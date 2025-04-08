@@ -1,0 +1,31 @@
+default_stages: [ pre-commit ]
+exclude: ^src/.*/(blueking/|config/|settings.py|migrations/)
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      # Run the linter.
+      - id: ruff
+        types: [python]
+        args: ["--config", "pyproject.toml", "--fix", "--no-cache"]
+      # Run the formatter.
+      - id: ruff-format
+        types: [python]
+        args: ["--config", "pyproject.toml", "--no-cache"]
+
+  #【必须】通过匹配conflict string，检查是否存在没有解决冲突的代码
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.0.1
+    hooks:
+      - id: check-merge-conflict
+
+  # AIDEV
+  - repo: local
+    hooks:
+      - id: aidev-requirements-export
+        name: aidev-requirements-export
+        language: system
+        entry: bash -c "cd ./src/aidev && make requirements.txt"
+        pass_filenames: false
+        files: "src/aidev/poetry.lock"

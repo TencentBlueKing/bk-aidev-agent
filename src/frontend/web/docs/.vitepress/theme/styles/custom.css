@@ -1,0 +1,205 @@
+/* 全局样式 */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--vp-font-family-base);
+}
+
+
+/* 首页特性卡片样式 */
+.VPFeatures .VPFeature {
+  transition: all 0.3s ease;
+}
+
+.VPFeatures .VPFeature:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+}
+
+.VPFeatures .VPFeature .icon {
+  font-size: 24px;
+  background: var(--vp-c-brand-dimm);
+  border-radius: 50%;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.VPImage.image-src {
+  height: 100%;
+}
+
+/* 首页底部样式 */
+.home-footer {
+  text-align: center;
+  margin-top: 64px;
+  padding: 32px 0;
+}
+
+/* 版本标签样式 */
+.version-badge {
+  display: inline-block;
+  background: var(--vp-c-brand);
+  color: white;
+  font-size: 14px;
+  padding: 4px 8px;
+  border-radius: var(--vp-border-radius);
+  font-weight: 600;
+}
+
+/* 示例容器样式 */
+.demo-container {
+  margin: 24px 0;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: var(--vp-border-radius);
+  overflow: hidden;
+}
+
+.demo-container .demo-header {
+  padding: 12px 16px;
+  background: var(--vp-c-bg-soft);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.demo-container .demo-content {
+  padding: 20px;
+  background: var(--vp-c-bg-soft);
+}
+
+.demo-container .demo-footer {
+  border-top: 1px solid var(--vp-c-divider);
+  padding: 12px 16px;
+  background: var(--vp-c-bg-alt);
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .VPFeatures .VPFeature {
+    flex-basis: 100%;
+  }
+}
+
+/* 代码块样式 */
+div[class*='language-'] {
+  border-radius: var(--vp-border-radius);
+  margin: 16px 0;
+}
+
+/* 自定义组件样式 */
+.playground {
+  margin: 32px 0;
+  border-radius: var(--vp-border-radius);
+  overflow: hidden;
+}
+
+/* 标题装饰 */
+h2 {
+  position: relative;
+  padding-bottom: 8px;
+}
+
+h2::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 48px;
+  height: 3px;
+  background: var(--vp-c-brand);
+  border-radius: 3px;
+}
+
+.changelog h2 {
+  border-top: none;
+}
+
+/* 深色模式特定样式覆盖 */
+
+.dark .VPNavBarSearch .VPNavBarSearchInput {
+  background-color: var(--vp-c-bg-search);
+  border-color: var(--vp-c-divider);
+}
+
+.dark .VPSidebarItem .link-text {
+  color: var(--vp-sidebar-link-color);
+}
+
+.dark .VPSidebarItem.is-active .link-text {
+  color: var(--vp-c-brand);
+  font-weight: 600;
+}
+
+.dark .feature-card {
+  background: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-divider);
+}
+
+.dark .feature-card:hover {
+  background: linear-gradient(to bottom right, var(--vp-c-bg-soft), var(--vp-c-bg-alt));
+  transform: translateY(-5px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+}
+
+/* 搜索结果样式 */
+.dark .DocSearch-Modal {
+  background-color: var(--vp-c-bg-alt);
+  border: 1px solid var(--vp-c-divider);
+}
+
+.dark .DocSearch-Input {
+  color: var(--vp-c-text-1);
+}
+
+.dark .DocSearch-Hit {
+  background-color: var(--vp-c-bg-search-result);
+}
+
+.dark .DocSearch-Hit a {
+  background-color: var(--vp-c-bg-search-result);
+}
+
+.dark .DocSearch-Hit:hover a {
+  background-color: var(--vp-c-bg-search-result-hover);
+}
+
+/* 修复demo容器在深色模式下的样式 */
+.dark .demo-container {
+  border-color: var(--vp-c-divider);
+}
+
+.dark .demo-header {
+  background-color: var(--vp-c-bg-soft);
+}
+
+.dark .demo-content {
+  background-color: var(--vp-c-bg);
+}
+
+.dark .demo-footer {
+  background-color: var(--vp-c-bg-soft);
+}
+
+/* 修复代码编辑器深色模式 */
+.dark .monaco-placeholder {
+  background-color: #1e1e1e;
+}
+
+.dark .monaco-note {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* 修复控制台深色模式 */
+.dark .console-header {
+  background-color: var(--vp-c-bg-soft);
+}
+
+.dark .console-content {
+  background-color: var(--vp-c-bg);
+}
+
+.dark .log-time {
+  color: var(--vp-c-text-2);
+} 

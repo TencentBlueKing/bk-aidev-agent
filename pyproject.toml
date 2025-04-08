@@ -1,0 +1,95 @@
+[tool.poetry]
+name = "bk-aidev"
+version = "0.1.0"
+description = "pre-commit for bi-aidev"
+authors = ["blueking"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "~3.10.5"
+django-downloadview = "<2.4"
+django = "<4"
+
+
+[tool.poetry.group.dev.dependencies]
+ipdb = ">=0.13.13,<0.14.0"
+pytest = ">=7.4.4,<7.5.0"
+pytest-django = ">=4.7.0,<4.8.0"
+pytest-asyncio = ">=0.23.3,<0.24.0"
+pytest-env = ">=1.1.3,<1.2.0"
+pytest-cov = ">=4.1.0,<4.2.0"
+pytest-timeout = "2.3.1"
+pre-commit = "4.0.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.mypy]
+mypy_path = ["."]
+python_version = "3.10"
+warn_unused_configs = true
+warn_unused_ignores = true
+warn_return_any = true
+warn_unreachable = true
+ignore_missing_imports = true
+show_error_codes = true
+strict_optional = true
+pretty = true
+disable_error_code = ["attr-defined", "no-any-return"]
+exclude='''(?x)(
+    ^.*/config/.*|
+    .*/tests/.*|
+    .*/settings\.py|
+    .*/langchain/.*|
+    .*/knowledge_base/.*|
+)'''
+
+[[tool.mypy.overrides]]
+module = ["blueking.*", "*.config.*", "*.migrations.*"]
+ignore_errors = true
+
+[tool.django-stubs]
+django_settings_module = "settings"
+
+[tool.flake8]
+extend-ignore = "W503,ANN101,ANN102,ANN002,ANN003,ANN001,ANN201,ANN204,ANN205,E203"
+max-line-length = 120
+max-complexity = 20
+format = "pylint"
+show_source = "true"
+statistics = "true"
+count = "true"
+
+[tool.ruff]
+exclude = [
+    "*/config/",
+    "*/migrations/",
+]
+force-exclude = true
+line-length = 120
+indent-width = 4
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "PIE",
+    "PERF"
+]
+ignore = ["PERF401", "E501", "E402"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.ruff.lint.isort]
+# 总是显式制定 import section 的顺序
+section-order = [
+  "future",
+  "standard-library",
+  "third-party",
+  "first-party",
+  "local-folder",
+]
+relative-imports-order = "closest-to-furthest"

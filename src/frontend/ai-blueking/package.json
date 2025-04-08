@@ -1,0 +1,80 @@
+{
+  "name": "@blueking/ai-blueking",
+  "version": "0.5.3-beta.3",
+  "description": "AI 小鲸",
+  "license": "MIT",
+  "author": "Tencent BlueKing",
+  "scripts": {
+    "dev": "vite --mode development -c scripts/vite.dev.ts",
+    "build": "tsx ./scripts/vite.build.ts && vue-tsc --project tsconfig.dts.json",
+    "dts": "vue-tsc --project tsconfig.dts.json",
+    "prettier": "prettier ./src ./scripts ./playground --write",
+    "visualize": "vite-bundle-visualizer -c scripts/vite.vusualizer.ts",
+    "clean": "rm -rf dist node_modules"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/vue3.d.ts",
+      "import": "./dist/vue3/index.es.min.js",
+      "require": "./dist/vue3/index.umd.min.js",
+      "default": "./dist/vue3/index.es.min.js"
+    },
+    "./vue2": {
+      "types": "./dist/vue2.d.ts",
+      "import": "./dist/vue2/index.es.min.js",
+      "require": "./dist/vue2/index.es.min.js",
+      "default": "./dist/vue2/index.es.min.js"
+    },
+    "./chat-helper": {
+      "types": "./dist/chat-helper.d.ts",
+      "import": "./dist/chat-helper.js",
+      "require": "./dist/chat-helper.js",
+      "default": "./dist/chat-helper.js"
+    },
+    "./dist/*": "./dist/*",
+    "./src/*": "./src/*"
+  },
+  "typesVersions": {
+    "*": {
+      ".": [
+        "./dist/vue3.d.ts"
+      ],
+      "vue3": [
+        "./dist/vue3.d.ts"
+      ],
+      "vue2": [
+        "./dist/vue2.d.ts"
+      ]
+    }
+  },
+  "types": "./dist/vue3.d.ts",
+  "main": "dist/vue3/index.es.min.js",
+  "unpkg": "dist/vue3/index.es.min.js",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "peerDependencies": {
+    "dayjs": "^1.10.7",
+    "highlight.js": "^11.5.1",
+    "markdown-it": "^13.0.1",
+    "markdown-it-code-copy": "^0.2.1"
+  },
+  "devDependencies": {
+    "@types/highlight.js": "^10.1.0",
+    "@vitejs/plugin-vue": "^5.2.3",
+    "highlight.js": "11.11.1",
+    "marked-highlight": "2.2.1"
+  },
+  "dependencies": {
+    "@agoose77/markdown-it-mermaid": "^1.1.0",
+    "@blueking/ai-ui-sdk": "0.0.12-beta.5",
+    "@blueking/bkui-library": "0.0.0-beta.6",
+    "motion-v": "^0.11.3",
+    "tippy.js": "^6.3.7",
+    "vue-draggable-resizable": "^3.0.0"
+  }
+}

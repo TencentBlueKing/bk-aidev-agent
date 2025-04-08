@@ -1,0 +1,72 @@
+{
+  "type": "ai-blueking",
+  "name": "ai-blueking",
+  "displayName": "AI 小鲸",
+  "framework": "vue3",
+  "props": {
+    "messages": {
+      "type": "array",
+      "tips": "聊天框展示的内容"
+    },
+    "prompts": {
+      "type": "array",
+      "tips": "快捷prompt列表"
+    },
+    "loading": {
+      "type": "boolean",
+      "tips": "处理 ai 消息的loading状态"
+    },
+    "headBackground": {
+      "type": "string",
+      "tips": "头部背景色"
+    },
+    "background": {
+      "type": "string",
+      "tips": "背景色"
+    },
+    "positionLimit": {
+      "type": "object",
+      "val": {
+        "top": 0,
+        "bottom": 0,
+        "left": 0,
+        "right": 0
+      },
+      "tips": "位置范围限制"
+    },
+    "sizeLimit": {
+      "type": "object",
+      "val": {
+        "height": 500,
+        "width": 294
+      },
+      "tips": "大小限制"
+    },
+    "userPhoto": {
+      "type": "string",
+      "tips": "用户头像地址"
+    },
+    "logo": {
+      "type": "string",
+      "tips": "icon class"
+    }
+  },
+  "events": [
+    {
+      "name": "clear",
+      "tips": "点击清空事件"
+    },
+    {
+      "name": "close",
+      "tips": "点击关闭事件"
+    },
+    {
+      "name": "send",
+      "tips": "点击发送事件"
+    },
+    {
+      "name": "choose-prompt",
+      "tips": "选择prompt事件"
+    }
+  ]
+}
