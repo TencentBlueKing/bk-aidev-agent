@@ -8,6 +8,21 @@ export default {
     return {
       changelogData: [
         {
+          version: "v0.5.3-beta.4",
+          date: "2025-04-10",
+          features: [
+            "新增 `title` 属性，支持自定义标题",
+            "新增 `helloText` 属性，支持自定义欢迎语",
+          ]
+        },
+        {
+          version: "v0.5.3-beta.3",
+          date: "2025-04-03",
+          features: [
+            "新增 `close` 事件，响应组件关闭"
+          ]
+        },
+        {
           version: "v0.5.3-beta.2",
           date: "2025-04-02",
           features: [
