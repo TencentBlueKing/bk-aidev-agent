@@ -1,7 +1,7 @@
 # AI 小鲸文档项目
 
 <p align="center">
-  <img src="./src/public/ai-logo.svg" alt="AI 小鲸" width="128" height="128">
+  <img src="./docs/public/ai-logo.svg" alt="AI 小鲸" width="128" height="128">
 </p>
 
 <p align="center">

@@ -39,8 +39,9 @@
 	src # 项目源码
 	├── agent         # aidev agent sdk
 	├── frontend      # 前端目录
-	│   ├── sdk       # 前端sdk
-	```
+	│   ├── ai-blueking  # 小鲸组件
+	│   ├── web          # 小鲸文档 Web 应用
+   ```
 
 ## Support
 

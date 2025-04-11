@@ -5,23 +5,7 @@
       title="实时会话样例"
     />
     <div class="demo-content">
-      <div class="feature-cards">
-        <div class="feature-card">
-          <div class="card-icon">💬</div>
-          <h3>实时对话</h3>
-          <p>支持流式输出，让对话更加自然流畅</p>
-        </div>
-        <div class="feature-card">
-          <div class="card-icon">📎</div>
-          <h3>内容引用</h3>
-          <p>选中文本即可快速引用并提问</p>
-        </div>
-        <div class="feature-card">
-          <div class="card-icon">⚡️</div>
-          <h3>快捷操作</h3>
-          <p>支持快速翻译、解释等常用功能</p>
-        </div>
-      </div>
+      <FeatureCards />
 
       <div class="article-section">
         <div class="article-card">
@@ -98,6 +82,7 @@
   import AIBlueking, { AIBluekingExpose, ShortCut } from '../src/vue3.ts';
   import DemoHeader from './components/demo-header.vue';
   import EventLogger from './components/event-logger.vue';
+  import FeatureCards from './components/feature-cards.vue';
   import { useEventLogger } from './composables/use-event-logger.ts';
 
   const prompts = ['请推荐几本关于人工智能的书籍。', '请用 Python 写一个简单的 Hello World 程序。'];
@@ -169,42 +154,6 @@
   .dynamic-playground {
     max-width: 1200px;
     margin: 0 auto;
-  }
-
-  .feature-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 24px;
-    margin-bottom: 40px;
-  }
-
-  .feature-card {
-    padding: 24px;
-    text-align: center;
-    background: #fff;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-    transition: transform 0.2s;
-
-    &:hover {
-      transform: translateY(-4px);
-    }
-
-    .card-icon {
-      margin-bottom: 16px;
-      font-size: 32px;
-    }
-
-    h3 {
-      margin-bottom: 12px;
-      font-size: 18px;
-      color: #333;
-    }
-
-    p {
-      line-height: 1.6;
-      color: #666;
-    }
   }
 
   .article-section {
