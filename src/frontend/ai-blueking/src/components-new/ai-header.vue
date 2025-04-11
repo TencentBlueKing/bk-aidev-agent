@@ -10,7 +10,7 @@
           alt="logo"
         />
       </div>
-      <div class="title">AI 蓝鲸</div>
+      <div class="title">{{ title }}</div>
     </div>
     <div class="right-section">
       <!-- <i class="bkai-icon icon-xinzengliaotian"></i> -->
@@ -37,9 +37,13 @@
   import { useTooltip } from '../composables/use-tippy';
   import { t } from '../lang';
 
-  const props = defineProps<{
+  const props = withDefaults(defineProps<{
+    title: string;
     isCompressionHeight: boolean;
-  }>();
+  }>(), {
+    title: t('AI 小鲸'),
+    isCompressionHeight: false,
+  });
 
   const emit = defineEmits<(e: 'close' | 'toggleCompression') => void>();
 

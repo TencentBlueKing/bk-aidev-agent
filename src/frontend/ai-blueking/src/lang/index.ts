@@ -79,6 +79,7 @@ export const langData = {
   缩小高度: 'Shrink height',
   恢复默认大小: 'Restore default size',
   无匹配结果: 'No matching results',
+  'AI 小鲸': 'AI BK GPT',
 } as const;
 
 export const zhLangData = {

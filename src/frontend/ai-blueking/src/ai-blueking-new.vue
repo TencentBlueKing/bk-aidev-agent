@@ -24,6 +24,7 @@
         <div class="ai-blueking-container">
           <!-- 顶部栏 -->
           <AiBluekingHeader
+            :title="props.title"
             :is-compression-height="isCompressionHeight"
             @close="handleClose"
             @toggle-compression="toggleCompression"
@@ -44,7 +45,7 @@
                 :initial="{ opacity: 1 }"
               >
                 <div class="greeting-title">
-                  {{ t('你好，我是小鲸') }}
+                  {{ props.helloText }}
                 </div>
                 <div class="greeting-anmition-wrapper">
                   <motion.div
@@ -167,6 +168,8 @@
 
   // 类型定义
   interface Props {
+    title?: string;
+    helloText?: string;
     enablePopup?: boolean;
     shortcuts?: ShortCut[];
     url?: string;
@@ -178,6 +181,8 @@
 
   // Props 定义
   const props = withDefaults(defineProps<Props>(), {
+    title: t('AI 小鲸'),
+    helloText: t('你好，我是小鲸'),
     enablePopup: true,
     shortcuts: () => DEFAULT_SHORTCUTS,
     url: '',

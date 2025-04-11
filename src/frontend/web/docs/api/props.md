@@ -5,6 +5,8 @@
 | 属性名          | 类型              | 默认值      | 描述                                                                                                   |
 | --------------- | ----------------- | ----------- | ------------------------------------------------------------------------------------------------------ |
 | `url`           | `String`          | `''`        | **必需**. AI 服务接口地址。                                                                              |
+| `title`         | `String`          | `'AI 小鲸'`  | 在头部显示的标题文本。                                                                                |
+| `helloText`     | `String`          | `'你好，我是小鲸'` | 初始欢迎页面显示的问候语。                                                                        |
 | `enablePopup`   | `Boolean`         | `true`      | 是否启用选中文本后的弹出操作窗口 (需要配合 `shortcuts` 使用)。                                            |
 | `shortcuts`     | `Array<ShortCut>` | `[]`        | 快捷操作列表。详细格式参见 [内容引用与快捷操作指南](/guide/core-features/content-referencing#配置快捷操作-shortcuts)。 |
 | `prompts`       | `Array<String>`   | `[]`        | 预设提示词列表。详细说明参见 [预设提示词指南](/guide/core-features/prompts)。                         |

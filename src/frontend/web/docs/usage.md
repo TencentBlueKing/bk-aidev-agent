@@ -12,6 +12,8 @@
     <AIBlueking 
       ref="aiBlueking"
       :url="apiUrl"
+      title="我的智能助手"
+      helloText="你好，我是你的AI助手"
       @show="handleShow"
       @close="handleClose"
     />
@@ -46,6 +48,8 @@ const handleClose = () => {
 | 属性名 | 类型 | 默认值 | 描述 |
 |--------|------|--------|------|
 | url | String | '' | AI 服务接口地址，必须设置 |
+| title | String | 'AI 小鲸' | 在头部显示的标题文本 |
+| helloText | String | '你好，我是小鲸' | 初始欢迎页面显示的问候语 |
 | enablePopup | Boolean | true | 是否启用选中文本后的弹出操作窗口 |
 | shortcuts | Array | [...] | 快捷操作列表 |
 | prompts | Array | [] | 预设提示词列表 |

@@ -2,6 +2,62 @@
 
 AI 小鲸提供了一些选项来定制其外观和行为。
 
+## 自定义标题和欢迎语
+
+您可以通过以下两个属性来自定义AI小鲸的显示标题和初始欢迎语：
+
+- `title` (String): 默认值为 `'AI 小鲸'`。设置头部展示的标题文本。
+- `helloText` (String): 默认值为 `'你好，我是小鲸'`。设置初始欢迎页面显示的问候语。
+
+:::code-group
+```vue [Vue 3]
+<template>
+  <AIBlueking
+    ref="aiBlueking"
+    :url="apiUrl"
+    title="企业助手"
+    helloText="你好，我是你的企业智能助手"
+  />
+</template>
+
+<script lang="ts" setup>
+import { ref } from 'vue';
+import AIBlueking from '@blueking/ai-blueking';
+import '@blueking/ai-blueking/dist/vue3/style.css';
+
+const aiBlueking = ref(null);
+const apiUrl = 'https://your-api-endpoint.com/assistant/';
+</script>
+```
+
+```vue [Vue 2]
+<template>
+  <AIBlueking
+    ref="aiBlueking"
+    :url="apiUrl"
+    title="企业助手"
+    helloText="你好，我是你的企业智能助手"
+  />
+</template>
+
+<script>
+import AIBlueking from '@blueking/ai-blueking/vue2';
+import '@blueking/ai-blueking/dist/vue2/style.css';
+
+export default {
+  components: {
+    AIBlueking
+  },
+  data() {
+    return {
+      apiUrl: 'https://your-api-endpoint.com/assistant/'
+    };
+  }
+};
+</script>
+```
+:::
+
 ## 窗口拖拽与缩放
 
 AI 小鲸的对话窗口默认支持拖拽移动位置和调整大小。用户可以通过拖动窗口标题栏来移动窗口，通过拖动窗口的边缘或右下角来改变窗口尺寸。这是组件的内置功能，无需额外配置。

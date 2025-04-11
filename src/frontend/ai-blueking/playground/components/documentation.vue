@@ -8,7 +8,7 @@
 </template>
 
 <script setup lang="ts">
-  import readme from '../../README.md?raw';
+  import readme from '../README.MD?raw';
   import MarkdownViewer from './markdown-viewer.vue';
   import ModalLayout from './modal-layout.vue';
 

@@ -1,6 +1,6 @@
 {
   "name": "@blueking/ai-blueking",
-  "version": "0.5.3-beta.3",
+  "version": "0.5.3-beta.4",
   "description": "AI 小鲸",
   "license": "MIT",
   "author": "Tencent BlueKing",
@@ -65,8 +65,10 @@
   },
   "devDependencies": {
     "@types/highlight.js": "^10.1.0",
+    "@types/node": "^20.14.2",
     "@vitejs/plugin-vue": "^5.2.3",
     "highlight.js": "11.11.1",
+    "marked": "^15.0.8",
     "marked-highlight": "2.2.1"
   },
   "dependencies": {
