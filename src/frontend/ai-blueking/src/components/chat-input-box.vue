@@ -63,7 +63,7 @@
   import { type ShortCut } from '@blueking/ai-ui-sdk';
   import { Instance } from 'tippy.js';
 
-  import AiCite from '../components-new/ai-cite.vue';
+  import AiCite from '../components/ai-cite.vue';
   import { useInputInteraction } from '../composables/use-input-interaction';
   import { usePopup } from '../composables/use-popup-props';
   import { useSelect } from '../composables/use-select-pop';

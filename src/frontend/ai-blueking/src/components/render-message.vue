@@ -115,7 +115,7 @@
   import MarkdownItCodeCopy from 'markdown-it-code-copy';
 
   import defaultUserLogo from '../assets/images/ai-user.png';
-  import AiCite from '../components-new/ai-cite.vue';
+  import AiCite from '../components/ai-cite.vue';
   import { usePopup } from '../composables/use-popup-props';
   import { useSelect } from '../composables/use-select-pop';
   import { useTooltip } from '../composables/use-tippy';

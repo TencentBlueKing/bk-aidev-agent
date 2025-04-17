@@ -151,11 +151,11 @@
   import { useChat, useStyle, useClickProxy, type ISession, ShortCut } from '@blueking/ai-ui-sdk';
   import { motion } from 'motion-v';
 
-  import AiBluekingHeader from './components-new/ai-header.vue';
-  import BarButton from './components-new/bar-button.vue';
-  import ChatInputBox from './components-new/chat-input-box.vue';
-  import renderMessage from './components-new/render-message.vue';
-  import RenderPopup from './components-new/render-popup.vue';
+  import AiBluekingHeader from './components/ai-header.vue';
+  import BarButton from './components/bar-button.vue';
+  import ChatInputBox from './components/chat-input-box.vue';
+  import renderMessage from './components/render-message.vue';
+  import RenderPopup from './components/render-popup.vue';
   import { POPUP_INJECTION_KEY } from './composables/use-popup-props';
   import { useResizableContainer } from './composables/use-resizable-container';
   import { useSelect } from './composables/use-select-pop';

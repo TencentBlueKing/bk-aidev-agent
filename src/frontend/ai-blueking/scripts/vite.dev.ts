@@ -26,11 +26,11 @@
 import { defineConfig } from 'vite';
 
 import { createCommonConfig } from './vite.utils';
-export default defineConfig(() => ({
+export default defineConfig({
   ...createCommonConfig(),
   server: {
     host: '0.0.0.0',
     port: 8001,
-    allowedHosts: ['localhost', '127.0.0.1', '0.0.0.0'],
+    allowedHosts: true,
   },
-}));
+});

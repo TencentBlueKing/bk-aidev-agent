@@ -27,7 +27,7 @@ import { h, render } from 'vue';
 
 import tippy, { type Instance as TippyInstance, type Props as TippyProps } from 'tippy.js';
 
-import DeleteConfirmVue from '../components-new/delete-confirm.vue';
+import DeleteConfirmVue from '../components/delete-confirm.vue';
 
 import 'tippy.js/dist/tippy.css';
 
