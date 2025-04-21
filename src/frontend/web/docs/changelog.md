@@ -8,6 +8,14 @@ export default {
     return {
       changelogData: [
         {
+          version: "v0.5.3-beta.5",
+          date: "2025-04-15",
+          features: [
+            "图标系统升级，将所有图标类名从 <code>icon-*</code> 更新为 <code>bkai-*</code> 前缀",
+            "优化停止生成和滚动到底部功能的图标展示"
+          ]
+        },
+        {
           version: "v0.5.3-beta.4",
           date: "2025-04-10",
           features: [

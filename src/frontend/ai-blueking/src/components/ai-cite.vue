@@ -8,7 +8,7 @@
         class="content-text"
         :class="{ 'show-close-icon': showCloseIcon }"
       >
-        <i class="bkai-icon icon-yinyong"></i>
+        <i class="bkai-icon bkai-yinyong"></i>
         <span
           ref="citeTextRef"
           class="ai-cite-text"
@@ -17,7 +17,7 @@
       </span>
       <i
         v-if="showCloseIcon"
-        class="bkai-icon icon-close-line-2 close-icon"
+        class="bkai-icon bkai-close-line-2 close-icon"
         @click="$emit('close')"
       ></i>
     </span>
@@ -124,7 +124,7 @@
         color: #979ba5;
       }
 
-      .icon-yinyong {
+      .bkai-yinyong {
         flex-shrink: 0;
         margin-right: 4px;
       }

@@ -1,11 +1,11 @@
 <template>
   <div class="ai-selected-box">
     <i
-      class="bkai-icon icon-close-circle-shape"
+      class="bkai-icon bkai-close-circle-shape"
       @click="clearSelection"
     ></i>
     <div class="ai-selected-tip">
-      <i class="bkai-icon icon-yinyong"></i>
+      <i class="bkai-icon bkai-yinyong"></i>
       <span class="ai-selected-tip-text">
         {{ t('已框选内容') }}
       </span>
@@ -62,7 +62,7 @@
     border-radius: 4px;
     box-shadow: 0 2px 6px 2px #1919290f;
 
-    .icon-close-circle-shape {
+    .bkai-close-circle-shape {
       position: absolute;
       top: -8px;
       right: -10px;

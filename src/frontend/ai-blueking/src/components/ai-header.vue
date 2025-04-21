@@ -13,8 +13,8 @@
       <div class="title">{{ title }}</div>
     </div>
     <div class="right-section">
-      <!-- <i class="bkai-icon icon-xinzengliaotian"></i> -->
-      <!-- <i class="bkai-icon icon-history"></i> -->
+      <!-- <i class="bkai-icon bkai-xinzengliaotian"></i> -->
+      <!-- <i class="bkai-icon bkai-history"></i> -->
       <i
         ref="compressionRef"
         class="bkai-icon"
@@ -23,7 +23,7 @@
       ></i>
       <i
         ref="closeRef"
-        class="bkai-icon icon-close-line-2"
+        class="bkai-icon bkai-close-line-2"
         @click="emit('close')"
       ></i>
     </div>
@@ -48,7 +48,7 @@
   const emit = defineEmits<(e: 'close' | 'toggleCompression') => void>();
 
   const compressionIcon = computed(() => {
-    return props.isCompressionHeight ? 'icon-morenchicun' : 'icon-yasuo';
+    return props.isCompressionHeight ? 'bkai-morenchicun' : 'bkai-yasuo';
   });
 
   const compressionTooltip = computed(() => {

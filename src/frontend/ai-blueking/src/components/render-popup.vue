@@ -9,7 +9,7 @@
     <div class="popup-content">
       <!-- AI图标按钮 -->
       <div
-        class="popup-icon-btn"
+        class="popup-bkai-btn"
         @click="handleClick"
       >
         <img
@@ -103,7 +103,7 @@
     pointer-events: auto;
   }
 
-  .popup-icon-btn {
+  .popup-bkai-btn {
     display: flex;
     flex-shrink: 0;
     gap: 4px;

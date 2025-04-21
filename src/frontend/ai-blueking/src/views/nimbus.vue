@@ -22,7 +22,7 @@
       @mouseleave="handleMouseLeave"
       @mouseup="handleMouseUp"
     >
-      <div class="nimbus-icon-wrapper">
+      <div class="nimbus-bkai-wrapper">
         <img
           width="32"
           height="32"
@@ -33,7 +33,7 @@
       <i
         ref="minimizeButtonRef"
         class="nimbus-mini bkai-icon"
-        :class="isMinimize ? 'icon-yinyong' : 'icon-minus-line'"
+        :class="isMinimize ? 'bkai-yinyong' : 'bkai-minus-line'"
         @click.stop="handleMinimize"
       ></i>
     </div>
@@ -157,7 +157,7 @@
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     transform: translateX(0);
 
-    .nimbus-icon-wrapper {
+    .nimbus-bkai-wrapper {
       display: flex;
       align-items: center;
       justify-content: center;

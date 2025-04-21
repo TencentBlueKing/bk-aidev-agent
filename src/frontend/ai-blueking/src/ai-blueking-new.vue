@@ -101,14 +101,14 @@
                   <BarButton
                     v-if="currentSessionLoading"
                     color="#EA3636"
-                    icon="icon-tingzhishengcheng"
+                    icon="bkaitingzhishengcheng"
                     text="停止生成"
                     @click="handleStop"
                   />
                   <BarButton
                     v-if="showScrollToBottom"
                     color="#979BA5"
-                    icon="icon-jiantou"
+                    icon="bkaijiantou"
                     text="返回底部"
                     @click="scrollMainToBottom"
                   />

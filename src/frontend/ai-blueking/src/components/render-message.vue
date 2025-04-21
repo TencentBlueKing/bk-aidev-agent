@@ -53,7 +53,7 @@
             class="loading-message"
             aria-hidden="true"
           >
-            <use xlink:href="#icon-quanquan"></use>
+            <use xlink:href="#bkai-quanquan"></use>
           </svg>
           <span
             v-if="message.status === SessionContentStatus.Fail"
@@ -76,26 +76,26 @@
         class="message-tool"
       >
         <i
-          class="bkai-icon icon-fuzhi"
+          class="bkai-icon bkai-fuzhi"
           @click="handleCopy"
         />
         <i
-          class="bkai-icon icon-yinyong"
+          class="bkai-icon bkai-yinyong"
           @click="setCiteText(message.content)"
         />
         <i
           v-if="message.role === SessionContentRole.Ai"
-          class="bkai-icon icon-zhongxinshengcheng"
+          class="bkai-icon bkai-zhongxinshengcheng"
           @click="handleRegenerate"
         />
         <template v-if="message.role === SessionContentRole.User">
           <i
-            class="bkai-icon icon-bianji"
+            class="bkai-icon bkai-bianji"
             @click="isEdit = true"
           />
         </template>
         <i
-          class="bkai-icon icon-shanchu"
+          class="bkai-icon bkai-shanchu"
           @click="handleDelete"
         />
       </div>
@@ -170,7 +170,7 @@
     },
   })
     .use(MarkdownItCodeCopy, {
-      iconClass: 'bkai-icon icon-fuzhi',
+      iconClass: 'bkai-icon bkai-fuzhi',
       buttonClass: 'ai-blueking-copy-button',
     })
     .use(MarkdownItLinkBlank)
@@ -178,7 +178,7 @@
   // 计算属性
   const statusIcon = computed(() => {
     const iconMap: Record<SessionContentStatus, string> = {
-      [SessionContentStatus.Fail]: 'bkai-icon icon-warning-circle-fill',
+      [SessionContentStatus.Fail]: 'bkai-icon bkai-warning-circle-fill',
       [SessionContentStatus.Loading]: '',
       [SessionContentStatus.Success]: '',
     };
@@ -241,11 +241,11 @@
   // 工具提示初始化
   const initTooltips = () => {
     destroyAll();
-    createTooltipsForSelector('.message-tool .icon-fuzhi', t('复制'));
-    createTooltipsForSelector('.message-tool .icon-zhongxinshengcheng', t('重新生成'));
-    createTooltipsForSelector('.message-tool .icon-yinyong', t('引用'));
-    createTooltipsForSelector('.message-tool .icon-bianji', t('编辑'));
-    createTooltipsForSelector('.message-tool .icon-shanchu', t('删除'));
+    createTooltipsForSelector('.message-tool .bkai-fuzhi', t('复制'));
+    createTooltipsForSelector('.message-tool .bkai-zhongxinshengcheng', t('重新生成'));
+    createTooltipsForSelector('.message-tool .bkai-yinyong', t('引用'));
+    createTooltipsForSelector('.message-tool .bkai-bianji', t('编辑'));
+    createTooltipsForSelector('.message-tool .bkai-shanchu', t('删除'));
   };
 
   // 生命周期钩子
@@ -275,7 +275,7 @@
 
 <style lang="scss">
   /* stylelint-disable declaration-no-important */
-  @keyframes icon-loading {
+  @keyframes bkai-loading {
     to {
       transform: rotate(1turn);
     }
@@ -315,7 +315,7 @@
       color: #4d4f56;
     }
 
-    &.icon-warning-circle-fill {
+    &.bkai-warning-circle-fill {
       font-size: 16px;
       line-height: 22px;
       color: #ea3636;
@@ -661,7 +661,7 @@
     border: none;
     outline: none;
 
-    .icon-fuzhi {
+    .bkai-fuzhi {
       margin: 0;
       font-size: 16px !important;
       line-height: 1 !important;
@@ -679,7 +679,7 @@
     margin-top: 2px;
     margin-right: 5px;
     fill: #3a84ff;
-    animation: icon-loading 1s linear infinite;
+    animation: bkai-loading 1s linear infinite;
   }
 
   code.hljs {

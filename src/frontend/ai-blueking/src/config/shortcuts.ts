@@ -32,12 +32,12 @@ export const DEFAULT_SHORTCUTS: ShortCut[] = [
     label: t('翻译'),
     prompt: t('translateShortcut'),
     key: 'translate',
-    icon: 'icon-fanyi',
+    icon: 'bkai-fanyi',
   },
   {
     label: t('解释'),
     prompt: t('explanationShortcut'),
     key: 'explanation',
-    icon: 'icon-jieshi',
+    icon: 'bkai-jieshi',
   },
 ];

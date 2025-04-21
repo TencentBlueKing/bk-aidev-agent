@@ -113,7 +113,7 @@
   const actionIconRef = ref<HTMLElement>();
   const actionTooltip = ref<Instance>();
   const actionIconClass = computed(() => {
-    return props.loading ? 'icon-published-zhongzhi' : 'icon-fasong';
+    return props.loading ? 'bkai-published-zhongzhi' : 'bkai-fasong';
   });
   const actionTooltipText = computed(() => {
     return props.loading ? t('停止') : t('发送');
@@ -403,7 +403,7 @@
         color: #63656e;
         cursor: pointer;
 
-        &.icon-fasong {
+        &.bkai-fasong {
           margin-right: 0;
         }
 
