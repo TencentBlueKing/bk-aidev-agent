@@ -92,9 +92,10 @@ export default {
 
 ```json
 {
-  "inputs": {},
-  "chat_history": [],
-  "input": "用户的提问内容"
+  "inputs": {
+    "chat_history": [],
+    "input": "用户的提问内容"
+  },
 }
 ```
 
@@ -102,11 +103,12 @@ export default {
 
 ```diff
  {
-   "inputs": {},
-   "chat_history": [],
-   "input": "用户的提问内容",
-+  "preset": "QA",
-+  "userId": "user123"
+   "inputs": {
+      "chat_history": [],
+      "input": "用户的提问内容",
++     "preset": "QA",
++     "userId": "user123"
+   },
  }
 ```
 

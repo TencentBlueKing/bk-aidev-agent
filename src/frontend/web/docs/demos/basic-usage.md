@@ -32,16 +32,18 @@ onMounted(() => {
 ## 关键代码讲解
 
 ### 1. 引入组件
+:::code-group
 
-```js
-// Vue 3
+```js [Vue3]
 import AIBlueking from '@blueking/ai-blueking';
 import '@blueking/ai-blueking/dist/vue3/style.css';
+```
 
-// Vue 2
-import AIBlueking from '@blueking/ai-blueking';
+```js [Vue2]
+import AIBlueking from '@blueking/ai-blueking/vue2';
 import '@blueking/ai-blueking/dist/vue2/style.css';
 ```
+:::
 
 ### 2. 设置 API 服务地址
 

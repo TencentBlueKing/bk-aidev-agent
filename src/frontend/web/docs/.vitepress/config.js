@@ -10,9 +10,9 @@ export default defineConfig({
   themeConfig: {
     logo: '/ai-logo.svg',
     nav: [
-      { text: '指南', link: '/guide/introductions' },
-      { text: 'API 文档', link: '/api/props' },
-      { text: '示例', link: '/demos/basic-usage' },
+      { text: '指南', link: '/guide/introductions', activeMatch: '/guide/' },
+      { text: 'API 文档', link: '/api/props', activeMatch: '/api/' },
+      { text: '示例', link: '/demos/basic-usage', activeMatch: '/demos/' },
       { text: '更新日志', link: '/changelog' },
       { text: '常见问题', link: '/faq' },
       { 

@@ -3,7 +3,7 @@
   "version": "0.5.3-beta.5",
   "description": "AI 小鲸智能对话组件文档",
   "scripts": {
-    "dev": "vitepress dev docs",
+    "dev": "vitepress dev docs --host",
     "build": "vitepress build docs",
     "preview": "vitepress preview docs",
     "server": "node ./server.cjs"
