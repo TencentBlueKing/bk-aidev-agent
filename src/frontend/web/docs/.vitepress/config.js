@@ -85,6 +85,9 @@ export default defineConfig({
       message: 'All Rights Reserved. 腾讯蓝鲸 版权所有',
       copyright: 'Copyright © 2025 Blueking'
     },
+    search: {
+      provider: 'local',
+    }
     
     // algolia: {
     //   appId: 'YOUR_APP_ID',
