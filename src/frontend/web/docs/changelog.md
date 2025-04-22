@@ -8,6 +8,14 @@ export default {
     return {
       changelogData: [
         {
+          version: "v0.5.3-beta.6",
+          date: "2025-04-16",
+          features: [
+            "增强 Vue2 组件的API暴露支持，同步暴露Vue3组件中的所有方法和属性",
+            "完善 Vue2 与 Vue3 组件的兼容性"
+          ]
+        },
+        {
           version: "v0.5.3-beta.5",
           date: "2025-04-15",
           features: [

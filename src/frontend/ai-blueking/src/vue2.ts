@@ -115,6 +115,27 @@ export default {
     this.sendChat = (options: { message: string; cite: string; shortcut: ShortCut }) => {
       aiBlueking.component.exposed.sendChat(options);
     };
+    this.handleClose = () => {
+      aiBlueking.component.exposed.handleClose();
+    };
+    this.handleSendMessage = (message: string) => {
+      aiBlueking.component.exposed.handleSendMessage(message);
+    };
+    this.handleDelete = (index: number) => {
+      aiBlueking.component.exposed.handleDelete(index);
+    };
+    this.handleRegenerate = (index: number) => {
+      aiBlueking.component.exposed.handleRegenerate(index);
+    };
+    this.handleResend = (index: number, value: { message: string; cite: string }) => {
+      aiBlueking.component.exposed.handleResend(index, value);
+    };
+
+    // 添加 组件暴露属性（属性类型使用 defineProperty 添加, 以保持响应式）
+    Object.defineProperty(this, 'sessionContents', {
+      get: () => aiBlueking.component.exposed.sessionContents,
+    });
+    
   },
   mounted() {
     this.app?.mount(this.$el);

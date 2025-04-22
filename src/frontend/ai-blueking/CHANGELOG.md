@@ -1,5 +1,16 @@
 # 更新日志
 
+## [0.5.3-beta.6] - 2025-04-16
+
+### 优化
+- **增强 Vue2 组件 API 支持**：
+  - 完善 Vue2 组件对 Vue3 组件暴露的 API 的支持，确保所有方法和属性都能被正确访问
+  - 包括 `sessionContents`, `handleClose`, `handleSendMessage`, `handleDelete`, `handleRegenerate`, `handleResend` 等
+  - 使用 `Object.defineProperty` 保持 `sessionContents` 属性的响应式特性
+- **完善 Vue2 与 Vue3 组件的兼容性**：
+  - 优化 Vue2 组件的代码结构，提升与 Vue3 组件间的交互效率
+  - 确保 Vue2 环境下的功能和 Vue3 一致
+
 ## [0.5.3-beta.5] - 2025-04-15
 
 ### 优化
