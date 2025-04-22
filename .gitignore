@@ -180,6 +180,7 @@ src/frontend/web/docs/.vitepress/dist/
 src/frontend/node_modules/
 src/frontend/ai-blueking/node_modules/
 src/frontend/web/node_modules/
+src/frontend/vue2-playground/node_modules/
 
 # lesscode dist
 src/frontend/ai-blueking/lesscode-dist/

@@ -1,6 +1,6 @@
 {
   "name": "ai-blueking-docs",
-  "version": "0.5.3-beta.6",
+  "version": "0.5.3-beta.7",
   "description": "AI 小鲸智能对话组件文档",
   "scripts": {
     "dev": "vitepress dev docs --host",
@@ -9,7 +9,7 @@
     "server": "node ./server.cjs"
   },
   "dependencies": {
-    "@blueking/ai-blueking": "0.5.3-beta.6",
+    "@blueking/ai-blueking": "0.5.3-beta.7",
     "vue": "^3.3.4",
     "express": "^5.1.0",
     "bkui-vue": "^2.0.1-beta.114"

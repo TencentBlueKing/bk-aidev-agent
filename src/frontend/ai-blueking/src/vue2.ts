@@ -133,7 +133,26 @@ export default {
 
     // 添加 组件暴露属性（属性类型使用 defineProperty 添加, 以保持响应式）
     Object.defineProperty(this, 'sessionContents', {
-      get: () => aiBlueking.component.exposed.sessionContents,
+      get: () => {
+        const contents = aiBlueking.component.exposed.sessionContents;
+        // 解包 Vue3 的 Ref 对象
+        let result = contents && contents.__v_isRef ? contents.value : contents;
+        
+        // 如果是 Proxy 对象，转换为普通 JavaScript 数组
+        if (result && typeof result === 'object') {
+          try {
+            // 方法1：使用 JSON 转换去掉 Proxy（如果对象是可序列化的）
+            result = JSON.parse(JSON.stringify(result));
+          } catch (e) {
+            // 方法2：如果 JSON 转换失败，尝试手动解构
+            if (Array.isArray(result)) {
+              result = [...result];
+            }
+          }
+        }
+        
+        return Array.isArray(result) ? result : [];
+      },
     });
     
   },

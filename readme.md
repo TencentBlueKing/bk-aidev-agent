@@ -67,6 +67,14 @@ pnpm dev:component  # 开发模式（AI小鲸组件）
 pnpm build:component  # 生产构建（AI小鲸组件）
 ```
 
+#### Vue2 组件测试
+```bash
+cd src/frontend
+pnpm install
+cd vue2-playground
+pnpm run serve  # 启动 Vue2 环境测试
+```
+
 #### 文档开发
 ```bash
 cd src/frontend
@@ -96,6 +104,9 @@ bk-aidev-agent/
 │       │   ├── src/      # 组件源代码
 │       │   ├── playground/ # 本地开发环境
 │       │   └── scripts/  # 构建脚本
+│       ├── vue2-playground/ # Vue2 环境测试工程
+│       │   ├── src/      # Vue2 测试应用源码
+│       │   └── public/   # 静态资源
 │       └── web/          # 文档站点
 │           ├── docs/     # 文档内容
 │           └── server.cjs # 文档服务器

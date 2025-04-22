@@ -64,6 +64,14 @@ pnpm dev:component  # Development mode (AI Dolphin component)
 pnpm build:component  # Production build (AI Dolphin component)
 ```
 
+#### Vue2 Component Testing
+```bash
+cd src/frontend
+pnpm install
+cd vue2-playground
+pnpm run serve  # Start Vue2 environment testing
+```
+
 #### Documentation Development
 ```bash
 cd src/frontend
@@ -93,6 +101,9 @@ bk-aidev-agent/
 │       │   ├── src/      # Component source code
 │       │   ├── playground/ # Local development environment
 │       │   └── scripts/  # Build scripts
+│       ├── vue2-playground/ # Vue2 environment testing project
+│       │   ├── src/      # Vue2 test application source code
+│       │   └── public/   # Static resources
 │       └── web/          # Documentation site
 │           ├── docs/     # Documentation content
 │           └── server.cjs # Documentation server
