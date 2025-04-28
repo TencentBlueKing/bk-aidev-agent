@@ -5,7 +5,7 @@
         v-if="isShow"
         ref="resizeWrapper"
         :active="isShow"
-        :draggable="true"
+        :draggable="props.draggable"
         :h="height"
         :max-width="maxWidth"
         :min-height="minHeight"
@@ -26,6 +26,7 @@
           <AiBluekingHeader
             :title="props.title"
             :is-compression-height="isCompressionHeight"
+            :draggable="props.draggable"
             @close="handleClose"
             @toggle-compression="toggleCompression"
           />
@@ -178,6 +179,11 @@
     defaultMinimize?: boolean;
     teleportTo?: string;
     defaultMessages?: ISessionContent[];
+    draggable?: boolean;
+    defaultWidth?: number;
+    defaultHeight?: number;
+    defaultTop?: number;
+    defaultLeft?: number;
   }
 
   // Props 定义
@@ -192,6 +198,11 @@
     defaultMinimize: false,
     teleportTo: 'body',
     defaultMessages: () => [],
+    draggable: true,
+    defaultWidth: undefined,
+    defaultHeight: undefined,
+    defaultTop: undefined,
+    defaultLeft: undefined,
   });
 
   // Emits 定义
@@ -226,7 +237,13 @@
     handleDragging,
     handleResizing,
     toggleCompression,
-  } = useResizableContainer({ maxWidthPercent: 80 });
+  } = useResizableContainer({ 
+    maxWidthPercent: 80,
+    initWidth: props.defaultWidth,
+    defaultHeight: props.defaultHeight,
+    defaultTop: props.defaultTop,
+    defaultLeft: props.defaultLeft,
+  });
 
   const inputHeight = ref(68);
 

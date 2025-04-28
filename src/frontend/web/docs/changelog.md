@@ -8,6 +8,17 @@ export default {
     return {
       changelogData: [
         {
+          version: "v0.5.4",
+          date: "2025-04-28",
+          features: [
+            "新增 `draggable` 属性，控制组件是否可拖拽",
+            "新增 `defaultWidth` 属性，设置组件初始宽度",
+            "新增 `defaultHeight` 属性，设置组件初始高度",
+            "新增 `defaultTop` 属性，设置组件初始顶部位置",
+            "新增 `defaultLeft` 属性，设置组件初始左侧位置",
+          ]
+        },
+        {
           version: "v0.5.3",
           date: "2025-04-20",
           features: [

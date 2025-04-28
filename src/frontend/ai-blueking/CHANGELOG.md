@@ -1,5 +1,30 @@
 # 更新日志
 
+## [0.5.4] - 2025-04-28
+
+### 新增功能
+- **增强可拖拽功能**：
+  - 新增 `draggable` 属性，控制组件是否可拖拽（默认true）
+  - 当设置为 `false` 时，组件将固定位置不可拖动
+- **支持自定义初始位置和尺寸**：
+  - 新增 `defaultWidth` 属性：设置组件初始宽度
+  - 新增 `defaultHeight` 属性：设置组件初始高度
+  - 新增 `defaultTop` 属性：设置组件初始顶部位置
+  - 新增 `defaultLeft` 属性：设置组件初始左侧位置
+  - 这些属性可以配合使用，实现组件初始状态的精确控制
+
+```html
+<template>
+  <AIBlueking
+    :draggable="false"
+    :default-width="600"
+    :default-height="400"
+    :default-top="100"
+    :default-left="200"
+  />
+</template>
+```
+
 ## [0.5.3] - 2025-04-20
 
 ### 新增功能

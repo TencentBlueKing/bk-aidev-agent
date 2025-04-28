@@ -2,6 +2,7 @@
   <div
     ref="headerRef"
     class="header drag-handle"
+    :class="{ 'draggable': props.draggable }"
   >
     <div class="left-section">
       <div class="logo">
@@ -40,9 +41,11 @@
   const props = withDefaults(defineProps<{
     title: string;
     isCompressionHeight: boolean;
+    draggable: boolean;
   }>(), {
     title: t('AI 小鲸'),
     isCompressionHeight: false,
+    draggable: true,
   });
 
   const emit = defineEmits<(e: 'close' | 'toggleCompression') => void>();
@@ -104,8 +107,11 @@
     justify-content: space-between;
     height: 48px;
     padding: 14px;
-    cursor: move;
     border-bottom: 1px solid #e5e5e5;
+
+    &.draggable {
+      cursor: move;
+    }
 
     .left-section {
       display: flex;

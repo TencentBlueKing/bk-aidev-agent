@@ -40,6 +40,12 @@ interface ResizableContainerOptions {
   maxWidthPercent?: number;
   /** 最小高度，默认为 800px */
   miniHeight?: number;
+  /** 自定义初始高度 */
+  defaultHeight?: number;
+  /** 自定义初始顶部位置 */
+  defaultTop?: number;
+  /** 自定义初始左侧位置 */
+  defaultLeft?: number;
 }
 
 /**
@@ -59,10 +65,10 @@ export function useResizableContainer(options: ResizableContainerOptions = {}) {
 
   // 状态管理
   const initialX = ref(window.innerWidth - initWidth);
-  const top = ref(0);
-  const left = ref(initialX.value);
+  const top = ref(options.defaultTop !== undefined ? options.defaultTop : 0);
+  const left = ref(options.defaultLeft !== undefined ? options.defaultLeft : initialX.value);
   const width = ref(initWidth);
-  const height = ref(window.innerHeight);
+  const height = ref(options.defaultHeight !== undefined ? options.defaultHeight : window.innerHeight);
   const maxWidth = ref(window.innerWidth * (maxWidthPercent / 100));
   const isCompressionHeight = ref(false);
   const leftDiff = ref(0);

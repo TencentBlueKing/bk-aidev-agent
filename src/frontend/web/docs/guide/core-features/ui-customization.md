@@ -62,6 +62,71 @@ export default {
 
 AI 小鲸的对话窗口默认支持拖拽移动位置和调整大小。用户可以通过拖动窗口标题栏来移动窗口，通过拖动窗口的边缘或右下角来改变窗口尺寸。这是组件的内置功能，无需额外配置。
 
+### 拖拽功能控制与初始位置设置
+
+从 `v0.5.4` 版本开始，您可以通过以下属性来控制组件的拖拽功能以及自定义初始位置和尺寸：
+
+- `draggable` (Boolean): 默认值为 `true`。控制组件是否可拖拽。
+- `defaultWidth` (Number): 设置组件初始宽度，像素值（比如`500`）。
+- `defaultHeight` (Number): 设置组件初始高度，像素值。
+- `defaultTop` (Number): 设置组件初始顶部位置，像素值。
+- `defaultLeft` (Number): 设置组件初始左侧位置，像素值。
+
+:::code-group
+```vue [Vue 3]
+<template>
+  <AIBlueking
+    ref="aiBlueking"
+    :url="apiUrl"
+    :draggable="true"
+    :default-width="520"
+    :default-height="600"
+    :default-top="50"
+    :default-left="20"
+  />
+</template>
+
+<script lang="ts" setup>
+import { ref } from 'vue';
+import AIBlueking from '@blueking/ai-blueking';
+import '@blueking/ai-blueking/dist/vue3/style.css';
+
+const aiBlueking = ref(null);
+const apiUrl = 'https://your-api-endpoint.com/assistant/';
+</script>
+```
+
+```vue [Vue 2]
+<template>
+  <AIBlueking
+    ref="aiBlueking"
+    :url="apiUrl"
+    :draggable="true"
+    :default-width="520"
+    :default-height="600"
+    :default-top="50"
+    :default-left="20"
+  />
+</template>
+
+<script>
+import AIBlueking from '@blueking/ai-blueking/vue2';
+import '@blueking/ai-blueking/dist/vue2/style.css';
+
+export default {
+  components: {
+    AIBlueking
+  },
+  data() {
+    return {
+      apiUrl: 'https://your-api-endpoint.com/assistant/'
+    };
+  }
+};
+</script>
+```
+:::
+
 ## 初始最小化状态
 
 您可以通过 `defaultMinimize` prop 控制 AI 小鲸窗口在首次加载或通过 `handleShow` 方法显示时是否处于最小化状态。

@@ -15,6 +15,11 @@
 | `teleportTo`    | `String`          | `'body'`    | 控制组件内容传送到的 DOM 节点，可将组件内容渲染到任意 DOM 位置。详细说明参见 [界面定制指南](/guide/core-features/ui-customization#自定义传送目标)。 |
 | `defaultMessages`| `Array<Message>` | `[]`        | 预设对话内容，可用于初始化对话或恢复会话状态。详细说明参见 [预设对话内容指南](/guide/advanced-usage/default-messages)。 |
 | `sessionContents`| `Array`           | `[] (内部)` | **只读**. 暴露当前会话内容，可用于外部访问和操作。详细说明参见 [访问会话内容指南](/guide/advanced-usage/session-access)。 |
+| `draggable`     | `Boolean`         | `true`      | 控制组件是否可拖拽。设置为 `false` 时，窗口将固定在位置上不可移动。详细说明参见 [界面定制指南](/guide/core-features/ui-customization#拖拽功能控制与初始位置设置)。 |
+| `defaultWidth`  | `Number`          | `400` | 设置组件初始宽度，单位为像素。详细说明参见 [界面定制指南](/guide/core-features/ui-customization#拖拽功能控制与初始位置设置)。 |
+| `defaultHeight` | `Number`          | `undefined` | 设置组件初始高度，单位为像素，不设置组件会动态计算，设置为视窗高度。详细说明参见 [界面定制指南](/guide/core-features/ui-customization#拖拽功能控制与初始位置设置)。 |
+| `defaultTop`    | `Number`          | `0` | 设置组件初始顶部位置，单位为像素。详细说明参见 [界面定制指南](/guide/core-features/ui-customization#拖拽功能控制与初始位置设置)。 |
+| `defaultLeft`   | `Number`          | `undefined` | 设置组件初始左侧位置，单位为像素。不设置会动态计算，设置为 `视窗宽度 - defaultWidth`。详细说明参见 [界面定制指南](/guide/core-features/ui-customization#拖拽功能控制与初始位置设置)。 |
 
 ## `ShortCut` 对象格式
 

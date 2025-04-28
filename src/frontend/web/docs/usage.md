@@ -56,6 +56,11 @@ const handleClose = () => {
 | requestOptions | Object | {} | 自定义请求选项 |
 | defaultMinimize | Boolean | false | 初始是否处于最小化状态 |
 | sessionContents | Array | [] | 当前会话内容 |
+| draggable | Boolean | true | 控制组件是否可拖拽 |
+| defaultWidth | String/Number | - | 设置组件初始宽度 |
+| defaultHeight | String/Number | - | 设置组件初始高度 |
+| defaultTop | String/Number | - | 设置组件初始顶部位置 |
+| defaultLeft | String/Number | - | 设置组件初始左侧位置 |
 
 ### shortcuts 属性说明
 
@@ -184,6 +189,28 @@ const sessionContents = [
     content: '你好！我是 AI 小鲸，一个智能对话助手。我可以帮助你回答问题、提供信息，以及完成各种对话任务。有什么我可以帮助你的吗？'
   }
 ];
+</script>
+```
+
+### 自定义窗口大小与位置
+
+```vue
+<template>
+  <AIBlueking
+    :url="apiUrl"
+    :draggable="true"
+    :default-width="600"
+    :default-height="700"
+    :default-top="50"
+    :default-left="'30%'"
+  />
+</template>
+
+<script setup>
+import { ref } from 'vue';
+import AIBlueking from '@blueking/ai-blueking';
+
+const apiUrl = 'https://your-api-endpoint.com/assistant/';
 </script>
 ```
 
