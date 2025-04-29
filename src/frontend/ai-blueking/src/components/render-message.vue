@@ -4,10 +4,10 @@
     :class="[message.role, 'message-main']"
   >
     <div
-      v-if="message.cite"
+      v-if="message?.property?.extra?.cite"
       class="ai-cite-container"
     >
-      <AiCite :text="message.cite" />
+      <AiCite :text="message.property.extra.cite" />
     </div>
     <div :class="`message-content-container ${message.role}`">
       <template v-if="message.role === SessionContentRole.User">

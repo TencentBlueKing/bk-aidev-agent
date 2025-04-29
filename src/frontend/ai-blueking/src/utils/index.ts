@@ -107,7 +107,7 @@ export function durationFormatter(val: number) {
   const seconds = Math.floor((val % 60000) / 1000);
   const milliseconds = val % 1000;
 
-  const parts = [];
+  const parts: string[] = [];
   if (hours > 0) {
     parts.push(`${hours}h`);
   }
@@ -139,4 +139,16 @@ export const scrollToBottom = (el: HTMLElement) => {
  */
 export const escapeHtml = (str: string) => {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+};
+
+/**
+ * 生成UUID
+ * @returns UUID
+ */
+export const uuid = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0,
+      v = c == 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 };

@@ -149,7 +149,7 @@
   import VueDraggableResizable from 'vue-draggable-resizable';
   import type { IRequestOptions } from './types';
 
-  import { useChat, useStyle, useClickProxy, type ISession, ShortCut, ISessionContent } from '@blueking/ai-ui-sdk';
+  import { useChat, useStyle, useClickProxy, type ISession, ShortCut, ISessionContent, SessionContentRole } from '@blueking/ai-ui-sdk';
   import { motion } from 'motion-v';
 
   import AiBluekingHeader from './components/ai-header.vue';
@@ -162,7 +162,7 @@
   import { useSelect } from './composables/use-select-pop';
   import { DEFAULT_SHORTCUTS } from './config';
   import { t } from './lang';
-  import { scrollToBottom, escapeHtml } from './utils';
+  import { scrollToBottom, escapeHtml, uuid } from './utils';
   import Nimbus from './views/nimbus.vue';
 
   import 'vue-draggable-resizable/style.css';
@@ -278,9 +278,10 @@
   useClickProxy();
 
   // 初始化会话信息
+  const sessionCode = uuid();
   const session: ISession = {
-    sessionCode: '1',
-    sessionName: 'test',
+    sessionCode,
+    sessionName: 'session',
     model: '',
   };
 
@@ -322,14 +323,15 @@
   const {
     currentSession,
     sessionContents,
-    sendChat,
+    plusSessionContent,
+    chat,
     stopChat,
     setCurrentSession,
     setSessionContents,
     currentSessionLoading,
     reGenerateChat,
     reSendChat,
-    deleteChat,
+    deleteSessionContent,
   } = useChat({
     handleStart: () => {
       scrollToBottomIfNeeded();
@@ -382,15 +384,22 @@
     // HTML转义功能 防止被当做 HTML 标签渲染
     const escapedMessage = escapeHtml(message);
 
-    sendChat(
-      {
-        message: escapedMessage,
-        cite: citeText.value,
+    plusSessionContent(sessionCode, {
+      role: SessionContentRole.User,
+      content: escapedMessage,
+      sessionCode,
+      property: {
+        extra: {
+          cite: citeText.value,
+        },
       },
-      () => {
-        nextTick(scrollToBottomIfNeeded);
-      },
-    );
+    });
+
+    chat({
+      sessionCode,
+      url: props.url,
+      ...props.requestOptions,
+    })
 
     emit('send-message', escapedMessage);
 
@@ -400,11 +409,17 @@
   };
 
   const handleRegenerate = (index: number) => {
-    reGenerateChat(index);
+    const sessionContent = sessionContents.value[index];
+    if (sessionContent) {
+      reGenerateChat(sessionContent.sessionCode, sessionContent, index);
+    }
   };
 
-  const handleResend = (index: number, value: { message: string; cite: string }) => {
-    reSendChat(index, value);
+  const handleResend = (index: number) => {
+    const sessionContent = sessionContents.value[index];
+    if (sessionContent) {
+      reSendChat(sessionContent.sessionCode, sessionContent, index);
+    }
   };
 
   const handleStop = () => {
@@ -417,17 +432,30 @@
   const handleShortcutClick = (shortcut: ShortCut) => {
     !isShow.value && handleShow();
 
-    sendChat({
-      message: shortcut.label,
-      cite: selectedText.value || inputMessage.value,
-      shortcut,
+    plusSessionContent(sessionCode, {
+      role: SessionContentRole.User,
+      content: shortcut.label,
+      sessionCode,
+      property: {
+        extra: {
+          cite: selectedText.value || inputMessage.value,
+          shortcut,
+        },
+      },
     });
+
+    chat({
+      sessionCode,
+      url: props.url,
+      ...props.requestOptions,
+    })
 
     emit('shortcut-click', shortcut);
   };
 
   const handleDelete = (index: number) => {
-    deleteChat(index);
+    const sessionContent = sessionContents.value[index];
+    sessionContent && deleteSessionContent(sessionContent.sessionCode, sessionContent.id as number);
   };
 
   // 监听消息列表变化，自动滚动到底部
@@ -444,7 +472,6 @@
     handleShow,
     handleClose,
     handleStop,
-    sendChat,
     handleSendMessage,
     handleShortcutClick,
     handleDelete,
