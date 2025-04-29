@@ -57,6 +57,30 @@ export default {
       default: () => [],
       type: Array,
     },
+    defaultMessages: {
+      default: () => [],
+      type: Array,
+    },
+    teleportTo: {
+      default: 'body',
+      type: String,
+    },
+    draggable: {
+      default: true,
+      type: Boolean,
+    },
+    defaultWidth: {
+      type: Number,
+    },
+    defaultHeight: {
+      type: Number,
+    },
+    defaultLeft: {
+      type: Number,
+    },
+    defaultTop: {
+      type: Number,
+    },
   },
   data() {
     return {
@@ -79,6 +103,11 @@ export default {
           prompts: that.prompts,
           defaultMessages: that.defaultMessages,
           teleportTo: that.teleportTo,
+          draggable: that.draggable,
+          defaultWidth: that.defaultWidth,
+          defaultHeight: that.defaultHeight,
+          defaultLeft: that.defaultLeft,
+          defaultTop: that.defaultTop,
           onClose() {
             emit('close', ...arguments);
           },
@@ -94,14 +123,14 @@ export default {
           onSendMessage() {
             emit('send-message', ...arguments);
           },
-          onReceivedStart() {
-            emit('received-start', ...arguments);
+          onReceiveStart() {
+            emit('receive-start', ...arguments);
           },
-          onReceivedEnd() {
-            emit('received-end', ...arguments);
+          onReceiveEnd() {
+            emit('receive-end', ...arguments);
           },
-          onReceivedText() {
-            emit('received-text', ...arguments);
+          onReceiveText() {
+            emit('receive-text', ...arguments);
           },
           ...that.$attrs,
         });

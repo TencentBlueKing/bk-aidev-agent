@@ -31,9 +31,18 @@
       :title="'AI 小鲸 Vue2 测试'"
       :hello-text="'我是 AI 小鲸 Vue2 版本'"
       :shortcuts="shortcuts"
+      :default-width="500"
+      :default-height="500"
+      :default-left="50"
+      :default-top="50"
+      :default-messages="defaultMessages"
       @close="onClose"
       @show="onShow"
       @stop="onStop"
+      @send-message="onSendMessage"
+      @receive-start="onReceiveStart"
+      @receive-end="onReceiveEnd"
+      @receive-text="onReceiveText"
       @shortcut-click="onShortcutClick"
     />
   </div>
@@ -73,6 +82,9 @@ export default {
           label: '优化代码',
           prompt: '请优化下面的代码：',
         }
+      ],
+      defaultMessages: [
+
       ]
     };
   },
@@ -94,6 +106,19 @@ export default {
     }
   },
   methods: {
+    onReceiveStart() {
+      console.log('AI 小鲸已开始生成');
+    },
+    onReceiveEnd() {
+      console.log('AI 小鲸已结束生成');
+    },
+    onReceiveText(text) {
+      console.log('AI 小鲸生成内容:', text);
+    },
+    onSendMessage(message) {
+      console.log('用户发送消息:', message);
+    },
+    
     handleShow() {
       this.$refs.aiBlueking?.handleShow();
     },
