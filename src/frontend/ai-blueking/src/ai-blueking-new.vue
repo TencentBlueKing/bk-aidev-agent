@@ -130,6 +130,7 @@
         </div>
       </vue-draggable-resizable>
       <Nimbus
+        v-if="!props.hideNimbus"
         v-model:is-panel-show="isShow"
         :default-minimize="defaultMinimize"
         v-model:is-minimize="isNimbusMinimize"
@@ -175,6 +176,7 @@
     shortcuts?: ShortCut[];
     url?: string;
     prompts?: string[];
+    hideNimbus?: boolean;
     requestOptions?: IRequestOptions;
     defaultMinimize?: boolean;
     teleportTo?: string;
@@ -194,6 +196,7 @@
     shortcuts: () => DEFAULT_SHORTCUTS,
     url: '',
     prompts: () => [],
+    hideNimbus: false,
     requestOptions: () => ({}),
     defaultMinimize: false,
     teleportTo: 'body',
@@ -223,6 +226,8 @@
   const showScrollToBottom = ref(false);
   const isNimbusMinimize = ref(props.defaultMinimize);
   let lastScrollTop = 0; // 上一次的滚动位置, 用于判断是否向下滑动
+  const sessionCode = ref(uuid());
+  const isSessionInitialized = ref(false);
 
   // 使用可调整大小的容器
   const {
@@ -267,6 +272,11 @@
   const handleShow = () => {
     isShow.value = true;
     emit('show');
+    
+    // 弹窗打开时，如果有 URL 且未初始化会话，则初始化会话
+    if (props.url && !isSessionInitialized.value) {
+      initSession();
+    }
   };
 
   const handleNimbusClick = () => {
@@ -276,14 +286,6 @@
   // 初始化样式和点击代理
   useStyle();
   useClickProxy();
-
-  // 初始化会话信息
-  const sessionCode = uuid();
-  const session: ISession = {
-    sessionCode,
-    sessionName: 'session',
-    model: '',
-  };
 
   // 添加用户滚动跟踪变量
   const userScrolling = ref(false);
@@ -324,6 +326,7 @@
     currentSession,
     sessionContents,
     plusSessionContent,
+    plusSessionApi,
     chat,
     stopChat,
     setCurrentSession,
@@ -331,7 +334,8 @@
     currentSessionLoading,
     reGenerateChat,
     reSendChat,
-    deleteSessionContent,
+    deleteChat,
+    updateRequestOptions
   } = useChat({
     handleStart: () => {
       scrollToBottomIfNeeded();
@@ -351,10 +355,46 @@
     },
   });
   
-  setCurrentSession(session);
+  // 封装会话初始化逻辑
+  const initSession = () => {
+    // 重新生成 sessionCode
+    sessionCode.value = uuid();
+    
+    const session: ISession = {
+      sessionCode: sessionCode.value,
+      sessionName: 'session',
+    };
 
-  if (props.defaultMessages.length > 0) {
-    setSessionContents(props.defaultMessages);
+    // 创建 session 并设置为当前会话
+    plusSessionApi(session);
+    setCurrentSession(session);
+
+    // 如果有默认消息，则设置
+    if (props.defaultMessages.length > 0) {
+      setSessionContents(props.defaultMessages);
+    }
+    
+    isSessionInitialized.value = true;
+  };
+
+  // 监听 url 变化
+  watch(() => props.url, (newUrl, oldUrl) => {
+    if (newUrl !== oldUrl && newUrl) {
+      // 更新请求选项
+      updateRequestOptions({
+        url: props.url,
+        ...props.requestOptions,
+      });
+      // URL 变化时重新初始化会话
+      initSession();
+
+      console.log('newUrl', newUrl, oldUrl);
+    }
+  });
+
+  // 如果初始 URL 存在且弹窗默认显示，则立即初始化会话
+  if (props.url && !props.defaultMinimize) {
+    initSession();
   }
 
   const scrollMainToBottom = () => {
@@ -375,8 +415,13 @@
   };
 
   // 事件处理
-  const handleSendMessage = (message: string) => {
+  const handleSendMessage = async (message: string) => {
     if (!message.trim()) return;
+    
+    // 如果会话未初始化，先初始化
+    if (!isSessionInitialized.value && props.url) {
+      initSession();
+    }
 
     // 发送新消息时重置用户滚动状态
     resetUserScrolling();
@@ -384,10 +429,10 @@
     // HTML转义功能 防止被当做 HTML 标签渲染
     const escapedMessage = escapeHtml(message);
 
-    plusSessionContent(sessionCode, {
+    await plusSessionContent(sessionCode.value, {
       role: SessionContentRole.User,
       content: escapedMessage,
-      sessionCode,
+      sessionCode: sessionCode.value,
       property: {
         extra: {
           cite: citeText.value,
@@ -396,8 +441,7 @@
     });
 
     chat({
-      sessionCode,
-      url: props.url,
+      sessionCode: sessionCode.value,
       ...props.requestOptions,
     })
 
@@ -415,9 +459,13 @@
     }
   };
 
-  const handleResend = (index: number) => {
+  const handleResend = (index: number, { message, cite }: { message: string; cite: string }) => {
     const sessionContent = sessionContents.value[index];
     if (sessionContent) {
+      sessionContent.content = escapeHtml(message);
+      if (sessionContent?.property?.extra?.cite) {
+        sessionContent.property.extra.cite = cite;
+      }
       reSendChat(sessionContent.sessionCode, sessionContent, index);
     }
   };
@@ -429,13 +477,18 @@
     }
   };
 
-  const handleShortcutClick = (shortcut: ShortCut) => {
+  const handleShortcutClick = async (shortcut: ShortCut) => {
     !isShow.value && handleShow();
+    
+    // 如果会话未初始化，先初始化
+    if (!isSessionInitialized.value && props.url) {
+      initSession();
+    }
 
-    plusSessionContent(sessionCode, {
+    await plusSessionContent(sessionCode.value, {
       role: SessionContentRole.User,
       content: shortcut.label,
-      sessionCode,
+      sessionCode: sessionCode.value,
       property: {
         extra: {
           cite: selectedText.value || inputMessage.value,
@@ -445,8 +498,7 @@
     });
 
     chat({
-      sessionCode,
-      url: props.url,
+      sessionCode: sessionCode.value,
       ...props.requestOptions,
     })
 
@@ -454,8 +506,7 @@
   };
 
   const handleDelete = (index: number) => {
-    const sessionContent = sessionContents.value[index];
-    sessionContent && deleteSessionContent(sessionContent.sessionCode, sessionContent.id as number);
+    deleteChat(index, sessionCode.value)
   };
 
   // 监听消息列表变化，自动滚动到底部
@@ -477,6 +528,7 @@
     handleDelete,
     handleRegenerate,
     handleResend,
+    initSession,
   });
 </script>
 

@@ -73,7 +73,7 @@
   },
   "dependencies": {
     "@agoose77/markdown-it-mermaid": "^1.1.0",
-    "@blueking/ai-ui-sdk": "0.0.15-beta.4",
+    "@blueking/ai-ui-sdk": "0.0.15-beta.23",
     "@blueking/bkui-library": "0.0.0-beta.6",
     "motion-v": "^0.11.3",
     "tippy.js": "^6.3.7",
