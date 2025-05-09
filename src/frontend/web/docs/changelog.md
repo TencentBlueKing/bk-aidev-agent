@@ -8,6 +8,14 @@ export default {
     return {
       changelogData: [
         {
+          version: "0.5.5-beta.2",
+          date: "2025-05-09",
+          fixed: [
+            "修复 初始位置调整导致位置交互错位的问题"
+            "修复 Vue2 部分属性不生效的问题"
+          ]
+        }
+        {
           version: "v0.5.4",
           date: "2025-04-28",
           features: [

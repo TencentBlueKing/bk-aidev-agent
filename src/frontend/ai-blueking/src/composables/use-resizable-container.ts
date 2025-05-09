@@ -68,8 +68,8 @@ export function useResizableContainer(options: ResizableContainerOptions = {}) {
   const top = ref(options.defaultTop !== undefined ? options.defaultTop : 0);
   const left = ref(options.defaultLeft !== undefined ? options.defaultLeft : initialX.value);
   const width = ref(initWidth);
-  const height = ref(options.defaultHeight !== undefined ? options.defaultHeight : window.innerHeight);
-  const maxWidth = ref(window.innerWidth * (maxWidthPercent / 100));
+  const height = ref(options.defaultHeight !== undefined ? options.defaultHeight : window.innerHeight - top.value);
+  const maxWidth = ref((window.innerWidth - left.value) * (maxWidthPercent / 100));
   const isCompressionHeight = ref(false);
   const leftDiff = ref(0);
 
