@@ -326,7 +326,7 @@
 
   // 封装自定义的sendMessage方法
   const sendMessage = () => {
-    if (!inputValue.value.trim()) return;
+    if (!inputValue.value.trim() || props.loading) return;
     handleSend();
   };
 </script>

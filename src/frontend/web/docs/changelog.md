@@ -8,6 +8,13 @@ export default {
     return {
       changelogData: [
         {
+          version: "v0.5.6",
+          date: "2025-05-20",
+          fixes: [
+            "修复在加载状态下仍可发送消息的问题"
+          ]
+        },
+        {
           version: "v0.5.5",
           date: "2025-05-15",
           features: [

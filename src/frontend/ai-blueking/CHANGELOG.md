@@ -1,5 +1,20 @@
 # 更新日志
 
+## [0.5.6] - 2025-05-20
+
+### 修复
+- **修复消息发送逻辑**：
+  - 修复在加载状态下仍可发送消息的问题
+  - 优化消息发送逻辑，防止在AI响应过程中重复发送消息
+
+```javascript
+// 优化后的消息发送逻辑
+const sendMessage = () => {
+  if (!inputValue.value.trim() || props.loading) return; // 增加loading状态检查
+  handleSend();
+};
+```
+
 ## [0.5.5] - 2025-05-15
 
 ### 新增功能
