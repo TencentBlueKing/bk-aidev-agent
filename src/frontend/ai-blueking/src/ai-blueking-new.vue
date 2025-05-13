@@ -65,7 +65,7 @@
                     :animate="{ width: 'auto', scaleX: 1 }"
                     :initial="{ width: 0, scaleX: 0 }"
                   >
-                    {{ t('输入你的问题，助你高效的完成工作') }}
+                    {{ greetingText }}
                   </motion.div>
                 </div>
               </motion.div>
@@ -117,7 +117,7 @@
                 <ChatInputBox
                   v-model="inputMessage"
                   :loading="currentSessionLoading"
-                  :prompts="props.prompts"
+                  :prompts="promptList"
                   :shortcuts="shortcuts"
                   @height-change="handleInputHeightChange"
                   @send="handleSendMessage"
@@ -146,7 +146,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, provide, ref, nextTick, watch, defineExpose } from 'vue';
+  import { computed, provide, ref, nextTick, watch, defineExpose, Ref } from 'vue';
   import VueDraggableResizable from 'vue-draggable-resizable';
   import type { IRequestOptions } from './types';
 
@@ -228,6 +228,20 @@
   let lastScrollTop = 0; // 上一次的滚动位置, 用于判断是否向下滑动
   const sessionCode = ref(uuid());
   const isSessionInitialized = ref(false);
+
+  const openingRemark = ref('') // 接口获取的开场白
+  const predefinedQuestions: Ref<string[]> = ref([]) // 接口获取的预设问题
+
+  const greetingText = computed(() => {
+    return openingRemark.value || t('输入你的问题，助你高效的完成工作')
+  })
+
+  const promptList = computed(() => {
+    return [
+      ...props.prompts,
+      ...predefinedQuestions.value,
+    ]
+  })
 
   // 使用可调整大小的容器
   const {
@@ -335,7 +349,8 @@
     reGenerateChat,
     reSendChat,
     deleteChat,
-    updateRequestOptions
+    updateRequestOptions,
+    getAgentInfoApi
   } = useChat({
     handleStart: () => {
       scrollToBottomIfNeeded();
@@ -356,7 +371,7 @@
   });
   
   // 封装会话初始化逻辑
-  const initSession = () => {
+  const initSession = async () => {
     // 重新生成 sessionCode
     sessionCode.value = uuid();
     
@@ -373,6 +388,10 @@
     if (props.defaultMessages.length > 0) {
       setSessionContents(props.defaultMessages);
     }
+
+    const res = await getAgentInfoApi()
+    openingRemark.value = res.openingRemark
+    predefinedQuestions.value = res.predefinedQuestions || []
     
     isSessionInitialized.value = true;
   };
