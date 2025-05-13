@@ -56,11 +56,13 @@ const handleClose = () => {
 | requestOptions | Object | {} | 自定义请求选项 |
 | defaultMinimize | Boolean | false | 初始是否处于最小化状态 |
 | sessionContents | Array | [] | 当前会话内容 |
+| defaultMessages | Array | [] | 预设的对话内容，用于初始化对话 |
 | draggable | Boolean | true | 控制组件是否可拖拽 |
 | defaultWidth | String/Number | - | 设置组件初始宽度 |
 | defaultHeight | String/Number | - | 设置组件初始高度 |
 | defaultTop | String/Number | - | 设置组件初始顶部位置 |
 | defaultLeft | String/Number | - | 设置组件初始左侧位置 |
+| teleportTo | String | 'body' | 自定义传送目标元素 |
 
 ### shortcuts 属性说明
 
@@ -94,6 +96,11 @@ const defaultShortcuts = [
 | minimize | - | 窗口最小化时触发 |
 | maximize | - | 窗口最大化时触发 |
 | error | error: Error | 发生错误时触发 |
+| receive-start | - | AI 开始接收响应时触发 |
+| receive-text | text: String | 接收到文本片段时触发 |
+| receive-end | - | 响应接收完成时触发 |
+| send-message | message: Object | 发送消息时触发 |
+| shortcut-click | data: Object | 快捷操作按钮点击时触发 |
 
 ## 方法 (Methods)
 
@@ -187,6 +194,34 @@ const sessionContents = [
   {
     role: 'assistant',
     content: '你好！我是 AI 小鲸，一个智能对话助手。我可以帮助你回答问题、提供信息，以及完成各种对话任务。有什么我可以帮助你的吗？'
+  }
+];
+</script>
+```
+
+### 使用预设对话内容
+
+```vue
+<template>
+  <AIBlueking
+    :url="apiUrl"
+    :default-messages="defaultMessages"
+  />
+</template>
+
+<script setup>
+import { ref } from 'vue';
+import AIBlueking from '@blueking/ai-blueking';
+
+const apiUrl = 'https://your-api-endpoint.com/assistant/';
+const defaultMessages = [
+  {
+    role: 'user',
+    content: '你能做什么？'
+  },
+  {
+    role: 'assistant',
+    content: '我是AI小鲸，可以帮助你回答问题、提供信息、分析数据、创建内容等。你有什么需要我协助的吗？'
   }
 ];
 </script>
