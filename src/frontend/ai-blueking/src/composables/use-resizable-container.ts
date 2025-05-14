@@ -64,12 +64,12 @@ export function useResizableContainer(options: ResizableContainerOptions = {}) {
   const miniPadding = 50;
 
   // 状态管理
-  const initialX = ref(window.innerWidth - initWidth);
+  const initialX = ref(options.defaultLeft !== undefined ? options.defaultLeft : window.innerWidth - initWidth);
   const top = ref(options.defaultTop !== undefined ? options.defaultTop : 0);
   const left = ref(options.defaultLeft !== undefined ? options.defaultLeft : initialX.value);
   const width = ref(initWidth);
   const height = ref(options.defaultHeight !== undefined ? options.defaultHeight : window.innerHeight - top.value);
-  const maxWidth = ref(window.innerWidth * (maxWidthPercent / 100));
+  const maxWidth = ref(Math.max(window.innerWidth * (maxWidthPercent / 100), width.value));
   const isCompressionHeight = ref(false);
   const leftDiff = ref(0);
 
@@ -91,7 +91,7 @@ export function useResizableContainer(options: ResizableContainerOptions = {}) {
   // 窗口大小变化处理器
   const handleResize = () => {
     // 更新最大宽度
-    maxWidth.value = window.innerWidth * (maxWidthPercent / 100);
+    maxWidth.value = Math.max(window.innerWidth * (maxWidthPercent / 100), width.value);
 
     nextTick(() => {
       if (isCompressionHeight.value) {
@@ -102,7 +102,7 @@ export function useResizableContainer(options: ResizableContainerOptions = {}) {
         // 正常状态下，保持容器贴在右侧
         const newLeft = window.innerWidth - width.value - leftDiff.value;
         left.value = Math.max(0, newLeft);
-        height.value = window.innerHeight;
+        height.value = window.innerHeight - top.value;
       }
 
       // 检查并调整宽度，确保不会超出最大限制

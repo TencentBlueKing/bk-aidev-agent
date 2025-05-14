@@ -389,9 +389,9 @@
       setSessionContents(props.defaultMessages);
     }
 
-    const res = await getAgentInfoApi()
-    openingRemark.value = res.openingRemark
-    predefinedQuestions.value = res.predefinedQuestions || []
+    const { conversationSettings } = await getAgentInfoApi()
+    openingRemark.value = conversationSettings?.openingRemark || ''
+    predefinedQuestions.value = conversationSettings?.predefinedQuestions || []
     
     isSessionInitialized.value = true;
   };
