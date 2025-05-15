@@ -24,6 +24,7 @@
         <div class="ai-blueking-container">
           <!-- 顶部栏 -->
           <AiBluekingHeader
+            v-if="!props.hideHeader"
             :title="props.title"
             :is-compression-height="isCompressionHeight"
             :draggable="props.draggable"
@@ -186,6 +187,7 @@
     defaultHeight?: number;
     defaultTop?: number;
     defaultLeft?: number;
+    hideHeader?: boolean;
   }
 
   // Props 定义
@@ -206,6 +208,7 @@
     defaultHeight: undefined,
     defaultTop: undefined,
     defaultLeft: undefined,
+    hideHeader: false,
   });
 
   // Emits 定义
