@@ -642,10 +642,12 @@
     display: flex;
     flex: 1;
     overflow: hidden;
+    justify-content: center;
   }
 
   .main-content {
     position: relative;
+    max-width: 1000px;
     display: flex;
     flex: 1;
     flex-direction: column;
