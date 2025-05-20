@@ -1,5 +1,9 @@
 # 预设对话内容
 
+:::warning
+注意：这是一项实验性功能，不建议在生产环境中依赖。未来我们计划在 Agent 配置中正式支持预设对话和角色定义，届时此特性可能会被替代。
+:::
+
 AI 小鲸组件支持通过 `defaultMessages` 属性预设初始对话内容，该功能可用于以下场景：
 
 - 初始化对话：在组件首次加载时预先展示一些内容，而不是空白状态
@@ -27,7 +31,7 @@ import AIBlueking from '@blueking/ai-blueking';
 const apiUrl = 'https://your-api-url.com/chat';
 const initialMessages = ref([
   { role: 'user', content: '请介绍一下蓝鲸产品' },
-  { role: 'assistant', content: '蓝鲸（BlueKing）是腾讯推出的一站式技术运营平台，为企业提供丰富的运维、开发和运营工具，能够有效降低企业管理IT成本。...' },
+  { role: 'ai', content: '蓝鲸（BlueKing）是腾讯推出的一站式技术运营平台，为企业提供丰富的运维、开发和运营工具，能够有效降低企业管理IT成本。...' },
   { 
     role: 'user', 
     content: '请帮我优化下面的SQL查询', 
@@ -54,7 +58,7 @@ export default {
       apiUrl: 'https://your-api-url.com/chat',
       initialMessages: [
         { role: 'user', content: '请介绍一下蓝鲸产品' },
-        { role: 'assistant', content: '蓝鲸（BlueKing）是腾讯推出的一站式技术运营平台，为企业提供丰富的运维、开发和运营工具，能够有效降低企业管理IT成本。...' },
+        { role: 'ai', content: '蓝鲸（BlueKing）是腾讯推出的一站式技术运营平台，为企业提供丰富的运维、开发和运营工具，能够有效降低企业管理IT成本。...' },
         { 
           role: 'user', 
           content: '请帮我优化下面的SQL查询', 
@@ -74,16 +78,15 @@ export default {
 
 ```typescript
 interface Message {
-  role: 'user' | 'assistant';  // 消息发送者角色
+  role: 'user' | 'ai';  // 消息发送者角色
   content: string;            // 消息内容
   cite?: string;              // (可选) 框选引用内容，用于预设引用的文本
 }
 ```
 
 注意事项：
-- `role` 必须为 `'user'` 或 `'assistant'`，分别表示用户消息和AI助手消息
-- 如果最后一条消息是 `'user'` 角色，组件将自动向 AI 服务发送该消息并获取回复
-- 如果最后一条消息是 `'assistant'` 角色，组件将仅展示消息而不发送请求
+- `role` 必须为 `'user'` 或 `'ai'`，分别表示用户消息和AI助手消息
+- 预设内容必须是一问一答的形式
 - `cite` 字段为可选，用于预设框选引用的内容，在消息中将以引用形式展示
 
 ### 带引用内容的示例
@@ -108,7 +111,7 @@ const messagesWithCite = ref([
     cite: 'function calculateTotal(items) {\n  return items.reduce((sum, item) => sum + item.price, 0);\n}'
   },
   { 
-    role: 'assistant', 
+    role: 'ai', 
     content: '这是一个JavaScript函数，用于计算商品的总价。它使用reduce方法遍历items数组，将每个item的price加到累加器sum中，初始值为0。' 
   }
 ]);
@@ -169,7 +172,7 @@ const apiUrl = 'https://your-api-url.com/chat';
 const aiBlueking = ref();
 const sessionMessages = ref([
   { role: 'user', content: '你好' },
-  { role: 'assistant', content: '您好！有什么可以帮助您的吗？' }
+  { role: 'ai', content: '您好！有什么可以帮助您的吗？' }
 ]);
 
 // 用户发送消息时保存状态
@@ -196,7 +199,7 @@ const handleReceiveEnd = () => {
     const lastMessage = aiBlueking.value.sessionContents[aiBlueking.value.sessionContents.length - 1];
     const updatedMessages = [
       ...sessionMessages.value,
-      { role: 'assistant', content: lastMessage.content }
+      { role: 'ai', content: lastMessage.content }
     ];
     saveSessionToLocalStorage(updatedMessages);
     sessionMessages.value = updatedMessages;
@@ -232,7 +235,7 @@ const aiBlueking = ref();
 const apiUrl = 'https://your-api-url.com/chat';
 const initialMessages = ref([
   { role: 'user', content: '你好' },
-  { role: 'assistant', content: '您好！有什么可以帮助您的吗？' }
+  { role: 'ai', content: '您好！有什么可以帮助您的吗？' }
 ]);
 
 const saveCurrentSession = () => {

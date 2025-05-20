@@ -14,11 +14,15 @@ const AIBlueking = defineAsyncComponent({
 // 预设对话内容
 const defaultMessages = ref([
   { role: 'user', content: '请介绍蓝鲸平台' },
-  { role: 'assistant', content: '蓝鲸（BlueKing）是腾讯推出的一站式技术运营平台，为企业提供丰富的运维、开发和运营工具，能够有效降低企业管理IT成本。\n\n主要包括以下核心产品：\n- 配置平台\n- 作业平台\n- 监控告警\n- 流程服务\n- 容器服务\n\n这些产品形成了完整的IT运营体系，帮助企业实现高效的运维管理。' },
+  { role: 'ai', content: '蓝鲸（BlueKing）是腾讯推出的一站式技术运营平台，为企业提供丰富的运维、开发和运营工具，能够有效降低企业管理IT成本。\n\n主要包括以下核心产品：\n- 配置平台\n- 作业平台\n- 监控告警\n- 流程服务\n- 容器服务\n\n这些产品形成了完整的IT运营体系，帮助企业实现高效的运维管理。' },
   { 
     role: 'user', 
     content: '请优化这段 SQL 查询', 
     cite: 'SELECT * FROM users u JOIN orders o ON u.id = o.user_id WHERE u.created_at > "2025-01-01" AND u.status = "active" ORDER BY u.created_at DESC'
+  }, 
+  {
+    role: 'ai',
+    content: "我来帮你优化这段查询...."
   }
 ]);
 
@@ -32,6 +36,10 @@ onMounted(() => {
 
 :::tip
 本页面展示了如何使用 `defaultMessages` 属性预设对话内容。请点击右下角按钮打开小鲸，就能看到预设的对话历史和带有引用内容的消息。
+:::
+
+:::warning
+注意：这是一项实验性功能，不建议在生产环境中依赖。未来我们计划在 Agent 配置中正式支持预设对话和角色定义，届时此特性可能会被替代。
 :::
 
 这个示例展示了如何使用 `defaultMessages` 属性来预设 AI 小鲸的对话内容，包括基本对话历史和带引用内容的消息。
@@ -63,13 +71,17 @@ import '@blueking/ai-blueking/dist/vue2/style.css';
 const defaultMessages = ref([
   // 简单对话消息
   { role: 'user', content: '请介绍蓝鲸平台' },
-  { role: 'assistant', content: '蓝鲸（BlueKing）是腾讯推出的一站式技术运营平台...' },
+  { role: 'ai', content: '蓝鲸（BlueKing）是腾讯推出的一站式技术运营平台...' },
   
   // 带引用内容的消息
   { 
     role: 'user', 
     content: '请优化这段 SQL 查询', 
     cite: 'SELECT * FROM users u JOIN orders o ON u.id = o.user_id WHERE u.created_at > "2025-01-01" AND u.status = "active" ORDER BY u.created_at DESC'
+  },
+  {
+    role: 'ai',
+    content: "我来帮你优化这段查询...."
   }
 ]);
 ```
@@ -89,7 +101,7 @@ const defaultMessages = ref([
 
 ```typescript
 interface Message {
-  role: 'user' | 'assistant';  // 消息发送者角色
+  role: 'user' | 'ai';  // 消息发送者角色
   content: string;            // 消息内容
   cite?: string;              // (可选) 框选引用内容
 }
@@ -97,7 +109,6 @@ interface Message {
 
 ## 注意事项
 
-- `role` 必须为 `'user'` 或 `'assistant'`，分别表示用户消息和AI助手消息
-- 如果最后一条消息是 `'user'` 角色，组件将自动向 AI 服务发送该消息并获取回复
-- 如果最后一条消息是 `'assistant'` 角色，组件将仅展示消息而不发送请求
+- `role` 必须为 `'user'` 或 `'ai'`，分别表示用户消息和AI助手消息
+- 预设内容必须是一问一答的形式
 - `cite` 字段为可选，用于预设框选引用的内容，在消息中将以引用形式展示 
