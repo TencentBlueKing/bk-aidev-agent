@@ -10,9 +10,6 @@ modules:
       - key: PIP_VERSION
         value: 21.0
         description: pip version control
-      - key: BK_APIGW_CORS_ALLOW_ORIGINS
-        value: "**"
-        description: BK_APIGW_CORS_ALLOW_ORIGINS
       - key: PYTHONPATH
         value: /app
         description: ADD PYTHONPATH
@@ -38,13 +35,13 @@ modules:
         value: bk_plugin_runtime.config
         description: blueapps config path
       - key: BK_APIGW_CORS_ALLOW_ORIGINS
-        value: {{cookiecutter.apigw_cors_allow_origins}}
+        value: "**"
         description: apigw cors strategie allow origins
       - key: BK_APIGW_CORS_ALLOW_METHODS
-        value: {{cookiecutter.apigw_cors_allow_methods}}
+        value: "**"
         description: apigw cors strategie allow methods
       - key: BK_APIGW_CORS_ALLOW_HEADERS
-        value: {{cookiecutter.apigw_cors_allow_headers}}
+        value: "**"
         description: apigw cors strategie allow headers
       - key: DJANGO_ALLOW_ASYNC_UNSAFE
         value: "True"

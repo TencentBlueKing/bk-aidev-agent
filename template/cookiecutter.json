@@ -5,9 +5,6 @@
   "init_admin": "init admin username",
   "init_apigw_maintainer": "admin",
   "apigw_manager_url_tmpl": "bk apigw manager url template",
-  "apigw_cors_allow_origins": "'**'",
-  "apigw_cors_allow_methods": "'**'",
-  "apigw_cors_allow_headers": "'**'",
   "_copy_without_render": [
     ".ci",
     "*dist"
