@@ -576,11 +576,11 @@ pnpm install
 pnpm run dev
 ```
 
-3. 配置 hosts，以.woa.com 结尾的域名,以正常获取cookie
+3. 配置 hosts，以.xxx.com 结尾的域名,以正常获取cookie （xxx.com 即与接口地址相同的域名）
 
 ```bash
 # 配置 hosts
-echo "127.0.0.1 local.dev.woa.com" >> /etc/hosts
+echo "127.0.0.1 local.dev.xxx.com" >> /etc/hosts
 ```
 
 ### Demo 运行模式
