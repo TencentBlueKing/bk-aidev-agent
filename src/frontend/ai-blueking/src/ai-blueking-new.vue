@@ -151,7 +151,7 @@
   import VueDraggableResizable from 'vue-draggable-resizable';
   import type { IRequestOptions } from './types';
 
-  import { useChat, useStyle, useClickProxy, type ISession, ShortCut, ISessionContent, SessionContentRole } from '@blueking/ai-ui-sdk';
+  import { useChat, useStyle, useClickProxy, type ISession, ShortCut, SessionContentRole } from '@blueking/ai-ui-sdk';
   import { motion } from 'motion-v';
 
   import AiBluekingHeader from './components/ai-header.vue';
@@ -181,7 +181,6 @@
     requestOptions?: IRequestOptions;
     defaultMinimize?: boolean;
     teleportTo?: string;
-    defaultMessages?: ISessionContent[];
     draggable?: boolean;
     defaultWidth?: number;
     defaultHeight?: number;
@@ -202,7 +201,6 @@
     requestOptions: () => ({}),
     defaultMinimize: false,
     teleportTo: 'body',
-    defaultMessages: () => [],
     draggable: true,
     defaultWidth: undefined,
     defaultHeight: undefined,
@@ -347,13 +345,13 @@
     chat,
     stopChat,
     setCurrentSession,
-    setSessionContents,
     currentSessionLoading,
     reGenerateChat,
     reSendChat,
     deleteChat,
     updateRequestOptions,
-    getAgentInfoApi
+    getAgentInfoApi,
+    handleCompleteRole,
   } = useChat({
     handleStart: () => {
       scrollToBottomIfNeeded();
@@ -387,14 +385,14 @@
     plusSessionApi(session);
     setCurrentSession(session);
 
-    // 如果有默认消息，则设置
-    if (props.defaultMessages.length > 0) {
-      setSessionContents(props.defaultMessages);
-    }
 
-    const { conversationSettings } = await getAgentInfoApi()
+    const { conversationSettings, promptSetting } = await getAgentInfoApi()
     openingRemark.value = conversationSettings?.openingRemark || ''
     predefinedQuestions.value = conversationSettings?.predefinedQuestions || []
+
+    if (promptSetting?.content?.length) {
+      await handleCompleteRole(sessionCode.value, promptSetting.content)
+    }
     
     isSessionInitialized.value = true;
   };
@@ -410,7 +408,6 @@
       // URL 变化时重新初始化会话
       initSession();
 
-      console.log('newUrl', newUrl, oldUrl);
     }
   });
 

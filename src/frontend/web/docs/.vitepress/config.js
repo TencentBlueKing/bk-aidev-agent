@@ -73,7 +73,6 @@ export default defineConfig({
             { text: '基础使用', link: '/demos/basic-usage' },
             { text: '快捷操作', link: '/demos/shortcuts-demo' },
             { text: '提示词', link: '/demos/prompts-demo' },
-            { text: '预设对话内容', link: '/demos/default-messages-demo' }
           ]
         }
       ]
