@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <link rel="icon" href="<%= process.env.BK_STATIC_URL %>/static/images/favicon.png" type="image/x-icon" />
+    <link rel="shortcut icon" href="<%= process.env.BK_STATIC_URL %>/static/images/favicon.png" type="image/x-icon" />
+    <meta charset="utf-8">
+    <title> 智能体 - <%= process.env.BK_AGENT_NAME %> </title>
+  </head>
+    <body>
+      <div class="app"></div>
+      <script>
+        var SITE_URL = '<%= process.env.BK_SITE_URL %>'
+        var BK_STATIC_URL = '<%= process.env.BK_STATIC_URL %>'
+        var BK_API_PREFIX = '<%= process.env.BK_API_PREFIX %>'
+        var BK_USER_IMAGE_URL = '<%= process.env.BK_USER_IMAGE_URL %>'
+        var BK_USER_NAME = '<%= process.env.BK_USER_NAME %>'
+        var BK_AGENT_NAME = '<%= process.env.BK_AGENT_NAME %>'
+      </script>
+    </body>
+</html>

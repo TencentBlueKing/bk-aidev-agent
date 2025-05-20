@@ -1,0 +1,43 @@
+.g-scrollbar-page {
+  overflow-y: auto;
+
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    width: 8px;
+    height: 8px;
+    border-radius: 3px;
+    background-color: #dcdee5;
+
+    &:hover {
+      background-color: #979ba5;
+    }
+  }
+}
+
+.g-flex-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.g-flex-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+body {
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #f5f7fa;
+  color: #63656e;
+  font-size: 14px;
+  text-align: left;
+}
+
