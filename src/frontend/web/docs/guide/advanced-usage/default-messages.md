@@ -1,228 +1,66 @@
 # 预设对话内容
 
 :::warning
-注意：这是一项实验性功能，不建议在生产环境中依赖。未来我们计划在 Agent 配置中正式支持预设对话和角色定义，届时此特性可能会被替代。
+注意， 最后一个支持此功能的版本为 v0.5.6，在最新版本中被移除。从 v1.0.0-beta.9 开始，不再支持通过 `defaultMessages` 属性预设对话内容。请使用 Agent 配置中的开场白和预设问题功能来替代。
 :::
 
-AI 小鲸组件支持通过 `defaultMessages` 属性预设初始对话内容，该功能可用于以下场景：
+## 功能变更说明
 
-- 初始化对话：在组件首次加载时预先展示一些内容，而不是空白状态
-- 恢复会话：从其他地方（如本地存储、服务器）读取历史会话并恢复
-- 示例对话：为用户展示示范性的对话，引导用户使用
-- 上下文保留：在应用中保留上下文，避免用户重复输入
+在之前的版本中，AI 小鲸组件支持通过 `defaultMessages` 属性预设初始对话内容。从 v1.0.0-beta.9 开始，此功能已被移除，取而代之的是通过 Agent 配置，小鲸内部集成，不需要额外配置任何内容。
 
-## 基本用法
+这种基于 Agent 配置的方式带来以下优势：
 
-要设置预设对话内容，只需向组件传递 `defaultMessages` 属性：
+- 配置集中管理，不需要在每个组件实例中重复定义
+- 与后端保持同步，确保体验一致性
 
-:::code-group
-```vue [Vue 3]
+## 如何迁移
+
+如果您之前使用了 `defaultMessages` 属性，请按照以下步骤迁移：
+
+1. 移除组件中的 `:default-messages` 属性
+2. 在 Agent 配置中设置开场白和预设问题
+
+```diff
 <template>
   <AIBlueking
     :url="apiUrl"
-    :default-messages="initialMessages"
-  />
-</template>
-
-<script lang="ts" setup>
-import { ref } from 'vue';
-import AIBlueking from '@blueking/ai-blueking';
-
-const apiUrl = 'https://your-api-url.com/chat';
-const initialMessages = ref([
-  { role: 'user', content: '请介绍一下蓝鲸产品' },
-  { role: 'ai', content: '蓝鲸（BlueKing）是腾讯推出的一站式技术运营平台，为企业提供丰富的运维、开发和运营工具，能够有效降低企业管理IT成本。...' },
-  { 
-    role: 'user', 
-    content: '请帮我优化下面的SQL查询', 
-    cite: 'SELECT * FROM users WHERE created_at > "2025-01-01" AND status = "active" ORDER BY created_at DESC' 
-  }
-]);
-</script>
-```
-
-```vue [Vue 2]
-<template>
-  <AIBlueking
-    :url="apiUrl"
-    :default-messages="initialMessages"
+-   :default-messages="defaultMessages"
   />
 </template>
 
 <script>
-import AIBlueking from '@blueking/ai-blueking/vue2';
-
-export default {
-  data() {
-    return {
-      apiUrl: 'https://your-api-url.com/chat',
-      initialMessages: [
-        { role: 'user', content: '请介绍一下蓝鲸产品' },
-        { role: 'ai', content: '蓝鲸（BlueKing）是腾讯推出的一站式技术运营平台，为企业提供丰富的运维、开发和运营工具，能够有效降低企业管理IT成本。...' },
-        { 
-          role: 'user', 
-          content: '请帮我优化下面的SQL查询', 
-          cite: 'SELECT * FROM users WHERE created_at > "2025-01-01" AND status = "active" ORDER BY created_at DESC' 
-        }
-      ]
-    };
-  },
-}
-</script>
-```
-:::
-
-## 消息格式
-
-`defaultMessages` 数组中的每个对象需要符合以下格式：
-
-```typescript
-interface Message {
-  role: 'user' | 'ai';  // 消息发送者角色
-  content: string;            // 消息内容
-  cite?: string;              // (可选) 框选引用内容，用于预设引用的文本
-}
-```
-
-注意事项：
-- `role` 必须为 `'user'` 或 `'ai'`，分别表示用户消息和AI助手消息
-- 预设内容必须是一问一答的形式
-- `cite` 字段为可选，用于预设框选引用的内容，在消息中将以引用形式展示
-
-### 带引用内容的示例
-
-```vue
-<template>
-  <AIBlueking
-    :url="apiUrl"
-    :default-messages="messagesWithCite"
-  />
-</template>
-
-<script lang="ts" setup>
 import { ref } from 'vue';
 import AIBlueking from '@blueking/ai-blueking';
 
 const apiUrl = 'https://your-api-url.com/chat';
-const messagesWithCite = ref([
-  { 
-    role: 'user', 
-    content: '请解释这段代码', 
-    cite: 'function calculateTotal(items) {\n  return items.reduce((sum, item) => sum + item.price, 0);\n}'
-  },
-  { 
-    role: 'ai', 
-    content: '这是一个JavaScript函数，用于计算商品的总价。它使用reduce方法遍历items数组，将每个item的price加到累加器sum中，初始值为0。' 
-  }
-]);
+- const defaultMessages = ref([
+-   { role: 'user', content: '请介绍蓝鲸平台' },
+-   { role: 'ai', content: '蓝鲸（BlueKing）是腾讯推出的一站式...' },
+-   // ...更多预设消息
+- ]);
 </script>
-```
+``` 
 
-## 动态更新预设消息
 
-您可以通过响应式方式更新 `defaultMessages` 属性，例如从外部数据源加载会话历史：
 
-```vue
-<template>
-  <div>
-    <button @click="loadSession">加载上次会话</button>
-    <AIBlueking
-      :url="apiUrl"
-      :default-messages="sessionMessages"
-    />
-  </div>
-</template>
+## 通过 Agent 配置设置对话内容
 
-<script lang="ts" setup>
-import { ref } from 'vue';
-import AIBlueking from '@blueking/ai-blueking';
+在 Agent 配置中，您可以设置以下内容来替代原有的预设对话功能：
 
-const apiUrl = 'https://your-api-url.com/chat';
-const sessionMessages = ref([]);
+1. **开场白**：智能体的首次问候语
+2. **预设问题**：用户可以快速选择的预设问题
 
-const loadSession = async () => {
-  // 从服务器或本地存储加载会话历史
-  const savedSession = await fetchSessionFromServer();
-  // 更新预设消息
-  sessionMessages.value = savedSession;
-};
-</script>
-```
+这些配置在 Agent 创建或编辑时进行设置，无需在前端代码中指定。
 
-## 与消息事件结合使用
+## 如何获取当前会话内容
 
-您可以结合 `defaultMessages` 与 [消息事件](/api/events) 一起使用，实现更丰富的对话交互：
+如果您需要在外部访问当前会话内容，可以使用 `sessionContents` 属性：
 
 ```vue
 <template>
   <AIBlueking
     ref="aiBlueking"
     :url="apiUrl"
-    :default-messages="sessionMessages"
-    @send-message="handleSendMessage"
-    @receive-end="handleReceiveEnd"
-  />
-</template>
-
-<script lang="ts" setup>
-import { ref } from 'vue';
-import AIBlueking from '@blueking/ai-blueking';
-
-const apiUrl = 'https://your-api-url.com/chat';
-const aiBlueking = ref();
-const sessionMessages = ref([
-  { role: 'user', content: '你好' },
-  { role: 'ai', content: '您好！有什么可以帮助您的吗？' }
-]);
-
-// 用户发送消息时保存状态
-const handleSendMessage = (message) => {
-  // 从组件实例获取最新的消息，包含可能的引用内容
-  const latestMessage = aiBlueking.value?.sessionContents?.find(
-    msg => msg.role === 'user' && msg.content === message
-  );
-  
-  saveSessionToLocalStorage([
-    ...sessionMessages.value,
-    { 
-      role: 'user', 
-      content: message,
-      ...(latestMessage?.cite ? { cite: latestMessage.cite } : {})
-    }
-  ]);
-};
-
-// AI 回复完成时保存状态
-const handleReceiveEnd = () => {
-  // 此时使用 ref 获取组件实例的 sessionContents 获取最新消息
-  if (aiBlueking.value && aiBlueking.value.sessionContents) {
-    const lastMessage = aiBlueking.value.sessionContents[aiBlueking.value.sessionContents.length - 1];
-    const updatedMessages = [
-      ...sessionMessages.value,
-      { role: 'ai', content: lastMessage.content }
-    ];
-    saveSessionToLocalStorage(updatedMessages);
-    sessionMessages.value = updatedMessages;
-  }
-};
-
-// 保存会话到本地存储
-const saveSessionToLocalStorage = (messages) => {
-  localStorage.setItem('ai-session', JSON.stringify(messages));
-};
-</script>
-```
-
-## 与 sessionContents 结合使用
-
-如果您需要在外部访问当前会话内容，可以结合 `defaultMessages` 与 [`sessionContents`](/api/props#sessioncontents) 一起使用：
-
-```vue
-<template>
-  <AIBlueking
-    ref="aiBlueking"
-    :url="apiUrl"
-    :default-messages="initialMessages"
   />
   <button @click="saveCurrentSession">保存当前会话</button>
 </template>
@@ -233,10 +71,6 @@ import AIBlueking from '@blueking/ai-blueking';
 
 const aiBlueking = ref();
 const apiUrl = 'https://your-api-url.com/chat';
-const initialMessages = ref([
-  { role: 'user', content: '你好' },
-  { role: 'ai', content: '您好！有什么可以帮助您的吗？' }
-]);
 
 const saveCurrentSession = () => {
   // 获取当前会话内容
@@ -247,4 +81,4 @@ const saveCurrentSession = () => {
 </script>
 ```
 
-通过这些方法，您可以灵活地管理AI对话会话的状态，并实现更丰富的用户体验。 
+通过以上方法，您可以继续灵活地管理AI对话会话的状态，并实现更丰富的用户体验。 
