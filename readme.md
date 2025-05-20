@@ -98,7 +98,7 @@ pnpm prettier
 ```
 bk-aidev-agent/
 ├── src/
-│   ├── agent/            # 后端 Agent 服务
+│   ├── agent/            # 后端 Agent SDK
 │   └── frontend/         # 前端项目
 │       ├── ai-blueking/  # AI 小鲸组件
 │       │   ├── src/      # 组件源代码
@@ -110,6 +110,7 @@ bk-aidev-agent/
 │       └── web/          # 文档站点
 │           ├── docs/     # 文档内容
 │           └── server.cjs # 文档服务器
+├── templates/            # Agent模板
 ├── docs/                 # 设计文档
 ├── scripts/              # 构建脚本
 └── tests/                # 测试用例
