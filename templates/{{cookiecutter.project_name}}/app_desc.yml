@@ -1,0 +1,86 @@
+spec_version: 2
+modules:
+  default:
+    language: python
+    is_default: true
+    processes:
+      web:
+        command: gunicorn bk_plugin_runtime.wsgi --timeout 120 -k gthread -w 2 --max-requests=1000 --threads 64
+    env_variables:
+      - key: PIP_VERSION
+        value: 21.0
+        description: pip version control
+      - key: BK_APIGW_CORS_ALLOW_ORIGINS
+        value: "**"
+        description: BK_APIGW_CORS_ALLOW_ORIGINS
+      - key: PYTHONPATH
+        value: /app
+        description: ADD PYTHONPATH
+      - key: BK_APP_CONFIG_PATH
+        value: bk_plugin_runtime.config
+        description: app config path
+      - key: DJANGO_SETTINGS_MODULE
+        value: bk_plugin.patch.plugin
+        description: django settings module
+      - key: BK_APIGW_MANAGER_URL_TMPL
+        value: {{cookiecutter.apigw_manager_url_tmpl}}
+        description: pip version control
+      - key: BK_APIGW_MANAGER_MAINTAINERS
+        value: {{cookiecutter.init_apigw_maintainer}}
+        description: plugin apigw managers
+      - key: BK_INIT_SUPERUSER
+        value: {{cookiecutter.init_admin}}
+        description: plugin admin panel init superuser
+      - key: BK_SOPS_APP_CODE
+        value: bksops
+        description: bk-sops app code
+      - key: BK_APP_CONFIG_PATH
+        value: bk_plugin_runtime.config
+        description: blueapps config path
+      - key: BK_APIGW_CORS_ALLOW_ORIGINS
+        value: {{cookiecutter.apigw_cors_allow_origins}}
+        description: apigw cors strategie allow origins
+      - key: BK_APIGW_CORS_ALLOW_METHODS
+        value: {{cookiecutter.apigw_cors_allow_methods}}
+        description: apigw cors strategie allow methods
+      - key: BK_APIGW_CORS_ALLOW_HEADERS
+        value: {{cookiecutter.apigw_cors_allow_headers}}
+        description: apigw cors strategie allow headers
+      - key: DJANGO_ALLOW_ASYNC_UNSAFE
+        value: "True"
+        description: set django allow unsafe async
+      {% if cookiecutter.llm_gateway_url -%}
+      - key: LLM_GW_ENDPOINT
+        value: "{{cookiecutter.llm_gateway_url}}"
+        description: LLM gateway endpoint
+      {%- endif -%}
+      {% if cookiecutter.model_management_ns_host %}
+      - key: MODEL_MANAGEMENT_NS_HOST
+        value: "{{cookiecutter.model_management_ns_host}}"
+        description: model management host
+      {%- endif -%}
+      {% if cookiecutter.model_management_ns_port %}
+      - key: MODEL_MANAGEMENT_NS_PORT
+        value: "{{cookiecutter.model_management_ns_port}}"
+        description: model management port
+      {%- endif -%}
+      {% if cookiecutter.similarity_model_service_name %}
+      - key: SIMILARITY_MODEL_SERVICE_NAME
+        value: "{{cookiecutter.similarity_model_service_name}}"
+        description: similarity model service name
+      {%- endif -%}
+      {% if cookiecutter.llm_service_prefix %}
+      - key: LLM_SERVICE_PREFIX
+        value: "{{ cookiecutter.llm_service_prefix }}"
+        description: LLM service prefix
+      {%- endif -%}
+      {% if cookiecutter.aidev_gateway_name %}
+      - key: AIDEV_GATEWAY_NAME
+        value: "{{ cookiecutter.aidev_gateway_name }}"
+        description: aidev gateway name
+      {%- endif -%}
+      {% if cookiecutter.bk_apigw_stage %}
+      - key: BK_APIGW_STAGE
+        value: "{{ cookiecutter.bk_apigw_stage }}"
+        description: bk apigw stage
+      {% endif %}
