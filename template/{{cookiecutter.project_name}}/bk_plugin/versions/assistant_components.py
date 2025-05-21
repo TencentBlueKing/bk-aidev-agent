@@ -28,17 +28,6 @@ class PluginConfig(BaseModel):
     # 直接重写完整的 agent prompt 并注册到 CommonQAAgent 中进行替换。
     role_prompt: str = "{{cookiecutter.role_prompt}}"
 
-    # 意图识别（检索召回）相关的配置参数。详情请参考 README_AGENT_PLUGIN.md [情况一] 的内容
-    intent_recognition_kwargs: dict = {
-        "topk": {{cookiecutter.topk}},
-        "knowledge_resource_fine_grained_score_type": "{{cookiecutter.knowledge_resource_fine_grained_score_type}}",
-        "knowledge_resource_reject_threshold": {{cookiecutter.knowledge_resource_reject_threshold}},
-        "independent_query_mode": "{{cookiecutter.independent_query_mode}}",
-        "with_index_specific_search_init": {{cookiecutter.with_index_specific_search_init}},
-        "with_index_specific_search_keywords": {{cookiecutter.with_index_specific_search_keywords}},
-        "with_index_specific_search_translation": {{cookiecutter.with_index_specific_search_translation}},
-    }
-
 
 # --------------------------------------------配置区-------------------------------------------- #
 

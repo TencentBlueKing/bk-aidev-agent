@@ -1,7 +1,7 @@
 from django.urls import include, re_path
 from rest_framework.routers import DefaultRouter
 
-from .chat import (
+from agent.views import (
     AgentInfoViewSet,
     ChatCompletionViewSet,
     ChatSessionContentViewSet,

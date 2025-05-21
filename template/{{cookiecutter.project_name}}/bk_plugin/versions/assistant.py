@@ -4,6 +4,7 @@
 若非定制开发，只修改 assistant_components.py 文件即可，请勿修改本文件。
 """
 
+from aidev_agent.services.chat import ChatPrompt, ExecuteKwargs
 from bk_plugin_framework.kit import (
     Context,
     ContextRequire,
@@ -13,7 +14,8 @@ from bk_plugin_framework.kit import (
     OutputsModel,
     Plugin,
 )
-from langchain_openai.chat_models.base import _convert_message_to_dict
+
+from ..factory import build_chat_completion_agent
 
 
 class CommonAgent(Plugin):
@@ -26,7 +28,7 @@ class CommonAgent(Plugin):
         command: str | None
         input: str | None
         session_code: str | None
-        chat_history: list | None
+        chat_history: list[dict] | None
         context: list | None
 
     class Outputs(OutputsModel):
@@ -56,8 +58,7 @@ class CommonAgent(Plugin):
         }
 
     def execute(self, inputs: Inputs, context: Context):
-        # TODO:  build agent and run
-        agent_e, cfg = self.create_agent_instance(inputs)
-        ret = agent_e.invoke(inputs.dict(), config=cfg)
-        ret["chat_history"] = [_convert_message_to_dict(m) for m in ret["chat_history"]]
-        context.outputs = ret
+        chat_history = [ChatPrompt(role=each["role"], content=each["content"]) for each in inputs.chat_history]
+        chat_completion_agent = build_chat_completion_agent(chat_history)
+        result = chat_completion_agent.execute(ExecuteKwargs(stream=False))
+        context.outputs = result
