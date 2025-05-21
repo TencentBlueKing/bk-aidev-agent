@@ -30,5 +30,6 @@
   "llm_service_prefix": "",
   "aidev_gateway_name": "",
   "bk_apigw_stage": "",
-  "non_thinking_llm": ""
+  "non_thinking_llm": "",
+  "app_apigw_host": ""
 }

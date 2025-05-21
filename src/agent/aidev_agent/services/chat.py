@@ -45,6 +45,7 @@ class ChatCompletionAgent(BaseModel):
     role_prompt: str | None = None
     max_token_size: int | None = None
     callbacks: list[BaseCallbackHandler] | None = None
+    agent_cls: type[CommonQAAgent] = CommonQAAgent
 
     # using in streaming
     first_chunk: bool = True
@@ -211,7 +212,7 @@ class ChatCompletionAgent(BaseModel):
         }
 
     def _get_agent(self, messages: list[BaseMessage]) -> tuple[EnhancedAgentExecutor, RunnableConfig]:
-        return CommonQAAgent.get_agent_executor(
+        return self.agent_cls.get_agent_executor(
             llm=self.chat_model,
             knowledge_llm=self.chat_model,
             extra_tools=self.tools,

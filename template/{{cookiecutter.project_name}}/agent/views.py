@@ -1,26 +1,20 @@
 import json
-import os
 
 from aidev_agent.api.bk_aidev import BKAidevApi
-from aidev_agent.core.extend.models.llm_gateway import ChatModel
 from aidev_agent.services.chat import ChatCompletionAgent, ChatPrompt, ExecuteKwargs
+from bk_plugin.factory import build_chat_completion_agent
 from bk_plugin_framework.kit.api import custom_authentication_classes
 from bk_plugin_framework.kit.decorators import inject_user_token, login_exempt
 from bkoauth import get_app_access_token
+from blueapps.core.exceptions import ClientBlueException
 from django.conf import settings
-from django.http import HttpResponse
 from django.http.response import StreamingHttpResponse
 from django.utils.decorators import method_decorator
-from langchain_core.prompts import jinja2_formatter
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.status import is_success
 from rest_framework.views import APIView, Response
 from rest_framework.viewsets import ViewSetMixin
-
-from ..versions.assistant_components import config
-
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 
 
 @method_decorator(login_exempt, name="dispatch")
@@ -106,7 +100,13 @@ class ChatCompletionViewSet(PluginViewSet):
     def create(self, request):
         execute_kwargs = ExecuteKwargs.model_validate(request.data.get("execute_kwargs", {}))
         session_code = request.data.get("session_code", "")
-        agent_instance = self._build_agent_by_session_code(session_code)
+        if session_code:
+            agent_instance = self._build_agent_by_session_code(session_code)
+        else:
+            chat_history = request.data.get("chat_prompts", []) or request.data.get("chat_history", [])
+            if not chat_history:
+                raise ClientBlueException(message="chat_history is required")
+            agent_instance = build_chat_completion_agent(chat_history)
 
         if execute_kwargs.stream:
             generator = agent_instance.execute(execute_kwargs)
@@ -123,39 +123,11 @@ class ChatCompletionViewSet(PluginViewSet):
         return sr
 
     def _build_agent_by_session_code(self, session_code: str) -> ChatCompletionAgent:
-        llm = ChatModel.get_setup_instance(model=config.chat_model)
         client = BKAidevApi.get_client()
-
         result = client.api.get_chat_session_context(path_params={"session_code": session_code})
-        knowledge_bases = [
-            client.api.appspace_retrieve_knowledgebase(path_params={"id": _id})["data"]
-            for _id in config.knowledgebase_ids
-        ]
-        tools = [client.construct_tool(tool_code) for tool_code in config.tool_codes]
-
-        return ChatCompletionAgent(
-            chat_model=llm,
-            chat_history=[ChatPrompt.model_validate(each) for each in result.get("data", [])],
-            knowledge_bases=knowledge_bases,
-            tools=tools,
-        )
-
-
-class IndexView(APIView):
-    def get(self, request):
-        client = BKAidevApi.get_client()
-        result = client.api.retrieve_agent_config(path_params={"agent_code": settings.APP_CODE})
-        agent_name = result["data"]["agent_name"]
-        with open(f"{BASE_DIR}/dist/index.html") as fo:
-            rendered = jinja2_formatter(
-                fo.read(),
-                SITE_URL="",
-                BK_STATIC_URL="",
-                BK_API_PREFIX="/bk_plugin/plugin_api",
-                BK_USER_NAME=getattr(request.user, "username", ""),
-                BK_AGENT_NAME=agent_name,
-            )
-        return HttpResponse(rendered)
+        chat_history = ([ChatPrompt.model_validate(each) for each in result.get("data", [])],)
+        agent = build_chat_completion_agent(chat_history)
+        return agent
 
 
 class AgentInfoViewSet(PluginViewSet):
