@@ -22,6 +22,7 @@
   "with_index_specific_search_init": "True",
   "with_index_specific_search_keywords": "False",
   "with_index_specific_search_translation": "False",
+  "run_ver": "open",
   "llm_gateway_url": "",
   "model_management_ns_host": "",
   "model_management_ns_port": "",
