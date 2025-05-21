@@ -10,7 +10,7 @@
       <AiCite :text="message.property.extra.cite" />
     </div>
     <div :class="`message-content-container ${message.role}`">
-      <template v-if="message.role === SessionContentRole.User">
+      <template v-if="[SessionContentRole.User, SessionContentRole.System].includes(message.role)">
         <BkTextEditor
           v-if="isEdit"
           :auto-focus="true"
