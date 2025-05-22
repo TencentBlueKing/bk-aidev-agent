@@ -37,7 +37,7 @@ python bin/manage.py runserver 0.0.0.0:5000
 - `chat_history`：在此处传递除了当前输入外的聊天历史记录。格式：
   `[{"role": "user", "content": "用户内容"},{"role": "assitant", "content": "AI内容"}]`
 
-本地调用示例
+智能体本地开发调用示例
 
 ```bash
 curl -X POST http://127.0.0.1:8000/bk_plugin/invoke/1.0.0assistant \
@@ -45,7 +45,7 @@ curl -X POST http://127.0.0.1:8000/bk_plugin/invoke/1.0.0assistant \
     -d '{"inputs": {"chat_history": [{"role": "user", "content": "how are you?"}]}, "context": {"executor": "user"}}'
 ```
 
-网关调用示例
+智能体网关API调用示例
 
 ```bash
 curl -X POST {{cookiecutter.app_apigw_host}}/invoke/1.0.0assistant \
@@ -63,13 +63,15 @@ curl -X POST {{cookiecutter.app_apigw_host}}/invoke/1.0.0assistant \
 - `chat_history`：在此处传递除了当前输入外的聊天历史记录。格式：
   `[{"role": "user", "content": "用户内容"},{"role": "assitant", "content": "AI内容"}]`
 
+智能体本地开发调用示例
+
 ```bash
 curl -X POST http://127.0.0.1:8000/bk_plugin/plugin_api/chat_completion/ \
     -H "Content-Type: application/json"   \
     -d '{"chat_history":[{"role":"user","content":"hi"}], "execute_kwargs": {"stream": true}}'
 ```
 
-网关调用示例
+智能体网关API调用示例
 
 ```bash
 curl -X POST {{cookiecutter.app_apigw_host}}/bk_plugin/plugin_api/chat_completion/  \
@@ -80,13 +82,15 @@ curl -X POST {{cookiecutter.app_apigw_host}}/bk_plugin/plugin_api/chat_completio
 
 #### 1.3.3 非流式调用
 
+智能体本地开发调用示例
+
 ```bash
 curl -X POST http://127.0.0.1:8000/bk_plugin/plugin_api/chat_completion/ \
     -H "Content-Type: application/json"   \
     -d '{"chat_history":[{"role":"user","content":"hi"}], "execute_kwargs": {"stream": false}}'
 ```
 
-网关调用示例
+智能体网关API调用示例
 
 ```bash
 curl -X POST {{cookiecutter.app_apigw_host}}/bk_plugin/plugin_api/chat_completion/  \
