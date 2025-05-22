@@ -7,7 +7,8 @@
   "apigw_manager_url_tmpl": "bk apigw manager url template",
   "_copy_without_render": [
     ".ci",
-    "*dist"
+    "*dist",
+    "*tpls"
   ],
   "agent_description": "aidev agent demo",
   "chat_model": "hunyuan-turbo",
@@ -32,5 +33,6 @@
   "bk_apigw_stage": "",
   "non_thinking_llm": "",
   "app_apigw_host": "",
+  "static_template_root": "tpls",
   "sync_config_from_aidev": "False"
 }

@@ -34,17 +34,15 @@ python bin/manage.py runserver 0.0.0.0:5000
 更新当前目录的`agent/config.py`文件即可自定义所需的配置,例如需要修改默认的模型变为`deepseek-r1`.
 
 ```python
-override_config = {
+AGENT_CONFIG = {
   "chat_model": "deepseek-r1"
 }
 ```
 
-如果智能体是在平台创建的,可以打开`sync_config_from_aidev`配置,同步平台智能体配置的更新
+如果智能体是在平台创建的,可以打开`SYNC_CONFIG_FROM_AIDEV`配置,同步平台智能体配置的更新
 
 ```python
-override_config = {
-  "sync_config_from_aidev": True
-}
+SYNC_CONFIG_FROM_AIDEV = True
 ```
 
 ### 1.4 api 调用
@@ -62,7 +60,27 @@ override_config = {
 ```bash
 curl -X POST http://127.0.0.1:8000/bk_plugin/invoke/1.0.0assistant \
     -H "Content-Type: application/json"   \
-    -d '{"inputs": {"chat_history": [{"role": "user", "content": "how are you?"}]}, "context": {"executor": "user"}}'
+    -d '{
+        "inputs": {
+            "command": "chat",
+            "input": "SRE 可观测性有哪些领域?",
+            "stream": true,
+            "chat_history": [
+                {
+                    "role": "system",
+                    "content": "你是 SRE 专家"
+                },
+                {
+                    "role": "assistant",
+                    "content": "作为SRE（Site Reliability Engineering，站点可靠性工程）专家，我的核心职责是确保系统的可靠性、可扩展性和高效运维"
+                }
+            ],
+            "context": []
+        },
+        "context": {
+            "executor": "user"
+        }
+    }'
 ```
 
 智能体网关API调用示例
@@ -71,7 +89,27 @@ curl -X POST http://127.0.0.1:8000/bk_plugin/invoke/1.0.0assistant \
 curl -X POST {{cookiecutter.app_apigw_host}}/invoke/1.0.0assistant \
     -H "Content-Type: application/json"   \
     -H "X-Bkapi-Authorization": xxx   \
-    -d '{"inputs": {"chat_history": [{"role": "user", "content": "how are you?"}]}, "context": {"executor": "user"}}'
+    -d '{
+        "inputs": {
+            "command": "chat",
+            "input": "SRE 可观测性有哪些领域?",
+            "stream": true,
+            "chat_history": [
+                {
+                    "role": "system",
+                    "content": "你是 SRE 专家"
+                },
+                {
+                    "role": "assistant",
+                    "content": "作为SRE（Site Reliability Engineering，站点可靠性工程）专家，我的核心职责是确保系统的可靠性、可扩展性和高效运维"
+                }
+            ],
+            "context": []
+        },
+        "context": {
+            "executor": "user"
+        }
+    }'
 ```
 
 

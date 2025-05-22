@@ -27,3 +27,18 @@ poetry-install:
 
 .git/hooks/pre-push: ${ROOT_DIR}/.pre-commit-config.yaml
 	poetry run pre-commit install -t pre-push
+
+build-template:
+	cd ./src/frontend/publish-template/ && npm install && npm run build && cd -
+	mkdir -p tmp/build
+	cp -r ${ROOT_DIR}/template tmp/build
+	cp -r ${ROOT_DIR}/src/frontend/publish-template/dist tmp/build/template/{{cookiecutter.project_name}}/bk_plugin/
+	cd tmp/build && zip -q -r templates.zip ./*
+	mv tmp/build/templates.zip .
+	echo "Build template success"
+	rm -rf tmp/build
+
+build-template-clean:
+	rm -rf tmp/build
+	rm -rf ${ROOT_DIR}/src/frontend/publish-template/dist
+	rm -f templates.zip
