@@ -15,7 +15,7 @@ from bk_plugin_framework.kit import (
     Plugin,
 )
 
-from ..factory import build_chat_completion_agent
+from agent.services.agent import build_chat_completion_agent
 
 
 class CommonAgent(Plugin):

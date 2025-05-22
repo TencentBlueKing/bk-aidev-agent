@@ -10,7 +10,7 @@ class AgentConfig(AppConfig):
         from bk_plugin.factory import agent_factory
         from bk_plugin.meta import DEFAULT_AGENT
 
-        from agent.agent import CommonQAAgentExtend
+        from agent.services.agent import CommonQAAgentExtend
 
         agent_factory.register(DEFAULT_AGENT, CommonQAAgentExtend)
         return super().ready()

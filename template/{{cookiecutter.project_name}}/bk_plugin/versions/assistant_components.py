@@ -1,10 +1,11 @@
-from typing import List
+from typing import ClassVar, List
 
 from aidev_agent.api.bk_aidev import BKAidevApi
 from django.conf import settings
+from django.core.cache import cache
 from pydantic import BaseModel
 
-from agent.config import override_config
+from agent.config import AGENT_CONFIG, SYNC_CONFIG_FROM_AIDEV
 
 
 class PluginConfig(BaseModel):
@@ -30,13 +31,10 @@ class PluginConfig(BaseModel):
     # 直接重写完整的 agent prompt 并注册到 CommonQAAgent 中进行替换。
     role_prompt: str = "{{cookiecutter.role_prompt}}"
 
-    # 是否从AIDev同步最新配置
-    # 1.True:获取此 agent 最新配置，增量覆盖源码配置
-    # 2.False:仅使用源码配置
-    sync_config_from_aidev: bool = False
+    CACHE_KEY: ClassVar[str] = "cached"
 
     def sync_config(self):
-        if not self.sync_config_from_aidev:
+        if not SYNC_CONFIG_FROM_AIDEV and cache.get(self.CACHE_KEY):
             return
         client = BKAidevApi.get_client()
         result = client.api.retrieve_agent_config(path_params={"agent_code": settings.APP_CODE})["data"]
@@ -44,9 +42,10 @@ class PluginConfig(BaseModel):
         config.non_thinking_llm = result["prompt_setting"]["non_thinking_llm"]
         config.knowledgebase_ids = result["knowledgebase_settings"]["knowledgebases"]
         config.tool_codes = result["related_tools"]
+        cache.set(self.CACHE_KEY, "1", timeout=60)
 
 
-if override_config:
-    config = PluginConfig(**override_config)
+if AGENT_CONFIG:
+    config = PluginConfig(**AGENT_CONFIG)
 else:
     config = PluginConfig()

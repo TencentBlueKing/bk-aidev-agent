@@ -1,16 +1,17 @@
-"""
-Sample configuration to override default settings
+# 是否从AIDev平台同步最新配置
+# 1.True:获取此智能体最新配置，覆盖配置
+# 2.False:仅使用源码配置
+SYNC_CONFIG_FROM_AIDEV = False
 
-Sample for update config
-override_config = {
-    "chat_model": "deepseek-r1",  # Example: Override the default chat model
-    "non_thinking_llm": "deepseek-v3",  # Example: Override the non-thinking model
-    "knowledgebase_ids": [1, 2, 3],  # Example: List of knowledgebase IDs
-    "knowledge_ids": [101, 102, 103],  # Example: List of knowledge IDs
-    "tool_codes": ["tool1", "tool2"],  # Example: List of tool codes
-    "role_prompt": "You are a helpful assistant.",  # Example: Custom role prompt
-    "sync_config_from_aidev": True  # Example: Enable syncing config from AIDev
+"""
+如果 SYNC_CONFIG_FROM_AIDEV 非 True,则可以通过下面的配置覆盖现有的配置
+AGENT_CONFIG = {
+    "chat_model": "deepseek-r1",  # 示例：覆盖默认的聊天模型
+    "non_thinking_llm": "deepseek-v3",  # 示例：覆盖非思考模型
+    "knowledgebase_ids": [1, 2, 3],  # 示例：知识库ID列表
+    "knowledge_ids": [101, 102, 103],  # 示例：知识ID列表
+    "tool_codes": ["tool1", "tool2"],  # 示例：工具代码列表
+    "role_prompt": "You are a helpful assistant.",  # 示例：自定义角色提示
 }
 """
-
-override_config = {}
+AGENT_CONFIG = {}

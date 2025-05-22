@@ -1,8 +1,8 @@
+# PLEASE DO NOT MODIFY THIS FILE!
 import json
 
 from aidev_agent.api.bk_aidev import BKAidevApi
 from aidev_agent.services.chat import ChatCompletionAgent, ChatPrompt, ExecuteKwargs
-from bk_plugin.factory import build_chat_completion_agent
 from bk_plugin_framework.kit.api import custom_authentication_classes
 from bk_plugin_framework.kit.decorators import inject_user_token, login_exempt
 from bkoauth import get_app_access_token
@@ -15,6 +15,8 @@ from rest_framework.decorators import action
 from rest_framework.status import is_success
 from rest_framework.views import APIView, Response
 from rest_framework.viewsets import ViewSetMixin
+
+from agent.services.agent import build_chat_completion_agent
 
 
 @method_decorator(login_exempt, name="dispatch")

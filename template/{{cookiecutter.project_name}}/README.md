@@ -10,7 +10,7 @@
 python3.10 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp .env_tpl .env
+cp .env.template .env
 ```
 
 根据实际情况,更新`.env`文件末尾对应的`BKPAAS_APP_SECRET`.
@@ -31,7 +31,7 @@ python bin/manage.py runserver 0.0.0.0:5000
 
 #### 1.3.1 更新配置
 
-更新当前目录的`agent/config.py`文件即可自定义所需的配置,如我需要修改默认的模型变为`deepseek-r1`.
+更新当前目录的`agent/config.py`文件即可自定义所需的配置,例如需要修改默认的模型变为`deepseek-r1`.
 
 ```python
 override_config = {
@@ -189,4 +189,22 @@ curl -X POST {{cookiecutter.app_apigw_host}}/bk_plugin/plugin_api/chat_completio
     "code": 400,
     "message": "发生错误"
 }
+```
+
+### 1.5 项目结构
+
+```
+├── agent  # 用于二开的django app目录
+│   ├── config.py # 自定义配置,可覆盖默认配置
+│   ├── services
+│   │   └── agent.py # agent 二开入口
+│   └── views
+│       └── builtin.py # 内置url入口,请勿修改
+├── .env.template # 本地测试用环境变量
+├── app_desc.yml  # 项目启动配置
+├── bk_plugin  # 标准蓝鲸插件目录,请勿修改
+│   ├── apis  # 蓝鲸插件api地址,以`/bk_plugin/plugin_api/`前缀暴露到api网关中
+│   └── versions
+│       ├── assistant.py # 蓝鲸插件入口,通过`invoke`方式调用
+│       └── assistant_components.py # 智能体配置,由模板生成
 ```
