@@ -121,7 +121,7 @@ LLM_GW_ENDPOINT = env.str("LLM_GW_ENDPOINT", "") or env.str("LLM_GATEWAY_URL", "
 APP_CODE = env.str("BKPAAS_APP_ID", "") or env.str("APP_ID", "")
 SECRET_KEY = env.str("BKPAAS_APP_SECRET", "") or env.str("APP_TOKEN", "")
 BK_AIDEV_GATEWAY_NAME = env.str("AIDEV_GATEWAY_NAME", "bkaidev")
-BK_APIGW_STAGE = env.str("BK_APIGW_STAGE", "prod")
+BK_APIGW_STAGE = env.str("BK_APIGW_STAGE", "") or env.str("BKAIDEV_RESOURCE_STAGE", "prod")
 # end: 配置
 
 

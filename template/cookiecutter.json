@@ -31,5 +31,6 @@
   "aidev_gateway_name": "",
   "bk_apigw_stage": "",
   "non_thinking_llm": "",
-  "app_apigw_host": ""
+  "app_apigw_host": "",
+  "sync_config_from_aidev": "False"
 }

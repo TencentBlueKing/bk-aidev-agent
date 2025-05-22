@@ -19,6 +19,7 @@ agent_factory.register(DEFAULT_AGENT, CommonQAAgent)
 
 def build_chat_completion_agent(chat_history: list[ChatPrompt]) -> ChatCompletionAgent:
     client = BKAidevApi.get_client()
+    config.sync_config()
     llm = ChatModel.get_setup_instance(model=config.chat_model)
     knowledge_bases = [
         client.api.appspace_retrieve_knowledgebase(path_params={"id": _id})["data"] for _id in config.knowledgebase_ids

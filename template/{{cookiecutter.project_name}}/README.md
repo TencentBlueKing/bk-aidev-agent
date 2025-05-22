@@ -27,9 +27,29 @@ python bin/manage.py runserver 0.0.0.0:5000
 
 本地打开`localhost:5000`即可使用小鲸进行会话
 
-### 1.3 api 调用
+### 1.3 开发指引
 
-#### 1.3.1 标准运维插件调用
+#### 1.3.1 更新配置
+
+更新当前目录的`agent/config.py`文件即可自定义所需的配置,如我需要修改默认的模型变为`deepseek-r1`.
+
+```python
+override_config = {
+  "chat_model": "deepseek-r1"
+}
+```
+
+如果智能体是在平台创建的,可以打开`sync_config_from_aidev`配置,同步平台智能体配置的更新
+
+```python
+override_config = {
+  "sync_config_from_aidev": True
+}
+```
+
+### 1.4 api 调用
+
+#### 1.4.1 标准运维插件调用
 
 **请求输入格式**
 
@@ -55,7 +75,7 @@ curl -X POST {{cookiecutter.app_apigw_host}}/invoke/1.0.0assistant \
 ```
 
 
-#### 1.3.2 流式调用
+#### 1.4.2 流式调用
 
 **请求输入格式**
 
@@ -80,7 +100,7 @@ curl -X POST {{cookiecutter.app_apigw_host}}/bk_plugin/plugin_api/chat_completio
     -d '{"inputs": {"chat_history": [{"role": "user", "content": "how are you?"}]}, "context": {"executor": "user"}}'
 ```
 
-#### 1.3.3 非流式调用
+#### 1.4.3 非流式调用
 
 智能体本地开发调用示例
 
@@ -100,7 +120,7 @@ curl -X POST {{cookiecutter.app_apigw_host}}/bk_plugin/plugin_api/chat_completio
 ```
 
 
-#### 1.3.4 流式响应协议
+#### 1.4.4 流式响应协议
 
 - 流式响应遵从标准的SSE响应规范。响应的data具体内容为JSON字符串，具体协议如下：
   - event支持5种类型：text, think, reference_doc, done, error

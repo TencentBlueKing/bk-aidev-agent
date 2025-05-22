@@ -1,10 +1,12 @@
 from typing import List
 
+from aidev_agent.api.bk_aidev import BKAidevApi
+from django.conf import settings
 from pydantic import BaseModel
 
+from agent.config import override_config
 
-# --------------------------------------------配置区-------------------------------------------- #
-# 使用的 LLM（联系接口人获取可使用的 LLM 模型名称列表）。
+
 class PluginConfig(BaseModel):
     # 使用的 LLM（联系接口人获取可使用的 LLM 模型名称列表）。
     chat_model: str = "{{cookiecutter.chat_model}}"
@@ -17,7 +19,7 @@ class PluginConfig(BaseModel):
     knowledgebase_ids: List[int] = {{cookiecutter.knowledgebase_ids}}  # 知识库 ID 的列表
     knowledge_ids: List[int] = {{cookiecutter.knowledge_ids}}  # 知识（文件/文件夹） ID 的列表
 
-    # 在 AIDev 站点注册工具，然后将对应的工具 ID 填在此处，可以在 agent 使用的时候调用相关工具。
+    # 在 AIDev 站点注册工具，然后将对应的工具 tool_code 填在此处，可以在 agent 使用的时候调用相关工具。
     tool_codes: List[str] = {{cookiecutter.tool_codes}}
 
     # 在 CommonQAAgent 内置 prompt 的基础上，用户自定义的增量 prompt。
@@ -28,7 +30,23 @@ class PluginConfig(BaseModel):
     # 直接重写完整的 agent prompt 并注册到 CommonQAAgent 中进行替换。
     role_prompt: str = "{{cookiecutter.role_prompt}}"
 
+    # 是否从AIDev同步最新配置
+    # 1.True:获取此 agent 最新配置，增量覆盖源码配置
+    # 2.False:仅使用源码配置
+    sync_config_from_aidev: bool = False
 
-# --------------------------------------------配置区-------------------------------------------- #
+    def sync_config(self):
+        if not self.sync_config_from_aidev:
+            return
+        client = BKAidevApi.get_client()
+        result = client.api.retrieve_agent_config(path_params={"agent_code": settings.APP_CODE})["data"]
+        config.chat_model = result["prompt_setting"]["llm_code"]
+        config.non_thinking_llm = result["prompt_setting"]["non_thinking_llm"]
+        config.knowledgebase_ids = result["knowledgebase_settings"]["knowledgebases"]
+        config.tool_codes = result["related_tools"]
 
-config = PluginConfig()
+
+if override_config:
+    config = PluginConfig(**override_config)
+else:
+    config = PluginConfig()
