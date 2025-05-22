@@ -59,6 +59,8 @@ class CommonAgent(Plugin):
 
     def execute(self, inputs: Inputs, context: Context):
         chat_history = [ChatPrompt(role=each["role"], content=each["content"]) for each in inputs.chat_history]
+        if inputs.input and not (inputs.chat_history or inputs.command):
+            chat_history.append(ChatPrompt(role="user", content=inputs.input))
         chat_completion_agent = build_chat_completion_agent(chat_history)
         result = chat_completion_agent.execute(ExecuteKwargs(stream=False))
         context.outputs = result
