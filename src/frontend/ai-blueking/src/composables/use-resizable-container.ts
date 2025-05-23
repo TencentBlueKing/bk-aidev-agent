@@ -102,7 +102,9 @@ export function useResizableContainer(options: ResizableContainerOptions = {}) {
         // 正常状态下，保持容器贴在右侧
         const newLeft = window.innerWidth - width.value - leftDiff.value;
         left.value = Math.max(0, newLeft);
-        height.value = window.innerHeight - top.value;
+        setTimeout(() => {
+          height.value = window.innerHeight - top.value;
+        }, 0);
       }
 
       // 检查并调整宽度，确保不会超出最大限制
