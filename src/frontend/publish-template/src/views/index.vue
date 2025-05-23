@@ -20,6 +20,9 @@
             {{ router.name }}
           </router-link>
         </section>
+        <section class="user-name" style="font-size: 14px; color: #7b7d8a;">
+          {{ userName }}
+        </section>
       </section>
     </template>
     <router-view />
@@ -29,6 +32,7 @@
 <script setup lang="ts">
 const agentName = window.BK_AGENT_NAME;
 
+const userName = window.BK_USER_NAME;
 const routers = [
   { to: 'page', name: '聊天窗' },
   { to: 'side-slider', name: '小鲸样例' },
@@ -43,6 +47,7 @@ const routers = [
   justify-content: space-between;
   font-size: 20px;
 }
+
 
 .router-links {
   a {
