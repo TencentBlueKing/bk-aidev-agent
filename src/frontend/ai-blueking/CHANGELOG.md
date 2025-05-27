@@ -1,5 +1,36 @@
 # 更新日志
 
+## [1.0.0] - 2025-05-27
+
+### ✨ 重大更新 - AI 小鲸 1.0 全新架构
+
+全新升级，搭配 AIDev 智能体一站式体验，更流畅的交互和更丰富的功能。
+
+### 优化
+- **优化可调整容器高度的逻辑**：
+  - 通过添加异步处理，修复了窗口尺寸调整时的计算问题
+  - 提高了屏幕尺寸变化时容器高度适配的稳定性
+
+```javascript
+// 优化后的高度调整逻辑
+setTimeout(() => {
+  height.value = window.innerHeight - top.value;
+}, 0);
+```
+
+#### 交互体验优化
+
+- ✅ **改进拖拽体验**：更流畅的窗口拖拽感觉
+- ✅ **动态调整大小**：优化窗口大小调整的交互体验
+- ✅ **布局优化**：更合理的空间利用和内容展示
+
+### ⚠️ 破坏性变动 (Breaking Changes)
+
+- ❌ **API 方法变更**：不再暴露 `sendChat` 方法，请使用新的 `sendMessage` 方法
+- ❌ **预设对话变更**：预设对话内容不再支持自定义，改为从接口统一获取
+- ❌ **事件机制变更**：修改了部分事件名称和参数结构，请参考最新文档
+- ❌ **组件属性调整**：部分组件属性名称和用法发生变化
+
 ## [0.5.6] - 2025-05-20
 
 ### 修复
@@ -147,8 +178,6 @@ const sendMessage = () => {
   - 新增 `title` 属性，支持自定义标题
   - 新增 `helloText` 属性，支持自定义欢迎语
 
-
-
 ## [0.5.3-beta.3] - 2025-04-03
 
 ### 新增功能
@@ -164,7 +193,6 @@ const sendMessage = () => {
 
 ### 新增功能
 - **支持 mermaid 图表渲染**：
-
 
 ## [0.5.3-beta.1] - 2025-04-02
 
@@ -242,9 +270,6 @@ const aiBluekingRef = ref<InstanceType<typeof AIBlueking>>();
 const sessionContents = aiBluekingRef.value?.sessionContents; // 获取当前会话内容
 </script>
 ```
-
-
-
 
 ## [0.5.0] - 2025-03-28
 
@@ -343,7 +368,6 @@ const sessionContents = aiBluekingRef.value?.sessionContents; // 获取当前会
 - 回调函数 `handleReceiveMessage` 新增 `cover` 参数，支持消息内容的增量更新和全量覆盖
 - 回调函数 `handleEnd` 增强错误处理，支持检测思考状态
 
-
 因此，升级后，请参考以下示例代码更新您的代码：
 ```ts
 // ChatHelper 初始化示例
@@ -414,7 +438,6 @@ const handleShortcutClick = (data: { type: string; label: string; cite: string; 
 - 修复快捷操作按钮点击无效的问题
 - 修复 AI 在回复过程中，点击清空按钮导致状态混乱问题
 
-
 ## [0.3.28] - 2024-02-25
 
 ### 更新
@@ -432,7 +455,6 @@ const handleShortcutClick = (data: { type: string; label: string; cite: string; 
 
 - model 窗口位置优化
   - 修复 model 窗口在屏幕大小发生变化时位置计算错误的问题
-
 
 ## [0.3.26] - 2024-02-20
 

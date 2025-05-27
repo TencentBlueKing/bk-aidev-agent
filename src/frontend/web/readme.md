@@ -5,13 +5,35 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/blueking/ai-blueking"><img src="https://img.shields.io/badge/版本-0.5.2-blue" alt="版本"></a>
+  <a href="https://github.com/blueking/ai-blueking"><img src="https://img.shields.io/badge/版本-1.0.0--beta.13-blue" alt="版本"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/许可证-MIT-green" alt="许可证"></a>
 </p>
 
 ## 简介
 
 这是 AI 小鲸智能对话组件的官方文档项目，使用 VitePress 构建。本项目包含了 AI 小鲸组件的使用文档、API 参考和示例代码。
+
+## 1.0 版本重大更新
+
+AI小鲸组件现已升级到1.0版本，带来全新的架构设计和更流畅的用户体验。
+
+### 主要功能与改进
+
+- **全新架构**：彻底重构内部实现，提供更高效的组件性能和稳定性
+- **优化交互体验**：更流畅的拖拽和调整大小功能
+- **增强响应式设计**：更好地支持各种屏幕尺寸和设备
+- **更合理的布局**：优化空间利用和内容展示
+
+### ⚠️ 重要变更
+
+1.0版本包含以下破坏性变更：
+
+- API方法变更：不再暴露`sendChat`方法，请使用新的`sendMessage`方法
+- 预设对话变更：预设对话内容不再支持自定义，改为从接口统一获取
+- 事件机制变更：修改了部分事件名称和参数结构
+- 组件属性调整：部分组件属性名称和用法发生变化
+
+详细的更新内容请查看[更新日志](./docs/changelog.md)。
 
 ## 项目启动
 

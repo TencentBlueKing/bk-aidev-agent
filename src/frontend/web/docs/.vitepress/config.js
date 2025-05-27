@@ -19,6 +19,7 @@ export default defineConfig({
         text: version,
         items: [
           { text: '更新日志', link: '/changelog' },
+          { text: '1.0迁移指南', link: '/guide/migration-1.0' },
           { text: 'Magic Box', link: 'https://magicbox.bk.tencent.com/static_api/v3/main/index.html' }
         ]
       }
@@ -52,6 +53,12 @@ export default defineConfig({
           ]
         },
         {
+          text: '版本迁移',
+          items: [
+            { text: '迁移到 1.0 版本', link: '/guide/migration-1.0' }
+          ]
+        },
+        {
           text: '框架集成', link: '/guide/framework-integration'
         }, 
         { text: '使用示例', link: '/demos/basic-usage' }
@@ -79,7 +86,7 @@ export default defineConfig({
     },
     
     socialLinks: [
-      // { icon: 'github', link: 'https://github.com/blueking/ai-blueking' }
+      { icon: 'github', link: 'https://github.com/TencentBlueKing/bk-aidev-agent' }
     ],
     
     footer: {

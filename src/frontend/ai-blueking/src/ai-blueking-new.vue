@@ -547,7 +547,7 @@
     handleDelete,
     handleRegenerate,
     handleResend,
-    initSession,
+    updateRequestOptions,
   });
 </script>
 

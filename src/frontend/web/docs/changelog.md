@@ -8,6 +8,24 @@ export default {
     return {
       changelogData: [
         {
+          version: "v1.0.0",
+          date: "2025-05-28",
+          features: [
+            "全新架构设计，提供更高效的组件性能",
+            "增强的界面适配能力，更好地支持各种屏幕尺寸",
+            "优化交互体验，提供更流畅的拖拽和调整大小功能",
+            "优化可调整容器高度的逻辑，提高窗口尺寸调整的稳定性"
+          ],
+          breaking: [
+            "不再暴露 <code>sendChat</code> 方法，请使用新的 <code>sendMessage</code> 方法",
+            "预设对话内容不再支持使用 <code>defaultMessages</code> ，需要在 BKAIDev 平台配置智能体时设置，小鲸组件将从接口统一获取",
+            "修改了部分事件名称和参数结构，请参考最新文档"
+          ],
+          fixes: [
+            "修复容器高度在屏幕尺寸变化时的计算问题"
+          ]
+        },
+        {
           version: "v0.5.6",
           date: "2025-05-20",
           fixes: [

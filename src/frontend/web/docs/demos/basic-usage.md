@@ -47,11 +47,17 @@ import '@blueking/ai-blueking/dist/vue2/style.css';
 
 ### 2. 设置 API 服务地址
 
-```js
-const apiUrl = 'https://your-api-endpoint.com/assistant/';
+```Vue
+<template>
+<AIBlueking :url="apiUrl" />
+</tempalte>
+
+<script setup>
+  const apiUrl = 'https://your-api-endpoint.com/assistant/';
+</script>
 ```
 
-API 地址是必须设置的属性，所有对话请求都会发送到此地址。
+API 地址是必须设置的属性，所有与智能体的初始化、对话请求等都通过此连接进行通信。
 
 ### 3. 操作方法
 

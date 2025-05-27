@@ -15,6 +15,9 @@ hero:
     - theme: alt
       text: 立即体验
       link: /demos/basic-usage
+    - theme: alt
+      text: 1.0版本迁移指南
+      link: /guide/migration-1.0
 
 features:
   - icon: 💬

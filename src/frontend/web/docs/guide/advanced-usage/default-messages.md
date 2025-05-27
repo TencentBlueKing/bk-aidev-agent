@@ -12,6 +12,7 @@
 
 - 配置集中管理，不需要在每个组件实例中重复定义
 - 与后端保持同步，确保体验一致性
+- 支持实时更新，无需重新部署前端应用
 
 ## 如何迁移
 
@@ -19,6 +20,7 @@
 
 1. 移除组件中的 `:default-messages` 属性
 2. 在 Agent 配置中设置开场白和预设问题
+3. 确保您的 AI-SDK 版本与组件版本匹配
 
 ```diff
 <template>
@@ -41,20 +43,29 @@ const apiUrl = 'https://your-api-url.com/chat';
 </script>
 ``` 
 
-
-
 ## 通过 Agent 配置设置对话内容
 
 在 Agent 配置中，您可以设置以下内容来替代原有的预设对话功能：
 
-1. **开场白**：智能体的首次问候语
-2. **预设问题**：用户可以快速选择的预设问题
+1. **开场白（`openingRemark`）**：智能体的首次问候语，显示在对话开始时
+2. **预设问题（`predefinedQuestions`）**：用户可以快速选择的预设问题，会与前端配置的`prompts`属性合并显示
 
-这些配置在 Agent 创建或编辑时进行设置，无需在前端代码中指定。
+这些配置在 Agent 创建或编辑时在平台进行设置，无需在前端代码中指定。系统会在组件初始化时自动获取这些配置。
 
-## 如何获取当前会话内容
+## 1.0版本初始化流程
 
-如果您需要在外部访问当前会话内容，可以使用 `sessionContents` 属性：
+在1.0版本中，组件的初始化流程如下：
+
+1. 组件挂载后，通过`url`属性指定的地址获取智能体配置
+2. 配置获取成功后，自动应用开场白（`openingRemark`）作为初始问候
+3. 将智能体配置中的预设问题（`predefinedQuestions`）与前端的`prompts`属性合并显示
+4. 组件完成初始化，用户可以开始对话
+
+这种方式确保了前端组件与后端智能体配置的一致性，提供更加统一的用户体验。
+
+## 如何获取和管理当前会话内容
+
+从1.0版本开始，组件实例暴露了`sessionContents`属性，用于获取当前会话内容：
 
 ```vue
 <template>
@@ -67,7 +78,7 @@ const apiUrl = 'https://your-api-url.com/chat';
 
 <script lang="ts" setup>
 import { ref } from 'vue';
-import AIBlueking from '@blueking/ai-blueking';
+import { AIBlueking } from '@blueking/ai-blueking';
 
 const aiBlueking = ref();
 const apiUrl = 'https://your-api-url.com/chat';
@@ -81,4 +92,22 @@ const saveCurrentSession = () => {
 </script>
 ```
 
-通过以上方法，您可以继续灵活地管理AI对话会话的状态，并实现更丰富的用户体验。 
+`sessionContents`属性返回一个包含当前会话所有消息的数组，每个消息对象的结构如下：
+
+```typescript
+interface Message {
+  role: 'user' | 'assistant'; // 消息发送者角色
+  content: string;           // 消息文本内容
+  cite?: string;             // 可选，引用的文本内容
+  time?: number;             // 消息时间戳
+}
+```
+
+通过访问`sessionContents`属性，您可以实现以下功能：
+
+- 保存当前会话状态
+- 分析对话内容
+- 导出对话记录
+- 实现自定义的会话管理逻辑
+
+请注意，`sessionContents`属性是只读的，不支持直接修改会话内容。如需管理会话，请使用组件提供的方法（如`handleSendMessage`等）。 
