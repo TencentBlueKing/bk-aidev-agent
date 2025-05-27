@@ -18,7 +18,7 @@ from aidev_agent.utils import Empty
 
 
 async def async_generator_with_timeout(
-    gen: AsyncGenerator, timeout: Optional[int | float], max_wait_rounds: int = 10
+    gen: AsyncGenerator, timeout: Optional[int | float], max_wait_rounds: int = 15
 ) -> AsyncGenerator:
     try:
         while True:

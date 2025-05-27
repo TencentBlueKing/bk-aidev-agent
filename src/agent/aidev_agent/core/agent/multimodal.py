@@ -181,8 +181,6 @@ class EnhancedAgentExecutor(LiteEnhancedAgentExecutor):
         }
         files_list = input.get("files_lst", [])
         input["files_list"] = files_list
-        input["knowledge_items"] = self.agent.knowledge_items
-        input["knowledge_bases"] = self.agent.knowledge_bases
 
 
 class CommonAgentMixIn(BaseModel, ABC):

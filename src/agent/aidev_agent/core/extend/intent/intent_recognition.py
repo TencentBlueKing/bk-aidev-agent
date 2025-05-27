@@ -22,7 +22,7 @@ import logging
 import os
 from collections import defaultdict
 from enum import Enum
-from typing import Any, Callable, ClassVar, Dict, List, Set, Tuple
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Set
 
 from langchain_core.callbacks import Callbacks
 from langchain_core.documents import Document
@@ -44,6 +44,7 @@ from aidev_agent.core.extend.intent.utils import (
     retry,
     timeit,
 )
+from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils.module_loading import import_string
 
 logger = logging.getLogger(__name__)
@@ -184,7 +185,14 @@ class IntentRecognition(BaseModel):
 
     @timeit(message="知识库检索（index_specific方式）")
     def search_knowledge_index_specific(
-        self, knowledge_items: list[dict], knowledge_bases: list[dict], query, topk, resource_type="knowledge", **kwargs
+        self,
+        knowledge_items: list[dict],
+        knowledge_bases: list[dict],
+        query,
+        topk,
+        agent_options,
+        resource_type="knowledge",
+        **kwargs,
     ):
         """基于向量检索获取相关文档（index_specific方式）"""
         index_query_kwargs = []
@@ -198,8 +206,8 @@ class IntentRecognition(BaseModel):
             "query": query,
             "topk": topk,
             "index_query_kwargs": index_query_kwargs,
-            "knowledge_template_id": kwargs.get("knowledge_template_id"),
-            "with_scalar_data": kwargs.get("with_scalar_data", True),
+            "knowledge_template_id": agent_options.knowledge_query_options.knowledge_template_id,
+            "with_scalar_data": agent_options.knowledge_query_options.with_scalar_data,
             "raw": True,  # 知识库查询接口集成了本文件中的重排逻辑，设置为True防止循环重排。下同
             "type": "index_specific",
         }
@@ -207,7 +215,13 @@ class IntentRecognition(BaseModel):
 
     @timeit(message="知识库检索（index_specific方式，使用提取的关键词）")
     def search_knowledge_index_specific_keywords(
-        self, knowledge_items: list[dict], knowledge_bases: list[dict], extracted_keywords, topk, **kwargs
+        self,
+        knowledge_items: list[dict],
+        knowledge_bases: list[dict],
+        extracted_keywords,
+        topk,
+        agent_options,
+        **kwargs,
     ):
         """基于index_specific获取相关文档（index_specific方式，使用提取的关键词）"""
         if extracted_keywords:
@@ -217,6 +231,7 @@ class IntentRecognition(BaseModel):
                 query="\n\n".join(extracted_keywords),
                 topk=topk,
                 disable_timeit=True,
+                agent_options=agent_options,
                 **kwargs,
             )
         else:
@@ -224,7 +239,7 @@ class IntentRecognition(BaseModel):
 
     @timeit(message="知识库检索（index_specific方式，使用翻译后的中文）")
     def search_knowledge_index_specific_translation(
-        self, knowledge_items: list[dict], knowledge_bases: list[dict], translated_query, topk, **kwargs
+        self, knowledge_items: list[dict], knowledge_bases: list[dict], translated_query, topk, agent_options, **kwargs
     ):
         """基于index_specific获取相关文档（index_specific方式，使用翻译后的中文）"""
         if translated_query:
@@ -234,6 +249,7 @@ class IntentRecognition(BaseModel):
                 query=translated_query,
                 topk=topk,
                 disable_timeit=True,
+                agent_options=agent_options,
                 **kwargs,
             )
         else:
@@ -247,8 +263,8 @@ class IntentRecognition(BaseModel):
             "topk": topk,
             "knowledge_id": [knowledge["id"] for knowledge in knowledge_items],
             "knowledge_base_id": [knowledge["id"] for knowledge in knowledge_bases],
-            "knowledge_template_id": kwargs.get("knowledge_template_id"),
-            "with_scalar_data": kwargs.get("with_scalar_data", True),
+            "knowledge_template_id": 0,
+            "with_scalar_data": True,
             "raw": True,
             "type": "nature",
         }
@@ -524,21 +540,22 @@ class IntentRecognition(BaseModel):
         query_for_search,
         llm,
         context_docs_with_scores,
+        agent_options,
         **kwargs,
     ):
-        if fine_grained_score_type == FineGrainedScoreType.LLM:
+        if fine_grained_score_type.value == FineGrainedScoreType.LLM.value:
             # NOTE: 如果 FineGrainedScoreType 为 LLM，则因为当前只有是/否相关的判断，因此分数只有 1.0 或 0.0
             fine_grained_scores = self.llm_relevance_determiner_parallel(
                 (
                     kwargs.get("translated_query", query_for_search)
-                    if kwargs.get("use_independent_query_in_scores", True)
+                    if agent_options.knowledge_query_options.use_independent_query_in_scores
                     else kwargs["input"]
                 ),
                 [doc for doc, _ in context_docs_with_scores],
                 llm,
                 **kwargs,
             )
-        elif fine_grained_score_type == FineGrainedScoreType.EXCLUSIVE_SIMILARITY_MODEL:
+        elif fine_grained_score_type.value == FineGrainedScoreType.EXCLUSIVE_SIMILARITY_MODEL.value:
             # 使用专属小模型计算的分数作为最终的细粒度相似度分数
             # TODO: 目前知识类资源和工具类资源是独立使用小模型的，可以考虑在都要计算的情况下，合成一个batch进行计算
             # NOTE: 如果有 index_content 且是结构化数据则取 index_content，否则才取 page_content（兼容写法）。
@@ -550,7 +567,7 @@ class IntentRecognition(BaseModel):
                     (
                         (
                             kwargs.get("translated_query", query_for_search)
-                            if kwargs.get("use_independent_query_in_scores", False)
+                            if agent_options.knowledge_query_options.use_independent_query_in_scores
                             else kwargs["input"]
                         ),
                         (
@@ -563,7 +580,7 @@ class IntentRecognition(BaseModel):
                 ]
             )
             fine_grained_scores = [float(fine_grained_score) for fine_grained_score in fine_grained_scores]
-        elif fine_grained_score_type == FineGrainedScoreType.EMBEDDING:
+        elif fine_grained_score_type.value == FineGrainedScoreType.EMBEDDING.value:
             # 直接使用emb分数作为最终的细粒度相似度分数
             fine_grained_scores = [float(emb_score) for _, emb_score in context_docs_with_scores]
         else:
@@ -808,60 +825,54 @@ class IntentRecognition(BaseModel):
         self,
         query,
         llm,
-        with_structured_data,  # 用户勾选的知识中是否包含了结构化数据
-        with_index_specific_search,
-        with_index_specific_search_init,
-        with_index_specific_search_translation,
-        with_index_specific_search_keywords,
-        with_es_search_query,
-        with_es_search_keywords,
-        with_rrf,
         knowledge_items,
         knowledge_bases,
-        knowledge_resource_rough_recall_topk,
-        knowledge_resource_reject_threshold,
-        knowledge_resource_fine_grained_score_type,
-        self_query_threshold_top_n,
+        agent_options,
         **kwargs,
     ):
         """知识类资源检索并解析结果"""
         query_for_search = query
         if not any(
             [
-                with_index_specific_search,
-                with_index_specific_search_init,
-                with_index_specific_search_translation,
-                with_index_specific_search_keywords,
-                with_es_search_query,
-                with_es_search_keywords,
+                agent_options.intent_recognition_options.with_index_specific_search,
+                agent_options.intent_recognition_options.with_index_specific_search_init,
+                agent_options.intent_recognition_options.with_index_specific_search_translation,
+                agent_options.intent_recognition_options.with_index_specific_search_keywords,
+                agent_options.intent_recognition_options.with_es_search_query,
+                agent_options.intent_recognition_options.with_es_search_keywords,
             ]
         ):
             raise RuntimeError("请至少选择一种召回方式！")
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            if with_index_specific_search:
+            if agent_options.intent_recognition_options.with_index_specific_search:
                 future_index_specific = executor.submit(
                     self.search_knowledge_index_specific,
                     knowledge_items=knowledge_items,
                     knowledge_bases=knowledge_bases,
                     query=query_for_search,
-                    topk=knowledge_resource_rough_recall_topk,
+                    topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
+                    agent_options=agent_options,
                     **kwargs,
                 )
-            if with_index_specific_search_init and query_for_search != kwargs["input"]:
+            if (
+                agent_options.intent_recognition_options.with_index_specific_search_init
+                and query_for_search != kwargs["input"]
+            ):
                 future_index_specific_init = executor.submit(
                     self.search_knowledge_index_specific,
                     knowledge_items=knowledge_items,
                     knowledge_bases=knowledge_bases,
                     query=kwargs["input"],
-                    topk=knowledge_resource_rough_recall_topk,
+                    topk=agent_options.intent_recognition_options.knowledge_resource_rough_recall_topk,
+                    agent_options=agent_options,
                     **kwargs,
                 )
-            if with_index_specific_search_translation:
+            if agent_options.intent_recognition_options.with_index_specific_search_translation:
                 future_translated_query = executor.submit(
                     self.query_translation,
                     query=(
                         query_for_search
-                        if kwargs.get("use_independent_query_in_translation", False)
+                        if agent_options.knowledge_query_options.use_independent_query_in_translation
                         else kwargs["input"]
                     ),
                     llm=llm,
@@ -873,80 +884,98 @@ class IntentRecognition(BaseModel):
                     knowledge_items=knowledge_items,
                     knowledge_bases=knowledge_bases,
                     translated_query=translated_query,
-                    topk=knowledge_resource_rough_recall_topk,
+                    topk=agent_options.intent_recognition_options.knowledge_resource_rough_recall_topk,
+                    agent_options=agent_options,
                     **kwargs,
                 )
-                if kwargs.get("use_translated_query_in_scores", True) and translated_query:
+                if agent_options.knowledge_query_options.use_translated_query_in_scores and translated_query:
                     kwargs["translated_query"] = translated_query
-            if with_es_search_query:
+            if agent_options.intent_recognition_options.with_es_search_query:
                 future_es_query = executor.submit(
                     self.search_knowledge_es_query,
                     knowledge_items=knowledge_items,
                     knowledge_bases=knowledge_bases,
                     query=query_for_search,
-                    topk=knowledge_resource_rough_recall_topk,
+                    topk=agent_options.intent_recognition_options.knowledge_resource_rough_recall_topk,
                     **kwargs,
                 )
-            if with_index_specific_search_keywords or with_es_search_keywords:
+            if (
+                agent_options.intent_recognition_options.with_index_specific_search_keywords
+                or agent_options.intent_recognition_options.with_es_search_keywords
+            ):
                 future_extracted_keywords = executor.submit(
                     self.extract_query_keywords,
                     query=query_for_search,
                     llm=llm,
                     **kwargs,
                 )
-            if with_index_specific_search_keywords:
+            if agent_options.intent_recognition_options.with_index_specific_search_keywords:
                 future_index_specific_keywords = executor.submit(
                     self.search_knowledge_index_specific_keywords,
                     knowledge_items=knowledge_items,
                     knowledge_bases=knowledge_bases,
                     extracted_keywords=future_extracted_keywords.result(),
-                    topk=knowledge_resource_rough_recall_topk,
+                    topk=agent_options.intent_recognition_options.knowledge_resource_rough_recall_topk,
+                    agent_options=agent_options,
                     **kwargs,
                 )
-            if with_es_search_keywords:
+            if agent_options.intent_recognition_options.with_es_search_keywords:
                 future_es_keywords = executor.submit(
                     self.search_knowledge_es_keywords,
                     knowledge_items=knowledge_items,
                     knowledge_bases=knowledge_bases,
                     extracted_keywords=future_extracted_keywords.result(),
-                    topk=knowledge_resource_rough_recall_topk,
+                    topk=agent_options.intent_recognition_options.knowledge_resource_rough_recall_topk,
                     **kwargs,
                 )
             # TODO: 去除 nature 分支
-            if with_structured_data:
+            if agent_options.intent_recognition_options.with_structured_data:
                 future_nature = executor.submit(
                     self.search_knowledge_nature,
                     knowledge_items=knowledge_items,
                     knowledge_bases=knowledge_bases,
                     query=query_for_search,
-                    topk=knowledge_resource_rough_recall_topk,
-                    **kwargs,
+                    topk=agent_options.intent_recognition_options.knowledge_resource_rough_recall_topk,
+                    agent_options=agent_options**kwargs,
                 )
 
-            retrieved_results_index_specific = future_index_specific.result() if with_index_specific_search else []
+            retrieved_results_index_specific = (
+                future_index_specific.result()
+                if agent_options.intent_recognition_options.with_index_specific_search
+                else []
+            )
 
-            if with_index_specific_search_init and query_for_search != kwargs["input"]:
+            if (
+                agent_options.intent_recognition_options.with_index_specific_search_init
+                and query_for_search != kwargs["input"]
+            ):
                 retrieved_results_index_specific_init = future_index_specific_init.result()
             else:
                 retrieved_results_index_specific_init = []
 
-            if with_index_specific_search_translation:
+            if agent_options.intent_recognition_options.with_index_specific_search_translation:
                 retrieved_results_index_specific_translation = future_index_specific_translation.result()
             else:
                 retrieved_results_index_specific_translation = []
 
-            if with_index_specific_search_keywords:
+            if agent_options.intent_recognition_options.with_index_specific_search_keywords:
                 retrieved_results_index_specific_keywords = future_index_specific_keywords.result()
             else:
                 retrieved_results_index_specific_keywords = []
 
-            retrieved_results_es_query = future_es_query.result() if with_es_search_query else []
+            retrieved_results_es_query = (
+                future_es_query.result() if agent_options.intent_recognition_options.with_es_search_query else []
+            )
 
-            retrieved_results_es_keywords = future_es_keywords.result() if with_es_search_keywords else []
+            retrieved_results_es_keywords = (
+                future_es_keywords.result() if agent_options.intent_recognition_options.with_es_search_keywords else []
+            )
 
-            retrieved_results_nature = future_nature.result() if with_structured_data else []
+            retrieved_results_nature = (
+                future_nature.result() if agent_options.intent_recognition_options.with_structured_data else []
+            )
 
-        if with_rrf:
+        if agent_options.intent_recognition_options.with_rrf:
             fusion_docs = self.weighted_reciprocal_rank_fusion(
                 [
                     retrieved_results_index_specific,
@@ -978,21 +1007,29 @@ class IntentRecognition(BaseModel):
 
         # TODO: 这里也可以考虑先使用 rerank 小模型排个序再取 self_query_threshold_top_n 文档来判断 query 是否涉及结构化数据
         # TODO: 待去除 nature 分支后即可正式走以下流程：
-        if with_structured_data and any([is_structured_data(doc) for doc in fusion_docs[:self_query_threshold_top_n]]):
+        if agent_options.intent_recognition_options.with_structured_data and any(
+            [
+                is_structured_data(doc)
+                for doc in fusion_docs[: agent_options.intent_recognition_options.self_query_threshold_top_n]
+            ]
+        ):
             # 在这种情况下需要使用 self-query 模块进行 2 次召回
             re_retrieved_res = self.search_knowledge_self_query(query_for_search, llm, **kwargs)
             fusion_docs.extend(re_retrieved_res)
 
         context_docs_with_scores = [(Document(**item), item["metadata"]["__score__"]) for item in fusion_docs]
         fine_grained_scores = self.calculate_fine_grained_scores(
-            knowledge_resource_fine_grained_score_type,
+            agent_options.knowledge_query_options.knowledge_resource_fine_grained_score_type,
             query_for_search,
             llm,
             context_docs_with_scores,
+            agent_options,
             **kwargs,
         )
         return self.separate_docs_by_scores(
-            context_docs_with_scores, fine_grained_scores, knowledge_resource_reject_threshold
+            context_docs_with_scores,
+            fine_grained_scores,
+            agent_options.knowledge_query_options.knowledge_resource_reject_threshold,
         )
 
     @timeit(message="工具类资源粗召+精排")
@@ -1000,12 +1037,6 @@ class IntentRecognition(BaseModel):
         self,
         query,
         llm,
-        tool_resource_item_ids,
-        tool_resource_base_ids,
-        tool_resource_rough_recall_topk,
-        tool_resource_reject_threshold,
-        tool_resource_fine_grained_score_type,
-        gen_pseudo_tool_resource_desc=None,
         **kwargs,
     ):
         """工具类资源检索并解析结果
@@ -1040,10 +1071,8 @@ class IntentRecognition(BaseModel):
             # 其他情况：如果存在一些可能是 query【意图不明确】或【描述不清】导致的中间分相关文档，根据中分相关文档进行 query 重写
             return Decision.QUERY_CLARIFICATION
 
-    def query_cls_pipeline(
-        self, chat_history, query, llm, merge_query_cls_with_resp_or_rewrite, with_query_cls, **kwargs
-    ):
-        if merge_query_cls_with_resp_or_rewrite:
+    def query_cls_pipeline(self, chat_history, query, llm, agent_options, **kwargs):
+        if agent_options.intent_recognition_options.merge_query_cls_with_resp_or_rewrite:
             if chat_history:
                 result = self.query_cls_with_resp_or_rewrite(chat_history, query, llm, **kwargs)
                 query_cls = result["query_cls"]
@@ -1067,7 +1096,7 @@ class IntentRecognition(BaseModel):
                 independent_query = query
         else:
             if chat_history:
-                if with_query_cls:
+                if agent_options.intent_recognition_options.with_query_cls:
                     query_cls = self.latest_query_classification(chat_history, query, llm, **kwargs)
                 else:
                     query_cls = "continue"
@@ -1114,26 +1143,10 @@ class IntentRecognition(BaseModel):
         independent_query,
         llm,
         tools,
-        with_structured_data,
-        with_index_specific_search,
-        with_index_specific_search_init,
-        with_index_specific_search_translation,
-        with_index_specific_search_keywords,
-        with_es_search_query,
-        with_es_search_keywords,
-        with_rrf,
-        knowledge_items: list[dict],
-        knowledge_bases: list[dict],
-        knowledge_resource_rough_recall_topk,
-        knowledge_resource_reject_threshold,
-        knowledge_resource_fine_grained_score_type,
-        self_query_threshold_top_n,
+        knowledge_items,
+        knowledge_bases,
         do_tool_resource_retrieve,
-        tool_resource_base_ids,
-        tool_resource_rough_recall_topk,
-        tool_resource_reject_threshold,
-        tool_resource_fine_grained_score_type,
-        gen_pseudo_tool_resource_desc,
+        agent_options,
         **kwargs,
     ):
         # ====================================================================================================
@@ -1149,20 +1162,9 @@ class IntentRecognition(BaseModel):
             ) = self.retrieve_and_parse_knowledge_resource(
                 query=independent_query,
                 llm=llm,
-                with_structured_data=with_structured_data,
-                with_index_specific_search=with_index_specific_search,
-                with_index_specific_search_init=with_index_specific_search_init,
-                with_index_specific_search_translation=with_index_specific_search_translation,
-                with_index_specific_search_keywords=with_index_specific_search_keywords,
-                with_es_search_query=with_es_search_query,
-                with_es_search_keywords=with_es_search_keywords,
-                with_rrf=with_rrf,
                 knowledge_items=knowledge_items,
                 knowledge_bases=knowledge_bases,
-                knowledge_resource_rough_recall_topk=knowledge_resource_rough_recall_topk,
-                knowledge_resource_reject_threshold=knowledge_resource_reject_threshold,
-                knowledge_resource_fine_grained_score_type=knowledge_resource_fine_grained_score_type,
-                self_query_threshold_top_n=self_query_threshold_top_n,
+                agent_options=agent_options,
                 **kwargs,
             )
         else:
@@ -1182,11 +1184,6 @@ class IntentRecognition(BaseModel):
                 query=independent_query,
                 llm=llm,
                 tool_resource_item_ids=[],
-                tool_resource_base_ids=tool_resource_base_ids,
-                tool_resource_rough_recall_topk=tool_resource_rough_recall_topk,
-                tool_resource_reject_threshold=tool_resource_reject_threshold,
-                tool_resource_fine_grained_score_type=tool_resource_fine_grained_score_type,
-                gen_pseudo_tool_resource_desc=gen_pseudo_tool_resource_desc,
                 **kwargs,
             )
             raise NotImplementedError("目前开发侧还不支持为工具类、agent类等资源提供注册表管理机制，并自动与知识库关联")
@@ -1230,33 +1227,7 @@ class IntentRecognition(BaseModel):
         llm: BaseChatModel,
         tools: List[BaseTool],
         callbacks: Callbacks = None,
-        chat_history: List = None,
-        intent_code: str = None,
-        with_query_cls: bool = True,
-        force_process_by_agent: bool = False,
-        with_structured_data: bool = False,
-        with_index_specific_search: bool = True,
-        with_index_specific_search_init: bool = True,
-        with_index_specific_search_translation: bool = False,
-        with_index_specific_search_keywords: bool = False,
-        with_es_search_query: bool = False,
-        with_es_search_keywords: bool = False,
-        with_rrf: bool = True,
-        knowledge_items: List[dict] = [],
-        knowledge_bases: List[dict] = [],
-        knowledge_resource_rough_recall_topk: int = 10,
-        knowledge_resource_reject_threshold: Tuple[float, float] = (0.0001, 0.1),
-        knowledge_resource_fine_grained_score_type: FineGrainedScoreType = FineGrainedScoreType.LLM,
-        self_query_threshold_top_n: int = 0,
-        tool_resource_base_ids: List[int] = [],
-        tool_resource_rough_recall_topk: int = 10,
-        tool_resource_reject_threshold: Tuple[float, float] = (0.25, 0.75),
-        tool_resource_fine_grained_score_type: FineGrainedScoreType = FineGrainedScoreType.EXCLUSIVE_SIMILARITY_MODEL,
-        tool_count_threshold: int = 10000,
-        gen_pseudo_tool_resource_desc: bool = True,
-        retrieved_knowledge_resources: List = None,
-        merge_query_cls_with_resp_or_rewrite: bool = False,
-        independent_query_mode: IndependentQueryMode = IndependentQueryMode.SUM_AND_CONCATE,
+        agent_options: Optional[AgentOptions] = None,
         **kwargs,
     ):
         """
@@ -1266,84 +1237,44 @@ class IntentRecognition(BaseModel):
         :param llm: 使用的 LLM
         :param tools: 非系统内置的候选工具列表
         :param callbacks: callback 列表
-        :param chat_history: 多轮会话历史
-        :param intent_code: 约定的意图识别 code，用于快速单跳
-        :param with_query_cls: 是否进行意图切换检测。NOTE: 目前仅在非 merge_query_cls_with_resp_or_rewrite 的情况下才生效
-        :param force_process_by_agent: 是否强制进入 IntentStatus.PROCESS_BY_AGENT 的 status。用于 AIDEV 产品页面召回测试
-        :param with_structured_data: 用户勾选的知识中是否带结构化数据。NOTE: 目前该值为 True 时才会进行 nature 方式的知识召回
-        :param with_index_specific_search: 是否使用基于 embedding 模型的 index specific 召回
-        :param with_index_specific_search_init: 是否使用原始的 query，使用基于 embedding 模型的 index specific 召回
-            注意仅在 query 确实被改写了才生效
-        :param with_index_specific_search_translation: 是否在判断发现输入的 query 为英文的情况下，将其翻译成中文后再进行召回
-        :param with_index_specific_search_keywords: 是否使用 query 提取的关键词，
-            并使用基于 embedding 模型的 index specific 召回
-        :param with_es_search_query: 是否使用原始 query 在 ES 上进行召回
-        :param with_es_search_keywords: 是否使用 query 提取的关键词 在 ES 上进行召回
-        :param with_rrf: 是否使用 weighted reciprocal rank fusion 对多路召回的结果进行融合。
-            如果为 False，则直接合并后使用 __score__ 字段的值进行降序排序
-        :param knowledgeitem_ids: 知识类资源 item ID 列表
-        :param knowledgebase_ids: 知识类资源 base ID 列表
-        :param knowledge_resource_rough_recall_topk: 知识类资源粗召 topk 值
-        :param knowledge_resource_reject_threshold: 知识类资源拒答和直接回答的阈值
-        :param knowledge_resource_fine_grained_score_type: 知识类资源进行细粒度的相似度计算的模型类型
-        :param self_query_threshold_top_n: 在第 1 步意图识别判断用户 query 是否涉及结构化数据的时候，
-            使用全量检索结果的 top_n 中是否包含结构化数据来判断。
-            NOTE: 当前先将其值置为0，即不开启 self query 分支。
-            TODO: 后续去除 nature 分支后，即可将其值置为 5 等，开启 self query 分支。
-        :param tool_resource_base_ids: 工具类资源 base ID 列表。NOTE: 目前工具类资源统一放 base ID 中不放 item ID 中
-        :param tool_resource_rough_recall_topk: 工具类资源粗召 topk 值
-        :param tool_resource_reject_threshold: 工具类资源拒答和直接回答的阈值
-        :param tool_resource_fine_grained_score_type: 工具类资源进行细粒度的相似度计算的模型类型
-        :param tool_count_threshold: 当能够获取的工具的个数大于该阈值时，才开启工具类资源的粗召 + 精排，
-            否则每次调用兜底LLM agent时都附上所有工具类资源
-        :param gen_pseudo_tool_resource_desc: 在进行工具类资源的粗召时，是否进行伪工具类资源描述的生成
-        :param retrieved_knowledge_resources: 用户自带的历史检索的上下文
-        :param merge_query_cls_with_resp_or_rewrite: 是否将意图切换检测和 query 重写/直接答复合并在一次LLM调用中
-        :param independent_query_mode: 独立 query 的构造逻辑
+        :param agent_options: 意图识别和知识库查询的参数选项
         """
+        # 获取客户端对象
+        client = BKAidevApi.get_client_by_username(username="")
+        knowledge_items = [
+            client.api.appspace_retrieve_knowledge(path_params={"id": id_})["data"]
+            for id_ in agent_options.knowledge_query_options.knowledge_item_ids
+        ]
+        knowledge_bases = [
+            client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"]
+            for id_ in agent_options.knowledge_query_options.knowledge_base_ids
+        ]
+
         if callbacks:
             _set_config_context({"callbacks": callbacks})
-
         # ====================================================================================================
         # 如果是 force_process_by_agent 的情况下，则直接走知识类资源召回+精排的路，且获取 make decision 结果
         # ====================================================================================================
-        if force_process_by_agent:
+        if agent_options.intent_recognition_options.force_process_by_agent:
             return self.independent_query_pipeline(
                 query,
                 None,
                 [],
-                with_structured_data,
-                with_index_specific_search,
-                with_index_specific_search_init,
-                with_index_specific_search_translation,
-                with_index_specific_search_keywords,
-                with_es_search_query,
-                with_es_search_keywords,
-                with_rrf,
                 knowledge_items,
                 knowledge_bases,
-                knowledge_resource_rough_recall_topk,
-                knowledge_resource_reject_threshold,
-                knowledge_resource_fine_grained_score_type,
-                self_query_threshold_top_n,
                 False,
-                None,
-                None,
-                None,
-                None,
-                None,
+                agent_options,
                 **kwargs,
             )
 
         # ====================================================================================================
         # 如果带历史检索上下文，则说明用户的意图非常明确，需设置工具列表为空，且直接使用该上下文进行回答
         # ====================================================================================================
-        if retrieved_knowledge_resources:
+        if agent_options.intent_recognition_options.retrieved_knowledge_resources:
             return {
                 "status": IntentStatus.QA_WITH_RETRIEVED_KNOWLEDGE_RESOURCES,
-                "retrieved_knowledge_resources": retrieved_knowledge_resources,
+                "retrieved_knowledge_resources": agent_options.intent_recognition_options.retrieved_knowledge_resources,
             }
-
         # ====================================================================================================
         # 为【无需history的】且可通过3种特殊意图识别方式判断的query提供快速单跳通道
         # ====================================================================================================
@@ -1352,8 +1283,8 @@ class IntentRecognition(BaseModel):
         # 假设是跳至某个具体的工具，则直接调用LLM进行工具参数生成，然后调用工具即可
         # 假设是跳至某个智能工单查证场景这种特殊的通道，则调用对应的分类小模型，然后进行工单查证
         # 假设是跳至某个特殊的知识库索引，则可能是调用对应的索引进行召回，然后进行LLM问答
-        if intent_code:
-            intent = self.intent_recognition_by_code(intent_code)
+        if agent_options.intent_recognition_options.intent_code:
+            intent = self.intent_recognition_by_code(agent_options.intent_recognition_options.intent_code)
             raise NotImplementedError("需要根据该具体的intent设定进行后续对应处理逻辑的实现")
         intent = self.intent_recognition_by_template(query)
         if intent:
@@ -1377,17 +1308,20 @@ class IntentRecognition(BaseModel):
         # NOTE: 待开发侧支持为工具类、agent类等资源提供注册表管理机制，并自动与知识库关联后，
         # tool_resource_base_ids 与传入的 tools 会有关联，本判断条件需要更新
         # TODO: 待上述事项支持后，需要改成使用 exec_intent_recognition 传进来的参数
-        do_tool_resource_retrieve = tool_resource_base_ids and len(tools) > tool_count_threshold
+        do_tool_resource_retrieve = (
+            agent_options.intent_recognition_options.tool_resource_base_ids
+            and len(tools) > agent_options.intent_recognition_options.tool_count_threshold
+        )
         # NOTE: 目前认为只有绑定了知识库，或者需要进行工具类资源召回的情况下，才可能需要进行 independent query 的改写
         # 此外，还加了 with_query_cls_and_rewrite 总开关
         res = query  # 默认初始化为 query
         if knowledge_items or knowledge_bases or do_tool_resource_retrieve:
-            if independent_query_mode == IndependentQueryMode.REWRITE:
-                res = self.query_cls_pipeline(
-                    chat_history, query, llm, merge_query_cls_with_resp_or_rewrite, with_query_cls, **kwargs
+            if agent_options.knowledge_query_options.independent_query_mode == IndependentQueryMode.REWRITE:
+                res = self.query_cls_pipeline(query, llm, agent_options, **kwargs)
+            elif agent_options.knowledge_query_options.independent_query_mode == IndependentQueryMode.SUM_AND_CONCATE:
+                sum_res = self.sum_chat_history_for_query(
+                    agent_options.intent_recognition_options.chat_history, query, llm, **kwargs
                 )
-            elif independent_query_mode == IndependentQueryMode.SUM_AND_CONCATE:
-                sum_res = self.sum_chat_history_for_query(chat_history, query, llm, **kwargs)
                 if sum_res:
                     res = f"{sum_res}\n{query}"
 
@@ -1400,25 +1334,9 @@ class IntentRecognition(BaseModel):
             independent_query,
             llm,
             tools,
-            with_structured_data,
-            with_index_specific_search,
-            with_index_specific_search_init,
-            with_index_specific_search_translation,
-            with_index_specific_search_keywords,
-            with_es_search_query,
-            with_es_search_keywords,
-            with_rrf,
             knowledge_items,
             knowledge_bases,
-            knowledge_resource_rough_recall_topk,
-            knowledge_resource_reject_threshold,
-            knowledge_resource_fine_grained_score_type,
-            self_query_threshold_top_n,
             do_tool_resource_retrieve,
-            tool_resource_base_ids,
-            tool_resource_rough_recall_topk,
-            tool_resource_reject_threshold,
-            tool_resource_fine_grained_score_type,
-            gen_pseudo_tool_resource_desc,
+            agent_options,
             **kwargs,
         )
