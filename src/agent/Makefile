@@ -1,5 +1,5 @@
 # 导入子目录中的 Makefile 文件
-ROOT_DIR?=$(shell git rev-parse --show-toplevel)
+ROOT_DIR?=$(shell git rev-parse --show-toplevel)/src/agent
 
 .PHONY: ALL
 ALL: init requirements
@@ -21,12 +21,6 @@ init: poetry-install .git/hooks/pre-commit .git/hooks/pre-push
 .PHONY: poetry-install
 poetry-install:
 	poetry install --remove-untracked
-
-.git/hooks/pre-commit: ${ROOT_DIR}/.pre-commit-config.yaml
-	poetry run pre-commit install -t pre-commit
-
-.git/hooks/pre-push: ${ROOT_DIR}/.pre-commit-config.yaml
-	poetry run pre-commit install -t pre-push
 
 .PHONY: backend-test
 test:
