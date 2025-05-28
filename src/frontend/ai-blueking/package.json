@@ -91,6 +91,7 @@
     "dompurify": ">=3.2.4",
     "mermaid": "10.9.3",
     "motion-v": "^0.11.3",
+    "markdown-it-copy-code": "^0.1.3",
     "tippy.js": "6.3.7",
     "vue-draggable-resizable": "^3.0.0"
   },

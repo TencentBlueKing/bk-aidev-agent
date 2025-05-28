@@ -8,40 +8,32 @@
 
 ## 方法列表
 
-| 方法名                | 参数                                         | 返回值   | 描述                                                                                                                             |
-| --------------------- | -------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `handleShow()`        | -                                            | `void`   | 主动显示 AI 小鲸窗口。                                                                                                           |
-| `handleClose()`       | -                                            | `void`   | 关闭 AI 小鲸窗口。                                                                                                          |
-| `handleStop()`        | -                                            | `void`   | 停止当前正在进行的 AI 内容生成（流式输出）。                                                                                      |
-| `handleSendMessage(message)` | `message: string`                    | `void`   | 发送消息到 AI 小鲸，可用于编程式触发对话。 |
-| `handleShortcutClick(shortcut)` | `shortcut: ShortCut`               | `void`   | 模拟点击快捷操作按钮，可用于编程式触发预设的操作。                                                                                 |
-| `handleDelete(index)`  | `index: number`                             | `void`   | 删除指定索引位置的消息。                                                                                                      |
-| `handleRegenerate(index)` | `index: number`                          | `void`   | 重新生成指定索引位置的消息。                                                                                                  |
-| `handleResend(index, options)` | `index: number, options: {message: string, cite: string}`   | `void`   | 重发指定索引位置的消息，可修改消息内容和引用内容。                                                                          |
-| `updateRequestOptions(options)` | `options: { url?: string; headers?: Record<string, string>; data?: any }` | `void` | 动态更新请求选项，可以修改API地址或请求参数。对于需要在运行时切换智能体或修改请求参数的场景非常有用。 |
-| `focusInput()` | - | `void` | **v1.1.1新增** 程序式聚焦输入框。可用于在特定时机主动聚焦到输入框，提升用户体验。 |
+| 方法名                          | 参数                                                                                                                  | 返回值          | 描述                                                                                                  |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------- |
+| `handleShow()`                  | -                                                                                                                     | `void`          | 主动显示 AI 小鲸窗口。                                                                                |
+| `handleClose()`                 | -                                                                                                                     | `void`          | 关闭 AI 小鲸窗口。                                                                                    |
+| `handleStop()`                  | -                                                                                                                     | `void`          | 停止当前正在进行的 AI 内容生成（流式输出）。                                                          |
+| `handleSendMessage(message)`    | `message: string`                                                                                                     | `void`          | 发送消息到 AI 小鲸，可用于编程式触发对话。                                                            |
+| `handleShortcutClick(shortcut)` | `shortcut: IShortcut`                                                                                                 | `void`          | 模拟点击快捷操作按钮，可用于编程式触发快捷操作。                                                      |
+| `handleDelete(index)`           | `index: number`                                                                                                       | `void`          | 删除指定索引位置的消息。                                                                              |
+| `handleRegenerate(index)`       | `index: number`                                                                                                       | `void`          | 重新生成指定索引位置的消息。                                                                          |
+| `handleResend(index, options)`  | `index: number, options: {message: string, cite: string}`                                                             | `void`          | 重发指定索引位置的消息，可修改消息内容和引用内容。                                                    |
+| `initSession()`                 | -                                                                                                                     | `Promise<void>` | 初始化会话，获取开场白和预设问题。                                                                    |
+| `updateRequestOptions(options)` | `options: { url?: string; headers?: Record<string, string>; data?: any; context?: Array<{key: string, value: any}> }` | `void`          | 动态更新请求选项，可以修改API地址或请求参数。对于需要在运行时切换智能体或修改请求参数的场景非常有用。 |
+| `updateRequestOptions(options)` | `options: { url?: string; headers?: Record<string, string>; data?: any; context?: Array<Object> }`                    | `void`          | 动态更新请求选项，可以修改API地址或请求参数。对于需要在运行时切换智能体或修改请求参数的场景非常有用。 |
+| `focusInput()`                  | -                                                                                                                     | `void`          | **v1.1.1新增** 程序式聚焦输入框。可用于在特定时机主动聚焦到输入框，提升用户体验。                     |
 
 ::: danger 已废弃方法
 以下方法在相应版本中已被移除:
+
 - `sendChat(options)` (v1.0.0): 已被 `handleSendMessage(options)` 替代
 - `initSession()` (v1.1.0): 会话初始化现在自动处理，无需手动调用
-:::
-
-## `ShortCut` 类型
-
-```typescript
-interface ShortCut {
-  type: string;    // 操作类型
-  label: string;   // 显示的标签
-  cite?: boolean;  // 是否需要引用文本
-  prompt?: string; // 发送到AI的提示词
-  icon?: string;   // 图标名称
-}
-```
+  :::
 
 ## 调用示例
 
 :::code-group
+
 ```vue [Vue 3]
 <template>
   <AIBlueking ref="aiBlueking" :url="apiUrl" />
@@ -52,18 +44,18 @@ interface ShortCut {
 </template>
 
 <script lang="ts" setup>
-import { ref } from 'vue';
-import { AIBlueking } from '@blueking/ai-blueking';
+  import { ref } from "vue"
+  import { AIBlueking } from "@blueking/ai-blueking"
 
-const aiBlueking = ref(null);
-const apiUrl = '...';
+  const aiBlueking = ref(null)
+  const apiUrl = "..."
 
-const show = () => aiBlueking.value?.handleShow();
-const stop = () => aiBlueking.value?.handleStop();
-const send = () => {
-  aiBlueking.value?.handleSendMessage('你好，这是一条测试消息');
-};
-const focus = () => aiBlueking.value?.focusInput();
+  const show = () => aiBlueking.value?.handleShow()
+  const stop = () => aiBlueking.value?.handleStop()
+  const send = () => {
+    aiBlueking.value?.handleSendMessage("你好，这是一条测试消息")
+  }
+  const focus = () => aiBlueking.value?.focusInput()
 </script>
 ```
 
@@ -79,22 +71,29 @@ const focus = () => aiBlueking.value?.focusInput();
 </template>
 
 <script>
-import { AIBlueking } from '@blueking/ai-blueking/vue2';
+  import { AIBlueking } from "@blueking/ai-blueking/vue2"
 
-export default {
-  components: { AIBlueking },
-  data: () => ({ apiUrl: '...' }),
-  methods: {
-    show() { this.$refs.aiBlueking.handleShow(); },
-    stop() { this.$refs.aiBlueking.handleStop(); },
-    send() {
-      this.$refs.aiBlueking.handleSendMessage('你好，这是一条测试消息');
+  export default {
+    components: { AIBlueking },
+    data: () => ({ apiUrl: "..." }),
+    methods: {
+      show() {
+        this.$refs.aiBlueking.handleShow()
+      },
+      stop() {
+        this.$refs.aiBlueking.handleStop()
+      },
+      send() {
+        this.$refs.aiBlueking.handleSendMessage("你好，这是一条测试消息")
+      },
+      focus() {
+        this.$refs.aiBlueking.focusInput()
+      },
     },
-    focus() { this.$refs.aiBlueking.focusInput(); }
   }
-};
 </script>
 ```
+
 :::
 
 ## 动态更新请求选项
@@ -112,32 +111,87 @@ export default {
 </template>
 
 <script setup>
-import { ref } from 'vue';
-import { AIBlueking } from '@blueking/ai-blueking';
+  import { ref } from "vue"
+  import { AIBlueking } from "@blueking/ai-blueking"
 
-const aiBlueking = ref(null);
-const apiUrl = 'https://api.example.com/agent1';
+  const aiBlueking = ref(null)
+  const apiUrl = "https://api.example.com/agent1"
 
-// 切换不同的智能体API地址 （直接修改 AIblueking 的 url 参数也可以实现）
-const switchAgent = (agentId) => {
-  const newUrl = `https://api.example.com/${agentId}`;
-  aiBlueking.value?.updateRequestOptions({
-    url: newUrl,
-  });
-  
-  // 可选：重新初始化会话以获取新智能体的配置
-  aiBlueking.value?.initSession();
-};
+  // 切换不同的智能体API地址 （直接修改 AIblueking 的 url 参数也可以实现）
+  const switchAgent = (agentId) => {
+    const newUrl = `https://api.example.com/${agentId}`
+    aiBlueking.value?.updateRequestOptions({
+      url: newUrl,
+    })
 
-// 添加自定义请求头
-const addCustomHeader = () => {
-  aiBlueking.value?.updateRequestOptions({
-    headers: {
-      'X-Custom-Header': 'custom-value',
-      'Authorization': 'Bearer your-token'
+    // 可选：重新初始化会话以获取新智能体的配置
+    aiBlueking.value?.initSession()
+  }
+
+  // 添加自定义请求头
+  const addCustomHeader = () => {
+    aiBlueking.value?.updateRequestOptions({
+      headers: {
+        "X-Custom-Header": "custom-value",
+        Authorization: "Bearer your-token",
+      },
+      // 1.1版本可以添加context参数
+      context: [{ language: "javascript" }, { scenario: "code_review" }],
+    })
+  }
+</script>
+```
+
+## 触发快捷操作
+
+您可以通过`handleShortcutClick`方法编程式地触发快捷操作：
+
+```vue
+<template>
+  <AIBlueking ref="aiBlueking" :url="apiUrl" :shortcuts="shortcuts" />
+  <button @click="triggerExplain">解释代码</button>
+</template>
+
+<script setup>
+  import { ref } from 'vue';
+  import { AIBlueking, type IShortcut } from '@blueking/ai-blueking';
+
+  const aiBlueking = ref(null);
+  const apiUrl = '...';
+
+  const shortcuts = [
+    {
+      id: 'explain',
+      name: '解释代码',
+      icon: 'bkai-code',
+      components: [
+        {
+          type: 'textarea',
+          key: 'code',
+          label: '代码内容',
+          fillBack: true
+        }
+      ]
     }
-  });
-};
+  ];
+
+  const triggerExplain = () => {
+    // 找到对应ID的快捷操作
+    const shortcut = shortcuts.find(s => s.id === 'explain');
+    if (!shortcut) return;
+
+    // 手动设置要填充的文本
+    const textComponent = shortcut.components.find(c => c.fillBack);
+    if (textComponent) {
+      textComponent.selectedText = 'function example() { console.log("Hello World"); }';
+    }
+
+    // 显示AI小鲸窗口
+    aiBlueking.value?.handleShow();
+
+    // 触发快捷操作
+    aiBlueking.value?.handleShortcutClick(shortcut);
+  };
 </script>
 ```
 
@@ -152,14 +206,14 @@ const addCustomHeader = () => {
 </template>
 
 <script setup>
-import { ref } from 'vue';
-import { AIBlueking } from '@blueking/ai-blueking';
+  import { ref } from "vue"
+  import { AIBlueking } from "@blueking/ai-blueking"
 
-const aiBlueking = ref(null);
+  const aiBlueking = ref(null)
 
-const getContents = () => {
-  const contents = aiBlueking.value?.sessionContents;
-  console.log('当前会话内容:', contents);
-};
+  const getContents = () => {
+    const contents = aiBlueking.value?.sessionContents
+    console.log("当前会话内容:", contents)
+  }
 </script>
 ```

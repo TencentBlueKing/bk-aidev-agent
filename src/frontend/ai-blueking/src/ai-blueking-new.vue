@@ -21,7 +21,10 @@
         @dragging="handleDragging"
         @resizing="handleResizing"
       >
-        <div class="ai-blueking-container">
+        <div
+          ref="rootNode"
+          class="ai-blueking-container"
+        >
           <loading-overlay :show="isLoadingSessionContents" />
           <!-- 顶部栏 -->
           <ai-blueking-header
@@ -82,15 +85,19 @@
                 :style="{ opacity: hasSessionContents ? 1 : 0 }"
                 class="message-wrapper"
               >
-                <render-message
+                <div
                   v-for="(message, index) in sessionContents"
                   :key="message.id"
-                  :index="index"
-                  :message="message"
-                  @delete="handleDelete"
-                  @regenerate="handleRegenerate"
-                  @resend="handleResend"
-                />
+                  class="message-line-wrapper"
+                >
+                  <render-message
+                    :index="index"
+                    :message="message"
+                    @delete="handleDelete"
+                    @regenerate="handleRegenerate"
+                    @resend="handleResend"
+                  />
+                </div>
               </div>
               <motion.div
                 :transition="{
@@ -103,38 +110,48 @@
                 :style="hasSessionContents ? undefined : inputContainerStyle"
                 layout
               >
-                <div
-                  v-if="currentSessionLoading || showScrollToBottom"
-                  class="bottom-tools-bar"
-                >
-                  <bar-button
-                    v-if="currentSessionLoading"
-                    color="#EA3636"
-                    icon="bkaitingzhishengcheng"
-                    text="停止生成"
-                    @click="handleStop"
+                <div class="chat-input-wrapper">
+                  <div
+                    v-if="currentSessionLoading || showScrollToBottom"
+                    class="bottom-tools-bar"
+                  >
+                    <bar-button
+                      v-if="currentSessionLoading"
+                      color="#EA3636"
+                      icon="bkaitingzhishengcheng"
+                      :text="t('停止生成')"
+                      @click="handleStop"
+                    />
+                    <bar-button
+                      v-if="showScrollToBottom"
+                      color="#979BA5"
+                      icon="bkaijiantou"
+                      :text="t('返回底部')"
+                      @click="scrollMainToBottom"
+                    />
+                  </div>
+                  <custom-input
+                    v-if="currentShortcut"
+                    :key="currentShortcut.id"
+                    :shortcut="currentShortcut"
+                    :root-node="rootNode"
+                    @cancel="handleCancelShortcut"
+                    @submit="handleSubmitShortcut"
                   />
-                  <bar-button
-                    v-if="showScrollToBottom"
-                    color="#979BA5"
-                    icon="bkaijiantou"
-                    text="返回底部"
-                    @click="scrollMainToBottom"
+
+                  <chat-input-box
+                    v-else
+                    v-model="inputMessage"
+                    :loading="currentSessionLoading"
+                    :prompts="promptList"
+                    :shortcuts="shortcuts"
+                    :disabled="props.disabledInput"
+                    @height-change="handleInputHeightChange"
+                    @send="handleSendMessage"
+                    @shortcut-click="handleShortcutClick"
+                    @stop="handleStop"
                   />
                 </div>
-                <chat-input-box
-                  ref="chatInputBoxRef"
-                  v-model="inputMessage"
-                  :loading="currentSessionLoading"
-                  :prompts="promptList"
-                  :shortcuts="shortcuts || []"
-                  :disabled="props.disabledInput"
-                  :placeholder="props.placeholder"
-                  @height-change="handleInputHeightChange"
-                  @send="handleSendMessage"
-                  @shortcut-click="handleShortcutClick"
-                  @stop="handleStop"
-                />
               </motion.div>
             </div>
           </div>
@@ -160,7 +177,7 @@
 <script setup lang="ts">
   import { SessionContentRole } from '@blueking/ai-ui-sdk/enums';
   import { useChat, useStyle, useClickProxy } from '@blueking/ai-ui-sdk/hooks';
-  import { ShortCut } from '@blueking/ai-ui-sdk/types';
+  import { ISession } from '@blueking/ai-ui-sdk/types';
   import { motion } from 'motion-v';
   import {
     computed,
@@ -179,6 +196,7 @@
   import BarButton from './components/bar-button.vue';
   import ChatInputBox from './components/chat-input-box.vue';
   import LoadingOverlay from './components/loading-overlay.vue';
+  import CustomInput from './components/custom-inputs/index.vue';
   import renderMessage from './components/render-message.vue';
   import RenderPopup from './components/render-popup.vue';
   import { useMarkdown } from './composables/use-markdown';
@@ -186,10 +204,10 @@
   import { useResizableContainer } from './composables/use-resizable-container';
   import { useSelect } from './composables/use-select-pop';
   import { provideSessionStore } from './composables/use-session-store';
+  import { scrollToBottom, escapeHtml, normalizeUrl, uuid } from './utils';
   import { DEFAULT_SHORTCUTS, HIDE_ROLE_LIST } from './config';
   import { t } from './lang';
-  import type { IRequestOptions } from './types';
-  import { scrollToBottom, escapeHtml, normalizeUrl } from './utils';
+  import type { IRequestOptions, IShortcut } from './types';
   import Nimbus from './views/nimbus.vue';
 
   import 'vue-draggable-resizable/style.css';
@@ -199,7 +217,7 @@
     title?: string;
     helloText?: string;
     enablePopup?: boolean;
-    shortcuts?: ShortCut[];
+    shortcuts?: IShortcut[];
     url?: string;
     prompts?: string[];
     hideNimbus?: boolean;
@@ -248,7 +266,7 @@
 
   // Emits 定义
   const emit = defineEmits<{
-    (e: 'shortcut-click', shortcut: ShortCut): void;
+    (e: 'shortcut-click', shortcut: IShortcut): void;
     (e: 'close' | 'show' | 'stop' | 'receive-start' | 'receive-text' | 'receive-end'): void;
     (e: 'send-message', message: string): void;
     (
@@ -274,6 +292,9 @@
   let initSessionPromise: Promise<void> | null = null; // 用于避免重复初始化会话
   const openingRemark = ref(''); // 接口获取的开场白
   const predefinedQuestions: Ref<string[]> = ref([]); // 接口获取的预设问题
+
+  const rootNode: Ref<HTMLElement | undefined> = ref();
+  const currentShortcut = ref<IShortcut>();
 
   // 提供会话存储实例
   const sessionStore = provideSessionStore();
@@ -488,6 +509,9 @@
       url: normalizedUrl.value,
       ...props.requestOptions,
     },
+    otherOptions: {
+      hideReferenceDocIcon: true,
+    },
   });
 
   // 注册 SDK 的 setCurrentSession 方法
@@ -655,13 +679,11 @@
     }
   };
 
-  const handleResend = (index: number, { message, cite }: { message: string; cite: string }) => {
+  const handleResend = (index: number, { message }: { message: string }) => {
     const sessionContent = sessionContents.value[index];
     if (sessionContent) {
       sessionContent.content = escapeHtml(message);
-      if (sessionContent?.property?.extra?.cite) {
-        sessionContent.property.extra.cite = cite;
-      }
+
       reSendChat(sessionContent.sessionCode, sessionContent, index);
     }
   };
@@ -673,8 +695,22 @@
     }
   };
 
-  const handleShortcutClick = async (shortcut: ShortCut) => {
+  const handleCancelShortcut = () => {
+    currentShortcut.value = undefined;
+  };
+
+  const handleSubmitShortcut = async ({
+    shortcut,
+    formData,
+  }: {
+    shortcut: IShortcut;
+    formData: Record<string, any>[];
+  }) => {
+    currentShortcut.value = undefined;
+
     !isShow.value && handleShow();
+
+    currentSessionLoading.value && handleStop();
 
     // 如果会话未初始化，先初始化
     if (!isSessionInitialized.value && normalizedUrl.value) {
@@ -683,12 +719,13 @@
 
     await plusSessionContent(currentSession.value?.sessionCode, {
       role: SessionContentRole.User,
-      content: shortcut.label,
+      content: shortcut.name,
       sessionCode: currentSession.value?.sessionCode,
       property: {
         extra: {
-          cite: selectedText.value || inputMessage.value,
-          shortcut,
+          cite: formData.map(item => `${item.__label}: ${item.__value}`).join(', '),
+          command: shortcut.id,
+          context: [...formData, ...(props.requestOptions?.context || [])],
         },
       },
     });
@@ -698,7 +735,43 @@
       ...props.requestOptions,
     });
 
+    emit('send-message', shortcut.name);
     emit('shortcut-click', shortcut);
+  };
+
+  const handleShortcutClick = (shortcut: IShortcut) => {
+    // 创建 shortcut 的深拷贝，避免直接修改 props 传入的对象
+    const modifiedShortcut = structuredClone(shortcut) as IShortcut;
+
+    !isShow.value && handleShow();
+
+    // 在副本上查找需要填充的组件
+    const fillBackItem = modifiedShortcut.components.find(item => item.fillBack);
+    if (fillBackItem) {
+      let textToFill = selectedText.value; // 默认使用选中内容
+
+      if (fillBackItem.fillRegx) {
+        try {
+          // 尝试使用正则表达式匹配
+          const regex = new RegExp(fillBackItem.fillRegx);
+          const matches = selectedText.value.match(regex);
+          if (matches && matches.length > 0) {
+            // 使用匹配结果
+            textToFill = matches[0];
+          } else {
+            textToFill = ''; // 如果有正则表达式，但是没有匹配到内容，则使用空字符串
+          }
+        } catch (e) {
+          console.error('快捷方式组件中的正则表达式无效:', fillBackItem.fillRegx, e);
+        }
+      }
+
+      // 将文本赋值给副本中的组件
+      fillBackItem.selectedText = textToFill;
+    }
+
+    // 将修改后的副本赋值给响应式引用
+    currentShortcut.value = modifiedShortcut;
   };
 
   const handleDelete = (index: number) => {
@@ -841,6 +914,9 @@
     flex-direction: column;
     width: 100%;
     height: 100%;
+    :deep(.icon-search::before) {
+      content: none !important;
+    }
   }
 
   .content-wrapper {
@@ -848,12 +924,10 @@
     display: flex;
     flex: 1;
     overflow: hidden;
-    justify-content: center;
   }
 
   .main-content {
     position: relative;
-    max-width: 1000px;
     display: flex;
     flex: 1;
     flex-direction: column;
@@ -885,6 +959,12 @@
       transition: opacity 0.5s ease;
 
       @include custom-scrollbar;
+    }
+
+    .message-line-wrapper {
+      width: 100%;
+      max-width: 1000px;
+      margin: 0 auto;
     }
 
     &.chat-layout {
@@ -928,6 +1008,11 @@
 
         // greeting-markdown 样式现在从公共样式文件导入
       }
+    }
+
+    .chat-input-wrapper {
+      max-width: 1000px;
+      margin: 0 auto;
     }
 
     .chat-input-container {

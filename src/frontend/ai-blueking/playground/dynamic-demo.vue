@@ -10,7 +10,10 @@
         <div class="article-card">
           <h2>使用示例</h2>
           <p>👇 试试选中下面的文本，体验快捷操作功能</p>
-          <div class="article">
+          <div
+            class="article"
+            ai-blueking-hide
+          >
             <h3>BK AI: Revolutionizing the Future of Artificial Intelligence</h3>
             <p>{{ article }}</p>
           </div>
@@ -19,8 +22,12 @@
               class="action-btn"
               @click="
                 quickActions(
-                  { label: '解释', key: 'explanation', prompt: '解释一下内容： {{ SELECTED_TEXT }}' },
-                  'BK AI: Revolutionizing the Future of Artificial Intelligence',
+                  {
+                    label: '解释',
+                    key: 'explanation',
+                    prompt: '解释一下内容： {{ SELECTED_TEXT }}',
+                  },
+                  'BK AI: Revolutionizing the Future of Artificial Intelligence'
                 )
               "
             >
@@ -32,7 +39,7 @@
               @click="
                 quickActions(
                   { label: '翻译', key: 'translate', prompt: '翻译一下内容： {{ SELECTED_TEXT }}' },
-                  'BK AI: Revolutionizing the Future of Artificial Intelligence',
+                  'BK AI: Revolutionizing the Future of Artificial Intelligence'
                 )
               "
             >
@@ -54,19 +61,24 @@
     <div>
       <div>
         <AIBlueking
-      ref="aiBlueking"
-      hello-text="bbb"
-      :request-options="{
-        data: requestData,
-      }"
-      :prompts="prompts"
-      :url="url"
-      teleport-to="body"
-      @close="handleClose"
-      @shortcut-click="handleShortcutClick"
-      @show="handleShowAi"
-      @stop="handleStop"
-    />
+          ref="aiBlueking"
+          title="aaa"
+          hello-text="bbb"
+          :request-options="{
+            data: {
+              preset: 'QA',
+            },
+            context: [{ context_test: 'vk' }],
+          }"
+          :prompts="prompts"
+          :url="url"
+          teleport-to="body"
+          :shortcuts="shortcuts"
+          @close="handleClose"
+          @shortcut-click="handleShortcutClick"
+          @show="handleShowAi"
+          @stop="handleStop"
+        />
       </div>
     </div>
   </div>
@@ -75,11 +87,76 @@
 <script lang="ts" setup>
   import { ref, computed } from 'vue';
 
-  import AIBlueking, { AIBluekingExpose, ShortCut } from '../src/vue3.ts';
+  import AIBlueking, { AIBluekingExpose, IShortcut } from '../src/vue3.ts';
   import DemoHeader from './components/demo-header.vue';
   import EventLogger from './components/event-logger.vue';
   import FeatureCards from './components/feature-cards.vue';
   import { useEventLogger } from './composables/use-event-logger.ts';
+
+  const shortcuts: IShortcut[] = [
+    {
+      name: 'Trace 分析',
+      icon: '',
+      id: 'trace_analysis',
+      components: [
+        {
+          name: '项目名称',
+          key: 'project_name',
+          type: 'text',
+          default: '',
+          placeholder: '请输入项目名称',
+          required: true,
+          fillBack: true,
+          fillRegx: /^[a-zA-Z0-9]+$/,
+        },
+        {
+          name: '数量',
+          key: 'quantity',
+          default: 10,
+          type: 'number',
+          min: 1,
+          max: 100,
+          required: true,
+          fillBack: false,
+        },
+        {
+          name: '项目描述',
+          key: 'description',
+          type: 'textarea',
+          rows: 4,
+          required: false,
+          fillBack: false,
+        },
+        {
+          name: '项目类型',
+          key: 'project_type',
+          type: 'select',
+          required: true,
+          fillBack: false,
+          options: [
+            { label: '类型A', value: 'A' },
+            { label: '类型B', value: 'B' },
+          ],
+        },
+      ],
+    },
+    {
+      name: '翻译',
+      icon: 'bkai-icon bkai-fanyi',
+      id: 'translate',
+      components: [
+        {
+          name: '内容',
+          key: 'content',
+          type: 'text',
+          default: '',
+          placeholder: '请输入项目名称',
+          required: true,
+          fillBack: true,
+        },
+      ],
+    },
+  ];
 
   const prompts = ['请推荐几本关于人工智能的书籍。', '请用 Python 写一个简单的 Hello World 程序。'];
 
@@ -91,12 +168,7 @@
 
   const aiBlueking = ref<AIBluekingExpose | null>(null);
 
-
-  const url = process.env.BK_API_URL_TMPL
-
-  const requestData = {
-    data: 123
-  }
+  const url = process.env.BK_API_URL_TMPL || '';
 
   // 事件日志相关
   const { eventLogs, addLog, clearLogs } = useEventLogger();
@@ -121,7 +193,7 @@
     addLog('quick-action', { message: shortcut.label, cite, prompt: shortcut.prompt });
   };
 
-  const handleShortcutClick = (shortcut: ShortCut) => {
+  const handleShortcutClick = (shortcut: IShortcut) => {
     addLog('shortcut-click', shortcut);
   };
 

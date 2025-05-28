@@ -27,5 +27,4 @@
 
 declare const BKUI_PREFIX: string;
 declare module 'markdown-it';
-declare module 'markdown-it-code-copy';
 declare module 'markdown-it-link-blank';

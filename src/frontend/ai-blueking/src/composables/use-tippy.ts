@@ -27,6 +27,7 @@ import tippy, { Instance, Props } from 'tippy.js';
 import { onBeforeUnmount, ref, Ref } from 'vue';
 
 import 'tippy.js/dist/tippy.css';
+import '../styles/use-tippy.scss';
 
 export type TooltipOptions = Partial<Props>;
 
@@ -63,26 +64,6 @@ interface TooltipAPI {
 export function useTooltip(defaultOptions: TooltipOptions = {}): TooltipAPI {
   // 添加默认的类名
   const defaultThemeClass = 'ai-blueking-tooltip';
-
-  // 确保在页面中添加自定义样式
-  const addCustomStyles = () => {
-    if (!document.getElementById('ai-blueking-tooltip-styles')) {
-      const styleEl = document.createElement('style');
-      styleEl.id = 'ai-blueking-tooltip-styles';
-      styleEl.textContent = `
-        .ai-blueking-tooltip {
-          font-size: 12px !important;
-        }
-        .tippy-box {
-          font-size: 12px !important;
-        }
-      `;
-      document.head.appendChild(styleEl);
-    }
-  };
-
-  // 添加自定义样式
-  addCustomStyles();
 
   const instances = ref<Instance[]>([]);
 

@@ -112,8 +112,10 @@
   import DOMPurify from 'dompurify';
   import hljs from 'highlight.js';
   import MarkdownIt from 'markdown-it';
-  import MarkdownItCodeCopy from 'markdown-it-code-copy';
   import { computed, onMounted, ref, watch, defineEmits, onBeforeUnmount, nextTick } from 'vue';
+  import MarkdownItCodeCopy from 'markdown-it-copy-code';
+  import 'markdown-it-copy-code/styles/base.css';
+  import 'markdown-it-copy-code/styles/small.css';
 
   import defaultUserLogo from '../assets/images/ai-user.png';
   import AiCite from '../components/ai-cite.vue';
@@ -139,7 +141,7 @@
 
   const emit = defineEmits<{
     regenerate: [index: number];
-    resend: [index: number, value: { message: string; cite: string }];
+    resend: [index: number, value: { message: string }];
     delete: [index: number];
   }>();
 
@@ -175,10 +177,7 @@
       return '';
     },
   })
-    .use(MarkdownItCodeCopy, {
-      iconClass: 'bkai-icon bkai-fuzhi',
-      buttonClass: 'ai-blueking-copy-button',
-    })
+    .use(MarkdownItCodeCopy)
     .use(MarkdownItLinkBlank)
     .use(mermaidPlugin);
   // 计算属性
@@ -229,7 +228,7 @@
   // 事件处理
   const handleEditMessage = (value: string) => {
     isEdit.value = false;
-    emit('resend', props.index, { message: value, cite: props.message.cite || '' });
+    emit('resend', props.index, { message: value });
   };
 
   const handleCopy = async () => {
@@ -362,7 +361,7 @@
     &.user,
     &.cite {
       justify-content: flex-end;
-      float: right;
+      align-items: flex-end;
     }
 
     &:after {

@@ -66,10 +66,9 @@
 </template>
 
 <script setup lang="ts">
-  import { type ShortCut } from '@blueking/ai-ui-sdk/types';
   import { Instance } from 'tippy.js';
-  import { ref, onMounted, watch, computed, onBeforeUnmount, withDefaults } from 'vue';
   import { ComponentPublicInstance } from 'vue';
+  import { ref, onMounted, watch, computed, onBeforeUnmount } from 'vue';
 
   import AiCite from '../components/ai-cite.vue';
   import { useInputInteraction } from '../composables/use-input-interaction';
@@ -78,6 +77,7 @@
   import { useTextareaHeight } from '../composables/use-textarea-height';
   import { useTooltip } from '../composables/use-tippy';
   import { t } from '../lang';
+  import type { IShortcut } from '../types';
 
   import AiSelectedBox from './ai-selected-box.vue';
   import PromptList from './prompt-list.vue';
@@ -87,7 +87,7 @@
     (e: 'send' | 'update:modelValue', value: string): void;
     (e: 'stop'): void;
     (e: 'height-change', height: number): void;
-    (e: 'shortcut-click', shortcut: ShortCut): void;
+    (e: 'shortcut-click', shortcut: IShortcut): void;
   }>();
 
   const { enablePopup } = usePopup();
@@ -96,7 +96,7 @@
 
   const props = withDefaults(
     defineProps<{
-      shortcuts: ShortCut[];
+      shortcuts: IShortcut[];
       loading: boolean;
       prompts: string[];
       disabled: boolean;
@@ -185,12 +185,12 @@
     defaultHeight: 68,
   });
 
-  const handleShortcutClickWithClear = (shortcut: ShortCut) => {
+  const handleShortcutClickWithClear = (shortcut: IShortcut) => {
     handleShortcutClick(shortcut);
     inputValue.value = '';
   };
 
-  const handleShortcutClick = (shortcut: ShortCut) => {
+  const handleShortcutClick = (shortcut: IShortcut) => {
     emit('shortcut-click', shortcut);
     clearSelection();
   };
@@ -347,6 +347,9 @@
     // 现有的键盘事件处理逻辑
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
+      if (isComposing.value) {
+        return;
+      }
       sendMessage();
     }
   };

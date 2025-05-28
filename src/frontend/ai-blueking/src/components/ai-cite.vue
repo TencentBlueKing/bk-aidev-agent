@@ -13,7 +13,7 @@
           ref="citeTextRef"
           class="ai-cite-text"
         >
-          {{ `${t('框选内容')}：${text}` }}
+          {{ text }}
         </span>
       </span>
       <i
@@ -30,7 +30,6 @@
   import { nextTick, ref, onMounted, watch } from 'vue';
 
   import { useTooltip } from '../composables/use-tippy';
-  import { t } from '../lang';
 
   const props = defineProps<{
     text: string;

@@ -30,7 +30,7 @@
 
 6.  **Q: 是否可以自定义快捷操作的图标？**
 
-    A: 可以。在 `shortcuts` 配置中，为每个 shortcut 对象添加 `icon` 属性，值为您项目中图标库对应的 CSS 类名即可。例如 `icon: 'bk-icon icon-magic-hat'`。
+    A: 可以。在 `shortcuts` 配置中，为每个 shortcut 对象添加 `icon` 属性，值为您项目中图标库对应的完整 CSS 类名即可。例如 `icon: 'bk-icon icon-magic-hat'`。注意：需要包含完整的类名，包括图标库前缀。
 
 7.  **Q: 如何获取当前的对话历史记录？**
 

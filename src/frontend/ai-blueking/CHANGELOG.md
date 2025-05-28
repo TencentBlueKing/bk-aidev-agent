@@ -1,3 +1,69 @@
+## [1.1.0-beta.2] - 2025-06-02
+
+### 修复
+- **修复自定义输入 `textarea` 背景色异常的问题**
+
+## [1.1.0-beta.1] - 2025-06-01
+
+### 新增功能
+- **自定义表单输入功能**：
+  - 添加自定义表单输入能力，支持快捷指令自定义表单交互
+  - 支持文本输入框、下拉选择框、数字输入框和多行文本域等多种表单组件
+  - 优化快捷操作接口定义，增强扩展性
+
+### 变更
+- **快捷操作接口升级**：
+  - 重构快捷操作的数据结构，从 `ShortCut` 升级为更加灵活的 `IShortcut`
+  - 支持通过自定义组件配置实现复杂的用户输入交互
+  - 增加表单数据的收集和提交能力
+  - **重要**: 快捷操作不再使用前端拼接 prompt 的方式，而是将表单数据作为上下文直接发送到后端，**需要后端进行适配**
+
+```typescript
+// 新的快捷操作接口定义
+interface IShortcut {
+  id: string;       // 快捷操作ID
+  name: string;     // 快捷操作名称
+  icon?: string;    // 图标类名
+  // 组件配置，用于定义表单项
+  components: Array<{
+    type: string;    // 组件类型：'input', 'select', 'textarea', 'number' 等
+    name?: string;   // 表单项名称
+    key: string;     // 表单项键名
+    placeholder?: string; // 占位文本
+    default?: any;   // 默认值
+    required?: boolean;   // 是否必填
+    fillBack?: boolean;   // 是否自动填充选中文本
+    fillRegx?: string | RegExp; // 填充的正则匹配表达式
+    rows?: number;        // 输入框行数（textarea类型）
+    min?: number;         // 最小值（number类型）
+    max?: number;         // 最大值（number类型）
+    options?: Array<{     // 下拉选项（select类型）
+      label: string;
+      value: string | number;
+    }>;
+  }>
+}
+```
+
+### 后端数据格式
+后端将接收到以下格式的数据：
+
+```javascript
+// 后端接收到的数据结构示例
+{
+  "property": {
+    "extra": {
+      "command": "translate", // 快捷操作ID，对应 IShortcut 的 id
+      "context": [
+        { "key": "text", "value": "这是需要翻译的文本" },
+        { "key": "targetLang", "value": "en" },
+        // ... 其他表单数据
+      ]
+    }
+  }
+}
+```
+
 # 更新日志
 
 ## [1.1.5] - 2025-07-09

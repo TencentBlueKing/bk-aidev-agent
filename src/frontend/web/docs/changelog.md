@@ -8,6 +8,22 @@ export default {
     return {
       changelogData: [
         {
+          version: "v1.1.0-beta.1",
+          date: "2025-06-01",
+          features: [
+            "新增自定义表单输入功能，支持快捷指令配置自定义表单交互",
+            "支持文本输入框、下拉选择框、数字输入框和多行文本域等多种表单组件",
+            "优化快捷操作接口，从 <code>ShortCut</code> 升级为 <code>IShortcut</code>",
+            "新增 <code>components</code> 组件配置，实现复杂的交互表单",
+            "支持配置表单项自动填充选中文本",
+            "引入基于上下文的快捷操作处理机制，表单数据将作为上下文直接发送到后端"
+          ],
+          breaking: [
+            "快捷操作接口由 <code>ShortCut</code> 更改为 <code>IShortcut</code>，参见<a href='/api/types'>接口文档</a>",
+            "快捷操作不再使用前端拼接 prompt 的方式处理，改为将表单数据发送到后端，<strong>需要后端进行适配</strong>"
+          ]
+        },
+        {
           version: "v1.1.5",
           date: "2025-07-09",
           features: [
@@ -78,6 +94,11 @@ export default {
             "新增 `nimbusSize` 属性，支持 `small`, `normal`, `large` 三种尺寸，用于调整 Nimbus 悬浮图标的大小",
             "优化 Nimbus 最小化按钮尺寸，根据 `nimbusSize` 动态调整，提升视觉协调性",
           ],
+          version: "v1.1.0-beta.2",
+          date: "2025-06-02",
+          fixes: [
+            "修复自定义输入 `textarea` 背景色异常的问题"
+          ]
         },
         {
           version: "v1.0.1",

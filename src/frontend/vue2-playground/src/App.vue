@@ -97,11 +97,8 @@ export default {
     },
     aiUrl() {
       console.log(process.env, process.env.VUE_APP_BK_API_URL_TMPL, process.env.VUE_APP_BK_API_GATEWAY_NAME);
-      const prefix = (process.env.VUE_APP_BK_API_URL_TMPL || '')
-        .replace('{api_name}', process.env.VUE_APP_BK_API_GATEWAY_NAME || '')
-        .replace(/^(http|https):/, `${window.location.protocol}`);
 
-      const url = `${prefix}/prod/bk_plugin/plugin_api/assistant/`;
+      const url = process.env.VUE_APP_BK_API_URL_TMPL;
       return url;
     }
   },

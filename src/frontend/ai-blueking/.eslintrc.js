@@ -68,7 +68,7 @@ module.exports = {
     'vue/no-unused-vars': 'error',
     'vue/script-setup-uses-vars': 'error',
     'vue/multi-word-component-names': 'off',
-    
+
     // === 关闭所有与Prettier冲突的格式化规则 ===
     'vue/html-indent': 'off',
     'vue/script-indent': 'off',
@@ -112,14 +112,7 @@ module.exports = {
     'import/order': [
       'error',
       {
-        groups: [
-          'builtin',
-          'external',
-          'internal',
-          'parent',
-          'sibling',
-          'index',
-        ],
+        groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index'],
         pathGroups: [
           {
             pattern: 'vue',

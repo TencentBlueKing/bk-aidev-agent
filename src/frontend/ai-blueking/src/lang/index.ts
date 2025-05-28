@@ -82,6 +82,12 @@ export const langData = {
   'AI 小鲸': 'AI BK GPT',
   新增会话: 'New chat',
   历史会话: 'History session',
+  返回底部: 'Back to bottom',
+  停止生成: 'Stop generating',
+  复制: 'Copy',
+  重新生成: 'Regenerate',
+  引用: 'Quote',
+  编辑: 'Edit',
 } as const;
 
 export const zhLangData = {

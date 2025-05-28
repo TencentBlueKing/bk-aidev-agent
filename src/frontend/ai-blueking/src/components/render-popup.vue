@@ -30,10 +30,9 @@
         >
           <i
             v-if="btn.icon"
-            class="bkai-icon"
             :class="btn.icon"
           ></i>
-          <span class="btn-text ai-blueking-tag-text">{{ btn.label }}</span>
+          <span class="btn-text ai-blueking-tag-text">{{ btn.name }}</span>
         </div>
       </div>
     </div>
@@ -41,16 +40,15 @@
 </template>
 
 <script lang="ts" setup>
-  import { type ShortCut } from '@blueking/ai-ui-sdk/types';
-
   import avatar from '../assets/images/avatar.png';
   import { usePopup } from '../composables/use-popup-props';
   import { useSelect } from '../composables/use-select-pop';
   import { DEFAULT_SHORTCUTS } from '../config';
   import { t } from '../lang';
+  import { type IShortcut } from '../types';
 
   interface IProps {
-    shortcuts: ShortCut[];
+    shortcuts: IShortcut[];
   }
 
   const props = defineProps<IProps>();
@@ -68,7 +66,7 @@
     isIconVisible.value = false;
   };
 
-  const handleShortcutClick = (shortcut: ShortCut) => {
+  const handleShortcutClick = (shortcut: IShortcut) => {
     try {
       emit('shortcut-click', shortcut);
       clearSelection();

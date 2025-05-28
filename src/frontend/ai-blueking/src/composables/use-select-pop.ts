@@ -109,6 +109,18 @@ export function useSelect(enablePopup: boolean) {
     };
   };
 
+  // 向上查找元素是否包含指定属性的辅助函数
+  const hasAttributeInAncestors = (element: Element | null, attributeName: string): boolean => {
+    let current = element;
+    while (current && current !== document.documentElement) {
+      if (current.hasAttribute && current.hasAttribute(attributeName)) {
+        return true;
+      }
+      current = current.parentElement;
+    }
+    return false;
+  };
+
   const handleSelectionChange = () => {
     clearTimeout(debounceTimeout);
     debounceTimeout = setTimeout(() => {
@@ -119,7 +131,20 @@ export function useSelect(enablePopup: boolean) {
       }
 
       const range = selection.getRangeAt(0);
+
+      // 检查是否在 ai-blueking-wrapper 内
       if (range.commonAncestorContainer.parentElement?.closest('.ai-blueking-wrapper')) {
+        hideIcon();
+        return;
+      }
+
+      // 检查选中区域的元素或其父元素是否包含 ai-blueking-hide 属性
+      const commonAncestor = range.commonAncestorContainer;
+      const ancestorElement = commonAncestor.nodeType === Node.ELEMENT_NODE
+        ? commonAncestor as Element
+        : commonAncestor.parentElement;
+
+      if (hasAttributeInAncestors(ancestorElement, 'ai-blueking-hide')) {
         hideIcon();
         return;
       }
