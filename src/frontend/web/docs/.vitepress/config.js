@@ -69,7 +69,8 @@ export default defineConfig({
           items: [
             { text: '属性', link: '/api/props' },
             { text: '事件', link: '/api/events' },
-            { text: '方法', link: '/api/methods' }
+            { text: '方法', link: '/api/methods' },
+            { text: '类型定义', link: '/api/types' }
           ]
         }
       ],

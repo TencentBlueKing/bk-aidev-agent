@@ -14,29 +14,17 @@
 | `handleClose()`       | -                                            | `void`   | 关闭 AI 小鲸窗口。                                                                                                          |
 | `handleStop()`        | -                                            | `void`   | 停止当前正在进行的 AI 内容生成（流式输出）。                                                                                      |
 | `handleSendMessage(message)` | `message: string`                    | `void`   | 发送消息到 AI 小鲸，可用于编程式触发对话。 |
-| `handleShortcutClick(shortcut)` | `shortcut: ShortCut`               | `void`   | 模拟点击快捷操作按钮，可用于编程式触发预设的操作。                                                                                 |
+| `handleShortcutClick(shortcut)` | `shortcut: IShortcut`               | `void`   | 模拟点击快捷操作按钮，可用于编程式触发快捷操作。                                                                               |
 | `handleDelete(index)`  | `index: number`                             | `void`   | 删除指定索引位置的消息。                                                                                                      |
 | `handleRegenerate(index)` | `index: number`                          | `void`   | 重新生成指定索引位置的消息。                                                                                                  |
 | `handleResend(index, options)` | `index: number, options: {message: string, cite: string}`   | `void`   | 重发指定索引位置的消息，可修改消息内容和引用内容。                                                                          |
 | `initSession()`       | -                                            | `Promise<void>`   | 初始化会话，获取开场白和预设问题。                                                                                       |
-| `updateRequestOptions(options)` | `options: { url?: string; headers?: Record<string, string>; data?: any }` | `void` | 动态更新请求选项，可以修改API地址或请求参数。对于需要在运行时切换智能体或修改请求参数的场景非常有用。 |
+| `updateRequestOptions(options)` | `options: { url?: string; headers?: Record<string, string>; data?: any; context?: Array<{key: string, value: any}> }` | `void` | 动态更新请求选项，可以修改API地址或请求参数。对于需要在运行时切换智能体或修改请求参数的场景非常有用。 |
 
 ::: danger 已废弃方法
 以下方法在1.0版本中已被移除:
 - `sendChat(options)`: 已被 `handleSendMessage(options)` 替代，请更新您的代码。
 :::
-
-## `ShortCut` 类型
-
-```typescript
-interface ShortCut {
-  type: string;    // 操作类型
-  label: string;   // 显示的标签
-  cite?: boolean;  // 是否需要引用文本
-  prompt?: string; // 发送到AI的提示词
-  icon?: string;   // 图标名称
-}
-```
 
 ## 调用示例
 
@@ -130,8 +118,70 @@ const addCustomHeader = () => {
     headers: {
       'X-Custom-Header': 'custom-value',
       'Authorization': 'Bearer your-token'
-    }
+    },
+    // 1.1版本可以添加context参数
+    context: [
+      { key: 'language', value: 'javascript' },
+      { key: 'scenario', value: 'code_review' }
+    ]
   });
+};
+</script>
+```
+
+## 触发快捷操作
+
+您可以通过`handleShortcutClick`方法编程式地触发快捷操作：
+
+```vue
+<template>
+  <AIBlueking 
+    ref="aiBlueking" 
+    :url="apiUrl" 
+    :shortcuts="shortcuts"
+  />
+  <button @click="triggerExplain">解释代码</button>
+</template>
+
+<script setup>
+import { ref } from 'vue';
+import { AIBlueking, type IShortcut } from '@blueking/ai-blueking';
+
+const aiBlueking = ref(null);
+const apiUrl = '...';
+
+const shortcuts = [
+  {
+    id: 'explain',
+    name: '解释代码',
+    icon: 'bkai-code',
+    components: [
+      {
+        type: 'textarea',
+        key: 'code',
+        label: '代码内容',
+        fillBack: true
+      }
+    ]
+  }
+];
+
+const triggerExplain = () => {
+  // 找到对应ID的快捷操作
+  const shortcut = shortcuts.find(s => s.id === 'explain');
+  if (!shortcut) return;
+  
+  // 手动设置要填充的文本
+  const textComponent = shortcut.components.find(c => c.fillBack);
+  if (textComponent) {
+    textComponent.selectedText = 'function example() { console.log("Hello World"); }';
+  }
+  
+  // 显示AI小鲸窗口
+  aiBlueking.value?.handleShow();
+  
+  // 触发快捷操作
+  aiBlueking.value?.handleShortcutClick(shortcut);
 };
 </script>
 ```

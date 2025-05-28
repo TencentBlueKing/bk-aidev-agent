@@ -23,21 +23,35 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { type ShortCut } from '@blueking/ai-ui-sdk';
+import type { IShortcut } from '../types';
 
 import { t } from '../lang/index';
 
-export const DEFAULT_SHORTCUTS: ShortCut[] = [
+export const DEFAULT_SHORTCUTS: IShortcut[] = [
   {
-    label: t('翻译'),
-    prompt: t('translateShortcut'),
-    key: 'translate',
+    name: t('翻译'),
+    id: 'translate',
     icon: 'bkai-fanyi',
+    components: [
+      {
+        name: t('翻译'),
+        key: 'translate',
+        type: 'textarea',
+        fillBack: true,
+      },
+    ],
   },
   {
-    label: t('解释'),
-    prompt: t('explanationShortcut'),
-    key: 'explanation',
+    name: t('解释'),
+    id: 'explanation',
     icon: 'bkai-jieshi',
+    components: [
+      {
+        name: t('解释'),
+        key: 'explanation',
+        type: 'textarea',
+        fillBack: true
+      },
+    ],
   },
 ];

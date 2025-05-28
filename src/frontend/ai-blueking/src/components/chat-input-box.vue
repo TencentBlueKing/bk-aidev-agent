@@ -23,15 +23,8 @@
         @height-change="handlePromptHeightChange"
         @select="handlePromptSelect"
       />
-      <div
-        v-if="citeText.length > 0"
-        class="cite"
-      >
-        <AiCite
-          :show-close-icon="true"
-          :text="citeText"
-          @close="setCiteText('')"
-        />
+      <div v-if="citeText.length > 0" class="cite">
+        <AiCite :show-close-icon="true" :text="citeText" @close="setCiteText('')" />
       </div>
       <textarea
         ref="textareaRef"
@@ -49,7 +42,12 @@
       <div class="input-tools">
         <i
           ref="actionIconRef"
-          :class="['bkai-icon', actionIconClass, { disabled: !loading && !inputValue.trim() }, 'clickable']"
+          :class="[
+            'bkai-icon',
+            actionIconClass,
+            { disabled: !loading && !inputValue.trim() },
+            'clickable',
+          ]"
           @click="handleActionClick"
         ></i>
       </div>
@@ -61,7 +59,7 @@
   import { ref, onMounted, watch, computed, onBeforeUnmount } from 'vue';
   import { ComponentPublicInstance } from 'vue';
 
-  import { type ShortCut } from '@blueking/ai-ui-sdk';
+  import type { IShortcut } from '../types';
   import { Instance } from 'tippy.js';
 
   import AiCite from '../components/ai-cite.vue';
@@ -79,15 +77,16 @@
     (e: 'send' | 'update:modelValue', value: string): void;
     (e: 'stop'): void;
     (e: 'height-change', height: number): void;
-    (e: 'shortcut-click', shortcut: ShortCut): void;
+    (e: 'shortcut-click', shortcut: IShortcut): void;
   }>();
   const placeholder = t('输入 "/" 唤出 Prompt\n通过 Shift + Enter 进行换行输入');
 
   const { enablePopup } = usePopup();
-  const { selectedText, citeText, setCiteText, clearSelection, lockSelectedText } = useSelect(enablePopup);
+  const { selectedText, citeText, setCiteText, clearSelection, lockSelectedText } =
+    useSelect(enablePopup);
 
   const props = defineProps<{
-    shortcuts: ShortCut[];
+    shortcuts: IShortcut[];
     loading: boolean;
     prompts: string[];
     disabled: boolean;
@@ -171,12 +170,12 @@
     defaultHeight: 68,
   });
 
-  const handleShortcutClickWithClear = (shortcut: ShortCut) => {
+  const handleShortcutClickWithClear = (shortcut: IShortcut) => {
     handleShortcutClick(shortcut);
     inputValue.value = '';
   };
 
-  const handleShortcutClick = (shortcut: ShortCut) => {
+  const handleShortcutClick = (shortcut: IShortcut) => {
     emit('shortcut-click', shortcut);
     clearSelection();
   };
@@ -211,7 +210,7 @@
     () => textareaHeight.value,
     newHeight => {
       emit('height-change', newHeight);
-    },
+    }
   );
 
   // 监听加载状态和输入内容变化，更新tooltip

@@ -4,18 +4,20 @@
 
 ::: warning 版本变更提示
 1.0版本对请求体结构有所调整，但保持了API的基本使用方式。
+1.1版本新增了`context`字段，用于传递上下文参数，将与快捷操作表单数据一起发送到后端。
 :::
 
 ## 配置 `requestOptions`
 
-`requestOptions` 是一个对象，可以包含 `headers` 和 `data` 两个属性：
+`requestOptions` 是一个对象，可以包含以下属性：
 
 -   `headers` (Object): 一个对象，其键值对将被合并到最终请求的 **请求头 (Headers)** 中。
 -   `data` (Object): 一个对象，其键值对将被合并到最终请求的 **请求体 (Body)** 中。
+-   `context` (Array<{key: string, value: any}>): 一个数组，包含要传递给后端的上下文参数，会与快捷操作表单数据一起发送。
 
 **示例：**
 
-假设您需要在请求头中添加 `Authorization` 字段，并在请求体中添加 `preset` 字段。
+假设您需要在请求头中添加 `Authorization` 字段，并在请求体中添加 `preset` 字段，同时传递一些上下文参数。
 
 :::code-group
 ```vue [Vue 3]
@@ -43,7 +45,11 @@ const customOptions = reactive({
   data: {
     preset: 'QA',
     userId: 'user123'
-  }
+  },
+  context: [
+    { key: 'language', value: 'javascript' },
+    { key: 'scenario', value: 'code_review' }
+  ]
 });
 
 // 如果 Token 是动态的，可以适时更新 customOptions.headers.Authorization
@@ -78,7 +84,11 @@ export default {
         data: {
           preset: 'QA',
           userId: 'user123'
-        }
+        },
+        context: [
+          { key: 'language', value: 'javascript' },
+          { key: 'scenario', value: 'code_review' }
+        ]
       }
     };
   },
@@ -100,6 +110,7 @@ updateRequestOptions(options: {
   url?: string;            // 可选，更新API地址
   headers?: Record<string, string>; // 可选，更新请求头
   data?: Record<string, any>;      // 可选，更新请求体附加数据
+  context?: Array<{key: string, value: any}>; // 可选，更新上下文参数
 }): void
 ```
 
@@ -112,6 +123,7 @@ updateRequestOptions(options: {
   <div class="controls">
     <button @click="switchAgent">切换智能体</button>
     <button @click="updateToken">更新令牌</button>
+    <button @click="addContext">添加代码检查上下文</button>
   </div>
 </template>
 
@@ -142,6 +154,17 @@ const updateToken = () => {
     }
   });
 };
+
+// 添加代码检查上下文
+const addContext = () => {
+  aiBlueking.value?.updateRequestOptions({
+    context: [
+      { key: 'language', value: 'typescript' },
+      { key: 'framework', value: 'vue' },
+      { key: 'mode', value: 'review' }
+    ]
+  });
+};
 </script>
 ```
 
@@ -152,6 +175,7 @@ const updateToken = () => {
     <div class="controls">
       <button @click="switchAgent">切换智能体</button>
       <button @click="updateToken">更新令牌</button>
+      <button @click="addContext">添加代码检查上下文</button>
     </div>
   </div>
 </template>
@@ -186,6 +210,17 @@ export default {
       });
     },
     
+    // 添加代码检查上下文
+    addContext() {
+      this.$refs.aiBlueking.updateRequestOptions({
+        context: [
+          { key: 'language', value: 'typescript' },
+          { key: 'framework', value: 'vue' },
+          { key: 'mode', value: 'review' }
+        ]
+      });
+    },
+    
     getNewToken() {
       // 实际获取新令牌的逻辑
       return 'new-token-value';
@@ -196,9 +231,9 @@ export default {
 ```
 :::
 
-## 1.0版本请求体结构
+## 1.1版本请求体结构
 
-在1.0版本中，AI小鲸组件的请求体结构发生了变化。下面是实际发送请求的数据结构：
+在1.1版本中，AI小鲸组件的请求体结构有所扩展，特别是在快捷操作表单数据处理方面。下面是实际发送请求的数据结构：
 
 ```javascript
 {
@@ -211,12 +246,49 @@ export default {
     execute_kwargs: {
       stream: true,
     },
+    // 如果是快捷操作，会增加以下字段
+    command: shortcut?.id,  // 快捷操作的ID
+    context: {
+      ...formData, // 表单收集的数据
+      ...contextParams // 从requestOptions.context转换的参数
+    },
     // 其他数据
     ...data,
     // 用户通过requestOptions.data提供的数据
     ...currentRequestOptions.value.data,
   },
   headers: headers || currentRequestOptions.value?.headers,
+}
+```
+
+**context参数合并示例:**
+
+假设您通过`requestOptions.context`提供以下数据：
+
+```javascript
+context: [
+  { key: 'language', value: 'javascript' },
+  { key: 'mode', value: 'review' }
+]
+```
+
+而表单收集了以下数据：
+
+```javascript
+{
+  code: "console.log('Hello world')",
+  style: "standard"
+}
+```
+
+最终在请求体中的`context`字段将如下所示：
+
+```json
+{
+  "code": "console.log('Hello world')",
+  "style": "standard",
+  "language": "javascript",
+  "mode": "review"
 }
 ```
 
@@ -240,6 +312,13 @@ export default {
   "execute_kwargs": {
     "stream": true
   },
+  "command": "code_review",
+  "context": {
+    "code": "console.log('Hello world')",
+    "style": "standard",
+    "language": "javascript",
+    "mode": "review"
+  },
   "preset": "QA",
   "userId": "user123"
 }
@@ -248,7 +327,8 @@ export default {
 请求头也会相应地被添加或覆盖。
 
 ::: warning 注意
-如果 `requestOptions.data` 中定义的键与 AI 小鲸内部使用的请求体键（如 `session_content_id`, `session_code` 等）冲突，外部传入的值 **可能会覆盖** 内部值，请谨慎使用。
+1. 如果 `requestOptions.data` 中定义的键与 AI 小鲸内部使用的请求体键（如 `session_content_id`, `session_code` 等）冲突，外部传入的值 **可能会覆盖** 内部值，请谨慎使用。
+2. 在1.1版本中，`context`字段用于传递表单数据和上下文参数，与快捷操作配合使用效果更佳。
 :::
 
 ## 常见使用场景
@@ -256,4 +336,5 @@ export default {
 1. **添加身份验证信息**：在请求头中添加 JWT 令牌或 API Key
 2. **切换不同的智能体**：通过动态更新 URL 来切换不同的智能体服务
 3. **传递上下文信息**：在请求体中添加业务上下文，如用户ID、业务标识等
-4. **处理特殊场景**：如添加跨域请求头、设置特定的内容类型等
+4. **提供代码环境信息**：通过`context`字段传递代码语言、框架、风格等信息
+5. **处理特殊场景**：如添加跨域请求头、设置特定的内容类型等

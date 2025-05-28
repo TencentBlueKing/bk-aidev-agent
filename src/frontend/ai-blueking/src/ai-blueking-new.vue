@@ -34,7 +34,9 @@
 
           <div class="content-wrapper">
             <!-- 主要内容区域 -->
-            <div :class="`main-content ${sessionContents.length === 0 ? 'greeting-layout' : 'chat-layout'}`">
+            <div
+              :class="`main-content ${sessionContents.length === 0 ? 'greeting-layout' : 'chat-layout'}`"
+            >
               <motion.div
                 v-if="sessionContents.length === 0"
                 class="greeting-box"
@@ -96,10 +98,7 @@
                 :class="`chat-input-container ${sessionContents.length === 0 ? 'centered' : 'bottom'}`"
                 layout
               >
-                <div
-                  v-if="currentSessionLoading || showScrollToBottom"
-                  class="bottom-tools-bar"
-                >
+                <div v-if="currentSessionLoading || showScrollToBottom" class="bottom-tools-bar">
                   <BarButton
                     v-if="currentSessionLoading"
                     color="#EA3636"
@@ -115,7 +114,15 @@
                     @click="scrollMainToBottom"
                   />
                 </div>
+                <CustomInput
+                  v-if="currentShortcut"
+                  :shortcut="currentShortcut"
+                  @cancel="handleCancelShortcut"
+                  @submit="handleSubmitShortcut"
+                />
+
                 <ChatInputBox
+                  v-else
                   v-model="inputMessage"
                   :loading="currentSessionLoading"
                   :prompts="promptList"
@@ -151,11 +158,17 @@
 <script setup lang="ts">
   import { computed, provide, ref, nextTick, watch, defineExpose, Ref } from 'vue';
   import VueDraggableResizable from 'vue-draggable-resizable';
-  import type { IRequestOptions } from './types';
+  import type { IRequestOptions, IShortcut } from './types';
 
-  import { useChat, useStyle, useClickProxy, type ISession, ShortCut, SessionContentRole } from '@blueking/ai-ui-sdk';
+  import {
+    useChat,
+    useStyle,
+    useClickProxy,
+    type ISession,
+    SessionContentRole,
+  } from '@blueking/ai-ui-sdk';
   import { motion } from 'motion-v';
-
+  import CustomInput from './components/custom-inputs/index.vue';
   import AiBluekingHeader from './components/ai-header.vue';
   import BarButton from './components/bar-button.vue';
   import ChatInputBox from './components/chat-input-box.vue';
@@ -176,7 +189,7 @@
     title?: string;
     helloText?: string;
     enablePopup?: boolean;
-    shortcuts?: ShortCut[];
+    shortcuts?: IShortcut[];
     url?: string;
     prompts?: string[];
     hideNimbus?: boolean;
@@ -217,7 +230,7 @@
 
   // Emits 定义
   const emit = defineEmits<{
-    (e: 'shortcut-click', shortcut: ShortCut): void;
+    (e: 'shortcut-click', shortcut: IShortcut): void;
     (e: 'close' | 'show' | 'stop' | 'receive-start' | 'receive-text' | 'receive-end'): void;
     (e: 'send-message', message: string): void;
   }>();
@@ -236,19 +249,18 @@
   const sessionCode = ref(uuid());
   const isSessionInitialized = ref(false);
 
-  const openingRemark = ref('') // 接口获取的开场白
-  const predefinedQuestions: Ref<string[]> = ref([]) // 接口获取的预设问题
+  const openingRemark = ref(''); // 接口获取的开场白
+  const predefinedQuestions: Ref<string[]> = ref([]); // 接口获取的预设问题
+
+  const currentShortcut = ref<IShortcut>();
 
   const greetingText = computed(() => {
-    return openingRemark.value || t('输入你的问题，助你高效的完成工作')
-  })
+    return openingRemark.value || t('输入你的问题，助你高效的完成工作');
+  });
 
   const promptList = computed(() => {
-    return [
-      ...props.prompts,
-      ...predefinedQuestions.value,
-    ]
-  })
+    return [...props.prompts, ...predefinedQuestions.value];
+  });
 
   // 使用可调整大小的容器
   const {
@@ -263,7 +275,7 @@
     handleDragging,
     handleResizing,
     toggleCompression,
-  } = useResizableContainer({ 
+  } = useResizableContainer({
     maxWidthPercent: 80,
     initWidth: props.defaultWidth,
     defaultHeight: props.defaultHeight,
@@ -293,7 +305,7 @@
   const handleShow = () => {
     isShow.value = true;
     emit('show');
-    
+
     // 弹窗打开时，如果有 URL 且未初始化会话，则初始化会话
     if (props.url && !isSessionInitialized.value) {
       initSession();
@@ -376,12 +388,12 @@
       ...props.requestOptions,
     },
   });
-  
+
   // 封装会话初始化逻辑
   const initSession = async () => {
     // 重新生成 sessionCode
     sessionCode.value = uuid();
-    
+
     const session: ISession = {
       sessionCode: sessionCode.value,
       sessionName: 'session',
@@ -391,31 +403,32 @@
     plusSessionApi(session);
     setCurrentSession(session);
 
-
-    const { conversationSettings, promptSetting } = await getAgentInfoApi()
-    openingRemark.value = conversationSettings?.openingRemark || ''
-    predefinedQuestions.value = conversationSettings?.predefinedQuestions || []
+    const { conversationSettings, promptSetting } = await getAgentInfoApi();
+    openingRemark.value = conversationSettings?.openingRemark || '';
+    predefinedQuestions.value = conversationSettings?.predefinedQuestions || [];
 
     if (promptSetting?.content?.length) {
-      await handleCompleteRole(sessionCode.value, promptSetting.content)
+      await handleCompleteRole(sessionCode.value, promptSetting.content);
     }
-    
+
     isSessionInitialized.value = true;
   };
 
   // 监听 url 变化
-  watch(() => props.url, (newUrl, oldUrl) => {
-    if (newUrl !== oldUrl && newUrl) {
-      // 更新请求选项
-      updateRequestOptions({
-        url: props.url,
-        ...props.requestOptions,
-      });
-      // URL 变化时重新初始化会话
-      initSession();
-
+  watch(
+    () => props.url,
+    (newUrl, oldUrl) => {
+      if (newUrl !== oldUrl && newUrl) {
+        // 更新请求选项
+        updateRequestOptions({
+          url: props.url,
+          ...props.requestOptions,
+        });
+        // URL 变化时重新初始化会话
+        initSession();
+      }
     }
-  });
+  );
 
   // 如果初始 URL 存在且弹窗默认显示，则立即初始化会话
   if (props.url && !props.defaultMinimize) {
@@ -442,7 +455,7 @@
   // 事件处理
   const handleSendMessage = async (message: string) => {
     if (!message.trim()) return;
-    
+
     // 如果会话未初始化，先初始化
     if (!isSessionInitialized.value && props.url) {
       initSession();
@@ -461,6 +474,7 @@
       property: {
         extra: {
           cite: citeText.value,
+          ...props.requestOptions?.context,
         },
       },
     });
@@ -468,7 +482,7 @@
     chat({
       sessionCode: sessionCode.value,
       ...props.requestOptions,
-    })
+    });
 
     emit('send-message', escapedMessage);
 
@@ -502,9 +516,15 @@
     }
   };
 
-  const handleShortcutClick = async (shortcut: ShortCut) => {
+  const handleCancelShortcut = () => {
+    currentShortcut.value = undefined;
+  };
+
+  const handleSubmitShortcut = async ({ shortcut, formData }: { shortcut: IShortcut; formData: Record<string, any>[] }) => {
+    currentShortcut.value = undefined;
+
     !isShow.value && handleShow();
-    
+
     // 如果会话未初始化，先初始化
     if (!isSessionInitialized.value && props.url) {
       initSession();
@@ -512,12 +532,12 @@
 
     await plusSessionContent(sessionCode.value, {
       role: SessionContentRole.User,
-      content: shortcut.label,
+      content: shortcut.name,
       sessionCode: sessionCode.value,
       property: {
         extra: {
-          cite: selectedText.value || inputMessage.value,
-          shortcut,
+          command: shortcut.id,
+          context: [...formData, ...props.requestOptions?.context || []],
         },
       },
     });
@@ -525,13 +545,35 @@
     chat({
       sessionCode: sessionCode.value,
       ...props.requestOptions,
-    })
+    });
 
     emit('shortcut-click', shortcut);
   };
 
+  const handleShortcutClick = (shortcut: IShortcut) => {
+    currentShortcut.value = shortcut;
+
+    !isShow.value && handleShow();
+    
+    // 如果快捷键有填充回填项，则填充回填项
+    const fillBackItem = shortcut.components.find(item => item.fillBack)
+      if (fillBackItem) {
+        if (fillBackItem.fillRegx) {
+          // 如果有正则表达式，尝试匹配
+          const matches = selectedText.value.match(new RegExp(fillBackItem.fillRegx));
+          if (matches && matches.length > 0) {
+            fillBackItem.selectedText = matches[0];
+            return;
+          }
+        }
+
+        fillBackItem.selectedText = selectedText.value;
+      }
+    return;
+  };
+
   const handleDelete = (index: number) => {
-    deleteChat(index, sessionCode.value)
+    deleteChat(index, sessionCode.value);
   };
 
   // 监听消息列表变化，自动滚动到底部
@@ -540,7 +582,7 @@
     () => {
       nextTick(scrollToBottomIfNeeded);
     },
-    { deep: true },
+    { deep: true }
   );
 
   defineExpose({

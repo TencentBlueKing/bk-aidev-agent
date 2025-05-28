@@ -3,27 +3,27 @@
     <div
       v-for="shortcut in shortcuts"
       class="shortcut-item"
-      :key="shortcut.key"
+      :key="shortcut.id"
       @click="emit('shortcut-click', shortcut)"
     >
       <i
         class="bkai-icon"
         :class="shortcut.icon"
       ></i>
-      <span class="shortcut-text">{{ shortcut.label }}</span>
+      <span class="shortcut-text">{{ shortcut.name }}</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { type ShortCut } from '@blueking/ai-ui-sdk';
+  import type { IShortcut } from '../types';
 
   const emit = defineEmits<{
-    'shortcut-click': [ShortCut];
+    'shortcut-click': [IShortcut];
   }>();
 
   defineProps<{
-    shortcuts: ShortCut[];
+    shortcuts: IShortcut[];
   }>();
 </script>
 

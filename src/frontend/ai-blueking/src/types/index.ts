@@ -36,11 +36,37 @@ export interface AIBluekingExpose {
   currentSessionLoading: () => boolean;
 }
 
+export type IShortcut = {
+  name: string;
+  icon?: string;
+  id: string;
+  components: IShortcutComponent[];
+}
+
+export type IShortcutComponentType = 'text' | 'textarea' | 'number' | 'select';
+
+export type IShortcutComponent = {
+  name: string;
+  key: string;
+  type: IShortcutComponentType;
+  default?: string | number;
+  placeholder?: string;
+  required?: boolean;
+  fillBack?: boolean;
+  fillRegx?: RegExp;
+  min?: number;
+  max?: number;
+  rows?: number;
+  selectedText?: string;
+  options?: { label: string; value: string }[];
+}
+
 export type { ShortCut, ISessionContent };
 
 export interface IRequestOptions {
   headers?: Record<string, string>;
   data?: Record<string, string>;
+  context?: Record<string, any>[];
 }
 
 export type IDocument = {
@@ -50,3 +76,17 @@ export type IDocument = {
     preview_path?: string;
   };
 };
+
+export interface FormItem {
+  name: string
+  key: string
+  type: 'text' | 'textarea' | 'number' | 'select'
+  default?: any
+  placeholder?: string
+  required?: boolean
+  // 特殊属性（如 select 的 options）
+  options?: string[] // select 专用
+  min?: number; // number 专用
+  max?: number; // number 专用
+  rows?: number; // textarea 专用
+}

@@ -1,0 +1,24 @@
+# 构建输出目录
+dist
+build
+coverage
+lesscode-dist
+
+# 依赖包
+node_modules
+
+# 日志文件
+*.log
+
+# 缓存目录
+.cache
+.temp
+
+# 配置文件
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# 其他不需要格式化的文件
+*.min.js
+*.min.css

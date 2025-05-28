@@ -1,9 +1,6 @@
 <template>
   <div class="dynamic-playground">
-    <DemoHeader
-      description="AI小鲸弹窗组件连接AI智能体，体验实时对话能力"
-      title="实时会话样例"
-    />
+    <DemoHeader description="AI小鲸弹窗组件连接AI智能体，体验实时对话能力" title="实时会话样例" />
     <div class="demo-content">
       <FeatureCards />
 
@@ -20,8 +17,12 @@
               class="action-btn"
               @click="
                 quickActions(
-                  { label: '解释', key: 'explanation', prompt: '解释一下内容： {{ SELECTED_TEXT }}' },
-                  'BK AI: Revolutionizing the Future of Artificial Intelligence',
+                  {
+                    label: '解释',
+                    key: 'explanation',
+                    prompt: '解释一下内容： {{ SELECTED_TEXT }}',
+                  },
+                  'BK AI: Revolutionizing the Future of Artificial Intelligence'
                 )
               "
             >
@@ -33,7 +34,7 @@
               @click="
                 quickActions(
                   { label: '翻译', key: 'translate', prompt: '翻译一下内容： {{ SELECTED_TEXT }}' },
-                  'BK AI: Revolutionizing the Future of Artificial Intelligence',
+                  'BK AI: Revolutionizing the Future of Artificial Intelligence'
                 )
               "
             >
@@ -43,11 +44,7 @@
           </div>
 
           <!-- 调试模式下显示日志 -->
-          <EventLogger
-            v-if="isDebugMode"
-            :logs="eventLogs"
-            @clear="clearLogs"
-          />
+          <EventLogger v-if="isDebugMode" :logs="eventLogs" @clear="clearLogs" />
         </div>
       </div>
     </div>
@@ -55,215 +52,264 @@
     <div>
       <div>
         <AIBlueking
-      ref="aiBlueking"
-      title="aaa"
-      hello-text="bbb"
-      :request-options="{
-        data: {
-          preset: 'QA',
-        },
-      }"
-      :prompts="prompts"
-      :url="url"
-      teleport-to="body"
-      @close="handleClose"
-      @shortcut-click="handleShortcutClick"
-      @show="handleShowAi"
-      @stop="handleStop"
-    />
+          ref="aiBlueking"
+          title="aaa"
+          hello-text="bbb"
+          :request-options="{
+            data: {
+              preset: 'QA',
+            },
+            context: [
+              {context_test: 'vk'}
+            ]
+          }"
+          :prompts="prompts"
+          :url="url"
+          teleport-to="body"
+          :shortcuts="shortcuts"
+          @close="handleClose"
+          @shortcut-click="handleShortcutClick"
+          @show="handleShowAi"
+          @stop="handleStop"
+        />
       </div>
     </div>
   </div>
 </template>
 
 <script lang="ts" setup>
-  import { ref, computed } from 'vue';
+import { ref, computed } from 'vue'
 
-  import AIBlueking, { AIBluekingExpose, ShortCut } from '../src/vue3.ts';
-  import DemoHeader from './components/demo-header.vue';
-  import EventLogger from './components/event-logger.vue';
-  import FeatureCards from './components/feature-cards.vue';
-  import { useEventLogger } from './composables/use-event-logger.ts';
+import AIBlueking, { AIBluekingExpose, IShortcut } from '../src/vue3.ts'
+import DemoHeader from './components/demo-header.vue'
+import EventLogger from './components/event-logger.vue'
+import FeatureCards from './components/feature-cards.vue'
+import { useEventLogger } from './composables/use-event-logger.ts'
 
-  const prompts = ['请推荐几本关于人工智能的书籍。', '请用 Python 写一个简单的 Hello World 程序。'];
+const shortcuts: IShortcut[] = [
+  {
+    name: 'Trace 分析',
+    icon: '',
+    id: 'trace_analysis',
+    components: [
+      {
+        name: '项目名称',
+        key: 'project_name',
+        type: 'text',
+        default: '',
+        placeholder: '请输入项目名称',
+        required: true,
+        fillBack: true,
+        fillRegx: /^[a-zA-Z0-9]+$/,
+      },
+      {
+        name: '数量',
+        key: 'quantity',
+        default: 10,
+        type: 'number',
+        min: 1,
+        max: 100,
+        required: true,
+        fillBack: false,
+      },
+      {
+        name: '项目描述',
+        key: 'description',
+        type: 'textarea',
+        rows: 4,
+        required: false,
+        fillBack: false,
+      },
+      {
+        name: '项目类型',
+        key: 'project_type',
+        type: 'select',
+        required: true,
+        fillBack: false,
+        options: [
+          { label: '类型A', value: 'A' },
+          { label: '类型B', value: 'B' },
+        ],
+      },
+    ],
+  },
+]
 
-  // 检查 URL 中是否包含 debug=true
-  const isDebugMode = computed(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('debug') === 'true';
-  });
+const prompts = ['请推荐几本关于人工智能的书籍。', '请用 Python 写一个简单的 Hello World 程序。']
 
-  const aiBlueking = ref<AIBluekingExpose | null>(null);
+// 检查 URL 中是否包含 debug=true
+const isDebugMode = computed(() => {
+  const urlParams = new URLSearchParams(window.location.search)
+  return urlParams.get('debug') === 'true'
+})
 
-  const prefix = (process.env.BK_API_URL_TMPL || '')
-    .replace('{api_name}', process.env.BK_API_GATEWAY_NAME || '')
-    .replace(/^(http|https):/, `${window.location.protocol}`);
+const aiBlueking = ref<AIBluekingExpose | null>(null)
 
-  const url = `${prefix}/prod/bk_plugin/plugin_api/assistant/`;
+const url = process.env.BK_API_URL_TMPL || ''
 
-  // 事件日志相关
-  const { eventLogs, addLog, clearLogs } = useEventLogger();
+// 事件日志相关
+const { eventLogs, addLog, clearLogs } = useEventLogger()
 
-  // 修改现有的事件处理方法，添加日志记录
-  const handleShowAi = () => {
-    addLog('show', 'AI chat window opened');
-  };
+// 修改现有的事件处理方法，添加日志记录
+const handleShowAi = () => {
+  addLog('show', 'AI chat window opened')
+}
 
-  const handleClose = () => {
-    addLog('close', 'AI chat window closed');
-  };
+const handleClose = () => {
+  addLog('close', 'AI chat window closed')
+}
 
-  const quickActions = (shortcut: { label: string; prompt: string; key: string }, cite: string) => {
-    aiBlueking.value?.handleShow();
+const quickActions = (shortcut: { label: string; prompt: string; key: string }, cite: string) => {
+  aiBlueking.value?.handleShow()
 
-    aiBlueking.value?.sendChat({
-      message: shortcut.label,
-      cite,
-      shortcut,
-    });
-    addLog('quick-action', { message: shortcut.label, cite, prompt: shortcut.prompt });
-  };
+  aiBlueking.value?.sendChat({
+    message: shortcut.label,
+    cite,
+    shortcut,
+  })
+  addLog('quick-action', { message: shortcut.label, cite, prompt: shortcut.prompt })
+}
 
-  const handleShortcutClick = (shortcut: ShortCut) => {
-    addLog('shortcut-click', shortcut);
-  };
+const handleShortcutClick = (shortcut: IShortcut) => {
+  addLog('shortcut-click', shortcut)
+}
 
-  // const handleAiClick = (data: any) => {
-  //   addLog('ai-click', data);
-  // };
+// const handleAiClick = (data: any) => {
+//   addLog('ai-click', data);
+// };
 
-  // // 清空消息
-  // const handleClear = () => {
-  //   addLog('clear', 'All messages cleared');
-  // };
+// // 清空消息
+// const handleClear = () => {
+//   addLog('clear', 'All messages cleared');
+// };
 
-  // // 发送消息
-  // const handleSend = (args: any) => {
-  //   addLog('send', { content: args.content, cite: args.cite, prompt: args.prompt });
-  // };
+// // 发送消息
+// const handleSend = (args: any) => {
+//   addLog('send', { content: args.content, cite: args.cite, prompt: args.prompt });
+// };
 
-  // 暂停聊天
-  const handleStop = () => {
-    addLog('stop', 'Chat stream stopped');
-  };
+// 暂停聊天
+const handleStop = () => {
+  addLog('stop', 'Chat stream stopped')
+}
 
-  const article = `In the rapidly evolving world of technology...`; // 将原有的长文本提取为变量
+const article = `In the rapidly evolving world of technology...` // 将原有的长文本提取为变量
 </script>
 
 <style lang="scss" scoped>
-  .dynamic-playground {
-    max-width: 1200px;
-    margin: 0 auto;
+.dynamic-playground {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.article-section {
+  position: relative;
+  margin-bottom: 40px;
+
+  :deep(.event-logger) {
+    margin-top: 24px;
+  }
+}
+
+.article-card {
+  padding: 32px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+
+  &.mt20 {
+    margin-top: 20px;
   }
 
-  .article-section {
-    position: relative;
-    margin-bottom: 40px;
-
-    :deep(.event-logger) {
-      margin-top: 24px;
-    }
+  h2 {
+    margin-bottom: 16px;
+    font-size: 24px;
+    color: #333;
   }
 
-  .article-card {
-    padding: 32px;
-    background: #fff;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-
-    &.mt20 {
-      margin-top: 20px;
-    }
-
-    h2 {
-      margin-bottom: 16px;
-      font-size: 24px;
-      color: #333;
-    }
-
-    > p {
-      margin-bottom: 24px;
-      color: #666;
-    }
-  }
-
-  .article {
-    padding: 24px;
+  > p {
     margin-bottom: 24px;
-    background: #f5f7fa;
-    border-radius: 8px;
+    color: #666;
+  }
+}
 
-    h3 {
-      margin-bottom: 16px;
-      font-size: 20px;
-      color: #333;
-    }
+.article {
+  padding: 24px;
+  margin-bottom: 24px;
+  background: #f5f7fa;
+  border-radius: 8px;
 
-    p {
-      line-height: 1.8;
-      color: #666;
-
-      &::selection {
-        color: #fff;
-        background: rgba(20, 130, 255, 0.8);
-      }
-    }
+  h3 {
+    margin-bottom: 16px;
+    font-size: 20px;
+    color: #333;
   }
 
-  .quick-actions {
-    display: flex;
-    gap: 16px;
-  }
+  p {
+    line-height: 1.8;
+    color: #666;
 
-  .action-btn {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    padding: 8px 16px;
-    color: #1482ff;
-    cursor: pointer;
-    background: rgba(20, 130, 255, 0.1);
-    border: 1px solid rgba(20, 130, 255, 0.2);
-    border-radius: 4px;
-    transition: all 0.2s;
-
-    &:hover {
-      background: rgba(20, 130, 255, 0.15);
-      border-color: rgba(20, 130, 255, 0.3);
-    }
-
-    .action-icon {
-      font-size: 16px;
+    &::selection {
+      color: #fff;
+      background: rgba(20, 130, 255, 0.8);
     }
   }
+}
 
-  .floating-triggers {
-    position: fixed;
-    right: 20px;
-    bottom: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
+.quick-actions {
+  display: flex;
+  gap: 16px;
+}
+
+.action-btn {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 16px;
+  color: #1482ff;
+  cursor: pointer;
+  background: rgba(20, 130, 255, 0.1);
+  border: 1px solid rgba(20, 130, 255, 0.2);
+  border-radius: 4px;
+  transition: all 0.2s;
+
+  &:hover {
+    background: rgba(20, 130, 255, 0.15);
+    border-color: rgba(20, 130, 255, 0.3);
   }
 
-  .ai-image {
-    width: 64px;
-    height: 64px;
-    cursor: pointer;
-    transition: transform 0.3s;
-
-    &:hover {
-      transform: scale(1.1);
-    }
+  .action-icon {
+    font-size: 16px;
   }
+}
 
-  .float-image {
-    position: relative;
-    right: -32px;
-    transition: right 0.3s;
+.floating-triggers {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 
-    &:hover {
-      right: 0;
-    }
+.ai-image {
+  width: 64px;
+  height: 64px;
+  cursor: pointer;
+  transition: transform 0.3s;
+
+  &:hover {
+    transform: scale(1.1);
   }
+}
+
+.float-image {
+  position: relative;
+  right: -32px;
+  transition: right 0.3s;
+
+  &:hover {
+    right: 0;
+  }
+}
 </style>

@@ -8,15 +8,8 @@
   >
     <div class="popup-content">
       <!-- AI图标按钮 -->
-      <div
-        class="popup-bkai-btn"
-        @click="handleClick"
-      >
-        <img
-          class="avatar"
-          :src="avatar"
-          alt="AI"
-        />
+      <div class="popup-bkai-btn" @click="handleClick">
+        <img class="avatar" :src="avatar" alt="AI" />
         <span>{{ t('问问小鲸') }}</span>
       </div>
 
@@ -28,12 +21,8 @@
           :key="index"
           @click="handleShortcutClick(btn)"
         >
-          <i
-            v-if="btn.icon"
-            class="bkai-icon"
-            :class="btn.icon"
-          ></i>
-          <span class="btn-text ai-blueking-tag-text">{{ btn.label }}</span>
+          <i v-if="btn.icon" class="bkai-icon" :class="btn.icon"></i>
+          <span class="btn-text ai-blueking-tag-text">{{ btn.name }}</span>
         </div>
       </div>
     </div>
@@ -41,7 +30,7 @@
 </template>
 
 <script lang="ts" setup>
-  import { type ShortCut } from '@blueking/ai-ui-sdk';
+  import { type IShortcut } from '../types';
 
   import avatar from '../assets/images/avatar.png';
   import { usePopup } from '../composables/use-popup-props';
@@ -50,7 +39,7 @@
   import { t } from '../lang';
 
   interface IProps {
-    shortcuts: ShortCut[];
+    shortcuts: IShortcut[];
   }
 
   const props = defineProps<IProps>();
@@ -68,7 +57,7 @@
     isIconVisible.value = false;
   };
 
-  const handleShortcutClick = (shortcut: ShortCut) => {
+  const handleShortcutClick = (shortcut: IShortcut) => {
     try {
       emit('shortcut-click', shortcut);
       clearSelection();

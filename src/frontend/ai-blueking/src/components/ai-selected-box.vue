@@ -1,9 +1,6 @@
 <template>
   <div class="ai-selected-box">
-    <i
-      class="bkai-icon bkai-close-circle-shape"
-      @click="clearSelection"
-    ></i>
+    <i class="bkai-icon bkai-close-circle-shape" @click="clearSelection"></i>
     <div class="ai-selected-tip">
       <i class="bkai-icon bkai-yinyong"></i>
       <span class="ai-selected-tip-text">
@@ -17,35 +14,32 @@
       <div
         v-for="action in props.actions"
         class="ai-selected-box-action"
-        :key="action.key"
+        :key="action.id"
         @click="handleShortcutClick(action)"
       >
-        <i
-          class="bkai-icon"
-          :class="action.icon"
-        ></i>
-        <span>{{ action.label }}</span>
+        <i class="bkai-icon" :class="action.icon"></i>
+        <span>{{ action.name }}</span>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { type ShortCut } from '@blueking/ai-ui-sdk';
+  import type { IShortcut } from '../types';
 
   import { useSelect } from '../composables/use-select-pop';
   import { t } from '../lang';
 
-  const emit = defineEmits<(e: 'shortcut-click', shortcut: ShortCut) => void>();
+  const emit = defineEmits<(e: 'shortcut-click', shortcut: IShortcut) => void>();
 
   const props = defineProps<{
     selectedText: string;
-    actions: ShortCut[];
+    actions: IShortcut[];
   }>();
 
   const { clearSelection } = useSelect(true);
 
-  const handleShortcutClick = (shortcut: ShortCut) => {
+  const handleShortcutClick = (shortcut: IShortcut) => {
     emit('shortcut-click', shortcut);
   };
 </script>
