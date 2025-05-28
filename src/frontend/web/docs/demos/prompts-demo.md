@@ -11,10 +11,7 @@ onMounted(() => {
   import('@blueking/ai-blueking/dist/vue3/style.css');
 });
 
-const prefix = (import.meta.env.BK_API_URL_TMPL || '')
-  .replace('{api_name}', import.meta.env.BK_API_GATEWAY_NAME || '')
-  .replace('http', 'https');
-const apiUrl = `${prefix}/prod/bk_plugin/plugin_api/assistant/`;
+const apiUrl = import.meta.env.BK_API_URL_TMPL || ''
 
 const customPrompts = [
   '我给一段文字，概括文字的主题和主要观点',

@@ -12,7 +12,7 @@ aidev_agent 必须同步升级到 1.0.0b1 或更高版本！
 
 1.0 版本是一次重大更新，虽然保持了 API 的基本兼容性，但内部实现进行了优化，特别是在与蓝鲸AI平台（AIDev）的集成方面有显著变化：
 
-- 开场白和预设对话内容从智能体配置接口获取，这意味着原来使用 `defaultMessages` 属性的需要去除，具体参考[预设对话内容](/guide//advanced-usage/default-messages.md)
+- 开场白和预设对话内容从智能体配置接口获取，这意味着原来使用 `defaultMessages` 属性的需要去除，具体参考[预设对话内容](/guide/advanced-usage/default-messages.md)
 - 依赖更新：必须同步升级 AI-SDK，版本不匹配将导致组件无法正常使用
 - 整体架构优化，提供更流畅的用户体验
 
