@@ -10,11 +10,12 @@
   },
   "dependencies": {
     "@blueking/ai-blueking": "1.0.0",
-    "vue": "^3.3.4",
+    "bkui-vue": "^2.0.1-beta.114",
     "express": "^5.1.0",
-    "bkui-vue": "^2.0.1-beta.114"
+    "vue": "^3.3.4"
   },
   "devDependencies": {
+    "less": "^4.2.0",
     "markdown-it-container": "^3.0.0",
     "monaco-editor-vue3": "^0.1.6",
     "vitepress": "^1.6.3"
