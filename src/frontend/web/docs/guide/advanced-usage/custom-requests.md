@@ -13,7 +13,7 @@
 
 -   `headers` (Object): 一个对象，其键值对将被合并到最终请求的 **请求头 (Headers)** 中。
 -   `data` (Object): 一个对象，其键值对将被合并到最终请求的 **请求体 (Body)** 中。
--   `context` (Array<{key: string, value: any}>): 一个数组，包含要传递给后端的上下文参数，会与快捷操作表单数据一起发送。
+-   `context` (Array<Object>): 一个数组，包含要传递给后端的上下文参数，会与快捷操作表单数据一起发送，每个对象应包含所需的字段。
 
 **示例：**
 
@@ -248,10 +248,10 @@ export default {
     },
     // 如果是快捷操作，会增加以下字段
     command: shortcut?.id,  // 快捷操作的ID
-    context: {
-      ...formData, // 表单收集的数据
-      ...contextParams // 从requestOptions.context转换的参数
-    },
+    context: [
+      ...formDataArray, // 表单收集的数据（数组形式）
+      ...currentRequestOptions.value.context || [] // 从requestOptions.context提供的参数
+    ],
     // 其他数据
     ...data,
     // 用户通过requestOptions.data提供的数据
@@ -267,29 +267,29 @@ export default {
 
 ```javascript
 context: [
-  { key: 'language', value: 'javascript' },
-  { key: 'mode', value: 'review' }
+  { language: 'javascript' },
+  { mode: 'review' }
 ]
 ```
 
 而表单收集了以下数据：
 
 ```javascript
-{
-  code: "console.log('Hello world')",
-  style: "standard"
-}
+[
+  { code: "console.log('Hello world')" },
+  { style: "standard" }
+]
 ```
 
 最终在请求体中的`context`字段将如下所示：
 
 ```json
-{
-  "code": "console.log('Hello world')",
-  "style": "standard",
-  "language": "javascript",
-  "mode": "review"
-}
+[
+  { "code": "console.log('Hello world')" },
+  { "style": "standard" },
+  { "language": "javascript" },
+  { "mode": "review" }
+]
 ```
 
 **请求体合并示例:**
@@ -313,12 +313,12 @@ context: [
     "stream": true
   },
   "command": "code_review",
-  "context": {
-    "code": "console.log('Hello world')",
-    "style": "standard",
-    "language": "javascript",
-    "mode": "review"
-  },
+  "context": [
+    { "code": "console.log('Hello world')" },
+    { "style": "standard" },
+    { "language": "javascript" },
+    { "mode": "review" }
+  ],
   "preset": "QA",
   "userId": "user123"
 }

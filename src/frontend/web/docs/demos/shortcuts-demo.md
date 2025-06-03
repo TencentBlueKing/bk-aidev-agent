@@ -72,6 +72,21 @@ const shortcuts = ref([
 const handleShortcutClick = (shortcut) => {
   console.log('快捷操作被点击:', shortcut.name);
 };
+
+const triggerShortcut = () => {
+  // 找到对应ID的快捷操作
+  const shortcut = shortcuts.value.find(s => s.id === 'explanation');
+  if (!shortcut) return;
+  
+  // 可以手动设置要填充的文本
+  const textComponent = shortcut.components.find(c => c.fillBack);
+  if (textComponent) {
+    textComponent.selectedText = '这是一段需要解释的文本';
+  }
+  
+  // 触发快捷操作
+  aiBlueking.value.handleShortcutClick(shortcut);
+};
 </script>
 
 # 快捷操作 Demo
@@ -191,9 +206,6 @@ const triggerShortcut = () => {
     textComponent.selectedText = '这是一段需要解释的文本';
   }
   
-  // 显示AI小鲸窗口
-  aiBlueking.value.handleShow();
-  
   // 触发快捷操作
   aiBlueking.value.handleShortcutClick(shortcut);
 };
@@ -206,5 +218,7 @@ const triggerShortcut = () => {
 - 在v1.1版本中，快捷操作使用组件配置（`components`）替代了原先的 `prompt` 字段
 - 每个组件都有自己的类型和属性，目前支持 `text`、`textarea`、`number` 和 `select` 四种类型
 - 要实现选中文本填充功能，需要设置组件的 `fillBack: true` 属性
+- 表单收集的数据将以数组形式发送到后端，每个项为一个对象，包含组件对应的数据
+- context 参数同样以数组形式传递，与表单数据合并后发送到后端
 - 如果没有配置 `shortcuts`，即使 `enablePopup` 为 true 也不会显示菜单
 - 图标需要使用项目已有的图标类名（建议使用 `bkai-` 前缀的图标）

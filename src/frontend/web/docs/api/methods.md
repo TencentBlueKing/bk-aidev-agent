@@ -20,6 +20,7 @@
 | `handleResend(index, options)` | `index: number, options: {message: string, cite: string}`   | `void`   | 重发指定索引位置的消息，可修改消息内容和引用内容。                                                                          |
 | `initSession()`       | -                                            | `Promise<void>`   | 初始化会话，获取开场白和预设问题。                                                                                       |
 | `updateRequestOptions(options)` | `options: { url?: string; headers?: Record<string, string>; data?: any; context?: Array<{key: string, value: any}> }` | `void` | 动态更新请求选项，可以修改API地址或请求参数。对于需要在运行时切换智能体或修改请求参数的场景非常有用。 |
+| `updateRequestOptions(options)` | `options: { url?: string; headers?: Record<string, string>; data?: any; context?: Array<Object> }` | `void` | 动态更新请求选项，可以修改API地址或请求参数。对于需要在运行时切换智能体或修改请求参数的场景非常有用。 |
 
 ::: danger 已废弃方法
 以下方法在1.0版本中已被移除:
@@ -121,8 +122,8 @@ const addCustomHeader = () => {
     },
     // 1.1版本可以添加context参数
     context: [
-      { key: 'language', value: 'javascript' },
-      { key: 'scenario', value: 'code_review' }
+      { language: 'javascript' },
+      { scenario: 'code_review' }
     ]
   });
 };
