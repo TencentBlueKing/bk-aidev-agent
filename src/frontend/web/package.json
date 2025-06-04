@@ -1,6 +1,6 @@
 {
   "name": "ai-blueking-docs",
-  "version": "1.1.0-beta.2",
+  "version": "1.1.0-beta.3",
   "description": "AI 小鲸智能对话组件文档",
   "scripts": {
     "dev": "vitepress dev docs --host",

@@ -381,7 +381,7 @@ export default {
             { 
               type: 'select', 
               key: 'targetLang', 
-              label: '目标语言',
+              name: '目标语言',
               options: [
                 { label: '英文', value: 'en' },
                 { label: '日文', value: 'jp' }

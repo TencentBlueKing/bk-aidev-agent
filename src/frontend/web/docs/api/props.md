@@ -86,7 +86,7 @@ interface IShortcut {
     {
       type: 'textarea',
       key: 'text',
-      label: '待翻译文本',
+      name: '待翻译文本',
       fillBack: true, // 启用自动填充
       fillRegx: '.*', // 可选，使用正则表达式匹配选中的文本
       placeholder: '请输入或选中需要翻译的文本'
@@ -94,7 +94,7 @@ interface IShortcut {
     {
       type: 'select',
       key: 'targetLang',
-      label: '目标语言',
+      name: '目标语言',
       options: [
         { label: '中文', value: 'zh' },
         { label: '英文', value: 'en' },
