@@ -84,7 +84,6 @@ interface IShortcut {
   components: Array<{
     type: string;    // 组件类型
     name?: string;   // 表单项名称
-    label?: string;  // 表单项标签
     key: string;     // 表单项键名
     placeholder?: string; // 占位文本
     default?: any;   // 默认值
@@ -126,14 +125,14 @@ interface IShortcut {
     {
       type: 'textarea',
       key: 'text',
-      label: '待翻译文本',
+      name: '待翻译文本',
       fillBack: true,
       placeholder: '请输入或选中需要翻译的文本'
     },
     {
       type: 'select',
       key: 'targetLang',
-      label: '目标语言',
+      name: '目标语言',
       options: [
         { label: '中文', value: 'zh' },
         { label: '英文', value: 'en' },
@@ -144,7 +143,7 @@ interface IShortcut {
     {
       type: 'select',
       key: 'style',
-      label: '翻译风格',
+      name: '翻译风格',
       options: [
         { label: '标准', value: 'standard' },
         { label: '正式', value: 'formal' },

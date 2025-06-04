@@ -21,7 +21,7 @@
         @dragging="handleDragging"
         @resizing="handleResizing"
       >
-        <div class="ai-blueking-container">
+        <div class="ai-blueking-container" ref="rootNode">
           <!-- 顶部栏 -->
           <AiBluekingHeader
             v-if="!props.hideHeader"
@@ -117,6 +117,7 @@
                 <CustomInput
                   v-if="currentShortcut"
                   :shortcut="currentShortcut"
+                  :root-node="rootNode"
                   @cancel="handleCancelShortcut"
                   @submit="handleSubmitShortcut"
                 />
@@ -251,6 +252,8 @@
 
   const openingRemark = ref(''); // 接口获取的开场白
   const predefinedQuestions: Ref<string[]> = ref([]); // 接口获取的预设问题
+
+  const rootNode: Ref<HTMLElement | undefined> = ref();
 
   const currentShortcut = ref<IShortcut>();
 

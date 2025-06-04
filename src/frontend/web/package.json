@@ -9,7 +9,7 @@
     "server": "node ./server.cjs"
   },
   "dependencies": {
-    "@blueking/ai-blueking": "1.1.0-beta.2",
+    "@blueking/ai-blueking": "1.1.0-beta.3",
     "bkui-vue": "^2.0.1-beta.114",
     "express": "^5.1.0",
     "vue": "^3.3.4"

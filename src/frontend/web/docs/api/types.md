@@ -15,7 +15,6 @@ interface IShortcut {
   components: Array<{
     type: string;    // 组件类型：'input', 'select', 'number', 'textarea' 等
     name?: string;   // 表单项名称（推荐使用，与 label 相同功能）
-    label?: string;  // 表单项标签
     key: string;     // 表单项键名
     placeholder?: string; // 占位文本
     default?: any;   // 默认值

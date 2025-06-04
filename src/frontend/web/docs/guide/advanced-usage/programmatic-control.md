@@ -27,30 +27,16 @@ AI小鲸组件实例提供以下方法用于编程式控制:
 ```typescript
 handleSendMessage(options: {
   message?: string; // 要发送的消息文本，可以为空
-  cite?: string;    // 引用的文本内容
-  shortcut?: {     // 模拟的快捷操作对象 (可选)
-    type: string;
-    label: string;
-    cite?: boolean;
-    prompt?: string; // 可以包含 {{cite}} 占位符
-    icon?: string;
-  };
 })
 ```
 
 **参数说明:**
 
 -   `message`: 用户输入的或您想模拟的用户消息。如果提供了 `shortcut` 且其 `prompt` 不为空，`message` 通常可以省略或用于显示目的。
--   `cite`: 您希望附加到本次提问的引用文本。如果提供了 `shortcut` 且其 `prompt` 包含 `{{cite}}`，`cite` 会被用来替换这个占位符。
--   `shortcut`: 一个可选的对象，用于模拟用户点击了一个快捷操作。如果提供了 `shortcut`，组件会：
-    1.  将 `cite` 的内容替换 `shortcut.prompt` 中的 `{{cite}}`。
-    2.  将处理后的 `prompt` 作为最终发送给 AI 的指令。
-    3.  触发 `shortcut-click` 事件。
 
 **使用场景:**
 
-1.  **通过页面按钮触发特定带引用的提问:** (参见 [内容引用与快捷操作](/guide/core-features/content-referencing#快捷操作演示) 中的示例)
-2.  **与其他组件联动:** 例如，在一个表单旁边放置 AI 按钮，点击后将表单的某个字段值作为 `cite`，并使用预设的 `shortcut` (如 "解释这个术语") 发送给 AI。
+1.  **需要通过编程控制直接发送信息与 AI小鲸交互**
 
 **示例 (联动场景):**
 
@@ -80,14 +66,7 @@ const explainTerm = () => {
   }
   aiBlueking.value?.handleShow();
   aiBlueking.value?.handleSendMessage({
-    // message: `解释术语: ${term.value}`, // 可以不传 message，依赖 shortcut.prompt
-    cite: term.value, // 将输入框内容作为引用
-    shortcut: {
-      type: 'explain_term',
-      label: '解释术语',
-      cite: true,
-      prompt: '请用通俗易懂的语言解释以下术语：\n{{cite}}'
-    }
+    message: `解释术语: ${term.value}`,
   });
 };
 </script>
@@ -119,14 +98,7 @@ export default {
       }
       this.$refs.aiBlueking.handleShow();
       this.$refs.aiBlueking.handleSendMessage({
-        // message: `解释术语: ${this.term}`, // 可以不传 message
-        cite: this.term, // 将输入框内容作为引用
-        shortcut: {
-          type: 'explain_term',
-          label: '解释术语',
-          cite: true,
-          prompt: '请用通俗易懂的语言解释以下术语：\n{{cite}}'
-        }
+        message: `解释术语: ${this.term}`
       });
     }
   }

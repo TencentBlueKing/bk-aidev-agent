@@ -21,7 +21,7 @@ const shortcuts = ref([
       {
         type: 'textarea',
         key: 'content',
-        label: '内容',
+        name: '内容',
         fillBack: true,
         placeholder: '请输入需要解释的内容'
       }
@@ -35,7 +35,7 @@ const shortcuts = ref([
       {
         type: 'textarea',
         key: 'text',
-        label: '待翻译文本',
+        name: '待翻译文本',
         fillBack: true,
         placeholder: '请输入需要翻译的内容'
       }
@@ -49,14 +49,14 @@ const shortcuts = ref([
       {
         type: 'textarea',
         key: 'code',
-        label: '代码',
+        name: '代码',
         fillBack: true,
         placeholder: '请输入需要优化的代码'
       },
       {
         type: 'select',
         key: 'language',
-        label: '语言',
+        name: '语言',
         placeholder: '请选择编程语言',
         options: [
           { label: 'JavaScript', value: 'javascript' },
@@ -121,7 +121,7 @@ const shortcuts = ref([
       {
         type: 'textarea',
         key: 'content',
-        label: '内容',
+        name: '内容',
         fillBack: true,
         placeholder: '请输入需要解释的内容'
       }
@@ -135,7 +135,7 @@ const shortcuts = ref([
       {
         type: 'textarea',
         key: 'text',
-        label: '待翻译文本',
+        name: '待翻译文本',
         fillBack: true,
         placeholder: '请输入需要翻译的内容'
       }
@@ -149,14 +149,14 @@ const shortcuts = ref([
       {
         type: 'textarea',
         key: 'code',
-        label: '代码',
+        name: '代码',
         fillBack: true,
         placeholder: '请输入需要优化的代码'
       },
       {
         type: 'select',
         key: 'language',
-        label: '语言',
+        name: '语言',
         placeholder: '请选择编程语言',
         options: [
           { label: 'JavaScript', value: 'javascript' },

@@ -34,7 +34,7 @@ const customShortcuts = [
       {
         type: 'textarea',
         key: 'code',
-        label: '代码内容',
+        name: '代码内容',
         fillBack: true,
         placeholder: '请输入或选中需要解释的代码',
         rows: 4
@@ -49,14 +49,14 @@ const customShortcuts = [
       {
         type: 'textarea',
         key: 'text',
-        label: '待翻译文本',
+        name: '待翻译文本',
         fillBack: true,
         placeholder: '请输入或选中需要翻译的文本'
       },
       {
         type: 'select',
         key: 'targetLang',
-        label: '目标语言',
+        name: '目标语言',
         options: [
           { label: '中文', value: 'zh' },
           { label: '英文', value: 'en' },
@@ -89,7 +89,6 @@ const customShortcuts = [
 | `type` | `string` | 组件类型，如 'input'、'select'、'textarea'、'number' |
 | `key` | `string` | 表单项数据的键名 |
 | `name` | `string` | 表单项名称（推荐使用） |
-| `label` | `string` | 表单项标签 |
 | `placeholder` | `string` | 输入框占位文本 |
 | `fillBack` | `boolean` | 是否自动填充用户选中的文本 |
 | `fillRegx` | `string` 或 `RegExp` | 填充文本时使用的正则表达式 |
@@ -286,18 +285,18 @@ const shortcuts: IShortcut[] = [
     id: 'explain',
     name: '解释',
     components: [
-      { type: 'textarea', key: 'text', label: '内容', fillBack: true }
+      { type: 'textarea', key: 'text', name: '内容', fillBack: true }
     ]
   },
   {
     id: 'translate',
     name: '翻译',
     components: [
-      { type: 'textarea', key: 'text', label: '内容', fillBack: true },
+      { type: 'textarea', key: 'text', name: '内容', fillBack: true },
       { 
         type: 'select', 
         key: 'targetLang', 
-        label: '目标语言',
+        name: '目标语言',
         options: [
           { label: '英文', value: 'en' },
           { label: '日文', value: 'jp' }

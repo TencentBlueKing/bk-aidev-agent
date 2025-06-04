@@ -29,7 +29,7 @@
           v-model="formData[index][item.key]"
           v-bind="item"
           :popoverOptions="{
-            boundary: 'parent'
+            boundary: props.rootNode || 'parent'
           }"
         />
       </bk-form-item>
@@ -53,6 +53,7 @@
 
   const props = defineProps<{
     shortcut: IShortcut;
+    rootNode: HTMLElement | undefined;
   }>();
 
   const emit = defineEmits(['submit', 'cancel']);
@@ -137,7 +138,7 @@
       grid-template-columns: repeat(2, 1fr);
       gap: 12px;
 
-      :deep(.ai-blueking-form-label) {
+      :deep(.ai-blueking-form-label, .bk-form-label) {
         font-size: 12px;
       }
     }
@@ -148,7 +149,7 @@
       padding: 0 12px 12px 12px;
     }
 
-    :deep(.ai-blueking-form-item) {
+    :deep(.ai-blueking-form-item, .bk-form-item) {
       margin-bottom: 0;
     }
 
