@@ -328,6 +328,8 @@ class IntentRecognitionMixin(BaseModel):
             inner_input["beijing_now"] = get_beijing_now()
         if "context" in chat_prompt_template.input_variables:
             inner_input["context"] = kwargs["context"]
+        if "qa_context" in chat_prompt_template.input_variables:
+            inner_input["qa_context"] = kwargs["qa_context"]
         if "query" in chat_prompt_template.input_variables:
             inner_input["query"] = kwargs["query"]
         if "role_prompt" in chat_prompt_template.input_variables:
@@ -342,6 +344,8 @@ class IntentRecognitionMixin(BaseModel):
             inner_input["use_general_knowledge_on_miss"] = kwargs["use_general_knowledge_on_miss"]
         if "rejection_response" in chat_prompt_template.input_variables:
             inner_input["rejection_response"] = kwargs["rejection_response"]
+        if "with_qa_response" in chat_prompt_template.input_variables:
+            inner_input["with_qa_response"] = kwargs["with_qa_response"]
         formated_prompts = chat_prompt_template._format_prompt_with_error_handling(inner_input)
         cur_token_len = llm.get_num_tokens_from_messages(formated_prompts.messages)
         return cur_token_len, formated_prompts
@@ -432,6 +436,12 @@ class IntentRecognitionMixin(BaseModel):
         # 待知识库后台对非结构化数据的处理方式的 index_content 不是默认使用LLM总结后的内容之后，
         # 可将“且是结构化数据”的逻辑去除
         # NOTE: 目前暂不考虑检索返回模板对 page_content 的影响
+        knowledge_base_ids = set()
+        for doc in recog_results[knowledge_resource_type]:
+            if "knowledge_base_id" not in doc.get("metadata", {}):
+                raise ValueError("Document metadata missing required field: knowledge_base_id")
+            else:
+                knowledge_base_ids.add(doc["metadata"]["knowledge_base_id"])
         kwargs["context"] = [
             (
                 doc["metadata"]["index_content"]
@@ -439,7 +449,20 @@ class IntentRecognitionMixin(BaseModel):
                 else doc["page_content"]
             )
             for doc in recog_results[knowledge_resource_type]
+            if doc["metadata"]["knowledge_base_id"] not in recog_results["qa_response_kb_ids"]
         ]
+        kwargs["qa_context"] = [
+            (
+                doc["metadata"]["index_content"]
+                if "index_content" in doc["metadata"] and is_structured_data(doc)
+                else doc["page_content"]
+            )
+            for doc in recog_results[knowledge_resource_type]
+            if doc["metadata"]["knowledge_base_id"] in recog_results["qa_response_kb_ids"]
+        ]
+        qa_set = set(recog_results["qa_response_kb_ids"])
+        # 检查是否包含qa_response_kb_ids
+        kwargs["with_qa_response"] = qa_set.issubset(knowledge_base_ids)
         if reference_doc := deduplicate_knowledge_file_paths(recog_results[knowledge_resource_type]):
             conditional_dispatch_custom_event(
                 "custom_event",

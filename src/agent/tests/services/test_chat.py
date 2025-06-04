@@ -111,7 +111,7 @@ def test_CommonQAAgent_chat_streaming():
             knowledge_resource_reject_threshold=(0.001, 0.1),
             topk=10,
             knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM.value,
-            use_general_knowledge_on_miss=False,
+            use_general_knowledge_on_miss=True,
             rejection_response="抱歉，我无法回答你的问题。",
         ),
     )
@@ -132,3 +132,76 @@ def test_CommonQAAgent_chat_streaming():
         if each:
             chunk = json.loads(each[6:])
             print(f"\n=====> {chunk}\n")  # 方便跟其他标准输出区分开来
+
+
+@pytest.mark.skipif(
+    not all([settings.LLM_GW_ENDPOINT, settings.APP_CODE, settings.SECRET_KEY]),
+    reason="没有配置足够的环境变量,跳过该测试",
+)
+def test_qa_response(test_input, expected_kb_ids):
+    # 初始化聊天模型
+    chat_model = ChatModel.get_setup_instance(
+        model="deepseek-v3",
+        streaming=True,
+    )
+
+    # 初始化知识库模型
+    kb_model = ChatModel.get_setup_instance(
+        model="hunyuan-turbo",
+        streaming=True,
+    )
+
+    client = BKAidevApi.get_client_by_username(username="")
+    tools = [client.construct_tool("weather-query")]
+
+    # 配置带参数的智能体选项
+    agent_options = AgentOptions(
+        intent_recognition_options=IntentRecognition(
+            force_process_by_agent=False,
+            role_prompt="",
+        ),
+        knowledge_query_options=KnowledgebaseSettings(
+            knowledge_base_ids=[58],
+            knowledge_item_ids=[10805],
+            qa_response_kb_ids=expected_kb_ids,
+            knowledge_resource_reject_threshold=(0.001, 0.1),
+            topk=10,
+            knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM.value,
+            use_general_knowledge_on_miss=True,
+            rejection_response="无法回答该问题",
+        ),
+    )
+
+    # 初始化智能体执行器
+    agent_e, cfg = CommonQAAgent.get_agent_executor(
+        chat_model,
+        kb_model,
+        extra_tools=tools,
+        chat_history=[HumanMessage(content="你好"), AIMessage(content="你好！")],
+        agent_options=agent_options,
+    )
+
+    for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_input, timeout=2):
+        if each == "data: [DONE]\n\n":
+            break
+        if each:
+            chunk = json.loads(each[6:])
+            print(f"\n=====> {chunk}\n")  # 方便跟其他标准输出区分开来
+
+
+@pytest.mark.skipif(
+    not all([settings.LLM_GW_ENDPOINT, settings.APP_CODE, settings.SECRET_KEY]),
+    reason="没有配置足够的环境变量,跳过该测试",
+)
+def test_qa_response_sequence():
+    """按特定顺序执行测试用例"""
+    test_cases = [
+        ({"input": "世界最高盐度海域"}, [254]),
+        ({"input": "世界最高盐度海域"}, []),
+        # ({"input": "云桌面本地双屏设置"}, [254]),
+        # ({"input": "云桌面本地双屏设置"}, []),
+    ]
+    
+    for test_input, expected_kb_ids in test_cases:
+        print(f"\n=== 正在执行测试用例: {test_input['input']} ===")
+        test_qa_response(test_input, expected_kb_ids)

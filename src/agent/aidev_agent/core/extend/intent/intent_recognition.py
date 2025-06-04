@@ -854,6 +854,21 @@ class IntentRecognition(BaseModel):
                     agent_options=agent_options,
                     **kwargs,
                 )
+            if agent_options.knowledge_query_options.qa_response_kb_ids:
+                client = BKAidevApi.get_client_by_username(username="")
+                qa_response_knowledge_bases = [
+                    client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"]
+                    for id_ in agent_options.knowledge_query_options.qa_response_kb_ids
+                ]
+                future_qa_response = executor.submit(
+                    self.search_knowledge_index_specific,
+                    knowledge_items=knowledge_items,
+                    knowledge_bases=qa_response_knowledge_bases,
+                    query=query_for_search,
+                    topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
+                    agent_options=agent_options,
+                    **kwargs,
+                )
             if (
                 agent_options.intent_recognition_options.with_index_specific_search_init
                 and query_for_search != kwargs["input"]
@@ -944,7 +959,11 @@ class IntentRecognition(BaseModel):
                 if agent_options.intent_recognition_options.with_index_specific_search
                 else []
             )
-
+            retrieved_results_qa_response = (
+                future_qa_response.result() 
+                if agent_options.knowledge_query_options.qa_response_kb_ids 
+                else []
+            )
             if (
                 agent_options.intent_recognition_options.with_index_specific_search_init
                 and query_for_search != kwargs["input"]
@@ -979,6 +998,7 @@ class IntentRecognition(BaseModel):
             fusion_docs = self.weighted_reciprocal_rank_fusion(
                 [
                     retrieved_results_index_specific,
+                    retrieved_results_qa_response,
                     retrieved_results_index_specific_init,
                     retrieved_results_index_specific_translation,
                     retrieved_results_index_specific_keywords,
@@ -986,7 +1006,7 @@ class IntentRecognition(BaseModel):
                     retrieved_results_es_keywords,
                     retrieved_results_nature,
                 ],
-                weights=[1.0 / 7] * 7,
+                weights=[1.0 / 8] * 8,
             )
         else:
             # NOTE: 推荐使用 with_rrf，否则因为ES支路的score使用该次召回的最大值来归一化的，最高分就是1，
@@ -994,6 +1014,7 @@ class IntentRecognition(BaseModel):
             fusion_docs = sorted(
                 deduplicate_knowledge_chunks(
                     retrieved_results_index_specific
+                    + retrieved_results_qa_response
                     + retrieved_results_index_specific_init
                     + retrieved_results_index_specific_translation
                     + retrieved_results_index_specific_keywords
@@ -1214,6 +1235,7 @@ class IntentRecognition(BaseModel):
             "status": IntentStatus.PROCESS_BY_AGENT,
             "decision": decision,
             "independent_query": independent_query,
+            "qa_response_kb_ids": agent_options.knowledge_query_options.qa_response_kb_ids,
             "candidate_tools": candidate_tools,
             "knowledge_resources_emb_recalled": knowledge_resources_emb_recalled,
             "knowledge_resources_highly_relevant": knowledge_resources_highly_relevant,

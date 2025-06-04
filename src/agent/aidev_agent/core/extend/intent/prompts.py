@@ -253,6 +253,13 @@ private_qa_prompt_tool_calling = ChatPromptTemplate.from_messages(
                 "我会给你提供一个用户最新提问，以及一些来自私域知识库的知识库知识。"
                 "你需要根据情况智能地选择以下3种情况的1种进行答复。"
                 "\n\n1. 如果你非常自信地觉得根据给你的知识库知识可以回答给你的用户最新提问，"
+                "{% if with_qa_response %}请优先查参考历史问答过程，问答过程内容格式如下：[HumanMessage(content='xxx'),"
+                "AIMessage(content='xxx'), ...]，"
+                "其中'HumanMessage'表示用户历史提问，'AIMessage'表示智能聊天系统的历史回答。"
+                "如果历史回答评分低于或等于3分，则不要参考该回答进行回答，且避免回答相似的内容。"
+                "如果用户评分高于3分，则参考该回答进行回答。"
+                "如果同时有高于3分和低于3分的回答，则参考高于3分的回答。"
+                "如果用户问题和提供的历史问答无关，则使用私域知识库知识进行回答。{% endif -%}"
                 "你务必严格遵循给你的知识库知识回答给你的用户最新提问。"
                 "永远不要编造答案或回复一些超出该知识库知识信息范围外的答案。不要在你的返回中出现诸如“根据提供的知识库知识”这样的表述，"
                 "直接回答即可。"
@@ -272,7 +279,9 @@ private_qa_prompt_tool_calling = ChatPromptTemplate.from_messages(
         ("placeholder", "{{chat_history}}"),
         (
             "human",
-            "以下是知识库知识内容：```{{context}}```\n\n\n以下是用户最新提问内容：```{{query}}```\n\n\n{{role_prompt}}\n\n\n{{agent_scratchpad}}",
+            """以下是知识库知识内容:：```{{context}}```{% if with_qa_response %}\n\n\n以下是历史问答：```{{qa_context}}```，
+            如果历史回答评分低于或等于3分，则不要参考该回答进行回答，高于3分才能作参考{% endif -%}\n\n\n以下是用户最新提问内容：
+            ```{{query}}```\n\n\n{{role_prompt}}\n\n\n{{agent_scratchpad}}""",
         ),
     ],
     template_format="jinja2",
@@ -286,6 +295,13 @@ clarifying_qa_prompt_tool_calling = ChatPromptTemplate.from_messages(
                 "我会给你提供一个用户最新提问，以及一些来自私域知识库的知识库知识。"
                 "你需要根据情况智能地选择以下4种情况的1种进行答复。"
                 "\n\n1. 如果你非常自信地觉得根据给你的知识库知识可以回答给你的用户最新提问，"
+                "{% if with_qa_response %}请优先查参考历史问答过程，问答过程内容格式如下：[HumanMessage(content='xxx'),"
+                "AIMessage(content='xxx'), ...]，"
+                "其中'HumanMessage'表示用户历史提问，'AIMessage'表示智能聊天系统的历史回答。"
+                "如果历史回答评分低于或等于3分，则不要参考该回答进行回答，且避免回答相似的内容。"
+                "如果用户评分高于3分，则参考该回答进行回答。"
+                "如果同时有高于3分和低于3分的回答，则参考高于3分的回答。"
+                "如果用户问题和提供的历史问答无关，则使用私域知识库知识进行回答。{% endif -%}"
                 "你务必严格遵循给你的知识库知识回答给你的用户最新提问。"
                 "永远不要编造答案或回复一些超出该知识库知识信息范围外的答案。不要在你的返回中出现诸如“根据提供的知识库知识”这样的表述，"
                 "直接回答即可。"
@@ -310,7 +326,9 @@ clarifying_qa_prompt_tool_calling = ChatPromptTemplate.from_messages(
         ("placeholder", "{{chat_history}}"),
         (
             "human",
-            "以下是知识库知识内容：```{{context}}```\n\n\n以下是用户最新提问内容：```{{query}}```\n\n\n{{role_prompt}}\n\n\n{{agent_scratchpad}}",
+            """以下是知识库知识内容:：```{{context}}```{% if with_qa_response %}\n\n\n以下是历史问答：```{{qa_context}}```，
+            如果历史回答评分低于或等于3分，则不要参考该回答进行回答，高于3分才能作参考{% endif -%}\n\n\n以下是用户最新提问内容：
+            ```{{query}}```\n\n\n{{role_prompt}}\n\n\n{{agent_scratchpad}}""",
         ),
     ],
     template_format="jinja2",
@@ -467,6 +485,13 @@ d. 一些来自上述工具调用的结果。提供给你的格式是先用json�
 {% endraw %}
 注意！在 $YOUR_ANSWER_ACCORDING_TO_CURRENT_CONTEXT 中，
 你务必严格遵循给你的上下文信息来回答给你的用户最新提问。永远不要编造答案或回复一些超出该上下文信息范围外的答案！回答尽量详细！
+{% if with_qa_response %}
+历史问答内容格式如下：[HumanMessage(content='xxx'), AIMessage(content='xxx'), ...]，其中"HumanMessage"表示用户历史提问，
+"AIMessage"表示智能聊天系统的历史回答。
+如果知识库中该问题的回答用户评分高于3分，则直接使用该回答进行回答即可，不需另外使用私域知识库内容。
+如果在知识库中该问题的回答用户评分低于或等于3分，则不要参考知识库中的回答进行回答，且避免回答相似的内容，另外用私域知识库或自身知识作答。
+如果用户问题和提供的历史问答无关，则使用私域知识库知识进行回答。
+{% endif %}
 永远不要在你的回答中出现诸如'根据给定的上下文信息'这样的字眼！直接回答用户最新提问即可！
 注意！务必在根据当前给定的知识库知识和工具调用结果已经足够完整地回答用户所有的提问，才能选择本情况！
 注意！如果当前给定的信息不足以完整地回答用户所有的提问，你就一定不能选择本情况！
@@ -553,6 +578,7 @@ d. 一些来自上述工具调用的结果。提供给你的格式是先用json�
             (
                 "\n\n\n以下是你可以根据需要选择使用的工具：```{{tools}}```"
                 "\n\n\n以下是知识库知识内容：```{{context}}```"
+                "{% if with_qa_response %}\n\n\n以下是历史问答内容：```{{qa_context}}```{% endif -%}"
                 "\n\n\n以下是用户最新提问内容：```{{query}}```"
                 "\n\n\n注意注意再注意！你务必看清楚用户最新提问内容是什么！"
                 "\n\n\n你的回答务必针对用户最新提问，即```{{query}}```"
