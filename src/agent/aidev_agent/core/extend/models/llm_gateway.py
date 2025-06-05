@@ -29,6 +29,7 @@ from langchain_openai.chat_models.base import _convert_message_to_dict
 from langchain_openai.embeddings import OpenAIEmbeddings as RawOpenAIEmbeddings
 from pydantic import BaseModel, model_validator
 
+from aidev_agent.api.domains import BKAIDEV_URL
 from aidev_agent.config import settings
 
 
@@ -37,7 +38,7 @@ class ApiGwMixin(BaseModel):
     def get_setup_instance(cls, **kwargs):
         base_url = kwargs.get("base_url", "") or settings.LLM_GW_ENDPOINT
         if not base_url:
-            base_url = settings.BK_APIGW_ENDPOINT.lstrip("/") + f"/{settings.ENVIRONMENT}/openapi/aidev/gateway/llm/v1"
+            base_url = f"{BKAIDEV_URL}/openapi/aidev/gateway/llm/v1"
         kwargs["base_url"] = base_url
         auth_headers = kwargs.pop("auth_headers", {})
         if not auth_headers:

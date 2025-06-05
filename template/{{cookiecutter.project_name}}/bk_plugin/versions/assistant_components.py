@@ -34,7 +34,7 @@ class PluginConfig(BaseModel):
     CACHE_KEY: ClassVar[str] = "cached"
 
     def sync_config(self):
-        if not SYNC_CONFIG_FROM_AIDEV and cache.get(self.CACHE_KEY):
+        if not SYNC_CONFIG_FROM_AIDEV or cache.get(self.CACHE_KEY):
             return
         client = BKAidevApi.get_client()
         result = client.api.retrieve_agent_config(path_params={"agent_code": settings.APP_CODE})["data"]
