@@ -97,6 +97,11 @@ class ChatSessionContentViewSet(PluginViewSet):
         result = client.api.update_chat_session_content(path_params={"id": pk}, json=request.data)
         return Response(data=result["data"])
 
+    def batch_delete(self, request, **kwargs):
+        client = BKAidevApi.get_client()
+        result = client.api.batch_delete_chat_session_content(json=request.data)
+        return Response(data=result["data"])
+
 
 class ChatCompletionViewSet(PluginViewSet):
     def create(self, request):

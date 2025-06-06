@@ -99,6 +99,13 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/chat/session_content/{id}/",
     )
 
+    batch_delete_chat_session_content = bind_property(
+        Operation,
+        name="destroy_chat_session_content",
+        method="POST",
+        path="/openapi/aidev/resource/v1/chat/session_content/batch_delete/",
+    )
+
     retrieve_agent_config = bind_property(
         Operation,
         name="retrieve_agent_config",

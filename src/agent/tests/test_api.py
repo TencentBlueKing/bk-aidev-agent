@@ -35,10 +35,13 @@ class TestAPI:
         client = BKAidevApi.get_client()
 
         session_code = "onlyfortest1"
-        result = client.api.create_chat_session(json={"session_code": session_code, "session_name": "testonly"})
-        assert result["data"]
+        try:
+            client.api.destroy_chat_session(path_params={"session_code": session_code})
+            result = client.api.create_chat_session(json={"session_code": session_code, "session_name": "testonly"})
+        except Exception:
+            pass
 
-        result = client.api.retrieve_chat_session(path_params={"session_code": result["data"]["session_code"]})
+        result = client.api.retrieve_chat_session(path_params={"session_code": session_code})
         assert result
 
         # 添加一些session content
@@ -67,8 +70,25 @@ class TestAPI:
         assert len(result["data"]) == 1
         client.api.destroy_chat_session_content(path_params={"id": session_content_id})
         result = client.api.get_chat_session_contents(params={"session_code": session_code})
+
+        # 添加一些session content
+        ids = []
+        for _ in range(10):
+            result = client.api.create_chat_session_content(
+                json={
+                    "session_code": session_code,
+                    "role": "user",
+                    "content": "test",
+                    "status": "success",
+                }
+            )
+            ids.append(result["data"]["id"])
+        result = client.api.get_chat_session_contents(params={"session_code": session_code})
+        assert len(result["data"]) == 10
+        client.api.batch_delete_chat_session_content(json={"ids": ids})
+        result = client.api.get_chat_session_contents(params={"session_code": session_code})
         assert len(result["data"]) == 0
-        client.api.destroy_chat_session(path_params={"session_code": "onlyfortest1"})
+        client.api.destroy_chat_session(path_params={"session_code": session_code})
 
     def test_bkaidev_get_agent(self):
         client = BKAidevApi.get_client()
