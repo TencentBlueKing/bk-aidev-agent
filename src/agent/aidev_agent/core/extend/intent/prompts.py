@@ -234,13 +234,15 @@ general_qa_prompt_tool_calling = ChatPromptTemplate.from_messages(
             "system",
             (
                 "你是一位得力的智能问答助手。负责回答用户最新提问。"
-                "\n\n此外，跟你说下，现在是北京时间{beijing_now}，你如果无需用到这个北京时间信息，则忽略这个北京时间信息即可。"
+                "{% if use_general_knowledge_on_miss %}请用通识知识回答。{% endif -%}"
+                "{% if not use_general_knowledge_on_miss %}请用拒答文案```{{rejection_response}}```拒绝回答。{% endif -%}"
+                "\n\n此外，跟你说下，现在是北京时间{{beijing_now}}，你如果无需用到这个北京时间信息，则忽略这个北京时间信息即可。"
             ),
         ),
-        ("placeholder", "{chat_history}"),
-        ("human", "以下是用户最新提问内容：```{query}```\n\n\n{role_prompt}"),
-        ("placeholder", "{agent_scratchpad}"),
-    ]
+        ("placeholder", "{{chat_history}}"),
+        ("human", "以下是用户最新提问内容：```{{query}}```\n\n\n{{role_prompt}}\n\n\n{{agent_scratchpad}}"),
+    ],
+    template_format="jinja2",
 )
 private_qa_prompt_tool_calling = ChatPromptTemplate.from_messages(
     [
@@ -251,28 +253,38 @@ private_qa_prompt_tool_calling = ChatPromptTemplate.from_messages(
                 "我会给你提供一个用户最新提问，以及一些来自私域知识库的知识库知识。"
                 "你需要根据情况智能地选择以下3种情况的1种进行答复。"
                 "\n\n1. 如果你非常自信地觉得根据给你的知识库知识可以回答给你的用户最新提问，"
+                "{% if with_qa_response %}请优先查参考历史问答过程，问答过程内容格式如下：[HumanMessage(content='xxx'),"
+                "AIMessage(content='xxx'), ...]，"
+                "其中'HumanMessage'表示用户历史提问，'AIMessage'表示智能聊天系统的历史回答。"
+                "如果历史回答评分低于或等于3分，则不要参考该回答进行回答，且避免回答相似的内容。"
+                "如果用户评分高于3分，则参考该回答进行回答。"
+                "如果同时有高于3分和低于3分的回答，则参考高于3分的回答。"
+                "如果用户问题和提供的历史问答无关，则使用私域知识库知识进行回答。{% endif -%}"
                 "你务必严格遵循给你的知识库知识回答给你的用户最新提问。"
                 "永远不要编造答案或回复一些超出该知识库知识信息范围外的答案。不要在你的返回中出现诸如“根据提供的知识库知识”这样的表述，"
                 "直接回答即可。"
                 "\n\n2. 如果你觉得提供给你的知识库知识跟给你的用户最新提问毫无关系，而更倾向于使用提供给你的工具，请使用提供给你的工具。"
                 "并根据工具返回结果进行回答。"
                 "\n\n3. 如果你觉得提供给你的知识库知识和工具都不足以回答给你的用户最新提问，"
-                "请以'根据已有知识库和工具，无法回答该问题。以下尝试根据我自身知识进行回答：'为开头，"
+                "{% if use_general_knowledge_on_miss %}请以'根据已有知识库和工具，无法回答该问题。以下尝试根据我自身知识进行回答：'为开头，"
                 "在不参考提供给你的知识库知识的前提下根据你自己的知识进行回答。"
                 "！！！务必在提供给你的知识库知识和工具都不足以回答给你的用户最新提问的情况下，才可以选择本情况！！！"
                 "！！！如果你选择用知识库知识或工具来回答给你的用户最新提问，"
-                "就禁止使用'根据已有知识库和工具，无法回答该问题。以下尝试根据我自身知识进行回答：'作为开头！！！"
+                "就禁止使用'根据已有知识库和工具，无法回答该问题。以下尝试根据我自身知识进行回答：'作为开头！！！{% endif -%}"
+                "{% if not use_general_knowledge_on_miss %}请用拒答文案```{{rejection_response}}```拒绝回答{% endif -%}"
                 "\n\n注意：务必严格遵循以上要求和返回格式！请尽量保持答案简洁！请务必使用中文回答！"
-                "\n\n此外，跟你说下，现在是北京时间{beijing_now}，你如果无需用到这个北京时间信息，则忽略这个北京时间信息即可。"
+                "\n\n此外，跟你说下，现在是北京时间{{beijing_now}}，你如果无需用到这个北京时间信息，则忽略这个北京时间信息即可。"
             ),
         ),
-        ("placeholder", "{chat_history}"),
+        ("placeholder", "{{chat_history}}"),
         (
             "human",
-            "以下是知识库知识内容：```{context}```\n\n\n以下是用户最新提问内容：```{query}```\n\n\n{role_prompt}",
+            """以下是知识库知识内容:：```{{context}}```{% if with_qa_response %}\n\n\n以下是历史问答：```{{qa_context}}```，
+            如果历史回答评分低于或等于3分，则不要参考该回答进行回答，高于3分才能作参考{% endif -%}\n\n\n以下是用户最新提问内容：
+            ```{{query}}```\n\n\n{{role_prompt}}\n\n\n{{agent_scratchpad}}""",
         ),
-        ("placeholder", "{agent_scratchpad}"),
-    ]
+    ],
+    template_format="jinja2",
 )
 clarifying_qa_prompt_tool_calling = ChatPromptTemplate.from_messages(
     [
@@ -283,14 +295,22 @@ clarifying_qa_prompt_tool_calling = ChatPromptTemplate.from_messages(
                 "我会给你提供一个用户最新提问，以及一些来自私域知识库的知识库知识。"
                 "你需要根据情况智能地选择以下4种情况的1种进行答复。"
                 "\n\n1. 如果你非常自信地觉得根据给你的知识库知识可以回答给你的用户最新提问，"
+                "{% if with_qa_response %}请优先查参考历史问答过程，问答过程内容格式如下：[HumanMessage(content='xxx'),"
+                "AIMessage(content='xxx'), ...]，"
+                "其中'HumanMessage'表示用户历史提问，'AIMessage'表示智能聊天系统的历史回答。"
+                "如果历史回答评分低于或等于3分，则不要参考该回答进行回答，且避免回答相似的内容。"
+                "如果用户评分高于3分，则参考该回答进行回答。"
+                "如果同时有高于3分和低于3分的回答，则参考高于3分的回答。"
+                "如果用户问题和提供的历史问答无关，则使用私域知识库知识进行回答。{% endif -%}"
                 "你务必严格遵循给你的知识库知识回答给你的用户最新提问。"
                 "永远不要编造答案或回复一些超出该知识库知识信息范围外的答案。不要在你的返回中出现诸如“根据提供的知识库知识”这样的表述，"
                 "直接回答即可。"
                 "\n\n2. 如果你觉得提供给你的知识库知识跟给你的用户最新提问毫无关系，而更倾向于使用提供给你的工具，请使用提供给你的工具。"
                 "并根据工具返回结果进行回答。"
                 "\n\n3. 如果你觉得提供给你的知识库知识和工具都不足以回答给你的用户最新提问，"
-                "请以'根据已有知识库和工具，无法回答该问题。以下尝试根据我自身知识进行回答：'为开头，"
-                "在不参考提供给你的知识库知识的前提下根据你自己的知识进行回答。"
+                "{% if use_general_knowledge_on_miss %}请以'根据已有知识库和工具，无法回答该问题。以下尝试根据我自身知识进行回答：'为开头，"
+                "在不参考提供给你的知识库知识的前提下根据你自己的知识进行回答。{% endif -%}"
+                "{% if not use_general_knowledge_on_miss %}请用拒答文案```{{rejection_response}}```拒绝回答{% endif -%}"
                 "\n\n4. 如果你觉得提供给你的知识库知识和用户最新提问是有一定联系的，"
                 "只是由于用户最新提问表述模棱两可、意图不够明确导致你不知道如何回答，"
                 "请尝试根据知识库知识内容对用户最新提问进行重写，以向用户二次确认其明确的意图是什么。"
@@ -300,16 +320,18 @@ clarifying_qa_prompt_tool_calling = ChatPromptTemplate.from_messages(
                 "当且仅当在用户最新提问表述模棱两可、意图不够明确，"
                 "并且提供给你的知识库知识和用户最新提问是有一定联系的前提下才能选择本情况！"
                 "\n\n注意：务必严格遵循以上要求和返回格式！请尽量保持答案简洁！请务必使用中文回答！"
-                "此外，跟你说下，现在是北京时间{beijing_now}，你如果无需用到这个北京时间信息，则忽略这个北京时间信息即可。"
+                "此外，跟你说下，现在是北京时间{{beijing_now}}，你如果无需用到这个北京时间信息，则忽略这个北京时间信息即可。"
             ),
         ),
-        ("placeholder", "{chat_history}"),
+        ("placeholder", "{{chat_history}}"),
         (
             "human",
-            "以下是知识库知识内容：```{context}```\n\n\n以下是用户最新提问内容：```{query}```\n\n\n{role_prompt}",
+            """以下是知识库知识内容:：```{{context}}```{% if with_qa_response %}\n\n\n以下是历史问答：```{{qa_context}}```，
+            如果历史回答评分低于或等于3分，则不要参考该回答进行回答，高于3分才能作参考{% endif -%}\n\n\n以下是用户最新提问内容：
+            ```{{query}}```\n\n\n{{role_prompt}}\n\n\n{{agent_scratchpad}}""",
         ),
-        ("placeholder", "{agent_scratchpad}"),
-    ]
+    ],
+    template_format="jinja2",
 )
 
 # ####################################################################################################
@@ -330,12 +352,14 @@ c. 一些来自上述工具调用的结果。提供给你的格式是先用json�
 [情况1]
 如果你认为根据当前给定的工具调用的结果已经足够完整地回答用户所有的提问，
 请在你的输出中包含一个 $JSON_BLOB 来回答用户最新提问，格式如下：
+{% raw %}
 \n```json
 {{
   "action": "Final Answer",
   "action_input": $YOUR_ANSWER_ACCORDING_TO_CURRENT_TOOL_RESULTS
 }}
 ```
+{% endraw %}
 注意！在 $YOUR_ANSWER_ACCORDING_TO_CURRENT_TOOL_RESULTS 中，
 你务必严格遵循给你的工具调用结果来回答给你的用户最新提问。永远不要编造答案或回复一些超出该工具调用结果范围外的答案！回答尽量详细！
 永远不要在你的回答中出现诸如'根据给定的工具调用结果'这样的字眼！直接回答用户最新提问即可！
@@ -346,13 +370,15 @@ c. 一些来自上述工具调用的结果。提供给你的格式是先用json�
 [情况2]
 如果你觉得还需要调用提供给你的工具来补充更多信息才能完整地回答用户所有的提问，
 请在你的输出中包含一个 $JSON_BLOB 来指定一个工具，其中包含一个 action 键（表示工具名称）和一个 action_input 键（表示工具输入），格式如下：
+{% raw %}
 \n```json
 {{
   "action": $TOOL_NAME,
   "action_input": $TOOL_INPUT
 }}
 ```
-注意！有效的 $TOOL_NAME 值为{tool_names}！
+{% endraw %}
+注意！有效的 $TOOL_NAME 值为{{tool_names}}！
 注意！有效的 $TOOL_INPUT 值请严格根据提供给你的工具定义来指定！
 请看清楚工具定义，并同时指定参数名和参数值，而不要只指定参数值。
 注意！你只能使用一个工具！请你放心，如果一个工具调用结果信息还是不够，在下一轮中我还会给你机会再选择其他工具的，本轮你只需先选择一个工具即可！
@@ -364,26 +390,43 @@ c. 一些来自上述工具调用的结果。提供给你的格式是先用json�
 
 [情况3]
 如果你觉得提供给你的工具无法完整回答给你的用户最新提问，请在你的输出中包含一个 $JSON_BLOB 来回答用户最新提问，格式如下：
+{% if use_general_knowledge_on_miss %}
+{% raw %}
 \n```json
 {{
   "action": "Final Answer",
   "action_input": $YOUR_OWN_ANSWER
 }}
 ```
+{% endraw %}
 注意！$YOUR_OWN_ANSWER中，对于根据提供给你的工具无法回答的内容，你需要使用你自身知识进行回应，
 并且务必通过'根据我自身知识'等字眼，合理组织语言以明确清晰地让用户知道你是在用你自身的知识进行回应！
 注意！$YOUR_OWN_ANSWER中不能忽略用户最新提问中的任何细节！
+{% endif -%}
+{% if not use_general_knowledge_on_miss %}
+{% raw %}
+\n```json
+{{
+  "action": "Final Answer",
+  "action_input": $Rejection_response
+}}
+``` 
+{% endraw %}
+注意！$Rejection_response中，请用拒答文案```{{rejection_response}}```来拒答用户最新提问！
+{% endif -%}
 注意！务必在提供给你的工具无法完整回答给你的用户最新提问的情况下，才可以选择本情况！
 
 [情况4]
 如果你觉得提供给你的工具应该是可以回答用户最新提问的，只是由于用户最新提问表述模棱两可、意图不够明确、信息不足导致你不知道如何调用工具，
 请在你的输出中包含一个 $JSON_BLOB 来回答用户最新提问，格式如下：
+{% raw %}
 \n```json
 {{
   "action": "Final Answer",
   "action_input": $YOUR_QUERY_CLARIFICATION
 }}
 ```
+{% endraw %}
 注意！你将通过$YOUR_QUERY_CLARIFICATION向用户二次确认其明确的意图是什么。
 注意！当且仅当在用户最新提问表述模棱两可、意图不够明确、信息不足，并且提供给你的工具调用结果和用户最新提问是有一定联系的前提下才能选择本情况！
 注意！你需要变得更聪明一些，尽量自己揣摩用户意图即可，尽量不要选择本情况！在不必要的情况下尽量不要跟用户二次确认！
@@ -391,24 +434,25 @@ c. 一些来自上述工具调用的结果。提供给你的格式是先用json�
 注意注意再注意！你只能选择上述4种情况中的1种进行输出！你只能返回一个 $JSON_BLOB！输出格式务必严格遵循你选择的情况中对应的格式要求！
 你返回的 $JSON_BLOB 前面务必带上换行符\n以方便我用 markdown 语法对你的结果进行渲染！
 
-此外，跟你说下，现在是北京时间{beijing_now}，你如果无需用到这个北京时间信息，则忽略这个北京时间信息即可。
+此外，跟你说下，现在是北京时间{{beijing_now}}，你如果无需用到这个北京时间信息，则忽略这个北京时间信息即可。
 """,
         ),
-        ("placeholder", "{chat_history}"),
+        ("placeholder", "{{chat_history}}"),
         (
             "human",
             (
-                "\n\n\n以下是你可以根据需要选择使用的工具：```{tools}```"
-                "\n\n\n以下是用户最新提问内容：```{query}```"
+                "\n\n\n以下是你可以根据需要选择使用的工具：```{{tools}}```"
+                "\n\n\n以下是用户最新提问内容：```{{query}}```"
                 "\n\n\n注意注意再注意！你务必看清楚用户最新提问内容是什么！"
-                "\n\n\n你的回答务必针对用户最新提问，即```{query}```"
+                "\n\n\n你的回答务必针对用户最新提问，即```{{query}}```"
                 "\n\n\n再次强调，你无论如何都要以上文中定义的 $JSON_BLOB 格式输出！"
                 "你返回的 $JSON_BLOB 前面务必带上换行符\n以方便我用 markdown 语法对你的结果进行渲染！"
-                "\n\n\n{role_prompt}"
-                "\n\n\n{agent_scratchpad}"
+                "\n\n\n{{role_prompt}}"
+                "\n\n\n{{agent_scratchpad}}"
             ),
         ),
-    ]
+    ],
+    template_format="jinja2",
 )
 # NOTE:
 # https://github.com/langchain-ai/langchain/issues/3448#issuecomment-2129804159
@@ -431,14 +475,23 @@ d. 一些来自上述工具调用的结果。提供给你的格式是先用json�
 [情况1]
 如果你认为根据当前给定的知识库知识和工具调用的结果已经足够完整地回答用户所有的提问，
 请在你的输出中包含一个 $JSON_BLOB 来回答用户最新提问，格式如下：
+{% raw %} 
 \n```json
 {{
   "action": "Final Answer",
   "action_input": $YOUR_ANSWER_ACCORDING_TO_CURRENT_CONTEXT
 }}
 ```
+{% endraw %}
 注意！在 $YOUR_ANSWER_ACCORDING_TO_CURRENT_CONTEXT 中，
 你务必严格遵循给你的上下文信息来回答给你的用户最新提问。永远不要编造答案或回复一些超出该上下文信息范围外的答案！回答尽量详细！
+{% if with_qa_response %}
+历史问答内容格式如下：[HumanMessage(content='xxx'), AIMessage(content='xxx'), ...]，其中"HumanMessage"表示用户历史提问，
+"AIMessage"表示智能聊天系统的历史回答。
+如果知识库中该问题的回答用户评分高于3分，则直接使用该回答进行回答即可，不需另外使用私域知识库内容。
+如果在知识库中该问题的回答用户评分低于或等于3分，则不要参考知识库中的回答进行回答，且避免回答相似的内容，另外用私域知识库或自身知识作答。
+如果用户问题和提供的历史问答无关，则使用私域知识库知识进行回答。
+{% endif %}
 永远不要在你的回答中出现诸如'根据给定的上下文信息'这样的字眼！直接回答用户最新提问即可！
 注意！务必在根据当前给定的知识库知识和工具调用结果已经足够完整地回答用户所有的提问，才能选择本情况！
 注意！如果当前给定的信息不足以完整地回答用户所有的提问，你就一定不能选择本情况！
@@ -447,13 +500,15 @@ d. 一些来自上述工具调用的结果。提供给你的格式是先用json�
 [情况2]
 如果你觉得还需要调用提供给你的工具来补充更多信息才能完整地回答用户所有的提问，
 请在你的输出中包含一个 $JSON_BLOB 来指定一个工具，其中包含一个 action 键（表示工具名称）和一个 action_input 键（表示工具输入），格式如下：
+{% raw %} 
 \n```json
 {{
   "action": $TOOL_NAME,
   "action_input": $TOOL_INPUT
 }}
 ```
-注意！有效的 $TOOL_NAME 值为{tool_names}！
+{% endraw %}
+注意！有效的 $TOOL_NAME 值为{{tool_names}}！
 注意！有效的 $TOOL_INPUT 值请严格根据提供给你的工具定义来指定！
 请看清楚工具定义，并同时指定参数名和参数值，而不要只指定参数值。
 注意！你只能使用一个工具！请你放心，如果一个工具调用结果信息还是不够，在下一轮中我还会给你机会再选择其他工具的，本轮你只需先选择一个工具即可！
@@ -465,26 +520,43 @@ d. 一些来自上述工具调用的结果。提供给你的格式是先用json�
 
 [情况3]
 如果你觉得提供给你的知识库知识和工具无法完整回答给你的用户最新提问，请在你的输出中包含一个 $JSON_BLOB 来回答用户最新提问，格式如下：
+{% if use_general_knowledge_on_miss %}
+{% raw %}
 \n```json
 {{
   "action": "Final Answer",
   "action_input": $YOUR_OWN_ANSWER
 }}
 ```
-注意！$YOUR_OWN_ANSWER中，对于根据提供给你的知识库知识和工具无法回答的内容，你需要使用你自身知识进行回应，
+{% endraw %}
+注意！$YOUR_OWN_ANSWER中，对于根据提供给你的工具无法回答的内容，你需要使用你自身知识进行回应，
 并且务必通过'根据我自身知识'等字眼，合理组织语言以明确清晰地让用户知道你是在用你自身的知识进行回应！
 注意！$YOUR_OWN_ANSWER中不能忽略用户最新提问中的任何细节！
-注意！务必在提供给你的知识库知识和工具无法完整回答给你的用户最新提问的情况下，才可以选择本情况！
+{% endif -%}
+{% if not use_general_knowledge_on_miss %}
+{% raw %}
+\n```json
+{{
+  "action": "Final Answer",
+  "action_input": $Rejection_response
+}}
+``` 
+{% endraw %}
+注意！$Rejection_response中，请用拒答文案```{{rejection_response}}```来拒答用户最新提问！
+{% endif -%}
+注意！务必在提供给你的工具无法完整回答给你的用户最新提问的情况下，才可以选择本情况！
 
 [情况4]
 如果你觉得提供给你的知识库知识和工具应该是可以回答用户最新提问的，只是由于用户最新提问表述模棱两可、意图不够明确导致你不知道如何回答，
 请在你的输出中包含一个 $JSON_BLOB 来回答用户最新提问，格式如下：
+{% raw %} 
 \n```json
 {{
   "action": "Final Answer",
   "action_input": $YOUR_QUERY_CLARIFICATION
 }}
 ```
+{% endraw %}
 注意！$YOUR_QUERY_CLARIFICATION的要求：
 内容上务必是严格根据当前已经提供给你的知识库知识内容或工具调用结果对用户最新提问进行重写，以向用户二次确认其明确的意图是什么。
 格式上务必严格参照'抱歉，您是不是想问：\n(1) 你重写的第1个问题\n(2) 你重写的第2个问题\n'的格式，不要返回其他任何内容！"
@@ -497,28 +569,52 @@ d. 一些来自上述工具调用的结果。提供给你的格式是先用json�
 注意注意再注意！你只能选择上述4种情况中的1种进行输出！你只能返回一个 $JSON_BLOB！输出格式务必严格遵循你选择的情况中对应的格式要求！
 你返回的 $JSON_BLOB 前面务必带上换行符\n以方便我用 markdown 语法对你的结果进行渲染！
 
-此外，跟你说下，现在是北京时间{beijing_now}，你如果无需用到这个北京时间信息，则忽略这个北京时间信息即可。
+此外，跟你说下，现在是北京时间{{beijing_now}}，你如果无需用到这个北京时间信息，则忽略这个北京时间信息即可。
 """,
         ),
-        ("placeholder", "{chat_history}"),
+        ("placeholder", "{{chat_history}}"),
         (
             "human",
             (
-                "\n\n\n以下是你可以根据需要选择使用的工具：```{tools}```"
-                "\n\n\n以下是知识库知识内容：```{context}```"
-                "\n\n\n以下是用户最新提问内容：```{query}```"
+                "\n\n\n以下是你可以根据需要选择使用的工具：```{{tools}}```"
+                "\n\n\n以下是知识库知识内容：```{{context}}```"
+                "{% if with_qa_response %}\n\n\n以下是历史问答内容：```{{qa_context}}```{% endif -%}"
+                "\n\n\n以下是用户最新提问内容：```{{query}}```"
                 "\n\n\n注意注意再注意！你务必看清楚用户最新提问内容是什么！"
-                "\n\n\n你的回答务必针对用户最新提问，即```{query}```"
+                "\n\n\n你的回答务必针对用户最新提问，即```{{query}}```"
                 "\n\n\n再次强调，你无论如何都要以上文中定义的 $JSON_BLOB 格式输出！"
                 "你返回的 $JSON_BLOB 前面务必带上换行符\n以方便我用 markdown 语法对你的结果进行渲染！"
-                "\n\n\n{role_prompt}"
-                "\n\n\n{agent_scratchpad}"
+                "\n\n\n{{role_prompt}}"
+                "\n\n\n{{agent_scratchpad}}"
             ),
         ),
     ],
+    template_format="jinja2",
 )
 # NOTE: 目前 structured_chat 的情况下，clarifying 和 private 使用同样的 prompt 模板即可
 clarifying_qa_prompt_structured_chat = private_qa_prompt_structured_chat
+
+intent_recognition = ChatPromptTemplate.from_messages(
+    [
+        (
+            "human",
+            """你是一个智能的决策者。我会给你一些意图选项，每项包含包含意图类别、意图名称和意图描述。
+            请你根据用户的提问，选择一个或多个适合解答用户的问题的意图，输出格式必须为纯JSON数组（不要包含任何markdown标记），例如：
+            [{"意图类别": "xxx","意图名称": "xxx","意图描述": "xxx"},{"意图类别": "xxx","意图名称": "xxx","意图描述": "xxx"}]
+"""
+        ),
+        (
+            "human",
+            (
+                "\n\n\n以下是用户最新提问内容：```{{query}}```"
+                "\n\n\n注意注意再注意！你务必看清楚用户最新提问内容是什么！"
+                "\n\n\n以下是意图选项内容：```{{intent_knowledge_doc}}```"
+                "\n\n\n再次强调，你无论如何都要以上文中定义的json数组格式输出！"
+            ),
+        ),
+    ],
+    template_format="jinja2",
+)
 
 DEFAULT_QA_PROMPT_TEMPLATES = {k: v for k, v in globals().items() if "_qa_prompt_" in k}
 DEFAULT_INTENT_RECOGNITION_PROMPT_TEMPLATES = {k: v for k, v in globals().items() if "_qa_prompt_" not in k}
