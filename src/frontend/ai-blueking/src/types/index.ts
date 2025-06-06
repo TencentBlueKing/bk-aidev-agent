@@ -57,7 +57,7 @@ export type IShortcutComponent = {
   min?: number;
   max?: number;
   rows?: number;
-  selectedText?: string;
+  selectedText?: string | null;
   options?: { label: string; value: string }[];
 }
 

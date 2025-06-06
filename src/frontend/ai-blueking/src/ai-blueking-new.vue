@@ -554,25 +554,36 @@
   };
 
   const handleShortcutClick = (shortcut: IShortcut) => {
-    currentShortcut.value = shortcut;
+    // 创建 shortcut 的深拷贝，避免直接修改 props 传入的对象
+    const modifiedShortcut = structuredClone(shortcut) as IShortcut;
 
     !isShow.value && handleShow();
     
-    // 如果快捷键有填充回填项，则填充回填项
-    const fillBackItem = shortcut.components.find(item => item.fillBack)
-      if (fillBackItem) {
-        if (fillBackItem.fillRegx) {
-          // 如果有正则表达式，尝试匹配
-          const matches = selectedText.value.match(new RegExp(fillBackItem.fillRegx));
-          if (matches && matches.length > 0) {
-            fillBackItem.selectedText = matches[0];
-            return;
-          }
-        }
+    // 在副本上查找需要填充的组件
+    const fillBackItem = modifiedShortcut.components.find(item => item.fillBack);
+    if (fillBackItem) {
+      let textToFill = ''; // 默认使用空字符串
 
-        fillBackItem.selectedText = selectedText.value;
+      if (fillBackItem.fillRegx) {
+        try {
+          // 尝试使用正则表达式匹配
+          const regex = new RegExp(fillBackItem.fillRegx);
+          const matches = selectedText.value.match(regex);
+          if (matches && matches.length > 0) {
+            // 使用匹配结果
+            textToFill = matches[0];
+          }
+        } catch (e) {
+          console.error("快捷方式组件中的正则表达式无效:", fillBackItem.fillRegx, e);
+        }
       }
-    return;
+
+      // 将文本赋值给副本中的组件
+      fillBackItem.selectedText = textToFill;
+    }
+
+    // 将修改后的副本赋值给响应式引用
+    currentShortcut.value = modifiedShortcut;
   };
 
   const handleDelete = (index: number) => {

@@ -1,14 +1,14 @@
-import { ref, computed } from 'vue';
-import type { IShortcut } from '../types';
+import { ref, computed, type Ref, watch } from 'vue';
+import type { IShortcut, IShortcutComponent } from '../types';
 import BkForm from 'bkui-vue/lib/form';
 import { t } from '../lang';
 
-export const useCustomForm = (shortcut: IShortcut) => {
+export const useCustomForm = (shortcut: Ref<IShortcut>) => {
   const formRef = ref<InstanceType<typeof BkForm>>();
 
   // 表单数据
   const formData = ref<Record<string, any>[]>(
-    shortcut.components.reduce(
+    shortcut.value.components.reduce(
       (data, item) => {
         data.push({
           [item.key]: item.selectedText || item.default || '',
@@ -35,7 +35,7 @@ export const useCustomForm = (shortcut: IShortcut) => {
 
   // 表单验证规则
   const formRules = computed(() => {
-    return shortcut.components.reduce(
+    return shortcut.value.components.reduce(
       (acc, item) => {
         if (item.required) {
           acc[item.key] = [
@@ -52,10 +52,31 @@ export const useCustomForm = (shortcut: IShortcut) => {
     );
   });
 
+  // 根据 component 更新 formData
+  const updateFormData = (component: IShortcutComponent) => {
+    const key = component.key;
+    const index = formData.value.findIndex(item => item[key]);
+    if (index !== -1) {
+      formData.value[index][key] = component.selectedText || component.default || '';
+    }
+  };
+
+  watch(
+    () => shortcut.value.components,
+    (val) => {
+      const updatedComponent = val.find(item => item.selectedText);
+      if (updatedComponent) {
+        updateFormData(updatedComponent);
+      }
+    },
+    { deep: true, immediate: true }
+  );
+
   return {
     formRef,
     formData,
     modelFormData,
     formRules,
+    updateFormData,
   };
 };

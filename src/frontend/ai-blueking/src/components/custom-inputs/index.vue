@@ -50,6 +50,7 @@
   import { Button as BkButton } from 'bkui-vue';
   import { t } from '../../lang';
   import { useCustomForm } from '../../composables/use-custom-form';
+  import { toRef } from 'vue';
 
   const props = defineProps<{
     shortcut: IShortcut;
@@ -68,7 +69,9 @@
 
   const getComponent = (type: IShortcutComponent['type']) => componentMap[type];
 
-  const { formRef, formData, modelFormData, formRules } = useCustomForm(props.shortcut);
+  const shortCutRef = toRef(props, 'shortcut');
+
+  const { formRef, formData, modelFormData, formRules } = useCustomForm(shortCutRef);
   
   // Layout 辅助函数：判断是否为奇数组的最后一个
   const isLastInOddGroup = (components: IShortcutComponent[], currentIndex: number) => {
