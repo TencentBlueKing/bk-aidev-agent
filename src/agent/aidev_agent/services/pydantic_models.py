@@ -65,33 +65,12 @@ class ChatPrompt(BaseModel):
 
 
 class IntentRecognition(BaseModel):
-    intent_recognition_knowledge_knowledgebase: int | None = Field(default=None, description=("意图识别知识文档"))
-    threshold: float = Field(default=0.5, description=("用户最新输入的提问"))
-    model_name: str = Field(default=None, description="使用的 LLM")
+    intent_recognition_knowledgebase_id: Optional[list[int]] = Field(default=None, description=("意图识别知识库id"))
+    intent_recognition_topk: float = Field(default=None, description=("意图识别topk值"))
+    intent_recognition_llm: str = Field(default=None, description="意图识别使用的LLM")
     enable_logging: bool = Field(default=True, description="是否启用日志记录")
-    intent_code: str = Field(
-        default=None, description="约定的意图识别 code，用于快速单跳", alias="intent_recognition_llm_code"
-    )
-    with_query_cls: bool = Field(
-        default=True,
-        description="是否进行意图切换检测。NOTE: 目前仅在非 merge_query_cls_with_resp_or_rewrite 的情况下才生效",
-    )
-    force_process_by_agent: bool = Field(
-        default=False, description=("是否强制进入 IntentStatus.PROCESS_BY_AGENT 的 status。用于 AIDEV 产品页面召回测试")
-    )
-    role_prompt: str = Field(
-        default=None,
-        description=(
-            "用户在 aidev 页面上创建 agent 时填写的 prompt。旧主站逻辑会将其与 prefix 拼接后作为整体外层 agent 的 system prompt。"
-        ),
-    )
-    assets_list: str = Field(default=None, description=("assets_list参数"))
-    with_structured_data: bool = Field(
-        default=False,
-        description=("用户勾选的知识中是否带结构化数据。NOTE: 目前该值为 True 时才会进行 nature 方式的知识召回"),
-    )
-    with_index_specific_search: bool = Field(
-        default=True, description="是否使用基于 embedding 模型的 index specific 召回"
+    intent_recognition_llm_code: str = Field(
+        default=None, description=("约定的意图识别 code，用于快速单跳")
     )
     with_index_specific_search_init: bool = Field(
         default=True, description=("意图识别with_index_specific_search_init参数")
@@ -102,41 +81,7 @@ class IntentRecognition(BaseModel):
     with_index_specific_search_keywords: bool = Field(
         default=False, description=("意图识别with_index_specific_search_keywords参数")
     )
-    with_es_search_query: bool = Field(default=False, description="是否使用原始 query 在 ES 上进行召回")
-    with_es_search_keywords: bool = Field(default=False, description="是否使用 query 提取的关键词 在 ES 上进行召回")
-    with_rrf: bool = Field(
-        default=True, description="是否使用 weighted reciprocal rank fusion 对多路召回的结果进行融合。"
-    )
-    self_query_threshold_top_n: int = Field(
-        default=0,
-        description="""在第 1 步意图识别判断用户 query 是否涉及结构化数据的时候，
-            使用全量检索结果的 top_n 中是否包含结构化数据来判断。
-            NOTE: 当前先将其值置为0，即不开启 self query 分支。
-            TODO: 后续去除 nature 分支后，即可将其值置为 5 等，开启 self query 分支。""",
-    )
-    tool_resource_rough_recall_topk: int = Field(default=10, description="工具类资源粗召 topk 值")
-    tool_resource_reject_threshold: Tuple[float, float] = Field(
-        default=(0.25, 0.75), description="工具类资源拒答和直接回答的阈值"
-    )
-    tool_resource_fine_grained_score_type: FineGrainedScoreType = Field(
-        default=FineGrainedScoreType.EXCLUSIVE_SIMILARITY_MODEL.value,
-        description="工具类资源进行细粒度的相似度计算的模型类型",
-    )
-    tool_count_threshold: int = Field(
-        default=10000,
-        description="当能够获取的工具的个数大于该阈值时，才开启工具类资源的粗召 + 精排，否则每次调用兜底LLM agent时都附上所有工具类资源",
-    )
-    gen_pseudo_tool_resource_desc: bool = Field(
-        default=True, description="在进行工具类资源的粗召时，是否进行伪工具类资源描述的生成"
-    )
-    retrieved_knowledge_resources: List = Field(default=None, description="用户自带的历史检索的上下文")
-    merge_query_cls_with_resp_or_rewrite: bool = Field(
-        default=False, description="是否将意图切换检测和 query 重写/直接答复合并在一次LLM调用中"
-    )
-    tool_resource_base_ids: List[int] = Field(
-        default=[], description=("工具类资源 base ID 列表。NOTE: 目前工具类资源统一放 base ID 中不放 item ID 中")
-    )
-    token_limit_margin: int = Field(default=200, description=("token_limit_margin参数"))
+
 
 
 class KnowledgebaseSettings(BaseModel):
@@ -170,7 +115,62 @@ class KnowledgebaseSettings(BaseModel):
     )
     use_translated_query_in_scores: bool = Field(default=True, description=("use_translated_query_in_scores参数"))
     use_independent_query_in_scores: bool = Field(default=True, description=("use_independent_query_in_scores参数"))
-
+    with_query_cls: bool = Field(
+        default=True,
+        description="是否进行意图切换检测。NOTE: 目前仅在非 merge_query_cls_with_resp_or_rewrite 的情况下才生效",
+    )
+    force_process_by_agent: bool = Field(
+        default=False, description=("是否强制进入 IntentStatus.PROCESS_BY_AGENT 的 status。用于 AIDEV 产品页面召回测试")
+    )
+    role_prompt: str = Field(
+        default=None,
+        description=(
+            "用户在 aidev 页面上创建 agent 时填写的 prompt。旧主站逻辑会将其与 prefix 拼接后作为整体外层 agent 的 system prompt。"
+        ),
+    )
+    assets_list: str = Field(default=None, description=("assets_list参数"))
+    with_structured_data: bool = Field(
+        default=False,
+        description=("用户勾选的知识中是否带结构化数据。NOTE: 目前该值为 True 时才会进行 nature 方式的知识召回"),
+    )
+    with_index_specific_search: bool = Field(
+        default=True, description="是否使用基于 embedding 模型的 index specific 召回"
+    )
+    with_es_search_query: bool = Field(default=False, description="是否使用原始 query 在 ES 上进行召回")
+    with_es_search_keywords: bool = Field(default=False, description="是否使用 query 提取的关键词 在 ES 上进行召回")
+    with_rrf: bool = Field(
+        default=True, description="是否使用 weighted reciprocal rank fusion 对多路召回的结果进行融合。"
+    )
+    self_query_threshold_top_n: int = Field(
+        default=0,
+        description="""在第 1 步意图识别判断用户 query 是否涉及结构化数据的时候，
+            使用全量检索结果的 top_n 中是否包含结构化数据来判断。
+            NOTE: 当前先将其值置为0，即不开启 self query 分支。
+            TODO: 后续去除 nature 分支后，即可将其值置为 5 等，开启 self query 分支。""",
+    )
+    tool_resource_rough_recall_topk: int = Field(default=10, description="工具类资源粗召 topk 值")
+    tool_resource_reject_threshold: Tuple[float, float] = Field(
+        default=(0.25, 0.75), description="工具类资源拒答和直接回答的阈值"
+    )
+    tool_resource_fine_grained_score_type: FineGrainedScoreType = Field(
+        default=FineGrainedScoreType.EXCLUSIVE_SIMILARITY_MODEL.value,
+        description="工具类资源进行细粒度的相似度计算的模型类型",
+    )
+    tool_count_threshold: int = Field(
+        default=10000,
+        description="当能够获取的工具的个数大于该阈值时，才开启工具类资源的粗召 + 精排，否则每次调用兜底LLM agent时都附上所有工具类资源",
+    )
+    gen_pseudo_tool_resource_desc: bool = Field(
+        default=True, description="在进行工具类资源的粗召时，是否进行伪工具类资源描述的生成"
+    )
+    retrieved_knowledge_resources: List = Field(default=None, description="用户自带的历史检索的上下文")
+    merge_query_cls_with_resp_or_rewrite: bool = Field(
+        default=False, description="是否将意图切换检测和 query 重写/直接答复合并在一次LLM调用中"
+    )
+    tool_resource_base_ids: List[int] = Field(
+        default=["weather-query"], description=("工具类资源 base ID 列表。NOTE: 目前工具类资源统一放 base ID 中不放 item ID 中")
+    )
+    token_limit_margin: int = Field(default=200, description=("token_limit_margin参数"))
     class Config:
         arbitrary_types_allowed = True
 

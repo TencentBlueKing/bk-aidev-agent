@@ -18,6 +18,7 @@ to the current version of the project delivered to anyone in the future.
 
 import concurrent.futures
 import copy
+import json
 import logging
 import os
 from collections import defaultdict
@@ -44,6 +45,7 @@ from aidev_agent.core.extend.intent.utils import (
     retry,
     timeit,
 )
+from aidev_agent.core.extend.models.llm_gateway import ChatModel
 from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils.module_loading import import_string
 
@@ -832,19 +834,20 @@ class IntentRecognition(BaseModel):
     ):
         """知识类资源检索并解析结果"""
         query_for_search = query
+
         if not any(
             [
-                agent_options.intent_recognition_options.with_index_specific_search,
+                agent_options.knowledge_query_options.with_index_specific_search,
                 agent_options.intent_recognition_options.with_index_specific_search_init,
                 agent_options.intent_recognition_options.with_index_specific_search_translation,
                 agent_options.intent_recognition_options.with_index_specific_search_keywords,
-                agent_options.intent_recognition_options.with_es_search_query,
-                agent_options.intent_recognition_options.with_es_search_keywords,
+                agent_options.knowledge_query_options.with_es_search_query,
+                agent_options.knowledge_query_options.with_es_search_keywords,
             ]
         ):
             raise RuntimeError("请至少选择一种召回方式！")
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            if agent_options.intent_recognition_options.with_index_specific_search:
+            if agent_options.knowledge_query_options.with_index_specific_search:
                 future_index_specific = executor.submit(
                     self.search_knowledge_index_specific,
                     knowledge_items=knowledge_items,
@@ -878,7 +881,7 @@ class IntentRecognition(BaseModel):
                     knowledge_items=knowledge_items,
                     knowledge_bases=knowledge_bases,
                     query=kwargs["input"],
-                    topk=agent_options.intent_recognition_options.knowledge_resource_rough_recall_topk,
+                    topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
                     agent_options=agent_options,
                     **kwargs,
                 )
@@ -899,24 +902,24 @@ class IntentRecognition(BaseModel):
                     knowledge_items=knowledge_items,
                     knowledge_bases=knowledge_bases,
                     translated_query=translated_query,
-                    topk=agent_options.intent_recognition_options.knowledge_resource_rough_recall_topk,
+                    topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
                     agent_options=agent_options,
                     **kwargs,
                 )
                 if agent_options.knowledge_query_options.use_translated_query_in_scores and translated_query:
                     kwargs["translated_query"] = translated_query
-            if agent_options.intent_recognition_options.with_es_search_query:
+            if agent_options.knowledge_query_options.with_es_search_query:
                 future_es_query = executor.submit(
                     self.search_knowledge_es_query,
                     knowledge_items=knowledge_items,
                     knowledge_bases=knowledge_bases,
                     query=query_for_search,
-                    topk=agent_options.intent_recognition_options.knowledge_resource_rough_recall_topk,
+                    topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
                     **kwargs,
                 )
             if (
                 agent_options.intent_recognition_options.with_index_specific_search_keywords
-                or agent_options.intent_recognition_options.with_es_search_keywords
+                or agent_options.knowledge_query_options.with_es_search_keywords
             ):
                 future_extracted_keywords = executor.submit(
                     self.extract_query_keywords,
@@ -930,33 +933,33 @@ class IntentRecognition(BaseModel):
                     knowledge_items=knowledge_items,
                     knowledge_bases=knowledge_bases,
                     extracted_keywords=future_extracted_keywords.result(),
-                    topk=agent_options.intent_recognition_options.knowledge_resource_rough_recall_topk,
+                    topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
                     agent_options=agent_options,
                     **kwargs,
                 )
-            if agent_options.intent_recognition_options.with_es_search_keywords:
+            if agent_options.knowledge_query_options.with_es_search_keywords:
                 future_es_keywords = executor.submit(
                     self.search_knowledge_es_keywords,
                     knowledge_items=knowledge_items,
                     knowledge_bases=knowledge_bases,
                     extracted_keywords=future_extracted_keywords.result(),
-                    topk=agent_options.intent_recognition_options.knowledge_resource_rough_recall_topk,
+                    topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
                     **kwargs,
                 )
             # TODO: 去除 nature 分支
-            if agent_options.intent_recognition_options.with_structured_data:
+            if agent_options.knowledge_query_options.with_structured_data:
                 future_nature = executor.submit(
                     self.search_knowledge_nature,
                     knowledge_items=knowledge_items,
                     knowledge_bases=knowledge_bases,
                     query=query_for_search,
-                    topk=agent_options.intent_recognition_options.knowledge_resource_rough_recall_topk,
+                    topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
                     agent_options=agent_options**kwargs,
                 )
 
             retrieved_results_index_specific = (
                 future_index_specific.result()
-                if agent_options.intent_recognition_options.with_index_specific_search
+                if agent_options.knowledge_query_options.with_index_specific_search
                 else []
             )
             retrieved_results_qa_response = (
@@ -983,18 +986,18 @@ class IntentRecognition(BaseModel):
                 retrieved_results_index_specific_keywords = []
 
             retrieved_results_es_query = (
-                future_es_query.result() if agent_options.intent_recognition_options.with_es_search_query else []
+                future_es_query.result() if agent_options.knowledge_query_options.with_es_search_query else []
             )
 
             retrieved_results_es_keywords = (
-                future_es_keywords.result() if agent_options.intent_recognition_options.with_es_search_keywords else []
+                future_es_keywords.result() if agent_options.knowledge_query_options.with_es_search_keywords else []
             )
 
             retrieved_results_nature = (
-                future_nature.result() if agent_options.intent_recognition_options.with_structured_data else []
+                future_nature.result() if agent_options.knowledge_query_options.with_structured_data else []
             )
 
-        if agent_options.intent_recognition_options.with_rrf:
+        if agent_options.knowledge_query_options.with_rrf:
             fusion_docs = self.weighted_reciprocal_rank_fusion(
                 [
                     retrieved_results_index_specific,
@@ -1028,10 +1031,10 @@ class IntentRecognition(BaseModel):
 
         # TODO: 这里也可以考虑先使用 rerank 小模型排个序再取 self_query_threshold_top_n 文档来判断 query 是否涉及结构化数据
         # TODO: 待去除 nature 分支后即可正式走以下流程：
-        if agent_options.intent_recognition_options.with_structured_data and any(
+        if agent_options.knowledge_query_options.with_structured_data and any(
             [
                 is_structured_data(doc)
-                for doc in fusion_docs[: agent_options.intent_recognition_options.self_query_threshold_top_n]
+                for doc in fusion_docs[: agent_options.knowledge_query_options.self_query_threshold_top_n]
             ]
         ):
             # 在这种情况下需要使用 self-query 模块进行 2 次召回
@@ -1093,7 +1096,7 @@ class IntentRecognition(BaseModel):
             return Decision.QUERY_CLARIFICATION
 
     def query_cls_pipeline(self, chat_history, query, llm, agent_options, **kwargs):
-        if agent_options.intent_recognition_options.merge_query_cls_with_resp_or_rewrite:
+        if agent_options.knowledge_query_options.merge_query_cls_with_resp_or_rewrite:
             if chat_history:
                 result = self.query_cls_with_resp_or_rewrite(chat_history, query, llm, **kwargs)
                 query_cls = result["query_cls"]
@@ -1117,7 +1120,7 @@ class IntentRecognition(BaseModel):
                 independent_query = query
         else:
             if chat_history:
-                if agent_options.intent_recognition_options.with_query_cls:
+                if agent_options.knowledge_query_options.with_query_cls:
                     query_cls = self.latest_query_classification(chat_history, query, llm, **kwargs)
                 else:
                     query_cls = "continue"
@@ -1271,13 +1274,95 @@ class IntentRecognition(BaseModel):
             client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"]
             for id_ in agent_options.knowledge_query_options.knowledge_base_ids
         ]
+        tool_resource_base_ids = agent_options.knowledge_query_options.tool_resource_base_ids
+        # 处理意图识别知识库
+        if agent_options.intent_recognition_options.intent_recognition_knowledgebase_id:
+            client = BKAidevApi.get_client_by_username(username="")
+            
+            # 获取知识库基础信息
+            intent_knowledge_bases = [
+                client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"]
+                for id_ in agent_options.intent_recognition_options.intent_recognition_knowledgebase_id
+            ]
 
+            # 统一处理知识库检索
+            topk = (agent_options.intent_recognition_options.intent_recognition_topk 
+                    or 100)  # 默认取100条
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(
+                    self.search_knowledge_index_specific,
+                    knowledge_items=[],
+                    knowledge_bases=intent_knowledge_bases,
+                    query=query,
+                    topk=topk,
+                    agent_options=agent_options,
+                    **kwargs,
+                )
+                intent_knowledge_doc = future.result()
+
+            # 提取知识内容
+            intent_knowledge = [doc['page_content'] for doc in intent_knowledge_doc]
+
+            # 统一处理LLM意图识别
+            if agent_options.intent_recognition_options.intent_recognition_llm:
+                try:
+                    # 初始化LLM
+                    llm = ChatModel.get_setup_instance(
+                        model=agent_options.intent_recognition_options.intent_recognition_llm,
+                        streaming=True
+                    )
+                    
+                    # 准备prompt
+                    chat_prompt_template = self.intent_recognition_prompt_templates.get("intent_recognition")
+                    inner_input = {
+                        "intent_knowledge_doc": intent_knowledge,
+                        "query": query
+                    }
+                    formated_prompts = chat_prompt_template._format_prompt_with_error_handling(inner_input)
+                    
+                    # 调用LLM
+                    invoke_func = invoke_decorator(llm.invoke, llm)
+                    resp = invoke_func(formated_prompts)
+                    
+                    # 解析响应
+                    resp_content = resp.content.replace("```json", "").replace("```", "").strip()
+                    intent_knowledge = json.loads(resp_content)
+                    
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse LLM response: {e}")
+                    intent_knowledge = []
+                except Exception as e:
+                    logger.error(f"Intent recognition LLM error: {e}")
+                    intent_knowledge = []
+
+            intent_base_id = []
+            intent_item_id = []
+            tools_id = []
+            for doc in intent_knowledge:
+                if doc["意图类别"] == "知识base":
+                    intent_base_id.append(doc["意图名称"])
+                if doc["意图类别"] == "知识item":
+                    intent_item_id.append(doc["意图名称"])
+                if doc["意图类别"] == "工具":
+                    tools_id.append(doc["意图名称"])
+            if intent_base_id:
+                knowledge_bases = [
+                        client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"]
+                        for id_ in intent_base_id
+                ] 
+            if intent_item_id:
+                knowledge_items = [
+                    client.api.appspace_retrieve_knowledge(path_params={"id": id_})["data"]
+                    for id_ in intent_item_id
+                ] 
+            if tools_id:
+                tool_resource_base_ids = tools_id
         if callbacks:
             _set_config_context({"callbacks": callbacks})
         # ====================================================================================================
         # 如果是 force_process_by_agent 的情况下，则直接走知识类资源召回+精排的路，且获取 make decision 结果
         # ====================================================================================================
-        if agent_options.intent_recognition_options.force_process_by_agent:
+        if agent_options.knowledge_query_options.force_process_by_agent:
             return self.independent_query_pipeline(
                 query,
                 None,
@@ -1292,10 +1377,10 @@ class IntentRecognition(BaseModel):
         # ====================================================================================================
         # 如果带历史检索上下文，则说明用户的意图非常明确，需设置工具列表为空，且直接使用该上下文进行回答
         # ====================================================================================================
-        if agent_options.intent_recognition_options.retrieved_knowledge_resources:
+        if agent_options.knowledge_query_options.retrieved_knowledge_resources:
             return {
                 "status": IntentStatus.QA_WITH_RETRIEVED_KNOWLEDGE_RESOURCES,
-                "retrieved_knowledge_resources": agent_options.intent_recognition_options.retrieved_knowledge_resources,
+                "retrieved_knowledge_resources": agent_options.knowledge_query_options.retrieved_knowledge_resources,
             }
         # ====================================================================================================
         # 为【无需history的】且可通过3种特殊意图识别方式判断的query提供快速单跳通道
@@ -1305,8 +1390,8 @@ class IntentRecognition(BaseModel):
         # 假设是跳至某个具体的工具，则直接调用LLM进行工具参数生成，然后调用工具即可
         # 假设是跳至某个智能工单查证场景这种特殊的通道，则调用对应的分类小模型，然后进行工单查证
         # 假设是跳至某个特殊的知识库索引，则可能是调用对应的索引进行召回，然后进行LLM问答
-        if agent_options.intent_recognition_options.intent_code:
-            intent = self.intent_recognition_by_code(agent_options.intent_recognition_options.intent_code)
+        if agent_options.intent_recognition_options.intent_recognition_llm_code:
+            intent = self.intent_recognition_by_code(agent_options.intent_recognition_options.intent_recognition_llm_code)
             raise NotImplementedError("需要根据该具体的intent设定进行后续对应处理逻辑的实现")
         intent = self.intent_recognition_by_template(query)
         if intent:
@@ -1331,8 +1416,8 @@ class IntentRecognition(BaseModel):
         # tool_resource_base_ids 与传入的 tools 会有关联，本判断条件需要更新
         # TODO: 待上述事项支持后，需要改成使用 exec_intent_recognition 传进来的参数
         do_tool_resource_retrieve = (
-            agent_options.intent_recognition_options.tool_resource_base_ids
-            and len(tools) > agent_options.intent_recognition_options.tool_count_threshold
+            tool_resource_base_ids
+            and len(tools) > agent_options.knowledge_query_options.tool_count_threshold
         )
         # NOTE: 目前认为只有绑定了知识库，或者需要进行工具类资源召回的情况下，才可能需要进行 independent query 的改写
         # 此外，还加了 with_query_cls_and_rewrite 总开关
@@ -1342,7 +1427,7 @@ class IntentRecognition(BaseModel):
                 res = self.query_cls_pipeline(query, llm, agent_options, **kwargs)
             elif agent_options.knowledge_query_options.independent_query_mode == IndependentQueryMode.SUM_AND_CONCATE:
                 sum_res = self.sum_chat_history_for_query(
-                    agent_options.intent_recognition_options.chat_history, query, llm, **kwargs
+                    agent_options.knowledge_query_options.chat_history, query, llm, **kwargs
                 )
                 if sum_res:
                     res = f"{sum_res}\n{query}"

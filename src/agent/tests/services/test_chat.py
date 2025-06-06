@@ -103,6 +103,9 @@ def test_CommonQAAgent_chat_streaming():
         intent_recognition_options=IntentRecognition(
             force_process_by_agent=False,
             role_prompt="",
+            intent_recognition_knowledgebase_id= [276],
+            intent_recognition_topk = 10,
+            intent_recognition_llm = "deepseek-r1",
         ),
         knowledge_query_options=KnowledgebaseSettings(
             knowledge_base_ids=[58],
@@ -124,7 +127,7 @@ def test_CommonQAAgent_chat_streaming():
     )
 
     # 测试部分
-    test_case_inputs = {"input": "云桌面绿屏解决方法"}
+    test_case_inputs = {"input": "日志清洗方法"}
 
     for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=2):
         if each == "data: [DONE]\n\n":
@@ -132,6 +135,8 @@ def test_CommonQAAgent_chat_streaming():
         if each:
             chunk = json.loads(each[6:])
             print(f"\n=====> {chunk}\n")  # 方便跟其他标准输出区分开来
+
+
 
 
 @pytest.mark.skipif(

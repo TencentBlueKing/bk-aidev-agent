@@ -594,5 +594,27 @@ d. 一些来自上述工具调用的结果。提供给你的格式是先用json�
 # NOTE: 目前 structured_chat 的情况下，clarifying 和 private 使用同样的 prompt 模板即可
 clarifying_qa_prompt_structured_chat = private_qa_prompt_structured_chat
 
+intent_recognition = ChatPromptTemplate.from_messages(
+    [
+        (
+            "human",
+            """你是一个智能的决策者。我会给你一些意图选项，每项包含包含意图类别、意图名称和意图描述。
+            请你根据用户的提问，选择一个或多个适合解答用户的问题的意图，输出格式必须为纯JSON数组（不要包含任何markdown标记），例如：
+            [{"意图类别": "xxx","意图名称": "xxx","意图描述": "xxx"},{"意图类别": "xxx","意图名称": "xxx","意图描述": "xxx"}]
+"""
+        ),
+        (
+            "human",
+            (
+                "\n\n\n以下是用户最新提问内容：```{{query}}```"
+                "\n\n\n注意注意再注意！你务必看清楚用户最新提问内容是什么！"
+                "\n\n\n以下是意图选项内容：```{{intent_knowledge_doc}}```"
+                "\n\n\n再次强调，你无论如何都要以上文中定义的json数组格式输出！"
+            ),
+        ),
+    ],
+    template_format="jinja2",
+)
+
 DEFAULT_QA_PROMPT_TEMPLATES = {k: v for k, v in globals().items() if "_qa_prompt_" in k}
 DEFAULT_INTENT_RECOGNITION_PROMPT_TEMPLATES = {k: v for k, v in globals().items() if "_qa_prompt_" not in k}

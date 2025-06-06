@@ -501,7 +501,7 @@ class IntentRecognitionMixin(BaseModel):
             **kwargs,
         )
         if (
-            agent_options.intent_recognition_options.force_process_by_agent
+            agent_options.knowledge_query_options.force_process_by_agent
             and recog_results["status"] != IntentStatus.PROCESS_BY_AGENT
         ):
             raise RuntimeError(
@@ -581,12 +581,12 @@ class IntentRecognitionMixin(BaseModel):
             # 默认在最终提问的时候使用原始的用户 query
             # independent query 只用于知识库召回
             kwargs["query"] = kwargs["input"]
-        kwargs["role_prompt"] = agent_options.intent_recognition_options.role_prompt
+        kwargs["role_prompt"] = agent_options.knowledge_query_options.role_prompt
         kwargs["recog_results"] = recog_results
         kwargs["use_general_knowledge_on_miss"] = agent_options.knowledge_query_options.use_general_knowledge_on_miss
         kwargs["rejection_response"] = agent_options.knowledge_query_options.rejection_response
         # 补充/修改 kwargs 的值：给 AIDEV 产品检索测试模块使用
-        if agent_options.intent_recognition_options.force_process_by_agent:
+        if agent_options.knowledge_query_options.force_process_by_agent:
             kwargs["decision"] = recog_results["decision"]
             kwargs["retrieved_docs"] = filter_and_select_topk(
                 recog_results["knowledge_resources_emb_recalled"],
