@@ -1335,16 +1335,26 @@ class IntentRecognition(BaseModel):
                     logger.error(f"Intent recognition LLM error: {e}")
                     intent_knowledge = []
 
+            class IntentCategory(Enum):
+                KNOWLEDGE_BASE = "知识base"
+                KNOWLEDGE_ITEM = "知识item"
+                TOOL = "工具"
+
             intent_base_id = []
             intent_item_id = []
             tools_id = []
+            
             for doc in intent_knowledge:
-                if doc["意图类别"] == "知识base":
-                    intent_base_id.append(doc["意图名称"])
-                if doc["意图类别"] == "知识item":
-                    intent_item_id.append(doc["意图名称"])
-                if doc["意图类别"] == "工具":
-                    tools_id.append(doc["意图名称"])
+                try:
+                    category = IntentCategory(doc["意图类别"])
+                    if category == IntentCategory.KNOWLEDGE_BASE:
+                        intent_base_id.append(doc["意图名称"])
+                    elif category == IntentCategory.KNOWLEDGE_ITEM:
+                        intent_item_id.append(doc["意图名称"])
+                    elif category == IntentCategory.TOOL:
+                        tools_id.append(doc["意图名称"])
+                except ValueError as e:
+                    logger.warning(f"Invalid intent category: {doc['意图类别']} in document {doc}")
             if intent_base_id:
                 knowledge_bases = [
                         client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"]
