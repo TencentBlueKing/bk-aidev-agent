@@ -106,6 +106,20 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/agent/{agent_code}/",
     )
 
+    add_knowledge_item = bind_property(
+        Operation,
+        name="add_knowledge_item",
+        method="POST",
+        path="/openapi/aidev/resource/v1/knowledge/",
+    )
+
+    add_dataset_item = bind_property(
+        Operation,
+        name="add_dataset_item",
+        method="POST",
+        path="/openapi/aidev/resource/v1/dataset_item/",
+    )
+
 
 class Client(BaseClient):
     api = bind_property(OpenApiGroup, name="api")
