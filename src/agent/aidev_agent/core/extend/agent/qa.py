@@ -37,7 +37,6 @@ from langchain_core.runnables.config import _set_config_context
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel
 
-from aidev_agent.config import settings
 from aidev_agent.core.agent.agents import (
     ACTION_INPUT_ERR_MSG,
     OUTPUT_PARSER_ERR_MSG,
@@ -46,9 +45,10 @@ from aidev_agent.core.agent.agents import (
 )
 from aidev_agent.core.agent.multimodal import MultiToolCallCommonAgent, StructuredChatCommonAgent
 from aidev_agent.core.utils.local import request_local
+from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils import Empty
 
-from ..intent.intent_recognition import Decision, FineGrainedScoreType, IntentRecognition, IntentStatus
+from ..intent.intent_recognition import Decision, IntentRecognition, IntentStatus
 from ..intent.prompts import DEFAULT_QA_PROMPT_TEMPLATES
 from ..intent.utils import (
     FINAL_ANSWER_PREFIXES,
@@ -113,11 +113,10 @@ class IntentRecognitionMixin(BaseModel):
             ) = self.__class__.intent_recognition(
                 self.llm,
                 self.prefix,
-                self.role_prompt or "",
                 self.tools,
+                self.agent_options,
                 intermediate_steps,
                 callbacks,
-                force_process_by_agent=False,
                 **kwargs,
             )
             # NOTE: 需要格外注意此处的深拷贝和浅拷贝逻辑
@@ -329,6 +328,8 @@ class IntentRecognitionMixin(BaseModel):
             inner_input["beijing_now"] = get_beijing_now()
         if "context" in chat_prompt_template.input_variables:
             inner_input["context"] = kwargs["context"]
+        if "qa_context" in chat_prompt_template.input_variables:
+            inner_input["qa_context"] = kwargs["qa_context"]
         if "query" in chat_prompt_template.input_variables:
             inner_input["query"] = kwargs["query"]
         if "role_prompt" in chat_prompt_template.input_variables:
@@ -339,7 +340,12 @@ class IntentRecognitionMixin(BaseModel):
             inner_input["tools"] = render_text_description_and_args(list(candidate_tools))
         if "chat_history" in chat_prompt_template.partial_variables:
             inner_input["chat_history"] = kwargs["chat_history"]
-
+        if "use_general_knowledge_on_miss" in chat_prompt_template.input_variables:
+            inner_input["use_general_knowledge_on_miss"] = kwargs["use_general_knowledge_on_miss"]
+        if "rejection_response" in chat_prompt_template.input_variables:
+            inner_input["rejection_response"] = kwargs["rejection_response"]
+        if "with_qa_response" in chat_prompt_template.input_variables:
+            inner_input["with_qa_response"] = kwargs["with_qa_response"]
         formated_prompts = chat_prompt_template._format_prompt_with_error_handling(inner_input)
         cur_token_len = llm.get_num_tokens_from_messages(formated_prompts.messages)
         return cur_token_len, formated_prompts
@@ -430,6 +436,12 @@ class IntentRecognitionMixin(BaseModel):
         # 待知识库后台对非结构化数据的处理方式的 index_content 不是默认使用LLM总结后的内容之后，
         # 可将“且是结构化数据”的逻辑去除
         # NOTE: 目前暂不考虑检索返回模板对 page_content 的影响
+        knowledge_base_ids = set()
+        for doc in recog_results[knowledge_resource_type]:
+            if "knowledge_base_id" not in doc.get("metadata", {}):
+                raise ValueError("Document metadata missing required field: knowledge_base_id")
+            else:
+                knowledge_base_ids.add(doc["metadata"]["knowledge_base_id"])
         kwargs["context"] = [
             (
                 doc["metadata"]["index_content"]
@@ -437,7 +449,20 @@ class IntentRecognitionMixin(BaseModel):
                 else doc["page_content"]
             )
             for doc in recog_results[knowledge_resource_type]
+            if doc["metadata"]["knowledge_base_id"] not in recog_results["qa_response_kb_ids"]
         ]
+        kwargs["qa_context"] = [
+            (
+                doc["metadata"]["index_content"]
+                if "index_content" in doc["metadata"] and is_structured_data(doc)
+                else doc["page_content"]
+            )
+            for doc in recog_results[knowledge_resource_type]
+            if doc["metadata"]["knowledge_base_id"] in recog_results["qa_response_kb_ids"]
+        ]
+        qa_set = set(recog_results["qa_response_kb_ids"])
+        # 检查是否包含qa_response_kb_ids
+        kwargs["with_qa_response"] = qa_set.issubset(knowledge_base_ids)
         if reference_doc := deduplicate_knowledge_file_paths(recog_results[knowledge_resource_type]):
             conditional_dispatch_custom_event(
                 "custom_event",
@@ -452,48 +477,33 @@ class IntentRecognitionMixin(BaseModel):
         cls,
         llm: BaseChatModel,
         prefix: str,
-        role_prompt: str,
         tools: List[BaseTool],
+        agent_options: Optional[AgentOptions],
         intermediate_steps: List[Tuple[AgentAction, str]],
         callbacks: Callbacks = None,
-        force_process_by_agent=False,
         config=None,
         **kwargs: Any,
     ) -> Tuple[BaseChatModel, ChatPromptTemplate, List[BaseTool], List[Tuple[AgentAction, str]], Callbacks, Any]:
         """
         :param prefix: aidev 默认为用户配的 system prompt。
-        :param role_prompt: 用户在 aidev 页面上创建 agent 时填写的 prompt。
-            旧主站逻辑会将其与 prefix 拼接后作为整体外层 agent 的 system prompt。
-        :param force_process_by_agent: 是否强制进入 IntentStatus.PROCESS_BY_AGENT 的 status。用于 AIDEV 产品页面召回测试。
         """
         if config:
             _set_config_context(config)
         query = kwargs["input"]
         # NOTE: 加上意图识别流程后，需要把默认自带的 `knowledge_query` 去掉
         tools_for_intent_recog = deduplicate_tools([tool for tool in deepcopy(tools) if tool.name != "knowledge_query"])
-        reject_threshold = tuple(map(float, settings.BKAIDEV_KNOWLEDGE_RESOURCE_REJECT_THRESHOLD.split(",")))
         recog_results = cls.intent_recognition_instance.exec_intent_recognition(
             query,
             llm,
             tools_for_intent_recog,
             callbacks,
-            force_process_by_agent=force_process_by_agent,
-            with_structured_data=kwargs.pop("with_structured_data", False),  # pop 防止跟后续的 **kwargs 重复。下同
-            knowledge_bases=kwargs.pop("knowledge_bases", []),
-            knowledge_items=kwargs.pop("knowledge_items", []),
-            knowledge_resource_rough_recall_topk=kwargs.pop("topk", settings.BKAIDEV_TOP_K),
-            knowledge_resource_reject_threshold=kwargs.pop(
-                "knowledge_resource_reject_threshold",
-                reject_threshold,
-            ),
-            knowledge_resource_fine_grained_score_type=kwargs.pop(
-                "knowledge_resource_fine_grained_score_type",
-                FineGrainedScoreType(settings.BKAIDEV_FINE_GRAINED_SCORE_TYPE),
-            ),
-            tool_resource_base_ids=None,  # 待工具类资源注册表支持后，改成从kwargs中取
+            agent_options,
             **kwargs,
         )
-        if force_process_by_agent and recog_results["status"] != IntentStatus.PROCESS_BY_AGENT:
+        if (
+            agent_options.knowledge_query_options.force_process_by_agent
+            and recog_results["status"] != IntentStatus.PROCESS_BY_AGENT
+        ):
             raise RuntimeError(
                 "force_process_by_agent 的情况下状态值必须是 IntentStatus.PROCESS_BY_AGENT"
                 f"当前状态值为{recog_results['status']}"
@@ -571,10 +581,12 @@ class IntentRecognitionMixin(BaseModel):
             # 默认在最终提问的时候使用原始的用户 query
             # independent query 只用于知识库召回
             kwargs["query"] = kwargs["input"]
-        kwargs["role_prompt"] = role_prompt
+        kwargs["role_prompt"] = agent_options.knowledge_query_options.role_prompt
         kwargs["recog_results"] = recog_results
+        kwargs["use_general_knowledge_on_miss"] = agent_options.knowledge_query_options.use_general_knowledge_on_miss
+        kwargs["rejection_response"] = agent_options.knowledge_query_options.rejection_response
         # 补充/修改 kwargs 的值：给 AIDEV 产品检索测试模块使用
-        if force_process_by_agent:
+        if agent_options.knowledge_query_options.force_process_by_agent:
             kwargs["decision"] = recog_results["decision"]
             kwargs["retrieved_docs"] = filter_and_select_topk(
                 recog_results["knowledge_resources_emb_recalled"],
@@ -964,7 +976,8 @@ class CommonQAStreamingMixIn:
                             if len(cache) == max_cache_length:
                                 ret = cache.popleft()
                                 last_event_type = ret["event"]
-                                yield f"data: {json.dumps(ret)}\n\n"
+                                if not (last_event_type == EventType.THINK.value and ret["content"].strip() == ""):
+                                    yield f"data: {json.dumps(ret)}\n\n"
                     else:
                         yield f"data: {json.dumps(ret)}\n\n"
             if is_deepseek_r1_series_models(self.llm) or "deepseek-v3" in self.llm.model_name:
@@ -989,7 +1002,8 @@ class CommonQAStreamingMixIn:
                 while cache:
                     ret = cache.popleft()
                     last_event_type = ret["event"]
-                    yield f"data: {json.dumps(ret)}\n\n"
+                    if not (last_event_type == EventType.THINK.value and ret["content"].strip() == ""):
+                        yield f"data: {json.dumps(ret)}\n\n"
                 for think_symbol in self.think_symbols:
                     final_result = final_result.replace(think_symbol, "")
                 # 如果 done 之前的最后一个 event 是 think 类型，则说明从 think 内容中解析结论失败，需额外发送一条 text event，
