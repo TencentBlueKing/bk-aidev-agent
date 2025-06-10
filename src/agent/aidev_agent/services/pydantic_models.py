@@ -69,9 +69,7 @@ class IntentRecognition(BaseModel):
     intent_recognition_topk: float = Field(default=None, description=("意图识别topk值"))
     intent_recognition_llm: str = Field(default=None, description="意图识别使用的LLM")
     enable_logging: bool = Field(default=True, description="是否启用日志记录")
-    intent_recognition_llm_code: str = Field(
-        default=None, description=("约定的意图识别 code，用于快速单跳")
-    )
+    intent_recognition_llm_code: str = Field(default=None, description=("约定的意图识别 code，用于快速单跳"))
     with_index_specific_search_init: bool = Field(
         default=True, description=("意图识别with_index_specific_search_init参数")
     )
@@ -83,11 +81,10 @@ class IntentRecognition(BaseModel):
     )
 
 
-
 class KnowledgebaseSettings(BaseModel):
-    knowledge_base_ids: Optional[list[int]] = Field(default=None, description=("关联知识库id,有可能没有关联"))
-    knowledge_item_ids: Optional[List[int]] = Field(default=None, description=("关联知识id,可能没有关联"))
-    qa_response_kb_ids: Optional[List[int]] = Field(default=None, description=("历史反馈问答知识库id,可能不存在"))
+    knowledge_bases: list[dict] = Field(default_factory=list, description=("关联知识库,有可能没有关联"))
+    knowledge_items: list[dict] = Field(default_factory=list, description=("关联知识,可能没有关联"))
+    qa_response_kb_ids: list[int] = Field(default_factory=list, description=("历史反馈问答知识库id,可能不存在"))
     retriever_code: str = Field(default=None, max_length=255, description=("检索器ID"))
     query_function: KnowledgeBaseQueryFunction = Field(
         default=KnowledgeBaseQueryFunction.SEMANTIC, description=("查询方式")
@@ -168,9 +165,11 @@ class KnowledgebaseSettings(BaseModel):
         default=False, description="是否将意图切换检测和 query 重写/直接答复合并在一次LLM调用中"
     )
     tool_resource_base_ids: List[int] = Field(
-        default=["weather-query"], description=("工具类资源 base ID 列表。NOTE: 目前工具类资源统一放 base ID 中不放 item ID 中")
+        default=["weather-query"],
+        description=("工具类资源 base ID 列表。NOTE: 目前工具类资源统一放 base ID 中不放 item ID 中"),
     )
     token_limit_margin: int = Field(default=200, description=("token_limit_margin参数"))
+
     class Config:
         arbitrary_types_allowed = True
 

@@ -175,8 +175,8 @@ class EnhancedAgentExecutor(LiteEnhancedAgentExecutor):
         request_local.current_user_store = {
             "file_store": self.agent.file_store,
             "image": {},
-            "knowledge_bases": self.agent.knowledge_bases,
-            "knowledge_items": self.agent.knowledge_items,
+            "knowledge_bases": self.agent.agent_options.knowledge_query_options.knowledge_bases,
+            "knowledge_items": self.agent.agent_options.knowledge_query_options.knowledge_items,
             "reference_doc": {},
         }
         files_list = input.get("files_lst", [])
@@ -246,13 +246,15 @@ class CommonAgentMixIn(BaseModel, ABC):
         )
         agent.file_store = file_store
         agent.knowledge_llm = knowledge_llm
-        agent.knowledge_bases = knowledge_bases or []
-        agent.knowledge_items = knowledge_items or []
         agent.llm_token_limit = llm_token_limit or int(os.getenv("LLM_TOKEN_LIMIT", 28000))
         if kwargs.get("intent_recognition_kwargs"):
             agent.intent_recognition_kwargs = kwargs["intent_recognition_kwargs"]
         if agent_options:
             agent.agent_options = agent_options
+        if knowledge_bases:
+            agent.agent_options.knowledge_query_options.knowledge_bases = knowledge_bases
+        if knowledge_items:
+            agent.agent_options.knowledge_query_options.knowledge_items = knowledge_items
         history = ChatMessageHistory()
         if chat_history:
             history.add_messages(chat_history)

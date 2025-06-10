@@ -34,6 +34,7 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel
 
 from aidev_agent.api.bk_aidev import BKAidevApi
+from aidev_agent.core.extend.intent.enums import IntentCategory
 from aidev_agent.core.extend.intent.prompts import DEFAULT_INTENT_RECOGNITION_PROMPT_TEMPLATES
 from aidev_agent.core.extend.intent.similarity_model import calculate_similarity
 from aidev_agent.core.extend.intent.utils import (
@@ -963,9 +964,7 @@ class IntentRecognition(BaseModel):
                 else []
             )
             retrieved_results_qa_response = (
-                future_qa_response.result() 
-                if agent_options.knowledge_query_options.qa_response_kb_ids 
-                else []
+                future_qa_response.result() if agent_options.knowledge_query_options.qa_response_kb_ids else []
             )
             if (
                 agent_options.intent_recognition_options.with_index_specific_search_init
@@ -1266,19 +1265,13 @@ class IntentRecognition(BaseModel):
         """
         # 获取客户端对象
         client = BKAidevApi.get_client_by_username(username="")
-        knowledge_items = [
-            client.api.appspace_retrieve_knowledge(path_params={"id": id_})["data"]
-            for id_ in agent_options.knowledge_query_options.knowledge_item_ids
-        ]
-        knowledge_bases = [
-            client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"]
-            for id_ in agent_options.knowledge_query_options.knowledge_base_ids
-        ]
         tool_resource_base_ids = agent_options.knowledge_query_options.tool_resource_base_ids
+        knowledge_bases = agent_options.knowledge_query_options.knowledge_bases
+        knowledge_items = agent_options.knowledge_query_options.knowledge_items
         # 处理意图识别知识库
         if agent_options.intent_recognition_options.intent_recognition_knowledgebase_id:
             client = BKAidevApi.get_client_by_username(username="")
-            
+
             # 获取知识库基础信息
             intent_knowledge_bases = [
                 client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"]
@@ -1286,8 +1279,7 @@ class IntentRecognition(BaseModel):
             ]
 
             # 统一处理知识库检索
-            topk = (agent_options.intent_recognition_options.intent_recognition_topk 
-                    or 100)  # 默认取100条
+            topk = agent_options.intent_recognition_options.intent_recognition_topk or 100  # 默认取100条
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(
                     self.search_knowledge_index_specific,
@@ -1301,33 +1293,29 @@ class IntentRecognition(BaseModel):
                 intent_knowledge_doc = future.result()
 
             # 提取知识内容
-            intent_knowledge = [doc['page_content'] for doc in intent_knowledge_doc]
+            intent_knowledge = [doc["page_content"] for doc in intent_knowledge_doc]
 
             # 统一处理LLM意图识别
             if agent_options.intent_recognition_options.intent_recognition_llm:
                 try:
                     # 初始化LLM
                     llm = ChatModel.get_setup_instance(
-                        model=agent_options.intent_recognition_options.intent_recognition_llm,
-                        streaming=True
+                        model=agent_options.intent_recognition_options.intent_recognition_llm, streaming=True
                     )
-                    
+
                     # 准备prompt
                     chat_prompt_template = self.intent_recognition_prompt_templates.get("intent_recognition")
-                    inner_input = {
-                        "intent_knowledge_doc": intent_knowledge,
-                        "query": query
-                    }
+                    inner_input = {"intent_knowledge_doc": intent_knowledge, "query": query}
                     formated_prompts = chat_prompt_template._format_prompt_with_error_handling(inner_input)
-                    
+
                     # 调用LLM
                     invoke_func = invoke_decorator(llm.invoke, llm)
                     resp = invoke_func(formated_prompts)
-                    
+
                     # 解析响应
                     resp_content = resp.content.replace("```json", "").replace("```", "").strip()
                     intent_knowledge = json.loads(resp_content)
-                    
+
                 except json.JSONDecodeError as e:
                     logger.error(f"Failed to parse LLM response: {e}")
                     intent_knowledge = []
@@ -1335,15 +1323,10 @@ class IntentRecognition(BaseModel):
                     logger.error(f"Intent recognition LLM error: {e}")
                     intent_knowledge = []
 
-            class IntentCategory(Enum):
-                KNOWLEDGE_BASE = "知识base"
-                KNOWLEDGE_ITEM = "知识item"
-                TOOL = "工具"
-
             intent_base_id = []
             intent_item_id = []
             tools_id = []
-            
+
             for doc in intent_knowledge:
                 try:
                     category = IntentCategory(doc["意图类别"])
@@ -1353,18 +1336,17 @@ class IntentRecognition(BaseModel):
                         intent_item_id.append(doc["意图名称"])
                     elif category == IntentCategory.TOOL:
                         tools_id.append(doc["意图名称"])
-                except ValueError as e:
+                except ValueError:  # noqa
                     logger.warning(f"Invalid intent category: {doc['意图类别']} in document {doc}")
             if intent_base_id:
                 knowledge_bases = [
-                        client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"]
-                        for id_ in intent_base_id
-                ] 
+                    client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"]
+                    for id_ in intent_base_id
+                ]
             if intent_item_id:
                 knowledge_items = [
-                    client.api.appspace_retrieve_knowledge(path_params={"id": id_})["data"]
-                    for id_ in intent_item_id
-                ] 
+                    client.api.appspace_retrieve_knowledge(path_params={"id": id_})["data"] for id_ in intent_item_id
+                ]
             if tools_id:
                 tool_resource_base_ids = tools_id
         if callbacks:
@@ -1401,7 +1383,9 @@ class IntentRecognition(BaseModel):
         # 假设是跳至某个智能工单查证场景这种特殊的通道，则调用对应的分类小模型，然后进行工单查证
         # 假设是跳至某个特殊的知识库索引，则可能是调用对应的索引进行召回，然后进行LLM问答
         if agent_options.intent_recognition_options.intent_recognition_llm_code:
-            intent = self.intent_recognition_by_code(agent_options.intent_recognition_options.intent_recognition_llm_code)
+            intent = self.intent_recognition_by_code(
+                agent_options.intent_recognition_options.intent_recognition_llm_code
+            )
             raise NotImplementedError("需要根据该具体的intent设定进行后续对应处理逻辑的实现")
         intent = self.intent_recognition_by_template(query)
         if intent:
@@ -1426,8 +1410,7 @@ class IntentRecognition(BaseModel):
         # tool_resource_base_ids 与传入的 tools 会有关联，本判断条件需要更新
         # TODO: 待上述事项支持后，需要改成使用 exec_intent_recognition 传进来的参数
         do_tool_resource_retrieve = (
-            tool_resource_base_ids
-            and len(tools) > agent_options.knowledge_query_options.tool_count_threshold
+            tool_resource_base_ids and len(tools) > agent_options.knowledge_query_options.tool_count_threshold
         )
         # NOTE: 目前认为只有绑定了知识库，或者需要进行工具类资源召回的情况下，才可能需要进行 independent query 的改写
         # 此外，还加了 with_query_cls_and_rewrite 总开关

@@ -103,9 +103,9 @@ def test_CommonQAAgent_chat_streaming():
         intent_recognition_options=IntentRecognition(
             force_process_by_agent=False,
             role_prompt="",
-            intent_recognition_knowledgebase_id= [276],
-            intent_recognition_topk = 10,
-            intent_recognition_llm = "deepseek-r1",
+            intent_recognition_knowledgebase_id=[276],
+            intent_recognition_topk=10,
+            intent_recognition_llm="deepseek-r1",
         ),
         knowledge_query_options=KnowledgebaseSettings(
             knowledge_base_ids=[58],
@@ -135,8 +135,6 @@ def test_CommonQAAgent_chat_streaming():
         if each:
             chunk = json.loads(each[6:])
             print(f"\n=====> {chunk}\n")  # 方便跟其他标准输出区分开来
-
-
 
 
 @pytest.mark.skipif(
@@ -206,7 +204,12 @@ def test_qa_response_sequence():
         # ({"input": "云桌面本地双屏设置"}, [254]),
         # ({"input": "云桌面本地双屏设置"}, []),
     ]
-    
+
     for test_input, expected_kb_ids in test_cases:
         print(f"\n=== 正在执行测试用例: {test_input['input']} ===")
         test_qa_response(test_input, expected_kb_ids)
+
+
+def test_agent_option():
+    options = AgentOptions()
+    assert options
