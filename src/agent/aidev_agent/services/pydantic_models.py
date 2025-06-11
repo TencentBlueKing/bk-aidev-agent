@@ -105,7 +105,9 @@ class KnowledgebaseSettings(BaseModel):
     raw: bool = Field(default=False, description=("是否返回检索大模型总结内容"))
     knowledge_template_id: int = Field(default=0, description=("检索内容返回模板ID"))
     use_general_knowledge_on_miss: bool = Field(default=True, description=("未命中知识库时根据通识回答"))
-    rejection_response: str = Field(default=None, max_length=1024, description=("拒答文案"))
+    rejection_response: str = Field(
+        default="无法根据当前文档回答当前问题。请更换问题。", max_length=1024, description=("拒答文案")
+    )
     with_scalar_data: bool = Field(default=False, description=("with_scalar_data参数"))
     use_independent_query_in_translation: bool = Field(
         default=False, description=("use_independent_query_in_translation参数")
