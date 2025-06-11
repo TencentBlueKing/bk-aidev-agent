@@ -239,8 +239,9 @@ general_qa_prompt_tool_calling = ChatPromptTemplate.from_messages(
                 "\n\n此外，跟你说下，现在是北京时间{{beijing_now}}，你如果无需用到这个北京时间信息，则忽略这个北京时间信息即可。"
             ),
         ),
-        ("placeholder", "{{chat_history}}"),
-        ("human", "以下是用户最新提问内容：```{{query}}```\n\n\n{{role_prompt}}\n\n\n{{agent_scratchpad}}"),
+        ("placeholder", "{chat_history}"),
+        ("human", "以下是用户最新提问内容：```{{query}}```\n\n\n{{role_prompt}}"),
+        ("placeholder", "{agent_scratchpad}"),
     ],
     template_format="jinja2",
 )
@@ -276,13 +277,14 @@ private_qa_prompt_tool_calling = ChatPromptTemplate.from_messages(
                 "\n\n此外，跟你说下，现在是北京时间{{beijing_now}}，你如果无需用到这个北京时间信息，则忽略这个北京时间信息即可。"
             ),
         ),
-        ("placeholder", "{{chat_history}}"),
+        ("placeholder", "{chat_history}"),
         (
             "human",
             """以下是知识库知识内容:：```{{context}}```{% if with_qa_response %}\n\n\n以下是历史问答：```{{qa_context}}```，
             如果历史回答评分低于或等于3分，则不要参考该回答进行回答，高于3分才能作参考{% endif -%}\n\n\n以下是用户最新提问内容：
-            ```{{query}}```\n\n\n{{role_prompt}}\n\n\n{{agent_scratchpad}}""",
+            ```{{query}}```\n\n\n{{role_prompt}}""",
         ),
+        ("placeholder", "{agent_scratchpad}"),
     ],
     template_format="jinja2",
 )
@@ -323,13 +325,14 @@ clarifying_qa_prompt_tool_calling = ChatPromptTemplate.from_messages(
                 "此外，跟你说下，现在是北京时间{{beijing_now}}，你如果无需用到这个北京时间信息，则忽略这个北京时间信息即可。"
             ),
         ),
-        ("placeholder", "{{chat_history}}"),
+        ("placeholder", "{chat_history}"),
         (
             "human",
             """以下是知识库知识内容:：```{{context}}```{% if with_qa_response %}\n\n\n以下是历史问答：```{{qa_context}}```，
             如果历史回答评分低于或等于3分，则不要参考该回答进行回答，高于3分才能作参考{% endif -%}\n\n\n以下是用户最新提问内容：
-            ```{{query}}```\n\n\n{{role_prompt}}\n\n\n{{agent_scratchpad}}""",
+            ```{{query}}```\n\n\n{{role_prompt}}""",
         ),
+        ("placeholder", "{agent_scratchpad}"),
     ],
     template_format="jinja2",
 )
@@ -437,7 +440,7 @@ c. 一些来自上述工具调用的结果。提供给你的格式是先用json�
 此外，跟你说下，现在是北京时间{{beijing_now}}，你如果无需用到这个北京时间信息，则忽略这个北京时间信息即可。
 """,
         ),
-        ("placeholder", "{{chat_history}}"),
+        ("placeholder", "{chat_history}"),
         (
             "human",
             (
@@ -572,7 +575,7 @@ d. 一些来自上述工具调用的结果。提供给你的格式是先用json�
 此外，跟你说下，现在是北京时间{{beijing_now}}，你如果无需用到这个北京时间信息，则忽略这个北京时间信息即可。
 """,
         ),
-        ("placeholder", "{{chat_history}}"),
+        ("placeholder", "{chat_history}"),
         (
             "human",
             (
