@@ -843,7 +843,7 @@ class CommonQAStreamingMixIn:
                             ret = {
                                 "event": EventType.REFERENCE_DOC.value,
                                 "documents": item["data"]["reference_doc"],
-                                "cover": cover,
+                                "cover": True,
                             }
                         elif "compress_log" in item["data"] and front_end_display:
                             ret = {
