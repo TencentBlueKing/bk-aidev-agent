@@ -120,7 +120,13 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/dataset_item/",
     )
 
-
+    bind_agent_space = bind_property(
+        Operation,
+        name="bind_agent_space",
+        method="POST",
+        path="/openapi/aidev/resource/v1/agent/{agent_code}/bind_space/",
+    )
+    
 class Client(BaseClient):
     api = bind_property(OpenApiGroup, name="api")
 
