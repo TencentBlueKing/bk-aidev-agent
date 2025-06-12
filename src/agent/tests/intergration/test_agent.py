@@ -1,5 +1,3 @@
-import json
-
 import pytest
 from aidev_agent.api.bk_aidev import BKAidevApi
 from aidev_agent.config import settings
@@ -12,18 +10,7 @@ from aidev_agent.services.pydantic_models import (
     KnowledgebaseSettings,
 )
 from langchain_core.callbacks.stdout import StdOutCallbackHandler
-
-
-def verify_results(results: list[dict], need_reference_doc: bool = False) -> bool:
-    has_reference_doc = not need_reference_doc
-    for each in results:
-        if "documents" in each:
-            has_reference_doc = True
-            assert each["cover"] is True
-        else:
-            assert "content" in each
-
-    assert has_reference_doc
+from tests.intergration.utilities import verify_streaming_result_format
 
 
 @pytest.mark.skipif(
@@ -90,16 +77,9 @@ class TestStructedAgent:
 
         # 测试部分
         test_case_inputs = {"input": "标准运维找不到文件。"}
-        results = []
-        for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=2):
-            if each == "data: [DONE]\n\n":
-                break
-            if each:
-                chunk = json.loads(each[6:])
-                print(f"\n=====> {chunk}\n")  # 方便跟其他标准输出区分开来
-                results.append(chunk)
-
-        verify_results(results)
+        verify_streaming_result_format(
+            [each for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=2)]
+        )
 
     def test_CommonQAAgent_case_hunyuan(self):
         # 设置chat_model实例
@@ -140,13 +120,7 @@ class TestStructedAgent:
 
         # 测试部分
         test_case_inputs = {"input": "标准运维找不到文件。"}
-        results = []
         # 特意将timeout弄长一些,用于跳过LOAD_MESSAGE
-        for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=10):
-            if each == "data: [DONE]\n\n":
-                break
-            if each:
-                chunk = json.loads(each[6:])
-                print(f"\n=====> {chunk}\n")  # 方便跟其他标准输出区分开来
-                results.append(chunk)
-        verify_results(results)
+        verify_streaming_result_format(
+            [each for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=10)]
+        )
