@@ -66,4 +66,4 @@ intergration-test:
 	$(eval path ?= ${ROOT_DIR}/tests/intergration)
 	$(eval maxfail ?= --maxfail=2)
 	$(eval warnings ?= --disable-pytest-warnings)
-	${pytest} ${path} -s
+	${pytest} ${path} -s --durations=100

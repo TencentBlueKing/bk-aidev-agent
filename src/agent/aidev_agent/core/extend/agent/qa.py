@@ -979,7 +979,7 @@ class CommonQAStreamingMixIn:
                     if is_deepseek_r1_series_models(self.llm) or "deepseek-v3" in self.llm.model_name:
                         if ret.get("content", "") == self.LOADING_AGENT_MESSAGE:
                             last_event_type = ret["event"]
-                            yield f"data: {json.dumps(ret)}\n\n"
+                            yield self._yield_ret(ret)
                         else:
                             # NOTE: 只有非 self.LOADING_AGENT_MESSAGE 的 event 可以放到 cache 中
                             self.check_and_append(cache, ret)
@@ -988,7 +988,7 @@ class CommonQAStreamingMixIn:
                                 if cache:
                                     ret = cache.popleft()
                                     last_event_type = ret["event"]
-                                    yield f"data: {json.dumps(ret)}\n\n"
+                                    yield self._yield_ret(ret)
                                 self.check_and_append(cache, ret)
                             cache = self.cache_filter(
                                 cache, final_answer_prefix_to_filter, final_answer_suffix_to_filter
@@ -997,16 +997,16 @@ class CommonQAStreamingMixIn:
                                 ret = cache.popleft()
                                 last_event_type = ret["event"]
                                 if not (last_event_type == EventType.THINK.value and ret["content"].strip() == ""):
-                                    yield f"data: {json.dumps(ret)}\n\n"
+                                    yield self._yield_ret(ret)
                     else:
-                        yield f"data: {json.dumps(ret)}\n\n"
+                        yield self._yield_ret(ret)
             if is_deepseek_r1_series_models(self.llm) or "deepseek-v3" in self.llm.model_name:
                 if isinstance(self, StructuredChatCommonQAAgent):
                     # 以下逻辑用于利用 self.end_content 标志跟 final_answer_suffix_to_filter 拼接后进行尾部去除
                     if len(cache) == max_cache_length:
                         ret = cache.popleft()
                         last_event_type = ret["event"]
-                        yield f"data: {json.dumps(ret)}\n\n"
+                        yield self._yield_ret(ret)
                     self.check_and_append(cache, ret)
                     len_before_filtering = len(cache)
                     cache = self.cache_filter(cache, final_answer_prefix_to_filter, final_answer_suffix_to_filter)
@@ -1017,7 +1017,7 @@ class CommonQAStreamingMixIn:
                     ret = cache.popleft()
                     last_event_type = ret["event"]
                     if not (last_event_type == EventType.THINK.value and ret["content"].strip() == ""):
-                        yield f"data: {json.dumps(ret)}\n\n"
+                        yield self._yield_ret(ret)
                 for think_symbol in self.think_symbols:
                     final_result = final_result.replace(think_symbol, "")
                 # 如果 done 之前的最后一个 event 是 think 类型，则说明从 think 内容中解析结论失败，需额外发送一条 text event，
@@ -1031,7 +1031,7 @@ class CommonQAStreamingMixIn:
                         "cover": False,
                         "elapsed_time": (time.time() - agent_think_start_time) * 1000,
                     }
-                    yield f"data: {json.dumps(ret)}\n\n"
+                    yield self._yield_ret(ret)
                     # 再发一个确保为 text 的 ret
                     _logger.warning(
                         "Fail to derive the final answer from the thinking process. "
@@ -1042,17 +1042,16 @@ class CommonQAStreamingMixIn:
                         "content": "抱歉，由于LLM指令遵从效果欠佳，尝试从思考内容中解析最终结论失败，请从思考内容中获取结论。",
                         "cover": cover,
                     }
-                    yield f"data: {json.dumps(ret)}\n\n"
+                    yield self._yield_ret(ret)
             # cover 为 True 时，final_result 为 stream 结束后需要最终显示的结果，可根据需要重新拼接
             # cover 为 False 时不进行覆盖
             cover = False
-
             ret = {
                 "event": EventType.DONE.value,
                 "content": final_result,
                 "cover": cover,
             }
-            yield f"data: {json.dumps(ret)}\n\n"
+            yield self._yield_ret(ret)
         except Exception as exception:
             ret = {
                 "event": "error",
@@ -1060,9 +1059,14 @@ class CommonQAStreamingMixIn:
                 "message": exception.response_data() if hasattr(exception, "response_data") else str(exception),
             }
             _logger.exception(exception)
-            yield f"data: {json.dumps(ret)}\n\n"
+            yield self._yield_ret(ret)
         finally:
-            yield "data: [DONE]\n\n"
+            yield self._yield_ret(done=True)
+
+    def _yield_ret(self, ret: dict | None = None, done=False):
+        if done:
+            return "data: [DONE]\n\n"
+        return f"data: {json.dumps(ret)}\n\n"
 
 
 class ToolCallingCommonQAAgent(IntentRecognitionMixin, CommonQAStreamingMixIn, MultiToolCallCommonAgent):
