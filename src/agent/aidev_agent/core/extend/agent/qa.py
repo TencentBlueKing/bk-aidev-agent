@@ -704,22 +704,38 @@ class CommonQAStreamingMixIn:
             cache = deque(remain_events)
 
         return cache
+   
+    def check_and_append(self, cache, ret):
+        """在刚从 think 切换到 text 逻辑之前需要进行的特殊处理"""
+        # 前端渲染要求在 think 和 text 之间必须保证有 "\n\n" 的 text 内容
+        if (
+            cache
+            and (cache[-1].get("event") == EventType.THINK.value)
+            and (ret.get("event") == EventType.TEXT.value)
+            and (not ret.get("content").startswith("\n"))
+        ):
+            if ret.get("content"):
+                ret["content"] = "\n\n" + ret["content"]
+            else:
+                ret["content"] = "\n\n"
+        cache.append(ret)
 
     def stream_standard_event(self, agent_e, cfg, input_, skip_thought=True, timeout: Optional[int] = None):
         """
         如果 is_deepseek_r1_series_models(self.llm)，则需要：
-           统一：去除 think 标识位
+            统一：去除 think 标识位
 
-           a) 如果 isinstance(self, StructuredChatCommonQAAgent)，则需要：
-              将 think 过程和中间的 agent action 过程都作为 think event 发送
-              用自定义的匹配流程来判断
-           b) 如果 isinstance(self, ToolCallingCommonQAAgent)，则需要：
-              将 think 过程作为 think event 发送
-              用 reasoning content 来判断
+            a) 如果 isinstance(self, StructuredChatCommonQAAgent)，则需要：
+                将 think 过程和中间的 agent action 过程都作为 think event 发送
+                用自定义的匹配流程来判断
+            b) 如果 isinstance(self, ToolCallingCommonQAAgent)，则需要：
+                将 think 过程作为 think event 发送
+                用 reasoning content 来判断
         """
         run_info = defaultdict(dict)
         first_chunk = True
         final_result = ""
+        non_think_content = ""
         last_ret_is_empty = False
         front_end_display = True
         if is_deepseek_r1_series_models(self.llm) or "deepseek-v3" in self.llm.model_name:
@@ -772,6 +788,7 @@ class CommonQAStreamingMixIn:
                                     content = reasoning_content
                                 else:
                                     content = item["data"]["chunk"].content
+                                    non_think_content += content
                                 ret = {
                                     "event": EventType.TEXT.value,
                                     "content": content,
@@ -798,18 +815,20 @@ class CommonQAStreamingMixIn:
                                             "cover": False,
                                             "elapsed_time": (time.time() - agent_think_start_time) * 1000,
                                         }
-                                        cache.append(ret)
+                                        self.check_and_append(cache, ret)
                                     ret = {
                                         "event": EventType.TEXT.value,
                                         "content": item["data"]["chunk"].content,
                                         "cover": cover,
                                     }
+                                    non_think_content += item["data"]["chunk"].content
                         else:
                             ret = {
                                 "event": EventType.TEXT.value,
                                 "content": item["data"]["chunk"].content,
                                 "cover": cover,
                             }
+                            non_think_content += item["data"]["chunk"].content
                         final_result += ret["content"]
                     elif item["event"] == "on_custom_event":
                         if "front_end_display" in item["data"]:
@@ -876,11 +895,12 @@ class CommonQAStreamingMixIn:
                         if "content" in ret:
                             ret["event"] = cur_event_type
                         # 一旦出现 Final Answer 模式，之后的所有过程都视为 agent 的正式回答过程
+                        # NOTE: 需要在 non_think_content 中匹配到的 Final Answer 才能触发结束，think 过程中匹配到的不算
                         if not final_answer_occurred:
                             for final_answer_prefix, final_answer_suffix in zip(
                                 self.final_answer_prefixes, self.final_answer_suffixes
                             ):
-                                if final_answer_prefix in final_result:
+                                if final_answer_prefix in non_think_content:
                                     final_answer_occurred = True
                                     final_answer_prefix_to_filter = final_answer_prefix
                                     # 注：后续放到 cache 前的 ret 内容从出现 final answer 的下一次开始进行了针对 \n 的转义操作
@@ -891,7 +911,9 @@ class CommonQAStreamingMixIn:
                                     if not final_result.endswith(final_answer_prefix):
                                         # 这种情况下说明最终答案有一小块跟在了 final_answer_prefix 最后一个块的后面
                                         # 需要将这块内容补回来，并将 think 末尾的那段内容截掉
-                                        start_index = final_result.find(final_answer_prefix)
+                                        # NOTE: 使用 rfind 寻找最后匹配的那个final answer，确保匹配到的是
+                                        # non_think_content 中的 final answer 块
+                                        start_index = final_result.rfind(final_answer_prefix)
                                         if start_index == -1:
                                             raise RuntimeError(
                                                 f"结果子串提取有误。\nfinal_result: {final_result}\n"
@@ -962,20 +984,20 @@ class CommonQAStreamingMixIn:
                             yield f"data: {json.dumps(ret)}\n\n"
                         else:
                             # NOTE: 只有非 self.LOADING_AGENT_MESSAGE 的 event 可以放到 cache 中
-                            cache.append(ret)
+                            self.check_and_append(cache, ret)
                             if recall_ret:
                                 # 如果 cache 非空，先 pop 最开始的元素，再将补充的 recall_ret 给添加进来
                                 if cache:
                                     ret = cache.popleft()
                                     last_event_type = ret["event"]
                                     yield f"data: {json.dumps(ret)}\n\n"
-                                cache.append(recall_ret)
+                                self.check_and_append(cache, ret)
                             cache = self.cache_filter(
                                 cache, final_answer_prefix_to_filter, final_answer_suffix_to_filter
                             )
                             if len(cache) == max_cache_length:
                                 ret = cache.popleft()
-                                last_event_type = ret["event"]
+                                last_event_type = ret["event"]                   
                                 if not (last_event_type == EventType.THINK.value and ret["content"].strip() == ""):
                                     yield f"data: {json.dumps(ret)}\n\n"
                     else:
@@ -992,7 +1014,7 @@ class CommonQAStreamingMixIn:
                         "content": deepcopy(self.end_content),
                         "cover": False,
                     }
-                    cache.append(end_ret)
+                    self.check_and_append(cache, ret)
                     len_before_filtering = len(cache)
                     cache = self.cache_filter(cache, final_answer_prefix_to_filter, final_answer_suffix_to_filter)
                     if len(cache) == len_before_filtering:
@@ -1025,7 +1047,7 @@ class CommonQAStreamingMixIn:
                     )
                     ret = {
                         "event": EventType.TEXT.value,
-                        "content": "尝试从思考内容中解析最终结论失败。",
+                        "content": "抱歉，由于LLM指令遵从效果欠佳，尝试从思考内容中解析最终结论失败，请从思考内容中获取结论。",
                         "cover": cover,
                     }
                     yield f"data: {json.dumps(ret)}\n\n"
