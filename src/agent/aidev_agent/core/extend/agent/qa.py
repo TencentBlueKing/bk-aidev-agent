@@ -101,8 +101,6 @@ class IntentRecognitionMixin(BaseModel):
             # 更新覆盖，而不是将整个kwargs替换，防止某些 key 可能被丢失了
             kwargs = {**kwargs, **request_local.intent_recognition_results["kwargs"]}
         else:
-            if self.intent_recognition_kwargs:
-                kwargs = {**kwargs, **self.intent_recognition_kwargs}
             (
                 llm,
                 chat_prompt_template,
@@ -175,7 +173,7 @@ class IntentRecognitionMixin(BaseModel):
                 agent_scratchpad = format_to_tool_messages(intermediate_steps)
             elif isinstance(self, StructuredChatCommonQAAgent):
                 agent_scratchpad = enhanced_format_log_to_str(intermediate_steps)
-            if len(agent_scratchpad) > kwargs.get("tool_output_compress_thrd", 5000):
+            if len(agent_scratchpad) > self.agent_options.intent_recognition_options.tool_output_compress_thrd:
                 conditional_dispatch_custom_event(
                     "custom_event",
                     {"compress_log": "\n```text\n工具调用结果过长，尝试压缩工具调用结果以减少 token 使用。\n```\n"},
@@ -704,7 +702,7 @@ class CommonQAStreamingMixIn:
             cache = deque(remain_events)
 
         return cache
-   
+
     def check_and_append(self, cache, ret):
         """在刚从 think 切换到 text 逻辑之前需要进行的特殊处理"""
         # 前端渲染要求在 think 和 text 之间必须保证有 "\n\n" 的 text 内容
@@ -997,7 +995,7 @@ class CommonQAStreamingMixIn:
                             )
                             if len(cache) == max_cache_length:
                                 ret = cache.popleft()
-                                last_event_type = ret["event"]                   
+                                last_event_type = ret["event"]
                                 if not (last_event_type == EventType.THINK.value and ret["content"].strip() == ""):
                                     yield f"data: {json.dumps(ret)}\n\n"
                     else:
@@ -1009,16 +1007,10 @@ class CommonQAStreamingMixIn:
                         ret = cache.popleft()
                         last_event_type = ret["event"]
                         yield f"data: {json.dumps(ret)}\n\n"
-                    end_ret = {
-                        "event": EventType.TEXT.value,
-                        "content": deepcopy(self.end_content),
-                        "cover": False,
-                    }
                     self.check_and_append(cache, ret)
                     len_before_filtering = len(cache)
                     cache = self.cache_filter(cache, final_answer_prefix_to_filter, final_answer_suffix_to_filter)
                     if len(cache) == len_before_filtering:
-                        # 如果没 filter 到，则还是将 end_ret 剔除
                         cache.pop()
 
                 while cache:

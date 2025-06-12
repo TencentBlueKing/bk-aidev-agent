@@ -79,6 +79,7 @@ class IntentRecognition(BaseModel):
     with_index_specific_search_keywords: bool = Field(
         default=False, description=("意图识别with_index_specific_search_keywords参数")
     )
+    tool_output_compress_thrd: int = Field(default=5000, description=("工具输出压缩阈值"))
 
 
 class KnowledgebaseSettings(BaseModel):
@@ -167,7 +168,7 @@ class KnowledgebaseSettings(BaseModel):
         default=False, description="是否将意图切换检测和 query 重写/直接答复合并在一次LLM调用中"
     )
     tool_resource_base_ids: List[int] = Field(
-        default=["weather-query"],
+        default_factory=list,
         description=("工具类资源 base ID 列表。NOTE: 目前工具类资源统一放 base ID 中不放 item ID 中"),
     )
     token_limit_margin: int = Field(default=200, description=("token_limit_margin参数"))
