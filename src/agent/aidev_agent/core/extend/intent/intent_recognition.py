@@ -1225,6 +1225,7 @@ class IntentRecognition(BaseModel):
         llm: BaseChatModel,
         tools: List[BaseTool],
         callbacks: Callbacks = None,
+        chat_history: List = None,
         agent_options: Optional[AgentOptions] = None,
         **kwargs,
     ):
@@ -1394,7 +1395,7 @@ class IntentRecognition(BaseModel):
                 res = self.query_cls_pipeline(query, llm, agent_options, **kwargs)
             elif agent_options.knowledge_query_options.independent_query_mode == IndependentQueryMode.SUM_AND_CONCATE:
                 sum_res = self.sum_chat_history_for_query(
-                    agent_options.knowledge_query_options.chat_history, query, llm, **kwargs
+                    chat_history, query, llm, **kwargs
                 )
                 if sum_res:
                     res = f"{sum_res}\n{query}"
