@@ -175,14 +175,12 @@ class EnhancedAgentExecutor(LiteEnhancedAgentExecutor):
         request_local.current_user_store = {
             "file_store": self.agent.file_store,
             "image": {},
-            "knowledge_bases": self.agent.knowledge_bases,
-            "knowledge_items": self.agent.knowledge_items,
+            "knowledge_bases": self.agent.agent_options.knowledge_query_options.knowledge_bases,
+            "knowledge_items": self.agent.agent_options.knowledge_query_options.knowledge_items,
             "reference_doc": {},
         }
         files_list = input.get("files_lst", [])
         input["files_list"] = files_list
-        input["knowledge_items"] = self.agent.knowledge_items
-        input["knowledge_bases"] = self.agent.knowledge_bases
 
 
 class CommonAgentMixIn(BaseModel, ABC):
@@ -197,7 +195,6 @@ class CommonAgentMixIn(BaseModel, ABC):
     llm_token_limit: Optional[int] = None  # LLM支持的最大token数
     chat_prompt_template: Optional[ChatPromptTemplate] = None
     create_agent_func: Callable = None  # 创建 agent 的具体方法
-    intent_recognition_kwargs: Dict = Field(default_factory=dict)
     agent_options: AgentOptions = Field(default_factory=AgentOptions, description="Agent运行使用的配置")
 
     agent_classes: ClassVar[Dict] = None
@@ -248,13 +245,17 @@ class CommonAgentMixIn(BaseModel, ABC):
         )
         agent.file_store = file_store
         agent.knowledge_llm = knowledge_llm
-        agent.knowledge_bases = knowledge_bases or []
-        agent.knowledge_items = knowledge_items or []
         agent.llm_token_limit = llm_token_limit or int(os.getenv("LLM_TOKEN_LIMIT", 28000))
-        if kwargs.get("intent_recognition_kwargs"):
-            agent.intent_recognition_kwargs = kwargs["intent_recognition_kwargs"]
         if agent_options:
             agent.agent_options = agent_options
+        if kwargs.get("intent_recognition_kwargs"):
+            agent.agent_options.intent_recognition_options.tool_output_compress_thrd = kwargs.get(
+                "intent_recognition_kwargs", {}
+            ).get("tool_output_compress_thrd", 5000)
+        if knowledge_bases:
+            agent.agent_options.knowledge_query_options.knowledge_bases = knowledge_bases
+        if knowledge_items:
+            agent.agent_options.knowledge_query_options.knowledge_items = knowledge_items
         history = ChatMessageHistory()
         if chat_history:
             history.add_messages(chat_history)

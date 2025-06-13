@@ -43,6 +43,13 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/tool/{tool_code}/",
     )
 
+    list_chat_session = bind_property(
+        Operation,
+        name="list_chat_session",
+        method="GET",
+        path="/openapi/aidev/resource/v1/chat/session/",
+    )
+
     create_chat_session = bind_property(
         Operation,
         name="create_chat_session",
@@ -104,6 +111,27 @@ class OpenApiGroup(OperationGroup):
         name="retrieve_agent_config",
         method="GET",
         path="/openapi/aidev/resource/v1/agent/{agent_code}/",
+    )
+
+    add_knowledge_item = bind_property(
+        Operation,
+        name="add_knowledge_item",
+        method="POST",
+        path="/openapi/aidev/resource/v1/knowledge/",
+    )
+
+    add_dataset_item = bind_property(
+        Operation,
+        name="add_dataset_item",
+        method="POST",
+        path="/openapi/aidev/resource/v1/dataset_item/",
+    )
+
+    bind_agent_space = bind_property(
+        Operation,
+        name="bind_agent_space",
+        method="POST",
+        path="/openapi/aidev/resource/v1/agent/{agent_code}/bind_space/",
     )
 
 

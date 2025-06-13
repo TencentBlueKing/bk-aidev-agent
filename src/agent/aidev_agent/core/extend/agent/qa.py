@@ -16,7 +16,6 @@ We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
 
-import enum
 import json
 import time
 from collections import defaultdict, deque
@@ -37,7 +36,6 @@ from langchain_core.runnables.config import _set_config_context
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel
 
-from aidev_agent.config import settings
 from aidev_agent.core.agent.agents import (
     ACTION_INPUT_ERR_MSG,
     OUTPUT_PARSER_ERR_MSG,
@@ -45,10 +43,12 @@ from aidev_agent.core.agent.agents import (
     get_beijing_now,
 )
 from aidev_agent.core.agent.multimodal import MultiToolCallCommonAgent, StructuredChatCommonAgent
+from aidev_agent.core.extend.intent.intent_recognition import IntentRecognition
 from aidev_agent.core.utils.local import request_local
+from aidev_agent.enums import Decision, EventType, IntentStatus
+from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils import Empty
 
-from ..intent.intent_recognition import Decision, FineGrainedScoreType, IntentRecognition, IntentStatus
 from ..intent.prompts import DEFAULT_QA_PROMPT_TEMPLATES
 from ..intent.utils import (
     FINAL_ANSWER_PREFIXES,
@@ -64,15 +64,6 @@ from ..intent.utils import (
 )
 
 _logger = getLogger(__name__)
-
-
-class EventType(enum.Enum):
-    LOADING = "loading"
-    TEXT = "text"
-    DONE = "done"
-    ERROR = "error"
-    REFERENCE_DOC = "reference_doc"
-    THINK = "think"
 
 
 class IntentRecognitionMixin(BaseModel):
@@ -101,8 +92,6 @@ class IntentRecognitionMixin(BaseModel):
             # 更新覆盖，而不是将整个kwargs替换，防止某些 key 可能被丢失了
             kwargs = {**kwargs, **request_local.intent_recognition_results["kwargs"]}
         else:
-            if self.intent_recognition_kwargs:
-                kwargs = {**kwargs, **self.intent_recognition_kwargs}
             (
                 llm,
                 chat_prompt_template,
@@ -113,11 +102,10 @@ class IntentRecognitionMixin(BaseModel):
             ) = self.__class__.intent_recognition(
                 self.llm,
                 self.prefix,
-                self.role_prompt or "",
                 self.tools,
+                self.agent_options,
                 intermediate_steps,
                 callbacks,
-                force_process_by_agent=False,
                 **kwargs,
             )
             # NOTE: 需要格外注意此处的深拷贝和浅拷贝逻辑
@@ -176,7 +164,7 @@ class IntentRecognitionMixin(BaseModel):
                 agent_scratchpad = format_to_tool_messages(intermediate_steps)
             elif isinstance(self, StructuredChatCommonQAAgent):
                 agent_scratchpad = enhanced_format_log_to_str(intermediate_steps)
-            if len(agent_scratchpad) > kwargs.get("tool_output_compress_thrd", 5000):
+            if len(agent_scratchpad) > self.agent_options.intent_recognition_options.tool_output_compress_thrd:
                 conditional_dispatch_custom_event(
                     "custom_event",
                     {"compress_log": "\n```text\n工具调用结果过长，尝试压缩工具调用结果以减少 token 使用。\n```\n"},
@@ -329,6 +317,8 @@ class IntentRecognitionMixin(BaseModel):
             inner_input["beijing_now"] = get_beijing_now()
         if "context" in chat_prompt_template.input_variables:
             inner_input["context"] = kwargs["context"]
+        if "qa_context" in chat_prompt_template.input_variables:
+            inner_input["qa_context"] = kwargs["qa_context"]
         if "query" in chat_prompt_template.input_variables:
             inner_input["query"] = kwargs["query"]
         if "role_prompt" in chat_prompt_template.input_variables:
@@ -339,7 +329,12 @@ class IntentRecognitionMixin(BaseModel):
             inner_input["tools"] = render_text_description_and_args(list(candidate_tools))
         if "chat_history" in chat_prompt_template.partial_variables:
             inner_input["chat_history"] = kwargs["chat_history"]
-
+        if "use_general_knowledge_on_miss" in chat_prompt_template.input_variables:
+            inner_input["use_general_knowledge_on_miss"] = kwargs["use_general_knowledge_on_miss"]
+        if "rejection_response" in chat_prompt_template.input_variables:
+            inner_input["rejection_response"] = kwargs["rejection_response"]
+        if "with_qa_response" in chat_prompt_template.input_variables:
+            inner_input["with_qa_response"] = kwargs["with_qa_response"]
         formated_prompts = chat_prompt_template._format_prompt_with_error_handling(inner_input)
         cur_token_len = llm.get_num_tokens_from_messages(formated_prompts.messages)
         return cur_token_len, formated_prompts
@@ -430,6 +425,12 @@ class IntentRecognitionMixin(BaseModel):
         # 待知识库后台对非结构化数据的处理方式的 index_content 不是默认使用LLM总结后的内容之后，
         # 可将“且是结构化数据”的逻辑去除
         # NOTE: 目前暂不考虑检索返回模板对 page_content 的影响
+        knowledge_base_ids = set()
+        for doc in recog_results[knowledge_resource_type]:
+            if "knowledge_base_id" not in doc.get("metadata", {}):
+                raise ValueError("Document metadata missing required field: knowledge_base_id")
+            else:
+                knowledge_base_ids.add(doc["metadata"]["knowledge_base_id"])
         kwargs["context"] = [
             (
                 doc["metadata"]["index_content"]
@@ -437,7 +438,20 @@ class IntentRecognitionMixin(BaseModel):
                 else doc["page_content"]
             )
             for doc in recog_results[knowledge_resource_type]
+            if doc["metadata"]["knowledge_base_id"] not in recog_results["qa_response_kb_ids"]
         ]
+        kwargs["qa_context"] = [
+            (
+                doc["metadata"]["index_content"]
+                if "index_content" in doc["metadata"] and is_structured_data(doc)
+                else doc["page_content"]
+            )
+            for doc in recog_results[knowledge_resource_type]
+            if doc["metadata"]["knowledge_base_id"] in recog_results["qa_response_kb_ids"]
+        ]
+        qa_set = set(recog_results["qa_response_kb_ids"])
+        # 检查是否包含qa_response_kb_ids
+        kwargs["with_qa_response"] = qa_set.issubset(knowledge_base_ids)
         if reference_doc := deduplicate_knowledge_file_paths(recog_results[knowledge_resource_type]):
             conditional_dispatch_custom_event(
                 "custom_event",
@@ -452,48 +466,33 @@ class IntentRecognitionMixin(BaseModel):
         cls,
         llm: BaseChatModel,
         prefix: str,
-        role_prompt: str,
         tools: List[BaseTool],
+        agent_options: Optional[AgentOptions],
         intermediate_steps: List[Tuple[AgentAction, str]],
         callbacks: Callbacks = None,
-        force_process_by_agent=False,
         config=None,
         **kwargs: Any,
     ) -> Tuple[BaseChatModel, ChatPromptTemplate, List[BaseTool], List[Tuple[AgentAction, str]], Callbacks, Any]:
         """
         :param prefix: aidev 默认为用户配的 system prompt。
-        :param role_prompt: 用户在 aidev 页面上创建 agent 时填写的 prompt。
-            旧主站逻辑会将其与 prefix 拼接后作为整体外层 agent 的 system prompt。
-        :param force_process_by_agent: 是否强制进入 IntentStatus.PROCESS_BY_AGENT 的 status。用于 AIDEV 产品页面召回测试。
         """
         if config:
             _set_config_context(config)
         query = kwargs["input"]
         # NOTE: 加上意图识别流程后，需要把默认自带的 `knowledge_query` 去掉
         tools_for_intent_recog = deduplicate_tools([tool for tool in deepcopy(tools) if tool.name != "knowledge_query"])
-        reject_threshold = tuple(map(float, settings.BKAIDEV_KNOWLEDGE_RESOURCE_REJECT_THRESHOLD.split(",")))
         recog_results = cls.intent_recognition_instance.exec_intent_recognition(
             query,
             llm,
             tools_for_intent_recog,
             callbacks,
-            force_process_by_agent=force_process_by_agent,
-            with_structured_data=kwargs.pop("with_structured_data", False),  # pop 防止跟后续的 **kwargs 重复。下同
-            knowledge_bases=kwargs.pop("knowledge_bases", []),
-            knowledge_items=kwargs.pop("knowledge_items", []),
-            knowledge_resource_rough_recall_topk=kwargs.pop("topk", settings.BKAIDEV_TOP_K),
-            knowledge_resource_reject_threshold=kwargs.pop(
-                "knowledge_resource_reject_threshold",
-                reject_threshold,
-            ),
-            knowledge_resource_fine_grained_score_type=kwargs.pop(
-                "knowledge_resource_fine_grained_score_type",
-                FineGrainedScoreType(settings.BKAIDEV_FINE_GRAINED_SCORE_TYPE),
-            ),
-            tool_resource_base_ids=None,  # 待工具类资源注册表支持后，改成从kwargs中取
+            agent_options=agent_options,
             **kwargs,
         )
-        if force_process_by_agent and recog_results["status"] != IntentStatus.PROCESS_BY_AGENT:
+        if (
+            agent_options.knowledge_query_options.force_process_by_agent
+            and recog_results["status"] != IntentStatus.PROCESS_BY_AGENT
+        ):
             raise RuntimeError(
                 "force_process_by_agent 的情况下状态值必须是 IntentStatus.PROCESS_BY_AGENT"
                 f"当前状态值为{recog_results['status']}"
@@ -571,10 +570,14 @@ class IntentRecognitionMixin(BaseModel):
             # 默认在最终提问的时候使用原始的用户 query
             # independent query 只用于知识库召回
             kwargs["query"] = kwargs["input"]
-        kwargs["role_prompt"] = role_prompt
+        kwargs["role_prompt"] = agent_options.knowledge_query_options.role_prompt
         kwargs["recog_results"] = recog_results
+        kwargs["use_general_knowledge_on_miss"] = (
+            agent_options.knowledge_query_options.is_response_when_no_knowledgebase_match
+        )
+        kwargs["rejection_response"] = agent_options.knowledge_query_options.rejection_message
         # 补充/修改 kwargs 的值：给 AIDEV 产品检索测试模块使用
-        if force_process_by_agent:
+        if agent_options.knowledge_query_options.force_process_by_agent:
             kwargs["decision"] = recog_results["decision"]
             kwargs["retrieved_docs"] = filter_and_select_topk(
                 recog_results["knowledge_resources_emb_recalled"],
@@ -693,21 +696,37 @@ class CommonQAStreamingMixIn:
 
         return cache
 
+    def check_and_append(self, cache, ret):
+        """在刚从 think 切换到 text 逻辑之前需要进行的特殊处理"""
+        # 前端渲染要求在 think 和 text 之间必须保证有 "\n\n" 的 text 内容
+        if (
+            cache
+            and (cache[-1].get("event") == EventType.THINK.value)
+            and (ret.get("event") == EventType.TEXT.value)
+            and (not ret.get("content").startswith("\n"))
+        ):
+            if ret.get("content"):
+                ret["content"] = "\n\n" + ret["content"]
+            else:
+                ret["content"] = "\n\n"
+        cache.append(ret)
+
     def stream_standard_event(self, agent_e, cfg, input_, skip_thought=True, timeout: Optional[int] = None):
         """
         如果 is_deepseek_r1_series_models(self.llm)，则需要：
-           统一：去除 think 标识位
+            统一：去除 think 标识位
 
-           a) 如果 isinstance(self, StructuredChatCommonQAAgent)，则需要：
-              将 think 过程和中间的 agent action 过程都作为 think event 发送
-              用自定义的匹配流程来判断
-           b) 如果 isinstance(self, ToolCallingCommonQAAgent)，则需要：
-              将 think 过程作为 think event 发送
-              用 reasoning content 来判断
+            a) 如果 isinstance(self, StructuredChatCommonQAAgent)，则需要：
+                将 think 过程和中间的 agent action 过程都作为 think event 发送
+                用自定义的匹配流程来判断
+            b) 如果 isinstance(self, ToolCallingCommonQAAgent)，则需要：
+                将 think 过程作为 think event 发送
+                用 reasoning content 来判断
         """
         run_info = defaultdict(dict)
         first_chunk = True
         final_result = ""
+        non_think_content = ""
         last_ret_is_empty = False
         front_end_display = True
         if is_deepseek_r1_series_models(self.llm) or "deepseek-v3" in self.llm.model_name:
@@ -760,6 +779,7 @@ class CommonQAStreamingMixIn:
                                     content = reasoning_content
                                 else:
                                     content = item["data"]["chunk"].content
+                                    non_think_content += content
                                 ret = {
                                     "event": EventType.TEXT.value,
                                     "content": content,
@@ -786,18 +806,20 @@ class CommonQAStreamingMixIn:
                                             "cover": False,
                                             "elapsed_time": (time.time() - agent_think_start_time) * 1000,
                                         }
-                                        cache.append(ret)
+                                        self.check_and_append(cache, ret)
                                     ret = {
                                         "event": EventType.TEXT.value,
                                         "content": item["data"]["chunk"].content,
                                         "cover": cover,
                                     }
+                                    non_think_content += item["data"]["chunk"].content
                         else:
                             ret = {
                                 "event": EventType.TEXT.value,
                                 "content": item["data"]["chunk"].content,
                                 "cover": cover,
                             }
+                            non_think_content += item["data"]["chunk"].content
                         final_result += ret["content"]
                     elif item["event"] == "on_custom_event":
                         if "front_end_display" in item["data"]:
@@ -814,7 +836,7 @@ class CommonQAStreamingMixIn:
                             ret = {
                                 "event": EventType.REFERENCE_DOC.value,
                                 "documents": item["data"]["reference_doc"],
-                                "cover": cover,
+                                "cover": True,
                             }
                         elif "compress_log" in item["data"] and front_end_display:
                             ret = {
@@ -864,11 +886,12 @@ class CommonQAStreamingMixIn:
                         if "content" in ret:
                             ret["event"] = cur_event_type
                         # 一旦出现 Final Answer 模式，之后的所有过程都视为 agent 的正式回答过程
+                        # NOTE: 需要在 non_think_content 中匹配到的 Final Answer 才能触发结束，think 过程中匹配到的不算
                         if not final_answer_occurred:
                             for final_answer_prefix, final_answer_suffix in zip(
                                 self.final_answer_prefixes, self.final_answer_suffixes
                             ):
-                                if final_answer_prefix in final_result:
+                                if final_answer_prefix in non_think_content:
                                     final_answer_occurred = True
                                     final_answer_prefix_to_filter = final_answer_prefix
                                     # 注：后续放到 cache 前的 ret 内容从出现 final answer 的下一次开始进行了针对 \n 的转义操作
@@ -879,7 +902,9 @@ class CommonQAStreamingMixIn:
                                     if not final_result.endswith(final_answer_prefix):
                                         # 这种情况下说明最终答案有一小块跟在了 final_answer_prefix 最后一个块的后面
                                         # 需要将这块内容补回来，并将 think 末尾的那段内容截掉
-                                        start_index = final_result.find(final_answer_prefix)
+                                        # NOTE: 使用 rfind 寻找最后匹配的那个final answer，确保匹配到的是
+                                        # non_think_content 中的 final answer 块
+                                        start_index = final_result.rfind(final_answer_prefix)
                                         if start_index == -1:
                                             raise RuntimeError(
                                                 f"结果子串提取有误。\nfinal_result: {final_result}\n"
@@ -947,49 +972,50 @@ class CommonQAStreamingMixIn:
                     if is_deepseek_r1_series_models(self.llm) or "deepseek-v3" in self.llm.model_name:
                         if ret.get("content", "") == self.LOADING_AGENT_MESSAGE:
                             last_event_type = ret["event"]
-                            yield f"data: {json.dumps(ret)}\n\n"
+                            yield self._yield_ret(ret)
                         else:
                             # NOTE: 只有非 self.LOADING_AGENT_MESSAGE 的 event 可以放到 cache 中
-                            cache.append(ret)
+                            self.check_and_append(cache, ret)
                             if recall_ret:
                                 # 如果 cache 非空，先 pop 最开始的元素，再将补充的 recall_ret 给添加进来
                                 if cache:
                                     ret = cache.popleft()
                                     last_event_type = ret["event"]
-                                    yield f"data: {json.dumps(ret)}\n\n"
-                                cache.append(recall_ret)
+                                    yield self._yield_ret(ret)
+                                self.check_and_append(cache, ret)
                             cache = self.cache_filter(
                                 cache, final_answer_prefix_to_filter, final_answer_suffix_to_filter
                             )
                             if len(cache) == max_cache_length:
                                 ret = cache.popleft()
                                 last_event_type = ret["event"]
-                                yield f"data: {json.dumps(ret)}\n\n"
+                                if not (last_event_type == EventType.THINK.value and ret["content"].strip() == ""):
+                                    yield self._yield_ret(ret)
                     else:
-                        yield f"data: {json.dumps(ret)}\n\n"
+                        yield self._yield_ret(ret)
             if is_deepseek_r1_series_models(self.llm) or "deepseek-v3" in self.llm.model_name:
                 if isinstance(self, StructuredChatCommonQAAgent):
                     # 以下逻辑用于利用 self.end_content 标志跟 final_answer_suffix_to_filter 拼接后进行尾部去除
                     if len(cache) == max_cache_length:
                         ret = cache.popleft()
                         last_event_type = ret["event"]
-                        yield f"data: {json.dumps(ret)}\n\n"
+                        yield self._yield_ret(ret)
                     end_ret = {
                         "event": EventType.TEXT.value,
                         "content": deepcopy(self.end_content),
                         "cover": False,
                     }
-                    cache.append(end_ret)
+                    self.check_and_append(cache, end_ret)
                     len_before_filtering = len(cache)
                     cache = self.cache_filter(cache, final_answer_prefix_to_filter, final_answer_suffix_to_filter)
                     if len(cache) == len_before_filtering:
-                        # 如果没 filter 到，则还是将 end_ret 剔除
                         cache.pop()
 
                 while cache:
                     ret = cache.popleft()
                     last_event_type = ret["event"]
-                    yield f"data: {json.dumps(ret)}\n\n"
+                    if not (last_event_type == EventType.THINK.value and ret["content"].strip() == ""):
+                        yield self._yield_ret(ret)
                 for think_symbol in self.think_symbols:
                     final_result = final_result.replace(think_symbol, "")
                 # 如果 done 之前的最后一个 event 是 think 类型，则说明从 think 内容中解析结论失败，需额外发送一条 text event，
@@ -1003,7 +1029,7 @@ class CommonQAStreamingMixIn:
                         "cover": False,
                         "elapsed_time": (time.time() - agent_think_start_time) * 1000,
                     }
-                    yield f"data: {json.dumps(ret)}\n\n"
+                    yield self._yield_ret(ret)
                     # 再发一个确保为 text 的 ret
                     _logger.warning(
                         "Fail to derive the final answer from the thinking process. "
@@ -1011,20 +1037,19 @@ class CommonQAStreamingMixIn:
                     )
                     ret = {
                         "event": EventType.TEXT.value,
-                        "content": "尝试从思考内容中解析最终结论失败。",
+                        "content": "抱歉，由于LLM指令遵从效果欠佳，尝试从思考内容中解析最终结论失败，请从思考内容中获取结论。",
                         "cover": cover,
                     }
-                    yield f"data: {json.dumps(ret)}\n\n"
+                    yield self._yield_ret(ret)
             # cover 为 True 时，final_result 为 stream 结束后需要最终显示的结果，可根据需要重新拼接
             # cover 为 False 时不进行覆盖
             cover = False
-
             ret = {
                 "event": EventType.DONE.value,
                 "content": final_result,
                 "cover": cover,
             }
-            yield f"data: {json.dumps(ret)}\n\n"
+            yield self._yield_ret(ret)
         except Exception as exception:
             ret = {
                 "event": "error",
@@ -1032,9 +1057,14 @@ class CommonQAStreamingMixIn:
                 "message": exception.response_data() if hasattr(exception, "response_data") else str(exception),
             }
             _logger.exception(exception)
-            yield f"data: {json.dumps(ret)}\n\n"
+            yield self._yield_ret(ret)
         finally:
-            yield "data: [DONE]\n\n"
+            yield self._yield_ret(done=True)
+
+    def _yield_ret(self, ret: dict | None = None, done=False):
+        if done:
+            return "data: [DONE]\n\n"
+        return f"data: {json.dumps(ret)}\n\n"
 
 
 class ToolCallingCommonQAAgent(IntentRecognitionMixin, CommonQAStreamingMixIn, MultiToolCallCommonAgent):

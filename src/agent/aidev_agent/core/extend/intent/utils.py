@@ -17,7 +17,6 @@ to the current version of the project delivered to anyone in the future.
 """
 
 import logging
-import os
 import time
 import traceback
 from functools import wraps
@@ -151,6 +150,16 @@ def invoke_decorator(invoke_func, llm):
         # 根据 https://huggingface.co/deepseek-ai/DeepSeek-R1#usage-recommendations 的建议：
         # Avoid adding a system prompt; all instructions should be contained within the user prompt.
         # NOTE: 目前假设只有第 1 个 message 才可能是 SystemMessage
+        if global_llm_model_name := settings.INTENT_RECOGNITION_GLOBAL_LLM_MODEL_NAME:
+            global_llm = ChatModel.get_setup_instance(
+                model=global_llm_model_name,
+                streaming=True,
+            )
+            invoke_func_to_use = global_llm.invoke
+            llm = global_llm
+        else:
+            invoke_func_to_use = invoke_func
+
         if (
             is_deepseek_r1_series_models(llm)
             and isinstance(args[0][0], SystemMessage)
@@ -158,16 +167,7 @@ def invoke_decorator(invoke_func, llm):
         ):
             args[0][-1] = HumanMessage(content=f"{args[0][0].content}\n\n{args[0][-1].content}")
             del args[0][0]
-        # 如果设置了 INTENT_RECOGNITION_GLOBAL_LLM_MODEL_NAME，则将意图识别内部所有中间步骤的 LLM 调用模型
-        # 改成该环境变量所指定的 LLM 模型。目前设置为 hunyuan
-        if global_llm_model_name := os.getenv("INTENT_RECOGNITION_GLOBAL_LLM_MODEL_NAME", settings.SUMMARY_MODEL):
-            global_llm = ChatModel.get_setup_instance(
-                model=global_llm_model_name,
-                streaming=True,
-            )
-            invoke_func_to_use = global_llm.invoke
-        else:
-            invoke_func_to_use = invoke_func
+
         result = invoke_func_to_use(*args)
         if kwargs.get("llm_input_output"):
             kwargs["llm_input_output"][llm.model_name]["input"].append(args[0])
@@ -175,6 +175,7 @@ def invoke_decorator(invoke_func, llm):
         if is_deepseek_r1_series_models(llm):
             # deepseek-r1 系列模型会有 think 过程，在使用结果的时候需要去除
             result.content = remove_thinking_process(result.content)
+            result.content = result.content.strip()
         return result
 
     return wrapper

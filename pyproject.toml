@@ -7,8 +7,6 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = "~3.10.5"
-django-downloadview = "<2.4"
-django = "<4"
 
 
 [tool.poetry.group.dev.dependencies]

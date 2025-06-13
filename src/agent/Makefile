@@ -1,5 +1,6 @@
 # 导入子目录中的 Makefile 文件
 ROOT_DIR?=$(shell git rev-parse --show-toplevel)/src/agent
+pytest = poetry run pytest -c ${ROOT_DIR}/pyproject.toml
 
 .PHONY: ALL
 ALL: init requirements
@@ -58,3 +59,11 @@ clean:
 	find . -name ".mypy_cache"  | xargs rm -rf
 	find . -name ".cache" | xargs rm -rf
 	rm -rf ./dist
+
+
+.PHONY: intergration-test
+intergration-test:
+	$(eval path ?= ${ROOT_DIR}/tests/intergration)
+	$(eval maxfail ?= --maxfail=2)
+	$(eval warnings ?= --disable-pytest-warnings)
+	${pytest} ${path} -s --durations=100

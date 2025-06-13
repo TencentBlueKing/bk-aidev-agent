@@ -55,6 +55,11 @@
     $ make test path=./tests/xxx/
     ```
     ```
+4. 如需指定网关或指定环境,可以配置环境变量`AIDEV_GATEWAY_NAME`(指定网关名)和`BK_APIGW_STAGE`(指定环境)
+   ```bash
+    AIDEV_GATEWAY_NAME=aidev-test
+    BK_APIGW_STAGE=stag
+   ```
 
 ## 构建
 1. 生成`pip`包

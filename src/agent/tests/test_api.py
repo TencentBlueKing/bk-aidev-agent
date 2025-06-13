@@ -74,3 +74,29 @@ class TestAPI:
         client = BKAidevApi.get_client()
         result = client.api.retrieve_agent_config(path_params={"agent_code": settings.APP_CODE})
         print(result)
+
+    def test_bkaidev_knowledge(self):
+        client = BKAidevApi.get_client()
+        obj = {
+            "knowledge_base_id": 6,
+            "file_path": "test_knowledge",
+            "knowledge_name": "test_knowledge",
+            "created_type": "manual",
+            "content": "LangChain is a framework for developing applications powered by large language models (LLMs).",
+        }
+        result = client.api.add_knowledge_item(
+            json=obj,
+            headers={"X-BKAIDEV-USER": "wenxingtang"},
+        )
+        print(result)
+
+    def test_bkaidev_dataset(self):
+        client = BKAidevApi.get_client()
+        result = client.api.add_dataset_item(
+            json={
+                "dataset_id": 9,
+                "data": {"text": "test001"},
+            },
+            headers={"X-BKAIDEV-USER": "wenxingtang"},
+        )
+        print(result)

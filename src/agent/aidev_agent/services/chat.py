@@ -20,7 +20,7 @@ from aidev_agent.core.agent.multimodal import EnhancedAgentExecutor
 from aidev_agent.core.extend.agent.qa import CommonQAAgent
 from aidev_agent.enums import PromptRole, StreamEventType
 from aidev_agent.exceptions import AgentException
-from aidev_agent.services.pydantic_models import ChatPrompt
+from aidev_agent.services.pydantic_models import AgentOptions, ChatPrompt
 
 logger = getLogger(__name__)
 
@@ -46,6 +46,7 @@ class ChatCompletionAgent(BaseModel):
     max_token_size: int | None = None
     callbacks: list[BaseCallbackHandler] | None = None
     agent_cls: type[CommonQAAgent] = CommonQAAgent
+    agent_options: AgentOptions = Field(default_factory=AgentOptions)
 
     # using in streaming
     first_chunk: bool = True
@@ -212,18 +213,21 @@ class ChatCompletionAgent(BaseModel):
         }
 
     def _get_agent(self, messages: list[BaseMessage]) -> tuple[EnhancedAgentExecutor, RunnableConfig]:
+        if self.knowledge_bases:
+            self.agent_options.knowledge_query_options.knowledge_bases = self.knowledge_bases
+        if self.knowledges:
+            self.agent_options.knowledge_query_options.knowledge_items = self.knowledges
         return self.agent_cls.get_agent_executor(
             llm=self.chat_model,
             knowledge_llm=self.chat_model,
             extra_tools=self.tools,
             chat_history=messages[:-1],
             tool_execution_interval=self.TOOL_EXECUTION_INTERVAL,
-            knowledge_bases=self.knowledge_bases,
-            knowledge_items=self.knowledges,
             support_vision=self.support_vision,
             file_store=self.file_store,
             role_prompt=self.role_prompt,
             callbacks=self.callbacks,
+            agent_options=self.agent_options,
         )
 
     def get_memory_window(

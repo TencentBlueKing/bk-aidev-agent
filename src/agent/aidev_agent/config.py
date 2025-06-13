@@ -122,6 +122,7 @@ APP_CODE = env.str("BKPAAS_APP_ID", "") or env.str("APP_ID", "")
 SECRET_KEY = env.str("BKPAAS_APP_SECRET", "") or env.str("APP_TOKEN", "")
 BK_AIDEV_GATEWAY_NAME = env.str("AIDEV_GATEWAY_NAME", "bkaidev")
 BK_APIGW_STAGE = env.str("BK_APIGW_STAGE", "") or env.str("BKAIDEV_RESOURCE_STAGE", "prod")
+INTENT_RECOGNITION_GLOBAL_LLM_MODEL_NAME = env.str("INTENT_RECOGNITION_GLOBAL_LLM_MODEL_NAME", "hunyuan")
 # end: 配置
 
 
