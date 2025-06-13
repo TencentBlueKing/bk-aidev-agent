@@ -199,3 +199,40 @@ class TestStructedAgent:
         # 验证低相关性文档被拒绝
         has_documents = any("documents" in result for result in results)
         assert not has_documents, "当相关性低于阈值时应拒绝所有文档"
+
+    def test_CommonQAAgent_case_thinking_case2(self):
+        # 设置chat_model实例
+        model_name = "deepseek-v3"
+        chat_model = ChatModel.get_setup_instance(
+            model=model_name,
+            streaming=True,
+        )
+
+        # 获取客户端对象
+        client = BKAidevApi.get_client_by_username(username="")
+        # 设置工具
+        tool_codes = ["weather-query"]
+        tools = [client.construct_tool(tool_code) for tool_code in tool_codes]
+
+        # 获取代理执行器和配置
+        agent_options = AgentOptions(
+            intent_recognition_options=IntentRecognition(tool_output_compress_thrd=5000),
+            knowledge_query_options=KnowledgebaseSettings(
+                knowledge_resource_reject_threshold=(0.001, 0.1),
+                topk=10,
+                knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM,
+            ),
+        )
+        agent_e, cfg = CommonQAAgent.get_agent_executor(
+            chat_model,
+            chat_model,
+            extra_tools=tools,
+            agent_options=agent_options,
+            callbacks=[StdOutCallbackHandler()],
+        )
+
+        # 测试部分
+        test_case_inputs = {"input": "今天深圳天气如何?"}
+        results = [each for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=2)]
+        results = get_stream_result(results)
+        assert not results[-2]["content"].endswith("```")

@@ -1000,7 +1000,12 @@ class CommonQAStreamingMixIn:
                         ret = cache.popleft()
                         last_event_type = ret["event"]
                         yield self._yield_ret(ret)
-                    self.check_and_append(cache, ret)
+                    end_ret = {
+                        "event": EventType.TEXT.value,
+                        "content": deepcopy(self.end_content),
+                        "cover": False,
+                    }
+                    self.check_and_append(cache, end_ret)
                     len_before_filtering = len(cache)
                     cache = self.cache_filter(cache, final_answer_prefix_to_filter, final_answer_suffix_to_filter)
                     if len(cache) == len_before_filtering:

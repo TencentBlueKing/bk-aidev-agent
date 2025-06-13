@@ -84,14 +84,11 @@ class TestAPI:
             "created_type": "manual",
             "content": "LangChain is a framework for developing applications powered by large language models (LLMs).",
         }
-        try:
-            result = client.api.add_knowledge_item(
-                json=obj,
-                headers={"X-BKAIDEV-USER": "wenxingtang"},
-            )
-            print(result)
-        except Exception as err:
-            print(err)
+        result = client.api.add_knowledge_item(
+            json=obj,
+            headers={"X-BKAIDEV-USER": "wenxingtang"},
+        )
+        print(result)
 
     def test_bkaidev_dataset(self):
         client = BKAidevApi.get_client()
