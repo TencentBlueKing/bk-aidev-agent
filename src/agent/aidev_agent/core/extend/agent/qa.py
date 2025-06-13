@@ -486,7 +486,7 @@ class IntentRecognitionMixin(BaseModel):
             llm,
             tools_for_intent_recog,
             callbacks,
-            agent_options,
+            agent_options=agent_options,
             **kwargs,
         )
         if (
