@@ -1,6 +1,6 @@
 from typing import List, Literal, Tuple
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from aidev_agent.enums import FineGrainedScoreType, IndependentQueryMode, KnowledgeBaseQueryFunction
 
@@ -65,7 +65,6 @@ class IntentRecognition(BaseModel):
 
 
 class KnowledgebaseSettings(BaseModel):
-    model_config = ConfigDict(use_enum_values=True, arbitrary_types_allowed=True)  # model_dump的枚举值使用value
     knowledge_bases: list[dict] = Field(default_factory=list, description=("关联知识库,有可能没有关联"))
     knowledge_items: list[dict] = Field(default_factory=list, description=("关联知识,可能没有关联"))
     qa_response_kb_ids: list[int] = Field(default_factory=list, description=("历史反馈问答知识库id,可能不存在"))
@@ -88,8 +87,8 @@ class KnowledgebaseSettings(BaseModel):
     polish: bool = Field(default=True, description=("是否返回检索原始文档内容"))
     raw: bool = Field(default=False, description=("是否返回检索大模型总结内容"))
     knowledge_template_id: int = Field(default=0, description=("检索内容返回模板ID"))
-    use_general_knowledge_on_miss: bool = Field(default=True, description=("未命中知识库时根据通识回答"))
-    rejection_response: str = Field(
+    is_response_when_no_knowledgebase_match: bool = Field(default=True, description=("未命中知识库时根据通识回答"))
+    rejection_message: str = Field(
         default="无法根据当前文档回答当前问题。请更换问题。",
         max_length=1024,
         description=("拒答文案"),

@@ -1,4 +1,5 @@
 import json
+
 import pytest
 from aidev_agent.api.bk_aidev import BKAidevApi
 from aidev_agent.config import settings
@@ -65,7 +66,7 @@ class TestStructedAgent:
                 knowledge_bases=knowledge_bases,
                 knowledge_resource_reject_threshold=(0.001, 0.1),
                 topk=10,
-                knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM.value,
+                knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM,
             ),
         )
         agent_e, cfg = CommonQAAgent.get_agent_executor(
@@ -94,14 +95,6 @@ class TestStructedAgent:
         client = BKAidevApi.get_client_by_username(username="")
         # 设置工具
         knowledge_bases = [client.api.appspace_retrieve_knowledgebase(path_params={"id": 263})["data"]]
-        # role_prompt = """
-        # 此外，必须记住当前用户(bk_username)是reynalddeng，这是你查询用户权限的唯一凭据！
-        # 非常重要！如果要为GET请求生成action_input, 必须为每个参数带上"query__"前缀；如果要为POST请求生成action_input, 必须为每个参数带上"body__"前缀。
-        # 非常重要！你的回答必须用markdown格式，在回答跟任务异常或报错相关的问题时，至少包含三个同层级的标题：现象分析、根因分析、解决方案，缺一不可！在此基础上可以新增次级标题。
-        # 非常重要！用户没有权限直接接触版本机，绝对不要展示任何命令行操作！
-        # 非常重要！绝对不要给用户展示调用工具的参数和代码，用户不知道怎么用！只需要告诉用户你能做什么，需要什么参数！
-        # 非常重要！回答内容必须严格限制在知识库中已有的内容，绝对不能超出知识库范围！
-        # """
 
         # 获取代理执行器和配置
         agent_options = AgentOptions(
@@ -109,7 +102,7 @@ class TestStructedAgent:
                 knowledge_bases=knowledge_bases,
                 knowledge_resource_reject_threshold=(0.001, 0.1),
                 topk=10,
-                knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM.value,
+                knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM,
             ),
         )
         agent_e, cfg = CommonQAAgent.get_agent_executor(
@@ -144,9 +137,9 @@ class TestStructedAgent:
                 knowledge_bases=knowledge_bases,
                 knowledge_resource_reject_threshold=(0.001, 0.1),
                 topk=10,
-                knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM.value,
-                use_general_knowledge_on_miss=False,
-                rejection_response="你在说啥呢?",
+                knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM,
+                is_response_when_no_knowledgebase_match=False,
+                rejection_message="你在说啥呢?",
             ),
         )
         agent_e, cfg = CommonQAAgent.get_agent_executor(
@@ -160,7 +153,7 @@ class TestStructedAgent:
         test_case_inputs = {"input": "谁是最可爱的人?"}
         # 特意将timeout弄长一些,用于跳过LOAD_MESSAGE
         results = [each for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=10)]
-        assert agent_options.knowledge_query_options.rejection_response in "".join(
+        assert agent_options.knowledge_query_options.rejection_message in "".join(
             each["content"] for each in get_stream_result(results)
         )
 
@@ -179,13 +172,13 @@ class TestStructedAgent:
         agent_options = AgentOptions(
             knowledge_query_options=KnowledgebaseSettings(
                 knowledge_bases=knowledge_bases,
-                knowledge_resource_reject_threshold=(0.95, 1.0), #设置高阈值
+                knowledge_resource_reject_threshold=(0.95, 1.0),  # 设置高阈值
                 topk=10,
-                use_general_knowledge_on_miss=False, #设置为与知识库无关时拒答
+                use_general_knowledge_on_miss=False,  # 设置为与知识库无关时拒答
                 knowledge_resource_fine_grained_score_type=FineGrainedScoreType.EMBEDDING.value,
             ),
         )
-        
+
         agent_e, cfg = CommonQAAgent.get_agent_executor(
             chat_model,
             chat_model,
@@ -206,5 +199,3 @@ class TestStructedAgent:
         # 验证低相关性文档被拒绝
         has_documents = any("documents" in result for result in results)
         assert not has_documents, "当相关性低于阈值时应拒绝所有文档"
-
-

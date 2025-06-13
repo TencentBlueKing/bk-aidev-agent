@@ -572,8 +572,10 @@ class IntentRecognitionMixin(BaseModel):
             kwargs["query"] = kwargs["input"]
         kwargs["role_prompt"] = agent_options.knowledge_query_options.role_prompt
         kwargs["recog_results"] = recog_results
-        kwargs["use_general_knowledge_on_miss"] = agent_options.knowledge_query_options.use_general_knowledge_on_miss
-        kwargs["rejection_response"] = agent_options.knowledge_query_options.rejection_response
+        kwargs["use_general_knowledge_on_miss"] = (
+            agent_options.knowledge_query_options.is_response_when_no_knowledgebase_match
+        )
+        kwargs["rejection_response"] = agent_options.knowledge_query_options.rejection_message
         # 补充/修改 kwargs 的值：给 AIDEV 产品检索测试模块使用
         if agent_options.knowledge_query_options.force_process_by_agent:
             kwargs["decision"] = recog_results["decision"]

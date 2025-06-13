@@ -114,8 +114,8 @@ def test_CommonQAAgent_chat_streaming():
             knowledge_resource_reject_threshold=(0.001, 0.1),
             topk=10,
             knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM.value,
-            use_general_knowledge_on_miss=True,
-            rejection_response="抱歉，我无法回答你的问题。",
+            is_response_when_no_knowledgebase_match=True,
+            rejection_message="抱歉，我无法回答你的问题。",
         ),
     )
     agent_e, cfg = CommonQAAgent.get_agent_executor(
@@ -170,8 +170,8 @@ def test_qa_response(test_input, expected_kb_ids):
             knowledge_resource_reject_threshold=(0.001, 0.1),
             topk=10,
             knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM.value,
-            use_general_knowledge_on_miss=True,
-            rejection_response="无法回答该问题",
+            is_response_when_no_knowledgebase_match=True,
+            rejection_message="无法回答该问题",
         ),
     )
 

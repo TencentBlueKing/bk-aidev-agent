@@ -43,6 +43,13 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/tool/{tool_code}/",
     )
 
+    list_chat_session = bind_property(
+        Operation,
+        name="list_chat_session",
+        method="GET",
+        path="/openapi/aidev/resource/v1/chat/session/",
+    )
+
     create_chat_session = bind_property(
         Operation,
         name="create_chat_session",
@@ -126,7 +133,8 @@ class OpenApiGroup(OperationGroup):
         method="POST",
         path="/openapi/aidev/resource/v1/agent/{agent_code}/bind_space/",
     )
-    
+
+
 class Client(BaseClient):
     api = bind_property(OpenApiGroup, name="api")
 

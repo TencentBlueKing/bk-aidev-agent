@@ -520,7 +520,7 @@ class IntentRecognition(BaseModel):
         agent_options,
         **kwargs,
     ):
-        if fine_grained_score_type == FineGrainedScoreType.LLM.value:
+        if fine_grained_score_type == FineGrainedScoreType.LLM:
             # NOTE: 如果 FineGrainedScoreType 为 LLM，则因为当前只有是/否相关的判断，因此分数只有 1.0 或 0.0
             fine_grained_scores = self.llm_relevance_determiner_parallel(
                 (
@@ -532,7 +532,7 @@ class IntentRecognition(BaseModel):
                 llm,
                 **kwargs,
             )
-        elif fine_grained_score_type == FineGrainedScoreType.EXCLUSIVE_SIMILARITY_MODEL.value:
+        elif fine_grained_score_type == FineGrainedScoreType.EXCLUSIVE_SIMILARITY_MODEL:
             # 使用专属小模型计算的分数作为最终的细粒度相似度分数
             # TODO: 目前知识类资源和工具类资源是独立使用小模型的，可以考虑在都要计算的情况下，合成一个batch进行计算
             # NOTE: 如果有 index_content 且是结构化数据则取 index_content，否则才取 page_content（兼容写法）。
@@ -557,12 +557,12 @@ class IntentRecognition(BaseModel):
                 ]
             )
             fine_grained_scores = [float(fine_grained_score) for fine_grained_score in fine_grained_scores]
-        elif fine_grained_score_type == FineGrainedScoreType.EMBEDDING.value:
+        elif fine_grained_score_type == FineGrainedScoreType.EMBEDDING:
             # 直接使用emb分数作为最终的细粒度相似度分数
             fine_grained_scores = [float(emb_score) for _, emb_score in context_docs_with_scores]
         else:
             raise ValueError(
-                f"当前仅支持以下计算细粒度相关分数的方式：{[score_type.value for score_type in FineGrainedScoreType]}，"
+                f"当前仅支持以下计算细粒度相关分数的方式：{[score_type for score_type in FineGrainedScoreType]}，"
                 f"但传入的 fine_grained_score_type 为：`{fine_grained_score_type}`"
             )
 
@@ -804,7 +804,7 @@ class IntentRecognition(BaseModel):
         llm,
         knowledge_items,
         knowledge_bases,
-        agent_options,
+        agent_options: AgentOptions,
         **kwargs,
     ):
         """知识类资源检索并解析结果"""
@@ -1394,9 +1394,7 @@ class IntentRecognition(BaseModel):
             if agent_options.knowledge_query_options.independent_query_mode == IndependentQueryMode.REWRITE:
                 res = self.query_cls_pipeline(query, llm, agent_options, **kwargs)
             elif agent_options.knowledge_query_options.independent_query_mode == IndependentQueryMode.SUM_AND_CONCATE:
-                sum_res = self.sum_chat_history_for_query(
-                    chat_history, query, llm, **kwargs
-                )
+                sum_res = self.sum_chat_history_for_query(chat_history, query, llm, **kwargs)
                 if sum_res:
                     res = f"{sum_res}\n{query}"
 
