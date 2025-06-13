@@ -1,3 +1,4 @@
+import json
 import pytest
 from aidev_agent.api.bk_aidev import BKAidevApi
 from aidev_agent.config import settings
@@ -162,3 +163,48 @@ class TestStructedAgent:
         assert agent_options.knowledge_query_options.rejection_response in "".join(
             each["content"] for each in get_stream_result(results)
         )
+
+    def test_knowledge_reject_threshold(self):
+        """测试知识库拒绝阈值功能"""
+        # 初始化模型和客户端
+        model_name = "deepseek-r1"
+        chat_model = ChatModel.get_setup_instance(
+            model=model_name,
+            streaming=True,
+        )
+        client = BKAidevApi.get_client_by_username(username="")
+        knowledge_bases = [client.api.appspace_retrieve_knowledgebase(path_params={"id": 58})["data"]]
+
+        # 配置代理使用特定阈值
+        agent_options = AgentOptions(
+            knowledge_query_options=KnowledgebaseSettings(
+                knowledge_bases=knowledge_bases,
+                knowledge_resource_reject_threshold=(0.95, 1.0), #设置高阈值
+                topk=10,
+                use_general_knowledge_on_miss=False, #设置为与知识库无关时拒答
+                knowledge_resource_fine_grained_score_type=FineGrainedScoreType.EMBEDDING.value,
+            ),
+        )
+        
+        agent_e, cfg = CommonQAAgent.get_agent_executor(
+            chat_model,
+            chat_model,
+            agent_options=agent_options,
+            callbacks=[StdOutCallbackHandler()],
+        )
+
+        # 执行测试
+        test_case_inputs = {"input": "云桌面绿屏怎么办"}
+        results = []
+        for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=2):
+            if each == "data: [DONE]\n\n":
+                break
+            if each:
+                chunk = json.loads(each[6:])
+                results.append(chunk)
+
+        # 验证低相关性文档被拒绝
+        has_documents = any("documents" in result for result in results)
+        assert not has_documents, "当相关性低于阈值时应拒绝所有文档"
+
+
