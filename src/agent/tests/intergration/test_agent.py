@@ -10,7 +10,8 @@ from aidev_agent.services.pydantic_models import (
     KnowledgebaseSettings,
 )
 from langchain_core.callbacks.stdout import StdOutCallbackHandler
-from tests.intergration.utilities import verify_streaming_result_format
+from tests.intergration.constants import TEST_DEFAULT_MODEL
+from tests.intergration.utilities import get_stream_result, verify_streaming_result_format
 
 
 @pytest.mark.skipif(
@@ -83,9 +84,8 @@ class TestStructedAgent:
 
     def test_CommonQAAgent_case_hunyuan(self):
         # 设置chat_model实例
-        model_name = "hunyuan"
         chat_model = ChatModel.get_setup_instance(
-            model=model_name,
+            model=TEST_DEFAULT_MODEL,
             streaming=True,
         )
 
@@ -123,4 +123,42 @@ class TestStructedAgent:
         # 特意将timeout弄长一些,用于跳过LOAD_MESSAGE
         verify_streaming_result_format(
             [each for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=10)]
+        )
+
+    def test_CommonQAAgent_case_hunyuan_reject(self):
+        # 设置chat_model实例
+        chat_model = ChatModel.get_setup_instance(
+            model=TEST_DEFAULT_MODEL,
+            streaming=True,
+        )
+
+        # 获取客户端对象
+        client = BKAidevApi.get_client_by_username(username="")
+        # 设置工具
+        knowledge_bases = [client.api.appspace_retrieve_knowledgebase(path_params={"id": 263})["data"]]
+
+        # 获取代理执行器和配置
+        agent_options = AgentOptions(
+            knowledge_query_options=KnowledgebaseSettings(
+                knowledge_bases=knowledge_bases,
+                knowledge_resource_reject_threshold=(0.001, 0.1),
+                topk=10,
+                knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM.value,
+                use_general_knowledge_on_miss=False,
+                rejection_response="你在说啥呢?",
+            ),
+        )
+        agent_e, cfg = CommonQAAgent.get_agent_executor(
+            chat_model,
+            chat_model,
+            agent_options=agent_options,
+            callbacks=[StdOutCallbackHandler()],
+        )
+
+        # 测试部分
+        test_case_inputs = {"input": "谁是最可爱的人?"}
+        # 特意将timeout弄长一些,用于跳过LOAD_MESSAGE
+        results = [each for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=10)]
+        assert agent_options.knowledge_query_options.rejection_response in "".join(
+            each["content"] for each in get_stream_result(results)
         )

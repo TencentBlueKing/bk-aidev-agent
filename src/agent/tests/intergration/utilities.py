@@ -14,3 +14,8 @@ def verify_streaming_result_format(results: list[str], need_reference_doc: bool 
             assert "content" in each
     assert has_reference_doc
     assert done == "data: [DONE]\n\n"
+
+
+def get_stream_result(results: list[str]) -> list[dict]:
+    # 获取流式输出结果
+    return [json.loads(each[6:]) for each in results if each.startswith("data:") and not each.endswith("[DONE]\n\n")]

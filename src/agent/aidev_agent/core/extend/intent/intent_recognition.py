@@ -22,7 +22,6 @@ import json
 import logging
 import os
 from collections import defaultdict
-from enum import Enum
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Set
 
 from langchain_core.callbacks import Callbacks
@@ -34,7 +33,6 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel
 
 from aidev_agent.api.bk_aidev import BKAidevApi
-from aidev_agent.core.extend.intent.enums import IntentCategory
 from aidev_agent.core.extend.intent.prompts import DEFAULT_INTENT_RECOGNITION_PROMPT_TEMPLATES
 from aidev_agent.core.extend.intent.similarity_model import calculate_similarity
 from aidev_agent.core.extend.intent.utils import (
@@ -47,6 +45,7 @@ from aidev_agent.core.extend.intent.utils import (
     timeit,
 )
 from aidev_agent.core.extend.models.llm_gateway import ChatModel
+from aidev_agent.enums import Decision, FineGrainedScoreType, IndependentQueryMode, IntentCategory, IntentStatus
 from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils.module_loading import import_string
 
@@ -55,31 +54,6 @@ logger = logging.getLogger(__name__)
 intent_recognition_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=int(os.getenv("INTENT_RECOGNITION_EXECUTOR_MAX_WORKERS", "10"))
 )
-
-
-class IntentStatus(Enum):
-    QA_WITH_RETRIEVED_KNOWLEDGE_RESOURCES = "QA_WITH_RETRIEVED_KNOWLEDGE_RESOURCES"
-    AGENT_FINISH_WITH_RESPONSE = "AGENT_FINISH_WITH_RESPONSE"
-    DIRECTLY_RESPOND_BY_AGENT = "DIRECTLY_RESPOND_BY_AGENT"
-    PROCESS_BY_AGENT = "PROCESS_BY_AGENT"
-
-
-class Decision(Enum):
-    GENERAL_QA = "GENERAL_QA"
-    PRIVATE_QA = "PRIVATE_QA"
-    QUERY_CLARIFICATION = "QUERY_CLARIFICATION"
-
-
-class FineGrainedScoreType(Enum):
-    LLM = "LLM"
-    EXCLUSIVE_SIMILARITY_MODEL = "EXCLUSIVE_SIMILARITY_MODEL"
-    EMBEDDING = "EMBEDDING"
-
-
-class IndependentQueryMode(Enum):
-    INIT = "INIT"  # 直接使用原始的，不进行重写
-    REWRITE = "REWRITE"  # 根据 chat history 对 query 进行重写
-    SUM_AND_CONCATE = "SUM_AND_CONCATE"  # 对 chat history 进行总结，并跟 query 进行拼接
 
 
 class IntentRecognition(BaseModel):
@@ -546,7 +520,7 @@ class IntentRecognition(BaseModel):
         agent_options,
         **kwargs,
     ):
-        if fine_grained_score_type.value == FineGrainedScoreType.LLM.value:
+        if fine_grained_score_type == FineGrainedScoreType.LLM.value:
             # NOTE: 如果 FineGrainedScoreType 为 LLM，则因为当前只有是/否相关的判断，因此分数只有 1.0 或 0.0
             fine_grained_scores = self.llm_relevance_determiner_parallel(
                 (
@@ -558,7 +532,7 @@ class IntentRecognition(BaseModel):
                 llm,
                 **kwargs,
             )
-        elif fine_grained_score_type.value == FineGrainedScoreType.EXCLUSIVE_SIMILARITY_MODEL.value:
+        elif fine_grained_score_type == FineGrainedScoreType.EXCLUSIVE_SIMILARITY_MODEL.value:
             # 使用专属小模型计算的分数作为最终的细粒度相似度分数
             # TODO: 目前知识类资源和工具类资源是独立使用小模型的，可以考虑在都要计算的情况下，合成一个batch进行计算
             # NOTE: 如果有 index_content 且是结构化数据则取 index_content，否则才取 page_content（兼容写法）。
@@ -583,7 +557,7 @@ class IntentRecognition(BaseModel):
                 ]
             )
             fine_grained_scores = [float(fine_grained_score) for fine_grained_score in fine_grained_scores]
-        elif fine_grained_score_type.value == FineGrainedScoreType.EMBEDDING.value:
+        elif fine_grained_score_type == FineGrainedScoreType.EMBEDDING.value:
             # 直接使用emb分数作为最终的细粒度相似度分数
             fine_grained_scores = [float(emb_score) for _, emb_score in context_docs_with_scores]
         else:

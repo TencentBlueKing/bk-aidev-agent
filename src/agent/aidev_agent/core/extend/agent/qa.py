@@ -16,7 +16,6 @@ We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
 
-import enum
 import json
 import time
 from collections import defaultdict, deque
@@ -44,11 +43,12 @@ from aidev_agent.core.agent.agents import (
     get_beijing_now,
 )
 from aidev_agent.core.agent.multimodal import MultiToolCallCommonAgent, StructuredChatCommonAgent
+from aidev_agent.core.extend.intent.intent_recognition import IntentRecognition
 from aidev_agent.core.utils.local import request_local
+from aidev_agent.enums import Decision, EventType, IntentStatus
 from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils import Empty
 
-from ..intent.intent_recognition import Decision, IntentRecognition, IntentStatus
 from ..intent.prompts import DEFAULT_QA_PROMPT_TEMPLATES
 from ..intent.utils import (
     FINAL_ANSWER_PREFIXES,
@@ -64,15 +64,6 @@ from ..intent.utils import (
 )
 
 _logger = getLogger(__name__)
-
-
-class EventType(enum.Enum):
-    LOADING = "loading"
-    TEXT = "text"
-    DONE = "done"
-    ERROR = "error"
-    REFERENCE_DOC = "reference_doc"
-    THINK = "think"
 
 
 class IntentRecognitionMixin(BaseModel):

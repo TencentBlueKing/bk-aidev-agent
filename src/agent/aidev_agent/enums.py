@@ -29,3 +29,51 @@ class ChatContentStatus(enum.Enum):
     LOADING = "loading"
     FAIL = "fail"
     SUCCESS = "success"
+
+
+class IntentStatus(enum.Enum):
+    QA_WITH_RETRIEVED_KNOWLEDGE_RESOURCES = "QA_WITH_RETRIEVED_KNOWLEDGE_RESOURCES"
+    AGENT_FINISH_WITH_RESPONSE = "AGENT_FINISH_WITH_RESPONSE"
+    DIRECTLY_RESPOND_BY_AGENT = "DIRECTLY_RESPOND_BY_AGENT"
+    PROCESS_BY_AGENT = "PROCESS_BY_AGENT"
+
+
+class Decision(enum.Enum):
+    GENERAL_QA = "GENERAL_QA"
+    PRIVATE_QA = "PRIVATE_QA"
+    QUERY_CLARIFICATION = "QUERY_CLARIFICATION"
+
+
+class FineGrainedScoreType(enum.Enum):
+    LLM = "LLM"
+    EXCLUSIVE_SIMILARITY_MODEL = "EXCLUSIVE_SIMILARITY_MODEL"
+    EMBEDDING = "EMBEDDING"
+
+
+class IndependentQueryMode(enum.Enum):
+    INIT = "INIT"  # 直接使用原始的，不进行重写
+    REWRITE = "REWRITE"  # 根据 chat history 对 query 进行重写
+    SUM_AND_CONCATE = "SUM_AND_CONCATE"  # 对 chat history 进行总结，并跟 query 进行拼接
+
+
+class KnowledgeBaseQueryFunction(enum.Enum):
+    """检索方式"""
+
+    SEMANTIC = "semantic"  # 语义检索
+    MIXED = "mixed"  # 混合检索
+    SQL = "sql"  # SQL检索
+
+
+class IntentCategory(enum.Enum):
+    KNOWLEDGE_BASE = "知识base"
+    KNOWLEDGE_ITEM = "知识item"
+    TOOL = "工具"
+
+
+class EventType(enum.Enum):
+    LOADING = "loading"
+    TEXT = "text"
+    DONE = "done"
+    ERROR = "error"
+    REFERENCE_DOC = "reference_doc"
+    THINK = "think"
