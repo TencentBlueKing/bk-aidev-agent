@@ -729,6 +729,7 @@ class CommonQAStreamingMixIn:
         non_think_content = ""
         last_ret_is_empty = False
         front_end_display = True
+        first_after_LOADINGMESSAGE= True
         if is_deepseek_r1_series_models(self.llm) or "deepseek-v3" in self.llm.model_name:
             # 用于去除 think 标识位
             max_cache_length = 50
@@ -989,7 +990,12 @@ class CommonQAStreamingMixIn:
                             if len(cache) == max_cache_length:
                                 ret = cache.popleft()
                                 last_event_type = ret["event"]
-                                if not (last_event_type == EventType.THINK.value and ret["content"].strip() == ""):
+                                # 避免输出内容为空的think event
+                                if not (last_event_type == EventType.THINK.value and ret["content"] == ""):
+                                    # 确保LOADING_AGENT_MESSAGE后输出的第一个event cover为true
+                                    if first_after_LOADINGMESSAGE:
+                                        ret["cover"] = True
+                                        first_after_LOADINGMESSAGE = False
                                     yield self._yield_ret(ret)
                     else:
                         yield self._yield_ret(ret)
@@ -1009,12 +1015,18 @@ class CommonQAStreamingMixIn:
                     len_before_filtering = len(cache)
                     cache = self.cache_filter(cache, final_answer_prefix_to_filter, final_answer_suffix_to_filter)
                     if len(cache) == len_before_filtering:
+                        # 如果没 filter 到，则还是将 end_ret 剔除
                         cache.pop()
 
                 while cache:
                     ret = cache.popleft()
                     last_event_type = ret["event"]
-                    if not (last_event_type == EventType.THINK.value and ret["content"].strip() == ""):
+                    # 避免输出内容为空的think event
+                    if not (last_event_type == EventType.THINK.value and ret["content"] == ""):
+                        # 确保LOADING_AGENT_MESSAGE后输出的第一个event cover为true
+                        if first_after_LOADINGMESSAGE:
+                            ret["cover"] = True
+                            first_after_LOADINGMESSAGE = False
                         yield self._yield_ret(ret)
                 for think_symbol in self.think_symbols:
                     final_result = final_result.replace(think_symbol, "")
