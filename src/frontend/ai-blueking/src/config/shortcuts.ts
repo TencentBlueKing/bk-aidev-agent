@@ -23,7 +23,7 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { type ShortCut } from '@blueking/ai-ui-sdk';
+import { type ShortCut } from '@blueking/ai-ui-sdk/types';
 
 import { t } from '../lang/index';
 

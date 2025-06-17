@@ -1,6 +1,6 @@
 {
   "name": "bk-aidev-agent-frontend",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "蓝鲸AI开发者助手前端项目",
   "scripts": {
@@ -25,7 +25,7 @@
     "@types/semver": "^7.5.8",
     "@vitejs/plugin-vue": "^5.0.5",
     "@vitest/ui": "^1.3.1",
-    "bkui-vue": "1.0.3-beta.69",
+    "bkui-vue": "2.0.2-beta.29",
     "execa": "^9.2.0",
     "less": "^4.2.0",
     "lint-staged": "^15.2.5",

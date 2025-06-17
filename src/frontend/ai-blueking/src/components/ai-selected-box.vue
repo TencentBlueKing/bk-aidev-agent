@@ -31,7 +31,7 @@
 </template>
 
 <script setup lang="ts">
-  import { type ShortCut } from '@blueking/ai-ui-sdk';
+  import { type ShortCut } from '@blueking/ai-ui-sdk/types';
 
   import { useSelect } from '../composables/use-select-pop';
   import { t } from '../lang';

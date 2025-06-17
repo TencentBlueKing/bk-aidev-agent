@@ -41,7 +41,7 @@
 </template>
 
 <script lang="ts" setup>
-  import { type ShortCut } from '@blueking/ai-ui-sdk';
+  import { type ShortCut } from '@blueking/ai-ui-sdk/types';
 
   import avatar from '../assets/images/avatar.png';
   import { usePopup } from '../composables/use-popup-props';
