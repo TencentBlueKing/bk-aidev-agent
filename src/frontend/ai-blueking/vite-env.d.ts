@@ -17,3 +17,8 @@ declare module '*.md?raw' {
   const content: string
   export default content
 } 
+
+declare module '*.(jpg|jpeg|gif|svg|webp)' {
+  const path: string;
+  export default path;
+}

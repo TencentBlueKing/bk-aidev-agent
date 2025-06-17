@@ -1,0 +1,254 @@
+<template>
+  <div class="bkai-history-panel">
+    <div class="history-panel-header">
+      <h1 class="history-panel-header-title">{{ t("历史会话") }}</h1>
+      <BkInput v-model="search" behavior="simplicity" :placeholder="t('搜索')" style="height: 22px">
+        <template #suffix>
+          <span class="input-icon">
+            <Search />
+          </span>
+        </template>
+      </BkInput>
+    </div>
+    <div class="history-panel-content">
+      <div class="history-panel-content-item" v-for="item in historyList" :key="item.key">
+        <div class="history-panel-content-item-title">
+          <span>{{ item.alias }}</span>
+        </div>
+        <div class="history-panel-content-item-list">
+          <div
+            class="history-panel-content-item-list-item"
+            v-for="session in item.sessionList"
+            :key="session.sessionCode"
+            :class="{ active: isCurrentSession(session) }"
+            @click="handleSessionClick(session)"
+          >
+            <template v-if="!session.isEdit">
+              <BkOverflowTitle
+                style="width: calc(100% - 42px)"
+              >
+                {{ session.sessionName }}
+              </BkOverflowTitle>
+              <span class="history-panel-content-item-list-item-action">
+                <i
+                  v-bk-tooltips="{
+                    content: t('编辑'),
+                    boundary: 'parent',
+                  }"
+                  class="bkai-icon bkai-bianji"
+                  @click.stop="handleEdit(session)"
+                ></i>
+                <BkPopConfirm
+                  :title="t('确认删除会话 ?')"
+                  content="删除操作无法撤回，请谨慎操作!"
+                  :confirmConfig="{
+                    theme: 'danger',
+                  }"
+                  trigger="click"
+                  boundary="parent"
+                  @confirm="handleDelete(session.sessionCode)"
+                >
+                  <i
+                    v-bk-tooltips="{
+                      content: t('删除'),
+                      boundary: 'parent',
+                    }"
+                    class="bkai-icon bkai-shanchu"
+                    @click.stop
+                  ></i>
+                </BkPopConfirm>
+              </span>
+            </template>
+            <BkInput
+              v-else
+              v-model="session.sessionName"
+              style="width: 100%; height: 28px"
+              @blur="handleBlur(session)"
+              @enter="handleEnter"
+              @click.stop
+              :ref="
+                (el: HTMLInputElement) => {
+                  if (session.isEdit) inputRefs[session.sessionCode] = el
+                }
+              "
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, nextTick } from "vue"
+
+import { Input as BkInput, bkTooltips, PopConfirm as BkPopConfirm, OverflowTitle as BkOverflowTitle } from "bkui-vue"
+import { Search } from "bkui-vue/lib/icon"
+
+import { t } from "../lang"
+import { sessionStore } from "../store/sessionStore"
+import type { ISessionEditItem, HistoryItem } from "../store/types"
+
+const emit = defineEmits<{
+  (e: "close"): void
+}>()
+
+const vBkTooltips = bkTooltips
+const search = ref("")
+
+const inputRefs = ref<Record<string, any>>({})
+
+const historyList = computed(() => {
+  const list = sessionStore.sessionList.value.reduce<HistoryItem[]>(
+    (acc, item) => {
+      const date = new Date(item.createdAt)
+      const today = new Date()
+      const yesterday = new Date()
+      yesterday.setDate(yesterday.getDate() - 1)
+
+      if (date.toDateString() === today.toDateString()) {
+        acc.find((historyItem) => historyItem.key === "today" && item.sessionName.includes(search.value))?.sessionList.push(item)
+      } else if (date.toDateString() === yesterday.toDateString()) {
+        acc.find((historyItem) => historyItem.key === "yesterday" && item.sessionName.includes(search.value))?.sessionList.push(item)
+      } else {
+        acc.find((historyItem) => historyItem.key === "before" && item.sessionName.includes(search.value))?.sessionList.push(item)
+      }
+      return acc
+    },
+    [
+      {
+        key: "today",
+        alias: t("今天"),
+        sessionList: [],
+      },
+      {
+        key: "yesterday",
+        alias: t("昨天"),
+        sessionList: [],
+      },
+      {
+        key: "before",
+        alias: t("之前"),
+        sessionList: [],
+      },
+    ]
+  )
+  return list.filter((item) => item.sessionList.length > 0)
+})
+
+/**
+ * 检查是否为当前会话
+ */
+const isCurrentSession = (session: ISessionEditItem) => {
+  return sessionStore.currentSession.value?.sessionCode === session.sessionCode
+}
+
+/**
+ * 处理会话点击事件
+ */
+const handleSessionClick = (session: ISessionEditItem) => {
+  // 如果不是当前会话，则切换到该会话
+  if (!isCurrentSession(session)) {
+    sessionStore.switchSessionWithContents(session)
+    emit("close")
+  }
+}
+
+const handleDelete = (sessionCode: string) => {
+  // 删除会话
+  sessionStore.deleteSession(sessionCode)
+}
+
+const handleBlur = (session: ISessionEditItem) => {
+  // 结束编辑并更新会话
+  sessionStore.finishEditSession(session.sessionCode, {
+    sessionName: session.sessionName,
+  })
+}
+
+const handleEdit = (session: ISessionEditItem) => {
+  // 开始编辑会话
+  sessionStore.startEditSession(session.sessionCode)
+
+  nextTick(() => {
+    const input = inputRefs.value[session.sessionCode]
+    if (input) {
+      input.focus()
+    }
+  })
+}
+
+const handleEnter = (_value: string, event: Event) => {
+  // 获取输入框元素
+  const input = event.target as HTMLInputElement
+  input.blur()
+}
+
+</script>
+
+<style lang="scss" scoped>
+.bkai-history-panel {
+  width: 245px;
+  height: 507px;
+  background-color: #fff;
+  border-radius: 4px;
+  overflow-y: auto;
+  .history-panel-header {
+    display: flex;
+    flex-direction: column;
+    padding: 0 8px;
+    font-size: 12px;
+    line-height: 22px;
+    color: #313238;
+    .history-panel-header-title {
+      font-size: 12px;
+      line-height: 22px;
+      color: #313238;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+  }
+  .history-panel-content {
+    margin-top: 10px;
+    .history-panel-content-item {
+      .history-panel-content-item-title {
+        font-size: 12px;
+        line-height: 20px;
+        color: #979ba5;
+        margin-bottom: 4px;
+        padding: 0 8px;
+      }
+      .history-panel-content-item-list {
+        .history-panel-content-item-list-item {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          font-size: 12px;
+          height: 28px;
+          color: #4d4f56;
+          padding: 0 8px;
+          border-radius: 2px;
+          cursor: pointer;
+          .history-panel-content-item-list-item-action {
+            color: #979ba5;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            .bkai-icon {
+              font-size: 14px;
+            }
+          }
+          &:hover {
+            background: #f0f1f5;
+          }
+          &.active {
+            background: #e1ecff;
+            color: #3a84ff;
+            font-weight: 700;
+          }
+        }
+      }
+    }
+  }
+}
+</style>

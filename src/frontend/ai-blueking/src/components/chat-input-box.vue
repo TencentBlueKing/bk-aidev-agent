@@ -61,7 +61,7 @@
   import { ref, onMounted, watch, computed, onBeforeUnmount } from 'vue';
   import { ComponentPublicInstance } from 'vue';
 
-  import { type ShortCut } from '@blueking/ai-ui-sdk';
+  import { type ShortCut } from '@blueking/ai-ui-sdk/types';
   import { Instance } from 'tippy.js';
 
   import AiCite from '../components/ai-cite.vue';
