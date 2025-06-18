@@ -14,6 +14,7 @@ class SettingEnvVariables(enum.Enum):
     BK_API_URL_TMPL = "BK_API_URL_TMPL"
     BK_APIGW_STAGE = "BK_APIGW_STAGE"
     BK_AIDEV_GATEWAY_NAME = "AIDEV_GATEWAY_NAME"
+    BK_AIDEV_APIGW_ENDPOINT = "BK_AIDEV_APIGW_ENDPOINT"
 
 
 class Settings(object):
@@ -122,6 +123,7 @@ APP_CODE = env.str("BKPAAS_APP_ID", "") or env.str("APP_ID", "")
 SECRET_KEY = env.str("BKPAAS_APP_SECRET", "") or env.str("APP_TOKEN", "")
 BK_AIDEV_GATEWAY_NAME = env.str("AIDEV_GATEWAY_NAME", "bkaidev")
 BK_APIGW_STAGE = env.str("BK_APIGW_STAGE", "") or env.str("BKAIDEV_RESOURCE_STAGE", "prod")
+BK_AIDEV_APIGW_ENDPOINT = env.str("BK_AIDEV_APIGW_ENDPOINT", "")
 # end: 配置
 
 
