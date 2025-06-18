@@ -100,3 +100,24 @@ class TestAPI:
             headers={"X-BKAIDEV-USER": "wenxingtang"},
         )
         print(result)
+
+    def test_bkaidev_agent_session_management(self):
+        client = BKAidevApi.get_client()
+        results = client.api.list_chat_session()["data"]
+        session_codes = [each["session_code"] for each in results]
+        if session_codes:
+            client.api.batch_delete_chat_session(json={"session_codes": session_codes})
+
+        for _idx in range(5):
+            _session_code = f"onlyfortest-{_idx}"
+            result = client.api.create_chat_session(
+                json={"session_code": _session_code, "session_name": f"testonly-{_idx}"}
+            )
+            session_codes.append(result["data"]["session_code"])
+
+        results = client.api.list_chat_session()["data"]
+        assert len(results) == 5
+        client.api.batch_delete_chat_session(json={"session_codes": session_codes})
+
+        results = client.api.list_chat_session()["data"]
+        assert len(results) == 0

@@ -50,6 +50,13 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/chat/session/",
     )
 
+    batch_delete_chat_session = bind_property(
+        Operation,
+        name="batch_delete_chat_session",
+        method="POST",
+        path="/openapi/aidev/resource/v1/chat/session/batch_delete/",
+    )
+
     create_chat_session = bind_property(
         Operation,
         name="create_chat_session",
