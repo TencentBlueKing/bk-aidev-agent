@@ -711,7 +711,7 @@ class CommonQAStreamingMixIn:
                 ret["content"] = "\n\n"
         cache.append(ret)
 
-    def stream_standard_event(self, agent_e, cfg, input_, skip_thought=True, timeout: Optional[int] = None):
+    def stream_standard_event(self, agent_e, cfg, input_, skip_thought=True, timeout: int = 2):
         """
         如果 is_deepseek_r1_series_models(self.llm)，则需要：
             统一：去除 think 标识位
@@ -729,7 +729,7 @@ class CommonQAStreamingMixIn:
         non_think_content = ""
         last_ret_is_empty = False
         front_end_display = True
-        first_after_LOADINGMESSAGE= True
+        first_after_LOADINGMESSAGE = True
         if is_deepseek_r1_series_models(self.llm) or "deepseek-v3" in self.llm.model_name:
             # 用于去除 think 标识位
             max_cache_length = 50
