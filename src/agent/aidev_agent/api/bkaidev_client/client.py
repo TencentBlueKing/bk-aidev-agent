@@ -64,6 +64,13 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/chat/session/",
     )
 
+    update_chat_session = bind_property(
+        Operation,
+        name="update_chat_session",
+        method="PUT",
+        path="/openapi/aidev/resource/v1/chat/session/{session_code}/",
+    )
+
     retrieve_chat_session = bind_property(
         Operation,
         name="retrieve_chat_session",
@@ -90,6 +97,13 @@ class OpenApiGroup(OperationGroup):
         name="update_chat_session_content ",
         method="PUT",
         path="/openapi/aidev/resource/v1/chat/session_content/{id}/",
+    )
+
+    batch_delete_chat_session_content = bind_property(
+        Operation,
+        name="batch_delete_chat_session_content ",
+        method="POST",
+        path="/openapi/aidev/resource/v1/chat/session_content/batch_delete/",
     )
 
     get_chat_session_contents = bind_property(

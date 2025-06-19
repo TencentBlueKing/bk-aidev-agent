@@ -75,6 +75,11 @@ class ChatSessionViewSet(PluginViewSet):
         result = client.api.create_chat_session(json=request.data)
         return Response(data=result["data"])
 
+    def update(self, request, pk, **kwargs):
+        client = BKAidevApi.get_client()
+        result = client.api.update_chat_session(path_params={"id": pk}, json=request.data)
+        return Response(data=result["data"])
+
     def retrieve(self, request, pk, **kwargs):
         client = BKAidevApi.get_client()
         result = client.api.retrieve_chat_session(path_params={"session_code": pk})
@@ -106,6 +111,12 @@ class ChatSessionContentViewSet(PluginViewSet):
     def update(self, request, pk, **kwargs):
         client = BKAidevApi.get_client()
         result = client.api.update_chat_session_content(path_params={"id": pk}, json=request.data)
+        return Response(data=result["data"])
+
+    @action(["POST"], url_path="batch_delete", detail=False)
+    def batch_delete(self, request):
+        client = BKAidevApi.get_client()
+        result = client.api.batch_delete_chat_session_content(json=request.data)
         return Response(data=result["data"])
 
 
