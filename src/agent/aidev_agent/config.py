@@ -107,6 +107,7 @@ def update_django_settings(django_settings=None):
 
 
 env = environs.Env()
+env.read_env()
 existed_keys = list(locals().keys())
 existed_keys.append("existed_keys")
 
