@@ -77,7 +77,7 @@ class ChatSessionViewSet(PluginViewSet):
 
     def update(self, request, pk, **kwargs):
         client = BKAidevApi.get_client()
-        result = client.api.update_chat_session(path_params={"id": pk}, json=request.data)
+        result = client.api.update_chat_session(path_params={"session_code": pk}, json=request.data)
         return Response(data=result["data"])
 
     def retrieve(self, request, pk, **kwargs):
