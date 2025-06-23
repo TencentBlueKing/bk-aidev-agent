@@ -121,6 +121,7 @@
                   </div>
                   <CustomInput
                     v-if="currentShortcut"
+                    :key="currentShortcut.id"
                     :shortcut="currentShortcut"
                     :root-node="rootNode"
                     @cancel="handleCancelShortcut"
@@ -568,7 +569,7 @@
     // 在副本上查找需要填充的组件
     const fillBackItem = modifiedShortcut.components.find(item => item.fillBack);
     if (fillBackItem) {
-      let textToFill = ''; // 默认使用空字符串
+      let textToFill = selectedText.value; // 默认使用选中内容
 
       if (fillBackItem.fillRegx) {
         try {
@@ -578,6 +579,8 @@
           if (matches && matches.length > 0) {
             // 使用匹配结果
             textToFill = matches[0];
+          } else {
+            textToFill = ''; // 如果有正则表达式，但是没有匹配到内容，则使用空字符串
           }
         } catch (e) {
           console.error("快捷方式组件中的正则表达式无效:", fillBackItem.fillRegx, e);
