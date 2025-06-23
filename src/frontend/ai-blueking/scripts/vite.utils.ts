@@ -68,8 +68,7 @@ function getExternal(formats: LibraryFormats[], version: VueVersion) {
       (isVue3 && (/^bkui-vue/.test(id) || /^vue$/.test(id))) ||
       (!isVue3 && /^@blueking\/bkui-library/.test(id)) ||
       /^highlight.js/.test(id) ||
-      /^markdown-it/.test(id) ||
-      /^markdown-it-code-copy/.test(id)
+      /^markdown-it/.test(id)
     ) {
       return true;
     }
@@ -135,7 +134,6 @@ export const createBuildConfig = (
               dayjs: 'dayjs',
               'highlight.js': 'hljs',
               'markdown-it': 'MarkdownIt',
-              'markdown-it-code-copy': 'MarkdownItCodeCopy',
               'bkui-vue': 'BKUIVUE',
               '@blueking/bkui-library': 'BKUI',
             },

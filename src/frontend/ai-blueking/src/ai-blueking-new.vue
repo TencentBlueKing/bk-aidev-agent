@@ -77,15 +77,19 @@
                 :style="{ opacity: sessionContents.length > 0 ? 1 : 0 }"
                 class="message-wrapper"
               >
-                <render-message
+                <div
                   v-for="(message, index) in sessionContents"
-                  :index="index"
                   :key="message.id"
-                  :message="message"
-                  @delete="handleDelete"
-                  @regenerate="handleRegenerate"
-                  @resend="handleResend"
-                />
+                  class="message-line-wrapper"
+                >
+                  <render-message
+                    :index="index"
+                    :message="message"
+                    @delete="handleDelete"
+                    @regenerate="handleRegenerate"
+                    @resend="handleResend"
+                  />
+                </div>
               </div>
 
               <motion.div
@@ -98,42 +102,44 @@
                 :class="`chat-input-container ${sessionContents.length === 0 ? 'centered' : 'bottom'}`"
                 layout
               >
-                <div v-if="currentSessionLoading || showScrollToBottom" class="bottom-tools-bar">
-                  <BarButton
-                    v-if="currentSessionLoading"
-                    color="#EA3636"
-                    icon="bkaitingzhishengcheng"
-                    text="停止生成"
-                    @click="handleStop"
+                <div class="chat-input-wrapper">
+                  <div v-if="currentSessionLoading || showScrollToBottom" class="bottom-tools-bar">
+                    <BarButton
+                      v-if="currentSessionLoading"
+                      color="#EA3636"
+                      icon="bkaitingzhishengcheng"
+                      text="停止生成"
+                      @click="handleStop"
+                    />
+                    <BarButton
+                      v-if="showScrollToBottom"
+                      color="#979BA5"
+                      icon="bkaijiantou"
+                      text="返回底部"
+                      @click="scrollMainToBottom"
+                    />
+                  </div>
+                  <CustomInput
+                    v-if="currentShortcut"
+                    :shortcut="currentShortcut"
+                    :root-node="rootNode"
+                    @cancel="handleCancelShortcut"
+                    @submit="handleSubmitShortcut"
                   />
-                  <BarButton
-                    v-if="showScrollToBottom"
-                    color="#979BA5"
-                    icon="bkaijiantou"
-                    text="返回底部"
-                    @click="scrollMainToBottom"
+
+                  <ChatInputBox
+                    v-else
+                    v-model="inputMessage"
+                    :loading="currentSessionLoading"
+                    :prompts="promptList"
+                    :shortcuts="shortcuts"
+                    :disabled="props.disabledInput"
+                    @height-change="handleInputHeightChange"
+                    @send="handleSendMessage"
+                    @shortcut-click="handleShortcutClick"
+                    @stop="handleStop"
                   />
                 </div>
-                <CustomInput
-                  v-if="currentShortcut"
-                  :shortcut="currentShortcut"
-                  :root-node="rootNode"
-                  @cancel="handleCancelShortcut"
-                  @submit="handleSubmitShortcut"
-                />
-
-                <ChatInputBox
-                  v-else
-                  v-model="inputMessage"
-                  :loading="currentSessionLoading"
-                  :prompts="promptList"
-                  :shortcuts="shortcuts"
-                  :disabled="props.disabledInput"
-                  @height-change="handleInputHeightChange"
-                  @send="handleSendMessage"
-                  @shortcut-click="handleShortcutClick"
-                  @stop="handleStop"
-                />
               </motion.div>
             </div>
           </div>
@@ -701,12 +707,10 @@
     display: flex;
     flex: 1;
     overflow: hidden;
-    justify-content: center;
   }
 
   .main-content {
     position: relative;
-    max-width: 1000px;
     display: flex;
     flex: 1;
     flex-direction: column;
@@ -738,6 +742,12 @@
       transition: opacity 0.5s ease;
 
       @include custom-scrollbar;
+    }
+
+    .message-line-wrapper {
+      width: 100%;
+      max-width: 1000px;
+      margin: 0 auto;
     }
 
     &.chat-layout {
@@ -777,6 +787,11 @@
         white-space: nowrap;
         transform-origin: left;
       }
+    }
+
+    .chat-input-wrapper {
+      max-width: 1000px;
+      margin: 0 auto;
     }
 
     .chat-input-container {

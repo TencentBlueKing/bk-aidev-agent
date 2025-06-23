@@ -112,8 +112,11 @@
   import dayjs from 'dayjs';
   import hljs from 'highlight.js';
   import MarkdownIt from 'markdown-it';
-  import MarkdownItCodeCopy from 'markdown-it-code-copy';
+  import MarkdownItCodeCopy from 'markdown-it-copy-code';
+  import 'markdown-it-copy-code/styles/base.css'
+  import 'markdown-it-copy-code/styles/medium.css'
 
+  import { useCopyCode } from 'markdown-it-copy-code'
   import defaultUserLogo from '../assets/images/ai-user.png';
   import AiCite from '../components/ai-cite.vue';
   import { usePopup } from '../composables/use-popup-props';
@@ -169,10 +172,7 @@
       return '';
     },
   })
-    .use(MarkdownItCodeCopy, {
-      iconClass: 'bkai-icon bkai-fuzhi',
-      buttonClass: 'ai-blueking-copy-button',
-    })
+    .use(MarkdownItCodeCopy)
     .use(MarkdownItLinkBlank)
     .use(mermaidPlugin);
   // 计算属性
@@ -251,6 +251,7 @@
   // 生命周期钩子
   onMounted(() => {
     setTimeout(initTooltips, 0);
+    useCopyCode();
   });
 
   // 监听器
@@ -431,6 +432,18 @@
       height: 100%;
       font-size: 14px;
       color: #313238;
+
+      .markdown-copy-code-container .markdown-copy-code-button {
+        color: rgba(255,255,255,.87);
+        background-color: #2c2c2c;
+        &:hover {
+          background-color: #8884;
+        }
+
+        .markdown-copy-code-done>svg {
+          stroke: rgba(255,255,255,.87);
+        }
+      }
 
       h1,
       h2,

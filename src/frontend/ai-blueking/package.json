@@ -1,6 +1,6 @@
 {
   "name": "@blueking/ai-blueking",
-  "version": "1.1.0-beta.4",
+  "version": "1.1.0-beta.5",
   "description": "AI 小鲸",
   "license": "MIT",
   "author": "Tencent BlueKing",
@@ -60,8 +60,7 @@
   "peerDependencies": {
     "dayjs": "^1.10.7",
     "highlight.js": "^11.5.1",
-    "markdown-it": "^13.0.1",
-    "markdown-it-code-copy": "^0.2.1"
+    "markdown-it": "^13.0.1"
   },
   "devDependencies": {
     "@types/highlight.js": "^10.1.0",
@@ -75,6 +74,7 @@
     "@agoose77/markdown-it-mermaid": "^1.1.0",
     "@blueking/ai-ui-sdk": "0.0.15-beta.38",
     "@blueking/bkui-library": "0.0.0-beta.6",
+    "markdown-it-copy-code": "^0.1.3",
     "motion-v": "^0.11.3",
     "tippy.js": "6.3.6",
     "vue-draggable-resizable": "^3.0.0"
