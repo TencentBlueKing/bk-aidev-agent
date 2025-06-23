@@ -991,7 +991,10 @@ class CommonQAStreamingMixIn:
                                 ret = cache.popleft()
                                 last_event_type = ret["event"]
                                 # 避免输出内容为空的think event
-                                if not (last_event_type == EventType.THINK.value and ret["content"] == ""):
+                                if not (self.llm.model_name == "deepseek-v3" 
+                                        and last_event_type == EventType.THINK.value 
+                                        and not ret.get("content", "").strip() 
+                                        and ret.get("elapsed_time")):
                                     # 确保LOADING_AGENT_MESSAGE后输出的第一个event cover为true
                                     if first_after_LOADINGMESSAGE:
                                         ret["cover"] = True
@@ -1022,7 +1025,10 @@ class CommonQAStreamingMixIn:
                     ret = cache.popleft()
                     last_event_type = ret["event"]
                     # 避免输出内容为空的think event
-                    if not (last_event_type == EventType.THINK.value and ret["content"] == ""):
+                    if not (self.llm.model_name == "deepseek-v3" 
+                            and last_event_type == EventType.THINK.value 
+                            and not ret.get("content", "").strip() 
+                            and ret.get("elapsed_time")):
                         # 确保LOADING_AGENT_MESSAGE后输出的第一个event cover为true
                         if first_after_LOADINGMESSAGE:
                             ret["cover"] = True
