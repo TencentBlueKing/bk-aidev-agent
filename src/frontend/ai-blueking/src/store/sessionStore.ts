@@ -29,26 +29,6 @@ export function useSessionStore() {
   }
 
   /**
-   * 获取并设置会话内容
-   * @param sessionCode 会话代码
-   */
-  const fetchAndSetSessionContents = async (sessionCode: string): Promise<ISessionContent[]> => {
-    try {
-      sessionContentLoading.value = true
-      const getContents = checkSdkMethod('getSessionContentsApi')
-      const setContents = checkSdkMethod('setSessionContents')
-      const contents = await getContents(sessionCode)
-      setContents(contents)
-      return contents
-    } catch (error) {
-      console.error('Failed to fetch session contents:', error)
-      throw error
-    } finally {
-      sessionContentLoading.value = false
-    }
-  }
-
-  /**
    * 完整的会话切换流程
    * @param session 目标会话
    */
