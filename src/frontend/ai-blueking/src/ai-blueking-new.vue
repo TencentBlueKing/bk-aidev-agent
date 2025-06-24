@@ -145,7 +145,7 @@ import { useResizableContainer } from "./composables/use-resizable-container"
 import { useSelect } from "./composables/use-select-pop"
 import { DEFAULT_SHORTCUTS } from "./config"
 import { t } from "./lang"
-import { scrollToBottom, escapeHtml, uuid } from "./utils"
+import { scrollToBottom, escapeHtml } from "./utils"
 import Nimbus from "./views/nimbus.vue"
 import { sessionStore } from "./store/sessionStore"
 
