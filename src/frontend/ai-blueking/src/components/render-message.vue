@@ -2,6 +2,7 @@
   <li
     ref="messageMainRef"
     :class="[message.role, 'message-main']"
+    v-if="!hideRoleList.includes(message.role)"
   >
     <div
       v-if="message?.property?.extra?.cite"
@@ -146,6 +147,8 @@
     userPhoto: defaultUserLogo,
     showTime: false,
   });
+
+  const hideRoleList = ['hidden-user', 'hidden-system', 'hidden-assistant']
 
   // 状态管理
   const isEdit = ref(false);
@@ -332,7 +335,7 @@
     &.user,
     &.cite {
       justify-content: flex-end;
-      float: right;
+      align-items: flex-end;
     }
 
     &:after {

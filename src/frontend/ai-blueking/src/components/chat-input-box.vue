@@ -322,6 +322,9 @@
     // 现有的键盘事件处理逻辑
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
+      if (isComposing.value) {
+        return;
+      }
       sendMessage();
     }
   };
