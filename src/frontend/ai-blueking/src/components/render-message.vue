@@ -148,7 +148,7 @@
     showTime: false,
   });
 
-  const hideRoleList = ['hidden-user', 'hidden-system', 'hidden-assistant']
+  const hideRoleList = ['hidden-user', 'hidden-system', 'hidden-assistant', 'hidden-role']
 
   // 状态管理
   const isEdit = ref(false);
