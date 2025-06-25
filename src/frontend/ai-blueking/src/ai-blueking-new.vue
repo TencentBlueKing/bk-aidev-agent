@@ -135,6 +135,7 @@
         v-if="!props.hideNimbus"
         v-model:is-panel-show="isShow"
         :default-minimize="defaultMinimize"
+        :size="props.nimbusSize"
         v-model:is-minimize="isNimbusMinimize"
         @click="handleNimbusClick"
       />
@@ -189,6 +190,7 @@
     defaultLeft?: number;
     hideHeader?: boolean;
     disabledInput?: boolean;
+    nimbusSize?: 'small' | 'normal' | 'large';
   }
 
   // Props 定义
@@ -210,6 +212,7 @@
     defaultLeft: undefined,
     hideHeader: false,
     disabledInput: false,
+    nimbusSize: 'normal',
   });
 
   // Emits 定义

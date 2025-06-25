@@ -19,6 +19,7 @@
 | `teleportTo`    | `String`          | `'body'`    | 控制组件内容传送到的 DOM 节点，可将组件内容渲染到任意 DOM 位置。详细说明参见 [界面定制指南](/guide/core-features/ui-customization#自定义传送目标)。 |
 | `hideHeader`    | `Boolean`         | `false`     | 设置为`true`时隐藏组件的头部栏。                                                                      |
 | `hideNimbus`    | `Boolean`         | `false`     | 设置为`true`时隐藏Nimbus悬浮图标。                                                                     |
+| `nimbusSize`    | `String`          | `'normal'`  | 设置 Nimbus 悬浮图标的尺寸。可选值为 `'small'`, `'normal'`, `'large'`。                               |
 | `draggable`     | `Boolean`         | `true`      | 控制组件是否可拖拽。设置为 `false` 时，窗口将固定在位置上不可移动。详细说明参见 [界面定制指南](/guide/core-features/ui-customization#拖拽功能控制与初始位置设置)。 |
 | `defaultWidth`  | `Number`          | `400` | 设置组件初始宽度，单位为像素。详细说明参见 [界面定制指南](/guide/core-features/ui-customization#拖拽功能控制与初始位置设置)。 |
 | `defaultHeight` | `Number`          | `undefined` | 设置组件初始高度，单位为像素，不设置组件会动态计算，设置为视窗高度。详细说明参见 [界面定制指南](/guide/core-features/ui-customization#拖拽功能控制与初始位置设置)。 |

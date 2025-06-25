@@ -8,6 +8,14 @@ export default {
     return {
       changelogData: [
         {
+          version: "v1.0.2",
+          date: "2025-06-25",
+          features: [
+            "新增 `nimbusSize` 属性，支持 `small`, `normal`, `large` 三种尺寸，用于调整 Nimbus 悬浮图标的大小",
+            "优化 Nimbus 最小化按钮尺寸，根据 `nimbusSize` 动态调整，提升视觉协调性",
+          ],
+        },
+        {
           version: "v1.0.1",
           date: "2025-05-28",
           features: [

@@ -3,11 +3,11 @@
     :active="!isPanelShow"
     :axis="'y'"
     :draggable="true"
-    :h="48"
+    :h="nimbusDimensions.container"
     :parent="true"
     :prevent-deactivation="true"
     :resizable="false"
-    :w="48"
+    :w="nimbusDimensions.container"
     :x="nimbusLeft"
     :y="nimbusTop"
     @dragging="handleDragging"
@@ -24,8 +24,8 @@
     >
       <div class="nimbus-bkai-wrapper">
         <img
-          width="32"
-          height="32"
+          :width="nimbusDimensions.img"
+          :height="nimbusDimensions.img"
           :src="avatar"
           alt="nimbus"
         />
@@ -53,16 +53,54 @@
     name: 'NimbusButton',
   });
 
-  const props = defineProps<{
+  const props = withDefaults(defineProps<{
     isPanelShow: boolean;
     isMinimize: boolean;
-  }>();
+    size?: 'small' | 'normal' | 'large';
+  }>(), {
+    size: 'normal',
+  });
 
   const emit = defineEmits<{
     (e: 'click'): void;
     (e: 'minimize', value: boolean): void;
     (e: 'update:isMinimize', value: boolean): void;
   }>();
+
+  const sizeMap = {
+    small: {
+      container: 40,
+      wrapper: 32,
+      img: 24,
+      mini: {
+        size: 14,
+        fontSize: 10,
+        right: -4,
+      },
+    },
+    normal: {
+      container: 48,
+      wrapper: 40,
+      img: 32,
+      mini: {
+        size: 16,
+        fontSize: 12,
+        right: -6,
+      },
+    },
+    large: {
+      container: 56,
+      wrapper: 48,
+      img: 40,
+      mini: {
+        size: 18,
+        fontSize: 14,
+        right: -6,
+      },
+    },
+  };
+
+  const nimbusDimensions = computed(() => sizeMap[props.size]);
 
   const nimbusContainerRef = ref<HTMLElement | null>(null);
   const minimizeButtonRef = ref<HTMLElement | null>(null);
@@ -147,8 +185,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 48px;
-    height: 48px;
+    width: v-bind('`${nimbusDimensions.container}px`');
+    height: v-bind('`${nimbusDimensions.container}px`');
     pointer-events: auto;
     cursor: pointer;
     background: #fff;
@@ -161,8 +199,8 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 40px;
-      height: 40px;
+      width: v-bind('`${nimbusDimensions.wrapper}px`');
+      height: v-bind('`${nimbusDimensions.wrapper}px`');
       background: #f0f5ff;
       border-radius: 50%;
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -171,13 +209,13 @@
     .nimbus-mini {
       position: absolute;
       top: 0;
-      right: -6px;
+      right: v-bind('`${nimbusDimensions.mini.right}px`');
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 16px;
-      height: 16px;
-      font-size: 12px;
+      width: v-bind('`${nimbusDimensions.mini.size}px`');
+      height: v-bind('`${nimbusDimensions.mini.size}px`');
+      font-size: v-bind('`${nimbusDimensions.mini.fontSize}px`');
       color: #979ba5;
       pointer-events: none;
       background: #fff;
