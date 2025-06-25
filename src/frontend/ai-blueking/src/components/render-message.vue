@@ -107,7 +107,8 @@
 <script lang="ts" setup>
   import { computed, onMounted, ref, watch, defineEmits, onBeforeUnmount } from 'vue';
 
-  import { SessionContentRole, type ISessionContent, SessionContentStatus } from '@blueking/ai-ui-sdk';
+  import { SessionContentRole, SessionContentStatus } from '@blueking/ai-ui-sdk/enums';
+  import { type ISessionContent } from '@blueking/ai-ui-sdk/types';
   import { Message } from 'bkui-vue';
   import mermaidPlugin from "@agoose77/markdown-it-mermaid";
   import dayjs from 'dayjs';

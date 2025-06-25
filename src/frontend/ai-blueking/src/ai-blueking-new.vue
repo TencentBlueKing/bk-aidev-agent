@@ -168,13 +168,10 @@
   import VueDraggableResizable from 'vue-draggable-resizable';
   import type { IRequestOptions, IShortcut } from './types';
 
-  import {
-    useChat,
-    useStyle,
-    useClickProxy,
-    type ISession,
-    SessionContentRole,
-  } from '@blueking/ai-ui-sdk';
+  import { useChat, useStyle, useClickProxy } from "@blueking/ai-ui-sdk/hooks"
+  import { SessionContentRole } from "@blueking/ai-ui-sdk/enums"
+  import { ISession } from "@blueking/ai-ui-sdk/types"
+  
   import { motion } from 'motion-v';
   import CustomInput from './components/custom-inputs/index.vue';
   import AiBluekingHeader from './components/ai-header.vue';
