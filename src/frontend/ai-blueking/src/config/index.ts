@@ -24,3 +24,5 @@
  * IN THE SOFTWARE.
  */
 export * from './shortcuts';
+
+export const HIDE_ROLE_LIST = ['hidden-user', 'hidden-system', 'hidden-assistant', 'hidden-role']

@@ -2,7 +2,7 @@
   <li
     ref="messageMainRef"
     :class="[message.role, 'message-main']"
-    v-if="!hideRoleList.includes(message.role)"
+    v-if="!HIDE_ROLE_LIST.includes(message.role)"
   >
     <div
       v-if="message?.property?.extra?.cite"
@@ -124,6 +124,7 @@
   import { usePopup } from '../composables/use-popup-props';
   import { useSelect } from '../composables/use-select-pop';
   import { useTooltip } from '../composables/use-tippy';
+  import { HIDE_ROLE_LIST } from '../config';
   import { t } from '../lang';
   import MarkdownItLinkBlank from '../plugins/markdown-it-link-blank';
   import { createDeleteConfirm, closeAllDeleteConfirms } from '../utils/delete-confirm';
@@ -148,8 +149,6 @@
     userPhoto: defaultUserLogo,
     showTime: false,
   });
-
-  const hideRoleList = ['hidden-user', 'hidden-system', 'hidden-assistant', 'hidden-role']
 
   // 状态管理
   const isEdit = ref(false);

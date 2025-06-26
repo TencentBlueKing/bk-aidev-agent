@@ -62,11 +62,9 @@ export default {
       type: String,
     },
     title: {
-      default: '',
       type: String,
     },
     helloText: {
-      default: '',
       type: String,
     },
     requestOptions: {

@@ -38,7 +38,7 @@
               :class="`main-content ${sessionContents.length === 0 ? 'greeting-layout' : 'chat-layout'}`"
             >
               <motion.div
-                v-if="sessionContents.length === 0"
+                v-if="sessionContents.filter(item => !HIDE_ROLE_LIST.includes(item.role)).length === 0"
                 class="greeting-box"
                 :transition="{
                   duration: 0.5,
@@ -182,7 +182,7 @@
   import { POPUP_INJECTION_KEY } from './composables/use-popup-props';
   import { useResizableContainer } from './composables/use-resizable-container';
   import { useSelect } from './composables/use-select-pop';
-  import { DEFAULT_SHORTCUTS } from './config';
+  import { DEFAULT_SHORTCUTS, HIDE_ROLE_LIST } from './config';
   import { t } from './lang';
   import { scrollToBottom, escapeHtml, uuid } from './utils';
   import Nimbus from './views/nimbus.vue';
@@ -404,6 +404,8 @@
     const session: ISession = {
       sessionCode: sessionCode.value,
       sessionName: 'session',
+      updatedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
     };
 
     // 创建 session 并设置为当前会话
