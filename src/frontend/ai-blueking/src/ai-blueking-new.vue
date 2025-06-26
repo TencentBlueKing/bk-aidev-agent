@@ -394,6 +394,9 @@
       url: props.url,
       ...props.requestOptions,
     },
+    otherOptions: {
+      hideReferenceDocIcon: true,
+    },
   });
 
   // 封装会话初始化逻辑

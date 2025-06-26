@@ -23,6 +23,13 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+import { SessionContentRole } from '@blueking/ai-ui-sdk/enums';
+
 export * from './shortcuts';
 
-export const HIDE_ROLE_LIST = ['hidden-user', 'hidden-system', 'hidden-assistant', 'hidden-role']
+export const HIDE_ROLE_LIST = [
+  SessionContentRole.HiddenAi,
+  SessionContentRole.HiddenUser,
+  SessionContentRole.HiddenGuide,
+  SessionContentRole.HiddenRole,
+];
