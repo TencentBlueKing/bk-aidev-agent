@@ -510,13 +510,11 @@
     }
   };
 
-  const handleResend = (index: number, { message, cite }: { message: string; cite: string }) => {
+  const handleResend = (index: number, { message }: { message: string }) => {
     const sessionContent = sessionContents.value[index];
     if (sessionContent) {
       sessionContent.content = escapeHtml(message);
-      if (sessionContent?.property?.extra?.cite) {
-        sessionContent.property.extra.cite = cite;
-      }
+
       reSendChat(sessionContent.sessionCode, sessionContent, index);
     }
   };

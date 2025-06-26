@@ -116,7 +116,7 @@
   import MarkdownIt from 'markdown-it';
   import MarkdownItCodeCopy from 'markdown-it-copy-code';
   import 'markdown-it-copy-code/styles/base.css'
-  import 'markdown-it-copy-code/styles/medium.css'
+  import 'markdown-it-copy-code/styles/small.css'
 
   import { useCopyCode } from 'markdown-it-copy-code'
   import defaultUserLogo from '../assets/images/ai-user.png';
@@ -140,7 +140,7 @@
 
   const emit = defineEmits<{
     regenerate: [index: number];
-    resend: [index: number, value: { message: string; cite: string }];
+    resend: [index: number, value: { message: string }];
     delete: [index: number];
   }>();
 
@@ -205,7 +205,7 @@
   // 事件处理
   const handleEditMessage = (value: string) => {
     isEdit.value = false;
-    emit('resend', props.index, { message: value, cite: props.message.cite || '' });
+    emit('resend', props.index, { message: value });
   };
 
   const handleCopy = async () => {
@@ -538,7 +538,7 @@
 
       ul,
       ol {
-        padding-left: 40px;
+        padding-left: 12px;
         margin: 10px 0 10px;
         text-indent: 0;
       }
