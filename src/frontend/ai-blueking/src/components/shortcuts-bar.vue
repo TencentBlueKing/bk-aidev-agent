@@ -16,7 +16,7 @@
 </template>
 
 <script setup lang="ts">
-  import { type ShortCut } from '@blueking/ai-ui-sdk';
+  import { type ShortCut } from '@blueking/ai-ui-sdk/types';
 
   const emit = defineEmits<{
     'shortcut-click': [ShortCut];

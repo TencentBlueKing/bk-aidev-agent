@@ -33,20 +33,7 @@ class TestStructedAgent:
         client = BKAidevApi.get_client_by_username(username="")
         # 设置工具
         tool_codes = [
-            "list-user-business-cloudstone",
-            "fix-file-md5",
-            "list-task",
-            "describe-task-log",
-            "check-src-cos",
-            "check-target-cos",
-            "check-ftp",
-            "check-version",
-            "sync-cos-to-ftp",
-            "sync-ftp-to-ver",
-            "get-sync-job-log",
-            "verify-ftp-whitelist",
-            "update-ftp-info",
-            "get-ftp-info",
+           "weather-query",
         ]
         tools = [client.construct_tool(tool_code) for tool_code in tool_codes]
         knowledge_bases = [client.api.appspace_retrieve_knowledgebase(path_params={"id": 263})["data"]]
@@ -236,3 +223,44 @@ class TestStructedAgent:
         results = [each for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=2)]
         results = get_stream_result(results)
         assert not results[-2]["content"].endswith("```")
+
+    def test_empty_think_event_filtered(self):
+        # 设置chat_model实例
+        model_name = "deepseek-v3"
+        chat_model = ChatModel.get_setup_instance(
+            model=model_name,
+            streaming=True,
+        )
+
+        # 获取客户端对象
+        client = BKAidevApi.get_client_by_username(username="")
+        # 设置工具
+        tool_codes = []
+        tools = [client.construct_tool(tool_code) for tool_code in tool_codes]
+        knowledge_bases = [client.api.appspace_retrieve_knowledgebase(path_params={"id": 58})["data"]]
+        # 获取代理执行器和配置
+        agent_options = AgentOptions(
+            intent_recognition_options=IntentRecognition(tool_output_compress_thrd=5000),
+            knowledge_query_options=KnowledgebaseSettings(
+                knowledge_bases = knowledge_bases,
+                knowledge_resource_reject_threshold=(0.001, 0.1),
+                topk=10,
+                knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM,
+            ),
+        )
+        agent_e, cfg = CommonQAAgent.get_agent_executor(
+            chat_model,
+            chat_model,
+            extra_tools=tools,
+            agent_options=agent_options,
+            callbacks=[StdOutCallbackHandler()],
+        )
+
+        # 测试部分
+        test_case_inputs = {"input": "云桌面黑屏怎么处理?"}      
+        results = [each for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=2)]
+        results = get_stream_result(results)
+        for event in results:
+            if event['event'] == "think":
+                assert event['content'].strip()!="", \
+                    "Think event should have content or elapsed_time"

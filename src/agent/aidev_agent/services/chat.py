@@ -135,6 +135,8 @@ class ChatCompletionAgent(BaseModel):
         messages = self.convert_history_to_messages()
         if self.is_run_by_agent():
             return self._execute_by_agent(messages, stream=execute_kwargs.stream)
+        if self.callbacks:
+            self.chat_model.callbacks = self.callbacks
         if execute_kwargs.stream:
             return self._stream(messages)
         return self._invoke(messages)

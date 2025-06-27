@@ -92,7 +92,6 @@
   // 使用 tippy 工具提示
   const { createTooltip, destroyAll } = useTooltip({
     theme: 'ai-blueking',
-    followCursor: 'horizontal',
     delay: [0, 0],
   });
 

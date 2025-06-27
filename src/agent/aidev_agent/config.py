@@ -14,6 +14,7 @@ class SettingEnvVariables(enum.Enum):
     BK_API_URL_TMPL = "BK_API_URL_TMPL"
     BK_APIGW_STAGE = "BK_APIGW_STAGE"
     BK_AIDEV_GATEWAY_NAME = "AIDEV_GATEWAY_NAME"
+    BK_AIDEV_APIGW_ENDPOINT = "BK_AIDEV_APIGW_ENDPOINT"
 
 
 class Settings(object):
@@ -106,6 +107,7 @@ def update_django_settings(django_settings=None):
 
 
 env = environs.Env()
+env.read_env()
 existed_keys = list(locals().keys())
 existed_keys.append("existed_keys")
 
@@ -118,11 +120,13 @@ BKAIDEV_FINE_GRAINED_SCORE_TYPE = (
 BKAIDEV_TOP_K = env.int("BKAIDEV_TOP_K", 10)
 BKAIDEV_KNOWLEDGE_RESOURCE_REJECT_THRESHOLD = env.str("BKAIDEV_KNOWLEDGE_RESOURCE_REJECT_THRESHOLD", "0.0001,0.1")
 LLM_GW_ENDPOINT = env.str("LLM_GW_ENDPOINT", "") or env.str("LLM_GATEWAY_URL", "")
-APP_CODE = env.str("BKPAAS_APP_ID", "") or env.str("APP_ID", "")
-SECRET_KEY = env.str("BKPAAS_APP_SECRET", "") or env.str("APP_TOKEN", "")
+APP_CODE = env.str("BK_AIDEV_AGENT_APP_CODE", "") or env.str("BKPAAS_APP_ID", "") or env.str("APP_ID", "")
+SECRET_KEY = env.str("BK_AIDEV_AGENT_APP_SECRET", "") or env.str("BKPAAS_APP_SECRET", "") or env.str("APP_TOKEN", "")
 BK_AIDEV_GATEWAY_NAME = env.str("AIDEV_GATEWAY_NAME", "bkaidev")
+BK_AIDEV_APIGW_ENDPOINT = env.str("BK_AIDEV_APIGW_ENDPOINT", "")
 BK_APIGW_STAGE = env.str("BK_APIGW_STAGE", "") or env.str("BKAIDEV_RESOURCE_STAGE", "prod")
 INTENT_RECOGNITION_GLOBAL_LLM_MODEL_NAME = env.str("INTENT_RECOGNITION_GLOBAL_LLM_MODEL_NAME", "hunyuan")
+
 # end: 配置
 
 

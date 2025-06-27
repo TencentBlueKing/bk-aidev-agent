@@ -14,8 +14,17 @@
       <div class="title">{{ title }}</div>
     </div>
     <div class="right-section">
-      <!-- <i class="bkai-icon bkai-xinzengliaotian"></i> -->
-      <!-- <i class="bkai-icon bkai-history"></i> -->
+      <i
+        class="bkai-icon bkai-xinzengliaotian"
+        v-bk-tooltips="{ content: t('新增聊天'), boundary: 'parent' }"
+        @click="handleNewChat"
+      ></i>
+      <BkPopover ref="historyPanelRef" theme="light" trigger="click" boundary="parent">
+        <i class="bkai-icon bkai-history" v-bk-tooltips="{ content: t('历史会话'), boundary: 'parent' }"></i>
+        <template #content>
+          <HistoryPanel @close="handleCloseHistoryPanel" />
+        </template>
+      </BkPopover>
       <i
         ref="compressionRef"
         class="bkai-icon"
@@ -37,6 +46,10 @@
   import logo from '../assets/images/avatar.png';
   import { useTooltip } from '../composables/use-tippy';
   import { t } from '../lang';
+  import { sessionStore } from '../store/sessionStore';
+
+  import { bkTooltips, Popover as BkPopover } from 'bkui-vue';
+  import HistoryPanel from './history-panel.vue';
 
   const props = withDefaults(defineProps<{
     title: string;
@@ -48,7 +61,11 @@
     draggable: true,
   });
 
-  const emit = defineEmits<(e: 'close' | 'toggleCompression') => void>();
+  const emit = defineEmits<(e: 'close' | 'toggleCompression' | 'newChat') => void>();
+
+  const vBkTooltips = bkTooltips;
+
+  const historyPanelRef = ref<InstanceType<typeof BkPopover> | null>(null);
 
   const compressionIcon = computed(() => {
     return props.isCompressionHeight ? 'bkai-morenchicun' : 'bkai-yasuo';
@@ -97,6 +114,22 @@
   onBeforeUnmount(() => {
     destroyAll();
   });
+
+  const handleCloseHistoryPanel = () => {
+    historyPanelRef.value?.hide();
+  };
+
+  // 处理新增聊天按钮点击
+  const handleNewChat = async () => {
+    try {
+      // 通知父组件
+      emit('newChat')
+      // 创建新会话
+      await sessionStore.initSession(false)
+    } catch (error) {
+      console.error('Failed to create new chat:', error)
+    }
+  }
 </script>
 
 <style lang="scss" scoped>
