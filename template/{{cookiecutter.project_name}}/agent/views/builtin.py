@@ -61,7 +61,7 @@ class PluginViewSet(ViewSetMixin, APIView):
 class ChatSessionViewSet(PluginViewSet):
     def list(self, request):
         client = BKAidevApi.get_client()
-        result = client.api.list_chat_session(headers={"BKAIDEV-USER": request.user.username})
+        result = client.api.list_chat_session(headers={"X-BKAIDEV-USER": request.user.username})
         return Response(data=result["data"])
 
     @action(["POST"], url_path="batch_delete", detail=False)
@@ -72,7 +72,7 @@ class ChatSessionViewSet(PluginViewSet):
 
     def create(self, request):
         client = BKAidevApi.get_client()
-        result = client.api.create_chat_session(json=request.data, headers={"BKAIDEV-USER": request.user.username})
+        result = client.api.create_chat_session(json=request.data, headers={"X-BKAIDEV-USER": request.user.username})
         return Response(data=result["data"])
 
     def update(self, request, pk, **kwargs):
