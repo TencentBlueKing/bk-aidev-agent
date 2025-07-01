@@ -705,6 +705,9 @@
     flex-direction: column;
     width: 100%;
     height: 100%;
+    :deep(.icon-search::before) {
+      content: none !important;
+    }
   }
 
   .content-wrapper {
