@@ -80,6 +80,12 @@ export const langData = {
   恢复默认大小: 'Restore default size',
   无匹配结果: 'No matching results',
   'AI 小鲸': 'AI BK GPT',
+  返回底部: 'Back to bottom',
+  停止生成: 'Stop generating',
+  复制: 'Copy',
+  重新生成: 'Regenerate',
+  引用: 'Quote',
+  编辑: 'Edit',
 } as const;
 
 export const zhLangData = {

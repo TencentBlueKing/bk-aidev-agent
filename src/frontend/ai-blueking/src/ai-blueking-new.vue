@@ -108,14 +108,14 @@
                       v-if="currentSessionLoading"
                       color="#EA3636"
                       icon="bkaitingzhishengcheng"
-                      text="停止生成"
+                      :text="t('停止生成')"
                       @click="handleStop"
                     />
                     <BarButton
                       v-if="showScrollToBottom"
                       color="#979BA5"
                       icon="bkaijiantou"
-                      text="返回底部"
+                      :text="t('返回底部')"
                       @click="scrollMainToBottom"
                     />
                   </div>
@@ -534,6 +534,8 @@
     currentShortcut.value = undefined;
 
     !isShow.value && handleShow();
+
+    currentSessionLoading.value && handleStop();
 
     // 如果会话未初始化，先初始化
     if (!isSessionInitialized.value && props.url) {

@@ -13,6 +13,7 @@ export const useCustomForm = (shortcut: Ref<IShortcut>) => {
         data.push({
           [item.key]: item.selectedText || item.default || '',
           context_type: item.type,
+          __key: item.key,
         });
         return data;
       },

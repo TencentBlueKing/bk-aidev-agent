@@ -97,7 +97,10 @@
     formRef.value?.validate().then(() => {
       emit('submit', {
         shortcut: props.shortcut,
-        formData: formData.value,
+        formData: formData.value.map(item => ({
+          ...item,
+          __value: item[item.__key]
+        }))
       });
     });
   };
