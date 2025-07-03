@@ -39,7 +39,7 @@ class TestStructedAgent:
         tools = [client.construct_tool(tool_code) for tool_code in tool_codes]
         knowledge_bases = [client.api.appspace_retrieve_knowledgebase(path_params={"id": 263})["data"]]
         role_prompt = """
-        此外，必须记住当前用户(bk_username)是reynalddeng，这是你查询用户权限的唯一凭据！
+        此外，必须记住当前用户(bk_username)是user001，这是你查询用户权限的唯一凭据！
         非常重要！如果要为GET请求生成action_input, 必须为每个参数带上"query__"前缀；如果要为POST请求生成action_input, 必须为每个参数带上"body__"前缀。
         非常重要！你的回答必须用markdown格式，在回答跟任务异常或报错相关的问题时，至少包含三个同层级的标题：现象分析、根因分析、解决方案，缺一不可！在此基础上可以新增次级标题。
         非常重要！用户没有权限直接接触版本机，绝对不要展示任何命令行操作！

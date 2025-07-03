@@ -86,7 +86,7 @@ class TestAPI:
         }
         result = client.api.add_knowledge_item(
             json=obj,
-            headers={"X-BKAIDEV-USER": "wenxingtang"},
+            headers={"X-BKAIDEV-USER": "user001"},
         )
         print(result)
 
@@ -97,7 +97,7 @@ class TestAPI:
                 "dataset_id": 9,
                 "data": {"text": "test001"},
             },
-            headers={"X-BKAIDEV-USER": "wenxingtang"},
+            headers={"X-BKAIDEV-USER": "user001"},
         )
         print(result)
 
