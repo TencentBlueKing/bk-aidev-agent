@@ -16,7 +16,8 @@ We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
 
-from jinja2 import BaseLoader, Environment
+from jinja2 import BaseLoader
+from jinja2.sandbox import SandboxedEnvironment as Environment
 from langchain_core.prompts import ChatPromptTemplate
 
 env = Environment(loader=BaseLoader)
@@ -604,7 +605,7 @@ intent_recognition = ChatPromptTemplate.from_messages(
             """你是一个智能的决策者。我会给你一些意图选项，每项包含包含意图类别、意图名称和意图描述。
             请你根据用户的提问，选择一个或多个适合解答用户的问题的意图，输出格式必须为纯JSON数组（不要包含任何markdown标记），例如：
             [{"意图类别": "xxx","意图名称": "xxx","意图描述": "xxx"},{"意图类别": "xxx","意图名称": "xxx","意图描述": "xxx"}]
-"""
+""",
         ),
         (
             "human",
