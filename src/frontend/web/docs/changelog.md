@@ -8,6 +8,13 @@ export default {
     return {
       changelogData: [
         {
+          version: "v1.0.3",
+          date: "2025-07-03",
+          features: [
+            "支持动态更新 `requestOptions` 属性，允许在运行时修改请求参数",
+          ],
+        },
+        {
           version: "v1.0.2",
           date: "2025-06-25",
           features: [
@@ -267,4 +274,4 @@ export default {
     }
   }
 }
-</script> 
+</script>

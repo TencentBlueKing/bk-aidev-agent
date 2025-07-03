@@ -250,6 +250,8 @@
     ]
   })
 
+  const requestOptionsRef = computed(() => props.requestOptions);
+
   // 使用可调整大小的容器
   const {
     minWidth,
@@ -524,7 +526,7 @@
 
     chat({
       sessionCode: sessionCode.value,
-      ...props.requestOptions,
+      ...requestOptionsRef.value
     })
 
     emit('shortcut-click', shortcut);

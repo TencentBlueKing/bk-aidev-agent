@@ -1,5 +1,33 @@
 # 更新日志
 
+## [1.0.3] - 2025-07-03
+
+### 新增功能
+- **支持动态更新 `requestOptions`**：
+  - `requestOptions` 属性现在支持动态更新，允许在运行时修改请求参数。
+  - 这使得开发者可以根据应用状态变化，灵活调整发送给 AI 的数据。
+
+```html
+<template>
+  <AIBlueking :request-options="dynamicOptions" />
+</template>
+
+<script setup>
+import { ref, reactive } from 'vue';
+
+const dynamicOptions = reactive({
+  data: {
+    param1: 'initial_value'
+  }
+});
+
+// 在运行时更新
+setTimeout(() => {
+  dynamicOptions.data.param1 = 'new_value';
+}, 2000);
+</script>
+```
+
 ## [1.0.2] - 2025-06-25
 
 ### 新增功能

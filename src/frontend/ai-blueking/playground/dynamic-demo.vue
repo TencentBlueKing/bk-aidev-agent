@@ -6,7 +6,6 @@
     />
     <div class="demo-content">
       <FeatureCards />
-
       <div class="article-section">
         <div class="article-card">
           <h2>使用示例</h2>
@@ -59,9 +58,7 @@
       title="aaa"
       hello-text="bbb"
       :request-options="{
-        data: {
-          preset: 'QA',
-        },
+        data: requestData,
       }"
       :prompts="prompts"
       :url="url"
@@ -95,11 +92,12 @@
 
   const aiBlueking = ref<AIBluekingExpose | null>(null);
 
-  const prefix = (process.env.BK_API_URL_TMPL || '')
-    .replace('{api_name}', process.env.BK_API_GATEWAY_NAME || '')
-    .replace(/^(http|https):/, `${window.location.protocol}`);
 
-  const url = `${prefix}/prod/bk_plugin/plugin_api/assistant/`;
+  const url = process.env.BK_API_URL_TMPL
+
+  const requestData = {
+    data: 123
+  }
 
   // 事件日志相关
   const { eventLogs, addLog, clearLogs } = useEventLogger();
