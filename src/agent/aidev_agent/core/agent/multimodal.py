@@ -34,7 +34,7 @@ from typing import (
     cast,
 )
 
-from jinja2 import Template
+from jinja2.sandbox import SandboxedEnvironment as Environment
 from langchain.agents import (
     AgentExecutor,
 )
@@ -84,7 +84,7 @@ apply_patches()
 class J2PromptMixin:
     @classmethod
     def get_prefix(cls, prefix: str, **kwargs) -> str:
-        return Template(prefix).render(**kwargs)
+        return Environment().from_string(prefix).render(**kwargs)
 
 
 class LiteEnhancedAgentExecutor(AgentExecutor):
