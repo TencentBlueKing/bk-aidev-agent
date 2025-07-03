@@ -1392,7 +1392,7 @@ class IntentRecognition(BaseModel):
         res = query  # 默认初始化为 query
         if knowledge_items or knowledge_bases or do_tool_resource_retrieve:
             if agent_options.knowledge_query_options.independent_query_mode == IndependentQueryMode.REWRITE:
-                res = self.query_cls_pipeline(query, llm, agent_options, **kwargs)
+                res = self.query_cls_pipeline(chat_history, query, llm, agent_options, **kwargs)
             elif agent_options.knowledge_query_options.independent_query_mode == IndependentQueryMode.SUM_AND_CONCATE:
                 sum_res = self.sum_chat_history_for_query(chat_history, query, llm, **kwargs)
                 if sum_res:
