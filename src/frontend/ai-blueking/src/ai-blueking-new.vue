@@ -119,7 +119,7 @@
                   v-model="inputMessage"
                   :loading="currentSessionLoading"
                   :prompts="promptList"
-                  :shortcuts="shortcuts"
+                  :shortcuts="shortcuts || []"
                   :disabled="props.disabledInput"
                   @height-change="handleInputHeightChange"
                   @send="handleSendMessage"
@@ -140,7 +140,7 @@
         @click="handleNimbusClick"
       />
       <RenderPopup
-        :shortcuts="shortcuts"
+        :shortcuts="shortcuts || []"
         @click="isShow = true"
         @shortcut-click="handleShortcutClick"
       />
@@ -249,8 +249,6 @@
       ...predefinedQuestions.value,
     ]
   })
-
-  const requestOptionsRef = computed(() => props.requestOptions);
 
   // 使用可调整大小的容器
   const {
@@ -419,6 +417,18 @@
     }
   });
 
+  // 监听 requestOptions 变化
+  watch(
+    () => props.requestOptions,
+    (newOptions) => {
+      updateRequestOptions({
+        url: props.url,
+        ...newOptions,
+      });
+    },
+    { deep: true },
+  );
+
   // 如果初始 URL 存在且弹窗默认显示，则立即初始化会话
   if (props.url && !props.defaultMinimize) {
     initSession();
@@ -526,7 +536,7 @@
 
     chat({
       sessionCode: sessionCode.value,
-      ...requestOptionsRef.value
+      ...props.requestOptions,
     })
 
     emit('shortcut-click', shortcut);
