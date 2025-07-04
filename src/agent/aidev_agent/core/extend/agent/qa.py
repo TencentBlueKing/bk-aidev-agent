@@ -503,7 +503,7 @@ class IntentRecognitionMixin(BaseModel):
             chat_prompt_template_variable_suffix = "_tool_calling"
         elif issubclass(cls, StructuredChatCommonQAAgent):
             chat_prompt_template_variable_suffix = "_structured_chat"
-        if llm.model_name == "hunyuan" and chat_prompt_template_variable_suffix == "_structured_chat":
+        if "hunyuan" in llm.model_name and llm.model_name != "hunyuan-t1" and chat_prompt_template_variable_suffix == "_structured_chat":
             raise RuntimeError("混元的prompt除system之外必须是一问一答形式，请检查 chat prompt template")
 
         # 根据不同的 IntentStatus 分别进行处理
