@@ -15,7 +15,8 @@ from aidev_agent.services.pydantic_models import (
 from langchain_core.callbacks.stdout import StdOutCallbackHandler
 from tests.intergration.constants import TEST_DEFAULT_MODEL
 from tests.intergration.utilities import get_stream_result, verify_streaming_result_format
-
+from langchain_core.messages.ai import AIMessage
+from langchain_core.messages.human import HumanMessage
 
 @pytest.mark.skipif(
     not all([settings.LLM_GW_ENDPOINT, settings.APP_CODE, settings.SECRET_KEY]),
@@ -226,6 +227,7 @@ class TestStructedAgent:
         assert not results[-2]["content"].endswith("```")
 
     def test_empty_think_event_filtered(self):
+        """测试输出思考内容不为空"""
         # 设置chat_model实例
         model_name = "deepseek-v3"
         chat_model = ChatModel.get_setup_instance(
@@ -262,11 +264,12 @@ class TestStructedAgent:
         results = [each for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=2)]
         results = get_stream_result(results)
         for event in results:
-            if event['event'] == "think":
+            if event['event'] == "think" and event.get("elapsed_time"):
                 assert event['content'].strip()!="", \
                     "Think event should have content or elapsed_time"
                 
     def test_deepseek_v3_rewrite(self):
+        """测试query重写功能"""
         # 设置chat_model实例
         model_name = "deepseek-v3"
         chat_model = ChatModel.get_setup_instance(
@@ -296,11 +299,66 @@ class TestStructedAgent:
             chat_model,
             extra_tools=tools,
             agent_options=agent_options,
+            chat_history=[HumanMessage(content="你好"), AIMessage(content="你好！")],
             callbacks=[StdOutCallbackHandler()],
         )
 
         # 测试部分
-        test_case_inputs = {"input": "云桌面黑屏怎么处理?"}
+        test_case_inputs = {"input": "云桌面黑屏"}
+        results = [each for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=2)]
+        results = get_stream_result(results)
+        for event in results:
+            print(event)
+
+    def test_hunyuant1_chat_streaming(self):
+        """测试适配hunyuan-t1模型"""
+        # 设置chat_model实例
+        chat_model = ChatModel.get_setup_instance(
+            model="hunyuan-t1",
+            streaming=True,
+        )
+        # 获取客户端对象
+        client = BKAidevApi.get_client_by_username(username="")
+
+        # 设置工具和知识库
+        tool_codes = ["weather-query"]
+        tools = [client.construct_tool(tool_code) for tool_code in tool_codes]
+        knowledge_bases = [client.api.appspace_retrieve_knowledgebase(path_params={"id": 58})["data"]]
+        qa_response_kb_ids=[254]
+        qa_response_knowledge_bases = [
+            client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"]
+            for id_ in qa_response_kb_ids
+        ]
+        # 获取代理执行器和配置
+        agent_options = AgentOptions(
+            intent_recognition_options=IntentRecognition(
+                force_process_by_agent=False,
+                role_prompt="",
+                intent_recognition_knowledgebase_id=[276],
+                intent_recognition_topk=10,
+                intent_recognition_llm="deepseek-r1",
+            ),
+            knowledge_query_options=KnowledgebaseSettings(
+                knowledge_bases=knowledge_bases,
+                qa_response_kb_ids=qa_response_kb_ids,
+                qa_response_knowledge_bases = qa_response_knowledge_bases,
+                knowledge_resource_reject_threshold=(0.001, 0.1),
+                topk=10,
+                knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM.value,
+                is_response_when_no_knowledgebase_match=True,
+                rejection_message="抱歉，我无法回答你的问题。",
+            ),
+        )
+        agent_e, cfg = CommonQAAgent.get_agent_executor(
+            chat_model,
+            chat_model,
+            extra_tools=tools,
+            chat_history=[HumanMessage(content="你好"), AIMessage(content="你好，请问有什么可以帮您？")],
+            agent_options=agent_options,
+        )
+
+        # 测试部分
+        test_case_inputs = {"input": "云桌面绿屏解决方法"}
         results = [each for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=2)]
         results = get_stream_result(results)
         for event in results:

@@ -822,152 +822,165 @@ class IntentRecognition(BaseModel):
         ):
             raise RuntimeError("请至少选择一种召回方式！")
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            if agent_options.knowledge_query_options.with_index_specific_search:
-                future_index_specific = executor.submit(
-                    self.search_knowledge_index_specific,
-                    knowledge_items=knowledge_items,
-                    knowledge_bases=knowledge_bases,
-                    query=query_for_search,
-                    topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
-                    agent_options=agent_options,
-                    **kwargs,
-                )
-            if agent_options.knowledge_query_options.qa_response_kb_ids:
-                client = BKAidevApi.get_client_by_username(username="")
-                qa_response_knowledge_bases = [
-                    client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"]
-                    for id_ in agent_options.knowledge_query_options.qa_response_kb_ids
-                ]
+            if knowledge_bases:
+                if agent_options.knowledge_query_options.with_index_specific_search:
+                    future_index_specific = executor.submit(
+                        self.search_knowledge_index_specific,
+                        knowledge_items=knowledge_items,
+                        knowledge_bases=knowledge_bases,
+                        query=query_for_search,
+                        topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
+                        agent_options=agent_options,
+                        **kwargs,
+                    )
+                if (
+                    agent_options.intent_recognition_options.with_index_specific_search_init
+                    and query_for_search != kwargs["input"]
+                ):
+                    future_index_specific_init = executor.submit(
+                        self.search_knowledge_index_specific,
+                        knowledge_items=knowledge_items,
+                        knowledge_bases=knowledge_bases,
+                        query=kwargs["input"],
+                        topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
+                        agent_options=agent_options,
+                        **kwargs,
+                    )
+                if agent_options.intent_recognition_options.with_index_specific_search_translation:
+                    future_translated_query = executor.submit(
+                        self.query_translation,
+                        query=(
+                            query_for_search
+                            if agent_options.knowledge_query_options.use_independent_query_in_translation
+                            else kwargs["input"]
+                        ),
+                        llm=llm,
+                        **kwargs,
+                    )
+                    translated_query = future_translated_query.result()
+                    future_index_specific_translation = executor.submit(
+                        self.search_knowledge_index_specific_translation,
+                        knowledge_items=knowledge_items,
+                        knowledge_bases=knowledge_bases,
+                        translated_query=translated_query,
+                        topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
+                        agent_options=agent_options,
+                        **kwargs,
+                    )
+                    if agent_options.knowledge_query_options.use_translated_query_in_scores and translated_query:
+                        kwargs["translated_query"] = translated_query
+                if agent_options.knowledge_query_options.with_es_search_query:
+                    future_es_query = executor.submit(
+                        self.search_knowledge_es_query,
+                        knowledge_items=knowledge_items,
+                        knowledge_bases=knowledge_bases,
+                        query=query_for_search,
+                        topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
+                        **kwargs,
+                    )
+                if (
+                    agent_options.intent_recognition_options.with_index_specific_search_keywords
+                    or agent_options.knowledge_query_options.with_es_search_keywords
+                ):
+                    future_extracted_keywords = executor.submit(
+                        self.extract_query_keywords,
+                        query=query_for_search,
+                        llm=llm,
+                        **kwargs,
+                    )
+                if agent_options.intent_recognition_options.with_index_specific_search_keywords:
+                    future_index_specific_keywords = executor.submit(
+                        self.search_knowledge_index_specific_keywords,
+                        knowledge_items=knowledge_items,
+                        knowledge_bases=knowledge_bases,
+                        extracted_keywords=future_extracted_keywords.result(),
+                        topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
+                        agent_options=agent_options,
+                        **kwargs,
+                    )
+                if agent_options.knowledge_query_options.with_es_search_keywords:
+                    future_es_keywords = executor.submit(
+                        self.search_knowledge_es_keywords,
+                        knowledge_items=knowledge_items,
+                        knowledge_bases=knowledge_bases,
+                        extracted_keywords=future_extracted_keywords.result(),
+                        topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
+                        **kwargs,
+                    )
+                # TODO: 去除 nature 分支
+                if agent_options.knowledge_query_options.with_structured_data:
+                    future_nature = executor.submit(
+                        self.search_knowledge_nature,
+                        knowledge_items=knowledge_items,
+                        knowledge_bases=knowledge_bases,
+                        query=query_for_search,
+                        topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
+                        agent_options=agent_options**kwargs,
+                    )
+            if agent_options.knowledge_query_options.qa_response_knowledge_bases:
                 future_qa_response = executor.submit(
                     self.search_knowledge_index_specific,
                     knowledge_items=knowledge_items,
-                    knowledge_bases=qa_response_knowledge_bases,
+                    knowledge_bases=agent_options.knowledge_query_options.qa_response_knowledge_bases,
                     query=query_for_search,
                     topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
                     agent_options=agent_options,
                     **kwargs,
-                )
-            if (
-                agent_options.intent_recognition_options.with_index_specific_search_init
-                and query_for_search != kwargs["input"]
-            ):
-                future_index_specific_init = executor.submit(
-                    self.search_knowledge_index_specific,
-                    knowledge_items=knowledge_items,
-                    knowledge_bases=knowledge_bases,
-                    query=kwargs["input"],
-                    topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
-                    agent_options=agent_options,
-                    **kwargs,
-                )
-            if agent_options.intent_recognition_options.with_index_specific_search_translation:
-                future_translated_query = executor.submit(
-                    self.query_translation,
-                    query=(
-                        query_for_search
-                        if agent_options.knowledge_query_options.use_independent_query_in_translation
-                        else kwargs["input"]
-                    ),
-                    llm=llm,
-                    **kwargs,
-                )
-                translated_query = future_translated_query.result()
-                future_index_specific_translation = executor.submit(
-                    self.search_knowledge_index_specific_translation,
-                    knowledge_items=knowledge_items,
-                    knowledge_bases=knowledge_bases,
-                    translated_query=translated_query,
-                    topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
-                    agent_options=agent_options,
-                    **kwargs,
-                )
-                if agent_options.knowledge_query_options.use_translated_query_in_scores and translated_query:
-                    kwargs["translated_query"] = translated_query
-            if agent_options.knowledge_query_options.with_es_search_query:
-                future_es_query = executor.submit(
-                    self.search_knowledge_es_query,
-                    knowledge_items=knowledge_items,
-                    knowledge_bases=knowledge_bases,
-                    query=query_for_search,
-                    topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
-                    **kwargs,
-                )
-            if (
-                agent_options.intent_recognition_options.with_index_specific_search_keywords
-                or agent_options.knowledge_query_options.with_es_search_keywords
-            ):
-                future_extracted_keywords = executor.submit(
-                    self.extract_query_keywords,
-                    query=query_for_search,
-                    llm=llm,
-                    **kwargs,
-                )
-            if agent_options.intent_recognition_options.with_index_specific_search_keywords:
-                future_index_specific_keywords = executor.submit(
-                    self.search_knowledge_index_specific_keywords,
-                    knowledge_items=knowledge_items,
-                    knowledge_bases=knowledge_bases,
-                    extracted_keywords=future_extracted_keywords.result(),
-                    topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
-                    agent_options=agent_options,
-                    **kwargs,
-                )
-            if agent_options.knowledge_query_options.with_es_search_keywords:
-                future_es_keywords = executor.submit(
-                    self.search_knowledge_es_keywords,
-                    knowledge_items=knowledge_items,
-                    knowledge_bases=knowledge_bases,
-                    extracted_keywords=future_extracted_keywords.result(),
-                    topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
-                    **kwargs,
-                )
-            # TODO: 去除 nature 分支
-            if agent_options.knowledge_query_options.with_structured_data:
-                future_nature = executor.submit(
-                    self.search_knowledge_nature,
-                    knowledge_items=knowledge_items,
-                    knowledge_bases=knowledge_bases,
-                    query=query_for_search,
-                    topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
-                    agent_options=agent_options**kwargs,
                 )
 
             retrieved_results_index_specific = (
-                future_index_specific.result()
-                if agent_options.knowledge_query_options.with_index_specific_search
+                future_index_specific.result() 
+                if agent_options.knowledge_query_options.with_index_specific_search 
+                and "future_index_specific" in locals() 
                 else []
             )
             retrieved_results_qa_response = (
-                future_qa_response.result() if agent_options.knowledge_query_options.qa_response_kb_ids else []
+                future_qa_response.result() 
+                if agent_options.knowledge_query_options.qa_response_knowledge_bases 
+                and "future_qa_response" in locals() 
+                else []
             )
-            if (
-                agent_options.intent_recognition_options.with_index_specific_search_init
-                and query_for_search != kwargs["input"]
-            ):
-                retrieved_results_index_specific_init = future_index_specific_init.result()
-            else:
-                retrieved_results_index_specific_init = []
+            retrieved_results_index_specific_init = (
+                future_index_specific_init.result() 
+                if agent_options.intent_recognition_options.with_index_specific_search_init 
+                and query_for_search != kwargs["input"] 
+                and "future_index_specific" in locals() 
+                else []
+            )
 
-            if agent_options.intent_recognition_options.with_index_specific_search_translation:
-                retrieved_results_index_specific_translation = future_index_specific_translation.result()
-            else:
-                retrieved_results_index_specific_translation = []
+            retrieved_results_index_specific_translation = (
+                future_index_specific_translation.result() 
+                if agent_options.intent_recognition_options.with_index_specific_search_translation 
+                and "future_index_specific" in locals() 
+                else []
+            )
 
-            if agent_options.intent_recognition_options.with_index_specific_search_keywords:
-                retrieved_results_index_specific_keywords = future_index_specific_keywords.result()
-            else:
-                retrieved_results_index_specific_keywords = []
+            retrieved_results_index_specific_keywords = (
+                future_index_specific_keywords.result() 
+                if agent_options.intent_recognition_options.with_index_specific_search_keywords 
+                and "future_index_specific" in locals() 
+                else []
+            )
 
             retrieved_results_es_query = (
-                future_es_query.result() if agent_options.knowledge_query_options.with_es_search_query else []
+                future_es_query.result() 
+                if agent_options.knowledge_query_options.with_es_search_query 
+                and "future_index_specific" in locals() 
+                else []
             )
 
             retrieved_results_es_keywords = (
-                future_es_keywords.result() if agent_options.knowledge_query_options.with_es_search_keywords else []
+                future_es_keywords.result() 
+                if agent_options.knowledge_query_options.with_es_search_keywords 
+                and "future_index_specific" in locals() 
+                else []
             )
 
             retrieved_results_nature = (
-                future_nature.result() if agent_options.knowledge_query_options.with_structured_data else []
+                future_nature.result() 
+                if agent_options.knowledge_query_options.with_structured_data 
+                and "future_index_specific" in locals() 
+                else []
             )
 
         if agent_options.knowledge_query_options.with_rrf:
@@ -1150,7 +1163,7 @@ class IntentRecognition(BaseModel):
         # 资源召回和解析
         # ====================================================================================================
         # 知识类资源
-        if knowledge_items or knowledge_bases:
+        if knowledge_items or knowledge_bases or agent_options.knowledge_query_options.qa_response_knowledge_bases:
             (
                 knowledge_resources_emb_recalled,
                 knowledge_resources_lowly_relevant,
@@ -1390,7 +1403,8 @@ class IntentRecognition(BaseModel):
         # NOTE: 目前认为只有绑定了知识库，或者需要进行工具类资源召回的情况下，才可能需要进行 independent query 的改写
         # 此外，还加了 with_query_cls_and_rewrite 总开关
         res = query  # 默认初始化为 query
-        if knowledge_items or knowledge_bases or do_tool_resource_retrieve:
+        if (knowledge_items or knowledge_bases or do_tool_resource_retrieve 
+            or agent_options.knowledge_query_options.qa_response_knowledge_bases):
             if agent_options.knowledge_query_options.independent_query_mode == IndependentQueryMode.REWRITE:
                 res = self.query_cls_pipeline(chat_history, query, llm, agent_options, **kwargs)
             elif agent_options.knowledge_query_options.independent_query_mode == IndependentQueryMode.SUM_AND_CONCATE:

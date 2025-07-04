@@ -17,6 +17,7 @@ from langchain_core.messages.ai import AIMessage
 from langchain_core.messages.human import HumanMessage
 
 
+
 @pytest.fixture
 def add_session():
     client = BKAidevApi.get_client()
@@ -96,7 +97,12 @@ def test_CommonQAAgent_chat_streaming():
     # 设置工具
     tool_codes = ["weather-query"]
     tools = [client.construct_tool(tool_code) for tool_code in tool_codes]
-
+    knowledge_bases = [client.api.appspace_retrieve_knowledgebase(path_params={"id": 58})["data"]]
+    qa_response_kb_ids=[254]
+    qa_response_knowledge_bases = [
+        client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"]
+        for id_ in qa_response_kb_ids
+    ]
     # 获取代理执行器和配置
     chat_history = [HumanMessage(content="你好"), AIMessage(content="你好，请问有什么可以帮您？")]
     agent_options = AgentOptions(
@@ -108,9 +114,9 @@ def test_CommonQAAgent_chat_streaming():
             intent_recognition_llm="deepseek-r1",
         ),
         knowledge_query_options=KnowledgebaseSettings(
-            knowledge_base_ids=[58],
-            knowledge_item_ids=[10805],
-            qa_response_kb_ids=[254],
+            knowledge_bases = knowledge_bases,
+            qa_response_kb_ids = qa_response_kb_ids,
+            qa_response_knowledge_bases = qa_response_knowledge_bases,
             knowledge_resource_reject_threshold=(0.001, 0.1),
             topk=10,
             knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM.value,
@@ -127,8 +133,7 @@ def test_CommonQAAgent_chat_streaming():
     )
 
     # 测试部分
-    test_case_inputs = {"input": "日志清洗方法"}
-
+    test_case_inputs = {"input": "云桌面绿屏"}
     for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=2):
         if each == "data: [DONE]\n\n":
             break
@@ -144,7 +149,8 @@ def test_CommonQAAgent_chat_streaming():
 def test_qa_response(test_input, expected_kb_ids):
     # 初始化聊天模型
     chat_model = ChatModel.get_setup_instance(
-        model="deepseek-v3",
+        # model="deepseek-v3",
+        model="hunyuan-t1",
         streaming=True,
     )
 
@@ -156,7 +162,11 @@ def test_qa_response(test_input, expected_kb_ids):
 
     client = BKAidevApi.get_client_by_username(username="")
     tools = [client.construct_tool("weather-query")]
-
+    knowledge_bases = [client.api.appspace_retrieve_knowledgebase(path_params={"id": 58})["data"]]
+    qa_response_knowledge_bases = [
+        client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"]
+        for id_ in expected_kb_ids
+    ]
     # 配置带参数的智能体选项
     agent_options = AgentOptions(
         intent_recognition_options=IntentRecognition(
@@ -164,9 +174,9 @@ def test_qa_response(test_input, expected_kb_ids):
             role_prompt="",
         ),
         knowledge_query_options=KnowledgebaseSettings(
-            knowledge_base_ids=[58],
-            knowledge_item_ids=[10805],
+            knowledge_bases=knowledge_bases,
             qa_response_kb_ids=expected_kb_ids,
+            qa_response_knowledge_bases=qa_response_knowledge_bases,
             knowledge_resource_reject_threshold=(0.001, 0.1),
             topk=10,
             knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM.value,
