@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const RateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -22,7 +23,12 @@ app.use(express.static(distDir, {
 }));
 
 // 处理所有路由，确保SPA正常工作
-app.use((req, res, next) => {
+const spaRateLimiter = RateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // max 100 requests per windowMs
+});
+
+app.use(spaRateLimiter, (req, res, next) => {
   // 排除静态资源请求
   if (req.path.startsWith('/assets/')) {
     return next();
