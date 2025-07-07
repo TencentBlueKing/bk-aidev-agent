@@ -24,6 +24,10 @@ from tests.intergration.utilities import get_stream_result, verify_streaming_res
 class TestStructedAgent:
     def test_CommonQAAgent_case_thinking(self):
         # 设置chat_model实例
+        import jinja2
+        import jinja2.sandbox
+
+        assert jinja2.Environment == jinja2.sandbox.SandboxedEnvironment
         model_name = "deepseek-r1"
         chat_model = ChatModel.get_setup_instance(
             model=model_name,
@@ -34,7 +38,7 @@ class TestStructedAgent:
         client = BKAidevApi.get_client_by_username(username="")
         # 设置工具
         tool_codes = [
-           "weather-query",
+            "weather-query",
         ]
         tools = [client.construct_tool(tool_code) for tool_code in tool_codes]
         knowledge_bases = [client.api.appspace_retrieve_knowledgebase(path_params={"id": 263})["data"]]
@@ -243,7 +247,7 @@ class TestStructedAgent:
         agent_options = AgentOptions(
             intent_recognition_options=IntentRecognition(tool_output_compress_thrd=5000),
             knowledge_query_options=KnowledgebaseSettings(
-                knowledge_bases = knowledge_bases,
+                knowledge_bases=knowledge_bases,
                 knowledge_resource_reject_threshold=(0.001, 0.1),
                 topk=10,
                 knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM,
@@ -258,14 +262,13 @@ class TestStructedAgent:
         )
 
         # 测试部分
-        test_case_inputs = {"input": "云桌面黑屏怎么处理?"}      
+        test_case_inputs = {"input": "云桌面黑屏怎么处理?"}
         results = [each for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=2)]
         results = get_stream_result(results)
         for event in results:
-            if event['event'] == "think":
-                assert event['content'].strip()!="", \
-                    "Think event should have content or elapsed_time"
-                
+            if event["event"] == "think":
+                assert event["content"].strip() != "", "Think event should have content or elapsed_time"
+
     def test_deepseek_v3_rewrite(self):
         # 设置chat_model实例
         model_name = "deepseek-v3"
