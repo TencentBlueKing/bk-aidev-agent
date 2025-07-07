@@ -264,8 +264,8 @@ class TestStructedAgent:
         results = [each for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=2)]
         results = get_stream_result(results)
         for event in results:
-            if event['event'] == "think" and event.get("elapsed_time"):
-                assert event['content'].strip()!="", \
+            if event.get('event') == "think" and event.get("elapsed_time"):
+                assert event.get('content', '').strip() != "", \
                     "Think event should have content or elapsed_time"
                 
     def test_deepseek_v3_rewrite(self):
