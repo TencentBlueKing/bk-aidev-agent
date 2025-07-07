@@ -730,9 +730,11 @@ class CommonQAStreamingMixIn:
         last_ret_is_empty = False
         front_end_display = True
         first_after_LOADINGMESSAGE = True
-        if (is_deepseek_r1_series_models(self.llm)
-                or "deepseek-v3" in self.llm.model_name
-                or "hunyuan-t1" in self.llm.model_name):
+        if (
+            is_deepseek_r1_series_models(self.llm)
+            or "deepseek-v3" in self.llm.model_name
+            or "hunyuan-t1" in self.llm.model_name
+        ):
             # 用于去除 think 标识位
             max_cache_length = 50
             cache = deque(maxlen=max_cache_length)
@@ -772,9 +774,11 @@ class CommonQAStreamingMixIn:
                             "reasoning_content", None
                         ):
                             continue
-                        if (is_deepseek_r1_series_models(self.llm)
-                                or "deepseek-v3" in self.llm.model_name
-                                or "hunyuan-t1" in self.llm.model_name):
+                        if (
+                            is_deepseek_r1_series_models(self.llm)
+                            or "deepseek-v3" in self.llm.model_name
+                            or "hunyuan-t1" in self.llm.model_name
+                        ):
                             if isinstance(self, StructuredChatCommonQAAgent):
                                 # 如果是 StructuredChatCommonQAAgent，则会将所有中间 action 步骤也归为 think
                                 # 判断最终答案的逻辑在后面，所以这里先统一成 text
@@ -974,9 +978,11 @@ class CommonQAStreamingMixIn:
                 if ret:
                     first_chunk = False
                     last_ret_is_empty = ret.get("content", "") == self.LOADING_AGENT_MESSAGE
-                    if (is_deepseek_r1_series_models(self.llm)
-                            or "deepseek-v3" in self.llm.model_name
-                            or "hunyuan-t1" in self.llm.model_name):
+                    if (
+                        is_deepseek_r1_series_models(self.llm)
+                        or "deepseek-v3" in self.llm.model_name
+                        or "hunyuan-t1" in self.llm.model_name
+                    ):
                         if ret.get("content", "") == self.LOADING_AGENT_MESSAGE:
                             last_event_type = ret["event"]
                             yield self._yield_ret(ret)
@@ -1008,9 +1014,11 @@ class CommonQAStreamingMixIn:
                                     yield self._yield_ret(ret)
                     else:
                         yield self._yield_ret(ret)
-            if (is_deepseek_r1_series_models(self.llm)
-                    or "deepseek-v3" in self.llm.model_name
-                    or "hunyuan-t1" in self.llm.model_name):
+            if (
+                is_deepseek_r1_series_models(self.llm)
+                or "deepseek-v3" in self.llm.model_name
+                or "hunyuan-t1" in self.llm.model_name
+            ):
                 if isinstance(self, StructuredChatCommonQAAgent):
                     # 以下逻辑用于利用 self.end_content 标志跟 final_answer_suffix_to_filter 拼接后进行尾部去除
                     if len(cache) == max_cache_length:
