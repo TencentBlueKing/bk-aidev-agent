@@ -47,7 +47,6 @@ interface ShortCut {
     @receive-text="onReceiveText"
     @receive-end="onReceiveEnd"
     @send-message="onSendMessage"
-    @init-session="onInitSession"
   />
 </template>
 
@@ -63,7 +62,6 @@ const onReceiveStart = () => console.log('Event: receive-start');
 const onReceiveText = () => console.log('Event: receive-text');
 const onReceiveEnd = () => console.log('Event: receive-end');
 const onSendMessage = (message) => console.log('Event: send-message', message);
-const onInitSession = (success) => console.log('Event: init-session', success ? '成功' : '失败');
 </script>
 ```
 
@@ -80,7 +78,6 @@ const onInitSession = (success) => console.log('Event: init-session', success ? 
     @receive-text="onReceiveText"
     @receive-end="onReceiveEnd"
     @send-message="onSendMessage"
-    @init-session="onInitSession"
   />
 </template>
 
@@ -97,8 +94,7 @@ export default {
     onReceiveStart() { console.log('Event: receive-start'); },
     onReceiveText() { console.log('Event: receive-text'); },
     onReceiveEnd() { console.log('Event: receive-end'); },
-    onSendMessage(message) { console.log('Event: send-message', message); },
-    onInitSession(success) { console.log('Event: init-session', success ? '成功' : '失败'); }
+    onSendMessage(message) { console.log('Event: send-message', message); }
   }
 }
 </script>

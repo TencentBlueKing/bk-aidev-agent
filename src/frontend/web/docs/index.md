@@ -23,6 +23,9 @@ features:
   - icon: 💬
     title: 实时对话
     details: 支持流式输出，让对话更自然流畅
+  - icon: 📋
+    title: 多会话管理
+    details: v1.1.0新增！支持创建、切换、管理多个独立会话
   - icon: 📎
     title: 内容引用
     details: 选中文本即可快速引用并提问

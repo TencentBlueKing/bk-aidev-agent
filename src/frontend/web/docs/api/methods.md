@@ -18,12 +18,12 @@
 | `handleDelete(index)`  | `index: number`                             | `void`   | 删除指定索引位置的消息。                                                                                                      |
 | `handleRegenerate(index)` | `index: number`                          | `void`   | 重新生成指定索引位置的消息。                                                                                                  |
 | `handleResend(index, options)` | `index: number, options: {message: string, cite: string}`   | `void`   | 重发指定索引位置的消息，可修改消息内容和引用内容。                                                                          |
-| `initSession()`       | -                                            | `Promise<void>`   | 初始化会话，获取开场白和预设问题。                                                                                       |
 | `updateRequestOptions(options)` | `options: { url?: string; headers?: Record<string, string>; data?: any }` | `void` | 动态更新请求选项，可以修改API地址或请求参数。对于需要在运行时切换智能体或修改请求参数的场景非常有用。 |
 
 ::: danger 已废弃方法
-以下方法在1.0版本中已被移除:
-- `sendChat(options)`: 已被 `handleSendMessage(options)` 替代，请更新您的代码。
+以下方法在相应版本中已被移除:
+- `sendChat(options)` (v1.0.0): 已被 `handleSendMessage(options)` 替代
+- `initSession()` (v1.1.0): 会话初始化现在自动处理，无需手动调用
 :::
 
 ## `ShortCut` 类型

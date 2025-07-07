@@ -26,6 +26,43 @@
 | `defaultTop`    | `Number`          | `0` | 设置组件初始顶部位置，单位为像素。详细说明参见 [界面定制指南](/guide/core-features/ui-customization#拖拽功能控制与初始位置设置)。 |
 | `defaultLeft`   | `Number`          | `undefined` | 设置组件初始左侧位置，单位为像素。不设置会动态计算，设置为 `视窗宽度 - defaultWidth`。详细说明参见 [界面定制指南](/guide/core-features/ui-customization#拖拽功能控制与初始位置设置)。 |
 | `disabledInput` | `Boolean`        | `false`     | 控制输入框是否处于禁用状态。设置为 `true` 时，用户无法在输入框中输入文本。详细说明参见 [界面定制指南](/guide/core-features/ui-customization#输入框禁用控制)。 |
+| `showHistoryIcon` | `Boolean`      | `true`      | **v1.1.0新增** 控制头部历史会话图标的显示。设置为 `false` 时隐藏历史会话按钮。 |
+| `showNewChatIcon` | `Boolean`      | `true`      | **v1.1.0新增** 控制头部新聊天图标的显示。设置为 `false` 时隐藏新建聊天按钮。 |
+
+## 多会话管理功能 <Badge type="tip" text="v1.1.0" />
+
+v1.1.0版本引入了全新的多会话管理功能，支持创建、切换、编辑和删除多个聊天会话：
+
+### 会话管理特性
+
+- **🆕 多会话支持**：可以创建和管理多个独立的聊天会话
+- **📊 历史面板**：按时间分组显示历史会话（今天、昨天、之前）
+- **🔍 会话搜索**：在历史面板中搜索特定会话
+- **✏️ 会话重命名**：直接编辑会话名称
+- **🗑️ 安全删除**：删除会话时提供确认机制
+- **🎨 动态标题**：头部显示当前会话名称
+
+### 相关属性
+
+通过 `showHistoryIcon` 和 `showNewChatIcon` 属性可以控制会话管理相关图标的显示：
+
+```vue
+<template>
+  <!-- 显示所有会话管理功能 -->
+  <AIBlueking
+    :url="apiUrl"
+    :show-history-icon="true"
+    :show-new-chat-icon="true"
+  />
+
+  <!-- 只显示新聊天功能，隐藏历史面板 -->
+  <AIBlueking
+    :url="apiUrl"
+    :show-history-icon="false"
+    :show-new-chat-icon="true"
+  />
+</template>
+```
 
 ::: danger 已废弃属性
 以下属性在1.0版本中已被移除:
