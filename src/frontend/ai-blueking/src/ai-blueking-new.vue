@@ -548,6 +548,7 @@
       sessionCode: sessionCode.value,
       property: {
         extra: {
+          cite: formData.map(item => `${item.__label}: ${item.__value}`).join(', '),
           command: shortcut.id,
           context: [...formData, ...props.requestOptions?.context || []],
         },
