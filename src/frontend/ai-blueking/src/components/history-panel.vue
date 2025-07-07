@@ -151,6 +151,7 @@ const handleSessionClick = (session: ISessionEditItem) => {
   if (!isCurrentSession(session)) {
     sessionStore.switchSessionWithContents(session)
     emit("close")
+    console.log(sessionStore.currentSession.value)
   }
 }
 

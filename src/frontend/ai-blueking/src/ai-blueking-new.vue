@@ -29,6 +29,8 @@
             :title="props.title"
             :is-compression-height="isCompressionHeight"
             :draggable="props.draggable"
+            :show-history-icon="props.showHistoryIcon"
+            :show-new-chat-icon="props.showNewChatIcon"
             @close="handleClose"
             @toggle-compression="toggleCompression"
             @new-chat="handleNewChat"
@@ -172,6 +174,8 @@ interface Props {
   hideHeader?: boolean
   disabledInput?: boolean
   nimbusSize?: "small" | "normal" | "large"
+  showHistoryIcon?: boolean
+  showNewChatIcon?: boolean
 }
 
 // Props 定义
@@ -194,6 +198,8 @@ const props = withDefaults(defineProps<Props>(), {
   hideHeader: false,
   disabledInput: false,
   nimbusSize: "normal",
+  showHistoryIcon: true,
+  showNewChatIcon: true,
 })
 
 // Emits 定义

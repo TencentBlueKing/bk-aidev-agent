@@ -11,15 +11,17 @@
           alt="logo"
         />
       </div>
-      <div class="title">{{ title }}</div>
+      <div class="title">{{ displayTitle }}</div>
     </div>
     <div class="right-section">
       <i
+        v-if="props.showNewChatIcon"
         class="bkai-icon bkai-xinzengliaotian"
         v-bk-tooltips="{ content: t('新增聊天'), boundary: 'parent' }"
         @click="handleNewChat"
       ></i>
       <i
+        v-if="props.showHistoryIcon"
         ref="historyIconRef"
         class="bkai-icon bkai-history"
         v-bk-tooltips="{ content: t('历史会话'), boundary: 'parent' }"
@@ -56,10 +58,14 @@
     title: string;
     isCompressionHeight: boolean;
     draggable: boolean;
+    showHistoryIcon: boolean;
+    showNewChatIcon?: boolean;
   }>(), {
     title: t('AI 小鲸'),
     isCompressionHeight: false,
     draggable: true,
+    showHistoryIcon: true,
+    showNewChatIcon: true,
   });
 
   const emit = defineEmits<(e: 'close' | 'toggleCompression' | 'newChat') => void>();
@@ -78,6 +84,10 @@
       offset: [0, 8],
       appendTo: () => document.querySelector('.ai-blueking-container-wrapper') as HTMLElement || document.body,
     }
+  });
+
+  const displayTitle = computed(() => {
+    return sessionStore.currentSession.value?.sessionName || props.title;
   });
 
   const compressionIcon = computed(() => {
@@ -161,6 +171,8 @@
       display: flex;
       gap: 4px;
       align-items: center;
+      flex: 1;
+      min-width: 0;
 
       .logo {
         width: 32px;
@@ -178,6 +190,10 @@
         font-weight: 600;
         line-height: 20px;
         color: #4d4f56;
+        max-width: calc(100% - 60px);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
     }
 
