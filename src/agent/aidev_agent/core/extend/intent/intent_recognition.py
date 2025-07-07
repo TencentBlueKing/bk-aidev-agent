@@ -876,6 +876,7 @@ class IntentRecognition(BaseModel):
                         knowledge_bases=knowledge_bases,
                         query=query_for_search,
                         topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
+                        agent_options=agent_options,
                         **kwargs,
                     )
                 if (
@@ -905,6 +906,7 @@ class IntentRecognition(BaseModel):
                         knowledge_bases=knowledge_bases,
                         extracted_keywords=future_extracted_keywords.result(),
                         topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
+                        agent_options=agent_options,
                         **kwargs,
                     )
                 # TODO: 去除 nature 分支
@@ -915,7 +917,8 @@ class IntentRecognition(BaseModel):
                         knowledge_bases=knowledge_bases,
                         query=query_for_search,
                         topk=agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
-                        agent_options=agent_options**kwargs,
+                        agent_options=agent_options,
+                        **kwargs,
                     )
             if agent_options.knowledge_query_options.qa_response_knowledge_bases:
                 future_qa_response = executor.submit(

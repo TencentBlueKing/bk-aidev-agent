@@ -149,7 +149,6 @@ def test_CommonQAAgent_chat_streaming():
 def test_qa_response(test_input, expected_kb_ids):
     # 初始化聊天模型
     chat_model = ChatModel.get_setup_instance(
-        # model="deepseek-v3",
         model="hunyuan-t1",
         streaming=True,
     )
