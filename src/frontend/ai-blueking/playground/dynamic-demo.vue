@@ -55,7 +55,6 @@
       <div>
         <AIBlueking
       ref="aiBlueking"
-      title="aaa"
       hello-text="bbb"
       :request-options="{
         data: requestData,
