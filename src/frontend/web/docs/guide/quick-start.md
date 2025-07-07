@@ -143,4 +143,3 @@ export default {
 
 - 了解更多 [核心功能](/guide/core-features/chat-interaction)
 - 查看 [API 文档](/api/props) 了解所有可用属性
-- 探索 [高级用法](/guide/advanced-usage/) 实现更复杂的功能
