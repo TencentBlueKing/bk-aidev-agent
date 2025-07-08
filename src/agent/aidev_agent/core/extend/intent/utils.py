@@ -131,6 +131,8 @@ def remove_thinking_process(resp_content):
 def is_deepseek_r1_series_models(llm):
     return "deepseek-r1" in llm.model_name or "qwq" in llm.model_name
 
+def is_model_without_function_calling(llm):
+    return any(m in llm.model_name for m in ("deepseek-r1", "qwq", "deepseek-v3", "hunyuan-t1", "qwen3"))
 
 def support_multimodal(llm):
     return "deepseek" not in llm.model_name

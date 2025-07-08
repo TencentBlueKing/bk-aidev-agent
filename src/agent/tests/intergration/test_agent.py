@@ -310,8 +310,8 @@ class TestStructedAgent:
         for event in results:
             print(event)
 
-    def test_hunyuant1_chat_streaming(self):
-        """测试适配hunyuan-t1模型"""
+    def test_hunyuant1_function_calling(self):
+        """测试hunyuan-t1工具调用能力"""
         # 设置chat_model实例
         chat_model = ChatModel.get_setup_instance(
             model="hunyuan-t1",
@@ -345,8 +345,6 @@ class TestStructedAgent:
                 knowledge_resource_reject_threshold=(0.001, 0.1),
                 topk=10,
                 knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM.value,
-                is_response_when_no_knowledgebase_match=True,
-                rejection_message="抱歉，我无法回答你的问题。",
             ),
         )
         agent_e, cfg = CommonQAAgent.get_agent_executor(
@@ -358,8 +356,49 @@ class TestStructedAgent:
         )
 
         # 测试部分
-        test_case_inputs = {"input": "云桌面绿屏解决方法"}
-        results = [each for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=2)]
-        results = get_stream_result(results)
-        for event in results:
-            print(event)
+        test_case_inputs = {"input": "深圳天气怎么样"}
+        verify_streaming_result_format(
+            [each for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=2)]
+        )
+
+    def test_qwen3_function_calling(self):
+        """测试qwen3工具调用能力"""
+        # 设置chat_model实例
+        chat_model = ChatModel.get_setup_instance(
+            model="qwen3",
+            streaming=True,
+        )
+        # 获取客户端对象
+        client = BKAidevApi.get_client_by_username(username="")
+
+        # 设置工具和知识库
+        tool_codes = ["weather-query"]
+        tools = [client.construct_tool(tool_code) for tool_code in tool_codes]
+        # 获取代理执行器和配置
+        agent_options = AgentOptions(
+            intent_recognition_options=IntentRecognition(
+                force_process_by_agent=False,
+                role_prompt="",
+                intent_recognition_knowledgebase_id=[276],
+                intent_recognition_topk=10,
+                intent_recognition_llm="deepseek-r1",
+            ),
+            knowledge_query_options=KnowledgebaseSettings(
+                knowledge_resource_reject_threshold=(0.001, 0.1),
+                topk=10,
+                knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM.value,
+            ),
+        )
+        agent_e, cfg = CommonQAAgent.get_agent_executor(
+            chat_model,
+            chat_model,
+            extra_tools=tools,
+            chat_history=[HumanMessage(content="你好"), AIMessage(content="你好，请问有什么可以帮您？")],
+            agent_options=agent_options,
+        )
+
+        # 测试部分
+        test_case_inputs = {"input": "深圳市今天天气怎么样"}
+        verify_streaming_result_format(
+            [each for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs, timeout=2)]
+        )
