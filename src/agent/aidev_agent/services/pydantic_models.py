@@ -30,6 +30,8 @@ class SessionContentExtra(BaseModel):
 
     tools: list[SessionTool] = Field(default_factory=list)
     anchor_path_resources: dict = Field(default_factory=dict)
+    context: list[dict] | None = None
+    command: str | None = None
 
 
 class SessionContentProperty(BaseModel):
