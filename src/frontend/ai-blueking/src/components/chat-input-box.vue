@@ -39,7 +39,7 @@
         class="input-area"
         v-model="inputValue"
         :disabled="props.disabled"
-        :placeholder="placeholder"
+        :placeholder="props.placeholder"
         @compositionend="handleCompositionEnd"
         @compositionstart="handleCompositionStart"
         @focus="handleFocus"
@@ -58,7 +58,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, watch, computed, onBeforeUnmount } from 'vue';
+  import { ref, onMounted, watch, computed, onBeforeUnmount, withDefaults } from 'vue';
   import { ComponentPublicInstance } from 'vue';
 
   import { type ShortCut } from '@blueking/ai-ui-sdk/types';
@@ -81,17 +81,19 @@
     (e: 'height-change', height: number): void;
     (e: 'shortcut-click', shortcut: ShortCut): void;
   }>();
-  const placeholder = t('输入 "/" 唤出 Prompt\n通过 Shift + Enter 进行换行输入');
 
   const { enablePopup } = usePopup();
   const { selectedText, citeText, setCiteText, clearSelection, lockSelectedText } = useSelect(enablePopup);
 
-  const props = defineProps<{
+  const props = withDefaults(defineProps<{
     shortcuts: ShortCut[];
     loading: boolean;
     prompts: string[];
     disabled: boolean;
-  }>();
+    placeholder?: string;
+  }>(), {
+    placeholder: () => t('输入 "/" 唤出 Prompt\n通过 Shift + Enter 进行换行输入'),
+  });
 
   const textareaRef = ref<HTMLTextAreaElement>();
   const inputValue = ref('');
@@ -231,7 +233,8 @@
       selectedText.value = '';
     }
 
-    if (inputValue.value.includes('/')) {
+    // 只有在有 Prompt 数据且输入包含 '/' 时才显示 Prompt 列表
+    if (inputValue.value.includes('/') && props.prompts.length > 0) {
       showPromptList.value = true;
     } else {
       showPromptList.value = false;
@@ -287,6 +290,15 @@
   onBeforeUnmount(() => {
     // 移除事件监听
     document.removeEventListener('click', handleDocumentClick);
+  });
+
+  // 暴露 focus 方法给父组件
+  const focus = () => {
+    textareaRef.value?.focus();
+  };
+
+  defineExpose({
+    focus,
   });
 
   // 直接处理高度变化事件

@@ -19,6 +19,7 @@
 | `handleRegenerate(index)` | `index: number`                          | `void`   | 重新生成指定索引位置的消息。                                                                                                  |
 | `handleResend(index, options)` | `index: number, options: {message: string, cite: string}`   | `void`   | 重发指定索引位置的消息，可修改消息内容和引用内容。                                                                          |
 | `updateRequestOptions(options)` | `options: { url?: string; headers?: Record<string, string>; data?: any }` | `void` | 动态更新请求选项，可以修改API地址或请求参数。对于需要在运行时切换智能体或修改请求参数的场景非常有用。 |
+| `focusInput()` | - | `void` | **v1.1.1新增** 程序式聚焦输入框。可用于在特定时机主动聚焦到输入框，提升用户体验。 |
 
 ::: danger 已废弃方法
 以下方法在相应版本中已被移除:
@@ -47,6 +48,7 @@ interface ShortCut {
   <button @click="show">显示</button>
   <button @click="stop">停止生成</button>
   <button @click="send">发送消息</button>
+  <button @click="focus">聚焦输入框</button>
 </template>
 
 <script lang="ts" setup>
@@ -61,6 +63,7 @@ const stop = () => aiBlueking.value?.handleStop();
 const send = () => {
   aiBlueking.value?.handleSendMessage('你好，这是一条测试消息');
 };
+const focus = () => aiBlueking.value?.focusInput();
 </script>
 ```
 
@@ -71,6 +74,7 @@ const send = () => {
     <button @click="show">显示</button>
     <button @click="stop">停止生成</button>
     <button @click="send">发送消息</button>
+    <button @click="focus">聚焦输入框</button>
   </div>
 </template>
 
@@ -85,7 +89,8 @@ export default {
     stop() { this.$refs.aiBlueking.handleStop(); },
     send() {
       this.$refs.aiBlueking.handleSendMessage('你好，这是一条测试消息');
-    }
+    },
+    focus() { this.$refs.aiBlueking.focusInput(); }
   }
 };
 </script>

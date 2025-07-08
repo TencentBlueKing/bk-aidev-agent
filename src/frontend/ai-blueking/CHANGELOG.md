@@ -1,5 +1,88 @@
 # 更新日志
 
+## [1.1.1] - 2025-07-08
+
+### ✨ 新增功能
+
+#### 自定义占位符文本
+- **新增 `placeholder` 属性**：支持自定义输入框占位符文本
+- **灵活配置**：可以根据不同场景设置不同的提示文本
+- **向下兼容**：默认保持原有的提示文本
+
+```vue
+<template>
+  <AIBlueking
+    :url="apiUrl"
+    placeholder="请输入您的问题..."
+  />
+</template>
+```
+
+#### 输入框聚焦优化
+- **自动聚焦**：面板打开时自动聚焦到输入框，提升用户体验
+- **程序式聚焦**：新增 `focusInput` 方法，支持外部调用聚焦输入框
+
+```vue
+<template>
+  <AIBlueking ref="aiBlueking" :url="apiUrl" />
+  <button @click="focusInput">聚焦输入框</button>
+</template>
+
+<script setup>
+import { ref } from 'vue';
+
+const aiBlueking = ref(null);
+
+const focusInput = () => {
+  aiBlueking.value?.focusInput();
+};
+</script>
+```
+
+### 🎨 用户体验优化
+
+#### Prompt 列表显示优化
+- **智能显示**：只有在有 Prompt 数据且输入包含 '/' 时才显示 Prompt 列表
+- **减少干扰**：避免空列表时的无意义显示，提供更清爽的界面
+- **交互改进**：优化 Prompt 触发逻辑，提升使用体验
+
+### 🔧 新增属性和方法
+
+| 属性/方法名 | 类型 | 默认值 | 描述 |
+|------------|------|--------|------|
+| `placeholder` | `String` | `'输入 "/" 唤出 Prompt\n通过 Shift + Enter 进行换行输入'` | 输入框占位符文本 |
+| `focusInput()` | `Method` | - | 程序式聚焦输入框方法 |
+
+### 📝 使用示例
+
+```vue
+<template>
+  <div>
+    <!-- 自定义占位符 -->
+    <AIBlueking
+      ref="aiBlueking"
+      :url="apiUrl"
+      placeholder="有什么可以帮助您的吗？"
+    />
+
+    <!-- 外部控制聚焦 -->
+    <button @click="handleFocus">聚焦输入框</button>
+  </div>
+</template>
+
+<script setup>
+import { ref } from 'vue';
+import { AIBlueking } from '@blueking/ai-blueking';
+
+const aiBlueking = ref(null);
+const apiUrl = 'your-ai-service-url';
+
+const handleFocus = () => {
+  aiBlueking.value?.focusInput();
+};
+</script>
+```
+
 ## [1.1.0] - 2025-07-07
 
 ### ✨ 重大更新 - 多会话管理功能

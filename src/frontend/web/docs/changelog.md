@@ -8,6 +8,19 @@ export default {
     return {
       changelogData: [
         {
+          version: "v1.1.1",
+          date: "2025-07-08",
+          features: [
+            "新增 `placeholder` 属性：支持自定义输入框占位符文本，提供更灵活的用户提示",
+            "输入框自动聚焦：面板打开时自动聚焦到输入框，提升用户体验",
+            "新增 `focusInput` 方法：支持外部程序式聚焦输入框"
+          ],
+          improvements: [
+            "优化 Prompt 列表显示逻辑：只有在有数据且输入包含 '/' 时才显示，避免空列表干扰",
+            "改进输入框交互体验，减少不必要的界面元素显示"
+          ]
+        },
+        {
           version: "v1.1.0",
           date: "2025-07-07",
           features: [

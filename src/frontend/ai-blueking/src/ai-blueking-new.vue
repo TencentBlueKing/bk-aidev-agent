@@ -99,11 +99,13 @@
                   <BarButton v-if="showScrollToBottom" color="#979BA5" icon="bkaijiantou" text="返回底部" @click="scrollMainToBottom" />
                 </div>
                 <ChatInputBox
+                  ref="chatInputBoxRef"
                   v-model="inputMessage"
                   :loading="currentSessionLoading"
                   :prompts="promptList"
                   :shortcuts="shortcuts || []"
                   :disabled="props.disabledInput"
+                  :placeholder="props.placeholder"
                   @height-change="handleInputHeightChange"
                   @send="handleSendMessage"
                   @shortcut-click="handleShortcutClick"
@@ -176,6 +178,7 @@ interface Props {
   nimbusSize?: "small" | "normal" | "large"
   showHistoryIcon?: boolean
   showNewChatIcon?: boolean
+  placeholder?: string
 }
 
 // Props 定义
@@ -200,6 +203,7 @@ const props = withDefaults(defineProps<Props>(), {
   nimbusSize: "normal",
   showHistoryIcon: true,
   showNewChatIcon: true,
+  placeholder: t('输入 "/" 唤出 Prompt\n通过 Shift + Enter 进行换行输入'),
 })
 
 // Emits 定义
@@ -214,6 +218,7 @@ provide(POPUP_INJECTION_KEY, props.enablePopup)
 
 // 状态管理
 const resizeWrapper = ref<InstanceType<typeof VueDraggableResizable>>()
+const chatInputBoxRef = ref<InstanceType<typeof ChatInputBox>>()
 const isShow = ref(false)
 const inputMessage = ref("")
 const messageWrapper = ref<HTMLElement>()
@@ -535,6 +540,19 @@ watch(
   { deep: true }
 )
 
+// 监听面板显示状态，面板打开时自动聚焦输入框
+watch(
+  () => isShow.value,
+  (newValue) => {
+    if (newValue) {
+      // 面板打开时，延迟一下让 DOM 渲染完成后再聚焦
+      nextTick(() => {
+        chatInputBoxRef.value?.focus()
+      })
+    }
+  }
+)
+
 // 处理新增聊天
 const handleNewChat = async () => {
   // 终止当前会话
@@ -560,6 +578,9 @@ defineExpose({
   currentSessionLoading,
   isLoadingSessionContents,
   setCurrentSession,
+  focusInput: () => {
+    chatInputBoxRef.value?.focus()
+  },
 })
 </script>
 
