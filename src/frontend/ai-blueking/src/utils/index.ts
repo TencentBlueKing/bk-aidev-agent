@@ -77,7 +77,7 @@ export const throttle = <T>(fn: (t: T) => void, delay = 200) => {
  * @returns
  */
 export const debounce = <T, R>(fn: (P?: T) => R, delay = 200) => {
-  let timer: NodeJS.Timeout;
+  let timer: ReturnType<typeof setTimeout>;
   return function (params?: T) {
     if (timer) {
       clearTimeout(timer);
@@ -151,4 +151,49 @@ export const uuid = () => {
       v = c == 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+};
+
+/**
+ * 标准化URL，自动匹配当前页面的协议
+ * @param url 原始URL
+ * @returns 标准化后的URL
+ */
+export const normalizeUrl = (url: string): string => {
+  if (!url) return url;
+
+  try {
+    // 如果URL已经是完整的协议URL，检查是否需要协议转换
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      const currentProtocol = window.location.protocol;
+      const urlObj = new URL(url);
+
+      // 如果当前页面是HTTPS，但API URL是HTTP，则转换为HTTPS
+      if (currentProtocol === 'https:' && urlObj.protocol === 'http:') {
+        urlObj.protocol = 'https:';
+        return urlObj.toString();
+      }
+
+      // 如果当前页面是HTTP，但API URL是HTTPS，保持HTTPS（更安全）
+      return url;
+    }
+
+    // 如果URL是相对路径或协议相对路径
+    if (url.startsWith('//')) {
+      // 协议相对路径，使用当前页面的协议
+      return `${window.location.protocol}${url}`;
+    }
+
+    if (url.startsWith('/')) {
+      // 绝对路径，使用当前页面的协议和域名
+      return `${window.location.protocol}//${window.location.host}${url}`;
+    }
+
+    // 相对路径，基于当前页面构建完整URL
+    const baseUrl = `${window.location.protocol}//${window.location.host}${window.location.pathname}`;
+    return new URL(url, baseUrl).toString();
+
+  } catch (error) {
+    console.warn('URL normalization failed:', error);
+    return url; // 如果处理失败，返回原始URL
+  }
 };

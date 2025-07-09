@@ -38,9 +38,12 @@ export interface AIBluekingExpose {
 
 export type { ShortCut, ISessionContent };
 
+type IContext = Record<string, string> | Record<string, string>[]
+
 export interface IRequestOptions {
   headers?: Record<string, string>;
   data?: Record<string, string>;
+  context?: IContext | (() => IContext);
 }
 
 export type IDocument = {

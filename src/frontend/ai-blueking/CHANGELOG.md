@@ -1,5 +1,163 @@
 # 更新日志
 
+## [1.1.5] - 2025-07-09
+
+### ✨ 新增功能
+
+#### URL 协议自动适配
+- **智能协议匹配**：新增 `normalizeUrl` 工具函数，自动匹配当前页面协议
+- **安全性提升**：HTTPS 页面下自动将 HTTP API 转换为 HTTPS，提升安全性
+- **多种路径支持**：支持相对路径、绝对路径、协议相对路径的智能识别和处理
+
+```vue
+<template>
+  <!-- 支持多种URL格式 -->
+  <AIBlueking :url="'/api/chat'" />           <!-- 相对路径 -->
+  <AIBlueking :url="//api.example.com/chat" /> <!-- 协议相对路径 -->
+  <AIBlueking :url="http://api.example.com/chat" /> <!-- 完整URL，HTTPS页面下自动转换为HTTPS -->
+</template>
+```
+
+#### 上下文支持
+- **静态上下文**：支持传递静态对象作为上下文信息
+- **动态上下文**：支持传递函数，实现动态上下文获取
+- **灵活配置**：可以是单个对象或对象数组
+
+```vue
+<template>
+  <!-- 静态上下文 -->
+  <AIBlueking
+    :url="apiUrl"
+    :request-options="{
+      context: { userId: '123', department: 'IT' }
+    }"
+  />
+
+  <!-- 动态上下文 -->
+  <AIBlueking
+    :url="apiUrl"
+    :request-options="{
+      context: () => ({
+        userId: getCurrentUserId(),
+        timestamp: Date.now()
+      })
+    }"
+  />
+</template>
+
+<script setup>
+const getCurrentUserId = () => {
+  // 动态获取用户ID的逻辑
+  return store.state.user.id;
+};
+</script>
+```
+
+### 🎨 优化改进
+
+#### URL 处理优化
+- **智能识别**：自动识别不同类型的URL格式
+- **协议转换**：在HTTPS环境下自动升级HTTP请求为HTTPS
+- **错误处理**：完善的URL处理错误捕获和降级机制
+
+#### 类型定义改进
+- **TypeScript 优化**：改进 `debounce` 函数的类型定义
+- **上下文类型**：新增 `IContext` 类型定义，支持对象和对象数组
+- **开发体验**：提升IDE智能提示和类型检查
+
+#### 代码质量提升
+- **格式化**：统一代码格式，提升可读性
+- **性能优化**：优化URL处理和上下文传递的性能
+- **错误处理**：增强错误处理机制
+
+### 🔧 新增配置项
+
+| 配置项 | 类型 | 描述 |
+|--------|------|------|
+| `requestOptions.context` | `IContext \| (() => IContext)` | 上下文信息，支持静态对象或动态函数 |
+
+其中 `IContext` 类型定义为：
+```typescript
+type IContext = Record<string, string> | Record<string, string>[]
+```
+
+### 📝 使用示例
+
+#### 完整的上下文配置示例
+
+```vue
+<template>
+  <AIBlueking
+    ref="aiBlueking"
+    :url="apiUrl"
+    :request-options="requestOptions"
+  />
+</template>
+
+<script setup>
+import { ref, computed } from 'vue';
+import { AIBlueking } from '@blueking/ai-blueking';
+
+const aiBlueking = ref(null);
+const apiUrl = '/api/ai/chat'; // 相对路径，会自动转换为完整URL
+
+// 动态上下文配置
+const requestOptions = computed(() => ({
+  headers: {
+    'Authorization': `Bearer ${getToken()}`
+  },
+  context: () => ({
+    userId: getCurrentUser().id,
+    sessionId: getSessionId(),
+    timestamp: Date.now().toString(),
+    userAgent: navigator.userAgent
+  })
+}));
+
+const getToken = () => {
+  // 获取认证token
+  return localStorage.getItem('auth_token');
+};
+
+const getCurrentUser = () => {
+  // 获取当前用户信息
+  return JSON.parse(localStorage.getItem('user_info') || '{}');
+};
+
+const getSessionId = () => {
+  // 获取会话ID
+  return sessionStorage.getItem('session_id');
+};
+</script>
+```
+
+#### URL 协议适配示例
+
+```vue
+<template>
+  <div>
+    <!-- 这些URL在不同协议环境下会自动适配 -->
+    <AIBlueking :url="httpUrl" />      <!-- HTTP环境：保持HTTP，HTTPS环境：自动转换为HTTPS -->
+    <AIBlueking :url="httpsUrl" />     <!-- 任何环境：保持HTTPS -->
+    <AIBlueking :url="relativeUrl" />  <!-- 自动使用当前页面的协议和域名 -->
+    <AIBlueking :url="protocolRelativeUrl" /> <!-- 自动使用当前页面的协议 -->
+  </div>
+</template>
+
+<script setup>
+const httpUrl = 'http://api.example.com/chat';
+const httpsUrl = 'https://api.example.com/chat';
+const relativeUrl = '/api/chat';
+const protocolRelativeUrl = '//api.example.com/chat';
+</script>
+```
+
+### ⚠️ 注意事项
+
+- **协议转换**：在HTTPS页面中使用HTTP API时会自动转换为HTTPS，请确保目标服务器支持HTTPS
+- **上下文函数**：动态上下文函数会在每次发送消息时调用，请避免在函数中执行耗时操作
+- **类型安全**：使用TypeScript时，上下文对象的值必须是字符串类型
+
 ## [1.1.2] - 2025-07-08
 
 ### ✨ 新增功能

@@ -8,10 +8,11 @@
 
 ## 配置 `requestOptions`
 
-`requestOptions` 是一个对象，可以包含 `headers` 和 `data` 两个属性：
+`requestOptions` 是一个对象，可以包含 `headers`、`data` 和 `context` 三个属性：
 
 -   `headers` (Object): 一个对象，其键值对将被合并到最终请求的 **请求头 (Headers)** 中。
 -   `data` (Object): 一个对象，其键值对将被合并到最终请求的 **请求体 (Body)** 中。
+-   `context` <Badge type="tip" text="v1.1.5" /> (Object | Function): 上下文信息，支持静态对象或动态函数形式，会被合并到消息的 `property.extra` 中。
 
 **示例：**
 
@@ -43,6 +44,11 @@ const customOptions = reactive({
   data: {
     preset: 'QA',
     userId: 'user123'
+  },
+  context: {
+    department: 'IT',
+    role: 'admin',
+    sessionType: 'support'
   }
 });
 
@@ -78,6 +84,11 @@ export default {
         data: {
           preset: 'QA',
           userId: 'user123'
+        },
+        context: {
+          department: 'IT',
+          role: 'admin',
+          sessionType: 'support'
         }
       }
     };
@@ -251,9 +262,106 @@ export default {
 如果 `requestOptions.data` 中定义的键与 AI 小鲸内部使用的请求体键（如 `session_content_id`, `session_code` 等）冲突，外部传入的值 **可能会覆盖** 内部值，请谨慎使用。
 :::
 
+## 上下文配置 <Badge type="tip" text="v1.1.5" />
+
+从 v1.1.5 开始，`requestOptions` 支持 `context` 属性，用于传递上下文信息给AI服务。上下文信息会被合并到每条消息的 `property.extra` 中。
+
+### 静态上下文
+
+```vue
+<template>
+  <AIBlueking
+    :url="apiUrl"
+    :request-options="{
+      context: {
+        userId: '123',
+        department: 'IT',
+        role: 'admin'
+      }
+    }"
+  />
+</template>
+```
+
+### 动态上下文
+
+```vue
+<template>
+  <AIBlueking
+    :url="apiUrl"
+    :request-options="requestOptions"
+  />
+</template>
+
+<script setup>
+import { computed } from 'vue';
+
+const requestOptions = computed(() => ({
+  context: () => ({
+    userId: getCurrentUser().id,
+    sessionId: getSessionId(),
+    timestamp: Date.now().toString(),
+    userAgent: navigator.userAgent
+  })
+}));
+
+const getCurrentUser = () => {
+  return JSON.parse(localStorage.getItem('user_info') || '{}');
+};
+
+const getSessionId = () => {
+  return sessionStorage.getItem('session_id');
+};
+</script>
+```
+
+### 上下文数据结构
+
+上下文支持以下类型：
+
+```typescript
+type IContext = Record<string, string> | Record<string, string>[]
+
+// 示例
+const context1 = { userId: '123', role: 'admin' };           // 单个对象
+const context2 = [{ userId: '123' }, { role: 'admin' }];    // 对象数组
+const context3 = () => ({ timestamp: Date.now().toString() }); // 动态函数
+```
+
+::: warning 注意事项
+- 上下文对象的值必须是字符串类型
+- 动态上下文函数会在每次发送消息时调用，请避免在函数中执行耗时操作
+- 上下文信息会与消息的引用内容(`cite`)一起传递给AI服务
+:::
+
+## URL 协议自动适配 <Badge type="tip" text="v1.1.5" />
+
+从 v1.1.5 开始，AI 小鲸支持智能的 URL 协议适配功能：
+
+### 支持的URL格式
+
+- **相对路径**：`/api/chat` - 自动使用当前页面的协议和域名
+- **协议相对路径**：`//api.example.com/chat` - 自动使用当前页面的协议
+- **完整URL**：`http://api.example.com/chat` - HTTPS页面下自动转换为HTTPS
+- **HTTPS URL**：`https://api.example.com/chat` - 任何环境下保持HTTPS
+
+### 安全性提升
+
+在HTTPS页面中使用HTTP API时，组件会自动将其转换为HTTPS，提升安全性。
+
+```vue
+<template>
+  <!-- 这些URL在不同协议环境下会自动适配 -->
+  <AIBlueking :url="'/api/chat'" />                    <!-- 相对路径 -->
+  <AIBlueking :url="'//api.example.com/chat'" />      <!-- 协议相对路径 -->
+  <AIBlueking :url="'http://api.example.com/chat'" /> <!-- HTTP，HTTPS页面下自动转换 -->
+</template>
+```
+
 ## 常见使用场景
 
 1. **添加身份验证信息**：在请求头中添加 JWT 令牌或 API Key
 2. **切换不同的智能体**：通过动态更新 URL 来切换不同的智能体服务
-3. **传递上下文信息**：在请求体中添加业务上下文，如用户ID、业务标识等
+3. **传递上下文信息**：使用 `context` 属性传递业务上下文，如用户ID、业务标识等
 4. **处理特殊场景**：如添加跨域请求头、设置特定的内容类型等
+5. **协议适配**：利用自动协议适配功能，简化不同环境下的URL配置

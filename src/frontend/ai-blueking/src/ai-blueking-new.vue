@@ -91,7 +91,7 @@
                   type: 'tween',
                   layoutId: 'chat-input',
                 }"
-                :class="`chat-input-container ${ !hasSessionContents ? 'centered' : 'bottom'}`"
+                :class="`chat-input-container ${!hasSessionContents ? 'centered' : 'bottom'}`"
                 layout
               >
                 <div v-if="currentSessionLoading || showScrollToBottom" class="bottom-tools-bar">
@@ -148,9 +148,9 @@ import LoadingOverlay from "./components/loading-overlay.vue"
 import { POPUP_INJECTION_KEY } from "./composables/use-popup-props"
 import { useResizableContainer } from "./composables/use-resizable-container"
 import { useSelect } from "./composables/use-select-pop"
-import { DEFAULT_SHORTCUTS, HIDE_ROLE_LIST } from './config';
+import { DEFAULT_SHORTCUTS, HIDE_ROLE_LIST } from "./config"
 import { t } from "./lang"
-import { scrollToBottom, escapeHtml } from "./utils"
+import { scrollToBottom, escapeHtml, normalizeUrl } from "./utils"
 import Nimbus from "./views/nimbus.vue"
 import { sessionStore } from "./store/sessionStore"
 
@@ -240,7 +240,12 @@ const promptList = computed(() => {
 })
 
 const hasSessionContents = computed(() => {
-  return sessionContents.value.filter(item => !HIDE_ROLE_LIST.includes(item.role)).length > 0
+  return sessionContents.value.filter((item) => !HIDE_ROLE_LIST.includes(item.role)).length > 0
+})
+
+// 标准化的URL，自动匹配当前页面协议
+const normalizedUrl = computed(() => {
+  return normalizeUrl(props.url)
 })
 
 // 使用可调整大小的容器
@@ -278,7 +283,7 @@ const handleShow = () => {
   emit("show")
 
   // 弹窗打开时，如果有 URL 且未初始化会话，则初始化会话
-  if (props.url && !isSessionInitialized.value) {
+  if (normalizedUrl.value && !isSessionInitialized.value) {
     initSession()
   }
 }
@@ -378,7 +383,7 @@ const {
     emit("receive-end")
   },
   requestOptions: {
-    url: props.url,
+    url: normalizedUrl.value,
     ...props.requestOptions,
   },
 })
@@ -400,19 +405,19 @@ sessionStore.registerSdkMethods({
 // 封装会话初始化逻辑
 const initSession = async () => {
   const { conversationSettings } = await sessionStore.initSession()
-  openingRemark.value = conversationSettings?.openingRemark || ''
+  openingRemark.value = conversationSettings?.openingRemark || ""
   predefinedQuestions.value = conversationSettings?.predefinedQuestions || []
   isSessionInitialized.value = true
 }
 
 // 监听 url 变化
 watch(
-  () => props.url,
+  () => normalizedUrl.value,
   (newUrl, oldUrl) => {
     if (newUrl !== oldUrl && newUrl) {
       // 更新请求选项
       updateRequestOptions({
-        url: props.url,
+        url: newUrl,
         ...props.requestOptions,
       })
       // URL 变化时重新初始化会话
@@ -426,7 +431,7 @@ watch(
   () => props.requestOptions,
   (newOptions) => {
     updateRequestOptions({
-      url: props.url,
+      url: normalizedUrl.value,
       ...newOptions,
     })
   },
@@ -434,7 +439,7 @@ watch(
 )
 
 // 如果初始 URL 存在且弹窗默认显示，则立即初始化会话
-if (props.url && !props.defaultMinimize) {
+if (normalizedUrl.value && !props.defaultMinimize) {
   initSession()
 }
 
@@ -460,7 +465,7 @@ const handleSendMessage = async (message: string) => {
   if (!message.trim()) return
 
   // 如果会话未初始化，先初始化
-  if (!isSessionInitialized.value && props.url) {
+  if (!isSessionInitialized.value && normalizedUrl.value) {
     initSession()
   }
 
@@ -477,6 +482,7 @@ const handleSendMessage = async (message: string) => {
     property: {
       extra: {
         cite: citeText.value,
+        ...(typeof props.requestOptions?.context === "function" ? props.requestOptions?.context() : props.requestOptions?.context),
       },
     },
   })
@@ -522,7 +528,7 @@ const handleShortcutClick = async (shortcut: ShortCut) => {
   !isShow.value && handleShow()
 
   // 如果会话未初始化，先初始化
-  if (!isSessionInitialized.value && props.url) {
+  if (!isSessionInitialized.value && normalizedUrl.value) {
     initSession()
   }
 

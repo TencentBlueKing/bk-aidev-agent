@@ -8,6 +8,20 @@ export default {
     return {
       changelogData: [
         {
+          version: "v1.1.5",
+          date: "2025-07-09",
+          features: [
+            "URL 协议自动适配：新增智能 URL 标准化功能，自动匹配当前页面协议（HTTP/HTTPS）",
+            "上下文支持：新增 `context` 配置项，支持静态对象或动态函数形式传递上下文信息",
+            "协议安全优化：HTTPS 页面下自动将 HTTP API 转换为 HTTPS，提升安全性"
+          ],
+          improvements: [
+            "优化 URL 处理逻辑，支持相对路径、绝对路径、协议相对路径的智能识别",
+            "改进 TypeScript 类型定义，提升开发体验",
+            "代码格式化和性能优化"
+          ]
+        },
+        {
           version: "v1.1.2",
           date: "2025-07-08",
           features: [
