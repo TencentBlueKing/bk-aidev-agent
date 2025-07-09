@@ -1,6 +1,6 @@
 {
   "name": "@blueking/ai-blueking",
-  "version": "1.1.2",
+  "version": "1.1.4",
   "description": "AI 小鲸",
   "license": "MIT",
   "author": "Tencent BlueKing",
@@ -72,9 +72,9 @@
     "marked-highlight": "2.2.1"
   },
   "dependencies": {
-    "@agoose77/markdown-it-mermaid": "^1.1.0",
     "@blueking/ai-ui-sdk": "0.1.12-beta.14",
     "@blueking/bkui-library": "0.0.0-beta.6",
+    "mermaid": "10.9.3",
     "motion-v": "^0.11.3",
     "tippy.js": "6.3.6",
     "vue-draggable-resizable": "^3.0.0"

@@ -319,11 +319,27 @@ const handleUserScroll = () => {
 }
 
 // 监听滚动容器
-watch(messageWrapper, (el) => {
+watch(messageWrapper, (el, oldEl) => {
+  // 移除旧元素的事件监听器
+  if (oldEl) {
+    oldEl.removeEventListener("scroll", handleUserScroll)
+    oldEl.removeEventListener("mermaid-rendered", handleMermaidRendered)
+  }
+
   if (el) {
     el.addEventListener("scroll", handleUserScroll)
+    // 监听 mermaid 渲染完成事件
+    el.addEventListener("mermaid-rendered", handleMermaidRendered)
   }
 })
+
+// 处理 mermaid 渲染完成事件
+const handleMermaidRendered = () => {
+  // 在 mermaid 渲染完成后，如果用户没有在滚动，则自动滚动到底部
+  nextTick(() => {
+    scrollToBottomIfNeeded()
+  })
+}
 
 // 使用聊天功能
 const {

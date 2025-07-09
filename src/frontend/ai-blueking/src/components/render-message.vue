@@ -105,12 +105,11 @@
 </template>
 
 <script lang="ts" setup>
-  import { computed, onMounted, ref, watch, defineEmits, onBeforeUnmount } from 'vue';
+  import { computed, onMounted, ref, watch, defineEmits, onBeforeUnmount, nextTick } from 'vue';
 
   import { SessionContentRole, SessionContentStatus } from '@blueking/ai-ui-sdk/enums';
   import { type ISessionContent } from '@blueking/ai-ui-sdk/types';
   import { Message } from 'bkui-vue';
-  import mermaidPlugin from "@agoose77/markdown-it-mermaid";
   import dayjs from 'dayjs';
   import hljs from 'highlight.js';
   import MarkdownIt from 'markdown-it';
@@ -121,9 +120,11 @@
   import { usePopup } from '../composables/use-popup-props';
   import { useSelect } from '../composables/use-select-pop';
   import { useTooltip } from '../composables/use-tippy';
+  import { useMermaid } from '../composables/use-mermaid';
   import { HIDE_ROLE_LIST } from '../config';
   import { t } from '../lang';
   import MarkdownItLinkBlank from '../plugins/markdown-it-link-blank';
+  import mermaidPlugin from '../plugins/markdown-it-mermaid';
   import { createDeleteConfirm, closeAllDeleteConfirms } from '../utils/delete-confirm';
   import BkTextEditor from './text-editor.vue';
 
@@ -159,6 +160,7 @@
     appendTo: 'parent',
     delay: [0, 0],
   });
+  const { initMermaid, processMermaidDiagrams, cleanupMermaidElements } = useMermaid();
 
   // Markdown 实例
   const md = new MarkdownIt({
@@ -191,6 +193,19 @@
   const renderValue = computed(() => {
     if (!props.message.content) return '';
     const dom = md.render(props.message.content);
+
+    // Process mermaid diagrams after DOM update
+    nextTick(() => {
+      if (messageMainRef.value) {
+        processMermaidDiagrams(messageMainRef.value, () => {
+          // 在 mermaid 渲染完成后，触发父组件的滚动更新
+          // 通过自定义事件通知父组件需要重新滚动
+          const event = new CustomEvent('mermaid-rendered', { bubbles: true });
+          messageMainRef.value?.dispatchEvent(event);
+        });
+      }
+    });
+
     return dom.replace(/\s*<\/p>\s*$/, '</p>');
   });
 
@@ -253,6 +268,7 @@
 
   // 生命周期钩子
   onMounted(() => {
+    initMermaid();
     setTimeout(initTooltips, 0);
   });
 
@@ -273,6 +289,7 @@
 
   onBeforeUnmount(() => {
     closeAllDeleteConfirms();
+    cleanupMermaidElements();
   });
 </script>
 
@@ -588,6 +605,45 @@
 
       img {
         width: 100%;
+      }
+
+      // Mermaid diagram styles
+      .mermaid-diagram {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin: 10px 0;
+        padding: 10px;
+        background-color: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 4px;
+        overflow-x: auto;
+
+        svg {
+          max-width: 100%;
+          height: auto;
+        }
+      }
+
+      .mermaid-placeholder {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin: 10px 0;
+        padding: 20px;
+        color: #6c757d;
+        background-color: #f8f9fa;
+        border: 1px dashed #dee2e6;
+        border-radius: 4px;
+      }
+
+      .mermaid-error {
+        margin: 10px 0;
+        padding: 10px;
+        color: #721c24;
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        border-radius: 4px;
       }
 
       pre {
