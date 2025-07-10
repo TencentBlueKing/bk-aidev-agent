@@ -241,7 +241,7 @@ general_qa_prompt_tool_calling = ChatPromptTemplate.from_messages(
             ),
         ),
         ("placeholder", "{chat_history}"),
-        ("human", "以下是用户最新提问内容：```{{query}}```\n\n\n{{role_prompt}}"),
+        ("human", "以下是用户最新提问内容：```{{query}}```\n\n\n{{role_prompt}}{% if not use_general_knowledge_on_miss %}请用拒答文案```{{rejection_response}}```拒绝回答。{% endif -%}"),
         ("placeholder", "{agent_scratchpad}"),
     ],
     template_format="jinja2",
@@ -393,8 +393,9 @@ c. 一些来自上述工具调用的结果。提供给你的格式是先用json�
 注意注意再注意！如果你还需要调用工具补充信息才能完整回答用户最新提问，就务必选择本情况！千万不要直接就返回"Final Answer"了！
 
 [情况3]
-如果你觉得提供给你的工具无法完整回答给你的用户最新提问，请在你的输出中包含一个 $JSON_BLOB 来回答用户最新提问，格式如下：
+如果你觉得提供给你的工具无法完整回答给你的用户最新提问
 {% if use_general_knowledge_on_miss %}
+请在你的输出中包含一个 $JSON_BLOB 来回答用户最新提问，格式如下：
 {% raw %}
 \n```json
 {{
@@ -408,6 +409,7 @@ c. 一些来自上述工具调用的结果。提供给你的格式是先用json�
 注意！$YOUR_OWN_ANSWER中不能忽略用户最新提问中的任何细节！
 {% endif -%}
 {% if not use_general_knowledge_on_miss %}
+请在你的输出中包含一个 $JSON_BLOB 来拒绝回答用户最新提问，格式如下：
 {% raw %}
 \n```json
 {{
