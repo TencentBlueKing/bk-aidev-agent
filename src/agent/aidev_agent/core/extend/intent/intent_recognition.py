@@ -1322,11 +1322,11 @@ class IntentRecognition(BaseModel):
                 try:
                     category = IntentCategory(doc["意图类别"])
                     if category == IntentCategory.KNOWLEDGE_BASE:
-                        intent_base_id.append(doc["意图名称"])
+                        intent_base_id.append(doc["意图ID"])
                     elif category == IntentCategory.KNOWLEDGE_ITEM:
-                        intent_item_id.append(doc["意图名称"])
+                        intent_item_id.append(doc["意图ID"])
                     elif category == IntentCategory.TOOL:
-                        tools_id.append(doc["意图名称"])
+                        tools_id.append(doc["意图ID"])
                 except ValueError:  # noqa
                     logger.warning(f"Invalid intent category: {doc['意图类别']} in document {doc}")
             if intent_base_id:

@@ -998,7 +998,16 @@ class CommonQAStreamingMixIn:
                                         and ret.get("elapsed_time")):
                                     # 确保LOADING_AGENT_MESSAGE后输出的第一个event cover为true
                                     if first_after_LOADINGMESSAGE:
-                                        ret["cover"] = True
+                                        if self.llm.model_name == "deepseek-v3" and ret["event"] == EventType.THINK.value:
+                                            ret1 = {
+                                                "event": EventType.THINK.value,
+                                                "content": "\n",
+                                                "cover": True,
+                                            }
+                                            yield self._yield_ret(ret1)                              
+                                            ret["cover"] = False
+                                        else:                                        
+                                            ret["cover"] = True
                                         first_after_LOADINGMESSAGE = False
                                     yield self._yield_ret(ret)
                     else:
@@ -1032,7 +1041,16 @@ class CommonQAStreamingMixIn:
                             and ret.get("elapsed_time")):
                         # 确保LOADING_AGENT_MESSAGE后输出的第一个event cover为true
                         if first_after_LOADINGMESSAGE:
-                            ret["cover"] = True
+                            if self.llm.model_name == "deepseek-v3" and ret["event"] == EventType.THINK.value:
+                                ret1 = {
+                                    "event": EventType.THINK.value,
+                                    "content": "\n",
+                                    "cover": True,
+                                }
+                                yield self._yield_ret(ret1)                              
+                                ret["cover"] = False
+                            else:
+                                ret["cover"] = True
                             first_after_LOADINGMESSAGE = False
                         yield self._yield_ret(ret)
                 for think_symbol in self.think_symbols:
