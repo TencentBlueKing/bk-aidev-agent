@@ -8,7 +8,7 @@
         <div class="article-card">
           <h2>使用示例</h2>
           <p>👇 试试选中下面的文本，体验快捷操作功能</p>
-          <div class="article">
+          <div class="article" ai-blueking-hide>
             <h3>BK AI: Revolutionizing the Future of Artificial Intelligence</h3>
             <p>{{ article }}</p>
           </div>
@@ -133,6 +133,22 @@ const shortcuts: IShortcut[] = [
       },
     ],
   },
+  {
+    name: "翻译",
+    icon: 'bkai-icon bkai-fanyi',
+    id: 'translate',
+    components: [
+      {
+        name: '内容',
+        key: 'content',
+        type: 'text',
+        default: '',
+        placeholder: '请输入项目名称',
+        required: true,
+        fillBack: true,
+      }
+    ]
+  }
 ]
 
 const prompts = ['请推荐几本关于人工智能的书籍。', '请用 Python 写一个简单的 Hello World 程序。']

@@ -31,7 +31,7 @@ export const DEFAULT_SHORTCUTS: IShortcut[] = [
   {
     name: t('翻译'),
     id: 'translate',
-    icon: 'bkai-fanyi',
+    icon: 'bkai-icon bkai-fanyi',
     components: [
       {
         name: t('翻译'),
@@ -44,7 +44,7 @@ export const DEFAULT_SHORTCUTS: IShortcut[] = [
   {
     name: t('解释'),
     id: 'explanation',
-    icon: 'bkai-jieshi',
+    icon: 'bkai-icon bkai-jieshi',
     components: [
       {
         name: t('解释'),

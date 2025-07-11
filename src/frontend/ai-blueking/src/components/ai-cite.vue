@@ -12,7 +12,7 @@
         <span
           ref="citeTextRef"
           class="ai-cite-text"
-          >{{ `${t('框选内容')}：${text}` }}</span
+          >{{ text }}</span
         >
       </span>
       <i
@@ -30,7 +30,6 @@
   import { Instance } from 'tippy.js';
 
   import { useTooltip } from '../composables/use-tippy';
-  import { t } from '../lang';
 
   const props = defineProps<{
     text: string;

@@ -50,7 +50,7 @@
   import { Button as BkButton } from 'bkui-vue';
   import { t } from '../../lang';
   import { useCustomForm } from '../../composables/use-custom-form';
-  import { toRef } from 'vue';
+  import { toRef, onMounted } from 'vue';
 
   const props = defineProps<{
     shortcut: IShortcut;
@@ -109,6 +109,13 @@
   const handleCancel = () => {
     emit('cancel');
   };
+
+  onMounted(() => {
+    // 如果表单只有一项，且已经被填入值，则直接触发提交表单
+    if (formData.value.length === 1 && formData.value[0][formData.value[0].__key]) {
+      handleSubmit();
+    }
+  })
 </script>
 
 <style scoped>

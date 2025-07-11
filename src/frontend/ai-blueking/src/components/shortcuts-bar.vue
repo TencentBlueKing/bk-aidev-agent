@@ -6,9 +6,7 @@
       :key="shortcut.id"
       @click="emit('shortcut-click', shortcut)"
     >
-      <i
-        class="bkai-icon"
-        :class="shortcut.icon"
+      <i :class="shortcut.icon"
       ></i>
       <span class="shortcut-text">{{ shortcut.name }}</span>
     </div>
