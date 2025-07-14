@@ -992,7 +992,8 @@ class CommonQAStreamingMixIn:
                                 ret = cache.popleft()
                                 last_event_type = ret["event"]
                                 # 避免输出内容为空的think event
-                                if not (self.llm.model_name == "deepseek-v3" 
+                                if not ((self.llm.model_name == "deepseek-v3" 
+                                        or self.llm.model_name == "qwen3-nothinking")
                                         and last_event_type == EventType.THINK.value 
                                         and not ret.get("content", "").strip() 
                                         and ret.get("elapsed_time")):
@@ -1026,7 +1027,8 @@ class CommonQAStreamingMixIn:
                     ret = cache.popleft()
                     last_event_type = ret["event"]
                     # 避免输出内容为空的think event
-                    if not (self.llm.model_name == "deepseek-v3" 
+                    if not ((self.llm.model_name == "deepseek-v3"
+                            or self.llm.model_name == "qwen3-nothinking") 
                             and last_event_type == EventType.THINK.value 
                             and not ret.get("content", "").strip() 
                             and ret.get("elapsed_time")):
