@@ -16,8 +16,8 @@
     <div class="ai-selected-box-actions">
       <div
         v-for="action in props.actions"
-        class="ai-selected-box-action"
         :key="action.key"
+        class="ai-selected-box-action"
         @click="handleShortcutClick(action)"
       >
         <i

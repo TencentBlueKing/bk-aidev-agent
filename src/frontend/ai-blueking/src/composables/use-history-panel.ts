@@ -24,8 +24,8 @@
  * IN THE SOFTWARE.
  */
 
-import { ref, h, render, onBeforeUnmount, type Ref, type Component } from 'vue';
 import tippy, { type Instance } from 'tippy.js';
+import { ref, h, render, onBeforeUnmount, type Ref, type Component } from 'vue';
 
 export interface HistoryPanelOptions {
   /** 触发元素的 ref */
@@ -48,10 +48,10 @@ export interface HistoryPanelOptions {
  */
 export function useHistoryPanel(options: HistoryPanelOptions) {
   const { triggerRef, panelComponent, panelProps = {}, tippyOptions = {} } = options;
-  
+
   // tippy 实例
   const tippyInstance = ref<Instance | null>(null);
-  
+
   // 面板挂载点，保持引用避免重复创建
   let mountPoint: HTMLElement | null = null;
 
@@ -62,14 +62,14 @@ export function useHistoryPanel(options: HistoryPanelOptions) {
     if (!mountPoint) {
       mountPoint = document.createElement('div');
     }
-    
+
     // 每次都重新渲染组件内容，确保数据是最新的
     const vnode = h(panelComponent, {
       ...panelProps,
-      onClose: hide // 传递关闭方法给面板组件
+      onClose: hide, // 传递关闭方法给面板组件
     });
     render(vnode, mountPoint);
-    
+
     return mountPoint;
   };
 
@@ -79,20 +79,20 @@ export function useHistoryPanel(options: HistoryPanelOptions) {
   const handleDocumentClick = (event: Event) => {
     const target = event.target as Element;
     const triggerElement = triggerRef.value;
-    
+
     // 如果点击的是触发元素，不处理（让触发元素的点击事件处理）
     if (triggerElement && triggerElement.contains(target)) {
       return;
     }
-    
+
     // 查找历史面板的 tippy 元素
     const historyTippyBox = document.querySelector('.tippy-box[data-theme~="history-panel"]');
-    
+
     // 如果点击的是面板内容，不关闭面板
     if (historyTippyBox && historyTippyBox.contains(target)) {
       return;
     }
-    
+
     // 否则关闭面板
     if (tippyInstance.value?.state.isVisible) {
       tippyInstance.value.hide();
@@ -164,7 +164,7 @@ export function useHistoryPanel(options: HistoryPanelOptions) {
     if (!tippyInstance.value) {
       createTippyInstance();
     }
-    
+
     if (tippyInstance.value?.state.isVisible) {
       hide();
     } else {
@@ -189,13 +189,13 @@ export function useHistoryPanel(options: HistoryPanelOptions) {
       tippyInstance.value.destroy();
       tippyInstance.value = null;
     }
-    
+
     // 清理挂载点
     if (mountPoint) {
       render(null, mountPoint);
       mountPoint = null;
     }
-    
+
     // 移除全局监听器（防止内存泄漏）
     document.removeEventListener('click', handleDocumentClick, false);
   };

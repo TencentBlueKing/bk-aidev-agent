@@ -63,7 +63,8 @@ export function useSelect(enablePopup: boolean) {
     if (mouseDownPosition) {
       // 比较 mousedown 和 mouseup 的位置
       const distance = Math.sqrt(
-        Math.pow(event.clientX - mouseDownPosition.x, 2) + Math.pow(event.clientY - mouseDownPosition.y, 2),
+        Math.pow(event.clientX - mouseDownPosition.x, 2) +
+          Math.pow(event.clientY - mouseDownPosition.y, 2)
       );
       // 如果距离大于一个阈值（例如 5px），则认为是文本选择
       isTextSelected = distance > 5;
@@ -161,7 +162,8 @@ export function useSelect(enablePopup: boolean) {
   const handleClickOutside = (event: MouseEvent) => {
     const target = event.target as HTMLElement;
     const isTargetTagText =
-      target.classList?.contains('ai-blueking-tag-text') || target.classList?.contains('shortcut-btn');
+      target.classList?.contains('ai-blueking-tag-text') ||
+      target.classList?.contains('shortcut-btn');
     const isPopupContainsTarget = popupRef.value?.contains(target);
 
     // 处理标签文本的点击

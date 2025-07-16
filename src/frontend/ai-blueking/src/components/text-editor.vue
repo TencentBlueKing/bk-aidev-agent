@@ -2,8 +2,8 @@
   <div class="bk-text-editor">
     <textarea
       ref="textareaRef"
-      class="editor-textarea"
       v-model="inputValue"
+      class="editor-textarea"
       :placeholder="placeholder"
       @compositionend="handleCompositionEnd"
       @compositionstart="handleCompositionStart"
@@ -12,7 +12,7 @@
     ></textarea>
     <div class="editor-footer">
       <div class="button-group">
-        <BkButton
+        <bk-button
           style="width: 52px; min-width: 52px"
           class="cancel-btn"
           size="small"
@@ -20,8 +20,8 @@
           @click="handleCancel"
         >
           {{ t('取消') }}
-        </BkButton>
-        <BkButton
+        </bk-button>
+        <bk-button
           style="width: 52px; min-width: 52px"
           class="submit-btn"
           :disabled="!inputValue.trim()"
@@ -30,16 +30,15 @@
           @click="handleSubmit"
         >
           {{ t('发送') }}
-        </BkButton>
+        </bk-button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref, watch, computed, onMounted } from 'vue';
-
   import { Button as BkButton } from 'bkui-vue';
+  import { ref, watch, computed, onMounted } from 'vue';
 
   import { useInputInteraction } from '../composables/use-input-interaction';
   import { t } from '../lang';
@@ -56,7 +55,7 @@
       placeholder: t('请输入内容'),
       autoFocus: false,
       loading: false,
-    },
+    }
   );
 
   const emit = defineEmits<{
@@ -88,7 +87,7 @@
     () => props.modelValue,
     newValue => {
       inputValue.value = newValue;
-    },
+    }
   );
 
   // 监听 inputValue 变化
@@ -96,7 +95,7 @@
     () => inputValue.value,
     newValue => {
       emit('update:modelValue', newValue);
-    },
+    }
   );
 
   // 处理输入事件

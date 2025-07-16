@@ -1,6 +1,6 @@
 <template>
   <div class="chat-input-box">
-    <AiSelectedBox
+    <ai-selected-box
       v-if="selectedText.length > 0"
       style="margin-bottom: 10px"
       :actions="props.shortcuts"
@@ -8,17 +8,20 @@
       @mousedown.prevent
       @shortcut-click="handleShortcutClick"
     />
-    <ShortcutsBar
+    <shortcuts-bar
       v-else
       style="margin-bottom: 8px"
       :shortcuts="shortcuts"
       @shortcut-click="handleShortcutClickWithClear"
     />
-    <div class="input-wrapper" :class="{ disabled: props.disabled }">
-      <PromptList
+    <div
+      class="input-wrapper"
+      :class="{ disabled: props.disabled }"
+    >
+      <prompt-list
         ref="promptListRef"
-        class="prompt-list-wrapper"
         v-model:show="showPromptList"
+        class="prompt-list-wrapper"
         :prompts="props.prompts"
         @height-change="handlePromptHeightChange"
         @select="handlePromptSelect"
@@ -27,7 +30,7 @@
         v-if="citeText.length > 0"
         class="cite"
       >
-        <AiCite
+        <ai-cite
           :show-close-icon="true"
           :text="citeText"
           @close="setCiteText('')"
@@ -35,9 +38,9 @@
       </div>
       <textarea
         ref="textareaRef"
+        v-model="inputValue"
         :style="{ height: textareaHeight + 'px' }"
         class="input-area"
-        v-model="inputValue"
         :disabled="props.disabled"
         :placeholder="props.placeholder"
         @compositionend="handleCompositionEnd"
@@ -49,7 +52,12 @@
       <div class="input-tools">
         <i
           ref="actionIconRef"
-          :class="['bkai-icon', actionIconClass, { disabled: !loading && !inputValue.trim() }, 'clickable']"
+          :class="[
+            'bkai-icon',
+            actionIconClass,
+            { disabled: !loading && !inputValue.trim() },
+            'clickable',
+          ]"
           @click="handleActionClick"
         ></i>
       </div>
@@ -58,11 +66,10 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, watch, computed, onBeforeUnmount, withDefaults } from 'vue';
-  import { ComponentPublicInstance } from 'vue';
-
   import { type ShortCut } from '@blueking/ai-ui-sdk/types';
   import { Instance } from 'tippy.js';
+  import { ref, onMounted, watch, computed, onBeforeUnmount, withDefaults } from 'vue';
+  import { ComponentPublicInstance } from 'vue';
 
   import AiCite from '../components/ai-cite.vue';
   import { useInputInteraction } from '../composables/use-input-interaction';
@@ -71,6 +78,7 @@
   import { useTextareaHeight } from '../composables/use-textarea-height';
   import { useTooltip } from '../composables/use-tippy';
   import { t } from '../lang';
+
   import AiSelectedBox from './ai-selected-box.vue';
   import PromptList from './prompt-list.vue';
   import ShortcutsBar from './shortcuts-bar.vue';
@@ -83,17 +91,21 @@
   }>();
 
   const { enablePopup } = usePopup();
-  const { selectedText, citeText, setCiteText, clearSelection, lockSelectedText } = useSelect(enablePopup);
+  const { selectedText, citeText, setCiteText, clearSelection, lockSelectedText } =
+    useSelect(enablePopup);
 
-  const props = withDefaults(defineProps<{
-    shortcuts: ShortCut[];
-    loading: boolean;
-    prompts: string[];
-    disabled: boolean;
-    placeholder?: string;
-  }>(), {
-    placeholder: () => t('输入 "/" 唤出 Prompt\n通过 Shift + Enter 进行换行输入'),
-  });
+  const props = withDefaults(
+    defineProps<{
+      shortcuts: ShortCut[];
+      loading: boolean;
+      prompts: string[];
+      disabled: boolean;
+      placeholder?: string;
+    }>(),
+    {
+      placeholder: () => t('输入 "/" 唤出 Prompt\n通过 Shift + Enter 进行换行输入'),
+    }
+  );
 
   const textareaRef = ref<HTMLTextAreaElement>();
   const inputValue = ref('');
@@ -213,7 +225,7 @@
     () => textareaHeight.value,
     newHeight => {
       emit('height-change', newHeight);
-    },
+    }
   );
 
   // 监听加载状态和输入内容变化，更新tooltip
@@ -367,23 +379,23 @@
       border-radius: 8px;
 
       &.disabled {
-        background: 
+        background:
           linear-gradient(#f5f7fa, #f5f7fa) padding-box,
           linear-gradient(180deg, #e5e5e5, #d5d5d5) border-box;
-        
+
         .input-area {
           color: #c4c6cc;
           background-color: #f5f7fa;
           cursor: not-allowed;
         }
-        
+
         .input-tools {
           .bkai-icon {
             &.clickable {
               color: #c4c6cc;
               background: #f0f1f5;
               cursor: not-allowed;
-              
+
               &:hover {
                 color: #c4c6cc;
                 background: #f0f1f5;

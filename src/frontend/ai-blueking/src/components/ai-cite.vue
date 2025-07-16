@@ -1,7 +1,7 @@
 <template>
   <section
-    class="ai-cite"
     v-show="text"
+    class="ai-cite"
   >
     <span class="content">
       <span
@@ -12,8 +12,9 @@
         <span
           ref="citeTextRef"
           class="ai-cite-text"
-          >{{ `${t('框选内容')}：${text}` }}</span
         >
+          {{ `${t('框选内容')}：${text}` }}
+        </span>
       </span>
       <i
         v-if="showCloseIcon"
@@ -25,9 +26,8 @@
 </template>
 
 <script setup lang="ts">
-  import { nextTick, ref, onMounted, watch } from 'vue';
-
   import { Instance } from 'tippy.js';
+  import { nextTick, ref, onMounted, watch } from 'vue';
 
   import { useTooltip } from '../composables/use-tippy';
   import { t } from '../lang';
@@ -50,7 +50,7 @@
       nextTick(() => {
         initTooltip();
       });
-    },
+    }
   );
 
   const citeTextRef = ref<HTMLElement | null>(null);

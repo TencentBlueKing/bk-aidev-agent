@@ -2,8 +2,8 @@
   <div class="shortcuts-bar">
     <div
       v-for="shortcut in shortcuts"
-      class="shortcut-item"
       :key="shortcut.key"
+      class="shortcut-item"
       @click="emit('shortcut-click', shortcut)"
     >
       <i

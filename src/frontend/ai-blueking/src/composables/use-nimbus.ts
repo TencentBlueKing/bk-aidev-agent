@@ -27,7 +27,7 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue';
 
 export function useNimbus(
   emit: { (e: 'click'): void; (e: 'minimize', value: boolean): void },
-  defaultMinimize = false,
+  defaultMinimize = false
 ) {
   const nimbusWidth = 48;
   const nimbusHeight = 48;

@@ -1,0 +1,62 @@
+# 构建输出目录
+dist/
+build/
+coverage/
+lesscode-dist/
+
+# 依赖包
+node_modules/
+
+# 日志文件
+*.log
+logs/
+
+# 缓存目录
+.cache/
+.temp/
+.vscode/
+.idea/
+
+# 配置文件
+*.config.js
+*.config.ts
+vite.config.*
+vitest.config.*
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# 构建脚本（可选，如果需要检查可以移除）
+scripts/
+
+# 类型声明文件
+*.d.ts
+!src/**/*.d.ts
+
+# 其他不需要检查的文件
+*.min.js
+*.min.css
+*.bundle.js
+
+# 测试文件（如果不需要检查）
+# **/*.test.ts
+# **/*.test.js
+# **/*.spec.ts
+# **/*.spec.js
+
+# 临时文件
+.DS_Store
+Thumbs.db
+
+# 环境文件
+.env
+.env.local
+.env.*.local
+
+# 编辑器文件
+*.swp
+*.swo
+*~
+
+# Playground 目录（如果不需要严格检查）
+playground/

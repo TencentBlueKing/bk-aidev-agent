@@ -80,8 +80,8 @@ export const langData = {
   恢复默认大小: 'Restore default size',
   无匹配结果: 'No matching results',
   'AI 小鲸': 'AI BK GPT',
-  '新增会话': 'New chat',
-  '历史会话': 'History session',
+  新增会话: 'New chat',
+  历史会话: 'History session',
 } as const;
 
 export const zhLangData = {

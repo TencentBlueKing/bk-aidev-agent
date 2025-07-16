@@ -9,6 +9,11 @@
     "build": "tsx ./scripts/vite.build.ts && vue-tsc --project tsconfig.dts.json",
     "dts": "vue-tsc --project tsconfig.dts.json",
     "prettier": "prettier ./src ./scripts ./playground --write",
+    "format": "prettier --write ./src ./scripts ./playground --config .prettierrc.js",
+    "format:check": "prettier --check ./src ./scripts ./playground --config .prettierrc.js",
+    "lint": "eslint src --ext .vue,.js,.ts,.jsx,.tsx",
+    "lint:fix": "eslint src --ext .vue,.js,.ts,.jsx,.tsx --fix; prettier --write ./src --config .prettierrc.js",
+    "lint:check": "eslint src --ext .vue,.js,.ts,.jsx,.tsx --max-warnings 0",
     "visualize": "vite-bundle-visualizer -c scripts/vite.vusualizer.ts",
     "clean": "rm -rf dist node_modules"
   },
@@ -66,7 +71,16 @@
   "devDependencies": {
     "@types/highlight.js": "^10.1.0",
     "@types/node": "^20.14.2",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
     "@vitejs/plugin-vue": "^5.2.3",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.1.5",
+    "eslint-import-resolver-typescript": "^4.4.4",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-prettier": "^5.5.1",
+    "eslint-plugin-unused-imports": "^4.1.4",
+    "eslint-plugin-vue": "^9.33.0",
     "highlight.js": "11.11.1",
     "marked": "^15.0.8",
     "marked-highlight": "2.2.1"

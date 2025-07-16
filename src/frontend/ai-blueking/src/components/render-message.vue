@@ -1,18 +1,18 @@
 <template>
   <li
+    v-if="!HIDE_ROLE_LIST.includes(message.role)"
     ref="messageMainRef"
     :class="[message.role, 'message-main']"
-    v-if="!HIDE_ROLE_LIST.includes(message.role)"
   >
     <div
       v-if="message?.property?.extra?.cite"
       class="ai-cite-container"
     >
-      <AiCite :text="message.property.extra.cite" />
+      <ai-cite :text="message.property.extra.cite" />
     </div>
     <div :class="`message-content-container ${message.role}`">
       <template v-if="[SessionContentRole.User, SessionContentRole.Role].includes(message.role)">
-        <BkTextEditor
+        <bk-text-editor
           v-if="isEdit"
           :auto-focus="true"
           :model-value="message.content"
@@ -64,11 +64,11 @@
           </span>
           <span
             v-else
-            v-html="renderValue"
             :class="{
               'markdown-content': true,
               loading: message.status === SessionContentStatus.Loading,
             }"
+            v-html="renderValue"
           ></span>
         </p>
       </template>
@@ -105,28 +105,28 @@
 </template>
 
 <script lang="ts" setup>
-  import { computed, onMounted, ref, watch, defineEmits, onBeforeUnmount, nextTick } from 'vue';
-
   import { SessionContentRole, SessionContentStatus } from '@blueking/ai-ui-sdk/enums';
   import { type ISessionContent } from '@blueking/ai-ui-sdk/types';
   import { Message } from 'bkui-vue';
   import dayjs from 'dayjs';
+  import DOMPurify from 'dompurify';
   import hljs from 'highlight.js';
   import MarkdownIt from 'markdown-it';
   import MarkdownItCodeCopy from 'markdown-it-code-copy';
-  import DOMPurify from 'dompurify';
+  import { computed, onMounted, ref, watch, defineEmits, onBeforeUnmount, nextTick } from 'vue';
 
   import defaultUserLogo from '../assets/images/ai-user.png';
   import AiCite from '../components/ai-cite.vue';
+  import { useMermaid } from '../composables/use-mermaid';
   import { usePopup } from '../composables/use-popup-props';
   import { useSelect } from '../composables/use-select-pop';
   import { useTooltip } from '../composables/use-tippy';
-  import { useMermaid } from '../composables/use-mermaid';
   import { HIDE_ROLE_LIST } from '../config';
   import { t } from '../lang';
   import MarkdownItLinkBlank from '../plugins/markdown-it-link-blank';
   import mermaidPlugin from '../plugins/markdown-it-mermaid';
   import { createDeleteConfirm, closeAllDeleteConfirms } from '../utils/delete-confirm';
+
   import BkTextEditor from './text-editor.vue';
 
   // 类型定义
@@ -198,7 +198,7 @@
     const sanitized = DOMPurify.sanitize(rendered, {
       USE_PROFILES: { html: true },
       FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input'],
-      FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover']
+      FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover'],
     });
 
     // Process mermaid diagrams after DOM update
@@ -221,7 +221,9 @@
 
     const time = dayjs(props.message.time);
     const now = dayjs();
-    return now.isSame(time, 'year') ? time.format('MM-DD HH:mm:ss') : time.format('YYYY-MM-DD HH:mm:ss');
+    return now.isSame(time, 'year')
+      ? time.format('MM-DD HH:mm:ss')
+      : time.format('YYYY-MM-DD HH:mm:ss');
   });
 
   // 事件处理
@@ -285,7 +287,7 @@
     () => {
       setTimeout(initTooltips, 0);
     },
-    { deep: true },
+    { deep: true }
   );
 
   watch(isEdit, newValue => {

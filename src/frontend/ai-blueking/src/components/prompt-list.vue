@@ -1,11 +1,11 @@
 <template>
   <div
+    v-show="show"
     ref="promptListEl"
     class="bkai-prompt-list"
-    v-show="show"
   >
     <div class="bkai-prompt-list-search">
-      <Input
+      <input
         v-model="searchValue"
         behavior="simplicity"
         placeholder="请输入关键词"
@@ -21,10 +21,10 @@
       <div
         v-for="(prompt, index) in filteredPrompts"
         v-else
+        :key="prompt"
         style="overflow: hidden"
         class="bkai-prompt-list-item"
         :class="{ active: activeIndex === index }"
-        :key="prompt"
         @click="handleSelect(prompt)"
         @mouseleave="activeIndex = null"
         @mouseover="activeIndex = index"
@@ -37,8 +37,6 @@
 
 <script setup lang="ts">
   import { nextTick, ref, computed, onMounted, onBeforeUnmount, defineExpose, watch } from 'vue';
-
-  import { Input } from 'bkui-vue';
 
   import { t } from '../lang';
 
@@ -59,7 +57,9 @@
 
   const filteredPrompts = computed(() => {
     if (!searchValue.value.trim()) return props.prompts;
-    return props.prompts.filter(prompt => prompt.toLowerCase().includes(searchValue.value.toLowerCase()));
+    return props.prompts.filter(prompt =>
+      prompt.toLowerCase().includes(searchValue.value.toLowerCase())
+    );
   });
 
   watch(
@@ -70,7 +70,7 @@
           activeIndex.value = null;
         });
       }
-    },
+    }
   );
 
   // 处理选择项

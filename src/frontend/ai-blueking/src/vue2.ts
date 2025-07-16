@@ -27,9 +27,8 @@
 import { createApp, h } from 'vue';
 
 import { DEFAULT_SHORTCUTS } from './config/shortcuts';
-import AiBlueking from './vue3.ts';
-
 import type { ShortCut } from './types/index.ts';
+import AiBlueking from './vue3.ts';
 
 export type * from './types/index.ts';
 
@@ -176,7 +175,7 @@ export default {
         () => {
           instance.$forceUpdate();
         },
-        { deep: true },
+        { deep: true }
       );
     });
     this.handleShow = () => {
@@ -216,7 +215,7 @@ export default {
         const contents = aiBlueking.component.exposed.sessionContents;
         // 解包 Vue3 的 Ref 对象
         let result = contents && contents.__v_isRef ? contents.value : contents;
-        
+
         // 如果是 Proxy 对象，转换为普通 JavaScript 数组
         if (result && typeof result === 'object') {
           try {
@@ -229,11 +228,10 @@ export default {
             }
           }
         }
-        
+
         return Array.isArray(result) ? result : [];
       },
     });
-    
   },
   mounted() {
     this.app?.mount(this.$el);

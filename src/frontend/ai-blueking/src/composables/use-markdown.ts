@@ -1,10 +1,11 @@
-import { computed, type Ref } from 'vue'
-import hljs from 'highlight.js'
-import MarkdownIt from 'markdown-it'
-import MarkdownItCodeCopy from 'markdown-it-code-copy'
-import MarkdownItLinkBlank from '../plugins/markdown-it-link-blank'
-import mermaidPlugin from '../plugins/markdown-it-mermaid'
-import DOMPurify from 'dompurify'
+import DOMPurify from 'dompurify';
+import hljs from 'highlight.js';
+import MarkdownIt from 'markdown-it';
+import MarkdownItCodeCopy from 'markdown-it-code-copy';
+import { computed, type Ref } from 'vue';
+
+import MarkdownItLinkBlank from '../plugins/markdown-it-link-blank';
+import mermaidPlugin from '../plugins/markdown-it-mermaid';
 
 /**
  * Markdown 渲染 composable
@@ -18,10 +19,10 @@ export function useMarkdown() {
     highlight: (str: string, lang: string) => {
       if (lang && hljs.getLanguage(lang)) {
         try {
-          return hljs.highlight(str, { language: lang }).value
+          return hljs.highlight(str, { language: lang }).value;
         } catch (__) {}
       }
-      return ''
+      return '';
     },
   })
     .use(MarkdownItCodeCopy, {
@@ -29,7 +30,7 @@ export function useMarkdown() {
       buttonClass: 'ai-blueking-copy-button',
     })
     .use(MarkdownItLinkBlank)
-    .use(mermaidPlugin)
+    .use(mermaidPlugin);
 
   /**
    * 渲染 markdown 文本
@@ -37,24 +38,24 @@ export function useMarkdown() {
    * @returns 渲染后的 HTML
    */
   const renderMarkdown = (text: string): string => {
-    if (!text) return ''
-    
+    if (!text) return '';
+
     try {
-      const rendered = md.render(text)
+      const rendered = md.render(text);
       // 使用 DOMPurify 净化内容以防止 XSS
       const sanitized = DOMPurify.sanitize(rendered, {
         USE_PROFILES: { html: true },
         FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input'],
-        FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover']
-      })
+        FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover'],
+      });
       // 移除末尾的空白段落标签
-      return sanitized.replace(/\s*<\/p>\s*$/, '</p>')
+      return sanitized.replace(/\s*<\/p>\s*$/, '</p>');
     } catch (error) {
-      console.warn('Markdown rendering failed:', error)
+      console.warn('Markdown rendering failed:', error);
       // 如果渲染失败，返回转义后的纯文本
-      return text.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      return text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
-  }
+  };
 
   /**
    * 创建响应式的 markdown 渲染计算属性
@@ -62,11 +63,11 @@ export function useMarkdown() {
    * @returns 渲染后的 HTML 计算属性
    */
   const createMarkdownRenderer = (source: Ref<string>) => {
-    return computed(() => renderMarkdown(source.value))
-  }
+    return computed(() => renderMarkdown(source.value));
+  };
 
   return {
     renderMarkdown,
     createMarkdownRenderer,
-  }
+  };
 }

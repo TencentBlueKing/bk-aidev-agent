@@ -53,13 +53,16 @@
     name: 'NimbusButton',
   });
 
-  const props = withDefaults(defineProps<{
-    isPanelShow: boolean;
-    isMinimize: boolean;
-    size?: 'small' | 'normal' | 'large';
-  }>(), {
-    size: 'normal',
-  });
+  const props = withDefaults(
+    defineProps<{
+      isPanelShow: boolean;
+      isMinimize: boolean;
+      size?: 'small' | 'normal' | 'large';
+    }>(),
+    {
+      size: 'normal',
+    }
+  );
 
   const emit = defineEmits<{
     (e: 'click'): void;
@@ -119,7 +122,7 @@
   } = useNimbus(emit, props.isMinimize);
 
   // 向父组件通知状态变化
-  watch(isMinimize, (newValue) => {
+  watch(isMinimize, newValue => {
     emit('update:isMinimize', newValue);
   });
 
@@ -163,7 +166,7 @@
       nextTick(() => {
         initTooltips();
       });
-    },
+    }
   );
 
   onMounted(() => {

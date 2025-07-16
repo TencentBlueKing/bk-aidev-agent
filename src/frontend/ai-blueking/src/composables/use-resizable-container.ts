@@ -66,9 +66,15 @@ export function useResizableContainer(options: ResizableContainerOptions = {}) {
   const miniPadding = options.miniPadding !== undefined ? options.miniPadding : 0;
 
   // 状态管理
-  const initialX = ref(options.defaultLeft !== undefined ? options.defaultLeft : window.innerWidth - initWidth);
+  const initialX = ref(
+    options.defaultLeft !== undefined ? options.defaultLeft : window.innerWidth - initWidth
+  );
   const initialTop = ref(options.defaultTop !== undefined ? options.defaultTop : 0);
-  const initialHeight = ref(options.defaultHeight !== undefined ? options.defaultHeight : window.innerHeight - (options.defaultTop !== undefined ? options.defaultTop : 0));
+  const initialHeight = ref(
+    options.defaultHeight !== undefined
+      ? options.defaultHeight
+      : window.innerHeight - (options.defaultTop !== undefined ? options.defaultTop : 0)
+  );
   const initialWidth = ref(initWidth);
 
   const top = ref(initialTop.value);

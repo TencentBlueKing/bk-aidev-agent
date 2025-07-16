@@ -23,9 +23,8 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { onBeforeUnmount, ref, Ref } from 'vue';
-
 import tippy, { Instance, Props } from 'tippy.js';
+import { onBeforeUnmount, ref, Ref } from 'vue';
 
 import 'tippy.js/dist/tippy.css';
 
@@ -40,8 +39,16 @@ export interface TooltipTarget {
 // 添加返回类型接口
 interface TooltipAPI {
   instances: Ref<Instance[]>;
-  createTooltip: (element: Element | string, content: string, options?: TooltipOptions) => Instance | null;
-  createTooltipsForSelector: (selector: string, content: string, options?: TooltipOptions) => Instance[];
+  createTooltip: (
+    element: Element | string,
+    content: string,
+    options?: TooltipOptions
+  ) => Instance | null;
+  createTooltipsForSelector: (
+    selector: string,
+    content: string,
+    options?: TooltipOptions
+  ) => Instance[];
   createMultipleTooltips: (targets: TooltipTarget[]) => Instance[];
   destroyAll: () => void;
   updateContent: (instance: Instance, content: string) => void;
@@ -86,7 +93,11 @@ export function useTooltip(defaultOptions: TooltipOptions = {}): TooltipAPI {
    * @param options - Tooltip options
    * @returns Tooltip instance
    */
-  const createTooltip = (element: Element | string, content: string, options: TooltipOptions = {}): Instance | null => {
+  const createTooltip = (
+    element: Element | string,
+    content: string,
+    options: TooltipOptions = {}
+  ): Instance | null => {
     try {
       // 如果传入的是选择器字符串，获取对应的元素
       const targetElement = typeof element === 'string' ? document.querySelector(element) : element;
@@ -123,7 +134,11 @@ export function useTooltip(defaultOptions: TooltipOptions = {}): TooltipAPI {
    * @param options - Tooltip options
    * @returns Array of tooltip instances
    */
-  const createTooltipsForSelector = (selector: string, content: string, options: TooltipOptions = {}): Instance[] => {
+  const createTooltipsForSelector = (
+    selector: string,
+    content: string,
+    options: TooltipOptions = {}
+  ): Instance[] => {
     const elements = document.querySelectorAll(selector);
     const newInstances: Instance[] = [];
 

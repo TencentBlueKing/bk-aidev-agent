@@ -191,7 +191,6 @@ export const normalizeUrl = (url: string): string => {
     // 相对路径，基于当前页面构建完整URL
     const baseUrl = `${window.location.protocol}//${window.location.host}${window.location.pathname}`;
     return new URL(url, baseUrl).toString();
-
   } catch (error) {
     console.warn('URL normalization failed:', error);
     return url; // 如果处理失败，返回原始URL

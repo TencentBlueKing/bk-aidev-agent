@@ -27,7 +27,15 @@ import type { ISessionContent, ShortCut } from '@blueking/ai-ui-sdk/types';
 import type { Ref } from 'vue';
 export interface AIBluekingExpose {
   sessionContents: Ref<ISessionContent[]>;
-  sendChat: ({ message, cite, shortcut }: { message: string; cite?: string; shortcut?: ShortCut }) => void;
+  sendChat: ({
+    message,
+    cite,
+    shortcut,
+  }: {
+    message: string;
+    cite?: string;
+    shortcut?: ShortCut;
+  }) => void;
   handleShow: () => void;
   handleStop: () => void;
   reGenerateChat: () => void;
@@ -38,7 +46,7 @@ export interface AIBluekingExpose {
 
 export type { ShortCut, ISessionContent };
 
-type IContext = Record<string, string> | Record<string, string>[]
+type IContext = Record<string, string> | Record<string, string>[];
 
 export interface IRequestOptions {
   headers?: Record<string, string>;

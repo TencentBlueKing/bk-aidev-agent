@@ -26,13 +26,19 @@
 
 export default (md: any) => {
   // Remember the old renderer if overridden, or proxy to the default renderer.
-  var defaultRender =
+  const defaultRender =
     md.renderer.rules.link_open ||
     function (tokens: any, idx: any, options: any, env: any, self: any) {
       return self.renderToken(tokens, idx, options);
     };
 
-  md.renderer.rules.link_open = function (tokens: any, idx: any, options: any, env: any, self: any) {
+  md.renderer.rules.link_open = function (
+    tokens: any,
+    idx: any,
+    options: any,
+    env: any,
+    self: any
+  ) {
     // Add a new `target` attribute, or replace the value of the existing one.
     tokens[idx].attrSet('target', '_blank');
 

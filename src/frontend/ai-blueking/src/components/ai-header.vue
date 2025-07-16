@@ -2,7 +2,7 @@
   <div
     ref="headerRef"
     class="header drag-handle"
-    :class="{ 'draggable': props.draggable }"
+    :class="{ draggable: props.draggable }"
   >
     <div class="left-section">
       <div class="logo">
@@ -16,15 +16,15 @@
     <div class="right-section">
       <i
         v-if="props.showNewChatIcon"
-        class="bkai-icon bkai-xinzengliaotian"
         v-bk-tooltips="{ content: t('新增会话'), boundary: 'parent' }"
+        class="bkai-icon bkai-xinzengliaotian"
         @click="handleNewChat"
       ></i>
       <i
         v-if="props.showHistoryIcon"
         ref="historyIconRef"
-        class="bkai-icon bkai-history"
         v-bk-tooltips="{ content: t('历史会话'), boundary: 'parent' }"
+        class="bkai-icon bkai-history"
         @click="handleHistoryClick"
       ></i>
       <i
@@ -43,31 +43,34 @@
 </template>
 
 <script setup lang="ts">
+  import { bkTooltips } from 'bkui-vue';
   import { computed, ref, onMounted, watch, onBeforeUnmount } from 'vue';
 
   import logo from '../assets/images/avatar.png';
-  import { useTooltip } from '../composables/use-tippy';
   import { useHistoryPanel } from '../composables/use-history-panel';
-  import { t } from '../lang';
   import { useInjectSessionStore } from '../composables/use-session-store';
+  import { useTooltip } from '../composables/use-tippy';
+  import { t } from '../lang';
   import type { SessionStore } from '../store/sessionStore';
 
-  import { bkTooltips } from 'bkui-vue';
   import HistoryPanel from './history-panel.vue';
 
-  const props = withDefaults(defineProps<{
-    title: string;
-    isCompressionHeight: boolean;
-    draggable: boolean;
-    showHistoryIcon: boolean;
-    showNewChatIcon?: boolean;
-  }>(), {
-    title: '',
-    isCompressionHeight: false,
-    draggable: true,
-    showHistoryIcon: true,
-    showNewChatIcon: true,
-  });
+  const props = withDefaults(
+    defineProps<{
+      title: string;
+      isCompressionHeight: boolean;
+      draggable: boolean;
+      showHistoryIcon: boolean;
+      showNewChatIcon?: boolean;
+    }>(),
+    {
+      title: '',
+      isCompressionHeight: false,
+      draggable: true,
+      showHistoryIcon: true,
+      showNewChatIcon: true,
+    }
+  );
 
   const emit = defineEmits<(e: 'close' | 'toggleCompression' | 'newChat') => void>();
 
@@ -84,17 +87,21 @@
     triggerRef: historyIconRef,
     panelComponent: HistoryPanel,
     panelProps: {
-      sessionStore: sessionStore
+      sessionStore: sessionStore,
     },
     tippyOptions: {
       placement: 'bottom-end',
       offset: [0, 8],
-      appendTo: () => document.querySelector('.ai-blueking-container-wrapper') as HTMLElement || document.body,
-    }
+      appendTo: () =>
+        (document.querySelector('.ai-blueking-container-wrapper') as HTMLElement) || document.body,
+    },
   });
 
   const displayTitle = computed(() => {
-    return props.title || `${sessionStore.agentInfo.agentName || ''}-${sessionStore.currentSession.value?.sessionName}`
+    return (
+      props.title ||
+      `${sessionStore.agentInfo.agentName || ''}-${sessionStore.currentSession.value?.sessionName}`
+    );
   });
 
   const compressionIcon = computed(() => {
@@ -134,7 +141,7 @@
     () => props.isCompressionHeight,
     () => {
       initTooltips();
-    },
+    }
   );
 
   onMounted(() => {
@@ -145,19 +152,17 @@
     destroyAll();
   });
 
-
-
   // 处理新增聊天按钮点击
   const handleNewChat = async () => {
     try {
       // 通知父组件
-      emit('newChat')
+      emit('newChat');
       // 创建新会话（总是创建新会话，不检查上一个会话是否为空）
-      await sessionStore.addNewSession()
+      await sessionStore.addNewSession();
     } catch (error) {
-      console.error('Failed to create new chat:', error)
+      console.error('Failed to create new chat:', error);
     }
-  }
+  };
 </script>
 
 <style lang="scss" scoped>

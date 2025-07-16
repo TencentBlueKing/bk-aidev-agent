@@ -24,8 +24,8 @@
       <div class="shortcut-buttons">
         <div
           v-for="(btn, index) in shortcutButtons"
-          class="shortcut-btn"
           :key="index"
+          class="shortcut-btn"
           @click="handleShortcutClick(btn)"
         >
           <i
