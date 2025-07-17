@@ -4,6 +4,8 @@ from bkapi_client_core.base import Operation, OperationGroup
 from bkapi_client_core.client import BaseClient
 from bkapi_client_core.property import bind_property
 
+from aidev_agent.config import settings
+from aidev_agent.enums import CredentialType
 from aidev_agent.packages.langchain.tools.base import Tool, make_structured_tool
 
 
@@ -155,6 +157,20 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/agent/{agent_code}/bind_space/",
     )
 
+    retrieve_resource_v1_prompt = bind_property(
+        Operation,
+        name="retrieve_resource_v1_prompt",
+        method="GET",
+        path="/openapi/aidev/resource/v1/prompt/{prompt_code}/",
+    )
+
+    retrieve_resource_v1_collection = bind_property(
+        Operation,
+        name="retrieve_resource_v1_collection",
+        method="GET",
+        path="/openapi/aidev/resource/v1/collection/{collection_code}/",
+    )
+
 
 class Client(BaseClient):
     api = bind_property(OpenApiGroup, name="api")
@@ -163,6 +179,10 @@ class Client(BaseClient):
         retrieve_tool = self.api.retrieve_tool if kwargs.pop("appspace", True) else self.api.appspace_retrieve_tool
         result = retrieve_tool(path_params={"tool_code": tool_code}, **kwargs)
         result["data"]["tool_cn_name"] = result["data"]["tool_name"]
+        if result["data"].get("credential_type", "") == CredentialType.BLUEAPPS.value:
+            tool = Tool.model_validate(result["data"])
+            tool.extra = {"bk_app_code": settings.APP_CODE, "bk_app_secret": settings.SECRET_KEY}
+            return make_structured_tool(tool)
         return make_structured_tool(Tool.model_validate(result["data"]))
 
     def knowledge_query(self, data: dict):
