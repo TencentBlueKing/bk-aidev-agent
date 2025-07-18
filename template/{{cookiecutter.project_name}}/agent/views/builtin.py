@@ -1,5 +1,6 @@
 # PLEASE DO NOT MODIFY THIS FILE!
 import json
+from logging import getLogger
 
 from aidev_agent.api.bk_aidev import BKAidevApi
 from aidev_agent.services.chat import ChatCompletionAgent, ChatPrompt, ExecuteKwargs
@@ -18,6 +19,8 @@ from rest_framework.views import APIView, Response
 from rest_framework.viewsets import ViewSetMixin
 
 from agent.services.agent import build_chat_completion_agent
+
+logger = getLogger(__name__)
 
 
 @method_decorator(login_exempt, name="dispatch")
@@ -102,12 +105,12 @@ class ChatSessionContentViewSet(PluginViewSet):
         # 快捷指令
         try:
             command_data = property_data.get("extra")
+            logger.info("CreateChatSessionContent: try to process command, command_data->[%s]", command_data)
             if command_data.get("command"):
                 processed_content = CommandProcessor().process_command(command_data)
                 request.data["content"] = processed_content
-        except Exception:  # pylint: disable=broad-except
-            # logger.error("process command error->[%s]", e)
-            pass
+        except Exception as e:  # pylint: disable=broad-except
+            logger.error("CreateChatSessionContent: process command error->[%s]", e)
 
         result = client.api.create_chat_session_content(json=request.data)
         return Response(data=result["data"])
