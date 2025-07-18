@@ -241,7 +241,11 @@ general_qa_prompt_tool_calling = ChatPromptTemplate.from_messages(
             ),
         ),
         ("placeholder", "{chat_history}"),
-        ("human", "以下是用户最新提问内容：```{{query}}```\n\n\n{{role_prompt}}"),
+        (
+            "human", 
+            """以下是用户最新提问内容：```{{query}}```\n\n\n{{role_prompt}}
+            {% if not use_general_knowledge_on_miss %}请用拒答文案```{{rejection_response}}```拒绝回答。{% endif -%}"""
+         ),
         ("placeholder", "{agent_scratchpad}"),
     ],
     template_format="jinja2",
