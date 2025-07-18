@@ -97,7 +97,7 @@ class EnhancedJSONAgentOutputParser(JSONAgentOutputParser):
         super().__init__()
         self.llm = llm
 
-    def parse(self, text: str) -> Union[AgentAction, AgentFinish]:
+    def parse(self, text: str) -> Union[AgentAction, AgentFinish, List[AgentAction]]:
         if not text:
             raise RuntimeError("模型调用失败，LLM Gateway 返回的结果为空！")
         cur_time = datetime.now(pytz.utc).astimezone(pytz.timezone("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S %f")
@@ -108,10 +108,19 @@ class EnhancedJSONAgentOutputParser(JSONAgentOutputParser):
                 text = remove_thinking_process(text)
             response = parse_json_markdown(text)
             logger.info(f"=====> [response] [{cur_time}] {response}")
+            
+            # 处理并行工具调用
             if isinstance(response, list):
-                # gpt turbo frequently ignores the directive to emit a single action
-                logger.warning("Got multiple action responses: %s", response)
-                response = response[0]
+                # 当解析到JSON数组时，处理为并行工具调用，返回多个AgentAction对象
+                actions = []
+                for tool_call in response:
+                    if tool_call["action"] == "Final Answer":
+                        raise OutputParserException("Cannot mix Final Answer with tool calls in parallel mode")
+                    if isinstance(tool_call.get("action_input"), str):
+                        raise RuntimeError(ACTION_INPUT_ERR_MSG)
+                    actions.append(AgentAction(tool_call["action"], tool_call.get("action_input", {}), text))
+                return actions
+                
             if response["action"] == "Final Answer":
                 if isinstance(response["action_input"], dict):
                     # NOTE: 有时候这里不是字符串（例如用户query为“用json格式给我输出个不同排序算法的对比”）

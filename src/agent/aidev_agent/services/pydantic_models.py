@@ -64,6 +64,7 @@ class IntentRecognition(BaseModel):
         default=False, description=("意图识别with_index_specific_search_keywords参数")
     )
     tool_output_compress_thrd: int = Field(default=5000, description=("工具输出压缩阈值"))
+    agent_type: str | None = Field(default=None, description=("agent类"))
 
 
 class KnowledgebaseSettings(BaseModel):
