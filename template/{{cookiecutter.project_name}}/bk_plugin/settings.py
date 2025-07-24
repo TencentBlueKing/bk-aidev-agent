@@ -9,3 +9,5 @@ STATIC_TEMPLATE_ROOT = os.path.join(CUR_DIR, "{{cookiecutter.static_template_roo
 STATICFILES_DIRS += [os.path.join(STATIC_TEMPLATE_ROOT, "static")]
 
 INSTALLED_APPS += ("agent",)
+
+DEFAULT_CACHE_TIMEOUT = 60

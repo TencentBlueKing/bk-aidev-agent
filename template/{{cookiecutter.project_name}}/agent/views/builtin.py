@@ -18,7 +18,11 @@ from rest_framework.status import is_success
 from rest_framework.views import APIView, Response
 from rest_framework.viewsets import ViewSetMixin
 
-from agent.services.agent import build_chat_completion_agent
+from agent.services.agent import (
+    build_chat_completion_agent,
+    get_agent_config_info,
+    get_agent_role_info,
+)
 
 logger = getLogger(__name__)
 
@@ -105,7 +109,10 @@ class ChatSessionContentViewSet(PluginViewSet):
         # 快捷指令
         try:
             command_data = property_data.get("extra")
-            logger.info("CreateChatSessionContent: try to process command, command_data->[%s]", command_data)
+            logger.info(
+                "CreateChatSessionContent: try to process command, command_data->[%s]",
+                command_data,
+            )
             if command_data.get("command"):
                 processed_content = CommandProcessor().process_command(command_data)
                 request.data["content"] = processed_content
@@ -148,6 +155,11 @@ class ChatCompletionViewSet(PluginViewSet):
             chat_history = request.data.get("chat_prompts", []) or request.data.get("chat_history", [])
             if not chat_history:
                 raise ClientBlueException(message="chat_history is required")
+            chat_history = [ChatPrompt(role=each["role"], content=each["content"]) for each in chat_history]
+            role_contents = get_agent_role_info()
+            if role_contents:
+                chat_history = role_contents + chat_history
+
             agent_instance = build_chat_completion_agent(chat_history)
 
         if execute_kwargs.stream:
@@ -175,6 +187,5 @@ class ChatCompletionViewSet(PluginViewSet):
 class AgentInfoViewSet(PluginViewSet):
     @action(detail=False, methods=["GET"], url_path="info", url_name="info")
     def info(self, request):
-        client = BKAidevApi.get_client()
-        result = client.api.retrieve_agent_config(path_params={"agent_code": settings.APP_CODE})
-        return Response(data=result["data"])
+        agent_info = get_agent_config_info()
+        return Response(data=agent_info)

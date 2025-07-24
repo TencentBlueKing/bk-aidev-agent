@@ -8,6 +8,8 @@ from aidev_agent.services.pydantic_models import ChatPrompt
 from bk_plugin.factory import agent_factory
 from bk_plugin.meta import DEFAULT_AGENT
 from bk_plugin.versions.assistant_components import config
+from django.conf import settings
+from django.core.cache import cache
 
 
 class CommonQAAgentExtend(CommonQAAgent):
@@ -32,7 +34,31 @@ def build_chat_completion_agent(chat_history: list[ChatPrompt]) -> ChatCompletio
         role_prompt=config.role_prompt,
         tools=tools,
         knowledge_bases=knowledge_bases,
-        knowledge_items=knowledge_items,
+        knowledges=knowledge_items,
         chat_history=chat_history,
         agent_cls=agent_cls,
     )
+
+
+def get_agent_config_info():
+    agent_info = cache.get("get_agent_config_info")
+    if not agent_info:
+        client = BKAidevApi.get_client()
+        result = client.api.retrieve_agent_config(path_params={"agent_code": settings.APP_CODE})
+        agent_info = result["data"]
+        cache.set(agent_info, settings.DEFAULT_CACHE_TIMEOUT)
+    return agent_info
+
+
+def get_agent_role_info() -> list[ChatPrompt]:
+    agent_config_info = get_agent_config_info()
+    agent_role_content = agent_config_info["prompt_setting"].get("content", [])
+    if not agent_role_content:
+        return []
+
+    for each in agent_role_content:
+        each["role"] = each["role"].replace("hidden-", "")
+        if each["role"] == "pause":
+            each["role"] = "assistant"
+
+    return [ChatPrompt(role=each["role"], content=each["content"]) for each in agent_role_content]

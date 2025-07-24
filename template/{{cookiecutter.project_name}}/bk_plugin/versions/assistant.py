@@ -15,7 +15,7 @@ from bk_plugin_framework.kit import (
     Plugin,
 )
 
-from agent.services.agent import build_chat_completion_agent
+from agent.services.agent import build_chat_completion_agent, get_agent_role_info
 
 
 class CommonAgent(Plugin):
@@ -58,7 +58,14 @@ class CommonAgent(Plugin):
         }
 
     def execute(self, inputs: Inputs, context: Context):
-        chat_history = [ChatPrompt(role=each["role"], content=each["content"]) for each in inputs.chat_history]
+        chat_history = (
+            [ChatPrompt(role=each["role"], content=each["content"]) for each in inputs.chat_history]
+            if inputs.chat_history
+            else []
+        )
+        role_contents = get_agent_role_info()
+        if role_contents:
+            chat_history = role_contents + chat_history
         if inputs.input and not (inputs.chat_history or inputs.command):
             chat_history.append(ChatPrompt(role="user", content=inputs.input))
         chat_completion_agent = build_chat_completion_agent(chat_history)
