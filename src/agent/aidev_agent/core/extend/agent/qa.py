@@ -139,43 +139,43 @@ class IntentRecognitionMixin(BaseModel):
     def context_compressor_pipeline(
         self, llm, chat_prompt_template, candidate_tools, intermediate_steps, callbacks, kwargs
     ):
-        # NOTE: 目前只对 StructuredChatCommonQAAgent 进行处理
-        if isinstance(self, StructuredChatCommonQAAgent):
-            if "chat_history" in kwargs and kwargs["chat_history"]:
-                # 用来压缩知识库知识/工具调用结果所需提供的 chat history（倒数取最新的）
-                provided_chat_history = deepcopy(kwargs["chat_history"])[
-                    -kwargs.get("max_n_chat_history_for_compress", 5) :
-                ]
-            else:
-                provided_chat_history = []
+        if "chat_history" in kwargs and kwargs["chat_history"]:
+            # 用来压缩知识库知识/工具调用结果所需提供的 chat history（倒数取最新的）
+            provided_chat_history = deepcopy(kwargs["chat_history"])[
+                -kwargs.get("max_n_chat_history_for_compress", 5) :
+            ]
+        else:
+            provided_chat_history = []
 
-            self.ensure_agent_token_limit(
-                llm,
-                chat_prompt_template,
-                candidate_tools,
-                intermediate_steps,
-                provided_chat_history,
-                kwargs,
+        self.ensure_agent_token_limit(
+            llm,
+            chat_prompt_template,
+            candidate_tools,
+            intermediate_steps,
+            provided_chat_history,
+            kwargs,
+        )
+
+        # 对于工具调用结果，直接再加个特殊判断
+        # 且使用字符串长度而不使用 token 计数，减少计算 token 的耗时
+        if isinstance(self, ToolCallingCommonQAAgent):
+            tool_messages = format_to_tool_messages(intermediate_steps)
+            # 将工具调用结果拼接成字符串
+            agent_scratchpad = "".join(m.content for m in tool_messages)
+        elif isinstance(self, StructuredChatCommonQAAgent):
+            agent_scratchpad = enhanced_format_log_to_str(intermediate_steps)
+        if len(agent_scratchpad) > self.agent_options.intent_recognition_options.tool_output_compress_thrd:
+            conditional_dispatch_custom_event(
+                "custom_event",
+                {"compress_log": "\n```text\n工具调用结果过长，尝试压缩工具调用结果以减少 token 使用。\n```\n"},
+                **kwargs,
             )
-
-            # 对于工具调用结果，直接再加个特殊判断
-            # 且使用字符串长度而不使用 token 计数，减少计算 token 的耗时
-            if isinstance(self, ToolCallingCommonQAAgent):
-                agent_scratchpad = format_to_tool_messages(intermediate_steps)
-            elif isinstance(self, StructuredChatCommonQAAgent):
-                agent_scratchpad = enhanced_format_log_to_str(intermediate_steps)
-            if len(agent_scratchpad) > self.agent_options.intent_recognition_options.tool_output_compress_thrd:
-                conditional_dispatch_custom_event(
-                    "custom_event",
-                    {"compress_log": "\n```text\n工具调用结果过长，尝试压缩工具调用结果以减少 token 使用。\n```\n"},
-                    **kwargs,
-                )
-                self.__class__.intent_recognition_instance.llm_intermediate_step_compressor_parallel(
-                    provided_chat_history,
-                    kwargs["query"],
-                    intermediate_steps,
-                    llm,
-                )
+            self.__class__.intent_recognition_instance.llm_intermediate_step_compressor_parallel(
+                provided_chat_history,
+                kwargs["query"],
+                intermediate_steps,
+                llm,
+            )
 
         return llm, chat_prompt_template, candidate_tools, intermediate_steps, callbacks, kwargs
 
