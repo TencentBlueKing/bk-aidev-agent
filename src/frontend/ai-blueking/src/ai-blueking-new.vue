@@ -177,7 +177,6 @@
 <script setup lang="ts">
   import { SessionContentRole } from '@blueking/ai-ui-sdk/enums';
   import { useChat, useStyle, useClickProxy } from '@blueking/ai-ui-sdk/hooks';
-  import { ISession } from '@blueking/ai-ui-sdk/types';
   import { motion } from 'motion-v';
   import {
     computed,
@@ -204,7 +203,7 @@
   import { useResizableContainer } from './composables/use-resizable-container';
   import { useSelect } from './composables/use-select-pop';
   import { provideSessionStore } from './composables/use-session-store';
-  import { scrollToBottom, escapeHtml, normalizeUrl, uuid } from './utils';
+  import { scrollToBottom, escapeHtml, normalizeUrl } from './utils';
   import { DEFAULT_SHORTCUTS, HIDE_ROLE_LIST } from './config';
   import { t } from './lang';
   import type { IRequestOptions, IShortcut } from './types';
@@ -725,7 +724,7 @@
         extra: {
           cite: formData.map(item => `${item.__label}: ${item.__value}`).join(', '),
           command: shortcut.id,
-          context: [...formData, ...(props.requestOptions?.context || [])],
+          context: [...formData, ...(Array.isArray(props.requestOptions?.context) ? props.requestOptions.context : [])],
         },
       },
     });

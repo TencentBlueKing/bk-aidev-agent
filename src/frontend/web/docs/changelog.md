@@ -8,8 +8,8 @@ export default {
     return {
       changelogData: [
         {
-          version: "v1.1.0-beta.1",
-          date: "2025-06-01",
+          version: "v1.2.0",
+          date: "2025-07-30",
           features: [
             "新增自定义表单输入功能，支持快捷指令配置自定义表单交互",
             "支持文本输入框、下拉选择框、数字输入框和多行文本域等多种表单组件",
@@ -25,7 +25,7 @@ export default {
         },
         {
           version: "v1.1.6",
-          date: "2025-07-10",
+          date: "2025-07-15",
           features: [
             "Markdown 渲染增强：新增完整的 Markdown 样式支持，优化代码块、表格、列表等元素的渲染效果",
             "窗口高度响应式处理：添加智能高度计算，优化问候文本的最大高度限制",
