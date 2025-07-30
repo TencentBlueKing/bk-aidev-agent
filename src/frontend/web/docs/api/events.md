@@ -17,7 +17,8 @@
 | `receive-start`    | -                             | AI 开始接收响应时触发。                                                                           |
 | `receive-text`     | `text: string`                | 接收到文本片段时触发。                                                                            |
 | `receive-end`      | -                             | 响应接收完成时触发。                                                                              |
-| `send-message`     | `message: string`             | 发送消息时触发，参数为发送的消息内容。                                                           |                                                   |
+| `send-message`     | `message: string`             | 发送消息时触发，参数为发送的消息内容。                                                           |
+| `session-init`     | `sessionId: string`           | 会话初始化完成时触发，参数为当前会话ID。从 v1.1.6 开始支持。                                      |                                                   |
 
 ## 类型定义
 
@@ -47,6 +48,7 @@ interface ShortCut {
     @receive-text="onReceiveText"
     @receive-end="onReceiveEnd"
     @send-message="onSendMessage"
+    @session-init="onSessionInit"
   />
 </template>
 
@@ -65,6 +67,7 @@ const onReceiveStart = () => console.log('Event: receive-start');
 const onReceiveText = (text) => console.log('Event: receive-text', text);
 const onReceiveEnd = () => console.log('Event: receive-end');
 const onSendMessage = (message) => console.log('Event: send-message', message);
+const onSessionInit = (sessionId) => console.log('Event: session-init', sessionId);
 </script>
 ```
 
@@ -81,6 +84,7 @@ const onSendMessage = (message) => console.log('Event: send-message', message);
     @receive-text="onReceiveText"
     @receive-end="onReceiveEnd"
     @send-message="onSendMessage"
+    @session-init="onSessionInit"
   />
 </template>
 
@@ -100,7 +104,8 @@ export default {
     onReceiveStart() { console.log('Event: receive-start'); },
     onReceiveText(text) { console.log('Event: receive-text', text); },
     onReceiveEnd() { console.log('Event: receive-end'); },
-    onSendMessage(message) { console.log('Event: send-message', message); }
+    onSendMessage(message) { console.log('Event: send-message', message); },
+    onSessionInit(sessionId) { console.log('Event: session-init', sessionId); }
   }
 }
 </script>
