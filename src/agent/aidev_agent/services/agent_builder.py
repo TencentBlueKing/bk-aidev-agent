@@ -20,16 +20,12 @@ class AgentInstanceBuilder:
         :param agent_code:      Agent代码
         """
         logger.info(
-            "AgentInstanceBuilder: try to build agent instance for session_code->[%s],use agent->[%s]",
-            session_code,
-            agent_code,
+            f"AgentInstanceBuilder: try to build agent instance for session_code->{session_code},use agent->{agent_code}"
         )
         session_context_data = api_client.api.get_chat_session_context(path_params={"session_code": session_code}).get(
             "data", []
         )
-        logger.info(
-            "AgentInstanceBuilder: session->[%s] get session_context_data->[%s]", session_code, session_context_data
-        )
+        logger.info(f"AgentInstanceBuilder: session->{session_code} get session_context_data->{session_context_data}")
 
         # 是否需要切换智能体
         switch_agent = False
@@ -47,21 +43,17 @@ class AgentInstanceBuilder:
                 switch_agent = True if command_agent_code != agent_code else False
                 agent_code = command_agent_code  # 切换Agent
         except Exception as e:  # pylint: disable=broad-except
-            logger.warning("AgentInstanceBuilder: get last user message error->[%s]", e)
+            logger.warning(f"AgentInstanceBuilder: get last user message error->{e}")
 
         if session_context_data and session_context_data[-1]["role"] == "assistant":
             logger.info(
-                "AgentInstanceBuilder: session->[%s] last message->[%s] is assistant, remove it",
-                session_code,
-                session_context_data[-1],
+                f"AgentInstanceBuilder: session->{session_code} last message->{session_context_data[-1]} is "
+                f"assistant, remove it"
             )
             # TODO: 如果最后一条消息是assistant，且content里有"生成中"三个字，则去掉
             content = session_context_data[-1]["content"]
             if settings.AIDEV_AGENT_AI_GENERATING_KEYWORD in content:  # 只要 content 里有"生成中"三个字即可
                 session_context_data.pop()
-
-        # 对话历史 chat_history的记录下沉到 build_agent中
-        # chat_history = [ChatPrompt.model_validate(each) for each in session_context_data]
 
         agent = build_chat_completion_agent(
             api_client=api_client,
@@ -73,11 +65,11 @@ class AgentInstanceBuilder:
 
 
 def build_chat_completion_agent(api_client, agent_code, session_context_data, switch_agent) -> ChatCompletionAgent:
-    logger.info("AgentInstanceBuilder: try to build agent instance with agent_code->[%s]", agent_code)
+    logger.info(f"AgentInstanceBuilder: try to build agent instance with agent_code->{agent_code}")
     config = AgentConfigManager.get_config(agent_code=agent_code, api_client=api_client)
 
     if switch_agent:  # 若需要切换Agent,则在【本轮对话】中替换System Prompt,并不会在平台侧落地
-        logger.info("AgentInstanceBuilder: switch agent to->[%s]", agent_code)
+        logger.info(f"AgentInstanceBuilder: switch agent to->{agent_code}")
         # 找到最后一条role为system的记录并修改
         for item in reversed(session_context_data):
             if item["role"] == "system":
@@ -99,7 +91,6 @@ def build_chat_completion_agent(api_client, agent_code, session_context_data, sw
         model=config.llm_model_name,
         base_url=llm_base_url,
         auth_headers=auth_headers,
-        # temperature=settings.AIDEV_AGENT_LLM_DEFAULT_TEMPERATURE,  # 可以指定温度,需要在Config中配置
     )
 
     knowledge_bases = [
