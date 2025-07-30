@@ -1,11 +1,12 @@
 import logging
 
 from aidev_agent.config import settings
+
+from src.agent.aidev_agent.bk_plugin.agent_config_manager import AgentConfigManager
 from src.agent.aidev_agent.core.extend.agent.qa import CommonQAAgent
 from src.agent.aidev_agent.core.extend.models.llm_gateway import ChatModel
 from src.agent.aidev_agent.services.chat import ChatCompletionAgent
 from src.agent.aidev_agent.services.pydantic_models import ChatPrompt
-from src.agent.aidev_agent.utils.agent_config_manager import AgentConfigManager
 
 logger = logging.getLogger("aidev_agent")
 
@@ -64,7 +65,9 @@ class AgentInstanceBuilder:
         return agent
 
 
-def build_chat_completion_agent(api_client, agent_code, session_context_data, switch_agent) -> ChatCompletionAgent:
+def build_chat_completion_agent(
+    api_client, agent_code, session_context_data, switch_agent, agent_cls=CommonQAAgent
+) -> ChatCompletionAgent:
     logger.info(f"AgentInstanceBuilder: try to build agent instance with agent_code->{agent_code}")
     config = AgentConfigManager.get_config(agent_code=agent_code, api_client=api_client)
 
@@ -101,9 +104,6 @@ def build_chat_completion_agent(api_client, agent_code, session_context_data, sw
         api_client.api.appspace_retrieve_knowledge(path_params={"id": _id})["data"] for _id in config.knowledge_ids
     ]
     tools = [api_client.construct_tool(tool_code) for tool_code in config.tool_codes]
-
-    # 可继承该方法并改造为通过Factory获取
-    agent_cls = CommonQAAgent
 
     return ChatCompletionAgent(
         chat_model=llm,
