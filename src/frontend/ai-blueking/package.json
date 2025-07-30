@@ -1,6 +1,6 @@
 {
   "name": "@blueking/ai-blueking",
-  "version": "1.1.6-beta.1",
+  "version": "1.1.6-beta.10",
   "description": "AI 小鲸",
   "license": "MIT",
   "author": "Tencent BlueKing",
@@ -72,11 +72,17 @@
     "marked-highlight": "2.2.1"
   },
   "dependencies": {
-    "@blueking/ai-ui-sdk": "0.1.12-beta.14",
+    "@blueking/ai-ui-sdk": "0.1.12-beta.28",
     "@blueking/bkui-library": "0.0.0-beta.6",
+    "dompurify": ">=3.2.4",
     "mermaid": "10.9.3",
     "motion-v": "^0.11.3",
-    "tippy.js": "6.3.6",
+    "tippy.js": "6.3.7",
     "vue-draggable-resizable": "^3.0.0"
+  },
+  "overrides": {
+    "mermaid": {
+      "dompurify": ">=3.2.4"
+    }
   }
 }

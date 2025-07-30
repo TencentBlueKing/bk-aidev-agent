@@ -162,6 +162,9 @@ export default {
           onReceiveText() {
             emit('receive-text', ...arguments);
           },
+          onSessionInitialized() {
+            emit('session-initialized', ...arguments);
+          },
           ...that.$attrs,
         });
         return aiBlueking;

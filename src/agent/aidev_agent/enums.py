@@ -77,3 +77,9 @@ class EventType(enum.Enum):
     ERROR = "error"
     REFERENCE_DOC = "reference_doc"
     THINK = "think"
+
+
+class CredentialType(enum.Enum):
+    NULL = "null"
+    BLUEAPPS = "blueapps"
+    CUSTOM = "custom"

@@ -4,21 +4,28 @@ import type { ISessionEditItem, SdkApi } from "./types"
 import { uuid as generateUuid } from "../utils"
 import { HIDE_ROLE_LIST } from "../config"
 
-
-const sessionList = ref<ISessionEditItem[]>([])
-const currentSession = ref<ISessionEditItem | null>(null)
-const sessionContentLoading = ref<boolean>(false)
-let sdkApi: Partial<SdkApi> = {}
-
-// 存储会话的原始值
-const originalSessionValues = ref<Record<string, ISessionEditItem>>({})
-
-let agentInfo: IAgentInfo | null = null
-
 /**
  * 使用会话管理 Store
  */
 export function useSessionStore() {
+  const sessionList = ref<ISessionEditItem[]>([])
+  const currentSession = ref<ISessionEditItem | null>(null)
+  const sessionContentLoading = ref<boolean>(false)
+  let sdkApi: Partial<SdkApi> = {}
+
+  // 存储会话的原始值
+  const originalSessionValues = ref<Record<string, ISessionEditItem>>({})
+
+  const agentInfo: IAgentInfo = {
+    agentName: '',
+    conversationSettings: {
+      openingRemark: '',
+      predefinedQuestions: []
+    },
+    promptSetting: {
+      content: []
+    }
+  }
   /**
    * 检查 SDK 方法是否已注册
    * @param methodName SDK 方法名
@@ -37,11 +44,11 @@ export function useSessionStore() {
    */
   const switchSessionWithContents = async (session: ISession | ISessionEditItem) => {
     try {
-      const setChain = checkSdkMethod('setCurrentSessionChain')
+      const setChain = checkSdkMethod("setCurrentSessionChain")
       await setChain(session)
       setCurrentSession(session)
     } catch (error) {
-      console.error('Failed to switch session:', error)
+      console.error("Failed to switch session:", error)
       throw error
     }
   }
@@ -103,7 +110,7 @@ export function useSessionStore() {
     const session = addSession(newSession)
 
     // 创建 session 并同步到后台
-    const plusSession = checkSdkMethod('plusSessionApi')
+    const plusSession = checkSdkMethod("plusSessionApi")
     await plusSession(session)
 
     // 切换到新会话
@@ -117,7 +124,7 @@ export function useSessionStore() {
    * @param sessionCode 会话代码
    */
   const startEditSession = (sessionCode: string) => {
-    const session = sessionList.value.find(s => s.sessionCode === sessionCode)
+    const session = sessionList.value.find((s) => s.sessionCode === sessionCode)
     if (session) {
       // 保存原始值
       originalSessionValues.value[sessionCode] = { ...session }
@@ -139,16 +146,12 @@ export function useSessionStore() {
 
     // 检查内容是否有实际变化（与原始值比较）
     const hasContentChanged = Object.entries(updates).some(([key, value]) => {
-      if (key === 'isEdit') return false
+      if (key === "isEdit") return false
       return originalSession[key as keyof ISessionEditItem] !== value
     })
 
     // 更新会话
-    const result = await updateSession(
-      sessionCode,
-      { ...updates, isEdit: false },
-      { syncBackend: hasContentChanged }
-    )
+    const result = await updateSession(sessionCode, { ...updates, isEdit: false }, { syncBackend: hasContentChanged })
 
     // 清理原始值
     delete originalSessionValues.value[sessionCode]
@@ -172,7 +175,7 @@ export function useSessionStore() {
   ) => {
     const { syncBackend = true, forceSync = false } = options
     const index = sessionList.value.findIndex((s) => s.sessionCode === sessionCode)
-    
+
     if (index === -1) {
       return null
     }
@@ -191,12 +194,12 @@ export function useSessionStore() {
     // 判断是否需要同步到后端
     if ((syncBackend && !updates.isEdit) || forceSync) {
       try {
-        const modifySession = checkSdkMethod('modifySessionApi')
+        const modifySession = checkSdkMethod("modifySessionApi")
         // 同步到后端时，确保 isEdit 为 false
         const sessionToSync = { ...updatedSession, isEdit: false }
         await modifySession(sessionToSync)
       } catch (error) {
-        console.error('Failed to sync session to backend:', error)
+        console.error("Failed to sync session to backend:", error)
       }
     }
 
@@ -209,7 +212,7 @@ export function useSessionStore() {
    * @returns 如果删除的是当前会话，返回下一个可用的会话；否则返回 null
    */
   const deleteSession = async (sessionCode: string): Promise<ISessionEditItem | null> => {
-    const deleteApi = checkSdkMethod('deleteSessionApi')
+    const deleteApi = checkSdkMethod("deleteSessionApi")
     await deleteApi(sessionCode)
 
     const index = sessionList.value.findIndex((s) => s.sessionCode === sessionCode)
@@ -227,13 +230,13 @@ export function useSessionStore() {
       if (sessionList.value.length > 0) {
         // 优先选择今天的会话，否则选择第一个会话
         const today = new Date().toDateString()
-        const todaySessions = sessionList.value.filter((s) => new Date(s.createdAt || '').toDateString() === today)
+        const todaySessions = sessionList.value.filter((s) => new Date(s.createdAt || "").toDateString() === today)
         const nextSession = todaySessions.length > 0 ? todaySessions[0] : sessionList.value[0]
-        
+
         await switchSessionWithContents(nextSession)
         return nextSession
-      } 
-      
+      }
+
       // 如果没有其他会话，则创建一个新会话
       await initSession(false)
       return null
@@ -278,7 +281,7 @@ export function useSessionStore() {
    */
   const initSession = async (isInitChat: boolean = true) => {
     // 获取会话列表
-    const getSessions = checkSdkMethod('getSessionsApi')
+    const getSessions = checkSdkMethod("getSessionsApi")
     const sessions = await getSessions()
     setSessionList(sessions)
 
@@ -288,16 +291,16 @@ export function useSessionStore() {
     // 如果有现有会话，检查最近的一条会话
     if (sessions.length > 0) {
       // 按创建时间降序排序，获取最新的会话
-      const latestSession = sessions.sort((a, b) => 
-        new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime()
-      )[0]
+      const latestSession = sessions.sort((a, b) => new Date(b.createdAt || "").getTime() - new Date(a.createdAt || "").getTime())[0]
 
       // 获取最新会话的内容
-      const getContents = checkSdkMethod('getSessionContentsApi')
+      const getContents = checkSdkMethod("getSessionContentsApi")
       targetSessionContents = await getContents(latestSession.sessionCode)
 
       // 检查会话内容是否为空（检查每个内容的 content 字段）
-      const hasContent = targetSessionContents.filter(item => !HIDE_ROLE_LIST.includes(item.role)).some(item => item.content && item.content.trim() !== '')
+      const hasContent = targetSessionContents
+        .filter((item) => !HIDE_ROLE_LIST.includes(item.role))
+        .some((item) => item.content && item.content.trim() !== "")
 
       // 如果内容为空，直接使用这个会话
       if (!hasContent) {
@@ -310,25 +313,26 @@ export function useSessionStore() {
       targetSession = await addNewSession()
     } else {
       // 使用现有会话
-      const setContents = checkSdkMethod('setSessionContents')
+      const setContents = checkSdkMethod("setSessionContents")
       setContents(targetSessionContents)
       switchSessionWithContents(targetSession)
     }
 
     if (!agentInfo || isInitChat) {
       // 获取会话设置
-      const getAgentInfo = checkSdkMethod('getAgentInfoApi')
-      const { conversationSettings, promptSetting } = await getAgentInfo()
-      agentInfo = {
+      const getAgentInfo = checkSdkMethod("getAgentInfoApi")
+
+      const { conversationSettings, promptSetting, agentName } = await getAgentInfo()
+      Object.assign(agentInfo, {
         conversationSettings: conversationSettings,
-        promptSetting: promptSetting
-      }
+        promptSetting: promptSetting,
+        agentName,
+      })
     }
 
-      
     // 处理角色设置
     if (agentInfo?.promptSetting?.content?.length) {
-      const handleRole = checkSdkMethod('handleCompleteRole')
+      const handleRole = checkSdkMethod("handleCompleteRole")
       await handleRole(targetSession.sessionCode, agentInfo.promptSetting.content)
     }
 
@@ -352,8 +356,8 @@ export function useSessionStore() {
     registerSdkMethods,
     switchSessionWithContents,
     sessionContentLoading,
+    agentInfo,
   }
 }
 
-// 创建一个单例实例
-export const sessionStore = useSessionStore()
+export type SessionStore = ReturnType<typeof useSessionStore>

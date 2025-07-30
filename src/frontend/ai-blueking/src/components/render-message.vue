@@ -30,7 +30,7 @@
             {{ timeMessage }}
           </span>
           <span
-            class="markdown-message"
+            class="markdown-content"
             v-html="renderValue"
           ></span>
         </p>
@@ -66,7 +66,7 @@
             v-else
             v-html="renderValue"
             :class="{
-              'markdown-message': true,
+              'markdown-content': true,
               loading: message.status === SessionContentStatus.Loading,
             }"
           ></span>
@@ -114,6 +114,7 @@
   import hljs from 'highlight.js';
   import MarkdownIt from 'markdown-it';
   import MarkdownItCodeCopy from 'markdown-it-code-copy';
+  import DOMPurify from 'dompurify';
 
   import defaultUserLogo from '../assets/images/ai-user.png';
   import AiCite from '../components/ai-cite.vue';
@@ -192,7 +193,13 @@
 
   const renderValue = computed(() => {
     if (!props.message.content) return '';
-    const dom = md.render(props.message.content);
+    const rendered = md.render(props.message.content);
+    // 使用 DOMPurify 净化内容以防止 XSS
+    const sanitized = DOMPurify.sanitize(rendered, {
+      USE_PROFILES: { html: true },
+      FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input'],
+      FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover']
+    });
 
     // Process mermaid diagrams after DOM update
     nextTick(() => {
@@ -206,7 +213,7 @@
       }
     });
 
-    return dom.replace(/\s*<\/p>\s*$/, '</p>');
+    return sanitized.replace(/\s*<\/p>\s*$/, '</p>');
   });
 
   const timeMessage = computed(() => {
@@ -295,6 +302,8 @@
 
 <style lang="scss">
   /* stylelint-disable declaration-no-important */
+  @import '../styles/markdown.scss';
+
   @keyframes bkai-loading {
     to {
       transform: rotate(1turn);
@@ -446,255 +455,7 @@
       display: block;
     }
 
-    .markdown-message {
-      width: 100%;
-      height: 100%;
-      font-size: 14px;
-      color: #313238;
-
-      h1,
-      h2,
-      h3,
-      h4,
-      h5 {
-        height: auto;
-        margin: 10px 0;
-        font-family: -apple-system, 'PingFang SC', 'Helvetica Neue', Helvetica, Arial, 'Lantinghei SC',
-          'Hiragino Sans GB', 'Microsoft Yahei', sans-serif;
-        font-size: 14px;
-        font-weight: bold;
-        line-height: 1.5;
-        color: #34383e;
-      }
-
-      h1 {
-        font-size: 28px;
-      }
-
-      h2 {
-        font-size: 20px;
-      }
-
-      h3 {
-        font-size: 16px;
-      }
-
-      h4 {
-        font-size: 14px;
-      }
-
-      h5 {
-        font-size: 14px;
-      }
-
-      em {
-        font-style: italic;
-      }
-
-      div,
-      p,
-      font,
-      span,
-      li {
-        line-height: 1.5;
-      }
-
-      p {
-        margin: 0;
-      }
-
-      table,
-      table p {
-        margin: 0;
-      }
-
-      table {
-        width: 100%;
-        max-width: 100%;
-        margin-top: 10px;
-        margin-bottom: 10px;
-        border-spacing: 0;
-        border-collapse: collapse;
-
-        th {
-          padding: 8px;
-          font-weight: bold;
-          text-align: left;
-          background-color: #f5f7fa;
-          border-bottom: 2px solid #e8e8e8;
-        }
-
-        td {
-          padding: 8px;
-          vertical-align: top;
-          border-top: 1px solid #e8e8e8;
-          border-bottom: 1px solid #e8e8e8;
-        }
-
-        tr:nth-child(even) {
-          background-color: #fafbfd;
-        }
-
-        thead {
-          background-color: #f5f7fa;
-        }
-      }
-
-      ul,
-      ol {
-        padding-left: 40px;
-        margin: 10px 0 10px;
-        text-indent: 0;
-      }
-
-      ul {
-        list-style: disc;
-
-        & > li {
-          line-height: 1.8;
-          white-space: normal;
-          list-style: disc;
-        }
-      }
-
-      ol {
-        list-style: decimal;
-
-        & > li {
-          line-height: 1.8;
-          white-space: normal;
-          list-style: decimal;
-        }
-      }
-
-      li > ul {
-        margin-bottom: 10px;
-      }
-
-      li ol {
-        padding-left: 20px !important;
-      }
-
-      ul ul,
-      ul ol,
-      ol ol,
-      ol ul {
-        margin-bottom: 0;
-        margin-left: 20px;
-      }
-
-      pre,
-      code {
-        padding: 0 3px 2px;
-        font-family: Monaco, Menlo, Consolas, 'Courier New', monospace;
-        font-size: 14px;
-        border-radius: 3px;
-      }
-
-      code {
-        padding: 2px 4px;
-        color: #24292e;
-        background-color: rgba(27, 31, 35, 0.05);
-      }
-
-      a {
-        color: #3a84ff;
-        text-decoration: none;
-        cursor: pointer;
-      }
-
-      img {
-        width: 100%;
-      }
-
-      // Mermaid diagram styles
-      .mermaid-diagram {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin: 10px 0;
-        padding: 10px;
-        background-color: #f8f9fa;
-        border: 1px solid #e9ecef;
-        border-radius: 4px;
-        overflow-x: auto;
-
-        svg {
-          max-width: 100%;
-          height: auto;
-        }
-      }
-
-      .mermaid-placeholder {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin: 10px 0;
-        padding: 20px;
-        color: #6c757d;
-        background-color: #f8f9fa;
-        border: 1px dashed #dee2e6;
-        border-radius: 4px;
-      }
-
-      .mermaid-error {
-        margin: 10px 0;
-        padding: 10px;
-        color: #721c24;
-        background-color: #f8d7da;
-        border: 1px solid #f5c6cb;
-        border-radius: 4px;
-      }
-
-      pre {
-        display: block;
-        padding: 9.5px;
-        margin: 0 0 10px;
-        font-family: Consolas, monospace, tahoma, Arial;
-        font-size: 13px;
-        word-break: break-all;
-        word-wrap: break-word;
-        white-space: pre-wrap;
-        background-color: #333;
-        border-radius: 2px;
-
-        code {
-          padding: 0;
-          color: #fff;
-          white-space: pre-wrap;
-          background-color: transparent;
-          border: 0;
-        }
-      }
-
-      blockquote {
-        padding: 0 0 0 12px;
-        margin: 0 0 20px;
-        border-left: 5px solid #dfdfdf;
-
-        ::before,
-        ::after {
-          content: '';
-        }
-
-        p {
-          margin-bottom: 0;
-          font-size: 14px;
-          font-weight: 300;
-          line-height: 25px;
-        }
-
-        small {
-          display: block;
-          line-height: 20px;
-          color: #999;
-
-          ::before {
-            content: '\2014 \00A0';
-          }
-        }
-      }
-    }
+    // markdown-content 样式现在从公共样式文件导入
 
     .message-wrap {
       display: inline-block;

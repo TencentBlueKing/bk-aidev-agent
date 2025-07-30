@@ -120,7 +120,6 @@ curl -X POST {{cookiecutter.app_apigw_host}}/invoke/1.0.0assistant \
 
 **请求输入格式**
 
-- 整体格式：`{"inputs": {"input": "$你的需求", "chat_history": []},"context": {"executor": "someone"}}`
 - `chat_history`：在此处传递除了当前输入外的聊天历史记录。格式：
   `[{"role": "user", "content": "用户内容"},{"role": "assitant", "content": "AI内容"}]`
 
@@ -138,7 +137,7 @@ curl -X POST http://local.{{cookiecutter.bk_paas_domain}}:8000/bk_plugin/plugin_
 curl -X POST {{cookiecutter.app_apigw_host}}/bk_plugin/plugin_api/chat_completion/  \
     -H "Content-Type: application/json"   \
     -H "X-Bkapi-Authorization": xxx   \
-    -d '{"inputs": {"chat_history": [{"role": "user", "content": "how are you?"}]}, "context": {"executor": "user"}}'
+    -d '{"chat_history":[{"role":"user","content":"hi"}], "execute_kwargs": {"stream": true}}'
 ```
 
 #### 1.4.3 非流式调用
@@ -157,7 +156,7 @@ curl -X POST http://127.0.0.1:8000/bk_plugin/plugin_api/chat_completion/ \
 curl -X POST {{cookiecutter.app_apigw_host}}/bk_plugin/plugin_api/chat_completion/  \
     -H "Content-Type: application/json"   \
     -H "X-Bkapi-Authorization": xxx   \
-    -d '{"inputs": {"chat_history": [{"role": "user", "content": "how are you?"}]}, "context": {"executor": "user"}}'
+    -d '{"chat_history":[{"role":"user","content":"hi"}], "execute_kwargs": {"stream": true}}'
 ```
 
 

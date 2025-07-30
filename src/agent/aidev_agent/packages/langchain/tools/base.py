@@ -80,6 +80,12 @@ class BkField(BaseModel):
             return type(self.default) if self.default else float
 
 
+class ToolExtra(BaseModel):
+    query: dict | None = None
+    header: dict | None = None
+    body: dict | None = None
+
+
 class Tool(BaseModel):
     """工具定义"""
 
@@ -90,7 +96,7 @@ class Tool(BaseModel):
     method: str
     property: dict
     url: str
-    default_headers: dict | None = None
+    extra: dict | None = None
 
 
 class ApiWrapper:
@@ -110,7 +116,7 @@ class ApiWrapper:
         max_retry: int = 3,
         complex_fields: list | None = None,
         builtin_fields: dict | None = None,
-        default_headers: dict | None = None,
+        extra: dict | None = None,
     ):
         self.session = requests.Session()
         self._method = http_method
@@ -122,7 +128,7 @@ class ApiWrapper:
         self._request_counter: Dict[str, int] = {}
         self._complex_fields = complex_fields
         self._builtin_fields = builtin_fields or {}
-        self._default_headers = default_headers or {}
+        self._extra = ToolExtra.model_validate(extra or {})
 
     def __call__(self, **kwargs):
         if self._check_max_call(kwargs):
@@ -139,10 +145,16 @@ class ApiWrapper:
 
         # 补充内置变量
         self._header = {k: self._render_builtin_variables(v) for k, v in self._header.items()} if self._header else {}
-        self._header.update(self._default_headers)
         self._body = {k: self._render_builtin_variables(v) for k, v in self._body.items()} if self._body else {}
         self._query = {k: self._render_builtin_variables(v) for k, v in self._query.items()} if self._query else {}
         self._load_body()
+        if self._extra:
+            if self._extra.query:
+                self._query.update(self._extra.query)
+            if self._extra.header:
+                self._header.update(self._extra.header)
+            if self._extra.body:
+                self._body.update(self._extra.body)
         try:
             resp = self.session.request(
                 self._method,
@@ -248,7 +260,6 @@ def make_structured_tool(
     tool: Tool,
     debug: bool = False,
     builtin_fields: dict | None = None,
-    default_headers: dict | None = None,
 ) -> StructuredTool:
     """根据Tool的ORM定义构建对应的langchain Tool
     注意的是会将嵌套的字段通过`__`打平,例如:
@@ -301,7 +312,7 @@ def make_structured_tool(
             body=default_values.get("body", {}),
             complex_fields=complex_fields,
             builtin_fields=builtin_fields,
-            default_headers=tool.default_headers,
+            extra=tool.extra,
         ),
         description=tool.description,
         return_direct=debug,

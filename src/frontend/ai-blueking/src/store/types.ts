@@ -42,5 +42,6 @@ export interface IAgentInfo {
   }
   promptSetting?: {
     content?: ISessionPrompt[]
-  }
+  },
+  agentName?: string
 }

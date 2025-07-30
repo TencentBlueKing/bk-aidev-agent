@@ -11,6 +11,7 @@
   import hljs from 'highlight.js';
   import { Marked } from 'marked';
   import { markedHighlight } from 'marked-highlight';
+  import DOMPurify from 'dompurify';
 
   import 'highlight.js/lib/languages/javascript';
   import 'highlight.js/lib/languages/scss';
@@ -42,7 +43,13 @@
   const parsedContent = ref('');
 
   onMounted(async () => {
-    parsedContent.value = await marked.parse(props.content);
+    const parsed = await marked.parse(props.content);
+    // 使用 DOMPurify 净化内容以防止 XSS
+    parsedContent.value = DOMPurify.sanitize(parsed, {
+      USE_PROFILES: { html: true },
+      FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input'],
+      FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover']
+    });
   });
 </script>
 

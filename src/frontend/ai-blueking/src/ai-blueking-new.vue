@@ -56,20 +56,24 @@
                   <motion.div
                     class="greeting-text"
                     :transition="{
-                      duration: 1.2,
-                      ease: [0.16, 0.77, 0.47, 0.97],
-                      scaleX: {
-                        type: 'spring',
-                        stiffness: 160,
-                        damping: 15,
-                        mass: 0.5,
-                        delay: 0.1,
-                      },
+                      duration: .5,
+                      ease: [0.25, 0.46, 0.45, 0.94],
+                      delay: 0,
                     }"
-                    :animate="{ width: 'auto', scaleX: 1 }"
-                    :initial="{ width: 0, scaleX: 0 }"
+                    :animate="{
+                      opacity: 1,
+                      y: 0
+                    }"
+                    :initial="{
+                      opacity: 0,
+                      y: -20
+                    }"
                   >
-                    {{ greetingText }}
+                    <div
+                      ref="greetingTextRef"
+                      class="greeting-markdown"
+                      v-html="renderedGreetingText"
+                    ></div>
                   </motion.div>
                 </div>
               </motion.div>
@@ -92,6 +96,7 @@
                   layoutId: 'chat-input',
                 }"
                 :class="`chat-input-container ${!hasSessionContents ? 'centered' : 'bottom'}`"
+                :style="hasSessionContents ? undefined : inputContainerStyle"
                 layout
               >
                 <div v-if="currentSessionLoading || showScrollToBottom" class="bottom-tools-bar">
@@ -130,7 +135,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, provide, ref, nextTick, watch, defineExpose, Ref } from "vue"
+import { computed, provide, ref, nextTick, watch, defineExpose, Ref, onMounted, onBeforeUnmount } from "vue"
 import VueDraggableResizable from "vue-draggable-resizable"
 import type { IRequestOptions } from "./types"
 
@@ -152,7 +157,8 @@ import { DEFAULT_SHORTCUTS, HIDE_ROLE_LIST } from "./config"
 import { t } from "./lang"
 import { scrollToBottom, escapeHtml, normalizeUrl } from "./utils"
 import Nimbus from "./views/nimbus.vue"
-import { sessionStore } from "./store/sessionStore"
+import { provideSessionStore } from "./composables/use-session-store"
+import { useMarkdown } from "./composables/use-markdown"
 
 import "vue-draggable-resizable/style.css"
 
@@ -184,7 +190,7 @@ interface Props {
 
 // Props 定义
 const props = withDefaults(defineProps<Props>(), {
-  title: t("AI 小鲸"),
+  title: '',
   helloText: t("你好，我是小鲸"),
   enablePopup: true,
   shortcuts: () => DEFAULT_SHORTCUTS,
@@ -213,6 +219,7 @@ const emit = defineEmits<{
   (e: "shortcut-click", shortcut: ShortCut): void
   (e: "close" | "show" | "stop" | "receive-start" | "receive-text" | "receive-end"): void
   (e: "send-message", message: string): void
+  (e: "session-initialized", data: { openingRemark: string; predefinedQuestions: string[] }): void
 }>()
 
 // 提供 popup 注入
@@ -224,15 +231,32 @@ const chatInputBoxRef = ref<InstanceType<typeof ChatInputBox>>()
 const isShow = ref(false)
 const inputMessage = ref("")
 const messageWrapper = ref<HTMLElement>()
+const greetingTextRef = ref<HTMLElement>()
 const showScrollToBottom = ref(false)
 const isNimbusMinimize = ref(props.defaultMinimize)
 let lastScrollTop = 0 // 上一次的滚动位置, 用于判断是否向下滑动
 const isSessionInitialized = ref(false)
+let initSessionPromise: Promise<void> | null = null // 用于避免重复初始化会话
 const openingRemark = ref("") // 接口获取的开场白
 const predefinedQuestions: Ref<string[]> = ref([]) // 接口获取的预设问题
 
-const greetingText = computed(() => {
-  return openingRemark.value || t("输入你的问题，助你高效的完成工作")
+// 提供会话存储实例
+const sessionStore = provideSessionStore()
+
+const greetingText = computed(() => openingRemark.value || t("输入你的问题，助你高效的完成工作"))
+
+// 响应式的窗口高度
+const windowHeight = ref(window.innerHeight)
+
+// 动态计算 greeting 最大高度
+const greetingMaxHeight = computed(() => windowHeight.value - 367) // 367 是其余组件占据空间
+
+// 使用 markdown 渲染功能
+const { renderMarkdown } = useMarkdown()
+
+// 渲染后的问候语（支持 markdown）
+const renderedGreetingText = computed(() => {
+  return renderMarkdown(greetingText.value)
 })
 
 const promptList = computed(() => {
@@ -246,6 +270,36 @@ const hasSessionContents = computed(() => {
 // 标准化的URL，自动匹配当前页面协议
 const normalizedUrl = computed(() => {
   return normalizeUrl(props.url)
+})
+
+// 动态计算 greeting text 的高度，用于调整输入框位置
+const greetingTextHeight = ref(0)
+
+// 监听 greeting text 内容变化，重新计算高度
+const updateGreetingTextHeight = () => {
+  nextTick(() => {
+    if (greetingTextRef.value) {
+      greetingTextHeight.value = greetingTextRef.value.offsetHeight
+    }
+  })
+}
+
+// 计算输入框的动态位置
+const inputContainerStyle = computed(() => {
+  if (!hasSessionContents.value) {
+    // 当没有消息时，根据 greeting text 的高度动态调整位置
+    const baseTop = 188 // 原始的 top 值
+    const greetingHeight = greetingTextHeight.value
+
+    // 如果 greeting text 超过了基础高度，需要向下调整输入框位置
+    const additionalOffset = Math.min(greetingHeight - 22, greetingMaxHeight.value - 22) // 22 是单行高度
+    const dynamicTop = baseTop + Math.max(0, additionalOffset)
+
+    return {
+      top: `${dynamicTop}px`
+    }
+  }
+  return {}
 })
 
 // 使用可调整大小的容器
@@ -286,6 +340,8 @@ const handleShow = () => {
   if (normalizedUrl.value && !isSessionInitialized.value) {
     initSession()
   }
+
+  updateGreetingTextHeight()
 }
 
 const handleNimbusClick = () => {
@@ -404,10 +460,39 @@ sessionStore.registerSdkMethods({
 
 // 封装会话初始化逻辑
 const initSession = async () => {
-  const { conversationSettings } = await sessionStore.initSession()
-  openingRemark.value = conversationSettings?.openingRemark || ""
-  predefinedQuestions.value = conversationSettings?.predefinedQuestions || []
-  isSessionInitialized.value = true
+  // 如果已经有正在进行的初始化，则等待其完成
+  if (initSessionPromise) {
+    await initSessionPromise
+    return
+  }
+
+  // 如果已经初始化完成，则直接返回
+  if (isSessionInitialized.value && !initSessionPromise) {
+    return
+  }
+
+  // 创建新的初始化Promise
+  initSessionPromise = (async () => {
+    try {
+      const { conversationSettings } = await sessionStore.initSession()
+      openingRemark.value = conversationSettings?.openingRemark || ""
+      predefinedQuestions.value = conversationSettings?.predefinedQuestions || []
+      isSessionInitialized.value = true
+      
+      // 派发初始化完成事件
+      emit("session-initialized", {
+        openingRemark: openingRemark.value,
+        predefinedQuestions: predefinedQuestions.value,
+      })
+    } finally {
+      // 无论成功还是失败，都要清理Promise
+      initSessionPromise = null
+      // 更新 greeting text 的高度
+      updateGreetingTextHeight()
+    }
+  })()
+
+  await initSessionPromise
 }
 
 // 监听 url 变化
@@ -420,7 +505,9 @@ watch(
         url: newUrl,
         ...props.requestOptions,
       })
-      // URL 变化时重新初始化会话
+      // URL 变化时重置初始化状态并重新初始化会话
+      isSessionInitialized.value = false
+      initSessionPromise = null
       initSession()
     }
   }
@@ -442,6 +529,20 @@ watch(
 if (normalizedUrl.value && !props.defaultMinimize) {
   initSession()
 }
+
+// 窗口 resize 事件处理器
+const handleWindowResize = () => {
+  windowHeight.value = window.innerHeight
+}
+
+// 生命周期钩子 - 添加和移除窗口 resize 监听器
+onMounted(() => {
+  window.addEventListener('resize', handleWindowResize)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleWindowResize)
+})
 
 const scrollMainToBottom = () => {
   messageWrapper.value?.scrollTo({
@@ -602,6 +703,7 @@ defineExpose({
   updateRequestOptions,
   currentSessionLoading,
   isLoadingSessionContents,
+  updateGreetingTextHeight,
   setCurrentSession,
   focusInput: () => {
     chatInputBoxRef.value?.focus()
@@ -611,6 +713,7 @@ defineExpose({
 
 <style lang="scss" scoped>
 @import "./styles/mixins.scss";
+@import "./styles/markdown.scss";
 
 .ai-blueking-wrapper {
   position: fixed;
@@ -750,7 +853,6 @@ defineExpose({
     gap: 8px;
     align-items: center;
     width: 100%;
-    pointer-events: none;
     transform: translateX(-50%);
 
     .greeting-anmition-wrapper {
@@ -766,12 +868,17 @@ defineExpose({
     }
 
     .greeting-text {
-      width: fit-content;
+      width: 100%;
+      max-width: 600px;
+      max-height: v-bind('greetingMaxHeight + "px"');
       font-size: 14px;
       line-height: 22px;
       color: #4d4f56;
-      white-space: nowrap;
-      transform-origin: left;
+      transform-origin: center top;
+      overflow-y: auto; // 添加垂直滚动
+      padding: 8px 0;
+
+      // greeting-markdown 样式现在从公共样式文件导入
     }
   }
 

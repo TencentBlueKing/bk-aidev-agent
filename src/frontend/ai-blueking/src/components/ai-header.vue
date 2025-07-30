@@ -17,7 +17,7 @@
       <i
         v-if="props.showNewChatIcon"
         class="bkai-icon bkai-xinzengliaotian"
-        v-bk-tooltips="{ content: t('新增聊天'), boundary: 'parent' }"
+        v-bk-tooltips="{ content: t('新增会话'), boundary: 'parent' }"
         @click="handleNewChat"
       ></i>
       <i
@@ -49,7 +49,8 @@
   import { useTooltip } from '../composables/use-tippy';
   import { useHistoryPanel } from '../composables/use-history-panel';
   import { t } from '../lang';
-  import { sessionStore } from '../store/sessionStore';
+  import { useInjectSessionStore } from '../composables/use-session-store';
+  import type { SessionStore } from '../store/sessionStore';
 
   import { bkTooltips } from 'bkui-vue';
   import HistoryPanel from './history-panel.vue';
@@ -61,7 +62,7 @@
     showHistoryIcon: boolean;
     showNewChatIcon?: boolean;
   }>(), {
-    title: t('AI 小鲸'),
+    title: '',
     isCompressionHeight: false,
     draggable: true,
     showHistoryIcon: true,
@@ -72,6 +73,9 @@
 
   const vBkTooltips = bkTooltips;
 
+  // 注入会话存储实例
+  const sessionStore = useInjectSessionStore() as SessionStore;
+
   // 历史面板相关的 refs
   const historyIconRef = ref<HTMLElement | null>(null);
 
@@ -79,6 +83,9 @@
   const { handleTriggerClick: handleHistoryClick } = useHistoryPanel({
     triggerRef: historyIconRef,
     panelComponent: HistoryPanel,
+    panelProps: {
+      sessionStore: sessionStore
+    },
     tippyOptions: {
       placement: 'bottom-end',
       offset: [0, 8],
@@ -87,7 +94,7 @@
   });
 
   const displayTitle = computed(() => {
-    return sessionStore.currentSession.value?.sessionName || props.title;
+    return props.title || `${sessionStore.agentInfo.agentName || ''}-${sessionStore.currentSession.value?.sessionName}`
   });
 
   const compressionIcon = computed(() => {
@@ -145,8 +152,8 @@
     try {
       // 通知父组件
       emit('newChat')
-      // 创建新会话
-      await sessionStore.initSession(false)
+      // 创建新会话（总是创建新会话，不检查上一个会话是否为空）
+      await sessionStore.addNewSession()
     } catch (error) {
       console.error('Failed to create new chat:', error)
     }

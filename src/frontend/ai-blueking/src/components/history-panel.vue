@@ -82,58 +82,60 @@
 <script setup lang="ts">
 import { ref, computed, nextTick } from "vue"
 
-import { Input as BkInput, bkTooltips, PopConfirm as BkPopConfirm, OverflowTitle as BkOverflowTitle } from "bkui-vue"
+import { Input as BkInput, PopConfirm as BkPopConfirm, OverflowTitle as BkOverflowTitle } from "bkui-vue"
 import { Search } from "bkui-vue/lib/icon"
 
 import { t } from "../lang"
-import { sessionStore } from "../store/sessionStore"
+import type { SessionStore } from "../store/sessionStore"
 import type { ISessionEditItem, HistoryItem } from "../store/types"
+
+const props = defineProps<{
+  sessionStore: SessionStore
+}>()
 
 const emit = defineEmits<{
   (e: "close"): void
 }>()
 
-const vBkTooltips = bkTooltips
 const search = ref("")
+
+const sessionStore = props.sessionStore
 
 const inputRefs = ref<Record<string, any>>({})
 
 const historyList = computed(() => {
-  const list = sessionStore.sessionList.value.reduce<HistoryItem[]>(
-    (acc, item) => {
-      const date = new Date(item.createdAt || '')
-      const today = new Date()
-      const yesterday = new Date()
-      yesterday.setDate(yesterday.getDate() - 1)
+  const initialGroups: HistoryItem[] = [
+    { key: "today", alias: t("今天"), sessionList: [] },
+    { key: "yesterday", alias: t("昨天"), sessionList: [] },
+    { key: "before", alias: t("之前"), sessionList: [] },
+  ]
 
-      if (date.toDateString() === today.toDateString()) {
-        acc.find((historyItem) => historyItem.key === "today" && item.sessionName.includes(search.value))?.sessionList.push(item)
-      } else if (date.toDateString() === yesterday.toDateString()) {
-        acc.find((historyItem) => historyItem.key === "yesterday" && item.sessionName.includes(search.value))?.sessionList.push(item)
-      } else {
-        acc.find((historyItem) => historyItem.key === "before" && item.sessionName.includes(search.value))?.sessionList.push(item)
-      }
-      return acc
-    },
-    [
-      {
-        key: "today",
-        alias: t("今天"),
-        sessionList: [],
-      },
-      {
-        key: "yesterday",
-        alias: t("昨天"),
-        sessionList: [],
-      },
-      {
-        key: "before",
-        alias: t("之前"),
-        sessionList: [],
-      },
-    ]
+  const filteredSessions = sessionStore.sessionList.value.filter(item => 
+    item.sessionName.toLowerCase().includes(search.value.toLowerCase())
   )
-  return list.filter((item) => item.sessionList.length > 0)
+
+  return filteredSessions.reduce<HistoryItem[]>((acc, item) => {
+    const date = new Date(item.createdAt || '')
+    const today = new Date()
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+
+    let targetGroup: HistoryItem | undefined
+    if (date.toDateString() === today.toDateString()) {
+      targetGroup = acc.find(g => g.key === "today")
+    } else if (date.toDateString() === yesterday.toDateString()) {
+      targetGroup = acc.find(g => g.key === "yesterday")
+    } else {
+      targetGroup = acc.find(g => g.key === "before")
+    }
+
+    if (targetGroup) {
+      targetGroup.sessionList.push(item)
+    }
+
+    return acc
+  }, JSON.parse(JSON.stringify(initialGroups)))
+    .filter(item => item.sessionList.length > 0)
 })
 
 /**

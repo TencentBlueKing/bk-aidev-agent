@@ -1,5 +1,6 @@
 import { nextTick } from 'vue';
 import mermaid from 'mermaid';
+import DOMPurify from 'dompurify';
 
 export function useMermaid() {
   // Initialize mermaid with v10.x configuration
@@ -39,8 +40,9 @@ export function useMermaid() {
 
         // Create wrapper div with proper styling
         const wrapper = document.createElement('div');
+        const cleanSvg = DOMPurify.sanitize(svg, {ADD_TAGS: ['foreignObject'], USE_PROFILES: {svg: true, svgFilters: true}});
         wrapper.className = 'mermaid-diagram';
-        wrapper.innerHTML = svg;
+        wrapper.innerHTML = cleanSvg;
 
         // Replace placeholder with rendered diagram
         placeholder.parentNode?.replaceChild(wrapper, placeholder);

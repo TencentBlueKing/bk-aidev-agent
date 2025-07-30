@@ -18,6 +18,7 @@
   import hljs from 'highlight.js';
   import { Marked } from 'marked';
   import { markedHighlight } from 'marked-highlight';
+  import DOMPurify from 'dompurify';
 
   import 'highlight.js/lib/languages/javascript';
   import 'highlight.js/lib/languages/typescript';
@@ -46,7 +47,13 @@
     const code = `\`\`\`json
 ${JSON.stringify(props.config, null, 2)}
 \`\`\``;
-    return marked.parse(code);
+    const parsed = marked.parse(code);
+    // 使用 DOMPurify 净化内容以防止 XSS
+    return DOMPurify.sanitize(parsed, {
+      USE_PROFILES: { html: true },
+      FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input'],
+      FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover']
+    });
   });
 </script>
 

@@ -42,7 +42,7 @@ class PluginConfig(BaseModel):
         config.non_thinking_llm = result["prompt_setting"]["non_thinking_llm"]
         config.knowledgebase_ids = result["knowledgebase_settings"]["knowledgebases"]
         config.tool_codes = result["related_tools"]
-        cache.set(self.CACHE_KEY, "1", timeout=60)
+        cache.set(self.CACHE_KEY, "1", timeout=settings.DEFAULT_CACHE_TIMEOUT)
 
 
 if AGENT_CONFIG:
