@@ -2,7 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from string import Formatter
 
-logger = logging.getLogger("agent_command")
+logger = logging.getLogger("aidev_agent")
 
 """
 新版快捷指令前后端协议

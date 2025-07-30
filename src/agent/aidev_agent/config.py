@@ -127,6 +127,12 @@ BK_AIDEV_APIGW_ENDPOINT = env.str("BK_AIDEV_APIGW_ENDPOINT", "")
 BK_APIGW_STAGE = env.str("BK_APIGW_STAGE", "") or env.str("BKAIDEV_RESOURCE_STAGE", "prod")
 INTENT_RECOGNITION_GLOBAL_LLM_MODEL_NAME = env.str("INTENT_RECOGNITION_GLOBAL_LLM_MODEL_NAME", "hunyuan")
 
+# 快捷指令-Agent代码映射 {commandA: agentA, commandB: agentB}
+AIDEV_COMMAND_AGENT_MAPPING = env.dict("BKAIDEV_COMMAND_AGENT_MAPPING", {})
+
+# Agent生成中关键字
+AIDEV_AGENT_AI_GENERATING_KEYWORD = "生成中"
+
 # end: 配置
 
 
