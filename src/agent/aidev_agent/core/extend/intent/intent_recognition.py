@@ -822,7 +822,7 @@ class IntentRecognition(BaseModel):
         ):
             raise RuntimeError("请至少选择一种召回方式！")
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            if knowledge_bases:
+            if knowledge_bases or knowledge_items:
                 if agent_options.knowledge_query_options.with_index_specific_search:
                     future_index_specific = executor.submit(
                         self.search_knowledge_index_specific,
