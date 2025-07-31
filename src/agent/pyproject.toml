@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "aidev-agent"
-version = "1.0.0b21"
+version = "1.0.0b22"
 description = "bkaidev agent builder"
 authors = ["blueking"]
 license = "MIT"
