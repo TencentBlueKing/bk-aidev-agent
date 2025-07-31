@@ -28,6 +28,7 @@ export default function mermaidPlugin(md: any, options: any = {}) {
       if (defaultFenceRenderer !== undefined) {
         return defaultFenceRenderer(tokens, idx, options, env, slf);
       }
+
       return '';
     }
 

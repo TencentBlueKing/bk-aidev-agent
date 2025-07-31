@@ -30,7 +30,7 @@
   };
 </script>
 <style lang="scss" scoped>
-.bk-ai-custom-input :deep(textarea) {
-  background-color: #fff;
-}
+  .bk-ai-custom-input :deep(textarea) {
+    background-color: #fff;
+  }
 </style>

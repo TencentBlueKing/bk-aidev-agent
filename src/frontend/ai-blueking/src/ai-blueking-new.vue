@@ -41,64 +41,23 @@
           <div class="content-wrapper">
             <!-- 主要内容区域 -->
             <div :class="`main-content ${!hasSessionContents ? 'greeting-layout' : 'chat-layout'}`">
-              <motion.div
-                v-if="!hasSessionContents"
-                class="greeting-box"
-                :transition="{
-                  duration: 0.5,
-                  ease: [0.33, 1, 0.68, 1],
-                  type: 'tween',
-                }"
-                :animate="{ opacity: 1 }"
-                :initial="{ opacity: 1 }"
-              >
-                <div class="greeting-title">
-                  {{ props.helloText }}
-                </div>
-                <div class="greeting-anmition-wrapper">
-                  <motion.div
-                    class="greeting-text"
-                    :transition="{
-                      duration: 0.5,
-                      ease: [0.25, 0.46, 0.45, 0.94],
-                      delay: 0,
-                    }"
-                    :animate="{
-                      opacity: 1,
-                      y: 0,
-                    }"
-                    :initial="{
-                      opacity: 0,
-                      y: -20,
-                    }"
-                  >
-                    <div
-                      ref="greetingTextRef"
-                      class="greeting-markdown"
-                      v-html="renderedGreetingText"
-                    ></div>
-                  </motion.div>
-                </div>
-              </motion.div>
-              <div
-                ref="messageWrapper"
-                :style="{ opacity: hasSessionContents ? 1 : 0 }"
-                class="message-wrapper"
-              >
-                <div
-                  v-for="(message, index) in sessionContents"
-                  :key="message.id"
-                  class="message-line-wrapper"
-                >
-                  <render-message
-                    :index="index"
-                    :message="message"
-                    @delete="handleDelete"
-                    @regenerate="handleRegenerate"
-                    @resend="handleResend"
-                  />
-                </div>
-              </div>
+              <greeting-section
+                ref="greetingSectionRef"
+                :title="props.helloText"
+                :greeting-text="greetingText"
+                :has-session-contents="hasSessionContents"
+                :render-markdown="renderMarkdown"
+                :greeting-max-height="greetingMaxHeight"
+              />
+              <message-list
+                ref="messageListRef"
+                :session-contents="sessionContents"
+                :has-session-contents="hasSessionContents"
+                :content-margin-bottom="contentMarginBottom"
+                @delete="handleDelete"
+                @regenerate="handleRegenerate"
+                @resend="handleResend"
+              />
               <motion.div
                 :transition="{
                   duration: 0.5,
@@ -127,7 +86,7 @@
                       color="#979BA5"
                       icon="bkaijiantou"
                       :text="t('返回底部')"
-                      @click="scrollMainToBottom"
+                      @click="handleScrollMainToBottom"
                     />
                   </div>
                   <custom-input
@@ -142,9 +101,9 @@
                   <chat-input-box
                     v-else
                     v-model="inputMessage"
-                    :loading="currentSessionLoading"
+                    :loading="currentSessionLoading || false"
                     :prompts="promptList"
-                    :shortcuts="shortcuts"
+                    :shortcuts="shortcuts || []"
                     :disabled="props.disabledInput"
                     @height-change="handleInputHeightChange"
                     @send="handleSendMessage"
@@ -175,40 +134,56 @@
 </template>
 
 <script setup lang="ts">
+  // ===================================================================
+  // 1. 导入和类型定义
+  // ===================================================================
   import { SessionContentRole } from '@blueking/ai-ui-sdk/enums';
   import { useChat, useStyle, useClickProxy } from '@blueking/ai-ui-sdk/hooks';
   import { motion } from 'motion-v';
   import {
     computed,
+    defineEmits,
+    defineExpose,
+    defineProps,
+    nextTick,
+    onBeforeUnmount,
+    onMounted,
     provide,
     ref,
-    nextTick,
-    watch,
-    defineExpose,
     Ref,
-    onMounted,
-    onBeforeUnmount,
+    watch,
+    withDefaults,
   } from 'vue';
   import VueDraggableResizable from 'vue-draggable-resizable';
 
+  // 组件导入
   import AiBluekingHeader from './components/ai-header.vue';
   import BarButton from './components/bar-button.vue';
   import ChatInputBox from './components/chat-input-box.vue';
-  import LoadingOverlay from './components/loading-overlay.vue';
   import CustomInput from './components/custom-inputs/index.vue';
-  import renderMessage from './components/render-message.vue';
+  import GreetingSection from './components/greeting-section.vue';
+  import LoadingOverlay from './components/loading-overlay.vue';
+  import MessageList from './components/message-list.vue';
   import RenderPopup from './components/render-popup.vue';
+  import Nimbus from './views/nimbus.vue';
+
+  // Composable导入
+  import { useGreetingHeight } from './composables/use-greeting-height';
   import { useMarkdown } from './composables/use-markdown';
+  import { useMessageList } from './composables/use-message-list';
   import { POPUP_INJECTION_KEY } from './composables/use-popup-props';
   import { useResizableContainer } from './composables/use-resizable-container';
   import { useSelect } from './composables/use-select-pop';
   import { provideSessionStore } from './composables/use-session-store';
-  import { scrollToBottom, escapeHtml, normalizeUrl } from './utils';
+  import { useShortcut } from './composables/use-shortcut';
+
+  // 配置和工具导入
   import { DEFAULT_SHORTCUTS, HIDE_ROLE_LIST } from './config';
   import { t } from './lang';
   import type { IRequestOptions, IShortcut } from './types';
-  import Nimbus from './views/nimbus.vue';
+  import { escapeHtml, normalizeUrl } from './utils';
 
+  // 样式导入
   import 'vue-draggable-resizable/style.css';
 
   // 类型定义
@@ -237,7 +212,9 @@
     miniPadding?: number;
   }
 
-  // Props 定义
+  // ===================================================================
+  // 2. Props 和 Emits 定义
+  // ===================================================================
   const props = withDefaults(defineProps<Props>(), {
     title: '',
     helloText: t('你好，我是小鲸'),
@@ -263,7 +240,6 @@
     miniPadding: 0,
   });
 
-  // Emits 定义
   const emit = defineEmits<{
     (e: 'shortcut-click', shortcut: IShortcut): void;
     (e: 'close' | 'show' | 'stop' | 'receive-start' | 'receive-text' | 'receive-end'): void;
@@ -274,89 +250,74 @@
     ): void;
   }>();
 
-  // 提供 popup 注入
+  // ===================================================================
+  // 3. 依赖注入
+  // ===================================================================
   provide(POPUP_INJECTION_KEY, props.enablePopup);
 
-  // 状态管理
+  // ===================================================================
+  // 4. 核心状态管理
+  // ===================================================================
+  // DOM引用
   const resizeWrapper = ref<InstanceType<typeof VueDraggableResizable>>();
   const chatInputBoxRef = ref<InstanceType<typeof ChatInputBox>>();
-  const isShow = ref(false);
-  const inputMessage = ref('');
-  const messageWrapper = ref<HTMLElement>();
-  const greetingTextRef = ref<HTMLElement>();
-  const showScrollToBottom = ref(false);
-  const isNimbusMinimize = ref(props.defaultMinimize);
-  let lastScrollTop = 0; // 上一次的滚动位置, 用于判断是否向下滑动
-  const isSessionInitialized = ref(false);
-  let initSessionPromise: Promise<void> | null = null; // 用于避免重复初始化会话
-  const openingRemark = ref(''); // 接口获取的开场白
-  const predefinedQuestions: Ref<string[]> = ref([]); // 接口获取的预设问题
-
   const rootNode: Ref<HTMLElement | undefined> = ref();
-  const currentShortcut = ref<IShortcut>();
 
-  // 提供会话存储实例
-  const sessionStore = provideSessionStore();
+  // UI状态
+  const isShow = ref(false);
+  const isNimbusMinimize = ref(props.defaultMinimize);
+  const inputMessage = ref('');
+  const showScrollToBottom = ref(false);
 
-  const greetingText = computed(() => openingRemark.value || t('输入你的问题，助你高效的完成工作'));
+  // 会话状态
+  const isSessionInitialized = ref(false);
+  let initSessionPromise: Promise<void> | null = null;
+  const openingRemark = ref('');
+  const predefinedQuestions: Ref<string[]> = ref([]);
 
-  // 响应式的窗口高度
+  // 窗口状态
   const windowHeight = ref(window.innerHeight);
 
-  // 动态计算 greeting 最大高度
-  const greetingMaxHeight = computed(() => windowHeight.value - 367); // 367 是其余组件占据空间
+  // 输入状态
+  const inputHeight = ref(68);
 
+  // ===================================================================
+  // 5. 会话存储
+  // ===================================================================
+  const sessionStore = provideSessionStore();
+
+  // ===================================================================
+  // 6. 组合式 API 钩子 (Composables)
+  // ===================================================================
   // 使用 markdown 渲染功能
   const { renderMarkdown } = useMarkdown();
 
-  // 渲染后的问候语（支持 markdown）
-  const renderedGreetingText = computed(() => {
-    return renderMarkdown(greetingText.value);
+  // 使用选择文本功能
+  const { selectedText, citeText, setCiteText } = useSelect(props.enablePopup);
+
+  // 使用消息列表功能
+  const { messageListRef, scrollMainToBottom, scrollToBottomIfNeeded, resetUserScrolling } =
+    useMessageList();
+
+  // 使用快捷方式功能
+  const { currentShortcut, handleShortcutClick, handleCancelShortcut } = useShortcut({
+    selectedText: selectedText,
+    isShow: isShow,
+    handleShow: () => {
+      handleShow();
+    },
+    handleStop: () => {
+      handleStop();
+    },
   });
 
-  const promptList = computed(() => {
-    return [...props.prompts, ...predefinedQuestions.value];
-  });
+  // 初始化样式和点击代理
+  useStyle();
+  useClickProxy();
 
-  const hasSessionContents = computed(() => {
-    return sessionContents.value.filter(item => !HIDE_ROLE_LIST.includes(item.role)).length > 0;
-  });
-
-  // 标准化的URL，自动匹配当前页面协议
-  const normalizedUrl = computed(() => {
-    return normalizeUrl(props.url);
-  });
-
-  // 动态计算 greeting text 的高度，用于调整输入框位置
-  const greetingTextHeight = ref(0);
-
-  // 监听 greeting text 内容变化，重新计算高度
-  const updateGreetingTextHeight = () => {
-    nextTick(() => {
-      if (greetingTextRef.value) {
-        greetingTextHeight.value = greetingTextRef.value.offsetHeight;
-      }
-    });
-  };
-
-  // 计算输入框的动态位置
-  const inputContainerStyle = computed(() => {
-    if (!hasSessionContents.value) {
-      // 当没有消息时，根据 greeting text 的高度动态调整位置
-      const baseTop = 188; // 原始的 top 值
-      const greetingHeight = greetingTextHeight.value;
-
-      // 如果 greeting text 超过了基础高度，需要向下调整输入框位置
-      const additionalOffset = Math.min(greetingHeight - 22, greetingMaxHeight.value - 22); // 22 是单行高度
-      const dynamicTop = baseTop + Math.max(0, additionalOffset);
-
-      return {
-        top: `${dynamicTop}px`,
-      };
-    }
-    return {};
-  });
-
+  // ===================================================================
+  // 7. UI 和布局管理 (UI & Layout)
+  // ===================================================================
   // 使用可调整大小的容器
   const {
     minWidth,
@@ -379,94 +340,35 @@
     miniPadding: props.miniPadding,
   });
 
-  const inputHeight = ref(68);
+  // 动态计算 greeting 最大高度
+  const greetingMaxHeight = computed(() => windowHeight.value - 367);
 
-  const handleInputHeightChange = (height: number) => {
-    inputHeight.value = height;
-  };
+  // 使用问候语高度计算功能
+  const { greetingSectionRef, updateGreetingTextHeight, getInputContainerStyle } =
+    useGreetingHeight({
+      greetingMaxHeight: greetingMaxHeight.value,
+    });
 
+  // 计算输入框的动态位置
+  const inputContainerStyle = computed(() => {
+    return getInputContainerStyle(hasSessionContents.value);
+  });
+
+  // 内容边距计算
   const contentMarginBottom = computed(() => {
     const toolsBarHeight = 40;
     const offSetHeight = selectedText.value ? 100 : 70;
     return inputHeight.value + toolsBarHeight + offSetHeight;
   });
 
-  const { selectedText, citeText, setCiteText } = useSelect(props.enablePopup);
+  // ===================================================================
+  // 8. 聊天和会话管理 (Chat & Session)
+  // ===================================================================
 
-  const handleClose = () => {
-    isShow.value = false;
-    emit('close');
-  };
-
-  const handleShow = () => {
-    isShow.value = true;
-    emit('show');
-
-    // 弹窗打开时，如果有 URL 且未初始化会话，则初始化会话
-    if (normalizedUrl.value && !isSessionInitialized.value) {
-      initSession();
-    }
-
-    updateGreetingTextHeight();
-  };
-
-  const handleNimbusClick = () => {
-    handleShow();
-  };
-
-  // 初始化样式和点击代理
-  useStyle();
-  useClickProxy();
-
-  // 添加用户滚动跟踪变量
-  const userScrolling = ref(false);
-
-  // 重置用户滚动状态的函数
-  const resetUserScrolling = () => {
-    userScrolling.value = false;
-  };
-
-  // 处理用户滚动事件
-  const handleUserScroll = () => {
-    if (!messageWrapper.value) return;
-
-    userScrolling.value = true;
-
-    const { scrollTop, scrollHeight, clientHeight } = messageWrapper.value;
-    const isNearBottom = scrollTop + clientHeight >= scrollHeight - 50;
-
-    // 更新返回底部按钮的显示状态
-    showScrollToBottom.value = !isNearBottom && scrollHeight > clientHeight;
-
-    // 只有向下滑动且接近底部时才重置滚动状态
-    if (isNearBottom && scrollTop > lastScrollTop) {
-      resetUserScrolling();
-    }
-    lastScrollTop = scrollTop;
-  };
-
-  // 监听滚动容器
-  watch(messageWrapper, (el, oldEl) => {
-    // 移除旧元素的事件监听器
-    if (oldEl) {
-      oldEl.removeEventListener('scroll', handleUserScroll);
-      oldEl.removeEventListener('mermaid-rendered', handleMermaidRendered);
-    }
-
-    if (el) {
-      el.addEventListener('scroll', handleUserScroll);
-      // 监听 mermaid 渲染完成事件
-      el.addEventListener('mermaid-rendered', handleMermaidRendered);
-    }
+  // 标准化的URL，自动匹配当前页面协议 - **必须在使用它的 useChat 之前定义**
+  const normalizedUrl = computed(() => {
+    return normalizeUrl(props.url);
   });
-
-  // 处理 mermaid 渲染完成事件
-  const handleMermaidRendered = () => {
-    // 在 mermaid 渲染完成后，如果用户没有在滚动，则自动滚动到底部
-    nextTick(() => {
-      scrollToBottomIfNeeded();
-    });
-  };
 
   // 使用聊天功能
   const {
@@ -513,7 +415,7 @@
     },
   });
 
-  // 注册 SDK 的 setCurrentSession 方法
+  // 注册 SDK 的方法
   sessionStore.registerSdkMethods({
     setCurrentSession,
     setCurrentSessionChain,
@@ -527,20 +429,31 @@
     handleCompleteRole,
   });
 
-  // 封装会话初始化逻辑
+  // 提示列表
+  const promptList = computed(() => {
+    return [...props.prompts, ...predefinedQuestions.value];
+  });
+
+  // 是否有会话内容
+  const hasSessionContents = computed(() => {
+    return sessionContents.value.filter(item => !HIDE_ROLE_LIST.includes(item.role)).length > 0;
+  });
+
+  // 问候文本
+  const greetingText = computed(() => openingRemark.value || t('输入你的问题，助你高效的完成工作'));
+
+  // ===================================================================
+  // 9. 会话初始化逻辑
+  // ===================================================================
   const initSession = async () => {
-    // 如果已经有正在进行的初始化，则等待其完成
     if (initSessionPromise) {
       await initSessionPromise;
       return;
     }
-
-    // 如果已经初始化完成，则直接返回
     if (isSessionInitialized.value && !initSessionPromise) {
       return;
     }
 
-    // 创建新的初始化Promise
     initSessionPromise = (async () => {
       try {
         const { conversationSettings } = await sessionStore.initSession();
@@ -548,15 +461,12 @@
         predefinedQuestions.value = conversationSettings?.predefinedQuestions || [];
         isSessionInitialized.value = true;
 
-        // 派发初始化完成事件
         emit('session-initialized', {
           openingRemark: openingRemark.value,
           predefinedQuestions: predefinedQuestions.value,
         });
       } finally {
-        // 无论成功还是失败，都要清理Promise
         initSessionPromise = null;
-        // 更新 greeting text 的高度
         updateGreetingTextHeight();
       }
     })();
@@ -564,17 +474,17 @@
     await initSessionPromise;
   };
 
-  // 监听 url 变化
+  // ===================================================================
+  // 10. Watcher 监听器
+  // ===================================================================
   watch(
     () => normalizedUrl.value,
     (newUrl, oldUrl) => {
       if (newUrl !== oldUrl && newUrl) {
-        // 更新请求选项
         updateRequestOptions({
           url: newUrl,
           ...props.requestOptions,
         });
-        // URL 变化时重置初始化状态并重新初始化会话
         isSessionInitialized.value = false;
         initSessionPromise = null;
         initSession();
@@ -582,7 +492,6 @@
     }
   );
 
-  // 监听 requestOptions 变化
   watch(
     () => props.requestOptions,
     newOptions => {
@@ -594,55 +503,81 @@
     { deep: true }
   );
 
-  // 如果初始 URL 存在且弹窗默认显示，则立即初始化会话
-  if (normalizedUrl.value && !props.defaultMinimize) {
-    initSession();
-  }
+  watch(
+    sessionContents,
+    () => {
+      nextTick(scrollToBottomIfNeeded);
+    },
+    { deep: true }
+  );
 
-  // 窗口 resize 事件处理器
+  watch(
+    () => isShow.value,
+    newValue => {
+      if (newValue) {
+        nextTick(() => {
+          chatInputBoxRef.value?.focus();
+        });
+      }
+    }
+  );
+
+  // ===================================================================
+  // 11. 生命周期钩子
+  // ===================================================================
   const handleWindowResize = () => {
     windowHeight.value = window.innerHeight;
   };
 
-  // 生命周期钩子 - 添加和移除窗口 resize 监听器
   onMounted(() => {
     window.addEventListener('resize', handleWindowResize);
+    if (normalizedUrl.value && !props.defaultMinimize) {
+      initSession();
+    }
   });
 
   onBeforeUnmount(() => {
     window.removeEventListener('resize', handleWindowResize);
   });
 
-  const scrollMainToBottom = () => {
-    messageWrapper.value?.scrollTo({
-      top: messageWrapper.value.scrollHeight,
-      behavior: 'smooth',
-    });
+  // ===================================================================
+  // 12. 事件处理函数
+  // ===================================================================
+  const handleInputHeightChange = (height: number) => {
+    inputHeight.value = height;
   };
 
-  // 滚动到底部的辅助函数
-  const scrollToBottomIfNeeded = () => {
-    // 如果用户正在滚动查看历史消息，则不自动滚动
-    if (userScrolling.value) return;
+  const handleClose = () => {
+    isShow.value = false;
+    emit('close');
+  };
 
-    if (messageWrapper.value) {
-      scrollToBottom(messageWrapper.value);
+  const handleShow = () => {
+    isShow.value = true;
+    emit('show');
+
+    if (normalizedUrl.value && !isSessionInitialized.value) {
+      initSession();
     }
+    updateGreetingTextHeight();
   };
 
-  // 事件处理
+  const handleNimbusClick = () => {
+    handleShow();
+  };
+
+  const handleScrollMainToBottom = () => {
+    scrollMainToBottom();
+  };
+
   const handleSendMessage = async (message: string) => {
     if (!message.trim()) return;
 
-    // 如果会话未初始化，先初始化
     if (!isSessionInitialized.value && normalizedUrl.value) {
-      initSession();
+      await initSession();
     }
 
-    // 发送新消息时重置用户滚动状态
     resetUserScrolling();
-
-    // HTML转义功能 防止被当做 HTML 标签渲染
     const escapedMessage = escapeHtml(message);
 
     await plusSessionContent(currentSession.value?.sessionCode, {
@@ -665,8 +600,6 @@
     });
 
     emit('send-message', escapedMessage);
-
-    // 清空输入
     inputMessage.value = '';
     setCiteText('');
   };
@@ -682,7 +615,6 @@
     const sessionContent = sessionContents.value[index];
     if (sessionContent) {
       sessionContent.content = escapeHtml(message);
-
       reSendChat(sessionContent.sessionCode, sessionContent, index);
     }
   };
@@ -694,10 +626,6 @@
     }
   };
 
-  const handleCancelShortcut = () => {
-    currentShortcut.value = undefined;
-  };
-
   const handleSubmitShortcut = async ({
     shortcut,
     formData,
@@ -705,15 +633,12 @@
     shortcut: IShortcut;
     formData: Record<string, any>[];
   }) => {
-    currentShortcut.value = undefined;
-
+    handleCancelShortcut();
     !isShow.value && handleShow();
-
     currentSessionLoading.value && handleStop();
 
-    // 如果会话未初始化，先初始化
     if (!isSessionInitialized.value && normalizedUrl.value) {
-      initSession();
+      await initSession();
     }
 
     await plusSessionContent(currentSession.value?.sessionCode, {
@@ -724,7 +649,10 @@
         extra: {
           cite: formData.map(item => `${item.__label}: ${item.__value}`).join(', '),
           command: shortcut.id,
-          context: [...formData, ...(Array.isArray(props.requestOptions?.context) ? props.requestOptions.context : [])],
+          context: [
+            ...formData,
+            ...(Array.isArray(props.requestOptions?.context) ? props.requestOptions.context : []),
+          ],
         },
       },
     });
@@ -738,78 +666,20 @@
     emit('shortcut-click', shortcut);
   };
 
-  const handleShortcutClick = (shortcut: IShortcut) => {
-    // 创建 shortcut 的深拷贝，避免直接修改 props 传入的对象
-    const modifiedShortcut = structuredClone(shortcut) as IShortcut;
-
-    !isShow.value && handleShow();
-
-    // 在副本上查找需要填充的组件
-    const fillBackItem = modifiedShortcut.components.find(item => item.fillBack);
-    if (fillBackItem) {
-      let textToFill = selectedText.value; // 默认使用选中内容
-
-      if (fillBackItem.fillRegx) {
-        try {
-          // 尝试使用正则表达式匹配
-          const regex = new RegExp(fillBackItem.fillRegx);
-          const matches = selectedText.value.match(regex);
-          if (matches && matches.length > 0) {
-            // 使用匹配结果
-            textToFill = matches[0];
-          } else {
-            textToFill = ''; // 如果有正则表达式，但是没有匹配到内容，则使用空字符串
-          }
-        } catch (e) {
-          console.error('快捷方式组件中的正则表达式无效:', fillBackItem.fillRegx, e);
-        }
-      }
-
-      // 将文本赋值给副本中的组件
-      fillBackItem.selectedText = textToFill;
-    }
-
-    // 将修改后的副本赋值给响应式引用
-    currentShortcut.value = modifiedShortcut;
-  };
-
   const handleDelete = (index: number) => {
     deleteChat(index, currentSession.value?.sessionCode);
   };
 
-  // 监听消息列表变化，自动滚动到底部
-  watch(
-    sessionContents,
-    () => {
-      nextTick(scrollToBottomIfNeeded);
-    },
-    { deep: true }
-  );
-
-  // 监听面板显示状态，面板打开时自动聚焦输入框
-  watch(
-    () => isShow.value,
-    newValue => {
-      if (newValue) {
-        // 面板打开时，延迟一下让 DOM 渲染完成后再聚焦
-        nextTick(() => {
-          chatInputBoxRef.value?.focus();
-        });
-      }
-    }
-  );
-
-  // 处理新增聊天
   const handleNewChat = async () => {
-    // 终止当前会话
     stopChat(currentSession.value?.sessionCode);
-    // 重置输入框
     inputMessage.value = '';
     setCiteText('');
-    // 重置会话内容
     setSessionContents([]);
   };
 
+  // ===================================================================
+  // 13. 暴露给父组件的方法
+  // ===================================================================
   defineExpose({
     sessionContents,
     handleShow,
@@ -832,8 +702,8 @@
 </script>
 
 <style lang="scss" scoped>
-  @import './styles/mixins.scss';
-  @import './styles/markdown.scss';
+  @use './styles/mixins.scss';
+  @use './styles/markdown.scss';
 
   .ai-blueking-wrapper {
     position: fixed;
@@ -957,7 +827,7 @@
       overflow-y: auto;
       transition: opacity 0.5s ease;
 
-      @include custom-scrollbar;
+      @include mixins.custom-scrollbar;
     }
 
     .message-line-wrapper {
@@ -984,6 +854,8 @@
 
       .greeting-anmition-wrapper {
         overflow: hidden;
+        width: 100%;
+        padding: 0 16px;
       }
 
       .greeting-title {

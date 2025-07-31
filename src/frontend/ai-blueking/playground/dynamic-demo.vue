@@ -112,7 +112,7 @@
         {
           name: '数量',
           key: 'quantity',
-          default: 10,
+          default: '10',
           type: 'number',
           min: 1,
           max: 100,

@@ -140,9 +140,10 @@ export function useSelect(enablePopup: boolean) {
 
       // 检查选中区域的元素或其父元素是否包含 ai-blueking-hide 属性
       const commonAncestor = range.commonAncestorContainer;
-      const ancestorElement = commonAncestor.nodeType === Node.ELEMENT_NODE
-        ? commonAncestor as Element
-        : commonAncestor.parentElement;
+      const ancestorElement =
+        commonAncestor.nodeType === Node.ELEMENT_NODE
+          ? (commonAncestor as Element)
+          : commonAncestor.parentElement;
 
       if (hasAttributeInAncestors(ancestorElement, 'ai-blueking-hide')) {
         hideIcon();

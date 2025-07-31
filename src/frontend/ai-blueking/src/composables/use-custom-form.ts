@@ -66,7 +66,7 @@ export const useCustomForm = (shortcut: Ref<IShortcut>) => {
 
   watch(
     () => shortcut.value.components,
-    (val) => {
+    val => {
       const updatedComponent = val.find(item => item.selectedText);
       if (updatedComponent) {
         updateFormData(updatedComponent);

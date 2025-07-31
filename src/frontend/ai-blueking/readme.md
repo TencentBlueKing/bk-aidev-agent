@@ -1,7 +1,7 @@
 # AI 小鲸 (AI Blueking) 使用文档
 
 <p align="center">
-  <img src="./ai-logo.svg" alt="AI 小鲸" width="128" height="128">
+  <img src="https://pic-bed-1302552283.cos.ap-guangzhou.myqcloud.com/undefinedai-logo.svg?imageSlim" alt="AI 小鲸" width="128" height="128">
 </p>
 
 <p align="center">
@@ -43,25 +43,30 @@ yarn add @blueking/ai-blueking
   <div>
     <button @click="showAI">打开 AI 小鲸</button>
 
-    <AIBlueking ref="aiBlueking" :url="apiUrl" @show="handleShow" @close="handleClose" />
+    <AIBlueking
+      ref="aiBlueking"
+      :url="apiUrl"
+      @show="handleShow"
+      @close="handleClose"
+    />
   </div>
 </template>
 
 <script lang="ts" setup>
-import { ref } from 'vue';
-import AIBlueking from '@blueking/ai-blueking';
-import '@blueking/ai-blueking/dist/vue3/style.css';
+  import { ref } from 'vue';
+  import AIBlueking from '@blueking/ai-blueking';
+  import '@blueking/ai-blueking/dist/vue3/style.css';
 
-const aiBlueking = ref(null);
-const apiUrl = 'https://your-api-endpoint.com/assistant/';
+  const aiBlueking = ref(null);
+  const apiUrl = 'https://your-api-endpoint.com/assistant/';
 
-const showAI = () => {
-  console.log('AI 小鲸已显示');
-};
+  const showAI = () => {
+    console.log('AI 小鲸已显示');
+  };
 
-const handleClose = () => {
-  console.log('AI 小鲸已关闭');
-};
+  const handleClose = () => {
+    console.log('AI 小鲸已关闭');
+  };
 </script>
 ```
 
@@ -72,35 +77,40 @@ const handleClose = () => {
   <div>
     <button @click="showAI">打开 AI 小鲸</button>
 
-    <AIBlueking ref="aiBlueking" :url="apiUrl" @show="handleShow" @close="handleClose" />
+    <AIBlueking
+      ref="aiBlueking"
+      :url="apiUrl"
+      @show="handleShow"
+      @close="handleClose"
+    />
   </div>
 </template>
 
 <script>
-import AIBlueking from '@blueking/ai-blueking/vue2';
-import '@blueking/ai-blueking/dist/vue2/style.css';
+  import AIBlueking from '@blueking/ai-blueking/vue2';
+  import '@blueking/ai-blueking/dist/vue2/style.css';
 
-export default {
-  components: {
-    AIBlueking,
-  },
-  data() {
-    return {
-      apiUrl: 'https://your-api-endpoint.com/assistant/',
-    };
-  },
-  methods: {
-    showAI() {
-      this.$refs.aiBlueking.handleShow();
+  export default {
+    components: {
+      AIBlueking,
     },
-    handleShow() {
-      console.log('AI 小鲸已显示');
+    data() {
+      return {
+        apiUrl: 'https://your-api-endpoint.com/assistant/',
+      };
     },
-    handleClose() {
-      console.log('AI 小鲸已关闭');
+    methods: {
+      showAI() {
+        this.$refs.aiBlueking.handleShow();
+      },
+      handleShow() {
+        console.log('AI 小鲸已显示');
+      },
+      handleClose() {
+        console.log('AI 小鲸已关闭');
+      },
     },
-  },
-};
+  };
 </script>
 ```
 
@@ -177,34 +187,37 @@ export default {
       <button @click="quickActions('翻译', '翻译成英文：', articleTitle)">翻译标题</button>
     </div>
 
-    <AIBlueking ref="aiBlueking" :url="apiUrl" />
+    <AIBlueking
+      ref="aiBlueking"
+      :url="apiUrl"
+    />
   </div>
 </template>
 
 <script lang="ts" setup>
-import { ref } from 'vue';
-import AIBlueking from '@blueking/ai-blueking';
-import '@blueking/ai-blueking/dist/vue3/style.css';
+  import { ref } from 'vue';
+  import AIBlueking from '@blueking/ai-blueking';
+  import '@blueking/ai-blueking/dist/vue3/style.css';
 
-const aiBlueking = ref(null);
-const apiUrl = 'https://your-api-endpoint.com/assistant/';
-const articleTitle = 'AI 技术的发展与应用';
-const articleContent = '人工智能技术在近年来取得了突飞猛进的发展...';
+  const aiBlueking = ref(null);
+  const apiUrl = 'https://your-api-endpoint.com/assistant/';
+  const articleTitle = 'AI 技术的发展与应用';
+  const articleContent = '人工智能技术在近年来取得了突飞猛进的发展...';
 
-const quickActions = (label, promptPrefix, cite) => {
-  aiBlueking.value?.handleShow();
+  const quickActions = (label, promptPrefix, cite) => {
+    aiBlueking.value?.handleShow();
 
-  aiBlueking.value?.sendChat({
-    message: label,
-    cite,
-    shortcut: {
-      label,
-      key: label.toLowerCase(),
-      prompt: `${promptPrefix} {{ SELECTED_TEXT }}`,
-      icon: 'icon-explanation',
-    },
-  });
-};
+    aiBlueking.value?.sendChat({
+      message: label,
+      cite,
+      shortcut: {
+        label,
+        key: label.toLowerCase(),
+        prompt: `${promptPrefix} {{ SELECTED_TEXT }}`,
+        icon: 'icon-explanation',
+      },
+    });
+  };
 </script>
 ```
 
@@ -223,42 +236,45 @@ const quickActions = (label, promptPrefix, cite) => {
       <button @click="quickActions('翻译', '翻译成英文：', articleTitle)">翻译标题</button>
     </div>
 
-    <AIBlueking ref="aiBlueking" :url="apiUrl" />
+    <AIBlueking
+      ref="aiBlueking"
+      :url="apiUrl"
+    />
   </div>
 </template>
 
 <script>
-import AIBlueking from '@blueking/ai-blueking/vue2';
-import '@blueking/ai-blueking/dist/vue2/style.css';
+  import AIBlueking from '@blueking/ai-blueking/vue2';
+  import '@blueking/ai-blueking/dist/vue2/style.css';
 
-export default {
-  components: {
-    AIBlueking,
-  },
-  data() {
-    return {
-      apiUrl: 'https://your-api-endpoint.com/assistant/',
-      articleTitle: 'AI 技术的发展与应用',
-      articleContent: '人工智能技术在近年来取得了突飞猛进的发展...',
-    };
-  },
-  methods: {
-    quickActions(label, promptPrefix, cite) {
-      this.$refs.aiBlueking.handleShow(); // 显示AI小鲸
-
-      this.$refs.aiBlueking.sendChat({
-        // 主动调用发送消息
-        message: label,
-        cite,
-        shortcut: {
-          label,
-          key: label.toLowerCase(),
-          prompt: `${promptPrefix} {{ SELECTED_TEXT }}`,
-        },
-      });
+  export default {
+    components: {
+      AIBlueking,
     },
-  },
-};
+    data() {
+      return {
+        apiUrl: 'https://your-api-endpoint.com/assistant/',
+        articleTitle: 'AI 技术的发展与应用',
+        articleContent: '人工智能技术在近年来取得了突飞猛进的发展...',
+      };
+    },
+    methods: {
+      quickActions(label, promptPrefix, cite) {
+        this.$refs.aiBlueking.handleShow(); // 显示AI小鲸
+
+        this.$refs.aiBlueking.sendChat({
+          // 主动调用发送消息
+          message: label,
+          cite,
+          shortcut: {
+            label,
+            key: label.toLowerCase(),
+            prompt: `${promptPrefix} {{ SELECTED_TEXT }}`,
+          },
+        });
+      },
+    },
+  };
 </script>
 ```
 
@@ -266,22 +282,26 @@ export default {
 
 ```vue
 <template>
-  <AIBlueking ref="aiBlueking" :url="apiUrl" :prompts="customPrompts" />
+  <AIBlueking
+    ref="aiBlueking"
+    :url="apiUrl"
+    :prompts="customPrompts"
+  />
 </template>
 
 <script lang="ts" setup>
-import { ref } from 'vue';
-import AIBlueking from '@blueking/ai-blueking';
-import '@blueking/ai-blueking/dist/vue3/style.css';
+  import { ref } from 'vue';
+  import AIBlueking from '@blueking/ai-blueking';
+  import '@blueking/ai-blueking/dist/vue3/style.css';
 
-const aiBlueking = ref(null);
-const apiUrl = 'https://your-api-endpoint.com/assistant/';
+  const aiBlueking = ref(null);
+  const apiUrl = 'https://your-api-endpoint.com/assistant/';
 
-const customPrompts = [
-  '我给一段文字，概括文字的主题和主要观点，找出支持主题的关键事实、论据或观点，使用中文回答。',
-  '假设你是一名关系型数据库专家，后续的对话我会直接描述我想要的查询效果，请告诉我如何写对应的SQL查询，并解释它，如果有多个版本的SQL，以MySQL数据库为主。',
-  '你是一名经验丰富的前端开发工程师，请帮我解决以下问题...',
-];
+  const customPrompts = [
+    '我给一段文字，概括文字的主题和主要观点，找出支持主题的关键事实、论据或观点，使用中文回答。',
+    '假设你是一名关系型数据库专家，后续的对话我会直接描述我想要的查询效果，请告诉我如何写对应的SQL查询，并解释它，如果有多个版本的SQL，以MySQL数据库为主。',
+    '你是一名经验丰富的前端开发工程师，请帮我解决以下问题...',
+  ];
 </script>
 ```
 
@@ -289,16 +309,20 @@ const customPrompts = [
 
 ```vue
 <template>
-  <AIBlueking ref="aiBlueking" :url="apiUrl" :default-minimize="true" />
+  <AIBlueking
+    ref="aiBlueking"
+    :url="apiUrl"
+    :default-minimize="true"
+  />
 </template>
 
 <script lang="ts" setup>
-import { ref } from 'vue';
-import AIBlueking from '@blueking/ai-blueking';
-import '@blueking/ai-blueking/dist/vue3/style.css';
+  import { ref } from 'vue';
+  import AIBlueking from '@blueking/ai-blueking';
+  import '@blueking/ai-blueking/dist/vue3/style.css';
 
-const aiBlueking = ref(null);
-const apiUrl = 'https://your-api-endpoint.com/assistant/';
+  const aiBlueking = ref(null);
+  const apiUrl = 'https://your-api-endpoint.com/assistant/';
 </script>
 ```
 
@@ -308,17 +332,21 @@ const apiUrl = 'https://your-api-endpoint.com/assistant/';
 <template>
   <div>
     <div id="ai-container"></div>
-    <AIBlueking ref="aiBlueking" :url="apiUrl" teleport-to="#ai-container" />
+    <AIBlueking
+      ref="aiBlueking"
+      :url="apiUrl"
+      teleport-to="#ai-container"
+    />
   </div>
 </template>
 
 <script lang="ts" setup>
-import { ref } from 'vue';
-import AIBlueking from '@blueking/ai-blueking';
-import '@blueking/ai-blueking/dist/vue3/style.css';
+  import { ref } from 'vue';
+  import AIBlueking from '@blueking/ai-blueking';
+  import '@blueking/ai-blueking/dist/vue3/style.css';
 
-const aiBlueking = ref(null);
-const apiUrl = 'https://your-api-endpoint.com/assistant/';
+  const aiBlueking = ref(null);
+  const apiUrl = 'https://your-api-endpoint.com/assistant/';
 </script>
 ```
 
@@ -356,22 +384,25 @@ const apiUrl = 'https://your-api-endpoint.com/assistant/';
 
 ````vue
 <template>
-  <AIBlueking ref="aiBlueking" :url="apiUrl" />
+  <AIBlueking
+    ref="aiBlueking"
+    :url="apiUrl"
+  />
   <button @click="showSessionContents">显示会话内容</button>
 </template>
 
 <script lang="ts" setup>
-import { ref } from 'vue';
-import AIBlueking from '@blueking/ai-blueking';
-import '@blueking/ai-blueking/dist/vue3/style.css';
+  import { ref } from 'vue';
+  import AIBlueking from '@blueking/ai-blueking';
+  import '@blueking/ai-blueking/dist/vue3/style.css';
 
-const aiBlueking = ref<InstanceType<typeof AIBlueking>>();
-const apiUrl = 'https://your-api-endpoint.com/assistant/';
+  const aiBlueking = ref<InstanceType<typeof AIBlueking>>();
+  const apiUrl = 'https://your-api-endpoint.com/assistant/';
 
-const showSessionContents = () => {
-  const sessionContents = aiBlueking.value?.sessionContents;
-  console.log('当前会话内容:', sessionContents);
-};
+  const showSessionContents = () => {
+    const sessionContents = aiBlueking.value?.sessionContents;
+    console.log('当前会话内容:', sessionContents);
+  };
 </script>
 
 ### Vue 2 自定义请求选项 ```vue
@@ -395,30 +426,33 @@ const showSessionContents = () => {
 
 ```vue
 <template>
-  <AIBlueking ref="aiBlueking" :url="apiUrl" />
+  <AIBlueking
+    ref="aiBlueking"
+    :url="apiUrl"
+  />
   <button @click="showSessionContents">显示会话内容</button>
 </template>
 
 <script>
-import AIBlueking from '@blueking/ai-blueking/vue2';
-import '@blueking/ai-blueking/dist/vue2/style.css';
+  import AIBlueking from '@blueking/ai-blueking/vue2';
+  import '@blueking/ai-blueking/dist/vue2/style.css';
 
-export default {
-  components: {
-    AIBlueking,
-  },
-  data() {
-    return {
-      apiUrl: 'https://your-api-endpoint.com/assistant/',
-    };
-  },
-  methods: {
-    showSessionContents() {
-      const sessionContents = this.$refs.aiBlueking.sessionContents;
-      console.log('当前会话内容:', sessionContents);
+  export default {
+    components: {
+      AIBlueking,
     },
-  },
-};
+    data() {
+      return {
+        apiUrl: 'https://your-api-endpoint.com/assistant/',
+      };
+    },
+    methods: {
+      showSessionContents() {
+        const sessionContents = this.$refs.aiBlueking.sessionContents;
+        console.log('当前会话内容:', sessionContents);
+      },
+    },
+  };
 </script>
 ```
 
@@ -426,28 +460,32 @@ export default {
 
 ```vue
 <template>
-  <AIBlueking ref="aiBlueking" :url="apiUrl" :prompts="customPrompts" />
+  <AIBlueking
+    ref="aiBlueking"
+    :url="apiUrl"
+    :prompts="customPrompts"
+  />
 </template>
 
 <script>
-import AIBlueking from '@blueking/ai-blueking/vue2';
-import '@blueking/ai-blueking/dist/vue2/style.css';
+  import AIBlueking from '@blueking/ai-blueking/vue2';
+  import '@blueking/ai-blueking/dist/vue2/style.css';
 
-export default {
-  components: {
-    AIBlueking,
-  },
-  data() {
-    return {
-      apiUrl: 'https://your-api-endpoint.com/assistant/',
-      customPrompts: [
-        '我给一段文字，概括文字的主题和主要观点，找出支持主题的关键事实、论据或观点，使用中文回答。',
-        '假设你是一名关系型数据库专家，后续的对话我会直接描述我想要的查询效果，请告诉我如何写对应的SQL查询，并解释它，如果有多个版本的SQL，以MySQL数据库为主。',
-        '你是一名经验丰富的前端开发工程师，请帮我解决以下问题...',
-      ],
-    };
-  },
-};
+  export default {
+    components: {
+      AIBlueking,
+    },
+    data() {
+      return {
+        apiUrl: 'https://your-api-endpoint.com/assistant/',
+        customPrompts: [
+          '我给一段文字，概括文字的主题和主要观点，找出支持主题的关键事实、论据或观点，使用中文回答。',
+          '假设你是一名关系型数据库专家，后续的对话我会直接描述我想要的查询效果，请告诉我如何写对应的SQL查询，并解释它，如果有多个版本的SQL，以MySQL数据库为主。',
+          '你是一名经验丰富的前端开发工程师，请帮我解决以下问题...',
+        ],
+      };
+    },
+  };
 </script>
 ```
 
@@ -455,23 +493,27 @@ export default {
 
 ```vue
 <template>
-  <AIBlueking ref="aiBlueking" :url="apiUrl" :default-minimize="true" />
+  <AIBlueking
+    ref="aiBlueking"
+    :url="apiUrl"
+    :default-minimize="true"
+  />
 </template>
 
 <script>
-import AIBlueking from '@blueking/ai-blueking/vue2';
-import '@blueking/ai-blueking/dist/vue2/style.css';
+  import AIBlueking from '@blueking/ai-blueking/vue2';
+  import '@blueking/ai-blueking/dist/vue2/style.css';
 
-export default {
-  components: {
-    AIBlueking,
-  },
-  data() {
-    return {
-      apiUrl: 'https://your-api-endpoint.com/assistant/',
-    };
-  },
-};
+  export default {
+    components: {
+      AIBlueking,
+    },
+    data() {
+      return {
+        apiUrl: 'https://your-api-endpoint.com/assistant/',
+      };
+    },
+  };
 </script>
 ```
 
@@ -481,24 +523,28 @@ export default {
 <template>
   <div>
     <div id="ai-container"></div>
-    <AIBlueking ref="aiBlueking" :url="apiUrl" teleport-to="#ai-container" />
+    <AIBlueking
+      ref="aiBlueking"
+      :url="apiUrl"
+      teleport-to="#ai-container"
+    />
   </div>
 </template>
 
 <script>
-import AIBlueking from '@blueking/ai-blueking/vue2';
-import '@blueking/ai-blueking/dist/vue2/style.css';
+  import AIBlueking from '@blueking/ai-blueking/vue2';
+  import '@blueking/ai-blueking/dist/vue2/style.css';
 
-export default {
-  components: {
-    AIBlueking,
-  },
-  data() {
-    return {
-      apiUrl: 'https://your-api-endpoint.com/assistant/',
-    };
-  },
-};
+  export default {
+    components: {
+      AIBlueking,
+    },
+    data() {
+      return {
+        apiUrl: 'https://your-api-endpoint.com/assistant/',
+      };
+    },
+  };
 </script>
 ```
 
@@ -535,13 +581,13 @@ export default {
 
 ## 常见问题
 
-1. **Q: AI 小鲸窗口如何调整大小？**  
+1. **Q: AI 小鲸窗口如何调整大小？**
    A: 用户可以通过拖动窗口边缘或右下角来调整窗口大小。
 
-2. **Q: 如何实现选中文本弹出快捷操作？**  
+2. **Q: 如何实现选中文本弹出快捷操作？**
    A: 这是 AI 小鲸的内置功能，设置 `enablePopup` 为 true 即可启用。
 
-3. **Q: 在 Vue 2 项目中使用时遇到兼容性问题怎么办？**  
+3. **Q: 在 Vue 2 项目中使用时遇到兼容性问题怎么办？**
    A: 确保正确导入 Vue 2 版本的组件和样式，路径分别为 `@blueking/ai-blueking/vue2` 和 `@blueking/ai-blueking/dist/vue2/style.css`。
 
 ## 贡献指南

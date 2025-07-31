@@ -1,5 +1,6 @@
-import type { ISession, ISessionContent, IAgentInfo } from '@blueking/ai-ui-sdk/types';
 import { ref } from 'vue';
+
+import type { ISession, ISessionContent, IAgentInfo } from '@blueking/ai-ui-sdk/types';
 
 import { HIDE_ROLE_LIST } from '../config';
 import { uuid as generateUuid } from '../utils';
@@ -37,6 +38,7 @@ export function useSessionStore() {
     if (!sdkApi[methodName]) {
       throw new Error(`${methodName} not registered`);
     }
+
     return sdkApi[methodName] as NonNullable<SdkApi[T]>;
   };
 
@@ -47,6 +49,7 @@ export function useSessionStore() {
   const switchSessionWithContents = async (session: ISession | ISessionEditItem) => {
     try {
       const setChain = checkSdkMethod('setCurrentSessionChain');
+
       await setChain(session);
       setCurrentSession(session);
     } catch (error) {
@@ -69,7 +72,9 @@ export function useSessionStore() {
    */
   const addSession = (session: ISession) => {
     const newSession = { ...session, isEdit: false };
+
     sessionList.value.unshift(newSession);
+
     return newSession;
   };
 
@@ -88,8 +93,10 @@ export function useSessionStore() {
     sessionList.value.forEach(session => {
       if (chatPattern.test(session.sessionName)) {
         const match = session.sessionName.match(chatPattern);
+
         if (match && match[1]) {
           const index = parseInt(match[1], 10);
+
           if (!isNaN(index) && index > maxIndex) {
             maxIndex = index;
           }
@@ -113,6 +120,7 @@ export function useSessionStore() {
 
     // 创建 session 并同步到后台
     const plusSession = checkSdkMethod('plusSessionApi');
+
     await plusSession(session);
 
     // 切换到新会话
@@ -127,6 +135,7 @@ export function useSessionStore() {
    */
   const startEditSession = (sessionCode: string) => {
     const session = sessionList.value.find(s => s.sessionCode === sessionCode);
+
     if (session) {
       // 保存原始值
       originalSessionValues.value[sessionCode] = { ...session };
@@ -142,6 +151,7 @@ export function useSessionStore() {
    */
   const finishEditSession = async (sessionCode: string, updates: Partial<ISessionEditItem>) => {
     const originalSession = originalSessionValues.value[sessionCode];
+
     if (!originalSession) {
       return null;
     }
@@ -149,6 +159,7 @@ export function useSessionStore() {
     // 检查内容是否有实际变化（与原始值比较）
     const hasContentChanged = Object.entries(updates).some(([key, value]) => {
       if (key === 'isEdit') return false;
+
       return originalSession[key as keyof ISessionEditItem] !== value;
     });
 
@@ -203,6 +214,7 @@ export function useSessionStore() {
         const modifySession = checkSdkMethod('modifySessionApi');
         // 同步到后端时，确保 isEdit 为 false
         const sessionToSync = { ...updatedSession, isEdit: false };
+
         await modifySession(sessionToSync);
       } catch (error) {
         console.error('Failed to sync session to backend:', error);
@@ -219,14 +231,17 @@ export function useSessionStore() {
    */
   const deleteSession = async (sessionCode: string): Promise<ISessionEditItem | null> => {
     const deleteApi = checkSdkMethod('deleteSessionApi');
+
     await deleteApi(sessionCode);
 
     const index = sessionList.value.findIndex(s => s.sessionCode === sessionCode);
+
     if (index === -1) {
       return null;
     }
 
     const isDeletingCurrentSession = currentSession.value?.sessionCode === sessionCode;
+
     // 先从列表中删除
     sessionList.value.splice(index, 1);
 
@@ -242,11 +257,13 @@ export function useSessionStore() {
         const nextSession = todaySessions.length > 0 ? todaySessions[0] : sessionList.value[0];
 
         await switchSessionWithContents(nextSession);
+
         return nextSession;
       }
 
       // 如果没有其他会话，则创建一个新会话
       await initSession(false);
+
       return null;
     }
 
@@ -268,6 +285,7 @@ export function useSessionStore() {
     } else {
       // 如果会话不存在，添加到列表并设置为当前会话
       const newSession = addSession(session);
+
       currentSession.value = newSession;
     }
   };
@@ -287,10 +305,11 @@ export function useSessionStore() {
    *   predefinedQuestions: string[]
    * }>
    */
-  const initSession = async (isInitChat: boolean = true) => {
+  const initSession = async (isInitChat = true) => {
     // 获取会话列表
     const getSessions = checkSdkMethod('getSessionsApi');
     const sessions = await getSessions();
+
     setSessionList(sessions);
 
     let targetSession: ISessionEditItem | null = null;
@@ -305,6 +324,7 @@ export function useSessionStore() {
 
       // 获取最新会话的内容
       const getContents = checkSdkMethod('getSessionContentsApi');
+
       targetSessionContents = await getContents(latestSession.sessionCode);
 
       // 检查会话内容是否为空（检查每个内容的 content 字段）
@@ -324,6 +344,7 @@ export function useSessionStore() {
     } else {
       // 使用现有会话
       const setContents = checkSdkMethod('setSessionContents');
+
       setContents(targetSessionContents);
       switchSessionWithContents(targetSession);
     }
@@ -333,9 +354,10 @@ export function useSessionStore() {
       const getAgentInfo = checkSdkMethod('getAgentInfoApi');
 
       const { conversationSettings, promptSetting, agentName } = await getAgentInfo();
+
       Object.assign(agentInfo, {
-        conversationSettings: conversationSettings,
-        promptSetting: promptSetting,
+        conversationSettings,
+        promptSetting,
         agentName,
       });
     }
@@ -343,6 +365,7 @@ export function useSessionStore() {
     // 处理角色设置
     if (agentInfo?.promptSetting?.content?.length) {
       const handleRole = checkSdkMethod('handleCompleteRole');
+
       await handleRole(targetSession.sessionCode, agentInfo.promptSetting.content);
     }
 

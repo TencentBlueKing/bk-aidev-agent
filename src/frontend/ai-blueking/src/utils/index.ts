@@ -30,9 +30,11 @@
  */
 export const getCookieByName = (name: string) => {
   const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]*)(;|$)`));
+
   if (match) {
     return match[2];
   }
+
   return '';
 };
 
@@ -44,6 +46,7 @@ export const getCookieByName = (name: string) => {
 export const isJSON = (str: string) => {
   try {
     JSON.parse(str);
+
     return true;
   } catch (e) {
     return false;
@@ -58,6 +61,7 @@ export const isJSON = (str: string) => {
  */
 export const throttle = <T>(fn: (t: T) => void, delay = 200) => {
   let valid = true;
+
   return function (t: T) {
     if (!valid) {
       return false;
@@ -78,6 +82,7 @@ export const throttle = <T>(fn: (t: T) => void, delay = 200) => {
  */
 export const debounce = <T, R>(fn: (P?: T) => R, delay = 200) => {
   let timer: ReturnType<typeof setTimeout>;
+
   return function (params?: T) {
     if (timer) {
       clearTimeout(timer);
@@ -92,9 +97,8 @@ export const debounce = <T, R>(fn: (P?: T) => R, delay = 200) => {
  * @param selectedText 选中的文本
  * @returns 处理后的提示词
  */
-export const processPromptTemplate = (prompt: string, selectedText: string) => {
-  return prompt.replace(/\{\{\s*SELECTED_TEXT\s*\}\}/g, selectedText || '');
-};
+export const processPromptTemplate = (prompt: string, selectedText: string) =>
+  prompt.replace(/\{\{\s*SELECTED_TEXT\s*\}\}/g, selectedText || '');
 
 /**
  * 格式化时间
@@ -108,6 +112,7 @@ export function durationFormatter(val: number) {
   const milliseconds = val % 1000;
 
   const parts: string[] = [];
+
   if (hours > 0) {
     parts.push(`${hours}h`);
   }
@@ -137,21 +142,20 @@ export const scrollToBottom = (el: HTMLElement) => {
  * @param str
  * @returns
  */
-export const escapeHtml = (str: string) => {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-};
+export const escapeHtml = (str: string) =>
+  str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /**
  * 生成UUID
  * @returns UUID
  */
-export const uuid = () => {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+export const uuid = () =>
+  'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
     const r = (Math.random() * 16) | 0,
       v = c == 'x' ? r : (r & 0x3) | 0x8;
+
     return v.toString(16);
   });
-};
 
 /**
  * 标准化URL，自动匹配当前页面的协议
@@ -170,6 +174,7 @@ export const normalizeUrl = (url: string): string => {
       // 如果当前页面是HTTPS，但API URL是HTTP，则转换为HTTPS
       if (currentProtocol === 'https:' && urlObj.protocol === 'http:') {
         urlObj.protocol = 'https:';
+
         return urlObj.toString();
       }
 
@@ -190,9 +195,11 @@ export const normalizeUrl = (url: string): string => {
 
     // 相对路径，基于当前页面构建完整URL
     const baseUrl = `${window.location.protocol}//${window.location.host}${window.location.pathname}`;
+
     return new URL(url, baseUrl).toString();
   } catch (error) {
     console.warn('URL normalization failed:', error);
+
     return url; // 如果处理失败，返回原始URL
   }
 };

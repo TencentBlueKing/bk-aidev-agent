@@ -112,8 +112,8 @@
   import DOMPurify from 'dompurify';
   import hljs from 'highlight.js';
   import MarkdownIt from 'markdown-it';
-  import { computed, onMounted, ref, watch, defineEmits, onBeforeUnmount, nextTick } from 'vue';
   import MarkdownItCodeCopy from 'markdown-it-copy-code';
+  import { computed, onMounted, ref, watch, defineEmits, onBeforeUnmount, nextTick } from 'vue';
   import 'markdown-it-copy-code/styles/base.css';
   import 'markdown-it-copy-code/styles/small.css';
 
@@ -303,7 +303,7 @@
 
 <style lang="scss">
   /* stylelint-disable declaration-no-important */
-  @import '../styles/markdown.scss';
+  @use '../styles/markdown.scss';
 
   @keyframes bkai-loading {
     to {

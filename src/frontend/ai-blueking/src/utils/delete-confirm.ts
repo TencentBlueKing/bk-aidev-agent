@@ -23,8 +23,9 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import tippy, { type Instance as TippyInstance, type Props as TippyProps } from 'tippy.js';
 import { h, render } from 'vue';
+
+import tippy, { type Instance as TippyInstance, type Props as TippyProps } from 'tippy.js';
 
 import DeleteConfirmVue from '../components/delete-confirm.vue';
 
@@ -55,13 +56,16 @@ export function createDeleteConfirm(
 
   if (!element) {
     console.error('Target element not found');
+
     return undefined;
   }
 
   // 如果该元素已有删除确认框，则返回已有实例
   if (confirmInstances.has(element)) {
     const instance = confirmInstances.get(element);
+
     instance?.show();
+
     return instance;
   }
 
@@ -89,6 +93,7 @@ export function createDeleteConfirm(
 
   // 渲染组件
   const vnode = h(DeleteConfirmVue, compProps);
+
   render(vnode, mountPoint);
 
   // 创建tippy实例

@@ -8,6 +8,15 @@ export default {
     return {
       changelogData: [
         {
+          version: "v1.2.1",
+          date: "2025-07-31",
+          improvements: [
+            "修复开场白过长导致的 UI 问题",
+            "优化 shortcut 快捷键功能",
+            "文档错误修复"
+          ],
+        },
+        {
           version: "v1.2.0",
           date: "2025-07-30",
           features: [

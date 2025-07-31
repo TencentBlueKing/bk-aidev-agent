@@ -1,7 +1,10 @@
 <template>
   <div class="custom-input-wrapper">
     <div class="header">
-      <i class="bkai-icon" :class="props.shortcut.icon" />
+      <i
+        class="bkai-icon"
+        :class="props.shortcut.icon"
+      />
       <span>{{ props.shortcut.name }}</span>
     </div>
     <bk-form
@@ -29,13 +32,18 @@
           v-model="formData[index][item.key]"
           v-bind="item"
           :popover-options="{
-            boundary: props.rootNode || 'parent'
+            boundary: props.rootNode || 'parent',
           }"
         />
       </bk-form-item>
     </bk-form>
     <div class="footer">
-      <bk-button theme="primary" @click="handleSubmit">{{ t('提交') }}</bk-button>
+      <bk-button
+        theme="primary"
+        @click="handleSubmit"
+      >
+        {{ t('提交') }}
+      </bk-button>
       <bk-button @click="handleCancel">{{ t('取消') }}</bk-button>
     </div>
   </div>
@@ -53,7 +61,6 @@
 
   import FormInput from './form-input.vue';
   import FormSelect from './form-select.vue';
-
 
   const props = defineProps<{
     shortcut: IShortcut;
@@ -75,7 +82,7 @@
   const shortCutRef = toRef(props, 'shortcut');
 
   const { formRef, formData, modelFormData, formRules } = useCustomForm(shortCutRef);
-  
+
   // Layout 辅助函数：判断是否为奇数组的最后一个
   const isLastInOddGroup = (components: IShortcutComponent[], currentIndex: number) => {
     // 跳过 textarea 类型
@@ -102,8 +109,8 @@
         shortcut: props.shortcut,
         formData: formData.value.map(item => ({
           ...item,
-          __value: item[item.__key]
-        }))
+          __value: item[item.__key],
+        })),
       });
     });
   };
@@ -118,7 +125,7 @@
     if (formData.value.length === 1 && formData.value[0][formData.value[0].__key]) {
       handleSubmit();
     }
-  })
+  });
 </script>
 
 <style scoped>

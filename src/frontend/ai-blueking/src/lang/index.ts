@@ -101,5 +101,6 @@ export const zhLangData = {
 
 export const t = (key: string) => {
   if (lang !== 'en') return zhLangData[key as keyof typeof zhLangData] || key;
+
   return langData[key as keyof typeof langData] || key;
 };

@@ -165,7 +165,7 @@
 </script>
 
 <style lang="scss" scoped>
-  @import '../styles/mixins.scss';
+  @use '../styles/mixins.scss';
 
   .bkai-prompt-list {
     z-index: 1000;
@@ -187,7 +187,7 @@
       padding: 8px;
       overflow-y: auto;
 
-      @include custom-scrollbar;
+      @include mixins.custom-scrollbar;
 
       .bkai-prompt-list-item {
         display: -webkit-box;

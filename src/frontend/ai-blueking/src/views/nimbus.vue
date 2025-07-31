@@ -1,7 +1,7 @@
 <template>
   <vue-draggable-resizable
     :active="!isPanelShow"
-    :axis="'y'"
+    axis="y"
     :draggable="true"
     :h="nimbusDimensions.container"
     :parent="true"
@@ -42,6 +42,7 @@
 
 <script setup lang="ts">
   import { ref, onMounted, watch, computed, nextTick, onBeforeUnmount } from 'vue';
+
   import VueDraggableResizable from 'vue-draggable-resizable';
 
   import avatar from '../assets/images/avatar.png';
@@ -126,9 +127,9 @@
     emit('update:isMinimize', newValue);
   });
 
-  const minimizeTooltip = computed(() => {
-    return isMinimize.value ? t('恢复默认大小') : t('最小化，将缩成锚点');
-  });
+  const minimizeTooltip = computed(() =>
+    isMinimize.value ? t('恢复默认大小') : t('最小化，将缩成锚点')
+  );
 
   // 使用 tippy 工具提示
   const { createTooltip, destroyAll } = useTooltip({

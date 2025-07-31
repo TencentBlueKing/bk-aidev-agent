@@ -114,6 +114,7 @@ export default {
     let instance: any = null;
     let aiBlueking: any = null;
     const that = this;
+
     this.app = createApp({
       render() {
         instance = this;
@@ -164,18 +165,19 @@ export default {
           },
           ...that.$attrs,
         });
+
         return aiBlueking;
       },
     });
-    this.unWatchStack = Object.keys(this.$props).map(k => {
-      return this.$watch(
+    this.unWatchStack = Object.keys(this.$props).map(k =>
+      this.$watch(
         k,
         () => {
           instance.$forceUpdate();
         },
         { deep: true }
-      );
-    });
+      )
+    );
     this.handleShow = () => {
       aiBlueking.component.exposed.handleShow();
     };
