@@ -308,10 +308,11 @@ class IntentRecognitionMixin(BaseModel):
         kwargs,
     ):
         inner_input = {}
-        if "agent_scratchpad" in chat_prompt_template.input_variables:
-            if isinstance(self, ToolCallingCommonQAAgent):
+        if isinstance(self, ToolCallingCommonQAAgent):
+            if "agent_scratchpad" in chat_prompt_template.partial_variables:
                 inner_input["agent_scratchpad"] = format_to_tool_messages(intermediate_steps)
-            elif isinstance(self, StructuredChatCommonQAAgent):
+        elif isinstance(self, StructuredChatCommonQAAgent):
+            if "agent_scratchpad" in chat_prompt_template.input_variables:
                 inner_input["agent_scratchpad"] = enhanced_format_log_to_str(intermediate_steps)
         if "beijing_now" in chat_prompt_template.input_variables:
             inner_input["beijing_now"] = get_beijing_now()
@@ -503,8 +504,6 @@ class IntentRecognitionMixin(BaseModel):
             chat_prompt_template_variable_suffix = "_tool_calling"
         elif issubclass(cls, StructuredChatCommonQAAgent):
             chat_prompt_template_variable_suffix = "_structured_chat"
-        if "hunyuan" in llm.model_name and llm.model_name != "hunyuan-t1" and chat_prompt_template_variable_suffix == "_structured_chat":
-            raise RuntimeError("混元的prompt除system之外必须是一问一答形式，请检查 chat prompt template")
 
         # 根据不同的 IntentStatus 分别进行处理
         if recog_results["status"] == IntentStatus.QA_WITH_RETRIEVED_KNOWLEDGE_RESOURCES:
@@ -805,7 +804,7 @@ class CommonQAStreamingMixIn:
                                 if item["data"]["chunk"].tool_call_chunks[0].get("name"):
                                     # 先输出action name
                                     name = item["data"]["chunk"].tool_call_chunks[0].get("name")
-                                    # 如果是第二次调用工具，需要补上一个```
+                                    # 如果不是第一次调用工具，需要补上一个```
                                     log_prefix = "\n```\n" if has_tool_call else ""
                                     ret = {
                                     "event": EventType.THINK.value,
@@ -814,6 +813,9 @@ class CommonQAStreamingMixIn:
                                     ),                                            
                                     "cover": cover,
                                     }
+                                    # 如果不是第一次调用工具，将first_tool_args还原为True
+                                    if has_tool_call:
+                                        first_tool_args = True
                                 if item["data"]["chunk"].tool_call_chunks[0].get("args"):
                                     # 如果是第一个tool args，需要在前面加上'"action_input":'
                                     if first_tool_args:
@@ -929,8 +931,6 @@ class CommonQAStreamingMixIn:
                                     # 为了不影响命中，此处也同步进行相同的转义操作
                                     final_answer_suffix_to_filter = final_answer_suffix.replace("\\n", "\n")
                                     # 需要加上特殊的 end_content 才能作为最终的 final_answer_suffix
-                                    if self.llm.model_name == "hunyuan-t1":
-                                        final_answer_suffix_to_filter += "\n"
                                     final_answer_suffix_to_filter += deepcopy(self.end_content)
                                     if not final_result.endswith(final_answer_prefix):
                                         # 这种情况下说明最终答案有一小块跟在了 final_answer_prefix 最后一个块的后面
@@ -1008,7 +1008,7 @@ class CommonQAStreamingMixIn:
                             yield self._yield_ret(ret)
                         else:
                             # NOTE: 首次出现 ``` 时，需要在前面添加一个换行符，防止前端没有渲染出来
-                            if '```' in ret.get("content", "") and first_triple_backticks:
+                            if '``' in ret.get("content", "") and first_triple_backticks:
                                 ret['content'] = '\n' + ret['content']
                                 first_triple_backticks = False
                             # NOTE: 只有非 self.LOADING_AGENT_MESSAGE 的 event 可以放到 cache 中
@@ -1029,7 +1029,10 @@ class CommonQAStreamingMixIn:
                                 and cache[-1]['event'] == 'think'
                                 and cache[-1]['content'].strip() == ''
                             ):  
-                                cache.pop()                              
+                                cache.pop()
+                                # 如果 cache 为空，要将 last_ret_is_empty 设置为 True，确保第一个 text 的 cover 是 True
+                                if len(cache) == 0: 
+                                    last_ret_is_empty = True                           
                             if len(cache) == max_cache_length:
                                 ret = cache.popleft()
                                 last_event_type = ret["event"]
@@ -1043,6 +1046,9 @@ class CommonQAStreamingMixIn:
                     ret = cache.popleft()
                     last_event_type = ret["event"]
                     yield self._yield_ret(ret)
+                # 如果 cache 最后一个元素包含 `\n，需要在 final_answer_suffix_to_filter 后面也添加一个换行符才能把后缀过滤掉
+                if "`\n" in cache[-1].get("content", ""):
+                    final_answer_suffix_to_filter =final_answer_suffix.replace("\\n", "\n")+"\n"+deepcopy(self.end_content)              
                 end_ret = {
                     "event": EventType.TEXT.value,
                     "content": deepcopy(self.end_content),
@@ -1050,7 +1056,11 @@ class CommonQAStreamingMixIn:
                 }
                 self.check_and_append(cache, end_ret)
                 len_before_filtering = len(cache)
+                first_true = cache[0].get("cover", "") == True
                 cache = self.cache_filter(cache, final_answer_prefix_to_filter, final_answer_suffix_to_filter)
+                # 如果cache过滤前第一个元素的 cover 是 True，则过滤后 cover 应该是 True
+                if first_true:
+                    cache[0]["cover"] = True
                 if len(cache) == len_before_filtering:
                     # 如果没 filter 到，则还是将 end_ret 剔除
                     cache.pop()
@@ -1140,9 +1150,10 @@ class CommonQAAgent(ToolCallingCommonQAAgent):
         llm = kwargs["llm"] if "llm" in kwargs else args[0]
         extra_tools = kwargs.get("extra_tools", [])
         agent_options = kwargs.get("agent_options", [])
-        # 如果是 deepseek r1 系列模型，且 extra_tools 不为空，则使用 structured_chat_common_qa_agent
+        # 如果是 deepseek r1 系列模型，且 extra_tools 不为空，则默认使用 structured_chat_common_qa_agent
         if is_deepseek_r1_series_models(llm) and extra_tools:
-            agent_options.intent_recognition_options.agent_type="structured_chat_common_qa_agent"
-        # 其他模型可自行选择agent_type，默认为tool_calling_common_qa_agent
-        agent_class = cls.agent_classes.get(agent_options.intent_recognition_options.agent_type, cls.agent_classes["tool_calling_common_qa_agent"])
+            agent_class = cls.agent_classes.get(agent_options.intent_recognition_options.agent_type, cls.agent_classes["structured_chat_common_qa_agent"])
+        else:
+            # 其他模型默认为tool_calling_common_qa_agent
+            agent_class = cls.agent_classes.get(agent_options.intent_recognition_options.agent_type, cls.agent_classes["tool_calling_common_qa_agent"])
         return agent_class.get_agent_executor(*args, **kwargs)
