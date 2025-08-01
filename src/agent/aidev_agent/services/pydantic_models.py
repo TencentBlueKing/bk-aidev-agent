@@ -70,7 +70,7 @@ class KnowledgebaseSettings(BaseModel):
     knowledge_bases: list[dict] = Field(default_factory=list, description=("关联知识库,有可能没有关联"))
     knowledge_items: list[dict] = Field(default_factory=list, description=("关联知识,可能没有关联"))
     qa_response_kb_ids: list[int] = Field(default_factory=list, description=("历史反馈问答知识库id,可能不存在"))
-    qa_response_knowledge_bases: list[dict] = Field(default_factory=list, description=("历史反馈问答知识库,可能不存在"))    
+    qa_response_knowledge_bases: list[dict] = Field(default_factory=list, description=("历史反馈问答知识库,可能不存在"))
     retriever_code: str = Field(default=None, max_length=255, description=("检索器ID"))
     query_function: KnowledgeBaseQueryFunction = Field(
         default=KnowledgeBaseQueryFunction.SEMANTIC, description=("查询方式")
