@@ -36,6 +36,7 @@ from langchain_core.prompts.chat import ChatPromptTemplate
 from langchain_core.runnables import Runnable, RunnablePassthrough
 from langchain_core.tools import BaseTool
 from langchain_core.tools.render import ToolsRenderer
+from aidev_agent.services.pydantic_models import AgentOptions
 
 from aidev_agent.core.extend.intent.utils import (
     FINAL_ANSWER_PREFIXES,
@@ -92,7 +93,8 @@ class EnhancedJSONAgentOutputParser(JSONAgentOutputParser):
     """
 
     llm: BaseChatModel = pydantic.Field(default=None)
-
+    agent_options: AgentOptions = AgentOptions()
+    
     def __init__(self, llm):
         super().__init__()
         self.llm = llm
@@ -111,15 +113,20 @@ class EnhancedJSONAgentOutputParser(JSONAgentOutputParser):
             
             # 处理并行工具调用
             if isinstance(response, list):
-                # 当解析到JSON数组时，处理为并行工具调用，返回多个AgentAction对象
-                actions = []
-                for tool_call in response:
-                    if tool_call["action"] == "Final Answer":
-                        raise OutputParserException("Cannot mix Final Answer with tool calls in parallel mode")
-                    if isinstance(tool_call.get("action_input"), str):
-                        raise RuntimeError(ACTION_INPUT_ERR_MSG)
-                    actions.append(AgentAction(tool_call["action"], tool_call.get("action_input", {}), text))
-                return actions
+                if self.agent_options.knowledge_query_options.enable_parallel_tool_calls:
+                    # 当解析到JSON数组时，处理为并行工具调用，返回多个AgentAction对象
+                    actions = []
+                    for tool_call in response:
+                        if tool_call["action"] == "Final Answer":
+                            raise OutputParserException("Cannot mix Final Answer with tool calls in parallel mode")
+                        if isinstance(tool_call.get("action_input"), str):
+                            raise RuntimeError(ACTION_INPUT_ERR_MSG)
+                        actions.append(AgentAction(tool_call["action"], tool_call.get("action_input", {}), text))
+                    return actions
+                else:
+                    # gpt turbo frequently ignores the directive to emit a single action
+                    logger.warning("Got multiple action responses: %s", response)
+                    response = response[0]
                 
             if response["action"] == "Final Answer":
                 if isinstance(response["action_input"], dict):

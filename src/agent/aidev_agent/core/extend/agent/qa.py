@@ -336,6 +336,8 @@ class IntentRecognitionMixin(BaseModel):
             inner_input["rejection_response"] = kwargs["rejection_response"]
         if "with_qa_response" in chat_prompt_template.input_variables:
             inner_input["with_qa_response"] = kwargs["with_qa_response"]
+        if "enable_parallel_tool_calls" in chat_prompt_template.input_variables:
+            inner_input["enable_parallel_tool_calls"] = kwargs["enable_parallel_tool_calls"]        
         formated_prompts = chat_prompt_template._format_prompt_with_error_handling(inner_input)
         cur_token_len = llm.get_num_tokens_from_messages(formated_prompts.messages)
         return cur_token_len, formated_prompts
@@ -575,6 +577,7 @@ class IntentRecognitionMixin(BaseModel):
             agent_options.knowledge_query_options.is_response_when_no_knowledgebase_match
         )
         kwargs["rejection_response"] = agent_options.knowledge_query_options.rejection_message
+        kwargs["enable_parallel_tool_calls"] = agent_options.knowledge_query_options.enable_parallel_tool_calls
         # 补充/修改 kwargs 的值：给 AIDEV 产品检索测试模块使用
         if agent_options.knowledge_query_options.force_process_by_agent:
             kwargs["decision"] = recog_results["decision"]
