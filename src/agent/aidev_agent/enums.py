@@ -83,3 +83,9 @@ class CredentialType(enum.Enum):
     NULL = "null"
     BLUEAPPS = "blueapps"
     CUSTOM = "custom"
+
+
+class ContextType(enum.Enum):
+    PRIVATE = "private"
+    QA_RESPONSE = "qa_response"
+    BOTH = "both"
