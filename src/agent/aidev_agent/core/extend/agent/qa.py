@@ -48,6 +48,7 @@ from aidev_agent.core.utils.local import request_local
 from aidev_agent.enums import Decision, EventType, IntentStatus
 from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils import Empty
+from aidev_agent.enums import ContextType
 
 from ..intent.prompts import DEFAULT_QA_PROMPT_TEMPLATES
 from ..intent.utils import (
@@ -320,6 +321,8 @@ class IntentRecognitionMixin(BaseModel):
             inner_input["context"] = kwargs["context"]
         if "qa_context" in chat_prompt_template.input_variables:
             inner_input["qa_context"] = kwargs["qa_context"]
+        if "context_type" in chat_prompt_template.input_variables:
+            inner_input["context_type"] = kwargs["context_type"]
         if "query" in chat_prompt_template.input_variables:
             inner_input["query"] = kwargs["query"]
         if "role_prompt" in chat_prompt_template.input_variables:
@@ -334,10 +337,8 @@ class IntentRecognitionMixin(BaseModel):
             inner_input["use_general_knowledge_on_miss"] = kwargs["use_general_knowledge_on_miss"]
         if "rejection_response" in chat_prompt_template.input_variables:
             inner_input["rejection_response"] = kwargs["rejection_response"]
-        if "with_qa_response" in chat_prompt_template.input_variables:
-            inner_input["with_qa_response"] = kwargs["with_qa_response"]
         if "enable_parallel_tool_calls" in chat_prompt_template.input_variables:
-            inner_input["enable_parallel_tool_calls"] = kwargs["enable_parallel_tool_calls"]        
+            inner_input["enable_parallel_tool_calls"] = kwargs["enable_parallel_tool_calls"]   
         formated_prompts = chat_prompt_template._format_prompt_with_error_handling(inner_input)
         cur_token_len = llm.get_num_tokens_from_messages(formated_prompts.messages)
         return cur_token_len, formated_prompts
@@ -540,6 +541,12 @@ class IntentRecognitionMixin(BaseModel):
                 cls.knowledge_resources_postproc(
                     kwargs, recog_results, knowledge_resource_type="knowledge_resources_highly_relevant"
                 )
+                if kwargs["context"] and kwargs["qa_context"]:
+                    kwargs["context_type"] = ContextType.BOTH.value
+                elif kwargs["context"]:
+                    kwargs["context_type"] = ContextType.PRIVATE.value
+                elif kwargs["qa_context"]:
+                    kwargs["context_type"] = ContextType.QA_RESPONSE.value
             elif recog_results["decision"] == Decision.QUERY_CLARIFICATION:
                 if query_clarification_enabled(llm, kwargs):
                     chat_prompt_template = cls.qa_prompt_templates.get(
@@ -552,6 +559,12 @@ class IntentRecognitionMixin(BaseModel):
                 cls.knowledge_resources_postproc(
                     kwargs, recog_results, knowledge_resource_type="knowledge_resources_moderately_relevant"
                 )
+                if kwargs["context"] and kwargs["qa_context"]:
+                    kwargs["context_type"] = ContextType.BOTH.value
+                elif kwargs["context"]:
+                    kwargs["context_type"] = ContextType.PRIVATE.value
+                elif kwargs["qa_context"]:
+                    kwargs["context_type"] = ContextType.QA_RESPONSE.value
 
         # NOTE: 如果是多模态场景，可能会有一个特殊的 `add_image_to_chat_context` 工具，需要带上
         # 但是仅针对支持 multimodal 才添加
