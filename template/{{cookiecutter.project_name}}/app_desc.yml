@@ -6,9 +6,6 @@ modules:
     spec:
       configuration:
         env:
-          - name: PIP_VERSION
-            value: 21.0
-            description: pip version control
           - name: PYTHONPATH
             value: /app
             description: ADD PYTHONPATH
