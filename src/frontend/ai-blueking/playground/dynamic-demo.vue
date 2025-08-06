@@ -54,6 +54,46 @@
             :logs="eventLogs"
             @clear="clearLogs"
           />
+
+          <div class="article-card mt20">
+            <h2>测试接口</h2>
+            <div class="test-actions">
+              <button
+                class="action-btn"
+                @click="handleAddNewSession"
+              >
+                新增会话
+              </button>
+            </div>
+            <div class="test-actions">
+              <input
+                v-model="sessionToUpdate"
+                placeholder="要更新的 session code"
+              />
+              <input
+                v-model="newSessionName"
+                placeholder="新会话名称"
+              />
+              <button
+                class="action-btn"
+                @click="handleUpdateSessionName"
+              >
+                更新会话名称
+              </button>
+            </div>
+            <div class="test-actions">
+              <input
+                v-model="sessionToSwitch"
+                placeholder="要切换的 session code"
+              />
+              <button
+                class="action-btn"
+                @click="handleSwitchToSession"
+              >
+                切换到指定会话
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -62,7 +102,6 @@
       <div>
         <AIBlueking
           ref="aiBlueking"
-          title="aaa"
           hello-text="bbb"
           :request-options="{
             data: {
@@ -78,6 +117,7 @@
           @shortcut-click="handleShortcutClick"
           @show="handleShowAi"
           @stop="handleStop"
+          :auto-switch-to-initial-session="false"
         />
       </div>
     </div>
@@ -85,7 +125,7 @@
 </template>
 
 <script lang="ts" setup>
-  import { ref, computed } from 'vue';
+  import { ref, computed, onMounted } from 'vue';
 
   import AIBlueking, { AIBluekingExpose, IShortcut } from '../src/vue3.ts';
   import DemoHeader from './components/demo-header.vue';
@@ -217,6 +257,48 @@
   };
 
   const article = `In the rapidly evolving world of technology...`; // 将原有的长文本提取为变量
+
+  const sessionToUpdate = ref('');
+  const newSessionName = ref('');
+  const sessionToSwitch = ref('');
+
+  const handleAddNewSession = async () => {
+    const newSession = await aiBlueking.value?.addNewSession();
+    addLog('add-new-session', newSession);
+    if (newSession) {
+      sessionToUpdate.value = newSession.sessionCode;
+      newSessionName.value = `${newSession.sessionName}-updated`;
+      sessionToSwitch.value = newSession.sessionCode;
+    }
+    return newSession;
+  };
+
+  const handleUpdateSessionName = async () => {
+    if (!sessionToUpdate.value || !newSessionName.value) {
+      alert('请输入要更新的 Session Code 和新名称');
+      return;
+    }
+    const result = await aiBlueking.value?.updateSessionName(
+      sessionToUpdate.value,
+      newSessionName.value
+    );
+    addLog('update-session-name', result);
+  };
+
+  const handleSwitchToSession = async () => {
+    if (!sessionToSwitch.value) {
+      alert('请输入要切换的 Session Code');
+      return;
+    }
+    await aiBlueking.value?.switchToSession(sessionToSwitch.value);
+    aiBlueking.value?.handleShow(sessionToSwitch.value);
+    addLog('switch-to-session', { sessionCode: sessionToSwitch.value });
+  };
+
+  onMounted(async () => {
+    await handleAddNewSession();
+    handleSwitchToSession();
+  });
 </script>
 
 <style lang="scss" scoped>
@@ -282,6 +364,25 @@
   .quick-actions {
     display: flex;
     gap: 16px;
+  }
+
+  .test-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-top: 10px;
+
+    input {
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      transition: border-color 0.2s;
+
+      &:focus {
+        border-color: #1482ff;
+        outline: none;
+      }
+    }
   }
 
   .action-btn {

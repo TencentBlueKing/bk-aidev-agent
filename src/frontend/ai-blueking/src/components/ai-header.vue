@@ -100,7 +100,7 @@
   const displayTitle = computed(() => {
     return (
       props.title ||
-      `${sessionStore.agentInfo.agentName || ''}-${sessionStore.currentSession.value?.sessionName}`
+      `${sessionStore.agentInfo.value?.agentName || ''}-${sessionStore.currentSession.value?.sessionName}`
     );
   });
 

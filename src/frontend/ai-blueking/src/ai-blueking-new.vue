@@ -210,6 +210,8 @@
     showNewChatIcon?: boolean;
     placeholder?: string;
     miniPadding?: number;
+    initialSessionCode?: string;
+    autoSwitchToInitialSession?: boolean;
   }
 
   // ===================================================================
@@ -238,6 +240,8 @@
     showNewChatIcon: true,
     placeholder: t('输入 "/" 唤出 Prompt\n通过 Shift + Enter 进行换行输入'),
     miniPadding: 0,
+    initialSessionCode: '',
+    autoSwitchToInitialSession: false,
   });
 
   const emit = defineEmits<{
@@ -525,14 +529,30 @@
   // ===================================================================
   // 11. 生命周期钩子
   // ===================================================================
+  const _switchToSession = async (sessionCode: string) => {
+    if (!sessionCode) return;
+    //确保在切换会话之前，会话列表已初始化
+    if (!isSessionInitialized.value) {
+      await initSession();
+    }
+    const targetSession = sessionStore.sessionList.value.find(s => s.sessionCode === sessionCode);
+    if (targetSession) {
+      await sessionStore.switchSessionWithContents(targetSession);
+    }
+  };
   const handleWindowResize = () => {
     windowHeight.value = window.innerHeight;
   };
 
-  onMounted(() => {
+  onMounted(async () => {
     window.addEventListener('resize', handleWindowResize);
     if (normalizedUrl.value && !props.defaultMinimize) {
-      initSession();
+      await initSession();
+
+      // 如果设置了初始会话代码且需要自动切换，则切换到初始会话
+      if (props.initialSessionCode && props.autoSwitchToInitialSession) {
+        await _switchToSession(props.initialSessionCode);
+      }
     }
   });
 
@@ -552,12 +572,16 @@
     emit('close');
   };
 
-  const handleShow = () => {
+  const handleShow = async (sessionCode?: string) => {
     isShow.value = true;
     emit('show');
 
-    if (normalizedUrl.value && !isSessionInitialized.value) {
-      initSession();
+    if (!isSessionInitialized.value) {
+      await initSession();
+    }
+
+    if (sessionCode) {
+      await _switchToSession(sessionCode);
     }
     updateGreetingTextHeight();
   };
@@ -698,6 +722,16 @@
     focusInput: () => {
       chatInputBoxRef.value?.focus();
     },
+    // 新增会话接口
+    addNewSession: sessionStore.addNewSession,
+    // 更新会话名称接口
+    updateSessionName: async (sessionCode: string, newName: string) => {
+      return sessionStore.updateSession(sessionCode, { sessionName: newName });
+    },
+    // 切换到指定会话
+    switchToSession: _switchToSession,
+    // 获取会话列表
+    getSessionList: sessionStore.getSessionList,
   });
 </script>
 

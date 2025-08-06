@@ -1,3 +1,16 @@
+## [1.2.2] - 2025-08-06
+
+### ✨ 新增功能
+
+- **编程式会话管理**: 新增 `addNewSession`, `updateSessionName`, `switchToSession`, `getSessionList` 等方法，允许外部程序化控制会话。
+- **初始会话指定**: 新增 `initialSessionCode` 和 `autoSwitchToInitialSession` 属性，支持组件加载时直接进入特定会话。
+
+### 🎨 优化改进
+
+- **文档重构**: 优化文档结构，将编程控制相关内容整合为“基础控制”、“会话生命周期”和“高级工作流”三个层次。
+- **响应性修复**: 修复了更新会话名称后，历史列表UI不刷新的问题。
+- **BUG修复**: 修复了切换会话时偶现的 `switchSession` 方法不存在的错误。
+
 ## [1.1.0-beta.2] - 2025-06-02
 
 ### 修复

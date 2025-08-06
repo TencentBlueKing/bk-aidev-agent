@@ -1,68 +1,154 @@
-# 会话管理 <Badge type="tip" text="v1.1.0" />
+# 编程交互基础
 
-AI 小鲸提供了强大的会话管理功能，包括多会话支持、会话内容访问等高级特性。本指南将详细介绍如何使用这些功能。
+除了用户通过界面与 AI 小鲸交互外，您还可以通过调用组件实例的方法来编程式地控制其行为，例如主动发送消息或控制窗口显示状态。
 
-## 多会话管理 <Badge type="tip" text="v1.1.0" />
+::: warning 版本变更提示
+1.0版本中，`sendChat`方法已被替换为`handleSendMessage`方法，请注意更新您的代码。
+:::
 
-从 v1.1.0 开始，AI 小鲸支持多会话管理功能，让您可以同时管理多个独立的聊天会话，每个会话保持独立的对话上下文和历史记录。
+## 可用方法列表
 
-### 功能概览
+AI小鲸组件实例提供以下方法用于编程式控制:
 
-多会话管理功能包含以下核心特性：
+| 方法名 | 描述 |
+| ------ | ---- |
+| `handleShow()` | 显示AI小鲸窗口 |
+| `handleClose()` | 关闭AI小鲸窗口 |
+| `handleStop()` | 停止当前内容生成 |
+| `handleSendMessage(options)` | 主动发送消息，详见下文 |
+| `handleShortcutClick(shortcut)` | 模拟点击快捷操作 |
+| `focusInput()` | **v1.1.1新增** 程序式聚焦输入框 |
 
-- **🆕 会话创建**：快速创建新的聊天会话
-- **🔄 会话切换**：在不同会话间无缝切换
-- **📊 历史管理**：按时间分组查看和管理历史会话
-- **✏️ 会话重命名**：自定义会话名称便于识别
-- **🗑️ 会话删除**：安全删除不需要的会话
-- **🔍 会话搜索**：快速查找特定会话
+## 主动发送消息 (`handleSendMessage`)
 
-### 基础使用
+`handleSendMessage` 方法允许您从外部代码触发一次对话交互。这在实现自定义触发器或与其他组件联动时非常有用。
 
-#### 启用多会话功能
+**方法签名:**
 
-多会话功能默认启用，您只需要正常使用 AI 小鲸组件：
+```typescript
+handleSendMessage(options: {
+  message?: string; // 要发送的消息文本，可以为空
+})
+```
 
-```vue
+**参数说明:**
+
+-   `message`: 用户输入的或您想模拟的用户消息。如果提供了 `shortcut` 且其 `prompt` 不为空，`message` 通常可以省略或用于显示目的。
+
+**使用场景:**
+
+1.  **需要通过编程控制直接发送信息与 AI小鲸交互**
+
+**示例 (联动场景):**
+
+:::code-group
+```vue [Vue 3]
 <template>
-  <AIBlueking :url="apiUrl" />
+  <div>
+    <label>输入术语: <input type="text" v-model="term"></label>
+    <button @click="explainTerm">让 AI 解释</button>
+    <AIBlueking ref="aiBlueking" :url="apiUrl" />
+  </div>
 </template>
 
-<script setup>
+<script lang="ts" setup>
+import { ref } from 'vue';
 import { AIBlueking } from '@blueking/ai-blueking';
+import '@blueking/ai-blueking/dist/style.css';
 
-const apiUrl = 'your-ai-service-url';
+const aiBlueking = ref(null);
+const apiUrl = '...';
+const term = ref('');
+
+const explainTerm = () => {
+  if (!term.value) {
+    alert('请输入术语');
+    return;
+  }
+  aiBlueking.value?.handleShow();
+  aiBlueking.value?.handleSendMessage({
+    message: `解释术语: ${term.value}`,
+  });
+};
 </script>
 ```
 
-#### 控制界面元素显示
-
-您可以通过属性控制会话管理相关图标的显示：
-
-```vue
+```vue [Vue 2]
 <template>
-  <!-- 显示所有会话管理功能 -->
-  <AIBlueking
-    :url="apiUrl"
-    :show-history-icon="true"
-    :show-new-chat-icon="true"
-  />
-
-  <!-- 只显示新聊天功能 -->
-  <AIBlueking
-    :url="apiUrl"
-    :show-history-icon="false"
-    :show-new-chat-icon="true"
-  />
-
-  <!-- 隐藏所有会话管理图标 -->
-  <AIBlueking
-    :url="apiUrl"
-    :show-history-icon="false"
-    :show-new-chat-icon="false"
-  />
+  <div>
+    <label>输入术语: <input type="text" v-model="term"></label>
+    <button @click="explainTerm">让 AI 解释</button>
+    <AIBlueking ref="aiBlueking" :url="apiUrl" />
+  </div>
 </template>
+
+<script>
+import { AIBlueking } from '@blueking/ai-blueking/vue2';
+import '@blueking/ai-blueking/dist/style.css';
+
+export default {
+  components: { AIBlueking },
+  data() {
+    return { apiUrl: '...', term: '' };
+  },
+  methods: {
+    explainTerm() {
+      if (!this.term) {
+        alert('请输入术语');
+        return;
+      }
+      this.$refs.aiBlueking.handleShow();
+      this.$refs.aiBlueking.handleSendMessage({
+        message: `解释术语: ${this.term}`
+      });
+    }
+  }
+};
+</script>
 ```
+:::
+
+这样，点击按钮后，AI 小鲸会弹出，并将输入框中的术语作为引用内容，发送"解释术语"的指令给 AI。
+
+## 程序式聚焦输入框 (`focusInput`)
+
+**v1.1.1新增** `focusInput` 方法允许您在特定时机主动聚焦到输入框，提升用户体验。
+
+**方法签名:**
+
+```typescript
+focusInput(): void
+```
+
+**使用场景:**
+
+1.  **在特定操作后自动聚焦到输入框**：例如在关闭快捷操作面板后自动聚焦到输入框
+2.  **引导用户输入**：在页面加载或特定交互后引导用户进行输入
+
+**示例:**
+
+:::code-group
+```vue [Vue 3]
+<template>
+  <div>
+    <AIBlueking ref="aiBlueking" :url="apiUrl" />
+    <button @click="focusInput">聚焦输入框</button>
+  </div>
+</template>
+
+<script lang="ts" setup>
+import { ref } from 'vue';
+import { AIBlueking } from '@blueking/ai-blueking';
+
+const aiBlueking = ref(null);
+const apiUrl = '...';
+
+const focusInput = () => {
+  aiBlueking.value?.focusInput();
+};
+</script>
+```
+:::
 
 ## 访问会话内容
 
@@ -241,39 +327,6 @@ export default {
 </style>
 ```
 :::
-
-
-## 技术说明
-
-### API 要求
-
-多会话功能需要后端 API 支持以下接口：
-
-- 会话创建和管理
-- 会话内容的获取和保存
-- 会话元数据的更新
-
-请确保您的 AI 服务支持这些会话管理功能，可从 AIDEV 官网中创建新智能体体验。
-
-### 数据结构
-
-会话内容的典型数据结构：
-
-```typescript
-interface SessionContent {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  sessionCode: string;
-  property?: {
-    extra?: {
-      cite?: string;
-      shortcut?: any;
-    };
-  };
-  status?: 'loading' | 'success' | 'error';
-  createdAt?: string;
-}
-```
 
 ### 暴露的属性和方法
 

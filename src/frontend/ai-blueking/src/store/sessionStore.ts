@@ -19,7 +19,7 @@ export function useSessionStore() {
   // 存储会话的原始值
   const originalSessionValues = ref<Record<string, ISessionEditItem>>({});
 
-  const agentInfo: IAgentInfo = {
+  const agentInfo = ref<IAgentInfo>({
     agentName: '',
     conversationSettings: {
       openingRemark: '',
@@ -28,7 +28,7 @@ export function useSessionStore() {
     promptSetting: {
       content: [],
     },
-  };
+  });
   /**
    * 检查 SDK 方法是否已注册
    * @param methodName SDK 方法名
@@ -202,6 +202,8 @@ export function useSessionStore() {
 
     // 更新本地状态
     sessionList.value[index] = updatedSession;
+    // 强制触发响应式更新
+    sessionList.value = [...sessionList.value];
 
     // 如果更新的是当前会话，也更新 currentSession
     if (currentSession.value && currentSession.value.sessionCode === sessionCode) {
@@ -218,6 +220,12 @@ export function useSessionStore() {
         await modifySession(sessionToSync);
       } catch (error) {
         console.error('Failed to sync session to backend:', error);
+        // 如果同步失败，回滚本地状态
+        sessionList.value[index] = oldSession;
+        sessionList.value = [...sessionList.value];
+        if (currentSession.value && currentSession.value.sessionCode === sessionCode) {
+          currentSession.value = oldSession;
+        }
       }
     }
 
@@ -349,13 +357,13 @@ export function useSessionStore() {
       switchSessionWithContents(targetSession);
     }
 
-    if (!agentInfo || isInitChat) {
+    if (!agentInfo.value || isInitChat) {
       // 获取会话设置
       const getAgentInfo = checkSdkMethod('getAgentInfoApi');
 
       const { conversationSettings, promptSetting, agentName } = await getAgentInfo();
 
-      Object.assign(agentInfo, {
+      Object.assign(agentInfo.value, {
         conversationSettings,
         promptSetting,
         agentName,
@@ -363,15 +371,26 @@ export function useSessionStore() {
     }
 
     // 处理角色设置
-    if (agentInfo?.promptSetting?.content?.length) {
+    if (agentInfo.value?.promptSetting?.content?.length) {
       const handleRole = checkSdkMethod('handleCompleteRole');
 
-      await handleRole(targetSession.sessionCode, agentInfo.promptSetting.content);
+      await handleRole(targetSession.sessionCode, agentInfo.value.promptSetting.content);
     }
 
     return {
-      conversationSettings: agentInfo?.conversationSettings,
+      conversationSettings: agentInfo.value?.conversationSettings,
     };
+  };
+
+  /**
+   * 获取最新的会话列表
+   * @returns Promise<ISessionEditItem[]> 会话列表
+   */
+  const getSessionList = async () => {
+    const getSessions = checkSdkMethod('getSessionsApi');
+    const sessions = await getSessions();
+    setSessionList(sessions);
+    return sessionList.value;
   };
 
   return {
@@ -390,6 +409,7 @@ export function useSessionStore() {
     switchSessionWithContents,
     sessionContentLoading,
     agentInfo,
+    getSessionList,
   };
 }
 

@@ -22,6 +22,9 @@
 | `updateRequestOptions(options)` | `options: { url?: string; headers?: Record<string, string>; data?: any; context?: Array<{key: string, value: any}> }` | `void`          | 动态更新请求选项，可以修改API地址或请求参数。对于需要在运行时切换智能体或修改请求参数的场景非常有用。 |
 | `updateRequestOptions(options)` | `options: { url?: string; headers?: Record<string, string>; data?: any; context?: Array<Object> }`                    | `void`          | 动态更新请求选项，可以修改API地址或请求参数。对于需要在运行时切换智能体或修改请求参数的场景非常有用。 |
 | `focusInput()`                  | -                                                                                                                     | `void`          | **v1.1.1新增** 程序式聚焦输入框。可用于在特定时机主动聚焦到输入框，提升用户体验。                     |
+| `addNewSession()`               | -                                                                                                                     | `Promise<ISessionEditItem>` | **v1.2.2新增** 创建一个新的聊天会话并返回会话信息。 |
+| `updateSessionName(sessionCode, newName)` | `sessionCode: string, newName: string`                                                                              | `Promise<ISessionEditItem>` | **v1.2.2新增** 更新指定会话的名称。 |
+| `switchToSession(sessionCode)`  | `sessionCode: string`                                                                                                 | `Promise<void>` | **v1.2.2新增** 切换到指定代码的会话。 |
 
 ::: danger 已废弃方法
 以下方法在相应版本中已被移除:
@@ -217,3 +220,59 @@
   }
 </script>
 ```
+
+## 编程式会话管理
+
+v1.2.2版本新增了编程式会话管理功能，允许通过组件实例方法创建、重命名和切换会话：
+
+```vue
+<template>
+  <AIBlueking ref="aiBlueking" :url="apiUrl" />
+  <div>
+    <button @click="createAndRenameSession">创建并重命名会话</button>
+    <button @click="switchToFirstSession">切换到第一个会话</button>
+  </div>
+</template>
+
+<script setup>
+  import { ref } from "vue"
+  import { AIBlueking } from "@blueking/ai-blueking"
+
+  const aiBlueking = ref(null)
+
+  // 创建新会话并重命名
+  const createAndRenameSession = async () => {
+    try {
+      // 1. 创建新会话
+      const newSession = await aiBlueking.value?.addNewSession()
+      
+      // 2. 重命名会话
+      if (newSession?.sessionCode) {
+        await aiBlueking.value?.updateSessionName(newSession.sessionCode, "我的新会话")
+        
+        // 3. 切换到新会话
+        await aiBlueking.value?.switchToSession(newSession.sessionCode)
+      }
+    } catch (error) {
+      console.error("会话操作失败:", error)
+    }
+  }
+
+  // 切换到第一个会话
+  const switchToFirstSession = async () => {
+    try {
+      // 获取会话列表（需要通过其他方式获取，这里仅为示例）
+      // 假设我们已经获取到了会话列表 sessionList
+      const sessionList = [] // 实际使用中需要获取真实的会话列表
+      
+      if (sessionList.length > 0) {
+        await aiBlueking.value?.switchToSession(sessionList[0].sessionCode)
+      }
+    } catch (error) {
+      console.error("切换会话失败:", error)
+    }
+  }
+</script>
+```
+
+更完整的使用示例请参见 [编程化会话管理指南](/guide/advanced-usage/programmatic-session-management)。

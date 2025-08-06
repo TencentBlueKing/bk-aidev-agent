@@ -8,9 +8,23 @@ export default {
     return {
       changelogData: [
         {
+          version: "v1.2.2",
+          date: "2025-08-06",
+          features: [
+            "新增编程式会话管理API，允许通过方法调用创建、重命名、切换和获取会话列表",
+            "新增 `addNewSession`、`updateSessionName`、`switchToSession` 和 `getSessionList` 方法，增强组件可编程性",
+            "新增 `initialSessionCode` 和 `autoSwitchToInitialSession` 属性，支持组件初始化时进入指定会话"
+          ],
+          fixes: [
+            "重构并优化文档结构，将编程交互相关文档整合为“基础控制”、“会话生命周期”和“高级工作流”三个层次，提升可读性和可维护性",
+            "修复会话列表在名称更新后UI不刷新的响应性问题",
+            "修复切换会话时偶发的 `switchSession` 方法不存在的错误"
+          ]
+        },
+        {
           version: "v1.2.1",
           date: "2025-07-31",
-          improvements: [
+          features: [
             "修复开场白过长导致的 UI 问题",
             "优化 shortcut 快捷键功能",
             "文档错误修复"
@@ -42,7 +56,7 @@ export default {
             "多实例支持：重构 sessionStore 为实例化模式，避免多个组件实例间的状态冲突",
             "新增会话初始化完成事件：支持监听 <code>session-init</code> 事件，获取会话初始化状态"
           ],
-          improvements: [
+          fixes: [
             "优化代理信息显示逻辑，修复标题中可能出现的 'undefined' 问题",
             "提升 TypeScript 类型定义，增强开发体验",
             "改进会话管理逻辑，修复新增会话按钮复用空会话的问题",

@@ -126,6 +126,8 @@ yarn add @blueking/ai-blueking
 | defaultMinimize | Boolean | false  | 控制 Nimbus 组件初始是否处于最小化状态                            |
 | teleportTo      | String  | 'body' | 指定将 AI 小鲸组件传送到的 DOM 节点，默认为 body 元素             |
 | sessionContents | Array   | []     | 暴露当前会话内容，可用于外部访问和操作                            |
+| initialSessionCode | String | ''  | 初始会话代码，用于指定初始会话                                    |
+| autoSwitchToInitialSession | Boolean | false | 是否自动切换到初始会话                                        |
 
 ### shortcuts 格式示例
 
@@ -165,10 +167,13 @@ yarn add @blueking/ai-blueking
 
 | 方法名              | 参数                               | 返回值 | 描述                   |
 | ------------------- | ---------------------------------- | ------ | ---------------------- |
-| handleShow          | -                                  | -      | 显示 AI 小鲸窗口       |
+| handleShow          | sessionCode?: string               | -      | 显示 AI 小鲸窗口，可选择性地指定会话代码 |
 | handleStop          | -                                  | -      | 停止当前正在生成的内容 |
 | sendChat            | options: {message, cite, shortcut} | -      | 发送消息到 AI 小鲸     |
 | handleShortcutClick | shortcut: ShortCut                 | -      | 处理快捷操作点击       |
+| addNewSession       | -                                  | Promise<ISessionEditItem> | 创建新的聊天会话 |
+| updateSessionName   | sessionCode: string, newName: string | Promise<ISessionEditItem | null> | 更新会话名称 |
+| switchToSession     | sessionCode: string                | Promise<void> | 切换到指定会话 |
 
 ## 高级用法
 

@@ -30,6 +30,8 @@
 | `showNewChatIcon` | `Boolean`          | `true`                                                    | **v1.1.0新增** 控制头部新聊天图标的显示。设置为 `false` 时隐藏新建聊天按钮。                                                                                                                          |
 | `placeholder`     | `String`           | `'输入 "/" 唤出 Prompt\n通过 Shift + Enter 进行换行输入'` | **v1.1.1新增** 输入框占位符文本。可以自定义提示用户如何使用输入框。                                                                                                                                   |
 | `miniPadding`     | `Number`           | `0`                                                       | **v1.1.2新增** 压缩状态下的边距，单位为像素。控制组件在压缩状态时与屏幕边缘的距离。                                                                                                                   |
+| `initialSessionCode` | `String`        | `''`                                                    | **v1.2.2新增** 指定组件初始化时要加载的会话代码。如果设置了此属性且 `autoSwitchToInitialSession` 为 `true`，组件将在加载时自动切换到该会话。                                                           |
+| `autoSwitchToInitialSession` | `Boolean` | `true`                                                    | **v1.2.2新增** 控制是否在组件初始化时自动切换到 `initialSessionCode` 指定的会话。设置为 `false` 时，仅加载会话列表但不自动切换。                                                                      |
 
 ## 压缩状态边距控制 <Badge type="tip" text="v1.1.2" />
 
@@ -298,3 +300,20 @@ interface IRequestOptions {
   }
 </script>
 ```
+
+## 编程式会话管理
+
+v1.2.2版本新增了编程式会话管理功能，允许通过组件实例方法创建、重命名和切换会话：
+
+### 相关属性
+
+- `initialSessionCode`: 指定初始化时加载的会话代码
+- `autoSwitchToInitialSession`: 控制是否自动切换到初始会话
+
+### 相关方法
+
+- `addNewSession()`: 创建新会话
+- `updateSessionName(sessionCode, newName)`: 重命名会话
+- `switchToSession(sessionCode)`: 切换到指定会话
+
+详细使用方法请参见 [编程化会话管理指南](/guide/advanced-usage/programmatic-session-management)。
