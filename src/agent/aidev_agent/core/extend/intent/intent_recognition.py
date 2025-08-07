@@ -1260,22 +1260,16 @@ class IntentRecognition(BaseModel):
         knowledge_bases = agent_options.knowledge_query_options.knowledge_bases
         knowledge_items = agent_options.knowledge_query_options.knowledge_items
         # 处理意图识别知识库
-        if agent_options.intent_recognition_options.intent_recognition_knowledgebase_id:
+        if agent_options.intent_recognition_options.intent_recognition_knowledge:
             client = BKAidevApi.get_client_by_username(username="")
-
-            # 获取知识库基础信息
-            intent_knowledge_bases = [
-                client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"]
-                for id_ in agent_options.intent_recognition_options.intent_recognition_knowledgebase_id
-            ]
 
             # 统一处理知识库检索
             topk = agent_options.intent_recognition_options.intent_recognition_topk or 100  # 默认取100条
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(
                     self.search_knowledge_index_specific,
-                    knowledge_items=[],
-                    knowledge_bases=intent_knowledge_bases,
+                    knowledge_items=agent_options.intent_recognition_options.intent_recognition_knowledge,
+                    knowledge_bases=[],
                     query=query,
                     topk=topk,
                     agent_options=agent_options,
@@ -1322,11 +1316,11 @@ class IntentRecognition(BaseModel):
                 try:
                     category = IntentCategory(doc["意图类别"])
                     if category == IntentCategory.KNOWLEDGE_BASE:
-                        intent_base_id.append(doc["意图名称"])
+                        intent_base_id.append(doc["意图ID"])
                     elif category == IntentCategory.KNOWLEDGE_ITEM:
-                        intent_item_id.append(doc["意图名称"])
+                        intent_item_id.append(doc["意图ID"])
                     elif category == IntentCategory.TOOL:
-                        tools_id.append(doc["意图名称"])
+                        tools_id.append(doc["意图ID"])
                 except ValueError:  # noqa
                     logger.warning(f"Invalid intent category: {doc['意图类别']} in document {doc}")
             if intent_base_id:

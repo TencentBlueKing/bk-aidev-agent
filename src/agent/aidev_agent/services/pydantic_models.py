@@ -48,7 +48,7 @@ class ChatPrompt(BaseModel):
 
 
 class IntentRecognition(BaseModel):
-    intent_recognition_knowledgebase_id: list[int] | None = Field(default=None, description=("意图识别知识库id"))
+    intent_recognition_knowledge: list[dict] | None = Field(default=None, description=("意图识别知识"))
     intent_recognition_topk: float | None = Field(default=None, description=("意图识别topk值"))
     intent_recognition_llm: str | None = Field(default=None, description="意图识别使用的LLM")
     enable_logging: bool = Field(default=True, description="是否启用日志记录")
