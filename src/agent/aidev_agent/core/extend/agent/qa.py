@@ -58,7 +58,6 @@ from ..intent.utils import (
     deduplicate_tools,
     filter_and_select_topk,
     is_deepseek_r1_series_models,
-    is_model_without_function_calling,
     is_structured_data,
     query_clarification_enabled,
     support_multimodal,
@@ -140,43 +139,43 @@ class IntentRecognitionMixin(BaseModel):
     def context_compressor_pipeline(
         self, llm, chat_prompt_template, candidate_tools, intermediate_steps, callbacks, kwargs
     ):
-        # NOTE: 目前只对 StructuredChatCommonQAAgent 进行处理
-        if isinstance(self, StructuredChatCommonQAAgent):
-            if "chat_history" in kwargs and kwargs["chat_history"]:
-                # 用来压缩知识库知识/工具调用结果所需提供的 chat history（倒数取最新的）
-                provided_chat_history = deepcopy(kwargs["chat_history"])[
-                    -kwargs.get("max_n_chat_history_for_compress", 5) :
-                ]
-            else:
-                provided_chat_history = []
+        if "chat_history" in kwargs and kwargs["chat_history"]:
+            # 用来压缩知识库知识/工具调用结果所需提供的 chat history（倒数取最新的）
+            provided_chat_history = deepcopy(kwargs["chat_history"])[
+                -kwargs.get("max_n_chat_history_for_compress", 5) :
+            ]
+        else:
+            provided_chat_history = []
 
-            self.ensure_agent_token_limit(
-                llm,
-                chat_prompt_template,
-                candidate_tools,
-                intermediate_steps,
-                provided_chat_history,
-                kwargs,
+        self.ensure_agent_token_limit(
+            llm,
+            chat_prompt_template,
+            candidate_tools,
+            intermediate_steps,
+            provided_chat_history,
+            kwargs,
+        )
+
+        # 对于工具调用结果，直接再加个特殊判断
+        # 且使用字符串长度而不使用 token 计数，减少计算 token 的耗时
+        if isinstance(self, ToolCallingCommonQAAgent):
+            tool_messages = format_to_tool_messages(intermediate_steps)
+            # 将工具调用结果拼接成字符串
+            agent_scratchpad = "".join(m.content for m in tool_messages)
+        elif isinstance(self, StructuredChatCommonQAAgent):
+            agent_scratchpad = enhanced_format_log_to_str(intermediate_steps)
+        if len(agent_scratchpad) > self.agent_options.intent_recognition_options.tool_output_compress_thrd:
+            conditional_dispatch_custom_event(
+                "custom_event",
+                {"compress_log": "\n```text\n工具调用结果过长，尝试压缩工具调用结果以减少 token 使用。\n```\n"},
+                **kwargs,
             )
-
-            # 对于工具调用结果，直接再加个特殊判断
-            # 且使用字符串长度而不使用 token 计数，减少计算 token 的耗时
-            if isinstance(self, ToolCallingCommonQAAgent):
-                agent_scratchpad = format_to_tool_messages(intermediate_steps)
-            elif isinstance(self, StructuredChatCommonQAAgent):
-                agent_scratchpad = enhanced_format_log_to_str(intermediate_steps)
-            if len(agent_scratchpad) > self.agent_options.intent_recognition_options.tool_output_compress_thrd:
-                conditional_dispatch_custom_event(
-                    "custom_event",
-                    {"compress_log": "\n```text\n工具调用结果过长，尝试压缩工具调用结果以减少 token 使用。\n```\n"},
-                    **kwargs,
-                )
-                self.__class__.intent_recognition_instance.llm_intermediate_step_compressor_parallel(
-                    provided_chat_history,
-                    kwargs["query"],
-                    intermediate_steps,
-                    llm,
-                )
+            self.__class__.intent_recognition_instance.llm_intermediate_step_compressor_parallel(
+                provided_chat_history,
+                kwargs["query"],
+                intermediate_steps,
+                llm,
+            )
 
         return llm, chat_prompt_template, candidate_tools, intermediate_steps, callbacks, kwargs
 
@@ -309,10 +308,11 @@ class IntentRecognitionMixin(BaseModel):
         kwargs,
     ):
         inner_input = {}
-        if "agent_scratchpad" in chat_prompt_template.input_variables:
-            if isinstance(self, ToolCallingCommonQAAgent):
+        if isinstance(self, ToolCallingCommonQAAgent):
+            if "agent_scratchpad" in chat_prompt_template.partial_variables:
                 inner_input["agent_scratchpad"] = format_to_tool_messages(intermediate_steps)
-            elif isinstance(self, StructuredChatCommonQAAgent):
+        elif isinstance(self, StructuredChatCommonQAAgent):
+            if "agent_scratchpad" in chat_prompt_template.input_variables:
                 inner_input["agent_scratchpad"] = enhanced_format_log_to_str(intermediate_steps)
         if "beijing_now" in chat_prompt_template.input_variables:
             inner_input["beijing_now"] = get_beijing_now()
@@ -336,6 +336,8 @@ class IntentRecognitionMixin(BaseModel):
             inner_input["rejection_response"] = kwargs["rejection_response"]
         if "with_qa_response" in chat_prompt_template.input_variables:
             inner_input["with_qa_response"] = kwargs["with_qa_response"]
+        if "enable_parallel_tool_calls" in chat_prompt_template.input_variables:
+            inner_input["enable_parallel_tool_calls"] = kwargs["enable_parallel_tool_calls"]        
         formated_prompts = chat_prompt_template._format_prompt_with_error_handling(inner_input)
         cur_token_len = llm.get_num_tokens_from_messages(formated_prompts.messages)
         return cur_token_len, formated_prompts
@@ -504,8 +506,6 @@ class IntentRecognitionMixin(BaseModel):
             chat_prompt_template_variable_suffix = "_tool_calling"
         elif issubclass(cls, StructuredChatCommonQAAgent):
             chat_prompt_template_variable_suffix = "_structured_chat"
-        if "hunyuan" in llm.model_name and llm.model_name != "hunyuan-t1" and chat_prompt_template_variable_suffix == "_structured_chat":
-            raise RuntimeError("混元的prompt除system之外必须是一问一答形式，请检查 chat prompt template")
 
         # 根据不同的 IntentStatus 分别进行处理
         if recog_results["status"] == IntentStatus.QA_WITH_RETRIEVED_KNOWLEDGE_RESOURCES:
@@ -577,6 +577,7 @@ class IntentRecognitionMixin(BaseModel):
             agent_options.knowledge_query_options.is_response_when_no_knowledgebase_match
         )
         kwargs["rejection_response"] = agent_options.knowledge_query_options.rejection_message
+        kwargs["enable_parallel_tool_calls"] = agent_options.knowledge_query_options.enable_parallel_tool_calls
         # 补充/修改 kwargs 的值：给 AIDEV 产品检索测试模块使用
         if agent_options.knowledge_query_options.force_process_by_agent:
             kwargs["decision"] = recog_results["decision"]
@@ -712,7 +713,7 @@ class CommonQAStreamingMixIn:
                 ret["content"] = "\n\n"
         cache.append(ret)
 
-    def stream_standard_event(self, agent_e, cfg, input_, skip_thought=True, timeout: int = 2):
+    def stream_standard_event(self, agent_e, cfg, input_, skip_thought=False, timeout: int = 2):
         """
         如果 is_deepseek_r1_series_models(self.llm)，则需要：
             统一：去除 think 标识位
@@ -730,24 +731,27 @@ class CommonQAStreamingMixIn:
         non_think_content = ""
         last_ret_is_empty = False
         front_end_display = True
-        first_after_LOADINGMESSAGE = True
-        if is_model_without_function_calling(self.llm):
-            # 用于去除 think 标识位
-            max_cache_length = 50
-            cache = deque(maxlen=max_cache_length)
-            agent_think_start_time = time.time()
+        # 用于判断是否是第一个```
+        first_triple_backticks = True
+        # 用于去除 think 标识位
+        max_cache_length = 50
+        cache = deque(maxlen=max_cache_length)
+        agent_think_start_time = time.time()
+        if isinstance(self, StructuredChatCommonQAAgent):
+            # 在 StructuredChatCommonQAAgent 中用于合并 agent action 中间过程
+            # 在出现 Final Answer 模式之前的所有过程都视为 agent 的 think 过程，因此初始化为 EventType.THINK.value
             # 用于判断 done 之前的最后一个 event 类型
             last_event_type = None
             final_answer_prefix_to_filter = None
             final_answer_suffix_to_filter = None
-            if isinstance(self, StructuredChatCommonQAAgent):
-                # 在 StructuredChatCommonQAAgent 中用于合并 agent action 中间过程
-                # 在出现 Final Answer 模式之前的所有过程都视为 agent 的 think 过程，因此初始化为 EventType.THINK.value
-                cur_event_type = EventType.THINK.value
-                final_answer_occurred = False
-                first_time_final_answer = True
-            elif isinstance(self, ToolCallingCommonQAAgent):
-                has_sent_elapsed_time = False
+            cur_event_type = EventType.THINK.value
+            final_answer_occurred = False
+            first_time_final_answer = True
+        elif isinstance(self, ToolCallingCommonQAAgent):
+            has_reasoning_content = False
+            has_tool_call = False
+            # 用于判断是否是第一个tool args
+            first_tool_args = True
         try:
             for item in agent_e.stream_events(input_, config=cfg, version="v2", timeout=timeout):
                 ret = {}
@@ -762,66 +766,95 @@ class CommonQAStreamingMixIn:
                 else:
                     cover = bool(last_ret_is_empty)
                     if item["event"] == "on_chat_model_stream" and front_end_display:
-                        if item["data"]["chunk"].tool_calls:
+                        if item["data"]["chunk"].tool_call_chunks:
                             run_info[item["run_id"]]["tool_call"] = True
+                        else:
+                            run_info[item["run_id"]]["tool_call"] = False
                         is_tool_call = run_info[item["run_id"]].get("tool_call")
-                        if skip_thought and is_tool_call:
+                        if skip_thought:
                             continue
                         if not item["data"]["chunk"].content and not item["data"]["chunk"].additional_kwargs.get(
                             "reasoning_content", None
-                        ):
+                        ) and not is_tool_call:
                             continue
-                        if is_model_without_function_calling(self.llm):
-                            if isinstance(self, StructuredChatCommonQAAgent):
-                                # 如果是 StructuredChatCommonQAAgent，则会将所有中间 action 步骤也归为 think
-                                # 判断最终答案的逻辑在后面，所以这里先统一成 text
-                                if reasoning_content := item["data"]["chunk"].additional_kwargs.get(
-                                    "reasoning_content", None
-                                ):
-                                    content = reasoning_content
-                                else:
-                                    content = item["data"]["chunk"].content
-                                    non_think_content += content
-                                ret = {
-                                    "event": EventType.TEXT.value,
-                                    "content": content,
-                                    "cover": cover,
-                                }
-                            elif isinstance(self, ToolCallingCommonQAAgent):
-                                # 如果是 CommonQAAgent，则判断最终答案的逻辑在这里
-                                if reasoning_content := item["data"]["chunk"].additional_kwargs.get(
-                                    "reasoning_content", None
-                                ):
-                                    ret = {
-                                        "event": EventType.THINK.value,
-                                        "content": reasoning_content,
-                                        "cover": cover,
-                                    }
-                                else:
-                                    # 如果首次收到 text 内容，说明是从 think 逻辑切过来的，需要先补发一条带 elapsed_time
-                                    # 的 think event 以供识别
-                                    if not has_sent_elapsed_time:
-                                        has_sent_elapsed_time = True
-                                        ret = {
-                                            "event": EventType.THINK.value,
-                                            "content": "\n",
-                                            "cover": False,
-                                            "elapsed_time": (time.time() - agent_think_start_time) * 1000,
-                                        }
-                                        self.check_and_append(cache, ret)
-                                    ret = {
-                                        "event": EventType.TEXT.value,
-                                        "content": item["data"]["chunk"].content,
-                                        "cover": cover,
-                                    }
-                                    non_think_content += item["data"]["chunk"].content
-                        else:
+                        if isinstance(self, StructuredChatCommonQAAgent):
+                            # 如果是 StructuredChatCommonQAAgent，则会将所有中间 action 步骤也归为 think
+                            # 判断最终答案的逻辑在后面，所以这里先统一成 text
+                            if reasoning_content := item["data"]["chunk"].additional_kwargs.get(
+                                "reasoning_content", None
+                            ):
+                                content = reasoning_content
+                            else:
+                                content = item["data"]["chunk"].content
+                                non_think_content += content
                             ret = {
                                 "event": EventType.TEXT.value,
-                                "content": item["data"]["chunk"].content,
+                                "content": content,
                                 "cover": cover,
                             }
-                            non_think_content += item["data"]["chunk"].content
+                        elif isinstance(self, ToolCallingCommonQAAgent):
+                            # 如果是 CommonQAAgent，则判断最终答案的逻辑在这里
+                            if reasoning_content := item["data"]["chunk"].additional_kwargs.get(
+                                "reasoning_content", None
+                            ):
+                                ret = {
+                                    "event": EventType.THINK.value,
+                                    "content": reasoning_content,
+                                    "cover": cover,
+                                }
+                                has_reasoning_content = True
+                            elif is_tool_call:
+                                if item["data"]["chunk"].tool_call_chunks[0].get("name"):
+                                    # 先输出action name
+                                    name = item["data"]["chunk"].tool_call_chunks[0].get("name")
+                                    # 如果不是第一次调用工具，需要补上一个```
+                                    log_prefix = "\n```\n" if has_tool_call else ""
+                                    ret = {
+                                    "event": EventType.THINK.value,
+                                    "content": (
+                                        f'{log_prefix}\n```json\n"action": "{name}",\n'
+                                    ),                                            
+                                    "cover": cover,
+                                    }
+                                    # 如果不是第一次调用工具，将first_tool_args还原为True
+                                    if has_tool_call:
+                                        first_tool_args = True
+                                if item["data"]["chunk"].tool_call_chunks[0].get("args"):
+                                    # 如果是第一个tool args，需要在前面加上'"action_input":'
+                                    if first_tool_args:
+                                        ret = {
+                                            "event": EventType.THINK.value,
+                                            "content": '"action_input":',
+                                            "cover": cover,
+                                        }            
+                                        yield self._yield_ret(ret)
+                                        final_result += ret["content"]                                    
+                                        first_tool_args = False
+                                    ret = {
+                                        "event": EventType.THINK.value,
+                                        "content": item["data"]["chunk"].tool_call_chunks[0].get("args"),
+                                        "cover": False,
+                                    }
+                                has_tool_call = True
+                            else:  
+                                # 如果首次从 think 切到 text 内容，需要先补发一条带 elapsed_time的 think event 以供识别                                        
+                                if (has_reasoning_content or has_tool_call) and item["data"]["chunk"].content.strip():
+                                    has_reasoning_content = False
+                                    has_tool_call = False
+                                    ret = {
+                                        "event": EventType.THINK.value,
+                                        "content": "\n",
+                                        "cover": False,
+                                        "elapsed_time": (time.time() - agent_think_start_time) * 1000,
+                                    }
+                                    yield self._yield_ret(ret)
+                                    final_result += ret["content"] 
+                                ret = {
+                                    "event": EventType.TEXT.value,
+                                    "content": item["data"]["chunk"].content,
+                                    "cover": cover,
+                                }
+                                non_think_content += item["data"]["chunk"].content
                         final_result += ret["content"]
                     elif item["event"] == "on_custom_event":
                         if "front_end_display" in item["data"]:
@@ -854,7 +887,7 @@ class CommonQAStreamingMixIn:
                                 "cover": cover,
                             }
                             final_result += item["data"]["custom_agent_finish"]
-                    elif isinstance(self, StructuredChatCommonQAAgent) and item["event"] == "on_tool_end":
+                    elif item["event"] == "on_tool_end":
                         # TODO: 可能需要考虑异步是否会导致event的乱序问题
                         # 打印工具输出
                         tool_output_content = str(item["data"]["output"])
@@ -876,13 +909,14 @@ class CommonQAStreamingMixIn:
                         # 如果是奇数次，则手工拼接一个 ``` 防止前端渲染的时候乱了
                         log_prefix = "\n```\n" if final_result.count("```") % 2 == 1 else ""
                         ret = {
-                            "event": EventType.TEXT.value,
+                            "event": EventType.THINK.value,
                             "content": (
                                 f"{log_prefix}\n\n以下是该 Agent Action 的结果："
                                 f"\n```text\n{tool_output_content}\n```\n\n"
                             ),
                             "cover": cover,
                         }
+                        first_tool_args = True
                         final_result += ret["content"]
                     if isinstance(self, StructuredChatCommonQAAgent):
                         if "content" in ret:
@@ -971,11 +1005,15 @@ class CommonQAStreamingMixIn:
                 if ret:
                     first_chunk = False
                     last_ret_is_empty = ret.get("content", "") == self.LOADING_AGENT_MESSAGE
-                    if is_model_without_function_calling(self.llm):
+                    if isinstance(self, StructuredChatCommonQAAgent):
                         if ret.get("content", "") == self.LOADING_AGENT_MESSAGE:
                             last_event_type = ret["event"]
                             yield self._yield_ret(ret)
                         else:
+                            # NOTE: 首次出现 ``` 时，需要在前面添加一个换行符，防止前端没有渲染出来
+                            if '``' in ret.get("content", "") and first_triple_backticks:
+                                ret['content'] = '\n' + ret['content']
+                                first_triple_backticks = False
                             # NOTE: 只有非 self.LOADING_AGENT_MESSAGE 的 event 可以放到 cache 中
                             self.check_and_append(cache, ret)
                             if recall_ret:
@@ -988,55 +1026,52 @@ class CommonQAStreamingMixIn:
                             cache = self.cache_filter(
                                 cache, final_answer_prefix_to_filter, final_answer_suffix_to_filter
                             )
+                            # 如果所有think event加起来过滤后为空，则删除，防止输出空的思考过程
+                            if (
+                                final_answer_occurred
+                                and cache[-1]['event'] == 'think'
+                                and cache[-1]['content'].strip() == ''
+                            ):  
+                                cache.pop()
+                                # 如果 cache 为空，要将 last_ret_is_empty 设置为 True，确保第一个 text 的 cover 是 True
+                                if len(cache) == 0: 
+                                    last_ret_is_empty = True                           
                             if len(cache) == max_cache_length:
                                 ret = cache.popleft()
                                 last_event_type = ret["event"]
-                                # 避免输出内容为空的think event
-                                if not ((self.llm.model_name == "deepseek-v3" 
-                                        or self.llm.model_name == "qwen3-nothinking")
-                                        and last_event_type == EventType.THINK.value 
-                                        and not ret.get("content", "").strip() 
-                                        and ret.get("elapsed_time")):
-                                    # 确保LOADING_AGENT_MESSAGE后输出的第一个event cover为true
-                                    if first_after_LOADINGMESSAGE:
-                                        ret["cover"] = True
-                                        first_after_LOADINGMESSAGE = False
-                                    yield self._yield_ret(ret)
+                                yield self._yield_ret(ret)
                     else:
-                        yield self._yield_ret(ret)
-            if is_model_without_function_calling(self.llm):
-                if isinstance(self, StructuredChatCommonQAAgent):
-                    # 以下逻辑用于利用 self.end_content 标志跟 final_answer_suffix_to_filter 拼接后进行尾部去除
-                    if len(cache) == max_cache_length:
-                        ret = cache.popleft()
-                        last_event_type = ret["event"]
-                        yield self._yield_ret(ret)
-                    end_ret = {
-                        "event": EventType.TEXT.value,
-                        "content": deepcopy(self.end_content),
-                        "cover": False,
-                    }
-                    self.check_and_append(cache, end_ret)
-                    len_before_filtering = len(cache)
-                    cache = self.cache_filter(cache, final_answer_prefix_to_filter, final_answer_suffix_to_filter)
-                    if len(cache) == len_before_filtering:
-                        # 如果没 filter 到，则还是将 end_ret 剔除
-                        cache.pop()
+                        yield self._yield_ret(ret)    
+
+            if isinstance(self, StructuredChatCommonQAAgent):
+                # 以下逻辑用于利用 self.end_content 标志跟 final_answer_suffix_to_filter 拼接后进行尾部去除
+                if len(cache) == max_cache_length:
+                    ret = cache.popleft()
+                    last_event_type = ret["event"]
+                    yield self._yield_ret(ret)
+                # 如果 cache 最后一个元素包含 `\n，需要在 final_answer_suffix_to_filter 后面也添加一个换行符才能把后缀过滤掉
+                if "`\n" in cache[-1].get("content", ""):
+                    final_answer_suffix_to_filter =final_answer_suffix.replace("\\n", "\n")+"\n"+deepcopy(self.end_content)              
+                end_ret = {
+                    "event": EventType.TEXT.value,
+                    "content": deepcopy(self.end_content),
+                    "cover": False,
+                }
+                self.check_and_append(cache, end_ret)
+                len_before_filtering = len(cache)
+                first_true = cache[0].get("cover", "") == True
+                cache = self.cache_filter(cache, final_answer_prefix_to_filter, final_answer_suffix_to_filter)
+                # 如果cache过滤前第一个元素的 cover 是 True，则过滤后 cover 应该是 True
+                if first_true:
+                    cache[0]["cover"] = True
+                if len(cache) == len_before_filtering:
+                    # 如果没 filter 到，则还是将 end_ret 剔除
+                    cache.pop()
 
                 while cache:
                     ret = cache.popleft()
                     last_event_type = ret["event"]
-                    # 避免输出内容为空的think event
-                    if not ((self.llm.model_name == "deepseek-v3"
-                            or self.llm.model_name == "qwen3-nothinking") 
-                            and last_event_type == EventType.THINK.value 
-                            and not ret.get("content", "").strip() 
-                            and ret.get("elapsed_time")):
-                        # 确保LOADING_AGENT_MESSAGE后输出的第一个event cover为true
-                        if first_after_LOADINGMESSAGE:
-                            ret["cover"] = True
-                            first_after_LOADINGMESSAGE = False
-                        yield self._yield_ret(ret)
+                    yield self._yield_ret(ret)
                 for think_symbol in self.think_symbols:
                     final_result = final_result.replace(think_symbol, "")
                 # 如果 done 之前的最后一个 event 是 think 类型，则说明从 think 内容中解析结论失败，需额外发送一条 text event，
@@ -1117,10 +1152,11 @@ class CommonQAAgent(ToolCallingCommonQAAgent):
     def get_agent_executor(cls, *args, **kwargs):
         llm = kwargs["llm"] if "llm" in kwargs else args[0]
         extra_tools = kwargs.get("extra_tools", [])
-        key = (
-            "structured_chat_common_qa_agent"
-            if is_model_without_function_calling(llm) and extra_tools
-            else "tool_calling_common_qa_agent"
-        )
-        agent_class = cls.agent_classes.get(key, cls.agent_classes["tool_calling_common_qa_agent"])
+        agent_options = kwargs.get("agent_options", [])
+        # 如果是 deepseek r1 系列模型，且 extra_tools 不为空，则默认使用 structured_chat_common_qa_agent
+        if is_deepseek_r1_series_models(llm) and extra_tools:
+            agent_class = cls.agent_classes.get(agent_options.intent_recognition_options.agent_type, cls.agent_classes["structured_chat_common_qa_agent"])
+        else:
+            # 其他模型默认为tool_calling_common_qa_agent
+            agent_class = cls.agent_classes.get(agent_options.intent_recognition_options.agent_type, cls.agent_classes["tool_calling_common_qa_agent"])
         return agent_class.get_agent_executor(*args, **kwargs)

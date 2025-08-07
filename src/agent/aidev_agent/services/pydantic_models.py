@@ -48,22 +48,25 @@ class ChatPrompt(BaseModel):
 
 
 class IntentRecognition(BaseModel):
-    intent_recognition_knowledgebase_id: list[int] | None = Field(default=None, description=("意图识别知识库id"))
+    intent_recognition_knowledge: list[dict] | None = Field(default=None, description=("意图识别知识"))
     intent_recognition_topk: float | None = Field(default=None, description=("意图识别topk值"))
     intent_recognition_llm: str | None = Field(default=None, description="意图识别使用的LLM")
     enable_logging: bool = Field(default=True, description="是否启用日志记录")
     intent_recognition_llm_code: str | None = Field(default=None, description=("约定的意图识别 code，用于快速单跳"))
     with_index_specific_search_init: bool = Field(
-        default=True, description=("意图识别with_index_specific_search_init参数")
+        default=True, 
+        description="是否使用初始查询进行 index specific 召回"
     )
     with_index_specific_search_translation: bool = Field(
         default=False,
-        description=("意图识别with_index_specific_search_translation参数"),
+        description="是否使用翻译后的查询进行 index specific 召回"
     )
     with_index_specific_search_keywords: bool = Field(
-        default=False, description=("意图识别with_index_specific_search_keywords参数")
-    )
+        default=False, 
+        description="是否使用提取的关键词进行 index specific 召回"
+    )    
     tool_output_compress_thrd: int = Field(default=5000, description=("工具输出压缩阈值"))
+    agent_type: str | None = Field(default=None, description=("agent类"))
 
 
 class KnowledgebaseSettings(BaseModel):
@@ -96,12 +99,22 @@ class KnowledgebaseSettings(BaseModel):
         max_length=1024,
         description=("拒答文案"),
     )
-    with_scalar_data: bool = Field(default=False, description=("with_scalar_data参数"))
-    use_independent_query_in_translation: bool = Field(
-        default=False, description=("use_independent_query_in_translation参数")
+    enable_parallel_tool_calls: bool = Field(default=False, description=("StructuredChatCommonQAAgent调用多个工具时是否使用并行调用"))
+    with_scalar_data: bool = Field(
+        default=False, 
+        description="是否使用标量索引进行结构化数据召回"
     )
-    use_translated_query_in_scores: bool = Field(default=True, description=("use_translated_query_in_scores参数"))
-    use_independent_query_in_scores: bool = Field(default=True, description=("use_independent_query_in_scores参数"))
+    use_independent_query_in_translation: bool = Field(
+        default=False, description=("翻译查询时是否使用独立查询(而非原始查询)作为输入源")
+    )
+    use_translated_query_in_scores: bool = Field(
+        default=True, 
+        description="计算相关性分数时是否使用翻译后的查询(而非原始查询)"
+    )
+    use_independent_query_in_scores: bool = Field(
+        default=True,
+        description="计算相关性分数时是否使用独立查询(而非原始查询)"
+    )
     with_query_cls: bool = Field(
         default=True,
         description="是否进行意图切换检测。NOTE: 目前仅在非 merge_query_cls_with_resp_or_rewrite 的情况下才生效",
@@ -162,7 +175,7 @@ class KnowledgebaseSettings(BaseModel):
         default_factory=list,
         description=("工具类资源 base ID 列表。NOTE: 目前工具类资源统一放 base ID 中不放 item ID 中"),
     )
-    token_limit_margin: int = Field(default=200, description=("token_limit_margin参数"))
+    token_limit_margin: int = Field(default=200, description=("召回知识内容的最大Token限制值"))
 
 
 class AgentOptions(BaseModel):

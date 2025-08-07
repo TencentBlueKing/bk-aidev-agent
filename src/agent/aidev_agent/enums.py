@@ -65,9 +65,9 @@ class KnowledgeBaseQueryFunction(enum.Enum):
 
 
 class IntentCategory(enum.Enum):
-    KNOWLEDGE_BASE = "知识base"
-    KNOWLEDGE_ITEM = "知识item"
-    TOOL = "工具"
+    KNOWLEDGE_BASE = "knowledge base"
+    KNOWLEDGE_ITEM = "knowledge item"
+    TOOL = "tool"
 
 
 class EventType(enum.Enum):

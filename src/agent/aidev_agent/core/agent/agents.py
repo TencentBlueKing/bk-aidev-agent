@@ -19,7 +19,7 @@ to the current version of the project delivered to anyone in the future.
 import json
 import logging
 from datetime import datetime
-from typing import Callable, List, Sequence, Tuple, Union
+from typing import Callable, List, Optional, Sequence, Tuple, Union
 
 import pydantic
 import pytz
@@ -36,6 +36,7 @@ from langchain_core.prompts.chat import ChatPromptTemplate
 from langchain_core.runnables import Runnable, RunnablePassthrough
 from langchain_core.tools import BaseTool
 from langchain_core.tools.render import ToolsRenderer
+from aidev_agent.services.pydantic_models import AgentOptions
 
 from aidev_agent.core.extend.intent.utils import (
     FINAL_ANSWER_PREFIXES,
@@ -92,12 +93,15 @@ class EnhancedJSONAgentOutputParser(JSONAgentOutputParser):
     """
 
     llm: BaseChatModel = pydantic.Field(default=None)
-
-    def __init__(self, llm):
+    agent_options: Optional[AgentOptions] = pydantic.Field(default=None)
+    
+    def __init__(self, llm, agent_options: Optional[AgentOptions] = None):
         super().__init__()
         self.llm = llm
+        if agent_options is not None:
+            self.__class__.agent_options = agent_options
 
-    def parse(self, text: str) -> Union[AgentAction, AgentFinish]:
+    def parse(self, text: str) -> Union[AgentAction, AgentFinish, List[AgentAction]]:
         if not text:
             raise RuntimeError("模型调用失败，LLM Gateway 返回的结果为空！")
         cur_time = datetime.now(pytz.utc).astimezone(pytz.timezone("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S %f")
@@ -108,10 +112,25 @@ class EnhancedJSONAgentOutputParser(JSONAgentOutputParser):
                 text = remove_thinking_process(text)
             response = parse_json_markdown(text)
             logger.info(f"=====> [response] [{cur_time}] {response}")
+            
+            # 处理并行工具调用
             if isinstance(response, list):
-                # gpt turbo frequently ignores the directive to emit a single action
-                logger.warning("Got multiple action responses: %s", response)
-                response = response[0]
+                agent_options = self.agent_options or getattr(self.__class__, 'agent_options', None)
+                if agent_options and agent_options.knowledge_query_options.enable_parallel_tool_calls:
+                    # 当解析到JSON数组时，处理为并行工具调用，返回多个AgentAction对象
+                    actions = []
+                    for tool_call in response:
+                        if tool_call["action"] == "Final Answer":
+                            raise OutputParserException("Cannot mix Final Answer with tool calls in parallel mode")
+                        if isinstance(tool_call.get("action_input"), str):
+                            raise RuntimeError(ACTION_INPUT_ERR_MSG)
+                        actions.append(AgentAction(tool_call["action"], tool_call.get("action_input", {}), text))
+                    return actions
+                else:
+                    # gpt turbo frequently ignores the directive to emit a single action
+                    logger.warning("Got multiple action responses: %s", response)
+                    response = response[0]
+                
             if response["action"] == "Final Answer":
                 if isinstance(response["action_input"], dict):
                     # NOTE: 有时候这里不是字符串（例如用户query为“用json格式给我输出个不同排序算法的对比”）
@@ -183,6 +202,7 @@ def create_enhanced_structured_chat_agent(
     llm: BaseLanguageModel,
     tools: Sequence[BaseTool],
     prompt: ChatPromptTemplate,
+    agent_options: Optional[AgentOptions] = None,
     tools_renderer: ToolsRenderer = render_text_description_and_args,
     *,
     stop_sequence: Union[bool, List[str]] = False,
@@ -228,7 +248,7 @@ def create_enhanced_structured_chat_agent(
         )
         | prompt
         | llm_with_stop
-        | EnhancedJSONAgentOutputParser(llm)
+        | EnhancedJSONAgentOutputParser(llm, agent_options)
     )
     return agent
 
