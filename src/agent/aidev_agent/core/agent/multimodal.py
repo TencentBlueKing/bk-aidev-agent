@@ -242,6 +242,7 @@ class CommonAgentMixIn(BaseModel, ABC):
             suffix=suffix,
             format_instructions=format_instructions,
             query_knowledgebase=query_knowledgebase,
+            agent_options=agent_options,
         )
         agent.file_store = file_store
         agent.knowledge_llm = knowledge_llm
@@ -462,10 +463,11 @@ class StructuredChatCommonAgentMixIn(ToolCallCommonAgentMixIn):
         role_prompt: Optional[str] = None,
         suffix: Optional[str] = None,
         format_instructions: Optional[str] = None,
+        agent_options: Optional[AgentOptions] = None,
         **kwargs,
     ) -> Self:
         chat_prompt_template = deepcopy(general_qa_prompt_structured_chat)
-        agent_runnable = create_enhanced_structured_chat_agent(llm, tools, chat_prompt_template)
+        agent_runnable = create_enhanced_structured_chat_agent(llm, tools, chat_prompt_template, agent_options)
         agent = cls(runnable=agent_runnable, callbacks=[])  # type: ignore
         agent.raw_runnable = agent_runnable
         agent.llm = llm
