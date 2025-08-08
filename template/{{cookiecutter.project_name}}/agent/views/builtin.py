@@ -3,8 +3,8 @@ import json
 from logging import getLogger
 
 from aidev_agent.api.bk_aidev import BKAidevApi
-from aidev_agent.services.agent import AgentInstanceBuilder
-from aidev_agent.services.chat import ExecuteKwargs
+from aidev_agent.services.agent import AgentInstanceFactory
+from aidev_agent.services.chat import ChatPrompt, ExecuteKwargs
 from aidev_agent.services.command_handler import CommandProcessor
 from bk_plugin_framework.kit.api import custom_authentication_classes
 from bk_plugin_framework.kit.decorators import inject_user_token, login_exempt
@@ -21,6 +21,7 @@ from rest_framework.viewsets import ViewSetMixin
 
 from agent.services.agent import (
     get_agent_config_info,
+    get_agent_role_info,
 )
 
 logger = getLogger(__name__)
@@ -148,15 +149,22 @@ class ChatCompletionViewSet(PluginViewSet):
     def create(self, request):
         execute_kwargs = ExecuteKwargs.model_validate(request.data.get("execute_kwargs", {}))
         session_code = request.data.get("session_code", "")
-        agent_code = request.data.get("agent_code", settings.APP_CODE)
-        client = BKAidevApi.get_client()
+        if session_code:
+            agent_instance = AgentInstanceFactory(session_code=session_code).agent
+        else:
+            chat_history = request.data.get("chat_prompts", []) or request.data.get("chat_history", [])
+            if not chat_history:
+                raise ClientBlueException(message="chat_history is required")
+            chat_history = [ChatPrompt(role=each["role"], content=each["content"]) for each in chat_history]
+            role_contents = get_agent_role_info()
+            if role_contents:
+                chat_history = role_contents + chat_history
 
-        if not session_code:
-            raise ClientBlueException("session_code is required")
-
-        agent_instance = AgentInstanceBuilder.build_agent_instance_by_session(
-            session_code=session_code, api_client=client, agent_code=agent_code
-        )
+            agent_instance = AgentInstanceFactory(
+                agent_type="chat",
+                build_type="direct",  # 关键：使用direct模式
+                session_context_data=chat_history,  # 直接传入聊天历史
+            ).agent
 
         if execute_kwargs.stream:
             generator = agent_instance.execute(execute_kwargs)

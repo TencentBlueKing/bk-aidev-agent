@@ -1,5 +1,8 @@
 import logging
+from typing import Any, Callable, Dict, List, Optional, Type
 
+from src.agent.aidev_agent.api import BKAidevApi
+from src.agent.aidev_agent.api.bkaidev_client.client import Client
 from src.agent.aidev_agent.config import settings
 from src.agent.aidev_agent.core.extend.agent.qa import CommonQAAgent
 from src.agent.aidev_agent.core.extend.models.llm_gateway import ChatModel
@@ -10,30 +13,198 @@ from src.agent.aidev_agent.services.pydantic_models import ChatPrompt
 logger = logging.getLogger("aidev-agent")
 
 
-class AgentInstanceBuilder:
-    @classmethod
-    def build_agent_instance_by_session(cls, session_code, api_client, agent_code):
+class AgentInstanceFactory:
+    """
+    Agent实例工厂 - 支持构建多种类型的Agent
+    """
+
+    # Agent类型映射表
+    _agent_classes: Dict[str, Type] = {}
+    # Agent构建器注册表
+    _agent_builders: Dict[str, Callable] = {}
+
+    def __init__(
+        self,
+        agent_code: str = settings.APP_CODE,
+        agent_type: str = "chat",
+        build_type: str = "session",
+        session_code: Optional[str] = None,
+        session_context_data: Optional[List[dict]] = None,
+        agent_cls: type = CommonQAAgent,
+        callbacks: List[Any] = None,
+        api_client: Client = None,
+    ):
         """
-        通过session_code初始化Agent实例
-        :param session_code:    会话代码
-        :param api_client:      API客户端实例
-        :param agent_code:      Agent代码
+        初始化Agent实例
+        :param agent_code: Agent代码
+        :param agent_type: Agent类型 ("chat", "task", "workflow"等)
+        :param build_type: 构建类型 ("session", "direct")
+        :param session_code: 会话代码 (build_type="session"时必需)
+        :param session_context_data: 会话上下文数据 (build_type="direct"时使用)
+        :param agent_cls: Agent类
+        :param callbacks: 回调函数列表
+        :param api_client: API客户端实例
         """
+        self.api_client = api_client or BKAidevApi.get_client()
+        self.agent_code = agent_code
+        self.agent_type = agent_type
+        self.build_type = build_type
+        self.session_code = session_code
+        self.agent_cls = agent_cls
+        self.callbacks = callbacks or []
+
+        # 验证参数
+        self._validate_params()
+
+        # 构建基础参数
+        if build_type == "session":
+            base_args = self._build_from_session()
+        elif build_type == "direct":
+            base_args = self._build_direct(session_context_data or [])
+        else:
+            raise ValueError(f"Unsupported build_type: {build_type}")
+
+        # 根据agent_type构建特定参数
+        agent_args = self._build_agent_args(base_args)
+
+        # 创建Agent实例
+        self.agent = self._create_agent_instance(agent_args)
+
+    def _validate_params(self):
+        """验证初始化参数"""
+        if self.build_type == "session" and not self.session_code:
+            raise ValueError("session_code is required when build_type is 'session'")
+
+        if self.build_type not in ["session", "direct"]:
+            raise ValueError(f"Unsupported build_type: {self.build_type}")
+
+        if self.agent_type not in self._agent_builders:
+            raise ValueError(
+                f"Unsupported agent_type: {self.agent_type}. Supported types: {list(self._agent_builders.keys())}"
+            )
+
+    def _build_agent_args(self, base_args: dict) -> dict:
+        """
+        构建Agent特定参数
+        取决于Agent类别
+        """
+        builder = self._agent_builders[self.agent_type]
+        agent_specific_args = builder(self, **base_args)
+
+        # 合并通用参数
+        final_args = {"agent_cls": self.agent_cls, "callbacks": self.callbacks, **agent_specific_args}
+
+        return final_args
+
+    def _create_agent_instance(self, agent_args: dict):
+        """创建Agent实例"""
+        agent_class = self._agent_classes[self.agent_type]
+        return agent_class(**agent_args)
+
+    def _build_from_session(self) -> dict:
+        """通过session_code构建基础参数"""
         logger.info(
-            "AgentInstanceBuilder: try to build agent instance for session_code->[%s],use agent->[%s]",
-            session_code,
-            agent_code,
-        )
-        session_context_data = api_client.api.get_chat_session_context(path_params={"session_code": session_code}).get(
-            "data", []
-        )
-        base_agent_config = AgentConfigManager.get_config(agent_code=agent_code, api_client=api_client)
-        logger.info(
-            "AgentInstanceBuilder: session->[%s] get session_context_data->[%s]", session_code, session_context_data
+            f"AgentInstanceFactory: building {self.agent_type} agent for session_code->[{self.session_code}], "
+            f"agent_code->[{self.agent_code}]"
         )
 
-        # 是否需要切换智能体
+        # 获取会话上下文数据
+        session_context_data = self.api_client.api.get_chat_session_context(
+            path_params={"session_code": self.session_code}
+        ).get("data", [])
+
+        base_agent_config = AgentConfigManager.get_config(agent_code=self.agent_code, api_client=self.api_client)
+
+        logger.info(
+            f"AgentInstanceFactory: session->[{self.session_code}] "
+            f"get session_context_data count->[{len(session_context_data)}]"
+        )
+
+        # 检查是否需要切换智能体
+        switch_agent, final_agent_code = self._check_agent_switch(session_context_data, base_agent_config)
+
+        # 处理最后一条assistant消息
+        self._clean_last_assistant_message(session_context_data, base_agent_config)
+
+        return {
+            "agent_code": final_agent_code,
+            "session_context_data": session_context_data,
+            "switch_agent": switch_agent,
+        }
+
+    def _build_direct(self, session_context_data: List[dict]) -> dict:
+        """直接构建基础参数（使用提供的session_context_data）"""
+        logger.info(
+            f"AgentInstanceFactory: building {self.agent_type} agent directly with agent_code->[{self.agent_code}]"
+        )
+
+        return {
+            "agent_code": self.agent_code,
+            "session_context_data": session_context_data,
+            "switch_agent": False,
+        }
+
+    # ============== 通用构建方法 ==============
+
+    def build_chat_model(self, agent_code: str):
+        """构建聊天模型"""
+        config = AgentConfigManager.get_config(agent_code=agent_code, api_client=self.api_client)
+
+        auth_headers = {
+            "bk_app_code": settings.APP_CODE,
+            "bk_app_secret": settings.SECRET_KEY,
+        }
+
+        return ChatModel.get_setup_instance(
+            model=config.llm_model_name,
+            base_url=settings.LLM_GW_ENDPOINT,
+            auth_headers=auth_headers,
+        )
+
+    def build_chat_history(self, session_context_data: List[dict]) -> List[ChatPrompt]:
+        """构建聊天历史"""
+        return [ChatPrompt.model_validate(each) for each in session_context_data]
+
+    def build_knowledge_bases(self, agent_code: str) -> List[dict]:
+        """构建知识库"""
+        config = AgentConfigManager.get_config(agent_code=agent_code, api_client=self.api_client)
+        return [
+            self.api_client.api.appspace_retrieve_knowledgebase(path_params={"id": _id})["data"]
+            for _id in config.knowledgebase_ids
+        ]
+
+    def build_knowledge_items(self, agent_code: str) -> List[dict]:
+        """构建知识条目"""
+        config = AgentConfigManager.get_config(agent_code=agent_code, api_client=self.api_client)
+        return [
+            self.api_client.api.appspace_retrieve_knowledge(path_params={"id": _id})["data"]
+            for _id in config.knowledge_ids
+        ]
+
+    def build_tools(self, agent_code: str) -> List[Any]:
+        """构建工具"""
+        config = AgentConfigManager.get_config(agent_code=agent_code, api_client=self.api_client)
+        return [self.api_client.construct_tool(tool_code) for tool_code in config.tool_codes]
+
+    def get_role_prompt(self, agent_code: str) -> str:
+        """获取角色提示词"""
+        config = AgentConfigManager.get_config(agent_code=agent_code, api_client=self.api_client)
+        return config.role_prompt
+
+    def handle_agent_switch(self, session_context_data: List[dict], agent_code: str, switch_agent: bool):
+        """处理智能体切换"""
+        if switch_agent:
+            logger.info(f"AgentInstanceFactory: switching agent to->[{agent_code}]")
+            # 找到最后一条role为system的记录并修改
+            for item in reversed(session_context_data):
+                if item["role"] == "system":
+                    item["content"] = self.get_role_prompt(agent_code)
+                    break
+
+    def _check_agent_switch(self, session_context_data: List[dict], base_agent_config) -> tuple[bool, str]:
+        """检查是否需要切换智能体"""
         switch_agent = False
+        final_agent_code = self.agent_code
 
         try:
             # 获取最后一条用户消息
@@ -45,80 +216,70 @@ class AgentInstanceBuilder:
 
             if command:  # 若存在Command，且该Command映射到了新的Agent,那么在本轮对话中使用新的Agent的配置
                 command_agent_code = base_agent_config.command_settings.get("command_agent_mappings", {}).get(
-                    command, agent_code
+                    command, self.agent_code
                 )
-                switch_agent = True if command_agent_code != agent_code else False
-                agent_code = command_agent_code  # 切换Agent
-        except Exception as e:  # pylint: disable=broad-except
-            logger.warning("AgentInstanceBuilder: get last user message error->[%s]", e)
+                switch_agent = command_agent_code != self.agent_code
+                final_agent_code = command_agent_code  # 切换Agent
 
+        except Exception as e:  # pylint: disable=broad-except
+            logger.warning(f"AgentInstanceFactory: get last user message error->[{e}]")
+
+        return switch_agent, final_agent_code
+
+    def _clean_last_assistant_message(self, session_context_data: List[dict], base_agent_config):
+        """清理最后一条assistant消息（如果包含生成中关键词）"""
         if session_context_data and session_context_data[-1]["role"] == "assistant":
             logger.info(
-                "AgentInstanceBuilder: session->[%s] last message->[%s] is assistant, remove it",
-                session_code,
-                session_context_data[-1],
+                f"AgentInstanceFactory: session->[{self.session_code}] last message is assistant, checking if should "
+                f"remove"
             )
-            # TODO: 如果最后一条消息是assistant，且content里有"生成中"三个字，则去掉
+
             content = session_context_data[-1]["content"]
             if base_agent_config.generating_keyword in content:  # 只要 content 里有"生成中"三个字即可
+                logger.info("AgentInstanceFactory: removing last assistant message with generating keyword")
                 session_context_data.pop()
 
-        agent = build_chat_completion_agent(
-            api_client=api_client,
-            agent_code=agent_code,
-            session_context_data=session_context_data,
-            switch_agent=switch_agent,
-        )
-        return agent
+    @classmethod
+    def register_agent_type(cls, agent_type: str, agent_class: Type, builder_func: Callable):
+        """注册新的Agent类型"""
+        cls._agent_classes[agent_type] = agent_class
+        cls._agent_builders[agent_type] = builder_func
+        logger.info(f"AgentInstanceFactory: registered agent type->[{agent_type}] with class->[{agent_class.__name__}]")
+
+    # ============== Agent构建器函数 ==============
+
+    @staticmethod
+    def build_chat_agent_args(factory, agent_code, session_context_data, switch_agent):
+        """构建ChatCompletionAgent参数"""
+        logger.info(f"Building ChatCompletionAgent args with agent_code->[{agent_code}]")
+
+        # 处理智能体切换
+        factory.handle_agent_switch(session_context_data, agent_code, switch_agent)
+
+        return {
+            "chat_model": factory.build_chat_model(agent_code),
+            "role_prompt": factory.get_role_prompt(agent_code),
+            "tools": factory.build_tools(agent_code),
+            "knowledge_bases": factory.build_knowledge_bases(agent_code),
+            "knowledge_items": factory.build_knowledge_items(agent_code),
+            "chat_history": factory.build_chat_history(session_context_data),
+        }
+
+    @staticmethod
+    def build_task_agent_args(factory, agent_code, session_context_data, switch_agent):
+        """构建TaskAgent参数（示例）"""
+        # 处理智能体切换
+        factory.handle_agent_switch(session_context_data, agent_code, switch_agent)
+
+        # TaskAgent可能需要不同的参数组合
+        return {
+            "task_config": factory.get_role_prompt(agent_code),
+            "tools": factory.build_tools(agent_code),
+            "chat_history": factory.build_chat_history(session_context_data),
+            # 可能不需要knowledge_bases等
+        }
 
 
-def build_chat_completion_agent(
-    api_client, agent_code, session_context_data, switch_agent, agent_cls=CommonQAAgent, callbacks=[]
-) -> ChatCompletionAgent:
-    logger.info("AgentInstanceBuilder: try to build agent instance with agent_code->[%s]", agent_code)
-    config = AgentConfigManager.get_config(agent_code=agent_code, api_client=api_client)
-
-    if switch_agent:  # 若需要切换Agent,则在【本轮对话】中替换System Prompt,并不会在平台侧落地
-        logger.info("AgentInstanceBuilder: switch agent to->[%s]", agent_code)
-        # 找到最后一条role为system的记录并修改
-        for item in reversed(session_context_data):
-            if item["role"] == "system":
-                item["content"] = config.role_prompt
-                break  # 修改最后一条后就退出循环
-
-    # 构造对话上下文历史
-    chat_history = [ChatPrompt.model_validate(each) for each in session_context_data]
-
-    auth_headers = {
-        "bk_app_code": settings.APP_CODE,
-        "bk_app_secret": settings.SECRET_KEY,
-    }
-
-    llm_base_url = settings.LLM_GW_ENDPOINT
-
-    llm = ChatModel.get_setup_instance(
-        model=config.llm_model_name,
-        base_url=llm_base_url,
-        auth_headers=auth_headers,
-        temperature=config.temperature,
-    )
-
-    knowledge_bases = [
-        api_client.api.appspace_retrieve_knowledgebase(path_params={"id": _id})["data"]
-        for _id in config.knowledgebase_ids
-    ]
-    knowledge_items = [
-        api_client.api.appspace_retrieve_knowledge(path_params={"id": _id})["data"] for _id in config.knowledge_ids
-    ]
-    tools = [api_client.construct_tool(tool_code) for tool_code in config.tool_codes]
-
-    return ChatCompletionAgent(
-        chat_model=llm,
-        role_prompt=config.role_prompt,
-        tools=tools,
-        knowledge_bases=knowledge_bases,
-        knowledge_items=knowledge_items,
-        chat_history=chat_history,
-        agent_cls=agent_cls,
-        callbacks=callbacks,  # 回调
-    )
+# 注册默认的Agent类型
+AgentInstanceFactory.register_agent_type("chat", ChatCompletionAgent, AgentInstanceFactory.build_chat_agent_args)
+# AgentInstanceFactory.register_agent_type("task", TaskAgent, AgentInstanceFactory.build_task_agent_args)

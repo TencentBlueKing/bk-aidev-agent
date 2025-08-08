@@ -15,20 +15,12 @@ class AgentConfig(BaseModel):
     opening_mark: str | None = Field(None, description="智能体开场白")
     command_settings: dict = Field(default_factory=dict, description="快捷指令设置")
     generating_keyword: str | None = Field(description="生成关键词", default="生成中")
-    temperature: float = Field(default=0.7, description="温度配置")
 
 
 class AgentConfigManager:
     """智能体配置管理器"""
 
     _config_cache: dict[str, AgentConfig] = {}
-
-    @classmethod
-    def register_agent_config(cls, **kwargs):
-        """
-        注册智能体配置
-        :param kwargs: 智能体配置参数
-        """
 
     @classmethod
     def get_config(cls, agent_code: str, api_client, force_refresh: bool = False) -> AgentConfig:
@@ -68,7 +60,6 @@ class AgentConfigManager:
             tool_codes=res["related_tools"],
             opening_mark=res["conversation_settings"]["opening_remark"] or None,
             command_settings=res["conversation_settings"].get("command_settings", {}),
-            temperature=res["conversation_settings"].get("temperature", 0.7),
         )
 
         # 更新缓存
