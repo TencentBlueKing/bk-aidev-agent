@@ -6,6 +6,7 @@ from src.agent.aidev_agent.api.bkaidev_client.client import Client
 from src.agent.aidev_agent.config import settings
 from src.agent.aidev_agent.core.extend.agent.qa import CommonQAAgent
 from src.agent.aidev_agent.core.extend.models.llm_gateway import ChatModel
+from src.agent.aidev_agent.enums import AgentBuildType, AgentType
 from src.agent.aidev_agent.services.chat import ChatCompletionAgent
 from src.agent.aidev_agent.services.config_manager import AgentConfigManager
 from src.agent.aidev_agent.services.pydantic_models import ChatPrompt
@@ -26,8 +27,8 @@ class AgentInstanceFactory:
     def __init__(
         self,
         agent_code: str,
-        agent_type: str,
-        build_type: str,
+        agent_type: str = AgentType.CHAT,
+        build_type: str = AgentBuildType.SESSION,
         session_code: Optional[str] = None,
         agent_cls: type = CommonQAAgent,
         callbacks: List[Any] = None,
@@ -57,8 +58,8 @@ class AgentInstanceFactory:
     def build_agent(
         cls,
         agent_code: str = settings.APP_CODE,
-        agent_type: str = "chat",
-        build_type: str = "session",
+        agent_type: str = AgentType.CHAT,
+        build_type: str = AgentBuildType.SESSION,
         session_code: Optional[str] = None,
         session_context_data: Optional[List[dict]] = None,
         agent_cls: type = CommonQAAgent,
@@ -92,9 +93,9 @@ class AgentInstanceFactory:
         factory._validate_params()
 
         # 构建基础参数
-        if build_type == "session":
+        if build_type == AgentBuildType.SESSION:
             base_args = factory._build_from_session()
-        elif build_type == "direct":
+        elif build_type == AgentBuildType.DIRECT:
             base_args = factory._build_direct(session_context_data or [])
         else:
             raise ValueError(f"Unsupported build_type: {build_type}")
@@ -329,5 +330,7 @@ class AgentInstanceFactory:
 
 
 # 注册默认的Agent类型
-AgentInstanceFactory.register_agent_type("chat", ChatCompletionAgent, AgentInstanceFactory.build_chat_agent_args)
+AgentInstanceFactory.register_agent_type(
+    agent_type=AgentType.CHAT, agent_class=ChatCompletionAgent, builder_func=AgentInstanceFactory.build_chat_agent_args
+)
 # AgentInstanceFactory.register_agent_type("task", TaskAgent, AgentInstanceFactory.build_task_agent_args)

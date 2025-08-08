@@ -83,3 +83,17 @@ class CredentialType(enum.Enum):
     NULL = "null"
     BLUEAPPS = "blueapps"
     CUSTOM = "custom"
+
+
+class AgentBuildType(enum.Enum):
+    """Agent构建类型"""
+
+    SESSION = "session"
+    DIRECT = "direct"
+
+
+class AgentType(enum.Enum):
+    """Agent类型"""
+
+    CHAT = "chat"
+    TASK = "task"
