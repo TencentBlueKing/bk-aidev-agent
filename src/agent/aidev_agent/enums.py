@@ -89,3 +89,17 @@ class ContextType(enum.Enum):
     PRIVATE = "private"
     QA_RESPONSE = "qa_response"
     BOTH = "both"
+
+
+class AgentBuildType(enum.Enum):
+    """Agent构建类型"""
+
+    SESSION = "session"
+    DIRECT = "direct"
+
+
+class AgentType(enum.Enum):
+    """Agent类型"""
+
+    CHAT = "chat"
+    TASK = "task"

@@ -1,6 +1,7 @@
 import logging
 from abc import ABC, abstractmethod
-from string import Formatter
+
+from src.agent.aidev_agent.utils.renderer import SafeJinjaEnvironment
 
 logger = logging.getLogger("agent_command")
 
@@ -47,6 +48,9 @@ class CommandHandler(ABC):
     agent_code = None  # 智能体代码
     command = None  # 指令名称
 
+    def __init__(self):
+        self.jinja_env = SafeJinjaEnvironment()
+
     @abstractmethod
     def get_template(self) -> str:
         """获取命令对应的提示词模板"""
@@ -58,22 +62,17 @@ class CommandHandler(ABC):
         variables = {}
         for item in context:
             if "__key" in item and "__value" in item:
-                variables[item["__key"]] = item["__value"]  # 去除__前缀
+                variables[item["__key"]] = item["__value"]
         return variables
 
     def process_content(self, context: list[dict]) -> str:
         """
-        处理内容（使用模板和变量）
+        处理内容（使用Jinja2模板和变量）
         """
         template = self.get_template()
         variables = self.extract_context_vars(context)
 
-        try:
-            # 安全格式化，缺失变量保持原样
-            return Formatter().vformat(template, (), variables)
-        except KeyError as e:
-            missing = str(e).strip("'")
-            raise ValueError(f"Missing required context variable: {missing}")
+        return self.jinja_env.render(template, variables)
 
 
 class TranslateCommandHandler(CommandHandler):
@@ -87,8 +86,8 @@ class TranslateCommandHandler(CommandHandler):
 
     def get_template(self) -> str:
         return """
-        请将以下内容翻译为{language}:
-        {content}
+        请将以下内容翻译为{{ language }}:
+        {{ content }}
         翻译要求: 确保翻译准确无误，无需冗余回答内容
         """
 
@@ -110,7 +109,7 @@ class ExplanationCommandHandler(CommandHandler):
 
     def get_template(self) -> str:
         return """
-        请解释以下内容{content}
+        请解释以下内容{{ content }}
         解释要求: 确保解释准确无误，无需冗余回答内容
         """
 
