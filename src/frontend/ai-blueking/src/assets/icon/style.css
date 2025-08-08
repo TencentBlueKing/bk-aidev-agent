@@ -26,6 +26,9 @@ url("fonts/iconcool.eot?#iefix") format("embedded-opentype");
 .bkai-warning-circle-fill:before {
 	content: "\e129";
 }
+.bkai-angle-down:before {
+	content: "\e13c";
+}
 .bkai-close-circle-shape:before {
 	content: "\e134";
 }

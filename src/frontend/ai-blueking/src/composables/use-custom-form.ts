@@ -1,18 +1,21 @@
+import type { IAgentCommandComponent } from '@blueking/ai-ui-sdk/types';
 import BkForm from 'bkui-vue/lib/form';
 import { ref, computed, type Ref, watch } from 'vue';
 
 import { t } from '../lang';
-import type { IShortcut, IShortcutComponent } from '../types';
+import type { IShortcut } from '../types';
 
 export const useCustomForm = (shortcut: Ref<IShortcut>) => {
   const formRef = ref<InstanceType<typeof BkForm>>();
 
   // 表单数据
   const formData = ref<Record<string, any>[]>(
-    shortcut.value.components.reduce(
+    (shortcut.value.components || []).reduce(
       (data, item) => {
+        // 为 IAgentCommandComponent 添加 selectedText 属性的兼容处理
+        const selectedItem = item as IAgentCommandComponent & { selectedText?: string };
         data.push({
-          [item.key]: item.selectedText || item.default || '',
+          [item.key]: selectedItem.selectedText || item.default || '',
           context_type: item.type,
           __label: item.name,
           __key: item.key,
@@ -38,7 +41,7 @@ export const useCustomForm = (shortcut: Ref<IShortcut>) => {
 
   // 表单验证规则
   const formRules = computed(() => {
-    return shortcut.value.components.reduce(
+    return (shortcut.value.components || []).reduce(
       (acc, item) => {
         if (item.required) {
           acc[item.key] = [
@@ -56,18 +59,24 @@ export const useCustomForm = (shortcut: Ref<IShortcut>) => {
   });
 
   // 根据 component 更新 formData
-  const updateFormData = (component: IShortcutComponent) => {
+  const updateFormData = (component: IAgentCommandComponent) => {
     const key = component.key;
     const index = formData.value.findIndex(item => item[key]);
     if (index !== -1) {
-      formData.value[index][key] = component.selectedText || component.default || '';
+      // 为 IAgentCommandComponent 添加 selectedText 属性的兼容处理
+      const selectedItem = component as IAgentCommandComponent & { selectedText?: string };
+      formData.value[index][key] = selectedItem.selectedText || component.default || '';
     }
   };
 
   watch(
     () => shortcut.value.components,
     val => {
-      const updatedComponent = val.find(item => item.selectedText);
+      // 为 IAgentCommandComponent 添加 selectedText 属性的兼容处理
+      const updatedComponent = (val || []).find(item => {
+        const selectedItem = item as IAgentCommandComponent & { selectedText?: string };
+        return selectedItem.selectedText;
+      });
       if (updatedComponent) {
         updateFormData(updatedComponent);
       }

@@ -25,8 +25,6 @@
  */
 import { SessionContentRole } from '@blueking/ai-ui-sdk/enums';
 
-export * from './shortcuts';
-
 export const HIDE_ROLE_LIST = [
   SessionContentRole.HiddenAi,
   SessionContentRole.HiddenUser,

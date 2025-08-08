@@ -15,13 +15,13 @@
     </div>
     <div class="right-section">
       <i
-        v-if="props.showNewChatIcon"
+        v-if="props.showNewChatIcon && props.enableChatSession !== false"
         v-bk-tooltips="{ content: t('新增会话'), boundary: 'parent' }"
         class="bkai-icon bkai-xinzengliaotian"
         @click="handleNewChat"
       ></i>
       <i
-        v-if="props.showHistoryIcon"
+        v-if="props.showHistoryIcon && props.enableChatSession !== false"
         ref="historyIconRef"
         v-bk-tooltips="{ content: t('历史会话'), boundary: 'parent' }"
         class="bkai-icon bkai-history"
@@ -62,6 +62,7 @@
       draggable: boolean;
       showHistoryIcon: boolean;
       showNewChatIcon?: boolean;
+      enableChatSession?: boolean;
     }>(),
     {
       title: '',
@@ -69,6 +70,7 @@
       draggable: true,
       showHistoryIcon: true,
       showNewChatIcon: true,
+      enableChatSession: true,
     }
   );
 
@@ -98,6 +100,11 @@
   });
 
   const displayTitle = computed(() => {
+    // 如果关闭会话管理 title 为智能体名本身
+    if (!props.enableChatSession) {
+      return sessionStore.agentInfo.value?.agentName;
+    }
+
     return (
       props.title ||
       `${sessionStore.agentInfo.value?.agentName || ''}-${sessionStore.currentSession.value?.sessionName}`

@@ -112,7 +112,6 @@
           :prompts="prompts"
           :url="url"
           teleport-to="body"
-          :shortcuts="shortcuts"
           @close="handleClose"
           @shortcut-click="handleShortcutClick"
           @show="handleShowAi"

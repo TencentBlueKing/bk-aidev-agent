@@ -34,6 +34,9 @@
             :draggable="props.draggable"
             :show-history-icon="props.showHistoryIcon"
             :show-new-chat-icon="props.showNewChatIcon"
+            :enable-chat-session="
+              sessionStore.agentInfo.value?.conversationSettings?.enableChatSession ?? true
+            "
             @close="handleClose"
             @toggle-compression="toggleCompression"
             @new-chat="handleNewChat"
@@ -103,11 +106,12 @@
                     v-model="inputMessage"
                     :loading="currentSessionLoading || false"
                     :prompts="promptList"
-                    :shortcuts="shortcuts || []"
+                    :shortcuts="props.shortcuts"
+                    :conversation-settings="sessionStore.agentInfo.value?.conversationSettings"
                     :disabled="props.disabledInput"
                     @height-change="handleInputHeightChange"
                     @send="handleSendMessage"
-                    @shortcut-click="handleShortcutClick"
+                    @shortcut-click="handleInputShortcutClick"
                     @stop="handleStop"
                   />
                 </div>
@@ -125,9 +129,11 @@
         @click="handleNimbusClick"
       />
       <render-popup
-        :shortcuts="shortcuts || []"
+        :shortcuts="props.shortcuts"
+        :conversation-settings="sessionStore.agentInfo.value?.conversationSettings"
+        :shortcut-limit="props.shortcutLimit"
         @click="isShow = true"
-        @shortcut-click="handleShortcutClick"
+        @shortcut-click="handlePopupShortcutClick"
       />
     </div>
   </teleport>
@@ -139,6 +145,7 @@
   // ===================================================================
   import { SessionContentRole } from '@blueking/ai-ui-sdk/enums';
   import { useChat, useStyle, useClickProxy } from '@blueking/ai-ui-sdk/hooks';
+  import { useCopyCode } from 'markdown-it-copy-code';
   import { motion } from 'motion-v';
   import {
     computed,
@@ -165,7 +172,6 @@
   import LoadingOverlay from './components/loading-overlay.vue';
   import MessageList from './components/message-list.vue';
   import RenderPopup from './components/render-popup.vue';
-  import Nimbus from './views/nimbus.vue';
 
   // Composable导入
   import { useGreetingHeight } from './composables/use-greeting-height';
@@ -178,10 +184,11 @@
   import { useShortcut } from './composables/use-shortcut';
 
   // 配置和工具导入
-  import { DEFAULT_SHORTCUTS, HIDE_ROLE_LIST } from './config';
+  import { HIDE_ROLE_LIST } from './config';
   import { t } from './lang';
   import type { IRequestOptions, IShortcut } from './types';
   import { escapeHtml, normalizeUrl } from './utils';
+  import Nimbus from './views/nimbus.vue';
 
   // 样式导入
   import 'vue-draggable-resizable/style.css';
@@ -192,6 +199,7 @@
     helloText?: string;
     enablePopup?: boolean;
     shortcuts?: IShortcut[];
+    shortcutLimit?: number;
     url?: string;
     prompts?: string[];
     hideNimbus?: boolean;
@@ -221,7 +229,8 @@
     title: '',
     helloText: t('你好，我是小鲸'),
     enablePopup: true,
-    shortcuts: () => DEFAULT_SHORTCUTS,
+    shortcuts: () => [],
+    shortcutLimit: 3,
     url: '',
     prompts: () => [],
     hideNimbus: false,
@@ -245,7 +254,10 @@
   });
 
   const emit = defineEmits<{
-    (e: 'shortcut-click', shortcut: IShortcut): void;
+    (
+      e: 'shortcut-click',
+      data: { shortcut: IShortcut; source: 'popup' | 'main' | 'ai-selected' }
+    ): void;
     (e: 'close' | 'show' | 'stop' | 'receive-start' | 'receive-text' | 'receive-end'): void;
     (e: 'send-message', message: string): void;
     (
@@ -556,6 +568,8 @@
         await _switchToSession(props.initialSessionCode);
       }
     }
+
+    useCopyCode();
   });
 
   onBeforeUnmount(() => {
@@ -565,6 +579,26 @@
   // ===================================================================
   // 12. 事件处理函数
   // ===================================================================
+  const handlePopupShortcutClick = (data: {
+    shortcut: IShortcut;
+    source: 'popup' | 'main' | 'ai-selected';
+  }) => {
+    // 来自 render-popup 的快捷方式点击事件
+    handleShortcutClick(data);
+  };
+
+  const handleInputShortcutClick = (data: {
+    shortcut: IShortcut;
+    source: 'popup' | 'main' | 'ai-selected';
+  }) => {
+    // 传递_source属性以便custom-input组件可以正确处理自动提交
+    const modifiedShortcut = {
+      ...data.shortcut,
+      _source: data.source,
+    };
+    handleShortcutClick({ shortcut: modifiedShortcut, source: data.source });
+  };
+
   const handleInputHeightChange = (height: number) => {
     inputHeight.value = height;
   };
@@ -689,7 +723,7 @@
     });
 
     emit('send-message', shortcut.name);
-    emit('shortcut-click', shortcut);
+    emit('shortcut-click', { shortcut, source: 'main' });
   };
 
   const handleDelete = (index: number) => {
@@ -879,6 +913,7 @@
     .greeting-box {
       position: absolute;
       top: 92px;
+      max-width: 1000px;
       left: 50%;
       z-index: 2;
       display: flex;

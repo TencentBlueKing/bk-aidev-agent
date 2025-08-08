@@ -13,9 +13,13 @@
     <div class="ai-selected-box-content">
       {{ props.selectedText }}
     </div>
-    <div class="ai-selected-box-actions">
+    <div
+      ref="actionsContainerRef"
+      class="ai-selected-box-actions"
+    >
+      <!-- 可见的操作项 -->
       <div
-        v-for="action in props.actions"
+        v-for="action in visibleActions"
         :key="action.id"
         class="ai-selected-box-action"
         @click="handleShortcutClick(action)"
@@ -26,16 +30,35 @@
         ></i>
         <span>{{ action.name }}</span>
       </div>
+
+      <!-- "更多"按钮 -->
+      <div
+        v-if="hiddenActions.length > 0"
+        ref="moreButtonRef"
+        class="ai-selected-box-action more-container"
+      >
+        <span>更多</span>
+        <i class="bkai-icon bkai-angle-down"></i>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+  import { ref, computed } from 'vue';
+
+  import { useOverflowHandler } from '../composables/use-overflow-handler';
   import { useSelect } from '../composables/use-select-pop';
   import { t } from '../lang';
   import type { IShortcut } from '../types';
 
-  const emit = defineEmits<(e: 'shortcut-click', shortcut: IShortcut) => void>();
+  const emit =
+    defineEmits<
+      (
+        e: 'shortcut-click',
+        data: { shortcut: IShortcut; source: 'popup' | 'main' | 'ai-selected' }
+      ) => void
+    >();
 
   const props = defineProps<{
     selectedText: string;
@@ -44,8 +67,32 @@
 
   const { clearSelection } = useSelect(true);
 
+  const actionsContainerRef = ref<HTMLElement | null>(null);
+  const moreButtonRef = ref<HTMLElement | null>(null);
+
+  // 创建一个 computed ref 来传递给 useOverflowHandler
+  const actionsRef = computed(() => props.actions);
+
+  const { visibleItems: visibleActions, hiddenItems: hiddenActions } = useOverflowHandler(
+    actionsContainerRef,
+    actionsRef,
+    moreButtonRef,
+    {
+      theme: 'ai-blueking-light light',
+      placement: 'top',
+      trigger: 'mouseenter',
+      interactive: true,
+      allowHTML: true,
+      arrow: true,
+      offset: [0, 4],
+      onItemClick: item => {
+        emit('shortcut-click', { shortcut: item, source: 'ai-selected' });
+      },
+    }
+  );
+
   const handleShortcutClick = (shortcut: IShortcut) => {
-    emit('shortcut-click', shortcut);
+    emit('shortcut-click', { shortcut, source: 'ai-selected' });
   };
 </script>
 
@@ -107,9 +154,14 @@
       display: flex;
       gap: 8px;
       align-items: center;
+      overflow: hidden;
+      flex-wrap: nowrap;
+      width: 100%;
+      min-width: 0;
 
       .ai-selected-box-action {
-        display: flex;
+        display: inline-flex;
+        flex-shrink: 0;
         align-items: center;
         justify-content: center;
         height: 26px;
@@ -120,10 +172,21 @@
         background: #ffffff;
         border: 1px solid #c4c6cc;
         border-radius: 13px;
+        white-space: nowrap;
+        max-width: 120px;
+        min-width: 0;
+
+        span {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          min-width: 0;
+        }
 
         .bkai-icon {
           font-size: 14px;
           color: #606060;
+          margin-right: 4px;
         }
 
         &:hover {
@@ -133,6 +196,21 @@
 
           .bkai-icon {
             color: #ffffff;
+          }
+        }
+      }
+
+      .more-container {
+        gap: 4px;
+
+        .bkai-angle-down {
+          transition: transform 0.2s ease-in-out;
+          color: #606060;
+        }
+
+        &:hover {
+          .bkai-angle-down {
+            transform: rotate(180deg);
           }
         }
       }
