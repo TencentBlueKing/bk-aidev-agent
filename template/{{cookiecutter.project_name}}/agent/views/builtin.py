@@ -161,9 +161,8 @@ class ChatCompletionViewSet(PluginViewSet):
                 chat_history = role_contents + chat_history
 
             agent_instance = AgentInstanceFactory(
-                agent_type="chat",
-                build_type="direct",  # 关键：使用direct模式
-                session_context_data=chat_history,  # 直接传入聊天历史
+                build_type="direct",
+                session_context_data=chat_history,  # 直接传入对话上下文
             ).agent
 
         if execute_kwargs.stream:
