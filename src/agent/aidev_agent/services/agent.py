@@ -25,22 +25,21 @@ class AgentInstanceFactory:
 
     def __init__(
         self,
-        agent_code: str = settings.APP_CODE,
-        agent_type: str = "chat",
-        build_type: str = "session",
+        agent_code: str,
+        agent_type: str,
+        build_type: str,
         session_code: Optional[str] = None,
-        session_context_data: Optional[List[dict]] = None,
         agent_cls: type = CommonQAAgent,
         callbacks: List[Any] = None,
         api_client: Client = None,
+        auth_headers: Dict[str, str] = None,
     ):
         """
-        初始化Agent实例
+        初始化Agent工厂实例
         :param agent_code: Agent代码
         :param agent_type: Agent类型 ("chat", "task", "workflow"等)
         :param build_type: 构建类型 ("session", "direct")
         :param session_code: 会话代码 (build_type="session"时必需)
-        :param session_context_data: 会话上下文数据 (build_type="direct"时使用)
         :param agent_cls: Agent类
         :param callbacks: 回调函数列表
         :param api_client: API客户端实例
@@ -52,23 +51,59 @@ class AgentInstanceFactory:
         self.session_code = session_code
         self.agent_cls = agent_cls
         self.callbacks = callbacks or []
+        self.auth_headers = auth_headers or None
+
+    @classmethod
+    def build_agent(
+        cls,
+        agent_code: str = settings.APP_CODE,
+        agent_type: str = "chat",
+        build_type: str = "session",
+        session_code: Optional[str] = None,
+        session_context_data: Optional[List[dict]] = None,
+        agent_cls: type = CommonQAAgent,
+        callbacks: List[Any] = None,
+        api_client: Client = None,
+    ):
+        """
+        构建Agent实例
+        :param agent_code: Agent代码
+        :param agent_type: Agent类型 ("chat", "task", "workflow"等)
+        :param build_type: 构建类型 ("session", "direct")
+        :param session_code: 会话代码 (build_type="session"时必需)
+        :param session_context_data: 会话上下文数据 (build_type="direct"时使用)
+        :param agent_cls: Agent类
+        :param callbacks: 回调函数列表
+        :param api_client: API客户端实例
+        :return: 构建好的Agent实例
+        """
+        # 创建工厂实例
+        factory = cls(
+            agent_code=agent_code,
+            agent_type=agent_type,
+            build_type=build_type,
+            session_code=session_code,
+            agent_cls=agent_cls,
+            callbacks=callbacks,
+            api_client=api_client,
+        )
 
         # 验证参数
-        self._validate_params()
+        factory._validate_params()
 
         # 构建基础参数
         if build_type == "session":
-            base_args = self._build_from_session()
+            base_args = factory._build_from_session()
         elif build_type == "direct":
-            base_args = self._build_direct(session_context_data or [])
+            base_args = factory._build_direct(session_context_data or [])
         else:
             raise ValueError(f"Unsupported build_type: {build_type}")
 
         # 根据agent_type构建特定参数
-        agent_args = self._build_agent_args(base_args)
+        agent_args = factory._build_agent_args(base_args)
 
         # 创建Agent实例
-        self.agent = self._create_agent_instance(agent_args)
+        return factory._create_agent_instance(agent_args)
 
     def _validate_params(self):
         """验证初始化参数"""
@@ -150,16 +185,17 @@ class AgentInstanceFactory:
         """构建聊天模型"""
         config = AgentConfigManager.get_config(agent_code=agent_code, api_client=self.api_client)
 
-        auth_headers = {
-            "bk_app_code": settings.APP_CODE,
-            "bk_app_secret": settings.SECRET_KEY,
+        # Prepare kwargs for ChatModel.get_setup_instance
+        kwargs = {
+            "model": config.llm_model_name,
+            "base_url": settings.LLM_GW_ENDPOINT,
         }
 
-        return ChatModel.get_setup_instance(
-            model=config.llm_model_name,
-            base_url=settings.LLM_GW_ENDPOINT,
-            auth_headers=auth_headers,
-        )
+        # Only add auth_headers if it has a value
+        if self.auth_headers:
+            kwargs["auth_headers"] = self.auth_headers
+
+        return ChatModel.get_setup_instance(**kwargs)
 
     def build_chat_history(self, session_context_data: List[dict]) -> List[ChatPrompt]:
         """构建聊天历史"""
@@ -193,13 +229,15 @@ class AgentInstanceFactory:
 
     def handle_agent_switch(self, session_context_data: List[dict], agent_code: str, switch_agent: bool):
         """处理智能体切换"""
-        if switch_agent:
-            logger.info(f"AgentInstanceFactory: switching agent to->[{agent_code}]")
-            # 找到最后一条role为system的记录并修改
-            for item in reversed(session_context_data):
-                if item["role"] == "system":
-                    item["content"] = self.get_role_prompt(agent_code)
-                    break
+        if not switch_agent:
+            return
+
+        logger.info(f"AgentInstanceFactory: switching agent to->[{agent_code}]")
+        # 找到最后一条role为system的记录并修改
+        for item in reversed(session_context_data):
+            if item["role"] == "system":
+                item["content"] = self.get_role_prompt(agent_code)
+                break
 
     def _check_agent_switch(self, session_context_data: List[dict], base_agent_config) -> tuple[bool, str]:
         """检查是否需要切换智能体"""
@@ -228,16 +266,26 @@ class AgentInstanceFactory:
 
     def _clean_last_assistant_message(self, session_context_data: List[dict], base_agent_config):
         """清理最后一条assistant消息（如果包含生成中关键词）"""
-        if session_context_data and session_context_data[-1]["role"] == "assistant":
-            logger.info(
-                f"AgentInstanceFactory: session->[{self.session_code}] last message is assistant, checking if should "
-                f"remove"
-            )
+        # 卫语句：如果没有消息数据，直接返回
+        if not session_context_data:
+            return
 
-            content = session_context_data[-1]["content"]
-            if base_agent_config.generating_keyword in content:  # 只要 content 里有"生成中"三个字即可
-                logger.info("AgentInstanceFactory: removing last assistant message with generating keyword")
-                session_context_data.pop()
+        # 卫语句：如果最后一条消息不是assistant，直接返回
+        if session_context_data[-1]["role"] != "assistant":
+            return
+
+        logger.info(
+            f"AgentInstanceFactory: session->[{self.session_code}] last message is assistant, checking if should remove"
+        )
+
+        content = session_context_data[-1]["content"]
+
+        # 卫语句：如果content中没有生成中关键词，直接返回
+        if base_agent_config.generating_keyword not in content:
+            return
+
+        logger.info("AgentInstanceFactory: removing last assistant message with generating keyword")
+        session_context_data.pop()
 
     @classmethod
     def register_agent_type(cls, agent_type: str, agent_class: Type, builder_func: Callable):

@@ -150,7 +150,7 @@ class ChatCompletionViewSet(PluginViewSet):
         execute_kwargs = ExecuteKwargs.model_validate(request.data.get("execute_kwargs", {}))
         session_code = request.data.get("session_code", "")
         if session_code:
-            agent_instance = AgentInstanceFactory(session_code=session_code).agent
+            agent_instance = AgentInstanceFactory.build_agent(session_code=session_code)
         else:
             chat_history = request.data.get("chat_prompts", []) or request.data.get("chat_history", [])
             if not chat_history:
@@ -160,10 +160,7 @@ class ChatCompletionViewSet(PluginViewSet):
             if role_contents:
                 chat_history = role_contents + chat_history
 
-            agent_instance = AgentInstanceFactory(
-                build_type="direct",
-                session_context_data=chat_history,  # 直接传入对话上下文
-            ).agent
+            agent_instance = AgentInstanceFactory.build_agent(build_type="direct", session_context_data=chat_history)
 
         if execute_kwargs.stream:
             generator = agent_instance.execute(execute_kwargs)
