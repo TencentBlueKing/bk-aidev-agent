@@ -108,10 +108,10 @@ class AgentInstanceFactory:
 
     def _validate_params(self):
         """验证初始化参数"""
-        if self.build_type == "session" and not self.session_code:
+        if self.build_type == AgentBuildType.SESSION and not self.session_code:
             raise ValueError("session_code is required when build_type is 'session'")
 
-        if self.build_type not in ["session", "direct"]:
+        if self.build_type not in [AgentBuildType.SESSION, AgentBuildType.DIRECT]:
             raise ValueError(f"Unsupported build_type: {self.build_type}")
 
         if self.agent_type not in self._agent_builders:
