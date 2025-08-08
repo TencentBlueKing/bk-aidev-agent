@@ -1,6 +1,8 @@
 import logging
 from abc import ABC, abstractmethod
-from string import Formatter
+
+from jinja2 import StrictUndefined
+from jinja2.sandbox import SandboxedEnvironment
 
 logger = logging.getLogger("agent_command")
 
@@ -39,6 +41,33 @@ logger = logging.getLogger("agent_command")
 """
 
 
+class SafeJinjaEnvironment:
+    _instance = None
+    _env = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            # 创建安全的沙盒环境
+            cls._env = SandboxedEnvironment(
+                undefined=StrictUndefined,  # 严格模式，未定义变量时抛出异常
+                autoescape=True,  # 自动转义，防止注入
+                trim_blocks=True,
+                lstrip_blocks=True,
+            )
+            # 禁用危险的全局函数
+            cls._env.globals.clear()
+        return cls._instance
+
+    def render(self, template_str: str, variables: dict) -> str:
+        """安全渲染模板"""
+        try:
+            template = self._env.from_string(template_str)
+            return template.render(**variables).strip()
+        except Exception as e:
+            raise ValueError(f"Template rendering failed: {str(e)}")
+
+
 class CommandHandler(ABC):
     """
     快捷指令处理器基类
@@ -46,6 +75,9 @@ class CommandHandler(ABC):
 
     agent_code = None  # 智能体代码
     command = None  # 指令名称
+
+    def __init__(self):
+        self.jinja_env = SafeJinjaEnvironment()
 
     @abstractmethod
     def get_template(self) -> str:
@@ -58,22 +90,17 @@ class CommandHandler(ABC):
         variables = {}
         for item in context:
             if "__key" in item and "__value" in item:
-                variables[item["__key"]] = item["__value"]  # 去除__前缀
+                variables[item["__key"]] = item["__value"]
         return variables
 
     def process_content(self, context: list[dict]) -> str:
         """
-        处理内容（使用模板和变量）
+        处理内容（使用Jinja2模板和变量）
         """
         template = self.get_template()
         variables = self.extract_context_vars(context)
 
-        try:
-            # 安全格式化，缺失变量保持原样
-            return Formatter().vformat(template, (), variables)
-        except KeyError as e:
-            missing = str(e).strip("'")
-            raise ValueError(f"Missing required context variable: {missing}")
+        return self.jinja_env.render(template, variables)
 
 
 class TranslateCommandHandler(CommandHandler):
@@ -87,8 +114,8 @@ class TranslateCommandHandler(CommandHandler):
 
     def get_template(self) -> str:
         return """
-        请将以下内容翻译为{language}:
-        {content}
+        请将以下内容翻译为{{ language }}:
+        {{ content }}
         翻译要求: 确保翻译准确无误，无需冗余回答内容
         """
 
@@ -110,7 +137,7 @@ class ExplanationCommandHandler(CommandHandler):
 
     def get_template(self) -> str:
         return """
-        请解释以下内容{content}
+        请解释以下内容{{ content }}
         解释要求: 确保解释准确无误，无需冗余回答内容
         """
 
