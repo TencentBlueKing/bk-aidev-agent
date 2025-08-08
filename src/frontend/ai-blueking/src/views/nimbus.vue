@@ -42,7 +42,6 @@
 
 <script setup lang="ts">
   import { ref, onMounted, watch, computed, nextTick, onBeforeUnmount } from 'vue';
-
   import VueDraggableResizable from 'vue-draggable-resizable';
 
   import avatar from '../assets/images/avatar.png';

@@ -3,7 +3,9 @@
     <ai-selected-box
       v-if="selectedText.length > 0"
       style="margin-bottom: 10px"
-      :actions="props.shortcuts"
+      :actions="
+        props.shortcuts.length > 0 ? props.shortcuts : props.conversationSettings?.commands || []
+      "
       :selected-text="selectedText"
       @mousedown.prevent
       @shortcut-click="handleShortcutClick"
@@ -11,7 +13,9 @@
     <shortcuts-bar
       v-else
       style="margin-bottom: 8px"
-      :shortcuts="shortcuts"
+      :shortcuts="
+        props.shortcuts.length > 0 ? props.shortcuts : props.conversationSettings?.commands || []
+      "
       @shortcut-click="handleShortcutClickWithClear"
     />
     <div
@@ -87,22 +91,29 @@
     (e: 'send' | 'update:modelValue', value: string): void;
     (e: 'stop'): void;
     (e: 'height-change', height: number): void;
-    (e: 'shortcut-click', shortcut: IShortcut): void;
+    (
+      e: 'shortcut-click',
+      shortcut: { shortcut: IShortcut; source: 'popup' | 'main' | 'ai-selected' }
+    ): void;
   }>();
 
   const { enablePopup } = usePopup();
   const { selectedText, citeText, setCiteText, clearSelection, lockSelectedText } =
     useSelect(enablePopup);
 
+  import type { IAgentInfo } from '@blueking/ai-ui-sdk/types';
+
   const props = withDefaults(
     defineProps<{
-      shortcuts: IShortcut[];
+      shortcuts?: IShortcut[];
+      conversationSettings?: IAgentInfo['conversationSettings'];
       loading: boolean;
       prompts: string[];
       disabled: boolean;
       placeholder?: string;
     }>(),
     {
+      shortcuts: () => [],
       placeholder: () => t('输入 "/" 唤出 Prompt\n通过 Shift + Enter 进行换行输入'),
     }
   );
@@ -185,13 +196,19 @@
     defaultHeight: 68,
   });
 
-  const handleShortcutClickWithClear = (shortcut: IShortcut) => {
-    handleShortcutClick(shortcut);
+  const handleShortcutClickWithClear = (data: {
+    shortcut: IShortcut;
+    source: 'popup' | 'main' | 'ai-selected';
+  }) => {
+    handleShortcutClick(data);
     inputValue.value = '';
   };
 
-  const handleShortcutClick = (shortcut: IShortcut) => {
-    emit('shortcut-click', shortcut);
+  const handleShortcutClick = (data: {
+    shortcut: IShortcut;
+    source: 'popup' | 'main' | 'ai-selected';
+  }) => {
+    emit('shortcut-click', data);
     clearSelection();
   };
 

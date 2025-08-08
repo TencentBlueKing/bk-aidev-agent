@@ -15,7 +15,7 @@
       :rules="formRules"
     >
       <bk-form-item
-        v-for="(item, index) in props.shortcut.components"
+        v-for="(item, index) in props.shortcut.components || []"
         :key="item.key"
         error-display-type="tooltips"
         :label="item.name"
@@ -23,14 +23,18 @@
         :required="item.required"
         :class="{
           'full-width':
-            item.type === 'textarea' || isLastInOddGroup(props.shortcut.components, index),
+            item.type === 'textarea' || isLastInOddGroup(props.shortcut.components || [], index),
         }"
       >
         <component
           :is="getComponent(item.type)"
           :id="item.key"
           v-model="formData[index][item.key]"
-          v-bind="item"
+          v-bind="{
+            ...item,
+            placeholder: item.placeholder === null ? undefined : item.placeholder,
+            options: item.options || [],
+          }"
           :popover-options="{
             boundary: props.rootNode || 'parent',
           }"
@@ -50,6 +54,7 @@
 </template>
 
 <script setup lang="ts">
+  import type { IAgentCommandComponent } from '@blueking/ai-ui-sdk/types';
   import { Button as BkButton } from 'bkui-vue';
   import BkForm from 'bkui-vue/lib/form';
   import { BkFormItem } from 'bkui-vue/lib/form';
@@ -57,7 +62,7 @@
 
   import { useCustomForm } from '../../composables/use-custom-form';
   import { t } from '../../lang';
-  import type { IShortcut, IShortcutComponent } from '../../types';
+  import type { IShortcut } from '../../types';
 
   import FormInput from './form-input.vue';
   import FormSelect from './form-select.vue';
@@ -77,14 +82,17 @@
     select: FormSelect,
   };
 
-  const getComponent = (type: IShortcutComponent['type']) => componentMap[type];
+  const getComponent = (type: string) => componentMap[type as keyof typeof componentMap];
 
   const shortCutRef = toRef(props, 'shortcut');
 
   const { formRef, formData, modelFormData, formRules } = useCustomForm(shortCutRef);
 
   // Layout 辅助函数：判断是否为奇数组的最后一个
-  const isLastInOddGroup = (components: IShortcutComponent[], currentIndex: number) => {
+  const isLastInOddGroup = (components: IAgentCommandComponent[], currentIndex: number) => {
+    // 处理空数组或无效索引的情况
+    if (!components || currentIndex < 0 || currentIndex >= components.length) return false;
+
     // 跳过 textarea 类型
     if (components[currentIndex].type === 'textarea') return false;
 
@@ -121,10 +129,13 @@
   };
 
   onMounted(() => {
-    // 如果表单只有一项，且已经被填入值，则直接触发提交表单
-    if (formData.value.length === 1 && formData.value[0][formData.value[0].__key]) {
+    // 只有来自 popup 的快捷方式才能自动提交
+    const actualShortcut = props.shortcut;
+    if ((actualShortcut as any).autoSubmit) {
       handleSubmit();
     }
+    // 注意：来自 main 的快捷方式（chat-input-box）永远不允许自动提交
+    // 即使表单只有一项且有默认值，也禁止自动提交
   });
 </script>
 

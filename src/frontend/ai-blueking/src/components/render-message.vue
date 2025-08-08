@@ -193,9 +193,22 @@
   const renderValue = computed(() => {
     if (!props.message.content) return '';
     const rendered = md.render(props.message.content);
+
+    console.log(rendered, '===rendered===');
     // 使用 DOMPurify 净化内容以防止 XSS
     const sanitized = DOMPurify.sanitize(rendered, {
-      USE_PROFILES: { html: true },
+      USE_PROFILES: { html: true, svg: true },
+      ADD_TAGS: ['svg', 'g', 'path'],
+      ADD_ATTR: [
+        'xmlns',
+        'width',
+        'height',
+        'viewBox',
+        'fill',
+        'stroke-linecap',
+        'stroke-linejoin',
+        'stroke-width',
+      ],
       FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input'],
       FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover'],
     });

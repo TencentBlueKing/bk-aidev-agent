@@ -23,9 +23,9 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+import type { ISessionContent, ShortCut, IAgentCommand } from '@blueking/ai-ui-sdk/types';
 import type { Ref } from 'vue';
 
-import type { ISessionContent, ShortCut } from '@blueking/ai-ui-sdk/types';
 export interface AIBluekingExpose {
   sessionContents: Ref<ISessionContent[]>;
   sendChat: ({
@@ -45,12 +45,8 @@ export interface AIBluekingExpose {
   currentSessionLoading: () => boolean;
 }
 
-export type IShortcut = {
-  name: string;
-  icon?: string;
-  id: string;
-  components: IShortcutComponent[];
-};
+// 使用 ai-ui-sdk 中的 IAgentCommand 类型作为 IShortcut 的别名
+export type IShortcut = IAgentCommand;
 
 export type IShortcutComponentType = 'text' | 'textarea' | 'number' | 'select';
 
@@ -62,13 +58,18 @@ export type IShortcutComponent = {
   placeholder?: string;
   required?: boolean;
   fillBack?: boolean;
-  fillRegx?: RegExp;
+  fillRegx?: string; // 改为字符串类型，避免 JSON 序列化问题
   min?: number;
   max?: number;
   rows?: number;
   selectedText?: string | null;
   options?: { label: string; value: string }[];
 };
+
+// 扩展 IAgentCommandComponent 类型，添加 selectedText 属性
+export interface IAgentCommandComponentWithSelectedText extends IShortcutComponent {
+  selectedText?: string | null;
+}
 
 export type { ShortCut, ISessionContent };
 

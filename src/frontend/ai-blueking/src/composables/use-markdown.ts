@@ -1,7 +1,7 @@
 import DOMPurify from 'dompurify';
 import hljs from 'highlight.js';
 import MarkdownIt from 'markdown-it';
-import MarkdownItCodeCopy from 'markdown-it-code-copy';
+import MarkdownItCodeCopy from 'markdown-it-copy-code';
 import { computed, type Ref } from 'vue';
 
 import MarkdownItLinkBlank from '../plugins/markdown-it-link-blank';
@@ -25,10 +25,7 @@ export function useMarkdown() {
       return '';
     },
   })
-    .use(MarkdownItCodeCopy, {
-      iconClass: 'bkai-icon bkai-fuzhi',
-      buttonClass: 'ai-blueking-copy-button',
-    })
+    .use(MarkdownItCodeCopy)
     .use(MarkdownItLinkBlank)
     .use(mermaidPlugin);
 

@@ -1,6 +1,5 @@
-import { ref } from 'vue';
-
 import type { ISession, ISessionContent, IAgentInfo } from '@blueking/ai-ui-sdk/types';
+import { ref } from 'vue';
 
 import { HIDE_ROLE_LIST } from '../config';
 import { uuid as generateUuid } from '../utils';

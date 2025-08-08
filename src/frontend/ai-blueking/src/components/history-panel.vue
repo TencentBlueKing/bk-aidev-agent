@@ -92,10 +92,10 @@
     PopConfirm as BkPopConfirm,
     OverflowTitle as BkOverflowTitle,
   } from 'bkui-vue';
+  import { Search } from 'bkui-vue/lib/icon';
   import { ref, computed, nextTick } from 'vue';
 
   import { t } from '../lang';
-  import { Search } from 'bkui-vue/lib/icon';
   import type { SessionStore } from '../store/sessionStore';
   import type { ISessionEditItem, HistoryItem } from '../store/types';
 

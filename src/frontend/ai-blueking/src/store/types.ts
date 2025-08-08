@@ -32,16 +32,7 @@ export interface SdkApi {
   handleCompleteRole: (sessionCode: string, prompts: ISessionPrompt[]) => Promise<any>;
 }
 
-/**
- * 代理信息类型
- */
-export interface IAgentInfo {
-  conversationSettings?: {
-    openingRemark?: string;
-    predefinedQuestions?: string[];
-  };
-  promptSetting?: {
-    content?: ISessionPrompt[];
-  };
-  agentName?: string;
-}
+import type { IAgentInfo as AIUIAgentInfo } from '@blueking/ai-ui-sdk/types';
+
+// 使用 ai-ui-sdk 中的 IAgentInfo 类型
+export type IAgentInfo = AIUIAgentInfo;

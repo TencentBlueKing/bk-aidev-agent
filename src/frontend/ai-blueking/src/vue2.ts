@@ -26,7 +26,6 @@
  */
 import { createApp, h } from 'vue';
 
-import { DEFAULT_SHORTCUTS } from './config/shortcuts';
 import type { ShortCut } from './types/index.ts';
 import AiBlueking from './vue3.ts';
 
@@ -41,7 +40,7 @@ export default {
   },
   props: {
     shortcuts: {
-      default: () => DEFAULT_SHORTCUTS,
+      default: () => [],
       type: Array,
     },
     enablePopup: {
@@ -110,6 +109,10 @@ export default {
       type: Boolean,
       default: false,
     },
+    shortcutLimit: {
+      type: Number,
+      default: 3,
+    },
   },
   data() {
     return {
@@ -128,6 +131,7 @@ export default {
         instance = this;
         aiBlueking = h(AiBlueking, {
           shortcuts: that.shortcuts,
+          shortcutLimit: that.shortcutLimit,
           enablePopup: that.enablePopup,
           url: that.url,
           title: that.title,

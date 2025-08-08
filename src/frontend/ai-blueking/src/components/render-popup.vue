@@ -23,7 +23,7 @@
       <!-- 快捷按钮组 -->
       <div class="shortcut-buttons">
         <div
-          v-for="(btn, index) in shortcutButtons"
+          v-for="(btn, index) in visibleShortcuts"
           :key="index"
           class="shortcut-btn"
           @click="handleShortcutClick(btn)"
@@ -34,30 +34,80 @@
           ></i>
           <span class="btn-text ai-blueking-tag-text">{{ btn.name }}</span>
         </div>
+        <!-- 更多按钮 -->
+        <div
+          v-if="hiddenShortcuts.length > 0"
+          class="shortcut-btn more-btn"
+          @mouseenter="handleMoreEnter"
+          @mouseleave="handleMoreLeave"
+        >
+          <span class="btn-text">更多</span>
+          <i class="bkai-icon bkai-angle-down"></i>
+          <!-- 更多菜单 -->
+          <div
+            v-if="showMoreMenu"
+            class="more-menu"
+            @mouseenter="handleMenuEnter"
+            @mouseleave="handleMenuLeave"
+          >
+            <div
+              v-for="(btn, index) in hiddenShortcuts"
+              :key="index"
+              class="more-menu-item"
+              @click="handleShortcutClick(btn)"
+            >
+              <i
+                v-if="btn.icon"
+                :class="btn.icon"
+              ></i>
+              <span>{{ btn.name }}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script lang="ts" setup>
+  import type { IAgentInfo } from '@blueking/ai-ui-sdk/types';
+  import { computed, ref } from 'vue';
+
   import avatar from '../assets/images/avatar.png';
   import { usePopup } from '../composables/use-popup-props';
   import { useSelect } from '../composables/use-select-pop';
-  import { DEFAULT_SHORTCUTS } from '../config';
   import { t } from '../lang';
   import { type IShortcut } from '../types';
 
   interface IProps {
-    shortcuts: IShortcut[];
+    shortcuts?: IShortcut[];
+    conversationSettings?: IAgentInfo['conversationSettings'];
+    shortcutLimit?: number;
   }
 
-  const props = defineProps<IProps>();
+  const props = withDefaults(defineProps<IProps>(), {
+    shortcuts: () => [],
+    shortcutLimit: 3,
+  });
 
   const { enablePopup } = usePopup();
   const { isIconVisible, iconPosition, popupRef, clearSelection } = useSelect(enablePopup);
 
   // 定义快捷按钮数据
-  const shortcutButtons = props.shortcuts || DEFAULT_SHORTCUTS;
+  const allShortcuts = computed(() =>
+    props.shortcuts.length > 0 ? props.shortcuts : props.conversationSettings?.commands || []
+  );
+
+  // 可见的快捷按钮
+  const visibleShortcuts = computed(() => allShortcuts.value.slice(0, props.shortcutLimit));
+
+  // 隐藏的快捷按钮
+  const hiddenShortcuts = computed(() => allShortcuts.value.slice(props.shortcutLimit));
+
+  // 控制更多菜单的显示
+  const showMoreMenu = ref(false);
+  let menuLeaveTimer: number | null = null;
+  let moreLeaveTimer: number | null = null;
 
   const emit = defineEmits(['click', 'shortcut-click']);
 
@@ -66,9 +116,53 @@
     isIconVisible.value = false;
   };
 
+  // 处理更多按钮的鼠标进入事件
+  const handleMoreEnter = () => {
+    if (moreLeaveTimer) {
+      clearTimeout(moreLeaveTimer);
+      moreLeaveTimer = null;
+    }
+    showMoreMenu.value = true;
+  };
+
+  // 处理更多按钮的鼠标离开事件
+  const handleMoreLeave = () => {
+    if (moreLeaveTimer) {
+      window.clearTimeout(moreLeaveTimer);
+      moreLeaveTimer = null;
+    }
+    moreLeaveTimer = window.setTimeout(() => {
+      if (!menuLeaveTimer) {
+        showMoreMenu.value = false;
+      }
+    }, 100);
+  };
+
+  // 处理菜单的鼠标进入事件
+  const handleMenuEnter = () => {
+    if (menuLeaveTimer) {
+      clearTimeout(menuLeaveTimer);
+      menuLeaveTimer = null;
+    }
+  };
+
+  // 处理菜单的鼠标离开事件
+  const handleMenuLeave = () => {
+    if (menuLeaveTimer) {
+      window.clearTimeout(menuLeaveTimer);
+      menuLeaveTimer = null;
+    }
+    menuLeaveTimer = window.setTimeout(() => {
+      showMoreMenu.value = false;
+    }, 100);
+  };
+
   const handleShortcutClick = (shortcut: IShortcut) => {
     try {
-      emit('shortcut-click', shortcut);
+      emit('shortcut-click', {
+        shortcut,
+        source: 'popup',
+      });
       clearSelection();
       isIconVisible.value = false;
     } catch (error) {
@@ -153,6 +247,7 @@
     background: #fff;
     border-radius: 4px;
     transition: all 0.2s ease;
+    position: relative;
 
     .bkai-icon {
       color: #979ba5;
@@ -172,6 +267,58 @@
 
     &:hover {
       background: #f0f1f5;
+    }
+  }
+
+  .more-btn {
+    position: relative;
+
+    .bkai-angle-down {
+      transition: transform 0.2s ease-in-out;
+      color: #979ba5;
+    }
+
+    &:hover {
+      .bkai-angle-down {
+        transform: rotate(180deg);
+      }
+    }
+  }
+
+  .more-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 10002;
+    min-width: 120px;
+    padding: 4px;
+    margin-top: 4px;
+    background: #fff;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    overflow: hidden;
+  }
+
+  .more-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: #313238;
+    cursor: pointer;
+    white-space: nowrap;
+    border-radius: 2px;
+    transition: all 0.2s ease;
+
+    &:hover {
+      color: #3a84ff;
+      background: #e1ecff;
+    }
+
+    i {
+      font-size: 12px;
+      color: #979ba5;
     }
   }
 </style>

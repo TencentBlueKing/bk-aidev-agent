@@ -248,6 +248,18 @@
       }
     }
   }
+  .markdown-copy-code-button {
+    .markdown-copy-code-copy,
+    .markdown-copy-code-done {
+      color: #fff;
+      &:hover {
+        color: #4d4f56;
+      }
+      svg {
+        stroke: #fff;
+      }
+    }
+  }
 }
 
 /* 针对 greeting text 的特殊样式调整 */

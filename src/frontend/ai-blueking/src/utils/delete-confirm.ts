@@ -23,9 +23,8 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { h, render } from 'vue';
-
 import tippy, { type Instance as TippyInstance, type Props as TippyProps } from 'tippy.js';
+import { h, render } from 'vue';
 
 import DeleteConfirmVue from '../components/delete-confirm.vue';
 
