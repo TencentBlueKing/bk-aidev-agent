@@ -3,7 +3,7 @@
     <div class="history-panel-header">
       <h1 class="history-panel-header-title">{{ t('历史会话') }}</h1>
       <bk-input
-        v-model="search"
+        v-model="searchKey"
         behavior="simplicity"
         :placeholder="t('搜索')"
         style="height: 22px"
@@ -95,6 +95,7 @@
   import { ref, computed, nextTick } from 'vue';
 
   import { t } from '../lang';
+  import { Search } from 'bkui-vue/lib/icon';
   import type { SessionStore } from '../store/sessionStore';
   import type { ISessionEditItem, HistoryItem } from '../store/types';
 
@@ -106,7 +107,7 @@
     (e: 'close'): void;
   }>();
 
-  const search = ref('');
+  const searchKey = ref('');
 
   const sessionStore = props.sessionStore;
 
@@ -120,7 +121,7 @@
     };
 
     const filteredSessions = sessionStore.sessionList.value.filter(item =>
-      item.sessionName.toLowerCase().includes(search.value.toLowerCase())
+      item.sessionName.toLowerCase().includes(searchKey.value.toLowerCase())
     );
 
     for (const session of filteredSessions) {
