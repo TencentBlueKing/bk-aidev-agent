@@ -3,7 +3,8 @@ import json
 from logging import getLogger
 
 from aidev_agent.api.bk_aidev import BKAidevApi
-from aidev_agent.services.chat import ChatCompletionAgent, ChatPrompt, ExecuteKwargs
+from aidev_agent.services.agent import AgentInstanceFactory
+from aidev_agent.services.chat import ChatPrompt, ExecuteKwargs
 from aidev_agent.services.command_handler import CommandProcessor
 from bk_plugin_framework.kit.api import custom_authentication_classes
 from bk_plugin_framework.kit.decorators import inject_user_token, login_exempt
@@ -19,7 +20,6 @@ from rest_framework.views import APIView, Response
 from rest_framework.viewsets import ViewSetMixin
 
 from agent.services.agent import (
-    build_chat_completion_agent,
     get_agent_config_info,
     get_agent_role_info,
 )
@@ -150,7 +150,7 @@ class ChatCompletionViewSet(PluginViewSet):
         execute_kwargs = ExecuteKwargs.model_validate(request.data.get("execute_kwargs", {}))
         session_code = request.data.get("session_code", "")
         if session_code:
-            agent_instance = self._build_agent_by_session_code(session_code)
+            agent_instance = AgentInstanceFactory.build_agent(session_code=session_code)
         else:
             chat_history = request.data.get("chat_prompts", []) or request.data.get("chat_history", [])
             if not chat_history:
@@ -160,7 +160,7 @@ class ChatCompletionViewSet(PluginViewSet):
             if role_contents:
                 chat_history = role_contents + chat_history
 
-            agent_instance = build_chat_completion_agent(chat_history)
+            agent_instance = AgentInstanceFactory.build_agent(build_type="direct", session_context_data=chat_history)
 
         if execute_kwargs.stream:
             generator = agent_instance.execute(execute_kwargs)
@@ -175,13 +175,6 @@ class ChatCompletionViewSet(PluginViewSet):
         sr.headers["X-Accel-Buffering"] = "no"
         sr.headers["content-type"] = "text/event-stream"
         return sr
-
-    def _build_agent_by_session_code(self, session_code: str) -> ChatCompletionAgent:
-        client = BKAidevApi.get_client()
-        result = client.api.get_chat_session_context(path_params={"session_code": session_code})
-        chat_history = [ChatPrompt.model_validate(each) for each in result.get("data", [])]
-        agent = build_chat_completion_agent(chat_history)
-        return agent
 
 
 class AgentInfoViewSet(PluginViewSet):
