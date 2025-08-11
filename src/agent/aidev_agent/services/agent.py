@@ -1,15 +1,15 @@
 import logging
 from typing import Any, Callable, Dict, List, Optional, Type
 
-from src.agent.aidev_agent.api import BKAidevApi
-from src.agent.aidev_agent.api.bkaidev_client.client import Client
-from src.agent.aidev_agent.config import settings
-from src.agent.aidev_agent.core.extend.agent.qa import CommonQAAgent
-from src.agent.aidev_agent.core.extend.models.llm_gateway import ChatModel
-from src.agent.aidev_agent.enums import AgentBuildType, AgentType
-from src.agent.aidev_agent.services.chat import ChatCompletionAgent
-from src.agent.aidev_agent.services.config_manager import AgentConfigManager
-from src.agent.aidev_agent.services.pydantic_models import ChatPrompt
+from aidev_agent.api import BKAidevApi
+from aidev_agent.api.bkaidev_client.client import Client
+from aidev_agent.config import settings
+from aidev_agent.core.extend.agent.qa import CommonQAAgent
+from aidev_agent.core.extend.models.llm_gateway import ChatModel
+from aidev_agent.enums import AgentBuildType, AgentType
+from aidev_agent.services.chat import ChatCompletionAgent
+from aidev_agent.services.config_manager import AgentConfigManager
+from aidev_agent.services.pydantic_models import ChatPrompt
 
 logger = logging.getLogger("aidev-agent")
 

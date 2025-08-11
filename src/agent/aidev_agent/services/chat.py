@@ -128,7 +128,15 @@ class ChatCompletionAgent(BaseModel):
         return getattr(self.chat_model, "model_name", "")
 
     def is_run_by_agent(self) -> bool:
-        return any([self.tools, self.files, self.knowledge_bases, self.knowledges])
+        return any(
+            [
+                self.tools,
+                self.files,
+                self.knowledge_bases,
+                self.knowledges,
+                self.agent_options.intent_recognition_options.intent_recognition_knowledge,
+            ]
+        )
 
     def execute(self, execute_kwargs: ExecuteKwargs) -> dict | Generator[str, None, None]:
         # 执行agent操作

@@ -1,7 +1,7 @@
 import logging
 from abc import ABC, abstractmethod
 
-from src.agent.aidev_agent.utils.renderer import SafeJinjaEnvironment
+from aidev_agent.utils.renderer import SafeJinjaEnvironment
 
 logger = logging.getLogger("agent_command")
 

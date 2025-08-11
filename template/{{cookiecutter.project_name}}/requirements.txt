@@ -1,6 +1,6 @@
 # base
 # DO NOT DELETE ANY PACKAGE IN base SECTION !!!
-bk-plugin-framework==2.2.12
+bk-plugin-framework==2.2.11
 gunicorn==23.0.0
 # 固定otel版本，减少解析时间
 opentelemetry-api==1.25.0
@@ -25,4 +25,4 @@ opentelemetry-sdk==1.25.0
 opentelemetry-semantic-conventions==0.46b0
 opentelemetry-util-http==0.46b0
 # add your custom requirements below this line
-aidev_agent==1.0.0b22
+aidev_agent==1.0.0b23
