@@ -674,8 +674,7 @@
     if (isFirstUserMessage && currentSession.value?.sessionCode) {
       try {
         const updatedSession = await renameSessionApi(currentSession.value.sessionCode);
-        debugger;
-        if (updatedSession?.sessionName) {
+        if (updatedSession?.sessionName && updatedSession.sessionName !== '无话可说') {
           // 更新会话存储中的会话名称
           await sessionStore.updateSession(currentSession.value.sessionCode, {
             sessionName: updatedSession.sessionName,
@@ -911,23 +910,6 @@
       margin-bottom: 16px;
     }
 
-    .message-wrapper {
-      position: relative;
-      display: flex;
-      flex: 1;
-      flex-direction: column;
-      gap: 32px;
-      min-height: 0;
-      padding: 0 16px;
-      margin-right: -16px;
-      margin-bottom: v-bind('contentMarginBottom + "px"');
-      margin-left: -16px;
-      overflow-y: auto;
-      transition: opacity 0.5s ease;
-
-      @include mixins.custom-scrollbar;
-    }
-
     .message-line-wrapper {
       width: 100%;
       max-width: 1000px;
@@ -936,48 +918,6 @@
 
     &.chat-layout {
       gap: 0;
-    }
-
-    .greeting-box {
-      position: absolute;
-      top: 92px;
-      max-width: 1000px;
-      left: 50%;
-      z-index: 2;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      align-items: center;
-      width: 100%;
-      transform: translateX(-50%);
-
-      .greeting-anmition-wrapper {
-        overflow: hidden;
-        width: 100%;
-        padding: 0 16px;
-      }
-
-      .greeting-title {
-        margin-bottom: 22px;
-        font-size: 21px;
-        font-weight: 700;
-        line-height: 24px;
-        color: #313238;
-      }
-
-      .greeting-text {
-        width: 100%;
-        max-width: 600px;
-        max-height: v-bind('greetingMaxHeight + "px"');
-        font-size: 14px;
-        line-height: 22px;
-        color: #4d4f56;
-        transform-origin: center top;
-        overflow-y: auto; // 添加垂直滚动
-        padding: 8px 0;
-
-        // greeting-markdown 样式现在从公共样式文件导入
-      }
     }
 
     .chat-input-wrapper {

@@ -116,7 +116,6 @@
 
     .greeting-text {
       width: 100%;
-      max-width: 600px;
       max-height: v-bind('greetingMaxHeight + "px"');
       font-size: 14px;
       line-height: 22px;

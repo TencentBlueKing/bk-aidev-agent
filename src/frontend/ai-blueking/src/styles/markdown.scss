@@ -264,6 +264,10 @@
 
 /* 针对 greeting text 的特殊样式调整 */
 .greeting-markdown {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
   @extend .markdown-content;
 
   // 针对问候语的特殊调整
