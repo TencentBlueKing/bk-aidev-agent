@@ -1,8 +1,8 @@
 import logging
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Type, cast
 
 from aidev_agent.api import BKAidevApi
-from aidev_agent.api.bkaidev_client.client import Client
+from aidev_agent.api.abstract_client import AbstractBKAidevResourceManager
 from aidev_agent.config import settings
 from aidev_agent.core.extend.agent.qa import CommonQAAgent
 from aidev_agent.core.extend.models.llm_gateway import ChatModel
@@ -20,20 +20,20 @@ class AgentInstanceFactory:
     """
 
     # Agent类型映射表
-    _agent_classes: Dict[str, Type] = {}
+    _agent_classes: Dict[AgentType, Type] = {}
     # Agent构建器注册表
-    _agent_builders: Dict[str, Callable] = {}
+    _agent_builders: Dict[AgentType, Callable] = {}
 
     def __init__(
         self,
         agent_code: str,
-        agent_type: str = AgentType.CHAT,
-        build_type: str = AgentBuildType.SESSION,
+        agent_type: AgentType = AgentType.CHAT,
+        build_type: AgentBuildType = AgentBuildType.SESSION,
         session_code: Optional[str] = None,
         agent_cls: type = CommonQAAgent,
-        callbacks: List[Any] = None,
-        api_client: Client = None,
-        auth_headers: Dict[str, str] = None,
+        callbacks: List[Any] | None = None,
+        resource_manager: AbstractBKAidevResourceManager | None = None,
+        auth_headers: Dict[str, str] | None = None,
     ):
         """
         初始化Agent工厂实例
@@ -43,28 +43,28 @@ class AgentInstanceFactory:
         :param session_code: 会话代码 (build_type="session"时必需)
         :param agent_cls: Agent类
         :param callbacks: 回调函数列表
-        :param api_client: API客户端实例
+        :param resource_manager:  bkaidev 资源管理
         """
-        self.api_client = api_client or BKAidevApi.get_client()
+        self.resource_manager = resource_manager or BKAidevApi.get_client()
         self.agent_code = agent_code
         self.agent_type = agent_type
         self.build_type = build_type
         self.session_code = session_code
         self.agent_cls = agent_cls
-        self.callbacks = callbacks or []
+        self.callbacks = [each for each in callbacks if each] or []
         self.auth_headers = auth_headers or None
 
     @classmethod
     def build_agent(
         cls,
         agent_code: str = settings.APP_CODE,
-        agent_type: str = AgentType.CHAT,
-        build_type: str = AgentBuildType.SESSION,
+        agent_type: AgentType = AgentType.CHAT,
+        build_type: AgentBuildType = AgentBuildType.SESSION,
         session_code: Optional[str] = None,
         session_context_data: Optional[List[dict]] = None,
         agent_cls: type = CommonQAAgent,
-        callbacks: List[Any] = None,
-        api_client: Client = None,
+        callbacks: List[Any] | None = None,
+        resource_manager: AbstractBKAidevResourceManager | None = None,
     ):
         """
         构建Agent实例
@@ -86,7 +86,7 @@ class AgentInstanceFactory:
             session_code=session_code,
             agent_cls=agent_cls,
             callbacks=callbacks,
-            api_client=api_client,
+            resource_manager=resource_manager,
         )
 
         # 验证参数
@@ -128,7 +128,11 @@ class AgentInstanceFactory:
         agent_specific_args = builder(self, **base_args)
 
         # 合并通用参数
-        final_args = {"agent_cls": self.agent_cls, "callbacks": self.callbacks, **agent_specific_args}
+        final_args = {
+            "agent_cls": self.agent_cls,
+            "callbacks": self.callbacks,
+            **agent_specific_args,
+        }
 
         return final_args
 
@@ -145,11 +149,12 @@ class AgentInstanceFactory:
         )
 
         # 获取会话上下文数据
-        session_context_data = self.api_client.api.get_chat_session_context(
-            path_params={"session_code": self.session_code}
-        ).get("data", [])
+        session_code = cast(str, self.session_code)
+        session_context_data = self.resource_manager.get_chat_session_context(session_code)
 
-        base_agent_config = AgentConfigManager.get_config(agent_code=self.agent_code, api_client=self.api_client)
+        base_agent_config = AgentConfigManager.get_config(
+            agent_code=self.agent_code, resource_manager=self.resource_manager
+        )
 
         logger.info(
             f"AgentInstanceFactory: session->[{self.session_code}] "
@@ -184,7 +189,7 @@ class AgentInstanceFactory:
 
     def build_chat_model(self, agent_code: str):
         """构建聊天模型"""
-        config = AgentConfigManager.get_config(agent_code=agent_code, api_client=self.api_client)
+        config = AgentConfigManager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
 
         # Prepare kwargs for ChatModel.get_setup_instance
         kwargs = {
@@ -204,28 +209,22 @@ class AgentInstanceFactory:
 
     def build_knowledge_bases(self, agent_code: str) -> List[dict]:
         """构建知识库"""
-        config = AgentConfigManager.get_config(agent_code=agent_code, api_client=self.api_client)
-        return [
-            self.api_client.api.appspace_retrieve_knowledgebase(path_params={"id": _id})["data"]
-            for _id in config.knowledgebase_ids
-        ]
+        config = AgentConfigManager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        return [self.resource_manager.retrieve_knowledgebase(_id) for _id in config.knowledgebase_ids]
 
     def build_knowledge_items(self, agent_code: str) -> List[dict]:
         """构建知识条目"""
-        config = AgentConfigManager.get_config(agent_code=agent_code, api_client=self.api_client)
-        return [
-            self.api_client.api.appspace_retrieve_knowledge(path_params={"id": _id})["data"]
-            for _id in config.knowledge_ids
-        ]
+        config = AgentConfigManager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        return [self.resource_manager.retrieve_knowledge(_id) for _id in config.knowledge_ids]
 
     def build_tools(self, agent_code: str) -> List[Any]:
         """构建工具"""
-        config = AgentConfigManager.get_config(agent_code=agent_code, api_client=self.api_client)
-        return [self.api_client.construct_tool(tool_code) for tool_code in config.tool_codes]
+        config = AgentConfigManager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        return [self.resource_manager.construct_tool(tool_code) for tool_code in config.tool_codes]
 
-    def get_role_prompt(self, agent_code: str) -> str:
+    def get_role_prompt(self, agent_code: str) -> str | None:
         """获取角色提示词"""
-        config = AgentConfigManager.get_config(agent_code=agent_code, api_client=self.api_client)
+        config = AgentConfigManager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
         return config.role_prompt
 
     def handle_agent_switch(self, session_context_data: List[dict], agent_code: str, switch_agent: bool):
@@ -248,7 +247,11 @@ class AgentInstanceFactory:
         try:
             # 获取最后一条用户消息
             last_user_message = (
-                next((msg for msg in reversed(session_context_data) if msg["role"] == "user"), None) or {}
+                next(
+                    (msg for msg in reversed(session_context_data) if msg["role"] == "user"),
+                    None,
+                )
+                or {}
             )
 
             command = last_user_message.get("extra", {}).get("command")
@@ -289,8 +292,16 @@ class AgentInstanceFactory:
         session_context_data.pop()
 
     @classmethod
-    def register_agent_type(cls, agent_type: str, agent_class: Type, builder_func: Callable):
+    def register_agent_type(
+        cls,
+        agent_type: AgentType,
+        agent_class: Type,
+        builder_func: Callable,
+        override=False,
+    ):
         """注册新的Agent类型"""
+        if not override and agent_type in cls._agent_classes:
+            raise ValueError(f"Agent type '{agent_type}' already exists")
         cls._agent_classes[agent_type] = agent_class
         cls._agent_builders[agent_type] = builder_func
         logger.info(f"AgentInstanceFactory: registered agent type->[{agent_type}] with class->[{agent_class.__name__}]")
@@ -331,6 +342,8 @@ class AgentInstanceFactory:
 
 # 注册默认的Agent类型
 AgentInstanceFactory.register_agent_type(
-    agent_type=AgentType.CHAT, agent_class=ChatCompletionAgent, builder_func=AgentInstanceFactory.build_chat_agent_args
+    agent_type=AgentType.CHAT,
+    agent_class=ChatCompletionAgent,
+    builder_func=AgentInstanceFactory.build_chat_agent_args,
 )
 # AgentInstanceFactory.register_agent_type("task", TaskAgent, AgentInstanceFactory.build_task_agent_args)

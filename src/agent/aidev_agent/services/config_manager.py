@@ -1,5 +1,8 @@
 from pydantic import BaseModel, Field
 
+from aidev_agent.api.abstract_client import AbstractBKAidevResourceManager
+from aidev_agent.services.pydantic_models import AgentOptions, IntentRecognition, KnowledgebaseSettings
+
 
 class AgentConfig(BaseModel):
     """智能体配置"""
@@ -15,6 +18,7 @@ class AgentConfig(BaseModel):
     opening_mark: str | None = Field(None, description="智能体开场白")
     command_settings: dict = Field(default_factory=dict, description="快捷指令设置")
     generating_keyword: str | None = Field(description="生成关键词", default="生成中")
+    agent_options: AgentOptions = Field(..., description="智能体选项")
 
 
 class AgentConfigManager:
@@ -23,7 +27,9 @@ class AgentConfigManager:
     _config_cache: dict[str, AgentConfig] = {}
 
     @classmethod
-    def get_config(cls, agent_code: str, api_client, force_refresh: bool = False) -> AgentConfig:
+    def get_config(
+        cls, agent_code: str, resource_manager: AbstractBKAidevResourceManager, force_refresh: bool = False
+    ) -> AgentConfig:
         """
         获取智能体配置
         :param agent_code: 智能体代码
@@ -37,7 +43,7 @@ class AgentConfigManager:
 
         # 实时从AIDev平台拉取配置
         try:
-            res = api_client.api.retrieve_agent_config(path_params={"agent_code": agent_code})["data"]
+            res = resource_manager.retrieve_agent_config(agent_code)
         except Exception as e:
             # 添加适当的错误处理或日志记录
             raise ValueError(f"Failed to retrieve agent config: {e}")
@@ -60,6 +66,10 @@ class AgentConfigManager:
             tool_codes=res["related_tools"],
             opening_mark=res["conversation_settings"]["opening_remark"] or None,
             command_settings=res["conversation_settings"].get("command_settings", {}),
+            agent_options=AgentOptions(
+                intent_recognition_options=IntentRecognition.model_validate(res["intent_recognition"]),
+                knowledge_query_options=KnowledgebaseSettings.model_validate(res["knowledgebase_settings"]),
+            ),
         )
 
         # 更新缓存

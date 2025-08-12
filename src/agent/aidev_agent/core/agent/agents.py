@@ -36,7 +36,6 @@ from langchain_core.prompts.chat import ChatPromptTemplate
 from langchain_core.runnables import Runnable, RunnablePassthrough
 from langchain_core.tools import BaseTool
 from langchain_core.tools.render import ToolsRenderer
-from aidev_agent.services.pydantic_models import AgentOptions
 
 from aidev_agent.core.extend.intent.utils import (
     FINAL_ANSWER_PREFIXES,
@@ -44,6 +43,7 @@ from aidev_agent.core.extend.intent.utils import (
     is_deepseek_r1_series_models,
     remove_thinking_process,
 )
+from aidev_agent.services.pydantic_models import AgentOptions
 
 MessageFormatter = Callable[[Sequence[Tuple[AgentAction, str]]], List[BaseMessage]]
 
@@ -94,7 +94,7 @@ class EnhancedJSONAgentOutputParser(JSONAgentOutputParser):
 
     llm: BaseChatModel = pydantic.Field(default=None)
     agent_options: Optional[AgentOptions] = pydantic.Field(default=None)
-    
+
     def __init__(self, llm, agent_options: Optional[AgentOptions] = None):
         super().__init__()
         self.llm = llm
@@ -112,10 +112,10 @@ class EnhancedJSONAgentOutputParser(JSONAgentOutputParser):
                 text = remove_thinking_process(text)
             response = parse_json_markdown(text)
             logger.info(f"=====> [response] [{cur_time}] {response}")
-            
+
             # 处理并行工具调用
             if isinstance(response, list):
-                agent_options = self.agent_options or getattr(self.__class__, 'agent_options', None)
+                agent_options = self.agent_options or getattr(self.__class__, "agent_options", None)
                 if agent_options and agent_options.knowledge_query_options.enable_parallel_tool_calls:
                     # 当解析到JSON数组时，处理为并行工具调用，返回多个AgentAction对象
                     actions = []
@@ -130,7 +130,7 @@ class EnhancedJSONAgentOutputParser(JSONAgentOutputParser):
                     # gpt turbo frequently ignores the directive to emit a single action
                     logger.warning("Got multiple action responses: %s", response)
                     response = response[0]
-                
+
             if response["action"] == "Final Answer":
                 if isinstance(response["action_input"], dict):
                     # NOTE: 有时候这里不是字符串（例如用户query为“用json格式给我输出个不同排序算法的对比”）

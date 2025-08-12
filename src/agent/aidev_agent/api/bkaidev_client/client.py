@@ -4,6 +4,7 @@ from bkapi_client_core.base import Operation, OperationGroup
 from bkapi_client_core.client import BaseClient
 from bkapi_client_core.property import bind_property
 
+from aidev_agent.api.abstract_client import AbstractBKAidevResourceManager
 from aidev_agent.config import settings
 from aidev_agent.enums import CredentialType
 from aidev_agent.packages.langchain.tools.base import Tool, make_structured_tool
@@ -172,7 +173,7 @@ class OpenApiGroup(OperationGroup):
     )
 
 
-class Client(BaseClient):
+class Client(BaseClient, AbstractBKAidevResourceManager):
     api = bind_property(OpenApiGroup, name="api")
 
     def construct_tool(self, tool_code, **kwargs):
@@ -188,3 +189,18 @@ class Client(BaseClient):
     def knowledge_query(self, data: dict):
         result = self.api.create_knowledgebase_query(data=data)
         return result.get("data", {})
+
+    def retrieve_agent_config(self, agent_code: str, **kwargs) -> dict:
+        return self.api.retrieve_agent_config(path_params={"agent_code": agent_code}, **kwargs).get("data", {})
+
+    def get_chat_session_context(self, session_code: str, **kwargs) -> list[dict]:
+        """Get chat session context"""
+        return self.api.get_chat_session_context(path_params={"session_code": session_code}, **kwargs).get("data", [])
+
+    def retrieve_knowledgebase(self, id: int, **kwargs) -> dict:
+        """Get knowledgebase details"""
+        return self.api.appspace_retrieve_knowledgebase(path_params={"id": id}, **kwargs).get("data", {})
+
+    def retrieve_knowledge(self, id: int, **kwargs) -> dict:
+        """Get knowledge details"""
+        return self.api.appspace_retrieve_knowledge(path_params={"id": id}, **kwargs).get("data", {})
