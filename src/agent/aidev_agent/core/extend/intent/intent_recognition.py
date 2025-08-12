@@ -1397,6 +1397,16 @@ class IntentRecognition(BaseModel):
                 knowledge_bases,
                 False,
                 agent_options,
+                all_intent_knowledge,
+                bound_tool_names,     
+                bound_knowledge_base_ids,
+                bound_knowledge_ids,
+                intent_base_id,
+                intent_item_id,
+                tools_id,
+                final_intent_base_id,
+                final_intent_item_id,
+                final_tools_id,
                 **kwargs,
             )
 
