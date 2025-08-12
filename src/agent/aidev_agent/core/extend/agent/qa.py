@@ -45,10 +45,11 @@ from aidev_agent.core.agent.agents import (
 from aidev_agent.core.agent.multimodal import MultiToolCallCommonAgent, StructuredChatCommonAgent
 from aidev_agent.core.extend.intent.intent_recognition import IntentRecognition
 from aidev_agent.core.utils.local import request_local
-from aidev_agent.enums import Decision, EventType, IntentStatus
+from aidev_agent.enums import Decision, EventType, IntentCategory, IntentStatus
 from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils import Empty
 from aidev_agent.enums import ContextType
+import unicodedata
 
 from ..intent.prompts import DEFAULT_QA_PROMPT_TEMPLATES
 from ..intent.utils import (
@@ -464,7 +465,124 @@ class IntentRecognitionMixin(BaseModel):
             )
             if hasattr(request_local, "current_user_store"):
                 request_local.current_user_store["reference_doc"] = reference_doc
+                
+    @classmethod                
+    def cell_display_length(cls, s):
+        """计算字符串显示宽度，中文等全角字符算2，半角算1"""
+        length = 0
+        for c in str(s):
+            # F,W,? 算2，其它算1
+            length += 2 if unicodedata.east_asian_width(c) in "FW" else 1
+        return length
 
+    @classmethod
+    def pretty_table(cls, header, rows):
+        columns = [[header[i]] + [row[i] for row in rows] for i in range(len(header))]
+        col_widths = [max(cls.cell_display_length(cell) for cell in col) for col in columns]
+
+        def format_row(row):
+            formatted = []
+            for idx, cell in enumerate(row):
+                cell_str = str(cell)
+                # add spaces (全宽字符用2宽度补齐)
+                padding = col_widths[idx] - cls.cell_display_length(cell_str)
+                formatted.append(cell_str + " " * padding)
+            return " | ".join(formatted)
+
+        sep = "-+-".join(["-" * w for w in col_widths])
+
+        lines = [
+            format_row(header),
+            sep,
+        ]
+        for row in rows:
+            lines.append(format_row(row))
+        return "\n".join(lines)
+    
+    @classmethod
+    def get_intent_ids(cls, intents, category):
+        """辅助函数：按类别收集意图ID"""
+        return [
+            int(doc["意图ID"]) 
+            for doc in (json.loads(i) for i in intents)
+            if IntentCategory(doc["意图类别"]) == category
+        ]
+        
+    @classmethod
+    def build_table(cls, title, data_list, empty_msg="为空"):
+        """辅助函数：构建表格内容"""
+        if not data_list:
+            return f"{title}{empty_msg}\n\n"
+        return f"{title}：\n\n{cls.pretty_table(['意图类别', '意图ID'], data_list)}\n\n"
+    
+    @classmethod
+    def render_intent_recognition_results(cls, recog_results, **kwargs):
+        """渲染意图识别结果到前端
+        
+        Args:
+            recog_results: 意图识别结果字典
+            **kwargs: 其他参数
+        """
+        # 按类别收集意图id
+        all_intent_base_id = cls.get_intent_ids(recog_results["all_intent_knowledge"], IntentCategory.KNOWLEDGE_BASE)
+        all_intent_item_id = cls.get_intent_ids(recog_results["all_intent_knowledge"], IntentCategory.KNOWLEDGE_ITEM)
+        all_tools_id = [
+            doc["意图ID"] 
+            for doc in (json.loads(i) for i in recog_results["all_intent_knowledge"])
+            if IntentCategory(doc["意图类别"]) == IntentCategory.TOOL
+        ]
+
+        # 如果意图识别和用户绑定知识存在不一致，需要提示给用户
+        if not (
+            set(all_intent_base_id) == set(recog_results["bound_knowledge_base_ids"])
+            and set(all_intent_item_id) == set(recog_results["bound_knowledge_ids"])
+            and set(all_tools_id) == set(recog_results["bound_tool_names"])
+        ):
+            # 第一部分：意图识别知识文件 vs 实际绑定资源
+            intent_rows = [[d['意图类别'], d['意图ID']] for d in 
+                        (json.loads(i) for i in recog_results["all_intent_knowledge"])]
+            bound_rows = (
+                [["tool", n] for n in recog_results["bound_tool_names"]] +
+                [["knowledge base", i] for i in recog_results["bound_knowledge_base_ids"]] +
+                [["knowledge item", i] for i in recog_results["bound_knowledge_ids"]]
+            )
+            
+            table_content = (
+                cls.build_table("意图识别知识文件提供的意图", intent_rows) +
+                cls.build_table("实际绑定的资源", bound_rows) +
+                "以上配置存在不一致，可能导致结果不符合预期，建议绑定的资源（知识/工具）与意图识别知识文件提供的意图保持一致。"
+            )
+            conditional_dispatch_custom_event(
+                "custom_event",
+                {"intent_recognition_conflict": f"\n```text\n{table_content}\n```\n"},
+                **kwargs,
+            )
+
+        # 第二部分：原始意图识别结果 vs 有效意图识别结果
+        original_rows = (
+            [["tool", n] for n in recog_results["tools_id"]] +
+            [["knowledge base", i] for i in recog_results["intent_base_id"]] +
+            [["knowledge item", i] for i in recog_results["intent_item_id"]]
+        )
+        
+        final_rows = (
+            [["tool", n] for n in recog_results["final_tools_id"]] +
+            [["knowledge base", i] for i in recog_results["final_intent_base_id"]] +
+            [["knowledge item", i] for i in recog_results["final_intent_item_id"]]
+        )
+        
+        table_content = (
+            cls.build_table("原始意图识别结果", original_rows) +
+            cls.build_table("有效意图识别结果", final_rows) +
+            "智能体将依据以上有效意图识别结果开展后续流程。"
+        )
+        
+        conditional_dispatch_custom_event(
+            "custom_event",
+            {"intent_recognition_result": f"\n```text\n{table_content}\n```\n"},
+            **kwargs,
+        )
+          
     @classmethod
     def intent_recognition(
         cls,
@@ -576,6 +694,10 @@ class IntentRecognitionMixin(BaseModel):
             candidate_tools = deduplicate_tools(
                 [tool for tool in deepcopy(candidate_tools) if tool.name != "add_image_to_chat_context"]
             )
+            
+        # 如果有意图识别知识，需要渲染到前端    
+        if recog_results["all_intent_knowledge"]:
+            cls.render_intent_recognition_results(recog_results, **kwargs)
 
         # 补充/修改 kwargs 的值
         if kwargs.get("use_independent_query_in_qa", False):
@@ -600,6 +722,7 @@ class IntentRecognitionMixin(BaseModel):
                 kwargs.get("topk", 20),
             )
             kwargs["beijing_now"] = get_beijing_now()
+
 
         return llm, chat_prompt_template, candidate_tools, intermediate_steps, callbacks, kwargs
 
@@ -746,6 +869,7 @@ class CommonQAStreamingMixIn:
         front_end_display = True
         # 用于判断是否是第一个```
         first_triple_backticks = True
+        has_custom_event = False
         # 用于去除 think 标识位
         max_cache_length = 50
         cache = deque(maxlen=max_cache_length)
@@ -851,7 +975,7 @@ class CommonQAStreamingMixIn:
                                 has_tool_call = True
                             else:  
                                 # 如果首次从 think 切到 text 内容，需要先补发一条带 elapsed_time的 think event 以供识别                                        
-                                if (has_reasoning_content or has_tool_call) and item["data"]["chunk"].content.strip():
+                                if (has_reasoning_content or has_tool_call or has_custom_event) and item["data"]["chunk"].content.strip():
                                     has_reasoning_content = False
                                     has_tool_call = False
                                     ret = {
@@ -900,6 +1024,20 @@ class CommonQAStreamingMixIn:
                                 "cover": cover,
                             }
                             final_result += item["data"]["custom_agent_finish"]
+                        elif "intent_recognition_conflict" in item["data"] and front_end_display:
+                            ret = {
+                                "event": EventType.THINK.value,
+                                "content": item["data"]["intent_recognition_conflict"],
+                                "cover": cover,
+                            } 
+                            has_custom_event=True   
+                        elif "intent_recognition_result" in item["data"] and front_end_display:
+                            ret = {
+                                "event": EventType.THINK.value,
+                                "content": item["data"]["intent_recognition_result"],
+                                "cover": cover,
+                            } 
+                            has_custom_event=True                            
                     elif item["event"] == "on_tool_end":
                         # TODO: 可能需要考虑异步是否会导致event的乱序问题
                         # 打印工具输出
