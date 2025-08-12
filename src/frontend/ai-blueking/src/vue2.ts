@@ -39,6 +39,10 @@ export default {
     });
   },
   props: {
+    extCls: {
+      default: '',
+      type: String,
+    },
     shortcuts: {
       default: () => [],
       type: Array,
@@ -130,6 +134,7 @@ export default {
       render() {
         instance = this;
         aiBlueking = h(AiBlueking, {
+          extCls: that.extCls,
           shortcuts: that.shortcuts,
           shortcutLimit: that.shortcutLimit,
           enablePopup: that.enablePopup,
@@ -233,6 +238,9 @@ export default {
     };
     this.getSessionList = () => {
       return aiBlueking.component.exposed.getSessionList();
+    };
+    this.sessionList = () => {
+      return aiBlueking.component.exposed.sessionList();
     };
 
     // 添加 组件暴露属性（属性类型使用 defineProperty 添加, 以保持响应式）
