@@ -1161,9 +1161,9 @@ class IntentRecognition(BaseModel):
         do_tool_resource_retrieve,
         agent_options,
         all_intent_knowledge,
-        origin_tool_names,     
-        origin_knowledge_base_ids,
-        origin_knowledge_ids,
+        bound_tool_names,     
+        bound_knowledge_base_ids,
+        bound_knowledge_ids,
         intent_base_id,
         intent_item_id,
         tools_id,   
@@ -1243,9 +1243,9 @@ class IntentRecognition(BaseModel):
             "knowledge_resources_highly_relevant": knowledge_resources_highly_relevant,
             "knowledge_resources_moderately_relevant": knowledge_resources_moderately_relevant,
             "all_intent_knowledge": all_intent_knowledge,
-            "origin_tool_names": origin_tool_names,     
-            "origin_knowledge_base_ids": origin_knowledge_base_ids,
-            "origin_knowledge_ids": origin_knowledge_ids,
+            "bound_tool_names": bound_tool_names,     
+            "bound_knowledge_base_ids": bound_knowledge_base_ids,
+            "bound_knowledge_ids": bound_knowledge_ids,
             "intent_base_id": intent_base_id,
             "intent_item_id": intent_item_id,
             "tools_id": tools_id,  
@@ -1280,9 +1280,9 @@ class IntentRecognition(BaseModel):
         knowledge_bases = agent_options.knowledge_query_options.knowledge_bases
         knowledge_items = agent_options.knowledge_query_options.knowledge_items
         all_intent_knowledge=[]
-        origin_tool_names = []     
-        origin_knowledge_base_ids = []
-        origin_knowledge_ids = [] 
+        bound_tool_names = []     
+        bound_knowledge_base_ids = []
+        bound_knowledge_ids = [] 
         intent_base_id = []
         intent_item_id = []
         tools_id = []        
@@ -1353,16 +1353,16 @@ class IntentRecognition(BaseModel):
             # 实际去调用资源的时候，只取意图识别结果跟绑定的资源的交集部分        
             if tools:
                 for tool in tools:
-                    origin_tool_names.append(tool.name)
+                    bound_tool_names.append(tool.name)
             if knowledge_bases:
                 for kb in knowledge_bases:
-                    origin_knowledge_base_ids.append(kb['id']) 
+                    bound_knowledge_base_ids.append(kb['id']) 
             if knowledge_items:
                 for kb in knowledge_items:
-                    origin_knowledge_ids.append(kb['id'])  
-            final_intent_base_id = set(intent_base_id) & set(origin_knowledge_base_ids)
-            final_intent_item_id = set(intent_item_id) & set(origin_knowledge_ids)
-            final_tools_id = set(tools_id) & set(origin_tool_names)
+                    bound_knowledge_ids.append(kb['id'])  
+            final_intent_base_id = set(intent_base_id) & set(bound_knowledge_base_ids)
+            final_intent_item_id = set(intent_item_id) & set(bound_knowledge_ids)
+            final_tools_id = set(tools_id) & set(bound_tool_names)
             try:
                 knowledge_bases = [
                     client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"]
@@ -1472,9 +1472,9 @@ class IntentRecognition(BaseModel):
             do_tool_resource_retrieve,
             agent_options,
             all_intent_knowledge,
-            origin_tool_names,     
-            origin_knowledge_base_ids,
-            origin_knowledge_ids,
+            bound_tool_names,     
+            bound_knowledge_base_ids,
+            bound_knowledge_ids,
             intent_base_id,
             intent_item_id,
             tools_id,

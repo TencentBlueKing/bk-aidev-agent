@@ -500,6 +500,22 @@ class IntentRecognitionMixin(BaseModel):
         return "\n".join(lines)
     
     @classmethod
+    def get_intent_ids(cls, intents, category):
+        """辅助函数：按类别收集意图ID"""
+        return [
+            int(doc["意图ID"]) 
+            for doc in (json.loads(i) for i in intents)
+            if IntentCategory(doc["意图类别"]) == category
+        ]
+        
+    @classmethod
+    def build_table(cls, title, data_list, empty_msg="为空"):
+        """辅助函数：构建表格内容"""
+        if not data_list:
+            return f"{title}{empty_msg}\n\n"
+        return f"{title}：\n\n{cls.pretty_table(['意图类别', '意图ID'], data_list)}\n\n"
+    
+    @classmethod
     def intent_recognition(
         cls,
         llm: BaseChatModel,
@@ -610,59 +626,37 @@ class IntentRecognitionMixin(BaseModel):
             candidate_tools = deduplicate_tools(
                 [tool for tool in deepcopy(candidate_tools) if tool.name != "add_image_to_chat_context"]
             )
-        # 如果用户有上传意图识别知识，则需要渲染到前端 
+        # 如果有意图识别知识，需要渲染到前端
         if recog_results["all_intent_knowledge"]:
-            all_intent_base_id=[]   
-            all_intent_item_id=[]    
-            all_tools_id=[]   
-            
-            for doc in recog_results["all_intent_knowledge"]:
-                doc = json.loads(doc)
-                try:
-                    category = IntentCategory(doc["意图类别"])
-                    if category == IntentCategory.KNOWLEDGE_BASE:                   
-                        all_intent_base_id.append(int(doc["意图ID"]))
-                    elif category == IntentCategory.KNOWLEDGE_ITEM:
-                        all_intent_item_id.append(int(doc["意图ID"]))
-                    elif category == IntentCategory.TOOL:
-                        all_tools_id.append(doc["意图ID"])
-                except ValueError:  # noqa
-                    _logger.warning(f"Invalid intent category: {doc['意图类别']} in document {doc}") 
-                    
-            header = ["意图类别", "意图ID"]
+            # 按类别收集意图id
+            all_intent_base_id = cls.get_intent_ids(recog_results["all_intent_knowledge"], IntentCategory.KNOWLEDGE_BASE)
+            all_intent_item_id = cls.get_intent_ids(recog_results["all_intent_knowledge"], IntentCategory.KNOWLEDGE_ITEM)
+            all_tools_id = [
+                doc["意图ID"] 
+                for doc in (json.loads(i) for i in recog_results["all_intent_knowledge"])
+                if IntentCategory(doc["意图类别"]) == IntentCategory.TOOL
+            ]
+
             # 如果意图识别和用户绑定知识存在不一致，需要提示给用户
             if not (
-                set(all_intent_base_id) == set(recog_results["origin_knowledge_base_ids"])
-                and set(all_intent_item_id) == set(recog_results["origin_knowledge_ids"])
-                and set(all_tools_id) == set(recog_results["origin_tool_names"])
-            ): 
+                set(all_intent_base_id) == set(recog_results["bound_knowledge_base_ids"])
+                and set(all_intent_item_id) == set(recog_results["bound_knowledge_ids"])
+                and set(all_tools_id) == set(recog_results["bound_tool_names"])
+            ):
                 # 第一部分：意图识别知识文件 vs 实际绑定资源
-                rows = []
-                for intent in recog_results["all_intent_knowledge"]:
-                    intent_data = json.loads(intent)
-                    rows.append([intent_data['意图类别'], intent_data['意图ID']])
-                if rows:
-                    table_content = "意图识别知识文件提供的意图有：\n\n"
-                    table_content += cls.pretty_table(header, rows) + "\n\n"
-                else:
-                    table_content = "意图识别知识文件提供的意图为空\n\n"
-
-                # 实际绑定资源表格         
-                bound_rows = []
-                if recog_results["origin_tool_names"]:
-                    bound_rows.extend([["tool", name] for name in recog_results["origin_tool_names"]])
-                if recog_results["origin_knowledge_base_ids"]:
-                    bound_rows.extend([["knowledge base", id] for id in recog_results["origin_knowledge_base_ids"]])
-                if recog_results["origin_knowledge_ids"]:
-                    bound_rows.extend([["knowledge item", id] for id in recog_results["origin_knowledge_ids"]])
-                if bound_rows:
-                    table_content += "实际绑定的资源有：\n\n"
-                    table_content += cls.pretty_table(header, bound_rows) + "\n\n"
-                else:
-                    table_content += "实际绑定的资源为空\n\n"
-                table_content += "以上配置存在不一致，可能导致结果不符合预期，建议绑定的资源（知识/工具）与意图识别知识文件提供的意图保持一致。"
+                intent_rows = [[d['意图类别'], d['意图ID']] for d in 
+                                (json.loads(i) for i in recog_results["all_intent_knowledge"])]
+                bound_rows = (
+                    [["tool", n] for n in recog_results["bound_tool_names"]] +
+                    [["knowledge base", i] for i in recog_results["bound_knowledge_base_ids"]] +
+                    [["knowledge item", i] for i in recog_results["bound_knowledge_ids"]]
+                )
                 
-                # 发送事件
+                table_content = (
+                    cls.build_table("意图识别知识文件提供的意图", intent_rows) +
+                    cls.build_table("实际绑定的资源", bound_rows) +
+                    "以上配置存在不一致，可能导致结果不符合预期，建议绑定的资源（知识/工具）与意图识别知识文件提供的意图保持一致。"
+                )
                 conditional_dispatch_custom_event(
                     "custom_event",
                     {"intent_recognition_conflict": f"\n```text\n{table_content}\n```\n"},
@@ -670,36 +664,24 @@ class IntentRecognitionMixin(BaseModel):
                 )
 
             # 第二部分：原始意图识别结果 vs 有效意图识别结果
-            original_rows = []
-            if recog_results["tools_id"]:
-                original_rows.extend([["tool", name] for name in recog_results["tools_id"]])
-            if recog_results["intent_base_id"]:
-                original_rows.extend([["knowledge base", id] for id in recog_results["intent_base_id"]])
-            if recog_results["intent_item_id"]:
-                original_rows.extend([["knowledge item", id] for id in recog_results["intent_item_id"]])
-            if original_rows:
-                table_content = "原始意图识别结果为：\n\n" 
-                table_content += cls.pretty_table(header, original_rows) + "\n\n"
-            else:              
-                table_content = "原始意图识别结果为空\n\n"
-
-
-            # 有效意图识别结果表格
-            final_rows = []
-            if recog_results["final_tools_id"]:
-                final_rows.extend([["tool", name] for name in recog_results["final_tools_id"]])
-            if recog_results["final_intent_base_id"]:
-                final_rows.extend([["knowledge base", id] for id in recog_results["final_intent_base_id"]])
-            if recog_results["final_intent_item_id"]:
-                final_rows.extend([["knowledge item", id] for id in recog_results["final_intent_item_id"]])
-            if final_rows:
-                table_content += "有效意图识别结果为：\n\n" 
-                table_content += cls.pretty_table(header, final_rows) + "\n\n" 
-            else:              
-                table_content += "有效意图识别结果为空\n\n"
-            table_content += "智能体将依据以上有效意图识别结果开展后续流程。"
-
-            # 发送事件
+            original_rows = (
+                [["tool", n] for n in recog_results["tools_id"]] +
+                [["knowledge base", i] for i in recog_results["intent_base_id"]] +
+                [["knowledge item", i] for i in recog_results["intent_item_id"]]
+            )
+            
+            final_rows = (
+                [["tool", n] for n in recog_results["final_tools_id"]] +
+                [["knowledge base", i] for i in recog_results["final_intent_base_id"]] +
+                [["knowledge item", i] for i in recog_results["final_intent_item_id"]]
+            )
+            
+            table_content = (
+                cls.build_table("原始意图识别结果", original_rows) +
+                cls.build_table("有效意图识别结果", final_rows) +
+                "智能体将依据以上有效意图识别结果开展后续流程。"
+            )
+            
             conditional_dispatch_custom_event(
                 "custom_event",
                 {"intent_recognition_result": f"\n```text\n{table_content}\n```\n"},
@@ -1052,7 +1034,7 @@ class CommonQAStreamingMixIn:
                         # 报错信息封装
                         if " is not a valid tool, try one of " in tool_output_content:
                             err_tool = tool_output_content.split(" is not a valid tool, try one of ")[0]
-                            tool_output_content = f"意图识别选择的工具“{err_tool}”超出了给定工具的范围，本次工具调用失败。"
+                            tool_output_content = f"LLM 选择的工具“{err_tool}”超出了给定工具的范围，本次工具调用失败。"
                         elif tool_output_content == ACTION_INPUT_ERR_MSG:
                             tool_output_content = "LLM 生成的工具调用参数不正确，本次工具调用失败。"
                         elif tool_output_content == OUTPUT_PARSER_ERR_MSG:
