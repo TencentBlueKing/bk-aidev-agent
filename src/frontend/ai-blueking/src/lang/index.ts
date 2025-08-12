@@ -88,6 +88,9 @@ export const langData = {
   重新生成: 'Regenerate',
   引用: 'Quote',
   编辑: 'Edit',
+  请输入数字: 'Please enter a number',
+  数值不能小于: 'The value cannot be less than',
+  数值不能大于: 'The value cannot be greater than',
 } as const;
 
 export const zhLangData = {

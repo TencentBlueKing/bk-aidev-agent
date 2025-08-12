@@ -27,7 +27,7 @@
         <div class="history-panel-content-item-list">
           <div
             v-for="session in item.sessionList"
-            :key="session.sessionCode"
+            :key="session.sessionCode + session.sessionName"
             class="history-panel-content-item-list-item"
             :class="{ active: isCurrentSession(session) }"
             @click="handleSessionClick(session)"

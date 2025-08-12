@@ -25,6 +25,7 @@ export interface SdkApi {
   setSessionContents: (contents: ISessionContent[]) => void;
   modifySessionApi: (session: ISession) => Promise<any>;
   deleteSessionApi: (sessionCode: string) => Promise<any>;
+  renameSessionApi: (sessionCode: string) => Promise<ISession>;
   setCurrentSessionChain: (session: ISession) => void;
   getSessionsApi: () => Promise<ISession[]>;
   getAgentInfoApi: () => Promise<IAgentInfo>;

@@ -21,6 +21,7 @@
         :label="item.name"
         :property="item.key"
         :required="item.required"
+        error-tip-append-to-parent
         :class="{
           'full-width':
             item.type === 'textarea' || isLastInOddGroup(props.shortcut.components || [], index),

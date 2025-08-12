@@ -172,7 +172,6 @@
   import LoadingOverlay from './components/loading-overlay.vue';
   import MessageList from './components/message-list.vue';
   import RenderPopup from './components/render-popup.vue';
-
   // Composable导入
   import { useGreetingHeight } from './composables/use-greeting-height';
   import { useMarkdown } from './composables/use-markdown';
@@ -409,6 +408,7 @@
     getSessionContentsApi,
     modifySessionApi,
     deleteSessionApi,
+    renameSessionApi,
     setSessionContents,
     handleCompleteRole,
   } = useChat({
@@ -440,6 +440,7 @@
     setSessionContents,
     modifySessionApi,
     deleteSessionApi,
+    renameSessionApi,
     getSessionContentsApi,
     getSessionsApi,
     getAgentInfoApi,
@@ -656,10 +657,34 @@
       },
     });
 
+    // 自动命名功能：在发送第一条消息后调用renameSessionApi
+    // 检查是否为当前会话中的第一条用户消息（排除隐藏角色）
+    const visibleMessages = sessionContents.value.filter(
+      item => !HIDE_ROLE_LIST.includes(item.role)
+    );
+    const isFirstUserMessage =
+      visibleMessages.length === 1 && visibleMessages[0].role === SessionContentRole.User;
+
     chat({
       sessionCode: currentSession.value?.sessionCode,
       ...props.requestOptions,
     });
+
+    // 在发送第一条用户消息后调用renameSessionApi
+    if (isFirstUserMessage && currentSession.value?.sessionCode) {
+      try {
+        const updatedSession = await renameSessionApi(currentSession.value.sessionCode);
+        debugger;
+        if (updatedSession?.sessionName) {
+          // 更新会话存储中的会话名称
+          await sessionStore.updateSession(currentSession.value.sessionCode, {
+            sessionName: updatedSession.sessionName,
+          });
+        }
+      } catch (error) {
+        console.error('自动命名会话失败:', error);
+      }
+    }
 
     emit('send-message', escapedMessage);
     inputMessage.value = '';
