@@ -1160,6 +1160,16 @@ class IntentRecognition(BaseModel):
         knowledge_bases,
         do_tool_resource_retrieve,
         agent_options,
+        all_intent_knowledge,
+        bound_tool_names,     
+        bound_knowledge_base_ids,
+        bound_knowledge_ids,
+        intent_base_id,
+        intent_item_id,
+        tools_id,   
+        final_intent_base_id,
+        final_intent_item_id,
+        final_tools_id,      
         **kwargs,
     ):
         # ====================================================================================================
@@ -1232,6 +1242,16 @@ class IntentRecognition(BaseModel):
             "knowledge_resources_emb_recalled": knowledge_resources_emb_recalled,
             "knowledge_resources_highly_relevant": knowledge_resources_highly_relevant,
             "knowledge_resources_moderately_relevant": knowledge_resources_moderately_relevant,
+            "all_intent_knowledge": all_intent_knowledge,
+            "bound_tool_names": bound_tool_names,     
+            "bound_knowledge_base_ids": bound_knowledge_base_ids,
+            "bound_knowledge_ids": bound_knowledge_ids,
+            "intent_base_id": intent_base_id,
+            "intent_item_id": intent_item_id,
+            "tools_id": tools_id,  
+            "final_intent_base_id": final_intent_base_id,
+            "final_intent_item_id": final_intent_item_id,
+            "final_tools_id": final_tools_id,  
         }
 
     @timeit(message="意图识别总流程")
@@ -1259,6 +1279,16 @@ class IntentRecognition(BaseModel):
         tool_resource_base_ids = agent_options.knowledge_query_options.tool_resource_base_ids
         knowledge_bases = agent_options.knowledge_query_options.knowledge_bases
         knowledge_items = agent_options.knowledge_query_options.knowledge_items
+        all_intent_knowledge=[]
+        bound_tool_names = []     
+        bound_knowledge_base_ids = []
+        bound_knowledge_ids = [] 
+        intent_base_id = []
+        intent_item_id = []
+        tools_id = []        
+        final_intent_base_id = []
+        final_intent_item_id = []
+        final_tools_id = []          
         # 处理意图识别知识库
         if agent_options.intent_recognition_options.intent_recognition_knowledge:
             client = BKAidevApi.get_client_by_username(username="")
@@ -1279,6 +1309,7 @@ class IntentRecognition(BaseModel):
 
             # 提取知识内容
             intent_knowledge = [doc["page_content"] for doc in intent_knowledge_doc]
+            all_intent_knowledge = intent_knowledge
 
             # 统一处理LLM意图识别
             if agent_options.intent_recognition_options.intent_recognition_llm:
@@ -1308,32 +1339,50 @@ class IntentRecognition(BaseModel):
                     logger.error(f"Intent recognition LLM error: {e}")
                     intent_knowledge = []
 
-            intent_base_id = []
-            intent_item_id = []
-            tools_id = []
-
             for doc in intent_knowledge:
                 try:
                     category = IntentCategory(doc["意图类别"])
                     if category == IntentCategory.KNOWLEDGE_BASE:
-                        intent_base_id.append(doc["意图ID"])
+                        intent_base_id.append(int(doc["意图ID"]))
                     elif category == IntentCategory.KNOWLEDGE_ITEM:
-                        intent_item_id.append(doc["意图ID"])
+                        intent_item_id.append(int(doc["意图ID"]))
                     elif category == IntentCategory.TOOL:
                         tools_id.append(doc["意图ID"])
                 except ValueError:  # noqa
                     logger.warning(f"Invalid intent category: {doc['意图类别']} in document {doc}")
-            if intent_base_id:
+            # 实际去调用资源的时候，只取意图识别结果跟绑定的资源的交集部分        
+            if tools:
+                for tool in tools:
+                    bound_tool_names.append(tool.name)
+            if knowledge_bases:
+                for kb in knowledge_bases:
+                    bound_knowledge_base_ids.append(kb['id']) 
+            if knowledge_items:
+                for kb in knowledge_items:
+                    bound_knowledge_ids.append(kb['id'])  
+            final_intent_base_id = set(intent_base_id) & set(bound_knowledge_base_ids)
+            final_intent_item_id = set(intent_item_id) & set(bound_knowledge_ids)
+            final_tools_id = set(tools_id) & set(bound_tool_names)
+            try:
                 knowledge_bases = [
                     client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"]
-                    for id_ in intent_base_id
+                    for id_ in final_intent_base_id
                 ]
-            if intent_item_id:
+            except Exception:
+                logger.error(f"获取意图识别知识库失败，知识库id无效！")
+
+            try:
                 knowledge_items = [
-                    client.api.appspace_retrieve_knowledge(path_params={"id": id_})["data"] for id_ in intent_item_id
+                    client.api.appspace_retrieve_knowledge(path_params={"id": id_})["data"] 
+                    for id_ in final_intent_item_id
                 ]
-            if tools_id:
-                tool_resource_base_ids = tools_id
+            except Exception:
+                logger.error(f"获取意图识别知识失败，知识id无效！")
+
+            try:
+                tools = [client.construct_tool(tool_code) for tool_code in final_tools_id]
+            except Exception:
+                logger.error(f"获取意图识别工具失败，工具id无效！")              
         if callbacks:
             _set_config_context({"callbacks": callbacks})
         # ====================================================================================================
@@ -1348,6 +1397,16 @@ class IntentRecognition(BaseModel):
                 knowledge_bases,
                 False,
                 agent_options,
+                all_intent_knowledge,
+                bound_tool_names,     
+                bound_knowledge_base_ids,
+                bound_knowledge_ids,
+                intent_base_id,
+                intent_item_id,
+                tools_id,
+                final_intent_base_id,
+                final_intent_item_id,
+                final_tools_id,
                 **kwargs,
             )
 
@@ -1422,5 +1481,15 @@ class IntentRecognition(BaseModel):
             knowledge_bases,
             do_tool_resource_retrieve,
             agent_options,
+            all_intent_knowledge,
+            bound_tool_names,     
+            bound_knowledge_base_ids,
+            bound_knowledge_ids,
+            intent_base_id,
+            intent_item_id,
+            tools_id,
+            final_intent_base_id,
+            final_intent_item_id,
+            final_tools_id,
             **kwargs,
         )
