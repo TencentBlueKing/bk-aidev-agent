@@ -516,6 +516,74 @@ class IntentRecognitionMixin(BaseModel):
         return f"{title}：\n\n{cls.pretty_table(['意图类别', '意图ID'], data_list)}\n\n"
     
     @classmethod
+    def render_intent_recognition_results(cls, recog_results, **kwargs):
+        """渲染意图识别结果到前端
+        
+        Args:
+            recog_results: 意图识别结果字典
+            **kwargs: 其他参数
+        """
+        # 按类别收集意图id
+        all_intent_base_id = cls.get_intent_ids(recog_results["all_intent_knowledge"], IntentCategory.KNOWLEDGE_BASE)
+        all_intent_item_id = cls.get_intent_ids(recog_results["all_intent_knowledge"], IntentCategory.KNOWLEDGE_ITEM)
+        all_tools_id = [
+            doc["意图ID"] 
+            for doc in (json.loads(i) for i in recog_results["all_intent_knowledge"])
+            if IntentCategory(doc["意图类别"]) == IntentCategory.TOOL
+        ]
+
+        # 如果意图识别和用户绑定知识存在不一致，需要提示给用户
+        if not (
+            set(all_intent_base_id) == set(recog_results["bound_knowledge_base_ids"])
+            and set(all_intent_item_id) == set(recog_results["bound_knowledge_ids"])
+            and set(all_tools_id) == set(recog_results["bound_tool_names"])
+        ):
+            # 第一部分：意图识别知识文件 vs 实际绑定资源
+            intent_rows = [[d['意图类别'], d['意图ID']] for d in 
+                        (json.loads(i) for i in recog_results["all_intent_knowledge"])]
+            bound_rows = (
+                [["tool", n] for n in recog_results["bound_tool_names"]] +
+                [["knowledge base", i] for i in recog_results["bound_knowledge_base_ids"]] +
+                [["knowledge item", i] for i in recog_results["bound_knowledge_ids"]]
+            )
+            
+            table_content = (
+                cls.build_table("意图识别知识文件提供的意图", intent_rows) +
+                cls.build_table("实际绑定的资源", bound_rows) +
+                "以上配置存在不一致，可能导致结果不符合预期，建议绑定的资源（知识/工具）与意图识别知识文件提供的意图保持一致。"
+            )
+            conditional_dispatch_custom_event(
+                "custom_event",
+                {"intent_recognition_conflict": f"\n```text\n{table_content}\n```\n"},
+                **kwargs,
+            )
+
+        # 第二部分：原始意图识别结果 vs 有效意图识别结果
+        original_rows = (
+            [["tool", n] for n in recog_results["tools_id"]] +
+            [["knowledge base", i] for i in recog_results["intent_base_id"]] +
+            [["knowledge item", i] for i in recog_results["intent_item_id"]]
+        )
+        
+        final_rows = (
+            [["tool", n] for n in recog_results["final_tools_id"]] +
+            [["knowledge base", i] for i in recog_results["final_intent_base_id"]] +
+            [["knowledge item", i] for i in recog_results["final_intent_item_id"]]
+        )
+        
+        table_content = (
+            cls.build_table("原始意图识别结果", original_rows) +
+            cls.build_table("有效意图识别结果", final_rows) +
+            "智能体将依据以上有效意图识别结果开展后续流程。"
+        )
+        
+        conditional_dispatch_custom_event(
+            "custom_event",
+            {"intent_recognition_result": f"\n```text\n{table_content}\n```\n"},
+            **kwargs,
+        )
+          
+    @classmethod
     def intent_recognition(
         cls,
         llm: BaseChatModel,
@@ -626,67 +694,10 @@ class IntentRecognitionMixin(BaseModel):
             candidate_tools = deduplicate_tools(
                 [tool for tool in deepcopy(candidate_tools) if tool.name != "add_image_to_chat_context"]
             )
-        # 如果有意图识别知识，需要渲染到前端
+            
+        # 如果有意图识别知识，需要渲染到前端    
         if recog_results["all_intent_knowledge"]:
-            # 按类别收集意图id
-            all_intent_base_id = cls.get_intent_ids(recog_results["all_intent_knowledge"], IntentCategory.KNOWLEDGE_BASE)
-            all_intent_item_id = cls.get_intent_ids(recog_results["all_intent_knowledge"], IntentCategory.KNOWLEDGE_ITEM)
-            all_tools_id = [
-                doc["意图ID"] 
-                for doc in (json.loads(i) for i in recog_results["all_intent_knowledge"])
-                if IntentCategory(doc["意图类别"]) == IntentCategory.TOOL
-            ]
-
-            # 如果意图识别和用户绑定知识存在不一致，需要提示给用户
-            if not (
-                set(all_intent_base_id) == set(recog_results["bound_knowledge_base_ids"])
-                and set(all_intent_item_id) == set(recog_results["bound_knowledge_ids"])
-                and set(all_tools_id) == set(recog_results["bound_tool_names"])
-            ):
-                # 第一部分：意图识别知识文件 vs 实际绑定资源
-                intent_rows = [[d['意图类别'], d['意图ID']] for d in 
-                                (json.loads(i) for i in recog_results["all_intent_knowledge"])]
-                bound_rows = (
-                    [["tool", n] for n in recog_results["bound_tool_names"]] +
-                    [["knowledge base", i] for i in recog_results["bound_knowledge_base_ids"]] +
-                    [["knowledge item", i] for i in recog_results["bound_knowledge_ids"]]
-                )
-                
-                table_content = (
-                    cls.build_table("意图识别知识文件提供的意图", intent_rows) +
-                    cls.build_table("实际绑定的资源", bound_rows) +
-                    "以上配置存在不一致，可能导致结果不符合预期，建议绑定的资源（知识/工具）与意图识别知识文件提供的意图保持一致。"
-                )
-                conditional_dispatch_custom_event(
-                    "custom_event",
-                    {"intent_recognition_conflict": f"\n```text\n{table_content}\n```\n"},
-                    **kwargs,
-                )
-
-            # 第二部分：原始意图识别结果 vs 有效意图识别结果
-            original_rows = (
-                [["tool", n] for n in recog_results["tools_id"]] +
-                [["knowledge base", i] for i in recog_results["intent_base_id"]] +
-                [["knowledge item", i] for i in recog_results["intent_item_id"]]
-            )
-            
-            final_rows = (
-                [["tool", n] for n in recog_results["final_tools_id"]] +
-                [["knowledge base", i] for i in recog_results["final_intent_base_id"]] +
-                [["knowledge item", i] for i in recog_results["final_intent_item_id"]]
-            )
-            
-            table_content = (
-                cls.build_table("原始意图识别结果", original_rows) +
-                cls.build_table("有效意图识别结果", final_rows) +
-                "智能体将依据以上有效意图识别结果开展后续流程。"
-            )
-            
-            conditional_dispatch_custom_event(
-                "custom_event",
-                {"intent_recognition_result": f"\n```text\n{table_content}\n```\n"},
-                **kwargs,
-            )
+            cls.render_intent_recognition_results(recog_results, **kwargs)
 
         # 补充/修改 kwargs 的值
         if kwargs.get("use_independent_query_in_qa", False):
