@@ -1,6 +1,6 @@
 <template>
   <teleport :to="teleportTo">
-    <div class="ai-blueking-wrapper">
+    <div :class="['ai-blueking-wrapper', props.extCls ?? '']">
       <vue-draggable-resizable
         v-if="isShow"
         ref="resizeWrapper"
@@ -195,6 +195,7 @@
 
   // 类型定义
   interface Props {
+    extCls: string;
     title?: string;
     helloText?: string;
     enablePopup?: boolean;
@@ -227,6 +228,7 @@
   // ===================================================================
   const props = withDefaults(defineProps<Props>(), {
     title: '',
+    extCls: '',
     helloText: t('你好，我是小鲸'),
     enablePopup: true,
     shortcuts: () => [],
@@ -768,6 +770,7 @@
     switchToSession: _switchToSession,
     // 获取会话列表
     getSessionList: sessionStore.getSessionList,
+    sessionList: sessionStore.sessionList,
   });
 </script>
 
