@@ -45,10 +45,11 @@ from aidev_agent.core.agent.agents import (
 from aidev_agent.core.agent.multimodal import MultiToolCallCommonAgent, StructuredChatCommonAgent
 from aidev_agent.core.extend.intent.intent_recognition import IntentRecognition
 from aidev_agent.core.utils.local import request_local
-from aidev_agent.enums import Decision, EventType, IntentStatus
+from aidev_agent.enums import Decision, EventType, IntentCategory, IntentStatus
 from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils import Empty
 from aidev_agent.enums import ContextType
+import unicodedata
 
 from ..intent.prompts import DEFAULT_QA_PROMPT_TEMPLATES
 from ..intent.utils import (
@@ -464,7 +465,40 @@ class IntentRecognitionMixin(BaseModel):
             )
             if hasattr(request_local, "current_user_store"):
                 request_local.current_user_store["reference_doc"] = reference_doc
+                
+    @classmethod                
+    def cell_display_length(cls, s):
+        """计算字符串显示宽度，中文等全角字符算2，半角算1"""
+        length = 0
+        for c in str(s):
+            # F,W,? 算2，其它算1
+            length += 2 if unicodedata.east_asian_width(c) in "FW" else 1
+        return length
 
+    @classmethod
+    def pretty_table(cls, header, rows):
+        columns = [[header[i]] + [row[i] for row in rows] for i in range(len(header))]
+        col_widths = [max(cls.cell_display_length(cell) for cell in col) for col in columns]
+
+        def format_row(row):
+            formatted = []
+            for idx, cell in enumerate(row):
+                cell_str = str(cell)
+                # add spaces (全宽字符用2宽度补齐)
+                padding = col_widths[idx] - cls.cell_display_length(cell_str)
+                formatted.append(cell_str + " " * padding)
+            return " | ".join(formatted)
+
+        sep = "-+-".join(["-" * w for w in col_widths])
+
+        lines = [
+            format_row(header),
+            sep,
+        ]
+        for row in rows:
+            lines.append(format_row(row))
+        return "\n".join(lines)
+    
     @classmethod
     def intent_recognition(
         cls,
@@ -576,6 +610,101 @@ class IntentRecognitionMixin(BaseModel):
             candidate_tools = deduplicate_tools(
                 [tool for tool in deepcopy(candidate_tools) if tool.name != "add_image_to_chat_context"]
             )
+        # 如果用户有上传意图识别知识，则需要渲染到前端 
+        if recog_results["all_intent_knowledge"]:
+            all_intent_base_id=[]   
+            all_intent_item_id=[]    
+            all_tools_id=[]   
+            
+            for doc in recog_results["all_intent_knowledge"]:
+                doc = json.loads(doc)
+                try:
+                    category = IntentCategory(doc["意图类别"])
+                    if category == IntentCategory.KNOWLEDGE_BASE:                   
+                        all_intent_base_id.append(int(doc["意图ID"]))
+                    elif category == IntentCategory.KNOWLEDGE_ITEM:
+                        all_intent_item_id.append(int(doc["意图ID"]))
+                    elif category == IntentCategory.TOOL:
+                        all_tools_id.append(doc["意图ID"])
+                except ValueError:  # noqa
+                    _logger.warning(f"Invalid intent category: {doc['意图类别']} in document {doc}") 
+                    
+            header = ["意图类别", "意图ID"]
+            # 如果意图识别和用户绑定知识存在不一致，需要提示给用户
+            if not (
+                set(all_intent_base_id) == set(recog_results["origin_knowledge_base_ids"])
+                and set(all_intent_item_id) == set(recog_results["origin_knowledge_ids"])
+                and set(all_tools_id) == set(recog_results["origin_tool_names"])
+            ): 
+                # 第一部分：意图识别知识文件 vs 实际绑定资源
+                rows = []
+                for intent in recog_results["all_intent_knowledge"]:
+                    intent_data = json.loads(intent)
+                    rows.append([intent_data['意图类别'], intent_data['意图ID']])
+                if rows:
+                    table_content = "意图识别知识文件提供的意图有：\n\n"
+                    table_content += cls.pretty_table(header, rows) + "\n\n"
+                else:
+                    table_content = "意图识别知识文件提供的意图为空\n\n"
+
+                # 实际绑定资源表格         
+                bound_rows = []
+                if recog_results["origin_tool_names"]:
+                    bound_rows.extend([["tool", name] for name in recog_results["origin_tool_names"]])
+                if recog_results["origin_knowledge_base_ids"]:
+                    bound_rows.extend([["knowledge base", id] for id in recog_results["origin_knowledge_base_ids"]])
+                if recog_results["origin_knowledge_ids"]:
+                    bound_rows.extend([["knowledge item", id] for id in recog_results["origin_knowledge_ids"]])
+                if bound_rows:
+                    table_content += "实际绑定的资源有：\n\n"
+                    table_content += cls.pretty_table(header, bound_rows) + "\n\n"
+                else:
+                    table_content += "实际绑定的资源为空\n\n"
+                table_content += "以上配置存在不一致，可能导致结果不符合预期，建议绑定的资源（知识/工具）与意图识别知识文件提供的意图保持一致。"
+                
+                # 发送事件
+                conditional_dispatch_custom_event(
+                    "custom_event",
+                    {"intent_recognition_conflict": f"\n```text\n{table_content}\n```\n"},
+                    **kwargs,
+                )
+
+            # 第二部分：原始意图识别结果 vs 有效意图识别结果
+            original_rows = []
+            if recog_results["tools_id"]:
+                original_rows.extend([["tool", name] for name in recog_results["tools_id"]])
+            if recog_results["intent_base_id"]:
+                original_rows.extend([["knowledge base", id] for id in recog_results["intent_base_id"]])
+            if recog_results["intent_item_id"]:
+                original_rows.extend([["knowledge item", id] for id in recog_results["intent_item_id"]])
+            if original_rows:
+                table_content = "原始意图识别结果为：\n\n" 
+                table_content += cls.pretty_table(header, original_rows) + "\n\n"
+            else:              
+                table_content = "原始意图识别结果为空\n\n"
+
+
+            # 有效意图识别结果表格
+            final_rows = []
+            if recog_results["final_tools_id"]:
+                final_rows.extend([["tool", name] for name in recog_results["final_tools_id"]])
+            if recog_results["final_intent_base_id"]:
+                final_rows.extend([["knowledge base", id] for id in recog_results["final_intent_base_id"]])
+            if recog_results["final_intent_item_id"]:
+                final_rows.extend([["knowledge item", id] for id in recog_results["final_intent_item_id"]])
+            if final_rows:
+                table_content += "有效意图识别结果为：\n\n" 
+                table_content += cls.pretty_table(header, final_rows) + "\n\n" 
+            else:              
+                table_content += "有效意图识别结果为空\n\n"
+            table_content += "智能体将依据以上有效意图识别结果开展后续流程。"
+
+            # 发送事件
+            conditional_dispatch_custom_event(
+                "custom_event",
+                {"intent_recognition_result": f"\n```text\n{table_content}\n```\n"},
+                **kwargs,
+            )
 
         # 补充/修改 kwargs 的值
         if kwargs.get("use_independent_query_in_qa", False):
@@ -600,6 +729,7 @@ class IntentRecognitionMixin(BaseModel):
                 kwargs.get("topk", 20),
             )
             kwargs["beijing_now"] = get_beijing_now()
+
 
         return llm, chat_prompt_template, candidate_tools, intermediate_steps, callbacks, kwargs
 
@@ -746,6 +876,7 @@ class CommonQAStreamingMixIn:
         front_end_display = True
         # 用于判断是否是第一个```
         first_triple_backticks = True
+        has_custom_event = False
         # 用于去除 think 标识位
         max_cache_length = 50
         cache = deque(maxlen=max_cache_length)
@@ -851,7 +982,7 @@ class CommonQAStreamingMixIn:
                                 has_tool_call = True
                             else:  
                                 # 如果首次从 think 切到 text 内容，需要先补发一条带 elapsed_time的 think event 以供识别                                        
-                                if (has_reasoning_content or has_tool_call) and item["data"]["chunk"].content.strip():
+                                if (has_reasoning_content or has_tool_call or has_custom_event) and item["data"]["chunk"].content.strip():
                                     has_reasoning_content = False
                                     has_tool_call = False
                                     ret = {
@@ -900,6 +1031,20 @@ class CommonQAStreamingMixIn:
                                 "cover": cover,
                             }
                             final_result += item["data"]["custom_agent_finish"]
+                        elif "intent_recognition_conflict" in item["data"] and front_end_display:
+                            ret = {
+                                "event": EventType.THINK.value,
+                                "content": item["data"]["intent_recognition_conflict"],
+                                "cover": cover,
+                            } 
+                            has_custom_event=True   
+                        elif "intent_recognition_result" in item["data"] and front_end_display:
+                            ret = {
+                                "event": EventType.THINK.value,
+                                "content": item["data"]["intent_recognition_result"],
+                                "cover": cover,
+                            } 
+                            has_custom_event=True                            
                     elif item["event"] == "on_tool_end":
                         # TODO: 可能需要考虑异步是否会导致event的乱序问题
                         # 打印工具输出
@@ -907,7 +1052,7 @@ class CommonQAStreamingMixIn:
                         # 报错信息封装
                         if " is not a valid tool, try one of " in tool_output_content:
                             err_tool = tool_output_content.split(" is not a valid tool, try one of ")[0]
-                            tool_output_content = f"LLM 选择的工具“{err_tool}”超出了给定工具的范围，本次工具调用失败。"
+                            tool_output_content = f"意图识别选择的工具“{err_tool}”超出了给定工具的范围，本次工具调用失败。"
                         elif tool_output_content == ACTION_INPUT_ERR_MSG:
                             tool_output_content = "LLM 生成的工具调用参数不正确，本次工具调用失败。"
                         elif tool_output_content == OUTPUT_PARSER_ERR_MSG:
