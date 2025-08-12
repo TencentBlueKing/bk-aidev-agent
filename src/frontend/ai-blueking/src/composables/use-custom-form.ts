@@ -3,7 +3,7 @@ import BkForm from 'bkui-vue/lib/form';
 import { ref, computed, type Ref, watch } from 'vue';
 
 import { t } from '../lang';
-import type { IShortcut } from '../types';
+import type { IShortcut, IShortcutComponent, FormRule, ValidationStrategy } from '../types';
 
 export const useCustomForm = (shortcut: Ref<IShortcut>) => {
   const formRef = ref<InstanceType<typeof BkForm>>();
@@ -39,22 +39,89 @@ export const useCustomForm = (shortcut: Ref<IShortcut>) => {
     );
   });
 
+  // 必填验证策略
+  const requiredValidation: ValidationStrategy = component => {
+    if (component.required) {
+      return {
+        required: true,
+        message: t('请输入内容'),
+        trigger: component.type === 'select' ? 'change' : 'blur',
+      };
+    }
+    return null;
+  };
+
+  // 数字类型验证策略
+  const numberTypeValidation: ValidationStrategy = component => {
+    if (component.type === 'number') {
+      return {
+        type: 'number',
+        message: t('请输入数字'),
+        trigger: 'blur',
+      };
+    }
+    return null;
+  };
+
+  // 最小值验证策略
+  const minValidation: ValidationStrategy = component => {
+    if (component.type === 'number' && typeof component.min === 'number') {
+      return {
+        type: 'number',
+        min: component.min,
+        message: `${t('数值不能小于')} ${component.min}`,
+        trigger: 'blur',
+      };
+    }
+    return null;
+  };
+
+  // 最大值验证策略
+  const maxValidation: ValidationStrategy = component => {
+    if (component.type === 'number' && typeof component.max === 'number') {
+      return {
+        type: 'number',
+        max: component.max,
+        message: `${t('数值不能大于')} ${component.max}`,
+        trigger: 'blur',
+      };
+    }
+    return null;
+  };
+
+  // 验证策略注册表
+  const validationStrategies: ValidationStrategy[] = [
+    requiredValidation,
+    numberTypeValidation,
+    minValidation,
+    maxValidation,
+  ];
+
   // 表单验证规则
   const formRules = computed(() => {
     return (shortcut.value.components || []).reduce(
       (acc, item) => {
-        if (item.required) {
-          acc[item.key] = [
-            {
-              required: true,
-              message: t('请输入内容'),
-              trigger: item.type === 'select' ? 'change' : 'blur',
-            },
-          ];
+        const rules: FormRule[] = [];
+
+        // 应用所有验证策略
+        validationStrategies.forEach(strategy => {
+          const result = strategy(item as IShortcutComponent);
+          if (result) {
+            if (Array.isArray(result)) {
+              rules.push(...result);
+            } else {
+              rules.push(result);
+            }
+          }
+        });
+
+        if (rules.length > 0) {
+          acc[item.key] = rules;
         }
+
         return acc;
       },
-      {} as Record<string, any>
+      {} as Record<string, FormRule[]>
     );
   });
 

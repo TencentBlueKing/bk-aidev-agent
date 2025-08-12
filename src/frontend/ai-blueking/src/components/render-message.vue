@@ -194,7 +194,6 @@
     if (!props.message.content) return '';
     const rendered = md.render(props.message.content);
 
-    console.log(rendered, '===rendered===');
     // 使用 DOMPurify 净化内容以防止 XSS
     const sanitized = DOMPurify.sanitize(rendered, {
       USE_PROFILES: { html: true, svg: true },

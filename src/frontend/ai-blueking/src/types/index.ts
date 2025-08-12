@@ -102,3 +102,18 @@ export interface FormItem {
   max?: number; // number 专用
   rows?: number; // textarea 专用
 }
+
+// 表单规则类型定义
+export interface FormRule {
+  required?: boolean;
+  type?: string;
+  min?: number;
+  max?: number;
+  message: string;
+  trigger: string;
+}
+
+// 验证策略接口
+export interface ValidationStrategy {
+  (component: IShortcutComponent): FormRule | FormRule[] | null;
+}
