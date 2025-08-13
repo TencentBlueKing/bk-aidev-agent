@@ -1308,7 +1308,7 @@ class IntentRecognition(BaseModel):
                 intent_knowledge_doc = future.result()
 
             # 提取知识内容
-            intent_knowledge = [doc["page_content"] for doc in intent_knowledge_doc]
+            intent_knowledge = [json.loads(doc["page_content"]) for doc in intent_knowledge_doc]
             all_intent_knowledge = intent_knowledge
 
             # 统一处理LLM意图识别

@@ -99,7 +99,7 @@ class KnowledgebaseSettings(BaseModel):
         max_length=1024,
         description=("拒答文案"),
     )
-    enable_parallel_tool_calls: bool = Field(default=False, description=("StructuredChatCommonQAAgent调用多个工具时是否使用并行调用"))
+    enable_parallel_tool_calls: bool = Field(default=True, description=("StructuredChatCommonQAAgent调用多个工具时是否使用并行调用"))
     with_scalar_data: bool = Field(
         default=False, 
         description="是否使用标量索引进行结构化数据召回"
