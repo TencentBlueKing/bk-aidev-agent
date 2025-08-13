@@ -32,6 +32,10 @@
 | `miniPadding`     | `Number`           | `0`                                                       | **v1.1.2新增** 压缩状态下的边距，单位为像素。控制组件在压缩状态时与屏幕边缘的距离。                                                                                                                   |
 | `initialSessionCode` | `String`        | `''`                                                    | **v1.2.2新增** 指定组件初始化时要加载的会话代码。如果设置了此属性且 `autoSwitchToInitialSession` 为 `true`，组件将在加载时自动切换到该会话。                                                           |
 | `autoSwitchToInitialSession` | `Boolean` | `true`                                                    | **v1.2.2新增** 控制是否在组件初始化时自动切换到 `initialSessionCode` 指定的会话。设置为 `false` 时，仅加载会话列表但不自动切换。                                                                      |
+| `extCls`      | `String`           | `''`                                                      | **v1.2.3新增** 自定义组件根元素的类名，方便用户进行样式覆盖和扩展。 |
+| `sessionList` | `Array<ISession>`  | `[]`                                                      | **v1.2.3新增** 会话列表，用于展示和管理多个会话。 |
+| `shortcutLimit` | `Number`         | `3`                                                       | **v1.2.3新增** 快捷指令在popover中显示的数量限制。 |
+| `shortcutFilter`| `Function`       | `undefined`                                               | **v1.2.3新增** 快捷指令的过滤函数，用于动态控制快捷指令的显示。 |
 
 ## 压缩状态边距控制 <Badge type="tip" text="v1.1.2" />
 

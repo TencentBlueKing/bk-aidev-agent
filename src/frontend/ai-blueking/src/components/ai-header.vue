@@ -164,8 +164,8 @@
     try {
       // 通知父组件
       emit('newChat');
-      // 创建新会话（总是创建新会话，不检查上一个会话是否为空）
-      await sessionStore.addNewSession();
+      // 创建新会话（保持初始化逻辑， 如果已有空回话，不再新建）
+      await sessionStore.initSession(false);
     } catch (error) {
       console.error('Failed to create new chat:', error);
     }

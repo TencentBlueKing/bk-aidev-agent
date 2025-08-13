@@ -199,6 +199,7 @@
       USE_PROFILES: { html: true, svg: true },
       ADD_TAGS: ['svg', 'g', 'path'],
       ADD_ATTR: [
+        'target',
         'xmlns',
         'width',
         'height',

@@ -103,6 +103,7 @@
 
                   <chat-input-box
                     v-else
+                    :class="!hasSessionContents ? 'greeting-layout' : 'chat-layout'"
                     v-model="inputMessage"
                     :loading="currentSessionLoading || false"
                     :prompts="promptList"
@@ -132,6 +133,7 @@
         :shortcuts="props.shortcuts"
         :conversation-settings="sessionStore.agentInfo.value?.conversationSettings"
         :shortcut-limit="props.shortcutLimit"
+        :shortcut-filter="props.shortcutFilter"
         @click="isShow = true"
         @shortcut-click="handlePopupShortcutClick"
       />
@@ -200,6 +202,7 @@
     enablePopup?: boolean;
     shortcuts?: IShortcut[];
     shortcutLimit?: number;
+    shortcutFilter?: (shortcut: IShortcut) => boolean;
     url?: string;
     prompts?: string[];
     hideNimbus?: boolean;
@@ -232,6 +235,7 @@
     enablePopup: true,
     shortcuts: () => [],
     shortcutLimit: 3,
+    shortcutFilter: undefined,
     url: '',
     prompts: () => [],
     hideNimbus: false,

@@ -384,9 +384,14 @@
     background: #ffffff;
     border-radius: 8px;
 
-    .prompt-list-wrapper {
+    &.chat-layout .prompt-list-wrapper {
       position: absolute;
       top: v-bind(promptListTop);
+    }
+
+    &.greeting-layout .prompt-list-wrapper {
+      position: absolute;
+      top: 108px;
     }
 
     .input-wrapper {

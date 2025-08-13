@@ -5,7 +5,7 @@
     class="bkai-prompt-list"
   >
     <div class="bkai-prompt-list-search">
-      <input
+      <bk-input
         v-model="searchValue"
         behavior="simplicity"
         placeholder="请输入关键词"
@@ -37,6 +37,8 @@
 
 <script setup lang="ts">
   import { nextTick, ref, computed, onMounted, onBeforeUnmount, defineExpose, watch } from 'vue';
+
+  import { Input as BkInput } from 'bkui-vue';
 
   import { t } from '../lang';
 

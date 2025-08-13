@@ -3,6 +3,7 @@ import { ref } from 'vue';
 
 import { HIDE_ROLE_LIST } from '../config';
 import { uuid as generateUuid } from '../utils';
+import { t } from '../lang';
 
 import type { ISessionEditItem, SdkApi } from './types';
 
@@ -86,27 +87,8 @@ export function useSessionStore() {
     // 如果没有提供 sessionCode，则生成新的会话代码
     const newSessionCode = sessionCode || generateUuid();
 
-    // 查找现有会话中以 Chat- 开头的最大索引
-    const chatPattern = /^Chat-(\d+)$/;
-    let maxIndex = 0;
-
-    sessionList.value.forEach(session => {
-      if (chatPattern.test(session.sessionName)) {
-        const match = session.sessionName.match(chatPattern);
-
-        if (match && match[1]) {
-          const index = parseInt(match[1], 10);
-
-          if (!isNaN(index) && index > maxIndex) {
-            maxIndex = index;
-          }
-        }
-      }
-    });
-
-    // 新会话索引为最大索引 + 1
-    const newIndex = maxIndex + 1;
-    const sessionName = `Chat-${newIndex}`;
+    // 所有新会话统一命名为"新会话"
+    const sessionName = t('新会话');
 
     const newSession: ISession = {
       sessionCode: newSessionCode,
@@ -322,6 +304,8 @@ export function useSessionStore() {
 
     let targetSession: ISessionEditItem | null = null;
     let targetSessionContents: ISessionContent[] = [];
+
+    debugger;
 
     // 如果有现有会话，检查最近的一条会话
     if (sessions.length > 0) {

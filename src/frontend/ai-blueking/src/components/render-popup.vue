@@ -83,6 +83,7 @@
     shortcuts?: IShortcut[];
     conversationSettings?: IAgentInfo['conversationSettings'];
     shortcutLimit?: number;
+    shortcutFilter?: (shortcut: IShortcut) => boolean;
   }
 
   const props = withDefaults(defineProps<IProps>(), {
@@ -94,9 +95,14 @@
   const { isIconVisible, iconPosition, popupRef, clearSelection } = useSelect(enablePopup);
 
   // 定义快捷按钮数据
-  const allShortcuts = computed(() =>
-    props.shortcuts.length > 0 ? props.shortcuts : props.conversationSettings?.commands || []
-  );
+  const allShortcuts = computed(() => {
+    const shortcuts = props.shortcuts.length > 0 ? props.shortcuts : props.conversationSettings?.commands || [];
+    // 如果提供了过滤函数，则应用过滤
+    if (props.shortcutFilter) {
+      return shortcuts.filter(props.shortcutFilter);
+    }
+    return shortcuts;
+  });
 
   // 可见的快捷按钮
   const visibleShortcuts = computed(() => allShortcuts.value.slice(0, props.shortcutLimit));

@@ -91,6 +91,7 @@ export const langData = {
   请输入数字: 'Please enter a number',
   数值不能小于: 'The value cannot be less than',
   数值不能大于: 'The value cannot be greater than',
+  新会话: 'New Session',
 } as const;
 
 export const zhLangData = {
@@ -100,6 +101,7 @@ export const zhLangData = {
       {{ SELECTED_TEXT }}
     '''`,
   explanationShortcut: `您是一位专业的解释者。请详细解释“{{ SELECTED_TEXT }}”。您的解释应包括 1) 基本含义和概念解释；2) 实际应用或使用案例；3) 如果是技术术语，请提供相关技术背景；4) 适当时提供具体示例，以帮助理解。使用清晰易懂的语言，确保非专业人员也能理解。如果该词/短语有多种含义，请列出主要定义。在确保信息完整性和准确性的同时，请保持答复简洁明了。`,
+  新会话: '新会话',
 };
 
 export const t = (key: string) => {

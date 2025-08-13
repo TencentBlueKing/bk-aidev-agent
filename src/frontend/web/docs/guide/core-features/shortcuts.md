@@ -181,6 +181,31 @@ interface IShortcut {
 }
 ```
 
+### 控制快捷指令弹窗
+
+在某些情况下，您可能不希望在页面的特定区域选中文字时弹出快捷指令窗口。例如，在一个代码编辑器或者一个具有复杂交互的表格中，这个弹窗可能会干扰正常操作。
+
+AI 小鲸提供了一个简单的方法来禁用特定区域的弹窗功能。您只需要在不希望弹出快捷指令的任何 HTML 元素上添加 `ai-blueking-hide` 属性即可。
+
+```html
+<div ai-blueking-hide>
+  <p>在这部分区域内选中文本，将不会触发 AI 小鲸的快捷指令弹窗。</p>
+  <code>
+    // 这里是代码区域，同样不会触发弹窗
+    const x = 10;
+    console.log(x);
+  </code>
+</div>
+```
+
+当您在带有 `ai-blueking-hide` 属性的元素或其任何子元素中选择文本时，快捷指令弹窗将不会出现。这为您提供了精细的控制能力，确保 AI 小鲸的交互不会干扰您应用中的其他功能。
+
+#### 工作原理
+
+AI 小鲸在响应文本选择事件时，会从被选中的文本所在的元素开始，向上遍历DOM树。如果在这个遍历过程中发现了任何一个元素带有 `ai-blueking-hide` 属性，它就会停止处理，从而阻止了弹窗的显示。
+
+这个特性对于提升与现有复杂前端应用的集成体验非常有用。
+
 ### 配置数字输入
 
 ```javascript
@@ -246,6 +271,45 @@ interface IShortcut {
   />
 </template>
 ```
+
+## 快捷操作增强 (v1.2.3)
+
+v1.2.3版本进一步增强了快捷操作的灵活性和用户体验，新增了以下功能：
+
+### 自动提交
+
+对于通过文本选中后弹出的快捷操作（`enablePopup: true`），现在支持自动提交。如果一个快捷指令只有一个表单项，并且该表单项通过 `fillBack: true` 自动填充了内容，那么该操作将自动执行，无需用户再次点击提交按钮。这大大简化了常见的单步操作，如“翻译”或“解释代码”。
+
+### 显示数量限制
+
+新增 `shortcutLimit` 属性，可以控制在弹出窗口中显示的快捷操作数量。当快捷操作较多时，可以避免列表过长。
+
+```vue
+<template>
+  <AIBlueking :shortcuts="shortcuts" :shortcut-limit="3" />
+</template>
+```
+
+### 动态过滤
+
+新增 `shortcutFilter` 属性，它是一个函数，可以用来动态地过滤要显示的快捷操作。这个函数会在每次弹出快捷操作菜单时执行。
+
+函数签名：`(shortcut: IShortcut) => boolean`
+
+```vue
+<template>
+  <AIBlueking :shortcuts="shortcuts" :shortcut-filter="myFilter" />
+</template>
+
+<script setup>
+const myFilter = (shortcut) => {
+  // 只显示ID为 'translate' 或 'explain' 的快捷操作
+  return ['translate', 'explain'].includes(shortcut.id);
+};
+</script>
+```
+
+这些增强功能使快捷操作的管理更加强大和灵活，能够适应更多复杂的应用场景。
 
 ## 最佳实践
 

@@ -117,6 +117,10 @@ export default {
       type: Number,
       default: 3,
     },
+    shortcutFilter: {
+      type: Function,
+      default: undefined,
+    },
   },
   data() {
     return {
@@ -137,6 +141,7 @@ export default {
           extCls: that.extCls,
           shortcuts: that.shortcuts,
           shortcutLimit: that.shortcutLimit,
+          shortcutFilter: that.shortcutFilter,
           enablePopup: that.enablePopup,
           url: that.url,
           title: that.title,
