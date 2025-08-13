@@ -40,6 +40,7 @@ export default defineConfig({
             { text: "聊天交互", link: "/guide/core-features/chat-interaction" },
             { text: "内容引用", link: "/guide/core-features/content-referencing" },
             { text: "提示词", link: "/guide/core-features/prompts" },
+            { text: "快捷操作", link: "/guide/core-features/shortcuts" },
             { text: "UI 定制", link: "/guide/core-features/ui-customization" },
           ],
         },
