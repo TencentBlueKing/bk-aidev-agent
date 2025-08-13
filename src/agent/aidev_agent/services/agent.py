@@ -8,7 +8,7 @@ from aidev_agent.core.extend.agent.qa import CommonQAAgent
 from aidev_agent.core.extend.models.llm_gateway import ChatModel
 from aidev_agent.enums import AgentBuildType, AgentType
 from aidev_agent.services.chat import ChatCompletionAgent
-from aidev_agent.services.config_manager import AgentConfigManager
+from aidev_agent.services.config_manager import AgentConfig, AgentConfigManager
 from aidev_agent.services.pydantic_models import ChatPrompt
 
 logger = logging.getLogger("aidev-agent")
@@ -239,7 +239,7 @@ class AgentInstanceFactory:
                 item["content"] = self.get_role_prompt(agent_code)
                 break
 
-    def _check_agent_switch(self, session_context_data: List[dict], base_agent_config) -> tuple[bool, str]:
+    def _check_agent_switch(self, session_context_data: List[dict], base_agent_config: AgentConfig) -> tuple[bool, str]:
         """检查是否需要切换智能体"""
         switch_agent = False
         final_agent_code = self.agent_code
@@ -257,9 +257,7 @@ class AgentInstanceFactory:
             command = last_user_message.get("extra", {}).get("command")
 
             if command:  # 若存在Command，且该Command映射到了新的Agent,那么在本轮对话中使用新的Agent的配置
-                command_agent_code = base_agent_config.command_settings.get("command_agent_mappings", {}).get(
-                    command, self.agent_code
-                )
+                command_agent_code = base_agent_config.command_agent_mapping.get(command, self.agent_code)
                 switch_agent = command_agent_code != self.agent_code
                 final_agent_code = command_agent_code  # 切换Agent
 

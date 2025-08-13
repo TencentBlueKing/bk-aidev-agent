@@ -1,6 +1,6 @@
-from typing import List, Literal, Tuple
+from typing import Any, List, Literal, Tuple
 
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 
 from aidev_agent.enums import FineGrainedScoreType, IndependentQueryMode, KnowledgeBaseQueryFunction
 
@@ -32,6 +32,7 @@ class SessionContentExtra(BaseModel):
     anchor_path_resources: dict = Field(default_factory=dict)
     context: list[dict] | None = None
     command: str | None = None
+    rendered_content: str | None = None
 
 
 class SessionContentProperty(BaseModel):
@@ -46,6 +47,18 @@ class ChatPrompt(BaseModel):
     content: str
     extra: SessionContentExtra | None = None
 
+    @model_validator(mode="before")
+    def validate_content_with_rendered(cls, values: Any) -> Any:
+        extra = values.get("extra")
+        if extra:
+            if isinstance(extra, dict):
+                rendered_content = extra.get("rendered_content")
+                if rendered_content:
+                    values["content"] = rendered_content
+            elif hasattr(extra, "rendered_content") and extra.rendered_content:
+                values["content"] = extra.rendered_content
+        return values
+
 
 class IntentRecognition(BaseModel):
     intent_recognition_knowledge: list[dict] | None = Field(default=None, description=("意图识别知识"))
@@ -53,18 +66,13 @@ class IntentRecognition(BaseModel):
     intent_recognition_llm: str | None = Field(default=None, description="意图识别使用的LLM")
     enable_logging: bool = Field(default=True, description="是否启用日志记录")
     intent_recognition_llm_code: str | None = Field(default=None, description=("约定的意图识别 code，用于快速单跳"))
-    with_index_specific_search_init: bool = Field(
-        default=True, 
-        description="是否使用初始查询进行 index specific 召回"
-    )
+    with_index_specific_search_init: bool = Field(default=True, description="是否使用初始查询进行 index specific 召回")
     with_index_specific_search_translation: bool = Field(
-        default=False,
-        description="是否使用翻译后的查询进行 index specific 召回"
+        default=False, description="是否使用翻译后的查询进行 index specific 召回"
     )
     with_index_specific_search_keywords: bool = Field(
-        default=False, 
-        description="是否使用提取的关键词进行 index specific 召回"
-    )    
+        default=False, description="是否使用提取的关键词进行 index specific 召回"
+    )
     tool_output_compress_thrd: int = Field(default=5000, description=("工具输出压缩阈值"))
     agent_type: str | None = Field(default=None, description=("agent类"))
 
@@ -99,21 +107,18 @@ class KnowledgebaseSettings(BaseModel):
         max_length=1024,
         description=("拒答文案"),
     )
-    enable_parallel_tool_calls: bool = Field(default=True, description=("StructuredChatCommonQAAgent调用多个工具时是否使用并行调用"))
-    with_scalar_data: bool = Field(
-        default=False, 
-        description="是否使用标量索引进行结构化数据召回"
+    enable_parallel_tool_calls: bool = Field(
+        default=True, description=("StructuredChatCommonQAAgent调用多个工具时是否使用并行调用")
     )
+    with_scalar_data: bool = Field(default=False, description="是否使用标量索引进行结构化数据召回")
     use_independent_query_in_translation: bool = Field(
         default=False, description=("翻译查询时是否使用独立查询(而非原始查询)作为输入源")
     )
     use_translated_query_in_scores: bool = Field(
-        default=True, 
-        description="计算相关性分数时是否使用翻译后的查询(而非原始查询)"
+        default=True, description="计算相关性分数时是否使用翻译后的查询(而非原始查询)"
     )
     use_independent_query_in_scores: bool = Field(
-        default=True,
-        description="计算相关性分数时是否使用独立查询(而非原始查询)"
+        default=True, description="计算相关性分数时是否使用独立查询(而非原始查询)"
     )
     with_query_cls: bool = Field(
         default=True,

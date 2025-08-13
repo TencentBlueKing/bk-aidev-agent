@@ -6,7 +6,6 @@ from aidev_agent.api.bk_aidev import BKAidevApi
 from aidev_agent.enums import AgentBuildType
 from aidev_agent.services.agent import AgentInstanceFactory
 from aidev_agent.services.chat import ChatPrompt, ExecuteKwargs
-from aidev_agent.services.command_handler import CommandProcessor
 from bk_plugin_framework.kit.api import custom_authentication_classes
 from bk_plugin_framework.kit.decorators import inject_user_token, login_exempt
 from blueapps.core.exceptions import ClientBlueException
@@ -103,23 +102,7 @@ class ChatSessionViewSet(PluginViewSet):
 
 class ChatSessionContentViewSet(PluginViewSet):
     def create(self, request):
-        property_data = request.data.get("property", {})
-
         client = BKAidevApi.get_client()
-
-        # 快捷指令
-        try:
-            command_data = property_data.get("extra")
-            logger.info(
-                "CreateChatSessionContent: try to process command, command_data->[%s]",
-                command_data,
-            )
-            if command_data.get("command"):
-                processed_content = CommandProcessor().process_command(command_data)
-                request.data["content"] = processed_content
-        except Exception as e:  # pylint: disable=broad-except
-            logger.error("CreateChatSessionContent: process command error->[%s]", e)
-
         result = client.api.create_chat_session_content(json=request.data)
         return Response(data=result["data"])
 

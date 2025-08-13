@@ -114,6 +114,22 @@ class ExplanationCommandHandler(CommandHandler):
         """
 
 
+class CommonCommandHandler(CommandHandler):
+    def __init__(self, command: str, template: str):
+        super().__init__()
+        self._template = template
+        self.command = command
+
+    def get_template(self) -> str:
+        return self._template
+
+
+class CommonCommandHandlerBuilder:
+    @classmethod
+    def build(cls, command_id, command_template) -> CommonCommandHandler:
+        return CommonCommandHandler(command_id, command_template)
+
+
 class CommandProcessor:
     _handlers: dict[str, type[CommandHandler]] = {}
 
@@ -144,6 +160,6 @@ class CommandProcessor:
             raise e
 
 
-# 注册处理器
-CommandProcessor.register_handler("translate", TranslateCommandHandler)
-CommandProcessor.register_handler("explanation", ExplanationCommandHandler)
+# 注册处理器 exsample
+# CommandProcessor.register_handler("translate", TranslateCommandHandler)
+# CommandProcessor.register_handler("explanation", ExplanationCommandHandler)
