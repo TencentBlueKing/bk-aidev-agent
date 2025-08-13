@@ -1,3 +1,5 @@
+import time
+
 from pydantic import BaseModel, Field
 
 from aidev_agent.api.abstract_client import AbstractBKAidevResourceManager
@@ -21,10 +23,23 @@ class AgentConfig(BaseModel):
     command_agent_mapping: dict = Field(default_factory=dict, description="智能体映射关联")
 
 
+class CachedEntry:
+    """缓存条目，包含配置和过期时间"""
+
+    def __init__(self, config: AgentConfig, timestamp: float):
+        self.config = config
+        self.timestamp = timestamp
+
+    def is_expired(self, ttl: int = 10) -> bool:
+        """检查缓存是否过期，默认10秒过期时间"""
+        return time.time() - self.timestamp > ttl
+
+
 class AgentConfigManager:
     """智能体配置管理器"""
 
-    _config_cache: dict[str, AgentConfig] = {}
+    _config_cache: dict[str, CachedEntry] = {}
+    CACHE_TTL = 10  # 缓存过期时间（秒）
 
     @classmethod
     def get_config(
@@ -39,7 +54,12 @@ class AgentConfigManager:
         """
         # 检查缓存中是否存在且不需要强制刷新
         if not force_refresh and agent_code in cls._config_cache:
-            return cls._config_cache[agent_code]
+            cached_entry = cls._config_cache[agent_code]
+            # 检查缓存是否过期
+            if not cached_entry.is_expired(cls.CACHE_TTL):
+                return cached_entry.config
+            # 如果过期，从缓存中删除
+            del cls._config_cache[agent_code]
 
         # 实时从AIDev平台拉取配置
         try:
@@ -75,5 +95,5 @@ class AgentConfigManager:
         )
 
         # 更新缓存
-        cls._config_cache[agent_code] = config
+        cls._config_cache[agent_code] = CachedEntry(config, time.time())
         return config

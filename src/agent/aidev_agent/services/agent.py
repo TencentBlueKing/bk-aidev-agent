@@ -9,7 +9,7 @@ from aidev_agent.core.extend.models.llm_gateway import ChatModel
 from aidev_agent.enums import AgentBuildType, AgentType
 from aidev_agent.services.chat import ChatCompletionAgent
 from aidev_agent.services.config_manager import AgentConfig, AgentConfigManager
-from aidev_agent.services.pydantic_models import ChatPrompt
+from aidev_agent.services.pydantic_models import AgentOptions, ChatPrompt
 
 logger = logging.getLogger("aidev-agent")
 
@@ -227,6 +227,11 @@ class AgentInstanceFactory:
         config = AgentConfigManager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
         return config.role_prompt
 
+    def build_agent_options(self, agent_code: str) -> AgentOptions:
+        """构建Agent选项"""
+        config = AgentConfigManager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        return config.agent_options
+
     def handle_agent_switch(self, session_context_data: List[dict], agent_code: str, switch_agent: bool):
         """处理智能体切换"""
         if not switch_agent:
@@ -321,6 +326,7 @@ class AgentInstanceFactory:
             "knowledge_bases": factory.build_knowledge_bases(agent_code),
             "knowledge_items": factory.build_knowledge_items(agent_code),
             "chat_history": factory.build_chat_history(session_context_data),
+            "agent_options": factory.build_agent_options(agent_code),
         }
 
     @staticmethod
