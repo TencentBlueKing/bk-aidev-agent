@@ -134,6 +134,7 @@ class ChatCompletionAgent(BaseModel):
                 self.files,
                 self.knowledge_bases,
                 self.knowledges,
+                self.agent_options.knowledge_query_options.qa_response_knowledge_bases,
                 self.agent_options.intent_recognition_options.intent_recognition_knowledge,
             ]
         )
