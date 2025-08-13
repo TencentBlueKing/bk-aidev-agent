@@ -504,7 +504,7 @@ class IntentRecognitionMixin(BaseModel):
         """辅助函数：按类别收集意图ID"""
         return [
             int(doc["意图ID"]) 
-            for doc in (json.loads(i) for i in intents)
+            for doc in intents
             if IntentCategory(doc["意图类别"]) == category
         ]
         
@@ -528,7 +528,7 @@ class IntentRecognitionMixin(BaseModel):
         all_intent_item_id = cls.get_intent_ids(recog_results["all_intent_knowledge"], IntentCategory.KNOWLEDGE_ITEM)
         all_tools_id = [
             doc["意图ID"] 
-            for doc in (json.loads(i) for i in recog_results["all_intent_knowledge"])
+            for doc in recog_results["all_intent_knowledge"]
             if IntentCategory(doc["意图类别"]) == IntentCategory.TOOL
         ]
 
@@ -539,8 +539,7 @@ class IntentRecognitionMixin(BaseModel):
             and set(all_tools_id) == set(recog_results["bound_tool_names"])
         ):
             # 第一部分：意图识别知识文件 vs 实际绑定资源
-            intent_rows = [[d['意图类别'], d['意图ID']] for d in 
-                        (json.loads(i) for i in recog_results["all_intent_knowledge"])]
+            intent_rows = [[d['意图类别'], d['意图ID']] for d in recog_results["all_intent_knowledge"]]
             bound_rows = (
                 [["tool", n] for n in recog_results["bound_tool_names"]] +
                 [["knowledge base", i] for i in recog_results["bound_knowledge_base_ids"]] +
@@ -683,6 +682,10 @@ class IntentRecognitionMixin(BaseModel):
                     kwargs["context_type"] = ContextType.PRIVATE.value
                 elif kwargs["qa_context"]:
                     kwargs["context_type"] = ContextType.QA_RESPONSE.value
+                
+            # 如果有意图识别知识，需要渲染到前端    
+            if recog_results["all_intent_knowledge"]:
+                cls.render_intent_recognition_results(recog_results, **kwargs)
 
         # NOTE: 如果是多模态场景，可能会有一个特殊的 `add_image_to_chat_context` 工具，需要带上
         # 但是仅针对支持 multimodal 才添加
@@ -695,9 +698,7 @@ class IntentRecognitionMixin(BaseModel):
                 [tool for tool in deepcopy(candidate_tools) if tool.name != "add_image_to_chat_context"]
             )
             
-        # 如果有意图识别知识，需要渲染到前端    
-        if recog_results["all_intent_knowledge"]:
-            cls.render_intent_recognition_results(recog_results, **kwargs)
+
 
         # 补充/修改 kwargs 的值
         if kwargs.get("use_independent_query_in_qa", False):
@@ -978,6 +979,7 @@ class CommonQAStreamingMixIn:
                                 if (has_reasoning_content or has_tool_call or has_custom_event) and item["data"]["chunk"].content.strip():
                                     has_reasoning_content = False
                                     has_tool_call = False
+                                    has_custom_event = False
                                     ret = {
                                         "event": EventType.THINK.value,
                                         "content": "\n",
