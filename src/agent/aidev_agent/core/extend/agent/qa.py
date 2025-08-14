@@ -523,62 +523,72 @@ class IntentRecognitionMixin(BaseModel):
             recog_results: 意图识别结果字典
             **kwargs: 其他参数
         """
-        # 按类别收集意图id
-        all_intent_base_id = cls.get_intent_ids(recog_results["all_intent_knowledge"], IntentCategory.KNOWLEDGE_BASE)
-        all_intent_item_id = cls.get_intent_ids(recog_results["all_intent_knowledge"], IntentCategory.KNOWLEDGE_ITEM)
-        all_tools_id = [
-            doc["意图ID"] 
-            for doc in recog_results["all_intent_knowledge"]
-            if IntentCategory(doc["意图类别"]) == IntentCategory.TOOL
-        ]
 
-        # 如果意图识别和用户绑定知识存在不一致，需要提示给用户
-        if not (
-            set(all_intent_base_id) == set(recog_results["bound_knowledge_base_ids"])
-            and set(all_intent_item_id) == set(recog_results["bound_knowledge_ids"])
-            and set(all_tools_id) == set(recog_results["bound_tool_names"])
-        ):
-            # 第一部分：意图识别知识文件 vs 实际绑定资源
-            intent_rows = [[d['意图类别'], d['意图ID']] for d in recog_results["all_intent_knowledge"]]
-            bound_rows = (
-                [["tool", n] for n in recog_results["bound_tool_names"]] +
-                [["knowledge base", i] for i in recog_results["bound_knowledge_base_ids"]] +
-                [["knowledge item", i] for i in recog_results["bound_knowledge_ids"]]
-            )
-            
-            table_content = (
-                cls.build_table("意图识别知识文件提供的意图", intent_rows) +
-                cls.build_table("实际绑定的资源", bound_rows) +
-                "以上配置存在不一致，可能导致结果不符合预期，建议绑定的资源（知识/工具）与意图识别知识文件提供的意图保持一致。"
-            )
-            conditional_dispatch_custom_event(
-                "custom_event",
-                {"intent_recognition_conflict": f"\n```text\n{table_content}\n```\n"},
-                **kwargs,
-            )
-
-        # 第二部分：原始意图识别结果 vs 有效意图识别结果
-        original_rows = (
-            [["tool", n] for n in recog_results["tools_id"]] +
-            [["knowledge base", i] for i in recog_results["intent_base_id"]] +
-            [["knowledge item", i] for i in recog_results["intent_item_id"]]
-        )
-        
-        final_rows = (
-            [["tool", n] for n in recog_results["final_tools_id"]] +
-            [["knowledge base", i] for i in recog_results["final_intent_base_id"]] +
-            [["knowledge item", i] for i in recog_results["final_intent_item_id"]]
+        # 将意图识别知识文件和实际绑定资源记录到日志
+        intent_rows = [[d['意图类别'], d['意图ID']] for d in recog_results["all_intent_knowledge"]]
+        bound_rows = (
+            [["tool", n] for n in recog_results["bound_tool_names"]] +
+            [["knowledge base", i] for i in recog_results["bound_knowledge_base_ids"]] +
+            [["knowledge item", i] for i in recog_results["bound_knowledge_ids"]]
         )
         
         table_content = (
-            cls.build_table("原始意图识别结果", original_rows) +
-            cls.build_table("有效意图识别结果", final_rows) +
-            "智能体将依据以上有效意图识别结果开展后续流程。"
+            cls.build_table("意图识别知识文件提供的意图", intent_rows) +
+            cls.build_table("实际绑定的资源", bound_rows)
         )
+        _logger.info(f"{table_content}")
+
+        # 按类别获取所有意图ID
+        tools_id = recog_results["tools_id"]
+        intent_base_id = recog_results["intent_base_id"]
+        intent_item_id = recog_results["intent_item_id"]
+        
+        final_tools_id = recog_results["final_tools_id"]
+        final_intent_base_id = recog_results["final_intent_base_id"]
+        final_intent_item_id = recog_results["final_intent_item_id"]
+
+        # 情况1：没有识别到任何意图
+        if not tools_id and not intent_base_id and not intent_item_id:
+            intent_result = "根据您提供的意图识别知识文件，未识别到您的意图。\n\n"
+        
+        # 情况2：识别到意图但没有有效绑定的资源
+        elif not final_tools_id and not final_intent_base_id and not final_intent_item_id:
+            # 构建识别到的意图描述
+            intent_desc = []
+            if intent_base_id:
+                intent_desc.extend(f"知识库{base_id}" for base_id in intent_base_id)
+            if intent_item_id:
+                intent_desc.extend(f"知识条目{item_id}" for item_id in intent_item_id)
+            if tools_id:
+                intent_desc.extend(f"工具{tool_id}" for tool_id in tools_id)
+            
+            intent_result = f"根据您提供的意图识别知识文件，您可能是想查询{'、'.join(intent_desc)}的内容。\n\n但您实际绑定的资源不存在该意图，因此智能体将不使用该资源。\n\n"
+        
+        # 情况3：识别到意图且有有效绑定的资源
+        else:
+            # 构建识别到的意图描述
+            intent_desc = []
+            if intent_base_id:
+                intent_desc.extend([f"知识库{base_id}" for base_id in intent_base_id])
+            if intent_item_id:
+                intent_desc.extend([f"知识条目{item_id}" for item_id in intent_item_id])
+            if tools_id:
+                intent_desc.extend([f"工具{tool_id}" for tool_id in tools_id])
+            
+            # 构建绑定资源描述
+            bound_desc = []
+            if final_intent_base_id:
+                bound_desc.extend(f"知识库{base_id}" for base_id in final_intent_base_id)
+            if final_intent_item_id:
+                bound_desc.extend(f"知识条目{item_id}" for item_id in final_intent_item_id)
+            if final_tools_id:
+                bound_desc.extend(f"工具{tool_id}" for tool_id in final_tools_id)
+            
+            intent_result = f"根据您提供的意图识别知识文件，您可能是想查询{'、'.join(intent_desc)}的内容。\n\n您实际绑定的资源存在该意图，智能体实际会尝试查询{'、'.join(bound_desc)}的内容。\n\n"
         
         conditional_dispatch_custom_event(
             "custom_event",
-            {"intent_recognition_result": f"\n```text\n{table_content}\n```\n"},
+            {"intent_recognition_result": f"\n{intent_result}\n"},
             **kwargs,
         )
           
@@ -1025,14 +1035,7 @@ class CommonQAStreamingMixIn:
                                 "content": item["data"]["custom_agent_finish"],
                                 "cover": cover,
                             }
-                            final_result += item["data"]["custom_agent_finish"]
-                        elif "intent_recognition_conflict" in item["data"] and front_end_display:
-                            ret = {
-                                "event": EventType.THINK.value,
-                                "content": item["data"]["intent_recognition_conflict"],
-                                "cover": cover,
-                            } 
-                            has_custom_event=True   
+                            final_result += item["data"]["custom_agent_finish"] 
                         elif "intent_recognition_result" in item["data"] and front_end_display:
                             ret = {
                                 "event": EventType.THINK.value,
