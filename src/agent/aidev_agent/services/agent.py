@@ -51,7 +51,7 @@ class AgentInstanceFactory:
         self.build_type = build_type
         self.session_code = session_code
         self.agent_cls = agent_cls
-        self.callbacks = [each for each in callbacks if each] or []
+        self.callbacks = [each for each in callbacks if each] if callbacks else []
         self.auth_headers = auth_headers or None
 
     @classmethod
