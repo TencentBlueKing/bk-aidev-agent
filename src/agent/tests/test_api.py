@@ -65,9 +65,11 @@ class TestAPI:
         assert result["data"]["content"] == "test22222"
         result = client.api.get_chat_session_contents(params={"session_code": result["data"]["session_code"]})
         assert len(result["data"]) == 1
+        result = client.api.rename_chat_session(path_params={"session_code": session_code})
         client.api.destroy_chat_session_content(path_params={"id": session_content_id})
         result = client.api.get_chat_session_contents(params={"session_code": session_code})
         assert len(result["data"]) == 0
+
         client.api.destroy_chat_session(path_params={"session_code": "onlyfortest1"})
 
     def test_bkaidev_get_agent(self):

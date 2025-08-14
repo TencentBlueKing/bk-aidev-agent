@@ -94,6 +94,12 @@ class ChatSessionViewSet(PluginViewSet):
         result = client.api.retrieve_chat_session(path_params={"session_code": pk})
         return Response(data=result["data"])
 
+    @action(["POST"], url_path="ai_rename", detail=True)
+    def ai_rename(self, request, pk, **kwargs):
+        client = BKAidevApi.get_client()
+        result = client.api.rename_chat_session(path_params={"session_code": pk})
+        return Response(data=result["data"])
+
     def destroy(self, request, pk, **kwargs):
         client = BKAidevApi.get_client()
         result = client.api.destroy_chat_session(path_params={"session_code": pk})

@@ -88,6 +88,13 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/chat/session/{session_code}/",
     )
 
+    rename_chat_session = bind_property(
+        Operation,
+        name="rename_chat_session",
+        method="POST",
+        path="/openapi/aidev/resource/v1/chat/session/{session_code}/ai_rename/",
+    )
+
     create_chat_session_content = bind_property(
         Operation,
         name="create_chat_session_content",
