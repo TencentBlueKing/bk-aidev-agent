@@ -82,7 +82,7 @@
   // 获取agent信息的函数
   const fetchAgentInfo = async () => {
     try {
-      const response = await fetch(`${url}/agent/info/`, {
+      const response = await fetch(`${url.value}/agent/info/`, {
         credentials: "include", // 包含Cookie等凭证信息
       })
       const data = await response.json()
