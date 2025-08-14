@@ -1,11 +1,11 @@
 <template>
   <div class="chat-wrapper" v-bkloading="loadingConf">
     <div class="chat-container">
-      <!-- 会话列表侧边栏 (始终显示在左侧) -->
-      <div class="session-list-sidebar">
+      <!-- 会话列表侧边栏 (根据 enableChatSession 控制显示) -->
+      <div class="session-list-sidebar" v-if="enableChatSession">
         <!-- 顶部控制区域 -->
         <div class="top-controls">
-          <BKInput type="text" class="search-input" placeholder="搜索会话记录" v-model="searchQuery">
+          <BKInput type="text" class="search-input" placeholder="搜索会话记录" v-model="searchQuery" clearable>
             <template #suffix>
               <span class="input-icon suffix-icon">
                 <search />
@@ -21,23 +21,33 @@
         </BKButton>
 
         <!-- 会话列表 -->
-        <div class="conversation-list">
-          <div
-            v-for="session in filteredSessionList"
-            :key="session.sessionCode"
-            class="conversation-item"
-            :class="{ active: currentSession?.sessionCode === session.sessionCode }"
-            @click="switchToSession(session.sessionCode)"
-          >
-            <div class="conversation-title">{{ session.sessionName }}</div>
-            <div class="conversation-subtitle">{{ formatSessionDate(session.createdAt) }}</div>
-          </div>
+        <div class="conversation-list" :class="{ 'is-empty': filteredSessionList.length === 0 && searchQuery }">
+          <template v-if="filteredSessionList.length > 0">
+            <div
+              v-for="session in filteredSessionList"
+              :key="session.sessionCode"
+              class="conversation-item"
+              :class="{ active: currentSession?.sessionCode === session.sessionCode }"
+              @click="switchToSession(session.sessionCode)"
+            >
+              <div class="conversation-title">{{ session.sessionName }}</div>
+              <div class="conversation-subtitle">{{ formatSessionDate(session.createdAt) }}</div>
+            </div>
+          </template>
+          <bk-exception
+            v-else
+            style="margin-top: 100px"
+            :description="searchQuery ? '搜索为空' : '暂无对话'"
+            scene="part"
+            :type="searchQuery ? 'search-empty' : 'empty'"
+          ></bk-exception>
         </div>
       </div>
 
       <!-- 主聊天区域 -->
-      <div class="main-chat-area">
+      <div class="main-chat-area" :class="{ 'full-width': !enableChatSession }">
         <AIBlueking
+          v-if="isComponentReady"
           ref="aiBlueking"
           ext-cls="page-demo-ai-blueking"
           hide-header
@@ -45,7 +55,7 @@
           :hide-nimbus="false"
           :url="url"
           :default-top="52"
-          :default-width="AIBluekingWidth"
+          :default-width="defaultWidth"
         />
       </div>
     </div>
@@ -54,21 +64,45 @@
 
 <script setup lang="ts">
   import { ref, onMounted, reactive, watch, computed } from "vue"
-  import { Input as BKInput, Button as BKButton } from "bkui-vue"
+  import { Input as BKInput, Button as BKButton, Exception as BKException } from "bkui-vue"
   import { Search, Plus } from "bkui-vue/lib/icon"
 
   import AIBlueking, { AIBluekingExpose } from "@blueking/ai-blueking"
   import "@blueking/ai-blueking/dist/vue3/style.css"
 
   const aiBlueking = ref<AIBluekingExpose | null>(null)
-  const sessionList = ref([])
-  const currentSession = ref(null)
+  const sessionList = ref<any[]>([])
+  const currentSession = ref<any>(null)
   const searchQuery = ref("")
+  const agentInfo = ref<any>(null) // 用于存储从agent/info接口获取的数据
+  const isComponentReady = ref(false) // 控制 AIBlueking 组件是否准备就绪
 
   const url = ref(window.BK_API_PREFIX)
 
+  // 获取agent信息的函数
+  const fetchAgentInfo = async () => {
+    try {
+      const response = await fetch(`${url}/agent/info/`, {
+        credentials: "include", // 包含Cookie等凭证信息
+      })
+      const data = await response.json()
+      agentInfo.value = data.data
+      return data.data
+    } catch (error) {
+      console.error("获取Agent信息失败:", error)
+      return null
+    }
+  }
+
   // 设置 AIBlueking 组件的宽度为容器宽度减去会话列表宽度
-  const AIBluekingWidth = ref(window.innerWidth - 280)
+  const AIBluekingWidth = ref(800)
+
+  // 计算 AIBlueking 组件的默认宽度
+  const defaultWidth = computed(() => {
+    if (typeof window === "undefined") return 800
+    // 根据 enableChatSession 的值来决定宽度
+    return enableChatSession.value ? window.innerWidth - 280 : window.innerWidth
+  })
 
   const title = ref("加载中...")
 
@@ -87,8 +121,18 @@
     return sessionList.value.filter((session) => session.sessionName.toLowerCase().includes(searchQuery.value.toLowerCase()))
   })
 
+  // 是否启用会话管理 (基于从接口获取的数据)
+  const enableChatSession = computed(() => {
+    // 如果还没有获取到agent信息，返回false
+    if (!agentInfo.value) {
+      return false
+    }
+    // 根据接口返回的配置确定是否启用会话管理
+    return agentInfo.value?.conversation_settings?.enable_chat_session ?? true
+  })
+
   // 格式化会话日期
-  const formatSessionDate = (dateString) => {
+  const formatSessionDate = (dateString: string) => {
     if (!dateString) return ""
     const date = new Date(dateString)
     const today = new Date()
@@ -105,13 +149,13 @@
   }
 
   // 切换到指定会话
-  const switchToSession = async (sessionCode) => {
+  const switchToSession = async (sessionCode: string) => {
     if (aiBlueking.value && typeof aiBlueking.value.switchToSession === "function") {
       try {
         await aiBlueking.value.switchToSession(sessionCode)
         // 更新当前会话状态
         const sessions = sessionList.value
-        currentSession.value = sessions.find((s) => s.sessionCode === sessionCode) || null
+        currentSession.value = sessions.find((s: any) => s.sessionCode === sessionCode) || null
       } catch (error) {
         console.error("切换会话失败:", error)
       }
@@ -122,7 +166,7 @@
   const createNewSession = async () => {
     if (aiBlueking.value && typeof aiBlueking.value.addNewSession === "function") {
       try {
-        const newSession = await aiBlueking.value.addNewSession()
+        const newSession: any = await aiBlueking.value.addNewSession()
         // 更新会话列表
         if (aiBlueking.value.getSessionList) {
           sessionList.value = await aiBlueking.value.getSessionList()
@@ -139,9 +183,9 @@
 
   // 获取会话列表
   const fetchSessionList = async () => {
-    if (aiBlueking.value && typeof aiBlueking.value.sessionList?.value !== "undefined") {
+    if (aiBlueking.value && typeof (aiBlueking.value as any).sessionList?.value !== "undefined") {
       // 如果 sessionList 是响应式属性，直接使用
-      sessionList.value = aiBlueking.value.sessionList.value
+      sessionList.value = (aiBlueking.value as any).sessionList.value
       currentSession.value = sessionList.value[0] || null
     } else if (aiBlueking.value && typeof aiBlueking.value.getSessionList === "function") {
       // 如果有 getSessionList 方法，调用它
@@ -156,8 +200,8 @@
 
   // 监听 AIBlueking 组件的 sessionList 变化
   watch(
-    () => aiBlueking.value?.sessionList?.value,
-    (newSessionList) => {
+    () => (aiBlueking.value as any)?.sessionList?.value,
+    (newSessionList: any) => {
       if (newSessionList) {
         sessionList.value = newSessionList
         if (!currentSession.value && newSessionList.length > 0) {
@@ -170,17 +214,34 @@
 
   // 监听窗口大小变化，动态调整 AIBlueking 宽度
   const handleResize = () => {
-    AIBluekingWidth.value = window.innerWidth - 280
+    if (typeof window === "undefined") return
+    // 强制更新 AIBluekingWidth 以触发重新计算
+    AIBluekingWidth.value = enableChatSession.value ? window.innerWidth - 280 : window.innerWidth
   }
 
-  onMounted(() => {
-    window.addEventListener("resize", handleResize)
+  onMounted(async () => {
+    if (typeof window !== "undefined") {
+      window.addEventListener("resize", handleResize)
+    }
 
+    // 先获取agent信息
+    await fetchAgentInfo()
+
+    // 设置组件准备就绪标志
+    isComponentReady.value = true
+
+    // 获取agent信息后再初始化组件
     setTimeout(() => {
       aiBlueking.value?.handleShow()
       loading.value = false
       // 初始化会话列表
       fetchSessionList()
+      // 触发一次 resize 事件确保组件宽度正确计算
+      setTimeout(() => {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("resize"))
+        }
+      }, 100)
     }, 200)
   })
 </script>
@@ -199,6 +260,11 @@
   .main-chat-area {
     flex: 1;
     height: 100%;
+  }
+
+  .main-chat-area.full-width {
+    flex: 1;
+    width: 100%;
   }
 
   .session-list-sidebar {
@@ -239,6 +305,19 @@
     overflow-y: overlay;
     padding-right: 8px;
     margin-right: -8px;
+  }
+
+  .conversation-list.is-empty {
+    flex: 0 0 auto;
+    height: auto;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .conversation-list:not(.is-empty) {
+    flex: 1;
   }
 
   /* macOS 风格滚动条样式 */

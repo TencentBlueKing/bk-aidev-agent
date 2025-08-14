@@ -38,11 +38,25 @@ export interface AIBluekingExpose {
     shortcut?: ShortCut;
   }) => void;
   handleShow: () => void;
+  handleClose: () => void;
   handleStop: () => void;
-  reGenerateChat: () => void;
-  reSendChat: () => void;
-  deleteChat: () => void;
-  currentSessionLoading: () => boolean;
+  handleSendMessage: (message: string) => void;
+  handleShortcutClick: (data: { shortcut: IShortcut; source: 'popup' | 'main' | 'ai-selected' }) => void;
+  handleDelete: (index: number) => void;
+  handleRegenerate: (index: number) => void;
+  handleResend: (index: number, { message }: { message: string }) => void;
+  updateRequestOptions: (options: any) => void;
+  currentSessionLoading: Ref<boolean>;
+  isLoadingSessionContents: Ref<boolean>;
+  updateGreetingTextHeight: () => void;
+  setCurrentSession: (sessionCode: string) => void;
+  focusInput: () => void;
+  addNewSession: (sessionCode?: string) => Promise<any>;
+  updateSessionName: (sessionCode: string, newName: string) => Promise<any>;
+  switchToSession: (sessionCode: string) => Promise<boolean>;
+  getSessionList: () => Promise<any[]>;
+  sessionList: Ref<any[]>;
+  enableChatSession: Ref<boolean>;
 }
 
 // 使用 ai-ui-sdk 中的 IAgentCommand 类型作为 IShortcut 的别名

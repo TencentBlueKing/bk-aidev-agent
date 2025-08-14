@@ -305,8 +305,6 @@ export function useSessionStore() {
     let targetSession: ISessionEditItem | null = null;
     let targetSessionContents: ISessionContent[] = [];
 
-    debugger;
-
     // 如果有现有会话，检查最近的一条会话
     if (sessions.length > 0) {
       // 按创建时间降序排序，获取最新的会话

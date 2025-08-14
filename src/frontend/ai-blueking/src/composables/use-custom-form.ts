@@ -55,7 +55,6 @@ export const useCustomForm = (shortcut: Ref<IShortcut>) => {
   const numberTypeValidation: ValidationStrategy = component => {
     if (component.type === 'number') {
       return {
-        type: 'number',
         message: t('请输入数字'),
         trigger: 'blur',
       };
@@ -66,10 +65,11 @@ export const useCustomForm = (shortcut: Ref<IShortcut>) => {
   // 最小值验证策略
   const minValidation: ValidationStrategy = component => {
     if (component.type === 'number' && typeof component.min === 'number') {
+      // 使用类型断言确保 TypeScript 知道 component.min 是一个数字
+      const min = component.min as number;
       return {
-        type: 'number',
-        min: component.min,
-        message: `${t('数值不能小于')} ${component.min}`,
+        validator: (value: number) => value >= min,
+        message: `${t('数值不能小于')} ${min}`,
         trigger: 'blur',
       };
     }
@@ -79,10 +79,11 @@ export const useCustomForm = (shortcut: Ref<IShortcut>) => {
   // 最大值验证策略
   const maxValidation: ValidationStrategy = component => {
     if (component.type === 'number' && typeof component.max === 'number') {
+      // 使用类型断言确保 TypeScript 知道 component.max 是一个数字
+      const max = component.max as number;
       return {
-        type: 'number',
-        max: component.max,
-        message: `${t('数值不能大于')} ${component.max}`,
+        validator: (value: number) => value <= max,
+        message: `${t('数值不能大于')} ${max}`,
         trigger: 'blur',
       };
     }

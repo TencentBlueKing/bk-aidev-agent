@@ -34,9 +34,7 @@
             :draggable="props.draggable"
             :show-history-icon="props.showHistoryIcon"
             :show-new-chat-icon="props.showNewChatIcon"
-            :enable-chat-session="
-              sessionStore.agentInfo.value?.conversationSettings?.enableChatSession ?? true
-            "
+            :enable-chat-session="enableChatSession"
             @close="handleClose"
             @toggle-compression="toggleCompression"
             @new-chat="handleNewChat"
@@ -462,6 +460,11 @@
     return sessionContents.value.filter(item => !HIDE_ROLE_LIST.includes(item.role)).length > 0;
   });
 
+  // 是否启用会话管理
+  const enableChatSession = computed(() => {
+    return sessionStore.agentInfo.value?.conversationSettings?.enableChatSession ?? true;
+  });
+
   // 问候文本
   const greetingText = computed(() => openingRemark.value || t('输入你的问题，助你高效的完成工作'));
 
@@ -678,7 +681,7 @@
     if (isFirstUserMessage && currentSession.value?.sessionCode) {
       try {
         const updatedSession = await renameSessionApi(currentSession.value.sessionCode);
-        if (updatedSession?.sessionName && updatedSession.sessionName !== '无话可说') {
+        if (updatedSession?.sessionName) {
           // 更新会话存储中的会话名称
           await sessionStore.updateSession(currentSession.value.sessionCode, {
             sessionName: updatedSession.sessionName,
@@ -799,6 +802,8 @@
     // 获取会话列表
     getSessionList: sessionStore.getSessionList,
     sessionList: sessionStore.sessionList,
+    // 是否启用会话管理
+    enableChatSession,
   });
 </script>
 

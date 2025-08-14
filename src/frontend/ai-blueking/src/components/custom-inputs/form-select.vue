@@ -6,6 +6,7 @@
     }"
     :placeholder="props.placeholder"
     :disabled="props.disabled"
+    :multiple="props.multiple"
   >
     <bk-option
       v-for="option in props.options"
@@ -28,6 +29,7 @@
     options: Array<{ label: string; value: any }>;
     placeholder?: string;
     disabled?: boolean;
+    multiple?: boolean;
   }>();
 
   const emit = defineEmits(['update:modelValue']);
