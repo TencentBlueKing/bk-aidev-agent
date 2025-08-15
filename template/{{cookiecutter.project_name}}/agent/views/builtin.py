@@ -67,70 +67,61 @@ class PluginViewSet(ViewSetMixin, APIView):
         return super().finalize_response(request, response, *args, **kwargs)
 
 
+client = BKAidevApi.get_client(app_code=settings.BK_APP_CODE, app_secret=settings.BK_APP_SECRET)
+
+
 class ChatSessionViewSet(PluginViewSet):
     def list(self, request):
-        client = BKAidevApi.get_client()
         result = client.api.list_chat_session(headers={"X-BKAIDEV-USER": request.user.username})
         return Response(data=result["data"])
 
     @action(["POST"], url_path="batch_delete", detail=False)
     def batch_delete(self, request):
-        client = BKAidevApi.get_client()
         result = client.api.batch_delete_chat_session(json=request.data)
         return Response(data=result["data"])
 
     def create(self, request):
-        client = BKAidevApi.get_client()
         result = client.api.create_chat_session(json=request.data, headers={"X-BKAIDEV-USER": request.user.username})
         return Response(data=result["data"])
 
     def update(self, request, pk, **kwargs):
-        client = BKAidevApi.get_client()
         result = client.api.update_chat_session(path_params={"session_code": pk}, json=request.data)
         return Response(data=result["data"])
 
     def retrieve(self, request, pk, **kwargs):
-        client = BKAidevApi.get_client()
         result = client.api.retrieve_chat_session(path_params={"session_code": pk})
         return Response(data=result["data"])
 
     @action(["POST"], url_path="ai_rename", detail=True)
     def ai_rename(self, request, pk, **kwargs):
-        client = BKAidevApi.get_client()
         result = client.api.rename_chat_session(path_params={"session_code": pk})
         return Response(data=result["data"])
 
     def destroy(self, request, pk, **kwargs):
-        client = BKAidevApi.get_client()
         result = client.api.destroy_chat_session(path_params={"session_code": pk})
         return Response(data=result["data"])
 
 
 class ChatSessionContentViewSet(PluginViewSet):
     def create(self, request):
-        client = BKAidevApi.get_client()
         result = client.api.create_chat_session_content(json=request.data)
         return Response(data=result["data"])
 
     @action(["GET"], url_path="content", detail=False)
     def content(self, request, **kwargs):
-        client = BKAidevApi.get_client()
         result = client.api.get_chat_session_contents(params=request.query_params)
         return Response(data=result["data"])
 
     def destroy(self, request, pk, **kwargs):
-        client = BKAidevApi.get_client()
         result = client.api.destroy_chat_session_content(path_params={"id": pk})
         return Response(data=result["data"])
 
     def update(self, request, pk, **kwargs):
-        client = BKAidevApi.get_client()
         result = client.api.update_chat_session_content(path_params={"id": pk}, json=request.data)
         return Response(data=result["data"])
 
     @action(["POST"], url_path="batch_delete", detail=False)
     def batch_delete(self, request):
-        client = BKAidevApi.get_client()
         result = client.api.batch_delete_chat_session_content(json=request.data)
         return Response(data=result["data"])
 
