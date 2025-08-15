@@ -1183,7 +1183,7 @@ class CommonQAStreamingMixIn:
                             cache = self.cache_filter(
                                 cache, final_answer_prefix_to_filter, final_answer_suffix_to_filter
                             )
-                            # 防止出现第一个think event为空或cover为False的情况
+                            # 防止出现think为空或第一个 think event 的 cover 为 False 的情况
                             if (
                                 final_answer_occurred
                                 and cache[-1]['event'] == 'think'
