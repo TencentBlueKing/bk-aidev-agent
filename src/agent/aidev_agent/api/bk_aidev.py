@@ -13,10 +13,8 @@ from aidev_agent.config import settings
 
 class BKAidevApi(ApiProtocol):
     @classmethod
-    def get_client(cls) -> Client:
-        return _get_client_by_settings(
-            Client, endpoint=BKAIDEV_URL, bk_app_code=settings.APP_CODE, bk_app_secret=settings.SECRET_KEY
-        )
+    def get_client(cls, app_code=settings.APP_CODE, app_secret=settings.SECRET_KEY) -> Client:
+        return _get_client_by_settings(Client, endpoint=BKAIDEV_URL, bk_app_code=app_code, bk_app_secret=app_secret)
 
     @classmethod
     def get_client_by_request(cls, request):
