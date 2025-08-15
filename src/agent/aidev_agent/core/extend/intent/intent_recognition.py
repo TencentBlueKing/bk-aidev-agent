@@ -1341,15 +1341,15 @@ class IntentRecognition(BaseModel):
 
             for doc in intent_knowledge:
                 try:
-                    category = IntentCategory(doc["意图类别"])
+                    category = IntentCategory(doc["资源类别"])
                     if category == IntentCategory.KNOWLEDGE_BASE:
-                        intent_base_id.append(int(doc["意图ID"]))
+                        intent_base_id.append(int(doc["资源ID"]))
                     elif category == IntentCategory.KNOWLEDGE_ITEM:
-                        intent_item_id.append(int(doc["意图ID"]))
+                        intent_item_id.append(int(doc["资源ID"]))
                     elif category == IntentCategory.TOOL:
-                        tools_id.append(doc["意图ID"])
+                        tools_id.append(doc["资源ID"])
                 except ValueError:  # noqa
-                    logger.warning(f"Invalid intent category: {doc['意图类别']} in document {doc}")
+                    logger.warning(f"Invalid intent category: {doc['资源类别']} in document {doc}")
             # 实际去调用资源的时候，只取意图识别结果跟绑定的资源的交集部分        
             if tools:
                 for tool in tools:
@@ -1422,7 +1422,7 @@ class IntentRecognition(BaseModel):
         # 为【无需history的】且可通过3种特殊意图识别方式判断的query提供快速单跳通道
         # ====================================================================================================
         # NOTE:
-        # 下述3种快速单跳通道，根据跳至的意图类别的不同，后续走的逻辑分支更不相同，需要每种都去特殊支持。例如：
+        # 下述3种快速单跳通道，根据跳至的意图资源类别的不同，后续走的逻辑分支更不相同，需要每种都去特殊支持。例如：
         # 假设是跳至某个具体的工具，则直接调用LLM进行工具参数生成，然后调用工具即可
         # 假设是跳至某个智能工单查证场景这种特殊的通道，则调用对应的分类小模型，然后进行工单查证
         # 假设是跳至某个特殊的知识库索引，则可能是调用对应的索引进行召回，然后进行LLM问答

@@ -501,11 +501,11 @@ class IntentRecognitionMixin(BaseModel):
     
     @classmethod
     def get_intent_ids(cls, intents, category):
-        """辅助函数：按类别收集意图ID"""
+        """辅助函数：按类别收集资源ID"""
         return [
-            int(doc["意图ID"]) 
+            int(doc["资源ID"]) 
             for doc in intents
-            if IntentCategory(doc["意图类别"]) == category
+            if IntentCategory(doc["资源类别"]) == category
         ]
         
     @classmethod
@@ -513,7 +513,7 @@ class IntentRecognitionMixin(BaseModel):
         """辅助函数：构建表格内容"""
         if not data_list:
             return f"{title}{empty_msg}\n\n"
-        return f"{title}：\n\n{cls.pretty_table(['意图类别', '意图ID'], data_list)}\n\n"
+        return f"{title}：\n\n{cls.pretty_table(['资源类别', '资源ID'], data_list)}\n\n"
     
     @classmethod
     def render_intent_recognition_results(cls, recog_results, **kwargs):
@@ -525,7 +525,7 @@ class IntentRecognitionMixin(BaseModel):
         """
 
         # 将意图识别知识文件和实际绑定资源记录到日志
-        intent_rows = [[d['意图类别'], d['意图ID']] for d in recog_results["all_intent_knowledge"]]
+        intent_rows = [[d['资源类别'], d['资源ID']] for d in recog_results["all_intent_knowledge"]]
         bound_rows = (
             [["tool", n] for n in recog_results["bound_tool_names"]] +
             [["knowledge base", i] for i in recog_results["bound_knowledge_base_ids"]] +
@@ -538,7 +538,7 @@ class IntentRecognitionMixin(BaseModel):
         )
         _logger.info(f"{table_content}")
 
-        # 按类别获取所有意图ID
+        # 按类别获取所有资源ID
         tools_id = recog_results["tools_id"]
         intent_base_id = recog_results["intent_base_id"]
         intent_item_id = recog_results["intent_item_id"]
@@ -895,6 +895,7 @@ class CommonQAStreamingMixIn:
             cur_event_type = EventType.THINK.value
             final_answer_occurred = False
             first_time_final_answer = True
+            first_think_event = True
         elif isinstance(self, ToolCallingCommonQAAgent):
             has_reasoning_content = False
             has_tool_call = False
@@ -1182,19 +1183,27 @@ class CommonQAStreamingMixIn:
                             cache = self.cache_filter(
                                 cache, final_answer_prefix_to_filter, final_answer_suffix_to_filter
                             )
-                            # 如果所有think event加起来过滤后为空，则删除，防止输出空的思考过程
+                            # 防止出现第一个think event为空或cover为False的情况
                             if (
                                 final_answer_occurred
                                 and cache[-1]['event'] == 'think'
-                                and cache[-1]['content'].strip() == ''
-                            ):  
-                                cache.pop()
-                                # 如果 cache 为空，要将 last_ret_is_empty 设置为 True，确保第一个 text 的 cover 是 True
-                                if len(cache) == 0: 
-                                    last_ret_is_empty = True                           
+                                and first_think_event
+                            ): 
+                                # 如果所有think event加起来过滤后为空，则删除，防止输出空的思考过程
+                                if cache[-1]['content'].strip() == '':
+                                    cache.pop()
+                                    # 如果过滤后 cache 为空，要将 last_ret_is_empty 设置为 True，确保第一个 text 的 cover 是 True
+                                    if len(cache) == 0:
+                                        last_ret_is_empty = True
+                                # 如果过滤后只剩一个think event且是第一个，要将 cover 设置为 True
+                                elif len(cache) == 1:
+                                    cache[0]['cover'] = True   
+                                    first_think_event = False                      
                             if len(cache) == max_cache_length:
                                 ret = cache.popleft()
                                 last_event_type = ret["event"]
+                                if last_event_type == "think":
+                                    first_think_event = False
                                 yield self._yield_ret(ret)
                     else:
                         yield self._yield_ret(ret)    
