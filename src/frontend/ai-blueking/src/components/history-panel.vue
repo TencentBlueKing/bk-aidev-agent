@@ -252,12 +252,17 @@
               display: flex;
               align-items: center;
               gap: 4px;
+              opacity: 0;
+              transition: opacity 0.1s ease;
               .bkai-icon {
                 font-size: 14px;
               }
             }
             &:hover {
               background: #f0f1f5;
+              .history-panel-content-item-list-item-action {
+                opacity: 1;
+              }
             }
             &.active {
               background: #e1ecff;
