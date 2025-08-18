@@ -5,7 +5,7 @@
       <bk-input
         v-model="searchKey"
         behavior="simplicity"
-        :placeholder="t('搜索')"
+        :placeholder="t('搜索会话名称')"
         style="height: 22px"
       >
         <template #suffix>
@@ -16,72 +16,81 @@
       </bk-input>
     </div>
     <div class="history-panel-content">
-      <div
-        v-for="item in historyList"
-        :key="item.key"
-        class="history-panel-content-item"
-      >
-        <div class="history-panel-content-item-title">
-          <span>{{ item.alias }}</span>
-        </div>
-        <div class="history-panel-content-item-list">
-          <div
-            v-for="session in item.sessionList"
-            :key="session.sessionCode + session.sessionName"
-            class="history-panel-content-item-list-item"
-            :class="{ active: isCurrentSession(session) }"
-            @click="handleSessionClick(session)"
-          >
-            <template v-if="!session.isEdit">
-              <bk-overflow-title style="width: calc(100% - 42px)">
-                {{ session.sessionName }}
-              </bk-overflow-title>
-              <span class="history-panel-content-item-list-item-action">
-                <i
-                  v-bk-tooltips="{
-                    content: t('编辑'),
-                    boundary: 'parent',
-                  }"
-                  class="bkai-icon bkai-bianji"
-                  @click.stop="handleEdit(session)"
-                ></i>
-                <bk-pop-confirm
-                  :title="t('确认删除会话 ?')"
-                  content="删除操作无法撤回，请谨慎操作!"
-                  :confirm-config="{
-                    theme: 'danger',
-                  }"
-                  trigger="click"
-                  boundary="parent"
-                  @confirm="handleDelete(session.sessionCode)"
-                >
+      <template v-if="historyList.length > 0">
+        <div
+          v-for="item in historyList"
+          :key="item.key"
+          class="history-panel-content-item"
+        >
+          <div class="history-panel-content-item-title">
+            <span>{{ item.alias }}</span>
+          </div>
+          <div class="history-panel-content-item-list">
+            <div
+              v-for="session in item.sessionList"
+              :key="session.sessionCode"
+              class="history-panel-content-item-list-item"
+              :class="{ active: isCurrentSession(session) }"
+              @click="handleSessionClick(session)"
+            >
+              <template v-if="!session.isEdit">
+                <bk-overflow-title style="width: calc(100% - 42px)">
+                  {{ session.sessionName }}
+                </bk-overflow-title>
+                <span class="history-panel-content-item-list-item-action">
                   <i
                     v-bk-tooltips="{
-                      content: t('删除'),
+                      content: t('编辑'),
                       boundary: 'parent',
                     }"
-                    class="bkai-icon bkai-shanchu"
-                    @click.stop
+                    class="bkai-icon bkai-bianji"
+                    @click.stop="handleEdit(session)"
                   ></i>
-                </bk-pop-confirm>
-              </span>
-            </template>
-            <bk-input
-              v-else
-              :ref="
-                (el: HTMLInputElement) => {
-                  if (session.isEdit) inputRefs[session.sessionCode] = el;
-                }
-              "
-              v-model="session.sessionName"
-              style="width: 100%; height: 28px"
-              @blur="handleBlur(session)"
-              @enter="handleEnter"
-              @click.stop
-            />
+                  <bk-pop-confirm
+                    :title="t('确认删除会话 ?')"
+                    content="删除操作无法撤回，请谨慎操作!"
+                    :confirm-config="{
+                      theme: 'danger',
+                    }"
+                    trigger="click"
+                    boundary="parent"
+                    @confirm="handleDelete(session.sessionCode)"
+                  >
+                    <i
+                      v-bk-tooltips="{
+                        content: t('删除'),
+                        boundary: 'parent',
+                      }"
+                      class="bkai-icon bkai-shanchu"
+                      @click.stop
+                    ></i>
+                  </bk-pop-confirm>
+                </span>
+              </template>
+              <bk-input
+                v-else
+                :ref="
+                  (el: HTMLInputElement) => {
+                    if (session.isEdit) inputRefs[session.sessionCode] = el;
+                  }
+                "
+                v-model="session.sessionName"
+                style="width: 100%; height: 28px"
+                @blur="handleBlur(session)"
+                @enter="handleEnter"
+                @click.stop
+              />
+            </div>
           </div>
         </div>
-      </div>
+      </template>
+      <bk-exception
+        v-else
+        style="margin-top: 100px"
+        :description="searchKey ? t('搜索为空') : t('暂无对话')"
+        scene="part"
+        :type="searchKey ? 'search-empty' : 'empty'"
+      ></bk-exception>
     </div>
   </div>
 </template>
@@ -91,6 +100,8 @@
     Input as BkInput,
     PopConfirm as BkPopConfirm,
     OverflowTitle as BkOverflowTitle,
+    Exception as BkException,
+    bkTooltips,
   } from 'bkui-vue';
   import { Search } from 'bkui-vue/lib/icon';
   import { ref, computed, nextTick } from 'vue';
@@ -107,6 +118,7 @@
     (e: 'close'): void;
   }>();
 
+  const vBkTooltips = bkTooltips;
   const searchKey = ref('');
 
   const sessionStore = props.sessionStore;

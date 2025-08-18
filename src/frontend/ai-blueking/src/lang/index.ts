@@ -92,6 +92,7 @@ export const langData = {
   数值不能小于: 'The value cannot be less than',
   数值不能大于: 'The value cannot be greater than',
   新会话: 'New Session',
+  搜索会话名称: 'Search session name',
 } as const;
 
 export const zhLangData = {

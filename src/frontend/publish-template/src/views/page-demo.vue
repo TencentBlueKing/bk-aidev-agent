@@ -5,7 +5,7 @@
       <div class="session-list-sidebar" v-if="enableChatSession">
         <!-- 顶部控制区域 -->
         <div class="top-controls">
-          <BKInput type="text" class="search-input" placeholder="搜索会话记录" v-model="searchQuery" clearable>
+          <BKInput type="text" class="search-input" placeholder="搜索会话名称" v-model="searchQuery" clearable>
             <template #suffix>
               <span class="input-icon suffix-icon">
                 <search />
