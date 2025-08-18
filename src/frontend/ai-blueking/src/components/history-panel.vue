@@ -28,7 +28,7 @@
           <div class="history-panel-content-item-list">
             <div
               v-for="session in item.sessionList"
-              :key="session.sessionCode"
+              :key="`${session.sessionCode}-${sessionStore.sessionUpdateCounter.value[session.sessionCode] || 0}`"
               class="history-panel-content-item-list-item"
               :class="{ active: isCurrentSession(session) }"
               @click="handleSessionClick(session)"

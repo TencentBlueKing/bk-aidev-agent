@@ -683,9 +683,7 @@
         const updatedSession = await renameSessionApi(currentSession.value.sessionCode);
         if (updatedSession?.sessionName) {
           // 更新会话存储中的会话名称
-          await sessionStore.updateSession(currentSession.value.sessionCode, {
-            sessionName: updatedSession.sessionName,
-          });
+          await sessionStore.getSessionList();
         }
       } catch (error) {
         console.error('自动命名会话失败:', error);

@@ -14,6 +14,7 @@ export function useSessionStore() {
   const sessionList = ref<ISessionEditItem[]>([]);
   const currentSession = ref<ISessionEditItem | null>(null);
   const sessionContentLoading = ref<boolean>(false);
+  const sessionUpdateCounter = ref<Record<string, number>>({});
   let sdkApi: Partial<SdkApi> = {};
 
   // 存储会话的原始值
@@ -64,6 +65,20 @@ export function useSessionStore() {
    */
   const setSessionList = (sessions: ISession[]) => {
     sessionList.value = sessions.map(item => ({ ...item, isEdit: false }));
+
+    // 如果当前有会话，更新当前会话的信息
+    if (currentSession.value) {
+      const updatedCurrentSession = sessions.find(
+        s => s.sessionCode === currentSession.value?.sessionCode
+      );
+      if (updatedCurrentSession) {
+        currentSession.value = {
+          ...currentSession.value,
+          ...updatedCurrentSession,
+          isEdit: currentSession.value.isEdit,
+        };
+      }
+    }
   };
 
   /**
@@ -187,6 +202,12 @@ export function useSessionStore() {
     // 强制触发响应式更新
     sessionList.value = [...sessionList.value];
 
+    // 增加会话更新计数器
+    if (!sessionUpdateCounter.value[sessionCode]) {
+      sessionUpdateCounter.value[sessionCode] = 0;
+    }
+    sessionUpdateCounter.value[sessionCode]++;
+
     // 如果更新的是当前会话，也更新 currentSession
     if (currentSession.value && currentSession.value.sessionCode === sessionCode) {
       currentSession.value = { ...currentSession.value, ...updates };
@@ -297,10 +318,14 @@ export function useSessionStore() {
    */
   const initSession = async (isInitChat = true) => {
     // 获取会话列表
-    const getSessions = checkSdkMethod('getSessionsApi');
-    const sessions = await getSessions();
+    let sessions = sessionList.value;
 
-    setSessionList(sessions);
+    if (isInitChat) {
+      const getSessions = checkSdkMethod('getSessionsApi');
+      const sessions = await getSessions();
+
+      setSessionList(sessions);
+    }
 
     let targetSession: ISessionEditItem | null = null;
     let targetSessionContents: ISessionContent[] = [];
@@ -372,6 +397,21 @@ export function useSessionStore() {
     const getSessions = checkSdkMethod('getSessionsApi');
     const sessions = await getSessions();
     setSessionList(sessions);
+
+    // 如果当前有会话，更新当前会话的信息
+    if (currentSession.value) {
+      const updatedCurrentSession = sessions.find(
+        s => s.sessionCode === currentSession.value?.sessionCode
+      );
+      if (updatedCurrentSession) {
+        currentSession.value = {
+          ...currentSession.value,
+          ...updatedCurrentSession,
+          isEdit: currentSession.value.isEdit,
+        };
+      }
+    }
+
     return sessionList.value;
   };
 
@@ -392,6 +432,7 @@ export function useSessionStore() {
     sessionContentLoading,
     agentInfo,
     getSessionList,
+    sessionUpdateCounter,
   };
 }
 
