@@ -36,6 +36,7 @@
 | `sessionList` | `Array<ISession>`  | `[]`                                                      | **v1.2.3新增** 会话列表，用于展示和管理多个会话。 |
 | `shortcutLimit` | `Number`         | `3`                                                       | **v1.2.3新增** 快捷指令在popover中显示的数量限制。 |
 | `shortcutFilter`| `Function`       | `undefined`                                               | **v1.2.3新增** 快捷指令的过滤函数，用于动态控制快捷指令的显示。 |
+| `enableChatSession` | `Boolean`    | `true`                                                    | **v1.2.3新增** 控制是否启用多会话功能。此属性由后端通过 `getAgentInfo` 接口返回的 `conversationSettings.enableChatSession` 配置决定，当设置为 `false` 时将隐藏会话管理相关UI元素。 |
 
 ## 压缩状态边距控制 <Badge type="tip" text="v1.1.2" />
 

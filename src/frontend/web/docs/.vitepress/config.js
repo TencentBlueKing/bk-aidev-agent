@@ -54,6 +54,7 @@ export default defineConfig({
               items: [
                 { text: "基础控制", link: "/guide/advanced-usage/programmatic-interaction" },
                 { text: "会话生命周期", link: "/guide/advanced-usage/session-lifecycle" },
+                { text: "会话功能配置", link: "/guide/advanced-usage/session-feature-config" },
               ],
             },
           ],

@@ -25,7 +25,7 @@
 | `addNewSession(sessionCode?)`   | `sessionCode?: string`                                                                                               | `Promise<ISessionEditItem>` | **v1.2.2新增** 创建一个新的聊天会话并返回会话信息。可选参数 sessionCode 用于指定会话代码，如果不提供则自动生成。 |
 | `updateSessionName(sessionCode, newName)` | `sessionCode: string, newName: string`                                                                              | `Promise<ISessionEditItem>` | **v1.2.2新增** 更新指定会话的名称。 |
 | `switchToSession(sessionCode)`  | `sessionCode: string`                                                                                                 | `Promise<void>` | **v1.2.2新增** 切换到指定代码的会话。 |
-| `getSessionList()`              | -                                                                                                                     | `Promise<ISessionEditItem[]>` | **v1.2.3新增** 获取当前会话列表。 |
+| `getSessionList()`              | -                                                                                                                     | `Promise<ISessionEditItem[]>` | **v1.2.2新增** 获取当前会话列表。 |
 
 ::: danger 已废弃方法
 以下方法在相应版本中已被移除:
