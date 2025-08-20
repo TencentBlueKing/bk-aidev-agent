@@ -12,9 +12,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@blueking/ai-blueking": "1.2.4-beta.6",
+    "@blueking/ai-blueking": "1.2.4",
     "@blueking/ai-ui-sdk": "0.0.15-beta.30",
-    "@blueking/cli-service": "0.1.0-beta.9",
+    "@blueking/cli-service": "0.1.1",
     "bkui-vue": "2.0.1",
     "dayjs": "^1.11.12",
     "postcss": "~8.4.16",

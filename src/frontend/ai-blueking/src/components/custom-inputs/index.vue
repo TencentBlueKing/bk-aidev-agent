@@ -14,33 +14,37 @@
       :model="modelFormData"
       :rules="formRules"
     >
-      <bk-form-item
-        v-for="(item, index) in props.shortcut.components || []"
-        :key="item.key"
-        error-display-type="tooltips"
-        :label="item.name"
-        :property="item.key"
-        :required="item.required"
-        error-tip-append-to-parent
-        :class="{
-          'full-width':
-            item.type === 'textarea' || isLastInOddGroup(props.shortcut.components || [], index),
-        }"
+      <template
+        v-for="(componentItem, index) in visibleComponents"
+        :key="componentItem.key"
       >
-        <component
-          :is="getComponent(item.type)"
-          :id="item.key"
-          v-model="formData[index][item.key]"
-          v-bind="{
-            ...item,
-            placeholder: item.placeholder === null ? undefined : item.placeholder,
-            options: item.options || [],
+        <bk-form-item
+          error-display-type="tooltips"
+          :label="componentItem.name"
+          :property="componentItem.key"
+          :required="componentItem.required"
+          error-tip-append-to-parent
+          :class="{
+            'full-width':
+              componentItem.type === 'textarea' || isLastInOddGroup(visibleComponents, index),
           }"
-          :popover-options="{
-            boundary: props.rootNode || 'parent',
-          }"
-        />
-      </bk-form-item>
+        >
+          <component
+            :is="getComponent(componentItem.type)"
+            :id="componentItem.key"
+            v-model="formData[getOriginalIndex(componentItem)][componentItem.key]"
+            v-bind="{
+              ...componentItem,
+              placeholder:
+                componentItem.placeholder === null ? undefined : componentItem.placeholder,
+              options: componentItem.options || [],
+            }"
+            :popover-options="{
+              boundary: props.rootNode || 'parent',
+            }"
+          />
+        </bk-form-item>
+      </template>
     </bk-form>
     <div class="footer">
       <bk-button
@@ -59,11 +63,11 @@
   import { Button as BkButton } from 'bkui-vue';
   import BkForm from 'bkui-vue/lib/form';
   import { BkFormItem } from 'bkui-vue/lib/form';
-  import { toRef, onMounted } from 'vue';
+  import { toRef, onMounted, computed } from 'vue';
 
   import { useCustomForm } from '../../composables/use-custom-form';
   import { t } from '../../lang';
-  import type { IShortcut } from '../../types';
+  import type { IShortcut, IShortcutComponent } from '../../types';
 
   import FormInput from './form-input.vue';
   import FormSelect from './form-select.vue';
@@ -83,16 +87,36 @@
     select: FormSelect,
   };
 
-  const getComponent = (type: string) => componentMap[type as keyof typeof componentMap];
+  const getComponent = (type: string) => {
+    if (!type) return FormInput; // 默认返回 FormInput
+    return componentMap[type as keyof typeof componentMap] || FormInput;
+  };
 
   const shortCutRef = toRef(props, 'shortcut');
 
   const { formRef, formData, modelFormData, formRules } = useCustomForm(shortCutRef);
 
+  // 计算可见组件（过滤掉隐藏的组件）
+  const visibleComponents = computed(() => {
+    return (props.shortcut.components || []).filter(component => {
+      // 使用类型断言确保 component 有 hide 属性
+      const item = component as IShortcutComponent;
+      return !item.hide;
+    });
+  });
+
+  // 获取原始索引（用于 formData 的正确映射）
+  const getOriginalIndex = (component: IAgentCommandComponent) => {
+    return (props.shortcut.components || []).indexOf(component);
+  };
+
   // Layout 辅助函数：判断是否为奇数组的最后一个
   const isLastInOddGroup = (components: IAgentCommandComponent[], currentIndex: number) => {
     // 处理空数组或无效索引的情况
     if (!components || currentIndex < 0 || currentIndex >= components.length) return false;
+
+    // 确保当前元素存在
+    if (!components[currentIndex]) return false;
 
     // 跳过 textarea 类型
     if (components[currentIndex].type === 'textarea') return false;
@@ -100,26 +124,49 @@
     // 向前查找连续的非 textarea 数量
     let count = 0;
     for (let i = currentIndex; i >= 0; i--) {
-      if (components[i].type === 'textarea') break;
+      // 确保元素存在
+      if (!components[i] || components[i].type === 'textarea') break;
       count++;
     }
 
     // 如果是连续非 textarea 的奇数位置且是最后一个
     return (
       count % 2 === 1 &&
-      (currentIndex === components.length - 1 || components[currentIndex + 1].type === 'textarea')
+      (currentIndex === components.length - 1 ||
+        (components[currentIndex + 1] && components[currentIndex + 1].type === 'textarea'))
     );
   };
 
   // 提交表单
   const handleSubmit = () => {
     formRef.value?.validate().then(() => {
+      // 处理表单数据的辅助函数
+      const processFormData = (data: Record<string, any>[]) => {
+        return data.map(item => ({
+          ...item,
+          __value: item && item.__key ? item[item.__key] : undefined,
+        }));
+      };
+
+      // 过滤掉隐藏字段的辅助函数
+      const filterVisibleFormData = (data: Record<string, any>[]) => {
+        return data.filter(item => {
+          const key = Object.keys(item).find(k => !k.startsWith('__'));
+          if (!key) return false;
+          const component = props.shortcut.components?.find(c => c.key === key) as IShortcutComponent;
+          return component && !component.hide;
+        });
+      };
+
+      // 过滤掉隐藏字段
+      const visibleFormData = filterVisibleFormData(formData.value);
+
       emit('submit', {
         shortcut: props.shortcut,
-        formData: formData.value.map(item => ({
-          ...item,
-          __value: item[item.__key],
-        })),
+        // 传递完整的 formData 给后端
+        formData: processFormData(formData.value),
+        // 仅用于 cite 显示的过滤数据
+        citeFormData: processFormData(visibleFormData),
       });
     });
   };

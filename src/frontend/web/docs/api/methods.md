@@ -21,11 +21,11 @@
 | `initSession()`                 | -                                                                                                                     | `Promise<void>` | 初始化会话，获取开场白和预设问题。                                                                    |
 | `updateRequestOptions(options)` | `options: { url?: string; headers?: Record<string, string>; data?: any; context?: Array<{key: string, value: any}> }` | `void`          | 动态更新请求选项，可以修改API地址或请求参数。对于需要在运行时切换智能体或修改请求参数的场景非常有用。 |
 | `updateRequestOptions(options)` | `options: { url?: string; headers?: Record<string, string>; data?: any; context?: Array<Object> }`                    | `void`          | 动态更新请求选项，可以修改API地址或请求参数。对于需要在运行时切换智能体或修改请求参数的场景非常有用。 |
-| `focusInput()`                  | -                                                                                                                     | `void`          | **v1.1.1新增** 程序式聚焦输入框。可用于在特定时机主动聚焦到输入框，提升用户体验。                     |
-| `addNewSession(sessionCode?)`   | `sessionCode?: string`                                                                                               | `Promise<ISessionEditItem>` | **v1.2.2新增** 创建一个新的聊天会话并返回会话信息。可选参数 sessionCode 用于指定会话代码，如果不提供则自动生成。 |
-| `updateSessionName(sessionCode, newName)` | `sessionCode: string, newName: string`                                                                              | `Promise<ISessionEditItem>` | **v1.2.2新增** 更新指定会话的名称。 |
-| `switchToSession(sessionCode)`  | `sessionCode: string`                                                                                                 | `Promise<void>` | **v1.2.2新增** 切换到指定代码的会话。 |
-| `getSessionList()`              | -                                                                                                                     | `Promise<ISessionEditItem[]>` | **v1.2.2新增** 获取当前会话列表。 |
+| `focusInput()`                  | -                                                                                                                     | `void`          | <Badge type="tip" text="v1.1.1" /> 程序式聚焦输入框。可用于在特定时机主动聚焦到输入框，提升用户体验。                     |
+| `addNewSession(sessionCode?)`   | `sessionCode?: string`                                                                                               | `Promise<ISessionEditItem>` | <Badge type="tip" text="v1.2.2" /> 创建一个新的聊天会话并返回会话信息。可选参数 sessionCode 用于指定会话代码，如果不提供则自动生成。 |
+| `updateSessionName(sessionCode, newName)` | `sessionCode: string, newName: string`                                                                              | `Promise<ISessionEditItem>` | <Badge type="tip" text="v1.2.2" /> 更新指定会话的名称。 |
+| `switchToSession(sessionCode)`  | `sessionCode: string`                                                                                                 | `Promise<void>` | <Badge type="tip" text="v1.2.2" /> 切换到指定代码的会话。 |
+| `getSessionList()`              | -                                                                                                                     | `Promise<ISessionEditItem[]>` | <Badge type="tip" text="v1.2.2" /> 获取当前会话列表。 |
 
 ::: danger 已废弃方法
 以下方法在相应版本中已被移除:

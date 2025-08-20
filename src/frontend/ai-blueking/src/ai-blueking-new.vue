@@ -195,7 +195,7 @@
 
   // 类型定义
   interface Props {
-    extCls: string;
+    extCls?: string;
     title?: string;
     helloText?: string;
     enablePopup?: boolean;
@@ -720,13 +720,12 @@
     }
   };
 
-  const handleSubmitShortcut = async ({
-    shortcut,
-    formData,
-  }: {
+  const handleSubmitShortcut = async (data: {
     shortcut: IShortcut;
     formData: Record<string, any>[];
+    citeFormData?: Record<string, any>[];
   }) => {
+    const { shortcut, formData, citeFormData } = data;
     handleCancelShortcut();
     !isShow.value && handleShow();
     currentSessionLoading.value && handleStop();
@@ -735,13 +734,23 @@
       await initSession();
     }
 
+    // 使用 citeFormData（如果提供）否则回退到 formData
+    const citeData = citeFormData || formData;
+
     await plusSessionContent(currentSession.value?.sessionCode, {
       role: SessionContentRole.User,
       content: shortcut.name,
       sessionCode: currentSession.value?.sessionCode,
       property: {
         extra: {
-          cite: formData.map(item => `${item.__label}: ${item.__value}`).join(', '),
+          cite: {
+            type: 'structured',
+            title: shortcut.name,
+            data: citeData.map(item => ({
+              key: item.__label,
+              value: item.__value,
+            })),
+          },
           command: shortcut.id,
           context: [
             ...formData,

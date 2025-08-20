@@ -13,6 +13,13 @@
         </ul>
       </div>
       
+      <div v-if="version.improvements" class="section">
+        <h3>🛠 改进</h3>
+        <ul>
+          <li v-for="(improvement, i) in version.improvements" :key="i" v-html="improvement"></li>
+        </ul>
+      </div>
+      
       <div v-if="version.fixes" class="section">
         <h3>🐛 修复</h3>
         <ul>

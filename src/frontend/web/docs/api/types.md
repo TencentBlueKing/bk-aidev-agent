@@ -28,6 +28,7 @@ interface IShortcut {
       label: string;
       value: string | number;
     }>;
+    hide?: boolean;       // 是否隐藏该组件（v1.2.4-beta.3 新增）
   }>
 }
 ```

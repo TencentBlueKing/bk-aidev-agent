@@ -322,7 +322,7 @@ export function useSessionStore() {
 
     if (isInitChat) {
       const getSessions = checkSdkMethod('getSessionsApi');
-      const sessions = await getSessions();
+      sessions = await getSessions();
 
       setSessionList(sessions);
     }
@@ -356,6 +356,7 @@ export function useSessionStore() {
     // 如果没有找到合适的现有会话，创建新会话
     if (!targetSession) {
       targetSession = await addNewSession();
+      targetSessionContents = [];
     } else {
       // 使用现有会话
       const setContents = checkSdkMethod('setSessionContents');
@@ -378,7 +379,8 @@ export function useSessionStore() {
     }
 
     // 处理角色设置
-    if (agentInfo.value?.promptSetting?.content?.length) {
+    if (agentInfo.value?.promptSetting?.content?.length && targetSessionContents.length === 0) {
+      // 只要已有内容，则不需要再自动塞入 prompt
       const handleRole = checkSdkMethod('handleCompleteRole');
 
       await handleRole(targetSession.sessionCode, agentInfo.value.promptSetting.content);

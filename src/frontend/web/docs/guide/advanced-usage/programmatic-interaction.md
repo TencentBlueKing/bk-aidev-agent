@@ -17,7 +17,7 @@ AI小鲸组件实例提供以下方法用于编程式控制:
 | `handleStop()` | 停止当前内容生成 |
 | `handleSendMessage(options)` | 主动发送消息，详见下文 |
 | `handleShortcutClick(shortcut)` | 模拟点击快捷操作 |
-| `focusInput()` | **v1.1.1新增** 程序式聚焦输入框 |
+| `focusInput()` | <Badge type="tip" text="v1.1.1" /> 程序式聚焦输入框 |
 
 ## 主动发送消息 (`handleSendMessage`)
 
@@ -112,7 +112,7 @@ export default {
 
 ## 程序式聚焦输入框 (`focusInput`)
 
-**v1.1.1新增** `focusInput` 方法允许您在特定时机主动聚焦到输入框，提升用户体验。
+<Badge type="tip" text="v1.1.1" /> `focusInput` 方法允许您在特定时机主动聚焦到输入框，提升用户体验。
 
 **方法签名:**
 

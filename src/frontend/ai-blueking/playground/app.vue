@@ -37,6 +37,7 @@
 
     <main class="content">
       <DynamicPlayground v-if="currentRoute === 'dynamic'" />
+      <ShortcutFilterDemo v-if="currentRoute === 'shortcut-filter'" />
       <Documentation
         v-if="showDocs"
         @close="showDocs = false"
@@ -55,10 +56,14 @@
   import Changelog from './components/changelog-viewer.vue';
   import Documentation from './components/documentation.vue';
   import DynamicPlayground from './dynamic-demo.vue';
+  import ShortcutFilterDemo from './views/shortcut-filter-demo.vue';
 
   import 'highlight.js/styles/atom-one-dark.css';
 
-  const routes = [{ key: 'dynamic', label: '实时会话样例' }];
+  const routes = [
+    { key: 'dynamic', label: '实时会话样例' },
+    { key: 'shortcut-filter', label: '快捷操作过滤器' }
+  ];
 
   const currentRoute = ref('dynamic');
   // 从 URL 参数中获取初始状态

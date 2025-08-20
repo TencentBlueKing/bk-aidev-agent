@@ -8,10 +8,19 @@
       v-if="message?.property?.extra?.cite"
       class="ai-cite-container"
     >
-      <ai-cite :text="message.property.extra.cite" />
+      <ai-cite
+        v-if="!isStructuredCite(message.property.extra.cite)"
+        :text="message.property.extra.cite"
+      />
     </div>
     <div :class="`message-content-container ${message.role}`">
-      <template v-if="[SessionContentRole.User, SessionContentRole.Role].includes(message.role)">
+      <ai-cite-structured
+        v-if="isStructuredCite(message?.property?.extra?.cite)"
+        :cite-data="message?.property?.extra?.cite"
+      />
+      <template
+        v-else-if="[SessionContentRole.User, SessionContentRole.Role].includes(message.role)"
+      >
         <bk-text-editor
           v-if="isEdit"
           :auto-focus="true"
@@ -82,7 +91,7 @@
         />
         <i
           class="bkai-icon bkai-yinyong"
-          @click="setCiteText(message.content)"
+          @click="handleCite"
         />
         <i
           v-if="message.role === SessionContentRole.Ai"
@@ -119,6 +128,7 @@
 
   import defaultUserLogo from '../assets/images/ai-user.png';
   import AiCite from '../components/ai-cite.vue';
+  import AiCiteStructured from '../components/ai-cite-structured.vue';
   import { useMermaid } from '../composables/use-mermaid';
   import { usePopup } from '../composables/use-popup-props';
   import { useSelect } from '../composables/use-select-pop';
@@ -139,6 +149,20 @@
     index: number;
   }
 
+  interface CitedData {
+    key: string;
+    value: string;
+  }
+
+  // 类型定义 - 与 ai-cite-structured.vue 中保持一致
+  interface StructuredCite {
+    type: 'structured';
+    title: string;
+    data: CitedData[];
+    content?: string | object;
+    [key: string]: any;
+  }
+
   const emit = defineEmits<{
     regenerate: [index: number];
     resend: [index: number, value: { message: string }];
@@ -154,6 +178,16 @@
   // 状态管理
   const isEdit = ref(false);
   const messageMainRef = ref<HTMLElement | null>(null);
+
+  // 检查是否为结构化cite
+  const isStructuredCite = (cite: unknown): cite is StructuredCite => {
+    return (
+      typeof cite === 'object' &&
+      cite !== null &&
+      'type' in cite &&
+      (cite as { type: string }).type === 'structured'
+    );
+  };
   // 组合式函数
   const { enablePopup } = usePopup();
   const { setCiteText } = useSelect(enablePopup);
@@ -244,9 +278,42 @@
     emit('resend', props.index, { message: value });
   };
 
+  /**
+   * 将结构化数据转换为可读字符串
+   * @param cite 结构化引用数据
+   * @returns 格式化后的字符串
+   */
+  const formatStructuredCiteToString = (cite: StructuredCite): string => {
+    // 优先使用 content 字段
+    if (cite.content) {
+      return typeof cite.content === 'string'
+        ? cite.content
+        : JSON.stringify(cite.content, null, 2);
+    }
+
+    // 其次尝试从 data 构建格式化字符串
+    if (cite.data && cite.data.length > 0) {
+      return `${cite.title}\n${cite.data.map(item => `${item.key}: ${item.value}`).join('\n')}`;
+    }
+
+    // 如果没有特定格式，直接转换整个对象
+    return JSON.stringify(cite, null, 2);
+  };
+
+  /**
+   * 获取消息的文本内容，处理结构化数据
+   */
+  const getMessageTextContent = (): string => {
+    const cite = props.message?.property?.extra?.cite;
+    if (cite && isStructuredCite(cite)) {
+      return formatStructuredCiteToString(cite);
+    }
+    return props.message.content;
+  };
+
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(props.message.content);
+      await navigator.clipboard.writeText(getMessageTextContent());
       Message({
         theme: 'success',
         message: t('复制成功'),
@@ -258,6 +325,10 @@
         message: t('复制失败'),
       });
     }
+  };
+
+  const handleCite = () => {
+    setCiteText(getMessageTextContent());
   };
 
   const handleRegenerate = () => {
@@ -408,7 +479,7 @@
 
         i {
           margin-right: 0;
-          font-size: 16px;
+          font-size: 14px;
           cursor: pointer;
         }
 
@@ -437,9 +508,9 @@
     position: relative;
     display: flex;
     align-items: center;
-    padding: 10px 12px;
+    padding: 8px 12px;
     margin: 0;
-    font-size: 14px;
+    font-size: 12px;
     line-height: 1.5;
     color: #313238;
     word-break: break-all;
@@ -451,7 +522,7 @@
       top: -16px;
       display: none;
       width: 150px;
-      font-size: 14px;
+      font-size: 12px;
       line-height: 12px;
       color: #979ba5;
 

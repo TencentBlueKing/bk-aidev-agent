@@ -1,3 +1,121 @@
+## [1.2.4] - 2025-09-03
+
+### ✨ 新增功能
+
+- **beforeRequest 钩子支持**: 支持在发送请求前对请求参数进行处理，增强请求的灵活性和可控制性
+- **划选过滤增强**: 改进划选文本检测逻辑，优化在 shadow DOM 中的文本选择支持
+- **监控体验优化**: 优化组件的监控和错误处理机制，提供更稳定的用户体验
+
+### 🎨 优化改进
+
+- **快捷操作过滤器增强**:
+  - 更新 `shortcutFilter` 函数签名，支持访问选中文本内容
+  - 函数签名从 `(shortcut: IShortcut) => boolean` 更新为 `(shortcut: IShortcut, selectedText: string) => boolean`
+- **结构化引用数据支持**:
+  - 优化引用组件，增加内容溢出处理和快捷操作支持
+  - 新增结构化引用数据显示组件
+- **表单提交逻辑优化**:
+  - 优化表单提交逻辑，新增处理和过滤表单数据的辅助函数
+  - 支持引用数据的传递，区分完整表单数据和用于引用显示的过滤数据
+
+### 🐛 BUG修复
+
+- 修复划选文本检测的时序问题，提升划选操作的响应速度和准确性
+- 修复在某些场景下快捷操作事件重复触发的问题
+
+## [1.2.4-beta.3] - 2025-08-20
+
+### ✨ 新增功能
+
+- **快捷操作组件隐藏支持**: 新增 `hide` 属性，支持动态控制快捷操作表单组件的显示/隐藏
+  - 在 `IShortcut` 的 `components` 配置中新增 `hide` 属性
+  - 当设置为 `true` 时，该组件将不会在表单中显示，同时其数据也不会包含在提交的表单数据中
+  - 支持根据条件动态显示/隐藏表单字段，实现更灵活的表单交互
+
+```javascript
+{
+  id: 'dynamic_form',
+  name: '动态表单',
+  icon: 'bkai-icon bkai-form',
+  components: [
+    {
+      type: 'select',
+      key: 'userType',
+      name: '用户类型',
+      options: [
+        { label: '普通用户', value: 'normal' },
+        { label: 'VIP用户', value: 'vip' }
+      ],
+      placeholder: '请选择用户类型'
+    },
+    {
+      type: 'input',
+      key: 'vipCode',
+      name: 'VIP码',
+      placeholder: '请输入VIP码',
+      // 只有当用户类型为VIP时才显示此字段
+      hide: true // 初始隐藏，可根据条件动态控制
+    }
+  ]
+}
+```
+
+## [1.2.4-beta.2] - 2025-08-20
+
+### ✨ 新增功能
+
+- **快捷操作过滤器**: 新增 `shortcutFilter` 属性，支持根据选中文本内容动态过滤快捷操作的显示
+  - 当用户选中文本时，每个快捷操作的组件会自动获得 `selectedText` 属性
+  - 开发者可以通过 `shortcutFilter` 函数访问选中文本内容，实现更智能的快捷操作过滤
+  - 支持根据选中文本特征（如代码、长度等）动态控制快捷操作的可见性
+
+```vue
+<template>
+  <AIBlueking
+    :shortcuts="shortcuts"
+    :shortcut-filter="shortcutFilter"
+  />
+</template>
+
+<script setup>
+  const shortcuts = [
+    {
+      id: 'explain_code',
+      name: '解释代码',
+      icon: 'bkai-icon bkai-code',
+      components: [
+        {
+          type: 'textarea',
+          key: 'code',
+          name: '代码内容',
+          fillBack: true,
+          placeholder: '请输入或选中需要解释的代码',
+        },
+      ],
+    },
+  ];
+
+  const shortcutFilter = shortcut => {
+    // 获取选中的文本内容
+    const selectedText = shortcut.components?.find(c => c.selectedText)?.selectedText || '';
+
+    // 根据快捷操作类型和选中文本内容进行过滤
+    switch (shortcut.id) {
+      case 'explain_code':
+        // 只有当选中的文本包含代码特征时才显示
+        return (
+          selectedText.includes('function') ||
+          selectedText.includes('const') ||
+          selectedText.includes('let') ||
+          selectedText.includes('var')
+        );
+      default:
+        return true;
+    }
+  };
+</script>
+```
+
 ## [1.2.3] - 2025-08-12
 
 ### ✨ 新增功能
@@ -41,17 +159,20 @@
 ## [1.1.0-beta.2] - 2025-06-02
 
 ### 修复
+
 - **修复自定义输入 `textarea` 背景色异常的问题**
 
 ## [1.1.0-beta.1] - 2025-06-01
 
 ### 新增功能
+
 - **自定义表单输入功能**：
   - 添加自定义表单输入能力，支持快捷指令自定义表单交互
   - 支持文本输入框、下拉选择框、数字输入框和多行文本域等多种表单组件
   - 优化快捷操作接口定义，增强扩展性
 
 ### 变更
+
 - **快捷操作接口升级**：
   - 重构快捷操作的数据结构，从 `ShortCut` 升级为更加灵活的 `IShortcut`
   - 支持通过自定义组件配置实现复杂的用户输入交互
@@ -61,31 +182,33 @@
 ```typescript
 // 新的快捷操作接口定义
 interface IShortcut {
-  id: string;       // 快捷操作ID
-  name: string;     // 快捷操作名称
-  icon?: string;    // 图标类名
+  id: string; // 快捷操作ID
+  name: string; // 快捷操作名称
+  icon?: string; // 图标类名
   // 组件配置，用于定义表单项
   components: Array<{
-    type: string;    // 组件类型：'input', 'select', 'textarea', 'number' 等
-    name?: string;   // 表单项名称
-    key: string;     // 表单项键名
+    type: string; // 组件类型：'input', 'select', 'textarea', 'number' 等
+    name?: string; // 表单项名称
+    key: string; // 表单项键名
     placeholder?: string; // 占位文本
-    default?: any;   // 默认值
-    required?: boolean;   // 是否必填
-    fillBack?: boolean;   // 是否自动填充选中文本
+    default?: any; // 默认值
+    required?: boolean; // 是否必填
+    fillBack?: boolean; // 是否自动填充选中文本
     fillRegx?: string | RegExp; // 填充的正则匹配表达式
-    rows?: number;        // 输入框行数（textarea类型）
-    min?: number;         // 最小值（number类型）
-    max?: number;         // 最大值（number类型）
-    options?: Array<{     // 下拉选项（select类型）
+    rows?: number; // 输入框行数（textarea类型）
+    min?: number; // 最小值（number类型）
+    max?: number; // 最大值（number类型）
+    options?: Array<{
+      // 下拉选项（select类型）
       label: string;
       value: string | number;
     }>;
-  }>
+  }>;
 }
 ```
 
 ### 后端数据格式
+
 后端将接收到以下格式的数据：
 
 ```javascript
@@ -111,6 +234,7 @@ interface IShortcut {
 ### ✨ 新增功能
 
 #### URL 协议自动适配
+
 - **智能协议匹配**：新增 `normalizeUrl` 工具函数，自动匹配当前页面协议
 - **安全性提升**：HTTPS 页面下自动将 HTTP API 转换为 HTTPS，提升安全性
 - **多种路径支持**：支持相对路径、绝对路径、协议相对路径的智能识别和处理
@@ -118,13 +242,17 @@ interface IShortcut {
 ```vue
 <template>
   <!-- 支持多种URL格式 -->
-  <AIBlueking :url="'/api/chat'" />           <!-- 相对路径 -->
-  <AIBlueking :url="//api.example.com/chat" /> <!-- 协议相对路径 -->
-  <AIBlueking :url="http://api.example.com/chat" /> <!-- 完整URL，HTTPS页面下自动转换为HTTPS -->
+  <AIBlueking :url="'/api/chat'" />
+  <!-- 相对路径 -->
+  <AIBlueking :url="//api.example.com/chat" />
+  <!-- 协议相对路径 -->
+  <AIBlueking :url="http://api.example.com/chat" />
+  <!-- 完整URL，HTTPS页面下自动转换为HTTPS -->
 </template>
 ```
 
 #### 上下文支持
+
 - **静态上下文**：支持传递静态对象作为上下文信息
 - **动态上下文**：支持传递函数，实现动态上下文获取
 - **灵活配置**：可以是单个对象或对象数组
@@ -135,7 +263,7 @@ interface IShortcut {
   <AIBlueking
     :url="apiUrl"
     :request-options="{
-      context: { userId: '123', department: 'IT' }
+      context: { userId: '123', department: 'IT' },
     }"
   />
 
@@ -145,46 +273,50 @@ interface IShortcut {
     :request-options="{
       context: () => ({
         userId: getCurrentUserId(),
-        timestamp: Date.now()
-      })
+        timestamp: Date.now(),
+      }),
     }"
   />
 </template>
 
 <script setup>
-const getCurrentUserId = () => {
-  // 动态获取用户ID的逻辑
-  return store.state.user.id;
-};
+  const getCurrentUserId = () => {
+    // 动态获取用户ID的逻辑
+    return store.state.user.id;
+  };
 </script>
 ```
 
 ### 🎨 优化改进
 
 #### URL 处理优化
+
 - **智能识别**：自动识别不同类型的URL格式
 - **协议转换**：在HTTPS环境下自动升级HTTP请求为HTTPS
 - **错误处理**：完善的URL处理错误捕获和降级机制
 
 #### 类型定义改进
+
 - **TypeScript 优化**：改进 `debounce` 函数的类型定义
 - **上下文类型**：新增 `IContext` 类型定义，支持对象和对象数组
 - **开发体验**：提升IDE智能提示和类型检查
 
 #### 代码质量提升
+
 - **格式化**：统一代码格式，提升可读性
 - **性能优化**：优化URL处理和上下文传递的性能
 - **错误处理**：增强错误处理机制
 
 ### 🔧 新增配置项
 
-| 配置项 | 类型 | 描述 |
-|--------|------|------|
+| 配置项                   | 类型                           | 描述                               |
+| ------------------------ | ------------------------------ | ---------------------------------- |
 | `requestOptions.context` | `IContext \| (() => IContext)` | 上下文信息，支持静态对象或动态函数 |
 
 其中 `IContext` 类型定义为：
+
 ```typescript
-type IContext = Record<string, string> | Record<string, string>[]
+type IContext = Record<string, string> | Record<string, string>[];
 ```
 
 ### 📝 使用示例
@@ -201,39 +333,39 @@ type IContext = Record<string, string> | Record<string, string>[]
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
-import { AIBlueking } from '@blueking/ai-blueking';
+  import { ref, computed } from 'vue';
+  import { AIBlueking } from '@blueking/ai-blueking';
 
-const aiBlueking = ref(null);
-const apiUrl = '/api/ai/chat'; // 相对路径，会自动转换为完整URL
+  const aiBlueking = ref(null);
+  const apiUrl = '/api/ai/chat'; // 相对路径，会自动转换为完整URL
 
-// 动态上下文配置
-const requestOptions = computed(() => ({
-  headers: {
-    'Authorization': `Bearer ${getToken()}`
-  },
-  context: () => ({
-    userId: getCurrentUser().id,
-    sessionId: getSessionId(),
-    timestamp: Date.now().toString(),
-    userAgent: navigator.userAgent
-  })
-}));
+  // 动态上下文配置
+  const requestOptions = computed(() => ({
+    headers: {
+      Authorization: `Bearer ${getToken()}`,
+    },
+    context: () => ({
+      userId: getCurrentUser().id,
+      sessionId: getSessionId(),
+      timestamp: Date.now().toString(),
+      userAgent: navigator.userAgent,
+    }),
+  }));
 
-const getToken = () => {
-  // 获取认证token
-  return localStorage.getItem('auth_token');
-};
+  const getToken = () => {
+    // 获取认证token
+    return localStorage.getItem('auth_token');
+  };
 
-const getCurrentUser = () => {
-  // 获取当前用户信息
-  return JSON.parse(localStorage.getItem('user_info') || '{}');
-};
+  const getCurrentUser = () => {
+    // 获取当前用户信息
+    return JSON.parse(localStorage.getItem('user_info') || '{}');
+  };
 
-const getSessionId = () => {
-  // 获取会话ID
-  return sessionStorage.getItem('session_id');
-};
+  const getSessionId = () => {
+    // 获取会话ID
+    return sessionStorage.getItem('session_id');
+  };
 </script>
 ```
 
@@ -243,18 +375,22 @@ const getSessionId = () => {
 <template>
   <div>
     <!-- 这些URL在不同协议环境下会自动适配 -->
-    <AIBlueking :url="httpUrl" />      <!-- HTTP环境：保持HTTP，HTTPS环境：自动转换为HTTPS -->
-    <AIBlueking :url="httpsUrl" />     <!-- 任何环境：保持HTTPS -->
-    <AIBlueking :url="relativeUrl" />  <!-- 自动使用当前页面的协议和域名 -->
-    <AIBlueking :url="protocolRelativeUrl" /> <!-- 自动使用当前页面的协议 -->
+    <AIBlueking :url="httpUrl" />
+    <!-- HTTP环境：保持HTTP，HTTPS环境：自动转换为HTTPS -->
+    <AIBlueking :url="httpsUrl" />
+    <!-- 任何环境：保持HTTPS -->
+    <AIBlueking :url="relativeUrl" />
+    <!-- 自动使用当前页面的协议和域名 -->
+    <AIBlueking :url="protocolRelativeUrl" />
+    <!-- 自动使用当前页面的协议 -->
   </div>
 </template>
 
 <script setup>
-const httpUrl = 'http://api.example.com/chat';
-const httpsUrl = 'https://api.example.com/chat';
-const relativeUrl = '/api/chat';
-const protocolRelativeUrl = '//api.example.com/chat';
+  const httpUrl = 'http://api.example.com/chat';
+  const httpsUrl = 'https://api.example.com/chat';
+  const relativeUrl = '/api/chat';
+  const protocolRelativeUrl = '//api.example.com/chat';
 </script>
 ```
 
@@ -269,6 +405,7 @@ const protocolRelativeUrl = '//api.example.com/chat';
 ### ✨ 新增功能
 
 #### 可配置压缩边距
+
 - **新增 `miniPadding` 属性**：支持自定义压缩状态下的边距
 
 ```vue
@@ -283,15 +420,16 @@ const protocolRelativeUrl = '//api.example.com/chat';
 ### 🎨 用户体验优化
 
 #### 高度切换逻辑优化
+
 - **智能恢复**：恢复默认高度时使用用户设置的初始位置和尺寸
 - **保持配置**：不再使用固定的 `window.innerHeight`，而是根据用户的初始配置恢复
 - **状态管理改进**：更好地保持用户自定义的初始位置、高度等配置
 
 ### 🔧 新增属性
 
-| 属性/方法名 | 类型 | 默认值 | 描述 |
-|------------|------|--------|------|
-| `miniPadding` | `Number` | `0` | 压缩状态下的边距，单位为像素 |
+| 属性/方法名   | 类型     | 默认值 | 描述                         |
+| ------------- | -------- | ------ | ---------------------------- |
+| `miniPadding` | `Number` | `0`    | 压缩状态下的边距，单位为像素 |
 
 ### 📝 使用示例
 
@@ -317,9 +455,9 @@ const protocolRelativeUrl = '//api.example.com/chat';
 </template>
 
 <script setup>
-import { AIBlueking } from '@blueking/ai-blueking';
+  import { AIBlueking } from '@blueking/ai-blueking';
 
-const apiUrl = 'your-ai-service-url';
+  const apiUrl = 'your-ai-service-url';
 </script>
 ```
 
@@ -334,6 +472,7 @@ const apiUrl = 'your-ai-service-url';
 ### ✨ 新增功能
 
 #### 自定义占位符文本
+
 - **新增 `placeholder` 属性**：支持自定义输入框占位符文本
 - **灵活配置**：可以根据不同场景设置不同的提示文本
 - **向下兼容**：默认保持原有的提示文本
@@ -348,39 +487,44 @@ const apiUrl = 'your-ai-service-url';
 ```
 
 #### 输入框聚焦优化
+
 - **自动聚焦**：面板打开时自动聚焦到输入框，提升用户体验
 - **程序式聚焦**：新增 `focusInput` 方法，支持外部调用聚焦输入框
 
 ```vue
 <template>
-  <AIBlueking ref="aiBlueking" :url="apiUrl" />
+  <AIBlueking
+    ref="aiBlueking"
+    :url="apiUrl"
+  />
   <button @click="focusInput">聚焦输入框</button>
 </template>
 
 <script setup>
-import { ref } from 'vue';
+  import { ref } from 'vue';
 
-const aiBlueking = ref(null);
+  const aiBlueking = ref(null);
 
-const focusInput = () => {
-  aiBlueking.value?.focusInput();
-};
+  const focusInput = () => {
+    aiBlueking.value?.focusInput();
+  };
 </script>
 ```
 
 ### 🎨 用户体验优化
 
 #### Prompt 列表显示优化
+
 - **智能显示**：只有在有 Prompt 数据且输入包含 '/' 时才显示 Prompt 列表
 - **减少干扰**：避免空列表时的无意义显示，提供更清爽的界面
 - **交互改进**：优化 Prompt 触发逻辑，提升使用体验
 
 ### 🔧 新增属性和方法
 
-| 属性/方法名 | 类型 | 默认值 | 描述 |
-|------------|------|--------|------|
-| `placeholder` | `String` | `'输入 "/" 唤出 Prompt\n通过 Shift + Enter 进行换行输入'` | 输入框占位符文本 |
-| `focusInput()` | `Method` | - | 程序式聚焦输入框方法 |
+| 属性/方法名    | 类型     | 默认值                                                    | 描述                 |
+| -------------- | -------- | --------------------------------------------------------- | -------------------- |
+| `placeholder`  | `String` | `'输入 "/" 唤出 Prompt\n通过 Shift + Enter 进行换行输入'` | 输入框占位符文本     |
+| `focusInput()` | `Method` | -                                                         | 程序式聚焦输入框方法 |
 
 ### 📝 使用示例
 
@@ -400,15 +544,15 @@ const focusInput = () => {
 </template>
 
 <script setup>
-import { ref } from 'vue';
-import { AIBlueking } from '@blueking/ai-blueking';
+  import { ref } from 'vue';
+  import { AIBlueking } from '@blueking/ai-blueking';
 
-const aiBlueking = ref(null);
-const apiUrl = 'your-ai-service-url';
+  const aiBlueking = ref(null);
+  const apiUrl = 'your-ai-service-url';
 
-const handleFocus = () => {
-  aiBlueking.value?.focusInput();
-};
+  const handleFocus = () => {
+    aiBlueking.value?.focusInput();
+  };
 </script>
 ```
 
@@ -421,6 +565,7 @@ const handleFocus = () => {
 ### 🎯 核心新功能
 
 #### 多会话管理
+
 - **🆕 会话创建**：支持创建多个独立的聊天会话，每个会话保持独立的对话上下文
 - **🔄 会话切换**：在不同会话间快速切换，无缝继续之前的对话
 - **📝 会话重命名**：直接在历史面板中编辑会话名称，便于识别和管理
@@ -428,12 +573,14 @@ const handleFocus = () => {
 - **🧠 智能切换**：删除当前会话时自动切换到最近的会话或创建新会话
 
 #### 历史会话面板
+
 - **📊 时间分组**：按"今天"、"昨天"、"之前"自动分组显示历史会话
 - **🔍 搜索功能**：支持在历史面板中搜索会话，快速定位目标对话
 - **🎨 视觉优化**：现代化的面板设计，清晰的会话状态指示
 - **📱 响应式设计**：适配不同屏幕尺寸，提供一致的用户体验
 
 #### 界面增强
+
 - **🆕 新聊天按钮**：头部新增新建聊天按钮，一键创建新的对话会话
 - **📋 动态标题**：头部标题现在显示当前会话名称，提供更好的上下文感知
 - **⚙️ 图标控制**：新增属性控制历史和新聊天图标的显示
@@ -450,10 +597,10 @@ const handleFocus = () => {
 </template>
 ```
 
-| 属性名 | 类型 | 默认值 | 描述 |
-|--------|------|--------|------|
+| 属性名            | 类型      | 默认值 | 描述                       |
+| ----------------- | --------- | ------ | -------------------------- |
 | `showHistoryIcon` | `Boolean` | `true` | 控制头部历史会话图标的显示 |
-| `showNewChatIcon` | `Boolean` | `true` | 控制头部新聊天图标的显示 |
+| `showNewChatIcon` | `Boolean` | `true` | 控制头部新聊天图标的显示   |
 
 ### 🎨 用户体验优化
 
@@ -465,6 +612,7 @@ const handleFocus = () => {
 ### 🌐 多语言支持
 
 为所有新增功能提供完整的中英文支持：
+
 - 历史会话、新增聊天、编辑、删除等操作的多语言文本
 - 时间分组标签的本地化显示
 - 确认对话框和提示信息的多语言支持
@@ -512,6 +660,7 @@ const apiUrl = 'your-ai-service-url';
 ## [1.0.3] - 2025-07-03
 
 ### 新增功能
+
 - **支持动态更新 `requestOptions`**：
   - `requestOptions` 属性现在支持动态更新，允许在运行时修改请求参数。
   - 这使得开发者可以根据应用状态变化，灵活调整发送给 AI 的数据。
@@ -522,24 +671,25 @@ const apiUrl = 'your-ai-service-url';
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue';
+  import { ref, reactive } from 'vue';
 
-const dynamicOptions = reactive({
-  data: {
-    param1: 'initial_value'
-  }
-});
+  const dynamicOptions = reactive({
+    data: {
+      param1: 'initial_value',
+    },
+  });
 
-// 在运行时更新
-setTimeout(() => {
-  dynamicOptions.data.param1 = 'new_value';
-}, 2000);
+  // 在运行时更新
+  setTimeout(() => {
+    dynamicOptions.data.param1 = 'new_value';
+  }, 2000);
 </script>
 ```
 
 ## [1.0.2] - 2025-06-25
 
 ### 新增功能
+
 - **新增 Nimbus 尺寸调整功能**：
   - 新增 `nimbusSize` 属性，支持 `small`, `normal`, `large` 三种尺寸。
   - 用户可以根据需求调整 Nimbus 悬浮图标的大小，以适应不同的界面环境。
@@ -552,6 +702,7 @@ setTimeout(() => {
 ```
 
 ### 优化
+
 - **优化 Nimbus 最小化按钮尺寸**：
   - 根据 `nimbusSize` 属性动态调整最小化按钮的大小和位置。
   - 修复了在 `small` 尺寸下最小化按钮显得过大的问题，提升了视觉协调性。
@@ -559,6 +710,7 @@ setTimeout(() => {
 ## [1.0.1] - 2025-05-28
 
 ### 新增功能
+
 - **新增输入框禁用控制**：
   - 新增 `disabledInput` 属性，用于控制输入框是否可用
   - 当设置为 `true` 时，输入框将处于禁用状态，用户无法输入文本
@@ -571,11 +723,13 @@ setTimeout(() => {
 ```
 
 ### 优化
+
 - **优化输入框禁用状态的样式**：
   - 提供更明确的禁用状态视觉反馈
   - 禁用状态下输入框呈灰色，且鼠标悬停显示禁用光标
 
 ### 修复
+
 - **修复输入组件状态管理问题**：
   - 修复了某些场景下输入组件状态管理不正确的问题
   - 优化了输入框与发送按钮的状态联动
@@ -587,6 +741,7 @@ setTimeout(() => {
 全新升级，搭配 AIDev 智能体一站式体验，更流畅的交互和更丰富的功能。
 
 ### 优化
+
 - **优化可调整容器高度的逻辑**：
   - 通过添加异步处理，修复了窗口尺寸调整时的计算问题
   - 提高了屏幕尺寸变化时容器高度适配的稳定性
@@ -614,6 +769,7 @@ setTimeout(() => {
 ## [0.5.6] - 2025-05-20
 
 ### 修复
+
 - **修复消息发送逻辑**：
   - 修复在加载状态下仍可发送消息的问题
   - 优化消息发送逻辑，防止在AI响应过程中重复发送消息
@@ -629,11 +785,13 @@ const sendMessage = () => {
 ## [0.5.5] - 2025-05-15
 
 ### 新增功能
+
 - **优化位置交互计算方式**：
   - 改进组件定位算法，提高组件在各种场景下的定位精度
   - 增强拖拽与调整大小时的流畅性体验
 
 ### 修复
+
 - **修复初始位置调整问题**：
   - 修复初始位置调整导致位置交互错位的问题
   - 解决组件初始渲染时的位置计算错误
@@ -656,6 +814,7 @@ const sendMessage = () => {
 ## [0.5.4] - 2025-04-28
 
 ### 新增功能
+
 - **增强可拖拽功能**：
   - 新增 `draggable` 属性，控制组件是否可拖拽（默认true）
   - 当设置为 `false` 时，组件将固定位置不可拖动
@@ -681,16 +840,19 @@ const sendMessage = () => {
 ## [0.5.3] - 2025-04-20
 
 ### 新增功能
+
 - **支持预设对话内容**：
   - 新增 `defaultMessages` 属性，允许预设初始化对话内容
   - 可通过此属性实现对话的预加载和状态恢复
 
 ```html
 <template>
-  <AIBlueking :default-messages="[
+  <AIBlueking
+    :default-messages="[
     { role: 'user', content: '你好' },
     { role: 'assistant', content: '您好！有什么我可以帮助您的吗？' }
-  ]"/>
+  ]"
+  />
 </template>
 ```
 
@@ -703,8 +865,8 @@ const sendMessage = () => {
 
 ```html
 <template>
-  <AIBlueking 
-    @receive-start="handleReceiveStart" 
+  <AIBlueking
+    @receive-start="handleReceiveStart"
     @receive-text="handleReceiveText"
     @receive-end="handleReceiveEnd"
     @send-message="handleSendMessage"
@@ -729,6 +891,7 @@ const sendMessage = () => {
 - **支持访问会话内容**：新增 `sessionContents` 属性
 
 ### 修复
+
 - 修复框选内容在输入时没有立即消失的问题
 - 修复输入框组件可能引起的 xml 攻击风险
 - 修复 `minimize` 下点击无法显示面板的问题
@@ -736,6 +899,7 @@ const sendMessage = () => {
 ## [0.5.3-beta.6] - 2025-04-16
 
 ### 优化
+
 - **增强 Vue2 组件 API 支持**：
   - 完善 Vue2 组件对 Vue3 组件暴露的 API 的支持，确保所有方法和属性都能被正确访问
   - 包括 `sessionContents`, `handleClose`, `handleSendMessage`, `handleDelete`, `handleRegenerate`, `handleResend` 等
@@ -747,6 +911,7 @@ const sendMessage = () => {
 ## [0.5.3-beta.5] - 2025-04-15
 
 ### 优化
+
 - **图标系统升级**：
   - 将所有图标类名从 `icon-*` 更新为 `bkai-*` 前缀，统一组件图标风格
   - 优化停止生成和滚动到底部功能的图标展示
@@ -754,6 +919,7 @@ const sendMessage = () => {
 ## [0.5.3-beta.4] - 2025-04-10
 
 ### 新增功能
+
 - **支持自定义标题和欢迎语**：
   - 新增 `title` 属性，支持自定义标题
   - 新增 `helloText` 属性，支持自定义欢迎语
@@ -761,6 +927,7 @@ const sendMessage = () => {
 ## [0.5.3-beta.3] - 2025-04-03
 
 ### 新增功能
+
 - **支持组件关闭事件**：
   - 新增 `close` 事件，响应组件关闭
   - 事件返回完整的关闭信息：`{ type, label, cite, prompt }`
@@ -772,11 +939,13 @@ const sendMessage = () => {
 ## [0.5.3-beta.2] - 2025-04-02
 
 ### 新增功能
+
 - **支持 mermaid 图表渲染**：
 
 ## [0.5.3-beta.1] - 2025-04-02
 
 ### 新增功能
+
 - **支持自定义传送目标元素**：
   - 新增 `teleportTo` 属性，控制组件内容传送到的 DOM 节点
   - 可以将组件内容渲染到任意 DOM 位置，避免嵌套组件的样式和定位问题
@@ -785,16 +954,18 @@ const sendMessage = () => {
 ```html
 <template>
   <!-- 将组件内容传送到 id 为 ai-container 的元素内 -->
-  <AIBlueking :teleport-to="#ai-container"/>
+  <AIBlueking :teleport-to="#ai-container" />
 </template>
 ```
 
 ### 修复
+
 - 修复框选内容在输入时没有立即消失的问题
 - 修复输入框组件可能引起的 xml 攻击风险
 - 修复 `minimize` 下点击无法显示面板的问题
 
 ## [0.5.2] - 2025-04-01
+
 ### 新增功能与支持
 
 - **支持设置 Nimbus 初始最小化状态**：
@@ -804,26 +975,32 @@ const sendMessage = () => {
 
 ```html
 <template>
-  <AIBlueking :default-minimize="true"/> <!-- Nimbus 组件初始以最小化状态显示 -->
+  <AIBlueking :default-minimize="true" />
+  <!-- Nimbus 组件初始以最小化状态显示 -->
 </template>
 ```
 
 ### 支持 Chat 接口添加自定义参数
 
 - 支持 `requestOptions` 传递自定义选项到发送请求
+
 ```html
 <template>
-<AIBlueking :request-options="{
+  <AIBlueking
+    :request-options="{
     headers: {
       preset: 'QA',
     },
     data: {
       preset: 'QA',
     },
-  }"/>
+  }"
+  />
 </template>
 ```
+
 这将使得发送请求时，会携带 `preset` 参数，headers 的数据会合并到请求头中， 请求体数据会合并到请求体中
+
 ```diff
 {
   inputs: {},
@@ -832,6 +1009,7 @@ const sendMessage = () => {
 +  preset: "QA"
 }
 ```
+
 ### 支持 `sessionContents` 暴露当前会话内容
 
 - 新增 `sessionContents` 属性，暴露当前会话内容
@@ -842,12 +1020,15 @@ const sendMessage = () => {
   <AIBlueking ref="aiBlueking" />
 </template>
 
-<script setup lang="ts">
-import { ref } from 'vue';
-import AIBlueking from '@blueking/ai-blueking';
+<script
+  setup
+  lang="ts"
+>
+  import { ref } from 'vue';
+  import AIBlueking from '@blueking/ai-blueking';
 
-const aiBluekingRef = ref<InstanceType<typeof AIBlueking>>();
-const sessionContents = aiBluekingRef.value?.sessionContents; // 获取当前会话内容
+  const aiBluekingRef = ref<InstanceType<typeof AIBlueking>>();
+  const sessionContents = aiBluekingRef.value?.sessionContents; // 获取当前会话内容
 </script>
 ```
 
@@ -895,8 +1076,8 @@ const sessionContents = aiBluekingRef.value?.sessionContents; // 获取当前会
 <template>
   <div>
     <button @click="showAI">打开 AI 小鲸</button>
-    
-    <AIBlueking 
+
+    <AIBlueking
       ref="aiBlueking"
       :url="apiUrl"
       :prompts="customPrompts"
@@ -910,20 +1091,24 @@ const sessionContents = aiBluekingRef.value?.sessionContents; // 获取当前会
 ## [0.4.3] - 2025-03-03
 
 ### 修复
+
 - 参考文档 `preview_path` 字段
 - Vue2 组件导出 `isThinking` 工具函数
 
 ## [0.4.2] - 2024-02-28
 
 ### 修复
+
 - Vue2 组件对 `shortcut-click` 事件的响应问题
 
 ## [0.4.1] - 2024-02-27
 
 ### 新增
+
 - 支持自定义快捷操作 shortcuts 配置
 
 ### 修复
+
 - 修复 popup 快捷键点击内容为空的问题
 - 修复翻译问题
 - 修复多余的控制台日志
@@ -943,12 +1128,14 @@ const sessionContents = aiBluekingRef.value?.sessionContents; // 获取当前会
 ### ⚠️ 破坏性变动 (Breaking Changes)
 
 #### ChatHelper 接口更新
+
 - ChatHelper 构造函数新增 `messages` 参数，用于在 think 事件中支持思考状态展示的更新
 - 回调函数 `handleClear` 必须使用 `messages.value.splice(0)` 方式清空消息，因为 `messages` 将作为引用类型传给 ChatHelper
 - 回调函数 `handleReceiveMessage` 新增 `cover` 参数，支持消息内容的增量更新和全量覆盖
 - 回调函数 `handleEnd` 增强错误处理，支持检测思考状态
 
 因此，升级后，请参考以下示例代码更新您的代码：
+
 ```ts
 // ChatHelper 初始化示例
 const messages = ref<Message[]>([]);
@@ -958,14 +1145,14 @@ const chatHelper = new ChatHelper(
   handleReceiveMessage,
   handleEnd,
   handleError,
-  messages.value  // 新增：消息数组引用
+  messages.value // 新增：消息数组引用
 );
 
 // handleReceiveMessage 使用示例
 const handleReceiveMessage = (
   message: string,
   id: number | string,
-  cover?: boolean  // 新增：控制消息更新模式
+  cover?: boolean // 新增：控制消息更新模式
 ) => {
   const currentMessage = messages.value.at(-1);
   if (currentMessage?.status === MessageStatus.Loading) {
@@ -982,7 +1169,10 @@ import { isThinking } from '@blueking/ai-blueking';
 const handleEnd = (id: number | string) => {
   loading.value = false;
   const currentMessage = messages.value.at(-1);
-  if (currentMessage?.status === MessageStatus.Loading || isThinking(currentMessage?.content || '')) {
+  if (
+    currentMessage?.status === MessageStatus.Loading ||
+    isThinking(currentMessage?.content || '')
+  ) {
     currentMessage.content = '聊天内容已中断';
     currentMessage.status = MessageStatus.Error;
   }
@@ -997,6 +1187,7 @@ const handleClear = () => {
 ### 其他新增功能
 
 #### 快捷操作事件
+
 - 新增 `shortcut-click` 事件，响应快捷操作按钮点击
 - 事件返回完整的操作信息：`{ type, label, cite, prompt }`
 
@@ -1045,19 +1236,20 @@ const handleShortcutClick = (data: { type: string; label: string; cite: string; 
   - 向下兼容原有的 string 类型配置
 
 使用示例：
+
 ```vue
 // 字符串方式（原有用法）
 <AIBlueking alert="这是一条提示" />
 
 // 对象方式（新增用法）
-<AIBlueking 
+<AIBlueking
   :alert="{
     title: '这是一条提示',
-    theme: 'warning',    // 支持 'primary' | 'success' | 'warning' | 'danger'
-    closable: true,      // 是否可关闭
-    closeText: '关闭',   // 关闭按钮文字
+    theme: 'warning', // 支持 'primary' | 'success' | 'warning' | 'danger'
+    closable: true, // 是否可关闭
+    closeText: '关闭', // 关闭按钮文字
     // ... 其他 Alert 组件支持的属性
-  }" 
+  }"
 />
 ```
 
@@ -1079,6 +1271,7 @@ const handleShortcutClick = (data: { type: string; label: string; cite: string; 
   - 通过 `AIBlueking` 组件的 `quickActions` 方法调用
 
 使用示例：
+
 ```ts
 interface AIBluekingExpose {
   quickActions: (type: 'explanation' | 'translate', content: string) => void;
