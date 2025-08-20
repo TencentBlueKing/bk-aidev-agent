@@ -3,7 +3,7 @@ from enum import Enum
 import pytest
 from aidev_agent.utils.factory import GenericFactory, SimpleFactory, SingletonFactory
 
-from tests.typing import FixtureType as ft
+from tests._typing import FixtureType as ft
 
 
 class MockType(Enum):
