@@ -27,35 +27,27 @@
 </template>
 
 <script lang="ts" setup>
-  import { ref, reactive } from 'vue';
-  import { AIBlueking } from '@blueking/ai-blueking';
-  import '@blueking/ai-blueking/dist/style.css';
+  import { ref, reactive } from "vue"
+  import { AIBlueking } from "@blueking/ai-blueking"
+  import "@blueking/ai-blueking/dist/style.css"
 
-  const aiBlueking = ref(null);
-  const apiUrl = 'https://your-api-endpoint.com/assistant/';
+  const aiBlueking = ref(null)
+  const apiUrl = "https://your-api-endpoint.com/assistant/"
 
   const customOptions = reactive({
     headers: {
-      Authorization: 'Bearer your-token-here',
-      'X-Custom-Header': 'some-value'
+      Authorization: "Bearer your-token-here",
+      "X-Custom-Header": "some-value",
     },
     data: {
-      preset: 'QA',
-      userId: 'user123'
+      preset: "QA",
+      userId: "user123",
     },
-  <<<<<<< HEAD
-    context: {
-      department: 'IT',
-      role: 'admin',
-      sessionType: 'support'
-    }
-  =======
     context: [
-      { key: 'language', value: 'javascript' },
-      { key: 'scenario', value: 'code_review' }
-    ]
-  >>>>>>> a5315c4 (feat: 自定义输入功能开发 v1.10)
-  });
+      { key: "language", value: "javascript" },
+      { key: "scenario", value: "code_review" },
+    ],
+  })
 
   // 如果 Token 是动态的，可以适时更新 customOptions.headers.Authorization
 </script>
@@ -67,42 +59,34 @@
 </template>
 
 <script>
-  import { AIBlueking } from '@blueking/ai-blueking/vue2';
-  import '@blueking/ai-blueking/dist/style.css';
+  import { AIBlueking } from "@blueking/ai-blueking/vue2"
+  import "@blueking/ai-blueking/dist/style.css"
 
   export default {
     components: {
-      AIBlueking
+      AIBlueking,
     },
     data() {
       return {
-        apiUrl: 'https://your-api-endpoint.com/assistant/',
+        apiUrl: "https://your-api-endpoint.com/assistant/",
         customOptions: {
           headers: {
-            Authorization: 'Bearer your-token-here',
-            'X-Custom-Header': 'some-value'
+            Authorization: "Bearer your-token-here",
+            "X-Custom-Header": "some-value",
           },
           data: {
-            preset: 'QA',
-            userId: 'user123'
+            preset: "QA",
+            userId: "user123",
           },
-  <<<<<<< HEAD
-          context: {
-            department: 'IT',
-            role: 'admin',
-            sessionType: 'support'
-          }
-  =======
           context: [
-            { key: 'language', value: 'javascript' },
-            { key: 'scenario', value: 'code_review' }
-          ]
-  >>>>>>> a5315c4 (feat: 自定义输入功能开发 v1.10)
-        }
-      };
+            { key: "language", value: "javascript" },
+            { key: "scenario", value: "code_review" },
+          ],
+        },
+      }
     },
     // 如果 Token 是动态的，可以在 updated 或 watch 中更新 this.customOptions.headers.Authorization
-  };
+  }
 </script>
 ```
 
@@ -436,4 +420,3 @@ const context3 = () => ({ timestamp: Date.now().toString() }) // 动态函数
 6. **传递上下文信息**：在请求体中添加业务上下文，如用户ID、业务标识等
 7. **提供代码环境信息**：通过`context`字段传递代码语言、框架、风格等信息
 8. **处理特殊场景**：如添加跨域请求头、设置特定的内容类型等
-   > > > > > > > a5315c4 (feat: 自定义输入功能开发 v1.10)

@@ -8,6 +8,15 @@ export default {
     return {
       changelogData: [
         {
+          version: "v1.2.4-beta.3",
+          date: "2025-08-20",
+          features: [
+            "新增 `hide` 属性，支持动态控制快捷操作表单组件的显示/隐藏",
+            "当组件的 `hide` 属性设置为 `true` 时，该组件将不会在表单中显示，同时其数据也不会包含在提交的表单数据中",
+            "支持根据条件动态显示/隐藏表单字段，实现更灵活的表单交互"
+          ],
+        },
+        {
           version: "v1.2.4-beta.2",
           date: "2025-08-20",
           features: [

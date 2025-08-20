@@ -23,7 +23,12 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import type { ISessionContent, ShortCut, IAgentCommand } from '@blueking/ai-ui-sdk/types';
+import type {
+  ISessionContent,
+  ShortCut,
+  IAgentCommand,
+  IAgentCommandComponent,
+} from '@blueking/ai-ui-sdk/types';
 import type { Ref } from 'vue';
 
 export interface AIBluekingExpose {
@@ -41,7 +46,10 @@ export interface AIBluekingExpose {
   handleClose: () => void;
   handleStop: () => void;
   handleSendMessage: (message: string) => void;
-  handleShortcutClick: (data: { shortcut: IShortcut; source: 'popup' | 'main' | 'ai-selected' }) => void;
+  handleShortcutClick: (data: {
+    shortcut: IShortcut;
+    source: 'popup' | 'main' | 'ai-selected';
+  }) => void;
   handleDelete: (index: number) => void;
   handleRegenerate: (index: number) => void;
   handleResend: (index: number, { message }: { message: string }) => void;
@@ -62,28 +70,13 @@ export interface AIBluekingExpose {
 // 使用 ai-ui-sdk 中的 IAgentCommand 类型作为 IShortcut 的别名
 export type IShortcut = IAgentCommand;
 
-export type IShortcutComponentType = 'text' | 'textarea' | 'number' | 'select';
-
-export type IShortcutComponent = {
-  name: string;
-  key: string;
-  type: IShortcutComponentType;
-  default?: string | number;
-  placeholder?: string;
-  required?: boolean;
-  fillBack?: boolean;
-  fillRegx?: string; // 改为字符串类型，避免 JSON 序列化问题
-  min?: number;
-  max?: number;
-  rows?: number;
-  selectedText?: string | null;
-  options?: { label: string; value: string }[];
-};
-
-// 扩展 IAgentCommandComponent 类型，添加 selectedText 属性
-export interface IAgentCommandComponentWithSelectedText extends IShortcutComponent {
+// 扩展 IAgentCommandComponent 类型，添加 hide 和 selectedText 属性
+export interface IShortcutComponent extends IAgentCommandComponent {
   selectedText?: string | null;
 }
+
+// 保持与旧版本的兼容性
+export type IAgentCommandComponentWithSelectedText = IShortcutComponent;
 
 export type { ShortCut, ISessionContent };
 

@@ -1,4 +1,3 @@
-import type { IAgentCommandComponent } from '@blueking/ai-ui-sdk/types';
 import BkForm from 'bkui-vue/lib/form';
 import { ref, computed, type Ref, watch } from 'vue';
 
@@ -12,10 +11,10 @@ export const useCustomForm = (shortcut: Ref<IShortcut>) => {
   const formData = ref<Record<string, any>[]>(
     (shortcut.value.components || []).reduce(
       (data, item) => {
-        // 为 IAgentCommandComponent 添加 selectedText 属性的兼容处理
-        const selectedItem = item as IAgentCommandComponent & { selectedText?: string };
+        // 使用本地扩展的 IShortcutComponent 类型
+        const component = item as IShortcutComponent;
         data.push({
-          [item.key]: selectedItem.selectedText || item.default || '',
+          [item.key]: component.selectedText || component.default || '',
           context_type: item.type,
           __label: item.name,
           __key: item.key,
@@ -127,26 +126,25 @@ export const useCustomForm = (shortcut: Ref<IShortcut>) => {
   });
 
   // 根据 component 更新 formData
-  const updateFormData = (component: IAgentCommandComponent) => {
+  const updateFormData = (component: IShortcutComponent) => {
     const key = component.key;
     const index = formData.value.findIndex(item => item[key]);
     if (index !== -1) {
-      // 为 IAgentCommandComponent 添加 selectedText 属性的兼容处理
-      const selectedItem = component as IAgentCommandComponent & { selectedText?: string };
-      formData.value[index][key] = selectedItem.selectedText || component.default || '';
+      // 使用本地扩展的 IShortcutComponent 类型
+      formData.value[index][key] = component.selectedText || component.default || '';
     }
   };
 
   watch(
     () => shortcut.value.components,
     val => {
-      // 为 IAgentCommandComponent 添加 selectedText 属性的兼容处理
+      // 使用本地扩展的 IShortcutComponent 类型
       const updatedComponent = (val || []).find(item => {
-        const selectedItem = item as IAgentCommandComponent & { selectedText?: string };
-        return selectedItem.selectedText;
+        const component = item as IShortcutComponent;
+        return component.selectedText;
       });
       if (updatedComponent) {
-        updateFormData(updatedComponent);
+        updateFormData(updatedComponent as IShortcutComponent);
       }
     },
     { deep: true, immediate: true }

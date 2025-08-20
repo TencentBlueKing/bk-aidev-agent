@@ -1,3 +1,40 @@
+## [1.2.4-beta.3] - 2025-08-20
+
+### ✨ 新增功能
+
+- **快捷操作组件隐藏支持**: 新增 `hide` 属性，支持动态控制快捷操作表单组件的显示/隐藏
+  - 在 `IShortcut` 的 `components` 配置中新增 `hide` 属性
+  - 当设置为 `true` 时，该组件将不会在表单中显示，同时其数据也不会包含在提交的表单数据中
+  - 支持根据条件动态显示/隐藏表单字段，实现更灵活的表单交互
+
+```javascript
+{
+  id: 'dynamic_form',
+  name: '动态表单',
+  icon: 'bkai-icon bkai-form',
+  components: [
+    {
+      type: 'select',
+      key: 'userType',
+      name: '用户类型',
+      options: [
+        { label: '普通用户', value: 'normal' },
+        { label: 'VIP用户', value: 'vip' }
+      ],
+      placeholder: '请选择用户类型'
+    },
+    {
+      type: 'input',
+      key: 'vipCode',
+      name: 'VIP码',
+      placeholder: '请输入VIP码',
+      // 只有当用户类型为VIP时才显示此字段
+      hide: true // 初始隐藏，可根据条件动态控制
+    }
+  ]
+}
+```
+
 ## [1.2.4-beta.2] - 2025-08-20
 
 ### ✨ 新增功能

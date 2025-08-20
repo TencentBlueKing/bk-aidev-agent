@@ -95,7 +95,45 @@ interface IShortcut {
       label: string
       value: string | number
     }>
+    hide?: boolean // 是否隐藏该组件 <Badge type="tip" text="v1.2.4-beta.3" />
   }>
+}
+```
+
+### hide 属性 <Badge type="tip" text="v1.2.4-beta.3" />
+
+`hide` 属性允许开发者动态控制快捷操作表单中特定组件的显示/隐藏。当设置为 `true` 时，该组件将不会在表单中显示，同时其数据也不会包含在提交的表单数据中。
+
+这在以下场景中特别有用：
+1. 根据条件动态显示/隐藏表单字段
+2. 在不同上下文中复用相同的快捷操作配置
+3. 实现更复杂的表单交互逻辑
+
+```javascript
+{
+  id: 'dynamic_form',
+  name: '动态表单',
+  icon: 'bkai-icon bkai-form',
+  components: [
+    {
+      type: 'select',
+      key: 'userType',
+      name: '用户类型',
+      options: [
+        { label: '普通用户', value: 'normal' },
+        { label: 'VIP用户', value: 'vip' }
+      ],
+      placeholder: '请选择用户类型'
+    },
+    {
+      type: 'input',
+      key: 'vipCode',
+      name: 'VIP码',
+      placeholder: '请输入VIP码',
+      // 只有当用户类型为VIP时才显示此字段
+      hide: false // 初始可见，可通过程序动态控制
+    }
+  ]
 }
 ```
 
