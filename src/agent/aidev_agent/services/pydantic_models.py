@@ -71,6 +71,13 @@ class IntentRecognition(BaseModel):
     intent_recognition_knowledge: list[dict] | None = Field(default=None, description=("意图识别知识"))
     intent_recognition_topk: float | None = Field(default=None, description=("意图识别topk值"))
     intent_recognition_llm: str | None = Field(default=None, description="意图识别使用的LLM")
+    intent_recognition_fine_grained_score_type: FineGrainedScoreType = Field(
+        default=FineGrainedScoreType.LLM, description=("相关性判断模型")
+    )
+    intent_recognition_reject_threshold: Tuple[float, float] = Field(
+        default=(0.001, 0.6),
+        description=("相关性阈值"),
+    )
     enable_logging: bool = Field(default=True, description="是否启用日志记录")
     intent_recognition_llm_code: str | None = Field(default=None, description=("约定的意图识别 code，用于快速单跳"))
     with_index_specific_search_init: bool = Field(default=True, description="是否使用初始查询进行 index specific 召回")
