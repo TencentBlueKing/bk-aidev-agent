@@ -132,6 +132,15 @@ class EnhancedAgentExecutor(LiteEnhancedAgentExecutor):
             ret["reference_doc"] = reference_doc
         return ret
 
+    async def ainvoke(self, input: Dict[str, str], *args, **kwargs) -> Dict[str, Any]:
+        """执行"""
+        self._setup_execute_context(input)
+        ret = await super().ainvoke(input, *args, **kwargs)
+        reference_doc = request_local.current_user_store["reference_doc"]
+        if reference_doc:
+            ret["reference_doc"] = reference_doc
+        return ret
+
     def stream(
         self,
         input: Union[Dict[str, Any], Any],

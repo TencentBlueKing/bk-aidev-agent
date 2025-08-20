@@ -10,15 +10,14 @@ specific language governing permissions and limitations under the License.
 """
 
 import asyncio
-import queue
-from threading import Thread
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator
 
+from aidev_agent.core.utils.loop import get_event_loop
 from aidev_agent.utils import Empty
 
 
 async def async_generator_with_timeout(
-    gen: AsyncGenerator, timeout: Optional[int | float], max_wait_rounds: int = 50
+    gen: AsyncGenerator, timeout: int | float = 1, max_wait_rounds: int = 50
 ) -> AsyncGenerator:
     try:
         while True:
@@ -38,51 +37,31 @@ async def async_generator_with_timeout(
         return
 
 
-def async_to_sync_generator(async_gen, loop=None):
-    data_queue = queue.Queue()
+def async_to_sync_generator(async_gen):
+    data_queue = asyncio.Queue()
     error = None
-    new_loop_created = False
 
-    # 判断是否使用现有循环
-    if loop is None:
-        loop = asyncio.new_event_loop()
-        new_loop_created = True
+    loop = get_event_loop()
 
     # 定义异步消费任务
     async def consume_async():
         nonlocal error
         try:
             async for item in async_gen:
-                data_queue.put(item)
+                await data_queue.put(item)
         except Exception as e:
             error = e
         finally:
-            data_queue.put(None)  # 结束信号
+            await data_queue.put(None)  # 结束信号
 
     # 线程运行函数（仅当需要新线程时启动）
-    def run_loop():
-        asyncio.set_event_loop(loop)
-        loop.run_forever()
-
-    # 根据循环状态决定是否启动新线程
-    if not loop.is_running() and new_loop_created:
-        event_loop_thread = Thread(target=run_loop, daemon=True)
-        event_loop_thread.start()
-
     # 提交异步任务到指定循环
     asyncio.run_coroutine_threadsafe(consume_async(), loop)
 
-    try:
-        while True:
-            item = data_queue.get()
-            if item is None:
-                if error is not None:
-                    raise error
-                break
-            yield item
-    finally:
-        # 仅清理自己创建的循环
-        if new_loop_created:
-            loop.call_soon_threadsafe(loop.stop)
-            if event_loop_thread.is_alive():
-                event_loop_thread.join(timeout=1)
+    while True:
+        item = loop.run_until_complete(data_queue.get())
+        if item is None:
+            if error is not None:
+                raise error
+            break
+        yield item

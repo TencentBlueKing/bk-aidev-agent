@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from aidev_agent.core.agent.multimodal import EnhancedAgentExecutor
 from aidev_agent.core.extend.agent.qa import CommonQAAgent
+from aidev_agent.core.utils.loop import get_event_loop
 from aidev_agent.enums import PromptRole, StreamEventType
 from aidev_agent.exceptions import AgentException
 from aidev_agent.services.pydantic_models import AgentOptions, ChatPrompt
@@ -29,6 +30,7 @@ class ExecuteKwargs(BaseModel):
     stream: bool = False
     stream_timeout: int = 30
     passthrough_input: bool = False
+    run_agent: bool = False
 
 
 class ChatCompletionAgent(BaseModel):
@@ -139,10 +141,10 @@ class ChatCompletionAgent(BaseModel):
             ]
         )
 
-    def execute(self, execute_kwargs: ExecuteKwargs) -> dict | Generator[str, None, None]:
+    def execute(self, execute_kwargs: ExecuteKwargs) -> dict | Generator[str, None, None] | str:
         # 执行agent操作
         messages = self.convert_history_to_messages()
-        if self.is_run_by_agent():
+        if execute_kwargs.run_agent or self.is_run_by_agent():
             return self._execute_by_agent(messages, stream=execute_kwargs.stream)
         if self.callbacks:
             self.chat_model.callbacks = self.callbacks
@@ -157,7 +159,8 @@ class ChatCompletionAgent(BaseModel):
                 agent_e, cfg, {"input": messages[-1].content}, timeout=self.HEARTBEATS_INTERVAL
             )
         else:
-            result = agent_e.invoke({"input": messages[-1].content}, cfg)
+            loop = get_event_loop()
+            result = loop.run_until_complete(agent_e.ainvoke({"input": messages[-1].content}, cfg))
             return result.get("output", "")
 
     def _stream(self, messages: list[BaseMessage]) -> Generator[str, None, None]:

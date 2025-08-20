@@ -70,4 +70,7 @@ class CommonAgent(Plugin):
             chat_history.append(ChatPrompt(role="user", content=inputs.input))
         chat_completion_agent = build_chat_completion_agent(chat_history)
         result = chat_completion_agent.execute(ExecuteKwargs(stream=False))
-        context.outputs = result
+        if not isinstance(result, str):
+            context.outputs = {"output": result["choices"][0]["delta"]["content"]}
+        else:
+            context.outputs = {"output": result}
