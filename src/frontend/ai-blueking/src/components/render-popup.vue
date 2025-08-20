@@ -92,14 +92,31 @@
   });
 
   const { enablePopup } = usePopup();
-  const { isIconVisible, iconPosition, popupRef, clearSelection } = useSelect(enablePopup);
+  const { isIconVisible, iconPosition, popupRef, clearSelection, selectedText } =
+    useSelect(enablePopup);
 
   // 定义快捷按钮数据
   const allShortcuts = computed(() => {
-    const shortcuts = props.shortcuts.length > 0 ? props.shortcuts : props.conversationSettings?.commands || [];
+    const shortcuts =
+      props.shortcuts.length > 0 ? props.shortcuts : props.conversationSettings?.commands || [];
     // 如果提供了过滤函数，则应用过滤
     if (props.shortcutFilter) {
-      return shortcuts.filter(props.shortcutFilter);
+      // 创建带有选中文本信息的快捷方式副本
+      const shortcutsWithSelectedText = shortcuts.map(shortcut => {
+        if (shortcut.components && selectedText.value) {
+          // 为每个组件添加选中文本
+          const componentsWithSelectedText = shortcut.components.map(component => ({
+            ...component,
+            selectedText: selectedText.value,
+          }));
+          return {
+            ...shortcut,
+            components: componentsWithSelectedText,
+          };
+        }
+        return shortcut;
+      });
+      return shortcutsWithSelectedText.filter(props.shortcutFilter);
     }
     return shortcuts;
   });

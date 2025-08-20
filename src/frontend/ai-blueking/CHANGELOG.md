@@ -1,3 +1,57 @@
+## [1.2.4-beta.2] - 2025-08-20
+
+### ✨ 新增功能
+
+- **快捷操作过滤器**: 新增 `shortcutFilter` 属性，支持根据选中文本内容动态过滤快捷操作的显示
+  - 当用户选中文本时，每个快捷操作的组件会自动获得 `selectedText` 属性
+  - 开发者可以通过 `shortcutFilter` 函数访问选中文本内容，实现更智能的快捷操作过滤
+  - 支持根据选中文本特征（如代码、长度等）动态控制快捷操作的可见性
+
+```vue
+<template>
+  <AIBlueking 
+    :shortcuts="shortcuts" 
+    :shortcut-filter="shortcutFilter"
+  />
+</template>
+
+<script setup>
+const shortcuts = [
+  {
+    id: 'explain_code',
+    name: '解释代码',
+    icon: 'bkai-icon bkai-code',
+    components: [
+      {
+        type: 'textarea',
+        key: 'code',
+        name: '代码内容',
+        fillBack: true,
+        placeholder: '请输入或选中需要解释的代码'
+      }
+    ]
+  }
+];
+
+const shortcutFilter = (shortcut) => {
+  // 获取选中的文本内容
+  const selectedText = shortcut.components?.find(c => c.selectedText)?.selectedText || '';
+  
+  // 根据快捷操作类型和选中文本内容进行过滤
+  switch (shortcut.id) {
+    case 'explain_code':
+      // 只有当选中的文本包含代码特征时才显示
+      return selectedText.includes('function') || 
+             selectedText.includes('const') || 
+             selectedText.includes('let') || 
+             selectedText.includes('var');
+    default:
+      return true;
+  }
+};
+</script>
+```
+
 ## [1.2.3] - 2025-08-12
 
 ### ✨ 新增功能

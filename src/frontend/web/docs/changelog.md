@@ -8,6 +8,14 @@ export default {
     return {
       changelogData: [
         {
+          version: "v1.2.4-beta.2",
+          date: "2025-08-20",
+          features: [
+            "新增 `shortcutFilter` 属性，支持根据选中文本内容动态过滤快捷操作",
+            "通过 `shortcutFilter` 函数可以访问当前选中的文本，实现更智能的快捷操作显示逻辑",
+          ],
+        },
+        {
           version: "v1.2.3",
           date: "2025-08-12",
           features: [

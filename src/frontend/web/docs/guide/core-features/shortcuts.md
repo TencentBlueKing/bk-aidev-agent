@@ -32,23 +32,23 @@
 </template>
 
 <script setup>
-const shortcuts = [
-  {
-    id: 'explain',
-    name: '解释代码',
-    icon: 'bkai-icon bkai-code',
-    components: [
-      {
-        type: 'textarea',
-        key: 'code',
-        label: '代码内容',
-        fillBack: true,
-        placeholder: '请输入或选中需要解释的代码',
-        rows: 5
-      }
-    ]
-  }
-];
+  const shortcuts = [
+    {
+      id: "explain",
+      name: "解释代码",
+      icon: "bkai-icon bkai-code",
+      components: [
+        {
+          type: "textarea",
+          key: "code",
+          label: "代码内容",
+          fillBack: true,
+          placeholder: "请输入或选中需要解释的代码",
+          rows: 5,
+        },
+      ],
+    },
+  ]
 </script>
 ```
 
@@ -56,17 +56,14 @@ const shortcuts = [
 
 ```vue
 <template>
-  <AIBlueking 
-    :shortcuts="shortcuts" 
-    @shortcut-click="handleShortcutClick" 
-  />
+  <AIBlueking :shortcuts="shortcuts" @shortcut-click="handleShortcutClick" />
 </template>
 
 <script setup>
-const handleShortcutClick = (data) => {
-  console.log('执行了快捷操作:', data.shortcut.name);
-  console.log('表单数据:', data.formData);
-};
+  const handleShortcutClick = (data) => {
+    console.log("执行了快捷操作:", data.shortcut.name)
+    console.log("表单数据:", data.formData)
+  }
 </script>
 ```
 
@@ -78,25 +75,26 @@ const handleShortcutClick = (data) => {
 
 ```typescript
 interface IShortcut {
-  id: string;       // 快捷操作的唯一标识符
-  name: string;     // 显示的操作名称
-  icon?: string;    // 按钮图标的完整类名（如：'bkai-icon bkai-translate'）
+  id: string // 快捷操作的唯一标识符
+  name: string // 显示的操作名称
+  icon?: string // 按钮图标的完整类名（如：'bkai-icon bkai-translate'）
   components: Array<{
-    type: string;    // 组件类型
-    name?: string;   // 表单项名称
-    key: string;     // 表单项键名
-    placeholder?: string; // 占位文本
-    default?: any;   // 默认值
-    required?: boolean;   // 是否必填
-    fillBack?: boolean;   // 是否自动填充选中文本
-    fillRegx?: string | RegExp;    // 填充的正则匹配表达式
-    rows?: number;        // 输入框行数（仅 textarea 类型有效）
-    min?: number;         // 最小值（仅 number 类型有效）
-    max?: number;         // 最大值（仅 number 类型有效）
-    options?: Array<{     // 下拉选项（仅 select 类型有效）
-      label: string;
-      value: string | number;
-    }>;
+    type: string // 组件类型
+    name?: string // 表单项名称
+    key: string // 表单项键名
+    placeholder?: string // 占位文本
+    default?: any // 默认值
+    required?: boolean // 是否必填
+    fillBack?: boolean // 是否自动填充选中文本
+    fillRegx?: string | RegExp // 填充的正则匹配表达式
+    rows?: number // 输入框行数（仅 textarea 类型有效）
+    min?: number // 最小值（仅 number 类型有效）
+    max?: number // 最大值（仅 number 类型有效）
+    options?: Array<{
+      // 下拉选项（仅 select 类型有效）
+      label: string
+      value: string | number
+    }>
   }>
 }
 ```
@@ -105,12 +103,12 @@ interface IShortcut {
 
 目前支持以下组件类型：
 
-| 类型 | 描述 | 特有属性 |
-| ---- | ---- | ------- |
-| `text` | 单行文本输入框 | - |
+| 类型       | 描述           | 特有属性                     |
+| ---------- | -------------- | ---------------------------- |
+| `text`     | 单行文本输入框 | -                            |
 | `textarea` | 多行文本输入框 | `rows`：文本框行数，默认为 3 |
-| `number` | 数字输入框 | `min`, `max`：数值范围限制 |
-| `select` | 下拉选择框 | `options`：选项列表 |
+| `number`   | 数字输入框     | `min`, `max`：数值范围限制   |
+| `select`   | 下拉选择框     | `options`：选项列表          |
 
 ## 高级用法
 
@@ -190,11 +188,7 @@ AI 小鲸提供了一个简单的方法来禁用特定区域的弹窗功能。�
 ```html
 <div ai-blueking-hide>
   <p>在这部分区域内选中文本，将不会触发 AI 小鲸的快捷指令弹窗。</p>
-  <code>
-    // 这里是代码区域，同样不会触发弹窗
-    const x = 10;
-    console.log(x);
-  </code>
+  <code> // 这里是代码区域，同样不会触发弹窗 const x = 10; console.log(x); </code>
 </div>
 ```
 
@@ -261,20 +255,18 @@ AI 小鲸在响应文本选择事件时，会从被选中的文本所在的元�
 
 ```vue
 <template>
-  <AIBlueking 
+  <AIBlueking
     :shortcuts="shortcuts"
     :request-options="{
-      context: [
-        { key: 'language', value: 'typescript' }
-      ]
+      context: [{ key: 'language', value: 'typescript' }],
     }"
   />
 </template>
 ```
 
-## 快捷操作增强 (v1.2.3)
+## 快捷操作增强 (v1.2.4-beta.2)
 
-v1.2.3版本进一步增强了快捷操作的灵活性和用户体验，新增了以下功能：
+v1.2.4-beta.2版本进一步增强了快捷操作的灵活性和用户体验，新增了以下功能：
 
 ### 自动提交
 
@@ -296,16 +288,35 @@ v1.2.3版本进一步增强了快捷操作的灵活性和用户体验，新增�
 
 函数签名：`(shortcut: IShortcut) => boolean`
 
+当用户选中了页面上的文本时，每个快捷操作的组件（components）会自动获得一个 `selectedText` 属性，其中包含当前选中的文本内容。这使得您可以根据选中的文本内容来过滤快捷操作。
+
 ```vue
 <template>
   <AIBlueking :shortcuts="shortcuts" :shortcut-filter="myFilter" />
 </template>
 
 <script setup>
-const myFilter = (shortcut) => {
-  // 只显示ID为 'translate' 或 'explain' 的快捷操作
-  return ['translate', 'explain'].includes(shortcut.id);
-};
+  const myFilter = (shortcut) => {
+    // 只显示ID为 'translate' 或 'explain' 的快捷操作
+    if (!["translate", "explain"].includes(shortcut.id)) {
+      return false
+    }
+
+    // 如果选中的文本包含代码特征，只显示"解释代码"快捷操作
+    if (shortcut.id === "explain" && shortcut.components?.some((c) => c.selectedText?.includes("function"))) {
+      return true
+    }
+
+    // 对于翻译操作，只有当选中的文本长度在合理范围内时才显示
+    if (
+      shortcut.id === "translate" &&
+      shortcut.components?.some((c) => c.selectedText && c.selectedText.length > 0 && c.selectedText.length < 1000)
+    ) {
+      return true
+    }
+
+    return false
+  }
 </script>
 ```
 
@@ -319,4 +330,4 @@ const myFilter = (shortcut) => {
 4. **使用图标增强辨识度**：为快捷操作配置直观的图标，提高用户识别速度
 5. **利用自动填充功能**：合理使用 `fillBack` 和 `fillRegx` 属性，减少用户输入
 6. **配置必填字段**：使用 `required` 属性标记必填字段，确保收集到必要信息
-7. **与后端协调**：确保前端配置的快捷操作ID和表单项与后端处理逻辑一致 
+7. **与后端协调**：确保前端配置的快捷操作ID和表单项与后端处理逻辑一致
