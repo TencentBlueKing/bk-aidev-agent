@@ -378,7 +378,8 @@ export function useSessionStore() {
     }
 
     // 处理角色设置
-    if (agentInfo.value?.promptSetting?.content?.length) {
+    if (agentInfo.value?.promptSetting?.content?.length && targetSessionContents.length > 0) {
+      // 只要已有内容，则不需要再自动塞入 prompt
       const handleRole = checkSdkMethod('handleCompleteRole');
 
       await handleRole(targetSession.sessionCode, agentInfo.value.promptSetting.content);
