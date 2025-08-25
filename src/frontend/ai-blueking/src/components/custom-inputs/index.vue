@@ -140,20 +140,33 @@
   // 提交表单
   const handleSubmit = () => {
     formRef.value?.validate().then(() => {
+      // 处理表单数据的辅助函数
+      const processFormData = (data: Record<string, any>[]) => {
+        return data.map(item => ({
+          ...item,
+          __value: item && item.__key ? item[item.__key] : undefined,
+        }));
+      };
+
+      // 过滤掉隐藏字段的辅助函数
+      const filterVisibleFormData = (data: Record<string, any>[]) => {
+        return data.filter(item => {
+          const key = Object.keys(item).find(k => !k.startsWith('__'));
+          if (!key) return false;
+          const component = props.shortcut.components?.find(c => c.key === key) as IShortcutComponent;
+          return component && !component.hide;
+        });
+      };
+
       // 过滤掉隐藏字段
-      const visibleFormData = formData.value.filter(item => {
-        const key = Object.keys(item).find(k => !k.startsWith('__'));
-        if (!key) return false;
-        const component = props.shortcut.components?.find(c => c.key === key) as IShortcutComponent;
-        return component && !component.hide;
-      });
+      const visibleFormData = filterVisibleFormData(formData.value);
 
       emit('submit', {
         shortcut: props.shortcut,
-        formData: visibleFormData.map(item => ({
-          ...item,
-          __value: item && item.__key ? item[item.__key] : undefined,
-        })),
+        // 传递完整的 formData 给后端
+        formData: processFormData(formData.value),
+        // 仅用于 cite 显示的过滤数据
+        citeFormData: processFormData(visibleFormData),
       });
     });
   };
