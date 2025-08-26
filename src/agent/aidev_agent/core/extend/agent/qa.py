@@ -721,8 +721,8 @@ class IntentRecognitionMixin(BaseModel):
             kwargs["decision"] = recog_results["decision"]
             kwargs["retrieved_docs"] = filter_and_select_topk(
                 recog_results["knowledge_resources_emb_recalled"],
-                kwargs.get("score_threshold"),
-                kwargs.get("topk", 20),
+                agent_options.knowledge_query_options.knowledge_resource_reject_threshold[1],
+                agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
             )
             kwargs["beijing_now"] = get_beijing_now()
 
@@ -1215,7 +1215,7 @@ class CommonQAStreamingMixIn:
                 }
                 self.check_and_append(cache, end_ret)
                 len_before_filtering = len(cache)
-                first_true = cache[0].get("cover", "") == True
+                first_true = bool(cache) and cache[0].get("cover", False)
                 cache = self.cache_filter(cache, final_answer_prefix_to_filter, final_answer_suffix_to_filter)
                 # 如果cache过滤前第一个元素的 cover 是 True，则过滤后 cover 应该是 True
                 if first_true:
