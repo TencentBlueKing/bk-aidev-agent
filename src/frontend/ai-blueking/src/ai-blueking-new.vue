@@ -740,7 +740,14 @@
       sessionCode: currentSession.value?.sessionCode,
       property: {
         extra: {
-          cite: citeData.map(item => `${item.__label}: ${item.__value}`).join(', '),
+          cite: {
+            type: 'structured',
+            title: shortcut.name,
+            data: citeData.map(item => ({
+              key: item.__label,
+              value: item.__value,
+            })),
+          },
           command: shortcut.id,
           context: [
             ...formData,

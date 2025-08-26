@@ -109,6 +109,7 @@
             },
             context: [{ context_test: 'vk' }],
           }"
+          :shortcuts="shortcuts"
           :prompts="prompts"
           :url="url"
           teleport-to="body"
@@ -262,7 +263,7 @@
   const sessionToSwitch = ref('');
 
   const handleAddNewSession = async () => {
-    const newSession = await aiBlueking.value?.addNewSession();
+    const newSession = await aiBlueking.value?.addNewSession(`test-${Date.now()}`);
     addLog('add-new-session', newSession);
     if (newSession) {
       sessionToUpdate.value = newSession.sessionCode;
@@ -295,8 +296,8 @@
   };
 
   onMounted(async () => {
-    await handleAddNewSession();
-    handleSwitchToSession();
+    // await handleAddNewSession();
+    // handleSwitchToSession();
   });
 </script>
 
