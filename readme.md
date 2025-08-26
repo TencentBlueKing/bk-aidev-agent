@@ -37,15 +37,15 @@
 ## 🛠️ 快速开始
 
 ### 系统要求
-- Python 3.11+
+- Python 3.10+
 - Node.js 20+
 - Poetry 1.8+
 
 ### Agent 开发
-1. 确认 Python 版本（3.11.x）
+1. 确认 Python 版本（3.10.x）
     ```bash
     $ python --version
-    Python 3.11.5
+    Python 3.10.5
    ```
 
 2. 安装 `poetry`：Poetry 应该安装一个独立的环境，避免与项目环境互相影响
