@@ -55,6 +55,9 @@ intent_recognition_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=int(os.getenv("INTENT_RECOGNITION_EXECUTOR_MAX_WORKERS", "10"))
 )
 
+# 默认添加全文索引
+DEFAULT_INDEX_CONFIG = ["full_text"]
+
 
 class IntentRecognition(BaseModel):
     intent_recognition_prompt_templates: ClassVar[Dict[str, Any]] = DEFAULT_INTENT_RECOGNITION_PROMPT_TEMPLATES
@@ -148,7 +151,7 @@ class IntentRecognition(BaseModel):
                 if not all_index_names:
                     all_index_names = supported_index_names
                 if not all_index_names:
-                    raise RuntimeError(f"{knowledge_type} 类型的知识（库）ID {knowledge.get('id')} 的索引为空！")
+                    all_index_names = ["full_text"]
                 index_query_kwargs.extend(
                     [
                         {
@@ -932,57 +935,54 @@ class IntentRecognition(BaseModel):
                 )
 
             retrieved_results_index_specific = (
-                future_index_specific.result() 
-                if agent_options.knowledge_query_options.with_index_specific_search 
-                and "future_index_specific" in locals() 
+                future_index_specific.result()
+                if agent_options.knowledge_query_options.with_index_specific_search
+                and "future_index_specific" in locals()
                 else []
             )
             retrieved_results_qa_response = (
-                future_qa_response.result() 
-                if agent_options.knowledge_query_options.qa_response_knowledge_bases 
-                and "future_qa_response" in locals() 
+                future_qa_response.result()
+                if agent_options.knowledge_query_options.qa_response_knowledge_bases
+                and "future_qa_response" in locals()
                 else []
             )
             retrieved_results_index_specific_init = (
-                future_index_specific_init.result() 
-                if agent_options.intent_recognition_options.with_index_specific_search_init 
-                and query_for_search != kwargs["input"] 
-                and "future_index_specific" in locals() 
+                future_index_specific_init.result()
+                if agent_options.intent_recognition_options.with_index_specific_search_init
+                and query_for_search != kwargs["input"]
+                and "future_index_specific" in locals()
                 else []
             )
 
             retrieved_results_index_specific_translation = (
-                future_index_specific_translation.result() 
-                if agent_options.intent_recognition_options.with_index_specific_search_translation 
-                and "future_index_specific" in locals() 
+                future_index_specific_translation.result()
+                if agent_options.intent_recognition_options.with_index_specific_search_translation
+                and "future_index_specific" in locals()
                 else []
             )
 
             retrieved_results_index_specific_keywords = (
-                future_index_specific_keywords.result() 
-                if agent_options.intent_recognition_options.with_index_specific_search_keywords 
-                and "future_index_specific" in locals() 
+                future_index_specific_keywords.result()
+                if agent_options.intent_recognition_options.with_index_specific_search_keywords
+                and "future_index_specific" in locals()
                 else []
             )
 
             retrieved_results_es_query = (
-                future_es_query.result() 
-                if agent_options.knowledge_query_options.with_es_search_query 
-                and "future_index_specific" in locals() 
+                future_es_query.result()
+                if agent_options.knowledge_query_options.with_es_search_query and "future_index_specific" in locals()
                 else []
             )
 
             retrieved_results_es_keywords = (
-                future_es_keywords.result() 
-                if agent_options.knowledge_query_options.with_es_search_keywords 
-                and "future_index_specific" in locals() 
+                future_es_keywords.result()
+                if agent_options.knowledge_query_options.with_es_search_keywords and "future_index_specific" in locals()
                 else []
             )
 
             retrieved_results_nature = (
-                future_nature.result() 
-                if agent_options.knowledge_query_options.with_structured_data 
-                and "future_index_specific" in locals() 
+                future_nature.result()
+                if agent_options.knowledge_query_options.with_structured_data and "future_index_specific" in locals()
                 else []
             )
 
@@ -1161,15 +1161,15 @@ class IntentRecognition(BaseModel):
         do_tool_resource_retrieve,
         agent_options,
         all_intent_knowledge,
-        bound_tool_names,     
+        bound_tool_names,
         bound_knowledge_base_ids,
         bound_knowledge_ids,
         intent_base_id,
         intent_item_id,
-        tools_id,   
+        tools_id,
         final_intent_base_id,
         final_intent_item_id,
-        final_tools_id,      
+        final_tools_id,
         **kwargs,
     ):
         # ====================================================================================================
@@ -1243,15 +1243,15 @@ class IntentRecognition(BaseModel):
             "knowledge_resources_highly_relevant": knowledge_resources_highly_relevant,
             "knowledge_resources_moderately_relevant": knowledge_resources_moderately_relevant,
             "all_intent_knowledge": all_intent_knowledge,
-            "bound_tool_names": bound_tool_names,     
+            "bound_tool_names": bound_tool_names,
             "bound_knowledge_base_ids": bound_knowledge_base_ids,
             "bound_knowledge_ids": bound_knowledge_ids,
             "intent_base_id": intent_base_id,
             "intent_item_id": intent_item_id,
-            "tools_id": tools_id,  
+            "tools_id": tools_id,
             "final_intent_base_id": final_intent_base_id,
             "final_intent_item_id": final_intent_item_id,
-            "final_tools_id": final_tools_id,  
+            "final_tools_id": final_tools_id,
         }
 
     @timeit(message="意图识别总流程")
@@ -1279,16 +1279,16 @@ class IntentRecognition(BaseModel):
         tool_resource_base_ids = agent_options.knowledge_query_options.tool_resource_base_ids
         knowledge_bases = agent_options.knowledge_query_options.knowledge_bases
         knowledge_items = agent_options.knowledge_query_options.knowledge_items
-        all_intent_knowledge=[]
-        bound_tool_names = []     
+        all_intent_knowledge = []
+        bound_tool_names = []
         bound_knowledge_base_ids = []
-        bound_knowledge_ids = [] 
+        bound_knowledge_ids = []
         intent_base_id = []
         intent_item_id = []
-        tools_id = []        
+        tools_id = []
         final_intent_base_id = []
         final_intent_item_id = []
-        final_tools_id = []          
+        final_tools_id = []
         # 处理意图识别知识库
         if agent_options.intent_recognition_options.intent_recognition_knowledge:
             client = BKAidevApi.get_client_by_username(username="")
@@ -1350,16 +1350,16 @@ class IntentRecognition(BaseModel):
                         tools_id.append(doc["资源ID"])
                 except ValueError:  # noqa
                     logger.warning(f"Invalid intent category: {doc['资源类别']} in document {doc}")
-            # 实际去调用资源的时候，只取意图识别结果跟绑定的资源的交集部分        
+            # 实际去调用资源的时候，只取意图识别结果跟绑定的资源的交集部分
             if tools:
                 for tool in tools:
                     bound_tool_names.append(tool.name)
             if knowledge_bases:
                 for kb in knowledge_bases:
-                    bound_knowledge_base_ids.append(kb['id']) 
+                    bound_knowledge_base_ids.append(kb["id"])
             if knowledge_items:
                 for kb in knowledge_items:
-                    bound_knowledge_ids.append(kb['id'])  
+                    bound_knowledge_ids.append(kb["id"])
             final_intent_base_id = set(intent_base_id) & set(bound_knowledge_base_ids)
             final_intent_item_id = set(intent_item_id) & set(bound_knowledge_ids)
             final_tools_id = set(tools_id) & set(bound_tool_names)
@@ -1369,20 +1369,20 @@ class IntentRecognition(BaseModel):
                     for id_ in final_intent_base_id
                 ]
             except Exception:
-                logger.error(f"获取意图识别知识库失败，知识库id无效！")
+                logger.error("获取意图识别知识库失败，知识库id无效！")
 
             try:
                 knowledge_items = [
-                    client.api.appspace_retrieve_knowledge(path_params={"id": id_})["data"] 
+                    client.api.appspace_retrieve_knowledge(path_params={"id": id_})["data"]
                     for id_ in final_intent_item_id
                 ]
             except Exception:
-                logger.error(f"获取意图识别知识失败，知识id无效！")
+                logger.error("获取意图识别知识失败，知识id无效！")
 
             try:
                 tools = [client.construct_tool(tool_code) for tool_code in final_tools_id]
             except Exception:
-                logger.error(f"获取意图识别工具失败，工具id无效！")              
+                logger.error("获取意图识别工具失败，工具id无效！")
         if callbacks:
             _set_config_context({"callbacks": callbacks})
         # ====================================================================================================
@@ -1398,7 +1398,7 @@ class IntentRecognition(BaseModel):
                 False,
                 agent_options,
                 all_intent_knowledge,
-                bound_tool_names,     
+                bound_tool_names,
                 bound_knowledge_base_ids,
                 bound_knowledge_ids,
                 intent_base_id,
@@ -1459,8 +1459,12 @@ class IntentRecognition(BaseModel):
         # NOTE: 目前认为只有绑定了知识库，或者需要进行工具类资源召回的情况下，才可能需要进行 independent query 的改写
         # 此外，还加了 with_query_cls_and_rewrite 总开关
         res = query  # 默认初始化为 query
-        if (knowledge_items or knowledge_bases or do_tool_resource_retrieve 
-            or agent_options.knowledge_query_options.qa_response_knowledge_bases):
+        if (
+            knowledge_items
+            or knowledge_bases
+            or do_tool_resource_retrieve
+            or agent_options.knowledge_query_options.qa_response_knowledge_bases
+        ):
             if agent_options.knowledge_query_options.independent_query_mode == IndependentQueryMode.REWRITE:
                 res = self.query_cls_pipeline(chat_history, query, llm, agent_options, **kwargs)
             elif agent_options.knowledge_query_options.independent_query_mode == IndependentQueryMode.SUM_AND_CONCATE:
@@ -1482,7 +1486,7 @@ class IntentRecognition(BaseModel):
             do_tool_resource_retrieve,
             agent_options,
             all_intent_knowledge,
-            bound_tool_names,     
+            bound_tool_names,
             bound_knowledge_base_ids,
             bound_knowledge_ids,
             intent_base_id,

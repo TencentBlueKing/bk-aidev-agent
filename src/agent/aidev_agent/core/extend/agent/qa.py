@@ -18,6 +18,7 @@ to the current version of the project delivered to anyone in the future.
 
 import json
 import time
+import unicodedata
 from collections import defaultdict, deque
 from copy import deepcopy
 from logging import getLogger
@@ -45,11 +46,9 @@ from aidev_agent.core.agent.agents import (
 from aidev_agent.core.agent.multimodal import MultiToolCallCommonAgent, StructuredChatCommonAgent
 from aidev_agent.core.extend.intent.intent_recognition import IntentRecognition
 from aidev_agent.core.utils.local import request_local
-from aidev_agent.enums import Decision, EventType, IntentCategory, IntentStatus
+from aidev_agent.enums import ContextType, Decision, EventType, IntentCategory, IntentStatus
 from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils import Empty
-from aidev_agent.enums import ContextType
-import unicodedata
 
 from ..intent.prompts import DEFAULT_QA_PROMPT_TEMPLATES
 from ..intent.utils import (
@@ -339,7 +338,7 @@ class IntentRecognitionMixin(BaseModel):
         if "rejection_response" in chat_prompt_template.input_variables:
             inner_input["rejection_response"] = kwargs["rejection_response"]
         if "enable_parallel_tool_calls" in chat_prompt_template.input_variables:
-            inner_input["enable_parallel_tool_calls"] = kwargs["enable_parallel_tool_calls"]   
+            inner_input["enable_parallel_tool_calls"] = kwargs["enable_parallel_tool_calls"]
         formated_prompts = chat_prompt_template._format_prompt_with_error_handling(inner_input)
         cur_token_len = llm.get_num_tokens_from_messages(formated_prompts.messages)
         return cur_token_len, formated_prompts
@@ -465,8 +464,8 @@ class IntentRecognitionMixin(BaseModel):
             )
             if hasattr(request_local, "current_user_store"):
                 request_local.current_user_store["reference_doc"] = reference_doc
-                
-    @classmethod                
+
+    @classmethod
     def cell_display_length(cls, s):
         """计算字符串显示宽度，中文等全角字符算2，半角算1"""
         length = 0
@@ -498,43 +497,38 @@ class IntentRecognitionMixin(BaseModel):
         for row in rows:
             lines.append(format_row(row))
         return "\n".join(lines)
-    
+
     @classmethod
     def get_intent_ids(cls, intents, category):
         """辅助函数：按类别收集资源ID"""
-        return [
-            int(doc["资源ID"]) 
-            for doc in intents
-            if IntentCategory(doc["资源类别"]) == category
-        ]
-        
+        return [int(doc["资源ID"]) for doc in intents if IntentCategory(doc["资源类别"]) == category]
+
     @classmethod
     def build_table(cls, title, data_list, empty_msg="为空"):
         """辅助函数：构建表格内容"""
         if not data_list:
             return f"{title}{empty_msg}\n\n"
         return f"{title}：\n\n{cls.pretty_table(['资源类别', '资源ID'], data_list)}\n\n"
-    
+
     @classmethod
     def render_intent_recognition_results(cls, recog_results, **kwargs):
         """渲染意图识别结果到前端
-        
+
         Args:
             recog_results: 意图识别结果字典
             **kwargs: 其他参数
         """
 
         # 将意图识别知识文件和实际绑定资源记录到日志
-        intent_rows = [[d['资源类别'], d['资源ID']] for d in recog_results["all_intent_knowledge"]]
+        intent_rows = [[d["资源类别"], d["资源ID"]] for d in recog_results["all_intent_knowledge"]]
         bound_rows = (
-            [["tool", n] for n in recog_results["bound_tool_names"]] +
-            [["knowledge base", i] for i in recog_results["bound_knowledge_base_ids"]] +
-            [["knowledge item", i] for i in recog_results["bound_knowledge_ids"]]
+            [["tool", n] for n in recog_results["bound_tool_names"]]
+            + [["knowledge base", i] for i in recog_results["bound_knowledge_base_ids"]]
+            + [["knowledge item", i] for i in recog_results["bound_knowledge_ids"]]
         )
-        
-        table_content = (
-            cls.build_table("意图识别知识文件提供的意图", intent_rows) +
-            cls.build_table("实际绑定的资源", bound_rows)
+
+        table_content = cls.build_table("意图识别知识文件提供的意图", intent_rows) + cls.build_table(
+            "实际绑定的资源", bound_rows
         )
         _logger.info(f"{table_content}")
 
@@ -542,7 +536,7 @@ class IntentRecognitionMixin(BaseModel):
         tools_id = recog_results["tools_id"]
         intent_base_id = recog_results["intent_base_id"]
         intent_item_id = recog_results["intent_item_id"]
-        
+
         final_tools_id = recog_results["final_tools_id"]
         final_intent_base_id = recog_results["final_intent_base_id"]
         final_intent_item_id = recog_results["final_intent_item_id"]
@@ -550,7 +544,7 @@ class IntentRecognitionMixin(BaseModel):
         # 情况1：没有识别到任何意图
         if not tools_id and not intent_base_id and not intent_item_id:
             intent_result = "根据您提供的意图识别知识文件，未识别到您的意图。\n\n"
-        
+
         # 情况2：识别到意图但没有有效绑定的资源
         elif not final_tools_id and not final_intent_base_id and not final_intent_item_id:
             # 构建识别到的意图描述
@@ -561,9 +555,9 @@ class IntentRecognitionMixin(BaseModel):
                 intent_desc.extend(f"知识条目{item_id}" for item_id in intent_item_id)
             if tools_id:
                 intent_desc.extend(f"工具{tool_id}" for tool_id in tools_id)
-            
+
             intent_result = f"根据您提供的意图识别知识文件，您可能是想查询{'、'.join(intent_desc)}的内容。\n\n但您实际绑定的资源不存在该意图，因此智能体将不使用该资源。\n\n"
-        
+
         # 情况3：识别到意图且有有效绑定的资源
         else:
             # 构建识别到的意图描述
@@ -574,7 +568,7 @@ class IntentRecognitionMixin(BaseModel):
                 intent_desc.extend([f"知识条目{item_id}" for item_id in intent_item_id])
             if tools_id:
                 intent_desc.extend([f"工具{tool_id}" for tool_id in tools_id])
-            
+
             # 构建绑定资源描述
             bound_desc = []
             if final_intent_base_id:
@@ -583,15 +577,15 @@ class IntentRecognitionMixin(BaseModel):
                 bound_desc.extend(f"知识条目{item_id}" for item_id in final_intent_item_id)
             if final_tools_id:
                 bound_desc.extend(f"工具{tool_id}" for tool_id in final_tools_id)
-            
+
             intent_result = f"根据您提供的意图识别知识文件，您可能是想查询{'、'.join(intent_desc)}的内容。\n\n您实际绑定的资源存在该意图，智能体实际会尝试查询{'、'.join(bound_desc)}的内容。\n\n"
-        
+
         conditional_dispatch_custom_event(
             "custom_event",
             {"intent_recognition_result": f"\n{intent_result}\n"},
             **kwargs,
         )
-          
+
     @classmethod
     def intent_recognition(
         cls,
@@ -692,8 +686,8 @@ class IntentRecognitionMixin(BaseModel):
                     kwargs["context_type"] = ContextType.PRIVATE.value
                 elif kwargs["qa_context"]:
                     kwargs["context_type"] = ContextType.QA_RESPONSE.value
-                
-            # 如果有意图识别知识，需要渲染到前端    
+
+            # 如果有意图识别知识，需要渲染到前端
             if recog_results["all_intent_knowledge"]:
                 cls.render_intent_recognition_results(recog_results, **kwargs)
 
@@ -707,8 +701,6 @@ class IntentRecognitionMixin(BaseModel):
             candidate_tools = deduplicate_tools(
                 [tool for tool in deepcopy(candidate_tools) if tool.name != "add_image_to_chat_context"]
             )
-            
-
 
         # 补充/修改 kwargs 的值
         if kwargs.get("use_independent_query_in_qa", False):
@@ -733,7 +725,6 @@ class IntentRecognitionMixin(BaseModel):
                 kwargs.get("topk", 20),
             )
             kwargs["beijing_now"] = get_beijing_now()
-
 
         return llm, chat_prompt_template, candidate_tools, intermediate_steps, callbacks, kwargs
 
@@ -922,9 +913,11 @@ class CommonQAStreamingMixIn:
                         is_tool_call = run_info[item["run_id"]].get("tool_call")
                         if skip_thought:
                             continue
-                        if not item["data"]["chunk"].content and not item["data"]["chunk"].additional_kwargs.get(
-                            "reasoning_content", None
-                        ) and not is_tool_call:
+                        if (
+                            not item["data"]["chunk"].content
+                            and not item["data"]["chunk"].additional_kwargs.get("reasoning_content", None)
+                            and not is_tool_call
+                        ):
                             continue
                         if isinstance(self, StructuredChatCommonQAAgent):
                             # 如果是 StructuredChatCommonQAAgent，则会将所有中间 action 步骤也归为 think
@@ -959,11 +952,9 @@ class CommonQAStreamingMixIn:
                                     # 如果不是第一次调用工具，需要补上一个```
                                     log_prefix = "\n```\n" if has_tool_call else ""
                                     ret = {
-                                    "event": EventType.THINK.value,
-                                    "content": (
-                                        f'{log_prefix}\n```json\n"action": "{name}",\n'
-                                    ),                                            
-                                    "cover": cover,
+                                        "event": EventType.THINK.value,
+                                        "content": (f'{log_prefix}\n```json\n"action": "{name}",\n'),
+                                        "cover": cover,
                                     }
                                     # 如果不是第一次调用工具，将first_tool_args还原为True
                                     if has_tool_call:
@@ -975,9 +966,9 @@ class CommonQAStreamingMixIn:
                                             "event": EventType.THINK.value,
                                             "content": '"action_input":',
                                             "cover": cover,
-                                        }            
+                                        }
                                         yield self._yield_ret(ret)
-                                        final_result += ret["content"]                                    
+                                        final_result += ret["content"]
                                         first_tool_args = False
                                     ret = {
                                         "event": EventType.THINK.value,
@@ -985,9 +976,11 @@ class CommonQAStreamingMixIn:
                                         "cover": False,
                                     }
                                 has_tool_call = True
-                            else:  
-                                # 如果首次从 think 切到 text 内容，需要先补发一条带 elapsed_time的 think event 以供识别                                        
-                                if (has_reasoning_content or has_tool_call or has_custom_event) and item["data"]["chunk"].content.strip():
+                            else:
+                                # 如果首次从 think 切到 text 内容，需要先补发一条带 elapsed_time的 think event 以供识别
+                                if (has_reasoning_content or has_tool_call or has_custom_event) and item["data"][
+                                    "chunk"
+                                ].content.strip():
                                     has_reasoning_content = False
                                     has_tool_call = False
                                     has_custom_event = False
@@ -998,7 +991,7 @@ class CommonQAStreamingMixIn:
                                         "elapsed_time": (time.time() - agent_think_start_time) * 1000,
                                     }
                                     yield self._yield_ret(ret)
-                                    final_result += ret["content"] 
+                                    final_result += ret["content"]
                                 ret = {
                                     "event": EventType.TEXT.value,
                                     "content": item["data"]["chunk"].content,
@@ -1036,14 +1029,14 @@ class CommonQAStreamingMixIn:
                                 "content": item["data"]["custom_agent_finish"],
                                 "cover": cover,
                             }
-                            final_result += item["data"]["custom_agent_finish"] 
+                            final_result += item["data"]["custom_agent_finish"]
                         elif "intent_recognition_result" in item["data"] and front_end_display:
                             ret = {
                                 "event": EventType.THINK.value,
                                 "content": item["data"]["intent_recognition_result"],
                                 "cover": cover,
-                            } 
-                            has_custom_event=True                            
+                            }
+                            has_custom_event = True
                     elif item["event"] == "on_tool_end":
                         # TODO: 可能需要考虑异步是否会导致event的乱序问题
                         # 打印工具输出
@@ -1168,8 +1161,8 @@ class CommonQAStreamingMixIn:
                             yield self._yield_ret(ret)
                         else:
                             # NOTE: 首次出现 ``` 时，需要在前面添加一个换行符，防止前端没有渲染出来
-                            if '``' in ret.get("content", "") and first_triple_backticks:
-                                ret['content'] = '\n' + ret['content']
+                            if "``" in ret.get("content", "") and first_triple_backticks:
+                                ret["content"] = "\n" + ret["content"]
                                 first_triple_backticks = False
                             # NOTE: 只有非 self.LOADING_AGENT_MESSAGE 的 event 可以放到 cache 中
                             self.check_and_append(cache, ret)
@@ -1184,21 +1177,17 @@ class CommonQAStreamingMixIn:
                                 cache, final_answer_prefix_to_filter, final_answer_suffix_to_filter
                             )
                             # 防止出现think为空或第一个 think event 的 cover 为 False 的情况
-                            if (
-                                final_answer_occurred
-                                and cache[-1]['event'] == 'think'
-                                and first_think_event
-                            ): 
+                            if final_answer_occurred and cache[-1]["event"] == "think" and first_think_event:
                                 # 如果所有think event加起来过滤后为空，则删除，防止输出空的思考过程
-                                if cache[-1]['content'].strip() == '':
+                                if cache[-1]["content"].strip() == "":
                                     cache.pop()
                                     # 如果过滤后 cache 为空，要将 last_ret_is_empty 设置为 True，确保第一个 text 的 cover 是 True
                                     if len(cache) == 0:
                                         last_ret_is_empty = True
                                 # 如果过滤后只剩一个think event且是第一个，要将 cover 设置为 True
                                 elif len(cache) == 1:
-                                    cache[0]['cover'] = True   
-                                    first_think_event = False                      
+                                    cache[0]["cover"] = True
+                                    first_think_event = False
                             if len(cache) == max_cache_length:
                                 ret = cache.popleft()
                                 last_event_type = ret["event"]
@@ -1206,7 +1195,7 @@ class CommonQAStreamingMixIn:
                                     first_think_event = False
                                 yield self._yield_ret(ret)
                     else:
-                        yield self._yield_ret(ret)    
+                        yield self._yield_ret(ret)
 
             if isinstance(self, StructuredChatCommonQAAgent):
                 # 以下逻辑用于利用 self.end_content 标志跟 final_answer_suffix_to_filter 拼接后进行尾部去除
@@ -1216,7 +1205,9 @@ class CommonQAStreamingMixIn:
                     yield self._yield_ret(ret)
                 # 如果 cache 最后一个元素包含 `\n，需要在 final_answer_suffix_to_filter 后面也添加一个换行符才能把后缀过滤掉
                 if "`\n" in cache[-1].get("content", ""):
-                    final_answer_suffix_to_filter =final_answer_suffix.replace("\\n", "\n")+"\n"+deepcopy(self.end_content)              
+                    final_answer_suffix_to_filter = (
+                        final_answer_suffix.replace("\\n", "\n") + "\n" + deepcopy(self.end_content)
+                    )
                 end_ret = {
                     "event": EventType.TEXT.value,
                     "content": deepcopy(self.end_content),
@@ -1317,11 +1308,16 @@ class CommonQAAgent(ToolCallingCommonQAAgent):
     def get_agent_executor(cls, *args, **kwargs):
         llm = kwargs["llm"] if "llm" in kwargs else args[0]
         extra_tools = kwargs.get("extra_tools", [])
-        agent_options = kwargs.get("agent_options", [])
+        agent_options = kwargs.get("agent_options", AgentOptions())
         # 如果是 deepseek r1 系列模型，且 extra_tools 不为空，则默认使用 structured_chat_common_qa_agent
         if is_deepseek_r1_series_models(llm) and extra_tools:
-            agent_class = cls.agent_classes.get(agent_options.intent_recognition_options.agent_type, cls.agent_classes["structured_chat_common_qa_agent"])
+            agent_class = cls.agent_classes.get(
+                agent_options.intent_recognition_options.agent_type,
+                cls.agent_classes["structured_chat_common_qa_agent"],
+            )
         else:
             # 其他模型默认为tool_calling_common_qa_agent
-            agent_class = cls.agent_classes.get(agent_options.intent_recognition_options.agent_type, cls.agent_classes["tool_calling_common_qa_agent"])
+            agent_class = cls.agent_classes.get(
+                agent_options.intent_recognition_options.agent_type, cls.agent_classes["tool_calling_common_qa_agent"]
+            )
         return agent_class.get_agent_executor(*args, **kwargs)
