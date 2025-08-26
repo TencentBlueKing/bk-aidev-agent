@@ -49,6 +49,7 @@ from aidev_agent.core.utils.local import request_local
 from aidev_agent.enums import ContextType, Decision, EventType, IntentCategory, IntentStatus
 from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils import Empty
+from aidev_agent.utils.error_handling import extract_error_message
 
 from ..intent.prompts import DEFAULT_QA_PROMPT_TEMPLATES
 from ..intent.utils import (
@@ -1266,7 +1267,7 @@ class CommonQAStreamingMixIn:
             ret = {
                 "event": "error",
                 "code": exception.code if hasattr(exception, "code") else 400,
-                "message": exception.response_data() if hasattr(exception, "response_data") else str(exception),
+                "message": self._extract_exception_msg(exception),
             }
             _logger.exception(exception)
             yield self._yield_ret(ret)
@@ -1277,6 +1278,11 @@ class CommonQAStreamingMixIn:
         if done:
             return "data: [DONE]\n\n"
         return f"data: {json.dumps(ret)}\n\n"
+
+    def _extract_exception_msg(self, exception) -> str:
+        message = exception.response_data() if hasattr(exception, "response_data") else str(exception)
+        new_message = extract_error_message(message)
+        return new_message or message
 
 
 class ToolCallingCommonQAAgent(IntentRecognitionMixin, CommonQAStreamingMixIn, MultiToolCallCommonAgent):

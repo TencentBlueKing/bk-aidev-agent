@@ -21,16 +21,9 @@ from aidev_agent.core.extend.agent.qa import CommonQAAgent
 from aidev_agent.core.utils.loop import get_event_loop
 from aidev_agent.enums import PromptRole, StreamEventType
 from aidev_agent.exceptions import AgentException
-from aidev_agent.services.pydantic_models import AgentOptions, ChatPrompt
+from aidev_agent.services.pydantic_models import AgentOptions, ChatPrompt, ExecuteKwargs
 
 logger = getLogger(__name__)
-
-
-class ExecuteKwargs(BaseModel):
-    stream: bool = False
-    stream_timeout: int = 30
-    passthrough_input: bool = False
-    run_agent: bool = False
 
 
 class ChatCompletionAgent(BaseModel):
