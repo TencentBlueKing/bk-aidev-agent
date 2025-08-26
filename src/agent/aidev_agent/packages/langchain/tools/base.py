@@ -84,6 +84,7 @@ class ToolExtra(BaseModel):
     query: dict | None = None
     header: dict | None = None
     body: dict | None = None
+    path: dict | None = None
 
 
 class Tool(BaseModel):
@@ -113,6 +114,7 @@ class ApiWrapper:
         query: dict | None = None,
         header: dict | None = None,
         body: dict | None = None,
+        path: dict | None = None,
         max_retry: int = 3,
         complex_fields: list | None = None,
         builtin_fields: dict | None = None,
@@ -124,6 +126,7 @@ class ApiWrapper:
         self._query = query if query else {}
         self._header = header if header else {}
         self._body = body if body else {}
+        self._path = path if path else {}
         self._max_retry = max_retry
         self._request_counter: Dict[str, int] = {}
         self._complex_fields = complex_fields
@@ -140,6 +143,8 @@ class ApiWrapper:
                 self._query[field] = v
             elif http_part == "header":
                 self._header[field] = v
+            elif http_part == "path":
+                self._path[field] = v
             else:
                 self._body[field] = v
 
@@ -147,6 +152,7 @@ class ApiWrapper:
         self._header = {k: self._render_builtin_variables(v) for k, v in self._header.items()} if self._header else {}
         self._body = {k: self._render_builtin_variables(v) for k, v in self._body.items()} if self._body else {}
         self._query = {k: self._render_builtin_variables(v) for k, v in self._query.items()} if self._query else {}
+        self._path = {k: self._render_builtin_variables(v) for k, v in self._path.items()} if self._path else {}
         self._load_body()
         if self._extra:
             if self._extra.query:
@@ -155,6 +161,12 @@ class ApiWrapper:
                 self._header.update(self._extra.header)
             if self._extra.body:
                 self._body.update(self._extra.body)
+            if self._extra.path:
+                self._path.update(self._extra.path)
+
+        #LLM填充url模版
+        self._url = self._build_dynamic_url()
+
         try:
             resp = self.session.request(
                 self._method,
@@ -196,6 +208,32 @@ class ApiWrapper:
             return True
         self._request_counter[request_hash] += 1
         return False
+
+    def _build_dynamic_url(self) -> str:
+        """构建最终的URL，支持动态路径参数"""
+
+        #使用当前的路径参数状态（已经合并了默认值和LLM传入值）
+        path_values = self._path
+
+        #检查是否有路径参数需要处理, 匹配大括号内的参数名
+        pattern = r"\{([^}/]+)\}"
+        required_params = re.findall(pattern, self._url)
+        if not required_params:
+            # 没有路径参数，直接返回原始URL
+            return self._url
+
+        #检查是否有未填充的必需路径参数
+        missing_params = [param for param in required_params if param not in path_values]
+        if missing_params:
+            raise ValueError(f"缺少必须的路径参数: {', '.join(missing_params)}")
+
+        #替换路径参数
+        result_url = self._url
+        for param, value in path_values.items():
+            if param and isinstance(param, str):
+                result_url = result_url.replace(f"{{{param}}}", str(value))
+
+        return result_url
 
     def _render_builtin_variables(self, value: Any):
         """内部变量暂时只支持渲染 bk_username"""
@@ -270,16 +308,16 @@ def make_structured_tool(
     ```
     对应的字段为: query__test=123
     """
-    default_values: dict[str, dict[str, Any]] = {"header": {}, "query": {}, "body": {}}
+    default_values: dict[str, dict[str, Any]] = {"header": {}, "query": {}, "body": {}, "path": {}}
     complex_fields: list[str] = []
     _params: list[BkField] = []
     method = tool.method.lower()
     if method in ["get", "delete", "head"]:
-        key_list = ["header", "query"]
+        key_list = ["header", "query", "path"]
     elif method in ["post", "put", "patch"]:
-        key_list = ["header", "body"]
+        key_list = ["header", "body", "path"]
     else:
-        key_list = ["header"]
+        key_list = ["header", "path"]
     for key in key_list:
         field_info = tool.property.get(key)
         default_values[key] = {}
@@ -310,6 +348,7 @@ def make_structured_tool(
             query=default_values.get("query", {}),
             header=default_values.get("header", {}),
             body=default_values.get("body", {}),
+            path=default_values.get("path", {}),
             complex_fields=complex_fields,
             builtin_fields=builtin_fields,
             extra=tool.extra,
