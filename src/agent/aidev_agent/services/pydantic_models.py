@@ -5,6 +5,13 @@ from pydantic import AliasChoices, BaseModel, Field, model_validator
 from aidev_agent.enums import FineGrainedScoreType, IndependentQueryMode, KnowledgeBaseQueryFunction
 
 
+class ExecuteKwargs(BaseModel):
+    stream: bool = False
+    stream_timeout: int = 30
+    passthrough_input: bool = False
+    run_agent: bool = False
+
+
 class SessionTool(BaseModel):
     tool_id: int
     tool_code: str

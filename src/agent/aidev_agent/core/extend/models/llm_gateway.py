@@ -54,7 +54,7 @@ class ApiGwMixin(BaseModel):
 
 
 class ChatModel(RawChatOpenAI, ApiGwMixin):
-    remote_tokenizer: bool = False
+    remote_tokenizer: bool = True
     max_content_length: Optional[int] = None
 
     @model_validator(mode="before")
