@@ -1295,22 +1295,42 @@ class IntentRecognition(BaseModel):
 
             # 统一处理知识库检索
             topk = agent_options.intent_recognition_options.intent_recognition_topk or 100  # 默认取100条
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(
-                    self.search_knowledge_index_specific,
-                    knowledge_items=agent_options.intent_recognition_options.intent_recognition_knowledge,
-                    knowledge_bases=[],
-                    query=query,
-                    topk=topk,
-                    agent_options=agent_options,
-                    **kwargs,
-                )
-                intent_knowledge_doc = future.result()
-
+            intent_knowledge_doc = self.search_knowledge_index_specific(
+                knowledge_items=agent_options.intent_recognition_options.intent_recognition_knowledge,
+                knowledge_bases=[],
+                query=query,
+                topk=topk,
+                agent_options=agent_options,
+                **kwargs,
+            )
             # 提取知识内容
             intent_knowledge = [json.loads(doc["page_content"]) for doc in intent_knowledge_doc]
             all_intent_knowledge = intent_knowledge
-
+            
+            if not agent_options.intent_recognition_options.intent_recognition_llm:
+                context_docs_with_scores = [
+                    (Document(**item), item["metadata"]["__score__"]) 
+                    for item in intent_knowledge_doc
+                ]
+                fine_grained_scores = self.calculate_fine_grained_scores(
+                    agent_options.intent_recognition_options.intent_recognition_fine_grained_score_type,
+                    query,
+                    llm,
+                    context_docs_with_scores,
+                    agent_options,
+                    **kwargs,
+                )
+                # 获取分类结果
+                result = self.separate_docs_by_scores(
+                    context_docs_with_scores,
+                    fine_grained_scores,
+                    agent_options.intent_recognition_options.intent_recognition_reject_threshold,
+                )
+                highly_relevant_resources = result[3]
+                    
+                # 提取知识内容
+                intent_knowledge = [json.loads(doc["page_content"]) for doc in highly_relevant_resources]
+                
             # 统一处理LLM意图识别
             if agent_options.intent_recognition_options.intent_recognition_llm:
                 try:
