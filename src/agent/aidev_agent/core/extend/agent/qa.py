@@ -60,6 +60,7 @@ from ..intent.utils import (
     deduplicate_tools,
     filter_and_select_topk,
     is_deepseek_r1_series_models,
+    is_model_without_function_calling,
     is_structured_data,
     query_clarification_enabled,
     support_multimodal,
@@ -1315,8 +1316,8 @@ class CommonQAAgent(ToolCallingCommonQAAgent):
         llm = kwargs["llm"] if "llm" in kwargs else args[0]
         extra_tools = kwargs.get("extra_tools", [])
         agent_options = kwargs.get("agent_options", AgentOptions())
-        # 如果是 deepseek r1 系列模型，且 extra_tools 不为空，则默认使用 structured_chat_common_qa_agent
-        if is_deepseek_r1_series_models(llm) and extra_tools:
+        # 如果是没有原生function calling能力的模型，且 extra_tools 不为空，则默认使用 structured_chat_common_qa_agent
+        if is_model_without_function_calling(llm) and extra_tools:
             agent_class = cls.agent_classes.get(
                 agent_options.intent_recognition_options.agent_type,
                 cls.agent_classes["structured_chat_common_qa_agent"],

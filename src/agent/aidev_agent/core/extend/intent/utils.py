@@ -129,7 +129,16 @@ def remove_thinking_process(resp_content):
 
 
 def is_deepseek_r1_series_models(llm):
-    return "deepseek-r1" in llm.model_name or "qwq" in llm.model_name or "qwen3-nothinking" in llm.model_name or "gptoss-120b" in llm.model_name
+    return "deepseek-r1" in llm.model_name
+
+
+def is_model_without_function_calling(llm):
+    return (
+        "deepseek-r1" in llm.model_name
+        or "qwq" in llm.model_name
+        or "qwen3-nothinking" in llm.model_name
+        or "gptoss-120b" in llm.model_name
+    )
 
 
 def support_multimodal(llm):
