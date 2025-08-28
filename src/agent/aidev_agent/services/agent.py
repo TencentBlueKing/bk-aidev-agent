@@ -34,6 +34,7 @@ class AgentInstanceFactory:
         callbacks: List[Any] | None = None,
         resource_manager: AbstractBKAidevResourceManager | None = None,
         auth_headers: Dict[str, str] | None = None,
+        temperature: float = None,
     ):
         """
         初始化Agent工厂实例
@@ -44,6 +45,7 @@ class AgentInstanceFactory:
         :param agent_cls: Agent类
         :param callbacks: 回调函数列表
         :param resource_manager:  bkaidev 资源管理
+        :param temperature: 模型温度
         """
         self.resource_manager = resource_manager or BKAidevApi.get_client()
         self.agent_code = agent_code
@@ -53,6 +55,7 @@ class AgentInstanceFactory:
         self.agent_cls = agent_cls
         self.callbacks = [each for each in callbacks if each] if callbacks else []
         self.auth_headers = auth_headers or None
+        self.temperature = temperature or None
 
     @classmethod
     def build_agent(
@@ -65,6 +68,7 @@ class AgentInstanceFactory:
         agent_cls: type = CommonQAAgent,
         callbacks: List[Any] | None = None,
         resource_manager: AbstractBKAidevResourceManager | None = None,
+        temperature: float | None = None,
     ):
         """
         构建Agent实例
@@ -75,7 +79,8 @@ class AgentInstanceFactory:
         :param session_context_data: 会话上下文数据 (build_type="direct"时使用)
         :param agent_cls: Agent类
         :param callbacks: 回调函数列表
-        :param api_client: API客户端实例
+        :param resource_manager: 资源管理类
+        :param temperature: 模型温度
         :return: 构建好的Agent实例
         """
         # 创建工厂实例
@@ -87,6 +92,7 @@ class AgentInstanceFactory:
             agent_cls=agent_cls,
             callbacks=callbacks,
             resource_manager=resource_manager,
+            temperature=temperature,
         )
 
         # 验证参数
@@ -196,6 +202,9 @@ class AgentInstanceFactory:
             "model": config.llm_model_name,
             "base_url": settings.LLM_GW_ENDPOINT,
         }
+
+        if self.temperature is not None:
+            kwargs["temperature"] = self.temperature
 
         # Only add auth_headers if it has a value
         if self.auth_headers:
