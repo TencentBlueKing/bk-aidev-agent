@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import json
+
 from bkapi_client_core.base import Operation, OperationGroup
 from bkapi_client_core.client import BaseClient
 from bkapi_client_core.property import bind_property
@@ -7,7 +9,7 @@ from bkapi_client_core.property import bind_property
 from aidev_agent.api.abstract_client import AbstractBKAidevResourceManager
 from aidev_agent.config import settings
 from aidev_agent.enums import CredentialType
-from aidev_agent.packages.langchain.tools.base import Tool, make_structured_tool
+from aidev_agent.packages.langchain.tools.base import MCPServerConfig, Tool, make_mcp_tools, make_structured_tool
 
 
 class OpenApiGroup(OperationGroup):
@@ -179,6 +181,13 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/collection/{collection_code}/",
     )
 
+    retrieve_resource_v1_mcp = bind_property(
+        Operation,
+        name="retrieve_resource_v1_mcp",
+        method="GET",
+        path="/openapi/aidev/resource/v1/mcp/{mcp_code}/",
+    )
+
 
 class Client(BaseClient, AbstractBKAidevResourceManager):
     api = bind_property(OpenApiGroup, name="api")
@@ -192,6 +201,24 @@ class Client(BaseClient, AbstractBKAidevResourceManager):
             tool.extra = {"bk_app_code": settings.APP_CODE, "bk_app_secret": settings.SECRET_KEY}
             return make_structured_tool(tool)
         return make_structured_tool(Tool.model_validate(result["data"]))
+
+    def construct_mcp_tool(self, mcp_code, **kwargs):
+        result = self.api.retrieve_resource_v1_mcp(path_params={"mcp_code": mcp_code})
+        result_data = result["data"]
+        server_config = result_data["server_config"].get("mcpServers", {})
+        if result_data.get("credential_type", "") == CredentialType.BLUEAPPS.value:
+            authinfo = {"bk_app_code": settings.APP_CODE, "bk_app_secret": settings.SECRET_KEY}
+            if bk_ticket := kwargs.get("bk_ticket", ""):
+                authinfo.update({"bk_ticket": bk_ticket})
+            for v in server_config.values():
+                v["headers"] = {"X-Bkapi-Authorization": json.dumps(server_config)}
+        new_server_config = {
+            k: MCPServerConfig.model_validate(v).model_dump(
+                exclude_unset=True, exclude_none=True, exclude_defaults=True
+            )
+            for k, v in server_config.items()
+        }
+        return make_mcp_tools(new_server_config)
 
     def knowledge_query(self, data: dict):
         result = self.api.create_knowledgebase_query(data=data)

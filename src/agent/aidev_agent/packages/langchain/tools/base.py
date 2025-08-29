@@ -20,14 +20,16 @@ import contextlib
 import json
 import re
 from hashlib import md5
-from typing import Any, Dict, Type
+from typing import Any, Dict, List, Optional, Type
 
 import requests
 from langchain_core.prompts import jinja2_formatter
 from langchain_core.tools import StructuredTool
+from langchain_mcp_adapters.client import MultiServerMCPClient
 from pydantic import BaseModel, Field, ValidationError, create_model, field_validator
 from requests.exceptions import JSONDecodeError
 
+from aidev_agent.core.utils.loop import get_event_loop
 from aidev_agent.packages.langchain.exceptions import ToolValidationError
 from aidev_agent.packages.langchain.tools.enums import FieldType, FuncType
 
@@ -43,6 +45,17 @@ class Rule(BaseModel):
 class Validator(BaseModel):
     enable: bool = Field(False)
     rules: list[Rule]
+
+
+class MCPServerConfig(BaseModel):
+    """MCP服务配置"""
+
+    command: Optional[str] = None
+    args: List[str] = []
+    url: Optional[str] = None
+    transport: Optional[str] = None
+    headers: Optional[Dict[str, Any]] = None
+    description: str = ""
 
 
 class BkField(BaseModel):
@@ -164,7 +177,7 @@ class ApiWrapper:
             if self._extra.path:
                 self._path.update(self._extra.path)
 
-        #LLM填充url模版
+        # LLM填充url模版
         self._url = self._build_dynamic_url()
 
         try:
@@ -212,22 +225,22 @@ class ApiWrapper:
     def _build_dynamic_url(self) -> str:
         """构建最终的URL，支持动态路径参数"""
 
-        #使用当前的路径参数状态（已经合并了默认值和LLM传入值）
+        # 使用当前的路径参数状态（已经合并了默认值和LLM传入值）
         path_values = self._path
 
-        #检查是否有路径参数需要处理, 匹配大括号内的参数名
+        # 检查是否有路径参数需要处理, 匹配大括号内的参数名
         pattern = r"\{([^}/]+)\}"
         required_params = re.findall(pattern, self._url)
         if not required_params:
             # 没有路径参数，直接返回原始URL
             return self._url
 
-        #检查是否有未填充的必需路径参数
+        # 检查是否有未填充的必需路径参数
         missing_params = [param for param in required_params if param not in path_values]
         if missing_params:
             raise ValueError(f"缺少必须的路径参数: {', '.join(missing_params)}")
 
-        #替换路径参数
+        # 替换路径参数
         result_url = self._url
         for param, value in path_values.items():
             if param and isinstance(param, str):
@@ -361,3 +374,10 @@ def make_structured_tool(
         metadata={"tool_name": tool.tool_name},
     )
     return _tool
+
+
+def make_mcp_tools(server_config: dict) -> List[StructuredTool]:
+    client = MultiServerMCPClient(server_config)
+    _loop = get_event_loop()
+    tools = _loop.run_until_complete(client.get_tools())
+    return tools
