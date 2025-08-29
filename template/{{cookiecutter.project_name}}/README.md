@@ -7,7 +7,7 @@
 执行下面的脚本,创建虚拟环境&安装依赖
 
 ```bash
-python3.10 -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.template .env
