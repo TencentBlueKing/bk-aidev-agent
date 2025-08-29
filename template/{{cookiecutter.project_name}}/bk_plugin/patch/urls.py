@@ -11,7 +11,7 @@ specific language governing permissions and limitations under the License.
 """
 
 from django.conf import settings
-from django.conf.urls import include, url
+from django.urls import include, re_path
 from django.contrib import admin
 from drf_yasg import openapi
 from drf_yasg.views import get_schema_view
@@ -30,19 +30,20 @@ schema_view = get_schema_view(
 
 
 urlpatterns = [
-    url(r"^admin/", admin.site.urls),
-    url(r"^account/", include("blueapps.account.urls")),
-    url(r"^i18n/", include("django.conf.urls.i18n")),
-    url(
+    re_path(r"^admin/", admin.site.urls),
+    re_path(r"^account/", include("blueapps.account.urls")),
+    re_path(r"^i18n/", include("django.conf.urls.i18n")),
+    re_path(
         r"^swagger(?P<format>\.json|\.yaml)$",
         schema_view.without_ui(cache_timeout=0),
         name="schema-json",
     ),
-    url(r"^redoc/$", schema_view.with_ui("redoc", cache_timeout=0), name="schema-redoc"),
-    url(r"^bk_plugin/", include("bk_plugin_framework.services.bpf_service.urls")),
-    url(r"^$", IndexView.as_view(), name="index"),
-    url(r"^page/$", IndexView.as_view(), name="index"),
-    url(r"^side-slider/$", IndexView.as_view(), name="index"),
+
+    re_path(r"^redoc/$", schema_view.with_ui("redoc", cache_timeout=0), name="schema-redoc"),
+    re_path(r"^bk_plugin/", include("bk_plugin_framework.services.bpf_service.urls")),
+    re_path(r"^$", IndexView.as_view(), name="index"),
+    re_path(r"^page/$", IndexView.as_view(), name="index"),
+    re_path(r"^side-slider/$", IndexView.as_view(), name="index"),
 ]
 
 
@@ -51,8 +52,8 @@ if settings.ENVIRONMENT == "dev":
 
     urlpatterns.extend(
         [
-            url(r"^debug/$", debug_panel, name="debug-panel"),
-            url(
+            re_path(r"^debug/$", debug_panel, name="debug-panel"),
+            re_path(
                 r"^swagger/$",
                 schema_view.with_ui("swagger", cache_timeout=0),
                 name="schema-swagger-ui",
