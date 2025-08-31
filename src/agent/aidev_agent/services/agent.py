@@ -7,6 +7,7 @@ from aidev_agent.config import settings
 from aidev_agent.core.extend.agent.qa import CommonQAAgent
 from aidev_agent.core.extend.models.llm_gateway import ChatModel
 from aidev_agent.enums import AgentBuildType, AgentType
+from aidev_agent.packages.langchain.tools.base import make_mcp_tools
 from aidev_agent.services.chat import ChatCompletionAgent
 from aidev_agent.services.config_manager import AgentConfig, AgentConfigManager
 from aidev_agent.services.pydantic_models import AgentOptions, ChatPrompt
@@ -229,7 +230,8 @@ class AgentInstanceFactory:
     def build_tools(self, agent_code: str) -> List[Any]:
         """构建工具"""
         config = AgentConfigManager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
-        return [self.resource_manager.construct_tool(tool_code) for tool_code in config.tool_codes]
+        mcp_tools = make_mcp_tools(config.mcp_server_config)
+        return [self.resource_manager.construct_tool(tool_code) for tool_code in config.tool_codes] + mcp_tools
 
     def get_role_prompt(self, agent_code: str) -> str | None:
         """获取角色提示词"""
