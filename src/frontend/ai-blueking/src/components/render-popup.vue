@@ -71,7 +71,7 @@
 
 <script lang="ts" setup>
   import type { IAgentInfo } from '@blueking/ai-ui-sdk/types';
-  import { computed, ref } from 'vue';
+  import { computed, ref, toRaw } from 'vue';
 
   import avatar from '../assets/images/avatar.png';
   import { usePopup } from '../composables/use-popup-props';
@@ -83,7 +83,7 @@
     shortcuts?: IShortcut[];
     conversationSettings?: IAgentInfo['conversationSettings'];
     shortcutLimit?: number;
-    shortcutFilter?: (shortcut: IShortcut) => boolean;
+    shortcutFilter?: (shortcut: IShortcut, selectedText: string) => boolean;
   }
 
   const props = withDefaults(defineProps<IProps>(), {
@@ -100,23 +100,8 @@
     const shortcuts =
       props.shortcuts.length > 0 ? props.shortcuts : props.conversationSettings?.commands || [];
     // 如果提供了过滤函数，则应用过滤
-    if (props.shortcutFilter) {
-      // 创建带有选中文本信息的快捷方式副本
-      const shortcutsWithSelectedText = shortcuts.map(shortcut => {
-        if (shortcut.components && selectedText.value) {
-          // 为每个组件添加选中文本
-          const componentsWithSelectedText = shortcut.components.map(component => ({
-            ...component,
-            selectedText: selectedText.value,
-          }));
-          return {
-            ...shortcut,
-            components: componentsWithSelectedText,
-          };
-        }
-        return shortcut;
-      });
-      return shortcutsWithSelectedText.filter(props.shortcutFilter);
+    if (typeof props.shortcutFilter === 'function') {
+      return shortcuts.filter(item => !!props.shortcutFilter?.(toRaw(item), selectedText.value));
     }
     return shortcuts;
   });

@@ -23,12 +23,14 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+
 import type {
   ISessionContent,
   ShortCut,
   IAgentCommand,
   IAgentCommandComponent,
 } from '@blueking/ai-ui-sdk/types';
+import type { useChat } from '@blueking/ai-ui-sdk/hooks';
 import type { Ref } from 'vue';
 
 export interface AIBluekingExpose {
@@ -81,12 +83,11 @@ export type IAgentCommandComponentWithSelectedText = IShortcutComponent;
 export type { ShortCut, ISessionContent };
 
 type IContext = Record<string, string> | Record<string, string>[];
+export type UseChatParams = typeof useChat extends (...args: infer R) => any ? R[0] : never;
 
-export interface IRequestOptions {
-  headers?: Record<string, string>;
-  data?: Record<string, string>;
+export type IRequestOptions = Partial<UseChatParams['requestOptions']> & {
   context?: IContext | (() => IContext);
-}
+};
 
 export type IDocument = {
   metadata: {
