@@ -123,15 +123,14 @@ export function useSelect(enablePopup: boolean) {
 
   const handleSelectionChange = () => {
     clearTimeout(debounceTimeout);
+    const selection = window.getSelection();
+    if (!selection?.toString().trim()) {
+      hideIcon();
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
     debounceTimeout = setTimeout(() => {
-      const selection = window.getSelection();
-      if (!selection?.toString().trim()) {
-        hideIcon();
-        return;
-      }
-
-      const range = selection.getRangeAt(0);
-
       // 检查是否在 ai-blueking-wrapper 内
       if (range.commonAncestorContainer.parentElement?.closest('.ai-blueking-wrapper')) {
         hideIcon();
@@ -167,7 +166,12 @@ export function useSelect(enablePopup: boolean) {
         lastMouseUpEvent = null; // 清理
       } else {
         // 非 textarea，使用 Range 计算位置
-        const rect = range.getBoundingClientRect();
+        let rect = range.getBoundingClientRect();
+        const shadowRoot = (range.commonAncestorContainer.firstChild as HTMLElement)?.shadowRoot;
+        // 判断是否在shadow-root内
+        if (shadowRoot) {
+          rect = (shadowRoot as any).getSelection()?.getRangeAt(0)?.getBoundingClientRect() || rect;
+        }
         if (!rect.width || !rect.height) {
           hideIcon();
           return;
