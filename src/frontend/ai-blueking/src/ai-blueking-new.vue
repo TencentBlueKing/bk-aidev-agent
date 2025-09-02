@@ -106,6 +106,7 @@
                     :loading="currentSessionLoading || false"
                     :prompts="promptList"
                     :shortcuts="props.shortcuts"
+                    :shortcut-filter="props.shortcutFilter"
                     :conversation-settings="sessionStore.agentInfo.value?.conversationSettings"
                     :disabled="props.disabledInput"
                     @height-change="handleInputHeightChange"
@@ -200,7 +201,7 @@
     enablePopup?: boolean;
     shortcuts?: IShortcut[];
     shortcutLimit?: number;
-    shortcutFilter?: (shortcut: IShortcut) => boolean;
+    shortcutFilter?: (shortcut: IShortcut, selectedText: string) => boolean;
     url?: string;
     prompts?: string[];
     hideNimbus?: boolean;
@@ -594,6 +595,7 @@
     source: 'popup' | 'main' | 'ai-selected';
   }) => {
     // 来自 render-popup 的快捷方式点击事件
+    emit('shortcut-click', { shortcut: data.shortcut, source: data.source });
     handleShortcutClick(data);
   };
 
@@ -606,6 +608,7 @@
       ...data.shortcut,
       _source: data.source,
     };
+    emit('shortcut-click', { shortcut: modifiedShortcut, source: data.source });
     handleShortcutClick({ shortcut: modifiedShortcut, source: data.source });
   };
 
@@ -754,7 +757,6 @@
     });
 
     emit('send-message', shortcut.name);
-    emit('shortcut-click', { shortcut, source: 'main' });
   };
 
   const handleDelete = (index: number) => {

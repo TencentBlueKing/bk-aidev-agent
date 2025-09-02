@@ -1,11 +1,9 @@
 <template>
   <div class="chat-input-box">
     <ai-selected-box
-      v-if="selectedText.length > 0"
+      v-if="selectedText.length > 0 && filteredShortcuts.length > 0"
       style="margin-bottom: 10px"
-      :actions="
-        props.shortcuts.length > 0 ? props.shortcuts : props.conversationSettings?.commands || []
-      "
+      :actions="filteredShortcuts"
       :selected-text="selectedText"
       @mousedown.prevent
       @shortcut-click="handleShortcutClick"
@@ -13,9 +11,7 @@
     <shortcuts-bar
       v-else
       style="margin-bottom: 8px"
-      :shortcuts="
-        props.shortcuts.length > 0 ? props.shortcuts : props.conversationSettings?.commands || []
-      "
+      :shortcuts="filteredShortcuts"
       @shortcut-click="handleShortcutClickWithClear"
     />
     <div
@@ -111,6 +107,7 @@
       prompts: string[];
       disabled: boolean;
       placeholder?: string;
+      shortcutFilter?: (shortcut: IShortcut, selectedText: string) => boolean;
     }>(),
     {
       shortcuts: () => [],
@@ -128,7 +125,13 @@
     const offset = 8;
     return -(promptHeight.value + offset) + 'px';
   });
-
+  const filteredShortcuts = computed(() => {
+    const shortcuts =
+      props.shortcuts.length > 0 ? props.shortcuts : props.conversationSettings?.commands || [];
+    return shortcuts.filter(shortcut => {
+      return props.shortcutFilter?.(shortcut, selectedText.value) ?? true;
+    });
+  });
   const showPromptList = ref(false);
 
   const handlePromptSelect = (prompt: string) => {

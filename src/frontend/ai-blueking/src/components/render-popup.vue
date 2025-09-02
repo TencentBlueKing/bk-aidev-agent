@@ -71,7 +71,7 @@
 
 <script lang="ts" setup>
   import type { IAgentInfo } from '@blueking/ai-ui-sdk/types';
-  import { computed, ref } from 'vue';
+  import { computed, ref, toRaw } from 'vue';
 
   import avatar from '../assets/images/avatar.png';
   import { usePopup } from '../composables/use-popup-props';
@@ -83,7 +83,7 @@
     shortcuts?: IShortcut[];
     conversationSettings?: IAgentInfo['conversationSettings'];
     shortcutLimit?: number;
-    shortcutFilter?: (shortcut: IShortcut) => boolean;
+    shortcutFilter?: (shortcut: IShortcut, selectedText: string) => boolean;
   }
 
   const props = withDefaults(defineProps<IProps>(), {
@@ -92,14 +92,16 @@
   });
 
   const { enablePopup } = usePopup();
-  const { isIconVisible, iconPosition, popupRef, clearSelection } = useSelect(enablePopup);
+  const { isIconVisible, iconPosition, popupRef, clearSelection, selectedText } =
+    useSelect(enablePopup);
 
   // 定义快捷按钮数据
   const allShortcuts = computed(() => {
-    const shortcuts = props.shortcuts.length > 0 ? props.shortcuts : props.conversationSettings?.commands || [];
+    const shortcuts =
+      props.shortcuts.length > 0 ? props.shortcuts : props.conversationSettings?.commands || [];
     // 如果提供了过滤函数，则应用过滤
-    if (props.shortcutFilter) {
-      return shortcuts.filter(props.shortcutFilter);
+    if (typeof props.shortcutFilter === 'function') {
+      return shortcuts.filter(item => !!props.shortcutFilter?.(toRaw(item), selectedText.value));
     }
     return shortcuts;
   });

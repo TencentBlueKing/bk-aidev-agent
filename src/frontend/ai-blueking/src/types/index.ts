@@ -23,6 +23,7 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+import type { useChat } from '@blueking/ai-ui-sdk/hooks';
 import type { ISessionContent, ShortCut, IAgentCommand } from '@blueking/ai-ui-sdk/types';
 import type { Ref } from 'vue';
 
@@ -41,7 +42,10 @@ export interface AIBluekingExpose {
   handleClose: () => void;
   handleStop: () => void;
   handleSendMessage: (message: string) => void;
-  handleShortcutClick: (data: { shortcut: IShortcut; source: 'popup' | 'main' | 'ai-selected' }) => void;
+  handleShortcutClick: (data: {
+    shortcut: IShortcut;
+    source: 'popup' | 'main' | 'ai-selected';
+  }) => void;
   handleDelete: (index: number) => void;
   handleRegenerate: (index: number) => void;
   handleResend: (index: number, { message }: { message: string }) => void;
@@ -88,12 +92,11 @@ export interface IAgentCommandComponentWithSelectedText extends IShortcutCompone
 export type { ShortCut, ISessionContent };
 
 type IContext = Record<string, string> | Record<string, string>[];
+export type UseChatParams = typeof useChat extends (...args: infer R) => any ? R[0] : never;
 
-export interface IRequestOptions {
-  headers?: Record<string, string>;
-  data?: Record<string, string>;
+export type IRequestOptions = Partial<UseChatParams['requestOptions']> & {
   context?: IContext | (() => IContext);
-}
+};
 
 export type IDocument = {
   metadata: {
