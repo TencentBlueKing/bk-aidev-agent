@@ -35,22 +35,17 @@ BlueKing AIDev platform is dedicated to providing excellent intelligent developm
 
 ### System Requirements
 - Python 3.10+
+- uv 0.7.14+
 - Node.js 20+
-- Poetry 1.8+
 
 ### Agent Development
-1. Confirm Python version (3.10.x)
+1. Confirm uv version
     ```bash
-    $ python --version
-    Python 3.10.5
+    $ uv --version
+    uv 0.7.14 (e7f596711 2025-06-23)
    ```
 
-2. Install `poetry`: Poetry should be installed in a separate environment to avoid interference with the project environment
-   ```shell
-   curl -sSL https://install.python-poetry.org | python3 - --version 1.8.5
-   ```
-
-3. Initialize the project environment (virtual environment located in the project root directory `.venv`), this step will initialize the local `pre-commit` component
+2. Initialize the project environment (virtual environment located in the project root directory `.venv`), this step will initialize the local `pre-commit` component
    ```shell
    $ make
    ```

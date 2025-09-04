@@ -11,8 +11,8 @@ specific language governing permissions and limitations under the License.
 """
 
 from django.conf import settings
-from django.urls import include, re_path
 from django.contrib import admin
+from django.urls import include, re_path
 from drf_yasg import openapi
 from drf_yasg.views import get_schema_view
 from rest_framework import permissions
@@ -38,7 +38,6 @@ urlpatterns = [
         schema_view.without_ui(cache_timeout=0),
         name="schema-json",
     ),
-
     re_path(r"^redoc/$", schema_view.with_ui("redoc", cache_timeout=0), name="schema-redoc"),
     re_path(r"^bk_plugin/", include("bk_plugin_framework.services.bpf_service.urls")),
     re_path(r"^$", IndexView.as_view(), name="index"),

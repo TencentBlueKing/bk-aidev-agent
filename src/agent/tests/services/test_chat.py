@@ -17,7 +17,6 @@ from langchain_core.messages.ai import AIMessage
 from langchain_core.messages.human import HumanMessage
 
 
-
 @pytest.fixture
 def add_session():
     client = BKAidevApi.get_client()
@@ -98,10 +97,9 @@ def test_CommonQAAgent_chat_streaming():
     tool_codes = ["weather-query"]
     tools = [client.construct_tool(tool_code) for tool_code in tool_codes]
     knowledge_bases = [client.api.appspace_retrieve_knowledgebase(path_params={"id": 58})["data"]]
-    qa_response_kb_ids=[254]
+    qa_response_kb_ids = [254]
     qa_response_knowledge_bases = [
-        client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"]
-        for id_ in qa_response_kb_ids
+        client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"] for id_ in qa_response_kb_ids
     ]
     # 获取代理执行器和配置
     chat_history = [HumanMessage(content="你好"), AIMessage(content="你好，请问有什么可以帮您？")]
@@ -114,9 +112,9 @@ def test_CommonQAAgent_chat_streaming():
             intent_recognition_llm="deepseek-r1",
         ),
         knowledge_query_options=KnowledgebaseSettings(
-            knowledge_bases = knowledge_bases,
-            qa_response_kb_ids = qa_response_kb_ids,
-            qa_response_knowledge_bases = qa_response_knowledge_bases,
+            knowledge_bases=knowledge_bases,
+            qa_response_kb_ids=qa_response_kb_ids,
+            qa_response_knowledge_bases=qa_response_knowledge_bases,
             knowledge_resource_reject_threshold=(0.001, 0.1),
             topk=10,
             knowledge_resource_fine_grained_score_type=FineGrainedScoreType.LLM.value,
@@ -163,8 +161,7 @@ def test_qa_response(test_input, expected_kb_ids):
     tools = [client.construct_tool("weather-query")]
     knowledge_bases = [client.api.appspace_retrieve_knowledgebase(path_params={"id": 58})["data"]]
     qa_response_knowledge_bases = [
-        client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"]
-        for id_ in expected_kb_ids
+        client.api.appspace_retrieve_knowledgebase(path_params={"id": id_})["data"] for id_ in expected_kb_ids
     ]
     # 配置带参数的智能体选项
     agent_options = AgentOptions(

@@ -2,31 +2,44 @@
 ROOT_DIR?=$(shell git rev-parse --show-toplevel)
 
 .PHONY: ALL
-ALL: init-project requirements
+ALL: init-project
 
-poetry.lock: pyproject.toml
-	poetry lock --no-update -vvv
+uv.lock: pyproject.toml
+	uv lock
 
 .PHONY: requirements
 requirements: requirements.txt
 
 .PHONY: requirements.txt
-requirements.txt: poetry.lock pyproject.toml
-	poetry export -f requirements.txt --without-hashes | awk -F';' '{print$$1}' | grep -v "index-url" > ${ROOT_DIR}/requirements.txt
+requirements.txt: uv.lock pyproject.toml
+	uv pip freeze | grep -v "file" > requirements.txt
+
 
 .PHONY: init-project
-init-project: poetry-install .git/hooks/pre-commit .git/hooks/pre-push
+init-project: uv-install .git/hooks/pre-commit .git/hooks/pre-push
 	@echo "Project initialization complete."
 
-.PHONY: poetry-install
-poetry-install:
-	poetry install --remove-untracked
+.PHONY: uv-install
+uv-install:
+	uv --version
+	uv sync
 
 .git/hooks/pre-commit: ${ROOT_DIR}/.pre-commit-config.yaml
-	poetry run pre-commit install -t pre-commit
+	uv run pre-commit install -t pre-commit
+	@echo "Pre-commit hook installed."
 
 .git/hooks/pre-push: ${ROOT_DIR}/.pre-commit-config.yaml
-	poetry run pre-commit install -t pre-push
+	uv run pre-commit install -t pre-push
+
+.PHONY: clean
+clean:
+	rm -f .git/hooks/pre-commit
+	rm -f .git/hooks/pre-push
+	uv clean
+
+.PHONY: lint
+lint:
+	uv run pre-commit run -a --hook-stage commit
 
 build-template:
 	cd ./src/frontend/publish-template/ && npm install && npm run build && cd -

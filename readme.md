@@ -37,23 +37,18 @@
 ## 🛠️ 快速开始
 
 ### 系统要求
-- Python 3.10+
+- Python 3.11+
+- uv 0.7.14+
 - Node.js 20+
-- Poetry 1.8+
 
 ### Agent 开发
-1. 确认 Python 版本（3.10.x）
+1. 确认 uv 版本
     ```bash
-    $ python --version
-    Python 3.10.5
-   ```
+    $ uv --version
+    uv 0.7.14 (e7f596711 2025-06-23)
+    ```
 
-2. 安装 `poetry`：Poetry 应该安装一个独立的环境，避免与项目环境互相影响
-   ```shell
-   curl -sSL https://install.python-poetry.org | python3 - --version 1.8.5
-   ```
-
-3. 初始化项目环境（虚拟环境位于项目根目录 `.venv` 下），此步骤将始化本地`pre-commit`组件
+2. 初始化项目环境（虚拟环境位于项目根目录 `.venv` 下），此步骤将始化本地`pre-commit`组件
    ```shell
    $ make
    ```

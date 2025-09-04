@@ -1306,11 +1306,10 @@ class IntentRecognition(BaseModel):
             # 提取知识内容
             intent_knowledge = [json.loads(doc["page_content"]) for doc in intent_knowledge_doc]
             all_intent_knowledge = intent_knowledge
-            
+
             if not agent_options.intent_recognition_options.intent_recognition_llm:
                 context_docs_with_scores = [
-                    (Document(**item), item["metadata"]["__score__"]) 
-                    for item in intent_knowledge_doc
+                    (Document(**item), item["metadata"]["__score__"]) for item in intent_knowledge_doc
                 ]
                 fine_grained_scores = self.calculate_fine_grained_scores(
                     agent_options.intent_recognition_options.intent_recognition_fine_grained_score_type,
@@ -1327,10 +1326,10 @@ class IntentRecognition(BaseModel):
                     agent_options.intent_recognition_options.intent_recognition_reject_threshold,
                 )
                 highly_relevant_resources = result[3]
-                    
+
                 # 提取知识内容
                 intent_knowledge = [json.loads(doc["page_content"]) for doc in highly_relevant_resources]
-                
+
             # 统一处理LLM意图识别
             if agent_options.intent_recognition_options.intent_recognition_llm:
                 try:
