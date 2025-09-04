@@ -1,54 +1,49 @@
-[tool.poetry]
+[project]
+authors = [
+    {name = "blueking"},
+]
+license = {text = "MIT"}
+requires-python = "<4.0,>=3.10.5"
+dependencies = [
+    "environs<15.0.0,>=14.1.0",
+    "langchain<1.0.0,>=0.3.14",
+    "langchain-openai<1.0.0,>=0.3.0",
+    "langchain-community==0.3.15",
+    "pyro4<5.0,>=4.82",
+    "langfuse<3",
+    "bkapi-client-core<2.0.0,>=1.2.0",
+    "jinja2<4.0.0,>=3.1.6",
+    "cachetools<6.0.0,>=5.5.2",
+    "asgiref<4.0.0,>=3.8.1",
+    "werkzeug<4.0.0,>=3.1.3",
+    "pytz<2026.0,>=2025.2",
+    "h11==0.16.0",
+    "langchain-mcp-adapters<1.0.0,>=0.1.9",
+]
 name = "aidev-agent"
 version = "1.0.0b32"
 description = "bkaidev agent builder"
-authors = ["blueking"]
-license = "MIT"
-packages = [{ include = "aidev_agent" }]
 
-[tool.poetry.dependencies]
-python = ">=3.10.5,<4.0"
-environs = "^14.1.0"
-langchain = "^0.3.14"
-langchain-openai = "^0.3.0"
-langchain-community = "0.3.15"
-pyro4 = "^4.82"
-langfuse = "<3"
-bkapi-client-core = "^1.2.0"
-jinja2 = "^3.1.6"
-cachetools = "^5.5.2"
-asgiref = "^3.8.1"
-werkzeug = "^3.1.3"
-pytz = "^2025.2"
-h11 = "0.16.0"
-langchain-mcp-adapters = "^0.1.9"
+[dependency-groups]
+dev = [
+    "ipdb<0.14.0,>=0.13.13",
+    "pytest<7.5.0,>=7.4.4",
+    "pytest-asyncio<0.24.0,>=0.23.3",
+    "pytest-env<1.2.0,>=1.1.3",
+    "pytest-cov<4.2.0,>=4.1.0",
+    "pytest-timeout==2.3.1",
+    "pre-commit==4.0.1",
+    "faker<38.0.0,>=37.0.0",
+    "pytest-mock<4.0.0,>=3.14.0",
+    "pytest-dotenv<1.0.0,>=0.5.2",
+]
 
-
-[tool.poetry.group.dev.dependencies]
-ipdb = ">=0.13.13,<0.14.0"
-pytest = ">=7.4.4,<7.5.0"
-pytest-asyncio = ">=0.23.3,<0.24.0"
-pytest-env = ">=1.1.3,<1.2.0"
-pytest-cov = ">=4.1.0,<4.2.0"
-pytest-timeout = "2.3.1"
-pre-commit = "4.0.1"
-faker = "^37.0.0"
-pytest-mock = "^3.14.0"
-pytest-dotenv = "^0.5.2"
-
+[tool.pdm.build]
+includes = ["aidev_agent"]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
-
-[tool.flake8]
-extend-ignore = "W503,ANN101,ANN102,ANN002,ANN003,ANN001,ANN201,ANN204,ANN205,E203"
-max-line-length = 120
-max-complexity = 20
-format = "pylint"
-show_source = "true"
-statistics = "true"
-count = "true"
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
 
 [tool.ruff]
 exclude = ["*/config/", "*/migrations/"]
@@ -80,3 +75,4 @@ env_files = [".env"]
 asyncio_default_fixture_loop_scope = "session"
 addopts = "-vvv --maxfail=2 -s"
 asyncio_mode = "auto"
+

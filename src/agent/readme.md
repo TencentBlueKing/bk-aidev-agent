@@ -3,39 +3,28 @@
 ## 开发指南
 
 ### 初始化
-1. 确认 Python 版本（3.10.x）
+1. 确认 uv 版本
     ```bash
-    python --version
-    Python 3.10.5
-   ```
+    $ uv --version
+    uv 0.7.14 (e7f596711 2025-06-23)
+    ```
    
-2. 安装 `poetry`：Poetry 应该安装一个独立的环境，避免与项目环境互相影响
-   ```shell
-   curl -sSL https://install.python-poetry.org | python3 - --version 1.8.5
-   ```
-
-3. 初始化项目环境（虚拟环境位于项目根目录 `.venv` 下），此步骤将始化本地`pre-commit`组件
+2. 初始化项目环境（虚拟环境位于项目根目录 `.venv` 下），此步骤将始化本地`pre-commit`组件
     ```bash
-    $ make init
+    $ make
     ```
 
-4. 执行 `pre-commit` 验证
-   ```shell
-   $ pre-commit
-   ```
-
 ### 依赖包管理
-1. `AIDev` 通过 `Poetry` 管理项目依赖，蓝鲸插件依赖需要通过 `Group` 管理
+1. `AIDev` 通过 `uv` 管理项目依赖，不同的模块需要通过 `Group` 管理
    ```bash
    # 平台依赖
-   poetry add {package_name}~=1.0.0
+   uv add {package_name}~=1.0.0
    # 开发环境依赖
-   poetry add {package_name}~=1.0.0 -G dev
+   uv add {package_name}~=1.0.0 -- dev
    ```
-
 2. 可以通过以下命令导出依赖对应的 `requirements.txt`
    ```bash
-   poetry export -f requirements.txt --output requirements.txt --without-hashes
+   make requirements.txt
    ```
 
 ### 单元测试
