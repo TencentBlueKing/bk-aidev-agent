@@ -1,15 +1,6 @@
 <template>
   <div class="chat-input-box">
-    <ai-selected-box
-      v-if="selectedText.length > 0 && filteredShortcuts.length > 0"
-      style="margin-bottom: 10px"
-      :actions="filteredShortcuts"
-      :selected-text="selectedText"
-      @mousedown.prevent
-      @shortcut-click="handleShortcutClick"
-    />
     <shortcuts-bar
-      v-else
       style="margin-bottom: 8px"
       :shortcuts="filteredShortcuts"
       @shortcut-click="handleShortcutClickWithClear"
@@ -79,7 +70,6 @@
   import { t } from '../lang';
   import type { IShortcut } from '../types';
 
-  import AiSelectedBox from './ai-selected-box.vue';
   import PromptList from './prompt-list.vue';
   import ShortcutsBar from './shortcuts-bar.vue';
 
@@ -87,10 +77,7 @@
     (e: 'send' | 'update:modelValue', value: string): void;
     (e: 'stop'): void;
     (e: 'height-change', height: number): void;
-    (
-      e: 'shortcut-click',
-      shortcut: { shortcut: IShortcut; source: 'popup' | 'main' | 'ai-selected' }
-    ): void;
+    (e: 'shortcut-click', shortcut: { shortcut: IShortcut; source: 'popup' | 'main' }): void;
   }>();
 
   const { enablePopup } = usePopup();
@@ -201,16 +188,13 @@
 
   const handleShortcutClickWithClear = (data: {
     shortcut: IShortcut;
-    source: 'popup' | 'main' | 'ai-selected';
+    source: 'popup' | 'main';
   }) => {
     handleShortcutClick(data);
     inputValue.value = '';
   };
 
-  const handleShortcutClick = (data: {
-    shortcut: IShortcut;
-    source: 'popup' | 'main' | 'ai-selected';
-  }) => {
+  const handleShortcutClick = (data: { shortcut: IShortcut; source: 'popup' | 'main' }) => {
     emit('shortcut-click', data);
     clearSelection();
   };

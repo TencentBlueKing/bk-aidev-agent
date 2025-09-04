@@ -48,10 +48,7 @@ export interface AIBluekingExpose {
   handleClose: () => void;
   handleStop: () => void;
   handleSendMessage: (message: string) => void;
-  handleShortcutClick: (data: {
-    shortcut: IShortcut;
-    source: 'popup' | 'main' | 'ai-selected';
-  }) => void;
+  handleShortcutClick: (data: { shortcut: IShortcut; source: 'popup' | 'main' }) => void;
   handleDelete: (index: number) => void;
   handleRegenerate: (index: number) => void;
   handleResend: (index: number, { message }: { message: string }) => void;

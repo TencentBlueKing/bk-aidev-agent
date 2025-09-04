@@ -37,7 +37,7 @@
     shortcuts: IShortcut[];
   }>();
   const emit = defineEmits<{
-    'shortcut-click': [{ shortcut: IShortcut; source: 'popup' | 'main' | 'ai-selected' }];
+    'shortcut-click': [{ shortcut: IShortcut; source: 'popup' | 'main' }];
   }>();
 
   const containerRef = ref<HTMLDivElement | null>(null);
