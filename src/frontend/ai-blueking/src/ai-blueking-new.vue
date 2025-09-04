@@ -258,10 +258,7 @@
   });
 
   const emit = defineEmits<{
-    (
-      e: 'shortcut-click',
-      data: { shortcut: IShortcut; source: 'popup' | 'main' | 'ai-selected' }
-    ): void;
+    (e: 'shortcut-click', data: { shortcut: IShortcut; source: 'popup' | 'main' }): void;
     (e: 'close' | 'show' | 'stop' | 'receive-start' | 'receive-text' | 'receive-end'): void;
     (e: 'send-message', message: string): void;
     (
@@ -590,19 +587,13 @@
   // ===================================================================
   // 12. 事件处理函数
   // ===================================================================
-  const handlePopupShortcutClick = (data: {
-    shortcut: IShortcut;
-    source: 'popup' | 'main' | 'ai-selected';
-  }) => {
+  const handlePopupShortcutClick = (data: { shortcut: IShortcut; source: 'popup' | 'main' }) => {
     // 来自 render-popup 的快捷方式点击事件
     emit('shortcut-click', { shortcut: data.shortcut, source: data.source });
     handleShortcutClick(data);
   };
 
-  const handleInputShortcutClick = (data: {
-    shortcut: IShortcut;
-    source: 'popup' | 'main' | 'ai-selected';
-  }) => {
+  const handleInputShortcutClick = (data: { shortcut: IShortcut; source: 'popup' | 'main' }) => {
     // 传递_source属性以便custom-input组件可以正确处理自动提交
     const modifiedShortcut = {
       ...data.shortcut,
