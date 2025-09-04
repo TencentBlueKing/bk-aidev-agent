@@ -324,7 +324,7 @@ v1.2.4-beta.2版本进一步增强了快捷操作的灵活性和用户体验，�
 
 新增 `shortcutFilter` 属性，它是一个函数，可以用来动态地过滤要显示的快捷操作。这个函数会在每次弹出快捷操作菜单时执行。
 
-函数签名：`(shortcut: IShortcut) => boolean`
+函数签名：`(shortcut: IShortcut, selectedText: string) => boolean`
 
 当用户选中了页面上的文本时，每个快捷操作的组件（components）会自动获得一个 `selectedText` 属性，其中包含当前选中的文本内容。这使得您可以根据选中的文本内容来过滤快捷操作。
 
@@ -334,22 +334,19 @@ v1.2.4-beta.2版本进一步增强了快捷操作的灵活性和用户体验，�
 </template>
 
 <script setup>
-  const myFilter = (shortcut) => {
+  const myFilter = (shortcut, selectedText) => {
     // 只显示ID为 'translate' 或 'explain' 的快捷操作
     if (!["translate", "explain"].includes(shortcut.id)) {
       return false
     }
 
     // 如果选中的文本包含代码特征，只显示"解释代码"快捷操作
-    if (shortcut.id === "explain" && shortcut.components?.some((c) => c.selectedText?.includes("function"))) {
+    if (shortcut.id === "explain" && selectedText?.includes("function")) {
       return true
     }
 
     // 对于翻译操作，只有当选中的文本长度在合理范围内时才显示
-    if (
-      shortcut.id === "translate" &&
-      shortcut.components?.some((c) => c.selectedText && c.selectedText.length > 0 && c.selectedText.length < 1000)
-    ) {
+    if (shortcut.id === "translate" && selectedText && selectedText.length > 0 && selectedText.length < 1000) {
       return true
     }
 
