@@ -106,7 +106,10 @@ export function useShortcut(options: UseShortcutOptions) {
     const allRequiredFieldsHaveValues =
       modifiedShortcut.components?.every(item => {
         if (!item.required) return true;
-        return item.default !== undefined && item.default !== null && item.default !== '';
+        return (
+          (item.default !== undefined && item.default !== null && item.default !== '') ||
+          item.selectedText
+        );
       }) ||
       !modifiedShortcut.components ||
       modifiedShortcut.components.length === 0;
