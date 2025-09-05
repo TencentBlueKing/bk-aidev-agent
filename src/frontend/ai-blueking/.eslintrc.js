@@ -5,6 +5,16 @@ module.exports = {
     es2021: true,
     node: true,
   },
+  globals: {
+    // Vue 3 <script setup> 编译时宏
+    defineProps: 'readonly',
+    defineEmits: 'readonly',
+    defineExpose: 'readonly',
+    withDefaults: 'readonly',
+    defineOptions: 'readonly',
+    defineSlots: 'readonly',
+    defineModel: 'readonly',
+  },
   extends: [
     // 基础规则
     'eslint:recommended',
@@ -20,7 +30,7 @@ module.exports = {
     ecmaVersion: 'latest',
     parser: '@typescript-eslint/parser',
     sourceType: 'module',
-    project: './tsconfig.dts.json',
+    project: './src/frontend/ai-blueking/tsconfig.json',
     extraFileExtensions: ['.vue'],
   },
   plugins: ['vue', '@typescript-eslint', 'import', 'unused-imports', 'prettier'],
@@ -28,7 +38,7 @@ module.exports = {
     'import/resolver': {
       typescript: {
         alwaysTryTypes: true,
-        project: './tsconfig.dts.json',
+        project: './src/frontend/ai-blueking/tsconfig.json',
       },
       node: {
         extensions: ['.js', '.jsx', '.ts', '.tsx', '.vue'],

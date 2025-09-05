@@ -38,6 +38,7 @@
             @close="handleClose"
             @toggle-compression="toggleCompression"
             @new-chat="handleNewChat"
+            @auto-generate-name="handleAutoGenerateName"
           />
           <div class="content-wrapper">
             <!-- 主要内容区域 -->
@@ -101,8 +102,8 @@
 
                   <chat-input-box
                     v-else
-                    :class="!hasSessionContents ? 'greeting-layout' : 'chat-layout'"
                     v-model="inputMessage"
+                    :class="!hasSessionContents ? 'greeting-layout' : 'chat-layout'"
                     :loading="currentSessionLoading || false"
                     :prompts="promptList"
                     :shortcuts="props.shortcuts"
@@ -182,7 +183,6 @@
   import { useSelect } from './composables/use-select-pop';
   import { provideSessionStore } from './composables/use-session-store';
   import { useShortcut } from './composables/use-shortcut';
-
   // 配置和工具导入
   import { HIDE_ROLE_LIST } from './config';
   import { t } from './lang';
@@ -761,6 +761,29 @@
 
   const handleDelete = (index: number) => {
     deleteChat(index, currentSession.value?.sessionCode);
+  };
+
+  // 处理自动生成命名
+  const handleAutoGenerateName = async (sessionCode?: string) => {
+    try {
+      // 如果没有传入 sessionCode，使用当前会话的 sessionCode
+      const targetSessionCode = sessionCode || currentSession.value?.sessionCode;
+
+      if (!targetSessionCode) {
+        console.error('无法获取会话代码');
+        return;
+      }
+
+      console.log('开始自动生成命名，会话代码:', targetSessionCode);
+      const updatedSession = await renameSessionApi(targetSessionCode);
+
+      if (updatedSession?.sessionName) {
+        // 刷新会话列表以获取最新的会话信息
+        await sessionStore.getSessionList();
+      }
+    } catch (error) {
+      console.error('自动命名失败:', error);
+    }
   };
 
   const handleNewChat = async () => {

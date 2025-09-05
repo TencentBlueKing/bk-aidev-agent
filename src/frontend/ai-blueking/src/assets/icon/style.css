@@ -26,14 +26,26 @@ url("fonts/iconcool.eot?#iefix") format("embedded-opentype");
 .bkai-warning-circle-fill:before {
 	content: "\e129";
 }
+.bkai-edit:before {
+	content: "\e13f";
+}
 .bkai-angle-down:before {
 	content: "\e13c";
+}
+.bkai-check-1:before {
+	content: "\e140";
 }
 .bkai-close-circle-shape:before {
 	content: "\e134";
 }
+.bkai-close:before {
+	content: "\e141";
+}
 .bkai-close-line-2:before {
 	content: "\e126";
+}
+.bkai-auto-refresh-line:before {
+	content: "\e13e";
 }
 .bkai-minus-line:before {
 	content: "\e12e";
@@ -46,6 +58,9 @@ url("fonts/iconcool.eot?#iefix") format("embedded-opentype");
 }
 .bkai-quanquan:before {
 	content: "\e128";
+}
+.bkai-more:before {
+	content: "\e13d";
 }
 .bkai-yanjing-kejian:before {
 	content: "\e11b";

@@ -1,13 +1,13 @@
 {
   "name": "@blueking/ai-blueking",
-  "version": "1.2.5-beta.2",
+  "version": "1.2.5-beta.3",
   "description": "AI 小鲸",
   "license": "MIT",
   "author": "Tencent BlueKing",
   "scripts": {
     "dev": "vite --mode development -c scripts/vite.dev.ts",
-    "build": "tsx ./scripts/vite.build.ts && vue-tsc --project tsconfig.dts.json",
-    "dts": "vue-tsc --project tsconfig.dts.json",
+    "build": "tsx ./scripts/vite.build.ts && vue-tsc --project tsconfig.build.json",
+    "dts": "vue-tsc --project tsconfig.build.json",
     "prettier": "prettier ./src ./scripts ./playground --write",
     "format": "prettier --write ./src ./scripts ./playground --config .prettierrc.js",
     "format:check": "prettier --check ./src ./scripts ./playground --config .prettierrc.js",
