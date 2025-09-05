@@ -36,6 +36,7 @@ class AgentInstanceFactory:
         resource_manager: AbstractBKAidevResourceManager | None = None,
         auth_headers: Dict[str, str] | None = None,
         temperature: float = None,
+        switch_agent_by_scene: bool = False,
     ):
         """
         初始化Agent工厂实例
@@ -47,6 +48,7 @@ class AgentInstanceFactory:
         :param callbacks: 回调函数列表
         :param resource_manager:  bkaidev 资源管理
         :param temperature: 模型温度
+        :param switch_agent_by_scene: 是否根据场景切换智能体
         """
         self.resource_manager = resource_manager or BKAidevApi.get_client()
         self.agent_code = agent_code
@@ -57,6 +59,7 @@ class AgentInstanceFactory:
         self.callbacks = [each for each in callbacks if each] if callbacks else []
         self.auth_headers = auth_headers or None
         self.temperature = temperature or None
+        self.switch_agent_by_scene = switch_agent_by_scene
 
     @classmethod
     def build_agent(
@@ -70,6 +73,7 @@ class AgentInstanceFactory:
         callbacks: List[Any] | None = None,
         resource_manager: AbstractBKAidevResourceManager | None = None,
         temperature: float | None = None,
+        switch_agent_by_scene: bool = False,
     ):
         """
         构建Agent实例
@@ -82,6 +86,7 @@ class AgentInstanceFactory:
         :param callbacks: 回调函数列表
         :param resource_manager: 资源管理类
         :param temperature: 模型温度
+        :param switch_agent_by_scene: 是否根据场景切换智能体
         :return: 构建好的Agent实例
         """
         # 创建工厂实例
@@ -94,6 +99,7 @@ class AgentInstanceFactory:
             callbacks=callbacks,
             resource_manager=resource_manager,
             temperature=temperature,
+            switch_agent_by_scene=switch_agent_by_scene,
         )
 
         # 验证参数
@@ -170,6 +176,9 @@ class AgentInstanceFactory:
 
         # 检查是否需要切换智能体
         switch_agent, final_agent_code = self._check_agent_switch(session_context_data, base_agent_config)
+
+        if not switch_agent and self.switch_agent_by_scene:
+            switch_agent = True
 
         # 处理最后一条assistant消息
         self._clean_last_assistant_message(session_context_data, base_agent_config)
