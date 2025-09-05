@@ -93,6 +93,10 @@ export const langData = {
   数值不能大于: 'The value cannot be greater than',
   新会话: 'New Session',
   搜索会话名称: 'Search session name',
+  重命名: 'Rename',
+  自动生成命名: 'Auto generate name',
+  分享会话: 'Share session',
+  重命名失败: 'Rename failed',
 } as const;
 
 export const zhLangData = {
@@ -101,8 +105,11 @@ export const zhLangData = {
     '''
       {{ SELECTED_TEXT }}
     '''`,
-  explanationShortcut: `您是一位专业的解释者。请详细解释“{{ SELECTED_TEXT }}”。您的解释应包括 1) 基本含义和概念解释；2) 实际应用或使用案例；3) 如果是技术术语，请提供相关技术背景；4) 适当时提供具体示例，以帮助理解。使用清晰易懂的语言，确保非专业人员也能理解。如果该词/短语有多种含义，请列出主要定义。在确保信息完整性和准确性的同时，请保持答复简洁明了。`,
+  explanationShortcut: `您是一位专业的解释者。请详细解释"{{ SELECTED_TEXT }}"。您的解释应包括 1) 基本含义和概念解释；2) 实际应用或使用案例；3) 如果是技术术语，请提供相关技术背景；4) 适当时提供具体示例，以帮助理解。使用清晰易懂的语言，确保非专业人员也能理解。如果该词/短语有多种含义，请列出主要定义。在确保信息完整性和准确性的同时，请保持答复简洁明了。`,
   新会话: '新会话',
+  重命名: '重命名',
+  自动生成命名: '自动生成命名',
+  分享会话: '分享会话',
 };
 
 export const t = (key: string) => {
