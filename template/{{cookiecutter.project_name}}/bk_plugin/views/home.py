@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 
 from aidev_agent.api.bk_aidev import BKAidevApi
+from bkplugin_aidev_agent.utils import set_user_access_token
 from django.conf import settings
 from django.http import HttpResponse
 from langchain_core.prompts import jinja2_formatter
 from rest_framework.views import APIView
-
-from agent.utils import set_user_access_token
 
 
 class IndexView(APIView):

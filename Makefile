@@ -14,7 +14,6 @@ requirements: requirements.txt
 requirements.txt: uv.lock pyproject.toml
 	uv pip freeze | grep -v "file" > requirements.txt
 
-
 .PHONY: init-project
 init-project: uv-install .git/hooks/pre-commit .git/hooks/pre-push
 	@echo "Project initialization complete."
@@ -41,17 +40,9 @@ clean:
 lint:
 	uv run pre-commit run -a --hook-stage commit
 
-build-template:
+.PHONY: build-bkplugin-agent-sdk
+build-bkplugin-agent-sdk:
 	cd ./src/frontend/publish-template/ && npm install && npm run build && cd -
-	mkdir -p tmp/build
-	cp -r ${ROOT_DIR}/template tmp/build
-	cp -r ${ROOT_DIR}/src/frontend/publish-template/dist tmp/build/template/{{cookiecutter.project_name}}/bk_plugin/tpls
-	cd tmp/build && zip -q -r templates.zip ./*
-	mv tmp/build/templates.zip .
-	echo "Build template success"
-	rm -rf tmp/build
-
-build-template-clean:
-	rm -rf tmp/build
-	rm -rf ${ROOT_DIR}/src/frontend/publish-template/dist
-	rm -f templates.zip
+	cp -r ${ROOT_DIR}/src/frontend/publish-template/dist ${ROOT_DIR}/src/bkplugin_extension/bkplugin_aidev_agent
+	cd ${ROOT_DIR}/src/bkplugin_extension && uv build
+	@echo "bkplugin_aidev_agent built."

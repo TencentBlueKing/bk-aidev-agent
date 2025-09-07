@@ -20,12 +20,12 @@ from rest_framework.status import is_success
 from rest_framework.views import APIView, Response
 from rest_framework.viewsets import ViewSetMixin
 
-from agent.permissions import AgentPluginPermission
-from agent.services.agent import (
+from bkplugin_aidev_agent.permissions import AgentPluginPermission
+from bkplugin_aidev_agent.services.agent import (
     get_agent_config_info,
     get_agent_role_info,
 )
-from agent.utils import set_user_access_token
+from bkplugin_aidev_agent.utils import set_user_access_token
 
 logger = getLogger(__name__)
 

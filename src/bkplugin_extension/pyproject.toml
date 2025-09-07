@@ -1,0 +1,15 @@
+[project]
+name = "bkplugin_aidev_agent"
+version = "1.0.0"
+description = "AiDev Agent Bkplugin builtin functions"
+readme = "README.md"
+requires-python = ">=3.11.10, <4"
+dependencies = ["aidev-agent==1.0.0b39", "bk-plugin-framework==2.3.0rc4"]
+
+
+[tool.pdm.build]
+includes = ["bkplugin_aidev_agent"]
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"

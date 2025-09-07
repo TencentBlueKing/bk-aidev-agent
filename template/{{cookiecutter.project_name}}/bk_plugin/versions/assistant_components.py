@@ -1,11 +1,10 @@
 from typing import ClassVar, List
 
 from aidev_agent.api.bk_aidev import BKAidevApi
+from bkplugin_aidev_agent.config import AGENT_CONFIG, SYNC_CONFIG_FROM_AIDEV
 from django.conf import settings
 from django.core.cache import cache
 from pydantic import BaseModel
-
-from agent.config import AGENT_CONFIG, SYNC_CONFIG_FROM_AIDEV
 
 
 class PluginConfig(BaseModel):

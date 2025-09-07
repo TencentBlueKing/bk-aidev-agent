@@ -14,8 +14,7 @@ from bk_plugin_framework.kit import (
     OutputsModel,
     Plugin,
 )
-
-from agent.services.agent import build_chat_completion_agent, get_agent_role_info
+from bkplugin_aidev_agent.services.agent import build_chat_completion_agent, get_agent_role_info
 
 
 class CommonAgent(Plugin):

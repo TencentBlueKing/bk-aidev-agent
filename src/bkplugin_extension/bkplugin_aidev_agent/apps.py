@@ -11,12 +11,12 @@ except ImportError:
 
 class AgentConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
-    name = "agent"
+    name = "bkplugin_aidev_agent"
 
     def ready(self) -> None:
         # register your extension here
-        from agent.services.agent import CommonQAAgentExtend
-        from agent.services.factory import agent_factory
+        from bkplugin_aidev_agent.services.agent import CommonQAAgentExtend
+        from bkplugin_aidev_agent.services.factory import agent_factory
 
         if bkoauth:
             bkoauth._init_function()

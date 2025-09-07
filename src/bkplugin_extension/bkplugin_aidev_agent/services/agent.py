@@ -12,7 +12,7 @@ from bk_plugin.versions.assistant_components import config
 from django.conf import settings
 from django.core.cache import cache
 
-from agent.services.factory import agent_factory
+from .factory import agent_factory
 
 
 class CommonQAAgentExtend(CommonQAAgent):

@@ -4,7 +4,7 @@ from django.core.cache import cache
 from rest_framework import permissions
 from rest_framework.exceptions import PermissionDenied
 
-from agent.services.agent import get_agent_config_info
+from .services.agent import get_agent_config_info
 
 
 class AgentPluginPermission(permissions.BasePermission):
