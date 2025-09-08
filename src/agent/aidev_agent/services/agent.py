@@ -239,7 +239,7 @@ class AgentInstanceFactory:
     def build_tools(self, agent_code: str) -> List[Any]:
         """构建工具"""
         config = AgentConfigManager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
-        mcp_tools = make_mcp_tools(config.mcp_server_config)
+        mcp_tools = make_mcp_tools(config.mcp_server_config) if config.mcp_server_config else []
         return [self.resource_manager.construct_tool(tool_code) for tool_code in config.tool_codes] + mcp_tools
 
     def get_role_prompt(self, agent_code: str) -> str | None:

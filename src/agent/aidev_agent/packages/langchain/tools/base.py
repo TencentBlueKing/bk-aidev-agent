@@ -29,7 +29,10 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from pydantic import BaseModel, Field, ValidationError, create_model, field_validator
 from requests.exceptions import JSONDecodeError
 
+from aidev_agent.config import settings
+from aidev_agent.core.utils.local import request_local
 from aidev_agent.core.utils.loop import get_event_loop
+from aidev_agent.enums import CredentialType
 from aidev_agent.packages.langchain.exceptions import ToolValidationError
 from aidev_agent.packages.langchain.tools.enums import FieldType, FuncType
 
@@ -377,6 +380,12 @@ def make_structured_tool(
 
 
 def make_mcp_tools(server_config: dict) -> List[StructuredTool]:
+    if server_config.pop("credential_type", "") == CredentialType.BLUEAPPS.value:
+        auth_info = {"bk_app_code": settings.APP_CODE, "bk_app_secret": settings.SECRET_KEY}
+        if request_local.username:
+            auth_info = {"access_token": request_local.username}
+        server_config["headers"] = {"X-Bkapi-Authorization": json.dumps(auth_info)}
+
     client = MultiServerMCPClient(server_config)
     _loop = get_event_loop()
     tools = _loop.run_until_complete(client.get_tools())

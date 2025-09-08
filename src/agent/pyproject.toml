@@ -76,3 +76,6 @@ asyncio_default_fixture_loop_scope = "session"
 addopts = "-vvv --maxfail=2 -s"
 asyncio_mode = "auto"
 
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
