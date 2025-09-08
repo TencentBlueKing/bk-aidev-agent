@@ -8,7 +8,7 @@ dependencies = [
     "environs<15.0.0,>=14.1.0",
     "langchain<1.0.0,>=0.3.14",
     "langchain-openai<1.0.0,>=0.3.0",
-    "langchain-community==0.3.15",
+    "langchain-community==0.3.27",
     "pyro4<5.0,>=4.82",
     "langfuse<3",
     "bkapi-client-core<2.0.0,>=1.2.0",
@@ -21,7 +21,7 @@ dependencies = [
     "langchain-mcp-adapters<1.0.0,>=0.1.9",
 ]
 name = "aidev-agent"
-version = "1.0.0b33"
+version = "1.0.0b34"
 description = "bkaidev agent builder"
 
 [dependency-groups]
