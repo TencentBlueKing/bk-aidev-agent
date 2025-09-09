@@ -113,6 +113,10 @@ export default {
       type: Boolean,
       default: false,
     },
+    loadRecentSessionOnMount: {
+      type: Boolean,
+      default: false,
+    },
     shortcutLimit: {
       type: Number,
       default: 3,
@@ -160,6 +164,7 @@ export default {
           defaultTop: that.defaultTop,
           initialSessionCode: that.initialSessionCode,
           autoSwitchToInitialSession: that.autoSwitchToInitialSession,
+          loadRecentSessionOnMount: that.loadRecentSessionOnMount,
           onClose() {
             emit('close', ...arguments);
           },
@@ -249,6 +254,21 @@ export default {
     };
     this.enableChatSession = () => {
       return aiBlueking.component.exposed.enableChatSession();
+    };
+    this.currentSessionLoading = () => {
+      return aiBlueking.component.exposed.currentSessionLoading;
+    };
+    this.isLoadingSessionContents = () => {
+      return aiBlueking.component.exposed.isLoadingSessionContents;
+    };
+    this.updateGreetingTextHeight = () => {
+      aiBlueking.component.exposed.updateGreetingTextHeight();
+    };
+    this.setCurrentSession = (sessionCode: string) => {
+      aiBlueking.component.exposed.setCurrentSession(sessionCode);
+    };
+    this.focusInput = () => {
+      aiBlueking.component.exposed.focusInput();
     };
 
     // 添加 组件暴露属性（属性类型使用 defineProperty 添加, 以保持响应式）
