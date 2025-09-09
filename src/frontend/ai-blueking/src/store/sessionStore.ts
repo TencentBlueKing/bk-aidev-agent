@@ -311,12 +311,14 @@ export function useSessionStore() {
 
   /**
    * 初始化会话
+   * @param isInitChat 是否初始化聊天
+   * @param loadRecentSession 是否加载最近的会话（即使有内容）
    * @returns Promise<{
    *   openingRemark: string
    *   predefinedQuestions: string[]
    * }>
    */
-  const initSession = async (isInitChat = true) => {
+  const initSession = async (isInitChat = true, loadRecentSession = false) => {
     // 获取会话列表
     let sessions = sessionList.value;
 
@@ -347,8 +349,8 @@ export function useSessionStore() {
         .filter(item => !HIDE_ROLE_LIST.includes(item.role))
         .some(item => item.content && item.content.trim() !== '');
 
-      // 如果内容为空，直接使用这个会话
-      if (!hasContent) {
+      // 如果内容为空，直接使用这个会话；如果 loadRecentSession 为 true，也使用这个会话
+      if (!hasContent || loadRecentSession) {
         targetSession = { ...latestSession, isEdit: false };
       }
     }

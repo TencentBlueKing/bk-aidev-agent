@@ -222,6 +222,7 @@
     miniPadding?: number;
     initialSessionCode?: string;
     autoSwitchToInitialSession?: boolean;
+    loadRecentSessionOnMount?: boolean;
   }
 
   // ===================================================================
@@ -255,6 +256,7 @@
     miniPadding: 0,
     initialSessionCode: '',
     autoSwitchToInitialSession: false,
+    loadRecentSessionOnMount: false,
   });
 
   const emit = defineEmits<{
@@ -469,7 +471,7 @@
   // ===================================================================
   // 9. 会话初始化逻辑
   // ===================================================================
-  const initSession = async () => {
+  const initSession = async (loadRecentSession = false) => {
     if (initSessionPromise) {
       await initSessionPromise;
       return;
@@ -480,7 +482,7 @@
 
     initSessionPromise = (async () => {
       try {
-        const { conversationSettings } = await sessionStore.initSession();
+        const { conversationSettings } = await sessionStore.initSession(true, loadRecentSession);
         openingRemark.value = conversationSettings?.openingRemark || '';
         predefinedQuestions.value = conversationSettings?.predefinedQuestions || [];
         isSessionInitialized.value = true;
@@ -569,7 +571,7 @@
   onMounted(async () => {
     window.addEventListener('resize', handleWindowResize);
     if (normalizedUrl.value && !props.defaultMinimize) {
-      await initSession();
+      await initSession(props.loadRecentSessionOnMount);
 
       // 如果设置了初始会话代码且需要自动切换，则切换到初始会话
       if (props.initialSessionCode && props.autoSwitchToInitialSession) {
@@ -658,13 +660,8 @@
       },
     });
 
-    // 自动命名功能：在发送第一条消息后调用renameSessionApi
-    // 检查是否为当前会话中的第一条用户消息（排除隐藏角色）
-    const visibleMessages = sessionContents.value.filter(
-      item => !HIDE_ROLE_LIST.includes(item.role)
-    );
-    const isFirstUserMessage =
-      visibleMessages.length === 1 && visibleMessages[0].role === SessionContentRole.User;
+    // 检查是否为当前会话中的第一条用户消息
+    const shouldAutoRename = isFirstUserMessageInSession();
 
     chat({
       sessionCode: currentSession.value?.sessionCode,
@@ -672,13 +669,9 @@
     });
 
     // 在发送第一条用户消息后调用renameSessionApi
-    if (isFirstUserMessage && currentSession.value?.sessionCode) {
+    if (shouldAutoRename) {
       try {
-        const updatedSession = await renameSessionApi(currentSession.value.sessionCode);
-        if (updatedSession?.sessionName) {
-          // 更新会话存储中的会话名称
-          await sessionStore.getSessionList();
-        }
+        await autoRenameCurrentSession();
       } catch (error) {
         console.error('自动命名会话失败:', error);
       }
@@ -751,16 +744,51 @@
       },
     });
 
+    // 检查是否为当前会话中的第一条用户消息
+    const shouldAutoRename = isFirstUserMessageInSession();
+
     chat({
       sessionCode: currentSession.value?.sessionCode,
       ...props.requestOptions,
     });
+
+    // 在发送第一条用户消息后调用renameSessionApi
+    if (shouldAutoRename) {
+      try {
+        await autoRenameCurrentSession();
+      } catch (error) {
+        console.error('自动命名会话失败:', error);
+      }
+    }
 
     emit('send-message', shortcut.name);
   };
 
   const handleDelete = (index: number) => {
     deleteChat(index, currentSession.value?.sessionCode);
+  };
+
+  // 检查是否为第一条用户消息（排除隐藏角色）
+  const isFirstUserMessageInSession = () => {
+    const visibleMessages = sessionContents.value.filter(
+      item => !HIDE_ROLE_LIST.includes(item.role)
+    );
+    return visibleMessages.length === 1 && visibleMessages[0].role === SessionContentRole.User;
+  };
+
+  // 自动重命名当前会话
+  const autoRenameCurrentSession = async () => {
+    try {
+      if (currentSession.value?.sessionCode) {
+        const updatedSession = await renameSessionApi(currentSession.value.sessionCode);
+        if (updatedSession?.sessionName) {
+          // 更新会话存储中的会话名称
+          await sessionStore.getSessionList();
+        }
+      }
+    } catch (error) {
+      console.error('自动命名会话失败:', error);
+    }
   };
 
   // 处理自动生成命名
