@@ -843,7 +843,7 @@ class CommonQAStreamingMixIn:
         # 前端渲染要求在 think 和 text 之间必须保证有 "\n\n" 的 text 内容
         if (
             cache
-            and (cache[-1].get("event") == EventType.THINK.value)
+            and (cache[-1].get("event") in (EventType.THINK.value, EventType.REFERENCE_DOC.value))
             and (ret.get("event") == EventType.TEXT.value)
             and (not ret.get("content").startswith("\n"))
         ):
