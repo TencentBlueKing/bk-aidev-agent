@@ -12,7 +12,7 @@ class SafeJinjaEnvironment:
             # 创建安全的沙盒环境
             cls._env = SandboxedEnvironment(
                 undefined=StrictUndefined,  # 严格模式，未定义变量时抛出异常
-                autoescape=True,  # 自动转义，防止注入
+                autoescape=False,
                 trim_blocks=True,
                 lstrip_blocks=True,
             )
