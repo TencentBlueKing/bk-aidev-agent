@@ -267,6 +267,7 @@
       e: 'session-initialized',
       data: { openingRemark: string; predefinedQuestions: string[] }
     ): void;
+    (e: 'sdk-error', data: { apiName: string; code: number; message: string; data: unknown }): void;
   }>();
 
   // ===================================================================
@@ -448,6 +449,11 @@
     getAgentInfoApi,
     plusSessionApi,
     handleCompleteRole,
+  });
+
+  // 注册错误回调函数
+  sessionStore.registerErrorCallback(error => {
+    emit('sdk-error', error);
   });
 
   // 提示列表

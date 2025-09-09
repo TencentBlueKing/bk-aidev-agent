@@ -20,7 +20,7 @@
             <div class="image">
               <div class="image-container">
                 <div class="image-bg"></div>
-                <img class="VPImage image-src" :src="AILogo" alt="AI Blueking">
+                <img class="VPImage image-src" :src="AILogo" alt="AI Blueking" />
               </div>
             </div>
           </div>
@@ -89,8 +89,8 @@
         </div>
 
         <!-- 文档区域占位 -->
-        <div class="vp-doc container" style="--vp-offset: calc(50% - 1272.5px);">
-          <div style="position:relative;">
+        <div class="vp-doc container" style="--vp-offset: calc(50% - 1272.5px)">
+          <div style="position: relative">
             <div></div>
           </div>
         </div>
@@ -106,36 +106,35 @@
     </footer>
 
     <!-- AIBlueking组件 -->
-    <AIBlueking
-      ref="aiBlueking"
-      :hide-nimbus="false"
-      :url="url"
-    />
+    <AIBlueking ref="aiBlueking" :hide-nimbus="false" :url="url" @sdk-error="handleSdkError" />
   </div>
 </template>
 
 <script lang="ts" setup>
-  import { ref } from 'vue';
-  import AILogo from '../assets/svg/ai-logo.svg';
+  import { ref } from "vue"
+  import AILogo from "../assets/svg/ai-logo.svg"
 
-  import AIBlueking, { AIBluekingExpose } from '@blueking/ai-blueking';
-  import '@blueking/ai-blueking/dist/vue3/style.css';
+  import AIBlueking, { AIBluekingExpose } from "@blueking/ai-blueking"
+  import "@blueking/ai-blueking/dist/vue3/style.css"
 
+  const aiBlueking = ref<AIBluekingExpose | null>(null)
 
-  const aiBlueking = ref<AIBluekingExpose | null>(null);
-
-  const url = ref(window.BK_API_PREFIX);
+  const url = ref(window.BK_API_PREFIX)
 
   const quickActions = (shortcut: { label: string; prompt: string; key: string }, cite: string) => {
-    aiBlueking.value?.handleShow();
+    aiBlueking.value?.handleShow()
 
     aiBlueking.value?.sendChat({
       message: shortcut.label,
       cite,
       shortcut,
-    });
-  };
+    })
+  }
 
+  const handleSdkError = (error: any) => {
+    console.error("SDK错误:", error)
+    router.push("/403")
+  }
 </script>
 
 <style lang="postcss" scoped>
@@ -176,7 +175,7 @@
     line-height: 1.2;
     font-weight: 600;
     margin-bottom: 16px;
-    background-image: linear-gradient(120deg, #3884FF, #5E3BFF);
+    background-image: linear-gradient(120deg, #3884ff, #5e3bff);
     color: transparent;
     -webkit-background-clip: text;
     background-clip: text;
@@ -216,7 +215,7 @@
   }
 
   .VPButton.brand {
-    background-color: #3884FF;
+    background-color: #3884ff;
     color: white;
   }
 
@@ -226,7 +225,7 @@
 
   .VPButton.alt {
     background-color: rgba(56, 132, 255, 0.1);
-    color: #3884FF;
+    color: #3884ff;
     border: 1px solid rgba(56, 132, 255, 0.3);
   }
 
@@ -286,7 +285,9 @@
     background-color: #fff;
     border-radius: 12px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition:
+      transform 0.2s,
+      box-shadow 0.2s;
   }
 
   .VPFeature .box:hover {
