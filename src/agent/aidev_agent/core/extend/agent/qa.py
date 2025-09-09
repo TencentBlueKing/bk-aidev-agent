@@ -1166,6 +1166,13 @@ class CommonQAStreamingMixIn:
                             if "``" in ret.get("content", "") and first_triple_backticks:
                                 ret["content"] = "\n" + ret["content"]
                                 first_triple_backticks = False
+                            # NOTE: 出现 "#" 且前面没有换行符或者#时，需要在前面添加两个换行符，防止标题没有被正确渲染
+                            if (
+                                "#" in ret.get("content", "")
+                                and ret.get("event", "") == "text"
+                                and not any(c in cache[-1]["content"] for c in ("\n", "#"))
+                            ):
+                                ret["content"] = "\n\n" + ret["content"]
                             # NOTE: 只有非 self.LOADING_AGENT_MESSAGE 的 event 可以放到 cache 中
                             self.check_and_append(cache, ret)
                             if recall_ret:
