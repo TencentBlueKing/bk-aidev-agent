@@ -324,7 +324,12 @@ def make_structured_tool(
     ```
     对应的字段为: query__test=123
     """
-    default_values: dict[str, dict[str, Any]] = {"header": {}, "query": {}, "body": {}, "path": {}}
+    default_values: dict[str, dict[str, Any]] = {
+        "header": {},
+        "query": {},
+        "body": {},
+        "path": {},
+    }
     complex_fields: list[str] = []
     _params: list[BkField] = []
     method = tool.method.lower()
@@ -380,13 +385,26 @@ def make_structured_tool(
 
 
 def make_mcp_tools(server_config: dict) -> List[StructuredTool]:
-    if server_config.pop("credential_type", "") == CredentialType.BLUEAPPS.value:
-        auth_info = {"bk_app_code": settings.APP_CODE, "bk_app_secret": settings.SECRET_KEY}
-        if request_local.username:
-            auth_info = {"access_token": request_local.username}
-        server_config["headers"] = {"X-Bkapi-Authorization": json.dumps(auth_info)}
+    try:
+        from bkoauth import get_access_token_by_user
+    except ImportError:
+        get_access_token_by_user = None
+
+    for _server_config in server_config.values():
+        if _server_config.pop("credential_type", "") == CredentialType.BLUEAPPS.value:
+            auth_info = {
+                "bk_app_code": settings.APP_CODE,
+                "bk_app_secret": settings.SECRET_KEY,
+            }
+            request = getattr(request_local, "request", None)
+            if get_access_token_by_user is not None and request and request.user.username:
+                auth_info = {"access_token": get_access_token_by_user(request.user.username).access_token}
+            _server_config["headers"] = {"X-Bkapi-Authorization": json.dumps(auth_info)}
 
     client = MultiServerMCPClient(server_config)
     _loop = get_event_loop()
-    tools = _loop.run_until_complete(client.get_tools())
+    try:
+        tools = _loop.run_until_complete(client.get_tools())
+    except Exception:
+        raise ValueError("获取MCP工具列表失败")
     return tools
