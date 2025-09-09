@@ -167,3 +167,13 @@ class AgentInfoViewSet(PluginViewSet):
     def info(self, request):
         agent_info = get_agent_config_info()
         return Response(data=agent_info)
+
+    @action(detail=False, methods=["GET"], url_path="ping", url_name="ping")
+    def ping(self, request):
+        try:
+            import bkoauth
+
+            bkoauth.get_access_token(request)
+        except Exception as err:
+            logger.warning(f"failed to import bkoauth, error: {err}")
+        return Response(data="pong")

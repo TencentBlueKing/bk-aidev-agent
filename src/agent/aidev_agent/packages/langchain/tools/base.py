@@ -397,8 +397,11 @@ def make_mcp_tools(server_config: dict) -> List[StructuredTool]:
                 "bk_app_secret": settings.SECRET_KEY,
             }
             request = getattr(request_local, "request", None)
-            if get_access_token_by_user is not None and request and request.user.username:
-                auth_info = {"access_token": get_access_token_by_user(request.user.username).access_token}
+            if request and request.user.username:
+                if get_access_token_by_user:
+                    auth_info = {"access_token": get_access_token_by_user(request.user.username).access_token}
+                else:
+                    auth_info["bk_username"] = request.user.username
             _server_config["headers"] = {"X-Bkapi-Authorization": json.dumps(auth_info)}
 
     client = MultiServerMCPClient(server_config)

@@ -37,5 +37,6 @@
   "sync_config_from_aidev": "False",
   "app_setting_page": "",
   "bk_login_url": "http://login.com",
-  "bk_paas_domain": ".com"
+  "bk_paas_domain": ".com",
+  "oauth_api_url": ""
 }
