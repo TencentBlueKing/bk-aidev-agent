@@ -55,6 +55,7 @@
           :hide-nimbus="false"
           :url="url"
           :default-top="52"
+          :sdk-error="handleSdkError"
           :default-width="defaultWidth"
         />
       </div>
@@ -69,6 +70,7 @@
 
   import AIBlueking, { AIBluekingExpose } from "@blueking/ai-blueking"
   import "@blueking/ai-blueking/dist/vue3/style.css"
+  import router from "../router"
 
   const aiBlueking = ref<AIBluekingExpose | null>(null)
   const sessionList = ref<any[]>([])
@@ -90,8 +92,14 @@
       return data.data
     } catch (error) {
       console.error("获取Agent信息失败:", error)
+      router.push("/403")
       return null
     }
+  }
+
+  const handleSdkError = (error: any) => {
+    console.error("SDK错误:", error)
+    router.push("/403")
   }
 
   // 设置 AIBlueking 组件的宽度为容器宽度减去会话列表宽度
