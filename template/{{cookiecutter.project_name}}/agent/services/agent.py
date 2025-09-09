@@ -40,11 +40,13 @@ def build_chat_completion_agent(chat_history: list[ChatPrompt]) -> ChatCompletio
     )
 
 
-def get_agent_config_info():
+def get_agent_config_info(username: str | None = None):
     agent_info = cache.get("get_agent_config_info")
     if not agent_info:
         client = BKAidevApi.get_client()
-        result = client.api.retrieve_agent_config(path_params={"agent_code": settings.APP_CODE})
+        result = client.api.retrieve_agent_config(
+            path_params={"agent_code": settings.APP_CODE}, headers={"X-BKAIDEV-USER": username}
+        )
         agent_info = result["data"]
         cache.set(agent_info, settings.DEFAULT_CACHE_TIMEOUT)
     return agent_info

@@ -19,6 +19,7 @@ from rest_framework.status import is_success
 from rest_framework.views import APIView, Response
 from rest_framework.viewsets import ViewSetMixin
 
+from agent.permissions import AgentPluginPermission
 from agent.services.agent import (
     get_agent_config_info,
     get_agent_role_info,
@@ -30,6 +31,7 @@ logger = getLogger(__name__)
 @method_decorator(login_exempt, name="dispatch")
 @method_decorator(inject_user_token, name="dispatch")
 class PluginViewSet(ViewSetMixin, APIView):
+    permission_classes = [AgentPluginPermission]
     authentication_classes = custom_authentication_classes
 
     def initialize_request(self, request, *args, **kwargs):
@@ -165,5 +167,5 @@ class ChatCompletionViewSet(PluginViewSet):
 class AgentInfoViewSet(PluginViewSet):
     @action(detail=False, methods=["GET"], url_path="info", url_name="info")
     def info(self, request):
-        agent_info = get_agent_config_info()
+        agent_info = get_agent_config_info(request.user.username)
         return Response(data=agent_info)
