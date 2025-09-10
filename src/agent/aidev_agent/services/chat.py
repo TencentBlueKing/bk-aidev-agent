@@ -170,6 +170,7 @@ class ChatCompletionAgent(BaseModel):
                     self.elapsed[0] = time()
                 if self.last_event_type == StreamEventType.THINK and event_type == StreamEventType.TEXT:
                     self.elapsed[1] = time()
+                    each.content = "\n\n" + str(each.content)
                 self.last_event_type = event_type
                 self.first_chunk = False
                 ret = {
