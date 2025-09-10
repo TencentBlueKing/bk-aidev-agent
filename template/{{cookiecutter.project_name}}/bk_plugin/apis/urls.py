@@ -1,19 +1,11 @@
-from django.urls import include, re_path
-from rest_framework.routers import DefaultRouter
+# -*- coding: utf-8 -*-
 
-from agent.views.builtin import (
-    AgentInfoViewSet,
-    ChatCompletionViewSet,
-    ChatSessionContentViewSet,
-    ChatSessionViewSet,
-)
+"""
+此文件为蓝鲸插件默认加载的url文件，其它各定义模块都从此处导入
+1. 位置：bk_plugin_framework/services/bpf_service/urls.py
+2. 前辍：/plugin_api/
+"""
 
-_router = DefaultRouter()
-_router.register("agent", AgentInfoViewSet, "agent_info")
-_router.register("chat_completion", ChatCompletionViewSet, "chat_completion")
-_router.register("session", ChatSessionViewSet, "chat_session")
-_router.register("session_content", ChatSessionContentViewSet, "chat_session_content")
+from django.urls import include, path
 
-urlpatterns = [
-    re_path("", include(_router.urls)),
-]
+urlpatterns = (path("", include("agent.urls")),)

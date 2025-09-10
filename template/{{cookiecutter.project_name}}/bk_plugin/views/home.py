@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 from aidev_agent.api.bk_aidev import BKAidevApi
 from django.conf import settings
 from django.http import HttpResponse
