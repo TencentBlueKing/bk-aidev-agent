@@ -541,6 +541,17 @@ export function useSessionStore() {
         const agentInfoData = await getAgentInfo();
 
         Object.assign(agentInfo.value, agentInfoData);
+        
+        // 如果存在 saasUrl 且不为空，发送一个带 cookie 的 fetch 请求
+        if (agentInfoData.saasUrl && agentInfoData.saasUrl.trim() !== '') {
+          try {
+            await fetch(agentInfoData.saasUrl, {
+              credentials: 'include'
+            });
+          } catch (error) {
+            console.error('Failed to fetch saasUrl:', error);
+          }
+        }
       } catch (error) {
         // 如果 getAgentInfo 出错，抛出统一的错误事件
         handleSdkError('getAgentInfoApi', error);
