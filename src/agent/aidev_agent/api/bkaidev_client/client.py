@@ -138,6 +138,13 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/chat/session_content/{id}/",
     )
 
+    create_chat_group = bind_property(
+        Operation,
+        name="create_chat_group",
+        method="POST",
+        path="/openapi/aidev/resource/v1/chat/chat_group/",
+    )
+
     retrieve_agent_config = bind_property(
         Operation,
         name="retrieve_agent_config",
