@@ -35,10 +35,12 @@
             :show-history-icon="props.showHistoryIcon"
             :show-new-chat-icon="props.showNewChatIcon"
             :enable-chat-session="enableChatSession"
+            :chat-group="sessionStore.agentInfo.value?.chatGroup"
             @close="handleClose"
             @toggle-compression="toggleCompression"
             @new-chat="handleNewChat"
             @auto-generate-name="handleAutoGenerateName"
+            @help-click="() => enterSelectMode('transfer')"
           />
           <div class="content-wrapper">
             <!-- 主要内容区域 -->
@@ -56,11 +58,46 @@
                 :session-contents="sessionContents"
                 :has-session-contents="hasSessionContents"
                 :content-margin-bottom="contentMarginBottom"
+                :is-select-mode="sessionStore.isSelectMode.value"
+                :is-message-selected="sessionStore.isMessageSelected"
                 @delete="handleDelete"
                 @regenerate="handleRegenerate"
                 @resend="handleResend"
+                @message-select="sessionStore.toggleMessageSelection"
               />
+              <!-- 选择模式下的底部确认区域 -->
+              <div
+                v-if="sessionStore.isSelectMode.value"
+                class="selection-footer"
+              >
+                <div class="selection-info">
+                  <bk-checkbox
+                    :model-value="isSelectAll"
+                    :indeterminate="isIndeterminate"
+                    label="全选"
+                    @change="handleSelectAllChange"
+                  />
+                </div>
+                <div class="selection-actions">
+                  <bk-button
+                    class="cancel-btn"
+                    @click="handleCancelSelection"
+                  >
+                    {{ t('取消') }}
+                  </bk-button>
+                  <bk-button
+                    class="confirm-btn"
+                    :loading="loading"
+                    theme="primary"
+                    @click="handleConfirmSelection"
+                  >
+                    {{ t('确定') }}
+                  </bk-button>
+                </div>
+              </div>
+
               <motion.div
+                v-else
                 :transition="{
                   duration: 0.5,
                   ease: [0.33, 1, 0.68, 1],
@@ -147,6 +184,7 @@
   // ===================================================================
   import { SessionContentRole } from '@blueking/ai-ui-sdk/enums';
   import { useChat, useStyle, useClickProxy } from '@blueking/ai-ui-sdk/hooks';
+  import { Button as BkButton, Checkbox as BkCheckbox } from 'bkui-vue';
   import { useCopyCode } from 'markdown-it-copy-code';
   import { motion } from 'motion-v';
   import {
@@ -181,6 +219,7 @@
   import { POPUP_INJECTION_KEY } from './composables/use-popup-props';
   import { useResizableContainer } from './composables/use-resizable-container';
   import { useSelect } from './composables/use-select-pop';
+  import { useSelectionMode } from './composables/use-selection-mode';
   import { provideSessionStore } from './composables/use-session-store';
   import { useShortcut } from './composables/use-shortcut';
   // 配置和工具导入
@@ -268,6 +307,8 @@
       data: { openingRemark: string; predefinedQuestions: string[] }
     ): void;
     (e: 'sdk-error', data: { apiName: string; code: number; message: string; data: unknown }): void;
+    (e: 'transfer-messages', messageIds: string[]): void;
+    (e: 'share-messages', messageIds: string[]): void;
   }>();
 
   // ===================================================================
@@ -407,6 +448,7 @@
     deleteChat,
     updateRequestOptions,
     getAgentInfoApi,
+    getChatGroupApi,
     getSessionsApi,
     getSessionContentsApi,
     modifySessionApi,
@@ -436,6 +478,28 @@
     },
   });
 
+  // 使用选择模式功能
+  const {
+    handleConfirmSelection,
+    handleCancelSelection,
+    handleSelectAllChange,
+    enterSelectMode,
+    isSelectAll,
+    isIndeterminate,
+    loading,
+  } = useSelectionMode({
+    sessionStore,
+    sessionContents,
+    currentSession,
+    getChatGroupApi,
+    onTransferMessages: messageIds => {
+      emit('transfer-messages', messageIds);
+    },
+    onShareMessages: messageIds => {
+      emit('share-messages', messageIds);
+    },
+  });
+
   // 注册 SDK 的方法
   sessionStore.registerSdkMethods({
     setCurrentSession,
@@ -449,6 +513,7 @@
     getAgentInfoApi,
     plusSessionApi,
     handleCompleteRole,
+    getChatGroupApi,
   });
 
   // 注册错误回调函数
@@ -574,8 +639,15 @@
     windowHeight.value = window.innerHeight;
   };
 
+  // 处理进入选择模式的自定义事件
+  const handleEnterSelectMode = (event: CustomEvent<{ type: 'transfer' | 'share' }>) => {
+    const { type } = event.detail;
+    enterSelectMode(type);
+  };
+
   onMounted(async () => {
     window.addEventListener('resize', handleWindowResize);
+    window.addEventListener('enter-select-mode', handleEnterSelectMode as EventListener);
     if (normalizedUrl.value && !props.defaultMinimize) {
       await initSession(props.loadRecentSessionOnMount);
 
@@ -590,6 +662,7 @@
 
   onBeforeUnmount(() => {
     window.removeEventListener('resize', handleWindowResize);
+    window.removeEventListener('enter-select-mode', handleEnterSelectMode as EventListener);
   });
 
   // ===================================================================
@@ -1014,6 +1087,41 @@
         bottom: 16px;
         left: 16px;
         width: calc(100% - 32px);
+      }
+    }
+
+    .selection-footer {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      height: 46px;
+      padding: 0 16px;
+      background: #fafbfd;
+      box-shadow: inset 0 1px 0 0 #dcdee5;
+
+      .selection-info {
+        font-size: 14px;
+        color: #63656e;
+      }
+
+      .selection-actions {
+        display: flex;
+        gap: 8px;
+
+        .cancel-btn {
+          color: #63656e;
+          background: #ffffff;
+          border: 1px solid #c4c6cc;
+
+          &:hover {
+            border-color: #979ba5;
+          }
+        }
       }
     }
   }

@@ -12,9 +12,12 @@
       <render-message
         :index="index"
         :message="message"
+        :is-select-mode="isSelectMode"
+        :is-message-selected="isMessageSelected"
         @delete="handleDelete"
         @regenerate="handleRegenerate"
         @resend="handleResend"
+        @message-select="handleMessageSelect"
       />
     </div>
   </div>
@@ -30,12 +33,15 @@
     sessionContents: ISessionContent[];
     hasSessionContents: boolean;
     contentMarginBottom: number;
+    isSelectMode?: boolean;
+    isMessageSelected?: (messageId: string) => boolean;
   }
 
   interface Emits {
     (e: 'delete', index: number): void;
     (e: 'regenerate', index: number): void;
     (e: 'resend', index: number, data: { message: string }): void;
+    (e: 'message-select', messageId: string): void;
   }
 
   const props = defineProps<Props>();
@@ -88,6 +94,10 @@
 
   const handleResend = (index: number, data: { message: string }) => {
     emit('resend', index, data);
+  };
+
+  const handleMessageSelect = (messageId: string) => {
+    emit('message-select', messageId);
   };
 
   const scrollToBottomIfNeeded = () => {

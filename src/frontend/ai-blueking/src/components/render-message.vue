@@ -4,110 +4,125 @@
     ref="messageMainRef"
     :class="[message.role, 'message-main']"
   >
-    <div
-      v-if="message?.property?.extra?.cite"
-      class="ai-cite-container"
-    >
-      <ai-cite
-        v-if="!isStructuredCite(message.property.extra.cite)"
-        :text="message.property.extra.cite"
-      />
-    </div>
-    <div :class="`message-content-container ${message.role}`">
-      <ai-cite-structured
-        v-if="isStructuredCite(message?.property?.extra?.cite)"
-        :cite-data="message?.property?.extra?.cite"
-      />
-      <template
-        v-else-if="[SessionContentRole.User, SessionContentRole.Role].includes(message.role)"
-      >
-        <bk-text-editor
-          v-if="isEdit"
-          :auto-focus="true"
-          :model-value="message.content"
-          @cancel="isEdit = false"
-          @submit="handleEditMessage"
-        />
-        <p
-          v-else
-          class="message-content user"
-        >
-          <span
-            v-if="timeMessage && props.showTime"
-            class="time-message user"
-          >
-            {{ timeMessage }}
-          </span>
-          <span
-            class="markdown-content"
-            v-html="renderValue"
-          ></span>
-        </p>
-      </template>
-      <template v-else>
-        <p class="message-content ai">
-          <span
-            v-if="timeMessage && props.showTime"
-            class="time-message ai"
-          >
-            {{ timeMessage }}
-          </span>
-          <i
-            v-if="statusIcon"
-            :class="statusIcon"
-          ></i>
-          <svg
-            v-if="message.status === SessionContentStatus.Loading"
-            width="14"
-            height="14"
-            class="loading-message"
-            aria-hidden="true"
-          >
-            <use xlink:href="#bkai-quanquan"></use>
-          </svg>
-          <span
-            v-if="message.status === SessionContentStatus.Fail"
-            class="message-wrap"
-          >
-            {{ message.content }}
-          </span>
-          <span
-            v-else
-            :class="{
-              'markdown-content': true,
-              loading: message.status === SessionContentStatus.Loading,
-            }"
-            v-html="renderValue"
-          ></span>
-        </p>
-      </template>
+    <div class="message-wrapper">
+      <!-- 选择模式下的checkbox -->
       <div
-        v-if="!isEdit && message.status !== SessionContentStatus.Loading"
-        class="message-tool"
+        v-if="isSelectMode"
+        class="message-checkbox"
       >
-        <i
-          class="bkai-icon bkai-fuzhi"
-          @click="handleCopy"
+        <bk-checkbox
+          :model-value="message.id ? isMessageSelected(message.id.toString()) : false"
+          @change="handleMessageSelect"
         />
-        <i
-          class="bkai-icon bkai-yinyong"
-          @click="handleCite"
-        />
-        <i
-          v-if="message.role === SessionContentRole.Ai"
-          class="bkai-icon bkai-zhongxinshengcheng"
-          @click="handleRegenerate"
-        />
-        <template v-if="message.role === SessionContentRole.User">
-          <i
-            class="bkai-icon bkai-bianji"
-            @click="isEdit = true"
+      </div>
+
+      <div class="message-content-wrapper">
+        <div
+          v-if="message?.property?.extra?.cite"
+          class="ai-cite-container"
+        >
+          <ai-cite
+            v-if="!isStructuredCite(message.property.extra.cite)"
+            :text="message.property.extra.cite"
           />
-        </template>
-        <i
-          class="bkai-icon bkai-shanchu"
-          @click="handleDelete"
-        />
+        </div>
+        <div :class="`message-content-container ${message.role}`">
+          <ai-cite-structured
+            v-if="isStructuredCite(message?.property?.extra?.cite)"
+            :cite-data="message?.property?.extra?.cite"
+          />
+          <template
+            v-else-if="[SessionContentRole.User, SessionContentRole.Role].includes(message.role)"
+          >
+            <bk-text-editor
+              v-if="isEdit"
+              :auto-focus="true"
+              :model-value="message.content"
+              @cancel="isEdit = false"
+              @submit="handleEditMessage"
+            />
+            <p
+              v-else
+              class="message-content user"
+            >
+              <span
+                v-if="timeMessage && props.showTime"
+                class="time-message user"
+              >
+                {{ timeMessage }}
+              </span>
+              <span
+                class="markdown-content"
+                v-html="renderValue"
+              ></span>
+            </p>
+          </template>
+          <template v-else>
+            <p class="message-content ai">
+              <span
+                v-if="timeMessage && props.showTime"
+                class="time-message ai"
+              >
+                {{ timeMessage }}
+              </span>
+              <i
+                v-if="statusIcon"
+                :class="statusIcon"
+              ></i>
+              <svg
+                v-if="message.status === SessionContentStatus.Loading"
+                width="14"
+                height="14"
+                class="loading-message"
+                aria-hidden="true"
+              >
+                <use xlink:href="#bkai-quanquan"></use>
+              </svg>
+              <span
+                v-if="message.status === SessionContentStatus.Fail"
+                class="message-wrap"
+              >
+                {{ message.content }}
+              </span>
+              <span
+                v-else
+                :class="{
+                  'markdown-content': true,
+                  loading: message.status === SessionContentStatus.Loading,
+                }"
+                v-html="renderValue"
+              ></span>
+            </p>
+          </template>
+          <div
+            v-if="!isEdit && message.status !== SessionContentStatus.Loading"
+            class="message-tool"
+          >
+            <i
+              class="bkai-icon bkai-fuzhi"
+              @click="handleCopy"
+            />
+            <i
+              class="bkai-icon bkai-yinyong"
+              @click="handleCite"
+            />
+            <i
+              v-if="message.role === SessionContentRole.Ai"
+              class="bkai-icon bkai-zhongxinshengcheng"
+              @click="handleRegenerate"
+            />
+            <template v-if="message.role === SessionContentRole.User">
+              <i
+                class="bkai-icon bkai-bianji"
+                @click="isEdit = true"
+              />
+            </template>
+            <i
+              class="bkai-icon bkai-shanchu"
+              @click="handleDelete"
+            />
+          </div>
+        </div>
       </div>
     </div>
   </li>
@@ -116,7 +131,7 @@
 <script lang="ts" setup>
   import { SessionContentRole, SessionContentStatus } from '@blueking/ai-ui-sdk/enums';
   import { type ISessionContent } from '@blueking/ai-ui-sdk/types';
-  import { Message } from 'bkui-vue';
+  import { Message, Checkbox as BkCheckbox } from 'bkui-vue';
   import dayjs from 'dayjs';
   import DOMPurify from 'dompurify';
   import hljs from 'highlight.js';
@@ -127,8 +142,8 @@
   import 'markdown-it-copy-code/styles/small.css';
 
   import defaultUserLogo from '../assets/images/ai-user.png';
-  import AiCite from '../components/ai-cite.vue';
   import AiCiteStructured from '../components/ai-cite-structured.vue';
+  import AiCite from '../components/ai-cite.vue';
   import { useMermaid } from '../composables/use-mermaid';
   import { usePopup } from '../composables/use-popup-props';
   import { useSelect } from '../composables/use-select-pop';
@@ -147,6 +162,8 @@
     userPhoto?: string;
     showTime?: boolean;
     index: number;
+    isSelectMode?: boolean;
+    isMessageSelected?: (messageId: string) => boolean;
   }
 
   interface CitedData {
@@ -167,12 +184,15 @@
     regenerate: [index: number];
     resend: [index: number, value: { message: string }];
     delete: [index: number];
+    'message-select': [messageId: string];
   }>();
 
   // Props 定义
   const props = withDefaults(defineProps<Props>(), {
     userPhoto: defaultUserLogo,
     showTime: false,
+    isSelectMode: false,
+    isMessageSelected: () => false,
   });
 
   // 状态管理
@@ -348,6 +368,15 @@
     });
   };
 
+  /**
+   * 处理消息选择事件
+   */
+  const handleMessageSelect = (_value: boolean) => {
+    if (props.message.id !== undefined) {
+      emit('message-select', props.message.id.toString());
+    }
+  };
+
   // 工具提示初始化
   const initTooltips = () => {
     destroyAll();
@@ -452,6 +481,22 @@
       display: table;
       clear: both;
       content: '';
+    }
+
+    .message-wrapper {
+      display: flex;
+      width: 100%;
+
+      .message-checkbox {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+      }
+
+      .message-content-wrapper {
+        flex: 1;
+      }
     }
 
     .message-content-container {

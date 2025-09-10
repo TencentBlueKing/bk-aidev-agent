@@ -31,6 +31,11 @@ export function useSessionStore() {
   // 存储会话的原始值
   const originalSessionValues = ref<Record<string, ISessionEditItem>>({});
 
+  // 消息选择模式状态
+  const isSelectMode = ref(false);
+  const selectedMessages = ref<Set<string>>(new Set());
+  const selectModeType = ref<'transfer' | 'share' | null>(null);
+
   // 错误回调函数
   let sdkErrorCallback: SdkErrorCallback | null = null;
 
@@ -43,12 +48,101 @@ export function useSessionStore() {
   };
 
   /**
+   * 进入选择模式
+   * @param type 选择模式类型
+   */
+  const enterSelectMode = (type: 'transfer' | 'share') => {
+    isSelectMode.value = true;
+    selectModeType.value = type;
+    selectedMessages.value = new Set();
+  };
+
+  /**
+   * 退出选择模式
+   */
+  const exitSelectMode = () => {
+    isSelectMode.value = false;
+    selectModeType.value = null;
+    selectedMessages.value = new Set();
+  };
+
+  /**
+   * 切换消息选择状态
+   * @param messageId 消息ID
+   */
+  const toggleMessageSelection = (messageId: string) => {
+    const newSet = new Set(selectedMessages.value);
+    if (newSet.has(messageId)) {
+      newSet.delete(messageId);
+    } else {
+      newSet.add(messageId);
+    }
+    selectedMessages.value = newSet;
+  };
+
+  /**
+   * 全选/取消全选
+   * @param messageIds 所有可选择的消息ID数组
+   * @param selectAll 是否全选
+   */
+  const toggleSelectAll = (messageIds: string[], selectAll: boolean) => {
+    if (selectAll) {
+      // 全选
+      const newSet = new Set(selectedMessages.value);
+      messageIds.forEach(id => newSet.add(id));
+      selectedMessages.value = newSet;
+    } else {
+      // 取消全选
+      const newSet = new Set(selectedMessages.value);
+      messageIds.forEach(id => newSet.delete(id));
+      selectedMessages.value = newSet;
+    }
+  };
+
+  /**
+   * 检查是否全选
+   * @param messageIds 所有可选择的消息ID数组
+   * @returns 是否全选
+   */
+  const isSelectAll = (messageIds: string[]): boolean => {
+    if (messageIds.length === 0) return false;
+    return messageIds.every(id => selectedMessages.value.has(id));
+  };
+
+  /**
+   * 检查是否部分选择（半选状态）
+   * @param messageIds 所有可选择的消息ID数组
+   * @returns 是否部分选择
+   */
+  const isIndeterminate = (messageIds: string[]): boolean => {
+    if (messageIds.length === 0) return false;
+    const selectedCount = messageIds.filter(id => selectedMessages.value.has(id)).length;
+    return selectedCount > 0 && selectedCount < messageIds.length;
+  };
+
+  /**
+   * 获取已选择的消息ID数组
+   * @returns 已选择的消息ID数组
+   */
+  const getSelectedMessages = (): string[] => {
+    return Array.from(selectedMessages.value);
+  };
+
+  /**
+   * 检查消息是否被选择
+   * @param messageId 消息ID
+   * @returns 是否被选择
+   */
+  const isMessageSelected = (messageId: string): boolean => {
+    return selectedMessages.value.has(messageId);
+  };
+
+  /**
    * 处理 SDK API 错误
    * @param apiName API 名称
    * @param error 错误对象
    */
   const handleSdkError = (apiName: string, error: unknown) => {
-    debugger;
     if (!sdkErrorCallback) {
       console.error(`SDK API ${apiName} error:`, error);
       return;
@@ -444,13 +538,9 @@ export function useSessionStore() {
       const getAgentInfo = checkSdkMethod('getAgentInfoApi');
 
       try {
-        const { conversationSettings, promptSetting, agentName } = await getAgentInfo();
+        const agentInfoData = await getAgentInfo();
 
-        Object.assign(agentInfo.value, {
-          conversationSettings,
-          promptSetting,
-          agentName,
-        });
+        Object.assign(agentInfo.value, agentInfoData);
       } catch (error) {
         // 如果 getAgentInfo 出错，抛出统一的错误事件
         handleSdkError('getAgentInfoApi', error);
@@ -535,6 +625,20 @@ export function useSessionStore() {
     agentInfo,
     getSessionList,
     sessionUpdateCounter,
+    // 选择模式相关
+    isSelectMode,
+    selectedMessages,
+    selectModeType,
+    enterSelectMode,
+    exitSelectMode,
+    toggleMessageSelection,
+    toggleSelectAll,
+    isSelectAll,
+    isIndeterminate,
+    getSelectedMessages,
+    isMessageSelected,
+    // 错误处理
+    handleSdkError,
   };
 }
 

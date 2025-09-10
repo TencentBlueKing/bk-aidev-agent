@@ -1,0 +1,127 @@
+import { SessionContentRole } from '@blueking/ai-ui-sdk/enums';
+import type { ISessionContent } from '@blueking/ai-ui-sdk/types';
+import { computed, ref } from 'vue';
+
+import { HIDE_ROLE_LIST } from '../config';
+import type { SessionStore } from '../store/sessionStore';
+
+interface UseSelectionModeOptions {
+  sessionStore: SessionStore;
+  sessionContents: { value: ISessionContent[] };
+  currentSession: { value: { sessionCode?: string } | null };
+  getChatGroupApi: (data: any) => Promise<any>;
+  onTransferMessages?: (messageIds: string[]) => void;
+  onShareMessages?: (messageIds: string[]) => void;
+}
+
+export function useSelectionMode({
+  sessionStore,
+  sessionContents,
+  currentSession,
+  getChatGroupApi,
+  onTransferMessages,
+  onShareMessages,
+}: UseSelectionModeOptions) {
+  const loading = ref(false);
+
+  // 获取所有可见消息的ID
+  const visibleMessageIds = computed(() => {
+    return sessionContents.value
+      .filter(
+        (item): item is ISessionContent & { id: number } =>
+          !HIDE_ROLE_LIST.includes(item.role) && item.id !== undefined
+      )
+      .map(item => item.id.toString());
+  });
+
+  // 是否全选
+  const isSelectAll = computed(() => {
+    return sessionStore.isSelectAll(visibleMessageIds.value);
+  });
+
+  // 是否半选
+  const isIndeterminate = computed(() => {
+    return sessionStore.isIndeterminate(visibleMessageIds.value);
+  });
+
+  /**
+   * 处理确认选择
+   */
+  const handleConfirmSelection = async () => {
+    const selectedMessages = sessionStore.getSelectedMessages();
+    // 根据选择模式类型触发不同的事件
+    if (sessionStore.selectModeType.value === 'transfer') {
+      // 触发 transfer-messages 事件
+      onTransferMessages?.(selectedMessages);
+
+      // 调用 getChatGroupApi 方法
+      try {
+        loading.value = true;
+        // 获取选中的消息内容
+        const selectedMessageContents = sessionContents.value.filter(
+          item =>
+            item.id !== undefined &&
+            selectedMessages.includes(item.id.toString()) &&
+            !HIDE_ROLE_LIST.includes(item.role)
+        );
+
+        // 构造消息数组
+        const messages = selectedMessageContents.map(item => ({
+          role: item.role === SessionContentRole.Ai ? 'ai' : 'user',
+          content: item.content,
+        })) as import('@blueking/ai-ui-sdk/types').IChatGroupMessage[];
+
+        // 调用 getChatGroupApi
+        await getChatGroupApi({
+          chat_group_name: '小鲸转人工',
+          messages,
+          session_code: currentSession.value?.sessionCode || '',
+        });
+      } catch (error) {
+        console.error('调用 getChatGroupApi 失败:', error);
+        sessionStore.handleSdkError('getChatGroupApi', error);
+      } finally {
+        loading.value = false;
+      }
+    } else if (sessionStore.selectModeType.value === 'share') {
+      // 触发 share-messages 事件
+      onShareMessages?.(selectedMessages);
+    }
+    sessionStore.exitSelectMode();
+  };
+
+  /**
+   * 处理取消选择
+   */
+  const handleCancelSelection = () => {
+    sessionStore.exitSelectMode();
+  };
+
+  /**
+   * 处理全选变化
+   */
+  const handleSelectAllChange = (value: boolean) => {
+    sessionStore.toggleSelectAll(visibleMessageIds.value, value);
+  };
+
+  /**
+   * 进入选择模式
+   */
+  const enterSelectMode = (type: 'transfer' | 'share') => {
+    sessionStore.enterSelectMode(type);
+  };
+
+  return {
+    // 处理函数
+    handleConfirmSelection,
+    handleCancelSelection,
+    handleSelectAllChange,
+    enterSelectMode,
+
+    // 计算属性
+    visibleMessageIds,
+    isSelectAll,
+    isIndeterminate,
+    loading,
+  };
+}

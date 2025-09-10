@@ -64,6 +64,12 @@
         @click="handleHistoryClick"
       ></i>
       <i
+        v-if="props.chatGroup?.enabled"
+        v-bk-tooltips="{ content: t('转人工'), boundary: 'parent' }"
+        class="bkai-icon bkai-zhushou"
+        @click="handleHelpClick"
+      ></i>
+      <i
         ref="compressionRef"
         class="bkai-icon"
         :class="compressionIcon"
@@ -99,6 +105,10 @@
       showHistoryIcon: boolean;
       showNewChatIcon?: boolean;
       enableChatSession?: boolean;
+      chatGroup?: {
+        enabled: boolean;
+        staff: string[];
+      };
     }>(),
     {
       title: '',
@@ -107,13 +117,17 @@
       showHistoryIcon: true,
       showNewChatIcon: true,
       enableChatSession: true,
+      chatGroup: () => ({
+        enabled: false,
+        staff: [],
+      }),
     }
   );
 
   const emit =
     defineEmits<
       (
-        e: 'close' | 'toggle-compression' | 'new-chat' | 'auto-generate-name',
+        e: 'close' | 'toggle-compression' | 'new-chat' | 'auto-generate-name' | 'help-click',
         sessionCode?: string
       ) => void
     >();
@@ -185,14 +199,12 @@
           <i class="bkai-icon bkai-auto-refresh-line"></i>
           <span>${t('自动生成命名')}</span>
         </div>
+        <div class="tippy-menu-item" data-action="share">
+          <i class="bkai-icon bkai-fenxiang"></i>
+          <span>${t('分享会话')}</span>
+        </div>
       </div>
     `;
-
-    // 未来添加分享会话
-    // <div class="tippy-menu-item" data-action="share">
-    //   <i class="bkai-icon bkai-fenxiang"></i>
-    //   <span>${t('分享会话')}</span>
-    // </div>
   });
 
   const { createTooltip, destroyAll } = useTooltip({
@@ -471,8 +483,16 @@
 
   // 分享会话处理函数
   const handleShare = () => {
-    console.log(t('分享会话'));
-    // TODO: 实现分享会话逻辑
+    // 触发自定义事件，让父组件处理进入分享选择模式
+    const event = new CustomEvent('enter-select-mode', {
+      detail: { type: 'share' as const }
+    });
+    window.dispatchEvent(event);
+  };
+
+  // 处理转人工按钮点击事件
+  const handleHelpClick = () => {
+    emit('help-click');
   };
 </script>
 
