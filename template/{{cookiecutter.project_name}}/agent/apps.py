@@ -1,4 +1,7 @@
+# -*- coding: utf-8 -*-
+
 from django.apps import AppConfig
+from django.conf import settings
 
 
 class AgentConfig(AppConfig):
@@ -7,10 +10,8 @@ class AgentConfig(AppConfig):
 
     def ready(self) -> None:
         # register your extension here
-        from bk_plugin.factory import agent_factory
-        from bk_plugin.meta import DEFAULT_AGENT
-
         from agent.services.agent import CommonQAAgentExtend
+        from agent.services.factory import agent_factory
 
-        agent_factory.register(DEFAULT_AGENT, CommonQAAgentExtend)
+        agent_factory.register(settings.DEFAULT_AGENT, CommonQAAgentExtend)
         return super().ready()
