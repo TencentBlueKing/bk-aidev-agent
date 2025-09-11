@@ -88,8 +88,8 @@ class AgentConfigManager:
             opening_mark=res["conversation_settings"]["opening_remark"] or None,
             mcp_server_config=res.get("mcp_server_config", {}).get("mcpServers", {}),
             agent_options=AgentOptions(
-                intent_recognition_options=IntentRecognition.model_validate(res["intent_recognition"]),
-                knowledge_query_options=KnowledgebaseSettings.model_validate(res["knowledgebase_settings"]),
+                intent_recognition_options=IntentRecognition.model_validate(res.get("intent_recognition", {})),
+                knowledge_query_options=KnowledgebaseSettings.model_validate(res.get("knowledgebase_settings", {})),
             ),
             command_agent_mapping={
                 each["id"]: each["agent_code"] for each in res["conversation_settings"].get("commands", [])

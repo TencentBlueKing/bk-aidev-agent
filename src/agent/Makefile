@@ -10,13 +10,6 @@ uv.lock: pyproject.toml
 	uv lock
 	uv lock --check
 
-.PHONY: requirements
-requirements: requirements.txt
-
-.PHONY: requirements.txt
-requirements.txt: pyproject.toml
-	uv export --no-hashes --no-annotate --no-dev --no-editable --no-header --format requirements-txt | awk 'NR>1' >  requirements.txt
-
 .PHONY: init-project
 init: uv-install
 	@echo "Project initialization complete."

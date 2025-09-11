@@ -26,6 +26,6 @@ repos:
       - id: aidev-requirements-export
         name: aidev-requirements-export
         language: system
-        entry: bash -c "cd ./src/aidev && make requirements.txt"
+        entry: bash -c "cd ./src/aidev && make uv.lock"
         pass_filenames: false
-        files: "src/aidev/poetry.lock"
+        files: "src/aidev/pyproject.toml"
