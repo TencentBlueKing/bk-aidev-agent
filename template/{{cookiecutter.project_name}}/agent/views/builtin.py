@@ -25,6 +25,7 @@ from agent.services.agent import (
     get_agent_config_info,
     get_agent_role_info,
 )
+from agent.utils import set_user_access_token
 
 logger = getLogger(__name__)
 
@@ -176,12 +177,7 @@ class AgentInfoViewSet(PluginViewSet):
 
     @action(detail=False, methods=["GET"], url_path="ping", url_name="ping")
     def ping(self, request):
-        try:
-            import bkoauth
-
-            bkoauth.get_access_token(request)
-        except Exception as err:
-            logger.warning(f"failed to import bkoauth, error: {err}")
+        set_user_access_token(request)
         return Response(data="pong")
 
 

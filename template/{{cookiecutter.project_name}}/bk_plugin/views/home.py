@@ -6,12 +6,15 @@ from django.http import HttpResponse
 from langchain_core.prompts import jinja2_formatter
 from rest_framework.views import APIView
 
+from agent.utils import set_user_access_token
+
 
 class IndexView(APIView):
     def get(self, request):
         client = BKAidevApi.get_client()
         result = client.api.retrieve_agent_config(path_params={"agent_code": settings.APP_CODE})
         agent_name = result["data"]["agent_name"]
+        set_user_access_token(request)
         with open(f"{settings.STATIC_TEMPLATE_ROOT}/index.html") as fo:
             rendered = jinja2_formatter(
                 fo.read(),
