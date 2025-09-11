@@ -5,6 +5,9 @@ import os
 # 应用模块
 INSTALLED_APPS = ("agent",)
 
+# 智能体
+DEFAULT_AGENT = os.environ.get("DEFAULT_AGENT", "common_qa")
+
 # 客服渠道
 CHAT_GROUP_ENABLED = os.environ.get("CHAT_GROUP_ENABLED") == "1"
 CHAT_GROUP_STAFF = os.environ.get("CHAT_GROUP_STAFF")
