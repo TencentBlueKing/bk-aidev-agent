@@ -36,6 +36,7 @@
             :show-new-chat-icon="props.showNewChatIcon"
             :enable-chat-session="enableChatSession"
             :chat-group="sessionStore.agentInfo.value?.chatGroup"
+            :has-session-contents="hasSessionContents"
             @close="handleClose"
             @toggle-compression="toggleCompression"
             @new-chat="handleNewChat"

@@ -109,6 +109,7 @@
         enabled: boolean;
         staff: string[];
       };
+      hasSessionContents?: boolean;
     }>(),
     {
       title: '',
@@ -189,13 +190,17 @@
 
   // 下拉菜单内容
   const dropdownMenuContent = computed(() => {
+    const isDisabled = !props.hasSessionContents;
+    const disabledClass = isDisabled ? 'disabled' : '';
+    const tooltipAttr = isDisabled ? `data-tippy-content="${t('请先发起会话')}"` : '';
+
     return `
       <div class="tippy-dropdown-menu">
         <div class="tippy-menu-item" data-action="rename">
           <i class="bkai-icon bkai-bianji"></i>
           <span>${t('重命名')}</span>
         </div>
-        <div class="tippy-menu-item" data-action="auto-generate">
+        <div class="tippy-menu-item ${disabledClass}" data-action="auto-generate" ${tooltipAttr}>
           <i class="bkai-icon bkai-auto-refresh-line"></i>
           <span>${t('自动生成命名')}</span>
         </div>
@@ -254,7 +259,20 @@
           setTimeout(() => {
             const menuItems = document.querySelectorAll('.tippy-menu-item');
             menuItems.forEach(item => {
-              item.addEventListener('click', handleMenuItemClick);
+              const element = item as HTMLElement & { _tippy?: any };
+              // 初始化tippy tooltip
+              if (element._tippy) {
+                element._tippy.destroy();
+              }
+              // 为禁用的自动生成命名项添加tooltip
+              if (element.classList.contains('disabled') && element.dataset.action === 'auto-generate') {
+                createTooltip(element, t('请先发起会话'), {
+                  arrow: true,
+                  offset: [0, 8],
+                  appendTo: document.querySelector('.ai-blueking-container-wrapper') as HTMLElement,
+                });
+              }
+              element.addEventListener('click', handleMenuItemClick);
             });
           }, 0);
         },
@@ -262,7 +280,12 @@
           // 移除菜单项点击事件监听
           const menuItems = document.querySelectorAll('.tippy-menu-item');
           menuItems.forEach(item => {
-            item.removeEventListener('click', handleMenuItemClick);
+            const element = item as HTMLElement & { _tippy?: any };
+            element.removeEventListener('click', handleMenuItemClick);
+            // 销毁tippy实例
+            if (element._tippy) {
+              element._tippy.destroy();
+            }
           });
         },
       });
@@ -272,6 +295,14 @@
   // 监听压缩状态变化，更新 tooltip
   watch(
     () => props.isCompressionHeight,
+    () => {
+      initTooltips();
+    }
+  );
+
+  // 监听会话内容变化，更新 tooltip
+  watch(
+    () => props.hasSessionContents,
     () => {
       initTooltips();
     }
@@ -327,6 +358,11 @@
 
     const target = event.currentTarget as HTMLElement;
     const action = target.dataset.action;
+
+    // 如果是禁用的菜单项，直接返回
+    if (target.classList.contains('disabled')) {
+      return;
+    }
 
     // 隐藏下拉菜单
     if (moreIconTippy) {
@@ -485,7 +521,7 @@
   const handleShare = () => {
     // 触发自定义事件，让父组件处理进入分享选择模式
     const event = new CustomEvent('enter-select-mode', {
-      detail: { type: 'share' as const }
+      detail: { type: 'share' as const },
     });
     window.dispatchEvent(event);
   };
@@ -687,6 +723,24 @@
 
           i {
             color: #3a84ff;
+          }
+        }
+
+        &.disabled {
+          color: #c4c6cc;
+          cursor: not-allowed;
+
+          i {
+            color: #c4c6cc;
+          }
+
+          &:hover {
+            background: transparent;
+            color: #c4c6cc;
+
+            i {
+              color: #c4c6cc;
+            }
           }
         }
       }
