@@ -37,6 +37,8 @@
 | `shortcutLimit` | `Number`         | `3`                                                       | <Badge type="tip" text="v1.2.3" /> 快捷指令在popover中显示的数量限制。 |
 | `shortcutFilter`| `Function`       | `undefined`                                               | <Badge type="tip" text="v1.2.4" /> 快捷指令的过滤函数，用于动态控制快捷指令的显示。当用户选中文本时，每个快捷指令的组件会自动获得 `selectedText` 属性，可在过滤函数中访问该属性以根据选中文本内容进行过滤。函数签名：`(shortcut: IShortcut, selectedText: string) => boolean` |
 | `enableChatSession` | `Boolean`    | `true`                                                    | <Badge type="tip" text="v1.2.3" /> 控制是否启用多会话功能。此属性由后端通过 `getAgentInfo` 接口返回的 `conversationSettings.enableChatSession` 配置决定，当设置为 `false` 时将隐藏会话管理相关UI元素。 |
+| `loadRecentSessionOnMount` | `Boolean` | `false`                                                   | <Badge type="tip" text="v1.2.5" /> 控制组件挂载时是否自动加载最近会话。设置为 `true` 时，组件初始化时会自动加载并切换到最近的会话，优化会话初始化体验。 |
+| `hasSessionContents` | `Boolean`   | `true`                                                    | <Badge type="tip" text="v1.2.5" /> 控制当前是否有会话内容。此属性影响某些UI元素的显示状态，如为空会话时的提示信息等。 |
 
 ## 压缩状态边距控制 <Badge type="tip" text="v1.1.2" />
 

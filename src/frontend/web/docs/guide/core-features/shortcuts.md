@@ -109,6 +109,68 @@ interface IShortcut {
 2. 在不同上下文中复用相同的快捷操作配置
 3. 实现更复杂的表单交互逻辑
 
+## 快捷操作优化 <Badge type="tip" text="v1.2.5" />
+
+v1.2.5 版本对快捷操作功能进行了重要的架构优化和用户体验提升：
+
+### 架构优化
+
+- **组件简化**：移除了 `ai-selected-box` 组件，简化了快捷操作的整体架构
+- **事件处理优化**：重新设计了快捷操作点击事件的处理逻辑，提升了响应性能和稳定性
+- **过滤器增强**：优化了 `shortcutFilter` 函数的实现，增强了快捷操作的灵活性和可定制性
+
+### 新特性
+
+- **更强的类型支持**：改进了 TypeScript 类型定义，提供了更好的开发体验
+- **性能提升**：通过组件轻量化和事件处理优化，提升了整体性能表现
+- **更好的错误处理**：增强了错误捕获和处理机制，提供了更稳定的用户体验
+
+### 向后兼容
+
+所有现有快捷操作配置在 v1.2.5 版本中仍然完全兼容，无需进行任何修改。优化主要针对内部实现，对外部 API 保持完全一致。
+
+### 使用建议
+
+```vue
+<template>
+  <AIBlueking
+    :shortcuts="enhancedShortcuts"
+    :shortcut-filter="smartFilter"
+    @shortcut-click="handleShortcutClick"
+  />
+</template>
+
+<script setup>
+const enhancedShortcuts = [
+  {
+    id: 'smart_operation',
+    name: '智能操作',
+    icon: 'bkai-icon bkai-ai',
+    components: [
+      {
+        type: 'textarea',
+        key: 'content',
+        name: '内容',
+        fillBack: true,
+        placeholder: '请输入或选择内容',
+        // v1.2.5 优化后的 hide 属性支持更灵活的控制
+        hide: false
+      }
+    ]
+  }
+]
+
+// v1.2.5 优化后的过滤器性能更好
+const smartFilter = (shortcut, selectedText) => {
+  // 更智能的过滤逻辑
+  if (shortcut.id === 'code_analysis') {
+    return selectedText.includes('function') || selectedText.includes('const')
+  }
+  return true
+}
+</script>
+```
+
 ```javascript
 {
   id: 'dynamic_form',

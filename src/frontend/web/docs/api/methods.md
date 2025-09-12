@@ -26,6 +26,9 @@
 | `updateSessionName(sessionCode, newName)` | `sessionCode: string, newName: string`                                                                              | `Promise<ISessionEditItem>` | <Badge type="tip" text="v1.2.2" /> 更新指定会话的名称。 |
 | `switchToSession(sessionCode)`  | `sessionCode: string`                                                                                                 | `Promise<void>` | <Badge type="tip" text="v1.2.2" /> 切换到指定代码的会话。 |
 | `getSessionList()`              | -                                                                                                                     | `Promise<ISessionEditItem[]>` | <Badge type="tip" text="v1.2.2" /> 获取当前会话列表。 |
+| `enterSelectMode(type)`         | `type: 'transfer' \| 'delete' \| 'regenerate'`                                                                          | `void`                        | <Badge type="tip" text="v1.2.5" /> 进入选择模式，用于选择消息进行操作。`type` 参数指定选择模式的类型。 |
+| `exitSelectMode()`              | -                                                                                                                     | `void`                        | <Badge type="tip" text="v1.2.5" /> 退出选择模式。 |
+| `getSelectedMessages()`         | -                                                                                                                     | `Array<ISessionContent>`      | <Badge type="tip" text="v1.2.5" /> 获取当前选择的消息列表。 |
 
 ::: danger 已废弃方法
 以下方法在相应版本中已被移除:

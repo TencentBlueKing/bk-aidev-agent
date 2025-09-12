@@ -2,6 +2,112 @@
 
 本指南提供了各版本间的主要变化和迁移方法，帮助您顺利升级 AI 小鲸组件。
 
+## v1.2.5 更新指南 <Badge type="tip" text="最新" />
+
+v1.2.5 版本重点优化了快捷操作体验，增强了会话管理功能，改进了权限和错误处理机制，并提升了开发体验。
+
+### 主要变更
+
+1. **快捷操作优化**：移除 `ai-selected-box` 组件，简化快捷操作事件处理，提升响应性能
+2. **会话初始化增强**：新增 `loadRecentSessionOnMount` 属性，支持自动加载最近会话
+3. **权限处理完善**：新增 403 错误页面支持，完善无权限访问处理
+4. **开发体验提升**：重构 ESLint 配置，新增 tsconfig.build.json，优化 TypeScript 构建流程
+5. **依赖升级**：升级 @blueking/ai-ui-sdk 到 0.1.16-beta.3，获取更多底层能力
+6. **环境配置简化**：移除开发环境配置中的 `BK_API_URL_TMPL` 和 `BKUI_PREFIX` 变量
+
+### 新增功能
+
+#### 1. 最近会话自动加载
+
+v1.2.5 版本引入了 `loadRecentSessionOnMount` 属性，实现组件挂载时自动加载最近会话：
+
+```vue
+<template>
+  <AIBlueking 
+    :load-recent-session-on-mount="true"
+    :url="apiUrl"
+  />
+</template>
+```
+
+此功能特别适用于：
+- **用户回访**：自动恢复到上次的会话
+- **页面刷新**：快速恢复到之前的对话状态
+- **多标签页**：在不同标签页间保持会话连续性
+
+#### 2. 会话内容状态管理
+
+新增 `hasSessionContents` 属性，用于控制会话内容状态的显示：
+
+```vue
+<template>
+  <AIBlueking 
+    :has-session-contents="hasContents"
+    :url="apiUrl"
+  />
+</template>
+
+<script setup>
+import { computed } from 'vue'
+
+const hasContents = computed(() => sessionContents.value.length > 0)
+</script>
+```
+
+#### 3. 选择模式功能
+
+v1.2.5 版本新增了消息选择模式，支持消息的批量选择和操作：
+
+```vue
+<script setup>
+const aiBlueking = ref(null)
+
+// 进入选择模式
+const enterSelectMode = () => {
+  aiBlueking.value?.enterSelectMode('transfer')
+}
+
+// 获取选中的消息
+const getSelectedMessages = () => {
+  return aiBlueking.value?.getSelectedMessages()
+}
+</script>
+```
+
+### 开发环境变更
+
+#### 环境配置简化
+
+v1.2.5 版本移除了开发环境配置中的 `BK_API_URL_TMPL` 和 `BKUI_PREFIX` 变量：
+
+```bash
+# 旧版本可能需要的环境变量（现在已移除）
+# BK_API_URL_TMPL=http://localhost:8080/api
+# BKUI_PREFIX=bk
+
+# 新版本只需基本配置
+NODE_ENV=development
+```
+
+#### TypeScript 构建优化
+
+新增 `tsconfig.build.json` 配置文件，优化了 TypeScript 构建流程，提供更好的类型检查和构建性能。
+
+### 迁移注意事项
+
+1. **环境配置更新**：检查并更新您的开发环境配置，移除 `BK_API_URL_TMPL` 和 `BKUI_PREFIX` 相关配置
+2. **依赖兼容性**：@blueking/ai-ui-sdk 已升级到新版本，请确保后端服务兼容新的 SDK 版本
+3. **快捷操作功能**：所有现有快捷操作配置完全兼容，无需修改
+4. **会话管理**：`loadRecentSessionOnMount` 是可选功能，默认关闭以保持向后兼容
+
+### 升级步骤
+
+1. 更新依赖包到 v1.2.5 版本
+2. 清理开发环境配置中的 `BK_API_URL_TMPL` 和 `BKUI_PREFIX` 变量
+3. （可选）根据需求配置 `loadRecentSessionOnMount` 属性
+4. （可选）利用新的选择模式功能和会话状态管理功能
+5. 测试所有现有功能确保兼容性
+
 ## v1.1.6 更新指南
 
 v1.1.6 版本专注于提升用户体验和稳定性，引入了增强的 Markdown 渲染支持和多实例优化。

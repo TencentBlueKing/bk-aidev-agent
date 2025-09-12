@@ -8,6 +8,28 @@ export default {
     return {
       changelogData: [
         {
+          version: "v1.2.5",
+          date: "2025-09-12",
+          important: "⚠️ <strong>重要提醒</strong>：小鲸 1.2.5 版本必须与后端 SDK 版本 1.0.0b38 或更高版本匹配使用，否则可能出现兼容性问题",
+          features: [
+            "优化快捷操作逻辑，移除 ai-selected-box 组件，简化快捷方式点击事件的处理",
+            "新增 loadRecentSessionOnMount 属性，支持组件挂载时加载最近会话，优化会话初始化体验",
+            "新增 403 错误页面支持，完善权限控制和无权限访问的处理",
+            "新增人工反馈功能，增强用户交互体验",
+            "新增 saasUrl 请求功能，支持SaaS模式下的接口调用",
+            "新增 hasSessionContents 属性，支持为无会话内容的菜单项提供 tooltip 提示",
+            "新增选择模式功能，支持消息的选择和多选操作",
+            "进一步完善图标字体库和视觉样式"
+          ],
+          improvements: [
+            "重构 ESLint 配置，统一代码规范，提升代码质量",
+            "新增 tsconfig.build.json 配置文件，优化 TypeScript 构建流程",
+            "优化会话重命名功能，支持自动生成会话名称",
+            "移除开发环境配置中的 BK_API_URL_TMPL 和 BKUI_PREFIX 变量，简化环境配置",
+            "优化快捷操作过滤器逻辑，增强快捷操作的灵活性和可定制性"
+          ]
+        },
+        {
           version: "v1.2.4",
           date: "2025-09-03",
           features: [

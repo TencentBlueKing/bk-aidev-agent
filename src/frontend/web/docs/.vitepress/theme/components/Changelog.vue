@@ -6,6 +6,10 @@
         <span class="date">{{ version.date }}</span>
       </div>
       
+      <div v-if="version.important" class="important-notice">
+        <div class="important-content" v-html="version.important"></div>
+      </div>
+      
       <div v-if="version.features" class="section">
         <h3>✨ 新增功能</h3>
         <ul>
@@ -114,5 +118,23 @@ export default {
 .demo-content {
   background-color: var(--vp-c-bg-soft);
   padding: 1rem;
+}
+
+.important-notice {
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.25rem;
+  border-left: 4px solid var(--vp-c-red);
+  background-color: rgba(255, 59, 48, 0.05);
+  border-radius: 4px;
+}
+
+.important-content {
+  font-weight: 500;
+  color: var(--vp-c-red);
+  line-height: 1.6;
+}
+
+.important-content strong {
+  font-weight: 700;
 }
 </style> 
