@@ -961,7 +961,7 @@ class CommonQAStreamingMixIn:
                                     # 如果不是第一次调用工具，将first_tool_args还原为True
                                     if has_tool_call:
                                         first_tool_args = True
-                                if item["data"]["chunk"].tool_call_chunks[0].get("args"):
+                                elif item["data"]["chunk"].tool_call_chunks[0].get("args"):
                                     # 如果是第一个tool args，需要在前面加上'"action_input":'
                                     if first_tool_args:
                                         ret = {
@@ -977,6 +977,8 @@ class CommonQAStreamingMixIn:
                                         "content": item["data"]["chunk"].tool_call_chunks[0].get("args"),
                                         "cover": False,
                                     }
+                                else:
+                                    continue
                                 has_tool_call = True
                             else:
                                 # 如果首次从 think 切到 text 内容，需要先补发一条带 elapsed_time的 think event 以供识别
