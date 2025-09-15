@@ -20,7 +20,7 @@ from aidev_agent.core.agent.multimodal import EnhancedAgentExecutor
 from aidev_agent.core.extend.agent.qa import CommonQAAgent
 from aidev_agent.core.utils.loop import get_event_loop
 from aidev_agent.enums import PromptRole, StreamEventType
-from aidev_agent.exceptions import AgentException
+from aidev_agent.exceptions import AgentException, streaming_chunk_exception_handling
 from aidev_agent.services.pydantic_models import AgentOptions, ChatPrompt, ExecuteKwargs
 
 logger = getLogger(__name__)
@@ -192,13 +192,8 @@ class ChatCompletionAgent(BaseModel):
                 if ret:
                     yield f"data: {json.dumps(ret)}\n\n"
         except Exception as exception:
-            ret = {
-                "event": StreamEventType.ERROR.value,
-                "code": exception.code if hasattr(exception, "code") else 400,
-                "message": exception.response_data() if hasattr(exception, "response_data") else str(exception),
-            }
             logger.exception(exception)
-            yield f"data: {json.dumps(ret)}\n\n"
+            yield streaming_chunk_exception_handling(exception)
         yield "data: [DONE]\n\n"
 
     def _pop_q_get_ret(self, q):
