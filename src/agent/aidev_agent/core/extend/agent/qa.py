@@ -47,6 +47,7 @@ from aidev_agent.core.agent.multimodal import MultiToolCallCommonAgent, Structur
 from aidev_agent.core.extend.intent.intent_recognition import IntentRecognition
 from aidev_agent.core.utils.local import request_local
 from aidev_agent.enums import ContextType, Decision, EventType, IntentCategory, IntentStatus
+from aidev_agent.exceptions import streaming_chunk_exception_handling
 from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils import Empty
 from aidev_agent.utils.error_handling import extract_error_message
@@ -961,7 +962,7 @@ class CommonQAStreamingMixIn:
                                     # 如果不是第一次调用工具，将first_tool_args还原为True
                                     if has_tool_call:
                                         first_tool_args = True
-                                if item["data"]["chunk"].tool_call_chunks[0].get("args"):
+                                elif item["data"]["chunk"].tool_call_chunks[0].get("args"):
                                     # 如果是第一个tool args，需要在前面加上'"action_input":'
                                     if first_tool_args:
                                         ret = {
@@ -977,6 +978,8 @@ class CommonQAStreamingMixIn:
                                         "content": item["data"]["chunk"].tool_call_chunks[0].get("args"),
                                         "cover": False,
                                     }
+                                else:
+                                    continue
                                 has_tool_call = True
                             else:
                                 # 如果首次从 think 切到 text 内容，需要先补发一条带 elapsed_time的 think event 以供识别
@@ -1271,13 +1274,8 @@ class CommonQAStreamingMixIn:
             }
             yield self._yield_ret(ret)
         except Exception as exception:
-            ret = {
-                "event": "error",
-                "code": exception.code if hasattr(exception, "code") else 400,
-                "message": self._extract_exception_msg(exception),
-            }
             _logger.exception(exception)
-            yield self._yield_ret(ret)
+            yield streaming_chunk_exception_handling(exception)
         finally:
             yield self._yield_ret(done=True)
 
