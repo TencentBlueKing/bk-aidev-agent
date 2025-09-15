@@ -20,6 +20,7 @@ import contextlib
 import json
 import re
 from hashlib import md5
+from logging import getLogger
 from typing import Any, Dict, List, Optional, Type
 
 import requests
@@ -37,6 +38,8 @@ from aidev_agent.packages.langchain.exceptions import ToolValidationError
 from aidev_agent.packages.langchain.tools.enums import FieldType, FuncType
 
 COMPLEXED_FIELD_TYPE = ["object", "array"]
+
+_logger = getLogger(__name__)
 
 
 class Rule(BaseModel):
@@ -407,7 +410,17 @@ def make_mcp_tools(server_config: dict) -> List[StructuredTool]:
     client = MultiServerMCPClient(server_config)
     _loop = get_event_loop()
     try:
-        tools = _loop.run_until_complete(client.get_tools())
+        tools: List[StructuredTool] = _loop.run_until_complete(client.get_tools())
     except Exception:
         raise ValueError("获取MCP工具列表失败")
+    for each in tools:
+        each.coroutine = wrap_mcp_exception_handling(each.coroutine)
     return tools
+
+
+async def wrap_mcp_exception_handling(coro):
+    try:
+        return await coro()
+    except Exception as err:
+        _logger.exception(f"failed to run mcp: {err}")
+        return "[ERROR] MCP 工具执行失败"
