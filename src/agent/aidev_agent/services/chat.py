@@ -192,13 +192,7 @@ class ChatCompletionAgent(BaseModel):
                 if ret:
                     yield f"data: {json.dumps(ret)}\n\n"
         except Exception as exception:
-            ret = {
-                "event": StreamEventType.ERROR.value,
-                "code": exception.code if hasattr(exception, "code") else 400,
-                "message": exception.response_data() if hasattr(exception, "response_data") else str(exception),
-            }
-            logger.exception(exception)
-            yield f"data: {json.dumps(ret)}\n\n"
+            yield streaming_chunk_exception_handling(exception)
         yield "data: [DONE]\n\n"
 
     def _pop_q_get_ret(self, q):
@@ -256,3 +250,17 @@ class ChatCompletionAgent(BaseModel):
             max_token_limit=max_token_limit,
         )
         return len(memory.buffer) - len(self.chat_history)
+
+
+def streaming_chunk_exception_handling(exception: Exception) -> str:
+    if hasattr(exception, "message"):
+        err_msg = exception.message
+    else:
+        err_msg = exception.response_data() if hasattr(exception, "response_data") else str(exception)
+    ret = {
+        "event": StreamEventType.ERROR.value,
+        "code": exception.code if hasattr(exception, "code") else 400,
+        "message": f"模型调用异常: {err_msg}",
+    }
+    logger.exception(exception)
+    return f"data: {json.dumps(ret)}\n\n"
