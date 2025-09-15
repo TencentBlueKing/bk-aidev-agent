@@ -47,6 +47,7 @@ from aidev_agent.core.agent.multimodal import MultiToolCallCommonAgent, Structur
 from aidev_agent.core.extend.intent.intent_recognition import IntentRecognition
 from aidev_agent.core.utils.local import request_local
 from aidev_agent.enums import ContextType, Decision, EventType, IntentCategory, IntentStatus
+from aidev_agent.exceptions import streaming_chunk_exception_handling
 from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils import Empty
 from aidev_agent.utils.error_handling import extract_error_message
@@ -1273,13 +1274,8 @@ class CommonQAStreamingMixIn:
             }
             yield self._yield_ret(ret)
         except Exception as exception:
-            ret = {
-                "event": "error",
-                "code": exception.code if hasattr(exception, "code") else 400,
-                "message": self._extract_exception_msg(exception),
-            }
             _logger.exception(exception)
-            yield self._yield_ret(ret)
+            yield streaming_chunk_exception_handling(exception)
         finally:
             yield self._yield_ret(done=True)
 
