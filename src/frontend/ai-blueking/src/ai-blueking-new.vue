@@ -65,6 +65,7 @@
                 @regenerate="handleRegenerate"
                 @resend="handleResend"
                 @message-select="sessionStore.toggleMessageSelection"
+                @scroll-position-change="handleScrollPositionChange"
               />
               <!-- 选择模式下的底部确认区域 -->
               <div
@@ -117,14 +118,14 @@
                     <bar-button
                       v-if="currentSessionLoading"
                       color="#EA3636"
-                      icon="bkaitingzhishengcheng"
+                      icon="bkai-icon bkai-tingzhishengcheng"
                       :text="t('停止生成')"
                       @click="handleStop"
                     />
                     <bar-button
                       v-if="showScrollToBottom"
                       color="#979BA5"
-                      icon="bkaijiantou"
+                      icon="bkai-icon bkai-jiantou"
                       :text="t('返回底部')"
                       @click="handleScrollMainToBottom"
                     />
@@ -714,6 +715,17 @@
 
   const handleScrollMainToBottom = () => {
     scrollMainToBottom();
+    // 滚动到底部后隐藏按钮
+    showScrollToBottom.value = false;
+  };
+
+  const handleScrollPositionChange = (isNearBottom: boolean) => {
+    // 只有当消息容器有内容且不在底部时，才显示返回底部按钮
+    const messageWrapper = messageListRef.value?.messageWrapper;
+    if (!messageWrapper) return;
+
+    const { scrollHeight, clientHeight } = messageWrapper;
+    showScrollToBottom.value = !isNearBottom && scrollHeight > clientHeight;
   };
 
   const handleSendMessage = async (message: string) => {

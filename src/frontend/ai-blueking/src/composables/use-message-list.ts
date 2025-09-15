@@ -27,6 +27,7 @@ import { ref } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
 
 interface MessageListInstance extends ComponentPublicInstance {
+  messageWrapper: HTMLElement | null;
   scrollToBottom: () => void;
   scrollToBottomIfNeeded: () => void;
   resetUserScrolling: () => void;
