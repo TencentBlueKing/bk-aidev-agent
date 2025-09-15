@@ -87,6 +87,12 @@
       const response = await fetch(`${url.value}/agent/info/`, {
         credentials: "include", // 包含Cookie等凭证信息
       })
+
+      // 检查 HTTP 状态码，fetch 不会为 4xx/5xx 状态码抛出异常
+      if (response.code === "403" || !response.result) {
+        throw new Error(`HTTP Error: ${response.code} ${response.message?.detail}`)
+      }
+
       const data = await response.json()
       agentInfo.value = data.data
       return data.data
