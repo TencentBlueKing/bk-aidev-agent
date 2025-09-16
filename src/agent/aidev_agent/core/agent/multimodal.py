@@ -266,6 +266,8 @@ class CommonAgentMixIn(BaseModel, ABC):
             agent.agent_options.knowledge_query_options.knowledge_bases = knowledge_bases
         if knowledge_items:
             agent.agent_options.knowledge_query_options.knowledge_items = knowledge_items
+        if role_prompt:
+            agent.agent_options.knowledge_query_options.role_prompt = role_prompt
         history = ChatMessageHistory()
         if chat_history:
             history.add_messages(chat_history)
