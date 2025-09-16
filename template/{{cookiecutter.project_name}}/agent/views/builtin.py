@@ -172,7 +172,11 @@ class AgentInfoViewSet(PluginViewSet):
         agent_info = get_agent_config_info(request.user.username)
 
         # 新增群聊信息
-        agent_info["chat_group"] = {"enabled": settings.CHAT_GROUP_ENABLED, "staff": settings.CHAT_GROUP_STAFF}
+        agent_info["chat_group"] = {
+            "enabled": settings.CHAT_GROUP_ENABLED,
+            "staff": settings.CHAT_GROUP_STAFF,
+            "username": request.user.username,
+        }
         return Response(data=agent_info)
 
     @action(detail=False, methods=["GET"], url_path="ping", url_name="ping")
