@@ -492,7 +492,6 @@
   } = useSelectionMode({
     sessionStore,
     sessionContents,
-    currentSession,
     getChatGroupApi,
     onTransferMessages: messageIds => {
       emit('transfer-messages', messageIds);
@@ -931,6 +930,7 @@
     isLoadingSessionContents,
     updateGreetingTextHeight,
     setCurrentSession,
+    setCiteText,
     focusInput: () => {
       chatInputBoxRef.value?.focus();
     },

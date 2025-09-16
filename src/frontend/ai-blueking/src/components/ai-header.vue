@@ -108,6 +108,7 @@
       chatGroup?: {
         enabled: boolean;
         staff: string[];
+        username: string;
       };
       hasSessionContents?: boolean;
     }>(),
@@ -121,6 +122,7 @@
       chatGroup: () => ({
         enabled: false,
         staff: [],
+        username: '',
       }),
     }
   );
@@ -265,7 +267,10 @@
                 element._tippy.destroy();
               }
               // 为禁用的自动生成命名项添加tooltip
-              if (element.classList.contains('disabled') && element.dataset.action === 'auto-generate') {
+              if (
+                element.classList.contains('disabled') &&
+                element.dataset.action === 'auto-generate'
+              ) {
                 createTooltip(element, t('请先发起会话'), {
                   arrow: true,
                   offset: [0, 8],

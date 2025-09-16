@@ -57,6 +57,7 @@
 </template>
 
 <script setup lang="ts">
+  import type { IAgentInfo } from '@blueking/ai-ui-sdk/types';
   import { Instance } from 'tippy.js';
   import { ComponentPublicInstance } from 'vue';
   import { ref, onMounted, watch, computed, onBeforeUnmount } from 'vue';
@@ -83,8 +84,6 @@
   const { enablePopup } = usePopup();
   const { selectedText, citeText, setCiteText, clearSelection, lockSelectedText } =
     useSelect(enablePopup);
-
-  import type { IAgentInfo } from '@blueking/ai-ui-sdk/types';
 
   const props = withDefaults(
     defineProps<{
@@ -441,6 +440,7 @@
       background: transparent;
       border: none;
       outline: none;
+      box-sizing: border-box;
 
       &::placeholder {
         line-height: 20px;

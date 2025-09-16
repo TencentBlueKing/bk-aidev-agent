@@ -8,7 +8,6 @@ import type { SessionStore } from '../store/sessionStore';
 interface UseSelectionModeOptions {
   sessionStore: SessionStore;
   sessionContents: { value: ISessionContent[] };
-  currentSession: { value: { sessionCode?: string } | null };
   getChatGroupApi: (data: any) => Promise<any>;
   onTransferMessages?: (messageIds: string[]) => void;
   onShareMessages?: (messageIds: string[]) => void;
@@ -17,12 +16,22 @@ interface UseSelectionModeOptions {
 export function useSelectionMode({
   sessionStore,
   sessionContents,
-  currentSession,
   getChatGroupApi,
   onTransferMessages,
   onShareMessages,
 }: UseSelectionModeOptions) {
   const loading = ref(false);
+
+  // 动态生成聊天群名称
+  const chatGroupName = computed(() => {
+    const agentName = sessionStore.agentInfo.value?.agentName || '';
+    const sessionName = sessionStore.currentSession.value?.sessionName || '';
+    const username = sessionStore.agentInfo.value?.chatGroup?.username || '';
+
+    // 构造格式：智能体名称-会话名称-咨询用户
+    const parts = [agentName, sessionName, username].filter(part => part.trim() !== '');
+    return parts.length > 0 ? parts.join('-') : '小鲸转人工'; // 如果所有部分都为空，使用默认名称
+  });
 
   // 获取所有可见消息的ID
   const visibleMessageIds = computed(() => {
@@ -73,9 +82,9 @@ export function useSelectionMode({
 
         // 调用 getChatGroupApi
         await getChatGroupApi({
-          chat_group_name: '小鲸转人工',
+          chat_group_name: chatGroupName.value,
           messages,
-          session_code: currentSession.value?.sessionCode || '',
+          session_code: sessionStore.currentSession.value?.sessionCode || '',
         });
       } catch (error) {
         console.error('调用 getChatGroupApi 失败:', error);

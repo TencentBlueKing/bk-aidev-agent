@@ -270,6 +270,9 @@ export default {
     this.focusInput = () => {
       aiBlueking.component.exposed.focusInput();
     };
+    this.setCiteText = (citeText: string) => {
+      aiBlueking.component.exposed.setCiteText(citeText);
+    };
 
     // 添加 组件暴露属性（属性类型使用 defineProperty 添加, 以保持响应式）
     Object.defineProperty(this, 'sessionContents', {
