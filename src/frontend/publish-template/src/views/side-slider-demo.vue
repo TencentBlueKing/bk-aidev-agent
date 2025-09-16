@@ -111,13 +111,17 @@
 </template>
 
 <script lang="ts" setup>
-  import { ref } from "vue"
+  import { ref, onMounted } from "vue"
   import AILogo from "../assets/svg/ai-logo.svg"
 
   import AIBlueking, { AIBluekingExpose } from "@blueking/ai-blueking"
   import "@blueking/ai-blueking/dist/vue3/style.css"
+  import router from "../router"
+  import { fetchAgentInfo } from "../composables/useAgentInfo"
 
   const aiBlueking = ref<AIBluekingExpose | null>(null)
+  const agentInfo = ref<any>(null)
+  const isComponentReady = ref(false)
 
   const url = ref(window.BK_API_PREFIX)
 
@@ -131,10 +135,21 @@
     })
   }
 
+  const getAgentInfo = async () => {
+    const data = await fetchAgentInfo(url.value)
+    agentInfo.value = data
+    return data
+  }
+
   const handleSdkError = (error: any) => {
     console.error("SDK错误:", error)
     router.push("/403")
   }
+
+  onMounted(async () => {
+    // 获取agent信息
+    await getAgentInfo()
+  })
 </script>
 
 <style lang="postcss" scoped>

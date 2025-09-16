@@ -65,12 +65,13 @@
 
 <script setup lang="ts">
   import { ref, onMounted, reactive, watch, computed } from "vue"
-  import { Input as BKInput, Button as BKButton, Exception as BKException } from "bkui-vue"
+  import { Input as BKInput, Button as BKButton } from "bkui-vue"
   import { Search, Plus } from "bkui-vue/lib/icon"
 
   import AIBlueking, { AIBluekingExpose } from "@blueking/ai-blueking"
   import "@blueking/ai-blueking/dist/vue3/style.css"
   import router from "../router"
+  import { fetchAgentInfo } from "../composables/useAgentInfo"
 
   const aiBlueking = ref<AIBluekingExpose | null>(null)
   const sessionList = ref<any[]>([])
@@ -82,25 +83,10 @@
   const url = ref(window.BK_API_PREFIX)
 
   // 获取agent信息的函数
-  const fetchAgentInfo = async () => {
-    try {
-      const response = await fetch(`${url.value}/agent/info/`, {
-        credentials: "include", // 包含Cookie等凭证信息
-      })
-
-      // 检查 HTTP 状态码，fetch 不会为 4xx/5xx 状态码抛出异常
-      if (!response.ok || response.status !== 200) {
-        throw new Error(`HTTP Error: ${response.status} ${response.statusText}`)
-      }
-
-      const data = await response.json()
-      agentInfo.value = data.data
-      return data.data
-    } catch (error) {
-      console.error("获取Agent信息失败:", error)
-      router.push("/403")
-      return null
-    }
+  const getAgentInfo = async () => {
+    const data = await fetchAgentInfo(url.value)
+    agentInfo.value = data
+    return data
   }
 
   const handleSdkError = (error: any) => {
@@ -239,7 +225,7 @@
     }
 
     // 先获取agent信息
-    await fetchAgentInfo()
+    await getAgentInfo()
 
     // 设置组件准备就绪标志
     isComponentReady.value = true
