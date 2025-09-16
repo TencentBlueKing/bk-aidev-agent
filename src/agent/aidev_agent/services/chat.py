@@ -220,8 +220,6 @@ class ChatCompletionAgent(BaseModel):
             self.agent_options.knowledge_query_options.knowledge_bases = self.knowledge_bases
         if self.knowledges:
             self.agent_options.knowledge_query_options.knowledge_items = self.knowledges
-        if self.role_prompt:
-            self.agent_options.knowledge_query_options.role_prompt = self.role_prompt
         return self.agent_cls.get_agent_executor(
             llm=self.chat_model,
             knowledge_llm=self.chat_model,
