@@ -4,6 +4,7 @@ from collections import deque
 from logging import getLogger
 from time import time
 from typing import Any, ClassVar, Generator, Optional
+from uuid import uuid4
 
 from langchain.memory.token_buffer import ConversationTokenBufferMemory
 from langchain_community.chat_message_histories import ChatMessageHistory
@@ -154,7 +155,13 @@ class ChatCompletionAgent(BaseModel):
         else:
             loop = get_event_loop()
             result = loop.run_until_complete(agent_e.ainvoke({"input": messages[-1].content}, cfg))
-            return result.get("output", "")
+            return_data = {
+                "choices": [{"delta": {"role": "assistant", "content": result["output"]}}],
+                "model": self.model_name,
+                "id": str(uuid4()),
+                "reference_doc": result.get("reference_doc", []),
+            }
+            return return_data
 
     def _stream(self, messages: list[BaseMessage]) -> Generator[str, None, None]:
         # 流式处理

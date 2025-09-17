@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import json
 
 from bkapi_client_core.base import Operation, OperationGroup
 from bkapi_client_core.client import BaseClient
@@ -8,7 +9,7 @@ from bkapi_client_core.property import bind_property
 from aidev_agent.api.abstract_client import AbstractBKAidevResourceManager
 from aidev_agent.config import settings
 from aidev_agent.enums import CredentialType
-from aidev_agent.packages.langchain.tools.base import Tool, make_structured_tool
+from aidev_agent.packages.langchain.tools.base import Tool, ToolExtra, make_structured_tool
 
 
 class OpenApiGroup(OperationGroup):
@@ -211,7 +212,13 @@ class Client(BaseClient, AbstractBKAidevResourceManager):
         result["data"]["tool_cn_name"] = result["data"]["tool_name"]
         if result["data"].get("credential_type", "") == CredentialType.BLUEAPPS.value:
             tool = Tool.model_validate(result["data"])
-            tool.extra = {"bk_app_code": settings.APP_CODE, "bk_app_secret": settings.SECRET_KEY}
+            tool.extra = ToolExtra(
+                header={
+                    "X-Bkapi-Authorization": json.dumps(
+                        {"bk_app_code": settings.APP_CODE, "bk_app_secret": settings.SECRET_KEY}
+                    )
+                }
+            )
             return make_structured_tool(tool)
         return make_structured_tool(Tool.model_validate(result["data"]))
 
