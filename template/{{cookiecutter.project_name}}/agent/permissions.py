@@ -14,7 +14,6 @@ class AgentPluginPermission(permissions.BasePermission):
 
     def has_permission(self, request, view):
         # 检查用户是否有agent的access_agent权限
-        get_agent_config_info(request.user.username)
         allowed_access = self._get_allowed_access(request.user.username)
         if not allowed_access:
             raise PermissionDenied(
