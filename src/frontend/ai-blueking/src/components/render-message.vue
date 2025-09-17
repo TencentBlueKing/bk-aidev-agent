@@ -496,6 +496,7 @@
 
       .message-content-wrapper {
         flex: 1;
+        width: 0;
       }
     }
 

@@ -458,6 +458,7 @@
     renameSessionApi,
     setSessionContents,
     handleCompleteRole,
+    stopSessionContentApi,
   } = useChat({
     handleStart: () => {
       scrollToBottomIfNeeded();
@@ -646,7 +647,30 @@
     enterSelectMode(type);
   };
 
+  // 使用 sendBeacon 发送停止会话请求
+  const sendStopSessionRequest = () => {
+    if (navigator.sendBeacon && normalizedUrl.value) {
+      const stopUrl = `${normalizedUrl.value}/session_content/stop/`;
+
+      // 使用 sendBeacon 发送 POST 请求
+      const success = navigator.sendBeacon(stopUrl, new Blob(['{}'], { type: 'application/json' }));
+
+      return success;
+    } else {
+      // 降级到普通的停止API调用
+      stopSessionContentApi();
+      return false;
+    }
+  };
+
+  // 处理页面卸载事件
+  const handleUnload = () => {
+    sendStopSessionRequest();
+  };
+
   onMounted(async () => {
+    // 使用 unload 事件配合 sendBeacon，确保请求能够成功发送
+    window.addEventListener('unload', handleUnload);
     window.addEventListener('resize', handleWindowResize);
     window.addEventListener('enter-select-mode', handleEnterSelectMode as EventListener);
     if (normalizedUrl.value && !props.defaultMinimize) {
@@ -664,6 +688,9 @@
   onBeforeUnmount(() => {
     window.removeEventListener('resize', handleWindowResize);
     window.removeEventListener('enter-select-mode', handleEnterSelectMode as EventListener);
+
+    // 清理页面卸载相关的事件监听器
+    window.removeEventListener('unload', handleUnload);
   });
 
   // ===================================================================
@@ -916,6 +943,7 @@
   // 13. 暴露给父组件的方法
   // ===================================================================
   defineExpose({
+    stopSessionContentApi,
     sessionContents,
     handleShow,
     handleClose,
