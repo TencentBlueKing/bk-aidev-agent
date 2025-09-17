@@ -1,13 +1,18 @@
 import os
 from warnings import warn
 
-from blueapps.patch.settings_paas_services import INSTALLED_APPS, STATICFILES_DIRS  # noqa
+from blueapps.patch.settings_paas_services import CACHES, INSTALLED_APPS, STATICFILES_DIRS  # noqa
 
 CUR_DIR = os.path.dirname(__file__)
 STATIC_TEMPLATE_ROOT = os.path.join(CUR_DIR, "{{cookiecutter.static_template_root}}")
 STATICFILES_DIRS += [os.path.join(STATIC_TEMPLATE_ROOT, "static")]
 
 DEFAULT_CACHE_TIMEOUT = 60
+
+CACHES["default"] = {
+    "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+    "LOCATION": "my_cache_table",
+}
 
 
 # 需要合并的配置

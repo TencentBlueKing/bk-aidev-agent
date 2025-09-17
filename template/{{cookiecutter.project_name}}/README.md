@@ -24,11 +24,11 @@ cp .env.template .env
 ```bash
 source .env
 python bin/manage.py migrate
+python bin/manage.py createcachetable
 python bin/manage.py runserver local.{{cookiecutter.bk_paas_domain}}:8000
 ```
 
 本地打开`local.{{cookiecutter.bk_paas_domain}}:8000`即可使用小鲸进行会话
-
 
 ### 1.3 开发指引
 
@@ -115,7 +115,6 @@ curl -X POST {{cookiecutter.app_apigw_host}}/invoke/1.0.0assistant \
     }'
 ```
 
-
 #### 1.4.2 流式调用
 
 **请求输入格式**
@@ -159,10 +158,10 @@ curl -X POST {{cookiecutter.app_apigw_host}}/bk_plugin/plugin_api/chat_completio
     -d '{"chat_history":[{"role":"user","content":"hi"}], "execute_kwargs": {"stream": true}}'
 ```
 
-
 #### 1.4.4 流式响应协议
 
 - 流式响应遵从标准的SSE响应规范。响应的data具体内容为JSON字符串，具体协议如下：
+
   - event支持5种类型：text, think, reference_doc, done, error
   - text类型event，表示单个流式输出
     - 附带字段
@@ -171,63 +170,62 @@ curl -X POST {{cookiecutter.app_apigw_host}}/bk_plugin/plugin_api/chat_completio
     - 附带字段
       - content: 单个流式响应内容
   - reference_doc类型event，表示执行了知识库查询并检索到了可能相关的文档
-    - 附带字段: 
+    - 附带字段:
       - documents
   - done类型event，表示流式输出结束
-    - 附带字段: 
+    - 附带字段:
       - content: 最终完整输出（默认为前序所有流式内容集合，或自定义最终输出）
       - cover: 是否用最终输出覆盖前序已展示流式输出
   - error类型event，表示遇到异常，同时流式输出结束
-    - 附带字段: 
+    - 附带字段:
       - message
       - code
 
-
 - 可以在agent内部处理逻辑中使用`langchain_core.callbacks.manager.dispatch_custom_event`函数，从算法逻辑中分发自定义事件并在`bk_plugin/apis/assistant.py`中转换为上述标准流式事件
 
-
 - 示例:
+
 ```json
 {
-    "event": "text",
-    "content": "这是AI助手"
+  "event": "text",
+  "content": "这是AI助手"
 }
 ```
 
 ```json
 {
-    "event": "text",
-    "content": "的回答。"
+  "event": "text",
+  "content": "的回答。"
 }
 ```
 
 ```json
 {
-    "event": "think",
-    "content": "这是AI助手的思考过程。"
+  "event": "think",
+  "content": "这是AI助手的思考过程。"
 }
 ```
 
 ```json
 {
-    "event": "done",
-    "content": "这是AI助手的完整回答。",
-    "cover": false
+  "event": "done",
+  "content": "这是AI助手的完整回答。",
+  "cover": false
 }
 ```
 
 ```json
 {
-    "event": "reference_doc",
-    "documents": [{"metadata": {}}]
+  "event": "reference_doc",
+  "documents": [{ "metadata": {} }]
 }
 ```
 
 ```json
 {
-    "event": "error",
-    "code": 400,
-    "message": "发生错误"
+  "event": "error",
+  "code": 400,
+  "message": "发生错误"
 }
 ```
 
