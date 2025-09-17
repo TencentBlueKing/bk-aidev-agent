@@ -138,6 +138,13 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/chat/session_content/{id}/",
     )
 
+    stop_chat_session_content = bind_property(
+        Operation,
+        name="stop_chat_session_content",
+        method="POST",
+        path="/openapi/aidev/resource/v1/chat/session_content/stop/",
+    )
+
     create_chat_group = bind_property(
         Operation,
         name="create_chat_group",

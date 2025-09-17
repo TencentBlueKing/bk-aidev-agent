@@ -129,6 +129,12 @@ class ChatSessionContentViewSet(PluginViewSet):
         result = client.api.batch_delete_chat_session_content(json=request.data)
         return Response(data=result["data"])
 
+    @action(["POST"], url_path="stop", detail=False)
+    def stop(self, request):
+        username = request.user.username
+        result = client.api.stop_chat_session_content(headers={"X-BKAIDEV-USER": username})
+        return Response(data=result["data"])
+
 
 class ChatCompletionViewSet(PluginViewSet):
     def create(self, request):
