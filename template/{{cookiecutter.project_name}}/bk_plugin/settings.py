@@ -10,7 +10,8 @@ STATICFILES_DIRS += [os.path.join(STATIC_TEMPLATE_ROOT, "static")]
 DEFAULT_CACHE_TIMEOUT = 60
 
 CACHES["default"] = {
-    "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+    "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+    "LOCATION": "my_cache_table",
 }
 
 
