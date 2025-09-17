@@ -20,8 +20,8 @@ export const fetchAgentInfo = async (url: string): Promise<AgentInfo | null> => 
 
     // 检查 HTTP 状态码，fetch 不会为 4xx/5xx 状态码抛出异常
     if (!response.ok && response.status === 403) {
-      throw new Error(`HTTP Error: ${response.status} ${response.statusText}`)
       router.push("/403")
+      throw new Error(`HTTP Error: ${response.status} ${response.statusText}`)
     }
 
     const data = await response.json()
