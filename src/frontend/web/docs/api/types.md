@@ -8,39 +8,40 @@
 
 ```typescript
 interface IShortcut {
-  id: string;       // 快捷操作的唯一标识符
-  name: string;     // 显示的操作名称
-  icon?: string;    // 按钮图标的类名
+  id: string // 快捷操作的唯一标识符
+  name: string // 显示的操作名称
+  icon?: string // 按钮图标的类名
   // 组件配置，用于定义表单项
   components: Array<{
-    type: string;    // 组件类型：'input', 'select', 'number', 'textarea' 等
-    name?: string;   // 表单项名称（推荐使用，与 label 相同功能）
-    key: string;     // 表单项键名
-    placeholder?: string; // 占位文本
-    default?: any;   // 默认值
-    required?: boolean;   // 是否必填
-    fillBack?: boolean;   // 是否自动填充选中文本
-    fillRegx?: string | RegExp; // 填充的正则匹配表达式
-    rows?: number;        // 输入框行数（仅 textarea 类型有效）
-    min?: number;         // 最小值（仅 number 类型有效）
-    max?: number;         // 最大值（仅 number 类型有效）
-    options?: Array<{     // 下拉选项（仅 select 类型有效）
-      label: string;
-      value: string | number;
-    }>;
-    hide?: boolean;       // 是否隐藏该组件（v1.2.4-beta.3 新增）
+    type: string // 组件类型：'input', 'select', 'number', 'textarea' 等
+    name?: string // 表单项名称（推荐使用，与 label 相同功能）
+    key: string // 表单项键名
+    placeholder?: string // 占位文本
+    default?: any // 默认值
+    required?: boolean // 是否必填
+    fillBack?: boolean // 是否自动填充选中文本
+    fillRegx?: string | RegExp // 填充的正则匹配表达式
+    rows?: number // 输入框行数（仅 textarea 类型有效）
+    min?: number // 最小值（仅 number 类型有效）
+    max?: number // 最大值（仅 number 类型有效）
+    options?: Array<{
+      // 下拉选项（仅 select 类型有效）
+      label: string
+      value: string | number
+    }>
+    hide?: boolean // 是否隐藏该组件（v1.2.4-beta.3 新增）
   }>
 }
 ```
 
 ### 组件类型
 
-| 类型 | 描述 | 特有属性 |
-| ---- | ---- | ------- |
-| `text` | 单行文本输入框 | - |
+| 类型       | 描述           | 特有属性                     |
+| ---------- | -------------- | ---------------------------- |
+| `text`     | 单行文本输入框 | -                            |
 | `textarea` | 多行文本输入框 | `rows`：文本框行数，默认为 3 |
-| `number` | 数字输入框 | `min`, `max`：数值范围限制 |
-| `select` | 下拉选择框 | `options`：选项列表 |
+| `number`   | 数字输入框     | `min`, `max`：数值范围限制   |
+| `select`   | 下拉选择框     | `options`：选项列表          |
 
 ### 后端数据格式
 
@@ -71,9 +72,9 @@ interface IShortcut {
 
 ```typescript
 interface Message {
-  role: 'user' | 'assistant';  // 消息发送者角色
-  content: string;            // 消息内容
-  cite?: string;              // (可选) 框选引用内容，用于预设引用的文本
+  role: "user" | "assistant" // 消息发送者角色
+  content: string // 消息内容
+  cite?: string // (可选) 框选引用内容，用于预设引用的文本
 }
 ```
 
@@ -83,9 +84,9 @@ interface Message {
 
 ```typescript
 interface ISession {
-  sessionCode: string;   // 会话唯一标识
-  sessionName: string;   // 会话名称
-  sessionDesc?: string;  // 会话描述
+  sessionCode: string // 会话唯一标识
+  sessionName: string // 会话名称
+  sessionDesc?: string // 会话描述
 }
 ```
 
@@ -95,8 +96,35 @@ interface ISession {
 
 ```typescript
 interface IRequestOptions {
-  headers?: Record<string, any>; // 请求头参数
-  data?: Record<string, any>;    // 请求体附加数据
-  context?: Array<Record<string, any>>; // 上下文参数数据，会合并到快捷操作的context中
+  headers?: Record<string, any> // 请求头参数
+  data?: Record<string, any> // 请求体附加数据
+  context?: Array<Record<string, any>> // 上下文参数数据，会合并到快捷操作的context中
 }
-``` 
+```
+
+## IAgentInfo
+
+智能体信息对象定义，包含智能体的配置和状态信息。
+
+```typescript
+interface IAgentInfo {
+  agentName: string // 智能体名称
+  openingRemark: string // 开场白
+  predefinedQuestions: string[] // 预设问题
+  chatGroup?: {
+    // <Badge type="tip" text="v1.2.6" /> 群聊配置信息（可选）
+    enabled: boolean // 是否启用群聊功能
+    staff: string[] // 群成员列表
+    username?: string // 咨询用户的用户名（v1.2.6新增）
+  }
+  // ... 其他配置项
+}
+```
+
+### 群聊配置
+
+从 v1.2.6 开始，`chatGroup` 配置新增 `username` 字段支持：
+
+- `username` 用于在群聊转人工时显示咨询用户的名称
+- 聊天群名称会根据智能体名称、会话名称和用户名动态生成
+- 格式：`智能体名称-会话名称-咨询用户`
