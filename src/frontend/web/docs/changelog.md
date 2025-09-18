@@ -8,9 +8,24 @@ export default {
     return {
       changelogData: [
         {
+          version: "v1.2.6",
+          date: "2025-09-18",
+          important: "⚠️ <strong>重要提醒</strong>：小鲸 1.2.6 版本必须与后端 SDK 版本 1.0.0b42 或更高版本匹配使用，否则可能出现兼容性问题",
+          features: [
+            "新增 setCiteText 方法，支持编程式设置输入框中的引用文本",
+            "群聊咨询用户名支持，在选择模式中新增 username 字段，用于群聊转人工时显示咨询用户名称",
+            "动态群聊名称生成，聊天群名称根据智能体名称、会话名称和用户名自动组合生成"
+          ],
+          improvements: [
+            "升级 @blueking/ai-ui-sdk 到 0.1.16-beta.4，获取更多底层能力支持和功能增强",
+            "优化输入框样式，添加 box-sizing 属性提升样式一致性",
+            "重构选择模式逻辑，移除不必要的依赖，提升代码可维护性"
+          ]
+        },
+        {
           version: "v1.2.5",
           date: "2025-09-12",
-          important: "⚠️ <strong>重要提醒</strong>：小鲸 1.2.5 版本必须与后端 SDK 版本 1.0.0b38 或更高版本匹配使用，否则可能出现兼容性问题",
+          important: "⚠️ <strong>重要提醒</strong>：小鲸 1.2.5 版本必须与后端 SDK 版本 1.0.0b39 或更高版本匹配使用，否则可能出现兼容性问题",
           features: [
             "优化快捷操作逻辑，移除 ai-selected-box 组件，简化快捷方式点击事件的处理",
             "新增 loadRecentSessionOnMount 属性，支持组件挂载时加载最近会话，优化会话初始化体验",
