@@ -108,7 +108,8 @@ class ChatSessionViewSet(PluginViewSet):
 
 class ChatSessionContentViewSet(PluginViewSet):
     def create(self, request):
-        result = client.api.create_chat_session_content(json=request.data)
+        username = request.user.username
+        result = client.api.create_chat_session_content(json=request.data, headers={"X-BKAIDEV-USER": username})
         return Response(data=result["data"])
 
     @action(["GET"], url_path="content", detail=False)
