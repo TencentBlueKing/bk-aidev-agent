@@ -2,7 +2,7 @@
 
 ## 概览
 
-**当前版本**：1.0.0b9
+**当前版本**：1.0.0b44
 
 ### 支持的能力：
 
@@ -18,7 +18,7 @@
 Python版本：>=3.10;
 
 ```
-$ pip install aidev-agent==1.0.0b9
+$ pip install aidev-agent==1.0.0b44
 ```
 
 ### 2. 使用样例
@@ -31,10 +31,10 @@ $ pip install aidev-agent==1.0.0b9
 # (必选)以下环境变量可以向aidev的服务的管理员获取
 LLM_GW_ENDPOINT=https://xxx.example.com/prod/openapi/aidev/gateway/llm/v1
 # 个人拥有的蓝鲸app应用名
-APP_ID=xxx 
+APP_ID=xxx
 BKPAAS_APP_ID=xxx
 # 个人拥有的蓝鲸app应用密钥
-APP_TOKEN=yyy 
+APP_TOKEN=yyy
 BKPAAS_APP_SECRET=yyy
 
 # (可选)如果需要访问aidev平台资源,如知识库/工具,需要配置下面的环境变量
@@ -147,3 +147,146 @@ for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs):
 
 print(results)
 ```
+
+#### 样例4：在蓝鲸主站中使用 SSM 客户端进行认证
+
+**注意** 这个示例适用于在蓝鲸主站代码中集成 SSM 认证功能
+
+
+```python
+# -*- coding: utf-8 -*-
+"""
+在蓝鲸主站项目中使用 SSM 客户端
+参考真实项目中的使用模式，保持简洁实用
+"""
+
+from dataclasses import dataclass
+from typing import Optional
+from aidev_agent.api.bk_ssm import SSMApi
+from aidev_agent.api.ssm_client import SSMException
+
+@dataclass
+class UserLLMService:
+    tenant_id: str
+    space_id: str
+    username: Optional[str] = None
+
+    def get_access_token_for_external_api(self, request=None):
+        """
+        为调用外部API获取访问令牌
+        """
+        try:
+            if request and self.username:
+                # 用户态：使用当前用户身份
+                ssm_client = SSMApi.get_user_client(request)
+                return ssm_client.get_user_access_token()
+            else:
+                # 应用态：使用应用身份（适用于后台任务、定时任务等）
+                ssm_client = SSMApi.get_client_client()
+                return ssm_client.get_client_access_token()
+        except SSMException as e:
+            # 根据业务需要处理异常
+            raise Exception(f"获取访问令牌失败: {e}")
+
+    def call_external_service_with_auth(self, request=None):
+        """
+        调用需要认证的外部服务示例
+        """
+        access_token = self.get_access_token_for_external_api(request)
+
+        # 使用 token 调用外部 API
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json'
+        }
+
+        # 具体的API调用逻辑
+        # response = requests.get(external_api_url, headers=headers)
+        # return response.json()
+
+        return {"token_obtained": True, "ready_for_api_call": True}
+
+# 在 Django 视图中使用
+def get_user_resources(request):
+    """获取用户资源的API视图"""
+    service = UserLLMService(
+        tenant_id="your_tenant",
+        space_id="your_space",
+        username=request.user.username
+    )
+
+    try:
+        # 获取需要认证的外部资源
+        result = service.call_external_service_with_auth(request)
+        return {"code": 0, "data": result}
+    except Exception as e:
+        return {"code": 500, "message": str(e)}
+
+# 在后台任务中使用（无用户上下文）
+def background_sync_task():
+    """后台同步任务"""
+    service = UserLLMService(
+        tenant_id="your_tenant",
+        space_id="your_space"
+        # 注意：username=None，将使用应用态
+    )
+
+    try:
+        # 后台任务使用应用态认证
+        result = service.call_external_service_with_auth()
+        return result
+    except Exception as e:
+        print(f"后台任务执行失败: {e}")
+```
+
+**最简化的使用方式：**
+
+```python
+from aidev_agent.api.bk_ssm import SSMApi
+
+# 方式1：在有Django request的地方
+def api_view(request):
+    client = SSMApi.get_user_client(request)
+    token = client.get_user_access_token()
+    # 使用 token 调用外部API
+
+# 方式2：在后台任务或定时任务中
+def background_task():
+    client = SSMApi.get_client_client()
+    token = client.get_client_access_token()
+    # 使用 token 调用外部API
+
+# 方式3：智能模式
+def smart_api_view(request):
+    client = SSMApi.get_client_by_request(request)
+    # 自动根据request判断使用用户态还是应用态
+    if hasattr(request, 'user') and request.user.is_authenticated:
+        token = client.get_user_access_token()
+    else:
+        token = client.get_client_access_token()
+```
+
+**环境配置（.env 文件）：**
+
+```bash
+# SSM 相关配置（选择其一即可）
+BK_SSM_ENDPOINT=https://your-ssm-endpoint.com
+
+# 或者分环境配置
+BK_SSM_SG_ENDPOINT=https://bkssm.sg.example.com    # 生产环境
+BK_SSM_BKOP_ENDPOINT=https://bkssm.bkop.example.com # 测试环境
+
+# 应用认证信息
+BKPAAS_APP_ID=your_app_code
+BKPAAS_APP_SECRET=your_app_secret
+```
+
+### 注意事项
+
+#### SSM 客户端使用注意事项：
+
+1. **环境配置**: 确保正确配置了 SSM 相关的环境变量
+2. **网络连接**: SSM 服务只能直调，不能通过网关访问
+3. **Token 缓存**: 客户端内置了 token 缓存机制，避免频繁请求
+4. **错误处理**: 合理处理 SSMException 异常
+5. **线程安全**: SSMClient 支持多线程并发访问
