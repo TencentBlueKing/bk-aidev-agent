@@ -19,6 +19,7 @@ dependencies = [
     "pytz<2026.0,>=2025.2",
     "h11==0.16.0",
     "langchain-mcp-adapters<1.0.0,>=0.1.9",
+    "responses>=0.25.8",
 ]
 name = "aidev-agent"
 version = "1.0.0b43"

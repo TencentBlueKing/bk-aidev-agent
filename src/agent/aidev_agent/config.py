@@ -126,6 +126,10 @@ BK_AIDEV_GATEWAY_NAME = env.str("AIDEV_GATEWAY_NAME", "bkaidev")
 BK_AIDEV_APIGW_ENDPOINT = env.str("BK_AIDEV_APIGW_ENDPOINT", "")
 BK_APIGW_STAGE = env.str("BK_APIGW_STAGE", "") or env.str("BKAIDEV_RESOURCE_STAGE", "prod")
 INTENT_RECOGNITION_GLOBAL_LLM_MODEL_NAME = env.str("INTENT_RECOGNITION_GLOBAL_LLM_MODEL_NAME", "hunyuan")
+# SSM相关配置
+BK_SSM_ENDPOINT = env.str("BK_SSM_ENDPOINT", "")
+BK_SSM_SG_ENDPOINT = env.str("BK_SSM_SG_ENDPOINT", "https://bkssm.sg.crosgame.com")
+BK_SSM_BKOP_ENDPOINT = env.str("BK_SSM_BKOP_ENDPOINT", "https://bkssm.bkop.woa.com")
 
 # end: 配置
 
