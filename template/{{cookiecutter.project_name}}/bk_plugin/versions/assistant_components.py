@@ -29,7 +29,7 @@ class PluginConfig(BaseModel):
     # 例如要求 agent 根据用户最新提问使用的语言（中/英文）进行自适应的答复等场景。
     # 对于复杂的自定义 prompt 需求，请参考 README_AGENT_PLUGIN.md [情况二] 的内容，
     # 直接重写完整的 agent prompt 并注册到 CommonQAAgent 中进行替换。
-    role_prompt: str = "{{cookiecutter.role_prompt}}"
+    role_prompt: str = ""
 
     CACHE_KEY: ClassVar[str] = "cached"
 

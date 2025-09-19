@@ -341,7 +341,6 @@ class AgentInstanceFactory:
 
         return {
             "chat_model": factory.build_chat_model(agent_code),
-            "role_prompt": factory.get_role_prompt(agent_code),
             "tools": factory.build_tools(agent_code),
             "knowledge_bases": factory.build_knowledge_bases(agent_code),
             "knowledge_items": factory.build_knowledge_items(agent_code),
