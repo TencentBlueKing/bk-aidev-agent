@@ -21,7 +21,7 @@ dependencies = [
     "langchain-mcp-adapters<1.0.0,>=0.1.9",
 ]
 name = "aidev-agent"
-version = "1.0.0b43"
+version = "1.0.0b44"
 description = "bkaidev agent builder"
 
 [dependency-groups]
@@ -36,6 +36,7 @@ dev = [
     "faker<38.0.0,>=37.0.0",
     "pytest-mock<4.0.0,>=3.14.0",
     "pytest-dotenv<1.0.0,>=0.5.2",
+    "responses<1.0.0,>=0.25.0",
 ]
 
 [tool.pdm.build]

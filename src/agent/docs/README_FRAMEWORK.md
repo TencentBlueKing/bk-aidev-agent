@@ -31,10 +31,10 @@ $ pip install aidev-agent==1.0.0b9
 # (必选)以下环境变量可以向aidev的服务的管理员获取
 LLM_GW_ENDPOINT=https://xxx.example.com/prod/openapi/aidev/gateway/llm/v1
 # 个人拥有的蓝鲸app应用名
-APP_ID=xxx 
+APP_ID=xxx
 BKPAAS_APP_ID=xxx
 # 个人拥有的蓝鲸app应用密钥
-APP_TOKEN=yyy 
+APP_TOKEN=yyy
 BKPAAS_APP_SECRET=yyy
 
 # (可选)如果需要访问aidev平台资源,如知识库/工具,需要配置下面的环境变量
@@ -147,3 +147,112 @@ for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs):
 
 print(results)
 ```
+
+# SSM客户端使用指南
+
+## 概览
+
+**当前版本**：1.0.0b44
+
+### 支持的能力：
+
+- 应用态和用户态Token管理：获取、刷新、校验access_token
+- 自动缓存机制：缓存token，自动处理过期和刷新
+- Django集成：从request对象自动提取用户信息和bk_token
+- 环境自适应：根据运行环境自动选择SSM端点
+
+⚠️ **重要：SSM 只能直调，不能走网关调用！**
+
+## 使用入门
+
+### 1. 环境变量配置
+
+使用前需要配置环境变量，可以写到`.env`中：
+
+```bash
+# (必选) 基础应用配置 - 支持多种环境变量名
+APP_ID=your_app_code                # 或 BKPAAS_APP_ID 或 BK_AIDEV_AGENT_APP_CODE
+APP_TOKEN=your_app_secret           # 或 BKPAAS_APP_SECRET 或 BK_AIDEV_AGENT_APP_SECRET
+
+# (可选) SSM服务端点配置，不配置会根据RUN_MODE自动选择
+BK_SSM_ENDPOINT=                    # 自定义SSM端点（优先级最高）
+BK_SSM_SG_ENDPOINT=                 # SG环境（生产）
+BK_SSM_BKOP_ENDPOINT=               # BKOP环境（开发）
+RUN_MODE=DEVELOPMENT                # PRODUCT 或 DEVELOPMENT（会自动判断）
+```
+
+### 2. 使用样例
+
+#### 样例1：获取应用态Token
+
+```python
+from aidev_agent.api.ssm_client import SSMClient
+
+client = SSMClient()
+access_token = client.get_client_access_token()
+print(f"应用态Token: {access_token}")
+```
+
+#### 样例2：从Django Request获取用户态Token
+
+```python
+from aidev_agent.api.ssm_client import get_user_access_token_from_request
+
+def my_view(request):
+    # 快速获取用户态token
+    access_token = get_user_access_token_from_request(request)
+    return JsonResponse({"access_token": access_token})
+```
+
+#### 样例3：主站代码集成
+
+基于主站代码(bkaidev-user)，替换bkoauth获取token：
+
+```python
+from aidev_agent.api.ssm_client import get_user_access_token_from_request
+
+class UserView(AIDevAPIViewSet):
+    def list(self, request, *args, **kwargs):
+        # 替换原来的bkoauth调用
+        access_token = get_user_access_token_from_request(request)
+
+        data = {"access_token": access_token}
+        return Response(data)
+```
+
+#### 样例4：手动提供用户信息
+
+```python
+from aidev_agent.api.ssm_client import SSMClient
+
+client = SSMClient()
+access_token = client.get_user_access_token(
+    username="admin",
+    bk_token="user_bk_token_here"
+)
+```
+
+## API参考
+
+### 常用方法
+
+```python
+from aidev_agent.api.ssm_client import SSMClient, get_user_access_token_from_request
+
+# 创建客户端
+client = SSMClient()
+
+# 获取应用态token
+client.get_client_access_token()
+
+# 获取用户态token
+client.get_user_access_token(username="admin", bk_token="token")
+client.get_user_access_token(request=request)
+
+# 便捷函数
+get_user_access_token_from_request(request)
+```
+
+
+
+
