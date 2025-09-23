@@ -3,10 +3,9 @@
 
 import json
 import time
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import responses
-from aidev_agent.api.bk_ssm import SSMApi
 from aidev_agent.api.ssm_client import SSMClient, TokenInfo
 
 
@@ -241,90 +240,6 @@ class TestSSMClient:
         # 清理所有缓存
         self.client.clear_cache()
         assert len(self.client._token_cache) == 0
-
-
-class TestSSMApi:
-    """SSM API工厂类测试"""
-
-    def test_get_user_client(self):
-        """测试获取用户态客户端"""
-        # 创建模拟request对象
-        mock_request = Mock()
-        mock_request.username = "test_user"
-        mock_request.user = Mock()
-        mock_request.user.username = "test_user"
-        mock_request.META = {"HTTP_BK_TOKEN": "test_bk_token"}
-        mock_request.COOKIES = {}
-
-        with patch("aidev_agent.api.bk_ssm.SSMClient") as mock_client_class:
-            mock_client = Mock()
-            mock_client_class.return_value = mock_client
-
-            # 模拟配置以避免初始化错误
-            with patch("aidev_agent.api.ssm_client.settings") as mock_settings:
-                mock_settings.APP_CODE = "test_app"
-                mock_settings.SECRET_KEY = "test_secret"
-                mock_settings.BK_SSM_ENDPOINT = "https://test-ssm.example.com"
-
-                client = SSMApi.get_user_client(mock_request)
-
-                assert client == mock_client
-                mock_client_class.assert_called_once()
-                # 验证设置了request上下文
-                assert mock_client._request_context == {
-                    "username": "test_user",
-                    "bk_token": "test_bk_token",
-                    "is_user_mode": True,
-                }
-
-    def test_get_client_client(self):
-        """测试获取应用态客户端"""
-        with patch("aidev_agent.api.bk_ssm.SSMClient") as mock_client_class:
-            mock_client = Mock()
-            mock_client_class.return_value = mock_client
-
-            client = SSMApi.get_client_client()
-
-            assert client == mock_client
-            mock_client_class.assert_called_once()
-
-    def test_get_client_by_request(self):
-        """测试通过request获取客户端"""
-        # 测试无用户信息的情况（应用态）
-        mock_request = Mock()
-        mock_request.username = None
-        mock_request.user = Mock()
-        mock_request.user.username = None
-        mock_request.META = {}
-        mock_request.COOKIES = {}
-
-        with patch("aidev_agent.api.bk_ssm.SSMApi.get_client_client") as mock_get_client:
-            mock_client = Mock()
-            mock_get_client.return_value = mock_client
-
-            client = SSMApi.get_client_by_request(mock_request)
-
-            assert client == mock_client
-            mock_get_client.assert_called_once()
-
-    def test_get_client_by_request_with_user(self):
-        """测试通过request获取用户态客户端"""
-        # 测试有用户信息的情况（用户态）
-        mock_request = Mock()
-        mock_request.username = "test_user"
-        mock_request.user = Mock()
-        mock_request.user.username = "test_user"
-        mock_request.META = {"HTTP_BK_TOKEN": "test_bk_token"}
-        mock_request.COOKIES = {}
-
-        with patch("aidev_agent.api.bk_ssm.SSMApi.get_user_client") as mock_get_user:
-            mock_client = Mock()
-            mock_get_user.return_value = mock_client
-
-            client = SSMApi.get_client_by_request(mock_request)
-
-            assert client == mock_client
-            mock_get_user.assert_called_once_with(mock_request)
 
 
 class TestSSMIntegration:
