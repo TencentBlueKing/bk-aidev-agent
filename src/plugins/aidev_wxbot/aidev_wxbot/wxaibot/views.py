@@ -23,7 +23,6 @@ from ..api.bkaidev import BkAiDevApi
 from ..utils.rabbitmq import rabbitmq_client
 
 logger = getLogger(__name__)
-from blueapps.account.decorators import login_exempt
 
 
 class WxAiBotViewSet(ViewSet):
@@ -33,28 +32,26 @@ class WxAiBotViewSet(ViewSet):
     authentication_classes = []
     permission_classes = []
 
-    @login_exempt
-    def dispatch(self, request, *args, **kwargs):
-        return super().dispatch(request, *args, **kwargs)
-
     @property
     def wxbot_config(self):
         if settings.WXAIBOT_TOKEN and settings.WXAIBOT_ENCODING_AES_KEY:
             return {"rtx_token": settings.WXAIBOT_TOKEN, "rtx_encoding_aes_key": settings.WXAIBOT_ENCODING_AES_KEY}
         else:
-            return BkAiDevApi().retrieve_agent_channel_configs("rtx")["data"]["config"]
+            config = [
+                item
+                for item in BkAiDevApi().retrieve_agent_channel_configs("rtx")["data"]
+                if item["channel_type"] == "rtx"
+            ][0]
+            return config["config"]
 
     def _reply_wxaibot(self, payload: dict) -> dict:
         """处理微信AI机器人的回复逻辑"""
         msg_type = payload["msgtype"]
         if msg_type == "text":
-            logger.info("go to reply_text")
             return_msg = self._reply_text(payload)
         elif msg_type == "event":
-            logger.info("go to reply_event")
             return_msg = self._reply_event(payload)
         elif msg_type == "stream":
-            logger.info("go to reply_stream")
             stream_id = payload["stream"]["id"]
             return_msg = self._reply_stream(stream_id)
         else:
@@ -75,9 +72,11 @@ class WxAiBotViewSet(ViewSet):
             # 从队列中取出单个元素
             llm_chunk = LlmChunkMsg(stream_id=stream_id)
             return_msg = llm_chunk.wxaibot_msg_json_from_cache(rabbitmq_client)
+            if llm_chunk.is_finish:
+                logger.info(f"stream_id:{stream_id} 流式响应结束")
             return return_msg
         except Exception as e:
-            logger.error(f"获取流式响应失败: {e}")
+            logger.error(f"stream_id:{stream_id} 获取流式响应失败: {e}")
             return stream_msg("回答失败！", True, stream_id)
 
     def _reply_event(self, payload: dict) -> dict:
@@ -94,18 +93,20 @@ class WxAiBotViewSet(ViewSet):
         current_context = ContextGenerator(payload).generate()
         agent_apigw_name = settings.BKPAAS_BK_PLUGIN_APIGW_NAME
         # 生成流式响应ID
-        stream_id = f"stream_queue_{int(time.time())}_{current_context.sender_code}"
+        stream_id = current_context.msg_id + "_" + str(int(time.time()))
 
         # 启动后台线程处理实际的AI请求
         thread = threading.Thread(
-            target=self._process_ai_request_async, args=(content, stream_id, agent_apigw_name), daemon=True
+            target=self._process_ai_request_async,
+            args=(content, stream_id, agent_apigw_name, current_context.sender_id),
+            daemon=True,
         )
         thread.start()
 
         # 立即返回"正在思考中...."的消息
         return stream_msg("正在思考中....", False, stream_id)
 
-    def _process_ai_request_async(self, content: str, stream_id: str, agent_apigw_name: str):
+    def _process_ai_request_async(self, content: str, stream_id: str, agent_apigw_name: str, username: str):
         """异步处理AI请求的后台方法"""
         try:
             start_time = time.time()
@@ -116,8 +117,6 @@ class WxAiBotViewSet(ViewSet):
                 + "prod"
                 + "/bk_plugin/plugin_api/chat_completion/"
             )
-            logger.info(f"chat_root: {chat_root}")
-
             response = requests.post(
                 chat_root,
                 headers={
@@ -126,7 +125,7 @@ class WxAiBotViewSet(ViewSet):
                 json={
                     "inputs": {"chat_history": [{"role": "user", "content": content}]},
                     "chat_history": [{"role": "user", "content": content}],
-                    "context": {"executor": "user"},
+                    "context": {"executor": username},
                     "execute_kwargs": {"stream": True},
                 },
                 stream=True,
@@ -158,7 +157,9 @@ class WxAiBotViewSet(ViewSet):
                                 if first_response_time is None:
                                     first_response_time = time.time()
                                     elapsed_time = first_response_time - start_time
-                                    logger.info(f"从请求开始到第一次收到流式响应耗时: {elapsed_time:.3f} 秒")
+                                    logger.info(
+                                        f"stream_id:{stream_id} 从请求开始到第一次收到流式响应耗时: {elapsed_time:.3f} 秒"
+                                    )
 
                                 event_type = chunk_json.get("event", "")
                                 if event_type == "text":
@@ -180,9 +181,9 @@ class WxAiBotViewSet(ViewSet):
                                     llm_chunk.is_finish = True
                                     llm_chunk.append_to_cache(rabbitmq_client)
                                 else:
-                                    logger.info(f"未知的事件类型: {event_type}")
+                                    logger.info(f"stream_id:{stream_id} 未知的事件类型: {event_type}")
                     except Exception as e:
-                        logger.error(f"处理 chunk 时发生错误: {e}")
+                        logger.error(f"stream_id:{stream_id} 处理 chunk 时发生错误: {e}")
                         # 发生错误时，写入错误信息到流中
                         error_chunk = LlmChunkMsg(
                             content=f"处理请求时发生错误: {str(e)}", is_finish=True, stream_id=stream_id
@@ -203,14 +204,14 @@ class WxAiBotViewSet(ViewSet):
                             llm_chunk.docs = docs
                             llm_chunk.append_to_cache(rabbitmq_client)
                     except Exception as e:
-                        logger.info(f"缓冲区中的数据无法解析: {data_content}")
+                        logger.info(f"stream_id:{stream_id} 缓冲区中的数据无法解析: {data_content}")
                         error_chunk = LlmChunkMsg(
                             content=f"解析响应数据时发生错误: {str(e)}", is_finish=True, stream_id=stream_id
                         )
                         error_chunk.append_to_cache(rabbitmq_client)
 
         except Exception as e:
-            logger.error(f"异步处理AI请求失败: {e}")
+            logger.error(f"stream_id:{stream_id} 异步处理AI请求失败: {e}")
             # 发生异常时，写入错误信息到流中
             error_chunk = LlmChunkMsg(content=f"请求处理失败: {str(e)}", is_finish=True, stream_id=stream_id)
             error_chunk.append_to_cache(rabbitmq_client)
@@ -231,7 +232,6 @@ class WxAiBotViewSet(ViewSet):
         nonce = request.GET.get("nonce")
         echostr = request.GET.get("echostr")
 
-        logger.info("验证 URL")
         ret, echostr = crypt.VerifyURL(msg_signature, timestamp, nonce, echostr)
         logger.info(echostr)
         if ret != 0:

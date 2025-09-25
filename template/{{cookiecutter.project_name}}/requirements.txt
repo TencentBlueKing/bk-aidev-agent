@@ -29,4 +29,4 @@ celery==5.4.0
 django-celery-beat==2.7.0
 django-celery-results==2.5.1
 aidev_agent==1.0.0b43
-aidev_wxbot==0.1.6
+aidev_wxbot==0.1.7

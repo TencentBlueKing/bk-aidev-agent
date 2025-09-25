@@ -10,7 +10,7 @@ import pika
 from django.conf import settings
 from pika.exceptions import ChannelClosedByBroker
 
-# 设置pika库的日志级别为DEBUG
+# 设置pika库的日志级别为ERROR
 pika_logger = logging.getLogger("pika")
 pika_logger.setLevel(logging.ERROR)
 
@@ -211,7 +211,7 @@ class RabbitMQClient:
                 auto_delete=auto_delete,
                 arguments=arguments or {},
             )
-            logger.info(f"交换机 '{exchange_name}' 声明成功")
+            logger.debug(f"交换机 '{exchange_name}' 声明成功")
             return True
         except Exception as e:
             logger.error(f"声明交换机 '{exchange_name}' 失败: {e}")

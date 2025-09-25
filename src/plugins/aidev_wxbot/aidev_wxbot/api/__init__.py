@@ -43,7 +43,7 @@ class Api(object):
         )
         try:
             response = requests.request(method, url, **params)
-            logger.info(f"\n-----resp-----\n {response.url} {response.headers} {response.text}")
+            logger.info(f"\n-----resp-----\n {response.url} {response.text}")
             if 200 <= response.status_code < 300:
                 result = response.json()
                 if isinstance(result, dict):

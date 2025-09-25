@@ -11,9 +11,11 @@ specific language governing permissions and limitations under the License.
 """
 
 from aidev_wxbot.wxaibot.views import WxAiBotViewSet
+from blueapps.account.decorators import login_exempt
 from django.conf import settings
 from django.contrib import admin
 from django.urls import include, re_path
+from django.utils.decorators import method_decorator
 from drf_yasg import openapi
 from drf_yasg.views import get_schema_view
 from rest_framework import permissions
@@ -28,8 +30,7 @@ schema_view = get_schema_view(
     public=True,
     permission_classes=(permissions.AllowAny,),
 )
-
-
+WxAiBotViewSetWithoutLogin = method_decorator(login_exempt, name="dispatch")(WxAiBotViewSet)
 urlpatterns = [
     re_path(r"^admin/", admin.site.urls),
     re_path(r"^account/", include("blueapps.account.urls")),
@@ -40,14 +41,16 @@ urlpatterns = [
         name="schema-json",
     ),
     re_path(r"^redoc/$", schema_view.with_ui("redoc", cache_timeout=0), name="schema-redoc"),
+    re_path(
+        r"^wxbot_callback/?$",
+        WxAiBotViewSetWithoutLogin.as_view({"get": "callback", "post": "callback"}),
+        name="wxbot_callback",
+    ),
     re_path(r"^bk_plugin/", include("bk_plugin_framework.services.bpf_service.urls")),
     re_path(r"^$", IndexView.as_view(), name="index"),
     re_path(r"^page/$", IndexView.as_view(), name="index"),
     re_path(r"^side-slider/$", IndexView.as_view(), name="index"),
     re_path(r"^403/$", IndexView.as_view(), name="index"),
-    re_path(
-        r"^wxbot_callback/?$", WxAiBotViewSet.as_view({"get": "callback", "post": "callback"}), name="wxbot_callback"
-    ),
 ]
 
 if settings.ENVIRONMENT == "dev":

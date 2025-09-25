@@ -1,12 +1,15 @@
 import json
 import logging
 import time
+import uuid
 from typing import Any
+
+from django.conf import settings
+from pydantic import BaseModel, ConfigDict, Field
 
 from aidev_wxbot.api.bkaidev import BkAiDevApi
 from aidev_wxbot.context import Context, Message
 from aidev_wxbot.context.message import MsgType
-from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -71,10 +74,10 @@ class LlmChunkMsg(BaseModel):
         try:
             queue_name = self.stream_id
             is_finish = False
-            stream_time = int(self.stream_id.split("_")[2])
+            stream_time = int(self.stream_id.split("_")[1])
 
             # 检查消息是否超时
-            if time.time() - stream_time > 300:  # 消息时间太久
+            if time.time() - stream_time > settings.MAX_MESSAGE_TIME:  # 消息时间太久
                 return stream_msg("消息超时！请重新发送！", True, self.stream_id)
 
             # 等待队列中有消息
@@ -83,7 +86,7 @@ class LlmChunkMsg(BaseModel):
                 if queue_info and queue_info.get("message_count", 0) > 0:
                     break
                 else:
-                    logger.info("消息还未有第一次回复...")
+                    logger.info(f"stream_id:{self.stream_id} 消息还未有第一次回复...")
                     time.sleep(1)
             else:
                 return stream_msg("正在思考中....", is_finish, self.stream_id)
@@ -98,27 +101,28 @@ class LlmChunkMsg(BaseModel):
                         if message_data.get("is_finish", False):
                             try:
                                 rabbitmq_client.delete_queue(queue_name)
-                                logger.info(f"队列 {queue_name} 已删除")
+                                logger.debug(f"stream_id:{self.stream_id} 队列 {queue_name} 已删除")
                                 self.docs = message_data.get("docs", [])
                                 content += self.docs_content
                             except Exception as e:
-                                logger.error(f"删除队列 {queue_name} 失败: {e}")
-                        logger.info(f"给{self.stream_id}回复的内容: {content}")
+                                logger.error(f"stream_id:{self.stream_id} 删除队列 {queue_name} 失败: {e}")
+                        logger.info(f"stream_id:{self.stream_id} 回复的内容: {content}")
                         return stream_msg(content, message_data.get("is_finish", False), self.stream_id)
                     else:
                         time.sleep(0.3)
                 except Exception as e:
-                    logger.error(f"读取队列消息出错: {e}")
+                    logger.error(f"stream_id:{self.stream_id} 读取队列消息出错: {e}")
                     raise e
             # 如果消息流结束，删除队列
         except Exception as e:
-            logger.error(f"wxaibot_msg_json_from_cache 出错: {e}, stream_id: {self.stream_id}")
+            logger.error(f"stream_id:{self.stream_id} wxaibot_msg_json_from_cache 出错: {e}")
             return stream_msg("读取消息失败，请重试", True, self.stream_id)
 
 
 class WxWorkAiBotContext(Context):
     origin_dict: Any = Field(default={})
     stream_id: str = Field(default="")
+    msg_id: str = Field(default="")
 
 
 class ContextGenerator:
@@ -142,6 +146,7 @@ class ContextGenerator:
         from_type = self.payload.get("chattype")
         chat_id = self.payload.get("chatid")
         ctx_data = {
+            "msg_id": self.payload.get("msgid", uuid.uuid4().hex),
             "from_type": from_type,
             "sender_id": sender_id,
             "sender_code": sender_code,
