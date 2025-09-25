@@ -1,5 +1,6 @@
-from aidev_wxbot.api import BkApi
 from django.conf import settings
+
+from aidev_wxbot.api import BkApi
 
 
 class BkAiDevApi:
@@ -12,7 +13,7 @@ class BkAiDevApi:
         )
 
     def convert_to_rtx(self, open_id):
-        return self.api.call_action("/resource/v1/qyweixin/convert_to_userid/", "POST", json={"open_id": open_id})
+        return self.api.call_action("resource/v1/qyweixin/convert_to_userid/", "POST", json={"open_id": open_id})
 
 
 class AgentBackend:
