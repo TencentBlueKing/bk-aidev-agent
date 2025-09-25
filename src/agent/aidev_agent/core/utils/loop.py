@@ -18,55 +18,70 @@ to the current version of the project delivered to anyone in the future.
 
 import asyncio
 import atexit
+import threading
 
-# Global variable to store the event loop reference
-_loop = None
+# Thread-local storage for event loops
+_thread_local = threading.local()
 
 
 def get_event_loop():
     """
-    Get the current event loop, create one if it doesn't exist, and activate it.
+    Get the current event loop for this thread, create one if it doesn't exist.
 
     Returns:
-        asyncio.AbstractEventLoop: The current event loop.
+        asyncio.AbstractEventLoop: The current event loop for this thread.
     """
-    global _loop
-
-    # Return the cached loop if we have one
-    if _loop is not None and not _loop.is_closed():
-        return _loop
+    # Check if we have a cached loop for this thread
+    if hasattr(_thread_local, "loop") and _thread_local.loop is not None and not _thread_local.loop.is_closed():
+        return _thread_local.loop
 
     try:
-        # Try to get the current event loop
-        _loop = asyncio.get_running_loop() or asyncio.get_event_loop()
+        # Try to get the running loop first
+        running_loop = asyncio.get_running_loop()
+        _thread_local.loop = running_loop
+        return running_loop
     except RuntimeError:
-        # No event loop exists, create a new one
-        _loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(_loop)
-        # Register cleanup function
-        atexit.register(_cleanup_loop)
+        # No running loop, try to get the event loop for this thread
+        try:
+            current_loop = asyncio.get_event_loop()
+            # Check if this loop is running
+            if current_loop.is_running():
+                # If the loop is running, we can't use run_until_complete on it
+                # Create a new loop for this thread
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                _thread_local.loop = new_loop
+                # Register cleanup function for this thread's loop
+                atexit.register(_cleanup_thread_loop, new_loop)
+                return new_loop
+            else:
+                _thread_local.loop = current_loop
+                return current_loop
+        except RuntimeError:
+            # No event loop exists, create a new one
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            _thread_local.loop = new_loop
+            # Register cleanup function for this thread's loop
+            atexit.register(_cleanup_thread_loop, new_loop)
+            return new_loop
 
-    return _loop
 
-
-def _cleanup_loop():
-    """Cleanup function to properly close the event loop on exit."""
-    global _loop
-    if _loop is not None and not _loop.is_closed():
+def _cleanup_thread_loop(loop):
+    """Cleanup function to properly close a thread's event loop on exit."""
+    if loop is not None and not loop.is_closed():
         try:
             # Cancel all pending tasks
-            pending = asyncio.all_tasks(_loop)
+            pending = asyncio.all_tasks(loop)
             for task in pending:
                 task.cancel()
 
-            # Run until all tasks are cancelled
-            if pending:
-                _loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            # Run until all tasks are cancelled if the loop is not running
+            if pending and not loop.is_running():
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
 
             # Close the loop
-            _loop.close()
+            loop.close()
         except Exception:
             # Ignore exceptions during cleanup
             pass
-        finally:
-            _loop = None
