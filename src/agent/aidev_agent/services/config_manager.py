@@ -13,7 +13,7 @@ class AgentConfig(BaseModel):
     agent_name: str = Field(..., description="智能体名称")
     llm_model_name: str = Field(..., description="LLM模型名称")
     non_thinking_llm_model_name: str = Field(..., description="非深度思考模型")
-    role_prompt: str | None = Field(None, description="角色提示词")
+    role_prompt: str | None = Field(None, description="角色提示词(平台)")
     knowledgebase_ids: list = Field(default_factory=list, description="知识库ID列表")
     knowledge_ids: list = Field(default_factory=list, description="知识ID列表")
     tool_codes: list = Field(default_factory=list, description="工具列表")
@@ -22,6 +22,7 @@ class AgentConfig(BaseModel):
     mcp_server_config: dict | None = Field(None, description="MCP服务器配置")
     agent_options: AgentOptions = Field(..., description="智能体选项")
     command_agent_mapping: dict = Field(default_factory=dict, description="智能体映射关联")
+    agent_prompt: str | None = Field(None, description="智能体提示词(内嵌)")
 
 
 class CachedEntry:
@@ -40,7 +41,7 @@ class AgentConfigManager:
     """智能体配置管理器"""
 
     _config_cache: dict[str, CachedEntry] = {}
-    CACHE_TTL = 10  # 缓存过期时间（秒）
+    CACHE_TTL = 300  # 缓存过期时间（秒）
 
     @classmethod
     def get_config(

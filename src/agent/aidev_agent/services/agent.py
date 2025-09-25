@@ -37,6 +37,7 @@ class AgentInstanceFactory:
         auth_headers: Dict[str, str] | None = None,
         temperature: float = None,
         switch_agent_by_scene: bool = False,
+        config_manager: Type[AgentConfigManager] | None = None,
     ):
         """
         初始化Agent工厂实例
@@ -60,6 +61,7 @@ class AgentInstanceFactory:
         self.auth_headers = auth_headers or None
         self.temperature = temperature or None
         self.switch_agent_by_scene = switch_agent_by_scene
+        self.config_manager = config_manager or AgentConfigManager
 
     @classmethod
     def build_agent(
@@ -69,11 +71,12 @@ class AgentInstanceFactory:
         build_type: AgentBuildType = AgentBuildType.SESSION,
         session_code: Optional[str] = None,
         session_context_data: Optional[List[dict]] = None,
-        agent_cls: type = CommonQAAgent,
+        agent_cls: type = Type[CommonQAAgent],
         callbacks: List[Any] | None = None,
         resource_manager: AbstractBKAidevResourceManager | None = None,
         temperature: float | None = None,
         switch_agent_by_scene: bool = False,
+        config_manager: Type[AgentConfigManager] | None = None,
     ):
         """
         构建Agent实例
@@ -100,6 +103,7 @@ class AgentInstanceFactory:
             resource_manager=resource_manager,
             temperature=temperature,
             switch_agent_by_scene=switch_agent_by_scene,
+            config_manager=config_manager,
         )
 
         # 验证参数
@@ -165,7 +169,7 @@ class AgentInstanceFactory:
         session_code = cast(str, self.session_code)
         session_context_data = self.resource_manager.get_chat_session_context(session_code)
 
-        base_agent_config = AgentConfigManager.get_config(
+        base_agent_config = self.config_manager.get_config(
             agent_code=self.agent_code, resource_manager=self.resource_manager
         )
 
@@ -205,7 +209,7 @@ class AgentInstanceFactory:
 
     def build_chat_model(self, agent_code: str):
         """构建聊天模型"""
-        config = AgentConfigManager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        config = self.config_manager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
 
         # Prepare kwargs for ChatModel.get_setup_instance
         kwargs = {
@@ -228,28 +232,28 @@ class AgentInstanceFactory:
 
     def build_knowledge_bases(self, agent_code: str) -> List[dict]:
         """构建知识库"""
-        config = AgentConfigManager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        config = self.config_manager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
         return [self.resource_manager.retrieve_knowledgebase(_id) for _id in config.knowledgebase_ids]
 
     def build_knowledge_items(self, agent_code: str) -> List[dict]:
         """构建知识条目"""
-        config = AgentConfigManager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        config = self.config_manager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
         return [self.resource_manager.retrieve_knowledge(_id) for _id in config.knowledge_ids]
 
     def build_tools(self, agent_code: str) -> List[Any]:
         """构建工具"""
-        config = AgentConfigManager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        config = self.config_manager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
         mcp_tools = make_mcp_tools(config.mcp_server_config) if config.mcp_server_config else []
         return [self.resource_manager.construct_tool(tool_code) for tool_code in config.tool_codes] + mcp_tools
 
     def get_role_prompt(self, agent_code: str) -> str | None:
         """获取角色提示词"""
-        config = AgentConfigManager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        config = self.config_manager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
         return config.role_prompt
 
     def build_agent_options(self, agent_code: str) -> AgentOptions:
         """构建Agent选项"""
-        config = AgentConfigManager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        config = self.config_manager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
         return config.agent_options
 
     def handle_agent_switch(self, session_context_data: List[dict], agent_code: str, switch_agent: bool):
@@ -332,7 +336,9 @@ class AgentInstanceFactory:
     # ============== Agent构建器函数 ==============
 
     @staticmethod
-    def build_chat_agent_args(factory, agent_code, session_context_data, switch_agent):
+    def build_chat_agent_args(
+        factory: "AgentInstanceFactory", agent_code: str, session_context_data: List[dict], switch_agent: bool
+    ):
         """构建ChatCompletionAgent参数"""
         logger.info(f"Building ChatCompletionAgent args with agent_code->[{agent_code}]")
 

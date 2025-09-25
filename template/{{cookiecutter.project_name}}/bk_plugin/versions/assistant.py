@@ -5,6 +5,7 @@
 """
 
 from aidev_agent.services.chat import ChatPrompt, ExecuteKwargs
+from aidev_bkplugin.services.agent import build_chat_completion_agent_by_chat_history, get_agent_role_info
 from bk_plugin_framework.kit import (
     Context,
     ContextRequire,
@@ -14,8 +15,6 @@ from bk_plugin_framework.kit import (
     OutputsModel,
     Plugin,
 )
-
-from agent.services.agent import build_chat_completion_agent, get_agent_role_info
 
 
 class CommonAgent(Plugin):
@@ -68,7 +67,7 @@ class CommonAgent(Plugin):
             chat_history = role_contents + chat_history
         if inputs.input and not (inputs.chat_history or inputs.command):
             chat_history.append(ChatPrompt(role="user", content=inputs.input))
-        chat_completion_agent = build_chat_completion_agent(chat_history)
+        chat_completion_agent = build_chat_completion_agent_by_chat_history(chat_history)
         result = chat_completion_agent.execute(ExecuteKwargs(stream=False))
         if not isinstance(result, str):
             context.outputs = {"output": result["choices"][0]["delta"]["content"]}
