@@ -23,7 +23,6 @@ from ..api.bkaidev import BkAiDevApi
 from ..utils.rabbitmq import rabbitmq_client
 
 logger = getLogger(__name__)
-from blueapps.account.decorators import login_exempt
 
 
 class WxAiBotViewSet(ViewSet):
@@ -32,10 +31,6 @@ class WxAiBotViewSet(ViewSet):
     # 微信回调接口不需要DRF认证，使用微信自己的签名验证
     authentication_classes = []
     permission_classes = []
-
-    @login_exempt
-    def dispatch(self, request, *args, **kwargs):
-        return super().dispatch(request, *args, **kwargs)
 
     @property
     def wxbot_config(self):

@@ -4,6 +4,7 @@ import time
 import uuid
 from typing import Any
 
+from django.conf import settings
 from pydantic import BaseModel, ConfigDict, Field
 
 from aidev_wxbot.api.bkaidev import BkAiDevApi
@@ -76,7 +77,7 @@ class LlmChunkMsg(BaseModel):
             stream_time = int(self.stream_id.split("_")[1])
 
             # 检查消息是否超时
-            if time.time() - stream_time > 300:  # 消息时间太久
+            if time.time() - stream_time > settings.MAX_MESSAGE_TIME:  # 消息时间太久
                 return stream_msg("消息超时！请重新发送！", True, self.stream_id)
 
             # 等待队列中有消息

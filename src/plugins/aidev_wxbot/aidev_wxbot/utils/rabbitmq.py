@@ -10,7 +10,7 @@ import pika
 from django.conf import settings
 from pika.exceptions import ChannelClosedByBroker
 
-# 设置pika库的日志级别为DEBUG
+# 设置pika库的日志级别为ERROR
 pika_logger = logging.getLogger("pika")
 pika_logger.setLevel(logging.ERROR)
 
