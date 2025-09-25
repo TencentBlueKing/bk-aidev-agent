@@ -4,6 +4,7 @@ import json
 from logging import getLogger
 
 from aidev_agent.api.bk_aidev import BKAidevApi
+from aidev_agent.enums import PromptRole
 from aidev_agent.services.chat import ChatPrompt, ExecuteKwargs
 from bk_plugin_framework.kit.api import custom_authentication_classes
 from bk_plugin_framework.kit.decorators import inject_user_token, login_exempt
@@ -187,6 +188,13 @@ class AgentInfoViewSet(PluginViewSet):
             "staff": settings.CHAT_GROUP_STAFF,
             "username": request.user.username,
         }
+        prompt_setting = agent_info.get("prompt_setting", {})
+        prompt_setting["collection_content"] = []
+        prompt_setting["collection_variables"] = []
+        prompt_setting["content"] = [
+            content for content in prompt_setting["content"] if content.get("role") == PromptRole.PAUSE.value
+        ]
+        agent_info["prompt_setting"] = prompt_setting
         return Response(data=agent_info)
 
     @action(detail=False, methods=["GET"], url_path="ping", url_name="ping")
