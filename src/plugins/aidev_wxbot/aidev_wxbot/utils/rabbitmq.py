@@ -1,6 +1,7 @@
 import json
 import logging
 import threading
+import time
 from contextlib import contextmanager
 from functools import wraps
 from queue import Empty, Queue
@@ -37,9 +38,27 @@ class ConnectionPool:
             # 尝试从池中获取连接
             connection = self.connections.get_nowait()
             if connection and not connection.is_closed:
-                return connection
+                # 检查连接是否真正可用
+                try:
+                    # 尝试创建一个临时通道来测试连接
+                    test_channel = connection.channel()
+                    test_channel.close()
+                    return connection
+                except Exception as e:
+                    logger.warning(f"连接健康检查失败，创建新连接: {e}")
+                    # 连接不可用，减少计数并创建新连接
+                    with self._lock:
+                        self._created_connections -= 1
+                    try:
+                        connection.close()
+                    except Exception:
+                        pass
+                    return self._create_connection()
             else:
-                # 连接已关闭，创建新连接
+                # 连接已关闭，减少计数并创建新连接
+                if connection:
+                    with self._lock:
+                        self._created_connections -= 1
                 return self._create_connection()
         except Empty:
             # 池中没有连接，创建新连接
@@ -85,31 +104,81 @@ class ConnectionPool:
         self._created_connections = 0
 
 
-def with_connection(func):
-    """装饰器：使用连接池中的连接"""
+def with_connection_retry(max_retries=3, retry_delay=0.5):
+    """装饰器工厂：使用连接池中的连接，支持自定义重试参数"""
 
-    @wraps(func)
-    def wrapper(self, *args, **kwargs):
-        connection = None
-        channel = None
-        try:
-            connection = self.connection_pool.get_connection()
-            channel = connection.channel()
-            # 将channel作为第一个参数传递给方法
-            return func(self, channel, *args, **kwargs)
-        except Exception as e:
-            logger.error(f"执行操作时出错: {e}")
-            raise
-        finally:
-            if channel and not channel.is_closed:
+    def decorator(func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            last_exception = None
+
+            for attempt in range(max_retries):
+                connection = None
+                channel = None
                 try:
-                    channel.close()
-                except Exception as e:
-                    logger.exception(e)
-            if connection:
-                self.connection_pool.return_connection(connection)
+                    connection = self.connection_pool.get_connection()
+                    channel = connection.channel()
+                    # 将channel作为第一个参数传递给方法
+                    result = func(self, channel, *args, **kwargs)
+                    logger.debug(f"操作成功 (尝试 {attempt + 1}/{max_retries})")
+                    return result
 
-    return wrapper
+                except (
+                    ConnectionResetError,
+                    ConnectionError,
+                    OSError,
+                    pika.exceptions.StreamLostError,
+                    pika.exceptions.ConnectionClosed,
+                    pika.exceptions.ChannelClosedByBroker,
+                ) as e:
+                    last_exception = e
+                    logger.warning(f"连接/通道错误 (尝试 {attempt + 1}/{max_retries}): {e}")
+
+                    # 连接相关错误，清理连接并重试
+                    if channel:
+                        try:
+                            channel.close()
+                        except Exception:
+                            pass
+                    if connection:
+                        try:
+                            connection.close()
+                        except Exception:
+                            pass
+                        # 不要将失效的连接放回池中
+                        connection = None
+
+                    if attempt < max_retries - 1:
+                        sleep_time = retry_delay * (2**attempt)  # 指数退避
+                        logger.info(f"等待 {sleep_time:.2f} 秒后重试...")
+                        time.sleep(sleep_time)
+                        continue
+
+                except Exception as e:
+                    # 非连接相关的错误，不重试
+                    logger.error(f"执行操作时出错 (不重试): {e}")
+                    raise
+                finally:
+                    if channel and not channel.is_closed:
+                        try:
+                            channel.close()
+                        except Exception as e:
+                            logger.debug(f"关闭通道时出错: {e}")
+                    if connection:
+                        self.connection_pool.return_connection(connection)
+
+            # 所有重试都失败了
+            logger.error(f"操作失败，已达到最大重试次数: {max_retries}")
+            raise last_exception
+
+        return wrapper
+
+    return decorator
+
+
+def with_connection(func):
+    """装饰器：使用连接池中的连接，默认重试参数"""
+    return with_connection_retry(max_retries=3, retry_delay=0.5)(func)
 
 
 class RabbitMQClient:
@@ -167,7 +236,32 @@ class RabbitMQClient:
         """关闭所有连接"""
         self.connection_pool.close_all()
 
-    @with_connection
+    def reset_connection_pool(self):
+        """重置连接池，用于处理连接问题"""
+        try:
+            logger.info("正在重置 RabbitMQ 连接池...")
+            self.close_all_connections()
+            # 重新初始化连接池
+            self.connection_pool = ConnectionPool(self.connection_pool.max_connections)
+            self.connection_pool.set_connection_params(self._get_connection_parameters())
+            logger.info("RabbitMQ 连接池重置完成")
+        except Exception as e:
+            logger.error(f"重置连接池失败: {e}")
+
+    def health_check(self) -> bool:
+        """健康检查，测试连接是否正常"""
+        try:
+            with self.get_connection() as channel:
+                # 尝试声明一个临时队列来测试连接
+                test_queue = f"health_check_{int(time.time())}"
+                channel.queue_declare(queue=test_queue, durable=False, auto_delete=True)
+                channel.queue_delete(queue=test_queue)
+                return True
+        except Exception as e:
+            logger.error(f"健康检查失败: {e}")
+            return False
+
+    @with_connection_retry(max_retries=5, retry_delay=0.3)
     def declare_queue(
         self,
         channel,
@@ -190,9 +284,9 @@ class RabbitMQClient:
             return True
         except Exception as e:
             logger.error(f"声明队列 '{queue_name}' 失败: {e}")
-            return False
+            raise  # 让装饰器处理重试逻辑
 
-    @with_connection
+    @with_connection_retry(max_retries=5, retry_delay=0.3)
     def declare_exchange(
         self,
         channel,
@@ -215,7 +309,7 @@ class RabbitMQClient:
             return True
         except Exception as e:
             logger.error(f"声明交换机 '{exchange_name}' 失败: {e}")
-            return False
+            raise  # 让装饰器处理重试逻辑
 
     @with_connection
     def bind_queue(self, channel, queue_name: str, exchange_name: str, routing_key: str = "") -> bool:
@@ -228,7 +322,7 @@ class RabbitMQClient:
             logger.error(f"绑定队列失败: {e}")
             return False
 
-    @with_connection
+    @with_connection_retry(max_retries=5, retry_delay=0.3)
     def publish_message(
         self, channel, exchange: str, routing_key: str, message: Any, properties: Optional[pika.BasicProperties] = None
     ) -> bool:
@@ -250,7 +344,7 @@ class RabbitMQClient:
             return True
         except Exception as e:
             logger.error(f"发布消息失败: {e}")
-            return False
+            raise e  # 让装饰器处理重试逻辑
 
     @with_connection
     def consume_messages(
@@ -293,21 +387,25 @@ class RabbitMQClient:
         except Exception as e:
             logger.error(f"消费消息失败: {e}")
 
-    @with_connection
+    @with_connection_retry(max_retries=5, retry_delay=0.3)
     def get_message(self, channel, queue_name: str, auto_ack: bool = False) -> Optional[Dict]:
         """获取单条消息"""
-        method, properties, body = channel.basic_get(queue=queue_name, auto_ack=auto_ack)
-
-        if method is None:
-            return None
-
-        # 尝试解析JSON消息
         try:
-            message = json.loads(body.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            message = body.decode("utf-8")
+            method, properties, body = channel.basic_get(queue=queue_name, auto_ack=auto_ack)
 
-        return {"method": method, "properties": properties, "body": message}
+            if method is None:
+                return None
+
+            # 尝试解析JSON消息
+            try:
+                message = json.loads(body.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                message = body.decode("utf-8")
+
+            return {"method": method, "properties": properties, "body": message}
+        except Exception as e:
+            logger.error(f"获取消息失败: {e}")
+            raise  # 让装饰器处理重试逻辑
 
     @with_connection
     def ack_message(self, channel, delivery_tag: int) -> bool:
@@ -340,7 +438,7 @@ class RabbitMQClient:
             logger.error(f"清空队列失败: {e}")
             return False
 
-    @with_connection
+    @with_connection_retry(max_retries=3, retry_delay=0.5)
     def delete_queue(self, channel, queue_name: str, if_unused: bool = False, if_empty: bool = False) -> bool:
         """删除队列"""
         try:
@@ -349,9 +447,9 @@ class RabbitMQClient:
             return True
         except Exception as e:
             logger.error(f"删除队列失败: {e}")
-            return False
+            raise  # 让装饰器处理重试逻辑
 
-    @with_connection
+    @with_connection_retry(max_retries=5, retry_delay=0.3)
     def get_queue_info(self, channel, queue_name: str) -> Optional[Dict]:
         """获取队列信息"""
         try:
@@ -364,9 +462,11 @@ class RabbitMQClient:
         except ChannelClosedByBroker as e:
             if e.reply_text.startswith("NOT_FOUND"):
                 return None
+            logger.error(f"获取队列信息失败: {e}")
+            raise  # 让装饰器处理重试逻辑
         except Exception as e:
             logger.error(f"获取队列信息失败: {e}")
-            return None
+            raise  # 让装饰器处理重试逻辑
 
 
 # 创建全局实例
