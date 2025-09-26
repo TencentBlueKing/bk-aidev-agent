@@ -1,11 +1,6 @@
-import os
 from warnings import warn
 
-from blueapps.patch.settings_paas_services import CACHES, INSTALLED_APPS, STATICFILES_DIRS  # noqa
-
-CUR_DIR = os.path.dirname(__file__)
-STATIC_TEMPLATE_ROOT = os.path.join(CUR_DIR, "{{cookiecutter.static_template_root}}")
-STATICFILES_DIRS += [os.path.join(STATIC_TEMPLATE_ROOT, "static")]
+from blueapps.patch.settings_paas_services import CACHES, INSTALLED_APPS  # noqa
 
 DEFAULT_CACHE_TIMEOUT = 60
 
