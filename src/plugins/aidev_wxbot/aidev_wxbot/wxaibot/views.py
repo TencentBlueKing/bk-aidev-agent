@@ -184,11 +184,15 @@ class WxAiBotViewSet(ViewSet):
                                     logger.info(f"stream_id:{stream_id} 未知的事件类型: {event_type}")
                     except Exception as e:
                         logger.error(f"stream_id:{stream_id} 处理 chunk 时发生错误: {e}")
+
                         # 发生错误时，写入错误信息到流中
                         error_chunk = LlmChunkMsg(
                             content=f"处理请求时发生错误: {str(e)}", is_finish=True, stream_id=stream_id
                         )
-                        error_chunk.append_to_cache(rabbitmq_client)
+                        try:
+                            error_chunk.append_to_cache(rabbitmq_client)
+                        except Exception as cache_e:
+                            logger.error(f"stream_id:{stream_id} 写入错误信息到缓存失败: {cache_e}")
                         return
             llm_chunk.content = llm_chunk.content + added_content
             llm_chunk.is_finish = True
@@ -197,9 +201,13 @@ class WxAiBotViewSet(ViewSet):
 
         except Exception as e:
             logger.error(f"stream_id:{stream_id} 异步处理AI请求失败: {e}")
+
             # 发生异常时，写入错误信息到流中
             error_chunk = LlmChunkMsg(content=f"请求处理失败: {str(e)}", is_finish=True, stream_id=stream_id)
-            error_chunk.append_to_cache(rabbitmq_client)
+            try:
+                error_chunk.append_to_cache(rabbitmq_client)
+            except Exception as cache_e:
+                logger.error(f"stream_id:{stream_id} 写入错误信息到缓存失败: {cache_e}")
 
     @action(detail=False, methods=["get", "post"], url_path="callback")
     def callback(self, request: Request) -> HttpResponse:

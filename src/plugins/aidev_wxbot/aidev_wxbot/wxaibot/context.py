@@ -112,8 +112,7 @@ class LlmChunkMsg(BaseModel):
                         time.sleep(0.3)
                 except Exception as e:
                     logger.error(f"stream_id:{self.stream_id} 读取队列消息出错: {e}")
-                    raise e
-            # 如果消息流结束，删除队列
+                    return stream_msg("读取消息失败，请重试", True, self.stream_id)
         except Exception as e:
             logger.error(f"stream_id:{self.stream_id} wxaibot_msg_json_from_cache 出错: {e}")
             return stream_msg("读取消息失败，请重试", True, self.stream_id)
