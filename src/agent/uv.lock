@@ -11,7 +11,7 @@ resolution-markers = [
 
 [[package]]
 name = "aidev-agent"
-version = "1.0.0b44"
+version = "1.0.0b46"
 source = { editable = "." }
 dependencies = [
     { name = "asgiref" },

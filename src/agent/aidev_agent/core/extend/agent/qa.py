@@ -384,8 +384,6 @@ class IntentRecognitionMixin(BaseModel):
                 has_executed_context_compressor = True
             # 优先级 2: 压缩 intermediate steps 的内容
             elif intermediate_steps and not has_executed_intermediate_step_compressor:
-                if not isinstance(self, StructuredChatCommonQAAgent):
-                    raise RuntimeError("当前仅支持对 StructuredChatCommonQAAgent 进行工具调用中间结果总结压缩！")
                 conditional_dispatch_custom_event(
                     "custom_event",
                     {"compress_log": "\n```text\nToken 超限，尝试压缩工具调用结果以减少 token 使用。\n```\n"},
@@ -411,7 +409,7 @@ class IntentRecognitionMixin(BaseModel):
             else:
                 err_msg = (
                     "已尝试按优先级压缩上下文，但还是超过 token 限制，无法回答问题，请尝试其他 LLM。"
-                    f"（注：当前所需 token 数为：{cur_token_len}；支持的 LLM token 数为：{llm_token_limit(llm.model_name)}；"
+                    f"（注：当前所需 token 数为：{cur_token_len}；支持的 LLM token 数为：{llm_token_limit}；"
                     f"设置的 token limit margin 为：{token_limit_margin}。）"
                 )
                 _logger.error(err_msg)

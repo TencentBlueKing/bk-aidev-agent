@@ -14,7 +14,6 @@ CACHES["default"] = {
     "LOCATION": "my_cache_table",
 }
 
-
 # 需要合并的配置
 SETTINGS_FOR_MERGE = ["INSTALLED_APPS", "MIDDLEWARE", "AUTHENTICATION_BACKENDS"]
 SETTINGS_FOR_UPDATE = ["DATABASES"]
@@ -45,3 +44,4 @@ def load_settings(module_path: str, raise_exception: bool = True):
 
 # 加载自定义模块
 load_settings("agent.settings")  # 智能体配置
+load_settings("aidev_wxbot.settings")  # 企微机器人配置
