@@ -1,9 +1,11 @@
 from bkapi_client_core.base import Operation
 from bkapi_client_core.client import BaseClient
+from bkapi_client_core.django_helper import _get_client_by_settings
 from bkapi_client_core.property import bind_property
 
 from aidev_agent.api.base import ApiProtocol
 from aidev_agent.api.domains import SSM_URL
+from aidev_agent.config import settings
 
 
 class SSMClient(BaseClient):
@@ -40,19 +42,9 @@ class SSMApi(ApiProtocol):
     _api_name = "ssm"
 
     @classmethod
-    def get_client(cls) -> SSMClient:
-        """获取SSM客户端实例（无Django依赖）"""
-        from aidev_agent.config import settings
-
-        # 根据 bkapi_client_core 的标准方式创建客户端
-        return SSMClient(
-            endpoint=SSM_URL,
-            # 认证信息通过标准方式传递
-            headers={
-                "X-Bk-App-Code": getattr(settings, "APP_CODE", "") or getattr(settings, "BK_APP_CODE", ""),
-                "X-Bk-App-Secret": getattr(settings, "SECRET_KEY", "") or getattr(settings, "BK_APP_SECRET", ""),
-            },
-        )
+    def get_client(cls, app_code=settings.APP_CODE, app_secret=settings.SECRET_KEY) -> SSMClient:
+        """获取SSM客户端实例"""
+        return _get_client_by_settings(SSMClient, endpoint=SSM_URL, bk_app_code=app_code, bk_app_secret=app_secret)
 
 
 # 模块级便捷函数

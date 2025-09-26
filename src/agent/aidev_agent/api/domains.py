@@ -8,4 +8,4 @@ BKAIDEV_URL = settings.BK_AIDEV_APIGW_ENDPOINT or get_endpoint(settings.BK_AIDEV
 
 
 # SSM服务相关配置（默认值仅供本地开发使用，请在生产环境中配置正确的地址）
-SSM_URL = settings.BK_SSM_ENDPOINT
+SSM_URL = settings.BK_SSM_ENDPOINT or "https://example.com"
