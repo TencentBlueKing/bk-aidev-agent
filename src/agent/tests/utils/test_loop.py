@@ -1,4 +1,5 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -8,9 +9,12 @@ from aidev_agent.core.utils.loop import get_event_loop
 
 def test_get_event_loop():
     """Test that get_event_loop returns a valid event loop."""
-    # Reset the global loop reference
-    global _loop
-    _loop = None
+    # Import the thread local storage to reset it
+    from aidev_agent.core.utils.loop import _thread_local
+
+    # Reset the thread-local loop reference
+    if hasattr(_thread_local, "loop"):
+        delattr(_thread_local, "loop")
 
     # Get the event loop
     loop = get_event_loop()
@@ -26,9 +30,12 @@ def test_get_event_loop():
 
 def test_loop_creation():
     """Test that a new loop is created if one doesn't exist."""
-    # Reset the global loop reference
-    global _loop
-    _loop = None
+    # Import the thread local storage to reset it
+    from aidev_agent.core.utils.loop import _thread_local
+
+    # Reset the thread-local loop reference
+    if hasattr(_thread_local, "loop"):
+        delattr(_thread_local, "loop")
 
     # Get the event loop
     loop = get_event_loop()
@@ -42,6 +49,12 @@ async def sample_async_task(value):
     """A simple async task for testing."""
     await asyncio.sleep(0.01)
     return value * 2
+
+
+async def run_task(t: float):
+    """A simple async task for testing."""
+    await asyncio.sleep(t)
+    return 1 * t
 
 
 def test_run_async_task():
@@ -69,6 +82,27 @@ def test_multiple_async_tasks():
 
     # Verify the results
     assert results == [2, 4, 6]
+
+
+def test_run_async_task_multi_threading():
+    """Test that we can run async tasks using the event loop."""
+
+    def _f(t):
+        # Get the event loop
+        loop = get_event_loop()
+
+        # Run an async task
+        result = loop.run_until_complete(run_task(t))
+
+        # Verify the result
+        assert result == t * 1
+        return result
+
+    results = []
+    with ThreadPoolExecutor(10) as pool:
+        results = [pool.submit(_f, _i * 0.1) for _i in range(10)]
+
+    assert [each.result() for each in results] == [_i * 0.1 for _i in range(10)]
 
 
 @pytest.mark.asyncio
