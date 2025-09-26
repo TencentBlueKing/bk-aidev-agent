@@ -1,6 +1,6 @@
+# -*- coding: utf-8 -*-
 from bkapi_client_core.base import Operation
 from bkapi_client_core.client import BaseClient
-from bkapi_client_core.django_helper import _get_client_by_settings
 from bkapi_client_core.property import bind_property
 
 from aidev_agent.api.base import ApiProtocol
@@ -44,7 +44,13 @@ class SSMApi(ApiProtocol):
     @classmethod
     def get_client(cls, app_code=settings.APP_CODE, app_secret=settings.SECRET_KEY) -> SSMClient:
         """获取SSM客户端实例"""
-        return _get_client_by_settings(SSMClient, endpoint=SSM_URL, bk_app_code=app_code, bk_app_secret=app_secret)
+        return SSMClient(
+            endpoint=SSM_URL,
+            headers={
+                "X-Bk-App-Code": app_code,
+                "X-Bk-App-Secret": app_secret,
+            },
+        )
 
 
 # 模块级便捷函数
