@@ -4,10 +4,7 @@ import json
 from logging import getLogger
 
 from aidev_agent.api.bk_aidev import BKAidevApi
-from aidev_agent.enums import AgentBuildType
-from aidev_agent.services.agent import AgentInstanceFactory
 from aidev_agent.services.chat import ChatPrompt, ExecuteKwargs
-from bk_plugin.versions.assistant_components import config
 from bk_plugin_framework.kit.api import custom_authentication_classes
 from bk_plugin_framework.kit.decorators import inject_user_token, login_exempt
 from blueapps.core.exceptions import ClientBlueException
@@ -21,12 +18,13 @@ from rest_framework.status import is_success
 from rest_framework.views import APIView, Response
 from rest_framework.viewsets import ViewSetMixin
 
-from agent.permissions import AgentPluginPermission
-from agent.services.agent import (
+from aidev_bkplugin.permissions import AgentPluginPermission
+from aidev_bkplugin.services.agent import (
+    build_chat_completion_agent_by_chat_history,
+    build_chat_completion_agent_by_session_code,
     get_agent_config_info,
-    get_agent_role_info,
 )
-from agent.utils import set_user_access_token
+from aidev_bkplugin.utils import set_user_access_token
 
 logger = getLogger(__name__)
 
@@ -155,23 +153,13 @@ class ChatCompletionViewSet(PluginViewSet):
         execute_kwargs = ExecuteKwargs.model_validate(request.data.get("execute_kwargs", {}))
         session_code = request.data.get("session_code", "")
         if session_code:
-            agent_instance = AgentInstanceFactory.build_agent(
-                build_type=AgentBuildType.SESSION, session_code=session_code
-            )
+            agent_instance = build_chat_completion_agent_by_session_code(session_code)
         else:
             chat_history = request.data.get("chat_prompts", []) or request.data.get("chat_history", [])
             if not chat_history:
                 raise ClientBlueException(message="chat_history is required")
             chat_history = [ChatPrompt(role=each["role"], content=each["content"]) for each in chat_history]
-            role_contents = get_agent_role_info()
-            if role_contents:
-                chat_history = role_contents + chat_history
-
-            agent_instance = AgentInstanceFactory.build_agent(
-                build_type=AgentBuildType.DIRECT, session_context_data=chat_history
-            )
-        if config.role_prompt:
-            agent_instance.role_prompt = config.role_prompt
+            agent_instance = build_chat_completion_agent_by_chat_history(chat_history)
 
         if execute_kwargs.stream:
             generator = agent_instance.execute(execute_kwargs)

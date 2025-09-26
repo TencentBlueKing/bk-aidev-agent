@@ -34,7 +34,7 @@ python bin/manage.py runserver local.{{cookiecutter.bk_paas_domain}}:8000
 
 #### 1.3.1 更新配置
 
-更新当前目录的`agent/config.py`文件即可自定义所需的配置,例如需要修改默认的模型变为`deepseek-r1`
+更新当前目录的`bk_plugin/config.py`文件即可自定义所需的配置,例如需要修改默认的模型变为`deepseek-r1`
 
 ```python
 AGENT_CONFIG = {
@@ -65,7 +65,7 @@ curl -X POST http://127.0.0.1:8000/bk_plugin/invoke/1.0.0assistant \
     -H "Content-Type: application/json"   \
     -d '{
         "inputs": {
-            "command": "chat",
+            "command": "",
             "input": "SRE 是什么?",
             "stream": true,
             "chat_history": [
@@ -94,7 +94,7 @@ curl -X POST {{cookiecutter.app_apigw_host}}/invoke/1.0.0assistant \
     -H "X-Bkapi-Authorization": xxx   \
     -d '{
         "inputs": {
-            "command": "chat",
+            "command": "",
             "input": "SRE 是什么?",
             "stream": true,
             "chat_history": [
@@ -232,17 +232,28 @@ curl -X POST {{cookiecutter.app_apigw_host}}/bk_plugin/plugin_api/chat_completio
 ### 1.5 项目结构
 
 ```
-├── agent  # 用于二开的django app目录
-│   ├── config.py # 自定义配置,可覆盖默认配置
-│   ├── services
-│   │   └── agent.py # agent 二开入口
-│   └── views
-│       └── builtin.py # 内置url入口,请勿修改
-├── .env.template # 本地测试用环境变量
-├── app_desc.yml  # 项目启动配置
-├── bk_plugin  # 标准蓝鲸插件目录,请勿修改
-│   ├── apis  # 蓝鲸插件api地址,以`/bk_plugin/plugin_api/`前缀暴露到api网关中
-│   └── versions
-│       ├── assistant.py # 蓝鲸插件入口,通过`invoke`方式调用
-│       └── assistant_components.py # 智能体配置,由模板生成
+├── app_desc.yml # 蓝鲸插件 app_desc 运行配置
+├── bin
+│   ├── manage.py # django manage.py cli 入口
+│   └── post_compile  # 默认蓝鲸插件的部署钩子脚本
+├── bk_plugin
+│   ├── apis
+│   │   └── urls.py
+│   ├── config.py # 智能体配置相关
+│   ├── meta.py # 蓝鲸插件的meta配置
+│   ├── extend # 用于扩展
+│   │   ├── agent.py
+│   │   └── config_manager.py
+│   ├── patch # patch了默认蓝鲸插件的配置,主要是扩展了路由
+│   │   ├── plugin.py
+│   │   └── urls.py
+│   ├── settings.py
+│   ├── versions
+│   │   ├── assistant_components.py # 导入config.py的配置
+│   │   └── assistant.py # 蓝鲸插件invoke接口入口
+│   └── views
+│       └── home.py # 小鲸页面入口视图
+├── README.md # 指引文档
+├── requirements.txt # 蓝鲸插件 app_desc 运行配置
+└── runtime.txt # 蓝鲸插件 app_desc 运行配置
 ```
