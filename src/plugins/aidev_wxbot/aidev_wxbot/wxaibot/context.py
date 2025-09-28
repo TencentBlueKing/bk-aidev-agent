@@ -99,8 +99,8 @@ class LlmChunkMsg(BaseModel):
                     message_info = rabbitmq_client.get_message(queue_name, auto_ack=True)
                     if message_info:
                         message_data = message_info["body"]
-                        content = message_data.get("think_content", "")
-                        thinking_content = message_data.get("think", "")
+                        content = message_data.get("content", "")
+                        thinking_content = message_data.get("think_content", "")
                         if thinking_content:
                             content = f"<think>{thinking_content}</think>{content}"
                         if message_data.get("is_finish", False):
