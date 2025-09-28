@@ -187,6 +187,10 @@ class WxAiBotViewSet(ViewSet):
                                 elif event_type == "think":
                                     if chunk_json.get("content") == "正在思考...":
                                         continue
+                                    if not think_content:
+                                        # 如果思考内容是空的，就先清空一次内容，解决显示问题。
+                                        empty_llm_chunk = LlmChunkMsg(stream_id=stream_id)
+                                        empty_llm_chunk.append_to_cache(rabbitmq_client)
                                     think_content += chunk_json.get("content", "")
                                     if len(think_content) > 50:
                                         llm_chunk.think_content = llm_chunk.think_content + think_content
