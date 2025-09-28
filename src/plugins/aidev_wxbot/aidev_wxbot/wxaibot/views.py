@@ -184,7 +184,7 @@ class WxAiBotViewSet(ViewSet):
                                     if chunk_json.get("content") == "正在思考...":
                                         continue
                                     think_content += chunk_json.get("content", "")
-                                    if len(added_content) > 50:
+                                    if len(think_content) > 50:
                                         llm_chunk.think_content = llm_chunk.think_content + think_content
                                         llm_chunk.append_to_cache(rabbitmq_client)
                                         think_content = ""
