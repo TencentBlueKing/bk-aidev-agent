@@ -196,10 +196,6 @@ class WxAiBotViewSet(ViewSet):
                                         llm_chunk.think_content = llm_chunk.think_content + think_content
                                         llm_chunk.append_to_cache(rabbitmq_client)
                                         think_content = ""
-                                elif event_type == "done":
-                                    llm_chunk.docs = docs
-                                    llm_chunk.is_finish = True
-                                    llm_chunk.append_to_cache(rabbitmq_client)
                                 else:
                                     logger.info(f"stream_id:{stream_id} 未知的事件类型: {event_type}")
                     except Exception as e:
