@@ -31,7 +31,7 @@ class LlmChunkMsg(BaseModel):
     docs: list[dict] = Field(default_factory=list)
     content: str = Field(default_factory=str)
     stream_id: str = Field(default_factory=str)
-    thinking_content: str = Field(default_factory=str)
+    think_content: str = Field(default_factory=str)
 
     @property
     def docs_content(self):
@@ -53,7 +53,7 @@ class LlmChunkMsg(BaseModel):
             # 准备消息数据
             message_data = {
                 "content": self.content,
-                "thinking_content": self.thinking_content,
+                "think_content": self.think_content,
                 "is_finish": self.is_finish,
                 "docs": self.docs,
                 "timestamp": time.time(),
@@ -99,8 +99,8 @@ class LlmChunkMsg(BaseModel):
                     message_info = rabbitmq_client.get_message(queue_name, auto_ack=True)
                     if message_info:
                         message_data = message_info["body"]
-                        content = message_data.get("content", "")
-                        thinking_content = message_data.get("thinking_content", "")
+                        content = message_data.get("think_content", "")
+                        thinking_content = message_data.get("think", "")
                         if thinking_content:
                             content = f"<think>{thinking_content}</think>{content}"
                         if message_data.get("is_finish", False):

@@ -138,7 +138,7 @@ class WxAiBotViewSet(ViewSet):
             buffer = ""  # 用于缓存不完整的数据
             llm_chunk = LlmChunkMsg(content="", is_finish=False, stream_id=stream_id)
             added_content = ""
-            thinking_content = ""
+            think_content = ""
             for chunk in response.iter_content(chunk_size=1024):  # 设置合适的chunk大小
                 if chunk:
                     try:
@@ -180,14 +180,14 @@ class WxAiBotViewSet(ViewSet):
                                         if "metadata" in doc_info:
                                             docs.append(doc_info["metadata"])
                                     continue
-                                elif event_type == "thinking":
+                                elif event_type == "think":
                                     if chunk_json.get("content") == "正在思考...":
                                         continue
-                                    thinking_content += chunk_json.get("content", "")
+                                    think_content += chunk_json.get("content", "")
                                     if len(added_content) > 50:
-                                        llm_chunk.thinking_content = llm_chunk.thinking_content + added_content
+                                        llm_chunk.think_content = llm_chunk.think_content + think_content
                                         llm_chunk.append_to_cache(rabbitmq_client)
-                                        thinking_content = ""
+                                        think_content = ""
                                 elif event_type == "done":
                                     llm_chunk.docs = docs
                                     llm_chunk.is_finish = True
