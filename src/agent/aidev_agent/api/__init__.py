@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from .abstract_client import AbstractBKAidevResourceManager
 from .bk_aidev import BKAidevApi
-from .ssm_client import SSMApi, SSMClient, get_client
+from .ssm_client import SSMApi
 from .utils import bulk_fetch
 
 __all__ = [
@@ -9,6 +9,4 @@ __all__ = [
     "BKAidevApi",
     "bulk_fetch",
     "SSMApi",
-    "SSMClient",
-    "get_client",
 ]
