@@ -17,7 +17,7 @@ class TestSSMClient:
         mock_client.verify_access_token = Mock()
         mock_get_client.return_value = mock_client
 
-        client = SSMApi.get_client()  # 修复：使用正确的调用方式
+        client = SSMApi.get_client()
 
         assert hasattr(client, "create_access_token")
         assert hasattr(client, "refresh_access_token")
@@ -30,7 +30,7 @@ class TestSSMClient:
         mock_client.create_access_token.return_value = {"code": 0, "data": {"access_token": "test_token"}}
         mock_get_client.return_value = mock_client
 
-        client = SSMApi.get_client()  # 修复：使用正确的调用方式
+        client = SSMApi.get_client()
         response = client.create_access_token({"grant_type": "client_credentials", "id_provider": "client"})
 
         assert response["data"]["access_token"] == "test_token"
@@ -43,7 +43,7 @@ class TestSSMClient:
         mock_client.create_access_token.return_value = {"code": 0, "data": {"access_token": "user_token"}}
         mock_get_client.return_value = mock_client
 
-        client = SSMApi.get_client()  # 修复：使用正确的调用方式
+        client = SSMApi.get_client()
         response = client.create_access_token(
             {"grant_type": "authorization_code", "id_provider": "bk_login", "bk_token": "user_bk_token"}
         )
@@ -57,7 +57,7 @@ class TestSSMClient:
         mock_client.verify_access_token.return_value = {"code": 0, "data": {"username": "test_user"}}
         mock_get_client.return_value = mock_client
 
-        client = SSMApi.get_client()  # 修复：使用正确的调用方式
+        client = SSMApi.get_client()
         response = client.verify_access_token({"access_token": "test_token"})
 
         assert response["data"]["username"] == "test_user"
@@ -69,7 +69,7 @@ class TestSSMClient:
         mock_client.refresh_access_token.return_value = {"code": 0, "data": {"access_token": "new_token"}}
         mock_get_client.return_value = mock_client
 
-        client = SSMApi.get_client()  # 修复：使用正确的调用方式
+        client = SSMApi.get_client()
         response = client.refresh_access_token({"refresh_token": "old_token"})
 
         assert response["data"]["access_token"] == "new_token"
