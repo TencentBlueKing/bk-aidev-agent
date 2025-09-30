@@ -128,7 +128,7 @@ BK_APIGW_STAGE = env.str("BK_APIGW_STAGE", "") or env.str("BKAIDEV_RESOURCE_STAG
 INTENT_RECOGNITION_GLOBAL_LLM_MODEL_NAME = env.str("INTENT_RECOGNITION_GLOBAL_LLM_MODEL_NAME", "hunyuan")
 
 # SSM相关配置
-BK_SSM_ENDPOINT = env.str("BK_SSM_ENDPOINT", "https://example.com")  # noqa
+BK_SSM_ENDPOINT = env.str("BK_SSM_ENDPOINT", "https://bkssm.service.consul")  # noqa
 # end: 配置
 
 

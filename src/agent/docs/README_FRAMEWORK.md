@@ -162,9 +162,9 @@ APP_CODE=your_app_code              # 或 BKPAAS_APP_ID 或 APP_ID
 SECRET_KEY=your_app_secret          # 或 BKPAAS_APP_SECRET 或 APP_TOKEN
 
 # (可选) SSM端点，不配置默认使用 bkop 环境
-BK_SSM_ENDPOINT=https://example.bkop.com     # bkop环境（默认）
+BK_SSM_ENDPOINT=https://bkssm.service.consul  # （默认）
 # 或
-BK_SSM_ENDPOINT=https://example.sg.com  # sg环境
+BK_SSM_ENDPOINT=https://sgssm.service.consul
 ```
 
 ## 使用方法
