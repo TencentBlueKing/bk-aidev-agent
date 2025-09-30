@@ -161,10 +161,9 @@ SSM客户端，用于获取、校验、刷新 access_token。
 APP_CODE=your_app_code              # 或 BKPAAS_APP_ID 或 APP_ID
 SECRET_KEY=your_app_secret          # 或 BKPAAS_APP_SECRET 或 APP_TOKEN
 
-# (可选) SSM端点，不配置默认使用 bkop 环境
+# (可选) SSM端点
 BK_SSM_ENDPOINT=https://bkssm.service.consul  # （默认）
-# 或
-BK_SSM_ENDPOINT=https://sgssm.service.consul
+
 ```
 
 ## 使用方法
