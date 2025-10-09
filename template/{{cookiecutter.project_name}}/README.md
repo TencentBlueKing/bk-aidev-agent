@@ -234,26 +234,31 @@ curl -X POST {{cookiecutter.app_apigw_host}}/bk_plugin/plugin_api/chat_completio
 ```
 ├── app_desc.yml # 蓝鲸插件 app_desc 运行配置
 ├── bin
-│   ├── manage.py # django manage.py cli 入口
-│   └── post_compile  # 默认蓝鲸插件的部署钩子脚本
+│   ├── manage.py # django manage.py cli 入口
+│   └── post_compile  # 默认蓝鲸插件的部署钩子脚本
 ├── bk_plugin
-│   ├── apis
-│   │   └── urls.py
-│   ├── config.py # 智能体配置相关
-│   ├── meta.py # 蓝鲸插件的meta配置
-│   ├── extend # 用于扩展
-│   │   ├── agent.py
-│   │   └── config_manager.py
-│   ├── patch # patch了默认蓝鲸插件的配置,主要是扩展了路由
-│   │   ├── plugin.py
-│   │   └── urls.py
-│   ├── settings.py
-│   ├── versions
-│   │   ├── assistant_components.py # 导入config.py的配置
-│   │   └── assistant.py # 蓝鲸插件invoke接口入口
-│   └── views
-│       └── home.py # 小鲸页面入口视图
+│   ├── apis
+│   │   └── urls.py # API路由配置
+│   ├── config.py # 智能体配置相关
+│   ├── docs
+│   │   └── EXTENSION_AGENT.md # 二次开发智能体文档
+│   ├── extend # 用于扩展
+│   │   ├── agent.py # 自定义智能体扩展
+│   │   └── config_manager.py # 配置管理器扩展
+│   ├── forms # 前端表单配置
+│   │   └── 1.0.0
+│   │       └── *.js # 表单配置文件
+│   ├── meta.py # 蓝鲸插件的meta配置
+│   ├── patch # patch了默认蓝鲸插件的配置,主要是扩展了路由
+│   │   ├── plugin.py # 插件补丁
+│   │   └── urls.py # 路由补丁
+│   ├── settings.py # Django设置
+│   ├── versions
+│   │   ├── assistant_components.py # 导入config.py的配置
+│   │   └── assistant.py # 蓝鲸插件invoke接口入口
+│   └── views
+│       └── home.py # 小鲸页面入口视图
 ├── README.md # 指引文档
-├── requirements.txt # 蓝鲸插件 app_desc 运行配置
-└── runtime.txt # 蓝鲸插件 app_desc 运行配置
+├── requirements.txt # Python依赖包配置
+└── runtime.txt # Python运行时版本配置
 ```
