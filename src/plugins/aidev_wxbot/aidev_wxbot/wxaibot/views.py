@@ -115,7 +115,7 @@ class WxAiBotViewSet(ViewSet):
                 settings.BK_APIGW_MANAGER_URL_TMPL.format(api_name=agent_apigw_name)
                 + "/"
                 + "prod"
-                + "/bk_plugin/plugin_api/chat_completion/"
+                + "/bk_plugin/openapi/agent/chat_completion/"
             )
             response = requests.post(
                 chat_root,
