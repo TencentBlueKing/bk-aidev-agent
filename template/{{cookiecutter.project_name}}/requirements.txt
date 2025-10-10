@@ -1,6 +1,6 @@
 # base
 # DO NOT DELETE ANY PACKAGE IN base SECTION !!!
-bk-plugin-framework==2.3.0rc4
+bk-plugin-framework==2.3.1
 gunicorn==23.0.0
 # 固定otel版本，减少解析时间
 opentelemetry-api==1.25.0
