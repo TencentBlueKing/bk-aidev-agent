@@ -127,16 +127,8 @@ BK_AIDEV_APIGW_ENDPOINT = env.str("BK_AIDEV_APIGW_ENDPOINT", "")
 BK_APIGW_STAGE = env.str("BK_APIGW_STAGE", "") or env.str("BKAIDEV_RESOURCE_STAGE", "prod")
 INTENT_RECOGNITION_GLOBAL_LLM_MODEL_NAME = env.str("INTENT_RECOGNITION_GLOBAL_LLM_MODEL_NAME", "hunyuan")
 
-# 优先从环境变量获取，否则根据蓝鲸PaaS环境变量自动判断
-_bkpaas_env = os.environ.get("BKPAAS_ENVIRONMENT")
-_bk_env = os.environ.get("BK_ENV")
-_default_run_mode = "PRODUCT" if (_bkpaas_env == "prod" or _bk_env == "production") else "DEVELOPMENT"
-RUN_MODE = env.str("RUN_MODE", _default_run_mode)
-
 # SSM相关配置
-BK_SSM_ENDPOINT = env.str("BK_SSM_ENDPOINT", "")
-BK_SSM_SG_ENDPOINT = env.str("BK_SSM_SG_ENDPOINT", "")
-BK_SSM_BKOP_ENDPOINT = env.str("BK_SSM_BKOP_ENDPOINT", "")
+BK_SSM_ENDPOINT = env.str("BK_SSM_ENDPOINT", "https://bkssm.service.consul")  # noqa
 # end: 配置
 
 

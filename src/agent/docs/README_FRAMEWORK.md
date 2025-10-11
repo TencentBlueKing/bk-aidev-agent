@@ -148,111 +148,148 @@ for each in agent_e.agent.stream_standard_event(agent_e, cfg, test_case_inputs):
 print(results)
 ```
 
-# SSM客户端使用指南
+# SSM 客户端使用指南
 
-## 概览
+SSM客户端，用于获取、校验、刷新 access_token。
 
-**当前版本**：1.0.0b44
+⚠️ **注意：SSM 只能直调，不能走网关！**
 
-### 支持的能力：
-
-- 应用态和用户态Token管理：获取、刷新、校验access_token
-- 自动缓存机制：缓存token，自动处理过期和刷新
-- Django集成：从request对象自动提取用户信息和bk_token
-- 环境自适应：根据运行环境自动选择SSM端点
-
-⚠️ **重要：SSM 只能直调，不能走网关调用！**
-
-## 使用入门
-
-### 1. 环境变量配置
-
-使用前需要配置环境变量，可以写到`.env`中：
+## 环境配置
 
 ```bash
-# (必选) 基础应用配置 - 支持多种环境变量名
-APP_ID=your_app_code                # 或 BKPAAS_APP_ID 或 BK_AIDEV_AGENT_APP_CODE
-APP_TOKEN=your_app_secret           # 或 BKPAAS_APP_SECRET 或 BK_AIDEV_AGENT_APP_SECRET
+# (必选) 应用认证信息
+APP_CODE=your_app_code              # 或 BKPAAS_APP_ID 或 APP_ID
+SECRET_KEY=your_app_secret          # 或 BKPAAS_APP_SECRET 或 APP_TOKEN
 
-# (可选) SSM服务端点配置，不配置会根据RUN_MODE自动选择
-BK_SSM_ENDPOINT=                    # 自定义SSM端点（优先级最高）
-BK_SSM_SG_ENDPOINT=                 # SG环境（生产）
-BK_SSM_BKOP_ENDPOINT=               # BKOP环境（开发）
-RUN_MODE=DEVELOPMENT                # PRODUCT 或 DEVELOPMENT（会自动判断）
+# (可选) SSM端点
+BK_SSM_ENDPOINT=https://bkssm.service.consul  # （默认）
+
 ```
 
-### 2. 使用样例
+## 使用方法
 
-#### 样例1：获取应用态Token
+### 基础调用
 
 ```python
-from aidev_agent.api.ssm_client import SSMClient
+from aidev_agent.api import SSMApi
 
-client = SSMClient()
-access_token = client.get_client_access_token()
-print(f"应用态Token: {access_token}")
+# 使用默认配置
+client = SSMApi.get_client()
+
+# 或自定义认证信息
+client = SSMApi.get_client(app_code="custom_code", app_secret="custom_secret")
 ```
 
-#### 样例2：从Django Request获取用户态Token
+### 获取应用态Token
 
 ```python
-from aidev_agent.api.ssm_client import get_user_access_token_from_request
+from aidev_agent.api import SSMApi
 
-def my_view(request):
-    # 快速获取用户态token
-    access_token = get_user_access_token_from_request(request)
-    return JsonResponse({"access_token": access_token})
+client = SSMApi.get_client()
+response = client.create_access_token({
+    "grant_type": "client_credentials",
+    "id_provider": "client"
+})
+
+if response["code"] == 0:
+    access_token = response["data"]["access_token"]
+    print(f"应用态Token: {access_token}")
+else:
+    print(f"获取失败: {response['message']}")
 ```
 
-#### 样例3：主站代码集成
-
-基于主站代码(bkaidev-user)，替换bkoauth获取token：
+### 获取用户态Token
 
 ```python
-from aidev_agent.api.ssm_client import get_user_access_token_from_request
+from aidev_agent.api import SSMApi
 
-class UserView(AIDevAPIViewSet):
-    def list(self, request, *args, **kwargs):
-        # 替换原来的bkoauth调用
-        access_token = get_user_access_token_from_request(request)
+client = SSMApi.get_client()
+response = client.create_access_token({
+    "grant_type": "authorization_code",
+    "id_provider": "bk_login",
+    "bk_token": "user_bk_token_here"
+})
 
-        data = {"access_token": access_token}
-        return Response(data)
+if response["code"] == 0:
+    access_token = response["data"]["access_token"]
+    refresh_token = response["data"]["refresh_token"]
+    print(f"用户态Token: {access_token}")
 ```
 
-#### 样例4：手动提供用户信息
+### 校验Token
 
 ```python
-from aidev_agent.api.ssm_client import SSMClient
+from aidev_agent.api import SSMApi
 
-client = SSMClient()
-access_token = client.get_user_access_token(
-    username="admin",
-    bk_token="user_bk_token_here"
-)
+client = SSMApi.get_client()
+response = client.verify_access_token({
+    "access_token": "token_to_verify"
+})
+
+if response["code"] == 0:
+    identity = response["data"]["identity"]
+    print(f"Token有效，用户: {identity.get('username', 'N/A')}")
 ```
 
-## API参考
-
-### 常用方法
+### 刷新Token
 
 ```python
-from aidev_agent.api.ssm_client import SSMClient, get_user_access_token_from_request
+from aidev_agent.api import SSMApi
 
-# 创建客户端
-client = SSMClient()
+client = SSMApi.get_client()
+response = client.refresh_access_token({
+    "refresh_token": "your_refresh_token"
+})
 
-# 获取应用态token
-client.get_client_access_token()
-
-# 获取用户态token
-client.get_user_access_token(username="admin", bk_token="token")
-client.get_user_access_token(request=request)
-
-# 便捷函数
-get_user_access_token_from_request(request)
+if response["code"] == 0:
+    new_access_token = response["data"]["access_token"]
+    print(f"新Token: {new_access_token}")
 ```
 
+## 完整示例
 
+```python
+from aidev_agent.api import SSMApi
+
+def demo_ssm_workflow():
+    # 获取客户端
+    client = SSMApi.get_client()
+
+    # 1. 获取应用态token
+    app_response = client.create_access_token({
+        "grant_type": "client_credentials",
+        "id_provider": "client"
+    })
+
+    if app_response["code"] != 0:
+        print(f"获取应用态token失败: {app_response['message']}")
+        return
+
+    access_token = app_response["data"]["access_token"]
+    refresh_token = app_response["data"]["refresh_token"]
+    print(f"应用态Token: {access_token}")
+
+    # 2. 校验token
+    verify_response = client.verify_access_token({
+        "access_token": access_token
+    })
+
+    if verify_response["code"] == 0:
+        print("Token校验成功")
+        bk_app_code = verify_response["data"].get("bk_app_code")
+        print(f"应用: {bk_app_code}")
+
+    # 3. 刷新token
+    refresh_response = client.refresh_access_token({
+        "refresh_token": refresh_token
+    })
+
+    if refresh_response["code"] == 0:
+        new_token = refresh_response["data"]["access_token"]
+        print(f"刷新后的Token: {new_token}")
+
+if __name__ == "__main__":
+    demo_ssm_workflow()
+```
 
 
