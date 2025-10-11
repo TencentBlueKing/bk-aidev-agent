@@ -202,6 +202,20 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/mcp/{mcp_code}/",
     )
 
+    create_feedback = bind_property(
+        Operation,
+        name="create_feedback",
+        method="POST",
+        path="/openapi/aidev/resource/v1/chat/session_feedback/",
+    )
+
+    get_feedback_reason = bind_property(
+        Operation,
+        name="get_feedback_reason",
+        method="GET",
+        path="/openapi/aidev/resource/v1/chat/session_feedback/reasons/",
+    )
+
 
 class Client(BaseClient, AbstractBKAidevResourceManager):
     api = bind_property(OpenApiGroup, name="api")

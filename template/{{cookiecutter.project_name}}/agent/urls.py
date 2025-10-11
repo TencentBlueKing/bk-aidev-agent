@@ -7,6 +7,7 @@ from agent.views.builtin import (
     AgentInfoViewSet,
     ChatCompletionViewSet,
     ChatGroupViewSet,
+    ChatSessionContentFeedbackViewSet,
     ChatSessionContentViewSet,
     ChatSessionViewSet,
 )
@@ -16,6 +17,7 @@ _router.register("agent", AgentInfoViewSet, "agent_info")
 _router.register("chat_completion", ChatCompletionViewSet, "chat_completion")
 _router.register("session", ChatSessionViewSet, "chat_session")
 _router.register("session_content", ChatSessionContentViewSet, "chat_session_content")
+_router.register("session_feedback", ChatSessionContentFeedbackViewSet, "chat_session_feedback")
 _router.register("chat_group", ChatGroupViewSet, "chat_group")
 
 

@@ -138,6 +138,18 @@ class ChatSessionContentViewSet(PluginViewSet):
         return Response(data=result["data"])
 
 
+class ChatSessionContentFeedbackViewSet(PluginViewSet):
+    def create(self, request):
+        username = request.user.username
+        result = client.api.create_feedback(json=request.data, headers={"X-BKAIDEV-USER": username})
+        return Response(data=result["data"])
+
+    @action(["GET"], url_path="reasons", detail=False)
+    def reasons(self, request, **kwargs):
+        result = client.api.get_feedback_reasons(params=request.query_params)
+        return Response(data=result["data"])
+
+
 class ChatCompletionViewSet(PluginViewSet):
     def create(self, request):
         execute_kwargs = ExecuteKwargs.model_validate(request.data.get("execute_kwargs", {}))
