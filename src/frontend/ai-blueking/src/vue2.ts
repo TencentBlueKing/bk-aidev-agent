@@ -285,6 +285,15 @@ export default {
     this.setCiteText = (citeText: string) => {
       aiBlueking.component.exposed.setCiteText(citeText);
     };
+    this.updatePosition = (x: number, y: number) => {
+      aiBlueking.component.exposed.updatePosition(x, y);
+    };
+    this.updateSize = (w: number, h: number) => {
+      aiBlueking.component.exposed.updateSize(w, h);
+    };
+    this.updatePositionAndSize = (x: number, y: number, w: number, h: number) => {
+      aiBlueking.component.exposed.updatePositionAndSize(x, y, w, h);
+    };
 
     // 添加 组件暴露属性（属性类型使用 defineProperty 添加, 以保持响应式）
     Object.defineProperty(this, 'sessionContents', {
