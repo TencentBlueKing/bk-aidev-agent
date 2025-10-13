@@ -1,3 +1,45 @@
+## [1.2.7-beta.6] - 2025-10-13
+
+### ✨ 新增功能
+
+#### 新会话创建优化
+
+- **新增 `forceNewSession` 参数**: 在 `handleShow` 方法中新增 `forceNewSession` 参数，支持创建新会话时同时打开窗口
+- **优化新会话创建逻辑**: 当 `forceNewSession=true` 时，会先创建会话再打开面板，确保用户体验的一致性
+- **Vue2 适配器同步**: 在 Vue2 适配器中同步支持新的 `handleShow` 方法参数
+
+### 🎯 使用示例
+
+#### 创建新会话并打开窗口
+
+```vue
+<template>
+  <AIBlueking ref="aiBlueking" :url="apiUrl" />
+  <button @click="showNewSession">显示新会话</button>
+</template>
+
+<script setup>
+import { AIBlueking } from '@blueking/ai-blueking';
+
+const aiBlueking = ref(null);
+const apiUrl = '...';
+
+// 创建新会话并打开窗口
+const showNewSession = async () => {
+  await aiBlueking.value?.handleShow(undefined, true);
+};
+</script>
+```
+
+## [1.2.7-beta.5] - 2025-10-12
+
+### ✨ 新增功能
+
+#### Vue2 版本功能同步
+
+- **新增 Vue2 编程式控制功能**: 为 Vue2 版本添加编程式控制容器位置和大小的功能
+- **Vue2 适配器优化**: 优化 Vue2 适配器，确保与 Vue3 版本功能完全同步
+
 ## [1.2.7-beta.4] - 2025-10-11
 
 ### ✨ 新增功能

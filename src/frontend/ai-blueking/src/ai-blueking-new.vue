@@ -750,17 +750,36 @@
     emit('close');
   };
 
-  const handleShow = async (sessionCode?: string) => {
-    isShow.value = true;
-    emit('show');
+  const handleShow = async (sessionCode?: string, forceNewSession?: boolean): Promise<void> => {
+    // 如果是强制新会话，先创建会话再打开面板，避免显示旧内容
+    if (forceNewSession) {
+      if (!isSessionInitialized.value) {
+        await initSession();
+      }
 
-    if (!isSessionInitialized.value) {
-      await initSession();
+      stopChat(currentSession.value?.sessionCode);
+      inputMessage.value = '';
+      setCiteText('');
+      // 支持用指定的 sessionCode 创建新会话，如果不提供则自动生成
+      await sessionStore.addNewSession(sessionCode);
+
+      // 新会话创建成功后再打开面板
+      isShow.value = true;
+      emit('show');
+    } else {
+      // 非强制新会话的情况，保持原有逻辑：先打开面板
+      isShow.value = true;
+      emit('show');
+
+      if (!isSessionInitialized.value) {
+        await initSession();
+      }
+
+      if (sessionCode) {
+        await _switchToSession(sessionCode);
+      }
     }
 
-    if (sessionCode) {
-      await _switchToSession(sessionCode);
-    }
     updateGreetingTextHeight();
   };
 

@@ -153,7 +153,9 @@
         return data.filter(item => {
           const key = Object.keys(item).find(k => !k.startsWith('__'));
           if (!key) return false;
-          const component = props.shortcut.components?.find(c => c.key === key) as IShortcutComponent;
+          const component = props.shortcut.components?.find(
+            c => c.key === key
+          ) as IShortcutComponent;
           return component && !component.hide;
         });
       };

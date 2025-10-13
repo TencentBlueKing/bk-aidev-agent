@@ -44,7 +44,7 @@ export interface AIBluekingExpose {
     cite?: string;
     shortcut?: ShortCut;
   }) => void;
-  handleShow: () => void;
+  handleShow: (sessionCode?: string, forceNewSession?: boolean) => Promise<void>;
   handleClose: () => void;
   handleStop: () => void;
   handleSendMessage: (message: string) => void;

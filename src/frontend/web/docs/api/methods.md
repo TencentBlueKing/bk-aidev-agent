@@ -10,7 +10,7 @@
 
 | 方法名                                    | 参数                                                                                                                  | 返回值                        | 描述                                                                                                                                 |
 | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `handleShow()`                            | -                                                                                                                     | `void`                        | 主动显示 AI 小鲸窗口。                                                                                                               |
+| `handleShow(sessionCode?, forceNewSession?)` | `sessionCode?: string, forceNewSession?: boolean`                                                                 | `Promise<void>`               | <Badge type="tip" text="v1.2.7" /> 主动显示 AI 小鲸窗口。支持传入会话代码切换到指定会话，或使用 `forceNewSession: true` 创建新会话并打开窗口。 |
 | `handleClose()`                           | -                                                                                                                     | `void`                        | 关闭 AI 小鲸窗口。                                                                                                                   |
 | `handleStop()`                            | -                                                                                                                     | `void`                        | 停止当前正在进行的 AI 内容生成（流式输出）。                                                                                         |
 | `handleSendMessage(message)`              | `message: string`                                                                                                     | `void`                        | 发送消息到 AI 小鲸，可用于编程式触发对话。                                                                                           |
@@ -334,3 +334,48 @@ function calculateSum(a, b) {
 - **外部系统集成**：从其他系统或API获取数据并设置为引用文本
 - **自定义快捷操作**：在快捷操作中自动填充特定的引用内容
 - **用户界面增强**：提供更灵活的内容引用和输入体验
+
+## 创建新会话并打开窗口
+
+v1.2.7 版本新增了 `forceNewSession` 参数，支持在打开窗口的同时创建新会话：
+
+```vue
+<template>
+  <AIBlueking ref="aiBlueking" :url="apiUrl" />
+  <div class="controls">
+    <button @click="showWithNewSession">显示新会话</button>
+    <button @click="showWithCustomSession">显示自定义会话</button>
+  </div>
+</template>
+
+<script setup>
+import { ref } from "vue"
+import { AIBlueking } from "@blueking/ai-blueking"
+
+const aiBlueking = ref(null)
+const apiUrl = "..."
+
+// 显示新会话，会自动创建新会话并打开窗口
+const showWithNewSession = async () => {
+  // 传入 forceNewSession: true 创建新会话并打开窗口
+  await aiBlueking.value?.handleShow(undefined, true)
+}
+
+// 显示新会话，使用自定义会话代码
+const showWithCustomSession = async () => {
+  // 传入自定义 sessionCode 和 forceNewSession: true 创建指定代码的新会话
+  await aiBlueking.value?.handleShow("custom-session-123", true)
+}
+
+// 普通显示，保持原有行为
+const showNormal = () => {
+  aiBlueking.value?.handleShow()
+}
+</script>
+```
+
+此功能特别适用于：
+- **独立工作流程**：当用户需要开始一个全新的对话时，确保不会看到之前的对话内容
+- **外部触发场景**：从外部系统触发时，自动创建新会话而不需要手动调用 `addNewSession`
+- **一键新建对话**：为用户提供一键新建对话的便捷功能
+- **会话隔离**：在特定业务场景下确保对话内容的隔离

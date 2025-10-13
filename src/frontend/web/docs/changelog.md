@@ -8,6 +8,24 @@ export default {
     return {
       changelogData: [
         {
+          version: "v1.2.7-beta.6",
+          date: "2025-10-13",
+          features: [
+            "新增 handleShow 方法的 forceNewSession 参数，支持创建新会话时同时打开窗口，优化用户体验",
+            "更新 handleShow 方法签名：handleShow(sessionCode?: string, forceNewSession?: boolean): Promise<void>",
+            "在 Vue2 适配器中同步支持新的 handleShow 方法参数",
+            "优化新会话创建逻辑，确保在 forceNewSession=true 时先创建会话再打开面板"
+          ]
+        },
+        {
+          version: "v1.2.7-beta.5",
+          date: "2025-10-12",
+          features: [
+            "新增 Vue2 版本的编程式控制容器位置和大小的功能",
+            "优化 Vue2 适配器，确保与 Vue3 版本功能同步"
+          ]
+        },
+        {
           version: "v1.2.7-beta.4",
           date: "2025-10-11",
           features: [

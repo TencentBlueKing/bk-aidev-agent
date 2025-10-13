@@ -219,8 +219,8 @@ export default {
         { deep: true }
       )
     );
-    this.handleShow = (sessionCode?: string) => {
-      aiBlueking.component.exposed.handleShow(sessionCode);
+    this.handleShow = (sessionCode?: string, forceNewSession?: boolean) => {
+      return aiBlueking.component.exposed.handleShow(sessionCode, forceNewSession);
     };
     this.handleStop = () => {
       aiBlueking.component.exposed.handleStop();
