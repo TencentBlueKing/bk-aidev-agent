@@ -48,32 +48,32 @@ class SSMApi(ApiProtocol):
     @classmethod
     def get_client(cls, app_code=settings.APP_CODE, app_secret=settings.SECRET_KEY) -> SSMClient:
         """获取SSM客户端实例"""
-        logger.info("[SSMApi.get_client] 创建SSM客户端:")
-        logger.info(f"  - endpoint: {SSM_URL}")
-        logger.info(f"  - app_code: {app_code}")
-        logger.info(f"  - app_secret: {'***' if app_secret else '为空'}")
+        app_code = app_code or getattr(settings, "BKPAAS_APP_ID", "") or getattr(settings, "APP_CODE", "")
+        app_secret = app_secret or getattr(settings, "BKPAAS_APP_SECRET", "") or getattr(settings, "SECRET_KEY", "")
 
         if not app_code:
             logger.error("[SSMApi.get_client] app_code为空！")
+            raise ValueError("app_code不能为空")
         if not app_secret:
             logger.error("[SSMApi.get_client] app_secret为空！")
+            raise ValueError("app_secret不能为空")
         if not SSM_URL:
             logger.error("[SSMApi.get_client] SSM_URL为空！")
-
-        headers = {
-            "X-Bk-App-Code": app_code,
-            "X-Bk-App-Secret": app_secret,
-        }
-        logger.info(f"[SSMApi.get_client] 请求头部: {{'X-Bk-App-Code': '{app_code}', 'X-Bk-App-Secret': '***'}}")
+            raise ValueError("SSM_URL不能为空")
 
         try:
-            # 不传递headers给构造函数
+            # 创建客户端
             client = SSMClient(endpoint=SSM_URL)
 
-            # 使用BaseClient提供的方法设置请求头
-            client.update_headers(headers)
+            # 使用正确的认证头部格式
+            headers = {
+                "X-BK-APP-CODE": app_code,
+                "X-BK-APP-SECRET": app_secret,
+                "Content-Type": "application/json",
+            }
 
-            logger.info("[SSMApi.get_client] 客户端创建成功，已设置认证头部")
+            client.update_headers(headers)
+            logger.info(f"[SSMApi.get_client] 客户端创建成功，app_code: {app_code}")
             return client
         except Exception as e:
             logger.error(f"[SSMApi.get_client] 创建客户端失败: {e}")
@@ -81,7 +81,7 @@ class SSMApi(ApiProtocol):
 
 
 # 模块级便捷函数
-def get_client() -> SSMClient:
+def get_client(bk_token=None) -> SSMClient:
     """获取SSM客户端实例"""
     logger.info("[get_client] 调用SSMApi.get_client()")
-    return SSMApi.get_client()
+    return SSMApi.get_client(bk_token=bk_token)
