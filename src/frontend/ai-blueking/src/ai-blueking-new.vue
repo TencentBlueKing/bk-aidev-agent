@@ -151,6 +151,7 @@
                     :shortcut-filter="props.shortcutFilter"
                     :conversation-settings="sessionStore.agentInfo.value?.conversationSettings"
                     :disabled="props.disabledInput"
+                    :placeholder="props.placeholder"
                     @height-change="handleInputHeightChange"
                     @send="handleSendMessage"
                     @shortcut-click="handleInputShortcutClick"
