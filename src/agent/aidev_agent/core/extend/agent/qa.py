@@ -46,11 +46,10 @@ from aidev_agent.core.agent.agents import (
 from aidev_agent.core.agent.multimodal import MultiToolCallCommonAgent, StructuredChatCommonAgent
 from aidev_agent.core.extend.intent.intent_recognition import IntentRecognition
 from aidev_agent.core.utils.local import request_local
-from aidev_agent.enums import ContextType, Decision, EventType, IntentCategory, IntentStatus
+from aidev_agent.enums import ContextType, Decision, IntentCategory, IntentStatus, StreamEventType
 from aidev_agent.exceptions import streaming_chunk_exception_handling
 from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils import Empty
-from aidev_agent.utils.error_handling import extract_error_message
 
 from ..intent.prompts import DEFAULT_QA_PROMPT_TEMPLATES
 from ..intent.utils import (
@@ -764,7 +763,7 @@ class CommonQAStreamingMixIn:
             if combined_content:
                 recall_event = {"event": event_type, "content": combined_content, "cover": False}
             # think 类型有个特殊处理：需要保证在最后一个 think event 上带上 elapsed_time
-            if event_type == EventType.THINK.value:
+            if event_type == StreamEventType.THINK.value:
                 for item in cache:
                     if elapsed_time := item.get("elapsed_time"):
                         if recall_event:
@@ -797,12 +796,14 @@ class CommonQAStreamingMixIn:
         think_event_filter_symbols = deepcopy(self.think_symbols)
         if final_answer_prefix_to_filter:
             think_event_filter_symbols.append(final_answer_prefix_to_filter)
-        hit_think, recall_event_think = self.common_filter(cache, think_event_filter_symbols, EventType.THINK.value)
+        hit_think, recall_event_think = self.common_filter(
+            cache, think_event_filter_symbols, StreamEventType.THINK.value
+        )
 
         # 针对 final answer JSON BLOB 后缀的过滤
         if final_answer_suffix_to_filter:
             hit_suffix, recall_event_suffix = self.common_filter(
-                cache, [final_answer_suffix_to_filter], EventType.TEXT.value
+                cache, [final_answer_suffix_to_filter], StreamEventType.TEXT.value
             )
         else:
             hit_suffix = False
@@ -816,7 +817,7 @@ class CommonQAStreamingMixIn:
                 remain_events = []
                 have_appended_recall_event_think = False
                 for event in init_events:
-                    if event.get("event") == EventType.THINK.value:
+                    if event.get("event") == StreamEventType.THINK.value:
                         if recall_event_think and not have_appended_recall_event_think:
                             remain_events.append(recall_event_think)
                             have_appended_recall_event_think = True
@@ -829,7 +830,7 @@ class CommonQAStreamingMixIn:
                 # 去除 text 的 event，因为已经合并和过滤了
                 # 需保证 think 在 text 前面
                 # 因为认为 cache 中原始的 think 一定在 text 前面，所以这样处理即可：
-                remain_events = [event for event in remain_events if event.get("event") != EventType.TEXT.value]
+                remain_events = [event for event in remain_events if event.get("event") != StreamEventType.TEXT.value]
                 if recall_event_suffix:
                     remain_events.append(recall_event_suffix)
 
@@ -842,8 +843,8 @@ class CommonQAStreamingMixIn:
         # 前端渲染要求在 think 和 text 之间必须保证有 "\n\n" 的 text 内容
         if (
             cache
-            and (cache[-1].get("event") in (EventType.THINK.value, EventType.REFERENCE_DOC.value))
-            and (ret.get("event") == EventType.TEXT.value)
+            and (cache[-1].get("event") in (StreamEventType.THINK.value, StreamEventType.REFERENCE_DOC.value))
+            and (ret.get("event") == StreamEventType.TEXT.value)
             and (not ret.get("content").startswith("\n"))
         ):
             if ret.get("content"):
@@ -884,7 +885,7 @@ class CommonQAStreamingMixIn:
             last_event_type = None
             final_answer_prefix_to_filter = None
             final_answer_suffix_to_filter = None
-            cur_event_type = EventType.THINK.value
+            cur_event_type = StreamEventType.THINK.value
             final_answer_occurred = False
             first_time_final_answer = True
             first_think_event = True
@@ -900,7 +901,7 @@ class CommonQAStreamingMixIn:
                 if item == Empty:
                     if last_ret_is_empty or first_chunk:
                         ret = {
-                            "event": EventType.TEXT.value,
+                            "event": StreamEventType.TEXT.value,
                             "content": self.LOADING_AGENT_MESSAGE,
                             "cover": last_ret_is_empty,
                         }
@@ -931,7 +932,7 @@ class CommonQAStreamingMixIn:
                                 content = item["data"]["chunk"].content
                                 non_think_content += content
                             ret = {
-                                "event": EventType.TEXT.value,
+                                "event": StreamEventType.TEXT.value,
                                 "content": content,
                                 "cover": cover,
                             }
@@ -941,7 +942,7 @@ class CommonQAStreamingMixIn:
                                 "reasoning_content", None
                             ):
                                 ret = {
-                                    "event": EventType.THINK.value,
+                                    "event": StreamEventType.THINK.value,
                                     "content": reasoning_content,
                                     "cover": cover,
                                 }
@@ -953,7 +954,7 @@ class CommonQAStreamingMixIn:
                                     # 如果不是第一次调用工具，需要补上一个```
                                     log_prefix = "\n```\n" if has_tool_call else ""
                                     ret = {
-                                        "event": EventType.THINK.value,
+                                        "event": StreamEventType.THINK.value,
                                         "content": (f'{log_prefix}\n```json\n"action": "{name}",\n'),
                                         "cover": cover,
                                     }
@@ -964,7 +965,7 @@ class CommonQAStreamingMixIn:
                                     # 如果是第一个tool args，需要在前面加上'"action_input":'
                                     if first_tool_args:
                                         ret = {
-                                            "event": EventType.THINK.value,
+                                            "event": StreamEventType.THINK.value,
                                             "content": '"action_input":',
                                             "cover": cover,
                                         }
@@ -972,7 +973,7 @@ class CommonQAStreamingMixIn:
                                         final_result += ret["content"]
                                         first_tool_args = False
                                     ret = {
-                                        "event": EventType.THINK.value,
+                                        "event": StreamEventType.THINK.value,
                                         "content": item["data"]["chunk"].tool_call_chunks[0].get("args"),
                                         "cover": False,
                                     }
@@ -988,7 +989,7 @@ class CommonQAStreamingMixIn:
                                     has_tool_call = False
                                     has_custom_event = False
                                     ret = {
-                                        "event": EventType.THINK.value,
+                                        "event": StreamEventType.THINK.value,
                                         "content": "\n",
                                         "cover": False,
                                         "elapsed_time": (time.time() - agent_think_start_time) * 1000,
@@ -996,7 +997,7 @@ class CommonQAStreamingMixIn:
                                     self.check_and_append(cache, ret)
                                     final_result += ret["content"]
                                 ret = {
-                                    "event": EventType.TEXT.value,
+                                    "event": StreamEventType.TEXT.value,
                                     "content": item["data"]["chunk"].content,
                                     "cover": cover,
                                 }
@@ -1008,34 +1009,34 @@ class CommonQAStreamingMixIn:
                             front_end_display = item["data"]["front_end_display"]
                         elif "custom_return_chunk" in item["data"] and front_end_display:
                             ret = {
-                                "event": EventType.TEXT.value,
+                                "event": StreamEventType.TEXT.value,
                                 "content": item["data"]["custom_return_chunk"],
                                 "cover": cover,
                             }
                             final_result += ret["content"]
                         elif "reference_doc" in item["data"] and front_end_display:
                             ret = {
-                                "event": EventType.REFERENCE_DOC.value,
+                                "event": StreamEventType.REFERENCE_DOC.value,
                                 "documents": item["data"]["reference_doc"],
                                 "cover": True,
                             }
                         elif "compress_log" in item["data"] and front_end_display:
                             ret = {
-                                "event": EventType.THINK.value,
+                                "event": StreamEventType.THINK.value,
                                 "content": item["data"]["compress_log"],
                                 "cover": cover,
                             }
                         elif "custom_agent_finish" in item["data"] and front_end_display:
                             # 专为用户需自定义 agent finish 逻辑且需要使用 stream 调用的情况设计
                             ret = {
-                                "event": EventType.TEXT.value,
+                                "event": StreamEventType.TEXT.value,
                                 "content": item["data"]["custom_agent_finish"],
                                 "cover": cover,
                             }
                             final_result += item["data"]["custom_agent_finish"]
                         elif "intent_recognition_result" in item["data"] and front_end_display:
                             ret = {
-                                "event": EventType.THINK.value,
+                                "event": StreamEventType.THINK.value,
                                 "content": item["data"]["intent_recognition_result"],
                                 "cover": cover,
                             }
@@ -1062,7 +1063,7 @@ class CommonQAStreamingMixIn:
                         # 如果是奇数次，则手工拼接一个 ``` 防止前端渲染的时候乱了
                         log_prefix = "\n```\n" if final_result.count("```") % 2 == 1 else ""
                         ret = {
-                            "event": EventType.THINK.value,
+                            "event": StreamEventType.THINK.value,
                             "content": (
                                 f"{log_prefix}\n\n以下是该 Agent Action 的结果："
                                 f"\n```text\n{tool_output_content}\n```\n\n"
@@ -1114,11 +1115,11 @@ class CommonQAStreamingMixIn:
                                         # 执行这个动作！否则会把 ret["content"] 多去了一个字符
                                         recall_ret_prefix_content = recall_ret_prefix_content.replace("\\n", "\n")
                                         recall_ret = {
-                                            "event": EventType.TEXT.value,
+                                            "event": StreamEventType.TEXT.value,
                                             "content": recall_ret_prefix_content,
                                             "cover": cover,
                                         }
-                                    cur_event_type = EventType.TEXT.value
+                                    cur_event_type = StreamEventType.TEXT.value
                                     ret["elapsed_time"] = (time.time() - agent_think_start_time) * 1000
                                     break
                         if final_answer_occurred and not first_time_final_answer:  # noqa: SIM102
@@ -1218,7 +1219,7 @@ class CommonQAStreamingMixIn:
                         final_answer_suffix.replace("\\n", "\n") + "\n" + deepcopy(self.end_content)
                     )
                 end_ret = {
-                    "event": EventType.TEXT.value,
+                    "event": StreamEventType.TEXT.value,
                     "content": deepcopy(self.end_content),
                     "cover": False,
                 }
@@ -1242,10 +1243,10 @@ class CommonQAStreamingMixIn:
             # 如果 done 之前的最后一个 event 是 think 类型，则说明从 think 内容中解析结论失败，需额外发送一条 text event，
             # 防止报错：
             # {\"result\":false,\"data\":null,\"code\":\"1500400\",\"message\":\"content: 该字段不能为空。\"}" }
-            if last_event_type == EventType.THINK.value:
+            if last_event_type == StreamEventType.THINK.value:
                 # 先发一个确保带 elapsed_time 的 think ret
                 ret = {
-                    "event": EventType.THINK.value,
+                    "event": StreamEventType.THINK.value,
                     "content": "\n",
                     "cover": False,
                     "elapsed_time": (time.time() - agent_think_start_time) * 1000,
@@ -1257,7 +1258,7 @@ class CommonQAStreamingMixIn:
                     f"The final result is: \n{final_result}\n"
                 )
                 ret = {
-                    "event": EventType.TEXT.value,
+                    "event": StreamEventType.TEXT.value,
                     "content": "抱歉，由于LLM指令遵从效果欠佳，尝试从思考内容中解析最终结论失败，请从思考内容中获取结论。",
                     "cover": cover,
                 }
@@ -1266,7 +1267,7 @@ class CommonQAStreamingMixIn:
             # cover 为 False 时不进行覆盖
             cover = False
             ret = {
-                "event": EventType.DONE.value,
+                "event": StreamEventType.DONE.value,
                 "content": final_result,
                 "cover": cover,
             }
@@ -1281,11 +1282,6 @@ class CommonQAStreamingMixIn:
         if done:
             return "data: [DONE]\n\n"
         return f"data: {json.dumps(ret)}\n\n"
-
-    def _extract_exception_msg(self, exception) -> str:
-        message = exception.response_data() if hasattr(exception, "response_data") else str(exception)
-        new_message = extract_error_message(message)
-        return new_message or message
 
 
 class ToolCallingCommonQAAgent(IntentRecognitionMixin, CommonQAStreamingMixIn, MultiToolCallCommonAgent):

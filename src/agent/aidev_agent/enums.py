@@ -16,15 +16,6 @@ class PromptRole(enum.Enum):
     USER_IMAGE = "user-image"  # 用户带图片的输入
 
 
-class StreamEventType(enum.Enum):
-    NO = ""  # 不会展示这个
-    TEXT = "text"
-    THINK = "think"
-    REFERENCE_DOC = "reference_doc"
-    ERROR = "error"
-    DONE = "done"
-
-
 class ChatContentStatus(enum.Enum):
     LOADING = "loading"
     FAIL = "fail"
@@ -70,7 +61,8 @@ class IntentCategory(enum.Enum):
     TOOL = "tool"
 
 
-class EventType(enum.Enum):
+class StreamEventType(enum.Enum):
+    NO = ""  # 不会展示这个
     LOADING = "loading"
     TEXT = "text"
     DONE = "done"

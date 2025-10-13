@@ -209,9 +209,9 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/chat/session_feedback/",
     )
 
-    get_feedback_reason = bind_property(
+    get_feedback_reasons = bind_property(
         Operation,
-        name="get_feedback_reason",
+        name="get_feedback_reasons",
         method="GET",
         path="/openapi/aidev/resource/v1/chat/session_feedback/reasons/",
     )
