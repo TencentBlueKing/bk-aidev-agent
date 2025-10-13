@@ -335,3 +335,167 @@ export default {
 - `sessionContents`: 当前会话的消息内容数组
 - `isLoadingSessionContents`: 会话内容是否正在加载
 - `currentSessionLoading`: 当前是否有消息正在生成
+
+## 编程式控制容器位置和大小
+
+<Badge type="tip" text="v1.2.7" /> v1.2.7 版本新增了编程式控制容器位置和大小的功能，允许您动态调整 AI 小鲸窗口的位置和尺寸。
+
+### 可用方法
+
+| 方法名 | 描述 |
+| ------ | ---- |
+| `updatePosition(x, y)` | 更新容器位置，设置左上角坐标 |
+| `updateSize(w, h)` | 更新容器大小，设置宽度和高度 |
+| `updatePositionAndSize(x, y, w, h)` | 同时更新容器的位置和大小 |
+
+### 方法签名
+
+```typescript
+// 更新容器位置
+updatePosition(x: number, y: number): void
+
+// 更新容器大小
+updateSize(w: number, h: number): void
+
+// 同时更新位置和大小
+updatePositionAndSize(x: number, y: number, w: number, h: number): void
+```
+
+### 使用场景
+
+1. **动态布局调整**：根据页面内容或其他组件的位置动态调整 AI 小鲸窗口
+2. **响应式设计**：在不同屏幕尺寸下自动调整窗口位置和大小
+3. **用户偏好设置**：根据用户保存的偏好设置恢复窗口位置和大小
+4. **界面协调**：与其他 UI 组件协调，避免遮挡重要内容
+
+### 容器控制示例
+
+:::code-group
+```vue [Vue 3]
+<template>
+  <div>
+    <AIBlueking ref="aiBlueking" :url="apiUrl" />
+    <div class="controls">
+      <button @click="moveToTopRight">移动到右上角</button>
+      <button @click="setSizeLarge">设置大尺寸</button>
+      <button @click="setSizeSmall">设置小尺寸</button>
+      <button @click="setPositionAndSize">设置位置和尺寸</button>
+    </div>
+  </div>
+</template>
+
+<script lang="ts" setup>
+import { ref } from 'vue';
+import { AIBlueking } from '@blueking/ai-blueking';
+
+const aiBlueking = ref(null);
+const apiUrl = '...';
+
+// 移动到右上角
+const moveToTopRight = () => {
+  // 获取窗口宽度，计算右上角位置（距离右边框20px，距离上边框20px）
+  const containerWidth = 400; // 假设容器宽度
+  const x = window.innerWidth - containerWidth - 20;
+  const y = 20;
+
+  aiBlueking.value?.updatePosition(x, y);
+};
+
+// 设置大尺寸
+const setSizeLarge = () => {
+  aiBlueking.value?.updateSize(600, 500);
+};
+
+// 设置小尺寸
+const setSizeSmall = () => {
+  aiBlueking.value?.updateSize(350, 400);
+};
+
+// 同时设置位置和尺寸
+const setPositionAndSize = () => {
+  const x = 100;
+  const y = 100;
+  const width = 500;
+  const height = 450;
+
+  aiBlueking.value?.updatePositionAndSize(x, y, width, height);
+};
+</script>
+
+<style scoped>
+.controls {
+  margin: 10px 0;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+</style>
+```
+
+```vue [Vue 2]
+<template>
+  <div>
+    <AIBlueking ref="aiBlueking" :url="apiUrl" />
+    <div class="controls">
+      <button @click="moveToTopRight">移动到右上角</button>
+      <button @click="setSizeLarge">设置大尺寸</button>
+      <button @click="setSizeSmall">设置小尺寸</button>
+      <button @click="setPositionAndSize">设置位置和尺寸</button>
+    </div>
+  </div>
+</template>
+
+<script>
+import AIBlueking from '@blueking/ai-blueking/vue2';
+
+export default {
+  components: { AIBlueking },
+  data() {
+    return {
+      apiUrl: '...'
+    };
+  },
+  methods: {
+    // 移动到右上角
+    moveToTopRight() {
+      // 获取窗口宽度，计算右上角位置（距离右边框20px，距离上边框20px）
+      const containerWidth = 400; // 假设容器宽度
+      const x = window.innerWidth - containerWidth - 20;
+      const y = 20;
+
+      this.$refs.aiBlueking.updatePosition(x, y);
+    },
+
+    // 设置大尺寸
+    setSizeLarge() {
+      this.$refs.aiBlueking.updateSize(600, 500);
+    },
+
+    // 设置小尺寸
+    setSizeSmall() {
+      this.$refs.aiBlueking.updateSize(350, 400);
+    },
+
+    // 同时设置位置和尺寸
+    setPositionAndSize() {
+      const x = 100;
+      const y = 100;
+      const width = 500;
+      const height = 450;
+
+      this.$refs.aiBlueking.updatePositionAndSize(x, y, width, height);
+    }
+  }
+};
+</script>
+
+<style scoped>
+.controls {
+  margin: 10px 0;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+</style>
+```
+:::

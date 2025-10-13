@@ -117,6 +117,10 @@
           @shortcut-click="handleShortcutClick"
           @show="handleShowAi"
           @stop="handleStop"
+          @dragging="handleDragging"
+          @resizing="handleResizing"
+          @drag-stop="handleDragStop"
+          @resize-stop="handleResizeStop"
           :auto-switch-to-initial-session="false"
         />
       </div>
@@ -254,6 +258,24 @@
   // 暂停聊天
   const handleStop = () => {
     addLog('stop', 'Chat stream stopped');
+  };
+
+  // 拖拽事件
+  const handleDragging = (position: { x: number; y: number; width: number; height: number }) => {
+    addLog('dragging', position);
+  };
+
+  const handleDragStop = (position: { x: number; y: number; width: number; height: number }) => {
+    addLog('drag-stop', position);
+  };
+
+  // 调整大小事件
+  const handleResizing = (position: { x: number; y: number; width: number; height: number }) => {
+    addLog('resizing', position);
+  };
+
+  const handleResizeStop = (position: { x: number; y: number; width: number; height: number }) => {
+    addLog('resize-stop', position);
   };
 
   const article = `In the rapidly evolving world of technology...`; // 将原有的长文本提取为变量

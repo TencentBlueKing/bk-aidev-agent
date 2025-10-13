@@ -8,27 +8,31 @@
 
 ## 方法列表
 
-| 方法名                          | 参数                                                                                                                  | 返回值          | 描述                                                                                                  |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------- |
-| `handleShow()`                  | -                                                                                                                     | `void`          | 主动显示 AI 小鲸窗口。                                                                                |
-| `handleClose()`                 | -                                                                                                                     | `void`          | 关闭 AI 小鲸窗口。                                                                                    |
-| `handleStop()`                  | -                                                                                                                     | `void`          | 停止当前正在进行的 AI 内容生成（流式输出）。                                                          |
-| `handleSendMessage(message)`    | `message: string`                                                                                                     | `void`          | 发送消息到 AI 小鲸，可用于编程式触发对话。                                                            |
-| `handleShortcutClick(shortcut)` | `shortcut: IShortcut`                                                                                                 | `void`          | 模拟点击快捷操作按钮，可用于编程式触发快捷操作。                                                      |
-| `handleDelete(index)`           | `index: number`                                                                                                       | `void`          | 删除指定索引位置的消息。                                                                              |
-| `handleRegenerate(index)`       | `index: number`                                                                                                       | `void`          | 重新生成指定索引位置的消息。                                                                          |
-| `handleResend(index, options)`  | `index: number, options: {message: string, cite: string}`                                                             | `void`          | 重发指定索引位置的消息，可修改消息内容和引用内容。                                                    |
-| `initSession()`                 | -                                                                                                                     | `Promise<void>` | 初始化会话，获取开场白和预设问题。                                                                    |
-| `updateRequestOptions(options)` | `options: { url?: string; headers?: Record<string, string>; data?: any; context?: Array<{key: string, value: any}> }` | `void`          | 动态更新请求选项，可以修改API地址或请求参数。对于需要在运行时切换智能体或修改请求参数的场景非常有用。 |
-| `updateRequestOptions(options)` | `options: { url?: string; headers?: Record<string, string>; data?: any; context?: Array<Object> }`                    | `void`          | 动态更新请求选项，可以修改API地址或请求参数。对于需要在运行时切换智能体或修改请求参数的场景非常有用。 |
-| `focusInput()`                  | -                                                                                                                     | `void`          | <Badge type="tip" text="v1.1.1" /> 程序式聚焦输入框。可用于在特定时机主动聚焦到输入框，提升用户体验。                     |
-| `addNewSession(sessionCode?)`   | `sessionCode?: string`                                                                                               | `Promise<ISessionEditItem>` | <Badge type="tip" text="v1.2.2" /> 创建一个新的聊天会话并返回会话信息。可选参数 sessionCode 用于指定会话代码，如果不提供则自动生成。 |
-| `updateSessionName(sessionCode, newName)` | `sessionCode: string, newName: string`                                                                              | `Promise<ISessionEditItem>` | <Badge type="tip" text="v1.2.2" /> 更新指定会话的名称。 |
-| `switchToSession(sessionCode)`  | `sessionCode: string`                                                                                                 | `Promise<void>` | <Badge type="tip" text="v1.2.2" /> 切换到指定代码的会话。 |
-| `getSessionList()`              | -                                                                                                                     | `Promise<ISessionEditItem[]>` | <Badge type="tip" text="v1.2.2" /> 获取当前会话列表。 |
-| `enterSelectMode(type)`         | `type: 'transfer' \| 'delete' \| 'regenerate'`                                                                          | `void`                        | <Badge type="tip" text="v1.2.5" /> 进入选择模式，用于选择消息进行操作。`type` 参数指定选择模式的类型。 |
-| `exitSelectMode()`              | -                                                                                                                     | `void`                        | <Badge type="tip" text="v1.2.5" /> 退出选择模式。 |
-| `getSelectedMessages()`         | -                                                                                                                     | `Array<ISessionContent>`      | <Badge type="tip" text="v1.2.5" /> 获取当前选择的消息列表。 |
+| 方法名                                    | 参数                                                                                                                  | 返回值                        | 描述                                                                                                                                 |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `handleShow()`                            | -                                                                                                                     | `void`                        | 主动显示 AI 小鲸窗口。                                                                                                               |
+| `handleClose()`                           | -                                                                                                                     | `void`                        | 关闭 AI 小鲸窗口。                                                                                                                   |
+| `handleStop()`                            | -                                                                                                                     | `void`                        | 停止当前正在进行的 AI 内容生成（流式输出）。                                                                                         |
+| `handleSendMessage(message)`              | `message: string`                                                                                                     | `void`                        | 发送消息到 AI 小鲸，可用于编程式触发对话。                                                                                           |
+| `handleShortcutClick(shortcut)`           | `shortcut: IShortcut`                                                                                                 | `void`                        | 模拟点击快捷操作按钮，可用于编程式触发快捷操作。                                                                                     |
+| `handleDelete(index)`                     | `index: number`                                                                                                       | `void`                        | 删除指定索引位置的消息。                                                                                                             |
+| `handleRegenerate(index)`                 | `index: number`                                                                                                       | `void`                        | 重新生成指定索引位置的消息。                                                                                                         |
+| `handleResend(index, options)`            | `index: number, options: {message: string, cite: string}`                                                             | `void`                        | 重发指定索引位置的消息，可修改消息内容和引用内容。                                                                                   |
+| `initSession()`                           | -                                                                                                                     | `Promise<void>`               | 初始化会话，获取开场白和预设问题。                                                                                                   |
+| `updateRequestOptions(options)`           | `options: { url?: string; headers?: Record<string, string>; data?: any; context?: Array<{key: string, value: any}> }` | `void`                        | 动态更新请求选项，可以修改API地址或请求参数。对于需要在运行时切换智能体或修改请求参数的场景非常有用。                                |
+| `updateRequestOptions(options)`           | `options: { url?: string; headers?: Record<string, string>; data?: any; context?: Array<Object> }`                    | `void`                        | 动态更新请求选项，可以修改API地址或请求参数。对于需要在运行时切换智能体或修改请求参数的场景非常有用。                                |
+| `focusInput()`                            | -                                                                                                                     | `void`                        | <Badge type="tip" text="v1.1.1" /> 程序式聚焦输入框。可用于在特定时机主动聚焦到输入框，提升用户体验。                                |
+| `addNewSession(sessionCode?)`             | `sessionCode?: string`                                                                                                | `Promise<ISessionEditItem>`   | <Badge type="tip" text="v1.2.2" /> 创建一个新的聊天会话并返回会话信息。可选参数 sessionCode 用于指定会话代码，如果不提供则自动生成。 |
+| `updateSessionName(sessionCode, newName)` | `sessionCode: string, newName: string`                                                                                | `Promise<ISessionEditItem>`   | <Badge type="tip" text="v1.2.2" /> 更新指定会话的名称。                                                                              |
+| `switchToSession(sessionCode)`            | `sessionCode: string`                                                                                                 | `Promise<void>`               | <Badge type="tip" text="v1.2.2" /> 切换到指定代码的会话。                                                                            |
+| `getSessionList()`                        | -                                                                                                                     | `Promise<ISessionEditItem[]>` | <Badge type="tip" text="v1.2.2" /> 获取当前会话列表。                                                                                |
+| `enterSelectMode(type)`                   | `type: 'transfer' \| 'delete' \| 'regenerate'`                                                                        | `void`                        | <Badge type="tip" text="v1.2.5" /> 进入选择模式，用于选择消息进行操作。`type` 参数指定选择模式的类型。                               |
+| `exitSelectMode()`                        | -                                                                                                                     | `void`                        | <Badge type="tip" text="v1.2.5" /> 退出选择模式。                                                                                    |
+| `getSelectedMessages()`                   | -                                                                                                                     | `Array<ISessionContent>`      | <Badge type="tip" text="v1.2.5" /> 获取当前选择的消息列表。                                                                          |
+| `setCiteText(citeText)`                   | `citeText: string`                                                                                                    | `void`                        | <Badge type="tip" text="v1.2.6" /> 编程式设置输入框中的引用文本。可用于动态添加引用内容到输入框。                                    |
+| `updatePosition(x, y)`                    | `x: number, y: number`                                                                                                | `void`                        | <Badge type="tip" text="v1.2.7" /> 编程式更新容器位置。可用于动态调整AI小鲸窗口的位置。                                              |
+| `updateSize(w, h)`                        | `w: number, h: number`                                                                                                | `void`                        | <Badge type="tip" text="v1.2.7" /> 编程式更新容器大小。可用于动态调整AI小鲸窗口的尺寸。                                              |
+| `updatePositionAndSize(x, y, w, h)`       | `x: number, y: number, w: number, h: number`                                                                          | `void`                        | <Badge type="tip" text="v1.2.7" /> 同时更新容器的位置和大小。可用于一次性调整AI小鲸窗口的位置和尺寸。                                  |
 
 ::: danger 已废弃方法
 以下方法在相应版本中已被移除:
@@ -249,11 +253,11 @@ v1.2.2版本新增了编程式会话管理功能，允许通过组件实例方�
     try {
       // 1. 创建新会话
       const newSession = await aiBlueking.value?.addNewSession()
-      
+
       // 2. 重命名会话
       if (newSession?.sessionCode) {
         await aiBlueking.value?.updateSessionName(newSession.sessionCode, "我的新会话")
-        
+
         // 3. 切换到新会话
         await aiBlueking.value?.switchToSession(newSession.sessionCode)
       }
@@ -268,7 +272,7 @@ v1.2.2版本新增了编程式会话管理功能，允许通过组件实例方�
       // 获取会话列表（需要通过其他方式获取，这里仅为示例）
       // 假设我们已经获取到了会话列表 sessionList
       const sessionList = [] // 实际使用中需要获取真实的会话列表
-      
+
       if (sessionList.length > 0) {
         await aiBlueking.value?.switchToSession(sessionList[0].sessionCode)
       }
@@ -280,3 +284,53 @@ v1.2.2版本新增了编程式会话管理功能，允许通过组件实例方�
 ```
 
 更完整的使用示例请参见 [会话生命周期管理指南](/guide/advanced-usage/session-lifecycle)。
+
+## 编程式设置引用文本
+
+v1.2.6 版本新增了 `setCiteText` 方法，支持通过编程方式动态设置输入框中的引用文本：
+
+```vue
+<template>
+  <AIBlueking ref="aiBlueking" :url="apiUrl" />
+  <div class="controls">
+    <button @click="addExternalCite">添加外部引用</button>
+    <button @click="addCodeCite">添加代码引用</button>
+    <button @click="clearCite">清除引用</button>
+  </div>
+</template>
+
+<script setup>
+  import { ref } from "vue"
+  import { AIBlueking } from "@blueking/ai-blueking"
+
+  const aiBlueking = ref(null)
+  const apiUrl = "..."
+
+  // 添加外部系统的引用内容
+  const addExternalCite = () => {
+    const externalData = "从CRM系统获取的客户信息：客户A的订单详情..."
+    aiBlueking.value?.setCiteText(externalData)
+  }
+
+  // 添加代码引用
+  const addCodeCite = () => {
+    const codeSnippet = `
+function calculateSum(a, b) {
+  return a + b;
+}`
+    aiBlueking.value?.setCiteText(codeSnippet)
+  }
+
+  // 清除引用内容
+  const clearCite = () => {
+    aiBlueking.value?.setCiteText("")
+  }
+</script>
+```
+
+此功能特别适用于：
+
+- **动态内容引用**：根据用户操作或系统状态动态添加引用内容
+- **外部系统集成**：从其他系统或API获取数据并设置为引用文本
+- **自定义快捷操作**：在快捷操作中自动填充特定的引用内容
+- **用户界面增强**：提供更灵活的内容引用和输入体验

@@ -1,3 +1,137 @@
+## [1.2.7-beta.4] - 2025-10-11
+
+### ✨ 新增功能
+
+#### 编程式控制容器位置和大小
+
+- **新增编程式控制功能**: 新增 `updatePosition`、`updateSize` 和 `updatePositionAndSize` 方法，支持动态调整AI小鲸窗口的位置和尺寸
+- **优化可调整大小容器的逻辑**: 完善容器的拖拽和调整大小功能，提升用户体验
+
+### 🎨 优化改进
+
+#### 可编程控制增强
+
+- **位置控制**: 通过 `updatePosition(x, y)` 方法可以动态设置容器的坐标位置
+- **尺寸控制**: 通过 `updateSize(w, h)` 方法可以动态设置容器的宽度和高度
+- **综合控制**: 通过 `updatePositionAndSize(x, y, w, h)` 方法可以同时设置位置和尺寸
+
+```vue
+<template>
+  <AIBlueking ref="aiBlueking" :url="apiUrl" />
+  <button @click="moveToTopRight">移动到右上角</button>
+  <button @click="setSizeLarge">设置大尺寸</button>
+</template>
+
+<script setup>
+import { ref } from 'vue';
+import { AIBlueking } from '@blueking/ai-blueking';
+
+const aiBlueking = ref(null);
+const apiUrl = '...';
+
+// 移动到右上角
+const moveToTopRight = () => {
+  const containerWidth = 400;
+  const x = window.innerWidth - containerWidth - 20;
+  const y = 20;
+
+  aiBlueking.value?.updatePosition(x, y);
+};
+
+// 设置大尺寸
+const setSizeLarge = () => {
+  aiBlueking.value?.updateSize(600, 500);
+};
+</script>
+```
+
+## [1.2.7-beta.3] - 2025-09-25
+
+### ✨ 新增功能
+
+#### 历史会话面板时间分组优化
+
+- **新增时间分组**: 在历史会话面板中新增"3天前"、"5天前"、"1周前"等更精细的时间分组
+- **改进会话分类逻辑**: 优化会话按时间分组的算法，提供更清晰的历史会话管理体验
+- **国际化支持**: 新增相关时间分组的英文翻译，完善多语言支持
+
+### 🎨 优化改进
+
+#### 用户体验提升
+
+- **历史面板细化**: 将原本的"之前"分组细化为多个时间段，便于用户查找历史会话
+- **时间计算优化**: 改进会话时间与当前时间的比较逻辑，提高时间分组准确性
+
+## [1.2.7-beta.2] - 2025-09-24
+
+### ✨ 新增功能
+
+#### 拖拽和调整大小事件支持
+
+- **新增 `drag-stop` 事件**: 拖拽结束时触发，参数为容器的位置和尺寸信息
+- **新增 `resize-stop` 事件**: 调整大小结束时触发，参数为容器的位置和尺寸信息
+- **新增 `dragging` 事件**: 拖拽过程中触发，参数为容器的位置和尺寸信息
+- **新增 `resizing` 事件**: 调整大小过程中触发，参数为容器的位置和尺寸信息
+- **新增回调函数支持**: 在 `useResizableContainer` 组合式函数中增加拖拽和调整大小结束的回调函数
+
+#### 开发体验优化
+
+- **ESLint 配置优化**: 修正了 tsconfig.json 路径配置，提升 TypeScript 类型检查准确性
+
+### 🎯 使用示例
+
+#### 拖拽和调整大小结束事件
+
+```vue
+<template>
+  <AIBlueking
+    :url="apiUrl"
+    @drag-stop="onDragStop"
+    @resize-stop="onResizeStop"
+  />
+</template>
+
+<script setup>
+  import { AIBlueking } from '@blueking/ai-blueking';
+
+  const onDragStop = position => {
+    console.log('拖拽结束', position);
+    // position 包含 x, y, width, height 属性
+  };
+
+  const onResizeStop = position => {
+    console.log('调整大小结束', position);
+    // position 包含 x, y, width, height 属性
+  };
+</script>
+```
+
+## [1.2.6] - 2025-09-18
+
+> ⚠️ **重要提醒**：小鲸 1.2.6 版本必须与后端 SDK 版本 1.0.0b42 或更高版本匹配使用，否则可能出现兼容性问题
+
+### ✨ 新增功能
+
+#### 群聊咨询用户名支持
+
+- **新增 `username` 字段**: 在选择模式中新增 `username` 字段，用于群聊转人工时显示咨询用户名称
+- **动态群聊名称生成**: 聊天群名称现在根据智能体名称、会话名称和用户名动态生成，格式为：`智能体名称-会话名称-咨询用户`
+
+#### 编程式引用文本设置
+
+- **新增 `setCiteText` 方法**: 支持编程式设置输入框中的引用文本，可用于动态添加引用内容到输入框
+
+### 🛠️ 代码优化
+
+#### 依赖升级
+
+- **@blueking/ai-ui-sdk 升级**: 升级依赖到 `0.1.16-beta.4`，获取更多底层能力支持和功能增强
+
+#### 样式和性能优化
+
+- **输入框样式优化**: 添加 `box-sizing` 属性，提升样式一致性
+- **选择模式逻辑重构**: 移除不必要的依赖，提升代码可维护性和性能
+
 ## [1.2.5] - 2025-09-04
 
 > ⚠️ **重要提醒**：小鲸 1.2.5 版本必须与后端 SDK 版本 1.0.0b39 或更高版本匹配使用，否则可能出现兼容性问题

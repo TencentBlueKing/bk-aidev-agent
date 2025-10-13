@@ -30,7 +30,7 @@ module.exports = {
     ecmaVersion: 'latest',
     parser: '@typescript-eslint/parser',
     sourceType: 'module',
-    project: './src/frontend/ai-blueking/tsconfig.json',
+    project: './tsconfig.json',
     extraFileExtensions: ['.vue'],
   },
   plugins: ['vue', '@typescript-eslint', 'import', 'unused-imports', 'prettier'],
@@ -38,7 +38,7 @@ module.exports = {
     'import/resolver': {
       typescript: {
         alwaysTryTypes: true,
-        project: './src/frontend/ai-blueking/tsconfig.json',
+        project: './tsconfig.json',
       },
       node: {
         extensions: ['.js', '.jsx', '.ts', '.tsx', '.vue'],

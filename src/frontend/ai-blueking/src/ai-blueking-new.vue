@@ -20,6 +20,8 @@
         drag-handle=".drag-handle"
         @dragging="handleDragging"
         @resizing="handleResizing"
+        @drag-stop="handleDragStop"
+        @resize-stop="handleResizeStop"
       >
         <div
           ref="rootNode"
@@ -311,6 +313,10 @@
     (e: 'sdk-error', data: { apiName: string; code: number; message: string; data: unknown }): void;
     (e: 'transfer-messages', messageIds: string[]): void;
     (e: 'share-messages', messageIds: string[]): void;
+    (e: 'dragging', position: { x: number; y: number; width: number; height: number }): void;
+    (e: 'resizing', position: { x: number; y: number; width: number; height: number }): void;
+    (e: 'drag-stop', position: { x: number; y: number; width: number; height: number }): void;
+    (e: 'resize-stop', position: { x: number; y: number; width: number; height: number }): void;
   }>();
 
   // ===================================================================
@@ -393,15 +399,38 @@
     isCompressionHeight,
     handleDragging,
     handleResizing,
+    handleDragStop,
+    handleResizeStop,
     toggleCompression,
-  } = useResizableContainer({
-    maxWidthPercent: 80,
-    initWidth: props.defaultWidth,
-    defaultHeight: props.defaultHeight,
-    defaultTop: props.defaultTop,
-    defaultLeft: props.defaultLeft,
-    miniPadding: props.miniPadding,
-  });
+    updatePosition,
+    updateSize,
+    updatePositionAndSize,
+  } = useResizableContainer(
+    {
+      maxWidthPercent: 80,
+      initWidth: props.defaultWidth,
+      defaultHeight: props.defaultHeight,
+      defaultTop: props.defaultTop,
+      defaultLeft: props.defaultLeft,
+      miniPadding: props.miniPadding,
+    },
+    position => {
+      // 拖拽结束回调
+      emit('drag-stop', position);
+    },
+    position => {
+      // 调整大小结束回调
+      emit('resize-stop', position);
+    },
+    position => {
+      // 拖拽过程中回调
+      emit('dragging', position);
+    },
+    position => {
+      // 调整大小过程中回调
+      emit('resizing', position);
+    }
+  );
 
   // 动态计算 greeting 最大高度
   const greetingMaxHeight = computed(() => windowHeight.value - 367);
@@ -975,6 +1004,10 @@
     sessionList: sessionStore.sessionList,
     // 是否启用会话管理
     enableChatSession,
+    // 编程式控制容器位置和大小
+    updatePosition,
+    updateSize,
+    updatePositionAndSize,
   });
 </script>
 

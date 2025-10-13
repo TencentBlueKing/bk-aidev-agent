@@ -18,4 +18,6 @@ position: 1
 /doc-update 编程式会话管理
 /doc-update 新增用户偏好设置功能
 
-执行该命令后，Claude Code 将自动调用 doc-update 子代理来处理完整的文档更新流程。
+执行该命令后，Claude Code 将自动调用 doc-expert 子代理来处理完整的文档更新流程。
+
+接下来，请根据：$ARGUMENTS 内容，更新相关文档

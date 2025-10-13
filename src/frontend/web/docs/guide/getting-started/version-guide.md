@@ -2,7 +2,153 @@
 
 本指南提供了各版本间的主要变化和迁移方法，帮助您顺利升级 AI 小鲸组件。
 
-## v1.2.5 更新指南 <Badge type="tip" text="最新" />
+## v1.2.7 更新指南 <Badge type="tip" text="最新" />
+
+v1.2.7 版本新增了编程式控制容器位置和大小的功能，优化了可调整大小容器的逻辑，同时增强了历史会话面板的时间分组功能。
+
+### v1.2.7-beta.4 主要变更
+
+1. **新增编程式控制容器功能**：新增 `updatePosition`、`updateSize` 和 `updatePositionAndSize` 方法，支持动态调整AI小鲸窗口的位置和尺寸
+2. **优化可调整大小容器的逻辑**：完善容器的拖拽和调整大小功能
+3. **增强历史会话面板**：新增"3天前"、"5天前"、"1周前"等更精细的时间分组
+
+### 新增功能
+
+#### 1. 编程式控制容器位置和大小
+
+v1.2.7 版本新增了编程式控制容器位置和大小的功能，允许您动态调整 AI 小鲸窗口的位置和尺寸：
+
+```vue
+<template>
+  <AIBlueking ref="aiBlueking" :url="apiUrl" />
+  <button @click="moveToTopRight">移动到右上角</button>
+  <button @click="setSizeLarge">设置大尺寸</button>
+  <button @click="setPositionAndSize">设置位置和尺寸</button>
+</template>
+
+<script setup>
+import { ref } from 'vue';
+import { AIBlueking } from '@blueking/ai-blueking';
+
+const aiBlueking = ref(null);
+
+// 移动到右上角
+const moveToTopRight = () => {
+  const containerWidth = 400;
+  const x = window.innerWidth - containerWidth - 20;
+  const y = 20;
+
+  aiBlueking.value?.updatePosition(x, y);
+};
+
+// 设置大尺寸
+const setSizeLarge = () => {
+  aiBlueking.value?.updateSize(600, 500);
+};
+
+// 同时设置位置和尺寸
+const setPositionAndSize = () => {
+  const x = 100;
+  const y = 100;
+  const width = 500;
+  const height = 450;
+
+  aiBlueking.value?.updatePositionAndSize(x, y, width, height);
+};
+</script>
+```
+
+#### 2. 新增方法
+
+- `updatePosition(x: number, y: number): void` - 编程式更新容器位置
+- `updateSize(w: number, h: number): void` - 编程式更新容器大小
+- `updatePositionAndSize(x: number, y: number, w: number, h: number): void` - 同时更新容器的位置和大小
+
+### 升级注意事项
+
+1. **向后兼容**：所有现有功能完全兼容，无需修改现有代码
+2. **新功能可选**：新增功能均为可选特性，不会影响现有功能的正常使用
+3. **使用场景**：新方法特别适用于动态布局调整、响应式设计、用户偏好设置等场景
+
+### 升级步骤
+
+1. 更新依赖包到 v1.2.7 版本
+2. （可选）根据需要使用新增的 `updatePosition`、`updateSize` 和 `updatePositionAndSize` 方法进行编程式控制
+3. 测试所有现有功能确保兼容性
+
+## v1.2.6 更新指南
+
+v1.2.6 版本主要增强了群聊转人工功能，新增了编程式引用文本设置能力，并优化了相关代码逻辑。
+
+### 主要变更
+
+1. **群聊咨询用户名支持**：在选择模式中新增 `username` 字段，用于群聊转人工时显示咨询用户名称
+2. **动态群聊名称生成**：聊天群名称现在根据智能体名称、会话名称和用户名动态生成，格式为：`智能体名称-会话名称-咨询用户`
+3. **编程式引用文本设置**：新增 `setCiteText` 方法，支持动态设置输入框中的引用文本
+4. **依赖升级**：升级 @blueking/ai-ui-sdk 到 0.1.16-beta.4，获取更多底层能力支持
+5. **代码优化**：优化选择模式逻辑，移除不必要的依赖，提升代码可维护性
+
+### 新增功能
+
+#### 1. 编程式设置引用文本
+
+v1.2.6 版本新增了 `setCiteText` 方法，允许通过编程方式动态设置输入框中的引用文本：
+
+```vue
+<template>
+  <AIBlueking ref="aiBlueking" :url="apiUrl" />
+  <button @click="addCiteText">添加引用文本</button>
+</template>
+
+<script setup>
+  const aiBlueking = ref(null)
+
+  const addCiteText = () => {
+    // 动态添加引用文本到输入框
+    aiBlueking.value?.setCiteText("这是要引用的文本内容")
+  }
+</script>
+```
+
+此功能特别适用于：
+
+- **动态内容引用**：根据用户操作动态添加引用内容
+- **外部系统集成**：从其他系统获取数据并设置为引用文本
+- **自定义快捷操作**：在快捷操作中自动填充引用内容
+
+#### 2. 群聊咨询用户信息支持
+
+新增了群聊咨询用户名支持，在转人工操作时会自动包含咨询用户的信息：
+
+```typescript
+// 聊天群名称格式：智能体名称-会话名称-咨询用户
+// 例如：小鲸助手-产品咨询-张三
+```
+
+### API 更新
+
+#### 新增方法
+
+- `setCiteText(citeText: string): void` - 编程式设置输入框中的引用文本
+
+#### 数据结构更新
+
+- `chatGroup` 配置新增 `username` 字段，用于存储咨询用户的用户名
+
+### 升级注意事项
+
+1. **向后兼容**：所有现有功能完全兼容，无需修改现有代码
+2. **依赖版本**：@blueking/ai-ui-sdk 已升级到 0.1.16-beta.4，请确保相关依赖版本匹配
+3. **新功能可选**：新增功能均为可选特性，不会影响现有功能的正常使用
+
+### 升级步骤
+
+1. 更新依赖包到 v1.2.6 版本
+2. （可选）根据需要使用 `setCiteText` 方法进行编程式引用文本设置
+3. （可选）在群聊转人工场景中配置和使用 `username` 字段
+4. 测试所有现有功能确保兼容性
+
+## v1.2.5 更新指南
 
 v1.2.5 版本重点优化了快捷操作体验，增强了会话管理功能，改进了权限和错误处理机制，并提升了开发体验。
 
@@ -23,14 +169,12 @@ v1.2.5 版本引入了 `loadRecentSessionOnMount` 属性，实现组件挂载时
 
 ```vue
 <template>
-  <AIBlueking 
-    :load-recent-session-on-mount="true"
-    :url="apiUrl"
-  />
+  <AIBlueking :load-recent-session-on-mount="true" :url="apiUrl" />
 </template>
 ```
 
 此功能特别适用于：
+
 - **用户回访**：自动恢复到上次的会话
 - **页面刷新**：快速恢复到之前的对话状态
 - **多标签页**：在不同标签页间保持会话连续性
@@ -41,16 +185,13 @@ v1.2.5 版本引入了 `loadRecentSessionOnMount` 属性，实现组件挂载时
 
 ```vue
 <template>
-  <AIBlueking 
-    :has-session-contents="hasContents"
-    :url="apiUrl"
-  />
+  <AIBlueking :has-session-contents="hasContents" :url="apiUrl" />
 </template>
 
 <script setup>
-import { computed } from 'vue'
+  import { computed } from "vue"
 
-const hasContents = computed(() => sessionContents.value.length > 0)
+  const hasContents = computed(() => sessionContents.value.length > 0)
 </script>
 ```
 
@@ -60,17 +201,17 @@ v1.2.5 版本新增了消息选择模式，支持消息的批量选择和操作�
 
 ```vue
 <script setup>
-const aiBlueking = ref(null)
+  const aiBlueking = ref(null)
 
-// 进入选择模式
-const enterSelectMode = () => {
-  aiBlueking.value?.enterSelectMode('transfer')
-}
+  // 进入选择模式
+  const enterSelectMode = () => {
+    aiBlueking.value?.enterSelectMode("transfer")
+  }
 
-// 获取选中的消息
-const getSelectedMessages = () => {
-  return aiBlueking.value?.getSelectedMessages()
-}
+  // 获取选中的消息
+  const getSelectedMessages = () => {
+    return aiBlueking.value?.getSelectedMessages()
+  }
 </script>
 ```
 
@@ -157,9 +298,9 @@ v1.1.6 版本通过重构 sessionStore 为实例化模式，解决了多个 AI �
 </template>
 
 <script setup>
-const onSessionInit = (sessionId) => {
-  console.log('会话初始化完成:', sessionId);
-};
+  const onSessionInit = (sessionId) => {
+    console.log("会话初始化完成:", sessionId)
+  }
 </script>
 ```
 
@@ -211,11 +352,11 @@ v1.1.0 版本引入了自定义表单输入功能，这是一个重大更新，�
 ```javascript
 const shortcuts = [
   {
-    label: '解释',
-    key: 'explanation',
-    prompt: '请解释以下内容：\n{{ SELECTED_TEXT }}',
-    icon: 'icon-help'
-  }
+    label: "解释",
+    key: "explanation",
+    prompt: "请解释以下内容：\n{{ SELECTED_TEXT }}",
+    icon: "icon-help",
+  },
 ]
 ```
 
@@ -224,19 +365,20 @@ const shortcuts = [
 ```javascript
 const shortcuts = [
   {
-    id: 'explanation', // 原 key 改为 id
-    name: '解释',      // 原 label 改为 name
-    icon: 'bkai-help', // 图标前缀由 icon- 变为 bkai-
-    components: [      // 新增 components 数组
+    id: "explanation", // 原 key 改为 id
+    name: "解释", // 原 label 改为 name
+    icon: "bkai-help", // 图标前缀由 icon- 变为 bkai-
+    components: [
+      // 新增 components 数组
       {
-        type: 'input',
-        key: 'text',
-        label: '内容',
+        type: "input",
+        key: "text",
+        label: "内容",
         fillBack: true, // 自动填充选中文本
-        placeholder: '请输入或选中需要解释的内容'
-      }
-    ]
-  }
+        placeholder: "请输入或选中需要解释的内容",
+      },
+    ],
+  },
 ]
 ```
 
@@ -246,8 +388,8 @@ const shortcuts = [
 
 ```javascript
 const handleShortcutClick = (shortcut) => {
-  console.log('操作:', shortcut.label);
-  console.log('提示词:', shortcut.prompt);
+  console.log("操作:", shortcut.label)
+  console.log("提示词:", shortcut.prompt)
 }
 ```
 
@@ -255,8 +397,8 @@ const handleShortcutClick = (shortcut) => {
 
 ```javascript
 const handleShortcutClick = (data) => {
-  console.log('操作:', data.shortcut.name);
-  console.log('表单数据:', data.formData);
+  console.log("操作:", data.shortcut.name)
+  console.log("表单数据:", data.formData)
   // formData 示例: [{ key: 'text', value: '选中的文本内容' }]
 }
 ```
@@ -288,10 +430,7 @@ v0.5.5 版本主要改进了组件的位置交互计算方式，修复了多个�
 ### 使用示例
 
 ```html
-<AIBlueking
-  :default-top="50"
-  :draggable="true"
-/>
+<AIBlueking :default-top="50" :draggable="true" />
 ```
 
 ## v0.5.4 更新指南
@@ -306,11 +445,5 @@ v0.5.4 版本增强了组件的可拖拽功能和初始位置设置能力。
 ### 使用示例
 
 ```html
-<AIBlueking
-  :draggable="false"
-  :default-width="600"
-  :default-height="400"
-  :default-top="100"
-  :default-left="200"
-/>
-``` 
+<AIBlueking :draggable="false" :default-width="600" :default-height="400" :default-top="100" :default-left="200" />
+```

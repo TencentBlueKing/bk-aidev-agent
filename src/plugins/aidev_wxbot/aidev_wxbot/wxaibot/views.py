@@ -115,12 +115,15 @@ class WxAiBotViewSet(ViewSet):
                 settings.BK_APIGW_MANAGER_URL_TMPL.format(api_name=agent_apigw_name)
                 + "/"
                 + "prod"
-                + "/bk_plugin/plugin_api/chat_completion/"
+                + "/bk_plugin/openapi/agent/chat_completion/"
             )
             response = requests.post(
                 chat_root,
                 headers={
                     "Content-Type": "application/json",
+                    "X-Bkapi-Authorization": json.dumps(
+                        {"bk_app_code": settings.BKPAAS_APP_CODE, "bk_app_secret": settings.BKPAAS_APP_SECRET}
+                    ),
                 },
                 json={
                     "inputs": {"chat_history": [{"role": "user", "content": content}]},
@@ -135,6 +138,7 @@ class WxAiBotViewSet(ViewSet):
             buffer = ""  # 用于缓存不完整的数据
             llm_chunk = LlmChunkMsg(content="", is_finish=False, stream_id=stream_id)
             added_content = ""
+            think_content = ""
             for chunk in response.iter_content(chunk_size=1024):  # 设置合适的chunk大小
                 if chunk:
                     try:
@@ -166,6 +170,10 @@ class WxAiBotViewSet(ViewSet):
                                     if chunk_json.get("content") == "正在思考...":
                                         continue
                                     added_content += chunk_json.get("content", "")
+                                    if think_content:
+                                        llm_chunk.think_content = llm_chunk.think_content + think_content
+                                        llm_chunk.append_to_cache(rabbitmq_client)
+                                        think_content = ""
                                     if len(added_content) > 50:
                                         llm_chunk.content = llm_chunk.content + added_content
                                         llm_chunk.append_to_cache(rabbitmq_client)
@@ -176,10 +184,18 @@ class WxAiBotViewSet(ViewSet):
                                         if "metadata" in doc_info:
                                             docs.append(doc_info["metadata"])
                                     continue
-                                elif event_type == "done":
-                                    llm_chunk.docs = docs
-                                    llm_chunk.is_finish = True
-                                    llm_chunk.append_to_cache(rabbitmq_client)
+                                elif event_type == "think":
+                                    if chunk_json.get("content") == "正在思考...":
+                                        continue
+                                    if not think_content:
+                                        # 如果思考内容是空的，就先清空一次内容，解决显示问题。
+                                        empty_llm_chunk = LlmChunkMsg(stream_id=stream_id)
+                                        empty_llm_chunk.append_to_cache(rabbitmq_client)
+                                    think_content += chunk_json.get("content", "")
+                                    if len(think_content) > 50:
+                                        llm_chunk.think_content = llm_chunk.think_content + think_content
+                                        llm_chunk.append_to_cache(rabbitmq_client)
+                                        think_content = ""
                                 else:
                                     logger.info(f"stream_id:{stream_id} 未知的事件类型: {event_type}")
                     except Exception as e:

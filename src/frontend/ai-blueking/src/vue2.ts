@@ -192,6 +192,18 @@ export default {
           onSessionInitialized() {
             emit('session-initialized', ...arguments);
           },
+          onDragStop(...args: [{ x: number; y: number; width: number; height: number }]) {
+            emit('drag-stop', ...args);
+          },
+          onResizeStop(...args: [{ x: number; y: number; width: number; height: number }]) {
+            emit('resize-stop', ...args);
+          },
+          onDragging(...args: [{ x: number; y: number; width: number; height: number }]) {
+            emit('dragging', ...args);
+          },
+          onResizing(...args: [{ x: number; y: number; width: number; height: number }]) {
+            emit('resizing', ...args);
+          },
           ...that.$attrs,
         });
 
@@ -302,7 +314,7 @@ export default {
     this.app?.mount(this.$el);
   },
   beforeDestroy() {
-    this.unWatchStack.forEach((unWatch: Function) => unWatch?.());
+    this.unWatchStack.forEach((unWatch: () => void) => unWatch?.());
     this.app?.unmount();
   },
 } as any;

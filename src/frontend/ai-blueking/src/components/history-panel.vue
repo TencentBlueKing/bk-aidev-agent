@@ -129,7 +129,10 @@
     const groups: Record<string, HistoryItem> = {
       today: { key: 'today', alias: t('今天'), sessionList: [] },
       yesterday: { key: 'yesterday', alias: t('昨天'), sessionList: [] },
-      before: { key: 'before', alias: t('之前'), sessionList: [] },
+      '3days': { key: '3days', alias: t('3天前'), sessionList: [] },
+      '5days': { key: '5days', alias: t('5天前'), sessionList: [] },
+      '1week': { key: '1week', alias: t('1周前'), sessionList: [] },
+      before: { key: 'before', alias: t('更早'), sessionList: [] },
     };
 
     const filteredSessions = sessionStore.sessionList.value.filter(item =>
@@ -137,15 +140,31 @@
     );
 
     for (const session of filteredSessions) {
-      const date = new Date(session.createdAt || '');
+      const sessionDate = new Date(session.createdAt || '');
       const today = new Date();
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
+      const days3Ago = new Date();
+      days3Ago.setDate(today.getDate() - 3);
+      const days5Ago = new Date();
+      days5Ago.setDate(today.getDate() - 5);
+      const week1Ago = new Date();
+      week1Ago.setDate(today.getDate() - 7);
 
-      if (date.toDateString() === today.toDateString()) {
+      const sessionDateOnly = sessionDate.toDateString();
+      const todayDateOnly = today.toDateString();
+      const yesterdayDateOnly = yesterday.toDateString();
+
+      if (sessionDateOnly === todayDateOnly) {
         groups.today.sessionList.push(session);
-      } else if (date.toDateString() === yesterday.toDateString()) {
+      } else if (sessionDateOnly === yesterdayDateOnly) {
         groups.yesterday.sessionList.push(session);
+      } else if (sessionDate >= days3Ago && sessionDate > days5Ago) {
+        groups['3days'].sessionList.push(session);
+      } else if (sessionDate >= days5Ago && sessionDate > week1Ago) {
+        groups['5days'].sessionList.push(session);
+      } else if (sessionDate >= week1Ago) {
+        groups['1week'].sessionList.push(session);
       } else {
         groups.before.sessionList.push(session);
       }

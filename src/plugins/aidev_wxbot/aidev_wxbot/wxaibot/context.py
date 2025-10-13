@@ -31,6 +31,7 @@ class LlmChunkMsg(BaseModel):
     docs: list[dict] = Field(default_factory=list)
     content: str = Field(default_factory=str)
     stream_id: str = Field(default_factory=str)
+    think_content: str = Field(default_factory=str)
 
     @property
     def docs_content(self):
@@ -52,6 +53,7 @@ class LlmChunkMsg(BaseModel):
             # 准备消息数据
             message_data = {
                 "content": self.content,
+                "think_content": self.think_content,
                 "is_finish": self.is_finish,
                 "docs": self.docs,
                 "timestamp": time.time(),
@@ -98,6 +100,9 @@ class LlmChunkMsg(BaseModel):
                     if message_info:
                         message_data = message_info["body"]
                         content = message_data.get("content", "")
+                        thinking_content = message_data.get("think_content", "")
+                        if thinking_content:
+                            content = f"<think>{thinking_content}</think>{content}"
                         if message_data.get("is_finish", False):
                             try:
                                 rabbitmq_client.delete_queue(queue_name)
