@@ -8,6 +8,20 @@ export default {
     return {
       changelogData: [
         {
+          version: "v1.2.7-beta.8",
+          date: "2025-10-14",
+          features: [
+            "新增 hideDefaultTrigger 属性，支持隐藏默认的AI小鲸触发按钮，适用于需要完全自定义触发方式的场景"
+          ]
+        },
+        {
+          version: "v1.2.7-beta.7",
+          date: "2025-10-13",
+          features: [
+            "新增 placeholder 属性，支持自定义输入框占位符文本，提供更灵活的用户提示"
+          ]
+        },
+        {
           version: "v1.2.7-beta.6",
           date: "2025-10-13",
           features: [

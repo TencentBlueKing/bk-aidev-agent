@@ -9,6 +9,7 @@
     <div class="popup-content">
       <!-- AI图标按钮 -->
       <div
+        v-if="!props.hideDefaultTrigger"
         class="popup-bkai-btn"
         @click="handleClick"
       >
@@ -84,11 +85,13 @@
     conversationSettings?: IAgentInfo['conversationSettings'];
     shortcutLimit?: number;
     shortcutFilter?: (shortcut: IShortcut, selectedText: string) => boolean;
+    hideDefaultTrigger?: boolean;
   }
 
   const props = withDefaults(defineProps<IProps>(), {
     shortcuts: () => [],
     shortcutLimit: 3,
+    hideDefaultTrigger: false,
   });
 
   const { enablePopup } = usePopup();

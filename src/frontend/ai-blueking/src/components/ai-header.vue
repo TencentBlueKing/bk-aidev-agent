@@ -111,6 +111,11 @@
         username: string;
       };
       hasSessionContents?: boolean;
+      dropdownMenuConfig?: {
+        showRename?: boolean;
+        showAutoGenerate?: boolean;
+        showShare?: boolean;
+      };
     }>(),
     {
       title: '',
@@ -123,6 +128,11 @@
         enabled: false,
         staff: [],
         username: '',
+      }),
+      dropdownMenuConfig: () => ({
+        showRename: true,
+        showAutoGenerate: true,
+        showShare: true,
       }),
     }
   );
@@ -196,20 +206,41 @@
     const disabledClass = isDisabled ? 'disabled' : '';
     const tooltipAttr = isDisabled ? `data-tippy-content="${t('请先发起会话')}"` : '';
 
-    return `
-      <div class="tippy-dropdown-menu">
+    let menuItems = '';
+
+    // 添加重命名菜单项（如果配置允许）
+    if (props.dropdownMenuConfig?.showRename) {
+      menuItems += `
         <div class="tippy-menu-item" data-action="rename">
           <i class="bkai-icon bkai-bianji"></i>
           <span>${t('重命名')}</span>
         </div>
+      `;
+    }
+
+    // 添加自动生成命名菜单项（如果配置允许）
+    if (props.dropdownMenuConfig?.showAutoGenerate) {
+      menuItems += `
         <div class="tippy-menu-item ${disabledClass}" data-action="auto-generate" ${tooltipAttr}>
           <i class="bkai-icon bkai-auto-refresh-line"></i>
           <span>${t('自动生成命名')}</span>
         </div>
+      `;
+    }
+
+    // 添加分享会话菜单项（如果配置允许）
+    if (props.dropdownMenuConfig?.showShare) {
+      menuItems += `
         <div class="tippy-menu-item" data-action="share">
           <i class="bkai-icon bkai-fenxiang"></i>
           <span>${t('分享会话')}</span>
         </div>
+      `;
+    }
+
+    return `
+      <div class="tippy-dropdown-menu">
+        ${menuItems}
       </div>
     `;
   });

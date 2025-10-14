@@ -1,3 +1,87 @@
+## [1.2.7-beta.8] - 2025-10-14
+
+### ✨ 新增功能
+
+#### 触发按钮控制
+
+- **新增 `hideDefaultTrigger` 属性**: 支持隐藏默认的AI小鲸触发按钮，适用于需要完全自定义触发方式的场景
+- **灵活的UI控制**: 通过 `hideDefaultTrigger` 属性可以完全隐藏默认触发按钮，让开发者完全自定义触发方式
+
+```vue
+<template>
+  <AIBlueking
+    :url="apiUrl"
+    :hide-default-trigger="true"
+  />
+  <!-- 开发者可以完全自定义触发按钮 -->
+  <button @click="showAIPanel">打开AI助手</button>
+</template>
+
+<script setup>
+import { AIBlueking } from '@blueking/ai-blueking';
+
+const showAIPanel = () => {
+  // 通过编程方式控制AI面板显示
+};
+</script>
+```
+
+#### 下拉菜单配置
+
+- **新增 `dropdownMenuConfig` 属性**: 支持自定义会话操作下拉菜单中的功能项显示，包含重命名、自动生成命名和分享会话选项的显示控制
+- **灵活的菜单控制**: 通过 `dropdownMenuConfig` 对象可以灵活控制下拉菜单中的各项功能是否显示
+
+```vue
+<template>
+  <AIBlueking
+    :url="apiUrl"
+    :dropdown-menu-config="{
+      showRename: true,
+      showAutoGenerate: true,
+      showShare: true
+    }"
+  />
+</template>
+```
+
+## [1.2.7-beta.7] - 2025-10-13
+
+### ✨ 新增功能
+
+#### 输入框占位符自定义
+
+- **新增 `placeholder` 属性**: 支持自定义输入框占位符文本，提供更灵活的用户提示
+- **向后兼容**: 保持默认占位符文本，不影响现有使用方式
+
+```vue
+<template>
+  <AIBlueking
+    :url="apiUrl"
+    placeholder="请输入您的问题，我来为您解答..."
+  />
+</template>
+```
+
+#### 上下文配置增强
+
+- **`requestOptions.context` 支持函数返回数组**: 现在 `context` 配置支持返回上下文数组的函数，增强动态上下文配置的灵活性
+- **函数返回 undefined 支持**: 当上下文函数返回 `undefined` 时，组件会正确处理而不会报错
+
+```vue
+<template>
+  <AIBlueking
+    :url="apiUrl"
+    :request-options="{
+      context: () => [
+        { key: 'userId', value: getCurrentUserId() },
+        { key: 'sessionId', value: getSessionId() },
+        { key: 'timestamp', value: Date.now().toString() },
+      ]
+    }"
+  />
+</template>
+```
+
 ## [1.2.7-beta.6] - 2025-10-13
 
 ### ✨ 新增功能

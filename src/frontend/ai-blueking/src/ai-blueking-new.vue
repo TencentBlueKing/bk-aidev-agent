@@ -39,6 +39,7 @@
             :enable-chat-session="enableChatSession"
             :chat-group="sessionStore.agentInfo.value?.chatGroup"
             :has-session-contents="hasSessionContents"
+            :dropdown-menu-config="props.dropdownMenuConfig"
             @close="handleClose"
             @toggle-compression="toggleCompression"
             @new-chat="handleNewChat"
@@ -176,6 +177,7 @@
         :conversation-settings="sessionStore.agentInfo.value?.conversationSettings"
         :shortcut-limit="props.shortcutLimit"
         :shortcut-filter="props.shortcutFilter"
+        :hide-default-trigger="props.hideDefaultTrigger"
         @click="isShow = true"
         @shortcut-click="handlePopupShortcutClick"
       />
@@ -246,6 +248,7 @@
     shortcuts?: IShortcut[];
     shortcutLimit?: number;
     shortcutFilter?: (shortcut: IShortcut, selectedText: string) => boolean;
+    hideDefaultTrigger?: boolean;
     url?: string;
     prompts?: string[];
     hideNimbus?: boolean;
@@ -267,6 +270,11 @@
     initialSessionCode?: string;
     autoSwitchToInitialSession?: boolean;
     loadRecentSessionOnMount?: boolean;
+    dropdownMenuConfig?: {
+      showRename?: boolean;
+      showAutoGenerate?: boolean;
+      showShare?: boolean;
+    };
   }
 
   // ===================================================================
@@ -280,6 +288,7 @@
     shortcuts: () => [],
     shortcutLimit: 3,
     shortcutFilter: undefined,
+    hideDefaultTrigger: false,
     url: '',
     prompts: () => [],
     hideNimbus: false,
@@ -301,6 +310,11 @@
     initialSessionCode: '',
     autoSwitchToInitialSession: false,
     loadRecentSessionOnMount: false,
+    dropdownMenuConfig: () => ({
+      showRename: true,
+      showAutoGenerate: true,
+      showShare: false, // 默认禁用分享会话功能
+    }),
   });
 
   const emit = defineEmits<{
@@ -907,6 +921,9 @@
             ...formData,
             ...(Array.isArray(props.requestOptions?.context) ? props.requestOptions.context : []),
           ],
+          ...(typeof props.requestOptions?.context === 'function'
+            ? props.requestOptions?.context()
+            : props.requestOptions?.context),
         },
       },
     });
