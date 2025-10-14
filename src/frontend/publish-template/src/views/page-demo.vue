@@ -212,11 +212,25 @@
     { deep: true }
   )
 
-  // 监听窗口大小变化，动态调整 AIBlueking 宽度
+  // 监听窗口大小变化，动态调整 AIBlueking 宽度和位置
   const handleResize = () => {
     if (typeof window === "undefined") return
     // 强制更新 AIBluekingWidth 以触发重新计算
     AIBluekingWidth.value = enableChatSession.value ? window.innerWidth - 280 : window.innerWidth
+
+    // 等待下一帧以确保组件已更新其内部状态
+    // 然后触发组件刷新以确保它保持在边界内
+    setTimeout(() => {
+      if (aiBlueking.value && typeof aiBlueking.value.updatePositionAndSize === "function") {
+        // 获取当前位置并触发更新以确保它保持在窗口边界内
+        // 这会强制组件根据新的窗口尺寸调整其位置/大小
+        const newWidth = enableChatSession.value ? window.innerWidth - 280 : window.innerWidth
+        const defaultTop = 52 // 如组件的 default-top 属性所指定
+        const defaultLeft = window.innerWidth - newWidth // 保持在右侧
+
+        aiBlueking.value.updatePositionAndSize(defaultLeft, defaultTop, newWidth, window.innerHeight - defaultTop)
+      }
+    }, 100) // 延迟以确保 DOM 更新已完成
   }
 
   onMounted(async () => {

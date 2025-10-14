@@ -64,6 +64,9 @@ export interface AIBluekingExpose {
   getSessionList: () => Promise<any[]>;
   sessionList: Ref<any[]>;
   enableChatSession: Ref<boolean>;
+  updatePosition: (x: number, y: number) => void;
+  updateSize: (w: number, h: number) => void;
+  updatePositionAndSize: (x: number, y: number, w: number, h: number) => void;
 }
 
 // 使用 ai-ui-sdk 中的 IAgentCommand 类型作为 IShortcut 的别名
