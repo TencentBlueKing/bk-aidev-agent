@@ -8,62 +8,25 @@ export default {
     return {
       changelogData: [
         {
-          version: "v1.2.7-beta.8",
+          version: "v1.2.7",
           date: "2025-10-14",
           features: [
-            "新增 hideDefaultTrigger 属性，支持隐藏默认的AI小鲸触发按钮，适用于需要完全自定义触发方式的场景"
-          ]
-        },
-        {
-          version: "v1.2.7-beta.7",
-          date: "2025-10-13",
-          features: [
-            "新增 placeholder 属性，支持自定义输入框占位符文本，提供更灵活的用户提示"
-          ]
-        },
-        {
-          version: "v1.2.7-beta.6",
-          date: "2025-10-13",
-          features: [
-            "新增 handleShow 方法的 forceNewSession 参数，支持创建新会话时同时打开窗口，优化用户体验",
-            "更新 handleShow 方法签名：handleShow(sessionCode?: string, forceNewSession?: boolean): Promise<void>",
-            "在 Vue2 适配器中同步支持新的 handleShow 方法参数",
-            "优化新会话创建逻辑，确保在 forceNewSession=true 时先创建会话再打开面板"
-          ]
-        },
-        {
-          version: "v1.2.7-beta.5",
-          date: "2025-10-12",
-          features: [
-            "新增 Vue2 版本的编程式控制容器位置和大小的功能",
-            "优化 Vue2 适配器，确保与 Vue3 版本功能同步"
-          ]
-        },
-        {
-          version: "v1.2.7-beta.4",
-          date: "2025-10-11",
-          features: [
-            "新增编程式控制容器位置和大小的功能，优化可调整大小容器的逻辑",
-            "新增 updatePosition、updateSize 和 updatePositionAndSize 方法，支持动态调整AI小鲸窗口的位置和尺寸"
-          ]
-        },
-        {
-          version: "v1.2.7-beta.3",
-          date: "2025-09-25",
-          features: [
-            "新增历史会话面板时间分组，支持3天前、5天前、1周前等更精细的时间分组",
+            "新增 hideDefaultTrigger 属性，支持隐藏默认的AI小鲸触发按钮，适用于需要完全自定义触发方式的场景",
+            "新增 dropdownMenuConfig 属性，支持自定义会话操作下拉菜单中的功能项显示，包含重命名、自动生成命名和分享会话选项的显示控制",
+            "新增 placeholder 属性，支持自定义输入框占位符文本，提供更灵活的用户提示",
+            "handleShow 方法新增 forceNewSession 参数，支持创建新会话时同时打开窗口，优化用户体验",
+            "handleShow 方法签名更新为 handleShow(sessionCode?: string, forceNewSession?: boolean): Promise<void>",
+            "新增 updatePosition、updateSize 和 updatePositionAndSize 方法，支持动态调整AI小鲸窗口的位置和尺寸",
+            "新增 drag-stop、resize-stop、dragging 和 resizing 事件，支持监听拖拽和调整大小过程中的状态",
+            "历史会话面板新增时间分组，支持3天前、5天前、1周前等更精细的时间分组",
+            "为 Vue2 版本添加编程式控制容器位置和大小的功能，优化 Vue2 适配器确保与 Vue3 版本功能同步"
+          ],
+          improvements: [
+            "优化新会话创建逻辑，确保在 forceNewSession=true 时先创建会话再打开面板",
             "优化会话时间分组算法，改进历史会话管理体验",
-            "新增相关时间分组的国际化支持"
-          ]
-        },
-        {
-          version: "v1.2.7-beta.2",
-          date: "2025-09-24",
-          features: [
-            "新增 drag-stop 和 resize-stop 事件，支持监听拖拽和调整大小结束事件",
-            "新增 dragging 和 resizing 事件，支持监听拖拽和调整大小过程中的状态",
+            "新增相关时间分组的国际化支持",
             "在 useResizableContainer 组合式函数中增加拖拽和调整大小结束的回调函数",
-            "优化 ESLint 配置，修正了 tsconfig.json 路径配置"
+            "requestOptions.context 支持函数返回数组，增强动态上下文配置的灵活性"
           ]
         },
         {
