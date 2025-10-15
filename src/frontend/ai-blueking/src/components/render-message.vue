@@ -23,7 +23,7 @@
         >
           <ai-cite
             v-if="!isStructuredCite(message.property.extra.cite)"
-            :text="message.property.extra.cite"
+            :text="cleanedCiteText"
           />
         </div>
         <div :class="`message-content-container ${message.role}`">
@@ -183,6 +183,8 @@
   import mermaidPlugin from '../plugins/markdown-it-mermaid';
   import { createDeleteConfirm, closeAllDeleteConfirms } from '../utils/delete-confirm';
   import { RenderLike } from '@blueking/ai-ui-sdk/components';
+  import { removeThinkingSections } from '../utils';
+
   import BkTextEditor from './text-editor.vue';
 
   // 类型定义
@@ -250,6 +252,15 @@
       (cite as { type: string }).type === 'structured'
     );
   };
+
+  /**
+   * 获取清理后的 cite 文本
+   */
+  const cleanedCiteText = computed(() => {
+    const cite = props.message?.property?.extra?.cite;
+    if (!cite || isStructuredCite(cite)) return '';
+    return removeThinkingSections(cite);
+  });
   // 组合式函数
   const { enablePopup } = usePopup();
   const { setCiteText } = useSelect(enablePopup);
@@ -288,7 +299,14 @@
 
   const renderValue = computed(() => {
     if (!props.message.content) return '';
-    const rendered = md.render(props.message.content);
+
+    // 当 cite 不存在时，需要清理 content 中的思考标签
+    const cite = props.message?.property?.extra?.cite;
+    const contentToRender = !cite
+      ? removeThinkingSections(props.message.content)
+      : props.message.content;
+
+    const rendered = md.render(contentToRender);
 
     // 使用 DOMPurify 净化内容以防止 XSS
     const sanitized = DOMPurify.sanitize(rendered, {
@@ -367,10 +385,15 @@
    */
   const getMessageTextContent = (): string => {
     const cite = props.message?.property?.extra?.cite;
-    if (cite && isStructuredCite(cite)) {
-      return formatStructuredCiteToString(cite);
+    if (cite) {
+      if (isStructuredCite(cite)) {
+        return formatStructuredCiteToString(cite);
+      }
+      // 如果是普通 cite 文本，返回清理后的文本
+      return cleanedCiteText.value;
     }
-    return props.message.content;
+    // 当 cite 不存在时，需要清理 content 中的思考标签
+    return removeThinkingSections(props.message.content);
   };
 
   const handleCopy = async () => {

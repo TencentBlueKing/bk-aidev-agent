@@ -33,7 +33,7 @@
         const language = hljs.getLanguage(lang) ? lang : 'plaintext';
         return hljs.highlight(code, { language }).value;
       },
-    }),
+    })
   );
 
   const props = defineProps<{
@@ -48,7 +48,7 @@
     parsedContent.value = DOMPurify.sanitize(parsed, {
       USE_PROFILES: { html: true },
       FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input'],
-      FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover']
+      FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover'],
     });
   });
 </script>
@@ -81,7 +81,6 @@
     p {
       margin: 16px 0;
       line-height: 1.8;
-      color: #444;
     }
 
     ul,

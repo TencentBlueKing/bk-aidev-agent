@@ -203,3 +203,21 @@ export const normalizeUrl = (url: string): string => {
     return url; // 如果处理失败，返回原始URL
   }
 };
+
+/**
+ * 清理思考模型生成的思考片段
+ * @param text 原始文本
+ * @returns 清理后的文本
+ */
+export const removeThinkingSections = (text: string): string => {
+  if (typeof text !== 'string') return text;
+
+  // 移除思考头部和思考内容的 section 标签及其内容
+  let cleaned = text.replace(/<section\s+class="think-head[^"]*"[^>]*>[\s\S]*?<\/section>/gi, '');
+  cleaned = cleaned.replace(/<section\s+class="think-body"[^>]*>[\s\S]*?<\/section>/gi, '');
+
+  // 移除多余的空白行
+  cleaned = cleaned.replace(/^\s*\n\s*\n\s*\n/gm, '\n\n');
+
+  return cleaned.trim();
+};
