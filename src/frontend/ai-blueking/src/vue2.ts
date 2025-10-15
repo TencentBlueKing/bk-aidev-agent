@@ -31,6 +31,9 @@ import AiBlueking from './vue3.ts';
 
 export type * from './types/index.ts';
 
+// 导出 h 函数，用于自定义 icon 渲染
+export { h };
+
 export default {
   name: 'AiBlueking',
   render(createElement: any) {

@@ -1,7 +1,12 @@
 <template>
   <div class="custom-input-wrapper">
     <div class="header">
+      <component
+        :is="props.shortcut.iconRender ? props.shortcut.iconRender(h) : null"
+        v-if="props.shortcut.iconRender"
+      />
       <i
+        v-else-if="props.shortcut.icon"
         class="bkai-icon"
         :class="props.shortcut.icon"
       />
@@ -63,7 +68,7 @@
   import { Button as BkButton } from 'bkui-vue';
   import BkForm from 'bkui-vue/lib/form';
   import { BkFormItem } from 'bkui-vue/lib/form';
-  import { toRef, onMounted, computed } from 'vue';
+  import { toRef, onMounted, computed, h } from 'vue';
 
   import { useCustomForm } from '../../composables/use-custom-form';
   import { t } from '../../lang';

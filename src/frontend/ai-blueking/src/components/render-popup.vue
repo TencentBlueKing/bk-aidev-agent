@@ -29,8 +29,12 @@
           class="shortcut-btn"
           @click="handleShortcutClick(btn)"
         >
+          <component
+            :is="btn.iconRender ? btn.iconRender(h) : null"
+            v-if="btn.iconRender"
+          />
           <i
-            v-if="btn.icon"
+            v-else-if="btn.icon"
             :class="btn.icon"
           ></i>
           <span class="btn-text ai-blueking-tag-text">{{ btn.name }}</span>
@@ -57,8 +61,12 @@
               class="more-menu-item"
               @click="handleShortcutClick(btn)"
             >
+              <component
+                :is="btn.iconRender ? btn.iconRender(h) : null"
+                v-if="btn.iconRender"
+              />
               <i
-                v-if="btn.icon"
+                v-else-if="btn.icon"
                 :class="btn.icon"
               ></i>
               <span>{{ btn.name }}</span>
@@ -72,7 +80,7 @@
 
 <script lang="ts" setup>
   import type { IAgentInfo } from '@blueking/ai-ui-sdk/types';
-  import { computed, ref, toRaw } from 'vue';
+  import { computed, h, ref, toRaw } from 'vue';
 
   import avatar from '../assets/images/avatar.png';
   import { usePopup } from '../composables/use-popup-props';
@@ -99,9 +107,11 @@
     useSelect(enablePopup);
 
   // 定义快捷按钮数据
-  const allShortcuts = computed(() => {
+  const allShortcuts = computed<IShortcut[]>(() => {
     const shortcuts =
-      props.shortcuts.length > 0 ? props.shortcuts : props.conversationSettings?.commands || [];
+      props.shortcuts.length > 0
+        ? props.shortcuts
+        : (props.conversationSettings?.commands as IShortcut[]) || [];
     // 如果提供了过滤函数，则应用过滤
     if (typeof props.shortcutFilter === 'function') {
       return shortcuts.filter(item => !!props.shortcutFilter?.(toRaw(item), selectedText.value));

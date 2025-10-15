@@ -10,7 +10,14 @@
       class="shortcut-item"
       @click="emit('shortcut-click', { shortcut, source: 'main' })"
     >
-      <i :class="shortcut.icon"></i>
+      <component
+        :is="shortcut.iconRender ? shortcut.iconRender(h) : null"
+        v-if="shortcut.iconRender"
+      />
+      <i
+        v-else-if="shortcut.icon"
+        :class="shortcut.icon"
+      ></i>
       <span class="shortcut-text">{{ shortcut.name }}</span>
     </div>
 
@@ -27,7 +34,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed } from 'vue';
+  import { ref, computed, h } from 'vue';
 
   import { useOverflowHandler } from '../composables/use-overflow-handler';
   import type { IShortcut } from '../types';

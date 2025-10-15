@@ -31,7 +31,7 @@ import type {
   IAgentCommandComponent,
 } from '@blueking/ai-ui-sdk/types';
 import type { useChat } from '@blueking/ai-ui-sdk/hooks';
-import type { Ref } from 'vue';
+import type { Ref, VNode } from 'vue';
 
 export interface AIBluekingExpose {
   sessionContents: Ref<ISessionContent[]>;
@@ -69,8 +69,15 @@ export interface AIBluekingExpose {
   updatePositionAndSize: (x: number, y: number, w: number, h: number) => void;
 }
 
-// 使用 ai-ui-sdk 中的 IAgentCommand 类型作为 IShortcut 的别名
-export type IShortcut = IAgentCommand;
+// 扩展 IAgentCommand 类型，添加 iconRender 支持
+export interface IShortcut extends IAgentCommand {
+  /**
+   * 自定义 icon 渲染函数
+   * @param h - Vue 的 h 函数，用于创建 VNode
+   * @returns VNode
+   */
+  iconRender?: (h: typeof import('vue').h) => VNode;
+}
 
 // 扩展 IAgentCommandComponent 类型，添加 hide 和 selectedText 属性
 export interface IShortcutComponent extends IAgentCommandComponent {

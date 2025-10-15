@@ -6,6 +6,7 @@ export interface OverflowItem {
   id: string;
   name: string;
   icon?: string;
+  iconRender?: any; // 支持 iconRender，但在 tooltip 中不会使用
   [key: string]: any;
 }
 

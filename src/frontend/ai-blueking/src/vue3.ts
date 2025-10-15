@@ -24,6 +24,7 @@
  * IN THE SOFTWARE.
  */
 import { provideGlobalConfig } from 'bkui-vue';
+import { h } from 'vue';
 
 import AiBluekingNew from './ai-blueking-new.vue';
 import './assets/icon/iconcool.js';
@@ -35,5 +36,8 @@ provideGlobalConfig({
 });
 
 export type * from './types/index.ts';
+
+// 导出 h 函数，用于自定义 icon 渲染
+export { h };
 
 export default AiBluekingNew;
