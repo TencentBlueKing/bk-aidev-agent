@@ -158,7 +158,7 @@ class ChatCompletionViewSet(PluginViewSet):
         else:
             chat_history = request.data.get("chat_prompts", []) or request.data.get("chat_history", [])
             _input = request.data.get("input", "")
-            if not chat_history or not _input:
+            if not chat_history and not _input:
                 raise ClientBlueException(message="chat_history or input is required")
             chat_history = [ChatPrompt(role=each["role"], content=each["content"]) for each in chat_history]
             chat_history.append(ChatPrompt(role="user", content=_input))

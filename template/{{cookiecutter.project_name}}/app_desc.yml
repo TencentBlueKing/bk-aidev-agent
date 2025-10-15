@@ -44,9 +44,10 @@ modules:
             description: set django allow unsafe async
           - name: DEFAULT_AGENT
             value: "bk_plugin.extend.agent.CommonQAAgentExtend"
+            description: default Agent class
           - name: DEFAULT_CONFIG_MANAGER
             value: "bk_plugin.extend.config_manager.CustomAgentConfigManager"
-          - name: BK_APIGW_STAGE
+            description: default ConfigManager class
           {% if cookiecutter.llm_gateway_url -%}
           - name: LLM_GW_ENDPOINT
             value: "{{cookiecutter.llm_gateway_url}}"
