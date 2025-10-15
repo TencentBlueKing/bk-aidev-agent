@@ -39,4 +39,5 @@ def load_settings(module_path: str, raise_exception: bool = True):
 
 # 加载自定义模块
 load_settings("aidev_bkplugin.settings")  # 智能体配置
+load_settings("aidev_ai_blueking.settings")  # 小鲸配置
 load_settings("aidev_wxbot.settings")  # 企微机器人配置

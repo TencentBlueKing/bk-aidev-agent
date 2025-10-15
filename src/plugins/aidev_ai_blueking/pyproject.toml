@@ -1,0 +1,15 @@
+[project]
+name = "aidev-ai-blueking"
+version = "1.0.0"
+description = "小鲸静态资源包"
+readme = "README.md"
+requires-python = ">=3.11.10, <4"
+dependencies = ["aidev-agent==1.0.b48", "blueapps>=4.15.1, <5.0"]
+
+
+[tool.pdm.build]
+includes = ["aidev_ai_blueking"]
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"

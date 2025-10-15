@@ -20,8 +20,6 @@ from drf_yasg import openapi
 from drf_yasg.views import get_schema_view
 from rest_framework import permissions
 
-from bk_plugin.views.home import IndexView
-
 schema_view = get_schema_view(
     openapi.Info(
         title="PluginService API",
@@ -47,10 +45,7 @@ urlpatterns = [
         name="wxbot_callback",
     ),
     re_path(r"^bk_plugin/", include("bk_plugin_framework.services.bpf_service.urls")),
-    re_path(r"^$", IndexView.as_view(), name="index"),
-    re_path(r"^page/$", IndexView.as_view(), name="index"),
-    re_path(r"^side-slider/$", IndexView.as_view(), name="index"),
-    re_path(r"^403/$", IndexView.as_view(), name="index"),
+    re_path(r"", include("aidev_ai_blueking.urls")),
 ]
 
 if settings.ENVIRONMENT == "dev":

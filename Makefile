@@ -40,9 +40,11 @@ clean:
 lint:
 	uv run pre-commit run -a --hook-stage commit
 
-.PHONY: build-aidev-bkplugin
-build-aidev-bkplugin:
+.PHONY: build-aidev-ai-blueking
+build-aidev-ai-blueking:
 	cd ./src/frontend/publish-template/ && npm install && npm run build && cd -
-	cp -r ${ROOT_DIR}/src/frontend/publish-template/dist ${ROOT_DIR}/src/plugins/aidev_bkplugin/aidev_bkplugin
-	cd ${ROOT_DIR}/src/plugins/aidev_bkplugin && uv build
-	@echo "aidev-bkplugin built."
+	mv ${ROOT_DIR}/src/frontend/publish-template/dist/static ${ROOT_DIR}/src/plugins/aidev_ai_blueking/aidev_ai_blueking
+	mkdir ${ROOT_DIR}/src/plugins/aidev_ai_blueking/aidev_ai_blueking/templates
+	mv ${ROOT_DIR}/src/frontend/publish-template/dist/index.html ${ROOT_DIR}/src/plugins/aidev_ai_blueking/aidev_ai_blueking/templates
+	cd ${ROOT_DIR}/src/plugins/aidev_ai_blueking && uv build
+	@echo "aidev-ai-blueking built."
