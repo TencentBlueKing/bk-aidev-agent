@@ -191,6 +191,7 @@
   // 1. 导入和类型定义
   // ===================================================================
   import { SessionContentRole } from '@blueking/ai-ui-sdk/enums';
+  import type { ISessionContent } from '@blueking/ai-ui-sdk/types';
   import { useChat, useStyle, useClickProxy } from '@blueking/ai-ui-sdk/hooks';
   import { Button as BkButton, Checkbox as BkCheckbox } from 'bkui-vue';
   import { useCopyCode } from 'markdown-it-copy-code';
@@ -956,7 +957,10 @@
     deleteChat(index, currentSession.value?.sessionCode);
   };
 
-  const handleUpdateSessionContent = (data: { messageId: number | undefined; updates: Partial<ISessionContent> }) => {
+  const handleUpdateSessionContent = (data: {
+    messageId: number | undefined;
+    updates: Partial<ISessionContent>;
+  }) => {
     if (data.messageId) {
       // Find the message in sessionContents and update it
       const index = sessionContents.value.findIndex(content => content.id === data.messageId);
