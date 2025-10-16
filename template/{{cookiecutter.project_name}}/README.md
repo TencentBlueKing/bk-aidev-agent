@@ -245,19 +245,15 @@ curl -X POST {{cookiecutter.app_apigw_host}}/bk_plugin/plugin_api/chat_completio
 │   ├── extend # 用于扩展
 │   │   ├── agent.py # 自定义智能体扩展
 │   │   └── config_manager.py # 配置管理器扩展
-│   ├── forms # 前端表单配置
-│   │   └── 1.0.0
-│   │       └── *.js # 表单配置文件
+│   ├── openapi/  # 用于生成蓝鲸插件的应用态接口
 │   ├── meta.py # 蓝鲸插件的meta配置
 │   ├── patch # patch了默认蓝鲸插件的配置,主要是扩展了路由
 │   │   ├── plugin.py # 插件补丁
 │   │   └── urls.py # 路由补丁
 │   ├── settings.py # Django设置
-│   ├── versions
-│   │   ├── assistant_components.py # 导入config.py的配置
-│   │   └── assistant.py # 蓝鲸插件invoke接口入口
-│   └── views
-│       └── home.py # 小鲸页面入口视图
+│   └── versions
+│       ├── assistant_components.py # 【重要】导入config.py的配置
+│       └── assistant.py # 蓝鲸插件invoke接口入口
 ├── README.md # 指引文档
 ├── requirements.txt # Python依赖包配置
 └── runtime.txt # Python运行时版本配置

@@ -90,21 +90,37 @@ pnpm prettier
 ```
 bk-aidev-agent/
 ├── src/
-│   ├── agent/            # Backend Agent service
-│   └── frontend/         # Frontend project
-│       ├── ai-blueking/  # AI Dolphin component
-│       │   ├── src/      # Component source code
-│       │   ├── playground/ # Local development environment
-│       │   └── scripts/  # Build scripts
-│       ├── vue2-playground/ # Vue2 environment testing project
-│       │   ├── src/      # Vue2 test application source code
-│       │   └── public/   # Static resources
-│       └── web/          # Documentation site
-│           ├── docs/     # Documentation content
-│           └── server.cjs # Documentation server
-├── docs/                 # Design documents
-├── scripts/              # Build scripts
-└── tests/                # Test cases
+│   ├── agent/            # Agent SDK Core
+│   ├── frontend/         # Frontend project
+│   │   ├── ai-blueking/  # AI Dolphin page component
+│   │   │   ├── src/      # Component source code
+│   │   │   ├── playground/ # Local development environment
+│   │   │   └── scripts/  # Build scripts
+│   │   ├── publish-template/ # Publish template project
+│   │   │   └── src/      # Template application source code
+│   │   ├── vue2-playground/ # Vue2 environment testing project
+│   │   │   ├── src/      # Vue2 test application source code
+│   │   │   └── public/   # Static resources
+│   │   └── web/          # Documentation site
+│   │       ├── docs/     # Documentation content (api, guide, demos)
+│   │       └── server.cjs # Documentation server
+│   └── plugins/          # Plugin collection
+│       ├── aidev_ai_blueking/ # AI Dolphin page plugin: Provides static page entry and routing
+│       ├── aidev_bkplugin/    # BlueKing agent plugin: Agent development & management backend with frontend, agent services, permissions
+│       └── aidev_wxbot/       # WeCom bot plugin: Handles message callbacks, automated processing, RabbitMQ integration
+├── template/             # Custom agent template
+│   └── {{cookiecutter.project_name}}/
+│       ├── bk_plugin/    # Plugin core code
+│       │   ├── apis/     # API interfaces
+│       │   ├── extend/   # Extension modules (agent, config_manager)
+│       │   ├── openapi/  # BlueKing plugin app-level API routing (prefix /openapi/, supports app authentication)
+│       │   ├── patch/    # Patch modules
+│       │   └── versions/ # [Important] Agent configuration
+│       └── bin/          # Management scripts
+├── docs/                 # Project design documents
+├── assets/               # Project assets
+├── dist/                 # Build artifacts
+└── Makefile              # Build commands
 ```
 
 ## 📚 Related Resources
@@ -139,4 +155,4 @@ We welcome all forms of contributions! If you have good opinions or suggestions,
 The [Tencent Open Source Incentive Plan](https://opensource.tencent.com/contribution) encourages developer participation and contribution. Looking forward to your joining.
 
 ## 📜 License
-This project is open-sourced under the [MIT License](./LICENSE.txt) 
+This project is open-sourced under the [MIT License](./LICENSE.txt)

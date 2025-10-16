@@ -93,22 +93,37 @@ pnpm prettier
 ```
 bk-aidev-agent/
 ├── src/
-│   ├── agent/            # 后端 Agent SDK
-│   └── frontend/         # 前端项目
-│       ├── ai-blueking/  # AI 小鲸组件
-│       │   ├── src/      # 组件源代码
-│       │   ├── playground/ # 本地开发环境
-│       │   └── scripts/  # 构建脚本
-│       ├── vue2-playground/ # Vue2 环境测试工程
-│       │   ├── src/      # Vue2 测试应用源码
-│       │   └── public/   # 静态资源
-│       └── web/          # 文档站点
-│           ├── docs/     # 文档内容
-│           └── server.cjs # 文档服务器
-├── templates/            # Agent模板
-├── docs/                 # 设计文档
-├── scripts/              # 构建脚本
-└── tests/                # 测试用例
+│   ├── agent/            # Agent SDK 核心
+│   ├── frontend/         # 前端项目
+│   │   ├── ai-blueking/  # AI 小鲸页面组件
+│   │   │   ├── src/      # 组件源代码
+│   │   │   ├── playground/ # 本地开发环境
+│   │   │   └── scripts/  # 构建脚本
+│   │   ├── publish-template/ # 发布模板工程
+│   │   │   └── src/      # 模板应用源码
+│   │   ├── vue2-playground/ # Vue2 环境测试工程
+│   │   │   ├── src/      # Vue2 测试应用源码
+│   │   │   └── public/   # 静态资源
+│   │   └── web/          # 文档站点
+│   │       ├── docs/     # 文档内容（api、guide、demos）
+│   │       └── server.cjs # 文档服务器
+│   └── plugins/          # 插件集合
+│       ├── aidev_ai_blueking/ # AI小鲸页面插件：提供小鲸静态页入口和路由配置
+│       ├── aidev_bkplugin/    # 蓝鲸智能体插件：智能体开发管理后台服务，包含前端页面、Agent服务、权限管理等
+│       └── aidev_wxbot/       # 企业微信机器人插件：提供企微消息回调处理、自动化消息处理、RabbitMQ集成等
+├── template/             # 二开智能体模板
+│   └── {{cookiecutter.project_name}}/
+│       ├── bk_plugin/    # 插件核心代码
+│       │   ├── apis/     # API 接口
+│       │   ├── extend/   # 扩展模块（agent、config_manager）
+│       │   ├── openapi/  # 用于生成蓝鲸插件的应用态接口
+│       │   ├── patch/    # 补丁模块
+│       │   └── versions/ # 【重要】智能体配置
+│       └── bin/          # 管理脚本
+├── docs/                 # 项目设计文档
+├── assets/               # 项目资源文件
+├── dist/                 # 构建产物
+└── Makefile              # 构建命令
 ```
 
 ## 📚 相关资源
