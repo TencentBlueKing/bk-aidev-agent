@@ -45,6 +45,6 @@ build-aidev-ai-blueking:
 	cd ./src/frontend/publish-template/ && npm install && npm run build && cd -
 	mv ${ROOT_DIR}/src/frontend/publish-template/dist/static ${ROOT_DIR}/src/plugins/aidev_ai_blueking/aidev_ai_blueking
 	mkdir ${ROOT_DIR}/src/plugins/aidev_ai_blueking/aidev_ai_blueking/templates
-	mv ${ROOT_DIR}/src/frontend/publish-template/dist/index.html ${ROOT_DIR}/src/plugins/aidev_ai_blueking/aidev_ai_blueking/templates
+	mv ${ROOT_DIR}/src/frontend/publish-template/dist/index.html ${ROOT_DIR}/src/plugins/aidev_ai_blueking/aidev_ai_blueking/templates/home.html
 	cd ${ROOT_DIR}/src/plugins/aidev_ai_blueking && uv build
 	@echo "aidev-ai-blueking built."
