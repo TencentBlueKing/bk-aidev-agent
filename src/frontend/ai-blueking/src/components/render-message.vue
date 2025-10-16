@@ -300,13 +300,7 @@
   const renderValue = computed(() => {
     if (!props.message.content) return '';
 
-    // 当 cite 不存在时，需要清理 content 中的思考标签
-    const cite = props.message?.property?.extra?.cite;
-    const contentToRender = !cite
-      ? removeThinkingSections(props.message.content)
-      : props.message.content;
-
-    const rendered = md.render(contentToRender);
+    const rendered = md.render(props.message.content);
 
     // 使用 DOMPurify 净化内容以防止 XSS
     const sanitized = DOMPurify.sanitize(rendered, {
