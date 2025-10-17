@@ -33,8 +33,15 @@ export interface SdkApi {
   getAgentInfoApi: () => Promise<IAgentInfo>;
   plusSessionApi: (session: ISession) => Promise<any>;
   handleCompleteRole: (sessionCode: string, prompts: ISessionPrompt[]) => Promise<any>;
-  getChatGroupApi: (data: import('@blueking/ai-ui-sdk/types').IChatGroupRequest) => Promise<import('@blueking/ai-ui-sdk/types').IChatGroup>;
+  getChatGroupApi: (
+    data: import('@blueking/ai-ui-sdk/types').IChatGroupRequest
+  ) => Promise<import('@blueking/ai-ui-sdk/types').IChatGroup>;
 }
 
 // 使用 ai-ui-sdk 中的 IAgentInfo 类型
 export type IAgentInfo = AIUIAgentInfo;
+
+// 创建会话配置
+export type AddNewSessionOptions = {
+  isTemporary?: boolean;
+};

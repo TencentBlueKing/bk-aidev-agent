@@ -240,6 +240,7 @@
 
   // 样式导入
   import 'vue-draggable-resizable/style.css';
+  import { AddNewSessionOptions } from './store/types';
 
   // 类型定义
   interface Props {
@@ -770,9 +771,16 @@
     emit('close');
   };
 
-  const handleShow = async (sessionCode?: string, forceNewSession?: boolean): Promise<void> => {
+  /**
+   * @param sessionCode session code
+   * @param options 创建会话参数配置
+   */
+  const handleShow = async (
+    sessionCode?: string,
+    options?: AddNewSessionOptions
+  ): Promise<void> => {
     // 如果是强制新会话，先创建会话再打开面板，避免显示旧内容
-    if (forceNewSession) {
+    if (options?.isTemporary) {
       if (!isSessionInitialized.value) {
         await initSession();
       }
@@ -781,7 +789,7 @@
       inputMessage.value = '';
       setCiteText('');
       // 支持用指定的 sessionCode 创建新会话，如果不提供则自动生成
-      await sessionStore.addNewSession(sessionCode);
+      await sessionStore.addNewSession(sessionCode, options);
 
       // 新会话创建成功后再打开面板
       isShow.value = true;

@@ -32,6 +32,7 @@ import type {
 } from '@blueking/ai-ui-sdk/types';
 import type { useChat } from '@blueking/ai-ui-sdk/hooks';
 import type { Ref, VNode } from 'vue';
+import { AddNewSessionOptions } from '@/store/types';
 
 export interface AIBluekingExpose {
   sessionContents: Ref<ISessionContent[]>;
@@ -44,7 +45,7 @@ export interface AIBluekingExpose {
     cite?: string;
     shortcut?: ShortCut;
   }) => void;
-  handleShow: (sessionCode?: string, forceNewSession?: boolean) => Promise<void>;
+  handleShow: (sessionCode?: string, options?: AddNewSessionOptions) => Promise<void>;
   handleClose: () => void;
   handleStop: () => void;
   handleSendMessage: (message: string) => void;

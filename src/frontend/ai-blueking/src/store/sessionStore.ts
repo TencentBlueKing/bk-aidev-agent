@@ -5,7 +5,7 @@ import { HIDE_ROLE_LIST } from '../config';
 import { t } from '../lang';
 import { uuid as generateUuid } from '../utils';
 
-import type { ISessionEditItem, SdkApi } from './types';
+import type { AddNewSessionOptions, ISessionEditItem, SdkApi } from './types';
 
 // 错误事件发射器类型
 export interface SdkErrorEvent {
@@ -244,7 +244,7 @@ export function useSessionStore() {
    * @param sessionCode 可选的会话代码，如果不提供则自动生成
    * @returns Promise<ISessionEditItem> 新创建的会话
    */
-  const addNewSession = async (sessionCode?: string) => {
+  const addNewSession = async (sessionCode?: string, options?: AddNewSessionOptions) => {
     // 如果没有提供 sessionCode，则生成新的会话代码
     const newSessionCode = sessionCode || generateUuid();
 
@@ -256,6 +256,7 @@ export function useSessionStore() {
       sessionName,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      isTemporary: !!options?.isTemporary,
     };
 
     // 添加到本地会话列表
@@ -478,7 +479,6 @@ export function useSessionStore() {
   const initSession = async (isInitChat = true, loadRecentSession = false) => {
     // 获取会话列表
     let sessions = sessionList.value;
-
     if (isInitChat) {
       const getSessions = checkSdkMethod('getSessionsApi');
       try {
