@@ -64,6 +64,7 @@ function getExternal(formats: LibraryFormats[], version: VueVersion) {
       return isVue3 && /^vue$/.test(id);
     }
     if (
+      /^x-mavon-editor/.test(id) ||
       /^dayjs[/]?\w*/.test(id) ||
       (isVue3 && (/^bkui-vue/.test(id) || /^vue$/.test(id))) ||
       (!isVue3 && /^@blueking\/bkui-library/.test(id)) ||
@@ -104,7 +105,7 @@ export const createBuildConfig = (
   version: VueVersion,
   formats: LibraryFormats[],
   emptyOutDir: boolean,
-  userConfig?: UserConfig,
+  userConfig?: UserConfig
 ): UserConfig => {
   const isIIFE = formats.includes('iife');
   const prefix = getPrefix(version, formats);
@@ -130,6 +131,7 @@ export const createBuildConfig = (
             // 全局变量声明
             globals: {
               vue: 'Vue',
+              'x-mavon-editor': 'XMaonEditor',
               '@blueking/ai-ui-sdk': 'BKAIUISDK',
               dayjs: 'dayjs',
               'highlight.js': 'hljs',
@@ -149,6 +151,6 @@ export const createBuildConfig = (
     },
     {
       ...userConfig,
-    },
+    }
   );
 };
