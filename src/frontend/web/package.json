@@ -23,7 +23,7 @@
   },
   "type": "module",
   "engines": {
-    "node": "20.11.1"
+    "node": ">=20.11.1"
   },
   "license": "MIT"
 }
