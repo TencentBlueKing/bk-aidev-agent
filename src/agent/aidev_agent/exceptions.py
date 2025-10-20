@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 import ast
 import json
+from logging import getLogger
 
 from mcp.shared.exceptions import McpError
 
 from aidev_agent.enums import StreamEventType
+
+_logger = getLogger(__name__)
 
 
 class AIDevException(Exception):
@@ -24,10 +27,13 @@ class AgentException(AIDevException):
 
 def find_mcp_errors(exc):
     if isinstance(exc, McpError):
+        _logger.exception(f"MCP error: {exc}")
         yield exc
     elif hasattr(exc, "exceptions"):  # Check if exc has exceptions attribute first
         for sub_exc in exc.exceptions:
             yield from find_mcp_errors(sub_exc)
+
+
 def extract_error_message(error_string):
     start = error_string.find("{")
     end = error_string.rfind("}")
