@@ -38,6 +38,7 @@ class AgentInstanceFactory:
         temperature: float = None,
         switch_agent_by_scene: bool = False,
         config_manager: Type[AgentConfigManager] | None = None,
+        is_temporary: bool = False,
     ):
         """
         初始化Agent工厂实例
@@ -50,6 +51,7 @@ class AgentInstanceFactory:
         :param resource_manager:  bkaidev 资源管理
         :param temperature: 模型温度
         :param switch_agent_by_scene: 是否根据场景切换智能体
+        :param is_temporary: 是否为临时Agent
         """
         self.resource_manager = resource_manager or BKAidevApi.get_client()
         self.agent_code = agent_code
@@ -62,6 +64,7 @@ class AgentInstanceFactory:
         self.temperature = temperature or None
         self.switch_agent_by_scene = switch_agent_by_scene
         self.config_manager = config_manager or AgentConfigManager
+        self.is_temporary = is_temporary
 
     @classmethod
     def build_agent(
@@ -77,6 +80,7 @@ class AgentInstanceFactory:
         temperature: float | None = None,
         switch_agent_by_scene: bool = False,
         config_manager: Type[AgentConfigManager] | None = None,
+        is_temporary: bool = False,
     ):
         """
         构建Agent实例
@@ -90,6 +94,7 @@ class AgentInstanceFactory:
         :param resource_manager: 资源管理类
         :param temperature: 模型温度
         :param switch_agent_by_scene: 是否根据场景切换智能体
+        :param is_temporary: 是否为临时Agent
         :return: 构建好的Agent实例
         """
         # 创建工厂实例
@@ -104,6 +109,7 @@ class AgentInstanceFactory:
             temperature=temperature,
             switch_agent_by_scene=switch_agent_by_scene,
             config_manager=config_manager,
+            is_temporary=is_temporary,
         )
 
         # 验证参数
@@ -283,12 +289,30 @@ class AgentInstanceFactory:
                 or {}
             )
 
-            command = last_user_message.get("extra", {}).get("command")
+            first_user_message = (
+                next(
+                    (msg for msg in session_context_data if msg["role"] == "user"),
+                    None,
+                )
+                or {}
+            )
 
-            if command:  # 若存在Command，且该Command映射到了新的Agent,那么在本轮对话中使用新的Agent的配置
-                command_agent_code = base_agent_config.command_agent_mapping.get(command, self.agent_code)
-                switch_agent = command_agent_code != self.agent_code
-                final_agent_code = command_agent_code  # 切换Agent
+            last_command = last_user_message.get("extra", {}).get("command")
+            first_command = first_user_message.get("extra", {}).get("command")
+
+            if (
+                last_command
+            ):  # 若最后一条会话记录存在Command，且该Command映射到了新的Agent,那么在本轮对话中使用新的Agent的配置
+                command_agent_code = base_agent_config.command_agent_mapping.get(last_command, self.agent_code)
+            elif (
+                self.is_temporary and first_command
+            ):  # 若该会话是临时会话,且第一条用户记录内容中存在Command,使用该Command映射的Agent配置
+                command_agent_code = base_agent_config.command_agent_mapping.get(first_command, self.agent_code)
+            else:
+                command_agent_code = self.agent_code
+
+            switch_agent = command_agent_code != self.agent_code
+            final_agent_code = command_agent_code  # 切换Agent
 
         except Exception as e:  # pylint: disable=broad-except
             logger.warning(f"AgentInstanceFactory: get last user message error->[{e}]")
