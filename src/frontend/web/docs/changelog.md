@@ -8,6 +8,25 @@ export default {
     return {
       changelogData: [
         {
+          version: "v1.2.8",
+          date: "2025-10-17",
+          features: [
+            "新增会话创建参数配置，优化 handleShow 和 addNewSession 方法",
+            "APM 调用分析图表跳转链接调整，新增标签过滤参数",
+            "新增 feedback 功能，优化 feedback 前端交互体验",
+            "智能体：AI 小鲸独立生成 pip 包并集成到插件",
+            "新增 iconRender 支持以自定义图标渲染，优化多个组件以使用该功能",
+            "优化 markdown-viewer 组件的 cite 文本处理，新增 removeThinkingSections 工具函数以清理思考片段",
+            "新增更新位置和大小的功能，优化窗口大小变化时的组件位置调整逻辑"
+          ],
+          improvements: [
+            "更新 @blueking/ai-ui-sdk 版本到 0.1.18-beta.21，确保 @blueking/ai-blueking 依赖一致性",
+            "修复 x-mavon-editor 的全局变量声明并优化用户配置参数格式",
+            "新增 ISessionContent 类型导入并优化 handleUpdateSessionContent 函数的参数格式",
+            "简化 render-message 组件的内容渲染逻辑"
+          ]
+        },
+        {
           version: "v1.2.7",
           date: "2025-10-14",
           features: [

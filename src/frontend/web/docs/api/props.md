@@ -41,6 +41,7 @@
 | `hasSessionContents` | `Boolean`   | `true`                                                    | <Badge type="tip" text="v1.2.5" /> 控制当前是否有会话内容。此属性影响某些UI元素的显示状态，如为空会话时的提示信息等。 |
 | `hideDefaultTrigger` | `Boolean`   | `false`                                                   | <Badge type="tip" text="v1.2.7" /> 控制是否隐藏默认的触发按钮。设置为 `true` 时，隐藏默认的AI小鲸触发按钮，适用于需要完全自定义触发方式的场景。 |
 | `dropdownMenuConfig` | `Object`    | `{ showRename: true, showAutoGenerate: true, showShare: false }` | <Badge type="tip" text="v1.2.7" /> 下拉菜单配置对象，用于控制会话操作菜单中各项功能的显示。包含 `showRename` (是否显示重命名选项)、`showAutoGenerate` (是否显示自动生成命名选项)、`showShare` (是否显示分享选项) 三个布尔值属性。 |
+| `iconRender`        | `Function`  | `undefined`                                                    | <Badge type="tip" text="v1.2.8" /> 自定义图标渲染函数，用于替代 `icon` 属性提供更灵活的图标渲染方式。函数接收 Vue 的 `h` 函数作为参数，返回 VNode 节点。当同时设置 `iconRender` 和 `icon` 时，优先使用 `iconRender`。 |
 
 ## 压缩状态边距控制 <Badge type="tip" text="v1.1.2" />
 
@@ -192,6 +193,13 @@ interface IShortcut {
   id: string // 快捷操作的唯一标识符
   name: string // 显示的操作名称
   icon?: string // 按钮图标的类名
+  /**
+   * 自定义图标渲染函数
+   * @param h - Vue 的 h 函数，用于创建 VNode
+   * @returns VNode
+   * @since v1.2.8
+   */
+  iconRender?: (h: typeof import('vue').h) => import('vue').VNode // <Badge type="tip" text="v1.2.8" /> 自定义图标渲染函数
   // 组件配置，用于定义表单项
   components: Array<{
     type: string // 组件类型：'input', 'text', 'textarea', 'select', 'number' 等
@@ -210,6 +218,7 @@ interface IShortcut {
       label: string
       value: string | number
     }>
+    hide?: boolean // 是否隐藏该组件（v1.2.4-beta.3 新增）
   }>
 }
 ```

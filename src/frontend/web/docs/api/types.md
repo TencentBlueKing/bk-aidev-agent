@@ -11,6 +11,13 @@ interface IShortcut {
   id: string // 快捷操作的唯一标识符
   name: string // 显示的操作名称
   icon?: string // 按钮图标的类名
+  /**
+   * 自定义图标渲染函数
+   * @param h - Vue 的 h 函数，用于创建 VNode
+   * @returns VNode
+   * @since v1.2.8
+   */
+  iconRender?: (h: typeof import('vue').h) => import('vue').VNode // <Badge type="tip" text="v1.2.8" /> 自定义图标渲染函数
   // 组件配置，用于定义表单项
   components: Array<{
     type: string // 组件类型：'input', 'select', 'number', 'textarea' 等

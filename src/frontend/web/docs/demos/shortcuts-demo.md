@@ -66,6 +66,29 @@ const shortcuts = ref([
         ]
       }
     ]
+  },
+  {
+    id: 'custom-icon',
+    name: '自定义图标',
+    // 使用 iconRender 函数自定义渲染图标
+    iconRender: (h) => h('svg', {
+      class: 'custom-svg-icon',
+      viewBox: '0 0 24 24',
+      style: { width: '16px', height: '16px', fill: '#3a84ff' }
+    }, [
+      h('path', {
+        d: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z'
+      })
+    ]),
+    components: [
+      {
+        type: 'textarea',
+        key: 'custom',
+        name: '自定义内容',
+        fillBack: true,
+        placeholder: '请输入自定义内容'
+      }
+    ]
   }
 ]);
 
@@ -166,6 +189,29 @@ const shortcuts = ref([
         ]
       }
     ]
+  },
+  {
+    id: 'custom-icon',
+    name: '自定义图标',
+    // 使用 iconRender 函数自定义渲染图标
+    iconRender: (h) => h('svg', {
+      class: 'custom-svg-icon',
+      viewBox: '0 0 24 24',
+      style: { width: '16px', height: '16px', fill: '#3a84ff' }
+    }, [
+      h('path', {
+        d: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z'
+      })
+    ]),
+    components: [
+      {
+        type: 'textarea',
+        key: 'custom',
+        name: '自定义内容',
+        fillBack: true,
+        placeholder: '请输入自定义内容'
+      }
+    ]
   }
 ]);
 ```
@@ -222,3 +268,4 @@ const triggerShortcut = () => {
 - context 参数同样以数组形式传递，与表单数据合并后发送到后端
 - 如果没有配置 `shortcuts`，即使 `enablePopup` 为 true 也不会显示菜单
 - 图标需要使用项目已有的图标类名（建议使用 `bkai-` 前缀的图标）
+- v1.2.8版本新增 `iconRender` 属性支持，允许使用自定义渲染函数替代传统的图标类名，提供更灵活的图标定制能力

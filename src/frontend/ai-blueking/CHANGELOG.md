@@ -1,3 +1,133 @@
+## [1.2.8] - 2025-10-17
+
+### ✨ 新增功能
+
+#### 会话创建参数配置
+- **新增会话创建参数配置**：优化 `handleShow` 和 `addNewSession` 方法，支持更多会话创建参数配置
+- **APM 调用分析图表跳转链接调整**：新增标签过滤参数，优化APM调用分析图表的跳转功能
+
+#### 反馈功能
+- **新增 feedback 功能**：实现反馈功能，优化 feedback 前端交互体验
+- **用户体验优化**：改进反馈提交和展示流程
+
+#### 智能体集成
+- **AI 小鲸独立 pip 包**：智能体 AI 小鲸独立生成 pip 包并集成到插件
+- **插件集成优化**：完善插件集成流程和依赖管理
+
+#### 图标渲染支持
+- **新增 iconRender 支持**：支持自定义图标渲染，优化多个组件以使用该功能
+- **图标自定义能力**：提供更灵活的图标渲染方式
+
+#### Markdown 查看器改进
+- **Cite 文本处理优化**：优化 markdown-viewer 组件的 cite 文本处理
+- **思考片段清理**：新增 removeThinkingSections 工具函数以清理思考片段
+
+#### 位置和大小调整
+- **新增更新位置和大小功能**：支持动态调整组件的位置和大小
+- **窗口调整优化**：优化窗口大小变化时的组件位置调整逻辑
+
+### 🎯 使用示例
+
+#### 会话创建配置
+
+```vue
+<template>
+  <AIBlueking
+    ref="aiBlueking"
+    :url="apiUrl"
+    @session-created="onSessionCreated"
+  />
+</template>
+
+<script setup>
+import { ref } from 'vue';
+import { AIBlueking } from '@blueking/ai-blueking';
+
+const aiBlueking = ref(null);
+
+// 优化后的会话创建方法
+const createNewSession = async () => {
+  await aiBlueking.value?.handleShow(undefined, true); // 支持 forceNewSession 参数
+};
+</script>
+```
+
+#### 图标自定义渲染
+
+```vue
+<template>
+  <AIBlueking
+    :icon-render="customIconRender"
+    :url="apiUrl"
+  />
+</template>
+
+<script setup>
+// 自定义图标渲染函数
+const customIconRender = (iconType) => {
+  // 返回自定义的图标渲染内容
+  return `<i class="custom-icon custom-${iconType}"></i>`;
+};
+</script>
+```
+
+#### 组件位置和大小调整
+
+```vue
+<template>
+  <AIBlueking
+    ref="aiBlueking"
+    :url="apiUrl"
+    @resize-stop="onResizeStop"
+    @drag-stop="onDragStop"
+  />
+</template>
+
+<script setup>
+import { ref } from 'vue';
+
+const aiBlueking = ref(null);
+
+// 更新组件位置
+const updatePosition = (x, y) => {
+  aiBlueking.value?.updatePosition(x, y);
+};
+
+// 更新组件大小
+const updateSize = (width, height) => {
+  aiBlueking.value?.updateSize(width, height);
+};
+
+// 更新组件位置和大小
+const updatePositionAndSize = (x, y, width, height) => {
+  aiBlueking.value?.updatePositionAndSize(x, y, width, height);
+};
+
+const onResizeStop = (position) => {
+  console.log('调整大小结束', position);
+};
+
+const onDragStop = (position) => {
+  console.log('拖拽结束', position);
+};
+</script>
+```
+
+### 🛠️ 优化改进
+
+#### 依赖更新
+- **@blueking/ai-ui-sdk 升级**：更新版本到 0.1.18-beta.21
+- **依赖一致性**：确保 @blueking/ai-blueking 依赖一致性
+
+#### 代码优化
+- **x-mavon-editor 修复**：修复 x-mavon-editor 的全局变量声明
+- **用户配置参数优化**：优化用户配置参数格式
+- **ISessionContent 类型导入**：新增 ISessionContent 类型导入
+- **handleUpdateSessionContent 优化**：优化函数的参数格式
+
+#### 渲染优化
+- **消息渲染逻辑简化**：简化 render-message 组件的内容渲染逻辑
+
 ## [1.2.7] - 2025-10-14
 
 ### ✨ 新增功能
