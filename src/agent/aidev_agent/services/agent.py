@@ -234,7 +234,7 @@ class AgentInstanceFactory:
 
     def build_chat_history(self, session_context_data: List[dict]) -> List[ChatPrompt]:
         """构建聊天历史"""
-        return [ChatPrompt.model_validate(each) for each in session_context_data]
+        return [ChatPrompt.model_validate(each) for each in session_context_data if each.get("content", "")]
 
     def build_knowledge_bases(self, agent_code: str) -> List[dict]:
         """构建知识库"""
