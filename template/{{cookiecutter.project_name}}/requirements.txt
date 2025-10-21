@@ -31,4 +31,4 @@ django-celery-results==2.5.1
 aidev_wxbot==1.0.0
 tiktoken==0.11.0
 aidev-ai-blueking>=1.0.0,<1.1.0
-aidev-bkplugin>=1.0.0,<1.1.0
+aidev-bkplugin>=1.0.1,<1.1.0

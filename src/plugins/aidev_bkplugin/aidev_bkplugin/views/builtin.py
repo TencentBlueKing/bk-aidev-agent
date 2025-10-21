@@ -161,7 +161,8 @@ class ChatCompletionViewSet(PluginViewSet):
             if not chat_history and not _input:
                 raise ClientBlueException(message="chat_history or input is required")
             chat_history = [ChatPrompt(role=each["role"], content=each["content"]) for each in chat_history]
-            chat_history.append(ChatPrompt(role="user", content=_input))
+            if _input:
+                chat_history.append(ChatPrompt(role="user", content=_input))
             agent_instance = build_chat_completion_agent_by_chat_history(chat_history)
 
         if execute_kwargs.stream:
