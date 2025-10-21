@@ -45,7 +45,7 @@ class AgentConfigManager:
 
     @classmethod
     def get_config(
-        cls, agent_code: str, resource_manager: AbstractBKAidevResourceManager, force_refresh: bool = False
+        cls, agent_code: str, resource_manager: AbstractBKAidevResourceManager, force_refresh: bool = False, **kwargs
     ) -> AgentConfig:
         """
         获取智能体配置

@@ -31,13 +31,13 @@ class AgentInstanceFactory:
         agent_type: AgentType = AgentType.CHAT,
         build_type: AgentBuildType = AgentBuildType.SESSION,
         session_code: Optional[str] = None,
-        agent_cls: type = CommonQAAgent,
+        agent_cls: type[CommonQAAgent] | None = None,
         callbacks: List[Any] | None = None,
         resource_manager: AbstractBKAidevResourceManager | None = None,
         auth_headers: Dict[str, str] | None = None,
         temperature: float = None,
         switch_agent_by_scene: bool = False,
-        config_manager: Type[AgentConfigManager] | None = None,
+        config_manager: type[AgentConfigManager] | None = None,
         is_temporary: bool = False,
     ):
         """
@@ -74,12 +74,12 @@ class AgentInstanceFactory:
         build_type: AgentBuildType = AgentBuildType.SESSION,
         session_code: Optional[str] = None,
         session_context_data: Optional[List[dict]] = None,
-        agent_cls: type = Type[CommonQAAgent],
+        agent_cls: Type[CommonQAAgent] | None = CommonQAAgent,
         callbacks: List[Any] | None = None,
         resource_manager: AbstractBKAidevResourceManager | None = None,
         temperature: float | None = None,
         switch_agent_by_scene: bool = False,
-        config_manager: Type[AgentConfigManager] | None = None,
+        config_manager: Type[AgentConfigManager] | None = AgentConfigManager,
         is_temporary: bool = False,
     ):
         """
@@ -361,10 +361,16 @@ class AgentInstanceFactory:
 
     @staticmethod
     def build_chat_agent_args(
-        factory: "AgentInstanceFactory", agent_code: str, session_context_data: List[dict], switch_agent: bool
+        factory: "AgentInstanceFactory",
+        agent_code: str,
+        session_context_data: List[dict],
+        switch_agent: bool,
     ):
         """构建ChatCompletionAgent参数"""
         logger.info(f"Building ChatCompletionAgent args with agent_code->[{agent_code}]")
+
+        if switch_agent:
+            factory.config_manager = AgentConfigManager
 
         # 处理智能体切换
         factory.handle_agent_switch(session_context_data, agent_code, switch_agent)
@@ -383,6 +389,8 @@ class AgentInstanceFactory:
         """构建TaskAgent参数（示例）"""
         # 处理智能体切换
         factory.handle_agent_switch(session_context_data, agent_code, switch_agent)
+        if switch_agent:
+            factory.config_manager = AgentConfigManager
 
         # TaskAgent可能需要不同的参数组合
         return {
@@ -399,4 +407,3 @@ AgentInstanceFactory.register_agent_type(
     agent_class=ChatCompletionAgent,
     builder_func=AgentInstanceFactory.build_chat_agent_args,
 )
-# AgentInstanceFactory.register_agent_type("task", TaskAgent, AgentInstanceFactory.build_task_agent_args)
