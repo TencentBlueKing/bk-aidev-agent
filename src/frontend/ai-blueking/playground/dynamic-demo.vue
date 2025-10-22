@@ -122,6 +122,8 @@
           @drag-stop="handleDragStop"
           @resize-stop="handleResizeStop"
           :auto-switch-to-initial-session="false"
+          max-width="100%"
+          defaultChatInputPosition="bottom"
         />
       </div>
     </div>
@@ -188,15 +190,19 @@
       name: '翻译',
       icon: 'bkai-icon bkai-fanyi',
       id: 'translate',
+      mode: 'simple',
+      hideFooter: true,
       components: [
         {
           name: '内容',
           key: 'content',
-          type: 'text',
+          type: 'textarea',
           default: '',
           placeholder: '请输入项目名称',
-          required: true,
+          required: false,
           fillBack: true,
+          mode: 'simple',
+          showSendButton: true,
         },
       ],
     },

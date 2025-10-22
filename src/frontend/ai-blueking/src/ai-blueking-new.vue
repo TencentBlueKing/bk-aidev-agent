@@ -1,6 +1,9 @@
 <template>
   <teleport :to="teleportTo">
-    <div :class="['ai-blueking-wrapper', props.extCls ?? '']">
+    <div
+      :class="['ai-blueking-wrapper', props.extCls ?? '']"
+      :style="rootVariables"
+    >
       <vue-draggable-resizable
         v-if="isShow"
         ref="resizeWrapper"
@@ -40,6 +43,7 @@
             :chat-group="sessionStore.agentInfo.value?.chatGroup"
             :has-session-contents="hasSessionContents"
             :dropdown-menu-config="props.dropdownMenuConfig"
+            :show-compression-icon="props.showCompressionIcon"
             @close="handleClose"
             @toggle-compression="toggleCompression"
             @new-chat="handleNewChat"
@@ -110,8 +114,12 @@
                   type: 'tween',
                   layoutId: 'chat-input',
                 }"
-                :class="`chat-input-container ${!hasSessionContents ? 'centered' : 'bottom'}`"
-                :style="hasSessionContents ? undefined : inputContainerStyle"
+                :class="`chat-input-container ${!hasSessionContents ? (props.defaultChatInputPosition ?? 'centered') : 'bottom'}`"
+                :style="
+                  hasSessionContents || props.defaultChatInputPosition
+                    ? undefined
+                    : inputContainerStyle
+                "
                 layout
               >
                 <div class="chat-input-wrapper">
@@ -278,6 +286,51 @@
       showAutoGenerate?: boolean;
       showShare?: boolean;
     };
+
+    /**
+     * 是否显示缩放图标
+     * @since v1.2.9
+     * @default true
+     * @description 如果未定义，则显示压缩图标
+     * @example
+     * - true: 显示压缩图标
+     * - false: 不显示压缩图标
+     */
+    showCompressionIcon?: boolean;
+
+    /**
+     * 是否显示更多图标
+     * @since v1.2.9
+     * @default true
+     * @description 如果未定义，则显示更多图标
+     * @example
+     * - true: 显示更多图标
+     * - false: 不显示更多图标
+     */
+    showMoreIcon?: boolean;
+
+    /**
+     * 默认输入框位置
+     * @since v1.2.9
+     * @default undefined
+     * @description 如果未定义，则根据是否有会话内容自动判断位置
+     * @example
+     * - undefined: 根据是否有会话内容自动判断位置
+     * - 'bottom': 底部
+     */
+    defaultChatInputPosition?: 'bottom' | undefined;
+
+    /**
+     * 最大宽度
+     * @since v1.2.9
+     * @default undefined
+     * @description 如果未定义，1000px
+     * @example
+     * - undefined: 1000px
+     * - 100: 最大宽度为 100px
+     * - 100%: 最大宽度为视窗宽度
+     */
+    maxWidth?: number | string;
   }
 
   // ===================================================================
@@ -308,6 +361,8 @@
     nimbusSize: 'normal',
     showHistoryIcon: true,
     showNewChatIcon: true,
+    showCompressionIcon: true,
+    showMoreIcon: true,
     placeholder: t('输入 "/" 唤出 Prompt\n通过 Shift + Enter 进行换行输入'),
     miniPadding: 0,
     initialSessionCode: '',
@@ -318,6 +373,8 @@
       showAutoGenerate: true,
       showShare: false, // 默认禁用分享会话功能
     }),
+    defaultChatInputPosition: undefined,
+    maxWidth: 1000,
   });
 
   const emit = defineEmits<{
@@ -404,6 +461,26 @@
     handleStop: () => {
       handleStop();
     },
+  });
+
+  /**
+   * 计算根元素的样式变量
+   * @since v1.2.9
+   * @description 计算根元素的样式变量
+   * @example
+   * - maxWidth: 1000px
+   * - maxWidth: 100%
+   * @returns {Record<string, string>}
+   * @example
+   * {
+   *   '--ai-blueking-max-width': '1000px',
+   * }
+   */
+  const rootVariables = computed(() => {
+    const maxWidth = typeof props.maxWidth === 'number' ? `${props.maxWidth}px` : props.maxWidth;
+    return {
+      '--ai-blueking-max-width': maxWidth ?? '1000px',
+    };
   });
 
   // 初始化样式和点击代理
@@ -1193,7 +1270,7 @@
 
     .message-line-wrapper {
       width: 100%;
-      max-width: 1000px;
+      max-width: var(--ai-blueking-max-width);
       margin: 0 auto;
     }
 
@@ -1202,7 +1279,7 @@
     }
 
     .chat-input-wrapper {
-      max-width: 1000px;
+      max-width: var(--ai-blueking-max-width);
       margin: 0 auto;
     }
 

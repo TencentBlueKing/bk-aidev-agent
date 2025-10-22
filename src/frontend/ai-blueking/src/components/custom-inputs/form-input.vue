@@ -7,6 +7,7 @@
     :resize="false"
     :rows="props.rows || 3"
     @update:modelValue="updateValue"
+    @enter="handleEnter"
   />
 </template>
 
@@ -21,12 +22,16 @@
     rows?: number;
   }>();
 
-  const emit = defineEmits(['update:modelValue']);
+  const emit = defineEmits(['update:modelValue', 'enter']);
 
   const value = computed(() => props.modelValue);
 
   const updateValue = (val: string) => {
     emit('update:modelValue', val);
+  };
+
+  const handleEnter = () => {
+    emit('enter');
   };
 </script>
 <style lang="scss" scoped>

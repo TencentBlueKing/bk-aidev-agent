@@ -44,6 +44,7 @@
         </div>
       </div>
       <span
+        v-if="props.showMoreIcon"
         ref="moreIconRef"
         class="bkai-icon bkai-more"
         @click="handleMoreIconClick"
@@ -70,11 +71,13 @@
         @click="handleHelpClick"
       ></i>
       <i
+        v-if="props.showCompressionIcon"
         ref="compressionRef"
         class="bkai-icon"
         :class="compressionIcon"
         @click="emit('toggle-compression')"
       ></i>
+
       <i
         ref="closeRef"
         class="bkai-icon bkai-close-line-2"
@@ -104,6 +107,8 @@
       draggable: boolean;
       showHistoryIcon: boolean;
       showNewChatIcon?: boolean;
+      showCompressionIcon?: boolean;
+      showMoreIcon?: boolean;
       enableChatSession?: boolean;
       chatGroup?: {
         enabled: boolean;
@@ -123,6 +128,8 @@
       draggable: true,
       showHistoryIcon: true,
       showNewChatIcon: true,
+      showCompressionIcon: true,
+      showMoreIcon: true,
       enableChatSession: true,
       chatGroup: () => ({
         enabled: false,
