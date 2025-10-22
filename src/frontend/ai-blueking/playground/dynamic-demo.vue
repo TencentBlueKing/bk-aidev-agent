@@ -190,8 +190,6 @@
       name: '翻译',
       icon: 'bkai-icon bkai-fanyi',
       id: 'translate',
-      mode: 'simple',
-      hideFooter: true,
       components: [
         {
           name: '内容',
@@ -201,8 +199,6 @@
           placeholder: '请输入项目名称',
           required: false,
           fillBack: true,
-          mode: 'simple',
-          showSendButton: true,
         },
       ],
     },
