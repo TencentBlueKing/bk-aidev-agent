@@ -1,5 +1,5 @@
 <template>
-  <div class="custom-input-wrapper">
+  <div :class="rootElementClass">
     <div class="header">
       <component
         :is="props.shortcut.iconRender ? props.shortcut.iconRender(h) : null"
@@ -25,13 +25,14 @@
       >
         <bk-form-item
           error-display-type="tooltips"
+          error-tip-append-to-parent
           :label="componentItem.name"
           :property="componentItem.key"
           :required="componentItem.required"
-          error-tip-append-to-parent
           :class="{
             'full-width':
               componentItem.type === 'textarea' || isLastInOddGroup(visibleComponents, index),
+            'with-send-button': componentItem.showSendButton,
           }"
         >
           <component
@@ -47,7 +48,20 @@
             :popover-options="{
               boundary: props.rootNode || 'parent',
             }"
+            @enter="() => handleComponentSend(componentItem)"
           />
+          <!-- @since v1.2.9 -->
+          <template v-if="componentItem.showSendButton">
+            <span
+              :class="[
+                'send-button',
+                { disabled: !formData[getOriginalIndex(componentItem)][componentItem.key] },
+              ]"
+              @click="() => handleComponentSend(componentItem)"
+            >
+              <i class="bkai-icon bkai-fasong"></i>
+            </span>
+          </template>
         </bk-form-item>
       </template>
     </bk-form>
@@ -100,6 +114,18 @@
   const shortCutRef = toRef(props, 'shortcut');
 
   const { formRef, formData, modelFormData, formRules } = useCustomForm(shortCutRef);
+
+  /**
+   * 计算根元素的 class
+   * @since v1.2.9
+   */
+  const rootElementClass = computed(() => {
+    return [
+      'custom-input-wrapper',
+      shortCutRef.value.mode ?? 'advanced',
+      shortCutRef.value.hideFooter ? 'no-footer' : '',
+    ];
+  });
 
   // 计算可见组件（过滤掉隐藏的组件）
   const visibleComponents = computed(() => {
@@ -178,6 +204,20 @@
     });
   };
 
+  /**
+   * 单个指令提交
+   * @since v1.2.9
+   * @param componentItem
+   */
+  const handleComponentSend = (componentItem: IAgentCommandComponent) => {
+    const componentValue = formData.value[getOriginalIndex(componentItem)]?.[componentItem.key];
+    if (!componentItem.showSendButton || !componentValue) {
+      return;
+    }
+
+    handleSubmit();
+  };
+
   // 取消表单
   const handleCancel = () => {
     emit('cancel');
@@ -244,6 +284,91 @@
 
     :deep(.full-width) {
       grid-column: 1 / -1;
+    }
+
+    /**
+     * 带发送按钮的输入模块样式
+     * @since v1.2.9
+     */
+    :deep(.with-send-button .bk-form-content) {
+      position: relative;
+
+      .bk-ai-custom-input {
+        padding-right: 24px;
+      }
+
+      .send-button {
+        position: absolute;
+        right: 4px;
+        bottom: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+
+        /* width: 24px; */
+        padding: 0 4px;
+        height: 24px;
+        border-radius: 4px;
+
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        color: #fff;
+        background: #3a84ff;
+
+        &.disabled {
+          cursor: not-allowed;
+          background: #f0f1f5;
+
+          .bkai-icon {
+            color: #c4c6cc;
+          }
+        }
+
+        .bkai-icon {
+          font-size: 14px;
+          margin-right: 0;
+          color: #fff;
+        }
+      }
+    }
+
+    /**
+     * 隐藏底部按钮区域
+     * @since v1.2.9
+     */
+    &.no-footer {
+      .footer {
+        display: none;
+      }
+
+      :deep(.bk-form-item:last-child) {
+        margin-bottom: 0;
+      }
+    }
+
+    /**
+     * simple 模式样式
+     * @since v1.2.9
+     */
+    &.simple {
+      background: none;
+      border-radius: 0;
+      border: none;
+
+      .header {
+        display: none;
+      }
+
+      :deep(.bk-form.form-container) {
+        padding: 0;
+      }
+
+      :deep(.bk-form-item .bk-form-label) {
+        display: none;
+      }
     }
   }
 </style>

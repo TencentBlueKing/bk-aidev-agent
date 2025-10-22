@@ -13,7 +13,8 @@
     "bkui-vue": "^2.0.1-beta.114",
     "express": "^5.1.0",
     "vue": "^3.3.4",
-    "express-rate-limit": "^7.5.1"
+    "express-rate-limit": "^7.5.1",
+    "x-mavon-editor": "^0.0.20"
   },
   "devDependencies": {
     "less": "^4.2.0",

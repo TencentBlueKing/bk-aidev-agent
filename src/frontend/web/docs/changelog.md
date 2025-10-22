@@ -10,6 +10,7 @@ export default {
         {
           version: "v1.2.8",
           date: "2025-10-17",
+          important: "⚠️ <strong>重要提醒</strong>：小鲸 1.2.8 版本必须与后端 SDK 版本 1.0.0b48 或更高版本匹配使用，特别是点赞功能需要该版本SDK支持，否则可能出现兼容性问题",
           features: [
             "新增会话创建参数配置，优化 handleShow 和 addNewSession 方法",
             "APM 调用分析图表跳转链接调整，新增标签过滤参数",

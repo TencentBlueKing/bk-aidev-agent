@@ -44,24 +44,35 @@
         </div>
       </div>
       <span
+        v-if="props.showMoreIcon && sessionStore.hasPermission.value"
         ref="moreIconRef"
         class="bkai-icon bkai-more"
         @click="handleMoreIconClick"
       ></span>
     </div>
     <div class="right-section">
+      <!-- 新增会话按钮 -->
       <i
         v-if="props.showNewChatIcon && props.enableChatSession !== false"
-        v-bk-tooltips="{ content: t('新增会话'), boundary: 'parent' }"
-        class="bkai-icon bkai-xinzengliaotian"
-        @click="handleNewChat"
+        v-bk-tooltips="{
+          content: getPermissionTooltip(t('新增会话')),
+          boundary: 'parent',
+        }"
+        :class="['bkai-icon', 'bkai-xinzengliaotian', { disabled: !hasPermission }]"
+        :style="getPermissionStyle()"
+        @click="hasPermission ? handleNewChat() : undefined"
       ></i>
+      <!-- 历史会话按钮 -->
       <i
         v-if="props.showHistoryIcon && props.enableChatSession !== false"
         ref="historyIconRef"
-        v-bk-tooltips="{ content: t('历史会话'), boundary: 'parent' }"
-        class="bkai-icon bkai-history"
-        @click="handleHistoryClick"
+        v-bk-tooltips="{
+          content: getPermissionTooltip(t('历史会话')),
+          boundary: 'parent',
+        }"
+        :class="['bkai-icon', 'bkai-history', { disabled: !hasPermission }]"
+        :style="getPermissionStyle()"
+        @click="hasPermission ? handleHistoryClick($event) : undefined"
       ></i>
       <i
         v-if="props.chatGroup?.enabled"
@@ -70,11 +81,13 @@
         @click="handleHelpClick"
       ></i>
       <i
+        v-if="props.showCompressionIcon"
         ref="compressionRef"
         class="bkai-icon"
         :class="compressionIcon"
         @click="emit('toggle-compression')"
       ></i>
+
       <i
         ref="closeRef"
         class="bkai-icon bkai-close-line-2"
@@ -104,6 +117,8 @@
       draggable: boolean;
       showHistoryIcon: boolean;
       showNewChatIcon?: boolean;
+      showCompressionIcon?: boolean;
+      showMoreIcon?: boolean;
       enableChatSession?: boolean;
       chatGroup?: {
         enabled: boolean;
@@ -123,6 +138,8 @@
       draggable: true,
       showHistoryIcon: true,
       showNewChatIcon: true,
+      showCompressionIcon: true,
+      showMoreIcon: true,
       enableChatSession: true,
       chatGroup: () => ({
         enabled: false,
@@ -177,6 +194,11 @@
   });
 
   const displayTitle = computed(() => {
+    // 如果没有权限，无法获取智能体信息，显示无权限
+    if (!sessionStore.hasPermission.value) {
+      return t('无智能体使用权限');
+    }
+
     // 如果关闭会话管理 title 为智能体名本身
     if (!props.enableChatSession) {
       return sessionStore.agentInfo.value?.agentName;
@@ -195,6 +217,19 @@
   const compressionTooltip = computed(() => {
     return props.isCompressionHeight ? t('恢复默认尺寸') : t('缩小高度');
   });
+
+  // 公共的权限检查逻辑
+  const hasPermission = computed(() => sessionStore.hasPermission.value);
+
+  // 获取按钮的通用 tooltip 内容
+  const getPermissionTooltip = (normalContent: string) => {
+    return hasPermission.value ? normalContent : t('暂无使用权限');
+  };
+
+  // 获取按钮的通用样式
+  const getPermissionStyle = () => {
+    return { cursor: hasPermission.value ? 'pointer' : 'not-allowed' };
+  };
 
   const headerRef = ref<HTMLElement | null>(null);
   const compressionRef = ref<HTMLElement | null>(null);
@@ -637,6 +672,16 @@
       &:hover {
         color: #4d4f56;
         background: #eaebf0;
+      }
+
+      &.disabled {
+        color: #c4c6cc;
+        cursor: not-allowed;
+
+        &:hover {
+          color: #c4c6cc;
+          background: transparent;
+        }
       }
     }
 

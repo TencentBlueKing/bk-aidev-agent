@@ -101,6 +101,9 @@ export const langData = {
   自动生成命名: 'Auto generate name',
   分享会话: 'Share session',
   重命名失败: 'Rename failed',
+  暂无该智能体使用权限: 'No permission to use this agent',
+  '请联系 admin（管理员） 处理': 'Please contact admin (administrator) for processing',
+  无智能体使用权限: 'No permission to use this agent',
 } as const;
 
 export const zhLangData = {

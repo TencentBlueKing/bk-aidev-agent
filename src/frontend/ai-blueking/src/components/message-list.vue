@@ -45,7 +45,10 @@
     (e: 'resend', index: number, data: { message: string }): void;
     (e: 'message-select', messageId: string): void;
     (e: 'scroll-position-change', isNearBottom: boolean): void;
-    (e: 'update-session-content', data: { messageId: number | undefined; updates: Partial<ISessionContent> }): void;
+    (
+      e: 'update-session-content',
+      data: { messageId: number | undefined; updates: Partial<ISessionContent> }
+    ): void;
   }
 
   const props = defineProps<Props>();
@@ -111,7 +114,10 @@
     emit('message-select', messageId);
   };
 
-  const handleUpdateSessionContent = (data: { messageId: number | undefined; updates: Partial<ISessionContent> }) => {
+  const handleUpdateSessionContent = (data: {
+    messageId: number | undefined;
+    updates: Partial<ISessionContent>;
+  }) => {
     emit('update-session-content', data);
   };
 
@@ -170,7 +176,7 @@
 
   .message-line-wrapper {
     width: 100%;
-    max-width: 1000px;
+    max-width: var(--ai-blueking-max-width);
     margin: 0 auto;
   }
 </style>

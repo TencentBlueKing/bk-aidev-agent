@@ -192,10 +192,10 @@
         {
           name: '内容',
           key: 'content',
-          type: 'text',
+          type: 'textarea',
           default: '',
           placeholder: '请输入项目名称',
-          required: true,
+          required: false,
           fillBack: true,
         },
       ],
