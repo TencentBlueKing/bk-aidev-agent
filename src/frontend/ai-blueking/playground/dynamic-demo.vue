@@ -122,8 +122,6 @@
           @drag-stop="handleDragStop"
           @resize-stop="handleResizeStop"
           :auto-switch-to-initial-session="false"
-          max-width="100%"
-          defaultChatInputPosition="bottom"
         />
       </div>
     </div>
