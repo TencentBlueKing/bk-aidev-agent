@@ -370,7 +370,7 @@
       }
 
       :deep(.bk-form-item .bk-form-label),
-      :deep(.ai-blueking-form-item, .ai-blueking-form-label) {
+      :deep(.ai-blueking-form-item .ai-blueking-form-label) {
         display: none;
       }
     }
