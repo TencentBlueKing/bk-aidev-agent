@@ -73,8 +73,8 @@ class StreamEventType(enum.Enum):
 
 class CredentialType(enum.Enum):
     NULL = "null"
-    BLUEAPPS = "blueapps"
-    CUSTOM = "custom"
+    BLUEAPPS = "blueapps"  # apigw
+    CUSTOM = "custom"  # proxy
 
 
 class ContextType(enum.Enum):
