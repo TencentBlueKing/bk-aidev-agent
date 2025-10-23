@@ -51,8 +51,24 @@
             @help-click="() => enterSelectMode('transfer')"
           />
           <div class="content-wrapper">
+            <!-- 无权限提示 -->
+            <div
+              v-if="!hasPermission"
+              class="permission-denied"
+            >
+              <bk-exception
+                class="exception-wrap-item exception-part"
+                title="暂无该智能体使用权限"
+                description="请联系 admin（管理员） 处理"
+                scene="part"
+                type="403"
+              ></bk-exception>
+            </div>
             <!-- 主要内容区域 -->
-            <div :class="`main-content ${!hasSessionContents ? 'greeting-layout' : 'chat-layout'}`">
+            <div
+              v-else
+              :class="`main-content ${!hasSessionContents ? 'greeting-layout' : 'chat-layout'}`"
+            >
               <greeting-section
                 ref="greetingSectionRef"
                 :title="props.helloText"
@@ -201,7 +217,7 @@
   import { SessionContentRole } from '@blueking/ai-ui-sdk/enums';
   import type { ISessionContent } from '@blueking/ai-ui-sdk/types';
   import { useChat, useStyle, useClickProxy } from '@blueking/ai-ui-sdk/hooks';
-  import { Button as BkButton, Checkbox as BkCheckbox } from 'bkui-vue';
+  import { Button as BkButton, Checkbox as BkCheckbox, Exception as BkException } from 'bkui-vue';
   import { useCopyCode } from 'markdown-it-copy-code';
   import { motion } from 'motion-v';
   import {
@@ -663,6 +679,11 @@
   // 是否启用会话管理
   const enableChatSession = computed(() => {
     return sessionStore.agentInfo.value?.conversationSettings?.enableChatSession ?? true;
+  });
+
+  // 是否有权限
+  const hasPermission = computed(() => {
+    return sessionStore.hasPermission.value;
   });
 
   // 问候文本
@@ -1358,5 +1379,41 @@
   :deep(.vdr) {
     background: transparent;
     border: none;
+  }
+
+  // 无权限提示样式
+  .permission-denied {
+    display: flex;
+    margin-top: 140px;
+    justify-content: center;
+    flex: 1;
+    height: 100%;
+
+    .permission-denied-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+      text-align: center;
+
+      .permission-icon {
+        font-size: 48px;
+        color: #c4c6cc;
+        margin-bottom: 16px;
+      }
+
+      .permission-text {
+        font-size: 18px;
+        font-weight: 600;
+        color: #63656e;
+        margin-bottom: 8px;
+      }
+
+      .permission-desc {
+        font-size: 14px;
+        color: #979ba5;
+      }
+    }
   }
 </style>

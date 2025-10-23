@@ -42,6 +42,10 @@
 | `hideDefaultTrigger` | `Boolean`   | `false`                                                   | <Badge type="tip" text="v1.2.7" /> 控制是否隐藏默认的触发按钮。设置为 `true` 时，隐藏默认的AI小鲸触发按钮，适用于需要完全自定义触发方式的场景。 |
 | `dropdownMenuConfig` | `Object`    | `{ showRename: true, showAutoGenerate: true, showShare: false }` | <Badge type="tip" text="v1.2.7" /> 下拉菜单配置对象，用于控制会话操作菜单中各项功能的显示。包含 `showRename` (是否显示重命名选项)、`showAutoGenerate` (是否显示自动生成命名选项)、`showShare` (是否显示分享选项) 三个布尔值属性。 |
 | `iconRender`        | `Function`  | `undefined`                                                    | <Badge type="tip" text="v1.2.8" /> 自定义图标渲染函数，用于替代 `icon` 属性提供更灵活的图标渲染方式。函数接收 Vue 的 `h` 函数作为参数，返回 VNode 节点。当同时设置 `iconRender` 和 `icon` 时，优先使用 `iconRender`。 |
+| `showCompressionIcon` | `Boolean` | `true`                                                     | <Badge type="tip" text="v1.2.9" /> 控制是否显示压缩图标。设置为 `false` 时隐藏压缩图标按钮。 |
+| `showMoreIcon`      | `Boolean`   | `true`                                                     | <Badge type="tip" text="v1.2.9" /> 控制是否显示更多图标。设置为 `false` 时隐藏更多操作图标按钮。 |
+| `defaultChatInputPosition` | `String` | `undefined`                                              | <Badge type="tip" text="v1.2.9" /> 设置默认输入框位置。可选值为 `'bottom'` 或 `undefined`，当设置为 `'bottom'` 时输入框始终显示在底部，`undefined` 时根据是否有会话内容自动判断位置。 |
+| `maxWidth`          | `Number` \| `String` | `1000`                                               | <Badge type="tip" text="v1.2.9" /> 设置组件最大宽度。可以是数字（像素值）或字符串（如 '100%'）。 |
 
 ## 压缩状态边距控制 <Badge type="tip" text="v1.1.2" />
 

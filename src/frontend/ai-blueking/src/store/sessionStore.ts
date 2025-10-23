@@ -26,6 +26,7 @@ export function useSessionStore() {
   const currentSession = ref<ISessionEditItem | null>(null);
   const sessionContentLoading = ref<boolean>(false);
   const sessionUpdateCounter = ref<Record<string, number>>({});
+  const hasPermission = ref<boolean>(true); // 默认有权限
   let sdkApi: Partial<SdkApi> = {};
 
   // 存储会话的原始值
@@ -161,6 +162,8 @@ export function useSessionStore() {
       message,
       data,
     };
+
+    console.log('errorEvent', errorEvent);
 
     sdkErrorCallback(errorEvent);
   };
@@ -484,7 +487,14 @@ export function useSessionStore() {
       try {
         sessions = await getSessions();
         setSessionList(sessions);
+        hasPermission.value = true; // 成功获取会话列表，说明有权限
       } catch (error) {
+        // 检查是否是权限错误（通常403表示无权限）
+        const errorObj = error as any;
+        const code = errorObj?.error?.code || errorObj?.code || errorObj?.response?.code || -1;
+        if (code === '403') {
+          hasPermission.value = false; // 设置无权限状态
+        }
         handleSdkError('getSessionsApi', error);
         throw error;
       }
@@ -592,7 +602,14 @@ export function useSessionStore() {
     try {
       sessions = await getSessions();
       setSessionList(sessions);
+      hasPermission.value = true; // 成功获取会话列表，说明有权限
     } catch (error) {
+      // 检查是否是权限错误（通常403表示无权限）
+      const errorObj = error as any;
+      const code = errorObj?.error?.code || errorObj?.code || errorObj?.response?.code || -1;
+      if (code === 403) {
+        hasPermission.value = false; // 设置无权限状态
+      }
       handleSdkError('getSessionsApi', error);
       throw error;
     }
@@ -641,6 +658,8 @@ export function useSessionStore() {
     agentInfo,
     getSessionList,
     sessionUpdateCounter,
+    // 权限状态
+    hasPermission,
     // 选择模式相关
     isSelectMode,
     selectedMessages,
