@@ -108,6 +108,22 @@ export default {
       default: false,
       type: Boolean,
     },
+    showCompressionIcon: {
+      default: true,
+      type: Boolean,
+    },
+    showMoreIcon: {
+      default: true,
+      type: Boolean,
+    },
+    defaultChatInputPosition: {
+      default: undefined,
+      type: String,
+    },
+    maxWidth: {
+      default: 1000,
+      type: [Number, String],
+    },
     initialSessionCode: {
       type: String,
       default: '',
@@ -168,6 +184,10 @@ export default {
           initialSessionCode: that.initialSessionCode,
           autoSwitchToInitialSession: that.autoSwitchToInitialSession,
           loadRecentSessionOnMount: that.loadRecentSessionOnMount,
+          showCompressionIcon: that.showCompressionIcon,
+          showMoreIcon: that.showMoreIcon,
+          defaultChatInputPosition: that.defaultChatInputPosition,
+          maxWidth: that.maxWidth,
           onClose() {
             emit('close', ...arguments);
           },
