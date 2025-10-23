@@ -290,7 +290,8 @@
      * 带发送按钮的输入模块样式
      * @since v1.2.9
      */
-    :deep(.with-send-button .bk-form-content) {
+    :deep(.with-send-button .bk-form-content),
+    :deep(.with-send-button .ai-blueking-form-content) {
       position: relative;
 
       .bk-ai-custom-input {
@@ -344,7 +345,8 @@
         display: none;
       }
 
-      :deep(.bk-form-item:last-child) {
+      :deep(.bk-form-item:last-child),
+      :deep(.ai-blueking-form-item:last-child) {
         margin-bottom: 0;
       }
     }
@@ -362,11 +364,13 @@
         display: none;
       }
 
-      :deep(.bk-form.form-container) {
+      :deep(.bk-form.form-container),
+      :deep(.ai-blueking-form.form-container) {
         padding: 0;
       }
 
-      :deep(.bk-form-item .bk-form-label) {
+      :deep(.bk-form-item .bk-form-label),
+      :deep(.ai-blueking-form-item, .ai-blueking-form-label) {
         display: none;
       }
     }
