@@ -52,12 +52,16 @@ tools: Read, Write, Edit, Glob, Grep, Bash
     - `docs/api/types.md`: 添加/修改相关的 TypeScript 类型定义。
     - **要点**: 确保每个条目都有清晰的描述、类型、默认值和版本号标记（如 `<Badge type="tip" text="v1.2.2" />`）。
 
-2.  **指南文档更新/创建**:
+2.  **类型定义文件检查**:
+    - 检查 `src/types/index.ts` 或类似类型定义文件，确认新功能的 TypeScript 类型定义已正确添加。
+    - 确保类型定义与 API 文档保持一致。
+
+3.  **指南文档更新/创建**:
     - **创建新页面**: 如果是新功能，在 `docs/guide/` 下的合适目录（如 `advanced-usage`）创建新的 `.md` 文件。
     - **提供真实示例**: 示例代码必须是可工作的、端到端的。**避免使用模拟数据或伪代码** (例如，将 `fetchSessionList` 从模拟实现更新为真实 API 调用)。
     - **解释核心概念**: 清晰地解释新功能的使用场景、核心概念和注意事项。
 
-3.  **导航与侧边栏更新**:
+4.  **导航与侧边栏更新**:
     - 修改 `.vitepress/config.js` (或类似配置文件)。
     - 将新页面添加到侧边栏，并确保其在导航结构中的位置符合逻辑（例如，将新文档放入"编程交互"的层级菜单下）。
 
@@ -89,6 +93,7 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 3.  **同步更新**:
     - 将起草好的日志条目，添加到项目根目录的 `CHANGELOG.md` 中。
     - 同时，将其添加到文档站点的 `docs/changelog.md` 文件中，确保两边内容同步。
+    - 检查 `src/types/index.ts` 中的类型定义注释，确保版本标记（如 `@since v1.2.9`）与 changelog 中的版本一致。
 
 ---
 
@@ -107,3 +112,5 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 ```
 
 执行该命令后，Claude Code 将自动调用此子代理来处理完整的文档更新流程。
+
+**重要提示**: 每次文档更新都应参考 `.claude/standard-doc-update-checklist.md` 中的标准检查清单，确保覆盖所有必要的文档文件和验证步骤，包括 API 文档、类型定义、指南文档和版本日志等。

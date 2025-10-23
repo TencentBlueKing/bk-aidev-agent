@@ -8,6 +8,16 @@ export default {
     return {
       changelogData: [
         {
+          version: "v1.2.9",
+          date: "2025-10-23",
+          features: [
+            "优化小鲸指令配置，支持 simple 配置模式，简化指令配置流程",
+            "无权限页面优化，添加权限检查机制和相应提示组件",
+            "新增 showCompressionIcon、showMoreIcon、defaultChatInputPosition、maxWidth 等 props 配置项",
+            "更新项目依赖包，提升组件稳定性和性能"
+          ]
+        },
+        {
           version: "v1.2.8",
           date: "2025-10-17",
           important: "⚠️ <strong>重要提醒</strong>：小鲸 1.2.8 版本必须与后端 SDK 版本 1.0.0b48 或更高版本匹配使用，特别是点赞功能需要该版本SDK支持，否则可能出现兼容性问题",
