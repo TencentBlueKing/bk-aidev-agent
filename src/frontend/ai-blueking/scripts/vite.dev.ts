@@ -30,7 +30,7 @@ export default defineConfig({
   ...createCommonConfig(),
   server: {
     host: '0.0.0.0',
-    port: 8008,
+    port: 8001,
     allowedHosts: true,
   },
 });

@@ -197,8 +197,6 @@
           placeholder: '请输入项目名称',
           required: false,
           fillBack: true,
-          showSendButton: true,
-          mode: 'simple',
         },
       ],
     },
