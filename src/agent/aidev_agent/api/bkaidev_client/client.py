@@ -224,7 +224,7 @@ class Client(BaseClient, AbstractBKAidevResourceManager):
         retrieve_tool = self.api.retrieve_tool if kwargs.pop("appspace", True) else self.api.appspace_retrieve_tool
         result = retrieve_tool(path_params={"tool_code": tool_code}, **kwargs)
         result["data"]["tool_cn_name"] = result["data"]["tool_name"]
-        if result["data"].get("credential_type", "") == CredentialType.BLUEAPPS.value:
+        if result["data"].get("credential_type", "") != CredentialType.NULL.value:
             tool = Tool.model_validate(result["data"])
             tool.extra = ToolExtra(
                 header={
