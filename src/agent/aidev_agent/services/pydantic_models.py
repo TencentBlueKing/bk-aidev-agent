@@ -89,6 +89,7 @@ class IntentRecognition(BaseModel):
     )
     tool_output_compress_thrd: int = Field(default=5000, description=("工具输出压缩阈值"))
     agent_type: str | None = Field(default=None, description=("agent类"))
+    max_tool_output_len: int = Field(default=500, description=("工具调用结果展示的最大长度"))
 
 
 class KnowledgebaseSettings(BaseModel):
@@ -194,7 +195,7 @@ class KnowledgebaseSettings(BaseModel):
         default_factory=list,
         description=("工具类资源 base ID 列表。NOTE: 目前工具类资源统一放 base ID 中不放 item ID 中"),
     )
-    token_limit_margin: int = Field(default=200, description=("召回知识内容的最大Token限制值"))
+    token_limit_margin: int = Field(default=100, description=("上下文最大Token限制边界"))
 
 
 class AgentOptions(BaseModel):

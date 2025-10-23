@@ -364,7 +364,7 @@ class IntentRecognitionMixin(BaseModel):
         first_entry = True
         has_executed_context_compressor = False
         has_executed_intermediate_step_compressor = False
-        token_limit_margin = kwargs.get("token_limit_margin", 100)
+        token_limit_margin = self.agent_options.knowledge_query_options.token_limit_margin
         llm_token_limit = getattr(self, "llm_token_limit", 28000)
         while cur_token_len > llm_token_limit - token_limit_margin:
             # 优先级 1: 压缩召回的知识的内容
@@ -1054,7 +1054,7 @@ class CommonQAStreamingMixIn:
                         elif tool_output_content == OUTPUT_PARSER_ERR_MSG:
                             tool_output_content = OUTPUT_PARSER_ERR_MSG
 
-                        max_tool_output_len = 500
+                        max_tool_output_len = self.agent_options.intent_recognition_options.max_tool_output_len
                         if len(tool_output_content) > max_tool_output_len:
                             tool_output_content = tool_output_content[:max_tool_output_len] + "（内容过长，已截断）"
                         # NOTE: 重要操作！
