@@ -230,7 +230,7 @@ class CommonAgentMixIn(BaseModel, ABC):
         knowledge_bases: Optional[List[Dict]] = None,
         file_store: Optional[ByteStore] = None,
         support_vision: bool = False,
-        llm_token_limit=28000,
+        llm_token_limit=None,
         agent_options: Optional[AgentOptions] = None,
         **kwargs,
     ) -> Tuple[AgentExecutor, RunnableConfig]:
@@ -262,6 +262,12 @@ class CommonAgentMixIn(BaseModel, ABC):
             agent.agent_options.intent_recognition_options.tool_output_compress_thrd = kwargs.get(
                 "intent_recognition_kwargs", {}
             ).get("tool_output_compress_thrd", 5000)
+            agent.agent_options.knowledge_query_options.token_limit_margin = kwargs.get(
+                "intent_recognition_kwargs", {}
+            ).get("token_limit_margin", 100)
+            agent.agent_options.intent_recognition_options.max_tool_output_len = kwargs.get(
+                "intent_recognition_kwargs", {}
+            ).get("max_tool_output_len", 500)
         if knowledge_bases:
             agent.agent_options.knowledge_query_options.knowledge_bases = knowledge_bases
         if knowledge_items:
