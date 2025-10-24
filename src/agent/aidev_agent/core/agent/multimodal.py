@@ -230,7 +230,7 @@ class CommonAgentMixIn(BaseModel, ABC):
         knowledge_bases: Optional[List[Dict]] = None,
         file_store: Optional[ByteStore] = None,
         support_vision: bool = False,
-        llm_token_limit=28000,
+        llm_token_limit=None,
         agent_options: Optional[AgentOptions] = None,
         **kwargs,
     ) -> Tuple[AgentExecutor, RunnableConfig]:
