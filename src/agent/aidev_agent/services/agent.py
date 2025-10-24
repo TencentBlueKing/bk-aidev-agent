@@ -273,6 +273,11 @@ class AgentInstanceFactory:
         config = self.config_manager_class.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
         return config.agent_options
 
+    def build_agent_prompt(self, agent_code: str) -> str | None:
+        """构建Agent提示词"""
+        config = self.config_manager.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        return config.agent_prompt
+
     def handle_agent_switch(self, session_context_data: List[dict], agent_code: str, switch_agent: bool):
         """处理智能体切换"""
         if not switch_agent:
@@ -395,6 +400,7 @@ class AgentInstanceFactory:
             "knowledge_items": factory.build_knowledge_items(agent_code),
             "chat_history": factory.build_chat_history(session_context_data),
             "agent_options": factory.build_agent_options(agent_code),
+            "agent_prompt": factory.build_agent_prompt(agent_code),
         }
 
     @staticmethod

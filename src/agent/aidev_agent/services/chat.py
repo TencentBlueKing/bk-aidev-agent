@@ -40,6 +40,7 @@ class ChatCompletionAgent(BaseModel):
     support_vision: bool = False  # 是否支持图片
     file_store: ByteStore | None = None
     role_prompt: str | None = None
+    agent_prompt: str | None = None
     max_token_size: int | None = None
     callbacks: list[BaseCallbackHandler] | None = None
     agent_cls: type[CommonQAAgent] = CommonQAAgent
@@ -238,6 +239,7 @@ class ChatCompletionAgent(BaseModel):
             support_vision=self.support_vision,
             file_store=self.file_store,
             role_prompt=self.role_prompt,
+            agent_prompt=self.agent_prompt,
             callbacks=self.callbacks,
             agent_options=self.agent_options,
         )
