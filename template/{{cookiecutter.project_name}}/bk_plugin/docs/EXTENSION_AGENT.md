@@ -317,7 +317,7 @@ class CommonQAAgentExtend(CommonQAAgent):
 }
 ```
 
-> **注意**：使用MCP服务需要先申请对应的访问权限和API密钥，参考 [蓝鲸平台MCP文档](https://bkapigw.woa.com/mcp-market)。
+> **注意**：使用MCP服务需要先申请对应的访问权限和API密钥，参考 [蓝鲸平台MCP文档]({{cookiecutter.mcp_market_url}})。
 
 ## 四、完整开发流程
 
@@ -492,7 +492,7 @@ def safe_api_call(param: str) -> str:
 
 - [LangChain Tool Documentation](https://python.langchain.com/docs/modules/agents/tools/)
 - [MCP Protocol Specification](https://modelcontextprotocol.io/)
-- [蓝鲸平台MCP市场](https://bkapigw.woa.com/mcp-market)
+- [蓝鲸平台MCP市场]({{cookiecutter.mcp_market_url}})
 ---
 
 如有问题，请联系技术支持或参考项目README文档。
