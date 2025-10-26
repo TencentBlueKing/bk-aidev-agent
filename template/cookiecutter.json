@@ -38,5 +38,6 @@
   "app_setting_page": "",
   "bk_login_url": "http://login.com",
   "bk_paas_domain": ".com",
-  "oauth_api_url": ""
+  "oauth_api_url": "",
+  "mcp_market_url": "https://bkapigw.example.com/mcp-market"
 }
