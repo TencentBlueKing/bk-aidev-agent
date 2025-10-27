@@ -225,3 +225,18 @@ class ChatGroupViewSet(PluginViewSet):
 
         result = client.api.create_chat_group(json=request.data, headers={"X-BKAIDEV-USER": username})
         return Response(data=result["data"])
+
+class ChatSessionShareView(PluginViewSet):
+    def create(self, request):
+        username = request.user.username
+        result = client.api.share_chat_session(
+            json=request.data,
+            headers={"X-BKAIDEV-USER": username},
+        )
+        return Response(data=result["data"])
+
+    def retrieve(self, request, pk, **kwargs):
+        result = client.api.get_shared_chat(
+            path_params={"share_token": pk},
+        )
+        return Response(data=result["data"])
