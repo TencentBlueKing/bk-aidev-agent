@@ -216,6 +216,20 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/chat/session_feedback/reasons/",
     )
 
+    share_chat_session = bind_property(
+        Operation,
+        name="share_chat_session",
+        method="POST",
+        path="/openapi/aidev/resource/v1/chat/share/",
+    )
+
+    get_shared_chat = bind_property(
+        Operation,
+        name="get_shared_chat",
+        method="GET",
+        path="/openapi/aidev/resource/v1/chat/share/{share_token}/",
+    )
+
 
 class Client(BaseClient, AbstractBKAidevResourceManager):
     api = bind_property(OpenApiGroup, name="api")
