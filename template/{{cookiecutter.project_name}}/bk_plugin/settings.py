@@ -1,3 +1,4 @@
+import os
 from warnings import warn
 
 from blueapps.patch.settings_paas_services import CACHES, INSTALLED_APPS  # noqa
@@ -13,6 +14,8 @@ CACHES["default"] = {
 SETTINGS_FOR_MERGE = ["INSTALLED_APPS", "MIDDLEWARE", "AUTHENTICATION_BACKENDS"]
 SETTINGS_FOR_UPDATE = ["DATABASES"]
 
+# SaaS运行版本，如非必要请勿修改
+RUN_VER = "ieod" if os.environ.get("BKPAAS_ENGINE_REGION", "default") == "ieod" else "open"
 
 def load_settings(module_path: str, raise_exception: bool = True):
     try:
@@ -41,3 +44,8 @@ def load_settings(module_path: str, raise_exception: bool = True):
 load_settings("aidev_bkplugin.settings")  # 智能体配置
 load_settings("aidev_ai_blueking.settings")  # 小鲸配置
 load_settings("aidev_wxbot.settings")  # 企微机器人配置
+
+# 智能体配置
+DEFAULT_AGENT = os.environ.get("DEFAULT_AGENT", "bk_plugin.extend.agent.CommonQAAgentExtend")
+DEFAULT_CONFIG_MANAGER = os.environ.get("DEFAULT_CONFIG_MANAGER", "bk_plugin.extend.config_manager.CustomAgentConfigManager")
+BK_APIGW_STAGE = os.environ.get("BK_APIGW_STAGE", "prod") or os.environ.get("BKAIDEV_RESOURCE_STAGE", "prod")

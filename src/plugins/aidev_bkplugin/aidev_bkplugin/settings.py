@@ -7,8 +7,8 @@ INSTALLED_APPS = ("aidev_bkplugin",)
 
 # 智能体
 DEFAULT_NAME = "default"
-DEFAULT_AGENT = os.environ.get("DEFAULT_AGENT", "aidev_agent.core.extend.agent.qa.CommonQAAgent")
-DEFAULT_CONFIG_MANAGER = os.environ.get("DEFAULT_CONFIG_MANAGER", "aidev_agent.services.config_manager.AgentConfigManager")
+DEFAULT_AGENT = os.environ.get("DEFAULT_AGENT", "bk_plugin.extend.agent.CommonQAAgentExtend")
+DEFAULT_CONFIG_MANAGER = os.environ.get("DEFAULT_CONFIG_MANAGER", "bk_plugin.extend.config_manager.CustomAgentConfigManager")
 
 # 客服渠道
 CHAT_GROUP_ENABLED = os.environ.get("CHAT_GROUP_ENABLED") == "1"
