@@ -247,6 +247,7 @@
   import RenderPopup from './components/render-popup.vue';
   // Composable导入
   import { useGreetingHeight } from './composables/use-greeting-height';
+  import { useKeyboardShortcut } from './composables/use-keyboard-shortcut';
   import { useMarkdown } from './composables/use-markdown';
   import { useMessageList } from './composables/use-message-list';
   import { POPUP_INJECTION_KEY } from './composables/use-popup-props';
@@ -908,6 +909,16 @@
 
     updateGreetingTextHeight();
   };
+
+  // ===================================================================
+  // 8. 快捷键管理
+  // ===================================================================
+  useKeyboardShortcut({
+    enabled: computed(() => !props.hideNimbus),
+    isShow,
+    onShow: handleShow,
+    onHide: handleClose,
+  });
 
   const handleNimbusClick = () => {
     handleShow();

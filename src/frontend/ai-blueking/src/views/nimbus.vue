@@ -48,6 +48,7 @@
   import { useNimbus } from '../composables/use-nimbus';
   import { useTooltip } from '../composables/use-tippy';
   import { t } from '../lang';
+  import { getTogglePanelShortcut } from '../utils/platform';
 
   defineOptions({
     name: 'NimbusButton',
@@ -147,7 +148,7 @@
   const initTooltips = () => {
     destroyAll();
     if (nimbusContainerRef.value && !isMinimize.value) {
-      createTooltip(nimbusContainerRef.value, 'Cmd + I', {
+      createTooltip(nimbusContainerRef.value, getTogglePanelShortcut(), {
         placement: 'left',
       });
     }
