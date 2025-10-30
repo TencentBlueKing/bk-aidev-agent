@@ -10,7 +10,7 @@
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.template .env
+cp ./support-files/env.template .env
 ```
 
 可通过[蓝鲸插件应用设置]({{cookiecutter.app_setting_page}})获取此应用的密钥,并将其补充到`.env`文件末尾对应的`BKPAAS_APP_SECRET`
