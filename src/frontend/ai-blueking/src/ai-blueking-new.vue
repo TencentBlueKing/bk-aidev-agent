@@ -822,7 +822,7 @@
     window.addEventListener('unload', handleUnload);
     window.addEventListener('resize', handleWindowResize);
     window.addEventListener('enter-select-mode', handleEnterSelectMode as EventListener);
-    if (normalizedUrl.value && !props.defaultMinimize) {
+    if (normalizedUrl.value) {
       await initSession(props.loadRecentSessionOnMount);
 
       // 如果设置了初始会话代码且需要自动切换，则切换到初始会话
