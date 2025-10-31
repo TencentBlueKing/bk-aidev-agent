@@ -1,0 +1,15 @@
+node_modules
+src
+scripts
+playground
+tsconfig*.json
+vite.config.ts
+*.log
+.DS_Store
+.vscode
+.idea
+*.map
+ecosystem.config.js
+PM2_USAGE.md
+logs
+

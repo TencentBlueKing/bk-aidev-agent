@@ -1,0 +1,14 @@
+node_modules
+dist
+vue2
+vue3
+typings
+*.log
+logs
+.DS_Store
+
+# Environment variables
+.env*
+!.env.example
+!.env.local.template
+

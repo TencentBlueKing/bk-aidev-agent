@@ -6,12 +6,14 @@
   "scripts": {
     "dev:component": "pnpm --filter @blueking/ai-blueking dev",
     "dev:docs": "pnpm --filter ai-blueking-docs dev",
+    "dev:ai-helper": "pnpm --filter @blueking/bk-ai-helper dev",
     "build:component": "pnpm --filter @blueking/ai-blueking build",
     "build:docs": "pnpm --filter ai-blueking-docs build",
-    "build": "pnpm build:component && pnpm build:docs",
+    "build:ai-helper": "pnpm --filter @blueking/bk-ai-helper build",
+    "build": "pnpm build:component && pnpm build:docs && pnpm build:ai-helper",
     "prepare:docs": "pnpm build:component && pnpm dev:docs",
     "start": "pnpm prepare:docs",
-    "clean": "rm -rf node_modules && pnpm --filter @blueking/ai-blueking clean && pnpm --filter ai-blueking-docs clean"
+    "clean": "rm -rf node_modules && pnpm --filter @blueking/ai-blueking clean && pnpm --filter ai-blueking-docs clean && pnpm --filter @blueking/bk-ai-helper clean"
   },
   "keywords": [
     "blueking",

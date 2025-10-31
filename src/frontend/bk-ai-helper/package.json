@@ -1,0 +1,74 @@
+{
+  "name": "@blueking/bk-ai-helper",
+  "version": "0.0.5",
+  "description": "蓝鲸 AI 助手组件",
+  "license": "MIT",
+  "author": "Tencent BlueKing",
+  "scripts": {
+    "dev": "vite --mode development -c scripts/vite.dev.ts",
+    "build": "tsx ./scripts/vite.build.ts",
+    "build:internal": "cross-env BUILD_TYPE=internal tsx ./scripts/vite.build.ts",
+    "build:external": "cross-env BUILD_TYPE=external tsx ./scripts/vite.build.ts",
+    "publish:internal": "cross-env BUILD_TYPE=internal tsx ./scripts/publish.ts",
+    "publish:external": "cross-env BUILD_TYPE=external tsx ./scripts/publish.ts",
+    "dts": "vue-tsc --project tsconfig.dts.json",
+    "clean": "rm -rf dist",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop bk-ai-helper-playground",
+    "pm2:restart": "pm2 restart bk-ai-helper-playground",
+    "pm2:delete": "pm2 delete bk-ai-helper-playground",
+    "pm2:logs": "pm2 logs bk-ai-helper-playground",
+    "pm2:status": "pm2 status bk-ai-helper-playground"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/vue3.d.ts",
+      "import": "./dist/vue3/index.es.min.js",
+      "default": "./dist/vue3/index.es.min.js"
+    },
+    "./vue3": {
+      "types": "./dist/vue3.d.ts",
+      "import": "./dist/vue3/index.es.min.js",
+      "default": "./dist/vue3/index.es.min.js"
+    },
+    "./vue2": {
+      "types": "./dist/vue2.d.ts",
+      "import": "./dist/vue2/index.es.min.js",
+      "default": "./dist/vue2/index.es.min.js"
+    },
+    "./vue3/*": "./dist/vue3/*",
+    "./vue2/*": "./dist/vue2/*"
+  },
+  "typesVersions": {
+    "*": {
+      ".": [
+        "./dist/vue3.d.ts"
+      ],
+      "vue3": [
+        "./dist/vue3.d.ts"
+      ],
+      "vue2": [
+        "./dist/vue2.d.ts"
+      ]
+    }
+  },
+  "types": "./dist/vue3.d.ts",
+  "module": "./dist/vue3/index.es.min.js",
+  "unpkg": "./dist/vue3/index.es.min.js",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "bkui-vue": "^1.0.3-beta.38",
+    "vue": "^3"
+  },
+  "dependencies": {
+    "tippy.js": "^6.3.7"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0"
+  }
+}
