@@ -203,7 +203,13 @@ class AgentInfoViewSet(PluginViewSet):
     @action(detail=False, methods=["GET"], url_path="ping", url_name="ping")
     def ping(self, request):
         set_user_access_token(request)
-        return Response(data="pong")
+        response = Response(data="pong")
+        response["Access-Control-Allow-Origin"] = request.headers.get("Origin")
+        response["Access-Control-Allow-Credentials"] = "true"
+        response["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        response["Access-Control-Max-Age"] = "1000"
+        response["Access-Control-Allow-Headers"] = "X-Requested-With, Content-Type"
+        return response
 
 
 class ChatGroupViewSet(PluginViewSet):
