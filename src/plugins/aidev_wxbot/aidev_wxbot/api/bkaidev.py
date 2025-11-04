@@ -9,7 +9,7 @@ class BkAiDevApi:
 
     def retrieve_agent_channel_configs(self, channel_type):
         return self.api.call_action(
-            f"openapi/aidev/resource/v1/agent_channel/configs/?channel_type={channel_type}/", "GET"
+            f"openapi/aidev/resource/v1/agent_channel/configs/?channel_type={channel_type}", "GET"
         )
 
     def convert_to_rtx(self, open_id):
