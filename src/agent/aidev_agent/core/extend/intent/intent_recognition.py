@@ -271,7 +271,7 @@ class IntentRecognition(BaseModel):
 
     @timeit(message="用户提问关键词提取")
     @retry(max_retries=5, max_seconds=3600)
-    def extract_query_keywords(self, query, llm, **kwargs):
+    def extract_query_keywords(self, agent_options, query, llm, **kwargs):
         sys_prompt = self.__class__.intent_recognition_prompt_templates.get(
             "extract_query_keywords_sys_prompt_template"
         )
@@ -283,7 +283,7 @@ class IntentRecognition(BaseModel):
             HumanMessage(content=usr_prompt),
         ]
         # TODO: 待确认：并发请求内部无法 dispatch_custom_event，所以无需调用 conditional_dispatch_custom_event
-        invoke_func = invoke_decorator(llm.invoke, llm)
+        invoke_func = invoke_decorator(agent_options, llm.invoke, llm)
         resp = invoke_func(messages)
         resp_content = resp.content
         extracted_keywords = resp_content.strip().split("\n")
@@ -293,7 +293,7 @@ class IntentRecognition(BaseModel):
 
     @timeit(message="用户提问翻译")
     @retry(max_retries=5, max_seconds=3600)
-    def query_translation(self, query, llm, **kwargs):
+    def query_translation(self, agent_options, query, llm, **kwargs):
         sys_prompt = self.__class__.intent_recognition_prompt_templates.get("query_translation_sys_prompt_template")
         usr_prompt = self.__class__.intent_recognition_prompt_templates.get(
             "query_translation_usr_prompt_template"
@@ -303,7 +303,7 @@ class IntentRecognition(BaseModel):
             HumanMessage(content=usr_prompt),
         ]
         # TODO: 待确认：并发请求内部无法 dispatch_custom_event，所以无需调用 conditional_dispatch_custom_event
-        invoke_func = invoke_decorator(llm.invoke, llm)
+        invoke_func = invoke_decorator(agent_options, llm.invoke, llm)
         resp = invoke_func(messages)
         resp_content = resp.content
         logger.info(f"=====> <query_translation的结果>：{resp_content}")
@@ -314,7 +314,7 @@ class IntentRecognition(BaseModel):
 
     @timeit(message="意图切换检测")
     @retry(max_retries=5, max_seconds=3600)
-    def latest_query_classification(self, chat_history, query, llm, **kwargs):
+    def latest_query_classification(self, agent_options, chat_history, query, llm, **kwargs):
         sys_prompt = self.__class__.intent_recognition_prompt_templates.get(
             "latest_query_classification_sys_prompt_template"
         )
@@ -326,7 +326,7 @@ class IntentRecognition(BaseModel):
             HumanMessage(content=usr_prompt),
         ]
         conditional_dispatch_custom_event("custom_event", {"front_end_display": False}, **kwargs)
-        invoke_func = invoke_decorator(llm.invoke, llm)
+        invoke_func = invoke_decorator(agent_options, llm.invoke, llm)
         resp = invoke_func(messages, **kwargs)
         conditional_dispatch_custom_event("custom_event", {"front_end_display": True}, **kwargs)
         resp_content = resp.content
@@ -342,7 +342,7 @@ class IntentRecognition(BaseModel):
 
     @timeit(message="独立查询重写")
     @retry(max_retries=5, max_seconds=3600)
-    def query_rewrite_for_independence(self, chat_history, query, llm, display=False, **kwargs):
+    def query_rewrite_for_independence(self, agent_options, chat_history, query, llm, display=False, **kwargs):
         """
         :param display: 是否将独立查询重写的结果也展示在前端
         """
@@ -362,7 +362,7 @@ class IntentRecognition(BaseModel):
                 {"custom_return_chunk": "结合历史对话信息，您似乎是想问：“"},
                 **kwargs,
             )
-            invoke_func = invoke_decorator(llm.invoke, llm)
+            invoke_func = invoke_decorator(agent_options, llm.invoke, llm)
             resp = invoke_func(messages, **kwargs)
             conditional_dispatch_custom_event(
                 "custom_event",
@@ -372,7 +372,7 @@ class IntentRecognition(BaseModel):
         else:
             # 包在这 2 行 conditional_dispatch_custom_event 代码之间的 LLM 输出不会在前端展示
             conditional_dispatch_custom_event("custom_event", {"front_end_display": False}, **kwargs)
-            invoke_func = invoke_decorator(llm.invoke, llm)
+            invoke_func = invoke_decorator(agent_options, llm.invoke, llm)
             resp = invoke_func(messages, **kwargs)
             conditional_dispatch_custom_event("custom_event", {"front_end_display": True}, **kwargs)
         resp_content = resp.content
@@ -381,7 +381,7 @@ class IntentRecognition(BaseModel):
 
     @timeit(message="意图切换检测和独立查询重写/直接答复")
     @retry(max_retries=5, max_seconds=3600)
-    def query_cls_with_resp_or_rewrite(self, chat_history, query, llm, **kwargs):
+    def query_cls_with_resp_or_rewrite(self, agent_options, chat_history, query, llm, **kwargs):
         sys_prompt = self.__class__.intent_recognition_prompt_templates.get(
             "query_cls_with_resp_or_rewrite_sys_prompt_template"
         )
@@ -393,7 +393,7 @@ class IntentRecognition(BaseModel):
             HumanMessage(content=usr_prompt),
         ]
         conditional_dispatch_custom_event("custom_event", {"front_end_display": False}, **kwargs)
-        invoke_func = invoke_decorator(llm.invoke, llm)
+        invoke_func = invoke_decorator(agent_options, llm.invoke, llm)
         resp = invoke_func(messages)
         conditional_dispatch_custom_event("custom_event", {"front_end_display": True}, **kwargs)
         resp_content = resp.content
@@ -427,7 +427,7 @@ class IntentRecognition(BaseModel):
 
     @timeit(message="伪工具类资源描述生成")
     @retry(max_retries=5, max_seconds=3600)
-    def gen_pseudo_tool_resource_description(self, query, llm, **kwargs):
+    def gen_pseudo_tool_resource_description(self, agent_options, query, llm, **kwargs):
         sys_prompt = self.__class__.intent_recognition_prompt_templates.get(
             "gen_pseudo_tool_resource_description_sys_prompt_template"
         )
@@ -439,7 +439,7 @@ class IntentRecognition(BaseModel):
             HumanMessage(content=usr_prompt),
         ]
         conditional_dispatch_custom_event("custom_event", {"front_end_display": False}, **kwargs)
-        invoke_func = invoke_decorator(llm.invoke, llm)
+        invoke_func = invoke_decorator(agent_options, llm.invoke, llm)
         resp = invoke_func(messages)
         conditional_dispatch_custom_event("custom_event", {"front_end_display": True}, **kwargs)
         resp_content = resp.content
@@ -526,6 +526,7 @@ class IntentRecognition(BaseModel):
         if fine_grained_score_type == FineGrainedScoreType.LLM:
             # NOTE: 如果 FineGrainedScoreType 为 LLM，则因为当前只有是/否相关的判断，因此分数只有 1.0 或 0.0
             fine_grained_scores = self.llm_relevance_determiner_parallel(
+                agent_options,
                 (
                     kwargs.get("translated_query", query_for_search)
                     if agent_options.knowledge_query_options.use_independent_query_in_scores
@@ -595,7 +596,7 @@ class IntentRecognition(BaseModel):
         )
 
     @retry(max_retries=5, max_seconds=3600)
-    def llm_relevance_determiner(self, query, doc, llm, **kwargs):
+    def llm_relevance_determiner(self, agent_options, query, doc, llm, **kwargs):
         # NOTE: 如果有 index_content 且是结构化数据则取 index_content，否则才取 page_content（兼容写法）。
         # 待知识库后台对非结构化数据的处理方式的 index_content 不是默认使用LLM总结后的内容之后，
         # 可将“且是结构化数据”的逻辑去除。
@@ -635,16 +636,18 @@ class IntentRecognition(BaseModel):
             HumanMessage(content=usr_prompt),
         ]
         # TODO: 待确认：并发请求内部无法 dispatch_custom_event，所以无需调用 conditional_dispatch_custom_event
-        invoke_func = invoke_decorator(llm.invoke, llm)
+        invoke_func = invoke_decorator(agent_options, llm.invoke, llm)
         resp = invoke_func(messages)
         resp_content = resp.content
         return not resp_content.startswith("0")  # 用0来判断，减少误删
 
     @timeit(message="使用LLM并发进行query和召回文档相关性判断")
-    def llm_relevance_determiner_parallel(self, query, fusion_docs, llm, **kwargs):
+    def llm_relevance_determiner_parallel(self, agent_options, query, fusion_docs, llm, **kwargs):
         try:
             futures = [
-                intent_recognition_executor.submit(self.llm_relevance_determiner, query, doc, llm, **kwargs)
+                intent_recognition_executor.submit(
+                    self.llm_relevance_determiner, agent_options, query, doc, llm, **kwargs
+                )
                 for doc in fusion_docs
             ]
             results = [1.0 if future.result() else 0.0 for future in futures]
@@ -656,7 +659,7 @@ class IntentRecognition(BaseModel):
         return results
 
     @retry(max_retries=5, max_seconds=3600)
-    def llm_context_compressor(self, provided_chat_history, query, candidate_context, llm, **kwargs):
+    def llm_context_compressor(self, agent_options, provided_chat_history, query, candidate_context, llm, **kwargs):
         # 默认使用 specific 方式。
         compressor_type = kwargs.get("llm_context_compressor_type", "specific")
         if compressor_type == "common":
@@ -684,7 +687,7 @@ class IntentRecognition(BaseModel):
             HumanMessage(content=usr_prompt),
         ]
         # TODO: 待确认：并发请求内部无法 dispatch_custom_event，所以无需调用 conditional_dispatch_custom_event
-        invoke_func = invoke_decorator(llm.invoke, llm)
+        invoke_func = invoke_decorator(agent_options, llm.invoke, llm)
         resp = invoke_func(messages)
         resp_content = resp.content
         # 如果触发了混元的特殊回复，则不进行压缩
@@ -693,11 +696,17 @@ class IntentRecognition(BaseModel):
         return resp_content
 
     @timeit(message="使用LLM并发进行知识库内容压缩总结")
-    def llm_context_compressor_parallel(self, provided_chat_history, query, context, llm, **kwargs):
+    def llm_context_compressor_parallel(self, agent_options, provided_chat_history, query, context, llm, **kwargs):
         try:
             futures = [
                 intent_recognition_executor.submit(
-                    self.llm_context_compressor, provided_chat_history, query, candidate_context, llm, **kwargs
+                    self.llm_context_compressor,
+                    agent_options,
+                    provided_chat_history,
+                    query,
+                    candidate_context,
+                    llm,
+                    **kwargs,
                 )
                 for candidate_context in context
             ]
@@ -709,7 +718,9 @@ class IntentRecognition(BaseModel):
         return results
 
     @retry(max_retries=5, max_seconds=3600)
-    def llm_intermediate_step_compressor(self, provided_chat_history, query, intermediate_step, llm, **kwargs):
+    def llm_intermediate_step_compressor(
+        self, agent_options, provided_chat_history, query, intermediate_step, llm, **kwargs
+    ):
         # 注：如果使用 hunyuan-turbo，使用带query和会话历史的复杂压缩方式效果很差。
         # 例如用户最新提问如下：```今天又有啥大新闻？```"这样的例子，
         # 混元经常直接返回“很抱歉，我还未学习到如何回答这个问题的内容，暂时无法提供相关信息。”
@@ -745,7 +756,7 @@ class IntentRecognition(BaseModel):
             HumanMessage(content=usr_prompt),
         ]
         # TODO: 待确认：并发请求内部无法 dispatch_custom_event，所以无需调用 conditional_dispatch_custom_event
-        invoke_func = invoke_decorator(llm.invoke, llm)
+        invoke_func = invoke_decorator(agent_options, llm.invoke, llm)
         resp = invoke_func(messages)
         resp_content = resp.content
         # 如果触发了混元的特殊回复，则不进行压缩
@@ -755,11 +766,17 @@ class IntentRecognition(BaseModel):
 
     @timeit(message="使用LLM并发进行工具调用结果压缩总结")
     def llm_intermediate_step_compressor_parallel(
-        self, provided_chat_history, query, intermediate_steps, llm, **kwargs
+        self, agent_options, provided_chat_history, query, intermediate_steps, llm, **kwargs
     ):
         futures = {
             intent_recognition_executor.submit(
-                self.llm_intermediate_step_compressor, provided_chat_history, query, intermediate_step, llm, **kwargs
+                self.llm_intermediate_step_compressor,
+                agent_options,
+                provided_chat_history,
+                query,
+                intermediate_step,
+                llm,
+                **kwargs,
             ): idx
             for idx, intermediate_step in enumerate(intermediate_steps)
         }
@@ -852,6 +869,7 @@ class IntentRecognition(BaseModel):
                 if agent_options.intent_recognition_options.with_index_specific_search_translation:
                     future_translated_query = executor.submit(
                         self.query_translation,
+                        agent_options=agent_options,
                         query=(
                             query_for_search
                             if agent_options.knowledge_query_options.use_independent_query_in_translation
@@ -888,6 +906,7 @@ class IntentRecognition(BaseModel):
                 ):
                     future_extracted_keywords = executor.submit(
                         self.extract_query_keywords,
+                        agent_options=agent_options,
                         query=query_for_search,
                         llm=llm,
                         **kwargs,
@@ -1087,7 +1106,7 @@ class IntentRecognition(BaseModel):
     def query_cls_pipeline(self, chat_history, query, llm, agent_options, **kwargs):
         if agent_options.knowledge_query_options.merge_query_cls_with_resp_or_rewrite:
             if chat_history:
-                result = self.query_cls_with_resp_or_rewrite(chat_history, query, llm, **kwargs)
+                result = self.query_cls_with_resp_or_rewrite(agent_options, chat_history, query, llm, **kwargs)
                 query_cls = result["query_cls"]
             else:
                 # 如无history，目前处理成相当于开始一个新的话题
@@ -1110,7 +1129,7 @@ class IntentRecognition(BaseModel):
         else:
             if chat_history:
                 if agent_options.knowledge_query_options.with_query_cls:
-                    query_cls = self.latest_query_classification(chat_history, query, llm, **kwargs)
+                    query_cls = self.latest_query_classification(agent_options, chat_history, query, llm, **kwargs)
                 else:
                     query_cls = "continue"
             else:
@@ -1121,14 +1140,16 @@ class IntentRecognition(BaseModel):
                     "status": IntentStatus.DIRECTLY_RESPOND_BY_AGENT,
                 }
             elif query_cls == "continue":
-                independent_query = self.query_rewrite_for_independence(chat_history, query, llm, **kwargs)
+                independent_query = self.query_rewrite_for_independence(
+                    agent_options, chat_history, query, llm, **kwargs
+                )
             elif query_cls == "new":
                 independent_query = query
 
         return independent_query
 
     @retry(max_retries=5, max_seconds=3600)
-    def sum_chat_history_for_query(self, chat_history, query, llm, **kwargs):
+    def sum_chat_history_for_query(self, agent_options, chat_history, query, llm, **kwargs):
         if not chat_history:
             return None
         sys_prompt = self.__class__.intent_recognition_prompt_templates.get(
@@ -1142,7 +1163,7 @@ class IntentRecognition(BaseModel):
             HumanMessage(content=usr_prompt),
         ]
         conditional_dispatch_custom_event("custom_event", {"front_end_display": False}, **kwargs)
-        invoke_func = invoke_decorator(llm.invoke, llm)
+        invoke_func = invoke_decorator(agent_options, llm.invoke, llm)
         resp = invoke_func(messages)
         conditional_dispatch_custom_event("custom_event", {"front_end_display": True}, **kwargs)
         resp_content = resp.content
@@ -1344,7 +1365,7 @@ class IntentRecognition(BaseModel):
                     formated_prompts = chat_prompt_template._format_prompt_with_error_handling(inner_input)
 
                     # 调用LLM
-                    invoke_func = invoke_decorator(llm.invoke, llm)
+                    invoke_func = invoke_decorator(agent_options, llm.invoke, llm)
                     resp = invoke_func(formated_prompts)
 
                     # 解析响应
@@ -1487,7 +1508,7 @@ class IntentRecognition(BaseModel):
             if agent_options.knowledge_query_options.independent_query_mode == IndependentQueryMode.REWRITE:
                 res = self.query_cls_pipeline(chat_history, query, llm, agent_options, **kwargs)
             elif agent_options.knowledge_query_options.independent_query_mode == IndependentQueryMode.SUM_AND_CONCATE:
-                sum_res = self.sum_chat_history_for_query(chat_history, query, llm, **kwargs)
+                sum_res = self.sum_chat_history_for_query(agent_options, chat_history, query, llm, **kwargs)
                 if sum_res:
                     res = f"{sum_res}\n{query}"
 
