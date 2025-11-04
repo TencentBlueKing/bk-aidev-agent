@@ -174,6 +174,7 @@ class IntentRecognitionMixin(BaseModel):
                 **kwargs,
             )
             self.__class__.intent_recognition_instance.llm_intermediate_step_compressor_parallel(
+                self.agent_options,
                 provided_chat_history,
                 kwargs["query"],
                 intermediate_steps,
@@ -365,7 +366,7 @@ class IntentRecognitionMixin(BaseModel):
         has_executed_context_compressor = False
         has_executed_intermediate_step_compressor = False
         token_limit_margin = self.agent_options.knowledge_query_options.token_limit_margin
-        llm_token_limit = getattr(self, "llm_token_limit", 28000)
+        llm_token_limit = self.agent_options.knowledge_query_options.llm_token_limit
         while cur_token_len > llm_token_limit - token_limit_margin:
             # 优先级 1: 压缩召回的知识的内容
             if "context" in kwargs and kwargs["context"] and not has_executed_context_compressor:
@@ -375,6 +376,7 @@ class IntentRecognitionMixin(BaseModel):
                     **kwargs,
                 )
                 kwargs["context"] = self.__class__.intent_recognition_instance.llm_context_compressor_parallel(
+                    self.agent_options,
                     provided_chat_history,
                     kwargs["query"],
                     kwargs["context"],
@@ -389,6 +391,7 @@ class IntentRecognitionMixin(BaseModel):
                     **kwargs,
                 )
                 self.__class__.intent_recognition_instance.llm_intermediate_step_compressor_parallel(
+                    self.agent_options,
                     provided_chat_history,
                     kwargs["query"],
                     intermediate_steps,
@@ -878,11 +881,11 @@ class CommonQAStreamingMixIn:
         max_cache_length = 50
         cache = deque(maxlen=max_cache_length)
         agent_think_start_time = time.time()
+        last_event_type = None
         if isinstance(self, StructuredChatCommonQAAgent):
             # 在 StructuredChatCommonQAAgent 中用于合并 agent action 中间过程
             # 在出现 Final Answer 模式之前的所有过程都视为 agent 的 think 过程，因此初始化为 EventType.THINK.value
             # 用于判断 done 之前的最后一个 event 类型
-            last_event_type = None
             final_answer_prefix_to_filter = None
             final_answer_suffix_to_filter = None
             cur_event_type = StreamEventType.THINK.value
