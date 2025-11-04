@@ -243,8 +243,8 @@ class CommonAgentMixIn(BaseModel, ABC):
         tools.extend(extra_tools or [])
         if support_vision:
             tools.append(add_image_to_chat_context)
-        #解决agent系统提示词生效
-        role_prompt = role_prompt if role_prompt else agent_prompt,
+        # 解决agent系统提示词生效
+        role_prompt = role_prompt if role_prompt else agent_prompt
 
         agent = cls.create_agent(
             llm=llm,

@@ -126,6 +126,7 @@ BK_AIDEV_GATEWAY_NAME = env.str("AIDEV_GATEWAY_NAME", "bkaidev")
 BK_AIDEV_APIGW_ENDPOINT = env.str("BK_AIDEV_APIGW_ENDPOINT", "")
 BK_APIGW_STAGE = env.str("BK_APIGW_STAGE", "") or env.str("BKAIDEV_RESOURCE_STAGE", "prod")
 
+
 # SSM相关配置
 BK_SSM_ENDPOINT = env.str("BK_SSM_ENDPOINT", "https://bkssm.service.consul")  # noqa
 # end: 配置
