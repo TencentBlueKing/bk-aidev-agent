@@ -394,6 +394,8 @@ def make_mcp_tools(server_config: dict) -> List[StructuredTool]:
         get_access_token_by_user = None
 
     for _server_config in server_config.values():
+        if _server_config.get("headers", {}).get("X-Bkapi-Authorization", None):
+            continue
         if _server_config.pop("credential_type", "") == CredentialType.BLUEAPPS.value:
             auth_info = {
                 "bk_app_code": settings.APP_CODE,
