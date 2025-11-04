@@ -16,7 +16,6 @@ We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
 
-import os
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from typing import (
@@ -244,8 +243,8 @@ class CommonAgentMixIn(BaseModel, ABC):
         tools.extend(extra_tools or [])
         if support_vision:
             tools.append(add_image_to_chat_context)
-        #解决agent系统提示词生效
-        role_prompt = role_prompt if role_prompt else agent_prompt,
+        # 解决agent系统提示词生效
+        role_prompt = role_prompt if role_prompt else agent_prompt
 
         agent = cls.create_agent(
             llm=llm,
@@ -259,7 +258,8 @@ class CommonAgentMixIn(BaseModel, ABC):
         )
         agent.file_store = file_store
         agent.knowledge_llm = knowledge_llm
-        agent.llm_token_limit = llm_token_limit or int(os.getenv("LLM_TOKEN_LIMIT", 28000))
+        if llm_token_limit:
+            agent.agent_options.knowledge_query_options.llm_token_limit = llm_token_limit
         if agent_options:
             agent.agent_options = agent_options
         if kwargs.get("intent_recognition_kwargs"):

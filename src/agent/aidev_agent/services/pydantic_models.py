@@ -90,6 +90,7 @@ class IntentRecognition(BaseModel):
     tool_output_compress_thrd: int = Field(default=5000, description=("工具输出压缩阈值"))
     agent_type: str | None = Field(default=None, description=("agent类"))
     max_tool_output_len: int = Field(default=500, description=("工具调用结果展示的最大长度"))
+    global_llm_model_name: str | None = Field(default="hunyuan", description=("非深度思考LLM模型"))
 
 
 class KnowledgebaseSettings(BaseModel):
@@ -196,6 +197,7 @@ class KnowledgebaseSettings(BaseModel):
         description=("工具类资源 base ID 列表。NOTE: 目前工具类资源统一放 base ID 中不放 item ID 中"),
     )
     token_limit_margin: int = Field(default=100, description=("上下文最大Token限制边界"))
+    llm_token_limit: int = Field(default=28000, description=("LLM最大Token支持数"))
 
 
 class AgentOptions(BaseModel):
