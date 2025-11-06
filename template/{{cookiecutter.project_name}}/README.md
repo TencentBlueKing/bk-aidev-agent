@@ -313,7 +313,7 @@ git push -u origin main
 
 4. 关联智能体模板：适于从AIDev或开发者中心创建的智能体，代码需要先提交到 git 仓库
 ```bash
-cruft link https://github.com/TencentBlueKing/bk-aidev-agent.git --checkout develop --directory template --config-file=./.cookiecutter.json
+cruft link https://github.com/TencentBlueKing/bk-aidev-agent.git --checkout develop --directory template --no-input
 ```
 
 5. 验证模板是否已关联
