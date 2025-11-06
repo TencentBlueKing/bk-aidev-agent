@@ -307,7 +307,7 @@ cd {{cookiecutter.project_name}}
 git init
 git add .
 git commit -m "init repo"
-git remote add origin {{ git_url }}
+git remote add origin ${git_url}
 git push -u origin main
 ```
 
