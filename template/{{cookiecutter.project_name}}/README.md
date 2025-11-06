@@ -301,19 +301,19 @@ pip install cruft
 cruft create https://github.com/TencentBlueKing/bk-aidev-agent.git --checkout develop --directory template
 ```
 
-3. 添加远程仓库地址并完成推送：适用于代码未通过 `git` 管理的情况
+3. 关联智能体模板：适于从AIDev或开发者中心创建的智能体，代码需要先提交到 git 仓库
+```bash
+cruft link https://github.com/TencentBlueKing/bk-aidev-agent.git --checkout develop --directory template --no-input
+```
+
+4. 添加远程仓库地址并完成推送：适用于代码未通过 `git` 管理的情况
 ```bash
 cd {{cookiecutter.project_name}}
 git init
 git add .
 git commit -m "init repo"
-git remote add origin ${git_url}
+git remote add origin your_git_url
 git push -u origin main
-```
-
-4. 关联智能体模板：适于从AIDev或开发者中心创建的智能体，代码需要先提交到 git 仓库
-```bash
-cruft link https://github.com/TencentBlueKing/bk-aidev-agent.git --checkout develop --directory template --no-input
 ```
 
 5. 验证模板是否已关联
