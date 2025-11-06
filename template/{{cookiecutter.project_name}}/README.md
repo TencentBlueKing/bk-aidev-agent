@@ -6,6 +6,9 @@
 
 1. 初始化 `python` 虚拟环境，可通过 `uv`（推荐，版本>=0.7.14） 或 `pip` 创建虚拟环境并管理依赖
 ```bash
+# 安装 uv, 已安装可以跳过
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
 # 基于 UNIX 系统可以直接使用`make`命令进行初始化
 make
 
@@ -24,6 +27,7 @@ pip install -r requirements.txt
 cp ./support-files/env.template .env
 ```
  - `.env` 主要涉及蓝鲸开发者中心内置环境变量，可在开发者中心查看对应的内置环境变量
+ - `AIDEV_SPACE_ID` 是该应用在平台的空间ID,可以通过【bkaidev主站 > 选择空间 > 智能体 > 选中当前智能体 > 去配置】，当前页面的 url 以 x-space-id= 后面接的字符串即为此值
  - `BKPAAS_APP_SECRET` 是应用的密钥信息，可通过【蓝鲸开发者中心 > 应用配置 > 密钥信息】获取
  - 其它环境变量通过平台初始化时会自动生成，如有需要，可以通过【蓝鲸开发者中心 > 模块配置 > 环境变量】获取
 
@@ -37,6 +41,7 @@ cp ./support-files/env.template .env
 
 ```bash
 source .env
+source .venv/bin/activate
 python bin/manage.py migrate
 python bin/manage.py createcachetable
 
