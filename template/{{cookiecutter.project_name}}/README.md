@@ -296,8 +296,7 @@ curl -X POST{{ cookiecutter.apigw_manager_url_tmpl.format(api_name=cookiecutter.
 pip install cruft
 ```
 
-2. 通过`cruft`脚本架生成智能体插件，此步骤仅适用于直接创建智能体插件的场景，如果通过 AIDev 平台或开发者中心创建可以跳过此步骤
-
+2. 通过`cruft`创建智能体插件：适用于全新的智能体开发
 ```bash
 cruft create https://github.com/TencentBlueKing/bk-aidev-agent.git --checkout develop --directory template
 ```
@@ -312,7 +311,12 @@ git remote add origin {{ git_url }}
 git push -u origin main
 ```
 
-4. 验证模板是否已关联
+4. 关联智能体模板：适于从AIDev或开发者中心创建的智能体，代码需要先提交到 git 仓库
+```bash
+cruft link https://github.com/TencentBlueKing/bk-aidev-agent.git --checkout develop --directory template --config-file=./.cookiecutter.json
+```
+
+5. 验证模板是否已关联
 ```bash
 cruft check --checkout develop 
 ```
