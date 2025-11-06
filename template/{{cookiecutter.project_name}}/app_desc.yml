@@ -45,6 +45,9 @@ modules:
           - name: BK_APIGW_STAGE
             value: "{{ cookiecutter.bk_apigw_stage }}"
             description: bk apigw stage
+          - name: BK_APIGW_DEFAULT_TIMEOUT
+            value: "{{ cookiecutter.bk_apigw_default_timeout }}"
+            description: default apigw timeout
       processes:
         - name: web
           procCommand: gunicorn bk_plugin_runtime.wsgi --timeout 120 -k gthread -w 2 --max-requests=1000 --threads 64

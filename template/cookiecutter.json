@@ -16,6 +16,7 @@
   "apigw_manager_url_tmpl": "http://bkapi.bkpaas.com/api/{api_name}",
   "bk_login_url": "http://bkpaas.com/login/",
   "oauth_api_url": "http://bkssm.bkpaas.com",
+  "bk_apigw_default_timeout": 300,
   "_copy_without_render": [
     ".ci",
     "*dist",
