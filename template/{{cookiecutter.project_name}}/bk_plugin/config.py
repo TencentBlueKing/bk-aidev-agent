@@ -1,17 +1,25 @@
-# 是否从AIDev平台同步最新配置
-# 1.True:获取此智能体最新配置，覆盖配置
-# 2.False:仅使用源码配置
-SYNC_CONFIG_FROM_AIDEV = False
+# -*- coding: utf-8 -*-
 
 """
-如果 SYNC_CONFIG_FROM_AIDEV 非 True,则可以通过下面的配置覆盖现有的配置
-AGENT_CONFIG = {
-    "chat_model": "deepseek-r1",  # 示例：覆盖默认的聊天模型
-    "non_thinking_llm": "deepseek-v3",  # 示例：覆盖非思考模型
-    "knowledgebase_ids": [1, 2, 3],  # 示例：知识库ID列表
-    "knowledge_ids": [101, 102, 103],  # 示例：知识ID列表
-    "tool_codes": ["tool1", "tool2"],  # 示例：工具代码列表
-    "role_prompt": "You are a helpful assistant.",  # 示例：自定义角色提示
-}
+智能体将自动从平台获取配置做为默认配置，同时，如果在 `AGENT_CONFIG` 中定义的配置，将覆盖平台获取的配置。
 """
-AGENT_CONFIG = {}
+
+AGENT_CONFIG = {
+    # 使用的 LLM（联系接口人获取可使用的 LLM 模型名称列表）。
+    "chat_model": "",
+    # 非深度思考模型
+    "non_thinking_llm": "",
+    # 在 AIDev 站点上传知识，然后将对应的知识库 ID 或者知识 ID 填在此处，可以在 agent 使用的时候检索对应范围的知识。
+    # 通常来讲，选择的知识越多，检索速度也会越慢，检索效果也会越差。一般建议只选择该 agent 需要使用的知识，不要选择无关知识。
+    "knowledgebase_ids": [],
+    "knowledge_ids": [],
+    # 在 AIDev 站点注册工具，然后将对应的工具 tool_code 填在此处，可以在 agent 使用的时候调用相关工具。
+    "tool_codes": [],
+    # 在 CommonQAAgent 内置 prompt 的基础上，用户自定义的增量 prompt。
+    # 目前内部实现方式是将用户自定义的增量 prompt 直接拼接到 CommonQAAgent 内置 prompt 上。
+    # 因此，该 prompt 更适合只需简单的、与 CommonQAAgent 内置 prompt 没有冲突的自定义场景，
+    # 例如要求 agent 根据用户最新提问使用的语言（中/英文）进行自适应的答复等场景。
+    # 对于复杂的自定义 prompt 需求，请参考 README_AGENT_PLUGIN.md [情况二] 的内容，
+    # 直接重写完整的 agent prompt 并注册到 CommonQAAgent 中进行替换。
+    "role_prompt": "",
+}

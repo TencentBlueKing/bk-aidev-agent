@@ -1,4 +1,4 @@
-# 智能体工具扩展开发指南
+# 智能体定制开发指南
 
 ## 概述
 
@@ -25,55 +25,12 @@ bk_plugin/
 
 ## 一、智能体基础配置
 
-### 1.1 配置文件说明
+### 1.1 配置文件
 
-配置文件位于 `bk_plugin/config.py`，用于设置智能体的基础参数。
+配置文件位于 `bk_plugin/config.py`，用于设置智能体的基础参数。可参考文件提示进行修改
 
-**配置文件内容：**
-```python
-# 是否从AIDev平台同步最新配置
-# True: 从平台获取智能体最新配置（需要智能体已在平台创建）
-# False: 仅使用源码配置
-SYNC_CONFIG_FROM_AIDEV = False
 
-# 智能体配置项（当SYNC_CONFIG_FROM_AIDEV=False时生效）
-AGENT_CONFIG = {
-    "chat_model": "hunyuan-turbo",          # 主要聊天模型
-    "non_thinking_llm": "",                  # 非深度思考模型（可选）
-    "knowledgebase_ids": [],                 # 知识库ID列表（在AIDev平台创建）
-    "knowledge_ids": [],                     # 知识文件ID列表
-    "tool_codes": [],                        # 【重要】平台注册的工具代码列表
-    "role_prompt": "你是一个专业的AI助手",  # 角色提示词（增量prompt）
-}
-```
-
-### 1.2 配置步骤
-
-**步骤1：选择配置模式**
-
-- **本地配置模式**（推荐开发阶段）：设置 `SYNC_CONFIG_FROM_AIDEV = False`，配置写在 `AGENT_CONFIG` 中
-- **平台同步模式**（推荐生产环境）：设置 `SYNC_CONFIG_FROM_AIDEV = True`，从AIDev平台自动同步配置
-
-**步骤2：修改配置参数**
-
-编辑 `bk_plugin/config.py` 文件：
-
-```python
-# 示例：配置一个SRE专家智能体
-AGENT_CONFIG = {
-    "chat_model": "deepseek-r1",               # 使用深度思考模型
-    "tool_codes": ["weather-tool"],            # 使用平台已经注册的工具
-}
-```
-
-**步骤3：重启服务使配置生效**
-
-```bash
-# 本地开发环境
-python bin/manage.py runserver local.xxx.com:8000
-```
-
-### 1.3 配置项详解
+### 1.2 配置项详解
 
 | 配置项 | 说明 | 示例 |
 |--------|------|------|
@@ -82,21 +39,12 @@ python bin/manage.py runserver local.xxx.com:8000
 | `tool_codes` | 平台注册工具的代码列表 | `["weather_query", "db_query"]` |
 | `role_prompt` | 角色提示词，追加到系统默认prompt之后 | `"你是Python专家"` |
 
-### 1.4 配置生效原理
+### 1.3 配置生效路径
 
 配置通过以下链路生效：
-
-```
-bk_plugin/config.py (定义配置)
-    ↓
-bk_plugin/versions/assistant_components.py (加载配置到PluginConfig)
-    ↓
-bk_plugin/extend/config_manager.py (应用配置到AgentConfig)
-    ↓
-智能体运行时使用配置
-```
-
-修改 `bk_plugin/config.py`，对应变量会自动处理配置加载。
+1. 智能体在运行时将读取 `settings.DEFAULT_CONFIG_MANAGER` 获取配置管理实例
+2. 在插件默认使用`bk_plugin.extend.config_manager.CustomAgentConfigManager`进行配置管理
+3. `CustomAgentConfigManager` 将读取 `bk_plugin.config.AGENT_CONFIG` 覆盖平台配置
 
 ## 二、自定义工具扩展
 
@@ -317,7 +265,7 @@ class CommonQAAgentExtend(CommonQAAgent):
 }
 ```
 
-> **注意**：使用MCP服务需要先申请对应的访问权限和API密钥，参考 [蓝鲸平台MCP文档]({{cookiecutter.mcp_market_url}})。
+> **注意**：使用MCP服务需要先申请对应的访问权限和API密钥，详情可通过以下位置查看：蓝鲸开发者中心 > API 网关 > MCP市场。
 
 ## 四、完整开发流程
 
@@ -326,15 +274,13 @@ class CommonQAAgentExtend(CommonQAAgent):
 ```
 1. 修改 bk_plugin/config.py 配置基础参数
    ↓
-2. 修改 bk_plugin/versions/assistant_components.py：PluginConfig 相关配置（可选）
+2. 在 bk_plugin/extend/agent.py 中添加自定义工具
    ↓
-3. 在 bk_plugin/extend/agent.py 中添加自定义工具
+3. 本地启动服务测试
    ↓
-4. 本地启动服务测试
+4. 验证工具调用是否正常
    ↓
-5. 验证工具调用是否正常
-   ↓
-6. 部署到生产环境
+5. 部署到生产环境
 ```
 
 ### 4.2 完整示例：构建SRE助手
@@ -492,7 +438,6 @@ def safe_api_call(param: str) -> str:
 
 - [LangChain Tool Documentation](https://python.langchain.com/docs/modules/agents/tools/)
 - [MCP Protocol Specification](https://modelcontextprotocol.io/)
-- [蓝鲸平台MCP市场]({{cookiecutter.mcp_market_url}})
 ---
 
 如有问题，请联系技术支持或参考项目README文档。
