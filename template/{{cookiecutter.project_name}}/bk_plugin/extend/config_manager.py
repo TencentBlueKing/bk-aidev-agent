@@ -1,6 +1,6 @@
 from aidev_agent.services.config_manager import AgentConfig, AgentConfigManager
 
-from bk_plugin.versions.assistant_components import config
+from bk_plugin.config import AGENT_CONFIG
 
 
 class CustomAgentConfigManager(AgentConfigManager):
@@ -9,10 +9,10 @@ class CustomAgentConfigManager(AgentConfigManager):
     @classmethod
     def get_config(cls, *args, **kwargs) -> AgentConfig:
         agent_config: AgentConfig = AgentConfigManager.get_config(*args, **kwargs)
-        agent_config.llm_model_name = config.chat_model
-        agent_config.non_thinking_llm_model_name = config.non_thinking_llm
-        agent_config.knowledgebase_ids = config.knowledgebase_ids
-        agent_config.knowledge_ids = config.knowledge_ids
-        agent_config.tool_codes = config.tool_codes
-        agent_config.agent_prompt = config.role_prompt
+
+        # 使用本地配置覆盖
+        for key, config in AGENT_CONFIG.items():
+            if hasattr(agent_config, key) and AGENT_CONFIG.get(key):
+                setattr(agent_config, key, config)
+
         return agent_config

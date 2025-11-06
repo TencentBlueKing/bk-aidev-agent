@@ -1,0 +1,19 @@
+[project]
+name = "ai-plugin"
+version = "1.0.0"
+description = ""
+readme = "readme.md"
+authors = [{ name = "blueking" }]
+requires-python = "~=3.11.10"
+dependencies = [
+    "aidev-ai-blueking==1.2.8",
+    "aidev-bkplugin==1.0.2",
+    "aidev-wxbot==1.0.2",
+    "bk-plugin-framework>=2.3.2,<2.4.0",
+    "celery==5.4.0",
+    "django-celery-beat==2.7.0",
+    "django-celery-results==2.5.1",
+    "gunicorn==23.0.0",
+    "opentelemetry-instrumentation-langchain==0.38.10",
+    "tiktoken==0.11.0",
+]
