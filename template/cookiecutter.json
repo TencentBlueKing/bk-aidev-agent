@@ -1,5 +1,4 @@
 {
-  "template_version": "1.0.0",
   "project_name": "ai-plugin",
   "plugin_desc": "the description of this plugin",
   "init_admin": "admin",
