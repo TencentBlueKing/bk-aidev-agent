@@ -1,6 +1,6 @@
 {
   "template": "https://github.com/TencentBlueKing/bk-aidev-agent.git",
-  "commit": "dd36a8360752051e87ecb6472b983d5b0f72d390",
+  "commit": "f441f21d01fbf29ecfac46ed5a31aa0be26f150e",
   "checkout": null,
   "context": {
     "cookiecutter": {
@@ -21,7 +21,7 @@
       "_copy_without_render": {{cookiecutter._copy_without_render|tojson}},
       "extra_fields": {{cookiecutter.extra_fields|tojson}},
       "_template": "https://github.com/TencentBlueKing/bk-aidev-agent.git",
-      "_commit": "dd36a8360752051e87ecb6472b983d5b0f72d390"
+      "_commit": "f441f21d01fbf29ecfac46ed5a31aa0be26f150e"
     }
   },
   "directory": "template"
