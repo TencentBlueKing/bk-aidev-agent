@@ -65,8 +65,11 @@ class CommonAgent(Plugin):
         role_contents = get_agent_role_info()
         if role_contents:
             chat_history = role_contents + chat_history
-        if inputs.input and not (inputs.chat_history or inputs.command):
-            chat_history.append(ChatPrompt(role="user", content=inputs.input))
+        if inputs.input:
+            if inputs.chat_history:
+                chat_history.append(ChatPrompt(role="user", content=inputs.input))
+            else:
+                chat_history = [ChatPrompt(role="user", content=inputs.input)]
         chat_completion_agent = build_chat_completion_agent_by_chat_history(chat_history)
         result = chat_completion_agent.execute(ExecuteKwargs(stream=False))
         if not isinstance(result, str):
