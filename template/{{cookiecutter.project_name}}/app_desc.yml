@@ -48,26 +48,26 @@ modules:
           - name: BK_APIGW_DEFAULT_TIMEOUT
             value: "{{ cookiecutter.bk_apigw_default_timeout }}"
             description: default apigw timeout
-          { % if cookiecutter.model_management_ns_host % }
+          {% if cookiecutter.model_management_ns_host %}
           - name: MODEL_MANAGEMENT_NS_HOST
             value: "{{cookiecutter.model_management_ns_host}}"
             description: model management host
-          { %- endif -% }
-          { % if cookiecutter.model_management_ns_port % }
+          {%- endif -%}
+          {% if cookiecutter.model_management_ns_port %}
           - name: MODEL_MANAGEMENT_NS_PORT
             value: "{{cookiecutter.model_management_ns_port}}"
             description: model management port
-          { %- endif -% }
-          { % if cookiecutter.similarity_model_service_name % }
+          {%- endif -%}
+          {% if cookiecutter.similarity_model_service_name %}
           - name: SIMILARITY_MODEL_SERVICE_NAME
             value: "{{cookiecutter.similarity_model_service_name}}"
             description: similarity model service name
-          { %- endif -% }
-          { % if cookiecutter.llm_service_prefix % }
+          {%- endif -%}
+          {% if cookiecutter.llm_service_prefix %}
           - name: LLM_SERVICE_PREFIX
             value: "{{ cookiecutter.llm_service_prefix }}"
             description: LLM service prefix
-          { %- endif -% }
+          {%- endif -%}
       processes:
         - name: web
           procCommand: gunicorn bk_plugin_runtime.wsgi --timeout 120 -k gthread -w 2 --max-requests=1000 --threads 64
