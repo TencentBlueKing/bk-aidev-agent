@@ -197,6 +197,7 @@ class AgentInstanceFactory:
             "agent_code": final_agent_code,
             "session_context_data": session_context_data,
             "switch_agent": switch_agent,
+            "config_manager": self.config_manager,
         }
 
     def _build_direct(self, session_context_data: List[dict]) -> dict:
@@ -209,6 +210,7 @@ class AgentInstanceFactory:
             "agent_code": self.agent_code,
             "session_context_data": session_context_data,
             "switch_agent": False,
+            "config_manager": self.config_manager,
         }
 
     # ============== 通用构建方法 ==============
@@ -365,12 +367,13 @@ class AgentInstanceFactory:
         agent_code: str,
         session_context_data: List[dict],
         switch_agent: bool,
+        config_manager: type[AgentConfigManager] | None = None,
     ):
         """构建ChatCompletionAgent参数"""
         logger.info(f"Building ChatCompletionAgent args with agent_code->[{agent_code}]")
 
         if switch_agent:
-            factory.config_manager = AgentConfigManager
+            factory.config_manager = config_manager
 
         # 处理智能体切换
         factory.handle_agent_switch(session_context_data, agent_code, switch_agent)
@@ -385,12 +388,18 @@ class AgentInstanceFactory:
         }
 
     @staticmethod
-    def build_task_agent_args(factory, agent_code, session_context_data, switch_agent):
+    def build_task_agent_args(
+        factory,
+        agent_code,
+        session_context_data,
+        switch_agent,
+        config_manager: type[AgentConfigManager] | None = None,
+    ):
         """构建TaskAgent参数（示例）"""
         # 处理智能体切换
         factory.handle_agent_switch(session_context_data, agent_code, switch_agent)
         if switch_agent:
-            factory.config_manager = AgentConfigManager
+            factory.config_manager = config_manager
 
         # TaskAgent可能需要不同的参数组合
         return {
