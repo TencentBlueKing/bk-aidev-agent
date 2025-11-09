@@ -1,5 +1,3 @@
-from django.conf import settings
-
 from aidev_wxbot.api import BkApi
 
 
@@ -14,21 +12,3 @@ class BkAiDevApi:
 
     def convert_to_rtx(self, open_id):
         return self.api.call_action("resource/v1/qyweixin/convert_to_userid/", "POST", json={"open_id": open_id})
-
-
-class AgentBackend:
-    def __init__(self):
-        self.api = BkApi(settings.BKPAAS_BK_PLUGIN_APIGW_NAME)
-
-    def invoke(self, content):
-        data = {
-            "inputs": {
-                "command": "chat",
-                "input": content,
-                "stream": False,
-                "chat_history": [{"role": "user", "content": content}],
-                "context": [],
-            },
-            "context": {"executor": "user"},
-        }
-        return self.api.call_action("invoke/1.0.0assistant", "POST", json=data)

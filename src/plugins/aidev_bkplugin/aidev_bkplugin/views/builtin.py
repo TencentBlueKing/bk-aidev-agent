@@ -1,4 +1,5 @@
-# PLEASE DO NOT MODIFY THIS FILE!
+# -*- coding: utf-8 -*-
+
 import copy
 import json
 from logging import getLogger

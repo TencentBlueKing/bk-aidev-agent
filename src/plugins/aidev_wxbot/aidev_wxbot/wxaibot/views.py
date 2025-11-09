@@ -122,11 +122,10 @@ class WxAiBotViewSet(ViewSet):
                     "X-Bkapi-Authorization": json.dumps(
                         {"bk_app_code": settings.BKPAAS_APP_CODE, "bk_app_secret": settings.BKPAAS_APP_SECRET}
                     ),
+                    "X-BKAIDEV-USER": username,
                 },
                 json={
-                    "inputs": {"chat_history": [{"role": "user", "content": content}]},
-                    "chat_history": [{"role": "user", "content": content}],
-                    "context": {"executor": username},
+                    "input": content,
                     "execute_kwargs": {"stream": True},
                 },
                 stream=True,

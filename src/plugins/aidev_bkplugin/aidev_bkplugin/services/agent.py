@@ -13,7 +13,10 @@ def build_chat_completion_agent_by_session_code(session_code: str) -> ChatComple
     agent_cls = agent_factory.get(settings.DEFAULT_NAME)
     config_manager = agent_config_factory.get(settings.DEFAULT_NAME)
     return AgentInstanceFactory.build_agent(
-        build_type=AgentBuildType.SESSION, session_code=session_code, agent_cls=agent_cls, config_manager=config_manager
+        build_type=AgentBuildType.SESSION,
+        session_code=session_code,
+        agent_cls=agent_cls,
+        config_manager_class=config_manager,
     )
 
 
@@ -27,7 +30,7 @@ def build_chat_completion_agent_by_chat_history(chat_history: list[ChatPrompt]) 
         build_type=AgentBuildType.DIRECT,
         session_context_data=[each.model_dump() for each in chat_history],
         agent_cls=agent_cls,
-        config_manager=config_manager,
+        config_manager_class=config_manager,
     )
     return agent_instance
 
