@@ -220,6 +220,9 @@ class AgentInstanceFactory:
         """构建聊天模型"""
         config = self.config_manager_class.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
 
+        if not config.llm_model_name:
+            raise ValueError("请配置并发布智能体待使用的LLM模型")
+
         # Prepare kwargs for ChatModel.get_setup_instance
         kwargs = {
             "model": config.llm_model_name,
