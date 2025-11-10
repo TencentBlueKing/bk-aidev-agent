@@ -95,6 +95,8 @@ class WxAiBotViewSet(ViewSet):
         # 生成流式响应ID
         stream_id = current_context.msg_id + "_" + str(int(time.time()))
 
+        logger.info(f"reply_text: current_context=>{current_context}")
+
         # 启动后台线程处理实际的AI请求
         thread = threading.Thread(
             target=self._process_ai_request_async,
@@ -104,7 +106,7 @@ class WxAiBotViewSet(ViewSet):
         thread.start()
 
         # 立即返回"正在思考中...."的消息
-        return stream_msg("", False, stream_id)
+        return stream_msg("正在思考中...", False, stream_id)
 
     def _process_ai_request_async(self, content: str, stream_id: str, agent_apigw_name: str, username: str):
         """异步处理AI请求的后台方法"""

@@ -9,10 +9,10 @@
 from django.urls import include, re_path
 from rest_framework.routers import DefaultRouter
 
-from aidev_bkplugin.views.builtin import ChatCompletionViewSet
+from aidev_bkplugin.openapi.views import OpenapiChatCompletionViewSet
 
 _router = DefaultRouter()
-_router.register("chat_completion", ChatCompletionViewSet, "chat_completion")
+_router.register("chat_completion", OpenapiChatCompletionViewSet, "chat_completion")
 
 
 urlpatterns = [

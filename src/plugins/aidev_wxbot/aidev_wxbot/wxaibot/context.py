@@ -144,8 +144,9 @@ class ContextGenerator:
         logger.info(f"企微传递的参数是 {json.dumps(self.payload, ensure_ascii=False)}")
         sender_code = self.payload.get("from", {}).get("userid")
         try:
-            sender_id = BkAiDevApi().convert_to_rtx(sender_code)["user_id"]
-        except Exception:
+            sender_id = BkAiDevApi().convert_to_rtx(sender_code)["userid"]
+        except Exception as e:
+            logger.error(f"convert_to_rtx 出错: {e}")
             sender_id = sender_code
         from_type = self.payload.get("chattype")
         chat_id = self.payload.get("chatid")
