@@ -57,6 +57,3 @@ section-order = [
   "local-folder",
 ]
 relative-imports-order = "closest-to-furthest"
-
-[tool.ruff.per-file-ignores]
-"template/**/*.py" = ["F821"]  # 只忽略 template 目录下所有 Python 文件中的 F821 错误

@@ -4,18 +4,18 @@
   "init_admin": "admin",
   "init_apigw_maintainer": "admin",
   "app_code": "ai-plugin",
-  "app_apigw_name": "bp-ai-plugin",
   "extra_fields": {
     "space_id": ""
   },
   "aidev_gateway_name": "bk-aidev",
   "bk_apigw_stage": "prod",
-  "bk_paas_domain": "bkpaas.com",
-  "run_ver": "open",
-  "apigw_manager_url_tmpl": "http://bkapi.bkpaas.com/api/{api_name}",
-  "bk_login_url": "http://bkpaas.com/login/",
-  "oauth_api_url": "http://bkssm.bkpaas.com",
   "bk_apigw_default_timeout": 300,
+  "bk_api_url_tmpl": "http://bkapi.bkpaas.com/api/{api_name}",
+  "bkpaas_apigw_oauth_api_url": "http://bkssm.bkpaas.com",
+  "bkpaas_bk_domain": "bkpaas.com",
+  "bkpaas_engine_region": "open",
+  "bkpaas_login_url": "http://bkpaas.com/login/",
+  "bkpaas_url": "http://bkpaas.bkpaas.com",
   "model_management_ns_host": "",
   "model_management_ns_port": "",
   "similarity_model_service_name": "",
@@ -23,6 +23,7 @@
   "_copy_without_render": [
     ".ci",
     "*dist",
-    "*tpls"
+    "*tpls",
+    ".venv"
   ]
 }

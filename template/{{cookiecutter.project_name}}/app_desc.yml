@@ -15,9 +15,6 @@ modules:
           - name: DJANGO_SETTINGS_MODULE
             value: bk_plugin.patch.plugin
             description: django settings module
-          - name: BK_APIGW_MANAGER_URL_TMPL
-            value: {{cookiecutter.apigw_manager_url_tmpl}}
-            description: apigw manager url format
           - name: BK_APIGW_MANAGER_MAINTAINERS
             value: {{cookiecutter.init_apigw_maintainer}}
             description: plugin apigw managers
@@ -67,7 +64,7 @@ modules:
           - name: LLM_SERVICE_PREFIX
             value: "{{ cookiecutter.llm_service_prefix }}"
             description: LLM service prefix
-          {%- endif -%}
+          {% endif %}
       processes:
         - name: web
           procCommand: gunicorn bk_plugin_runtime.wsgi --timeout 120 -k gthread -w 2 --max-requests=1000 --threads 64

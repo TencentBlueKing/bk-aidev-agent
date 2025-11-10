@@ -8,4 +8,4 @@
 
 from django.urls import include, path
 
-urlpatterns = (path("agent/", include("aidev_bkplugin.urls")),)
+urlpatterns = (path("", include("aidev_bkplugin.openapi.urls")),)

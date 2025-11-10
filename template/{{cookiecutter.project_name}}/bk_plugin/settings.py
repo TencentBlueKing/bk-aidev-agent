@@ -51,8 +51,14 @@ load_settings("aidev_wxbot.settings")  # 企微机器人配置
 # 插件配置
 DEFAULT_AGENT = os.environ.get("AIDEV_DEFAULT_AGENT", "bk_plugin.extend.agent.CommonQAAgentExtend")
 DEFAULT_CONFIG_MANAGER = os.environ.get(
-    "AIDEV_DEFAULT_CONFIG_MANAGER", "bk_plugin.extend.config_manager.CustomAgentConfigManager"
+    "AIDEV_DEFAULT_CONFIG_MANAGER",
+    "bk_plugin.extend.config_manager.CustomAgentConfigManager",
 )
+
+REST_FRAMEWORK = {
+    "DATETIME_FORMAT": "%Y-%m-%d %H:%M:%S",
+    "EXCEPTION_HANDLER": "aidev_bkplugin.packages.drf.exception.custom_exception_handler",
+}
 
 
 # 自定义配置

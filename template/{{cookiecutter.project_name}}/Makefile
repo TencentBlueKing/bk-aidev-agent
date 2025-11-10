@@ -1,4 +1,5 @@
-# 导入子目录中的 Makefile 文件
+ROOT_DIR?=$(shell git rev-parse --show-toplevel 2>/dev/null || echo ".")
+pytest = uv run --no-sync pytest --ds settings -c ${ROOT_DIR}/pyproject.toml
 
 .PHONY: ALL
 ALL: init
@@ -14,9 +15,13 @@ requirements: requirements.txt
 requirements.txt: pyproject.toml
 	uv export --no-hashes --no-annotate --no-dev --no-editable --no-header --format requirements-txt | awk 'NR>1' >  requirements.txt
 
-.PHONY: init-project
+.PHONY: init
 init: uv-install
 	@echo "Project initialization complete."
+
+.PHONY: init-pre-commit
+init-pre-commit: .git/hooks/pre-commit .git/hooks/pre-push
+	@echo "Project link initialization complete."
 
 .PHONY: uv-install
 uv-install:
@@ -32,3 +37,14 @@ clean:
 	rm -rf ./dist
 	rm -rf .venv
 	uv clean
+
+.git/hooks/pre-commit: ${ROOT_DIR}/.pre-commit-config.yaml
+	uv run pre-commit install -t pre-commit
+	@echo "Pre-commit hook installed."
+
+.git/hooks/pre-push: ${ROOT_DIR}/.pre-commit-config.yaml
+	uv run pre-commit install -t pre-push
+
+.PHONY: lint
+lint:
+	uv run pre-commit run -a --hook-stage commit

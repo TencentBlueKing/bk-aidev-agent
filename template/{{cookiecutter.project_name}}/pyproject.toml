@@ -6,9 +6,10 @@ readme = "readme.md"
 authors = [{ name = "blueking" }]
 requires-python = "~=3.11.10"
 dependencies = [
+    "aidev-agent>=1.0.4,<1.1",
     "aidev-ai-blueking==1.2.8",
-    "aidev-bkplugin==1.0.2",
-    "aidev-wxbot==1.0.2",
+    "aidev-bkplugin==1.0.4",
+    "aidev-wxbot==1.0.3",
     "bk-plugin-framework>=2.3.2,<2.4.0",
     "celery==5.4.0",
     "django-celery-beat==2.7.0",
@@ -17,3 +18,52 @@ dependencies = [
     "opentelemetry-instrumentation-langchain==0.38.10",
     "tiktoken==0.11.0",
 ]
+
+[tool.pdm.build]
+includes = ["aidev"]
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+
+[dependency-groups]
+dev = [
+    "ipdb<0.14.0,>=0.13.13",
+    "pre-commit==4.0.1",
+]
+
+[tool.ruff]
+exclude = [
+    "*/config/",
+    "*/migrations/",
+]
+force-exclude = true
+line-length = 120
+indent-width = 4
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "PIE",
+    "PERF"
+]
+ignore = ["PERF401", "E501", "E402"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.ruff.lint.isort]
+# 总是显式制定 import section 的顺序
+section-order = [
+  "future",
+  "standard-library",
+  "third-party",
+  "first-party",
+  "local-folder",
+]
+relative-imports-order = "closest-to-furthest"

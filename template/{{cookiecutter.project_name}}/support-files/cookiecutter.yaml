@@ -4,14 +4,13 @@ default_context:
   init_admin: "{{cookiecutter.init_admin}}"
   init_apigw_maintainer: "{{cookiecutter.init_apigw_maintainer}}"
   app_code: "{{cookiecutter.app_code}}"
-  app_apigw_name: "{{cookiecutter.app_apigw_name}}"
   extra_fields: {{cookiecutter.extra_fields|tojson}}
   aidev_gateway_name: "{{cookiecutter.aidev_gateway_name}}"
   bk_apigw_stage: "{{cookiecutter.bk_apigw_stage}}"
-  bk_paas_domain: "{{cookiecutter.bk_paas_domain}}"
-  run_ver: "{{cookiecutter.run_ver}}"
-  apigw_manager_url_tmpl: "{{cookiecutter.apigw_manager_url_tmpl}}"
-  bk_login_url: "{{cookiecutter.bk_login_url}}"
-  oauth_api_url: "{{cookiecutter.oauth_api_url}}"
-  bk_apigw_default_timeout: {{cookiecutter.bk_apigw_default_timeout}}
-  _copy_without_render: {{cookiecutter._copy_without_render|tojson}}
+  bk_apigw_default_timeout: "{{cookiecutter.bk_apigw_default_timeout}}"
+  bk_api_url_tmpl: "{{cookiecutter.bk_api_url_tmpl}}"
+  bkpaas_apigw_oauth_api_url: "{{cookiecutter.bkpaas_apigw_oauth_api_url}}"
+  bkpaas_bk_domain: "{{cookiecutter.bkpaas_bk_domain}}"
+  bkpaas_engine_region: "{{cookiecutter.bkpaas_engine_region}}"
+  bkpaas_login_url: "{{cookiecutter.bkpaas_login_url}}"
+  bkpaas_url: "{{cookiecutter.bkpaas_url}}"

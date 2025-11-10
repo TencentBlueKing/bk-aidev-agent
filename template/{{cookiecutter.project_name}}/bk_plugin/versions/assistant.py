@@ -5,7 +5,10 @@
 """
 
 from aidev_agent.services.chat import ChatPrompt, ExecuteKwargs
-from aidev_bkplugin.services.agent import build_chat_completion_agent_by_chat_history, get_agent_role_info
+from aidev_bkplugin.services.agent import (
+    build_chat_completion_agent_by_chat_history,
+    get_agent_role_info,
+)
 from bk_plugin_framework.kit import (
     Context,
     ContextRequire,

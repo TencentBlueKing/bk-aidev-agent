@@ -106,3 +106,5 @@ dist/
 pre-*-bkcodeai
 bkcodeai.json
 bkaidev-ov
+ai-*
+aidev*

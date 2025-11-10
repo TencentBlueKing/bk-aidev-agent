@@ -2,9 +2,9 @@
 
 ## 概述
 
-本文档提供智能体工具扩展的完整开发指南。通过本文档，可以：
-1. **配置智能体基础参数**：模型、工具、角色提示词等
-2. **扩展自定义工具**：在智能体中添加自定义功能工具
+本文档提供智能体工具扩展的完整开发指南。通过本文档，您可以：
+1. **配置智能体基础参数**：设置模型、工具、角色提示词等
+2. **扩展自定义工具**：为智能体添加自定义功能工具
 3. **集成MCP服务**：接入标准化的外部工具服务
 
 ## 快速开始
@@ -27,8 +27,7 @@ bk_plugin/
 
 ### 1.1 配置文件
 
-配置文件位于 `bk_plugin/config.py`，用于设置智能体的基础参数。可参考文件提示进行修改
-
+配置文件位于 `bk_plugin/config.py`，用于设置智能体的基础参数。您可以参考文件中的提示进行修改。
 
 ### 1.2 配置项详解
 
@@ -43,7 +42,7 @@ bk_plugin/
 
 配置通过以下链路生效：
 1. 智能体在运行时将读取 `settings.DEFAULT_CONFIG_MANAGER` 获取配置管理实例
-2. 在插件默认使用`bk_plugin.extend.config_manager.CustomAgentConfigManager`进行配置管理
+2. 插件默认使用 `bk_plugin.extend.config_manager.CustomAgentConfigManager` 进行配置管理
 3. `CustomAgentConfigManager` 将读取 `bk_plugin.config.AGENT_CONFIG` 覆盖平台配置
 
 ## 二、自定义工具扩展
@@ -72,8 +71,7 @@ from aidev_agent.core.extend.agent.qa import CommonQAAgent
 
 @tool
 def weather_query_tool(city: str) -> str:
-    """
-    查询指定城市的天气信息。
+    """查询指定城市的天气信息。
 
     Args:
         city: 城市名称，如 "北京" 或 "上海"
@@ -102,15 +100,11 @@ def weather_query_tool(city: str) -> str:
 # ============================================
 
 class CommonQAAgentExtend(CommonQAAgent):
-    """
-    扩展的智能体类，集成自定义工具
-    """
+    """扩展的智能体类，集成自定义工具"""
 
     @classmethod
     def get_agent_executor(cls, *args, **kwargs):
-        """
-        获取智能体执行器，在这里添加自定义工具
-        """
+        """获取智能体执行器，在这里添加自定义工具"""
         # 获取已有的工具列表
         extra_tools = kwargs.get("extra_tools", [])
 
@@ -129,7 +123,7 @@ class CommonQAAgentExtend(CommonQAAgent):
 
 ### 2.3 工具开发规范
 
-**下面介绍工具函数其中一种规范：**
+**工具函数规范：**
 
 1. **必须使用 `@tool` 装饰器**
 2. **函数文档字符串（docstring）非常重要**：LLM会根据docstring判断何时调用工具
@@ -144,8 +138,7 @@ from langchain_core.tools import tool
 
 @tool
 def search_documents(query: str, limit: int = 5) -> str:
-    """
-    在文档库中搜索相关内容。
+    """在文档库中搜索相关内容。
 
     当用户询问技术文档、操作手册、最佳实践等问题时使用此工具。
 
@@ -164,7 +157,7 @@ def search_documents(query: str, limit: int = 5) -> str:
     results = perform_search(query, limit)
     return format_results(results)
 ```
-更多工具开发规范参考 [langchian官方文档-自定义工具](https://python.langchain.com.cn/docs/modules/agents/tools/how_to/custom_tools)
+更多工具开发规范请参考 [langchain官方文档-自定义工具](https://python.langchain.com.cn/docs/modules/agents/tools/how_to/custom_tools)
 
 
 ### 2.4 测试工具
@@ -178,9 +171,7 @@ python bin/manage.py runserver local.xxx.com:8000
 **步骤2：测试调用**
 
 ```bash
-curl -X POST http://local.xxx.com:8000/bk_plugin/plugin_api/chat_completion/ \
-    -H "Content-Type: application/json" \
-    -d '{
+curl -X POST http://local.xxx.com:8000/bk_plugin/plugin_api/chat_completion/     -H "Content-Type: application/json"     -d '{
         "chat_history": [
             {"role": "user", "content": "北京天气怎么样？"}
         ],
@@ -196,8 +187,8 @@ curl -X POST http://local.xxx.com:8000/bk_plugin/plugin_api/chat_completion/ \
 
 ### 3.1 MCP服务概述
 
-MCP (Model Context Protocol) 是一个标准化协议，用于连接AI应用程序与外部工具和数据源。通过MCP，可以快速集成第三方服务而无需编写适配代码。
-更多MCP内容参考 [MCP文档](https://modelcontextprotocol.io/)。
+MCP (Model Context Protocol) 是一个标准化协议，用于连接AI应用程序与外部工具和数据源。通过MCP，您可以快速集成第三方服务而无需编写适配代码。
+更多MCP内容请参考 [MCP文档](https://modelcontextprotocol.io/)。
 
 ### 3.2 配置MCP服务
 
@@ -226,9 +217,7 @@ MCP_SERVER_CONFIG = {
 
 
 class CommonQAAgentExtend(CommonQAAgent):
-    """
-    扩展的智能体类，集成MCP工具
-    """
+    """扩展的智能体类，集成MCP工具"""
 
     @classmethod
     def get_agent_executor(cls, *args, **kwargs):
@@ -252,10 +241,10 @@ class CommonQAAgentExtend(CommonQAAgent):
 |--------|------|-----------------------------|
 | `url` | MCP服务地址 | `"https://example.com/mcp"` |
 | `transport` | 传输协议：`sse` 或 `streamable_http` | `"sse"`                     |
-| `credential_type` | 认证类型：`blueapps`（蓝鲸应用）或其他 | `"blueapps" or 不填`          |
+| `credential_type` | 认证类型：`blueapps`（蓝鲸应用）或其他 | `"blueapps"` 或不填          |
 
 
-蓝鲸平台MCP服务
+蓝鲸平台MCP服务示例：
 
 ```python
 "bk-example": {
@@ -290,8 +279,6 @@ class CommonQAAgentExtend(CommonQAAgent):
 编辑 `bk_plugin/config.py`：
 
 ```python
-SYNC_CONFIG_FROM_AIDEV = False
-
 AGENT_CONFIG = {
     "chat_model": "hunyuan-turbo",
     "tool_codes": ["k8s_query"],  # 平台K8s查询工具
@@ -311,8 +298,7 @@ import requests
 
 @tool
 def query_pod_status(namespace: str, pod_name: str) -> str:
-    """
-    查询K8s Pod状态。
+    """查询K8s Pod状态。
 
     Args:
         namespace: 命名空间
@@ -328,8 +314,7 @@ def query_pod_status(namespace: str, pod_name: str) -> str:
 
 @tool
 def check_alert_history(service_name: str, hours: int = 24) -> str:
-    """
-    查询告警历史。
+    """查询告警历史。
 
     Args:
         service_name: 服务名称
@@ -414,12 +399,12 @@ def safe_api_call(param: str) -> str:
 **可能原因：**
 1. 工具的docstring描述不够清晰，LLM无法理解何时使用
 2. 用户问题与工具功能不匹配
-3. 没有重写CommonQAAgentExtend类中get_agent_executor函数，工具没有正确注册到 `extra_tools`
+3. 没有正确重写CommonQAAgentExtend类中的get_agent_executor函数，导致工具未能正确注册到 `extra_tools`
 
 **解决方案：**
 - 优化工具的docstring，增加详细的使用场景说明
-- 在工具描述中添加示例用法
-- 检查 `CommonQAAgentExtend`类中`get_agent_executor` 中的工具注册代码
+- 在工具描述中添加具体的示例用法
+- 检查 `CommonQAAgentExtend`类中`get_agent_executor` 方法的工具注册代码
 
 ### 5.2 MCP工具加载失败？
 
