@@ -1,6 +1,6 @@
 aidev-agent==1.0.4
 aidev-ai-blueking==1.2.8.post2
-aidev-bkplugin==1.0.4
+aidev-bkplugin==1.0.5
 aidev-wxbot==1.0.3
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.2

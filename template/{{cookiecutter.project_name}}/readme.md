@@ -187,16 +187,15 @@ cruft update
 2. chat_history：会话历史
 3. execute_kwargs
  - stream：是否流式输出
- - executor：使用者, 此参数仅应用态接口生效，用户态接口会直接使用蓝鲸接口协议
 
 ### 3.2 应用态调用
-1. 应用态接口必须通过 header 头（`X-BKAIDEV_USER`）传递用户信息
+1. 应用态接口必须通过 header 头（`X-BKAIDEV-USER`）传递用户信息
 
 2. 本地调试
 ```shell
 curl -X POST http://local.{{cookiecutter.bkpaas_bk_domain}}:8000/bk_plugin/openapi/agent/chat_completion/ \
     -H "Content-Type: application/json"   \
-    -H "X-BKAIDEV_USER: xxx" \
+    -H "X-BKAIDEV-USER: username" \
     -d '{"chat_history":[{"role":"user","content":"hi"}], "execute_kwargs": {"stream": true}}'
 ```
 
@@ -204,8 +203,8 @@ curl -X POST http://local.{{cookiecutter.bkpaas_bk_domain}}:8000/bk_plugin/opena
 ```shell
 curl -X POST {{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cookiecutter.app_code) }}/bk_plugin/openapi/agent/chat_completion/  \
     -H "Content-Type: application/json"   \
-    -H "X-Bkapi-Authorization: xxx" \
-    -H "X-BKAIDEV_USER: xxx" \
+    -H "X-Bkapi-Authorization: {\"bk_app_code\": \"\", \"bk_app_secret\": \"\"}" \
+    -H "X-BKAIDEV-USER: username" \
     -d '{"chat_history":[{"role":"user","content":"hi"}], "execute_kwargs": {"stream": true}}'
 ```
 
@@ -222,7 +221,7 @@ curl -X POST http://local.{{cookiecutter.bkpaas_bk_domain}}:8000/bk_plugin/plugi
 ```shell
 curl -X POST {{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cookiecutter.app_code) }}/bk_plugin/plugin_api/chat_completion/  \
     -H "Content-Type: application/json"   \
-    -H "X-Bkapi-Authorization: xxx" \
+    -H "X-Bkapi-Authorization: {\"access_token\": \"\"}" \
     -d '{"chat_history":[{"role":"user","content":"hi"}], "execute_kwargs": {"stream": true}}'
 ```
 
@@ -255,9 +254,9 @@ curl -X POST http://127.0.0.1:8000/bk_plugin/invoke/1.0.0assistant \
 
 3. `APIGW` 调用
 ```shell
-curl -X POST{{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cookiecutter.app_code) }}/invoke/1.0.0assistant \
+curl -X POST{{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cookiecutter.app_code) }}/prod/invoke/1.0.0assistant/ \
     -H "Content-Type: application/json"   \
-    -H "X-Bkapi-Authorization: xxx" \
+    -H "X-Bkapi-Authorization: {\"bk_app_code\": \"\", \"bk_app_secret\": \"\"}" \
     -d '{
         "inputs": {
             "command": "",
@@ -349,7 +348,14 @@ curl -X POST{{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cooki
 ```
 
 ## 四、智能体配置及定制开发
-### 4.1 智能体配置
+### 4.1 智能体自定义应用
+1. 如果智能体需要自定义其它业务逻辑，建议在`apps`目录下创建`django application`
+2. 应用创建后可以通过`bk_plugin/settings.py` 加载，应用涉及的配置建议直接在应用下的`settings.py`定义
+```python
+load_settings("apps.demo.settings")  # 自定义 demo 应用
+```
+
+### 4.2 智能体配置
 
 智能体会自动从平台获取配置作为默认配置。同时，如果在 `bk_plugin/config.py` 的 `AGENT_CONFIG` 中定义配置，将覆盖平台获取的配置。
 例如，需要将默认模型修改为 `deepseek-r1`：
@@ -362,7 +368,7 @@ AGENT_CONFIG = {
 
 **注意：一般情况下，推荐直接在平台修改智能体配置**
 
-### 4.2 智能体定制开发指南
+### 4.3 智能体定制开发指南
 
 当通用智能体无法满足业务场景时，可参考以下文档扩展智能体功能：
 [智能体定制开发指南](https://github.com/TencentBlueKing/bk-aidev-agent/tree/develop/docs/agent/EXTENSION_AGENT.md)

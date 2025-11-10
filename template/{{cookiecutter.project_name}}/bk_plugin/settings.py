@@ -60,6 +60,9 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "aidev_bkplugin.packages.drf.exception.custom_exception_handler",
 }
 
+# 智能体接口授权
+BK_APIGW_GRANTED_APPS = os.getenv("BKAPP_APIGW_GRANTED_APPS")
+BK_APIGW_GRANTED_APPS = BK_APIGW_GRANTED_APPS.split(",") if BK_APIGW_GRANTED_APPS else [locals().get("BKPAAS_APP_CODE")]
 
-# 自定义配置
-# 二开配置可以参数以上配置在此处进行修改
+# 自定义应用
+# load_settings("apps.demo.settings")

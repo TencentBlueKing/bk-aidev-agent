@@ -17,6 +17,7 @@ to the current version of the project delivered to anyone in the future.
 """
 
 from blueapps.utils.logger import logger
+from django.conf import settings
 from django.views.generic.base import View
 from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
@@ -25,6 +26,9 @@ from rest_framework.request import Request
 class ApigwPermission(BasePermission):
     def has_permission(self, request: Request, view: View):
         """验证应用来源是否合法"""
+        if settings.ENVIRONMENT == "dev":
+            return True
+
         if not hasattr(request, "app"):
             logger.error("request from apigw has no app info, details: %s", request.__dict__)
             return False
