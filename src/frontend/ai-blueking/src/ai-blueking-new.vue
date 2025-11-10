@@ -21,10 +21,10 @@
         :y="top"
         class-name="ai-blueking-container-wrapper"
         drag-handle=".drag-handle"
-        @dragging="handleDragging"
-        @resizing="handleResizing"
-        @drag-stop="handleDragStop"
-        @resize-stop="handleResizeStop"
+        @dragging="handleDraggingWithIframe"
+        @resizing="handleResizingWithIframe"
+        @drag-stop="handleDragStopWithIframe"
+        @resize-stop="handleResizeStopWithIframe"
       >
         <div
           ref="rootNode"
@@ -437,6 +437,7 @@
   const isNimbusMinimize = ref(props.defaultMinimize);
   const inputMessage = ref('');
   const showScrollToBottom = ref(false);
+  const isDraggingOrResizing = ref(false);
 
   // 会话状态
   const isSessionInitialized = ref(false);
@@ -845,6 +846,70 @@
   // ===================================================================
   // 12. 事件处理函数
   // ===================================================================
+
+  /**
+   * 禁用页面中所有 iframe 的指针事件
+   * 用于解决拖拽时鼠标经过 iframe 导致事件丢失的问题
+   */
+  const disableIframePointerEvents = () => {
+    const iframes = document.querySelectorAll('iframe');
+    iframes.forEach(iframe => {
+      iframe.style.pointerEvents = 'none';
+    });
+  };
+
+  /**
+   * 恢复页面中所有 iframe 的指针事件
+   */
+  const enableIframePointerEvents = () => {
+    const iframes = document.querySelectorAll('iframe');
+    iframes.forEach(iframe => {
+      iframe.style.pointerEvents = '';
+    });
+  };
+
+  /**
+   * 拖拽时的处理（包含 iframe 禁用）
+   */
+  const handleDraggingWithIframe = (x: number, y: number) => {
+    // 首次拖拽时禁用 iframe 的指针事件
+    if (!isDraggingOrResizing.value) {
+      isDraggingOrResizing.value = true;
+      disableIframePointerEvents();
+    }
+    handleDragging(x, y);
+  };
+
+  /**
+   * 调整大小时的处理（包含 iframe 禁用）
+   */
+  const handleResizingWithIframe = (x: number, y: number, width: number, height: number) => {
+    // 首次调整大小时禁用 iframe 的指针事件
+    if (!isDraggingOrResizing.value) {
+      isDraggingOrResizing.value = true;
+      disableIframePointerEvents();
+    }
+    handleResizing(x, y, width, height);
+  };
+
+  /**
+   * 拖拽停止时的处理（包含 iframe 恢复）
+   */
+  const handleDragStopWithIframe = (x: number, y: number) => {
+    handleDragStop(x, y);
+    isDraggingOrResizing.value = false;
+    enableIframePointerEvents();
+  };
+
+  /**
+   * 调整大小停止时的处理（包含 iframe 恢复）
+   */
+  const handleResizeStopWithIframe = (x: number, y: number, width: number, height: number) => {
+    handleResizeStop(x, y, width, height);
+    isDraggingOrResizing.value = false;
+    enableIframePointerEvents();
+  };
+
   const handlePopupShortcutClick = (data: { shortcut: IShortcut; source: 'popup' | 'main' }) => {
     // 来自 render-popup 的快捷方式点击事件
     emit('shortcut-click', { shortcut: data.shortcut, source: data.source });
