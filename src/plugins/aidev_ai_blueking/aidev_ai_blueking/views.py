@@ -15,9 +15,9 @@ class IndexView(APIView):
             request,
             "home.html",
             context=dict(
-                SITE_URL="",
-                BK_STATIC_URL="",
-                BK_API_PREFIX="/bk_plugin/plugin_api",
+                SITE_URL=settings.BKAPP_SAAS_PATH,
+                BK_STATIC_URL=settings.BKAPP_SAAS_PATH,
+                BK_API_PREFIX=settings.BKAPP_SAAS_PATH + "/bk_plugin/plugin_api",
                 BK_USER_NAME=getattr(request.user, "username", ""),
                 BK_AGENT_NAME=agent_name,
             ),

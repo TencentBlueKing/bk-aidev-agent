@@ -1,5 +1,5 @@
 aidev-agent==1.0.4
-aidev-ai-blueking==1.2.8
+aidev-ai-blueking==1.2.8.post2
 aidev-bkplugin==1.0.4
 aidev-wxbot==1.0.3
 aiohappyeyeballs==2.6.1
@@ -15,7 +15,7 @@ backoff==2.2.1
 billiard==4.2.2
 bk-plugin-framework==2.3.2
 bk-plugin-runtime==2.1.1
-bkapi-bk-apigateway==1.1.1
+bkapi-bk-apigateway==1.0.12
 bkapi-client-core==1.2.0
 bkoauth==0.1.0
 blueapps==4.15.8

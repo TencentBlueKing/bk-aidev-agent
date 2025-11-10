@@ -1,8 +1,8 @@
 [project]
 name = "aidev-ai-blueking"
-version = "1.2.8"
+version = "1.2.8.post2"
 description = "小鲸静态资源包"
-readme = "README.md"
+readme = "readme.md"
 requires-python = ">=3.11.10, <4"
 dependencies = ["aidev-agent>=1.0.1,<1.1", "django>=4.2.24,<5.0"]
 
