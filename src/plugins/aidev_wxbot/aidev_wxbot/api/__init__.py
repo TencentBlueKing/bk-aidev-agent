@@ -54,23 +54,25 @@ class Api(object):
                         or result.get("errcode", 1) == 0
                     ):
                         return result.get("data", result)
-                    logger.error(result)
+                    logger.exception(result)
                     raise ActionFailed(code=result.get("code"), info=result)
 
-            logger.error(response.text)
+            logger.exception(response.text)
         except Exception as e:
-            logger.error(e)
+            logger.exception(e)
             raise e
 
 
 class BkApi(Api):
     BK_APIGW_MANAGER_URL_TMPL = settings.BK_APIGW_MANAGER_URL_TMPL
-    BKPAAS_ENVIRONMENT = settings.BKPAAS_ENVIRONMENT
+    AIDEV_GATEWAY_NAME = settings.AIDEV_GATEWAY_NAME
+    BK_APIGW_STAGE = settings.BK_APIGW_STAGE
     BKPAAS_APP_SECRET = settings.BKPAAS_APP_SECRET
     BKPAAS_APP_CODE = settings.BKPAAS_APP_CODE
 
-    def __init__(self, api_name):
-        base_url = f"{self.BK_APIGW_MANAGER_URL_TMPL}/{self.BKPAAS_ENVIRONMENT}".format(api_name=api_name)
+    def __init__(self, api_name=None):
+        api_name = api_name or self.AIDEV_GATEWAY_NAME
+        base_url = f"{self.BK_APIGW_MANAGER_URL_TMPL}/{self.BK_APIGW_STAGE}".format(api_name=api_name)
         super().__init__(base_url)
 
     def get_auth_header(self, bk_username):

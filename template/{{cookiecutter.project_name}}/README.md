@@ -202,7 +202,7 @@ curl -X POST http://local.{{cookiecutter.bkpaas_bk_domain}}:8000/bk_plugin/opena
 
 3`APIGW` 调用
 ```shell
-curl -X POST {{ cookiecutter.bk_api_url_tmpl.format(api_name="bp-" + cookiecutter.app_code) }}/bk_plugin/openapi/agent/chat_completion/  \
+curl -X POST {{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cookiecutter.app_code) }}/bk_plugin/openapi/agent/chat_completion/  \
     -H "Content-Type: application/json"   \
     -H "X-Bkapi-Authorization: xxx" \
     -H "X-BKAIDEV_USER: xxx" \
@@ -220,7 +220,7 @@ curl -X POST http://local.{{cookiecutter.bkpaas_bk_domain}}:8000/bk_plugin/plugi
 
 2. `APIGW` 调用
 ```shell
-curl -X POST {{ cookiecutter.bk_api_url_tmpl.format(api_name="bp-" + cookiecutter.app_code) }}/bk_plugin/plugin_api/chat_completion/  \
+curl -X POST {{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cookiecutter.app_code) }}/bk_plugin/plugin_api/chat_completion/  \
     -H "Content-Type: application/json"   \
     -H "X-Bkapi-Authorization: xxx" \
     -d '{"chat_history":[{"role":"user","content":"hi"}], "execute_kwargs": {"stream": true}}'
@@ -255,7 +255,7 @@ curl -X POST http://127.0.0.1:8000/bk_plugin/invoke/1.0.0assistant \
 
 3. `APIGW` 调用
 ```shell
-curl -X POST{{ cookiecutter.bk_api_url_tmpl.format(api_name="bp-" + cookiecutter.app_code) }}/invoke/1.0.0assistant \
+curl -X POST{{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cookiecutter.app_code) }}/invoke/1.0.0assistant \
     -H "Content-Type: application/json"   \
     -H "X-Bkapi-Authorization: xxx" \
     -d '{

@@ -10,7 +10,7 @@
   "aidev_gateway_name": "bk-aidev",
   "bk_apigw_stage": "prod",
   "bk_apigw_default_timeout": 300,
-  "bk_api_url_tmpl": "http://bkapi.bkpaas.com/api/{api_name}",
+  "apigw_manager_url_tmpl": "http://bkapi.bkpaas.com/api/{api_name}",
   "bkpaas_apigw_oauth_api_url": "http://bkssm.bkpaas.com",
   "bkpaas_bk_domain": "bkpaas.com",
   "bkpaas_engine_region": "open",
