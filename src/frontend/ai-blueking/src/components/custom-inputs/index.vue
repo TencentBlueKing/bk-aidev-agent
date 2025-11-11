@@ -39,12 +39,7 @@
             :is="getComponent(componentItem.type)"
             :id="componentItem.key"
             v-model="formData[getOriginalIndex(componentItem)][componentItem.key]"
-            v-bind="{
-              ...componentItem,
-              placeholder:
-                componentItem.placeholder === null ? undefined : componentItem.placeholder,
-              options: componentItem.options || [],
-            }"
+            v-bind="componentItem"
             :popover-options="{
               boundary: props.rootNode || 'parent',
             }"
@@ -128,17 +123,28 @@
   });
 
   // 计算可见组件（过滤掉隐藏的组件）
+  // 同时处理每个组件的绑定属性，确保 options 等属性的响应式更新
   const visibleComponents = computed(() => {
-    return (props.shortcut.components || []).filter(component => {
-      // 使用类型断言确保 component 有 hide 属性
-      const item = component as IShortcutComponent;
-      return !item.hide;
-    });
+    return (props.shortcut.components || [])
+      .map((component, originalIndex) => ({
+        ...component,
+        // 保存原始索引，用于 formData 映射
+        __originalIndex: originalIndex,
+        // 确保 placeholder 和 options 是响应式的
+        placeholder: component.placeholder === null ? undefined : component.placeholder,
+        options: component.options || [],
+      }))
+      .filter(component => {
+        // 使用类型断言确保 component 有 hide 属性
+        const item = component as IShortcutComponent;
+        return !item.hide;
+      });
   });
 
   // 获取原始索引（用于 formData 的正确映射）
-  const getOriginalIndex = (component: IAgentCommandComponent) => {
-    return (props.shortcut.components || []).indexOf(component);
+  const getOriginalIndex = (component: any) => {
+    // 现在从组件对象中直接获取保存的原始索引
+    return component.__originalIndex ?? 0;
   };
 
   // Layout 辅助函数：判断是否为奇数组的最后一个
