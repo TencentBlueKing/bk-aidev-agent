@@ -136,7 +136,7 @@
                     ? undefined
                     : inputContainerStyle
                 "
-                layout
+                :layout="!hasSessionContents"
               >
                 <div class="chat-input-wrapper">
                   <div
@@ -159,9 +159,9 @@
                     />
                   </div>
                   <custom-input
-                    v-if="currentShortcut"
-                    :key="currentShortcut.id"
-                    :shortcut="currentShortcut"
+                    v-if="mergedShortcut"
+                    :key="mergedShortcut.id"
+                    :shortcut="mergedShortcut"
                     :root-node="rootNode"
                     @cancel="handleCancelShortcut"
                     @submit="handleSubmitShortcut"
@@ -479,6 +479,34 @@
     handleStop: () => {
       handleStop();
     },
+  });
+
+  // 动态合并 currentShortcut 和原始 shortcuts 的最新数据
+  // 当 props.shortcuts 变化时，自动更新 options 等动态属性
+  const mergedShortcut = computed(() => {
+    if (!currentShortcut.value) return undefined;
+
+    // 从原始 shortcuts 中找到对应的 shortcut
+    const originalShortcut = props.shortcuts?.find(s => s.id === currentShortcut.value?.id);
+    if (!originalShortcut) return currentShortcut.value;
+
+    // 合并 components，保留 currentShortcut 中的运行时属性（如 selectedText），更新 options 等配置属性
+    const mergedComponents = currentShortcut.value.components?.map((comp, index) => {
+      const originalComp = originalShortcut.components?.[index];
+      if (originalComp && comp.key === originalComp.key) {
+        // 合并：currentShortcut 的运行时属性 + originalShortcut 的最新配置
+        return {
+          ...originalComp, // 最新的配置（options、placeholder 等）
+          selectedText: (comp as any).selectedText, // 保留运行时添加的 selectedText
+        };
+      }
+      return comp;
+    });
+
+    return {
+      ...currentShortcut.value,
+      components: mergedComponents,
+    };
   });
 
   /**

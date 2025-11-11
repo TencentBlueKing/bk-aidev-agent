@@ -123,14 +123,13 @@
   });
 
   // 计算可见组件（过滤掉隐藏的组件）
-  // 同时处理每个组件的绑定属性，确保 options 等属性的响应式更新
   const visibleComponents = computed(() => {
     return (props.shortcut.components || [])
       .map((component, originalIndex) => ({
         ...component,
         // 保存原始索引，用于 formData 映射
         __originalIndex: originalIndex,
-        // 确保 placeholder 和 options 是响应式的
+        // 确保 placeholder 和 options 有默认值
         placeholder: component.placeholder === null ? undefined : component.placeholder,
         options: component.options || [],
       }))
