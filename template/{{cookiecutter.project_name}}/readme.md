@@ -199,11 +199,11 @@ curl -X POST http://local.{{cookiecutter.bkpaas_bk_domain}}:8000/bk_plugin/opena
     -d '{"chat_history":[{"role":"user","content":"hi"}], "execute_kwargs": {"stream": true}}'
 ```
 
-3`APIGW` 调用
+3`APIGW` 调用：此方式需要在 `APIGW` 对请求的 `bk_app_code` 进行授权
 ```shell
-curl -X POST {{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cookiecutter.app_code) }}/bk_plugin/openapi/agent/chat_completion/  \
+curl -X POST {{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cookiecutter.app_code) }}/prod/bk_plugin/openapi/agent/chat_completion/  \
     -H "Content-Type: application/json"   \
-    -H "X-Bkapi-Authorization: {\"bk_app_code\": \"\", \"bk_app_secret\": \"\"}" \
+    -H "X-Bkapi-Authorization: {\"bk_app_code\": \"{{cookiecutter.app_code}}\", \"bk_app_secret\": \"\"}" \
     -H "X-BKAIDEV-USER: username" \
     -d '{"chat_history":[{"role":"user","content":"hi"}], "execute_kwargs": {"stream": true}}'
 ```
@@ -217,9 +217,11 @@ curl -X POST http://local.{{cookiecutter.bkpaas_bk_domain}}:8000/bk_plugin/plugi
     -d '{"chat_history":[{"role":"user","content":"hi"}], "execute_kwargs": {"stream": true}}'
 ```
 
-2. `APIGW` 调用
+2. `APIGW` 调用：此方式需要在 `APIGW` 对请求的 `bk_app_code` 进行授权
+ - `access_token` 可通过【[蓝鲸开发者中心]({{cookiecutter.bkpaas_url}}/developer-center/apps/{{cookiecutter.app_code}}/summary) >  云 API 权限> 创建新令牌】获取
+
 ```shell
-curl -X POST {{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cookiecutter.app_code) }}/bk_plugin/plugin_api/chat_completion/  \
+curl -X POST {{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cookiecutter.app_code) }}/prod/bk_plugin/plugin_api/chat_completion/  \
     -H "Content-Type: application/json"   \
     -H "X-Bkapi-Authorization: {\"access_token\": \"\"}" \
     -d '{"chat_history":[{"role":"user","content":"hi"}], "execute_kwargs": {"stream": true}}'
@@ -252,11 +254,11 @@ curl -X POST http://127.0.0.1:8000/bk_plugin/invoke/1.0.0assistant \
     }'
 ```
 
-3. `APIGW` 调用
+3. `APIGW` 调用：此方式需要在 `APIGW` 对请求的 `bk_app_code` 进行授权
 ```shell
-curl -X POST{{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cookiecutter.app_code) }}/prod/invoke/1.0.0assistant/ \
+curl -X POST {{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cookiecutter.app_code) }}/prod/invoke/1.0.0assistant/ \
     -H "Content-Type: application/json"   \
-    -H "X-Bkapi-Authorization: {\"bk_app_code\": \"\", \"bk_app_secret\": \"\"}" \
+    -H "X-Bkapi-Authorization: {\"bk_app_code\": \"{{cookiecutter.app_code}}\", \"bk_app_secret\": \"\"}" \
     -d '{
         "inputs": {
             "command": "",
