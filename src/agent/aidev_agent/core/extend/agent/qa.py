@@ -878,14 +878,15 @@ class CommonQAStreamingMixIn:
         max_cache_length = 50
         cache = deque(maxlen=max_cache_length)
         agent_think_start_time = time.time()
+        content_event_type = StreamEventType.TEXT.value
+        # 用于判断 done 之前的最后一个 event 类型
+        last_event_type = None
         if isinstance(self, StructuredChatCommonQAAgent):
             # 在 StructuredChatCommonQAAgent 中用于合并 agent action 中间过程
             # 在出现 Final Answer 模式之前的所有过程都视为 agent 的 think 过程，因此初始化为 EventType.THINK.value
-            # 用于判断 done 之前的最后一个 event 类型
-            last_event_type = None
+            cur_event_type = StreamEventType.THINK.value
             final_answer_prefix_to_filter = None
             final_answer_suffix_to_filter = None
-            cur_event_type = StreamEventType.THINK.value
             final_answer_occurred = False
             first_time_final_answer = True
             first_think_event = True
@@ -951,8 +952,8 @@ class CommonQAStreamingMixIn:
                                 if item["data"]["chunk"].tool_call_chunks[0].get("name"):
                                     # 先输出action name
                                     name = item["data"]["chunk"].tool_call_chunks[0].get("name")
-                                    # 如果不是第一次调用工具，需要补上一个```
-                                    log_prefix = "\n```\n" if has_tool_call else ""
+                                    # 如果final_result中的 ``` 是奇数个，则手工拼接一个 ``` 防止前端渲染的时候乱了
+                                    log_prefix = "\n```\n" if final_result.count("```") % 2 == 1 else ""
                                     ret = {
                                         "event": StreamEventType.THINK.value,
                                         "content": (f'{log_prefix}\n```json\n"action": "{name}",\n'),
@@ -981,6 +982,11 @@ class CommonQAStreamingMixIn:
                                     continue
                                 has_tool_call = True
                             else:
+                                if "<think>" in item["data"]["chunk"].content:
+                                    content_event_type = StreamEventType.THINK.value
+                                    has_reasoning_content = False
+                                    has_tool_call = False
+                                    has_custom_event = False
                                 # 如果首次从 think 切到 text 内容，需要先补发一条带 elapsed_time的 think event 以供识别
                                 if (has_reasoning_content or has_tool_call or has_custom_event) and item["data"][
                                     "chunk"
@@ -997,11 +1003,14 @@ class CommonQAStreamingMixIn:
                                     self.check_and_append(cache, ret)
                                     final_result += ret["content"]
                                 ret = {
-                                    "event": StreamEventType.TEXT.value,
+                                    "event": content_event_type,
                                     "content": item["data"]["chunk"].content,
                                     "cover": cover,
                                 }
                                 non_think_content += item["data"]["chunk"].content
+                                if "</think>" in item["data"]["chunk"].content:
+                                    has_reasoning_content = True
+                                    content_event_type = StreamEventType.TEXT.value
                         final_result += ret["content"]
                     elif item["event"] == "on_custom_event":
                         if "front_end_display" in item["data"]:
