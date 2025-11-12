@@ -137,6 +137,12 @@ class WxAiBotViewSet(ViewSet):
 
             docs = []
             buffer = ""  # 用于缓存不完整的数据
+            if response.status_code != 200:
+                llm_chunk = LlmChunkMsg(
+                    content=f"请求出错\n{response.text}\n请联系管理员查看！", is_finish=True, stream_id=stream_id
+                )
+                llm_chunk.append_to_cache(rabbitmq_client)
+                return
             llm_chunk = LlmChunkMsg(content="", is_finish=False, stream_id=stream_id)
             added_content = ""
             think_content = ""
