@@ -47,7 +47,7 @@ const buildLib = async (
   version: VueVersion,
   formats: LibraryFormats[],
   emptyOutDir = false,
-  userConfig?: UserConfig,
+  userConfig?: UserConfig
   // uglyfiy = false,
 ) => {
   await build({

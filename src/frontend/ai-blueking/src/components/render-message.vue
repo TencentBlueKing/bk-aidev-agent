@@ -102,45 +102,47 @@
               class="bkai-icon bkai-fuzhi tool-icon"
               @click="handleCopy"
             />
-            <i
-              class="bkai-icon bkai-yinyong tool-icon"
-              @click="handleCite"
-            />
-            <i
-              v-if="message.role === SessionContentRole.Ai"
-              class="bkai-icon bkai-zhongxinshengcheng tool-icon"
-              @click="handleRegenerate"
-            />
-            <template v-if="message.role === SessionContentRole.User">
+            <template v-if="!readonly">
               <i
-                class="bkai-icon bkai-bianji tool-icon"
-                @click="isEdit = true"
-              />
-            </template>
-            <i
-              class="bkai-icon bkai-shanchu tool-icon"
-              @click="handleDelete"
-            />
-            <template v-if="message.role === SessionContentRole.Ai && lastMessageId">
-              <i class="split-line" />
-              <render-like
-                :api-prefix="apiPrefix"
-                :session-code="message.sessionCode"
-                :session-content-ids="[lastMessageId || 0, message.id || 0]"
-                :space-id="message.spaceId || ''"
-                :rate="message.rate || 0"
-                :popover-options="{
-                  zIndex: 999999,
-                }"
-                :tooltip-options="{
-                  boundary: 'parent',
-                }"
-                @update-session-content-list="handleUpdateSessionContentList"
+                class="bkai-icon bkai-yinyong tool-icon"
+                @click="handleCite"
               />
               <i
-                class="bkai-icon bkai-fenxiang tool-icon"
-                @click="handleShare"
+                v-if="message.role === SessionContentRole.Ai"
+                class="bkai-icon bkai-zhongxinshengcheng tool-icon"
+                @click="handleRegenerate"
               />
+              <template v-if="message.role === SessionContentRole.User">
+                <i
+                  class="bkai-icon bkai-bianji tool-icon"
+                  @click="isEdit = true"
+                />
+              </template>
+              <i
+                class="bkai-icon bkai-shanchu tool-icon"
+                @click="handleDelete"
+              />
+              <template v-if="message.role === SessionContentRole.Ai && lastMessageId">
+                <i class="split-line" />
+                <render-like
+                  :api-prefix="apiPrefix"
+                  :session-code="message.sessionCode"
+                  :session-content-ids="[lastMessageId || 0, message.id || 0]"
+                  :space-id="message.spaceId || ''"
+                  :rate="message.rate || 0"
+                  :popover-options="{
+                    zIndex: 999999,
+                  }"
+                  :tooltip-options="{
+                    boundary: 'parent',
+                  }"
+                  @update-session-content-list="handleUpdateSessionContentList"
+                />
+                <i
+                  class="bkai-icon bkai-fenxiang tool-icon"
+                  @click="handleShare"
+                />
+              </template>
             </template>
           </div>
         </div>
@@ -200,6 +202,7 @@
     isSelectMode?: boolean;
     lastMessageId?: number;
     isMessageSelected?: (messageId: string) => boolean;
+    readonly?: boolean;
   }
 
   interface CitedData {
@@ -232,6 +235,7 @@
     showTime: false,
     isSelectMode: false,
     isMessageSelected: () => false,
+    readonly: false,
   });
 
   // 注入会话 store

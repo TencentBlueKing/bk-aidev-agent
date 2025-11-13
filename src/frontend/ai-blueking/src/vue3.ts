@@ -27,6 +27,8 @@ import { provideGlobalConfig } from 'bkui-vue';
 import { h } from 'vue';
 
 import AiBluekingNew from './ai-blueking-new.vue';
+import MessageList from './components/message-list.vue';
+import RenderMessage from './components/render-message.vue';
 import './assets/icon/iconcool.js';
 
 import './assets/icon/style.css';
@@ -39,5 +41,8 @@ export type * from './types/index.ts';
 
 // 导出 h 函数，用于自定义 icon 渲染
 export { h };
+
+// 导出独立组件，支持按需引入
+export { MessageList, RenderMessage };
 
 export default AiBluekingNew;

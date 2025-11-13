@@ -15,6 +15,7 @@
         :is-select-mode="isSelectMode"
         :is-message-selected="isMessageSelected"
         :last-message-id="index === 0 ? undefined : getMessageId(index - 1)"
+        :readonly="readonly"
         @delete="handleDelete"
         @regenerate="handleRegenerate"
         @resend="handleResend"
@@ -37,6 +38,7 @@
     contentMarginBottom: number;
     isSelectMode?: boolean;
     isMessageSelected?: (messageId: string) => boolean;
+    readonly?: boolean;
   }
 
   interface Emits {
