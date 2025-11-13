@@ -53,6 +53,9 @@ export function useSessionStore() {
    * @param type 选择模式类型
    */
   const enterSelectMode = (type: 'transfer' | 'share') => {
+    if (isSelectMode.value && selectModeType.value === type) {
+      return;
+    }
     isSelectMode.value = true;
     selectModeType.value = type;
     selectedMessages.value = new Set();

@@ -36,6 +36,11 @@ export interface SdkApi {
   getChatGroupApi: (
     data: import('@blueking/ai-ui-sdk/types').IChatGroupRequest
   ) => Promise<import('@blueking/ai-ui-sdk/types').IChatGroup>;
+  shareSessionApi: (data: {
+    session_code: string;
+    content_ids: number[];
+    expired_at?: number;
+  }) => Promise<any>;
 }
 
 // 使用 ai-ui-sdk 中的 IAgentInfo 类型

@@ -1,6 +1,7 @@
 import { SessionContentRole } from '@blueking/ai-ui-sdk/enums';
 import type { ISessionContent } from '@blueking/ai-ui-sdk/types';
-import { computed, ref } from 'vue';
+import { computed, ref, h } from 'vue';
+import { Message as BkMessage } from 'bkui-vue';
 
 import { HIDE_ROLE_LIST } from '../config';
 import type { SessionStore } from '../store/sessionStore';
@@ -9,6 +10,7 @@ interface UseSelectionModeOptions {
   sessionStore: SessionStore;
   sessionContents: { value: ISessionContent[] };
   getChatGroupApi: (data: any) => Promise<any>;
+  shareSessionApi: (data: any) => Promise<any>;
   onTransferMessages?: (messageIds: string[]) => void;
   onShareMessages?: (messageIds: string[]) => void;
 }
@@ -17,6 +19,7 @@ export function useSelectionMode({
   sessionStore,
   sessionContents,
   getChatGroupApi,
+  shareSessionApi,
   onTransferMessages,
   onShareMessages,
 }: UseSelectionModeOptions) {
@@ -58,6 +61,8 @@ export function useSelectionMode({
    */
   const handleConfirmSelection = async () => {
     const selectedMessages = sessionStore.getSelectedMessages();
+
+    console.log('selectedMessages', selectedMessages);
     // 根据选择模式类型触发不同的事件
     if (sessionStore.selectModeType.value === 'transfer') {
       // 触发 transfer-messages 事件
@@ -95,6 +100,50 @@ export function useSelectionMode({
     } else if (sessionStore.selectModeType.value === 'share') {
       // 触发 share-messages 事件
       onShareMessages?.(selectedMessages);
+
+      // 调用 shareSessionApi
+      loading.value = true;
+      try {
+        const result = await shareSessionApi({
+          session_code: sessionStore.currentSession.value?.sessionCode || '',
+          content_ids: selectedMessages,
+        });
+
+        const shareCode = result?.share_code || result?.shareCode || '';
+        const url = (window as any).BK_API_PREFIX || window.location.origin;
+
+        BkMessage({
+          theme: 'success',
+          message: h(
+            'div',
+            {
+              class: 'share-success-message',
+            },
+            [
+              '分享成功',
+              h(
+                'a',
+                {
+                  href: `${url}/share/${shareCode}`,
+                  target: '_blank',
+                  class: 'share-link',
+                  style: {
+                    color: '#3A84FF',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                  },
+                },
+                '查看分享'
+              ),
+            ]
+          ),
+        });
+      } catch (error) {
+        console.error('调用 shareSessionApi 失败:', error);
+        sessionStore.handleSdkError('shareSessionApi', error);
+      } finally {
+        loading.value = false;
+      }
     }
     sessionStore.exitSelectMode();
   };

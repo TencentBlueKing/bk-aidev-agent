@@ -93,6 +93,13 @@ export interface IShortcut extends IAgentCommand {
    * @since v1.2.9
    */
   hideFooter?: boolean;
+
+  /**
+   * 用于强制重新渲染组件的唯一键值
+   * 每次快捷指令更新时都会生成新的时间戳
+   * @since v1.3.0
+   */
+  bindKey?: string;
 }
 
 // 扩展 IAgentCommandComponent 类型，添加 hide 和 selectedText 属性

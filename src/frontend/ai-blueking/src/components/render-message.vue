@@ -137,6 +137,10 @@
                 }"
                 @update-session-content-list="handleUpdateSessionContentList"
               />
+              <i
+                class="bkai-icon bkai-fenxiang tool-icon"
+                @click="handleShare"
+              />
             </template>
           </div>
         </div>
@@ -440,6 +444,13 @@
     });
   };
 
+  const handleShare = () => {
+    const event = new CustomEvent('enter-select-mode', {
+      detail: { type: 'share' as const },
+    });
+    window.dispatchEvent(event);
+  };
+
   /**
    * 处理消息选择事件
    */
@@ -457,6 +468,7 @@
     createTooltipsForSelector('.message-tool .bkai-yinyong', t('引用'));
     createTooltipsForSelector('.message-tool .bkai-bianji', t('编辑'));
     createTooltipsForSelector('.message-tool .bkai-shanchu', t('删除'));
+    createTooltipsForSelector('.message-tool .bkai-fenxiang', t('分享'));
   };
 
   // 生命周期钩子

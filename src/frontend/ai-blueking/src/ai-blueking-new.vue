@@ -160,7 +160,7 @@
                   </div>
                   <custom-input
                     v-if="mergedShortcut"
-                    :key="mergedShortcut.id"
+                    :key="mergedShortcut.bindKey"
                     :shortcut="mergedShortcut"
                     :root-node="rootNode"
                     @cancel="handleCancelShortcut"
@@ -388,7 +388,7 @@
     dropdownMenuConfig: () => ({
       showRename: true,
       showAutoGenerate: true,
-      showShare: false, // 默认禁用分享会话功能
+      showShare: true,
     }),
     defaultChatInputPosition: undefined,
     maxWidth: 1000,
@@ -506,6 +506,7 @@
     return {
       ...currentShortcut.value,
       components: mergedComponents,
+      bindKey: currentShortcut.value.id + '_' + Date.now(),
     };
   });
 
@@ -632,6 +633,7 @@
     setSessionContents,
     handleCompleteRole,
     stopSessionContentApi,
+    shareSessionApi,
   } = useChat({
     handleStart: () => {
       scrollToBottomIfNeeded();
@@ -667,6 +669,7 @@
     sessionStore,
     sessionContents,
     getChatGroupApi,
+    shareSessionApi,
     onTransferMessages: messageIds => {
       emit('transfer-messages', messageIds);
     },
@@ -689,6 +692,7 @@
     plusSessionApi,
     handleCompleteRole,
     getChatGroupApi,
+    shareSessionApi,
   });
 
   // 注册错误回调函数
