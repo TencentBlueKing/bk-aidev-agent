@@ -9,10 +9,18 @@
 from django.urls import include, re_path
 from rest_framework.routers import DefaultRouter
 
-from aidev_bkplugin.openapi.views import OpenapiChatCompletionViewSet
+from aidev_bkplugin.openapi.views import (
+    OpenapiAgentInfoViewSet,
+    OpenapiChatCompletionViewSet,
+    OpenapiChatSessionContentViewSet,
+    OpenapiChatSessionViewSet,
+)
 
 _router = DefaultRouter()
 _router.register("chat_completion", OpenapiChatCompletionViewSet, "chat_completion")
+_router.register("session", OpenapiChatSessionViewSet, "session")
+_router.register("session_content", OpenapiChatSessionContentViewSet, "session_content")
+_router.register("agent", OpenapiAgentInfoViewSet, "agent_info")
 
 
 urlpatterns = [
