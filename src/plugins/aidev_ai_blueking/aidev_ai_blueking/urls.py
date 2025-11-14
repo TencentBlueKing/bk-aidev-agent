@@ -9,4 +9,6 @@ urlpatterns = [
     re_path(r"^page/$", IndexView.as_view(), name="index"),
     re_path(r"^side-slider/$", IndexView.as_view(), name="index"),
     re_path(r"^403/$", IndexView.as_view(), name="index"),
+    re_path(r"^share-page/$", IndexView.as_view(), name="index"),
+    re_path(r"^share-page/(?P<token>\w+)/$", IndexView.as_view(), name="index"),
 ]
