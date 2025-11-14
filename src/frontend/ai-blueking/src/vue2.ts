@@ -27,7 +27,7 @@
 import { createApp, h } from 'vue';
 
 import type { ShortCut } from './types/index.ts';
-import AiBlueking, { MessageList, RenderMessage } from './vue3.ts';
+import AiBlueking, { MessageList, RenderMessage, useMessageListStandalone } from './vue3.ts';
 
 export type * from './types/index.ts';
 
@@ -36,6 +36,9 @@ export { h };
 
 // 导出独立组件，支持按需引入
 export { MessageList, RenderMessage };
+
+// 导出组合式函数
+export { useMessageListStandalone };
 
 export default {
   name: 'AiBlueking',

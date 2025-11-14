@@ -2,7 +2,7 @@
   <li
     v-if="!HIDE_ROLE_LIST.includes(message.role)"
     ref="messageMainRef"
-    :class="[message.role, 'message-main']"
+    :class="[message.role, 'message-main', { 'standalone-mode': isStandalone }]"
   >
     <div class="message-wrapper">
       <!-- 选择模式下的checkbox -->
@@ -181,8 +181,6 @@
   import { usePopup } from '../composables/use-popup-props';
   import { useSelect } from '../composables/use-select-pop';
   import { useTooltip } from '../composables/use-tippy';
-  import { useInjectSessionStore } from '../composables/use-session-store';
-  import type { SessionStore } from '../store/sessionStore';
   import { HIDE_ROLE_LIST } from '../config';
   import { t } from '../lang';
   import MarkdownItLinkBlank from '../plugins/markdown-it-link-blank';
@@ -203,6 +201,8 @@
     lastMessageId?: number;
     isMessageSelected?: (messageId: string) => boolean;
     readonly?: boolean;
+    /** 是否独立使用模式 */
+    isStandalone?: boolean;
   }
 
   interface CitedData {
@@ -236,13 +236,11 @@
     isSelectMode: false,
     isMessageSelected: () => false,
     readonly: false,
+    isStandalone: false,
   });
 
-  // 注入会话 store
-  const sessionStore = useInjectSessionStore() as SessionStore;
-
-  // 注入动态 URL
-  const normalizedUrl = inject<ComputedRef<string>>('normalizedUrl');
+  // 注入动态 URL (可选，用于独立使用时提供默认值)
+  const normalizedUrl = inject<ComputedRef<string> | undefined>('normalizedUrl', undefined);
 
   // 将 normalizedUrl 赋值给 apiPrefix
   const apiPrefix = computed(() => normalizedUrl?.value || '');
@@ -272,12 +270,9 @@
   // 组合式函数
   const { enablePopup } = usePopup();
   const { setCiteText } = useSelect(enablePopup);
-  const { createTooltipsForSelector, destroyAll } = useTooltip({
-    placement: 'top',
-    arrow: true,
-    appendTo: 'parent',
-    delay: [0, 0],
-  });
+
+  // 存储 tooltip 相关方法，在 onMounted 后初始化
+  let tooltipAPI: ReturnType<typeof useTooltip> | null = null;
   const { initMermaid, processMermaidDiagrams, cleanupMermaidElements } = useMermaid();
 
   // Markdown 实例
@@ -436,8 +431,8 @@
   };
 
   const handleUpdateSessionContentList = (feedBack: ISessionFeedback) => {
-    // Emit an event to update the session content in the parent component
-    // This will allow the parent to update the sessionContents ref properly
+    // 发送事件以更新父组件中的会话内容
+    // 父组件正确更新 sessionContents 引用
     emit('update-session-content', {
       messageId: props.message.id,
       updates: {
@@ -466,17 +461,29 @@
 
   // 工具提示初始化
   const initTooltips = () => {
-    destroyAll();
-    createTooltipsForSelector('.message-tool .bkai-fuzhi', t('复制'));
-    createTooltipsForSelector('.message-tool .bkai-zhongxinshengcheng', t('重新生成'));
-    createTooltipsForSelector('.message-tool .bkai-yinyong', t('引用'));
-    createTooltipsForSelector('.message-tool .bkai-bianji', t('编辑'));
-    createTooltipsForSelector('.message-tool .bkai-shanchu', t('删除'));
-    createTooltipsForSelector('.message-tool .bkai-fenxiang', t('分享'));
+    if (tooltipAPI) {
+      tooltipAPI.destroyAll();
+      tooltipAPI.createTooltipsForSelector('.message-tool .bkai-fuzhi', t('复制'));
+      tooltipAPI.createTooltipsForSelector('.message-tool .bkai-zhongxinshengcheng', t('重新生成'));
+      tooltipAPI.createTooltipsForSelector('.message-tool .bkai-yinyong', t('引用'));
+      tooltipAPI.createTooltipsForSelector('.message-tool .bkai-bianji', t('编辑'));
+      tooltipAPI.createTooltipsForSelector('.message-tool .bkai-shanchu', t('删除'));
+      tooltipAPI.createTooltipsForSelector('.message-tool .bkai-fenxiang', t('分享'));
+    }
   };
 
   // 生命周期钩子
   onMounted(() => {
+    // 初始化 tooltip，此时 messageMainRef.value 已经存在
+    if (messageMainRef.value) {
+      tooltipAPI = useTooltip({
+        placement: 'top',
+        arrow: true,
+        appendTo: messageMainRef.value,
+        delay: [0, 0],
+      });
+    }
+
     initMermaid();
     setTimeout(initTooltips, 0);
   });
@@ -499,6 +506,10 @@
   onBeforeUnmount(() => {
     closeAllDeleteConfirms();
     cleanupMermaidElements();
+    // 清理 tooltip
+    if (tooltipAPI) {
+      tooltipAPI.destroyAll();
+    }
   });
 </script>
 
@@ -569,6 +580,37 @@
       display: table;
       clear: both;
       content: '';
+    }
+
+    // 独立使用模式的样式优化
+    &.standalone-mode {
+      // 移除在小鲸组件内的特殊布局
+      &.user,
+      &.cite {
+        justify-content: flex-start;
+        align-items: flex-start;
+      }
+
+      // 消息间距优化
+      margin-bottom: 16px;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+
+      // 消息内容样式优化
+      .message-content-container {
+        width: 100%;
+        max-width: 100%;
+      }
+
+      // 工具栏位置优化
+      .message-tool {
+        position: static;
+        margin-top: 8px;
+        opacity: 1;
+        transform: none;
+      }
     }
 
     .message-wrapper {

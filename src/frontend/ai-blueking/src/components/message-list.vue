@@ -2,7 +2,7 @@
   <div
     ref="messageWrapper"
     :style="{ opacity: hasSessionContents ? 1 : 0 }"
-    class="message-wrapper"
+    :class="['message-list-wrapper', { 'standalone-mode': standalone }]"
   >
     <div
       v-for="(message, index) in sessionContents"
@@ -16,6 +16,7 @@
         :is-message-selected="isMessageSelected"
         :last-message-id="index === 0 ? undefined : getMessageId(index - 1)"
         :readonly="readonly"
+        :is-standalone="standalone"
         @delete="handleDelete"
         @regenerate="handleRegenerate"
         @resend="handleResend"
@@ -31,6 +32,7 @@
   import { ref, onMounted, onBeforeUnmount } from 'vue';
 
   import renderMessage from './render-message.vue';
+  import { useMessageListStandalone } from '../composables/use-message-list-standalone';
 
   interface Props {
     sessionContents: ISessionContent[];
@@ -39,6 +41,14 @@
     isSelectMode?: boolean;
     isMessageSelected?: (messageId: string) => boolean;
     readonly?: boolean;
+    /** 是否独立使用模式 - 自动处理样式和交互 */
+    standalone?: boolean;
+    /** 独立使用模式的配置选项 */
+    standaloneOptions?: {
+      clickProxyOptions?: {
+        disabledClassName?: string;
+      };
+    };
   }
 
   interface Emits {
@@ -55,6 +65,13 @@
 
   const props = defineProps<Props>();
   const emit = defineEmits<Emits>();
+
+  // 独立使用模式的初始化
+  if (props.standalone) {
+    useMessageListStandalone({
+      disabledClassName: props.standaloneOptions?.clickProxyOptions?.disabledClassName || '',
+    });
+  }
 
   const messageWrapper = ref<HTMLElement | null>(null);
   let lastScrollTop = 0;
@@ -159,7 +176,7 @@
 <style lang="scss" scoped>
   @use '../styles/mixins.scss';
 
-  .message-wrapper {
+  .message-list-wrapper {
     position: relative;
     display: flex;
     flex: 1;
@@ -174,6 +191,12 @@
     transition: opacity 0.5s ease;
 
     @include mixins.custom-scrollbar;
+
+    // 独立使用模式的样式优化
+    &.standalone-mode {
+      margin: 0;
+      overflow: visible;
+    }
   }
 
   .message-line-wrapper {

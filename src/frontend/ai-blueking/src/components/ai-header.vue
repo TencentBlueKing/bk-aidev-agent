@@ -149,7 +149,7 @@
       dropdownMenuConfig: () => ({
         showRename: true,
         showAutoGenerate: true,
-        showShare: true,
+        showShare: false,
       }),
     }
   );

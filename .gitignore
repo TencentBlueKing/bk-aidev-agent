@@ -186,10 +186,5 @@ src/frontend/publish-template/node_modules/
 # lesscode dist
 src/frontend/ai-blueking/lesscode-dist/
 
-# pnpm-lock.yaml
-pnpm-lock.yaml
-
-# pnpm-workspace.yaml
-pnpm-workspace.yaml
 .aider*
 .vscode/

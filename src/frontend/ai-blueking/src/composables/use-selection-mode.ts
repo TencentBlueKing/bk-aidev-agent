@@ -62,7 +62,6 @@ export function useSelectionMode({
   const handleConfirmSelection = async () => {
     const selectedMessages = sessionStore.getSelectedMessages();
 
-    console.log('selectedMessages', selectedMessages);
     // 根据选择模式类型触发不同的事件
     if (sessionStore.selectModeType.value === 'transfer') {
       // 触发 transfer-messages 事件
@@ -109,35 +108,37 @@ export function useSelectionMode({
           content_ids: selectedMessages,
         });
 
-        const shareCode = result?.share_code || result?.shareCode || '';
-        const url = (window as any).BK_API_PREFIX || window.location.origin;
+        const shareCode = result?.share_token || '';
+        const url = result?.share_page || '';
 
-        BkMessage({
-          theme: 'success',
-          message: h(
-            'div',
-            {
-              class: 'share-success-message',
-            },
-            [
-              '分享成功',
-              h(
-                'a',
-                {
-                  href: `${url}/share/${shareCode}`,
-                  target: '_blank',
-                  class: 'share-link',
-                  style: {
-                    color: '#3A84FF',
-                    fontSize: '12px',
-                    cursor: 'pointer',
+        url &&
+          BkMessage({
+            theme: 'success',
+            message: h(
+              'div',
+              {
+                class: 'share-success-message',
+              },
+              [
+                '分享成功, ',
+                h(
+                  'a',
+                  {
+                    href: `${url}/share-page/${shareCode}`,
+                    target: '_blank',
+                    class: 'share-link',
+                    style: {
+                      color: '#3A84FF',
+                      fontSize: '14px',
+                      cursor: 'pointer',
+                      textDecoration: 'none',
+                    },
                   },
-                },
-                '查看分享'
-              ),
-            ]
-          ),
-        });
+                  '查看分享'
+                ),
+              ]
+            ),
+          });
       } catch (error) {
         console.error('调用 shareSessionApi 失败:', error);
         sessionStore.handleSdkError('shareSessionApi', error);

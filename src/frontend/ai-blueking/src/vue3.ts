@@ -29,6 +29,7 @@ import { h } from 'vue';
 import AiBluekingNew from './ai-blueking-new.vue';
 import MessageList from './components/message-list.vue';
 import RenderMessage from './components/render-message.vue';
+import { useMessageListStandalone } from './composables/use-message-list-standalone';
 import './assets/icon/iconcool.js';
 
 import './assets/icon/style.css';
@@ -44,5 +45,8 @@ export { h };
 
 // 导出独立组件，支持按需引入
 export { MessageList, RenderMessage };
+
+// 导出组合式函数
+export { useMessageListStandalone };
 
 export default AiBluekingNew;
