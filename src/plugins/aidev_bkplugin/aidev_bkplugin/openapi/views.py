@@ -6,7 +6,13 @@ from django.contrib.auth import get_user_model
 
 from aidev_bkplugin.packages.apigw.permissions import ApigwPermission
 from aidev_bkplugin.permissions import AgentPluginPermission
-from aidev_bkplugin.views.builtin import ChatCompletionViewSet, PluginViewSet
+from aidev_bkplugin.views.builtin import (
+    AgentInfoViewSet,
+    ChatCompletionViewSet,
+    ChatSessionContentViewSet,
+    ChatSessionViewSet,
+    PluginViewSet,
+)
 
 USER_MODEL = get_user_model()
 
@@ -37,4 +43,16 @@ class OpenapiPluginViewSet(PluginViewSet):
 
 
 class OpenapiChatCompletionViewSet(OpenapiPluginViewSet, ChatCompletionViewSet):
+    pass
+
+
+class OpenapiChatSessionViewSet(OpenapiPluginViewSet, ChatSessionViewSet):
+    pass
+
+
+class OpenapiChatSessionContentViewSet(OpenapiPluginViewSet, ChatSessionContentViewSet):
+    pass
+
+
+class OpenapiAgentInfoViewSet(OpenapiPluginViewSet, AgentInfoViewSet):
     pass
