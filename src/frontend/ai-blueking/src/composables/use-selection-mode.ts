@@ -120,11 +120,11 @@ export function useSelectionMode({
                 class: 'share-success-message',
               },
               [
-                '分享成功, ',
+                '分享链接已生成，',
                 h(
                   'a',
                   {
-                    href: `${url}/share-page/${shareCode}`,
+                    href: `${url}share-page/${shareCode}`,
                     target: '_blank',
                     class: 'share-link',
                     style: {
@@ -134,7 +134,7 @@ export function useSelectionMode({
                       textDecoration: 'none',
                     },
                   },
-                  '查看分享'
+                  '立即查看'
                 ),
               ]
             ),
