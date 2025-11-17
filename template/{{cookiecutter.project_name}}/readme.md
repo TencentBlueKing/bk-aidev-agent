@@ -11,7 +11,7 @@
 ```bash
 # 使用 uv 管理依赖
 curl -LsSf https://astral.sh/uv/install.sh | sh
-make init
+make init # 如果没有make命令则使用 uv sync
 
 # 使用 pip 管理依赖
 python3.11 -m venv .venv
@@ -31,7 +31,7 @@ cp ./support-files/env.template .env
 **注意：support-files/env.template 是环境变量模板，会提交到代码仓库，请勿配置敏感信息**
 
 ### 1.4 启动服务并测试
-
+#### 1.4.1 UNIX系统
 在启动本地服务前，需要先将 `local.{{cookiecutter.bkpaas_bk_domain}}` 配置到本地的 `hosts` 文件中
 
 然后，执行以下脚本启动本地服务，即可开始测试：
@@ -39,6 +39,17 @@ cp ./support-files/env.template .env
 ```shell
 source .env
 source .venv/bin/activate
+python bin/manage.py migrate
+python bin/manage.py createcachetable
+
+# 启动服务
+python bin/manage.py runserver local.{{cookiecutter.bkpaas_bk_domain}}:8000
+```
+#### 1.4.2 Windows系统
+用户启动环境为Windows时，推荐使用`Git-bash`执行以下脚本启动本地服务，即可开始测试：
+```shell
+source .env
+source .venv/Scripts/activate
 python bin/manage.py migrate
 python bin/manage.py createcachetable
 
