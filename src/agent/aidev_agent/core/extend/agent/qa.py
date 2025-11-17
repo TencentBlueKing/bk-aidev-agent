@@ -365,7 +365,7 @@ class IntentRecognitionMixin(BaseModel):
         has_executed_context_compressor = False
         has_executed_intermediate_step_compressor = False
         token_limit_margin = self.agent_options.knowledge_query_options.token_limit_margin
-        llm_token_limit = getattr(self, "llm_token_limit", 28000)
+        llm_token_limit = self.agent_options.knowledge_query_options.llm_token_limit
         while cur_token_len > llm_token_limit - token_limit_margin:
             # 优先级 1: 压缩召回的知识的内容
             if "context" in kwargs and kwargs["context"] and not has_executed_context_compressor:

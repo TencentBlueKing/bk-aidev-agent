@@ -16,7 +16,6 @@ We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
 
-import os
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from typing import (
@@ -230,7 +229,6 @@ class CommonAgentMixIn(BaseModel, ABC):
         knowledge_bases: Optional[List[Dict]] = None,
         file_store: Optional[ByteStore] = None,
         support_vision: bool = False,
-        llm_token_limit=28000,
         agent_options: Optional[AgentOptions] = None,
         **kwargs,
     ) -> Tuple[AgentExecutor, RunnableConfig]:
@@ -255,7 +253,6 @@ class CommonAgentMixIn(BaseModel, ABC):
         )
         agent.file_store = file_store
         agent.knowledge_llm = knowledge_llm
-        agent.llm_token_limit = llm_token_limit or int(os.getenv("LLM_TOKEN_LIMIT", 28000))
         if agent_options:
             agent.agent_options = agent_options
         if kwargs.get("intent_recognition_kwargs"):
