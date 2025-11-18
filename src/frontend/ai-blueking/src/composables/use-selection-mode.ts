@@ -111,34 +111,17 @@ export function useSelectionMode({
         const shareCode = result?.share_token || '';
         const url = result?.share_page || '';
 
-        url &&
-          BkMessage({
-            theme: 'success',
-            message: h(
-              'div',
-              {
-                class: 'share-success-message',
-              },
-              [
-                '分享链接已生成，',
-                h(
-                  'a',
-                  {
-                    href: `${url}share-page/${shareCode}`,
-                    target: '_blank',
-                    class: 'share-link',
-                    style: {
-                      color: '#3A84FF',
-                      fontSize: '14px',
-                      cursor: 'pointer',
-                      textDecoration: 'none',
-                    },
-                  },
-                  '立即查看'
-                ),
-              ]
-            ),
-          });
+        const container = document.querySelector('.ai-blueking-wrapper');
+        const shareUrl = `${url}share-page/${shareCode}`;
+
+        // 把 shareUrl 写入剪贴板
+        navigator.clipboard.writeText(shareUrl);
+
+        BkMessage({
+          theme: 'success',
+          getContainer: container,
+          message: '分享链接已复制到剪贴板',
+        });
       } catch (error) {
         console.error('调用 shareSessionApi 失败:', error);
         sessionStore.handleSdkError('shareSessionApi', error);
