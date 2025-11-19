@@ -16,7 +16,7 @@ We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """  # flake8: noqa
 
-from langchain.agents.structured_chat.prompt import SUFFIX
+from langchain_classic.agents.structured_chat.prompt import SUFFIX
 from langchain_core.prompts import ChatPromptTemplate
 
 # Deprecated and no longer maintained. Please use MULTI_MODAL_PREFIX_J2_TPL.

@@ -23,10 +23,10 @@ from typing import Callable, List, Optional, Sequence, Tuple, Union
 
 import pydantic
 import pytz
-from langchain.agents.format_scratchpad.tools import format_to_tool_messages
-from langchain.agents.output_parsers import JSONAgentOutputParser
-from langchain.agents.output_parsers.tools import ToolsAgentOutputParser
-from langchain.tools.render import render_text_description_and_args
+from langchain_classic.agents.format_scratchpad.tools import format_to_tool_messages
+from langchain_classic.agents.output_parsers import JSONAgentOutputParser
+from langchain_classic.agents.output_parsers.tools import ToolsAgentOutputParser
+from langchain_classic.tools.render import render_text_description_and_args
 from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel, BaseLanguageModel

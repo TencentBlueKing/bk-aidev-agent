@@ -25,8 +25,8 @@ from logging import getLogger
 from typing import Any, ClassVar, Dict, List, Optional, Tuple, Union
 
 from asgiref.sync import sync_to_async
-from langchain.agents.format_scratchpad.tools import format_to_tool_messages
-from langchain.tools.render import render_text_description_and_args
+from langchain_classic.agents.format_scratchpad.tools import format_to_tool_messages
+from langchain_classic.tools.render import render_text_description_and_args
 from langchain_community.adapters.openai import convert_dict_to_message, convert_message_to_dict
 from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.callbacks import Callbacks
@@ -48,6 +48,7 @@ from aidev_agent.core.extend.intent.intent_recognition import IntentRecognition
 from aidev_agent.core.utils.local import request_local
 from aidev_agent.enums import ContextType, Decision, IntentCategory, IntentStatus, StreamEventType
 from aidev_agent.exceptions import streaming_chunk_exception_handling
+from aidev_agent.packages.langgraph.langgraph_v1_qa_agent import LangGraphV1QAAgent
 from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils import Empty
 
@@ -1303,6 +1304,7 @@ class CommonQAAgent(ToolCallingCommonQAAgent):
     agent_classes: ClassVar[Dict] = {
         "tool_calling_common_qa_agent": ToolCallingCommonQAAgent,
         "structured_chat_common_qa_agent": StructuredChatCommonQAAgent,
+        "langgraph_v1": LangGraphV1QAAgent
     }
 
     @classmethod
@@ -1311,18 +1313,21 @@ class CommonQAAgent(ToolCallingCommonQAAgent):
 
     @classmethod
     def get_agent_executor(cls, *args, **kwargs):
-        llm = kwargs["llm"] if "llm" in kwargs else args[0]
-        extra_tools = kwargs.get("extra_tools", [])
-        agent_options = kwargs.get("agent_options", AgentOptions())
-        # 如果是没有原生function calling能力的模型，且 extra_tools 不为空，则默认使用 structured_chat_common_qa_agent
-        if is_model_without_function_calling(llm) and extra_tools:
-            agent_class = cls.agent_classes.get(
-                agent_options.intent_recognition_options.agent_type,
-                cls.agent_classes["structured_chat_common_qa_agent"],
-            )
-        else:
-            # 其他模型默认为tool_calling_common_qa_agent
-            agent_class = cls.agent_classes.get(
-                agent_options.intent_recognition_options.agent_type, cls.agent_classes["tool_calling_common_qa_agent"]
-            )
+        print("asdgsg")
+        agent_class = LangGraphV1QAAgent
         return agent_class.get_agent_executor(*args, **kwargs)
+        # llm = kwargs["llm"] if "llm" in kwargs else args[0]
+        # extra_tools = kwargs.get("extra_tools", [])
+        # agent_options = kwargs.get("agent_options", AgentOptions())
+        # # 如果是没有原生function calling能力的模型，且 extra_tools 不为空，则默认使用 structured_chat_common_qa_agent
+        # if is_model_without_function_calling(llm) and extra_tools:
+        #     agent_class = cls.agent_classes.get(
+        #         agent_options.intent_recognition_options.agent_type,
+        #         cls.agent_classes["structured_chat_common_qa_agent"],
+        #     )
+        # else:
+        #     # 其他模型默认为tool_calling_common_qa_agent
+        #     agent_class = cls.agent_classes.get(
+        #         agent_options.intent_recognition_options.agent_type, cls.agent_classes["tool_calling_common_qa_agent"]
+        #     )
+        # return agent_class.get_agent_executor(*args, **kwargs)

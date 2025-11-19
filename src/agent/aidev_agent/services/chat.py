@@ -6,18 +6,17 @@ from time import time
 from typing import Any, ClassVar, Generator, Optional
 from uuid import uuid4
 
-from langchain.memory.token_buffer import ConversationTokenBufferMemory
+from langchain_classic.memory import ConversationTokenBufferMemory
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
-from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables import RunnableConfig, Runnable
 from langchain_core.stores import ByteStore
 from langchain_core.tools import StructuredTool
 from langchain_openai.chat_models.base import _convert_message_to_dict
 from pydantic import BaseModel, Field
 
-from aidev_agent.core.agent.multimodal import EnhancedAgentExecutor
 from aidev_agent.core.extend.agent.qa import CommonQAAgent
 from aidev_agent.core.utils.loop import get_event_loop
 from aidev_agent.enums import PromptRole, StreamEventType
@@ -138,6 +137,7 @@ class ChatCompletionAgent(BaseModel):
     def execute(self, execute_kwargs: ExecuteKwargs) -> dict | Generator[str, None, None] | str:
         # 执行agent操作
         messages = self.convert_history_to_messages()
+        execute_kwargs.run_agent = True
         if execute_kwargs.run_agent or self.is_run_by_agent():
             return self._execute_by_agent(messages, stream=execute_kwargs.stream)
         if self.callbacks:
@@ -222,7 +222,7 @@ class ChatCompletionAgent(BaseModel):
             "id": result.id,
         }
 
-    def _get_agent(self, messages: list[BaseMessage]) -> tuple[EnhancedAgentExecutor, RunnableConfig]:
+    def _get_agent(self, messages: list[BaseMessage]) -> tuple[Runnable, RunnableConfig]:
         if self.knowledge_bases:
             self.agent_options.knowledge_query_options.knowledge_bases = self.knowledge_bases
         if self.knowledges:

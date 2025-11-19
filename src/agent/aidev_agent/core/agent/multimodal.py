@@ -35,14 +35,14 @@ from typing import (
 )
 
 from jinja2.sandbox import SandboxedEnvironment as Environment
-from langchain.agents import (
+from langchain_classic.agents import (
     AgentExecutor,
 )
-from langchain.agents.agent import RunnableAgent, RunnableMultiActionAgent
-from langchain.agents.structured_chat.base import StructuredChatAgent
-from langchain.agents.structured_chat.prompt import FORMAT_INSTRUCTIONS
-from langchain.memory.chat_memory import BaseChatMemory
-from langchain.memory.token_buffer import ConversationTokenBufferMemory
+from langchain_classic.agents.agent import RunnableAgent, RunnableMultiActionAgent
+from langchain_classic.agents.structured_chat.base import StructuredChatAgent
+from langchain_classic.agents.structured_chat.prompt import FORMAT_INSTRUCTIONS
+from langchain_classic.memory.chat_memory import BaseChatMemory
+from langchain_classic.memory.token_buffer import ConversationTokenBufferMemory
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.callbacks import BaseCallbackHandler, Callbacks
