@@ -1,4 +1,4 @@
-aidev-agent==1.0.4
+aidev-agent==1.0.4.post1
 aidev-ai-blueking==1.2.8.post2
 aidev-bkplugin==1.0.5
 aidev-wxbot==1.0.3
