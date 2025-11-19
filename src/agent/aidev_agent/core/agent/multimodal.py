@@ -316,6 +316,7 @@ class CommonAgentMixIn(BaseModel, ABC):
             return_intermediate_steps=True,
             handle_parsing_errors=True,
             memory=memory,
+            max_iterations=agent.agent_options.intent_recognition_options.max_iterations,
             **kwargs.get("executor_kwargs", {}),
         )
         return e

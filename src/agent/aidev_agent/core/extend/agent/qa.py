@@ -875,7 +875,7 @@ class CommonQAStreamingMixIn:
         first_triple_backticks = True
         has_custom_event = False
         # 用于去除 think 标识位
-        max_cache_length = 50
+        max_cache_length = self.agent_options.intent_recognition_options.max_cache_length
         cache = deque(maxlen=max_cache_length)
         agent_think_start_time = time.time()
         content_event_type = StreamEventType.TEXT.value
@@ -950,13 +950,20 @@ class CommonQAStreamingMixIn:
                                 has_reasoning_content = True
                             elif is_tool_call:
                                 if item["data"]["chunk"].tool_call_chunks[0].get("name"):
+                                    # 将非思考模型调用工具前的文本也归为 think
+                                    if cache:
+                                        for i in range(len(cache) - 1, -1, -1):
+                                            if cache[i].get("event") == "text":
+                                                cache[i]["event"] = "think"
+                                            if cache[i].get("elapsed_time"):
+                                                del cache[i]
                                     # 先输出action name
                                     name = item["data"]["chunk"].tool_call_chunks[0].get("name")
                                     # 如果final_result中的 ``` 是奇数个，则手工拼接一个 ``` 防止前端渲染的时候乱了
                                     log_prefix = "\n```\n" if final_result.count("```") % 2 == 1 else ""
                                     ret = {
                                         "event": StreamEventType.THINK.value,
-                                        "content": (f'{log_prefix}\n```json\n"action": "{name}",\n'),
+                                        "content": (f'{log_prefix}\n\n```json\n"action": "{name}",\n'),
                                         "cover": cover,
                                     }
                                     # 如果不是第一次调用工具，将first_tool_args还原为True

@@ -109,6 +109,8 @@ class IntentRecognition(BaseModel):
     max_tool_output_len: int = Field(
         default=int(os.getenv("MAX_TOOL_OUTPUT_LEN", "500")), description=("工具调用结果展示的最大长度")
     )
+    max_cache_length: int = Field(default=int(os.getenv("MAX_CACHE_LENGTH", "50")), description=("缓存的最大长度"))
+    max_iterations: int = Field(default=int(os.getenv("MAX_ITERATIONS", "50")), description=("最大迭代次数"))
 
 
 class KnowledgebaseSettings(BaseModel):
