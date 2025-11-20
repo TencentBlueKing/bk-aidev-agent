@@ -11,8 +11,8 @@ class AgentConfig(BaseModel):
 
     agent_code: str = Field(..., description="智能体代码")
     agent_name: str = Field(..., description="智能体名称")
-    llm_model_name: str = Field(..., description="LLM模型名称")
-    non_thinking_llm_model_name: str = Field(..., description="非深度思考模型")
+    chat_model: str = Field(..., description="LLM模型名称")
+    non_thinking_llm: str = Field(..., description="非深度思考模型")
     role_prompt: str | None = Field(None, description="角色提示词(平台)")
     knowledgebase_ids: list = Field(default_factory=list, description="知识库ID列表")
     knowledge_ids: list = Field(default_factory=list, description="知识ID列表")
@@ -81,8 +81,8 @@ class AgentConfigManager:
         config = AgentConfig(
             agent_code=agent_code,
             agent_name=res["agent_name"],
-            llm_model_name=res["prompt_setting"]["llm_code"],
-            non_thinking_llm_model_name=res["prompt_setting"]["non_thinking_llm"] or "",
+            chat_model=res["prompt_setting"]["llm_code"],
+            non_thinking_llm=res["prompt_setting"]["non_thinking_llm"] or "",
             role_prompt=role_prompt or None,
             knowledgebase_ids=res["knowledgebase_settings"]["knowledgebases"],
             tool_codes=res["related_tools"],
