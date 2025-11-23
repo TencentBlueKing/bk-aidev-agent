@@ -2,7 +2,9 @@
 
 from logging import getLogger
 
+import pkg_resources
 from django.contrib.auth import get_user_model
+from rest_framework.response import Response
 
 from aidev_bkplugin.packages.apigw.permissions import ApigwPermission
 from aidev_bkplugin.permissions import AgentPluginPermission
@@ -38,3 +40,18 @@ class OpenapiPluginViewSet(PluginViewSet):
 
 class OpenapiChatCompletionViewSet(OpenapiPluginViewSet, ChatCompletionViewSet):
     pass
+
+
+class OpenapiAgentAbilitiesViewSet(PluginViewSet):
+    """
+    获取智能体依赖包
+    此接口不鉴权，同时也不需要用户信息
+    """
+
+    permission_classes = []
+
+    def list(self, request, *args, **kwargs):
+        """获取所有以 aidev 开头的已安装包及其版本"""
+        installed_packages = pkg_resources.working_set
+        abilities = {package.key: package.version for package in installed_packages if package.key.startswith("aidev")}
+        return Response(data=abilities)

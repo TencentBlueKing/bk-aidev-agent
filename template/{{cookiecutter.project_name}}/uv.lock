@@ -31,8 +31,8 @@ dev = [
 requires-dist = [
     { name = "aidev-agent", specifier = ">=1.0.4,<1.1" },
     { name = "aidev-ai-blueking", specifier = "==1.2.8.post2" },
-    { name = "aidev-bkplugin", specifier = "==1.0.5" },
-    { name = "aidev-wxbot", specifier = "==1.0.3" },
+    { name = "aidev-bkplugin", specifier = "==1.0.6" },
+    { name = "aidev-wxbot", specifier = "==1.0.4" },
     { name = "bk-plugin-framework", specifier = ">=2.3.2,<2.4.0" },
     { name = "bkapi-bk-apigateway", specifier = "==1.0.12" },
     { name = "celery", specifier = "==5.4.0" },
@@ -69,9 +69,9 @@ dependencies = [
     { name = "pytz" },
     { name = "werkzeug" },
 ]
-sdist = { url = "http://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-agent/1.0.4/aidev_agent-1.0.4.tar.gz", hash = "sha256:314a1429b1a88216e36777f974f58cf8e6272fe4ec87e7e1d07edc928acccb00" }
+sdist = { url = "http://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-agent/1.0.4/aidev_agent-1.0.4.tar.gz", hash = "sha256:74f1595207b0f72c349902bf7a382d09d2f718b1fca4d38d9692c455a86dc917" }
 wheels = [
-    { url = "http://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-agent/1.0.4/aidev_agent-1.0.4-py3-none-any.whl", hash = "sha256:1cf58e66db166103202c5f813f3edff31d8d6064376557cdd0ba269a746d6e26" },
+    { url = "http://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-agent/1.0.4/aidev_agent-1.0.4-py3-none-any.whl", hash = "sha256:b65f268dae1f57f4a1c30e3182f4ab037479cd3b6ad1c1db6b59665f703f0d77" },
 ]
 
 [[package]]
@@ -82,27 +82,27 @@ dependencies = [
     { name = "aidev-agent" },
     { name = "django" },
 ]
-sdist = { url = "http://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-ai-blueking/1.2.8.post2/aidev_ai_blueking-1.2.8.post2.tar.gz", hash = "sha256:b553f95265c989fe4bae25f9bdc045b015b5954782b427e2e2b984b0d792d63d" }
+sdist = { url = "http://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-ai-blueking/1.2.8.post2/aidev_ai_blueking-1.2.8.post2.tar.gz", hash = "sha256:7dd721fdfc1452495414cbe1c083a3657115c5eb3606cbb5d9f763d39a94a02c" }
 wheels = [
-    { url = "http://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-ai-blueking/1.2.8.post2/aidev_ai_blueking-1.2.8.post2-py3-none-any.whl", hash = "sha256:34ac4d965c23aaa09005c62ad4fe30e2ad66321f481d1bc359bb11c69b344124" },
+    { url = "http://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-ai-blueking/1.2.8.post2/aidev_ai_blueking-1.2.8.post2-py3-none-any.whl", hash = "sha256:1d94d0c289e9cb58e64db3b76625a6e42240d609e542425ffe5e72c99c261546" },
 ]
 
 [[package]]
 name = "aidev-bkplugin"
-version = "1.0.5"
+version = "1.0.6"
 source = { registry = "http://mirrors.cloud.tencent.com/pypi/simple/" }
 dependencies = [
     { name = "aidev-agent" },
     { name = "blueapps" },
 ]
-sdist = { url = "http://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-bkplugin/1.0.5/aidev_bkplugin-1.0.5.tar.gz", hash = "sha256:4c45be3aaf11fc5c0a49cbbe9b49fd5b8673b9053f9c184ba20d5a3450656196" }
+sdist = { url = "http://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-bkplugin/1.0.6/aidev_bkplugin-1.0.6.tar.gz", hash = "sha256:7414799c15f0679ff4935dc46f4e5989e799dac8944e7ec3e6b5dd9094a48271" }
 wheels = [
-    { url = "http://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-bkplugin/1.0.5/aidev_bkplugin-1.0.5-py3-none-any.whl", hash = "sha256:b90656dce5e57f4963d60289a5bc99a2f3f37de3e66ae56f56935b33375df84b" },
+    { url = "http://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-bkplugin/1.0.6/aidev_bkplugin-1.0.6-py3-none-any.whl", hash = "sha256:5f7512c4894a37348e72ae6e31b104f9e7ffdddbf429e5e109819ea9754ca63f" },
 ]
 
 [[package]]
 name = "aidev-wxbot"
-version = "1.0.3"
+version = "1.0.4"
 source = { registry = "http://mirrors.cloud.tencent.com/pypi/simple/" }
 dependencies = [
     { name = "django" },
@@ -113,9 +113,9 @@ dependencies = [
     { name = "requests" },
     { name = "stackprinter" },
 ]
-sdist = { url = "http://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-wxbot/1.0.3/aidev_wxbot-1.0.3.tar.gz", hash = "sha256:7c6282ddfacf96fb5f732198a5c287107ab2a990ff88a8c12b40de7640762080" }
+sdist = { url = "http://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-wxbot/1.0.4/aidev_wxbot-1.0.4.tar.gz", hash = "sha256:75ac03661f069c08144481aac6a699338d12c261aba52b7c9098a084cde3bad5" }
 wheels = [
-    { url = "http://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-wxbot/1.0.3/aidev_wxbot-1.0.3-py3-none-any.whl", hash = "sha256:2bfeff52f93cb0464bc739cdbe10438f115a3e8ca1688dc068232af578b497c8" },
+    { url = "http://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-wxbot/1.0.4/aidev_wxbot-1.0.4-py3-none-any.whl", hash = "sha256:6e12e08480df0267d3786ad62ea420f3de669ae1cd773c48dfdbe1aa1086effd" },
 ]
 
 [[package]]
