@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 
 
 class IndexView(APIView):
-    def get(self, request):
+    def get(self, request, *args, **kwargs):
         client = BKAidevApi.get_client()
         result = client.api.retrieve_agent_config(path_params={"agent_code": settings.APP_CODE})
         agent_name = result["data"]["agent_name"]
