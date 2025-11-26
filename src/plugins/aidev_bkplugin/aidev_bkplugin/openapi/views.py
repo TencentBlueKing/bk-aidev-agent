@@ -8,7 +8,13 @@ from rest_framework.response import Response
 
 from aidev_bkplugin.packages.apigw.permissions import ApigwPermission
 from aidev_bkplugin.permissions import AgentPluginPermission
-from aidev_bkplugin.views.builtin import ChatCompletionViewSet, PluginViewSet
+from aidev_bkplugin.views.builtin import (
+    AgentInfoViewSet,
+    ChatCompletionViewSet,
+    ChatSessionContentViewSet,
+    ChatSessionViewSet,
+    PluginViewSet,
+)
 
 USER_MODEL = get_user_model()
 
@@ -55,3 +61,15 @@ class OpenapiAgentAbilitiesViewSet(PluginViewSet):
         installed_packages = pkg_resources.working_set
         abilities = {package.key: package.version for package in installed_packages if package.key.startswith("aidev")}
         return Response(data=abilities)
+
+
+class OpenapiChatSessionViewSet(OpenapiPluginViewSet, ChatSessionViewSet):
+    pass
+
+
+class OpenapiChatSessionContentViewSet(OpenapiPluginViewSet, ChatSessionContentViewSet):
+    pass
+
+
+class OpenapiAgentInfoViewSet(OpenapiPluginViewSet, AgentInfoViewSet):
+    pass
