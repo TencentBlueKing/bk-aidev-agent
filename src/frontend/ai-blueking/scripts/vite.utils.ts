@@ -57,8 +57,9 @@ function getPrefix(version: VueVersion, formats: LibraryFormats[]) {
   return isVue3 && !isIIFE ? 'bk' : env.BKUI_PREFIX;
 }
 
-function getExternal(formats: LibraryFormats[], version: VueVersion) {
+function getExternal(formats: LibraryFormats[], version: VueVersion, isBundle?: boolean) {
   return (id: string) => {
+    if (isBundle) return false;
     const isVue3 = version === VueVersion.Vue3;
     if (formats.includes('iife')) {
       return isVue3 && /^vue$/.test(id);
@@ -105,7 +106,8 @@ export const createBuildConfig = (
   version: VueVersion,
   formats: LibraryFormats[],
   emptyOutDir: boolean,
-  userConfig?: UserConfig
+  userConfig?: UserConfig,
+  isBundle?: boolean
 ): UserConfig => {
   const isIIFE = formats.includes('iife');
   const prefix = getPrefix(version, formats);
@@ -117,19 +119,19 @@ export const createBuildConfig = (
         emptyOutDir,
         lib: {
           entry: resolve(process.cwd(), `src/${version}.ts`),
-          fileName: format => `index.${format}.min.js`,
+          fileName: format => `index.${format}${isBundle ? '.bundle' : ''}.min.js`,
           formats,
           name: LessCodeGlobalVar,
         },
         minify: true,
         rollupOptions: {
-          external: getExternal(formats, version),
+          external: getExternal(formats, version, isBundle),
           output: {
             assetFileNames: isIIFE ? undefined : () => 'style.css',
             dir: resolve(process.cwd(), `dist/${version}`),
             exports: 'named',
             // 全局变量声明
-            globals: {
+            globals: isBundle ? {} : {
               vue: 'Vue',
               'x-mavon-editor': 'XMaonEditor',
               '@blueking/ai-ui-sdk': 'BKAIUISDK',

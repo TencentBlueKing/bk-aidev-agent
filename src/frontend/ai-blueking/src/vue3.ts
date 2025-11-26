@@ -24,7 +24,7 @@
  * IN THE SOFTWARE.
  */
 import { provideGlobalConfig } from 'bkui-vue';
-import { h } from 'vue';
+import { h, createApp } from 'vue';
 
 import AiBluekingNew from './ai-blueking-new.vue';
 import MessageList from './components/message-list.vue';
@@ -41,7 +41,7 @@ provideGlobalConfig({
 export type * from './types/index.ts';
 
 // 导出 h 函数，用于自定义 icon 渲染
-export { h };
+export { h, createApp };
 
 // 导出独立组件，支持按需引入
 export { MessageList, RenderMessage };

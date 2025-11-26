@@ -47,11 +47,12 @@ const buildLib = async (
   version: VueVersion,
   formats: LibraryFormats[],
   emptyOutDir = false,
-  userConfig?: UserConfig
+  userConfig?: UserConfig,
+  isBundle?: boolean
   // uglyfiy = false,
 ) => {
   await build({
-    ...createBuildConfig(version, formats, emptyOutDir, userConfig),
+    ...createBuildConfig(version, formats, emptyOutDir, userConfig, isBundle),
   });
   const { pkg } = getPackageInfo<LesscodeConfig>('../lesscode/config.json');
   pkg.framework = version;
@@ -59,6 +60,7 @@ const buildLib = async (
 };
 (async () => {
   await buildLib(VueVersion.Vue3, ['es', 'umd'], true);
+  await buildLib(VueVersion.Vue3, ['es', 'umd'], true, undefined, true);
   await buildLib(VueVersion.Vue3, ['iife']);
   await buildLib(VueVersion.Vue2, ['es', 'umd'], true);
   await buildLib(VueVersion.Vue2, ['iife']);
