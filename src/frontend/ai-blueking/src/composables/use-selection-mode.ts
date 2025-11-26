@@ -5,6 +5,7 @@ import { Message as BkMessage } from 'bkui-vue';
 
 import { HIDE_ROLE_LIST } from '../config';
 import type { SessionStore } from '../store/sessionStore';
+import { copyToClipboard } from '../utils';
 
 interface UseSelectionModeOptions {
   sessionStore: SessionStore;
@@ -115,13 +116,21 @@ export function useSelectionMode({
         const shareUrl = `${url}share-page/${shareCode}`;
 
         // 把 shareUrl 写入剪贴板
-        navigator.clipboard.writeText(shareUrl);
+        const isSuccess = await copyToClipboard(shareUrl);
 
-        BkMessage({
-          theme: 'success',
-          getContainer: container,
-          message: '分享链接已复制到剪贴板',
-        });
+        if (isSuccess) {
+          BkMessage({
+            theme: 'success',
+            getContainer: container,
+            message: '分享链接已复制到剪贴板',
+          });
+        } else {
+          BkMessage({
+            theme: 'error',
+            getContainer: container,
+            message: '复制失败',
+          });
+        }
       } catch (error) {
         console.error('调用 shareSessionApi 失败:', error);
         sessionStore.handleSdkError('shareSessionApi', error);

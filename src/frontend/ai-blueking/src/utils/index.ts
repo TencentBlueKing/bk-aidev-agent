@@ -221,3 +221,46 @@ export const removeThinkingSections = (text: string): string => {
 
   return cleaned.trim();
 };
+
+/**
+ * 复制文本到剪贴板（兼容 HTTP 环境）
+ * @param text 需要复制的文本
+ * @returns Promise<boolean> 是否复制成功
+ */
+export const copyToClipboard = async (text: string): Promise<boolean> => {
+  // 优先尝试使用 navigator.clipboard API (HTTPS 环境)
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      console.warn('navigator.clipboard.writeText failed, trying fallback:', err);
+    }
+  }
+
+  // 降级方案：使用 execCommand (兼容 HTTP 环境)
+  return new Promise(resolve => {
+    try {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+
+      // 确保 textarea 不可见但存在于 DOM 中
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-9999px';
+      textArea.style.top = '0';
+      textArea.style.opacity = '0';
+
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+
+      resolve(successful);
+    } catch (err) {
+      console.error('Fallback: Oops, unable to copy', err);
+      resolve(false);
+    }
+  });
+};
