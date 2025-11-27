@@ -895,6 +895,8 @@ class CommonQAStreamingMixIn:
             has_tool_call = False
             # 用于判断是否是第一个tool args
             first_tool_args = True
+            # 用于判断是否在工具调用中，避免在工具调用的过程出现 text event
+            tool_calling = False
         try:
             for item in agent_e.stream_events(input_, config=cfg, version="v2", timeout=timeout):
                 ret = {}
@@ -950,6 +952,7 @@ class CommonQAStreamingMixIn:
                                 has_reasoning_content = True
                             elif is_tool_call:
                                 if item["data"]["chunk"].tool_call_chunks[0].get("name"):
+                                    tool_calling = True
                                     # 将非思考模型调用工具前的文本也归为 think
                                     if cache:
                                         for i in range(len(cache) - 1, -1, -1):
@@ -1007,7 +1010,8 @@ class CommonQAStreamingMixIn:
                                         "cover": False,
                                         "elapsed_time": (time.time() - agent_think_start_time) * 1000,
                                     }
-                                    self.check_and_append(cache, ret)
+                                    if not tool_calling:
+                                        self.check_and_append(cache, ret)
                                     final_result += ret["content"]
                                 ret = {
                                     "event": content_event_type,
@@ -1058,6 +1062,7 @@ class CommonQAStreamingMixIn:
                             }
                             has_custom_event = True
                     elif item["event"] == "on_tool_end":
+                        tool_calling = False
                         # TODO: 可能需要考虑异步是否会导致event的乱序问题
                         # 打印工具输出
                         tool_output_content = str(item["data"]["output"])
@@ -1217,7 +1222,7 @@ class CommonQAStreamingMixIn:
                     elif isinstance(self, ToolCallingCommonQAAgent):
                         if ret.get("content", "") == self.LOADING_AGENT_MESSAGE:
                             yield self._yield_ret(ret)
-                        else:
+                        elif not (ret.get("event") == "text" and tool_calling):
                             self.check_and_append(cache, ret)
                         if len(cache) == max_cache_length:
                             ret = cache.popleft()
