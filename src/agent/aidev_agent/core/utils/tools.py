@@ -18,9 +18,21 @@ to the current version of the project delivered to anyone in the future.
 
 import logging
 import time
+import traceback
+from datetime import datetime
 from functools import wraps
 
+import pytz
+
+from aidev_agent.core.extend.intent.utils import logger
+
 logger = logging.getLogger(__name__)
+
+
+def get_beijing_now():
+    utc_now = datetime.now(pytz.utc)
+    beijing_now = utc_now.astimezone(pytz.timezone("Asia/Shanghai")).strftime("%Y年%m月%d日 %H时%M分%S秒")
+    return beijing_now
 
 
 def timeit(message=""):
@@ -44,3 +56,29 @@ def timeit(message=""):
         return wrapper
 
     return decorator
+
+
+def retry(max_retries=5, max_seconds=1800):
+    def _retry(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            try_cnt = 0
+            start_time = time.time()
+            while try_cnt < max_retries and (time.time() - start_time) < max_seconds:
+                try:
+                    try_cnt += 1
+                    return func(*args, **kwargs)
+                except Exception:  # noqa: PERF203
+                    logger.info(
+                        f"\n\n=====\n>>>>> 执行出错，重试中。当前尝试次数: {try_cnt}。"
+                        f"详细错误情况：\n{traceback.format_exc()}\n=====\n\n"
+                    )
+                    if try_cnt >= max_retries or (time.time() - start_time) >= max_seconds:
+                        # 如果达到最大重试次数或者超过最大时间限制，最后一次重试的异常将被抛出。
+                        # 这样可以确保在所有重试都失败的情况下，异常会被正确地抛出并处理。
+                        raise
+                    continue
+
+        return wrapper
+
+    return _retry

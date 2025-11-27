@@ -20,7 +20,7 @@ from typing import List, Tuple
 
 from aidev_agent.core.utils.model_management.registry import RegistryPluginMixIn
 
-from .utils import timeit
+from aidev_agent.core.utils.tools import timeit
 
 reg = RegistryPluginMixIn()
 

@@ -43,21 +43,13 @@ from aidev_agent.core.extend.intent.utils import (
     is_deepseek_r1_series_models,
     remove_thinking_process,
 )
+from aidev_agent.core.utils.common import OUTPUT_PARSER_ERR_MSG, ACTION_INPUT_ERR_MSG
+from aidev_agent.core.utils.tools import get_beijing_now
 from aidev_agent.services.pydantic_models import AgentOptions
 
 MessageFormatter = Callable[[Sequence[Tuple[AgentAction, str]]], List[BaseMessage]]
 
 logger = logging.getLogger(__name__)
-
-OUTPUT_PARSER_ERR_MSG = "无法从 LLM 输出内容中解析出要求的 JSON BLOB，本次工具调用或结论解析失败。"
-ACTION_INPUT_ERR_MSG = """要求LLM返回的 $JSON_BLOB 中的 $TOOL_INPUT 务必是个字典，
-即务必同时指定参数名和参数值，而不要只指定参数值。但是LLM却只指定了其参数值，而没有指定参数名！工具调用失败！"""
-
-
-def get_beijing_now():
-    utc_now = datetime.now(pytz.utc)
-    beijing_now = utc_now.astimezone(pytz.timezone("Asia/Shanghai")).strftime("%Y年%m月%d日 %H时%M分%S秒")
-    return beijing_now
 
 
 def enhanced_format_log_to_str(

@@ -18,7 +18,6 @@ to the current version of the project delivered to anyone in the future.
 
 import json
 import time
-import unicodedata
 from collections import defaultdict, deque
 from copy import deepcopy
 from logging import getLogger
@@ -38,11 +37,11 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel
 
 from aidev_agent.core.agent.agents import (
-    ACTION_INPUT_ERR_MSG,
-    OUTPUT_PARSER_ERR_MSG,
     enhanced_format_log_to_str,
-    get_beijing_now,
 )
+from aidev_agent.core.utils.common import OUTPUT_PARSER_ERR_MSG, ACTION_INPUT_ERR_MSG
+from aidev_agent.core.utils.tools import get_beijing_now
+from ...knowledge.utils import is_structured_data, deduplicate_knowledge_file_paths, filter_and_select_topk
 from aidev_agent.core.agent.multimodal import MultiToolCallCommonAgent, StructuredChatCommonAgent
 from aidev_agent.core.extend.intent.intent_recognition import IntentRecognition
 from aidev_agent.core.utils.local import request_local
@@ -56,16 +55,12 @@ from ..intent.prompts import DEFAULT_QA_PROMPT_TEMPLATES
 from ..intent.utils import (
     FINAL_ANSWER_PREFIXES,
     FINAL_ANSWER_SUFFIXES,
-    conditional_dispatch_custom_event,
-    deduplicate_knowledge_file_paths,
     deduplicate_tools,
-    filter_and_select_topk,
     is_deepseek_r1_series_models,
-    is_model_without_function_calling,
-    is_structured_data,
     query_clarification_enabled,
     support_multimodal,
 )
+from aidev_agent.core.bk_streaming.utils import build_table, conditional_dispatch_custom_event
 
 _logger = getLogger(__name__)
 
@@ -467,49 +462,9 @@ class IntentRecognitionMixin(BaseModel):
                 request_local.current_user_store["reference_doc"] = reference_doc
 
     @classmethod
-    def cell_display_length(cls, s):
-        """计算字符串显示宽度，中文等全角字符算2，半角算1"""
-        length = 0
-        for c in str(s):
-            # F,W,? 算2，其它算1
-            length += 2 if unicodedata.east_asian_width(c) in "FW" else 1
-        return length
-
-    @classmethod
-    def pretty_table(cls, header, rows):
-        columns = [[header[i]] + [row[i] for row in rows] for i in range(len(header))]
-        col_widths = [max(cls.cell_display_length(cell) for cell in col) for col in columns]
-
-        def format_row(row):
-            formatted = []
-            for idx, cell in enumerate(row):
-                cell_str = str(cell)
-                # add spaces (全宽字符用2宽度补齐)
-                padding = col_widths[idx] - cls.cell_display_length(cell_str)
-                formatted.append(cell_str + " " * padding)
-            return " | ".join(formatted)
-
-        sep = "-+-".join(["-" * w for w in col_widths])
-
-        lines = [
-            format_row(header),
-            sep,
-        ]
-        for row in rows:
-            lines.append(format_row(row))
-        return "\n".join(lines)
-
-    @classmethod
     def get_intent_ids(cls, intents, category):
         """辅助函数：按类别收集资源ID"""
         return [int(doc["资源ID"]) for doc in intents if IntentCategory(doc["资源类别"]) == category]
-
-    @classmethod
-    def build_table(cls, title, data_list, empty_msg="为空"):
-        """辅助函数：构建表格内容"""
-        if not data_list:
-            return f"{title}{empty_msg}\n\n"
-        return f"{title}：\n\n{cls.pretty_table(['资源类别', '资源ID'], data_list)}\n\n"
 
     @classmethod
     def render_intent_recognition_results(cls, recog_results, **kwargs):
@@ -528,7 +483,7 @@ class IntentRecognitionMixin(BaseModel):
             + [["knowledge item", i] for i in recog_results["bound_knowledge_ids"]]
         )
 
-        table_content = cls.build_table("意图识别知识文件提供的意图", intent_rows) + cls.build_table(
+        table_content = build_table("意图识别知识文件提供的意图", intent_rows) + build_table(
             "实际绑定的资源", bound_rows
         )
         _logger.info(f"{table_content}")
@@ -1313,7 +1268,6 @@ class CommonQAAgent(ToolCallingCommonQAAgent):
 
     @classmethod
     def get_agent_executor(cls, *args, **kwargs):
-        print("asdgsg")
         agent_class = LangGraphV1QAAgent
         return agent_class.get_agent_executor(*args, **kwargs)
         # llm = kwargs["llm"] if "llm" in kwargs else args[0]

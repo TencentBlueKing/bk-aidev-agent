@@ -17,12 +17,7 @@ to the current version of the project delivered to anyone in the future.
 """
 
 import logging
-import time
-import traceback
-from functools import wraps
 
-from langchain_core.callbacks.manager import dispatch_custom_event
-from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from aidev_agent.config import settings
@@ -33,93 +28,8 @@ logger = logging.getLogger(__name__)
 HUNYUAN_SPECIFIC_RESPONSE = "很抱歉，我还未学习到如何回答这个问题的内容，暂时无法提供相关信息。"
 
 
-def is_structured_data(doc):
-    structured_data_file_types = ["csv", "xlsx"]
-    if isinstance(doc, Document):
-        if not hasattr(doc, "metadata"):
-            raise RuntimeError(f"召回的文档没有metadata属性！\n文档格式为 Document\n文档内容为：{doc}\n")
-        return "file_type" in doc.metadata and doc.metadata["file_type"] in structured_data_file_types
-    elif isinstance(doc, dict):
-        if "metadata" not in doc:
-            raise RuntimeError(f"召回的文档没有metadata属性！\n文档格式为 dict\n文档内容为：{doc}\n")
-        return "file_type" in doc["metadata"] and doc["metadata"]["file_type"] in structured_data_file_types
-    else:
-        raise RuntimeError(f"不支持的文档格式！\n文档内容为：{doc}\n")
-
-
-def timeit(message=""):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            if not kwargs.pop("disable_timeit", False):
-                st_time = time.time()
-                result = func(*args, **kwargs)
-                elapsed_time = time.time() - st_time
-                logger.info(f"=====> {message}耗时 ({func.__name__}): {elapsed_time:.2f}s")
-                return result
-            else:
-                return func(*args, **kwargs)
-
-        return wrapper
-
-    return decorator
-
-
-def retry(max_retries=5, max_seconds=1800):
-    def _retry(func):
-        def wrapper(*args, **kwargs):
-            try_cnt = 0
-            start_time = time.time()
-            while try_cnt < max_retries and (time.time() - start_time) < max_seconds:
-                try:
-                    try_cnt += 1
-                    return func(*args, **kwargs)
-                except Exception:  # noqa: PERF203
-                    logger.info(
-                        f"\n\n=====\n>>>>> 执行出错，重试中。当前尝试次数: {try_cnt}。"
-                        f"详细错误情况：\n{traceback.format_exc()}\n=====\n\n"
-                    )
-                    if try_cnt >= max_retries or (time.time() - start_time) >= max_seconds:
-                        # 如果达到最大重试次数或者超过最大时间限制，最后一次重试的异常将被抛出。
-                        # 这样可以确保在所有重试都失败的情况下，异常会被正确地抛出并处理。
-                        raise
-                    continue
-
-        return wrapper
-
-    return _retry
-
-
 def deduplicate_tools(candidate_tools):
     return list({tool.name: tool for tool in candidate_tools}.values())
-
-
-def deduplicate_knowledge_chunks(knowledge_chunks):
-    return list({item["metadata"]["uid"]: item for item in knowledge_chunks}.values())
-
-
-def deduplicate_knowledge_file_paths(knowledge_chunks):
-    """按照 file path 进行去重，且只保留 metadata，且按照 fine grained score 进行降序排序"""
-    unique_items = list(
-        {item["metadata"]["file_path"]: {"metadata": item["metadata"]} for item in knowledge_chunks}.values()
-    )
-    return sorted(unique_items, key=lambda x: x["metadata"]["fine_grained_score"], reverse=True)
-
-
-def conditional_dispatch_custom_event(name, data, **kwargs):
-    if kwargs.get("enable_custom_event", True):
-        dispatch_custom_event(name, data)
-
-
-def filter_and_select_topk(items, score_threshold, topk):
-    if score_threshold:
-        filtered_items = [
-            item for item in items if item.get("metadata", {}).get("fine_grained_score", 0) >= score_threshold
-        ]
-    else:
-        filtered_items = items
-    sorted_items = sorted(filtered_items, key=lambda x: x["metadata"]["fine_grained_score"], reverse=True)
-    return sorted_items[:topk]
 
 
 def remove_thinking_process(resp_content):

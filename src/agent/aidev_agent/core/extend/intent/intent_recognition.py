@@ -37,13 +37,11 @@ from aidev_agent.core.extend.intent.prompts import DEFAULT_INTENT_RECOGNITION_PR
 from aidev_agent.core.extend.intent.similarity_model import calculate_similarity
 from aidev_agent.core.extend.intent.utils import (
     HUNYUAN_SPECIFIC_RESPONSE,
-    conditional_dispatch_custom_event,
-    deduplicate_knowledge_chunks,
     invoke_decorator,
-    is_structured_data,
-    retry,
-    timeit,
 )
+from aidev_agent.core.bk_streaming.utils import conditional_dispatch_custom_event
+from aidev_agent.core.utils.tools import timeit, retry
+from aidev_agent.core.knowledge.utils import is_structured_data, deduplicate_knowledge_chunks
 from aidev_agent.core.extend.models.llm_gateway import ChatModel
 from aidev_agent.enums import Decision, FineGrainedScoreType, IndependentQueryMode, IntentCategory, IntentStatus
 from aidev_agent.services.pydantic_models import AgentOptions
