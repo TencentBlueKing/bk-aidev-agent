@@ -155,6 +155,7 @@ class AgentInstanceFactory:
         final_args = {
             "agent_cls": self.agent_cls,
             "callbacks": self.callbacks,
+            "run_by_agent": True,
             **agent_specific_args,
         }
 
