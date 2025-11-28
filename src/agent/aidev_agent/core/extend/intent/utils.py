@@ -153,7 +153,7 @@ def invoke_decorator(agent_options, invoke_func, llm):
         # 根据 https://huggingface.co/deepseek-ai/DeepSeek-R1#usage-recommendations 的建议：
         # Avoid adding a system prompt; all instructions should be contained within the user prompt.
         # NOTE: 目前假设只有第 1 个 message 才可能是 SystemMessage
-        if global_llm_model_name := agent_options.intent_recognition_options.global_llm_model_name:
+        if global_llm_model_name := agent_options.intent_recognition_options.non_thinking_llm:
             global_llm = ChatModel.get_setup_instance(
                 model=global_llm_model_name,
                 streaming=True,

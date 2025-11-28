@@ -45,6 +45,7 @@ class ChatCompletionAgent(BaseModel):
     callbacks: list[BaseCallbackHandler] | None = None
     agent_cls: type[CommonQAAgent] = CommonQAAgent
     agent_options: AgentOptions = Field(default_factory=AgentOptions)
+    run_by_agent: bool = False
 
     # using in streaming
     first_chunk: bool = True
@@ -128,6 +129,7 @@ class ChatCompletionAgent(BaseModel):
     def is_run_by_agent(self) -> bool:
         return any(
             [
+                self.run_by_agent,
                 self.tools,
                 self.files,
                 self.knowledge_bases,
