@@ -25,7 +25,6 @@ from langchain_core.callbacks.manager import dispatch_custom_event
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from aidev_agent.config import settings
 from aidev_agent.core.extend.models.llm_gateway import ChatModel
 
 logger = logging.getLogger(__name__)
@@ -149,12 +148,12 @@ def query_clarification_enabled(llm, kwargs):
     return llm.model_name == "gpt-4o" or "deepseek" in llm.model_name or "qwq" in llm.model_name
 
 
-def invoke_decorator(invoke_func, llm):
+def invoke_decorator(agent_options, invoke_func, llm):
     def wrapper(*args, **kwargs):
         # 根据 https://huggingface.co/deepseek-ai/DeepSeek-R1#usage-recommendations 的建议：
         # Avoid adding a system prompt; all instructions should be contained within the user prompt.
         # NOTE: 目前假设只有第 1 个 message 才可能是 SystemMessage
-        if global_llm_model_name := settings.INTENT_RECOGNITION_GLOBAL_LLM_MODEL_NAME:
+        if global_llm_model_name := agent_options.intent_recognition_options.non_thinking_llm:
             global_llm = ChatModel.get_setup_instance(
                 model=global_llm_model_name,
                 streaming=True,
@@ -180,6 +179,7 @@ def invoke_decorator(invoke_func, llm):
             # deepseek-r1 系列模型会有 think 过程，在使用结果的时候需要去除
             result.content = remove_thinking_process(result.content)
             result.content = result.content.strip()
+
         return result
 
     return wrapper

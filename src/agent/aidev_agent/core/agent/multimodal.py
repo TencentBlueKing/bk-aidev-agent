@@ -217,6 +217,7 @@ class CommonAgentMixIn(BaseModel, ABC):
         cls,
         llm: BaseChatModel,
         knowledge_llm: BaseChatModel,
+        non_thinking_llm: Optional[str] = None,
         extra_tools: Optional[List[BaseTool]] = None,
         prefix: Optional[str] = None,
         role_prompt: Optional[str] = None,
@@ -271,6 +272,8 @@ class CommonAgentMixIn(BaseModel, ABC):
             agent.agent_options.knowledge_query_options.knowledge_items = knowledge_items
         if role_prompt:
             agent.agent_options.knowledge_query_options.role_prompt = role_prompt
+        if non_thinking_llm:
+            agent.agent_options.intent_recognition_options.non_thinking_llm = non_thinking_llm
         history = ChatMessageHistory()
         if chat_history:
             history.add_messages(chat_history)

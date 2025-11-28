@@ -242,6 +242,11 @@ class AgentInstanceFactory:
         """构建聊天历史"""
         return [ChatPrompt.model_validate(each) for each in session_context_data if each.get("content", "")]
 
+    def build_non_thinking_llm(self, agent_code: str) -> str | None:
+        """构建非思考模型"""
+        config = self.config_manager_class.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        return config.non_thinking_llm
+
     def build_knowledge_bases(self, agent_code: str) -> List[dict]:
         """构建知识库"""
         config = self.config_manager_class.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
@@ -384,6 +389,7 @@ class AgentInstanceFactory:
 
         return {
             "chat_model": factory.build_chat_model(agent_code),
+            "non_thinking_llm": factory.build_non_thinking_llm(agent_code),
             "tools": factory.build_tools(agent_code),
             "knowledge_bases": factory.build_knowledge_bases(agent_code),
             "knowledge_items": factory.build_knowledge_items(agent_code),

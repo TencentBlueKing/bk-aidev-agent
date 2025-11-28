@@ -31,6 +31,7 @@ class ChatCompletionAgent(BaseModel):
     """聊天Agent"""
 
     chat_model: BaseChatModel
+    non_thinking_llm: str | None = None
     chat_history: list[ChatPrompt]
     files: list[dict] = Field(default_factory=list)
     tools: Optional[list[StructuredTool]] = None
@@ -230,6 +231,7 @@ class ChatCompletionAgent(BaseModel):
         return self.agent_cls.get_agent_executor(
             llm=self.chat_model,
             knowledge_llm=self.chat_model,
+            non_thinking_llm=self.non_thinking_llm,
             extra_tools=self.tools,
             chat_history=messages[:-1],
             tool_execution_interval=self.TOOL_EXECUTION_INTERVAL,

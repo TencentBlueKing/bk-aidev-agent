@@ -82,7 +82,7 @@ class AgentConfigManager:
             agent_code=agent_code,
             agent_name=res["agent_name"],
             chat_model=res["prompt_setting"]["llm_code"],
-            non_thinking_llm=res["prompt_setting"]["non_thinking_llm"] or "",
+            non_thinking_llm=res["prompt_setting"]["non_thinking_llm"] or res["prompt_setting"]["llm_code"],
             role_prompt=role_prompt or None,
             knowledgebase_ids=res["knowledgebase_settings"]["knowledgebases"],
             tool_codes=res["related_tools"],
