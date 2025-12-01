@@ -174,6 +174,7 @@ class IntentRecognitionMixin(BaseModel):
                 **kwargs,
             )
             self.__class__.intent_recognition_instance.llm_intermediate_step_compressor_parallel(
+                self.agent_options,
                 provided_chat_history,
                 kwargs["query"],
                 intermediate_steps,
@@ -375,6 +376,7 @@ class IntentRecognitionMixin(BaseModel):
                     **kwargs,
                 )
                 kwargs["context"] = self.__class__.intent_recognition_instance.llm_context_compressor_parallel(
+                    self.agent_options,
                     provided_chat_history,
                     kwargs["query"],
                     kwargs["context"],
@@ -389,6 +391,7 @@ class IntentRecognitionMixin(BaseModel):
                     **kwargs,
                 )
                 self.__class__.intent_recognition_instance.llm_intermediate_step_compressor_parallel(
+                    self.agent_options,
                     provided_chat_history,
                     kwargs["query"],
                     intermediate_steps,
