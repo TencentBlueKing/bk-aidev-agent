@@ -22,7 +22,7 @@ dependencies = [
     "langchain-core>0.3.79",
 ]
 name = "aidev-agent"
-version = "1.0.5rc4"
+version = "1.0.5"
 description = "bkaidev agent builder"
 
 [dependency-groups]
