@@ -60,11 +60,13 @@ release_ai_blueking:
 	sed -i 's/"version": "[^"]*"/"version": "'"$$VERSION"'"/' ${ROOT_DIR}/src/frontend/ai-blueking/package.json; \
 	sed -i 's/^version = "[^"]*"/version = "'"$$VERSION"'"/' ${ROOT_DIR}/src/plugins/aidev_ai_blueking/pyproject.toml; \
 	sed -i 's/^aidev-ai-blueking==[^ ]*/aidev-ai-blueking=='"$$VERSION"'/' ${ROOT_DIR}/template/{{cookiecutter.project_name}}/requirements.txt; \
+	sed -i 's/"aidev-ai-blueking==[^"]*"/"aidev-ai-blueking=='"$$VERSION"'"/' ${ROOT_DIR}/template/{{cookiecutter.project_name}}/pyproject.toml; \
 	echo "Version updated successfully to $$VERSION"; \
 	echo "Updated files:"; \
 	echo "  - src/frontend/ai-blueking/package.json"; \
 	echo "  - src/plugins/aidev_ai_blueking/pyproject.toml"; \
-	echo "  - template/{{cookiecutter.project_name}}/requirements.txt"
+	echo "  - template/{{cookiecutter.project_name}}/requirements.txt"; \
+	echo "  - template/{{cookiecutter.project_name}}/pyproject.toml"
 
 # Catch-all rule to prevent Make from complaining about unknown targets
 %:
