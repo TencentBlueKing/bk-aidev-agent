@@ -2,9 +2,11 @@
 
 import copy
 import json
+from itertools import chain
 from logging import getLogger
 
 from aidev_agent.api.bk_aidev import BKAidevApi
+from aidev_agent.core.utils.local import request_local
 from aidev_agent.enums import PromptRole
 from aidev_agent.services.chat import ChatPrompt, ExecuteKwargs
 from bk_plugin_framework.kit.api import custom_authentication_classes
@@ -155,6 +157,10 @@ class ChatCompletionViewSet(PluginViewSet):
         execute_kwargs = ExecuteKwargs.model_validate(request.data.get("execute_kwargs", {}))
         session_code = request.data.get("session_code", "")
         if session_code:
+            if not hasattr(request_local, "otel_info"):
+                request_local.otel_info = {}
+            request_local.otel_info["session_code"] = session_code
+            request_local.otel_info["executor"] = request.user.username or "anonymous"
             agent_instance = build_chat_completion_agent_by_session_code(session_code)
         else:
             chat_history = request.data.get("chat_prompts", []) or request.data.get("chat_history", [])
@@ -174,6 +180,8 @@ class ChatCompletionViewSet(PluginViewSet):
             return Response(result)
 
     def streaming_response(self, generator):
+        first_chunk = [next(generator) for _ in range(1)]
+        generator = chain(iter(first_chunk), generator)
         sr = StreamingHttpResponse(generator)
         sr.headers["Cache-Control"] = "no-cache"
         sr.headers["X-Accel-Buffering"] = "no"
@@ -225,6 +233,7 @@ class ChatGroupViewSet(PluginViewSet):
 
         result = client.api.create_chat_group(json=request.data, headers={"X-BKAIDEV-USER": username})
         return Response(data=result["data"])
+
 
 class ChatSessionShareView(PluginViewSet):
     def create(self, request):

@@ -15,6 +15,7 @@ specific language governing permissions and limitations under the License.
 We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
+
 import json
 import logging
 import threading
@@ -33,7 +34,7 @@ from opentelemetry import context as context_api
 from opentelemetry import trace
 from opentelemetry.context import _RUNTIME_CONTEXT
 from opentelemetry.instrumentation.utils import _SUPPRESS_INSTRUMENTATION_KEY
-from opentelemetry.trace import Status, StatusCode, Span, SpanKind
+from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from aidev_bkplugin.packages.opentelemetry.utils import dont_throw
@@ -44,6 +45,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SpanHolder:
     """管理 Span 及其层级关系"""
+
     span: Span
     token: Optional[Any]  # context token
     children: List[UUID]  # 子 Span 的 run_id 列表
@@ -79,9 +81,7 @@ def set_request_params(span, kwargs):
     for model_tag in ("model", "model_id", "model_name"):
         if (model := kwargs.get(model_tag)) is not None:
             break
-        elif (
-            model := (kwargs.get("invocation_params") or {}).get(model_tag)
-        ) is not None:
+        elif (model := (kwargs.get("invocation_params") or {}).get(model_tag)) is not None:
             break
     else:
         model = "unknown"
@@ -91,9 +91,7 @@ def set_request_params(span, kwargs):
     _set_span_attribute(span, "gen_ai.response.model", model)
 
     if "invocation_params" in kwargs:
-        params = (
-            kwargs["invocation_params"].get("params") or kwargs["invocation_params"]
-        )
+        params = kwargs["invocation_params"].get("params") or kwargs["invocation_params"]
     else:
         params = kwargs
 
@@ -102,9 +100,7 @@ def set_request_params(span, kwargs):
         "gen_ai.request.max_tokens",
         params.get("max_tokens") or params.get("max_new_tokens"),
     )
-    _set_span_attribute(
-        span, "gen_ai.request.temperature", params.get("temperature")
-    )
+    _set_span_attribute(span, "gen_ai.request.temperature", params.get("temperature"))
     _set_span_attribute(span, "gen_ai.request.top_p", params.get("top_p"))
 
     tools = kwargs.get("invocation_params", {}).get("tools", [])
@@ -257,15 +253,9 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
             创建的 Span
         """
         if metadata is not None:
-            current_association_properties = (
-                context_api.get_value("association_properties") or {}
-            )
+            current_association_properties = context_api.get_value("association_properties") or {}
             # Sanitize metadata values to ensure they're compatible with OpenTelemetry
-            sanitized_metadata = {
-                k: _sanitize_metadata_value(v)
-                for k, v in metadata.items()
-                if v is not None
-            }
+            sanitized_metadata = {k: _sanitize_metadata_value(v) for k, v in metadata.items() if v is not None}
             try:
                 context_api.attach(
                     context_api.set_value(
@@ -499,7 +489,7 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
     def on_bk_agent_start(
         self,
         inputs: Dict[str, Any],
-        session_id="unknown",
+        session_code="unknown",
         call_system_bk_app_code="unknown",
         call_system_ai_type="unknown",
         executor="anonymous",
@@ -508,7 +498,7 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
         knowledge_items=None,
         tools=None,
         agent_info=None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> None:
         """蓝鲸 Agent 开始回调，作为整个 Agent 执行的入口
 
@@ -536,7 +526,7 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
             agent_name = agent_info.get("agent_name", "unknown")
             agent_type = agent_info.get("agent_type", "unknown")
             agent_tag_name = agent_info.get("tag_name", "unknown")
-            agent_updated_by = agent_info.get("updated_by",  "unknown")
+            agent_updated_by = agent_info.get("updated_by", "unknown")
             # SDK 版本
             try:
                 agent_sdk_version = version("aidev_agent")
@@ -560,7 +550,7 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
                 "agent.info.tag_name": agent_tag_name,
                 "agent.info.updated_by": agent_updated_by,
                 # 会话维度
-                "agent.session.session_id": session_id,
+                "agent.session.session_code": session_code,
                 "agent.session.call_system_bk_app_code": call_system_bk_app_code,
                 "agent.session.call_system_ai_type": call_system_ai_type,
                 "agent.session.executor": executor,
@@ -593,8 +583,8 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
             self.context_token = self.spans[self._root_run_id].token
 
             logger.debug(
-                "Root span created and set as active context: session_id=%s, trace_id=%s",
-                session_id,
+                "Root span created and set as active context: session_code=%s, trace_id=%s",
+                session_code,
                 format(self.root_span.get_span_context().trace_id, "032x"),
             )
         except Exception as e:
@@ -797,13 +787,9 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
 
         span = self._get_span(run_id)
         if response.llm_output is not None:
-            model_name = response.llm_output.get(
-                "model_name"
-            ) or response.llm_output.get("model_id")
+            model_name = response.llm_output.get("model_name") or response.llm_output.get("model_id")
             if model_name is not None:
-                _set_span_attribute(
-                    span, "gen_ai.response.model", model_name or "unknown"
-                )
+                _set_span_attribute(span, "gen_ai.response.model", model_name or "unknown")
             id = response.llm_output.get("id")
             if id is not None and id != "":
                 _set_span_attribute(span, "gen_ai.response.id", id)
@@ -817,9 +803,9 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
                 response_text = response.generations[0][0].text
                 message = response.generations[0][0].message
 
-                if hasattr(message, 'tool_calls') and message.tool_calls:
+                if hasattr(message, "tool_calls") and message.tool_calls:
                     tool_calls = message.tool_calls
-                if hasattr(message, 'additional_kwargs') and message.additional_kwargs:
+                if hasattr(message, "additional_kwargs") and message.additional_kwargs:
                     additional_kwargs = message.additional_kwargs
 
         # 设置输出属性
@@ -856,7 +842,7 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
         metadata: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
-        """工具调用开始 - 创建 Tool Span """
+        """工具调用开始 - 创建 Tool Span"""
         if not self.enabled or not self.enable_traces:
             return
 

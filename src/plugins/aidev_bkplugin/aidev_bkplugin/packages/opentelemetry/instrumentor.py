@@ -15,13 +15,16 @@ specific language governing permissions and limitations under the License.
 We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
+
 import logging
-from datetime import timezone, timedelta, datetime
+from datetime import datetime, timedelta, timezone
 from typing import Collection, Optional
 
+from aidev_agent.core.utils.local import request_local
 from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
 from opentelemetry.instrumentation.utils import unwrap
 from wrapt import wrap_function_wrapper
+
 from aidev_bkplugin.services.agent import get_agent_config_info
 
 from .callback_handler import BkAidevAgentCallbackHandler
@@ -29,7 +32,7 @@ from .config import OTelConfig, default_config
 from .otel_service import BkAgentOTelService
 
 logger = logging.getLogger(__name__)
-_instruments = ("langchain-core > 0.1.0", )
+_instruments = ("langchain-core > 0.1.0",)
 
 
 class BkAidevAgentInstrumentor(BaseInstrumentor):
@@ -62,11 +65,6 @@ class BkAidevAgentInstrumentor(BaseInstrumentor):
             name="IntentRecognition.exec_intent_recognition",
             wrapper=IntentRecognitionMixinIntentRecognition(),
         )
-        # wrap_function_wrapper(
-        #     module="aidev_agent.core.extend.agent.qa",
-        #     name="IntentRecognitionMixin.intent_recognition",
-        #     wrapper=IntentRecognitionMixinIntentRecognition(),
-        # )
         # 注入启动时的各个Agent
         wrap_function_wrapper(
             module="aidev_agent.core.agent.multimodal",
@@ -85,21 +83,12 @@ class BkAidevAgentInstrumentor(BaseInstrumentor):
             bool: 是否成功取消插桩
         """
         self.stop_otel_service()
-        # unwrap("langchain_core.callbacks", "BaseCallbackManager.__init__")
         unwrap("aidev_agent.core.extend.intent.intent_recognition", "IntentRecognition.exec_intent_recognition")
         unwrap("aidev_agent.core.agent.multimodal", "LiteEnhancedAgentExecutor.stream_events")
 
 
 class IntentRecognitionMixinIntentRecognition:
-    def get_attributes(self,
-        query: str,
-        llm,
-        tools,
-        callbacks,
-        chat_history,
-        agent_options = None,
-        **kwargs
-    ):
+    def get_attributes(self, query: str, llm, tools, callbacks, chat_history, agent_options=None, **kwargs):
         trace_cb = None
         if callbacks:
             if isinstance(callbacks, (list, tuple)):
@@ -119,10 +108,12 @@ class IntentRecognitionMixinIntentRecognition:
         }
         if agent_options is not None:
             kb_options = agent_options.knowledge_query_options
-            ret.update({
-                "knowledge_bases": [kb.get("id") for kb in kb_options.knowledge_bases],
-                "knowledge_items": [ki.get("id") for ki in kb_options.knowledge_items],
-            })
+            ret.update(
+                {
+                    "knowledge_bases": [kb.get("id") for kb in kb_options.knowledge_bases],
+                    "knowledge_items": [ki.get("id") for ki in kb_options.knowledge_items],
+                }
+            )
         return ret
 
     def __call__(self, wrapped, instance, args, kwargs):
@@ -161,18 +152,17 @@ class LiteEnhancedAgentExecutorStreamEventsWrapper:
         self.tracer = tracer
         self.config = config
 
-    def get_values(self, input = None, **kwargs):
-        from aidev_agent.core.utils.local import request_local
+    def get_values(self, input=None, **kwargs):
         ret = {"inputs": input}
         if hasattr(request_local, "otel_info"):
-            if "executor" in  request_local.otel_info:
+            if "executor" in request_local.otel_info:
                 ret["executor"] = request_local.otel_info["executor"]
             if "call_system_bk_app_code" in request_local.otel_info:
                 ret["call_system_bk_app_code"] = request_local.otel_info["call_system_bk_app_code"]
             if "call_system_ai_type" in request_local.otel_info:
                 ret["call_system_ai_type"] = request_local.otel_info["call_system_ai_type"]
-            if "session_id" in request_local.otel_info:
-                ret["session_id"] = request_local.otel_info["session_id"]
+            if "session_code" in request_local.otel_info:
+                ret["session_code"] = request_local.otel_info["session_code"]
         return ret
 
     def __call__(
@@ -194,17 +184,21 @@ class LiteEnhancedAgentExecutorStreamEventsWrapper:
         kwargs["config"]["callbacks"].append(callback_handler)
         values = self.get_values(*args, **kwargs)
         agent = instance.agent
-        values.update({
-            "model_name": getattr(agent.llm, "model_name", None) or getattr(agent.llm, "model", None),
-            "tools": [tool.name for tool in getattr(agent, "tools", [])],
-            "agent_info": get_agent_config_info()
-        })
+        values.update(
+            {
+                "model_name": getattr(agent.llm, "model_name", None) or getattr(agent.llm, "model", None),
+                "tools": [tool.name for tool in getattr(agent, "tools", [])],
+                "agent_info": get_agent_config_info(),
+            }
+        )
         if hasattr(agent, "agent_options"):
             kb_options = agent.agent_options.knowledge_query_options
-            values.update({
-                "knowledge_bases": [kb.get("id") for kb in kb_options.knowledge_bases],
-                "knowledge_items": [ki.get("id") for ki in kb_options.knowledge_items],
-            })
+            values.update(
+                {
+                    "knowledge_bases": [kb.get("id") for kb in kb_options.knowledge_bases],
+                    "knowledge_items": [ki.get("id") for ki in kb_options.knowledge_items],
+                }
+            )
 
         callback_handler.on_bk_agent_start(**values)
         yield from wrapped(*args, **kwargs)

@@ -1,4 +1,8 @@
+import base64
+import json
+
 from aidev_agent.api.bk_aidev import BKAidevApi
+from aidev_agent.core.utils.local import request_local
 from aidev_agent.enums import AgentBuildType
 from aidev_agent.services.agent import AgentInstanceFactory
 from aidev_agent.services.chat import ChatCompletionAgent
@@ -43,6 +47,10 @@ def get_agent_config_info(username: str | None = None):
             path_params={"agent_code": settings.APP_CODE}, headers={"X-BKAIDEV-USER": username}
         )
         agent_info = result["data"]
+        otel_env_info = agent_info.pop("otel_info", None)
+        if otel_env_info:
+            agent_info["otel_info"] = json.loads(base64.b64decode(otel_env_info).decode())
+        request_local.otel_info = {"executor": username or "anonymous"}
         cache.set(agent_info, settings.DEFAULT_CACHE_TIMEOUT)
     return agent_info
 

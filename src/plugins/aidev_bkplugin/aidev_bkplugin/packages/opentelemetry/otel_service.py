@@ -45,7 +45,7 @@ except ImportError:
     OsResourceDetector: Optional[Type[ResourceDetector]] = None
 
 
-from .config import OTelConfig, ExporterType
+from .config import ExporterType, OTelConfig
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +68,6 @@ class BkAgentOTelService:
         self.tracer_provider: Optional[TracerProvider] = None
         self.meter_provider: Optional[MeterProvider] = None
         self.logger_provider: Optional[LoggerProvider] = None
-        # 验证配置
-        self.config.validate()
 
     def start(self):
         """启动 OTel 服务"""
@@ -133,10 +131,10 @@ class BkAgentOTelService:
                 exporter = self._create_trace_exporter(endpoint_config)
                 # 获取该端点的批处理配置
                 batch_config = {
-                    'max_queue_size': endpoint_config.get('batch_max_queue_size'),
-                    'schedule_delay_millis': endpoint_config.get('batch_schedule_delay_millis'),
-                    'export_timeout_millis': endpoint_config.get('batch_export_timeout_millis'),
-                    'max_export_batch_size': endpoint_config.get('batch_max_export_batch_size'),
+                    "max_queue_size": endpoint_config.get("batch_max_queue_size"),
+                    "schedule_delay_millis": endpoint_config.get("batch_schedule_delay_millis"),
+                    "export_timeout_millis": endpoint_config.get("batch_export_timeout_millis"),
+                    "max_export_batch_size": endpoint_config.get("batch_max_export_batch_size"),
                 }
                 # 创建 BatchSpanProcessor
                 span_processor = BatchSpanProcessor(exporter, **batch_config)
@@ -148,11 +146,9 @@ class BkAgentOTelService:
                 )
             except Exception as e:
                 logger.error(
-                    f"Failed to setup trace processor for endpoint {endpoint_config['url']}: {e}",
-                    exc_info=True
+                    f"Failed to setup trace processor for endpoint {endpoint_config['url']}: {e}", exc_info=True
                 )
                 # 某个端点失败不影响其他端点,继续处理
-
 
     def _create_trace_exporter(self, endpoint_config: dict):
         """
@@ -164,9 +160,9 @@ class BkAgentOTelService:
         Returns:
             OTLPSpanExporter 实例
         """
-        url = endpoint_config['url']
-        token = endpoint_config['token']
-        exporter_type = endpoint_config['exporter_type']
+        url = endpoint_config["url"]
+        token = endpoint_config["token"]
+        exporter_type = endpoint_config["exporter_type"]
 
         headers = {"x-bk-token": token} if token else {}
 
@@ -174,16 +170,13 @@ class BkAgentOTelService:
             return GRPCSpanExporter(
                 endpoint=url,
                 insecure=True,  # TODO: 生产环境建议使用 TLS
-                headers=headers
+                headers=headers,
             )
         elif exporter_type == ExporterType.HTTP:
             # HTTP 协议需要在 endpoint 后添加 /v1/traces
             if not url.endswith("/v1/traces"):
                 url = f"{url.rstrip('/')}/v1/traces"
-            return HTTPSpanExporter(
-                endpoint=url,
-                headers=headers
-            )
+            return HTTPSpanExporter(endpoint=url, headers=headers)
         else:
             assert_never(exporter_type)
 
@@ -211,10 +204,7 @@ class BkAgentOTelService:
                 )
 
             except Exception as e:
-                logger.error(
-                    f"Failed to setup metric reader for endpoint {endpoint_config['url']}: {e}",
-                    exc_info=True
-                )
+                logger.error(f"Failed to setup metric reader for endpoint {endpoint_config['url']}: {e}", exc_info=True)
                 # 某个端点失败不影响其他端点,继续处理
 
         # 配置 Histogram 视图
@@ -227,11 +217,7 @@ class BkAgentOTelService:
         )
 
         # 创建 MeterProvider
-        self.meter_provider = MeterProvider(
-            resource=resource,
-            metric_readers=readers,
-            views=[histogram_view]
-        )
+        self.meter_provider = MeterProvider(resource=resource, metric_readers=readers, views=[histogram_view])
         metrics.set_meter_provider(self.meter_provider)
 
     def _create_metric_exporter(self, endpoint_config: dict):
@@ -244,25 +230,18 @@ class BkAgentOTelService:
         Returns:
             OTLPMetricExporter 实例
         """
-        url = endpoint_config['url']
-        token = endpoint_config['token']
-        exporter_type = endpoint_config['exporter_type']
+        url = endpoint_config["url"]
+        token = endpoint_config["token"]
+        exporter_type = endpoint_config["exporter_type"]
 
         headers = {"x-bk-token": token} if token else {}
 
         if exporter_type == ExporterType.GRPC:
-            return GRPCMetricExporter(
-                endpoint=url,
-                insecure=True,
-                headers=headers
-            )
+            return GRPCMetricExporter(endpoint=url, insecure=True, headers=headers)
         elif exporter_type == ExporterType.HTTP:
             if not url.endswith("/v1/metrics"):
                 url = f"{url.rstrip('/')}/v1/metrics"
-            return HTTPMetricExporter(
-                endpoint=url,
-                headers=headers
-            )
+            return HTTPMetricExporter(endpoint=url, headers=headers)
         else:
             assert_never(exporter_type)
 
@@ -294,10 +273,7 @@ class BkAgentOTelService:
                 )
 
             except Exception as e:
-                logger.error(
-                    f"Failed to setup log processor for endpoint {endpoint_config['url']}: {e}",
-                    exc_info=True
-                )
+                logger.error(f"Failed to setup log processor for endpoint {endpoint_config['url']}: {e}", exc_info=True)
                 # 某个端点失败不影响其他端点,继续处理
 
         # 配置 LoggingHandler
@@ -314,25 +290,18 @@ class BkAgentOTelService:
         Returns:
             OTLPLogExporter 实例
         """
-        url = endpoint_config['url']
-        token = endpoint_config['token']
-        exporter_type = endpoint_config['exporter_type']
+        url = endpoint_config["url"]
+        token = endpoint_config["token"]
+        exporter_type = endpoint_config["exporter_type"]
 
         headers = {"x-bk-token": token} if token else {}
 
         if exporter_type == ExporterType.GRPC:
-            return GRPCLogExporter(
-                endpoint=url,
-                insecure=True,
-                headers=headers
-            )
+            return GRPCLogExporter(endpoint=url, insecure=True, headers=headers)
         elif exporter_type == ExporterType.HTTP:
             if not url.endswith("/v1/logs"):
                 url = f"{url.rstrip('/')}/v1/logs"
-            return HTTPLogExporter(
-                endpoint=url,
-                headers=headers
-            )
+            return HTTPLogExporter(endpoint=url, headers=headers)
         else:
             assert_never(exporter_type)
 
@@ -347,9 +316,7 @@ class BkAgentOTelService:
             Tracer 实例
         """
         # 如果未启用 trace 或未正确初始化 tracer_provider，则回退到全局 Tracer
-        if (not self.config.enabled
-                or not self.config.enable_traces
-                or self.tracer_provider is None):
+        if not self.config.enabled or not self.config.enable_traces or self.tracer_provider is None:
             return trace.get_tracer(name)
 
         # 使用 Agent 专用的 TracerProvider，避免影响全局 Tracer 配置
