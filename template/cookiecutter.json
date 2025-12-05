@@ -16,6 +16,7 @@
   "bkpaas_engine_region": "open",
   "bkpaas_login_url": "http://bkpaas.com/login/",
   "bkpaas_url": "http://bkpaas.bkpaas.com",
+  "bkpaas_grant_apps": "bk-aidev",
   "model_management_ns_host": "",
   "model_management_ns_port": "",
   "similarity_model_service_name": "",

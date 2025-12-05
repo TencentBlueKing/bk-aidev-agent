@@ -13,8 +13,8 @@ asgiref==3.10.0
 attrs==25.4.0
 backoff==2.2.1
 billiard==4.2.2
-bk-plugin-framework==2.3.2
-bk-plugin-runtime==2.1.1
+bk-plugin-framework==2.3.3
+bk-plugin-runtime==2.1.2
 bkapi-bk-apigateway==1.0.12
 bkapi-client-core==1.2.0
 bkoauth==0.1.0

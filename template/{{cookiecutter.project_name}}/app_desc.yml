@@ -68,6 +68,11 @@ modules:
             value: "{{ cookiecutter.llm_service_prefix }}"
             description: LLM service prefix
           {% endif %}
+          {% if cookiecutter.bkpaas_grant_apps %}
+          - name: BK_APIGW_GRANTED_APPS
+            value: "{{ cookiecutter.bkpaas_grant_apps }}"
+            description: bkpaas grant apps
+          {% endif %}
       processes:
         - name: web
           procCommand: gunicorn bk_plugin_runtime.wsgi --timeout 120 -k gthread -w 2 --max-requests=1000 --threads 64
