@@ -20,6 +20,7 @@ dependencies = [
     "h11==0.16.0",
     "langchain-mcp-adapters<1.0.0,>=0.1.9",
     "langchain-core>0.3.79",
+    "mcp==1.23.1",
 ]
 name = "aidev-agent"
 version = "1.0.5"
