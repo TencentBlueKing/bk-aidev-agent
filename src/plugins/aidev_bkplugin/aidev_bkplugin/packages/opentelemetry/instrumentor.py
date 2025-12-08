@@ -18,9 +18,11 @@ to the current version of the project delivered to anyone in the future.
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Collection, Optional
+from typing import Collection, Optional, Any
 
 from aidev_agent.core.utils.local import request_local
+from asgiref.sync import sync_to_async
+from langchain_core.runnables import RunnableConfig
 from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
 from opentelemetry.instrumentation.utils import unwrap
 from wrapt import wrap_function_wrapper
@@ -71,6 +73,17 @@ class BkAidevAgentInstrumentor(BaseInstrumentor):
             name="LiteEnhancedAgentExecutor.stream_events",
             wrapper=LiteEnhancedAgentExecutorStreamEventsWrapper(tracer, self._otel_service_config),
         )
+        wrap_function_wrapper(
+            module="aidev_agent.core.agent.multimodal",
+            name="EnhancedAgentExecutor.invoke",
+            wrapper=LiteEnhancedAgentExecutorInvokeWrapper(tracer, self._otel_service_config),
+        )
+        wrap_function_wrapper(
+            module="aidev_agent.core.agent.multimodal",
+            name="EnhancedAgentExecutor.ainvoke",
+            wrapper=LiteEnhancedAgentExecutorAInvokeWrapper(tracer, self._otel_service_config),
+        )
+
 
     def _uninstrument(self, **kwargs):
         """
@@ -137,14 +150,11 @@ class IntentRecognitionMixinIntentRecognition:
                 end_time_unix_nano = int(now.timestamp() * 1_000_000_000)
                 span.set_attribute("rag.end_time_str", end_time_str)
                 span.set_attribute("rag.end_time_unix_nano", end_time_unix_nano)
-                span.set_attribute("rag.num_retrieved_docs", len(kwargs.get("context", [])))
-                span.set_attribute("rag.retrieved_docs", kwargs.get("retrieved_docs"))
         else:
             ret = wrapped(*args, **kwargs)
         return ret
 
-
-class LiteEnhancedAgentExecutorStreamEventsWrapper:
+class LiteEnhancedAgentExecutorWrapper:
     def __init__(self, tracer, config: OTelConfig):
         """
         初始化包装器
@@ -152,28 +162,40 @@ class LiteEnhancedAgentExecutorStreamEventsWrapper:
         self.tracer = tracer
         self.config = config
 
-    def get_values(self, input=None, **kwargs):
+    def get_config(self, input: dict[str, Any], config: Optional[RunnableConfig] = None, **kwargs: Any):
+        return config
+
+    def get_values(self, agent, input=None, **kwargs):
         ret = {"inputs": input}
         if hasattr(request_local, "otel_info"):
-            if "executor" in request_local.otel_info:
-                ret["executor"] = request_local.otel_info["executor"]
-            if "call_system_bk_app_code" in request_local.otel_info:
-                ret["call_system_bk_app_code"] = request_local.otel_info["call_system_bk_app_code"]
-            if "call_system_ai_type" in request_local.otel_info:
-                ret["call_system_ai_type"] = request_local.otel_info["call_system_ai_type"]
-            if "session_code" in request_local.otel_info:
-                ret["session_code"] = request_local.otel_info["session_code"]
+            # 需要的内容有：executor、call_system_bk_app_code、call_system_ai_type、session_code
+            for k, v in request_local.otel_info.items():
+                ret[k] = v
+        # 其他需要的信息
+        ret.update(
+            {
+                "model_name": getattr(agent.llm, "model_name", None) or getattr(agent.llm, "model", None),
+                "tools": [tool.name for tool in getattr(agent, "tools", [])],
+                "agent_info": get_agent_config_info()
+            }
+        )
+        if hasattr(agent, "agent_options"):
+            kb_options = agent.agent_options.knowledge_query_options
+            ret.update(
+                {
+                    "knowledge_bases": [kb.get("id") for kb in kb_options.knowledge_bases],
+                    "knowledge_items": [ki.get("id") for ki in kb_options.knowledge_items],
+                }
+            )
         return ret
 
-    def __call__(
-        self,
-        wrapped,
-        instance,
-        args,
-        kwargs,
-    ):
-        if "config" not in kwargs or "callbacks" not in kwargs["config"]:
-            raise ValueError("LiteEnhancedAgentExecutor 调用过程中 必须传入callbacks")
+    def create_callback_handler(self, *args, **kwargs):
+        config = self.get_config(*args, **kwargs)
+        if config is None:
+            raise ValueError("LiteEnhancedAgentExecutor 调用过程中 必须传入config")
+
+        if "callbacks" not in config:
+            config["callbacks"] = []
         callback_handler = BkAidevAgentCallbackHandler(
             tracer=self.tracer,
             enabled=self.config.enabled,
@@ -181,25 +203,52 @@ class LiteEnhancedAgentExecutorStreamEventsWrapper:
             debug=self.config.debug,
             max_attribute_length=self.config.max_attribute_length,
         )
-        kwargs["config"]["callbacks"].append(callback_handler)
-        values = self.get_values(*args, **kwargs)
-        agent = instance.agent
-        values.update(
-            {
-                "model_name": getattr(agent.llm, "model_name", None) or getattr(agent.llm, "model", None),
-                "tools": [tool.name for tool in getattr(agent, "tools", [])],
-                "agent_info": get_agent_config_info(),
-            }
-        )
-        if hasattr(agent, "agent_options"):
-            kb_options = agent.agent_options.knowledge_query_options
-            values.update(
-                {
-                    "knowledge_bases": [kb.get("id") for kb in kb_options.knowledge_bases],
-                    "knowledge_items": [ki.get("id") for ki in kb_options.knowledge_items],
-                }
-            )
+        config["callbacks"].append(callback_handler)
+        return callback_handler
 
+
+class LiteEnhancedAgentExecutorStreamEventsWrapper(LiteEnhancedAgentExecutorWrapper):
+    def __call__(
+        self,
+        wrapped,
+        instance,
+        args,
+        kwargs,
+    ):
+        callback_handler = self.create_callback_handler(*args, **kwargs)
+        values = self.get_values(instance.agent, *args, **kwargs)
         callback_handler.on_bk_agent_start(**values)
         yield from wrapped(*args, **kwargs)
         callback_handler.on_bk_agent_end(**values)
+
+
+class LiteEnhancedAgentExecutorInvokeWrapper(LiteEnhancedAgentExecutorWrapper):
+    def __call__(
+        self,
+        wrapped,
+        instance,
+        args,
+        kwargs,
+    ):
+        callback_handler = self.create_callback_handler(*args, **kwargs)
+        values = self.get_values(instance.agent, *args, **kwargs)
+        callback_handler.on_bk_agent_start(**values)
+        ret = wrapped(*args, **kwargs)
+        callback_handler.on_bk_agent_end(**values)
+        return ret
+
+
+class LiteEnhancedAgentExecutorAInvokeWrapper(LiteEnhancedAgentExecutorWrapper):
+    async def __call__(
+        self,
+        wrapped,
+        instance,
+        args,
+        kwargs,
+    ):
+        callback_handler = self.create_callback_handler(*args, **kwargs)
+        values = await sync_to_async(self.get_values)(instance.agent)
+        callback_handler.on_bk_agent_start(**values)
+        ret = await wrapped(*args, **kwargs)
+        callback_handler.on_bk_agent_end(**values)
+        return ret
