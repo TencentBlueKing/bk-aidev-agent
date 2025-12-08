@@ -4,7 +4,7 @@ version = "1.0.0"
 description = ""
 readme = "readme.md"
 authors = [{ name = "blueking" }]
-requires-python = "~=3.11.10"
+requires-python = "~=3.11.9"
 dependencies = [
     "aidev-agent>=1.0.5,<1.1",
     "aidev-ai-blueking==1.2.8.post2",

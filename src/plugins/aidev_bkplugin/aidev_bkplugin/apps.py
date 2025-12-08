@@ -9,6 +9,8 @@ try:
 except ImportError:
     bkoatuh = None
 
+from aidev_bkplugin.packages.opentelemetry import BkAidevAgentInstrumentor
+
 
 class AgentConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
@@ -24,7 +26,6 @@ class AgentConfig(AppConfig):
         agent_config_factory.register(settings.DEFAULT_NAME, import_string(settings.DEFAULT_CONFIG_MANAGER))
 
         # 全局 OTel 服务实例 (应用启动时初始化一次)
-        from aidev_bkplugin.packages.opentelemetry import BkAidevAgentInstrumentor
         BkAidevAgentInstrumentor().instrument()
 
         return super().ready()
