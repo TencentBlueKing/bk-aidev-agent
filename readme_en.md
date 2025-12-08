@@ -14,6 +14,15 @@ BlueKing AIDev platform is dedicated to providing excellent intelligent developm
 
 ## ✨ Core Features
 
+### Agent Development Kit
+| Feature                                                       | Description |
+|---------------------------------------------------------------|-------------|
+| 🤖 [Agent Builder SDK](./src/agent)                           | Agent development framework based on LangChain, providing core capabilities such as tool invocation, memory management, streaming output, and supporting rapid construction of custom agent applications |
+| 🔌 [BKPlugin Integration](./src/plugins/aidev_bkplugin)       | Agent plugin encapsulation for quick integration into the BlueKing ecosystem (such as SOPS, bkflow) |
+| 🐳 [AI BlueKing Integration](./src/plugins/aidev_ai_blueking) | Official website agent plugin, providing complete web interaction experience including multi-turn dialogue, session management, content sharing, etc. |
+| 💬 [WeCom Integration](./src/plugins/aidev_wxbot)             | WeCom bot plugin, supporting message callback processing, automated responses, and RabbitMQ message queue integration |
+
+
 ### AI Dolphin Intelligent Component
 | Feature | Description |
 |------|------|
@@ -34,7 +43,7 @@ BlueKing AIDev platform is dedicated to providing excellent intelligent developm
 ## 🛠️ Quick Start
 
 ### System Requirements
-- Python 3.10+
+- Python 3.11+
 - uv 0.7.14+
 - Node.js 20+
 
@@ -43,12 +52,17 @@ BlueKing AIDev platform is dedicated to providing excellent intelligent developm
     ```bash
     $ uv --version
     uv 0.7.14 (e7f596711 2025-06-23)
-   ```
+    ```
 
 2. Initialize the project environment (virtual environment located in the project root directory `.venv`), this step will initialize the local `pre-commit` component
    ```shell
    $ make
    ```
+
+3. For more development instructions, please refer to:
+   - [General Agent SDK Development Guide](./src/agent/readme.md)
+   - [BlueKing Plugin Development Guide](./src/plugins/aidev_bkplugin/readme.md)
+   - [WeCom Bot Development Guide](./src/plugins/aidev_wxbot/readme.md)
 
 ### Frontend Development
 #### Component Development
@@ -124,6 +138,11 @@ bk-aidev-agent/
 ```
 
 ## 📚 Related Resources
+### Agent Development
+- [Agent FAQ](docs/agent/FAQ.md)
+- [Agent Extension Development Guide](docs/agent/EXTENSION_AGENT.md)
+
+### AI Dolphin
 - [Dolphin Component API Documentation](src/frontend/web/docs/api/props.md)
 - [Dolphin Component Changelog](src/frontend/ai-blueking/CHANGELOG.md)
 - [Dolphin Component FAQ](src/frontend/web/docs/faq.md)

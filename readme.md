@@ -14,6 +14,15 @@
 
 ## ✨ 核心特性
 
+### 智能体开发框架
+| 功能      | 描述                                |
+|---------|-----------------------------------|
+| 🤖 [通用智能体 SDK](./src/agent) | 基于 LangChain 的智能体开发框架，提供工具调用、记忆管理、流式输出等核心能力，支持快速构建自定义智能体应用 |
+| 🔌 [蓝鲸插件集成](./src/plugins/aidev_bkplugin) | 智能体插件化封装，可快速接入蓝鲸生态系统（如标准运维、bkflow） |
+| 🐳 [AI 小鲸集成](./src/plugins/aidev_ai_blueking) | 智能体官网插件，提供多轮对话、会话管理、内容分享等完整的 Web 交互体验 |
+| 💬 [企业微信集成](./src/plugins/aidev_wxbot) | 企业微信机器人插件，支持消息回调处理、自动化响应、RabbitMQ 消息队列集成 |
+
+
 ### AI 小鲸智能组件
 | 功能 | 描述 |
 |------|------|
@@ -50,6 +59,11 @@
    ```shell
    $ make
    ```
+
+3. 更多开发说明请参考：
+   - [通用智能体 SDK 开发指南](./src/agent/readme.md)
+   - [蓝鲸插件开发指南](./src/plugins/aidev_bkplugin/readme.md)
+   - [企业微信机器人开发指南](./src/plugins/aidev_wxbot/readme.md)
 
 ### 前端开发
 #### 组件开发
@@ -125,6 +139,11 @@ bk-aidev-agent/
 ```
 
 ## 📚 相关资源
+### Agent 开发
+- [Agent 常见问题](docs/agent/FAQ.md)
+- [Agent 扩展开发指南](docs/agent/EXTENSION_AGENT.md)
+
+### AI 小鲸
 - [小鲸组件 API 文档](src/frontend/web/docs/api/props.md)
 - [小鲸组件变更日志](src/frontend/ai-blueking/CHANGELOG.md)
 - [小鲸组件常见问题](src/frontend/web/docs/faq.md)
