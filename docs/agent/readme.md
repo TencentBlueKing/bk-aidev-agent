@@ -50,7 +50,6 @@ git push -u origin main
 
 > **提示**：切换为代码仓库部署后，后续的代码更新只需推送到指定分支即可，同时也无法切换源码包部署模式。
 
----
 
 ## 二、插件模板管理
 
@@ -120,7 +119,6 @@ cruft update
 
 > **注意**：模板更新可能涉及配置文件或依赖变更，建议在更新前备份关键文件，更新后仔细检查差异。
 
----
 
 ## 三、二次开发
 
@@ -135,13 +133,12 @@ cruft update
 - 完整开发示例（SRE 助手）
 - 调试技巧与常见问题
 
----
 
 ## 四、获取帮助
 
 如在开发过程中遇到问题：
 
 1. 首先查阅 [常见问题 FAQ](./agent/FAQ.md)
-2. 参考 [智能体定制开发指南](./agent/EXTENSION_AGENT.md) 中的调试技巧
+2. 参考 [智能体定制开发指南](./agent/EXTENSION_AGENT.md) 
 3. 在 [GitHub Issues](https://github.com/TencentBlueKing/bk-aidev-agent/issues) 提交问题
 
