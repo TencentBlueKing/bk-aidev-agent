@@ -15,7 +15,7 @@ specific language governing permissions and limitations under the License.
 We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
-
+import os
 import json
 import time
 import unicodedata
@@ -31,7 +31,7 @@ from langchain_community.adapters.openai import convert_dict_to_message, convert
 from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.callbacks import Callbacks
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables.config import _set_config_context
 from langchain_core.tools import BaseTool
@@ -390,13 +390,88 @@ class IntentRecognitionMixin(BaseModel):
                     {"compress_log": "\n```text\nToken 超限，尝试压缩工具调用结果以减少 token 使用。\n```\n"},
                     **kwargs,
                 )
-                self.__class__.intent_recognition_instance.llm_intermediate_step_compressor_parallel(
-                    self.agent_options,
-                    provided_chat_history,
-                    kwargs["query"],
-                    intermediate_steps,
-                    llm,
-                )
+                # 统一的压缩逻辑调用函数
+                def _apply_default_compression():
+                    """应用默认的压缩逻辑"""
+                    self.__class__.intent_recognition_instance.llm_intermediate_step_compressor_parallel(
+                        provided_chat_history,
+                        kwargs["query"],
+                        intermediate_steps,
+                        llm,
+                    )
+
+                # 从环境变量获取压缩类型
+                compress_type = os.getenv("compress_type", "default")
+                if compress_type != "custom":
+                    # 非 custom 模式：使用默认压缩逻辑
+                    _apply_default_compression()
+                    has_executed_intermediate_step_compressor = True
+                    continue
+
+                # custom 模式：重新调用最后一个工具
+                if not intermediate_steps:
+                    _apply_default_compression()
+                    has_executed_intermediate_step_compressor = True
+                    continue
+
+                last_action, last_output = intermediate_steps[-1]
+                tool_name = last_action.tool
+
+                # 只处理字典类型的 tool_input
+                if not isinstance(last_action.tool_input, dict):
+                    _logger.warning(f"工具 {tool_name} 的 tool_input 不是字典类型，删除最后一次调用")
+                    intermediate_steps.pop()
+                    continue
+
+                # 查找工具对象
+                tool_obj = next((tool for tool in candidate_tools if tool.name == tool_name), None)
+                if tool_obj is None:
+                    _logger.warning(f"未找到工具 {tool_name}，使用默认压缩逻辑")
+                    _apply_default_compression()
+                    has_executed_intermediate_step_compressor = True
+                    continue
+
+                # 获取压缩函数映射
+                try:
+                    compress_func_mappings = {}
+                    if (hasattr(self.agent_options, "compress_func_mappings")
+                            and self.agent_options.compress_func_mappings):
+                        for item in self.agent_options.compress_func_mappings.values():
+                            if isinstance(item, dict):
+                                compress_func_mappings.update(item)
+
+                    compress_cls_name = compress_func_mappings.get(tool_name)
+                    if not compress_cls_name:
+                        _logger.warning(f"工具 {tool_name} 未配置压缩类，使用默认压缩逻辑")
+                        _apply_default_compression()
+                        has_executed_intermediate_step_compressor = True
+                        continue
+
+                    # 动态加载压缩类并实例化
+                    compress_cls = pydoc.locate(compress_cls_name)
+                    if compress_cls is None:
+                        _logger.warning(f"无法定位压缩类 {compress_cls_name}，使用默认压缩逻辑")
+                        _apply_default_compression()
+                        has_executed_intermediate_step_compressor = True
+                        continue
+
+                    compress_instance = compress_cls(tool_obj)
+                    new_output = compress_instance.run(last_action.tool_input)
+
+                    # 检查返回结果是否是错误信息
+                    new_output_str = str(new_output)
+                    if "[ERROR]" in new_output_str or "失败" in new_output_str:
+                        _logger.warning(f"工具 {tool_name} 压缩返回错误: {new_output_str}，使用默认压缩逻辑")
+                        _apply_default_compression()
+                    else:
+                        # 更新 intermediate_steps 中最后一个元素的结果
+                        intermediate_steps[-1] = (last_action, new_output_str)
+                        _logger.info(f"工具 {tool_name} 压缩成功")
+
+                except Exception as e:
+                    _logger.warning(f"重新调用工具 {tool_name} 失败: {e}，使用默认压缩逻辑", exc_info=True)
+                    _apply_default_compression()
+
                 has_executed_intermediate_step_compressor = True
             # 优先级 3: 依次抛除 chat history 内容
             elif "chat_history" in kwargs and kwargs["chat_history"]:
@@ -408,6 +483,29 @@ class IntentRecognitionMixin(BaseModel):
                     )
                 kwargs["chat_history"].pop(0)
                 first_entry = False
+            # 优先级 4: 压缩用户输入内容
+            elif ("input" in kwargs and kwargs["input"] and not has_executed_input_compressor
+                  and llm.get_num_tokens_from_messages(
+                        [HumanMessage(content=kwargs["input"])]) > llm_token_limit - token_limit_margin):
+                conditional_dispatch_custom_event(
+                    "custom_event",
+                    {"compress_log": "\n```text\nToken 超限，尝试压缩用户输入内容以减少 token 使用。\n```\n"},
+                    **kwargs,
+                )
+                # 保存原始 input 值，用于后续比较
+                original_input = kwargs["input"]
+                # 将 input 转换为列表格式进行压缩
+                input_list = [original_input]
+                compressed_input_list = self.__class__.intent_recognition_instance.llm_context_compressor_parallel(
+                    provided_chat_history,
+                    kwargs.get("input", original_input),
+                    input_list,
+                    llm,
+                )
+                # 将压缩后的列表转换回字符串
+                if compressed_input_list and isinstance(compressed_input_list, list):
+                    kwargs["input"] = compressed_input_list[0]
+                has_executed_input_compressor = True
             else:
                 err_msg = (
                     "已尝试按优先级压缩上下文，但还是超过 token 限制，无法回答问题，请尝试其他 LLM。"

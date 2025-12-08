@@ -267,3 +267,4 @@ class AgentOptions(BaseModel):
     knowledge_query_options: KnowledgebaseSettings = Field(
         default_factory=KnowledgebaseSettings, description="知识库查询选项"
     )
+    compress_func_mappings: dict = Field(default_factory=dict, description=("压缩函数映射"))

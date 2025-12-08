@@ -23,6 +23,7 @@ class AgentConfig(BaseModel):
     agent_options: AgentOptions = Field(..., description="智能体选项")
     command_agent_mapping: dict = Field(default_factory=dict, description="智能体映射关联")
     agent_prompt: str | None = Field(None, description="智能体提示词(内嵌)")
+    compress_func_mappings: dict = Field(default_factory=dict, description="压缩函数映射")
 
 
 class CachedEntry:
@@ -91,6 +92,7 @@ class AgentConfigManager:
             agent_options=AgentOptions(
                 intent_recognition_options=IntentRecognition.model_validate(res.get("intent_recognition") or {}),
                 knowledge_query_options=KnowledgebaseSettings.model_validate(res.get("knowledgebase_settings") or {}),
+                compress_func_mappings=res.get("compress_func_mappings", {}),
             ),
             command_agent_mapping={
                 each["id"]: each["agent_code"] for each in res["conversation_settings"].get("commands", [])

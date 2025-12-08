@@ -14,5 +14,7 @@ class CustomAgentConfigManager(AgentConfigManager):
         for key, config in AGENT_CONFIG.items():
             if hasattr(agent_config, key) and AGENT_CONFIG.get(key):
                 setattr(agent_config, key, config)
+        if "compress_func_mappings" in AGENT_CONFIG:
+            agent_config.agent_options.compress_func_mappings = AGENT_CONFIG.get("compress_func_mappings", {})
 
         return agent_config
