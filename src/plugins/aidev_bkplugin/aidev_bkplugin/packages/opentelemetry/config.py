@@ -99,21 +99,6 @@ class OTelConfig:
                 }
             )
 
-        # 3. 从 OTEL_GRPC_URL 获取单地址
-        otel_grpc_url = os.getenv("OTEL_GRPC_URL", "")
-        otel_bk_data_token = os.getenv("OTEL_BK_DATA_TOKEN", "")
-        if otel_grpc_url and otel_bk_data_token:
-            urls.append(
-                {
-                    "url": otel_grpc_url,
-                    "token": otel_bk_data_token,
-                    "exporter_type": ExporterType.GRPC,  # OTEL_GRPC_URL 固定使用 GRPC
-                    "batch_max_queue_size": int(os.getenv("BKAI_AGENT_BATCH_MAX_QUEUE_SIZE", "2048")),
-                    "batch_schedule_delay_millis": int(os.getenv("BKAI_AGENT_BATCH_SCHEDULE_DELAY_MILLIS", "5000")),
-                    "batch_export_timeout_millis": int(os.getenv("BKAI_AGENT_BATCH_EXPORT_TIMEOUT_MILLIS", "30000")),
-                    "batch_max_export_batch_size": int(os.getenv("BKAI_AGENT_BATCH_MAX_EXPORT_BATCH_SIZE", "512")),
-                }
-            )
         return urls
 
     def _parse_endpoints(self, endpoints_str: str) -> List[Dict[str, Any]]:

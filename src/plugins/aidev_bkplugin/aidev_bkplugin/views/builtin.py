@@ -207,6 +207,7 @@ class AgentInfoViewSet(PluginViewSet):
             content for content in prompt_setting["content"] if content.get("role") == PromptRole.PAUSE.value
         ]
         agent_info["prompt_setting"] = prompt_setting
+        agent_info.pop("otel_info", None)
         return Response(data=agent_info)
 
     @action(detail=False, methods=["GET"], url_path="ping", url_name="ping")
