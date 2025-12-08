@@ -525,7 +525,7 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
             agent_code = agent_info.get("agent_code", "unknown")
             agent_name = agent_info.get("agent_name", "unknown")
             agent_type = agent_info.get("agent_type", "unknown")
-            agent_tag_name = agent_info.get("tag_name", "unknown")
+            agent_service_catalogue = agent_info.get("service_catalogue", "unknown")
             agent_updated_by = agent_info.get("updated_by", "unknown")
             # SDK 版本
             try:
@@ -547,7 +547,7 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
                 "agent.info.name": agent_name,
                 "agent.info.sdk_version": agent_sdk_version,
                 "agent.info.type": agent_type,
-                "agent.info.tag_name": agent_tag_name,
+                "agent.info.service_catalogue": agent_service_catalogue,
                 "agent.info.updated_by": agent_updated_by,
                 # 会话维度
                 "agent.session.session_code": session_code,
