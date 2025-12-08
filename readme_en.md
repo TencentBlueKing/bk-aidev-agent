@@ -15,12 +15,12 @@ BlueKing AIDev platform is dedicated to providing excellent intelligent developm
 ## ✨ Core Features
 
 ### Agent Development Kit
-| Feature                                                       | Description |
-|---------------------------------------------------------------|-------------|
-| 🤖 [Agent Builder SDK](./src/agent)                           | Agent development framework based on LangChain, providing core capabilities such as tool invocation, memory management, streaming output, and supporting rapid construction of custom agent applications |
-| 🔌 [BKPlugin Integration](./src/plugins/aidev_bkplugin)       | Agent plugin encapsulation for quick integration into the BlueKing ecosystem (such as SOPS, bkflow) |
-| 🐳 [AI BlueKing Integration](./src/plugins/aidev_ai_blueking) | Official website agent plugin, providing complete web interaction experience including multi-turn dialogue, session management, content sharing, etc. |
-| 💬 [WeCom Integration](./src/plugins/aidev_wxbot)             | WeCom bot plugin, supporting message callback processing, automated responses, and RabbitMQ message queue integration |
+| Feature                               | Description |
+|---------------------------------------|-------------|
+| 🤖 [Agent Builder SDK](./src/agent)   | Agent development framework based on LangChain, providing core capabilities such as tool invocation, memory management, streaming output, and supporting rapid construction of custom agent applications |
+| 🔌 [BKPlugin](./src/plugins/aidev_bkplugin) | Agent plugin encapsulation for quick integration into the BlueKing ecosystem (such as SOPS, bkflow) |
+| 🐳 [AI BlueKing](./src/plugins/aidev_ai_blueking) | Official website agent plugin, providing complete web interaction experience including multi-turn dialogue, session management, content sharing, etc. |
+| 💬 [WeCom](./src/plugins/aidev_wxbot) | WeCom bot plugin, supporting message callback processing, automated responses, and RabbitMQ message queue integration |
 
 
 ### AI Dolphin Intelligent Component
