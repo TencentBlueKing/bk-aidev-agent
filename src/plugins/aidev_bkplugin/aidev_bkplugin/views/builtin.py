@@ -156,11 +156,18 @@ class ChatCompletionViewSet(PluginViewSet):
     def create(self, request):
         execute_kwargs = ExecuteKwargs.model_validate(request.data.get("execute_kwargs", {}))
         session_code = request.data.get("session_code", "")
+        if not hasattr(request_local, "otel_info"):
+            request_local.otel_info = {}
+        request_local.otel_info["session_code"] = session_code
+        request_local.otel_info["executor"] = request.user.username or "anonymous"
+        request_local.otel_info["caller_bk_app_code"] = execute_kwargs.caller_bk_app_code
+        request_local.otel_info["caller_bk_biz_env"] = execute_kwargs.caller_bk_biz_env
+        request_local.otel_info["caller_bk_biz_id"] = execute_kwargs.caller_bk_biz_id
+        request_local.otel_info["caller_executor"] = execute_kwargs.caller_executor
+        request_local.otel_info["caller_order_type"] = execute_kwargs.caller_order_type
+        request_local.otel_info["caller_trace_id"] = execute_kwargs.caller_trace_id
+
         if session_code:
-            if not hasattr(request_local, "otel_info"):
-                request_local.otel_info = {}
-            request_local.otel_info["session_code"] = session_code
-            request_local.otel_info["executor"] = request.user.username or "anonymous"
             agent_instance = build_chat_completion_agent_by_session_code(session_code)
         else:
             chat_history = request.data.get("chat_prompts", []) or request.data.get("chat_history", [])

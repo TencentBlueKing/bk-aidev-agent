@@ -562,6 +562,13 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
                 "agent.info.knowledge_bases": knowledge_bases or [],
                 "agent.info.knowledge_items": knowledge_items or [],
                 "agent.info.tools": tools or [],
+                # 调用者维度
+                "agent.session.caller_bk_app_code": kwargs.get("caller_bk_app_code", ""),
+                "agent.session.caller_bk_biz_env": kwargs.get("caller_bk_biz_env", ""),
+                "agent.session.caller_bk_biz_id": kwargs.get("caller_bk_biz_id", ""),
+                "agent.session.caller_executor": kwargs.get("caller_executor", ""),
+                "agent.session.caller_order_type": kwargs.get("caller_order_type", ""),
+                "agent.session.caller_trace_id": kwargs.get("caller_trace_id", ""),
             }
             # 如果在本地开发调试阶段, 提供更多信息便于开发者进行 trace 追踪
             if self.debug:

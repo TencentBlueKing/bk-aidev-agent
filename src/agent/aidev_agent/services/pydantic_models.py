@@ -11,6 +11,13 @@ class ExecuteKwargs(BaseModel):
     stream_timeout: int = 30
     passthrough_input: bool = False
     run_agent: bool = False
+    # 新增参数
+    caller_bk_app_code: str | None = Field(default=None, description="调用者BK应用ID")
+    caller_bk_biz_env: str | None = Field(default=None, description="调用者BK业务环境")
+    caller_bk_biz_id: int | None = Field(default=None, description="调用者BK业务ID")
+    caller_executor: str | None = Field(default=None, description="调用人")
+    caller_order_type: str | None = Field(default=None, description="调用AI工单类型")
+    caller_trace_id: str | None = Field(default=None, description="调用链ID")
 
 
 class SessionTool(BaseModel):
