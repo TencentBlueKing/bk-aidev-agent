@@ -402,6 +402,7 @@ class AgentInstanceFactory:
             "chat_history": factory.build_chat_history(session_context_data),
             "agent_options": factory.build_agent_options(agent_code),
             "agent_prompt": factory.build_agent_prompt(agent_code),
+            "role_prompt": factory.get_role_prompt(agent_code),
         }
 
     @staticmethod
