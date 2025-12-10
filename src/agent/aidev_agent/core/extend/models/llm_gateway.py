@@ -60,9 +60,6 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
     @model_validator(mode="before")
     @classmethod
     def set_tiktoken_model_name_based_on_model_name(cls, values):
-        model = values.get("model_name") or values.get("model")
-        if model and not (model.startswith(("gpt-3.5-turbo", "gpt-4"))):
-            values["tiktoken_model_name"] = "gpt-3.5-turbo"
         if "api_key" not in values:
             values["api_key"] = "empty"
         return values

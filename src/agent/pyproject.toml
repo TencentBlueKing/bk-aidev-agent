@@ -23,7 +23,7 @@ dependencies = [
     "mcp==1.23.1",
 ]
 name = "aidev-agent"
-version = "1.0.5"
+version = "1.0.5.post1"
 description = "bkaidev agent builder"
 
 [dependency-groups]
