@@ -3,7 +3,9 @@
 from logging import getLogger
 
 import pkg_resources
+from blueapps.account.decorators import login_exempt as blueapps_login_exempt
 from django.contrib.auth import get_user_model
+from django.utils.decorators import method_decorator
 from rest_framework.response import Response
 
 from aidev_bkplugin.packages.apigw.permissions import ApigwPermission
@@ -42,6 +44,7 @@ class OpenapiChatCompletionViewSet(OpenapiPluginViewSet, ChatCompletionViewSet):
     pass
 
 
+@method_decorator(blueapps_login_exempt, name="dispatch")
 class OpenapiAgentAbilitiesViewSet(PluginViewSet):
     """
     获取智能体依赖包
@@ -49,6 +52,7 @@ class OpenapiAgentAbilitiesViewSet(PluginViewSet):
     """
 
     permission_classes = []
+    authentication_classes = []
 
     def list(self, request, *args, **kwargs):
         """获取所有以 aidev 开头的已安装包及其版本"""
