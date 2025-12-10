@@ -3,8 +3,6 @@
 import os
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
 
-from aidev_bkplugin.packages.opentelemetry import BkAidevAgentInstrumentor
-
 # 应用模块
 INSTALLED_APPS = ("aidev_bkplugin",)
 
@@ -26,5 +24,4 @@ BK_APP_OTEL_INSTRUMENT_DB_API = os.getenv("BKAPP_OTEL_INSTRUMENT_DB_API", "1") =
 
 BK_APP_OTEL_ADDTIONAL_INSTRUMENTORS = [
     LangchainInstrumentor(),
-    BkAidevAgentInstrumentor()
 ]
