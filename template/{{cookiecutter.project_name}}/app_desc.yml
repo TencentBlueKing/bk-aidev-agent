@@ -48,6 +48,9 @@ modules:
           - name: BK_APIGW_DEFAULT_TIMEOUT
             value: "{{ cookiecutter.bk_apigw_default_timeout }}"
             description: default apigw timeout
+          - name: BKAPP_OTEL_SAMPLER
+            value: "always_on"
+            description: otel sampler
           {% if cookiecutter.model_management_ns_host %}
           - name: MODEL_MANAGEMENT_NS_HOST
             value: "{{cookiecutter.model_management_ns_host}}"
