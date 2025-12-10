@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 
 import os
+from opentelemetry.instrumentation.langchain import LangchainInstrumentor
+
+from aidev_bkplugin.packages.opentelemetry import BkAidevAgentInstrumentor
 
 # 应用模块
 INSTALLED_APPS = ("aidev_bkplugin",)
@@ -15,3 +18,13 @@ CHAT_GROUP_ENABLED = os.environ.get("CHAT_GROUP_ENABLED") == "1"
 CHAT_GROUP_STAFF = os.environ.get("CHAT_GROUP_STAFF")
 CHAT_GROUP_STAFF = [i.strip() for i in CHAT_GROUP_STAFF.split(",")] if CHAT_GROUP_STAFF else []
 CHAT_GROUP_TYPE = os.environ.get("CHAT_GROUP_TYPE", "qyweixin_chat_group")
+
+
+############### APM
+ENABLE_OTEL_TRACE = os.getenv("BKAPP_ENABLE_OTEL_TRACE", "1") == "1"
+BK_APP_OTEL_INSTRUMENT_DB_API = os.getenv("BKAPP_OTEL_INSTRUMENT_DB_API", "1") == "1"
+
+BK_APP_OTEL_ADDTIONAL_INSTRUMENTORS = [
+    LangchainInstrumentor(),
+    BkAidevAgentInstrumentor()
+]
