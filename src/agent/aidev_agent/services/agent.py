@@ -239,9 +239,13 @@ class AgentInstanceFactory:
 
         return ChatModel.get_setup_instance(**kwargs)
 
-    def build_chat_history(self, session_context_data: List[dict]) -> List[ChatPrompt]:
+    def build_chat_history(
+        self, session_context_data: List[dict], agent_code: Optional[str] = None
+    ) -> List[ChatPrompt]:
         """构建聊天历史"""
-        return [ChatPrompt.model_validate(each) for each in session_context_data if each.get("content", "")]
+        chat_history = [ChatPrompt.model_validate(each) for each in session_context_data if each.get("content")]
+        self._modify_last_system_message(chat_history, agent_code or self.agent_code)
+        return chat_history
 
     def build_non_thinking_llm(self, agent_code: str) -> str | None:
         """构建非思考模型"""
@@ -358,6 +362,19 @@ class AgentInstanceFactory:
 
         logger.info("AgentInstanceFactory: removing last assistant message with generating keyword")
         session_context_data.pop()
+
+    def _modify_last_system_message(self, chat_history: List[ChatPrompt], agent_code: Optional[str]) -> None:
+        if not agent_code:
+            return
+
+        role_prompt = self.get_role_prompt(agent_code)
+        if not role_prompt:
+            return
+
+        for prompt in reversed(chat_history):
+            if prompt.role == "system":
+                prompt.content = role_prompt
+                break
 
     @classmethod
     def register_agent_type(
