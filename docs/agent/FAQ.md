@@ -71,3 +71,24 @@ python bin/manage.py createcachetable
 请完成智能体的配置并执行发布操作：
 
 <img src="./assets/publish_agent.png" width="60%"/>
+
+<hr/>
+
+### ❓问题：Token超限报错
+
+在聊天窗口会话时出现Token超限的相关提示：
+
+<img width="60%" alt="image" src="https://github.com/user-attachments/assets/cd19fccc-82eb-4885-90d2-1b7f9c42b537" />
+<img width="60%" alt="image" src="https://github.com/user-attachments/assets/9eae3ca2-754b-4ef7-bfaf-75d30419bbe6" />
+
+#### 原因
+目前默认上下文最大token数只有28000，超过了这个最大限制会按（压缩知识库召回内容➡压缩工具调用结果➡抛除chat history内容）优先级去压缩上下文，如果还是超限，就会报调用异常的提示。
+
+#### 解决方案
+可通过修改 LLM_TOKEN_LIMIT 环境变量的值来调整最大token限制数，后续需开发同学支持提供部署模型支持的token长度的配置表，并通过查表自动适配模型对应token长度。
+
+   修改方式：
+* 本地二次开发：在.env文件中新增 export LLM_TOKEN_LIMIT=xxx，再重新执行 source .env 即可。
+* 平台智能体：在蓝鲸开发者中心的模块配置中新增环境变量 LLM_TOKEN_LIMIT，完成配置后重新部署。
+
+<img width="60%" alt="image" src="https://github.com/user-attachments/assets/a02d52d0-c446-4a41-8c43-a7048b858547" />
