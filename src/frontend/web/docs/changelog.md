@@ -8,6 +8,23 @@ export default {
     return {
       changelogData: [
         {
+          version: "v1.3.0",
+          date: "2025-12-12",
+          important: "⚠️ <strong>重要提醒</strong>：小鲸 1.3.0 版本必须与后端 SDK 版本 1.0.5.post3 或更高版本匹配使用，否则可能出现兼容性问题",
+          features: [
+            "新增分享会话功能，支持选择对话内容进行分享，生成分享链接并自动复制到剪贴板",
+            "<code>dropdownMenuConfig.showShare</code> 默认启用，前后端同步升级即可使用分享功能",
+            "新增 Cmd/Ctrl + I 快捷键，支持快速切换面板显示/隐藏",
+            "快捷指令支持动态更新，修复打开时内容无法更新的问题",
+            "快捷指令的 options 选项支持实时更新"
+          ],
+          improvements: [
+            "修复 iframe 上拖拽失效的问题，拖拽时自动禁用 iframe 的指针事件",
+            "修复 HTTP 协议下剪切板操作失败的问题",
+            "改进 Vue2 样式兼容性，确保与 Vue3 保持一致"
+          ]
+        },
+        {
           version: "v1.2.9",
           date: "2025-10-23",
           features: [

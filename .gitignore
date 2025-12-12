@@ -188,6 +188,3 @@ src/frontend/ai-blueking/lesscode-dist/
 
 .aider*
 .vscode/
-
-# claude
-.claude/
