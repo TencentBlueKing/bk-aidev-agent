@@ -54,7 +54,6 @@ class ChatCompletionAgent(BaseModel):
     elapsed: list = [0.0, 0.0]
 
     IMAGE_FILE_PATTERN: ClassVar[re.Pattern] = re.compile(r"^\!\[.*\]\((http[^)]+/([^/]+?)\))")
-    HEARTBEATS_INTERVAL: ClassVar[int] = 3
     TOOL_EXECUTION_INTERVAL: ClassVar[int] = 10
     UPLOAD_IMAGE_PROMPT_PREFIX: ClassVar[Any] = "我上传了个图片文件,文件名为{file_name}。"
     SKIP_PROMPT_ROLE: ClassVar[list[str]] = ["guide"]
@@ -154,7 +153,10 @@ class ChatCompletionAgent(BaseModel):
         agent_e, cfg = self._get_agent(messages)
         if stream:
             return agent_e.agent.stream_standard_event(
-                agent_e, cfg, {"input": messages[-1].content}, timeout=self.HEARTBEATS_INTERVAL
+                agent_e,
+                cfg,
+                {"input": messages[-1].content},
+                timeout=self.agent_options.intent_recognition_options.heartbeats_interval,
             )
         else:
             loop = get_event_loop()

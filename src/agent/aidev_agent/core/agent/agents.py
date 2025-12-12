@@ -71,7 +71,7 @@ def enhanced_format_log_to_str(
     """
     thoughts = ""
     for action, observation in intermediate_steps:
-        if observation in (OUTPUT_PARSER_ERR_MSG, ACTION_INPUT_ERR_MSG) or observation in [
+        if str(observation) in (OUTPUT_PARSER_ERR_MSG, ACTION_INPUT_ERR_MSG) or str(observation) in [
             "Tool input validation error",
             "Tool execution error",
         ]:
