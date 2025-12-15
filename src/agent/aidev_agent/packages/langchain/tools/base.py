@@ -407,6 +407,7 @@ def make_mcp_tools(server_config: dict) -> List[StructuredTool]:
                 else:
                     auth_info["bk_username"] = request.user.username
             _server_config["headers"] = {"X-Bkapi-Authorization": json.dumps(auth_info)}
+            _server_config["headers"]["X-Bkapi-Timeout"] = settings.BK_APIGW_MCP_TIMEOUT
 
     client = MultiServerMCPClient(server_config)
     _loop = get_event_loop()

@@ -1,9 +1,8 @@
 """
-通用 assistant agent 插件。
-
-若非定制开发，只修改 assistant_components.py 文件即可，请勿修改本文件。
+通用 assistant agent 插件入口
 """
 
+from aidev_agent.core.utils.local import request_local
 from aidev_agent.services.chat import ChatPrompt, ExecuteKwargs
 from aidev_bkplugin.services.agent import (
     build_chat_completion_agent_by_chat_history,
@@ -18,6 +17,7 @@ from bk_plugin_framework.kit import (
     OutputsModel,
     Plugin,
 )
+from django.contrib.auth import get_user_model
 
 
 class CommonAgent(Plugin):
@@ -65,6 +65,10 @@ class CommonAgent(Plugin):
             if inputs.chat_history
             else []
         )
+        if context.data.executor:
+            user = get_user_model().objects.filter(username=context.data.executor).first()
+            if user:
+                request_local.request.user = user
         role_contents = get_agent_role_info()
         if role_contents:
             chat_history = role_contents + chat_history
