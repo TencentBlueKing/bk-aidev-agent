@@ -35,3 +35,74 @@
 7.  **Q: 如何获取当前的对话历史记录？**
 
     A: 可以通过访问组件实例的 `sessionContents` 属性来获取。这是一个只读的响应式数组，包含了当前对话的消息列表。详细说明参见 [编程交互基础指南](/guide/advanced-usage/programmatic-interaction#访问会话内容)。
+
+8.  **Q: 在 Webpack 4 项目中遇到 "Module not found: Can't resolve '@blueking/ai-blueking/vue2'" 或 "Unexpected token '??'" 错误怎么办？**
+
+    A: 这是因为 Webpack 4 不支持 `package.json` 的 `exports` 字段，且无法直接处理 ES2020 语法。需要进行以下配置：
+
+    **1. 配置路径别名 (webpack.config.js)**
+
+    ```javascript
+    const path = require('path');
+
+    module.exports = {
+      resolve: {
+        alias: {
+          '@blueking/ai-blueking/vue2': path.resolve(
+            __dirname,
+            'node_modules/@blueking/ai-blueking/dist/vue2/index.es.min.js'
+          )
+        }
+      }
+    };
+    ```
+
+    **2. 添加 .mjs 文件处理规则 (webpack.config.js)**
+
+    ```javascript
+    module.exports = {
+      module: {
+        rules: [
+          {
+            test: /\.mjs$/,
+            include: [
+              path.join(__dirname, 'node_modules/@blueking/ai-blueking')
+            ],
+            use: {
+              loader: 'babel-loader',
+              options: {
+                presets: [
+                  ['@babel/preset-env', { modules: false }]
+                ],
+                plugins: [
+                  '@babel/plugin-proposal-nullish-coalescing-operator',
+                  '@babel/plugin-proposal-optional-chaining'
+                ]
+              }
+            }
+          }
+        ]
+      }
+    };
+    ```
+
+    **3. 安装必要的 Babel 依赖**
+
+    ```bash
+    npm install -D @babel/plugin-proposal-nullish-coalescing-operator @babel/plugin-proposal-optional-chaining
+    ```
+
+    **4. 配置 .babelrc (可选)**
+
+    如果项目已有 `.babelrc`，确保包含以下插件：
+
+    ```json
+    {
+      "plugins": [
+        "@babel/plugin-proposal-nullish-coalescing-operator",
+        "@babel/plugin-proposal-optional-chaining"
+      ]
+    }
+    ```
+
+    详细配置示例可参考 [bk-sops 项目的 PR](https://github.com/TencentBlueKing/bk-sops/pull/8113)。
