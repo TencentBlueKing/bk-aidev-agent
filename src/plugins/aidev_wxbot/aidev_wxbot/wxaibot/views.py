@@ -139,7 +139,7 @@ class WxAiBotViewSet(ViewSet):
             buffer = ""  # 用于缓存不完整的数据
             if response.status_code != 200:
                 llm_chunk = LlmChunkMsg(
-                    content=f"请求出错\n{response.text}\n请联系管理员查看！", is_finish=True, stream_id=stream_id
+                    content=f"请求出错\n{response.text}\n请联系AIDev团队查看！", is_finish=True, stream_id=stream_id
                 )
                 llm_chunk.append_to_cache(rabbitmq_client)
                 return
@@ -149,7 +149,7 @@ class WxAiBotViewSet(ViewSet):
             for chunk in response.iter_content(chunk_size=1024):  # 设置合适的chunk大小
                 if chunk:
                     try:
-                        chunk_str = chunk.decode("utf-8")
+                        chunk_str = chunk.decode("utf-8", errors="ignore")  # 忽略错误的字节
                         buffer += chunk_str
                         lines = buffer.split("\n")
                         buffer = lines[-1]
