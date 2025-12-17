@@ -72,7 +72,6 @@ class CommonAgent(Plugin):
         }
 
     def execute(self, inputs: Inputs, context: Context):
-        logger.info(f"inputs: {inputs}")
         username = None
         if context.data.executor:
             user = get_user_model().objects.filter(username=context.data.executor).first()
