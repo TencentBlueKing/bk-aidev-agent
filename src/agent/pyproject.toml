@@ -24,7 +24,7 @@ dependencies = [
     "urllib3>=2.6.0",
 ]
 name = "aidev-agent"
-version = "1.0.5.post4"
+version = "1.0.6rc1"
 description = "bkaidev agent builder"
 
 [dependency-groups]

@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional, Type
 import requests
 from langchain_core.prompts import jinja2_formatter
 from langchain_core.tools import StructuredTool
+from langchain_core.tools.base import ToolException
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from pydantic import BaseModel, Field, ValidationError, create_model, field_validator
 from requests.exceptions import JSONDecodeError
@@ -427,9 +428,53 @@ class MCPExceptionWrapper:
     async def __call__(self, *args, **kwargs):
         try:
             return await self.coro(*args, **kwargs)
+        except ToolException as err:
+            _logger.exception(f"failed to run mcp: {err}")
+            # 尝试解析错误消息中的详细信息
+            error_detail = self.extract_error_message(str(err))
+            return (f"[ERROR] MCP工具调用失败: {error_detail}", None)
+        except BaseExceptionGroup as err:
+            # 提取所有非 ExceptionGroup 的底层异常
+            all_errors = list(self.extract_all_non_group_exceptions(err))
+            if all_errors:
+                if len(all_errors) > 1:
+                    error_lines = []
+                    for i, e in enumerate(all_errors, start=1):
+                        error_lines.append(f"错误{i}: {type(e).__name__} - {e}")
+                    return (f"MCP工具调用失败，发现{len(all_errors)}个错误:\n" + "\n".join(error_lines), None)
+                elif len(all_errors) == 1:
+                    return (f"MCP工具调用失败: {type(all_errors[0]).__name__} - {all_errors[0]}", None)
+            else:
+                return (f"[ERROR] MCP工具调用失败: {err}", None)
+        except ConnectionError as err:
+            _logger.exception(f"failed to run mcp: {err}")
+            return (f"[ERROR] MCP工具调用失败: 连接异常 {err}", None)
+        except TimeoutError as err:
+            _logger.exception(f"failed to run mcp: {err}")
+            return (f"[ERROR] MCP工具调用失败: 超时异常 {err}", None)
         except Exception as err:
             _logger.exception(f"failed to run mcp: {err}")
-            return ("[ERROR] MCP工具调用失败", None)
+            return (f"[ERROR] MCP工具调用失败: {err}", None)
+
+    def extract_error_message(self, error_str):
+        """从错误字符串中提取message"""
+        match = re.search(r"(\{.*\})", error_str)
+        if match:
+            try:
+                data = json.loads(match.group(1))
+                return data.get("response_body", {}).get("message")
+            except (json.JSONDecodeError, KeyError, AttributeError):
+                # 如果JSON解析失败或预期的键不存在，则返回原始错误
+                return error_str
+        return error_str
+
+    def extract_all_non_group_exceptions(self, exc):
+        """递归提取 ExceptionGroup 中所有非-ExceptionGroup 的底层异常"""
+        if isinstance(exc, BaseExceptionGroup):
+            for e in exc.exceptions:
+                yield from self.extract_all_non_group_exceptions(e)
+        else:
+            yield exc
 
     def __getstate__(self):
         # 在序列化时保存协程对象
