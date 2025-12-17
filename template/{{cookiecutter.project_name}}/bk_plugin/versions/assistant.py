@@ -2,12 +2,10 @@
 通用 assistant agent 插件入口
 """
 
+from logging import getLogger
+
 from aidev_agent.core.utils.local import request_local
-from aidev_agent.services.chat import ChatPrompt, ExecuteKwargs
-from aidev_bkplugin.services.agent import (
-    build_chat_completion_agent_by_chat_history,
-    get_agent_role_info,
-)
+from aidev_bkplugin.services.agent import run_bkplugin_invoke
 from bk_plugin_framework.kit import (
     Context,
     ContextRequire,
@@ -18,6 +16,8 @@ from bk_plugin_framework.kit import (
     Plugin,
 )
 from django.contrib.auth import get_user_model
+
+logger = getLogger(__name__)
 
 
 class CommonAgent(Plugin):
@@ -32,6 +32,7 @@ class CommonAgent(Plugin):
         session_code: str | None
         chat_history: list[dict] | None
         context: list | None
+        execute_kwargs: dict | None = None
 
     class Outputs(OutputsModel):
         intermediate_steps: list
@@ -58,27 +59,35 @@ class CommonAgent(Plugin):
                 },
             },
         }
+        execute_kwargs = {
+            "type": "object",
+            "title": "工单调用信息",
+            "properties": {
+                "caller_bk_app_code": {"type": "string", "title": "调用者BK应用ID"},
+                "caller_bk_biz_env": {"type": "string", "title": "调用者BK业务环境"},
+                "caller_bk_biz_id": {"type": "number", "title": "调用者BK业务ID"},
+                "caller_executor": {"type": "string", "title": "调用人"},
+                "caller_order_type": {"type": "string", "title": "调用AI工单类型"},
+            },
+        }
 
     def execute(self, inputs: Inputs, context: Context):
-        chat_history = (
-            [ChatPrompt(role=each["role"], content=each["content"]) for each in inputs.chat_history]
-            if inputs.chat_history
-            else []
-        )
+        logger.info(f"inputs: {inputs}")
+        username = None
         if context.data.executor:
             user = get_user_model().objects.filter(username=context.data.executor).first()
             if user:
                 request_local.request.user = user
-        role_contents = get_agent_role_info()
-        if role_contents:
-            chat_history = role_contents + chat_history
-        if inputs.input:
-            if inputs.chat_history:
-                chat_history.append(ChatPrompt(role="user", content=inputs.input))
-            else:
-                chat_history = [ChatPrompt(role="user", content=inputs.input)]
-        chat_completion_agent = build_chat_completion_agent_by_chat_history(chat_history)
-        result = chat_completion_agent.execute(ExecuteKwargs(stream=False))
+                username = user.username
+        execute_kwargs = inputs.execute_kwargs or {}
+        if inputs.session_code:
+            execute_kwargs["session_code"] = inputs.session_code
+        result = run_bkplugin_invoke(
+            inputs.chat_history or [],
+            execute_kwargs,
+            inputs.input or "",
+            username=username,
+        )
         if not isinstance(result, str):
             context.outputs = {"output": result["choices"][0]["delta"]["content"]}
         else:

@@ -15,20 +15,22 @@ specific language governing permissions and limitations under the License.
 We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
-import logging
-from typing import Any, Collection, Optional, Dict
 
+import logging
+from typing import Any, Collection, Dict, Optional
+
+import orjson
+from aidev_agent.core.utils.local import request_local
+from aidev_agent.services.pydantic_models import ExecuteKwargs
 from asgiref.sync import sync_to_async
 from langchain_core.runnables import RunnableConfig
 from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
 from opentelemetry.instrumentation.utils import unwrap
-import orjson
 from wrapt import wrap_function_wrapper
 
-from aidev_agent.core.utils.local import request_local
-from aidev_agent.services.pydantic_models import ExecuteKwargs
 from aidev_bkplugin.packages.opentelemetry.utils import dont_throw
 from aidev_bkplugin.services.agent import get_agent_config_info
+
 from .callback_handler import BkAidevAgentCallbackHandler, BkAidevAgentInjector
 from .config import OTelConfig, default_config
 from .otel_service import BkAgentOTelService
@@ -45,6 +47,7 @@ class BkAidevAgentInstrumentor(BaseInstrumentor):
     将在 instrument 的时候，启动 otel_service
     请注意，不要使用 BkAidevAgentInstrumentor().instrument() 多次，由于 BaseInstrumentor() 是单例化的，第二次会导致 trace 获取异常
     """
+
     def __init__(self, config: Optional[OTelConfig] = None):
         self._otel_service_config = config or default_config
         self._otel_service: Optional[BkAgentOTelService] = None
@@ -127,17 +130,17 @@ def _get_trace_cb_from_callbacks(callbacks):
 class IntentRecognitionMixinIntentRecognition:
     def get_attributes(self, query: str, llm, tools, callbacks, chat_history, agent_options=None, **kwargs):
         trace_cb = _get_trace_cb_from_callbacks(callbacks)
-        attributes: Dict[str, Any] = { "query": query }
+        attributes: Dict[str, Any] = {"rag.query": query}
         if agent_options is not None:
             kb_options = agent_options.knowledge_query_options
             attributes.update(
                 {
-                    "knowledge_bases": [kb.get("id") for kb in kb_options.knowledge_bases],
-                    "knowledge_items": [ki.get("id") for ki in kb_options.knowledge_items],
+                    "rag.knowledge_bases": [kb.get("id") for kb in kb_options.knowledge_bases],
+                    "rag.knowledge_items": [ki.get("id") for ki in kb_options.knowledge_items],
                 }
             )
             if hasattr(kb_options, "model_dump"):
-                attributes["kb_options"]= orjson.dumps(kb_options.model_dump(mode='json'))
+                attributes["rag.kb_options"] = orjson.dumps(kb_options.model_dump(mode="json"))
         return trace_cb, attributes
 
     def get_id_by_docs(self, docs):
@@ -148,11 +151,20 @@ class IntentRecognitionMixinIntentRecognition:
     @dont_throw
     def _on_end(self, span, kwargs):
         if kwargs.get("knowledge_resources_emb_recalled"):
-            span.set_attribute("rag.knowledge_resources_emb_recalled", orjson.dumps(self.get_id_by_docs(kwargs.get("knowledge_resources_emb_recalled"))))
+            span.set_attribute(
+                "rag.knowledge_resources_emb_recalled",
+                orjson.dumps(self.get_id_by_docs(kwargs.get("knowledge_resources_emb_recalled"))),
+            )
         if kwargs.get("knowledge_resources_highly_relevant"):
-            span.set_attribute("rag.knowledge_resources_highly_relevant", orjson.dumps(self.get_id_by_docs(kwargs.get("knowledge_resources_highly_relevant"))))
+            span.set_attribute(
+                "rag.knowledge_resources_highly_relevant",
+                orjson.dumps(self.get_id_by_docs(kwargs.get("knowledge_resources_highly_relevant"))),
+            )
         if kwargs.get("knowledge_resources_moderately_relevant"):
-            span.set_attribute("rag.knowledge_resources_moderately_relevant", orjson.dumps(self.get_id_by_docs(kwargs.get("knowledge_resources_moderately_relevant"))))
+            span.set_attribute(
+                "rag.knowledge_resources_moderately_relevant",
+                orjson.dumps(self.get_id_by_docs(kwargs.get("knowledge_resources_moderately_relevant"))),
+            )
 
     def __call__(self, wrapped, instance, args, kwargs):
         trace_cb, attributes = self.get_attributes(*args, **kwargs)
@@ -163,6 +175,7 @@ class IntentRecognitionMixinIntentRecognition:
         else:
             ret = wrapped(*args, **kwargs)
         return ret
+
 
 class LiteEnhancedAgentExecutorWrapper:
     def __init__(self, tracer, config: OTelConfig):
@@ -191,7 +204,7 @@ class LiteEnhancedAgentExecutorWrapper:
                 if hasattr(execute_kwargs, k) and getattr(execute_kwargs, k) is None:
                     setattr(execute_kwargs, k, v)
         # Agent 相关参数
-        agent_info = get_agent_config_info() # get_agent_config_info 实现了缓存机制
+        agent_info = get_agent_config_info()  # get_agent_config_info 实现了缓存机制
         agent_info.pop("otel_info")
         # trace 链路追踪的参数
         parent_trace_context = execute_kwargs.caller_trace_context

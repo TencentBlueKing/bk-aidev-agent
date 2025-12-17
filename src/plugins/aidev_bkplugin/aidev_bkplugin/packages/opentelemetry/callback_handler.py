@@ -28,6 +28,7 @@ from uuid import UUID, uuid4
 
 import orjson
 import pytz
+from aidev_agent.services.pydantic_models import ExecuteKwargs
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import LLMResult
@@ -37,15 +38,23 @@ from opentelemetry.instrumentation.utils import _SUPPRESS_INSTRUMENTATION_KEY
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode, set_span_in_context
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-from aidev_agent.services.pydantic_models import ExecuteKwargs
-from aidev_bkplugin.packages.opentelemetry.span_utils import set_chat_request, SpanHolder, set_llm_request, \
-    set_chat_response
-from aidev_bkplugin.packages.opentelemetry.utils import dont_throw, _safe_attach_context, _safe_detach_context, \
-    _sanitize_metadata_value, _set_span_attribute
+from aidev_bkplugin.packages.opentelemetry.span_utils import (
+    SpanHolder,
+    set_chat_request,
+    set_chat_response,
+    set_llm_request,
+)
+from aidev_bkplugin.packages.opentelemetry.utils import (
+    _safe_attach_context,
+    _safe_detach_context,
+    _sanitize_metadata_value,
+    _set_span_attribute,
+    dont_throw,
+)
 
 logger = logging.getLogger(__name__)
 SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY = "suppress_language_model_instrumentation"
-TIMEZONE = 'Asia/Shanghai'
+TIMEZONE = "Asia/Shanghai"
 try:
     AGENT_SDK_VERSION = version("aidev_agent")
 except PackageNotFoundError:
@@ -65,6 +74,7 @@ class BkAidevAgentInjector:
     1. agent.info.*：智能体的基本信息
     2. agent.session.*：本次 session 的单轮对话的基本信息
     """
+
     def __init__(
         self,
         tracer: trace.Tracer,
@@ -143,7 +153,7 @@ class BkAidevAgentInjector:
             "agent.info.updated_by": agent_updated_by,
             "agent.info.agent_info": orjson.dumps(agent_info),
             "agent.session.session_code": execute_kwargs.session_code,
-            "agent.session.executor": execute_kwargs.caller_executor,
+            "agent.session.executor": execute_kwargs.executor,
             "agent.session.input": str(inputs),
             "agent.session.start_time": start_time_str,
             "agent.session.start_time_unix_nano": start_time_unix_nano,
@@ -205,6 +215,7 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
     """
     基于 LangChain 的 Callback 机制实现对于 BkAidevAgent 的相关信息统计
     """
+
     def __init__(
         self,
         tracer: trace.Tracer,
@@ -239,7 +250,7 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
         self.root_span: Optional[Span] = None
         self._root_run_id: Optional[UUID] = None  # 根 Span 的 run_id
         self.spans: Dict[UUID, SpanHolder] = {}  # 使用 UUID 管理所有 Span
-        self._current_workflow_run_id: Optional[UUID] = None # 当前顶层 workflow 链的 run_id，用于挂载自定义 span
+        self._current_workflow_run_id: Optional[UUID] = None  # 当前顶层 workflow 链的 run_id，用于挂载自定义 span
 
         # 工具调用计数器
         self.tool_call_counter = 0
@@ -440,15 +451,11 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
             metadata=metadata,
         )
         try:
-            token = context_api.attach(
-                context_api.set_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True)
-            )
+            token = context_api.attach(context_api.set_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True))
         except Exception:
             token = None
 
-        self.spans[run_id] = SpanHolder(
-            span, token, None, [], None, entity_path
-        )
+        self.spans[run_id] = SpanHolder(span, token, None, [], None, entity_path)
         return span
 
     @contextmanager
@@ -501,7 +508,6 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
             return f"{parent_span.entity_name}"
         else:
             return f"{parent_span.entity_path}.{parent_span.entity_name}"
-
 
     @dont_throw
     def on_chain_start(
@@ -566,15 +572,10 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
         self._end_span(span, run_id)
         if parent_run_id is None:
             try:
-                context_api.attach(
-                    context_api.set_value(
-                        SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, False
-                    )
-                )
+                context_api.attach(context_api.set_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, False))
             except Exception:
                 # If context reset fails, it's not critical for functionality
                 pass
-
 
     @dont_throw
     def on_chain_error(
@@ -649,7 +650,6 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
             serialized=serialized,
         )
         set_chat_request(span, serialized, messages, kwargs, self.spans[run_id])
-
 
     @dont_throw
     def on_llm_start(
@@ -740,7 +740,7 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
         self._create_span(
             run_id=run_id,
             parent_run_id=parent_run_id,
-            name=f"tool.execution",
+            name="tool.execution",
             kind=SpanKind.INTERNAL,
             attributes=attributes,
         )

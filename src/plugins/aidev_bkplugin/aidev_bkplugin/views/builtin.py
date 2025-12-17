@@ -6,15 +6,13 @@ from logging import getLogger
 
 from aidev_agent.api.bk_aidev import BKAidevApi
 from aidev_agent.enums import PromptRole
-from aidev_agent.services.chat import ChatPrompt, ExecuteKwargs
+from aidev_agent.services.chat import ChatPrompt
 from bk_plugin_framework.kit.api import custom_authentication_classes
 from bk_plugin_framework.kit.decorators import inject_user_token, login_exempt
 from blueapps.core.exceptions import ClientBlueException
 from django.conf import settings
 from django.http.response import StreamingHttpResponse
 from django.utils.decorators import method_decorator
-from opentelemetry import trace
-from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.request import Request
@@ -26,6 +24,7 @@ from aidev_bkplugin.permissions import AgentPluginPermission
 from aidev_bkplugin.services.agent import (
     build_chat_completion_agent_by_chat_history,
     build_chat_completion_agent_by_session_code,
+    build_execute_kwargs,
     get_agent_config_info,
 )
 from aidev_bkplugin.utils import set_user_access_token
@@ -155,19 +154,9 @@ class ChatSessionContentFeedbackViewSet(PluginViewSet):
 class ChatCompletionViewSet(PluginViewSet):
     def create(self, request):
         # 调用Agent 的时候需要传入的相关参数
-        execute_kwargs = ExecuteKwargs.model_validate(request.data.get("execute_kwargs", {}))
+        execute_kwargs = build_execute_kwargs(request.data.get("execute_kwargs", {}), request.user.username)
         session_code = request.data.get("session_code", "")
         execute_kwargs.session_code = request.data.get("session_code", "")
-        execute_kwargs.caller_bk_biz_env = execute_kwargs.caller_bk_biz_env or "domestic_biz"
-        execute_kwargs.caller_bk_app_code = execute_kwargs.caller_bk_app_code or "bkaidev"
-        execute_kwargs.caller_executor = execute_kwargs.caller_executor or request.user.username or "anonymous"
-        execute_kwargs.caller_order_type = execute_kwargs.caller_order_type or "ai_chat"
-        current_span = trace.get_current_span()
-        if current_span is not None and current_span.get_span_context().is_valid:
-            carrier: dict[str, str] = {}
-            propagator = TraceContextTextMapPropagator()
-            propagator.inject(carrier, context=trace.set_span_in_context(current_span))
-            execute_kwargs.caller_trace_context = carrier
         # 构造 agent_instance，在 ChatCompletion 中，获取到的是 ChatCompletionAgent
         if session_code:
             agent_instance = build_chat_completion_agent_by_session_code(session_code)
