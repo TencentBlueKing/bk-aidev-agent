@@ -39,7 +39,9 @@ def build_chat_completion_agent_by_chat_history(chat_history: list[ChatPrompt]) 
 
 
 def get_agent_config_info(username: str | None = None):
-    agent_info = cache.get("get_agent_config_info")
+    agent_info_key = f"get_agent_config_info:{username or 'default'}"
+
+    agent_info = cache.get(agent_info_key)
     if not agent_info:
         client = BKAidevApi.get_client()
         result = client.api.retrieve_agent_config(
@@ -49,7 +51,7 @@ def get_agent_config_info(username: str | None = None):
         otel_env_info = agent_info.pop("otel_info", None)
         if otel_env_info:
             agent_info["otel_info"] = json.loads(base64.b64decode(otel_env_info).decode())
-        cache.set(agent_info, settings.DEFAULT_CACHE_TIMEOUT)
+        cache.set(agent_info_key, agent_info, settings.DEFAULT_CACHE_TIMEOUT)
     return agent_info
 
 

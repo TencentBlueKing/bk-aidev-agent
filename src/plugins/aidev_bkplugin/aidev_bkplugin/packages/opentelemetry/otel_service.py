@@ -45,8 +45,8 @@ except ImportError:
     OsResourceDetector: Optional[Type[ResourceDetector]] = None
 
 
-from .config import ExporterType, OTelConfig
-
+from .config import  OTelConfig
+from .utils import ExporterType
 logger = logging.getLogger(__name__)
 
 
@@ -169,7 +169,7 @@ class BkAgentOTelService:
         if exporter_type == ExporterType.GRPC:
             return GRPCSpanExporter(
                 endpoint=url,
-                insecure=True,  # TODO: 生产环境建议使用 TLS
+                # insecure=True,  # 生产环境建议使用 TLS
                 headers=headers,
             )
         elif exporter_type == ExporterType.HTTP:

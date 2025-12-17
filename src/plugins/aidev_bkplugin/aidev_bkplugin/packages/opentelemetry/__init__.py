@@ -15,10 +15,11 @@ specific language governing permissions and limitations under the License.
 We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
-from .config import OTelConfig, ExporterType
+from .config import OTelConfig
 from .otel_service import BkAgentOTelService
 from .callback_handler import BkAidevAgentCallbackHandler
 from .instrumentor import BkAidevAgentInstrumentor
+from .utils import ExporterType
 
 __all__ = [
     # 配置

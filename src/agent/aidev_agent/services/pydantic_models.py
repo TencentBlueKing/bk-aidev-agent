@@ -1,5 +1,5 @@
 import os
-from typing import Any, List, Literal, Tuple
+from typing import Any, List, Literal, Tuple, Dict
 
 from pydantic import AliasChoices, BaseModel, Field, model_validator
 
@@ -12,12 +12,13 @@ class ExecuteKwargs(BaseModel):
     passthrough_input: bool = False
     run_agent: bool = False
     # 新增参数
+    session_code: str | None = Field(default=None, description="调用时的会话 ID")
     caller_bk_app_code: str | None = Field(default=None, description="调用者BK应用ID")
     caller_bk_biz_env: str | None = Field(default=None, description="调用者BK业务环境")
     caller_bk_biz_id: int | None = Field(default=None, description="调用者BK业务ID")
     caller_executor: str | None = Field(default=None, description="调用人")
     caller_order_type: str | None = Field(default=None, description="调用AI工单类型")
-    caller_trace_id: str | None = Field(default=None, description="调用链ID")
+    caller_trace_context: Dict[str, Any] | None = Field(default=None, description="调用链ID")
 
 
 class SessionTool(BaseModel):

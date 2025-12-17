@@ -142,14 +142,14 @@ class ChatCompletionAgent(BaseModel):
         # 执行agent操作
         messages = self.convert_history_to_messages()
         if execute_kwargs.run_agent or self.is_run_by_agent():
-            return self._execute_by_agent(messages, stream=execute_kwargs.stream)
+            return self._execute_by_agent(messages, stream=execute_kwargs.stream, execute_kwargs=execute_kwargs)
         if self.callbacks:
             self.chat_model.callbacks = self.callbacks
         if execute_kwargs.stream:
             return self._stream(messages)
         return self._invoke(messages)
 
-    def _execute_by_agent(self, messages: list[BaseMessage], stream: bool = False):
+    def _execute_by_agent(self, messages: list[BaseMessage], stream: bool = False, execute_kwargs: ExecuteKwargs=None):
         if not messages:
             raise ValueError("The messages list cannot be empty.")
         agent_e, cfg = self._get_agent(messages)
@@ -157,12 +157,12 @@ class ChatCompletionAgent(BaseModel):
             return agent_e.agent.stream_standard_event(
                 agent_e,
                 cfg,
-                {"input": messages[-1].content},
+                {"input": messages[-1].content, "execute_kwargs": execute_kwargs},
                 timeout=self.agent_options.intent_recognition_options.heartbeats_interval,
             )
         else:
             loop = get_event_loop()
-            result = loop.run_until_complete(agent_e.ainvoke({"input": messages[-1].content}, cfg))
+            result = loop.run_until_complete(agent_e.ainvoke({"input": messages[-1].content, "execute_kwargs": execute_kwargs}, cfg))
             return_data = {
                 "choices": [{"delta": {"role": "assistant", "content": result["output"]}}],
                 "model": self.model_name,
