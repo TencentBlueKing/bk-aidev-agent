@@ -38,8 +38,8 @@ if BKAUTH_BACKEND_TYPE == 'bk_token':
 
     os.environ['OAUTH_API_URL'] = (
         os.getenv('BKAPP_OAUTH_API_URL') or
-        os.getenv('BKPAAS_APIGW_OAUTH_API_URL') or
-        'https://bkssm.service.consul'
+        os.getenv('BKPAAS_SSM_API_URL') or
+        'http://bkssm.service.consul'
     )
 
     # OAuth 临近过期时间：生效期在 1 小时内则自动刷新 token

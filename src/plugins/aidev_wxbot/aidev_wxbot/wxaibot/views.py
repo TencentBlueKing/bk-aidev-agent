@@ -35,14 +35,20 @@ class WxAiBotViewSet(ViewSet):
     @property
     def wxbot_config(self):
         if settings.WXAIBOT_TOKEN and settings.WXAIBOT_ENCODING_AES_KEY:
-            return {"rtx_token": settings.WXAIBOT_TOKEN, "rtx_encoding_aes_key": settings.WXAIBOT_ENCODING_AES_KEY}
-        else:
-            configs = [
-                item for item in BkAiDevApi().retrieve_agent_channel_configs("rtx") if item["channel_type"] == "rtx"
-            ]
-            if not configs:
-                raise Exception("请先在AI开发平台配置企业智能机器人渠道")
-            return configs[0]["config"]
+            return {
+                "rtx_token": settings.WXAIBOT_TOKEN,
+                "rtx_encoding_aes_key": settings.WXAIBOT_ENCODING_AES_KEY,
+                "contact": "智能体管理员",
+            }
+
+        # 从AI开发平台获取配置
+        configs = [item for item in BkAiDevApi().retrieve_agent_channel_configs("rtx") if item["channel_type"] == "rtx"]
+        if not configs:
+            raise Exception("请先在AI开发平台配置企业智能机器人渠道")
+        config = configs[0]["config"] or {}
+        if config.get("contact"):
+            config["contact"] = "智能体管理员"
+        return config
 
     def _reply_wxaibot(self, payload: dict) -> dict:
         """处理微信AI机器人的回复逻辑"""
@@ -138,11 +144,11 @@ class WxAiBotViewSet(ViewSet):
             docs = []
             buffer = ""  # 用于缓存不完整的数据
             if response.status_code != 200:
-                llm_chunk = LlmChunkMsg(
-                    content=f"请求出错\n{response.text}\n请联系AIDev团队查看！", is_finish=True, stream_id=stream_id
-                )
+                content = f"请求出错\n{response.text}\n请联系 {self.wxbot_config['contract']} 查看！"
+                llm_chunk = LlmChunkMsg(content=content, is_finish=True, stream_id=stream_id)
                 llm_chunk.append_to_cache(rabbitmq_client)
                 return
+
             llm_chunk = LlmChunkMsg(content="", is_finish=False, stream_id=stream_id)
             added_content = ""
             think_content = ""
