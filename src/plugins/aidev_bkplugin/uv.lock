@@ -8,7 +8,7 @@ resolution-markers = [
 
 [[package]]
 name = "aidev-agent"
-version = "1.0.4.post3"
+version = "1.0.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asgiref" },
@@ -19,21 +19,24 @@ dependencies = [
     { name = "jinja2" },
     { name = "langchain" },
     { name = "langchain-community" },
+    { name = "langchain-core" },
     { name = "langchain-mcp-adapters" },
     { name = "langchain-openai" },
     { name = "langfuse" },
+    { name = "mcp" },
     { name = "pyro4" },
     { name = "pytz" },
+    { name = "urllib3" },
     { name = "werkzeug" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/16/6c/77476f642588a10d2b19f69d6f71b47bc2c8850cfcc38c82e135c602fea5/aidev_agent-1.0.4.post3.tar.gz", hash = "sha256:ef7b2ff6551b75dbabfbeed3788e23f2955c0b7d4b039def126c698e55c0c20f", size = 118266, upload-time = "2025-11-20T12:03:15.982Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a2/c1/9bd3a8c92b1ae080e9ee2da89dfd50fe29f7606c44ac8239cc793196990e/aidev_agent-1.0.6.tar.gz", hash = "sha256:3e46bb577cd8c4e57fcc2537df98078736f786a8b6f93a9edf91342f4ac3f92f", size = 120631, upload-time = "2025-12-18T02:14:33.482Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/55/9a/71fae9e84eb183ac361daacc2ff5f31c766cf573c63768bdf766d1d33832/aidev_agent-1.0.4.post3-py3-none-any.whl", hash = "sha256:8e6095ec4fe4bd4366738298fb1a640e709002d0574ffe710839912bfc47aec1", size = 142823, upload-time = "2025-11-20T12:03:13.642Z" },
+    { url = "https://files.pythonhosted.org/packages/5a/aa/1403fd9f7e115e3cf156998305d86858b1208570085f7cd22d3a2229b603/aidev_agent-1.0.6-py3-none-any.whl", hash = "sha256:5f35cbb9bc274014a4f5638e53928e0ab730245ce434b9011029a53408f14ec0", size = 145242, upload-time = "2025-12-18T02:14:31.232Z" },
 ]
 
 [[package]]
 name = "aidev-bkplugin"
-version = "1.0.6"
+version = "1.0.9"
 source = { editable = "." }
 dependencies = [
     { name = "aidev-agent" },
@@ -42,7 +45,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aidev-agent", specifier = ">=1.0.1,<1.1" },
+    { name = "aidev-agent", specifier = ">=1.0.6,<1.1" },
     { name = "blueapps", specifier = ">=4.15.1,<5.0" },
 ]
 
@@ -1113,7 +1116,7 @@ wheels = [
 
 [[package]]
 name = "mcp"
-version = "1.22.0"
+version = "1.23.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1131,9 +1134,9 @@ dependencies = [
     { name = "typing-inspection" },
     { name = "uvicorn", marker = "sys_platform != 'emscripten'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a3/a2/c5ec0ab38b35ade2ae49a90fada718fbc76811dc5aa1760414c6aaa6b08a/mcp-1.22.0.tar.gz", hash = "sha256:769b9ac90ed42134375b19e777a2858ca300f95f2e800982b3e2be62dfc0ba01", size = 471788, upload-time = "2025-11-20T20:11:28.095Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/12/42/10c0c09ca27aceacd8c428956cfabdd67e3d328fe55c4abc16589285d294/mcp-1.23.1.tar.gz", hash = "sha256:7403e053e8e2283b1e6ae631423cb54736933fea70b32422152e6064556cd298", size = 596519, upload-time = "2025-12-02T18:41:12.807Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a9/bb/711099f9c6bb52770f56e56401cdfb10da5b67029f701e0df29362df4c8e/mcp-1.22.0-py3-none-any.whl", hash = "sha256:bed758e24df1ed6846989c909ba4e3df339a27b4f30f1b8b627862a4bade4e98", size = 175489, upload-time = "2025-11-20T20:11:26.542Z" },
+    { url = "https://files.pythonhosted.org/packages/9f/9e/26e1d2d2c6afe15dfba5ca6799eeeea7656dce625c22766e4c57305e9cc2/mcp-1.23.1-py3-none-any.whl", hash = "sha256:3ce897fcc20a41bd50b4c58d3aa88085f11f505dcc0eaed48930012d34c731d8", size = 231433, upload-time = "2025-12-02T18:41:11.195Z" },
 ]
 
 [[package]]
@@ -2298,11 +2301,11 @@ wheels = [
 
 [[package]]
 name = "urllib3"
-version = "2.5.0"
+version = "2.6.2"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/15/22/9ee70a2574a4f4599c47dd506532914ce044817c7752a79b6a51286319bc/urllib3-2.5.0.tar.gz", hash = "sha256:3fc47733c7e419d4bc3f6b3dc2b4f890bb743906a30d56ba4a5bfa4bbff92760", size = 393185, upload-time = "2025-06-18T14:07:41.644Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1e/24/a2a2ed9addd907787d7aa0355ba36a6cadf1768b934c652ea78acbd59dcd/urllib3-2.6.2.tar.gz", hash = "sha256:016f9c98bb7e98085cb2b4b17b87d2c702975664e4f060c6532e64d1c1a5e797", size = 432930, upload-time = "2025-12-11T15:56:40.252Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a7/c2/fe1e52489ae3122415c51f387e221dd0773709bad6c6cdaa599e8a2c5185/urllib3-2.5.0-py3-none-any.whl", hash = "sha256:e6b01673c0fa6a13e374b50871808eb3bf7046c4b125b216f6bf1cc604cff0dc", size = 129795, upload-time = "2025-06-18T14:07:40.39Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/b9/4095b668ea3678bf6a0af005527f39de12fb026516fb3df17495a733b7f8/urllib3-2.6.2-py3-none-any.whl", hash = "sha256:ec21cddfe7724fc7cb4ba4bea7aa8e2ef36f607a4bab81aa6ce42a13dc3f03dd", size = 131182, upload-time = "2025-12-11T15:56:38.584Z" },
 ]
 
 [[package]]
