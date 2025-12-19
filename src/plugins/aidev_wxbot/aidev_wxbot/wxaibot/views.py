@@ -46,7 +46,7 @@ class WxAiBotViewSet(ViewSet):
         if not configs:
             raise Exception("请先在AI开发平台配置企业智能机器人渠道")
         config = configs[0]["config"] or {}
-        if config.get("contact"):
+        if not config.get("contact"):
             config["contact"] = "智能体管理员"
         return config
 
@@ -144,7 +144,7 @@ class WxAiBotViewSet(ViewSet):
             docs = []
             buffer = ""  # 用于缓存不完整的数据
             if response.status_code != 200:
-                content = f"请求出错\n{response.text}\n请联系 {self.wxbot_config['contract']} 查看！"
+                content = f"请求出错\n{response.text}\n请联系 {self.wxbot_config['contact']} 查看！"
                 llm_chunk = LlmChunkMsg(content=content, is_finish=True, stream_id=stream_id)
                 llm_chunk.append_to_cache(rabbitmq_client)
                 return
