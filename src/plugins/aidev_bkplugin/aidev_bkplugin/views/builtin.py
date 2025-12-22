@@ -1,21 +1,19 @@
 # -*- coding: utf-8 -*-
 
 import copy
-import json
+from functools import wraps
 from logging import getLogger
 
 from aidev_agent.api.bk_aidev import BKAidevApi
 from aidev_agent.enums import PromptRole
-from aidev_agent.services.chat import ChatPrompt
-from bk_plugin_framework.kit.api import custom_authentication_classes
-from bk_plugin_framework.kit.decorators import inject_user_token, login_exempt
+from aidev_agent.services.chat import ChatPrompt, ExecuteKwargs
 from blueapps.core.exceptions import ClientBlueException
 from django.conf import settings
 from django.http.response import StreamingHttpResponse
 from django.utils.decorators import method_decorator
 from rest_framework import status
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
-from rest_framework.request import Request
 from rest_framework.status import is_success
 from rest_framework.views import APIView, Response
 from rest_framework.viewsets import ViewSetMixin
@@ -32,25 +30,32 @@ from aidev_bkplugin.utils import set_user_access_token
 logger = getLogger(__name__)
 
 
+def login_exempt(view_func):
+    """Mark a view function as being exempt from login view protection"""
+
+    def wrapped_view(*args, **kwargs):
+        return view_func(*args, **kwargs)
+
+    wrapped_view.login_exempt = settings.BKPAAS_ENVIRONMENT == "dev"
+    return wraps(view_func)(wrapped_view)
+
+
+class CsrfExemptSessionAuthentication(SessionAuthentication):
+    """关闭csrf验证"""
+
+    def enforce_csrf(self, request):
+        return
+
+
 @method_decorator(login_exempt, name="dispatch")
-@method_decorator(inject_user_token, name="dispatch")
 class PluginViewSet(ViewSetMixin, APIView):
     permission_classes = [AgentPluginPermission]
-    authentication_classes = custom_authentication_classes
+    authentication_classes = [CsrfExemptSessionAuthentication] if settings.BKPAAS_ENVIRONMENT == "dev" else []
 
     def initialize_request(self, request, *args, **kwargs):
         if request.user:
             setattr(request, "_user", request.user)
         return super().initialize_request(request, *args, **kwargs)
-
-    @staticmethod
-    def get_bkapi_authorization_info(request: Request) -> str:
-        auth_info = {
-            "bk_app_code": settings.BK_APP_CODE,
-            "bk_app_secret": settings.BK_APP_SECRET,
-            settings.USER_TOKEN_KEY_NAME: request.token,
-        }
-        return json.dumps(auth_info)
 
     def finalize_response(self, request, response, *args, **kwargs):
         # 目前仅对 Restful Response 进行处理
@@ -73,7 +78,7 @@ class PluginViewSet(ViewSetMixin, APIView):
         return super().finalize_response(request, response, *args, **kwargs)
 
 
-client = BKAidevApi.get_client(app_code=settings.BK_APP_CODE, app_secret=settings.BK_APP_SECRET)
+client = BKAidevApi.get_client(app_code=settings.AGENT_APP_CODE, app_secret=settings.AGENT_APP_SECRET)
 
 
 class ChatSessionViewSet(PluginViewSet):

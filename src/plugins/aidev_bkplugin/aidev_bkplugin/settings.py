@@ -7,7 +7,9 @@ from opentelemetry.instrumentation.langchain import LangchainInstrumentor
 INSTALLED_APPS = ("aidev_bkplugin",)
 
 # 智能体
-DEFAULT_NAME = "default"
+AGENT_APP_CODE = os.getenv("BK_AIDEV_AGENT_APP_CODE") or os.getenv("BKPAAS_APP_ID") or os.getenv("APP_ID")
+AGENT_APP_SECRET = os.getenv("BK_AIDEV_AGENT_APP_SECRET") or os.getenv("BKPAAS_APP_SECRET") or os.getenv("APP_TOKEN")
+AIDEV_BKPLUGIN_DEFAULT_NAME = "default"
 DEFAULT_AGENT = os.environ.get("DEFAULT_AGENT", "aidev_agent.core.extend.agent.qa.CommonQAAgent")
 DEFAULT_CONFIG_MANAGER = os.environ.get("DEFAULT_CONFIG_MANAGER", "aidev_agent.services.config_manager.AgentConfigManager")
 

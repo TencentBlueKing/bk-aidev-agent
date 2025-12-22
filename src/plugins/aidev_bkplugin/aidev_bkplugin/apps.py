@@ -22,8 +22,8 @@ class AgentConfig(AppConfig):
         if bkoauth:
             bkoauth._init_function()
 
-        agent_factory.register(settings.DEFAULT_NAME, import_string(settings.DEFAULT_AGENT))
-        agent_config_factory.register(settings.DEFAULT_NAME, import_string(settings.DEFAULT_CONFIG_MANAGER))
+        agent_factory.register(settings.AIDEV_BKPLUGIN_DEFAULT_NAME, import_string(settings.DEFAULT_AGENT))
+        agent_config_factory.register(settings.AIDEV_BKPLUGIN_DEFAULT_NAME, import_string(settings.DEFAULT_CONFIG_MANAGER))
 
         # 全局 OTel 服务实例 (应用启动时初始化一次)
         BkAidevAgentInstrumentor().instrument()

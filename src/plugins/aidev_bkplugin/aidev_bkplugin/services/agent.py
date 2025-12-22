@@ -1,3 +1,4 @@
+import os
 import base64
 import json
 
@@ -13,10 +14,11 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 
 from .factory import agent_config_factory, agent_factory
 
+DEFAULT_CACHE_TIMEOUT = int(os.getenv("DEFAULT_CACHE_TIMEOUT", 60))
 
 def build_chat_completion_agent_by_session_code(session_code: str) -> ChatCompletionAgent:
-    agent_cls = agent_factory.get(settings.DEFAULT_NAME)
-    config_manager = agent_config_factory.get(settings.DEFAULT_NAME)
+    agent_cls = agent_factory.get(settings.AIDEV_BKPLUGIN_DEFAULT_NAME)
+    config_manager = agent_config_factory.get(settings.AIDEV_BKPLUGIN_DEFAULT_NAME)
     return AgentInstanceFactory.build_agent(
         build_type=AgentBuildType.SESSION,
         session_code=session_code,
@@ -29,8 +31,8 @@ def build_chat_completion_agent_by_chat_history(chat_history: list[ChatPrompt]) 
     role_contents = get_agent_role_info()
     if role_contents:
         chat_history = role_contents + chat_history
-    agent_cls = agent_factory.get(settings.DEFAULT_NAME)
-    config_manager = agent_config_factory.get(settings.DEFAULT_NAME)
+    agent_cls = agent_factory.get(settings.AIDEV_BKPLUGIN_DEFAULT_NAME)
+    config_manager = agent_config_factory.get(settings.AIDEV_BKPLUGIN_DEFAULT_NAME)
     agent_instance = AgentInstanceFactory.build_agent(
         build_type=AgentBuildType.DIRECT,
         session_context_data=[each.model_dump() for each in chat_history],
@@ -47,13 +49,13 @@ def get_agent_config_info(username: str | None = None):
     if not agent_info:
         client = BKAidevApi.get_client()
         result = client.api.retrieve_agent_config(
-            path_params={"agent_code": settings.APP_CODE}, headers={"X-BKAIDEV-USER": username}
+            path_params={"agent_code": settings.AGENT_APP_CODE}, headers={"X-BKAIDEV-USER": username}
         )
         agent_info = result["data"]
         otel_env_info = agent_info.pop("otel_info", None)
         if otel_env_info:
             agent_info["otel_info"] = json.loads(base64.b64decode(otel_env_info).decode())
-        cache.set(agent_info_key, agent_info, settings.DEFAULT_CACHE_TIMEOUT)
+        cache.set(agent_info_key, agent_info, DEFAULT_CACHE_TIMEOUT)
     return agent_info
 
 
