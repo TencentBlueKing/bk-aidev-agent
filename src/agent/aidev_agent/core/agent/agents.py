@@ -26,7 +26,6 @@ import pytz
 from langchain.agents.format_scratchpad.tools import format_to_tool_messages
 from langchain.agents.output_parsers import JSONAgentOutputParser
 from langchain.agents.output_parsers.tools import ToolsAgentOutputParser
-from langchain.tools.render import render_text_description_and_args
 from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel, BaseLanguageModel
@@ -43,6 +42,7 @@ from aidev_agent.core.extend.intent.utils import (
     is_deepseek_r1_series_models,
     remove_thinking_process,
 )
+from aidev_agent.packages.langchain.tools.render import render_text_description_and_args
 from aidev_agent.services.pydantic_models import AgentOptions
 
 MessageFormatter = Callable[[Sequence[Tuple[AgentAction, str]]], List[BaseMessage]]
