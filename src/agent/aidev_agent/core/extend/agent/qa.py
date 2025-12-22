@@ -26,7 +26,6 @@ from typing import Any, ClassVar, Dict, List, Optional, Tuple, Union
 
 from asgiref.sync import sync_to_async
 from langchain.agents.format_scratchpad.tools import format_to_tool_messages
-from langchain.tools.render import render_text_description_and_args
 from langchain_community.adapters.openai import convert_dict_to_message, convert_message_to_dict
 from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.callbacks import Callbacks
@@ -48,6 +47,7 @@ from aidev_agent.core.extend.intent.intent_recognition import IntentRecognition
 from aidev_agent.core.utils.local import request_local
 from aidev_agent.enums import ContextType, Decision, IntentCategory, IntentStatus, StreamEventType
 from aidev_agent.exceptions import streaming_chunk_exception_handling
+from aidev_agent.packages.langchain.tools.render import render_text_description_and_args
 from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils import Empty
 
