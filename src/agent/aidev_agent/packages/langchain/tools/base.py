@@ -413,8 +413,16 @@ def make_mcp_tools(server_config: dict) -> List[StructuredTool]:
     _loop = get_event_loop()
     try:
         tools: List[StructuredTool] = _loop.run_until_complete(client.get_tools())
-    except Exception:
-        raise ValueError("获取MCP工具列表失败")
+    except Exception as err:
+        # 记录详细的异常信息用于调试
+        _logger.exception(f"Failed to get MCP tools list: {err}")
+
+        # 创建详细的错误信息，类似于MCPExceptionWrapper
+        error_detail = _extract_mcp_tools_error_detail(err)
+        error_msg = f"获取MCP工具列表失败:  {error_detail}"
+
+        # 抛出包含详细错误信息的ValueError
+        raise ValueError(error_msg)
     for each in tools:
         each.coroutine = MCPExceptionWrapper(each.coroutine)
     return tools
@@ -484,3 +492,78 @@ class MCPExceptionWrapper:
     def __setstate__(self, state):
         # 在反序列化时恢复协程对象
         self.coro = state["coro"]
+
+def _format_connect_timeout_error(e):
+    """格式化连接超时异常的错误信息"""
+    return f"{type(e).__name__} - 连接超时{str(e)}"
+
+def _format_single_exception(e):
+    """格式化单个异常的错误信息
+
+    Args:
+        e: 异常对象
+
+    Returns:
+        str: 格式化后的错误信息
+    """
+    if "ConnectTimeout" in type(e).__name__:
+        return _format_connect_timeout_error(e)
+    else:
+        return f"{type(e).__name__} - {e}"
+
+def _extract_mcp_tools_error_detail(err):
+    """从MCP工具获取异常中提取详细错误信息
+
+    Args:
+        err: MCP工具获取异常对象
+
+    Returns:
+        str: 详细错误信息
+    """
+    if isinstance(err, ConnectionError):
+        return f"连接异常 - {str(err)}"
+    elif isinstance(err, TimeoutError):
+        return f"超时异常 - {str(err)}"
+    elif isinstance(err, BaseExceptionGroup):
+        # 提取所有非ExceptionGroup的底层异常
+        all_errors = list(_extract_all_non_group_exceptions(err))
+        if not all_errors:
+            return f"{type(err).__name__} - {str(err)}"
+
+        if len(all_errors) > 1:
+            error_lines = []
+            for i, e in enumerate(all_errors, start=1):
+                error_msg = _format_single_exception(e)
+                error_lines.append(f"错误{i}: {error_msg}")
+            return f"发现{len(all_errors)}个错误:\n" + "\n".join(error_lines)
+        else:
+            # 单异常情况
+            return _format_single_exception(all_errors[0])
+    else:
+        # 尝试提取JSON格式的错误信息（如果存在）
+        error_str = str(err)
+        match = re.search(r"(\{.*\})", error_str)
+        if match:
+            try:
+                data = json.loads(match.group(1))
+                return data.get("response_body", {}).get("message", error_str)
+            except (json.JSONDecodeError, KeyError, AttributeError):
+                # 如果JSON解析失败，返回原始错误
+                return error_str
+        return f"{type(err).__name__} - {error_str}"
+
+
+def _extract_all_non_group_exceptions(exc):
+    """递归提取ExceptionGroup中所有非ExceptionGroup的底层异常
+
+    Args:
+        exc: 异常对象
+
+    Yields:
+        Exception: 非ExceptionGroup异常
+    """
+    if isinstance(exc, BaseExceptionGroup):
+        for e in exc.exceptions:
+            yield from _extract_all_non_group_exceptions(e)
+    else:
+        yield exc

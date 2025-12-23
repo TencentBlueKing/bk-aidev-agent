@@ -1340,16 +1340,19 @@ class CommonQAAgent(ToolCallingCommonQAAgent):
         llm = kwargs["llm"] if "llm" in kwargs else args[0]
         extra_tools = kwargs.get("extra_tools", [])
         agent_options = kwargs.get("agent_options", AgentOptions())
-        if agent_options.intent_recognition_options.agent_type:
+        # 如果 extra_tools 为空，直接使用 ToolCallingCommonQAAgent
+        if not extra_tools:
+            agent_class = cls.agent_classes["tool_calling_common_qa_agent"]
+        elif agent_options.intent_recognition_options.agent_type:
+            # 有 extra_tools 且指定了 agent_type，使用指定的 agent_type
             agent_class = cls.agent_classes.get(
                 agent_options.intent_recognition_options.agent_type,
                 cls.agent_classes["structured_chat_common_qa_agent"],
             )
         else:
-            # 如果是没有原生function calling能力的模型，且 extra_tools 不为空，则默认使用 structured_chat_common_qa_agent
-            if is_model_without_function_calling(llm) and extra_tools:
+            # 有 extra_tools 但未指定 agent_type，根据模型能力自动选择
+            if is_model_without_function_calling(llm):
                 agent_class = cls.agent_classes["structured_chat_common_qa_agent"]
             else:
-                # 其他模型默认为tool_calling_common_qa_agent
                 agent_class = cls.agent_classes["tool_calling_common_qa_agent"]
         return agent_class.get_agent_executor(*args, **kwargs)
