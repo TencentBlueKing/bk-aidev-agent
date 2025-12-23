@@ -243,7 +243,7 @@ class AgentInstanceFactory:
         self, session_context_data: List[dict], agent_code: Optional[str] = None
     ) -> List[ChatPrompt]:
         """构建聊天历史"""
-        chat_history = [ChatPrompt.model_validate(each) for each in session_context_data if each.get("content")]
+        chat_history = [ChatPrompt.model_validate(each) for each in session_context_data if each.get("content") and each["role"]!="system"]
         self._modify_last_system_message(chat_history, agent_code or self.agent_code)
         return chat_history
 
@@ -419,6 +419,7 @@ class AgentInstanceFactory:
             "chat_history": factory.build_chat_history(session_context_data),
             "agent_options": factory.build_agent_options(agent_code),
             "agent_prompt": factory.build_agent_prompt(agent_code),
+            "role_prompt": factory.get_role_prompt(agent_code),
         }
 
     @staticmethod
