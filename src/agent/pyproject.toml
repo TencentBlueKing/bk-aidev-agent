@@ -19,7 +19,7 @@ dependencies = [
     "pytz<2026.0,>=2025.2",
     "h11==0.16.0",
     "langchain-mcp-adapters<1.0.0,>=0.1.9",
-    "langchain-core>0.3.79",
+    "langchain-core>=0.3.81",
     "mcp==1.23.1",
     "urllib3>=2.6.0",
 ]
