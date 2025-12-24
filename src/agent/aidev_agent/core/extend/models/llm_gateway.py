@@ -31,6 +31,7 @@ from pydantic import BaseModel, model_validator
 
 from aidev_agent.api.domains import BKAIDEV_URL
 from aidev_agent.config import settings
+from aidev_agent.exceptions import AIDevException
 
 
 class ApiGwMixin(BaseModel):
@@ -78,14 +79,21 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
             ]
         )
         endpoint = os.path.join(self.openai_api_base, "api/token_check")
-        resp = requests.post(
-            endpoint,
-            headers=self.default_headers,
-            json=data,
-        )
-        resp.raise_for_status()
-        result = resp.json()
-        return result["prompts"][0]["tokenCount"]
+        try:
+            resp = requests.post(
+                endpoint,
+                headers=self.default_headers,
+                json=data,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            return result["prompts"][0]["tokenCount"]
+        except requests.HTTPError as err:
+            try:
+                error_message = err.response.json()
+                raise AIDevException(message=f"模型获取token异常: {error_message}")
+            except json.JSONDecodeError:
+                raise AIDevException(message=f"模型获取token异常: {err.response.content.decode(errors='ignore')}")
 
     def get_num_tokens_from_messages(self, messages: list[BaseMessage]) -> int:
         if not self.remote_tokenizer:
