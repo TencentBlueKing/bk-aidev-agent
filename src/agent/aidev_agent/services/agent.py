@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Any, Callable, Dict, List, Optional, Type, cast
 
 from aidev_agent.api import BKAidevApi
@@ -243,7 +244,19 @@ class AgentInstanceFactory:
         self, session_context_data: List[dict], agent_code: Optional[str] = None
     ) -> List[ChatPrompt]:
         """构建聊天历史"""
-        chat_history = [ChatPrompt.model_validate(each) for each in session_context_data if each.get("content") and each["role"]!="system"]
+        chat_history = [
+            ChatPrompt.model_validate(each)
+            for each in session_context_data
+            if each.get("content") and each["role"] != "system"
+        ]
+        for each in chat_history:
+            if each.role != "assistant":
+                continue
+            _content = each.content
+            _content = re.sub(
+                r'<section class="think-head click-close closed">[\s\S]*?</section>', "", _content, flags=re.DOTALL
+            )
+            each.content = _content
         self._modify_last_system_message(chat_history, agent_code or self.agent_code)
         return chat_history
 

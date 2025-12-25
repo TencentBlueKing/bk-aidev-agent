@@ -411,18 +411,21 @@ def make_mcp_tools(server_config: dict) -> List[StructuredTool]:
 
     client = MultiServerMCPClient(server_config)
     _loop = get_event_loop()
-    try:
-        tools: List[StructuredTool] = _loop.run_until_complete(client.get_tools())
-    except Exception as err:
-        # 记录详细的异常信息用于调试
-        _logger.exception(f"Failed to get MCP tools list: {err}")
+    # 重试2次
+    for _i in range(2):
+        try:
+            tools: List[StructuredTool] = _loop.run_until_complete(client.get_tools())
+        except Exception as err:
+            # 记录详细的异常信息用于调试
+            _logger.exception(f"Failed to get MCP tools list: {err}, retry: {_i}")
 
-        # 创建详细的错误信息，类似于MCPExceptionWrapper
-        error_detail = _extract_mcp_tools_error_detail(err)
-        error_msg = f"获取MCP工具列表失败:  {error_detail}"
-
-        # 抛出包含详细错误信息的ValueError
-        raise ValueError(error_msg)
+            # 创建详细的错误信息，类似于MCPExceptionWrapper
+            error_detail = _extract_mcp_tools_error_detail(err)
+            error_msg = f"获取MCP工具列表失败:  {error_detail}"
+            if _i == 0:
+                continue
+            # 抛出包含详细错误信息的ValueError
+            raise ValueError(error_msg)
     for each in tools:
         each.coroutine = MCPExceptionWrapper(each.coroutine)
     return tools
@@ -493,9 +496,11 @@ class MCPExceptionWrapper:
         # 在反序列化时恢复协程对象
         self.coro = state["coro"]
 
+
 def _format_connect_timeout_error(e):
     """格式化连接超时异常的错误信息"""
     return f"{type(e).__name__} - 连接超时{str(e)}"
+
 
 def _format_single_exception(e):
     """格式化单个异常的错误信息
@@ -510,6 +515,7 @@ def _format_single_exception(e):
         return _format_connect_timeout_error(e)
     else:
         return f"{type(e).__name__} - {e}"
+
 
 def _extract_mcp_tools_error_detail(err):
     """从MCP工具获取异常中提取详细错误信息
