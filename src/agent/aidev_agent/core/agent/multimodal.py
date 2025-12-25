@@ -430,10 +430,13 @@ class ToolCallCommonAgentMixIn(J2PromptMixin, CommonAgentMixIn):
         role_prompt: Optional[str] = None,
         **kwargs,
     ) -> Self:
+        # Escape { and } in prefix and role_prompt to prevent ChatPromptTemplate from treating them as variables
+        escaped_prefix = (prefix or cls.MULTI_MODAL_PREFIX).replace("{", "{{").replace("}", "}}")
+        escaped_role_prompt = (role_prompt or "").replace("{", "{{").replace("}", "}}")
         messages = [
             (
                 "system",
-                (prefix or cls.MULTI_MODAL_PREFIX) + f"\n{role_prompt or ''}\n",
+                escaped_prefix + f"\n{escaped_role_prompt}\n",
             ),
             ("placeholder", "{chat_history}"),
             ("human", "{input}"),

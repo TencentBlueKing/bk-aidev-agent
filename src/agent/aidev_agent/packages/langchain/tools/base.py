@@ -429,7 +429,7 @@ def make_mcp_tools(server_config: dict) -> List[StructuredTool]:
             if _i == 0:
                 continue
             # 抛出包含详细错误信息的ValueError
-            raise AIDevException(error_msg)
+            raise AIDevException(message=error_msg)
 
 
 class MCPExceptionWrapper:
