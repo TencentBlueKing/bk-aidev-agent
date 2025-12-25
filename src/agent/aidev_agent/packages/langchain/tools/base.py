@@ -35,6 +35,7 @@ from aidev_agent.config import settings
 from aidev_agent.core.utils.local import request_local
 from aidev_agent.core.utils.loop import get_event_loop
 from aidev_agent.enums import CredentialType
+from aidev_agent.exceptions import AIDevException
 from aidev_agent.packages.langchain.exceptions import ToolValidationError
 from aidev_agent.packages.langchain.tools.enums import FieldType, FuncType
 
@@ -409,12 +410,15 @@ def make_mcp_tools(server_config: dict) -> List[StructuredTool]:
             _server_config["headers"] = {"X-Bkapi-Authorization": json.dumps(auth_info)}
             _server_config["headers"]["X-Bkapi-Timeout"] = settings.BK_APIGW_MCP_TIMEOUT
 
-    client = MultiServerMCPClient(server_config)
     _loop = get_event_loop()
     # 重试2次
     for _i in range(2):
         try:
+            client = MultiServerMCPClient(server_config)
             tools: List[StructuredTool] = _loop.run_until_complete(client.get_tools())
+            for each in tools:
+                each.coroutine = MCPExceptionWrapper(each.coroutine)
+            return tools
         except Exception as err:
             # 记录详细的异常信息用于调试
             _logger.exception(f"Failed to get MCP tools list: {err}, retry: {_i}")
@@ -425,10 +429,7 @@ def make_mcp_tools(server_config: dict) -> List[StructuredTool]:
             if _i == 0:
                 continue
             # 抛出包含详细错误信息的ValueError
-            raise ValueError(error_msg)
-    for each in tools:
-        each.coroutine = MCPExceptionWrapper(each.coroutine)
-    return tools
+            raise AIDevException(error_msg)
 
 
 class MCPExceptionWrapper:

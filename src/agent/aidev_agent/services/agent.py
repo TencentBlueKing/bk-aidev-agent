@@ -252,11 +252,7 @@ class AgentInstanceFactory:
         for each in chat_history:
             if each.role != "assistant":
                 continue
-            _content = each.content
-            _content = re.sub(
-                r'<section class="think-head click-close closed">[\s\S]*?</section>', "", _content, flags=re.DOTALL
-            )
-            each.content = _content
+            each.content = _remove_think(each.content)
         self._modify_last_system_message(chat_history, agent_code or self.agent_code)
         return chat_history
 
@@ -464,3 +460,31 @@ AgentInstanceFactory.register_agent_type(
     agent_class=ChatCompletionAgent,
     builder_func=AgentInstanceFactory.build_chat_agent_args,
 )
+
+
+def _remove_think(content: str) -> str:
+    """移除HTML中的思考部分内容
+    Args:
+        content: 包含思考内容的HTML字符串
+    Returns:
+        清理后的内容字符串
+    """
+    # 第一步：移除思考头部（使用DOTALL模式匹配多行内容）
+    _content = re.sub(r'<section class="think-head click-close">[\s\S]*?</section>', "", content, flags=re.DOTALL)
+
+    _content = re.sub(
+        r'<section class="think-head click-close closed">[\s\S]*?</section>', "", _content, flags=re.DOTALL
+    )
+
+    # 第二步：移除思考主体部分
+    _content = re.sub(r'<section class="think-body">[\s\S]*?</section>', "", _content, flags=re.DOTALL)
+
+    # 第三步：如果内容为空则尝试提取思考主体内容
+    if not _content.strip():
+        # 使用search而非match来查找任意位置的匹配
+        think_body_match = re.search(r'<section class="think-body">([\s\S]*?)</section>', content, re.DOTALL)
+        if think_body_match:
+            # 使用group(1)获取第一个捕获组的内容
+            _content = think_body_match.group(1).strip()
+
+    return _content.strip()
