@@ -65,7 +65,7 @@ class CommonAgent(Plugin):
             "properties": {
                 "caller_bk_app_code": {"type": "string", "title": "调用者BK应用ID"},
                 "caller_bk_biz_env": {"type": "string", "title": "调用者BK业务环境"},
-                "caller_bk_biz_id": {"type": "number", "title": "调用者BK业务ID"},
+                "caller_bk_biz_id": {"type": "string", "title": "调用者BK业务ID"},
                 "caller_executor": {"type": "string", "title": "调用人"},
                 "caller_order_type": {"type": "string", "title": "调用AI工单类型"},
             },
@@ -81,6 +81,8 @@ class CommonAgent(Plugin):
         execute_kwargs = inputs.execute_kwargs or {}
         if inputs.session_code:
             execute_kwargs["session_code"] = inputs.session_code
+        if execute_kwargs.get("caller_bk_biz_id"):
+            execute_kwargs["caller_bk_biz_id"] = int(execute_kwargs["caller_bk_biz_id"])
         result = run_bkplugin_invoke(
             inputs.chat_history or [],
             execute_kwargs,

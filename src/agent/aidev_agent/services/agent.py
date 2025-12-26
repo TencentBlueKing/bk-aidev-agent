@@ -425,7 +425,7 @@ class AgentInstanceFactory:
             "tools": factory.build_tools(agent_code),
             "knowledge_bases": factory.build_knowledge_bases(agent_code),
             "knowledge_items": factory.build_knowledge_items(agent_code),
-            "chat_history": factory.build_chat_history(session_context_data),
+            "chat_history": factory.build_chat_history(session_context_data, agent_code),
             "agent_options": factory.build_agent_options(agent_code),
             "agent_prompt": factory.build_agent_prompt(agent_code),
             "role_prompt": factory.get_role_prompt(agent_code),
@@ -449,7 +449,7 @@ class AgentInstanceFactory:
         return {
             "task_config": factory.get_role_prompt(agent_code),
             "tools": factory.build_tools(agent_code),
-            "chat_history": factory.build_chat_history(session_context_data),
+            "chat_history": factory.build_chat_history(session_context_data, agent_code),
             # 可能不需要knowledge_bases等
         }
 
