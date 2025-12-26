@@ -20,11 +20,11 @@ dependencies = [
     "h11==0.16.0",
     "langchain-mcp-adapters<1.0.0,>=0.1.9",
     "langchain-core>0.3.79",
-    "mcp==1.23.1",
+    "mcp==1.25.0",
     "urllib3>=2.6.0",
 ]
 name = "aidev-agent"
-version = "1.0.7rc3"
+version = "1.0.7"
 description = "bkaidev agent builder"
 
 [dependency-groups]

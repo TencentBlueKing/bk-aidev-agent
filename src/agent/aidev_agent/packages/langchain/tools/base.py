@@ -413,8 +413,8 @@ def make_mcp_tools(server_config: dict) -> List[StructuredTool]:
     _loop = get_event_loop()
     # 重试2次
     for _i in range(2):
+        client = MultiServerMCPClient(server_config)
         try:
-            client = MultiServerMCPClient(server_config)
             tools: List[StructuredTool] = _loop.run_until_complete(client.get_tools())
             for each in tools:
                 each.coroutine = MCPExceptionWrapper(each.coroutine)
@@ -422,7 +422,6 @@ def make_mcp_tools(server_config: dict) -> List[StructuredTool]:
         except Exception as err:
             # 记录详细的异常信息用于调试
             _logger.exception(f"Failed to get MCP tools list: {err}, retry: {_i}")
-
             # 创建详细的错误信息，类似于MCPExceptionWrapper
             error_detail = _extract_mcp_tools_error_detail(err)
             error_msg = f"获取MCP工具列表失败:  {error_detail}"
