@@ -205,7 +205,7 @@ class LiteEnhancedAgentExecutorWrapper:
                     setattr(execute_kwargs, k, v)
         # Agent 相关参数
         agent_info = get_agent_config_info()  # get_agent_config_info 实现了缓存机制
-        agent_info.pop("otel_info")
+        agent_info.pop("otel_info", None)
         # trace 链路追踪的参数
         parent_trace_context = execute_kwargs.caller_trace_context
         # 构建统一参数
