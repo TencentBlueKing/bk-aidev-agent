@@ -15,6 +15,9 @@ CACHES["default"] = {
 # SaaS运行版本
 RUN_VER = "ieod" if os.environ.get("BKPAAS_ENGINE_REGION", "default") == "ieod" else "open"
 
+# 智能体插件版本
+VERSION_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "VERSION")
+
 # 需要合并的配置
 SETTINGS_FOR_MERGE = ["INSTALLED_APPS", "MIDDLEWARE", "AUTHENTICATION_BACKENDS"]
 SETTINGS_FOR_UPDATE = ["DATABASES"]
@@ -61,8 +64,9 @@ REST_FRAMEWORK = {
 }
 
 # 智能体接口授权
-BK_APIGW_GRANTED_APPS = os.getenv("BKAPP_APIGW_GRANTED_APPS")
-BK_APIGW_GRANTED_APPS = BK_APIGW_GRANTED_APPS.split(",") if BK_APIGW_GRANTED_APPS else [locals().get("BKPAAS_APP_CODE")]
+BK_APIGW_GRANTED_APPS = os.getenv("BKAPP_APIGW_GRANTED_APPS") or os.getenv("BK_APIGW_GRANTED_APPS")
+BK_APIGW_GRANTED_APPS = BK_APIGW_GRANTED_APPS.split(",") if BK_APIGW_GRANTED_APPS else []
+BK_APIGW_GRANTED_APPS.append(locals().get("BKPAAS_APP_CODE"))
 
-# 自定义应用
+# 自定义应用：在 apps 目录下创建应用，然后在这里加载
 # load_settings("apps.demo.settings")

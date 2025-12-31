@@ -124,7 +124,7 @@ cruft update
 
 当通用智能体无法满足业务场景时，可参考以下文档扩展智能体功能：
 
-📖 **[智能体定制开发指南](./agent/EXTENSION_AGENT.md)**
+📖 **[智能体定制开发指南](./EXTENSION_AGENT.md)**
 
 该文档涵盖：
 - 智能体基础配置详解

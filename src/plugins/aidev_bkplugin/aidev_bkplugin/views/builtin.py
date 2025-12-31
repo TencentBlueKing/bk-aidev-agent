@@ -26,6 +26,7 @@ from aidev_bkplugin.services.agent import (
     build_chat_completion_agent_by_session_code,
     build_execute_kwargs,
     get_agent_config_info,
+    get_agent_version,
 )
 from aidev_bkplugin.utils import set_user_access_token
 
@@ -216,6 +217,11 @@ class AgentInfoViewSet(PluginViewSet):
         response["Access-Control-Max-Age"] = "1000"
         response["Access-Control-Allow-Headers"] = "X-Requested-With, Content-Type"
         return response
+
+    @action(detail=False, methods=["GET"], url_path="version", url_name="version")
+    def version(self, request, *args, **kwargs):
+        """获取所有以 aidev 开头的已安装包及其版本"""
+        return Response(data=get_agent_version())
 
 
 class ChatGroupViewSet(PluginViewSet):

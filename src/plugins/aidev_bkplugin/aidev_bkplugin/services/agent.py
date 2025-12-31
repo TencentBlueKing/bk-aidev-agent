@@ -1,6 +1,8 @@
 import base64
 import json
+import os
 
+import pkg_resources
 from aidev_agent.api.bk_aidev import BKAidevApi
 from aidev_agent.enums import AgentBuildType
 from aidev_agent.services.agent import AgentInstanceFactory
@@ -106,3 +108,14 @@ def build_execute_kwargs(_execute_kwargs: dict, username: str | None = None) -> 
             propagator.inject(carrier, context=trace.set_span_in_context(current_span))
             execute_kwargs.caller_trace_context = carrier
     return execute_kwargs
+
+
+def get_agent_version():
+    """获取所有以 aidev 开头的已安装包及其版本"""
+    installed_packages = pkg_resources.working_set
+    abilities = {package.key: package.version for package in installed_packages if package.key.startswith("aidev")}
+
+    if settings.VERSION_PATH and os.path.isfile(settings.VERSION_PATH):
+        with open(settings.VERSION_PATH, "r") as f:
+            abilities["version"] = f.read().strip()
+    return abilities

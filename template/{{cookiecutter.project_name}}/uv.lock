@@ -50,11 +50,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aidev-agent", specifier = "==1.0.7.post1" },
-    { name = "aidev-ai-blueking", specifier = "==1.3.0" },
-    { name = "aidev-bkplugin", specifier = ">=1.0.9" },
-    { name = "aidev-wxbot", specifier = "==1.0.8" },
-    { name = "bk-plugin-framework", specifier = ">=2.3.2,<2.4.0" },
+    { name = "aidev-agent", specifier = ">=1.0.7.post1,<1.1" },
+    { name = "aidev-ai-blueking", specifier = ">=1.3.0,<2.0" },
+    { name = "aidev-bkplugin", specifier = ">=1.0.12,<1.1" },
+    { name = "aidev-wxbot", specifier = ">=1.0.9,<1.1" },
+    { name = "bk-plugin-framework", specifier = ">=2.3.3,<2.4.0" },
     { name = "bkapi-bk-apigateway", specifier = "==1.0.12" },
     { name = "celery", specifier = "==5.4.0" },
     { name = "django-celery-beat", specifier = "==2.7.0" },
@@ -134,20 +134,20 @@ wheels = [
 
 [[package]]
 name = "aidev-bkplugin"
-version = "1.0.9"
+version = "1.0.12"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aidev-agent" },
     { name = "blueapps" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/91/d2/f31c6c86dc469ad619f330d7510eb698d0b15b3da9a0a8b9bc1bf83d3062/aidev_bkplugin-1.0.9.tar.gz", hash = "sha256:054d1b09f1c98df7b202fb810e7600c1280cf03c8800c33aa910f1ad8f9ddc23", size = 33323, upload-time = "2025-12-18T06:23:34.714Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cc/91/19d8a5d59211e07e6f88f0410917866cb5d04307f34eb4b65d1ea937499c/aidev_bkplugin-1.0.12.tar.gz", hash = "sha256:426413cd2d08b205c1fd32226b51fdf95b82431123e1ebbb8c54da9a9299b073", size = 33670, upload-time = "2025-12-31T04:26:22.607Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4f/e4/93fbf0dd91e75def5b5d66e9016a7b71d8544676e3a8cd9171d0d963a42f/aidev_bkplugin-1.0.9-py3-none-any.whl", hash = "sha256:6519630f7d84e6ea11f7351b8aec4156ec8811083fc3883a42697092cfffa77f", size = 38178, upload-time = "2025-12-18T06:23:32.868Z" },
+    { url = "https://files.pythonhosted.org/packages/74/0a/89df3e33e75dcb56f63e6938421c19d3f1a83291a146fe765374c9a43f97/aidev_bkplugin-1.0.12-py3-none-any.whl", hash = "sha256:0087d744d5e7a22b88027c7dfb66b112d1fd374858605c6455f3e9435b80d23b", size = 38615, upload-time = "2025-12-31T04:26:20.982Z" },
 ]
 
 [[package]]
 name = "aidev-wxbot"
-version = "1.0.8"
+version = "1.0.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django" },
@@ -158,9 +158,9 @@ dependencies = [
     { name = "requests" },
     { name = "stackprinter" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4c/ef/857ebf7e844c39531bd2ac388a082abaf3d31f655fb18ee3ac8cbc945e6c/aidev_wxbot-1.0.8.tar.gz", hash = "sha256:606f36e5a4d1fd25dcfa9499bd83938959d2f34037e6d0255bddfa9ca9224689", size = 42712, upload-time = "2025-12-19T10:23:00.012Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8a/c9/29bd9700fe480a5eba212dafa7df27c4a59c1e3fbce0a0a21042bd5632b7/aidev_wxbot-1.0.9.tar.gz", hash = "sha256:75d2c9884c3399c159ffa40528441969887d206d71b6f7f34b7c3c1980b4657a", size = 42913, upload-time = "2025-12-30T14:24:16.83Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/56/d0/a3c5fcb337c744a0f90fd4ef8b86d1d9fa4a31beb1dee364afa8e502b3ec/aidev_wxbot-1.0.8-py3-none-any.whl", hash = "sha256:b1dd049be0f3a779369a6fe1bdd2a05332ac7686827a948356e3c4ff06c8affc", size = 24983, upload-time = "2025-12-19T10:22:58.402Z" },
+    { url = "https://files.pythonhosted.org/packages/a1/d2/3869897cddbfaf925aaa5b5a69d3e06a8406ba05463180fd98943d104913/aidev_wxbot-1.0.9-py3-none-any.whl", hash = "sha256:815217f0f6d2258f8c02b0c2d29ed31daab091573b7411b1111675b30262fcc1", size = 25183, upload-time = "2025-12-30T14:24:15.12Z" },
 ]
 
 [[package]]
@@ -318,7 +318,7 @@ wheels = [
 
 [[package]]
 name = "bk-plugin-framework"
-version = "2.3.2"
+version = "2.3.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "apigw-manager" },
@@ -327,14 +327,14 @@ dependencies = [
     { name = "pydantic" },
     { name = "werkzeug" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/26/ad/06c80af9a53916fd97b676452fdaf85d87805a8097ef4c7e938889e6c3e4/bk_plugin_framework-2.3.2.tar.gz", hash = "sha256:0b2cb2d57b07b5c0a14954be290adbbdeed2caa79b779d702bf0ba81449b4f9c", size = 24031, upload-time = "2025-10-30T15:40:03.889Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1e/79/dd79807b8723ecfce291d7e5da84b2b44d750204e1fe099019a0248b704f/bk_plugin_framework-2.3.3.tar.gz", hash = "sha256:dcec38911d968e423c59c0f980f12204f02fd9de60d0cea83be4db532c7c104f", size = 24125, upload-time = "2025-12-04T12:38:16.444Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cc/c0/cf25b8f7258e307d6e5e59bb7b56485616f9612d47641c4bcb737f0e1146/bk_plugin_framework-2.3.2-py3-none-any.whl", hash = "sha256:a9e2b449531e58c569660be2ee0016d5a3792960965100c72d313a86e7c1b138", size = 75974, upload-time = "2025-10-30T15:40:02.858Z" },
+    { url = "https://files.pythonhosted.org/packages/d1/db/d2a94b700604e4e8a5c1ff055297ac74f8442fbcb9a09462274792654678/bk_plugin_framework-2.3.3-py3-none-any.whl", hash = "sha256:7f1d20c520f5066a4f01b346cabd578f70233e9d7dd76db34ed22a4375ed3282", size = 76070, upload-time = "2025-12-04T12:38:15.429Z" },
 ]
 
 [[package]]
 name = "bk-plugin-runtime"
-version = "2.1.1"
+version = "2.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "blueapps", extra = ["opentelemetry"] },
@@ -353,9 +353,9 @@ dependencies = [
     { name = "raven" },
     { name = "redis" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/92/c1/bf398f19d86fca315467e610dfa92cac9e38413f38d0cc64aa8b0deda9a6/bk_plugin_runtime-2.1.1.tar.gz", hash = "sha256:0db0d4ec7c4e6f58f1327e1c4235ac815f939bf6715c9a2bc43bb757a17fbacc", size = 3735425, upload-time = "2025-10-30T15:25:39.565Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d0/ce/4b90bfd5a65ba22a8eb34e25ddce8a191e71106e066fab4f4de03504455f/bk_plugin_runtime-2.1.2.tar.gz", hash = "sha256:206297d4f45787703fcf77408408fbc2c80be0ad67f0bda3dd5d2399a0f1eb67", size = 3735455, upload-time = "2025-12-04T12:29:31.957Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f3/11/f26f764fabb1fc2295fdc5278aff5b4e0be176b31831cfa56cd0591ab0b7/bk_plugin_runtime-2.1.1-py3-none-any.whl", hash = "sha256:258bc6acd9f3041d8c78eac7c5b409bf498a2b34686d9553c6f8fd3444f31876", size = 3861399, upload-time = "2025-10-30T15:25:38.118Z" },
+    { url = "https://files.pythonhosted.org/packages/9c/32/6b98750a361e619607384e77671b5aa5472df6ee17f4df5727274188f468/bk_plugin_runtime-2.1.2-py3-none-any.whl", hash = "sha256:dd7b195baa8e3868902803dcca07638c6d855ca14f711c2627e2e7c3572df6b8", size = 3861452, upload-time = "2025-12-04T12:29:30.254Z" },
 ]
 
 [[package]]
