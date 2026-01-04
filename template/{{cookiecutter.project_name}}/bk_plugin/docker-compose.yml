@@ -1,0 +1,67 @@
+services:
+  ai-hpclienttools:
+    image: mirrors.com/myagent:latest
+    container_name: ai-myagent
+    ports:
+      - "8000:8000"
+    environment:
+      - MYSQL_NAME=devdb
+      - MYSQL_USER=devuser
+      - MYSQL_PASSWORD=xxxxxx
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - REDIS_URL=redis://:Ieg#3349f@redis:6379/0
+      - CHAT_MODEL=deepseek-v3
+      - DEBUG=False
+      - SECRET_KEY=your-secure-key-here
+      - PYTHONPATH=/app
+      - DJANGO_SETTINGS_MODULE=bk_plugin.patch.plugin
+      - DJANGO_ALLOW_ASYNC_UNSAFE=True
+    volumes:
+      - ai-data:/app/data
+      - ai-logs:/app/logs
+    networks:
+      - ai-network
+    depends_on:
+      - mysql
+      - redis
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:5.7
+    container_name: ai-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: xxxxxx
+      MYSQL_DATABASE: devdb
+      MYSQL_USER: devuser
+      MYSQL_PASSWORD: xxxxxx
+    ports:
+      - "11000:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    networks:
+      - ai-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:latest
+    container_name: ai-redis
+    ports:
+      - "11001:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --requirepass Ieg#3349f
+    networks:
+      - ai-network
+    restart: unless-stopped
+
+volumes:
+  ai-data:
+  ai-logs:
+  mysql-data:
+  redis-data:
+
+networks:
+  ai-network:
+    driver: bridge
