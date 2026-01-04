@@ -8,8 +8,8 @@ from blueapps.patch.settings_paas_services import CACHES, INSTALLED_APPS  # noqa
 DEFAULT_CACHE_TIMEOUT = 60
 
 CACHES["default"] = {
-    "BACKEND": "django.core.cache.backends.db.DatabaseCache",
-    "LOCATION": "my_cache_table",
+    "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+    "LOCATION": "/tmp/django_cache",
 }
 
 # SaaS运行版本
