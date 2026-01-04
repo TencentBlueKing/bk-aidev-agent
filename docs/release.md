@@ -1,15 +1,23 @@
+# Release Note - 1.0.2rc1
+**发布日期**: 2026-01-04
+
+## 智能体模板
+
+### 🛠️ 优化改进
+- 修改默认缓存配置为本地文件,减少数据库压力
+
 # Release Note - 1.0.1
 **发布日期**: 2025-12-31
 
 ## 核心依赖包
-aidev-agent==1.0.7.post1  
-aidev-ai-blueking==1.3.0  
-aidev-bkplugin==1.0.12 
-aidev-wxbot==1.0.9  
+- aidev-agent==1.0.7.post1
+- aidev-ai-blueking==1.3.0
+- aidev-bkplugin==1.0.12
+- aidev-wxbot==1.0.9
 
 ## 公共
 ### ✨ 新增功能
- - 新增智能体插件版本接口，通过此接口优化单智能体发布性能  
+ - 新增智能体插件版本接口，通过此接口优化单智能体发布性能
 
 ## aidev-agent
 ### ✨ 新增功能
@@ -58,23 +66,23 @@ aidev-wxbot==1.0.9
 
 ## aidev-bkplugin
 ### ✨ 新增功能
- - 支持SDK上报工单功能  
- - 应用态接口新增 `agent/abilities/` 接口，用于获取智能体依赖包信息  
- - 新增智能体版本依赖、缓存清理接口   
+ - 支持SDK上报工单功能
+ - 应用态接口新增 `agent/abilities/` 接口，用于获取智能体依赖包信息
+ - 新增智能体版本依赖、缓存清理接口
 
 ### 🛠️ 优化改进
- - 修复社区版获取 access token 异常的问题  
- - 修复 `otel_info` 字段缺失时抛出`KeyError`异常的问题  
- - 本地调试模式移除 apigw 鉴权  
- - 应用态接口优化从`apigw`获取用户信息  
+ - 修复社区版获取 access token 异常的问题
+ - 修复 `otel_info` 字段缺失时抛出`KeyError`异常的问题
+ - 本地调试模式移除 apigw 鉴权
+ - 应用态接口优化从`apigw`获取用户信息
 
 ## aidev-wxbot
 ### ✨ 新增功能
- - 增加对企微引用格式的支持  
+ - 增加对企微引用格式的支持
 
 ### 🛠️ 优化改进
- - 兼容返回文本 decode 异常的问题 
- - 报错时联系人优化  
+ - 兼容返回文本 decode 异常的问题
+ - 报错时联系人优化
 
 
 -----
@@ -83,12 +91,12 @@ aidev-wxbot==1.0.9
 **发布日期**: 2025-11-10
 
 ## 核心依赖包
-aidev-agent==1.0.4  
-aidev-ai-blueking==1.2.8.post2  
-aidev-bkplugin==1.0.4  
-aidev-wxbot==1.0.3  
+- aidev-agent==1.0.4
+- aidev-ai-blueking==1.2.8.post2
+- aidev-bkplugin==1.0.4
+- aidev-wxbot==1.0.3
 
 ## 公共
 ### ✨ 新增功能
- - 智能体平台调整为小包部署模式，并完成社区版适配  
- - 智能体模板增强：添加`uv`依赖管理功能及`cruft`模板更新机制  
+ - 智能体平台调整为小包部署模式，并完成社区版适配
+ - 智能体模板增强：添加`uv`依赖管理功能及`cruft`模板更新机制
