@@ -126,7 +126,7 @@ BK_AIDEV_GATEWAY_NAME = env.str("AIDEV_GATEWAY_NAME", "bkaidev")
 BK_AIDEV_APIGW_ENDPOINT = env.str("BK_AIDEV_APIGW_ENDPOINT", "")
 BK_APIGW_STAGE = env.str("BK_APIGW_STAGE", "") or env.str("BKAIDEV_RESOURCE_STAGE", "prod")
 BK_APIGW_MCP_TIMEOUT = env.str("BK_APIGW_MCP_TIMEOUT", "300")
-
+MAX_TOKENS = env.int("MAX_TOKENS", None)
 
 # SSM相关配置
 BK_SSM_ENDPOINT = env.str("BK_SSM_ENDPOINT", "https://bkssm.service.consul")  # noqa

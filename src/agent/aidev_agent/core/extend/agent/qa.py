@@ -879,7 +879,7 @@ class CommonQAStreamingMixIn:
         has_custom_event = False
         # 用于去除 think 标识位
         max_cache_length = self.agent_options.intent_recognition_options.max_cache_length
-        cache = deque(maxlen=max_cache_length)
+        cache = deque()
         agent_think_start_time = time.time()
         content_event_type = StreamEventType.TEXT.value
         # 用于判断 done 之前的最后一个 event 类型
@@ -1216,7 +1216,7 @@ class CommonQAStreamingMixIn:
                                 elif len(cache) == 1:
                                     cache[0]["cover"] = True
                                     first_think_event = False
-                            if len(cache) == max_cache_length:
+                            if len(cache) >= max_cache_length:
                                 ret = cache.popleft()
                                 last_event_type = ret["event"]
                                 if last_event_type == "think":
@@ -1227,13 +1227,13 @@ class CommonQAStreamingMixIn:
                             yield self._yield_ret(ret)
                         elif not (ret.get("event") == "text" and tool_calling):
                             self.check_and_append(cache, ret)
-                        if len(cache) == max_cache_length:
+                        if len(cache) >= max_cache_length:
                             ret = cache.popleft()
                             yield self._yield_ret(ret)
 
             if isinstance(self, StructuredChatCommonQAAgent):
                 # 以下逻辑用于利用 self.end_content 标志跟 final_answer_suffix_to_filter 拼接后进行尾部去除
-                if len(cache) == max_cache_length:
+                if len(cache) >= max_cache_length:
                     ret = cache.popleft()
                     last_event_type = ret["event"]
                     yield self._yield_ret(ret)

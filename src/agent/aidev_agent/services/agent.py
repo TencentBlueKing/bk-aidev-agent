@@ -37,6 +37,7 @@ class AgentInstanceFactory:
         resource_manager: AbstractBKAidevResourceManager | None = None,
         auth_headers: Dict[str, str] | None = None,
         temperature: float = None,
+        max_tokens: int = None,
         switch_agent_by_scene: bool = False,
         config_manager_class: type[AgentConfigManager] | None = None,
         is_temporary: bool = False,
@@ -51,6 +52,7 @@ class AgentInstanceFactory:
         :param callbacks: 回调函数列表
         :param resource_manager:  bkaidev 资源管理
         :param temperature: 模型温度
+        :param max_tokens: 模型最大回复长度
         :param switch_agent_by_scene: 是否根据场景切换智能体
         :param is_temporary: 是否为临时Agent
         """
@@ -63,6 +65,7 @@ class AgentInstanceFactory:
         self.callbacks = [each for each in callbacks if each] if callbacks else []
         self.auth_headers = auth_headers or None
         self.temperature = temperature or None
+        self.max_tokens = max_tokens or None
         self.switch_agent_by_scene = switch_agent_by_scene
         self.config_manager_class = config_manager_class or AgentConfigManager
         self.is_temporary = is_temporary
@@ -79,6 +82,7 @@ class AgentInstanceFactory:
         callbacks: List[Any] | None = None,
         resource_manager: AbstractBKAidevResourceManager | None = None,
         temperature: float | None = None,
+        max_tokens: int | None = settings.MAX_TOKENS,
         switch_agent_by_scene: bool = False,
         config_manager_class: Type[AgentConfigManager] | None = AgentConfigManager,
         is_temporary: bool = False,
@@ -94,6 +98,7 @@ class AgentInstanceFactory:
         :param callbacks: 回调函数列表
         :param resource_manager: 资源管理类
         :param temperature: 模型温度
+        :param max_tokens: 模型最大回复长度
         :param switch_agent_by_scene: 是否根据场景切换智能体
         :param config_manager_class: 配置管理类
         :param is_temporary: 是否为临时Agent
@@ -109,6 +114,7 @@ class AgentInstanceFactory:
             callbacks=callbacks,
             resource_manager=resource_manager,
             temperature=temperature,
+            max_tokens=max_tokens,
             switch_agent_by_scene=switch_agent_by_scene,
             config_manager_class=config_manager_class,
             is_temporary=is_temporary,
@@ -233,7 +239,11 @@ class AgentInstanceFactory:
 
         if self.temperature is not None:
             kwargs["temperature"] = self.temperature
-
+            
+        # 添加max_tokens参数支持
+        if self.max_tokens is not None:
+            kwargs["max_tokens"] = self.max_tokens
+            
         # Only add auth_headers if it has a value
         if self.auth_headers:
             kwargs["auth_headers"] = self.auth_headers
