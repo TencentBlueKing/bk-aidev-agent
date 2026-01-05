@@ -184,6 +184,8 @@ class AgentInstanceFactory:
         session_code = cast(str, self.session_code)
         session_context_data = self.resource_manager.get_chat_session_context(session_code)
 
+        session_context_data = [each for each in session_context_data if each.get("role", "") != "system"]
+
         base_agent_config = self.config_manager_class.get_config(
             agent_code=self.agent_code, resource_manager=self.resource_manager
         )
@@ -239,11 +241,11 @@ class AgentInstanceFactory:
 
         if self.temperature is not None:
             kwargs["temperature"] = self.temperature
-            
+
         # 添加max_tokens参数支持
         if self.max_tokens is not None:
             kwargs["max_tokens"] = self.max_tokens
-            
+
         # Only add auth_headers if it has a value
         if self.auth_headers:
             kwargs["auth_headers"] = self.auth_headers
@@ -254,6 +256,21 @@ class AgentInstanceFactory:
         self, session_context_data: List[dict], agent_code: Optional[str] = None
     ) -> List[ChatPrompt]:
         """构建聊天历史"""
+
+        # 添加系统历史
+        config = self.config_manager_class.get_config(
+            agent_code=agent_code or self.agent_code, resource_manager=self.resource_manager
+        )
+        role_history = (
+            [
+                ChatPrompt(role=each["role"].replace("hidden-", ""), content=each["content"])
+                for each in config.role_prompts
+                if each.get("role") in ["user", "assistant", "hidden-user", "hidden-assistant"]
+            ]
+            if config.role_prompts
+            else []
+        )
+
         chat_history = [
             ChatPrompt.model_validate(each)
             for each in session_context_data
@@ -264,6 +281,7 @@ class AgentInstanceFactory:
                 continue
             each.content = _remove_think(each.content)
         self._modify_last_system_message(chat_history, agent_code or self.agent_code)
+        chat_history = role_history + chat_history
         return chat_history
 
     def build_non_thinking_llm(self, agent_code: str) -> str | None:
@@ -290,7 +308,7 @@ class AgentInstanceFactory:
     def get_role_prompt(self, agent_code: str) -> str | None:
         """获取角色提示词"""
         config = self.config_manager_class.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
-        return config.role_prompt
+        return config.role_prompts[0]["content"] if config.role_prompts else None
 
     def build_agent_options(self, agent_code: str) -> AgentOptions:
         """构建Agent选项"""

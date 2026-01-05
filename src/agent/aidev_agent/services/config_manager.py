@@ -1,4 +1,5 @@
 import time
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -13,7 +14,7 @@ class AgentConfig(BaseModel):
     agent_name: str = Field(..., description="智能体名称")
     chat_model: str = Field(..., description="LLM模型名称")
     non_thinking_llm: str = Field(..., description="非深度思考模型")
-    role_prompt: str | None = Field(None, description="角色提示词(平台)")
+    role_prompts: list[dict[Literal["role", "content"], str]] | None = Field(None, description="角色提示词(平台)")
     knowledgebase_ids: list = Field(default_factory=list, description="知识库ID列表")
     knowledge_ids: list = Field(default_factory=list, description="知识ID列表")
     tool_codes: list = Field(default_factory=list, description="工具列表")
@@ -71,11 +72,7 @@ class AgentConfigManager:
             raise ValueError(f"Failed to retrieve agent config: {e}")
 
         # 处理特殊字段,兼容特殊role
-        role_prompt = "\n".join(
-            item["content"]
-            for item in res["prompt_setting"]["content"]
-            if item["role"] == "system" or item["role"] == "hidden-system"
-        )
+        role_prompts = res["prompt_setting"].get("content", None)
 
         # 创建配置实例
         config = AgentConfig(
@@ -83,7 +80,7 @@ class AgentConfigManager:
             agent_name=res["agent_name"],
             chat_model=res["prompt_setting"]["llm_code"],
             non_thinking_llm=res["prompt_setting"]["non_thinking_llm"] or res["prompt_setting"]["llm_code"],
-            role_prompt=role_prompt or None,
+            role_prompts=role_prompts or None,
             knowledgebase_ids=res["knowledgebase_settings"]["knowledgebases"],
             tool_codes=res["related_tools"],
             opening_mark=res["conversation_settings"]["opening_remark"] or None,
