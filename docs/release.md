@@ -1,3 +1,17 @@
+# Release Note - 1.0.2rc2
+**发布日期**: 2026-01-06
+
+## 核心依赖包
+- aidev-agent==1.0.8
+- aidev-ai-blueking==1.3.0
+- aidev-bkplugin==1.0.12
+- aidev-wxbot==1.0.9
+
+### 🛠️ 优化改进
+ - 修复快捷指令智能体角色内容缺失的问题
+ - 修复 stream 流中 event 可能被自动抛出的问题
+
+
 # Release Note - 1.0.2rc1
 **发布日期**: 2026-01-04
 
