@@ -42,7 +42,8 @@ lint:
 
 .PHONY: build-aidev-ai-blueking
 build-aidev-ai-blueking:
-	cd ./src/frontend/publish-template/ && pnpm install --no-frozen-lockfile && pnpm run build && cd -
+	cd ${ROOT_DIR}/src/frontend/ai-blueking && pnpm install --no-frozen-lockfile && pnpm run build
+	cd ${ROOT_DIR}/src/frontend/publish-template/ && pnpm install --no-frozen-lockfile && pnpm run build
 	mv ${ROOT_DIR}/src/frontend/publish-template/dist/static ${ROOT_DIR}/src/plugins/aidev_ai_blueking/aidev_ai_blueking
 	mkdir ${ROOT_DIR}/src/plugins/aidev_ai_blueking/aidev_ai_blueking/templates
 	mv ${ROOT_DIR}/src/frontend/publish-template/dist/index.html ${ROOT_DIR}/src/plugins/aidev_ai_blueking/aidev_ai_blueking/templates/home.html
