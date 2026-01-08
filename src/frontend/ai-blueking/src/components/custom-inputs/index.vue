@@ -10,7 +10,7 @@
         class="bkai-icon"
         :class="props.shortcut.icon"
       />
-      <span>{{ props.shortcut.name }}</span>
+      <span>{{ props.shortcut.alias ?? props.shortcut.name }}</span>
     </div>
     <bk-form
       ref="formRef"

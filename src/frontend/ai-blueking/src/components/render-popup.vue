@@ -37,7 +37,7 @@
             v-else-if="btn.icon"
             :class="btn.icon"
           ></i>
-          <span class="btn-text ai-blueking-tag-text">{{ btn.name }}</span>
+          <span class="btn-text ai-blueking-tag-text">{{ btn.alias ?? btn.name }}</span>
         </div>
         <!-- 更多按钮 -->
         <div
@@ -69,7 +69,7 @@
                 v-else-if="btn.icon"
                 :class="btn.icon"
               ></i>
-              <span>{{ btn.name }}</span>
+              <span>{{ btn.alias ?? btn.name }}</span>
             </div>
           </div>
         </div>
@@ -116,7 +116,7 @@
     if (typeof props.shortcutFilter === 'function') {
       return shortcuts.filter(item => !!props.shortcutFilter?.(toRaw(item), selectedText.value));
     }
-    return shortcuts;
+    return shortcuts.filter(item => item.enableFillBack ?? true);
   });
 
   // 可见的快捷按钮

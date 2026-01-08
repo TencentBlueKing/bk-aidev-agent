@@ -350,6 +350,26 @@ export default {
         return Array.isArray(result) ? result : [];
       },
     });
+
+    // 添加 agentInfo 属性
+    Object.defineProperty(this, 'agentInfo', {
+      get: () => {
+        const agentInfo = aiBlueking.component.exposed.agentInfo;
+        // 解包 Vue3 的 Ref 对象
+        let result = agentInfo && agentInfo.__v_isRef ? agentInfo.value : agentInfo;
+
+        // 如果是 Proxy 对象，转换为普通 JavaScript 对象
+        if (result && typeof result === 'object') {
+          try {
+            result = JSON.parse(JSON.stringify(result));
+          } catch (e) {
+            // 如果 JSON 转换失败，返回原对象
+          }
+        }
+
+        return result || null;
+      },
+    });
   },
   mounted() {
     this.app?.mount(this.$el);

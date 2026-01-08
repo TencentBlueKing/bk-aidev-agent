@@ -30,19 +30,13 @@ interface GreetingSectionInstance extends ComponentPublicInstance {
   getGreetingHeight: () => number;
 }
 
-interface UseGreetingHeightOptions {
-  greetingMaxHeight: number;
-}
-
 /**
  * 问候语高度计算的组合式函数
+ * 管理问候语组件的引用和高度状态
  *
- * @param options 配置选项
- * @returns 相关的状态和方法
+ * @returns 问候语高度相关的状态和方法
  */
-export function useGreetingHeight(options: UseGreetingHeightOptions) {
-  const { greetingMaxHeight } = options;
-
+export function useGreetingHeight() {
   // 问候语文本高度
   const greetingTextHeight = ref(0);
 
@@ -51,6 +45,7 @@ export function useGreetingHeight(options: UseGreetingHeightOptions) {
 
   /**
    * 更新问候语文本高度
+   * 从 greeting-section 组件获取实际的 DOM 高度
    */
   const updateGreetingTextHeight = () => {
     nextTick(() => {
@@ -60,30 +55,9 @@ export function useGreetingHeight(options: UseGreetingHeightOptions) {
     });
   };
 
-  /**
-   * 计算输入框的动态位置样式
-   */
-  const getInputContainerStyle = (hasSessionContents: boolean) => {
-    if (!hasSessionContents) {
-      // 当没有消息时，根据 greeting text 的高度动态调整位置
-      const baseTop = 188; // 原始的 top 值
-      const greetingHeight = greetingTextHeight.value;
-
-      // 如果 greeting text 超过了基础高度，需要向下调整输入框位置
-      const additionalOffset = Math.min(greetingHeight - 22, greetingMaxHeight - 22); // 22 是单行高度
-      const dynamicTop = baseTop + Math.max(0, additionalOffset);
-
-      return {
-        top: `${dynamicTop}px`,
-      };
-    }
-    return {};
-  };
-
   return {
     greetingTextHeight,
     greetingSectionRef,
     updateGreetingTextHeight,
-    getInputContainerStyle,
   };
 }

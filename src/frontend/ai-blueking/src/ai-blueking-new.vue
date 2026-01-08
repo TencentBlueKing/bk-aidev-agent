@@ -121,21 +121,14 @@
                 </div>
               </div>
 
-              <motion.div
+              <div
                 v-else
-                :transition="{
-                  duration: 0.5,
-                  ease: [0.33, 1, 0.68, 1],
-                  type: 'tween',
-                  layoutId: 'chat-input',
-                }"
                 :class="`chat-input-container ${!hasSessionContents ? (props.defaultChatInputPosition ?? 'centered') : 'bottom'}`"
                 :style="
                   hasSessionContents || props.defaultChatInputPosition
                     ? undefined
                     : inputContainerStyle
                 "
-                :layout="!hasSessionContents"
               >
                 <div class="chat-input-wrapper">
                   <div
@@ -183,7 +176,7 @@
                     @stop="handleStop"
                   />
                 </div>
-              </motion.div>
+              </div>
             </div>
           </div>
         </div>
@@ -215,8 +208,7 @@
   // ===================================================================
   import { useChat, useStyle, useClickProxy } from '@blueking/ai-ui-sdk/hooks';
   import { Button as BkButton, Checkbox as BkCheckbox, Exception as BkException } from 'bkui-vue';
-  import { motion } from 'motion-v';
-  import { computed, nextTick, provide, ref, Ref, watch } from 'vue';
+  import { computed, nextTick, onMounted, onUnmounted, provide, ref, Ref, watch } from 'vue';
   import VueDraggableResizable from 'vue-draggable-resizable';
 
   // 组件导入
@@ -262,7 +254,28 @@
   // ===================================================================
   // 3. 依赖注入
   // ===================================================================
-  provide(POPUP_INJECTION_KEY, props.enablePopup);
+  /**
+   * 计算最终的 popup 启用状态
+   * 同时受 props.enablePopup 和 conversationSettings.enableWordSelectionPopup 控制
+   * 只有当两者都不为 false 时，才启用 popup
+   * @since v1.3.2
+   */
+  const finalEnablePopup = computed(() => {
+    // props.enablePopup 优先级最高，如果为 false，直接禁用
+    if (!props.enablePopup) {
+      return false;
+    }
+
+    // 检查 conversationSettings 中的配置
+    const enableWordSelectionPopup =
+      sessionStore.agentInfo.value?.conversationSettings?.enableWordSelectionPopup;
+
+    // 如果 enableWordSelectionPopup 明确设置为 false，则禁用
+    // 如果未设置（undefined），则默认启用
+    return enableWordSelectionPopup !== false;
+  });
+
+  provide(POPUP_INJECTION_KEY, finalEnablePopup);
 
   // 标准化的URL，自动匹配当前页面协议
   const normalizedUrl = computed(() => {
@@ -303,7 +316,7 @@
   const { renderMarkdown } = useMarkdown();
 
   // 使用选择文本功能
-  const { selectedText, citeText, setCiteText } = useSelect(props.enablePopup);
+  const { selectedText, citeText, setCiteText } = useSelect(finalEnablePopup);
 
   // 使用消息列表功能
   const { messageListRef, scrollMainToBottom, scrollToBottomIfNeeded, resetUserScrolling } =
@@ -412,13 +425,26 @@
   const greetingMaxHeight = computed(() => windowHeightForGreeting.value - 367);
 
   // 使用问候语高度计算功能
-  const { updateGreetingTextHeight, getInputContainerStyle } = useGreetingHeight({
-    greetingMaxHeight: greetingMaxHeight.value,
-  });
+  const { greetingTextHeight, greetingSectionRef, updateGreetingTextHeight } = useGreetingHeight();
 
   // 计算输入框的动态位置
   const inputContainerStyle = computed(() => {
-    return getInputContainerStyle(hasSessionContents.value);
+    // 只在欢迎页面（无会话内容）时动态计算位置
+    if (!hasSessionContents.value) {
+      const BASE_TOP = 188; // 基础 top 值
+      const SINGLE_LINE_HEIGHT = 22; // 单行文本高度
+      const currentGreetingHeight = greetingTextHeight.value;
+
+      // 计算额外偏移量：greeting 超出单行的部分，但不超过最大允许高度
+      const extraHeight = currentGreetingHeight - SINGLE_LINE_HEIGHT;
+      const maxExtraHeight = greetingMaxHeight.value - SINGLE_LINE_HEIGHT;
+      const additionalOffset = Math.max(0, Math.min(extraHeight, maxExtraHeight));
+
+      return {
+        top: `${BASE_TOP + additionalOffset}px`,
+      };
+    }
+    return {};
   });
 
   // 内容边距计算
@@ -660,11 +686,27 @@
   };
 
   // ===================================================================
+  // 12.1. 窗口大小变化监听
+  // ===================================================================
+  const handleWindowResize = () => {
+    windowHeightForGreeting.value = window.innerHeight;
+  };
+
+  onMounted(() => {
+    window.addEventListener('resize', handleWindowResize);
+  });
+
+  onUnmounted(() => {
+    window.removeEventListener('resize', handleWindowResize);
+  });
+
+  // ===================================================================
   // 13. 暴露给父组件的方法
   // ===================================================================
   defineExpose({
     stopSessionContentApi,
     sessionContents,
+    agentInfo: sessionStore.agentInfo,
     handleShow,
     handleClose,
     handleStop,
@@ -830,28 +872,19 @@
     }
 
     .chat-input-container {
+      position: absolute;
+      left: 50%;
       z-index: 3;
-      width: 100%;
-      outline: none;
-      transform-origin: center;
-      will-change: transform;
+      width: calc(100% - 32px);
+      transform: translate(-50%, 0);
 
       &.centered {
-        position: absolute;
         top: 188px;
-        left: 50%;
-        width: calc(100% - 32px);
-
-        /* stylelint-disable-next-line declaration-no-important */
-        transform: translate(-50%, 0) !important;
       }
 
       &.bottom {
-        position: absolute;
-        right: 16px;
+        top: auto;
         bottom: 16px;
-        left: 16px;
-        width: calc(100% - 32px);
       }
     }
 

@@ -546,7 +546,7 @@ export function useSessionStore() {
       const setContents = checkSdkMethod('setSessionContents');
 
       setContents(targetSessionContents);
-      setCurrentSession(targetSession);
+      switchSessionWithContents(targetSession);
     }
 
     if (!agentInfo.value || isInitChat) {

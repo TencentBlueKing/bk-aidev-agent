@@ -172,7 +172,6 @@ export function useChatCore(options: UseChatCoreOptions): UseChatCoreReturn {
   let initSessionPromise: Promise<void> | null = null;
   const openingRemark = ref('');
   const predefinedQuestions: Ref<string[]> = ref([]);
-  const windowHeight = ref(window.innerHeight);
   const showScrollToBottom = ref(false);
 
   // ===================================================================
@@ -579,10 +578,6 @@ export function useChatCore(options: UseChatCoreOptions): UseChatCoreReturn {
   // ===================================================================
   // 生命周期
   // ===================================================================
-  const handleWindowResize = (): void => {
-    windowHeight.value = window.innerHeight;
-  };
-
   const handleEnterSelectMode = (event: CustomEvent<{ type: 'transfer' | 'share' }>): void => {
     const { type } = event.detail;
     enterSelectMode(type);
@@ -594,7 +589,6 @@ export function useChatCore(options: UseChatCoreOptions): UseChatCoreReturn {
 
   onMounted(async () => {
     window.addEventListener('unload', handleUnload);
-    window.addEventListener('resize', handleWindowResize);
     window.addEventListener('enter-select-mode', handleEnterSelectMode as EventListener);
 
     if (normalizedUrl.value) {
@@ -612,7 +606,6 @@ export function useChatCore(options: UseChatCoreOptions): UseChatCoreReturn {
   });
 
   onBeforeUnmount(() => {
-    window.removeEventListener('resize', handleWindowResize);
     window.removeEventListener('enter-select-mode', handleEnterSelectMode as EventListener);
     window.removeEventListener('unload', handleUnload);
   });

@@ -34,6 +34,80 @@ import type { useChat } from '@blueking/ai-ui-sdk/hooks';
 import type { Ref, VNode } from 'vue';
 import { AddNewSessionOptions } from '@/store/types';
 
+// 扩展 IAgentCommandComponent 类型，添加 hide 和 selectedText 属性
+// 扩展 mode 属性，用于指定指令模式：simple 简单模式，advanced 高级模式，默认为 advanced模式，在没有明确设置为 simple 模式时，视为 advanced 模式
+export interface IShortcutComponent extends IAgentCommandComponent {
+  selectedText?: string | null;
+
+  // 控制指令组件中单个输入模块的展示模式：simple 简单模式，advanced 高级模式，默认为 advanced模式，在没有明确设置为 simple 模式时，视为 advanced 模式
+  // simple模式：直接展示输入组件，没有label
+  // @since v1.2.9
+  mode?: 'simple' | 'advanced';
+
+  /**
+   * 当前输入模块是否显示发送按钮，默认为 false
+   * 如果为 true，则会在输入模块后面追加显示发送按钮，适合简单的输入模块，如：翻译、总结等
+   * @since v1.2.9
+   */
+  showSendButton?: boolean;
+
+  /**
+   * 是否将选中的文本填充到该组件中
+   * @since v1.3.2
+   */
+  fillBack?: boolean;
+
+  /**
+   * 用于提取选中文本的正则表达式
+   * 如果设置了该属性，将使用正则表达式从选中文本中提取需要填充的内容
+   * @since v1.3.2
+   */
+  fillRegx?: string;
+}
+
+// 扩展 IAgentCommand 类型，添加 iconRender 支持
+export interface IShortcut extends Omit<IAgentCommand, 'components'> {
+  /**
+   * 重写 components 属性，使用扩展的 IShortcutComponent 类型
+   */
+  components?: IShortcutComponent[];
+
+  /**
+   * 自定义 icon 渲染函数
+   * @param h - Vue 的 h 函数,用于创建 VNode
+   * @returns VNode
+   */
+  iconRender?: (h: typeof import('vue').h) => VNode;
+
+  /**
+   * 指定指令模式：simple 简单模式，advanced 高级模式，默认为 advanced模式，在没有明确设置为 simple 模式时，视为 advanced 模式
+   * 这里会添加mode到指令组件class中，用于样式控制
+   * simple模式：直接展示指令组件，没有外层 header 和 footer，右下角只有单个提交icon，适合简单的指令
+   * advanced模式：展示指令组件，有外层 header 和 footer，适合复杂的指令
+   * @since v1.2.9
+   */
+  mode?: 'simple' | 'advanced';
+
+  /**
+   * 是否隐藏底部按钮区域，默认为 false
+   * @since v1.2.9
+   */
+  hideFooter?: boolean;
+
+  /**
+   * 用于强制重新渲染组件的唯一键值
+   * 每次快捷指令更新时都会生成新的时间戳
+   * @since v1.3.0
+   */
+  bindKey?: string;
+
+  /**
+   * 用于显示的别名
+   * @since v1.3.2
+   */
+  alias?: string;
+}
+
 export interface AIBluekingExpose {
   sessionContents: Ref<ISessionContent[]>;
   sendChat: ({
@@ -68,56 +142,6 @@ export interface AIBluekingExpose {
   updatePosition: (x: number, y: number) => void;
   updateSize: (w: number, h: number) => void;
   updatePositionAndSize: (x: number, y: number, w: number, h: number) => void;
-}
-
-// 扩展 IAgentCommand 类型，添加 iconRender 支持
-export interface IShortcut extends IAgentCommand {
-  /**
-   * 自定义 icon 渲染函数
-   * @param h - Vue 的 h 函数，用于创建 VNode
-   * @returns VNode
-   */
-  iconRender?: (h: typeof import('vue').h) => VNode;
-
-  /**
-   * 指定指令模式：simple 简单模式，advanced 高级模式，默认为 advanced模式，在没有明确设置为 simple 模式时，视为 advanced 模式
-   * 这里会添加mode到指令组件class中，用于样式控制
-   * simple模式：直接展示指令组件，没有外层 header 和 footer，右下角只有单个提交icon，适合简单的指令
-   * advanced模式：展示指令组件，有外层 header 和 footer，适合复杂的指令
-   * @since v1.2.9
-   */
-  mode?: 'simple' | 'advanced';
-
-  /**
-   * 是否隐藏底部按钮区域，默认为 false
-   * @since v1.2.9
-   */
-  hideFooter?: boolean;
-
-  /**
-   * 用于强制重新渲染组件的唯一键值
-   * 每次快捷指令更新时都会生成新的时间戳
-   * @since v1.3.0
-   */
-  bindKey?: string;
-}
-
-// 扩展 IAgentCommandComponent 类型，添加 hide 和 selectedText 属性
-// 扩展 mode 属性，用于指定指令模式：simple 简单模式，advanced 高级模式，默认为 advanced模式，在没有明确设置为 simple 模式时，视为 advanced 模式
-export interface IShortcutComponent extends IAgentCommandComponent {
-  selectedText?: string | null;
-
-  // 控制指令组件中单个输入模块的展示模式：simple 简单模式，advanced 高级模式，默认为 advanced模式，在没有明确设置为 simple 模式时，视为 advanced 模式
-  // simple模式：直接展示输入组件，没有label
-  // @since v1.2.9
-  mode?: 'simple' | 'advanced';
-
-  /**
-   * 当前输入模块是否显示发送按钮，默认为 false
-   * 如果为 true，则会在输入模块后面追加显示发送按钮，适合简单的输入模块，如：翻译、总结等
-   * @since v1.2.9
-   */
-  showSendButton?: boolean;
 }
 
 // 保持与旧版本的兼容性

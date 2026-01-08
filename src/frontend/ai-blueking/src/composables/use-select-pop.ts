@@ -24,11 +24,11 @@
  * IN THE SOFTWARE.
  */
 // use-select.ts
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, onBeforeUnmount, unref, watch, type MaybeRef } from 'vue';
 
 const selectedText = ref('');
 const citeText = ref('');
-const lockSelectedText = ref(false); // 外面组件比如输入框组件 focus 时需要锁定，防止引用被清空
+const lockSelectedText = ref(false); // 外面组件比如输入框组件 focus 时需要锁定,防止引用被清空
 // 添加类型定义和常量配置
 
 interface Position {
@@ -43,11 +43,12 @@ const POPUP_CONFIG = {
   debounceTime: 300,
 } as const;
 
-export function useSelect(enablePopup: boolean) {
+export function useSelect(enablePopup: MaybeRef<boolean>) {
   const isIconVisible = ref(false);
   const iconPosition = ref<Position>({ top: '0px', left: '0px' });
   let debounceTimeout: ReturnType<typeof setTimeout>;
   let lastMouseUpEvent: MouseEvent | null = null;
+  let isListening = false; // 追踪监听器状态，避免重复添加
   const popupRef = ref<HTMLElement | null>(null);
 
   // 增加的变量
@@ -230,22 +231,59 @@ export function useSelect(enablePopup: boolean) {
     citeText.value = text;
   };
 
-  onMounted(() => {
-    if (enablePopup) {
-      document.addEventListener('selectionchange', handleSelectionChange);
-      document.addEventListener('mousedown', handleMouseDown);
-      document.addEventListener('mouseup', handleMouseUp);
-      document.addEventListener('click', handleClickOutside, true); // 捕获阶段
-    }
-  });
+  /**
+   * 添加事件监听器
+   * 使用 isListening 标志避免重复添加
+   */
+  const addEventListeners = () => {
+    if (isListening) return; // 防止重复添加
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('click', handleClickOutside, true); // 捕获阶段
+    isListening = true;
+  };
+
+  /**
+   * 移除事件监听器
+   * 使用 isListening 标志确保只移除已添加的监听器
+   */
+  const removeEventListeners = () => {
+    if (!isListening) return; // 避免移除不存在的监听器
+
+    document.removeEventListener('selectionchange', handleSelectionChange);
+    document.removeEventListener('mousedown', handleMouseDown);
+    document.removeEventListener('mouseup', handleMouseUp);
+    document.removeEventListener('click', handleClickOutside, true);
+    isListening = false;
+  };
+
+  /**
+   * 使用 watch 监听 enablePopup 的变化，动态添加或移除事件监听器
+   * 这样可以响应异步接口返回的配置变化
+   * @since v1.3.2
+   */
+  watch(
+    () => unref(enablePopup),
+    (newValue, oldValue) => {
+      if (newValue && !oldValue) {
+        // 从 false 变为 true，添加事件监听器
+        addEventListeners();
+      } else if (!newValue && oldValue) {
+        // 从 true 变为 false，移除事件监听器
+        removeEventListeners();
+        // 同时清理状态
+        hideIcon();
+        clearSelection();
+      }
+    },
+    { immediate: true } // 立即执行一次，相当于在初始化时就根据当前值决定是否添加监听器
+  );
 
   onBeforeUnmount(() => {
-    if (enablePopup) {
-      document.removeEventListener('selectionchange', handleSelectionChange);
-      document.removeEventListener('mousedown', handleMouseDown);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.removeEventListener('click', handleClickOutside, true);
-    }
+    // 组件卸载时，确保清理所有资源
+    removeEventListeners(); // removeEventListeners 内部已有 isListening 检查
     clearTimeout(debounceTimeout);
   });
 
