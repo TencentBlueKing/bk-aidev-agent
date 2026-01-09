@@ -60,7 +60,7 @@ python bin/manage.py createcachetable
 
 ### ❓问题：智能体发布失败
 
-在聊天窗口会话时出现提示：请配置并发布智能体待使用的LLM模型  
+在聊天窗口会话时出现提示：请配置智能体默认模型并重新发布  
 
 <img src="./assets/agent_llm_empty.png" width="60%"/>
 
