@@ -1,27 +1,151 @@
+## [1.3.2] - 2026-01-09
+
+### ✨ 新增功能
+
+#### 快捷指令增强
+
+- **别名支持**：快捷指令新增 `alias` 字段，支持显示与原始名称不同的别名，提供更灵活的展示方式
+- **文本填充控制增强**：组件级别新增 `fillBack` 和 `fillRegx` 字段，支持更细粒度的文本填充控制
+  - `fillBack`：控制是否将选中文本填充到该组件
+  - `fillRegx`：使用正则表达式从选中文本中提取需要填充的内容
+- **智能体信息暴露**：新增 `agentInfo` 属性暴露，可通过组件 ref 访问智能体的完整配置信息
+
+```typescript
+// 快捷指令配置示例
+const shortcuts: IShortcut[] = [
+  {
+    id: 'translate',
+    name: '翻译',
+    alias: '智能翻译', // 显示别名而非原始名称
+    icon: 'bkai-icon bkai-translate',
+    components: [
+      {
+        type: 'textarea',
+        key: 'text',
+        name: '待翻译内容',
+        fillBack: true, // 启用文本填充
+        fillRegx: '\\w+', // 只提取英文单词
+        placeholder: '请输入需要翻译的文本',
+      },
+    ],
+  },
+];
+
+// 访问智能体信息
+const aiBlueking = ref(null);
+const agentInfo = computed(() => aiBlueking.value?.agentInfo);
+```
+
+### 🛠️ 优化改进
+
+#### 划词 Popup 逻辑优化
+
+- **动态控制支持**：划词弹窗现在同时受 `enablePopup` prop 和智能体配置的 `conversationSettings.enableWordSelectionPopup` 控制
+- **智能启用逻辑**：只有当两者都不为 `false` 时才启用划词功能，提供更灵活的配置方式
+- **事件监听优化**：使用 `watch` 动态监听配置变化，支持异步接口返回后动态启用/禁用划词功能
+
+```typescript
+/**
+ * 计算最终的 popup 启用状态
+ * 优先级：props.enablePopup > conversationSettings.enableWordSelectionPopup
+ * @since v1.3.2
+ */
+const finalEnablePopup = computed(() => {
+  // props.enablePopup 为 false 时直接禁用
+  if (!props.enablePopup) {
+    return false;
+  }
+  // 检查智能体配置，默认启用
+  const enableWordSelectionPopup = agentInfo.value?.conversationSettings?.enableWordSelectionPopup;
+  return enableWordSelectionPopup !== false;
+});
+```
+
+#### 输入框渲染优化
+
+- **移除动画依赖**：移除 `motion-v` 动画库依赖，简化输入框组件渲染逻辑
+- **样式统一**：统一输入框定位样式，移除不必要的 `transform-origin` 和 `will-change` 属性
+- **性能提升**：减少不必要的动画计算，提升组件整体性能
+
+#### 问候语高度计算重构
+
+- **逻辑简化**：简化 `useGreetingHeight` composable，将输入框位置计算逻辑移到主组件
+- **计算优化**：优化问候语高度与输入框位置的联动计算，提供更准确的布局效果
+- **代码可读性提升**：将相关逻辑集中管理，提升代码可维护性
+
+```typescript
+// 计算输入框的动态位置
+const inputContainerStyle = computed(() => {
+  if (!hasSessionContents.value) {
+    const BASE_TOP = 188;
+    const SINGLE_LINE_HEIGHT = 22;
+    const currentGreetingHeight = greetingTextHeight.value;
+
+    // 计算额外偏移量
+    const extraHeight = currentGreetingHeight - SINGLE_LINE_HEIGHT;
+    const maxExtraHeight = greetingMaxHeight.value - SINGLE_LINE_HEIGHT;
+    const additionalOffset = Math.max(0, Math.min(extraHeight, maxExtraHeight));
+
+    return {
+      top: `${BASE_TOP + additionalOffset}px`,
+    };
+  }
+  return {};
+});
+```
+
+#### 窗口大小监听优化
+
+- **监听位置调整**：将窗口 `resize` 事件监听从 `use-chat-core` 移到主组件
+- **避免重复监听**：防止多个 composable 重复监听同一事件，提升性能
+- **生命周期管理**：在组件 `mounted` 和 `unmounted` 时正确添加/移除监听器
+
+#### 快捷指令显示优化
+
+- **别名优先显示**：在所有快捷指令显示位置（快捷栏、弹窗、表单等）优先显示 `alias`，如果没有则显示 `name`
+- **过滤逻辑增强**：支持通过 `enableFillBack` 字段控制快捷指令在划词弹窗中的显示
+- **一致性提升**：确保快捷指令在不同位置显示的名称保持一致
+
+### 🐛 Bug 修复
+
+- **修复会话切换问题**：修复从历史会话恢复时使用错误方法 `setCurrentSession` 导致的状态问题，改用 `switchSessionWithContents` 方法
+- **修复输入框样式问题**：修复输入框在某些情况下定位不准确的问题，统一使用 `position: absolute` 和 `transform: translate(-50%, 0)`
+
+### 📦 依赖更新
+
+- **@blueking/ai-ui-sdk**：从 `0.1.18-beta.26` 升级到 `0.1.19-beta.42`，获取更多底层能力支持和功能增强
+
+---
+
 ## [1.3.1] - 2026-01-06
 
 ### ✨ 新增功能
 
 #### 核心架构重构
+
 - **聊天核心逻辑提取**：提取聊天核心逻辑到独立的 `use-chat-core` composable，提升代码可维护性和复用性
 - **iframe 拖拽优化**：新增 `use-iframe-drag-resize` composable，优化 iframe 内的拖拽和调整大小体验
 - **Props 类型系统增强**：新增独立的 Props 类型定义和默认值配置模块
 
 #### 快捷方式编辑功能
+
 - **消息编辑支持**：支持 shortcut 消息的编辑和重新发送
 - **编辑模式优化**：重构模板条件判断顺序，编辑模式优先于显示模式
 - **数据注入**：通过 provide/inject 注入 shortcuts 列表供编辑使用
 
 #### 新增事件
+
 - **init-session-finished 事件**：新增 `init-session-finished` 事件，在会话初始化流程完全结束时触发，通知外部会话已准备就绪
 
 ### 🛠️ 优化改进
 
 #### 快捷方式功能优化
+
 - **动态合并**：优化快捷方式功能，动态合并当前快捷方式与原始快捷方式数据
 - **事件支持**：更新 resend 事件支持 shortcut 类型数据
 
 #### 依赖更新
+
 - **dayjs 依赖更新**：更新 dayjs 依赖版本
 - **markdown-it 依赖更新**：更新 markdown-it 依赖版本
 
@@ -39,27 +163,33 @@
 ### ✨ 新增功能
 
 #### 分享对话功能
+
 - **新增分享会话功能**：支持选择对话内容进行分享，生成分享链接并自动复制到剪贴板
 - **默认启用**：`dropdownMenuConfig.showShare` 默认为 `true`，前后端同步升级即可使用
 
 #### 快捷键支持
+
 - **新增 Cmd/Ctrl + I 快捷键**：支持通过快捷键快速切换面板显示/隐藏
 - **智能平台检测**：macOS 使用 `Cmd + I`，Windows/Linux 使用 `Ctrl + I`
 
 #### 快捷指令增强
+
 - **动态更新支持**：修复快捷指令在打开时内容无法更新的问题
 - **options 实时更新**：快捷指令的 options 选项现在支持实时更新
 
 ### 🛠️ 优化改进
 
 #### iframe 兼容性优化
+
 - **拖拽事件优化**：修复在 iframe 上拖拽失效的问题
 - **指针事件控制**：拖拽时自动禁用 iframe 的指针事件，避免事件丢失
 
 #### 剪切板优化
+
 - **HTTP 协议支持**：修复 HTTP 协议下剪切板操作失败的问题
 
 #### Vue2 兼容性
+
 - **样式兼容**：改进 Vue2 样式兼容性，确保与 Vue3 保持一致
 
 ---
@@ -69,13 +199,16 @@
 ### ✨ 新增功能
 
 #### 小鲸指令配置优化
+
 - **新增 simple 配置支持**：优化小鲸指令配置，支持 simple 配置模式，简化指令配置流程
 
 #### 无权限页面优化
+
 - **新增权限检查**：无权限页面添加权限检查机制，提供更准确的权限判断
 - **优化提示组件**：新增权限相关的样式和提示组件，改善无权限访问时的用户体验
 
 #### 新增 Props 配置项
+
 - **showCompressionIcon**：新增控制压缩图标显示的属性
 - **showMoreIcon**：新增控制更多图标显示的属性
 - **defaultChatInputPosition**：新增默认聊天输入框位置配置属性
@@ -84,6 +217,7 @@
 ### 🛠️ 优化改进
 
 #### 依赖包更新
+
 - **更新项目依赖**：升级相关依赖包，提升组件稳定性和性能
 
 ## [1.2.8] - 2025-10-17
@@ -93,26 +227,32 @@
 ### ✨ 新增功能
 
 #### 会话创建参数配置
+
 - **新增会话创建参数配置**：优化 `handleShow` 和 `addNewSession` 方法，支持更多会话创建参数配置
 - **APM 调用分析图表跳转链接调整**：新增标签过滤参数，优化APM调用分析图表的跳转功能
 
 #### 反馈功能
+
 - **新增 feedback 功能**：实现反馈功能，优化 feedback 前端交互体验
 - **用户体验优化**：改进反馈提交和展示流程
 
 #### 智能体集成
+
 - **AI 小鲸独立 pip 包**：智能体 AI 小鲸独立生成 pip 包并集成到插件
 - **插件集成优化**：完善插件集成流程和依赖管理
 
 #### 图标渲染支持
+
 - **新增 iconRender 支持**：支持自定义图标渲染，优化多个组件以使用该功能
 - **图标自定义能力**：提供更灵活的图标渲染方式
 
 #### Markdown 查看器改进
+
 - **Cite 文本处理优化**：优化 markdown-viewer 组件的 cite 文本处理
 - **思考片段清理**：新增 removeThinkingSections 工具函数以清理思考片段
 
 #### 位置和大小调整
+
 - **新增更新位置和大小功能**：支持动态调整组件的位置和大小
 - **窗口调整优化**：优化窗口大小变化时的组件位置调整逻辑
 
@@ -130,15 +270,15 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
-import { AIBlueking } from '@blueking/ai-blueking';
+  import { ref } from 'vue';
+  import { AIBlueking } from '@blueking/ai-blueking';
 
-const aiBlueking = ref(null);
+  const aiBlueking = ref(null);
 
-// 优化后的会话创建方法
-const createNewSession = async () => {
-  await aiBlueking.value?.handleShow(undefined, true); // 支持 forceNewSession 参数
-};
+  // 优化后的会话创建方法
+  const createNewSession = async () => {
+    await aiBlueking.value?.handleShow(undefined, true); // 支持 forceNewSession 参数
+  };
 </script>
 ```
 
@@ -153,11 +293,11 @@ const createNewSession = async () => {
 </template>
 
 <script setup>
-// 自定义图标渲染函数
-const customIconRender = (iconType) => {
-  // 返回自定义的图标渲染内容
-  return `<i class="custom-icon custom-${iconType}"></i>`;
-};
+  // 自定义图标渲染函数
+  const customIconRender = iconType => {
+    // 返回自定义的图标渲染内容
+    return `<i class="custom-icon custom-${iconType}"></i>`;
+  };
 </script>
 ```
 
@@ -174,48 +314,51 @@ const customIconRender = (iconType) => {
 </template>
 
 <script setup>
-import { ref } from 'vue';
+  import { ref } from 'vue';
 
-const aiBlueking = ref(null);
+  const aiBlueking = ref(null);
 
-// 更新组件位置
-const updatePosition = (x, y) => {
-  aiBlueking.value?.updatePosition(x, y);
-};
+  // 更新组件位置
+  const updatePosition = (x, y) => {
+    aiBlueking.value?.updatePosition(x, y);
+  };
 
-// 更新组件大小
-const updateSize = (width, height) => {
-  aiBlueking.value?.updateSize(width, height);
-};
+  // 更新组件大小
+  const updateSize = (width, height) => {
+    aiBlueking.value?.updateSize(width, height);
+  };
 
-// 更新组件位置和大小
-const updatePositionAndSize = (x, y, width, height) => {
-  aiBlueking.value?.updatePositionAndSize(x, y, width, height);
-};
+  // 更新组件位置和大小
+  const updatePositionAndSize = (x, y, width, height) => {
+    aiBlueking.value?.updatePositionAndSize(x, y, width, height);
+  };
 
-const onResizeStop = (position) => {
-  console.log('调整大小结束', position);
-};
+  const onResizeStop = position => {
+    console.log('调整大小结束', position);
+  };
 
-const onDragStop = (position) => {
-  console.log('拖拽结束', position);
-};
+  const onDragStop = position => {
+    console.log('拖拽结束', position);
+  };
 </script>
 ```
 
 ### 🛠️ 优化改进
 
 #### 依赖更新
+
 - **@blueking/ai-ui-sdk 升级**：更新版本到 0.1.18-beta.21
 - **依赖一致性**：确保 @blueking/ai-blueking 依赖一致性
 
 #### 代码优化
+
 - **x-mavon-editor 修复**：修复 x-mavon-editor 的全局变量声明
 - **用户配置参数优化**：优化用户配置参数格式
 - **ISessionContent 类型导入**：新增 ISessionContent 类型导入
 - **handleUpdateSessionContent 优化**：优化函数的参数格式
 
 #### 渲染优化
+
 - **消息渲染逻辑简化**：简化 render-message 组件的内容渲染逻辑
 
 ## [1.2.7] - 2025-10-14
@@ -238,11 +381,11 @@ const onDragStop = (position) => {
 </template>
 
 <script setup>
-import { AIBlueking } from '@blueking/ai-blueking';
+  import { AIBlueking } from '@blueking/ai-blueking';
 
-const showAIPanel = () => {
-  // 通过编程方式控制AI面板显示
-};
+  const showAIPanel = () => {
+    // 通过编程方式控制AI面板显示
+  };
 </script>
 ```
 
@@ -258,7 +401,7 @@ const showAIPanel = () => {
     :dropdown-menu-config="{
       showRename: true,
       showAutoGenerate: true,
-      showShare: true
+      showShare: true,
     }"
   />
 </template>
@@ -292,7 +435,7 @@ const showAIPanel = () => {
         { key: 'userId', value: getCurrentUserId() },
         { key: 'sessionId', value: getSessionId() },
         { key: 'timestamp', value: Date.now().toString() },
-      ]
+      ],
     }"
   />
 </template>
@@ -310,20 +453,23 @@ const showAIPanel = () => {
 
 ```vue
 <template>
-  <AIBlueking ref="aiBlueking" :url="apiUrl" />
+  <AIBlueking
+    ref="aiBlueking"
+    :url="apiUrl"
+  />
   <button @click="showNewSession">显示新会话</button>
 </template>
 
 <script setup>
-import { AIBlueking } from '@blueking/ai-blueking';
+  import { AIBlueking } from '@blueking/ai-blueking';
 
-const aiBlueking = ref(null);
-const apiUrl = '...';
+  const aiBlueking = ref(null);
+  const apiUrl = '...';
 
-// 创建新会话并打开窗口
-const showNewSession = async () => {
-  await aiBlueking.value?.handleShow(undefined, true);
-};
+  // 创建新会话并打开窗口
+  const showNewSession = async () => {
+    await aiBlueking.value?.handleShow(undefined, true);
+  };
 </script>
 ```
 
@@ -342,31 +488,34 @@ const showNewSession = async () => {
 
 ```vue
 <template>
-  <AIBlueking ref="aiBlueking" :url="apiUrl" />
+  <AIBlueking
+    ref="aiBlueking"
+    :url="apiUrl"
+  />
   <button @click="moveToTopRight">移动到右上角</button>
   <button @click="setSizeLarge">设置大尺寸</button>
 </template>
 
 <script setup>
-import { ref } from 'vue';
-import { AIBlueking } from '@blueking/ai-blueking';
+  import { ref } from 'vue';
+  import { AIBlueking } from '@blueking/ai-blueking';
 
-const aiBlueking = ref(null);
-const apiUrl = '...';
+  const aiBlueking = ref(null);
+  const apiUrl = '...';
 
-// 移动到右上角
-const moveToTopRight = () => {
-  const containerWidth = 400;
-  const x = window.innerWidth - containerWidth - 20;
-  const y = 20;
+  // 移动到右上角
+  const moveToTopRight = () => {
+    const containerWidth = 400;
+    const x = window.innerWidth - containerWidth - 20;
+    const y = 20;
 
-  aiBlueking.value?.updatePosition(x, y);
-};
+    aiBlueking.value?.updatePosition(x, y);
+  };
 
-// 设置大尺寸
-const setSizeLarge = () => {
-  aiBlueking.value?.updateSize(600, 500);
-};
+  // 设置大尺寸
+  const setSizeLarge = () => {
+    aiBlueking.value?.updateSize(600, 500);
+  };
 </script>
 ```
 

@@ -8,6 +8,28 @@ export default {
     return {
       changelogData: [
         {
+          version: "v1.3.2",
+          date: "2026-01-09",
+          features: [
+            "快捷指令新增 <code>alias</code> 字段，支持显示与原始名称不同的别名",
+            "组件级别新增 <code>fillBack</code> 和 <code>fillRegx</code> 字段，支持更细粒度的文本填充控制",
+            "新增 <code>agentInfo</code> 属性暴露，可通过组件 ref 访问智能体的完整配置信息"
+          ],
+          improvements: [
+            "划词弹窗支持从智能体配置的 <code>conversationSettings.enableWordSelectionPopup</code> 动态控制",
+            "优化划词选择的事件监听器管理，使用 watch 动态添加/移除监听器，支持异步配置变化",
+            "移除 motion-v 动画库依赖，简化输入框组件渲染逻辑，提升性能",
+            "重构问候语高度计算逻辑，优化输入框位置的联动计算",
+            "优化窗口大小监听，避免重复监听提升性能",
+            "快捷指令在所有位置优先显示 alias 别名，支持通过 <code>enableFillBack</code> 控制在划词弹窗中的显示",
+            "升级 @blueking/ai-ui-sdk 到 0.1.19-beta.42"
+          ],
+          fixes: [
+            "修复从历史会话恢复时会话切换的状态问题",
+            "修复输入框在某些情况下定位不准确的问题"
+          ]
+        },
+        {
           version: "v1.3.1",
           date: "2026-01-06",
           features: [

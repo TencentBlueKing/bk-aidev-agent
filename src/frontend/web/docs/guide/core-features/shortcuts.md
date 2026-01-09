@@ -9,8 +9,10 @@
 1. **自定义表单输入**：不再局限于预设提示词，可以通过表单收集用户输入
 2. **多种组件类型**：支持文本输入框、下拉选择框、数字输入框和多行文本域等多种组件类型
 3. **自动填充选中文本**：可以智能地将用户选中的文本填充到指定表单项中
-4. **正则表达式匹配**：支持使用正则表达式匹配选中文本的特定部分
-5. **后端处理逻辑**：表单数据不再拼接为前端prompt，而是作为结构化数据发送到后端处理
+4. **正则表达式匹配**：支持使用正则表达式匹配选中文本的特定部分 <Badge type="tip" text="v1.3.2 增强" />
+5. **别名显示**：支持为快捷指令设置显示别名，提供更灵活的展示方式 <Badge type="tip" text="v1.3.2" />
+6. **细粒度显示控制**：支持控制快捷指令在划词弹窗中的显示 <Badge type="tip" text="v1.3.2" />
+7. **后端处理逻辑**：表单数据不再拼接为前端prompt，而是作为结构化数据发送到后端处理
 
 ## 重要提示：后端适配要求
 
@@ -77,7 +79,9 @@
 interface IShortcut {
   id: string // 快捷操作的唯一标识符
   name: string // 显示的操作名称
+  alias?: string // <Badge type="tip" text="v1.3.2" /> 显示别名，优先于 name 显示
   icon?: string // 按钮图标的完整类名（如：'bkai-icon bkai-translate'）
+  enableFillBack?: boolean // <Badge type="tip" text="v1.3.2" /> 是否在划词弹窗中显示
   components: Array<{
     type: string // 组件类型
     name?: string // 表单项名称
@@ -85,8 +89,8 @@ interface IShortcut {
     placeholder?: string // 占位文本
     default?: any // 默认值
     required?: boolean // 是否必填
-    fillBack?: boolean // 是否自动填充选中文本
-    fillRegx?: string | RegExp // 填充的正则匹配表达式
+    fillBack?: boolean // <Badge type="tip" text="v1.3.2 增强" /> 是否将选中文本填充到该组件
+    fillRegx?: string | RegExp // <Badge type="tip" text="v1.3.2" /> 用于从选中文本提取的正则表达式
     rows?: number // 输入框行数（仅 textarea 类型有效）
     min?: number // 最小值（仅 number 类型有效）
     max?: number // 最大值（仅 number 类型有效）
@@ -198,6 +202,199 @@ const smartFilter = (shortcut, selectedText) => {
   ]
 }
 ```
+
+## 快捷指令增强功能 <Badge type="tip" text="v1.3.2" />
+
+v1.3.2 版本对快捷指令功能进行了重要增强，新增了别名显示、精准文本填充和细粒度显示控制等特性：
+
+### 别名显示
+
+快捷指令新增 `alias` 字段，用于显示与原始名称不同的别名。当设置了别名后，在所有展示位置（快捷栏、弹窗、表单等）会优先显示别名：
+
+```javascript
+const shortcuts = [
+  {
+    id: 'translate',
+    name: '翻译',  // 内部标识名称
+    alias: '智能翻译',  // 用户看到的名称
+    icon: 'bkai-icon bkai-translate',
+    // ... 其他配置
+  },
+  {
+    id: 'extract_email',
+    name: '提取邮箱',
+    alias: '邮箱提取器',  // 更友好的显示名称
+    icon: 'bkai-icon bkai-email',
+    // ... 其他配置
+  }
+]
+```
+
+**使用场景**：
+- 为技术性名称提供更用户友好的显示文本
+- 在不同语言环境下显示本地化名称
+- 保持内部标识稳定的同时调整外部显示
+
+### 精准文本填充 - fillRegx
+
+组件级别新增 `fillRegx` 字段，支持使用正则表达式从选中文本中提取特定内容：
+
+```javascript
+{
+  id: 'extract_url',
+  name: '分析链接',
+  alias: 'URL分析器',
+  icon: 'bkai-icon bkai-link',
+  enableFillBack: true,
+  components: [
+    {
+      type: 'textarea',
+      key: 'url',
+      name: 'URL地址',
+      fillBack: true,
+      // 只提取 URL 部分
+      fillRegx: 'https?://[^\\s]+',
+      placeholder: '自动提取选中文本中的URL'
+    }
+  ]
+}
+```
+
+**更多示例**：
+
+```javascript
+// 提取邮箱地址
+{
+  type: 'input',
+  key: 'email',
+  name: '邮箱',
+  fillBack: true,
+  fillRegx: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}'
+}
+
+// 提取代码块
+{
+  type: 'textarea',
+  key: 'code',
+  name: '代码',
+  fillBack: true,
+  fillRegx: '```[\\s\\S]*?```|`[^`]+`'  // 提取 markdown 代码块或行内代码
+}
+
+// 提取数字
+{
+  type: 'number',
+  key: 'amount',
+  name: '金额',
+  fillBack: true,
+  fillRegx: '\\d+(?:\\.\\d+)?'  // 提取整数或小数
+}
+```
+
+### 划词弹窗显示控制
+
+快捷指令级别新增 `enableFillBack` 字段，支持控制快捷指令是否在划词弹窗中显示：
+
+```javascript
+const shortcuts = [
+  {
+    id: 'simple_translate',
+    name: '翻译',
+    icon: 'bkai-icon bkai-translate',
+    enableFillBack: true,  // 在划词弹窗中显示
+    components: [
+      {
+        type: 'textarea',
+        key: 'text',
+        name: '文本',
+        fillBack: true
+      }
+    ]
+  },
+  {
+    id: 'complex_analysis',
+    name: '深度分析',
+    icon: 'bkai-icon bkai-analysis',
+    enableFillBack: false,  // 不在划词弹窗中显示，仅在主菜单显示
+    components: [
+      // ... 复杂的表单配置
+    ]
+  }
+]
+```
+
+**使用场景**：
+- 简单快捷的操作显示在划词弹窗中
+- 复杂的多步骤操作仅在主菜单中显示
+- 根据场景区分快速操作和完整操作
+
+### 组合使用示例
+
+```javascript
+const shortcuts = [
+  {
+    id: 'smart_translate',
+    name: '翻译',
+    alias: '智能翻译助手',  // 友好的显示名称
+    icon: 'bkai-icon bkai-translate',
+    enableFillBack: true,  // 在划词弹窗中显示
+    components: [
+      {
+        type: 'textarea',
+        key: 'text',
+        name: '待翻译文本',
+        fillBack: true,
+        fillRegx: '[^\\d\\s]+',  // 只提取非数字和非空白字符
+        placeholder: '自动填充选中的文本'
+      },
+      {
+        type: 'select',
+        key: 'targetLang',
+        name: '目标语言',
+        options: [
+          { label: '英文', value: 'en' },
+          { label: '中文', value: 'zh' }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'extract_contact',
+    name: '提取联系方式',
+    alias: '联系信息提取器',
+    icon: 'bkai-icon bkai-contact',
+    enableFillBack: true,
+    components: [
+      {
+        type: 'input',
+        key: 'phone',
+        name: '电话',
+        fillBack: true,
+        fillRegx: '1[3-9]\\d{9}',  // 提取手机号
+        placeholder: '提取手机号码'
+      },
+      {
+        type: 'input',
+        key: 'email',
+        name: '邮箱',
+        fillBack: true,
+        fillRegx: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}',  // 提取邮箱
+        placeholder: '提取邮箱地址'
+      }
+    ]
+  }
+]
+```
+
+### 最佳实践
+
+1. **合理使用别名**：为用户提供清晰易懂的快捷指令名称
+2. **精确的正则表达式**：使用适当的正则表达式确保提取的内容准确
+3. **划词弹窗显示策略**：
+   - 简单、单步操作 → `enableFillBack: true`
+   - 复杂、多步操作 → `enableFillBack: false`
+4. **测试正则表达式**：在实际使用前充分测试正则表达式的匹配效果
+5. **提供回退机制**：即使正则匹配失败，也应确保表单可以正常使用
 
 ### 支持的组件类型
 

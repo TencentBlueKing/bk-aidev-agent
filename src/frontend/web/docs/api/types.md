@@ -10,6 +10,7 @@
 interface IShortcut {
   id: string // 快捷操作的唯一标识符
   name: string // 显示的操作名称
+  alias?: string // <Badge type="tip" text="v1.3.2" /> 显示别名，优先于 name 显示
   icon?: string // 按钮图标的类名
   /**
    * 自定义图标渲染函数
@@ -18,6 +19,7 @@ interface IShortcut {
    * @since v1.2.8
    */
   iconRender?: (h: typeof import('vue').h) => import('vue').VNode // <Badge type="tip" text="v1.2.8" /> 自定义图标渲染函数
+  enableFillBack?: boolean // <Badge type="tip" text="v1.3.2" /> 是否在划词弹窗中显示（默认 true）
   // 组件配置，用于定义表单项
   components: Array<{
     type: string // 组件类型：'input', 'select', 'number', 'textarea' 等
@@ -26,8 +28,8 @@ interface IShortcut {
     placeholder?: string // 占位文本
     default?: any // 默认值
     required?: boolean // 是否必填
-    fillBack?: boolean // 是否自动填充选中文本
-    fillRegx?: string | RegExp // 填充的正则匹配表达式
+    fillBack?: boolean // <Badge type="tip" text="v1.3.2 增强" /> 是否将选中文本填充到该组件
+    fillRegx?: string | RegExp // <Badge type="tip" text="v1.3.2" /> 用于从选中文本提取的正则表达式
     rows?: number // 输入框行数（仅 textarea 类型有效）
     min?: number // 最小值（仅 number 类型有效）
     max?: number // 最大值（仅 number 类型有效）
@@ -38,6 +40,49 @@ interface IShortcut {
     }>
     hide?: boolean // 是否隐藏该组件（v1.2.4-beta.3 新增）
   }>
+}
+```
+
+### v1.3.2 新增字段说明
+
+#### alias <Badge type="tip" text="v1.3.2" />
+
+快捷指令的显示别名。当设置了 `alias` 后，在所有展示位置（快捷栏、弹窗、表单等）会优先显示别名而非原始名称。
+
+```javascript
+{
+  id: 'translate',
+  name: '翻译',
+  alias: '智能翻译', // 显示为"智能翻译"而非"翻译"
+  // ... 其他配置
+}
+```
+
+#### enableFillBack <Badge type="tip" text="v1.3.2" />
+
+控制快捷指令是否在划词弹窗中显示。默认值为 `true`，设置为 `false` 时该快捷指令将不会在划词弹窗中出现。
+
+```javascript
+{
+  id: 'complex_analysis',
+  name: '复杂分析',
+  enableFillBack: false, // 不在划词弹窗中显示，仅在主菜单中显示
+  // ... 其他配置
+}
+```
+
+#### fillRegx <Badge type="tip" text="v1.3.2" />
+
+使用正则表达式从选中文本中提取需要填充的内容。配合 `fillBack: true` 使用，可以实现更精准的文本提取。
+
+```javascript
+{
+  type: 'textarea',
+  key: 'email',
+  name: '邮箱地址',
+  fillBack: true,
+  fillRegx: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}', // 只提取邮箱地址
+  placeholder: '自动提取选中文本中的邮箱地址'
 }
 ```
 
@@ -135,3 +180,35 @@ interface IAgentInfo {
 - `username` 用于在群聊转人工时显示咨询用户的名称
 - 聊天群名称会根据智能体名称、会话名称和用户名动态生成
 - 格式：`智能体名称-会话名称-咨询用户`
+
+### 智能体信息访问 <Badge type="tip" text="v1.3.2" />
+
+从 v1.3.2 开始，组件实例暴露了 `agentInfo` 属性，允许通过组件 ref 访问完整的智能体配置信息：
+
+```vue
+<template>
+  <AIBlueking ref="aiBlueking" :url="apiUrl" />
+  <button @click="showAgentInfo">查看智能体信息</button>
+</template>
+
+<script setup>
+import { ref } from 'vue'
+import { AIBlueking } from '@blueking/ai-blueking'
+
+const aiBlueking = ref(null)
+
+const showAgentInfo = () => {
+  const info = aiBlueking.value?.agentInfo
+  console.log('智能体名称:', info?.agentName)
+  console.log('开场白:', info?.openingRemark)
+  console.log('预设问题:', info?.predefinedQuestions)
+  console.log('会话配置:', info?.conversationSettings)
+}
+</script>
+```
+
+此功能特别适用于：
+- **动态UI调整**：根据智能体配置动态调整界面元素
+- **功能开关控制**：根据智能体的配置启用或禁用特定功能
+- **状态展示**：在外部组件中展示智能体的相关信息
+- **调试和监控**：便于开发和调试时查看智能体配置

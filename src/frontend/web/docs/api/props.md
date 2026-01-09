@@ -11,7 +11,7 @@
 | `url`             | `String`           | `''`                                                      | **必需**. AI 服务接口地址，1.0版本中用于获取智能体配置信息。                                                                                                                                          |
 | `title`           | `String`           | `'AI 小鲸'`                                               | 在头部显示的标题文本。                                                                                                                                                                                |
 | `helloText`       | `String`           | `'你好，我是小鲸'`                                        | 初始欢迎页面显示的问候语。在1.0版本中，智能体配置的开场白(`openingRemark`)优先级高于此属性。                                                                                                          |
-| `enablePopup`     | `Boolean`          | `true`                                                    | 是否启用选中文本后的弹出操作窗口 (需要配合 `shortcuts` 使用)。                                                                                                                                        |
+| `enablePopup`     | `Boolean`          | `true`                                                    | 是否启用选中文本后的弹出操作窗口 (需要配合 `shortcuts` 使用)。<Badge type="tip" text="v1.3.2 增强" /> 现在会与智能体配置的 `conversationSettings.enableWordSelectionPopup` 联动控制，只有当两者都不为 `false` 时才启用。 |
 | `prompts`         | `Array<String>`    | `[]`                                                      | 预设提示词列表。在1.0版本中，这些提示词会与智能体配置的预设问题(`predefinedQuestions`)合并展示。                                                                                                      |
 | `requestOptions`  | `Object`           | `{}`                                                      | 自定义请求选项，可设置 `headers`、`data` 和 `context` 属性。**v1.1.5 新增** `context` 支持静态对象或动态函数形式传递上下文信息。详细说明参见 [自定义请求指南](/guide/advanced-usage/custom-requests)。 |
 | `shortcuts`       | `Array<IShortcut>` | `[]`                                                      | 快捷操作列表。详细格式参见 [内容引用与快捷操作指南](/guide/core-features/content-referencing#配置快捷操作-shortcuts)。                                                                                |
@@ -46,6 +46,71 @@
 | `showMoreIcon`      | `Boolean`   | `true`                                                     | <Badge type="tip" text="v1.2.9" /> 控制是否显示更多图标。设置为 `false` 时隐藏更多操作图标按钮。 |
 | `defaultChatInputPosition` | `String` | `undefined`                                              | <Badge type="tip" text="v1.2.9" /> 设置默认输入框位置。可选值为 `'bottom'` 或 `undefined`，当设置为 `'bottom'` 时输入框始终显示在底部，`undefined` 时根据是否有会话内容自动判断位置。 |
 | `maxWidth`          | `Number` \| `String` | `1000`                                               | <Badge type="tip" text="v1.2.9" /> 设置组件最大宽度。可以是数字（像素值）或字符串（如 '100%'）。 |
+
+## 划词弹窗控制增强 <Badge type="tip" text="v1.3.2" />
+
+v1.3.2 版本优化了划词弹窗的控制逻辑，现在支持通过多个层级进行精细化控制：
+
+### 控制优先级
+
+划词弹窗的启用状态由以下两个配置共同决定：
+
+1. **组件级配置**：`enablePopup` prop（优先级最高）
+2. **智能体级配置**：`conversationSettings.enableWordSelectionPopup`（通过 API 返回）
+
+**启用规则**：只有当两者都不为 `false` 时，划词弹窗功能才会启用。
+
+### 配置示例
+
+```vue
+<template>
+  <!-- 场景1：强制禁用划词弹窗 -->
+  <AIBlueking
+    :url="apiUrl"
+    :enable-popup="false"
+  />
+  <!-- 无论智能体配置如何，划词弹窗都不会启用 -->
+
+  <!-- 场景2：由智能体配置控制 -->
+  <AIBlueking
+    :url="apiUrl"
+    :enable-popup="true"
+  />
+  <!-- 实际是否启用取决于智能体的 conversationSettings.enableWordSelectionPopup -->
+
+  <!-- 场景3：检查实际启用状态 -->
+  <AIBlueking
+    ref="aiBlueking"
+    :url="apiUrl"
+    :enable-popup="true"
+  />
+  <button @click="checkPopupStatus">检查状态</button>
+</template>
+
+<script setup>
+import { ref } from 'vue'
+import { AIBlueking } from '@blueking/ai-blueking'
+
+const aiBlueking = ref(null)
+
+const checkPopupStatus = () => {
+  const agentInfo = aiBlueking.value?.agentInfo
+  const enableWordSelectionPopup = agentInfo?.conversationSettings?.enableWordSelectionPopup
+
+  // 最终启用状态 = props.enablePopup && conversationSettings.enableWordSelectionPopup !== false
+  console.log('划词弹窗最终状态:', enableWordSelectionPopup !== false)
+}
+</script>
+```
+
+### 使用场景
+
+这种设计适用于以下场景：
+
+- **全局控制**：前端统一禁用划词功能（`enablePopup: false`）
+- **智能体级控制**：由后端根据智能体类型决定是否启用划词功能
+- **动态调整**：智能体配置更新后，前端无需修改代码即可生效
+- **灵活组合**：前端和后端配合实现更精细的功能控制
 
 ## 压缩状态边距控制 <Badge type="tip" text="v1.1.2" />
 
@@ -310,9 +375,13 @@ interface IRequestOptions {
 
 这些参数会在发送请求时与其他参数一起发送，其中 `context` 会被合并到快捷操作的表单数据中，作为上下文信息传递给后端。
 
-## 会话内容访问
+## 暴露属性
 
-组件实例暴露了`sessionContents`属性，可用于获取当前会话内容：
+组件实例暴露了以下属性，可用于获取组件的内部状态：
+
+### sessionContents
+
+获取当前会话的消息内容列表：
 
 ```vue
 <template>
@@ -332,6 +401,56 @@ interface IRequestOptions {
   }
 </script>
 ```
+
+### agentInfo <Badge type="tip" text="v1.3.2" />
+
+获取智能体的完整配置信息，包含名称、问候语、快捷指令、会话配置等：
+
+```vue
+<template>
+  <AIBlueking ref="aiBlueking" :url="apiUrl" />
+  <button @click="showAgentInfo">查看智能体信息</button>
+  <button @click="checkPopupEnabled">检查划词功能状态</button>
+</template>
+
+<script setup>
+  import { ref } from "vue"
+  import { AIBlueking } from "@blueking/ai-blueking"
+
+  const aiBlueking = ref(null)
+
+  const showAgentInfo = () => {
+    const info = aiBlueking.value?.agentInfo
+    console.log('智能体名称:', info?.agentName)
+    console.log('开场白:', info?.openingRemark)
+    console.log('预设问题:', info?.predefinedQuestions)
+    console.log('快捷指令:', info?.commands)
+    console.log('会话配置:', info?.conversationSettings)
+  }
+
+  const checkPopupEnabled = () => {
+    const info = aiBlueking.value?.agentInfo
+    const enableWordSelectionPopup = info?.conversationSettings?.enableWordSelectionPopup
+    console.log('划词弹窗是否启用:', enableWordSelectionPopup !== false)
+  }
+</script>
+```
+
+**`agentInfo` 包含的主要字段**：
+
+- `agentName`: 智能体名称
+- `openingRemark`: 开场白文本
+- `predefinedQuestions`: 预设问题列表
+- `commands`: 快捷指令配置列表
+- `conversationSettings`: 会话相关配置
+  - `enableChatSession`: 是否启用多会话功能
+  - `enableWordSelectionPopup`: 是否启用划词弹窗（v1.3.2 新增）
+
+**使用场景**：
+- **动态UI调整**：根据智能体配置动态显示或隐藏界面元素
+- **功能开关控制**：根据智能体的会话配置启用或禁用特定功能
+- **状态展示**：在外部组件中展示智能体的相关信息
+- **调试和监控**：便于开发和调试时查看智能体的完整配置
 
 ## 编程式会话管理
 
