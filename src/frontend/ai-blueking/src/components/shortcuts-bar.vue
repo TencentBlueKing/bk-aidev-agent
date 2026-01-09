@@ -18,7 +18,7 @@
         v-else-if="shortcut.icon"
         :class="shortcut.icon"
       ></i>
-      <span class="shortcut-text">{{ shortcut.alias ?? shortcut.name }}</span>
+      <span class="shortcut-text">{{ shortcut.alias || shortcut.name }}</span>
     </div>
 
     <!-- "更多"按钮 -->

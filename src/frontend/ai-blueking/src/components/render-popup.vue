@@ -37,7 +37,7 @@
             v-else-if="btn.icon"
             :class="btn.icon"
           ></i>
-          <span class="btn-text ai-blueking-tag-text">{{ btn.alias ?? btn.name }}</span>
+          <span class="btn-text ai-blueking-tag-text">{{ btn.alias || btn.name }}</span>
         </div>
         <!-- 更多按钮 -->
         <div
@@ -69,7 +69,7 @@
                 v-else-if="btn.icon"
                 :class="btn.icon"
               ></i>
-              <span>{{ btn.alias ?? btn.name }}</span>
+              <span>{{ btn.alias || btn.name }}</span>
             </div>
           </div>
         </div>
