@@ -56,6 +56,7 @@ class PluginViewSet(ViewSetMixin, APIView):
     def finalize_response(self, request, response, *args, **kwargs):
         # 目前仅对 Restful Response 进行处理
         if isinstance(response, Response):
+            trace_id = getattr(request, "otel_trace_id", None)
             if is_success(response.status_code):
                 response.status_code = status.HTTP_200_OK
                 response.data = {
@@ -63,6 +64,7 @@ class PluginViewSet(ViewSetMixin, APIView):
                     "data": response.data,
                     "code": "success",
                     "message": "ok",
+                    "trace_id": trace_id,
                 }
             else:
                 response.data = {
@@ -70,6 +72,7 @@ class PluginViewSet(ViewSetMixin, APIView):
                     "data": None,
                     "code": f"{response.status_code}",
                     "message": response.data,
+                    "trace_id": trace_id,
                 }
         return super().finalize_response(request, response, *args, **kwargs)
 
