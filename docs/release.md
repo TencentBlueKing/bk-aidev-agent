@@ -1,38 +1,33 @@
-# Release Note - 1.0.2rc3
+# Release Note - 1.0.2
 **发布日期**: 2026-01-14
 
 ## 核心依赖包
 - aidev-agent==1.0.8.post1
-- aidev-ai-blueking==1.3.2b5
-- aidev-bkplugin==1.0.12
+- aidev-ai-blueking==1.3.2
+- aidev-bkplugin==1.0.13
 - aidev-wxbot==1.0.9
 
+## aidev-agent
 ### 🛠️ 优化改进
- - 关联智能体的快捷指令支持修改别名
- - 划词支持开关
+- 优化调用MCP工具报错显示
+- 调整默认缓存配置为本地文件,减少数据库压力
+- 修改智能体二开role_prompt配置方式
+- 修复快捷指令智能体角色内容缺失的问题
+- 修复 stream 流中 event 可能被自动抛出的问题
 
+## aidev--ai-blueking
+### ✨ 新增功能
+- 关联智能体的快捷指令支持修改别名
+- 新增划词开关配置
 
-# Release Note - 1.0.2rc2
-**发布日期**: 2026-01-06
-
-## 核心依赖包
-- aidev-agent==1.0.8
-- aidev-ai-blueking==1.3.0
-- aidev-bkplugin==1.0.12
-- aidev-wxbot==1.0.9
-
-### 🛠️ 优化改进
- - 修复快捷指令智能体角色内容缺失的问题
- - 修复 stream 流中 event 可能被自动抛出的问题
-
-
-# Release Note - 1.0.2rc1
-**发布日期**: 2026-01-04
+## aidev-bkplugin
+### ✨ 新增功能
+- 接口新增 trace id 返回
 
 ## 智能体模板
-
 ### 🛠️ 优化改进
 - 修改默认缓存配置为本地文件,减少数据库压力
+
 
 # Release Note - 1.0.1
 **发布日期**: 2025-12-31
