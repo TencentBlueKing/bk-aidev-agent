@@ -4,6 +4,9 @@ modules:
     isDefault: true
     language: python
     spec:
+      hooks:
+        preRelease:
+          procCommand: "bash bin/sync_apigateway.sh"
       configuration:
         env:
           - name: PYTHONPATH
