@@ -65,7 +65,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, reactive, watch, computed, nextTick } from "vue"
+  import { ref, onMounted, watch, computed, nextTick, onUnmounted } from "vue"
   import { Input as BKInput, Button as BKButton } from "bkui-vue"
   import { Search, Plus } from "bkui-vue/lib/icon"
 
@@ -75,69 +75,62 @@
   import { useRoute, useRouter } from "vue-router"
   import { fetchAgentInfo } from "../composables/useAgentInfo"
 
+  // ==================== 路由 ====================
   const route = useRoute()
   const routerInstance = useRouter()
 
+  // ==================== 状态 ====================
   const aiBlueking = ref<AIBluekingExpose | null>(null)
   const sessionList = ref<any[]>([])
   const currentSession = ref<any>(null)
   const searchQuery = ref("")
-  const agentInfo = ref<any>(null) // 用于存储从agent/info接口获取的数据
-  const isComponentReady = ref(false) // 控制 AIBlueking 组件是否准备就绪
-
-  // 存储待发送的问题（来自 URL 参数）
+  const agentInfo = ref<any>(null)
+  const isComponentReady = ref(false)
   const pendingQuestion = ref<string | null>(null)
+  const loading = ref(true)
 
   const url = ref(window.BK_API_PREFIX)
 
-  // 获取agent信息的函数
+  // ==================== 计算属性 ====================
+  // Loading 配置
+  const loadingConf = computed(() => ({
+    loading: loading.value,
+    title: "加载中...",
+  }))
+
+  // 是否启用会话管理
+  const enableChatSession = computed(() => {
+    if (!agentInfo.value) return false
+    return agentInfo.value?.conversation_settings?.enable_chat_session ?? true
+  })
+
+  // AIBlueking 组件宽度
+  const defaultWidth = computed(() => {
+    if (typeof window === "undefined") return 800
+    return enableChatSession.value ? window.innerWidth - 280 : window.innerWidth
+  })
+
+  // 过滤后的会话列表
+  const filteredSessionList = computed(() => {
+    if (!searchQuery.value) return sessionList.value
+    return sessionList.value.filter((session) =>
+      session.sessionName.toLowerCase().includes(searchQuery.value.toLowerCase())
+    )
+  })
+
+  // ==================== 方法 ====================
+  // 获取 agent 信息
   const getAgentInfo = async () => {
     const data = await fetchAgentInfo(url.value)
     agentInfo.value = data
     return data
   }
 
+  // SDK 错误处理
   const handleSdkError = (error: any) => {
     console.error("SDK错误:", error)
     router.push("/403")
   }
-
-  // 设置 AIBlueking 组件的宽度为容器宽度减去会话列表宽度
-  const AIBluekingWidth = ref(800)
-
-  // 计算 AIBlueking 组件的默认宽度
-  const defaultWidth = computed(() => {
-    if (typeof window === "undefined") return 800
-    // 根据 enableChatSession 的值来决定宽度
-    return enableChatSession.value ? window.innerWidth - 280 : window.innerWidth
-  })
-
-  const title = ref("加载中...")
-
-  const loading = ref(true)
-
-  const loadingConf = reactive({
-    loading,
-    title,
-  })
-
-  // 过滤会话列表
-  const filteredSessionList = computed(() => {
-    if (!searchQuery.value) {
-      return sessionList.value
-    }
-    return sessionList.value.filter((session) => session.sessionName.toLowerCase().includes(searchQuery.value.toLowerCase()))
-  })
-
-  // 是否启用会话管理 (基于从接口获取的数据)
-  const enableChatSession = computed(() => {
-    // 如果还没有获取到agent信息，返回false
-    if (!agentInfo.value) {
-      return false
-    }
-    // 根据接口返回的配置确定是否启用会话管理
-    return agentInfo.value?.conversation_settings?.enable_chat_session ?? true
-  })
 
   // 格式化会话日期
   const formatSessionDate = (dateString: string) => {
@@ -156,54 +149,72 @@
     }
   }
 
-  // 切换到指定会话
+  // 切换会话
   const switchToSession = async (sessionCode: string) => {
-    if (aiBlueking.value && typeof aiBlueking.value.switchToSession === "function") {
-      try {
-        await aiBlueking.value.switchToSession(sessionCode)
-        // 更新当前会话状态
-        const sessions = sessionList.value
-        currentSession.value = sessions.find((s: any) => s.sessionCode === sessionCode) || null
-      } catch (error) {
-        console.error("切换会话失败:", error)
-      }
+    if (!aiBlueking.value?.switchToSession) return
+    try {
+      await aiBlueking.value.switchToSession(sessionCode)
+      currentSession.value = sessionList.value.find((s) => s.sessionCode === sessionCode) || null
+    } catch (error) {
+      console.error("切换会话失败:", error)
     }
   }
 
   // 创建新会话
   const createNewSession = async () => {
-    if (aiBlueking.value && typeof aiBlueking.value.addNewSession === "function") {
-      try {
-        const newSession: any = await aiBlueking.value.addNewSession()
-        // 更新会话列表
-        if (aiBlueking.value.getSessionList) {
-          sessionList.value = await aiBlueking.value.getSessionList()
-        }
-        // 切换到新会话
-        if (newSession && newSession.sessionCode) {
-          currentSession.value = newSession
-        }
-      } catch (error) {
-        console.error("创建新会话失败:", error)
+    if (!aiBlueking.value?.addNewSession) return
+    try {
+      const newSession = await aiBlueking.value.addNewSession()
+      if (aiBlueking.value.getSessionList) {
+        sessionList.value = await aiBlueking.value.getSessionList()
       }
+      if (newSession?.sessionCode) {
+        currentSession.value = newSession
+      }
+    } catch (error) {
+      console.error("创建新会话失败:", error)
     }
   }
 
   // 获取会话列表
   const fetchSessionList = async () => {
-    if (aiBlueking.value && typeof (aiBlueking.value as any).sessionList?.value !== "undefined") {
-      // 如果 sessionList 是响应式属性，直接使用
-      sessionList.value = (aiBlueking.value as any).sessionList.value
-      currentSession.value = sessionList.value[0] || null
-    } else if (aiBlueking.value && typeof aiBlueking.value.getSessionList === "function") {
-      // 如果有 getSessionList 方法，调用它
-      try {
+    if (!aiBlueking.value) return
+    try {
+      if (aiBlueking.value.getSessionList) {
         sessionList.value = await aiBlueking.value.getSessionList()
         currentSession.value = sessionList.value[0] || null
-      } catch (error) {
-        console.error("获取会话列表失败:", error)
       }
+    } catch (error) {
+      console.error("获取会话列表失败:", error)
     }
+  }
+
+  // 窗口大小变化处理
+  const handleResize = () => {
+    if (typeof window === "undefined" || !aiBlueking.value?.updatePositionAndSize) return
+
+    const newWidth = enableChatSession.value ? window.innerWidth - 280 : window.innerWidth
+    const defaultTop = 52
+    const defaultLeft = window.innerWidth - newWidth
+
+    aiBlueking.value.updatePositionAndSize(defaultLeft, defaultTop, newWidth, window.innerHeight - defaultTop)
+  }
+
+  // 会话初始化完成事件处理
+  const handleInitSessionFinished = async () => {
+    // 处理 URL 中的待发送问题
+    if (pendingQuestion.value) {
+      const question = pendingQuestion.value
+      pendingQuestion.value = null
+
+      await aiBlueking.value?.handleShow(undefined, { isTemporary: true })
+      await nextTick()
+      aiBlueking.value?.handleSendMessage(question)
+      routerInstance.replace({ query: {} })
+    }
+
+    // 关闭 loading
+    loading.value = false
   }
 
   // 监听 AIBlueking 组件的 sessionList 变化
@@ -220,84 +231,48 @@
     { deep: true }
   )
 
-  // 监听窗口大小变化，动态调整 AIBlueking 宽度和位置
-  const handleResize = () => {
-    if (typeof window === "undefined") return
-    // 强制更新 AIBluekingWidth 以触发重新计算
-    AIBluekingWidth.value = enableChatSession.value ? window.innerWidth - 280 : window.innerWidth
-
-    // 等待下一帧以确保组件已更新其内部状态
-    // 然后触发组件刷新以确保它保持在边界内
-    setTimeout(() => {
-      if (aiBlueking.value && typeof aiBlueking.value.updatePositionAndSize === "function") {
-        // 获取当前位置并触发更新以确保它保持在窗口边界内
-        // 这会强制组件根据新的窗口尺寸调整其位置/大小
-        const newWidth = enableChatSession.value ? window.innerWidth - 280 : window.innerWidth
-        const defaultTop = 52 // 如组件的 default-top 属性所指定
-        const defaultLeft = window.innerWidth - newWidth // 保持在右侧
-
-        aiBlueking.value.updatePositionAndSize(defaultLeft, defaultTop, newWidth, window.innerHeight - defaultTop)
-      }
-    }, 100) // 延迟以确保 DOM 更新已完成
-  }
-
-  // 处理会话初始化完成事件
-  const handleInitSessionFinished = async () => {
-    // 如果有待发送的问题，创建临时会话并发送
-    if (pendingQuestion.value) {
-      const question = pendingQuestion.value
-      pendingQuestion.value = null // 清除，防止重复发送
-
-      // 创建临时会话并发送消息
-      await aiBlueking.value?.handleShow(undefined, { isTemporary: true })
-
-      // 等待临时会话创建完成
-      await nextTick()
-
-      // 发送消息
-      aiBlueking.value?.handleSendMessage(question)
-
-      // 清除 URL 中的 query 参数，防止刷新页面重复发送
-      routerInstance.replace({ query: {} })
-    }
-
-    // 无论是否有 question，都关闭 loading
-    loading.value = false
-  }
-
+  // ==================== 生命周期 ====================
   onMounted(async () => {
-    if (typeof window !== "undefined") {
-      window.addEventListener("resize", handleResize)
-    }
+    // 注册 resize 事件
+    window.addEventListener("resize", handleResize)
 
-    // 检查 URL 参数中是否有 question，存储到 pendingQuestion
+    // 检查 URL 参数中的 question
     const questionFromUrl = route.query.question as string | undefined
     if (questionFromUrl) {
       pendingQuestion.value = questionFromUrl
     }
 
-    // 先获取agent信息
+    // 获取 agent 信息
     await getAgentInfo()
 
-    // 设置组件准备就绪标志，触发 AIBlueking 组件渲染
-    // AIBlueking 组件会自动初始化会话，完成后触发 init-session-finished 事件
+    // 渲染 AIBlueking 组件
     isComponentReady.value = true
+    await nextTick()
 
-    // 获取agent信息后再初始化组件
-    setTimeout(async () => {
-      // 正常显示（不带临时会话参数，让组件自己初始化）
-      await aiBlueking.value?.handleShow()
-
-      // 注意：loading.value = false 已移到 handleInitSessionFinished 中
-      // 初始化会话列表
+    // 初始化组件
+    if (aiBlueking.value) {
+      try {
+        await aiBlueking.value.handleShow()
+      } catch (error) {
+        console.error("AIBlueking 初始化失败:", error)
+        loading.value = false
+      }
       fetchSessionList()
-      // 触发一次 resize 事件确保组件宽度正确计算
-      setTimeout(() => {
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new Event("resize"))
-        }
-      }, 100)
-    }, 200)
+      await nextTick()
+      window.dispatchEvent(new Event("resize"))
+    }
+
+    // 超时保护：防止页面永久卡在 loading 状态
+    setTimeout(() => {
+      if (loading.value) {
+        console.warn("初始化超时，强制关闭 loading")
+        loading.value = false
+      }
+    }, 5000)
+  })
+
+  onUnmounted(() => {
+    window.removeEventListener("resize", handleResize)
   })
 </script>
 
