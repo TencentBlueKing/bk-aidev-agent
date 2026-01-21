@@ -2,7 +2,7 @@
 # DO NOT MODIFY THIS SECTION !!!
 echo "do migrate"
 python bin/manage.py migrate --no-input
-
+python bin/manage.py createcachetable
 echo "[Sync] BEGIN ====================="
 
 # 使用智能同步命令，仅在接口定义发生变化时才同步到API网关
