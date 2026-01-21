@@ -54,7 +54,7 @@ requires-dist = [
     { name = "aidev-ai-blueking", specifier = ">=1.3.0,<2.0" },
     { name = "aidev-bkplugin", specifier = ">=1.0.12,<1.1" },
     { name = "aidev-wxbot", specifier = ">=1.0.9,<1.1" },
-    { name = "bk-plugin-framework", specifier = ">=2.3.3,<2.4.0" },
+    { name = "bk-plugin-framework", specifier = "==2.3.4" },
     { name = "bkapi-bk-apigateway", specifier = "==1.0.12" },
     { name = "celery", specifier = "==5.4.0" },
     { name = "django-celery-beat", specifier = "==2.7.0" },
@@ -318,23 +318,24 @@ wheels = [
 
 [[package]]
 name = "bk-plugin-framework"
-version = "2.3.3"
+version = "2.3.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "apigw-manager" },
     { name = "bk-plugin-runtime" },
+    { name = "drf-spectacular" },
     { name = "jsonschema" },
     { name = "pydantic" },
     { name = "werkzeug" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1e/79/dd79807b8723ecfce291d7e5da84b2b44d750204e1fe099019a0248b704f/bk_plugin_framework-2.3.3.tar.gz", hash = "sha256:dcec38911d968e423c59c0f980f12204f02fd9de60d0cea83be4db532c7c104f", size = 24125, upload-time = "2025-12-04T12:38:16.444Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/83/3a/95e659b42a0b61149f412f1576e775e71e9e8e59f289421648b2e50b7baa/bk_plugin_framework-2.3.4.tar.gz", hash = "sha256:3efd7b034787b9d13128c0cb604d2d38b6c0edd63eae43b845c5bc4f70ba94ef", size = 28326, upload-time = "2026-01-20T13:10:17.845Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d1/db/d2a94b700604e4e8a5c1ff055297ac74f8442fbcb9a09462274792654678/bk_plugin_framework-2.3.3-py3-none-any.whl", hash = "sha256:7f1d20c520f5066a4f01b346cabd578f70233e9d7dd76db34ed22a4375ed3282", size = 76070, upload-time = "2025-12-04T12:38:15.429Z" },
+    { url = "https://files.pythonhosted.org/packages/d8/45/4d5371a0eb073ad92216bac8ca85401c07de870feeadbb94ef93b6c19282/bk_plugin_framework-2.3.4-py3-none-any.whl", hash = "sha256:13ac096a01f506372e8131a6e2ca6ca6fc51052ae3f1682069119fa0cd84776e", size = 81892, upload-time = "2026-01-20T13:10:16.984Z" },
 ]
 
 [[package]]
 name = "bk-plugin-runtime"
-version = "2.1.2"
+version = "2.1.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "blueapps", extra = ["opentelemetry"] },
@@ -353,9 +354,9 @@ dependencies = [
     { name = "raven" },
     { name = "redis" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d0/ce/4b90bfd5a65ba22a8eb34e25ddce8a191e71106e066fab4f4de03504455f/bk_plugin_runtime-2.1.2.tar.gz", hash = "sha256:206297d4f45787703fcf77408408fbc2c80be0ad67f0bda3dd5d2399a0f1eb67", size = 3735455, upload-time = "2025-12-04T12:29:31.957Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a3/8d/44f3013c67d4e8a1acf3fa2584ae69490d2b6f898ce9cc61db01846d709c/bk_plugin_runtime-2.1.3.tar.gz", hash = "sha256:12a40292da251fdca33f2723dd5ee51908deb3e19140246b49d35441884af347", size = 3735931, upload-time = "2026-01-20T13:02:31.811Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9c/32/6b98750a361e619607384e77671b5aa5472df6ee17f4df5727274188f468/bk_plugin_runtime-2.1.2-py3-none-any.whl", hash = "sha256:dd7b195baa8e3868902803dcca07638c6d855ca14f711c2627e2e7c3572df6b8", size = 3861452, upload-time = "2025-12-04T12:29:30.254Z" },
+    { url = "https://files.pythonhosted.org/packages/ce/62/2ac1f60b920bfc22fe25c3d997e064f12c5d0b867f586a9e437148e1311c/bk_plugin_runtime-2.1.3-py3-none-any.whl", hash = "sha256:c9490940595235f661a7f828b89bb1bf70137832fc7f6097f0ea3b4076d5e333", size = 3861623, upload-time = "2026-01-20T13:02:29.558Z" },
 ]
 
 [[package]]
@@ -819,6 +820,23 @@ wheels = [
 ]
 
 [[package]]
+name = "drf-spectacular"
+version = "0.29.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+    { name = "djangorestframework" },
+    { name = "inflection" },
+    { name = "jsonschema" },
+    { name = "pyyaml" },
+    { name = "uritemplate" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5e/0e/a4f50d83e76cbe797eda88fc0083c8ca970cfa362b5586359ef06ec6f70a/drf_spectacular-0.29.0.tar.gz", hash = "sha256:0a069339ea390ce7f14a75e8b5af4a0860a46e833fd4af027411a3e94fc1a0cc", size = 241722, upload-time = "2025-11-02T03:40:26.348Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/32/d9/502c56fc3ca960075d00956283f1c44e8cafe433dada03f9ed2821f3073b/drf_spectacular-0.29.0-py3-none-any.whl", hash = "sha256:d1ee7c9535d89848affb4427347f7c4a22c5d22530b8842ef133d7b72e19b41a", size = 105433, upload-time = "2025-11-02T03:40:24.823Z" },
+]
+
+[[package]]
 name = "drf-yasg"
 version = "1.21.11"
 source = { registry = "https://pypi.org/simple" }
@@ -922,7 +940,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/a4/de/f28ced0a67749cac23fecb02b694f6473f47686dff6afaa211d186e2ef9c/greenlet-3.2.4-cp311-cp311-macosx_11_0_universal2.whl", hash = "sha256:96378df1de302bc38e99c3a9aa311967b7dc80ced1dcc6f171e99842987882a2", size = 272305, upload-time = "2025-08-07T13:15:41.288Z" },
     { url = "https://files.pythonhosted.org/packages/09/16/2c3792cba130000bf2a31c5272999113f4764fd9d874fb257ff588ac779a/greenlet-3.2.4-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:1ee8fae0519a337f2329cb78bd7a8e128ec0f881073d43f023c7b8d4831d5246", size = 632472, upload-time = "2025-08-07T13:42:55.044Z" },
     { url = "https://files.pythonhosted.org/packages/ae/8f/95d48d7e3d433e6dae5b1682e4292242a53f22df82e6d3dda81b1701a960/greenlet-3.2.4-cp311-cp311-manylinux2014_ppc64le.manylinux_2_17_ppc64le.whl", hash = "sha256:94abf90142c2a18151632371140b3dba4dee031633fe614cb592dbb6c9e17bc3", size = 644646, upload-time = "2025-08-07T13:45:26.523Z" },
-    { url = "https://files.pythonhosted.org/packages/d5/5e/405965351aef8c76b8ef7ad370e5da58d57ef6068df197548b015464001a/greenlet-3.2.4-cp311-cp311-manylinux2014_s390x.manylinux_2_17_s390x.whl", hash = "sha256:4d1378601b85e2e5171b99be8d2dc85f594c79967599328f95c1dc1a40f1c633", size = 640519, upload-time = "2025-08-07T13:53:13.928Z" },
     { url = "https://files.pythonhosted.org/packages/25/5d/382753b52006ce0218297ec1b628e048c4e64b155379331f25a7316eb749/greenlet-3.2.4-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:0db5594dce18db94f7d1650d7489909b57afde4c580806b8d9203b6e79cdc079", size = 639707, upload-time = "2025-08-07T13:18:27.146Z" },
     { url = "https://files.pythonhosted.org/packages/1f/8e/abdd3f14d735b2929290a018ecf133c901be4874b858dd1c604b9319f064/greenlet-3.2.4-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:2523e5246274f54fdadbce8494458a2ebdcdbc7b802318466ac5606d3cded1f8", size = 587684, upload-time = "2025-08-07T13:18:25.164Z" },
     { url = "https://files.pythonhosted.org/packages/5d/65/deb2a69c3e5996439b0176f6651e0052542bb6c8f8ec2e3fba97c9768805/greenlet-3.2.4-cp311-cp311-musllinux_1_1_aarch64.whl", hash = "sha256:1987de92fec508535687fb807a5cea1560f6196285a4cde35c100b8cd632cc52", size = 1116647, upload-time = "2025-08-07T13:42:38.655Z" },
