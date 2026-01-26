@@ -6,7 +6,7 @@ modules:
     spec:
       hooks:
         preRelease:
-          procCommand: "bash bin/sync_apigateway.sh"
+          procCommand: "bash bin/migrations.sh"
       configuration:
         env:
           - name: PYTHONPATH
