@@ -54,6 +54,7 @@ def add_session():
     client.api.destroy_chat_session(path_params={"session_code": session_code})
 
 
+@pytest.mark.stag_gw
 class TestCommonAgentChatStreaming:
     """测试聊天代理的流式响应功能"""
 

@@ -9,6 +9,7 @@ from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
     not all([settings.APP_CODE, settings.SECRET_KEY]),
     reason="没有配置足够的环境变量,跳过该测试",
 )
+@pytest.mark.stag_gw
 async def test_live_test():
     llm = ChatModel.get_setup_instance(model="deepseek-reasoner")
     for chunk in llm.stream(

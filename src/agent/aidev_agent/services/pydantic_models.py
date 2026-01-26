@@ -1,7 +1,9 @@
-import os
-from typing import Any, Dict, List, Literal, Tuple
+from __future__ import annotations
 
-from pydantic import AliasChoices, BaseModel, Field, model_validator
+import os
+from typing import Any, Dict, List, Literal, Optional, Tuple
+
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 from aidev_agent.enums import FineGrainedScoreType, IndependentQueryMode, KnowledgeBaseQueryFunction
 
@@ -284,3 +286,67 @@ class AgentOptions(BaseModel):
     knowledge_query_options: KnowledgebaseSettings = Field(
         default_factory=KnowledgebaseSettings, description="知识库查询选项"
     )
+
+
+class AgentExecutorKwargs(BaseModel):
+    """Agent 执行器构建参数（标准协议）。
+
+    该模型用于定义 `ChatCompletionAgent` 与 agent 执行器构建器（例如 `ReActAgentBuilder`）之间的参数协议。
+
+    - 框架使用方可通过 **继承** 该模型来扩展自定义参数。
+    - 该模型配置为 `extra='allow'`，因此平台通用配置字段也可直接透传（并可在 CommonQAAgent 中继续向下游 Builder 透传）。
+
+    自定义扩展示例：
+        class MyCustomKwargs(AgentExecutorKwargs):
+            custom_param: str | None = None
+
+        class MyCustomAgent(CommonQAAgent):
+            @classmethod
+            def get_agent_executor(cls, config: MyCustomKwargs | None = None, **kwargs):
+                if config is not None:
+                    custom_value = config.custom_param
+                    builder_kwargs = config.model_dump(exclude_none=True, exclude={"custom_param"})
+                else:
+                    builder_kwargs = kwargs
+                # ... custom logic
+
+    说明：
+    - 为避免模块加载时引入 langchain 依赖/循环依赖，这里对 langchain 相关类型统一使用 Any。
+    - 运行时接受的实际类型包括：BaseChatModel、BaseTool、BaseMessage、ByteStore、BaseCallbackHandler、BaseCheckpointSaver 等。
+    """
+
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+
+    # 核心模型配置
+    llm: Optional[Any] = Field(default=None, description="用于 agent 执行的主模型（BaseChatModel）")
+    knowledge_llm: Optional[Any] = Field(
+        default=None, description="用于知识检索的模型（BaseChatModel；未设置时通常与 llm 相同）"
+    )
+    non_thinking_llm: Optional[Any] = Field(default=None, description="非深度思考模型（BaseChatModel 或 str）")
+
+    # 工具与上下文
+    extra_tools: Optional[List[Any]] = Field(default=None, description="额外可用工具（List[BaseTool]）")
+    chat_history: Optional[List[Any]] = Field(
+        default=None, description="上下文聊天历史（不包含当前消息）（List[BaseMessage]）"
+    )
+
+    # 提示词相关
+    role_prompt: Optional[str] = Field(default=None, description="角色/系统提示词")
+    agent_prompt: Optional[str] = Field(default=None, description="Agent 级提示词（平台通用配置字段）")
+
+    # 运行时配置
+    tool_execution_interval: int = Field(default=10, description="工具执行/调用间隔（秒）")
+    support_vision: bool = Field(default=False, description="是否支持视觉/图片能力")
+    file_store: Optional[Any] = Field(default=None, description="文件存储后端（ByteStore）")
+    callbacks: Optional[List[Any]] = Field(
+        default=None, description="LangChain 回调（用于监控/trace）（List[BaseCallbackHandler]）"
+    )
+
+    # Agent 执行选项（框架已有模型）
+    agent_options: Optional[AgentOptions] = Field(default=None, description="Agent 执行选项（AgentOptions）")
+
+    # 执行上下文
+    execute_kwargs: Optional[ExecuteKwargs] = Field(default=None, description="执行参数（包含 stream 等设置）")
+
+    # Checkpoint（对话状态持久化）
+    checkpointer: Optional[Any] = Field(default=None, description="对话状态检查点保存器（BaseCheckpointSaver）")

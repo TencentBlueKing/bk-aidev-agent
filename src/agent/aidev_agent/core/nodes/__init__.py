@@ -17,12 +17,12 @@ to the current version of the project delivered to anyone in the future.
 """
 
 from .knowledge import make_knowledge_node
-from .model import ContextProcessor, get_beijing_now
+from .model import ContextAssembly, get_beijing_now
 from .tool import build_tool_node
 
 __all__ = [
     "build_tool_node",
     "make_knowledge_node",
-    "ContextProcessor",
+    "ContextAssembly",
     "get_beijing_now",
 ]

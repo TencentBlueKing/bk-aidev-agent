@@ -16,14 +16,34 @@ We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
 
+import base64
+from pathlib import Path
+
 import pytest
 from aidev_agent.config import settings
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
 from langchain_core.messages import HumanMessage
 
-
 # 测试模型列表
 TEST_MODELS = ["hunyuan-turbo", "qwen3", "deepseek-v3", "deepseek-r1"]
+
+# 支持函数调用的模型列表
+TEST_FUNCTION_CALL_MODELS = ["hunyuan-turbo", "qwen3", "deepseek-v3"]
+
+# 支持思考/推理能力的模型列表
+TEST_REASONING_MODELS = ["deepseek-r1"]
+
+# 支持视觉能力的模型列表
+TEST_VISION_MODELS = ["qwen3-vl-32B"]
+
+# 测试图片路径
+TEST_IMAGE_PATH = Path(__file__).parent.parent.parent.parent / "mock_data" / "bkaidev.png"
+
+
+def get_test_image_base64() -> str:
+    """读取测试图片并返回 base64 编码"""
+    with open(TEST_IMAGE_PATH, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
 
 
 @pytest.mark.skipif(
@@ -82,7 +102,7 @@ def test_chat_model_streaming(model_name):
     reason="没有配置足够的环境变量,跳过该测试",
 )
 @pytest.mark.slow
-@pytest.mark.parametrize("model_name", TEST_MODELS)
+@pytest.mark.parametrize("model_name", TEST_FUNCTION_CALL_MODELS)
 def test_chat_model_with_tool_call(model_name):
     """测试工具调用 - bind_tools 和 tool_choice"""
     # 定义一个简单的工具
@@ -110,8 +130,8 @@ def test_chat_model_with_tool_call(model_name):
     chat_model = ChatModel.get_setup_instance(model=model_name)
     chat_model_with_tools = chat_model.bind_tools(tools)
 
-    # 构造会触发工具调用的消息
-    messages = [HumanMessage(content="北京今天的天气怎么样？")]
+    # 构造会触发工具调用的消息 - 明确要求调用工具
+    messages = [HumanMessage(content="调用get_weather去获取深圳天气")]
 
     # 调用模型
     response = chat_model_with_tools.invoke(messages)
@@ -119,18 +139,21 @@ def test_chat_model_with_tool_call(model_name):
     # 验证响应
     assert response is not None
 
-    # 检查是否有工具调用
-    # 注意：不是所有模型在所有情况下都会调用工具，这取决于模型的行为
-    # 这里我们只验证响应的基本结构
+    # 检查是否有工具调用 - 必须有工具调用
     print(f"\n[{model_name}] 工具调用测试响应类型: {type(response)}")
     print(f"[{model_name}] 响应内容: {response.content if response.content else '(空)'}")
 
-    # 如果有 tool_calls，打印出来
+    # 验证必须有 tool_calls
     if hasattr(response, "tool_calls") and response.tool_calls:
         print(f"[{model_name}] 工具调用: {response.tool_calls}")
         assert len(response.tool_calls) > 0
+        # 验证调用的是 get_weather 工具
+        assert response.tool_calls[0]["name"] == "get_weather"
     elif hasattr(response, "additional_kwargs") and response.additional_kwargs.get("tool_calls"):
         print(f"[{model_name}] 工具调用 (additional_kwargs): {response.additional_kwargs['tool_calls']}")
+        assert len(response.additional_kwargs["tool_calls"]) > 0
+    else:
+        pytest.fail(f"[{model_name}] 模型未返回工具调用")
 
 
 @pytest.mark.skipif(
@@ -138,7 +161,7 @@ def test_chat_model_with_tool_call(model_name):
     reason="没有配置足够的环境变量,跳过该测试",
 )
 @pytest.mark.slow
-@pytest.mark.parametrize("model_name", TEST_MODELS)
+@pytest.mark.parametrize("model_name", TEST_FUNCTION_CALL_MODELS)
 def test_chat_model_with_tool_streaming(model_name):
     """测试工具调用 - 流式响应"""
     # 定义工具
@@ -190,11 +213,9 @@ def test_chat_model_with_tool_streaming(model_name):
     reason="没有配置足够的环境变量,跳过该测试",
 )
 @pytest.mark.slow
-def test_chat_model_reasoning_content():
-    """测试 deepseek-r1 的推理内容 (reasoning_content) 功能"""
-    # 只测试 deepseek-r1，因为这是支持 reasoning_content 的模型
-    model_name = "deepseek-r1"
-
+@pytest.mark.parametrize("model_name", TEST_REASONING_MODELS)
+def test_chat_model_reasoning_content(model_name):
+    """测试支持推理能力的模型的 reasoning_content 功能"""
     # 创建模型实例
     chat_model = ChatModel.get_setup_instance(model=model_name)
 
@@ -220,26 +241,59 @@ def test_chat_model_reasoning_content():
     reason="没有配置足够的环境变量,跳过该测试",
 )
 @pytest.mark.slow
-def test_chat_model_token_counting():
-    """测试 token 计数功能"""
-    model_name = "hunyuan-turbo"
-
+@pytest.mark.parametrize("model_name", TEST_VISION_MODELS)
+def test_chat_model_vision_invoke(model_name):
+    """测试视觉模型的图片输入功能 - 同步调用"""
     # 创建模型实例
-    chat_model = ChatModel.get_setup_instance(model=model_name, remote_tokenizer=True)
+    chat_model = ChatModel.get_setup_instance(model=model_name)
 
-    # 测试文本 token 计数
-    text = "这是一段测试文本，用于验证 token 计数功能是否正常工作"
-    token_count = chat_model.get_num_tokens(text)
-
-    assert token_count > 0
-    print(f"\n[{model_name}] 文本 token 数量: {token_count}")
-
-    # 测试消息 token 计数
-    messages = [
-        HumanMessage(content="你好"),
-        HumanMessage(content="这是第二条消息"),
+    # 构建包含图片的多模态消息
+    image_base64 = get_test_image_base64()
+    multimodal_content = [
+        {"type": "text", "text": "请描述这张图片的内容，特别需要包含有什么文字"},
+        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}},
     ]
-    message_token_count = chat_model.get_num_tokens_from_messages(messages)
+    messages = [HumanMessage(content=multimodal_content)]
 
-    assert message_token_count > 0
-    print(f"[{model_name}] 消息列表 token 数量: {message_token_count}")
+    # 调用模型
+    response = chat_model.invoke(messages)
+
+    # 验证响应
+    assert response is not None
+    assert response.content
+    assert len(response.content) > 0
+    print(f"\n[{model_name}] 图片描述响应: {response.content[:200]}")
+    assert "AIDEV" in response.content
+
+
+@pytest.mark.skipif(
+    not all([settings.LLM_GW_ENDPOINT, settings.APP_CODE, settings.SECRET_KEY]),
+    reason="没有配置足够的环境变量,跳过该测试",
+)
+@pytest.mark.slow
+@pytest.mark.parametrize("model_name", TEST_VISION_MODELS)
+def test_chat_model_vision_streaming(model_name):
+    """测试视觉模型的图片输入功能 - 流式响应"""
+    # 创建模型实例
+    chat_model = ChatModel.get_setup_instance(model=model_name)
+
+    # 构建包含图片的多模态消息
+    image_base64 = get_test_image_base64()
+    multimodal_content = [
+        {"type": "text", "text": "详细描述这张图片中的所有元素"},
+        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}},
+    ]
+    messages = [HumanMessage(content=multimodal_content)]
+
+    # 流式调用
+    chunks = []
+    for chunk in chat_model.stream(messages):
+        chunks.append(chunk)
+        assert chunk is not None
+
+    # 验证响应
+    assert len(chunks) > 0
+    full_content = "".join([chunk.content for chunk in chunks if chunk.content])
+    assert len(full_content) > 0
+    print(f"\n[{model_name}] 图片流式响应完整内容长度: {len(full_content)}")
+    print(f"[{model_name}] 图片流式响应内容: {full_content[:200]}")

@@ -16,8 +16,9 @@ We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
 
+import inspect
 import logging
-from typing import Any, Collection, Dict, Optional
+from typing import Any, Collection, Dict, Generator, Iterator, Optional
 
 import orjson
 from aidev_agent.services.pydantic_models import ExecuteKwargs
@@ -80,6 +81,12 @@ class BkAidevAgentInstrumentor(BaseInstrumentor):
             name="ChatCompletionAgent._get_agent",
             wrapper=ChatCompletionAgentGetAgentWrapper(tracer, self._otel_service_config),
         )
+        # 注入知识库检索节点的可观测性
+        wrap_function_wrapper(
+            module="aidev_agent.core.nodes.knowledge",
+            name="AgentKnowledgeNode.__call__",
+            wrapper=AgentKnowledgeNodeCallWrapper(),
+        )
 
     def _uninstrument(self, **kwargs):
         """
@@ -92,8 +99,9 @@ class BkAidevAgentInstrumentor(BaseInstrumentor):
             bool: 是否成功取消插桩
         """
         self.stop_otel_service()
-        unwrap("aidev_agent.services.chat", "ChatCompletionAgent._execute_by_agent")
+        unwrap("aidev_agent.services.chat", "ChatCompletionAgent._execute")
         unwrap("aidev_agent.services.chat", "ChatCompletionAgent._get_agent")
+        unwrap("aidev_agent.core.nodes.knowledge", "AgentKnowledgeNode.__call__")
 
 
 def _get_trace_cb_from_callbacks(callbacks):
@@ -112,48 +120,90 @@ def _get_trace_cb_from_callbacks(callbacks):
     return None
 
 
-class IntentRecognitionMixinIntentRecognition:
-    def get_attributes(self, query: str, llm, tools, callbacks, chat_history, agent_options=None, **kwargs):
-        trace_cb = _get_trace_cb_from_callbacks(callbacks)
+class AgentKnowledgeNodeCallWrapper:
+    """
+    AgentKnowledgeNode.__call__ 的可观测性包装器
+
+    为 AgentKnowledgeNode 的知识库检索添加 OpenTelemetry 追踪，
+    功能与 IntentRecognitionMixinIntentRecognition 类似。
+    """
+
+    def _get_trace_cb_from_config(self, config):
+        """从 RunnableConfig 中获取 BkAidevAgentCallbackHandler"""
+        if config is None:
+            return None
+        callbacks = config.get("callbacks")
+        return _get_trace_cb_from_callbacks(callbacks)
+
+    def _get_query_from_state(self, state):
+        """从 state 中获取查询文本，优先级: query > input > messages[-1].content"""
+        query = state.get("query")
+        if query is None:
+            query = state.get("input")
+        if query is None:
+            messages = state.get("messages")
+            if messages:
+                query = messages[-1].content
+        return query or ""
+
+    def get_attributes(self, state, config, instance) -> Dict[str, Any]:
+        """获取 span 属性"""
+        query = self._get_query_from_state(state)
         attributes: Dict[str, Any] = {"rag.query": query}
+
+        agent_options = getattr(instance, "agent_options", None)
         if agent_options is not None:
             kb_options = agent_options.knowledge_query_options
-            attributes.update(
-                {
-                    "rag.knowledge_bases": [kb.get("id") for kb in kb_options.knowledge_bases],
-                    "rag.knowledge_items": [ki.get("id") for ki in kb_options.knowledge_items],
-                }
-            )
-            if hasattr(kb_options, "model_dump"):
-                attributes["rag.kb_options"] = orjson.dumps(kb_options.model_dump(mode="json"))
-        return trace_cb, attributes
+            if kb_options is not None:
+                attributes.update(
+                    {
+                        "rag.knowledge_bases": [kb.get("id") for kb in kb_options.knowledge_bases],
+                        "rag.knowledge_items": [ki.get("id") for ki in kb_options.knowledge_items],
+                    }
+                )
+                if hasattr(kb_options, "model_dump"):
+                    attributes["rag.kb_options"] = orjson.dumps(kb_options.model_dump(mode="json"))
+        return attributes
 
     def get_id_by_docs(self, docs):
+        """从文档列表中提取 ID"""
         if isinstance(docs, list):
             return [i.get("id") for i in docs]
         return []
 
     @dont_throw
-    def _on_end(self, span, kwargs):
-        if kwargs.get("knowledge_resources_emb_recalled"):
+    def _on_end(self, span, ret):
+        """在 span 结束时设置召回结果属性"""
+        if ret.get("knowledge_resources_emb_recalled"):
             span.set_attribute(
                 "rag.knowledge_resources_emb_recalled",
-                orjson.dumps(self.get_id_by_docs(kwargs.get("knowledge_resources_emb_recalled"))),
+                orjson.dumps(self.get_id_by_docs(ret.get("knowledge_resources_emb_recalled"))),
             )
-        if kwargs.get("knowledge_resources_highly_relevant"):
+        if ret.get("knowledge_resources_highly_relevant"):
             span.set_attribute(
                 "rag.knowledge_resources_highly_relevant",
-                orjson.dumps(self.get_id_by_docs(kwargs.get("knowledge_resources_highly_relevant"))),
+                orjson.dumps(self.get_id_by_docs(ret.get("knowledge_resources_highly_relevant"))),
             )
-        if kwargs.get("knowledge_resources_moderately_relevant"):
+        if ret.get("knowledge_resources_moderately_relevant"):
             span.set_attribute(
                 "rag.knowledge_resources_moderately_relevant",
-                orjson.dumps(self.get_id_by_docs(kwargs.get("knowledge_resources_moderately_relevant"))),
+                orjson.dumps(self.get_id_by_docs(ret.get("knowledge_resources_moderately_relevant"))),
             )
 
     def __call__(self, wrapped, instance, args, kwargs):
-        trace_cb, attributes = self.get_attributes(*args, **kwargs)
+        """
+        包装 AgentKnowledgeNode.__call__ 方法
+
+        方法签名: __call__(self, state, config, *, store)
+        """
+        # 解析参数
+        state = args[0] if args else kwargs.get("state")
+        config = args[1] if len(args) > 1 else kwargs.get("config")
+
+        trace_cb = self._get_trace_cb_from_config(config)
+
         if trace_cb is not None:
+            attributes = self.get_attributes(state, config, instance)
             with trace_cb.create_custom_span("rag.retrieval", attributes=attributes) as span:
                 ret = wrapped(*args, **kwargs)
                 self._on_end(span, ret)
@@ -197,6 +247,29 @@ class ChatCompletionAgentExecuteByAgentWrapper:
         }
         return ret
 
+    def _wrap_generator(
+        self, gen: Iterator, base_handler: BkAidevAgentInjector, values: Dict[str, Any]
+    ) -> Generator[Any, None, None]:
+        """
+        包装生成器/迭代器，确保在迭代完成或异常时正确触发 on_bk_agent_end
+
+        Args:
+            gen: 原始生成器/迭代器
+            base_handler: BkAidevAgentInjector 实例
+            values: 传递给 on_bk_agent_end 的参数
+
+        Yields:
+            原始生成器的每个元素
+        """
+        try:
+            yield from gen
+        except Exception as e:
+            logger.exception("Agent 执行过程中发生异常")
+            base_handler.on_bk_agent_end(**values, error=e)
+            raise
+        else:
+            base_handler.on_bk_agent_end(**values)
+
     def __call__(
         self,
         wrapped,
@@ -206,19 +279,35 @@ class ChatCompletionAgentExecuteByAgentWrapper:
     ):
         values = self.get_values(*args, **kwargs)
         base_handler = BkAidevAgentInjector(tracer=self.tracer, parent_trace_context=values.get("parent_trace_context"))
+
+        base_handler.on_bk_agent_start(**values)
+        # 获取当前的 span，并且注入到caller_trace_context，以便于保证链路追踪不会断掉
+        execute_kwargs = values.get("execute_kwargs") or ExecuteKwargs()
+        current_span = trace.get_current_span()
+        if current_span is not None and current_span.get_span_context().is_valid:
+            carrier: dict[str, str] = {}
+            propagator = TraceContextTextMapPropagator()
+            propagator.inject(carrier, context=trace.set_span_in_context(current_span))
+            execute_kwargs.caller_trace_context = carrier
+
         try:
-            base_handler.on_bk_agent_start(**values)
-            # 获取当前的 span，并且注入到caller_trace_context，以便于保证链路追踪不会断掉
-            execute_kwargs = values.get("execute_kwargs") or ExecuteKwargs()
-            current_span = trace.get_current_span()
-            if current_span is not None and current_span.get_span_context().is_valid:
-                carrier: dict[str, str] = {}
-                propagator = TraceContextTextMapPropagator()
-                propagator.inject(carrier, context=trace.set_span_in_context(current_span))
-                execute_kwargs.caller_trace_context = carrier
-            return wrapped(*args, **kwargs)
-        finally:
+            result = wrapped(*args, **kwargs)
+        except Exception as e:
+            # 同步执行时发生异常，立即触发 on_end
+            base_handler.on_bk_agent_end(**values, error=e)
+            raise
+
+        # 判断返回值是否是生成器/迭代器
+        if inspect.isgenerator(result) or inspect.isgeneratorfunction(result):
+            # 流式返回：包装生成器，在迭代完成时触发 on_end
+            return self._wrap_generator(result, base_handler, values)
+        elif hasattr(result, "__iter__") and hasattr(result, "__next__"):
+            # 其他迭代器类型（如自定义迭代器）
+            return self._wrap_generator(result, base_handler, values)
+        else:
+            # 非流式返回：立即触发 on_end
             base_handler.on_bk_agent_end(**values)
+            return result
 
 
 class ChatCompletionAgentGetAgentWrapper:

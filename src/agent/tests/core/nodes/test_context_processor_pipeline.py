@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""测试 ContextProcessor 中间件基础设施。"""
+"""测试 ContextAssembly 中间件基础设施。"""
 
 import pytest
-from aidev_agent.core.nodes.model.context_processor import MiddlewarePipeline
+from aidev_agent.core.nodes.model.context_assembly import MiddlewarePipeline
 from aidev_agent.core.nodes.model.pydantic_models import ProcessorContext
 
 

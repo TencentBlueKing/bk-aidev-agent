@@ -443,7 +443,8 @@ class TestKnowledgeRag:
         with pytest.raises(NotImplementedError):
             rag.search_knowledge_self_query("test query", mock_llm)
 
-    def test_retrieve_no_recall_method_selected(self):
+    @patch("aidev_agent.packages.langchain_core.retrievers.kb_rag.dispatch_rag_event_chunk")
+    def test_retrieve_no_recall_method_selected(self, mock_dispatch_rag_event):
         """测试 retrieve 方法 - 未选择任何召回方式"""
         mock_llm = MagicMock()
         rag = KnowledgeRag(llm=mock_llm)

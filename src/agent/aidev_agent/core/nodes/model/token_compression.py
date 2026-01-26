@@ -20,32 +20,31 @@ Token 压缩中间件
 该模块负责：
 - Token 超限检测
 - 知识库内容压缩（带哈希缓存复用）
-- 工具输出压缩（基于长度阈值 或 Token 超限触发）
+- 工具输出压缩（已拆分为两个独立中间件：ToolOutputLengthCompressionMiddleware 和 ToolOutputTokenCompressionMiddleware）
 - 聊天历史压缩（渐进式移除最早消息）
-
-为保持向后兼容：
-- 保留 TokenCompressionMiddleware / TokenOverflowMiddleware 别名
 """
 
 from __future__ import annotations
 
 import concurrent.futures
+import copy
 import hashlib
 import logging
 import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from jinja2 import BaseLoader
+from jinja2 import BaseLoader, Template
 from jinja2.sandbox import SandboxedEnvironment as Environment
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
 
-from aidev_agent.packages.langchain_core.models.utils import is_deepseek_r1_series_models, remove_thinking_process
 from aidev_agent.packages.langchain_core.retrievers.utils import HUNYUAN_SPECIFIC_RESPONSE
 from aidev_agent.packages.langgraph.streaming.utils import conditional_dispatch_custom_event
+from aidev_agent.utils.decorator import retry
+
+from .pydantic_models import NextFunction, ProcessorContext
 
 env = Environment(loader=BaseLoader)
-from .pydantic_models import NextFunction, ProcessorContext
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +62,7 @@ class CompressionState:
 
     - knowledge_*: 知识库压缩的哈希/缓存/是否已压缩
     - tool_output_*: 工具输出压缩状态
-    - chat_history_*: 聊天历史累计移除条数 & 已处理消息数量基准线
+    - chat_history_removed: 聊天历史累计移除条数
     """
 
     # 知识库压缩状态
@@ -77,14 +76,12 @@ class CompressionState:
 
     # 聊天历史压缩状态
     chat_history_removed: int = 0
-    chat_history_baseline: int = 0
 
     @classmethod
     def from_legacy(cls, raw: Dict[str, Any]) -> "CompressionState":
         """兼容旧版 Dict `_compression_state` 的迁移。"""
         knowledge_compressed = bool(raw.get("knowledge_compressed", raw.get("context_compressed", False)))
         chat_history_removed = int(raw.get("chat_history_removed", raw.get("chat_history_compression_count", 0)) or 0)
-        chat_history_baseline = int(raw.get("chat_history_baseline", 0) or 0)
         tool_output_compressed = bool(raw.get("tool_output_compressed", False))
         tool_output_compressed_ids = set(raw.get("tool_output_compressed_ids", []))
 
@@ -95,22 +92,38 @@ class CompressionState:
             tool_output_compressed=tool_output_compressed,
             tool_output_compressed_ids=tool_output_compressed_ids,
             chat_history_removed=chat_history_removed,
-            chat_history_baseline=chat_history_baseline,
         )
 
 
-def _ensure_compression_state(metadata: Dict[str, Any]) -> CompressionState:
+def _ensure_compression_state(ctx: ProcessorContext) -> CompressionState:
+    """确保 ProcessorContext 中存在类型安全的 CompressionState。
+
+    状态来源优先级：
+    1) metadata["_compression_state"]
+    2) assembly_cache["compression_state"]（用于跨 ReAct 周期持久化）
+
+    同步策略：
+    - 始终回写 metadata["_compression_state"]
+    - 若存在 assembly_cache（dict），则同时回写 assembly_cache["compression_state"]
+    """
+    metadata = ctx.metadata
     raw = metadata.get("_compression_state")
 
-    if isinstance(raw, CompressionState):
-        return raw
+    cache = ctx.assembly_cache
+    if raw is None and isinstance(cache, dict):
+        raw = cache.get("compression_state")
 
-    if isinstance(raw, dict):
+    if isinstance(raw, CompressionState):
+        state = raw
+    elif isinstance(raw, dict):
         state = CompressionState.from_legacy(raw)
     else:
         state = CompressionState()
 
     metadata["_compression_state"] = state
+    if isinstance(cache, dict):
+        cache["compression_state"] = state
+
     return state
 
 
@@ -118,7 +131,21 @@ def _ensure_compression_state(metadata: Dict[str, Any]) -> CompressionState:
 # 基类
 # ============================================================================
 class BaseCompressionMiddleware:
-    """压缩中间件基类：提供通用的 token 超限检测与事件发送。"""
+    """压缩中间件基类：提供通用的 token 超限检测与事件发送。
+
+    Args:
+        token_limit: Token 限制，超过则触发压缩。如果为 None，则不进行基于 token 的压缩检查。
+        token_margin: Token 余量，用于计算实际可用的 token 数量。
+    """
+
+    def __init__(
+        self,
+        *,
+        token_limit: Optional[int] = None,
+        token_margin: int = 100,
+    ) -> None:
+        self.token_limit = token_limit
+        self.token_margin = token_margin
 
     @staticmethod
     def _dispatch_log(ctx: ProcessorContext, *, text: str) -> None:
@@ -131,37 +158,203 @@ class BaseCompressionMiddleware:
     @staticmethod
     def _try_get_token_len(ctx: ProcessorContext) -> Optional[int]:
         if ctx.chat_prompt_template is None or ctx.llm is None:
+            logger.warning("【BaseCompressionMiddleware】_try_get_token_len 如果想要启用压缩，必须提供模板和llm")
             return None
 
         try:
             formatted_prompt = ctx.chat_prompt_template._format_prompt_with_error_handling(ctx.variables)
             return ctx.llm.get_num_tokens_from_messages(formatted_prompt.messages)
         except Exception as e:
-            logger.warning(f"计算 token 长度失败: {e}")
+            logger.warning(f"【BaseCompressionMiddleware】_try_get_token_len 计算 token 长度失败: {e}")
             return None
 
-    @classmethod
-    def _is_overflow(cls, ctx: ProcessorContext) -> bool:
-        if ctx.token_limit is None:
+    def _is_overflow(self, ctx: ProcessorContext) -> bool:
+        if self.token_limit is None:
             return False
 
-        token_len = cls._try_get_token_len(ctx)
+        token_len = self._try_get_token_len(ctx)
         if token_len is None:
             return False
 
-        return token_len > ctx.token_limit - ctx.token_margin
+        return token_len > self.token_limit - self.token_margin
 
 
 # ============================================================================
-# 知识库内容压缩
+# 知识库压缩器 - Prompt 模板
+# ============================================================================
+_KNOWLEDGE_COMMON_COMPRESSOR_SYS_PROMPT = (
+    "对提供给你的内容进行摘要总结，要求不能丢失关键信息。直接返回你总结后的摘要即可，不要返回其他任何内容！"
+)
+_KNOWLEDGE_COMMON_COMPRESSOR_USR_PROMPT = env.from_string("提供给你的内容如下：```{{content}}```")
+
+_KNOWLEDGE_SPECIFIC_COMPRESSOR_SYS_PROMPT = """你是一个知识文档相关性判断与摘要生成器。你的任务是判断一个候选知识文档是否能够**部分或全部回答用户最新提问**。
+
+请遵循以下规则：
+
+1. **相关性判断标准**：
+   - 只要文档中包含**可用于回答用户最新提问中任何一个子问题或信息点的内容**，无论信息是否完整、是否需要推理、是否隐含在叙述中，都视为"可以回答"。
+   - 允许通过**语义理解、常识推断、上下文关联**等方式从文档中提取或推导答案，不要求原文与提问完全一致。
+
+2. **摘要要求**：
+   - 仅提取与用户最新提问直接相关的内容。
+   - 摘要必须**言简意赅，保留回答所需的关键信息**（如名称、时间、数值、定义、因果关系等）。
+   - 避免复制原文大段内容，优先提炼成简洁自然语言。
+   - 如果信息分散在多句中，可合并为一句完整摘要。
+
+3. **输出规则**：
+   - 如果文档**能提供任何有助于回答提问的信息** → 返回**摘要内容**。
+   - 只有当文档**完全不涉及提问主题、或无法从中获取任何可用信息时** → 返回："无效的知识文档"。
+
+4. **特别注意**：
+   - 为了让你可以更好地理解用户最新提问，我还会提供给你一段会话历史以供参考，格式如下：[HumanMessage(content='xxx'), AIMessage(content='xxx'), ...]
+     其中"HumanMessage"表示用户历史提问，"AIMessage"表示智能聊天系统的历史回答。
+   - 会话历史仅用于帮助理解当前提问的背景和指代，你的判断对象是**用户最新提问**与**候选文档内容**之间的相关性。
+   - 知识文档可能是叙述性、多主题或背景性内容，请聚焦其中**与当前问题最相关的片段**。
+   - **宁可保留一条模糊但可能相关的信息，也不要轻易判定为"无效"**。
+
+直接返回摘要或"无效的知识文档"，不要输出任何解释、前缀、格式标记或额外说明。"""
+
+_KNOWLEDGE_SPECIFIC_COMPRESSOR_USR_PROMPT = env.from_string(
+    "提供给你参考的会话历史内容如下：```{{provided_chat_history}}```"
+    "\n\n\n给你的候选文档如下：```{{candidate_context}}```"
+    "\n\n\n用户最新提问如下：```{{query}}```"
+)
+
+
+# ============================================================================
+# 知识库压缩器
+# ============================================================================
+class KnowledgeCompressor:
+    """知识库内容压缩器。
+
+    提供并发压缩知识库内容的能力，可作为 KnowledgeCompressionMiddleware 的 knowledge_compressor_func 使用。
+
+    Args:
+        llm: 用于压缩的 LLM 实例
+        compressor_type: 压缩模式，"specific"（带上下文）或 "common"（简单总结），默认为 "specific"
+        common_sys_prompt: common 模式的系统提示词，默认使用内置模板
+        common_usr_prompt: common 模式的用户提示词模板（Jinja2），需包含 {{content}} 变量
+        specific_sys_prompt: specific 模式的系统提示词，默认使用内置模板
+        specific_usr_prompt: specific 模式的用户提示词模板（Jinja2），需包含 {{provided_chat_history}}、{{query}}、{{candidate_context}} 变量
+    """
+
+    def __init__(
+        self,
+        llm: Any,
+        *,
+        compressor_type: str = "specific",
+        common_sys_prompt: Optional[str] = None,
+        common_usr_prompt: Optional[Template] = None,
+        specific_sys_prompt: Optional[str] = None,
+        specific_usr_prompt: Optional[Template] = None,
+    ) -> None:
+        self.llm = llm
+        self.compressor_type = compressor_type
+        self.common_sys_prompt = common_sys_prompt or _KNOWLEDGE_COMMON_COMPRESSOR_SYS_PROMPT
+        self.common_usr_prompt = common_usr_prompt or _KNOWLEDGE_COMMON_COMPRESSOR_USR_PROMPT
+        self.specific_sys_prompt = specific_sys_prompt or _KNOWLEDGE_SPECIFIC_COMPRESSOR_SYS_PROMPT
+        self.specific_usr_prompt = specific_usr_prompt or _KNOWLEDGE_SPECIFIC_COMPRESSOR_USR_PROMPT
+
+    def llm_context_compressor(
+        self,
+        provided_chat_history: list,
+        query: str,
+        candidate_context: Any,
+    ) -> str:
+        """压缩单个知识库内容。"""
+        if self.compressor_type == "common":
+            sys_prompt = self.common_sys_prompt
+            usr_prompt = self.common_usr_prompt.render(content=candidate_context)
+        elif self.compressor_type == "specific":
+            sys_prompt = self.specific_sys_prompt
+            usr_prompt = self.specific_usr_prompt.render(
+                provided_chat_history=provided_chat_history,
+                query=query,
+                candidate_context=candidate_context,
+            )
+        else:
+            raise ValueError(f"不支持的知识库知识压缩方式：{self.compressor_type}")
+
+        messages: List[BaseMessage] = [
+            SystemMessage(content=sys_prompt),
+            HumanMessage(content=usr_prompt),
+        ]
+
+        resp = self.llm.invoke(messages)
+        resp_content = resp.content
+
+        # 如果触发了混元的特殊回复，则不进行压缩
+        if resp_content == HUNYUAN_SPECIFIC_RESPONSE:
+            resp_content = candidate_context
+
+        return resp_content
+
+    def __call__(
+        self,
+        provided_chat_history: list,
+        query: str,
+        context: List[Any],
+    ) -> List[Any]:
+        """并发压缩知识库内容。
+
+        Args:
+            provided_chat_history: 聊天历史
+            query: 用户查询
+            context: 待压缩的知识库内容列表
+
+        Returns:
+            压缩后的内容列表
+        """
+        if not isinstance(context, list):
+            raise TypeError(f"context 必须是列表类型，但收到了 {type(context).__name__}")
+
+        if not context:
+            return context
+
+        try:
+            futures = [
+                _compression_executor.submit(
+                    self.llm_context_compressor,
+                    provided_chat_history,
+                    query,
+                    candidate_context,
+                )
+                for candidate_context in context
+            ]
+            results = [future.result() for future in futures]
+        except Exception:
+            # 如果 LLM 调用失败则不进行总结
+            results = context
+            logger.warning("调用 LLM 来对知识库内容进行压缩总结时失败，因此不进行总结！")
+
+        return results
+
+
+# ============================================================================
+# 知识库内容压缩中间件
 # ============================================================================
 class KnowledgeCompressionMiddleware(BaseCompressionMiddleware):
     """知识库内容压缩中间件：通过内容哈希缓存复用，避免重复压缩。
 
-    需要在 ctx.metadata 中提供:
-    - knowledge_compressor_func: Callable[[list, str, Any, Any], Any] - 压缩函数
-    - provided_chat_history: list - 用于压缩的聊天历史
+    Args:
+        knowledge_compressor_func: 知识库压缩函数，签名为 Callable[[list, str, Any], Any]
+            - 参数1: provided_chat_history - 聊天历史
+            - 参数2: query - 用户查询
+            - 参数3: context - 待压缩的知识库内容
+            - 返回: 压缩后的内容
+        token_limit: Token 限制，超过则触发压缩
+        token_margin: Token 余量
     """
+
+    def __init__(
+        self,
+        *,
+        knowledge_compressor_func: Optional[Callable[[list, str, Any], Any]] = None,
+        token_limit: Optional[int] = None,
+        token_margin: int = 100,
+    ) -> None:
+        super().__init__(token_limit=token_limit, token_margin=token_margin)
+        self.knowledge_compressor_func = knowledge_compressor_func
 
     @staticmethod
     def _compute_hash(content: Any) -> str:
@@ -172,132 +365,57 @@ class KnowledgeCompressionMiddleware(BaseCompressionMiddleware):
         return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
     def __call__(self, ctx: ProcessorContext, next: NextFunction) -> None:
-        if ctx.chat_prompt_template is None or ctx.llm is None or ctx.token_limit is None:
-            next()
-            return
-
+        logger.debug("KnowledgeCompressionMiddleware Start")
+        # 检查是否存在 context
         if not ("context" in ctx.variables and ctx.variables.get("context")):
+            logger.debug("KnowledgeCompressionMiddleware 当前不存在 context 无需压缩")
             next()
             return
-
-        state = _ensure_compression_state(ctx.metadata)
-
+        # 获取 缓存的 state
+        state = _ensure_compression_state(ctx)
         # 内容变更检测：一旦变更，清理旧缓存。
         cur_hash = self._compute_hash(ctx.variables.get("context"))
         if cur_hash and cur_hash != state.knowledge_hash:
             state.knowledge_hash = cur_hash
             state.knowledge_cache = None
             state.knowledge_compressed = False
-
         # 已压缩且命中缓存：后续 ReAct 循环直接复用缓存。
         if state.knowledge_compressed and state.knowledge_cache and cur_hash == state.knowledge_hash:
             ctx.variables["context"] = state.knowledge_cache
-
+            next()
+            return
+        # 检查是否超限
         if not self._is_overflow(ctx):
             next()
             return
-
-        # 超限但已压缩过：直接交给下一个中间件（如聊天历史压缩）。
-        if state.knowledge_compressed and state.knowledge_cache:
+        # 检查是否有知识库压缩函数
+        if not self.knowledge_compressor_func:
+            logger.warning("KnowledgeCompressionMiddleware, 未提供压缩函数，跳过知识库内容压缩")
             next()
             return
-
-        compressor_func: Optional[Callable] = ctx.metadata.get("knowledge_compressor_func")
-        if not compressor_func:
-            logger.debug("knowledge_compressor_func 未在 metadata 中提供，跳过知识库内容压缩")
-            next()
-            return
-
+        # 执行压缩流程
         provided_chat_history = ctx.metadata.get("provided_chat_history", [])
-
         self._dispatch_log(ctx, text="Token 超限，尝试压缩知识库知识内容以减少 token 使用。")
-
-        compressed_context = compressor_func(
+        compressed_context = self.knowledge_compressor_func(
             provided_chat_history,
             ctx.variables.get("query", ""),
             ctx.variables["context"],
-            ctx.llm,
         )
-
         state.knowledge_cache = compressed_context
         state.knowledge_compressed = True
         ctx.variables["context"] = compressed_context
-
-        next()
-
-
-# ============================================================================
-# 聊天历史压缩
-# ============================================================================
-class ChatHistoryCompressionMiddleware(BaseCompressionMiddleware):
-    """聊天历史压缩中间件：累积移除并渐进式执行，不修改原始 state.messages。"""
-
-    def __call__(self, ctx: ProcessorContext, next: NextFunction) -> None:
-        if ctx.chat_prompt_template is None or ctx.llm is None or ctx.token_limit is None:
-            next()
-            return
-
-        state = _ensure_compression_state(ctx.metadata)
-
-        chat_history = ctx.variables.get("chat_history")
-        if not isinstance(chat_history, list) or not chat_history:
-            next()
-            return
-
-        # 先应用历史累计移除量（确保跨 ReAct 循环可复用）。
-        removed = max(0, int(state.chat_history_removed or 0))
-        if removed:
-            chat_history = list(chat_history)[removed:]
-        else:
-            chat_history = list(chat_history)
-
-        ctx.variables["chat_history"] = chat_history
-
-        messages_len = len(ctx.state.get("messages") or [])
-        if state.chat_history_baseline <= 0:
-            state.chat_history_baseline = messages_len
-
-        if not self._is_overflow(ctx):
-            # 未超限：更新基准线（表示已处理到当前消息数）。
-            state.chat_history_baseline = messages_len
-            next()
-            return
-
-        dispatched = False
-
-        # 超限：逐条移除最早消息，直到不超限或无可移除。
-        while self._is_overflow(ctx):
-            cur_chat_history = ctx.variables.get("chat_history")
-            if not isinstance(cur_chat_history, list) or not cur_chat_history:
-                logger.warning(
-                    "已尝试抛除会话历史，但仍然超过 token 限制。"
-                    f"（限制: {ctx.token_limit}，余量: {ctx.token_margin}）"
-                )
-                break
-
-            if not dispatched:
-                self._dispatch_log(ctx, text="Token 超限，尝试抛除会话历史以减少 token 使用。")
-                dispatched = True
-
-            # 不修改原 list：始终生成新 list
-            ctx.variables["chat_history"] = list(cur_chat_history)[1:]
-            state.chat_history_removed += 1
-
-        # 记录已处理消息基准线
-        state.chat_history_baseline = messages_len
-
         next()
 
 
 # ============================================================================
 # 工具输出压缩 - Prompt 模板
 # ============================================================================
-_COMMON_COMPRESSOR_SYS_PROMPT = (
+_TOOL_OUTPUT_COMMON_COMPRESSOR_SYS_PROMPT = (
     "对提供给你的内容进行摘要总结，要求不能丢失关键信息。直接返回你总结后的摘要即可，不要返回其他任何内容！"
 )
-_COMMON_COMPRESSOR_USR_PROMPT = env.from_string("提供给你的内容如下：```{{content}}```")
+_TOOL_OUTPUT_COMMON_COMPRESSOR_USR_PROMPT = env.from_string("提供给你的内容如下：```{{content}}```")
 
-_SPECIFIC_COMPRESSOR_SYS_PROMPT = env.from_string(
+_TOOL_OUTPUT_SPECIFIC_COMPRESSOR_SYS_PROMPT = env.from_string(
     """
 你是一个工具调用结果相关性判断与摘要生成器。你的任务是判断 {{candidate_tool_name}} 工具的调用结果是否能够**部分或全部回答用户最新提问**。
 
@@ -327,7 +445,7 @@ _SPECIFIC_COMPRESSOR_SYS_PROMPT = env.from_string(
 """
 )
 
-_SPECIFIC_COMPRESSOR_USR_PROMPT = env.from_string(
+_TOOL_OUTPUT_SPECIFIC_COMPRESSOR_USR_PROMPT = env.from_string(
     "提供给你参考的会话历史内容如下：```{{provided_chat_history}}```"
     "\n\n\n给你的 {{candidate_tool_name}} 工具的调用结果如下：```{{candidate_tool_result}}```"
     "\n\n\n用户最新提问如下：```{{query}}```"
@@ -335,38 +453,183 @@ _SPECIFIC_COMPRESSOR_USR_PROMPT = env.from_string(
 
 
 # ============================================================================
-# 工具输出压缩
+# 工具输出压缩器
 # ============================================================================
-class ToolOutputCompressionMiddleware(BaseCompressionMiddleware):
-    """工具调用结果压缩中间件。
+class ToolOutputCompressor:
+    """工具输出压缩器。
 
-    支持两种触发方式：
-    1. 工具输出字符长度超过阈值（独立检查）
-    2. Token 超限时被协调中间件调用
+    提供并发压缩工具输出的能力，可作为 ToolOutputCompressionMiddleware 的 tool_output_compressor_func 使用。
 
-    参数说明：
-    - tool_output_compress_thrd: 工具输出字符长度阈值，超过则触发压缩
-    - compressor_type: 压缩模式，"specific"（带上下文）或 "common"（简单总结）
-    - max_retries: LLM 调用最大重试次数
-    - enable_token_overflow_compression: 是否在 Token 超限时也触发压缩
+    Args:
+        llm: 用于压缩的 LLM 实例
+        compressor_type: 压缩模式，"specific"（带上下文）或 "common"（简单总结），默认为 "specific"
+        common_sys_prompt: common 模式的系统提示词，默认使用内置模板
+        common_usr_prompt: common 模式的用户提示词模板（Jinja2），需包含 {{content}} 变量
+        specific_sys_prompt: specific 模式的系统提示词模板（Jinja2），需包含 {{candidate_tool_name}} 变量
+        specific_usr_prompt: specific 模式的用户提示词模板（Jinja2），需包含 {{provided_chat_history}}、{{query}}、{{candidate_tool_name}}、{{candidate_tool_result}} 变量
+    """
+
+    def __init__(
+        self,
+        llm: Any,
+        *,
+        compressor_type: str = "specific",
+        common_sys_prompt: Optional[str] = None,
+        common_usr_prompt: Optional[Template] = None,
+        specific_sys_prompt: Optional[Template] = None,
+        specific_usr_prompt: Optional[Template] = None,
+    ) -> None:
+        self.llm = llm
+        self.compressor_type = compressor_type
+        # common_sys_prompt 是字符串类型
+        self.common_sys_prompt = (
+            common_sys_prompt if common_sys_prompt is not None else _TOOL_OUTPUT_COMMON_COMPRESSOR_SYS_PROMPT
+        )
+        # 其他是 Template 类型
+        self.common_usr_prompt = (
+            common_usr_prompt if common_usr_prompt is not None else _TOOL_OUTPUT_COMMON_COMPRESSOR_USR_PROMPT
+        )
+        self.specific_sys_prompt = (
+            specific_sys_prompt if specific_sys_prompt is not None else _TOOL_OUTPUT_SPECIFIC_COMPRESSOR_SYS_PROMPT
+        )
+        self.specific_usr_prompt = (
+            specific_usr_prompt if specific_usr_prompt is not None else _TOOL_OUTPUT_SPECIFIC_COMPRESSOR_USR_PROMPT
+        )
+
+    @retry(max_retries=5, max_seconds=3600)
+    def llm_intermediate_step_compressor(
+        self,
+        provided_chat_history: Any,
+        query: str,
+        tool_name: str,
+        tool_result: Any,
+    ) -> str:
+        """压缩单个工具的输出（保持与旧版本方法名一致）。"""
+        tool_result_str = tool_result if isinstance(tool_result, str) else str(tool_result)
+
+        if self.compressor_type == "common":
+            sys_prompt = self.common_sys_prompt
+            usr_prompt = self.common_usr_prompt.render(content=tool_result_str)
+        elif self.compressor_type == "specific":
+            sys_prompt = self.specific_sys_prompt.render(candidate_tool_name=tool_name)
+            usr_prompt = self.specific_usr_prompt.render(
+                provided_chat_history=provided_chat_history,
+                query=query,
+                candidate_tool_name=tool_name,
+                candidate_tool_result=tool_result_str,
+            )
+        else:
+            raise ValueError(f"不支持的工具调用结果压缩方式：{self.compressor_type}")
+
+        messages: List[BaseMessage] = [
+            SystemMessage(content=sys_prompt),
+            HumanMessage(content=usr_prompt),
+        ]
+
+        resp = self.llm.invoke(messages)
+        resp_content = resp.content
+
+        # 如果触发了混元的特殊回复，则不进行压缩
+        if resp_content == HUNYUAN_SPECIFIC_RESPONSE:
+            logger.debug(f"工具 {tool_name} 触发混元特殊回复，不压缩")
+            return tool_result_str
+
+        logger.debug(f"工具 {tool_name} 压缩完成: {len(tool_result_str)} -> {len(resp_content)}")
+        return resp_content
+
+    def llm_intermediate_step_compressor_parallel(
+        self,
+        provided_chat_history: Any,
+        query: str,
+        tool_msg_positions: List[Tuple[int, ToolMessage]],
+    ) -> List[Optional[str]]:
+        """并发执行工具输出压缩（保持与旧版本方法名一致）。
+
+        Args:
+            provided_chat_history: 聊天历史
+            query: 用户查询
+            tool_msg_positions: ToolMessage 的索引位置
+
+        Returns:
+            压缩结果列表，与 tool_msg_positions 一一对应，失败的位置为 None
+        """
+        # 并发压缩
+        futures = {
+            _compression_executor.submit(
+                self.llm_intermediate_step_compressor,
+                provided_chat_history,
+                query,
+                (tool_msg.name or "unknown"),
+                tool_msg.content,
+            ): idx
+            for idx, (_, tool_msg) in enumerate(tool_msg_positions)
+        }
+
+        results: List[Optional[str]] = [None] * len(tool_msg_positions)
+        try:
+            for future in concurrent.futures.as_completed(futures):
+                idx = futures[future]
+                try:
+                    results[idx] = future.result()
+                except Exception as e:
+                    logger.warning(
+                        f"调用 LLM 来对工具调用结果进行压缩总结时，LLM 调用失败，索引 {idx}，错误：{e}。因此该内容不进行总结。"
+                    )
+        except Exception as e:
+            logger.warning(f"调用 LLM 来对工具调用结果进行压缩总结时，LLM 调用失败，错误：{e}。因此不进行总结。")
+
+        return results
+
+    def __call__(
+        self,
+        provided_chat_history: Any,
+        query: str,
+        tool_msg_positions: List[Tuple[int, ToolMessage]],
+    ) -> List[Optional[str]]:
+        """并发压缩工具输出（可作为 tool_output_compressor_func 使用）。
+
+        Args:
+            provided_chat_history: 聊天历史
+            query: 用户查询
+            tool_msg_positions: ToolMessage 的索引位置
+
+        Returns:
+            压缩结果列表，与 tool_msg_positions 一一对应，失败的位置为 None
+        """
+        return self.llm_intermediate_step_compressor_parallel(
+            provided_chat_history=provided_chat_history,
+            query=query,
+            tool_msg_positions=tool_msg_positions,
+        )
+
+
+# ============================================================================
+# 工具输出压缩中间件基类
+# ============================================================================
+class BaseToolOutputCompressionMiddleware(BaseCompressionMiddleware):
+    """工具输出压缩中间件基类：提供共享的辅助方法和核心压缩逻辑。
+
+    Args:
+        tool_output_compressor_func: 工具输出压缩函数
+        token_limit: Token 限制，超过则触发压缩
+        token_margin: Token 余量
 
     需要在 ctx.metadata 中提供:
     - tool_messages: list[BaseMessage] - 工具消息列表
-    - provided_chat_history: list - 用于压缩的聊天历史（compressor_type="specific" 时）
+    - provided_chat_history: list - 用于压缩的聊天历史
     """
 
     def __init__(
         self,
         *,
-        tool_output_compress_thrd: int = 5000,
-        compressor_type: str = "specific",
-        max_retries: int = 5,
-        enable_token_overflow_compression: bool = True,
+        tool_output_compressor_func: Optional[
+            Callable[[Any, str, List[Tuple[int, ToolMessage]]], List[Optional[str]]]
+        ] = None,
+        token_limit: Optional[int] = None,
+        token_margin: int = 100,
     ) -> None:
-        self.tool_output_compress_thrd = tool_output_compress_thrd
-        self.compressor_type = compressor_type
-        self.max_retries = max_retries
-        self.enable_token_overflow_compression = enable_token_overflow_compression
+        super().__init__(token_limit=token_limit, token_margin=token_margin)
+        self.tool_output_compressor_func = tool_output_compressor_func
 
     # -------------------------------------------------------------------------
     # 辅助方法
@@ -417,92 +680,10 @@ class ToolOutputCompressionMiddleware(BaseCompressionMiddleware):
                 positions.append((idx, m))
         return positions
 
-    def _invoke_llm(self, *, llm: Any, messages: List[BaseMessage], config: Any) -> str:
-        """调用 LLM 并处理 DeepSeek-R1 的特殊情况。"""
-        try:
-            is_r1 = is_deepseek_r1_series_models(llm)
-        except Exception:
-            is_r1 = False
-
-        call_messages = list(messages)
-        # DeepSeek-R1：避免使用 system prompt（将 SystemMessage 合并到 HumanMessage）。
-        if is_r1 and call_messages and isinstance(call_messages[0], SystemMessage):
-            sys_content = call_messages[0].content
-            if len(call_messages) >= 2 and isinstance(call_messages[-1], HumanMessage):
-                human_content = call_messages[-1].content
-                call_messages[-1] = HumanMessage(content=f"{sys_content}\n\n{human_content}")
-                del call_messages[0]
-
-        try:
-            resp = llm.invoke(call_messages, config=config)
-        except TypeError:
-            resp = llm.invoke(call_messages)
-
-        content = getattr(resp, "content", "")
-        content_str = content if isinstance(content, str) else str(content)
-
-        if is_r1:
-            try:
-                content_str = remove_thinking_process(content_str).strip()
-            except Exception:
-                content_str = content_str.strip()
-
-        return content_str
-
-    def _compress_single_tool_output(
-        self,
-        *,
-        llm: Any,
-        config: Any,
-        provided_chat_history: Any,
-        query: str,
-        tool_name: str,
-        tool_result: Any,
-    ) -> str:
-        """压缩单个工具的输出。"""
-        tool_result_str = tool_result if isinstance(tool_result, str) else str(tool_result)
-
-        if self.compressor_type == "common":
-            sys_prompt = _COMMON_COMPRESSOR_SYS_PROMPT
-            usr_prompt = _COMMON_COMPRESSOR_USR_PROMPT.render(content=tool_result_str)
-        elif self.compressor_type == "specific":
-            sys_prompt = _SPECIFIC_COMPRESSOR_SYS_PROMPT.render(candidate_tool_name=tool_name)
-            usr_prompt = _SPECIFIC_COMPRESSOR_USR_PROMPT.render(
-                provided_chat_history=provided_chat_history,
-                query=query,
-                candidate_tool_name=tool_name,
-                candidate_tool_result=tool_result_str,
-            )
-        else:
-            raise ValueError(f"不支持的工具调用结果压缩方式：{self.compressor_type}")
-
-        messages: List[BaseMessage] = [
-            SystemMessage(content=sys_prompt),
-            HumanMessage(content=usr_prompt),
-        ]
-
-        last_err: Optional[Exception] = None
-        for attempt in range(self.max_retries):
-            try:
-                resp_content = self._invoke_llm(llm=llm, messages=messages, config=config)
-                # 如果触发了混元的特殊回复，则不进行压缩
-                if resp_content == HUNYUAN_SPECIFIC_RESPONSE:
-                    logger.debug(f"工具 {tool_name} 触发混元特殊回复，不压缩")
-                    return tool_result_str
-                logger.debug(f"工具 {tool_name} 压缩完成: {len(tool_result_str)} -> {len(resp_content)}")
-                return resp_content
-            except Exception as e:
-                last_err = e
-                logger.warning(f"工具 {tool_name} 压缩失败 (尝试 {attempt + 1}/{self.max_retries}): {e}")
-
-        if last_err:
-            logger.error(f"工具 {tool_name} 压缩最终失败: {last_err}")
-        return tool_result_str
-
     # -------------------------------------------------------------------------
     # 核心压缩逻辑
     # -------------------------------------------------------------------------
-    def _do_compress(
+    def _compress_with_deduplication(
         self,
         ctx: ProcessorContext,
         tool_messages: List[BaseMessage],
@@ -511,7 +692,7 @@ class ToolOutputCompressionMiddleware(BaseCompressionMiddleware):
         *,
         reason: str,
     ) -> bool:
-        """执行实际的压缩操作。
+        """带去重的工具输出压缩（避免重复压缩已处理过的工具输出）。
 
         Args:
             ctx: 处理器上下文
@@ -523,6 +704,11 @@ class ToolOutputCompressionMiddleware(BaseCompressionMiddleware):
         Returns:
             是否执行了压缩
         """
+        # 检查是否有压缩函数
+        if not self.tool_output_compressor_func:
+            logger.warning("BaseToolOutputCompressionMiddleware, 未提供压缩函数，跳过工具输出压缩")
+            return False
+
         # 过滤出尚未压缩的 ToolMessage
         uncompressed_positions: List[Tuple[int, ToolMessage]] = []
         for pos, tool_msg in tool_msg_positions:
@@ -540,43 +726,24 @@ class ToolOutputCompressionMiddleware(BaseCompressionMiddleware):
 
         self._dispatch_log(ctx, text=reason)
 
-        # 并发压缩
-        futures = {
-            _compression_executor.submit(
-                self._compress_single_tool_output,
-                llm=ctx.llm,
-                config=ctx.config,
-                provided_chat_history=provided_chat_history,
-                query=query,
-                tool_name=(tool_msg.name or "unknown"),
-                tool_result=tool_msg.content,
-            ): i
-            for i, (_, tool_msg) in enumerate(uncompressed_positions)
-        }
+        # 调用压缩函数
+        results = self.tool_output_compressor_func(
+            provided_chat_history,
+            query,
+            uncompressed_positions,
+        )
 
-        results: List[Optional[str]] = [None] * len(uncompressed_positions)
-        try:
-            for future in concurrent.futures.as_completed(futures):
-                i = futures[future]
-                try:
-                    results[i] = future.result()
-                except Exception as e:
-                    logger.warning(f"调用 LLM 来对工具调用结果进行压缩总结时失败，索引 {i}，错误：{e}")
-        except Exception as e:
-            logger.warning(f"调用 LLM 来对工具调用结果进行压缩总结时失败，错误：{e}")
-
-        # 以新的 ToolMessage 列表回写，避免修改原始 state.messages。
+        # 以新的 ToolMessage 列表回写，避免修改原始 state.messages
         new_tool_messages: List[BaseMessage] = list(tool_messages)
         for i, (pos, tool_msg) in enumerate(uncompressed_positions):
             compressed = results[i]
             if compressed is None:
                 continue
 
-            new_tool_messages[pos] = ToolMessage(
-                content=compressed,
-                name=tool_msg.name,
-                tool_call_id=tool_msg.tool_call_id,
-            )
+            # 使用 copy 保留原 ToolMessage 的其他属性（如 additional_kwargs、artifact 等）
+            new_tool_msg = copy.copy(tool_msg)
+            new_tool_msg.content = compressed
+            new_tool_messages[pos] = new_tool_msg
 
             # 记录已压缩的 tool_call_id
             if tool_msg.tool_call_id:
@@ -587,64 +754,80 @@ class ToolOutputCompressionMiddleware(BaseCompressionMiddleware):
 
         return True
 
-    # -------------------------------------------------------------------------
-    # 两种触发方式
-    # -------------------------------------------------------------------------
-    def compress_if_too_long(self, ctx: ProcessorContext) -> bool:
-        """基于字符长度的压缩（独立检查）。
 
-        当工具输出总字符长度超过 tool_output_compress_thrd 时触发。
+# ============================================================================
+# 工具输出长度压缩中间件（基于字符长度阈值）
+# ============================================================================
+class ToolOutputLengthCompressionMiddleware(BaseToolOutputCompressionMiddleware):
+    """工具输出长度压缩中间件：当工具输出总字符长度超过阈值时触发压缩。
 
-        Returns:
-            是否执行了压缩
-        """
-        if ctx.llm is None:
-            return False
+    参数说明：
+    - tool_output_compress_thrd: 工具输出字符长度阈值，超过则触发压缩
+    - tool_output_compressor_func: 工具输出压缩函数
+    """
+
+    def __init__(
+        self,
+        *,
+        tool_output_compress_thrd: int = 5000,
+        tool_output_compressor_func: Optional[
+            Callable[[Any, str, List[Tuple[int, ToolMessage]]], List[Optional[str]]]
+        ] = None,
+    ) -> None:
+        super().__init__(tool_output_compressor_func=tool_output_compressor_func)
+        self.tool_output_compress_thrd = tool_output_compress_thrd
+
+    def __call__(self, ctx: ProcessorContext, next: NextFunction) -> None:
+        """中间件入口：基于字符长度的压缩。"""
+        logger.debug("ToolOutputLengthCompressionMiddleware __call__")
+
+        tool_messages = self._get_tool_messages(ctx)
+        if tool_messages and self._tool_output_len(tool_messages) > self.tool_output_compress_thrd:
+            tool_msg_positions = self._collect_tool_msg_positions(tool_messages)
+            if tool_msg_positions:
+                state = _ensure_compression_state(ctx)
+                self._compress_with_deduplication(
+                    ctx,
+                    tool_messages,
+                    tool_msg_positions,
+                    state,
+                    reason="工具调用结果过长，尝试压缩工具调用结果以减少 token 使用。",
+                )
+
+        next()
+
+
+# ============================================================================
+# 工具输出 Token 压缩中间件（基于 Token 超限）
+# ============================================================================
+class ToolOutputTokenCompressionMiddleware(BaseToolOutputCompressionMiddleware):
+    """工具输出 Token 压缩中间件：当 Token 超限时触发压缩。
+
+    参数说明：
+    - tool_output_compressor_func: 工具输出压缩函数
+    - token_limit: Token 限制，超过则触发压缩
+    - token_margin: Token 余量
+    """
+
+    def __call__(self, ctx: ProcessorContext, next: NextFunction) -> None:
+        """中间件入口：基于 Token 超限的压缩。"""
+        logger.debug("ToolOutputTokenCompressionMiddleware __call__")
+
+        if not self._is_overflow(ctx):
+            next()
+            return
 
         tool_messages = self._get_tool_messages(ctx)
         if not tool_messages:
-            return False
-
-        if self._tool_output_len(tool_messages) <= self.tool_output_compress_thrd:
-            return False
+            next()
+            return
 
         tool_msg_positions = self._collect_tool_msg_positions(tool_messages)
         if not tool_msg_positions:
-            return False
+            next()
+            return
 
-        state = _ensure_compression_state(ctx.metadata)
-
-        return self._do_compress(
-            ctx,
-            tool_messages,
-            tool_msg_positions,
-            state,
-            reason="工具调用结果过长，尝试压缩工具调用结果以减少 token 使用。",
-        )
-
-    def compress_for_token_overflow(self, ctx: ProcessorContext) -> bool:
-        """Token 超限时触发的压缩。
-
-        当 Token 超限且 enable_token_overflow_compression=True 时触发。
-
-        Returns:
-            是否执行了压缩
-        """
-        if not self.enable_token_overflow_compression:
-            return False
-
-        if ctx.llm is None:
-            return False
-
-        tool_messages = self._get_tool_messages(ctx)
-        if not tool_messages:
-            return False
-
-        tool_msg_positions = self._collect_tool_msg_positions(tool_messages)
-        if not tool_msg_positions:
-            return False
-
-        state = _ensure_compression_state(ctx.metadata)
+        state = _ensure_compression_state(ctx)
 
         # 如果所有工具输出都已压缩过，不重复压缩
         all_compressed = all(
@@ -652,9 +835,10 @@ class ToolOutputCompressionMiddleware(BaseCompressionMiddleware):
             for _, tool_msg in tool_msg_positions
         )
         if all_compressed:
-            return False
+            next()
+            return
 
-        return self._do_compress(
+        self._compress_with_deduplication(
             ctx,
             tool_messages,
             tool_msg_positions,
@@ -662,65 +846,47 @@ class ToolOutputCompressionMiddleware(BaseCompressionMiddleware):
             reason="Token 超限，尝试压缩工具调用结果以减少 token 使用。",
         )
 
-    # -------------------------------------------------------------------------
-    # 中间件入口
-    # -------------------------------------------------------------------------
-    def __call__(self, ctx: ProcessorContext, next: NextFunction) -> None:
-        """中间件入口：仅处理基于长度的压缩。
-
-        Token 超限的压缩由 TokenCompressionMiddleware 协调调用 compress_for_token_overflow。
-        """
-        self.compress_if_too_long(ctx)
         next()
 
 
 # ============================================================================
-# 统一协调中间件
+# 聊天历史压缩
 # ============================================================================
-class TokenCompressionMiddleware:
-    """统一的 Token 压缩协调中间件。
+class ChatHistoryCompressionMiddleware(BaseCompressionMiddleware):
+    """聊天历史压缩中间件：累积移除并渐进式执行，不修改原始 state.messages。
 
-    按优先级处理：
-    1. 工具输出压缩（基于长度阈值，与 token 无关）
-    2. 知识库内容压缩（Token 超限时）
-    3. 工具输出压缩（Token 超限时）
-    4. 聊天历史压缩（Token 超限时）
-
-    参数说明：
-    - tool_output_compress_thrd: 工具输出字符长度阈值
-    - compressor_type: 压缩模式，"specific" 或 "common"
+    Args:
+        token_limit: Token 限制，超过则触发压缩
+        token_margin: Token 余量
     """
 
-    def __init__(
-        self,
-        *,
-        tool_output_compress_thrd: int = 5000,
-        compressor_type: str = "specific",
-    ) -> None:
-        self._knowledge = KnowledgeCompressionMiddleware()
-        self._tool_output = ToolOutputCompressionMiddleware(
-            tool_output_compress_thrd=tool_output_compress_thrd,
-            compressor_type=compressor_type,
-            enable_token_overflow_compression=True,
-        )
-        self._chat_history = ChatHistoryCompressionMiddleware()
-
     def __call__(self, ctx: ProcessorContext, next: NextFunction) -> None:
-        # Step 1: 基于长度的工具输出压缩（独立于 token 检查）
-        self._tool_output.compress_if_too_long(ctx)
+        chat_history = ctx.variables.get("chat_history")
+        if not isinstance(chat_history, list) or not chat_history:
+            logger.warning("ChatHistoryCompressionMiddleware 当前没有聊天历史")
+            next()
+            return
 
-        # Step 2-4: 按优先级处理 Token 超限
-        def _after_knowledge() -> None:
-            # 优先级 2: 工具输出压缩（Token 超限）
-            if self._tool_output._is_overflow(ctx):
-                self._tool_output.compress_for_token_overflow(ctx)
+        state = _ensure_compression_state(ctx)
+        # 先应用历史累计移除量（确保跨 ReAct 循环可复用）
+        removed = max(0, int(state.chat_history_removed or 0))
+        chat_history = list(chat_history)[removed:] if removed else list(chat_history)
+        ctx.variables["chat_history"] = chat_history
 
-            # 优先级 3: 聊天历史压缩
-            self._chat_history(ctx, next)
+        if not self._is_overflow(ctx):
+            next()
+            return
 
-        # 优先级 1: 知识库压缩
-        self._knowledge(ctx, _after_knowledge)
+        # Token 超限，发送日志并逐条移除最早消息
+        self._dispatch_log(ctx, text="Token 超限，尝试抛除会话历史以减少 token 使用。")
 
+        while chat_history and self._is_overflow(ctx):
+            chat_history.pop(0)
+            state.chat_history_removed += 1
+        ctx.variables["chat_history"] = chat_history
+        if self._is_overflow(ctx):
+            logger.warning(
+                f"已尝试抛除会话历史，但仍然超过 token 限制。（限制: {self.token_limit}，余量: {self.token_margin}）"
+            )
 
-# 向后兼容：旧命名别名
-TokenOverflowMiddleware = TokenCompressionMiddleware
+        next()

@@ -62,17 +62,20 @@ class KnowledgeRagRetrieveResult(TypedDict):
         - knowledge_resources_highly_relevant: 高相关性资源
         - knowledge_resources_moderately_relevant: 中等相关性资源
         - knowledge_resources_lowly_relevant: 低相关性资源
+        - knowledge_resources_emb_recalled: 所有 embedding 召回的资源（含细粒度分数），用于 AIDev 产品页面检索测试
 
     其中：knowledge_content 和 knowledge_qa_content 会被用于后续 Model 节点的 prompt_var 拼接
     其中：decision 和 with_qa_response 用于 后续 Model 选择模板
     其中：reference_doc 用于给 invoke 提供返回知识库召回了哪些文档
     其中：knowledge_resources_highly_relevant，knowledge_resources_moderately_relevant， knowledge_resources_lowly_relevant 用于审计返回知识相关性
+    其中：knowledge_resources_emb_recalled 用于 AIDev 产品页面检索测试，返回所有召回资源（带细粒度分数）
     """
 
     decision: Decision
     knowledge_resources_highly_relevant: list
     knowledge_resources_moderately_relevant: list
     knowledge_resources_lowly_relevant: list
+    knowledge_resources_emb_recalled: NotRequired[list]
     knowledge_content: NotRequired[list]
     knowledge_qa_content: NotRequired[list]
     translated_query: NotRequired[str]
@@ -633,7 +636,6 @@ class KnowledgeRag:
         knowledge_items = kwargs.get("knowledge_items", agent_options.knowledge_query_options.knowledge_items)
         knowledge_bases = kwargs.get("knowledge_bases", agent_options.knowledge_query_options.knowledge_bases)
         # 初始化知识库操作实例，如果没有提供，使用默认的实例
-        # 初始化知识库召回实例，如果没有提供，使用默认的实例
         kb_retriever = kwargs.get("kb_retriever", self.kb_retriever)
         output_state = {}
 
@@ -858,5 +860,6 @@ class KnowledgeRag:
             knowledge_resources_highly_relevant=knowledge_resources_highly_relevant,
             knowledge_resources_moderately_relevant=knowledge_resources_moderately_relevant,
             knowledge_resources_lowly_relevant=knowledge_resources_lowly_relevant,
+            knowledge_resources_emb_recalled=knowledge_resources_emb_recalled,
             **output_state,
         )

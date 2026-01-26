@@ -19,10 +19,10 @@ to the current version of the project delivered to anyone in the future.
 from __future__ import annotations
 
 import logging
-import uuid
-from typing import TYPE_CHECKING, Annotated, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Annotated, Dict, List, Optional, Sequence, Tuple
 
 from langchain.agents.middleware.types import (
+    AgentMiddleware,
     AgentState,
 )
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -39,14 +39,15 @@ from langgraph.graph.state import StateGraph
 from langgraph.store.memory import InMemoryStore
 from typing_extensions import Literal, TypedDict, TypeVar
 
-from aidev_agent.core.nodes.model import ContextProcessor, ModelNodeSettings
+from aidev_agent.core.nodes.knowledge import make_knowledge_node
+from aidev_agent.core.nodes.model import ModelNodeSettings
 from aidev_agent.core.nodes.model import build_model_node as std_make_model_node
-from aidev_agent.core.nodes.tool import build_tool_node
+from aidev_agent.core.nodes.tool import ToolNodeSettings, build_tool_node
 from aidev_agent.core.tools.add_image_to_chat_context import add_image_to_chat_context
 from aidev_agent.enums import Decision
 from aidev_agent.packages.langchain_core.models.utils import is_model_without_function_calling
 from aidev_agent.packages.langgraph.streaming.streaming_protocol import AgentStreamAdapter
-from aidev_agent.services.pydantic_models import AgentOptions
+from aidev_agent.services.pydantic_models import AgentExecutorKwargs, AgentOptions
 
 if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
@@ -75,7 +76,7 @@ class KnowledgeInputState(TypedDict):
     query: str
 
 
-class ReActAgent:
+class ReActAgentBuilder:
     """LangGraph V1 QA Agent 构建器。
 
     支持工具调用的完整 ReAct 循环：
@@ -84,8 +85,209 @@ class ReActAgent:
     - 条件路由：model → tool / END，tool → model
     """
 
-    @staticmethod
+    def __init__(self) -> None:
+        # Core model & tools
+        self._llm: BaseChatModel | None = None
+        self._knowledge_llm: BaseChatModel | None = None
+        self._non_thinking_llm: BaseChatModel | str | None = None
+        self._extra_tools: list[BaseTool] = []
+
+        # Prompt / chat context
+        self._prefix: str | None = None
+        self._role_prompt: str | None = None
+        self._suffix: str | None = None
+        self._format_instructions: str | None = None
+        self._chat_history: list[BaseMessage] | None = None
+
+        # Knowledge & options
+        self._knowledge_items: list[Dict] | None = None
+        self._knowledge_bases: list[Dict] | None = None
+        self._agent_options: AgentOptions | None = None
+        self._intent_recognition_kwargs: Dict | None = None
+
+        # Runtime config
+        self._callbacks: list | None = None
+        self._file_store: ByteStore | None = None
+        self._support_vision: bool = False
+        self._llm_token_limit: int = 28000
+        self._state_schema: type[AgentState[ResponseT]] | None = None
+        self._checkpointer: BaseCheckpointSaver | None = None
+        self._store: "BaseStore | None" = None
+        self._interrupt_before: list[str] | None = None
+        self._interrupt_after: list[str] | None = None
+        self._debug: bool = False
+        self._name: str | None = None
+        self._cache: BaseCache | None = None
+        self._enable_query_clarification: Optional[bool] = None
+        self._langchain_middleware: Sequence[AgentMiddleware] = ()
+        self._tool_node_options: ToolNodeSettings | None = None
+
+        # Keep extra kwargs for forward compatibility (BkAi platform options / user extensions)
+        self._extra_kwargs: dict = {}
+
+    def set_llm(self, llm: BaseChatModel) -> "ReActAgentBuilder":
+        self._llm = llm
+        return self
+
+    def set_knowledge_llm(self, knowledge_llm: BaseChatModel | None) -> "ReActAgentBuilder":
+        self._knowledge_llm = knowledge_llm
+        return self
+
+    def set_non_thinking_llm(self, non_thinking_llm: BaseChatModel | str | None) -> "ReActAgentBuilder":
+        self._non_thinking_llm = non_thinking_llm
+        return self
+
+    def set_tools(self, tools: Sequence[BaseTool] | None) -> "ReActAgentBuilder":
+        self._extra_tools = list(tools or [])
+        return self
+
+    def add_tools(self, tools: Sequence[BaseTool]) -> "ReActAgentBuilder":
+        self._extra_tools.extend(list(tools or []))
+        return self
+
+    def set_role_prompt(self, role_prompt: str | None) -> "ReActAgentBuilder":
+        self._role_prompt = role_prompt
+        return self
+
+    def set_agent_options(self, agent_options: AgentOptions | None) -> "ReActAgentBuilder":
+        self._agent_options = agent_options
+        return self
+
+    def set_callbacks(self, callbacks: list | None) -> "ReActAgentBuilder":
+        self._callbacks = callbacks
+        return self
+
+    def set_file_store(self, file_store: ByteStore | None) -> "ReActAgentBuilder":
+        self._file_store = file_store
+        return self
+
+    def set_support_vision(self, support_vision: bool) -> "ReActAgentBuilder":
+        self._support_vision = support_vision
+        return self
+
+    def set_checkpointer(self, checkpointer: BaseCheckpointSaver | None) -> "ReActAgentBuilder":
+        self._checkpointer = checkpointer
+        return self
+
+    def set_store(self, store: "BaseStore | None") -> "ReActAgentBuilder":
+        self._store = store
+        return self
+
+    def set_langchain_middleware(self, middleware: Sequence[AgentMiddleware]) -> "ReActAgentBuilder":
+        self._langchain_middleware = middleware or ()
+        return self
+
+    def set_tool_node_options(self, tool_node_options: ToolNodeSettings | None) -> "ReActAgentBuilder":
+        self._tool_node_options = tool_node_options
+        return self
+
+    def set_bkai_options(self, options: AgentExecutorKwargs) -> "ReActAgentBuilder":
+        """将 BkAi 平台通用配置（AgentExecutorKwargs）映射到 builder 内部状态。"""
+        if options.llm is not None:
+            self._llm = options.llm
+        if options.knowledge_llm is not None:
+            self._knowledge_llm = options.knowledge_llm
+        if options.non_thinking_llm is not None:
+            self._non_thinking_llm = options.non_thinking_llm
+        if options.extra_tools is not None:
+            self._extra_tools = list(options.extra_tools)
+        if options.chat_history is not None:
+            self._chat_history = list(options.chat_history)
+        if options.role_prompt is not None:
+            self._role_prompt = options.role_prompt
+        if options.support_vision is not None:
+            self._support_vision = bool(options.support_vision)
+        if options.file_store is not None:
+            self._file_store = options.file_store
+        if options.callbacks is not None:
+            self._callbacks = list(options.callbacks)
+        if options.agent_options is not None:
+            self._agent_options = options.agent_options
+        if options.checkpointer is not None:
+            self._checkpointer = options.checkpointer
+
+        # 未被 builder 消费的字段（包含 extra='allow'）全部存入 _extra_kwargs，供后续扩展
+        consumed = {
+            "llm",
+            "knowledge_llm",
+            "non_thinking_llm",
+            "extra_tools",
+            "chat_history",
+            "role_prompt",
+            "support_vision",
+            "file_store",
+            "callbacks",
+            "agent_options",
+            "checkpointer",
+        }
+        dumped = options.model_dump(exclude_none=True)
+        for k, v in dumped.items():
+            if k not in consumed:
+                self._extra_kwargs[k] = v
+        return self
+
+    def set_prefix(self, prefix: str | None) -> "ReActAgentBuilder":
+        self._prefix = prefix
+        return self
+
+    def set_suffix(self, suffix: str | None) -> "ReActAgentBuilder":
+        self._suffix = suffix
+        return self
+
+    def set_format_instructions(self, format_instructions: str | None) -> "ReActAgentBuilder":
+        self._format_instructions = format_instructions
+        return self
+
+    def set_chat_history(self, chat_history: list[BaseMessage] | None) -> "ReActAgentBuilder":
+        self._chat_history = chat_history
+        return self
+
+    def set_knowledge_items(self, knowledge_items: list[Dict] | None) -> "ReActAgentBuilder":
+        self._knowledge_items = knowledge_items
+        return self
+
+    def set_knowledge_bases(self, knowledge_bases: list[Dict] | None) -> "ReActAgentBuilder":
+        self._knowledge_bases = knowledge_bases
+        return self
+
+    def set_intent_recognition_kwargs(self, intent_recognition_kwargs: Dict | None) -> "ReActAgentBuilder":
+        self._intent_recognition_kwargs = intent_recognition_kwargs
+        return self
+
+    def set_enable_query_clarification(self, enable_query_clarification: bool | None) -> "ReActAgentBuilder":
+        self._enable_query_clarification = enable_query_clarification
+        return self
+
+    def set_llm_token_limit(self, llm_token_limit: int) -> "ReActAgentBuilder":
+        self._llm_token_limit = llm_token_limit
+        return self
+
+    def set_state_schema(self, state_schema: type[AgentState[ResponseT]] | None) -> "ReActAgentBuilder":
+        self._state_schema = state_schema
+        return self
+
+    def set_interrupt_before(self, interrupt_before: list[str] | None) -> "ReActAgentBuilder":
+        self._interrupt_before = interrupt_before
+        return self
+
+    def set_interrupt_after(self, interrupt_after: list[str] | None) -> "ReActAgentBuilder":
+        self._interrupt_after = interrupt_after
+        return self
+
+    def set_debug(self, debug: bool) -> "ReActAgentBuilder":
+        self._debug = debug
+        return self
+
+    def set_name(self, name: str | None) -> "ReActAgentBuilder":
+        self._name = name
+        return self
+
+    def set_cache(self, cache: BaseCache | None) -> "ReActAgentBuilder":
+        self._cache = cache
+        return self
+
     def _prepare_agent_options(
+        self,
         agent_options: Optional[AgentOptions],
         *,
         knowledge_items: Optional[List[Dict]] = None,
@@ -116,18 +318,97 @@ class ReActAgent:
 
         return options
 
-    @staticmethod
+    def _prepare_agent_knowledge_node(self, *, knowledge_llm, agent_options):
+        knowledge_query_options = agent_options.knowledge_query_options
+        has_knowledge = knowledge_query_options.knowledge_bases or knowledge_query_options.knowledge_items
+        if has_knowledge:
+            return make_knowledge_node(
+                llm=knowledge_llm,
+                agent_options=agent_options,
+            )
+        return None
+
+    def _prepare_agent_model_node(
+        self,
+        *,
+        llm: BaseChatModel,
+        non_thinking_llm: BaseChatModel,
+        tools: List[BaseTool],
+        use_structured_response: bool,
+        enable_query_clarification: bool,
+        agent_options: AgentOptions,
+    ):
+        """创建模型节点。
+
+        构建 ModelNodeSettings 并创建 model_node，用于 LLM 推理。
+
+        Args:
+            llm: 语言模型
+            tools: 工具列表
+            use_structured_response: 是否使用结构化输出模式
+            enable_query_clarification: 是否启用查询澄清
+            agent_options: Agent 配置选项
+
+        Returns:
+            model_node: 模型节点
+        """
+        # 处理 enable_query_clarification 的默认值
+        if enable_query_clarification is None:
+            model_name = getattr(llm, "model_name", "")
+            enable_query_clarification = model_name == "gpt-4o" or "deepseek" in model_name or "qwq" in model_name
+        # 从 agent_options 获取配置
+        knowledge_query_options = agent_options.knowledge_query_options
+        default_node_options = ModelNodeSettings()
+        rejection_message = (
+            knowledge_query_options.rejection_message
+            if knowledge_query_options.rejection_message is not None
+            else default_node_options.rejection_message
+        )
+        role_prompt = (
+            knowledge_query_options.role_prompt
+            if knowledge_query_options.role_prompt is not None
+            else default_node_options.role_prompt
+        )
+        use_general_knowledge_on_miss = knowledge_query_options.is_response_when_no_knowledgebase_match
+
+        node_options = ModelNodeSettings(
+            use_structured_response=use_structured_response,
+            enable_query_clarification=enable_query_clarification,
+            rejection_message=rejection_message,
+            role_prompt=role_prompt,
+            use_general_knowledge_on_miss=use_general_knowledge_on_miss,
+            tool_output_compress_thrd=agent_options.intent_recognition_options.tool_output_compress_thrd,
+        )
+
+        # 创建模型节点
+        model_node = std_make_model_node(
+            llm=llm,
+            non_thinking_llm=non_thinking_llm,
+            tools=tools,
+            node_options=node_options,
+        )
+
+        return model_node
+
     def _prepare_agent_tools(
+        self,
         *,
         extra_tools: List[BaseTool] = None,
         support_vision: bool = False,
         ignore_errors: bool = False,
+        langchain_middleware: Sequence[AgentMiddleware],
     ) -> List[BaseTool]:
         tools: List[BaseTool] = []
+        # 加载所有传入的工具
         if extra_tools:
             tools.extend(extra_tools or [])
+        # 加载图片工具
         if support_vision:
             tools.append(add_image_to_chat_context)
+        # 加载由中间间导入的工具
+        middleware_tools = [t for m in langchain_middleware for t in getattr(m, "tools", [])]
+        tools.extend(middleware_tools)
+        # 为所有工具添加忽略错误表示
         if ignore_errors:
             # NOTE: 在 StructuredChatAgent 中修改 tools 中的参数
             # 使得如果 LLM 调用工具时如果出现以下类型的错误，可以重新尝试，继续进行而不阻碍过程
@@ -136,14 +417,46 @@ class ReActAgent:
                 tools[i].handle_tool_error = True
         return tools
 
-    @staticmethod
-    def _prepare_checkpointer(*, checkpointer: BaseCheckpointSaver | None = None):
+    def _prepare_agent_tool_node(
+        self,
+        tools: List[BaseTool],
+        *,
+        name: str = "tools",
+        tags: List[str] | None = None,
+        langchain_middleware: Sequence[AgentMiddleware],
+        node_options: ToolNodeSettings = None,
+    ):
+        # 处理执行时的包装器
+        middleware_w_wrap_tool_call = [
+            m
+            for m in langchain_middleware
+            if m.__class__.wrap_tool_call is not AgentMiddleware.wrap_tool_call
+            or m.__class__.awrap_tool_call is not AgentMiddleware.awrap_tool_call
+        ]
+        middleware_w_awrap_tool_call = [
+            m
+            for m in langchain_middleware
+            if m.__class__.awrap_tool_call is not AgentMiddleware.awrap_tool_call
+            or m.__class__.wrap_tool_call is not AgentMiddleware.wrap_tool_call
+        ]
+        if tools:
+            return build_tool_node(
+                tools=tools,
+                name=name,
+                tags=tags,
+                wrappers=middleware_w_wrap_tool_call,
+                async_wrappers=middleware_w_awrap_tool_call,
+                node_options=node_options,
+            )
+        return None
+
+    def _prepare_checkpointer(self, *, checkpointer: BaseCheckpointSaver | None = None):
         if isinstance(checkpointer, BaseCheckpointSaver):
             return checkpointer
         return MemorySaver()
 
-    @staticmethod
     def _prepare_store(
+        self,
         *,
         store: "BaseStore | None",
         file_store: Optional[ByteStore],
@@ -183,16 +496,10 @@ class ReActAgent:
 
         return "end"
 
-    @classmethod
     def _build_graph(
-        cls,
+        self,
         *,
-        llm: BaseChatModel,
-        knowledge_llm: BaseChatModel,
-        tools: List[BaseTool],
-        use_structured_response: bool,
         agent_options: AgentOptions,
-        enable_query_clarification: Optional[bool],
         state_schema,
         callbacks: List,
         debug: bool,
@@ -202,6 +509,9 @@ class ReActAgent:
         interrupt_after,
         name,
         cache,
+        knowledge_node,
+        model_node,
+        tool_node,
     ) -> Tuple["Runnable", RunnableConfig]:
         """构建 LangGraph 图。
 
@@ -211,12 +521,7 @@ class ReActAgent:
         - 如果有工具: model → (条件) → tools / END, tools → model
 
         Args:
-            llm: 语言模型
-            knowledge_llm: 知识库语言模型
-            tools: 工具列表
-            use_structured_response: 是否使用结构化输出模式
             agent_options: Agent 配置选项
-            enable_query_clarification: 是否启用查询澄清
             state_schema: 状态模式
             callbacks: 回调列表
             debug: 是否开启调试模式
@@ -226,60 +531,25 @@ class ReActAgent:
             interrupt_after: 中断后节点列表
             name: 图名称
             cache: 缓存
+            knowledge_node: 知识库节点
+            model_node: 模型节点
+            tool_node: 工具节点
 
         Returns:
             (CompiledGraph, RunnableConfig) 元组
         """
         graph = StateGraph(state_schema=state_schema)
 
-        # 处理 enable_query_clarification 的默认值
-        if enable_query_clarification is None:
-            model_name = getattr(llm, "model_name", "")
-            enable_query_clarification = model_name == "gpt-4o" or "deepseek" in model_name or "qwq" in model_name
-
-        # 从 agent_options 获取配置
-        knowledge_query_options = agent_options.knowledge_query_options
-        rejection_message = knowledge_query_options.rejection_message
-        role_prompt = knowledge_query_options.role_prompt
-        use_general_knowledge_on_miss = knowledge_query_options.is_response_when_no_knowledgebase_match
-
-        # 检查是否配置了知识库
-        has_knowledge = knowledge_query_options.knowledge_bases or knowledge_query_options.knowledge_items
-
-        # 构建上下文处理器（传入 tools 参数）
-        context_processor = ContextProcessor(
-            use_structured_response=use_structured_response,
-            enable_query_clarification=enable_query_clarification,
-            rejection_message=rejection_message,
-            role_prompt=role_prompt,
-            use_general_knowledge_on_miss=use_general_knowledge_on_miss,
-            tools=tools,
-            tool_output_compress_thrd=agent_options.intent_recognition_options.tool_output_compress_thrd,
-        )
-
         # 如果配置了知识库,添加 knowledge 节点
-        if has_knowledge:
-            from aidev_agent.core.nodes.knowledge import make_knowledge_node
-
-            knowledge_node = make_knowledge_node(
-                llm=knowledge_llm,
-                agent_options=agent_options,
-            )
+        if knowledge_node:
             graph.add_node("knowledge", knowledge_node)
             graph.add_edge(START, "knowledge")
-
-        # 创建模型节点（不再传入 tools 参数，改为通过 context_processor 获取）
-        model_node = std_make_model_node(
-            llm=llm,
-            context_processor=context_processor,
-            node_options=ModelNodeSettings(use_structured_response=use_structured_response),
-        )
 
         # 添加模型节点
         graph.add_node("model", model_node)
 
         # 根据是否有知识库节点,连接不同的边
-        if has_knowledge:
+        if knowledge_node:
             # 有知识库: knowledge → model
             graph.add_edge("knowledge", "model")
         else:
@@ -287,13 +557,12 @@ class ReActAgent:
             graph.add_edge(START, "model")
 
         # 如果有工具，添加工具节点和条件路由
-        if tools:
-            tool_node = build_tool_node(tools=tools)
+        if tool_node:
             graph.add_node("tools", tool_node)
             # model → (should_continue) → tools / end
             graph.add_conditional_edges(
                 "model",
-                cls._should_continue,
+                self._should_continue,
                 {
                     "tools": "tools",
                     "end": END,
@@ -307,128 +576,106 @@ class ReActAgent:
 
         compile_graph = graph.compile(
             checkpointer=checkpointer,
+            cache=cache,
             store=store,
             interrupt_before=interrupt_before,
             interrupt_after=interrupt_after,
             debug=debug,
             name=name,
-            cache=cache,
         )
 
         cfg = RunnableConfig()
         cfg["callbacks"] = callbacks
         cfg["configurable"] = {
-            "thread_id": uuid.uuid4(),
             "agent_options": agent_options,
             "debug": debug,
         }
-
         return compile_graph, cfg
 
-    @classmethod
-    def get_agent_executor(
-        cls,
-        *,
-        llm: BaseChatModel,
-        knowledge_llm: BaseChatModel,
-        non_thinking_llm: BaseChatModel | str = None,
-        extra_tools: Optional[List[BaseTool]] = None,
-        prefix: Optional[str] = None,
-        role_prompt: Optional[str] = None,
-        suffix: Optional[str] = None,
-        format_instructions: Optional[str] = None,
-        chat_history: Optional[List[BaseMessage]] = None,
-        callbacks: Optional[List] = None,
-        knowledge_items: Optional[List[Dict]] = None,
-        knowledge_bases: Optional[List[Dict]] = None,
-        file_store: Optional[ByteStore] = None,
-        support_vision: bool = False,
-        llm_token_limit=28000,
-        agent_options: Optional[AgentOptions] = None,
-        state_schema: type[AgentState[ResponseT]] | None = None,
-        checkpointer: BaseCheckpointSaver | None = None,
-        store: "BaseStore | None" = None,
-        interrupt_before: list[str] | None = None,
-        interrupt_after: list[str] | None = None,
-        debug: bool = False,
-        name: str | None = None,
-        cache: BaseCache | None = None,
-        intent_recognition_kwargs=None,
-        enable_query_clarification: Optional[bool] = None,
-        **kwargs,
-    ) -> Tuple["Runnable", RunnableConfig]:
-        """创建 Agent 执行器。
+    def build(self) -> Tuple["Runnable", RunnableConfig]:
+        """构建并返回 compiled graph 与 runnable config。"""
+        if self._llm is None:
+            raise ValueError("ReActAgentBuilder 构建失败：缺少 llm，请先调用 set_llm(...) 或 set_bkai_options(...)")
 
-        Args:
-            llm: 语言模型
-            knowledge_llm: 知识库语言模型
-            extra_tools: 额外工具列表
-            prefix: 系统提示前缀
-            role_prompt: 角色提示
-            suffix: 后缀（未使用）
-            format_instructions: 格式指令（未使用）
-            chat_history: 聊天历史
-            callbacks: 回调列表
-            knowledge_items: 知识项
-            knowledge_bases: 知识库
-            file_store: 文件存储
-            support_vision: 是否支持视觉
-            llm_token_limit: LLM token 限制
-            agent_options: Agent 配置选项
-            state_schema: 状态模式
-            checkpointer: 检查点
-            store: 存储
-            interrupt_before: 中断前节点列表
-            interrupt_after: 中断后节点列表
-            debug: 是否开启调试模式
-            name: 图名称
-            cache: 缓存
-            intent_recognition_kwargs: 意图识别参数
-            enable_query_clarification: 是否启用查询澄清
+        callbacks = list(self._callbacks or [])
+        non_thinking_llm = self._non_thinking_llm or self._llm
+        use_structured_response = bool(is_model_without_function_calling(self._llm) and self._extra_tools)
 
-        Returns:
-            (CompiledGraph, RunnableConfig) 元组
-        """
-        callbacks = callbacks or []
-        use_structured_response = bool(is_model_without_function_calling(llm) and extra_tools)
         # 统一处理 agent_options
-        prepared_agent_options = cls._prepare_agent_options(
-            agent_options,
-            knowledge_items=knowledge_items,
-            knowledge_bases=knowledge_bases,
-            role_prompt=role_prompt,
-            intent_recognition_kwargs=intent_recognition_kwargs,
+        prepared_agent_options = self._prepare_agent_options(
+            self._agent_options,
+            knowledge_items=self._knowledge_items,
+            knowledge_bases=self._knowledge_bases,
+            role_prompt=self._role_prompt,
+            intent_recognition_kwargs=self._intent_recognition_kwargs,
         )
+
+        # 若配置了知识库/知识项，则需要 knowledge_llm
+        has_knowledge = bool(
+            prepared_agent_options.knowledge_query_options.knowledge_bases
+            or prepared_agent_options.knowledge_query_options.knowledge_items
+        )
+        if has_knowledge and self._knowledge_llm is None:
+            raise ValueError("ReActAgentBuilder 构建失败：检测到知识库配置，但 knowledge_llm 为空")
+
+        # checkpointer 由调用方决定（ChatCompletionAgent 会在有需要时注入 thread_id 等 configurable key）
+        checkpointer = self._checkpointer
+
         # 统一处理 tools
         tool_ignore_errors = use_structured_response
-        tools: List[BaseTool] = cls._prepare_agent_tools(
-            extra_tools=extra_tools, support_vision=support_vision, ignore_errors=tool_ignore_errors
+        tools: List[BaseTool] = self._prepare_agent_tools(
+            extra_tools=self._extra_tools,
+            support_vision=self._support_vision,
+            ignore_errors=tool_ignore_errors,
+            langchain_middleware=self._langchain_middleware,
         )
-        # 统一处理 checkpoint
-        # checkpointer = cls._prepare_checkpointer(checkpointer=checkpointer)
-        # 初始化 Store
-        store = cls._prepare_store(store=store, file_store=file_store)
-        # 定制 ReAct chat prompt template
-        if state_schema is None:
-            state_schema = DefaultState
-        # 构建图
-        compile_graph, cfg = cls._build_graph(
-            llm=llm,
-            knowledge_llm=knowledge_llm,
+
+        # 统一处理 knowledge_node
+        knowledge_node = self._prepare_agent_knowledge_node(
+            knowledge_llm=self._knowledge_llm,
+            agent_options=prepared_agent_options,
+        )
+
+        # 统一处理 model_node
+        model_node = self._prepare_agent_model_node(
+            llm=self._llm,
+            non_thinking_llm=non_thinking_llm,
             tools=tools,
             use_structured_response=use_structured_response,
+            enable_query_clarification=self._enable_query_clarification,
             agent_options=prepared_agent_options,
-            enable_query_clarification=enable_query_clarification,
+        )
+
+        # 统一处理 tool_node
+        tool_node = self._prepare_agent_tool_node(
+            tools,
+            langchain_middleware=self._langchain_middleware,
+            node_options=self._tool_node_options,
+        )
+
+        # 初始化 Store
+        store = self._prepare_store(store=self._store, file_store=self._file_store)
+
+        # 定制 ReAct chat prompt template
+        state_schema = self._state_schema or DefaultState
+
+        # 构建图
+        compile_graph, cfg = self._build_graph(
+            agent_options=prepared_agent_options,
             state_schema=state_schema,
             callbacks=callbacks,
-            debug=debug,
+            debug=self._debug,
             checkpointer=checkpointer,
             store=store,
-            interrupt_before=interrupt_before,
-            interrupt_after=interrupt_after,
-            name=name,
-            cache=cache,
+            interrupt_before=self._interrupt_before,
+            interrupt_after=self._interrupt_after,
+            name=self._name,
+            cache=self._cache,
+            knowledge_node=knowledge_node,
+            model_node=model_node,
+            tool_node=tool_node,
         )
+
         # 添加适配器
         compile_graph.agent = AgentStreamAdapter()
         return compile_graph, cfg

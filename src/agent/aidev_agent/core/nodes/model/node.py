@@ -19,90 +19,43 @@ to the current version of the project delivered to anyone in the future.
 from __future__ import annotations
 
 import logging
-from typing import Annotated, Any, Dict
+from typing import Annotated, Any, Dict, List
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AnyMessage
-from langchain_core.runnables import RunnableConfig
+from langchain_core.messages import AnyMessage, BaseMessage
+from langchain_core.runnables import Runnable, RunnableConfig
+from langchain_core.tools import BaseTool
 from langgraph._internal._runnable import RunnableCallable
 from langgraph.graph.message import add_messages
 from langgraph.store.base import BaseStore
 from typing_extensions import Required, TypedDict
 
 from aidev_agent.packages.langchain_core.output_parsers import StructuredOutputToToolMessageParser
-from aidev_agent.packages.langchain_core.tools.render import render_text_description_and_args
 
-from .context_processor import ContextProcessor
-from .pydantic_models import ModelNodeSettings
+from .basic_middleware import (
+    BaseVariablesMiddleware,
+    DeepSeekR1VariablesMiddleware,
+    SpecialVariablesMiddleware,
+)
+from .context_assembly import ContextAssembly
+from .prompt_middleware import (
+    BeijingTimeMiddleware,
+    DecisionSystemMiddleware,
+    NoSystemInThinkingMiddleware,
+    RoleDefinitionMiddleware,
+    StructuredChatFormatMiddleware,
+)
+from .pydantic_models import ModelNodeSettings, ProcessorContext
+from .token_compression import (
+    ChatHistoryCompressionMiddleware,
+    KnowledgeCompressionMiddleware,
+    KnowledgeCompressor,
+    ToolOutputCompressor,
+    ToolOutputLengthCompressionMiddleware,
+    ToolOutputTokenCompressionMiddleware,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def _prepare_model_chain(
-    *,
-    llm: BaseChatModel,
-    context_processor: ContextProcessor,
-    use_structured_response: bool,
-    enable_parallel_tool_calls: bool,
-    state: "ModelState",
-    config: RunnableConfig,
-    store: BaseStore,
-) -> tuple[Any, Dict[str, Any]]:
-    """
-    准备模型推理所需的 chain 和上下文变量。
-
-    抽取 model_node 和 amodel_node 的公共逻辑，包括：
-    - 获取工具列表
-    - 获取 prompt 模板
-    - 准备上下文变量
-    - 根据模式构建 chain
-
-    Args:
-        llm: 语言模型
-        context_processor: 上下文处理器实例
-        use_structured_response: 是否使用结构化输出模式
-        enable_parallel_tool_calls: 是否启用并行工具调用
-        state: 状态字典
-        config: Runnable 配置
-        store: LangGraph Store
-
-    Returns:
-        tuple: (chain, context_variables)
-    """
-    # 使用 ContextProcessor 获取工具
-    tools = context_processor.get_choice_tools(state, config)
-    # 使用 ContextProcessor 选择 prompt 模板
-    chat_prompt_template = context_processor.get_chat_prompt_template(state, config, store)
-    # 使用 ContextProcessor 准备上下文变量
-    context_variables = context_processor.get_chat_prompt_variables(
-        chat_prompt_template=chat_prompt_template,
-        state=state,
-        config=config,
-    )
-
-    # 根据模式构建不同的 chain
-    if use_structured_response:
-        # 创建结构化输出解析器（用于 use_structured_response 模式）
-        # 传递 llm 以支持 DeepSeek R1 等模型的特殊处理
-        # 注意：不传递 tools，工具存在性校验由 ToolNode 负责
-        tool_message_parser = StructuredOutputToToolMessageParser(
-            llm=llm,
-            enable_parallel_tool_calls=enable_parallel_tool_calls,
-        )
-        # 结构化输出模式：llm 输出经过 parser 转换为带 tool_calls 的 AIMessage
-        chain = chat_prompt_template | llm | tool_message_parser
-        # 添加工具描述到上下文变量
-        context_variables = {
-            **context_variables,
-            "tools": render_text_description_and_args(list(tools)),
-            "tool_names": ",".join([t.name for t in tools]),
-        }
-    else:
-        # 原生工具调用模式：使用 bind_tools 绑定工具
-        llm_with_tools = llm.bind_tools(tools) if tools else llm
-        chain = chat_prompt_template | llm_with_tools
-
-    return chain, context_variables
 
 
 class ModelState(TypedDict, total=False):
@@ -117,17 +70,90 @@ class ModelState(TypedDict, total=False):
     messages: Required[Annotated[list[AnyMessage], add_messages]]
 
 
+def _prepare_model_chain(
+    *,
+    llm: BaseChatModel,
+    context_assembly: ContextAssembly,
+    use_structured_response: bool,
+    enable_parallel_tool_calls: bool,
+    state: ModelState,
+    config: RunnableConfig,
+    store: BaseStore,
+) -> tuple[Runnable, list[BaseMessage]]:
+    """
+    准备模型推理所需的 LLM chain 和渲染后的 messages。
+
+    抽取 model_node 和 amodel_node 的公共逻辑，包括：
+    - 获取工具列表
+    - 获取 prompt 模板
+    - 准备上下文变量
+    - 渲染 prompt -> messages
+    - 构建 LLM chain（不含 prompt）
+
+    Args:
+        llm: 语言模型
+        context_assembly: 上下文组件实例
+        use_structured_response: 是否使用结构化输出模式
+        enable_parallel_tool_calls: 是否启用并行工具调用
+        state: 状态字典
+        config: Runnable 配置
+        store: LangGraph Store
+
+    Returns:
+        tuple: (llm_chain, messages)
+            - llm_chain: LLM chain（可能包含 parser 或已绑定工具）
+            - messages: 渲染后的消息列表（可观测点）
+    """
+    # 创建共享的 ProcessorContext（整个 node 执行过程中复用）
+    ctx = ProcessorContext(
+        state=state,
+        config=config,
+        store=store,
+        llm=llm,
+    )
+
+    # 使用 ContextAssembly 获取工具
+    tools = context_assembly.get_choice_tools(ctx)
+    # 使用 ContextAssembly 选择 prompt 模板（会设置 ctx.chat_prompt_template）
+    chat_prompt_template = context_assembly.get_chat_prompt_template(ctx)
+    # 使用 ContextAssembly 准备上下文变量
+    context_variables = context_assembly.get_chat_prompt_variables(ctx)
+    # 渲染 prompt -> messages（可观测点）
+    prompt_value = chat_prompt_template.invoke(context_variables, config=config)
+    messages: list[BaseMessage] = prompt_value.to_messages()
+
+    # 根据模式构建不同的 llm_chain（不含 prompt）
+    if use_structured_response:
+        # 创建结构化输出解析器（用于 use_structured_response 模式）
+        # 传递 llm 以支持 DeepSeek R1 等模型的特殊处理
+        # 注意：不传递 tools，工具存在性校验由 ToolNode 负责
+        tool_message_parser = StructuredOutputToToolMessageParser(
+            llm=llm,
+            enable_parallel_tool_calls=enable_parallel_tool_calls,
+        )
+        # 结构化输出模式：llm 输出经过 parser 转换为带 tool_calls 的 AIMessage
+        llm_chain: Runnable = llm | tool_message_parser
+        # 添加工具描述到上下文变量
+    else:
+        # 原生工具调用模式：使用 bind_tools 绑定工具
+        llm_chain = llm.bind_tools(tools) if tools else llm
+
+    return llm_chain, messages
+
+
 def build_model_node(
     *,
     llm: BaseChatModel,
-    context_processor: ContextProcessor,
+    non_thinking_llm: BaseChatModel = None,
+    tools: List[BaseTool],
     node_options: ModelNodeSettings | None = None,
 ) -> RunnableCallable:
     """创建标准 QA 场景的模型节点。
 
     Args:
         llm: 语言模型
-        context_processor: 上下文处理器实例（包含工具列表）
+        non_thinking_llm: 辅助模型
+        tools: 工具列表（全量工具，内部会根据 state 决策筛选）
         node_options: 模型节点选项（可选，不传则使用默认值）
 
     Returns:
@@ -139,6 +165,76 @@ def build_model_node(
 
     use_structured_response = node_options.use_structured_response
     enable_parallel_tool_calls = node_options.enable_parallel_tool_calls
+
+    # NOTE: `chat_prompt_templates` is kept for backwards compatibility but is no longer used.
+
+    # 在内部构建 ContextAssembly，并手动加载所有必需的中间件
+    context_assembly = ContextAssembly(tools=tools)
+    # 加载和构造 prompt-template 相关的中间件
+    context_assembly.add_middleware(
+        "template",
+        StructuredChatFormatMiddleware(use_structured_response=use_structured_response),
+    )
+    context_assembly.add_middleware("template", RoleDefinitionMiddleware())
+    context_assembly.add_middleware(
+        "template",
+        DecisionSystemMiddleware(enable_query_clarification=node_options.enable_query_clarification),
+    )
+    context_assembly.add_middleware("template", BeijingTimeMiddleware())
+    context_assembly.add_middleware("template", NoSystemInThinkingMiddleware())
+    # 加载和构造 prompt-variables 相关的中间件
+    context_assembly.add_middleware("variable", BaseVariablesMiddleware())
+    context_assembly.add_middleware(
+        "variable",
+        SpecialVariablesMiddleware(
+            use_structured_response=use_structured_response,
+            use_general_knowledge_on_miss=node_options.use_general_knowledge_on_miss,
+            rejection_message=node_options.rejection_message,
+            role_prompt=node_options.role_prompt,
+            enable_parallel_tool_calls=enable_parallel_tool_calls,
+        ),
+    )
+    # 知识库的压缩器
+    context_assembly.add_middleware(
+        "variable",
+        KnowledgeCompressionMiddleware(
+            knowledge_compressor_func=KnowledgeCompressor(non_thinking_llm),
+            token_limit=node_options.token_limit,
+            token_margin=node_options.token_margin,
+        ),
+    )
+    # 基于字符长度阈值的工具输出压缩
+    tool_output_compressor = ToolOutputCompressor(
+        non_thinking_llm, compressor_type=node_options.tool_output_compressor_type
+    )
+    context_assembly.add_middleware(
+        "variable",
+        ToolOutputLengthCompressionMiddleware(
+            tool_output_compress_thrd=node_options.tool_output_compress_thrd,
+            tool_output_compressor_func=tool_output_compressor,
+        ),
+    )
+    # 基于 Token 超限的工具输出压缩
+    context_assembly.add_middleware(
+        "variable",
+        ToolOutputTokenCompressionMiddleware(
+            tool_output_compressor_func=tool_output_compressor,
+            token_limit=node_options.token_limit,
+            token_margin=node_options.token_margin,
+        ),
+    )
+    context_assembly.add_middleware(
+        "variable",
+        DeepSeekR1VariablesMiddleware(use_deepseek_r1_models_process=node_options.use_deepseek_r1_models_process),
+    )
+
+    context_assembly.add_middleware(
+        "variable",
+        ChatHistoryCompressionMiddleware(
+            token_limit=node_options.token_limit,
+            token_margin=node_options.token_margin,
+        ),
+    )
 
     def model_node(
         state: ModelState,
@@ -162,17 +258,18 @@ def build_model_node(
         Returns:
             包含 messages 的字典
         """
-        chain, context_variables = _prepare_model_chain(
+        llm_chain, messages = _prepare_model_chain(
             llm=llm,
-            context_processor=context_processor,
+            context_assembly=context_assembly,
             use_structured_response=use_structured_response,
             enable_parallel_tool_calls=enable_parallel_tool_calls,
             state=state,
             config=config,
             store=store,
         )
-        # 调用模型
-        response = chain.invoke(context_variables, config=config)
+
+        # 调用 LLM chain
+        response = llm_chain.invoke(messages, config=config)
         return {"messages": [response]}
 
     async def amodel_node(
@@ -197,17 +294,18 @@ def build_model_node(
         Returns:
             包含 messages 的字典
         """
-        chain, context_variables = _prepare_model_chain(
+        llm_chain, messages = _prepare_model_chain(
             llm=llm,
-            context_processor=context_processor,
+            context_assembly=context_assembly,
             use_structured_response=use_structured_response,
             enable_parallel_tool_calls=enable_parallel_tool_calls,
             state=state,
             config=config,
             store=store,
         )
-        # 异步调用模型
-        response = await chain.ainvoke(context_variables, config=config)
+
+        # 异步调用 LLM chain
+        response = await llm_chain.ainvoke(messages, config=config)
         return {"messages": [response]}
 
     return RunnableCallable(model_node, amodel_node, trace=True)

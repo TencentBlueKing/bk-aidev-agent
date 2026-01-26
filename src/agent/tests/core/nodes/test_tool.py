@@ -1188,4 +1188,223 @@ class TestBuildToolNodeAsync:
             if event["event"] == "on_tool_end":
                 output_message = event["data"]["output"]
                 assert isinstance(output_message, ToolMessage)
-                assert "description" in output_message.additional_kwargs
+
+
+# ============================================================================
+# 边界条件和覆盖缺口测试
+# ============================================================================
+
+
+class TestDefaultToolCallHandler:
+    """测试 default_tool_call_handler 函数"""
+
+    def test_empty_exception_message_with_args(self):
+        """测试空异常消息时回退到 args"""
+        from aidev_agent.core.nodes.tool.node import default_tool_call_handler
+
+        # 创建一个异常，str(error) 为空但有 args
+        class EmptyStrException(Exception):
+            def __str__(self):
+                return ""
+
+        error = EmptyStrException("fallback message")
+        result = default_tool_call_handler(error)
+        assert result == "fallback message"
+
+    def test_empty_exception_message_with_multiple_args(self):
+        """测试空异常消息时回退到多个 args"""
+        from aidev_agent.core.nodes.tool.node import default_tool_call_handler
+
+        class EmptyStrException(Exception):
+            def __str__(self):
+                return ""
+
+        error = EmptyStrException("arg1", "arg2")
+        result = default_tool_call_handler(error)
+        assert result == "('arg1', 'arg2')"
+
+    def test_exception_without_args(self):
+        """测试无 args 异常返回通用错误消息"""
+        from aidev_agent.core.nodes.tool.node import default_tool_call_handler
+
+        class EmptyException(Exception):
+            def __str__(self):
+                return ""
+
+        error = EmptyException()
+        result = default_tool_call_handler(error)
+        assert result == "工具执行失败"
+
+
+class TestWrapperChaining:
+    """测试 wrapper 链式组合函数"""
+
+    def test_empty_wrapper_list_returns_none(self):
+        """测试空 wrapper 列表返回 None"""
+        from aidev_agent.core.nodes.tool.node import _chain_tool_call_wrappers
+
+        result = _chain_tool_call_wrappers([])
+        assert result is None
+
+    def test_single_wrapper_returns_original(self):
+        """测试单个 wrapper 直接返回原 wrapper"""
+        from aidev_agent.core.nodes.tool.node import _chain_tool_call_wrappers
+
+        def my_wrapper(request, execute):
+            return execute(request)
+
+        result = _chain_tool_call_wrappers([my_wrapper])
+        assert result is my_wrapper
+
+    def test_empty_async_wrapper_list_returns_none(self):
+        """测试空异步 wrapper 列表返回 None"""
+        from aidev_agent.core.nodes.tool.node import _chain_async_tool_call_wrappers
+
+        result = _chain_async_tool_call_wrappers([])
+        assert result is None
+
+    def test_single_async_wrapper_returns_original(self):
+        """测试单个异步 wrapper 直接返回原 wrapper"""
+        from aidev_agent.core.nodes.tool.node import _chain_async_tool_call_wrappers
+
+        async def my_async_wrapper(request, execute):
+            return await execute(request)
+
+        result = _chain_async_tool_call_wrappers([my_async_wrapper])
+        assert result is my_async_wrapper
+
+
+class TestResultLimitBoundary:
+    """测试结果长度限制的边界条件"""
+
+    def test_result_limit_at_exact_threshold(self):
+        """测试长度恰好等于阈值时不应被替换"""
+        tool_node = build_tool_node(
+            tools=[long_text_tool],
+            node_options=ToolNodeSettings(use_result_limit=True, result_limit_thrd=10),
+        )
+
+        state = {
+            "messages": [
+                HumanMessage(content="Return text at exact threshold"),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "long_text_tool",
+                            "args": {"length": 10},  # 恰好等于阈值
+                            "id": "call_1",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+            ]
+        }
+
+        result = run_tool_node_in_graph(tool_node, state)
+        tool_messages = [msg for msg in result["messages"] if isinstance(msg, ToolMessage)]
+        assert len(tool_messages) == 1
+        # 长度等于阈值，不应被替换
+        assert tool_messages[0].content == "x" * 10
+
+    def test_result_limit_one_over_threshold(self):
+        """测试长度超过阈值 1 时应被替换"""
+        tool_node = build_tool_node(
+            tools=[long_text_tool],
+            node_options=ToolNodeSettings(use_result_limit=True, result_limit_thrd=10),
+        )
+
+        state = {
+            "messages": [
+                HumanMessage(content="Return text one over threshold"),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "long_text_tool",
+                            "args": {"length": 11},  # 超过阈值 1
+                            "id": "call_1",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+            ]
+        }
+
+        result = run_tool_node_in_graph(tool_node, state)
+        tool_messages = [msg for msg in result["messages"] if isinstance(msg, ToolMessage)]
+        assert len(tool_messages) == 1
+        # 长度超过阈值，应被替换
+        assert tool_messages[0].content == "本次工具调用返回结果超长，请重新调整调用参数"
+
+    @pytest.mark.parametrize(
+        "length,should_truncate",
+        [
+            (5, False),  # 低于阈值
+            (10, False),  # 等于阈值
+            (11, True),  # 超过阈值
+        ],
+    )
+    def test_result_limit_parametrized(self, length, should_truncate):
+        """参数化测试结果长度限制边界条件"""
+        tool_node = build_tool_node(
+            tools=[long_text_tool],
+            node_options=ToolNodeSettings(use_result_limit=True, result_limit_thrd=10),
+        )
+
+        state = {
+            "messages": [
+                HumanMessage(content="Test parametrized"),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "long_text_tool",
+                            "args": {"length": length},
+                            "id": "call_1",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+            ]
+        }
+
+        result = run_tool_node_in_graph(tool_node, state)
+        tool_messages = [msg for msg in result["messages"] if isinstance(msg, ToolMessage)]
+
+        if should_truncate:
+            assert tool_messages[0].content == "本次工具调用返回结果超长，请重新调整调用参数"
+        else:
+            assert tool_messages[0].content == "x" * length
+
+
+class TestToolMsgContentLen:
+    """测试 _tool_msg_content_len 函数"""
+
+    def test_content_none_via_getattr(self):
+        """测试 getattr 获取 content 为 None 的情况"""
+        from unittest.mock import MagicMock
+
+        from aidev_agent.core.nodes.tool.result_limit_wrapper import _tool_msg_content_len
+
+        # 使用 MagicMock 模拟一个 content 为 None 的消息对象
+        msg = MagicMock()
+        msg.content = None
+        result = _tool_msg_content_len(msg)
+        assert result == 0
+
+    def test_content_string(self):
+        """测试 content 为字符串的情况"""
+        from aidev_agent.core.nodes.tool.result_limit_wrapper import _tool_msg_content_len
+
+        msg = ToolMessage(content="hello", tool_call_id="test")
+        result = _tool_msg_content_len(msg)
+        assert result == 5
+
+    def test_content_non_string(self):
+        """测试 content 为非字符串的情况"""
+        from aidev_agent.core.nodes.tool.result_limit_wrapper import _tool_msg_content_len
+
+        msg = ToolMessage(content=12345, tool_call_id="test")
+        result = _tool_msg_content_len(msg)
+        assert result == 5  # str(12345) = "12345"

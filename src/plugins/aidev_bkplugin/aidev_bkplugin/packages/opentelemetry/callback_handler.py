@@ -20,7 +20,7 @@ import logging
 import threading
 import time
 import traceback
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Dict, List, Optional, Union
@@ -163,12 +163,8 @@ class BkAidevAgentInjector:
             "agent.session.caller_executor": execute_kwargs.caller_executor,
             "agent.session.caller_order_type": execute_kwargs.caller_order_type,
         }
-        if self.parent_context is not None:
-            # 没有父 run_id，但存在上游传播的 Trace Context
-            ctx = self.parent_context
-        else:
-            # 都没有，使用当前 context
-            ctx = None
+        # 如果存在上游传播的 Trace Context，则使用它，否则使用当前 context
+        ctx = self.parent_context if self.parent_context is not None else None
 
         if self.debug:
             attributes["debug.thread_id"] = threading.current_thread().name
@@ -188,10 +184,15 @@ class BkAidevAgentInjector:
         self.context_token = token
 
     @dont_throw
-    def on_bk_agent_end(self, **kwargs: Any) -> None:
+    def on_bk_agent_end(self, error: Optional[Exception] = None, **kwargs: Any) -> None:
         """蓝鲸 Agent 结束回调，作为整个 Agent 执行的出口
 
         正常结束时在这里补充最终统计信息并关闭根 Span。
+        如果传入 error 参数，则标记为失败状态。
+
+        Args:
+            error: 可选的异常对象，如果传入则标记 Span 为错误状态
+            **kwargs: 其他参数
         """
         # 结束时间（北京时间）
         now = datetime.now(pytz.timezone(TIMEZONE))
@@ -199,12 +200,19 @@ class BkAidevAgentInjector:
         end_time_unix_nano = int(now.timestamp() * 1_000_000_000)
 
         # 设置根 Span 的最终属性
-        _set_span_attribute(self.root_span, "agent.status", "completed")
         _set_span_attribute(self.root_span, "agent.end_time", end_time_str)
         _set_span_attribute(self.root_span, "agent.end_time_unix_nano", end_time_unix_nano)
 
-        # 设置状态为成功
-        self.root_span.set_status(Status(StatusCode.OK))
+        if error is not None:
+            # 执行过程中发生异常，标记为失败
+            _set_span_attribute(self.root_span, "agent.status", "failed")
+            _set_span_attribute(self.root_span, "agent.error_message", str(error))
+            self.root_span.set_status(Status(StatusCode.ERROR, str(error)))
+            self.root_span.record_exception(error)
+        else:
+            # 正常结束，标记为成功
+            _set_span_attribute(self.root_span, "agent.status", "completed")
+            self.root_span.set_status(Status(StatusCode.OK))
 
         # 使用 _end_span 结束根 Span
         self.root_span.end()
@@ -332,17 +340,15 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
             current_association_properties = context_api.get_value("association_properties") or {}
             # Sanitize metadata values to ensure they're compatible with OpenTelemetry
             sanitized_metadata = {k: _sanitize_metadata_value(v) for k, v in metadata.items() if v is not None}
-            try:
+            with suppress(Exception):
+                # If setting association properties fails, continue without them
+                # This doesn't affect the core span functionality
                 context_api.attach(
                     context_api.set_value(
                         "association_properties",
                         {**current_association_properties, **sanitized_metadata},
                     )
                 )
-            except Exception:
-                # If setting association properties fails, continue without them
-                # This doesn't affect the core span functionality
-                pass
 
         # 确定父级 Context
         if parent_run_id and parent_run_id in self.spans:
@@ -571,11 +577,9 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
 
         self._end_span(span, run_id)
         if parent_run_id is None:
-            try:
+            # If context reset fails, it's not critical for functionality
+            with suppress(Exception):
                 context_api.attach(context_api.set_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, False))
-            except Exception:
-                # If context reset fails, it's not critical for functionality
-                pass
 
     @dont_throw
     def on_chain_error(

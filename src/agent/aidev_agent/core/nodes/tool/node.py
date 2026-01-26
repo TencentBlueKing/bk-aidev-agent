@@ -18,7 +18,7 @@ to the current version of the project delivered to anyone in the future.
 
 import logging
 from collections.abc import Awaitable, Sequence
-from typing import Callable, List
+from typing import Callable
 
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool
@@ -48,7 +48,7 @@ def default_tool_call_handler(error: Exception) -> str:
         # ValueError: Invalid input -> "Invalid input"
         # KeyError: 'missing_key' -> "'missing_key'"
     """
-    logger.exception(f"Tool execution error: {error}")
+    logger.exception("Tool execution error: %s", error)
     error_message = str(error)
 
     # 如果异常消息为空，尝试获取异常的 args
@@ -159,7 +159,7 @@ def build_tool_node(
     tools: Sequence[BaseTool | Callable],
     *,
     name: str = "tools",
-    tags: List[str] | None = None,
+    tags: list[str] | None = None,
     handle_tool_errors: bool
     | str
     | Callable[..., str]
@@ -200,7 +200,7 @@ def build_tool_node(
         tool_node = build_tool_node(tools=[my_tool], wrappers=[my_wrapper])
 
         # 忽略所有错误
-        tool_node = build_tool_node(tools=[my_tool], ignore_errors=True)
+        tool_node = build_tool_node(tools=[my_tool], handle_tool_errors=True)
     """
 
     node_options = node_options or ToolNodeSettings()

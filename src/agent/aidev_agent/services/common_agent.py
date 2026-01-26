@@ -1,6 +1,14 @@
-from typing import ClassVar, Dict
+from __future__ import annotations
 
-from aidev_agent.core.graphs.react.graph import ReActAgent
+from typing import TYPE_CHECKING, ClassVar, Dict, Tuple
+
+from aidev_agent.core.graphs.react.graph import ReActAgentBuilder
+from aidev_agent.services.pydantic_models import AgentExecutorKwargs
+
+if TYPE_CHECKING:
+    from langchain_core.runnables import Runnable, RunnableConfig
+
+    from aidev_agent.services.pydantic_models import AgentExecutorKwargs
 
 
 class CommonQAAgent:
@@ -18,17 +26,17 @@ class CommonQAAgent:
         cls.agent_classes[key] = agent_class
 
     @classmethod
-    def get_agent_executor(cls, *args, **kwargs):
-        agent, cfg = ReActAgent.get_agent_executor(*args, **kwargs)
-        # agent_class = LangGraphV1QAAgent
-        # class MyAgentState(TypedDict):
-        #     input: str
-        #
-        # builder = AgentGraphBuilder()
-        # builder = builder.with_model(
-        #     ChatModel.get_setup_instance(model="qwen3"),
-        # ).with_state_schema(MyAgentState)
-        # agent, cfg = builder.build()
-        # agent.agent = AgentStreamAdapter()
-        # print("CommonQAAgent", agent)
+    def get_agent_executor(cls, **kwargs) -> Tuple["Runnable", "RunnableConfig"]:
+        """创建 Agent 执行器（graph + runnable config）。
+
+        - ChatCompletionAgent 会传入来自 BkAi 配置平台的“通用 kwargs”。
+        - CommonQAAgent 在这里统一将 kwargs 标准化为 `AgentExecutorKwargs`（支持 extra='allow' 透传扩展字段）。
+        - 然后使用 `ReActAgentBuilder` 的 fluent API（set_bkai_options / set_xxx / add_xxx）完成构建。
+
+        返回：
+            (compiled_graph, runnable_config)
+        """
+        options = AgentExecutorKwargs.model_validate(kwargs)
+        builder = ReActAgentBuilder().set_bkai_options(options)
+        agent, cfg = builder.build()
         return agent, cfg

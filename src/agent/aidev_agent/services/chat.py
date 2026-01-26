@@ -186,6 +186,7 @@ class ChatCompletionAgent(BaseModel):
                 name="test_agui_agent",
                 graph=agent_e,
                 event_handler=self.event_handler,
+                config=cfg,
                 tools={each.name: each for each in self.tools} if self.tools else {},
             )
             return self._stream_with_queue(agui_entry, agent_input)

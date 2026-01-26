@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
-"""ContextProcessor 中间件集成测试（不依赖真实 LLM）。"""
+"""ContextAssembly 中间件集成测试（不依赖真实 LLM）。"""
 
-from aidev_agent.core.nodes.model import ContextProcessor
+from aidev_agent.core.nodes.model import ContextAssembly
+from aidev_agent.core.nodes.model.basic_middleware import BaseToolsMiddleware
+from aidev_agent.core.nodes.model.pydantic_models import ProcessorContext
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
 
@@ -20,14 +22,9 @@ def tool_b() -> str:
     return "b"
 
 
-class TestContextProcessorIntegration:
+class TestContextAssemblyIntegration:
     def test_custom_tool_middleware_can_filter_tools(self):
-        cp = ContextProcessor(
-            use_structured_response=False,
-            enable_query_clarification=True,
-            rejection_message="rej",
-            role_prompt="role",
-            use_general_knowledge_on_miss=False,
+        ca = ContextAssembly(
             tools=[tool_a, tool_b],
         )
 
@@ -35,18 +32,16 @@ class TestContextProcessorIntegration:
             next_()
             ctx.tools = [t for t in ctx.tools if t.name == "tool_b"]
 
-        cp.add_tool_middleware(filter_mw)
+        # ContextAssembly 不再在 __init__ 中自动加载基础中间件，这里显式加载工具初始化中间件
+        ca.add_middleware("tool", BaseToolsMiddleware(), prepend=True)
+        ca.add_middleware("tool", filter_mw)
 
-        tools = cp.get_choice_tools(state={}, config={})
+        ctx = ProcessorContext(state={}, config={})
+        tools = ca.get_choice_tools(ctx)
         assert [t.name for t in tools] == ["tool_b"]
 
     def test_custom_variable_middleware_can_inject_variable(self):
-        cp = ContextProcessor(
-            use_structured_response=False,
-            enable_query_clarification=True,
-            rejection_message="rej",
-            role_prompt="role",
-            use_general_knowledge_on_miss=False,
+        ca = ContextAssembly(
             tools=[],
         )
 
@@ -54,13 +49,15 @@ class TestContextProcessorIntegration:
             next_()
             ctx.variables["foo"] = "bar"
 
-        cp.add_variable_middleware(inject_mw)
+        ca.add_middleware("variable", inject_mw)
 
         prompt = ChatPromptTemplate.from_messages([("human", "{input}")])
-        variables = cp.get_chat_prompt_variables(
-            chat_prompt_template=prompt,
+        ctx = ProcessorContext(
             state={"input": "hi", "messages": []},
             config={},
+            store=None,
+            chat_prompt_template=prompt,
         )
+        variables = ca.get_chat_prompt_variables(ctx)
 
         assert variables["foo"] == "bar"

@@ -20,24 +20,73 @@ from __future__ import annotations
 
 import json
 import logging
-from copy import deepcopy
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 import pytz
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import BaseTool
 from langchain_openai.chat_models.base import _convert_dict_to_message, _convert_message_to_dict
 
 from aidev_agent.core.ag_ui.types import ActivityMessage
-from aidev_agent.core.graphs.react.prompts import MULTI_MODAL_PREFIX, general_qa_prompt_structured_chat
-from aidev_agent.enums import ContextType, Decision
+from aidev_agent.enums import ContextType
 from aidev_agent.packages.langchain_core.models.utils import is_deepseek_r1_series_models
+from aidev_agent.packages.langchain_core.tools.render import render_text_description_and_args
 
 from .pydantic_models import DEFAULT_ENABLE_PARALLEL_TOOL_CALLS, NextFunction, ProcessorContext
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Default prompt prefix
+# =============================================================================
+
+# NOTE: Keep content aligned with graphs/react/prompts.py::MULTI_MODAL_PREFIX to
+# preserve backwards-compatible default behavior when `ModelNodeSettings.prefix`
+# is not provided.
+DEFAULT_MULTI_MODAL_PREFIX = """You are a professional assistant, 
+respond to the human as helpfully,accurately,concisely as possible.
+
+User who you are serving, already upload some documents and images already. 
+The uploaded file list are:
+```
+{files_list}.
+```
+
+The documents also already split and store into a knowledgebase. 
+An knowledgebase retriever is used to retrieve the document parts in natural language query.
+
+If the theme what user talk about is closely related to the document type file name, follow the principles below:
+
+- If the file type you care about is documents, no tool is specified to retrieve,
+ use knowledgebase retriever to get the similar content.
+- If the file type you care about is documents, and required to get the full documents,
+ use `get_extracted_documents_content` to get the content directly, use file size to generate right page_size
+- When using knowledgebase retriever, limit the search to a specific file name unless the user specifies otherwise.
+
+If the theme what user talk about is closely related to the uploaded images, or user ask questions intermediately after upload images
+never forget to use `add_image_to_chat_context` tool to add images content to chat context, 
+if you already added same image before, never add it again.
+Only use `add_image_to_chat_context` tool to get information from image files.
+
+!!! If you are generating some python code, and you need to `import` some module in that code, 
+MAKE SURE to use this format `globals()['module'] = __import__('module')` instead of `import module`. !!!
+
+Follow the common principles below:
+
+- If you can't get the information you need using tools, simply say you can't complete the requirement.
+ if you already get the information you need using the tools, return Final Answer as soon as possible.
+- When you plan to answer the question, 
+ check whether the theme what user talk about is closely related with the document type file name first, 
+ ONLY if closely related, use tools to get the content, 
+ OTHERWISE never to get the content or use other tools or provide the answer directly. 
+- Make sure the language of the Final Answer is Chinese.
+- !!! The information what you get may be irrelevant to the the requirements, remove them in Final Answer, 
+    or just say I dont't know NEVER return irrelevant information in Final Answer.!!! 
+- !!! Never use same tool with same parameters multi times continuously. !!!
+- If you got error from tools, try to fix it based on the error, but don't retry too much times (at most 2 times).
+- !!! You MUST offer the error info if tool's error can not be handled !!!"""
 
 
 # =============================================================================
@@ -97,156 +146,35 @@ def extract_tool_calls_from_messages(tool_messages: List[BaseMessage]) -> str:
 
 
 # =============================================================================
-# Helper Functions (from template.py)
+# Template Pipeline
+# =============================================================================
+#
+# Template assembly is now handled via:
+# - `ProcessorContext.prompt_slots` (slots)
+# - atomic middlewares in `prompt_middleware.py`
+# - `ContextAssembly._assemble_template` (final assembly)
+#
 # =============================================================================
 
 
-def create_tool_call_prompt_template(
-    prefix: Optional[str] = None,
-    role_prompt: Optional[str] = None,
-    *,
-    query_knowledgebase: bool = False,
-) -> ChatPromptTemplate:
-    """构造 Tool-Calling 场景下使用的 ChatPromptTemplate。"""
-
-    messages = [
-        (
-            "system",
-            (prefix or MULTI_MODAL_PREFIX) + ("\n" + role_prompt if role_prompt else "") + "\n",
-        ),
-        ("placeholder", "{chat_history}"),
-        ("human", "{input}"),
-        ("placeholder", "{agent_scratchpad}"),
-    ]
-    if query_knowledgebase:
-        messages.insert(
-            -2,
-            (
-                "human",
-                "根据后续用户提的问题，获取knowledge_item_ids与knowledgebase_ids, 先使用工具查询下知识库。"
-                "如果发现knowledge_items或knowledgebase都和主题无关，那就随机挑选一个存在的。",
-            ),
-        )
-        messages.insert(
-            -2,
-            (
-                "ai",
-                "好的，接下来我会先查询下知识库，并确保传入了knowledge_item_ids或knowledgebase_ids。",
-            ),
-        )
-    return ChatPromptTemplate.from_messages(messages)
-
-
-def create_structured_chat_prompt_template() -> ChatPromptTemplate:
-    """构造 Structured Chat 场景下使用的 ChatPromptTemplate。"""
-
-    return deepcopy(general_qa_prompt_structured_chat)
-
-
 # =============================================================================
-# Tools Middleware (from tools.py)
+# Tools Middleware
 # =============================================================================
 
 
 class BaseToolsMiddleware:
-    """设置初始工具列表。
+    """确保 ctx.tools 有默认值。
 
-    约定：ContextProcessor 在 ctx.metadata["all_tools"] 中提供全量工具列表。
+    主要用于向后兼容：历史上 tools pipeline 可能依赖该中间件初始化 tools。
+    当前 ContextAssembly.get_choice_tools 已会预先设置 ctx.tools。
     """
 
-    def __call__(self, ctx: ProcessorContext, next: NextFunction) -> None:
-        all_tools = ctx.metadata.get("all_tools", [])
-        ctx.tools = list(all_tools)
-        next()
-
-
-class DecisionBasedToolFilterMiddleware:
-    """根据 decision 过滤工具（可选）。
-
-    约定：
-    - ctx.metadata["tools_allowlist_by_decision"]: Dict[Decision, Set[str]] 或 Dict[str, Set[str]]
-    """
+    def __init__(self, tools: Optional[List[BaseTool]] = None):
+        self._tools = tools
 
     def __call__(self, ctx: ProcessorContext, next: NextFunction) -> None:
-        decision = ctx.state.get("decision")
-        allowlist_by_decision: Optional[Dict[Any, Set[str]]] = ctx.metadata.get("tools_allowlist_by_decision")
-
-        if not allowlist_by_decision:
-            next()
-            return
-
-        allow = allowlist_by_decision.get(decision)
-        if allow is None and isinstance(decision, Decision):
-            allow = allowlist_by_decision.get(decision.value)
-
-        if allow:
-            ctx.tools = [t for t in ctx.tools if isinstance(t, BaseTool) and t.name in allow]
-
-        next()
-
-
-# =============================================================================
-# Template Middleware (from template.py)
-# =============================================================================
-
-
-class BaseTemplateMiddleware:
-    """设置默认模板（非 QA 分支时使用）。"""
-
-    def __init__(
-        self,
-        *,
-        use_structured_response: bool,
-        prefix: Optional[str],
-        role_prompt: str,
-    ):
-        self.use_structured_response = use_structured_response
-        self.prefix = prefix
-        self.role_prompt = role_prompt
-
-    def __call__(self, ctx: ProcessorContext, next: NextFunction) -> None:
-        if self.use_structured_response:
-            ctx.prompt_template = create_structured_chat_prompt_template()
-        else:
-            ctx.prompt_template = create_tool_call_prompt_template(prefix=self.prefix, role_prompt=self.role_prompt)
-
-        next()
-
-
-class DecisionBasedTemplateMiddleware:
-    """根据 decision 选择模板（覆盖默认模板）。"""
-
-    def __init__(
-        self,
-        *,
-        chat_prompt_templates: Dict[str, Any],
-        use_structured_response: bool,
-        enable_query_clarification: bool,
-    ):
-        self.chat_prompt_templates = chat_prompt_templates
-        self.use_structured_response = use_structured_response
-        self.enable_query_clarification = enable_query_clarification
-
-    def __call__(self, ctx: ProcessorContext, next: NextFunction) -> None:
-        decision = ctx.state.get("decision", Decision.GENERAL_QA)
-        suffix = "_structured_chat" if self.use_structured_response else "_tool_calling"
-
-        template: Optional[ChatPromptTemplate]
-        if decision == Decision.GENERAL_QA:
-            template = self.chat_prompt_templates.get(f"general_qa_prompt{suffix}")
-        elif decision == Decision.PRIVATE_QA:
-            template = self.chat_prompt_templates.get(f"private_qa_prompt{suffix}")
-        elif decision == Decision.QUERY_CLARIFICATION:
-            if self.enable_query_clarification:
-                template = self.chat_prompt_templates.get(f"clarifying_qa_prompt{suffix}")
-            else:
-                template = self.chat_prompt_templates.get(f"private_qa_prompt{suffix}")
-        else:
-            template = None
-
-        if template is not None:
-            ctx.prompt_template = template
-
+        if self._tools is not None:
+            ctx.tools = list(self._tools)
         next()
 
 
@@ -275,7 +203,7 @@ class BaseVariablesMiddleware:
 
         messages: List[BaseMessage] = ctx.state.get("messages") or []
         messages = [each for each in messages if not isinstance(each, ActivityMessage)]
-        cache = ctx.metadata.get("_cache")
+        cache = ctx.assembly_cache
 
         # 尝试使用缓存的 last_human_idx
         if isinstance(cache, dict) and self._is_cache_valid(cache, messages):
@@ -358,18 +286,25 @@ class SpecialVariablesMiddleware:
             "agent_scratchpad": agent_scratchpad,
             "enable_parallel_tool_calls": self.enable_parallel_tool_calls,
         }
-
+        if self.use_structured_response:
+            special_vars = {
+                **special_vars,
+                "tools": render_text_description_and_args(list(ctx.tools)),
+                "tool_names": ",".join([t.name for t in ctx.tools]),
+            }
         ctx.variables = {**ctx.variables, **special_vars}
-
         next()
 
 
 class DeepSeekR1VariablesMiddleware:
     """DeepSeek-R1：避免使用 system prompt（将 SystemMessage 视为 user）。"""
 
+    def __init__(self, use_deepseek_r1_models_process: bool = True):
+        self.use_deepseek_r1_models_process = use_deepseek_r1_models_process
+
     def __call__(self, ctx: ProcessorContext, next: NextFunction) -> None:
         llm = ctx.llm
-        if llm is None or not ctx.metadata.get("use_deepseek_r1_models_process", True):
+        if llm is None or not self.use_deepseek_r1_models_process:
             next()
             return
         is_r1 = is_deepseek_r1_series_models(llm)

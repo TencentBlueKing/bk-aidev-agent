@@ -9,6 +9,7 @@ from loguru import logger
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_agui_graph_live(live_llm):
     agent_e, cfg = CommonQAAgent.get_agent_executor(
         llm=live_llm,

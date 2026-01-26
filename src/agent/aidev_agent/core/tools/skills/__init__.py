@@ -14,14 +14,25 @@ either express or implied. See the License for the
 specific language governing permissions and limitations under the License.
 We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
+
+技能模块。
+
+提供 Agent Skills 的类型定义、加载和管理功能，支持渐进式披露机制。
+遵循 Agent Skills 规范 (https://agentskills.io/specification)。
 """
 
-from pydantic import BaseModel, Field
+from .loader import (
+    MAX_SKILL_DESCRIPTION_LENGTH,
+    MAX_SKILL_FILE_SIZE,
+    MAX_SKILL_NAME_LENGTH,
+    SkillMetadata,
+    SkillRegistry,
+)
 
-
-class ToolNodeSettings(BaseModel):
-    """ToolNode wrappers settings."""
-
-    use_timer: bool = True
-    use_result_limit: bool = False
-    result_limit_thrd: int = Field(default=1000, ge=1, description="结果长度限制阈值")
+__all__ = [
+    "SkillMetadata",
+    "SkillRegistry",
+    "MAX_SKILL_FILE_SIZE",
+    "MAX_SKILL_NAME_LENGTH",
+    "MAX_SKILL_DESCRIPTION_LENGTH",
+]

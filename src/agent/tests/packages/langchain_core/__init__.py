@@ -15,13 +15,3 @@ specific language governing permissions and limitations under the License.
 We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
-
-from pydantic import BaseModel, Field
-
-
-class ToolNodeSettings(BaseModel):
-    """ToolNode wrappers settings."""
-
-    use_timer: bool = True
-    use_result_limit: bool = False
-    result_limit_thrd: int = Field(default=1000, ge=1, description="结果长度限制阈值")

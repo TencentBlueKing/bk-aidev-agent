@@ -6,29 +6,31 @@ strongly-coupled context processing utilities (previously under
 `aidev_agent.core.nodes.context_processor`).
 """
 
-from .basic_middleware import create_structured_chat_prompt_template, create_tool_call_prompt_template, get_beijing_now
-from .context_processor import ContextProcessor
+from .basic_middleware import get_beijing_now
+from .context_assembly import ContextAssembly
 from .node import ModelState, build_model_node
 from .pydantic_models import ModelNodeSettings
 from .token_compression import (
     ChatHistoryCompressionMiddleware,
     CompressionState,
     KnowledgeCompressionMiddleware,
-    TokenCompressionMiddleware,
-    ToolOutputCompressionMiddleware,
+    KnowledgeCompressor,
+    ToolOutputCompressor,
+    ToolOutputLengthCompressionMiddleware,
+    ToolOutputTokenCompressionMiddleware,
 )
 
 __all__ = [
     "ChatHistoryCompressionMiddleware",
     "CompressionState",
-    "ContextProcessor",
+    "ContextAssembly",
     "KnowledgeCompressionMiddleware",
+    "KnowledgeCompressor",
     "ModelState",
     "ModelNodeSettings",
-    "TokenCompressionMiddleware",
-    "ToolOutputCompressionMiddleware",
+    "ToolOutputCompressor",
+    "ToolOutputLengthCompressionMiddleware",
+    "ToolOutputTokenCompressionMiddleware",
     "build_model_node",
-    "create_tool_call_prompt_template",
-    "create_structured_chat_prompt_template",
     "get_beijing_now",
 ]
