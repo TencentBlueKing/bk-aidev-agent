@@ -18,7 +18,7 @@ to the current version of the project delivered to anyone in the future.
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Callable, List, Optional, Sequence, Tuple, Union
 
 import pydantic
@@ -59,6 +59,10 @@ def get_beijing_now():
     beijing_now = utc_now.astimezone(pytz.timezone("Asia/Shanghai")).strftime("%Y年%m月%d日 %H时%M分%S秒")
     return beijing_now
 
+def beijing_to_timestamp(beijing_now):
+    standard_format_str = beijing_now.replace(" ", "").replace("年", "-").replace("月", "-").replace("日", " ").replace("时", ":").replace("分", ":").replace("秒", "")
+    timestamp = int(datetime.strptime(standard_format_str.strip(), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone(timedelta(hours=8))).astimezone(timezone.utc).timestamp())
+    return timestamp
 
 def enhanced_format_log_to_str(
     intermediate_steps: List[Tuple[AgentAction, str]],
@@ -211,7 +215,7 @@ def create_enhanced_structured_chat_agent(
     相比于 langchain.agents.structured_chat.base.create_structured_chat_agent
     针对 deepseek r1 系列模型进行 parser 增强：
     1. 替换成 EnhancedJSONAgentOutputParser
-    2. 增加提供当前北京时间信息 beijing_now 给 LLM
+    2. 增加提供当前北京时间信息 beijing_now 和对应时间戳给 LLM
     3. stop_sequence 改成 False，因为目前不依赖observation，thought等进行循环
     """
 
@@ -219,8 +223,10 @@ def create_enhanced_structured_chat_agent(
 
     # beijing_now 不是 prompt 中强制定义的
     if "beijing_now" in prompt.input_variables:
-        main_vars.add("beijing_now")
-
+        main_vars.add("beijing_now")      
+    if "timestamp" in prompt.input_variables:
+        main_vars.add("timestamp")
+        
     missing_vars = main_vars.difference(prompt.input_variables + list(prompt.partial_variables))
     if missing_vars:
         raise ValueError(f"Prompt missing required variables: {missing_vars}")
@@ -235,7 +241,13 @@ def create_enhanced_structured_chat_agent(
         prompt = prompt.partial(
             beijing_now=get_beijing_now(),
         )
-
+        
+    if "timestamp" in prompt.input_variables:
+        main_vars.add("timestamp")
+        prompt = prompt.partial(
+            timestamp=beijing_to_timestamp(get_beijing_now()),
+        )
+        
     if stop_sequence:
         stop = ["\nObservation"] if stop_sequence is True else stop_sequence
         llm_with_stop = llm.bind(stop=stop)
@@ -263,7 +275,7 @@ def create_enhanced_tool_calling_agent(
     """
     相比于 langchain.agents.tool_calling_agent.base.create_tool_calling_agent
     增强：
-    1. 增加提供当前北京时间信息 beijing_now 给 LLM
+    1. 增加提供当前北京时间信息 beijing_now 和对应时间戳给 LLM
     """
 
     main_vars = {"agent_scratchpad"}
@@ -271,6 +283,8 @@ def create_enhanced_tool_calling_agent(
     # beijing_now 不是 prompt 中强制定义的
     if "beijing_now" in prompt.input_variables:
         main_vars.add("beijing_now")
+    if "timestamp" in prompt.input_variables:     
+        main_vars.add("timestamp")
 
     missing_vars = main_vars.difference(prompt.input_variables + list(prompt.partial_variables))
     if missing_vars:
@@ -280,6 +294,12 @@ def create_enhanced_tool_calling_agent(
         main_vars.add("beijing_now")
         prompt = prompt.partial(
             beijing_now=get_beijing_now(),
+        )
+        
+    if "timestamp" in prompt.input_variables:
+        main_vars.add("timestamp")
+        prompt = prompt.partial(
+            timestamp=beijing_to_timestamp(get_beijing_now()),
         )
 
     if tools:

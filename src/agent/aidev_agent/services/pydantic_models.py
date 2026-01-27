@@ -118,7 +118,7 @@ class IntentRecognition(BaseModel):
     max_tool_output_len: int = Field(
         default=int(os.getenv("MAX_TOOL_OUTPUT_LEN", "500")), description=("工具调用结果展示的最大长度")
     )
-    max_cache_length: int = Field(default=int(os.getenv("MAX_CACHE_LENGTH", "50")), description=("缓存的最大长度"))
+    max_cache_length: int = Field(default=int(os.getenv("MAX_CACHE_LENGTH", "80")), description=("缓存的最大长度"))
     max_iterations: int = Field(default=int(os.getenv("MAX_ITERATIONS", "50")), description=("最大迭代次数"))
     non_thinking_llm: str = Field(default=os.getenv("NON_THINKING_LLM", "hunyuan"), description=("非深度思考模型"))
     heartbeats_interval: int = Field(
@@ -177,6 +177,10 @@ class KnowledgebaseSettings(BaseModel):
     enable_parallel_tool_calls: bool = Field(
         default=os.getenv("ENABLE_PARALLEL_TOOL_CALLS", "true").lower() == "true",
         description=("StructuredChatCommonQAAgent调用多个工具时是否使用并行调用"),
+    )
+    enable_beijing_now: bool = Field(
+        default=os.getenv("ENABLE_BEIJING_NOW", "true").lower() == "true",
+        description=("是否提供给LLM当前的北京时间"),
     )
     with_scalar_data: bool = Field(
         default=os.getenv("WITH_SCALAR_DATA", "false").lower() == "true",
@@ -270,7 +274,7 @@ class KnowledgebaseSettings(BaseModel):
     token_limit_margin: int = Field(
         default=int(os.getenv("TOKEN_LIMIT_MARGIN", "100")), description=("上下文最大Token限制边界")
     )
-    llm_token_limit: int = Field(default=int(os.getenv("LLM_TOKEN_LIMIT", "28000")), description=("LLM最大Token限制"))
+    llm_token_limit: int = Field(default=int(os.getenv("LLM_TOKEN_LIMIT", "36000")), description=("LLM最大Token限制"))
 
 
 class AgentOptions(BaseModel):

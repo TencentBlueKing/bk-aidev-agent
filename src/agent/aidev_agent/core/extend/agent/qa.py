@@ -30,7 +30,7 @@ from langchain_community.adapters.openai import convert_dict_to_message, convert
 from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.callbacks import Callbacks
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables.config import _set_config_context
 from langchain_core.tools import BaseTool
@@ -41,6 +41,7 @@ from aidev_agent.core.agent.agents import (
     OUTPUT_PARSER_ERR_MSG,
     enhanced_format_log_to_str,
     get_beijing_now,
+    beijing_to_timestamp,
 )
 from aidev_agent.core.agent.multimodal import MultiToolCallCommonAgent, StructuredChatCommonAgent
 from aidev_agent.core.extend.intent.intent_recognition import IntentRecognition
@@ -51,7 +52,7 @@ from aidev_agent.packages.langchain.tools.render import render_text_description_
 from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils import Empty
 
-from ..intent.prompts import DEFAULT_QA_PROMPT_TEMPLATES
+from ..intent.prompts import DEFAULT_QA_PROMPT_TEMPLATES, DEFAULT_INTENT_RECOGNITION_PROMPT_TEMPLATES
 from ..intent.utils import (
     FINAL_ANSWER_PREFIXES,
     FINAL_ANSWER_SUFFIXES,
@@ -320,6 +321,8 @@ class IntentRecognitionMixin(BaseModel):
                 inner_input["agent_scratchpad"] = enhanced_format_log_to_str(intermediate_steps)
         if "beijing_now" in chat_prompt_template.input_variables:
             inner_input["beijing_now"] = get_beijing_now()
+        if "timestamp" in chat_prompt_template.input_variables:
+            inner_input["timestamp"] = beijing_to_timestamp(get_beijing_now())
         if "context" in chat_prompt_template.input_variables:
             inner_input["context"] = kwargs["context"]
         if "qa_context" in chat_prompt_template.input_variables:
@@ -342,6 +345,8 @@ class IntentRecognitionMixin(BaseModel):
             inner_input["rejection_response"] = kwargs["rejection_response"]
         if "enable_parallel_tool_calls" in chat_prompt_template.input_variables:
             inner_input["enable_parallel_tool_calls"] = kwargs["enable_parallel_tool_calls"]
+        if "enable_beijing_now" in chat_prompt_template.input_variables:
+            inner_input["enable_beijing_now"] = kwargs["enable_beijing_now"]
         formated_prompts = chat_prompt_template._format_prompt_with_error_handling(inner_input)
         cur_token_len = llm.get_num_tokens_from_messages(formated_prompts.messages)
         return cur_token_len, formated_prompts
@@ -719,6 +724,7 @@ class IntentRecognitionMixin(BaseModel):
         )
         kwargs["rejection_response"] = agent_options.knowledge_query_options.rejection_message
         kwargs["enable_parallel_tool_calls"] = agent_options.knowledge_query_options.enable_parallel_tool_calls
+        kwargs["enable_beijing_now"] = agent_options.knowledge_query_options.enable_beijing_now
         # 补充/修改 kwargs 的值：给 AIDEV 产品检索测试模块使用
         if agent_options.knowledge_query_options.force_process_by_agent:
             kwargs["decision"] = recog_results["decision"]
@@ -728,11 +734,13 @@ class IntentRecognitionMixin(BaseModel):
                 agent_options.knowledge_query_options.knowledge_resource_rough_recall_topk,
             )
             kwargs["beijing_now"] = get_beijing_now()
+            kwargs["timestamp"] = beijing_to_timestamp(get_beijing_now())
 
         return llm, chat_prompt_template, candidate_tools, intermediate_steps, callbacks, kwargs
 
 
 class CommonQAStreamingMixIn:
+    intent_recognition_prompt_templates: ClassVar[Dict[str, Any]] = DEFAULT_INTENT_RECOGNITION_PROMPT_TEMPLATES
     LOADING_AGENT_MESSAGE: str = "正在思考..."
     think_symbols: List[str] = [
         "<think>\n",
@@ -753,11 +761,13 @@ class CommonQAStreamingMixIn:
         )
         for symbol in filter_symbols:
             if symbol in combined_content:
-                # 如果是 final_answer_prefix 这种特殊情况，外层逻辑会补充一个 recall_ret 回来
-                # 因此这里可以放心地从 think 中去除末尾的那个需要归属 text 的块
-                if symbol in self.final_answer_prefixes and not combined_content.endswith(symbol):
-                    start_index = combined_content.find(symbol)
-                    combined_content = combined_content[:start_index]
+                if symbol in self.final_answer_prefixes:
+                    # 如果是 final_answer_prefix 这种特殊情况，外层逻辑会补充一个 recall_ret 回来
+                    # 因此这里可以放心地从 think 中去除末尾的那个需要归属 text 的块
+                    # 只过滤最后一个出现的 final_answer_prefixes 以及之后的内容
+                    symbol_index = combined_content.rfind(symbol)
+                    if symbol_index != -1:
+                        combined_content = combined_content[:symbol_index]
                 else:
                     combined_content = combined_content.replace(symbol, "")
                 hit = True
@@ -855,6 +865,17 @@ class CommonQAStreamingMixIn:
             else:
                 ret["content"] = "\n\n"
         cache.append(ret)
+        
+    def text_to_think(self, cache, has_elapsed_time):
+        """把 cache 里所有的 text 转成 think 类型，防止出现先 text 后 think 的情况"""
+        # 从后往前遍历把所有 text 改成 think 事件，删除包含 elapsed_time 的事件，把 has_elapsed_time 还原为 False
+        for i in range(len(cache) - 1, -1, -1):
+            if cache[i].get("event") == "text":
+                cache[i]["event"] = "think"
+            if cache[i].get("elapsed_time"):
+                del cache[i]
+                has_elapsed_time = False
+        return has_elapsed_time
 
     def stream_standard_event(self, agent_e, cfg, input_, skip_thought=False, timeout: int = 2):
         """
@@ -884,6 +905,8 @@ class CommonQAStreamingMixIn:
         content_event_type = StreamEventType.TEXT.value
         # 用于判断 done 之前的最后一个 event 类型
         last_event_type = None
+        # 记录最后的模型输出，缺少结论时用于提取结论
+        last_chat_model_content = ""
         if isinstance(self, StructuredChatCommonQAAgent):
             # 在 StructuredChatCommonQAAgent 中用于合并 agent action 中间过程
             # 在出现 Final Answer 模式之前的所有过程都视为 agent 的 think 过程，因此初始化为 EventType.THINK.value
@@ -895,11 +918,14 @@ class CommonQAStreamingMixIn:
             first_think_event = True
         elif isinstance(self, ToolCallingCommonQAAgent):
             has_reasoning_content = False
+            # 用于判断是否调用了工具
             has_tool_call = False
             # 用于判断是否是第一个tool args
             first_tool_args = True
             # 用于判断是否在工具调用中，避免在工具调用的过程出现 text event
             tool_calling = False
+            # 用于判断是否已经有包含 elapsed_time 的 ret
+            has_elapsed_time = False
         try:
             for item in agent_e.stream_events(input_, config=cfg, version="v2", timeout=timeout):
                 ret = {}
@@ -911,6 +937,7 @@ class CommonQAStreamingMixIn:
                             "content": self.LOADING_AGENT_MESSAGE,
                             "cover": last_ret_is_empty,
                         }
+                    last_chat_model_content = ""
                 else:
                     cover = bool(last_ret_is_empty)
                     if item["event"] == "on_chat_model_stream" and front_end_display:
@@ -956,13 +983,9 @@ class CommonQAStreamingMixIn:
                             elif is_tool_call:
                                 if item["data"]["chunk"].tool_call_chunks[0].get("name"):
                                     tool_calling = True
-                                    # 将非思考模型调用工具前的文本也归为 think
+                                    # 如果调用了工具，将调用工具前的 text 转为 think
                                     if cache:
-                                        for i in range(len(cache) - 1, -1, -1):
-                                            if cache[i].get("event") == "text":
-                                                cache[i]["event"] = "think"
-                                            if cache[i].get("elapsed_time"):
-                                                del cache[i]
+                                        has_elapsed_time = self.text_to_think(cache, has_elapsed_time)
                                     # 先输出action name
                                     name = item["data"]["chunk"].tool_call_chunks[0].get("name")
                                     # 如果final_result中的 ``` 是奇数个，则手工拼接一个 ``` 防止前端渲染的时候乱了
@@ -997,16 +1020,11 @@ class CommonQAStreamingMixIn:
                             else:
                                 if "<think>" in item["data"]["chunk"].content:
                                     content_event_type = StreamEventType.THINK.value
-                                    has_reasoning_content = False
-                                    has_tool_call = False
-                                    has_custom_event = False
+                                    has_elapsed_time = True
                                 # 如果首次从 think 切到 text 内容，需要先补发一条带 elapsed_time的 think event 以供识别
-                                if (has_reasoning_content or has_tool_call or has_custom_event) and item["data"][
-                                    "chunk"
-                                ].content.strip():
-                                    has_reasoning_content = False
-                                    has_tool_call = False
-                                    has_custom_event = False
+                                if ((has_reasoning_content or has_tool_call or has_custom_event) and
+                                    item["data"]["chunk"].content.strip() and
+                                    not has_elapsed_time):
                                     ret = {
                                         "event": StreamEventType.THINK.value,
                                         "content": "\n",
@@ -1015,6 +1033,7 @@ class CommonQAStreamingMixIn:
                                     }
                                     if not tool_calling:
                                         self.check_and_append(cache, ret)
+                                        has_elapsed_time = True
                                     final_result += ret["content"]
                                 ret = {
                                     "event": content_event_type,
@@ -1023,10 +1042,12 @@ class CommonQAStreamingMixIn:
                                 }
                                 non_think_content += item["data"]["chunk"].content
                                 if "</think>" in item["data"]["chunk"].content:
-                                    has_reasoning_content = True
+                                    has_elapsed_time = False
                                     content_event_type = StreamEventType.TEXT.value
                         final_result += ret["content"]
+                        last_chat_model_content += ret["content"]
                     elif item["event"] == "on_custom_event":
+                        last_chat_model_content = ""
                         if "front_end_display" in item["data"]:
                             # 如果接收到 front_end_display 标识位的信息，则更新 front_end_display
                             front_end_display = item["data"]["front_end_display"]
@@ -1065,6 +1086,7 @@ class CommonQAStreamingMixIn:
                             }
                             has_custom_event = True
                     elif item["event"] == "on_tool_end":
+                        last_chat_model_content = ""
                         tool_calling = False
                         # TODO: 可能需要考虑异步是否会导致event的乱序问题
                         # 打印工具输出
@@ -1080,7 +1102,7 @@ class CommonQAStreamingMixIn:
 
                         max_tool_output_len = self.agent_options.intent_recognition_options.max_tool_output_len
                         if len(tool_output_content) > max_tool_output_len:
-                            tool_output_content = tool_output_content[:max_tool_output_len] + "（内容过长，已截断）"
+                            tool_output_content = tool_output_content[:max_tool_output_len] + "（内容过长，前端已截断，后端未截断）"
                         # NOTE: 重要操作！
                         # 由于 LLM 输出结果不可控，为了防止 stream 过程中输出的 JSON BLOB 中有开始的 ``` 而没有结束的 ```
                         # 这里在返回工具调用结果之前，前判断当前 final_result 中 ``` 已经出现的次数
@@ -1281,12 +1303,26 @@ class CommonQAStreamingMixIn:
                     "Fail to derive the final answer from the thinking process. "
                     f"The final result is: \n{final_result}\n"
                 )
-                ret = {
-                    "event": StreamEventType.TEXT.value,
-                    "content": "抱歉，由于LLM指令遵从效果欠佳，尝试从思考内容中解析最终结论失败，请从思考内容中获取结论。",
-                    "cover": cover,
-                }
-                yield self._yield_ret(ret)
+                sys_prompt = self.__class__.intent_recognition_prompt_templates.get(
+                    "extract_conclusion_sys_prompt_template"
+                )
+                usr_prompt = self.__class__.intent_recognition_prompt_templates.get(
+                    "extract_conclusion_usr_prompt_template"
+                ).render(last_chat_model_content=last_chat_model_content)
+                messages = [
+                    SystemMessage(content=sys_prompt),
+                    HumanMessage(content=usr_prompt),
+                ]
+                for chunk in self.llm.stream(messages):
+                    if chunk.content:
+                        ret = {
+                            "event": StreamEventType.TEXT.value,
+                            "content": chunk.content,
+                            "cover": cover,
+                        }
+                        yield self._yield_ret(ret) 
+                        final_result += chunk.content                                    
+                    
             # cover 为 True 时，final_result 为 stream 结束后需要最终显示的结果，可根据需要重新拼接
             # cover 为 False 时不进行覆盖
             cover = False
@@ -1311,7 +1347,7 @@ class CommonQAStreamingMixIn:
 class ToolCallingCommonQAAgent(IntentRecognitionMixin, CommonQAStreamingMixIn, MultiToolCallCommonAgent):
     """适用于原生支持Function Calling的模型，如 hunyuan-turbo 模型"""
 
-
+    
 class StructuredChatCommonQAAgent(IntentRecognitionMixin, CommonQAStreamingMixIn, StructuredChatCommonAgent):
     """适用于没有原生支持Function Calling的模型，如DeepSeek R1 系列模型"""
 
