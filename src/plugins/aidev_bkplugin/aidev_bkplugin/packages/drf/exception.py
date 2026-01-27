@@ -24,14 +24,31 @@ def custom_exception_handler(exc, context):
     code = status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
 
     if getattr(exc, "response", None) is not None:
-        exc_data = exc.response.json()
-        if exc_data.get("error") and isinstance(exc_data["error"], dict):
-            code = exc_data["error"].get("code")
-            exc_message = exc_data["error"].get("message")
-            exc_data = exc_data["error"].get("data")
+        try:
+            exc_data = exc.response.json()
+        except (JSONDecodeError, ValueError, TypeError):
+            exc_data = None
+
+        if isinstance(exc_data, dict):
+            if exc_data.get("error") and isinstance(exc_data["error"], dict):
+                code = exc_data["error"].get("code")
+                exc_message = exc_data["error"].get("message")
+                exc_data = exc_data["error"].get("data")
+            else:
+                exc_message = (
+                    exc_data.get("message")
+                    or exc_data.get("detail")
+                    or getattr(exc.response, "text", None)
+                    or exc_message
+                )
+                code = (
+                    exc_data.get("code")
+                    or getattr(exc.response, "status_code", None)
+                    or code
+                )
         else:
-            exc_message = exc_data.get("message") or exc_data.get("detail") or exc.response.text
-            code = exc_data.get("code") or code
+            exc_message = getattr(exc.response, "text", None) or exc_message
+            code = getattr(exc.response, "status_code", None) or code
     else:
         if hasattr(exc, "data") and exc.data:
             if not isinstance(exc.data, str):
@@ -55,5 +72,17 @@ def custom_exception_handler(exc, context):
             status_code = exc.STATUS_CODE
 
     # 使用json方便提取
-    logger.exception(json.dumps({"code": code, "message": exc_message, "status_code": status_code, "data": exc_data}))
-    raise BlueException(message=exc_message, code=code, status_code=status_code, data=exc_data)
+    logger.exception(
+        json.dumps(
+            {
+                "code": code,
+                "message": exc_message,
+                "status_code": status_code,
+                "data": exc_data,
+            },
+            default=str,
+        )
+    )
+    raise BlueException(
+        message=exc_message, code=code, status_code=status_code, data=exc_data
+    )
