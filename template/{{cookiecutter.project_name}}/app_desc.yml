@@ -4,6 +4,9 @@ modules:
     isDefault: true
     language: python
     spec:
+      hooks:
+        preRelease:
+          procCommand: "bash bin/pre_release.sh"
       configuration:
         env:
           - name: PYTHONPATH
