@@ -115,12 +115,6 @@ class IntentRecognition(BaseModel):
     tool_output_compress_thrd: int = Field(
         default=int(os.getenv("TOOL_OUTPUT_COMPRESS_THRD", "5000")), description=("工具输出压缩阈值")
     )
-    context_window: int = Field(
-        default=int(os.getenv("CONTEXT_WINDOW", "16")),
-        description="携带上下文轮数",
-        ge=1,
-        le=30,
-    )
     agent_type: str | None = Field(default=os.getenv("AGENT_TYPE"), description=("agent类"))
     max_tool_output_len: int = Field(
         default=int(os.getenv("MAX_TOOL_OUTPUT_LEN", "500")), description=("工具调用结果展示的最大长度")

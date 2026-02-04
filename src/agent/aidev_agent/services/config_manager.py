@@ -85,8 +85,7 @@ class AgentConfigManager:
         # 将 prompt_setting 中的超参数合并到对应的配置中（SDK 期望从这些位置读取）
         # llm_token_limit 在 KnowledgebaseSettings 中使用
         knowledgebase_settings_data["llm_token_limit"] = prompt_setting.get("llm_token_limit")
-        # context_window 和 tool_output_compress_thrd 在 IntentRecognition 中使用
-        intent_recognition_data["context_window"] = prompt_setting.get("context_window")
+        # tool_output_compress_thrd 在 IntentRecognition 中使用
         intent_recognition_data["tool_output_compress_thrd"] = prompt_setting.get("tool_output_compress_thrd")
 
         config = AgentConfig(
