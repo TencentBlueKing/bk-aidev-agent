@@ -316,6 +316,7 @@ general_qa_prompt_tool_calling = ChatPromptTemplate.from_messages(
             {% if not use_general_knowledge_on_miss %}如果无法使用提供的工具回答，请用拒答文案'{{rejection_response}}'拒绝回答。{% endif -%}""",
         ),
         ("placeholder", "{agent_scratchpad}"),
+        ("placeholder", "{mcp_tool_retry_guide}"),
     ],
     template_format="jinja2",
 )
@@ -385,6 +386,7 @@ private_qa_prompt_tool_calling = ChatPromptTemplate.from_messages(
             以下是用户最新提问内容：```{{query}}```""",
         ),
         ("placeholder", "{agent_scratchpad}"),
+        ("placeholder", "{mcp_tool_retry_guide}"),
     ],
     template_format="jinja2",
 )
@@ -459,6 +461,7 @@ clarifying_qa_prompt_tool_calling = ChatPromptTemplate.from_messages(
             以下是用户最新提问内容：```{{query}}```""",
         ),
         ("placeholder", "{agent_scratchpad}"),
+        ("placeholder", "{mcp_tool_retry_guide}"),
     ],
     template_format="jinja2",
 )
@@ -512,12 +515,9 @@ c. 一些来自上述工具调用的结果。提供给你的格式是先用json�
 注意！有效的 $TOOL_NAME 值为{{tool_names}}！
 注意！有效的 $TOOL_INPUT 值请严格根据提供给你的工具定义来指定！
 请看清楚工具定义，并严格遵循以下规则指定参数：
-1. 必须同时指定参数名和参数值，不要只指定参数值
-2. 如果工具参数定义为JSON Schema格式：
-   - 必须将参数值构造为符合Schema定义的JSON对象
-   - 必须将整个JSON对象作为query_param参数的值
-   - 确保JSON中的字段名、类型和格式完全符合Schema定义
-   - 必须包含所有required=true的字段
+1、如果有参数容器（如 body_param、query_param 等），必须保留参数容器，不得将内部字段直接提到 action_input 顶层；
+2、所有实际参数应作为属性，完整嵌套在对应容器(如有)内；
+3、字段名、类型、必填项（required）必须与工具的 JSON Schema 定义完全一致。
 {% if not enable_parallel_tool_calls %}
 注意！你只能使用一个工具！请你放心，如果一个工具调用结果信息还是不够，在下一轮中我还会给你机会再选择其他工具的，本轮你只需先选择一个工具即可！
 {% endif %}
@@ -612,6 +612,7 @@ c. 一些来自上述工具调用的结果。提供给你的格式是先用json�
                 "\n\n\n再次强调，你无论如何都要以上文中定义的 $JSON_BLOB 格式输出！"
                 "你返回的 $JSON_BLOB 前面务必带上换行符\n以方便我用 markdown 语法对你的结果进行渲染！"
                 "\n\n\n{{agent_scratchpad}}"
+                "{% if mcp_tool_retry_guide %}\n\n{{mcp_tool_retry_guide}}{% endif %}"
             ),
         ),
     ],
@@ -703,7 +704,10 @@ d. 一些来自上述工具调用的结果。提供给你的格式是先用json�
 {% endraw %}
 注意！有效的 $TOOL_NAME 值为{{tool_names}}！
 注意！有效的 $TOOL_INPUT 值请严格根据提供给你的工具定义来指定！
-请看清楚工具定义，并同时指定参数名和参数值，而不要只指定参数值。
+请看清楚工具定义，并严格遵循以下规则指定参数：
+1、如果有参数容器（如 body_param、query_param 等），必须保留参数容器，不得将内部字段直接提到 action_input 顶层；
+2、所有实际参数应作为属性，完整嵌套在对应容器(如有)内；
+3、字段名、类型、必填项（required）必须与工具的 JSON Schema 定义完全一致。
 {% if not enable_parallel_tool_calls %}
 注意！你只能使用一个工具！请你放心，如果一个工具调用结果信息还是不够，在下一轮中我还会给你机会再选择其他工具的，本轮你只需先选择一个工具即可！
 {% endif %}
@@ -807,6 +811,7 @@ d. 一些来自上述工具调用的结果。提供给你的格式是先用json�
                 "\n\n\n再次强调，你无论如何都要以上文中定义的 $JSON_BLOB 格式输出！"
                 "你返回的 $JSON_BLOB 前面务必带上换行符\n以方便我用 markdown 语法对你的结果进行渲染！"
                 "\n\n\n{{agent_scratchpad}}"
+                "{% if mcp_tool_retry_guide %}\n\n{{mcp_tool_retry_guide}}{% endif %}"
             ),
         ),
     ],
@@ -836,6 +841,72 @@ intent_recognition = ChatPromptTemplate.from_messages(
     ],
     template_format="jinja2",
 )
+
+MCP_PARAMETER_RETRY_GUIDE = (
+    "以下是给你的工具重试指南：\n"
+    "工具调用参数错误。请按顺序检查：\n\n"
+    "1. **检查必填字段**：确认已传入所有必需参数\n"
+    "2. **检查参数容器**：确认参数放在正确的容器内\n\n"
+    "## 常见错误与修复\n"
+    "❌ 错误写法：直接将数据字段放在顶层\n"
+    "   {'name': '张三', 'age': 25}\n\n"
+    "✅ 正确写法：根据请求类型使用对应容器\n"
+    "   1. GET请求参数 → query_param\n"
+    "      {'query_param': {'page': 1, 'limit': 10}}\n"
+    "   2. POST请求数据 → body_param\n"
+    "      {'body_param': {'name': '张三', 'age': 25}}\n"
+    "   3. 路径参数 → path_param\n"
+    "      {'path_param': {'user_id': '123'}}\n\n"
+    "## 关键原则\n"
+    "• 所有参数必须放在对应的容器内\n"
+    "• 同一请求可以组合多个容器（如同时有body_param和path_param）\n"
+    "• 不要将容器内的字段提升到顶层"
+)
+
+MCP_SYSTEM_ERROR_RETRY_GUIDE = (
+    "以下是给你的工具重试指南：\n"
+    "请先检查参数结构：\n\n"
+    "1. **检查参数位置**：'body_param'应该是参数容器，不是具体的值\n"
+    "2. **检查参数结构**：实际数据应该放在body_param的值中\n\n"
+    "## 错误示例与修复\n"
+    "❌ **错误**：'body_param'被当作值使用\n"
+    "   {'body_param': '张三', 'age': 25, 'email': 'zhangsan@example.com'}\n\n"
+    "✅ **正确**：'body_param'作为容器包裹实际数据\n"
+    "   {'body_param': {'name': '张三', 'age': 25, 'email': 'zhangsan@example.com'}}\n\n"
+    "## 关键原则\n"
+    "• 'body_param'、'query_param'、'path_param' 都是参数容器\n"
+    "• 容器应该包裹具体的参数对象\n"
+    "3. 如果结构正确但仍报错，可能是系统内部异常，需要向用户说明"
+)
+
+MCP_PERMISSION_DENIED_RETRY_GUIDE = (
+    "以下是给你的工具重试指南：\n"
+    "请先检查参数结构：\n\n"
+    "1. **检查必填字段**：确认已传入所有必需参数\n"
+    "2. **检查参数容器**：确认参数放在正确的容器内\n\n"
+    "## 常见错误与修复\n"
+    "❌ 错误写法：直接将数据字段放在顶层\n"
+    "   {'name': '张三', 'age': 25}\n\n"
+    "✅ 正确写法：根据请求类型使用对应容器\n"
+    "   1. GET请求参数 → query_param\n"
+    "      {'query_param': {'page': 1, 'limit': 10}}\n"
+    "   2. POST请求数据 → body_param\n"
+    "      {'body_param': {'name': '张三', 'age': 25}}\n"
+    "   3. 路径参数 → path_param\n"
+    "      {'path_param': {'user_id': '123'}}\n\n"
+    "## 关键原则\n"
+    "• 所有参数必须放在对应的容器内\n"
+    "• 同一请求可以组合多个容器（如同时有body_param和path_param）\n"
+    "• 不要将容器内的字段提升到顶层"
+    "3. 权限问题\n"
+    "如果参数结构完全正确，仍出现权限错误，可能是用户缺少使用该工具的权限，请向用户说明\n"
+)
+
+pattern_to_retry_guide = {
+    r'(字段是必填项|请求参数格式错误|required|400)': MCP_PARAMETER_RETRY_GUIDE,
+    r"(系统异常|系统错误|联系管理员|object has no attribute 'items')": MCP_SYSTEM_ERROR_RETRY_GUIDE,
+    r'(无访问权限|禁止访问|403)': MCP_PERMISSION_DENIED_RETRY_GUIDE,
+}
 
 DEFAULT_QA_PROMPT_TEMPLATES = {k: v for k, v in globals().items() if "_qa_prompt_" in k}
 DEFAULT_INTENT_RECOGNITION_PROMPT_TEMPLATES = {k: v for k, v in globals().items() if "_qa_prompt_" not in k}

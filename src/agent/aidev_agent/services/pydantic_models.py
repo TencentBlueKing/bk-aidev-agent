@@ -177,7 +177,7 @@ class KnowledgebaseSettings(BaseModel):
         description=("未命中知识库时根据通识回答"),
     )
     rejection_message: str = Field(
-        default=os.getenv("REJECTION_MESSAGE", "无法根据当前文档回答当前问题。请更换问题。"),
+        default=os.getenv("REJECTION_MESSAGE", "无法根据当前绑定的资源回答问题，请更换问题。"),
         max_length=1024,
         description=("拒答文案"),
     )
@@ -189,6 +189,7 @@ class KnowledgebaseSettings(BaseModel):
         default=os.getenv("ENABLE_BEIJING_NOW", "true").lower() == "true",
         description=("是否提供给LLM当前的北京时间"),
     )
+    mcp_tool_retry_guide: list = Field(default_factory=list, description="MCP工具重试引导指南") 
     with_scalar_data: bool = Field(
         default=os.getenv("WITH_SCALAR_DATA", "false").lower() == "true",
         description="是否使用标量索引进行结构化数据召回",

@@ -95,6 +95,11 @@ class IntentRecognitionMixin(BaseModel):
             callbacks = request_local.intent_recognition_results["callbacks"]
             # 更新覆盖，而不是将整个kwargs替换，防止某些 key 可能被丢失了
             kwargs = {**kwargs, **request_local.intent_recognition_results["kwargs"]}
+            # 更新MCP工具重试指南内容   
+            if "mcp_tool_retry_guide" in kwargs:
+                kwargs["mcp_tool_retry_guide"] = self.agent_options.knowledge_query_options.mcp_tool_retry_guide
+                # 将 agent_options 中的 mcp_tool_retry_guide 重置为空
+                self.agent_options.knowledge_query_options.mcp_tool_retry_guide = []
         else:
             (
                 llm,
@@ -316,9 +321,16 @@ class IntentRecognitionMixin(BaseModel):
         if isinstance(self, ToolCallingCommonQAAgent):
             if "agent_scratchpad" in chat_prompt_template.partial_variables:
                 inner_input["agent_scratchpad"] = format_to_tool_messages(intermediate_steps)
+            if "mcp_tool_retry_guide" in chat_prompt_template.partial_variables:
+                inner_input["mcp_tool_retry_guide"] = kwargs["mcp_tool_retry_guide"]
         elif isinstance(self, StructuredChatCommonQAAgent):
             if "agent_scratchpad" in chat_prompt_template.input_variables:
                 inner_input["agent_scratchpad"] = enhanced_format_log_to_str(intermediate_steps)
+            if "mcp_tool_retry_guide" in chat_prompt_template.input_variables:
+                if kwargs["mcp_tool_retry_guide"]:
+                    inner_input["mcp_tool_retry_guide"] = kwargs["mcp_tool_retry_guide"][0]
+                else:
+                    inner_input["mcp_tool_retry_guide"] = kwargs["mcp_tool_retry_guide"]
         if "beijing_now" in chat_prompt_template.input_variables:
             inner_input["beijing_now"] = get_beijing_now()
         if "timestamp" in chat_prompt_template.input_variables:
@@ -725,6 +737,7 @@ class IntentRecognitionMixin(BaseModel):
         kwargs["rejection_response"] = agent_options.knowledge_query_options.rejection_message
         kwargs["enable_parallel_tool_calls"] = agent_options.knowledge_query_options.enable_parallel_tool_calls
         kwargs["enable_beijing_now"] = agent_options.knowledge_query_options.enable_beijing_now
+        kwargs["mcp_tool_retry_guide"] = agent_options.knowledge_query_options.mcp_tool_retry_guide
         # 补充/修改 kwargs 的值：给 AIDEV 产品检索测试模块使用
         if agent_options.knowledge_query_options.force_process_by_agent:
             kwargs["decision"] = recog_results["decision"]
@@ -1021,6 +1034,7 @@ class CommonQAStreamingMixIn:
                                 if "<think>" in item["data"]["chunk"].content:
                                     content_event_type = StreamEventType.THINK.value
                                     has_elapsed_time = True
+                                    has_reasoning_content = True
                                 # 如果首次从 think 切到 text 内容，需要先补发一条带 elapsed_time的 think event 以供识别
                                 if ((has_reasoning_content or has_tool_call or has_custom_event) and
                                     item["data"]["chunk"].content.strip() and
