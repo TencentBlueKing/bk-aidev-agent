@@ -34,6 +34,7 @@ from requests.exceptions import JSONDecodeError
 from aidev_agent.config import settings
 from aidev_agent.core.utils.local import request_local
 from aidev_agent.core.utils.loop import get_event_loop
+from aidev_agent.core.extend.intent.prompts import pattern_to_retry_guide
 from aidev_agent.enums import CredentialType
 from aidev_agent.exceptions import AIDevException
 from aidev_agent.packages.langchain.exceptions import ToolValidationError
@@ -390,7 +391,7 @@ def make_structured_tool(
     return _tool
 
 
-def make_mcp_tools(server_config: dict) -> List[StructuredTool]:
+def make_mcp_tools(server_config: dict, agent_options) -> List[StructuredTool]:
     try:
         from bkoauth import get_access_token_by_user
     except ImportError:
@@ -418,7 +419,7 @@ def make_mcp_tools(server_config: dict) -> List[StructuredTool]:
         try:
             tools: List[StructuredTool] = _loop.run_until_complete(client.get_tools())
             for each in tools:
-                each.coroutine = MCPExceptionWrapper(each.coroutine)
+                each.coroutine = MCPExceptionWrapper(each.coroutine, agent_options)
             return tools
         except Exception as err:
             # 记录详细的异常信息用于调试
@@ -435,8 +436,14 @@ def make_mcp_tools(server_config: dict) -> List[StructuredTool]:
 class MCPExceptionWrapper:
     """可序列化的MCP异常处理包装器"""
 
-    def __init__(self, coro):
+    def __init__(self, coro, agent_options):
         self.coro = coro
+        self.agent_options = agent_options
+        # 预编译正则表达式并存储为编译后的模式对象字典
+        self.compiled_pattern_to_retry_guide = {
+            re.compile(pattern): retry_guide 
+            for pattern, retry_guide in pattern_to_retry_guide.items()
+        }
 
     async def __call__(self, *args, **kwargs):
         try:
@@ -445,6 +452,10 @@ class MCPExceptionWrapper:
             _logger.exception(f"failed to run mcp: {err}")
             # 尝试解析错误消息中的详细信息
             error_detail = self.extract_error_message(str(err))
+            # 尝试获取重试引导
+            retry_guide = self.get_mcp_tool_retry_guide(error_detail)
+            if retry_guide:
+                self.agent_options.knowledge_query_options.mcp_tool_retry_guide.append(retry_guide)
             return (f"[ERROR] MCP工具调用失败: {error_detail}", None)
         except BaseExceptionGroup as err:
             # 提取所有非 ExceptionGroup 的底层异常
@@ -468,6 +479,20 @@ class MCPExceptionWrapper:
         except Exception as err:
             _logger.exception(f"failed to run mcp: {err}")
             return (f"[ERROR] MCP工具调用失败: {err}", None)
+
+    def get_mcp_tool_retry_guide(self, error_detail):
+        """根据预编译的正则表达式模式匹配错误详情获取重试引导"""
+        if not error_detail or not isinstance(error_detail, str):
+            return None
+            
+        for compiled_pattern, retry_guide in self.compiled_pattern_to_retry_guide.items():
+            try:
+                if compiled_pattern.search(error_detail):
+                    return retry_guide
+            except Exception as e:
+                _logger.warning(f"Error matching pattern: {e}")
+                continue
+        return None
 
     def get_status_code_description(self, status_code):
         """获取HTTP状态码的描述"""
