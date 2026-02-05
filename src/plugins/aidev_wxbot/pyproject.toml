@@ -1,6 +1,6 @@
 [project]
 name = "aidev-wxbot"
-version = "1.0.9"
+version = "1.0.10"
 description = "A Django app for WeChat AI bot integration with BK AI Dev platform"
 authors = [
     {name = "tencentblueking"}

@@ -1,3 +1,30 @@
+# Release Note - 1.0.3
+**发布日期**: 2026-02-06
+
+## 核心依赖包
+- aidev-agent==1.0.9
+- aidev-ai-blueking==1.3.3
+- aidev-bkplugin==1.0.14
+- aidev-wxbot==1.0.10
+
+## aidev-agent
+### ✨ 新增功能
+- SDK配置支持超参数
+- 添加提取结论的后处理方法
+- 添加当前北京时间对应时间戳和配置项
+
+### 🛠️ 优化改进
+- 动态加载MCP工具报错重试指南，优化MCP工具参数生成
+
+## aidev-bkplugin
+### ✨ 新增功能
+- 会话接口支持 session code
+
+## aidev-wxbot
+### ✨ 新增功能
+- 新增多轮会话支持
+
+
 # Release Note - 1.0.2
 **发布日期**: 2026-01-14
 
