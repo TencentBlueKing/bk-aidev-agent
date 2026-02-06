@@ -21,7 +21,7 @@ from .factory import agent_config_factory, agent_factory
 logger = logging.getLogger(__name__)
 
 
-def build_chat_completion_agent_by_session_code(session_code: str) -> ChatCompletionAgent:
+def build_chat_completion_agent_by_session_code(session_code: str, username: str | None = None) -> ChatCompletionAgent:
     agent_cls = agent_factory.get(settings.DEFAULT_NAME)
     config_manager = agent_config_factory.get(settings.DEFAULT_NAME)
     return AgentInstanceFactory.build_agent(
@@ -29,10 +29,13 @@ def build_chat_completion_agent_by_session_code(session_code: str) -> ChatComple
         session_code=session_code,
         agent_cls=agent_cls,
         config_manager_class=config_manager,
+        username=username,
     )
 
 
-def build_chat_completion_agent_by_chat_history(chat_history: list[ChatPrompt]) -> ChatCompletionAgent:
+def build_chat_completion_agent_by_chat_history(
+    chat_history: list[ChatPrompt], username: str | None = None
+) -> ChatCompletionAgent:
     role_contents = get_agent_role_info()
     if role_contents:
         chat_history = role_contents + chat_history
@@ -43,6 +46,7 @@ def build_chat_completion_agent_by_chat_history(chat_history: list[ChatPrompt]) 
         session_context_data=[each.model_dump() for each in chat_history],
         agent_cls=agent_cls,
         config_manager_class=config_manager,
+        username=username,
     )
     return agent_instance
 
@@ -94,7 +98,7 @@ def run_bkplugin_invoke(
             chat_history.append(ChatPrompt(role="user", content=input))
         else:
             chat_history = [ChatPrompt(role="user", content=input)]
-    chat_completion_agent = build_chat_completion_agent_by_chat_history(chat_history)
+    chat_completion_agent = build_chat_completion_agent_by_chat_history(chat_history, username)
     return chat_completion_agent.execute(execute_kwargs)
 
 

@@ -41,6 +41,7 @@ class AgentInstanceFactory:
         switch_agent_by_scene: bool = False,
         config_manager_class: type[AgentConfigManager] | None = None,
         is_temporary: bool = False,
+        username: str | None = None,
     ):
         """
         初始化Agent工厂实例
@@ -55,6 +56,7 @@ class AgentInstanceFactory:
         :param max_tokens: 模型最大回复长度
         :param switch_agent_by_scene: 是否根据场景切换智能体
         :param is_temporary: 是否为临时Agent
+        :param username: 用户名
         """
         self.resource_manager = resource_manager or BKAidevApi.get_client()
         self.agent_code = agent_code
@@ -69,6 +71,7 @@ class AgentInstanceFactory:
         self.switch_agent_by_scene = switch_agent_by_scene
         self.config_manager_class = config_manager_class or AgentConfigManager
         self.is_temporary = is_temporary
+        self.username = username
 
     @classmethod
     def build_agent(
@@ -86,6 +89,7 @@ class AgentInstanceFactory:
         switch_agent_by_scene: bool = False,
         config_manager_class: Type[AgentConfigManager] | None = AgentConfigManager,
         is_temporary: bool = False,
+        username: str | None = None,
     ):
         """
         构建Agent实例
@@ -102,6 +106,7 @@ class AgentInstanceFactory:
         :param switch_agent_by_scene: 是否根据场景切换智能体
         :param config_manager_class: 配置管理类
         :param is_temporary: 是否为临时Agent
+        :param username: 用户名
         :return: 构建好的Agent实例
         """
         # 创建工厂实例
@@ -118,6 +123,7 @@ class AgentInstanceFactory:
             switch_agent_by_scene=switch_agent_by_scene,
             config_manager_class=config_manager_class,
             is_temporary=is_temporary,
+            username=username,
         )
 
         # 验证参数
@@ -304,7 +310,11 @@ class AgentInstanceFactory:
     def build_tools(self, agent_code: str) -> List[Any]:
         """构建工具"""
         config = self.config_manager_class.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
-        mcp_tools = make_mcp_tools(config.mcp_server_config, config.agent_options) if config.mcp_server_config else []
+        mcp_tools = (
+            make_mcp_tools(config.mcp_server_config, config.agent_options, username=self.username)
+            if config.mcp_server_config
+            else []
+        )
         return [self.resource_manager.construct_tool(tool_code) for tool_code in config.tool_codes] + mcp_tools
 
     def get_role_prompt(self, agent_code: str) -> str | None:

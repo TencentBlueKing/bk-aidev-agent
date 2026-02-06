@@ -32,13 +32,19 @@ from pydantic import BaseModel, Field, ValidationError, create_model, field_vali
 from requests.exceptions import JSONDecodeError
 
 from aidev_agent.config import settings
-from aidev_agent.core.utils.local import request_local
-from aidev_agent.core.utils.loop import get_event_loop
 from aidev_agent.core.extend.intent.prompts import pattern_to_retry_guide
+from aidev_agent.core.utils.loop import get_event_loop
 from aidev_agent.enums import CredentialType
 from aidev_agent.exceptions import AIDevException
 from aidev_agent.packages.langchain.exceptions import ToolValidationError
 from aidev_agent.packages.langchain.tools.enums import FieldType, FuncType
+from aidev_agent.services.pydantic_models import AgentOptions
+
+try:
+    from bkoauth import get_access_token_by_user
+except ImportError:
+    get_access_token_by_user = None
+
 
 COMPLEXED_FIELD_TYPE = ["object", "array"]
 
@@ -391,24 +397,23 @@ def make_structured_tool(
     return _tool
 
 
-def make_mcp_tools(server_config: dict, agent_options) -> List[StructuredTool]:
-    try:
-        from bkoauth import get_access_token_by_user
-    except ImportError:
-        get_access_token_by_user = None
-
+def make_mcp_tools(
+    server_config: dict, agent_options: AgentOptions, username: str | None = None
+) -> List[StructuredTool]:
     for _server_config in server_config.values():
         if _server_config.pop("credential_type", "") == CredentialType.BLUEAPPS.value:
             auth_info = {
                 "bk_app_code": settings.APP_CODE,
                 "bk_app_secret": settings.SECRET_KEY,
             }
-            request = getattr(request_local, "request", None)
-            if request and request.user.username:
-                if get_access_token_by_user:
-                    auth_info = {"access_token": get_access_token_by_user(request.user.username).access_token}
+            if username:
+                access_token = None
+                if get_access_token_by_user is not None:
+                    access_token = get_access_token_by_user(username)
+                if access_token:
+                    auth_info = {"access_token": access_token.access_token}
                 else:
-                    auth_info["bk_username"] = request.user.username
+                    auth_info["bk_username"] = username
             _server_config["headers"] = {"X-Bkapi-Authorization": json.dumps(auth_info)}
             _server_config["headers"]["X-Bkapi-Timeout"] = settings.BK_APIGW_MCP_TIMEOUT
 
@@ -423,7 +428,9 @@ def make_mcp_tools(server_config: dict, agent_options) -> List[StructuredTool]:
             return tools
         except Exception as err:
             # 记录详细的异常信息用于调试
-            _logger.exception(f"Failed to get MCP tools list: {err}, retry: {_i}")
+            _logger.exception(
+                f"Failed to get MCP tools list: {err}, retry: {_i}, server_config: {server_config}, agent_options: {agent_options}, username: {username}"
+            )
             # 创建详细的错误信息，类似于MCPExceptionWrapper
             error_detail = _extract_mcp_tools_error_detail(err)
             error_msg = f"获取MCP工具列表失败:  {error_detail}"
@@ -441,8 +448,7 @@ class MCPExceptionWrapper:
         self.agent_options = agent_options
         # 预编译正则表达式并存储为编译后的模式对象字典
         self.compiled_pattern_to_retry_guide = {
-            re.compile(pattern): retry_guide 
-            for pattern, retry_guide in pattern_to_retry_guide.items()
+            re.compile(pattern): retry_guide for pattern, retry_guide in pattern_to_retry_guide.items()
         }
 
     async def __call__(self, *args, **kwargs):
@@ -484,7 +490,7 @@ class MCPExceptionWrapper:
         """根据预编译的正则表达式模式匹配错误详情获取重试引导"""
         if not error_detail or not isinstance(error_detail, str):
             return None
-            
+
         for compiled_pattern, retry_guide in self.compiled_pattern_to_retry_guide.items():
             try:
                 if compiled_pattern.search(error_detail):

@@ -161,7 +161,8 @@ class ChatSessionContentFeedbackViewSet(PluginViewSet):
 class ChatCompletionViewSet(PluginViewSet):
     def create(self, request):
         # 调用Agent 的时候需要传入的相关参数
-        execute_kwargs = build_execute_kwargs(request.data.get("execute_kwargs", {}), request.user.username)
+        username = request.user.username
+        execute_kwargs = build_execute_kwargs(request.data.get("execute_kwargs", {}), username)
         session_code = request.data.get("session_code", "")
         execute_kwargs.session_code = request.data.get("session_code", "")
 
@@ -172,13 +173,13 @@ class ChatCompletionViewSet(PluginViewSet):
             return self._handle_thread_id_mode(
                 thread_id=thread_id,
                 input_text=_input,
-                username=request.user.username,
+                username=username,
                 execute_kwargs=execute_kwargs,
             )
 
         # 构造 agent_instance，在 ChatCompletion 中，获取到的是 ChatCompletionAgent
         if session_code:
-            agent_instance = build_chat_completion_agent_by_session_code(session_code)
+            agent_instance = build_chat_completion_agent_by_session_code(session_code, username)
         else:
             chat_history = request.data.get("chat_prompts", []) or request.data.get("chat_history", [])
             if not chat_history and not _input:
@@ -186,7 +187,7 @@ class ChatCompletionViewSet(PluginViewSet):
             chat_history = [ChatPrompt(role=each["role"], content=each["content"]) for each in chat_history]
             if _input:
                 chat_history.append(ChatPrompt(role="user", content=_input))
-            agent_instance = build_chat_completion_agent_by_chat_history(chat_history)
+            agent_instance = build_chat_completion_agent_by_chat_history(chat_history, username)
         # 执行 agent
         if execute_kwargs.stream:
             generator = agent_instance.execute(execute_kwargs)
