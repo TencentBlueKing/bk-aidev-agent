@@ -29,6 +29,11 @@ from aidev_agent.enums import PromptRole
 logger = getLogger(__name__)
 
 
+def dict_keys_camel_to_snake(d: dict) -> dict:
+    """将字典的 key 从 camelCase 转换为 snake_case"""
+    return {camel_to_snake(k): v for k, v in d.items()}
+
+
 class BaseSessionWriter(ABC):
     """会话回写器抽象基类
 
@@ -236,7 +241,7 @@ class BaseSessionWriter(ABC):
         """
         event_data = event.event.get("data", {})
         message_id = event_data.get("message_id")
-        reference_documents = [camel_to_snake(each) for each in event_data.get("data", [])]
+        reference_documents = [dict_keys_camel_to_snake(each) for each in event_data.get("data", [])]
 
         if not message_id:
             message_id = f"ref_{uuid.uuid4().hex[:12]}"
@@ -247,7 +252,7 @@ class BaseSessionWriter(ABC):
         self._create_session_content(
             message_id=message_id,
             role=PromptRole.ACTIVITY.value,
-            content=reference_documents,
+            content=json.dumps(reference_documents, ensure_ascii=False),
             status="success",
             builtin_property={
                 "message_id": message_id,

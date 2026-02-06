@@ -476,7 +476,10 @@ def make_mcp_tools(server_config: dict, username: str | None = None) -> List[Str
                 "bk_app_secret": settings.SECRET_KEY,
             }
             if username:
-                auth_info = {"access_token": get_access_token_by_user(username).access_token}
+                if get_access_token_by_user:
+                    auth_info = {"access_token": get_access_token_by_user(username).access_token}
+                else:
+                    auth_info = {"bk_username": username}
             _server_config["headers"] = {"X-Bkapi-Authorization": json.dumps(auth_info)}
             _server_config["headers"]["X-Bkapi-Timeout"] = settings.BK_APIGW_MCP_TIMEOUT
 
@@ -484,16 +487,19 @@ def make_mcp_tools(server_config: dict, username: str | None = None) -> List[Str
     tools = []
     try:
         for server_name, _server_config in server_config.items():
+            _logger.info(f"[make_mcp_tools] Connecting to MCP server: {server_name}")
             client = MultiServerMCPClient({server_name: _server_config})
             _tools: List[StructuredTool] = _loop.run_until_complete(client.get_tools())
+            _logger.info(f"[make_mcp_tools] Got {len(_tools)} tools from {server_name}")
             for each in _tools:
                 each.coroutine = wrap_mcp_exception(each.coroutine)
                 if not each.metadata:
                     each.metadata = {}
                 each.metadata["mcp_name"] = server_name
             tools.extend(_tools)
-    except Exception:
-        raise ValueError("获取MCP工具列表失败")
+    except Exception as e:
+        _logger.exception(f"[make_mcp_tools] 获取MCP工具列表失败: {e}")
+        raise ValueError(f"获取MCP工具列表失败: {e}")
     return tools
 
 
