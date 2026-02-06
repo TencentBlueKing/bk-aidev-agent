@@ -28,13 +28,11 @@
         </div>
         <!-- 数据展示 -->
         <div v-else-if="hasValidData" class="share-data">
-          <MessageList
-            standalone
-            :session-contents="shareData"
-            :has-session-contents="true"
-            :content-margin-bottom="0"
-            :is-select-mode="false"
-            :readonly="true"
+          <MessageContainer
+            :messages="normalizedMessages"
+            :message-status="MessageStatus.Complete"
+            :enable-selection="false"
+            message-tools-status="hidden"
           />
         </div>
       </div>
@@ -47,12 +45,12 @@
   import { onBeforeMount, ref, computed } from "vue"
   import { useRoute } from "vue-router"
   import { Message, Exception as BkException, Button as BkButton } from "bkui-vue"
-  import { MessageList } from "@blueking/ai-blueking"
-  import "@blueking/ai-blueking/dist/vue3/style.css"
+  import { MessageContainer, MessageStatus, type Message as ChatMessage } from "@blueking/chat-x"
+  import "@blueking/chat-x/dist/index.css"
 
   // TypeScript 接口定义
   interface ShareData {
-    session_contents: any[]
+    session_contents: ChatMessage[]
     session_name: string
     agent_name: string
   }
@@ -102,7 +100,7 @@
   const agentName = ref<string>("")
   const url = ref<string>(window.BK_API_PREFIX || "")
   const loading = ref<boolean>(false)
-  const shareData = ref<any[]>([])
+  const shareData = ref<ChatMessage[]>([])
   const error = ref<string | null>(null)
   const currentShareCode = ref<string>("")
 
@@ -110,6 +108,18 @@
 
   // 计算属性
   const hasValidData = computed(() => shareData.value.length > 0)
+
+  // 标准化消息数据，确保兼容 chat-x 组件
+  const normalizedMessages = computed<ChatMessage[]>(() => {
+    return shareData.value.map((msg, index) => ({
+      ...msg,
+      // 确保有唯一 id
+      id: msg.id ?? `share-msg-${index}`,
+      messageId: msg.messageId ?? msg.id ?? index,
+      // 确保状态为完成
+      status: MessageStatus.Complete,
+    }))
+  })
   const hasError = computed(() => error.value !== null)
   const errorMessage = computed(() => error.value || "")
   const canRetry = computed(() => {
@@ -299,8 +309,7 @@
         }
 
         .share-data {
-          :deep(> .message-wrapper) {
-            margin: 0;
+          :deep(.ai-message-container) {
             overflow: visible;
           }
         }
@@ -314,22 +323,6 @@
 
         .retry-button {
           margin-top: 16px;
-        }
-
-        .share-data {
-          font-size: 12px;
-          color: #313238;
-          line-height: 1.5;
-
-          pre {
-            margin: 0;
-            padding: 16px;
-            background: #f5f7fa;
-            border-radius: 4px;
-            overflow-x: auto;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-          }
         }
       }
     }

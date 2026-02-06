@@ -82,6 +82,33 @@
 
   const url = ref(window.BK_API_PREFIX)
 
+  // ==================== 计算属性 ====================
+  // Loading 配置
+  const loadingConf = computed(() => ({
+    loading: loading.value,
+    title: "加载中...",
+  }))
+
+  // 是否启用会话管理
+  const enableChatSession = computed(() => {
+    if (!agentInfo.value) return false
+    return agentInfo.value?.conversation_settings?.enable_chat_session ?? true
+  })
+
+  // AIBlueking 组件宽度
+  const defaultWidth = computed(() => {
+    if (typeof window === "undefined") return 800
+    return enableChatSession.value ? window.innerWidth - 280 : window.innerWidth
+  })
+
+  // 过滤后的会话列表
+  const filteredSessionList = computed(() => {
+    if (!searchQuery.value) return sessionList.value
+    return sessionList.value.filter((session) => session.sessionName.toLowerCase().includes(searchQuery.value.toLowerCase()))
+  })
+
+  // ==================== 方法 ====================
+  // 获取 agent 信息
   // 获取agent信息的函数
   const getAgentInfo = async () => {
     const data = await fetchAgentInfo(url.value)
@@ -94,42 +121,7 @@
     router.push("/403")
   }
 
-  // 设置 AIBlueking 组件的宽度为容器宽度减去会话列表宽度
-  const AIBluekingWidth = ref(800)
-
-  // 计算 AIBlueking 组件的默认宽度
-  const defaultWidth = computed(() => {
-    if (typeof window === "undefined") return 800
-    // 根据 enableChatSession 的值来决定宽度
-    return enableChatSession.value ? window.innerWidth - 280 : window.innerWidth
-  })
-
-  const title = ref("加载中...")
-
   const loading = ref(true)
-
-  const loadingConf = reactive({
-    loading,
-    title,
-  })
-
-  // 过滤会话列表
-  const filteredSessionList = computed(() => {
-    if (!searchQuery.value) {
-      return sessionList.value
-    }
-    return sessionList.value.filter((session) => session.sessionName.toLowerCase().includes(searchQuery.value.toLowerCase()))
-  })
-
-  // 是否启用会话管理 (基于从接口获取的数据)
-  const enableChatSession = computed(() => {
-    // 如果还没有获取到agent信息，返回false
-    if (!agentInfo.value) {
-      return false
-    }
-    // 根据接口返回的配置确定是否启用会话管理
-    return agentInfo.value?.conversation_settings?.enable_chat_session ?? true
-  })
 
   // 格式化会话日期
   const formatSessionDate = (dateString: string) => {
@@ -209,7 +201,7 @@
         }
       }
     },
-    { deep: true }
+    { deep: true },
   )
 
   // 监听窗口大小变化，动态调整 AIBlueking 宽度和位置

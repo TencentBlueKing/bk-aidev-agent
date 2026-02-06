@@ -12,7 +12,7 @@ export default createRouter({
     {
       path: "/",
       component: Entry,
-      redirect: "/page",
+      redirect: "/side-slider",
       children: [
         {
           path: "side-slider",
@@ -20,9 +20,10 @@ export default createRouter({
           component: SideSliderDemo,
         },
         {
+          // page 路由重定向到 side-slider
           path: "page",
           name: "page",
-          component: PageDemo,
+          redirect: "/side-slider",
         },
       ],
     },
