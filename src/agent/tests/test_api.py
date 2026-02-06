@@ -9,7 +9,7 @@ from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
     not all([settings.APP_CODE, settings.SECRET_KEY]),
     reason="没有配置足够的环境变量,跳过该测试",
 )
-@pytest.mark.stag_gw
+@pytest.mark.slow
 async def test_live_test():
     llm = ChatModel.get_setup_instance(model="deepseek-reasoner")
     for chunk in llm.stream(
@@ -34,7 +34,7 @@ async def test_live_test():
     not all([settings.APP_CODE, settings.SECRET_KEY]),
     reason="没有配置足够的环境变量,跳过该测试",
 )
-@pytest.mark.stag_gw
+@pytest.mark.slow
 def test_bkaidev_api():
     client = BKAidevApi.get_client()
     result = client.api.appspace_retrieve_knowledgebase(path_params={"id": 72})
@@ -45,7 +45,7 @@ def test_bkaidev_api():
     not all([settings.APP_CODE, settings.SECRET_KEY]),
     reason="没有配置足够的环境变量,跳过该测试",
 )
-@pytest.mark.stag_gw
+@pytest.mark.slow
 class TestAPI:
     def test_bkaidev_api_chat(self):
         client = BKAidevApi.get_client()

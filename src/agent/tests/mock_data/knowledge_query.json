@@ -1,0 +1,39 @@
+{
+    "conclusion": "Retrieved",
+    "documents": [
+        {
+            "id": null,
+            "metadata": {
+                "file_path": "云桌面/【云桌面】蓝盾客户端/【云桌面】云桌面启动后黑屏",
+                "uid": "5bb8893a-2957-467e-a399-62929cf3d44e",
+                "__score__": 0.9484929740428925,
+                "index_content": "# 云桌面启动后黑屏解决方案\n\n## 故障现象\n云桌面启动后出现黑屏现象，无法进行任何操作。\n\n## 故障原因\n1. Console会话异常。\n2. 虚拟显示器异常。\n\n## 解决方案\n尝试重新启动云桌面；如无权限操作，可联系项目PM协助处理。\n\n## 备注\n若重启方法无效，可通过客户端点击“一键求助”获取人工服务。具体操作可参考《【云桌面】如何接入云桌面人工服务》。",
+                "tags": [
+                    [
+                        "test"
+                    ]
+                ],
+                "knowledge_id": 15,
+                "preview_path": "https://bk-aidev.example.com/agent-develop/knowledgebase?anchorPath=/4/云桌面/【云桌面】蓝盾客户端&knowledgeName=【云桌面】云桌面启动后黑屏&previewAnchorPath=/4/云桌面/【云桌面】蓝盾客户端/【云桌面】云桌面启动后黑屏&group_type=all&x-space-id=system-bkaidev",
+                "path": "https://abc.docs.com/p/8000009061",
+                "knowledge_base_id": 4,
+                "knowledge_base_name": "test3_private",
+                "file_type": "html",
+                "file_name": "云桌面/【云桌面】蓝盾客户端/【云桌面】云桌面启动后黑屏",
+                "display_name": "【云桌面】云桌面启动后黑屏",
+                "dimension": {
+                    "tenant_id": "system",
+                    "space_id": "system-bkaidev",
+                    "knowledge_base_id": "4",
+                    "knowledge_item_id": "15",
+                    "knowledge_document_id": "5bb8893a-2957-467e-a399-62929cf3d44e",
+                    "index": "1",
+                    "app_code": "ai-agui-test1",
+                    "request_user": ""
+                }
+            },
+            "page_content": "# 云桌面启动后黑屏解决方案\n\n## 故障现象\n云桌面启动后出现黑屏现象，无法进行任何操作。\n\n## 故障原因\n1. Console会话异常。\n2. 虚拟显示器异常。\n\n## 解决方案\n尝试重新启动云桌面；如无权限操作，可联系项目PM协助处理。\n\n## 备注\n若重启方法无效，可通过客户端点击“一键求助”获取人工服务。具体操作可参考《【云桌面】如何接入云桌面人工服务》。",
+            "type": "Document"
+        }
+    ]
+}

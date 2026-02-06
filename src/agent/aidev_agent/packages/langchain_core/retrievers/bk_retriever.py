@@ -1,12 +1,12 @@
 import logging
-from typing import Callable, Literal
+from typing import Callable
 
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 
 from aidev_agent.api.bk_aidev import BKAidevApi
-from aidev_agent.packages.langchain_core.retrievers.protocol import VectorFilter, ScalarFilter, Filter
+from aidev_agent.packages.langchain_core.retrievers.protocol import Filter, ScalarFilter, VectorFilter
 from aidev_agent.utils.decorator import timeit
 from aidev_agent.utils.module_loading import import_string
 
@@ -20,6 +20,7 @@ class BkRetriever(BaseRetriever):
     1. iwiki 文本召回
     2. csv 格式化的程序记忆
     """
+
     # ====================================================================================================
     # ES 相关内容，均未实现
     # ====================================================================================================
@@ -145,7 +146,9 @@ class BkRetriever(BaseRetriever):
                     ]
                 )
 
-    def _construct_simple_filter(self, query, index_name, knowledge_id, knowledge_base_id, topk, scalar_expression, **kwargs):
+    def _construct_simple_filter(
+        self, query, index_name, knowledge_id, knowledge_base_id, topk, scalar_expression, **kwargs
+    ):
         if scalar_expression:
             scalar_expression = scalar_expression.format(**kwargs)
 
@@ -156,7 +159,7 @@ class BkRetriever(BaseRetriever):
             knowledge_id=knowledge_id,
             knowledge_base_id=knowledge_base_id,
             topk=topk,
-            scalar=ScalarFilter(expression=scalar_expression) if scalar_expression else None
+            scalar=ScalarFilter(expression=scalar_expression) if scalar_expression else None,
         )
         return Filter(vector=[vector_filter], scalar=[])
 
@@ -260,7 +263,6 @@ class BkRetriever(BaseRetriever):
         return self._search_knowledge_by_client(data)
 
     def _get_relevant_documents(
-        self, query: str, *, run_manager: CallbackManagerForRetrieverRun,
-        **kwargs
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun, **kwargs
     ) -> list[Document]:
         raise NotImplementedError

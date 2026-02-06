@@ -1,14 +1,17 @@
+import json
+from unittest.mock import patch
+
 import pytest
 from ag_ui.core import EventType
-from aidev_agent.api.bk_aidev import BKAidevApi
 from aidev_agent.config import settings
+from aidev_agent.core.ag_ui.types import CustomMessageType
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
 from aidev_agent.packages.langchain_core.models.mock import MockChatModel, MockResponse
+from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.services.chat import ChatCompletionAgent, ExecuteKwargs
 from aidev_agent.services.pydantic_models import (
     ChatPrompt,
 )
-from bkapi_client_core.client import json
 from langchain_core.tools import tool
 
 
@@ -18,6 +21,26 @@ def assert_content_type_equal(results: list[dict], event_type: EventType, conten
         if each["type"] == event_type:
             contents.append(each["delta"])
     assert "".join(contents) == content
+
+
+def assert_custom_event_exists(results: list[dict], custom_message_type: CustomMessageType) -> dict:
+    """断言指定的自定义消息类型存在于 results 中并返回该事件
+
+    Args:
+        results: 事件结果列表
+        custom_message_type: 自定义消息类型枚举
+
+    Returns:
+        找到的第一个匹配事件
+
+    Raises:
+        AssertionError: 如果未找到匹配的事件
+    """
+    matched_events = [
+        e for e in results if e.get("type") == EventType.CUSTOM and e.get("name") == custom_message_type.value
+    ]
+    assert len(matched_events) > 0, f"应该有 {custom_message_type.value} 事件"
+    return matched_events[0]
 
 
 @tool
@@ -32,29 +55,6 @@ def get_weather_error(location: str) -> str:
     raise ValueError("天气预报获取失败")
 
 
-@pytest.fixture
-def add_session():
-    client = BKAidevApi.get_client()
-    session_code = "onlyfortest1"
-    client.api.create_chat_session(json={"session_code": session_code, "session_name": "testonly"})
-    # 添加一些session content
-    client.api.create_chat_session_content(
-        json={
-            "session_code": session_code,
-            "role": "user",
-            "content": "明天深圳天气怎么样?",
-            "status": "success",
-        }
-    )
-    yield session_code
-    result = client.api.get_chat_session_contents(params={"session_code": session_code})
-    for each in result.get("data", []):
-        _id = each["id"]
-        client.api.destroy_chat_session_content(path_params={"id": _id})
-    client.api.destroy_chat_session(path_params={"session_code": session_code})
-
-
-@pytest.mark.stag_gw
 class TestCommonAgentChatStreaming:
     """测试聊天代理的流式响应功能"""
 
@@ -283,11 +283,6 @@ class TestCommonAgentChatStreaming:
         使用MockChatModel模拟模型调用异常。
         错误响应格式: data: {"event": "error", "code": "UNKNOWN", "message": "模型调用异常: ..."}
         """
-        import json
-        from unittest.mock import patch
-
-        # 使用MockChatModel，通过mock其_astream方法来模拟异常（因为agent使用流式调用）
-        from aidev_agent.packages.langchain_core.models.mock import MockChatModel
 
         llm = MockChatModel(
             responses=[""],  # 空响应
@@ -360,6 +355,35 @@ class TestCommonAgentChatStreaming:
 
         # 验证3：最终文本响应应该是第二个MockResponse的内容
         assert_content_type_equal(results, EventType.TEXT_MESSAGE_CONTENT, "抱歉，获取天气信息时出现错误，请稍后再试。")
+
+    def test_knowledge_base(self):
+        """case 7: 知识库"""
+        with open("tests/mock_data/knowledgebase.json") as fi:
+            knowledgebase = json.load(fi)
+        with open("tests/mock_data/knowledge_query.json") as fi:
+            knowledge_query_result = json.load(fi)
+
+        # Mock _query_instance 属性以返回固定的知识库查询结果
+        with patch.object(BkRetriever, "_query_instance", return_value=knowledge_query_result) as mocked_query_instance:
+            agent = ChatCompletionAgent(
+                chat_model=MockChatModel(responses=["根据知识库，云桌面黑屏的处理方法是重启"]),
+                chat_history=[
+                    ChatPrompt(role="user", content="云桌面黑屏怎么处理?"),
+                ],
+                knowledge_bases=[knowledgebase],
+            )
+            results = []
+            for each in agent.execute(ExecuteKwargs(stream=True)):
+                _each = json.loads(each[6:])
+                results.append(_each)
+            assert_content_type_equal(results, EventType.TEXT_MESSAGE_CONTENT, "根据知识库，云桌面黑屏的处理方法是重启")
+            mocked_query_instance.assert_called_once()
+
+            # 验证知识库相关的自定义消息类型
+            assert_custom_event_exists(results, CustomMessageType.KNOWLEDGE_RAG_START)
+            assert_custom_event_exists(results, CustomMessageType.KNOWLEDGE_RAG_END)
+            assert_custom_event_exists(results, CustomMessageType.KNOWLEDGE_RAG_TEXT_CONTENT)
+            assert_custom_event_exists(results, CustomMessageType.KNOWLEDGE_RAG_RESULT)
 
 
 @pytest.mark.skipif(
