@@ -45,8 +45,9 @@ except ImportError:
     OsResourceDetector: Optional[Type[ResourceDetector]] = None
 
 
-from .config import  OTelConfig
+from .config import OTelConfig
 from .utils import ExporterType
+
 logger = logging.getLogger(__name__)
 
 

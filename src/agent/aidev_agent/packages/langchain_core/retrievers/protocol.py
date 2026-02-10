@@ -15,8 +15,9 @@ specific language governing permissions and limitations under the License.
 We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
+
 from enum import Enum
-from typing import Optional, List, Any
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -26,12 +27,14 @@ from pydantic import BaseModel, Field
 # ================================================================================================
 class IndexType(str, Enum):
     """索引类型枚举"""
+
     VECTOR_FULL_TEXT = "vector-full_text"
     VECTOR_MULTI_COLUMN = "vector-multi_column"
 
 
 class Operator(str, Enum):
     """操作符枚举。"""
+
     AND = "and"
     OR = "or"
     NOT = "not"
@@ -39,25 +42,28 @@ class Operator(str, Enum):
 
 class Comparator(str, Enum):
     """比较操作符枚举。"""
-    EQ = "eq"      # 等于
-    NE = "ne"      # 不等于
-    GT = "gt"      # 大于
-    GTE = "gte"    # 大于等于
-    LT = "lt"      # 小于
-    LTE = "lte"    # 小于等于
+
+    EQ = "eq"  # 等于
+    NE = "ne"  # 不等于
+    GT = "gt"  # 大于
+    GTE = "gte"  # 大于等于
+    LT = "lt"  # 小于
+    LTE = "lte"  # 小于等于
     CONTAIN = "contain"  # 包含子串
-    LIKE = "like"        # 模糊匹配
-    IN = "in"            # 包含于
-    NIN = "nin"          # 不包含于
+    LIKE = "like"  # 模糊匹配
+    IN = "in"  # 包含于
+    NIN = "nin"  # 不包含于
 
 
 class ScalarFilter(BaseModel):
     """标量过滤器"""
+
     expression: str = Field(description="表达式")
 
 
 class VectorFilter(BaseModel):
     """向量过滤器配置。"""
+
     index_name: str = Field(description="索引名称")
     index_value: str = Field(description="索引值")
     index_type: Optional[str] = Field(description="索引类型", default=IndexType.VECTOR_MULTI_COLUMN)
@@ -69,5 +75,6 @@ class VectorFilter(BaseModel):
 
 class Filter(BaseModel):
     """过滤器"""
+
     vector: List[VectorFilter] = Field(description="向量过滤")
     scalar: List[Any] = Field(default_factory=list, description="标量过滤器列表，始终为空列表")

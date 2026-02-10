@@ -3,6 +3,8 @@ from typing import Any, Optional
 
 # 流结束标记
 EOD_CHUNK = "<END_OF_STREAM>"
+# 主动取消标记（生产者被 request_cancel 停止时发送，消费者与 EOD 同样清理队列）
+CANCELLED_CHUNK = "<CANCELLED>"
 # 心跳标记
 HEARTBEAT_CHUNK = "<HEARTBEAT>"
 # 心跳发送间隔（秒）
@@ -117,6 +119,17 @@ class BaseMessageQueueHandler(ABC):
         Args:
             thread_id: 线程ID
         """
+
+    @abstractmethod
+    def request_cancel(self, thread_id: str) -> None:
+        """请求取消指定 thread_id 的流（生产者会在下次轮询时退出并发送结束标记）。
+
+        幂等：多次调用等价于一次。
+        """
+
+    def is_cancel_requested(self, thread_id: str) -> bool:
+        """检查是否已请求取消该 thread_id 的流。"""
+        return False
 
     @abstractmethod
     def flush(self, thread_id: str) -> None:

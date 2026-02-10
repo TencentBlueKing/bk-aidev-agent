@@ -56,6 +56,9 @@ class InMemoryQueueMessageHandler(SingleProcessMixin, BaseMessageQueueHandler):
         self._queue_locks: dict[str, threading.Lock] = {}
         # 全局锁：用于创建新队列时的同步
         self._global_lock = threading.Lock()
+        # 取消请求：thread_id -> bool（request_cancel 协议）
+        self._cancel_requested: dict[str, bool] = {}
+        self._cancel_lock = threading.Lock()
 
     def _get_or_create_queues(self, thread_id: str) -> tuple[queue.Queue, list[Any], threading.Lock]:
         """获取或创建指定 thread_id 的队列和锁
@@ -267,6 +270,8 @@ class InMemoryQueueMessageHandler(SingleProcessMixin, BaseMessageQueueHandler):
         with queue_lock:
             dlq.clear()
 
+        with self._cancel_lock:
+            self._cancel_requested.pop(thread_id, None)
         logger.debug(f"Marked completed and cleared queues for thread_id={thread_id}")
 
     def clear(self, thread_id: str) -> None:
@@ -291,7 +296,19 @@ class InMemoryQueueMessageHandler(SingleProcessMixin, BaseMessageQueueHandler):
         with queue_lock:
             dlq.clear()
 
+        with self._cancel_lock:
+            self._cancel_requested.pop(thread_id, None)
         logger.debug(f"Cleared all queues for thread_id={thread_id}")
+
+    def request_cancel(self, thread_id: str) -> None:
+        """请求取消该 thread_id 的流。幂等。"""
+        with self._cancel_lock:
+            self._cancel_requested[thread_id] = True
+
+    def is_cancel_requested(self, thread_id: str) -> bool:
+        """检查是否已请求取消该 thread_id 的流。"""
+        with self._cancel_lock:
+            return self._cancel_requested.get(thread_id, False)
 
     def get_cached_count(self, thread_id: str) -> int:
         """获取主队列中的消息数量

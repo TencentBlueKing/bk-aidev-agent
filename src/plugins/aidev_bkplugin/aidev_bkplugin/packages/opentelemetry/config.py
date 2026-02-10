@@ -18,7 +18,7 @@ to the current version of the project delivered to anyone in the future.
 
 import os
 
-from aidev_bkplugin.packages.opentelemetry.utils import get_otel_endpoints, get_env_bool
+from aidev_bkplugin.packages.opentelemetry.utils import get_env_bool, get_otel_endpoints
 
 
 class OTelConfig:

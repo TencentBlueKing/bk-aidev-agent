@@ -35,6 +35,7 @@ def pretty_table(header, rows):
         lines.append(format_row(row))
     return "\n".join(lines)
 
+
 def build_table(title, data_list, empty_msg="为空"):
     """辅助函数：构建表格内容"""
     if not data_list:

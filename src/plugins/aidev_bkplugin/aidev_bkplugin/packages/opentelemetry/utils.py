@@ -15,6 +15,7 @@ specific language governing permissions and limitations under the License.
 We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
+
 import dataclasses
 import json
 import logging
@@ -22,7 +23,7 @@ import os
 import traceback
 from enum import Enum
 from functools import lru_cache
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 from opentelemetry import context as context_api
 from opentelemetry import trace
@@ -41,10 +42,9 @@ class ExporterType(Enum):
 
 class CallbackFilteredJSONEncoder(json.JSONEncoder):
     def default(self, o):
-        if isinstance(o, dict):
-            if "callbacks" in o:
-                del o["callbacks"]
-                return o
+        if isinstance(o, dict) and "callbacks" in o:
+            del o["callbacks"]
+            return o
 
         if dataclasses.is_dataclass(o):
             return dataclasses.asdict(o)
@@ -71,7 +71,7 @@ def dont_throw(func):
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except Exception as e:
+        except Exception:
             logger.debug(
                 "OpenLLMetry failed to trace in %s, error: %s",
                 func.__name__,
@@ -164,6 +164,7 @@ def get_env_bool(key: str, default: bool) -> bool:
 def get_otel_endpoint_by_agent_info() -> tuple[str | None, str | None]:
     try:
         from aidev_bkplugin.services.agent import get_agent_config_info
+
         agent_info = get_agent_config_info()
         otel_info = agent_info.get("otel_info")
         return otel_info.get("otel_url"), otel_info.get("otel_token")
@@ -171,7 +172,8 @@ def get_otel_endpoint_by_agent_info() -> tuple[str | None, str | None]:
         # 无法获取公共上报地址
         return None, None
 
-def get_otel_endpoint_by_json_str( endpoints_str: str) -> List[Dict[str, Any]]:
+
+def get_otel_endpoint_by_json_str(endpoints_str: str) -> List[Dict[str, Any]]:
     """
     解析多个 OTEL Endpoint 配置
 

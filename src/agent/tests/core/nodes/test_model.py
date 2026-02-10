@@ -488,3 +488,32 @@ class TestBuildModelNode:
 
             p_vars.assert_called_once()
             assert "messages" in result
+
+    def test_model_node_extracts_image_from_query_list(self, mock_llm, sample_tools, mock_store):
+        mock_template = Mock()
+        prompt_value = Mock()
+        prompt_value.to_messages.return_value = [
+            HumanMessage(content="以下是用户最新提问内容：```这张图片有什么内容?```")
+        ]
+        mock_template.invoke.return_value = prompt_value
+        image_item = {"type": "image_url", "image_url": {"url": "https://example.com/test.png"}}
+        variables = {"query": [image_item, {"type": "text", "text": "这张图片有什么内容?"}]}
+
+        with (
+            patch("aidev_agent.core.nodes.model.node.ContextAssembly.get_choice_tools", return_value=sample_tools),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_template", return_value=mock_template
+            ),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_variables", return_value=variables
+            ),
+        ):
+            node = build_model_node(llm=mock_llm, tools=sample_tools)
+            node.invoke(
+                {"messages": [HumanMessage(content=variables["query"])]}, config=RunnableConfig(), store=mock_store
+            )
+
+        rendered_messages = mock_llm.bind_tools.return_value.invoke.call_args[0][0]
+        assert isinstance(rendered_messages[-1], HumanMessage)
+        assert rendered_messages[-1].content[0]["type"] == "text"
+        assert rendered_messages[-1].content[1] == image_item

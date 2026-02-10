@@ -15,18 +15,17 @@ specific language governing permissions and limitations under the License.
 We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
+
 import json
 from unittest.mock import Mock
-
-import pytest
-from langchain_core.messages import AIMessage
-from langchain_core.output_parsers import BaseOutputParser
 
 from aidev_agent.packages.langchain_core.output_parsers import (
     StructuredOutputToToolMessageParser,
     is_deepseek_r1_series_models,
     remove_thinking_process,
 )
+from langchain_core.messages import AIMessage
+from langchain_core.output_parsers import BaseOutputParser
 
 
 class TestStructuredOutputToToolMessageParser:
@@ -432,6 +431,7 @@ class TestFinalAnswerFallback:
 
 class TestEdgeCases:
     """测试边界情况"""
+
     def test_null_action_input(self):
         """测试 null action_input"""
         parser = StructuredOutputToToolMessageParser()

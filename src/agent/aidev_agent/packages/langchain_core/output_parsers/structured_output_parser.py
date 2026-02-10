@@ -15,13 +15,14 @@ specific language governing permissions and limitations under the License.
 We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import pytz
 from langchain_core.exceptions import OutputParserException
@@ -148,9 +149,7 @@ class StructuredOutputToToolMessageParser(BaseOutputParser[AIMessage]):
         """返回解析器类型标识。"""
         return "structured_output_to_tool_message_parser"
 
-    def parse_result(
-        self, result: List[Generation], *, partial: bool = False
-    ) -> AIMessage:
+    def parse_result(self, result: List[Generation], *, partial: bool = False) -> AIMessage:
         """
         解析 Generation 列表，提取工具调用信息并转换为 tool_calls 格式。
 
@@ -227,7 +226,9 @@ class StructuredOutputToToolMessageParser(BaseOutputParser[AIMessage]):
                     return self._handle_parallel_tool_calls(response, content)
                 else:
                     # 只用一个的时候 或 不支持并行调用时，只取第一个
-                    logger.warning("Got multiple action responses but parallel calls disabled, using first: %s", response)
+                    logger.warning(
+                        "Got multiple action responses but parallel calls disabled, using first: %s", response
+                    )
                     response = response[0]
 
             # 处理 Final Answer
@@ -273,7 +274,7 @@ class StructuredOutputToToolMessageParser(BaseOutputParser[AIMessage]):
             # Final Answer 不能与工具调用混合
             if tool_name == "Final Answer":
                 logger.warning("Cannot mix Final Answer with tool calls in parallel mode")
-                errors.append(f"工具 'Final Answer' 不能与其他工具调用混合使用")
+                errors.append("工具 'Final Answer' 不能与其他工具调用混合使用")
                 continue
 
             if not tool_name:
@@ -288,19 +289,23 @@ class StructuredOutputToToolMessageParser(BaseOutputParser[AIMessage]):
                 logger.warning(f"action_input 应为 dict 而非 str: {tool_input}")
                 # 对于字符串类型的 action_input，创建带特殊标识的工具调用
                 # 让 ToolNode 返回错误信息
-                tool_calls.append({
-                    "id": f"call_{uuid.uuid4().hex[:8]}",
-                    "name": "invalid_tool",
-                    "args": {"error": ACTION_INPUT_ERR_MSG, "original_input": tool_input},
-                })
+                tool_calls.append(
+                    {
+                        "id": f"call_{uuid.uuid4().hex[:8]}",
+                        "name": "invalid_tool",
+                        "args": {"error": ACTION_INPUT_ERR_MSG, "original_input": tool_input},
+                    }
+                )
                 continue
 
             # 不再校验工具是否存在，让 ToolNode 处理
-            tool_calls.append({
-                "id": f"call_{uuid.uuid4().hex[:8]}",
-                "name": tool_name,
-                "args": tool_input if isinstance(tool_input, dict) else {},
-            })
+            tool_calls.append(
+                {
+                    "id": f"call_{uuid.uuid4().hex[:8]}",
+                    "name": tool_name,
+                    "args": tool_input if isinstance(tool_input, dict) else {},
+                }
+            )
 
         if not tool_calls:
             # 如果没有有效的工具调用，返回包含错误信息的消息

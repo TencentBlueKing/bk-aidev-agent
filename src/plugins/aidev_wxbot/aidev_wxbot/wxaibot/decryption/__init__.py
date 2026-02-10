@@ -241,7 +241,7 @@ class WXBizJsonMsgCrypt(object):
         ret, signature = sha1.getSHA1(self.m_sToken, sTimeStamp, sNonce, sEchoStr)
         if ret != 0:
             return ret, None
-        if not signature == sMsgSignature:
+        if signature != sMsgSignature:
             return ierror.WXBizMsgCrypt_ValidateSignature_Error, None
         pc = Prpcrypt(self.key)
         ret, sReplyEchoStr = pc.decrypt(sEchoStr, self.m_sReceiveId)
@@ -285,7 +285,7 @@ class WXBizJsonMsgCrypt(object):
         ret, signature = sha1.getSHA1(self.m_sToken, sTimeStamp, sNonce, encrypt)
         if ret != 0:
             return ret, None
-        if not signature == sMsgSignature:
+        if signature != sMsgSignature:
             logger.info("signature not match")
             logger.info(signature)
             return ierror.WXBizMsgCrypt_ValidateSignature_Error, None

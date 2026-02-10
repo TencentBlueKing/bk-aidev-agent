@@ -1,3 +1,4 @@
+import contextlib
 import json
 import logging
 import threading
@@ -49,10 +50,8 @@ class ConnectionPool:
                     # 连接不可用，减少计数并创建新连接
                     with self._lock:
                         self._created_connections -= 1
-                    try:
+                    with contextlib.suppress(Exception):
                         connection.close()
-                    except Exception:
-                        pass
                     return self._create_connection()
             else:
                 # 连接已关闭，减少计数并创建新连接
@@ -136,15 +135,11 @@ def with_connection_retry(max_retries=3, retry_delay=0.5):
 
                     # 连接相关错误，清理连接并重试
                     if channel:
-                        try:
+                        with contextlib.suppress(Exception):
                             channel.close()
-                        except Exception:
-                            pass
                     if connection:
-                        try:
+                        with contextlib.suppress(Exception):
                             connection.close()
-                        except Exception:
-                            pass
                         # 不要将失效的连接放回池中
                         connection = None
 

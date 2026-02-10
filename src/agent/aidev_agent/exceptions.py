@@ -16,6 +16,7 @@ class AIDevException(Exception):
 
     def __init__(self, *args, message: str | None = None):
         self.message = message or self.MESSAGE
+        super().__init__(self.message)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(message={self.message})"

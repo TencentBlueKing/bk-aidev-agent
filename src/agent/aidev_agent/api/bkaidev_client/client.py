@@ -3,7 +3,7 @@
 import json
 
 from bkapi_client_core.base import Operation, OperationGroup
-from bkapi_client_core.client import BaseClient
+from bkapi_client_core.client import BaseClient, RequestContextBuilder
 from bkapi_client_core.property import bind_property
 
 from aidev_agent.api.abstract_client import AbstractBKAidevResourceManager
@@ -95,6 +95,13 @@ class OpenApiGroup(OperationGroup):
         name="rename_chat_session",
         method="POST",
         path="/openapi/aidev/resource/v1/chat/session/{session_code}/ai_rename/",
+    )
+
+    upload_chat_session_file = bind_property(
+        Operation,
+        name="upload_chat_session_file",
+        method="POST",
+        path="/openapi/aidev/resource/v1/chat/session/{session_code}/upload/{file_name}/",
     )
 
     create_chat_session_content = bind_property(
@@ -231,7 +238,23 @@ class OpenApiGroup(OperationGroup):
     )
 
 
+class AidevRequestContextBuilder(RequestContextBuilder):
+    def build(self, endpoint, operation_context):
+        return super().build(endpoint, operation_context)
+
+    def build_data(
+        self,
+        context,
+        data=None,
+    ):
+        if context.pop("keep_data", False):
+            context["data"] = data
+            return
+        super().build_data(context, data)
+
+
 class Client(BaseClient, AbstractBKAidevResourceManager):
+    _build_class = AidevRequestContextBuilder
     api = bind_property(OpenApiGroup, name="api")
 
     def construct_tool(self, tool_code, **kwargs):

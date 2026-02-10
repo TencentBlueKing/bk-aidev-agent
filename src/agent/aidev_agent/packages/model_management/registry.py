@@ -30,8 +30,9 @@ from Pyro4 import Daemon
 from Pyro4.core import Proxy
 from wrapt import synchronized
 
-from . import service
 from aidev_agent.packages.model_management.service import dedicated_service_daemon, get_service_proxy
+
+from . import service
 
 
 class AlreadySetupError(Exception):

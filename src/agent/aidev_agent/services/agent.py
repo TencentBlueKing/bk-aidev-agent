@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Any, Callable, Dict, List, Optional, Type, cast
 
 from ag_ui.core import BaseEvent
@@ -39,6 +40,7 @@ class AgentInstanceFactory:
         resource_manager: AbstractBKAidevResourceManager | None = None,
         auth_headers: Dict[str, str] | None = None,
         temperature: float = None,
+        max_tokens: int = None,
         switch_agent_by_scene: bool = False,
         config_manager_class: type[AgentConfigManager] | None = None,
         is_temporary: bool = False,
@@ -55,6 +57,7 @@ class AgentInstanceFactory:
         :param callbacks: 回调函数列表
         :param resource_manager:  bkaidev 资源管理
         :param temperature: 模型温度
+        :param max_tokens: 模型最大回复长度
         :param switch_agent_by_scene: 是否根据场景切换智能体
         :param is_temporary: 是否为临时Agent
         :param checkpointer: Checkpoint 存储后端，用于会话状态持久化
@@ -69,6 +72,7 @@ class AgentInstanceFactory:
         self.callbacks = [each for each in callbacks if each] if callbacks else []
         self.auth_headers = auth_headers or None
         self.temperature = temperature or None
+        self.max_tokens = max_tokens or None
         self.switch_agent_by_scene = switch_agent_by_scene
         self.config_manager_class = config_manager_class or AgentConfigManager
         self.is_temporary = is_temporary
@@ -87,6 +91,7 @@ class AgentInstanceFactory:
         callbacks: List[Any] | None = None,
         resource_manager: AbstractBKAidevResourceManager | None = None,
         temperature: float | None = None,
+        max_tokens: int | None = settings.MAX_TOKENS,
         switch_agent_by_scene: bool = False,
         config_manager_class: Type[AgentConfigManager] | None = AgentConfigManager,
         is_temporary: bool = False,
@@ -105,11 +110,13 @@ class AgentInstanceFactory:
         :param callbacks: 回调函数列表
         :param resource_manager: 资源管理类
         :param temperature: 模型温度
+        :param max_tokens: 模型最大回复长度
         :param switch_agent_by_scene: 是否根据场景切换智能体
         :param config_manager_class: 配置管理类
         :param is_temporary: 是否为临时Agent
         :param event_handler: 事件处理器，接收所有 AG-UI 事件（Callable[[BaseEvent], None]）
         :param checkpointer: Checkpoint 存储后端，用于会话状态持久化
+        :param username: 用户名
         :return: 构建好的Agent实例
         """
         # 创建工厂实例
@@ -122,6 +129,7 @@ class AgentInstanceFactory:
             callbacks=callbacks,
             resource_manager=resource_manager,
             temperature=temperature,
+            max_tokens=max_tokens,
             switch_agent_by_scene=switch_agent_by_scene,
             config_manager_class=config_manager_class,
             is_temporary=is_temporary,
@@ -195,7 +203,9 @@ class AgentInstanceFactory:
 
         # 获取会话上下文数据
         session_code = cast(str, self.session_code)
-        session_context_data = self.resource_manager.get_chat_session_context(session_code)
+        session_context_data = self.resource_manager.get_chat_session_context(session_code) or []
+
+        session_context_data = [each for each in session_context_data if each.get("role", "") != "system"]
 
         base_agent_config = self.config_manager_class.get_config(
             agent_code=self.agent_code, resource_manager=self.resource_manager
@@ -242,7 +252,7 @@ class AgentInstanceFactory:
         config = self.config_manager_class.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
 
         if not config.chat_model:
-            raise ValueError("请配置并发布智能体待使用的LLM模型")
+            raise ValueError("请配置智能体默认模型并重新发布")
 
         # Prepare kwargs for ChatModel.get_setup_instance
         kwargs = {
@@ -250,8 +260,14 @@ class AgentInstanceFactory:
             "base_url": settings.LLM_GW_ENDPOINT,
         }
 
-        if self.temperature is not None:
-            kwargs["temperature"] = self.temperature
+        # 优先使用工厂传入的参数，否则使用配置中的参数
+        temperature = self.temperature if self.temperature is not None else config.temperature
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+
+        max_tokens = self.max_tokens if self.max_tokens is not None else config.max_tokens
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
 
         # Only add auth_headers if it has a value
         if self.auth_headers:
@@ -263,8 +279,32 @@ class AgentInstanceFactory:
         self, session_context_data: List[dict], agent_code: Optional[str] = None
     ) -> List[ChatPrompt]:
         """构建聊天历史"""
-        chat_history = [ChatPrompt.model_validate(each) for each in session_context_data if each.get("content")]
+
+        # 添加系统历史
+        config = self.config_manager_class.get_config(
+            agent_code=agent_code or self.agent_code, resource_manager=self.resource_manager
+        )
+        role_history = (
+            [
+                ChatPrompt(role=each["role"].replace("hidden-", ""), content=each["content"])
+                for each in config.role_prompts
+                if each.get("role") in ["user", "assistant", "hidden-user", "hidden-assistant"]
+            ]
+            if config.role_prompts
+            else []
+        )
+
+        chat_history = [
+            ChatPrompt.model_validate(each)
+            for each in (session_context_data or [])
+            if each.get("content") and each["role"] != "system"
+        ]
+        for each in chat_history:
+            if each.role != "assistant":
+                continue
+            each.content = _remove_think(each.content)
         self._modify_last_system_message(chat_history, agent_code or self.agent_code)
+        chat_history = role_history + chat_history
         return chat_history
 
     def build_non_thinking_llm(self, agent_code: str) -> str | None:
@@ -285,13 +325,17 @@ class AgentInstanceFactory:
     def build_tools(self, agent_code: str) -> List[Any]:
         """构建工具"""
         config = self.config_manager_class.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
-        mcp_tools = make_mcp_tools(config.mcp_server_config, username=self.username) if config.mcp_server_config else []
+        mcp_tools = (
+            make_mcp_tools(config.mcp_server_config, config.agent_options, username=self.username)
+            if config.mcp_server_config
+            else []
+        )
         return [self.resource_manager.construct_tool(tool_code) for tool_code in config.tool_codes] + mcp_tools
 
     def get_role_prompt(self, agent_code: str) -> str | None:
         """获取角色提示词"""
         config = self.config_manager_class.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
-        return config.role_prompt
+        return config.role_prompts[0]["content"] if config.role_prompts else None
 
     def build_agent_options(self, agent_code: str) -> AgentOptions:
         """构建Agent选项"""
@@ -443,10 +487,11 @@ class AgentInstanceFactory:
             "tools": factory.build_tools(agent_code),
             "knowledge_bases": factory.build_knowledge_bases(agent_code),
             "knowledge_items": factory.build_knowledge_items(agent_code),
-            "chat_history": factory.build_chat_history(session_context_data),
+            "chat_history": factory.build_chat_history(session_context_data, agent_code),
             "agent_options": factory.build_agent_options(agent_code),
             "agent_prompt": factory.build_agent_prompt(agent_code),
             "checkpointer": factory.build_checkpointer(),
+            "role_prompt": factory.get_role_prompt(agent_code),
         }
 
     @staticmethod
@@ -467,7 +512,7 @@ class AgentInstanceFactory:
         return {
             "task_config": factory.get_role_prompt(agent_code),
             "tools": factory.build_tools(agent_code),
-            "chat_history": factory.build_chat_history(session_context_data),
+            "chat_history": factory.build_chat_history(session_context_data, agent_code),
             # 可能不需要knowledge_bases等
         }
 
@@ -478,3 +523,31 @@ AgentInstanceFactory.register_agent_type(
     agent_class=ChatCompletionAgent,
     builder_func=AgentInstanceFactory.build_chat_agent_args,
 )
+
+
+def _remove_think(content: str) -> str:
+    """移除HTML中的思考部分内容
+    Args:
+        content: 包含思考内容的HTML字符串
+    Returns:
+        清理后的内容字符串
+    """
+    # 第一步：移除思考头部（使用DOTALL模式匹配多行内容）
+    _content = re.sub(r'<section class="think-head click-close">[\s\S]*?</section>', "", content, flags=re.DOTALL)
+
+    _content = re.sub(
+        r'<section class="think-head click-close closed">[\s\S]*?</section>', "", _content, flags=re.DOTALL
+    )
+
+    # 第二步：移除思考主体部分
+    _content = re.sub(r'<section class="think-body">[\s\S]*?</section>', "", _content, flags=re.DOTALL)
+
+    # 第三步：如果内容为空则尝试提取思考主体内容
+    if not _content.strip():
+        # 使用search而非match来查找任意位置的匹配
+        think_body_match = re.search(r'<section class="think-body">([\s\S]*?)</section>', content, re.DOTALL)
+        if think_body_match:
+            # 使用group(1)获取第一个捕获组的内容
+            _content = think_body_match.group(1).strip()
+
+    return _content.strip()

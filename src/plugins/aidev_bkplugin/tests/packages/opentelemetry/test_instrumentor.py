@@ -16,22 +16,22 @@ We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
 
-from typing import Dict, Any
+import contextlib
+from typing import Any, Dict
 from unittest.mock import MagicMock, patch
 
 import pytest
 from aidev_agent.utils.local import request_local
-from langchain_core.messages import HumanMessage
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from pydantic import BaseModel, Field
-
 from aidev_bkplugin.packages.opentelemetry.config import OTelConfig
 from aidev_bkplugin.packages.opentelemetry.instrumentor import (
     ChatCompletionAgentExecuteByAgentWrapper,
     ChatCompletionAgentGetAgentWrapper,
 )
+from langchain_core.messages import HumanMessage
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from pydantic import BaseModel, Field
 
 
 # Mock ExecuteKwargs with the new definition
@@ -40,6 +40,7 @@ class ExecuteKwargs(BaseModel):
     Mock ExecuteKwargs with the new fields from
     /data/workspace/bk-aidev-agent/src/agent/aidev_agent/services/pydantic_models.py
     """
+
     stream: bool = False
     stream_timeout: int = 30
     passthrough_input: bool = False
@@ -81,14 +82,12 @@ def tracer_and_config():
     exporter.clear()
 
     # Patch ExecuteKwargs in instrumentor module to use our mocked version
-    with patch('aidev_bkplugin.packages.opentelemetry.instrumentor.ExecuteKwargs', ExecuteKwargs):
+    with patch("aidev_bkplugin.packages.opentelemetry.instrumentor.ExecuteKwargs", ExecuteKwargs):
         yield tracer, config, exporter
 
     # 强制刷新所有 spans
-    try:
+    with contextlib.suppress(Exception):
         span_processor.force_flush()
-    except Exception:
-        pass
 
     # 清理
     exporter.clear()
@@ -345,6 +344,7 @@ class TestChatCompletionAgentGetAgentWrapper:
 
         # 验证添加的是 BkAidevAgentCallbackHandler
         from aidev_bkplugin.packages.opentelemetry.callback_handler import BkAidevAgentCallbackHandler
+
         assert isinstance(cfg["callbacks"][0], BkAidevAgentCallbackHandler)
 
     def test_wrapper_preserves_existing_callbacks(self, tracer_and_config):
@@ -356,6 +356,7 @@ class TestChatCompletionAgentGetAgentWrapper:
 
         # 模拟被包装的函数，返回已有 callbacks
         existing_callback = MagicMock()
+
         def mock_get_agent(*args, **kwargs):
             mock_agent = MagicMock()
             cfg = {"callbacks": [existing_callback]}
@@ -377,5 +378,6 @@ class TestChatCompletionAgentGetAgentWrapper:
 
         # 验证新增的是 BkAidevAgentCallbackHandler
         from aidev_bkplugin.packages.opentelemetry.callback_handler import BkAidevAgentCallbackHandler
+
         callback_handlers = [cb for cb in cfg["callbacks"] if isinstance(cb, BkAidevAgentCallbackHandler)]
         assert len(callback_handlers) == 1

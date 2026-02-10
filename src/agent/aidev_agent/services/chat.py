@@ -78,6 +78,14 @@ class ChatCompletionAgent(BaseModel):
             bp = each.builtin_property or {}
             match each.role:
                 case PromptRole.USER.value:
+                    if isinstance(each.content, list):
+                        new_content = []
+                        for each_content in each.content:
+                            if each_content.get("url"):
+                                new_content.append({"type": "image_url", "image_url": {"url": each_content.get("url")}})
+                            else:
+                                new_content.append(each_content)
+                        each.content = new_content
                     messages.append(HumanMessage(id=each.id, content=each.content))
                 case PromptRole.ASSISTANT.value | PromptRole.AI.value:
                     tool_calls = self._extract_tool_calls(bp)
@@ -167,6 +175,13 @@ class ChatCompletionAgent(BaseModel):
         self.chat_model.callbacks = self.callbacks
         return self._execute(messages, execute_kwargs)
 
+    def stop(self):
+        helper = GeneratorStreamingHelper(
+            thread_id=self.thread_id,
+        )
+        if not helper.message_handler.is_cancel_requested(self.thread_id):
+            helper.message_handler.request_cancel(self.thread_id)
+
     def _execute(self, messages: list[BaseMessage], execute_kwargs: ExecuteKwargs):
         if not messages:
             raise ValueError("The messages list cannot be empty.")
@@ -176,26 +191,11 @@ class ChatCompletionAgent(BaseModel):
         cfg["configurable"]["execute_kwargs"] = execute_kwargs
         messages = [msg for msg in messages]
         if execute_kwargs.stream:
-            # 使用 session_code 作为 stream_thread_id，以支持断点续传（RabbitMQ 队列标识）
-            # 当用户刷新页面重新进入同一会话时，可以从 RabbitMQ 队列恢复之前的流
-            stream_thread_id = execute_kwargs.session_code or self.thread_id
-            # 每次请求使用新的 graph_thread_id，避免 LangGraph checkpoint 累积历史消息
-            # 因为平台端每次都从 DB 读取完整历史传入，不需要依赖 checkpoint 中的消息
-            graph_thread_id = f"{stream_thread_id}_{uuid.uuid4().hex[:8]}"
-            body = {
-                "thread_id": graph_thread_id,
-                "run_id": messages[-1].id or uuid.uuid4().hex,
-                "state": {},
-                "messages": langchain_messages_to_agui(messages),
-            }
-            agent_input = AgentInput(**body)
-            agui_entry = AidevAGUIAgent(
-                name="test_agui_agent",
-                graph=agent_e,
-                event_handler=self.event_handler,
-                tools={each.name: each for each in self.tools} if self.tools else {},
-            )
-            return self._stream_with_queue(agui_entry, agent_input, queue_thread_id=stream_thread_id)
+            if execute_kwargs.legacy_streaming:
+                return self._stream_with_legacy(agent_e, cfg, messages)
+            else:
+                return self._stream(agent_e, cfg, messages, execute_kwargs)
+
         else:
             loop = get_event_loop()
             result = loop.run_until_complete(
@@ -209,6 +209,37 @@ class ChatCompletionAgent(BaseModel):
                 "reference_doc": result.get("reference_doc", []),
             }
             return return_data
+
+    def _stream_with_legacy(
+        self, agent_e: Runnable, cfg: RunnableConfig, messages: list[BaseMessage]
+    ) -> Generator[Any, None, None]:
+        _input = {"messages": messages}
+        return agent_e.agent.stream_standard_event(agent_e, cfg, _input)
+
+    def _stream(
+        self, agent_e: Runnable, cfg: RunnableConfig, messages: list[BaseMessage], execute_kwargs: ExecuteKwargs
+    ) -> Generator[Any, None, None]:
+        # 使用 session_code 作为 stream_thread_id，以支持断点续传（RabbitMQ 队列标识）
+        # 当用户刷新页面重新进入同一会话时，可以从 RabbitMQ 队列恢复之前的流
+        stream_thread_id = execute_kwargs.session_code or self.thread_id
+        # 每次请求使用新的 graph_thread_id，避免 LangGraph checkpoint 累积历史消息
+        # 因为平台端每次都从 DB 读取完整历史传入，不需要依赖 checkpoint 中的消息
+        graph_thread_id = f"{stream_thread_id}_{uuid.uuid4().hex[:8]}"
+        body = {
+            "thread_id": graph_thread_id,
+            "run_id": messages[-1].id or uuid.uuid4().hex,
+            "state": {},
+            "messages": langchain_messages_to_agui(messages),
+        }
+        agent_input = AgentInput(**body)
+        agui_entry = AidevAGUIAgent(
+            name="test_agui_agent",
+            graph=agent_e,
+            event_handler=self.event_handler,
+            config=cfg,
+            tools={each.name: each for each in self.tools} if self.tools else {},
+        )
+        return self._stream_with_queue(agui_entry, agent_input)
 
     def _stream_with_queue(
         self, agui_entry: AidevAGUIAgent, agent_input: AgentInput, queue_thread_id: str | None = None

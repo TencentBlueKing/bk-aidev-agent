@@ -9,7 +9,8 @@ from .views.builtin import (
     ChatGroupViewSet,
     ChatSessionContentFeedbackViewSet,
     ChatSessionContentViewSet,
-    ChatSessionViewSet, ChatSessionShareView,
+    ChatSessionShareView,
+    ChatSessionViewSet,
 )
 
 _router = DefaultRouter()

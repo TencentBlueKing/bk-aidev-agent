@@ -20,16 +20,15 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
-from langchain_core.messages import HumanMessage, AIMessage
-from langchain_core.outputs import LLMResult, ChatGeneration
+from aidev_bkplugin.packages.opentelemetry.callback_handler import (
+    BkAidevAgentCallbackHandler,
+    BkAidevAgentInjector,
+)
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.outputs import ChatGeneration, LLMResult
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-
-from aidev_bkplugin.packages.opentelemetry.callback_handler import (
-    BkAidevAgentInjector,
-    BkAidevAgentCallbackHandler,
-)
 
 
 @pytest.fixture
@@ -122,9 +121,7 @@ class TestCompleteAgentExecution:
         )
 
         llm_result = LLMResult(
-            generations=[[ChatGeneration(
-                message=AIMessage(content="人工智能是计算机科学的一个分支...")
-            )]],
+            generations=[[ChatGeneration(message=AIMessage(content="人工智能是计算机科学的一个分支..."))]],
             llm_output={"model_name": "gpt-4"},
         )
 
@@ -226,20 +223,23 @@ class TestCompleteAgentExecution:
 
         # LLM 返回需要调用工具
         llm_result_1 = LLMResult(
-            generations=[[ChatGeneration(
-                message=AIMessage(
-                    content="",
-                    additional_kwargs={
-                        "tool_calls": [{
-                            "id": "call_123",
-                            "function": {
-                                "name": "get_weather",
-                                "arguments": '{"city": "北京"}'
-                            }
-                        }]
-                    }
-                )
-            )]],
+            generations=[
+                [
+                    ChatGeneration(
+                        message=AIMessage(
+                            content="",
+                            additional_kwargs={
+                                "tool_calls": [
+                                    {
+                                        "id": "call_123",
+                                        "function": {"name": "get_weather", "arguments": '{"city": "北京"}'},
+                                    }
+                                ]
+                            },
+                        )
+                    )
+                ]
+            ],
             llm_output={"model_name": "gpt-4"},
         )
 
@@ -268,19 +268,19 @@ class TestCompleteAgentExecution:
         llm_run_id_2 = uuid4()
         handler.on_chat_model_start(
             serialized={"name": "gpt-4"},
-            messages=[[
-                HumanMessage(content="北京今天的天气怎么样？"),
-                AIMessage(content="调用工具..."),
-                HumanMessage(content='工具结果: {"temperature": 15, "condition": "晴"}'),
-            ]],
+            messages=[
+                [
+                    HumanMessage(content="北京今天的天气怎么样？"),
+                    AIMessage(content="调用工具..."),
+                    HumanMessage(content='工具结果: {"temperature": 15, "condition": "晴"}'),
+                ]
+            ],
             run_id=llm_run_id_2,
             parent_run_id=chain_run_id,
         )
 
         llm_result_2 = LLMResult(
-            generations=[[ChatGeneration(
-                message=AIMessage(content="北京今天的天气是晴天，温度15度")
-            )]],
+            generations=[[ChatGeneration(message=AIMessage(content="北京今天的天气是晴天，温度15度"))]],
             llm_output={"model_name": "gpt-4"},
         )
 
@@ -395,9 +395,7 @@ class TestCompleteAgentExecution:
         )
 
         llm_result = LLMResult(
-            generations=[[ChatGeneration(
-                message=AIMessage(content="根据文档，蓝鲸平台的使用方法是...")
-            )]],
+            generations=[[ChatGeneration(message=AIMessage(content="根据文档，蓝鲸平台的使用方法是..."))]],
             llm_output={"model_name": "gpt-4"},
         )
 
@@ -510,9 +508,7 @@ class TestCompleteAgentExecution:
 
         # 4. LLM 流式调用结束
         llm_result = LLMResult(
-            generations=[[ChatGeneration(
-                message=AIMessage(content="这是流式响应的内容...")
-            )]],
+            generations=[[ChatGeneration(message=AIMessage(content="这是流式响应的内容..."))]],
             llm_output={"model_name": "gpt-4"},
         )
 

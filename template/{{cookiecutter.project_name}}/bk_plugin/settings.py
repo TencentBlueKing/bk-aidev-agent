@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import sys
 from warnings import warn
 
 from blueapps.patch.settings_paas_services import CACHES, INSTALLED_APPS  # noqa
@@ -66,3 +67,60 @@ BK_APIGW_GRANTED_APPS = BK_APIGW_GRANTED_APPS.split(",") if BK_APIGW_GRANTED_APP
 
 # 自定义应用
 # load_settings("apps.demo.settings")
+
+
+def _is_truthy(value: str | None, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _enable_console_log_for_local_debug():
+    """Expose root logger output to stdout in local debug sessions."""
+    is_local_env = os.getenv("BKPAAS_ENVIRONMENT", "dev").lower() in {"dev", "development"}
+    enabled = _is_truthy(os.getenv("AIDEV_STDOUT_LOG_ENABLED"), default=is_local_env)
+    if not enabled:
+        return
+
+    level = os.getenv("AIDEV_STDOUT_LOG_LEVEL", os.getenv("LOG_LEVEL", "INFO")).upper()
+    runtime_module_names = (
+        "bk_plugin_runtime.config.dev",
+        "bk_plugin_runtime.config.stag",
+        "bk_plugin_runtime.config.prod",
+    )
+    for module_name in runtime_module_names:
+        runtime_module = sys.modules.get(module_name)
+        if runtime_module is None:
+            continue
+
+        logging_config = getattr(runtime_module, "LOGGING", None)
+        if not isinstance(logging_config, dict):
+            continue
+
+        handlers = logging_config.setdefault("handlers", {})
+        formatters = logging_config.setdefault("formatters", {})
+        if "verbose" in formatters:
+            formatter_name = "verbose"
+        elif formatters:
+            formatter_name = next(iter(formatters))
+        else:
+            formatter_name = "simple"
+            formatters["simple"] = {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"}
+
+        handlers.setdefault(
+            "console",
+            {
+                "class": "logging.StreamHandler",
+                "level": level,
+                "formatter": formatter_name,
+            },
+        )
+
+        root_logger = logging_config.setdefault("loggers", {}).setdefault("root", {})
+        root_handlers = root_logger.setdefault("handlers", [])
+        if "console" not in root_handlers:
+            root_handlers.append("console")
+        root_logger.setdefault("level", level)
+
+
+_enable_console_log_for_local_debug()

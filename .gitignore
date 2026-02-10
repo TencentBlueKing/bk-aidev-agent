@@ -199,8 +199,9 @@ src/agent/tests/core/memory
 # open spec files
 src/agent/.codebuddy
 src/agent/.claude
+src/agent/.cursor
 src/agent/openspec
-src/agent/AGENTS.md
+# src/agent/AGENTS.md
 src/agent/CODEBUDDY.md
 
 

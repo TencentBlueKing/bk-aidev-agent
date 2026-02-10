@@ -25,7 +25,7 @@ class PromptRole(enum.Enum):
 
 class ChatContentStatus(enum.Enum):
     LOADING = "loading"
-    FAIL = "fail"
+    ERROR = "error"
     SUCCESS = "success"
     COMPLETE = "complete"
 

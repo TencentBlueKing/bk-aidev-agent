@@ -292,6 +292,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
     QUEUE_PREFIX: ClassVar[str] = "aidev_agent.thread."
     DLX_EXCHANGE_PREFIX: ClassVar[str] = "aidev_agent.dlx."  # 死信交换机前缀
     DLQ_PREFIX: ClassVar[str] = "aidev_agent.dlq."  # 死信队列前缀
+    CANCEL_QUEUE_PREFIX: ClassVar[str] = "aidev_agent.cancel."  # 取消请求队列前缀
     QUEUE_TTL_MS: ClassVar[int] = 3600 * 1000  # 队列生命周期：3600秒（单位：毫秒）
 
     _instance: Optional["RabbitMQMessageHandler"] = None
@@ -364,6 +365,10 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
     def _get_dlq_name(self, thread_id: str) -> str:
         """获取 thread_id 对应的死信队列名"""
         return f"{self.DLQ_PREFIX}{thread_id}"
+
+    def _get_cancel_queue_name(self, thread_id: str) -> str:
+        """获取 thread_id 对应的取消请求队列名"""
+        return f"{self.CANCEL_QUEUE_PREFIX}{thread_id}"
 
     def _ensure_queue_with_dlx(self, channel: Any, thread_id: str) -> tuple[str, str]:
         """确保主队列和死信队列都存在，返回 (主队列名, 死信队列名)
@@ -919,8 +924,56 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                 except Exception as e:
                     logger.warning(f"Failed to purge DLQ {dlq_name}: {e}")
 
+                # 清空取消请求队列
+                cancel_queue_name = self._get_cancel_queue_name(thread_id)
+                try:
+                    channel.queue_declare(queue=cancel_queue_name, durable=True, passive=True)
+                    channel.queue_purge(queue=cancel_queue_name)
+                except Exception:
+                    pass
+
         except Exception as e:
             logger.error(f"Error purging queues after completion for thread_id={thread_id}: {e}")
+
+    def request_cancel(self, thread_id: str) -> None:
+        """请求取消该 thread_id 的流。幂等：向取消队列投递一条消息，生产者轮询时消费到即退出。"""
+        try:
+            with self._with_connection() as connection:
+                channel = connection.channel()
+                cancel_queue_name = self._get_cancel_queue_name(thread_id)
+                channel.queue_declare(
+                    queue=cancel_queue_name,
+                    durable=True,
+                    arguments={"x-expires": self.QUEUE_TTL_MS},
+                )
+                channel.basic_publish(
+                    exchange="",
+                    routing_key=cancel_queue_name,
+                    body=b"1",
+                    properties=pika.BasicProperties(delivery_mode=1),
+                )
+                logger.debug(f"Requested cancel for thread_id={thread_id}")
+        except Exception as e:
+            logger.warning(f"Failed to request cancel for thread_id={thread_id}: {e}")
+
+    def is_cancel_requested(self, thread_id: str) -> bool:
+        """检查是否已请求取消该 thread_id 的流；若存在取消消息则消费一条并返回 True。"""
+        try:
+            with self._with_connection() as connection:
+                channel = connection.channel()
+                cancel_queue_name = self._get_cancel_queue_name(thread_id)
+                try:
+                    channel.queue_declare(queue=cancel_queue_name, durable=True, passive=True)
+                except Exception:
+                    return False
+                method_frame, _, _ = channel.basic_get(queue=cancel_queue_name, auto_ack=False)
+                if method_frame:
+                    channel.basic_ack(delivery_tag=method_frame.delivery_tag)
+                    return True
+                return False
+        except Exception as e:
+            logger.debug(f"Error checking cancel for thread_id={thread_id}: {e}")
+            return False
 
     def clear(self, thread_id: str) -> None:
         """清空指定 thread_id 的所有队列（主队列和死信队列）"""
@@ -948,6 +1001,13 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                     channel.queue_purge(queue=dlq_name)
                 except Exception as e:
                     logger.warning(f"Failed to purge DLQ: {e}")
+
+                cancel_queue_name = self._get_cancel_queue_name(thread_id)
+                try:
+                    channel.queue_declare(queue=cancel_queue_name, durable=True, passive=True)
+                    channel.queue_purge(queue=cancel_queue_name)
+                except Exception:
+                    pass
         except Exception as e:
             logger.warning(f"Failed to clear queues: {e}")
 

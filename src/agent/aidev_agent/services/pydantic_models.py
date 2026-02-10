@@ -22,6 +22,10 @@ class ExecuteKwargs(BaseModel):
     caller_executor: str | None = Field(default=None, description="调用人")
     caller_order_type: str | None = Field(default=None, description="调用AI工单类型")
     caller_trace_context: Dict[str, Any] | None = Field(default=None, description="调用链ID")
+    thread_id: str | None = Field(default=None, description="Thread ID，用于APIGW调用时自动管理会话")
+
+    # 执行配置
+    legacy_streaming: bool = Field(default=False, description="是否使用 legacy streaming protocol")
 
 
 class SessionTool(BaseModel):
@@ -125,7 +129,7 @@ class IntentRecognition(BaseModel):
     max_tool_output_len: int = Field(
         default=int(os.getenv("MAX_TOOL_OUTPUT_LEN", "500")), description=("工具调用结果展示的最大长度")
     )
-    max_cache_length: int = Field(default=int(os.getenv("MAX_CACHE_LENGTH", "50")), description=("缓存的最大长度"))
+    max_cache_length: int = Field(default=int(os.getenv("MAX_CACHE_LENGTH", "80")), description=("缓存的最大长度"))
     max_iterations: int = Field(default=int(os.getenv("MAX_ITERATIONS", "50")), description=("最大迭代次数"))
     non_thinking_llm: str | None = Field(default=None, description=("非深度思考模型"))
     heartbeats_interval: int = Field(
@@ -177,7 +181,7 @@ class KnowledgebaseSettings(BaseModel):
         description=("未命中知识库时根据通识回答"),
     )
     rejection_message: str = Field(
-        default=os.getenv("REJECTION_MESSAGE", "无法根据当前文档回答当前问题。请更换问题。"),
+        default=os.getenv("REJECTION_MESSAGE", "无法根据当前绑定的资源回答问题，请更换问题。"),
         max_length=1024,
         description=("拒答文案"),
     )
@@ -185,6 +189,11 @@ class KnowledgebaseSettings(BaseModel):
         default=os.getenv("ENABLE_PARALLEL_TOOL_CALLS", "true").lower() == "true",
         description=("StructuredChatCommonQAAgent调用多个工具时是否使用并行调用"),
     )
+    enable_beijing_now: bool = Field(
+        default=os.getenv("ENABLE_BEIJING_NOW", "true").lower() == "true",
+        description=("是否提供给LLM当前的北京时间"),
+    )
+    mcp_tool_retry_guide: list = Field(default_factory=list, description="MCP工具重试引导指南")
     with_scalar_data: bool = Field(
         default=os.getenv("WITH_SCALAR_DATA", "false").lower() == "true",
         description="是否使用标量索引进行结构化数据召回",
@@ -277,7 +286,7 @@ class KnowledgebaseSettings(BaseModel):
     token_limit_margin: int = Field(
         default=int(os.getenv("TOKEN_LIMIT_MARGIN", "100")), description=("上下文最大Token限制边界")
     )
-    llm_token_limit: int = Field(default=int(os.getenv("LLM_TOKEN_LIMIT", "28000")), description=("LLM最大Token限制"))
+    llm_token_limit: int = Field(default=int(os.getenv("LLM_TOKEN_LIMIT", "36000")), description=("LLM最大Token限制"))
 
 
 class AgentOptions(BaseModel):

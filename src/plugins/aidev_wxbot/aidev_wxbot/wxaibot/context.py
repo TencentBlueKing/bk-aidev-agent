@@ -1,3 +1,18 @@
+"""
+WxBot 流式协议适配层。
+
+协议映射契约：
+- stream_id：单次用户消息对应的 wx 轮询键，格式 msg_id_timestamp，用于 RabbitMQ 队列名与客户端拉取。
+- thread_id：Agent 会话续传键，按 group_id 由 AgentSession 管理，与 stream_id 一对多（一次会话多次请求共用一个 thread_id）。
+- 事件映射：ChatCompletionAgent SSE 事件 -> LlmChunkMsg：
+  - think -> think_content（合并后写入缓存，阈值见 CHUNK_FLUSH_THRESHOLD）
+  - text -> content
+  - reference_doc -> docs（metadata 列表）
+  - error -> 单条 is_finish=True 错误消息，终止流
+- 完成/错误态：正常结束或任意异常路径均写入 is_finish=True，确保 _reply_stream 不会悬挂。
+- 并发：同 group_id 下每条消息独立 stream_id，队列按 stream_id 隔离，互不串流。
+"""
+
 import json
 import logging
 import time
@@ -12,6 +27,9 @@ from aidev_wxbot.context import Context, Message
 from aidev_wxbot.context.message import MsgType
 
 logger = logging.getLogger(__name__)
+
+# 流式桥接：chunk 合并阈值（think/content 累积超过此长度再写队列）；首包「正在思考中...」由 views 返回，此处不处理
+CHUNK_FLUSH_THRESHOLD = 50
 
 
 def stream_msg(content, is_finish, stream_id):

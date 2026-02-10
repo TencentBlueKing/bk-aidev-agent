@@ -1,5 +1,9 @@
 """测试 InMemoryQueueMessageHandler 的基本功能"""
 
+import contextlib
+import threading
+import time
+
 import pytest
 from aidev_agent.services.messages_handler import (
     GeneratorStreamingHelper,
@@ -210,6 +214,76 @@ class TestInMemoryQueueMessageHandler:
         # 恢复后主队列有 chunk_0, chunk_1, chunk_2, chunk_3, chunk_4
         assert len(result) == 5
         assert result == ["chunk_0", "chunk_1", "chunk_2", "chunk_3", "chunk_4"]
+
+    def test_producer_stop_request_cancel(self, handler):
+        """主动停止：request_cancel 后 producer 退出并发送 CANCELLED，消费者正常结束并清理队列"""
+        thread_id = "test_stream_cancel"
+        collected = []
+        stream_started = threading.Event()
+
+        def slow_generator():
+            for i in range(20):
+                stream_started.set()
+                time.sleep(0.05)
+                yield f"chunk_{i}"
+
+        def consume():
+            helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
+            collected.extend(helper.stream(slow_generator()))
+
+        t = threading.Thread(target=consume)
+        t.start()
+        stream_started.wait(timeout=2.0)
+        time.sleep(0.1)
+        handler.request_cancel(thread_id)
+        t.join(timeout=3.0)
+        assert not t.is_alive()
+        # 应收到部分 chunk 且队列已清理（消费者读到 CANCELLED 后 mark_completed）
+        assert len(collected) < 20
+        assert handler.is_empty(thread_id)
+
+    def test_producer_stop_then_reconnect(self, handler):
+        """停止后重连：request_cancel 后消费者断开，重连后恢复并读到 CANCELLED 后清理"""
+        thread_id = "test_stream_cancel_reconnect"
+
+        def slow_generator():
+            for i in range(10):
+                time.sleep(0.05)
+                yield f"chunk_{i}"
+
+        helper1 = GeneratorStreamingHelper(handler, thread_id=thread_id)
+        stream1 = helper1.stream(slow_generator())
+        next(stream1)
+        next(stream1)
+        handler.request_cancel(thread_id)
+        # 不继续消费，关闭生成器（模拟断开）
+        with contextlib.suppress(GeneratorExit):
+            stream1.close()
+        time.sleep(0.5)
+
+        # 重连：有 pending（含 CANCELLED），恢复后消费应得到 CANCELLED 并结束
+        helper2 = GeneratorStreamingHelper(handler, thread_id=thread_id)
+        result = list(helper2.stream(iter([])))
+        # 恢复后主队列里是已产生的 chunk + CANCELLED，应收到到 CANCELLED 之前的所有 chunk
+        assert "chunk_0" in result and "chunk_1" in result
+        assert handler.is_empty(thread_id)
+
+    def test_request_cancel_idempotent(self, handler):
+        """重复 request_cancel 幂等：多次调用不报错，producer 仍能正常停止"""
+        thread_id = "test_stream_cancel_idempotent"
+        handler.request_cancel(thread_id)
+        handler.request_cancel(thread_id)
+        handler.request_cancel(thread_id)
+
+        def gen():
+            yield "a"
+            yield "b"
+
+        helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
+        result = list(helper.stream(gen()))
+        # 可能收到 0、1 或 2 条后因取消而结束
+        assert len(result) <= 2
+        assert handler.is_empty(thread_id)
 
     def test_factory(self):
         """测试工厂方法"""

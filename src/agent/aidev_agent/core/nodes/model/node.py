@@ -22,7 +22,7 @@ import logging
 from typing import Annotated, Any, Dict, List
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AnyMessage, BaseMessage
+from langchain_core.messages import AnyMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.tools import BaseTool
 from langgraph._internal._runnable import RunnableCallable
@@ -68,6 +68,48 @@ class ModelState(TypedDict, total=False):
     """
 
     messages: Required[Annotated[list[AnyMessage], add_messages]]
+
+
+def _extract_query_text_and_images(query: Any) -> tuple[Any, list[dict[str, Any]]]:
+    """从 query 中提取文本和图片（OpenAI-style content list）。"""
+
+    if not isinstance(query, list):
+        return query, []
+
+    text_parts: list[str] = []
+    image_contents: list[dict[str, Any]] = []
+    for item in query:
+        if not isinstance(item, dict):
+            continue
+        item_type = item.get("type")
+        if item_type == "text":
+            text = item.get("text")
+            if isinstance(text, str):
+                text_parts.append(text)
+        elif item_type == "image_url":
+            image_contents.append(item)
+
+    return "\n".join(text_parts), image_contents
+
+
+def _attach_images_to_last_human_message(messages: list[BaseMessage], image_contents: list[dict[str, Any]]) -> None:
+    """将图片内容挂载到最后一条 HumanMessage，避免丢失多模态输入。"""
+
+    if not image_contents:
+        return
+
+    for idx in range(len(messages) - 1, -1, -1):
+        if not isinstance(messages[idx], HumanMessage):
+            continue
+
+        human_message = messages[idx]
+        rendered_text = human_message.content if isinstance(human_message.content, str) else ""
+        multimodal_content: list[dict[str, Any]] = []
+        if rendered_text:
+            multimodal_content.append({"type": "text", "text": rendered_text})
+        multimodal_content.extend(image_contents)
+        messages[idx] = human_message.model_copy(update={"content": multimodal_content})
+        return
 
 
 def _prepare_model_chain(
@@ -118,9 +160,15 @@ def _prepare_model_chain(
     chat_prompt_template = context_assembly.get_chat_prompt_template(ctx)
     # 使用 ContextAssembly 准备上下文变量
     context_variables = context_assembly.get_chat_prompt_variables(ctx)
+    image_contents: list[dict[str, Any]] = []
+    query, image_contents = _extract_query_text_and_images(context_variables.get("query"))
+    if image_contents:
+        context_variables = {**context_variables, "query": query}
+
     # 渲染 prompt -> messages（可观测点）
     prompt_value = chat_prompt_template.invoke(context_variables, config=config)
     messages: list[BaseMessage] = prompt_value.to_messages()
+    _attach_images_to_last_human_message(messages, image_contents)
 
     # 根据模式构建不同的 llm_chain（不含 prompt）
     if use_structured_response:

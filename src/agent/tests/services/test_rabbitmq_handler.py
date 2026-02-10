@@ -1,5 +1,7 @@
 import asyncio
 import os
+import threading
+import time
 
 import pytest
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
@@ -227,3 +229,32 @@ class TestRabbitMQMessageHandler:
         assert handler.get_cached_count(thread_id) == 0
         assert handler._get_dlq_count(thread_id) == 0
         assert handler.is_empty(thread_id) is True
+
+    @pytest.mark.skipif(not os.getenv("RABBITMQ_HOST"), reason="Live test requires RABBITMQ_HOST")
+    def test_producer_stop_request_cancel_live(self):
+        """测试 request_cancel：主动停止后 producer 退出并发送 CANCELLED，队列清理"""
+
+        async def slow_gen():
+            for i in range(15):
+                await asyncio.sleep(0.08)
+                yield f"msg_{i}"
+
+        handler = RabbitMQMessageHandler()
+        thread_id = "thread-live-cancel-test"
+        handler.clear(thread_id)
+
+        collected = []
+
+        def consume():
+            nonlocal collected
+            helper = GeneratorStreamingHelper(handler, thread_id)
+            collected.extend(helper.stream(async_to_sync_generator(slow_gen())))
+
+        t = threading.Thread(target=consume)
+        t.start()
+        time.sleep(0.5)
+        handler.request_cancel(thread_id)
+        t.join(timeout=5.0)
+        assert not t.is_alive(), "Consumer thread should exit after cancel"
+        assert len(collected) < 6, "message count should be less than 6"
+        assert handler.is_empty(thread_id)

@@ -20,11 +20,11 @@ import json
 from unittest.mock import Mock
 
 import pytest
-from langchain_core.messages import AIMessageChunk
-
+from aidev_agent.core.ag_ui.types import CustomMessageType
 from aidev_agent.enums import StreamEventType
-from aidev_agent.packages.langgraph.streaming.streaming_protocol import BkAiStreamingProtocol, BKAiStreamingAgentType
+from aidev_agent.packages.langgraph.streaming.streaming_protocol import BKAiStreamingAgentType, BkAiStreamingProtocol
 from aidev_agent.utils import Empty
+from langchain_core.messages import AIMessageChunk
 
 
 class MockAgent:
@@ -36,14 +36,12 @@ class MockAgent:
 
 class AgentStreamAdapter:
     agent_type = BKAiStreamingAgentType.ToolCallingCommonQAAgent
+
     # 流协议处理
     def stream_standard_event(self, agent_e, cfg, input_state, skip_thought=False, timeout: int = 30):
         try:
             protocol = BkAiStreamingProtocol(
-                skip_thought=skip_thought,
-                timeout=timeout,
-                max_tool_output_len=2000,
-                agent_type=self.agent_type
+                skip_thought=skip_thought, timeout=timeout, max_tool_output_len=2000, agent_type=self.agent_type
             )
             # agent_e.stream_events() returns a sync generator, not async
             # so we don't need async_generator_with_timeout or async_to_sync_generator
@@ -54,8 +52,8 @@ class AgentStreamAdapter:
                 timeout=timeout,
             )
             yield from protocol.stream_standard_event(g)
-        except Exception as e:
-            yield f'data: {json.dumps({"event": "error", "code": 400, "message": "error"})}\n\n'
+        except Exception:
+            yield f"data: {json.dumps({'event': 'error', 'code': 400, 'message': 'error'})}\n\n"
 
 
 class TestCommonQAStreamingMixIn:
@@ -246,11 +244,17 @@ class TestCommonQAStreamingMixIn:
             # 模拟 reference_doc 自定义事件
             yield {
                 "event": "on_custom_event",
+                "name": CustomMessageType.KNOWLEDGE_RAG_RESULT.value,
                 "data": {
-                    "reference_doc": [
-                        {"file_path": "/path/to/doc1.txt", "score": 0.95},
-                        {"file_path": "/path/to/doc2.txt", "score": 0.88},
-                    ]
+                    "data": {
+                        "reference_doc": [
+                            {
+                                "originFile": "https://abc.example.com/?file_path=doc1.txt",
+                                "url": "https://doc.example.com/s/12345678",
+                                "name": "【云桌面】云桌面启动后黑屏",
+                            }
+                        ]
+                    }
                 },
             }
 
@@ -271,7 +275,7 @@ class TestCommonQAStreamingMixIn:
 
         assert len(reference_doc_events) > 0
         assert "documents" in reference_doc_events[0]
-        assert len(reference_doc_events[0]["documents"]) == 2
+        assert len(reference_doc_events[0]["documents"]) == 1
 
     def test_done_event_type(self, mock_tool_calling_agent):
         """测试 DONE 事件类型"""
@@ -627,7 +631,6 @@ class TestCommonQAStreamingMixIn:
         assert len(think_events) == 0
         # 验证自定义事件的文本内容被保留，或至少有 DONE 事件
         assert len(text_events) > 0 or len(done_events) > 0
-
 
     @pytest.mark.skipif(True, reason="迁移后BkAiStreamingProtocol以后测试失败，等待处理")
     def test_elapsed_time_in_think_event(self, mock_tool_calling_agent):

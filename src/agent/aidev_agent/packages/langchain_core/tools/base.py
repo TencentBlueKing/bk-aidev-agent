@@ -19,6 +19,7 @@ to the current version of the project delivered to anyone in the future.
 import contextlib
 import json
 import re
+from copy import deepcopy
 from hashlib import md5
 from logging import getLogger
 from typing import Any, Dict, List, Optional, Type
@@ -35,16 +36,78 @@ from typing_extensions import Annotated
 
 from aidev_agent.config import settings
 from aidev_agent.enums import CredentialType
+from aidev_agent.exceptions import AIDevException
+from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils.loop import get_event_loop
 
 from .enums import FieldType, FuncType
 from .exceptions import ToolValidationError
 
-try:
-    from bkoauth import get_access_token_by_user
-except ImportError:
-    get_access_token_by_user = None
+MCP_PARAMETER_RETRY_GUIDE = (
+    "以下是给你的工具重试指南：\n"
+    "工具调用参数错误。请按顺序检查：\n\n"
+    "1. **检查必填字段**：确认已传入所有必需参数\n"
+    "2. **检查参数容器**：确认参数放在正确的容器内\n\n"
+    "## 常见错误与修复\n"
+    "❌ 错误写法：直接将数据字段放在顶层\n"
+    "   {'name': '张三', 'age': 25}\n\n"
+    "✅ 正确写法：根据请求类型使用对应容器\n"
+    "   1. GET请求参数 → query_param\n"
+    "      {'query_param': {'page': 1, 'limit': 10}}\n"
+    "   2. POST请求数据 → body_param\n"
+    "      {'body_param': {'name': '张三', 'age': 25}}\n"
+    "   3. 路径参数 → path_param\n"
+    "      {'path_param': {'user_id': '123'}}\n\n"
+    "## 关键原则\n"
+    "• 所有参数必须放在对应的容器内\n"
+    "• 同一请求可以组合多个容器（如同时有body_param和path_param）\n"
+    "• 不要将容器内的字段提升到顶层"
+)
 
+MCP_SYSTEM_ERROR_RETRY_GUIDE = (
+    "以下是给你的工具重试指南：\n"
+    "请先检查参数结构：\n\n"
+    "1. **检查参数位置**：'body_param'应该是参数容器，不是具体的值\n"
+    "2. **检查参数结构**：实际数据应该放在body_param的值中\n\n"
+    "## 错误示例与修复\n"
+    "❌ **错误**：'body_param'被当作值使用\n"
+    "   {'body_param': '张三', 'age': 25, 'email': 'zhangsan@example.com'}\n\n"
+    "✅ **正确**：'body_param'作为容器包裹实际数据\n"
+    "   {'body_param': {'name': '张三', 'age': 25, 'email': 'zhangsan@example.com'}}\n\n"
+    "## 关键原则\n"
+    "• 'body_param'、'query_param'、'path_param' 都是参数容器\n"
+    "• 容器应该包裹具体的参数对象\n"
+    "3. 如果结构正确但仍报错，可能是系统内部异常，需要向用户说明"
+)
+
+MCP_PERMISSION_DENIED_RETRY_GUIDE = (
+    "以下是给你的工具重试指南：\n"
+    "请先检查参数结构：\n\n"
+    "1. **检查必填字段**：确认已传入所有必需参数\n"
+    "2. **检查参数容器**：确认参数放在正确的容器内\n\n"
+    "## 常见错误与修复\n"
+    "❌ 错误写法：直接将数据字段放在顶层\n"
+    "   {'name': '张三', 'age': 25}\n\n"
+    "✅ 正确写法：根据请求类型使用对应容器\n"
+    "   1. GET请求参数 → query_param\n"
+    "      {'query_param': {'page': 1, 'limit': 10}}\n"
+    "   2. POST请求数据 → body_param\n"
+    "      {'body_param': {'name': '张三', 'age': 25}}\n"
+    "   3. 路径参数 → path_param\n"
+    "      {'path_param': {'user_id': '123'}}\n\n"
+    "## 关键原则\n"
+    "• 所有参数必须放在对应的容器内\n"
+    "• 同一请求可以组合多个容器（如同时有body_param和path_param）\n"
+    "• 不要将容器内的字段提升到顶层"
+    "3. 权限问题\n"
+    "如果参数结构完全正确，仍出现权限错误，可能是用户缺少使用该工具的权限，请向用户说明\n"
+)
+
+PATTERN_TO_RETRY_GUIDE = {
+    r"(字段是必填项|请求参数格式错误|required|400)": MCP_PARAMETER_RETRY_GUIDE,
+    r"(系统异常|系统错误|联系管理员|object has no attribute 'items')": MCP_SYSTEM_ERROR_RETRY_GUIDE,
+    r"(无访问权限|禁止访问|403)": MCP_PERMISSION_DENIED_RETRY_GUIDE,
+}
 
 COMPLEXED_FIELD_TYPE = ["object", "array"]
 
@@ -133,7 +196,6 @@ class ApiWrapper:
 
     # 如果同个请求调用过多,则返回此prompt
     CALL_TOO_MUCH_PROMPT: str = """Same request call too much , please return FinalAnswer directly."""
-    TIMEOUT: int = 60
 
     def __init__(
         self,
@@ -147,6 +209,7 @@ class ApiWrapper:
         complex_fields: list | None = None,
         builtin_fields: dict | None = None,
         extra: dict | None = None,
+        timeout: int | None = None,
     ):
         self.session = requests.Session()
         self._method = http_method
@@ -160,6 +223,7 @@ class ApiWrapper:
         self._complex_fields = complex_fields
         self._builtin_fields = builtin_fields or {}
         self._extra = ToolExtra.model_validate(extra or {})
+        self._timeout = timeout if timeout is not None else settings.get("TOOL_CALL_TIMEOUT", 60)
 
     def __call__(self, **kwargs):
         # 提取 config 和 state (如果通过 InjectedState 和 RunnableConfig 注入)
@@ -207,7 +271,7 @@ class ApiWrapper:
                 headers=self._header if self._header else None,
                 params=self._query if self._query else None,
                 json=self._body if self._body else None,
-                timeout=self.TIMEOUT,
+                timeout=self._timeout,
             )
             resp.raise_for_status()
             try:
@@ -468,80 +532,78 @@ def make_structured_tool(
     return _tool
 
 
-def make_mcp_tools(server_config: dict, username: str | None = None) -> List[StructuredTool]:
-    for _server_config in server_config.values():
+def make_mcp_tools(
+    server_config: dict, agent_options: AgentOptions, username: str | None = None
+) -> List[StructuredTool]:
+    # 一定得在这里导包, 否则会报错
+    try:
+        from bkoauth import get_access_token_by_user
+    except ImportError:
+        get_access_token_by_user = None
+
+    new_server_config = deepcopy(server_config)
+    for _server_config in new_server_config.values():
         if _server_config.pop("credential_type", "") == CredentialType.BLUEAPPS.value:
             auth_info = {
                 "bk_app_code": settings.APP_CODE,
                 "bk_app_secret": settings.SECRET_KEY,
             }
             if username:
-                if get_access_token_by_user:
-                    auth_info = {"access_token": get_access_token_by_user(username).access_token}
+                access_token = None
+                if get_access_token_by_user is not None:
+                    access_token = get_access_token_by_user(username)
+                if access_token:
+                    auth_info = {"access_token": access_token.access_token}
                 else:
-                    auth_info = {"bk_username": username}
+                    auth_info["bk_username"] = username
             _server_config["headers"] = {"X-Bkapi-Authorization": json.dumps(auth_info)}
             _server_config["headers"]["X-Bkapi-Timeout"] = settings.BK_APIGW_MCP_TIMEOUT
 
     _loop = get_event_loop()
-    tools = []
-    try:
-        for server_name, _server_config in server_config.items():
-            _logger.info(f"[make_mcp_tools] Connecting to MCP server: {server_name}")
-            client = MultiServerMCPClient({server_name: _server_config})
-            _tools: List[StructuredTool] = _loop.run_until_complete(client.get_tools())
-            _logger.info(f"[make_mcp_tools] Got {len(_tools)} tools from {server_name}")
-            for each in _tools:
-                each.coroutine = wrap_mcp_exception(each.coroutine)
-                if not each.metadata:
-                    each.metadata = {}
-                each.metadata["mcp_name"] = server_name
-            tools.extend(_tools)
-    except Exception as e:
-        _logger.exception(f"[make_mcp_tools] 获取MCP工具列表失败: {e}")
-        raise ValueError(f"获取MCP工具列表失败: {e}")
-    return tools
-
-
-def _extract_error_message(error_str: str) -> str:
-    """从错误字符串中提取message"""
-    match = re.search(r"(\{.*\})", error_str)
-    if match:
+    # 重试2次
+    for _i in range(2):
+        client = MultiServerMCPClient(new_server_config)
         try:
-            data = json.loads(match.group(1))
-            return data.get("response_body", {}).get("message")
-        except (json.JSONDecodeError, KeyError, AttributeError):
-            # 如果JSON解析失败或预期的键不存在，则返回原始错误
-            return error_str
-    return error_str
+            tools: List[StructuredTool] = _loop.run_until_complete(client.get_tools())
+            for each in tools:
+                each.coroutine = MCPExceptionWrapper(each.coroutine, agent_options)
+            return tools
+        except Exception as err:
+            # 记录详细的异常信息用于调试
+            _logger.exception(
+                f"Failed to get MCP tools list: {err}, retry: {_i}, server_config: {new_server_config}, agent_options: {agent_options}, username: {username}"
+            )
+            # 创建详细的错误信息，类似于MCPExceptionWrapper
+            error_detail = _extract_mcp_tools_error_detail(err)
+            error_msg = f"获取MCP工具列表失败:  {error_detail}"
+            if _i == 0:
+                continue
+            # 抛出包含详细错误信息的ValueError
+            raise AIDevException(message=error_msg)
 
 
-def _extract_all_non_group_exceptions(exc):
-    """递归提取 ExceptionGroup 中所有非-ExceptionGroup 的底层异常"""
-    if isinstance(exc, BaseExceptionGroup):
-        for e in exc.exceptions:
-            yield from _extract_all_non_group_exceptions(e)
-    else:
-        yield exc
+class MCPExceptionWrapper:
+    """可序列化的MCP异常处理包装器"""
 
+    def __init__(self, coro, agent_options):
+        self.coro = coro
+        self.agent_options = agent_options
+        # 预编译正则表达式并存储为编译后的模式对象字典
+        self.compiled_pattern_to_retry_guide = {
+            re.compile(pattern): retry_guide for pattern, retry_guide in PATTERN_TO_RETRY_GUIDE.items()
+        }
 
-def wrap_mcp_exception(coro):
-    """MCP异常处理包装器工厂函数
-
-    Args:
-        coro: 原始协程函数
-
-    Returns:
-        包装后的协程函数
-    """
-
-    async def wrapped_coro(*args, **kwargs):
+    async def __call__(self, *args, **kwargs):
         try:
-            return await coro(*args, **kwargs)
+            return await self.coro(*args, **kwargs)
         except ToolException as err:
             _logger.exception(f"failed to run mcp: {err}")
             # 尝试解析错误消息中的详细信息
-            error_detail = _extract_error_message(str(err))
+            error_detail = self.extract_error_message(str(err))
+            # 尝试获取重试引导
+            retry_guide = self.get_mcp_tool_retry_guide(error_detail)
+            if retry_guide:
+                self.agent_options.knowledge_query_options.mcp_tool_retry_guide.append(retry_guide)
             return (f"[ERROR] MCP工具调用失败: {error_detail}", None)
         except BaseExceptionGroup as err:
             # 提取所有非 ExceptionGroup 的底层异常
@@ -566,4 +628,195 @@ def wrap_mcp_exception(coro):
             _logger.exception(f"failed to run mcp: {err}")
             return (f"[ERROR] MCP工具调用失败: {err}", None)
 
-    return wrapped_coro
+    def get_mcp_tool_retry_guide(self, error_detail):
+        """根据预编译的正则表达式模式匹配错误详情获取重试引导"""
+        if not error_detail or not isinstance(error_detail, str):
+            return None
+
+        for compiled_pattern, retry_guide in self.compiled_pattern_to_retry_guide.items():
+            try:
+                if compiled_pattern.search(error_detail):
+                    return retry_guide
+            except Exception as e:
+                _logger.warning(f"Error matching pattern: {e}")
+                continue
+        return None
+
+    def get_status_code_description(self, status_code):
+        """获取HTTP状态码的描述"""
+        status_code_map = {
+            "400": "请求参数或格式错误",
+            "401": "未认证，需要登录",
+            "403": "无访问权限，禁止访问",
+            "404": "请求的资源不存在",
+            "429": "请求过于频繁，被限制",
+            "500": "服务器内部错误",
+            "502": "网关/代理服务器错误",
+            "503": "服务暂时不可用",
+            "504": "网关超时，后端响应慢",
+        }
+        return status_code_map.get(str(status_code), "")
+
+    def extract_error_message(self, error_str):
+        """从错误字符串中提取message和status_code
+
+        Returns:
+            str: 组合后的错误信息，优先级为：
+                1. message + status_code (都存在)
+                2. error_str + status_code (message不存在，status_code存在)
+                3. message (message存在，status_code不存在)
+                4. error_str (都不存在)
+        """
+        # 从错误字符串中提取JSON数据
+        match = re.search(r"(\{.*\})", error_str)
+        if not match:
+            return f"错误信息: {error_str}"
+
+        try:
+            data = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            return f"错误信息: {error_str}"
+
+        # 安全地提取status_code
+        status_code = data.get("status_code")
+        status_code_info = None
+        if status_code is not None:
+            status_desc = self.get_status_code_description(status_code)
+            status_code_info = f"{status_code} ({status_desc})" if status_desc else str(status_code)
+
+        # 安全地提取message（response_body可能不存在或不是字典）
+        response_body = data.get("response_body", {})
+        message = response_body.get("message") if isinstance(response_body, dict) else None
+
+        # 根据可用的信息组合结果
+        if message and status_code_info:
+            return f"错误信息: {message}, 状态码: {status_code_info}"
+        if status_code_info:
+            return f"错误信息: {error_str}, 状态码: {status_code_info}"
+        if message:
+            return f"错误信息: {message}"
+
+        return f"错误信息: {error_str}"
+
+    def extract_all_non_group_exceptions(self, exc):
+        """递归提取 ExceptionGroup 中所有非-ExceptionGroup 的底层异常"""
+        if isinstance(exc, BaseExceptionGroup):
+            for e in exc.exceptions:
+                yield from self.extract_all_non_group_exceptions(e)
+        else:
+            yield exc
+
+    def __getstate__(self):
+        # 在序列化时保存协程对象
+        return {"coro": self.coro}
+
+    def __setstate__(self, state):
+        # 在反序列化时恢复协程对象
+        self.coro = state["coro"]
+
+
+def _format_connect_timeout_error(e):
+    """格式化连接超时异常的错误信息"""
+    return f"{type(e).__name__} - 连接超时{str(e)}"
+
+
+def _format_single_exception(e):
+    """格式化单个异常的错误信息
+
+    Args:
+        e: 异常对象
+
+    Returns:
+        str: 格式化后的错误信息
+    """
+    if "ConnectTimeout" in type(e).__name__:
+        return _format_connect_timeout_error(e)
+    else:
+        return f"{type(e).__name__} - {e}"
+
+
+def _extract_mcp_tools_error_detail(err):
+    """从MCP工具获取异常中提取详细错误信息
+
+    Args:
+        err: MCP工具获取异常对象
+
+    Returns:
+        str: 详细错误信息
+    """
+    if isinstance(err, ConnectionError):
+        return f"连接异常 - {str(err)}"
+    elif isinstance(err, TimeoutError):
+        return f"超时异常 - {str(err)}"
+    elif isinstance(err, BaseExceptionGroup):
+        # 提取所有非ExceptionGroup的底层异常
+        all_errors = list(_extract_all_non_group_exceptions(err))
+        if not all_errors:
+            return f"{type(err).__name__} - {str(err)}"
+
+        if len(all_errors) > 1:
+            error_lines = []
+            for i, e in enumerate(all_errors, start=1):
+                error_msg = _format_single_exception(e)
+                error_lines.append(f"错误{i}: {error_msg}")
+            return f"发现{len(all_errors)}个错误:\n" + "\n".join(error_lines)
+        else:
+            # 单异常情况
+            return _format_single_exception(all_errors[0])
+    else:
+        # 尝试提取JSON格式的错误信息（如果存在）
+        error_str = str(err)
+        match = re.search(r"(\{.*\})", error_str)
+        if match:
+            try:
+                data = json.loads(match.group(1))
+                return data.get("response_body", {}).get("message", error_str)
+            except (json.JSONDecodeError, KeyError, AttributeError):
+                # 如果JSON解析失败，返回原始错误
+                return error_str
+        return f"{type(err).__name__} - {error_str}"
+
+
+def _extract_all_non_group_exceptions(exc):
+    """递归提取ExceptionGroup中所有非ExceptionGroup的底层异常
+
+    Args:
+        exc: 异常对象
+
+    Yields:
+        Exception: 非ExceptionGroup异常
+    """
+    if isinstance(exc, BaseExceptionGroup):
+        for e in exc.exceptions:
+            yield from _extract_all_non_group_exceptions(e)
+    else:
+        yield exc
+
+
+def wrap_mcp_exception(coro):
+    """包装MCP工具的协程，添加异常处理
+
+    Args:
+        coro: 要包装的协程函数
+
+    Returns:
+        包装后的协程函数
+    """
+
+    async def wrapper(*args, **kwargs):
+        try:
+            return await coro(*args, **kwargs)
+        except ToolException as err:
+            _logger.exception(f"failed to run mcp: {err}")
+            return (f"[ERROR] MCP工具调用失败: {err}", None)
+        except ConnectionError as err:
+            _logger.exception(f"failed to run mcp: {err}")
+            return (f"[ERROR] MCP工具调用失败: 连接异常 {err}", None)
+        except TimeoutError as err:
+            _logger.exception(f"failed to run mcp: {err}")
+            return (f"[ERROR] MCP工具调用失败: 超时异常 {err}", None)
+        except Exception as err:
+            _logger.exception(f"failed to run mcp: {err}")
+            return (f"[ERROR] MCP工具调用失败: {err}", None)
+
+    return wrapper

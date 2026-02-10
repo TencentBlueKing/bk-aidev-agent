@@ -8,17 +8,19 @@ import time
 import uuid
 from logging import getLogger
 
-import requests
+from aidev_bkplugin.services.agent import build_execute_kwargs, run_chat_completion_with_thread_id
 from django.conf import settings
 from django.http import HttpResponse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 
-from .context import ContextGenerator, LlmChunkMsg, stream_msg
+from .context import CHUNK_FLUSH_THRESHOLD, ContextGenerator, LlmChunkMsg, stream_msg
 from .decryption import WXBizJsonMsgCrypt
+from .models import AgentSession
 from ..api.bkaidev import BkAiDevApi
 from ..utils.rabbitmq import rabbitmq_client
 
@@ -46,7 +48,7 @@ class WxAiBotViewSet(ViewSet):
         if not configs:
             raise Exception("请先在AI开发平台配置企业智能机器人渠道")
         config = configs[0]["config"] or {}
-        if config.get("contact"):
+        if not config.get("contact"):
             config["contact"] = "智能体管理员"
         return config
 
@@ -89,154 +91,243 @@ class WxAiBotViewSet(ViewSet):
         """处理事件消息"""
         return stream_msg("", True, uuid.uuid4().hex)
 
+    def _get_or_create_thread_id(self, group_id: str) -> str:
+        """
+        获取或创建thread_id
+
+        Args:
+            group_id: 群组ID
+
+        Returns:
+            str: thread_id
+        """
+        try:
+            # 尝试获取现有会话
+            agent_session = AgentSession.objects.get(group_id=group_id)
+
+            # 检查会话是否有效（30分钟内）
+            if agent_session.is_session_valid(timeout_minutes=30):
+                logger.info(f"group_id:{group_id} 使用现有会话 thread_id:{agent_session.thread_id}")
+                # 更新最后会话时间
+                agent_session.update_session()
+                return agent_session.thread_id
+            else:
+                # 会话已过期，生成新的thread_id
+                new_thread_id = f"{group_id}_{int(time.time())}"
+                agent_session.update_session(thread_id=new_thread_id)
+                logger.info(f"group_id:{group_id} 会话已过期，生成新的 thread_id:{new_thread_id}")
+                return new_thread_id
+
+        except AgentSession.DoesNotExist:
+            # 创建新会话
+            new_thread_id = f"{group_id}_{int(time.time())}"
+            AgentSession.objects.create(group_id=group_id, thread_id=new_thread_id, last_session_time=timezone.now())
+            logger.info(f"group_id:{group_id} 创建新会话 thread_id:{new_thread_id}")
+            return new_thread_id
+
     def _reply_text(self, payload: dict) -> dict:
         """处理文本消息"""
         content = payload["text"]["content"]
         rtx_name = settings.WAXIBOT_NAME
         if content.startswith(f"@{rtx_name}"):
             content = content[len(f"@{rtx_name}") :].strip()
-
         current_context = ContextGenerator(payload).generate()
-        agent_apigw_name = settings.BKPAAS_BK_PLUGIN_APIGW_NAME
-        # 生成流式响应ID
         stream_id = current_context.msg_id + "_" + str(int(time.time()))
+        if content.strip() in ["会话", "新会话"]:
+            return self._new_conversation(current_context.group_id, stream_id)
+
+        quote_content = payload.get("quote", {}).get("text", {}).get("content", None)
+        if quote_content:
+            content = self._build_quoted_input(quote_content, content)
 
         logger.info(f"reply_text: current_context=>{current_context}")
 
-        # 启动后台线程处理实际的AI请求
         thread = threading.Thread(
             target=self._process_ai_request_async,
-            args=(content, stream_id, agent_apigw_name, current_context.sender_id),
+            args=(content, stream_id, current_context.sender_id, current_context.group_id),
             daemon=True,
         )
         thread.start()
 
-        # 立即返回"正在思考中...."的消息
         return stream_msg("正在思考中...", False, stream_id)
 
-    def _process_ai_request_async(self, content: str, stream_id: str, agent_apigw_name: str, username: str):
-        """异步处理AI请求的后台方法"""
+    @staticmethod
+    def _build_quoted_input(quote_content: str, user_content: str) -> str:
+        """将引用内容与用户输入合并，去除 think 标签后作为上下文前缀。"""
+        if quote_content.startswith("<think>\n") and "\n</think>\n\n" in quote_content:
+            quote_content = quote_content.split("\n</think>\n\n", 1)[-1]
+        return f"引用内容：「{quote_content}」\n\n{user_content}"
+
+    def _new_conversation(self, group_id: str, stream_id: str) -> dict:
+        """
+        创建新会话
+
+        Args:
+            group_id: 群组ID
+            stream_id: 流式响应ID
+
+        Returns:
+            dict: 返回消息
+        """
+        # 生成新的thread_id
+        new_thread_id = f"{group_id}_{int(time.time())}"
+
+        try:
+            # 尝试获取现有会话并更新
+            agent_session = AgentSession.objects.get(group_id=group_id)
+            agent_session.update_session(thread_id=new_thread_id)
+            logger.info(f"group_id:{group_id} 更新会话 thread_id:{new_thread_id}")
+        except AgentSession.DoesNotExist:
+            # 创建新会话
+            AgentSession.objects.create(group_id=group_id, thread_id=new_thread_id, last_session_time=timezone.now())
+            logger.info(f"group_id:{group_id} 创建新会话 thread_id:{new_thread_id}")
+
+        return stream_msg("已创建新会话，请输入咨询内容", True, stream_id)
+
+    def _process_ai_request_async(self, content: str, stream_id: str, username: str, group_id: str):
+        """异步处理AI请求：直连共享 service，流式结果桥接到 wx 队列协议。"""
         try:
             start_time = time.time()
-            first_response_time = None
-            chat_root = (
-                settings.BK_API_URL_TMPL.format(api_name=agent_apigw_name)
-                + "/"
-                + "prod"
-                + "/bk_plugin/openapi/agent/chat_completion/"
+            thread_id = self._get_or_create_thread_id(group_id)
+            execute_kwargs = build_execute_kwargs(
+                {"stream": True, "thread_id": thread_id, "executor": username, "group_id": group_id},
+                username,
             )
-            response = requests.post(
-                chat_root,
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Bkapi-Authorization": json.dumps(
-                        {"bk_app_code": settings.BKPAAS_APP_CODE, "bk_app_secret": settings.BKPAAS_APP_SECRET}
-                    ),
-                    "X-BKAIDEV-USER": username,
-                },
-                json={
-                    "input": content,
-                    "execute_kwargs": {"stream": True},
-                },
-                stream=True,
+            result, session_code = run_chat_completion_with_thread_id(
+                thread_id=thread_id,
+                input_text=content,
+                username=username,
+                execute_kwargs=execute_kwargs,
+                save_content=True,
             )
-
-            docs = []
-            buffer = ""  # 用于缓存不完整的数据
-            if response.status_code != 200:
-                content = f"请求出错\n{response.text}\n请联系 {self.wxbot_config['contract']} 查看！"
-                llm_chunk = LlmChunkMsg(content=content, is_finish=True, stream_id=stream_id)
-                llm_chunk.append_to_cache(rabbitmq_client)
+            logger.info(f"stream_id:{stream_id} run_chat_completion_with_thread_id ok, session_code={session_code}")
+            if execute_kwargs.stream:
+                self._consume_agent_stream(result, stream_id, start_time)
                 return
 
-            llm_chunk = LlmChunkMsg(content="", is_finish=False, stream_id=stream_id)
-            added_content = ""
-            think_content = ""
-            for chunk in response.iter_content(chunk_size=1024):  # 设置合适的chunk大小
-                if chunk:
-                    try:
-                        chunk_str = chunk.decode("utf-8", errors="ignore")  # 忽略错误的字节
-                        buffer += chunk_str
-                        lines = buffer.split("\n")
-                        buffer = lines[-1]
-
-                        for line in lines[:-1]:
-                            line = line.strip()
-                            if not line:
-                                continue
-                            if line == "data: [DONE]":
-                                continue
-                            if line.startswith("data: "):
-                                data_content = line[6:]
-                                if not data_content:
-                                    continue
-                                chunk_json = json.loads(data_content)
-                                if first_response_time is None:
-                                    first_response_time = time.time()
-                                    elapsed_time = first_response_time - start_time
-                                    logger.info(
-                                        f"stream_id:{stream_id} 从请求开始到第一次收到流式响应耗时: {elapsed_time:.3f} 秒"
-                                    )
-
-                                event_type = chunk_json.get("event", "")
-                                if event_type == "text":
-                                    if chunk_json.get("content") == "正在思考...":
-                                        continue
-                                    added_content += chunk_json.get("content", "")
-                                    if think_content:
-                                        llm_chunk.think_content = llm_chunk.think_content + think_content
-                                        llm_chunk.append_to_cache(rabbitmq_client)
-                                        think_content = ""
-                                    if len(added_content) > 50:
-                                        llm_chunk.content = llm_chunk.content + added_content
-                                        llm_chunk.append_to_cache(rabbitmq_client)
-                                        added_content = ""
-                                elif event_type == "reference_doc":
-                                    documents = chunk_json.get("documents", [])
-                                    for doc_info in documents:
-                                        if "metadata" in doc_info:
-                                            docs.append(doc_info["metadata"])
-                                    continue
-                                elif event_type == "think":
-                                    if chunk_json.get("content") == "正在思考...":
-                                        continue
-                                    if not think_content:
-                                        # 如果思考内容是空的，就先清空一次内容，解决显示问题。
-                                        empty_llm_chunk = LlmChunkMsg(stream_id=stream_id)
-                                        empty_llm_chunk.append_to_cache(rabbitmq_client)
-                                    think_content += chunk_json.get("content", "")
-                                    if len(think_content) > 50:
-                                        llm_chunk.think_content = llm_chunk.think_content + think_content
-                                        llm_chunk.append_to_cache(rabbitmq_client)
-                                        think_content = ""
-                                else:
-                                    logger.info(f"stream_id:{stream_id} 未知的事件类型: {event_type}")
-                    except Exception as e:
-                        logger.error(f"stream_id:{stream_id} 处理 chunk 时发生错误: {e}")
-
-                        # 发生错误时，写入错误信息到流中
-                        error_chunk = LlmChunkMsg(
-                            content=f"处理请求时发生错误: {str(e)}", is_finish=True, stream_id=stream_id
-                        )
-                        try:
-                            error_chunk.append_to_cache(rabbitmq_client)
-                        except Exception as cache_e:
-                            logger.error(f"stream_id:{stream_id} 写入错误信息到缓存失败: {cache_e}")
-                        return
-            llm_chunk.content = llm_chunk.content + added_content
-            llm_chunk.is_finish = True
-            llm_chunk.docs = docs
+            final_content = ""
+            if isinstance(result, dict):
+                choices = result.get("choices") or [{}]
+                final_content = (choices[0].get("delta") or {}).get("content", "") or ""
+            llm_chunk = LlmChunkMsg(
+                content=final_content or "未获取到回答内容",
+                is_finish=True,
+                stream_id=stream_id,
+            )
             llm_chunk.append_to_cache(rabbitmq_client)
 
         except Exception as e:
             logger.exception(f"stream_id:{stream_id} 异步处理AI请求失败: {e}")
-
-            # 发生异常时，写入错误信息到流中
             error_chunk = LlmChunkMsg(content=f"请求处理失败: {str(e)}", is_finish=True, stream_id=stream_id)
             try:
                 error_chunk.append_to_cache(rabbitmq_client)
             except Exception as cache_e:
                 logger.error(f"stream_id:{stream_id} 写入错误信息到缓存失败: {cache_e}")
+
+    def _consume_agent_stream(self, stream_generator, stream_id: str, start_time: float):
+        """
+        消费 ChatCompletionAgent 流式输出并桥接到 wx 协议（RabbitMQ + LlmChunkMsg）。
+        事件映射：think/text/reference_doc/error -> think_content/content/docs；任何异常或 error 事件均写入 finish=True 终止。
+        """
+        docs = []
+        buffer = ""
+        first_response_time = None
+        llm_chunk = LlmChunkMsg(content="", is_finish=False, stream_id=stream_id)
+        added_content = ""
+        think_content = ""
+        has_error = False
+
+        def _process_line(line: str):
+            nonlocal first_response_time, added_content, think_content, has_error
+            line = line.strip()
+            if not line or line == "data: [DONE]" or not line.startswith("data: "):
+                return
+            data_content = line[6:]
+            if not data_content:
+                return
+            try:
+                chunk_json = json.loads(data_content)
+            except json.JSONDecodeError:
+                return
+            if first_response_time is None:
+                first_response_time = time.time()
+                logger.info(
+                    f"stream_id:{stream_id} 从请求开始到第一次收到流式响应耗时: {first_response_time - start_time:.3f} 秒"
+                )
+
+            event_type = chunk_json.get("event", "")
+            if event_type == "text":
+                text_content = chunk_json.get("content", "")
+                if text_content == "正在思考...":
+                    return
+                added_content += text_content
+                if think_content:
+                    llm_chunk.think_content = llm_chunk.think_content + think_content
+                    llm_chunk.append_to_cache(rabbitmq_client)
+                    think_content = ""
+                if len(added_content) > CHUNK_FLUSH_THRESHOLD:
+                    llm_chunk.content = llm_chunk.content + added_content
+                    llm_chunk.append_to_cache(rabbitmq_client)
+                    added_content = ""
+                return
+            if event_type == "reference_doc":
+                for doc_info in chunk_json.get("documents", []):
+                    if isinstance(doc_info, dict) and "metadata" in doc_info:
+                        docs.append(doc_info["metadata"])
+                return
+            if event_type == "think":
+                think_text = chunk_json.get("content", "")
+                if think_text == "正在思考...":
+                    return
+                if not think_content:
+                    empty_llm_chunk = LlmChunkMsg(stream_id=stream_id)
+                    empty_llm_chunk.append_to_cache(rabbitmq_client)
+                think_content += think_text
+                if len(think_content) > CHUNK_FLUSH_THRESHOLD:
+                    llm_chunk.think_content = llm_chunk.think_content + think_content
+                    llm_chunk.append_to_cache(rabbitmq_client)
+                    think_content = ""
+                return
+            if event_type == "error":
+                has_error = True
+                err_chunk = LlmChunkMsg(
+                    content=f"处理请求时发生错误: {chunk_json.get('message', chunk_json)}",
+                    is_finish=True,
+                    stream_id=stream_id,
+                )
+                err_chunk.append_to_cache(rabbitmq_client)
+                return
+            logger.info(f"stream_id:{stream_id} 未知的事件类型: {event_type}")
+
+        for chunk in stream_generator:
+            if has_error:
+                return
+            try:
+                chunk_str = chunk.decode("utf-8", errors="ignore") if isinstance(chunk, bytes) else str(chunk)
+                buffer += chunk_str
+                lines = buffer.split("\n")
+                buffer = lines[-1]
+                for line in lines[:-1]:
+                    _process_line(line)
+            except Exception as e:
+                logger.error(f"stream_id:{stream_id} 处理 chunk 时发生错误: {e}")
+                err_chunk = LlmChunkMsg(content=f"处理请求时发生错误: {str(e)}", is_finish=True, stream_id=stream_id)
+                err_chunk.append_to_cache(rabbitmq_client)
+                return
+
+        if has_error:
+            return
+        if buffer.strip():
+            _process_line(buffer)
+        if has_error:
+            return
+        if think_content:
+            llm_chunk.think_content = llm_chunk.think_content + think_content
+        if added_content:
+            llm_chunk.content = llm_chunk.content + added_content
+        llm_chunk.is_finish = True
+        llm_chunk.docs = docs
+        llm_chunk.append_to_cache(rabbitmq_client)
 
     @action(detail=False, methods=["get", "post"], url_path="callback")
     def callback(self, request: Request) -> HttpResponse:

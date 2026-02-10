@@ -1,19 +1,24 @@
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Any, Optional, List, Union, Dict
+from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
 
 from langchain_core.messages import (
-    BaseMessage, messages_to_dict,
+    BaseMessage,
+    messages_to_dict,
 )
 from langchain_core.outputs import (
-    LLMResult, Generation, ChatGeneration, GenerationChunk, ChatGenerationChunk,
+    ChatGeneration,
+    ChatGenerationChunk,
+    Generation,
+    GenerationChunk,
+    LLMResult,
 )
 from opentelemetry.context.context import Context
 from opentelemetry.trace.span import Span
 
-from aidev_bkplugin.packages.opentelemetry.utils import _set_span_attribute, CallbackFilteredJSONEncoder
+from aidev_bkplugin.packages.opentelemetry.utils import CallbackFilteredJSONEncoder, _set_span_attribute
 
 
 @dataclass
@@ -34,10 +39,7 @@ def set_request_params(span, kwargs, span_holder: SpanHolder):
         return
     # 设置请求的名称模型
     for model_tag in ("model", "model_id", "model_name"):
-        if (model := kwargs.get(model_tag)) is not None:
-            span_holder.request_model = model
-            break
-        elif (
+        if (model := kwargs.get(model_tag)) is not None or (
             model := (kwargs.get("invocation_params") or {}).get(model_tag)
         ) is not None:
             span_holder.request_model = model
@@ -52,11 +54,17 @@ def set_request_params(span, kwargs, span_holder: SpanHolder):
         if "invocation_params" in kwargs
         else kwargs
     )
-    _set_span_attribute(span, "gen_ai.request.max_tokens", params.get("max_tokens") or params.get("max_new_tokens"),)
+    _set_span_attribute(
+        span,
+        "gen_ai.request.max_tokens",
+        params.get("max_tokens") or params.get("max_new_tokens"),
+    )
     _set_span_attribute(span, "gen_ai.request.temperature", params.get("temperature"))
     _set_span_attribute(span, "gen_ai.request.top_p", params.get("top_p"))
     # 设置请求使用的工具
-    tools = kwargs.get("invocation_params", {}).get("tools", []) + kwargs.get("invocation_params", {}).get("functions", [])
+    tools = kwargs.get("invocation_params", {}).get("tools", []) + kwargs.get("invocation_params", {}).get(
+        "functions", []
+    )
     tools_desc = [
         {
             "name": tool.get("function", tool).get("name"),
@@ -77,11 +85,7 @@ def set_llm_request(
 ) -> None:
     set_request_params(span, kwargs, span_holder)
     for i, msg in enumerate(prompts):
-        _set_span_attribute(
-            span,
-            f"llm.input" if i == 0 else f"llm.input{i}",
-            json.dumps(msg)
-        )
+        _set_span_attribute(span, "llm.input" if i == 0 else f"llm.input{i}", json.dumps(msg))
 
 
 def set_chat_request(
@@ -96,15 +100,11 @@ def set_chat_request(
     set_request_params(span, kwargs, span_holder)
     # 收集 prompt
     for i, message in enumerate(messages):
-        _set_span_attribute(
-            span,
-            "llm.input" if i == 0 else f"llm.output{i}",
-            json.dumps(messages_to_dict(message))
-        )
+        _set_span_attribute(span, "llm.input" if i == 0 else f"llm.output{i}", json.dumps(messages_to_dict(message)))
 
 
 def generation_to_dict(generation: Union[Generation, ChatGeneration, GenerationChunk, ChatGenerationChunk]):
-    ret: Dict[str, Any] = { "role":  generation.type }
+    ret: Dict[str, Any] = {"role": generation.type}
     # 获取输出
     content = None
     if hasattr(generation, "text") and generation.text:
@@ -137,19 +137,25 @@ def generation_to_dict(generation: Union[Generation, ChatGeneration, GenerationC
         tool_call_list = []
         for idx, tool_call in enumerate(tool_calls):
             tool_call_dict = dict(tool_call)
-            tool_call_list.append({
-                "id": tool_call_dict.get("id"),
-                "name": tool_call_dict.get("function", {}).get("name") or tool_call_dict.get("name"),
-                "arguments": json.dumps(tool_call_dict.get("function", {}).get("arguments") or tool_call_dict.get("args"), cls=CallbackFilteredJSONEncoder)
-            })
+            tool_call_list.append(
+                {
+                    "id": tool_call_dict.get("id"),
+                    "name": tool_call_dict.get("function", {}).get("name") or tool_call_dict.get("name"),
+                    "arguments": json.dumps(
+                        tool_call_dict.get("function", {}).get("arguments") or tool_call_dict.get("args"),
+                        cls=CallbackFilteredJSONEncoder,
+                    ),
+                }
+            )
         if tool_call_list:
             ret["tool_call"] = tool_call_list
     return ret
+
 
 def set_chat_response(span: Span, response: LLMResult) -> None:
     for i, generations in enumerate(response.generations):
         _set_span_attribute(
             span,
-            f"llm.output" if i == 0 else f"llm.output{i}",
-            json.dumps([generation_to_dict(generation) for generation in generations])
+            "llm.output" if i == 0 else f"llm.output{i}",
+            json.dumps([generation_to_dict(generation) for generation in generations]),
         )

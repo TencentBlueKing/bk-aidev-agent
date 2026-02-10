@@ -178,9 +178,10 @@ class InteractionMessage(Message):
             layout["data"] = {"report_data": self.report_data}
         elif self.interaction_type == self.SubColumnLayoutInteractionType.URL:
             layout["data"] = {"url": self.url}
-        elif self.interaction_type == self.SubColumnLayoutInteractionType.DIALOG:
-            layout["data"] = {"report_data": self.report_data, "dialog": self.dialog}
-        elif self.interaction_type == self.SubColumnLayoutInteractionType.COMPONENT:
+        elif (
+            self.interaction_type == self.SubColumnLayoutInteractionType.DIALOG
+            or self.interaction_type == self.SubColumnLayoutInteractionType.COMPONENT
+        ):
             layout["data"] = {"report_data": self.report_data, "dialog": self.dialog}
         elif self.interaction_type == self.SubColumnLayoutInteractionType.MODAL:
             layout["template_id"] = self.template_id

@@ -20,16 +20,15 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
-from langchain_core.messages import HumanMessage, AIMessage
-from langchain_core.outputs import LLMResult, ChatGeneration
+from aidev_bkplugin.packages.opentelemetry.callback_handler import (
+    BkAidevAgentCallbackHandler,
+    BkAidevAgentInjector,
+)
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.outputs import ChatGeneration, LLMResult
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-
-from aidev_bkplugin.packages.opentelemetry.callback_handler import (
-    BkAidevAgentInjector,
-    BkAidevAgentCallbackHandler,
-)
 
 
 @pytest.fixture
@@ -69,7 +68,7 @@ class TestBkAidevAgentInjector:
 
         # 准备测试数据 - 使用 Mock 对象代替真实的 ExecuteKwargs
         execute_kwargs = MagicMock()
-        execute_kwargs.executor = 'test-executor'
+        execute_kwargs.executor = "test-executor"
         execute_kwargs.session_code = "test-session-123"
         execute_kwargs.caller_bk_app_code = "test-app"
         execute_kwargs.caller_bk_biz_env = "domestic_biz"
@@ -138,6 +137,7 @@ class TestBkAidevAgentInjector:
 
 class TestBkAidevAgentCallbackHandler:
     """测试 BkAidevAgentCallbackHandler 类"""
+
     def test_llm_generate_span_attributes(self, tracer_and_exporter):
         """测试 llm.generate span 包含 llm.input 和 llm.output 属性"""
         tracer, exporter = tracer_and_exporter
@@ -293,7 +293,7 @@ class TestBkAidevAgentCallbackHandler:
             "message": "处理完成",
         }
         handler.on_tool_end(
-            output=output_dict, # type: ignore[assignment]
+            output=output_dict,  # type: ignore[assignment]
             run_id=run_id,
             parent_run_id=parent_run_id,
         )
@@ -346,7 +346,7 @@ class TestBkAidevAgentCallbackHandler:
                 "knowledge_bases": [1, 2, 3],
                 "knowledge_items": [101, 102],
             },
-        ) as span:
+        ):
             # 模拟 RAG 检索
             pass
 

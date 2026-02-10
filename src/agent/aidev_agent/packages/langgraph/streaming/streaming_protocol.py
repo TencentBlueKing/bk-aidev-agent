@@ -15,6 +15,7 @@ specific language governing permissions and limitations under the License.
 We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
+
 from __future__ import annotations
 
 import enum
@@ -22,14 +23,15 @@ import json
 import logging
 import time
 import traceback
-from collections import deque, defaultdict
+from collections import defaultdict, deque
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, TypedDict, Tuple, Generator, Iterator
+from typing import Any, Dict, Generator, Iterator, List, Optional, Tuple, TypedDict
 
 from langchain_core.messages import BaseMessageChunk
 from langchain_core.runnables.schema import StreamEvent
 from typing_extensions import NotRequired
 
+from aidev_agent.core.ag_ui.types import CustomMessageType
 from aidev_agent.enums import StreamEventType
 from aidev_agent.utils import Empty
 from aidev_agent.utils.async_utils import async_generator_with_timeout, async_to_sync_generator
@@ -64,12 +66,14 @@ FINAL_ANSWER_SUFFIXES = [
 
 class BKAiStreamingAgentType(enum.Enum):
     """BK 前端流交互协议 - Think 类型"""
+
     StructuredChatCommonQAAgent = "StructuredChatCommonQAAgent"
     ToolCallingCommonQAAgent = "ToolCallingCommonQAAgent"
 
 
 class BkAiStreamEvent(TypedDict):
     """前端流事件数据结构"""
+
     event: StreamEventType
     content: NotRequired[str]
     cover: NotRequired[bool]
@@ -80,8 +84,8 @@ class BkAiStreamEvent(TypedDict):
 
 
 class BkAiStreamingProtocol:
-    """BK 前端流交互协议
-    """
+    """BK 前端流交互协议"""
+
     LOADING_AGENT_MESSAGE: str = "正在思考..."
     think_symbols: List[str] = [
         "<think>\n",
@@ -277,11 +281,7 @@ class BkAiStreamingProtocol:
                     yield self._yield_ret(event)
 
             # 发送完成事件
-            done_event = BkAiStreamEvent(
-                event=StreamEventType.DONE,
-                content=self.final_result,
-                cover=False
-            )
+            done_event = BkAiStreamEvent(event=StreamEventType.DONE, content=self.final_result, cover=False)
             yield self._yield_ret(done_event)
         except Exception as e:
             logger.exception(f"流处理过程中发生错误: {e}")
@@ -308,9 +308,7 @@ class BkAiStreamingProtocol:
         if item == Empty:
             if self.last_ret_is_empty or self.first_chunk:
                 event = BkAiStreamEvent(
-                    event=StreamEventType.TEXT,
-                    content=self.LOADING_AGENT_MESSAGE,
-                    cover=self.last_ret_is_empty
+                    event=StreamEventType.TEXT, content=self.LOADING_AGENT_MESSAGE, cover=self.last_ret_is_empty
                 )
                 yield from self.handle_ret_event(event, None)
         # 处理聊天模型流事件
@@ -319,38 +317,35 @@ class BkAiStreamingProtocol:
             run_id = item.get("run_id")
             self.run_info[run_id]["tool_call"] = bool(chunk.tool_call_chunks)
             if not self.skip_thought and (
-                chunk.content or
-                chunk.additional_kwargs.get("reasoning_content", None) or
-                self.run_info[run_id].get("tool_call")
+                chunk.content
+                or chunk.additional_kwargs.get("reasoning_content", None)
+                or self.run_info[run_id].get("tool_call")
             ):
                 yield from self.handle_on_chat_model_stream(chunk)
         # 处理自定义事件
         elif item.get("event") == "on_custom_event":
-            data = item.get("data", {})
-            yield from self.handle_on_custom_event(data)
+            yield from self.handle_on_custom_event(item)
         # 处理工具结束事件
         elif item.get("event") == "on_tool_end":
             data = item.get("data", {})
             for event in self.handle_on_tool_end(data):
                 yield event
 
-    def handle_ret(self, ret: BkAiStreamEvent) -> Generator[BkAiStreamEvent] :
+    def handle_ret(self, ret: BkAiStreamEvent) -> Generator[BkAiStreamEvent]:
         recall_ret = None
         if self.agent_type == BKAiStreamingAgentType.StructuredChatCommonQAAgent:
             recall_ret = self.handle_structured_chat_common_qa(ret)
         if ret:
             yield from self.handle_ret_event(ret, recall_ret)
 
-    def handle_structured_chat_common_qa(self, ret: BkAiStreamEvent) :
+    def handle_structured_chat_common_qa(self, ret: BkAiStreamEvent):
         recall_ret = None
         if "content" in ret:
             ret["event"] = self.cur_event_type
         # 一旦出现 Final Answer 模式，之后的所有过程都视为 agent 的正式回答过程
         # NOTE: 需要在 non_think_content 中匹配到的 Final Answer 才能触发结束，think 过程中匹配到的不算
         if not self.final_answer_occurred:
-            for final_answer_prefix, final_answer_suffix in zip(
-                self.final_answer_prefixes, self.final_answer_suffixes
-            ):
+            for final_answer_prefix, final_answer_suffix in zip(self.final_answer_prefixes, self.final_answer_suffixes):
                 if final_answer_prefix in self.non_think_content:
                     self.final_answer_occurred = True
                     self.final_answer_prefix_to_filter = final_answer_prefix
@@ -377,8 +372,7 @@ class BkAiStreamingProtocol:
                             ret["content"] = ret["content"][: -len(recall_ret_prefix_content)]
                         except Exception:
                             raise RuntimeError(
-                                f"子串去除有误。\nret: {ret}\n"
-                                f"recall_ret_prefix_content: {recall_ret_prefix_content}\n"
+                                f"子串去除有误。\nret: {ret}\nrecall_ret_prefix_content: {recall_ret_prefix_content}\n"
                             )
                         # 处理 json 格式内的 final answer 的内容（包含被转义的情况）以供 markdown 渲染。
                         # TODO: 同步更新 final_result
@@ -388,7 +382,7 @@ class BkAiStreamingProtocol:
                         recall_ret = BkAiStreamEvent(
                             event=StreamEventType.TEXT,
                             content=recall_ret_prefix_content,
-                            cover = bool(self.last_ret_is_empty)
+                            cover=bool(self.last_ret_is_empty),
                         )
                     self.cur_event_type = StreamEventType.TEXT
                     ret["elapsed_time"] = (time.time() - self.agent_think_start_time) * 1000
@@ -409,11 +403,7 @@ class BkAiStreamingProtocol:
             # 目前仅支持处理换行符：\\n --> \n
             if "content" in ret:
                 ret["content"] = ret["content"].replace("\\n", "\n")
-                if (
-                    self.cache
-                    and self.cache[-1].get("content", "").endswith("\\")
-                    and ret["content"].startswith("n")
-                ):
+                if self.cache and self.cache[-1].get("content", "").endswith("\\") and ret["content"].startswith("n"):
                     # 处理这样的case：
                     # data: {"event": "text", "content": "如下", "cover": false}
                     # data: {"event": "text", "content": "：", "cover": false}
@@ -429,7 +419,9 @@ class BkAiStreamingProtocol:
             self.first_time_final_answer = False
         return recall_ret
 
-    def handle_ret_event(self, ret: BkAiStreamEvent, recall_ret: Optional[BkAiStreamEvent]) -> Generator[BkAiStreamEvent]:
+    def handle_ret_event(
+        self, ret: BkAiStreamEvent, recall_ret: Optional[BkAiStreamEvent]
+    ) -> Generator[BkAiStreamEvent]:
         """处理 ret 逻辑，与原始 CommonQAStreamingMixIn 的 if ret 部分保持一致"""
         self.first_chunk = False
         self.last_ret_is_empty = ret.get("content", "") == self.LOADING_AGENT_MESSAGE
@@ -441,8 +433,8 @@ class BkAiStreamingProtocol:
                 yield ret
             else:
                 # NOTE: 首次出现 ``` 时，需要在前面添加一个换行符，防止前端没有渲染出来
-                if '``' in ret.get("content", "") and self.first_triple_backticks:
-                    ret["content"] = '\n' + ret["content"]
+                if "``" in ret.get("content", "") and self.first_triple_backticks:
+                    ret["content"] = "\n" + ret["content"]
                     self.first_triple_backticks = False
                 # NOTE: 只有非 self.LOADING_AGENT_MESSAGE 的 event 可以放到 cache 中
                 self.check_and_append(self.cache, ret)
@@ -454,18 +446,16 @@ class BkAiStreamingProtocol:
                         yield ret
                     self.check_and_append(self.cache, ret)
 
-                self.cache_filter(
-                    self.final_answer_prefix_to_filter, self.final_answer_suffix_to_filter
-                )
+                self.cache_filter(self.final_answer_prefix_to_filter, self.final_answer_suffix_to_filter)
 
                 # 防止出现think为空或第一个 think event 的 cover 为 False 的情况
                 if (
                     self.final_answer_occurred
-                    and self.cache[-1]['event'] == StreamEventType.THINK
+                    and self.cache[-1]["event"] == StreamEventType.THINK
                     and self.first_think_event
                 ):
                     # 如果所有think event加起来过滤后为空，则删除，防止输出空的思考过程
-                    if self.cache[-1]["content"].strip() == '':
+                    if self.cache[-1]["content"].strip() == "":
                         self.cache.pop()
                         # 如果过滤后 cache 为空，要将 last_ret_is_empty 设置为 True，确保第一个 text 的 cover 是 True
                         if len(self.cache) == 0:
@@ -493,7 +483,9 @@ class BkAiStreamingProtocol:
             yield ret
         # 如果 cache 最后一个元素包含 `\n，需要在 final_answer_suffix_to_filter 后面也添加一个换行符才能把后缀过滤掉
         if self.cache and "`\n" in self.cache[-1].get("content", ""):
-            self.final_answer_suffix_to_filter = self.final_answer_suffix.replace("\\n", "\n") + "\n" + deepcopy(self.end_content)
+            self.final_answer_suffix_to_filter = (
+                self.final_answer_suffix.replace("\\n", "\n") + "\n" + deepcopy(self.end_content)
+            )
 
         end_event = BkAiStreamEvent(
             event=StreamEventType.TEXT,
@@ -531,7 +523,7 @@ class BkAiStreamingProtocol:
                 event=StreamEventType.THINK,
                 content="\n",
                 cover=False,
-                elapsed_time=(time.time() - self.agent_think_start_time) * 1000
+                elapsed_time=(time.time() - self.agent_think_start_time) * 1000,
             )
             yield think_event
 
@@ -544,7 +536,7 @@ class BkAiStreamingProtocol:
             text_event = BkAiStreamEvent(
                 event=StreamEventType.TEXT,
                 content="抱歉，由于LLM指令遵从效果欠佳，尝试从思考内容中解析最终结论失败，请从思考内容中获取结论。",
-                cover=cover
+                cover=cover,
             )
             yield text_event
 
@@ -573,11 +565,7 @@ class BkAiStreamingProtocol:
             if reasoning_content:
                 self.has_reasoning_content = True
                 self.final_result += reasoning_content
-                ret = BkAiStreamEvent(
-                    event=StreamEventType.THINK,
-                    content=reasoning_content,
-                    cover=cover
-                )
+                ret = BkAiStreamEvent(event=StreamEventType.THINK, content=reasoning_content, cover=cover)
             elif is_tool_call:
                 if name := chunk.tool_call_chunks[0].get("name"):
                     self.tool_calling = True
@@ -629,7 +617,9 @@ class BkAiStreamingProtocol:
                 self.final_result += ret["content"]
             else:
                 # 如果首次从 think 切到 text 内容，需要先补发一条带 elapsed_time的 think event 以供识别
-                if (self.has_reasoning_content or self.has_tool_call or self.has_custom_event) and chunk.content.strip():
+                if (
+                    self.has_reasoning_content or self.has_tool_call or self.has_custom_event
+                ) and chunk.content.strip():
                     self.has_reasoning_content = False
                     self.has_tool_call = False
                     self.has_custom_event = False
@@ -651,9 +641,10 @@ class BkAiStreamingProtocol:
                 self.non_think_content += ret["content"]
         yield from self.handle_ret(ret)
 
-    def handle_on_custom_event(self, data) -> Generator[BkAiStreamEvent]:
+    def handle_on_custom_event(self, item: Dict[str, Any]) -> Generator[BkAiStreamEvent]:
         """处理自定义事件"""
         cover = bool(self.last_ret_is_empty)
+        data = item.get("data", {})
         ret = None
         # 处理前端显示标识
         if "front_end_display" in data:
@@ -662,42 +653,22 @@ class BkAiStreamingProtocol:
         elif "custom_return_chunk" in data and self.front_end_display:
             content = data["custom_return_chunk"]
             self.final_result += content
-            ret = BkAiStreamEvent(
-                event=StreamEventType.TEXT,
-                content=content,
-                cover=cover
-            )
+            ret = BkAiStreamEvent(event=StreamEventType.TEXT, content=content, cover=cover)
         # 处理参考文档
-        elif "reference_doc" in data and self.front_end_display:
-            ret = BkAiStreamEvent(
-                event=StreamEventType.REFERENCE_DOC,
-                documents=data["reference_doc"],
-                cover=True
-            )
+        elif item.get("name", "") == CustomMessageType.KNOWLEDGE_RAG_RESULT.value and self.front_end_display:
+            ret = BkAiStreamEvent(event=StreamEventType.REFERENCE_DOC, documents=data.get("data", []), cover=True)
         # 处理压缩日志
         elif "compress_log" in data and self.front_end_display:
-            ret = BkAiStreamEvent(
-                event=StreamEventType.THINK,
-                content=data["compress_log"],
-                cover=cover
-            )
+            ret = BkAiStreamEvent(event=StreamEventType.THINK, content=data["compress_log"], cover=cover)
         # 处理自定义智能体完成
         elif "custom_agent_finish" in data and self.front_end_display:
             content = data["custom_agent_finish"]
             self.final_result += content
-            ret = BkAiStreamEvent(
-                event=StreamEventType.TEXT,
-                content=content,
-                cover=cover
-            )
+            ret = BkAiStreamEvent(event=StreamEventType.TEXT, content=content, cover=cover)
         # 处理意图识别结果
         elif "intent_recognition_result" in data and self.front_end_display:
             self.has_custom_event = True
-            ret = BkAiStreamEvent(
-                event=StreamEventType.THINK,
-                content=data["intent_recognition_result"],
-                cover=cover
-            )
+            ret = BkAiStreamEvent(event=StreamEventType.THINK, content=data["intent_recognition_result"], cover=cover)
         elif "force_think_content" in data and self.front_end_display:
             self.force_think_content = data["force_think_content"]
 
@@ -718,7 +689,7 @@ class BkAiStreamingProtocol:
             tool_output_content = OUTPUT_PARSER_ERR_MSG
 
         if len(tool_output_content) > self.max_tool_output_len:
-            tool_output_content = tool_output_content[:self.max_tool_output_len] + "（内容过长，已截断）"
+            tool_output_content = tool_output_content[: self.max_tool_output_len] + "（内容过长，已截断）"
 
         # NOTE: 重要操作！
         # 由于 LLM 输出结果不可控，为了防止 stream 过程中输出的 JSON BLOB 中有开始的 ``` 而没有结束的 ```
@@ -726,19 +697,12 @@ class BkAiStreamingProtocol:
         # 如果是奇数次，则手工拼接一个 ``` 防止前端渲染的时候乱了
         log_prefix = "\n```\n" if self.final_result.count("```") % 2 == 1 else ""
 
-        content = (
-            f"{log_prefix}\n\n以下是该 Agent Action 的结果："
-            f"\n```text\n{tool_output_content}\n```\n\n"
-        )
+        content = f"{log_prefix}\n\n以下是该 Agent Action 的结果：\n```text\n{tool_output_content}\n```\n\n"
 
         self.first_tool_args = True
         self.final_result += content
         cover = bool(self.last_ret_is_empty)
-        ret = BkAiStreamEvent(
-            event=StreamEventType.THINK,
-            content=content,
-            cover=cover
-        )
+        ret = BkAiStreamEvent(event=StreamEventType.THINK, content=content, cover=cover)
         yield from self.handle_ret(ret)
 
 
@@ -761,5 +725,5 @@ class AgentStreamAdapter:
             _aiter = async_generator_with_timeout(_aiter, timeout=timeout)
             g = async_to_sync_generator(_aiter)
             yield from protocol.stream_standard_event(g)
-        except Exception as e:
+        except Exception:
             logger.error(traceback.format_exc())

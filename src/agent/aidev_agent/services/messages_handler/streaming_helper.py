@@ -5,6 +5,7 @@ from logging import getLogger
 from typing import Any, Callable, Generator
 
 from .base import (
+    CANCELLED_CHUNK,
     EOD_CHUNK,
     HEARTBEAT_CHUNK,
     HEARTBEAT_INTERVAL,
@@ -275,6 +276,11 @@ class GeneratorStreamingHelper:
                             # 读到结束标记，调用 mark_completed 清理所有队列
                             self.message_handler.mark_completed(self.thread_id)
                             logger.info(f"Stream completed for thread_id={self.thread_id}")
+                            return
+                        if item == CANCELLED_CHUNK:
+                            # 主动取消，同样清理队列并结束
+                            self.message_handler.mark_completed(self.thread_id)
+                            logger.info(f"Stream cancelled for thread_id={self.thread_id}")
                             return
                         yield item
                 except ConsumerPreemptedError:

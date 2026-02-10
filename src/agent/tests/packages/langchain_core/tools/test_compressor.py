@@ -365,7 +365,7 @@ def test_compressor_error_with_fallback_enabled():
     result = compressed_tool.invoke({"city": "Beijing"})
 
     # 验证返回的是原始结果（未压缩）
-    assert "Weather in Beijing: Sunny, 25°C" == result
+    assert result == "Weather in Beijing: Sunny, 25°C"
     assert "[Compressed]" not in result
 
 

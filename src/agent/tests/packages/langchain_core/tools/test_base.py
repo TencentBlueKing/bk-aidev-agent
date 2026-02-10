@@ -22,7 +22,7 @@ import pytest
 from aidev_agent.api.bk_aidev import BKAidevApi
 from aidev_agent.config import settings
 from aidev_agent.packages.langchain_core.tools.base import Tool, make_mcp_tools, make_structured_tool
-from aidev_agent.services.pydantic_models import ExecuteKwargs
+from aidev_agent.services.pydantic_models import AgentOptions, ExecuteKwargs
 from langchain_core.tools import StructuredTool
 
 # ================== make_structured_tool Mock 测试 ==================
@@ -462,16 +462,22 @@ def sample_mcp_config_with_auth():
     }
 
 
+@pytest.fixture
+def mock_agent_options():
+    """Mock AgentOptions 对象"""
+    return MagicMock(spec=AgentOptions)
+
+
 @patch("aidev_agent.packages.langchain_core.tools.base.MultiServerMCPClient")
 @patch("aidev_agent.packages.langchain_core.tools.base.get_event_loop")
-def test_make_mcp_tools_basic(mock_get_loop, mock_mcp_client_class, sample_mcp_config):
+def test_make_mcp_tools_basic(mock_get_loop, mock_mcp_client_class, sample_mcp_config, mock_agent_options):
     """测试基本的 make_mcp_tools 功能"""
     # Mock 工具列表
     mock_tool = MagicMock(spec=StructuredTool)
     mock_tool.name = "test-mcp-tool"
     mock_tool.description = "Test MCP tool"
     mock_tool.coroutine = AsyncMock()
-    mock_tool.metadata = {}  # 添加 metadata 属性
+    mock_tool.metadata = {"mcp_name": "tencentcloud-doc-mcp"}  # 添加 mcp_name 到 metadata
 
     # Mock MCP 客户端
     mock_client = MagicMock()
@@ -484,7 +490,7 @@ def test_make_mcp_tools_basic(mock_get_loop, mock_mcp_client_class, sample_mcp_c
     mock_get_loop.return_value = mock_loop
 
     # 调用 make_mcp_tools
-    tools = make_mcp_tools(sample_mcp_config)
+    tools = make_mcp_tools(sample_mcp_config, mock_agent_options)
 
     # 验证
     assert len(tools) == 1
@@ -496,7 +502,9 @@ def test_make_mcp_tools_basic(mock_get_loop, mock_mcp_client_class, sample_mcp_c
 
 @patch("aidev_agent.packages.langchain_core.tools.base.MultiServerMCPClient")
 @patch("aidev_agent.packages.langchain_core.tools.base.get_event_loop")
-def test_make_mcp_tools_with_blueapps_auth(mock_get_loop, mock_mcp_client_class, sample_mcp_config_with_auth):
+def test_make_mcp_tools_with_blueapps_auth(
+    mock_get_loop, mock_mcp_client_class, sample_mcp_config_with_auth, mock_agent_options
+):
     """测试带 blueapps 认证的 MCP 工具"""
     # Mock 工具
     mock_tool = MagicMock(spec=StructuredTool)
@@ -514,7 +522,7 @@ def test_make_mcp_tools_with_blueapps_auth(mock_get_loop, mock_mcp_client_class,
     mock_get_loop.return_value = mock_loop
 
     # 调用 make_mcp_tools
-    tools = make_mcp_tools(sample_mcp_config_with_auth)
+    tools = make_mcp_tools(sample_mcp_config_with_auth, mock_agent_options)
 
     # 验证认证信息被添加到配置中
     call_args = mock_mcp_client_class.call_args[0][0]
@@ -528,7 +536,7 @@ def test_make_mcp_tools_with_blueapps_auth(mock_get_loop, mock_mcp_client_class,
 
 @patch("aidev_agent.packages.langchain_core.tools.base.MultiServerMCPClient")
 @patch("aidev_agent.packages.langchain_core.tools.base.get_event_loop")
-def test_make_mcp_tools_error_handling(mock_get_loop, mock_mcp_client_class, sample_mcp_config):
+def test_make_mcp_tools_error_handling(mock_get_loop, mock_mcp_client_class, sample_mcp_config, mock_agent_options):
     """测试 MCP 工具获取失败的场景"""
     # Mock 客户端抛出异常
     mock_client = MagicMock()
@@ -540,14 +548,16 @@ def test_make_mcp_tools_error_handling(mock_get_loop, mock_mcp_client_class, sam
     mock_loop.run_until_complete.side_effect = Exception("Connection failed")
     mock_get_loop.return_value = mock_loop
 
-    # 调用应该抛出 ValueError
-    with pytest.raises(ValueError, match="获取MCP工具列表失败"):
-        make_mcp_tools(sample_mcp_config)
+    # 调用应该抛出 AIDevException
+    from aidev_agent.exceptions import AIDevException
+
+    with pytest.raises(AIDevException, match="获取MCP工具列表失败"):
+        make_mcp_tools(sample_mcp_config, mock_agent_options)
 
 
 @patch("aidev_agent.packages.langchain_core.tools.base.MultiServerMCPClient")
 @patch("aidev_agent.packages.langchain_core.tools.base.get_event_loop")
-def test_make_mcp_tools_multiple_servers(mock_get_loop, mock_mcp_client_class):
+def test_make_mcp_tools_multiple_servers(mock_get_loop, mock_mcp_client_class, mock_agent_options):
     """测试多个 MCP 服务器"""
     multi_server_config = {
         "server1": {"url": "http://server1.com/mcp", "transport": "streamable_http"},
@@ -565,22 +575,22 @@ def test_make_mcp_tools_multiple_servers(mock_get_loop, mock_mcp_client_class):
     mock_tool2.coroutine = AsyncMock()
     mock_tool2.metadata = {}  # 添加 metadata 属性
 
-    # Mock 客户端 - 为每个服务器返回一个工具
+    # Mock 客户端 - 返回两个工具
     mock_client = MagicMock()
-    mock_client.get_tools = AsyncMock(return_value=[mock_tool1])
+    mock_client.get_tools = AsyncMock(return_value=[mock_tool1, mock_tool2])
     mock_mcp_client_class.return_value = mock_client
 
-    # Mock 事件循环 - 每次调用返回一个工具
+    # Mock 事件循环 - 返回两个工具
     mock_loop = MagicMock()
-    mock_loop.run_until_complete.side_effect = [[mock_tool1], [mock_tool2]]
+    mock_loop.run_until_complete.return_value = [mock_tool1, mock_tool2]
     mock_get_loop.return_value = mock_loop
 
     # 调用
-    tools = make_mcp_tools(multi_server_config)
+    tools = make_mcp_tools(multi_server_config, mock_agent_options)
 
-    # 验证 - 应该有2个工具（每个服务器一个）
+    # 验证 - 应该有2个工具
     assert len(tools) == 2
-    assert mock_mcp_client_class.call_count == 2  # 为两个服务器各创建一个客户端
+    assert mock_mcp_client_class.call_count == 1  # 只创建一个客户端实例
 
 
 # ================== wrap_mcp_exception 测试 ==================

@@ -1,20 +1,27 @@
 import base64
+import hashlib
 import json
+import logging
+import os
 from functools import lru_cache
 
+import pkg_resources
 from aidev_agent.api.bk_aidev import BKAidevApi
 from aidev_agent.api.bkaidev_client.client import Client
-from aidev_agent.enums import AgentBuildType
+from aidev_agent.enums import AgentBuildType, ChatContentStatus, PromptRole, StreamEventType
 from aidev_agent.services.agent import AgentInstanceFactory
 from aidev_agent.services.chat import ChatCompletionAgent
 from aidev_agent.services.event_handlers import AGUISessionWriter
 from aidev_agent.services.pydantic_models import ChatPrompt, ExecuteKwargs
+from bkapi_client_core.exceptions import HTTPResponseError
 from django.conf import settings
 from django.core.cache import cache
 from opentelemetry import trace
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from .factory import agent_config_factory, agent_factory
+
+logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -126,7 +133,7 @@ def run_bkplugin_invoke(
             chat_history.append(ChatPrompt(role="user", content=input))
         else:
             chat_history = [ChatPrompt(role="user", content=input)]
-    chat_completion_agent = build_chat_completion_agent_by_chat_history(chat_history)
+    chat_completion_agent = build_chat_completion_agent_by_chat_history(chat_history, username)
     return chat_completion_agent.execute(execute_kwargs)
 
 
@@ -145,3 +152,314 @@ def build_execute_kwargs(_execute_kwargs: dict, username: str | None = None) -> 
             propagator.inject(carrier, context=trace.set_span_in_context(current_span))
             execute_kwargs.caller_trace_context = carrier
     return execute_kwargs
+
+
+def run_chat_completion_with_thread_id(
+    thread_id: str,
+    input_text: str,
+    username: str,
+    execute_kwargs: ExecuteKwargs,
+    save_content: bool = True,
+):
+    """
+    通过 thread_id 统一执行 ChatCompletion 并自动处理会话保存。
+    供 builtin view 与 wxbot 共用，避免 HTTP 自调用。
+    """
+    if not input_text:
+        raise ValueError("input_text is required when using thread_id")
+
+    agent_instance, session_code = build_chat_completion_agent_by_thread_id(
+        thread_id=thread_id,
+        input_text=input_text,
+        username=username,
+        save_content=save_content,
+    )
+    execute_kwargs.session_code = session_code
+    result = execute_agent_with_save(agent_instance, execute_kwargs, session_code, username)
+    return result, session_code
+
+
+def get_agent_version():
+    """获取所有以 aidev 开头的已安装包及其版本"""
+    installed_packages = pkg_resources.working_set
+    abilities = {package.key: package.version for package in installed_packages if package.key.startswith("aidev")}
+
+    if settings.VERSION_PATH and os.path.isfile(settings.VERSION_PATH):
+        with open(settings.VERSION_PATH, "r") as f:
+            abilities["version"] = f.read().strip()
+    return abilities
+
+
+def generate_session_code(username: str, agent_code: str, thread_id: str) -> str:
+    """
+    根据 username, agent_code, thread_id 生成唯一的 session_code
+    使用 MD5 hash 保证长度固定且唯一
+    """
+    raw_string = f"{username}:{agent_code}:{thread_id}"
+    return hashlib.md5(raw_string.encode()).hexdigest()
+
+
+def get_or_create_session_by_thread_id(username: str, thread_id: str, agent_code: str | None = None) -> str:
+    """
+    根据 thread_id 获取或创建会话
+
+    Returns:
+        session_code
+    """
+    agent_code = agent_code or settings.APP_CODE
+    session_code = generate_session_code(username, agent_code, thread_id)
+
+    client = BKAidevApi.get_client()
+
+    try:
+        result = client.api.retrieve_chat_session(
+            path_params={"session_code": session_code}, headers={"X-BKAIDEV-USER": username}
+        )
+        if result.get("data"):
+            return session_code
+    except HTTPResponseError as e:
+        logger.warning("Error retrieving chat session: {e}")
+        if e.response_status_code == 404:
+            # 会话不存在，创建新会话
+            client.api.create_chat_session(
+                json={
+                    "session_code": session_code,
+                    "session_name": f"Thread-{thread_id[:8]}",  # 使用 thread_id 前8位作为名称
+                },
+                headers={"X-BKAIDEV-USER": username},
+            )
+            return session_code
+        else:
+            raise e
+
+
+def save_session_content(
+    session_code: str, role: str, content: str, username: str, extra: dict | None = None, status: str = "success"
+) -> dict:
+    """
+    保存会话内容到 BKAidev
+    """
+    client = BKAidevApi.get_client()
+    data = {"session_code": session_code, "role": role, "content": content, "status": status}
+    if extra:
+        data["extra"] = extra
+
+    result = client.api.create_chat_session_content(json=data, headers={"X-BKAIDEV-USER": username})
+    return result.get("data", {})
+
+
+def save_ai_response(result: dict, session_code: str, username: str):
+    """
+    保存非流式 AI 回复
+    """
+    content = ""
+    if "choices" in result and result["choices"]:
+        delta = result["choices"][0].get("delta", {})
+        content = delta.get("content", "")
+
+    if content:
+        save_session_content(session_code=session_code, role=PromptRole.AI.value, content=content, username=username)
+
+
+def build_chat_completion_agent_by_thread_id(
+    thread_id: str, input_text: str, username: str, agent_code: str | None = None, save_content: bool = True
+) -> tuple[ChatCompletionAgent, str]:
+    """
+    通过 thread_id 构建 Agent
+
+    Args:
+        thread_id: Thread ID
+        input_text: 用户输入
+        username: 用户名
+        agent_code: 智能体代码
+        save_content: 是否保存会话内容
+
+    Returns:
+        tuple[agent_instance, session_code]
+    """
+    agent_code = agent_code or settings.APP_CODE
+
+    # 1. 获取或创建会话
+    session_code = get_or_create_session_by_thread_id(username, thread_id, agent_code)
+
+    # 2. 保存用户输入到会话
+    if save_content and input_text:
+        save_session_content(session_code, PromptRole.USER.value, input_text, username)
+
+    # 3. 构建 Agent（使用 session 模式获取历史）
+    agent_cls = agent_factory.get(settings.DEFAULT_NAME)
+    config_manager = agent_config_factory.get(settings.DEFAULT_NAME)
+
+    agent_instance = AgentInstanceFactory.build_agent(
+        build_type=AgentBuildType.SESSION,
+        session_code=session_code,
+        agent_cls=agent_cls,
+        config_manager_class=config_manager,
+    )
+
+    return agent_instance, session_code
+
+
+def execute_agent_with_save(
+    agent_instance: ChatCompletionAgent,
+    execute_kwargs,
+    session_code: str,
+    username: str,
+):
+    """
+    执行 Agent 并自动保存 AI 回复
+
+    Args:
+        agent_instance: Agent 实例
+        execute_kwargs: 执行参数
+        session_code: 会话代码
+        username: 用户名
+
+    Returns:
+        流式模式返回生成器，非流式模式返回结果字典
+    """
+    if execute_kwargs.stream:
+        generator = agent_instance.execute(execute_kwargs)
+        return wrap_generator_with_save(generator, session_code, username)
+    else:
+        result = agent_instance.execute(execute_kwargs)
+        save_ai_response(result, session_code, username)
+        return result
+
+
+def wrap_generator_with_save(generator, session_code: str, username: str):
+    """
+    包装流式生成器，在完成后保存 AI 回复
+
+    SSE 数据格式说明：
+    - event=think: 思考过程
+    - event=text: 实际回复内容
+    - event=error: 错误信息，错误信息在message字段
+    - event=reference_doc: 知识库引用文档
+    """
+
+    message_parts = []  # 按顺序保存消息片段，每个元素为 (event_type, content)
+    current_event_type = None
+    current_content = []
+    has_error = False  # 标记是否有错误发生
+
+    def _flush_current_content():
+        """将当前收集的内容刷新到 message_parts"""
+        nonlocal current_event_type, current_content
+        if current_event_type and current_content:
+            message_parts.append((current_event_type, "".join(current_content)))
+        current_content = []
+
+    try:
+        for chunk in generator:
+            yield chunk
+            # 解析 SSE 格式收集内容
+            if chunk.startswith("data: ") and chunk.strip() != "data: [DONE]":
+                try:
+                    data = json.loads(chunk[6:])
+                    event_type = data.get("event", "")
+                    content = data.get("content", "")
+                    cover = data.get("cover", "")
+
+                    if cover:
+                        message_parts = []
+                        current_content = []  # 同时清空当前正在收集的内容
+
+                    # 事件类型变更时，先保存之前的内容
+                    if event_type != current_event_type:
+                        _flush_current_content()
+                        current_event_type = event_type
+
+                    if (
+                        event_type == StreamEventType.THINK.value
+                        and content
+                        or event_type == StreamEventType.TEXT.value
+                        and content
+                    ):
+                        current_content.append(content)
+                    elif event_type == StreamEventType.ERROR.value:
+                        content = data.get("message")
+                        current_content.append(content)
+                        has_error = True  # 标记有错误发生
+                    elif event_type == StreamEventType.REFERENCE_DOC.value:
+                        docs = data.get("documents", [])
+                        if isinstance(docs, list) and docs:
+                            message_parts.append((StreamEventType.REFERENCE_DOC.value, docs))
+                except json.JSONDecodeError:
+                    logger.info(f"JSON解析失败: {chunk}")
+
+    finally:
+        # 刷新最后一批内容
+        _flush_current_content()
+
+        final_content_parts = []
+
+        # 事件类型到格式化函数的映射
+        handlers = {
+            StreamEventType.THINK.value: format_think_content,
+            StreamEventType.TEXT.value: lambda x: x,
+            StreamEventType.ERROR.value: lambda x: x,
+            StreamEventType.REFERENCE_DOC.value: format_reference_docs,
+        }
+
+        for event_type, content in message_parts:
+            handler = handlers.get(event_type)
+            if handler and content:
+                final_content_parts.append(handler(content))
+
+        if final_content_parts:
+            save_session_content(
+                session_code=session_code,
+                role=PromptRole.AI.value,
+                content="".join(final_content_parts),
+                username=username,
+                status=ChatContentStatus.ERROR.value if has_error else ChatContentStatus.SUCCESS.value,
+            )
+
+
+def format_think_content(content: str) -> str:
+    """格式化思考内容为 HTML 样式"""
+    return (
+        f'<section class="think-head click-close closed">'
+        f'<i class="ai-ui-sdk-icon ai-ui-sdk-sikao"></i>已完成思考'
+        f'<i class="ai-ui-sdk-icon ai-ui-sdk-angle-up"></i>'
+        f"</section>"
+        f'<section class="think-body">{content}</section>'
+    )
+
+
+def format_reference_docs(documents: list) -> str:
+    """格式化知识库引用文档为 HTML 样式"""
+    if not documents:
+        return ""
+
+    html_content = (
+        f'<section class="knowledge-head click-close">'
+        f'<svg class="ai-ui-sdk-wenzhang"><use href="#ai-ui-sdk-wenzhang"></use></svg>'
+        f"找到 {len(documents)} 篇资料参考"
+        f'<i class="ai-ui-sdk-icon ai-ui-sdk-angle-up"></i>'
+        f'</section><ul class="knowledge-body">'
+    )
+
+    for doc in documents:
+        metadata = doc.get("metadata", {}) if isinstance(doc, dict) else {}
+        path = metadata.get("path", "")
+        file_path = metadata.get("file_path", "")
+        display_name = metadata.get("display_name", "")
+        preview_path = metadata.get("preview_path", "")
+
+        title = display_name or (file_path.split("/")[-1] if file_path else "")
+        text_path = preview_path or path
+
+        html_content += (
+            f'<li class="knowledge-item">'
+            f'<i class="ai-ui-sdk-icon ai-ui-sdk-zhishiku"></i>'
+            f'<a href="{text_path}" title="{title} ({text_path})" target="_blank" '
+            f'class="knowledge-link g-flex-truncate">{title}</a>'
+            f'<a href="{path}" title="预览原文" target="_blank" class="knowledge-link hover-show">'
+            f'<i class="ai-ui-sdk-icon ai-ui-sdk-yanjing-kejian"></i></a>'
+            f"</li>"
+        )
+
+    html_content += "</ul>"
+    return html_content

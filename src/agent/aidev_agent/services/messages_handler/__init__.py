@@ -1,4 +1,11 @@
-from .base import EOD_CHUNK, HEARTBEAT_CHUNK, BaseMessageQueueHandler, ConsumerPreemptedError, StreamCancelledError
+from .base import (
+    CANCELLED_CHUNK,
+    EOD_CHUNK,
+    HEARTBEAT_CHUNK,
+    BaseMessageQueueHandler,
+    ConsumerPreemptedError,
+    StreamCancelledError,
+)
 from .factory import message_handler_factory
 from .in_memory import InMemoryQueueMessageHandler
 from .multi_process_mixin import MultiProcessMixin
@@ -12,6 +19,7 @@ __all__ = [
     "MultiProcessMixin",
     "ConsumerPreemptedError",
     "StreamCancelledError",
+    "CANCELLED_CHUNK",
     "EOD_CHUNK",
     "HEARTBEAT_CHUNK",
     "GeneratorStreamingHelper",
