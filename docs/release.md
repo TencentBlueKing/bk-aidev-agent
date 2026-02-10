@@ -1,10 +1,10 @@
-# Release Note - 1.0.3
-**发布日期**: 2026-02-06
+# Release Note - 1.0.3.post2
+**发布日期**: 2026-02-10
 
 ## 核心依赖包
-- aidev-agent==1.0.9
+- aidev-agent==1.0.9.post1
 - aidev-ai-blueking==1.3.3
-- aidev-bkplugin==1.0.14
+- aidev-bkplugin==1.0.14.post1
 - aidev-wxbot==1.0.10
 
 ## aidev-agent
@@ -15,6 +15,7 @@
 
 ### 🛠️ 优化改进
 - 动态加载MCP工具报错重试指南，优化MCP工具参数生成
+- 修复 MCP 执行时，在部分情况下用户名信息异常的问题
 
 ## aidev-bkplugin
 ### ✨ 新增功能
