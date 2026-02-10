@@ -8,13 +8,13 @@ aiosignal==1.4.0
 amqp==5.3.1
 annotated-types==0.7.0
 anyio==4.11.0
-apigw-manager==4.2.3
+apigw-manager==3.1.2
 asgiref==3.10.0
 attrs==25.4.0
 backoff==2.2.1
 billiard==4.2.2
-bk-plugin-framework==2.3.6
-bk-plugin-runtime==2.1.5
+bk-plugin-framework==2.3.3
+bk-plugin-runtime==2.1.2
 bkapi-bk-apigateway==1.0.12
 bkapi-client-core==1.2.0
 bkoauth==0.1.0
@@ -44,11 +44,10 @@ django-dbconn-retry==0.1.9
 django-prometheus==2.4.1
 django-timezone-field==7.1
 djangorestframework==3.16.1
-docutils==0.20.1
-drf-spectacular==0.29.0
 drf-yasg==1.21.11
 environs==14.5.0
 frozenlist==1.8.0
+future==1.0.0
 googleapis-common-protos==1.56.1
 greenlet==3.2.4 ; platform_machine == 'AMD64' or platform_machine == 'WIN32' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'ppc64le' or platform_machine == 'win32' or platform_machine == 'x86_64'
 grpcio==1.76.0
