@@ -19,6 +19,7 @@ to the current version of the project delivered to anyone in the future.
 import contextlib
 import json
 import re
+from copy import deepcopy
 from hashlib import md5
 from logging import getLogger
 from typing import Any, Dict, List, Optional, Type
@@ -39,12 +40,6 @@ from aidev_agent.exceptions import AIDevException
 from aidev_agent.packages.langchain.exceptions import ToolValidationError
 from aidev_agent.packages.langchain.tools.enums import FieldType, FuncType
 from aidev_agent.services.pydantic_models import AgentOptions
-
-try:
-    from bkoauth import get_access_token_by_user
-except ImportError:
-    get_access_token_by_user = None
-
 
 COMPLEXED_FIELD_TYPE = ["object", "array"]
 
@@ -400,7 +395,14 @@ def make_structured_tool(
 def make_mcp_tools(
     server_config: dict, agent_options: AgentOptions, username: str | None = None
 ) -> List[StructuredTool]:
-    for _server_config in server_config.values():
+    # 一定得在这里导包, 否则会报错
+    try:
+        from bkoauth import get_access_token_by_user
+    except ImportError:
+        get_access_token_by_user = None
+
+    new_server_config = deepcopy(server_config)
+    for _server_config in new_server_config.values():
         if _server_config.pop("credential_type", "") == CredentialType.BLUEAPPS.value:
             auth_info = {
                 "bk_app_code": settings.APP_CODE,
@@ -420,7 +422,7 @@ def make_mcp_tools(
     _loop = get_event_loop()
     # 重试2次
     for _i in range(2):
-        client = MultiServerMCPClient(server_config)
+        client = MultiServerMCPClient(new_server_config)
         try:
             tools: List[StructuredTool] = _loop.run_until_complete(client.get_tools())
             for each in tools:
@@ -429,7 +431,7 @@ def make_mcp_tools(
         except Exception as err:
             # 记录详细的异常信息用于调试
             _logger.exception(
-                f"Failed to get MCP tools list: {err}, retry: {_i}, server_config: {server_config}, agent_options: {agent_options}, username: {username}"
+                f"Failed to get MCP tools list: {err}, retry: {_i}, server_config: {new_server_config}, agent_options: {agent_options}, username: {username}"
             )
             # 创建详细的错误信息，类似于MCPExceptionWrapper
             error_detail = _extract_mcp_tools_error_detail(err)
