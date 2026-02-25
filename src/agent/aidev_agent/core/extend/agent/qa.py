@@ -30,7 +30,7 @@ from langchain_community.adapters.openai import convert_dict_to_message, convert
 from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.callbacks import Callbacks
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables.config import _set_config_context
 from langchain_core.tools import BaseTool
@@ -39,12 +39,13 @@ from pydantic import BaseModel
 from aidev_agent.core.agent.agents import (
     ACTION_INPUT_ERR_MSG,
     OUTPUT_PARSER_ERR_MSG,
+    beijing_to_timestamp,
     enhanced_format_log_to_str,
     get_beijing_now,
-    beijing_to_timestamp,
 )
 from aidev_agent.core.agent.multimodal import MultiToolCallCommonAgent, StructuredChatCommonAgent
 from aidev_agent.core.extend.intent.intent_recognition import IntentRecognition
+from aidev_agent.core.extend.models.llm_gateway import ChatModel
 from aidev_agent.core.utils.local import request_local
 from aidev_agent.enums import ContextType, Decision, IntentCategory, IntentStatus, StreamEventType
 from aidev_agent.exceptions import streaming_chunk_exception_handling
@@ -52,7 +53,7 @@ from aidev_agent.packages.langchain.tools.render import render_text_description_
 from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils import Empty
 
-from ..intent.prompts import DEFAULT_QA_PROMPT_TEMPLATES, DEFAULT_INTENT_RECOGNITION_PROMPT_TEMPLATES
+from ..intent.prompts import DEFAULT_INTENT_RECOGNITION_PROMPT_TEMPLATES, DEFAULT_QA_PROMPT_TEMPLATES
 from ..intent.utils import (
     FINAL_ANSWER_PREFIXES,
     FINAL_ANSWER_SUFFIXES,
@@ -95,7 +96,7 @@ class IntentRecognitionMixin(BaseModel):
             callbacks = request_local.intent_recognition_results["callbacks"]
             # 更新覆盖，而不是将整个kwargs替换，防止某些 key 可能被丢失了
             kwargs = {**kwargs, **request_local.intent_recognition_results["kwargs"]}
-            # 更新MCP工具重试指南内容   
+            # 更新MCP工具重试指南内容
             if "mcp_tool_retry_guide" in kwargs:
                 kwargs["mcp_tool_retry_guide"] = self.agent_options.knowledge_query_options.mcp_tool_retry_guide
                 # 将 agent_options 中的 mcp_tool_retry_guide 重置为空
@@ -878,7 +879,7 @@ class CommonQAStreamingMixIn:
             else:
                 ret["content"] = "\n\n"
         cache.append(ret)
-        
+
     def text_to_think(self, cache, has_elapsed_time):
         """把 cache 里所有的 text 转成 think 类型，防止出现先 text 后 think 的情况"""
         # 从后往前遍历把所有 text 改成 think 事件，删除包含 elapsed_time 的事件，把 has_elapsed_time 还原为 False
@@ -1036,9 +1037,11 @@ class CommonQAStreamingMixIn:
                                     has_elapsed_time = True
                                     has_reasoning_content = True
                                 # 如果首次从 think 切到 text 内容，需要先补发一条带 elapsed_time的 think event 以供识别
-                                if ((has_reasoning_content or has_tool_call or has_custom_event) and
-                                    item["data"]["chunk"].content.strip() and
-                                    not has_elapsed_time):
+                                if (
+                                    (has_reasoning_content or has_tool_call or has_custom_event)
+                                    and item["data"]["chunk"].content.strip()
+                                    and not has_elapsed_time
+                                ):
                                     ret = {
                                         "event": StreamEventType.THINK.value,
                                         "content": "\n",
@@ -1116,7 +1119,9 @@ class CommonQAStreamingMixIn:
 
                         max_tool_output_len = self.agent_options.intent_recognition_options.max_tool_output_len
                         if len(tool_output_content) > max_tool_output_len:
-                            tool_output_content = tool_output_content[:max_tool_output_len] + "（内容过长，前端已截断，后端未截断）"
+                            tool_output_content = (
+                                tool_output_content[:max_tool_output_len] + "（内容过长，前端已截断，后端未截断）"
+                            )
                         # NOTE: 重要操作！
                         # 由于 LLM 输出结果不可控，为了防止 stream 过程中输出的 JSON BLOB 中有开始的 ``` 而没有结束的 ```
                         # 这里在返回工具调用结果之前，前判断当前 final_result 中 ``` 已经出现的次数
@@ -1322,21 +1327,27 @@ class CommonQAStreamingMixIn:
                 )
                 usr_prompt = self.__class__.intent_recognition_prompt_templates.get(
                     "extract_conclusion_usr_prompt_template"
-                ).render(last_chat_model_content=last_chat_model_content)
+                ).render(
+                    role_prompt=self.role_prompt, query=input_["input"], last_chat_model_content=last_chat_model_content
+                )
                 messages = [
                     SystemMessage(content=sys_prompt),
                     HumanMessage(content=usr_prompt),
                 ]
-                for chunk in self.llm.stream(messages):
+                non_thinking_llm = ChatModel.get_setup_instance(
+                    model=self.agent_options.intent_recognition_options.non_thinking_llm,
+                    streaming=True,
+                )
+                for chunk in non_thinking_llm.stream(messages):
                     if chunk.content:
                         ret = {
                             "event": StreamEventType.TEXT.value,
                             "content": chunk.content,
                             "cover": cover,
                         }
-                        yield self._yield_ret(ret) 
-                        final_result += chunk.content                                    
-                    
+                        yield self._yield_ret(ret)
+                        final_result += chunk.content
+
             # cover 为 True 时，final_result 为 stream 结束后需要最终显示的结果，可根据需要重新拼接
             # cover 为 False 时不进行覆盖
             cover = False
@@ -1361,7 +1372,7 @@ class CommonQAStreamingMixIn:
 class ToolCallingCommonQAAgent(IntentRecognitionMixin, CommonQAStreamingMixIn, MultiToolCallCommonAgent):
     """适用于原生支持Function Calling的模型，如 hunyuan-turbo 模型"""
 
-    
+
 class StructuredChatCommonQAAgent(IntentRecognitionMixin, CommonQAStreamingMixIn, StructuredChatCommonAgent):
     """适用于没有原生支持Function Calling的模型，如DeepSeek R1 系列模型"""
 
