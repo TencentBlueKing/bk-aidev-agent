@@ -235,6 +235,7 @@ def build_chat_completion_agent_by_thread_id(
         session_code=session_code,
         agent_cls=agent_cls,
         config_manager_class=config_manager,
+        username=username,
     )
 
     return agent_instance, session_code
