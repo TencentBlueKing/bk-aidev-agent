@@ -91,7 +91,6 @@
 
   const handleSdkError = (error: any) => {
     console.error("SDK错误:", error)
-    router.push("/403")
   }
 
   // 设置 AIBlueking 组件的宽度为容器宽度减去会话列表宽度

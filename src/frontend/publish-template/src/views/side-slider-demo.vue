@@ -143,7 +143,6 @@
 
   const handleSdkError = (error: any) => {
     console.error("SDK错误:", error)
-    router.push("/403")
   }
 
   onMounted(async () => {
