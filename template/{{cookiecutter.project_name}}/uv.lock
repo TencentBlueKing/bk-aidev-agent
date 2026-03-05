@@ -16,7 +16,7 @@ wheels = [
 
 [[package]]
 name = "ai-plugin"
-version = "1.1.0"
+version = "1.1.0rc4"
 source = { editable = "." }
 dependencies = [
     { name = "aidev-agent" },
@@ -69,7 +69,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aidev-agent", editable = "../../src/agent" },
-    { name = "aidev-ai-blueking", specifier = "==2.0.0.dev9" },
+    { name = "aidev-ai-blueking", specifier = "==2.0.0.dev10" },
     { name = "aidev-bkplugin", editable = "../../src/plugins/aidev_bkplugin" },
     { name = "aidev-wxbot", editable = "../../src/plugins/aidev_wxbot" },
     { name = "bk-plugin-framework", specifier = ">=2.3.7" },
@@ -186,15 +186,15 @@ dev = [
 
 [[package]]
 name = "aidev-ai-blueking"
-version = "2.0.0.dev9"
+version = "2.0.0.dev10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aidev-agent" },
     { name = "django" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/89/8e/f42b0c6c6c823a64988c5b81f3a278575adeafb5b2bb4bc6a77e184e501b/aidev_ai_blueking-2.0.0.dev9.tar.gz", hash = "sha256:e840adf115524ff6a509cf533eded4ce686a46b3fce2635668fde2f1600494e6", size = 6115959, upload-time = "2026-02-09T07:13:53.63Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/00/e3/aad75fe49ac2d4922ff28630d1d553e43bbcac34646af225c8342e271302/aidev_ai_blueking-2.0.0.dev10.tar.gz", hash = "sha256:8c78fdfa36a04b40b0c4141ce3b5ee25a69957525b46153d6d91ebbe0938d5ed", size = 6116110, upload-time = "2026-03-05T06:51:48.826Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6f/28/17e7ef986986c4f6ad6d3cbf7a55907b89f4e79cdf69e9eb4bf49a2ce63d/aidev_ai_blueking-2.0.0.dev9-py3-none-any.whl", hash = "sha256:253af9848cc13b40e88af4ecebda8853a4a46e848734b611c4d11889d640fc21", size = 6176078, upload-time = "2026-02-09T07:13:45.15Z" },
+    { url = "https://files.pythonhosted.org/packages/a1/b9/b0ae9fae48264f827250405a3ef28afb06d774ea51488c6e96c589af1382/aidev_ai_blueking-2.0.0.dev10-py3-none-any.whl", hash = "sha256:c52045bbf6b8ffc0effcd34147f04c0ebf9da3418481125dc54573f295a1b5c1", size = 6176090, upload-time = "2026-03-05T06:51:35.534Z" },
 ]
 
 [[package]]

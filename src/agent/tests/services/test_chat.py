@@ -500,31 +500,6 @@ class TestCommonAgentChatStreamingLive:
             for each in result:
                 fo.write(each)
 
-    def test_image_support(self):
-        """case 4: 图片支持"""
-        url = "https://stag-dot-resource-dot-bkaidev-dev.bkapps-sz1.woa.com/api/bkaidev/resource/chat/v1/session_files/new_session_1772503691795/files/Gemini_Generated_Image_bbk4spbbk4spbbk4-removebg-preview.png/"
-        agent = ChatCompletionAgent(
-            chat_model=self.llm,
-            chat_history=[
-                ChatPrompt(
-                    role="user",
-                    content=[
-                        {
-                            "filename": "Gemini_Generated_Image_bbk4spbbk4spbbk4-removebg-preview.png",
-                            "mime_type": "image/png",
-                            "type": "binary",
-                            "url": url,
-                        },
-                        {"type": "text", "text": "这张图片有什么内容?"},
-                    ],
-                )
-            ],
-        )
-        with open("text.log", "w") as fo:
-            result = agent.execute(ExecuteKwargs(stream=True))
-            for each in result:
-                fo.write(each)
-
 
 class TestCommonAgentChatStreamingWithAgent:
     """测试聊天代理的流式响应功能"""
