@@ -1,8 +1,5 @@
 from abc import ABC, abstractmethod
-from logging import getLogger
 from typing import Any, Optional
-
-logger = getLogger(__name__)
 
 # 流结束标记
 EOD_CHUNK = "<END_OF_STREAM>"
@@ -14,18 +11,34 @@ HEARTBEAT_INTERVAL = 5.0
 HEARTBEAT_TIMEOUT = HEARTBEAT_INTERVAL * 3
 
 
+class ConsumerPreemptedError(Exception):
+    """当前消费者已被新消费者抢占"""
+
+
+class StreamCancelledError(Exception):
+    """流被用户主动取消（停止会话）"""
+
+
 class BaseMessageQueueHandler(ABC):
     """消息队列处理器抽象基类
 
-    定义了消息队列处理器的核心接口，支持流式请求缓存。
+    纯接口定义，不包含任何具体实现。
     使用 thread_id 作为 key 来管理不同的消息队列。
 
-    核心设计（使用死信队列优化性能）：
+    消息队列接口：
     - put(): 向主队列添加消息
     - get(): 从主队列获取消息（消费后消息进入死信队列）
     - has_pending_messages(): 检查主队列+死信队列是否有消息
     - restore_messages(): 将死信队列的消息恢复到主队列（断点续传）
     - mark_completed(): 标记流完成并清理所有队列
+    - clear(): 清空所有队列
+    - flush(): 立即推送缓冲区消息
+
+    消费者管理接口（由 ConsumerManagementMixin 提供默认实现）：
+    - acquire_consumer(): 注册新消费者，返回消费者 ID
+    - wait_for_previous_consumer(): 等待旧消费者退出
+    - check_consumer(): 检查当前消费者是否仍是活跃消费者
+    - release_consumer(): 释放消费者
 
     消息流转：
     1. 生产者 put() -> 主队列
@@ -105,12 +118,71 @@ class BaseMessageQueueHandler(ABC):
             thread_id: 线程ID
         """
 
+    @abstractmethod
     def flush(self, thread_id: str) -> None:
-        """立即将缓冲区中的消息推送到队列（可选实现）
+        """立即将缓冲区中的消息推送到队列
 
-        默认实现为空操作，子类可以根据需要覆盖此方法。
-        对于不使用缓冲区的实现，无需覆盖此方法。
+        对于不使用缓冲区的实现，可以实现为空操作。
 
         Args:
             thread_id: 线程ID
+        """
+
+    @abstractmethod
+    def acquire_consumer(self, thread_id: str) -> str:
+        """注册新消费者，返回消费者 ID
+
+        同一 thread_id 同一时间只允许一个活跃消费者。
+
+        Args:
+            thread_id: 线程ID
+
+        Returns:
+            新消费者的唯一 ID
+        """
+
+    @abstractmethod
+    def wait_for_previous_consumer(self, thread_id: str, timeout: float = 3.0) -> bool:
+        """等待旧消费者完全退出
+
+        Args:
+            thread_id: 线程ID
+            timeout: 最大等待时间（秒）
+
+        Returns:
+            True 表示旧消费者已退出，False 表示超时
+        """
+
+    @abstractmethod
+    def check_consumer(self, thread_id: str, consumer_id: str) -> None:
+        """检查当前消费者是否仍是活跃消费者
+
+        Args:
+            thread_id: 线程ID
+            consumer_id: 消费者 ID
+
+        Raises:
+            ConsumerPreemptedError: 当前消费者已被新消费者抢占
+        """
+
+    @abstractmethod
+    def release_consumer(self, thread_id: str, consumer_id: str) -> None:
+        """释放消费者
+
+        Args:
+            thread_id: 线程ID
+            consumer_id: 消费者 ID
+        """
+
+    @abstractmethod
+    def get_dlq_messages(self, thread_id: str) -> list[Any]:
+        """获取死信队列中的所有消息（不移除）
+
+        用于在流被取消时，获取已发送给前端但未回写数据库的完整消息内容。
+
+        Args:
+            thread_id: 线程ID
+
+        Returns:
+            死信队列中的消息列表（已发送给前端的消息）
         """

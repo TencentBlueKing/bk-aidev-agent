@@ -52,4 +52,4 @@ async def test_async_gen_with_timeout():
 
     # 迭代器超时没有返回则需要返回超时异常
     with pytest.raises(TimeoutError):
-        result = [each async for each in async_generator_with_timeout(gen(100), timeout=0.1)]
+        result = [each async for each in async_generator_with_timeout(gen(100), timeout=0.1, max_wait_rounds=3)]

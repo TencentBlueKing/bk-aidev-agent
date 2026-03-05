@@ -437,6 +437,7 @@ class AgentInstanceFactory:
         factory.handle_agent_switch(session_context_data, agent_code, switch_agent)
 
         return {
+            "thread_id": factory.session_code,  # 使用 session_code 作为 thread_id，支持断点续传
             "chat_model": factory.build_chat_model(agent_code),
             "non_thinking_llm": factory.build_non_thinking_llm(agent_code),
             "tools": factory.build_tools(agent_code),

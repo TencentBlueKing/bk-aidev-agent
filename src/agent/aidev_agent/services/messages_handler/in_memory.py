@@ -5,12 +5,13 @@ from logging import getLogger
 from typing import Any, ClassVar, Optional
 
 from .base import BaseMessageQueueHandler
+from .single_process_mixin import SingleProcessMixin
 
 logger = getLogger(__name__)
 
 
-class InMemoryQueueMessageHandler(BaseMessageQueueHandler):
-    """基于内存的消息处理器（进程内版本，用于测试）
+class InMemoryQueueMessageHandler(SingleProcessMixin, BaseMessageQueueHandler):
+    """基于内存的消息处理器（单进程版本）
 
     使用 Python 内置的 queue.Queue 作为存储，支持与 RabbitMQ 版本相同的消息流转机制。
     每个 thread_id 对应一个主队列和一个死信队列。
@@ -46,6 +47,7 @@ class InMemoryQueueMessageHandler(BaseMessageQueueHandler):
 
     def _init_queues(self):
         """初始化队列存储"""
+        SingleProcessMixin.__init__(self)
         # 主队列：thread_id -> queue.Queue
         self._main_queues: dict[str, queue.Queue] = {}
         # 死信队列：thread_id -> list[Any]
@@ -89,7 +91,7 @@ class InMemoryQueueMessageHandler(BaseMessageQueueHandler):
         main_queue.put(message)
         logger.debug(f"Put message to queue for thread_id={thread_id}")
 
-    def flush(self, thread_id: Optional[str] = None) -> None:
+    def flush(self, thread_id: str) -> None:
         """立即推送缓冲区中的消息（内存版本无需实现）
 
         内存版本的消息是立即写入的，无需额外的 flush 操作。
@@ -356,3 +358,23 @@ class InMemoryQueueMessageHandler(BaseMessageQueueHandler):
         """
         with self._global_lock:
             return list(self._main_queues.keys())
+
+    def get_dlq_messages(self, thread_id: str) -> list[Any]:
+        """获取死信队列中的所有消息（不移除）
+
+        用于在流被取消时，获取已发送给前端但未回写数据库的完整消息内容。
+
+        Args:
+            thread_id: 线程ID
+
+        Returns:
+            死信队列中的消息列表（已发送给前端的消息）
+        """
+        if thread_id not in self._main_queues:
+            return []
+
+        _, dlq, queue_lock = self._get_or_create_queues(thread_id)
+
+        with queue_lock:
+            # 返回副本，避免外部修改
+            return list(dlq)

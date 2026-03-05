@@ -49,6 +49,7 @@ from .types import (
 from .types import (
     ExtendUserMessage as AGUIUserMessage,
 )
+from ...enums import PromptRole
 
 DEFAULT_SCHEMA_KEYS = ["tools"]
 
@@ -232,7 +233,7 @@ def agui_messages_to_langchain(messages: list[AGUIMessage]) -> list[BaseMessage]
         role = message.role
         # 确保每条消息都有唯一的 id，避免 LangGraph add_messages reducer 错误地替换消息
         message.id = message.id if (message.id and message.id != "None") else str(uuid.uuid4())
-        if role == "user":
+        if role == PromptRole.USER.value:
             # Handle multimodal content
             if isinstance(message.content, str):
                 content = message.content
@@ -248,7 +249,7 @@ def agui_messages_to_langchain(messages: list[AGUIMessage]) -> list[BaseMessage]
                     name=message.name,
                 )
             )
-        elif role == "assistant":
+        elif role == PromptRole.ASSISTANT.value:
             tool_calls = []
             if hasattr(message, "tool_calls") and message.tool_calls:
                 for tc in message.tool_calls:
@@ -270,7 +271,7 @@ def agui_messages_to_langchain(messages: list[AGUIMessage]) -> list[BaseMessage]
                     name=message.name,
                 )
             )
-        elif role == "system":
+        elif role == PromptRole.SYSTEM.value:
             langchain_messages.append(
                 SystemMessage(
                     id=message.id,
@@ -278,7 +279,7 @@ def agui_messages_to_langchain(messages: list[AGUIMessage]) -> list[BaseMessage]
                     name=message.name,
                 )
             )
-        elif role == "tool":
+        elif role == PromptRole.TOOL.value:
             langchain_messages.append(
                 ToolMessage(
                     id=message.id,
@@ -286,6 +287,9 @@ def agui_messages_to_langchain(messages: list[AGUIMessage]) -> list[BaseMessage]
                     tool_call_id=message.tool_call_id,
                 )
             )
+        elif role in PromptRole.skip_roles():
+            # 跳过 reasoning 消息，它只用于前端展示，不需要发送给 LLM
+            continue
         else:
             raise ValueError(f"Unsupported message role: {role}")
     return langchain_messages

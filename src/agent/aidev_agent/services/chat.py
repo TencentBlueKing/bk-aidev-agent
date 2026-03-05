@@ -57,7 +57,7 @@ class ChatCompletionAgent(BaseModel):
     IMAGE_FILE_PATTERN: ClassVar[re.Pattern] = re.compile(r"^\!\[.*\]\((http[^)]+/([^/]+?)\))")
     TOOL_EXECUTION_INTERVAL: ClassVar[int] = 10
     UPLOAD_IMAGE_PROMPT_PREFIX: ClassVar[Any] = "我上传了个图片文件,文件名为{file_name}。"
-    SKIP_PROMPT_ROLE: ClassVar[list[str]] = ["guide"]
+    SKIP_PROMPT_ROLE: ClassVar[list[str]] = ["guide", "reasoning"]
 
     class Config:
         arbitrary_types_allowed = True
@@ -91,6 +91,7 @@ class ChatCompletionAgent(BaseModel):
 
     def _extract_tool_calls(self, builtin_property: dict) -> list[dict]:
         """从 builtin_property 中提取 tool_calls 列表
+
         注意：arguments 在数据库中存储为 JSON 字符串，需要解析为字典
         """
         tool_calls = []
@@ -175,8 +176,14 @@ class ChatCompletionAgent(BaseModel):
         cfg["configurable"]["execute_kwargs"] = execute_kwargs
         messages = [msg for msg in messages]
         if execute_kwargs.stream:
+            # 使用 session_code 作为 stream_thread_id，以支持断点续传（RabbitMQ 队列标识）
+            # 当用户刷新页面重新进入同一会话时，可以从 RabbitMQ 队列恢复之前的流
+            stream_thread_id = execute_kwargs.session_code or self.thread_id
+            # 每次请求使用新的 graph_thread_id，避免 LangGraph checkpoint 累积历史消息
+            # 因为平台端每次都从 DB 读取完整历史传入，不需要依赖 checkpoint 中的消息
+            graph_thread_id = f"{stream_thread_id}_{uuid.uuid4().hex[:8]}"
             body = {
-                "thread_id": self.thread_id,
+                "thread_id": graph_thread_id,
                 "run_id": messages[-1].id or uuid.uuid4().hex,
                 "state": {},
                 "messages": langchain_messages_to_agui(messages),
@@ -186,10 +193,9 @@ class ChatCompletionAgent(BaseModel):
                 name="test_agui_agent",
                 graph=agent_e,
                 event_handler=self.event_handler,
-                config=cfg,
                 tools={each.name: each for each in self.tools} if self.tools else {},
             )
-            return self._stream_with_queue(agui_entry, agent_input)
+            return self._stream_with_queue(agui_entry, agent_input, queue_thread_id=stream_thread_id)
         else:
             loop = get_event_loop()
             result = loop.run_until_complete(
@@ -204,7 +210,9 @@ class ChatCompletionAgent(BaseModel):
             }
             return return_data
 
-    def _stream_with_queue(self, agui_entry: AidevAGUIAgent, agent_input: AgentInput) -> Generator[Any, None, None]:
+    def _stream_with_queue(
+        self, agui_entry: AidevAGUIAgent, agent_input: AgentInput, queue_thread_id: str | None = None
+    ) -> Generator[Any, None, None]:
         """使用队列处理器缓存流式请求，支持断点续传
 
         断点续传逻辑：
@@ -215,15 +223,15 @@ class ChatCompletionAgent(BaseModel):
         以便在连接中断后能够从正确的位置继续。
 
         Args:
-            thread_id: 线程ID，用于标识队列
             agui_entry: AGUI Agent 入口
             agent_input: Agent 输入参数
+            queue_thread_id: 队列标识ID（用于断点续传），默认使用 agent_input.thread_id
 
         Yields:
             流式响应数据
         """
         helper = GeneratorStreamingHelper(
-            thread_id=agent_input.thread_id,
+            thread_id=queue_thread_id or agent_input.thread_id,
         )
         return helper.stream(async_to_sync_generator(agui_entry.run(agent_input)))
 

@@ -18,6 +18,10 @@ class PromptRole(enum.Enum):
     REASONING = "reasoning"  # 演绎过程
     ACTIVITY = "activity"  # 活动,用于指定自定义消息的类
 
+    @classmethod
+    def skip_roles(cls) -> list[str]:
+        return [cls.REASONING.value]
+
 
 class ChatContentStatus(enum.Enum):
     LOADING = "loading"
@@ -99,3 +103,21 @@ class AgentType(enum.Enum):
 
     CHAT = "chat"
     TASK = "task"
+
+
+class SessionsStatus(enum.Enum):
+    """会话状态（断点续传）"""
+
+    PENDING = "pending"  # 等待中
+    RUNNING = "running"  # 运行中
+    FINISHED = "finished"  # 已完成
+    FAILED = "failed"  # 已失败
+    CANCELLED = "cancelled"  # 已取消（用户主动停止）
+
+
+class MessageHandlerType(str, enum.Enum):
+    """消息处理器类型"""
+
+    INMEMORY = "inmemory"  # 内存队列，适用于单进程模式
+    RABBITMQ = "rabbitmq"  # RabbitMQ 队列，适用于多进程模式，支持断点续传
+    AUTO = "auto"  # 自动检测运行环境选择

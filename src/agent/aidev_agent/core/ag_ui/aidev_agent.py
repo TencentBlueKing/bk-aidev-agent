@@ -55,6 +55,7 @@ class EventDispatcher:
         raw_event_handlers = {
             "on_tool_node_finish": self._handle_tool_node_finish,
             "on_tool_node_start": self._handle_tool_node_start,
+            CustomMessageType.KNOWLEDGE_RAG_RESULT.value: self._handle_reference_document_raw,
         }
 
         handler = raw_event_handlers.get(event_name)
@@ -93,11 +94,19 @@ class EventDispatcher:
         return self.agent._parent_dispatch(event)
 
     def _handle_reference_document(self, event: CustomEvent) -> str:
-        """处理引用文档事件"""
+        """处理引用文档事件（CustomEvent 格式）"""
         value = event.raw_event.get("data", {}).get("data", [])
         return self.agent._parent_dispatch(
             CustomEvent(type=EventType.CUSTOM, name=event.raw_event.get("name"), value=value)
         )
+
+    def _handle_reference_document_raw(self, event: RawEvent) -> str:
+        """处理引用文档事件（RawEvent 格式）
+
+        将 LangGraph 的 on_custom_event 原始事件转换为标准的 RawEvent 继续传递给 BaseSessionWriter
+        """
+        # 直接传递 RawEvent，让 BaseSessionWriter 处理
+        return self.agent._parent_dispatch(event)
 
     def _handle_tool_call_start(self, event: ToolCallStartEvent) -> str:
         """处理工具调用开始事件，添加描述信息"""

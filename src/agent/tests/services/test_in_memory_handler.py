@@ -190,13 +190,9 @@ class TestInMemoryQueueMessageHandler:
         chunk2 = next(stream1)
         assert chunk1 == "chunk_0"
         assert chunk2 == "chunk_1"
-        # 模拟断开连接（不继续消费）
+        # 模拟断开连接（不继续消费），显式关闭避免第二次消费等待抢占超时
+        stream1.close()
         # 此时 chunk_0 和 chunk_1 在死信队列中，chunk_2, chunk_3, chunk_4 和 EOD_CHUNK 在主队列中
-
-        # 等待生产者完成
-        import time
-
-        time.sleep(1.0)
 
         # 第二次流式处理：应该从头开始消费（因为会恢复死信队列）
         helper2 = GeneratorStreamingHelper(handler, thread_id=thread_id)

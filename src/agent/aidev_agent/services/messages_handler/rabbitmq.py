@@ -15,6 +15,7 @@ import pika
 from environs import Env
 
 from .base import BaseMessageQueueHandler
+from .multi_process_mixin import MultiProcessMixin
 
 logger = getLogger(__name__)
 
@@ -63,8 +64,15 @@ class RabbitMQConnectionPool:
         return pika.BlockingConnection(params)
 
     def _is_connection_valid(self, connection: pika.BlockingConnection) -> bool:
-        """检查连接是否有效"""
+        """检查连接是否有效
+        除了检查 is_open 状态外，还尝试执行一个轻量级操作来验证连接真正可用。
+        """
         try:
+            if not connection.is_open:
+                return False
+            # 尝试处理一下 I/O 事件，可以帮助检测连接是否真正有效
+            # 如果连接已断开，这里可能会触发异常
+            connection.process_data_events(time_limit=0)
             return connection.is_open
         except Exception:
             return False
@@ -168,22 +176,62 @@ class RabbitMQConnectionPool:
 
         Yields:
             RabbitMQ 连接
+
+        Raises:
+            pika.exceptions.AMQPConnectionError: 连接失败时抛出
         """
         conn = None
-        try:
-            conn = self.get_connection()
-            yield conn
-        except Exception:
-            # 发生异常时，标记连接为失效
-            if conn:
-                self._close_connection(conn)
-                with self._created_lock:
-                    self._created_count = max(0, self._created_count - 1)
-                conn = None
-            raise
-        finally:
-            if conn:
+        max_retries = 2  # 最多重试 2 次（共 3 次尝试）
+        last_error = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                conn = self.get_connection()
+                yield conn
+                # 成功完成，正常归还连接
                 self.release_connection(conn)
+                conn = None
+                return
+            except (
+                pika.exceptions.StreamLostError,
+                pika.exceptions.AMQPConnectionError,
+                pika.exceptions.AMQPChannelError,
+                ConnectionResetError,
+                BrokenPipeError,
+                OSError,
+            ) as e:
+                # 连接相关的异常，标记连接失效并重试
+                last_error = e
+                if conn:
+                    self._close_connection(conn)
+                    with self._created_lock:
+                        self._created_count = max(0, self._created_count - 1)
+                    conn = None
+
+                if attempt < max_retries:
+                    logger.warning(
+                        f"RabbitMQ connection error (attempt {attempt + 1}/{max_retries + 1}): {e}, retrying..."
+                    )
+                    continue
+                else:
+                    logger.error(f"RabbitMQ connection error after {max_retries + 1} attempts: {e}")
+                    raise
+            except Exception:
+                # 其他非连接相关异常，不重试，标记连接失效
+                if conn:
+                    self._close_connection(conn)
+                    with self._created_lock:
+                        self._created_count = max(0, self._created_count - 1)
+                    conn = None
+                raise
+            finally:
+                # 如果 conn 还在，说明是正常退出或者需要归还
+                if conn:
+                    self.release_connection(conn)
+
+        # 如果执行到这里，说明所有重试都失败了
+        if last_error:
+            raise last_error
 
     def close(self) -> None:
         """关闭连接池，释放所有连接"""
@@ -219,8 +267,8 @@ class RabbitMQConnectionPool:
             return self._created_count
 
 
-class RabbitMQMessageHandler(BaseMessageQueueHandler):
-    """基于RabbitMQ的消息处理器（分布式版本）
+class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
+    """基于RabbitMQ的消息处理器（多进程版本）
 
     使用 RabbitMQ 作为远端存储，支持分布式场景下的流式消息处理。
     每个 thread_id 对应一个主队列和一个死信队列。
@@ -436,7 +484,7 @@ class RabbitMQMessageHandler(BaseMessageQueueHandler):
 
     def _start_daemon(self) -> None:
         """启动后台守护线程"""
-        if self._daemon_running:
+        if self._daemon_running and self._daemon_thread and self._daemon_thread.is_alive():
             return
 
         self._daemon_running = True
@@ -527,6 +575,10 @@ class RabbitMQMessageHandler(BaseMessageQueueHandler):
     def _restore_from_dlq(self, thread_id: str) -> int:
         """将死信队列中的消息恢复到主队列（用于断点续传）
 
+        断点续传时，DLQ 中的消息（已被旧消费者读取过）需要与主队列中的消息（未被读取）
+        合并，且 DLQ 消息应该排在前面，保证消息的正确顺序：
+        [DLQ历史消息] + [主队列新消息] = 完整的消息序列
+
         Args:
             thread_id: 线程ID
 
@@ -548,16 +600,34 @@ class RabbitMQMessageHandler(BaseMessageQueueHandler):
             if dlq_count == 0:
                 return 0
 
-            logger.info(f"Restoring {dlq_count} messages from DLQ to main queue for thread_id={thread_id}")
+            # 检查主队列中的消息数量
+            try:
+                main_queue_info = channel.queue_declare(queue=main_queue_name, durable=True, passive=True)
+                main_queue_count = main_queue_info.method.message_count
+            except Exception:
+                main_queue_count = 0
 
-            # 从死信队列获取所有消息并重新发布到主队列
-            restored_count = 0
+            logger.info(f"Restoring messages for thread_id={thread_id}: DLQ={dlq_count}, main_queue={main_queue_count}")
+
+            # 1. 先把主队列中的消息暂存（如果有的话）
+            main_queue_messages = []
+            if main_queue_count > 0:
+                for _ in range(main_queue_count):
+                    method_frame, properties, body = channel.basic_get(queue=main_queue_name, auto_ack=True)
+                    if not method_frame:
+                        break
+                    main_queue_messages.append(body)
+
+            # 2. 从 DLQ 获取所有消息
+            dlq_messages = []
             for _ in range(dlq_count):
                 method_frame, properties, body = channel.basic_get(queue=dlq_name, auto_ack=False)
                 if not method_frame:
                     break
+                dlq_messages.append((method_frame.delivery_tag, body))
 
-                # 重新发布到主队列
+            # 3. 按正确顺序重新发布到主队列：先 DLQ（历史），后主队列（新消息）
+            for _, body in dlq_messages:
                 channel.basic_publish(
                     exchange="",
                     routing_key=main_queue_name,
@@ -565,11 +635,23 @@ class RabbitMQMessageHandler(BaseMessageQueueHandler):
                     properties=pika.BasicProperties(delivery_mode=2),
                 )
 
-                # 确认死信队列中的消息
-                channel.basic_ack(delivery_tag=method_frame.delivery_tag)
-                restored_count += 1
+            for body in main_queue_messages:
+                channel.basic_publish(
+                    exchange="",
+                    routing_key=main_queue_name,
+                    body=body,
+                    properties=pika.BasicProperties(delivery_mode=2),
+                )
 
-            logger.info(f"Restored {restored_count} messages from DLQ for thread_id={thread_id}")
+            # 4. 确认 DLQ 中的消息（删除）
+            for delivery_tag, _ in dlq_messages:
+                channel.basic_ack(delivery_tag=delivery_tag)
+
+            restored_count = len(dlq_messages)
+            logger.info(
+                f"Restored {restored_count} messages from DLQ for thread_id={thread_id}, "
+                f"merged with {len(main_queue_messages)} main queue messages"
+            )
             return restored_count
 
     def _get_dlq_count(self, thread_id: str) -> int:
@@ -588,6 +670,17 @@ class RabbitMQMessageHandler(BaseMessageQueueHandler):
             return 0
 
     # ================== BaseMessageQueueHandler 接口实现 ==================
+
+    def _ensure_daemon_alive(self) -> None:
+        """确保守护线程存活（处理 Gunicorn fork 场景）
+
+        在 Gunicorn 多进程模式下，Worker 进程 fork 后，守护线程不会被继承。
+        此方法检查守护线程是否存活，如果不存活则重新启动。
+        """
+        is_alive = self._daemon_thread.is_alive() if self._daemon_thread else False
+        if not self._daemon_thread or not is_alive:
+            logger.warning("RabbitMQ daemon thread not alive, restarting...")
+            self._start_daemon()
 
     def put(self, thread_id: str, message: Any) -> None:
         """向指定 thread_id 的队列中添加消息
@@ -616,6 +709,8 @@ class RabbitMQMessageHandler(BaseMessageQueueHandler):
 
             if not messages_to_flush:
                 return
+
+            logger.debug("[Streaming] rabbitmq flush thread_id=%s, count=%d", thread_id, len(messages_to_flush))
 
             try:
                 with self._with_connection() as connection:
@@ -714,6 +809,7 @@ class RabbitMQMessageHandler(BaseMessageQueueHandler):
             if timeout is not None:
                 elapsed = time.time() - start_time
                 if elapsed >= timeout:
+                    logger.debug("[Streaming] rabbitmq get timeout thread_id=%s, elapsed=%.3fs", thread_id, elapsed)
                     raise TimeoutError("No message available within timeout")
 
             # 等待一小段时间后重试（轮询方式）
@@ -897,3 +993,54 @@ class RabbitMQMessageHandler(BaseMessageQueueHandler):
         """
         with self._buffer_lock:
             return list(self._message_buffer.keys())
+
+    def get_dlq_messages(self, thread_id: str) -> list[Any]:
+        """获取死信队列中的所有消息（不移除）
+
+        用于在流被取消时，获取已发送给前端但未回写数据库的完整消息内容。
+        使用 basic_get + basic_nack(requeue=True) 实现"偷看"效果。
+
+        Args:
+            thread_id: 线程ID
+
+        Returns:
+            死信队列中的消息列表（已发送给前端的消息）
+        """
+        messages = []
+        delivery_tags = []
+
+        try:
+            with self._with_connection() as connection:
+                channel = connection.channel()
+                dlq_name = self._get_dlq_name(thread_id)
+
+                # 先获取 DLQ 中的消息数量
+                try:
+                    dlq_info = channel.queue_declare(queue=dlq_name, durable=True, passive=True)
+                    dlq_count = dlq_info.method.message_count
+                except Exception:
+                    return []
+
+                if dlq_count == 0:
+                    return []
+
+                # 获取所有消息（不自动确认）
+                for _ in range(dlq_count):
+                    method_frame, properties, body = channel.basic_get(queue=dlq_name, auto_ack=False)
+                    if not method_frame:
+                        break
+
+                    message = pickle.loads(body)
+                    messages.append(message)
+                    delivery_tags.append(method_frame.delivery_tag)
+
+                # 将消息放回队列（不消费，只是"偷看"）
+                for tag in delivery_tags:
+                    channel.basic_nack(delivery_tag=tag, requeue=True)
+
+                logger.debug(f"Peeked {len(messages)} messages from DLQ for thread_id={thread_id}")
+
+        except Exception as e:
+            logger.error(f"Error getting DLQ messages for thread_id={thread_id}: {e}")
+
+        return messages

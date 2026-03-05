@@ -5,16 +5,22 @@
 1. 简单场景：只实现 _do_create_content()，使用默认事件处理逻辑
 2. 扩展场景：覆盖 handle_model_end/handle_tool_finish 等方法自定义处理
 3. 完全自定义：覆盖 __call__ 方法处理原始事件
+
+断点续传机制：
+- 不使用占位消息，而是通过会话状态（session.status）判断
+- 流式开始时：set_streaming_started() 将会话状态设为 running
+- 流式结束时：set_streaming_finished() 将会话状态设为 finished
+- 前端查询消息列表时，后端根据 session.status == running 动态标记最后一条 AI 消息为 streaming
 """
 
 import json
 import uuid
 from abc import ABC, abstractmethod
 from logging import getLogger
-from typing import Any
+from typing import Any, Callable
 
 from ag_ui.core import BaseEvent, EventType, RunErrorEvent
-from ag_ui.core.events import RawEvent
+from ag_ui.core.events import RawEvent, TextMessageContentEvent, TextMessageEndEvent, TextMessageStartEvent
 
 from aidev_agent.core.ag_ui.types import (
     CustomEventNames,
@@ -38,6 +44,11 @@ class BaseSessionWriter(ABC):
     """会话回写器抽象基类
 
     通过 __call__ 方法接收所有 AG-UI 事件，分发到对应的类型化处理方法。
+
+    断点续传通过会话状态判断实现（不使用占位消息）：
+    - 流式开始：set_streaming_started() 更新 session.status = running
+    - 流式结束：set_streaming_finished() 更新 session.status = finished
+    - 消息直接通过 create 创建，无需占位/变形
 
     使用方式：
     1. 简单场景：只实现 `_do_create_content` 方法，使用默认事件处理逻辑
@@ -78,6 +89,11 @@ class BaseSessionWriter(ABC):
         self._tools_mapping: dict[str, Any] = {tool.name: tool for tool in tools} if tools else {}
         # 用于内存去重，避免重复回写
         self._written_message_ids: set[str] = set()
+        # 用于追踪正在流式输出的消息，累积内容
+        # key: message_id, value: {"content": str}
+        self._streaming_messages: dict[str, dict] = {}
+
+    # ---------- 公共事件入口 ----------
 
     def __call__(self, event: BaseEvent) -> None:
         """事件入口 - 分发到对应的处理方法
@@ -89,6 +105,12 @@ class BaseSessionWriter(ABC):
             self._dispatch_raw_event(event)
         elif event.type == EventType.RUN_ERROR:
             self.handle_run_error(event)
+        elif event.type == EventType.TEXT_MESSAGE_START:
+            self.handle_text_message_start(event)
+        elif event.type == EventType.TEXT_MESSAGE_CONTENT:
+            self.handle_text_message_content(event)
+        elif event.type == EventType.TEXT_MESSAGE_END:
+            self.handle_text_message_end(event)
 
     def _dispatch_raw_event(self, event: RawEvent) -> None:
         """分发原始事件到类型化处理方法"""
@@ -108,6 +130,48 @@ class BaseSessionWriter(ABC):
         elif event_name == CustomMessageType.KNOWLEDGE_RAG_RESULT.value:
             self.handle_reference_document(event)
 
+    # ---------- 事件处理方法 ----------
+
+    def handle_text_message_start(self, event: TextMessageStartEvent) -> None:
+        """处理文本消息开始事件，开始追踪流式内容
+
+        Args:
+            event: TEXT_MESSAGE_START 事件
+        """
+        message_id = event.message_id
+        if not message_id or message_id in self._written_message_ids:
+            return
+
+        # 初始化消息内容追踪
+        self._streaming_messages[message_id] = {"content": ""}
+
+    def handle_text_message_content(self, event: TextMessageContentEvent) -> None:
+        """处理文本消息内容事件，累积内容
+
+        Args:
+            event: TEXT_MESSAGE_CONTENT 事件
+        """
+        message_id = event.message_id
+        if not message_id:
+            return
+
+        # 累积内容
+        if message_id in self._streaming_messages:
+            self._streaming_messages[message_id]["content"] += event.delta or ""
+
+    def handle_text_message_end(self, event: TextMessageEndEvent) -> None:
+        """处理文本消息结束事件
+
+        注意：实际的消息回写由 handle_model_end 完成，
+        这里只负责记录消息结束状态，避免重复处理。
+
+        Args:
+            event: TEXT_MESSAGE_END 事件
+        """
+        message_id = event.message_id
+        if not message_id:
+            return
+
     def handle_model_end(self, event: RawEvent) -> None:
         """处理模型输出结束事件，回写 assistant 消息
 
@@ -122,67 +186,31 @@ class BaseSessionWriter(ABC):
         if message_id in self._written_message_ids:
             return
 
+        # 构建 tool_calls
+        tool_calls = self._build_tool_calls(output_message)
+
         # 处理 reasoning 内容（如 deepseek-reasoner）
         reasoning_content = output_message.additional_kwargs.get("reasoning_content")
-        if reasoning_content:
-            reasoning_message_id = f"rsn_{message_id}"
-            if reasoning_message_id not in self._written_message_ids:
-                reasoning_content_list = (
-                    [reasoning_content] if isinstance(reasoning_content, str) else reasoning_content
-                )
-                self._create_session_content(
-                    message_id=reasoning_message_id,
-                    role=PromptRole.REASONING.value,
-                    content=json.dumps(reasoning_content_list, ensure_ascii=False),
-                    status="success",
-                    builtin_property={
-                        "message_id": reasoning_message_id,
-                        "duration": output_message.additional_kwargs.get("reasoning_time", 0),
-                    },
-                )
-                self._written_message_ids.add(reasoning_message_id)
 
-        # 构建 tool_calls
-        tool_calls = []
-        for each in output_message.tool_calls or []:
-            _tool = self._tools_mapping.get(each["name"])
-            tool_calls.append(
-                ExtendToolCall(
-                    id=each["id"],
-                    function=ExtendFunctionCall(
-                        name=each["name"],
-                        arguments=json.dumps(each["args"]),
-                        description=_tool.description if _tool else "",
-                        mcp_name=_tool.metadata.get("mcp_name", "") if _tool and _tool.metadata else "",
-                    ),
-                ).model_dump()
+        # 处理最终回复内容
+        content = self._resolve_content(output_message.content, tool_calls, reasoning_content)
+
+        if reasoning_content:
+            self._write_reasoning_message(
+                message_id=message_id,
+                reasoning_content=reasoning_content,
+                output_message=output_message,
             )
-        # 回写 assistant 消息
-        # 对于 DeepSeek reasoning 模型，最终回复可能在 reasoning_content 而不是 content
-        # 当有 tool_calls 时，content 为空是正常的（AI 只是调用工具）
-        # 当没有 tool_calls 且 content 为空时，尝试使用 reasoning_content 作为回复内容
-        content = output_message.content
-        content_stripped = content.strip() if content else ""
-        if not content_stripped and not tool_calls and reasoning_content:
-            content = reasoning_content
-        elif not content_stripped and tool_calls:
-            # 有 tool_calls 但 content 为空/只有空白字符，使用一个有意义的占位符
-            content = "正在调用工具..."
-        elif not content_stripped:
-            # 没有 tool_calls 也没有内容，使用空字符串（可能会失败）
-            content = ""
-        content = output_message.content or "..."
-        self._create_session_content(
+
+        self._write_assistant_message(
             message_id=message_id,
-            role=PromptRole.ASSISTANT.value,
             content=content,
-            status="success",
-            builtin_property={
-                "message_id": message_id,
-                "tool_calls": tool_calls,
-            },
+            tool_calls=tool_calls,
         )
+
         self._written_message_ids.add(message_id)
+        # 清理追踪
+        self._streaming_messages.pop(message_id, None)
 
     def handle_tool_finish(self, event: RawEvent) -> None:
         """处理工具执行完成事件，回写 tool 消息
@@ -249,6 +277,7 @@ class BaseSessionWriter(ABC):
         if message_id in self._written_message_ids:
             return
 
+        # content 需要序列化为 JSON 字符串，因为数据库 content 字段是 TextField
         self._create_session_content(
             message_id=message_id,
             role=PromptRole.ACTIVITY.value,
@@ -261,6 +290,126 @@ class BaseSessionWriter(ABC):
         )
         self._written_message_ids.add(message_id)
 
+    # ---------- handle_model_end 辅助方法 ----------
+
+    def _build_tool_calls(self, output_message: Any) -> list:
+        """从模型输出中构建 tool_calls 列表"""
+        tool_calls = []
+        for each in output_message.tool_calls or []:
+            _tool = self._tools_mapping.get(each["name"])
+            tool_calls.append(
+                ExtendToolCall(
+                    id=each["id"],
+                    function=ExtendFunctionCall(
+                        name=each["name"],
+                        arguments=json.dumps(each["args"]),
+                        description=_tool.description if _tool else "",
+                        mcp_name=_tool.metadata.get("mcp_name", "") if _tool and _tool.metadata else "",
+                    ),
+                ).model_dump()
+            )
+        return tool_calls
+
+    def _resolve_content(self, content: str, tool_calls: list, reasoning_content: str | None) -> str:
+        """解析最终回复内容
+
+        对于 DeepSeek reasoning 模型，最终回复可能在 reasoning_content 而不是 content。
+        当有 tool_calls 时，content 为空是正常的（AI 只是调用工具）。
+        当没有 tool_calls 且 content 为空时，尝试使用 reasoning_content 作为回复内容。
+        """
+        content_stripped = content.strip() if content else ""
+
+        if not content_stripped and not tool_calls and reasoning_content:
+            # reasoning 模型的最终回复在 reasoning_content 中
+            return reasoning_content
+        elif not content_stripped and tool_calls:
+            # 有 tool_calls 但 content 为空/只有空白字符，使用一个有意义的占位符
+            return "正在调用工具..."
+        elif not content_stripped:
+            # 没有 tool_calls 也没有内容，使用空字符串（可能会失败）
+            return ""
+        return reasoning_content
+
+    def _write_reasoning_message(
+        self,
+        message_id: str,
+        reasoning_content: str,
+        output_message: Any,
+    ) -> None:
+        """回写 reasoning 消息
+
+        Args:
+            message_id: 当前 assistant 消息 ID
+            reasoning_content: reasoning 内容
+            output_message: 模型输出对象
+        """
+        reasoning_message_id = f"rsn_{message_id}"
+        if reasoning_message_id in self._written_message_ids:
+            return
+
+        reasoning_content_list = reasoning_content if isinstance(reasoning_content, list) else [reasoning_content]
+        reasoning_json = json.dumps(reasoning_content_list, ensure_ascii=False)
+        reasoning_property = {
+            "message_id": reasoning_message_id,
+            "duration": output_message.additional_kwargs.get("reasoning_time", 0),
+        }
+
+        self._create_session_content(
+            message_id=reasoning_message_id,
+            role=PromptRole.REASONING.value,
+            content=reasoning_json,
+            status="success",
+            builtin_property=reasoning_property,
+        )
+
+        self._written_message_ids.add(reasoning_message_id)
+
+    def _write_assistant_message(
+        self,
+        message_id: str,
+        content: str,
+        tool_calls: list,
+    ) -> None:
+        """回写 assistant 消息
+
+        Args:
+            message_id: assistant 消息 ID
+            content: 消息内容
+            tool_calls: 工具调用列表
+        """
+        assistant_property = {
+            "message_id": message_id,
+            "tool_calls": tool_calls,
+        }
+
+        self._create_session_content(
+            message_id=message_id,
+            role=PromptRole.ASSISTANT.value,
+            content=content,
+            status="success",
+            builtin_property=assistant_property,
+        )
+
+    # ---------- 底层回写方法 ----------
+
+    def _get_headers(self) -> dict[str, str]:
+        """构建请求头"""
+        return {"X-BKAIDEV-USER": self.username} if self.username else {}
+
+    def _safe_call(self, fn: Callable, message_id: str, action: str, **kwargs: Any) -> None:
+        """安全调用回写函数，统一处理异常和日志
+
+        Args:
+            fn: 实际执行的回写函数（_do_create_content 等）
+            message_id: 消息 ID，仅用于日志
+            action: 操作名称，仅用于日志（如 "create"）
+            **kwargs: 传递给 fn 的参数
+        """
+        try:
+            fn(**kwargs)
+        except Exception as e:
+            logger.error(f"Failed to {action} session content: message_id={message_id}, error={e}", exc_info=True)
+
     def _create_session_content(
         self,
         message_id: str,
@@ -269,10 +418,7 @@ class BaseSessionWriter(ABC):
         status: str,
         builtin_property: dict[str, Any],
     ) -> None:
-        """创建会话内容（内部方法）
-
-        构建标准 payload 并调用子类实现的回写方法。
-        """
+        """创建会话内容（内部方法）"""
         payload = {
             "session_code": self.session_code,
             "role": role,
@@ -282,12 +428,7 @@ class BaseSessionWriter(ABC):
                 "builtin_property": builtin_property,
             },
         }
-        headers = {"X-BKAIDEV-USER": self.username} if self.username else {}
-
-        try:
-            self._do_create_content(payload=payload, headers=headers)
-        except Exception as e:
-            logger.error(f"Failed to create session content: message_id={message_id}, role={role}, error={e}")
+        self._safe_call(self._do_create_content, message_id, "create", payload=payload, headers=self._get_headers())
 
     @abstractmethod
     def _do_create_content(self, payload: dict[str, Any], headers: dict[str, str]) -> None:
@@ -301,4 +442,20 @@ class BaseSessionWriter(ABC):
 
         Raises:
             Exception: 回写失败时抛出异常，由基类统一处理日志记录
+        """
+
+    # ---------- 断点续传支持（基于会话状态判断） ----------
+
+    def set_streaming_started(self) -> None:
+        """标记流式传输开始
+
+        子类应覆盖此方法来更新会话状态为 running。
+        默认实现为空操作。
+        """
+
+    def set_streaming_finished(self) -> None:
+        """标记流式传输结束
+
+        子类应覆盖此方法来更新会话状态为 finished。
+        默认实现为空操作。
         """
