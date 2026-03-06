@@ -23,7 +23,10 @@
   const agentName = window.BK_AGENT_NAME
 
   const userName = window.BK_USER_NAME
-  const routers = [{ to: "side-slider", name: "小鲸样例" }]
+  const routers = [
+    { to: "side-slider", name: "小鲸样例" },
+    { to: "page", name: "聊天窗" },
+  ]
 </script>
 
 <style lang="postcss" scoped>

@@ -241,21 +241,25 @@
 <style lang="postcss" scoped>
   .share-container {
     width: 100%;
-    height: 100vh;
+    min-height: 100vh;
     opacity: 0.89;
     background-image: linear-gradient(0deg, #c6cdeb 0%, #fdf7f6 20%, #ebf3f8 38%, #f8f8ff 71%, #bae6fd 100%);
     display: flex;
     flex-direction: column;
-    justify-content: center;
     align-items: center;
+    padding: 40px 20px;
+    box-sizing: border-box;
     .ai-share-container {
       width: 900px;
+      max-width: 100%;
+      max-height: calc(100vh - 120px);
       min-height: 300px;
       background: #ffffff;
       border-radius: 16px;
       padding: 24px;
       display: flex;
       flex-direction: column;
+      box-sizing: border-box;
       .ai-share-header {
         height: 57px;
         flex: 0 0 57px;
@@ -286,8 +290,9 @@
         flex: 1;
         margin-top: 24px;
         padding-bottom: 24px;
-        min-height: 200px;
+        min-height: 0;
         overflow-y: auto;
+        overflow-x: hidden;
 
         /* 自定义滚动条样式 */
         &::-webkit-scrollbar {
@@ -331,6 +336,7 @@
       line-height: 16px;
       font-size: 12px;
       color: #979ba5;
+      flex-shrink: 0;
     }
   }
 </style>
