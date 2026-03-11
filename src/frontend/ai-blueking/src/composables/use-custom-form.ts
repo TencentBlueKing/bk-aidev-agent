@@ -14,7 +14,7 @@ export const useCustomForm = (shortcut: Ref<IShortcut>) => {
         // 使用本地扩展的 IShortcutComponent 类型
         const component = item as IShortcutComponent;
         data.push({
-          [item.key]: component.selectedText || component.default || '',
+          [item.key]: component.selectedText || (component.default ?? ''),
           context_type: item.type,
           __label: item.name,
           __key: item.key,
@@ -131,7 +131,7 @@ export const useCustomForm = (shortcut: Ref<IShortcut>) => {
     const index = formData.value.findIndex(item => item[key]);
     if (index !== -1) {
       // 使用本地扩展的 IShortcutComponent 类型
-      formData.value[index][key] = component.selectedText || component.default || '';
+      formData.value[index][key] = component.selectedText || (component.default ?? '');
     }
   };
 

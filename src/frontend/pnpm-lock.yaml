@@ -113,8 +113,8 @@ importers:
   ai-blueking:
     dependencies:
       '@blueking/ai-ui-sdk':
-        specifier: ' 0.1.19-beta.42'
-        version: 0.1.19-beta.42(bkui-vue@2.0.2-beta.29(highlight.js@11.11.1)(vue@3.5.17(typescript@5.8.3)))(dayjs@1.11.13)(tdesign-vue-next@1.18.0(vue@3.5.17(typescript@5.8.3)))(tippy.js@6.3.7)(vue-router@4.5.1(vue@3.5.17(typescript@5.8.3)))(vue@3.5.17(typescript@5.8.3))(x-mavon-editor@0.0.20)
+        specifier: ' 0.1.19-beta.44'
+        version: 0.1.19-beta.44(bkui-vue@2.0.2-beta.29(highlight.js@11.11.1)(vue@3.5.17(typescript@5.8.3)))(dayjs@1.11.13)(tdesign-vue-next@1.18.0(vue@3.5.17(typescript@5.8.3)))(tippy.js@6.3.7)(vue-router@4.5.1(vue@3.5.17(typescript@5.8.3)))(vue@3.5.17(typescript@5.8.3))(x-mavon-editor@0.0.20)
       '@blueking/bkui-library':
         specifier: 0.0.0-beta.6
         version: 0.0.0-beta.6
@@ -987,8 +987,8 @@ packages:
       vue-router: ^4.5.1
       x-mavon-editor: 0.0.20
 
-  '@blueking/ai-ui-sdk@0.1.19-beta.42':
-    resolution: {integrity: sha512-b5hkJcGeASRC+srS2V7IfWxiCH9A4IcJcx0Xs9Z3qC27gfPLbTD0+DvOjIPLD0txyOXwpiFOiGOHHwKqjfEl0A==}
+  '@blueking/ai-ui-sdk@0.1.19-beta.44':
+    resolution: {integrity: sha512-vsKC7uc0Qn44eGfLkMKSRA/ZmrBGw+uA4sueIltee5yM6Rp4HOBKakEA3SvAIp+iWS66LCqwC/wOgI37vPQlpw==}
     peerDependencies:
       bkui-vue: '*'
       dayjs: ^1.11.13
@@ -9319,7 +9319,7 @@ snapshots:
       vue-router: 4.5.1(vue@3.5.17(typescript@5.8.3))
       x-mavon-editor: 0.0.20
 
-  '@blueking/ai-ui-sdk@0.1.19-beta.42(bkui-vue@2.0.2-beta.29(highlight.js@11.11.1)(vue@3.5.17(typescript@5.8.3)))(dayjs@1.11.13)(tdesign-vue-next@1.18.0(vue@3.5.17(typescript@5.8.3)))(tippy.js@6.3.7)(vue-router@4.5.1(vue@3.5.17(typescript@5.8.3)))(vue@3.5.17(typescript@5.8.3))(x-mavon-editor@0.0.20)':
+  '@blueking/ai-ui-sdk@0.1.19-beta.44(bkui-vue@2.0.2-beta.29(highlight.js@11.11.1)(vue@3.5.17(typescript@5.8.3)))(dayjs@1.11.13)(tdesign-vue-next@1.18.0(vue@3.5.17(typescript@5.8.3)))(tippy.js@6.3.7)(vue-router@4.5.1(vue@3.5.17(typescript@5.8.3)))(vue@3.5.17(typescript@5.8.3))(x-mavon-editor@0.0.20)':
     dependencies:
       bkui-vue: 2.0.2-beta.29(highlight.js@11.11.1)(vue@3.5.17(typescript@5.8.3))
       dayjs: 1.11.13

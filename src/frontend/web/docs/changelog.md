@@ -8,6 +8,17 @@ export default {
     return {
       changelogData: [
         {
+          version: "v1.3.4",
+          date: "2026-03-11",
+          features: [
+            "<code>handleShow</code> 新增 <code>showFirst</code> 选项，支持先打开面板再执行初始化，优化编程式调用快捷指令的体验"
+          ],
+          fixes: [
+            "修复自定义表单 <code>default</code> 为 <code>0</code> 时回填失败的问题",
+            "修复 Vue2 适配器中 <code>handleShow</code> 第二个参数类型与 Vue3 不一致的问题"
+          ]
+        },
+        {
           version: "v1.3.2",
           date: "2026-01-09",
           features: [

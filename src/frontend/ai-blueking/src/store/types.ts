@@ -50,4 +50,6 @@ export interface SdkApi {
 // 创建会话配置
 export type AddNewSessionOptions = {
   isTemporary?: boolean;
+  /** 先打开面板再执行初始化，避免用户长时间等待面板出现 */
+  showFirst?: boolean;
 };

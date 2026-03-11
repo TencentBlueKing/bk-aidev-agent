@@ -142,6 +142,22 @@ interface ISession {
 }
 ```
 
+## AddNewSessionOptions <Badge type="tip" text="v1.3.4" />
+
+`handleShow` 方法的第二个参数类型，用于控制会话创建和面板显示行为。
+
+```typescript
+interface AddNewSessionOptions {
+  isTemporary?: boolean // 是否创建临时会话
+  showFirst?: boolean // 先打开面板再执行初始化，避免用户长时间等待面板出现
+}
+```
+
+| 字段 | 类型 | 默认值 | 描述 |
+| --- | --- | --- | --- |
+| `isTemporary` | `boolean` | `undefined` | 设置为 `true` 时创建临时会话 |
+| `showFirst` | `boolean` | `undefined` | 设置为 `true` 时，面板立即打开，初始化在面板内异步完成。适用于编程式调用 `handleShow` 后需要紧接触发 `handleShortcutClick` 的场景 |
+
 ## RequestOptions
 
 请求选项对象定义，用于 `requestOptions` 属性。

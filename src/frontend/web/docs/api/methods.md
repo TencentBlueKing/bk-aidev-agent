@@ -10,7 +10,7 @@
 
 | 方法名                                    | 参数                                                                                                                  | 返回值                        | 描述                                                                                                                                 |
 | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `handleShow(sessionCode?, forceNewSession?)` | `sessionCode?: string, forceNewSession?: boolean`                                                                 | `Promise<void>`               | <Badge type="tip" text="v1.2.7" /> 主动显示 AI 小鲸窗口。支持传入会话代码切换到指定会话，或使用 `forceNewSession: true` 创建新会话并打开窗口。 |
+| `handleShow(sessionCode?, options?)` | `sessionCode?: string, options?: AddNewSessionOptions`                                                                 | `Promise<void>`               | <Badge type="tip" text="v1.3.4 增强" /> 主动显示 AI 小鲸窗口。支持传入会话代码切换到指定会话，使用 `isTemporary: true` 创建临时会话，使用 `showFirst: true` 先打开面板再初始化。 |
 | `handleClose()`                           | -                                                                                                                     | `void`                        | 关闭 AI 小鲸窗口。                                                                                                                   |
 | `handleStop()`                            | -                                                                                                                     | `void`                        | 停止当前正在进行的 AI 内容生成（流式输出）。                                                                                         |
 | `handleSendMessage(message)`              | `message: string`                                                                                                     | `void`                        | 发送消息到 AI 小鲸，可用于编程式触发对话。                                                                                           |
@@ -337,14 +337,22 @@ function calculateSum(a, b) {
 
 ## 创建新会话并打开窗口
 
-v1.2.7 版本新增了 `forceNewSession` 参数，支持在打开窗口的同时创建新会话：
+`handleShow` 方法支持通过 `AddNewSessionOptions` 控制会话创建行为：
+
+```typescript
+interface AddNewSessionOptions {
+  isTemporary?: boolean;  // 是否创建临时会话
+  showFirst?: boolean;    // v1.3.3 先打开面板再执行初始化
+}
+```
 
 ```vue
 <template>
   <AIBlueking ref="aiBlueking" :url="apiUrl" />
   <div class="controls">
-    <button @click="showWithNewSession">显示新会话</button>
-    <button @click="showWithCustomSession">显示自定义会话</button>
+    <button @click="showWithNewSession">创建临时会话</button>
+    <button @click="showWithNewSessionFast">创建临时会话（快速打开）</button>
+    <button @click="showNormal">普通显示</button>
   </div>
 </template>
 
@@ -355,16 +363,19 @@ import { AIBlueking } from "@blueking/ai-blueking"
 const aiBlueking = ref(null)
 const apiUrl = "..."
 
-// 显示新会话，会自动创建新会话并打开窗口
+// 创建临时会话并打开窗口（等待初始化完成后面板才出现）
 const showWithNewSession = async () => {
-  // 传入 forceNewSession: true 创建新会话并打开窗口
-  await aiBlueking.value?.handleShow(undefined, true)
+  await aiBlueking.value?.handleShow(undefined, { isTemporary: true })
 }
 
-// 显示新会话，使用自定义会话代码
-const showWithCustomSession = async () => {
-  // 传入自定义 sessionCode 和 forceNewSession: true 创建指定代码的新会话
-  await aiBlueking.value?.handleShow("custom-session-123", true)
+// v1.3.3 新增：先打开面板再初始化（面板立即出现，初始化在面板内完成）
+const showWithNewSessionFast = async () => {
+  await aiBlueking.value?.handleShow(undefined, {
+    isTemporary: true,
+    showFirst: true,
+  })
+  // await 完成后，初始化已就绪，可以安全执行后续操作
+  aiBlueking.value?.handleShortcutClick({ shortcut: myCommand, source: 'popup' })
 }
 
 // 普通显示，保持原有行为
@@ -374,8 +385,17 @@ const showNormal = () => {
 </script>
 ```
 
+### showFirst 选项 <Badge type="tip" text="v1.3.3" />
+
+`showFirst` 解决了编程式调用 `handleShow` + `handleShortcutClick` 时的体验问题：
+
+| 模式 | 面板出现时机 | await 完成时机 | 适用场景 |
+| --- | --- | --- | --- |
+| 默认（不设 showFirst） | 初始化完成后 | 初始化完成后 | 普通场景 |
+| `showFirst: true` | 立即 | 初始化完成后 | 编程式调用快捷指令 |
+
 此功能特别适用于：
+- **编程式快捷指令**：从外部系统触发快捷指令时，让用户立即看到面板，减少等待感
 - **独立工作流程**：当用户需要开始一个全新的对话时，确保不会看到之前的对话内容
 - **外部触发场景**：从外部系统触发时，自动创建新会话而不需要手动调用 `addNewSession`
-- **一键新建对话**：为用户提供一键新建对话的便捷功能
 - **会话隔离**：在特定业务场景下确保对话内容的隔离

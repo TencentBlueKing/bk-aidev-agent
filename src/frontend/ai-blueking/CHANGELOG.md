@@ -1,3 +1,28 @@
+## [1.3.4] - 2026-03-11
+
+### ✨ 新增功能
+
+#### handleShow 支持 showFirst 模式
+
+- **先打开面板再初始化**：`handleShow` 的 `AddNewSessionOptions` 新增 `showFirst` 字段，当设置为 `true` 时，面板会立即打开，初始化在面板内异步完成后 Promise 才 resolve
+- **优化编程式调用体验**：解决了编程式调用 `handleShow` + `handleShortcutClick` 时，因 `await handleShow` 耗时过长导致面板迟迟不出现的问题
+
+```typescript
+// 编程式调用快捷指令：面板立即打开，初始化完成后自动触发快捷指令
+await aiBlueking.value?.handleShow(undefined, {
+  isTemporary: true,
+  showFirst: true, // 面板立即打开，不等待初始化
+});
+aiBlueking.value?.handleShortcutClick({ shortcut: command, source: 'popup' });
+```
+
+### 🐛 Bug 修复
+
+- **修复自定义表单 default 为 0 时回填失败**：修复 `use-custom-form` 中使用 `||` 运算符导致 `default` 值为 `0`、`false` 等 falsy 值时被错误跳过的问题，改用 `??` 空值合并运算符
+- **修复 Vue2 handleShow 类型签名不一致**：将 Vue2 适配器中 `handleShow` 的第二个参数类型从 `boolean` 修正为 `AddNewSessionOptions`，与 Vue3 保持一致
+
+---
+
 ## [1.3.2] - 2026-01-09
 
 ### ✨ 新增功能

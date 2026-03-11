@@ -56,6 +56,55 @@
           />
 
           <div class="article-card mt20">
+            <h2>default 回填测试</h2>
+            <p>测试当 default 为 0 或其他 falsy 值时，表单是否正确回填</p>
+            <div class="test-actions">
+              <button
+                class="action-btn"
+                @click="handleTestDefaultZero"
+              >
+                <span class="action-icon">🔢</span>
+                default=0 回填测试
+              </button>
+              <button
+                class="action-btn"
+                @click="handleTestDefaultEmptyString"
+              >
+                <span class="action-icon">📝</span>
+                default='' 回填测试
+              </button>
+              <button
+                class="action-btn"
+                @click="handleTestDefaultNormal"
+              >
+                <span class="action-icon">✅</span>
+                default=10 回填测试
+              </button>
+            </div>
+          </div>
+
+          <div class="article-card mt20">
+            <h2>showFirst 编程式调用测试</h2>
+            <p>测试 handleShow 的 showFirst 参数：先打开面板再初始化，然后触发快捷指令</p>
+            <div class="test-actions">
+              <button
+                class="action-btn"
+                @click="handleTestShowFirst"
+              >
+                <span class="action-icon">⚡</span>
+                showFirst=true 快捷指令调用
+              </button>
+              <button
+                class="action-btn"
+                @click="handleTestShowFirstDefault"
+              >
+                <span class="action-icon">🐌</span>
+                showFirst=false（对比：原始行为）
+              </button>
+            </div>
+          </div>
+
+          <div class="article-card mt20">
             <h2>测试接口</h2>
             <div class="test-actions">
               <button
@@ -109,7 +158,6 @@
             },
             context: [{ context_test: 'vk' }],
           }"
-          :shortcuts="shortcuts"
           :prompts="prompts"
           :url="url"
           teleport-to="body"
@@ -315,6 +363,109 @@
     await aiBlueking.value?.switchToSession(sessionToSwitch.value);
     aiBlueking.value?.handleShow(sessionToSwitch.value);
     addLog('switch-to-session', { sessionCode: sessionToSwitch.value });
+  };
+
+  // ===================================================================
+  // default 回填测试
+  // ===================================================================
+  const createShortcutWithDefault = (defaultValue: string | number) => {
+    return {
+      name: `测试 default=${JSON.stringify(defaultValue)}`,
+      icon: '',
+      id: `test_default_${defaultValue}`,
+      components: [
+        {
+          name: '数量',
+          key: 'quantity',
+          type: 'number',
+          default: defaultValue,
+          required: true,
+          fillBack: false,
+        },
+        {
+          name: '备注',
+          key: 'remark',
+          type: 'text',
+          default: 'hello',
+          required: false,
+          fillBack: false,
+        },
+      ],
+    } as IShortcut;
+  };
+
+  const handleTestDefaultZero = () => {
+    const shortcut = createShortcutWithDefault(0);
+    aiBlueking.value?.handleShow();
+    aiBlueking.value?.handleShortcutClick({ shortcut, source: 'main' });
+    addLog('test-default', { defaultValue: 0, description: '期望：数量字段显示 0' });
+  };
+
+  const handleTestDefaultEmptyString = () => {
+    const shortcut = createShortcutWithDefault('');
+    aiBlueking.value?.handleShow();
+    aiBlueking.value?.handleShortcutClick({ shortcut, source: 'main' });
+    addLog('test-default', { defaultValue: '', description: '期望：数量字段显示空' });
+  };
+
+  const handleTestDefaultNormal = () => {
+    const shortcut = createShortcutWithDefault(10);
+    aiBlueking.value?.handleShow();
+    aiBlueking.value?.handleShortcutClick({ shortcut, source: 'main' });
+    addLog('test-default', { defaultValue: 10, description: '期望：数量字段显示 10' });
+  };
+
+  // ===================================================================
+  // showFirst 编程式调用测试
+  // ===================================================================
+  const programmaticShortcut: IShortcut = {
+    name: 'SQL 分析',
+    icon: '',
+    id: 'sql_analysis',
+    components: [
+      {
+        name: 'SQL 语句',
+        key: 'sql',
+        type: 'textarea',
+        default: 'SELECT * FROM users WHERE id = 0',
+        required: true,
+        fillBack: false,
+      },
+      {
+        name: '错误信息',
+        key: 'error_message',
+        type: 'text',
+        default: 'Timeout after 30s',
+        required: false,
+        fillBack: false,
+      },
+    ],
+  };
+
+  const handleTestShowFirst = async () => {
+    const startTime = Date.now();
+    addLog('showFirst-test', 'showFirst=true 开始调用...');
+
+    await aiBlueking.value?.handleShow(undefined, { isTemporary: true, showFirst: true });
+
+    const showDuration = Date.now() - startTime;
+    addLog('showFirst-test', `面板已就绪，耗时 ${showDuration}ms，现在触发快捷指令`);
+
+    aiBlueking.value?.handleShortcutClick({ shortcut: programmaticShortcut, source: 'popup' });
+    addLog('showFirst-test', `快捷指令已触发，总耗时 ${Date.now() - startTime}ms`);
+  };
+
+  const handleTestShowFirstDefault = async () => {
+    const startTime = Date.now();
+    addLog('showFirst-test', 'showFirst=false（默认）开始调用...');
+
+    await aiBlueking.value?.handleShow(undefined, { isTemporary: true });
+
+    const showDuration = Date.now() - startTime;
+    addLog('showFirst-test', `面板已就绪，耗时 ${showDuration}ms，现在触发快捷指令`);
+
+    aiBlueking.value?.handleShortcutClick({ shortcut: programmaticShortcut, source: 'popup' });
+    addLog('showFirst-test', `快捷指令已触发，总耗时 ${Date.now() - startTime}ms`);
   };
 
   onMounted(async () => {

@@ -493,6 +493,11 @@ export function useChatCore(options: UseChatCoreOptions): UseChatCoreReturn {
     sessionOptions?: AddNewSessionOptions
   ): Promise<void> => {
     if (sessionOptions?.isTemporary) {
+      if (sessionOptions.showFirst) {
+        isShow.value = true;
+        emit('show');
+      }
+
       if (!isSessionInitialized.value) {
         await initSession();
       }
@@ -502,8 +507,10 @@ export function useChatCore(options: UseChatCoreOptions): UseChatCoreReturn {
       setCiteText('');
       await sessionStore.addNewSession(sessionCode, sessionOptions);
 
-      isShow.value = true;
-      emit('show');
+      if (!sessionOptions.showFirst) {
+        isShow.value = true;
+        emit('show');
+      }
     } else {
       isShow.value = true;
       emit('show');

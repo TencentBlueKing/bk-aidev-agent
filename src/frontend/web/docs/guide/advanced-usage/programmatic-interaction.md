@@ -12,7 +12,7 @@ AI小鲸组件实例提供以下方法用于编程式控制:
 
 | 方法名 | 描述 |
 | ------ | ---- |
-| `handleShow()` | 显示AI小鲸窗口 |
+| `handleShow(sessionCode?, options?)` | <Badge type="tip" text="v1.3.4 增强" /> 显示AI小鲸窗口，支持 `showFirst` 选项先打开面板 |
 | `handleClose()` | 关闭AI小鲸窗口 |
 | `handleStop()` | 停止当前内容生成 |
 | `handleSendMessage(options)` | 主动发送消息，详见下文 |
@@ -335,6 +335,85 @@ export default {
 - `sessionContents`: 当前会话的消息内容数组
 - `isLoadingSessionContents`: 会话内容是否正在加载
 - `currentSessionLoading`: 当前是否有消息正在生成
+
+## 编程式调用快捷指令 <Badge type="tip" text="v1.3.4" />
+
+当需要从外部系统编程式打开面板并触发快捷指令时，推荐使用 `showFirst` 选项让面板立即出现，避免用户长时间等待：
+
+:::code-group
+```vue [Vue 3]
+<template>
+  <div>
+    <AIBlueking ref="aiBlueking" :url="apiUrl" />
+    <button @click="analyzeSQL">AI 分析 SQL</button>
+  </div>
+</template>
+
+<script lang="ts" setup>
+import { ref } from 'vue';
+import { AIBlueking } from '@blueking/ai-blueking';
+
+const aiBlueking = ref(null);
+const apiUrl = '...';
+
+const analyzeSQL = async () => {
+  const command = {
+    name: 'SQL 分析',
+    id: 'sql_analysis',
+    components: [
+      { name: 'SQL 语句', key: 'sql', type: 'textarea', default: 'SELECT * FROM users', required: true },
+      { name: '错误信息', key: 'error', type: 'text', default: 'Timeout', required: false },
+    ],
+  };
+
+  // showFirst: true 面板立即打开，初始化在面板内异步完成
+  await aiBlueking.value?.handleShow(undefined, { isTemporary: true, showFirst: true });
+  // await 完成后初始化已就绪，安全触发快捷指令
+  aiBlueking.value?.handleShortcutClick({ shortcut: command, source: 'popup' });
+};
+</script>
+```
+
+```vue [Vue 2]
+<template>
+  <div>
+    <AIBlueking ref="aiBlueking" :url="apiUrl" />
+    <button @click="analyzeSQL">AI 分析 SQL</button>
+  </div>
+</template>
+
+<script>
+import AIBlueking from '@blueking/ai-blueking/vue2';
+
+export default {
+  components: { AIBlueking },
+  data() {
+    return { apiUrl: '...' };
+  },
+  methods: {
+    async analyzeSQL() {
+      const command = {
+        name: 'SQL 分析',
+        id: 'sql_analysis',
+        components: [
+          { name: 'SQL 语句', key: 'sql', type: 'textarea', default: 'SELECT * FROM users', required: true },
+          { name: '错误信息', key: 'error', type: 'text', default: 'Timeout', required: false },
+        ],
+      };
+
+      await this.$refs.aiBlueking.handleShow(undefined, { isTemporary: true, showFirst: true });
+      this.$refs.aiBlueking.handleShortcutClick({ shortcut: command, source: 'popup' });
+    }
+  }
+};
+</script>
+```
+:::
+
+::: tip showFirst vs 默认行为
+- **不设 showFirst**：面板在初始化完成后才出现，适合普通场景
+- **showFirst: true**：面板立即出现（可能显示加载状态），初始化完成后 `await` 才 resolve，后续操作时序安全
+:::
 
 ## 编程式控制容器位置和大小
 

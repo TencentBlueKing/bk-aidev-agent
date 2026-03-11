@@ -27,6 +27,7 @@
 import { createApp, h } from 'vue';
 
 import type { ShortCut } from './types/index.ts';
+import type { AddNewSessionOptions } from './store/types.ts';
 import AiBlueking, { MessageList, RenderMessage, useMessageListStandalone } from './vue3.ts';
 
 export type * from './types/index.ts';
@@ -251,8 +252,8 @@ export default {
         { deep: true }
       )
     );
-    this.handleShow = (sessionCode?: string, forceNewSession?: boolean) => {
-      return aiBlueking.component.exposed.handleShow(sessionCode, forceNewSession);
+    this.handleShow = (sessionCode?: string, options?: AddNewSessionOptions) => {
+      return aiBlueking.component.exposed.handleShow(sessionCode, options);
     };
     this.handleStop = () => {
       aiBlueking.component.exposed.handleStop();
