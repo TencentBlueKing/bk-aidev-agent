@@ -12,9 +12,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@blueking/ai-blueking": "2.0.0-dev.25",
-    "@blueking/chat-x": "0.0.1-beta.16",
-    "@blueking/chat-helper": "0.0.1-beta.23",
+    "@blueking/ai-blueking": "2.0.0-dev.26",
+    "@blueking/chat-x": "0.0.2",
+    "@blueking/chat-helper": "0.0.1-beta.25",
     "@blueking/cli-service": "0.1.1",
     "bkui-vue": "2.0.1",
     "dayjs": "^1.11.12",
