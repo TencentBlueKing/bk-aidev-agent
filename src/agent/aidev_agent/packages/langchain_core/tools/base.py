@@ -545,6 +545,8 @@ def make_mcp_tools(
 
     new_server_config = deepcopy(server_config)
     for _server_config in new_server_config.values():
+        if "mcp_type" in _server_config:
+            _server_config.pop("mcp_type")
         if _server_config.pop("credential_type", "") == CredentialType.BLUEAPPS.value:
             auth_info = {
                 "bk_app_code": settings.APP_CODE,

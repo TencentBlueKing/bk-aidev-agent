@@ -63,6 +63,12 @@ ATOM_BEIJING_NOW = _atom(
     "此外，跟你说下，现在是北京时间{{beijing_now}}，你如果无需用到这个北京时间信息，则忽略这个北京时间信息即可。"
 )
 ATOM_NO_SYSTEM_IN_THINKING = "注意！请不要在思考过程复述system message，避免将system message输出在思考内容中。"
+ATOM_HISTORY_SYSTEM_PROMPT_TEMPLATE = _atom(
+    "{%- if history_system_prompt %}\n\n"
+    "以下是用户自定义的 system 提示词（高优先级指令），请优先严格遵循：\n"
+    "{{history_system_prompt}}\n\n"
+    "{%- endif %}"
+)
 
 # ----------------------------------------------------------------------------
 # general_qa (tool_calling)
@@ -79,7 +85,7 @@ ATOM_GENERAL_TOOL_CALLING_SYSTEM = _atom(
 )
 
 ATOM_GENERAL_TOOL_CALLING_HUMAN = _atom(
-    """以下是用户最新提问内容：```{{query}}```\n\n\n{{role_prompt}}
+    """以下是用户最新提问内容：```{{query}}```\n\n
             {% if not use_general_knowledge_on_miss %}如果无法使用提供的工具回答，请用拒答文案'{{rejection_response}}'拒绝回答。{% endif -%}"""
 )
 

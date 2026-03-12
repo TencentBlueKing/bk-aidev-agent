@@ -6,6 +6,7 @@ from aidev_agent.core.nodes.model.context_assembly import ContextAssembly
 from aidev_agent.core.nodes.model.prompt_middleware import (
     BeijingTimeMiddleware,
     DecisionSystemMiddleware,
+    HistorySystemPromptMiddleware,
     NoSystemInThinkingMiddleware,
     RoleDefinitionMiddleware,
     StructuredChatFormatMiddleware,
@@ -97,8 +98,9 @@ DEFAULT_QA_PROMPT_TEMPLATES = {
 
 def _render_prompt_contents(prompt, variables: dict) -> list[str]:
     """Render a ChatPromptTemplate and return message contents."""
-
-    value = prompt.invoke(variables, config={})
+    payload = dict(variables)
+    payload.setdefault("history_system_prompt", "")
+    value = prompt.invoke(payload, config={})
     return [m.content for m in value.to_messages()]
 
 
@@ -115,6 +117,7 @@ def _build_context_assembly(
         "template",
         DecisionSystemMiddleware(enable_query_clarification=enable_query_clarification),
     )
+    ca.add_middleware("template", HistorySystemPromptMiddleware())
     ca.add_middleware("template", BeijingTimeMiddleware())
     ca.add_middleware("template", NoSystemInThinkingMiddleware())
     return ca
@@ -216,6 +219,30 @@ class TestTemplatePipeline:
         rendered_system = _render_prompt_contents(tpl, variables)[0]
         assert rendered_system.startswith("PREFIX\n")
         assert rendered_system.endswith("\nSUFFIX")
+
+    def test_history_system_prompt_is_injected_after_default_system(self):
+        ca = _build_context_assembly(use_structured_response=False)
+        ctx = ProcessorContext(state={"decision": Decision.GENERAL_QA}, config={}, store=None)
+        tpl = ca.get_chat_prompt_template(ctx)
+
+        variables = {
+            "query": "hi",
+            "role_prompt": "",
+            "rejection_response": "no",
+            "beijing_now": "2026-01-01",
+            "use_general_knowledge_on_miss": False,
+            "chat_history": [],
+            "history_system_prompt": "Please return in <result>...</result>",
+            "agent_scratchpad": [],
+            "context_type": "",
+            "context": "",
+            "qa_context": "",
+        }
+        rendered_system = _render_prompt_contents(tpl, variables)[0]
+        history_marker = "以下是用户自定义的 system 提示词（高优先级指令），请优先严格遵循："
+        assert history_marker in rendered_system
+        assert rendered_system.index("你是一位得力的智能问答助手。") < rendered_system.index(history_marker)
+        assert "Please return in <result>...</result>" in rendered_system
 
 
 class TestPromptAtomization:

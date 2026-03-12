@@ -677,5 +677,5 @@ class ReActAgentBuilder:
         )
 
         # 添加适配器
-        compile_graph.agent = AgentStreamAdapter()
+        compile_graph.agent = AgentStreamAdapter(agent_options=prepared_agent_options)
         return compile_graph, cfg

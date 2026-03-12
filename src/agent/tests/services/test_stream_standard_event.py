@@ -246,15 +246,13 @@ class TestCommonQAStreamingMixIn:
                 "event": "on_custom_event",
                 "name": CustomMessageType.KNOWLEDGE_RAG_RESULT.value,
                 "data": {
-                    "data": {
-                        "reference_doc": [
-                            {
-                                "originFile": "https://abc.example.com/?file_path=doc1.txt",
-                                "url": "https://doc.example.com/s/12345678",
-                                "name": "【云桌面】云桌面启动后黑屏",
-                            }
-                        ]
-                    }
+                    "data": [
+                        {
+                            "originFile": "https://abc.example.com/?anchorPath=/608/2.1.x%20%E5%8F%91%E5%B8%83%E5%86%85%E5%AE%B9",
+                            "url": "https://abc_example.com/agent-develop/knowledgebase?anchorPath=/608&knowledgeName=2.1.x%20%E5%8F%91%E5%B8%83%E5%86%85%E5%AE%B9&previewAnchorPath=/608/2.1.x%20%E5%8F%91%E5%B8%83%E5%86%85%E5%AE%B9",
+                            "name": "用户问题",
+                        }
+                    ]
                 },
             }
 
@@ -276,6 +274,7 @@ class TestCommonQAStreamingMixIn:
         assert len(reference_doc_events) > 0
         assert "documents" in reference_doc_events[0]
         assert len(reference_doc_events[0]["documents"]) == 1
+        assert reference_doc_events[0]["documents"][0]["file_path"] == "2.1.x 发布内容"
 
     def test_done_event_type(self, mock_tool_calling_agent):
         """测试 DONE 事件类型"""

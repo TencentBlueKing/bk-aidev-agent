@@ -41,6 +41,7 @@ from .context_assembly import ContextAssembly
 from .prompt_middleware import (
     BeijingTimeMiddleware,
     DecisionSystemMiddleware,
+    HistorySystemPromptMiddleware,
     NoSystemInThinkingMiddleware,
     RoleDefinitionMiddleware,
     StructuredChatFormatMiddleware,
@@ -230,6 +231,7 @@ def build_model_node(
     )
     context_assembly.add_middleware("template", BeijingTimeMiddleware())
     context_assembly.add_middleware("template", NoSystemInThinkingMiddleware())
+    context_assembly.add_middleware("template", HistorySystemPromptMiddleware())
     # 加载和构造 prompt-variables 相关的中间件
     context_assembly.add_middleware("variable", BaseVariablesMiddleware())
     context_assembly.add_middleware(

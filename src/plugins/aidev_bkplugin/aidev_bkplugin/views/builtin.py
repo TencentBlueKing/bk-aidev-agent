@@ -102,6 +102,7 @@ class PluginViewSet(ViewSetMixin, APIView):
 class ChatSessionViewSet(PluginViewSet):
     def list(self, request):
         result = client.api.list_chat_session(headers={"X-BKAIDEV-USER": request.user.username})
+        result["data"] = [each for each in result["data"] if each.get("protocol_version") == AGUI_PROTOCOL_VERSION]
         return Response(data=result["data"])
 
     @action(["POST"], url_path="batch_delete", detail=False)
@@ -231,6 +232,8 @@ class ChatCompletionViewSet(PluginViewSet):
 
         try:
             thread_id = execute_kwargs.thread_id
+            if not thread_id or not session_code:
+                thread_id = str(uuid.uuid4())
             if thread_id:
                 return self._handle_thread_id_mode(
                     thread_id=thread_id,

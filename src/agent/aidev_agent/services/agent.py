@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict, List, Optional, Type, cast
 
 from ag_ui.core import BaseEvent
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.memory import MemorySaver
 
 from aidev_agent.api import BKAidevApi
 from aidev_agent.api.abstract_client import AbstractBKAidevResourceManager
@@ -134,7 +135,7 @@ class AgentInstanceFactory:
             switch_agent_by_scene=switch_agent_by_scene,
             config_manager_class=config_manager_class,
             is_temporary=is_temporary,
-            checkpointer=checkpointer,
+            checkpointer=checkpointer or MemorySaver(),
             username=username,
         )
 
@@ -206,6 +207,7 @@ class AgentInstanceFactory:
         session_code = cast(str, self.session_code)
         session_context_data = self.resource_manager.get_chat_session_context(session_code) or []
 
+        # 去掉 system prompts 在config_manager中处理
         session_context_data = [each for each in session_context_data if each.get("role", "") != "system"]
 
         base_agent_config = self.config_manager_class.get_config(
@@ -307,7 +309,7 @@ class AgentInstanceFactory:
             [
                 ChatPrompt(role=each["role"].replace("hidden-", ""), content=each["content"])
                 for each in config.role_prompts
-                if each.get("role") in ["user", "assistant", "hidden-user", "hidden-assistant"]
+                if each.get("role") in ["user", "assistant", "hidden-user", "hidden-assistant", "hidden-system"]
             ]
             if config.role_prompts
             else []

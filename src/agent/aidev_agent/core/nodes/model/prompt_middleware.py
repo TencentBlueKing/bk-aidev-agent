@@ -130,6 +130,20 @@ class DecisionSystemMiddleware:
         next()
 
 
+class HistorySystemPromptMiddleware:
+    """将历史 system 提示词注入到模板 system 槽位末尾。"""
+
+    def __call__(self, ctx: ProcessorContext, next: NextFunction) -> None:
+        if ctx.metadata.get("slots_has_history_system_prompt"):
+            next()
+            return
+
+        p = _get_prompt_atoms()
+        ctx.prompt_slots.system += p.ATOM_HISTORY_SYSTEM_PROMPT_TEMPLATE
+        ctx.metadata["slots_has_history_system_prompt"] = True
+        next()
+
+
 class BeijingTimeMiddleware:
     """Append Beijing time atom to system prompt when needed."""
 

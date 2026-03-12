@@ -267,6 +267,13 @@ class SpecialVariablesMiddleware:
     def __call__(self, ctx: ProcessorContext, next: NextFunction) -> None:
         chat_history: List[BaseMessage] = ctx.metadata.get("chat_history", [])
         tool_messages: List[BaseMessage] = ctx.metadata.get("tool_messages", [])
+        history_messages = chat_history[:-1]
+        history_system_prompt = "\n\n".join(
+            str(msg.content)
+            for msg in history_messages
+            if isinstance(msg, SystemMessage) and isinstance(msg.content, str) and msg.content.strip()
+        )
+        history_non_system_messages = [msg for msg in history_messages if not isinstance(msg, SystemMessage)]
 
         if self.use_structured_response:
             agent_scratchpad: Any = extract_tool_calls_from_messages(tool_messages)
@@ -280,7 +287,8 @@ class SpecialVariablesMiddleware:
             "qa_context": ctx.state.get("knowledge_qa_content"),
             "query": chat_history[-1].content if chat_history else "",
             "use_general_knowledge_on_miss": self.use_general_knowledge_on_miss,
-            "chat_history": chat_history[:-1],
+            "chat_history": history_non_system_messages,
+            "history_system_prompt": history_system_prompt,
             "rejection_response": self.rejection_message,
             "role_prompt": self.role_prompt,
             "agent_scratchpad": agent_scratchpad,
@@ -318,4 +326,8 @@ class DeepSeekR1VariablesMiddleware:
                     msg = _convert_message_to_dict(chat_history[i])
                     msg["role"] = "user"
                     chat_history[i] = _convert_dict_to_message(msg)
+            history_system_prompt = ctx.variables.get("history_system_prompt")
+            if isinstance(history_system_prompt, str) and history_system_prompt.strip():
+                chat_history.insert(0, HumanMessage(content=history_system_prompt))
+                ctx.variables["history_system_prompt"] = ""
         next()
