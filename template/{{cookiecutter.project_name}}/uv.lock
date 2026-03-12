@@ -69,7 +69,7 @@ requires-dist = [
     { name = "aidev-ai-blueking", specifier = "==2.0.0.dev27" },
     { name = "aidev-bkplugin", specifier = "==1.1.0b7" },
     { name = "aidev-wxbot", specifier = "==1.1.0b2" },
-    { name = "bk-plugin-framework", specifier = ">=2.3.7" },
+    { name = "bk-plugin-framework", specifier = ">=2.3.9" },
     { name = "bkapi-bk-apigateway", specifier = "==1.0.12" },
     { name = "celery", specifier = "==5.4.0" },
     { name = "django", specifier = ">=4.2.28,<5.0" },
@@ -333,7 +333,7 @@ wheels = [
 
 [[package]]
 name = "bk-plugin-framework"
-version = "2.3.7"
+version = "2.3.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "apigw-manager" },
@@ -343,14 +343,14 @@ dependencies = [
     { name = "pydantic" },
     { name = "werkzeug" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5b/0e/0efc201c15f4641a7eea9f8fb0239708daf63041e9ba731fb143ae9f61a5/bk_plugin_framework-2.3.7.tar.gz", hash = "sha256:9a2fb43c27df5e67f8d8e5390b2bb4201289aab1cc230cbf1ddcab906cc5d4af", size = 28534, upload-time = "2026-03-03T09:00:27.115Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/dc/7a/71479272b00457a86da36aa79706ec118a7f7c3b38ecb601069848d6c47e/bk_plugin_framework-2.3.9.tar.gz", hash = "sha256:62ef93e99e8a642c6d740142f2e02aa95b440bb24716cb8d256d71ad652fbd36", size = 28531, upload-time = "2026-03-12T13:10:21.275Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f3/98/f7bb276335b7d268cb08a26831a0c2059335f95620940840535c0aa9c026/bk_plugin_framework-2.3.7-py3-none-any.whl", hash = "sha256:d2a60052f60edae9835b2cf19a9e6df3648e7acaa85497b434854555a40971c6", size = 82033, upload-time = "2026-03-03T09:00:26.172Z" },
+    { url = "https://files.pythonhosted.org/packages/4b/45/67ecfa836010c7237e9525d35145d315728acd536d63c4127c8659c3b525/bk_plugin_framework-2.3.9-py3-none-any.whl", hash = "sha256:ee98f4bbef5ac099f47030601d5a2b0e2357b0a878db7c349dce95a38c34ab89", size = 82032, upload-time = "2026-03-12T13:10:20.345Z" },
 ]
 
 [[package]]
 name = "bk-plugin-runtime"
-version = "2.1.6"
+version = "2.1.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "apigw-manager" },
@@ -370,9 +370,9 @@ dependencies = [
     { name = "raven" },
     { name = "redis" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/44/9a/7bf168bffa56fd69d7a24777d4c3c2ccd727fb76a642797d730c91a6a053/bk_plugin_runtime-2.1.6.tar.gz", hash = "sha256:6c06bd8a3ae0fbf3963ca0fc49f29c54f84ac0f26a9bc97fd4c9a67099fc7471", size = 3735966, upload-time = "2026-03-03T08:51:14.498Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/66/22/371401545c7cc226ad57e15922c35d52eaa252a7a8392f301e56a6af197e/bk_plugin_runtime-2.1.7.tar.gz", hash = "sha256:c46f1f460a78208ffb2f672d5d053a164fe67fb0ea3c8f8f99c40126d6a42d83", size = 3735870, upload-time = "2026-03-12T12:41:19.533Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ad/81/87c2ba924bbcc86e018fdab0fec8a4d78ed790a9ba13417aede7a7d013df/bk_plugin_runtime-2.1.6-py3-none-any.whl", hash = "sha256:511a20afd18a83a9db397c368c7341be90a7ca48d38bd5792849ef9da5e4edc0", size = 3861876, upload-time = "2026-03-03T08:51:12.557Z" },
+    { url = "https://files.pythonhosted.org/packages/21/48/91804f0f7d3c606d17ee390c93a410f8756ede54a01769cce240cf609492/bk_plugin_runtime-2.1.7-py3-none-any.whl", hash = "sha256:64c4e6582e3a47cdd0a985762f2171ec911208a12c561aea58511feba026ac8a", size = 3862180, upload-time = "2026-03-12T12:41:18.023Z" },
 ]
 
 [[package]]

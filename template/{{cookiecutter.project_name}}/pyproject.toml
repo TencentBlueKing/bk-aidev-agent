@@ -10,7 +10,7 @@ dependencies = [
     "aidev-bkplugin==1.1.0b7",
     "aidev-wxbot==1.1.0b2",
     "aidev-ai-blueking==2.0.0.dev27",
-    "bk-plugin-framework>=2.3.7",
+    "bk-plugin-framework>=2.3.9",
     "bkapi-bk-apigateway==1.0.12",
     "celery==5.4.0",
     "django-celery-beat==2.7.0",

@@ -102,6 +102,7 @@ class PluginViewSet(ViewSetMixin, APIView):
 class ChatSessionViewSet(PluginViewSet):
     def list(self, request):
         result = client.api.list_chat_session(headers={"X-BKAIDEV-USER": request.user.username})
+        result["data"] = [each for each in result["data"] if each.get("protocol_version") == AGUI_PROTOCOL_VERSION]
         return Response(data=result["data"])
 
     @action(["POST"], url_path="batch_delete", detail=False)

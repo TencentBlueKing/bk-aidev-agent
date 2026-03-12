@@ -26,13 +26,15 @@ import traceback
 from collections import defaultdict, deque
 from copy import deepcopy
 from typing import Any, Dict, Generator, Iterator, List, Optional, Tuple, TypedDict
+from urllib.parse import parse_qs, urlparse
 
-from langchain_core.messages import BaseMessageChunk
+from langchain_core.messages import BaseMessageChunk, ToolMessage
 from langchain_core.runnables.schema import StreamEvent
 from typing_extensions import NotRequired
 
 from aidev_agent.core.ag_ui.types import CustomMessageType
 from aidev_agent.enums import StreamEventType
+from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils import Empty
 from aidev_agent.utils.async_utils import async_generator_with_timeout, async_to_sync_generator
 
@@ -271,6 +273,7 @@ class BkAiStreamingProtocol:
         try:
             # 处理 LangGraph astream_events
             for item in g:
+                logger.info(f"BKAiStreamingProtocol process_event item: {item}")  # noqa: F821
                 for event in self.process_event(item):
                     yield self._yield_ret(event)
 
@@ -644,8 +647,15 @@ class BkAiStreamingProtocol:
     def handle_on_custom_event(self, item: Dict[str, Any]) -> Generator[BkAiStreamEvent]:
         """处理自定义事件"""
         cover = bool(self.last_ret_is_empty)
-        data = item.get("data", {})
+        custom_data = item.get("data", {})
         ret = None
+        # on_tool_node_finish 可能直接携带 ToolMessage
+        if isinstance(custom_data, ToolMessage) and self.front_end_display:
+            yield from self.handle_on_tool_end({"output": custom_data.content})
+            return
+        if not isinstance(custom_data, dict):
+            return
+        data = custom_data
         # 处理前端显示标识
         if "front_end_display" in data:
             self.front_end_display = data["front_end_display"]
@@ -656,7 +666,22 @@ class BkAiStreamingProtocol:
             ret = BkAiStreamEvent(event=StreamEventType.TEXT, content=content, cover=cover)
         # 处理参考文档
         elif item.get("name", "") == CustomMessageType.KNOWLEDGE_RAG_RESULT.value and self.front_end_display:
-            ret = BkAiStreamEvent(event=StreamEventType.REFERENCE_DOC, documents=data.get("data", []), cover=True)
+            documents = []
+            reference_docs = data.get("data", [])
+            for _each in reference_docs:
+                if not isinstance(_each, dict):
+                    continue
+                preview_path = _each.get("originFile", "")
+                file_path = parse_qs(urlparse(preview_path).query).get("anchorPath", [""])[0].split("/", 2)[-1]
+                documents.append(
+                    {
+                        "path": _each.get("url", ""),
+                        "file_path": file_path,
+                        "display_name": _each.get("name", ""),
+                        "preview_path": _each.get("originFile", ""),
+                    }
+                )
+            ret = BkAiStreamEvent(event=StreamEventType.REFERENCE_DOC, documents=documents, cover=True)
         # 处理压缩日志
         elif "compress_log" in data and self.front_end_display:
             ret = BkAiStreamEvent(event=StreamEventType.THINK, content=data["compress_log"], cover=cover)
@@ -707,13 +732,25 @@ class BkAiStreamingProtocol:
 
 
 class AgentStreamAdapter:
+    def __init__(self, agent_options: AgentOptions | None = None):
+        self.agent_options = agent_options
+
     # 流协议处理
     def stream_standard_event(self, agent_e, cfg, input_state, skip_thought=False, timeout: int = 30):
+        if self.agent_options and self.agent_options.intent_recognition_options.agent_type:
+            agent_type = (
+                BKAiStreamingAgentType.ToolCallingCommonQAAgent
+                if "deepseek" not in self.agent_options.intent_recognition_options.agent_type
+                else BKAiStreamingAgentType.StructuredChatCommonQAAgent
+            )
+        else:
+            agent_type = BKAiStreamingAgentType.ToolCallingCommonQAAgent
         try:
             protocol = BkAiStreamingProtocol(
                 skip_thought=skip_thought,
                 timeout=timeout,
-                max_tool_output_len=2000,
+                max_tool_output_len=5000,
+                agent_type=agent_type,
             )
             _aiter = agent_e.astream_events(
                 input_state,

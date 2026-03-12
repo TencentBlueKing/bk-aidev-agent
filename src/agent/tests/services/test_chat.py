@@ -12,7 +12,9 @@ from aidev_agent.packages.langchain_core.models.mock import MockChatModel, MockR
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.services.chat import ChatCompletionAgent, ExecuteKwargs
 from aidev_agent.services.pydantic_models import (
+    AgentOptions,
     ChatPrompt,
+    IntentRecognition,
 )
 from langchain_core.tools import tool
 
@@ -452,7 +454,7 @@ class TestCommonAgentChatStreamingLive:
     """测试聊天代理的流式响应功能"""
 
     def setup_method(self):
-        self.llm = ChatModel.get_setup_instance(model="qwen3-5-27B")
+        self.llm = ChatModel.get_setup_instance(model="deepseek-v3-0324")
 
     def test_knowledge_base(self):
         """case 1: 知识库"""
@@ -471,17 +473,27 @@ class TestCommonAgentChatStreamingLive:
                 fo.write(each)
 
     def test_tool_call_legacy(self):
-        """case 2: 知识库"""
+        """case 2: 工具调用 legacy streaming"""
         agent = ChatCompletionAgent(
             chat_model=self.llm,
             chat_history=[
                 ChatPrompt(role="user", content="今天广州天气怎么样?"),
             ],
             tools=[get_weather],
+            agent_options=AgentOptions(
+                intent_recognition_options=IntentRecognition(
+                    agent_type="openai",
+                ),
+            ),
         )
         with open("text.log", "w") as fo:
             result = agent.execute(ExecuteKwargs(stream=True, legacy_streaming=True))
             for each in result:
+                try:
+                    each = json.dumps(json.loads(each[6:]), ensure_ascii=False) + "\n"
+                except json.JSONDecodeError:
+                    fo.write(each)
+                    continue
                 fo.write(each)
 
     def test_knowledge_base_legacy(self):
@@ -501,10 +513,10 @@ class TestCommonAgentChatStreamingLive:
                 fo.write(each)
 
 
-class TestCommonAgentChatStreamingWithAgent:
+class TestCommonAgentChatStreamingWithAgentLegacyStreaming:
     """测试聊天代理的流式响应功能"""
 
-    def test_basic_chat(self):
+    def test_basic_chat_openai(self):
         """case 1: 基础聊天测试"""
         llm = MockChatModel(
             responses=["你好\n我可以帮你什么?"],
@@ -523,6 +535,11 @@ class TestCommonAgentChatStreamingWithAgent:
                 ChatPrompt(id="3", role="assistant", content="Hello, how can I help you?"),
                 ChatPrompt(id="4", role="user", content="复述一下上下文的内容"),
             ],
+            agent_options=AgentOptions(
+                intent_recognition_options=IntentRecognition(
+                    agent_type="openai",
+                ),
+            ),
         )
         results = []
         for each in agent.execute(ExecuteKwargs(stream=True, legacy_streaming=True)):
@@ -535,3 +552,41 @@ class TestCommonAgentChatStreamingWithAgent:
         text_contents = [e.get("content", "") for e in results if e.get("event") == "text"]
         assert "".join(think_contents) == "用户希望我帮他复述一下上下文\n"
         assert "".join(text_contents) == "你好\n我可以帮你什么?"
+
+    def test_basic_chat_deepseek(self):
+        """case 2: 基础聊天测试"""
+        llm = MockChatModel(
+            responses=['```json\n{\n  "action": "Final Answer",\n  "action_input": "你好\\n我可以帮你什么?"\n}\n```'],
+            reasoning_contents=["用户希望我帮他复述一下上下文"],
+            stream_chunk_size=2,
+        )
+        agent = ChatCompletionAgent(
+            chat_model=llm,
+            chat_history=[
+                ChatPrompt(
+                    id="1",
+                    role="system",
+                    content="You are a professional translator, please help translate the user input to English.",
+                ),
+                ChatPrompt(id="2", role="user", content="안녕하세요"),
+                ChatPrompt(id="3", role="assistant", content="Hello, how can I help you?"),
+                ChatPrompt(id="4", role="user", content="复述一下上下文的内容"),
+            ],
+            agent_options=AgentOptions(
+                intent_recognition_options=IntentRecognition(
+                    agent_type="deepseek",
+                ),
+            ),
+        )
+        results = []
+        for each in agent.execute(ExecuteKwargs(stream=True, legacy_streaming=True)):
+            if each == "data: [DONE]\n\n":
+                continue
+            _each = json.loads(each[6:])
+            results.append(_each)
+        # Legacy stream uses "event": "think" / "text" and "content"
+        think_contents = [e.get("content", "") for e in results if e.get("event") == "think"]
+        text_contents = [e.get("content", "") for e in results if e.get("event") == "text"]
+        assert "用户希望我帮他复述一下上下文" in "".join(think_contents)
+        normalized_text = "".join(text_contents).strip().strip('"')
+        assert normalized_text == "你好\n我可以帮你什么?"
