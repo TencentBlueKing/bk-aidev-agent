@@ -982,19 +982,3 @@ async def test_tool_with_langgraph_integration():
         # 验证 state 被正确注入和渲染
         assert headers.get("X-User") == "alice", "X-User 应该从 state.user 渲染"
         assert body.get("session_id") == "session_789", "session_id 应该从 state.session_id 渲染"
-
-
-# ONLY FOR DEBUG, NEED TO DELETE LATER
-def test_get_mcp_tools_only():
-    server_config = {
-        "bk-itsm-prod-ticket": {
-            "url": "https://bk-apigateway.apigw.o.woa.com/prod/api/v2/mcp-servers/bk-itsm-prod-ticket/application/mcp/",
-            "transport": "streamable_http",
-            "headers": {
-                "X-Bkapi-Authorization": '{"access_token": "bWKN8FlNbROhBKxIE96g55i0l06oL7"}',
-                "X-Bkapi-Timeout": "300",
-            },
-        }
-    }
-    _tools = make_mcp_tools(server_config, AgentOptions())
-    assert _tools[0].metadata.get("mcp_name")
