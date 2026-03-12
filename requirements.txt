@@ -1,7 +1,7 @@
 ag-ui-protocol==0.1.10
 aidev-agent==1.1.0b10
 aidev-ai-blueking==2.0.0.dev27
-aidev-bkplugin==1.1.0b7
+aidev-bkplugin==1.1.0b6
 aidev-wxbot==1.1.0b2
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.3
@@ -12,6 +12,7 @@ anyio==4.11.0
 apigw-manager==4.2.3
 asgiref==3.10.0
 attrs==25.4.0
+backoff==2.2.1
 billiard==4.2.2
 bk-plugin-framework==2.3.7
 bk-plugin-runtime==2.1.6
@@ -22,13 +23,12 @@ blueapps==4.15.8
 cachetools==5.5.2
 celery==5.4.0
 certifi==2025.10.5
-cffi==2.0.0 ; platform_python_implementation != 'PyPy'
+cffi==2.0.0
 charset-normalizer==3.4.4
 click==8.3.0
 click-didyoumean==0.3.1
 click-plugins==1.1.1.2
 click-repl==0.3.0
-colorama==0.4.6 ; sys_platform == 'win32'
 cron-descriptor==2.0.6
 cryptography==46.0.3
 curlify==3.0.0
@@ -48,9 +48,11 @@ docutils==0.20.1
 drf-spectacular==0.29.0
 drf-yasg==1.21.11
 environs==14.5.0
+exceptiongroup==1.3.1
 frozenlist==1.8.0
+future==1.0.0
 googleapis-common-protos==1.56.1
-greenlet==3.2.4 ; platform_machine == 'AMD64' or platform_machine == 'WIN32' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'ppc64le' or platform_machine == 'win32' or platform_machine == 'x86_64'
+greenlet==3.2.4
 grpcio==1.76.0
 gunicorn==23.0.0
 h11==0.16.0
@@ -74,6 +76,7 @@ langchain-core==1.2.7
 langchain-mcp-adapters==0.1.12
 langchain-openai==0.3.34
 langchain-text-splitters==1.1.0
+langfuse==2.60.10
 langgraph==1.0.7
 langgraph-checkpoint==4.0.0
 langgraph-prebuilt==1.0.7
@@ -118,7 +121,7 @@ prometheus-client==0.23.1
 prompt-toolkit==3.0.52
 propcache==0.4.1
 protobuf==5.29.5
-pycparser==2.23 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
+pycparser==2.23
 pycryptodome==3.23.0
 pydantic==2.12.4
 pydantic-core==2.41.5
@@ -132,7 +135,6 @@ python-dotenv==1.2.1
 python-json-logger==3.3.0
 python-multipart==0.0.20
 pytz==2025.2
-pywin32==311 ; sys_platform == 'win32'
 pyyaml==6.0.3
 raven==6.10.0
 redis==5.3.1
@@ -158,10 +160,11 @@ typing-extensions==4.15.0
 typing-inspect==0.9.0
 typing-inspection==0.4.2
 tzdata==2025.2
+tzlocal==5.3.1
 uritemplate==4.2.0
 urllib3==2.6.3
 uuid-utils==0.14.0
-uvicorn==0.38.0 ; sys_platform != 'emscripten'
+uvicorn==0.38.0
 vine==5.1.0
 wcwidth==0.2.14
 werkzeug==3.1.3

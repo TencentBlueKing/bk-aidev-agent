@@ -6,9 +6,9 @@ readme = "readme.md"
 authors = [{ name = "blueking" }]
 requires-python = "~=3.11.9"
 dependencies = [
-    "aidev-agent==1.1.0b8",
-    "aidev-bkplugin==1.1.0b3",
-    "aidev-wxbot==1.1.0b1",
+    "aidev-agent==1.1.0b10",
+    "aidev-bkplugin==1.1.0b7",
+    "aidev-wxbot==1.1.0b2",
     "aidev-ai-blueking==2.0.0.dev27",
     "bk-plugin-framework>=2.3.7",
     "bkapi-bk-apigateway==1.0.12",
@@ -55,10 +55,6 @@ venv = ".venv"
 
 [dependency-groups]
 dev = [
-    "aidev-agent",
-    "aidev-ai-blueking",
-    "aidev-bkplugin",
-    "aidev-wxbot",
     "bk-plugin-runtime",
     "ipdb<0.14.0,>=0.13.13",
     "pre-commit==4.0.1",
@@ -85,11 +81,6 @@ ignore = ["PERF401", "E501", "E402"]
 
 [tool.ruff.format]
 quote-style = "double"
-
-[tool.uv.sources]
-aidev-agent = { path = "../../src/agent", editable = true }
-aidev-bkplugin = { path = "../../src/plugins/aidev_bkplugin", editable = true }
-aidev-wxbot = { path = "../../src/plugins/aidev_wxbot", editable = true }
 
 [tool.ruff.lint.isort]
 # 总是显式制定 import section 的顺序

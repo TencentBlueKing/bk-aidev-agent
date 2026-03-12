@@ -58,10 +58,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "aidev-agent" },
-    { name = "aidev-ai-blueking" },
-    { name = "aidev-bkplugin" },
-    { name = "aidev-wxbot" },
     { name = "bk-plugin-runtime" },
     { name = "ipdb" },
     { name = "pre-commit" },
@@ -69,10 +65,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aidev-agent", editable = "../../src/agent" },
+    { name = "aidev-agent", specifier = "==1.1.0b10" },
     { name = "aidev-ai-blueking", specifier = "==2.0.0.dev27" },
-    { name = "aidev-bkplugin", editable = "../../src/plugins/aidev_bkplugin" },
-    { name = "aidev-wxbot", editable = "../../src/plugins/aidev_wxbot" },
+    { name = "aidev-bkplugin", specifier = "==1.1.0b7" },
+    { name = "aidev-wxbot", specifier = "==1.1.0b2" },
     { name = "bk-plugin-framework", specifier = ">=2.3.7" },
     { name = "bkapi-bk-apigateway", specifier = "==1.0.12" },
     { name = "celery", specifier = "==5.4.0" },
@@ -108,10 +104,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "aidev-agent", editable = "../../src/agent" },
-    { name = "aidev-ai-blueking" },
-    { name = "aidev-bkplugin", editable = "../../src/plugins/aidev_bkplugin" },
-    { name = "aidev-wxbot", editable = "../../src/plugins/aidev_wxbot" },
     { name = "bk-plugin-runtime" },
     { name = "ipdb", specifier = ">=0.13.13,<0.14.0" },
     { name = "pre-commit", specifier = "==4.0.1" },
@@ -120,7 +112,7 @@ dev = [
 [[package]]
 name = "aidev-agent"
 version = "1.1.0b10"
-source = { editable = "../../src/agent" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
     { name = "asgiref" },
@@ -144,46 +136,9 @@ dependencies = [
     { name = "werkzeug" },
     { name = "wrapt" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "ag-ui-protocol", specifier = ">=0.1.10" },
-    { name = "asgiref", specifier = ">=3.8.1,<4.0.0" },
-    { name = "bkapi-client-core", specifier = ">=1.2.0,<2.0.0" },
-    { name = "cachetools", specifier = ">=5.5.2,<6.0.0" },
-    { name = "environs", specifier = ">=14.1.0,<15.0.0" },
-    { name = "h11", specifier = "==0.16.0" },
-    { name = "jinja2", specifier = ">=3.1.6,<4.0.0" },
-    { name = "langchain", specifier = ">=1.1.0" },
-    { name = "langchain-classic", specifier = ">=1.0.1" },
-    { name = "langchain-core", specifier = ">1.1.3" },
-    { name = "langchain-mcp-adapters", specifier = "==0.1.12" },
-    { name = "langchain-openai", specifier = ">=0.3.0,<1.0.0" },
-    { name = "langgraph", specifier = ">=1.0.0" },
-    { name = "mcp", specifier = "==1.25.0" },
-    { name = "pika", specifier = ">=1.3.0" },
-    { name = "pyro4", specifier = ">=4.82,<5.0" },
-    { name = "pytz", specifier = ">=2025.2,<2026.0" },
-    { name = "typing-extensions", specifier = ">=4.0.0" },
-    { name = "urllib3", specifier = ">=2.6.3" },
-    { name = "werkzeug", specifier = ">=3.1.3,<4.0.0" },
-    { name = "wrapt", specifier = ">1,<2" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "faker", specifier = ">=37.0.0,<38.0.0" },
-    { name = "ipdb", specifier = ">=0.13.13,<0.14.0" },
-    { name = "loguru", specifier = ">=0.7.3" },
-    { name = "pre-commit", specifier = "==4.0.1" },
-    { name = "pytest", specifier = ">=7.4.4,<7.5.0" },
-    { name = "pytest-asyncio", specifier = ">=0.23.3,<0.24.0" },
-    { name = "pytest-cov", specifier = ">=4.1.0,<4.2.0" },
-    { name = "pytest-dotenv", specifier = ">=0.5.2,<1.0.0" },
-    { name = "pytest-env", specifier = ">=1.1.3,<1.2.0" },
-    { name = "pytest-mock", specifier = ">=3.14.0,<4.0.0" },
-    { name = "pytest-timeout", specifier = "==2.3.1" },
-    { name = "responses", specifier = ">=0.25.0,<1.0.0" },
+sdist = { url = "https://files.pythonhosted.org/packages/74/88/fdb61bf0cbd933f3637ee22276d768271b0e26f0629c1d52649dd0401639/aidev_agent-1.1.0b10.tar.gz", hash = "sha256:c8a85b2e0207fd5dc09971a35b779c4c4211dc4dbd485dbd0e27b653dba7a382", size = 305362, upload-time = "2026-03-11T10:45:14.498Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f4/81/837610e2c928b1a4385545dfb6fd4d038ab61e53f4882c31c30a4a0c3405/aidev_agent-1.1.0b10-py3-none-any.whl", hash = "sha256:83f13cf988b41efdc4e77e40bc23ec359a5666e9aa7e05df077e8f33f1bf6343", size = 283308, upload-time = "2026-03-11T10:45:09.97Z" },
 ]
 
 [[package]]
@@ -201,25 +156,22 @@ wheels = [
 
 [[package]]
 name = "aidev-bkplugin"
-version = "1.1.0b6"
-source = { editable = "../../src/plugins/aidev_bkplugin" }
+version = "1.1.0b7"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aidev-agent" },
     { name = "blueapps" },
     { name = "django" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "aidev-agent", specifier = ">=1.1.0b9" },
-    { name = "blueapps", specifier = ">=4.15.1,<5.0" },
-    { name = "django", specifier = ">=4.2.28,<5.0" },
+sdist = { url = "https://files.pythonhosted.org/packages/c2/3a/cc718089715404964b6e3ee23d1015bbe103f07a5c999e73b226889df148/aidev_bkplugin-1.1.0b7.tar.gz", hash = "sha256:6d437837d036baefe8b2530b52cc17033025c46997c2105d609ccc886ed8cbb1", size = 51500, upload-time = "2026-03-12T07:02:03.636Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2b/08/a16892e079c125d7d36e68b6fdf49278fc5ecdfc2af40f864ea4d2d97a9a/aidev_bkplugin-1.1.0b7-py3-none-any.whl", hash = "sha256:e8f4fb74ce30fc0d97a8f4726db21be324be2a6b91a012aa68abf76f870090dd", size = 57006, upload-time = "2026-03-12T07:02:00.47Z" },
 ]
 
 [[package]]
 name = "aidev-wxbot"
 version = "1.1.0b2"
-source = { editable = "../../src/plugins/aidev_wxbot" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aidev-bkplugin" },
     { name = "django" },
@@ -230,17 +182,9 @@ dependencies = [
     { name = "requests" },
     { name = "stackprinter" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "aidev-bkplugin", specifier = ">=1.1.0b3" },
-    { name = "django", specifier = ">=4.2.28,<5.0" },
-    { name = "djangorestframework", specifier = ">=3.14.0" },
-    { name = "pika", specifier = ">=1.3.0,<2.0" },
-    { name = "pycryptodome", specifier = ">=3.23.0" },
-    { name = "pydantic", specifier = ">=2.11.7" },
-    { name = "requests", specifier = ">=2.32.5" },
-    { name = "stackprinter", specifier = ">=0.2.12" },
+sdist = { url = "https://files.pythonhosted.org/packages/db/5d/2ecdc2bcb7a0b10b76f81f7be420294980d10cfe19c7cbfbb213d664231b/aidev_wxbot-1.1.0b2.tar.gz", hash = "sha256:48ad94828d948addea2a2ca55709d1a96259bff83582909f6f2ce550cd8c6866", size = 144742, upload-time = "2026-03-11T02:02:18.66Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/87/06/b7df60e40ffbd7c855fd20128a94baa3b9b1f855e2d0949e31dc0fd07e75/aidev_wxbot-1.1.0b2-py3-none-any.whl", hash = "sha256:3c99a1efaf1d436fe29896eb12cb6fc5ec6a3492c3c61ea6754c60f4b40dc1c2", size = 28277, upload-time = "2026-03-11T02:02:15.566Z" },
 ]
 
 [[package]]

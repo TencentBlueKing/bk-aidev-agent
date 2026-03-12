@@ -364,8 +364,8 @@ class AgentInfoViewSet(PluginViewSet):
                 if not isinstance(command, dict):
                     continue
                 command_id = command.get("id")
-                command_name = command.get("name")
-                if command_id and command_name and command_id == command_name:
+                command_agent_code = command.get("agent_code")
+                if command_id and command_agent_code and command_id == command_agent_code:
                     command["components"] = []
 
         # 新增群聊信息
