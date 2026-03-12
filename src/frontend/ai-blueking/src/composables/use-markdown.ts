@@ -4,6 +4,7 @@ import MarkdownIt from 'markdown-it';
 import MarkdownItCodeCopy from 'markdown-it-copy-code';
 import { computed, type Ref } from 'vue';
 
+import { baseSanitizeConfig } from '../config/sanitize-config';
 import MarkdownItLinkBlank from '../plugins/markdown-it-link-blank';
 import mermaidPlugin from '../plugins/markdown-it-mermaid';
 
@@ -39,12 +40,7 @@ export function useMarkdown() {
 
     try {
       const rendered = md.render(text);
-      // 使用 DOMPurify 净化内容以防止 XSS
-      const sanitized = DOMPurify.sanitize(rendered, {
-        USE_PROFILES: { html: true },
-        FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input'],
-        FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover'],
-      });
+      const sanitized = DOMPurify.sanitize(rendered, baseSanitizeConfig);
       // 移除末尾的空白段落标签
       return sanitized.replace(/\s*<\/p>\s*$/, '</p>');
     } catch (error) {

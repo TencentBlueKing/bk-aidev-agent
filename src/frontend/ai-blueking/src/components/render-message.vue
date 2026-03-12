@@ -194,6 +194,7 @@
   import { useSelect } from '../composables/use-select-pop';
   import { useTooltip } from '../composables/use-tippy';
   import { HIDE_ROLE_LIST } from '../config';
+  import { messageSanitizeConfig } from '../config/sanitize-config';
   import { t } from '../lang';
   import MarkdownItLinkBlank from '../plugins/markdown-it-link-blank';
   import mermaidPlugin from '../plugins/markdown-it-mermaid';
@@ -384,24 +385,7 @@
 
     const rendered = md.render(props.message.content);
 
-    // 使用 DOMPurify 净化内容以防止 XSS
-    const sanitized = DOMPurify.sanitize(rendered, {
-      USE_PROFILES: { html: true, svg: true },
-      ADD_TAGS: ['svg', 'g', 'path'],
-      ADD_ATTR: [
-        'target',
-        'xmlns',
-        'width',
-        'height',
-        'viewBox',
-        'fill',
-        'stroke-linecap',
-        'stroke-linejoin',
-        'stroke-width',
-      ],
-      FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input'],
-      FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover'],
-    });
+    const sanitized = DOMPurify.sanitize(rendered, messageSanitizeConfig);
 
     // Process mermaid diagrams after DOM update
     nextTick(() => {

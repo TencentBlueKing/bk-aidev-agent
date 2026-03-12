@@ -13,7 +13,7 @@
 | `helloText`       | `String`           | `'你好，我是小鲸'`                                        | 初始欢迎页面显示的问候语。在1.0版本中，智能体配置的开场白(`openingRemark`)优先级高于此属性。                                                                                                          |
 | `enablePopup`     | `Boolean`          | `true`                                                    | 是否启用选中文本后的弹出操作窗口 (需要配合 `shortcuts` 使用)。<Badge type="tip" text="v1.3.2 增强" /> 现在会与智能体配置的 `conversationSettings.enableWordSelectionPopup` 联动控制，只有当两者都不为 `false` 时才启用。 |
 | `prompts`         | `Array<String>`    | `[]`                                                      | 预设提示词列表。在1.0版本中，这些提示词会与智能体配置的预设问题(`predefinedQuestions`)合并展示。                                                                                                      |
-| `requestOptions`  | `Object`           | `{}`                                                      | 自定义请求选项，可设置 `headers`、`data` 和 `context` 属性。**v1.1.5 新增** `context` 支持静态对象或动态函数形式传递上下文信息。详细说明参见 [自定义请求指南](/guide/advanced-usage/custom-requests)。 |
+| `requestOptions`  | `IRequestOptions`  | `{}`                                                      | 自定义请求选项，支持 `headers`、`data`、`context`、`beforeRequest`、`afterRequest`。其中 `beforeRequest` 可拦截**所有接口**请求（包括 GET），`data` 仅影响聊天接口。详细说明参见 [自定义请求指南](/guide/advanced-usage/custom-requests)。 |
 | `shortcuts`       | `Array<IShortcut>` | `[]`                                                      | 快捷操作列表。详细格式参见 [内容引用与快捷操作指南](/guide/core-features/content-referencing#配置快捷操作-shortcuts)。                                                                                |
 | `defaultMinimize` | `Boolean`          | `false`                                                   | 控制 AI 小鲸窗口初始是否处于最小化状态。详细说明参见 [界面定制指南](/guide/core-features/ui-customization#初始最小化状态)。                                                                           |
 | `teleportTo`      | `String`           | `'body'`                                                  | 控制组件内容传送到的 DOM 节点，可将组件内容渲染到任意 DOM 位置。详细说明参见 [界面定制指南](/guide/core-features/ui-customization#自定义传送目标)。                                                   |
@@ -338,17 +338,18 @@ interface IShortcut {
 
 ## RequestOptions 配置
 
-组件的 `requestOptions` 属性支持以下配置项：
+组件的 `requestOptions` 属性支持以下配置项，详细使用指南参见 [自定义请求](/guide/advanced-usage/custom-requests)：
 
 ```typescript
 interface IRequestOptions {
-  headers?: Record<string, any> // 请求头参数
-  data?: Record<string, any> // 请求体附加数据
-  context?: Array<{
-    // 上下文参数数据
-    key: string // 参数键名
-    value: any // 参数值
-  }> | (() => Array<{ key: string, value: any }> | undefined) // 上下文参数数据，支持静态数组或动态函数
+  headers?: Record<string, string> // 自定义请求头，合并到所有请求中
+  data?: Record<string, any> // 附加到聊天请求体的额外字段（仅影响 chat_completion）
+  context?:
+    | Record<string, string>
+    | Record<string, string>[]
+    | (() => Record<string, string>) // 上下文信息，存入消息元数据
+  beforeRequest?: (data: RequestHookData) => RequestHookData | undefined // 请求拦截器，影响所有接口
+  afterRequest?: (data: RequestHookData, response: Response) => void // 响应回调
 }
 ```
 
@@ -365,15 +366,27 @@ interface IRequestOptions {
         preset: 'QA',
       },
       context: [
-        { key: 'language', value: 'javascript' },
-        { key: 'scenario', value: 'code_review' },
+        { language: 'javascript' },
+        { scenario: 'code_review' },
       ],
+      beforeRequest: (req) => ({
+        ...req,
+        data: {
+          ...(req.data ?? {}),
+          biz_id: '123',
+        },
+      }),
     }"
   />
 </template>
 ```
 
-这些参数会在发送请求时与其他参数一起发送，其中 `context` 会被合并到快捷操作的表单数据中，作为上下文信息传递给后端。
+::: tip 选择合适的字段
+- 需要给**所有接口**加参数 → 使用 `beforeRequest`
+- 只需给**聊天接口**加参数 → 使用 `data`
+- 传递业务上下文给 AI → 使用 `context`
+- 自定义认证信息 → 使用 `headers`
+:::
 
 ## 暴露属性
 

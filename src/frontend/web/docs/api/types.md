@@ -160,15 +160,36 @@ interface AddNewSessionOptions {
 
 ## RequestOptions
 
-请求选项对象定义，用于 `requestOptions` 属性。
+请求选项对象定义，用于 `requestOptions` 属性。详细使用指南参见 [自定义请求](/guide/advanced-usage/custom-requests)。
 
 ```typescript
+interface RequestHookData {
+  url: string
+  data?: unknown
+  headers?: Record<string, string>
+}
+
 interface IRequestOptions {
-  headers?: Record<string, any> // 请求头参数
-  data?: Record<string, any> // 请求体附加数据
-  context?: Array<Record<string, any>> // 上下文参数数据，会合并到快捷操作的context中
+  headers?: Record<string, string> // 自定义请求头，合并到所有请求中
+  data?: Record<string, any> // 附加到聊天请求体的额外字段（仅影响 chat_completion）
+  context?:
+    | Record<string, string>
+    | Record<string, string>[]
+    | (() => Record<string, string>) // 上下文信息，存入消息的 property.extra
+  beforeRequest?: (data: RequestHookData) => RequestHookData | undefined // 请求拦截器，影响所有接口
+  afterRequest?: (data: RequestHookData, response: Response) => void // 响应回调
 }
 ```
+
+### 字段作用范围
+
+| 字段 | 作用范围 | 说明 |
+| --- | --- | --- |
+| `headers` | 所有接口 | 合并到每个请求的请求头中 |
+| `data` | 仅 `chat_completion` | 展平合并到聊天流式请求体顶层 |
+| `context` | 消息元数据 | 存入 `property.extra`，不直接发送到 HTTP 请求体 |
+| `beforeRequest` | **所有接口** | 请求发出前拦截，可修改 url / data / headers |
+| `afterRequest` | 所有接口 | 请求完成后的回调 |
 
 ## IAgentInfo
 
