@@ -237,6 +237,13 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/chat/share/{share_token}/",
     )
 
+    upgrade_agent_sessions = bind_property(
+        Operation,
+        name="upgrade_agent_sessions",
+        method="POST",
+        path="/openapi/aidev/resource/v1/agent/agent_sessions/upgrade/",
+    )
+
 
 class AidevRequestContextBuilder(RequestContextBuilder):
     def build(self, endpoint, operation_context):

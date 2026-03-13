@@ -1,13 +1,16 @@
 # AI 智能体插件
 
 ## 一、Quickstart
+
 ### 1.1 关联智能体空间
+
 1. 如果您是从开发者中心创建的智能体，请参考[FAQ](https://github.com/TencentBlueKing/bk-aidev-agent/blob/develop/docs/agent/FAQ.md#%E2%9D%93%E9%97%AE%E9%A2%98%EF%BC%9A%E5%85%B3%E8%81%94%E6%99%BA%E8%83%BD%E4%BD%93)文档，将智能体关联到所属的项目空间
 2. 关联智能体后请务必配置并发布智能体
 
 ### 1.2 本地开发环境配置
 
 1. 初始化项目环境，通过 `uv`（>=0.7.14）或 `pip` 管理依赖，虚拟环境将创建在项目根目录 `.venv` 下
+
 ```bash
 # 使用 uv 管理依赖
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -22,6 +25,7 @@ pip install -r requirements.txt
 ### 1.3 本地环境变量配置
 
 1. 通过以下命令创建本地环境变量文件
+
 ```shell
 cp ./support-files/env.template .env
 ```
@@ -31,7 +35,9 @@ cp ./support-files/env.template .env
 **注意：support-files/env.template 是环境变量模板，会提交到代码仓库，请勿配置敏感信息**
 
 ### 1.4 启动服务并测试
-#### 1.4.1 UNIX系统
+
+#### 1.4.1 UNIX 系统
+
 在启动本地服务前，需要先将 `local.{{cookiecutter.bkpaas_bk_domain}}` 配置到本地的 `hosts` 文件中
 
 然后，执行以下脚本启动本地服务，即可开始测试：
@@ -45,8 +51,11 @@ python bin/manage.py createcachetable
 # 启动服务
 python bin/manage.py runserver local.{{cookiecutter.bkpaas_bk_domain}}:8000
 ```
-#### 1.4.2 Windows系统
-用户启动环境为Windows时，推荐使用`Git-bash`执行以下脚本启动本地服务，即可开始测试：
+
+#### 1.4.2 Windows 系统
+
+用户启动环境为 Windows 时，推荐使用`Git-bash`执行以下脚本启动本地服务，即可开始测试：
+
 ```shell
 source .env
 source .venv/Scripts/activate
@@ -59,7 +68,7 @@ python bin/manage.py runserver local.{{cookiecutter.bkpaas_bk_domain}}:8000
 
 本地打开 `local.{{cookiecutter.bkpaas_bk_domain}}:8000` 即可使用小鲸进行会话
 
-## 二、开发指引 
+## 二、开发指引
 
 ### 2.1 目录结构
 
@@ -97,7 +106,9 @@ python bin/manage.py runserver local.{{cookiecutter.bkpaas_bk_domain}}:8000
 ```
 
 ### 2.2 代码提交
+
 1. 如果智能体尚未提交到代码仓库，可通过以下操作提交
+
 ```shell
 cd {{cookiecutter.project_name}}
 git init
@@ -108,11 +119,13 @@ git push -u origin main
 ```
 
 2. 安装 `GIT` pre-commit 检测工具
+
 ```shell
 make init-pre-commit
 ```
 
 3. 通过 `make lint` 可对智能体所有代码进行检测
+
 ```shell
 make lint
 ```
@@ -142,12 +155,14 @@ uv add cruft --dev
 ```
 
 2. 关联智能体模板
+
 ```shell
 cd {{cookiecutter.project_name}}
 cruft link https://github.com/TencentBlueKing/bk-aidev-agent.git --directory template --config-file=./support-files/cookiecutter.yaml --no-input
 ```
 
 3. 提交 `cruft.json` 到代码仓库，请按实际代码分支处理
+
 ```shell
 git add .
 git commit -m "minor: add .cruft.json"
@@ -155,11 +170,13 @@ git push -u origin main
 ```
 
 4. 验证模板是否已关联
+
 ```shell
 cruft check
 ```
 
 5. 模板更新检测与应用
+
 ```shell
 cruft check
 
@@ -172,10 +189,10 @@ cruft update
 
 6. 开发中遇到问题？请点击[常见问题](https://github.com/TencentBlueKing/bk-aidev-agent/tree/develop/docs/agent/FAQ.md)
 
-
 ## 三、API 调用
 
 ### 3.1 接口协议
+
 ```
 {
   "input": "用户内容",
@@ -194,15 +211,19 @@ cruft update
   }
 }
 ```
+
 1. input: 用户对话内容
 2. chat_history：会话历史
 3. execute_kwargs
- - stream：是否流式输出
+
+- stream：是否流式输出
 
 ### 3.2 应用态调用
+
 1. 应用态接口必须通过 header 头（`X-BKAIDEV-USER`）传递用户信息
 
 2. 本地调试
+
 ```shell
 curl -X POST http://local.{{cookiecutter.bkpaas_bk_domain}}:8000/bk_plugin/openapi/agent/chat_completion/ \
     -H "Content-Type: application/json"   \
@@ -211,6 +232,7 @@ curl -X POST http://local.{{cookiecutter.bkpaas_bk_domain}}:8000/bk_plugin/opena
 ```
 
 3`APIGW` 调用：此方式需要在 `APIGW` 对请求的 `bk_app_code` 进行授权
+
 ```shell
 curl -X POST {{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cookiecutter.app_code) }}/prod/bk_plugin/openapi/agent/chat_completion/  \
     -H "Content-Type: application/json"   \
@@ -219,9 +241,10 @@ curl -X POST {{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cook
     -d '{"chat_history":[{"role":"user","content":"hi"}], "execute_kwargs": {"stream": true}}'
 ```
 
-
 ### 3.3 用户态调用
+
 1. 本地调试
+
 ```shell
 curl -X POST http://local.{{cookiecutter.bkpaas_bk_domain}}:8000/bk_plugin/plugin_api/chat_completion/ \
     -H "Content-Type: application/json"   \
@@ -229,7 +252,8 @@ curl -X POST http://local.{{cookiecutter.bkpaas_bk_domain}}:8000/bk_plugin/plugi
 ```
 
 2. `APIGW` 调用：此方式需要在 `APIGW` 对请求的 `bk_app_code` 进行授权
- - `access_token` 可通过【[蓝鲸开发者中心]({{cookiecutter.bkpaas_url}}/developer-center/apps/{{cookiecutter.app_code}}/summary) >  云 API 权限> 创建新令牌】获取
+
+- `access_token` 可通过【[蓝鲸开发者中心]({{cookiecutter.bkpaas_url}}/developer-center/apps/{{cookiecutter.app_code}}/summary) > 云 API 权限> 创建新令牌】获取
 
 ```shell
 curl -X POST {{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cookiecutter.app_code) }}/prod/bk_plugin/plugin_api/chat_completion/  \
@@ -239,8 +263,10 @@ curl -X POST {{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cook
 ```
 
 ### 3.4 蓝鲸插件调用
+
 1. 在蓝鲸插件调用场景下，将按蓝鲸插件协议标准调用，此方式不支持流式输出
 2. 本地调试
+
 ```shell
 curl -X POST http://127.0.0.1:8000/bk_plugin/invoke/1.0.0assistant \
     -H "Content-Type: application/json"   \
@@ -266,6 +292,7 @@ curl -X POST http://127.0.0.1:8000/bk_plugin/invoke/1.0.0assistant \
 ```
 
 3. `APIGW` 调用：此方式需要在 `APIGW` 对请求的 `bk_app_code` 进行授权
+
 ```shell
 curl -X POST {{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cookiecutter.app_code) }}/prod/invoke/1.0.0assistant/ \
     -H "Content-Type: application/json"   \
@@ -293,26 +320,28 @@ curl -X POST {{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cook
 
 ### 3.5 流式响应协议
 
-1. 请求输出格式：流式响应遵循标准的SSE响应规范。响应的data内容为JSON字符串，具体协议如下：
-  - event支持5种类型：text, think, reference_doc, done, error
-  - text类型event，表示单个流式输出
-    - 附带字段
-      - content: 单个流式响应内容
-  - think类型event，推理类LLM（如deepseek-r1）独有的内置think过程
-    - 附带字段
-      - content: 单个流式响应内容
-  - reference_doc类型event，表示执行了知识库查询并检索到了可能相关的文档
-    - 附带字段:
-      - documents
-  - done类型event，表示流式输出结束
-    - 附带字段:
-      - content: 最终完整输出（默认为前序所有流式内容集合，或自定义最终输出）
-      - cover: 是否用最终输出覆盖前序已展示流式输出
-  - error类型event，表示遇到异常，同时流式输出结束
-    - 附带字段:
-      - message
-      - code
-2. 可以在agent内部处理逻辑中使用 `langchain_core.callbacks.manager.dispatch_custom_event` 函数，从算法逻辑中分发自定义事件并在 `bk_plugin/apis/assistant.py` 中转换为上述标准流式事件
+1. 请求输出格式：流式响应遵循标准的 SSE 响应规范。响应的 data 内容为 JSON 字符串，具体协议如下：
+
+- event 支持 5 种类型：text, think, reference_doc, done, error
+- text 类型 event，表示单个流式输出
+  - 附带字段
+    - content: 单个流式响应内容
+- think 类型 event，推理类 LLM（如 deepseek-r1）独有的内置 think 过程
+  - 附带字段
+    - content: 单个流式响应内容
+- reference_doc 类型 event，表示执行了知识库查询并检索到了可能相关的文档
+  - 附带字段:
+    - documents
+- done 类型 event，表示流式输出结束
+  - 附带字段:
+    - content: 最终完整输出（默认为前序所有流式内容集合，或自定义最终输出）
+    - cover: 是否用最终输出覆盖前序已展示流式输出
+- error 类型 event，表示遇到异常，同时流式输出结束
+  - 附带字段:
+    - message
+    - code
+
+2. 可以在 agent 内部处理逻辑中使用 `langchain_core.callbacks.manager.dispatch_custom_event` 函数，从算法逻辑中分发自定义事件并在 `bk_plugin/apis/assistant.py` 中转换为上述标准流式事件
 
 - 示例:
 
@@ -361,9 +390,12 @@ curl -X POST {{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cook
 ```
 
 ## 四、智能体配置及定制开发
+
 ### 4.1 智能体自定义应用
+
 1. 如果智能体需要自定义其它业务逻辑，建议在`apps`目录下创建`django application`
 2. 应用创建后可以通过`bk_plugin/settings.py` 加载，应用涉及的配置建议直接在应用下的`settings.py`定义
+
 ```python
 load_settings("apps.demo.settings")  # 自定义 demo 应用
 ```
@@ -385,3 +417,24 @@ AGENT_CONFIG = {
 
 当通用智能体无法满足业务场景时，可参考以下文档扩展智能体功能：
 [智能体定制开发指南](https://github.com/TencentBlueKing/bk-aidev-agent/tree/develop/docs/agent/EXTENSION_AGENT.md)
+
+## 五、升级与迁移
+
+### 5.1 历史会话升级
+
+如果您的智能体在升级到 AG-UI 协议之前已有历史会话数据，可通过以下命令将旧版会话升级为 AG-UI v2 协议格式：
+
+```bash
+# 使用默认批次大小（500）
+python bin/manage.py upgrade_sessions
+
+# 指定每批次处理数量（范围 1-5000）
+python bin/manage.py upgrade_sessions --batch-size=1000
+```
+
+**说明：**
+
+- 该命令会向 AIDev 平台提交一个异步升级任务
+- 升级任务将在后台执行，不会阻塞当前操作
+- 升级进度和结果请在 AIDev 平台查看
+- 如果智能体没有旧版会话数据，无需执行此命令
