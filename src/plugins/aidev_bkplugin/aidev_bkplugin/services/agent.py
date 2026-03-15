@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import os
+import uuid
 from functools import lru_cache
 
 import pkg_resources
@@ -132,7 +133,11 @@ def run_bkplugin_invoke(
             chat_history.append(ChatPrompt(role="user", content=input))
         else:
             chat_history = [ChatPrompt(role="user", content=input)]
-    chat_completion_agent = build_chat_completion_agent_by_chat_history(chat_history, username)
+    chat_completion_agent, _ = build_chat_completion_agent_by_thread_id_with_chat_history(
+        thread_id=execute_kwargs.session_code or str(uuid.uuid4()),
+        chat_history=chat_history,
+        username=username,
+    )
     return chat_completion_agent.execute(execute_kwargs)
 
 
@@ -260,6 +265,38 @@ def save_ai_response(result: dict, session_code: str, username: str):
         save_session_content(session_code=session_code, role=PromptRole.AI.value, content=content, username=username)
 
 
+def save_chat_history_to_session(session_code: str, chat_history: list[ChatPrompt], username: str):
+    """按顺序将 chat_history 持久化到指定 session。"""
+    for prompt in chat_history or []:
+        save_session_content(
+            session_code=session_code,
+            role=prompt.role,
+            content=prompt.content,
+            username=username,
+        )
+
+
+def _build_session_agent_for_thread(session_code: str, username: str) -> ChatCompletionAgent:
+    agent_cls = agent_factory.get(settings.DEFAULT_NAME)
+    config_manager = agent_config_factory.get(settings.DEFAULT_NAME)
+
+    event_handler = (
+        AGUISessionWriter(session_code=session_code, client=bkaidev_api_client, username=username)
+        if bkaidev_api_client
+        else None
+    )
+
+    return AgentInstanceFactory.build_agent(
+        build_type=AgentBuildType.SESSION,
+        session_code=session_code,
+        agent_cls=agent_cls,
+        config_manager_class=config_manager,
+        checkpointer=_get_checkpointer(),
+        event_handler=event_handler,
+        username=username,
+    )
+
+
 def build_chat_completion_agent_by_thread_id(
     thread_id: str, input_text: str, username: str, agent_code: str | None = None, save_content: bool = True
 ) -> tuple[ChatCompletionAgent, str]:
@@ -285,27 +322,31 @@ def build_chat_completion_agent_by_thread_id(
     if save_content and input_text:
         save_session_content(session_code, PromptRole.USER.value, input_text, username)
 
-    # 3. 构建 Agent（使用 session 模式获取历史）
-    agent_cls = agent_factory.get(settings.DEFAULT_NAME)
-    config_manager = agent_config_factory.get(settings.DEFAULT_NAME)
+    return _build_session_agent_for_thread(session_code, username), session_code
 
-    event_handler = (
-        AGUISessionWriter(session_code=session_code, client=bkaidev_api_client, username=username)
-        if bkaidev_api_client
-        else None
-    )
 
-    agent_instance = AgentInstanceFactory.build_agent(
-        build_type=AgentBuildType.SESSION,
-        session_code=session_code,
-        agent_cls=agent_cls,
-        config_manager_class=config_manager,
-        checkpointer=_get_checkpointer(),
-        event_handler=event_handler,
-        username=username,
-    )
+def build_chat_completion_agent_by_thread_id_with_chat_history(
+    thread_id: str,
+    chat_history: list[ChatPrompt],
+    username: str,
+    agent_code: str | None = None,
+) -> tuple[ChatCompletionAgent, str]:
+    """
+    通过 thread_id 构建 Agent，并先将传入的 chat_history 写入对应 session。
 
-    return agent_instance, session_code
+    Args:
+        thread_id: Thread ID
+        chat_history: 会话历史
+        username: 用户名
+        agent_code: 智能体代码
+
+    Returns:
+        tuple[agent_instance, session_code]
+    """
+    agent_code = agent_code or settings.APP_CODE
+    session_code = get_or_create_session_by_thread_id(username, thread_id, agent_code)
+    save_chat_history_to_session(session_code=session_code, chat_history=chat_history, username=username)
+    return _build_session_agent_for_thread(session_code, username), session_code
 
 
 def execute_agent_with_save(

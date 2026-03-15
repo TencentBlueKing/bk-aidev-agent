@@ -333,12 +333,13 @@ class BkAiStreamingProtocol:
             for event in self.handle_on_tool_end(data):
                 yield event
 
-    def handle_ret(self, ret: BkAiStreamEvent) -> Generator[BkAiStreamEvent]:
+    def handle_ret(self, ret: BkAiStreamEvent | None) -> Generator[BkAiStreamEvent]:
+        if not ret:
+            return
         recall_ret = None
         if self.agent_type == BKAiStreamingAgentType.StructuredChatCommonQAAgent:
             recall_ret = self.handle_structured_chat_common_qa(ret)
-        if ret:
-            yield from self.handle_ret_event(ret, recall_ret)
+        yield from self.handle_ret_event(ret, recall_ret)
 
     def handle_structured_chat_common_qa(self, ret: BkAiStreamEvent):
         recall_ret = None
@@ -674,10 +675,12 @@ class BkAiStreamingProtocol:
                 file_path = parse_qs(urlparse(preview_path).query).get("anchorPath", [""])[0].split("/", 2)[-1]
                 documents.append(
                     {
-                        "path": _each.get("url", ""),
-                        "file_path": file_path,
-                        "display_name": _each.get("name", ""),
-                        "preview_path": _each.get("originFile", ""),
+                        "metadata": {
+                            "path": _each.get("url", ""),
+                            "file_path": file_path,
+                            "display_name": _each.get("name", ""),
+                            "preview_path": _each.get("originFile", ""),
+                        }
                     }
                 )
             ret = BkAiStreamEvent(event=StreamEventType.REFERENCE_DOC, documents=documents, cover=True)

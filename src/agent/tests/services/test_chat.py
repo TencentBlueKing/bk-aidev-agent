@@ -476,7 +476,7 @@ class TestCommonAgentChatStreamingLive:
     """测试聊天代理的流式响应功能"""
 
     def setup_method(self):
-        self.llm = ChatModel.get_setup_instance(model="qwen3-5-27B")
+        self.llm = ChatModel.get_setup_instance(model="deepseek-r1")
 
     def test_knowledge_base(self):
         """case 1: 知识库"""
@@ -528,6 +528,11 @@ class TestCommonAgentChatStreamingLive:
                 ChatPrompt(role="user", content="云桌面黑屏怎么处理?"),
             ],
             knowledge_bases=[knowledgebase],
+            agent_options=AgentOptions(
+                intent_recognition_options=IntentRecognition(
+                    agent_type="deepseek_r1",
+                ),
+            ),
         )
         with open("text.log", "w") as fo:
             result = agent.execute(ExecuteKwargs(stream=True, legacy_streaming=True))

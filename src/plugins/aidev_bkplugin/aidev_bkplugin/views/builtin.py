@@ -232,7 +232,7 @@ class ChatCompletionViewSet(PluginViewSet):
 
         try:
             thread_id = execute_kwargs.thread_id
-            if not thread_id or not session_code:
+            if not thread_id and not session_code:
                 thread_id = str(uuid.uuid4())
             if thread_id:
                 return self._handle_thread_id_mode(

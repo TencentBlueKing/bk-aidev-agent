@@ -274,7 +274,8 @@ class TestCommonQAStreamingMixIn:
         assert len(reference_doc_events) > 0
         assert "documents" in reference_doc_events[0]
         assert len(reference_doc_events[0]["documents"]) == 1
-        assert reference_doc_events[0]["documents"][0]["file_path"] == "2.1.x 发布内容"
+        assert "metadata" in reference_doc_events[0]["documents"][0]
+        assert reference_doc_events[0]["documents"][0]["metadata"]["file_path"] == "2.1.x 发布内容"
 
     def test_done_event_type(self, mock_tool_calling_agent):
         """测试 DONE 事件类型"""
@@ -492,6 +493,31 @@ class TestCommonQAStreamingMixIn:
 
         assert "不应该显示的内容" not in all_content
         assert "应该显示的内容" in all_content
+
+    def test_structured_chat_ignores_empty_knowledge_custom_event(self, mock_structured_chat_agent):
+        """测试 StructuredChatCommonQAAgent 忽略空的知识库自定义事件"""
+        mock_agent_e = MockAgent()
+
+        def mock_stream_events(*args, **kwargs):
+            yield {
+                "event": "on_custom_event",
+                "name": CustomMessageType.KNOWLEDGE_RAG_START.value,
+                "data": {},
+            }
+
+        mock_agent_e.stream_events = mock_stream_events
+
+        results = list(mock_structured_chat_agent.stream_standard_event(mock_agent_e, {}, {"input": "test"}))
+
+        error_events = []
+        for r in results:
+            if r.startswith("data: ") and r != "data: [DONE]\n\n":
+                data = json.loads(r[6:])
+                if data.get("event") == StreamEventType.ERROR.value:
+                    error_events.append(data)
+
+        assert error_events == []
+        assert results[-1] == "data: [DONE]\n\n"
 
     def test_structured_chat_final_answer(self, mock_structured_chat_agent):
         """测试 StructuredChatCommonQAAgent 的 Final Answer 处理"""

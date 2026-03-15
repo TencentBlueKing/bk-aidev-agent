@@ -28,7 +28,7 @@ dependencies = [
     "wrapt>1,<2",
 ]
 name = "aidev-agent"
-version = "1.1.0b11"
+version = "1.1.0b12"
 description = "bkaidev agent builder"
 
 [dependency-groups]

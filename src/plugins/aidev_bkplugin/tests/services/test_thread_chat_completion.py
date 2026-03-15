@@ -2,7 +2,8 @@
 """run_chat_completion_with_thread_id 与 ChatCompletionViewSet thread_id 分支回归测试。需在具备 Django + aidev_bkplugin 环境中运行。"""
 
 import sys
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -56,3 +57,66 @@ class TestRunChatCompletionWithThreadId:
             assert session_code == "session-abc"
             assert ek.session_code == "session-abc"
             assert result is not None
+
+
+@pytest.mark.skipif(not _has_django, reason="Django and plugin env required")
+class TestBuildChatCompletionAgentByThreadIdWithChatHistory:
+    def test_persists_chat_history_before_building_agent(self):
+        from aidev_bkplugin.services.agent import build_chat_completion_agent_by_thread_id_with_chat_history
+
+        history = [
+            SimpleNamespace(role="user", content="hello"),
+            SimpleNamespace(role="assistant", content="hi"),
+        ]
+
+        with (
+            patch("aidev_bkplugin.services.agent.get_or_create_session_by_thread_id") as mock_session,
+            patch("aidev_bkplugin.services.agent.save_session_content") as mock_save,
+            patch("aidev_bkplugin.services.agent.agent_factory.get") as mock_agent_factory,
+            patch("aidev_bkplugin.services.agent.agent_config_factory.get") as mock_config_factory,
+            patch("aidev_bkplugin.services.agent.AgentInstanceFactory.build_agent") as mock_build,
+        ):
+            mock_session.return_value = "session-abc"
+            mock_agent_factory.return_value = MagicMock()
+            mock_config_factory.return_value = MagicMock()
+            mock_build.return_value = MagicMock()
+
+            agent_instance, session_code = build_chat_completion_agent_by_thread_id_with_chat_history(
+                thread_id="thread-1",
+                chat_history=history,
+                username="tester",
+            )
+
+        assert agent_instance is mock_build.return_value
+        assert session_code == "session-abc"
+        assert mock_save.call_args_list == [
+            call(session_code="session-abc", role="user", content="hello", username="tester"),
+            call(session_code="session-abc", role="assistant", content="hi", username="tester"),
+        ]
+        mock_build.assert_called_once()
+        assert mock_build.call_args.kwargs["session_code"] == "session-abc"
+
+    def test_skips_persist_when_chat_history_is_empty(self):
+        from aidev_bkplugin.services.agent import build_chat_completion_agent_by_thread_id_with_chat_history
+
+        with (
+            patch("aidev_bkplugin.services.agent.get_or_create_session_by_thread_id") as mock_session,
+            patch("aidev_bkplugin.services.agent.save_session_content") as mock_save,
+            patch("aidev_bkplugin.services.agent.agent_factory.get") as mock_agent_factory,
+            patch("aidev_bkplugin.services.agent.agent_config_factory.get") as mock_config_factory,
+            patch("aidev_bkplugin.services.agent.AgentInstanceFactory.build_agent") as mock_build,
+        ):
+            mock_session.return_value = "session-empty"
+            mock_agent_factory.return_value = MagicMock()
+            mock_config_factory.return_value = MagicMock()
+            mock_build.return_value = MagicMock()
+
+            agent_instance, session_code = build_chat_completion_agent_by_thread_id_with_chat_history(
+                thread_id="thread-2",
+                chat_history=[],
+                username="tester",
+            )
+
+        assert agent_instance is mock_build.return_value
+        assert session_code == "session-empty"
+        mock_save.assert_not_called()
