@@ -2,7 +2,7 @@
   <div class="chat-window">
     <bk-resize-layout class="chat-window-layout" placement="left" :initial-divide="300" :min="200" :max="480" disabled collapsible :immediate="true">
       <template #aside>
-        <div class="session-panel">
+        <BkLoading :loading="isSessionListLoading" class="session-panel">
           <!-- 搜索 -->
           <div class="session-search">
             <BkInput v-model="searchQuery" type="search" placeholder="搜索会话名称" clearable />
@@ -87,12 +87,12 @@
               <BkButton size="small" @click="cancelSelect"> 取消 </BkButton>
             </div>
           </div>
-        </div>
+        </BkLoading>
       </template>
 
       <template #main>
         <div class="chat-main">
-          <ChatBot v-if="isComponentReady" ref="chatBotRef" :url="url" height="100%" @agent-info-loaded="handleAgentInfoLoaded" />
+          <ChatBot ref="chatBotRef" :url="url" height="100%" @agent-info-loaded="handleAgentInfoLoaded" @error="handleChatBotError" />
         </div>
       </template>
     </bk-resize-layout>
@@ -100,13 +100,13 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, shallowRef, computed, watch, nextTick, onMounted } from "vue"
+  import { ref, shallowRef, computed, watch, nextTick } from "vue"
   import { Input as BkInput, Button as BkButton, Checkbox as BkCheckbox, Loading as BkLoading, InfoBox, bkTooltips as vBkTooltips } from "bkui-vue"
   import { Plus } from "bkui-vue/lib/icon"
 
   import { ChatBot } from "@blueking/ai-blueking"
   import "@blueking/ai-blueking/dist/vue3/style.css"
-  import { fetchAgentInfo } from "../composables/useAgentInfo"
+  import router from "../router"
 
   import type { ChatBotExpose } from "@blueking/ai-blueking"
 
@@ -118,15 +118,20 @@
     createdAt: string
   }
 
+  interface RequestError extends Error {
+    response?: { status: number }
+  }
+
   const chatBotRef = ref<ChatBotExpose | null>(null)
   // shallowRef 避免 reactive 自动解包内部 ref，保留 session.list / session.current 原始 Ref 语义
   const chatHelperInstance = shallowRef<ChatHelper | null>(null)
-  const isComponentReady = ref(false)
   const searchQuery = ref("")
   const selectedCodes = ref<Set<string>>(new Set())
   const sessionList = ref<SessionItem[]>([])
   const currentSession = ref<SessionItem | null>(null)
   const url = ref(window.BK_API_PREFIX)
+
+  const isSessionListLoading = computed(() => !chatHelperInstance.value)
 
   const filteredSessionList = computed(() => {
     if (!searchQuery.value) return sessionList.value
@@ -318,10 +323,12 @@
     )
   }
 
-  onMounted(async () => {
-    await fetchAgentInfo(url.value)
-    isComponentReady.value = true
-  })
+  const handleChatBotError = (error: Error) => {
+    const status = (error as RequestError).response?.status
+    if (status === 403) {
+      router.push("/403")
+    }
+  }
 </script>
 
 <style lang="postcss" scoped>
@@ -519,6 +526,10 @@
   /* 覆盖 chat-bot 组件内 message 和 input 的最大宽度 */
   .chat-main .ai-chatbot .chatbot-messages .message-group {
     max-width: 800px !important;
+  }
+
+  .chat-main .ai-chatbot .chatbot-input {
+    max-width: 832px !important;
   }
 
   .chat-main .ai-chatbot .chatbot-input .chat-input-container .chat-input {
