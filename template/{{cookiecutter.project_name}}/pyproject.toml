@@ -6,10 +6,10 @@ readme = "readme.md"
 authors = [{ name = "blueking" }]
 requires-python = "~=3.11.9"
 dependencies = [
-    "aidev-agent==1.1.0b10",
-    "aidev-bkplugin==1.1.0b7",
+    "aidev-agent==1.1.0b12",
+    "aidev-bkplugin==1.1.0b9",
     "aidev-wxbot==1.1.0b2",
-    "aidev-ai-blueking==2.0.0-dev.29",
+    "aidev-ai-blueking==2.0.0.dev31",
     "bk-plugin-framework>=2.3.9",
     "bkapi-bk-apigateway==1.0.12",
     "celery==5.4.0",
