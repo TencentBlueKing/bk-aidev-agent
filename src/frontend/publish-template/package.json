@@ -12,8 +12,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@blueking/ai-blueking": "2.0.0-dev.29",
-    "@blueking/chat-x": "0.0.3-beta.2",
+    "@blueking/ai-blueking": "2.0.0-dev.31",
+    "@blueking/chat-x": "0.0.3-beta.3",
     "@blueking/chat-helper": "0.0.1-beta.27",
     "@blueking/cli-service": "0.1.1",
     "bkui-vue": "2.0.1",
