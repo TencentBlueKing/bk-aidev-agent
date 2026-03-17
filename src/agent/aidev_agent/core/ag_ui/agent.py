@@ -556,7 +556,11 @@ class LangGraphAgent:
                     predict_tool.get("tool") == tool_call_data["name"] for predict_tool in predict_state_metadata
                 )
 
-            is_tool_call_start_event = not has_current_stream and tool_call_data and tool_call_data.get("name")
+            is_tool_call_start_event = (
+                tool_call_data
+                and tool_call_data.get("name")
+                and (not has_current_stream or not current_stream.get("tool_call_id"))
+            )
             is_tool_call_args_event = (
                 has_current_stream
                 and current_stream.get("tool_call_id")
@@ -576,7 +580,10 @@ class LangGraphAgent:
             )
             is_message_content_event = tool_call_data is None and message_content
             is_message_end_event = (
-                has_current_stream and not current_stream.get("tool_call_id") and not is_message_content_event
+                has_current_stream
+                and not current_stream.get("tool_call_id")
+                and not is_message_content_event
+                and not is_tool_call_start_event
             )
 
             if reasoning_data:
@@ -630,6 +637,14 @@ class LangGraphAgent:
                 return
 
             if is_tool_call_start_event and should_emit_tool_calls:
+                if has_current_stream and not current_stream.get("tool_call_id"):
+                    yield self._dispatch_event(
+                        TextMessageEndEvent(
+                            type=EventType.TEXT_MESSAGE_END,
+                            message_id=current_stream["id"],
+                            raw_event=event,
+                        )
+                    )
                 yield self._dispatch_event(
                     ToolCallStartEvent(
                         type=EventType.TOOL_CALL_START,
@@ -647,6 +662,16 @@ class LangGraphAgent:
                         tool_call_name=tool_call_data["name"],
                     ),
                 )
+                current_stream = self.get_message_in_progress(self.active_run["id"])
+                if tool_call_data.get("args"):
+                    yield self._dispatch_event(
+                        ToolCallArgsEvent(
+                            type=EventType.TOOL_CALL_ARGS,
+                            tool_call_id=current_stream["tool_call_id"],
+                            delta=tool_call_data["args"],
+                            raw_event=event,
+                        )
+                    )
                 return
 
             if is_tool_call_args_event and should_emit_tool_calls:

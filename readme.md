@@ -125,7 +125,11 @@ make release_versions VERSION=2.0.0b1
 ```bash
 make release_versions aidev_agent_version=2.0.0b1 aidev_bkplugin_version=2.0.0b2 aidev_wxbot_version=2.0.0b3 aidev_template_version=2.0.0rc4
 ```
-可选参数 `aidev_ai_blueking_version` 不指定时默认与 `aidev_agent_version` 一致。
+也支持只指定部分组件，例如：
+```bash
+make release_versions aidev_ai_blueking_version=2.0.0rc1
+```
+未指定的组件会保持当前版本不变。
 
 ## 📂 项目结构
 ```

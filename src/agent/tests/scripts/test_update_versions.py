@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 from textwrap import dedent
 
@@ -21,10 +22,7 @@ def write_file(path: Path, content: str) -> None:
     path.write_text(dedent(content).lstrip(), encoding="utf-8")
 
 
-def test_update_repo_versions_updates_all_target_files(tmp_path):
-    module = load_update_versions_module()
-    repo_root = tmp_path / "repo"
-
+def create_repo_fixture(repo_root: Path) -> None:
     write_file(
         repo_root / "src/agent/pyproject.toml",
         """
@@ -106,6 +104,12 @@ def test_update_repo_versions_updates_all_target_files(tmp_path):
         """,
     )
 
+
+def test_update_repo_versions_updates_all_target_files(tmp_path):
+    module = load_update_versions_module()
+    repo_root = tmp_path / "repo"
+    create_repo_fixture(repo_root)
+
     updated_files = module.update_repo_versions(repo_root, "2.0.0b1")
 
     assert {path.as_posix() for path in updated_files} == {
@@ -146,3 +150,38 @@ def test_update_repo_versions_updates_all_target_files(tmp_path):
     assert 'version = "1.0.0assistant"' in assistant_text
     readme_text = (repo_root / "template/{{cookiecutter.project_name}}/readme.md").read_text(encoding="utf-8")
     assert "invoke/1.0.0assistant" in readme_text
+
+
+def test_main_updates_only_specified_component_versions(tmp_path, monkeypatch, capsys):
+    module = load_update_versions_module()
+    repo_root = tmp_path / "repo"
+    create_repo_fixture(repo_root)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "update_versions.py",
+            "--aidev-ai-blueking-version",
+            "3.0.0rc1",
+            "--repo-root",
+            str(repo_root),
+        ],
+    )
+
+    exit_code = module.main()
+
+    assert exit_code == 0
+    assert 'version = "1.1.0b13"' in (repo_root / "src/agent/pyproject.toml").read_text(encoding="utf-8")
+    assert 'version = "3.0.0rc1"' in (repo_root / "src/plugins/aidev_ai_blueking/pyproject.toml").read_text(
+        encoding="utf-8"
+    )
+    template_text = (repo_root / "template/{{cookiecutter.project_name}}/pyproject.toml").read_text(encoding="utf-8")
+    assert '"aidev-agent==1.1.0b12"' in template_text
+    assert '"aidev-ai-blueking==3.0.0rc1"' in template_text
+    requirements_text = (repo_root / "template/{{cookiecutter.project_name}}/requirements.txt").read_text(
+        encoding="utf-8"
+    )
+    assert "aidev-agent==1.1.0b13" in requirements_text
+    assert "aidev-ai-blueking==3.0.0rc1" in requirements_text
+    assert "Error:" not in capsys.readouterr().out

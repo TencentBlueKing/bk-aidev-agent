@@ -152,6 +152,34 @@ class TestCommonAgentChatStreaming:
             f"工具结果应该包含天气信息，实际: {tool_result_text[:100]}"
         )
 
+    def test_tool_call_after_reasoning_emits_model_stream_events(self):
+        llm = MockChatModel(
+            mock_responses=[
+                MockResponse(
+                    content="\n\n",
+                    reasoning_content="我需要先思考，再调用天气工具。",
+                    tool_calls=[{"name": "get_weather", "args": {"location": "广州"}, "id": "call_1"}],
+                ),
+                MockResponse(content="广州今天多云，温度25度。"),
+            ],
+            stream_chunk_size=2,
+            loop=False,
+        )
+        agent = ChatCompletionAgent(
+            chat_model=llm,
+            chat_history=[ChatPrompt(id="1", role="user", content="今天广州天气怎么样？")],
+            tools=[get_weather],
+        )
+        results = [json.loads(each[6:]) for each in agent.execute(ExecuteKwargs(stream=True))]
+        tool_start = next(e for e in results if e.get("type") == EventType.TOOL_CALL_START)
+        tool_args = next(e for e in results if e.get("type") == EventType.TOOL_CALL_ARGS)
+        tool_result_index = next(i for i, e in enumerate(results) if e.get("type") == EventType.TOOL_CALL_RESULT)
+        tool_args_index = next(i for i, e in enumerate(results) if e.get("type") == EventType.TOOL_CALL_ARGS)
+        assert tool_start["rawEvent"]["event"] == "on_chat_model_stream"
+        assert tool_args["rawEvent"]["event"] == "on_chat_model_stream"
+        assert json.loads(tool_args["delta"]) == {"location": "广州"}
+        assert tool_args_index < tool_result_index
+
     def test_mcp_tool_calling(self):
         """case 3: MCP工具调用
 
@@ -476,7 +504,7 @@ class TestCommonAgentChatStreamingLive:
     """测试聊天代理的流式响应功能"""
 
     def setup_method(self):
-        self.llm = ChatModel.get_setup_instance(model="deepseek-r1")
+        self.llm = ChatModel.get_setup_instance(model="dsv32-reasoner")
 
     def test_knowledge_base(self):
         """case 1: 知识库"""
@@ -537,6 +565,30 @@ class TestCommonAgentChatStreamingLive:
         with open("text.log", "w") as fo:
             result = agent.execute(ExecuteKwargs(stream=True, legacy_streaming=True))
             for each in result:
+                fo.write(each)
+
+    def test_tool_call_new(self):
+        """case 4: 工具调用 new streaming"""
+        agent = ChatCompletionAgent(
+            chat_model=self.llm,
+            chat_history=[
+                ChatPrompt(role="user", content="今天广州天气怎么样?"),
+            ],
+            tools=[get_weather],
+            agent_options=AgentOptions(
+                intent_recognition_options=IntentRecognition(
+                    agent_type="openai",
+                ),
+            ),
+        )
+        with open("text.log", "w") as fo:
+            result = agent.execute(ExecuteKwargs(stream=True))
+            for each in result:
+                try:
+                    each = json.dumps(json.loads(each[6:]), ensure_ascii=False) + "\n"
+                except json.JSONDecodeError:
+                    fo.write(each)
+                    continue
                 fo.write(each)
 
 

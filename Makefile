@@ -77,17 +77,17 @@ release_versions:
 	@if [ -n "$(VERSION)" ]; then \
 		echo "Updating all package versions to $(VERSION)..."; \
 		uv run python scripts/update_versions.py "$(VERSION)"; \
-	elif [ -n "$(aidev_agent_version)" ] && [ -n "$(aidev_bkplugin_version)" ] && [ -n "$(aidev_wxbot_version)" ] && [ -n "$(aidev_template_version)" ]; then \
-		echo "Updating package versions (per-component)..."; \
+	elif [ -n "$(aidev_agent_version)$(aidev_bkplugin_version)$(aidev_wxbot_version)$(aidev_template_version)$(aidev_ai_blueking_version)" ]; then \
+		echo "Updating package versions (specified components only)..."; \
 		uv run python scripts/update_versions.py \
-			--aidev-agent-version "$(aidev_agent_version)" \
-			--aidev-bkplugin-version "$(aidev_bkplugin_version)" \
-			--aidev-wxbot-version "$(aidev_wxbot_version)" \
-			--aidev-template-version "$(aidev_template_version)" \
-			$(if $(aidev_ai_blueking_version),--aidev-ai-blueking-version $(aidev_ai_blueking_version)); \
+			$(if $(aidev_agent_version),--aidev-agent-version "$(aidev_agent_version)") \
+			$(if $(aidev_bkplugin_version),--aidev-bkplugin-version "$(aidev_bkplugin_version)") \
+			$(if $(aidev_wxbot_version),--aidev-wxbot-version "$(aidev_wxbot_version)") \
+			$(if $(aidev_template_version),--aidev-template-version "$(aidev_template_version)") \
+			$(if $(aidev_ai_blueking_version),--aidev-ai-blueking-version "$(aidev_ai_blueking_version)"); \
 	else \
-		echo "Error: set either VERSION=2.0.0b1 or all of: aidev_agent_version, aidev_bkplugin_version, aidev_wxbot_version, aidev_template_version"; \
-		echo "Example: make release_versions aidev_agent_version=2.0.0b1 aidev_bkplugin_version=2.0.0b2 aidev_wxbot_version=2.0.0b3 aidev_template_version=2.0.0rc4"; \
+		echo "Error: set VERSION=2.0.0b1 or pass at least one per-component version"; \
+		echo "Example: make release_versions aidev_ai_blueking_version=2.0.0rc1"; \
 		exit 1; \
 	fi
 

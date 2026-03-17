@@ -103,10 +103,20 @@ def replace_required(text: str, pattern: str, replacement: str, path: Path) -> s
     return updated_text
 
 
-def update_repo_versions(repo_root: Path, versions: dict[str, str]) -> list[Path]:
+def normalize_versions(versions: str | dict[str, str]) -> dict[str, str]:
+    if isinstance(versions, str):
+        components = {component for _, _, component in VERSION_RULES}
+        return {component: versions for component in components}
+    return {component: version for component, version in versions.items() if version}
+
+
+def update_repo_versions(repo_root: Path, versions: str | dict[str, str]) -> list[Path]:
+    resolved_versions = normalize_versions(versions)
     file_rules: dict[Path, list[tuple[str, str]]] = {}
     for relative_path, pattern, component in VERSION_RULES:
-        version = versions[component]
+        if component not in resolved_versions:
+            continue
+        version = resolved_versions[component]
         replacement = replacement_for(pattern, version)
         file_rules.setdefault(repo_root / relative_path, []).append((pattern, replacement))
 
@@ -152,42 +162,28 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     if args.version:
-        # Single version for all components
-        v = args.version
-        versions = {
-            "agent": v,
-            "bkplugin": v,
-            "wxbot": v,
-            "ai_blueking": v,
-            "template": v,
-        }
+        versions: str | dict[str, str] = args.version
     else:
-        required = {
+        partial_versions = {
             "agent": args.aidev_agent_version,
             "bkplugin": args.aidev_bkplugin_version,
             "wxbot": args.aidev_wxbot_version,
+            "ai_blueking": args.aidev_ai_blueking_version,
             "template": args.aidev_template_version,
         }
-        missing = [k for k, val in required.items() if not val]
-        if missing:
-            print("Error: when using per-component versions, the following are required:", ", ".join(missing))
+        versions = {component: version for component, version in partial_versions.items() if version}
+        if not versions:
+            print("Error: set VERSION=2.0.0b1 or pass at least one per-component version")
             print(
-                "Example: make release_versions aidev_agent_version=2.0.0b1 aidev_bkplugin_version=2.0.0b2 "
-                "aidev_wxbot_version=2.0.0b3 aidev_template_version=2.0.0rc4"
+                "Example: make release_versions aidev_ai_blueking_version=2.0.0rc1 "
+                "or make release_versions aidev_agent_version=2.0.0b1 aidev_bkplugin_version=2.0.0b2"
             )
             return 1
-        ai_blueking = args.aidev_ai_blueking_version or args.aidev_agent_version
-        versions = {
-            "agent": args.aidev_agent_version,
-            "bkplugin": args.aidev_bkplugin_version,
-            "wxbot": args.aidev_wxbot_version,
-            "ai_blueking": ai_blueking,
-            "template": args.aidev_template_version,
-        }
 
     updated_files = update_repo_versions(args.repo_root, versions)
+    resolved_versions = normalize_versions(versions)
     print("Updated versions:")
-    for k, v in versions.items():
+    for k, v in resolved_versions.items():
         print(f"  {k}: {v}")
     print(f"Updated {len(updated_files)} files:")
     for path in updated_files:

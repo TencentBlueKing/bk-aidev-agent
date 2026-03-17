@@ -1,5 +1,5 @@
 ag-ui-protocol==0.1.10
-aidev-agent==2.0.0b1
+aidev-agent==2.0.0b2
 aidev-ai-blueking==2.0.0.dev32
 aidev-bkplugin==2.0.0b1
 aidev-wxbot==2.0.0b1
