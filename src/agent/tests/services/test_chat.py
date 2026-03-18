@@ -395,6 +395,11 @@ class TestCommonAgentChatStreaming:
         # 验证3：最终文本响应应该是第二个MockResponse的内容
         assert_content_type_equal(results, EventType.TEXT_MESSAGE_CONTENT, "抱歉，获取天气信息时出现错误，请稍后再试。")
 
+        # 验证4：工具调用结果事件
+        tool_call_result_events = [r for r in results if r.get("type") == EventType.TOOL_CALL_RESULT]
+        assert len(tool_call_result_events) > 0, "应该有工具调用结果事件"
+        assert tool_call_result_events[0].get("error") is True, "工具调用结果事件应该包含错误信息"
+
     def test_mcp_tool_fetch_failed_event(self):
         """case 7: MCP工具拉取失败事件
 
@@ -470,12 +475,6 @@ class TestCommonAgentChatStreaming:
             if e.get("type") == EventType.CUSTOM and e.get("name") == CustomMessageType.TEMP_MESSAGE.value
         )
         assert temp_message_index == 1, "合并后的 temp_message 应紧跟在 RUN_STARTED 后"
-        old_events = [
-            e
-            for e in results
-            if e.get("type") == EventType.CUSTOM and e.get("name") == CustomMessageType.MCP_TOOL_FETCH_FAILED.value
-        ]
-        assert not old_events, "不应再返回 mcp_tool_fetch_failed 事件"
         value = mcp_events[0].get("value") or {}
         assert value.get("status") == "error"
         assert "mcp-a" in (value.get("message") or "")

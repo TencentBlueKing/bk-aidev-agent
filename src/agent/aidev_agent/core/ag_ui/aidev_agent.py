@@ -66,6 +66,7 @@ class EventDispatcher:
     def _handle_tool_node_finish(self, event: RawEvent) -> str:
         """处理工具节点完成事件"""
         tool_msg = event.event.get("data")
+        is_error = getattr(tool_msg, "status", None) == "error" or bool(getattr(tool_msg, "error", None))
         return self.agent._parent_dispatch(
             ExtendToolCallResultEvent(
                 type=EventType.TOOL_CALL_RESULT,
@@ -74,6 +75,7 @@ class EventDispatcher:
                 content=tool_msg.content,
                 role="tool",
                 duration=tool_msg.additional_kwargs.get("duration", None),
+                error=is_error,
             )
         )
 
