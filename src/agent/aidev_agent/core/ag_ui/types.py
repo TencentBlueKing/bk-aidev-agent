@@ -135,6 +135,8 @@ class CustomMessageType(Enum):
     KNOWLEDGE_RAG_RESULT = "knowledge_rag_result"
     INTERRUPT = "interrupt"
     CUSTOM = "custom"
+    MCP_TOOL_FETCH_FAILED = "mcp_tool_fetch_failed"
+    TEMP_MESSAGE = "temp_message"
 
 
 class ExtendBaseMessage(BaseModel):

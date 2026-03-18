@@ -38,7 +38,6 @@ from typing_extensions import Annotated
 
 from aidev_agent.config import settings
 from aidev_agent.enums import CredentialType
-from aidev_agent.exceptions import AIDevException
 from aidev_agent.services.pydantic_models import AgentOptions
 from aidev_agent.utils.loop import get_event_loop
 
@@ -284,9 +283,11 @@ class ApiWrapper:
             except JSONDecodeError:
                 return resp.content
         except requests.HTTPError as err:
-            return f"[HTTPError]: {err.response.content.decode()}"
+            _logger.exception(f"failed to run tool: {err}")
+            raise ToolException(f"[HTTPError]: {err.response.content.decode()}")
         except Exception as err:
-            return f"Request ERROR: {err}"
+            _logger.exception(f"failed to run tool: {err}")
+            raise ToolException(f"Request ERROR: {err}")
 
     def _load_body(self):
         for key in self._body:
@@ -534,9 +535,24 @@ def make_structured_tool(
     return _tool
 
 
-def make_mcp_tools(
-    server_config: dict, agent_options: AgentOptions, username: str | None = None
-) -> List[StructuredTool]:
+class McpToolFetchFailure(BaseModel):
+    """单次 MCP 工具拉取失败记录"""
+
+    server_name: str = Field(..., description="失败的 MCP 服务器名")
+    message: str = Field(..., description="错误信息")
+    error_type: str | None = Field(default=None, description="异常类型名")
+
+
+class McpToolsResult(BaseModel):
+    """make_mcp_tools 的返回结果"""
+
+    tools: List[StructuredTool] = Field(default_factory=list, description="成功拉取到的 MCP 工具列表")
+    fetch_failures: List[McpToolFetchFailure] = Field(default_factory=list, description="拉取失败的服务器及错误信息")
+
+    model_config = {"arbitrary_types_allowed": True}
+
+
+def make_mcp_tools(server_config: dict, agent_options: AgentOptions, username: str | None = None) -> McpToolsResult:
     # 一定得在这里导包, 否则会报错
     try:
         from bkoauth import get_access_token_by_user
@@ -565,8 +581,8 @@ def make_mcp_tools(
 
     _loop = get_event_loop()
 
-    # 重试2次
-    async def _load_tool(server_name) -> list[StructuredTool]:
+    # 重试2次；返回 (tools, failure | None)，失败时返回 McpToolFetchFailure
+    async def _load_tool(server_name) -> tuple[list[StructuredTool], McpToolFetchFailure | None]:
         for _i in range(2):
             client = MultiServerMCPClient(new_server_config)
             try:
@@ -576,26 +592,34 @@ def make_mcp_tools(
                     if not each.metadata:
                         each.metadata = {}
                     each.metadata["mcp_name"] = server_name
-                return tools
+                return (tools, None)
             except Exception as err:
-                # 记录详细的异常信息用于调试
-                _logger.exception(
-                    f"Failed to get MCP tools list: {err}, retry: {_i}, server_config: {new_server_config}, agent_options: {agent_options}, username: {username}"
-                )
-                # 创建详细的错误信息，类似于MCPExceptionWrapper
                 error_detail = _extract_mcp_tools_error_detail(err)
                 error_msg = f"获取MCP工具列表失败:  {error_detail}"
                 if _i == 0:
                     continue
-                # 抛出包含详细错误信息的ValueError
-                raise AIDevException(message=error_msg)
+                _logger.warning(
+                    f"skip loading tools for server '{server_name}': {error_msg}",
+                    exc_info=err,
+                )
+                return (
+                    [],
+                    McpToolFetchFailure(
+                        server_name=server_name,
+                        message=error_msg,
+                        error_type=type(err).__name__,
+                    ),
+                )
 
     coros = [_load_tool(server_name) for server_name in new_server_config]
     coro_results = _loop.run_until_complete(asyncio.gather(*coros))
-    results = []
-    for _each in coro_results:
-        results.extend(_each)
-    return results
+    tools_list: List[StructuredTool] = []
+    failures: List[McpToolFetchFailure] = []
+    for tlist, fail in coro_results:
+        tools_list.extend(tlist)
+        if fail is not None:
+            failures.append(fail)
+    return McpToolsResult(tools=tools_list, fetch_failures=failures)
 
 
 class MCPExceptionWrapper:

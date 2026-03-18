@@ -142,15 +142,28 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         tools: dict[str, StructuredTool] | None = None,
         event_handler: Callable[[BaseEvent], None] | None = None,
         cancel_checker: Callable[[], bool] | None = None,
+        mcp_fetch_failures: list[dict] | None = None,
     ):
         super().__init__(name=name, graph=graph, description=description, config=config, cancel_checker=cancel_checker)
         self._tool_mapping = tools or {}
         self._event_handler = event_handler
         self._event_dispatcher = EventDispatcher(self)
+        self._mcp_fetch_failures = mcp_fetch_failures or []
+
+    @staticmethod
+    def _format_mcp_fetch_failure_message(failures: list[dict[str, Any]]) -> str:
+        """将 MCP 拉取失败列表格式化为一条临时错误消息。"""
+        lines = []
+        for failure in failures:
+            server_name = failure.get("server_name") or "unknown"
+            message = failure.get("message") or "MCP tool fetch failed"
+            lines.append(f"[{server_name}] {message}")
+        return "\n".join(lines)
 
     async def run(self, input: RunAgentInput) -> AsyncGenerator[str, None]:
         """运行 Agent 并生成编码后的事件流"""
         event_encoder = EventEncoder()
+        temp_message_emitted = False
         async for event in super().run(input):
             try:
                 # 特殊处理：不输出 message snapshot 事件
@@ -158,6 +171,24 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
                     logger.debug(f"message snapshot: {event}")
                 else:
                     yield event_encoder.encode(event)
+
+                # MCP 工具拉取失败消息需要紧跟在 RUN_STARTED 后返回
+                if (
+                    not temp_message_emitted
+                    and getattr(event, "type", "") == EventType.RUN_STARTED.value
+                    and self._mcp_fetch_failures
+                ):
+                    custom_event = CustomEvent(
+                        type=EventType.CUSTOM,
+                        name=CustomMessageType.TEMP_MESSAGE.value,
+                        value={
+                            "message": self._format_mcp_fetch_failure_message(self._mcp_fetch_failures),
+                            "status": "error",
+                        },
+                    )
+                    self._dispatch_event(custom_event)
+                    yield event_encoder.encode(custom_event)
+                    temp_message_emitted = True
             except Exception as e:
                 logger.exception(f"Failed to encode event: {e}")
                 raise e

@@ -9,9 +9,18 @@ an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express o
 specific language governing permissions and limitations under the License.
 """
 
-from .base import Tool, ToolExtra, make_mcp_tools, make_structured_tool
+from .base import (
+    McpToolFetchFailure,
+    McpToolsResult,
+    Tool,
+    ToolExtra,
+    make_mcp_tools,
+    make_structured_tool,
+)
 
 __all__ = [
+    "McpToolFetchFailure",
+    "McpToolsResult",
     "Tool",
     "ToolExtra",
     "make_structured_tool",

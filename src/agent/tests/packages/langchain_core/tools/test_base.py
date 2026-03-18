@@ -24,6 +24,7 @@ from aidev_agent.config import settings
 from aidev_agent.packages.langchain_core.tools.base import Tool, make_mcp_tools, make_structured_tool
 from aidev_agent.services.pydantic_models import AgentOptions, ExecuteKwargs
 from langchain_core.tools import StructuredTool
+from langchain_core.tools.base import ToolException
 
 # ================== make_structured_tool Mock 测试 ==================
 
@@ -255,8 +256,7 @@ def test_make_structured_tool_post_request_success(mock_session_class, sample_po
 
 @patch("aidev_agent.packages.langchain_core.tools.base.requests.Session")
 def test_make_structured_tool_http_error(mock_session_class, sample_weather_tool_data):
-    """测试 HTTP 错误的场景"""
-    # Mock 错误响应
+    """测试 HTTP 错误的场景：工具应抛出 ToolException 并携带错误信息"""
     import requests
 
     mock_response = Mock()
@@ -267,35 +267,29 @@ def test_make_structured_tool_http_error(mock_session_class, sample_weather_tool
     mock_session.request.return_value = mock_response
     mock_session_class.return_value = mock_session
 
-    # 创建工具
     tool = Tool.model_validate(sample_weather_tool_data)
     structured_tool = make_structured_tool(tool)
 
-    # 执行工具
-    result = structured_tool.invoke({"query__sheng": "广东", "query__place": "深圳"})
-
-    # 验证错误信息
-    assert "[HTTPError]" in result
-    assert "API error occurred" in result
+    with pytest.raises(ToolException) as exc_info:
+        structured_tool.invoke({"query__sheng": "广东", "query__place": "深圳"})
+    assert "[HTTPError]" in str(exc_info.value)
+    assert "API error occurred" in str(exc_info.value)
 
 
 @patch("aidev_agent.packages.langchain_core.tools.base.requests.Session")
 def test_make_structured_tool_timeout_error(mock_session_class, sample_weather_tool_data):
-    """测试超时错误的场景"""
+    """测试超时错误的场景：工具应抛出 ToolException 并携带错误信息"""
     mock_session = Mock()
     mock_session.request.side_effect = TimeoutError("Request timeout")
     mock_session_class.return_value = mock_session
 
-    # 创建工具
     tool = Tool.model_validate(sample_weather_tool_data)
     structured_tool = make_structured_tool(tool)
 
-    # 执行工具
-    result = structured_tool.invoke({"query__sheng": "广东", "query__place": "深圳"})
-
-    # 验证错误信息
-    assert "Request ERROR" in result
-    assert "timeout" in result.lower()
+    with pytest.raises(ToolException) as exc_info:
+        structured_tool.invoke({"query__sheng": "广东", "query__place": "深圳"})
+    assert "Request ERROR" in str(exc_info.value)
+    assert "timeout" in str(exc_info.value).lower()
 
 
 @patch("aidev_agent.packages.langchain_core.tools.base.requests.Session")
@@ -483,13 +477,12 @@ def test_make_mcp_tools_basic(mock_mcp_client_class, sample_mcp_config, mock_age
     mock_client.get_tools = AsyncMock(return_value=[mock_tool])
     mock_mcp_client_class.return_value = mock_client
 
-    # 调用 make_mcp_tools（使用真实的事件循环）
-    tools = make_mcp_tools(sample_mcp_config, mock_agent_options)
+    result = make_mcp_tools(sample_mcp_config, mock_agent_options)
 
-    # 验证
-    assert len(tools) == 1
-    assert tools[0].name == "test-mcp-tool"
-    assert tools[0].metadata["mcp_name"] == "tencentcloud-doc-mcp"
+    assert len(result.tools) == 1
+    assert result.tools[0].name == "test-mcp-tool"
+    assert result.tools[0].metadata["mcp_name"] == "tencentcloud-doc-mcp"
+    assert result.fetch_failures == []
     mock_mcp_client_class.assert_called_once()
 
 
@@ -506,8 +499,7 @@ def test_make_mcp_tools_with_blueapps_auth(mock_mcp_client_class, sample_mcp_con
     mock_client.get_tools = AsyncMock(return_value=[mock_tool])
     mock_mcp_client_class.return_value = mock_client
 
-    # 调用 make_mcp_tools（使用真实的事件循环）
-    tools = make_mcp_tools(sample_mcp_config_with_auth, mock_agent_options)
+    result = make_mcp_tools(sample_mcp_config_with_auth, mock_agent_options)
 
     # 验证认证信息被添加到配置中
     # MultiServerMCPClient 在异步函数内部被调用，需要检查 mock 的调用参数
@@ -519,27 +511,31 @@ def test_make_mcp_tools_with_blueapps_auth(mock_mcp_client_class, sample_mcp_con
     assert "X-Bkapi-Authorization" in config_arg["authenticated-mcp"]["headers"]
 
     # 验证工具被包装
-    assert len(tools) == 1
+    assert len(result.tools) == 1
 
 
 @patch("aidev_agent.packages.langchain_core.tools.base.MultiServerMCPClient")
-def test_make_mcp_tools_error_handling(mock_mcp_client_class, sample_mcp_config, mock_agent_options):
-    """测试 MCP 工具获取失败的场景"""
+def test_make_mcp_tools_error_handling(mock_mcp_client_class, sample_mcp_config, mock_agent_options, caplog):
+    """测试 MCP 工具获取失败时跳过并记录 warning"""
     # Mock 客户端抛出异常
     mock_client = MagicMock()
     mock_client.get_tools = AsyncMock(side_effect=Exception("Connection failed"))
     mock_mcp_client_class.return_value = mock_client
 
-    # 调用应该抛出 AIDevException（使用真实的事件循环）
-    from aidev_agent.exceptions import AIDevException
+    result = make_mcp_tools(sample_mcp_config, mock_agent_options)
 
-    with pytest.raises(AIDevException, match="获取MCP工具列表失败"):
-        make_mcp_tools(sample_mcp_config, mock_agent_options)
+    assert result.tools == []
+    assert len(result.fetch_failures) == 1
+    assert result.fetch_failures[0].server_name == "tencentcloud-doc-mcp"
+    assert "获取MCP工具列表失败" in result.fetch_failures[0].message
+    assert "skip loading tools for server" in caplog.text
+    assert "tencentcloud-doc-mcp" in caplog.text
+    assert [record.levelname for record in caplog.records] == ["WARNING"]
 
 
 @patch("aidev_agent.packages.langchain_core.tools.base.MultiServerMCPClient")
-def test_make_mcp_tools_multiple_servers(mock_mcp_client_class, mock_agent_options):
-    """测试多个 MCP 服务器"""
+def test_make_mcp_tools_multiple_servers(mock_mcp_client_class, mock_agent_options, caplog):
+    """测试多个 MCP 服务器中单个失败不会影响其他服务"""
     multi_server_config = {
         "server1": {"url": "http://server1.com/mcp", "transport": "streamable_http"},
         "server2": {"url": "http://server2.com/mcp", "transport": "streamable_http"},
@@ -556,18 +552,26 @@ def test_make_mcp_tools_multiple_servers(mock_mcp_client_class, mock_agent_optio
     mock_tool2.coroutine = AsyncMock()
     mock_tool2.metadata = {}  # 添加 metadata 属性
 
-    # Mock 客户端 - 返回两个工具
+    # Mock 客户端 - server1 返回工具，server2 抛出异常
     mock_client = MagicMock()
-    mock_client.get_tools = AsyncMock(return_value=[mock_tool1, mock_tool2])
+
+    async def mock_get_tools(*, server_name):
+        if server_name == "server1":
+            return [mock_tool1, mock_tool2]
+        raise Exception("Connection failed")
+
+    mock_client.get_tools = AsyncMock(side_effect=mock_get_tools)
     mock_mcp_client_class.return_value = mock_client
 
-    # 调用（使用真实的事件循环）
-    tools = make_mcp_tools(multi_server_config, mock_agent_options)
+    result = make_mcp_tools(multi_server_config, mock_agent_options)
 
-    # 验证 - 应该有4个工具（两个服务器，每个返回两个工具）
-    assert len(tools) == 4
-    # MultiServerMCPClient 被调用两次（每个服务器一次）
-    assert mock_mcp_client_class.call_count == 2
+    assert len(result.tools) == 2
+    assert {t.name for t in result.tools} == {"tool1", "tool2"}
+    assert len(result.fetch_failures) == 1
+    assert result.fetch_failures[0].server_name == "server2"
+    assert "skip loading tools for server" in caplog.text
+    assert "server2" in caplog.text
+    assert [record.levelname for record in caplog.records] == ["WARNING"]
 
 
 # ================== wrap_mcp_exception 测试 ==================

@@ -16,7 +16,7 @@ from aidev_agent.services.pydantic_models import (
     ChatPrompt,
     IntentRecognition,
 )
-from langchain_core.tools import tool
+from langchain_core.tools import ToolException, tool
 
 
 def assert_content_type_equal(results: list[dict], event_type: EventType, content: str):
@@ -56,7 +56,7 @@ def get_weather(location: str) -> str:
 @tool
 def get_weather_error(location: str) -> str:
     """获取指定地点的天气预报"""
-    raise ValueError("天气预报获取失败")
+    raise ToolException("天气预报获取失败")
 
 
 @tool
@@ -395,8 +395,96 @@ class TestCommonAgentChatStreaming:
         # 验证3：最终文本响应应该是第二个MockResponse的内容
         assert_content_type_equal(results, EventType.TEXT_MESSAGE_CONTENT, "抱歉，获取天气信息时出现错误，请稍后再试。")
 
+    def test_mcp_tool_fetch_failed_event(self):
+        """case 7: MCP工具拉取失败事件
+
+        测试 make_mcp_tools 在流开始前即失败时，错误能通过自定义事件返回事件流：
+        1. 传入 mcp_fetch_failures 模拟拉取失败
+        2. 流式执行后断言出现 mcp_tool_fetch_failed 自定义事件
+        3. 断言事件 payload 含 server_name、message，且流正常继续输出模型内容
+        """
+        mcp_failures = [
+            {
+                "server_name": "test-mcp-server",
+                "message": "获取MCP工具列表失败: Connection refused",
+                "error_type": "ConnectionError",
+            }
+        ]
+        llm = MockChatModel(responses=["你好，我可以帮你。"], stream_chunk_size=2)
+        agent = ChatCompletionAgent(
+            chat_model=llm,
+            chat_history=[ChatPrompt(role="user", content="你好")],
+            mcp_fetch_failures=mcp_failures,
+        )
+        results = [json.loads(each[6:]) for each in agent.execute(ExecuteKwargs(stream=True))]
+        assert results[0].get("type") == EventType.RUN_STARTED.value, "首条事件应为 RUN_STARTED"
+        run_finished_indices = [i for i, e in enumerate(results) if e.get("type") == EventType.RUN_FINISHED.value]
+        mcp_ev_indices = [
+            i
+            for i, e in enumerate(results)
+            if e.get("type") == EventType.CUSTOM and e.get("name") == CustomMessageType.TEMP_MESSAGE.value
+        ]
+        assert mcp_ev_indices, "应有 temp_message 事件"
+        assert run_finished_indices, "应有 RUN_FINISHED 事件"
+        assert mcp_ev_indices[0] == 1, "temp_message 应紧跟在 RUN_STARTED 后"
+        assert max(mcp_ev_indices) < min(run_finished_indices), "temp_message 应在 RUN_FINISHED 前"
+        old_events = [
+            e
+            for e in results
+            if e.get("type") == EventType.CUSTOM and e.get("name") == CustomMessageType.MCP_TOOL_FETCH_FAILED.value
+        ]
+        assert not old_events, "不应再返回 mcp_tool_fetch_failed 事件"
+        ev = assert_custom_event_exists(results, CustomMessageType.TEMP_MESSAGE)
+        value = ev.get("value") or {}
+        assert value.get("status") == "error"
+        assert "test-mcp-server" in (value.get("message") or "")
+        assert "获取MCP工具列表失败" in (value.get("message") or "")
+        assert_content_type_equal(results, EventType.TEXT_MESSAGE_CONTENT, "你好，我可以帮你。")
+
+    def test_mcp_tool_fetch_failed_event_merged(self):
+        """case 7b: 多条 MCP 拉取失败合并为一条 temp_message 事件"""
+        mcp_failures = [
+            {
+                "server_name": "mcp-a",
+                "message": "获取MCP工具列表失败: Connection refused",
+                "error_type": "ConnectionError",
+            },
+            {"server_name": "mcp-b", "message": "获取MCP工具列表失败: Timeout", "error_type": "TimeoutError"},
+        ]
+        llm = MockChatModel(responses=["收到。"], stream_chunk_size=2)
+        agent = ChatCompletionAgent(
+            chat_model=llm,
+            chat_history=[ChatPrompt(role="user", content="hi")],
+            mcp_fetch_failures=mcp_failures,
+        )
+        results = [json.loads(each[6:]) for each in agent.execute(ExecuteKwargs(stream=True))]
+        mcp_events = [
+            e
+            for e in results
+            if e.get("type") == EventType.CUSTOM and e.get("name") == CustomMessageType.TEMP_MESSAGE.value
+        ]
+        assert len(mcp_events) == 1, "多条失败应合并为一条 CUSTOM 事件"
+        temp_message_index = next(
+            i
+            for i, e in enumerate(results)
+            if e.get("type") == EventType.CUSTOM and e.get("name") == CustomMessageType.TEMP_MESSAGE.value
+        )
+        assert temp_message_index == 1, "合并后的 temp_message 应紧跟在 RUN_STARTED 后"
+        old_events = [
+            e
+            for e in results
+            if e.get("type") == EventType.CUSTOM and e.get("name") == CustomMessageType.MCP_TOOL_FETCH_FAILED.value
+        ]
+        assert not old_events, "不应再返回 mcp_tool_fetch_failed 事件"
+        value = mcp_events[0].get("value") or {}
+        assert value.get("status") == "error"
+        assert "mcp-a" in (value.get("message") or "")
+        assert "Connection refused" in (value.get("message") or "")
+        assert "mcp-b" in (value.get("message") or "")
+        assert "Timeout" in (value.get("message") or "")
+
     def test_knowledge_base(self):
-        """case 7: 知识库"""
+        """case 8: 知识库"""
         with open("tests/mock_data/knowledgebase.json") as fi:
             knowledgebase = json.load(fi)
         with open("tests/mock_data/knowledge_query.json") as fi:
@@ -425,7 +513,7 @@ class TestCommonAgentChatStreaming:
             assert_custom_event_exists(results, CustomMessageType.KNOWLEDGE_RAG_RESULT)
 
     def test_stop_during_long_tool_streaming(self):
-        """case 8: 耗时工具执行中主动停止，验证流式输出在停止后正常结束且为部分结果
+        """case 9: 耗时工具执行中主动停止，验证流式输出在停止后正常结束且为部分结果
 
         流程：先触发耗时工具调用，在工具执行期间调用 stop()，
         断言流式输出包含工具调用开始事件，且未包含完整最终文本（或流已结束）。
@@ -473,7 +561,7 @@ class TestCommonAgentChatStreaming:
         assert stream_done.is_set(), "流式消费应在超时内结束"
 
     def test_with_system_prompt(self):
-        """case 9: 系统提示词（mock）"""
+        """case 10: 系统提示词（mock）"""
         llm = MockChatModel(responses=["<result>云桌面黑屏处理步骤</result>"], stream_chunk_size=3)
         agent = ChatCompletionAgent(
             chat_model=llm,

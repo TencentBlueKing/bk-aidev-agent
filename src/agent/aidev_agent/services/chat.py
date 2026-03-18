@@ -55,6 +55,7 @@ class ChatCompletionAgent(BaseModel):
 
     # using in streaming
     event_handler: Callable[[BaseEvent], None] | None = None
+    mcp_fetch_failures: list[dict] = Field(default_factory=list, description="MCP 工具拉取失败记录，用于流式事件")
 
     IMAGE_FILE_PATTERN: ClassVar[re.Pattern] = re.compile(r"^\!\[.*\]\((http[^)]+/([^/]+?)\))")
     TOOL_EXECUTION_INTERVAL: ClassVar[int] = 10
@@ -255,6 +256,7 @@ class ChatCompletionAgent(BaseModel):
             config=cfg,
             tools={each.name: each for each in self.tools} if self.tools else {},
             cancel_checker=make_cancel_checker(stream_thread_id),
+            mcp_fetch_failures=getattr(self, "mcp_fetch_failures", []) or [],
         )
 
         return self._stream_with_queue(agui_entry, agent_input, queue_thread_id=stream_thread_id)

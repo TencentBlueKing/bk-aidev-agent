@@ -363,7 +363,8 @@ class AgentInstanceFactory:
             mcp_server_config = {each: config.mcp_server_config.get(each) for each in specific_mcps}
         else:
             mcp_server_config = config.mcp_server_config
-        mcp_tools = make_mcp_tools(mcp_server_config, config.agent_options, username=self.username)
+        mcp_result = make_mcp_tools(mcp_server_config, config.agent_options, username=self.username)
+        self._mcp_fetch_failures = [f.model_dump() for f in mcp_result.fetch_failures]
         logger.info(f"AgentInstanceFactory: mcp_server_config->[{mcp_server_config}]")
         specific_tools = [each.get("code") for each in self._specific_resources if each.get("type") == "tool"]
         if specific_tools:
@@ -371,7 +372,7 @@ class AgentInstanceFactory:
         else:
             tool_codes = config.tool_codes
         logger.info(f"AgentInstanceFactory: tool_codes->[{tool_codes}]")
-        return [self.resource_manager.construct_tool(tool_code) for tool_code in tool_codes] + mcp_tools
+        return [self.resource_manager.construct_tool(tool_code) for tool_code in tool_codes] + mcp_result.tools
 
     def get_role_prompt(self, agent_code: str) -> str | None:
         """获取角色提示词"""
@@ -521,11 +522,14 @@ class AgentInstanceFactory:
         # 处理智能体切换
         factory.handle_agent_switch(session_context_data, agent_code, switch_agent)
 
+        tools = factory.build_tools(agent_code)
+        mcp_fetch_failures = getattr(factory, "_mcp_fetch_failures", [])
         return {
             "thread_id": factory.session_code,  # 使用 session_code 作为 thread_id，支持断点续传
             "chat_model": factory.build_chat_model(agent_code),
             "non_thinking_llm": factory.build_non_thinking_llm(agent_code),
-            "tools": factory.build_tools(agent_code),
+            "tools": tools,
+            "mcp_fetch_failures": mcp_fetch_failures,
             "knowledge_bases": factory.build_knowledge_bases(agent_code),
             "knowledge_items": factory.build_knowledge_items(agent_code),
             "chat_history": factory.build_chat_history(session_context_data, agent_code),
