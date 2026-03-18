@@ -65,6 +65,9 @@ class QueueTTLConfig:
     # 消费者退出通知消息的 TTL（毫秒）：5 秒后自动过期
     CONSUMER_EXIT_MSG_TTL_MS = 5000
 
+    # 停止状态信号的 TTL（毫秒）：10 分钟后自动过期
+    STOPPED_SIGNAL_TTL_MS = 600000
+
     # 等待旧消费者退出的轮询间隔（秒）
     WAIT_POLL_INTERVAL = 0.2
 
@@ -87,6 +90,8 @@ class QueueNamePrefixes:
     CONSUMER_EXIT = "aidev_agent.consumer_exit."
     # 取消信号队列前缀
     CANCEL_SIGNAL = "aidev_agent.cancel."
+    # 停止状态队列前缀（标记 session 已被用户 stop）
+    STOPPED_SIGNAL = "aidev_agent.stopped."
 
 
 class TimeoutConfig:
@@ -100,6 +105,10 @@ class TimeoutConfig:
 
     # 获取 RabbitMQ 连接的超时时间（秒）
     CONNECTION_TIMEOUT = 10.0
+
+    # stop 接口等待 SSE 流真正结束的超时时间（秒）
+    # 正常情况下只需几百毫秒，超时则降级为当前行为
+    STOP_WAIT_STREAM_FINISH_TIMEOUT = 8.0
 
 
 class ConnectionPoolConfig:
@@ -124,11 +133,5 @@ class EnvVarNames:
 
     # 消息处理器类型（inmemory / rabbitmq）
     HANDLER_TYPE = "MESSAGE_HANDLER_TYPE"
-    # Gunicorn worker 数量
-    GUNICORN_WORKERS = "GUNICORN_WORKERS"
-    # 通用 web 并发数
-    WEB_CONCURRENCY = "WEB_CONCURRENCY"
-    # 显式多进程模式标志
-    MULTI_PROCESS_MODE = "MULTI_PROCESS_MODE"
     # RabbitMQ 主机地址
     RABBITMQ_HOST = "RABBITMQ_HOST"

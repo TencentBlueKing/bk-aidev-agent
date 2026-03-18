@@ -46,9 +46,8 @@ def _init_factory() -> SingletonFactory[str, BaseMessageQueueHandler]:
     default_handler = _create_handler(handler_type)
 
     logger.info(
-        "Message handler initialized: type=%s, multiprocess=%s, rabbitmq_configured=%s",
+        "Message handler initialized: type=%s, rabbitmq_configured=%s",
         handler_type.value,
-        MessageHandlerConfig.is_multiprocess_mode(),
         MessageHandlerConfig.has_rabbitmq_config(),
     )
 

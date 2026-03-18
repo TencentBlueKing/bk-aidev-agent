@@ -59,6 +59,12 @@ class InMemoryQueueMessageHandler(SingleProcessMixin, BaseMessageQueueHandler):
         # 取消请求：thread_id -> bool（request_cancel 协议）
         self._cancel_requested: dict[str, bool] = {}
         self._cancel_lock = threading.Lock()
+        # 停止状态：thread_id -> bool
+        self._stopped_sessions: dict[str, bool] = {}
+        self._stopped_lock = threading.Lock()
+        # 消费者取消完成通知：thread_id -> threading.Event
+        self._consumer_cancelled_events: dict[str, threading.Event] = {}
+        self._consumer_cancelled_lock = threading.Lock()
 
     def _get_or_create_queues(self, thread_id: str) -> tuple[queue.Queue, list[Any], threading.Lock]:
         """获取或创建指定 thread_id 的队列和锁
@@ -365,3 +371,83 @@ class InMemoryQueueMessageHandler(SingleProcessMixin, BaseMessageQueueHandler):
         with queue_lock:
             # 返回副本，避免外部修改
             return list(dlq)
+
+    # ================== 停止状态管理 ==================
+
+    def mark_stopped(self, thread_id: str) -> None:
+        """标记 session 已被用户主动停止（单进程内存实现）"""
+        with self._stopped_lock:
+            self._stopped_sessions[thread_id] = True
+        logger.debug(f"Stopped signal set for thread_id={thread_id}")
+
+    def is_stopped(self, thread_id: str) -> bool:
+        """检查 session 是否已被用户主动停止（单进程内存实现）"""
+        with self._stopped_lock:
+            return self._stopped_sessions.get(thread_id, False)
+
+    def clear_stopped(self, thread_id: str) -> None:
+        """清除停止标记（单进程内存实现）"""
+        with self._stopped_lock:
+            self._stopped_sessions.pop(thread_id, None)
+        logger.debug(f"Cleared stopped signal for thread_id={thread_id}")
+
+    # ================== 消费者取消完成通知 ==================
+
+    def notify_consumer_cancelled(self, thread_id: str) -> bool:
+        """通知 stop_session 消费者已因取消信号退出（单进程内存实现）
+
+        使用 threading.Event 实现进程内通知。
+
+        Args:
+            thread_id: 线程ID / session_code
+
+        Returns:
+            True 表示成功发送通知
+        """
+        with self._consumer_cancelled_lock:
+            event = self._consumer_cancelled_events.get(thread_id)
+            if event:
+                event.set()
+                logger.info(f"Consumer cancelled notification sent (in-memory) for thread_id={thread_id}")
+                return True
+            # 如果没有等待者，也创建一个已设置的 event，以防后来的等待者
+            event = threading.Event()
+            event.set()
+            self._consumer_cancelled_events[thread_id] = event
+            logger.info(f"Consumer cancelled notification set (no waiter) for thread_id={thread_id}")
+            return True
+
+    def wait_for_consumer_cancelled(self, thread_id: str, timeout: float = 3.0) -> bool:
+        """等待消费者因取消信号退出（单进程内存实现）
+
+        使用 threading.Event.wait() 等待通知。
+
+        Args:
+            thread_id: 线程ID / session_code
+            timeout: 最大等待时间（秒）
+
+        Returns:
+            True 表示消费者已退出，False 表示超时
+        """
+        with self._consumer_cancelled_lock:
+            event = self._consumer_cancelled_events.get(thread_id)
+            if event is None:
+                event = threading.Event()
+                self._consumer_cancelled_events[thread_id] = event
+
+        result = event.wait(timeout=timeout)
+        if result:
+            logger.info(f"Consumer cancelled confirmed (in-memory) for thread_id={thread_id}")
+        else:
+            logger.warning(f"Timeout waiting for consumer cancelled (in-memory), thread_id={thread_id}")
+        return result
+
+    def clear_cancelled_signal(self, thread_id: str) -> None:
+        """清除消费者取消完成通知（单进程内存实现）
+
+        Args:
+            thread_id: 线程ID / session_code
+        """
+        with self._consumer_cancelled_lock:
+            self._consumer_cancelled_events.pop(thread_id, None)
+        logger.debug(f"Cleared cancelled signal (in-memory) for thread_id={thread_id}")

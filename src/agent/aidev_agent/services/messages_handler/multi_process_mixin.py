@@ -42,9 +42,11 @@ class MultiProcessMixin:
     CONSUMER_QUEUE_PREFIX = QueueNamePrefixes.CONSUMER_CONTROL
     CONSUMER_EXIT_QUEUE_PREFIX = QueueNamePrefixes.CONSUMER_EXIT
     CANCEL_QUEUE_PREFIX = QueueNamePrefixes.CANCEL_SIGNAL
+    STOPPED_QUEUE_PREFIX = QueueNamePrefixes.STOPPED_SIGNAL
     CONSUMER_QUEUE_TTL_MS = QueueTTLConfig.QUEUE_EXPIRE_MS
     CONSUMER_EXIT_MSG_TTL_MS = QueueTTLConfig.CONSUMER_EXIT_MSG_TTL_MS
     CANCEL_SIGNAL_TTL_MS = QueueTTLConfig.CANCEL_SIGNAL_TTL_MS
+    STOPPED_SIGNAL_TTL_MS = QueueTTLConfig.STOPPED_SIGNAL_TTL_MS
     WAIT_POLL_INTERVAL = QueueTTLConfig.WAIT_POLL_INTERVAL
 
     def _get_consumer_queue_name(self, thread_id: str) -> str:
@@ -553,3 +555,91 @@ class MultiProcessMixin:
                     pass
         except Exception as e:
             logger.warning(f"Error clearing cancelled signal for thread_id={thread_id}: {e}")
+
+    # ==================== 跨进程停止状态管理 ====================
+
+    def _get_stopped_queue_name(self, thread_id: str) -> str:
+        """获取停止状态队列名"""
+        return f"{self.STOPPED_QUEUE_PREFIX}{thread_id}"
+
+    def mark_stopped(self, thread_id: str) -> None:
+        """标记 session 已被用户主动停止（跨进程实现）
+
+        通过 RabbitMQ 队列存储停止状态，任意进程都能读取。
+
+        Args:
+            thread_id: 线程ID / session_code
+        """
+        try:
+            with self._with_connection() as connection:
+                channel = connection.channel()
+                stopped_queue = self._get_stopped_queue_name(thread_id)
+
+                # 声明停止状态队列
+                self._declare_signal_queue(channel, stopped_queue, self.STOPPED_SIGNAL_TTL_MS)
+
+                # 发送停止信号
+                self._publish_signal(channel, stopped_queue, {"stopped": True, "ts": time.time()})
+                logger.info(f"Stopped signal set for thread_id={thread_id}")
+        except Exception as e:
+            logger.error(f"Failed to set stopped signal for thread_id={thread_id}: {e}")
+
+    def is_stopped(self, thread_id: str) -> bool:
+        """检查 session 是否已被用户主动停止（跨进程实现）
+
+        通过 peek RabbitMQ 队列检查停止状态（不消费消息）。
+
+        Args:
+            thread_id: 线程ID / session_code
+
+        Returns:
+            True 表示已停止
+        """
+        try:
+            with self._with_connection() as connection:
+                channel = connection.channel()
+                stopped_queue = self._get_stopped_queue_name(thread_id)
+
+                # 先被动声明检查队列是否存在
+                try:
+                    channel.queue_declare(queue=stopped_queue, passive=True)
+                except Exception as e:
+                    logger.warning(f"Error declaring stopped queue for thread_id={thread_id}: {e}")
+                    return False
+
+                # peek：取出后放回
+                method_frame, _, body = channel.basic_get(queue=stopped_queue, auto_ack=False)
+                if not method_frame:
+                    return False
+
+                # 放回消息
+                channel.basic_reject(delivery_tag=method_frame.delivery_tag, requeue=True)
+
+                try:
+                    data = json.loads(body)
+                    return data.get("stopped", False)
+                except (json.JSONDecodeError, KeyError):
+                    return False
+        except Exception as e:
+            logger.warning(f"Error checking stopped signal for thread_id={thread_id}: {e}")
+            return False
+
+    def clear_stopped(self, thread_id: str) -> None:
+        """清除停止标记（跨进程实现）
+
+        Args:
+            thread_id: 线程ID / session_code
+        """
+        try:
+            with self._with_connection() as connection:
+                channel = connection.channel()
+                stopped_queue = self._get_stopped_queue_name(thread_id)
+
+                try:
+                    channel.queue_declare(queue=stopped_queue, passive=True)
+                    channel.queue_purge(queue=stopped_queue)
+                    logger.debug(f"Cleared stopped signal for thread_id={thread_id}")
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"Error clearing stopped signal for thread_id={thread_id}: {e}")

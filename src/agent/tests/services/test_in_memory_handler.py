@@ -6,6 +6,7 @@ import time
 
 import aidev_agent.services.messages_handler.streaming_helper as streaming_helper_module
 import pytest
+from aidev_agent.enums import MessageHandlerType
 from aidev_agent.services.messages_handler import (
     CANCELLED_CHUNK,
     STOPPED_CHUNK,
@@ -13,6 +14,9 @@ from aidev_agent.services.messages_handler import (
     InMemoryQueueMessageHandler,
     message_handler_factory,
 )
+from aidev_agent.services.messages_handler.config import MessageHandlerConfig
+from aidev_agent.services.messages_handler.constants import EnvVarNames
+from aidev_agent.services.messages_handler.factory import _create_handler
 
 
 class TestInMemoryQueueMessageHandler:
@@ -403,9 +407,35 @@ class TestInMemoryQueueMessageHandler:
         with pytest.raises(RuntimeError, match="心跳超时"):
             list(helper.stream(slow_first_chunk()))
 
-    def test_factory(self):
-        """测试工厂方法"""
-        memory_handler = message_handler_factory.get()
-        assert isinstance(memory_handler, InMemoryQueueMessageHandler)
-        memory_handler2 = message_handler_factory.get()
-        assert memory_handler is memory_handler2
+
+class TestMessageHandlerConfig:
+    """测试 Config 解析 + 工厂 + RabbitMQ 降级"""
+
+    @pytest.mark.parametrize(
+        ("env_handler_type", "env_rabbitmq_host", "expected_type"),
+        [
+            ("", "", MessageHandlerType.INMEMORY),  # 无配置 → InMemory
+            ("inmemory", "", MessageHandlerType.INMEMORY),  # 显式 inmemory
+            ("rabbitmq", "", MessageHandlerType.RABBITMQ),  # 显式 rabbitmq
+            ("", "localhost", MessageHandlerType.RABBITMQ),  # 有 MQ 配置 → 自动 RabbitMQ
+            ("inmemory", "localhost", MessageHandlerType.INMEMORY),  # 显式覆盖 MQ 配置
+        ],
+    )
+    def test_resolve_handler_type(self, monkeypatch, env_handler_type, env_rabbitmq_host, expected_type):
+        """Config.resolve_handler_type 在不同环境变量组合下的行为"""
+        monkeypatch.setenv(EnvVarNames.HANDLER_TYPE, env_handler_type)
+        monkeypatch.setenv(EnvVarNames.RABBITMQ_HOST, env_rabbitmq_host)
+        assert MessageHandlerConfig.resolve_handler_type() == expected_type
+
+    def test_create_handler_rabbitmq_fallback(self, monkeypatch):
+        """_create_handler 传入 RABBITMQ 但无 MQ 配置时应降级为 InMemory"""
+        monkeypatch.setenv(EnvVarNames.RABBITMQ_HOST, "")
+        handler = _create_handler(MessageHandlerType.RABBITMQ)
+        assert isinstance(handler, InMemoryQueueMessageHandler)
+
+    def test_factory_returns_singleton_by_type(self):
+        """工厂按类型 get() 返回单例"""
+        h1 = message_handler_factory.get(MessageHandlerType.INMEMORY.value)
+        h2 = message_handler_factory.get(MessageHandlerType.INMEMORY.value)
+        assert h1 is h2
+        assert isinstance(h1, InMemoryQueueMessageHandler)

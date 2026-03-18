@@ -287,6 +287,17 @@ class GeneratorStreamingHelper:
         except Exception as e:
             logger.exception(f"{error_prefix}: {e}")
 
+    def _notify_consumer_cancelled_safely(self) -> None:
+        """安全发送消费者取消完成通知，避免异常打断主流程。
+
+        在消费者因取消信号退出时调用，通知 stop 接口流已结束。
+        """
+        try:
+            if hasattr(self.message_handler, "notify_consumer_cancelled"):
+                self.message_handler.notify_consumer_cancelled(self.thread_id)
+        except Exception as e:
+            logger.exception(f"Error sending consumer cancelled notification for thread_id={self.thread_id}: {e}")
+
     def _resolve_stopped_or_pending_state(self) -> tuple[bool, bool]:
         """解析当前会话状态，返回 (是否消费已停止会话, 是否有待消费消息)。"""
         is_stopped = self.message_handler.is_stopped(self.thread_id)
@@ -382,6 +393,8 @@ class GeneratorStreamingHelper:
                     )
                     if hasattr(self.message_handler, "mark_stopped"):
                         self.message_handler.mark_stopped(self.thread_id)
+                    # 通知 stop 接口：流已结束，可以继续后续操作
+                    self._notify_consumer_cancelled_safely()
                     yield STOPPED_CHUNK
                     return
 
@@ -403,11 +416,16 @@ class GeneratorStreamingHelper:
                                 logger.exception(f"on_complete callback error: {e}")
                         self.message_handler.mark_completed(self.thread_id)
                         logger.info(f"Stream completed for thread_id={self.thread_id}")
+                        # 通知 stop 接口：流已结束（正常结束也需要通知，
+                        # 因为 cancel 可能已发出但 Agent 恰好也完成了）
+                        self._notify_consumer_cancelled_safely()
                         return
                     if item == CANCELLED_CHUNK:
                         if hasattr(self.message_handler, "mark_stopped"):
                             self.message_handler.mark_stopped(self.thread_id)
                         logger.info(f"Stream cancelled for thread_id={self.thread_id}, DLQ content preserved")
+                        # 通知 stop 接口：流已结束，可以继续后续操作
+                        self._notify_consumer_cancelled_safely()
                         yield STOPPED_CHUNK
                         return
                     if is_resuming and self._should_filter_on_resume(item):

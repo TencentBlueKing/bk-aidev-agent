@@ -9,6 +9,8 @@ from aidev_agent.enums import PromptRole
 from aidev_agent.services.chat import ChatPrompt
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.services.messages_handler import ConsumerPreemptedError, GeneratorStreamingHelper, StreamCancelledError
+from aidev_agent.services.messages_handler.constants import TimeoutConfig
+from aidev_agent.services.messages_handler.factory import message_handler_factory
 from aidev_agent.services.pydantic_models import ExecuteKwargs
 from bk_plugin_framework.kit.api import custom_authentication_classes
 from bk_plugin_framework.kit.decorators import inject_user_token, login_exempt
@@ -184,8 +186,6 @@ class ChatSessionContentViewSet(PluginViewSet):
 
     @action(["POST"], url_path="stop", detail=False)
     def stop(self, request):
-        from aidev_agent.services.messages_handler.factory import message_handler_factory
-
         username = request.user.username
         session_code = request.data.get("session_code", "")
 
@@ -194,11 +194,38 @@ class ChatSessionContentViewSet(PluginViewSet):
 
         # 停止 agent 侧的流式生产者
         if session_code:
+            # 1. 发送取消信号（进程内 + 跨进程）
             GeneratorStreamingHelper.cancel(session_code)
 
-            # 标记 session 已停止，下次进入时只展示已有内容，不启动新生产者
-            if hasattr(message_handler, "mark_stopped"):
+            # 2. 等待 SSE 消费者真正退出（收到 CANCELLED_CHUNK 并完成 mark_stopped）
+            #    正常情况下几百毫秒内完成，超时则降级为当前行为
+            stream_finished = False
+            if hasattr(message_handler, "wait_for_consumer_cancelled"):
+                try:
+                    stream_finished = message_handler.wait_for_consumer_cancelled(
+                        session_code,
+                        timeout=TimeoutConfig.STOP_WAIT_STREAM_FINISH_TIMEOUT,
+                    )
+                    if stream_finished:
+                        logger.info(f"Stream finished confirmed for session_code={session_code}")
+                    else:
+                        logger.warning(
+                            f"Timeout waiting for stream to finish for session_code={session_code}, "
+                            f"proceeding with stop anyway"
+                        )
+                except Exception as e:
+                    logger.exception(f"Error waiting for stream finish: {e}")
+
+            # 3. 如果等待超时（消费者可能已崩溃），兜底标记 stopped
+            if not stream_finished and hasattr(message_handler, "mark_stopped"):
                 message_handler.mark_stopped(session_code)
+
+            # 4. 清理 cancelled 信号（避免残留）
+            if hasattr(message_handler, "clear_cancelled_signal"):
+                try:
+                    message_handler.clear_cancelled_signal(session_code)
+                except Exception as e:
+                    logger.exception(f"Error clearing cancelled signal: {e}")
 
         result = client.api.stop_chat_session_content(json=request.data, headers={"X-BKAIDEV-USER": username})
 
