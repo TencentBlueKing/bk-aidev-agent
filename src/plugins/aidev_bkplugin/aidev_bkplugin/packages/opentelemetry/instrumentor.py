@@ -24,6 +24,7 @@ import orjson
 from aidev_agent.services.pydantic_models import ExecuteKwargs
 from aidev_agent.utils.local import request_local
 from langchain_core.messages import BaseMessage
+from opentelemetry import context as context_api
 from opentelemetry import trace
 from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
 from opentelemetry.instrumentation.utils import unwrap
@@ -281,14 +282,23 @@ class ChatCompletionAgentExecuteByAgentWrapper:
         base_handler = BkAidevAgentInjector(tracer=self.tracer, parent_trace_context=values.get("parent_trace_context"))
 
         base_handler.on_bk_agent_start(**values)
-        # 获取当前的 span，并且注入到caller_trace_context，以便于保证链路追踪不会断掉
+        # 获取 root span，注入到 caller_trace_context 以保证链路追踪不断掉
+        # 直接从 base_handler 获取 root_span，不通过全局 context（避免 context 污染）
         execute_kwargs = values.get("execute_kwargs") or ExecuteKwargs()
-        current_span = trace.get_current_span()
-        if current_span is not None and current_span.get_span_context().is_valid:
+        root_span = base_handler.root_span
+        if root_span is not None and root_span.get_span_context().is_valid:
             carrier: dict[str, str] = {}
             propagator = TraceContextTextMapPropagator()
-            propagator.inject(carrier, context=trace.set_span_in_context(current_span))
+            propagator.inject(carrier, context=trace.set_span_in_context(root_span))
             execute_kwargs.caller_trace_context = carrier
+
+        # 在当前 HTTP 请求线程上 attach root span，使得自动插桩（requests/redis 等）能关联 trace
+        # 注意：必须在同一线程上 detach，因为 ContextVar 是线程隔离的
+        # 在流式场景下，_wrap_generator 内的 on_bk_agent_end 在 producer 线程执行，
+        # 无法 detach 当前线程的 context，所以必须在 __call__ 返回前 detach
+        root_span_token = None
+        if root_span is not None:
+            root_span_token = context_api.attach(trace.set_span_in_context(root_span))
 
         try:
             result = wrapped(*args, **kwargs)
@@ -296,6 +306,16 @@ class ChatCompletionAgentExecuteByAgentWrapper:
             # 同步执行时发生异常，立即触发 on_end
             base_handler.on_bk_agent_end(**values, error=e)
             raise
+        finally:
+            # 无论同步还是流式，在当前 HTTP 线程上立即 detach
+            # 流式场景：generator 的实际消费在 producer 线程，不在当前线程
+            # 当前线程的职责到这里结束，必须清理 context 栈
+            if root_span_token is not None:
+                try:
+                    context_api.detach(root_span_token)
+                except Exception:  # noqa: BLE001
+                    # 确保finally块中的清理操作不因detach失败而中断
+                    logger.debug("Failed to detach root span context token", exc_info=True)
 
         # 判断返回值是否是生成器/迭代器
         if inspect.isgenerator(result) or inspect.isgeneratorfunction(result):

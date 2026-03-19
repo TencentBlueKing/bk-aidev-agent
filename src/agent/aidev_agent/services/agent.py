@@ -524,8 +524,7 @@ class AgentInstanceFactory:
 
         tools = factory.build_tools(agent_code)
         mcp_fetch_failures = getattr(factory, "_mcp_fetch_failures", [])
-        return {
-            "thread_id": factory.session_code,  # 使用 session_code 作为 thread_id，支持断点续传
+        chat_agent_args = {
             "chat_model": factory.build_chat_model(agent_code),
             "non_thinking_llm": factory.build_non_thinking_llm(agent_code),
             "tools": tools,
@@ -538,6 +537,9 @@ class AgentInstanceFactory:
             "checkpointer": factory.build_checkpointer(),
             "role_prompt": factory.get_role_prompt(agent_code),
         }
+        if factory.session_code is not None:
+            chat_agent_args["thread_id"] = factory.session_code
+        return chat_agent_args
 
     @staticmethod
     def build_task_agent_args(

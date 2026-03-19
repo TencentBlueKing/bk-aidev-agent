@@ -20,7 +20,7 @@ import logging
 import threading
 import time
 import traceback
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Dict, List, Optional, Union
@@ -47,13 +47,11 @@ from aidev_bkplugin.packages.opentelemetry.span_utils import (
 from aidev_bkplugin.packages.opentelemetry.utils import (
     _safe_attach_context,
     _safe_detach_context,
-    _sanitize_metadata_value,
     _set_span_attribute,
     dont_throw,
 )
 
 logger = logging.getLogger(__name__)
-SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY = "suppress_language_model_instrumentation"
 TIMEZONE = "Asia/Shanghai"
 try:
     AGENT_SDK_VERSION = version("aidev_agent")
@@ -97,7 +95,6 @@ class BkAidevAgentInjector:
         self._setup_trace_context(parent_trace_context)
         # AiDev
         self.root_span = None
-        self.context_token = None  # 用于保存 context token，在 root span 创建时设置
         self.debug = debug
 
     def _setup_trace_context(self, parent_trace_context):
@@ -177,11 +174,10 @@ class BkAidevAgentInjector:
             attributes=attributes or {},
         )
 
-        # 安全地附加到 context
-        token = _safe_attach_context(self.root_span)
-        # _set_span_attribute(span, "entity.path", entity_path)
-        # 保存 context token 的引用，用于 on_bk_agent_end 清理
-        self.context_token = token
+        # 不在此处 attach root span 到全局 context
+        # 原因：在流式场景下，on_bk_agent_start 和 on_bk_agent_end 可能在不同线程上执行
+        # （HTTP 线程 vs producer 线程），ContextVar 是线程隔离的，跨线程 detach 无效
+        # attach/detach 由调用方（instrumentor.py）在同一线程内完成
 
     @dont_throw
     def on_bk_agent_end(self, error: Optional[Exception] = None, **kwargs: Any) -> None:
@@ -214,9 +210,8 @@ class BkAidevAgentInjector:
             _set_span_attribute(self.root_span, "agent.status", "completed")
             self.root_span.set_status(Status(StatusCode.OK))
 
-        # 使用 _end_span 结束根 Span
+        # 结束根 Span（detach 由 instrumentor.py 负责）
         self.root_span.end()
-        _safe_detach_context(self.context_token)
 
 
 class BkAidevAgentCallbackHandler(BaseCallbackHandler):
@@ -267,7 +262,6 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
         # Trace Context 传播
         self.parent_trace_context = parent_trace_context
         self.parent_context = None
-        self.context_token = None  # 用于保存 context token，在 root span 创建时设置
         self._setup_trace_context()
 
     def _setup_trace_context(self):
@@ -336,20 +330,6 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
         Returns:
             创建的 Span
         """
-        if metadata is not None:
-            current_association_properties = context_api.get_value("association_properties") or {}
-            # Sanitize metadata values to ensure they're compatible with OpenTelemetry
-            sanitized_metadata = {k: _sanitize_metadata_value(v) for k, v in metadata.items() if v is not None}
-            with suppress(Exception):
-                # If setting association properties fails, continue without them
-                # This doesn't affect the core span functionality
-                context_api.attach(
-                    context_api.set_value(
-                        "association_properties",
-                        {**current_association_properties, **sanitized_metadata},
-                    )
-                )
-
         # 确定父级 Context
         if parent_run_id and parent_run_id in self.spans:
             # 有父 Span，使用父 Span 的 context
@@ -401,12 +381,17 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
         Args:
             run_id: 要结束的 Span 的 run_id
         """
-        # 关闭所有child的 span，由于这是一个树结构，所以每一个 span 只会被关闭一次
+        # 关闭所有 child 的 span，并 detach 它们的 context token
         for child_id in self.spans[run_id].children:
             if child_id in self.spans:
-                child_span = self.spans[child_id].span
+                child_holder = self.spans[child_id]
+                if child_holder.token is not None:
+                    _safe_detach_context(child_holder.token)
+                child_span = child_holder.span
                 if child_span.end_time is None:  # avoid warning on ended spans
                     child_span.end()
+                del self.spans[child_id]
+        # detach 当前 span 的 context token
         span.end()
         token = self.spans[run_id].token
         if token:
@@ -456,12 +441,6 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
             entity_path=entity_path,
             metadata=metadata,
         )
-        try:
-            token = context_api.attach(context_api.set_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True))
-        except Exception:
-            token = None
-
-        self.spans[run_id] = SpanHolder(span, token, None, [], None, entity_path)
         return span
 
     @contextmanager
@@ -576,10 +555,6 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
             self._current_workflow_run_id = None
 
         self._end_span(span, run_id)
-        if parent_run_id is None:
-            # If context reset fails, it's not critical for functionality
-            with suppress(Exception):
-                context_api.attach(context_api.set_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, False))
 
     @dont_throw
     def on_chain_error(
@@ -618,9 +593,6 @@ class BkAidevAgentCallbackHandler(BaseCallbackHandler):
             except Exception as e:
                 logger.error(f"Failed to handle root span error: {e}", exc_info=True)
             finally:
-                # 清理 context
-                self._safe_detach_context(self.context_token)
-                self.context_token = None
                 self.root_span = None
 
         # 处理 Chain Span 本身的错误
