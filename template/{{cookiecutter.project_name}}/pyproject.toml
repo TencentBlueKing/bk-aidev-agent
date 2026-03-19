@@ -6,8 +6,8 @@ readme = "readme.md"
 authors = [{ name = "blueking" }]
 requires-python = "~=3.11.9"
 dependencies = [
-    "aidev-agent==2.0.0b3",
-    "aidev-bkplugin==2.0.0b1",
+    "aidev-agent==2.0.0b4",
+    "aidev-bkplugin==2.0.0b2",
     "aidev-wxbot==2.0.0b1",
     "aidev-ai-blueking==2.0.0.dev34",
     "bk-plugin-framework>=2.3.9",
