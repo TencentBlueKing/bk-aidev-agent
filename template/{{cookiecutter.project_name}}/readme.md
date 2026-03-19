@@ -320,74 +320,150 @@ curl -X POST {{ cookiecutter.apigw_manager_url_tmpl.format(api_name="bp-" + cook
 
 ### 3.5 流式响应协议
 
-1. 请求输出格式：流式响应遵循标准的 SSE 响应规范。响应的 data 内容为 JSON 字符串，具体协议如下：
+流式响应基于 [Agent User Interaction Protocol (AG-UI)](https://docs.ag-ui.com/concepts/events)，采用事件流架构，通过标准 SSE（Server-Sent Events）推送：每行形如 `data: <JSON>`，其中 JSON 为单条事件对象。
 
-- event 支持 5 种类型：text, think, reference_doc, done, error
-- text 类型 event，表示单个流式输出
-  - 附带字段
-    - content: 单个流式响应内容
-- think 类型 event，推理类 LLM（如 deepseek-r1）独有的内置 think 过程
-  - 附带字段
-    - content: 单个流式响应内容
-- reference_doc 类型 event，表示执行了知识库查询并检索到了可能相关的文档
-  - 附带字段:
-    - documents
-- done 类型 event，表示流式输出结束
-  - 附带字段:
-    - content: 最终完整输出（默认为前序所有流式内容集合，或自定义最终输出）
-    - cover: 是否用最终输出覆盖前序已展示流式输出
-- error 类型 event，表示遇到异常，同时流式输出结束
-  - 附带字段:
-    - message
-    - code
+**基础约定**：所有事件均包含 `type` 字段（事件类型标识）；可选包含 `timestamp`、`rawEvent`（原始/转换前数据）等。
 
-2. 可以在 agent 内部处理逻辑中使用 `langchain_core.callbacks.manager.dispatch_custom_event` 函数，从算法逻辑中分发自定义事件并在 `bk_plugin/apis/assistant.py` 中转换为上述标准流式事件
+#### 事件分类概览
 
-- 示例:
+| 分类         | 说明                         |
+| ------------ | ---------------------------- |
+| 生命周期事件 | 一次 run 的开始、步骤与结束   |
+| 文本消息事件 | 助手回复的流式内容           |
+| 推理事件     | 推理/思考过程（含已废弃命名） |
+| 状态事件     | 状态快照等                   |
+| 特殊事件     | 自定义、透传外部系统事件     |
+
+#### 生命周期事件（Lifecycle）
+
+- **RUN_STARTED**：一次 agent run 开始
+  - `threadId`：会话线程 ID
+  - `runId`：本次 run ID
+  - 可选：`parentRunId`、`input`
+- **STEP_STARTED** / **STEP_FINISHED**：步骤开始/结束（可选，可多次）
+  - `stepName`：步骤名（如 `"model"`）
+- **RUN_FINISHED**：run 正常结束
+  - `threadId`、`runId`；可选 `result`
+- **RUN_ERROR**：run 异常结束
+  - `message`；可选 `code`
+
+#### 文本消息事件（Text Message）
+
+流式回复采用「Start → Content(×N) → End」模式，由 `messageId` 关联同一消息：
+
+- **TEXT_MESSAGE_START**：消息开始
+  - `messageId`、`role`（如 `"assistant"`）；可选 `rawEvent`
+- **TEXT_MESSAGE_CONTENT**：内容片段
+  - `messageId`、`delta`（本段文本）；可选 `rawEvent`
+- **TEXT_MESSAGE_END**：消息结束
+  - `messageId`；可选 `rawEvent`
+
+前端应按顺序拼接同一 `messageId` 的 `delta` 得到完整回复。
+
+#### 推理事件（Reasoning / Thinking）
+
+推理类模型（如带思考链的模型）会流式输出思考过程。协议推荐使用 **REASONING_*** 系列；当前实现中仍可能下发 **THINKING_***（已标记为废弃，后续将迁移到 REASONING_*）：
+
+- **THINKING_START** / **THINKING_END**：推理段开始/结束（THINKING_END 可带 `duration`）
+- **THINKING_TEXT_MESSAGE_START** / **THINKING_TEXT_MESSAGE_CONTENT** / **THINKING_TEXT_MESSAGE_END**：推理内容流式片段，`delta` 为思考文本
+
+#### 工具调用事件（Tool Call）
+
+当模型决定调用工具（如查询天气）时，会按「Start → Args(×N) → End → Result」顺序下发事件，由 `toolCallId` 关联同一次调用：
+
+- **TOOL_CALL_START**：工具调用开始
+  - `toolCallId`：本次工具调用 ID（如 `"functions.get_weather:0"`）
+  - `toolCallName`：工具名（如 `"get_weather"`）
+  - 可选：`parentMessageId`、`rawEvent`、`description`、`mcpName`
+- **TOOL_CALL_ARGS**：工具参数流式片段（可多条）
+  - `toolCallId`：与 TOOL_CALL_START 一致
+  - `delta`：参数 JSON 的片段（需按顺序拼接成完整 JSON）
+- **TOOL_CALL_END**：工具参数发送结束，即将执行工具
+  - `toolCallId`；可选 `rawEvent`
+- **TOOL_CALL_RESULT**：工具执行完毕后的返回
+  - `messageId`：所属消息 ID
+  - `toolCallId`：对应 TOOL_CALL_START 的 ID
+  - `content`：工具返回内容（成功时为结果文本，失败时多为错误信息）
+  - `role`：通常为 `"tool"`
+  - 可选：`duration`（执行耗时）、`error`（是否为错误结果，如 `true`）
+
+前端可按 `toolCallId` 拼接 TOOL_CALL_ARGS 的 `delta` 得到完整入参，并用 TOOL_CALL_RESULT 的 `content` 展示工具结果或错误。
+
+#### 状态与特殊事件
+
+- **STATE_SNAPSHOT**：完整状态快照
+  - `snapshot`：当前状态（如 `messages` 等）
+- **CUSTOM**：应用自定义事件
+  - `name`：事件名（如 `"temp_message"`）
+  - `value`：载荷
+- **RAW**：透传外部/底层事件（如 LangChain/LangGraph 回调）
+  - `event`：原始事件对象；可选 `source`
+
+#### 示例（SSE 行内容）
 
 ```json
-{
-  "event": "text",
-  "content": "这是AI助手"
-}
+{"type":"RUN_STARTED","threadId":"xxx","runId":"31388"}
 ```
 
 ```json
-{
-  "event": "text",
-  "content": "的回答。"
-}
+{"type":"STEP_STARTED","stepName":"model"}
 ```
 
 ```json
-{
-  "event": "think",
-  "content": "这是AI助手的思考过程。"
-}
+{"type":"THINKING_START"}
 ```
 
 ```json
-{
-  "event": "done",
-  "content": "这是AI助手的完整回答。",
-  "cover": false
-}
+{"type":"THINKING_TEXT_MESSAGE_CONTENT","delta":"这是AI的思考内容 chunk"}
 ```
 
 ```json
-{
-  "event": "reference_doc",
-  "documents": [{ "metadata": {} }]
-}
+{"type":"TEXT_MESSAGE_START","messageId":"lc_run--xxx","role":"assistant"}
 ```
 
 ```json
-{
-  "event": "error",
-  "code": 400,
-  "message": "发生错误"
-}
+{"type":"TEXT_MESSAGE_CONTENT","messageId":"lc_run--xxx","delta":" 这戏AI的正文内容 chunk"}
 ```
+
+```json
+{"type":"TEXT_MESSAGE_END","messageId":"lc_run--xxx"}
+```
+
+```json
+{"type":"TOOL_CALL_START","toolCallId":"functions.get_weather:0","toolCallName":"get_weather","parentMessageId":"lc_run--xxx"}
+```
+
+```json
+{"type":"TOOL_CALL_ARGS","toolCallId":"functions.get_weather:0","delta":"{\""}
+```
+
+```json
+{"type":"TOOL_CALL_ARGS","toolCallId":"functions.get_weather:0","delta":"北京"}
+```
+
+```json
+{"type":"TOOL_CALL_END","toolCallId":"functions.get_weather:0"}
+```
+
+```json
+{"type":"TOOL_CALL_RESULT","messageId":"xxx","toolCallId":"functions.get_weather:0","content":"获取天气失败: 北京","role":"tool","duration":3.0,"error":true}
+```
+
+```json
+{"type":"STEP_FINISHED","stepName":"model"}
+```
+
+```json
+{"type":"RUN_FINISHED","threadId":"xxx","runId":"019d053a-188b-75a0-9854-f4d04999f952"}
+```
+
+```json
+{"type":"CUSTOM","name":"temp_message","value":{"message":"一些自定义的事件","status":"error"}}
+```
+
+完整事件类型与字段以 [AG-UI Events](https://docs.ag-ui.com/concepts/events) 为准；工具调用（Tool Call）、Activity 等事件形态也在该协议中定义，本服务在启用相应能力时会按同一规范下发。
+
+
 
 ## 四、智能体配置及定制开发
 
