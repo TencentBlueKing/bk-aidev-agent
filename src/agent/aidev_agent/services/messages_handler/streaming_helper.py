@@ -54,6 +54,13 @@ class GeneratorStreamingHelper:
     _cancel_events: dict[str, "threading.Event"] = {}
     _cancel_lock = threading.Lock()
 
+    # 取消后等待 generator 产出 RUN_FINISHED 的宽限时间（秒）
+    CANCEL_DRAIN_TIMEOUT = TimeoutConfig.CANCEL_DRAIN_TIMEOUT
+
+    # 生产者结束后延迟清理会话资源的等待时间（秒）
+    # 需足够长以允许活跃消费者处理 EOD_CHUNK，又不至于长时间占用资源
+    _PRODUCER_CLEANUP_DELAY = 30.0
+
     @staticmethod
     def _should_filter_on_resume(item: Any) -> bool:  # noqa: ARG004
         """判断断点续传时是否应该过滤该消息
@@ -513,8 +520,33 @@ class GeneratorStreamingHelper:
                 except Exception as e:
                     logger.exception(f"Error joining producer thread for thread_id={self.thread_id}: {e}")
 
-    # 取消后等待 generator 产出 RUN_FINISHED 的宽限时间（秒）
-    CANCEL_DRAIN_TIMEOUT = TimeoutConfig.CANCEL_DRAIN_TIMEOUT
+    def _schedule_session_cleanup(self) -> None:
+        """生产者完成后延迟清理孤立的会话资源。
+
+        用户断开连接后，如果未在延迟窗口内重连消费数据，队列数据会一直保留到 TTL 过期。
+        此方法启动一个守护线程，在延迟后检查队列中是否仍有未消费的数据，
+        若有则调用 mark_completed 主动释放资源。
+        """
+        thread_id = self.thread_id
+        handler = self.message_handler
+        delay = self._PRODUCER_CLEANUP_DELAY
+
+        def _do_cleanup() -> None:
+            time.sleep(delay)
+            try:
+                if handler.has_pending_messages(thread_id):
+                    handler.mark_completed(thread_id)
+                    logger.info(f"Cleaned up orphaned session data for thread_id={thread_id}")
+                else:
+                    logger.debug(f"Session already consumed for thread_id={thread_id}, skipping cleanup")
+            except Exception:
+                logger.exception(f"Error in delayed session cleanup for thread_id={thread_id}")
+
+        threading.Thread(
+            target=_do_cleanup,
+            daemon=True,
+            name=f"session-cleanup-{thread_id[:8]}",
+        ).start()
 
     def _producer(self, generator: Generator[Any, None, None], cancel_event: threading.Event | None = None) -> None:
         """生产者线程：将生成器产生的消息推送到队列
@@ -613,3 +645,7 @@ class GeneratorStreamingHelper:
             self.message_handler.put(self.thread_id, EOD_CHUNK)
             self.message_handler.flush(self.thread_id)
             logger.debug(f"Producer finished, sent EOD_CHUNK for thread_id={self.thread_id}")
+
+            # 延迟清理：如果消费者已断开且未重连，主动释放队列资源
+            # 不能立即清理，否则会与正在读取 EOD_CHUNK 的活跃消费者竞争
+            self._schedule_session_cleanup()

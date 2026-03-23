@@ -813,7 +813,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                 if messages:
                     return messages
             except Exception as e:
-                logger.error(f"Error in _get_block: {e}")
+                logger.exception(f"Error in _get_block: {e}")
 
             # 检查超时
             if timeout is not None:
@@ -969,13 +969,13 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                 # 追加 MultiProcessMixin 管理的信号队列
                 queue_names.extend(self._get_signal_queue_names(thread_id))
 
+                logger.info(f"Deleting all RabbitMQ resources for thread_id={thread_id}: {queue_names}")
                 # 批量删除所有队列（queue_delete 对不存在的队列是幂等的）
                 for queue_name in queue_names:
                     try:
                         channel.queue_delete(queue=queue_name)
-                        logger.debug(f"Deleted queue {queue_name}")
                     except Exception as e:
-                        logger.debug(f"Queue {queue_name} delete failed: {e}")
+                        logger.exception(f"Queue {queue_name} delete failed: {e}")
 
                 # 删除死信交换机（exchange_delete 对不存在的交换机也是幂等的）
                 try:

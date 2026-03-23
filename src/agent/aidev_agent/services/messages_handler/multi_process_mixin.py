@@ -667,9 +667,9 @@ class MultiProcessMixin:
                 try:
                     channel.queue_delete(queue=queue_name)
                     logger.debug(f"Deleted signal queue {queue_name}")
-                except Exception:
+                except Exception as e:
                     # 队列不存在或删除失败，忽略
-                    pass
+                    logger.exception(f"Failed to delete signal queue {queue_name}: {e}")
         finally:
             if channel and channel.is_open:
                 with contextlib.suppress(Exception):
