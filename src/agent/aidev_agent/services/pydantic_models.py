@@ -9,7 +9,7 @@ from aidev_agent.enums import FineGrainedScoreType, IndependentQueryMode, Knowle
 
 
 class ExecuteKwargs(BaseModel):
-    stream: bool = True
+    stream: bool = False
     stream_timeout: int = 30
     passthrough_input: bool = False
     run_agent: bool = False
