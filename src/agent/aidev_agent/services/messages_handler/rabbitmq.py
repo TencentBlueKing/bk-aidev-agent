@@ -861,28 +861,27 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                 return True
 
         # 检查 RabbitMQ 主队列和死信队列
+        # 每次 passive declare 使用独立 channel，避免主队列不存在时
+        # channel 被 404 error 关闭导致 DLQ 检查静默失败
         try:
             with self._with_connection() as connection:
-                channel = connection.channel()
                 main_queue_name = self._get_queue_name(thread_id)
                 dlq_name = self._get_dlq_name(thread_id)
 
-                # 检查主队列
-                main_count = 0
+                # 检查主队列（独立 channel）
                 try:
+                    channel = connection.channel()
                     queue_info = channel.queue_declare(queue=main_queue_name, durable=True, passive=True)
-                    main_count = queue_info.method.message_count
-                    if main_count > 0:
+                    if queue_info.method.message_count > 0:
                         return True
                 except Exception:
                     pass
 
-                # 检查死信队列
-                dlq_count = 0
+                # 检查死信队列（独立 channel）
                 try:
+                    channel = connection.channel()
                     dlq_info = channel.queue_declare(queue=dlq_name, durable=True, passive=True)
-                    dlq_count = dlq_info.method.message_count
-                    if dlq_count > 0:
+                    if dlq_info.method.message_count > 0:
                         return True
                 except Exception:
                     pass
@@ -905,11 +904,14 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         """
         return self._restore_from_dlq(thread_id)
 
-    def _safe_purge_queue(self, channel: Any, queue_name: str, passive_check: bool = False) -> bool:
+    def _safe_purge_queue(self, connection: Any, queue_name: str, passive_check: bool = False) -> bool:
         """安全清空队列（内部方法）
 
+        使用独立 channel 执行操作，避免 passive declare 触发 RabbitMQ 404
+        channel error 后导致 channel 被关闭，影响后续操作。
+
         Args:
-            channel: RabbitMQ channel
+            connection: RabbitMQ connection
             queue_name: 队列名
             passive_check: 是否先进行被动声明检查队列是否存在
 
@@ -917,6 +919,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             True 表示成功清空，False 表示失败或队列不存在
         """
         try:
+            channel = connection.channel()
             if passive_check:
                 channel.queue_declare(queue=queue_name, durable=True, passive=True)
             channel.queue_purge(queue=queue_name)
@@ -930,33 +933,79 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
     def _purge_all_queues(self, thread_id: str, include_cancel_queue: bool = True) -> None:
         """清空指定 thread_id 的所有队列（内部方法）
 
+        每个 purge 操作使用独立 channel，避免某个队列不存在时 channel 被关闭
+        导致后续 purge 静默失败。
+
         Args:
             thread_id: 线程ID
             include_cancel_queue: 是否同时清空取消请求队列
         """
         try:
             with self._with_connection() as connection:
-                channel = connection.channel()
-
-                # 清空主队列和死信队列
-                self._safe_purge_queue(channel, self._get_queue_name(thread_id))
-                self._safe_purge_queue(channel, self._get_dlq_name(thread_id))
+                # 每个 purge 操作使用独立 channel，避免 404 channel error 影响后续操作
+                self._safe_purge_queue(connection, self._get_queue_name(thread_id))
+                self._safe_purge_queue(connection, self._get_dlq_name(thread_id))
 
                 # 清空取消请求队列（如果需要，先检查是否存在）
                 if include_cancel_queue:
-                    self._safe_purge_queue(channel, self._get_cancel_queue_name(thread_id), passive_check=True)
+                    self._safe_purge_queue(connection, self._get_cancel_queue_name(thread_id), passive_check=True)
         except Exception as e:
             logger.error(f"Error purging queues for thread_id={thread_id}: {e}")
+
+    def _delete_all_resources(self, thread_id: str) -> None:
+        """
+        删除指定 thread_id 的所有 RabbitMQ 资源（队列 + 交换机）
+        在消费完成后调用，主动释放资源，避免空队列空占 1 小时以及死信交换机永久残留。
+        """
+        try:
+            with self._with_connection() as connection:
+                channel = connection.channel()
+                # 收集所有需要删除的队列名
+                queue_names = [
+                    self._get_queue_name(thread_id),
+                    self._get_dlq_name(thread_id),
+                    self._get_cancel_queue_name(thread_id),
+                ]
+                # 追加 MultiProcessMixin 管理的信号队列
+                queue_names.extend(self._get_signal_queue_names(thread_id))
+
+                # 批量删除所有队列（queue_delete 对不存在的队列是幂等的）
+                for queue_name in queue_names:
+                    try:
+                        channel.queue_delete(queue=queue_name)
+                        logger.debug(f"Deleted queue {queue_name}")
+                    except Exception as e:
+                        logger.debug(f"Queue {queue_name} delete failed: {e}")
+
+                # 删除死信交换机（exchange_delete 对不存在的交换机也是幂等的）
+                try:
+                    channel.exchange_delete(exchange=self._get_dlx_exchange_name(thread_id))
+                    logger.debug(f"Deleted exchange {self._get_dlx_exchange_name(thread_id)}")
+                except Exception as e:
+                    logger.debug(f"Exchange {self._get_dlx_exchange_name(thread_id)} delete failed: {e}")
+
+                logger.info(f"Deleted all RabbitMQ resources for thread_id={thread_id}")
+        except Exception as e:
+            logger.error(f"Error deleting resources for thread_id={thread_id}: {e}")
 
     def mark_completed(self, thread_id: str) -> None:
         """标记流已完成并清理队列
 
-        消费者在读取到结束标记时调用此方法，清空主队列和死信队列中的所有消息。
+        消费者在读取到结束标记时调用此方法：
+        1. 先清理本地缓冲区（防止守护线程 flush 时重建已删除的队列）
+        2. 清空所有队列中的消息（purge）
+        3. 主动删除所有队列和交换机（delete）
 
         Args:
             thread_id: 线程ID
         """
+        # 先清理本地缓冲区，防止守护线程在队列删除后仍尝试 flush 残留消息
+        with self._buffer_lock:
+            if thread_id in self._message_buffer:
+                self._message_buffer.pop(thread_id, None)
+
         self._purge_all_queues(thread_id, include_cancel_queue=True)
+        self._delete_all_resources(thread_id)
 
     def request_cancel(self, thread_id: str) -> None:
         """请求取消该 thread_id 的流。幂等：向取消队列投递一条消息，生产者轮询时消费到即退出。"""

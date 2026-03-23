@@ -8,6 +8,7 @@
 - 超时配置（Timeout Configuration）
 """
 
+import os
 
 # 用于标识流的各种状态变化
 
@@ -53,8 +54,8 @@ class QueueTTLConfig:
     避免在多个文件中重复定义，便于统一调整。
     """
 
-    # 队列生命周期（毫秒）：1 小时后自动删除
-    QUEUE_EXPIRE_MS = 3600 * 1000
+    # 队列生命周期（毫秒），默认 1 小时后自动删除，可通过环境变量 QUEUE_EXPIRE_SECONDS 配置（单位：秒）
+    QUEUE_EXPIRE_MS = int(os.environ.get("QUEUE_EXPIRE_SECONDS", 3600)) * 1000
 
     # 取消信号的 TTL（毫秒）：30 秒后自动过期
     CANCEL_SIGNAL_TTL_MS = 30000
@@ -126,7 +127,6 @@ class ConnectionPoolConfig:
 
 class EnvVarNames:
     """环境变量名称常量
-
     统一管理消息处理器相关的环境变量名称，
     便于文档化和避免拼写错误。
     """
@@ -135,3 +135,5 @@ class EnvVarNames:
     HANDLER_TYPE = "MESSAGE_HANDLER_TYPE"
     # RabbitMQ 主机地址
     RABBITMQ_HOST = "RABBITMQ_HOST"
+    # 队列过期时间（秒），默认 3600（1 小时）
+    QUEUE_EXPIRE_SECONDS = "QUEUE_EXPIRE_SECONDS"

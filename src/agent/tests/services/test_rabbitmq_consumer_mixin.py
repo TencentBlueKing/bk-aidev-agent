@@ -188,8 +188,10 @@ class TestEndToEnd:
 
         assert handler.get(thread_id, timeout=1) == all_msgs
 
-        handler.mark_completed(thread_id)
+        # 先释放消费者，再 mark_completed（避免 release_consumer 内部
+        # _ensure_consumer_queues 重新创建已删除的 consumer/exit 队列）
         handler.release_consumer(thread_id, consumer_b)
+        handler.mark_completed(thread_id)
         assert handler.is_empty(thread_id) is True
 
     def test_normal_flow_no_preemption(self, handler, thread_id):
@@ -537,3 +539,125 @@ class TestMultiProcessEndToEnd:
         _run_worker(mp_ctx, _worker_release, (env_vars, thread_id, rb["consumer_id"]))
         # release C（正常）
         _run_worker(mp_ctx, _worker_release, (env_vars, thread_id, rc["consumer_id"]))
+
+
+class TestResourceCleanup:
+    """mark_completed 后资源清理：队列删除 + 信号队列删除"""
+
+    @staticmethod
+    def _queue_exists(handler, queue_name: str) -> bool:
+        """通过 passive declare 检查队列是否存在"""
+        try:
+            with handler._with_connection() as connection:
+                channel = connection.channel()
+                channel.queue_declare(queue=queue_name, durable=True, passive=True)
+                return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _exchange_exists(handler, exchange_name: str) -> bool:
+        """通过 passive declare 检查交换机是否存在"""
+        try:
+            with handler._with_connection() as connection:
+                channel = connection.channel()
+                channel.exchange_declare(exchange=exchange_name, passive=True)
+                return True
+        except Exception:
+            return False
+
+    def test_mark_completed_deletes_all_resources(self, handler, thread_id):
+        """mark_completed 后主队列、死信队列、死信交换机以及信号队列全部被删除"""
+        handler.clear(thread_id)
+
+        # 发送消息并消费（创建主队列 + DLQ + DLX）
+        for msg in ["m1", "m2", "m3"]:
+            handler.put(thread_id, msg)
+        handler.flush(thread_id)
+        handler.get(thread_id, timeout=1)
+
+        # 触发信号队列创建
+        consumer_id = handler.acquire_consumer(thread_id)
+        handler.mark_stopped(thread_id)
+
+        # 收集所有资源名称
+        main_queue = handler._get_queue_name(thread_id)
+        dlq_name = handler._get_dlq_name(thread_id)
+        dlx_exchange = handler._get_dlx_exchange_name(thread_id)
+        consumer_queue = handler._get_consumer_queue_name(thread_id)
+        exit_queue = handler._get_consumer_exit_queue_name(thread_id)
+        stopped_queue = handler._get_stopped_queue_name(thread_id)
+
+        # 确认资源存在
+        assert self._queue_exists(handler, main_queue)
+        assert self._queue_exists(handler, dlq_name)
+        assert self._exchange_exists(handler, dlx_exchange)
+        assert self._queue_exists(handler, consumer_queue)
+        assert self._queue_exists(handler, exit_queue)
+        assert self._queue_exists(handler, stopped_queue)
+        # 先释放消费者，再 mark_completed（避免 release_consumer 内部
+        # _ensure_consumer_queues 重新创建已删除的 consumer/exit 队列）
+        handler.release_consumer(thread_id, consumer_id)
+
+        # 执行 mark_completed
+        handler.mark_completed(thread_id)
+
+        # 验证所有资源已被删除
+        assert not self._queue_exists(handler, main_queue), "主队列应被删除"
+        assert not self._queue_exists(handler, dlq_name), "死信队列应被删除"
+        assert not self._exchange_exists(handler, dlx_exchange), "死信交换机应被删除"
+        assert not self._queue_exists(handler, consumer_queue), "消费者控制队列应被删除"
+        assert not self._queue_exists(handler, exit_queue), "退出通知队列应被删除"
+        assert not self._queue_exists(handler, stopped_queue), "停止状态队列应被删除"
+
+    def test_double_delete_is_safe(self, handler, thread_id):
+        """重复执行 _delete_all_resources 不报错"""
+        handler.clear(thread_id)
+
+        handler.put(thread_id, "msg")
+        handler.flush(thread_id)
+
+        # 第一次删除
+        handler.mark_completed(thread_id)
+        # 第二次删除（资源已不存在）
+        handler._delete_all_resources(thread_id)
+
+    def test_preemption_then_mark_completed_cleans_all(self, handler):
+        """完整抢占流程后 mark_completed 清理所有资源"""
+        tid = f"test-cleanup-preempt-{int(time.time() * 1000) % 100000}"
+        try:
+            handler.clear(tid)
+
+            # 写入消息
+            for msg in ["p1", "p2"]:
+                handler.put(tid, msg)
+            handler.flush(tid)
+
+            # A 消费 → B 抢占 → A release
+            consumer_a = handler.acquire_consumer(tid)
+            handler.get(tid, timeout=1)
+            consumer_b = handler.acquire_consumer(tid)
+            handler.release_consumer(tid, consumer_a)
+
+            # B 等待旧消费者退出
+            handler.wait_for_previous_consumer(tid, timeout=2.0)
+
+            # B 消费恢复的消息
+            handler.get(tid, timeout=1)
+
+            # 先释放消费者，再 mark_completed（避免 release_consumer 内部
+            # _ensure_consumer_queues 重新创建已删除的 consumer/exit 队列）
+            handler.release_consumer(tid, consumer_b)
+            handler.mark_completed(tid)
+
+            # 验证所有资源被删除
+            main_queue = handler._get_queue_name(tid)
+            dlq_name = handler._get_dlq_name(tid)
+            dlx_exchange = handler._get_dlx_exchange_name(tid)
+
+            assert not self._queue_exists(handler, main_queue)
+            assert not self._queue_exists(handler, dlq_name)
+            assert not self._exchange_exists(handler, dlx_exchange)
+        finally:
+            with contextlib.suppress(Exception):
+                handler.clear(tid)

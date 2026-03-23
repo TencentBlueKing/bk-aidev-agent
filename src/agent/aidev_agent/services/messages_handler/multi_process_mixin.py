@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import time
@@ -643,3 +644,33 @@ class MultiProcessMixin:
                     pass
         except Exception as e:
             logger.warning(f"Error clearing stopped signal for thread_id={thread_id}: {e}")
+
+    def _get_signal_queue_names(self, thread_id: str) -> list[str]:
+        """获取 MultiProcessMixin 管理的所有信号队列名列表"""
+        return [
+            self._get_consumer_queue_name(thread_id),
+            self._get_consumer_exit_queue_name(thread_id),
+            self._get_cancelled_queue_name(thread_id),
+            self._get_stopped_queue_name(thread_id),
+        ]
+
+    def _delete_signal_queues(self, connection: Any, thread_id: str) -> None:
+        """
+        删除 MultiProcessMixin 管理的所有信号队列
+        使用单个 channel 批量删除所有信号队列。
+        AMQP 0-9-1 规范中 queue.delete 对不存在的队列不会抛出 channel error，
+        因此无需为每个队列创建独立的 channel，也无需先 passive declare 检查。
+        """
+        channel = connection.channel()
+        try:
+            for queue_name in self._get_signal_queue_names(thread_id):
+                try:
+                    channel.queue_delete(queue=queue_name)
+                    logger.debug(f"Deleted signal queue {queue_name}")
+                except Exception:
+                    # 队列不存在或删除失败，忽略
+                    pass
+        finally:
+            if channel and channel.is_open:
+                with contextlib.suppress(Exception):
+                    channel.close()
