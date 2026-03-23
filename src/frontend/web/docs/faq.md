@@ -1,108 +1,203 @@
-# 常见问题 (FAQ)
+# 常见问题
 
-1.  **Q: AI 小鲸窗口如何调整大小和移动位置？**
+## 1. ChatBot 和 AIBlueking 有什么区别？
 
-    A: 用户可以通过鼠标拖动窗口的边缘或右下角来调整大小，拖动窗口顶部的标题栏可以移动位置。这是组件的内置交互，无需配置。
+**ChatBot** 是纯聊天组件，只包含消息列表和输入框，适合嵌入到已有页面中。
 
-2.  **Q: 如何实现选中页面上的文本后，弹出快捷操作菜单？**
+**AIBlueking** 是包含悬浮球（Nimbus）、拖拽、划词选择等功能的完整面板，适合作为独立的 AI 助手窗口使用。
 
-    A: 这是 AI 小鲸的核心功能之一。确保 `enablePopup` prop 设置为 `true`（这是默认值），并且您已经通过 `shortcuts` prop 配置了至少一个快捷操作。用户在页面上选中文字后，会出现一个小图标，点击即可展开菜单。
+简单来说：ChatBot 是"聊天框"，AIBlueking 是"聊天面板 + 交互增强"。
 
-3.  **Q: 在 Vue 2 项目中使用时遇到兼容性问题或报错怎么办？**
+---
 
-    A: 请务必检查以下几点：
-    *   确认您导入的是 Vue 2 版本的组件：`import AIBlueking from '@blueking/ai-blueking/vue2';`
-    *   确认您导入的是 Vue 2 版本的样式：`import '@blueking/ai-blueking/dist/vue2/style.css';`
-    *   确保您的 Vue 版本符合组件的要求（查阅组件的 `package.json` 或说明）。
-    *   检查是否与其他全局库或 Polyfill 存在冲突。
+## 2. 如何选择集成模式？
 
-4.  **Q: `url` 属性应该填什么？**
+根据业务场景选择：
 
-    A: `url` 属性需要指向您部署的后端 AI 服务的 HTTP(S) 接口地址。这个接口负责接收 AI 小鲸发送的请求（包含用户输入、历史记录等），调用大语言模型，并将结果返回给前端。具体地址由您的后端服务提供。
+| 场景 | 推荐方案 |
+| --- | --- |
+| 快速嵌入现有页面 | ChatBot |
+| 需要悬浮球、拖拽等完整交互 | AIBlueking |
+| 深度定制 UI 和交互逻辑 | 原子组件（ChatInput + MessageContainer） |
 
-5.  **Q: 如何给发送到后端的请求添加认证信息（如 Token）？**
+---
 
-    A: 使用 `requestOptions` prop。您可以将 Token 添加到 `headers` 对象中，例如：
-    ```javascript
-    :request-options="{ headers: { 'Authorization': 'Bearer your_token' } }"
-    ```
-    详细说明参见 [自定义请求指南](/guide/advanced-usage/custom-requests)。
+## 3. protocol.injectMessageModule() 是什么？
 
-6.  **Q: 是否可以自定义快捷操作的图标？**
+`protocol.injectMessageModule()` 是原子模式下的必须调用，它将消息管理模块注入到 `AGUIProtocol` 中，让流式响应的消息数据能正确写入消息列表。
 
-    A: 可以。在 `shortcuts` 配置中，为每个 shortcut 对象添加 `icon` 属性，值为您项目中图标库对应的完整 CSS 类名即可。例如 `icon: 'bk-icon icon-magic-hat'`。注意：需要包含完整的类名，包括图标库前缀。
+```ts
+onMounted(() => {
+  protocol.injectMessageModule(chatHelper.message);
+});
+```
 
-7.  **Q: 如何获取当前的对话历史记录？**
+如果忘记调用，流式消息将无法显示在界面上。ChatBot 和 AIBlueking 内部已自动处理，无需手动调用。
 
-    A: 可以通过访问组件实例的 `sessionContents` 属性来获取。这是一个只读的响应式数组，包含了当前对话的消息列表。详细说明参见 [编程交互基础指南](/guide/advanced-usage/programmatic-interaction#访问会话内容)。
+---
 
-8.  **Q: 在 Webpack 4 项目中遇到 "Module not found: Can't resolve '@blueking/ai-blueking/vue2'" 或 "Unexpected token '??'" 错误怎么办？**
+## 4. 为什么 receive-* 事件没有触发？
 
-    A: 这是因为 Webpack 4 不支持 `package.json` 的 `exports` 字段，且无法直接处理 ES2020 语法。需要进行以下配置：
+`receive-start`、`receive-end` 等事件**仅在独立模式**（不传 `chatHelper`）下触发。
 
-    **1. 配置路径别名 (webpack.config.js)**
+在集成模式中，这些事件由 `useChatBootstrap` 的 `protocolCallbacks` 处理：
 
-    ```javascript
-    const path = require('path');
+```ts
+const { chatHelper, protocol } = useChatHelper({
+  url: '/api/',
+  protocolCallbacks: {
+    onReceiveStart: () => console.log('开始接收'),
+    onReceiveEnd: () => console.log('接收完成'),
+    onError: (error) => console.error('错误:', error),
+  },
+});
+```
 
-    module.exports = {
-      resolve: {
-        alias: {
-          '@blueking/ai-blueking/vue2': path.resolve(
-            __dirname,
-            'node_modules/@blueking/ai-blueking/dist/vue2/index.es.min.js'
-          )
-        }
-      }
-    };
-    ```
+---
 
-    **2. 添加 .mjs 文件处理规则 (webpack.config.js)**
+## 5. 如何在 Vue 2 中使用？
 
-    ```javascript
-    module.exports = {
-      module: {
-        rules: [
-          {
-            test: /\.mjs$/,
-            include: [
-              path.join(__dirname, 'node_modules/@blueking/ai-blueking')
-            ],
-            use: {
-              loader: 'babel-loader',
-              options: {
-                presets: [
-                  ['@babel/preset-env', { modules: false }]
-                ],
-                plugins: [
-                  '@babel/plugin-proposal-nullish-coalescing-operator',
-                  '@babel/plugin-proposal-optional-chaining'
-                ]
-              }
-            }
-          }
-        ]
-      }
-    };
-    ```
+需要先安装 `@vue/composition-api`：
 
-    **3. 安装必要的 Babel 依赖**
+```bash
+npm install @vue/composition-api
+```
 
-    ```bash
-    npm install -D @babel/plugin-proposal-nullish-coalescing-operator @babel/plugin-proposal-optional-chaining
-    ```
+然后在入口文件中注册：
 
-    **4. 配置 .babelrc (可选)**
+```ts
+import Vue from 'vue';
+import VueCompositionAPI from '@vue/composition-api';
+Vue.use(VueCompositionAPI);
+```
 
-    如果项目已有 `.babelrc`，确保包含以下插件：
+组件导入方式与 Vue 3 相同，使用 Options API 或 Composition API 均可。
 
-    ```json
-    {
-      "plugins": [
-        "@babel/plugin-proposal-nullish-coalescing-operator",
-        "@babel/plugin-proposal-optional-chaining"
-      ]
-    }
-    ```
+---
 
-    详细配置示例可参考 [bk-sops 项目的 PR](https://github.com/TencentBlueKing/bk-sops/pull/8113)。
+## 6. requestOptions 的 headers 为什么是函数？
+
+函数形式确保**每次请求时获取最新的 token**，避免 token 过期问题。
+
+```ts
+// ✅ 推荐：函数形式，每次请求时调用
+const requestOptions = {
+  headers: () => ({ Authorization: `Bearer ${getToken()}` }),
+};
+
+// ❌ 不推荐：对象形式，token 会被固定
+const requestOptions = {
+  headers: { Authorization: `Bearer ${token}` },
+};
+```
+
+如果 token 有效期很长且不会变化，也可以使用对象形式。
+
+---
+
+## 7. 如何自定义消息工具栏？
+
+通过 `MessageContainer` 的回调属性处理工具栏按钮逻辑：
+
+- `onAgentAction(action, message)` — 处理 AI 消息的工具按钮（复制、重试等）
+- `onAgentFeedback(type, message, reason)` — 处理 AI 消息的反馈（点赞/点踩）
+- `onUserAction(action, message)` — 处理用户消息的工具按钮（编辑等）
+
+```ts
+const handleAgentAction = (action: string, message: IMessage) => {
+  switch (action) {
+    case 'copy':
+      navigator.clipboard.writeText(message.content);
+      break;
+    case 'retry':
+      chatHelper.message.retryMessage(message.id);
+      break;
+  }
+};
+```
+
+---
+
+## 8. 如何获取 chatHelper 实例？
+
+两种方式：
+
+**方式一**：通过 ChatBot 的 expose 方法：
+
+```ts
+const chatBotRef = ref<ChatBotExpose>();
+const helper = chatBotRef.value?.getChatHelper();
+```
+
+**方式二**：监听 `agent-info-loaded` 事件：
+
+```ts
+const onReady = (chatHelper: IChatHelper) => {
+  // chatHelper 已就绪，可以进行操作
+  console.log('会话列表:', chatHelper.session.list.value);
+};
+```
+
+```vue
+<ChatBot @agent-info-loaded="onReady" />
+```
+
+---
+
+## 9. 消息的 property.extra 有什么用？
+
+`property.extra` 用于传递额外上下文信息到后端，常见用途：
+
+- **cite** — 引用文本内容
+- **command** — 快捷指令标识
+- **context** — 快捷指令的上下文数据
+
+```ts
+await chatHelper.message.sendMessage({
+  content: '请审查这段代码',
+  property: {
+    extra: {
+      cite: '被引用的文本内容',
+      command: 'code-review',
+      context: { language: 'JavaScript' },
+    },
+  },
+});
+```
+
+后端可根据 `extra` 中的信息执行不同的处理逻辑。
+
+---
+
+## 10. 如何处理流式错误？
+
+根据使用模式选择对应的错误处理方式：
+
+**ChatBot / AIBlueking 模式**：监听 `error` 事件：
+
+```vue
+<ChatBot url="/api/" @error="handleError" />
+```
+
+```ts
+const handleError = (error: Error) => {
+  console.error('请求错误:', error.message);
+  // 显示错误提示
+};
+```
+
+**原子组件模式**：在 `AGUIProtocol` 的 `onError` 回调中处理：
+
+```ts
+const { protocol } = useChatHelper({
+  url: '/api/',
+  protocolCallbacks: {
+    onError: (error) => {
+      console.error('流式错误:', error);
+      // 自定义错误处理逻辑
+    },
+  },
+});
+```
+
+常见的流式错误包括：网络断开、token 过期、服务端异常等。建议在错误处理中提供用户友好的提示信息。

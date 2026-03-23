@@ -1,105 +1,94 @@
-# 界面定制
+# UI 定制
 
-AI 小鲸提供了一些选项来定制其外观和行为。
+AI 小鲸 v2.0 提供了丰富的 UI 定制选项，涵盖样式、布局、文本、显示控制和渲染目标等方面。
 
-## 自定义标题和欢迎语
+## extCls 额外 CSS 类名
 
-您可以通过以下两个属性来自定义AI小鲸的显示标题和初始欢迎语：
+通过 `extCls` prop 为组件根元素添加自定义 CSS 类名，方便进行样式覆盖：
 
-- `title` (String): 默认值为 `'AI 小鲸'`。设置头部展示的标题文本。
-- `helloText` (String): 默认值为 `'你好，我是小鲸'`。设置初始欢迎页面显示的问候语。
-
-:::code-group
-```vue [Vue 3]
+```vue
 <template>
-  <AIBlueking
-    ref="aiBlueking"
-    :url="apiUrl"
-    title="企业助手"
-    helloText="你好，我是你的企业智能助手"
-  />
+  <AIBlueking :url="apiUrl" ext-cls="my-ai-theme" />
 </template>
 
-<script lang="ts" setup>
-import { ref } from 'vue';
-import AIBlueking from '@blueking/ai-blueking';
-import '@blueking/ai-blueking/dist/vue3/style.css';
-
-const aiBlueking = ref(null);
-const apiUrl = 'https://your-api-endpoint.com/assistant/';
-</script>
+<style>
+.my-ai-theme {
+  /* 自定义样式 */
+  --ai-primary-color: #3a84ff;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+</style>
 ```
 
-```vue [Vue 2]
+`ChatBot` 同样支持 `extCls`：
+
+```vue
 <template>
-  <AIBlueking
-    ref="aiBlueking"
-    :url="apiUrl"
-    title="企业助手"
-    helloText="你好，我是你的企业智能助手"
-  />
+  <ChatBot url="/api/ai/assistant/" ext-cls="embedded-chat" />
 </template>
-
-<script>
-import AIBlueking from '@blueking/ai-blueking/vue2';
-import '@blueking/ai-blueking/dist/vue2/style.css';
-
-export default {
-  components: {
-    AIBlueking
-  },
-  data() {
-    return {
-      apiUrl: 'https://your-api-endpoint.com/assistant/'
-    };
-  }
-};
-</script>
 ```
-:::
 
-## 窗口拖拽与缩放
+## CSS 变量
 
-AI 小鲸的对话窗口默认支持拖拽移动位置和调整大小。用户可以通过拖动窗口标题栏来移动窗口，通过拖动窗口的边缘或右下角来改变窗口尺寸。这是组件的内置功能，无需额外配置。
+AI 小鲸使用 CSS 变量进行主题定制，您可以通过覆盖这些变量来统一修改组件的视觉风格：
 
-### 拖拽功能控制与初始位置设置
+```css
+/* 在全局样式或 extCls 对应的选择器中覆盖 */
+.my-ai-theme {
+  /* 主色调 */
+  --ai-primary-color: #3a84ff;
 
-从 `v0.5.4` 版本开始，您可以通过以下属性来控制组件的拖拽功能以及自定义初始位置和尺寸：
+  /* 背景色 */
+  --ai-bg-color: #ffffff;
+  --ai-header-bg-color: #f5f7fa;
 
-- `draggable` (Boolean): 默认值为 `true`。控制组件是否可拖拽。
-- `defaultWidth` (Number): 设置组件初始宽度，像素值（比如`500`）。
-- `defaultHeight` (Number): 设置组件初始高度，像素值。
-- `defaultTop` (Number): 设置组件初始顶部位置，像素值。
-- `defaultLeft` (Number): 设置组件初始左侧位置，像素值。
+  /* 文本颜色 */
+  --ai-text-color: #313238;
+  --ai-text-secondary-color: #979ba5;
 
-:::code-group
-```vue [Vue 3]
+  /* 边框 */
+  --ai-border-color: #dcdee5;
+  --ai-border-radius: 8px;
+
+  /* 消息气泡 */
+  --ai-message-user-bg: #e1ecff;
+  --ai-message-assistant-bg: #f0f1f5;
+}
+```
+
+## 布局控制
+
+### 高度和最大宽度
+
+`ChatBot` 和 `AIBlueking` 均支持 `height` 和 `maxWidth` 控制：
+
+```vue
 <template>
-  <AIBlueking
-    ref="aiBlueking"
-    :url="apiUrl"
-    :draggable="true"
-    :default-width="520"
-    :default-height="600"
-    :default-top="50"
-    :default-left="20"
-  />
+  <!-- ChatBot 嵌入到页面，指定高度 -->
+  <ChatBot url="/api/ai/assistant/" :height="500" max-width="800px" />
+
+  <!-- AIBlueking 浮窗，通过默认尺寸控制 -->
+  <AIBlueking url="/api/ai/assistant/" :default-width="520" :default-height="680" />
 </template>
-
-<script lang="ts" setup>
-import { ref } from 'vue';
-import AIBlueking from '@blueking/ai-blueking';
-import '@blueking/ai-blueking/dist/vue3/style.css';
-
-const aiBlueking = ref(null);
-const apiUrl = 'https://your-api-endpoint.com/assistant/';
-</script>
 ```
 
-```vue [Vue 2]
+### AIBlueking 窗口定位
+
+`AIBlueking` 组件支持自定义初始位置和尺寸：
+
+| Prop | 类型 | 说明 |
+|------|------|------|
+| `defaultWidth` | `number` | 初始宽度（像素） |
+| `defaultHeight` | `number` | 初始高度（像素） |
+| `defaultLeft` | `number` | 初始左侧位置（像素） |
+| `defaultTop` | `number` | 初始顶部位置（像素） |
+| `draggable` | `boolean` | 是否可拖拽，默认 `true` |
+| `maxWidth` | `number \| string` | 最大宽度 |
+
+```vue
 <template>
   <AIBlueking
-    ref="aiBlueking"
     :url="apiUrl"
     :draggable="true"
     :default-width="520"
@@ -108,38 +97,236 @@ const apiUrl = 'https://your-api-endpoint.com/assistant/';
     :default-left="20"
   />
 </template>
-
-<script>
-import AIBlueking from '@blueking/ai-blueking/vue2';
-import '@blueking/ai-blueking/dist/vue2/style.css';
-
-export default {
-  components: {
-    AIBlueking
-  },
-  data() {
-    return {
-      apiUrl: 'https://your-api-endpoint.com/assistant/'
-    };
-  }
-};
-</script>
 ```
-:::
 
-## 初始最小化状态
+### 编程式更新位置和尺寸
 
-您可以通过 `defaultMinimize` prop 控制 AI 小鲸窗口在首次加载或通过 `handleShow` 方法显示时是否处于最小化状态。
+```typescript
+// 更新位置
+aiBluekingRef.value.updatePosition(100, 200);
 
--   `defaultMinimize` (Boolean): 默认值为 `false`。如果设置为 `true`，窗口初始将是最小化状态。
+// 更新尺寸
+aiBluekingRef.value.updateSize(600, 800);
 
-:::code-group
-```vue [Vue 3]
+// 同时更新位置和尺寸
+aiBluekingRef.value.updatePositionAndSize(100, 200, 600, 800);
+```
+
+## 文本定制
+
+### helloText 欢迎语
+
+设置对话窗口的初始欢迎语：
+
+```vue
 <template>
   <AIBlueking
-    ref="aiBlueking"
     :url="apiUrl"
-    :default-minimize="true"
+    hello-text="你好！我是你的企业智能助手，有什么可以帮助你的？"
+  />
+</template>
+```
+
+> **说明**：后端 Agent 配置中的 `openingRemark`（欢迎语）会覆盖 `helloText`。当 `getAgentInfo()` 返回了 `conversationSettings.openingRemark`，以后端配置为准。
+
+### placeholder 输入框占位符
+
+自定义输入框的占位提示文本：
+
+```vue
+<template>
+  <ChatBot
+    url="/api/ai/assistant/"
+    placeholder="输入您的问题，按 Enter 发送..."
+  />
+</template>
+```
+
+### title 组件标题
+
+设置 `AIBlueking` Header 中显示的标题文本：
+
+```vue
+<template>
+  <AIBlueking
+    :url="apiUrl"
+    title="企业智能助手"
+  />
+</template>
+```
+
+> **说明**：后端 Agent 配置中的 `agentName` 会覆盖 `title`。
+
+## 显示控制
+
+### hideHeader
+
+隐藏 `AIBlueking` 的头部栏：
+
+```vue
+<template>
+  <AIBlueking :url="apiUrl" :hide-header="true" />
+</template>
+```
+
+### hideNimbus
+
+隐藏悬浮球（Nimbus）触发器：
+
+```vue
+<template>
+  <!-- 隐藏悬浮球，通过自定义按钮控制显示 -->
+  <AIBlueking ref="aiRef" :url="apiUrl" :hide-nimbus="true" />
+  <button @click="aiRef?.handleShow()">打开 AI 助手</button>
+</template>
+```
+
+### hideDefaultTrigger
+
+隐藏默认的触发器（与 `hideNimbus` 配合使用）：
+
+```vue
+<template>
+  <AIBlueking :url="apiUrl" :hide-default-trigger="true" :hide-nimbus="true" />
+</template>
+```
+
+### enablePopup
+
+控制是否启用选中文本弹窗功能：
+
+```vue
+<template>
+  <!-- 启用划词弹窗（默认为 true） -->
+  <AIBlueking :url="apiUrl" :enable-popup="true" :shortcuts="shortcuts" />
+
+  <!-- 禁用划词弹窗 -->
+  <AIBlueking :url="apiUrl" :enable-popup="false" />
+</template>
+```
+
+### nimbusSize
+
+设置悬浮球大小：
+
+```vue
+<template>
+  <!-- 可选值: 'small' | 'normal' | 'large' -->
+  <AIBlueking :url="apiUrl" nimbus-size="small" />
+</template>
+```
+
+### 默认最小化
+
+```vue
+<template>
+  <!-- 初始为最小化状态 -->
+  <AIBlueking :url="apiUrl" :default-minimize="true" />
+</template>
+```
+
+### 禁用输入框
+
+```vue
+<template>
+  <!-- 只读模式，用户无法输入 -->
+  <AIBlueking :url="apiUrl" :disabled-input="true" />
+</template>
+```
+
+### Header 图标控制
+
+精细控制 Header 中各个图标的显示：
+
+```vue
+<template>
+  <AIBlueking
+    :url="apiUrl"
+    :show-new-chat-icon="true"
+    :show-history-icon="true"
+    :show-more-icon="true"
+    :show-compression-icon="false"
+  />
+</template>
+```
+
+### 下拉菜单配置
+
+```vue
+<template>
+  <AIBlueking
+    :url="apiUrl"
+    :dropdown-menu-config="{
+      showRename: true,
+      showAutoGenerate: true,
+      showShare: true,
+    }"
+  />
+</template>
+```
+
+## teleportTo 渲染目标
+
+通过 `teleportTo` prop 指定组件渲染到的目标 DOM 元素，使用 Vue 3 的 `<Teleport>` 实现：
+
+```vue
+<template>
+  <div>
+    <!-- 组件内容将渲染到 #ai-container 中 -->
+    <AIBlueking :url="apiUrl" teleport-to="#ai-container" />
+
+    <!-- 渲染目标 -->
+    <div id="ai-container"></div>
+  </div>
+</template>
+```
+
+常见用法：
+
+```vue
+<!-- 渲染到 body -->
+<AIBlueking :url="apiUrl" teleport-to="body" />
+
+<!-- 渲染到指定的 CSS 选择器 -->
+<AIBlueking :url="apiUrl" teleport-to=".app-container" />
+```
+
+## 代码示例：综合定制
+
+```vue
+<template>
+  <AIBlueking
+    ref="aiRef"
+    :url="apiUrl"
+    ext-cls="custom-ai-assistant"
+    title="项目助手"
+    hello-text="欢迎使用项目智能助手！输入 / 查看快捷指令"
+    placeholder="描述你的需求..."
+    teleport-to="body"
+    :draggable="true"
+    :default-width="500"
+    :default-height="650"
+    :default-top="80"
+    :default-left="50"
+    :max-width="800"
+    :hide-nimbus="false"
+    :hide-header="false"
+    :enable-popup="true"
+    :disabled-input="false"
+    :default-minimize="false"
+    nimbus-size="normal"
+    :show-new-chat-icon="true"
+    :show-history-icon="true"
+    :show-compression-icon="true"
+    :dropdown-menu-config="{
+      showRename: true,
+      showAutoGenerate: true,
+      showShare: true,
+    }"
+    :shortcuts="shortcuts"
+    :prompts="prompts"
+    @show="onShow"
+    @close="onClose"
   />
 </template>
 
@@ -148,112 +335,30 @@ import { ref } from 'vue';
 import AIBlueking from '@blueking/ai-blueking';
 import '@blueking/ai-blueking/dist/vue3/style.css';
 
-const aiBlueking = ref(null);
-const apiUrl = 'https://your-api-endpoint.com/assistant/';
-</script>
-```
+const aiRef = ref<InstanceType<typeof AIBlueking> | null>(null);
+const apiUrl = '/api/ai/assistant/';
 
-```vue [Vue 2]
-<template>
-  <AIBlueking
-    ref="aiBlueking"
-    :url="apiUrl"
-    :default-minimize="true"
-  />
-</template>
-
-<script>
-import AIBlueking from '@blueking/ai-blueking/vue2';
-import '@blueking/ai-blueking/dist/vue2/style.css';
-
-export default {
-  components: {
-    AIBlueking
+const shortcuts = [
+  {
+    id: 'explain',
+    name: '解释',
+    icon: 'bkai-icon bkai-explain',
+    components: [
+      { type: 'textarea', key: 'text', name: '内容', fillBack: true },
+    ],
   },
-  data() {
-    return {
-      apiUrl: 'https://your-api-endpoint.com/assistant/'
-    };
-  }
-};
+];
+
+const prompts = ['请帮我分析这段代码', '请帮我写单元测试'];
+
+const onShow = () => console.log('面板显示');
+const onClose = () => console.log('面板关闭');
 </script>
+
+<style>
+.custom-ai-assistant {
+  --ai-primary-color: #2dcb73;
+  border-radius: 16px;
+}
+</style>
 ```
-:::
-
-## 输入框禁用控制
-
-从 `v1.0.1` 版本开始，您可以通过 `disabledInput` 属性来控制输入框是否处于禁用状态。禁用后，用户将无法在输入框中输入文本或发送消息，适用于只读展示或特定交互场景。
-
--   `disabledInput` (Boolean): 默认值为 `false`。设置为 `true` 时，输入框将处于禁用状态。
-
-:::code-group
-```vue [Vue 3]
-<template>
-  <AIBlueking
-    ref="aiBlueking"
-    :url="apiUrl"
-    :disabled-input="true"
-  />
-</template>
-
-<script lang="ts" setup>
-import { ref } from 'vue';
-import AIBlueking from '@blueking/ai-blueking';
-import '@blueking/ai-blueking/dist/vue3/style.css';
-
-const aiBlueking = ref(null);
-const apiUrl = 'https://your-api-endpoint.com/assistant/';
-</script>
-```
-
-```vue [Vue 2]
-<template>
-  <AIBlueking
-    ref="aiBlueking"
-    :url="apiUrl"
-    :disabled-input="true"
-  />
-</template>
-
-<script>
-import AIBlueking from '@blueking/ai-blueking/vue2';
-import '@blueking/ai-blueking/dist/vue2/style.css';
-
-export default {
-  components: {
-    AIBlueking
-  },
-  data() {
-    return {
-      apiUrl: 'https://your-api-endpoint.com/assistant/'
-    };
-  }
-};
-</script>
-```
-:::
-
-### 禁用输入框的应用场景
-
-输入框禁用功能在以下场景中特别有用：
-
-1. **只读展示模式**：
-   - 展示预设的对话内容，但不希望用户继续交互
-   - 创建演示或教程内容，引导用户了解产品功能
-
-2. **条件限制交互**：
-   - 在用户完成特定操作前，暂时禁用输入功能
-   - 特定情境下临时限制用户输入
-
-3. **根据权限动态控制**：
-   ```vue
-   <AIBlueking
-     :url="apiUrl"
-     :disabled-input="!userHasPermission"
-   />
-   ```
-
-4. **创建引导式体验**：
-   - 结合预设问题，引导用户通过点击预设问题而非直接输入来交互
-
-禁用状态下，输入框会呈现灰色背景，并显示禁用状态的光标样式，为用户提供明确的视觉反馈。

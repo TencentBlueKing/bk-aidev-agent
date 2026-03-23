@@ -1,285 +1,219 @@
 # 内容引用
 
-AI 小鲸支持用户框选内容并通过快捷操作按钮进行交互，提供便捷的内容引用和快速操作能力。
+AI 小鲸 v2.0 支持将外部内容作为引用附加到对话消息中，让 AI 可以基于引用的上下文进行回答。内容引用通过消息的 `property` 系统传递给后端。
 
-## 内容引用
+## 简单文本引用
 
-用户可以通过鼠标选取页面上的文本内容，选中后将自动弹出引用操作菜单，包含配置的快捷操作按钮。
+最常用的引用方式是将一段文本作为引用内容附加到消息中。通过 `setCiteText()` 方法设置引用文本。
 
-![内容引用示例](../../public/content-reference.png)
-
-## 启用选中文本弹出菜单
-
-通过设置 `enablePopup` prop 为 `true` (默认值)，用户在页面上选中一段文本后，会自动在选中文本附近弹出一个小图标。点击该图标会展开快捷操作菜单（如果配置了 `shortcuts`）并自动将选中的文本作为引用内容。
+### 使用方法
 
 ```vue
 <template>
-  <AIBlueking :url="apiUrl" :enable-popup="true" />
+  <div>
+    <p ref="contentRef">这是一段需要引用的内容...</p>
+    <button @click="citeContent">引用此段落</button>
+
+    <ChatBot ref="chatBotRef" url="/api/ai/assistant/" />
+  </div>
 </template>
 
-<script setup>
-  // 或 <script>
-  import AIBlueking from "@blueking/ai-blueking" // 或 /vue2
-  import "@blueking/ai-blueking/dist/vue3/style.css" // 或 /vue2
-  const apiUrl = "..."
+<script lang="ts" setup>
+import { ref } from 'vue';
+import { ChatBot } from '@blueking/ai-blueking';
+
+const chatBotRef = ref<InstanceType<typeof ChatBot> | null>(null);
+const contentRef = ref<HTMLElement | null>(null);
+
+const citeContent = () => {
+  const text = contentRef.value?.textContent ?? '';
+  // 设置引用文本，会显示在输入框上方
+  chatBotRef.value?.setCiteText(text);
+  // 聚焦输入框
+  chatBotRef.value?.focusInput();
+};
 </script>
 ```
 
-如果设置为 `false`，则不会在选中文本后弹出菜单。
+### 数据流
 
-## 控制快捷指令弹窗
+调用 `setCiteText(text)` 后，引用文本会绑定到 `ChatInput` 的 `v-model:cite`。当用户发送消息时，引用内容会以简单字符串的形式写入 `property`：
 
-在某些情况下，您可能不希望在页面的特定区域选中文字时弹出快捷指令窗口。例如，在一个代码编辑器或者一个具有复杂交互的表格中，这个弹窗可能会干扰正常操作。
+```typescript
+// 发送到后端的 property 结构
+{
+  extra: {
+    cite: '用户引用的文本内容'
+  }
+}
+```
 
-AI 小鲸提供了一个简单的方法来禁用特定区域的弹窗功能。您只需要在不希望弹出快捷指令的任何 HTML 元素上添加 `ai-blueking-hide` 属性即可。
+## 结构化引用
+
+结构化引用用于传递更复杂的引用数据，通常与快捷指令配合使用。引用数据包含标题和键值对列表。
+
+### 数据结构
+
+```typescript
+// 结构化引用的 property 格式
+{
+  extra: {
+    cite: {
+      type: 'structured',
+      title: '日志分析',                    // 引用标题
+      data: [
+        { key: '日志内容', value: '...' },   // 键值对形式的结构化数据
+        { key: '日志 ID', value: '12345' },
+      ],
+    },
+    command: 'log_analysis',               // 快捷指令 ID
+    context: [
+      {
+        log: '...',                         // 原始字段键值
+        context_type: 'textarea',           // 组件类型
+        __label: '日志内容',                 // 元数据
+        __key: 'log',
+        __value: '...',
+      },
+    ],
+  }
+}
+```
+
+### 使用场景
+
+结构化引用通常由快捷指令表单自动构建。当用户填写快捷指令表单并提交时，`ChatBot` 内部会调用 `buildShortcutProperty()` 将表单数据转换为结构化 `property`：
+
+```
+用户填写快捷指令表单
+  → handleShortcutSubmit()
+    → buildShortcutProperty(shortcut, formData)
+      → 构建 { extra: { cite, command, context } }
+    → doSendMessage(message, { property })
+      → ChatBusinessManager.sendMessage(content, sessionCode, { property })
+```
+
+## AiSelection 划词弹窗
+
+AI 小鲸提供了划词弹窗功能，用户在页面上选中文本后会自动弹出快捷操作菜单。
+
+### 启用划词弹窗
+
+通过 `enablePopup` prop 启用（`AIBlueking` 组件，默认为 `true`）：
+
+```vue
+<template>
+  <AIBlueking
+    :url="apiUrl"
+    :enable-popup="true"
+    :shortcuts="shortcuts"
+  />
+</template>
+
+<script lang="ts" setup>
+import AIBlueking from '@blueking/ai-blueking';
+import '@blueking/ai-blueking/dist/vue3/style.css';
+
+const apiUrl = '/api/ai/assistant/';
+
+const shortcuts = [
+  {
+    id: 'explain',
+    name: '解释',
+    icon: 'bkai-icon bkai-explain',
+    enable_fill_back: true,
+    fill_back_component_key: 'text',
+    components: [
+      {
+        type: 'textarea',
+        key: 'text',
+        name: '内容',
+        fillBack: true,
+      },
+    ],
+  },
+  {
+    id: 'translate',
+    name: '翻译',
+    icon: 'bkai-icon bkai-translate',
+    enable_fill_back: true,
+    fill_back_component_key: 'text',
+    components: [
+      {
+        type: 'textarea',
+        key: 'text',
+        name: '待翻译文本',
+        fillBack: true,
+      },
+      {
+        type: 'select',
+        key: 'targetLang',
+        name: '目标语言',
+        options: [
+          { label: '英文', value: 'en' },
+          { label: '日文', value: 'jp' },
+        ],
+        default: 'en',
+      },
+    ],
+  },
+];
+</script>
+```
+
+### 工作流程
+
+![AiSelection 划词工作流](/images/guide/ai-selection-workflow.png)
+
+### 禁用特定区域
+
+在不希望弹出划词菜单的 HTML 元素上添加 `ai-blueking-hide` 属性：
 
 ```html
 <div ai-blueking-hide>
-  <p>在这部分区域内选中文本，将不会触发 AI 小鲸的快捷指令弹窗。</p>
-  <code>
-    // 这里是代码区域，同样不会触发弹窗
+  <p>在此区域内选中文本不会触发划词弹窗</p>
+  <pre>
+    // 代码区域也不会触发
     const x = 10;
-    console.log(x);
-  </code>
+  </pre>
 </div>
 ```
 
-当您在带有 `ai-blueking-hide` 属性的元素或其任何子元素中选择文本时，快捷指令弹窗将不会出现。这为您提供了精细的控制能力，确保 AI 小鲸的交互不会干扰您应用中的其他功能。
+AI 小鲸会从选中文本所在元素向上遍历 DOM 树，如果发现 `ai-blueking-hide` 属性则不弹出菜单。
 
-### 工作原理
+## 引用数据流总结
 
-AI 小鲸在响应文本选择事件时，会从被选中的文本所在的元素开始，向上遍历DOM树。如果在这个遍历过程中发现了任何一个元素带有 `ai-blueking-hide` 属性，它就会停止处理，从而阻止了弹窗的显示。
+![引用数据流总结](/images/guide/content-reference-flow.png)
 
-这个特性对于提升与现有复杂前端应用的集成体验非常有用。
+## 编程式触发引用
 
-## 快捷操作配置
-
-内容引用功能与快捷操作紧密结合。用户选中文本后，可以通过快捷操作对选中的内容进行处理。关于快捷操作的详细配置和使用，请参考[快捷操作](./shortcuts.md)文档。
-
-## 快捷操作事件 (shortcut-click)
-
-当用户点击快捷操作按钮时，会触发 `shortcut-click` 事件。您可以监听此事件以执行自定义逻辑。
-
-:::code-group
-
-```vue [Vue 3]
-<template>
-  <AIBlueking :url="apiUrl" :shortcuts="myShortcuts" @shortcut-click="handleShortcut" />
-</template>
-
-<script lang="ts" setup>
-  import AIBlueking from "@blueking/ai-blueking"
-  import "@blueking/ai-blueking/dist/vue3/style.css"
-
-  const apiUrl = "..."
-  const myShortcuts = [
-    /* ... */
-  ]
-
-  const handleShortcut = (data) => {
-    console.log("快捷操作:", data.shortcut.name)
-    console.log("表单数据:", data.formData)
-    // 可以在这里做一些额外处理，比如打点上报
-  }
-</script>
-```
-
-```vue [Vue 2]
-<template>
-  <AIBlueking :url="apiUrl" :shortcuts="myShortcuts" @shortcut-click="handleShortcut" />
-</template>
-
-<script>
-  import AIBlueking from "@blueking/ai-blueking/vue2"
-  import "@blueking/ai-blueking/dist/vue2/style.css"
-
-  export default {
-    components: { AIBlueking },
-    data() {
-      return {
-        apiUrl: "...",
-        myShortcuts: [
-          /* ... */
-        ],
-      }
-    },
-    methods: {
-      handleShortcut(data) {
-        console.log("快捷操作:", data.shortcut.name)
-        console.log("表单数据:", data.formData)
-        // 可以在这里做一些额外处理，比如打点上报
-      },
-    },
-  }
-</script>
-```
-
-:::
-
-## 编程式触发快捷操作
-
-以下示例展示了如何在代码中触发快捷操作，例如通过点击页面上的按钮：
-
-:::code-group
-
-```vue [Vue 3]
+```vue
 <template>
   <div>
-    <!-- 文章内容 -->
-    <div class="article">
-      <h3>{{ articleTitle }}</h3>
-      <p>{{ articleContent }}</p>
-    </div>
-
-    <!-- 快捷操作按钮 -->
-    <div class="action-buttons">
-      <button @click="triggerShortcut('explain', articleTitle)">解释标题</button>
-      <button @click="triggerShortcut('translate', articleTitle)">翻译标题</button>
-    </div>
-
-    <!-- AI小鲸组件 -->
-    <AIBlueking ref="aiBlueking" :url="apiUrl" :shortcuts="shortcuts" />
+    <button @click="citeAndAsk">引用并提问</button>
+    <AIBlueking ref="aiRef" :url="apiUrl" />
   </div>
 </template>
 
 <script lang="ts" setup>
-  import { ref } from "vue"
-  import AIBlueking from "@blueking/ai-blueking"
-  import { IShortcut } from "@blueking/ai-blueking/dist/types"
+import { ref } from 'vue';
+import AIBlueking from '@blueking/ai-blueking';
+import '@blueking/ai-blueking/dist/vue3/style.css';
 
-  const aiBlueking = ref<InstanceType<typeof AIBlueking>>()
-  const articleTitle = "AI 技术的发展与应用"
-  const articleContent = "人工智能技术在近年来取得了突飞猛进的发展..."
+const aiRef = ref<InstanceType<typeof AIBlueking> | null>(null);
+const apiUrl = '/api/ai/assistant/';
 
-  const shortcuts: IShortcut[] = [
-    {
-      id: "explain",
-      name: "解释",
-      components: [{ type: "textarea", key: "text", name: "内容", fillBack: true }],
-    },
-    {
-      id: "translate",
-      name: "翻译",
-      components: [
-        { type: "textarea", key: "text", name: "内容", fillBack: true },
-        {
-          type: "select",
-          key: "targetLang",
-          name: "目标语言",
-          options: [
-            { label: "英文", value: "en" },
-            { label: "日文", value: "jp" },
-          ],
-          default: "en",
-        },
-      ],
-    },
-  ]
+const citeAndAsk = async () => {
+  if (!aiRef.value) return;
 
-  // 编程式触发快捷操作
-  const triggerShortcut = (id: string, text: string) => {
-    if (!aiBlueking.value) return
+  // 1. 打开面板
+  await aiRef.value.handleShow();
 
-    // 找到对应ID的快捷操作
-    const shortcut = shortcuts.find((s) => s.id === id)
-    if (!shortcut) return
+  // 2. 设置引用文本
+  aiRef.value.setCiteText('这是需要分析的日志内容...');
 
-    // 显示AI小鲸窗口
-    aiBlueking.value.handleShow()
-
-    // 找到需要填充的表单项
-    const textComponent = shortcut.components.find((c) => c.fillBack)
-    if (textComponent) {
-      textComponent.default = text
-    }
-
-    // 触发快捷操作
-    aiBlueking.value.handleShortcutClick(shortcut)
-  }
+  // 3. 聚焦输入框，等待用户输入
+  aiRef.value.focusInput();
+};
 </script>
 ```
-
-```vue [Vue 2]
-<template>
-  <div>
-    <!-- 文章内容 -->
-    <div class="article">
-      <h3>{{ articleTitle }}</h3>
-      <p>{{ articleContent }}</p>
-    </div>
-
-    <!-- 快捷操作按钮 -->
-    <div class="action-buttons">
-      <button @click="triggerShortcut('explain', articleTitle)">解释标题</button>
-      <button @click="triggerShortcut('translate', articleTitle)">翻译标题</button>
-    </div>
-
-    <!-- AI小鲸组件 -->
-    <AIBlueking ref="aiBlueking" :url="apiUrl" :shortcuts="shortcuts" />
-  </div>
-</template>
-
-<script>
-  import AIBlueking from "@blueking/ai-blueking/vue2"
-
-  export default {
-    components: { AIBlueking },
-
-    data() {
-      return {
-        apiUrl: "...",
-        articleTitle: "AI 技术的发展与应用",
-        articleContent: "人工智能技术在近年来取得了突飞猛进的发展...",
-        shortcuts: [
-          {
-            id: "explain",
-            name: "解释",
-            components: [{ type: "textarea", key: "text", label: "内容", fillBack: true }],
-          },
-          {
-            id: "translate",
-            name: "翻译",
-            components: [
-              { type: "textarea", key: "text", label: "内容", fillBack: true },
-              {
-                type: "select",
-                key: "targetLang",
-                name: "目标语言",
-                options: [
-                  { label: "英文", value: "en" },
-                  { label: "日文", value: "jp" },
-                ],
-                default: "en",
-              },
-            ],
-          },
-        ],
-      }
-    },
-
-    methods: {
-      triggerShortcut(id, text) {
-        // 找到对应ID的快捷操作
-        const shortcut = this.shortcuts.find((s) => s.id === id)
-        if (!shortcut) return
-
-        // 显示AI小鲸窗口
-        this.$refs.aiBlueking.handleShow()
-
-        // 找到需要填充的表单项
-        const textComponent = shortcut.components.find((c) => c.fillBack)
-        if (textComponent) {
-          textComponent.default = text
-        }
-
-        // 触发快捷操作
-        this.$refs.aiBlueking.handleShortcutClick(shortcut)
-      },
-    },
-  }
-</script>
-```
-
-:::
-
-> **注意**: 在v1.1.0版本中，不再推荐使用sendChat方法来模拟快捷操作，应该直接使用组件暴露的handleShortcutClick方法并传入完整的IShortcut对象。

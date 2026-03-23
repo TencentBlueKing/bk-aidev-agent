@@ -3,7 +3,13 @@
     <div class="demo-header">
       <span class="demo-title">{{ description }}</span>
       <div class="demo-actions">
-        <button class="action-button" @click="toggleCode">
+        <button
+          type="button"
+          class="action-button"
+          :aria-expanded="showCode"
+          aria-controls="demo-container-code"
+          @click="toggleCode"
+        >
           {{ showCode ? '隐藏代码' : '查看代码' }}
         </button>
       </div>
@@ -13,7 +19,13 @@
       <slot></slot>
     </div>
     
-    <div v-show="showCode" class="demo-footer">
+    <div
+      v-show="showCode"
+      id="demo-container-code"
+      class="demo-footer"
+      role="region"
+      :aria-label="description || '示例源码'"
+    >
       <slot name="code"></slot>
     </div>
   </div>
@@ -79,7 +91,7 @@ export default {
 
 .demo-content {
   padding: 20px;
-  background: var(--vp-c-white);
+  background: var(--vp-c-bg);
 }
 
 .demo-footer {

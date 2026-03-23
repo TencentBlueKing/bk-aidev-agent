@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: AI 小鲸
-  text: 智能对话组件
-  tagline: 开箱即用的 Vue 智能对话解决方案，支持 Vue2/Vue3
+  text: 模块化智能对话解决方案
+  tagline: 基于三层架构的 Vue 智能对话组件，支持 Vue2/Vue3
   image:
     src: /ai-logo.svg
     alt: AI Blueking
@@ -14,31 +14,34 @@ hero:
       link: /guide/quick-start
     - theme: alt
       text: 立即体验
-      link: /demos/basic-usage
+      link: /demos/full-panel
     - theme: alt
-      text: 1.0版本迁移指南
-      link: /guide/migration-1.0
+      text: v1.x 迁移指南
+      link: /guide/migration-2.0
 
 features:
+  - icon: 🏗️
+    title: 三层模块化架构
+    details: ai-blueking + chat-x + chat-helper，关注点分离
+  - icon: 🔌
+    title: 三种集成模式
+    details: AIBlueking 浮窗 / ChatBot 嵌入 / 原子组件组装
   - icon: 💬
-    title: 实时对话
-    details: 支持流式输出，让对话更自然流畅
+    title: AG-UI 流式协议
+    details: 基于 AGUIProtocol 的实时流式响应
   - icon: 📋
-    title: 多会话管理
-    details: v1.1.0新增！支持创建、切换、管理多个独立会话
-  - icon: 📎
-    title: 内容引用
-    details: 选中文本即可快速引用并提问
-  - icon: ⚡️
-    title: 快捷操作
-    details: 支持预设常用功能和提示词
-  - icon: 🖱️
-    title: 可拖拽界面
-    details: 自由调整窗口位置和大小
+    title: 会话生命周期管理
+    details: 完整的会话创建、切换、删除、重命名（自动管理，零配置）
+  - icon: ⚡
+    title: Manager 可扩展模式
+    details: 业务管理器模式，易于扩展和定制
   - icon: 📦
-    title: 开箱即用
-    details: 传入 Agent 地址即可快速接入业务
-  - icon: 🔄
-    title: 跨框架支持
-    details: 同时支持 Vue2 和 Vue3 框架
+    title: 独立包设计
+    details: chat-x 纯 UI / chat-helper 纯业务，可独立使用
+  - icon: 🔒
+    title: TypeScript 全覆盖
+    details: 完整类型定义，开发体验优秀
+  - icon: 🚀
+    title: AIDev 一键接入
+    details: 配置 Agent 后传入 URL 即可流式对话，会话与状态自动管理
 ---

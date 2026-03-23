@@ -1,93 +1,170 @@
+# ChatBot 页面嵌入
+
+ChatBot 是一个可独立使用的轻量聊天组件，无需额外面板即可快速嵌入到任何页面中。
+
 <script setup>
-import { onMounted, defineAsyncComponent } from 'vue';
-
+import { defineAsyncComponent, onMounted, ref } from 'vue'
 const apiUrl = import.meta.env.BK_API_URL_TMPL || ''
-
-
-const AIBlueking = defineAsyncComponent({
-  loader: () => import('@blueking/ai-blueking'),
-});
-
+const ChatBot = apiUrl ? defineAsyncComponent({
+  loader: () => import('@blueking/ai-blueking').then(m => m.ChatBot),
+}) : null
 onMounted(() => {
-  // Use dynamic import() which runs only on the client here
-  import('@blueking/ai-blueking/dist/vue3/style.css');
-});
+  if (apiUrl) import('@blueking/ai-blueking/dist/vue3/style.css')
+})
+const onAgentLoaded = (helper) => {
+  if (helper?.session) {
+    helper.session.createSession({
+      sessionCode: `demo_${Date.now()}`,
+      sessionName: '新会话',
+    })
+  }
+}
 </script>
-
-# 基础使用示例
-:::tip
-本页面可以直接体验小鲸的聊天功能，请点击右下角按钮打开小鲸，下面将详细介绍本页面小鲸的代码实现
-:::
-
-这个示例展示了 AI 小鲸组件的基本用法，包括如何初始化和调用基本方法。
 
 <ClientOnly>
-<AIBlueking :url="apiUrl" />
+  <div v-if="ChatBot" style="width: 100%; height: 500px; border: 1px solid var(--vp-c-divider); border-radius: 8px; overflow: hidden; margin-bottom: 24px;">
+    <component :is="ChatBot" :url="apiUrl" hello-text="你好，我是 AI 小鲸" placeholder="输入你的问题..." @agent-info-loaded="onAgentLoaded" />
+  </div>
+  <div v-else class="custom-block tip">
+    <p>在线演示需要后端环境支持。请参考下方代码示例进行集成。</p>
+  </div>
 </ClientOnly>
 
-## 关键代码讲解
-
-### 1. 引入组件
-:::code-group
-
-```js [Vue3]
-import AIBlueking from '@blueking/ai-blueking';
-import '@blueking/ai-blueking/dist/vue3/style.css';
-```
-
-```js [Vue2]
-import AIBlueking from '@blueking/ai-blueking/vue2';
-import '@blueking/ai-blueking/dist/vue2/style.css';
-```
+::: tip 构建完整聊天页面
+需要构建带会话列表的完整聊天页面？参考 [自定义会话列表](/guide/advanced-usage/external-session-list)
 :::
 
-### 2. 设置 API 服务地址
+## 完整示例
 
-```Vue
+::: code-group
+
+```vue [Vue 3]
 <template>
-<AIBlueking :url="apiUrl" />
-</tempalte>
+  <div style="width: 600px; height: 800px;">
+    <ChatBot
+      ref="chatBotRef"
+      url="https://your-aidev-url.com/api/"
+      :request-options="requestOptions"
+      placeholder="输入你的问题..."
+      @send-message="handleSendMessage"
+      @session-switched="handleSessionSwitched"
+      @error="handleError"
+    />
+  </div>
+</template>
 
-<script setup>
-  const apiUrl = 'https://your-api-endpoint.com/assistant/';
+<script setup lang="ts">
+import { ref } from 'vue';
+import { ChatBot } from '@blueking/ai-blueking';
+import type { ChatBotExpose } from '@blueking/ai-blueking';
+
+const chatBotRef = ref<ChatBotExpose>();
+const requestOptions = {
+  headers: () => ({ Authorization: `Bearer ${getToken()}` }),
+};
+
+const handleSendMessage = (message: string) => console.log('发送:', message);
+const handleSessionSwitched = (session) => console.log('会话切换:', session?.sessionName);
+const handleError = (error: Error) => console.error('错误:', error);
+
+// 外部控制：通过 ref 调用组件暴露的方法
+const externalSend = () => chatBotRef.value?.sendMessage('Hello');
 </script>
 ```
 
-API 地址是必须设置的属性，所有与智能体的初始化、对话请求等都通过此连接进行通信。
+```vue [Vue 2]
+<template>
+  <div style="width: 600px; height: 800px;">
+    <ChatBot
+      ref="chatBotRef"
+      url="https://your-aidev-url.com/api/"
+      :request-options="requestOptions"
+      placeholder="输入你的问题..."
+      @send-message="handleSendMessage"
+      @session-switched="handleSessionSwitched"
+      @error="handleError"
+    />
+  </div>
+</template>
 
-### 3. 操作方法
+<script>
+import { ChatBot } from '@blueking/ai-blueking';
 
-```js
-// 显示对话窗口
-aiBlueking.value.show();
-
-// 隐藏对话窗口
-aiBlueking.value.hide();
-
-// 切换显示状态
-aiBlueking.value.toggle();
-
-// 发送消息
-aiBlueking.value.sendMessage('你好，AI 小鲸！');
-
-// 清空对话
-aiBlueking.value.clear();
+export default {
+  components: { ChatBot },
+  data() {
+    return {
+      requestOptions: {
+        headers: () => ({ Authorization: `Bearer ${this.getToken()}` }),
+      },
+    };
+  },
+  methods: {
+    handleSendMessage(message) {
+      console.log('发送:', message);
+    },
+    handleSessionSwitched(session) {
+      console.log('会话切换:', session?.sessionName);
+    },
+    handleError(error) {
+      console.error('错误:', error);
+    },
+    externalSend() {
+      this.$refs.chatBotRef?.sendMessage('Hello');
+    },
+    getToken() {
+      return 'your-token';
+    },
+  },
+};
+</script>
 ```
 
-### 4. 监听事件
+:::
 
-```vue
-<AIBlueking
-  @show="handleShow"
-  @close="handleClose"
-  @message="handleMessage"
-  @send="handleSend"
-  @error="handleError"
-/>
+## 关键说明
+
+### url
+
+- 必填项，指定后端 API 的基础地址（来自 AIDev 平台）。
+- ChatBot 内部会基于该地址拼接各类接口路径（会话管理、消息发送等）。
+- 快捷指令、提示词、欢迎语等均由 AIDev 后台配置，组件自动加载。
+
+### requestOptions
+
+- 用于配置请求头、超时等选项。
+- `headers` 推荐使用**函数形式**，确保每次请求时获取最新的认证 token，避免 token 过期问题。
+
+```ts
+const requestOptions = {
+  headers: () => ({
+    Authorization: `Bearer ${getToken()}`,
+    'X-Custom-Header': 'value',
+  }),
+};
 ```
 
-## 注意事项
+### shortcuts
 
-- 确保设置了正确的 API 地址，否则对话功能无法正常使用
-- Vue 3 和 Vue 2 版本的使用方式略有不同，请参考对应的示例代码
-- 组件默认显示在右下角，可以通过拖拽调整位置 
+- 快捷指令通常由 AIDev 后台 `agent/info` 接口自动返回，组件初始化时自动加载，**无需前端定义**。
+- 如需覆盖或补充，可通过 `shortcuts` prop 传入。详细配置请参考 [快捷指令](/guide/core-features/shortcuts) 章节。
+
+### Expose 方法
+
+通过 `ref` 获取 ChatBot 实例后，可调用以下暴露方法：
+
+| 方法 | 说明 |
+| --- | --- |
+| `sendMessage(text)` | 以编程方式发送消息 |
+| `switchSession(code)` | 切换到指定会话 |
+| `getChatHelper()` | 获取底层 chatHelper 实例，进行高级操作 |
+| `clearMessages()` | 清空当前会话消息 |
+
+```ts
+// 示例：外部触发发送消息
+const chatBotRef = ref<ChatBotExpose>();
+chatBotRef.value?.sendMessage('请帮我总结这段文字');
+
+// 示例：获取 chatHelper 进行高级操作
+const helper = chatBotRef.value?.getChatHelper();
+```

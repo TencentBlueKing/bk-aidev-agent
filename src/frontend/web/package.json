@@ -1,25 +1,29 @@
 {
   "name": "ai-blueking-docs",
-  "version": "1.3.1",
-  "description": "AI 小鲸智能对话组件文档",
+  "version": "2.0.0",
+  "description": "AI 小鲸智能对话组件文档 — v2.0",
   "scripts": {
     "dev": "vitepress dev docs --host",
     "build": "vitepress build docs",
-    "preview": "vitepress preview docs",
+    "preview": "vitepress build docs && PORT=4173 node ./server.cjs",
+    "preview:no-mock": "vitepress preview docs",
     "server": "node ./server.cjs"
   },
   "dependencies": {
-    "@blueking/ai-blueking": "1.3.1",
-    "bkui-vue": "^2.0.1-beta.114",
+    "@blueking/ai-blueking": "2.0.0-beta.1",
+    "@blueking/chat-helper": "0.0.1-beta.30",
+    "@blueking/chat-x": "0.0.3-beta.4",
+    "bkui-vue": "^2.0.2-beta.81",
     "express": "^5.1.0",
-    "vue": "^3.3.4",
     "express-rate-limit": "^7.5.1",
+    "vue": "^3.3.4",
     "x-mavon-editor": "^0.0.20"
   },
   "devDependencies": {
     "less": "^4.2.0",
     "markdown-it-container": "^3.0.0",
     "monaco-editor-vue3": "^0.1.6",
+    "shiki": "^2.5.0",
     "vitepress": "^1.6.3"
   },
   "type": "module",

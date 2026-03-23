@@ -1,421 +1,402 @@
 # 自定义请求
 
-在某些场景下，您可能需要在发送给 AI 后端服务的请求中添加额外的参数，例如用于身份验证的 Token、用于区分业务场景的标识等。AI 小鲸提供了 `requestOptions` prop 来满足这一需求。
+AI 小鲸 v2.0 提供了灵活的请求自定义能力，允许你配置请求头、请求体等，以适配不同的后端服务和认证方案。
 
-::: warning 版本变更提示
-1.0版本对请求体结构有所调整，但保持了API的基本使用方式。
-1.1版本新增了`context`字段，用于传递上下文参数，将与快捷操作表单数据一起发送到后端。
-:::
+## requestOptions 属性
 
-## 配置 `requestOptions`
-
-`requestOptions` 是一个对象，可以包含 `headers`、`data` 和 `context` 三个属性：
-
-- `headers` (Object): 一个对象，其键值对将被合并到最终请求的 **请求头 (Headers)** 中。
-- `data` (Object): 一个对象，其键值对将被合并到最终请求的 **请求体 (Body)** 中。
-- `context` <Badge type="tip" text="v1.1.5" /> (Object | Function): 上下文信息，支持静态对象或动态函数形式，会被合并到消息的 `property.extra` 中。
-
-**示例：**
-
-假设您需要在请求头中添加 `Authorization` 字段，并在请求体中添加 `preset` 字段，同时传递一些上下文参数。
-
-:::code-group
-
-```vue [Vue 3]
-<template>
-  <AIBlueking ref="aiBlueking" :url="apiUrl" :request-options="customOptions" />
-</template>
-
-<script lang="ts" setup>
-  import { ref, reactive } from "vue"
-  import { AIBlueking } from "@blueking/ai-blueking"
-  import "@blueking/ai-blueking/dist/style.css"
-
-  const aiBlueking = ref(null)
-  const apiUrl = "https://your-api-endpoint.com/assistant/"
-
-  const customOptions = reactive({
-    headers: {
-      Authorization: "Bearer your-token-here",
-      "X-Custom-Header": "some-value",
-    },
-    data: {
-      preset: "QA",
-      userId: "user123",
-    },
-    context: [
-      { key: "language", value: "javascript" },
-      { key: "scenario", value: "code_review" },
-    ],
-  })
-
-  // 如果 Token 是动态的，可以适时更新 customOptions.headers.Authorization
-</script>
-```
-
-```vue [Vue 2]
-<template>
-  <AIBlueking ref="aiBlueking" :url="apiUrl" :request-options="customOptions" />
-</template>
-
-<script>
-  import { AIBlueking } from "@blueking/ai-blueking/vue2"
-  import "@blueking/ai-blueking/dist/style.css"
-
-  export default {
-    components: {
-      AIBlueking,
-    },
-    data() {
-      return {
-        apiUrl: "https://your-api-endpoint.com/assistant/",
-        customOptions: {
-          headers: {
-            Authorization: "Bearer your-token-here",
-            "X-Custom-Header": "some-value",
-          },
-          data: {
-            preset: "QA",
-            userId: "user123",
-          },
-          context: [
-            { key: "language", value: "javascript" },
-            { key: "scenario", value: "code_review" },
-          ],
-        },
-      }
-    },
-    // 如果 Token 是动态的，可以在 updated 或 watch 中更新 this.customOptions.headers.Authorization
-  }
-</script>
-```
-
-:::
-
-## 动态更新请求选项
-
-在实际应用中，您可能需要在组件初始化后动态更新请求选项，例如在用户登录后添加授权令牌，或者切换到不同的智能体。AI 小鲸提供了 `updateRequestOptions` 方法来支持这一需求。
-
-### 使用方法
+`ChatBot` 和 `AIBlueking` 组件都接受 `requestOptions` 属性，用于全局配置所有 HTTP 请求。这是最常用的认证配置方式：
 
 ```typescript
-// 方法签名
-updateRequestOptions(options: {
-  url?: string;            // 可选，更新API地址
-  headers?: Record<string, string>; // 可选，更新请求头
-  data?: Record<string, any>;      // 可选，更新请求体附加数据
-  context?: Array<{key: string, value: any}>; // 可选，更新上下文参数
-}): void
+interface IRequestOptions {
+  headers?: () => Record<string, string>;  // 动态请求头
+  data?: () => Record<string, unknown>;    // 附加请求体数据
+  context?: Record<string, string> | (() => Record<string, string>);  // 上下文信息
+}
 ```
 
-### 示例
+### 内部机制
 
-:::code-group
+当你在组件上传入 `requestOptions`：
 
-```vue [Vue 3]
+1. **ChatBot 独立模式**：内部通过 `useChatHelper({ requestData: { urlPrefix, headers, data } })` 创建 SDK 实例，`requestOptions.headers/data` 会直接映射到 `requestData.headers/data`
+2. **AIBlueking**：内部通过 `useChatBootstrap({ url, requestOptions })` 初始化，同样映射到 `useChatHelper` 的 `requestData`
+
+两种组件底层走的是同一条路径，`requestOptions` 在 v2.0 中已完全适配。
+
+### 基本用法
+
+```vue
 <template>
-  <AIBlueking ref="aiBlueking" :url="apiUrl" />
-  <div class="controls">
-    <button @click="switchAgent">切换智能体</button>
-    <button @click="updateToken">更新令牌</button>
-    <button @click="addContext">添加代码检查上下文</button>
-  </div>
+  <!-- ChatBot 和 AIBlueking 用法一致 -->
+  <ChatBot
+    url="/api/v1/agent/chat"
+    :request-options="requestOptions"
+  />
 </template>
 
-<script setup>
-  import { ref } from "vue"
-  import { AIBlueking } from "@blueking/ai-blueking"
+<script setup lang="ts">
+import { ChatBot } from '@blueking/ai-blueking';
 
-  const aiBlueking = ref(null)
-  const apiUrl = "https://api.example.com/agent1"
-
-  // 切换智能体API地址
-  const switchAgent = () => {
-    const newUrl = "https://api.example.com/agent2"
-    aiBlueking.value?.updateRequestOptions({
-      url: newUrl,
-    })
-
-    // 重新初始化会话以获取新智能体配置
-    aiBlueking.value?.initSession()
-  }
-
-  // 更新授权令牌
-  const updateToken = () => {
-    const newToken = getNewToken() // 假设这是获取新令牌的函数
-    aiBlueking.value?.updateRequestOptions({
-      headers: {
-        Authorization: `Bearer ${newToken}`,
-      },
-    })
-  }
-
-  // 添加代码检查上下文
-  const addContext = () => {
-    aiBlueking.value?.updateRequestOptions({
-      context: [
-        { key: "language", value: "typescript" },
-        { key: "framework", value: "vue" },
-        { key: "mode", value: "review" },
-      ],
-    })
-  }
+const requestOptions = {
+  headers: () => ({
+    Authorization: `Bearer ${getToken()}`,
+    'X-App-Code': 'my-application',
+  }),
+  data: () => ({
+    app_id: 'your-app',
+    tenant_id: 'default',
+  }),
+};
 </script>
 ```
 
-```vue [Vue 2]
-<template>
-  <div>
-    <AIBlueking ref="aiBlueking" :url="apiUrl" />
-    <div class="controls">
-      <button @click="switchAgent">切换智能体</button>
-      <button @click="updateToken">更新令牌</button>
-      <button @click="addContext">添加代码检查上下文</button>
-    </div>
-  </div>
-</template>
-
-<script>
-  import { AIBlueking } from "@blueking/ai-blueking/vue2"
-
-  export default {
-    components: { AIBlueking },
-    data: () => ({
-      apiUrl: "https://api.example.com/agent1",
-    }),
-    methods: {
-      // 切换智能体API地址
-      switchAgent() {
-        const newUrl = "https://api.example.com/agent2"
-        this.$refs.aiBlueking.updateRequestOptions({
-          url: newUrl,
-        })
-
-        // 重新初始化会话以获取新智能体配置
-        this.$refs.aiBlueking.initSession()
-      },
-
-      // 更新授权令牌
-      updateToken() {
-        const newToken = this.getNewToken() // 假设这是获取新令牌的函数
-        this.$refs.aiBlueking.updateRequestOptions({
-          headers: {
-            Authorization: `Bearer ${newToken}`,
-          },
-        })
-      },
-
-      // 添加代码检查上下文
-      addContext() {
-        this.$refs.aiBlueking.updateRequestOptions({
-          context: [
-            { key: "language", value: "typescript" },
-            { key: "framework", value: "vue" },
-            { key: "mode", value: "review" },
-          ],
-        })
-      },
-
-      getNewToken() {
-        // 实际获取新令牌的逻辑
-        return "new-token-value"
-      },
-    },
-  }
-</script>
-```
-
-:::
-
-## 1.1版本请求体结构
-
-在1.1版本中，AI小鲸组件的请求体结构有所扩展，特别是在快捷操作表单数据处理方面。下面是实际发送请求的数据结构：
-
-```javascript
-{
-  data: {
-    // 会话内容ID
-    session_content_id: sessionContent?.id,
-    // 会话唯一标识
-    session_code: sessionCode,
-    // 执行参数
-    execute_kwargs: {
-      stream: true,
-    },
-    // 如果是快捷操作，会增加以下字段
-    command: shortcut?.id,  // 快捷操作的ID
-    context: [
-      ...formDataArray, // 表单收集的数据（数组形式）
-      ...currentRequestOptions.value.context || [] // 从requestOptions.context提供的参数
-    ],
-    // 其他数据
-    ...data,
-    // 用户通过requestOptions.data提供的数据
-    ...currentRequestOptions.value.data,
-  },
-  headers: headers || currentRequestOptions.value?.headers,
-}
-```
-
-**context参数合并示例:**
-
-假设您通过`requestOptions.context`提供以下数据：
-
-```javascript
-context: [{ language: "javascript" }, { mode: "review" }]
-```
-
-而表单收集了以下数据：
-
-```javascript
-;[{ code: "console.log('Hello world')" }, { style: "standard" }]
-```
-
-最终在请求体中的`context`字段将如下所示：
-
-```json
-[{ "code": "console.log('Hello world')" }, { "style": "standard" }, { "language": "javascript" }, { "mode": "review" }]
-```
-
-**请求体合并示例:**
-
-假设您通过`requestOptions.data`提供以下数据：
-
-```json
-{
-  "preset": "QA",
-  "userId": "user123"
-}
-```
-
-最终发送的请求体将如下所示：
-
-```json
-{
-  "session_content_id": "12345",
-  "session_code": "session-uuid-12345",
-  "execute_kwargs": {
-    "stream": true
-  },
-  "command": "code_review",
-  "context": [{ "code": "console.log('Hello world')" }, { "style": "standard" }, { "language": "javascript" }, { "mode": "review" }],
-  "preset": "QA",
-  "userId": "user123"
-}
-```
-
-请求头也会相应地被添加或覆盖。
-
-::: warning 注意
-
-1. 如果 `requestOptions.data` 中定义的键与 AI 小鲸内部使用的请求体键（如 `session_content_id`, `session_code` 等）冲突，外部传入的值 **可能会覆盖** 内部值，请谨慎使用。
-2. 在1.1版本中，`context`字段用于传递表单数据和上下文参数，与快捷操作配合使用效果更佳。
-   :::
-
-## 上下文配置 <Badge type="tip" text="v1.1.5" />
-
-从 v1.1.5 开始，`requestOptions` 支持 `context` 属性，用于传递上下文信息给AI服务。上下文信息会被合并到每条消息的 `property.extra` 中。
-
-### 静态上下文
+AIBlueking 完全一致：
 
 ```vue
 <template>
   <AIBlueking
-    :url="apiUrl"
-    :request-options="{
-      context: {
-        userId: '123',
-        department: 'IT',
-        role: 'admin',
-      },
-    }"
+    url="/api/v1/agent/chat"
+    :request-options="requestOptions"
   />
 </template>
-```
 
-### 动态上下文
+<script setup lang="ts">
+import { AIBlueking } from '@blueking/ai-blueking';
 
-```vue
-<template>
-  <AIBlueking :url="apiUrl" :request-options="requestOptions" />
-</template>
-
-<script setup>
-  import { computed } from "vue"
-
-  const requestOptions = computed(() => ({
-    context: () => ({
-      userId: getCurrentUser().id,
-      sessionId: getSessionId(),
-      timestamp: Date.now().toString(),
-      userAgent: navigator.userAgent,
-    }),
-  }))
-
-  const getCurrentUser = () => {
-    return JSON.parse(localStorage.getItem("user_info") || "{}")
-  }
-
-  const getSessionId = () => {
-    return sessionStorage.getItem("session_id")
-  }
+const requestOptions = {
+  headers: () => ({
+    Authorization: `Bearer ${getToken()}`,
+    'X-App-Code': 'my-application',
+  }),
+};
 </script>
 ```
 
-### 上下文数据结构
+### 说明
 
-上下文支持以下类型：
+- `headers` 和 `data` 都是**函数**而非静态对象，每次请求时都会重新执行，确保获取到最新的值（如最新的 token）
+- `headers` 返回的键值对会合并到每个请求的 HTTP 头中
+- `data` 返回的键值对会合并到每个请求的 HTTP Body 中
+- 组件内部会通过 `watch` 深度监听 `requestOptions` 变化，动态更新 SDK 配置
 
-```typescript
-type IContext = Record<string, string> | Record<string, string>[]
+## useChatBootstrap + ChatBot 组合模式
 
-// 示例
-const context1 = { userId: "123", role: "admin" } // 单个对象
-const context2 = [{ userId: "123" }, { role: "admin" }] // 对象数组
-const context3 = () => ({ timestamp: Date.now().toString() }) // 动态函数
-```
+当需要更精细的控制时（如在 ChatBot 外部管理初始化流程、共享 `chatHelper` 给其他组件），可以使用 `useChatBootstrap` 创建 `chatHelper` 实例，再以集成模式传入 ChatBot。
 
-::: warning 注意事项
+这也是 `AIBlueking` 内部使用 ChatBot 的方式。
 
-- 上下文对象的值必须是字符串类型
-- 动态上下文函数会在每次发送消息时调用，请避免在函数中执行耗时操作
-- 上下文信息会与消息的引用内容(`cite`)一起传递给AI服务
-  :::
-
-## URL 协议自动适配 <Badge type="tip" text="v1.1.5" />
-
-从 v1.1.5 开始，AI 小鲸支持智能的 URL 协议适配功能：
-
-### 支持的URL格式
-
-- **相对路径**：`/api/chat` - 自动使用当前页面的协议和域名
-- **协议相对路径**：`//api.example.com/chat` - 自动使用当前页面的协议
-- **完整URL**：`http://api.example.com/chat` - HTTPS页面下自动转换为HTTPS
-- **HTTPS URL**：`https://api.example.com/chat` - 任何环境下保持HTTPS
-
-### 安全性提升
-
-在HTTPS页面中使用HTTP API时，组件会自动将其转换为HTTPS，提升安全性。
+### 基本用法
 
 ```vue
 <template>
-  <!-- 这些URL在不同协议环境下会自动适配 -->
-  <AIBlueking :url="'/api/chat'" />
-  <!-- 相对路径 -->
-  <AIBlueking :url="'//api.example.com/chat'" />
-  <!-- 协议相对路径 -->
-  <AIBlueking :url="'http://api.example.com/chat'" />
-  <!-- HTTP，HTTPS页面下自动转换 -->
+  <div style="height: 600px;">
+    <ChatBot
+      v-if="isReady"
+      :chat-helper="chatHelper"
+      :url="url"
+    />
+    <div v-else>初始化中...</div>
+  </div>
 </template>
+
+<script setup lang="ts">
+import { ChatBot, useChatBootstrap } from '@blueking/ai-blueking';
+
+const url = '/api/v1/agent/chat';
+
+const {
+  chatHelper,
+  isReady,
+  agentInfo,
+  sessionList,
+  currentSession,
+} = useChatBootstrap({
+  url,
+  requestOptions: {
+    headers: () => ({
+      Authorization: `Bearer ${getToken()}`,
+    }),
+  },
+  autoInit: true,  // 自动执行 getAgentInfo + getSessions
+});
+</script>
 ```
 
-## 常见使用场景
+### useChatBootstrap 返回值
 
-1. **添加身份验证信息**：在请求头中添加 JWT 令牌或 API Key
-2. **切换不同的智能体**：通过动态更新 URL 来切换不同的智能体服务
-3. **传递上下文信息**：使用 `context` 属性传递业务上下文，如用户ID、业务标识等
-4. **处理特殊场景**：如添加跨域请求头、设置特定的内容类型等
-5. # **协议适配**：利用自动协议适配功能，简化不同环境下的URL配置
-6. **传递上下文信息**：在请求体中添加业务上下文，如用户ID、业务标识等
-7. **提供代码环境信息**：通过`context`字段传递代码语言、框架、风格等信息
-8. **处理特殊场景**：如添加跨域请求头、设置特定的内容类型等
+| 属性/方法 | 类型 | 说明 |
+|-----------|------|------|
+| `chatHelper` | `IChatHelper` | SDK 实例（同步创建，生命周期内不变） |
+| `protocol` | `AGUIProtocol` | 流式协议实例 |
+| `isReady` | `ComputedRef<boolean>` | Agent 信息是否加载完成 |
+| `isInitializing` | `ComputedRef<boolean>` | 是否正在初始化中 |
+| `phase` | `Ref<BootstrapPhase>` | 当前阶段：`IDLE` → `LOADING_AGENT` → `READY` / `ERROR` |
+| `error` | `Ref<Error \| null>` | 初始化错误 |
+| `agentInfo` | `ComputedRef<IAgentInfo \| null>` | Agent 配置信息 |
+| `agentName` | `ComputedRef<string>` | Agent 名称 |
+| `sessionList` | `ComputedRef<ISession[]>` | 会话列表 |
+| `currentSession` | `ComputedRef<ISession \| null>` | 当前会话 |
+| `initialize()` | `() => Promise<void>` | 手动触发初始化 |
+| `retry()` | `() => Promise<void>` | 重试初始化 |
+| `updateConfig(url)` | `(url: string) => Promise<void>` | 更新 URL 并重新初始化 |
+
+### ChatBot 的两种模式
+
+| 特性 | 独立模式 `<ChatBot url="...">` | 集成模式 `<ChatBot :chat-helper="helper">` |
+|------|------|------|
+| chatHelper 来源 | 内部自动创建 | 外部传入（如 useChatBootstrap） |
+| 初始化 | 自动执行 getAgentInfo → getSessions → chooseSession | 跳过，复用外部已初始化的实例 |
+| 适用场景 | 简单嵌入，快速集成 | 需要外部控制会话、共享实例 |
+| 常用于 | 独立页面嵌入 | AIBlueking 内部、自定义会话列表 |
+
+### 与 AIBlueking 配合
+
+`AIBlueking` 内部就是用 `useChatBootstrap` + ChatBot 集成模式运作的。如果你需要完全自定义面板 UI（不用 AIBlueking 的浮球/拖拽），可以直接使用同样的模式：
+
+```vue
+<template>
+  <div class="my-custom-panel">
+    <!-- 自定义的会话列表 -->
+    <aside>
+      <div v-for="s in sessionList" :key="s.sessionCode">{{ s.sessionName }}</div>
+    </aside>
+
+    <!-- ChatBot 作为聊天区域 -->
+    <main>
+      <ChatBot
+        v-if="isReady"
+        :chat-helper="chatHelper"
+        :url="url"
+      />
+    </main>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { watch } from 'vue';
+import { ChatBot, useChatBootstrap, SessionBusinessManager } from '@blueking/ai-blueking';
+
+const url = '/api/chat';
+
+const { chatHelper, isReady, sessionList, agentInfo } = useChatBootstrap({
+  url,
+  requestOptions: {
+    headers: () => ({ Authorization: `Bearer ${getToken()}` }),
+  },
+});
+
+// 创建 SessionBusinessManager 来管理会话（和 AIBlueking 内部做法一致）
+const sessionManager = new SessionBusinessManager(
+  chatHelper.session,
+  chatHelper.agent,
+);
+
+// isReady 后加载最近会话
+watch(isReady, async (ready) => {
+  if (ready) {
+    await sessionManager.loadRecentSession({ skipLoadSessions: true });
+  }
+});
+</script>
+```
+
+## 拦截器
+
+拦截器允许你在请求发出前和响应返回后执行自定义逻辑，适用于统一的错误处理、日志记录、数据转换等场景。
+
+```typescript
+const chatHelper = useChatHelper({
+  interceptors: {
+    request: (config) => {
+      // 请求发出前的处理
+      console.log('[请求]', config.url, config.method);
+
+      // 可以修改 config 后返回
+      config.headers['X-Timestamp'] = Date.now().toString();
+      return config;
+    },
+    response: (response) => {
+      // 响应返回后的处理
+      console.log('[响应]', response.status, response.data);
+
+      // 统一错误处理
+      if (response.data.code !== 0) {
+        showError(response.data.message);
+      }
+
+      return response;
+    },
+  },
+});
+```
+
+### 请求拦截器
+
+请求拦截器在每次 HTTP 请求发出之前执行：
+
+```typescript
+interceptors: {
+  request: (config) => {
+    // config 包含：url, method, headers, data 等
+    // 必须返回修改后的 config
+    return config;
+  },
+}
+```
+
+**常见用途：**
+
+- 添加认证信息
+- 注入追踪 ID
+- 请求日志记录
+- 请求数据转换
+
+### 响应拦截器
+
+响应拦截器在每次 HTTP 响应返回之后执行：
+
+```typescript
+interceptors: {
+  response: (response) => {
+    // response 包含：status, data, headers 等
+    // 必须返回 response
+    return response;
+  },
+}
+```
+
+**常见用途：**
+
+- 统一错误码处理
+- 响应数据转换
+- 响应日志记录
+- Token 过期自动刷新
+
+### 完整拦截器示例
+
+```typescript
+const chatHelper = useChatHelper({
+  interceptors: {
+    request: (config) => {
+      // 1. 注入追踪 ID
+      config.headers['X-Request-Id'] = crypto.randomUUID();
+
+      // 2. 记录请求日志
+      console.log(`[${config.method?.toUpperCase()}] ${config.url}`);
+
+      return config;
+    },
+    response: (response) => {
+      // 1. 统一错误处理
+      if (response.data?.code !== 0) {
+        const msg = response.data?.message || '请求失败';
+        // 特殊错误码处理
+        if (response.data?.code === 401) {
+          // Token 过期，跳转登录
+          redirectToLogin();
+        } else {
+          showError(msg);
+        }
+      }
+
+      // 2. 记录响应日志
+      console.log(`[响应] 状态码: ${response.status}`);
+
+      return response;
+    },
+  },
+});
+```
+
+## 动态请求头
+
+在实际项目中，请求头往往需要动态生成。以下是几种常见场景：
+
+### Token 刷新
+
+```typescript
+const requestOptions = {
+  headers: () => {
+    // 每次请求都获取最新 token
+    const token = tokenManager.getAccessToken();
+    return {
+      Authorization: `Bearer ${token}`,
+    };
+  },
+};
+```
+
+### 请求追踪 ID
+
+```typescript
+const requestOptions = {
+  headers: () => ({
+    Authorization: `Bearer ${getToken()}`,
+    'X-Request-Id': crypto.randomUUID(),       // 每次请求唯一 ID
+    'X-Trace-Id': getTraceId(),                // 链路追踪 ID
+    'X-Client-Timestamp': Date.now().toString(), // 客户端时间戳
+  }),
+};
+```
+
+### 基于环境的配置
+
+```typescript
+const requestOptions = {
+  headers: () => {
+    const base: Record<string, string> = {
+      'X-App-Code': APP_CODE,
+    };
+
+    // 开发环境添加调试头
+    if (import.meta.env.DEV) {
+      base['X-Debug-Mode'] = 'true';
+      base['X-Dev-User'] = 'developer';
+    }
+
+    return base;
+  },
+  data: () => ({
+    env: import.meta.env.MODE,
+    version: APP_VERSION,
+  }),
+};
+```
+
+## 综合示例
+
+以下是一个包含认证、动态头部的完整配置示例：
+
+```vue
+<template>
+  <AIBlueking
+    url="/api/v1/agent/chat"
+    :request-options="requestOptions"
+  />
+</template>
+
+<script setup lang="ts">
+import { AIBlueking } from '@blueking/ai-blueking';
+import { useAuth } from '@/composables/auth';
+import { useNotification } from '@/composables/notification';
+
+const { getToken, refreshToken } = useAuth();
+const { showError } = useNotification();
+
+const requestOptions = {
+  headers: () => ({
+    // 动态获取最新 token
+    Authorization: `Bearer ${getToken()}`,
+    // 追踪信息
+    'X-Request-Id': crypto.randomUUID(),
+    'X-App-Code': 'my-application',
+  }),
+  data: () => ({
+    // 附加到每个请求的业务数据
+    app_id: 'my-app',
+    tenant_id: getCurrentTenant(),
+    locale: getCurrentLocale(),
+  }),
+};
+</script>
+```

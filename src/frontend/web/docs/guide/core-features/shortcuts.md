@@ -1,377 +1,316 @@
-# 快捷操作
+# 快捷指令
 
-快捷操作是 AI 小鲸的核心功能之一，可以帮助用户快速执行常见任务，提高使用效率。v1.1.0 版本对快捷操作进行了重大升级，引入了自定义表单能力，使交互更加灵活和强大。
+::: warning 重要：快捷指令由 AIDev 后台配置
+标准流程中，快捷指令通过 `agent/info` 接口自动加载，**无需前端定义**。
+前端 `shortcuts` prop 仅用于特殊场景下的覆盖或补充。
+:::
 
-## 快捷操作的新特性
+快捷指令是 AI 小鲸的核心功能之一，允许用户通过预设的指令快速执行常见任务。v2.0 版本中，快捷操作由 [`ShortcutManager`](/guide/core-features/shortcuts#shortcutmanager) 统一管理，支持自定义表单、自动填充、正则匹配等能力。
 
-新版快捷操作支持：
+## 默认行为（零配置）
 
-1. **自定义表单输入**：不再局限于预设提示词，可以通过表单收集用户输入
-2. **多种组件类型**：支持文本输入框、下拉选择框、数字输入框和多行文本域等多种组件类型
-3. **自动填充选中文本**：可以智能地将用户选中的文本填充到指定表单项中
-4. **正则表达式匹配**：支持使用正则表达式匹配选中文本的特定部分 <Badge type="tip" text="v1.3.2 增强" />
-5. **别名显示**：支持为快捷指令设置显示别名，提供更灵活的展示方式 <Badge type="tip" text="v1.3.2" />
-6. **细粒度显示控制**：支持控制快捷指令在划词弹窗中的显示 <Badge type="tip" text="v1.3.2" />
-7. **后端处理逻辑**：表单数据不再拼接为前端prompt，而是作为结构化数据发送到后端处理
+当你在 AIDev 平台配置好 Agent 的快捷指令后，组件初始化时会自动完成：
 
-## 重要提示：后端适配要求
+1. 调用 `agent/info` 接口获取 Agent 配置
+2. 从 `conversationSettings.commands` 字段中解析快捷指令列表
+3. 自动渲染到欢迎页和对话窗口中
 
-**v1.1.0 版本要求后端必须进行适配**，才能正常使用快捷操作功能：
+**无需在前端传入任何 `shortcuts` prop**，一切由后台配置驱动。
 
-1. 快捷操作不再使用前端拼接 prompt 的方式处理
-2. 表单数据以结构化的方式直接发送到后端
-3. 后端需要处理 `command` 和 `context` 字段，生成适当的响应
+## 快捷指令数据结构
 
-如果您的后端尚未适配，请先与后端开发人员沟通，确保后端能够处理新的数据结构。
-
-## 基础使用
-
-### 配置快捷操作
-
-```vue
-<template>
-  <AIBlueking :shortcuts="shortcuts" />
-</template>
-
-<script setup>
-  const shortcuts = [
-    {
-      id: "explain",
-      name: "解释代码",
-      icon: "bkai-icon bkai-code",
-      components: [
-        {
-          type: "textarea",
-          key: "code",
-          label: "代码内容",
-          fillBack: true,
-          placeholder: "请输入或选中需要解释的代码",
-          rows: 5,
-        },
-      ],
-    },
-  ]
-</script>
-```
-
-### 处理快捷操作事件
-
-```vue
-<template>
-  <AIBlueking :shortcuts="shortcuts" @shortcut-click="handleShortcutClick" />
-</template>
-
-<script setup>
-  const handleShortcutClick = (data) => {
-    console.log("执行了快捷操作:", data.shortcut.name)
-    console.log("表单数据:", data.formData)
-  }
-</script>
-```
-
-## 快捷操作配置详解
-
-### IShortcut 接口
-
-快捷操作配置对象的完整接口定义：
+快捷指令通过 [`IShortcut`](/api/ai-blueking/types) 接口定义，扩展自 AG-UI SDK 的 `IAgentCommand`：
 
 ```typescript
 interface IShortcut {
-  id: string // 快捷操作的唯一标识符
-  name: string // 显示的操作名称
-  alias?: string // <Badge type="tip" text="v1.3.2" /> 显示别名，优先于 name 显示
-  icon?: string // 按钮图标的完整类名（如：'bkai-icon bkai-translate'）
-  enableFillBack?: boolean // <Badge type="tip" text="v1.3.2" /> 是否在划词弹窗中显示
-  components: Array<{
-    type: string // 组件类型
-    name?: string // 表单项名称
-    key: string // 表单项键名
-    placeholder?: string // 占位文本
-    default?: any // 默认值
-    required?: boolean // 是否必填
-    fillBack?: boolean // <Badge type="tip" text="v1.3.2 增强" /> 是否将选中文本填充到该组件
-    fillRegx?: string | RegExp // <Badge type="tip" text="v1.3.2" /> 用于从选中文本提取的正则表达式
-    rows?: number // 输入框行数（仅 textarea 类型有效）
-    min?: number // 最小值（仅 number 类型有效）
-    max?: number // 最大值（仅 number 类型有效）
-    options?: Array<{
-      // 下拉选项（仅 select 类型有效）
-      label: string
-      value: string | number
-    }>
-    hide?: boolean // 是否隐藏该组件 <Badge type="tip" text="v1.2.4-beta.3" />
-  }>
+  // === 基础属性 ===
+  id: string;                    // 唯一标识符
+  name: string;                  // 指令名称
+  alias?: string;                // 显示别名，优先于 name 显示
+  icon?: string;                 // 图标类名（如 'bkai-icon bkai-translate'）
+  iconRender?: (h) => VNode;     // 自定义 icon 渲染函数
+  description?: string;          // 描述信息
+
+  // === 表单配置 ===
+  components: IShortcutComponent[];  // 表单组件列表
+  formModel?: Record<string, any>;   // 表单数据模型
+
+  // === 行为控制 ===
+  mode?: 'simple' | 'advanced';       // 指令模式，默认 'advanced'
+  enable_fill_back?: boolean;          // 是否启用自动回填
+  fill_back_component_key?: string;    // 自动回填的目标字段 key
+  hideFooter?: boolean;                // 是否隐藏底部按钮区域
+  bindKey?: string;                    // 强制重新渲染的唯一键值
 }
 ```
 
-### hide 属性 <Badge type="tip" text="v1.2.4-beta.3" />
+### IShortcutComponent 表单组件
 
-`hide` 属性允许开发者动态控制快捷操作表单中特定组件的显示/隐藏。当设置为 `true` 时，该组件将不会在表单中显示，同时其数据也不会包含在提交的表单数据中。
+```typescript
+interface IShortcutComponent {
+  type: string;               // 组件类型: 'input' | 'textarea' | 'select' | 'number' | 'checkbox'
+  key: string;                // 表单项键名
+  name?: string;              // 表单项名称/标签
+  placeholder?: string;       // 占位文本
+  default?: any;              // 默认值
+  required?: boolean;         // 是否必填
+  hide?: boolean;             // 是否隐藏
+  fillBack?: boolean;         // 是否将选中文本填充到该组件
+  fillRegx?: string | RegExp; // 从选中文本提取内容的正则表达式
+  rows?: number;              // 文本框行数（仅 textarea 有效）
+  min?: number;               // 最小值（仅 number 有效）
+  max?: number;               // 最大值（仅 number 有效）
+  options?: Array<{           // 选项列表（仅 select 有效）
+    label: string;
+    value: string | number;
+  }>;
+  // === v2.0 扩展 ===
+  mode?: 'simple' | 'advanced';    // 单个组件展示模式
+  selectedText?: string | null;    // 选中的文本内容
+  showSendButton?: boolean;        // 是否显示发送按钮
+}
+```
 
-这在以下场景中特别有用：
-1. 根据条件动态显示/隐藏表单字段
-2. 在不同上下文中复用相同的快捷操作配置
-3. 实现更复杂的表单交互逻辑
+## 前端覆盖（特殊场景）
 
-## 快捷操作优化 <Badge type="tip" text="v1.2.5" />
+::: details 何时需要前端传入 shortcuts？
+仅在以下特殊场景中，才需要通过 `shortcuts` prop 传入快捷指令：
+- 需要在前端**覆盖**后端配置的指令
+- 需要**临时补充**额外的指令
+- 开发/调试阶段，后端尚未配置指令
 
-v1.2.5 版本对快捷操作功能进行了重要的架构优化和用户体验提升：
+前端传入的 `shortcuts` 优先级高于接口返回值。
+:::
 
-### 架构优化
-
-- **组件简化**：移除了 `ai-selected-box` 组件，简化了快捷操作的整体架构
-- **事件处理优化**：重新设计了快捷操作点击事件的处理逻辑，提升了响应性能和稳定性
-- **过滤器增强**：优化了 `shortcutFilter` 函数的实现，增强了快捷操作的灵活性和可定制性
-
-### 新特性
-
-- **更强的类型支持**：改进了 TypeScript 类型定义，提供了更好的开发体验
-- **性能提升**：通过组件轻量化和事件处理优化，提升了整体性能表现
-- **更好的错误处理**：增强了错误捕获和处理机制，提供了更稳定的用户体验
-
-### 向后兼容
-
-所有现有快捷操作配置在 v1.2.5 版本中仍然完全兼容，无需进行任何修改。优化主要针对内部实现，对外部 API 保持完全一致。
-
-### 使用建议
+通过 `shortcuts` prop 传入快捷指令列表：
 
 ```vue
 <template>
   <AIBlueking
-    :shortcuts="enhancedShortcuts"
-    :shortcut-filter="smartFilter"
+    :url="apiUrl"
+    :shortcuts="shortcuts"
+    :shortcut-limit="5"
     @shortcut-click="handleShortcutClick"
   />
 </template>
 
-<script setup>
-const enhancedShortcuts = [
+<script lang="ts" setup>
+import AIBlueking from '@blueking/ai-blueking';
+import '@blueking/ai-blueking/dist/vue3/style.css';
+import type { IShortcut } from '@blueking/ai-blueking';
+
+const apiUrl = '/api/ai/assistant/';
+
+const shortcuts: IShortcut[] = [
   {
-    id: 'smart_operation',
-    name: '智能操作',
-    icon: 'bkai-icon bkai-ai',
+    id: 'explain',
+    name: '解释代码',
+    icon: 'bkai-icon bkai-code',
+    enable_fill_back: true,
+    fill_back_component_key: 'code',
     components: [
       {
         type: 'textarea',
-        key: 'content',
-        name: '内容',
+        key: 'code',
+        name: '代码内容',
         fillBack: true,
-        placeholder: '请输入或选择内容',
-        // v1.2.5 优化后的 hide 属性支持更灵活的控制
-        hide: false
-      }
-    ]
-  }
-]
-
-// v1.2.5 优化后的过滤器性能更好
-const smartFilter = (shortcut, selectedText) => {
-  // 更智能的过滤逻辑
-  if (shortcut.id === 'code_analysis') {
-    return selectedText.includes('function') || selectedText.includes('const')
-  }
-  return true
-}
-</script>
-```
-
-```javascript
-{
-  id: 'dynamic_form',
-  name: '动态表单',
-  icon: 'bkai-icon bkai-form',
-  components: [
-    {
-      type: 'select',
-      key: 'userType',
-      name: '用户类型',
-      options: [
-        { label: '普通用户', value: 'normal' },
-        { label: 'VIP用户', value: 'vip' }
-      ],
-      placeholder: '请选择用户类型'
-    },
-    {
-      type: 'input',
-      key: 'vipCode',
-      name: 'VIP码',
-      placeholder: '请输入VIP码',
-      // 只有当用户类型为VIP时才显示此字段
-      hide: false // 初始可见，可通过程序动态控制
-    }
-  ]
-}
-```
-
-## 快捷指令增强功能 <Badge type="tip" text="v1.3.2" />
-
-v1.3.2 版本对快捷指令功能进行了重要增强，新增了别名显示、精准文本填充和细粒度显示控制等特性：
-
-### 别名显示
-
-快捷指令新增 `alias` 字段，用于显示与原始名称不同的别名。当设置了别名后，在所有展示位置（快捷栏、弹窗、表单等）会优先显示别名：
-
-```javascript
-const shortcuts = [
+        placeholder: '请输入或选中需要解释的代码',
+        rows: 5,
+      },
+      {
+        type: 'select',
+        key: 'language',
+        name: '编程语言',
+        options: [
+          { label: '自动检测', value: 'auto' },
+          { label: 'Python', value: 'python' },
+          { label: 'JavaScript', value: 'javascript' },
+          { label: 'Go', value: 'go' },
+        ],
+        default: 'auto',
+      },
+    ],
+  },
   {
     id: 'translate',
-    name: '翻译',  // 内部标识名称
-    alias: '智能翻译',  // 用户看到的名称
-    icon: 'bkai-icon bkai-translate',
-    // ... 其他配置
-  },
-  {
-    id: 'extract_email',
-    name: '提取邮箱',
-    alias: '邮箱提取器',  // 更友好的显示名称
-    icon: 'bkai-icon bkai-email',
-    // ... 其他配置
-  }
-]
-```
-
-**使用场景**：
-- 为技术性名称提供更用户友好的显示文本
-- 在不同语言环境下显示本地化名称
-- 保持内部标识稳定的同时调整外部显示
-
-### 精准文本填充 - fillRegx
-
-组件级别新增 `fillRegx` 字段，支持使用正则表达式从选中文本中提取特定内容：
-
-```javascript
-{
-  id: 'extract_url',
-  name: '分析链接',
-  alias: 'URL分析器',
-  icon: 'bkai-icon bkai-link',
-  enableFillBack: true,
-  components: [
-    {
-      type: 'textarea',
-      key: 'url',
-      name: 'URL地址',
-      fillBack: true,
-      // 只提取 URL 部分
-      fillRegx: 'https?://[^\\s]+',
-      placeholder: '自动提取选中文本中的URL'
-    }
-  ]
-}
-```
-
-**更多示例**：
-
-```javascript
-// 提取邮箱地址
-{
-  type: 'input',
-  key: 'email',
-  name: '邮箱',
-  fillBack: true,
-  fillRegx: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}'
-}
-
-// 提取代码块
-{
-  type: 'textarea',
-  key: 'code',
-  name: '代码',
-  fillBack: true,
-  fillRegx: '```[\\s\\S]*?```|`[^`]+`'  // 提取 markdown 代码块或行内代码
-}
-
-// 提取数字
-{
-  type: 'number',
-  key: 'amount',
-  name: '金额',
-  fillBack: true,
-  fillRegx: '\\d+(?:\\.\\d+)?'  // 提取整数或小数
-}
-```
-
-### 划词弹窗显示控制
-
-快捷指令级别新增 `enableFillBack` 字段，支持控制快捷指令是否在划词弹窗中显示：
-
-```javascript
-const shortcuts = [
-  {
-    id: 'simple_translate',
     name: '翻译',
+    alias: '智能翻译',
     icon: 'bkai-icon bkai-translate',
-    enableFillBack: true,  // 在划词弹窗中显示
-    components: [
-      {
-        type: 'textarea',
-        key: 'text',
-        name: '文本',
-        fillBack: true
-      }
-    ]
-  },
-  {
-    id: 'complex_analysis',
-    name: '深度分析',
-    icon: 'bkai-icon bkai-analysis',
-    enableFillBack: false,  // 不在划词弹窗中显示，仅在主菜单显示
-    components: [
-      // ... 复杂的表单配置
-    ]
-  }
-]
-```
-
-**使用场景**：
-- 简单快捷的操作显示在划词弹窗中
-- 复杂的多步骤操作仅在主菜单中显示
-- 根据场景区分快速操作和完整操作
-
-### 组合使用示例
-
-```javascript
-const shortcuts = [
-  {
-    id: 'smart_translate',
-    name: '翻译',
-    alias: '智能翻译助手',  // 友好的显示名称
-    icon: 'bkai-icon bkai-translate',
-    enableFillBack: true,  // 在划词弹窗中显示
+    enable_fill_back: true,
+    fill_back_component_key: 'text',
     components: [
       {
         type: 'textarea',
         key: 'text',
         name: '待翻译文本',
         fillBack: true,
-        fillRegx: '[^\\d\\s]+',  // 只提取非数字和非空白字符
-        placeholder: '自动填充选中的文本'
+        placeholder: '请输入或选中需要翻译的文本',
       },
       {
         type: 'select',
         key: 'targetLang',
         name: '目标语言',
         options: [
+          { label: '中文', value: 'zh' },
           { label: '英文', value: 'en' },
-          { label: '中文', value: 'zh' }
-        ]
-      }
-    ]
+          { label: '日文', value: 'jp' },
+        ],
+        default: 'en',
+      },
+    ],
+  },
+];
+
+const handleShortcutClick = (data: { shortcut: IShortcut; source: 'main' | 'popup' }) => {
+  console.log('执行快捷操作:', data.shortcut.name, '来源:', data.source);
+};
+</script>
+```
+
+## ShortcutManager
+
+`ShortcutManager` 是 v2.0 新增的快捷指令管理器，负责快捷指令的筛选和选择逻辑。
+
+### 快捷指令过滤
+
+通过 `shortcutFilter` prop 自定义过滤逻辑：
+
+```vue
+<template>
+  <AIBlueking
+    :url="apiUrl"
+    :shortcuts="shortcuts"
+    :shortcut-filter="customFilter"
+  />
+</template>
+
+<script setup>
+// 根据选中文本动态过滤快捷指令
+const customFilter = (shortcut, selectedText) => {
+  // 如果选中的文本包含代码特征，只显示代码相关快捷操作
+  if (selectedText?.includes('function') || selectedText?.includes('const')) {
+    return shortcut.id === 'explain' || shortcut.id === 'review';
+  }
+  return true;
+};
+</script>
+```
+
+## ShortcutRender 表单渲染
+
+快捷指令的表单由 `ShortcutRender` 组件负责渲染。支持以下组件类型：
+
+| 类型 | 描述 | 特有属性 |
+|------|------|---------|
+| `input` | 单行文本输入框 | — |
+| `textarea` | 多行文本输入框 | `rows`（行数，默认 3） |
+| `select` | 下拉选择框 | `options`（选项列表） |
+| `number` | 数字输入框 | `min`、`max`（范围限制） |
+| `checkbox` | 复选框 | — |
+
+### simple 和 advanced 模式
+
+快捷指令支持两种展示模式：
+
+- **advanced 模式**（默认）：展示完整表单，包含标题栏（header）、表单区域和底部按钮（footer）
+- **simple 模式**：直接展示表单组件，没有外层包装
+
+```typescript
+const simpleShortcut: IShortcut = {
+  id: 'quick_ask',
+  name: '快速提问',
+  mode: 'simple',         // 简单模式
+  hideFooter: true,        // 隐藏底部按钮
+  components: [
+    {
+      type: 'textarea',
+      key: 'question',
+      mode: 'simple',     // 组件也使用简单模式（无 label）
+      showSendButton: true, // 显示发送按钮
+    },
+  ],
+};
+```
+
+## ShortcutBtns 快捷按钮
+
+快捷按钮组显示在对话窗口中，用户可以点击快速发起操作。
+
+### shortcutLimit
+
+通过 `shortcutLimit` prop 控制显示数量：
+
+```vue
+<template>
+  <!-- 最多显示 3 个快捷按钮 -->
+  <AIBlueking :url="apiUrl" :shortcuts="shortcuts" :shortcut-limit="3" />
+</template>
+```
+
+### shortcut-click 事件
+
+当用户点击快捷操作按钮时触发，包含快捷指令对象和触发来源：
+
+```vue
+<template>
+  <AIBlueking
+    :url="apiUrl"
+    :shortcuts="shortcuts"
+    @shortcut-click="handleClick"
+  />
+</template>
+
+<script setup>
+const handleClick = (data) => {
+  console.log('指令:', data.shortcut.name);
+  console.log('来源:', data.source);  // 'main'（主菜单）或 'popup'（划词弹窗）
+};
+</script>
+```
+
+## fillBack 自动回填机制
+
+`fillBack` 机制允许将用户选中的文本自动回填到指定的表单字段中：
+
+1. 用户在页面上选中一段文本
+2. 划词弹窗展示快捷操作列表
+3. 用户点击快捷操作
+4. 组件查找 `fillBack: true` 的表单字段
+5. 将选中文本填充到该字段的 `default` 值
+
+### 结合 fillRegx 精准提取
+
+`fillRegx` 允许使用正则表达式从选中文本中提取特定内容：
+
+```typescript
+const shortcuts: IShortcut[] = [
+  {
+    id: 'extract_url',
+    name: 'URL 分析',
+    enable_fill_back: true,
+    fill_back_component_key: 'url',
+    components: [
+      {
+        type: 'textarea',
+        key: 'url',
+        name: 'URL 地址',
+        fillBack: true,
+        fillRegx: 'https?://[^\\s]+',      // 只提取 URL 部分
+        placeholder: '自动提取选中文本中的 URL',
+      },
+    ],
   },
   {
     id: 'extract_contact',
     name: '提取联系方式',
-    alias: '联系信息提取器',
-    icon: 'bkai-icon bkai-contact',
-    enableFillBack: true,
+    enable_fill_back: true,
     components: [
       {
         type: 'input',
         key: 'phone',
         name: '电话',
         fillBack: true,
-        fillRegx: '1[3-9]\\d{9}',  // 提取手机号
-        placeholder: '提取手机号码'
+        fillRegx: '1[3-9]\\d{9}',         // 提取手机号
       },
       {
         type: 'input',
@@ -379,249 +318,133 @@ const shortcuts = [
         name: '邮箱',
         fillBack: true,
         fillRegx: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}',  // 提取邮箱
-        placeholder: '提取邮箱地址'
-      }
-    ]
-  }
-]
+      },
+    ],
+  },
+];
 ```
 
-### 最佳实践
-
-1. **合理使用别名**：为用户提供清晰易懂的快捷指令名称
-2. **精确的正则表达式**：使用适当的正则表达式确保提取的内容准确
-3. **划词弹窗显示策略**：
-   - 简单、单步操作 → `enableFillBack: true`
-   - 复杂、多步操作 → `enableFillBack: false`
-4. **测试正则表达式**：在实际使用前充分测试正则表达式的匹配效果
-5. **提供回退机制**：即使正则匹配失败，也应确保表单可以正常使用
-
-### 支持的组件类型
-
-目前支持以下组件类型：
-
-| 类型       | 描述           | 特有属性                     |
-| ---------- | -------------- | ---------------------------- |
-| `text`     | 单行文本输入框 | -                            |
-| `textarea` | 多行文本输入框 | `rows`：文本框行数，默认为 3 |
-| `number`   | 数字输入框     | `min`, `max`：数值范围限制   |
-| `select`   | 下拉选择框     | `options`：选项列表          |
-
-## 高级用法
-
-### 组合多种表单组件
-
-```javascript
-{
-  id: 'translate',
-  name: '翻译',
-  icon: 'bkai-icon bkai-translate',
-  components: [
-    {
-      type: 'textarea',
-      key: 'text',
-      name: '待翻译文本',
-      fillBack: true,
-      placeholder: '请输入或选中需要翻译的文本'
-    },
-    {
-      type: 'select',
-      key: 'targetLang',
-      name: '目标语言',
-      options: [
-        { label: '中文', value: 'zh' },
-        { label: '英文', value: 'en' },
-        { label: '日文', value: 'jp' }
-      ],
-      placeholder: '请选择目标语言'
-    },
-    {
-      type: 'select',
-      key: 'style',
-      name: '翻译风格',
-      options: [
-        { label: '标准', value: 'standard' },
-        { label: '正式', value: 'formal' },
-        { label: '口语化', value: 'casual' }
-      ],
-      placeholder: '请选择翻译风格'
-    }
-  ]
-}
-```
-
-### 使用正则表达式匹配选中文本
-
-```javascript
-{
-  id: 'analyze_error',
-  name: '分析错误',
-  icon: 'bkai-icon bkai-bug',
-  components: [
-    {
-      type: 'textarea',
-      key: 'error_message',
-      label: '错误信息',
-      fillBack: true,
-      fillRegx: /Error:(.+)/,  // 使用正则表达式对象
-      placeholder: '请输入或选中错误信息'
-    },
-    {
-      type: 'input',
-      key: 'context',
-      label: '上下文信息',
-      placeholder: '请提供发生错误的上下文'
-    }
-  ]
-}
-```
-
-### 控制快捷指令弹窗
-
-在某些情况下，您可能不希望在页面的特定区域选中文字时弹出快捷指令窗口。例如，在一个代码编辑器或者一个具有复杂交互的表格中，这个弹窗可能会干扰正常操作。
-
-AI 小鲸提供了一个简单的方法来禁用特定区域的弹窗功能。您只需要在不希望弹出快捷指令的任何 HTML 元素上添加 `ai-blueking-hide` 属性即可。
-
-```html
-<div ai-blueking-hide>
-  <p>在这部分区域内选中文本，将不会触发 AI 小鲸的快捷指令弹窗。</p>
-  <code> // 这里是代码区域，同样不会触发弹窗 const x = 10; console.log(x); </code>
-</div>
-```
-
-当您在带有 `ai-blueking-hide` 属性的元素或其任何子元素中选择文本时，快捷指令弹窗将不会出现。这为您提供了精细的控制能力，确保 AI 小鲸的交互不会干扰您应用中的其他功能。
-
-#### 工作原理
-
-AI 小鲸在响应文本选择事件时，会从被选中的文本所在的元素开始，向上遍历DOM树。如果在这个遍历过程中发现了任何一个元素带有 `ai-blueking-hide` 属性，它就会停止处理，从而阻止了弹窗的显示。
-
-这个特性对于提升与现有复杂前端应用的集成体验非常有用。更多关于内容引用的信息，请参考[内容引用](./content-referencing.md)文档。
-
-### 配置数字输入
-
-```javascript
-{
-  id: 'generate_code',
-  name: '生成代码',
-  icon: 'bkai-icon bkai-code',
-  components: [
-    {
-      type: 'input',
-      key: 'description',
-      label: '描述',
-      placeholder: '请描述需要生成的代码功能'
-    },
-    {
-      type: 'number',
-      key: 'lines',
-      label: '代码行数',
-      default: 20,
-      min: 5,
-      max: 100,
-      required: true
-    }
-  ]
-}
-```
-
-## 服务端处理
-
-当用户点击快捷操作按钮并提交表单后，表单数据会作为 `context` 参数发送到服务端。后端可以根据这些数据提供更加定制化的响应。
-
-```javascript
-// 后端接收到的数据结构示例
-{
-  "property": {
-    "extra": {
-      "command": "translate", // 快捷操作ID
-      "context": [
-        { "key": "text", "value": "这是需要翻译的文本" },
-        { "key": "targetLang", "value": "en" },
-        { "key": "style", "value": "formal" }
-      ]
-    }
-  }
-}
-```
-
-> **重要：** 后端需要通过 `command` 识别快捷操作类型，并从 `context` 中获取表单数据进行处理。不再依赖前端拼接的 `prompt` 字符串。
-
-## 与RequestOptions结合使用
-
-您可以通过组件的 `requestOptions` 属性传递额外的上下文数据，这些数据会与快捷操作的表单数据合并：
+## 代码示例：完整快捷指令配置
 
 ```vue
 <template>
   <AIBlueking
+    :url="apiUrl"
     :shortcuts="shortcuts"
-    :request-options="{
-      context: [{ key: 'language', value: 'typescript' }],
-    }"
+    :shortcut-limit="5"
+    :shortcut-filter="smartFilter"
+    :enable-popup="true"
+    @shortcut-click="onShortcutClick"
   />
 </template>
-```
 
-## 快捷操作增强 (v1.2.4-beta.2)
+<script lang="ts" setup>
+import AIBlueking from '@blueking/ai-blueking';
+import '@blueking/ai-blueking/dist/vue3/style.css';
+import type { IShortcut } from '@blueking/ai-blueking';
 
-v1.2.4-beta.2版本进一步增强了快捷操作的灵活性和用户体验，新增了以下功能：
+const apiUrl = '/api/ai/assistant/';
 
-### 自动提交
+const shortcuts: IShortcut[] = [
+  {
+    id: 'code_review',
+    name: '代码审查',
+    alias: 'Code Review',
+    icon: 'bkai-icon bkai-code',
+    enable_fill_back: true,
+    fill_back_component_key: 'code',
+    components: [
+      {
+        type: 'textarea',
+        key: 'code',
+        name: '代码',
+        fillBack: true,
+        rows: 8,
+        required: true,
+        placeholder: '粘贴或选中需要审查的代码',
+      },
+      {
+        type: 'select',
+        key: 'focus',
+        name: '关注点',
+        options: [
+          { label: '安全性', value: 'security' },
+          { label: '性能', value: 'performance' },
+          { label: '可读性', value: 'readability' },
+          { label: '全面审查', value: 'all' },
+        ],
+        default: 'all',
+      },
+    ],
+  },
+  {
+    id: 'summarize',
+    name: '总结',
+    icon: 'bkai-icon bkai-summary',
+    enable_fill_back: true,
+    fill_back_component_key: 'text',
+    components: [
+      {
+        type: 'textarea',
+        key: 'text',
+        name: '内容',
+        fillBack: true,
+        placeholder: '输入需要总结的内容',
+      },
+      {
+        type: 'number',
+        key: 'maxWords',
+        name: '字数上限',
+        default: 200,
+        min: 50,
+        max: 1000,
+      },
+    ],
+  },
+];
 
-对于通过文本选中后弹出的快捷操作（`enablePopup: true`），现在支持自动提交。如果一个快捷指令只有一个表单项，并且该表单项通过 `fillBack: true` 自动填充了内容，那么该操作将自动执行，无需用户再次点击提交按钮。这大大简化了常见的单步操作，如“翻译”或“解释代码”。
+// 智能过滤：根据选中文本内容动态显示快捷操作
+const smartFilter = (shortcut: IShortcut, selectedText: string) => {
+  if (!selectedText) return true;
 
-### 显示数量限制
-
-新增 `shortcutLimit` 属性，可以控制在弹出窗口中显示的快捷操作数量。当快捷操作较多时，可以避免列表过长。
-
-```vue
-<template>
-  <AIBlueking :shortcuts="shortcuts" :shortcut-limit="3" />
-</template>
-```
-
-### 动态过滤
-
-新增 `shortcutFilter` 属性，它是一个函数，可以用来动态地过滤要显示的快捷操作。这个函数会在每次弹出快捷操作菜单时执行。
-
-函数签名：`(shortcut: IShortcut, selectedText: string) => boolean`
-
-当用户选中了页面上的文本时，每个快捷操作的组件（components）会自动获得一个 `selectedText` 属性，其中包含当前选中的文本内容。这使得您可以根据选中的文本内容来过滤快捷操作。
-
-```vue
-<template>
-  <AIBlueking :shortcuts="shortcuts" :shortcut-filter="myFilter" />
-</template>
-
-<script setup>
-  const myFilter = (shortcut, selectedText) => {
-    // 只显示ID为 'translate' 或 'explain' 的快捷操作
-    if (!["translate", "explain"].includes(shortcut.id)) {
-      return false
-    }
-
-    // 如果选中的文本包含代码特征，只显示"解释代码"快捷操作
-    if (shortcut.id === "explain" && selectedText?.includes("function")) {
-      return true
-    }
-
-    // 对于翻译操作，只有当选中的文本长度在合理范围内时才显示
-    if (shortcut.id === "translate" && selectedText && selectedText.length > 0 && selectedText.length < 1000) {
-      return true
-    }
-
-    return false
+  // 代码审查只在选中代码时显示
+  if (shortcut.id === 'code_review') {
+    return /function|const|let|var|class|import|def|func/.test(selectedText);
   }
+  return true;
+};
+
+const onShortcutClick = (data: { shortcut: IShortcut; source: 'main' | 'popup' }) => {
+  console.log(`执行 [${data.shortcut.name}]，来源: ${data.source}`);
+};
 </script>
 ```
 
-这些增强功能使快捷操作的管理更加强大和灵活，能够适应更多复杂的应用场景。
+## 服务端处理
 
-## 最佳实践
+快捷指令提交的表单数据以结构化方式发送到后端：
 
-1. **简洁明了的名称**：为快捷操作设置简洁、明确的名称，让用户一目了然
-2. **合理设置表单项**：只收集必要的信息，避免过多的表单项影响用户体验
-3. **设置合理的默认值**：为常用选项设置合理的默认值，减少用户操作
-4. **使用图标增强辨识度**：为快捷操作配置直观的图标，提高用户识别速度
-5. **利用自动填充功能**：合理使用 `fillBack` 和 `fillRegx` 属性，减少用户输入
-6. **配置必填字段**：使用 `required` 属性标记必填字段，确保收集到必要信息
-7. **与后端协调**：确保前端配置的快捷操作ID和表单项与后端处理逻辑一致
+```javascript
+// 后端接收到的请求体（property 部分）
+{
+  "property": {
+    "extra": {
+      "command": "code_review",             // 快捷指令 ID
+      "context": [
+        { "key": "code", "value": "..." },   // 表单数据
+        { "key": "focus", "value": "all" }
+      ],
+      "cite": {
+        "type": "structured",
+        "title": "代码审查",
+        "data": [
+          { "key": "代码", "value": "..." },
+          { "key": "关注点", "value": "全面审查" }
+        ]
+      }
+    }
+  }
+}
+```
+
+> **注意**：后端需要通过 `command` 识别快捷操作类型，从 `context` 中获取表单数据进行处理。表单数据不再由前端拼接为 prompt 字符串。

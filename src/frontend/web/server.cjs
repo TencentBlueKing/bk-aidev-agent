@@ -1,10 +1,23 @@
+/**
+ * 文档站生产/预览用静态服务 + Mock（/mock-agui/api）。
+ * VitePress 自带的 `vitepress preview` 不会加载 Vite dev 中间件，原子组装演示会 404；请用 `pnpm preview` 或本脚本。
+ */
 const express = require('express');
 const path = require('path');
 const RateLimit = require('express-rate-limit');
 
+const { createMockAguiRouter } = require('./docs/.vitepress/mock-agui-routes.cjs');
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 const distDir = path.resolve(__dirname, './dist');
+
+app.use(express.json());
+
+// 原子组装文档演示：Mock AG-UI + REST（与 VitePress dev 中 middleware 行为一致）
+const mockAgui = express.Router();
+mockAgui.use(createMockAguiRouter());
+app.use('/mock-agui/api', mockAgui);
 
 // 全局变量中间件（如果需要）
 app.use((req, res, next) => {

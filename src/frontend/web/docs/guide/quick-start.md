@@ -1,145 +1,149 @@
-# 快速上手
+# 快速开始
 
-本章节将引导您完成 AI 小鲸组件的安装和基本使用。
-::: tip 版本兼容性说明
-- 小鲸组件 1.x：需要后台 aidev_agent 版本 ≥ 1.0.0b1
-- 小鲸组件 0.x：需使用对应的旧版 aidev_agent
-
-请确保组件与后台版本匹配，否则将无法正常工作。
-:::
+本文将引导你在几分钟内完成 AI 小鲸的安装与基础集成。
 
 ## 安装
 
-您可以使用 npm 或 yarn 来安装 AI 小鲸：
-
 ```bash
-# 使用 npm
+# 完整安装
 npm install @blueking/ai-blueking
 
-# 使用 yarn
-yarn add @blueking/ai-blueking
+# 或仅安装需要的包
+npm install @blueking/chat-x @blueking/chat-helper
 ```
 
-## 基本使用
-
-根据您的项目框架选择对应的引入方式和代码示例。
-
-::: tip 注意
-必须提供有效的 `url` 属性，指向您的 AI 服务接口地址，否则组件无法正常工作。
+::: tip 提示
+`@blueking/ai-blueking` 已包含 `@blueking/chat-x` 和 `@blueking/chat-helper` 的依赖，完整安装后无需重复安装子包。
 :::
 
-:::code-group
+## 最小示例
+
+::: tip URL 来自 AIDev 平台
+组件初始化时会自动通过 `agent/info` 接口加载 Agent 配置（快捷指令、提示词、欢迎语等），**无需手动传入**。你只需要提供 AIDev 平台发布后的 URL。
+:::
+
+### ChatBot 页面嵌入
+
+以下是最简单的集成方式——只需一个 `url` 即可拥有完整的聊天能力。
+
+::: code-group
+
 ```vue [Vue 3]
 <template>
-  <div>
-    <button @click="showAI">打开 AI 小鲸</button>
-
-    <AIBlueking
-      ref="aiBlueking"
-      :url="apiUrl"
-      @show="handleShow"
-      @close="handleClose"
+  <div style="width: 600px; height: 800px;">
+    <ChatBot
+      url="https://your-aidev-url.com/api/"
+      @error="handleError"
     />
   </div>
 </template>
 
-<script lang="ts" setup>
-import { ref } from 'vue';
-// 1. 引入组件
-import AIBlueking from '@blueking/ai-blueking';
-// 2. 引入样式
-import '@blueking/ai-blueking/dist/vue3/style.css';
+<script setup lang="ts">
+import { ChatBot } from '@blueking/ai-blueking';
 
-const aiBlueking = ref<InstanceType<typeof AIBlueking> | null>(null);
-// 3. 设置 AI 服务接口地址
-const apiUrl = 'https://your-api-endpoint.com/assistant/';
-
-const showAI = () => {
-  // 调用组件实例的方法显示窗口
-  aiBlueking.value?.handleShow();
-};
-
-const handleShow = () => {
-  console.log('AI 小鲸已显示');
-};
-
-const handleClose = () => {
-  console.log('AI 小鲸已关闭');
-};
+const handleError = (error: Error) => console.error('错误:', error);
 </script>
 ```
 
 ```vue [Vue 2]
 <template>
-  <div>
-    <button @click="showAI">打开 AI 小鲸</button>
-
-    <AIBlueking
-      ref="aiBlueking"
-      :url="apiUrl"
-      @show="handleShow"
-      @close="handleClose"
+  <div style="width: 600px; height: 800px;">
+    <ChatBot
+      url="https://your-aidev-url.com/api/"
+      @error="handleError"
     />
   </div>
 </template>
 
 <script>
-// 1. 引入 Vue 2 版本组件
-import AIBlueking from '@blueking/ai-blueking/vue2';
-// 2. 引入 Vue 2 版本样式
-import '@blueking/ai-blueking/dist/vue2/style.css';
+import { ChatBot } from '@blueking/ai-blueking';
 
 export default {
-  components: {
-    AIBlueking
-  },
-  data() {
-    return {
-      // 3. 设置 AI 服务接口地址
-      apiUrl: 'https://your-api-endpoint.com/assistant/'
-    };
-  },
+  components: { ChatBot },
   methods: {
-    showAI() {
-      // 调用组件实例的方法显示窗口
-      this.$refs.aiBlueking.handleShow();
+    handleError(error) {
+      console.error('错误:', error);
     },
-    handleShow() {
-      console.log('AI 小鲸已显示');
-    },
-    handleClose() {
-      console.log('AI 小鲸已关闭');
-    }
-  }
+  },
 };
 </script>
 ```
 
-现在，您应该可以在页面上看到一个按钮，点击后会显示 AI 小鲸的对话窗口。
+:::
 
-## 多会话管理 <Badge type="tip" text="v1.1.0" />
+### AIBlueking 浮窗模式
 
-从 v1.1.0 开始，AI 小鲸支持多会话管理功能，让您可以同时管理多个独立的聊天会话：
+如果你需要一个全局 AI 助手浮窗，使用 `AIBlueking` 同样只需传入 `url`：
 
-### 主要功能
+```vue
+<template>
+  <AIBlueking url="https://your-aidev-url.com/api/" />
+</template>
 
-- **🆕 创建新会话**：点击头部的新增聊天图标快速创建新对话
-- **📊 历史会话**：点击历史图标查看和管理所有会话
-- **🔄 会话切换**：在不同会话间无缝切换，保持独立的对话上下文
-- **✏️ 会话管理**：重命名、删除会话，支持搜索功能
+<script setup lang="ts">
+import { AIBlueking } from '@blueking/ai-blueking';
+</script>
+```
 
-### 快速体验
+挂载后页面右下角会出现 Nimbus 浮球图标，点击即可展开对话面板。
 
-1. 启动 AI 小鲸后，您会看到头部有两个新图标
-2. 点击 **➕** 图标创建新的聊天会话
-3. 点击 **📋** 图标打开历史会话面板
-4. 在历史面板中可以切换、重命名或删除会话，历史会话按时间分组显示（今天、昨天、3天前、5天前、1周前、更早）
+::: warning Vue 2 用户注意
+Vue 2 项目需要额外安装 `@vue/composition-api` 以获得组合式 API 支持：
 
-想了解更多多会话功能，请参阅 [会话生命周期管理指南](/guide/advanced-usage/session-lifecycle)。
+```bash
+npm install @vue/composition-api
+```
+
+并在入口文件中注册：
+
+```js
+import Vue from 'vue';
+import VueCompositionAPI from '@vue/composition-api';
+
+Vue.use(VueCompositionAPI);
+```
+:::
+
+## 样式引入
+
+使用 AI 小鲸组件前，请确保引入对应的样式文件：
+
+```ts
+// 引入 ai-blueking 样式（已包含 chat-x 样式）
+import '@blueking/ai-blueking/dist/style.css';
+
+// 如果仅使用 chat-x
+import '@blueking/chat-x/dist/style.css';
+```
+
+## 认证配置
+
+如果你的后端 API 需要认证，通过 `requestOptions` 配置请求头：
+
+```vue
+<template>
+  <ChatBot
+    url="https://your-aidev-url.com/api/"
+    :request-options="requestOptions"
+  />
+</template>
+
+<script setup lang="ts">
+import { ChatBot } from '@blueking/ai-blueking';
+
+const requestOptions = {
+  headers: () => ({ Authorization: `Bearer ${getToken()}` }),
+};
+</script>
+```
+
+> `headers` 推荐使用**函数形式**，确保每次请求时获取最新的认证 token，避免 token 过期问题。
 
 ## 下一步
 
-恭喜！您已经成功集成了 AI 小鲸组件。接下来您可以：
+你已经完成了最基础的集成！接下来可以深入了解更多能力：
 
-- 了解更多 [核心功能](/guide/core-features/chat-interaction)
-- 查看 [API 文档](/api/props) 了解所有可用属性
+- [**AIBlueking 浮窗模式**](/guide/integration-modes/aiblueking-floating) — 全局 AI 助手，浮球入口 + 拖拽面板 + 划词弹窗
+- [**ChatBot 页面嵌入模式**](/guide/integration-modes/chatbot-embedded) — 嵌入式聊天，适合页面主内容区
+- [**API 文档**](/api/overview) — 查阅完整的组件 Props、Events、Slots 参考
+- [**示例**](/demos/full-panel) — 浏览更多交互示例与最佳实践
