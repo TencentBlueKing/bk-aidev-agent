@@ -1,5 +1,9 @@
 # 组件介绍
 
+::: tip Vibe Coding 快速接入
+不想手动翻阅文档？你可以通过 AIDev Skill 市场获取 `ai-blueking-guide` Skill，在 AI IDE 中用自然语言描述需求，让 AI 帮你生成集成代码。详见 [Skill 指引](/guide/core-features/skill-guide)。
+:::
+
 ## 什么是 AI 小鲸 v2.0
 
 AI 小鲸 v2.0 是蓝鲸智云推出的新一代智能对话前端解决方案。它采用**三层模块化架构**，将 UI 渲染、业务逻辑和状态管理彻底分离，为开发者提供灵活、可扩展的智能对话集成能力。

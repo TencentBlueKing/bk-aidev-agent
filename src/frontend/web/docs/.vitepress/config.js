@@ -58,6 +58,7 @@ export default defineConfig({
             { text: "会话管理", link: "/guide/core-features/session-management" },
             { text: "消息分享", link: "/guide/core-features/sharing" },
             { text: "UI 定制", link: "/guide/core-features/ui-customization" },
+            { text: "Skill 指引", link: "/guide/core-features/skill-guide" },
           ],
         },
         {
@@ -179,6 +180,7 @@ export default defineConfig({
       "process.env.BK_SITE_URL": JSON.stringify(process.env.BK_SITE_URL),
       "process.env.BK_API_URL_TMPL": JSON.stringify(process.env.BK_API_URL_TMPL),
       "process.env.BK_API_GATEWAY_NAME": JSON.stringify(process.env.BK_API_GATEWAY_NAME),
+      "process.env.BK_AIDEV_URL": JSON.stringify(process.env.BK_AIDEV_URL),
     },
   },
 })
