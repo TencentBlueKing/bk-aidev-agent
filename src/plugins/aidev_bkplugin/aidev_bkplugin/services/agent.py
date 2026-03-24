@@ -4,7 +4,6 @@ import json
 import logging
 import os
 import uuid
-from functools import lru_cache
 
 import pkg_resources
 from aidev_agent.api.bk_aidev import BKAidevApi
@@ -16,6 +15,7 @@ from aidev_agent.services.pydantic_models import ChatPrompt, ExecuteKwargs
 from bkapi_client_core.exceptions import HTTPResponseError
 from django.conf import settings
 from django.core.cache import cache
+from langgraph.checkpoint.memory import MemorySaver
 from opentelemetry import trace
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
@@ -25,13 +25,10 @@ from ..utils import bkaidev_api_client
 logger = logging.getLogger(__name__)
 
 
-@lru_cache(maxsize=1)
 def _get_checkpointer():
     """获取 Checkpointer 单例实例（延迟导入避免循环依赖）"""
-    from aidev_bkplugin.models import Checkpoint, Write
-    from aidev_bkplugin.packages.checkpoint import BKDjangoSaver
-
-    return BKDjangoSaver(checkpoint_model=Checkpoint, writes_model=Write)
+    memory_saver = MemorySaver()
+    return memory_saver
 
 
 def build_chat_completion_agent_by_session_code(

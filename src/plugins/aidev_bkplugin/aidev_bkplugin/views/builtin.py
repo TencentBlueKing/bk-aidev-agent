@@ -8,7 +8,7 @@ from logging import getLogger
 from aidev_agent.enums import PromptRole
 from aidev_agent.services.chat import ChatPrompt
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
-from aidev_agent.services.messages_handler import ConsumerPreemptedError, GeneratorStreamingHelper, StreamCancelledError
+from aidev_agent.services.messages_handler import GeneratorStreamingHelper
 from aidev_agent.services.messages_handler.constants import TimeoutConfig
 from aidev_agent.services.messages_handler.factory import message_handler_factory
 from aidev_agent.services.pydantic_models import ExecuteKwargs
@@ -256,7 +256,6 @@ class ChatCompletionViewSet(PluginViewSet):
         execute_kwargs.session_code = request.data.get("session_code", "")
 
         _input = request.data.get("input", "")
-        event_handler = None  # 用于断点续传
 
         try:
             thread_id = execute_kwargs.thread_id
@@ -288,8 +287,6 @@ class ChatCompletionViewSet(PluginViewSet):
                     session_code=session_code,
                     username=request.user.username,
                 )
-                # 获取 event_handler 用于后续更新会话状态
-                event_handler = agent_instance.event_handler
                 # 如果有 input 参数，追加到会话历史（支持新会话或追加消息）
                 if _input:
                     # 处理 chat_history 为 None 或空列表的情况（如编辑第一条消息时）
@@ -316,12 +313,6 @@ class ChatCompletionViewSet(PluginViewSet):
             # 执行 agent
             if execute_kwargs.stream:
                 generator = agent_instance.execute(execute_kwargs)
-                # 断点续传：在流式开始/结束时更新会话状态
-                if event_handler and all(
-                    hasattr(event_handler, m) for m in ["set_streaming_started", "set_streaming_finished"]
-                ):
-                    event_handler.set_streaming_started()
-                    generator = self._wrap_streaming_with_status(generator, event_handler)
                 return self.streaming_response(generator)
             else:
                 result = agent_instance.execute(execute_kwargs)
@@ -365,33 +356,6 @@ class ChatCompletionViewSet(PluginViewSet):
         if execute_kwargs.stream:
             return self.streaming_response(result)
         return Response(result)
-
-    def _wrap_streaming_with_status(self, generator, event_handler):
-        """包装流式生成器，在结束时更新会话状态为 finished
-
-        如果消费者被新消费者抢占（断点续传场景），不更新 status，
-        让新消费者负责管理会话状态。
-        如果客户端断开连接（GeneratorExit），也不更新 status，
-        因为 agent 可能仍在运行，用户刷新后需要续传。
-        """
-        _preempted = False
-        _client_disconnected = False
-        _cancelled = False
-        try:
-            for chunk in generator:
-                yield chunk
-        except GeneratorExit:
-            _client_disconnected = True
-            return
-        except ConsumerPreemptedError:
-            _preempted = True
-        except StreamCancelledError:
-            _cancelled = True
-        except Exception:
-            raise
-        finally:
-            if not _preempted and not _client_disconnected and not _cancelled:
-                event_handler.set_streaming_finished()
 
     def streaming_response(self, generator):
         sr = StreamingHttpResponse(generator)

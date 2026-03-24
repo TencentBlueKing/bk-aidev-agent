@@ -284,7 +284,11 @@ class ChatCompletionAgent(BaseModel):
         helper = GeneratorStreamingHelper(
             thread_id=queue_thread_id or agent_input.thread_id,
         )
-        return helper.stream(async_to_sync_generator(agui_entry.run(agent_input)))
+        return helper.stream(async_to_sync_generator(agui_entry.run(agent_input)), on_complete=self._on_complete)
+
+    def _on_complete(self):
+        if self.event_handler and hasattr(self.event_handler, "set_streaming_finished"):
+            self.event_handler.set_streaming_finished()
 
     def _get_agent(
         self, messages: list[BaseMessage], *, execute_kwargs: ExecuteKwargs

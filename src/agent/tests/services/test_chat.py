@@ -1,7 +1,7 @@
 import json
 import threading
 import time
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from ag_ui.core import EventType
@@ -11,6 +11,7 @@ from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
 from aidev_agent.packages.langchain_core.models.mock import MockChatModel, MockResponse
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.services.chat import ChatCompletionAgent, ExecuteKwargs
+from aidev_agent.services.event_handlers.base import BaseSessionWriter
 from aidev_agent.services.pydantic_models import (
     AgentOptions,
     ChatPrompt,
@@ -580,6 +581,49 @@ class TestCommonAgentChatStreaming:
         text_deltas = [e.get("delta", "") for e in results if e.get("type") == EventType.TEXT_MESSAGE_CONTENT]
         final_text = "".join(text_deltas).strip()
         assert final_text == "<result>云桌面黑屏处理步骤</result>"
+
+
+class TestOnComplete:
+    """测试 _on_complete 回调：流结束时通知 event_handler 更新会话状态"""
+
+    @pytest.mark.parametrize(
+        "event_handler, should_call",
+        [
+            pytest.param(None, False, id="no_handler"),
+            pytest.param(lambda e: None, False, id="plain_callable_without_method"),
+        ],
+    )
+    def test_on_complete_noop(self, event_handler, should_call):
+        """event_handler 为 None 或不含 set_streaming_finished 时不报错"""
+        agent = ChatCompletionAgent(
+            chat_model=MockChatModel(responses=["ok"]),
+            chat_history=[ChatPrompt(role="user", content="hi")],
+            event_handler=event_handler,
+        )
+        agent._on_complete()
+
+    def test_on_complete_calls_set_streaming_finished(self):
+        """event_handler 拥有 set_streaming_finished 时应被调用"""
+        mock_handler = MagicMock(spec=BaseSessionWriter)
+        agent = ChatCompletionAgent(
+            chat_model=MockChatModel(responses=["ok"]),
+            chat_history=[ChatPrompt(role="user", content="hi")],
+            event_handler=mock_handler,
+        )
+        agent._on_complete()
+        mock_handler.set_streaming_finished.assert_called_once()
+
+    def test_on_complete_invoked_during_stream(self):
+        """端到端验证：流式执行结束后 on_complete 被触发"""
+        mock_handler = MagicMock(spec=BaseSessionWriter)
+        llm = MockChatModel(responses=["hello"], stream_chunk_size=2)
+        agent = ChatCompletionAgent(
+            chat_model=llm,
+            chat_history=[ChatPrompt(role="user", content="hi")],
+            event_handler=mock_handler,
+        )
+        list(agent.execute(ExecuteKwargs(stream=True)))
+        mock_handler.set_streaming_finished.assert_called_once()
 
 
 @pytest.mark.skipif(
