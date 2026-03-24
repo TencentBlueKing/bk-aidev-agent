@@ -26,9 +26,10 @@ dependencies = [
     "pika>=1.3.0",
     "langchain-classic>=1.0.1",
     "wrapt>1,<2",
+    "json-repair>=0.58.6",
 ]
 name = "aidev-agent"
-version = "2.0.0b6"
+version = "2.0.0b7"
 description = "bkaidev agent builder"
 
 [dependency-groups]

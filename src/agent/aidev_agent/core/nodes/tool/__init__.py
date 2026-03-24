@@ -16,10 +16,13 @@ We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
 
+from .json_repair_wrapper import json_repair_on_error_async_wrapper, json_repair_on_error_sync_wrapper
 from .node import build_tool_node
 from .pydantic_models import ToolNodeSettings
 
 __all__ = [
     "build_tool_node",
     "ToolNodeSettings",
+    "json_repair_on_error_sync_wrapper",
+    "json_repair_on_error_async_wrapper",
 ]

@@ -26,6 +26,7 @@ from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt.tool_node import AsyncToolCallWrapper, ToolCallRequest, ToolCallWrapper
 from langgraph.types import Command
 
+from .json_repair_wrapper import json_repair_on_error_async_wrapper, json_repair_on_error_sync_wrapper
 from .pydantic_models import ToolNodeSettings
 from .result_limit_wrapper import build_result_limit_async_wrapper, build_result_limit_sync_wrapper
 from .timer_wrapper import timer_async_wrapper, timer_sync_wrapper
@@ -208,6 +209,10 @@ def build_tool_node(
     # 组合包装器：内置包装器 + 用户自定义包装器
     sync_wrapper_list: list[ToolCallWrapper] = []
     async_wrapper_list: list[AsyncToolCallWrapper] = []
+    # 是否启用参数校验失败时自动修复重试（响应式）
+    if node_options.use_json_repair_on_error:
+        sync_wrapper_list.append(json_repair_on_error_sync_wrapper)
+        async_wrapper_list.append(json_repair_on_error_async_wrapper)
     # 是否启用工具计时
     if node_options.use_timer:
         sync_wrapper_list.append(timer_sync_wrapper)
