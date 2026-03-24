@@ -90,7 +90,7 @@ modules:
             description: message handler type for multi-process mode
       processes:
         - name: web
-          procCommand: gunicorn bk_plugin_runtime.wsgi --timeout 120 -k gthread -w 2 --max-requests=1000 --threads 64
+          procCommand: gunicorn bk_plugin_runtime.wsgi --timeout 300 -k gthread -w 2 --max-requests 256 --max-requests-jitter 30 --threads 32
           services:
             - name: web
               protocol: TCP
