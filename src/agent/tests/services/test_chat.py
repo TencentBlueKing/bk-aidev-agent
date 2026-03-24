@@ -800,3 +800,221 @@ class TestCommonAgentChatStreamingWithAgentLegacyStreaming:
         assert "用户希望我帮他复述一下上下文" in "".join(think_contents)
         normalized_text = "".join(text_contents).strip().strip('"')
         assert normalized_text == "你好\n我可以帮你什么?"
+
+
+class TestFilterUnmatchedToolCalls:
+    """测试过滤没有匹配工具结果的 assistant 消息"""
+
+    def test_filter_assistant_without_tool_calls(self):
+        """case 1: assistant 消息没有 tool_calls，应该保留"""
+        from aidev_agent.services.agent import AgentInstanceFactory
+
+        chat_history = [
+            ChatPrompt(id="1", role="user", content="你好"),
+            ChatPrompt(id="2", role="assistant", content="你好！有什么我可以帮助你的吗？"),
+            ChatPrompt(id="3", role="user", content="今天天气怎么样？"),
+        ]
+
+        factory = AgentInstanceFactory(agent_code="test", agent_type="chat")
+        filtered = factory._filter_unmatched_tool_calls(chat_history)
+
+        assert len(filtered) == 3, "没有 tool_calls 的消息应该全部保留"
+
+    def test_filter_assistant_with_matched_tool_calls(self):
+        """case 2: assistant 消息有 tool_calls 且有对应的 tool 结果，应该保留"""
+        from aidev_agent.services.agent import AgentInstanceFactory
+
+        chat_history = [
+            ChatPrompt(id="1", role="user", content="今天广州天气怎么样？"),
+            ChatPrompt(
+                id="2",
+                role="assistant",
+                content="让我查一下天气。",
+                builtin_property={
+                    "tool_calls": [
+                        {
+                            "id": "call_abc123",
+                            "function": {"name": "get_weather", "arguments": '{"location": "广州"}'},
+                        }
+                    ]
+                },
+            ),
+            ChatPrompt(
+                id="3",
+                role="tool",
+                content="广州今天多云，25度",
+                builtin_property={"tool_call_id": "call_abc123"},
+            ),
+            ChatPrompt(id="4", role="assistant", content="广州今天多云，温度25度。"),
+        ]
+
+        factory = AgentInstanceFactory(agent_code="test", agent_type="chat")
+        filtered = factory._filter_unmatched_tool_calls(chat_history)
+
+        assert len(filtered) == 4, "完整匹配的工具调用链应该保留"
+        assert filtered[1].role == "assistant", "assistant 消息应该保留"
+        assert filtered[2].role == "tool", "tool 消息应该保留"
+
+    def test_filter_assistant_with_unmatched_tool_calls(self):
+        """case 3: assistant 消息有 tool_calls 但没有对应的 tool 结果，应该被过滤"""
+        from aidev_agent.services.agent import AgentInstanceFactory
+
+        chat_history = [
+            ChatPrompt(id="1", role="user", content="今天广州天气怎么样？"),
+            ChatPrompt(
+                id="2",
+                role="assistant",
+                content="让我查一下天气。",
+                builtin_property={
+                    "tool_calls": [
+                        {
+                            "id": "call_abc123",
+                            "function": {"name": "get_weather", "arguments": '{"location": "广州"}'},
+                        }
+                    ]
+                },
+            ),
+            # 没有 tool 结果消息
+            ChatPrompt(id="4", role="assistant", content="抱歉，查询失败。"),
+        ]
+
+        factory = AgentInstanceFactory(agent_code="test", agent_type="chat")
+        filtered = factory._filter_unmatched_tool_calls(chat_history)
+
+        # 有 tool_calls 但没有结果的 assistant 消息被过滤
+        assert len(filtered) == 2, "没有匹配结果的 assistant 消息应该被过滤"
+        # 第一条是 user
+        assert filtered[0].role == "user"
+        # 第二条是 assistant（没有 tool_calls 的那条，id=4）
+        assert filtered[1].role == "assistant"
+        assert filtered[1].id == "4"
+
+    def test_filter_multiple_tool_calls_partial_match(self):
+        """case 4: assistant 消息有多个 tool_calls，仅部分有对应结果，保留消息但移除未匹配的 tool_calls"""
+        from aidev_agent.services.agent import AgentInstanceFactory
+
+        chat_history = [
+            ChatPrompt(id="1", role="user", content="帮我查询广州和深圳的天气"),
+            ChatPrompt(
+                id="2",
+                role="assistant",
+                content="我来帮你查询两个城市的天气。",
+                builtin_property={
+                    "tool_calls": [
+                        {
+                            "id": "call_gz",
+                            "function": {"name": "get_weather", "arguments": '{"location": "广州"}'},
+                        },
+                        {
+                            "id": "call_sz",
+                            "function": {"name": "get_weather", "arguments": '{"location": "深圳"}'},
+                        },
+                    ]
+                },
+            ),
+            # 只有广州的天气结果，深圳的缺失
+            ChatPrompt(
+                id="3",
+                role="tool",
+                content="广州今天多云，25度",
+                builtin_property={"tool_call_id": "call_gz"},
+            ),
+            ChatPrompt(id="4", role="assistant", content="广州今天多云。"),
+        ]
+
+        factory = AgentInstanceFactory(agent_code="test", agent_type="chat")
+        filtered = factory._filter_unmatched_tool_calls(chat_history)
+
+        # assistant 消息应该保留，但只有 call_gz 这个 tool_call
+        assert len(filtered) == 4, "部分匹配时应该保留 assistant 消息"
+        # 验证消息顺序和内容
+        assert filtered[0].role == "user"
+        assert filtered[0].id == "1"
+        # assistant 消息保留，但 tool_calls 只剩一个
+        assert filtered[1].role == "assistant"
+        assert filtered[1].id == "2"
+        # 验证 tool_calls 只保留了匹配的那个
+        remaining_calls = filtered[1].builtin_property.get("tool_calls", [])
+        assert len(remaining_calls) == 1, "应该只保留匹配的 tool_call"
+        assert remaining_calls[0]["id"] == "call_gz"
+        # tool 消息保留
+        assert filtered[2].role == "tool"
+        assert filtered[2].id == "3"
+        # 最后的 assistant 消息保留
+        assert filtered[3].role == "assistant"
+        assert filtered[3].id == "4"
+
+    def test_filter_multiple_unmatched_assistant_messages(self):
+        """case 5: 多条连续的 assistant 消息都有 tool_calls，只有最后一条有完整结果"""
+        from aidev_agent.services.agent import AgentInstanceFactory
+
+        chat_history = [
+            ChatPrompt(id="1", role="user", content="帮我创建需求"),
+            ChatPrompt(
+                id="2",
+                role="assistant",
+                content="好的，我来帮你创建。",
+                builtin_property={
+                    "tool_calls": [{"id": "call_1", "function": {"name": "create_story", "arguments": "{}"}}]
+                },
+            ),
+            ChatPrompt(
+                id="3",
+                role="assistant",
+                content="参数格式有问题，重试。",
+                builtin_property={
+                    "tool_calls": [{"id": "call_2", "function": {"name": "create_story", "arguments": "{}"}}]
+                },
+            ),
+            ChatPrompt(
+                id="4",
+                role="assistant",
+                content="再次尝试。",
+                builtin_property={
+                    "tool_calls": [{"id": "call_3", "function": {"name": "create_story", "arguments": "{}"}}]
+                },
+            ),
+            ChatPrompt(
+                id="5",
+                role="assistant",
+                content="最终成功了。",
+                builtin_property={
+                    "tool_calls": [{"id": "call_4", "function": {"name": "create_story", "arguments": "{}"}}]
+                },
+            ),
+            ChatPrompt(
+                id="6",
+                role="tool",
+                content="创建成功",
+                builtin_property={"tool_call_id": "call_4"},
+            ),
+            ChatPrompt(id="7", role="assistant", content="需求已创建完成。"),
+        ]
+
+        factory = AgentInstanceFactory(agent_code="test", agent_type="chat")
+        filtered = factory._filter_unmatched_tool_calls(chat_history)
+
+        # 前 3 条 assistant 消息(id=2,3,4)的 tool_calls 都没有匹配的结果，应该被过滤
+        # id=5 的 assistant 有匹配结果，应该保留
+        # 结果: user, assistant(id=5, 有tool_calls且全部匹配), tool, assistant(id=7, 无tool_calls)
+        assert len(filtered) == 4, "所有 tool_calls 都没有结果的 assistant 消息应该被过滤"
+        # 验证保留的消息
+        assert filtered[0].role == "user"
+        assert filtered[0].id == "1"
+        # id=5 的 assistant 消息有 tool_calls 且全部匹配，应该保留
+        assert filtered[1].id == "5", "有完整匹配的 assistant 消息应该保留"
+        assert filtered[1].role == "assistant"
+        assert filtered[2].role == "tool"
+        assert filtered[2].id == "6"
+        # id=7 的 assistant 消息没有 tool_calls，应该保留
+        assert filtered[3].id == "7", "没有 tool_calls 的 assistant 消息应该保留"
+        assert filtered[3].role == "assistant"
+
+    def test_filter_empty_chat_history(self):
+        """case 6: 空聊天历史，应该返回空列表"""
+        from aidev_agent.services.agent import AgentInstanceFactory
+
+        factory = AgentInstanceFactory(agent_code="test", agent_type="chat")
+        filtered = factory._filter_unmatched_tool_calls([])
+
+        assert filtered == [], "空聊天历史应该返回空列表"

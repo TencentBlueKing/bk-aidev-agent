@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 from typing import Any, Callable, Dict, List, Optional, Type, cast
@@ -324,6 +325,10 @@ class AgentInstanceFactory:
             if each.role != "assistant":
                 continue
             each.content = _remove_think(each.content)
+
+        # 过滤没有匹配工具结果的 assistant 消息
+        chat_history = self._filter_unmatched_tool_calls(chat_history)
+
         self._modify_last_system_message(chat_history, agent_code or self.agent_code)
         chat_history = role_history + chat_history
         return chat_history
@@ -474,6 +479,130 @@ class AgentInstanceFactory:
 
         logger.info("AgentInstanceFactory: removing last assistant message with generating keyword")
         session_context_data.pop()
+
+    def _filter_unmatched_tool_calls(self, chat_history: List[ChatPrompt]) -> List[ChatPrompt]:
+        """过滤没有匹配工具结果的 assistant 消息
+
+        当 assistant 消息包含 tool_calls 但没有对应的 tool 结果消息时，
+        该 assistant 消息会导致模型调用失败（模型期望每个 tool_use 都有对应的 tool_result）。
+
+        Args:
+            chat_history: 聊天历史列表
+
+        Returns:
+            过滤后的聊天历史列表，移除了不完整的工具调用链
+        """
+        if not chat_history:
+            return chat_history
+
+        # 收集所有 tool 消息的 tool_call_id
+        tool_result_ids: set[str] = set()
+        for prompt in chat_history:
+            if prompt.role == "tool":
+                tool_call_id = prompt.builtin_property.get("tool_call_id", "")
+                if tool_call_id:
+                    tool_result_ids.add(tool_call_id)
+
+        # 过滤 assistant 消息中未匹配的 tool_calls
+        # 如果所有 tool_calls 都没有结果，则过滤整个 assistant 消息
+        # 如果部分 tool_calls 有结果，则只移除没有结果的 tool_calls
+        filtered_history: List[ChatPrompt] = []
+        for prompt in chat_history:
+            if prompt.role != "assistant":
+                filtered_history.append(prompt)
+                continue
+
+            # 提取 assistant 消息中的 tool_calls
+            tool_calls = self._extract_tool_calls_from_prompt(prompt)
+
+            if not tool_calls:
+                # 没有 tool_calls 的 assistant 消息，直接保留
+                filtered_history.append(prompt)
+                continue
+
+            # 分离匹配和未匹配的 tool_calls
+            matched_calls = [tc for tc in tool_calls if tc.get("id", "") in tool_result_ids]
+            unmatched_calls = [tc for tc in tool_calls if tc.get("id", "") not in tool_result_ids]
+
+            if not matched_calls:
+                # 所有工具调用都没有结果，移除整个消息
+                logger.info(
+                    f"AgentInstanceFactory: filtering assistant message with no matched tool_calls, "
+                    f"message_id=[{prompt.id}], tool_calls_count=[{len(tool_calls)}]"
+                )
+                continue
+
+            if unmatched_calls:
+                # 部分工具调用有结果，保留消息但移除未匹配的 tool_calls
+                logger.info(
+                    f"AgentInstanceFactory: removing unmatched tool_calls from assistant message, "
+                    f"message_id=[{prompt.id}], total_calls=[{len(tool_calls)}], "
+                    f"matched=[{len(matched_calls)}], unmatched=[{len(unmatched_calls)}]"
+                )
+                # 更新 builtin_property 中的 tool_calls，只保留匹配的
+                self._update_tool_calls_in_prompt(prompt, matched_calls)
+
+            # 保留该 assistant 消息
+            filtered_history.append(prompt)
+
+        return filtered_history
+
+    def _extract_tool_calls_from_prompt(self, prompt: ChatPrompt) -> List[dict]:
+        """从 ChatPrompt 中提取 tool_calls 列表
+
+        Args:
+            prompt: ChatPrompt 对象
+
+        Returns:
+            tool_calls 列表，每个元素包含 id, name, args 字段
+        """
+        builtin_property = prompt.builtin_property or {}
+        tool_calls_raw = builtin_property.get("tool_calls", [])
+
+        if not tool_calls_raw:
+            return []
+
+        tool_calls = []
+        for tc in tool_calls_raw:
+            # arguments 在数据库中存储为 JSON 字符串，需要解析为字典
+            args_str = tc.get("function", {}).get("arguments", "{}")
+            try:
+                args = json.loads(args_str) if isinstance(args_str, str) else args_str
+            except json.JSONDecodeError:
+                args = {}
+
+            tool_calls.append(
+                {
+                    "id": tc.get("id", ""),
+                    "name": tc.get("function", {}).get("name", ""),
+                    "args": args,
+                    "type": "tool_call",
+                }
+            )
+
+        return tool_calls
+
+    def _update_tool_calls_in_prompt(self, prompt: ChatPrompt, matched_tool_calls: List[dict]) -> None:
+        """更新 ChatPrompt 中的 tool_calls，只保留匹配的调用
+
+        Args:
+            prompt: ChatPrompt 对象
+            matched_tool_calls: 匹配的 tool_calls 列表（来自 _extract_tool_calls_from_prompt 的格式）
+        """
+        builtin_property = prompt.builtin_property or {}
+        tool_calls_raw = builtin_property.get("tool_calls", [])
+
+        # 获取匹配的 tool_call id 集合
+        matched_ids = {tc.get("id", "") for tc in matched_tool_calls}
+
+        # 从原始 tool_calls 中过滤出匹配的项
+        filtered_tool_calls = [tc for tc in tool_calls_raw if tc.get("id", "") in matched_ids]
+
+        # 更新 builtin_property
+        if builtin_property:
+            builtin_property["tool_calls"] = filtered_tool_calls
+        else:
+            prompt.builtin_property = {"tool_calls": filtered_tool_calls}
 
     def _modify_last_system_message(self, chat_history: List[ChatPrompt], agent_code: Optional[str]) -> None:
         if not agent_code:
