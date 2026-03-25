@@ -65,9 +65,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aidev-agent", specifier = "==2.0.0b5" },
+    { name = "aidev-agent", specifier = "==2.0.0b7" },
     { name = "aidev-ai-blueking", specifier = "==2.0.0b2" },
-    { name = "aidev-bkplugin", specifier = "==2.0.0b3" },
+    { name = "aidev-bkplugin", specifier = "==2.0.0b4" },
     { name = "aidev-wxbot", specifier = "==2.0.0b1" },
     { name = "bk-plugin-framework", specifier = ">=2.3.9" },
     { name = "bkapi-bk-apigateway", specifier = "==1.0.12" },
@@ -111,7 +111,7 @@ dev = [
 
 [[package]]
 name = "aidev-agent"
-version = "2.0.0b5"
+version = "2.0.0b7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
@@ -121,6 +121,7 @@ dependencies = [
     { name = "environs" },
     { name = "h11" },
     { name = "jinja2" },
+    { name = "json-repair" },
     { name = "langchain" },
     { name = "langchain-classic" },
     { name = "langchain-core" },
@@ -136,9 +137,9 @@ dependencies = [
     { name = "werkzeug" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b8/97/eef2e86893f9e21fdb5e30ef24b5f92d98fd9ed8891c9fa83a21518126b9/aidev_agent-2.0.0b5.tar.gz", hash = "sha256:c68dd1a2319b99502f07ce7230a7f8de21dfd41e9193dd215cd89bc0bb5a44d9", size = 314012, upload-time = "2026-03-19T07:27:39.452Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d6/46/72cc4f1b79ad733e2740aa2ab1728ce30da2eaa707812600b4a390336b8b/aidev_agent-2.0.0b7.tar.gz", hash = "sha256:cf067c7664e1193d1747941403bad316da12bdccfd7c3de192bf5389ba0cfaa0", size = 324022, upload-time = "2026-03-25T01:24:52.182Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d8/99/a49af878f56c8b152fbf8327c5abf6a2023f3dbf46bda81a10a50fde5844/aidev_agent-2.0.0b5-py3-none-any.whl", hash = "sha256:868b2957ed776f37d812088b04b02dd20f499eecf0d557938a64dba257037ad2", size = 286397, upload-time = "2026-03-19T07:27:36.113Z" },
+    { url = "https://files.pythonhosted.org/packages/7d/4f/9adcfd2829acfbb368847f761d1fb9510c6a22ae5a04269e6ac36e4605cf/aidev_agent-2.0.0b7-py3-none-any.whl", hash = "sha256:e377f2fe47375f22da20ddf6aaae294f55f5a6b4029834ee9847bcc618228d4a", size = 292283, upload-time = "2026-03-25T01:24:48.347Z" },
 ]
 
 [[package]]
@@ -156,16 +157,16 @@ wheels = [
 
 [[package]]
 name = "aidev-bkplugin"
-version = "2.0.0b3"
+version = "2.0.0b4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aidev-agent" },
     { name = "blueapps" },
     { name = "django" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a3/e8/26d915a873bcf61cc64cb0a93519028e66e1ef1f990f82dece6db0046aef/aidev_bkplugin-2.0.0b3.tar.gz", hash = "sha256:e8ffe2ffffefcae2be021da896e671bfe4a7fd2952cdc310dfb8a312cd844ad9", size = 53252, upload-time = "2026-03-19T07:27:46.359Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e0/69/ef50212a972d2f6546539009ee79afe431efdfee35bcc6d588f457b71b99/aidev_bkplugin-2.0.0b4.tar.gz", hash = "sha256:1f26121a6da5c792beea400f919b06d29725fdd49d3a55e4b1e1dee8d87b1267", size = 52780, upload-time = "2026-03-24T02:55:30.048Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/63/db/5f3d3d1b0a313087d65c03cbc073aba04c440b7fc60e0cb588880e1dcf47/aidev_bkplugin-2.0.0b3-py3-none-any.whl", hash = "sha256:ba8e422751a079da26823f90a0bb4b369298f38fba6e7f4112920e8b77819e7c", size = 60929, upload-time = "2026-03-19T07:27:44.407Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/d4/a8923c1cc5be1a7aa1dff4bb8c625364a141fdb1a144439b6ec168fb989d/aidev_bkplugin-2.0.0b4-py3-none-any.whl", hash = "sha256:68667b864e60d68197b9acda660d1155abadb56b3661e7a448f4c713de17c2cc", size = 60402, upload-time = "2026-03-24T02:55:28.408Z" },
 ]
 
 [[package]]
@@ -1178,6 +1179,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ba/cb/64e7f21dd357e8cd6b3c919c26fac7fc198385bbd1d85bb3b5355600d787/jiter-0.11.1-graalpy311-graalpy242_311_native-macosx_11_0_arm64.whl", hash = "sha256:464ba6d000585e4e2fd1e891f31f1231f497273414f5019e27c00a4b8f7a24ad", size = 301454, upload-time = "2025-10-17T11:31:05.338Z" },
     { url = "https://files.pythonhosted.org/packages/55/b0/54bdc00da4ef39801b1419a01035bd8857983de984fd3776b0be6b94add7/jiter-0.11.1-graalpy311-graalpy242_311_native-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:055568693ab35e0bf3a171b03bb40b2dcb10352359e0ab9b5ed0da2bf1eb6f6f", size = 336801, upload-time = "2025-10-17T11:31:06.893Z" },
     { url = "https://files.pythonhosted.org/packages/de/8f/87176ed071d42e9db415ed8be787ef4ef31a4fa27f52e6a4fbf34387bd28/jiter-0.11.1-graalpy311-graalpy242_311_native-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e0c69ea798d08a915ba4478113efa9e694971e410056392f4526d796f136d3fa", size = 343452, upload-time = "2025-10-17T11:31:08.259Z" },
+]
+
+[[package]]
+name = "json-repair"
+version = "0.58.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/76/70/484f97a744d2614218a2b162004accda3f3c4ccc8c5d688712624567ebec/json_repair-0.58.6.tar.gz", hash = "sha256:aa740113a1c9dede4ba84c29aa8f81493253aede6f0e4edde9a560ec4b1d7762", size = 44804, upload-time = "2026-03-16T13:43:34.722Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/da/bb/c019ac05a6923c5776fa134c65e5b19d216ef17227618d93b1f608bc2806/json_repair-0.58.6-py3-none-any.whl", hash = "sha256:e438a1e4ea03179dfe9a05dfd738e678e888f1ea5b4a40398f8f220925df1c5c", size = 43482, upload-time = "2026-03-16T13:43:33.569Z" },
 ]
 
 [[package]]

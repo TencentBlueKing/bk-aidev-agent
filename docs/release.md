@@ -1,3 +1,29 @@
+# Release Note - 2.0.0b9
+**发布日期**: 2026-03-25
+
+## 核心依赖包
+- aidev-agent==2.0.0b7
+- aidev-ai-blueking==2.0.0b2
+- aidev-bkplugin==2.0.0b4
+- aidev-wxbot==2.0.0b1
+
+## aidev-agent
+### ✨ 新增功能
+- 工具调用协议优化
+
+### 🛠️ 优化改进
+- 过滤掉没有匹配的工具调用 AI message
+- 调整智能体启动参数
+- 调整 `ExecuteKwargs` 的 `stream` 默认值为 `False`
+- producer 完成后延迟清理孤立会话，避免用户断开后资源泄漏
+- 消费结束后主动删除 RabbitMQ 队列和死信交换机，避免资源泄漏
+
+## 智能体模板
+### 🛠️ 优化改进
+- 更新智能体模板 SDK
+
+
+
 # Release Note - 2.0.0
 **发布日期**: 2026-03-19
 

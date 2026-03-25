@@ -7,7 +7,7 @@ authors = [{ name = "blueking" }]
 requires-python = "~=3.11.9"
 dependencies = [
     "aidev-agent==2.0.0b7",
-    "aidev-bkplugin==2.0.0b3",
+    "aidev-bkplugin==2.0.0b4",
     "aidev-wxbot==2.0.0b1",
     "aidev-ai-blueking==2.0.0b2",
     "bk-plugin-framework>=2.3.9",
