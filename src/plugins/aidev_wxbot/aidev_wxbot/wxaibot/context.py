@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 # 流式桥接：chunk 合并阈值（think/content 累积超过此长度再写队列）；首包「正在思考中...」由 views 返回，此处不处理
 CHUNK_FLUSH_THRESHOLD = 50
+MAX_BATCH_CONSUME_COUNT = 30
+MAX_THINK_ONLY_BATCH_CONSUME_COUNT = 10
+THINKING_MSG = "正在思考中...."
 
 
 def stream_msg(content, is_finish, stream_id):
@@ -67,6 +70,9 @@ class LlmChunkMsg(BaseModel):
         else:
             return ""
 
+    def _is_think_only_chunk(self, message_data: dict) -> bool:
+        return bool(message_data.get("think_content")) and not message_data.get("content")
+
     def append_to_cache(self, rabbitmq_client):
         """将消息内容发送到RabbitMQ队列"""
         try:
@@ -97,7 +103,6 @@ class LlmChunkMsg(BaseModel):
         """从RabbitMQ队列读取消息内容"""
         try:
             queue_name = self.stream_id
-            is_finish = False
             stream_time = int(self.stream_id.split("_")[1])
 
             # 检查消息是否超时
@@ -113,33 +118,49 @@ class LlmChunkMsg(BaseModel):
                     logger.info(f"stream_id:{self.stream_id} 消息还未有第一次回复...")
                     time.sleep(1)
             else:
-                return stream_msg("正在思考中....", is_finish, self.stream_id)
+                return stream_msg(THINKING_MSG, self.is_finish, self.stream_id)
 
-            # 读取消息
-            for i in range(30):  # 最多尝试30次
+            latest_message_data = None
+
+            # 批量读取当前积压的消息，但只返回最新快照，避免重复拼接历史内容
+            for batch_index in range(MAX_BATCH_CONSUME_COUNT):
                 try:
                     message_info = rabbitmq_client.get_message(queue_name, auto_ack=True)
-                    if message_info:
-                        message_data = message_info["body"]
-                        content = message_data.get("content", "")
-                        thinking_content = message_data.get("think_content", "")
-                        if thinking_content:
-                            content = f"<think>{thinking_content}</think>{content}"
-                        if message_data.get("is_finish", False):
-                            try:
-                                rabbitmq_client.delete_queue(queue_name)
-                                logger.debug(f"stream_id:{self.stream_id} 队列 {queue_name} 已删除")
-                                self.docs = message_data.get("docs", [])
-                                content += self.docs_content
-                            except Exception as e:
-                                logger.error(f"stream_id:{self.stream_id} 删除队列 {queue_name} 失败: {e}")
-                        logger.info(f"stream_id:{self.stream_id} 回复的内容: {content}")
-                        return stream_msg(content, message_data.get("is_finish", False), self.stream_id)
-                    else:
+                    if not message_info:
+                        if latest_message_data:
+                            break
                         time.sleep(0.3)
+                        continue
+
+                    latest_message_data = message_info["body"]
+                    if latest_message_data.get("is_finish", False):
+                        break
+                    if self._is_think_only_chunk(latest_message_data) and (
+                        batch_index + 1 >= MAX_THINK_ONLY_BATCH_CONSUME_COUNT
+                    ):
+                        break
                 except Exception as e:
                     logger.error(f"stream_id:{self.stream_id} 读取队列消息出错: {e}")
                     return stream_msg("读取消息失败，请重试", True, self.stream_id)
+
+            if not latest_message_data:
+                return stream_msg(THINKING_MSG, self.is_finish, self.stream_id)
+
+            self.is_finish = latest_message_data.get("is_finish", False)
+            content = latest_message_data.get("content", "")
+            thinking_content = latest_message_data.get("think_content", "")
+            if thinking_content:
+                content = f"<think>{thinking_content}</think>{content}"
+            if self.is_finish:
+                try:
+                    rabbitmq_client.delete_queue(queue_name)
+                    logger.debug(f"stream_id:{self.stream_id} 队列 {queue_name} 已删除")
+                    self.docs = latest_message_data.get("docs", [])
+                    content += self.docs_content
+                except Exception as e:
+                    logger.error(f"stream_id:{self.stream_id} 删除队列 {queue_name} 失败: {e}")
+            logger.info(f"stream_id:{self.stream_id} 回复的内容: {content}")
+            return stream_msg(content, self.is_finish, self.stream_id)
         except Exception as e:
             logger.error(f"stream_id:{self.stream_id} wxaibot_msg_json_from_cache 出错: {e}")
             return stream_msg("读取消息失败，请重试", True, self.stream_id)

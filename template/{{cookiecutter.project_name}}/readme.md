@@ -218,6 +218,30 @@ cruft update
 
 - stream：是否流式输出
 
+如果智能体绑定的模型是支持图生文的模型,还可以以下面方式传图片
+
+```
+{
+  "input": "用户内容",
+  "chat_history": [
+    {
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "描述一下这张图片的内容"},
+        {"type": "image_url", "image_url": { "url": "https://example.jpg" }},
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": "AI内容"
+    }
+  ],
+  "execute_kwargs": {
+    "stream": true
+  }
+}
+```
+
 ### 3.2 应用态调用
 
 1. 应用态接口必须通过 header 头（`X-BKAIDEV-USER`）传递用户信息
