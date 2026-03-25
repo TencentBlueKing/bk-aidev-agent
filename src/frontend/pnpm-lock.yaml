@@ -217,14 +217,14 @@ importers:
   publish-template:
     dependencies:
       '@blueking/ai-blueking':
-        specifier: 2.0.0-beta.2
-        version: 2.0.0-beta.2(highlight.js@11.11.1)(typescript@5.8.3)(vue@3.5.27(typescript@5.8.3))
+        specifier: 2.0.0-beta.3
+        version: 2.0.0-beta.3(highlight.js@11.11.1)(typescript@5.8.3)(vue@3.5.27(typescript@5.8.3))
       '@blueking/chat-helper':
-        specifier: 0.0.1-beta.32
-        version: 0.0.1-beta.32(vue@3.5.27(typescript@5.8.3))
+        specifier: 0.0.1-beta.33
+        version: 0.0.1-beta.33(vue@3.5.27(typescript@5.8.3))
       '@blueking/chat-x':
-        specifier: 0.0.3-beta.3
-        version: 0.0.3-beta.3(typescript@5.8.3)
+        specifier: 0.0.3-beta.7
+        version: 0.0.3-beta.7(typescript@5.8.3)
       '@blueking/cli-service':
         specifier: 0.1.1
         version: 0.1.1(@babel/core@7.28.0)(@vue/compiler-sfc@3.5.27)(eslint@8.57.1)(less@4.3.0)(prettier@3.6.2)(sass@1.89.2)(stylus@0.64.0)(vue@3.5.27(typescript@5.8.3))
@@ -1011,8 +1011,8 @@ packages:
     peerDependencies:
       vue: ^3.5.24
 
-  '@blueking/ai-blueking@2.0.0-beta.2':
-    resolution: {integrity: sha512-1Ml2UR0OsJXGPg42lvI8caefUHKLycqtHvNmw2iv+639ISkOJLWSdJEAQT4IValuPZge/H0eN8W4NtPriW1Ahw==}
+  '@blueking/ai-blueking@2.0.0-beta.3':
+    resolution: {integrity: sha512-umJNPYfL0IenObsrSLtZBImghzUOsW0pAujy5tB6FY3OceEJVeTs3lK/fm0sR4i1cwu4JNcn6NL3a+m05QcLig==}
     peerDependencies:
       vue: ^3.5.24
 
@@ -1040,16 +1040,17 @@ packages:
     peerDependencies:
       vue: ^3.5.24
 
-  '@blueking/chat-helper@0.0.1-beta.32':
-    resolution: {integrity: sha512-exddLT/Xl+lj2oUjrM4Vhu3Hq+4/ZPbEZ2yRhjbBbVrwA3Y6/5ZxZYXzdIjz3pm5psd2ffidMeOv9ITRaHzEKw==}
+  '@blueking/chat-helper@0.0.1-beta.33':
+    resolution: {integrity: sha512-bh7yPyfQa3yD5R9Of71bIfKkD8chQaYP2ieiImpuE0Qm9hcLFpjxcpufvlwXGa0zTMyIhdUgxKruBWbiMGg6hg==}
     peerDependencies:
       vue: ^3.5.24
 
-  '@blueking/chat-x@0.0.3-beta.3':
-    resolution: {integrity: sha512-E3f3AUHSwY9tdr3GDHbpOM238Ne4b0C533phceFUrhBzZhnXC04Ovp9Y53rSJaNMmMkrucNWwKN4QLCiBFHn6g==}
-
   '@blueking/chat-x@0.0.3-beta.4':
     resolution: {integrity: sha512-AGeA49H/zJBkgzpllvDZG+6Pojd5XnWtDKyDepsnXBmL5PRiZ9b1piuuaKNZUEKzMiAnj5oczzzlP+zRbqgEQw==}
+
+  '@blueking/chat-x@0.0.3-beta.7':
+    resolution: {integrity: sha512-gC8OayGNk/UrsqBagkV+UYh8rS+90FUYgbN24SyQGkjStvQtUmrictGjQwhoO1FxEleShOwj6uKi+YvOynMyfA==}
+    hasBin: true
 
   '@blueking/cli-service@0.1.1':
     resolution: {integrity: sha512-CSfHppH93eLejvP4V9gMoMB+Eq0S0n0fHf31dCpQ3tBgnl6NreJ3rCbdXS7t9t1RMPy9gw8X3228KXmzVzcVEA==}
@@ -9617,10 +9618,10 @@ snapshots:
       - highlight.js
       - typescript
 
-  '@blueking/ai-blueking@2.0.0-beta.2(highlight.js@11.11.1)(typescript@5.8.3)(vue@3.5.27(typescript@5.8.3))':
+  '@blueking/ai-blueking@2.0.0-beta.3(highlight.js@11.11.1)(typescript@5.8.3)(vue@3.5.27(typescript@5.8.3))':
     dependencies:
-      '@blueking/chat-helper': 0.0.1-beta.32(vue@3.5.27(typescript@5.8.3))
-      '@blueking/chat-x': 0.0.3-beta.4(typescript@5.8.3)
+      '@blueking/chat-helper': 0.0.1-beta.33(vue@3.5.27(typescript@5.8.3))
+      '@blueking/chat-x': 0.0.3-beta.7(typescript@5.8.3)
       bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.27(typescript@5.8.3))
       tippy.js: 6.3.7
       vue: 3.5.27(typescript@5.8.3)
@@ -9652,11 +9653,11 @@ snapshots:
     dependencies:
       vue: 3.5.27(typescript@5.8.3)
 
-  '@blueking/chat-helper@0.0.1-beta.32(vue@3.5.27(typescript@5.8.3))':
+  '@blueking/chat-helper@0.0.1-beta.33(vue@3.5.27(typescript@5.8.3))':
     dependencies:
       vue: 3.5.27(typescript@5.8.3)
 
-  '@blueking/chat-x@0.0.3-beta.3(typescript@5.8.3)':
+  '@blueking/chat-x@0.0.3-beta.4(typescript@5.8.3)':
     dependencies:
       bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.27(typescript@5.8.3))
       dompurify: 3.2.6
@@ -9674,7 +9675,7 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
-  '@blueking/chat-x@0.0.3-beta.4(typescript@5.8.3)':
+  '@blueking/chat-x@0.0.3-beta.7(typescript@5.8.3)':
     dependencies:
       bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.27(typescript@5.8.3))
       dompurify: 3.2.6
