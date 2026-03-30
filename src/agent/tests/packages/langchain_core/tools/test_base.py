@@ -491,6 +491,7 @@ def test_make_mcp_tools_with_blueapps_auth(mock_mcp_client_class, sample_mcp_con
     """测试带 blueapps 认证的 MCP 工具"""
     # Mock 工具
     mock_tool = MagicMock(spec=StructuredTool)
+    mock_tool.name = "auth-tool"
     mock_tool.coroutine = AsyncMock()
     mock_tool.metadata = {}  # 添加 metadata 属性
 
@@ -986,3 +987,126 @@ async def test_tool_with_langgraph_integration():
         # 验证 state 被正确注入和渲染
         assert headers.get("X-User") == "alice", "X-User 应该从 state.user 渲染"
         assert body.get("session_id") == "session_789", "session_id 应该从 state.session_id 渲染"
+
+
+# ================== make_mcp_tools 核心逻辑补充测试 ==================
+
+
+@patch("aidev_agent.packages.langchain_core.tools.base.MultiServerMCPClient")
+def test_make_mcp_tools_selected_tools_filter(mock_mcp_client_class, mock_agent_options):
+    """测试 selected_tools 过滤：只保留配置中指定的工具"""
+    config = {
+        "server1": {
+            "url": "http://server1.com/mcp",
+            "transport": "streamable_http",
+            "selected_tools": ["tool_a", "tool_c"],
+        },
+    }
+
+    # Mock 3 个工具，只有 tool_a 和 tool_c 应该被保留
+    tools = []
+    for name in ["tool_a", "tool_b", "tool_c"]:
+        t = MagicMock(spec=StructuredTool)
+        t.name = name
+        t.coroutine = AsyncMock()
+        t.metadata = {}
+        tools.append(t)
+
+    mock_client = MagicMock()
+    mock_client.get_tools = AsyncMock(return_value=tools)
+    mock_mcp_client_class.return_value = mock_client
+
+    result = make_mcp_tools(config, mock_agent_options)
+
+    assert len(result.tools) == 2
+    assert {t.name for t in result.tools} == {"tool_a", "tool_c"}
+
+
+@patch("aidev_agent.packages.langchain_core.tools.base.MultiServerMCPClient")
+def test_make_mcp_tools_selected_tools_not_passed_to_client(mock_mcp_client_class, mock_agent_options):
+    """测试 selected_tools 和 mcp_type 字段在传给 MultiServerMCPClient 前被清除"""
+    config = {
+        "server1": {
+            "url": "http://server1.com/mcp",
+            "transport": "streamable_http",
+            "selected_tools": ["tool_a"],
+            "mcp_type": "resource",
+        },
+    }
+
+    mock_tool = MagicMock(spec=StructuredTool)
+    mock_tool.name = "tool_a"
+    mock_tool.coroutine = AsyncMock()
+    mock_tool.metadata = {}
+
+    mock_client = MagicMock()
+    mock_client.get_tools = AsyncMock(return_value=[mock_tool])
+    mock_mcp_client_class.return_value = mock_client
+
+    make_mcp_tools(config, mock_agent_options)
+
+    # 验证传给 MultiServerMCPClient 的配置中不包含 selected_tools 和 mcp_type
+    call_args = mock_mcp_client_class.call_args[0][0]
+    server_cfg = call_args["server1"]
+    assert "selected_tools" not in server_cfg
+    assert "mcp_type" not in server_cfg
+
+
+@patch("aidev_agent.packages.langchain_core.tools.base.MultiServerMCPClient")
+def test_make_mcp_tools_retry_on_first_failure(mock_mcp_client_class, mock_agent_options):
+    """测试第一次失败后重试第二次成功"""
+    config = {
+        "server1": {"url": "http://server1.com/mcp", "transport": "streamable_http"},
+    }
+
+    mock_tool = MagicMock(spec=StructuredTool)
+    mock_tool.name = "tool1"
+    mock_tool.coroutine = AsyncMock()
+    mock_tool.metadata = {}
+
+    # 第一个 client 实例 get_tools 抛异常，第二个成功
+    mock_client_fail = MagicMock()
+    mock_client_fail.get_tools = AsyncMock(side_effect=Exception("transient error"))
+    mock_client_ok = MagicMock()
+    mock_client_ok.get_tools = AsyncMock(return_value=[mock_tool])
+    mock_mcp_client_class.side_effect = [mock_client_fail, mock_client_ok]
+
+    result = make_mcp_tools(config, mock_agent_options)
+
+    # 重试后应该成功，无失败记录
+    assert len(result.tools) == 1
+    assert result.tools[0].name == "tool1"
+    assert result.fetch_failures == []
+    # MultiServerMCPClient 应该被调用了 2 次（重试）
+    assert mock_mcp_client_class.call_count == 2
+
+
+@patch("aidev_agent.packages.langchain_core.tools.base.MultiServerMCPClient")
+def test_make_mcp_tools_does_not_mutate_original_config(mock_mcp_client_class, mock_agent_options):
+    """测试不会修改原始传入的 server_config"""
+    config = {
+        "server1": {
+            "url": "http://server1.com/mcp",
+            "transport": "streamable_http",
+            "selected_tools": ["tool_a"],
+            "mcp_type": "resource",
+            "credential_type": "blueapps",
+        },
+    }
+    import copy
+
+    original_config = copy.deepcopy(config)
+
+    mock_tool = MagicMock(spec=StructuredTool)
+    mock_tool.name = "tool_a"
+    mock_tool.coroutine = AsyncMock()
+    mock_tool.metadata = {}
+
+    mock_client = MagicMock()
+    mock_client.get_tools = AsyncMock(return_value=[mock_tool])
+    mock_mcp_client_class.return_value = mock_client
+
+    make_mcp_tools(config, mock_agent_options)
+
+    # 原始配置不应被修改
+    assert config == original_config
