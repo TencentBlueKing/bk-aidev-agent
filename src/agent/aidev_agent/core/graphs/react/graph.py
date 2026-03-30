@@ -585,11 +585,14 @@ class ReActAgentBuilder:
         )
 
         cfg = RunnableConfig()
-        cfg["callbacks"] = callbacks
         cfg["configurable"] = {
             "agent_options": agent_options,
             "debug": debug,
         }
+        if callbacks:
+            cfg["callbacks"] = callbacks
+            compile_graph = compile_graph.with_config({"callbacks": callbacks})
+            logger.info(f"react graph callbacks: {callbacks}")
         return compile_graph, cfg
 
     def build(self) -> Tuple["Runnable", RunnableConfig]:

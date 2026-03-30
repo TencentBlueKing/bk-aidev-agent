@@ -38,7 +38,7 @@ from aidev_bkplugin.services.agent import (
     get_agent_config_info,
     get_agent_version,
 )
-from aidev_bkplugin.utils import bkaidev_api_client, set_user_access_token
+from aidev_bkplugin.utils import bkaidev_api_client, is_local_dev, set_user_access_token
 
 
 class IgnoreClientContentNegotiation(DefaultContentNegotiation):
@@ -103,8 +103,12 @@ class PluginViewSet(ViewSetMixin, APIView):
 
 
 class ChatSessionViewSet(PluginViewSet):
+    session_type: str = "dev" if is_local_dev() else "agent"
+
     def list(self, request):
-        result = client.api.list_chat_session(headers={"X-BKAIDEV-USER": request.user.username})
+        result = client.api.list_chat_session(
+            headers={"X-BKAIDEV-USER": request.user.username}, params={"session_type": self.session_type}
+        )
         result["data"] = [each for each in result["data"] if each.get("protocol_version") == AGUI_PROTOCOL_VERSION]
         return Response(data=result["data"])
 
@@ -114,7 +118,7 @@ class ChatSessionViewSet(PluginViewSet):
         return Response(data=result["data"])
 
     def create(self, request):
-        data = {**request.data, "protocol_version": AGUI_PROTOCOL_VERSION}
+        data = {**request.data, "protocol_version": AGUI_PROTOCOL_VERSION, "session_type": self.session_type}
         result = client.api.create_chat_session(json=data, headers={"X-BKAIDEV-USER": request.user.username})
         return Response(data=result["data"])
 
@@ -381,6 +385,8 @@ class AgentInfoViewSet(PluginViewSet):
                 command_agent_code = command.get("agent_code")
                 if command_id and command_agent_code and command_id == command_agent_code:
                     command["components"] = []
+                if command.get("icon") and is_local_dev():
+                    command["icon"] = command["icon"].replace("https://", "http://")
 
         # 新增群聊信息
         agent_info["chat_group"] = {
