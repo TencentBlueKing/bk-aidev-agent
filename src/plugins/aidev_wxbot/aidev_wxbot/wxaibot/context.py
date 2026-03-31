@@ -43,6 +43,10 @@ def stream_msg(content, is_finish, stream_id):
     }
 
 
+def text_msg(content):
+    return {"msgtype": "text", "text": {"content": content}}
+
+
 class LlmChunkMsg(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     is_finish: bool = Field(default=False)
@@ -192,8 +196,8 @@ class ContextGenerator:
 
     def _event_create(self, message: Message, payload: dict):
         message.msg_type = MsgType.Event.value
-        message.event = payload.get("event").get("eventtype")
-        message.event_key = payload.get("event").get("template_card_event").get("event_key")
+        message.event = payload.get("event", {}).get("eventtype")
+        message.event_key = payload.get("event", {}).get("template_card_event", {}).get("event_key")
         message.text = ""
         message.wxaibot_template_card_event = payload.get("event", {}).get("template_card_event")
         return message
