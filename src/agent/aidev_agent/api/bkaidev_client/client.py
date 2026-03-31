@@ -209,6 +209,13 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/mcp/{mcp_code}/",
     )
 
+    retrieve_resource_v1_skill = bind_property(
+        Operation,
+        name="retrieve_resource_v1_skill",
+        method="GET",
+        path="/openapi/aidev/resource/v1/agents/skill/{skill_id}/",
+    )
+
     create_feedback = bind_property(
         Operation,
         name="create_feedback",
@@ -286,6 +293,13 @@ class Client(BaseClient, AbstractBKAidevResourceManager):
 
     def retrieve_agent_config(self, agent_code: str, **kwargs) -> dict:
         return self.api.retrieve_agent_config(path_params={"agent_code": agent_code}, **kwargs).get("data", {})
+
+    def retrieve_skill(self, skill_id: str, version: str, **kwargs) -> dict:
+        params = kwargs.pop("params", {})
+        params["version"] = version
+        return self.api.retrieve_resource_v1_skill(path_params={"skill_id": skill_id}, params=params, **kwargs).get(
+            "data", {}
+        )
 
     def get_chat_session_context(self, session_code: str, **kwargs) -> list[dict]:
         """Get chat session context"""

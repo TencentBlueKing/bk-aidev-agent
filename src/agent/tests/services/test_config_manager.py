@@ -38,6 +38,9 @@ class MockResourceManager(AbstractBKAidevResourceManager):
             "knowledgebase_settings": {"knowledgebases": []},
         }
 
+    def retrieve_skill(self, skill_id: str, version: str, **kwargs) -> dict:
+        return {"id": skill_id, "version": version}
+
     def construct_tool(self, tool_code: str, **kwargs):
         pass
 

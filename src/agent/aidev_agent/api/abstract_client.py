@@ -27,6 +27,10 @@ class AbstractBKAidevResourceManager(ABC):
         """Retrieve agent config by agent code"""
 
     @abstractmethod
+    def retrieve_skill(self, skill_id: str, version: str, **kwargs) -> dict:
+        """Retrieve skill by skill ID and version"""
+
+    @abstractmethod
     def construct_tool(self, tool_code: str, **kwargs) -> StructuredTool:
         """Construct tool from tool code"""
 
