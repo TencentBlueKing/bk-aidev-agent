@@ -5,10 +5,12 @@ import json
 import uuid
 from logging import getLogger
 
+from aidev_agent.config import settings as agent_settings
 from aidev_agent.enums import PromptRole
 from aidev_agent.services.chat import ChatPrompt
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
-from aidev_agent.services.messages_handler import GeneratorStreamingHelper
+from aidev_agent.services.flow_agent import FlowAgentCompletionAgent
+from aidev_agent.services.messages_handler import ConsumerPreemptedError, GeneratorStreamingHelper, StreamCancelledError
 from aidev_agent.services.messages_handler.constants import TimeoutConfig
 from aidev_agent.services.messages_handler.factory import message_handler_factory
 from aidev_agent.services.pydantic_models import ExecuteKwargs
@@ -38,6 +40,7 @@ from aidev_bkplugin.services.agent import (
     get_agent_config_info,
     get_agent_version,
 )
+from aidev_bkplugin.utils import bkaidev_api_client, get_flow_agent_client, set_user_access_token
 from aidev_bkplugin.utils import bkaidev_api_client, is_local_dev, set_user_access_token
 
 
@@ -54,6 +57,23 @@ class IgnoreClientContentNegotiation(DefaultContentNegotiation):
 
 logger = getLogger(__name__)
 client = bkaidev_api_client
+
+
+class _FlowAgentLocalClient:
+    """
+    包装 flow agent start 接口，自动附加用户认证信息
+    """
+
+    def __init__(self, username: str):
+        self._username = username
+
+    def start_flow_agent(self, **kwargs) -> dict:
+        flow_client, auth_headers = get_flow_agent_client(self._username)
+        headers = kwargs.pop("headers", {})
+        # auth_headers 提供认证信息，调用方传入的 headers 可覆盖
+        auth_headers.update(headers)
+        kwargs["headers"] = auth_headers
+        return flow_client.start_flow_agent(**kwargs)
 
 
 @method_decorator(login_exempt, name="dispatch")
@@ -231,6 +251,33 @@ class ChatSessionContentViewSet(PluginViewSet):
                 except Exception as e:
                     logger.exception(f"Error clearing cancelled signal: {e}")
 
+        # 5. 如果是 flow 类型智能体，额外调用 flow agent stop 接口撤销 bkflow 任务（不可恢复）
+        #    用户点击「停止」→ revoke（任务变为 REVOKED/FAILED），不可恢复
+        if session_code:
+            try:
+                agent_info = get_agent_config_info(username)
+                if agent_info.get("agent_type") == "flow":
+                    logger.info(f"Flow agent detected, revoking flow task for session_code={session_code}")
+                    flow_client, flow_headers = get_flow_agent_client(username)
+                    revoke_result = flow_client.stop_flow_agent_task(
+                        session_code=session_code,
+                        headers=flow_headers,
+                    )
+                    logger.info(f"[FLOW_AGENT] revoke 调用成功: session_code={session_code}, result={revoke_result}")
+                    # revoke 后更新 session 中的 flow_agent_status 为 failed
+                    try:
+                        client.api.update_chat_session(
+                            path_params={"session_code": session_code},
+                            json={"flow_agent_status": "failed"},
+                            headers={"X-BKAIDEV-USER": username},
+                        )
+                    except Exception as e:
+                        logger.exception(
+                            f"Error updating flow_agent_status after revoke: session_code={session_code}, error={e}"
+                        )
+            except Exception as e:
+                logger.exception(f"Error revoking flow agent task: session_code={session_code}, error={e}")
+
         result = client.api.stop_chat_session_content(json=request.data, headers={"X-BKAIDEV-USER": username})
 
         return Response(data=result["data"])
@@ -255,13 +302,22 @@ class ChatCompletionViewSet(PluginViewSet):
     def create(self, request):
         # 调用Agent 的时候需要传入的相关参数
         username = request.user.username
+        # 兜底：如果认证未生效（如本地开发），从请求体或 header 中获取 username
+        if not username:
+            username = request.data.get("username", "") or request.META.get("HTTP_X_BKAIDEV_USER", "")
         execute_kwargs = build_execute_kwargs(request.data.get("execute_kwargs", {}), username)
         session_code = request.data.get("session_code", "")
         execute_kwargs.session_code = request.data.get("session_code", "")
 
         _input = request.data.get("input", "")
+        event_handler = None  # 用于断点续传
 
         try:
+            agent_info = get_agent_config_info(username)
+            agent_type = request.data.get("agent_type", "") or agent_info.get("agent_type", "")
+            logger.debug(f"agent_info.agent_type={agent_info.get('agent_type')}, resolved agent_type={agent_type}")
+            if agent_type == "flow":
+                return self._handle_flow_agent(request, session_code, username)
             thread_id = execute_kwargs.thread_id
             if not thread_id and not session_code:
                 thread_id = str(uuid.uuid4())
@@ -317,6 +373,17 @@ class ChatCompletionViewSet(PluginViewSet):
             # 执行 agent
             if execute_kwargs.stream:
                 generator = agent_instance.execute(execute_kwargs)
+                # 断点续传：在流式开始/结束时更新会话状态
+                if event_handler and all(
+                    hasattr(event_handler, m) for m in ["set_streaming_started", "set_streaming_finished"]
+                ):
+                    event_handler.set_streaming_started()
+                    generator = self._wrap_streaming_with_status(
+                        generator,
+                        event_handler,
+                        session_code=session_code,
+                        username=username,
+                    )
                 return self.streaming_response(generator)
             else:
                 result = agent_instance.execute(execute_kwargs)
@@ -360,6 +427,130 @@ class ChatCompletionViewSet(PluginViewSet):
         if execute_kwargs.stream:
             return self.streaming_response(result)
         return Response(result)
+
+    def _handle_flow_agent(self, request, session_code: str, username: str):
+        """处理 Flow Agent 请求
+
+        通过 chat_completion 接口复用流式 SSE 机制，轮询 flow agent 任务状态并推送。
+
+        核心流程：
+        1. 将 session_code 传给 start 接口启动新任务
+        2. 拿到 task_id 后轮询 task_info 接口
+        3. 通过 SSE 流式推送轮询结果
+        4. 用户点击「停止」→ revoke bkflow 任务（不可恢复）
+
+        """
+        task_id = request.data.get("task_id")
+        flow_start_params = request.data.get("flow_start_params", {})
+        poll_interval = request.data.get("poll_interval", agent_settings.FLOW_AGENT_POLL_INTERVAL)
+        poll_timeout = request.data.get("poll_timeout", agent_settings.FLOW_AGENT_POLL_TIMEOUT)
+
+        logger.info(
+            f"[FLOW_AGENT] _handle_flow_agent: session_code={session_code}, username={username}, task_id={task_id}"
+        )
+
+        # 参数校验
+        try:
+            poll_interval = float(poll_interval)
+            poll_timeout = float(poll_timeout)
+        except (TypeError, ValueError):
+            raise ClientBlueException(message="poll_interval and poll_timeout must be valid numbers")
+        if poll_interval <= 0:
+            raise ClientBlueException(message=f"poll_interval must be positive, got {poll_interval}")
+        if poll_timeout <= 0:
+            raise ClientBlueException(message=f"poll_timeout must be positive, got {poll_timeout}")
+
+        # 关键：确保 session_code 注入到 flow_start_params 中
+        # 后端 FlowAgentStart 接口需要 session_code 来从数据库获取 chat_history 和 input，
+        # 并将它们作为 ${input} / ${chat_history} constants 传给 bkflow 任务
+        if session_code:
+            flow_start_params.setdefault("session_code", session_code)
+
+        # 构建 event_handler（如果有 session_code）
+        event_handler = None
+        if session_code:
+            event_handler = AGUISessionWriter(session_code=session_code, client=bkaidev_api_client, username=username)
+
+        # 构建 resource_manager：传入带认证头的 client
+        resource_manager = _FlowAgentLocalClient(username=username)
+
+        agent_instance = FlowAgentCompletionAgent(
+            resource_manager=resource_manager,
+            session_code=session_code or None,
+            task_id=task_id,
+            flow_start_params=flow_start_params,
+            poll_interval=poll_interval,
+            poll_timeout=poll_timeout,
+            event_handler=event_handler,
+        )
+
+        try:
+            generator = agent_instance.execute()
+        except Exception as err:
+            logger.exception(f"[FLOW_AGENT] execute error: session_code={session_code}, error={err}")
+            message = getattr(err, "message", str(err))
+            if session_code:
+                error_message_id = str(uuid.uuid4())
+                AGUISessionWriter(
+                    session_code=session_code, client=bkaidev_api_client, username=username
+                )._create_session_content(
+                    message_id=error_message_id,
+                    role=PromptRole.ASSISTANT.value,
+                    content=message,
+                    status="error",
+                    builtin_property={
+                        "message_id": error_message_id,
+                        "error": True,
+                    },
+                )
+            raise ClientBlueException(message=message)
+
+        logger.info(f"[FLOW_AGENT] Streaming started: session_code={session_code}, task_id={task_id}")
+        return self.streaming_response(generator)
+
+    def _wrap_streaming_with_status(
+        self, generator, event_handler, session_code: str = "", username: str = ""
+    ):
+        """包装流式生成器，在结束时更新会话状态为 finished
+
+        如果消费者被新消费者抢占（断点续传场景），不更新 status，
+        让新消费者负责管理会话状态。
+        如果客户端断开连接（GeneratorExit），也不更新 status，
+        因为 agent 可能仍在运行，用户刷新后需要续传。
+        """
+        _preempted = False
+        _client_disconnected = False
+        _cancelled = False
+        try:
+            for chunk in generator:
+                yield chunk
+        except GeneratorExit:
+            _client_disconnected = True
+            logger.info(
+                f"[WRAP_STATUS] Client disconnected (GeneratorExit): "
+                f"session_code={session_code}"
+            )
+            return
+        except ConsumerPreemptedError:
+            _preempted = True
+            logger.info(f"[WRAP_STATUS] ConsumerPreemptedError: session_code={session_code}")
+        except StreamCancelledError:
+            _cancelled = True
+            logger.info(f"[WRAP_STATUS] StreamCancelledError(用户停止生成): session_code={session_code}")
+        except Exception:
+            logger.exception(f"[WRAP_STATUS] Unexpected exception: session_code={session_code}")
+            raise
+        finally:
+            # 注意：cancel 信号可能在 finally 之前就被清理了，因此需要先检查
+            if not _cancelled and session_code:
+                from aidev_agent.services.messages_handler.streaming_helper import GeneratorStreamingHelper
+
+                if GeneratorStreamingHelper.is_cancelled(session_code):
+                    _cancelled = True
+                    logger.info(f"[WRAP_STATUS] Generator结束后检测到取消标志: session_code={session_code}")
+            if not _preempted and not _client_disconnected and not _cancelled:
+                logger.info(f"[WRAP_STATUS] 流正常结束, 调用 set_streaming_finished: session_code={session_code}")
+                event_handler.set_streaming_finished()
 
     def streaming_response(self, generator):
         sr = StreamingHttpResponse(generator)

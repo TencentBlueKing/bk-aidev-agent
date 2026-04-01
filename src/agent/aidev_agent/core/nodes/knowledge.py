@@ -29,6 +29,7 @@ from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
 
 from aidev_agent.core.ag_ui.types import ActivityMessage, CustomMessageType
+from aidev_agent.enums import ActivityType
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.packages.langchain_core.retrievers.kb_rag import KnowledgeRag, KnowledgeRagRetrieveResult
 from aidev_agent.services.pydantic_models import AgentOptions
@@ -218,7 +219,7 @@ class AgentKnowledgeNode(BaseKnowledgeNode):
         ret = cast(KnowledgeOutputState, ret)
         ret["messages"] = [
             ActivityMessage(
-                activity_type="reference_document",
+                activity_type=ActivityType.REFERENCE_DOCUMENT.value,
                 content=reference_doc,
                 id=message_id,
                 additional_kwargs={"duration": duration},

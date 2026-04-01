@@ -103,6 +103,7 @@ class AgentType(enum.Enum):
 
     CHAT = "chat"
     TASK = "task"
+    FLOW = "flow"
 
 
 class SessionsStatus(enum.Enum):
@@ -113,6 +114,13 @@ class SessionsStatus(enum.Enum):
     FINISHED = "finished"  # 已完成
     FAILED = "failed"  # 已失败
     CANCELLED = "cancelled"  # 已取消（用户主动停止）
+
+
+class ActivityType(enum.Enum):
+    """Activity 消息的 builtin_property 类型标识"""
+
+    REFERENCE_DOCUMENT = "reference_document"
+    FLOW_AGENT = "flow_agent"
 
 
 class MessageHandlerType(str, enum.Enum):

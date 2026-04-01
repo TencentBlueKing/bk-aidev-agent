@@ -4,6 +4,9 @@ import uuid
 from logging import getLogger
 from typing import Any, Callable, Generator
 
+from ag_ui.core import EventType, RunErrorEvent
+from ag_ui.encoder import EventEncoder
+
 from .base import BaseMessageQueueHandler, ConsumerPreemptedError
 from .constants import (
     CANCELLED_CHUNK,
@@ -19,7 +22,8 @@ from .factory import message_handler_factory
 logger = getLogger(__name__)
 
 # 断点续传时需要过滤的事件类型
-_RESUME_FILTER_EVENT_TYPES: frozenset[str] = frozenset()
+# flow_agent_start 事件在续聊时不应该重复发送，避免前端重新渲染
+_RESUME_FILTER_EVENT_TYPES: frozenset[str] = frozenset({"flow_agent_start"})
 
 
 class GeneratorStreamingHelper:
@@ -62,19 +66,27 @@ class GeneratorStreamingHelper:
     _PRODUCER_CLEANUP_DELAY = 30.0
 
     @staticmethod
-    def _should_filter_on_resume(item: Any) -> bool:  # noqa: ARG004
+    def _should_filter_on_resume(item: Any) -> bool:
         """判断断点续传时是否应该过滤该消息
 
-        注意：目前不过滤任何事件，包括 THINKING_* 事件，
-        因为前端需要通过 SSE 流恢复思考内容。
+        在断点续传（续聊）场景下，某些事件不应该重复发送给前端：
+        - flow_agent_start: 前端收到此事件会重新初始化/渲染，续聊时不需要
 
         Args:
             item: 队列中的消息（SSE 编码字符串或其他格式）
 
         Returns:
-            始终返回 False，表示不过滤任何消息
+            True 表示应该过滤（不发送给前端），False 表示正常发送
         """
-        # 目前不过滤任何事件类型
+        if not isinstance(item, str):
+            return False
+
+        # 检查是否是需要过滤的事件类型
+        # SSE 格式: data: {"type":"CUSTOM","name":"flow_agent_start",...}
+        for event_type in _RESUME_FILTER_EVENT_TYPES:
+            if f'"name":"{event_type}"' in item:
+                logger.info(f"Filtering event on resume: {event_type}")
+                return True
         return False
 
     def __init__(self, message_handler: BaseMessageQueueHandler | None = None, thread_id: str | None = None) -> None:
@@ -632,7 +644,14 @@ class GeneratorStreamingHelper:
         except GeneratorExit:
             logger.info(f"Generator closed for thread_id={self.thread_id}")
         except Exception as e:
-            logger.debug(f"Sent error chunk for thread_id={self.thread_id}: {e}")
+            logger.exception(f"Producer error for thread_id={self.thread_id}: {e}")
+            # 将错误信息作为 SSE error event 推送到队列，让消费者能感知并传播给前端
+            try:
+                encoder = EventEncoder()
+                error_event = RunErrorEvent(type=EventType.RUN_ERROR, message=f"Producer error: {e}")
+                self.message_handler.put(self.thread_id, encoder.encode(error_event))
+            except Exception as encode_err:
+                logger.exception(f"Failed to encode/send error event for thread_id={self.thread_id}: {encode_err}")
         finally:
             heartbeat_stop_event.set()
             if heartbeat_thread is not None:

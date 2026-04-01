@@ -6,11 +6,11 @@
 2. 扩展场景：覆盖 handle_model_end/handle_tool_finish 等方法自定义处理
 3. 完全自定义：覆盖 __call__ 方法处理原始事件
 
-断点续传机制：
-- 不使用占位消息，而是通过会话状态（session.status）判断
+断点续传机制（基于 session.status）：
 - 流式开始时：set_streaming_started() 将会话状态设为 running
-- 流式结束时：set_streaming_finished() 将会话状态设为 finished
+- 流式正常结束时：set_streaming_finished() 将会话状态设为 finished
 - 前端查询消息列表时，后端根据 session.status == running 动态标记最后一条 AI 消息为 streaming
+- 用户点击「停止」→ revoke bkflow 任务（不可恢复），session.status 设为 finished
 """
 
 import json
@@ -30,9 +30,12 @@ from aidev_agent.core.ag_ui.types import (
     LangGraphEventTypes,
 )
 from aidev_agent.core.ag_ui.utils import camel_to_snake
-from aidev_agent.enums import PromptRole
+from aidev_agent.enums import ActivityType, PromptRole
 
 logger = getLogger(__name__)
+
+# Flow Agent 结果中 duration 的默认值
+DEFAULT_FLOW_AGENT_DURATION = 0.0
 
 
 def dict_keys_camel_to_snake(d: dict) -> dict:
@@ -45,9 +48,9 @@ class BaseSessionWriter(ABC):
 
     通过 __call__ 方法接收所有 AG-UI 事件，分发到对应的类型化处理方法。
 
-    断点续传通过会话状态判断实现（不使用占位消息）：
+    断点续传通过会话状态判断实现：
     - 流式开始：set_streaming_started() 更新 session.status = running
-    - 流式结束：set_streaming_finished() 更新 session.status = finished
+    - 流式正常结束：set_streaming_finished() 更新 session.status = finished
     - 消息直接通过 create 创建，无需占位/变形
 
     使用方式：
@@ -61,6 +64,7 @@ class BaseSessionWriter(ABC):
         class MyWriter(BaseSessionWriter):
             def _do_create_content(self, payload, headers):
                 db.save(payload)
+                return None  # 不支持返回记录 ID
 
         # 扩展场景 - 自定义某类事件的处理
         class MyWriter(BaseSessionWriter):
@@ -97,6 +101,9 @@ class BaseSessionWriter(ABC):
         # 用于追踪 thinking/reasoning 内容
         # key: "thinking", value: {"content": str}
         self._thinking_content: str = ""
+        # 用于追踪 flow_agent_result 记录，确保同一个 task_id 只有一条记录（后续轮询更新而非创建）
+        self._flow_result_content_id: int | None = None
+        self._flow_result_message_id: str | None = None
 
     # ---------- 公共事件入口 ----------
 
@@ -111,6 +118,8 @@ class BaseSessionWriter(ABC):
         """
         if event.type == EventType.RAW:
             self._dispatch_raw_event(event)
+        elif event.type == EventType.CUSTOM:
+            self._dispatch_custom_event_direct(event)
         elif event.type == EventType.RUN_ERROR:
             self.handle_run_error(event)
         elif event.type == EventType.TEXT_MESSAGE_START:
@@ -138,13 +147,33 @@ class BaseSessionWriter(ABC):
             self._dispatch_custom_event(event)
 
     def _dispatch_custom_event(self, event: RawEvent) -> None:
-        """分发自定义事件"""
+        """分发自定义事件（从 RAW 事件中解析的 on_custom_event）"""
         event_name = event.event.get("name", "")
 
         if event_name == CustomEventNames.OnToolNodeFinish.value:
             self.handle_tool_finish(event)
         elif event_name == CustomMessageType.KNOWLEDGE_RAG_RESULT.value:
             self.handle_reference_document(event)
+        elif event_name == CustomMessageType.FLOW_AGENT_START.value:
+            self.handle_flow_agent_start(event)
+        elif event_name == CustomMessageType.FLOW_AGENT_RESULT.value:
+            self.handle_flow_agent_result(event)
+        elif event_name == CustomMessageType.FLOW_AGENT_END.value:
+            self.handle_flow_agent_end(event)
+
+    def _dispatch_custom_event_direct(self, event) -> None:
+        """分发直接的 CUSTOM 类型事件（非 RAW 包裹）
+
+        Flow Agent 直接产出 CustomEvent(type=CUSTOM)，不经过 LangGraph 的 RawEvent 包裹。
+        """
+        event_name = getattr(event, "name", "")
+
+        if event_name == CustomMessageType.FLOW_AGENT_START.value:
+            self.handle_flow_agent_start(event)
+        elif event_name == CustomMessageType.FLOW_AGENT_RESULT.value:
+            self.handle_flow_agent_result(event)
+        elif event_name == CustomMessageType.FLOW_AGENT_END.value:
+            self.handle_flow_agent_end(event)
 
     # ---------- 事件处理方法 ----------
 
@@ -379,10 +408,107 @@ class BaseSessionWriter(ABC):
             status="success",
             builtin_property={
                 "message_id": message_id,
-                "type": "reference_document",
+                "type": ActivityType.REFERENCE_DOCUMENT.value,
             },
         )
         self._written_message_ids.add(message_id)
+
+    def handle_flow_agent_result(self, event) -> None:
+        """处理 Flow Agent 结果事件，回写 activity 消息
+
+        同一个 task 的轮询结果只保留一条记录：
+        - 第一次轮询时创建记录并保存 content_id
+        - 后续轮询时更新同一条记录的 content
+
+        Args:
+            event: 包含 flow_agent_result 数据的事件（CustomEvent 或 RawEvent）
+        """
+        # 兼容 CustomEvent（直接有 value 属性）和 RawEvent（嵌套在 event dict 中）
+        if hasattr(event, "value"):
+            event_data = event.value if isinstance(event.value, dict) else {}
+        else:
+            event_data = event.event.get("data", {})
+
+        # 直接使用 dict 格式，包含 task_id, task_name, task_state, nodes, statistics, task_outputs 等字段
+        content = json.dumps(event_data, ensure_ascii=False)
+
+        if self._flow_result_content_id is not None:
+            # 已有记录，更新内容
+            self._update_session_content(
+                content_id=self._flow_result_content_id,
+                message_id=self._flow_result_message_id,
+                content=content,
+                builtin_property={
+                    "message_id": self._flow_result_message_id,
+                    "tool_calls": [],  # 前端兼容：添加空的 tool_calls 数组
+                    "tool_call_id": "",
+                    "additional_kwargs": {},
+                    "error": False,
+                    "type": ActivityType.FLOW_AGENT.value,
+                    "duration": DEFAULT_FLOW_AGENT_DURATION,
+                },
+            )
+        else:
+            # 首次创建
+            message_id = f"flow_result_{uuid.uuid4().hex[:12]}"
+            self._flow_result_message_id = message_id
+            content_id = self._create_session_content(
+                message_id=message_id,
+                role=PromptRole.ACTIVITY.value,
+                content=content,
+                status="complete",
+                builtin_property={
+                    "message_id": message_id,
+                    "tool_calls": [],  # 前端兼容：添加空的 tool_calls 数组
+                    "tool_call_id": "",
+                    "additional_kwargs": {},
+                    "error": False,
+                    "type": ActivityType.FLOW_AGENT.value,
+                    "duration": DEFAULT_FLOW_AGENT_DURATION,
+                },
+            )
+            if content_id is not None:
+                self._flow_result_content_id = content_id
+
+    def handle_flow_agent_end(self, event) -> None:
+        """处理 Flow Agent 结束事件，仅更新 session 的 flow_agent 状态
+
+        flow_agent_end 事件不再创建额外的 assistant 消息记录，
+        流程结果已在 flow_agent_result 的 activity 消息中完整保存。
+        此处仅负责断点续传：更新 session 元数据中的 flow_agent 状态。
+
+        Args:
+            event: 包含 flow_agent_end 数据的事件（CustomEvent 或 RawEvent）
+        """
+        if hasattr(event, "value"):
+            event_data = event.value if isinstance(event.value, dict) else {}
+        else:
+            event_data = event.event.get("data", {})
+
+        # 断点续传：任务结束，更新 session 中的 task_id（确保最终状态已持久化）
+        task_id = event_data.get("task_id", "")
+        if task_id:
+            self.update_flow_agent_info(task_id=task_id)
+
+    def handle_flow_agent_start(self, event) -> None:
+        """处理 Flow Agent 启动事件，持久化 task_id 到 session 元数据
+
+        在 flow_agent_start 事件触发时，将 task_id 写入 session_property.flow_info，
+        前端切回 session 时通过 GET /session/{session_code}/ 即可获取。
+
+        Args:
+            event: 包含 flow_agent_start 数据的事件（CustomEvent 或 RawEvent）
+        """
+        if hasattr(event, "value"):
+            event_data = event.value if isinstance(event.value, dict) else {}
+        else:
+            event_data = event.event.get("data", {})
+
+        task_id = event_data.get("task_id", "")
+        if task_id:
+            self.update_flow_agent_info(task_id=str(task_id))
+        else:
+            logger.warning("handle_flow_agent_start: task_id 为空，跳过持久化: event_data=%s", event_data)
 
     # ---------- handle_model_end 辅助方法 ----------
 
@@ -510,19 +636,23 @@ class BaseSessionWriter(ABC):
         """构建请求头"""
         return {"X-BKAIDEV-USER": self.username} if self.username else {}
 
-    def _safe_call(self, fn: Callable, message_id: str, action: str, **kwargs: Any) -> None:
+    def _safe_call(self, fn: Callable, message_id: str, action: str, **kwargs: Any) -> Any:
         """安全调用回写函数，统一处理异常和日志
 
         Args:
-            fn: 实际执行的回写函数（_do_create_content 等）
+            fn: 实际执行的回写函数（_do_create_content / _do_update_content 等）
             message_id: 消息 ID，仅用于日志
-            action: 操作名称，仅用于日志（如 "create"）
+            action: 操作名称，仅用于日志（如 "create", "update"）
             **kwargs: 传递给 fn 的参数
+
+        Returns:
+            fn 的返回值，异常时返回 None
         """
         try:
-            fn(**kwargs)
+            return fn(**kwargs)
         except Exception as e:
             logger.exception(f"Failed to {action} session content: message_id={message_id}, error={e}", exc_info=True)
+            return None
 
     def _create_session_content(
         self,
@@ -531,8 +661,12 @@ class BaseSessionWriter(ABC):
         content: str | list,
         status: str,
         builtin_property: dict[str, Any],
-    ) -> None:
-        """创建会话内容（内部方法）"""
+    ) -> int | None:
+        """创建会话内容（内部方法）
+
+        Returns:
+            创建成功时返回记录 ID（如果子类支持），否则返回 None
+        """
         payload = {
             "session_code": self.session_code,
             "role": role,
@@ -542,10 +676,42 @@ class BaseSessionWriter(ABC):
                 "builtin_property": builtin_property,
             },
         }
-        self._safe_call(self._do_create_content, message_id, "create", payload=payload, headers=self._get_headers())
+        return self._safe_call(
+            self._do_create_content, message_id, "create", payload=payload, headers=self._get_headers()
+        )
+
+    def _update_session_content(
+        self,
+        content_id: int,
+        message_id: str,
+        content: str | list,
+        builtin_property: dict[str, Any],
+    ) -> None:
+        """更新已有的会话内容（内部方法）
+
+        Args:
+            content_id: 记录 ID（数据库主键）
+            message_id: 消息标识，仅用于日志
+            content: 更新的内容
+            builtin_property: 更新的 builtin_property
+        """
+        payload = {
+            "content": content,
+            "property": {
+                "builtin_property": builtin_property,
+            },
+        }
+        self._safe_call(
+            self._do_update_content,
+            message_id,
+            "update",
+            content_id=content_id,
+            payload=payload,
+            headers=self._get_headers(),
+        )
 
     @abstractmethod
-    def _do_create_content(self, payload: dict[str, Any], headers: dict[str, str]) -> None:
+    def _do_create_content(self, payload: dict[str, Any], headers: dict[str, str]) -> int | None:
         """执行具体的回写操作
 
         子类必须实现此方法来定义具体的回写逻辑。
@@ -554,8 +720,22 @@ class BaseSessionWriter(ABC):
             payload: 回写数据，包含 session_code, role, content, status, property 等字段
             headers: HTTP 头信息，包含用户信息等
 
+        Returns:
+            创建成功时返回记录 ID（如果支持获取 ID），否则返回 None
+
         Raises:
             Exception: 回写失败时抛出异常，由基类统一处理日志记录
+        """
+
+    def _do_update_content(self, content_id: int, payload: dict[str, Any], headers: dict[str, str]) -> None:
+        """更新已有的会话内容记录
+
+        默认实现为空操作。子类可覆盖此方法来支持更新。
+
+        Args:
+            content_id: 记录 ID（数据库主键）
+            payload: 更新数据，包含 content, property 等字段
+            headers: HTTP 头信息
         """
 
     # ---------- 断点续传支持（基于会话状态判断） ----------
@@ -572,4 +752,14 @@ class BaseSessionWriter(ABC):
 
         子类应覆盖此方法来更新会话状态为 finished。
         默认实现为空操作。
+        """
+
+    def update_flow_agent_info(self, task_id: str) -> None:
+        """更新 session 中的 Flow Agent task_id
+
+        子类应覆盖此方法来将 task_id 持久化到 session_property.flow_info 元数据。
+        默认实现为空操作。
+
+        Args:
+            task_id: bkflow 任务 ID
         """

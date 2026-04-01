@@ -251,6 +251,48 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/agent/agent_sessions/upgrade/",
     )
 
+    flow_agent_start = bind_property(
+        Operation,
+        name="flow_agent_start",
+        method="POST",
+        path="/openapi/aidev/resource/v1/flow_agent/start/",
+    )
+
+    flow_agent_task_info = bind_property(
+        Operation,
+        name="flow_agent_task_info",
+        method="GET",
+        path="/openapi/aidev/resource/v1/flow_agent/task_info/{task_id}/",
+    )
+
+    flow_agent_task_node_info = bind_property(
+        Operation,
+        name="flow_agent_task_node_info",
+        method="GET",
+        path="/openapi/aidev/resource/v1/flow_agent/task_node_info/{task_id}/{node_id}/",
+    )
+
+    flow_agent_task_stop = bind_property(
+        Operation,
+        name="flow_agent_task_stop",
+        method="POST",
+        path="/openapi/aidev/resource/v1/flow_agent/task/stop/",
+    )
+
+    flow_agent_task_pause = bind_property(
+        Operation,
+        name="flow_agent_task_pause",
+        method="POST",
+        path="/openapi/aidev/resource/v1/flow_agent/task/pause/",
+    )
+
+    flow_agent_task_resume = bind_property(
+        Operation,
+        name="flow_agent_task_resume",
+        method="POST",
+        path="/openapi/aidev/resource/v1/flow_agent/task/resume/",
+    )
+
 
 class AidevRequestContextBuilder(RequestContextBuilder):
     def build(self, endpoint, operation_context):
@@ -312,3 +354,29 @@ class Client(BaseClient, AbstractBKAidevResourceManager):
     def retrieve_knowledge(self, id: int, **kwargs) -> dict:
         """Get knowledge details"""
         return self.api.appspace_retrieve_knowledge(path_params={"id": id}, **kwargs).get("data", {})
+
+    def start_flow_agent(self, data: dict, **kwargs) -> dict:
+        """Start a flow agent task"""
+        return self.api.flow_agent_start(data=data, **kwargs).get("data", {})
+
+    def get_flow_agent_task_info(self, task_id: str, **kwargs) -> dict:
+        """Get flow agent task info"""
+        return self.api.flow_agent_task_info(path_params={"task_id": task_id}, **kwargs).get("data", {})
+
+    def get_flow_agent_task_node_info(self, task_id: str, node_id: str, **kwargs) -> dict:
+        """Get flow agent task node info"""
+        return self.api.flow_agent_task_node_info(
+            path_params={"task_id": task_id, "node_id": node_id}, **kwargs
+        ).get("data", {})
+
+    def stop_flow_agent_task(self, session_code: str, **kwargs) -> dict:
+        """Stop (revoke) a flow agent task"""
+        return self.api.flow_agent_task_stop(data={"session_code": session_code}, **kwargs).get("data", {})
+
+    def pause_flow_agent_task(self, session_code: str, **kwargs) -> dict:
+        """Pause a flow agent task"""
+        return self.api.flow_agent_task_pause(data={"session_code": session_code}, **kwargs).get("data", {})
+
+    def resume_flow_agent_task(self, session_code: str, **kwargs) -> dict:
+        """Resume a paused flow agent task"""
+        return self.api.flow_agent_task_resume(data={"session_code": session_code}, **kwargs).get("data", {})

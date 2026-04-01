@@ -12,10 +12,12 @@ from .views.builtin import (
     ChatSessionShareView,
     ChatSessionViewSet,
 )
+from .views.flow_agent import FlowAgentViewSet
 
 _router = DefaultRouter()
 _router.register("agent", AgentInfoViewSet, "agent_info")
 _router.register("chat_completion", ChatCompletionViewSet, "chat_completion")
+_router.register("flow_agent", FlowAgentViewSet, "flow_agent")
 _router.register("session", ChatSessionViewSet, "chat_session")
 _router.register("session_content", ChatSessionContentViewSet, "chat_session_content")
 _router.register("session_feedback", ChatSessionContentFeedbackViewSet, "chat_session_feedback")

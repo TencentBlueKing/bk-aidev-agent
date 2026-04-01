@@ -21,9 +21,10 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 
-from .context import CHUNK_FLUSH_THRESHOLD, ContextGenerator, LlmChunkMsg, stream_msg, text_msg
+from .context import ContextGenerator, LlmChunkMsg, stream_msg,CHUNK_FLUSH_THRESHOLD,text_msg
 from .decryption import WXBizJsonMsgCrypt
 from .models import AgentSession
+from .strategies import resolve_strategy
 from ..api.bkaidev import BkAiDevApi
 from ..context.message import MsgType
 from ..utils.rabbitmq import rabbitmq_client
@@ -138,10 +139,9 @@ class WxAiBotViewSet(ViewSet):
             return new_thread_id
 
     def _reply_text(self, payload: dict) -> dict:
-        """处理文本消息"""
+        """处理文本消息，启动异步 AI 请求线程并立即返回流式占位响应。"""
         content = payload["text"]["content"]
         rtx_name = settings.WAXIBOT_NAME
-        quote_content = payload.get("quote", {}).get("text", {}).get("content", None)
         if content.startswith(f"@{rtx_name}"):
             content = content[len(f"@{rtx_name}") :].strip()
         current_context = ContextGenerator(payload).generate()
@@ -153,7 +153,10 @@ class WxAiBotViewSet(ViewSet):
         if quote_content:
             content = self._build_quoted_input(quote_content, content)
 
-        logger.info(f"reply_text: current_context=>{current_context}")
+        logger.info(
+            f"[WxAiBot] _reply_text: sender={current_context.sender_id}, "
+            f"group={current_context.group_id}, content_len={len(content)}"
+        )
 
         thread = threading.Thread(
             target=self._process_ai_request_async,
@@ -198,154 +201,32 @@ class WxAiBotViewSet(ViewSet):
         return stream_msg("已创建新会话，请输入咨询内容", True, stream_id)
 
     def _process_ai_request_async(self, content: str, stream_id: str, username: str, group_id: str):
-        """异步处理AI请求：直连共享 service，流式结果桥接到 wx 队列协议。"""
+        """异步处理 AI 请求：根据 agent_type 选择策略，执行并桥接到 RabbitMQ。
+
+        使用策略模式将 Chat Agent / Flow Agent 的处理逻辑解耦，
+        views 层只负责会话管理和线程调度，不关心具体 Agent 实现。
+        """
         try:
-            start_time = time.time()
             thread_id = self._get_or_create_thread_id(group_id)
-            execute_kwargs = build_execute_kwargs(
-                {"stream": True, "thread_id": thread_id, "executor": username, "group_id": group_id},
-                username,
-            )
-            result, session_code = run_chat_completion_with_thread_id(
-                thread_id=thread_id,
-                input_text=content,
-                username=username,
-                execute_kwargs=execute_kwargs,
-                save_content=True,
-            )
-            logger.info(f"stream_id:{stream_id} run_chat_completion_with_thread_id ok, session_code={session_code}")
-            if execute_kwargs.stream:
-                self._consume_agent_stream(result, stream_id, start_time)
-                return
-
-            final_content = ""
-            if isinstance(result, dict):
-                choices = result.get("choices") or [{}]
-                final_content = (choices[0].get("delta") or {}).get("content", "") or ""
-            llm_chunk = LlmChunkMsg(
-                content=final_content or "未获取到回答内容",
-                is_finish=True,
+            strategy = resolve_strategy(username)
+            strategy.execute(
+                content=content,
                 stream_id=stream_id,
+                username=username,
+                thread_id=thread_id,
+                group_id=group_id,
+                rabbitmq_client=rabbitmq_client,
             )
-            llm_chunk.append_to_cache(rabbitmq_client)
-
         except Exception as e:
             logger.exception(f"stream_id:{stream_id} 异步处理AI请求失败: {e}")
-            error_chunk = LlmChunkMsg(content=f"请求处理失败: {str(e)}", is_finish=True, stream_id=stream_id)
             try:
-                error_chunk.append_to_cache(rabbitmq_client)
-            except Exception as cache_e:
-                logger.error(f"stream_id:{stream_id} 写入错误信息到缓存失败: {cache_e}")
-
-    def _consume_agent_stream(self, stream_generator, stream_id: str, start_time: float):
-        """
-        消费 ChatCompletionAgent 流式输出并桥接到 wx 协议（RabbitMQ + LlmChunkMsg）。
-        事件映射：think/text/reference_doc/error -> think_content/content/docs；任何异常或 error 事件均写入 finish=True 终止。
-        """
-        docs = []
-        buffer = ""
-        first_response_time = None
-        llm_chunk = LlmChunkMsg(content="", is_finish=False, stream_id=stream_id)
-        added_content = ""
-        think_content = ""
-        has_error = False
-
-        def _process_line(line: str):
-            nonlocal first_response_time, added_content, think_content, has_error
-            line = line.strip()
-            if not line or line == "data: [DONE]" or not line.startswith("data: "):
-                return
-            data_content = line[6:]
-            if not data_content:
-                return
-            try:
-                chunk_json = json.loads(data_content)
-            except json.JSONDecodeError:
-                return
-            if first_response_time is None:
-                first_response_time = time.time()
-                logger.info(
-                    f"stream_id:{stream_id} 从请求开始到第一次收到流式响应耗时: {first_response_time - start_time:.3f} 秒"
-                )
-
-            # agui 格式
-            logger.debug(f"stream_id:{stream_id} 处理流式响应: {chunk_json}")
-            event_type = chunk_json.get("type", "")
-            if event_type == EventType.TEXT_MESSAGE_CONTENT:
-                text_content = chunk_json.get("delta", "")
-                if text_content == "正在思考...":
-                    return
-                added_content += text_content
-                if think_content:
-                    llm_chunk.think_content = llm_chunk.think_content + think_content
-                    llm_chunk.append_to_cache(rabbitmq_client)
-                    think_content = ""
-                if len(added_content) > CHUNK_FLUSH_THRESHOLD:
-                    llm_chunk.content = llm_chunk.content + added_content
-                    llm_chunk.append_to_cache(rabbitmq_client)
-                    added_content = ""
-                return
-            elif event_type == EventType.CUSTOM:
-                # handle custom event
-                for doc_info in chunk_json.get("documents", []):
-                    if isinstance(doc_info, dict) and "metadata" in doc_info:
-                        docs.append(doc_info["metadata"])
-                return
-            elif event_type == EventType.THINKING_TEXT_MESSAGE_CONTENT:
-                think_text = chunk_json.get("delta", "")
-                if think_text == "正在思考...":
-                    return
-                if not think_content:
-                    empty_llm_chunk = LlmChunkMsg(stream_id=stream_id)
-                    empty_llm_chunk.append_to_cache(rabbitmq_client)
-                think_content += think_text
-                if len(think_content) > CHUNK_FLUSH_THRESHOLD:
-                    llm_chunk.think_content = llm_chunk.think_content + think_content
-                    llm_chunk.append_to_cache(rabbitmq_client)
-                    think_content = ""
-                return
-            elif event_type == EventType.RUN_ERROR:
-                has_error = True
-                err_chunk = LlmChunkMsg(
-                    content=f"处理请求时发生错误: {chunk_json.get('message', chunk_json)}",
+                LlmChunkMsg(
+                    content=f"请求处理失败: {str(e)}",
                     is_finish=True,
                     stream_id=stream_id,
-                )
-                err_chunk.append_to_cache(rabbitmq_client)
-                return
-            elif event_type in [EventType.RAW]:
-                return
-            logger.info(f"stream_id:{stream_id} 未知的事件类型: {event_type}")
-
-        for chunk in stream_generator:
-            if has_error:
-                return
-            try:
-                chunk_str = chunk.decode("utf-8", errors="ignore") if isinstance(chunk, bytes) else str(chunk)
-                buffer += chunk_str
-                lines = buffer.split("\n")
-                buffer = lines[-1]
-                for line in lines[:-1]:
-                    _process_line(line)
-            except Exception as e:
-                logger.error(f"stream_id:{stream_id} 处理 chunk 时发生错误: {e}")
-                err_chunk = LlmChunkMsg(content=f"处理请求时发生错误: {str(e)}", is_finish=True, stream_id=stream_id)
-                err_chunk.append_to_cache(rabbitmq_client)
-                return
-
-        if has_error:
-            return
-        if buffer.strip():
-            _process_line(buffer)
-        if has_error:
-            return
-        if think_content:
-            llm_chunk.think_content = llm_chunk.think_content + think_content
-        if added_content:
-            llm_chunk.content = llm_chunk.content + added_content
-        llm_chunk.is_finish = True
-        llm_chunk.docs = docs
-        llm_chunk.append_to_cache(rabbitmq_client)
+                ).append_to_cache(rabbitmq_client)
+            except Exception as cache_e:
+                logger.error(f"stream_id:{stream_id} 写入错误信息到缓存失败: {cache_e}")
 
     @action(detail=False, methods=["get", "post"], url_path="callback")
     def callback(self, request: Request) -> HttpResponse:

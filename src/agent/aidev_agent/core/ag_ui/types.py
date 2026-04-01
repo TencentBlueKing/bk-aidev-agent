@@ -138,6 +138,11 @@ class CustomMessageType(Enum):
     MCP_TOOL_FETCH_FAILED = "mcp_tool_fetch_failed"
     TEMP_MESSAGE = "temp_message"
 
+    # Flow Agent 事件
+    FLOW_AGENT_START = "flow_agent_start"
+    FLOW_AGENT_RESULT = "flow_agent_result"
+    FLOW_AGENT_END = "flow_agent_end"
+
 
 class ExtendBaseMessage(BaseModel):
     status: Literal["complete", "streaming", "pending", "error", "stop"] = "complete"

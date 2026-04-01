@@ -58,11 +58,30 @@ class AGUISessionWriter(BaseSessionWriter):
         """
         super().__init__(session_code=session_code, username=username, tools=tools)
         self.client = client
+        # 缓存 session_property，避免 update_flow_agent_info 每次都额外 GET
+        self._cached_session_property: dict | None = None
 
-    def _do_create_content(self, payload: dict[str, Any], headers: dict[str, str]) -> None:
-        """通过 API 创建会话内容"""
+    def _do_create_content(self, payload: dict[str, Any], headers: dict[str, str]) -> int | None:
+        """通过 API 创建会话内容
+        Returns:
+            创建成功时返回记录 ID，解析失败时返回 None
+        """
         logger.info("开始创建会话内容: session_code=%s, payload=%s, headers=%s", self.session_code, payload, headers)
-        self.client.api.create_chat_session_content(json=payload, headers=headers)
+        result = self.client.api.create_chat_session_content(json=payload, headers=headers)
+        data = result.get("data", {})
+        content_id = data.get("id") if isinstance(data, dict) else None
+        if content_id is not None:
+            logger.info("创建会话内容成功: content_id=%s", content_id)
+        return content_id
+
+    def _do_update_content(self, content_id: int, payload: dict[str, Any], headers: dict[str, str]) -> None:
+        """通过 API 更新已有的会话内容"""
+        logger.info("开始更新会话内容: content_id=%s, payload=%s, headers=%s", content_id, payload, headers)
+        self.client.api.update_chat_session_content(
+            path_params={"id": content_id},
+            json=payload,
+            headers=headers,
+        )
 
     def set_streaming_started(self) -> None:
         """标记流式传输开始（会话状态设为 running）"""
@@ -89,3 +108,59 @@ class AGUISessionWriter(BaseSessionWriter):
             logger.info("会话状态更新成功: session_code=%s, status=%s, result=%s", self.session_code, status, result)
         except Exception:
             logger.exception("会话状态更新失败: session_code=%s, status=%s", self.session_code, status)
+
+    def update_flow_agent_info(self, task_id: str) -> None:
+        """更新 session 中的 Flow Agent task_id
+
+        通过 session_property.flow_info 持久化 task_id 到 session 元数据，
+        前端切回 session 时通过 GET /session/{session_code}/ 即可获取。
+        后端 ChatSession 模型中，flow_info 保存在 property (ChatSessionProperty) 内：
+            property.flow_info = SessionFlowInfo(flow_id, task_id, flow_version)
+        更新接口通过 session_property 字段写入。
+
+        首次调用时会 GET session 并缓存 session_property，后续调用直接使用缓存，
+        避免每次都产生额外的 GET 请求。
+
+        Args:
+            task_id: bkflow 任务 ID
+        """
+        headers = {"X-BKAIDEV-USER": self.username} if self.username else {}
+        try:
+            logger.info(
+                "更新 flow_agent task_id: session_code=%s, task_id=%s",
+                self.session_code,
+                task_id,
+            )
+            # 1. 首次调用时获取并缓存 session_property，保留 flow_info 中已有的 flow_id / flow_version 等字段
+            if self._cached_session_property is None:
+                try:
+                    session_data = self.client.api.retrieve_chat_session(
+                        path_params={"session_code": self.session_code},
+                        headers=headers,
+                    ).get("data", {})
+                    self._cached_session_property = session_data.get("session_property", {}) or {}
+                except Exception:
+                    logger.warning("获取 session property 失败，将直接覆盖: session_code=%s", self.session_code)
+                    self._cached_session_property = {}
+
+            # 2. 合并更新 task_id 到 flow_info
+            current_flow_info = self._cached_session_property.get("flow_info", {}) or {}
+            current_flow_info["task_id"] = task_id
+            self._cached_session_property["flow_info"] = current_flow_info
+
+            # 3. 通过 session_property 字段整体更新回去（保留所有已有字段）
+            self.client.api.update_chat_session(
+                path_params={"session_code": self.session_code},
+                json={
+                    "session_property": self._cached_session_property,
+                },
+                headers=headers,
+            )
+            logger.info(
+                "更新 flow_agent task_id 成功: session_code=%s, task_id=%s, session_property=%s",
+                self.session_code,
+                task_id,
+                self._cached_session_property,
+            )
+        except Exception:
+            logger.exception("更新 flow_agent task_id 失败: session_code=%s, task_id=%s", self.session_code, task_id)
