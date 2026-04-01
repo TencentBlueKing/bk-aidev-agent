@@ -217,14 +217,14 @@ importers:
   publish-template:
     dependencies:
       '@blueking/ai-blueking':
-        specifier: 2.0.0-beta.5
-        version: 2.0.0-beta.5(highlight.js@11.11.1)(typescript@5.8.3)(vue@3.5.27(typescript@5.8.3))
+        specifier: 2.0.0-beta.8
+        version: 2.0.0-beta.8(highlight.js@11.11.1)(typescript@5.8.3)(vue@3.5.27(typescript@5.8.3))
       '@blueking/chat-helper':
         specifier: 0.0.1-beta.33
         version: 0.0.1-beta.33(vue@3.5.27(typescript@5.8.3))
       '@blueking/chat-x':
-        specifier: 0.0.7
-        version: 0.0.7(typescript@5.8.3)
+        specifier: 0.0.8
+        version: 0.0.8(typescript@5.8.3)
       '@blueking/cli-service':
         specifier: 0.1.1
         version: 0.1.1(@babel/core@7.28.0)(@vue/compiler-sfc@3.5.27)(eslint@8.57.1)(less@4.3.0)(prettier@3.6.2)(sass@1.89.2)(stylus@0.64.0)(vue@3.5.27(typescript@5.8.3))
@@ -1011,8 +1011,8 @@ packages:
     peerDependencies:
       vue: ^3.5.24
 
-  '@blueking/ai-blueking@2.0.0-beta.5':
-    resolution: {integrity: sha512-d8HUKmeeF61NCBOtjkJkqFYFGHf5X51ZTFgcnTI6WcjBcW/A1gEO8cjVV/Ezu4SHp8tc1/sisSlUTK6cf2WkTA==}
+  '@blueking/ai-blueking@2.0.0-beta.8':
+    resolution: {integrity: sha512-Kkhyvu2UcrOyKlyH9k0XgpOGItXoj3m60a7o755z56gMV98+Rv9gLA3AHlWwqghgINlVRLbzc257mOQNobGvvw==}
     peerDependencies:
       vue: ^3.5.24
 
@@ -1048,8 +1048,12 @@ packages:
   '@blueking/chat-x@0.0.3-beta.4':
     resolution: {integrity: sha512-AGeA49H/zJBkgzpllvDZG+6Pojd5XnWtDKyDepsnXBmL5PRiZ9b1piuuaKNZUEKzMiAnj5oczzzlP+zRbqgEQw==}
 
-  '@blueking/chat-x@0.0.7':
-    resolution: {integrity: sha512-S+Hv8IyH6JQgQKD1vYSiBa9/WKtGxQQPAvttiXgbPxk/ArZtTNdMrFqCyEwe1GntqxBNAtYrofwzOfQn0iSPTg==}
+  '@blueking/chat-x@0.0.8':
+    resolution: {integrity: sha512-1QUuYAwSPGbBsdc3E29xA1wrQrUGhP/XRAVaf2UWert87LsjDQU8hh9gNV7p5IoyiUuwpSAIGBfKpD4rzu9M2g==}
+    hasBin: true
+
+  '@blueking/chat-x@0.0.9':
+    resolution: {integrity: sha512-CFVnNYivUfbPt0DPndENp0/l7AG8AWJjoT6EbgQ/+UszgdnGs4T+ena+MsYhW6T6x5ZR8MaDwOuEfoThYfE5+Q==}
     hasBin: true
 
   '@blueking/cli-service@0.1.1':
@@ -4943,6 +4947,10 @@ packages:
 
   get-tsconfig@4.10.1:
     resolution: {integrity: sha512-auHyJ4AgMz7vgS8Hp3N6HXSmlMdUyhSUrfBF16w153rxtLIEOE+HGqaBppczZvnHLqQJfiHotCYpNhl0lUROFQ==}
+
+  github-markdown-css@5.9.0:
+    resolution: {integrity: sha512-tmT5sY+zvg2302XLYEfH2mtkViIM1SWf2nvYoF5N1ZsO0V6B2qZTiw3GOzw4vpjLygK/KG35qRlPFweHqfzz5w==}
+    engines: {node: '>=10'}
 
   glob-parent@5.1.2:
     resolution: {integrity: sha512-AOIgSQCepiJYwP3ARnGx+5VnTu2HBYdzbGP45eLw1vr3zB3vZLeyed1sC9hnbcOc9/SrMyM5RPQrkGz4aS9Zow==}
@@ -9618,10 +9626,10 @@ snapshots:
       - highlight.js
       - typescript
 
-  '@blueking/ai-blueking@2.0.0-beta.5(highlight.js@11.11.1)(typescript@5.8.3)(vue@3.5.27(typescript@5.8.3))':
+  '@blueking/ai-blueking@2.0.0-beta.8(highlight.js@11.11.1)(typescript@5.8.3)(vue@3.5.27(typescript@5.8.3))':
     dependencies:
       '@blueking/chat-helper': 0.0.1-beta.33(vue@3.5.27(typescript@5.8.3))
-      '@blueking/chat-x': 0.0.7(typescript@5.8.3)
+      '@blueking/chat-x': 0.0.9(typescript@5.8.3)
       bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.27(typescript@5.8.3))
       tippy.js: 6.3.7
       vue: 3.5.27(typescript@5.8.3)
@@ -9675,7 +9683,26 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
-  '@blueking/chat-x@0.0.7(typescript@5.8.3)':
+  '@blueking/chat-x@0.0.8(typescript@5.8.3)':
+    dependencies:
+      bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.27(typescript@5.8.3))
+      dompurify: 3.2.6
+      github-markdown-css: 5.9.0
+      highlight.js: 11.11.1
+      katex: 0.16.28
+      lodash: 4.17.21
+      markdown-it-footnote: 4.0.0
+      markdown-it-ins: 4.0.0
+      markdown-it-mark: 4.0.0
+      markdown-it-sub: 2.0.0
+      markdown-it-sup: 2.0.0
+      markdown-it-task-checkbox: 1.0.6
+      mermaid: 11.12.2
+      vue: 3.5.27(typescript@5.8.3)
+    transitivePeerDependencies:
+      - typescript
+
+  '@blueking/chat-x@0.0.9(typescript@5.8.3)':
     dependencies:
       bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.27(typescript@5.8.3))
       dompurify: 3.2.6
@@ -14089,6 +14116,8 @@ snapshots:
   get-tsconfig@4.10.1:
     dependencies:
       resolve-pkg-maps: 1.0.0
+
+  github-markdown-css@5.9.0: {}
 
   glob-parent@5.1.2:
     dependencies:
