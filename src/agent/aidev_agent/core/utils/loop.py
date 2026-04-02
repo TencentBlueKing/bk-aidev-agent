@@ -18,6 +18,7 @@ to the current version of the project delivered to anyone in the future.
 
 import asyncio
 import atexit
+import contextlib
 import threading
 
 # Thread-local storage for event loops
@@ -67,6 +68,36 @@ def get_event_loop():
             return new_loop
 
 
+def close_thread_loop() -> None:
+    """Close and clear the cached event loop for the current thread."""
+    loop = getattr(_thread_local, "loop", None)
+    if loop is None:
+        return
+
+    try:
+        running_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        running_loop = None
+
+    if running_loop is loop:
+        return
+
+    _cleanup_thread_loop(loop)
+    with contextlib.suppress(Exception):
+        asyncio.set_event_loop(None)
+    _thread_local.loop = None
+
+
+def run_coro_sync(coro):
+    """Run a coroutine synchronously and release worker-thread loops afterward."""
+    loop = get_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        if threading.current_thread() is not threading.main_thread():
+            close_thread_loop()
+
+
 def _cleanup_thread_loop(loop):
     """Cleanup function to properly close a thread's event loop on exit."""
     if loop is not None and not loop.is_closed():
@@ -79,6 +110,11 @@ def _cleanup_thread_loop(loop):
             # Run until all tasks are cancelled if the loop is not running
             if pending and not loop.is_running():
                 loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+
+            with contextlib.suppress(AttributeError, RuntimeError):
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            with contextlib.suppress(AttributeError, RuntimeError):
+                loop.run_until_complete(loop.shutdown_default_executor())
 
             # Close the loop
             loop.close()

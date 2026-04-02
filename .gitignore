@@ -188,3 +188,4 @@ src/frontend/ai-blueking/lesscode-dist/
 
 .aider*
 .vscode/
+.codebuddy/

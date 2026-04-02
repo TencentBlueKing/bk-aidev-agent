@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 
 from aidev_agent.core.agent.multimodal import EnhancedAgentExecutor
 from aidev_agent.core.extend.agent.qa import CommonQAAgent
-from aidev_agent.core.utils.loop import get_event_loop
+from aidev_agent.core.utils.loop import run_coro_sync
 from aidev_agent.enums import PromptRole, StreamEventType
 from aidev_agent.exceptions import AgentException, streaming_chunk_exception_handling
 from aidev_agent.services.pydantic_models import AgentOptions, ChatPrompt, ExecuteKwargs
@@ -149,7 +149,9 @@ class ChatCompletionAgent(BaseModel):
             return self._stream(messages)
         return self._invoke(messages)
 
-    def _execute_by_agent(self, messages: list[BaseMessage], stream: bool = False, execute_kwargs: ExecuteKwargs=None):
+    def _execute_by_agent(
+        self, messages: list[BaseMessage], stream: bool = False, execute_kwargs: ExecuteKwargs = None
+    ):
         if not messages:
             raise ValueError("The messages list cannot be empty.")
         agent_e, cfg = self._get_agent(messages)
@@ -161,8 +163,9 @@ class ChatCompletionAgent(BaseModel):
                 timeout=self.agent_options.intent_recognition_options.heartbeats_interval,
             )
         else:
-            loop = get_event_loop()
-            result = loop.run_until_complete(agent_e.ainvoke({"input": messages[-1].content, "execute_kwargs": execute_kwargs}, cfg))
+            result = run_coro_sync(
+                agent_e.ainvoke({"input": messages[-1].content, "execute_kwargs": execute_kwargs}, cfg)
+            )
             return_data = {
                 "choices": [{"delta": {"role": "assistant", "content": result["output"]}}],
                 "model": self.model_name,

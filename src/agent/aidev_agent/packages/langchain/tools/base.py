@@ -34,7 +34,7 @@ from requests.exceptions import JSONDecodeError
 
 from aidev_agent.config import settings
 from aidev_agent.core.extend.intent.prompts import pattern_to_retry_guide
-from aidev_agent.core.utils.loop import get_event_loop
+from aidev_agent.core.utils.loop import run_coro_sync
 from aidev_agent.enums import CredentialType
 from aidev_agent.exceptions import AIDevException
 from aidev_agent.packages.langchain.exceptions import ToolValidationError
@@ -419,12 +419,11 @@ def make_mcp_tools(
             _server_config["headers"] = {"X-Bkapi-Authorization": json.dumps(auth_info)}
             _server_config["headers"]["X-Bkapi-Timeout"] = settings.BK_APIGW_MCP_TIMEOUT
 
-    _loop = get_event_loop()
     # 重试2次
     for _i in range(2):
         client = MultiServerMCPClient(new_server_config)
         try:
-            tools: List[StructuredTool] = _loop.run_until_complete(client.get_tools())
+            tools: List[StructuredTool] = run_coro_sync(client.get_tools())
             for each in tools:
                 each.coroutine = MCPExceptionWrapper(each.coroutine, agent_options)
             return tools
