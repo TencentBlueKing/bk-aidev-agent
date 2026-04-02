@@ -217,8 +217,8 @@ importers:
   publish-template:
     dependencies:
       '@blueking/ai-blueking':
-        specifier: 2.0.0-beta.8
-        version: 2.0.0-beta.8(highlight.js@11.11.1)(typescript@5.8.3)(vue@3.5.27(typescript@5.8.3))
+        specifier: 2.0.0-beta.10
+        version: 2.0.0-beta.10(highlight.js@11.11.1)(typescript@5.8.3)(vue@3.5.27(typescript@5.8.3))
       '@blueking/chat-helper':
         specifier: 0.0.1-beta.33
         version: 0.0.1-beta.33(vue@3.5.27(typescript@5.8.3))
@@ -1011,8 +1011,8 @@ packages:
     peerDependencies:
       vue: ^3.5.24
 
-  '@blueking/ai-blueking@2.0.0-beta.8':
-    resolution: {integrity: sha512-Kkhyvu2UcrOyKlyH9k0XgpOGItXoj3m60a7o755z56gMV98+Rv9gLA3AHlWwqghgINlVRLbzc257mOQNobGvvw==}
+  '@blueking/ai-blueking@2.0.0-beta.10':
+    resolution: {integrity: sha512-hRnwKJa9E4vhRtL0wucHGIhXu2MTZfkWwBcHGIb6vuXYIP2JJ4LHJuaQ8vwTk44thmtnzS18T7ppLZgrn94Jwg==}
     peerDependencies:
       vue: ^3.5.24
 
@@ -1042,6 +1042,11 @@ packages:
 
   '@blueking/chat-helper@0.0.1-beta.33':
     resolution: {integrity: sha512-bh7yPyfQa3yD5R9Of71bIfKkD8chQaYP2ieiImpuE0Qm9hcLFpjxcpufvlwXGa0zTMyIhdUgxKruBWbiMGg6hg==}
+    peerDependencies:
+      vue: ^3.5.24
+
+  '@blueking/chat-helper@0.0.1-beta.36':
+    resolution: {integrity: sha512-yWwf27SU5t0aIyRQkUaHUOG+1PlwcOQ2zjDvsTkMGbiOyQ7PCtC6sGwCKhEVFCaeWeWYQenkA1qXYUQw/C7lkw==}
     peerDependencies:
       vue: ^3.5.24
 
@@ -9626,9 +9631,9 @@ snapshots:
       - highlight.js
       - typescript
 
-  '@blueking/ai-blueking@2.0.0-beta.8(highlight.js@11.11.1)(typescript@5.8.3)(vue@3.5.27(typescript@5.8.3))':
+  '@blueking/ai-blueking@2.0.0-beta.10(highlight.js@11.11.1)(typescript@5.8.3)(vue@3.5.27(typescript@5.8.3))':
     dependencies:
-      '@blueking/chat-helper': 0.0.1-beta.33(vue@3.5.27(typescript@5.8.3))
+      '@blueking/chat-helper': 0.0.1-beta.36(vue@3.5.27(typescript@5.8.3))
       '@blueking/chat-x': 0.0.9(typescript@5.8.3)
       bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.27(typescript@5.8.3))
       tippy.js: 6.3.7
@@ -9662,6 +9667,10 @@ snapshots:
       vue: 3.5.27(typescript@5.8.3)
 
   '@blueking/chat-helper@0.0.1-beta.33(vue@3.5.27(typescript@5.8.3))':
+    dependencies:
+      vue: 3.5.27(typescript@5.8.3)
+
+  '@blueking/chat-helper@0.0.1-beta.36(vue@3.5.27(typescript@5.8.3))':
     dependencies:
       vue: 3.5.27(typescript@5.8.3)
 
