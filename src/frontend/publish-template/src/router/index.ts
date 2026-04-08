@@ -13,8 +13,13 @@ export default createRouter({
     {
       path: "/",
       component: Entry,
-      redirect: "/side-slider",
+      redirect: "/chat-window",
       children: [
+        {
+          path: "chat-window",
+          name: "chat-window",
+          component: ChatWindow,
+        },
         {
           path: "side-slider",
           name: "side-slider",
@@ -23,7 +28,7 @@ export default createRouter({
         {
           path: "page",
           name: "page",
-          component: ChatWindow,
+          component: PageDemo,
         },
       ],
     },

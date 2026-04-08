@@ -217,8 +217,8 @@ importers:
   publish-template:
     dependencies:
       '@blueking/ai-blueking':
-        specifier: 2.0.0-beta.10
-        version: 2.0.0-beta.10(highlight.js@11.11.1)(typescript@5.8.3)(vue@3.5.27(typescript@5.8.3))
+        specifier: 2.1.0-beta.1
+        version: 2.1.0-beta.1(@blueking/chat-x@0.0.8(typescript@5.8.3))(highlight.js@11.11.1)(vue@3.5.27(typescript@5.8.3))
       '@blueking/chat-helper':
         specifier: 0.0.1-beta.33
         version: 0.0.1-beta.33(vue@3.5.27(typescript@5.8.3))
@@ -1011,9 +1011,10 @@ packages:
     peerDependencies:
       vue: ^3.5.24
 
-  '@blueking/ai-blueking@2.0.0-beta.10':
-    resolution: {integrity: sha512-hRnwKJa9E4vhRtL0wucHGIhXu2MTZfkWwBcHGIb6vuXYIP2JJ4LHJuaQ8vwTk44thmtnzS18T7ppLZgrn94Jwg==}
+  '@blueking/ai-blueking@2.1.0-beta.1':
+    resolution: {integrity: sha512-b4hAS5r+HaFdwsnocxz/zQSx/9QgZwAGbQOL8kcTZo/yz4ylof5cShXoJDruaFYE2G1TzR05g2ey9yopJkaMmQ==}
     peerDependencies:
+      '@blueking/chat-x': '>=0.0.9'
       vue: ^3.5.24
 
   '@blueking/ai-ui-sdk@0.1.19-beta.44':
@@ -1055,10 +1056,6 @@ packages:
 
   '@blueking/chat-x@0.0.8':
     resolution: {integrity: sha512-1QUuYAwSPGbBsdc3E29xA1wrQrUGhP/XRAVaf2UWert87LsjDQU8hh9gNV7p5IoyiUuwpSAIGBfKpD4rzu9M2g==}
-    hasBin: true
-
-  '@blueking/chat-x@0.0.9':
-    resolution: {integrity: sha512-CFVnNYivUfbPt0DPndENp0/l7AG8AWJjoT6EbgQ/+UszgdnGs4T+ena+MsYhW6T6x5ZR8MaDwOuEfoThYfE5+Q==}
     hasBin: true
 
   '@blueking/cli-service@0.1.1':
@@ -9631,10 +9628,10 @@ snapshots:
       - highlight.js
       - typescript
 
-  '@blueking/ai-blueking@2.0.0-beta.10(highlight.js@11.11.1)(typescript@5.8.3)(vue@3.5.27(typescript@5.8.3))':
+  '@blueking/ai-blueking@2.1.0-beta.1(@blueking/chat-x@0.0.8(typescript@5.8.3))(highlight.js@11.11.1)(vue@3.5.27(typescript@5.8.3))':
     dependencies:
       '@blueking/chat-helper': 0.0.1-beta.36(vue@3.5.27(typescript@5.8.3))
-      '@blueking/chat-x': 0.0.9(typescript@5.8.3)
+      '@blueking/chat-x': 0.0.8(typescript@5.8.3)
       bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.27(typescript@5.8.3))
       tippy.js: 6.3.7
       vue: 3.5.27(typescript@5.8.3)
@@ -9642,7 +9639,6 @@ snapshots:
       vue-tippy: 6.7.1(vue@3.5.27(typescript@5.8.3))
     transitivePeerDependencies:
       - highlight.js
-      - typescript
 
   '@blueking/ai-ui-sdk@0.1.19-beta.44(bkui-vue@2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.27(typescript@5.8.3)))(dayjs@1.11.13)(tdesign-vue-next@1.18.0(vue@3.5.27(typescript@5.8.3)))(tippy.js@6.3.7)(vue-router@4.5.1(vue@3.5.27(typescript@5.8.3)))(vue@3.5.27(typescript@5.8.3))(x-mavon-editor@0.0.20)':
     dependencies:
@@ -9697,24 +9693,6 @@ snapshots:
       bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.27(typescript@5.8.3))
       dompurify: 3.2.6
       github-markdown-css: 5.9.0
-      highlight.js: 11.11.1
-      katex: 0.16.28
-      lodash: 4.17.21
-      markdown-it-footnote: 4.0.0
-      markdown-it-ins: 4.0.0
-      markdown-it-mark: 4.0.0
-      markdown-it-sub: 2.0.0
-      markdown-it-sup: 2.0.0
-      markdown-it-task-checkbox: 1.0.6
-      mermaid: 11.12.2
-      vue: 3.5.27(typescript@5.8.3)
-    transitivePeerDependencies:
-      - typescript
-
-  '@blueking/chat-x@0.0.9(typescript@5.8.3)':
-    dependencies:
-      bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.27(typescript@5.8.3))
-      dompurify: 3.2.6
       highlight.js: 11.11.1
       katex: 0.16.28
       lodash: 4.17.21
