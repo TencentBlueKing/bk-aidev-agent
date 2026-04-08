@@ -1,12 +1,20 @@
 <template>
-  <bk-navigation navigation-type="top-bottom" :side-title="agentName" :need-menu="false">
+  <bk-navigation
+    navigation-type="top-bottom"
+    :side-title="agentName"
+    :need-menu="false"
+  >
     <template #side-icon>
       <img src="@/assets/svg/logo.svg" />
     </template>
     <template #header>
       <section class="home-header">
         <section class="router-links">
-          <router-link v-for="router in routers" :key="router.to" :to="{ name: router.to }">
+          <router-link
+            v-for="router in routers"
+            :key="router.to"
+            :to="{ name: router.to }"
+          >
             {{ router.name }}
           </router-link>
         </section>
@@ -20,13 +28,13 @@
 </template>
 
 <script setup lang="ts">
-  const agentName = window.BK_AGENT_NAME
+  const agentName = window.BK_AGENT_NAME;
 
-  const userName = window.BK_USER_NAME
+  const userName = window.BK_USER_NAME;
   const routers = [
+    { to: "chat-window", name: "聊天窗" },
     { to: "side-slider", name: "小鲸样例" },
-    { to: "page", name: "聊天窗" },
-  ]
+  ];
 </script>
 
 <style lang="postcss" scoped>
