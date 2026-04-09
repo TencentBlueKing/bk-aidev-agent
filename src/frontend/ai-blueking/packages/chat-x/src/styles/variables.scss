@@ -1,0 +1,85 @@
+// background, color, icon-color, hover-background, hover-color, hover-icon-color
+$resourceTypeMap: (
+  tool: (
+    #f0f1f5,
+    #4d4f56,
+    #979ba5,
+    #dcdee5,
+    #4d4f56,
+    #4d4f56,
+  ),
+  shortcut: (
+    #e1ecff,
+    #3a84ff,
+    #3a84ff,
+    #cddffe,
+    #1768ef,
+    #3a84ff,
+  ),
+  doc: (
+    #daf6e5,
+    #2caf5e,
+    #2caf5e,
+    #cbf0da,
+    #14a568,
+    #1cab88,
+  ),
+  knowledgebase: (
+    #daf6e5,
+    #2caf5e,
+    #2caf5e,
+    #cbf0da,
+    #14a568,
+    #1cab88,
+  ),
+  mcp: (
+    #fdeed8,
+    #f59500,
+    #f59500,
+    #fce5c0,
+    #e38b02,
+    #f59500,
+  ),
+);
+
+// toolcall status color map
+// background, borderColor
+// Complete = 'complete',
+// Disabled = 'disabled',
+// Error = 'error',
+// Pending = 'pending',
+// Stop = 'stop',
+// Streaming = 'streaming',
+$toolcallStatusMap: (
+  pending: (
+    #fafbfd,
+    #dcdee5,
+  ),
+  streaming: (
+    #fafbfd,
+    #dcdee5,
+  ),
+  stop: (
+    #fafbfd,
+    #dcdee5,
+  ),
+  disabled: (
+    #fafbfd,
+    #dcdee5,
+  ),
+  complete: (
+    #ebfaf0,
+    #a1e3ba,
+  ),
+  success: (
+    #ebfaf0,
+    #a1e3ba,
+  ),
+  error: (
+    #fff0f0,
+    #f8b4b4,
+  ),
+);
+$chat-input-min-width: 168px;
+$chat-input-max-width: 1000px;
+$content-loading-icon-color-list: (#cddffe, #699df4, #1768ef);

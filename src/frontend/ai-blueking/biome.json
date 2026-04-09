@@ -1,0 +1,4 @@
+{
+  "extends": ["./node_modules/@blueking/bkui-lint/bk-biome.json"],
+  "root": true
+}

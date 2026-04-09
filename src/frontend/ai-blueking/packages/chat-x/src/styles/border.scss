@@ -1,0 +1,14 @@
+@mixin linear-gradient-border($angle: 145deg, $color1: #b8c6ec, $color2: #e3d2e3) {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: 1px;
+  pointer-events: none;
+  content: '';
+  background: linear-gradient(145deg, $color1 0%, $color2 100%);
+  border-radius: 8px;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}

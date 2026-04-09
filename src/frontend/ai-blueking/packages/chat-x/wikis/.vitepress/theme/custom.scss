@@ -1,0 +1,23 @@
+@use '../../../src/styles/global';
+
+body {
+  font-size: 14px;
+}
+
+.demo {
+  padding: 22px 24px;
+  margin-bottom: 1.2em;
+  border-radius: 8px;
+  box-shadow:
+    0 3px 12px #00000012,
+    0 1px 4px #00000012;
+  transition: background-color 0.5s;
+
+  .flex-gap-6 {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    width: 100%;
+  }
+}
