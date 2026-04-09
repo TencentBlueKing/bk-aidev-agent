@@ -41,8 +41,13 @@
     "README.md"
   ],
   "keywords": [],
-  "author": "",
+  "author": "Tencent BlueKing",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TencentBlueKing/bk-aidev-agent.git",
+    "directory": "src/frontend/ai-blueking/packages/chat-x"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "bkui-vue": "2.0.2-beta.81",
