@@ -41,7 +41,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
           cache-dependency-path: "src/frontend/**/pnpm-lock.yaml"
           registry-url: https://registry.npmjs.org/
@@ -76,7 +76,7 @@ jobs:
 
       - name: Publish ai-blueking to npm
         working-directory: src/frontend/ai-blueking/packages/ai-blueking
-        run: npm publish --access public --provenance
+        run: npm publish --access public
 
       - name: Convert version to Python format
         id: py-version
