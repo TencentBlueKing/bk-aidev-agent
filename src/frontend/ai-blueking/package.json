@@ -1,105 +1,25 @@
 {
-  "name": "@blueking/ai-blueking",
-  "version": "2.0.0-dev.29",
-  "description": "AI 小鲸",
-  "license": "MIT",
-  "author": "Tencent BlueKing",
+  "name": "ai-blueking-monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
   "scripts": {
-    "dev": "vite --mode development -c scripts/vite.dev.ts",
-    "build": "tsx ./scripts/vite.build.ts && vue-tsc --project tsconfig.build.json",
-    "dts": "vue-tsc --project tsconfig.build.json",
-    "prettier": "prettier ./src ./scripts ./playground --write",
-    "format": "prettier --write ./src ./scripts ./playground --config .prettierrc.js",
-    "format:check": "prettier --check ./src ./scripts ./playground --config .prettierrc.js",
-    "lint": "eslint src --ext .vue,.js,.ts,.jsx,.tsx",
-    "lint:fix": "eslint src --ext .vue,.js,.ts,.jsx,.tsx --fix; prettier --write ./src --config .prettierrc.js",
-    "lint:check": "eslint src --ext .vue,.js,.ts,.jsx,.tsx --max-warnings 0",
-    "visualize": "vite-bundle-visualizer -c scripts/vite.vusualizer.ts",
-    "clean": "rm -rf dist node_modules",
-    "prepublishOnly": "npm run build",
-    "publish:interactive": "bash publish.sh",
-    "publish:auto": "bash publish-simple.sh"
-  },
-  "exports": {
-    ".": {
-      "types": "./dist/vue3.d.ts",
-      "import": "./dist/vue3/index.es.min.js",
-      "require": "./dist/vue3/index.umd.min.js",
-      "default": "./dist/vue3/index.es.min.js"
-    },
-    "./vue2": {
-      "types": "./dist/vue2.d.ts",
-      "import": "./dist/vue2/index.es.min.js",
-      "require": "./dist/vue2/index.es.min.js",
-      "default": "./dist/vue2/index.es.min.js"
-    },
-    "./chat-helper": {
-      "types": "./dist/chat-helper.d.ts",
-      "import": "./dist/chat-helper.js",
-      "require": "./dist/chat-helper.js",
-      "default": "./dist/chat-helper.js"
-    },
-    "./dist/*": "./dist/*",
-    "./src/*": "./src/*"
-  },
-  "typesVersions": {
-    "*": {
-      ".": [
-        "./dist/vue3.d.ts"
-      ],
-      "vue3": [
-        "./dist/vue3.d.ts"
-      ],
-      "vue2": [
-        "./dist/vue2.d.ts"
-      ]
-    }
-  },
-  "types": "./dist/vue3.d.ts",
-  "main": "dist/vue3/index.es.min.js",
-  "unpkg": "dist/vue3/index.es.min.js",
-  "files": [
-    "dist"
-  ],
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org/"
+    "dev:ui": "pnpm --filter @blueking/chat-x dev",
+    "build:ui": "pnpm --filter @blueking/chat-x build",
+    "test:ui": "pnpm --filter @blueking/chat-x test",
+    "dev:helper": "pnpm --filter @blueking/chat-helper dev",
+    "build:helper": "pnpm --filter @blueking/chat-helper build",
+    "dev:ai": "pnpm --filter @blueking/ai-blueking dev",
+    "build:ai": "pnpm --filter @blueking/ai-blueking build",
+    "lint:ui": "pnpm --filter @blueking/chat-x lint:all",
+    "lint:ai": "pnpm --filter @blueking/ai-blueking lint:all",
+    "build:mcp": "pnpm --filter @blueking/chat-x mcp:build",
+    "dev:mcp": "pnpm --filter @blueking/chat-x mcp:dev",
+    "wiki:dev": "pnpm --filter @blueking/chat-x wiki:dev"
   },
   "devDependencies": {
-    "@types/highlight.js": "^10.1.0",
-    "@types/node": "^20.14.2",
-    "@typescript-eslint/eslint-plugin": "^7.18.0",
-    "@typescript-eslint/parser": "^7.18.0",
-    "@vitejs/plugin-vue": "^5.2.3",
-    "eslint": "^8.57.1",
-    "eslint-config-prettier": "^10.1.5",
-    "eslint-import-resolver-typescript": "^4.4.4",
-    "eslint-plugin-import": "^2.32.0",
-    "eslint-plugin-prettier": "^5.5.1",
-    "eslint-plugin-unused-imports": "^4.1.4",
-    "eslint-plugin-vue": "^9.33.0",
-    "marked": "^15.0.8",
-    "marked-highlight": "2.2.1",
-    "tsx": "^4.20.6",
-    "vue-tsc": "^3.1.1"
-  },
-  "dependencies": {
-    "@blueking/ai-ui-sdk": " 0.1.19-beta.44",
-    "@blueking/bkui-library": "0.0.0-beta.6",
-    "dayjs": "^1.10.7",
-    "dompurify": ">=3.2.4",
-    "markdown-it": "^13.0.1",
-    "markdown-it-copy-code": "^0.1.3",
-    "mermaid": "10.9.3",
-    "motion-v": "^0.11.3",
-    "tippy.js": "6.3.7",
-    "vue-draggable-resizable": "^3.0.0",
-    "highlight.js": "11.11.1",
-    "x-mavon-editor": "^0.0.20"
-  },
-  "overrides": {
-    "mermaid": {
-      "dompurify": ">=3.2.4"
-    }
+    "@blueking/bkui-lint": "0.1.8",
+    "@types/node": "^25.0.1",
+    "typescript": "~5.9.3"
   }
 }

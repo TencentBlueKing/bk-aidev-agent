@@ -1,0 +1,20 @@
+{
+  "name": "vue2-playground",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "vue": "2.7.16",
+    "@blueking/bkui-library": "0.0.0-beta.6",
+    "@blueking/ai-blueking": "file:../ai-blueking",
+    "@blueking/chat-helper": "file:../chat-helper",
+    "tippy.js": "^6.3.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue2": "^2.3.3",
+    "vite": "^6.3.1"
+  }
+}

@@ -1,0 +1,268 @@
+/*
+ * Tencent is pleased to support the open source community by making
+ * 蓝鲸智云PaaS平台 (BlueKing PaaS) available.
+ *
+ * Copyright (C) 2021 THL A29 Limited, a Tencent company.  All rights reserved.
+ *
+ * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
+ *
+ * License for 蓝鲸智云PaaS平台 (BlueKing PaaS):
+ *
+ * ---------------------------------------------------
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+ * documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and
+ * to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+ * the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+ * THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+ * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
+ */
+import { defineComponent, h } from 'vue';
+
+import { type VueWrapper, mount } from '@vue/test-utils';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import FlowAgentContent from './flow-agent-content.vue';
+
+import type { BkFlowMessageContent } from '../../../ag-ui/types/contents';
+
+const { mockAddCustomTab } = vi.hoisted(() => ({
+  mockAddCustomTab: vi.fn(),
+}));
+
+vi.mock('bkui-vue', () => ({
+  Loading: defineComponent({
+    name: 'MockLoading',
+    props: {
+      mode: { type: String, default: '' },
+      size: { type: String, default: '' },
+      theme: { type: String, default: '' },
+    },
+    setup() {
+      return () => h('span', { class: 'mock-bk-loading' });
+    },
+  }),
+}));
+
+vi.mock('../../../ag-ui/types/constants', () => ({
+  MessageContentType: {
+    FlowAgent: 'flow_agent',
+  },
+  MessageStatus: {
+    Complete: 'complete',
+    Pending: 'pending',
+    Streaming: 'streaming',
+    Success: 'success',
+  },
+}));
+
+vi.mock('../../../composables/use-custom-tab', () => ({
+  useCustomTabConsumer: () => ({ addCustomTab: mockAddCustomTab }),
+}));
+
+// 与业务侧 icons 一致：导出为 VNode，供 cloneVNode / 模板使用
+vi.mock('../../../icons', () => ({
+  ArrowRightIcon: h('span', { class: 'mock-arrow-right' }),
+  BkFlowFailedIcon: h('span', { class: 'mock-bkflow-failed' }),
+  BkFlowPendingIcon: h('span', { class: 'mock-bkflow-pending' }),
+  BkFlowSuccessIcon: h('span', { class: 'mock-bkflow-success' }),
+  BkFlowSuspendedIcon: h('span', { class: 'mock-bkflow-suspended' }),
+  NodeOutputIcon: h('span', { class: 'mock-node-output' }),
+}));
+
+vi.mock('../../../lang/lang', () => ({
+  t: (key: string) => key,
+}));
+
+vi.mock('../../ai-loading/ai-loading.vue', () => ({
+  default: defineComponent({
+    name: 'AiLoading',
+    props: { size: { type: Number, default: 12 } },
+    setup() {
+      return () => h('span', { class: 'mock-ai-loading' });
+    },
+  }),
+}));
+
+vi.mock('../../highlight-keyword/highlight-keyword', () => ({
+  default: defineComponent({
+    name: 'HighlightKeyword',
+    props: { text: { type: String, default: '' } },
+    setup(props) {
+      return () => h('span', { class: 'mock-highlight-keyword' }, props.text);
+    },
+  }),
+}));
+
+vi.mock('../activity-layout/activity-layout.vue', () => ({
+  default: defineComponent({
+    name: 'ActivityLayout',
+    props: {
+      activityType: { type: String, default: '' },
+      collapsed: { type: Boolean, default: false },
+    },
+    emits: ['update:collapsed'],
+    setup(_, { slots }) {
+      return () =>
+        h('div', { class: 'mock-activity-layout' }, [
+          h('div', { class: 'mock-activity-title' }, slots.title?.()),
+          h('div', { class: 'mock-activity-body' }, slots.default?.()),
+        ]);
+    },
+  }),
+}));
+
+vi.mock('./flow-agent-node-detail.vue', () => ({
+  default: defineComponent({
+    name: 'BkFlowNodeDetail',
+    setup() {
+      return () => h('div', { class: 'mock-flow-agent-node-detail' });
+    },
+  }),
+}));
+
+const createNode = (overrides: Partial<BkFlowMessageContent['nodes'][string]> = {}) => ({
+  elapsed_time: 3,
+  finish_time: '',
+  id: 'n1',
+  loop: 0,
+  name: '节点一',
+  retry: 0,
+  skip: false,
+  start_time: '',
+  state: 'FINISHED',
+  type: 'task',
+  ...overrides,
+});
+
+const createContent = (overrides: Partial<BkFlowMessageContent> = {}): BkFlowMessageContent => ({
+  nodes: {
+    n1: createNode({ id: 'n1', name: '节点一' }),
+    n2: createNode({ id: 'n2', name: '节点二', state: 'RUNNING', elapsed_time: 1 }),
+  },
+  statistics: {
+    state_counts: { FINISHED: 2, RUNNING: 1 },
+    total: 3,
+  },
+  task_id: 100,
+  task_name: '测试任务',
+  task_outputs: { key: 'value' },
+  task_state: 'FINISHED',
+  ...overrides,
+});
+
+describe('FlowAgentContent', () => {
+  let wrapper: VueWrapper;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    wrapper?.unmount();
+  });
+
+  describe('渲染测试', () => {
+    it('应该正确渲染组件', () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent(),
+        },
+      });
+
+      expect(wrapper.find('.mock-activity-layout').exists()).toBe(true);
+      expect(wrapper.find('.flow-agent-activity').exists()).toBe(true);
+    });
+  });
+
+  describe('统计数据展示', () => {
+    it('应根据 statistics.state_counts 展示非零统计项', () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent({
+            statistics: {
+              state_counts: { FINISHED: 2, RUNNING: 1 },
+              total: 3,
+            },
+          }),
+        },
+      });
+
+      const text = wrapper.find('.flow-agent-title-label').element.parentElement?.textContent ?? '';
+      expect(text).toContain('成功');
+      expect(text).toContain('2');
+      expect(text).toContain('执行中');
+      expect(text).toContain('1');
+    });
+
+    it('应正确展示待执行状态的统计', () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent({
+            statistics: {
+              state_counts: { FINISHED: 1, PENDING: 2 },
+              total: 3,
+            },
+          }),
+        },
+      });
+
+      const text = wrapper.find('.flow-agent-title-label').element.parentElement?.textContent ?? '';
+      expect(text).toContain('待执行');
+      expect(text).toContain('2');
+    });
+
+    it('待执行统计数字应使用主题灰 #4D4F56', () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent({
+            statistics: {
+              state_counts: { PENDING: 1 },
+              total: 1,
+            },
+          }),
+        },
+      });
+
+      const pendingItem = wrapper.findAll('.flow-agent-stat-item').find(item => item.text().includes('待执行'));
+      const count = pendingItem?.find('.flow-agent-stat-count');
+      expect(count?.attributes('style')).toContain('#4D4F56');
+    });
+  });
+
+  describe('节点列表', () => {
+    it('应渲染节点列表项', () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent(),
+        },
+      });
+
+      const items = wrapper.findAll('.flow-agent-node-item');
+      expect(items.length).toBe(2);
+      expect(wrapper.text()).toContain('节点一');
+      expect(wrapper.text()).toContain('节点二');
+    });
+  });
+
+  describe('task_outputs', () => {
+    it('应展示 task_outputs 的 JSON 字符串', () => {
+      const outputs = { result: 'ok', n: 1 };
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent({ task_outputs: outputs }),
+        },
+      });
+
+      const el = wrapper.find('.flow-agent-task-outputs');
+      expect(el.exists()).toBe(true);
+      expect(el.text()).toBe(JSON.stringify(outputs));
+    });
+  });
+});
