@@ -43,7 +43,7 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-          cache-dependency-path: src/frontend/ai-blueking/pnpm-lock.yaml
+          cache-dependency-path: "src/frontend/**/pnpm-lock.yaml"
           registry-url: https://registry.npmjs.org/
 
       - name: Install uv
