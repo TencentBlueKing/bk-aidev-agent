@@ -1,0 +1,76 @@
+name: Publish chat-helper
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（如 0.0.2-beta.1），留空则自动 patch 自增'
+        required: false
+        type: string
+        default: ''
+      target_branch:
+        description: '推送目标分支'
+        required: false
+        type: string
+        default: '2.0.0'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_branch }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: src/frontend/ai-blueking/pnpm-lock.yaml
+          registry-url: https://registry.npmjs.org/
+
+      - name: Install dependencies
+        working-directory: src/frontend/ai-blueking
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Bump version
+        id: bump-version
+        working-directory: src/frontend/ai-blueking/packages/chat-helper
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            npm version "${{ inputs.version }}" --no-git-tag-version
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            NEW_VERSION=$(npm version patch --no-git-tag-version)
+            echo "version=${NEW_VERSION#v}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Publishing version: $(cat package.json | grep '"version"' | head -1)"
+
+      - name: Build chat-helper
+        working-directory: src/frontend/ai-blueking
+        run: pnpm --filter @blueking/chat-helper build
+
+      - name: Publish chat-helper to npm
+        working-directory: src/frontend/ai-blueking/packages/chat-helper
+        run: npm publish --access public --provenance
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit and push changes
+        run: |
+          git add -A
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "chore(release): chat-helper@${{ steps.bump-version.outputs.version }}"
+          git push origin HEAD:${{ inputs.target_branch }}
