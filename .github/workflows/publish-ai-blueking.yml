@@ -1,18 +1,24 @@
 name: Publish ai-blueking
 
 on:
+  push:
+    branches:
+      - "2.0.0"
+    paths:
+      - "src/frontend/ai-blueking/**"
+      - "src/frontend/bkui-chat-x/**"
   workflow_dispatch:
     inputs:
       version:
-        description: '版本号（如 2.1.0-beta.5），留空则自动 patch 自增'
+        description: "版本号（如 2.1.0-beta.5），留空则自动 patch 自增"
         required: false
         type: string
-        default: ''
+        default: ""
       target_branch:
-        description: '推送目标分支'
+        description: "推送目标分支（仅手动触发有效）"
         required: false
         type: string
-        default: '2.0.0'
+        default: "2.0.0"
 
 permissions:
   contents: write
@@ -25,17 +31,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.target_branch }}
+          ref: ${{ github.event_name == 'push' && github.ref || inputs.target_branch }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
+        with:
+          version: 9
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
-          cache-dependency-path: src/frontend/ai-blueking/pnpm-lock.yaml
+          cache-dependency-path: "src/frontend/**/pnpm-lock.yaml"
           registry-url: https://registry.npmjs.org/
 
       - name: Install uv
@@ -103,4 +111,4 @@ jobs:
           git add -A
           git diff --cached --quiet && echo "No changes to commit" && exit 0
           git commit -m "chore(release): ai-blueking@${{ steps.bump-version.outputs.version }}"
-          git push origin HEAD:${{ inputs.target_branch }}
+          git push origin HEAD:${{ github.event_name == 'push' && github.ref_name || inputs.target_branch }}
