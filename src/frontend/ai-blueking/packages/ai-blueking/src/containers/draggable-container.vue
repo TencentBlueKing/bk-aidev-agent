@@ -30,7 +30,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, defineEmits, defineExpose, defineProps, ref, watch, withDefaults } from 'vue';
+  import { computed, ref, watch } from 'vue';
 
   import VueDraggableResizable from 'vue-draggable-resizable';
 
