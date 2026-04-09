@@ -4,6 +4,11 @@
   "description": "AI 小鲸 V2 - 基于新架构的智能对话组件",
   "license": "MIT",
   "author": "Tencent BlueKing",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TencentBlueKing/bk-aidev-agent.git",
+    "directory": "src/frontend/ai-blueking/packages/ai-blueking"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite --mode development -c scripts/vite.dev.ts",

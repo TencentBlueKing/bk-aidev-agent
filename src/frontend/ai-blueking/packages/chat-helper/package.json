@@ -13,8 +13,13 @@
   "files": [
     "dist"
   ],
-  "author": "",
+  "author": "Tencent BlueKing",
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TencentBlueKing/bk-aidev-agent.git",
+    "directory": "src/frontend/ai-blueking/packages/chat-helper"
+  },
   "packageManager": "pnpm@10.17.1",
   "peerDependencies": {
     "vue": "^3.5.24"
