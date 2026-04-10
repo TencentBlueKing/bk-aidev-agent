@@ -38,6 +38,7 @@ import type {
   ISessionModule,
 } from '@blueking/chat-helper';
 import type { IAiSlashMenuItem } from '@blueking/chat-x';
+import type { CreateSessionOptions } from './manager/business/types';
 
 /**
  * AIBlueking 组件 Emits 类型定义
@@ -87,7 +88,7 @@ export interface AIBluekingEmits {
  */
 export interface AIBluekingExpose {
   // 会话管理
-  addNewSession: (sessionCode?: string) => Promise<void>;
+  addNewSession: (options?: CreateSessionOptions) => Promise<void>;
   focusInput: () => void;
 
   /** 获取 chatHelper 实例，用于访问 agent/session/message 等底层模块 */
@@ -139,6 +140,12 @@ export interface AIBluekingExpose {
 export interface AIBluekingProps {
   /** 是否自动切换到初始会话 */
   autoSwitchToInitialSession?: boolean;
+  /**
+   * Nimbus 悬浮球点击前的钩子函数
+   * 返回 false 阻止默认的 showPanel 行为，返回 true 或不返回则继续默认行为
+   * 可用于在点击后先执行自定义逻辑（如切换到固定 session）再决定是否打开面板
+   */
+  beforeNimbusClick?: () => boolean | Promise<boolean | void> | void;
   /** 默认聊天输入框位置 */
   defaultChatInputPosition?: 'bottom' | undefined;
   /** 默认高度 */

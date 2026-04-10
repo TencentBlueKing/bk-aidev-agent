@@ -250,11 +250,15 @@ export default createVue2Wrapper(AIBlueking, {
       type: Boolean,
       default: false,
     },
+    beforeNimbusClick: {
+      type: Function,
+      default: undefined,
+    },
   },
   emitNames: [...aiBluekingEmitNames],
   exposeKeys: [...aiBluekingExposeKeys],
   slots: ['codeHeader'],
-  deepWatchProps: ['requestOptions', 'shortcuts'],
+  deepWatchProps: ['requestOptions', 'shortcuts', 'beforeNimbusClick'],
   methods: {
     show(): Promise<void> {
       console.warn('AIBluekingV2: show method not ready');
@@ -434,5 +438,5 @@ export const ChatBotV2 = createVue2Wrapper(ChatBot, {
   emitNames: [...chatBotEmitNames],
   exposeKeys: [...chatBotExposeKeys],
   slots: ['codeHeader'],
-  deepWatchProps: ['requestOptions', 'shortcuts'],
+  deepWatchProps: ['requestOptions', 'shortcuts', 'beforeNimbusClick'],
 });

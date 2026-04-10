@@ -12,6 +12,7 @@ import type { ComputedRef, Ref } from 'vue';
 
 import type ChatBot from '../components/chat-bot.vue';
 import type { SessionBusinessManager } from '../manager/business/session-business-manager';
+import type { CreateSessionOptions } from '../manager/business/types';
 import type { IChatHelper, ISession } from '../types';
 import type { EventForwarders } from './use-ai-blueking-init';
 import type { IMessageProperty } from '@blueking/chat-helper';
@@ -151,9 +152,9 @@ export function useSessionHandlers(params: UseSessionHandlersParams) {
 
   // ==================== Expose 方法 ====================
 
-  const addNewSession = async (sessionCode?: string) => {
-    if (sessionCode) {
-      await sessionBusinessManager.createSession({ sessionCode });
+  const addNewSession = async (options?: CreateSessionOptions) => {
+    if (options) {
+      await sessionBusinessManager.createSession(options);
     } else {
       await sessionBusinessManager.createNewSession();
     }

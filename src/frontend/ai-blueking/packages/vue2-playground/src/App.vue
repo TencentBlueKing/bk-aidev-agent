@@ -12,6 +12,13 @@
         AIBlueking 完整模式
       </button>
       <button
+        :class="{ active: activeTab === 'nimbus-hook' }"
+        type="button"
+        @click="activeTab = 'nimbus-hook'"
+      >
+        Nimbus 点击自定义
+      </button>
+      <button
         :class="{ active: activeTab === 'embedded' }"
         type="button"
         @click="activeTab = 'embedded'"
@@ -36,6 +43,36 @@
       <ai-blueking
         ref="aiBlueking"
         :url="apiUrl"
+        @close="onClose"
+        @send-message="onSendMessage"
+        @show="onShow"
+      />
+    </div>
+
+    <div
+      v-show="activeTab === 'nimbus-hook'"
+      class="panel-full"
+    >
+      <div class="controls">
+        <button
+          type="button"
+          @click="showHookAI"
+        >
+          显示 AI 小鲸
+        </button>
+        <label class="toggle-label">
+          <input
+            v-model="nimbusHookBlock"
+            type="checkbox"
+          />
+          阻止默认打开（return false）
+        </label>
+      </div>
+
+      <ai-blueking
+        ref="hookAIBlueking"
+        :url="apiUrl"
+        :before-nimbus-click="handleBeforeNimbusClick"
         @close="onClose"
         @send-message="onSendMessage"
         @show="onShow"
@@ -91,6 +128,7 @@
       return {
         activeTab: 'full',
         apiUrl: import.meta.env.VITE_API_URL || '',
+        nimbusHookBlock: true,
         shortcuts: [
           {
             id: 'translate',
@@ -111,6 +149,9 @@
       showAI() {
         this.$refs.aiBlueking.show();
       },
+      showHookAI() {
+        this.$refs.hookAIBlueking.show();
+      },
       onShow() {
         console.log('[Vue2 Playground] AI panel shown');
       },
@@ -125,6 +166,16 @@
       },
       onEmbeddedError(error) {
         console.error('[Vue2 Playground] [ChatBotV2] error:', error);
+      },
+      async handleBeforeNimbusClick() {
+        console.log('[Vue2 Playground] beforeNimbusClick triggered');
+        if (this.nimbusHookBlock) {
+          console.log('[Vue2 Playground] 阻止默认 showPanel，手动调用 switchToSession + show');
+          this.$refs.hookAIBlueking.switchToSession('new_session_1775618757894');
+          this.$refs.hookAIBlueking.show('new_session_1775618757894');
+          return false;
+        }
+        console.log('[Vue2 Playground] 允许默认 showPanel');
       },
     },
   };
@@ -167,7 +218,9 @@
     background: #f0f1f5;
     border: 1px solid #dcdee5;
     border-radius: 4px;
-    transition: background 0.2s, border-color 0.2s;
+    transition:
+      background 0.2s,
+      border-color 0.2s;
   }
 
   .tabs button.active {
@@ -197,6 +250,20 @@
 
   .controls button:hover {
     background: #699df4;
+  }
+
+  .toggle-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 16px;
+    font-size: 14px;
+    color: #63656e;
+    cursor: pointer;
+  }
+
+  .toggle-label input[type='checkbox'] {
+    cursor: pointer;
   }
 
   .embedded-desc {
