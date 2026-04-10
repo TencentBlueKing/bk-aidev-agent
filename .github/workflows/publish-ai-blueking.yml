@@ -57,9 +57,18 @@ jobs:
         id: bump-version
         working-directory: src/frontend/ai-blueking/packages/ai-blueking
         run: |
+          resolve_tag() {
+            local ver="$1"
+            if echo "$ver" | grep -qE -- '-alpha\.'; then echo "alpha"
+            elif echo "$ver" | grep -qE -- '-beta\.'; then echo "beta"
+            elif echo "$ver" | grep -qE -- '-rc\.'; then echo "rc"
+            else echo "latest"
+            fi
+          }
           if [ -n "${{ inputs.version }}" ]; then
             npm version "${{ inputs.version }}" --no-git-tag-version
             echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "npm_tag=$(resolve_tag '${{ inputs.version }}')" >> "$GITHUB_OUTPUT"
           else
             CURRENT=$(node -p "require('./package.json').version")
             if echo "$CURRENT" | grep -qE -- '-(alpha|beta|rc)\.'; then
@@ -69,6 +78,7 @@ jobs:
               NEW_VERSION="${PREFIX}$((NUM + 1))"
               npm version "$NEW_VERSION" --no-git-tag-version
               echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+              echo "npm_tag=$(resolve_tag "$NEW_VERSION")" >> "$GITHUB_OUTPUT"
             else
               echo "::error::当前版本 $CURRENT 是正式版，正式版必须通过手动触发并指定版本号发布"
               exit 1
@@ -86,7 +96,7 @@ jobs:
 
       - name: Publish ai-blueking to npm
         working-directory: src/frontend/ai-blueking/packages/ai-blueking
-        run: npm publish --access public
+        run: npm publish --access public --tag ${{ steps.bump-version.outputs.npm_tag }}
 
       - name: Convert version to Python format
         id: py-version
