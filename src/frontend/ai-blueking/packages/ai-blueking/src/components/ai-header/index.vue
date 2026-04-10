@@ -50,6 +50,7 @@
         @click="handleMoreIconClick"
       ></span>
     </div>
+    <slot name="headerLeft" />
     <div class="right-section">
       <!-- 新增会话按钮 -->
       <i
@@ -134,6 +135,10 @@
   });
 
   const emit = defineEmits<AIHeaderEmits>();
+
+  defineSlots<{
+    headerLeft?: () => unknown;
+  }>();
 
   const vBkTooltips = bkTooltips;
 

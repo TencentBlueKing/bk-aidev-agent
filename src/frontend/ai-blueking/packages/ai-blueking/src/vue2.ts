@@ -257,7 +257,7 @@ export default createVue2Wrapper(AIBlueking, {
   },
   emitNames: [...aiBluekingEmitNames],
   exposeKeys: [...aiBluekingExposeKeys],
-  slots: ['codeHeader'],
+  slots: ['codeHeader', 'headerLeft'],
   deepWatchProps: ['requestOptions', 'shortcuts', 'beforeNimbusClick'],
   methods: {
     show(): Promise<void> {
