@@ -43,6 +43,12 @@ const router = createRouter({
       component: () => import('./views/UrlSwitchView.vue'),
       meta: { title: 'URL 动态切换', group: 'example' },
     },
+    {
+      path: '/examples/header-left-slot',
+      name: 'HeaderLeftSlot',
+      component: () => import('./views/HeaderLeftSlotView.vue'),
+      meta: { title: 'headerLeft 插槽', group: 'example' },
+    },
   ],
 });
 

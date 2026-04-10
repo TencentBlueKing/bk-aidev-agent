@@ -50,7 +50,14 @@
             @rename="handleRename"
             @share="handleShare"
             @toggle-compression="handleToggleCompression"
-          />
+          >
+            <template
+              v-if="$slots.headerLeft"
+              #headerLeft
+            >
+              <slot name="headerLeft" />
+            </template>
+          </AIHeader>
 
           <!-- ChatBot 核心组件（仅聊天区域） -->
           <ChatBot
@@ -142,6 +149,7 @@
   const emit = defineEmits<AIBluekingEmits>();
   defineSlots<{
     codeHeader?: (props: { language: string; token: unknown[] }) => unknown;
+    headerLeft?: () => unknown;
   }>();
 
   // ==================== 1. 核心初始化 ====================
