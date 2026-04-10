@@ -109,12 +109,12 @@
       </div>
     </div>
   </ActivityLayout>
-  <div
+  <!-- <div
     v-if="taskData?.task_outputs"
     class="flow-agent-task-outputs"
   >
     {{ typeof taskData.task_outputs === 'object' ? JSON.stringify(taskData.task_outputs) : taskData.task_outputs }}
-  </div>
+  </div> -->
 </template>
 <script setup lang="ts">
   import { cloneVNode, computed, ref } from 'vue';

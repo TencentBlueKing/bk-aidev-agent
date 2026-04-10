@@ -252,7 +252,8 @@ describe('FlowAgentContent', () => {
   });
 
   describe('task_outputs', () => {
-    it('应展示 task_outputs 的 JSON 字符串', () => {
+    // 与模板一致：任务输出展示区块已注释，不在 DOM 中渲染
+    it('不应渲染 .flow-agent-task-outputs', () => {
       const outputs = { result: 'ok', n: 1 };
       wrapper = mount(FlowAgentContent, {
         props: {
@@ -260,9 +261,7 @@ describe('FlowAgentContent', () => {
         },
       });
 
-      const el = wrapper.find('.flow-agent-task-outputs');
-      expect(el.exists()).toBe(true);
-      expect(el.text()).toBe(JSON.stringify(outputs));
+      expect(wrapper.find('.flow-agent-task-outputs').exists()).toBe(false);
     });
   });
 });
