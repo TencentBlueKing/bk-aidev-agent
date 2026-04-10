@@ -18,6 +18,7 @@ import type { EventForwarders, ForwardToManagerFn } from './use-ai-blueking-init
 const SIDE_PANEL_EXTRA_WIDTH = 420;
 
 export interface UsePanelContainerParams {
+  beforeNimbusClick?: () => boolean | Promise<boolean | void> | void;
   chatBotRef: Ref<InstanceType<typeof ChatBot> | undefined>;
   componentManager: ComponentManager;
   forwarders: EventForwarders;
@@ -25,7 +26,7 @@ export interface UsePanelContainerParams {
 }
 
 export function usePanelContainer(params: UsePanelContainerParams) {
-  const { componentManager, chatBotRef, forwarders, forwardToManager } = params;
+  const { componentManager, chatBotRef, forwarders, forwardToManager, beforeNimbusClick } = params;
 
   // ==================== 面板控制 ====================
   const show = async (sessionCode?: string) => {
@@ -48,7 +49,15 @@ export function usePanelContainer(params: UsePanelContainerParams) {
   };
 
   // ==================== Nimbus ====================
-  const handleNimbusClick = () => {
+  const handleNimbusClick = async () => {
+    if (beforeNimbusClick) {
+      const result = await beforeNimbusClick();
+      if (result === false) {
+        // 用户拦截，不执行默认 showPanel
+        componentManager.emit('nimbus-click', {});
+        return;
+      }
+    }
     componentManager.handleNimbusClick();
   };
 

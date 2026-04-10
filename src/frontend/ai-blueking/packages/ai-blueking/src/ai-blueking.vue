@@ -205,6 +205,7 @@
     chatBotRef,
     forwarders,
     forwardToManager,
+    beforeNimbusClick: props.beforeNimbusClick,
   });
 
   // ==================== 3. 会话管理 ====================
