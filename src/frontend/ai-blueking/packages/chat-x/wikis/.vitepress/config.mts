@@ -146,6 +146,7 @@ function sidebarAPI() {
       collapsed: false,
       items: [
         { text: '概览', link: 'plugins/' },
+        { text: 'markdownItContainer', link: 'plugins/markdown-container' },
         { text: 'markdownItLatex', link: 'plugins/markdown-latex' },
         { text: 'markdownItMermaid', link: 'plugins/markdown-mermaid' },
       ],

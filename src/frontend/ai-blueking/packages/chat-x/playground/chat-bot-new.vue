@@ -1,4 +1,12 @@
 <template>
+  <div class="button-container">
+    <button
+      class="delete-message-button"
+      @click="handleDeleteMessage"
+    >
+      delete message
+    </button>
+  </div>
   <div class="chat-bot-new">
     <ChatContainer
       v-model:cite="cite"
@@ -17,9 +25,7 @@
       placement="left"
       :prompts="MOCK_PROMPTS"
       :resize-props="{
-        initialDivide: 500,
-        min: 400,
-        max: 1000,
+        initialDivide: '33.33%',
       }"
       :resources="MOCK_RESOURCES"
       :shortcuts="shortcuts"
@@ -903,8 +909,7 @@
     inputs: {
       _loop: 1,
       _inner_loop: 1,
-      uniform_api_plugin_url:
-        'https://your-api-gateway.example.com/openapi/aidev/gateway/llm/v1/chat/completions',
+      uniform_api_plugin_url: 'https://your-api-gateway.example.com/openapi/aidev/gateway/llm/v1/chat/completions',
       uniform_api_plugin_method: 'POST',
       uniform_api_plugin_credential_key: 'agent_credential',
       model: 'qwen3-8b',
@@ -1053,6 +1058,11 @@
     userInput.value = value;
   };
 
+  const handleDeleteMessage = () => {
+    console.log('delete message');
+    messages.value = [];
+  };
+
   onMounted(() => {
     let content = '';
     const chunkSize = 1000000000000000;
@@ -1080,6 +1090,12 @@
 </script>
 
 <style lang="scss">
+  .button-container {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+  }
+
   .chat-bot-new {
     display: flex;
     width: 1200px;

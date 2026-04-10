@@ -60,12 +60,19 @@ export function useCustomTabProvider<T extends Record<string, unknown>>(options:
     options.onTabChange?.(tab);
   };
 
+  const resetCustomTab = () => {
+    tabs.value = [EXECUTION_TAB];
+    selectedTab.value = EXECUTION_TAB;
+    isCollapse.value = true;
+  };
+
   provide(CUSTOM_TAB_TOKEN, {
     tabs,
     selectedTab,
     addCustomTab,
     removeCustomTab,
     selectCustomTab,
+    resetCustomTab,
   });
 
   return {
@@ -75,6 +82,7 @@ export function useCustomTabProvider<T extends Record<string, unknown>>(options:
     addCustomTab,
     removeCustomTab,
     selectCustomTab,
+    resetCustomTab,
   };
 }
 

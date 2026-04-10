@@ -55,6 +55,7 @@
     "highlight.js": "^11.11.1",
     "katex": "^0.16.27",
     "lodash": "^4.17.21",
+    "markdown-it-container": "^4.0.0",
     "markdown-it-footnote": "^4.0.0",
     "markdown-it-ins": "^4.0.0",
     "markdown-it-mark": "^4.0.0",

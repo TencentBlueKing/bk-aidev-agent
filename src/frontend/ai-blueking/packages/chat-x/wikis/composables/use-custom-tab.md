@@ -35,6 +35,7 @@ function useCustomTabProvider<T extends Record<string, unknown>>(options: {
   addCustomTab: (tab: CustomTab<T>) => void;
   removeCustomTab: (tabName: string) => void;
   selectCustomTab: (tab: CustomTab<T>) => void;
+  resetCustomTab: () => void;
 };
 ```
 
@@ -49,6 +50,7 @@ function useCustomTabConsumer<T extends Record<string, unknown>>():
       addCustomTab: (tab: CustomTab<T>) => void;
       removeCustomTab: (tabName: string) => void;
       selectCustomTab: (tab: CustomTab<T>) => void;
+      resetCustomTab: () => void;
     };
 ```
 
@@ -59,7 +61,8 @@ function useCustomTabConsumer<T extends Record<string, unknown>>():
 ```typescript
 import { useCustomTabProvider, EXECUTION_TAB_NAME } from '@blueking/chat-x';
 
-const { tabs, selectedTab, isCollapse, addCustomTab, removeCustomTab, selectCustomTab } = useCustomTabProvider({
+const { tabs, selectedTab, isCollapse, addCustomTab, removeCustomTab, selectCustomTab, resetCustomTab } =
+  useCustomTabProvider({
   onTabChange: async tab => {
     // Tab 切换时加载数据
     const data = await fetchTabData(tab.name);
@@ -106,6 +109,7 @@ tabManager?.removeCustomTab('node-detail-123');
 | addCustomTab    | `(tab: CustomTab) => void`  | 添加 Tab（同名 Tab 不重复添加）                   |
 | removeCustomTab | `(tabName: string) => void` | 移除指定 Tab                                      |
 | selectCustomTab | `(tab: CustomTab) => void`  | 切换到指定 Tab，触发 `onTabChange` 回调           |
+| resetCustomTab  | `() => void`                  | 重置为仅保留「执行情况」Tab、折叠侧栏并选中默认 Tab；`ChatContainer` 在卸载时调用，避免残留自定义 Tab |
 
 ## 类型定义
 

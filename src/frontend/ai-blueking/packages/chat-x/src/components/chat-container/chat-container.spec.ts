@@ -63,7 +63,7 @@ vi.mock('bkui-vue', () => {
         collapsible: Boolean,
         disabled: Boolean,
         immediate: Boolean,
-        initialDivide: Number,
+        initialDivide: [Number, String],
         max: Number,
         min: Number,
         placement: String,
@@ -151,10 +151,22 @@ vi.mock('../../composables/use-custom-tab', () => {
         selectedTab.value = tab ?? EXECUTION_TAB;
         _options.onTabChange?.(tab);
       });
+      const resetCustomTab = vi.fn(() => {
+        tabs.value = [EXECUTION_TAB];
+        selectedTab.value = EXECUTION_TAB;
+        isCollapse.value = true;
+      });
 
-      provide(CUSTOM_TAB_TOKEN, { tabs, selectedTab, addCustomTab, removeCustomTab, selectCustomTab });
+      provide(CUSTOM_TAB_TOKEN, {
+        tabs,
+        selectedTab,
+        addCustomTab,
+        removeCustomTab,
+        selectCustomTab,
+        resetCustomTab,
+      });
 
-      return { tabs, selectedTab, isCollapse, addCustomTab, removeCustomTab, selectCustomTab };
+      return { tabs, selectedTab, isCollapse, addCustomTab, removeCustomTab, selectCustomTab, resetCustomTab };
     }),
     useCustomTabConsumer: vi.fn(() => undefined),
   };
@@ -520,6 +532,18 @@ describe('ChatContainer', () => {
       const resize = wrapper.findComponent({ name: 'ResizeLayout' });
       expect(resize.props('placement')).toBe('right');
       expect(resize.props('min')).toBe(200);
+    });
+
+    it('resizeProps.initialDivide 支持百分比字符串', () => {
+      wrapper = mount(ChatContainer, {
+        props: {
+          ...defaultProps,
+          resizeProps: { initialDivide: '33.33%' },
+        },
+      });
+
+      const resize = wrapper.findComponent({ name: 'ResizeLayout' });
+      expect(resize.props('initialDivide')).toBe('33.33%');
     });
   });
 });

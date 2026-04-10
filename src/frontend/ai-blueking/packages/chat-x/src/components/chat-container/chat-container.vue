@@ -195,7 +195,17 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { type VNode, computed, ref as deepRef, h, nextTick, shallowRef, watch, withDirectives } from 'vue';
+  import {
+    type VNode,
+    computed,
+    ref as deepRef,
+    h,
+    nextTick,
+    onUnmounted,
+    shallowRef,
+    watch,
+    withDirectives,
+  } from 'vue';
 
   import { ResizeLayout, Tab } from 'bkui-vue';
 
@@ -238,7 +248,7 @@
     placement?: 'left' | 'right';
     resizeProps?: {
       disabled?: boolean;
-      initialDivide?: number;
+      initialDivide?: number | string;
       max?: number;
       min?: number;
     };
@@ -306,7 +316,7 @@
 
   useCommonTippyProvider({ tippyOptions: computed(() => props.commonTippyOptions ?? {}) });
 
-  const { tabs, selectedTab, isCollapse, addCustomTab, removeCustomTab, selectCustomTab } =
+  const { tabs, selectedTab, isCollapse, addCustomTab, removeCustomTab, selectCustomTab, resetCustomTab } =
     useCustomTabProvider<CustomBkFlowTabData>({
       onTabChange: async tab => {
         const tabProps = selectedTab.value.data?.props || {
@@ -399,7 +409,6 @@
    * @param messages - 消息
    */
   const handleAgentAction = async (tool: IToolBtn, messages: Message[]) => {
-    console.log('handleAgentAction', tool, messages);
     // 点击分享按钮，切换到分享模式
     if (tool.id === 'share') {
       isShareMode.value = true;
@@ -421,6 +430,9 @@
   const handleResizing = (w: number) => {
     resizeAsideWidth.value = w;
   };
+  onUnmounted(() => {
+    resetCustomTab();
+  });
 
   defineExpose({
     selectedTab,

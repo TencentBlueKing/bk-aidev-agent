@@ -69,6 +69,7 @@
   import { useContainerScrollConsumer } from '../../../composables';
   import MarkdownIt from '../../../markdown-it/index';
   import { markdownItLatex, markdownItMermaid } from '../../../plugins';
+  import { markdownItContainer } from '../../../plugins/markdown-container';
   // import { markdownAnimationAttrs } from '../../../plugins/markdown-animation-attrs';
   import { completeMarkdownSyntax } from '../../../utils/stream-markdown-completer';
   import { CodeContent, MermaidContent } from '../../markdown-token';
@@ -116,8 +117,8 @@
       katexOptions: {
         strict: false,
       },
-    });
-
+    })
+    .use(markdownItContainer, /^hljs-(left|center|right)$/);
   const vnodeOptions = {
     html: true,
     renderer: md.renderer,
@@ -275,13 +276,13 @@
       }
       // 流式渲染时对不完整的 markdown 语法进行补全
       const { content: completedContent, isIncomplete } = completeMarkdownSyntax(content);
-
       // 如果内容处于不完整状态（正在输入 LaTeX 命令），
       // 保持之前的渲染结果，避免闪烁或显示无效内容
       if (isIncomplete && groupedTokens.value.length > 0) {
         return;
       }
       const tokens = md.parse(completedContent, {});
+
       const list = groupTokens(tokens);
       for (const group of list) {
         const firstToken = group.at(0);
@@ -348,6 +349,18 @@
 
       pre code.hljs {
         background-color: #282c34;
+      }
+
+      .hljs-left {
+        text-align: left;
+      }
+
+      .hljs-center {
+        text-align: center;
+      }
+
+      .hljs-right {
+        text-align: right;
       }
     }
   }
