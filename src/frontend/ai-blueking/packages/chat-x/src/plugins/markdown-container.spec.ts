@@ -23,21 +23,18 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-/// <reference types="markdown-it" />
+import { describe, expect, it } from 'vitest';
 
-// 类型声明文件：将本地的 markdown-it/index.mjs 模块映射到 @types/markdown-it 的类型定义
-// 这个文件为 .mjs 模块提供 TypeScript 类型支持
+import MarkdownIt from '../markdown-it/index';
+import { markdownItContainer } from './markdown-container';
 
-import type MarkdownItConstructor from 'markdown-it';
-
-declare const MarkdownIt: typeof MarkdownItConstructor;
-
-export default MarkdownIt;
-export type { MarkdownItConstructor };
-// 主包入口无这些类型的命名导出（CommonJS 为 export =，ESM 的 index 也未 re-export），
-// 与官方类型定义中 lib 子模块的 default class 对齐。
-export type { Options, PluginSimple, PluginWithOptions, PluginWithParams, PresetName } from 'markdown-it';
-export type { default as Renderer } from 'markdown-it/lib/renderer.mjs';
-export type { default as StateBlock } from 'markdown-it/lib/rules_block/state_block.mjs';
-export type { default as StateInline } from 'markdown-it/lib/rules_inline/state_inline.mjs';
-export type { default as Token } from 'markdown-it/lib/token.mjs';
+describe('markdownItContainer', () => {
+  it('应将 ::: hljs-left 等容器解析为带 class 的 div', () => {
+    const md = new MarkdownIt({ html: true }).use(markdownItContainer, /^hljs-(left|center|right)$/);
+    const html = md.render(`::: hljs-left
+左对齐
+:::`);
+    expect(html).toContain('hljs-left');
+    expect(html).toContain('左对齐');
+  });
+});

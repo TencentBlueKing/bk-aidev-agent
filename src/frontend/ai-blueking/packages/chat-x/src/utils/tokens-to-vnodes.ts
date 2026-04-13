@@ -309,7 +309,8 @@ export const tokensToVNodes = (tokens: Token[], options: TokenToVNodeOptions = {
 
 /**
  * 将 markdown-it 的 attrs 数组转换为 Vue h 函数需要的 props 对象
- * 优化：增加 key 参数，用于优化 Vue Diff 性能
+ * - 支持同一属性多次出现：`class` 以空格拼接，`style` 以分号拼接（与常见 HTML 合并语义一致）
+ * - 增加 key 参数，用于优化 Vue Diff 性能
  */
 export const attrsToStyleAndProps = (
   attrs: null | TokenAttrs,
@@ -326,9 +327,9 @@ export const attrsToStyleAndProps = (
   if (attrs && attrs.length > 0) {
     for (const [k, v] of attrs) {
       if (k === 'class') {
-        props.class = v;
+        props.class = props.class ? `${props.class} ${v}` : v;
       } else if (k === 'style') {
-        props.style = v;
+        props.style = props.style ? `${props.style}; ${v}` : v;
       } else {
         props[k] = v;
       }

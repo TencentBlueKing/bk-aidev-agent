@@ -169,6 +169,34 @@ describe('useCustomTab', () => {
 
       wrapper.unmount();
     });
+
+    it('resetCustomTab 应该恢复为仅执行情况 Tab、折叠并选中默认 Tab', async () => {
+      const Provider = createProviderComponent();
+      const wrapper = mount(Provider);
+
+      const vm = wrapper.vm as unknown as {
+        providerResult: {
+          addCustomTab: (tab: { label: string; name: string }) => void;
+          resetCustomTab: () => void;
+          tabs: { value: { name: string }[] };
+          selectedTab: { value: { name: string } };
+          isCollapse: { value: boolean };
+        };
+      };
+
+      vm.providerResult.addCustomTab({ label: '节点1', name: 'node-1' });
+      await nextTick();
+      expect(vm.providerResult.tabs.value.length).toBe(2);
+      expect(vm.providerResult.isCollapse.value).toBe(false);
+
+      vm.providerResult.resetCustomTab();
+      expect(vm.providerResult.tabs.value.length).toBe(1);
+      expect(vm.providerResult.tabs.value[0]?.name).toBe(EXECUTION_TAB_NAME);
+      expect(vm.providerResult.selectedTab.value.name).toBe(EXECUTION_TAB_NAME);
+      expect(vm.providerResult.isCollapse.value).toBe(true);
+
+      wrapper.unmount();
+    });
   });
 
   describe('useCustomTabConsumer', () => {

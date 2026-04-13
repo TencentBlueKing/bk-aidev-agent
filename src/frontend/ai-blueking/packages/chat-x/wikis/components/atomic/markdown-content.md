@@ -100,6 +100,19 @@ graph TD
 \`\`\`
 `;
 
+  const alignContainerContent = `::: hljs-left
+左对齐段落
+:::
+
+::: hljs-center
+居中段落
+:::
+
+::: hljs-right
+右对齐段落
+:::
+`;
+
   const errorContent = '请求失败，服务端返回了错误响应。';
 
   const streamingContent = ref('');
@@ -234,6 +247,14 @@ props.content → completeMarkdownSyntax → md.parse → groupTokens → groupe
   <MarkdownContent :content="tableContent" :status="MessageStatus.Complete" />
 </div>
 
+## 对齐容器（markdown-it-container）
+
+支持 `::: hljs-left` / `::: hljs-center` / `::: hljs-right` 自定义容器，内容渲染在带对应 class 的块级容器中，由内置样式控制 `text-align`：
+
+<div class="demo">
+  <MarkdownContent :content="alignContainerContent" :status="MessageStatus.Complete" />
+</div>
+
 ## LaTeX 公式
 
 公式由 `LatexContent`（KaTeX）渲染，支持行内 `$...$` 和块级 `$$...$$`：
@@ -348,6 +369,7 @@ props.content → completeMarkdownSyntax → md.parse → groupTokens → groupe
 | `markdown-it-task-checkbox` | `- [x]`             | 任务列表             |
 | `markdownItMermaid`         | ` ```mermaid `      | Mermaid 图表 token   |
 | `markdownItLatex`           | `$...$` / `$$...$$` | KaTeX 数学公式 token |
+| `markdownItContainer`       | `::: hljs-left` 等  | 自定义对齐容器（class 与 highlight.js 命名对齐） |
 
 ### 安全性
 

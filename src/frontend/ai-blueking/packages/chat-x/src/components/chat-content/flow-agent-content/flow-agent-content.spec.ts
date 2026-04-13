@@ -32,9 +32,15 @@ import FlowAgentContent from './flow-agent-content.vue';
 
 import type { BkFlowMessageContent } from '../../../ag-ui/types/contents';
 
-const { mockAddCustomTab } = vi.hoisted(() => ({
-  mockAddCustomTab: vi.fn(),
-}));
+const { mockAddCustomTab, mockRemoveCustomTab, mockScrollRef } = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { ref } = require('vue');
+  return {
+    mockAddCustomTab: vi.fn(),
+    mockRemoveCustomTab: vi.fn(),
+    mockScrollRef: ref({ autoScrollEnabled: true }),
+  };
+});
 
 vi.mock('bkui-vue', () => ({
   Loading: defineComponent({
@@ -62,8 +68,12 @@ vi.mock('../../../ag-ui/types/constants', () => ({
   },
 }));
 
+vi.mock('../../../composables', () => ({
+  useContainerScrollConsumer: () => mockScrollRef,
+}));
+
 vi.mock('../../../composables/use-custom-tab', () => ({
-  useCustomTabConsumer: () => ({ addCustomTab: mockAddCustomTab }),
+  useCustomTabConsumer: () => ({ addCustomTab: mockAddCustomTab, removeCustomTab: mockRemoveCustomTab }),
 }));
 
 // 与业务侧 icons 一致：导出为 VNode，供 cloneVNode / 模板使用
@@ -162,6 +172,7 @@ describe('FlowAgentContent', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockScrollRef.value = { autoScrollEnabled: true };
   });
 
   afterEach(() => {
@@ -262,6 +273,35 @@ describe('FlowAgentContent', () => {
       });
 
       expect(wrapper.find('.flow-agent-task-outputs').exists()).toBe(false);
+    });
+  });
+
+  describe('生命周期与自定义 Tab', () => {
+    it('存在消息容器滚动上下文时卸载应移除各节点详情 Tab', () => {
+      mockScrollRef.value = { autoScrollEnabled: true };
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent(),
+        },
+      });
+
+      wrapper.unmount();
+
+      expect(mockRemoveCustomTab).toHaveBeenCalledWith('100|n1|节点一');
+      expect(mockRemoveCustomTab).toHaveBeenCalledWith('100|n2|节点二');
+    });
+
+    it('无滚动上下文时卸载不应调用 removeCustomTab', () => {
+      mockScrollRef.value = undefined as unknown as { autoScrollEnabled: boolean };
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent(),
+        },
+      });
+
+      wrapper.unmount();
+
+      expect(mockRemoveCustomTab).not.toHaveBeenCalled();
     });
   });
 });

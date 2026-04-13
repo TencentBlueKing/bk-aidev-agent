@@ -117,11 +117,12 @@
   </div> -->
 </template>
 <script setup lang="ts">
-  import { cloneVNode, computed, ref } from 'vue';
+  import { cloneVNode, computed, onUnmounted, ref } from 'vue';
 
   import { Loading } from 'bkui-vue';
 
   import { MessageContentType, MessageStatus } from '../../../ag-ui/types/constants';
+  import { useContainerScrollConsumer } from '../../../composables';
   import { useCommonTippyInject } from '../../../composables/use-common';
   import { useCustomTabConsumer } from '../../../composables/use-custom-tab';
   import { OverflowTips as vOverflowTips } from '../../../directives/overflow-tips';
@@ -178,8 +179,8 @@
     status?: MessageStatusType;
   }>();
 
-  const { addCustomTab } = useCustomTabConsumer<CustomBkFlowTabData>()!;
-
+  const { addCustomTab, removeCustomTab } = useCustomTabConsumer<CustomBkFlowTabData>()!;
+  const provideContainerScrollData = useContainerScrollConsumer();
   const collapsed = defineModel<boolean>('collapsed', {
     default: false,
   });
@@ -207,14 +208,14 @@
 
   const nodeList = computed(() => Object.values(props.content?.nodes ?? {}));
 
-  function getConvergedState(state: string): ConvergedState {
+  const getConvergedState = (state: string): ConvergedState => {
     if (state === 'FINISHED') return 'success';
     if (FAILED_STATES.has(state)) return 'failed';
     if (state === 'SUSPENDED') return 'suspended';
     if (state === 'PENDING') return 'pending';
     if (RUNNING_STATES.has(state)) return 'running';
     return 'running';
-  }
+  };
 
   const visibleStats = computed(() => {
     const stateCounts = props.content?.statistics?.state_counts ?? {};
@@ -236,7 +237,7 @@
     }));
   });
 
-  function formatElapsedTime(seconds: number): string {
+  const formatElapsedTime = (seconds: number): string => {
     if (seconds < 1) return '<1s';
 
     const d = Math.floor(seconds / 86400);
@@ -251,14 +252,14 @@
     if (s > 0) parts.push(`${s}s`);
 
     return parts.join('');
-  }
+  };
 
-  function handleNodeDetail(node: BkFlowNode) {
+  const handleNodeDetail = (node: BkFlowNode) => {
     const taskId = props.content?.task_id;
     if (taskId != null) {
       addCustomTab?.({
         label: node.name,
-        name: taskId + '|' + node.id + '|' + node.name,
+        name: `${taskId}|${node.id}|${node.name}`,
         data: {
           component: BkFlowNodeDetail,
           props: {
@@ -272,7 +273,18 @@
         },
       });
     }
-  }
+  };
+  onUnmounted(() => {
+    // 这里用于判断是否是在 message-container 中被销毁的.
+    // 如果是执行情况下的销毁，则不进行移除
+    if (!provideContainerScrollData?.value) {
+      return;
+    }
+    const taskId = props.content?.task_id;
+    for (const node of nodeList.value) {
+      removeCustomTab?.(`${taskId}|${node.id}|${node.name}`);
+    }
+  });
 </script>
 <style lang="scss">
   .flow-agent-activity {

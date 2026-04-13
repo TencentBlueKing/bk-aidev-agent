@@ -112,6 +112,10 @@ vi.mock('../../../plugins', () => ({
   markdownItMermaid: vi.fn(() => () => {}),
 }));
 
+vi.mock('../../../plugins/markdown-container', () => ({
+  markdownItContainer: vi.fn(() => () => {}),
+}));
+
 // Mock utils
 vi.mock('../../../utils/stream-markdown-completer', () => ({
   completeMarkdownSyntax: (content: string) => ({

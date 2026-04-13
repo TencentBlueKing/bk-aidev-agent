@@ -1176,76 +1176,17 @@ async function loadUserData() {
 `;
 export const streamContent = `
 
-## Links
+#### 3. Align content
 
-[link text](http://dev.nodeca.com)
+::: hljs-left
+This is left aligned content.
+:::
 
-[link with title](http://nodeca.github.io/pica/demo/)
+::: hljs-center
+This is center aligned content.
+:::
 
-### Code 
-\`\`\`javascript
-// 传统回调地狱 vs 现代async/await
-// 回调地狱示例
-fetch('/api/user').then(res => res.json()).then(user => {
-  fetch(\`/api/orders/\${user.id}\`).then(res => res.json()).then(orders => {
-    console.log(orders);
-  });
-});
-
-// async/await优化
-async function loadUserData() {
-  const user = await fetch('/api/user').then(res => res.json());
-  const orders = await fetch(\`/api/orders/\${user.id}\`).then(res => res.json());
-  console.log(orders);
-}
-\`\`\`
-#### 正弦函数展开
-### 复数运算
-
-复数的一般形式： $ z = a + bi $
-
-复数的模： $ |z| = \\sqrt{a^2 + b^2} $
-
-复数的乘法：
-
-$$
-(a + bi)(c + di) = (ac - bd) + (ad + bc)i
-$$
-
-德摩弗定理：
-
-$$
-(\\cos\\theta + i\\sin\\theta)^n = \\cos(n\\theta) + i\\sin(n\\theta)
-$$
-9. Mermaid graphic:
-
-#### 2. Sequence Diagram
-\`\`\`mermaid
-quadrantChart
-    title Reach and engagement of campaigns
-    x-axis Low Reach --> High Reach
-    y-axis Low Engagement --> High Engagement
-    quadrant-1 We should expand
-    quadrant-2 Need to promote
-    quadrant-3 Re-evaluate
-    quadrant-4 May be improved
-    Campaign A: [0.3, 0.6]
-    Campaign B: [0.45, 0.23]
-    Campaign C: [0.57, 0.69]
-    Campaign D: [0.78, 0.34]
-    Campaign E: [0.40, 0.34]
-    Campaign F: [0.35, 0.78]
-\`\`\`
-#### 2. Sequence Diagram
-\`\`\` mermaid
-sequenceDiagram
-    participant Client
-    participant Server
-    participant Database
-    
-    Client->>Server: POST /api/data
-    Server->>Database: INSERT record
-    Database-->>Server: Success
-    Server-->>Client: 201 Created
-\`\`\`
+::: hljs-right
+This is right aligned content.
+:::
 `;

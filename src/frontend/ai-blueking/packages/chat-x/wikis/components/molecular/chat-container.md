@@ -648,7 +648,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | commonTippyOptions | `AITippyProps`                                                               | —        | 通用 Tippy 配置，传入的选项会注入到所有使用 `v-overflow-tips` 的子组件中                                                                      |
 | openingRemark      | `string`                                                                     | —        | 开场白，无消息时显示，支持 Markdown                                                                                                           |
 | placement          | `'left' \| 'right'`                                                          | `'left'` | 侧边栏位置                                                                                                                                    |
-| resizeProps        | `{ disabled?: boolean; initialDivide?: number; max?: number; min?: number }` | —        | 透传给内部 `ResizeLayout` 的可选配置，与默认 `collapsible: false`、`immediate: true`、`min: 400` 合并；`placement` 始终取自本组件 `placement` |
+| resizeProps        | `{ disabled?: boolean; initialDivide?: number \| string; max?: number; min?: number }` | —        | 透传给内部 `ResizeLayout` 的可选配置，与默认 `collapsible: false`、`immediate: true`、`min: 400` 合并；`placement` 始终取自本组件 `placement`；`initialDivide` 可为像素数字或百分比等字符串（与 bkui ResizeLayout 一致） |
 | onCustomTabChange  | `(tab: CustomTab) => Promise<any>`                                           | —        | 自定义 Tab 切换回调，返回值作为 Tab 组件 props                                                                                                |
 
 > 完整 Props 列表请参考 [ChatInput](./chat-input.md) 和 [MessageContainer](./message-container.md) 文档。

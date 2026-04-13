@@ -16,7 +16,6 @@ lerna-debug.log*
 # Lock files
 package-lock.json
 yarn.lock
-pnpm-lock.yaml
 
 node_modules
 dist
@@ -51,3 +50,4 @@ Agents.md
 .cursor/hooks/state/continual-learning-index.json
 docs/superpowers/*
 packages/chat-x/mcp/generated/*
+.cursor

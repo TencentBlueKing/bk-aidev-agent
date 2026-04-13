@@ -339,7 +339,6 @@
 
     if (files.length > 0) {
       event.preventDefault();
-      console.log('handlePaste files', files);
       emit('upload', files);
     }
   };
