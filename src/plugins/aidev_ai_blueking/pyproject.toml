@@ -1,6 +1,6 @@
 [project]
 name = "aidev-ai-blueking"
-version = "2.1.1b2"
+version = "2.1.1b3"
 description = "小鲸静态资源包"
 readme = "readme.md"
 requires-python = ">=3.11.9, <4"
