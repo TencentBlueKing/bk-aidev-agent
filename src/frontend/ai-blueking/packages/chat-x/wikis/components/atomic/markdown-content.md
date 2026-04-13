@@ -177,6 +177,8 @@ props.content → completeMarkdownSyntax → md.parse → groupTokens → groupe
                     └──── handleTokenMounted（throttle 100ms）→ containerScroll.toScrollBottom()
 ```
 
+`VNodeRenderer` 的 `options` 中包含与当前 `MarkdownIt` 实例一致的 `mditOptions`（即 `md.options`），以便 `tokensToVNodes` 调用 `renderer.rules` 时第三参与 markdown-it 原生规则签名一致。
+
 ### Token 分组（groupTokens）
 
 `groupTokens` 使用栈将扁平 Token 数组转为分组数组，每组对应一个顶层 DOM 节点（段落、标题、列表、代码块等）：

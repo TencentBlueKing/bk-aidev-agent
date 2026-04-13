@@ -413,6 +413,19 @@ describe('ChatContainer', () => {
       expect(wrapper.find('.ai-welcome-remark').exists()).toBe(false);
     });
 
+    it('使用 welcome 插槽时应替换整块默认欢迎区（含 Banner 与默认标题）', () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, openingRemark: '默认开场白' },
+        slots: {
+          welcome: ({ openingRemark }: { openingRemark: string }) =>
+            h('div', { class: 'custom-welcome' }, `自定义: ${openingRemark}`),
+        },
+      });
+
+      expect(wrapper.find('.mock-banner-icon').exists()).toBe(false);
+      expect(wrapper.find('.ai-welcome-title').exists()).toBe(false);
+    });
+
     it('不传 welcome 插槽时应使用默认开场白渲染', () => {
       wrapper = mount(ChatContainer, {
         props: { ...defaultProps, openingRemark: '欢迎使用' },

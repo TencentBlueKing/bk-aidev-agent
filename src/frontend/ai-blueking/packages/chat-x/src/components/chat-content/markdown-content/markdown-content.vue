@@ -121,6 +121,7 @@
     .use(markdownItContainer, /^hljs-(left|center|right)$/);
   const vnodeOptions = {
     html: true,
+    mditOptions: md.options,
     renderer: md.renderer,
     sanitize: (html: string) => dompurify.sanitize(html, domPurifyConfig),
   };

@@ -205,10 +205,8 @@ ai-chat-container
     └── main（主内容区）
         ├── MessageContainer（有消息时）
         │   └── 消息列表 + 工具栏
-        ├── 欢迎页（无消息时）
-        │   ├── AIBluekingBannerIcon
-        │   ├── 欢迎标题
-        │   └── welcome 插槽（默认：开场白 ContentRender）
+        ├── 欢迎页（无消息时，容器 .ai-welcome-content）
+        │   └── welcome 插槽（默认：Banner + 欢迎标题 + 开场白 ContentRender；自定义则整块替换）
         ├── SelectionFooter（分享模式时）
         ├── ShortcutRender（有快捷指令时）
         └── ChatInput（默认状态）
@@ -458,7 +456,7 @@ ai-chat-container
 </template>
 ```
 
-> **注意**：使用 `welcome` 插槽后，默认的 `openingRemark` 渲染（`ContentRender`）将被替换，需要自行处理开场白展示逻辑。
+> **注意**：使用 `welcome` 插槽后，将**整块替换**默认欢迎区（含 Banner 图标、默认欢迎标题与 `openingRemark` 的 `ContentRender` 渲染），需自行编排完整欢迎页；插槽参数 `openingRemark` 仍可用于读取传入的开场白文本。
 
 **渲染效果**
 
@@ -680,7 +678,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | codeHeader | `{ language: string; token: Token[] }` | 代码块头部自定义操作区域，透传给 MessageRender → ContentRender → MarkdownContent → CodeContent |
 | default    | 消息列表相关绑定（messages 等）        | 自定义消息列表区域                                                                             |
 | message    | `{ message, messageToolsStatus }`      | 自定义单条消息渲染                                                                             |
-| welcome    | `{ openingRemark: string }`            | 自定义欢迎页内容，替换默认的 openingRemark 渲染，无消息时显示                                  |
+| welcome    | `{ openingRemark: string }`            | 无消息时自定义欢迎页；传入则替换默认 Banner、标题与开场白区域（整块替换）                      |
 
 ### Expose
 
