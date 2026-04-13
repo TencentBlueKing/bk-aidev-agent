@@ -10,6 +10,10 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 8002,
     allowedHosts: true,
+    fs: {
+      // 限制仅扫描 vue2-playground 目录，避免扫描到 monorepo 其他空包（如 mcp）导致 tsconfig 找不到
+      allow: [resolve(__dirname)],
+    },
   },
   resolve: {
     alias: {
@@ -19,5 +23,8 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ['vue'],
+    include: [
+      '@tencent/bk-magic-vue',
+    ],
   },
 });

@@ -1,182 +1,44 @@
 <template>
-  <div id="vue2-playground">
-    <h1>AI-Blueking Vue2 Playground</h1>
-    <p class="desc">测试 @blueking/ai-blueking/vue2 在 Vue 2.7 环境中的兼容性</p>
-
-    <div class="tabs">
-      <button
-        :class="{ active: activeTab === 'full' }"
-        type="button"
-        @click="activeTab = 'full'"
-      >
-        AIBlueking 完整模式
-      </button>
-      <button
-        :class="{ active: activeTab === 'nimbus-hook' }"
-        type="button"
-        @click="activeTab = 'nimbus-hook'"
-      >
-        Nimbus 点击自定义
-      </button>
-      <button
-        :class="{ active: activeTab === 'embedded' }"
-        type="button"
-        @click="activeTab = 'embedded'"
-      >
-        ChatBot 嵌入模式
-      </button>
-    </div>
-
-    <div
-      v-show="activeTab === 'full'"
-      class="panel-full"
-    >
-      <div class="controls">
-        <button
-          type="button"
-          @click="showAI"
-        >
-          显示 AI 小鲸
-        </button>
+  <div class="playground-layout">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="logo-icon">AI</span>
+        <span class="logo-text">Vue2 Playground</span>
       </div>
 
-      <ai-blueking
-        ref="aiBlueking"
-        :url="apiUrl"
-        @close="onClose"
-        @send-message="onSendMessage"
-        @show="onShow"
-      />
-    </div>
-
-    <div
-      v-show="activeTab === 'nimbus-hook'"
-      class="panel-full"
-    >
-      <div class="controls">
-        <button
-          type="button"
-          @click="showHookAI"
-        >
-          显示 AI 小鲸
-        </button>
-        <label class="toggle-label">
-          <input
-            v-model="nimbusHookBlock"
-            type="checkbox"
-          />
-          阻止默认打开（return false）
-        </label>
-      </div>
-
-      <ai-blueking
-        ref="hookAIBlueking"
-        :url="apiUrl"
-        :before-nimbus-click="handleBeforeNimbusClick"
-        @close="onClose"
-        @send-message="onSendMessage"
-        @show="onShow"
-      />
-    </div>
-
-    <div
-      v-show="activeTab === 'embedded'"
-      class="panel-embedded"
-    >
-      <p class="embedded-desc">将 ChatBotV2 嵌入页面布局（无 Nimbus、无浮窗壳层）</p>
-      <div class="page-layout">
-        <div class="sidebar">
-          <h3>页面导航</h3>
-          <ul>
-            <li>首页</li>
-            <li>设置</li>
-            <li>关于</li>
-          </ul>
+      <nav class="sidebar-nav">
+        <div class="nav-group">
+          <div class="nav-group-title">模式演示</div>
+          <router-link
+            v-for="route in routes"
+            :key="route.path"
+            :to="route.path"
+            class="nav-item"
+            active-class="nav-item--active"
+          >
+            <span class="nav-dot" />
+            {{ route.meta.title }}
+          </router-link>
         </div>
-        <div class="main-content">
-          <h3>主内容区域</h3>
-          <p>以下为 ChatBotV2 嵌入区域（命名导出自 <code>@blueking/ai-blueking/vue2</code>）。</p>
-          <div class="chatbot-wrapper">
-            <chat-bot-v2
-              ref="chatBotRef"
-              height="560px"
-              hello-text="你好，我是小鲸（Vue2 嵌入 Demo）"
-              :shortcuts="shortcuts"
-              :url="apiUrl"
-              @error="onEmbeddedError"
-              @send-message="onEmbeddedSendMessage"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
+      </nav>
+    </aside>
+
+    <main class="main-content">
+      <router-view />
+    </main>
   </div>
 </template>
 
 <script>
-  import AiBlueking, { ChatBotV2 } from '@blueking/ai-blueking/vue2';
-
-  import '@blueking/ai-blueking/dist/vue2/style.css';
-
   export default {
     name: 'App',
-    components: {
-      AiBlueking,
-      ChatBotV2,
-    },
     data() {
       return {
-        activeTab: 'full',
-        apiUrl: import.meta.env.VITE_API_URL || '',
-        nimbusHookBlock: true,
-        shortcuts: [
-          {
-            id: 'translate',
-            name: '翻译',
-            icon: 'translate',
-            prompt: '请帮我翻译以下内容：',
-          },
-          {
-            id: 'code-review',
-            name: '代码审查',
-            icon: 'code',
-            prompt: '请帮我审查以下代码：',
-          },
-        ],
+        routes: [],
       };
     },
-    methods: {
-      showAI() {
-        this.$refs.aiBlueking.show();
-      },
-      showHookAI() {
-        this.$refs.hookAIBlueking.show();
-      },
-      onShow() {
-        console.log('[Vue2 Playground] AI panel shown');
-      },
-      onClose() {
-        console.log('[Vue2 Playground] AI panel closed');
-      },
-      onSendMessage(message) {
-        console.log('[Vue2 Playground] Message sent:', message);
-      },
-      onEmbeddedSendMessage(message) {
-        console.log('[Vue2 Playground] [ChatBotV2] send-message:', message);
-      },
-      onEmbeddedError(error) {
-        console.error('[Vue2 Playground] [ChatBotV2] error:', error);
-      },
-      async handleBeforeNimbusClick() {
-        console.log('[Vue2 Playground] beforeNimbusClick triggered');
-        if (this.nimbusHookBlock) {
-          console.log('[Vue2 Playground] 阻止默认 showPanel，手动调用 switchToSession + show');
-          this.$refs.hookAIBlueking.switchToSession('new_session_1775618757894');
-          this.$refs.hookAIBlueking.show('new_session_1775618757894');
-          return false;
-        }
-        console.log('[Vue2 Playground] 允许默认 showPanel');
-      },
+    created() {
+      this.routes = this.$router.options.routes.filter(r => r.meta && r.meta.title);
     },
   };
 </script>
@@ -188,147 +50,121 @@
     margin: 0;
   }
 
-  #vue2-playground {
-    padding: 40px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  html,
+  body,
+  #app {
+    width: 100%;
+    height: 100%;
+  }
+</style>
+
+<style scoped>
+  .playground-layout {
+    display: flex;
+    width: 100%;
+    height: 100vh;
+    background: #f5f7fa;
   }
 
-  h1 {
-    margin-bottom: 8px;
-    font-size: 24px;
+  /* ===== Sidebar ===== */
+  .sidebar {
+    display: flex;
+    flex-shrink: 0;
+    flex-direction: column;
+    width: 220px;
+    height: 100%;
+    background: #fff;
+    border-right: 1px solid #dcdee5;
+  }
+
+  .sidebar-logo {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 20px 16px;
+    border-bottom: 1px solid #f0f1f5;
+  }
+
+  .logo-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #fff;
+    background: #3a84ff;
+    border-radius: 8px;
+  }
+
+  .logo-text {
+    font-size: 14px;
+    font-weight: 600;
     color: #313238;
   }
 
-  .desc {
-    margin-bottom: 16px;
-    font-size: 14px;
-    color: #979ba5;
+  /* ===== Navigation ===== */
+  .sidebar-nav {
+    flex: 1;
+    padding: 12px 0;
+    overflow-y: auto;
   }
 
-  .tabs {
+  .nav-group {
+    margin-bottom: 8px;
+  }
+
+  .nav-group-title {
+    padding: 8px 20px 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #979ba5;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .nav-item {
     display: flex;
     gap: 8px;
-    margin-bottom: 20px;
-  }
-
-  .tabs button {
-    padding: 8px 16px;
-    font-size: 14px;
-    cursor: pointer;
-    background: #f0f1f5;
-    border: 1px solid #dcdee5;
-    border-radius: 4px;
-    transition:
-      background 0.2s,
-      border-color 0.2s;
-  }
-
-  .tabs button.active {
-    color: #fff;
-    background: #3a84ff;
-    border-color: #3a84ff;
-  }
-
-  .tabs button:hover:not(.active) {
-    border-color: #c4c6cc;
-  }
-
-  .controls {
-    margin-bottom: 24px;
-  }
-
-  .controls button {
-    padding: 8px 20px;
-    font-size: 14px;
-    color: #fff;
-    cursor: pointer;
-    background: #3a84ff;
-    border: none;
-    border-radius: 4px;
-    transition: background 0.2s;
-  }
-
-  .controls button:hover {
-    background: #699df4;
-  }
-
-  .toggle-label {
-    display: inline-flex;
     align-items: center;
-    gap: 4px;
-    margin-left: 16px;
-    font-size: 14px;
+    height: 36px;
+    padding: 0 20px;
+    font-size: 13px;
     color: #63656e;
+    text-decoration: none;
     cursor: pointer;
+    transition: all 0.15s;
   }
 
-  .toggle-label input[type='checkbox'] {
-    cursor: pointer;
-  }
-
-  .embedded-desc {
-    margin-bottom: 16px;
-    font-size: 14px;
-    color: #63656e;
-  }
-
-  .page-layout {
-    display: flex;
-    gap: 24px;
-  }
-
-  .sidebar {
-    width: 200px;
-    padding: 16px;
-    background: #f5f7fa;
-    border-radius: 2px;
-  }
-
-  .sidebar h3 {
-    margin-top: 0;
-    font-size: 14px;
-  }
-
-  .sidebar ul {
-    padding: 0;
-    list-style: none;
-  }
-
-  .sidebar li {
-    padding: 8px 0;
-    cursor: pointer;
-  }
-
-  .sidebar li:hover {
+  .nav-item:hover {
     color: #3a84ff;
+    background: #f0f5ff;
   }
 
+  .nav-item--active {
+    font-weight: 500;
+    color: #3a84ff;
+    background: #e1ecff;
+  }
+
+  .nav-dot {
+    width: 6px;
+    height: 6px;
+    background: #c4c6cc;
+    border-radius: 50%;
+    transition: background 0.15s;
+  }
+
+  .nav-item:hover .nav-dot,
+  .nav-item--active .nav-dot {
+    background: #3a84ff;
+  }
+
+  /* ===== Main Content ===== */
   .main-content {
     flex: 1;
-    min-width: 0;
-  }
-
-  .main-content h3 {
-    margin-top: 0;
-  }
-
-  .main-content p {
-    margin-bottom: 12px;
-    font-size: 14px;
-    color: #63656e;
-  }
-
-  .main-content code {
-    padding: 2px 6px;
-    font-size: 12px;
-    background: #f0f1f5;
-    border-radius: 2px;
-  }
-
-  .chatbot-wrapper {
-    margin-top: 12px;
-    overflow: hidden;
-    border: 1px solid #dcdee5;
-    border-radius: 2px;
+    padding: 24px 32px;
+    overflow-y: auto;
   }
 </style>
