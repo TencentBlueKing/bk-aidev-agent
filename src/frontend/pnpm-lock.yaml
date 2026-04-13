@@ -338,20 +338,26 @@ importers:
   ai-blueking/packages/vue2-playground:
     dependencies:
       '@blueking/ai-blueking':
-        specifier: file:../ai-blueking
-        version: file:ai-blueking/packages/ai-blueking(@blueking/chat-x@0.0.22(typescript@5.9.3))(highlight.js@11.11.1)(vue@2.7.16)
+        specifier: workspace:*
+        version: link:../ai-blueking
       '@blueking/bkui-library':
         specifier: 0.0.0-beta.6
         version: 0.0.0-beta.6
       '@blueking/chat-helper':
-        specifier: file:../chat-helper
-        version: file:ai-blueking/packages/chat-helper(vue@2.7.16)
+        specifier: workspace:*
+        version: link:../chat-helper
+      bk-magic-vue:
+        specifier: latest
+        version: 2.5.9(vue@2.7.16)
       tippy.js:
         specifier: ^6.3.7
         version: 6.3.7
       vue:
         specifier: 2.7.16
         version: 2.7.16
+      vue-router:
+        specifier: ^3.6.5
+        version: 3.6.5(vue@2.7.16)
     devDependencies:
       '@vitejs/plugin-vue2':
         specifier: ^2.3.3
@@ -643,12 +649,6 @@ packages:
     peerDependencies:
       vue: ^3.5.24
 
-  '@blueking/ai-blueking@file:ai-blueking/packages/ai-blueking':
-    resolution: {directory: ai-blueking/packages/ai-blueking, type: directory}
-    peerDependencies:
-      '@blueking/chat-x': '>=0.0.22'
-      vue: ^3.5.24
-
   '@blueking/bkui-library@0.0.0-beta.6':
     resolution: {integrity: sha512-1M6pNDIOQYWzOu3uVRxo0h67d+huTbBQYDjj8+QF4Ka3HSe/mLgSrIkaZhhUVlJJl5zP8HK+UwXpkWcjL8zIsw==}
 
@@ -664,11 +664,6 @@ packages:
 
   '@blueking/chat-helper@0.0.1-beta.36':
     resolution: {integrity: sha512-yWwf27SU5t0aIyRQkUaHUOG+1PlwcOQ2zjDvsTkMGbiOyQ7PCtC6sGwCKhEVFCaeWeWYQenkA1qXYUQw/C7lkw==}
-    peerDependencies:
-      vue: ^3.5.24
-
-  '@blueking/chat-helper@file:ai-blueking/packages/chat-helper':
-    resolution: {directory: ai-blueking/packages/chat-helper, type: directory}
     peerDependencies:
       vue: ^3.5.24
 
@@ -3281,6 +3276,12 @@ packages:
   birpc@2.9.0:
     resolution: {integrity: sha512-KrayHS5pBi69Xi9JmvoqrIgYGDkD6mcSe/i6YKi3w5kekCLzrX4+nawcXqrj2tIp50Kw/mT/s3p+GVK0A0sKxw==}
 
+  bk-magic-vue@2.5.9:
+    resolution: {integrity: sha512-BwVRS2lriri+0r9VyKai7kTqtnmYwc2b0yNB+qtmz+eLh6+e7TP9Kc1lnE7/jJ6z5kZW3AczC87npEK5zAScUw==}
+    engines: {node: <= 16.14}
+    peerDependencies:
+      vue: ^2.6.0
+
   bkui-vue@1.0.3-beta.70:
     resolution: {integrity: sha512-gCA4aZfLUg6HQ0DDedzjlojB/qbnXLecp3JM9FHc6TfE3Ql8nO75GAi9FsPN/QGt0bAUr1S4g/mZr3cN7u799Q==}
     engines: {node: '>=14.0.0'}
@@ -3491,6 +3492,9 @@ packages:
   cli-truncate@4.0.0:
     resolution: {integrity: sha512-nPdaFdQ0h/GEigbPClz11D0v/ZJEwxmeVZGeMo3Z5StPtUTkA9o1lD6QwoirYiSDzbcwn2XcjwmCp68W1IS4TA==}
     engines: {node: '>=18'}
+
+  clipboard@2.0.11:
+    resolution: {integrity: sha512-C+0bbOqkezLIsmWSvlsXS0Q0bmkugu7jcfMIACB+RDEntIzQIkdr148we28AfSloQLRdZlYL/QYyrq05j/3Faw==}
 
   cliui@8.0.1:
     resolution: {integrity: sha512-BSeNnyus75C4//NQ9gQt1/csTXyo/8Sb+afLAkzAptFuMsod9HFokGNudZpi/oQV73hnVK+sR+5PVRMd+Dr7YQ==}
@@ -4197,6 +4201,9 @@ packages:
     resolution: {integrity: sha512-ZySD7Nf91aLB0RxL4KGrKHBXl7Eds1DAmEdcoVawXnLD7SDhpNgtuII2aAkg7a7QS41jxPSZ17p4VdGnMHk3MQ==}
     engines: {node: '>=0.4.0'}
 
+  delegate@3.2.0:
+    resolution: {integrity: sha512-IofjkYBZaZivn0V8nnsMJGBr4jVLxHDheKSW88PyxS5QC4Vo9ZbZVvhzlSxY87fVq3STR6r+4cGepyHkcWOQSw==}
+
   depd@1.1.2:
     resolution: {integrity: sha512-7emPTl6Dpo6JRXOXjLRxck+FlLRX5847cLKEn00PLAgc3g2hTZZgr+e4c2v6QpSmLeFP3n5yUo7ft6avBK/5jQ==}
     engines: {node: '>= 0.6'}
@@ -4770,6 +4777,9 @@ packages:
     resolution: {integrity: sha512-Y1zNGV+pzQdh7H39l9zgB4PJqjRNqydvdYCDG4HFXM4XuvSaQQlEc91IU1yALL8gUTDomgBAfz3XJdmUS+oo0w==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
+  good-listener@1.2.2:
+    resolution: {integrity: sha512-goW1b+d9q/HIwbVYZzZ6SsTr4IgE+WA44A0GmPIQstuOrgsFcT7VEJ48nmr9GaRtNu0XTKacFLGnBPAM6Afouw==}
+
   gopd@1.2.0:
     resolution: {integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==}
     engines: {node: '>= 0.4'}
@@ -4829,6 +4839,9 @@ packages:
   he@1.2.0:
     resolution: {integrity: sha512-F/1DnUGPopORZi0ni+CvrCgHQ5FyEAHRLSApuYWMmrbSwoN2Mn/7k+Gl38gJnR7yyDZk6WLXwiGod1JOWNDKGw==}
     hasBin: true
+
+  highlight.js@10.7.3:
+    resolution: {integrity: sha512-tzcUFauisWKNHaRkN4Wjl/ZA07gENAjFl3J/c480dprkGTg5EQstgaNFqBfUqCq54kZRIEcreTsAgF/m2quD7A==}
 
   highlight.js@11.11.1:
     resolution: {integrity: sha512-Xwwo44whKBVCYoliBQwaPvtd/2tYFkRQtXDWj1nackaV2JPXx3L0+Jvd8/qCJ2p+ML0/XVkJ2q+Mr+UVdpJK5w==}
@@ -5523,6 +5536,11 @@ packages:
   marked@16.4.2:
     resolution: {integrity: sha512-TI3V8YYWvkVf3KJe1dRkpnjs68JUPyEa5vjKrp1XEEJUAOaQc+Qj+L1qWbPd0SJuAdQkFU0h73sXXqwDYxsiDA==}
     engines: {node: '>= 20'}
+    hasBin: true
+
+  marked@4.2.12:
+    resolution: {integrity: sha512-yr8hSKa3Fv4D3jdZmtMMPghgVt6TWbk86WQaWhDloQjRSQhMMYCAro7jP7VDJrjjdV8pxVxMssXS8B8Y5DZ5aw==}
+    engines: {node: '>= 12'}
     hasBin: true
 
   math-intrinsics@1.1.0:
@@ -6942,6 +6960,9 @@ packages:
   select-hose@2.0.0:
     resolution: {integrity: sha512-mEugaLK+YfkijB4fx0e6kImuJdCIt2LxCRcbEYPqRGCs4F2ogyfZU5IAZRdjCP8JPq2AtdNoC/Dux63d9Kiryg==}
 
+  select@1.1.2:
+    resolution: {integrity: sha512-OwpTSOfy6xSs1+pwcNrv0RBMOzI39Lp3qQKUTPVVPRjCdNa5JH/oPRiqsesIskK8TVgmRiHwO4KXlV2Li9dANA==}
+
   selfsigned@5.5.0:
     resolution: {integrity: sha512-ftnu3TW4+3eBfLRFnDEkzGxSF/10BJBkaLJuBHZX0kiPS7bRdlpZGu6YGt4KngMkdTwJE6MbjavFpqHvqVt+Ew==}
     engines: {node: '>=18'}
@@ -7088,6 +7109,9 @@ packages:
 
   space-separated-tokens@2.0.2:
     resolution: {integrity: sha512-PEGlAwrG8yXGXRjW32fGbg66JAlOAwbObuqVoJpv/mRgoWDQfgH1wDPvtzWyUSNAXBGSk8h755YDbbcEy3SH2Q==}
+
+  spark-md5@3.0.2:
+    resolution: {integrity: sha512-wcFzz9cDfbuqe0FZzfi2or1sgyIrsDwmPwfZC4hiNidPdPINjeUwNfv5kldczoEAcjl9Y1L3SM7Uz2PUEQzxQw==}
 
   spdy-transport@3.0.0:
     resolution: {integrity: sha512-hsLVFE5SjA6TCisWeJXFKniGGOpBgMLmerfO2aCyCU5s7nJ/rpAepqmFifv/GCbSbueEeAJJnmSQ2rKC/g8Fcw==}
@@ -7306,6 +7330,9 @@ packages:
 
   thunky@1.1.0:
     resolution: {integrity: sha512-eHY7nBftgThBqOyHGVN+l8gF0BucP09fMo0oO/Lb0w1OF80dJv+lDVpXG60WMQvkcxAkNybKsrEIE3ZtKGmPrA==}
+
+  tiny-emitter@2.1.0:
+    resolution: {integrity: sha512-NB6Dk1A9xgQPMoGqC5CVXn123gWyte215ONT5Pp5a0yt4nlEoO1ZWeCwpncaekPHXO60i47ihFnZPiRPjRMq4Q==}
 
   tinybench@2.9.0:
     resolution: {integrity: sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg==}
@@ -7869,6 +7896,11 @@ packages:
       vue:
         optional: true
 
+  vue-router@3.6.5:
+    resolution: {integrity: sha512-VYXZQLtjuvKxxcshuRAwjHnciqZVoXAjTjcqBTz4rKc8qih9g9pI3hbDjmqXaHdgL3v8pV6P8Z335XvHzESxLQ==}
+    peerDependencies:
+      vue: ^2
+
   vue-router@4.6.4:
     resolution: {integrity: sha512-Hz9q5sa33Yhduglwz6g9skT8OBPii+4bFn88w6J+J4MfEo4KRRpmiNG/hHHkdbRFlLBOqxN8y8gf2Fb0MTUgVg==}
     peerDependencies:
@@ -8375,18 +8407,6 @@ snapshots:
       - highlight.js
       - typescript
 
-  '@blueking/ai-blueking@file:ai-blueking/packages/ai-blueking(@blueking/chat-x@0.0.22(typescript@5.9.3))(highlight.js@11.11.1)(vue@2.7.16)':
-    dependencies:
-      '@blueking/chat-helper': 0.0.1-beta.36(vue@2.7.16)
-      '@blueking/chat-x': 0.0.22(typescript@5.9.3)
-      bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@2.7.16)
-      tippy.js: 6.3.7
-      vue: 2.7.16
-      vue-draggable-resizable: 3.0.0(vue@2.7.16)
-      vue-tippy: 6.7.1(vue@2.7.16)
-    transitivePeerDependencies:
-      - highlight.js
-
   '@blueking/bkui-library@0.0.0-beta.6':
     dependencies:
       '@vue/runtime-dom': 3.5.32
@@ -8399,17 +8419,9 @@ snapshots:
     dependencies:
       vue: 3.5.27(typescript@5.9.3)
 
-  '@blueking/chat-helper@0.0.1-beta.36(vue@2.7.16)':
-    dependencies:
-      vue: 2.7.16
-
   '@blueking/chat-helper@0.0.1-beta.36(vue@3.5.27(typescript@5.9.3))':
     dependencies:
       vue: 3.5.27(typescript@5.9.3)
-
-  '@blueking/chat-helper@file:ai-blueking/packages/chat-helper(vue@2.7.16)':
-    dependencies:
-      vue: 2.7.16
 
   '@blueking/chat-x@0.0.22(typescript@5.9.3)':
     dependencies:
@@ -11121,6 +11133,16 @@ snapshots:
 
   birpc@2.9.0: {}
 
+  bk-magic-vue@2.5.9(vue@2.7.16):
+    dependencies:
+      clipboard: 2.0.11
+      highlight.js: 10.7.3
+      json-formatter-js: 2.3.4
+      marked: 4.2.12
+      spark-md5: 3.0.2
+      tinycolor2: 1.6.0
+      vue: 2.7.16
+
   bkui-vue@1.0.3-beta.70(highlight.js@11.11.1)(vue@3.5.27(typescript@5.9.3)):
     dependencies:
       '@floating-ui/dom': 1.5.4
@@ -11159,20 +11181,6 @@ snapshots:
       tinycolor2: 1.6.0
       vue: 3.5.27(typescript@5.9.3)
       vue-types: 4.1.1(vue@3.5.27(typescript@5.9.3))
-
-  bkui-vue@2.0.2-beta.81(highlight.js@11.11.1)(vue@2.7.16):
-    dependencies:
-      '@floating-ui/dom': 1.5.4
-      '@popperjs/core': 2.11.8
-      date-fns: 2.30.0
-      dompurify: 3.3.3
-      highlight.js: 11.11.1
-      js-calendar: 1.2.3
-      json-formatter-js: 2.3.4
-      lodash: 4.17.23
-      tinycolor2: 1.6.0
-      vue: 2.7.16
-      vue-types: 4.1.1(vue@2.7.16)
 
   bkui-vue@2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.27(typescript@5.9.3)):
     dependencies:
@@ -11408,6 +11416,12 @@ snapshots:
     dependencies:
       slice-ansi: 5.0.0
       string-width: 7.2.0
+
+  clipboard@2.0.11:
+    dependencies:
+      good-listener: 1.2.2
+      select: 1.1.2
+      tiny-emitter: 2.1.0
 
   cliui@8.0.1:
     dependencies:
@@ -11965,6 +11979,8 @@ snapshots:
       robust-predicates: 3.0.3
 
   delayed-stream@1.0.0: {}
+
+  delegate@3.2.0: {}
 
   depd@1.1.2: {}
 
@@ -12682,6 +12698,10 @@ snapshots:
       merge2: 1.4.1
       slash: 4.0.0
 
+  good-listener@1.2.2:
+    dependencies:
+      delegate: 3.2.0
+
   gopd@1.2.0: {}
 
   graceful-fs@4.2.11: {}
@@ -12752,6 +12772,8 @@ snapshots:
       '@types/hast': 3.0.4
 
   he@1.2.0: {}
+
+  highlight.js@10.7.3: {}
 
   highlight.js@11.11.1: {}
 
@@ -13397,6 +13419,8 @@ snapshots:
   marked@14.0.0: {}
 
   marked@16.4.2: {}
+
+  marked@4.2.12: {}
 
   math-intrinsics@1.1.0: {}
 
@@ -14904,6 +14928,8 @@ snapshots:
 
   select-hose@2.0.0: {}
 
+  select@1.1.2: {}
+
   selfsigned@5.5.0:
     dependencies:
       '@peculiar/x509': 1.14.3
@@ -15116,6 +15142,8 @@ snapshots:
   source-map@0.7.6: {}
 
   space-separated-tokens@2.0.2: {}
+
+  spark-md5@3.0.2: {}
 
   spdy-transport@3.0.0:
     dependencies:
@@ -15355,6 +15383,8 @@ snapshots:
   through@2.3.8: {}
 
   thunky@1.1.0: {}
+
+  tiny-emitter@2.1.0: {}
 
   tinybench@2.9.0: {}
 
@@ -15927,10 +15957,6 @@ snapshots:
 
   vue-component-type-helpers@2.2.12: {}
 
-  vue-draggable-resizable@3.0.0(vue@2.7.16):
-    dependencies:
-      vue: 2.7.16
-
   vue-draggable-resizable@3.0.0(vue@3.5.27(typescript@5.9.3)):
     dependencies:
       vue: 3.5.27(typescript@5.9.3)
@@ -16078,6 +16104,10 @@ snapshots:
       '@vue/compiler-sfc': 3.5.32
       vue: 3.5.27(typescript@5.9.3)
 
+  vue-router@3.6.5(vue@2.7.16):
+    dependencies:
+      vue: 2.7.16
+
   vue-router@4.6.4(vue@3.5.27(typescript@5.9.3)):
     dependencies:
       '@vue/devtools-api': 6.6.4
@@ -16113,11 +16143,6 @@ snapshots:
 
   vue-template-es2015-compiler@1.9.1: {}
 
-  vue-tippy@6.7.1(vue@2.7.16):
-    dependencies:
-      tippy.js: 6.3.7
-      vue: 2.7.16
-
   vue-tippy@6.7.1(vue@3.5.27(typescript@5.9.3)):
     dependencies:
       tippy.js: 6.3.7
@@ -16134,11 +16159,6 @@ snapshots:
       '@volar/typescript': 2.4.28
       '@vue/language-core': 3.2.6
       typescript: 5.9.3
-
-  vue-types@4.1.1(vue@2.7.16):
-    dependencies:
-      is-plain-object: 5.0.0
-      vue: 2.7.16
 
   vue-types@4.1.1(vue@3.5.27(typescript@5.9.3)):
     dependencies:
