@@ -30,8 +30,8 @@ importers:
         specifier: 0.0.1-beta.36
         version: 0.0.1-beta.36(vue@3.5.32(typescript@5.9.3))
       '@blueking/chat-x':
-        specifier: '>=0.0.19'
-        version: 0.0.19(typescript@5.9.3)
+        specifier: '>=0.0.20'
+        version: 0.0.20(typescript@5.9.3)
       bkui-vue:
         specifier: 2.0.2-beta.81
         version: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.32(typescript@5.9.3))
@@ -432,8 +432,8 @@ packages:
     peerDependencies:
       vue: ^3.5.25
 
-  '@blueking/chat-x@0.0.19':
-    resolution: {integrity: sha512-JW8R1qrSm/u68TEg25Nq1cqXRRGLOWSM5Ix6U1ckBCxYkapWBzanX3l6duRkdtr9nLZ6UYWbzb3eTvjFnqURvg==}
+  '@blueking/chat-x@0.0.20':
+    resolution: {integrity: sha512-HFuILeVK3+J9Y5+UxtE66H2JP+zlzZjkv8cQKWMRA1sohSrqVz6xKWJV+jAQhvtV2WLXBa24wQevXO8VqZTsBA==}
     hasBin: true
 
   '@blueking/chat-x@0.0.9':
@@ -7132,7 +7132,7 @@ snapshots:
     dependencies:
       vue: 3.5.32(typescript@5.9.3)
 
-  '@blueking/chat-x@0.0.19(typescript@5.9.3)':
+  '@blueking/chat-x@0.0.20(typescript@5.9.3)':
     dependencies:
       '@modelcontextprotocol/sdk': 1.29.0(zod@4.3.6)
       bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.32(typescript@5.9.3))
@@ -7147,7 +7147,9 @@ snapshots:
       markdown-it-sup: 2.0.0
       markdown-it-task-checkbox: 1.0.6
       mermaid: 11.14.0
+      tippy.js: 6.3.7
       vue: 3.5.32(typescript@5.9.3)
+      vue-tippy: 6.7.1(vue@3.5.32(typescript@5.9.3))
       zod: 4.3.6
     transitivePeerDependencies:
       - '@cfworker/json-schema'

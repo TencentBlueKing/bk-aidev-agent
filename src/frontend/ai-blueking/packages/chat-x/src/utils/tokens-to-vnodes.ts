@@ -28,7 +28,7 @@ import { type VNode, h, Text } from 'vue';
 
 import { ImageContent } from '../components/markdown-token';
 
-import type { Renderer, Token } from '../markdown-it';
+import type { Options, Renderer, Token } from '../markdown-it';
 
 export interface TokenToVNodeOptions {
   /**
@@ -38,6 +38,11 @@ export interface TokenToVNodeOptions {
 
   highlight?: ((str: string, lang: string, attrs?: any) => string) | null;
   html?: boolean;
+  /**
+   * 与产生 tokens 的 MarkdownIt 实例的 `options` 一致，供 `renderer.rules` 第三参使用
+   * （markdown-it 的 rule 签名为 (tokens, idx, options, env, self)，并非 Renderer 上的字段）
+   */
+  mditOptions?: Options;
   renderer?: Renderer;
   /**
    * HTML 净化函数，用于处理 innerHTML 的内容
@@ -173,14 +178,19 @@ const tokensToVNodesInternal = (tokens: Token[], options: TokenToVNodeOptions): 
     const parent = stack[stack.length - 1]!;
 
     // 1. 自定义渲染规则
-    if (token.nesting === 0 && !token.tag && options.renderer?.rules[token.type]) {
-      const html = options.renderer.rules[token.type](tokens, i, options.renderer.options || {}, {}, options.renderer);
-      const safeHtml = options.sanitize ? options.sanitize(html) : html;
-      // 使用基于内容的稳定 key
-      parent.children.push(
-        h('span', { innerHTML: safeHtml, class: `md-custom-${token.type}`, key: generateTokenKey(token) }),
-      );
-      continue;
+    const mdRenderer = options.renderer;
+    if (token.nesting === 0 && !token.tag && mdRenderer) {
+      const customRule = mdRenderer.rules[token.type];
+      if (typeof customRule === 'function') {
+        const mdOpts: Options = options.mditOptions ?? {};
+        const html = customRule(tokens, i, mdOpts, {}, mdRenderer);
+        const safeHtml = options.sanitize ? options.sanitize(html) : html;
+        // 使用基于内容的稳定 key
+        parent.children.push(
+          h('span', { innerHTML: safeHtml, class: `md-custom-${token.type}`, key: generateTokenKey(token) }),
+        );
+        continue;
+      }
     }
 
     // 2. Inline Tokens

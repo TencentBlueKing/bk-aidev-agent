@@ -137,22 +137,23 @@
             </template>
           </MessageContainer>
         </slot>
-        <div v-else>
-          <div class="ai-welcome-content">
+        <div
+          v-else
+          class="ai-welcome-content"
+        >
+          <slot
+            name="welcome"
+            v-bind="{ openingRemark }"
+          >
             <AIBluekingBannerIcon />
             <h2 class="ai-welcome-title">{{ t('你好，我是小鲸') }}</h2>
-            <slot
-              name="welcome"
-              v-bind="{ openingRemark }"
+            <div
+              v-if="openingRemark"
+              class="ai-welcome-remark"
             >
-              <div
-                v-if="openingRemark"
-                class="ai-welcome-remark"
-              >
-                <ContentRender :content="openingRemark" />
-              </div>
-            </slot>
-          </div>
+              <ContentRender :content="openingRemark" />
+            </div>
+          </slot>
         </div>
         <template v-if="isShareMode">
           <SelectionFooter
