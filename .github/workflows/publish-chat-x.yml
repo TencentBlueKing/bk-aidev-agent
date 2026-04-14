@@ -4,15 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '版本号（如 0.1.0），留空则自动 patch 自增'
+        description: "版本号（如 0.1.0），留空则自动 patch 自增"
         required: false
         type: string
-        default: ''
+        default: ""
       target_branch:
-        description: '推送目标分支'
+        description: "推送目标分支"
         required: false
         type: string
-        default: '2.0.0'
+        default: "2.0.0"
 
 permissions:
   contents: write
@@ -42,7 +42,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: src/frontend/ai-blueking
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --no-frozen-lockfile --ignore-scripts
 
       - name: Bump version
         id: bump-version
