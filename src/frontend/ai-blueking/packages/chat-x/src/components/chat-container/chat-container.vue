@@ -156,41 +156,43 @@
             </div>
           </slot>
         </div>
-        <template v-if="isShareMode">
-          <SelectionFooter
-            :is-all-selected="isAllSelected"
-            :loading="false"
-            :selected-count="selectedUserMessages.length"
-            @cancel="onCancelShare"
-            @confirm="handleConfirmShare"
-            @toggle-all="onToggleShareAll"
+        <template v-if="renderMode !== RenderMode.Share">
+          <template v-if="isShareMode">
+            <SelectionFooter
+              :is-all-selected="isAllSelected"
+              :loading="false"
+              :selected-count="selectedUserMessages.length"
+              @cancel="onCancelShare"
+              @confirm="handleConfirmShare"
+              @toggle-all="onToggleShareAll"
+            />
+          </template>
+          <ShortcutRender
+            v-else-if="selectedShortcut?.components?.length"
+            v-bind="selectedShortcut"
+            @close="handleShortcutRenderClose"
+            @submit="handleShortcutRenderSubmit"
           />
-        </template>
-        <ShortcutRender
-          v-else-if="selectedShortcut?.components?.length"
-          v-bind="selectedShortcut"
-          @close="handleShortcutRenderClose"
-          @submit="handleShortcutRenderSubmit"
-        />
-        <template v-else>
-          <ChatInput
-            v-model:cite="cite"
-            :message-status="messageStatus"
-            :model-value="modelValue"
-            :on-send-message="onSendMessage"
-            :on-stop-sending="onStopSending"
-            :on-upload="onUpload"
-            :placeholder="placeholder"
-            :prompts="prompts"
-            :resources="resources"
-            :shortcut-id="selectedShortcut?.id"
-            :shortcuts="shortcuts"
-            :support-upload="supportUpload"
-            :tippy-options="commonTippyOptions"
-            @delete-shortcut="handleCloseShortcut"
-            @select-shortcut="handleSelectShortcut"
-            @update:model-value="handleUpdateModelValue"
-          />
+          <template v-else>
+            <ChatInput
+              v-model:cite="cite"
+              :message-status="messageStatus"
+              :model-value="modelValue"
+              :on-send-message="onSendMessage"
+              :on-stop-sending="onStopSending"
+              :on-upload="onUpload"
+              :placeholder="placeholder"
+              :prompts="prompts"
+              :resources="resources"
+              :shortcut-id="selectedShortcut?.id"
+              :shortcuts="shortcuts"
+              :support-upload="supportUpload"
+              :tippy-options="commonTippyOptions"
+              @delete-shortcut="handleCloseShortcut"
+              @select-shortcut="handleSelectShortcut"
+              @update:model-value="handleUpdateModelValue"
+            />
+          </template>
         </template>
       </template>
     </ResizeLayout>
