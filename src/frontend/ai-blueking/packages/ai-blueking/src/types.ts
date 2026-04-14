@@ -230,7 +230,7 @@ export interface AIBluekingProps {
   /** ResizeLayout 配置（执行情况侧面板拖拽） */
   resizeProps?: {
     disabled?: boolean;
-    initialDivide?: number;
+    initialDivide?: number | string;
     max?: number;
     min?: number;
   };
