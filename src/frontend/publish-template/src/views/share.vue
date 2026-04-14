@@ -68,14 +68,37 @@
   } from "bkui-vue";
   import {
     ChatContainer,
+    MessageContentType,
+    MessageRole,
     MessageStatus,
     type Message as ChatMessage,
   } from "@blueking/chat-x";
   import "@blueking/chat-x/dist/index.css";
 
+  // 后端 API 返回的消息结构
+  interface ApiMessage {
+    id: number;
+    role: string;
+    content: string | Record<string, unknown>;
+    status: string;
+    activity_type?: string;
+    message_id?: string;
+    property?: {
+      extra?: Record<string, unknown> | null;
+      flow_info?: Record<string, unknown> | null;
+      builtin_property?: {
+        message_id?: string;
+        type?: string;
+        [key: string]: unknown;
+      } | null;
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  }
+
   // TypeScript 接口定义
   interface ShareData {
-    session_contents: ChatMessage[];
+    session_contents: ApiMessage[];
     session_name: string;
     agent_name: string;
   }
@@ -125,7 +148,7 @@
   const agentName = ref<string>("");
   const url = ref<string>(window.BK_API_PREFIX || "");
   const loading = ref<boolean>(false);
-  const shareData = ref<ChatMessage[]>([]);
+  const shareData = ref<ApiMessage[]>([]);
   const error = ref<string | null>(null);
   const currentShareCode = ref<string>("");
 
@@ -134,16 +157,25 @@
   // 计算属性
   const hasValidData = computed(() => shareData.value.length > 0);
 
-  // 标准化消息数据，确保兼容 chat-x 组件
+  // 将后端 API 数据映射为 chat-x Message 类型
   const normalizedMessages = computed<ChatMessage[]>(() => {
     return shareData.value.map((msg, index) => ({
-      ...msg,
-      // 确保有唯一 id
       id: msg.id ?? `share-msg-${index}`,
-      messageId: msg.messageId ?? msg.id ?? index,
-      // 确保状态为完成
+      // messageId: 优先取顶层 message_id，其次取 builtin_property.message_id，兜底用 id
+      messageId:
+        msg.message_id ??
+        msg.property?.builtin_property?.message_id ??
+        msg.id ??
+        index,
+      role: msg.role as MessageRole,
       status: MessageStatus.Complete,
-    }));
+      content: msg.content,
+      property: msg.property,
+      // activity 类型需要映射 activityType（snake_case → camelCase）
+      ...(msg.role === MessageRole.Activity && msg.activity_type
+        ? { activityType: msg.activity_type as MessageContentType }
+        : {}),
+    })) as ChatMessage[];
   });
   const hasError = computed(() => error.value !== null);
   const errorMessage = computed(() => error.value || "");
@@ -178,72 +210,6 @@
       return;
     }
 
-    const result = {
-      result: true,
-      data: {
-        session_contents: [
-          {
-            created_by: "vincenttgao",
-            updated_by: "vincenttgao",
-            created_at: "2026-04-14T03:13:02.605318Z",
-            updated_at: "2026-04-14T03:13:02.605367Z",
-            id: 32270,
-            property: {
-              extra: null,
-              flow_info: null,
-            },
-            space_id: "1a69f683a7d91777",
-            tenant_id: "system",
-            session_code: "new_session_1776136239845",
-            liked: 0,
-            role: "user",
-            content: "nihao a",
-            rate: 0,
-            comment: "",
-            labels: [],
-            status: "complete",
-            session_name: "你好问候",
-          },
-          {
-            created_by: "vincenttgao",
-            updated_by: "vincenttgao",
-            created_at: "2026-04-14T03:13:02.605441Z",
-            updated_at: "2026-04-14T03:13:02.605455Z",
-            id: 32271,
-            property: {
-              extra: null,
-              flow_info: null,
-            },
-            space_id: "1a69f683a7d91777",
-            tenant_id: "system",
-            session_code: "new_session_1776136239845",
-            liked: 0,
-            role: "activity",
-            content:
-              '{"task_id": 1146194, "task_name": "flow_agent_task_new_session_1776136239845", "task_state": "FINISHED", "nodes": {"n2d39a344b3e39128c1172ef63ae0e90": {"id": "n2d39a344b3e39128c1172ef63ae0e90", "name": "消息展示", "type": "ServiceActivity", "state": "FINISHED", "start_time": "2026-04-14 11:10:50 +0800", "finish_time": "2026-04-14 11:10:50 +0800", "elapsed_time": 0, "loop": 1, "retry": 0, "skip": false}, "ncbf905757c73b5d932042529e293cbf": {"id": "ncbf905757c73b5d932042529e293cbf", "name": "变量赋值", "type": "ServiceActivity", "state": "FINISHED", "start_time": "2026-04-14 11:10:50 +0800", "finish_time": "2026-04-14 11:10:50 +0800", "elapsed_time": 0, "loop": 1, "retry": 0, "skip": false}}, "statistics": {"total": 2, "state_counts": {"FINISHED": 2}}, "task_outputs": "nihao a"}',
-            rate: 0,
-            comment: "",
-            labels: [],
-            status: "complete",
-            session_name: "你好问候",
-            type: "flow_agent",
-            error: false,
-            duration: 0,
-            message_id: "flow_result_0da97f667489",
-            tool_calls: [],
-            tool_call_id: "",
-            additional_kwargs: {},
-          },
-        ],
-        session_name: "你好问候",
-        agent_name: "flow-0410-02",
-      },
-      code: "success",
-      message: "ok",
-      trace_id: "6781f56636682d7fc025670b72f108db",
-    };
-    shareData.value = result.data.session_contents;
-    return;
     loading.value = true;
     error.value = null;
     currentShareCode.value = shareCode.trim();
