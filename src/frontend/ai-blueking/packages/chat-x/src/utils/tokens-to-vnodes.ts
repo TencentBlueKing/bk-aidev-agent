@@ -265,6 +265,9 @@ const tokensToVNodesInternal = (tokens: Token[], options: TokenToVNodeOptions): 
       if (!tag) {
         tag = token.block ? 'div' : 'span';
         props.class = props.class ? `${props.class} md-unknown-${token.type}` : `md-unknown-${token.type}`;
+      } else if (tag === 'a') {
+        props.target = '_blank';
+        props.rel = 'noopener noreferrer';
       }
 
       const newContext: StackNode = {
@@ -297,7 +300,6 @@ const tokensToVNodesInternal = (tokens: Token[], options: TokenToVNodeOptions): 
 
       const vnode = h(tag, props);
       parent.children.push(vnode);
-      continue;
     }
   }
 
