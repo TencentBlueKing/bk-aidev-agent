@@ -1175,6 +1175,9 @@ async function loadUserData() {
 5. **容器化**：使用Docker将应用及其依赖打包
 `;
 export const streamContent = `
+#### 4. 链接与 a 标签示例
+**Markdown 行内链接**：[腾讯蓝鲸](https://bk.tencent.com/) · [chat-x npm](https://www.npmjs.com/package/@blueking/chat-x)
+**Markdown 自动链接**：<https://github.com/TencentBlueKing/bk-aidev-agent>
 
 #### 3. Align content
 

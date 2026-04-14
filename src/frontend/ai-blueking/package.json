@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "postinstall": "simple-git-hooks && node ./scripts/cp-git-hooks.mjs",
+    "postinstall": "pnpm exec simple-git-hooks && node ./scripts/cp-git-hooks.mjs",
     "dev:ui": "pnpm --filter @blueking/chat-x dev",
     "build:ui": "pnpm --filter @blueking/chat-x build",
     "test:ui": "pnpm --filter @blueking/chat-x test",
