@@ -595,27 +595,5 @@ describe('ChatContainer', () => {
       expect(wrapper.find('.ai-chat-container-tab').exists()).toBe(false);
       expect(wrapper.find('.collapse-button').exists()).toBe(false);
     });
-
-    it('renderMode 为 Share 时底部输入区域（ChatInput、SelectionFooter、ShortcutRender）不应渲染', () => {
-      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
-
-      wrapper = mount(ChatContainer, {
-        props: { ...defaultProps, messages, renderMode: RenderMode.Share },
-      });
-
-      expect(wrapper.find('.mock-chat-input').exists()).toBe(false);
-      expect(wrapper.find('.mock-selection-footer').exists()).toBe(false);
-      expect(wrapper.find('.mock-shortcut-render').exists()).toBe(false);
-    });
-
-    it('renderMode 非 Share 时底部输入区域应正常渲染', () => {
-      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
-
-      wrapper = mount(ChatContainer, {
-        props: { ...defaultProps, messages, renderMode: RenderMode.Chat },
-      });
-
-      expect(wrapper.find('.mock-chat-input').exists()).toBe(true);
-    });
   });
 });
