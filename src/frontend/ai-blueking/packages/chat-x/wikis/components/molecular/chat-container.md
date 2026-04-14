@@ -653,11 +653,12 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 
 ### v-model
 
-| 属性名           | 类型                  | 说明                             |
-| ---------------- | --------------------- | -------------------------------- |
-| modelValue       | `string \| TagSchema` | 输入框内容，支持纯文本或标签结构 |
-| selectedShortcut | `Shortcut \| null`    | 当前选中的快捷指令               |
-| cite             | `string`              | 引用内容                         |
+| 属性名           | 类型                  | 说明                                                         |
+| ---------------- | --------------------- | ------------------------------------------------------------ |
+| modelValue       | `string \| TagSchema` | 输入框内容，支持纯文本或标签结构                             |
+| selectedShortcut | `Shortcut \| null`    | 当前选中的快捷指令                                           |
+| cite             | `string`              | 引用内容                                                     |
+| renderMode       | `RenderMode`          | 渲染模式（默认 `Chat`）。`Share` 模式隐藏侧边栏和折叠按钮；`Test` 模式隐藏分享按钮 |
 
 ### Events
 
@@ -689,10 +690,39 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | removeCustomTab | `(tabName: string) => void` | 移除自定义 Tab |
 | selectCustomTab | `(tab: CustomTab) => void`  | 切换到指定 Tab |
 
+## 渲染模式
+
+通过 `v-model:render-mode` 控制容器的渲染行为：
+
+| `renderMode` | 侧边栏 Tab / 折叠按钮 | MessageTools 工具栏   | 说明                             |
+| ------------ | ---------------------- | --------------------- | -------------------------------- |
+| `Chat`       | 正常显示               | 全部工具按钮          | 默认对话模式                     |
+| `Share`      | **隐藏**               | **隐藏**（多选模式）  | 分享预览模式，仅展示消息         |
+| `Test`       | 正常显示               | 过滤掉「分享」按钮    | 测试/嵌入模式，隐藏分享入口     |
+
+```vue
+<template>
+  <ChatContainer
+    v-model="inputValue"
+    v-model:render-mode="renderMode"
+    :messages="messages"
+    :message-status="messageStatus"
+    :on-send-message="handleSendMessage"
+  />
+</template>
+
+<script setup lang="ts">
+  import { shallowRef } from 'vue';
+  import { ChatContainer, RenderMode } from '@blueking/chat-x';
+
+  const renderMode = shallowRef<RenderMode>(RenderMode.Chat);
+</script>
+```
+
 ## 类型定义
 
 ```typescript
-import { ChatContainer, type CustomTab, type Shortcut, type Message } from '@blueking/chat-x';
+import { ChatContainer, RenderMode, type CustomTab, type Shortcut, type Message } from '@blueking/chat-x';
 
 // 自定义 Tab
 interface CustomTab<T = Record<string, unknown>> {

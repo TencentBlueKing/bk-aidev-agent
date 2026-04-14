@@ -237,7 +237,7 @@ props.content → completeMarkdownSyntax → md.parse → groupTokens → groupe
 
 ## 代码块
 
-代码块由 `CodeContent` 渲染，支持 highlight.js 语法高亮、语言标签、一键复制：
+代码块由 `CodeContent` 渲染，支持 highlight.js 语法高亮、语言标签、一键复制。语法高亮主题样式由 `CodeContent` 侧引入（`github-dark`），`MarkdownContent` **不再**全局引入 `highlight.js` 主题 CSS，避免与代码块组件重复加载、并保持与消息区样式一致。
 
 <div class="demo">
   <MarkdownContent :content="codeContent" :status="MessageStatus.Complete" />

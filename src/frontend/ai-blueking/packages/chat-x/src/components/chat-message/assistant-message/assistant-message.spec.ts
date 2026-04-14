@@ -84,7 +84,7 @@ describe('AssistantMessage', () => {
         },
       });
 
-      expect(wrapper.find('.assistant-message').exists()).toBe(true);
+      expect(wrapper.find('.ai-assistant-message').exists()).toBe(true);
     });
 
     it('应该渲染 ContentRender 组件', () => {
@@ -189,7 +189,7 @@ describe('AssistantMessage', () => {
         },
       });
 
-      expect(wrapper.find('.assistant-message').exists()).toBe(true);
+      expect(wrapper.find('.ai-assistant-message').exists()).toBe(true);
     });
   });
 
@@ -201,7 +201,7 @@ describe('AssistantMessage', () => {
         },
       });
 
-      expect(wrapper.find('.assistant-message').exists()).toBe(true);
+      expect(wrapper.find('.ai-assistant-message').exists()).toBe(true);
     });
 
     it('应该处理 undefined content', () => {
@@ -209,7 +209,7 @@ describe('AssistantMessage', () => {
         props: {},
       });
 
-      expect(wrapper.find('.assistant-message').exists()).toBe(true);
+      expect(wrapper.find('.ai-assistant-message').exists()).toBe(true);
     });
 
     it('应该处理空的 toolCalls 数组', () => {
@@ -232,8 +232,8 @@ describe('AssistantMessage', () => {
         },
       });
 
-      expect(wrapper.find('.assistant-message').exists()).toBe(true);
-      expect(wrapper.find('.assistant-message-content').exists()).toBe(true);
+      expect(wrapper.find('.ai-assistant-message').exists()).toBe(true);
+      expect(wrapper.find('.ai-assistant-message-content').exists()).toBe(true);
     });
   });
 });

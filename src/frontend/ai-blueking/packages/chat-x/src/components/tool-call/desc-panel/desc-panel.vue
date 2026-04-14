@@ -9,14 +9,7 @@
           class="desc-panel-item"
         >
           <span class="desc-label"><HighlightKeyword :text="key" />:</span>
-          <span
-            v-overflow-tips="{
-              ...commonTippyOptions,
-              text: typeof value === 'object' && value ? JSON.stringify(value) : value,
-              appendTo: 'parent',
-            }"
-            class="desc-value"
-          >
+          <span class="desc-value">
             <HighlightKeyword
               style="word-break: break-all"
               :text="typeof value === 'object' && value ? JSON.stringify(value) : value"
@@ -24,22 +17,23 @@
           </span>
         </div>
       </template>
-      <template v-else><HighlightKeyword :text="data" /></template>
+      <template v-else
+        ><HighlightKeyword
+          :style="{ wordBreak: 'break-all' }"
+          :text="data"
+      /></template>
     </div>
   </div>
 </template>
 <script setup lang="ts">
   import { computed } from 'vue';
 
-  import { useCommonTippyInject } from '../../../composables/use-common';
-  import { OverflowTips as vOverflowTips } from '../../../directives';
   import HighlightKeyword from '../../highlight-keyword/highlight-keyword';
 
   const props = defineProps<{
     desc?: string;
     title: string;
   }>();
-  const commonTippyOptions = useCommonTippyInject();
   const data = computed<Record<string, string>>(() => {
     try {
       return JSON.parse(props.desc || '');
@@ -72,7 +66,8 @@
       .desc-panel-item {
         display: flex;
         gap: 4px;
-        align-items: center;
+
+        // align-items: center;
         line-height: 20px;
 
         .desc-label {
@@ -82,7 +77,8 @@
         .desc-value {
           overflow: hidden;
           text-overflow: ellipsis;
-          white-space: nowrap;
+
+          // white-space: nowrap;
         }
       }
     }

@@ -35,13 +35,12 @@ domain: helper
 │     └── {{ title }}
 └── .desc-panel（flex column，gap: 4px）
       ├── [JSON 对象/数组] v-for 逐项渲染 .desc-panel-item
-      │     ├── .desc-label  → "{{ key }}:"
-      │     └── .desc-value（overflow hidden，ellipsis，nowrap）
-      │           └── v-overflow-tips → hover 时显示完整内容
-      │               · value 为对象/数组时，tooltip 显示 JSON.stringify(value)
-      │               · value 为原始值时，tooltip 显示原始值
-      └── [非 JSON / 解析失败] 直接渲染 {{ data }}（纯文本）
+      │     ├── .desc-label  → HighlightKeyword(key)
+      │     └── .desc-value → HighlightKeyword(值的文本或 JSON 字符串)，`word-break: break-all`
+      └── [非 JSON / 解析失败] HighlightKeyword(data)，`word-break: break-all`
 ```
+
+> **说明**：键值与纯文本均通过 `HighlightKeyword` 展示，长内容依赖换行与面板宽度展示，**不再**使用 `v-overflow-tips` 悬停气泡。
 
 ## desc 解析规则
 
@@ -69,7 +68,7 @@ const data = computed(() => {
 | `'普通文本'`       | 解析抛出        | —           | 纯文本（原始字符串）     |
 | `''` / `undefined` | 解析抛出        | —           | 纯文本（空白）           |
 
-> **嵌套对象**：值本身是对象时，`{{ value }}` 渲染为 `[object Object]`，但 `v-overflow-tips` 的 tooltip 会显示 `JSON.stringify(value)` 的完整内容，方便查看原始结构。
+> **嵌套对象**：值本身是对象时，文本区域通过 `JSON.stringify(value)` 展示完整 JSON（`HighlightKeyword` + `word-break: break-all`），不再使用悬停 tooltip。
 
 ## 基础用法：JSON 参数
 
@@ -135,7 +134,7 @@ JSON 数组同样被视为 `object`，以数组索引（`0:`、`1:`…）作为�
 
 ## 嵌套 JSON
 
-嵌套对象的值通过 `v-overflow-tips` 悬停后显示 JSON.stringify 结果，文本区域显示 `[object Object]`：
+嵌套对象的值在文本区域直接渲染为 `JSON.stringify(value)` 字符串，便于在面板内换行阅读：
 
 ```vue
 <template>

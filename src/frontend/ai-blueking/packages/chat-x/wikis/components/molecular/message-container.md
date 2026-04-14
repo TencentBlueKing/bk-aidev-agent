@@ -386,8 +386,11 @@ domain: message
 - `role: 'tool'` 消息**不会独立渲染**，而是被注入到对应 AssistantMessage 的 `toolCall.toolMessage` 字段
 - 若 `toolMessage.error` 存在，AssistantMessage 的 `status` 会被强制设为 `MessageStatus.Error`
 - `MessageTools` 工具栏只在 `type === 'assistant'` 的消息组底部渲染（不依赖鼠标悬停，始终可见），且满足以下条件时**不渲染**：
+  - `renderMode === RenderMode.Share`（分享预览模式）
   - 消息组的 `pause` 为 `true`（来源于 `message.property?.extra?.pause`）
   - 多选模式（`enableSelection`）开启且消息组不是 Loading 类型
+- `renderMode === RenderMode.Test` 时，工具栏会过滤掉「分享」按钮，其余正常
+- `renderMode === RenderMode.Share` 时，`message-group-messages` 自动添加 `message-group-enabled-selection` 类名（与 `enableSelection: true` 一致的多选视觉效果）
 - Loading 消息组的 `type` 是 `MessageRole.Loading`，不显示工具栏和多选 Checkbox
 
 ## 等待响应（Loading 自动注入）
@@ -912,6 +915,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
 | onUserAction             | `(tool: IToolBtn, message: Message) => Promise<string[] \| void>`                            | —       | 用户消息工具操作回调                                                                                                                     |
 | onUserInputConfirm       | `(message: Message, content: UserMessage['content'], docSchema: TagSchema) => Promise<void>` | —       | 用户编辑消息确认回调                                                                                                                     |
 | onUserShortcutConfirm    | `(message: Message, formModel: Record<string, unknown>) => Promise<void>`                    | —       | 用户快捷指令表单提交回调                                                                                                                 |
+| renderMode               | `RenderMode`                                                                                 | —       | 渲染模式。`Share` 模式下启用多选样式并隐藏工具栏；`Test` 模式下过滤掉「分享」按钮；不传或 `Chat` 为默认行为                              |
 
 ### v-model
 

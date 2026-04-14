@@ -29,6 +29,7 @@ import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MessageRole, MessageStatus } from '../../ag-ui/types';
+import { RenderMode } from '../../common';
 import ChatContainer from './chat-container.vue';
 
 import type { AssistantMessage, Message, UserMessage } from '../../ag-ui/types';
@@ -260,10 +261,11 @@ vi.mock('../chat-message/message-container/message-container.vue', () => ({
       onUserAction: Function,
       onUserInputConfirm: Function,
       onUserShortcutConfirm: Function,
+      renderMode: String,
     },
     emits: ['stopStreaming', 'update:selectedUserMessages'],
-    setup() {
-      return () => h('div', { class: 'mock-message-container' });
+    setup(props) {
+      return () => h('div', { class: 'mock-message-container', 'data-render-mode': props.renderMode });
     },
   }),
 }));
@@ -557,6 +559,41 @@ describe('ChatContainer', () => {
 
       const resize = wrapper.findComponent({ name: 'ResizeLayout' });
       expect(resize.props('initialDivide')).toBe('33.33%');
+    });
+  });
+
+  describe('renderMode 测试', () => {
+    it('renderMode 默认应为 RenderMode.Chat', () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages },
+      });
+
+      const mc = wrapper.findComponent({ name: 'MessageContainer' });
+      expect(mc.attributes('data-render-mode')).toBe(RenderMode.Chat);
+    });
+
+    it('传入 renderMode 应透传给 MessageContainer', () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, renderMode: RenderMode.Test },
+      });
+
+      const mc = wrapper.findComponent({ name: 'MessageContainer' });
+      expect(mc.attributes('data-render-mode')).toBe(RenderMode.Test);
+    });
+
+    it('renderMode 为 Share 时侧边栏 Tab 和折叠按钮不应渲染', () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, renderMode: RenderMode.Share },
+      });
+
+      expect(wrapper.find('.ai-chat-container-tab').exists()).toBe(false);
+      expect(wrapper.find('.collapse-button').exists()).toBe(false);
     });
   });
 });

@@ -23,7 +23,8 @@
       <div
         class="message-group-messages"
         :class="{
-          'message-group-enabled-selection': enableSelection && group.type !== MessageRole.Loading,
+          'message-group-enabled-selection':
+            renderMode === RenderMode.Share || (enableSelection && group.type !== MessageRole.Loading),
         }"
         :style="{
           width: enableSelection && group.type !== MessageRole.Loading ? 'calc(100% - 16px)' : '100%',
@@ -55,11 +56,13 @@
         </template>
         <MessageTools
           v-if="
+            renderMode !== RenderMode.Share &&
             !(enableSelection && group.type !== MessageRole.Loading) &&
             !group.pause &&
             group.type === MessageRole.Assistant &&
             messageToolsStatus !== MessageToolsStatus.Hidden
           "
+          :message-tools="messageTools"
           :message-tools-status="messageToolsStatus"
           :on-action="(tool: IToolBtn) => handleAgentAction(tool, group.messages)"
           :style="{ visibility: group.isHover ? 'visible' : 'hidden' }"
@@ -100,11 +103,12 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { useTemplateRef } from 'vue';
+  import { computed, useTemplateRef } from 'vue';
 
   import { Checkbox } from 'bkui-vue';
 
   import { type Message, type UserMessage, MessageRole, MessageStatus } from '../../../ag-ui/types';
+  import { CONST_MESSAGE_TOOLS, RenderMode } from '../../../common';
   import { type MessageGroup, useClipboard, useContainerScrollProvider } from '../../../composables';
   import { ArrowDownIcon, CloseCircleIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
@@ -129,6 +133,7 @@
     onAgentAction?: AgentActionCallback;
     onAgentFeedback?: AgentFeedbackCallback;
     onUserAction?: UserActionCallback;
+    renderMode?: RenderMode;
   } & {
     onUserInputConfirm?: (message: Message, content: UserMessage['content'], docSchema: TagSchema) => Promise<void>;
     onUserShortcutConfirm?: (message: Message, formModel: Record<string, unknown>) => Promise<void>;
@@ -175,7 +180,9 @@
     messageContainerBottomRef,
   );
   const { copy } = useClipboard();
-
+  const messageTools = computed(() => {
+    return CONST_MESSAGE_TOOLS.filter(tool => props.renderMode !== RenderMode.Test || tool.id !== 'share');
+  });
   const handleMouseEnter = (group: { isHover: boolean }) => {
     group.isHover = true;
   };

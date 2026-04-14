@@ -366,7 +366,7 @@
         display: flex;
         align-items: center;
         height: 32px;
-        padding: 0 6px 0 13px;
+        padding: 0 12px 0 13px;
         cursor: pointer;
         border-radius: 2px;
 
@@ -482,7 +482,7 @@
         display: flex;
         align-items: center;
         height: 32px;
-        padding: 0 6px 0 34px;
+        padding: 0 12px 0 34px;
         border-radius: 2px;
 
         &:hover {

@@ -683,7 +683,7 @@ $$
 
 > **注意**：LaTeX 公式的渲染依赖于 KaTeX 库，确保已正确配置相关依赖。
 `;
-const streamMermaidContent = `
+export const streamMermaidContent = `
 Here are several Mermaid diagram examples 
 
 #### 1. Flowchart (Vertical)
@@ -733,7 +733,7 @@ quadrantChart
     Campaign F: [0.35, 0.78]
 \`\`\`
 `;
-const streamCodeContent = `
+export const streamCodeContent = `
 Here's a Python code block example that demonstrates how to calculate Fibonacci numbers:
 
 \`\`\` python
@@ -773,7 +773,7 @@ This code includes:
 
 You can modify the parameters or output format as needed. The Fibonacci sequence here starts with fib(1) = 1, fib(2) = 1.
 `;
-const commonContent = `---
+export const commonContent = `---
 __Advertisement :)__
 
 - __[pica](https://nodeca.github.io/pica/demo/)__ - high quality and fast image
@@ -1015,7 +1015,7 @@ It converts "HTML", but keep intact partial entries like "xxxHTMLyyy" and so on.
 :::
 
 `;
-const testContent = `
+export const testContent = `
 # 深度解析：从技术底层到生态实践的全栈开发知识体系构建
 
 ## 引言：为什么我们需要系统化的技术认知？
@@ -1189,4 +1189,80 @@ This is center aligned content.
 ::: hljs-right
 This is right aligned content.
 :::
+
+---
+
+#### 4. Code markdown 示例
+
+行内代码：使用 \`npm run build\` 或 \`const x = 1\` 包裹短片段。
+
+无语言标注的围栏代码块：
+
+\`\`\`
+plain text / 任意文本
+no language hint
+\`\`\`
+
+**JavaScript**
+
+\`\`\` js
+export const sum = (a, b) => a + b;
+
+async function fetchUser(id) {
+  const res = await fetch(\`/api/users/\${id}\`);
+  if (!res.ok) throw new Error('failed');
+  return res.json();
+}
+\`\`\`
+
+**TypeScript**
+
+\`\`\` ts
+interface User {
+  id: string;
+  name: string;
+}
+
+function greet(user: User): string {
+  return \`Hello, \${user.name}\`;
+}
+\`\`\`
+
+**Vue SFC（节选）**
+
+\`\`\` vue
+<script setup lang="ts">
+import { ref } from 'vue';
+
+const count = ref(0);
+</script>
+
+<template>
+  <button type="button" @click="count++">{{ count }}</button>
+</template>
+\`\`\`
+
+**Bash**
+
+\`\`\` bash
+pnpm install
+pnpm dev:ui
+git status
+\`\`\`
+
+**JSON**
+
+\`\`\` json
+{
+  "name": "chat-x",
+  "version": "0.0.19",
+  "private": false
+}
+\`\`\`
+
+**缩进代码块（4 空格）**
+
+    function legacy() {
+      return 'indented block';
+    }
 `;

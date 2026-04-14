@@ -14,7 +14,7 @@
       @resizing="handleResizing"
     >
       <template #aside>
-        <template v-if="!isCollapse && messages?.length">
+        <template v-if="!isCollapse && messages?.length && renderMode !== RenderMode.Share">
           <Tab
             :active="selectedTab.name"
             class="ai-chat-container-tab"
@@ -85,7 +85,7 @@
           </template>
         </template>
         <div
-          v-if="executionGroups?.length"
+          v-if="executionGroups?.length && renderMode !== RenderMode.Share"
           class="collapse-button"
           :class="{ 'is-right': placement === 'right' }"
           @click="handleCollapse"
@@ -127,6 +127,7 @@
             :on-user-action="onUserAction"
             :on-user-input-confirm="onUserInputConfirm"
             :on-user-shortcut-confirm="onUserShortcutConfirm"
+            :render-mode="renderMode"
             @stop-streaming="emits('stopStreaming')"
           >
             <template #default="{ message, messageToolsStatus }">
@@ -210,6 +211,7 @@
 
   import { ResizeLayout, Tab } from 'bkui-vue';
 
+  import { RenderMode } from '../../common';
   import { useMessageGroup } from '../../composables';
   import { useCommonTippyProvider } from '../../composables/use-common';
   import { EXECUTION_TAB_NAME, useCustomTabProvider } from '../../composables/use-custom-tab';
@@ -287,6 +289,10 @@
       placement: 'left',
     },
   );
+  const renderMode = defineModel<RenderMode>('renderMode', {
+    required: false,
+    default: RenderMode.Chat,
+  });
   const resizeProps = computed(() => ({
     collapsible: false,
     immediate: true,

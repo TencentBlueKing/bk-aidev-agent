@@ -24,7 +24,7 @@
  * IN THE SOFTWARE.
  */
 
-import { defineComponent, h } from 'vue';
+import { defineComponent, h, nextTick } from 'vue';
 
 import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -32,6 +32,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AiSlashInput from './ai-slash-input.vue';
 
 import type { IAiSlashMenuItem } from '../../../types/editor';
+
+/** 与 edix Editor.command 行为对齐：执行命令函数并传入伪造的 doc / selection，供 GetDocSnapshot 等逻辑使用 */
+const { editorCommand } = vi.hoisted(() => {
+  const fakeDoc = [[{ type: 'text', text: 'internal-snapshot' }]] as unknown[];
+  return {
+    editorCommand: vi.fn((fn: (...args: unknown[]) => unknown, ...args: unknown[]) => {
+      if (typeof fn === 'function') {
+        fn(fakeDoc, [], ...args);
+      }
+    }),
+  };
+});
 
 vi.mock('tippy.js/dist/tippy.css', () => ({}));
 
@@ -70,22 +82,35 @@ vi.mock('vue-tippy', () => ({
   useTippy: vi.fn(),
 }));
 
-// Mock composables
-vi.mock('../../../composables', () => ({
-  useCommandSelection: () => ({
-    commandSelection: { value: { column: 0, line: 0 } },
-    GetCursorPosition: vi.fn(),
-  }),
-}));
+// Mock composables（与 use-command-selection 返回值对齐，供 modelValue 同步逻辑使用）
+vi.mock('../../../composables', () => {
+  const docSnapshot = { value: [] as unknown[] };
+  return {
+    useCommandSelection: () => ({
+      commandSelection: { value: { column: 0, line: 0 } },
+      GetCursorPosition: vi.fn(),
+      GetDocSnapshot: ((doc: unknown) => {
+        docSnapshot.value = doc as unknown[];
+      }) as (...args: unknown[]) => void,
+      docSnapshot,
+    }),
+  };
+});
 
-// Mock edix
+// Mock edix（command 需执行 EditorCommand，否则 GetDocSnapshot 无法写入 docSnapshot）
 vi.mock('../../../edix', () => ({
   createEditor: () => ({
-    command: vi.fn(),
+    command: editorCommand,
     input: vi.fn(() => vi.fn()),
   }),
   ReplaceAll: 'ReplaceAll',
   stringToDoc: (str: string) => [[{ type: 'text', text: str }]],
+  docToString: (doc: unknown) => {
+    if (!Array.isArray(doc) || doc.length === 0) return '';
+    const line = doc[0];
+    if (!Array.isArray(line)) return '';
+    return line.map((n: { text?: string }) => n?.text ?? '').join('');
+  },
 }));
 
 // Mock icons
@@ -298,6 +323,36 @@ describe('AiSlashInput', () => {
       });
 
       expect(wrapper.find('.ai-slash-input').attributes('spellcheck')).toBe('false');
+    });
+  });
+
+  describe('modelValue 同步', () => {
+    it('外部更新 modelValue 时应完成渲染且不抛错', async () => {
+      wrapper = mount(AiSlashInput, {
+        props: {
+          modelValue: '初始',
+        },
+      });
+      await nextTick();
+      await wrapper.setProps({ modelValue: '更新后' });
+      await nextTick();
+      expect(wrapper.find('.ai-slash-input-wrapper').exists()).toBe(true);
+    });
+
+    it('外部更新 modelValue 且与编辑器快照不一致时应调用 ReplaceAll 同步为最新字符串', async () => {
+      wrapper = mount(AiSlashInput, {
+        props: {
+          modelValue: 'A',
+        },
+      });
+      await nextTick();
+      editorCommand.mockClear();
+      await wrapper.setProps({ modelValue: 'B' });
+      await nextTick();
+      const replaceCalls = editorCommand.mock.calls.filter(
+        call => (call[0] as unknown) === 'ReplaceAll',
+      );
+      expect(replaceCalls.some(([, text]) => text === 'B')).toBe(true);
     });
   });
 

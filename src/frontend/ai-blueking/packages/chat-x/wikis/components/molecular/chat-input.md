@@ -98,6 +98,10 @@ chat-input-container
 
 > **注意**：`slot#attachment` 只替换快捷指令区，`FileUploadBtn` 在其外部，使用该 slot 不会移除上传按钮。`slot#send-icon` 只替换图标，按钮的点击处理和样式仍由组件控制。
 
+### AiSlashInput 与 modelValue 同步
+
+内部编辑器 `AiSlashInput` 在 **`modelValue` 由外部异步更新**（例如从历史会话回填、父组件重置）且与当前文档不一致时，会通过 `useCommandSelection` 提供的 `GetDocSnapshot` 读取编辑器快照，与 `docToString(modelValue)` 比对后，必要时执行 `ReplaceAll` 将编辑器内容同步为新的 `modelValue`，避免内外状态脱节。
+
 ## 基础用法
 
 ```vue

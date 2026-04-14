@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/consistent-type-assertions */
 /*
  * Tencent is pleased to support the open source community by making
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) available.
@@ -30,6 +31,8 @@ import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import CodeContent from './code-content.vue';
+
+import type { Token } from '../../../markdown-it';
 
 vi.mock('highlight.js/styles/github-dark.css', () => ({}));
 
@@ -106,7 +109,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: 'javascript',
               content: 'const a = 1;',
-            },
+            } as Token,
           ],
         },
       });
@@ -122,7 +125,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: 'javascript',
               content: 'const a = 1;',
-            },
+            } as Token,
           ],
         },
       });
@@ -139,7 +142,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: 'javascript',
               content: 'const a = 1;',
-            },
+            } as Token,
           ],
         },
       });
@@ -158,7 +161,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: 'javascript',
               content: 'const a = 1;\nconst b = 2;',
-            },
+            } as Token,
           ],
         },
       });
@@ -174,7 +177,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: 'javascript',
               content: 'const a = 1',
-            },
+            } as Token,
           ],
         },
       });
@@ -194,7 +197,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: 'typescript',
               content: 'const x: number = 1;',
-            },
+            } as Token,
           ],
         },
       });
@@ -210,7 +213,7 @@ describe('CodeContent', () => {
               type: 'code_block',
               info: 'python',
               content: 'print("hello")',
-            },
+            } as Token,
           ],
         },
       });
@@ -226,7 +229,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: 'js',
               content: 'const a = 1;',
-            },
+            } as Token,
           ],
         },
       });
@@ -244,7 +247,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: 'javascript',
               content: 'const a = 1;',
-            },
+            } as Token,
           ],
         },
       });
@@ -275,7 +278,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: 'javascript',
               content: '',
-            },
+            } as Token,
           ],
         },
       });
@@ -291,7 +294,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: '',
               content: 'plain text',
-            },
+            } as Token,
           ],
         },
       });
@@ -307,7 +310,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: 'unknown-lang',
               content: 'some code',
-            },
+            } as Token,
           ],
         },
       });
@@ -325,7 +328,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: 'javascript',
               content: multilineCode,
-            },
+            } as Token,
           ],
         },
       });
@@ -341,7 +344,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: 'html',
               content: '<div>&</div>',
-            },
+            } as Token,
           ],
         },
       });
@@ -359,7 +362,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: 'javascript',
               content: 'const a = 1;',
-            },
+            } as Token,
           ],
         },
       });
@@ -375,7 +378,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: 'javascript',
               content: 'const a = 1;',
-            },
+            } as Token,
           ],
         },
       });
@@ -391,7 +394,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: 'javascript',
               content: 'const a = 1;',
-            },
+            } as Token,
           ],
         },
       });
@@ -415,7 +418,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: 'javascript',
               content: 'const a = 1;',
-            },
+            } as Token,
           ],
         },
       });
@@ -434,7 +437,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: 'javascript',
               content: 'const a = 1;',
-            },
+            } as Token,
           ],
         },
         slots: {
@@ -458,7 +461,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: 'javascript',
               content: 'const a = 1;',
-            },
+            } as Token,
           ],
         },
       });
@@ -475,7 +478,7 @@ describe('CodeContent', () => {
               type: 'fence',
               info: 'typescript',
               content: 'const x = 1;',
-            },
+            } as Token,
           ],
         },
       });

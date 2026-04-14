@@ -51,15 +51,15 @@ div.ai-key-value-content（flex column，gap: 8px，font-size: 12px，color: #4d
 │     ├── ThinkingIcon（14×14px）
 │     └── {{ title }}
 └── div.ai-key-value-content（flex column，无 gap）   ← 与外层同名嵌套
-      └── div.key-value-item × N（flex row，gap: 3px，height: 20px）
-            ├── div.item-key   → {{ item.key }}（font-weight: bold，color: #333）
+      └── div.key-value-item × N（flex row，gap: 3px，min-height: 20px）
+            ├── div.item-key   → {{ item.key }}（flex: 0 0 auto，font-weight: bold，color: #333）
             ├── "："            → 硬编码文本节点，冒号不属于任何 div
-            └── div.item-value → {{ item.value }}（overflow hidden，ellipsis，nowrap）
+            └── div.item-value → {{ item.value }}（overflow hidden，ellipsis，`word-break: break-all` 允许多行换行）
 ```
 
 > **注意**：内层也是 `.ai-key-value-content` 类（与外层同名），仅用于布局，无额外样式差异。  
 > **注意**：`v-for` 使用 `item.key` 作为 `:key`，`content` 中的 `key` 字段必须唯一，否则触发 Vue 重复 key 警告。  
-> **注意**：`item.value` 使用 `text-overflow: ellipsis` 截断，但**无 tooltip**（与 `DescPanel` 不同），过长内容会被静默截断。
+> **注意**：`item.value` 在单行方向仍可能因 `text-overflow: ellipsis` 显示省略，但配合 `word-break: break-all` 长串会优先换行展示，**无 tooltip**（与 `DescPanel` 不同）。
 
 ## 基础用法
 
@@ -105,9 +105,9 @@ div.ai-key-value-content（flex column，gap: 8px，font-size: 12px，color: #4d
   <KeyValueContent title="模型参数" :content="paramData" />
 </div>
 
-## 超长 value 截断
+## 超长 value 换行
 
-`.item-value` 固定 `white-space: nowrap`，超出容器宽度时截断显示省略号，**悬停无 tooltip**：
+`.item-value` 使用 `word-break: break-all`，长 URL 或长文本会在容器内换行；仍保留 `overflow: hidden` 与 `text-overflow: ellipsis` 以约束极端情况，**悬停无 tooltip**：
 
 <div class="demo">
   <KeyValueContent title="请求信息" :content="longValueData" />

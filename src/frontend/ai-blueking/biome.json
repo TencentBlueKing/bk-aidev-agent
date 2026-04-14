@@ -1,4 +1,15 @@
 {
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "extends": ["./node_modules/@blueking/bkui-lint/bk-biome.json"],
-  "root": true
+  "root": false,
+  "linter": {
+    "rules": {
+      "correctness": {
+        "noUnusedVariables": {
+          "fix": "none",
+          "level": "error"
+        }
+      }
+    }
+  }
 }

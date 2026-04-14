@@ -10,6 +10,7 @@
   <div class="chat-bot-new">
     <ChatContainer
       v-model:cite="cite"
+      v-model:render-mode="chatMode"
       v-model:selected-shortcut="selectedShortcut"
       :enable-selection="false"
       :messages="messages"
@@ -79,6 +80,7 @@
     MessageRender,
     MessageRole,
     MessageStatus,
+    RenderMode,
   } from '../src';
   import { streamContent } from './markdown';
   import { MOCK_PROMPTS, MOCK_RESOURCES } from './mock';
@@ -89,6 +91,7 @@
 
   import '../src/styles/global.scss';
 
+  const chatMode = shallowRef<RenderMode>(RenderMode.Test);
   const openingRemark = shallowRef(`你好，我是小鲸
 我是由蓝鲸智云开发的智能助手
 我可以帮助你完成各种任务`);

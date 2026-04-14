@@ -68,13 +68,13 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { customRef, onMounted, onUnmounted, shallowRef, useTemplateRef, watchEffect } from 'vue';
+  import { customRef, onMounted, onUnmounted, shallowRef, useTemplateRef, watch, watchEffect } from 'vue';
 
   import { Tippy, useTippy } from 'vue-tippy';
 
   import { EDITOR_MENU_Z_INDEX, isEn } from '../../../common';
   import { useCommandSelection } from '../../../composables';
-  import { type KeyboardPayload, createEditor, ReplaceAll, stringToDoc } from '../../../edix';
+  import { type KeyboardPayload, createEditor, docToString, ReplaceAll, stringToDoc } from '../../../edix';
   import { RemoveIcon } from '../../../icons';
   import AiPromptList from './ai-prompt-list/ai-prompt-list.vue';
   import AiSlashMenu from './ai-slash-menu/ai-slash-menu.vue';
@@ -148,8 +148,21 @@
   let cleanup: () => void;
   const body = document.body;
 
-  const { commandSelection, GetCursorPosition } = useCommandSelection();
+  const { commandSelection, GetCursorPosition, GetDocSnapshot, docSnapshot } = useCommandSelection();
 
+  watch(
+    () => props.modelValue,
+    () => {
+      // 处理上层 modelValue 变化时，编辑器内容与 modelValue 不一致的情况，同步编辑器内容
+      editor.command(GetDocSnapshot);
+      if (docToString(docSnapshot.value || []) !== docToString(text.value || [])) {
+        editor.command(ReplaceAll, docToString(text.value || []) as unknown as string);
+      }
+    },
+    {
+      deep: false,
+    },
+  );
   /* 显示提示 */
   const handleShowSuggestions = () => {
     setTimeout(() => {

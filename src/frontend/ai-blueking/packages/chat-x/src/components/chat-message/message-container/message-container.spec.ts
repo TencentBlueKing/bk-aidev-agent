@@ -30,6 +30,7 @@ import { type VueWrapper, flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MessageContentType, MessageRole, MessageStatus } from '../../../ag-ui/types';
+import { RenderMode } from '../../../common';
 import { MessageToolsStatus } from '../../../types/tool';
 import MessageContainer from './message-container.vue';
 
@@ -110,6 +111,7 @@ vi.mock('../../message-tools/message-tools.vue', () => ({
     name: 'MessageTools',
     props: {
       messageToolsStatus: { type: String, default: undefined },
+      messageTools: { type: Array, default: undefined },
       onAction: { type: Function, default: null },
       tippyOptions: { type: Object, default: undefined },
     },
@@ -121,6 +123,7 @@ vi.mock('../../message-tools/message-tools.vue', () => ({
             class: 'mock-message-tools',
             'data-message-tools-status': props.messageToolsStatus,
             'data-has-tippy-options': props.tippyOptions !== undefined ? 'true' : undefined,
+            'data-tools-count': props.messageTools?.length,
           },
           'Message Tools',
         );
@@ -1194,6 +1197,18 @@ describe('MessageContainer', () => {
       expect(customMessage.attributes('data-status')).toBe(MessageToolsStatus.Disabled);
     });
 
+    it('renderMode 为 Share 时 Assistant 消息组不应该渲染 MessageTools', async () => {
+      const messages: Message[] = [createAssistantMessage('1', 'Hello', 1)];
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages), renderMode: RenderMode.Share },
+      });
+
+      await nextTick();
+
+      expect(wrapper.find('.mock-message-tools').exists()).toBe(false);
+    });
+
     it('assistantMessage 包含 pause 标记时不应该渲染 MessageTools', async () => {
       const pausedMessage: Message = {
         ...createAssistantMessage('1', 'Hello', 1),
@@ -1220,6 +1235,63 @@ describe('MessageContainer', () => {
       await nextTick();
 
       expect(wrapper.find('.mock-message-tools').exists()).toBe(false);
+    });
+  });
+
+  describe('renderMode 测试', () => {
+    it('renderMode 为 Share 时 message-group-messages 应有 enabled-selection 类名', async () => {
+      const messages: Message[] = [createAssistantMessage('1', 'Hello', 1)];
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages), renderMode: RenderMode.Share },
+      });
+
+      await nextTick();
+
+      const messageGroupMessages = wrapper.find('.message-group-messages');
+      expect(messageGroupMessages.classes()).toContain('message-group-enabled-selection');
+    });
+
+    it('renderMode 为 Test 时 MessageTools 应过滤掉 share 按钮', async () => {
+      const messages: Message[] = [createAssistantMessage('1', 'Hello', 1)];
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages), renderMode: RenderMode.Test },
+      });
+
+      await nextTick();
+
+      const messageTools = wrapper.find('.mock-message-tools');
+      expect(messageTools.exists()).toBe(true);
+      expect(Number(messageTools.attributes('data-tools-count'))).toBe(3);
+    });
+
+    it('renderMode 为 Chat 时 MessageTools 应包含全部工具按钮', async () => {
+      const messages: Message[] = [createAssistantMessage('1', 'Hello', 1)];
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages), renderMode: RenderMode.Chat },
+      });
+
+      await nextTick();
+
+      const messageTools = wrapper.find('.mock-message-tools');
+      expect(messageTools.exists()).toBe(true);
+      expect(Number(messageTools.attributes('data-tools-count'))).toBe(4);
+    });
+
+    it('不传 renderMode 时 MessageTools 应包含全部工具按钮', async () => {
+      const messages: Message[] = [createAssistantMessage('1', 'Hello', 1)];
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages) },
+      });
+
+      await nextTick();
+
+      const messageTools = wrapper.find('.mock-message-tools');
+      expect(messageTools.exists()).toBe(true);
+      expect(Number(messageTools.attributes('data-tools-count'))).toBe(4);
     });
   });
 });

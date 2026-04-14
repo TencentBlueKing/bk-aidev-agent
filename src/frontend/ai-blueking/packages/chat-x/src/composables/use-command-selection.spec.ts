@@ -24,26 +24,22 @@
  * IN THE SOFTWARE.
  */
 
-import { shallowRef } from 'vue';
+import { describe, expect, it } from 'vitest';
 
-import type { EditorCommand } from '../edix';
-import type { DocFragment } from '../edix/doc/types';
+import { useCommandSelection } from './use-command-selection';
 
-export const useCommandSelection = () => {
-  const commandSelection = shallowRef<{ column: number; line: number }>({ column: 0, line: 0 });
-  const docSnapshot = shallowRef<DocFragment>([]);
-  const GetCursorPosition: EditorCommand<[]> = (_doc, selection) => {
-    const [, focus] = selection;
-    const [line, column] = focus;
-    commandSelection.value = { column, line };
-  };
-  const GetDocSnapshot: EditorCommand<[]> = doc => {
-    docSnapshot.value = doc;
-  };
-  return {
-    commandSelection,
-    docSnapshot,
-    GetCursorPosition,
-    GetDocSnapshot,
-  };
-};
+describe('use-command-selection', () => {
+  it('GetDocSnapshot 应将当前 doc 写入 docSnapshot', () => {
+    const { docSnapshot, GetDocSnapshot } = useCommandSelection();
+    const fakeDoc = [[{ type: 'text', text: 'hello' }]] as import('../edix/doc/types').DocFragment;
+    GetDocSnapshot(fakeDoc, [] as never);
+    expect(docSnapshot.value).toBe(fakeDoc);
+  });
+
+  it('GetCursorPosition 应根据 selection 更新 commandSelection', () => {
+    const { commandSelection, GetCursorPosition } = useCommandSelection();
+    const selection = [[0, 0], [2, 5]] as never;
+    GetCursorPosition([] as never, selection);
+    expect(commandSelection.value).toEqual({ line: 2, column: 5 });
+  });
+});

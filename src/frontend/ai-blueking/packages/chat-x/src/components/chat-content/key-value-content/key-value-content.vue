@@ -62,11 +62,11 @@
       display: flex;
       flex-direction: row;
       gap: 3px;
-      align-items: center;
-      height: 20px;
+      min-height: 20px;
     }
 
     .item-key {
+      flex: 0 0 auto;
       font-weight: bold;
       color: #333;
     }
@@ -75,7 +75,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
       font-size: 12px;
-      white-space: nowrap;
+      word-break: break-all;
     }
   }
 </style>

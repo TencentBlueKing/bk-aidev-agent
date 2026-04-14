@@ -29,20 +29,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import DescPanel from './desc-panel.vue';
 
-// Mock v-overflow-tips 指令
-vi.mock('../../../directives', () => ({
-  OverflowTips: {
-    mounted: vi.fn(),
-    updated: vi.fn(),
-    unmounted: vi.fn(),
-  },
-}));
-
-vi.mock('../../../composables/use-common', () => ({
-  useCommonTippyInject: vi.fn(() => undefined),
-  useKeywordInject: vi.fn(() => undefined),
-}));
-
 describe('DescPanel', () => {
   let wrapper: VueWrapper;
 
@@ -273,9 +259,9 @@ describe('DescPanel', () => {
     });
   });
 
-  describe('Overflow Tips 测试', () => {
-    it('JSON 数据的 value 应该使用 v-overflow-tips 指令', () => {
-      const desc = JSON.stringify({ longText: '这是一段很长的文本内容用于测试溢出提示功能' });
+  describe('长文本展示测试', () => {
+    it('JSON 数据的 value 应在 desc-value 内展示 HighlightKeyword', () => {
+      const desc = JSON.stringify({ longText: '这是一段很长的文本内容用于测试换行展示' });
 
       wrapper = mount(DescPanel, {
         props: {
@@ -284,7 +270,6 @@ describe('DescPanel', () => {
         },
       });
 
-      // 验证 desc-value 元素存在
       expect(wrapper.find('.desc-value').exists()).toBe(true);
     });
 

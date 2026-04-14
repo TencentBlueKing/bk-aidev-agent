@@ -132,8 +132,8 @@ AI 助手消息展示组件，负责渲染 AI 回复的文本内容和工具调�
 ## 渲染管线
 
 ```
-AssistantMessage
-├── assistant-message-content（内容区）
+AssistantMessage（根类名：ai-assistant-message）
+├── ai-assistant-message-content（内容区）
 │   └── [default slot] 或 ContentRender → MarkdownContent（Markdown 渲染）
 └── ToolCallRender × N（每个 toolCall 独立渲染，不受 slot 影响）
 ```
@@ -494,7 +494,7 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
 默认插槽替换**内容区**的渲染（即 `ContentRender` 部分），工具调用仍在内容区外独立渲染，不受插槽影响：
 
 ```
-[自定义 slot 内容]   ← 替换这里
+[自定义 slot 内容]   ← 替换 ai-assistant-message-content 内默认渲染
 [ToolCallRender]     ← 不受影响，仍正常渲染
 [ToolCallRender]
 ```

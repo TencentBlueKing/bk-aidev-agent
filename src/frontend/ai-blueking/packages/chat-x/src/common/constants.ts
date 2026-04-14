@@ -131,3 +131,9 @@ export const MAX_UPLOAD_FILE_SIZE = 2.5 * 1024 * 1024; // 最大上传文件大�
  * 关键词高亮类名
  */
 export const HIGHLIGHT_KEYWORD_CLASS_NAME = 'ai-is-keyword';
+
+export enum RenderMode {
+  Chat = 'chat',
+  Share = 'share',
+  Test = 'test',
+}

@@ -11,3 +11,4 @@ publicHoistPattern:
   - '*simple-git-hooks*'
   - '*tippy.js*'
   - '*prettier*'
+  - '*biome*'

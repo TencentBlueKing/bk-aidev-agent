@@ -4,6 +4,7 @@
 .tippy-box[data-theme~='ai-chat-box'] {
   .tippy-content {
     font-size: 12px !important;
+    word-break: break-all;
   }
 }
 

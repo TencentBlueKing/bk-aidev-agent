@@ -248,7 +248,7 @@
 </script>
 
 <style lang="scss">
-  .code-content-wrapper {
+  .ai-message-container .code-content-wrapper {
     width: 100%;
     margin-bottom: 12px;
 

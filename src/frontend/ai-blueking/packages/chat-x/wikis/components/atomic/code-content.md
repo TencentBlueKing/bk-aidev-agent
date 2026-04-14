@@ -143,8 +143,10 @@ export function useCounter(initial = 0) {
 
 ## 组件结构
 
+样式根选择器为 **`.ai-message-container .code-content-wrapper`**：代码块头部与 `pre` 区样式仅在消息容器（如 `MessageContainer` 根上的 `ai-message-container`）下生效。Wiki 与业务中独立演示时，请将 `CodeContent` 包在带 `ai-message-container` 类名的父节点内。
+
 ```
-.code-content-wrapper（width: 100%，margin-bottom: 12px）
+.ai-message-container .code-content-wrapper（width: 100%，margin-bottom: 12px）
 ├── .code-content-header（height: 40px，bg: #2f333d，border: 1px solid #1a1a1a）
 │     ├── .code-header-language（color: #999，显示 token.info 原始字符串）
 │     ├── slot#header（{ language, token }）— 自定义头部操作按钮区域
@@ -166,10 +168,13 @@ export function useCounter(initial = 0) {
 
 ```vue
 <template>
-  <CodeContent
-    :token="codeTokens"
-    @mounted="handleMounted"
-  />
+  <!-- 完整深色头部与 pre 样式依赖父级 .ai-message-container（与对话消息区一致） -->
+  <div class="ai-message-container">
+    <CodeContent
+      :token="codeTokens"
+      @mounted="handleMounted"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -195,19 +200,25 @@ export function useCounter(initial = 0) {
 **TypeScript**
 
 <div class="demo">
-  <CodeContent :token="tsTokens" />
+  <div class="ai-message-container">
+    <CodeContent :token="tsTokens" />
+  </div>
 </div>
 
 **Python**
 
 <div class="demo">
-  <CodeContent :token="pythonTokens" />
+  <div class="ai-message-container">
+    <CodeContent :token="pythonTokens" />
+  </div>
 </div>
 
 **SQL**
 
 <div class="demo">
-  <CodeContent :token="sqlTokens" />
+  <div class="ai-message-container">
+    <CodeContent :token="sqlTokens" />
+  </div>
 </div>
 
 ## 流式渲染
@@ -251,7 +262,9 @@ content 变化 → watch(immediate: true, deep: true) → processContent()
     >
       {{ isStreaming ? '输出中...' : '模拟流式输入' }}
     </button>
-    <CodeContent :token="streamingTokens" />
+    <div class="ai-message-container">
+      <CodeContent :token="streamingTokens" />
+    </div>
   </div>
 </div>
 
@@ -283,7 +296,9 @@ content 变化 → watch(immediate: true, deep: true) → processContent()
 当语言无法识别时，内容经过 HTML 转义（`&lt;` `&gt;` `&amp;` `&quot;`）后直接渲染，不进行语法高亮：
 
 <div class="demo">
-  <CodeContent :token="unknownTokens" />
+  <div class="ai-message-container">
+    <CodeContent :token="unknownTokens" />
+  </div>
 </div>
 
 ### 无语言标识
@@ -291,7 +306,9 @@ content 变化 → watch(immediate: true, deep: true) → processContent()
 `info` 为空字符串时，语言区域留空，内容同样走 HTML 转义路径：
 
 <div class="demo">
-  <CodeContent :token="noLangTokens" />
+  <div class="ai-message-container">
+    <CodeContent :token="noLangTokens" />
+  </div>
 </div>
 
 ## 高亮缓存

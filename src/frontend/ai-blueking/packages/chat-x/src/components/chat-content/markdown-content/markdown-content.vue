@@ -80,7 +80,6 @@
   import type { Token } from 'markdown-it/index.js';
 
   import './markdown-content.css';
-  import 'highlight.js/styles/atom-one-dark.min.css';
   import 'katex/dist/katex.min.css';
 
   // DOMPurify 配置：允许 KaTeX 生成的标签和属性

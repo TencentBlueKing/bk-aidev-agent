@@ -97,6 +97,24 @@ enum MessageToolsStatus {
 }
 ```
 
+### RenderMode
+
+渲染模式枚举，控制 `ChatContainer` / `MessageContainer` 的 UI 行为：
+
+```typescript
+enum RenderMode {
+  Chat = 'chat',   // 默认对话模式
+  Share = 'share', // 分享预览模式：隐藏侧边栏和工具栏，启用多选样式
+  Test = 'test',   // 测试/嵌入模式：过滤掉「分享」按钮
+}
+```
+
+| 枚举值  | 侧边栏 | MessageTools   | 说明                           |
+| ------- | ------ | -------------- | ------------------------------ |
+| `Chat`  | 正常   | 全部按钮       | 默认行为                       |
+| `Share` | 隐藏   | 隐藏           | 分享预览，仅展示消息内容       |
+| `Test`  | 正常   | 过滤掉「分享」 | 测试或嵌入场景，隐藏分享入口   |
+
 ## 输入状态
 
 ### MessageState
@@ -188,6 +206,7 @@ import {
   MessageStatus,
   MessageContentType,
   MessageToolsStatus,
+  RenderMode,
   CHAT_Z_INDEX,
   CONST_MESSAGE_TOOLS,
   DEFAULT_SHORTCUTS,
