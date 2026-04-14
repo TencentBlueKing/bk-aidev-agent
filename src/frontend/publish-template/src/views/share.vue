@@ -19,20 +19,37 @@
         }"
       >
         <!-- 错误状态 -->
-        <div v-if="hasError" class="error-state" role="alert" aria-live="polite">
-          <bk-exception class="exception-wrap-item exception-part" :description="errorMessage" scene="part" type="empty">
+        <div
+          v-if="hasError"
+          class="error-state"
+          role="alert"
+          aria-live="polite"
+        >
+          <bk-exception
+            class="exception-wrap-item exception-part"
+            :description="errorMessage"
+            scene="part"
+            type="empty"
+          >
             <template #default>
-              <bk-button v-if="canRetry" theme="primary" @click="handleRetry" class="retry-button"> 重新加载 </bk-button>
+              <bk-button
+                v-if="canRetry"
+                theme="primary"
+                @click="handleRetry"
+                class="retry-button"
+              >
+                重新加载
+              </bk-button>
             </template>
           </bk-exception>
         </div>
         <!-- 数据展示 -->
         <div v-else-if="hasValidData" class="share-data">
-          <MessageContainer
+          <ChatContainer
             :messages="normalizedMessages"
             :message-status="MessageStatus.Complete"
-            :enable-selection="false"
             message-tools-status="hidden"
+            render-mode="share"
           />
         </div>
       </div>
@@ -42,27 +59,35 @@
 </template>
 
 <script setup lang="ts">
-  import { onBeforeMount, ref, computed } from "vue"
-  import { useRoute } from "vue-router"
-  import { Message, Exception as BkException, Button as BkButton } from "bkui-vue"
-  import { MessageContainer, MessageStatus, type Message as ChatMessage } from "@blueking/chat-x"
-  import "@blueking/chat-x/dist/index.css"
+  import { onBeforeMount, ref, computed } from "vue";
+  import { useRoute } from "vue-router";
+  import {
+    Message,
+    Exception as BkException,
+    Button as BkButton,
+  } from "bkui-vue";
+  import {
+    ChatContainer,
+    MessageStatus,
+    type Message as ChatMessage,
+  } from "@blueking/chat-x";
+  import "@blueking/chat-x/dist/index.css";
 
   // TypeScript 接口定义
   interface ShareData {
-    session_contents: ChatMessage[]
-    session_name: string
-    agent_name: string
+    session_contents: ChatMessage[];
+    session_name: string;
+    agent_name: string;
   }
 
   interface ApiResponse {
-    data: ShareData
+    data: ShareData;
   }
 
   interface ErrorMessage {
-    message: string
-    userMessage: string
-    canRetry: boolean
+    message: string;
+    userMessage: string;
+    canRetry: boolean;
   }
 
   // 错误消息映射表
@@ -87,27 +112,27 @@
       userMessage: "服务器暂时无法处理请求，请稍后重试",
       canRetry: true,
     },
-  }
+  };
 
   const DEFAULT_ERROR: ErrorMessage = {
     message: "网络请求失败",
     userMessage: "网络请求失败，请稍后重试",
     canRetry: true,
-  }
+  };
 
   // 组件状态
-  const title = ref<string>("")
-  const agentName = ref<string>("")
-  const url = ref<string>(window.BK_API_PREFIX || "")
-  const loading = ref<boolean>(false)
-  const shareData = ref<ChatMessage[]>([])
-  const error = ref<string | null>(null)
-  const currentShareCode = ref<string>("")
+  const title = ref<string>("");
+  const agentName = ref<string>("");
+  const url = ref<string>(window.BK_API_PREFIX || "");
+  const loading = ref<boolean>(false);
+  const shareData = ref<ChatMessage[]>([]);
+  const error = ref<string | null>(null);
+  const currentShareCode = ref<string>("");
 
-  const route = useRoute()
+  const route = useRoute();
 
   // 计算属性
-  const hasValidData = computed(() => shareData.value.length > 0)
+  const hasValidData = computed(() => shareData.value.length > 0);
 
   // 标准化消息数据，确保兼容 chat-x 组件
   const normalizedMessages = computed<ChatMessage[]>(() => {
@@ -118,124 +143,190 @@
       messageId: msg.messageId ?? msg.id ?? index,
       // 确保状态为完成
       status: MessageStatus.Complete,
-    }))
-  })
-  const hasError = computed(() => error.value !== null)
-  const errorMessage = computed(() => error.value || "")
+    }));
+  });
+  const hasError = computed(() => error.value !== null);
+  const errorMessage = computed(() => error.value || "");
   const canRetry = computed(() => {
-    if (!currentShareCode.value || !hasError.value) return false
-    const status = getErrorStatus(error.value)
-    return ERROR_MESSAGES[status]?.canRetry ?? DEFAULT_ERROR.canRetry
-  })
+    if (!currentShareCode.value || !hasError.value) return false;
+    const status = getErrorStatus(error.value);
+    return ERROR_MESSAGES[status]?.canRetry ?? DEFAULT_ERROR.canRetry;
+  });
 
   // 获取错误状态码
   const getErrorStatus = (errorMessage: string | null): number => {
-    if (!errorMessage) return 0
-    const match = errorMessage.match(/HTTP (\d+)/)
-    return match ? parseInt(match[1]) : 0
-  }
+    if (!errorMessage) return 0;
+    const match = errorMessage.match(/HTTP (\d+)/);
+    return match ? parseInt(match[1]) : 0;
+  };
 
   // 错误处理函数
   const handleError = (status: number, statusText: string): void => {
-    const errorInfo = ERROR_MESSAGES[status] || DEFAULT_ERROR
-    error.value = `${errorInfo.message}: ${status} ${statusText}`
+    const errorInfo = ERROR_MESSAGES[status] || DEFAULT_ERROR;
+    error.value = `${errorInfo.message}: ${status} ${statusText}`;
     Message({
       theme: "error",
       message: errorInfo.userMessage,
       delay: 3000,
-    })
-  }
+    });
+  };
 
   // 异步请求数据
   const fetchShareData = async (shareCode: string): Promise<void> => {
     if (!shareCode?.trim()) {
-      handleError(0, "分享码为空")
-      return
+      handleError(0, "分享码为空");
+      return;
     }
 
-    loading.value = true
-    error.value = null
-    currentShareCode.value = shareCode.trim()
+    const result = {
+      result: true,
+      data: {
+        session_contents: [
+          {
+            created_by: "vincenttgao",
+            updated_by: "vincenttgao",
+            created_at: "2026-04-14T03:13:02.605318Z",
+            updated_at: "2026-04-14T03:13:02.605367Z",
+            id: 32270,
+            property: {
+              extra: null,
+              flow_info: null,
+            },
+            space_id: "1a69f683a7d91777",
+            tenant_id: "system",
+            session_code: "new_session_1776136239845",
+            liked: 0,
+            role: "user",
+            content: "nihao a",
+            rate: 0,
+            comment: "",
+            labels: [],
+            status: "complete",
+            session_name: "你好问候",
+          },
+          {
+            created_by: "vincenttgao",
+            updated_by: "vincenttgao",
+            created_at: "2026-04-14T03:13:02.605441Z",
+            updated_at: "2026-04-14T03:13:02.605455Z",
+            id: 32271,
+            property: {
+              extra: null,
+              flow_info: null,
+            },
+            space_id: "1a69f683a7d91777",
+            tenant_id: "system",
+            session_code: "new_session_1776136239845",
+            liked: 0,
+            role: "activity",
+            content:
+              '{"task_id": 1146194, "task_name": "flow_agent_task_new_session_1776136239845", "task_state": "FINISHED", "nodes": {"n2d39a344b3e39128c1172ef63ae0e90": {"id": "n2d39a344b3e39128c1172ef63ae0e90", "name": "消息展示", "type": "ServiceActivity", "state": "FINISHED", "start_time": "2026-04-14 11:10:50 +0800", "finish_time": "2026-04-14 11:10:50 +0800", "elapsed_time": 0, "loop": 1, "retry": 0, "skip": false}, "ncbf905757c73b5d932042529e293cbf": {"id": "ncbf905757c73b5d932042529e293cbf", "name": "变量赋值", "type": "ServiceActivity", "state": "FINISHED", "start_time": "2026-04-14 11:10:50 +0800", "finish_time": "2026-04-14 11:10:50 +0800", "elapsed_time": 0, "loop": 1, "retry": 0, "skip": false}}, "statistics": {"total": 2, "state_counts": {"FINISHED": 2}}, "task_outputs": "nihao a"}',
+            rate: 0,
+            comment: "",
+            labels: [],
+            status: "complete",
+            session_name: "你好问候",
+            type: "flow_agent",
+            error: false,
+            duration: 0,
+            message_id: "flow_result_0da97f667489",
+            tool_calls: [],
+            tool_call_id: "",
+            additional_kwargs: {},
+          },
+        ],
+        session_name: "你好问候",
+        agent_name: "flow-0410-02",
+      },
+      code: "success",
+      message: "ok",
+      trace_id: "6781f56636682d7fc025670b72f108db",
+    };
+    shareData.value = result.data.session_contents;
+    return;
+    loading.value = true;
+    error.value = null;
+    currentShareCode.value = shareCode.trim();
 
     try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 30000) // 30秒超时
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
 
       const response = await fetch(`${url.value}/share/${shareCode.trim()}`, {
         method: "GET",
         credentials: "include",
         signal: controller.signal,
-      })
+      });
 
-      clearTimeout(timeoutId)
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const result: ApiResponse = await response.json()
+      const result: ApiResponse = await response.json();
 
       // 数据验证
       if (!result?.data?.session_contents) {
-        throw new Error("Invalid response data structure")
+        throw new Error("Invalid response data structure");
       }
 
-      shareData.value = result.data.session_contents
-      title.value = result.data.session_name || "AI 对话分享"
-      agentName.value = result.data.agent_name || ""
+      shareData.value = result.data.session_contents;
+      title.value = result.data.session_name || "AI 对话分享";
+      agentName.value = result.data.agent_name || "";
     } catch (err) {
-      console.error("获取分享数据失败:", err)
+      console.error("获取分享数据失败:", err);
 
       if (err instanceof Error) {
         if (err.name === "AbortError") {
-          error.value = "请求超时，请稍后重试"
+          error.value = "请求超时，请稍后重试";
           Message({
             theme: "error",
             message: "请求超时，请稍后重试",
             delay: 3000,
-          })
+          });
         } else {
-          const statusMatch = err.message.match(/HTTP (\d+)/)
+          const statusMatch = err.message.match(/HTTP (\d+)/);
           if (statusMatch) {
-            handleError(parseInt(statusMatch[1]), err.message)
+            handleError(parseInt(statusMatch[1]), err.message);
           } else {
-            error.value = DEFAULT_ERROR.message
+            error.value = DEFAULT_ERROR.message;
             Message({
               theme: "error",
               message: DEFAULT_ERROR.userMessage,
               delay: 3000,
-            })
+            });
           }
         }
       } else {
-        error.value = DEFAULT_ERROR.message
+        error.value = DEFAULT_ERROR.message;
         Message({
           theme: "error",
           message: DEFAULT_ERROR.userMessage,
           delay: 3000,
-        })
+        });
       }
     } finally {
-      loading.value = false
+      loading.value = false;
     }
-  }
+  };
 
   // 重试处理
   const handleRetry = (): void => {
     if (currentShareCode.value) {
-      fetchShareData(currentShareCode.value)
+      fetchShareData(currentShareCode.value);
     }
-  }
+  };
 
   // 生命周期钩子
   onBeforeMount(async () => {
-    const shareCode = route.params.shareCode as string
+    const shareCode = route.params.shareCode as string;
     if (shareCode?.trim()) {
-      await fetchShareData(shareCode.trim())
+      await fetchShareData(shareCode.trim());
     } else {
-      handleError(0, "分享码不存在")
+      handleError(0, "分享码不存在");
     }
-  })
+  });
 </script>
 
 <style lang="postcss" scoped>
@@ -243,7 +334,14 @@
     width: 100%;
     min-height: 100vh;
     opacity: 0.89;
-    background-image: linear-gradient(0deg, #c6cdeb 0%, #fdf7f6 20%, #ebf3f8 38%, #f8f8ff 71%, #bae6fd 100%);
+    background-image: linear-gradient(
+      0deg,
+      #c6cdeb 0%,
+      #fdf7f6 20%,
+      #ebf3f8 38%,
+      #f8f8ff 71%,
+      #bae6fd 100%
+    );
     display: flex;
     flex-direction: column;
     align-items: center;
