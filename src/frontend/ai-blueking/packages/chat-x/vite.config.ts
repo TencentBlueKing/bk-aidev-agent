@@ -24,8 +24,8 @@
  * IN THE SOFTWARE.
  */
 import vue from '@vitejs/plugin-vue';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { defineConfig } from 'vite';
 import { analyzer, unstableRolldownAdapter } from 'vite-bundle-analyzer';
 

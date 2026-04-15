@@ -135,8 +135,10 @@ export const useMessageGroup = (options: {
           m => m.role === MessageRole.Assistant && m.toolCalls?.some(t => t.id === message.toolCallId),
         ) as AssistantMessage | undefined;
         if (toolMessage) {
-          const toolCall = toolMessage.toolCalls!.find(t => t.id === message.toolCallId)!;
-          toolCall.toolMessage = message;
+          const toolCall = toolMessage.toolCalls?.find(t => t.id === message.toolCallId);
+          if (toolCall) {
+            toolCall.toolMessage = message;
+          }
           toolMessage.status = message.error ? MessageStatus.Error : toolMessage.status || MessageStatus.Complete;
           continue;
         }
@@ -223,10 +225,7 @@ export const useMessageGroup = (options: {
    */
   const onToggleShareAll = (isAllSelected: boolean) => {
     options.selectedUserMessages.value = isAllSelected
-      ? messageGroups.value
-          ?.filter(group => group.type === MessageRole.User)
-          .map(group => group.messages)
-          .flat()
+      ? messageGroups.value?.filter(group => group.type === MessageRole.User).flatMap(group => group.messages)
       : [];
   };
   /**
@@ -245,8 +244,7 @@ export const useMessageGroup = (options: {
     return (
       messageGroups.value
         ?.filter(group => group.checked && group.type === MessageRole.User)
-        .map(group => group.messages)
-        .flat() ?? []
+        .flatMap(group => group.messages) ?? []
     );
   };
 

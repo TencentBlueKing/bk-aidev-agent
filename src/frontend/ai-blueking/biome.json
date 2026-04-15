@@ -1,7 +1,9 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
-  "extends": ["./node_modules/@blueking/bkui-lint/bk-biome.json"],
-  "root": false,
+  "extends": [
+    "./node_modules/@blueking/bkui-lint/bk-biome.json"
+  ],
+  "root": true,
   "linter": {
     "rules": {
       "correctness": {

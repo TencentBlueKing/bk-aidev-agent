@@ -182,7 +182,7 @@ domain: input
 
 ## 核心能力
 
-- **分栏布局**：基于 `ResizeLayout` 的可拖拽分栏，侧边栏展示执行摘要 / 自定义 Tab
+- **分栏布局**：基于 `ResizeLayout` 的可拖拽分栏；**侧栏是否展示 Tab / 执行摘要、以及分栏是否进入折叠样式（`ai-is-collapse`）以 `executionGroups` 为准**（由 `useMessageGroup` 从消息中过滤出工具调用与 FlowAgent 执行记录），**不以原始 `messages.length` 判断**。因此仅有普通对话、尚无执行类消息时，侧栏内容与「执行情况」区域可能为空，布局上与无执行数据时一致
 - **消息分组**：内置 `useMessageGroup` 自动处理消息分组、Tool 合并、Loading 注入
 - **执行摘要**：侧边栏展示工具调用 / FlowAgent 执行记录，支持关键词搜索和对话定位
 - **自定义 Tab**：通过 `useCustomTabProvider` 支持动态添加自定义 Tab（如节点详情）
@@ -284,6 +284,10 @@ ai-chat-container
 
 侧边栏默认包含「执行情况」Tab，展示所有工具调用和 FlowAgent 类型的 Activity 消息。支持关键词搜索过滤和点击定位到对话中的消息位置。
 
+**展示条件**：当 `executionGroups` 为空时，不渲染侧栏 Tab 与 `ExecutionSummary`（折叠按钮亦隐藏）；主区域仍可正常展示 `messages` 中的对话内容。`renderMode === Share` 时侧栏隐藏，且分栏会应用与折叠一致的样式。
+
+**自定义 Tab 联动**：当 `executionGroups` 变为空（例如会话清空或仅剩无执行类消息）时，容器会**自动重置自定义 Tab**（`resetCustomTab`），避免残留节点详情等 Tab。
+
 ```vue
 <template>
   <ChatContainer
@@ -372,7 +376,7 @@ ai-chat-container
 
 ## 自定义 Tab
 
-通过 `ref` 获取组件实例后，使用 `addCustomTab` / `removeCustomTab` 动态管理侧边栏 Tab：
+通过 `ref` 获取组件实例后，使用 `addCustomTab` / `removeCustomTab` 动态管理侧边栏 Tab。若 **`executionGroups` 变为空**，容器会清空自定义 Tab 状态（与侧栏执行数据联动，见上文「侧边栏与执行摘要」）。
 
 ```vue
 <template>

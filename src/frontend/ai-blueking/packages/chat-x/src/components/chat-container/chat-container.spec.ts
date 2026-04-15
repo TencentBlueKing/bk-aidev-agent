@@ -596,6 +596,16 @@ describe('ChatContainer', () => {
       expect(wrapper.find('.collapse-button').exists()).toBe(false);
     });
 
+    it('renderMode 为 Share 时 ResizeLayout 应应用 ai-is-collapse（与 executionGroups 无关）', () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, renderMode: RenderMode.Share },
+      });
+
+      expect(wrapper.find('.ai-chat-container-resize-layout').classes()).toContain('ai-is-collapse');
+    });
+
     it('renderMode 为 Share 时底部输入区域（ChatInput、SelectionFooter、ShortcutRender）不应渲染', () => {
       const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
 

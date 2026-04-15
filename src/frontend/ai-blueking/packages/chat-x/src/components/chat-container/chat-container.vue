@@ -9,12 +9,12 @@
     <ResizeLayout
       v-else
       class="ai-chat-container-resize-layout"
-      :class="{ 'ai-is-collapse': isCollapse || messages?.length < 1 }"
+      :class="{ 'ai-is-collapse': isCollapse || executionGroups?.length < 1 || renderMode === RenderMode.Share }"
       v-bind="resizeProps"
       @resizing="handleResizing"
     >
       <template #aside>
-        <template v-if="!isCollapse && messages?.length && renderMode !== RenderMode.Share">
+        <template v-if="!isCollapse && executionGroups?.length && renderMode !== RenderMode.Share">
           <Tab
             :active="selectedTab.name"
             class="ai-chat-container-tab"
@@ -351,7 +351,7 @@
   const keyword = shallowRef('');
   const selectedUserMessages = deepRef<Message[]>([]);
   const resizeAsideWidth = shallowRef<number>(400);
-  const resizeMaindWidth = computed(() => {
+  const resizeMainWidth = computed(() => {
     return `calc(100% - ${resizeAsideWidth.value}px)`;
   });
 
@@ -369,6 +369,26 @@
     selectedUserMessages,
   });
 
+  watch(isCollapse, newVal => {
+    if (newVal) {
+      keyword.value = '';
+      resizeAsideWidth.value = 0;
+    }
+    emits('collapseChange', newVal, resizeAsideWidth.value);
+  });
+  watch(
+    () => executionGroups.value,
+    newVal => {
+      if (!newVal.length) {
+        resetCustomTab();
+      }
+    },
+    {
+      immediate: true,
+      deep: false,
+    },
+  );
+
   const handleShortcutRenderClose = () => {
     selectedShortcut.value = null;
     emits('shortcutClose');
@@ -385,13 +405,6 @@
   const handleUpdateModelValue = (value: string | TagSchema, selectedResourceList: IAiSlashMenuItem[]) => {
     emits('update:modelValue', value, selectedResourceList);
   };
-  watch(isCollapse, newVal => {
-    if (newVal) {
-      keyword.value = '';
-      resizeAsideWidth.value = 0;
-    }
-    emits('collapseChange', newVal, resizeAsideWidth.value);
-  });
 
   const handleCollapse = () => {
     isCollapse.value = !isCollapse.value;
@@ -537,7 +550,7 @@
 
       .bk-resize-layout-main {
         position: relative;
-        width: v-bind(resizeMaindWidth);
+        width: v-bind(resizeMainWidth);
 
         // width: 100%;
         padding: 8px;
@@ -549,12 +562,6 @@
       }
 
       &.ai-is-collapse {
-        // .bk-resize-layout-aside {
-        //   flex: 0 0 0;
-        //   width: 0;
-        //   padding: 0;
-        // }
-
         .bk-resize-layout-aside {
           flex: 0 0 0;
           width: 0;
