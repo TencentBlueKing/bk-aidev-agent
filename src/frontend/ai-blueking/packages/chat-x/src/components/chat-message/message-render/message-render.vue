@@ -54,8 +54,7 @@
                 { content: props.message.content || '', status: props.message.status },
                 slots.codeHeader
                   ? {
-                      codeHeader: (slotProps: { language: string; token: Token[] }) =>
-                        slots.codeHeader?.(slotProps),
+                      codeHeader: (slotProps: { language: string; token: Token[] }) => slots.codeHeader?.(slotProps),
                     }
                   : undefined,
               ),

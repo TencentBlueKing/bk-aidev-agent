@@ -176,6 +176,7 @@
 
   const props = defineProps<{
     content?: BkFlowMessageContent;
+    messageUid?: string;
     status?: MessageStatusType;
   }>();
 
@@ -262,6 +263,7 @@
         name: `${taskId}|${node.id}|${node.name}`,
         data: {
           component: BkFlowNodeDetail,
+          messageUid: props.messageUid,
           props: {
             loading: true,
             node_id: node.id,

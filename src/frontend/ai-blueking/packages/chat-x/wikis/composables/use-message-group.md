@@ -47,6 +47,8 @@ function useMessageGroup(options: {
 
 `watchEffect` 遍历 `messages` 数组，按以下规则分组：
 
+**消息 `uid`：** 若某条消息缺少 `uid`，分组前会自动为其生成并写入 `uid`（与 `MessageGroup.uid` 及 DOM 定位约定配合）。
+
 ```
 messages 原始数组（按顺序处理）
          │
@@ -165,7 +167,7 @@ const { messageGroups, executionGroups, isShareMode, isAllSelected, onToggleShar
 import { type MessageGroup } from '@blueking/chat-x';
 
 interface MessageGroup {
-  uuid: string;
+  uid: string;
   type: MessageRole;
   messages: Message[];
   checked: boolean;

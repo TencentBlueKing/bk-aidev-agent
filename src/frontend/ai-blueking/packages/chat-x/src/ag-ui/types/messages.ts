@@ -28,13 +28,12 @@ import type { OldShortcut, Shortcut } from '../../types';
 import type { MessageContentType, MessageRole, MessageStatus } from './constants';
 import type { ContentMap, InputContent } from './contents';
 
-export interface ActivityMessage
-  extends BaseMessage<
-    MessageRole.Activity,
-    | ContentMap[MessageContentType.FlowAgent]
-    | ContentMap[MessageContentType.KnowledgeRag]
-    | ContentMap[MessageContentType.ReferenceDocument]
-  > {
+export interface ActivityMessage extends BaseMessage<
+  MessageRole.Activity,
+  | ContentMap[MessageContentType.FlowAgent]
+  | ContentMap[MessageContentType.KnowledgeRag]
+  | ContentMap[MessageContentType.ReferenceDocument]
+> {
   activityType:
     | MessageContentType.FlowAgent
     | MessageContentType.KnowledgeRag
@@ -59,6 +58,7 @@ export interface BaseMessage<T extends MessageType, C = string> {
   name?: string;
   role: T;
   status: MessageStatus;
+  uid?: string;
   property?: {
     extra?: {
       cite:

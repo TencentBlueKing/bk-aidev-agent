@@ -143,23 +143,19 @@ export function useCounter(initial = 0) {
 
 ## 组件结构
 
-样式根选择器为 **`.ai-message-container .code-content-wrapper`**：代码块头部与 `pre` 区样式仅在消息容器（如 `MessageContainer` 根上的 `ai-message-container`）下生效。Wiki 与业务中独立演示时，请将 `CodeContent` 包在带 `ai-message-container` 类名的父节点内。
+根类名为 **`.code-content-wrapper`**：外层宽度、下边距以及 **`.code-content-header`**（深色顶栏）在任意父级下均生效。**代码区** `.hljs-pre`、行内高亮等样式选择器为 **`.ai-message-container .code-content-wrapper`**，仅在消息列表（`MessageContainer` 根上的 `ai-message-container`）内与对话区一致。Wiki 与业务中若要完整还原代码区外观，请将 `CodeContent` 包在带 `ai-message-container` 类名的父节点内。
 
 ```
-.ai-message-container .code-content-wrapper（width: 100%，margin-bottom: 12px）
-├── .code-content-header（height: 40px，bg: #2f333d，border: 1px solid #1a1a1a）
-│     ├── .code-header-language（color: #999，显示 token.info 原始字符串）
-│     ├── slot#header（{ language, token }）— 自定义头部操作按钮区域
-│     └── ToolBtn id="copy"（点击复制 codeRef.innerText）
+.code-content-wrapper
+├── .code-content-header（深色顶栏；不依赖 .ai-message-container）
+│     ├── .code-header-language（token.info）
+│     ├── slot#header（{ language, token }）
+│     └── ToolBtn id="copy"
 │
-└── .hljs-pre（bg: #282c34，padding: 8×16，overflow-x: auto）
+└── .hljs-pre（完整 padding / 背景 / code 字体：需父级为 .ai-message-container .code-content-wrapper）
       └── <code class="hljs language-{raw-info}">
-            ├── v-for completedLines
-            │     <span class="code-line" v-html="line.html" /> + '\n'
-            │     （已完成行，经过 hljs.highlight 高亮）
-            └── v-if currentLineText
-                  <span class="code-line current-line" v-html="currentLineHtml" />
-                  （最后一行，也经过 highlightLine，用 .current-line 标识正在输入）
+            ├── v-for completedLines → <span class="code-line" />
+            └── v-if currentLineText → <span class="code-line current-line" />
 ```
 
 ## 基础用法
@@ -168,7 +164,7 @@ export function useCounter(initial = 0) {
 
 ```vue
 <template>
-  <!-- 完整深色头部与 pre 样式依赖父级 .ai-message-container（与对话消息区一致） -->
+  <!-- 代码区 .hljs-pre 的完整样式依赖父级 .ai-message-container（与对话消息区一致）；顶栏单独也可用 -->
   <div class="ai-message-container">
     <CodeContent
       :token="codeTokens"

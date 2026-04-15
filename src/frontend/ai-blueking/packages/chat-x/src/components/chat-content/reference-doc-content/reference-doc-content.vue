@@ -23,6 +23,7 @@
 
   const props = defineProps<{
     content?: ReferenceDocumentContent[];
+    messageUid?: string;
   }>();
   const collapsed = defineModel<boolean>('collapsed', {
     default: false,

@@ -34,6 +34,7 @@
 
   const props = defineProps<{
     content?: KnowledgeRagMessageContent;
+    messageUid?: string;
     status?: MessageStatusType;
   }>();
   const collapsed = defineModel<boolean>('collapsed', {

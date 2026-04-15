@@ -53,6 +53,9 @@ interface BaseMessage<T extends MessageType, C = string> {
   // 消息状态
   status: MessageStatus;
 
+  // 可选：单条消息实例唯一标识（`useMessageGroup` 在缺失时会自动生成并写回）
+  uid?: string;
+
   // 消息名称（可选）
   name?: string;
 

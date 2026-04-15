@@ -25,6 +25,11 @@
  */
 import DefaultTheme from 'vitepress/theme';
 
+// 文档站内直接演示源码组件时，确保 Markdown 正文、代码高亮、公式样式与线上一致
+// （避免仅依赖组件链路的按需 CSS 在部分页面未打入）
+import '../../../src/components/chat-content/markdown-content/markdown-content.css';
 import './custom.scss';
+import 'highlight.js/styles/github-dark.css';
+import 'katex/dist/katex.min.css';
 
 export default DefaultTheme;

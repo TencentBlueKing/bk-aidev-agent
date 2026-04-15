@@ -248,7 +248,7 @@
 </script>
 
 <style lang="scss">
-  .ai-message-container .code-content-wrapper {
+  .code-content-wrapper {
     width: 100%;
     margin-bottom: 12px;
 
@@ -271,7 +271,9 @@
         color: #999;
       }
     }
+  }
 
+  .ai-message-container .code-content-wrapper {
     .hljs-pre {
       padding: 8px 16px;
       margin: 0;

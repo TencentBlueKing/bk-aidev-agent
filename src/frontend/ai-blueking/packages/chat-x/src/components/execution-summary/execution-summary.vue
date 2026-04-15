@@ -13,9 +13,9 @@
       <template v-if="messageGroups.length">
         <div
           v-for="(group, index) in messageGroups"
-          :key="group.uuid"
+          :key="group.uid"
           class="execution-summary-content-item"
-          @mouseenter="hoverGroupId = group.uuid"
+          @mouseenter="hoverGroupId = group.uid"
           @mouseleave="hoverGroupId = undefined"
         >
           <div class="content-item-header">
@@ -29,7 +29,7 @@
               }}
             </span>
             <Button
-              v-show="hoverGroupId === group.uuid"
+              v-show="hoverGroupId === group.uid"
               class="content-item-locate"
               text
               theme="primary"
@@ -88,7 +88,7 @@
   }>();
 
   const emits = defineEmits<{
-    (e: 'locateMessageGroup', uuid: string, group: MessageGroup): void;
+    (e: 'locateMessageGroup', uid: string, group: MessageGroup): void;
     (e: 'updateKeyword', keyword: string): void;
   }>();
   const commonTippyOptions = useCommonTippyInject();
@@ -105,7 +105,7 @@
   };
 
   const handleLocate = (group: MessageGroup) => {
-    emits('locateMessageGroup', group.uuid, group);
+    emits('locateMessageGroup', group.uid, group);
   };
   const handleClearSearch = () => {
     keyword.value = '';

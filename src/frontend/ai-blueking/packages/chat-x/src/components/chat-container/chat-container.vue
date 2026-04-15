@@ -80,7 +80,19 @@
                 :is="selectedTab?.data?.component"
                 :key="selectedTab.name"
                 v-bind="selectedTab?.data?.props"
-              />
+              >
+                <template #locateButton>
+                  <Button
+                    class="ai-locate-button"
+                    size="small"
+                    text
+                    theme="primary"
+                    @click="handleLocateMessageGroup(selectedTab?.data?.messageUid)"
+                  >
+                    {{ t('在对话中定位') }}
+                  </Button>
+                </template>
+              </component>
             </div>
           </template>
         </template>
@@ -211,7 +223,7 @@
     withDirectives,
   } from 'vue';
 
-  import { ResizeLayout, Tab } from 'bkui-vue';
+  import { Button, ResizeLayout, Tab } from 'bkui-vue';
 
   import { RenderMode } from '../../common';
   import { useMessageGroup } from '../../composables';
@@ -399,11 +411,19 @@
   /**
    * 定位消息组
    */
-  const handleLocateMessageGroup = (uuid: string) => {
-    const dom = document.getElementById(uuid);
-    if (dom) {
-      dom.scrollIntoView({ behavior: 'smooth' });
+  const handleLocateMessageGroup = (uid?: string) => {
+    if (!uid) {
+      return;
     }
+    const dom = document.getElementById(uid);
+    if (!dom) {
+      const group = messageGroups.value.find(group => group.messages.some(message => message.uid === uid));
+      if (group) {
+        document.getElementById(group.uid)?.scrollIntoView({ behavior: 'smooth' });
+      }
+      return;
+    }
+    dom.scrollIntoView({ behavior: 'smooth' });
   };
   const handleUpdateTabActive = (name: string) => {
     selectCustomTab(tabs.value.find(tab => tab.name === name)!);
@@ -579,6 +599,12 @@
     &-message-slot {
       width: 100%;
       height: calc(100% - 40px);
+
+      .ai-locate-button {
+        margin-left: auto;
+        font-size: 12px;
+        font-weight: normal;
+      }
     }
 
     .collapse-button {

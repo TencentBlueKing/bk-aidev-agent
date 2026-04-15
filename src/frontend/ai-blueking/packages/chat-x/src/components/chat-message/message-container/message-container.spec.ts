@@ -208,7 +208,7 @@ type MessageGroup = {
   pause?: boolean;
   startTime?: number;
   type: string;
-  uuid: string;
+  uid: string;
 };
 
 const buildGroups = (messages: Message[]): MessageGroup[] => {
@@ -217,7 +217,7 @@ const buildGroups = (messages: Message[]): MessageGroup[] => {
   for (const msg of messages) {
     if (msg.role === MessageRole.User) {
       groups.push({
-        uuid: `group-${msg.id}`,
+        uid: `group-${msg.id}`,
         messages: [msg],
         type: MessageRole.User,
         isHover: false,
@@ -229,7 +229,7 @@ const buildGroups = (messages: Message[]): MessageGroup[] => {
         lastGroup.messages.push(msg);
       } else {
         groups.push({
-          uuid: `group-${msg.id}`,
+          uid: `group-${msg.id}`,
           messages: [msg],
           type: MessageRole.Assistant,
           isHover: false,
@@ -249,7 +249,7 @@ const buildGroups = (messages: Message[]): MessageGroup[] => {
   const lastMsg = messages[messages.length - 1];
   if (lastMsg && lastMsg.role === MessageRole.User) {
     groups.push({
-      uuid: 'loading-group',
+      uid: 'loading-group',
       messages: [
         {
           id: 'loading',

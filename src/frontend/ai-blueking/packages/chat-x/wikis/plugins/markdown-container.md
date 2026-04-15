@@ -2,7 +2,7 @@
 name: markdownItContainer
 slug: markdown-container
 category: plugin
-description: Markdown-it 自定义容器插件，支持 ::: name ... ::: 语法，用于对齐块等场景。
+description: "Markdown-it 自定义容器插件，支持 ::: name ... ::: 语法，用于对齐块等场景。"
 aiSummary: >
   markdownItContainer 基于 markdown-it-container，支持字符串或正则匹配容器名；MarkdownContent 中用于 hljs-left/center/right 对齐。
   渲染为带 class 的 div，与 tokens-to-vnodes 及样式配合。

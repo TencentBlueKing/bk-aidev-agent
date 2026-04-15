@@ -5,7 +5,13 @@
         <span>{{ t('节点') }}：</span>
         <span class="skeleton-title ai-skeleton-element" />
       </template>
-      <template v-else>{{ t('节点') }}：{{ basicInfo?.node_name }}</template>
+      <div
+        v-else
+        class="detail-title-content"
+      >
+        {{ t('节点') }}：{{ basicInfo?.node_name }}
+      </div>
+      <slot name="locateButton" />
     </h3>
     <div class="detail-tab-bar">
       <div
@@ -121,7 +127,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, shallowRef } from 'vue';
+  import { type VNode, computed, shallowRef } from 'vue';
 
   import { isEn } from '../../../common/lang';
   import { NodeOutputIcon, NodeTabIcon } from '../../../icons';
@@ -131,7 +137,9 @@
 
   import type { CustomBkFlowTabData, NodeDetailData } from '../../../types';
   import type { SimpleTableColumn } from './simple-table.vue';
-
+  defineSlots<{
+    locateButton: () => VNode;
+  }>();
   enum DetailTab {
     Config = 'config',
     Output = 'output',
@@ -244,14 +252,20 @@
     font-size: 12px;
 
     .detail-title {
+      display: flex;
+      align-items: center;
       margin: 0 0 16px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      font-size: 16px;
-      font-weight: bold;
       line-height: 24px;
       color: $color-title;
-      white-space: nowrap;
+
+      &-content {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-size: 16px;
+        font-weight: bold;
+        white-space: nowrap;
+      }
     }
 
     .detail-tab-bar {

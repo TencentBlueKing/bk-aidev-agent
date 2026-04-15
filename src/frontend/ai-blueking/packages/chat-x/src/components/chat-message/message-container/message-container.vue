@@ -5,7 +5,7 @@
   >
     <div
       v-for="(group, groupIndex) in messageGroups"
-      :id="group.uuid"
+      :id="group.uid"
       :key="groupIndex"
       class="message-group"
       :style="{

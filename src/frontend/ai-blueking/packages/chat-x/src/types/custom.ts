@@ -36,7 +36,7 @@ export type CustomBkFlowTabData = CustomTabData<{
 }>;
 
 export type CustomTab<T extends CustomTabData<Record<string, unknown>>> = {
-  data?: T;
+  data?: T & { messageUid?: string };
   icon?: string;
   label: string; // 显示标签
   name: string; // 唯一标识

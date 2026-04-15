@@ -96,7 +96,7 @@ vi.mock('../chat-message/message-render/message-render.vue', () => ({
 }));
 
 const createMessageGroup = (overrides: Partial<MessageGroup> = {}): MessageGroup => ({
-  uuid: `group-${Math.random().toString(36).slice(2, 8)}`,
+  uid: `group-${Math.random().toString(36).slice(2, 8)}`,
   messages: [],
   type: 'assistant' as MessageGroup['type'],
   isHover: false,
@@ -192,7 +192,7 @@ describe('ExecutionSummary', () => {
 
   describe('事件测试', () => {
     it('点击定位按钮应该触发 locateMessageGroup 事件', async () => {
-      const group = createMessageGroup({ uuid: 'test-uuid', userMessageTitle: '测试消息' });
+      const group = createMessageGroup({ uid: 'test-uid', userMessageTitle: '测试消息' });
 
       wrapper = mount(ExecutionSummary, {
         props: { messageGroups: [group] },
@@ -205,7 +205,7 @@ describe('ExecutionSummary', () => {
       await locateBtn.trigger('click');
 
       expect(wrapper.emitted('locateMessageGroup')).toBeTruthy();
-      expect(wrapper.emitted('locateMessageGroup')?.[0]?.[0]).toBe('test-uuid');
+      expect(wrapper.emitted('locateMessageGroup')?.[0]?.[0]).toBe('test-uid');
     });
   });
 

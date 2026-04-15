@@ -25,7 +25,7 @@ domain: helper
 
   const mockGroups = [
     {
-      uuid: 'group-1',
+      uid: 'group-1',
       type: 'assistant',
       checked: false,
       isHover: false,
@@ -55,7 +55,7 @@ domain: helper
       ],
     },
     {
-      uuid: 'group-2',
+      uid: 'group-2',
       type: 'assistant',
       checked: false,
       isHover: false,
@@ -86,8 +86,8 @@ domain: helper
     },
   ];
 
-  const handleLocate = (uuid, group) => {
-    locateInfo.value = `定位到消息组: ${uuid}（${new Date(group.startTime).toLocaleTimeString()}）`;
+  const handleLocate = (uid, group) => {
+    locateInfo.value = `定位到消息组: ${uid}（${new Date(group.startTime).toLocaleTimeString()}）`;
   };
 
   const handleUpdateKeyword = (keyword) => {
@@ -124,8 +124,8 @@ domain: helper
 <script setup lang="ts">
   import { ExecutionSummary, type MessageGroup } from '@blueking/chat-x';
 
-  const handleLocate = (uuid: string, group: MessageGroup) => {
-    const dom = document.getElementById(uuid);
+  const handleLocate = (uid: string, group: MessageGroup) => {
+    const dom = document.getElementById(uid);
     dom?.scrollIntoView({ behavior: 'smooth' });
   };
 
@@ -203,7 +203,7 @@ execution-summary
 
 | 事件名             | 参数                                  | 说明                     |
 | ------------------ | ------------------------------------- | ------------------------ |
-| locateMessageGroup | `(uuid: string, group: MessageGroup)` | 点击「在对话中定位」按钮 |
+| locateMessageGroup | `(uid: string, group: MessageGroup)` | 点击「在对话中定位」按钮，参数为消息组 `MessageGroup.uid` |
 | updateKeyword      | `(keyword: string)`                   | 搜索关键词变更           |
 
 ## 类型定义
@@ -212,7 +212,7 @@ execution-summary
 import { type MessageGroup } from '@blueking/chat-x';
 
 interface MessageGroup {
-  uuid: string;
+  uid: string;
   type: MessageRole;
   messages: Message[];
   checked: boolean;

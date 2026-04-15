@@ -200,7 +200,7 @@ ai-chat-container
     │   │   ├── 执行情况（默认 Tab）
     │   │   └── 自定义 Tab × N（可关闭）
     │   ├── ExecutionSummary（执行情况 Tab 内容）
-    │   ├── 自定义 Tab 组件（通过 component :is 渲染）
+    │   ├── 自定义 Tab 组件（通过 component :is 渲染，可向子组件注入 #locateButton）
     │   └── collapse-button（折叠按钮）
     └── main（主内容区）
         ├── MessageContainer（有消息时）
@@ -374,6 +374,12 @@ ai-chat-container
 
 通过 `ref` 获取组件实例后，使用 `addCustomTab` / `removeCustomTab` 动态管理侧边栏 Tab：
 
+### 自定义 Tab 与「在对话中定位」
+
+`addCustomTab` 的 `data` 可携带 **`messageUid`**（与对应活动消息的 `message.uid` 一致）。`ChatContainer` 在侧栏用 `<component :is>` 渲染自定义 Tab 时，会向子组件提供 **`locateButton` 插槽**：默认渲染「在对话中定位」按钮，点击后调用内部 `handleLocateMessageGroup(messageUid)`，优先滚动到主区域 `document.getElementById(messageUid)`；若不存在该节点，则在当前 `messageGroups` 中查找包含 `message.uid === messageUid` 的消息组，并滚动到该组的容器（`MessageGroup.uid` 作为组级 `id`）。
+
+子组件若需展示该按钮，请在模板中声明 `<slot name="locateButton" />`（例如 FlowAgent 节点详情标题栏）。`FlowAgentContent` 等会在打开节点详情 Tab 时将 `messageUid` 写入 `data`，与 `ActivityMessage` 下传给内容区的 `message-uid` 对齐。
+
 ```vue
 <template>
   <ChatContainer
@@ -394,13 +400,14 @@ ai-chat-container
   const chatContainerRef = useTemplateRef<InstanceType<typeof ChatContainer>>('chatContainerRef');
 
   // 添加自定义 Tab（如 FlowAgent 节点详情）
-  const addNodeDetailTab = (nodeId: string, nodeName: string) => {
+  const addNodeDetailTab = (nodeId: string, nodeName: string, messageUid?: string) => {
     chatContainerRef.value?.addCustomTab({
       name: `node-${nodeId}`,
       label: nodeName,
       data: {
-        component: MyNodeDetail, // 自定义组件
+        component: MyNodeDetail, // 自定义组件（模板内需 <slot name="locateButton" /> 以展示侧栏「在对话中定位」）
         props: { loading: true, data: {} },
+        messageUid, // 与活动消息 message.uid 一致时可省略；用于主对话定位
       },
     });
   };
@@ -724,11 +731,11 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 ```typescript
 import { ChatContainer, RenderMode, type CustomTab, type Shortcut, type Message } from '@blueking/chat-x';
 
-// 自定义 Tab
+// 自定义 Tab（data 可与 messageUid 组合，供侧栏定位主对话）
 interface CustomTab<T = Record<string, unknown>> {
   label: string;
   name: string;
-  data?: T;
+  data?: T & { messageUid?: string };
 }
 
 // 快捷指令

@@ -97,6 +97,18 @@ describe('FlowAgentNodeDetail', () => {
   });
 
   describe('渲染测试', () => {
+    it('应该渲染 locateButton 插槽内容', () => {
+      wrapper = mount(FlowAgentNodeDetail, {
+        props: baseProps,
+        slots: {
+          locateButton: () => h('button', { class: 'mock-locate-slot-btn' }, '在对话中定位'),
+        },
+      });
+
+      expect(wrapper.find('.mock-locate-slot-btn').exists()).toBe(true);
+      expect(wrapper.find('.mock-locate-slot-btn').text()).toBe('在对话中定位');
+    });
+
     it('应该正确渲染组件', () => {
       wrapper = mount(FlowAgentNodeDetail, {
         props: baseProps,

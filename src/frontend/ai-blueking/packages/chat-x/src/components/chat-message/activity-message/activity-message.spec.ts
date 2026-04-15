@@ -98,10 +98,20 @@ vi.mock('../../chat-content/flow-agent-content/flow-agent-content.vue', () => ({
       content: { type: Object, default: () => ({}) },
       status: { type: String, default: '' },
       collapsed: { type: Boolean, default: false },
+      messageUid: { type: String, default: '' },
     },
     emits: ['update:collapsed'],
     setup(props) {
-      return () => h('div', { class: 'mock-flow-agent-content', 'data-status': props.status }, 'FlowAgentContent');
+      return () =>
+        h(
+          'div',
+          {
+            class: 'mock-flow-agent-content',
+            'data-status': props.status,
+            'data-message-uid': props.messageUid || '',
+          },
+          'FlowAgentContent',
+        );
     },
   }),
 }));
@@ -422,6 +432,18 @@ describe('ActivityMessage', () => {
       });
 
       expect(wrapper.find('.mock-flow-agent-content').attributes('data-status')).toBe('streaming');
+    });
+
+    it('应将 uid 作为 messageUid 传递给 FlowAgentContent', () => {
+      wrapper = mount(ActivityMessage, {
+        props: {
+          activityType: 'flow-agent',
+          content: {},
+          uid: 'activity-uid-1',
+        },
+      });
+
+      expect(wrapper.find('.mock-flow-agent-content').attributes('data-message-uid')).toBe('activity-uid-1');
     });
   });
 

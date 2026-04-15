@@ -35,6 +35,24 @@ import ChatContainer from './chat-container.vue';
 import type { AssistantMessage, Message, UserMessage } from '../../ag-ui/types';
 
 vi.mock('bkui-vue', () => {
+  const Button = defineComponent({
+    name: 'Button',
+    props: {
+      size: { type: String, default: '' },
+      text: { type: Boolean, default: false },
+      theme: { type: String, default: 'default' },
+    },
+    emits: ['click'],
+    setup(_, { slots, emit }) {
+      return () =>
+        h(
+          'button',
+          { class: 'mock-bk-button', type: 'button', onClick: () => emit('click') },
+          slots.default?.(),
+        );
+    },
+  });
+
   const TabPanel = defineComponent({
     name: 'TabPanel',
     props: { name: String, label: [String, Function] },
@@ -58,6 +76,7 @@ vi.mock('bkui-vue', () => {
   (Tab as unknown as Record<string, unknown>).TabPanel = TabPanel;
 
   return {
+    Button,
     ResizeLayout: defineComponent({
       name: 'ResizeLayout',
       props: {

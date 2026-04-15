@@ -56,6 +56,8 @@ domain: message
 
 活动消息组件，用于展示 AI 的知识检索（Knowledge RAG）过程、参考文档引用列表和 FlowAgent 流程执行情况。通过 `activityType` 切换三种工作模式，点击标题栏可折叠/展开内容区域。
 
+组件会将父级传入消息上的 **`uid`** 以 **`message-uid`** 形式透传给各活动子组件（`FlowAgentContent` / `KnowledgeRagContent` / `ReferenceDocContent`），用于侧栏自定义 Tab、`addCustomTab` 的 `data.messageUid` 与主对话区「在对话中定位」联动（详见 [ChatContainer](./chat-container.md)）。
+
 ## 三种工作模式
 
 组件根据 `activityType` 的值决定渲染模式：

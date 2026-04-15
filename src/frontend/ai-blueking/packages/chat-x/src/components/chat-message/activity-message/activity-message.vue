@@ -4,6 +4,7 @@
     v-if="activityComponent"
     v-model:collapsed="collapsed"
     :content="content"
+    :message-uid="uid"
     :status="status"
   />
 </template>

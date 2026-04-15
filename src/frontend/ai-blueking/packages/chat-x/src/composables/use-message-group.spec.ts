@@ -94,6 +94,17 @@ describe('useMessageGroup', () => {
       expect(messageGroups.value.length).toBe(0);
     });
 
+    it('无 uid 的消息应在分组前被补充 uid', async () => {
+      const userMsg = createUserMessage('1');
+      expect(userMsg.uid).toBeUndefined();
+
+      const { messageGroups } = setupMessageGroup([userMsg]);
+      await nextTick();
+
+      expect(userMsg.uid).toBeDefined();
+      expect(messageGroups.value[0]?.messages[0]?.uid).toBe(userMsg.uid);
+    });
+
     it('单条用户消息应该创建 User 组 + Loading 组', async () => {
       const { messageGroups } = setupMessageGroup([createUserMessage('1')]);
       await nextTick();

@@ -45,8 +45,8 @@ export type MessageGroup = {
   pause?: boolean;
   startTime?: number; // 执行时间
   type: MessageRole;
+  uid: string;
   userMessageTitle?: number | string;
-  uuid: string;
 };
 
 type SearchTextExtractor = (message: Message) => string[];
@@ -109,6 +109,9 @@ export const useMessageGroup = (options: {
     let assistantMessages: Message[] = [];
     const list: MessageGroup[] = [];
     for (const message of options.messages.value) {
+      if (!message?.uid) {
+        message.uid = generateUUID();
+      }
       if (message.role === MessageRole.User) {
         if (assistantMessages.length > 0) {
           list.push({
@@ -116,7 +119,7 @@ export const useMessageGroup = (options: {
             type: MessageRole.Assistant,
             isHover: false,
             checked: false,
-            uuid: generateUUID(),
+            uid: generateUUID(),
             pause: assistantMessages?.some(m => m.property?.extra?.pause) ?? false,
           });
           assistantMessages = [];
@@ -126,7 +129,7 @@ export const useMessageGroup = (options: {
           type: MessageRole.User,
           isHover: false,
           checked: false,
-          uuid: generateUUID(),
+          uid: generateUUID(),
         });
         continue;
       }
@@ -149,7 +152,7 @@ export const useMessageGroup = (options: {
         type: MessageRole.Assistant,
         isHover: false,
         checked: false,
-        uuid: generateUUID(),
+        uid: generateUUID(),
         pause: assistantMessages?.some(m => m.property?.extra?.pause) ?? false,
       });
     }
@@ -162,12 +165,13 @@ export const useMessageGroup = (options: {
             status: MessageStatus.Pending,
             messageId: '',
             id: 'loading',
+            uid: generateUUID(),
           },
         ],
         type: MessageRole.Loading,
         isHover: false,
         checked: false,
-        uuid: generateUUID(),
+        uid: generateUUID(),
       });
     }
     messageGroups.value = list;

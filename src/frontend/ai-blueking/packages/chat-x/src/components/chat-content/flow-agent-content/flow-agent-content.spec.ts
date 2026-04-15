@@ -303,5 +303,22 @@ describe('FlowAgentContent', () => {
 
       expect(mockRemoveCustomTab).not.toHaveBeenCalled();
     });
+
+    it('打开节点详情时应将 messageUid 传入自定义 Tab 的 data', async () => {
+      const messageUid = 'flow-msg-uid-1';
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent(),
+          messageUid,
+        },
+      });
+
+      const detailBtn = wrapper.find('.flow-agent-node-detail-btn');
+      await detailBtn.trigger('click');
+
+      expect(mockAddCustomTab).toHaveBeenCalled();
+      const payload = mockAddCustomTab.mock.calls[0]?.[0] as { data?: { messageUid?: string } };
+      expect(payload?.data?.messageUid).toBe(messageUid);
+    });
   });
 });

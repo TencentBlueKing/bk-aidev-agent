@@ -117,7 +117,8 @@ tabManager?.removeCustomTab('node-detail-123');
 interface CustomTab<T = Record<string, unknown>> {
   label: string;
   name: string;
-  data?: T;
+  /** 可与 `component` / `props` 并列；用于侧栏「在对话中定位」与主消息 `message.uid` 对齐 */
+  data?: T & { messageUid?: string };
 }
 ```
 
