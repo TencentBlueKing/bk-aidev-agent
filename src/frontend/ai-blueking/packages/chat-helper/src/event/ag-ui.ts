@@ -149,12 +149,18 @@ export class AGUIProtocol implements ISSEProtocol {
   /**
    * 自定义事件 处理流程编排任务结束
    */
-  handleFlowAgentEndCustomEvent(_event: ICustomEvent) {
+  handleFlowAgentEndCustomEvent(event: ICustomEvent) {
     const message = this.messageModule.getCurrentLoadingMessage();
     if (message && message.role === MessageRole.Activity && message.activityType === ActivityType.FlowAgent) {
-      const value = _event.value as IFlowAgentEndCustomValue;
-      (message.content as IFlowAgentResultCustomValue).task_outputs = value.task_outputs;
+      // 先把最后一个loading消息标记为complete
       message.status = MessageStatus.Complete;
+      // 然后创建一个结束消息
+      const value = event.value as IFlowAgentEndCustomValue;
+      this.messageModule.plusMessage({
+        role: MessageRole.Assistant,
+        content: value.task_outputs.join('\n'),
+        status: MessageStatus.Complete,
+      });
     }
   }
 
