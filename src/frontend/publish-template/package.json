@@ -16,7 +16,7 @@
     "@blueking/chat-x": "workspace:*",
     "@blueking/chat-helper": "workspace:*",
     "@blueking/cli-service": "0.1.1",
-    "bkui-vue": "2.0.2-beta.81",
+    "bkui-vue": "^2.0.2-beta.112",
     "dayjs": "^1.11.12",
     "postcss": "~8.4.16",
     "postcss-import": "^15.0.0",

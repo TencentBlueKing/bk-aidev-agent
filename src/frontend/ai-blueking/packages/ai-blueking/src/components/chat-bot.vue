@@ -25,7 +25,7 @@
       :on-user-shortcut-confirm="handleUserShortcutConfirm"
       :opening-remark="openingRemark"
       :placeholder="props.placeholder"
-      :placement="'left'"
+      :placement="props.placement"
       :prompts="effectivePrompts"
       :resize-props="props.resizeProps"
       :resources="effectiveResources"
@@ -95,6 +95,7 @@
     shortcuts: () => [],
     resources: () => [],
     renderMode: RenderMode.Chat,
+    placement: 'left',
   });
 
   const emit = defineEmits<ChatBotEmits>();

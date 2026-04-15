@@ -49,6 +49,12 @@ const router = createRouter({
       component: () => import('./views/HeaderLeftSlotView.vue'),
       meta: { title: 'headerLeft 插槽', group: 'example' },
     },
+    {
+      path: '/examples/render-mode',
+      name: 'RenderMode',
+      component: () => import('./views/RenderModeView.vue'),
+      meta: { title: 'RenderMode 渲染模式', group: 'example' },
+    },
   ],
 });
 

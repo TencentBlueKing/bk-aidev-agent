@@ -1,11 +1,25 @@
 <template>
   <div class="chat-window">
-    <bk-resize-layout class="chat-window-layout" placement="left" :initial-divide="300" :min="200" :max="480" disabled collapsible :immediate="true">
+    <bk-resize-layout
+      class="chat-window-layout"
+      placement="left"
+      :initial-divide="300"
+      :min="200"
+      :max="480"
+      disabled
+      collapsible
+      :immediate="true"
+    >
       <template #aside>
         <BkLoading :loading="isSessionListLoading" class="session-panel">
           <!-- 搜索 -->
           <div class="session-search">
-            <BkInput v-model="searchQuery" type="search" placeholder="搜索会话名称" clearable />
+            <BkInput
+              v-model="searchQuery"
+              type="search"
+              placeholder="搜索会话名称"
+              clearable
+            />
           </div>
 
           <!-- 添加会话 -->
@@ -46,16 +60,25 @@
                     <!-- 展示态 -->
                     <template v-else>
                       <div class="session-name">{{ session.sessionName }}</div>
-                      <div class="session-date">{{ formatSessionDate(session.createdAt) }}</div>
+                      <div class="session-date">
+                        {{ formatSessionDate(session.createdAt) }}
+                      </div>
                     </template>
                   </div>
                   <div class="session-actions" @click.stop>
                     <span
-                      v-bk-tooltips="{ content: 'AI 生成标题', delay: [300, 0] }"
+                      v-bk-tooltips="{
+                        content: 'AI 生成标题',
+                        delay: [300, 0],
+                      }"
                       class="action-icon icon-refresh"
                       @click="renameByAI(session.sessionCode)"
                     />
-                    <span v-bk-tooltips="{ content: '编辑标题', delay: [300, 0] }" class="action-icon icon-edit" @click="startEdit(session)" />
+                    <span
+                      v-bk-tooltips="{ content: '编辑标题', delay: [300, 0] }"
+                      class="action-icon icon-edit"
+                      @click="startEdit(session)"
+                    />
                     <span
                       v-bk-tooltips="{ content: '删除会话', delay: [300, 0] }"
                       class="action-icon icon-delete"
@@ -64,7 +87,10 @@
                     <BkCheckbox
                       class="session-checkbox"
                       :model-value="isSessionSelected(session.sessionCode)"
-                      @change="(val: boolean) => toggleSessionSelect(session.sessionCode, val)"
+                      @change="
+                        (val: boolean) =>
+                          toggleSessionSelect(session.sessionCode, val)
+                      "
                     />
                   </div>
                 </div>
@@ -81,9 +107,17 @@
 
           <!-- 批量操作底栏 -->
           <div v-if="hasSelected" class="session-footer">
-            <BkCheckbox :model-value="isAllSelected" :indeterminate="isIndeterminate" @change="toggleSelectAll"> 全选 </BkCheckbox>
+            <BkCheckbox
+              :model-value="isAllSelected"
+              :indeterminate="isIndeterminate"
+              @change="toggleSelectAll"
+            >
+              全选
+            </BkCheckbox>
             <div class="footer-actions">
-              <BkButton theme="primary" size="small" @click="batchDelete"> 批量删除 </BkButton>
+              <BkButton theme="primary" size="small" @click="batchDelete">
+                批量删除
+              </BkButton>
               <BkButton size="small" @click="cancelSelect"> 取消 </BkButton>
             </div>
           </div>
@@ -92,7 +126,14 @@
 
       <template #main>
         <div class="chat-main">
-          <ChatBot ref="chatBotRef" :url="url" height="100%" @agent-info-loaded="handleAgentInfoLoaded" @error="handleChatBotError" />
+          <ChatBot
+            ref="chatBotRef"
+            :url="url"
+            placement="right"
+            height="100%"
+            @agent-info-loaded="handleAgentInfoLoaded"
+            @error="handleChatBotError"
+          />
         </div>
       </template>
     </bk-resize-layout>
@@ -100,94 +141,112 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, shallowRef, computed, watch, nextTick } from "vue"
-  import { Input as BkInput, Button as BkButton, Checkbox as BkCheckbox, Loading as BkLoading, InfoBox, bkTooltips as vBkTooltips } from "bkui-vue"
-  import { Plus } from "bkui-vue/lib/icon"
+  import { ref, shallowRef, computed, watch, nextTick } from "vue";
+  import {
+    Input as BkInput,
+    Button as BkButton,
+    Checkbox as BkCheckbox,
+    Loading as BkLoading,
+    InfoBox,
+    bkTooltips as vBkTooltips,
+  } from "bkui-vue";
+  import { Plus } from "bkui-vue/lib/icon";
 
-  import { ChatBot } from "@blueking/ai-blueking"
-  import "@blueking/ai-blueking/dist/vue3/style.css"
-  import router from "../router"
+  import { ChatBot } from "@blueking/ai-blueking";
+  import "@blueking/ai-blueking/dist/vue3/style.css";
+  import router from "../router";
 
-  import type { ChatBotExpose } from "@blueking/ai-blueking"
+  import type { ChatBotExpose } from "@blueking/ai-blueking";
 
-  type ChatHelper = NonNullable<ReturnType<ChatBotExpose["getChatHelper"]>>
+  type ChatHelper = NonNullable<ReturnType<ChatBotExpose["getChatHelper"]>>;
 
   interface SessionItem {
-    sessionCode: string
-    sessionName: string
-    createdAt: string
+    sessionCode: string;
+    sessionName: string;
+    createdAt: string;
   }
 
   interface RequestError extends Error {
-    response?: { status: number }
+    response?: { status: number };
   }
 
-  const chatBotRef = ref<ChatBotExpose | null>(null)
+  const chatBotRef = ref<ChatBotExpose | null>(null);
   // shallowRef 避免 reactive 自动解包内部 ref，保留 session.list / session.current 原始 Ref 语义
-  const chatHelperInstance = shallowRef<ChatHelper | null>(null)
-  const searchQuery = ref("")
-  const selectedCodes = ref<Set<string>>(new Set())
-  const sessionList = ref<SessionItem[]>([])
-  const currentSession = ref<SessionItem | null>(null)
-  const url = ref(window.BK_API_PREFIX)
-  const sessionCodeFromQuery = new URLSearchParams(window.location.search).get("session")?.trim() ?? ""
-  const hasHandledSessionQuery = ref(false)
+  const chatHelperInstance = shallowRef<ChatHelper | null>(null);
+  const searchQuery = ref("");
+  const selectedCodes = ref<Set<string>>(new Set());
+  const sessionList = ref<SessionItem[]>([]);
+  const currentSession = ref<SessionItem | null>(null);
+  const url = ref(window.BK_API_PREFIX);
+  const sessionCodeFromQuery =
+    new URLSearchParams(window.location.search).get("session")?.trim() ?? "";
+  const hasHandledSessionQuery = ref(false);
 
-  const isSessionListLoading = computed(() => !chatHelperInstance.value)
+  const isSessionListLoading = computed(() => !chatHelperInstance.value);
 
   const filteredSessionList = computed(() => {
-    if (!searchQuery.value) return sessionList.value
-    const query = searchQuery.value.toLowerCase()
-    return sessionList.value.filter((s) => s.sessionName.toLowerCase().includes(query))
-  })
+    if (!searchQuery.value) return sessionList.value;
+    const query = searchQuery.value.toLowerCase();
+    return sessionList.value.filter((s) =>
+      s.sessionName.toLowerCase().includes(query)
+    );
+  });
 
-  const hasSelected = computed(() => selectedCodes.value.size > 0)
+  const hasSelected = computed(() => selectedCodes.value.size > 0);
 
   const isAllSelected = computed(
-    () => filteredSessionList.value.length > 0 && filteredSessionList.value.every((s) => selectedCodes.value.has(s.sessionCode)),
-  )
+    () =>
+      filteredSessionList.value.length > 0 &&
+      filteredSessionList.value.every((s) =>
+        selectedCodes.value.has(s.sessionCode)
+      )
+  );
 
-  const isIndeterminate = computed(() => hasSelected.value && !isAllSelected.value)
+  const isIndeterminate = computed(
+    () => hasSelected.value && !isAllSelected.value
+  );
 
-  const isSessionSelected = (code: string) => selectedCodes.value.has(code)
+  const isSessionSelected = (code: string) => selectedCodes.value.has(code);
 
   const toggleSessionSelect = (code: string, val: boolean) => {
-    const next = new Set(selectedCodes.value)
+    const next = new Set(selectedCodes.value);
     if (val) {
-      next.add(code)
+      next.add(code);
     } else {
-      next.delete(code)
+      next.delete(code);
     }
-    selectedCodes.value = next
-  }
+    selectedCodes.value = next;
+  };
 
   const toggleSelectAll = (val: boolean) => {
     if (val) {
-      selectedCodes.value = new Set(filteredSessionList.value.map((s) => s.sessionCode))
+      selectedCodes.value = new Set(
+        filteredSessionList.value.map((s) => s.sessionCode)
+      );
     } else {
-      selectedCodes.value = new Set()
+      selectedCodes.value = new Set();
     }
-  }
+  };
 
   const cancelSelect = () => {
-    selectedCodes.value = new Set()
-  }
+    selectedCodes.value = new Set();
+  };
 
   const doBatchDelete = async () => {
-    if (!chatHelperInstance.value) return
-    const codes = [...selectedCodes.value]
+    if (!chatHelperInstance.value) return;
+    const codes = [...selectedCodes.value];
     for (const code of codes) {
       try {
-        await chatHelperInstance.value.session.deleteSession(code)
+        await chatHelperInstance.value.session.deleteSession(code);
       } catch (e) {
-        console.error("删除会话失败:", e)
+        console.error("删除会话失败:", e);
       }
     }
-    selectedCodes.value = new Set()
-  }
+    selectedCodes.value = new Set();
+  };
 
   const batchDelete = () => {
-    const count = selectedCodes.value.size
+    const count = selectedCodes.value.size;
     InfoBox({
       title: "确认删除",
       subTitle: `确定要删除选中的 ${count} 个会话吗？删除后不可恢复。`,
@@ -196,118 +255,121 @@
       headerAlign: "center" as const,
       contentAlign: "center" as const,
       onConfirm: () => doBatchDelete(),
-    })
-  }
+    });
+  };
 
   const formatSessionDate = (dateString: string) => {
-    if (!dateString) return ""
-    const date = new Date(dateString)
-    const today = new Date()
-    const yesterday = new Date(today)
-    yesterday.setDate(yesterday.getDate() - 1)
-    if (date.toDateString() === today.toDateString()) return "今天"
-    if (date.toDateString() === yesterday.toDateString()) return "昨天"
-    return date.toLocaleDateString("zh-CN", { month: "short", day: "numeric" })
-  }
+    if (!dateString) return "";
+    const date = new Date(dateString);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (date.toDateString() === today.toDateString()) return "今天";
+    if (date.toDateString() === yesterday.toDateString()) return "昨天";
+    return date.toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
+  };
 
   const switchToSession = async (sessionCode: string) => {
-    if (!chatHelperInstance.value) return
+    if (!chatHelperInstance.value) return;
     try {
-      await chatHelperInstance.value.session.chooseSession(sessionCode)
+      await chatHelperInstance.value.session.chooseSession(sessionCode);
       await router.replace({
         query: {
           ...router.currentRoute.value.query,
           session: sessionCode,
         },
-      })
+      });
     } catch (e) {
-      console.error("切换会话失败:", e)
+      console.error("切换会话失败:", e);
     }
-  }
+  };
 
   const trySwitchToQuerySession = async (helper: ChatHelper) => {
-    if (!sessionCodeFromQuery || hasHandledSessionQuery.value) return
+    if (!sessionCodeFromQuery || hasHandledSessionQuery.value) return;
 
-    const targetSession = helper.session.list.value.find((session) => session.sessionCode === sessionCodeFromQuery)
+    const targetSession = helper.session.list.value.find(
+      (session) => session.sessionCode === sessionCodeFromQuery
+    );
     if (!targetSession) {
-      hasHandledSessionQuery.value = true
-      return
+      hasHandledSessionQuery.value = true;
+      return;
     }
 
-    hasHandledSessionQuery.value = true
-    if (helper.session.current.value?.sessionCode === sessionCodeFromQuery) return
+    hasHandledSessionQuery.value = true;
+    if (helper.session.current.value?.sessionCode === sessionCodeFromQuery)
+      return;
 
     try {
-      await helper.session.chooseSession(sessionCodeFromQuery)
+      await helper.session.chooseSession(sessionCodeFromQuery);
     } catch (e) {
-      console.error("根据 URL 切换会话失败:", e)
+      console.error("根据 URL 切换会话失败:", e);
     }
-  }
+  };
 
   const createNewSession = async () => {
-    if (!chatHelperInstance.value) return
+    if (!chatHelperInstance.value) return;
     try {
-      const sessionCode = `new_session_${Date.now()}`
+      const sessionCode = `new_session_${Date.now()}`;
       await chatHelperInstance.value.session.createSession({
         sessionCode,
         sessionName: "新会话",
-      })
+      });
     } catch (e) {
-      console.error("创建会话失败:", e)
+      console.error("创建会话失败:", e);
     }
-  }
+  };
 
   // ==================== 编辑标题 ====================
-  const editingCode = ref<string | null>(null)
-  const editingName = ref("")
-  const editInputRef = ref<Array<{ $el?: HTMLElement }>>([])
-  const loadingSessionCode = ref<string | null>(null)
+  const editingCode = ref<string | null>(null);
+  const editingName = ref("");
+  const editInputRef = ref<Array<{ $el?: HTMLElement }>>([]);
+  const loadingSessionCode = ref<string | null>(null);
 
-  const isSessionLoading = (code: string) => loadingSessionCode.value === code
+  const isSessionLoading = (code: string) => loadingSessionCode.value === code;
 
   const startEdit = (session: SessionItem) => {
-    if (isSessionLoading(session.sessionCode)) return
-    editingCode.value = session.sessionCode
-    editingName.value = session.sessionName
+    if (isSessionLoading(session.sessionCode)) return;
+    editingCode.value = session.sessionCode;
+    editingName.value = session.sessionName;
     nextTick(() => {
-      const wrapper = editInputRef.value?.[0]
-      const el = wrapper?.$el ?? (wrapper as unknown as HTMLElement)
-      const input = el?.querySelector?.("input")
-      input?.focus()
-    })
-  }
+      const wrapper = editInputRef.value?.[0];
+      const el = wrapper?.$el ?? (wrapper as unknown as HTMLElement);
+      const input = el?.querySelector?.("input");
+      input?.focus();
+    });
+  };
 
   const confirmEdit = async (session: SessionItem) => {
-    if (!chatHelperInstance.value || !editingCode.value) return
-    const trimmed = editingName.value.trim()
-    editingCode.value = null
+    if (!chatHelperInstance.value || !editingCode.value) return;
+    const trimmed = editingName.value.trim();
+    editingCode.value = null;
     if (trimmed && trimmed !== session.sessionName) {
-      loadingSessionCode.value = session.sessionCode
+      loadingSessionCode.value = session.sessionCode;
       try {
         await chatHelperInstance.value.session.updateSession({
           ...session,
           sessionName: trimmed,
-        } as any)
+        } as any);
       } catch (e) {
-        console.error("更新会话标题失败:", e)
+        console.error("更新会话标题失败:", e);
       } finally {
-        loadingSessionCode.value = null
+        loadingSessionCode.value = null;
       }
     }
-  }
+  };
 
   // ==================== AI 自动生成标题 ====================
   const renameByAI = async (sessionCode: string) => {
-    if (!chatHelperInstance.value || isSessionLoading(sessionCode)) return
-    loadingSessionCode.value = sessionCode
+    if (!chatHelperInstance.value || isSessionLoading(sessionCode)) return;
+    loadingSessionCode.value = sessionCode;
     try {
-      await chatHelperInstance.value.session.renameSession(sessionCode)
+      await chatHelperInstance.value.session.renameSession(sessionCode);
     } catch (e) {
-      console.error("AI 重命名失败:", e)
+      console.error("AI 重命名失败:", e);
     } finally {
-      loadingSessionCode.value = null
+      loadingSessionCode.value = null;
     }
-  }
+  };
 
   // ==================== 单个删除 ====================
   const deleteSingle = (sessionCode: string) => {
@@ -319,44 +381,46 @@
       headerAlign: "center" as const,
       contentAlign: "center" as const,
       onConfirm: async () => {
-        if (!chatHelperInstance.value) return
+        if (!chatHelperInstance.value) return;
         try {
-          await chatHelperInstance.value.session.deleteSession(sessionCode)
-          selectedCodes.value.delete(sessionCode)
+          await chatHelperInstance.value.session.deleteSession(sessionCode);
+          selectedCodes.value.delete(sessionCode);
         } catch (e) {
-          console.error("删除会话失败:", e)
+          console.error("删除会话失败:", e);
         }
       },
-    })
-  }
+    });
+  };
 
   const handleAgentInfoLoaded = (helper: ChatHelper) => {
-    chatHelperInstance.value = helper
+    chatHelperInstance.value = helper;
 
     watch(
       () => helper.session.list.value,
       (list) => {
-        sessionList.value = Array.isArray(list) ? ([...list] as SessionItem[]) : []
-        void trySwitchToQuerySession(helper)
+        sessionList.value = Array.isArray(list)
+          ? ([...list] as SessionItem[])
+          : [];
+        void trySwitchToQuerySession(helper);
       },
-      { immediate: true, deep: true },
-    )
+      { immediate: true, deep: true }
+    );
 
     watch(
       () => helper.session.current?.value,
       (current) => {
-        currentSession.value = (current as SessionItem) ?? null
+        currentSession.value = (current as SessionItem) ?? null;
       },
-      { immediate: true },
-    )
-  }
+      { immediate: true }
+    );
+  };
 
   const handleChatBotError = (error: Error) => {
-    const status = (error as RequestError).response?.status
+    const status = (error as RequestError).response?.status;
     if (status === 403) {
-      router.push("/403")
+      router.push("/403");
     }
-  }
+  };
 </script>
 
 <style lang="postcss" scoped>
@@ -373,7 +437,7 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    background-color: #fff;
+    background-color: #f5f7fa;
     box-sizing: border-box;
   }
 
@@ -420,7 +484,7 @@
     border-radius: 6px;
     margin-bottom: 4px;
     cursor: pointer;
-    background-color: #f5f7fa;
+    background-color: #fff;
     color: #4d4f56;
     transition:
       background-color 0.15s,
@@ -434,7 +498,7 @@
     }
 
     &:hover {
-      background-color: #f0f5ff;
+      background-color: #e1ecff;
       color: #3a84ff;
 
       .session-name {
@@ -455,7 +519,7 @@
     }
 
     &.active {
-      background-color: #f0f5ff;
+      background-color: #e1ecff;
       color: #3a84ff;
 
       .session-name {
@@ -543,6 +607,7 @@
     height: 100%;
     min-width: 0;
     position: relative;
+    background: #fff;
   }
 </style>
 
