@@ -1,0 +1,140 @@
+name: Publish ai-blueking
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（如 2.1.0-beta.5），留空则自动 patch 自增"
+        required: false
+        type: string
+        default: ""
+      target_branch:
+        description: "推送目标分支（仅手动触发有效）"
+        required: false
+        type: string
+        default: "2.0.0"
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    if: "!startsWith(github.event.head_commit.message, 'chore(release)')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref || inputs.target_branch }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: "src/frontend/**/pnpm-lock.yaml"
+          registry-url: https://registry.npmjs.org/
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install frontend dependencies
+        working-directory: src/frontend/ai-blueking
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Bump version
+        id: bump-version
+        working-directory: src/frontend/ai-blueking/packages/ai-blueking
+        run: |
+          resolve_tag() {
+            local ver="$1"
+            if echo "$ver" | grep -qE -- '-alpha\.'; then echo "alpha"
+            elif echo "$ver" | grep -qE -- '-beta\.'; then echo "beta"
+            elif echo "$ver" | grep -qE -- '-rc\.'; then echo "rc"
+            else echo "latest"
+            fi
+          }
+          if [ -n "${{ inputs.version }}" ]; then
+            npm version "${{ inputs.version }}" --no-git-tag-version
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "npm_tag=$(resolve_tag '${{ inputs.version }}')" >> "$GITHUB_OUTPUT"
+          else
+            CURRENT=$(node -p "require('./package.json').version")
+            if echo "$CURRENT" | grep -qE -- '-(alpha|beta|rc)\.'; then
+              # 预发布版本：自增预发布号，如 2.1.0-beta.4 -> 2.1.0-beta.5
+              PREFIX=$(echo "$CURRENT" | sed -E 's/([0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.)([0-9]+)/\1/')
+              NUM=$(echo "$CURRENT" | sed -E 's/[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.([0-9]+)/\2/')
+              NEW_VERSION="${PREFIX}$((NUM + 1))"
+              npm version "$NEW_VERSION" --no-git-tag-version
+              echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+              echo "npm_tag=$(resolve_tag "$NEW_VERSION")" >> "$GITHUB_OUTPUT"
+            else
+              echo "::error::当前版本 $CURRENT 是正式版，正式版必须通过手动触发并指定版本号发布"
+              exit 1
+            fi
+          fi
+          echo "Publishing version: $(node -p "require('./package.json').version")"
+
+      - name: Build chat-x (dependency)
+        working-directory: src/frontend/ai-blueking
+        run: pnpm --filter @blueking/chat-x build
+
+      - name: Build ai-blueking
+        working-directory: src/frontend/ai-blueking
+        run: pnpm --filter @blueking/ai-blueking build
+
+      - name: Publish ai-blueking to npm
+        working-directory: src/frontend/ai-blueking/packages/ai-blueking
+        run: npm publish --ignore-scripts --access public --tag ${{ steps.bump-version.outputs.npm_tag }}
+
+      - name: Convert version to Python format
+        id: py-version
+        run: |
+          NPM_VERSION="${{ steps.bump-version.outputs.version }}"
+          # Convert: 2.1.0-beta.4 -> 2.1.0b4, 2.1.0-rc.1 -> 2.1.0rc1, 2.1.0-alpha.1 -> 2.1.0a1
+          PY_VERSION=$(echo "$NPM_VERSION" | sed -E 's/-alpha\./a/g; s/-beta\./b/g; s/-rc\./rc/g')
+          echo "py_version=$PY_VERSION" >> "$GITHUB_OUTPUT"
+          echo "npm version: $NPM_VERSION -> py version: $PY_VERSION"
+
+      - name: Update pyproject.toml version
+        working-directory: src/plugins/aidev_ai_blueking
+        run: |
+          sed -i 's/^version = "[^"]*"/version = "${{ steps.py-version.outputs.py_version }}"/' pyproject.toml
+          echo "Updated pyproject.toml:"
+          grep '^version' pyproject.toml
+
+      - name: Build aidev-ai-blueking
+        run: make build-aidev-ai-blueking
+
+      - name: Publish to PyPI
+        working-directory: src/plugins/aidev_ai_blueking
+        run: uv publish --token ${{ secrets.PYPI_TOKEN }}
+
+      - name: Update template aidev-ai-blueking version
+        run: |
+          PY_VERSION="${{ steps.py-version.outputs.py_version }}"
+          # 更新 requirements.txt 中的 aidev-ai-blueking 版本
+          sed -i "s/^aidev-ai-blueking==.*/aidev-ai-blueking==${PY_VERSION}/" "template/{{cookiecutter.project_name}}/requirements.txt"
+          # 更新 pyproject.toml 中的 aidev-ai-blueking 版本
+          sed -i "s/\"aidev-ai-blueking==[^\"]*\"/\"aidev-ai-blueking==${PY_VERSION}\"/" "template/{{cookiecutter.project_name}}/pyproject.toml"
+          echo "Updated template files:"
+          grep 'aidev-ai-blueking' "template/{{cookiecutter.project_name}}/requirements.txt"
+          grep 'aidev-ai-blueking' "template/{{cookiecutter.project_name}}/pyproject.toml"
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit and push changes
+        run: |
+          git add -A
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "chore(release): ai-blueking@${{ steps.bump-version.outputs.version }} [skip ci]"
+          git push origin HEAD:${{ github.event_name == 'push' && github.ref_name || inputs.target_branch }}

@@ -130,6 +130,8 @@
   const sessionList = ref<SessionItem[]>([])
   const currentSession = ref<SessionItem | null>(null)
   const url = ref(window.BK_API_PREFIX)
+  const sessionCodeFromQuery = new URLSearchParams(window.location.search).get("session")?.trim() ?? ""
+  const hasHandledSessionQuery = ref(false)
 
   const isSessionListLoading = computed(() => !chatHelperInstance.value)
 
@@ -212,8 +214,33 @@
     if (!chatHelperInstance.value) return
     try {
       await chatHelperInstance.value.session.chooseSession(sessionCode)
+      await router.replace({
+        query: {
+          ...router.currentRoute.value.query,
+          session: sessionCode,
+        },
+      })
     } catch (e) {
       console.error("切换会话失败:", e)
+    }
+  }
+
+  const trySwitchToQuerySession = async (helper: ChatHelper) => {
+    if (!sessionCodeFromQuery || hasHandledSessionQuery.value) return
+
+    const targetSession = helper.session.list.value.find((session) => session.sessionCode === sessionCodeFromQuery)
+    if (!targetSession) {
+      hasHandledSessionQuery.value = true
+      return
+    }
+
+    hasHandledSessionQuery.value = true
+    if (helper.session.current.value?.sessionCode === sessionCodeFromQuery) return
+
+    try {
+      await helper.session.chooseSession(sessionCodeFromQuery)
+    } catch (e) {
+      console.error("根据 URL 切换会话失败:", e)
     }
   }
 
@@ -310,6 +337,7 @@
       () => helper.session.list.value,
       (list) => {
         sessionList.value = Array.isArray(list) ? ([...list] as SessionItem[]) : []
+        void trySwitchToQuerySession(helper)
       },
       { immediate: true, deep: true },
     )

@@ -1,0 +1,14 @@
+packages:
+  - 'packages/**'
+overrides:
+  tippy.js: ^6.3.7
+  vite: ^8.0.2
+  '@popperjs/core': ^2.11.8
+publicHoistPattern:
+  - '*stylelint*'
+  - '*postcss-*'
+  - '*eslint*'
+  - '*simple-git-hooks*'
+  - '*tippy.js*'
+  - '*prettier*'
+  - '*biome*'

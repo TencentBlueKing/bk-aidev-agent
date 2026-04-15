@@ -1,0 +1,229 @@
+@font-face {
+	font-family: "bkai";
+	src: url("fonts/iconcool.svg#iconcool") format("svg"),
+url("fonts/iconcool.ttf") format("truetype"),
+url("fonts/iconcool.woff") format("woff"),
+url("fonts/iconcool.eot?#iefix") format("embedded-opentype");
+    font-weight: normal;
+    font-style: normal;
+}
+
+.bkai-icon {
+  /* use !important to prevent issues with browser extensions that change fonts */
+  font-family: 'bkai' !important;
+  speak: none;
+  font-style: normal;
+  font-weight: normal;
+  font-variant: normal;
+  text-transform: none;
+  line-height: 1;
+  text-align: center;
+  /* Better Font Rendering =========== */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.bkai-warning-circle-fill:before {
+	content: "\e129";
+}
+.bkai-edit:before {
+	content: "\e13f";
+}
+.bkai-jump-link:before {
+	content: "\e143";
+}
+.bkai-angle-down:before {
+	content: "\e13c";
+}
+.bkai-check-1:before {
+	content: "\e140";
+}
+.bkai-check-circle-shape:before {
+	content: "\e145";
+}
+.bkai-close-circle-shape:before {
+	content: "\e134";
+}
+.bkai-close:before {
+	content: "\e141";
+}
+.bkai-close-line-2:before {
+	content: "\e126";
+}
+.bkai-auto-refresh-line:before {
+	content: "\e13e";
+}
+.bkai-minus-line:before {
+	content: "\e12e";
+}
+.bkai-visible1:before {
+	content: "\e139";
+}
+.bkai-links:before {
+	content: "\e138";
+}
+.bkai-quanquan:before {
+	content: "\e128";
+}
+.bkai-more:before {
+	content: "\e13d";
+}
+.bkai-yanjing-kejian:before {
+	content: "\e11b";
+}
+.bkai-zhishiku:before {
+	content: "\e144";
+}
+.bkai-shipin-2:before {
+	content: "\e113";
+}
+.bkai-tupian-2:before {
+	content: "\e112";
+}
+.bkai-wenben-2:before {
+	content: "\e114";
+}
+.bkai-yasuobao-2:before {
+	content: "\e115";
+}
+.bkai-yinle-2:before {
+	content: "\e116";
+}
+.bkai-doc-3:before {
+	content: "\e111";
+}
+.bkai-excel-2:before {
+	content: "\e117";
+}
+.bkai-markdown:before {
+	content: "\e118";
+}
+.bkai-pdf-2:before {
+	content: "\e119";
+}
+.bkai-ppt-2:before {
+	content: "\e11a";
+}
+.bkai-sousuo:before {
+	content: "\e121";
+}
+.bkai-chouti:before {
+	content: "\e11f";
+}
+.bkai-liaotianchuang:before {
+	content: "\e120";
+}
+.bkai-sikao:before {
+	content: "\e11d";
+}
+.bkai-wenzhang:before {
+	content: "\e13a";
+}
+.bkai-published-zhongzhi:before {
+	content: "\e101";
+}
+.bkai-fasong:before {
+	content: "\e102";
+}
+.bkai-diancai:before {
+	content: "\e106";
+}
+.bkai-diancaishixin:before {
+	content: "\e105";
+}
+.bkai-dianzan:before {
+	content: "\e103";
+}
+.bkai-dianzanshixin:before {
+	content: "\e104";
+}
+.bkai-dingyue:before {
+	content: "\e107";
+}
+.bkai-fujian:before {
+	content: "\e108";
+}
+.bkai-lashen:before {
+	content: "\e10b";
+}
+.bkai-yasuo:before {
+	content: "\e109";
+}
+.bkai-yinyong:before {
+	content: "\e10a";
+}
+.bkai-drill-down:before {
+	content: "\e10c";
+}
+.bkai-liaotianliebiao:before {
+	content: "\e10d";
+}
+.bkai-xinzengliaotian:before {
+	content: "\e10e";
+}
+.bkai-quxiaozhiding:before {
+	content: "\e10f";
+}
+.bkai-zhiding:before {
+	content: "\e110";
+}
+.bkai-piliangbianji:before {
+	content: "\e11c";
+}
+.bkai-shanchu:before {
+	content: "\e11e";
+}
+.bkai-yuan-jiahao:before {
+	content: "\e122";
+}
+.bkai-yuan-jianhao:before {
+	content: "\e123";
+}
+.bkai-zhushou:before {
+	content: "\e124";
+}
+.bkai-bianji:before {
+	content: "\e125";
+}
+.bkai-shezhi-3:before {
+	content: "\e12c";
+}
+.bkai-history:before {
+	content: "\e127";
+}
+.bkai-fuzhi:before {
+	content: "\e12a";
+}
+.bkai-zhongxinshengcheng:before {
+	content: "\e12b";
+}
+.bkai-fenxiang:before {
+	content: "\e12d";
+}
+.bkai-jiahao:before {
+	content: "\e130";
+}
+.bkai-jieshi:before {
+	content: "\e131";
+}
+.bkai-fanyi:before {
+	content: "\e132";
+}
+.bkai-morenchicun:before {
+	content: "\e133";
+}
+.bkai-kuangxuan:before {
+	content: "\e135";
+}
+.bkai-jiantou:before {
+	content: "\e136";
+}
+.bkai-tingzhishengcheng:before {
+	content: "\e137";
+}
+.bkai-xiaojingyudian:before {
+	content: "\e13b";
+}
+.bkai-tingzhishengcheng-2:before {
+	content: "\e142";
+}

@@ -1,6 +1,5 @@
 packages:
-  - 'ai-blueking'
+  - 'ai-blueking/packages/*'
   - 'web'
-  - 'vue2-playground'
   - 'publish-template'
   - 'bk-ai-helper'

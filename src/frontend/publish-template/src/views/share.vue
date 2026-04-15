@@ -19,20 +19,37 @@
         }"
       >
         <!-- 错误状态 -->
-        <div v-if="hasError" class="error-state" role="alert" aria-live="polite">
-          <bk-exception class="exception-wrap-item exception-part" :description="errorMessage" scene="part" type="empty">
+        <div
+          v-if="hasError"
+          class="error-state"
+          role="alert"
+          aria-live="polite"
+        >
+          <bk-exception
+            class="exception-wrap-item exception-part"
+            :description="errorMessage"
+            scene="part"
+            type="empty"
+          >
             <template #default>
-              <bk-button v-if="canRetry" theme="primary" @click="handleRetry" class="retry-button"> 重新加载 </bk-button>
+              <bk-button
+                v-if="canRetry"
+                theme="primary"
+                @click="handleRetry"
+                class="retry-button"
+              >
+                重新加载
+              </bk-button>
             </template>
           </bk-exception>
         </div>
         <!-- 数据展示 -->
         <div v-else-if="hasValidData" class="share-data">
-          <MessageContainer
+          <ChatContainer
             :messages="normalizedMessages"
             :message-status="MessageStatus.Complete"
-            :enable-selection="false"
             message-tools-status="hidden"
+            render-mode="share"
           />
         </div>
       </div>
@@ -42,27 +59,58 @@
 </template>
 
 <script setup lang="ts">
-  import { onBeforeMount, ref, computed } from "vue"
-  import { useRoute } from "vue-router"
-  import { Message, Exception as BkException, Button as BkButton } from "bkui-vue"
-  import { MessageContainer, MessageStatus, type Message as ChatMessage } from "@blueking/chat-x"
-  import "@blueking/chat-x/dist/index.css"
+  import { onBeforeMount, ref, computed } from "vue";
+  import { useRoute } from "vue-router";
+  import {
+    Message,
+    Exception as BkException,
+    Button as BkButton,
+  } from "bkui-vue";
+  import {
+    ChatContainer,
+    MessageContentType,
+    MessageRole,
+    MessageStatus,
+    type Message as ChatMessage,
+  } from "@blueking/chat-x";
+  import "@blueking/chat-x/dist/index.css";
+
+  // 后端 API 返回的消息结构
+  interface ApiMessage {
+    id: number;
+    role: string;
+    content: string | Record<string, unknown>;
+    status: string;
+    activity_type?: string;
+    message_id?: string;
+    property?: {
+      extra?: Record<string, unknown> | null;
+      flow_info?: Record<string, unknown> | null;
+      builtin_property?: {
+        message_id?: string;
+        type?: string;
+        [key: string]: unknown;
+      } | null;
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  }
 
   // TypeScript 接口定义
   interface ShareData {
-    session_contents: ChatMessage[]
-    session_name: string
-    agent_name: string
+    session_contents: ApiMessage[];
+    session_name: string;
+    agent_name: string;
   }
 
   interface ApiResponse {
-    data: ShareData
+    data: ShareData;
   }
 
   interface ErrorMessage {
-    message: string
-    userMessage: string
-    canRetry: boolean
+    message: string;
+    userMessage: string;
+    canRetry: boolean;
   }
 
   // 错误消息映射表
@@ -87,155 +135,164 @@
       userMessage: "服务器暂时无法处理请求，请稍后重试",
       canRetry: true,
     },
-  }
+  };
 
   const DEFAULT_ERROR: ErrorMessage = {
     message: "网络请求失败",
     userMessage: "网络请求失败，请稍后重试",
     canRetry: true,
-  }
+  };
 
   // 组件状态
-  const title = ref<string>("")
-  const agentName = ref<string>("")
-  const url = ref<string>(window.BK_API_PREFIX || "")
-  const loading = ref<boolean>(false)
-  const shareData = ref<ChatMessage[]>([])
-  const error = ref<string | null>(null)
-  const currentShareCode = ref<string>("")
+  const title = ref<string>("");
+  const agentName = ref<string>("");
+  const url = ref<string>(window.BK_API_PREFIX || "");
+  const loading = ref<boolean>(false);
+  const shareData = ref<ApiMessage[]>([]);
+  const error = ref<string | null>(null);
+  const currentShareCode = ref<string>("");
 
-  const route = useRoute()
+  const route = useRoute();
 
   // 计算属性
-  const hasValidData = computed(() => shareData.value.length > 0)
+  const hasValidData = computed(() => shareData.value.length > 0);
 
-  // 标准化消息数据，确保兼容 chat-x 组件
+  // 将后端 API 数据映射为 chat-x Message 类型
   const normalizedMessages = computed<ChatMessage[]>(() => {
     return shareData.value.map((msg, index) => ({
-      ...msg,
-      // 确保有唯一 id
       id: msg.id ?? `share-msg-${index}`,
-      messageId: msg.messageId ?? msg.id ?? index,
-      // 确保状态为完成
+      // messageId: 优先取顶层 message_id，其次取 builtin_property.message_id，兜底用 id
+      messageId:
+        msg.message_id ??
+        msg.property?.builtin_property?.message_id ??
+        msg.id ??
+        index,
+      role: msg.role as MessageRole,
       status: MessageStatus.Complete,
-    }))
-  })
-  const hasError = computed(() => error.value !== null)
-  const errorMessage = computed(() => error.value || "")
+      content: msg.content,
+      property: msg.property,
+      // activity 类型需要映射 activityType（snake_case → camelCase）
+      ...(msg.role === MessageRole.Activity && msg.activity_type
+        ? { activityType: msg.activity_type as MessageContentType }
+        : {}),
+    })) as ChatMessage[];
+  });
+  const hasError = computed(() => error.value !== null);
+  const errorMessage = computed(() => error.value || "");
   const canRetry = computed(() => {
-    if (!currentShareCode.value || !hasError.value) return false
-    const status = getErrorStatus(error.value)
-    return ERROR_MESSAGES[status]?.canRetry ?? DEFAULT_ERROR.canRetry
-  })
+    if (!currentShareCode.value || !hasError.value) return false;
+    const status = getErrorStatus(error.value);
+    return ERROR_MESSAGES[status]?.canRetry ?? DEFAULT_ERROR.canRetry;
+  });
 
   // 获取错误状态码
   const getErrorStatus = (errorMessage: string | null): number => {
-    if (!errorMessage) return 0
-    const match = errorMessage.match(/HTTP (\d+)/)
-    return match ? parseInt(match[1]) : 0
-  }
+    if (!errorMessage) return 0;
+    const match = errorMessage.match(/HTTP (\d+)/);
+    return match ? parseInt(match[1]) : 0;
+  };
 
   // 错误处理函数
   const handleError = (status: number, statusText: string): void => {
-    const errorInfo = ERROR_MESSAGES[status] || DEFAULT_ERROR
-    error.value = `${errorInfo.message}: ${status} ${statusText}`
+    const errorInfo = ERROR_MESSAGES[status] || DEFAULT_ERROR;
+    error.value = `${errorInfo.message}: ${status} ${statusText}`;
     Message({
       theme: "error",
       message: errorInfo.userMessage,
       delay: 3000,
-    })
-  }
+    });
+  };
 
   // 异步请求数据
   const fetchShareData = async (shareCode: string): Promise<void> => {
     if (!shareCode?.trim()) {
-      handleError(0, "分享码为空")
-      return
+      handleError(0, "分享码为空");
+      return;
     }
 
-    loading.value = true
-    error.value = null
-    currentShareCode.value = shareCode.trim()
+    loading.value = true;
+    error.value = null;
+    currentShareCode.value = shareCode.trim();
 
     try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 30000) // 30秒超时
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
 
       const response = await fetch(`${url.value}/share/${shareCode.trim()}`, {
         method: "GET",
         credentials: "include",
         signal: controller.signal,
-      })
+      });
 
-      clearTimeout(timeoutId)
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const result: ApiResponse = await response.json()
+      const result: ApiResponse = await response.json();
 
       // 数据验证
       if (!result?.data?.session_contents) {
-        throw new Error("Invalid response data structure")
+        throw new Error("Invalid response data structure");
       }
 
-      shareData.value = result.data.session_contents
-      title.value = result.data.session_name || "AI 对话分享"
-      agentName.value = result.data.agent_name || ""
+      shareData.value = result.data.session_contents;
+      title.value = result.data.session_name || "AI 对话分享";
+      agentName.value = result.data.agent_name || "";
     } catch (err) {
-      console.error("获取分享数据失败:", err)
+      console.error("获取分享数据失败:", err);
 
       if (err instanceof Error) {
         if (err.name === "AbortError") {
-          error.value = "请求超时，请稍后重试"
+          error.value = "请求超时，请稍后重试";
           Message({
             theme: "error",
             message: "请求超时，请稍后重试",
             delay: 3000,
-          })
+          });
         } else {
-          const statusMatch = err.message.match(/HTTP (\d+)/)
+          const statusMatch = err.message.match(/HTTP (\d+)/);
           if (statusMatch) {
-            handleError(parseInt(statusMatch[1]), err.message)
+            handleError(parseInt(statusMatch[1]), err.message);
           } else {
-            error.value = DEFAULT_ERROR.message
+            error.value = DEFAULT_ERROR.message;
             Message({
               theme: "error",
               message: DEFAULT_ERROR.userMessage,
               delay: 3000,
-            })
+            });
           }
         }
       } else {
-        error.value = DEFAULT_ERROR.message
+        error.value = DEFAULT_ERROR.message;
         Message({
           theme: "error",
           message: DEFAULT_ERROR.userMessage,
           delay: 3000,
-        })
+        });
       }
     } finally {
-      loading.value = false
+      loading.value = false;
     }
-  }
+  };
 
   // 重试处理
   const handleRetry = (): void => {
     if (currentShareCode.value) {
-      fetchShareData(currentShareCode.value)
+      fetchShareData(currentShareCode.value);
     }
-  }
+  };
 
   // 生命周期钩子
   onBeforeMount(async () => {
-    const shareCode = route.params.shareCode as string
+    const shareCode = route.params.shareCode as string;
     if (shareCode?.trim()) {
-      await fetchShareData(shareCode.trim())
+      await fetchShareData(shareCode.trim());
     } else {
-      handleError(0, "分享码不存在")
+      handleError(0, "分享码不存在");
     }
-  })
+  });
 </script>
 
 <style lang="postcss" scoped>
@@ -243,7 +300,14 @@
     width: 100%;
     min-height: 100vh;
     opacity: 0.89;
-    background-image: linear-gradient(0deg, #c6cdeb 0%, #fdf7f6 20%, #ebf3f8 38%, #f8f8ff 71%, #bae6fd 100%);
+    background-image: linear-gradient(
+      0deg,
+      #c6cdeb 0%,
+      #fdf7f6 20%,
+      #ebf3f8 38%,
+      #f8f8ff 71%,
+      #bae6fd 100%
+    );
     display: flex;
     flex-direction: column;
     align-items: center;

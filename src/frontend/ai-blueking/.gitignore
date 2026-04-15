@@ -1,0 +1,53 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.pnpm-store/*
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# Lock files
+package-lock.json
+yarn.lock
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+
+pre-*-bkcodeai
+
+.stylelintcache
+.eslintcache
+
+typings/
+bkcodeai.json
+
+**/.vitepress/cache
+**/.vitepress/dist
+
+Agents.md
+.cursor/hooks/state/continual-learning-index.json
+docs/superpowers/*
+packages/chat-x/mcp/generated/*
+.cursor

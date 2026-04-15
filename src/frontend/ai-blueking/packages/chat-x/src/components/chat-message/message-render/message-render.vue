@@ -1,0 +1,78 @@
+<template>
+  <component :is="messageComponent" />
+</template>
+<script setup lang="ts">
+  import { type Component, type VNode, computed, h, renderSlot, useSlots } from 'vue';
+
+  import { MessageRole } from '../../../ag-ui/types/constants';
+  import { type AssistantMessage as AssistantMessageProps } from '../../../ag-ui/types/messages';
+  import ContentRender from '../../chat-content/content-render/content-render.vue';
+  import ActivityMessage from '../activity-message/activity-message.vue';
+  import AssistantMessage from '../assistant-message/assistant-message.vue';
+  import InfoMessage from '../info-message/info-message.vue';
+  import LoadingMessage from '../loading-message/loading-message.vue';
+  import ReasoningMessage from '../reasoning-message/reasoning-message.vue';
+  import ToolMessage from '../tool-message/tool-message.vue';
+  import UserMessage from '../user-message/user-message.vue';
+
+  import type { Message, MessageStatus } from '../../../ag-ui/types';
+  import type { Token } from '../../../markdown-it';
+  import type { MessageToolsProps } from '../../message-tools/message-tools.vue';
+  import type { UserMessageActionsProps } from '../user-message/user-message.vue';
+
+  defineSlots<{
+    codeHeader: (props: { language: string; token: Token[] }) => null | undefined | VNode;
+    default: (props: { content: string; status: MessageStatus }) => VNode;
+  }>();
+
+  const props = defineProps<
+    Partial<UserMessageActionsProps> &
+      Pick<MessageToolsProps, 'onAction' | 'tippyOptions'> & {
+        message: Partial<Message>;
+      }
+  >();
+
+  const slots = useSlots();
+
+  const messageComponent = computed(() => {
+    switch (props.message.role) {
+      case MessageRole.User:
+        return h(UserMessage, {
+          ...props.message,
+          onAction: props.onAction,
+          onInputConfirm: props.onInputConfirm,
+          onShortcutConfirm: props.onShortcutConfirm,
+          messageToolsStatus: props.messageToolsStatus,
+          tippyOptions: props.tippyOptions,
+        });
+      case MessageRole.Assistant:
+        return h(AssistantMessage, props.message, {
+          default: (slotProps: Partial<AssistantMessageProps>) =>
+            renderSlot(slots, 'default', slotProps, () => [
+              h(
+                ContentRender as unknown as Component,
+                { content: props.message.content || '', status: props.message.status },
+                slots.codeHeader
+                  ? {
+                      codeHeader: (slotProps: { language: string; token: Token[] }) =>
+                        slots.codeHeader?.(slotProps),
+                    }
+                  : undefined,
+              ),
+            ]),
+        });
+      case MessageRole.Info:
+        return h(InfoMessage, props.message);
+      case MessageRole.Reasoning:
+        return h(ReasoningMessage, props.message);
+      case MessageRole.Tool:
+        return h(ToolMessage, props.message);
+      case MessageRole.Activity:
+        return h(ActivityMessage, props.message);
+      case MessageRole.Loading:
+        return h(LoadingMessage, props.message);
+      default:
+        return null;
+    }
+  });
+</script>

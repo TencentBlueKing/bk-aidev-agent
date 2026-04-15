@@ -1,0 +1,157 @@
+@use 'sass:list';
+@use 'variables.scss' as variables;
+
+.tippy-box[data-theme~='ai-chat-box'] {
+  .tippy-content {
+    font-size: 12px !important;
+    word-break: break-all;
+  }
+}
+
+.tippy-box[data-theme~='ai-chat-box-light'] {
+  box-shadow: none !important;
+
+  .tippy-content {
+    padding: 0 !important;
+    font-size: 12px;
+    background: #fff;
+    border-radius: 2px;
+  }
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+  color: #4d4f56;
+}
+
+.ai-common-icon {
+  width: 1em;
+  height: 1em;
+  overflow: hidden;
+  vertical-align: middle;
+  outline: none;
+  fill: currentcolor;
+}
+
+.ai-divider {
+  display: flex;
+  flex: 0 0 1px;
+  width: 1px;
+  height: 12px;
+  background-color: #dcdee5;
+  border-radius: 2px;
+}
+
+@keyframes ai-markdown-fade-in {
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+.chat-fade-in * {
+  animation: fade-in 0.25s ease;
+}
+
+.ai-reasoning-message-content * {
+  animation: none !important;
+}
+
+@keyframes ai-blueking-typewriter {
+  0% {
+    clip-path: inset(0 100% 0 0);
+  }
+
+  100% {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* 打字机效果类 */
+.ai-blueking-typewriter {
+  animation: ai-markdown-fade-in 0.25s ease;
+
+  // animation: ai-blueking-typewriter 300ms ease-in-out forwards;
+}
+
+.ai-blueking-markdown-fade-in {
+  animation: ai-markdown-fade-in 0.5s ease-in-out forwards;
+}
+
+.ai-content-loading-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 10px;
+  height: 10px;
+  margin-right: 0;
+  margin-left: 2px;
+  font-size: 10px;
+
+  @for $i from 1 through list.length(variables.$content-loading-icon-color-list) {
+    $list-length: list.length(variables.$content-loading-icon-color-list);
+    $next-index: ($i % $list-length) + 1;
+    $next-next-index: (($i + 1) % $list-length) + 1;
+
+    @keyframes thinking-status-icon-#{$i} {
+      0% {
+        color: list.nth(variables.$content-loading-icon-color-list, $i);
+      }
+
+      50% {
+        color: list.nth(variables.$content-loading-icon-color-list, $next-index);
+      }
+
+      100% {
+        color: list.nth(variables.$content-loading-icon-color-list, $next-next-index);
+      }
+    }
+    &.loading-status-#{$i} {
+      color: list.nth(variables.$content-loading-icon-color-list, $i);
+      transform: translateZ(0);
+      backface-visibility: hidden;
+      animation: thinking-status-icon-#{$i} 1.5s infinite;
+      animation-delay: $i * 0.5s;
+      will-change: color;
+    }
+  }
+}
+
+.ai-skeleton-element {
+  position: relative;
+  display: flex;
+  width: 100%;
+  overflow: hidden;
+
+  &::after {
+    position: absolute;
+    inset-inline: -150%;
+    top: 0;
+    bottom: 0;
+    content: '';
+    background: linear-gradient(90deg, rgb(0 0 0 / 6%) 25%, rgb(0 0 0 / 15%) 37%, rgb(0 0 0 / 6%) 63%);
+    animation-name: ai-skeleton-loading;
+    animation-duration: 1.4s;
+    animation-timing-function: ease;
+    animation-iteration-count: infinite;
+  }
+
+  &.skeleton-element-lg {
+    border-radius: 50%;
+  }
+}
+
+@keyframes ai-skeleton-loading {
+  0% {
+    transform: translateX(-37.5%);
+  }
+
+  100% {
+    transform: translateX(37.5%);
+  }
+}
