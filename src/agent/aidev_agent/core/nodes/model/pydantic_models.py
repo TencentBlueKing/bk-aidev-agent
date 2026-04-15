@@ -18,6 +18,8 @@ to the current version of the project delivered to anyone in the future.
 
 from __future__ import annotations
 
+import os
+from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Protocol
 
@@ -25,7 +27,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 if TYPE_CHECKING:
     from langgraph.store.base import BaseStore
@@ -107,6 +109,10 @@ class ModelNodeSettings(BaseModel):
         default=True,
         description="是否允许并行工具调用（如果模型支持）",
     )
+    max_model_retries: int = Field(
+        default=10,
+        description="模型调用失败或返回无效消息时的最大重试次数。默认为 10。可通过环境变量 MODEL_MAX_RETRIES 配置。",
+    )
 
     # ---------------------------------------------------------------------
     # ContextAssembly configuration
@@ -156,6 +162,18 @@ class ModelNodeSettings(BaseModel):
     # ---------------------------------------------------------------------
     # Extension points (internal)
     # ---------------------------------------------------------------------
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_max_model_retries(cls, values: Any) -> Any:
+        """如果未显式设置 max_model_retries，则尝试从环境变量 MODEL_MAX_RETRIES 读取。"""
+        # 只有当 max_model_retries 没有在 values 中显式提供时，才检查环境变量
+        if "max_model_retries" not in values:
+            env_val = os.getenv("MODEL_MAX_RETRIES")
+            if env_val is not None:
+                with suppress(ValueError):
+                    values["max_model_retries"] = int(env_val)
+        return values
 
     extra_template_middlewares: list[Any] = Field(
         default_factory=list,

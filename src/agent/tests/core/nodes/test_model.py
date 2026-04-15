@@ -20,8 +20,9 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from aidev_agent.core.nodes.model import ModelNodeSettings, ModelState, build_model_node
+from aidev_agent.core.nodes.model.node import InvalidModelMessageError, _is_invalid_message
 from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables import RunnableConfig, RunnableLambda
 from langchain_core.tools import tool
 from langgraph._internal._runnable import RunnableCallable
 
@@ -36,28 +37,29 @@ class TestModelState:
         assert len(state["messages"]) == 1
 
 
+def _make_mock_llm(invoke_return=None, ainvoke_return=None):
+    """创建支持 Runnable 链式操作的 mock LLM。
+
+    使用 RunnableLambda 包装 mock 函数，确保 | 运算符和 with_retry 正常工作。
+    """
+    invoke_fn = Mock(return_value=invoke_return or AIMessage(content="Mocked response"))
+    ainvoke_fn = AsyncMock(return_value=ainvoke_return or AIMessage(content="Mocked async response"))
+
+    llm = RunnableLambda(invoke_fn, afunc=ainvoke_fn)
+    llm.bind_tools = Mock(return_value=llm)
+
+    # 暴露内部 mock 以便断言调用次数
+    llm._invoke_fn = invoke_fn
+    llm._ainvoke_fn = ainvoke_fn
+    return llm
+
+
 class TestBuildModelNode:
     """测试 build_model_node 函数（使用 Mock）"""
 
     @pytest.fixture
     def mock_llm(self):
-        """Mock LLM"""
-        llm = Mock()
-
-        llm.invoke = Mock(return_value=AIMessage(content="Mocked response"))
-        llm.ainvoke = AsyncMock(return_value=AIMessage(content="Mocked async response"))
-
-        # Mock bind_tools to return a mock that also has invoke/ainvoke
-        bound_llm = Mock()
-        bound_llm.invoke = Mock(return_value=AIMessage(content="Mocked response"))
-        bound_llm.ainvoke = AsyncMock(return_value=AIMessage(content="Mocked async response"))
-
-        # Support for chaining with | operator
-        llm.__or__ = Mock(return_value=llm)
-        bound_llm.__or__ = Mock(return_value=bound_llm)
-
-        llm.bind_tools = Mock(return_value=bound_llm)
-        return llm
+        return _make_mock_llm()
 
     @pytest.fixture
     def sample_tools(self):
@@ -81,23 +83,15 @@ class TestBuildModelNode:
         return Mock()
 
     @pytest.fixture
-    def tool_calling_prompt_chain(self):
-        """Mock prompt template and chain for tool_calling mode."""
+    def mock_prompt_setup(self):
+        """Mock prompt template 和 variables"""
         mock_template = Mock()
+        prompt_value = Mock()
+        prompt_value.to_messages.return_value = [HumanMessage(content="test")]
+        mock_template.invoke = Mock(return_value=prompt_value)
 
-        mock_chain = Mock()
-        mock_chain.invoke = Mock(return_value=AIMessage(content="Mocked response"))
-        mock_chain.ainvoke = AsyncMock(return_value=AIMessage(content="Mocked async response"))
-
-        mock_template.__or__ = Mock(return_value=mock_chain)
-        mock_template.input_variables = ["input", "chat_history", "agent_scratchpad"]
-
-        variables = {
-            "input": "test query",
-            "chat_history": [],
-            "agent_scratchpad": [],
-        }
-        return mock_template, mock_chain, variables
+        variables = {"input": "test", "chat_history": [], "agent_scratchpad": []}
+        return mock_template, variables
 
     def test_build_model_node_returns_runnable_callable(self, mock_llm, sample_tools):
         """测试 build_model_node 返回 RunnableCallable"""
@@ -107,9 +101,9 @@ class TestBuildModelNode:
         )
         assert isinstance(node, RunnableCallable)
 
-    def test_model_node_sync_with_tool_calling(self, mock_llm, sample_tools, mock_store, tool_calling_prompt_chain):
+    def test_model_node_sync_with_tool_calling(self, mock_llm, sample_tools, mock_store, mock_prompt_setup):
         """测试同步模型节点（tool_calling 模式）"""
-        mock_template, _mock_chain, variables = tool_calling_prompt_chain
+        mock_template, variables = mock_prompt_setup
 
         with (
             patch(
@@ -147,24 +141,9 @@ class TestBuildModelNode:
             p_vars.assert_called_once()
             mock_llm.bind_tools.assert_called_once()
 
-    def test_model_node_sync_with_structured_response(self, mock_llm, mock_store):
+    def test_model_node_sync_with_structured_response(self, mock_llm, mock_store, mock_prompt_setup):
         """测试同步模型节点（structured_response 模式）"""
-        mock_template = Mock()
-        mock_parser = Mock()
-
-        mock_chain_step1 = Mock()  # template | llm
-        mock_chain_final = Mock()  # (template | llm) | parser
-        mock_chain_final.invoke = Mock(return_value=AIMessage(content="Structured response"))
-
-        mock_template.__or__ = Mock(return_value=mock_chain_step1)
-        mock_chain_step1.__or__ = Mock(return_value=mock_chain_final)
-        mock_template.input_variables = ["input", "chat_history", "agent_scratchpad"]
-
-        variables = {
-            "input": "test query",
-            "chat_history": [],
-            "agent_scratchpad": [],
-        }
+        mock_template, variables = mock_prompt_setup
 
         with (
             patch("aidev_agent.core.nodes.model.node.StructuredOutputToToolMessageParser") as mock_parser_class,
@@ -181,6 +160,8 @@ class TestBuildModelNode:
                 return_value=variables,
             ) as p_vars,
         ):
+            # mock parser 也需要支持 Runnable 链
+            mock_parser = _make_mock_llm(invoke_return=AIMessage(content="Structured response"))
             mock_parser_class.return_value = mock_parser
 
             node = build_model_node(
@@ -212,11 +193,9 @@ class TestBuildModelNode:
             p_vars.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_model_node_async_with_tool_calling(
-        self, mock_llm, sample_tools, mock_store, tool_calling_prompt_chain
-    ):
+    async def test_model_node_async_with_tool_calling(self, mock_llm, sample_tools, mock_store, mock_prompt_setup):
         """测试异步模型节点（tool_calling 模式）"""
-        mock_template, _mock_chain, variables = tool_calling_prompt_chain
+        mock_template, variables = mock_prompt_setup
 
         with (
             patch(
@@ -254,24 +233,9 @@ class TestBuildModelNode:
             p_vars.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_model_node_async_with_structured_response(self, mock_llm, mock_store):
+    async def test_model_node_async_with_structured_response(self, mock_llm, mock_store, mock_prompt_setup):
         """测试异步模型节点（structured_response 模式）"""
-        mock_template = Mock()
-        mock_parser = Mock()
-
-        mock_chain_step1 = Mock()  # template | llm
-        mock_chain_final = Mock()  # (template | llm) | parser
-        mock_chain_final.ainvoke = AsyncMock(return_value=AIMessage(content="Structured async response"))
-
-        mock_template.__or__ = Mock(return_value=mock_chain_step1)
-        mock_chain_step1.__or__ = Mock(return_value=mock_chain_final)
-        mock_template.input_variables = ["input", "chat_history", "agent_scratchpad"]
-
-        variables = {
-            "input": "test query",
-            "chat_history": [],
-            "agent_scratchpad": [],
-        }
+        mock_template, variables = mock_prompt_setup
 
         with (
             patch("aidev_agent.core.nodes.model.node.StructuredOutputToToolMessageParser") as mock_parser_class,
@@ -288,6 +252,7 @@ class TestBuildModelNode:
                 return_value=variables,
             ) as p_vars,
         ):
+            mock_parser = _make_mock_llm(ainvoke_return=AIMessage(content="Structured async response"))
             mock_parser_class.return_value = mock_parser
 
             node = build_model_node(
@@ -314,9 +279,9 @@ class TestBuildModelNode:
             p_template.assert_called_once()
             p_vars.assert_called_once()
 
-    def test_model_node_without_tools(self, mock_llm, mock_store, tool_calling_prompt_chain):
+    def test_model_node_without_tools(self, mock_llm, mock_store, mock_prompt_setup):
         """测试没有工具的情况"""
-        mock_template, _mock_chain, variables = tool_calling_prompt_chain
+        mock_template, variables = mock_prompt_setup
 
         with (
             patch(
@@ -352,24 +317,9 @@ class TestBuildModelNode:
             p_template.assert_called_once()
             p_vars.assert_called_once()
 
-    def test_model_node_with_parallel_tool_calls_enabled(self, mock_llm, mock_store):
+    def test_model_node_with_parallel_tool_calls_enabled(self, mock_llm, mock_store, mock_prompt_setup):
         """测试启用并行工具调用"""
-        mock_template = Mock()
-        mock_parser = Mock()
-
-        mock_chain_step1 = Mock()
-        mock_chain_final = Mock()
-        mock_chain_final.invoke = Mock(return_value=AIMessage(content="Response with parallel calls"))
-
-        mock_template.__or__ = Mock(return_value=mock_chain_step1)
-        mock_chain_step1.__or__ = Mock(return_value=mock_chain_final)
-        mock_template.input_variables = ["input", "chat_history", "agent_scratchpad"]
-
-        variables = {
-            "input": "test query",
-            "chat_history": [],
-            "agent_scratchpad": [],
-        }
+        mock_template, variables = mock_prompt_setup
 
         with (
             patch("aidev_agent.core.nodes.model.node.StructuredOutputToToolMessageParser") as mock_parser_class,
@@ -386,6 +336,7 @@ class TestBuildModelNode:
                 return_value=variables,
             ),
         ):
+            mock_parser = _make_mock_llm(invoke_return=AIMessage(content="Response with parallel calls"))
             mock_parser_class.return_value = mock_parser
 
             node = build_model_node(
@@ -404,11 +355,11 @@ class TestBuildModelNode:
             call_kwargs = mock_parser_class.call_args[1]
             assert call_kwargs["enable_parallel_tool_calls"] is True
 
-    def test_model_node_state_with_decision(self, mock_llm, sample_tools, mock_store, tool_calling_prompt_chain):
+    def test_model_node_state_with_decision(self, mock_llm, sample_tools, mock_store, mock_prompt_setup):
         """测试 state 中包含 decision 的情况"""
         from aidev_agent.enums import Decision
 
-        mock_template, _mock_chain, variables = tool_calling_prompt_chain
+        mock_template, variables = mock_prompt_setup
 
         with (
             patch(
@@ -445,11 +396,9 @@ class TestBuildModelNode:
             assert "messages" in result
             assert len(result["messages"]) == 1
 
-    def test_model_node_context_variables_integration(
-        self, mock_llm, sample_tools, mock_store, tool_calling_prompt_chain
-    ):
+    def test_model_node_context_variables_integration(self, mock_llm, sample_tools, mock_store, mock_prompt_setup):
         """测试上下文变量的集成"""
-        mock_template, _mock_chain, _variables = tool_calling_prompt_chain
+        mock_template, _variables = mock_prompt_setup
 
         enriched = {
             "input": "test query",
@@ -513,7 +462,524 @@ class TestBuildModelNode:
                 {"messages": [HumanMessage(content=variables["query"])]}, config=RunnableConfig(), store=mock_store
             )
 
-        rendered_messages = mock_llm.bind_tools.return_value.invoke.call_args[0][0]
+        rendered_messages = mock_llm._invoke_fn.call_args[0][0]
         assert isinstance(rendered_messages[-1], HumanMessage)
         assert rendered_messages[-1].content[0]["type"] == "text"
         assert rendered_messages[-1].content[1] == image_item
+
+
+class TestIsInvalidMessage:
+    """测试 _is_invalid_message 函数"""
+
+    def test_empty_content_empty_tool_calls(self):
+        # 测试空 content + 空 tool_calls → True
+        message = AIMessage(content="", tool_calls=[])
+        assert _is_invalid_message(message) is True
+        # 测试有 content + 空 tool_calls → False
+        message = AIMessage(content="Hello, world!", tool_calls=[])
+        assert _is_invalid_message(message) is False
+        # 测试空 content + 有 tool_calls → False
+        message = AIMessage(
+            content="",
+            tool_calls=[{"name": "search", "args": {"query": "test"}, "id": "1"}],
+        )
+        assert _is_invalid_message(message) is False
+        # 测试非 AIMessage → True
+        message = HumanMessage(content="Hello")
+        assert _is_invalid_message(message) is True
+        # 测试多模态 content 包含文本 → False
+        message = AIMessage(
+            content=[
+                {"type": "text", "text": "Hello"},
+                {"type": "image_url", "image_url": {"url": "http://example.com/image.jpg"}},
+            ],
+            tool_calls=[],
+        )
+        assert _is_invalid_message(message) is False
+        # 测试多模态 content 不包含文本但有图片 → False（非空 list 即为有效）
+        # 修复：返回有问题不会解析出 list，所以只要 list 存在且非空就是有效的
+        message = AIMessage(
+            content=[
+                {"type": "image_url", "image_url": {"url": "http://example.com/image.jpg"}},
+            ],
+            tool_calls=[],
+        )
+        assert _is_invalid_message(message) is False
+        # 测试 content 仅包含空白字符 → True
+        message = AIMessage(content="   \n\t  ", tool_calls=[])
+        assert _is_invalid_message(message) is True
+        # 测试 content 包含前后空白但最终有文本 → False
+        message = AIMessage(content="  Hello, world!  ", tool_calls=[])
+        assert _is_invalid_message(message) is False
+        # 测试多模态 content 文本部分仅包含空白但有图片 → False（非空 list 即为有效）
+        # 修复：返回有问题不会解析出 list，所以只要 list 存在且非空就是有效的
+        message = AIMessage(
+            content=[
+                {"type": "text", "text": "   "},
+                {"type": "image_url", "image_url": {"url": "http://example.com/image.jpg"}},
+            ],
+            tool_calls=[],
+        )
+        assert _is_invalid_message(message) is False
+        # 测试空 tool_calls 列表 → 依赖 content 判断
+        message = AIMessage(content="Some content", tool_calls=[])
+        assert _is_invalid_message(message) is False
+        # 测试多模态 content 为空列表 → True（无有效内容）
+        message = AIMessage(content=[], tool_calls=[])
+        assert _is_invalid_message(message) is True
+        # 测试多个 tool_calls → False
+        message = AIMessage(
+            content="",
+            tool_calls=[
+                {"name": "search", "args": {"query": "test"}, "id": "1"},
+                {"name": "calculator", "args": {"expression": "1+1"}, "id": "2"},
+            ],
+        )
+        assert _is_invalid_message(message) is False
+
+
+def _make_response_queue_llm(responses, aresponses=None):
+    """创建按顺序返回响应的 mock LLM，支持 Runnable 链操作。
+
+    Args:
+        responses: 同步响应列表，按 pop(0) 顺序消费
+        aresponses: 异步响应列表，如不提供则复用 responses
+    """
+    queue = list(responses)
+    aqueue = list(aresponses) if aresponses else list(responses)
+    invoke_counter = [0]
+    ainvoke_counter = [0]
+
+    def invoke_fn(input, config=None, **kwargs):
+        invoke_counter[0] += 1
+        return queue.pop(0) if queue else AIMessage(content="")
+
+    async def ainvoke_fn(input, config=None, **kwargs):
+        ainvoke_counter[0] += 1
+        return aqueue.pop(0) if aqueue else AIMessage(content="")
+
+    llm = RunnableLambda(invoke_fn, afunc=ainvoke_fn)
+    llm.bind_tools = Mock(return_value=llm)
+    llm._invoke_count = invoke_counter
+    llm._ainvoke_count = ainvoke_counter
+    return llm
+
+
+class TestModelNodeRetry:
+    """测试 model_node 重试逻辑（with_retry + InvalidModelMessageError）"""
+
+    @pytest.fixture
+    def mock_store(self):
+        """Mock BaseStore"""
+        return Mock()
+
+    @pytest.fixture
+    def mock_prompt_setup(self):
+        """Mock prompt template 和 variables"""
+        mock_template = Mock()
+        prompt_value = Mock()
+        prompt_value.to_messages.return_value = [HumanMessage(content="test")]
+        mock_template.invoke = Mock(return_value=prompt_value)
+
+        variables = {"input": "test", "chat_history": [], "agent_scratchpad": []}
+        return mock_template, variables
+
+    def test_first_call_success_no_retry(self, mock_store, mock_prompt_setup):
+        """测试首次调用成功 → 不重试"""
+        mock_llm = _make_response_queue_llm([AIMessage(content="Success response")])
+        mock_template, variables = mock_prompt_setup
+
+        with (
+            patch("aidev_agent.core.nodes.model.node.ContextAssembly.get_choice_tools", return_value=[]),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_template", return_value=mock_template
+            ),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_variables", return_value=variables
+            ),
+        ):
+            node = build_model_node(
+                llm=mock_llm,
+                tools=[],
+                node_options=ModelNodeSettings(max_model_retries=3),
+            )
+
+            state: ModelState = {"messages": [HumanMessage(content="test")]}
+            config = RunnableConfig()
+
+            result = node.invoke(state, config=config, store=mock_store)
+
+            assert result["messages"][0].content == "Success response"
+            assert mock_llm._invoke_count[0] == 1
+
+    def test_first_failure_second_success(self, mock_store, mock_prompt_setup):
+        """测试首次失败（无效消息），第二次成功 → 重试 1 次"""
+        mock_llm = _make_response_queue_llm(
+            [
+                AIMessage(content="", tool_calls=[]),  # 无效
+                AIMessage(content="Success after retry"),  # 有效
+            ]
+        )
+        mock_template, variables = mock_prompt_setup
+
+        with (
+            patch("aidev_agent.core.nodes.model.node.ContextAssembly.get_choice_tools", return_value=[]),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_template", return_value=mock_template
+            ),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_variables", return_value=variables
+            ),
+        ):
+            node = build_model_node(
+                llm=mock_llm,
+                tools=[],
+                node_options=ModelNodeSettings(max_model_retries=3),
+            )
+
+            state: ModelState = {"messages": [HumanMessage(content="test")]}
+            config = RunnableConfig()
+
+            result = node.invoke(state, config=config, store=mock_store)
+
+            assert result["messages"][0].content == "Success after retry"
+            assert mock_llm._invoke_count[0] == 2
+
+    def test_multiple_failures_then_success(self, mock_store, mock_prompt_setup):
+        """测试多次失败，最终成功 → 重试多次"""
+        mock_llm = _make_response_queue_llm(
+            [
+                AIMessage(content="", tool_calls=[]),
+                AIMessage(content="", tool_calls=[]),
+                AIMessage(content="Success after 2 retries"),
+            ]
+        )
+        mock_template, variables = mock_prompt_setup
+
+        with (
+            patch("aidev_agent.core.nodes.model.node.ContextAssembly.get_choice_tools", return_value=[]),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_template", return_value=mock_template
+            ),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_variables", return_value=variables
+            ),
+        ):
+            node = build_model_node(
+                llm=mock_llm,
+                tools=[],
+                node_options=ModelNodeSettings(max_model_retries=3),
+            )
+
+            state: ModelState = {"messages": [HumanMessage(content="test")]}
+            config = RunnableConfig()
+
+            result = node.invoke(state, config=config, store=mock_store)
+
+            assert result["messages"][0].content == "Success after 2 retries"
+            assert mock_llm._invoke_count[0] == 3
+
+    def test_all_failures_raise_after_retries_exhausted(self, mock_store, mock_prompt_setup):
+        """测试全部失败（一直返回无效消息）→ 重试耗尽后抛出异常"""
+        mock_llm = _make_response_queue_llm(
+            [
+                AIMessage(content="", tool_calls=[]),
+                AIMessage(content="", tool_calls=[]),
+                AIMessage(content="", tool_calls=[]),
+            ]
+        )
+        mock_template, variables = mock_prompt_setup
+
+        with (
+            patch("aidev_agent.core.nodes.model.node.ContextAssembly.get_choice_tools", return_value=[]),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_template", return_value=mock_template
+            ),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_variables", return_value=variables
+            ),
+        ):
+            node = build_model_node(
+                llm=mock_llm,
+                tools=[],
+                node_options=ModelNodeSettings(max_model_retries=3),
+            )
+
+            state: ModelState = {"messages": [HumanMessage(content="test")]}
+            config = RunnableConfig()
+
+            with pytest.raises(InvalidModelMessageError):
+                node.invoke(state, config=config, store=mock_store)
+
+            assert mock_llm._invoke_count[0] == 3
+
+    def test_exception_not_retried(self, mock_store, mock_prompt_setup):
+        """测试调用抛出普通异常 → 不重试，直接抛出
+
+        with_retry 只配置了重试 InvalidModelMessageError，其他异常直接抛出。
+        """
+        invoke_counter = [0]
+
+        def invoke_fn(input, config=None, **kwargs):
+            invoke_counter[0] += 1
+            raise Exception("Model invocation failed")
+
+        mock_llm = RunnableLambda(invoke_fn)
+        mock_llm.bind_tools = Mock(return_value=mock_llm)
+        mock_llm._invoke_count = invoke_counter
+        mock_template, variables = mock_prompt_setup
+
+        with (
+            patch("aidev_agent.core.nodes.model.node.ContextAssembly.get_choice_tools", return_value=[]),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_template", return_value=mock_template
+            ),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_variables", return_value=variables
+            ),
+        ):
+            node = build_model_node(
+                llm=mock_llm,
+                tools=[],
+                node_options=ModelNodeSettings(max_model_retries=3),
+            )
+
+            state: ModelState = {"messages": [HumanMessage(content="test")]}
+            config = RunnableConfig()
+
+            with pytest.raises(Exception, match="Model invocation failed"):
+                node.invoke(state, config=config, store=mock_store)
+
+            # 普通异常不会触发重试，只调用一次
+            assert mock_llm._invoke_count[0] == 1
+
+    def test_retry_with_tool_calls_eventually_valid(self, mock_store, mock_prompt_setup):
+        """测试重试后最终返回有效 tool_calls → 成功"""
+        mock_llm = _make_response_queue_llm(
+            [
+                AIMessage(content="", tool_calls=[]),
+                AIMessage(
+                    content="",
+                    tool_calls=[{"name": "search", "args": {"query": "test"}, "id": "1"}],
+                ),
+            ]
+        )
+        mock_template, variables = mock_prompt_setup
+
+        with (
+            patch("aidev_agent.core.nodes.model.node.ContextAssembly.get_choice_tools", return_value=[]),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_template", return_value=mock_template
+            ),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_variables", return_value=variables
+            ),
+        ):
+            node = build_model_node(
+                llm=mock_llm,
+                tools=[],
+                node_options=ModelNodeSettings(max_model_retries=3),
+            )
+
+            state: ModelState = {"messages": [HumanMessage(content="test")]}
+            config = RunnableConfig()
+
+            result = node.invoke(state, config=config, store=mock_store)
+
+            assert len(result["messages"][0].tool_calls) == 1
+            assert result["messages"][0].tool_calls[0]["name"] == "search"
+            assert mock_llm._invoke_count[0] == 2
+
+
+class TestAModelNodeRetry:
+    """测试 amodel_node 异步重试逻辑（with_retry + InvalidModelMessageError）"""
+
+    @pytest.fixture
+    def mock_store(self):
+        """Mock BaseStore"""
+        return Mock()
+
+    @pytest.fixture
+    def mock_prompt_setup(self):
+        """Mock prompt template 和 variables"""
+        mock_template = Mock()
+        prompt_value = Mock()
+        prompt_value.to_messages.return_value = [HumanMessage(content="test")]
+        mock_template.invoke = Mock(return_value=prompt_value)
+
+        variables = {"input": "test", "chat_history": [], "agent_scratchpad": []}
+        return mock_template, variables
+
+    @pytest.mark.asyncio
+    async def test_first_call_success_no_retry(self, mock_store, mock_prompt_setup):
+        """测试首次调用成功 → 不重试"""
+        mock_llm = _make_response_queue_llm([AIMessage(content="Success response")])
+        mock_template, variables = mock_prompt_setup
+
+        with (
+            patch("aidev_agent.core.nodes.model.node.ContextAssembly.get_choice_tools", return_value=[]),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_template", return_value=mock_template
+            ),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_variables", return_value=variables
+            ),
+        ):
+            node = build_model_node(
+                llm=mock_llm,
+                tools=[],
+                node_options=ModelNodeSettings(max_model_retries=3),
+            )
+
+            state: ModelState = {"messages": [HumanMessage(content="test")]}
+            config = RunnableConfig()
+
+            result = await node.ainvoke(state, config=config, store=mock_store)
+
+            assert result["messages"][0].content == "Success response"
+            assert mock_llm._ainvoke_count[0] == 1
+
+    @pytest.mark.asyncio
+    async def test_first_failure_second_success(self, mock_store, mock_prompt_setup):
+        """测试首次失败（无效消息），第二次成功 → 重试 1 次"""
+        mock_llm = _make_response_queue_llm(
+            [
+                AIMessage(content="", tool_calls=[]),
+                AIMessage(content="Success after retry"),
+            ]
+        )
+        mock_template, variables = mock_prompt_setup
+
+        with (
+            patch("aidev_agent.core.nodes.model.node.ContextAssembly.get_choice_tools", return_value=[]),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_template", return_value=mock_template
+            ),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_variables", return_value=variables
+            ),
+        ):
+            node = build_model_node(
+                llm=mock_llm,
+                tools=[],
+                node_options=ModelNodeSettings(max_model_retries=3),
+            )
+
+            state: ModelState = {"messages": [HumanMessage(content="test")]}
+            config = RunnableConfig()
+
+            result = await node.ainvoke(state, config=config, store=mock_store)
+
+            assert result["messages"][0].content == "Success after retry"
+            assert mock_llm._ainvoke_count[0] == 2
+
+    @pytest.mark.asyncio
+    async def test_multiple_failures_then_success(self, mock_store, mock_prompt_setup):
+        """测试多次失败，最终成功 → 重试多次"""
+        mock_llm = _make_response_queue_llm(
+            [
+                AIMessage(content="", tool_calls=[]),
+                AIMessage(content="", tool_calls=[]),
+                AIMessage(content="Success after 2 retries"),
+            ]
+        )
+        mock_template, variables = mock_prompt_setup
+
+        with (
+            patch("aidev_agent.core.nodes.model.node.ContextAssembly.get_choice_tools", return_value=[]),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_template", return_value=mock_template
+            ),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_variables", return_value=variables
+            ),
+        ):
+            node = build_model_node(
+                llm=mock_llm,
+                tools=[],
+                node_options=ModelNodeSettings(max_model_retries=3),
+            )
+
+            state: ModelState = {"messages": [HumanMessage(content="test")]}
+            config = RunnableConfig()
+
+            result = await node.ainvoke(state, config=config, store=mock_store)
+
+            assert result["messages"][0].content == "Success after 2 retries"
+            assert mock_llm._ainvoke_count[0] == 3
+
+    @pytest.mark.asyncio
+    async def test_all_failures_raise_after_retries_exhausted(self, mock_store, mock_prompt_setup):
+        """测试全部失败（一直返回无效消息）→ 重试耗尽后抛出异常"""
+        mock_llm = _make_response_queue_llm(
+            [
+                AIMessage(content="", tool_calls=[]),
+                AIMessage(content="", tool_calls=[]),
+                AIMessage(content="", tool_calls=[]),
+            ]
+        )
+        mock_template, variables = mock_prompt_setup
+
+        with (
+            patch("aidev_agent.core.nodes.model.node.ContextAssembly.get_choice_tools", return_value=[]),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_template", return_value=mock_template
+            ),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_variables", return_value=variables
+            ),
+        ):
+            node = build_model_node(
+                llm=mock_llm,
+                tools=[],
+                node_options=ModelNodeSettings(max_model_retries=3),
+            )
+
+            state: ModelState = {"messages": [HumanMessage(content="test")]}
+            config = RunnableConfig()
+
+            with pytest.raises(InvalidModelMessageError):
+                await node.ainvoke(state, config=config, store=mock_store)
+
+            assert mock_llm._ainvoke_count[0] == 3
+
+    @pytest.mark.asyncio
+    async def test_exception_not_retried(self, mock_store, mock_prompt_setup):
+        """测试调用抛出普通异常 → 不重试，直接抛出
+
+        with_retry 只配置了重试 InvalidModelMessageError，其他异常直接抛出。
+        """
+        ainvoke_counter = [0]
+
+        async def ainvoke_fn(input, config=None, **kwargs):
+            ainvoke_counter[0] += 1
+            raise Exception("Model invocation failed")
+
+        mock_llm = RunnableLambda(lambda x, **kw: AIMessage(content=""), afunc=ainvoke_fn)
+        mock_llm.bind_tools = Mock(return_value=mock_llm)
+        mock_llm._ainvoke_count = ainvoke_counter
+        mock_template, variables = mock_prompt_setup
+
+        with (
+            patch("aidev_agent.core.nodes.model.node.ContextAssembly.get_choice_tools", return_value=[]),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_template", return_value=mock_template
+            ),
+            patch(
+                "aidev_agent.core.nodes.model.node.ContextAssembly.get_chat_prompt_variables", return_value=variables
+            ),
+        ):
+            node = build_model_node(
+                llm=mock_llm,
+                tools=[],
+                node_options=ModelNodeSettings(max_model_retries=3),
+            )
+
+            state: ModelState = {"messages": [HumanMessage(content="test")]}
+            config = RunnableConfig()
+
+            with pytest.raises(Exception, match="Model invocation failed"):
+                await node.ainvoke(state, config=config, store=mock_store)
+
+            # 普通异常不会触发重试，只调用一次
+            assert mock_llm._ainvoke_count[0] == 1

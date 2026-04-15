@@ -22,8 +22,8 @@ import logging
 from typing import Annotated, Any, Dict, List
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AnyMessage, BaseMessage, HumanMessage
-from langchain_core.runnables import Runnable, RunnableConfig
+from langchain_core.messages import AIMessage, AnyMessage, BaseMessage, HumanMessage
+from langchain_core.runnables import Runnable, RunnableConfig, RunnableLambda
 from langchain_core.tools import BaseTool
 from langgraph._internal._runnable import RunnableCallable
 from langgraph.graph.message import add_messages
@@ -57,6 +57,59 @@ from .token_compression import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class InvalidModelMessageError(Exception):
+    """模型返回了无效 message（content 和 tool_calls 均为空）时抛出。"""
+
+
+def _is_invalid_message(message: AnyMessage) -> bool:
+    """
+    判断模型返回的 message 是否无效。
+
+    无效条件（任一满足即无效）:
+    1. message 不是 AIMessage 类型
+    2. message.content 为空且 message.tool_calls 为空
+
+    Args:
+        message: LangChain 的 message 对象
+
+    Returns:
+        bool: True 表示无效，需要重试；False 表示有效
+    """
+
+    # 条件 1: 不是 AIMessage
+    if not isinstance(message, AIMessage):
+        return True
+
+    # 条件 2: content 和 tool_calls 都为空
+    has_content = False
+    has_tool_calls = False
+
+    # 检查 content
+    if message.content:
+        # 多模态内容，只要 list 长度大于 0 就认为有内容
+        # 返回有问题不会解析出 list，所以只要 list 存在且非空就是有效的
+        has_content = (isinstance(message.content, str) and message.content.strip() != "") or (
+            isinstance(message.content, list) and len(message.content) > 0
+        )
+
+    # 检查 tool_calls
+    if message.tool_calls:
+        has_tool_calls = len(message.tool_calls) > 0
+
+    return not has_content and not has_tool_calls
+
+
+def _validate_model_message(message: AnyMessage) -> AnyMessage:
+    """校验模型返回的 message，无效时抛出 InvalidModelMessageError 触发 with_retry 重试。"""
+    if _is_invalid_message(message):
+        raise InvalidModelMessageError(
+            f"Model returned invalid message: "
+            f"content={repr(message.content)[:100]}, "
+            f"tool_calls={len(message.tool_calls) if hasattr(message, 'tool_calls') else 'N/A'}"
+        )
+    return message
 
 
 class ModelState(TypedDict, total=False):
@@ -119,6 +172,7 @@ def _prepare_model_chain(
     context_assembly: ContextAssembly,
     use_structured_response: bool,
     enable_parallel_tool_calls: bool,
+    max_retries: int,
     state: ModelState,
     config: RunnableConfig,
     store: BaseStore,
@@ -131,22 +185,24 @@ def _prepare_model_chain(
     - 获取 prompt 模板
     - 准备上下文变量
     - 渲染 prompt -> messages
-    - 构建 LLM chain（不含 prompt）
+    - 构建 LLM chain（含校验和重试）
 
     Args:
         llm: 语言模型
         context_assembly: 上下文组件实例
         use_structured_response: 是否使用结构化输出模式
         enable_parallel_tool_calls: 是否启用并行工具调用
+        max_retries: 最大重试次数
         state: 状态字典
         config: Runnable 配置
         store: LangGraph Store
 
     Returns:
         tuple: (llm_chain, messages)
-            - llm_chain: LLM chain（可能包含 parser 或已绑定工具）
+            - llm_chain: LLM chain（含校验模块和 with_retry）
             - messages: 渲染后的消息列表（可观测点）
     """
+
     # 创建共享的 ProcessorContext（整个 node 执行过程中复用）
     ctx = ProcessorContext(
         state=state,
@@ -186,6 +242,12 @@ def _prepare_model_chain(
     else:
         # 原生工具调用模式：使用 bind_tools 绑定工具
         llm_chain = llm.bind_tools(tools) if tools else llm
+
+    # 在 chain 末尾添加校验模块，无效消息抛异常触发 with_retry 重试
+    llm_chain = (llm_chain | RunnableLambda(_validate_model_message)).with_retry(
+        retry_if_exception_type=(InvalidModelMessageError,),
+        stop_after_attempt=max_retries,
+    )
 
     return llm_chain, messages
 
@@ -316,13 +378,14 @@ def build_model_node(
             context_assembly=context_assembly,
             use_structured_response=use_structured_response,
             enable_parallel_tool_calls=enable_parallel_tool_calls,
+            max_retries=node_options.max_model_retries,
             state=state,
             config=config,
             store=store,
         )
 
-        # 调用 LLM chain
         response = llm_chain.invoke(messages, config=config)
+
         return {"messages": [response]}
 
     async def amodel_node(
@@ -352,13 +415,14 @@ def build_model_node(
             context_assembly=context_assembly,
             use_structured_response=use_structured_response,
             enable_parallel_tool_calls=enable_parallel_tool_calls,
+            max_retries=node_options.max_model_retries,
             state=state,
             config=config,
             store=store,
         )
 
-        # 异步调用 LLM chain
         response = await llm_chain.ainvoke(messages, config=config)
+
         return {"messages": [response]}
 
     return RunnableCallable(model_node, amodel_node, trace=True)
