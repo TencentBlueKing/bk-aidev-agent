@@ -9,6 +9,8 @@
 
 import type { ComputedRef, Ref } from 'vue';
 
+import type { RenderMode } from '@blueking/chat-x';
+
 import type { IShortcut } from '../types';
 import type { IChatHelper } from '../types';
 import type { ISession } from '@blueking/chat-helper';
@@ -104,6 +106,10 @@ export interface ChatBotProps {
   // === 功能开关 ===
   /** 是否启用消息选择 */
   enableSelection?: boolean;
+
+  // === 渲染模式 ===
+  /** 渲染模式：chat(默认)、share(分享)、test(测试) */
+  renderMode?: RenderMode;
   // === 其他配置 ===
   /** 自定义 CSS 类名 */
   extCls?: string;

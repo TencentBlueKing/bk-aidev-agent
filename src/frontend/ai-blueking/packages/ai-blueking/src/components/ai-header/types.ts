@@ -7,6 +7,8 @@
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
  */
 
+import type { RenderMode } from '@blueking/chat-x';
+
 import type { SessionBusinessManager } from '../../manager/business/session-business-manager';
 
 /**
@@ -37,6 +39,8 @@ export interface AIHeaderProps {
   };
   // V2 新增：会话业务管理器
   sessionBusinessManager?: SessionBusinessManager;
+  /** 渲染模式：chat(默认)、share(分享)、test(测试) */
+  renderMode?: RenderMode;
 }
 
 /**
