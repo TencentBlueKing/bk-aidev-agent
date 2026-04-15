@@ -72,4 +72,4 @@ export type { IAgentInfo, IMessage, ISession, MessageRole, MessageStatus } from 
 export { AGUIProtocol, useChatHelper } from '@blueking/chat-helper';
 
 // MessageContentType 从 chat-x 导出
-export { MessageContentType } from '@blueking/chat-x';
+export { MessageContentType, RenderMode } from '@blueking/chat-x';

@@ -27,6 +27,8 @@ export { MessageContentType } from '@blueking/chat-x';
 
 import type { VNode } from 'vue';
 
+import type { RenderMode } from '@blueking/chat-x';
+
 // 从 Manager 导入类型
 import type { PositionAndSize } from './manager/types';
 // 导入 chat-helper 类型用于扩展
@@ -225,6 +227,8 @@ export interface AIBluekingProps {
   // 基础配置
   /** API 服务地址 */
   url?: string;
+  /** 渲染模式：chat(默认)、share(分享)、test(测试) */
+  renderMode?: RenderMode;
   /** 快捷操作过滤函数 */
   shortcutFilter?: (shortcut: IShortcut, selectedText: string) => boolean;
   /** ResizeLayout 配置（执行情况侧面板拖拽） */

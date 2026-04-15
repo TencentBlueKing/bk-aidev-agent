@@ -103,6 +103,8 @@
 
   import { Input as BkInput, bkTooltips, Message } from 'bkui-vue';
 
+  import { RenderMode } from '@blueking/chat-x';
+
   import logo from '../../assets/images/avatar.png';
   import { t } from '../../lang';
   import { useHistoryDropdown } from './history-dropdown/use-history-dropdown';
@@ -132,6 +134,7 @@
       showShare: false,
     }),
     sessionBusinessManager: undefined,
+    renderMode: RenderMode.Chat,
   });
 
   const emit = defineEmits<AIHeaderEmits>();
@@ -231,7 +234,7 @@
       `;
     }
 
-    if (props.dropdownMenuConfig?.showShare) {
+    if (props.dropdownMenuConfig?.showShare && props.renderMode !== RenderMode.Test) {
       menuItems += `
         <div class="tippy-menu-item ${disabledClass}" data-action="share" ${tooltipAttr}>
           <i class="bkai-icon bkai-fenxiang"></i>

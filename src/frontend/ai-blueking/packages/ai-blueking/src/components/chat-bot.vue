@@ -7,6 +7,7 @@
       ref="chatContainerRef"
       v-model:cite="cite"
       v-model:selected-shortcut="selectedShortcut"
+      v-model:render-mode="internalRenderMode"
       :chat-loading="effectiveChatLoading"
       :common-tippy-options="messageToolsTippyOptions"
       :message-status="messageStatus"
@@ -68,6 +69,7 @@
   import { computed, nextTick, ref, shallowRef } from 'vue';
 
   import { ChatContainer, ChatInput, MessageRender } from '@blueking/chat-x';
+  import { RenderMode } from '@blueking/chat-x';
   // import { Loading } from 'bkui-vue';
 
   import { useChatbotInit } from './composables/use-chatbot-init';
@@ -92,6 +94,7 @@
     autoLoad: true,
     shortcuts: () => [],
     resources: () => [],
+    renderMode: RenderMode.Chat,
   });
 
   const emit = defineEmits<ChatBotEmits>();
@@ -107,6 +110,12 @@
   // 共享 ref（由组装层创建，注入到多个 composable）
   const selectedResources = shallowRef<IAiSlashMenuItem[]>([]);
   const selectedShortcut = ref<null | (Shortcut & { supportUpload?: ISupportUpload })>(null);
+
+  // 渲染模式：由 props 驱动，传给 ChatContainer 的 v-model:renderMode
+  const internalRenderMode = computed({
+    get: () => props.renderMode ?? RenderMode.Chat,
+    set: () => {}, // ChatContainer 可能 set，但由父组件 props 控制，忽略
+  });
 
   // ==================== 滚动辅助 ====================
   const scrollToBottom = async () => {

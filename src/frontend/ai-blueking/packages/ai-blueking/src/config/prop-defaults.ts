@@ -7,6 +7,8 @@
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
  */
 
+import { RenderMode } from '@blueking/chat-x';
+
 import { t } from '../lang';
 import type { DropdownMenuConfig, IShortcut, IRequestOptions } from '../types';
 
@@ -26,6 +28,9 @@ export const defaultProps = {
   enablePopup: true,
   draggable: true,
   enableChatSession: true,
+
+  // 渲染模式
+  renderMode: RenderMode.Chat as RenderMode,
 
   // 容器配置
   defaultWidth: 400,
