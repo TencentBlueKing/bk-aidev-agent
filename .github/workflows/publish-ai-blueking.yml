@@ -1,12 +1,6 @@
 name: Publish ai-blueking
 
 on:
-  push:
-    branches:
-      - "2.0.0"
-    paths:
-      - "src/frontend/ai-blueking/**"
-      - "src/frontend/bkui-chat-x/**"
   workflow_dispatch:
     inputs:
       version:
@@ -26,6 +20,7 @@ permissions:
 
 jobs:
   publish:
+    if: "!startsWith(github.event.head_commit.message, 'chore(release)')"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -96,7 +91,7 @@ jobs:
 
       - name: Publish ai-blueking to npm
         working-directory: src/frontend/ai-blueking/packages/ai-blueking
-        run: npm publish --access public --tag ${{ steps.bump-version.outputs.npm_tag }}
+        run: npm publish --ignore-scripts --access public --tag ${{ steps.bump-version.outputs.npm_tag }}
 
       - name: Convert version to Python format
         id: py-version
@@ -121,6 +116,17 @@ jobs:
         working-directory: src/plugins/aidev_ai_blueking
         run: uv publish --token ${{ secrets.PYPI_TOKEN }}
 
+      - name: Update template aidev-ai-blueking version
+        run: |
+          PY_VERSION="${{ steps.py-version.outputs.py_version }}"
+          # 更新 requirements.txt 中的 aidev-ai-blueking 版本
+          sed -i "s/^aidev-ai-blueking==.*/aidev-ai-blueking==${PY_VERSION}/" "template/{{cookiecutter.project_name}}/requirements.txt"
+          # 更新 pyproject.toml 中的 aidev-ai-blueking 版本
+          sed -i "s/\"aidev-ai-blueking==[^\"]*\"/\"aidev-ai-blueking==${PY_VERSION}\"/" "template/{{cookiecutter.project_name}}/pyproject.toml"
+          echo "Updated template files:"
+          grep 'aidev-ai-blueking' "template/{{cookiecutter.project_name}}/requirements.txt"
+          grep 'aidev-ai-blueking' "template/{{cookiecutter.project_name}}/pyproject.toml"
+
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
@@ -130,5 +136,5 @@ jobs:
         run: |
           git add -A
           git diff --cached --quiet && echo "No changes to commit" && exit 0
-          git commit -m "chore(release): ai-blueking@${{ steps.bump-version.outputs.version }}"
+          git commit -m "chore(release): ai-blueking@${{ steps.bump-version.outputs.version }} [skip ci]"
           git push origin HEAD:${{ github.event_name == 'push' && github.ref_name || inputs.target_branch }}
