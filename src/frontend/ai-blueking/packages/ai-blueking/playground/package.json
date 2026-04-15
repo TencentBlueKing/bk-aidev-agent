@@ -9,7 +9,6 @@
   },
   "dependencies": {
     "@blueking/ai-blueking": "workspace:*",
-    "@blueking/chat-x": "0.0.9",
     "bkui-vue": "2.0.2-beta.81",
     "vue": "^3.5.24",
     "vue-router": "^5.0.3"

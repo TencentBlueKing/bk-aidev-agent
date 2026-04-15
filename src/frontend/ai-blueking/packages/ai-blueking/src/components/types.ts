@@ -154,6 +154,9 @@ export interface ChatBotProps {
    */
   url?: string;
 
+  /** 执行情况侧面板位置 */
+  placement?: 'left' | 'right';
+
   /** ResizeLayout 配置（执行情况侧面板拖拽） */
   resizeProps?: {
     disabled?: boolean;
