@@ -28,7 +28,7 @@ import { type Ref, onBeforeUnmount, ref } from 'vue';
 import tippy, { type Instance, type Props } from 'tippy.js';
 
 import '../styles/use-tippy.scss';
-import 'tippy.js/themes/light.css';
+import 'tippy.js/dist/tippy.css';
 
 export type TooltipOptions = Partial<Props>;
 

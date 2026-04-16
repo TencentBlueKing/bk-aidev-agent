@@ -14,7 +14,7 @@
   }
 }
 
-// 下拉菜单样式
+// 下拉菜单样式（默认样式，ai-header/index.vue 中 more-menu-light theme 会覆盖部分值）
 .tippy-dropdown-menu {
   display: flex;
   flex-direction: column;

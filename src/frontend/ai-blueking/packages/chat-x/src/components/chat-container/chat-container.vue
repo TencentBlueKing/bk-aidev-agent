@@ -401,6 +401,10 @@
     },
   );
   const inputStatus = computed(() => {
+    // StopLoading 优先级最高，确保停止接口调用期间 UI 立即响应
+    if (props.messageStatus === MessageStatus.StopLoading) {
+      return MessageStatus.StopLoading;
+    }
     if (messageGroups.value?.some(group => group.messages.some(message => message.id === LOADING_MESSAGE_ID))) {
       return MessageStatus.Fetching;
     }

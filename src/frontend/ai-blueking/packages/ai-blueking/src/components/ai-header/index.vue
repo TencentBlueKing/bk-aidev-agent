@@ -168,7 +168,8 @@
   import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue';
 
   import { Input as BkInput, bkTooltips, Message } from 'bkui-vue';
-  import { Tippy, directive as vTippy, useTippy } from 'vue-tippy';
+  import { Tippy, directive as vTippy } from 'vue-tippy';
+  import type { useTippy } from 'vue-tippy';
 
   import { RenderMode } from '@blueking/chat-x';
 
