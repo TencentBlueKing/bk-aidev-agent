@@ -23,17 +23,33 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { defineConfig } from 'vite';
+import { resolve } from 'path';
+
+import { defineConfig, mergeConfig } from 'vite';
 
 import { createCommonConfig } from './vite.utils';
 
-export default defineConfig({
-  ...createCommonConfig(),
-  root: 'playground',
-  envDir: '..',
-  server: {
-    host: '0.0.0.0',
-    port: 8001,
-    allowedHosts: true,
-  },
-});
+export default defineConfig(
+  mergeConfig(
+    createCommonConfig(),
+    {
+      root: 'playground',
+      envDir: '..',
+      resolve: {
+        alias: [
+          // 开发模式下让 playground 直接引用 ai-blueking JS 源码，支持断点调试
+          // 仅精确匹配主入口，CSS 等子路径仍走 dist
+          {
+            find: /^@blueking\/ai-blueking$/,
+            replacement: resolve(__dirname, '../src/vue3.ts'),
+          },
+        ],
+      },
+      server: {
+        host: '0.0.0.0',
+        port: 8001,
+        allowedHosts: true,
+      },
+    },
+  ),
+);

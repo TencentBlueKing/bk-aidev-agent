@@ -608,6 +608,10 @@
     min-width: 0;
     position: relative;
     background: #fff;
+    .ai-chatbot :deep(.collapse-button.is-right) {
+      right: 0;
+      border-radius: 4px 0 0 4px;
+    }
   }
 </style>
 

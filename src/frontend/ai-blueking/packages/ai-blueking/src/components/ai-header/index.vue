@@ -43,12 +43,78 @@
           </div>
         </div>
       </div>
-      <span
+      <!-- 更多图标下拉菜单 - 使用 vue-tippy -->
+      <Tippy
         v-if="props.showMoreIcon && hasPermission"
-        ref="moreIconRef"
-        class="bkai-icon bkai-more"
-        @click="handleMoreIconClick"
-      ></span>
+        ref="moreMenuTippyRef"
+        :arrow="false"
+        :append-to="tippyAppendTo"
+        :offset="[0, 4]"
+        interactive
+        placement="bottom-start"
+        theme="ai-blueking-light more-menu-light light"
+        trigger="manual"
+        @hidden="moreMenuVisible = false"
+        @shown="moreMenuVisible = true"
+      >
+        <span
+          class="bkai-icon bkai-more"
+          @click="handleMoreIconClick"
+        ></span>
+
+        <template #content>
+          <div
+            v-if="moreMenuVisible"
+            class="tippy-dropdown-menu"
+          >
+            <div
+              v-if="props.dropdownMenuConfig?.showRename"
+              class="tippy-menu-item"
+              @click="handleRenameAction"
+            >
+              <i class="bkai-icon bkai-bianji"></i>
+              <span>{{ t('重命名') }}</span>
+            </div>
+            <div
+              v-if="props.dropdownMenuConfig?.showAutoGenerate"
+              v-tippy="{
+                content: !props.hasSessionContents ? t('请先发起会话') : '',
+                theme: 'ai-blueking-tooltip',
+                arrow: true,
+                delay: [300, 0],
+                appendTo: tippyAppendTo,
+              }"
+              class="tippy-menu-item"
+              :class="{
+                disabled: !props.hasSessionContents || props.autoGenerateLoading,
+              }"
+              @click="handleAutoGenerateAction"
+            >
+              <i
+                class="bkai-icon bkai-auto-refresh-line"
+                :class="{ spinning: props.autoGenerateLoading }"
+              ></i>
+              <span>{{ t('自动生成命名') }}</span>
+            </div>
+            <div
+              v-if="props.dropdownMenuConfig?.showShare && props.renderMode !== RenderMode.Test"
+              v-tippy="{
+                content: !props.hasSessionContents ? t('请先发起会话') : '',
+                theme: 'ai-blueking-tooltip',
+                arrow: true,
+                delay: [300, 0],
+                appendTo: tippyAppendTo,
+              }"
+              class="tippy-menu-item"
+              :class="{ disabled: !props.hasSessionContents }"
+              @click="handleShareAction"
+            >
+              <i class="bkai-icon bkai-fenxiang"></i>
+              <span>{{ t('分享会话') }}</span>
+            </div>
+          </div>
+        </template>
+      </Tippy>
     </div>
     <slot name="headerLeft" />
     <div class="right-section">
@@ -99,9 +165,10 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+  import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue';
 
   import { Input as BkInput, bkTooltips, Message } from 'bkui-vue';
+  import { Tippy, directive as vTippy, useTippy } from 'vue-tippy';
 
   import { RenderMode } from '@blueking/chat-x';
 
@@ -148,19 +215,18 @@
   // Refs
   const headerRef = ref<HTMLElement | null>(null);
   const historyIconRef = ref<HTMLElement | null>(null);
-  const moreIconRef = ref<HTMLElement | null>(null);
+  const moreMenuTippyRef = useTemplateRef<InstanceType<typeof Tippy> & ReturnType<typeof useTippy>>('moreMenuTippyRef');
 
   // 重命名相关的状态
   const showRenameTooltip = ref(false);
   const renameInputValue = ref('');
   const renameInputRef = ref<InstanceType<typeof BkInput> | null>(null);
 
-  // 更多图标的 tippy 实例
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let moreIconTippy: any = null;
-  // 菜单项 tooltip 实例集合（用于清理）
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const menuItemTooltips = new Map<HTMLElement, any>();
+  // 更多菜单可见状态
+  const moreMenuVisible = ref(false);
+
+  // tippy appendTo 目标
+  const tippyAppendTo = () => (document.querySelector('.ai-blueking-panel') as HTMLElement) || document.body;
 
   // V2: 历史会话下拉面板（延迟初始化）
   let historyDropdownInstance: null | ReturnType<typeof useHistoryDropdown> = null;
@@ -208,48 +274,6 @@
     return { cursor: hasPermission.value ? 'pointer' : 'not-allowed' };
   };
 
-  // 下拉菜单内容
-  const dropdownMenuContent = computed(() => {
-    const isDisabled = !props.hasSessionContents;
-    const disabledClass = isDisabled ? 'disabled' : '';
-    const tooltipAttr = isDisabled ? `data-tippy-content="${t('请先发起会话')}"` : '';
-
-    let menuItems = '';
-
-    if (props.dropdownMenuConfig?.showRename) {
-      menuItems += `
-        <div class="tippy-menu-item" data-action="rename">
-          <i class="bkai-icon bkai-bianji"></i>
-          <span>${t('重命名')}</span>
-        </div>
-      `;
-    }
-
-    if (props.dropdownMenuConfig?.showAutoGenerate) {
-      menuItems += `
-        <div class="tippy-menu-item ${disabledClass}" data-action="auto-generate" ${tooltipAttr}>
-          <i class="bkai-icon bkai-auto-refresh-line"></i>
-          <span>${t('自动生成命名')}</span>
-        </div>
-      `;
-    }
-
-    if (props.dropdownMenuConfig?.showShare && props.renderMode !== RenderMode.Test) {
-      menuItems += `
-        <div class="tippy-menu-item ${disabledClass}" data-action="share" ${tooltipAttr}>
-          <i class="bkai-icon bkai-fenxiang"></i>
-          <span>${t('分享会话')}</span>
-        </div>
-      `;
-    }
-
-    return `
-      <div class="tippy-dropdown-menu">
-        ${menuItems}
-      </div>
-    `;
-  });
-
   // 事件处理
   const handleNewChat = async () => {
     // V2: 如果有 sessionBusinessManager，调用它创建新会话
@@ -296,42 +320,32 @@
     if (historyDropdownInstance && historyDropdownInstance.isVisible()) {
       historyDropdownInstance.hide();
     }
-    if (moreIconTippy) {
-      if (moreIconTippy.state.isVisible) {
-        moreIconTippy.hide();
+    // 切换更多菜单
+    if (moreMenuTippyRef.value) {
+      if (moreMenuVisible.value) {
+        moreMenuTippyRef.value.hide();
       } else {
-        moreIconTippy.show();
+        moreMenuTippyRef.value.show();
       }
     }
   };
 
   // 菜单项点击处理
-  const handleMenuItemClick = (event: Event) => {
-    event.stopPropagation();
-    event.preventDefault();
+  const handleRenameAction = () => {
+    moreMenuTippyRef.value?.hide();
+    handleRename();
+  };
 
-    const target = event.currentTarget as HTMLElement;
-    const action = target.dataset.action;
+  const handleAutoGenerateAction = () => {
+    if (!props.hasSessionContents || props.autoGenerateLoading) return;
+    // 不关闭菜单，让 loading 状态在菜单中可见
+    emit('auto-generate-name');
+  };
 
-    if (target.classList.contains('disabled')) {
-      return;
-    }
-
-    if (moreIconTippy) {
-      moreIconTippy.hide();
-    }
-
-    switch (action) {
-      case 'rename':
-        handleRename();
-        break;
-      case 'auto-generate':
-        emit('auto-generate-name');
-        break;
-      case 'share':
-        emit('share');
-        break;
-    }
+  const handleShareAction = () => {
+    if (!props.hasSessionContents) return;
+    moreMenuTippyRef.value?.hide();
+    emit('share');
   };
 
   // 重命名处理
@@ -399,82 +413,17 @@
     }
   };
 
-  // 初始化 tippy
-  const initMoreIconTippy = async () => {
-    if (!moreIconRef.value) return;
-
-    // 动态导入 tippy
-    const tippy = (await import('tippy.js')).default;
-
-    if (moreIconTippy) {
-      moreIconTippy.destroy();
-      moreIconTippy = null;
-    }
-
-    moreIconTippy = tippy(moreIconRef.value, {
-      content: dropdownMenuContent.value,
-      theme: 'ai-blueking-light more-menu-light light',
-      placement: 'bottom-start',
-      trigger: 'manual',
-      interactive: true,
-      allowHTML: true,
-      arrow: false,
-      offset: [0, 4],
-      appendTo: () => (document.querySelector('.ai-blueking-panel') as HTMLElement) || document.body,
-      onShow: () => {
-        setTimeout(async () => {
-          // 动态导入 tippy（在回调中需要重新导入）
-          const { default: tippyLib } = await import('tippy.js');
-          const menuItems = document.querySelectorAll('.tippy-menu-item');
-          menuItems.forEach(item => {
-            const element = item as HTMLElement;
-            element.addEventListener('click', handleMenuItemClick);
-
-            // 为 disabled 的菜单项创建 tooltip
-            const tooltipContent = element.getAttribute('data-tippy-content');
-            if (tooltipContent && !menuItemTooltips.has(element)) {
-              const tippyInstance = tippyLib(element, {
-                content: tooltipContent,
-                theme: 'ai-blueking-tooltip',
-                trigger: 'mouseenter focus',
-                arrow: true,
-                delay: [300, 0],
-                appendTo: () => (document.querySelector('.ai-blueking-panel') as HTMLElement) || document.body,
-              });
-              menuItemTooltips.set(element, tippyInstance);
-            }
-          });
-        }, 0);
-      },
-      onHide: () => {
-        const menuItems = document.querySelectorAll('.tippy-menu-item');
-        menuItems.forEach(item => {
-          const element = item as HTMLElement;
-          element.removeEventListener('click', handleMenuItemClick);
-
-          // 清理 tooltip 实例
-          const tooltipInstance = menuItemTooltips.get(element);
-          if (tooltipInstance) {
-            tooltipInstance.destroy();
-            menuItemTooltips.delete(element);
-          }
-        });
-      },
-    });
-  };
-
-  // 监听配置变化
+  // 监听 autoGenerateLoading：loading 结束后自动关闭菜单
   watch(
-    () => [props.isCompressionHeight, props.hasSessionContents],
-    () => {
-      if (moreIconTippy) {
-        moreIconTippy.setContent(dropdownMenuContent.value);
+    () => props.autoGenerateLoading,
+    (isLoading, wasLoading) => {
+      if (wasLoading && !isLoading && moreMenuVisible.value) {
+        moreMenuTippyRef.value?.hide();
       }
     },
   );
 
   onMounted(() => {
-    initMoreIconTippy();
     // V2: 延迟初始化历史下拉面板，确保 DOM 已挂载
     if (props.sessionBusinessManager) {
       initHistoryDropdown();
@@ -483,15 +432,6 @@
   });
 
   onBeforeUnmount(() => {
-    if (moreIconTippy) {
-      moreIconTippy.destroy();
-      moreIconTippy = null;
-    }
-    // 清理所有菜单项 tooltip 实例
-    menuItemTooltips.forEach(tooltip => {
-      tooltip.destroy();
-    });
-    menuItemTooltips.clear();
     // V2: 清理历史下拉面板
     if (historyDropdownInstance) {
       historyDropdownInstance.destroy();
@@ -715,6 +655,11 @@
             }
           }
         }
+
+        // 自动生成命名 loading 呼吸脉冲动画
+        .spinning {
+          animation: ai-header-pulse 1.2s ease-in-out infinite;
+        }
       }
     }
   }
@@ -730,6 +675,19 @@
 
     .tippy-content {
       padding: 0;
+    }
+  }
+
+  @keyframes ai-header-pulse {
+    0%,
+    100% {
+      opacity: 0.4;
+      transform: scale(0.85);
+    }
+
+    50% {
+      opacity: 1;
+      transform: scale(1);
     }
   }
 </style>

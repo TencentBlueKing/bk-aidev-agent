@@ -55,6 +55,12 @@ const router = createRouter({
       component: () => import('./views/RenderModeView.vue'),
       meta: { title: 'RenderMode 渲染模式', group: 'example' },
     },
+    {
+      path: '/examples/error-handling',
+      name: 'ErrorHandling',
+      component: () => import('./views/ErrorHandlingView.vue'),
+      meta: { title: '错误处理', group: 'example' },
+    },
   ],
 });
 

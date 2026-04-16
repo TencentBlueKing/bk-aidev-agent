@@ -32,6 +32,7 @@ export interface AIHeaderProps {
     username: string;
   };
   hasSessionContents?: boolean;
+  autoGenerateLoading?: boolean;
   dropdownMenuConfig?: {
     showRename?: boolean;
     showAutoGenerate?: boolean;

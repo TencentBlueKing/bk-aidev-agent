@@ -65,7 +65,7 @@
     "@blueking/chat-x": ">=0.0.25"
   },
   "dependencies": {
-    "@blueking/chat-helper": "0.0.1-beta.36",
+    "@blueking/chat-helper": "0.0.1-beta.37",
     "bkui-vue": "2.0.2-beta.81",
     "tippy.js": "^6.3.7",
     "vue-draggable-resizable": "^3.0.0",

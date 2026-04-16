@@ -33,6 +33,7 @@ export function useSessionHandlers(params: UseSessionHandlersParams) {
   const sessionName = ref('');
   const hasPermission = ref(true);
   const hasSessionContents = ref(false);
+  const autoGenerateLoading = ref(false);
 
   // ==================== 辅助方法 ====================
 
@@ -55,7 +56,8 @@ export function useSessionHandlers(params: UseSessionHandlersParams) {
     session => {
       if (session) {
         sessionName.value = session.sessionName || '';
-        hasSessionContents.value = (session.sessionContentCount ?? 0) > 0;
+        const hasContent = (session.sessionContentCount ?? 0) > 0 || checkHasRealContents();
+        hasSessionContents.value = hasContent;
       }
     },
     { immediate: true },
@@ -99,6 +101,7 @@ export function useSessionHandlers(params: UseSessionHandlersParams) {
       return;
     }
 
+    autoGenerateLoading.value = true;
     try {
       await chatHelper.session.renameSession(sessionCode);
 
@@ -111,6 +114,8 @@ export function useSessionHandlers(params: UseSessionHandlersParams) {
     } catch (error) {
       console.error('[AIBlueking] Failed to auto-generate session name:', error);
       handleError(error as Error);
+    } finally {
+      autoGenerateLoading.value = false;
     }
 
     forwarders.autoGenerateName();
@@ -180,6 +185,7 @@ export function useSessionHandlers(params: UseSessionHandlersParams) {
     sessionName,
     hasPermission,
     hasSessionContents,
+    autoGenerateLoading,
     handleNewChat,
     handleHistoryClick,
     handleHistorySessionSwitch,

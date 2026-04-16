@@ -31,6 +31,7 @@
             :enable-chat-session="props.enableChatSession"
             :has-permission="hasPermission"
             :has-session-contents="hasSessionContents"
+            :auto-generate-loading="autoGenerateLoading"
             :is-compression-height="isCompressed"
             :render-mode="props.renderMode"
             :session-business-manager="sessionBusinessManager"
@@ -223,6 +224,7 @@
     sessionName,
     hasPermission,
     hasSessionContents,
+    autoGenerateLoading,
     handleNewChat,
     handleHistoryClick,
     handleHistorySessionSwitch,

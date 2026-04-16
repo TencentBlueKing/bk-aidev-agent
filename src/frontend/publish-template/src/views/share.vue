@@ -171,9 +171,11 @@
       status: MessageStatus.Complete,
       content: msg.content,
       property: msg.property,
-      // activity 类型需要映射 activityType（snake_case → camelCase）
-      ...(msg.role === MessageRole.Activity && msg.activity_type
-        ? { activityType: msg.activity_type as MessageContentType }
+      // activity 类型需要映射 activityType（优先 activity_type，兜底取 type，snake_case → camelCase）
+      ...(msg.role === MessageRole.Activity && (msg.activity_type || msg.type)
+        ? {
+            activityType: (msg.activity_type ?? msg.type) as MessageContentType,
+          }
         : {}),
     })) as ChatMessage[];
   });

@@ -61,10 +61,32 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
 
   const forwarders = createEventForwarders(forwardToManager);
 
+  // ==================== 错误处理 ====================
+  /**
+   * 统一的 SDK 错误发射器
+   * 所有错误通过此函数统一格式化后触发 sdk-error，避免散落的重复逻辑
+   */
+  const emitSdkError = (apiName: string, error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[AIBlueking] ${apiName} error:`, error);
+    componentManager.emitInternal('sdk-error', {
+      apiName,
+      code: -1,
+      message,
+      data: error,
+    });
+  };
+
+  /** ChatBot 子组件 @error 回调 */
+  const handleError = (error: Error) => {
+    emitSdkError('chat', error);
+  };
+
   // ==================== Bootstrap ====================
   const {
     chatHelper: bootstrapChatHelper,
     isReady: isBootstrapReady,
+    error: bootstrapError,
     agentInfo,
     agentName: bootstrapAgentName,
     currentSession,
@@ -83,12 +105,7 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
         forwarders.receiveEnd();
       },
       onError: (error: unknown) => {
-        componentManager.emitInternal('sdk-error', {
-          apiName: 'chat',
-          code: -1,
-          message: (error as Error).message,
-          data: error,
-        });
+        emitSdkError('chat', error);
       },
     },
   });
@@ -129,16 +146,15 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     return agentInfo.value?.conversationSettings?.predefinedQuestions ?? [];
   });
 
-  // ==================== 错误处理 ====================
-  const handleError = (error: Error) => {
-    console.error('ChatBot error:', error);
-    componentManager.emitInternal('sdk-error', {
-      apiName: 'chat',
-      code: -1,
-      message: error.message,
-      data: error,
-    });
-  };
+  // 监听 Bootstrap 初始化失败（如 Agent 信息获取失败），统一触发 sdk-error
+  watch(
+    () => bootstrapError.value,
+    err => {
+      if (err) {
+        emitSdkError('init', err);
+      }
+    },
+  );
 
   // ==================== Agent 初始化 Watcher ====================
   watch(

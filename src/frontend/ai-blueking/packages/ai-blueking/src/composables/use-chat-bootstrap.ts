@@ -305,7 +305,10 @@ export function useChatBootstrap(options: ChatBootstrapOptions): ChatBootstrapRe
     (newUrl, oldUrl) => {
       if (newUrl && newUrl !== oldUrl && oldUrl) {
         // URL 变化时更新配置并重新初始化
-        updateConfig(newUrl);
+        updateConfig(newUrl).catch(() => {
+          // 错误已在 initialize 内部处理（设置 error.value + phase = ERROR）
+          // 此处仅防止 unhandled promise rejection
+        });
       }
     }
   );
@@ -313,8 +316,12 @@ export function useChatBootstrap(options: ChatBootstrapOptions): ChatBootstrapRe
   // ==================== 自动初始化 ====================
   if (autoInit) {
     // 延迟到下一个微任务，确保调用者可以先获取返回值
+    // 注意：不在此处 catch，错误由调用方通过 watch phase/error 或 onInitError 回调处理
     Promise.resolve().then(() => {
-      initialize();
+      initialize().catch(() => {
+        // 错误已在 initialize 内部处理（设置 error.value + phase = ERROR）
+        // 此处仅防止 unhandled promise rejection，不再 re-throw
+      });
     });
   }
 
