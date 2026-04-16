@@ -29,10 +29,21 @@ import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MessageRole, MessageStatus } from '../../ag-ui/types';
-import { RenderMode } from '../../common';
+import { LOADING_MESSAGE_ID, RenderMode } from '../../common';
 import ChatContainer from './chat-container.vue';
 
 import type { AssistantMessage, Message, UserMessage } from '../../ag-ui/types';
+
+/** 供 useMessageGroup mock 注入，用于验证 inputStatus 对 Loading 占位消息的推导 */
+const mockMessageGroupsRef = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { ref } = require('vue');
+  return ref<
+    Array<{
+      messages: Array<{ id?: string }>;
+    }>
+  >([]);
+});
 
 vi.mock('bkui-vue', () => {
   const Button = defineComponent({
@@ -108,8 +119,8 @@ vi.mock('../../lang/lang', () => ({
 vi.mock('../../composables', () => ({
   useMessageGroup: vi.fn((_options: { messages: { value: Message[] } }) => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { computed, ref: deepRef, shallowRef } = require('vue');
-    const messageGroups = deepRef<unknown[]>([]);
+    const { computed, shallowRef } = require('vue');
+    const messageGroups = mockMessageGroupsRef;
     const executionGroups = computed(() => []);
     const isShareMode = shallowRef(false);
     const isAllSelected = computed(() => false);
@@ -352,6 +363,7 @@ describe('ChatContainer', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockMessageGroupsRef.value = [];
   });
 
   afterEach(() => {
@@ -464,6 +476,34 @@ describe('ChatContainer', () => {
       });
 
       expect(wrapper.find('.mock-chat-input').exists()).toBe(true);
+    });
+
+    it('当分组中存在 LOADING_MESSAGE_ID 占位消息时，MessageContainer 与 ChatInput 应收到 Fetching 状态', () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      mockMessageGroupsRef.value = [{ messages: [{ id: LOADING_MESSAGE_ID }] }];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, messageStatus: MessageStatus.Complete },
+      });
+
+      const mc = wrapper.findComponent({ name: 'MessageContainer' });
+      const ci = wrapper.findComponent({ name: 'ChatInput' });
+      expect(mc.props('messageStatus')).toBe(MessageStatus.Fetching);
+      expect(ci.props('messageStatus')).toBe(MessageStatus.Fetching);
+    });
+
+    it('无 Loading 占位时 messageStatus 应透传为 props.messageStatus', () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      mockMessageGroupsRef.value = [{ messages: [{ id: 'other-id' }] }];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, messageStatus: MessageStatus.Streaming },
+      });
+
+      const mc = wrapper.findComponent({ name: 'MessageContainer' });
+      const ci = wrapper.findComponent({ name: 'ChatInput' });
+      expect(mc.props('messageStatus')).toBe(MessageStatus.Streaming);
+      expect(ci.props('messageStatus')).toBe(MessageStatus.Streaming);
     });
   });
 

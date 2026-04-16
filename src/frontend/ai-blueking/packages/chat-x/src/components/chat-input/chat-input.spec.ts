@@ -499,6 +499,18 @@ describe('ChatInput', () => {
       const inputAttachment = wrapper.findComponent({ name: 'InputAttachment' });
       expect(inputAttachment.props('messageState')).toBe(MessageStatus.Streaming);
     });
+
+    it('messageStatus 为 Fetching 时应优先返回 Fetching（即使输入为空）', () => {
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          messageStatus: MessageStatus.Fetching,
+        },
+      });
+
+      const inputAttachment = wrapper.findComponent({ name: 'InputAttachment' });
+      expect(inputAttachment.props('messageState')).toBe(MessageStatus.Fetching);
+    });
   });
 
   describe('事件测试', () => {
@@ -538,6 +550,22 @@ describe('ChatInput', () => {
       wrapper = mount(ChatInput, {
         props: {
           modelValue: '',
+          onSendMessage,
+        },
+      });
+
+      await wrapper.find('.mock-ai-slash-input').trigger('keydown', { key: 'Enter' });
+
+      expect(onSendMessage).not.toHaveBeenCalled();
+    });
+
+    it('Enter 键在 Fetching 状态下不应该发送消息', async () => {
+      const onSendMessage = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: 'hello',
+          messageStatus: MessageStatus.Fetching,
           onSendMessage,
         },
       });

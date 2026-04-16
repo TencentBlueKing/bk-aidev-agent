@@ -30,7 +30,7 @@ import { type VueWrapper, flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MessageContentType, MessageRole, MessageStatus } from '../../../ag-ui/types';
-import { RenderMode } from '../../../common';
+import { LOADING_MESSAGE_ID, RenderMode } from '../../../common';
 import { MessageToolsStatus } from '../../../types/tool';
 import MessageContainer from './message-container.vue';
 
@@ -252,7 +252,7 @@ const buildGroups = (messages: Message[]): MessageGroup[] => {
       uid: 'loading-group',
       messages: [
         {
-          id: 'loading',
+          id: LOADING_MESSAGE_ID,
           content: '',
           role: MessageRole.Loading,
           status: MessageStatus.Pending,
@@ -408,6 +408,37 @@ describe('MessageContainer', () => {
         props: {
           ...defaultProps,
           messageStatus: MessageStatus.Streaming,
+        },
+      });
+
+      await nextTick();
+
+      const scrollBtns = wrapper.findAll('.mock-scroll-btn');
+      const stopBtn = scrollBtns.find(btn => btn.text().includes('停止生成'));
+      expect(stopBtn?.isVisible()).toBe(true);
+    });
+
+    it('Fetching 状态时应该显示停止生成按钮', async () => {
+      wrapper = mount(MessageContainer, {
+        props: {
+          ...defaultProps,
+          messageStatus: MessageStatus.Fetching,
+        },
+      });
+
+      await nextTick();
+
+      const scrollBtns = wrapper.findAll('.mock-scroll-btn');
+      const stopBtn = scrollBtns.find(btn => btn.text().includes('停止生成'));
+      expect(stopBtn?.isVisible()).toBe(true);
+      expect(stopBtn?.attributes('data-loading')).toBeUndefined();
+    });
+
+    it('Pending 状态时应该显示停止生成按钮', async () => {
+      wrapper = mount(MessageContainer, {
+        props: {
+          ...defaultProps,
+          messageStatus: MessageStatus.Pending,
         },
       });
 

@@ -8,7 +8,7 @@ description: >-
   `SelectionFooter`（多选操作栏）。提供完整的 AI 对话界面布局能力。
 aiSummary: >
   ChatContainer 提供完整 AI 对话布局：分栏（ResizeLayout）、消息列表（MessageContainer）、输入（ChatInput）、执行摘要（ExecutionSummary）、快捷表单（ShortcutRender）与多选栏（SelectionFooter）。
-  内置 useMessageGroup、分享与自定义 Tab 等能力，适合一站式接入。
+  内置 useMessageGroup、分享与自定义 Tab 等能力；对 MessageContainer/ChatInput 下推 inputStatus（末尾 Loading 占位时推导 Fetching），适合一站式接入。
   通过 props 传入 messages、shortcuts 等，事件与 ChatInput/MessageContainer 对齐。
 relatedComponents:
   - slug: message-container
@@ -184,6 +184,7 @@ domain: input
 
 - **分栏布局**：基于 `ResizeLayout` 的可拖拽分栏；**侧栏是否展示 Tab / 执行摘要、以及分栏是否进入折叠样式（`ai-is-collapse`）以 `executionGroups` 为准**（由 `useMessageGroup` 从消息中过滤出工具调用与 FlowAgent 执行记录），**不以原始 `messages.length` 判断**。因此仅有普通对话、尚无执行类消息时，侧栏内容与「执行情况」区域可能为空，布局上与无执行数据时一致
 - **消息分组**：内置 `useMessageGroup` 自动处理消息分组、Tool 合并、Loading 注入
+- **输入区状态推导**：传给 `MessageContainer` 与 `ChatInput` 的 `messageStatus` 为内部计算值 `inputStatus`：当分组中存在 id 为 `LOADING_MESSAGE_ID`（`'__loading__'`，由 `useMessageGroup` 注入的占位 Loading 消息）时，对内使用 `MessageStatus.Fetching`；否则使用外部传入的 `messageStatus`。用于在「已发用户消息、尚未流式」阶段与流式中一致地展示停止能力，并避免输入区重复发送
 - **执行摘要**：侧边栏展示工具调用 / FlowAgent 执行记录，支持关键词搜索和对话定位
 - **自定义 Tab**：通过 `useCustomTabProvider` 支持动态添加自定义 Tab（如节点详情）
 - **分享模式**：内置消息多选分享流程，选中用户消息后确认分享

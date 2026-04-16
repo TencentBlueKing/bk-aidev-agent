@@ -137,3 +137,5 @@ export enum RenderMode {
   Share = 'share',
   Test = 'test',
 }
+
+export const LOADING_MESSAGE_ID = '__loading__';

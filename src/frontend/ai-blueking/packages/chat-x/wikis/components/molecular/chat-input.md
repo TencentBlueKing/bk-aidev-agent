@@ -154,10 +154,10 @@ chat-input-container
 | `messageStatus`               | 输入框有内容时按钮表现                                 | 输入框空时               |
 | ----------------------------- | ------------------------------------------------------ | ------------------------ |
 | `complete` / `stop` / `error` | 蓝色发送按钮，点击触发 `onSendMessage`                 | 灰色禁用                 |
-| `streaming` / `pending`       | 蓝色停止按钮（Loading 图标），点击触发 `onStopSending` | 蓝色停止按钮（仍可点击） |
+| `streaming` / `pending` / `fetching` | 蓝色停止按钮（Loading 图标），点击触发 `onStopSending` | 蓝色停止按钮（仍可点击） |
 | `disabled`                    | 灰色禁用，点击无效                                     | 灰色禁用                 |
 
-> **实现细节**：组件内部用 `messageState` 计算属性决定实际按钮状态：当 `messageStatus` 为 `pending` 或 `streaming` 时直接使用该状态（确保停止按钮始终可用）；否则当输入为空或仅含空白字符时强制为 `disabled`，其余情况使用 `messageStatus` 的值。
+> **实现细节**：组件内部用 `messageState` 计算属性决定实际按钮状态：当 `messageStatus` 为 `pending`、`streaming` 或 `fetching` 时直接使用该状态（确保停止按钮始终可用）；否则当输入为空或仅含空白字符时强制为 `disabled`，其余情况使用 `messageStatus` 的值。`fetching` 时按 Enter **不会**触发发送（避免请求中与 Loading 占位阶段重复提交）。
 
 ### Complete（可发送）
 

@@ -150,7 +150,10 @@ Use Shift + Enter to enter a new line`
     return props.shortcuts?.find(shortcut => shortcut.id === props.shortcutId);
   });
   const messageState = computed(() => {
-    if (props.messageStatus && [MessageStatus.Pending, MessageStatus.Streaming].includes(props.messageStatus)) {
+    if (
+      props.messageStatus &&
+      [MessageStatus.Pending, MessageStatus.Streaming, MessageStatus.Fetching].includes(props.messageStatus)
+    ) {
       return props.messageStatus;
     }
     if (props.modelValue?.length < 1) {
@@ -207,6 +210,9 @@ Use Shift + Enter to enter a new line`
         return;
       }
       if (messageState.value === MessageStatus.Disabled) {
+        return;
+      }
+      if (messageState.value === MessageStatus.Fetching) {
         return;
       }
       handleSendMessage();

@@ -81,7 +81,12 @@
     />
     <div class="ai-message-fixed-bottom">
       <ScrollBtn
-        v-show="messageStatus === MessageStatus.Streaming || messageStatus === MessageStatus.StopLoading"
+        v-show="
+          messageStatus === MessageStatus.Streaming ||
+          messageStatus === MessageStatus.StopLoading ||
+          messageStatus === MessageStatus.Fetching ||
+          messageStatus === MessageStatus.Pending
+        "
         :loading="messageStatus === MessageStatus.StopLoading"
         :title="messageStatus === MessageStatus.StopLoading ? t('正在停止') : t('停止生成')"
         @click="$emit('stopStreaming')"

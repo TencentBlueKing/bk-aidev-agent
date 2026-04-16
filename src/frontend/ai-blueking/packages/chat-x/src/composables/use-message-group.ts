@@ -34,6 +34,7 @@ import {
   MessageRole,
   MessageStatus,
 } from '../ag-ui/types';
+import { LOADING_MESSAGE_ID } from '../common/constants';
 import { generateUUID } from '../utils';
 
 import type { BkFlowMessageContent } from '../ag-ui/types/contents';
@@ -166,7 +167,7 @@ export const useMessageGroup = (options: {
             content: '',
             status: MessageStatus.Pending,
             messageId: '',
-            id: 'loading',
+            id: LOADING_MESSAGE_ID,
             uid: generateUUID(),
           },
         ],

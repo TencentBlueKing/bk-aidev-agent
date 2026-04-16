@@ -4,7 +4,7 @@ slug: constants
 category: type
 description: '`@blueking/chat-x` 导出的常量和枚举类型。'
 aiSummary: >
-  汇总 MessageRole、MessageStatus、MessageContentType、MessageToolsStatus、MessageState、Z-Index 与 CONST_MESSAGE_TOOLS 等导出常量。
+  汇总 MessageRole、MessageStatus（含 Fetching 请求中）、MessageContentType、MessageToolsStatus、MessageState、Z-Index 与 CONST_MESSAGE_TOOLS 等导出常量。
   用于构造消息、配置 MessageContainer 工具栏与输入态，以及层级与默认快捷指令。与类型 messages 配套使用。
 relatedComponents:
   - slug: message-tools
@@ -61,14 +61,21 @@ enum MessageRole {
 
 ```typescript
 enum MessageStatus {
-  Pending = 'pending',
-  Streaming = 'streaming',
   Complete = 'complete',
-  Error = 'error',
-  Stop = 'stop',
   Disabled = 'disabled',
+  Error = 'error',
+  Fetching = 'fetching', // 请求中（例如已发用户消息、尚未开始流式，与末尾 Loading 占位一致）
+  Pending = 'pending',
+  Stop = 'stop',
+  StopLoading = 'stop-loading',
+  Streaming = 'streaming',
+  Success = 'success',
 }
 ```
+
+| 枚举值          | 说明 |
+| --------------- | ---- |
+| `Fetching`      | 请求中：与 `useMessageGroup` 在末尾用户消息后注入的 Loading 占位（`LOADING_MESSAGE_ID`）配合时，`ChatContainer` 会将传入输入区与列表底部的状态推导为该值，便于展示「停止」与禁止重复发送。 |
 
 ### MessageContentType
 

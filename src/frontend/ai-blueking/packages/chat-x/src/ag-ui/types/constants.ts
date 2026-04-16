@@ -64,6 +64,7 @@ export enum MessageStatus {
   Complete = 'complete',
   Disabled = 'disabled',
   Error = 'error',
+  Fetching = 'fetching', // 请求中
   Pending = 'pending',
   Stop = 'stop',
   StopLoading = 'stop-loading',

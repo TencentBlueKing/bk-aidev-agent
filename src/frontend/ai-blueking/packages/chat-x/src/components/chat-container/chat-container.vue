@@ -130,7 +130,7 @@
             v-model:selected-user-messages="selectedUserMessages"
             :enable-selection="isShareMode"
             :message-groups="messageGroups"
-            :message-status="messageStatus"
+            :message-status="inputStatus"
             :message-tools-status="messageToolsStatus"
             :message-tools-tippy-options="commonTippyOptions"
             :messages="messages"
@@ -188,7 +188,7 @@
           <template v-else>
             <ChatInput
               v-model:cite="cite"
-              :message-status="messageStatus"
+              :message-status="inputStatus"
               :model-value="modelValue"
               :on-send-message="onSendMessage"
               :on-stop-sending="onStopSending"
@@ -225,7 +225,8 @@
 
   import { Button, ResizeLayout, Tab } from 'bkui-vue';
 
-  import { RenderMode } from '../../common';
+  import { type Message, type UserMessage, MessageStatus } from '../../ag-ui/types';
+  import { LOADING_MESSAGE_ID, RenderMode } from '../../common';
   import { useMessageGroup } from '../../composables';
   import { useCommonTippyProvider } from '../../composables/use-common';
   import { EXECUTION_TAB_NAME, useCustomTabProvider } from '../../composables/use-custom-tab';
@@ -245,7 +246,6 @@
   import MessageLoading from '../message-loading/message-loading.vue';
   import SelectionFooter from '../selection-footer/selection-footer.vue';
 
-  import type { Message, UserMessage } from '../../ag-ui/types';
   import type {
     AITippyProps,
     CustomBkFlowTabData,
@@ -400,7 +400,12 @@
       deep: false,
     },
   );
-
+  const inputStatus = computed(() => {
+    if (messageGroups.value?.some(group => group.messages.some(message => message.id === LOADING_MESSAGE_ID))) {
+      return MessageStatus.Fetching;
+    }
+    return props.messageStatus;
+  });
   const handleShortcutRenderClose = () => {
     selectedShortcut.value = null;
     emits('shortcutClose');

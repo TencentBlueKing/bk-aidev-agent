@@ -129,6 +129,22 @@ describe('InputAttachment', () => {
       expect(wrapper.find('.mock-loading-icon').exists()).toBe(true);
     });
 
+    it('Fetching 状态应该显示 LoadingMessageIcon', () => {
+      wrapper = mount(InputAttachment, {
+        props: {
+          messageState: MessageStatus.Fetching,
+        },
+        global: {
+          directives: {
+            tippy: {},
+          },
+        },
+      });
+
+      expect(wrapper.find('.mock-loading-icon').exists()).toBe(true);
+      expect(wrapper.find('.mock-send-icon').exists()).toBe(false);
+    });
+
     it('Complete 状态应该显示 SendMessageIcon', () => {
       wrapper = mount(InputAttachment, {
         props: {
@@ -191,6 +207,21 @@ describe('InputAttachment', () => {
       expect(wrapper.find('.send-message-icon__pending').exists()).toBe(true);
     });
 
+    it('Fetching 状态应该有对应的样式类', () => {
+      wrapper = mount(InputAttachment, {
+        props: {
+          messageState: MessageStatus.Fetching,
+        },
+        global: {
+          directives: {
+            tippy: {},
+          },
+        },
+      });
+
+      expect(wrapper.find('.send-message-icon__fetching').exists()).toBe(true);
+    });
+
     it('Disabled 状态应该有对应的样式类', () => {
       wrapper = mount(InputAttachment, {
         props: {
@@ -229,6 +260,23 @@ describe('InputAttachment', () => {
       wrapper = mount(InputAttachment, {
         props: {
           messageState: MessageStatus.Streaming,
+        },
+        global: {
+          directives: {
+            tippy: {},
+          },
+        },
+      });
+
+      await wrapper.find('.mock-loading-icon').trigger('click');
+
+      expect(wrapper.emitted('stopSending')).toBeTruthy();
+    });
+
+    it('Fetching 状态点击 LoadingMessageIcon 应该发出 stopSending 事件', async () => {
+      wrapper = mount(InputAttachment, {
+        props: {
+          messageState: MessageStatus.Fetching,
         },
         global: {
           directives: {

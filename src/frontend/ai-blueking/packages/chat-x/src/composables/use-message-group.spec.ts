@@ -28,13 +28,18 @@ import { computed, ref as deepRef, nextTick, shallowRef } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MessageContentType, MessageRole, MessageStatus } from '../ag-ui/types';
+import { LOADING_MESSAGE_ID } from '../common/constants';
 import { useMessageGroup } from './use-message-group';
 
 import type { AssistantMessage, Message, ToolMessage, UserMessage } from '../ag-ui/types';
 
-vi.mock('../utils', () => ({
-  generateUUID: vi.fn(() => `uuid-${Math.random().toString(36).slice(2, 8)}`),
-}));
+vi.mock('../utils', async importOriginal => {
+  const actual = await importOriginal<typeof import('../utils')>();
+  return {
+    ...actual,
+    generateUUID: vi.fn(() => `uuid-${Math.random().toString(36).slice(2, 8)}`),
+  };
+});
 
 const createUserMessage = (id: string, content = 'hello'): UserMessage => ({
   id,
@@ -112,6 +117,14 @@ describe('useMessageGroup', () => {
       expect(messageGroups.value.length).toBe(2);
       expect(messageGroups.value[0]?.type).toBe(MessageRole.User);
       expect(messageGroups.value[1]?.type).toBe(MessageRole.Loading);
+    });
+
+    it('Loading 组占位消息 id 应为 LOADING_MESSAGE_ID', async () => {
+      const { messageGroups } = setupMessageGroup([createUserMessage('1')]);
+      await nextTick();
+
+      const loadingMsg = messageGroups.value[1]?.messages[0];
+      expect(loadingMsg?.id).toBe(LOADING_MESSAGE_ID);
     });
 
     it('单条助手消息应该创建 Assistant 组', async () => {

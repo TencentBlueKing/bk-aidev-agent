@@ -6,7 +6,7 @@ description: >-
   核心消息分组逻辑，将原始 `Message[]` 数组转换为结构化的 `MessageGroup[]`。处理 Tool 消息合并、Loading
   自动注入、执行摘要过滤和消息多选/分享等逻辑。
 aiSummary: >
-  useMessageGroup 接收 keyword、messages、selectedUserMessages，通过 watchEffect 产出 messageGroups（User/Assistant/Tool 合并、末尾 Loading 注入、pause 与分享勾选等）。
+  useMessageGroup 接收 keyword、messages、selectedUserMessages，通过 watchEffect 产出 messageGroups（User/Assistant/Tool 合并、末尾 Loading 注入且占位 id 为 LOADING_MESSAGE_ID、pause 与分享勾选等）。
   executionGroups 供侧边执行摘要过滤，并暴露 isShareMode、全选与 onConfirmShare。
   ChatContainer 组装后传给 MessageContainer；ExecutionSummary 消费 executionGroups。
 relatedComponents:
@@ -67,6 +67,8 @@ role=user  role=tool     其他 role
 ④ 遍历结束后将剩余 assistantMessages 推入 list
 ⑤ 末尾为 user 消息 → 追加 Loading 消息组
 ```
+
+注入的占位 Loading 消息使用固定 id：`LOADING_MESSAGE_ID`（`'__loading__'`，定义于 `common/constants`）。`ChatContainer` 据此判断是否在「请求中」阶段，并向 `ChatInput` / `MessageContainer` 下传 `MessageStatus.Fetching`，与流式中的停止、防重复发送行为对齐。
 
 ### Tool 消息处理
 

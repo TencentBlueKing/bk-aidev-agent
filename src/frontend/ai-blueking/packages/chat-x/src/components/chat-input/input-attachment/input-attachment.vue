@@ -7,7 +7,11 @@
         :class="{ ['send-message-icon__' + messageState]: true }"
       >
         <LoadingMessageIcon
-          v-if="messageState === MessageStatus.Streaming || messageState === MessageStatus.Pending"
+          v-if="
+            messageState === MessageStatus.Streaming ||
+            messageState === MessageStatus.Pending ||
+            messageState === MessageStatus.Fetching
+          "
           v-tippy="{ ...tippyOptions, content: t('停止'), theme: 'ai-chat-box', offset: [0, 16] }"
           @click="handleStopSending"
         />
