@@ -66,6 +66,7 @@ from .utils import (
     resolve_message_content,
     resolve_reasoning_content,
 )
+from aidev_agent.utils.event import RunId
 
 ProcessedEvents = (
     TextMessageStartEvent
@@ -134,6 +135,7 @@ class LangGraphAgent:
             "thinking_process": None,
             "node_name": None,
             "has_function_streaming": False,
+            "has_text_output": False,  # 是否有 AI 文本输出（根据流式是否有TEXT_MESSAGE_START）
         }
         self.active_run = INITIAL_ACTIVE_RUN
 
@@ -243,19 +245,36 @@ class LangGraphAgent:
             async for single_event in self._handle_single_event(event, state):
                 yield single_event
 
-        # 如果被取消，跳过正常的状态获取，直接发送 RunFinishedEvent
+        # 如果被取消，跳过正常的状态获取，直接发送结束事件
         if _cancelled:
             # 结束当前步骤（如果有）
             for ev in self.handle_node_change(None):
                 yield ev
-            # 发送 RunFinishedEvent，让前端走正常的结束流程
-            yield self._dispatch_event(
-                RunFinishedEvent(
-                    type=EventType.RUN_FINISHED,
-                    thread_id=thread_id,
-                    run_id=self.active_run["id"] or "cancelled",
-                )
+
+            # 根据是否有 AI 文本输出决定事件类型：
+            # - 无 AI 输出（仅有 thinking/tool/知识库等）：发 RUN_ERROR，触发暂停补写逻辑
+            # - 有 AI 输出：发 RUN_FINISHED(cancelled)，正常回写
+            has_text_output = self.active_run.get("has_text_output", False)
+            logger.info(
+                "Agent cancelled: thread_id=%s, has_text_output=%s",
+                thread_id,
+                has_text_output,
             )
+            if not has_text_output:
+                yield self._dispatch_event(
+                    RunErrorEvent(
+                        type=EventType.RUN_ERROR,
+                        message=RunId.CANCELLED_MESSAGE,
+                    )
+                )
+            else:
+                yield self._dispatch_event(
+                    RunFinishedEvent(
+                        type=EventType.RUN_FINISHED,
+                        thread_id=thread_id,
+                        run_id=RunId.CANCELLED,
+                    )
+                )
             self.active_run = INITIAL_ACTIVE_RUN
             return
 
@@ -715,6 +734,8 @@ class LangGraphAgent:
                             raw_event=event,
                         )
                     )
+                    # 标记已有 AI 文本输出，用于取消时决定发 RUN_ERROR 还是 RUN_FINISHED
+                    self.active_run["has_text_output"] = True
                     self.set_message_in_progress(
                         self.active_run["id"],
                         MessageInProgress(
@@ -773,6 +794,8 @@ class LangGraphAgent:
                         raw_event=event,
                     )
                 )
+                # 标记已有 AI 文本输出
+                self.active_run["has_text_output"] = True
                 yield self._dispatch_event(
                     TextMessageContentEvent(
                         type=EventType.TEXT_MESSAGE_CONTENT,

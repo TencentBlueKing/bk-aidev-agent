@@ -29,7 +29,7 @@ from aidev_agent.config import settings as agent_settings
 from aidev_agent.core.ag_ui.types import CustomMessageType
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper, StreamCancelledError
 from aidev_agent.services.protocols import FlowAgentClient, FlowAgentPollClient
-from aidev_agent.utils.event import emit_run_finished_event
+from aidev_agent.utils.event import RunId, emit_run_finished_event
 
 logger = getLogger(__name__)
 
@@ -82,6 +82,10 @@ class FlowAgentCompletionAgent(BaseModel):
     # 事件处理器（用于回写数据库等）
     event_handler: Callable[[BaseEvent], None] | None = None
 
+    # 运行时状态：任务是否已启动根据flow_agent_start判断
+    # 用于取消时决定发 RUN_FINISHED（已启动）还是 RUN_ERROR（未启动）
+    _task_started: bool = False
+
     class Config:
         arbitrary_types_allowed = True
 
@@ -108,10 +112,12 @@ class FlowAgentCompletionAgent(BaseModel):
         """核心流程：启动（或使用已有 task_id）→ 轮询 → 产出 SSE 事件"""
         encoder = EventEncoder()
         run_id = str(uuid.uuid4())
+        # 每次运行重置任务启动状态
+        self._task_started = False
 
         logger.info(
-            f"[FLOW_AGENT] _run_flow started: session_code={self.session_code}, "
-            f"task_id={self.task_id}, skip_start={bool(self.task_id)}"
+            "[FLOW_AGENT] _run_flow started: session_code=%s, task_id=%s, skip_start=%s",
+            self.session_code, self.task_id, bool(self.task_id),
         )
 
         # 0. RUN_STARTED
@@ -123,23 +129,33 @@ class FlowAgentCompletionAgent(BaseModel):
             # start 接口使用 resource_manager（plugin 层传入的带认证 client）
             start_client = self._get_client()
 
+            # 在调用 start 接口前检查是否已取消，避免不必要的 API 调用
+            stream_thread_id = self.session_code or self.thread_id
+            if GeneratorStreamingHelper.is_cancelled(stream_thread_id):
+                logger.info("[FLOW_AGENT] Cancelled before start_flow_agent: session_code=%s", self.session_code)
+                error_event = RunErrorEvent(type=EventType.RUN_ERROR, message=RunId.CANCELLED_MESSAGE)
+                self._dispatch_event(error_event)
+                yield encoder.encode(error_event)
+                return
+
             # 1. 获取 task_id：优先使用已指定的 task_id，否则调用 start 接口
             task_id = self.task_id
             if not task_id:
                 logger.debug(
-                    f"[FLOW_AGENT] Calling start_flow_agent: "
-                    f"flow_start_params={self.flow_start_params}, client_type={type(start_client).__name__}"
+                    "[FLOW_AGENT] Calling start_flow_agent: "
+                    "flow_start_params=%s, client_type=%s",
+                    self.flow_start_params, type(start_client).__name__,
                 )
 
                 start_result = start_client.start_flow_agent(data=self.flow_start_params)
 
-                logger.debug(f"[FLOW_AGENT] start_flow_agent response: {start_result}")
+                logger.debug("[FLOW_AGENT] start_flow_agent response: %s", start_result)
 
                 task_id = start_result.get("task_id")
                 if not task_id:
                     raise ValueError(f"flow_agent/start response missing task_id: {start_result}")
 
-            logger.info(f"[FLOW_AGENT] task_id={task_id}, skip_start={bool(self.task_id)}")
+            logger.info("[FLOW_AGENT] task_id=%s, skip_start=%s", task_id, bool(self.task_id))
 
             # 2. 发送 flow_agent_start 事件
             # 仅在未指定 task_id 时发送 start 事件（指定 task_id 表示直接轮询已有任务）
@@ -150,8 +166,12 @@ class FlowAgentCompletionAgent(BaseModel):
                 )
                 self._dispatch_event(start_event)
                 yield encoder.encode(start_event)
+                # 标记任务已启动
+                self._task_started = True
             else:
-                logger.info(f"[FLOW_AGENT] Existing task_id provided, skip flow_agent_start event: task_id={task_id}")
+                # 已有 task_id，视为任务已启动
+                self._task_started = True
+                logger.info("[FLOW_AGENT] Existing task_id provided, skip flow_agent_start event: task_id=%s", task_id)
 
             # 3. 轮询任务状态 —— 直接使用 SDK 的 client 调平台 API Gateway，不经过 plugin 层中转
             poll_client = self._get_poll_client()
@@ -159,10 +179,12 @@ class FlowAgentCompletionAgent(BaseModel):
 
         except StreamCancelledError as e:
             # 任务被取消，通过 generator 机制向外传递异常
-            logger.info(f"[FLOW_AGENT] StreamCancelledError caught, re-raising: {e}")
+            logger.info(
+                "[FLOW_AGENT] StreamCancelledError caught, re-raising: %s", e,
+            )
             raise
         except Exception as e:
-            logger.exception(f"[FLOW_AGENT] Flow agent error: {e}")
+            logger.exception("[FLOW_AGENT] Flow agent error: %s", e)
             yield from self._emit_error_and_finish(encoder, run_id, str(e))
 
     def _poll_task(
@@ -179,18 +201,32 @@ class FlowAgentCompletionAgent(BaseModel):
         stream_thread_id = self.session_code or self.thread_id
         consecutive_failures = 0
         logger.info(
-            f"[FLOW_AGENT] Polling started: task_id={task_id}, session_code={self.session_code}, "
-            f"poll_interval={self.poll_interval}s, poll_timeout={self.poll_timeout}s"
+            "[FLOW_AGENT] Polling started: task_id=%s, session_code=%s, "
+            "poll_interval=%ss, poll_timeout=%ss",
+            task_id, self.session_code, self.poll_interval, self.poll_timeout,
         )
         _poll_count = 0
         while True:
             _poll_count += 1
             # 检查是否被取消
             if GeneratorStreamingHelper.is_cancelled(stream_thread_id):
-                logger.info(f"[FLOW_AGENT] Task cancelled: task_id={task_id}, poll_count={_poll_count}")
+                logger.info("[FLOW_AGENT] Task cancelled: task_id=%s, poll_count=%d", task_id, _poll_count)
 
-                # 发送 RUN_FINISHED 事件，明确告知前端任务已结束
-                yield from self._emit_finish(encoder, run_id)
+                # 根据任务是否已启动决定事件类型：
+                # - 已启动（flow_agent_start 已发送）：发 RUN_FINISHED，正常暂停
+                # - 未启动（任务还没真正开始）：发 RUN_ERROR，触发暂停补写逻辑
+                if self._task_started:
+                    logger.info("[FLOW_AGENT] Task already started, sending RUN_FINISHED: task_id=%s", task_id)
+                    yield emit_run_finished_event(
+                        thread_id=self.thread_id,
+                        run_id=RunId.CANCELLED,
+                        event_handler=self._dispatch_event,
+                    )
+                else:
+                    logger.info("[FLOW_AGENT] Task not started yet, sending RUN_ERROR: task_id=%s", task_id)
+                    error_event = RunErrorEvent(type=EventType.RUN_ERROR, message=RunId.CANCELLED_MESSAGE)
+                    self._dispatch_event(error_event)
+                    yield encoder.encode(error_event)
                 return
 
             # 检查超时

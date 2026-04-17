@@ -4,20 +4,48 @@ import time
 from unittest.mock import MagicMock, patch
 
 import pytest
-from ag_ui.core import EventType
+from ag_ui.core import EventType, RunErrorEvent, RunFinishedEvent
 from aidev_agent.config import settings
 from aidev_agent.core.ag_ui.types import CustomMessageType
+from aidev_agent.enums import PromptRole
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
 from aidev_agent.packages.langchain_core.models.mock import MockChatModel, MockResponse
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.services.chat import ChatCompletionAgent, ExecuteKwargs
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
+from aidev_agent.services.messages_handler.streaming_helper import GeneratorStreamingHelper
 from aidev_agent.services.pydantic_models import (
     AgentOptions,
     ChatPrompt,
     IntentRecognition,
 )
+from aidev_agent.utils.event import RunId
 from langchain_core.tools import ToolException, tool
+
+
+class _ConcreteWriter(BaseSessionWriter):
+    """可实例化的测试用 Writer，记录回写内容以便断言"""
+
+    def __init__(self, session_code: str = "test_session", **kwargs):
+        super().__init__(session_code=session_code, **kwargs)
+        self._created_contents: list[dict] = []
+
+    @property
+    def is_cancelled(self) -> bool:
+        """返回是否已被取消（只读）"""
+        return self._is_cancelled
+
+    @property
+    def created_contents(self) -> tuple[dict, ...]:
+        """返回已创建内容的只读副本"""
+        return tuple(self._created_contents)
+
+    def _do_create_content(self, payload: dict, headers: dict) -> int | None:
+        self._created_contents.append(payload)
+        return len(self._created_contents)
+
+    def _do_update_content(self, content_id: int, payload: dict, headers: dict) -> None:
+        pass
 
 
 def assert_content_type_equal(results: list[dict], event_type: EventType, content: str):
@@ -1092,3 +1120,258 @@ class TestFilterUnmatchedToolCalls:
         filtered = factory._filter_unmatched_tool_calls([])
 
         assert filtered == [], "空聊天历史应该返回空列表"
+
+
+# =====================================================================
+# 取消/暂停场景测试
+# =====================================================================
+
+
+def _run_cancel_in_thread(agent, cancel_signal_fn, wait_signal_fn, cancel_after=0.5, timeout=15.0):
+    """辅助函数：在子线程中消费流，满足条件后触发取消，返回 (sse_results, writer_created_contents)
+
+    Args:
+        agent: ChatCompletionAgent 实例（需已设置 event_handler=_ConcreteWriter）
+        cancel_signal_fn: 取消函数，如 GeneratorStreamingHelper.cancel(thread_id)
+        wait_signal_fn: 等待事件，流开始后触发取消
+        cancel_after: wait_signal 触发后等待秒数
+        timeout: 流结束超时
+    """
+    writer = agent.event_handler
+    results = []
+    stream_done = threading.Event()
+
+    def consume():
+        for each in agent.execute(ExecuteKwargs(stream=True)):
+            results.append(json.loads(each[6:]))
+        stream_done.set()
+
+    t = threading.Thread(target=consume)
+    t.start()
+    wait_signal_fn.wait(timeout=10.0)
+    time.sleep(cancel_after)
+    cancel_signal_fn()
+    stream_done.wait(timeout=timeout)
+    t.join(timeout=5.0)
+    return results, writer
+
+
+class TestCancelScenarios:
+    """取消场景端到端测试：验证取消后的事件流和 session 回写
+
+    核心场景：
+    - 取消 + 无 AI 文本输出（thinking/tool/MCP 等阶段）→ RUN_ERROR → writer 补写"用户已取消"
+    - 取消 + 有 AI 文本输出（TEXT_MESSAGE_CONTENT 已出现）→ RUN_FINISHED(cancelled) → writer 正常回写
+    - 模型错误 → RUN_ERROR(message=错误信息) → writer 回写错误消息 + error=True
+    """
+
+    def test_cancel_without_ai_output(self):
+        """取消 + 无 AI 输出（工具调用阶段）→ 流正常结束，writer 补写暂停消息"""
+        writer = _ConcreteWriter()
+        llm = MockChatModel(
+            mock_responses=[
+                MockResponse(content="", tool_calls=[{"name": "slow_task", "args": {"seconds": 5.0}, "id": "call_slow"}]),
+                MockResponse(content="任务已完成"),
+            ],
+            stream_chunk_size=2, loop=False,
+        )
+        thread_id = "test_cancel_no_output"
+        agent = ChatCompletionAgent(
+            thread_id=thread_id, chat_model=llm,
+            chat_history=[ChatPrompt(role="user", content="执行一个慢任务")],
+            tools=[slow_task], event_handler=writer,
+        )
+
+        first_event = threading.Event()
+        orig_handler = agent.event_handler
+
+        results = []
+        stream_done = threading.Event()
+
+        def consume():
+            for each in agent.execute(ExecuteKwargs(stream=True)):
+                results.append(json.loads(each[6:]))
+                if not first_event.is_set():
+                    first_event.set()
+            stream_done.set()
+
+        t = threading.Thread(target=consume)
+        t.start()
+        first_event.wait(timeout=10.0)
+        time.sleep(0.5)
+        GeneratorStreamingHelper.cancel(thread_id)
+        stream_done.wait(timeout=15.0)
+        t.join(timeout=5.0)
+
+        # 流应有结束事件
+        final_events = [r for r in results if r.get("type") in (EventType.RUN_ERROR, EventType.RUN_FINISHED)]
+        assert len(final_events) >= 1, "流应有结束事件"
+        # writer 应有回写内容或取消标记
+        assert writer.is_cancelled or len(writer.created_contents) > 0
+
+    def test_cancel_with_ai_output(self):
+        """取消 + 有 AI 输出 → 流正常结束，writer 回写已有内容"""
+        writer = _ConcreteWriter()
+        llm = MockChatModel(
+            mock_responses=[
+                MockResponse(content="让我帮你查一下。"),
+                MockResponse(content="", tool_calls=[{"name": "slow_task", "args": {"seconds": 5.0}, "id": "call_slow"}]),
+                MockResponse(content="查询完成"),
+            ],
+            stream_chunk_size=2, loop=False,
+        )
+        thread_id = "test_cancel_with_output"
+        agent = ChatCompletionAgent(
+            thread_id=thread_id, chat_model=llm,
+            chat_history=[ChatPrompt(role="user", content="执行一个慢任务")],
+            tools=[slow_task], event_handler=writer,
+        )
+
+        text_started = threading.Event()
+        results = []
+        stream_done = threading.Event()
+
+        def consume():
+            for each in agent.execute(ExecuteKwargs(stream=True)):
+                _each = json.loads(each[6:])
+                results.append(_each)
+                if _each.get("type") == EventType.TEXT_MESSAGE_START and not text_started.is_set():
+                    text_started.set()
+            stream_done.set()
+
+        t = threading.Thread(target=consume)
+        t.start()
+        text_started.wait(timeout=10.0)
+        time.sleep(0.5)
+        GeneratorStreamingHelper.cancel(thread_id)
+        stream_done.wait(timeout=15.0)
+        t.join(timeout=5.0)
+
+        final_events = [r for r in results if r.get("type") in (EventType.RUN_ERROR, EventType.RUN_FINISHED)]
+        assert len(final_events) >= 1, "流应有结束事件"
+        assistant_contents = [c for c in writer.created_contents if c.get("role") == PromptRole.ASSISTANT.value]
+        assert len(assistant_contents) >= 1
+
+    def test_model_error_writes_error_message(self):
+        """模型错误 → RUN_ERROR + writer 回写错误消息 + error=True"""
+        writer = _ConcreteWriter()
+        llm = MockChatModel(responses=[""], sleep_time=0)
+
+        with patch.object(llm, "_astream", side_effect=Exception("Authentication failed")):
+            agent = ChatCompletionAgent(
+                chat_model=llm, chat_history=[ChatPrompt(role="user", content="hi")],
+                event_handler=writer,
+            )
+            results = [json.loads(each[6:]) for each in agent.execute(ExecuteKwargs(stream=True))]
+
+        error_events = [r for r in results if r.get("type") == EventType.RUN_ERROR]
+        assert len(error_events) >= 1
+        assert "Authentication failed" in error_events[0].get("message", "")
+
+        error_contents = [
+            c for c in writer.created_contents
+            if c.get("role") == PromptRole.ASSISTANT.value and c.get("status") == "fail"
+        ]
+        assert len(error_contents) >= 1
+        prop = error_contents[0].get("property", {})
+        assert prop.get("builtin_property", {}).get("error") is True
+        assert writer.is_cancelled is False
+
+    def test_normal_finish_with_writer(self):
+        """回归：正常完成 → writer 回写 status=complete，不设置 _is_cancelled"""
+        writer = _ConcreteWriter()
+        llm = MockChatModel(responses=["你好，我可以帮你。"], stream_chunk_size=2)
+        agent = ChatCompletionAgent(
+            chat_model=llm, chat_history=[ChatPrompt(role="user", content="你好")],
+            event_handler=writer,
+        )
+        results = [json.loads(each[6:]) for each in agent.execute(ExecuteKwargs(stream=True))]
+
+        finished_events = [r for r in results if r.get("type") == EventType.RUN_FINISHED]
+        assert len(finished_events) >= 1
+        assert finished_events[0].get("runId") != RunId.CANCELLED
+
+        assert writer.is_cancelled is False
+        assistant_contents = [c for c in writer.created_contents if c.get("role") == PromptRole.ASSISTANT.value]
+        assert len(assistant_contents) >= 1
+        assert assistant_contents[0].get("status") == "complete"
+
+
+# =====================================================================
+# BaseSessionWriter 取消回写单元测试
+# =====================================================================
+
+
+class TestSessionWriterCancelUnit:
+    """BaseSessionWriter 取消/暂停回写逻辑的单元测试
+
+    覆盖 writer 级别的边界场景（不易通过端到端触发）：
+    - 取消 + 仅有 thinking/streaming 部分内容 → 补写"用户已取消"
+    - 取消 + model_end 已回写 → 不补写暂停消息
+    - RUN_FINISHED(cancelled) + 无 AI 输出 → 补写暂停消息
+    - 真正运行错误 → 回写错误消息 + builtin_property.error=True
+    - 常量一致性
+    """
+
+    def test_cancel_error_with_thinking_writes_reasoning_and_paused(self):
+        """取消 + thinking 内容 → 回写 reasoning + 补写"用户已取消" + status=fail"""
+        writer = _ConcreteWriter()
+        writer._thinking_content = "正在深度思考中..."
+        writer.handle_run_error(RunErrorEvent(type=EventType.RUN_ERROR, message=RunId.CANCELLED_MESSAGE))
+
+        assert writer.is_cancelled is True
+        assert any(c.get("role") == PromptRole.REASONING.value for c in writer.created_contents)
+        assert any(
+            c.get("role") == PromptRole.ASSISTANT.value and c.get("status") == "fail" and c.get("content") == "用户已取消"
+            for c in writer.created_contents
+        )
+
+    def test_cancel_error_no_content_writes_only_paused(self):
+        """取消 + 完全无内容 → 仅补写"用户已取消" + status=fail"""
+        writer = _ConcreteWriter()
+        writer.handle_run_error(RunErrorEvent(type=EventType.RUN_ERROR, message=RunId.CANCELLED_MESSAGE))
+
+        assert len(writer.created_contents) == 1
+        assert writer.created_contents[0]["content"] == "用户已取消"
+        assert writer.created_contents[0]["status"] == "fail"
+
+    def test_cancel_run_finished_no_output_writes_paused(self):
+        """RUN_FINISHED(cancelled) + 无 AI 输出 → 补写"用户已取消"（Flow Agent 任务已启动场景）"""
+        writer = _ConcreteWriter()
+        writer.handle_run_finished(RunFinishedEvent(type=EventType.RUN_FINISHED, thread_id="t1", run_id=RunId.CANCELLED))
+
+        assert writer.is_cancelled is True
+        assert any(c.get("content") == "用户已取消" and c.get("status") == "fail" for c in writer.created_contents)
+
+    def test_cancel_with_model_end_written_no_paused(self):
+        """取消 + model_end 已回写 → 不补写暂停消息（AI 已输出文本场景）"""
+        writer = _ConcreteWriter()
+        writer._model_end_written = True
+        writer.handle_run_finished(RunFinishedEvent(type=EventType.RUN_FINISHED, thread_id="t1", run_id=RunId.CANCELLED))
+
+        assert not any(c.get("content") == "用户已取消" and c.get("status") == "fail" for c in writer.created_contents)
+
+    def test_real_error_writes_error_with_builtin_flag(self):
+        """真正运行错误 → 回写错误消息 + builtin_property.error=True"""
+        writer = _ConcreteWriter()
+        writer.handle_run_error(RunErrorEvent(type=EventType.RUN_ERROR, message="模型调用异常"))
+
+        assert writer.is_cancelled is False
+        error = next(c for c in writer.created_contents if c.get("status") == "fail")
+        assert error.get("content") == "模型调用异常"
+        assert error.get("property", {}).get("builtin_property", {}).get("error") is True
+
+    def test_normal_finish_thinking_only_writes_empty_assistant(self):
+        """回归：正常完成 + 仅有 thinking → 空 assistant(status=complete)，非"用户已取消" """
+        writer = _ConcreteWriter()
+        writer._thinking_content = "思考过程..."
+        writer.handle_run_finished(RunFinishedEvent(type=EventType.RUN_FINISHED, thread_id="t1", run_id="run-123"))
+
+        assert any(c.get("role") == PromptRole.REASONING.value for c in writer.created_contents)
+        assistant = next(c for c in writer.created_contents if c.get("role") == PromptRole.ASSISTANT.value)
+        assert assistant.get("status") == "complete"
+        assert assistant.get("content") != "用户已取消"
+
+    def test_constants_consistency(self):
+        """PAUSED_CONTENT_MESSAGE 和 RunId.CANCELLED_MESSAGE 应一致为"用户已取消" """
+        assert BaseSessionWriter.PAUSED_CONTENT_MESSAGE == RunId.CANCELLED_MESSAGE == "用户已取消"

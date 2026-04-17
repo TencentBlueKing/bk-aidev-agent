@@ -31,6 +31,7 @@ from aidev_agent.core.ag_ui.types import (
 )
 from aidev_agent.core.ag_ui.utils import camel_to_snake
 from aidev_agent.enums import ActivityType, PromptRole
+from aidev_agent.utils.event import RunId
 
 logger = getLogger(__name__)
 
@@ -52,6 +53,12 @@ class BaseSessionWriter(ABC):
     - 流式开始：set_streaming_started() 更新 session.status = running
     - 流式正常结束：set_streaming_finished() 更新 session.status = finished
     - 消息直接通过 create 创建，无需占位/变形
+
+    取消/暂停回写机制：
+    - 当用户在非 assistant 阶段（thinking/tool/activity）暂停时，handle_run_finished()
+      会转为 RUN_ERROR 语义，回写已有内容并补一条 role=assistant, content="用户已取消",
+      status="fail" 的消息
+    - 当用户在 assistant 阶段暂停时，已有的 assistant 消息以 status="complete" 正常回写
 
     使用方式：
     1. 简单场景：只实现 `_do_create_content` 方法，使用默认事件处理逻辑
@@ -80,6 +87,9 @@ class BaseSessionWriter(ABC):
         ```
     """
 
+    # 用户取消时补写的默认提示文本，与 RunId.CANCELLED_MESSAGE 保持一致
+    PAUSED_CONTENT_MESSAGE = "用户已取消"
+
     def __init__(self, session_code: str, username: str = "", tools: list | None = None):
         """初始化回写器
 
@@ -104,6 +114,11 @@ class BaseSessionWriter(ABC):
         # 用于追踪 flow_agent_result 记录，确保同一个 task_id 只有一条记录（后续轮询更新而非创建）
         self._flow_result_content_id: int | None = None
         self._flow_result_message_id: str | None = None
+        # 用于追踪本次运行是否因用户取消/暂停而结束
+        self._is_cancelled: bool = False
+        # 用于追踪 handle_model_end 是否已成功回写 assistant 消息
+        # 当 on_chat_model_end 触发时，assistant 消息已完整输出，取消时不应再补写暂停消息
+        self._model_end_written: bool = False
 
     # ---------- 公共事件入口 ----------
 
@@ -236,13 +251,39 @@ class BaseSessionWriter(ABC):
         这是一个后备机制：当 on_chat_model_end 事件没有被触发时，
         通过 RUN_FINISHED 事件来回写累积的流式消息内容。
 
+        取消/暂停场景处理：
+        - 取消 + 有 assistant 输出：以 status="complete" 正常回写，发 RUN_FINISHED
+        - 取消 + 无 assistant 输出（仅有 thinking/tool/知识库/MCP 等）：
+          回写已有内容 + 补一条 role=assistant, content="用户已取消", status="fail" 的消息，
+          并转为 RUN_ERROR 语义（确保前端正确展示暂停状态）
+
         Args:
             event: RUN_FINISHED 事件
         """
+        # 检测取消标识：run_id 为 "cancelled" 或 "stopped" 表示用户主动取消/暂停
+        run_id = getattr(event, "run_id", "")
+        if run_id in (RunId.CANCELLED, RunId.STOPPED):
+            self._is_cancelled = True
+            logger.info(
+                "Run finished with cancel signal: session_code=%s, run_id=%s",
+                self.session_code,
+                run_id,
+            )
+
         # 获取 thinking 内容
         thinking_content = self._thinking_content.strip() if self._thinking_content else ""
 
-        # 回写所有未写入的流式消息（包含 thinking 内容）
+        # 判断是否有 assistant 内容已流式输出或已通过 handle_model_end 回写
+        has_assistant_output = any(
+            mid not in self._written_message_ids for mid in self._streaming_messages
+        ) or self._model_end_written
+
+        # 取消 + 无 AI 输出：回写已有内容 + 补写"用户已取消" + status=fail
+        if self._is_cancelled and not has_assistant_output:
+            self._write_cancelled_messages(thinking_content)
+            return
+
+        # 正常回写或取消+有AI输出（正常回写即可）
         for message_id, message_data in list(self._streaming_messages.items()):
             if message_id in self._written_message_ids:
                 continue
@@ -256,7 +297,7 @@ class BaseSessionWriter(ABC):
                     reasoning_content=thinking_content,
                 )
 
-            # 回写 assistant 消息
+            # 回写 assistant 消息（status="complete"，不区分取消/非取消）
             self._write_assistant_message(
                 message_id=message_id,
                 content=content if content else "",
@@ -276,14 +317,80 @@ class BaseSessionWriter(ABC):
                 reasoning_content=thinking_content,
             )
 
-            # 回写空的 assistant 消息
-            self._write_assistant_message(
-                message_id=fallback_message_id,
-                content="",
-                tool_calls=[],
-            )
+            # 取消场景：补写"用户已取消" + status=fail
+            if self._is_cancelled:
+                self._write_assistant_message(
+                    message_id=fallback_message_id,
+                    content=self.PAUSED_CONTENT_MESSAGE,
+                    tool_calls=[],
+                    status="fail",
+                )
+            else:
+                self._write_assistant_message(
+                    message_id=fallback_message_id,
+                    content="",
+                    tool_calls=[],
+                )
 
             self._written_message_ids.add(fallback_message_id)
+
+        # 清理
+        self._streaming_messages.clear()
+        self._thinking_content = ""
+
+    def _write_cancelled_messages(self, thinking_content: str) -> None:
+        """回写取消/暂停场景下的消息
+
+        当用户在非 assistant 阶段（thinking/tool/知识库/MCP）取消时：
+        1. 回写已有的 thinking/reasoning 内容
+        2. 回写未写入的流式 assistant 消息（如有部分内容）
+        3. 补写一条 role=assistant, content="用户已取消", status="fail" 的消息
+
+        此方法由 handle_run_finished（取消+无AI输出）和 handle_run_error（取消场景）
+        共同调用，避免逻辑重复。
+
+        Args:
+            thinking_content: 已累积的 thinking 内容
+        """
+        logger.info(
+            "Writing cancelled messages: session_code=%s, "
+            "has_thinking=%s, streaming_messages=%d, _is_cancelled=%s",
+            self.session_code,
+            bool(thinking_content),
+            len(self._streaming_messages),
+            self._is_cancelled,
+        )
+
+        # 1. 回写未写入的 thinking/reasoning 内容
+        if thinking_content:
+            reasoning_message_id = f"rsn_{uuid.uuid4().hex[:12]}"
+            self._write_reasoning_message_simple(
+                message_id=reasoning_message_id,
+                reasoning_content=thinking_content,
+            )
+            self._written_message_ids.add(reasoning_message_id)
+
+        # 2. 回写未写入的流式 assistant 消息（如有部分内容）
+        for message_id, message_data in list(self._streaming_messages.items()):
+            if message_id in self._written_message_ids:
+                continue
+            content = message_data.get("content", "")
+            self._write_assistant_message(
+                message_id=message_id,
+                content=content if content else "",
+                tool_calls=[],
+            )
+            self._written_message_ids.add(message_id)
+
+        # 3. 补写 "用户已取消" + status=fail 的 assistant 消息
+        paused_message_id = f"paused_{uuid.uuid4().hex[:12]}"
+        self._write_assistant_message(
+            message_id=paused_message_id,
+            content=self.PAUSED_CONTENT_MESSAGE,
+            tool_calls=[],
+            status="fail",
+        )
+        self._written_message_ids.add(paused_message_id)
 
         # 清理
         self._streaming_messages.clear()
@@ -331,6 +438,8 @@ class BaseSessionWriter(ABC):
         self._streaming_messages.pop(message_id, None)
         # 清空 thinking 内容，避免 handle_run_finished 重复回写
         self._thinking_content = ""
+        # 标记 model_end 已回写，取消时不需要补写暂停消息
+        self._model_end_written = True
 
     def handle_tool_finish(self, event: RawEvent) -> None:
         """处理工具执行完成事件，回写 tool 消息
@@ -365,21 +474,75 @@ class BaseSessionWriter(ABC):
     def handle_run_error(self, event: RunErrorEvent) -> None:
         """处理运行时错误事件，回写 assistant 失败消息
 
+        对于取消/暂停场景（message 为 RunId.CANCELLED_MESSAGE），
+        会先回写已有的非 assistant 内容（thinking/tool/知识库/MCP 等），
+        再补写 content="用户已取消", status="fail" 的 assistant 消息。
+        对于真正的运行错误，直接写入错误消息。
+
         Args:
             event: 运行错误事件
         """
-        error_message_id = f"error_{uuid.uuid4().hex[:12]}"
+        # 检测是否为取消/暂停触发的 RUN_ERROR
+        # Agent 层取消时发送 RUN_ERROR(message=RunId.CANCELLED_MESSAGE)
+        # 防御 event.message 为 None 的场景（非标准事件对象）
+        error_message = event.message or ""
+        is_cancel_error = error_message == RunId.CANCELLED_MESSAGE
+        if is_cancel_error:
+            self._is_cancelled = True
+            logger.info(
+                "handle_run_error detected cancel: session_code=%s, message=%s",
+                self.session_code,
+                error_message,
+            )
+            # 取消场景：统一走 _write_cancelled_messages 回写已有内容 + 补写暂停消息
+            thinking_content = self._thinking_content.strip() if self._thinking_content else ""
+            self._write_cancelled_messages(thinking_content)
+            return
 
+        # 真正的运行错误处理
+        logger.info(
+            "handle_run_error writing error message: session_code=%s, message=%s",
+            self.session_code,
+            error_message,
+        )
+        # 回写未写入的 thinking/reasoning 内容（如有）
+        thinking_content = self._thinking_content.strip() if self._thinking_content else ""
+        if thinking_content:
+            reasoning_message_id = f"rsn_{uuid.uuid4().hex[:12]}"
+            self._write_reasoning_message_simple(
+                message_id=reasoning_message_id,
+                reasoning_content=thinking_content,
+            )
+            self._written_message_ids.add(reasoning_message_id)
+
+        # 回写未写入的流式 assistant 消息（如有部分内容）
+        for message_id, message_data in list(self._streaming_messages.items()):
+            if message_id in self._written_message_ids:
+                continue
+            content = message_data.get("content", "")
+            self._write_assistant_message(
+                message_id=message_id,
+                content=content if content else "",
+                tool_calls=[],
+            )
+            self._written_message_ids.add(message_id)
+
+        # 补写错误消息
+        error_message_id = f"error_{uuid.uuid4().hex[:12]}"
         self._create_session_content(
             message_id=error_message_id,
             role=PromptRole.ASSISTANT.value,
-            content=event.message,
+            content=error_message,
             status="fail",
             builtin_property={
                 "message_id": error_message_id,
                 "error": True,
             },
         )
+
+        # 清理
+        self._streaming_messages.clear()
+        self._thinking_content = ""
 
     def handle_reference_document(self, event: RawEvent) -> None:
         """处理引用文档事件，回写 activity 消息
@@ -633,6 +796,7 @@ class BaseSessionWriter(ABC):
         message_id: str,
         content: str,
         tool_calls: list,
+        status: str = "complete",
     ) -> None:
         """回写 assistant 消息
 
@@ -640,6 +804,7 @@ class BaseSessionWriter(ABC):
             message_id: assistant 消息 ID
             content: 消息内容
             tool_calls: 工具调用列表
+            status: 消息状态，默认 "complete"；取消/暂停场景使用 "fail"
         """
         assistant_property = {
             "message_id": message_id,
@@ -650,7 +815,7 @@ class BaseSessionWriter(ABC):
             message_id=message_id,
             role=PromptRole.ASSISTANT.value,
             content=content,
-            status="complete",
+            status=status,
             builtin_property=assistant_property,
         )
 
@@ -774,8 +939,11 @@ class BaseSessionWriter(ABC):
     def set_streaming_finished(self) -> None:
         """标记流式传输结束
 
-        子类应覆盖此方法来更新会话状态为 finished。
+        子类应覆盖此方法来更新会话状态。
         默认实现为空操作。
+
+        注意：当 _is_cancelled 为 True 时，子类应将会话状态设为 cancelled 而非 finished，
+        以便前端正确展示暂停/取消状态。
         """
 
     def update_flow_agent_info(self, task_id: str) -> None:

@@ -23,10 +23,12 @@ class RunId:
     Attributes:
         CANCELLED: 用户主动取消场景
         STOPPED: 会话停止/超时场景
+        CANCELLED_MESSAGE: 用户取消提示文本
     """
 
     CANCELLED: RunIdType = "cancelled"
     STOPPED: RunIdType = "stopped"
+    CANCELLED_MESSAGE: str = "用户已取消"
 
 
 def emit_run_finished_event(

@@ -88,8 +88,16 @@ class AGUISessionWriter(BaseSessionWriter):
         self._update_session_status(SessionsStatus.RUNNING.value)
 
     def set_streaming_finished(self) -> None:
-        """标记流式传输结束（会话状态设为 finished）"""
-        self._update_session_status(SessionsStatus.FINISHED.value)
+        """
+        标记流式传输结束
+        根据是否被取消选择不同的结束状态：
+        - 正常完成：会话状态设为 finished
+        - 用户取消/暂停：会话状态设为 cancelled
+        """
+        if self._is_cancelled:
+            self._update_session_status(SessionsStatus.CANCELLED.value)
+        else:
+            self._update_session_status(SessionsStatus.FINISHED.value)
 
     def _update_session_status(self, status: str) -> None:
         """更新会话状态（内部方法）

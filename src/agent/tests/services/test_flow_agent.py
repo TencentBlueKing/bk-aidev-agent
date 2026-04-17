@@ -209,55 +209,101 @@ class TestFlowAgentMainFlow:
 
 
 class TestFlowAgentStop:
-    """stop 终止流程：验证取消信号能正确终止轮询"""
+    """stop 终止流程：验证取消信号能正确终止轮询
+
+    核心场景：
+    - 任务已启动（flow_agent_start 已发送）→ RUN_FINISHED(runId="cancelled")
+    - 任务未启动（start_flow_agent 之前取消）→ RUN_ERROR(message="用户已取消")
+    """
 
     @patch("aidev_agent.services.flow_agent.BKAidevApi")
-    def test_cancel_stops_polling(self, mock_api):
-        """轮询中触发取消信号 → 停止轮询并发出 RUN_FINISHED
+    def test_cancel_after_task_started_emits_run_finished(self, mock_api):
+        """任务已启动后取消 → 发 RUN_FINISHED(runId="cancelled")
 
-        模拟场景：用户点击「停止」，前端调 stop() → GeneratorStreamingHelper.cancel()
-        → _poll_task 下一次循环检测到 is_cancelled=True → 停止轮询
+        模拟场景：flow_agent_start 已发送，轮询中检测到取消信号。
+        _task_started=True → 发 RUN_FINISHED(cancelled)，writer 补写"用户已取消"。
         """
         poll_count = {"n": 0}
 
         def mock_is_cancelled(thread_id, **kwargs):
-            # 让前 2 次检查返回 False（正常轮询），第 3 次返回 True（模拟用户点停止）
             poll_count["n"] += 1
             return poll_count["n"] >= 3
 
-        mock_poll_client = MockPollClient(
-            task_info_sequence=[{"task_state": "RUNNING"}] * 10
-        )
+        mock_poll_client = MockPollClient(task_info_sequence=[{"task_state": "RUNNING"}] * 10)
         mock_api.get_client.return_value = mock_poll_client
 
         agent = FlowAgentCompletionAgent(
             resource_manager=MockFlowAgentClient(start_result={"task_id": "cancel_task"}),
-            flow_start_params={},
-            poll_interval=0.01,
-            poll_timeout=60.0,
+            flow_start_params={}, poll_interval=0.01, poll_timeout=60.0,
             session_code="stop_session",
         )
 
         with patch.object(GeneratorStreamingHelper, "is_cancelled", side_effect=mock_is_cancelled):
             events = _parse_sse_events(agent._run_flow())
 
-        # 有 RUN_STARTED
         assert events[0]["type"] == EventType.RUN_STARTED
+        assert len(_find_custom_events(events, CustomMessageType.FLOW_AGENT_START.value)) == 1
+        assert len(_find_custom_events(events, CustomMessageType.FLOW_AGENT_END.value)) == 0
 
-        # 有 flow_agent_start（start 接口成功了）
-        start_events = _find_custom_events(events, CustomMessageType.FLOW_AGENT_START.value)
-        assert len(start_events) == 1
+        # 任务已启动后取消 → RUN_FINISHED(runId="cancelled")
+        finished_events = _find_events_by_type(events, EventType.RUN_FINISHED)
+        assert len(finished_events) >= 1
+        assert finished_events[0].get("runId") == "cancelled"
 
-        # 有部分 flow_agent_result（取消前的轮询结果）
-        result_events = _find_custom_events(events, CustomMessageType.FLOW_AGENT_RESULT.value)
-        assert len(result_events) >= 1
+    @patch("aidev_agent.services.flow_agent.BKAidevApi")
+    def test_cancel_before_task_started_emits_run_error(self, mock_api):
+        """任务未启动时取消 → 发 RUN_ERROR(message="用户已取消")
 
-        # 没有 flow_agent_end（任务没有自然结束，是被取消的）
-        end_events = _find_custom_events(events, CustomMessageType.FLOW_AGENT_END.value)
-        assert len(end_events) == 0
+        模拟场景：start_flow_agent 调用前就已检测到取消信号。
+        _task_started=False → 发 RUN_ERROR(message="用户已取消")。
+        """
+        def mock_is_cancelled_true(thread_id, **kwargs):
+            return True  # 一开始就取消
 
-        # 最后一个事件是 RUN_FINISHED（确保前端收到结束信号）
-        assert events[-1]["type"] == EventType.RUN_FINISHED
+        mock_api.get_client.return_value = MockPollClient()
+
+        agent = FlowAgentCompletionAgent(
+            resource_manager=MockFlowAgentClient(start_result={"task_id": "pre_cancel"}),
+            flow_start_params={}, poll_interval=0.01, poll_timeout=60.0,
+            session_code="pre_cancel_session",
+        )
+
+        with patch.object(GeneratorStreamingHelper, "is_cancelled", side_effect=mock_is_cancelled_true):
+            events = _parse_sse_events(agent._run_flow())
+
+        # 没有 flow_agent_start（任务未启动就被取消）
+        assert len(_find_custom_events(events, CustomMessageType.FLOW_AGENT_START.value)) == 0
+
+        # 任务未启动取消 → RUN_ERROR(message="用户已取消")
+        error_events = _find_events_by_type(events, EventType.RUN_ERROR)
+        assert len(error_events) >= 1
+        from aidev_agent.utils.event import RunId
+        assert error_events[0].get("message") == RunId.CANCELLED_MESSAGE
+
+    @patch("aidev_agent.services.flow_agent.BKAidevApi")
+    def test_cancel_before_start_api_call(self, mock_api):
+        """在 start_flow_agent 调用前就取消 → 直接发 RUN_ERROR，不调用 start API"""
+        def mock_is_cancelled_true(thread_id, **kwargs):
+            return True
+
+        mock_start_client = MagicMock()
+        mock_api.get_client.return_value = MockPollClient()
+
+        agent = FlowAgentCompletionAgent(
+            resource_manager=mock_start_client,
+            flow_start_params={}, poll_interval=0.01, poll_timeout=60.0,
+            session_code="cancel_before_api",
+        )
+
+        with patch.object(GeneratorStreamingHelper, "is_cancelled", side_effect=mock_is_cancelled_true):
+            events = _parse_sse_events(agent._run_flow())
+
+        # start_flow_agent 不应被调用
+        mock_start_client.start_flow_agent.assert_not_called()
+
+        # 应有 RUN_ERROR
+        error_events = _find_events_by_type(events, EventType.RUN_ERROR)
+        assert len(error_events) >= 1
 
     @patch("aidev_agent.services.flow_agent.BKAidevApi")
     def test_stop_method_calls_cancel(self, mock_api):
