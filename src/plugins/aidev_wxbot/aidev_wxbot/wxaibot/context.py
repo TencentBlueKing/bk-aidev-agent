@@ -21,6 +21,7 @@ from typing import Any
 
 from django.conf import settings
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from aidev_wxbot.api.bkaidev import BkAiDevApi
 from aidev_wxbot.context import Context, Message
@@ -44,6 +45,29 @@ def stream_msg(content, is_finish, stream_id):
             "content": content,
         },
     }
+
+
+def _escape_markdown_text(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+
+
+def _normalize_url(raw_url: str) -> str:
+    if not raw_url:
+        return ""
+
+    parts = urlsplit(raw_url)
+    if not parts.scheme:
+        return quote(raw_url, safe="/%#?&=:@+-._~")
+
+    return urlunsplit(
+        (
+            parts.scheme,
+            parts.netloc,
+            quote(parts.path, safe="/%:@+-._~"),
+            quote(parts.query, safe="=&%:@/+,-._~"),
+            quote(parts.fragment, safe="%:@/+,-._~"),
+        )
+    )
 
 
 def text_msg(content):
@@ -70,8 +94,8 @@ class LlmChunkMsg(BaseModel):
         if self.docs:
             content = "\n当前回答参考的文档如下:\n"
             for index, doc in enumerate(self.docs):
-                display_name = doc["display_name"]
-                path = doc["path"]
+                display_name = _escape_markdown_text(str(doc["display_name"]))
+                path = _normalize_url(str(doc["path"]))
                 content += f"[{index + 1}][{display_name}]({path})\n"
             return content
         else:
