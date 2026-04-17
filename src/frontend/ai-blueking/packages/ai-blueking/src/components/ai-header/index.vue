@@ -90,9 +90,15 @@
               }"
               @click="handleAutoGenerateAction"
             >
+              <Loading
+                v-if="props.autoGenerateLoading"
+                mode="spin"
+                size="mini"
+                theme="primary"
+              />
               <i
+                v-else
                 class="bkai-icon bkai-auto-refresh-line"
-                :class="{ spinning: props.autoGenerateLoading }"
               ></i>
               <span>{{ t('自动生成命名') }}</span>
             </div>
@@ -167,7 +173,7 @@
 <script setup lang="ts">
   import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue';
 
-  import { Input as BkInput, bkTooltips, Message } from 'bkui-vue';
+  import { Input as BkInput, Loading, bkTooltips, Message } from 'bkui-vue';
   import { Tippy, directive as vTippy } from 'vue-tippy';
   import type { useTippy } from 'vue-tippy';
 
@@ -656,11 +662,6 @@
             }
           }
         }
-
-        // 自动生成命名 loading 呼吸脉冲动画
-        .spinning {
-          animation: ai-header-pulse 1.2s ease-in-out infinite;
-        }
       }
     }
   }
@@ -676,19 +677,6 @@
 
     .tippy-content {
       padding: 0;
-    }
-  }
-
-  @keyframes ai-header-pulse {
-    0%,
-    100% {
-      opacity: 0.4;
-      transform: scale(0.85);
-    }
-
-    50% {
-      opacity: 1;
-      transform: scale(1);
     }
   }
 </style>
