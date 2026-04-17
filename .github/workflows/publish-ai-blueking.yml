@@ -85,6 +85,10 @@ jobs:
         working-directory: src/frontend/ai-blueking
         run: pnpm --filter @blueking/chat-x build
 
+      - name: Build chat-helper (dependency)
+        working-directory: src/frontend/ai-blueking
+        run: pnpm --filter @blueking/chat-helper build
+
       - name: Build ai-blueking
         working-directory: src/frontend/ai-blueking
         run: pnpm --filter @blueking/ai-blueking build
