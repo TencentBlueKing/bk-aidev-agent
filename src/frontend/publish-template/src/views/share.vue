@@ -46,7 +46,7 @@
         <!-- 数据展示 -->
         <div v-else-if="hasValidData" class="share-data">
           <ChatContainer
-            :messages="normalizedMessages"
+            :messages="messages"
             :message-status="MessageStatus.Complete"
             message-tools-status="hidden"
             render-mode="share"
@@ -66,44 +66,26 @@
     Exception as BkException,
     Button as BkButton,
   } from "bkui-vue";
-  import {
-    ChatContainer,
-    MessageContentType,
-    MessageRole,
-    MessageStatus,
-    type Message as ChatMessage,
-  } from "@blueking/chat-x";
+  import { ChatContainer, MessageStatus } from "@blueking/chat-x";
   import "@blueking/chat-x/dist/index.css";
-
-  // 后端 API 返回的消息结构
-  interface ApiMessage {
-    id: number;
-    role: string;
-    content: string | Record<string, unknown>;
-    status: string;
-    activity_type?: string;
-    message_id?: string;
-    property?: {
-      extra?: Record<string, unknown> | null;
-      flow_info?: Record<string, unknown> | null;
-      builtin_property?: {
-        message_id?: string;
-        type?: string;
-        [key: string]: unknown;
-      } | null;
-      [key: string]: unknown;
-    };
-    [key: string]: unknown;
-  }
+  import {
+    transferMessageApi2Message,
+    type IMessageApi,
+    type IMessage,
+  } from "@blueking/chat-helper";
 
   // TypeScript 接口定义
   interface ShareData {
-    session_contents: ApiMessage[];
+    session_contents: IMessageApi[];
     session_name: string;
     agent_name: string;
   }
 
   interface ApiResponse {
+    result?: boolean;
+    code?: string;
+    message?: string;
+    trace_id?: string;
     data: ShareData;
   }
 
@@ -148,37 +130,14 @@
   const agentName = ref<string>("");
   const url = ref<string>(window.BK_API_PREFIX || "");
   const loading = ref<boolean>(false);
-  const shareData = ref<ApiMessage[]>([]);
+  const messages = ref<IMessage[]>([]);
   const error = ref<string | null>(null);
   const currentShareCode = ref<string>("");
 
   const route = useRoute();
 
   // 计算属性
-  const hasValidData = computed(() => shareData.value.length > 0);
-
-  // 将后端 API 数据映射为 chat-x Message 类型
-  const normalizedMessages = computed<ChatMessage[]>(() => {
-    return shareData.value.map((msg, index) => ({
-      id: msg.id ?? `share-msg-${index}`,
-      // messageId: 优先取顶层 message_id，其次取 builtin_property.message_id，兜底用 id
-      messageId:
-        msg.message_id ??
-        msg.property?.builtin_property?.message_id ??
-        msg.id ??
-        index,
-      role: msg.role as MessageRole,
-      status: MessageStatus.Complete,
-      content: msg.content,
-      property: msg.property,
-      // activity 类型需要映射 activityType（优先 activity_type，兜底取 type，snake_case → camelCase）
-      ...(msg.role === MessageRole.Activity && (msg.activity_type || msg.type)
-        ? {
-            activityType: (msg.activity_type ?? msg.type) as MessageContentType,
-          }
-        : {}),
-    })) as ChatMessage[];
-  });
+  const hasValidData = computed(() => messages.value.length > 0);
   const hasError = computed(() => error.value !== null);
   const errorMessage = computed(() => error.value || "");
   const canRetry = computed(() => {
@@ -239,7 +198,9 @@
         throw new Error("Invalid response data structure");
       }
 
-      shareData.value = result.data.session_contents;
+      messages.value = (
+        result.data.session_contents as unknown as IMessageApi[]
+      ).map(transferMessageApi2Message);
       title.value = result.data.session_name || "AI 对话分享";
       agentName.value = result.data.agent_name || "";
     } catch (err) {
