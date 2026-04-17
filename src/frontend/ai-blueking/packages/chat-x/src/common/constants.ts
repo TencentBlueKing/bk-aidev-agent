@@ -68,7 +68,7 @@ export const CONST_MESSAGE_TOOLS = [
     name: t('引用'),
   },
   {
-    description: t('重新生成'),
+    description: t('重新生成将清空下文内容'),
     id: 'rebuild',
     name: t('重新生成'),
   },
