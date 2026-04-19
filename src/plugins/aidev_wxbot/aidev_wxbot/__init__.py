@@ -8,5 +8,5 @@ A Django app for WeChat AI bot integration with BK AI Dev platform.
 
 default_app_config = "aidev_wxbot.apps.AidevWxbotConfig"
 
-__version__ = "2.0.0b2"
+__version__ = "2.0.0rc12"
 __author__ = "tencentblueking"

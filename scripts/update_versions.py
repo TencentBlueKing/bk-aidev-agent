@@ -68,6 +68,11 @@ VERSION_RULES: list[tuple[str, str, str]] = [
         r'^"?aidev-wxbot==.*"?$',
         "wxbot",
     ),
+    (
+        "template/{{cookiecutter.project_name}}/VERSION",
+        r"^.+$",
+        "template",
+    ),
 ]
 
 SOURCE_PACKAGE_VERSION_FILES: dict[str, str] = {
@@ -82,8 +87,14 @@ TEMPLATE_VERSION_TARGETS = {
     Path("template/{{cookiecutter.project_name}}/requirements.txt"),
 }
 
+# `make release_versions VERSION=...` 统一版本时不会触达的组件；
+# 这些组件需通过 per-component 参数（如 `aidev_ai_blueking_version=...`）单独发布。
+EXCLUDED_FROM_BULK_UPDATE: set[str] = {"ai_blueking"}
+
 
 def replacement_for(pattern: str, version: str) -> str:
+    if pattern == r"^.+$":
+        return version
     if "version =" in pattern or "__version__" in pattern:
         return f'version = "{version}"' if "version =" in pattern else f'__version__ = "{version}"'
     if "aidev-agent>=" in pattern:
@@ -119,7 +130,7 @@ def replace_required(text: str, pattern: str, replacement: str, path: Path) -> s
 def normalize_versions(versions: str | dict[str, str]) -> dict[str, str]:
     if isinstance(versions, str):
         components = {component for _, _, component in VERSION_RULES}
-        return {component: versions for component in components}
+        return {component: versions for component in components if component not in EXCLUDED_FROM_BULK_UPDATE}
     return {component: version for component, version in versions.items() if version}
 
 

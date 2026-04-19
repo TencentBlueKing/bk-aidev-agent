@@ -120,6 +120,7 @@ pnpm prettier
 ```bash
 make release_versions VERSION=2.0.0b1
 ```
+> 该方式会同时更新 `template/{{cookiecutter.project_name}}/VERSION` 文件，但**不会**更新 `aidev-ai-blueking`（其版本节奏与其他组件解耦）。如需同时发布 `aidev-ai-blueking`，请走方式二或使用 `make release_ai_blueking VERSION=...`。
 
 **方式二：按组件分别指定版本**
 ```bash
