@@ -50,6 +50,7 @@ class AgentInstanceFactory:
         is_temporary: bool = False,
         checkpointer: BaseCheckpointSaver | None = None,
         username: str | None = None,
+        version: Optional[str] = None,
     ):
         """
         初始化Agent工厂实例
@@ -66,6 +67,8 @@ class AgentInstanceFactory:
         :param is_temporary: 是否为临时Agent
         :param checkpointer: Checkpoint 存储后端，用于会话状态持久化
         :param username: 用户名
+        :param version: 主 agent 的配置版本；为 None 时取最新版（与历史行为一致）。
+            命令切换出去的子 agent_code 各有独立版本语义，统一走最新版，不继承本字段。
         """
         self.resource_manager = resource_manager or BKAidevApi.get_client()
         self.agent_code = agent_code
@@ -82,7 +85,21 @@ class AgentInstanceFactory:
         self.is_temporary = is_temporary
         self.checkpointer = checkpointer
         self.username = username
+        self.version = version
         self._specific_resources: list[dict] = []
+
+    def _get_agent_config(self, agent_code: str) -> AgentConfig:
+        """统一的 agent 配置取回出口。
+
+        version 仅作用于主 agent；命令切换出去的子 agent_code 各有独立版本语义，
+        本工厂不替它们做版本路由（一律传 None → 最新版）。
+        """
+        version = self.version if agent_code == self.agent_code else None
+        return self.config_manager_class.get_config(
+            agent_code=agent_code,
+            resource_manager=self.resource_manager,
+            version=version,
+        )
 
     @classmethod
     def build_agent(
@@ -103,6 +120,7 @@ class AgentInstanceFactory:
         event_handler: Callable[[BaseEvent], None] | None = None,
         checkpointer: BaseCheckpointSaver | None = None,
         username: str | None = None,
+        version: Optional[str] = None,
     ):
         """
         构建Agent实例
@@ -122,6 +140,7 @@ class AgentInstanceFactory:
         :param event_handler: 事件处理器，接收所有 AG-UI 事件（Callable[[BaseEvent], None]）
         :param checkpointer: Checkpoint 存储后端，用于会话状态持久化
         :param username: 用户名
+        :param version: 主 agent 的配置版本；为 None 时取最新版（与历史行为一致）
         :return: 构建好的Agent实例
         """
         # 创建工厂实例
@@ -140,6 +159,7 @@ class AgentInstanceFactory:
             is_temporary=is_temporary,
             checkpointer=checkpointer or MemorySaver(),
             username=username,
+            version=version,
         )
 
         # 验证参数
@@ -220,9 +240,7 @@ class AgentInstanceFactory:
         # 去掉 system prompts 在config_manager中处理
         session_context_data = [each for each in session_context_data if each.get("role", "") != "system"]
 
-        base_agent_config = self.config_manager_class.get_config(
-            agent_code=self.agent_code, resource_manager=self.resource_manager
-        )
+        base_agent_config = self._get_agent_config(self.agent_code)
 
         logger.info(
             f"AgentInstanceFactory: session->[{self.session_code}] "
@@ -279,7 +297,7 @@ class AgentInstanceFactory:
 
     def build_chat_model(self, agent_code: str):
         """构建聊天模型"""
-        config = self.config_manager_class.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        config = self._get_agent_config(agent_code)
 
         if not config.chat_model:
             raise ValueError("请配置智能体默认模型并重新发布")
@@ -311,10 +329,7 @@ class AgentInstanceFactory:
         """构建聊天历史"""
 
         # 添加系统历史
-        config = self.config_manager_class.get_config(
-            agent_code=agent_code or self.agent_code,
-            resource_manager=self.resource_manager,
-        )
+        config = self._get_agent_config(agent_code or self.agent_code)
         role_history = (
             [
                 ChatPrompt(role=each["role"].replace("hidden-", ""), content=each["content"])
@@ -344,12 +359,12 @@ class AgentInstanceFactory:
 
     def build_non_thinking_llm(self, agent_code: str) -> str | None:
         """构建非思考模型"""
-        config = self.config_manager_class.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        config = self._get_agent_config(agent_code)
         return config.non_thinking_llm
 
     def build_knowledge_bases(self, agent_code: str) -> List[dict]:
         """构建知识库"""
-        config = self.config_manager_class.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        config = self._get_agent_config(agent_code)
         specific_resources = [
             each.get("id") for each in self._specific_resources if each.get("type") == "knowledgebase"
         ]
@@ -366,12 +381,12 @@ class AgentInstanceFactory:
 
     def build_knowledge_items(self, agent_code: str) -> List[dict]:
         """构建知识条目"""
-        config = self.config_manager_class.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        config = self._get_agent_config(agent_code)
         return [self.resource_manager.retrieve_knowledge(_id) for _id in config.knowledge_ids]
 
     def build_tools(self, agent_code: str) -> List[Any]:
         """构建工具"""
-        config = self.config_manager_class.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        config = self._get_agent_config(agent_code)
         specific_mcps = [each.get("code") for each in self._specific_resources if each.get("type") == "mcp"]
         if specific_mcps:
             mcp_server_config = {each: config.mcp_server_config.get(each) for each in specific_mcps}
@@ -390,22 +405,22 @@ class AgentInstanceFactory:
 
     def build_skills(self, agent_code: str) -> list | None:
         """构建关联技能"""
-        config = self.config_manager_class.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        config = self._get_agent_config(agent_code)
         return config.related_skills
 
     def get_role_prompt(self, agent_code: str) -> str | None:
         """获取角色提示词"""
-        config = self.config_manager_class.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        config = self._get_agent_config(agent_code)
         return config.role_prompts[0]["content"] if config.role_prompts else None
 
     def build_agent_options(self, agent_code: str) -> AgentOptions:
         """构建Agent选项"""
-        config = self.config_manager_class.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        config = self._get_agent_config(agent_code)
         return config.agent_options
 
     def build_agent_prompt(self, agent_code: str) -> str | None:
         """构建Agent提示词"""
-        config = self.config_manager_class.get_config(agent_code=agent_code, resource_manager=self.resource_manager)
+        config = self._get_agent_config(agent_code)
         return config.agent_prompt
 
     def build_executor_info(self) -> dict:

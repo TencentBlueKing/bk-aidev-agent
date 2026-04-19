@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import logging
+
 from aidev_agent.utils.module_loading import import_string
 from django.apps import AppConfig
 from django.conf import settings
@@ -7,9 +9,16 @@ from django.conf import settings
 try:
     import bkoauth
 except ImportError:
-    bkoatuh = None
+    bkoauth = None
 
-from aidev_bkplugin.packages.opentelemetry import BkAidevAgentInstrumentor
+# OpenTelemetry 是可选 extras，未安装时降级为 no-op。
+# 安装方式：pip install aidev-bkplugin[opentelemetry]
+try:
+    from aidev_bkplugin.packages.opentelemetry import BkAidevAgentInstrumentor
+except ImportError:
+    BkAidevAgentInstrumentor = None
+
+logger = logging.getLogger(__name__)
 
 
 class AgentConfig(AppConfig):
@@ -25,7 +34,12 @@ class AgentConfig(AppConfig):
         agent_factory.register(settings.DEFAULT_NAME, import_string(settings.DEFAULT_AGENT))
         agent_config_factory.register(settings.DEFAULT_NAME, import_string(settings.DEFAULT_CONFIG_MANAGER))
 
-        # 全局 OTel 服务实例 (应用启动时初始化一次)
-        BkAidevAgentInstrumentor().instrument()
+        if BkAidevAgentInstrumentor is not None:
+            BkAidevAgentInstrumentor().instrument()
+        else:
+            logger.info(
+                "[aidev_bkplugin] OpenTelemetry extras 未安装，跳过自动 instrument；"
+                "如需启用请安装 aidev-bkplugin[opentelemetry]。"
+            )
 
         return super().ready()

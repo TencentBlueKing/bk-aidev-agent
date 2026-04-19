@@ -31,11 +31,10 @@ from rest_framework.viewsets import ViewSetMixin
 
 from aidev_bkplugin.constants import AGUI_PROTOCOL_VERSION
 from aidev_bkplugin.permissions import AgentPluginPermission
+from aidev_bkplugin.serializers.chat_completion import ChatCompletionRequestSerializer
 from aidev_bkplugin.services.agent import (
-    build_chat_completion_agent_by_chat_history,
     build_chat_completion_agent_by_session_code,
     build_chat_completion_agent_by_thread_id_with_chat_history,
-    build_execute_kwargs,
     build_session_detail_url,
     execute_agent_with_save,
     get_agent_config_info,
@@ -320,48 +319,55 @@ class ChatCompletionViewSet(PluginViewSet):
     content_negotiation_class = IgnoreClientContentNegotiation
 
     def create(self, request):
-        # 调用Agent 的时候需要传入的相关参数
+        """
+        入参校验与解析统一交给 ChatCompletionRequestSerializer：
+         - agent_type ← get_agent_config_info(username, version=execute_kwargs.version)
+                          由 serializer 内部读取，**不接受用户输入**；
+         - thread_id  ← request.data.thread_id or execute_kwargs.thread_id
+                            or str(uuid.uuid4())（仅当 session_code 也为空时兜底）。
+        """
+
         username = self.get_username()
-        execute_kwargs = build_execute_kwargs(request.data.get("execute_kwargs", {}), username)
-        session_code = request.data.get("session_code", "")
-        execute_kwargs.session_code = request.data.get("session_code", "")
-        _input = request.data.get("input", "")
+        session_code = ""  # 给异常分支兜底，避免 except 段引用未定义变量
         event_handler = None  # 用于断点续传
 
         try:
-            agent_info = get_agent_config_info(username)
-            agent_type = request.data.get("agent_type", "") or agent_info.get("agent_type", "")
-            logger.debug(f"agent_info.agent_type={agent_info.get('agent_type')}, resolved agent_type={agent_type}")
+            serializer = ChatCompletionRequestSerializer(
+                data=request.data,
+                context={"username": username},
+            )
+            serializer.is_valid(raise_exception=True)
+            data = serializer.validated_data
 
-            # flow agent 的 thread_id → session_code 转换：
-            # 仅在调用方传了 thread_id 但未传 session_code 时触发，对 flow agent 尤为关键，
-            # 因为 _handle_flow_agent 只接受 session_code。
-            thread_id = execute_kwargs.thread_id
-            if thread_id and not session_code and agent_type == AgentType.FLOW.value:
-                try:
-                    session_code = get_or_create_session_by_thread_id(username, thread_id)
-                    execute_kwargs.session_code = session_code
-                    logger.info(
-                        "[FLOW_AGENT] Resolved session_code from thread_id: thread_id=%s, session_code=%s",
-                        thread_id,
-                        session_code,
-                    )
-                except Exception:
-                    logger.exception("[FLOW_AGENT] Failed to resolve session_code from thread_id=%s", thread_id)
+            execute_kwargs: ExecuteKwargs = data["execute_kwargs"]
+            session_code = data["session_code"]
+            execute_kwargs.session_code = session_code
+            _input = data["input"]
+            chat_history_raw = data["chat_history"]
+            agent_type = data["agent_type"]
+            thread_id = data["thread_id"]
+
+            logger.info(f"resolved agent_type={agent_type}, version={execute_kwargs.version}")
 
             if agent_type == AgentType.FLOW.value:
-                return self._handle_flow_agent(request, session_code, username)
-            if not thread_id and not session_code:
-                thread_id = str(uuid.uuid4())
+                # flow agent 的 thread_id → session_code 转换：仅在调用方传了 thread_id
+                # 但未传 session_code 时触发；_handle_flow_agent 只接受 session_code。
+                if thread_id and not session_code:
+                    try:
+                        session_code = get_or_create_session_by_thread_id(username, thread_id)
+                        execute_kwargs.session_code = session_code
+                        logger.info(
+                            "[FLOW_AGENT] Resolved session_code from thread_id: thread_id=%s, session_code=%s",
+                            thread_id,
+                            session_code,
+                        )
+                    except Exception:
+                        logger.exception("[FLOW_AGENT] Failed to resolve session_code from thread_id=%s", thread_id)
+                return self._handle_flow_agent(data, session_code, username)
+
             if thread_id:
-                # 统一使用 chat_history 模式
-                chat_history = request.data.get("chat_prompts", []) or request.data.get("chat_history", [])
-                chat_history = [
-                    ChatPrompt(role=each["role"], content=each["content"])
-                    for each in chat_history
-                    if "role" in each and "content" in each
-                ]
-                # 如果有 input，追加到 chat_history
+                # chat_history 已经过 serializer 校验，元素必含 role/content
+                chat_history = [ChatPrompt(role=each["role"], content=each["content"]) for each in chat_history_raw]
                 if _input:
                     chat_history.append(ChatPrompt(role="user", content=_input))
                 if not chat_history:
@@ -373,35 +379,23 @@ class ChatCompletionViewSet(PluginViewSet):
                     execute_kwargs=execute_kwargs,
                 )
 
-            # 构造 agent_instance，在 ChatCompletion 中，获取到的是 ChatCompletionAgent
-            if session_code:
-                agent_instance = build_chat_completion_agent_by_session_code(
-                    session_code=session_code,
-                    username=request.user.username,
-                )
-                # 如果有 input 参数，追加到会话历史（支持新会话或追加消息）
-                if _input:
-                    # 处理 chat_history 为 None 或空列表的情况（如编辑第一条消息时）
-                    if not agent_instance.chat_history:
-                        agent_instance.chat_history = []
-                    agent_instance.chat_history.append(ChatPrompt(role="user", content=_input))
-                # 校验：如果没有 input 且 chat_history 为空，抛出明确的错误
-                elif not agent_instance.chat_history:
-                    raise ClientBlueException(
-                        message="The chat history cannot be empty. Please provide 'input' parameter."
-                    )
-            else:
-                chat_history = request.data.get("chat_prompts", []) or request.data.get("chat_history", [])
-                if not chat_history and not _input:
-                    raise ClientBlueException(message="chat_history, input or session_code is required")
-                chat_history = [
-                    ChatPrompt(role=each["role"], content=each["content"])
-                    for each in chat_history
-                    if "role" in each and "content" in each
-                ]
-                if _input:
-                    chat_history.append(ChatPrompt(role="user", content=_input))
-                agent_instance = build_chat_completion_agent_by_chat_history(chat_history, username)
+            # 走到这里 thread_id 必为空（上面已 return）；由 serializer 中的 uuid 兜底规则可推出
+            # session_code 必为真。保留显式校验仅作为不变式被破坏时的防御性兜底。
+            if not session_code:
+                raise ClientBlueException(message="session_code or thread_id is required")
+
+            agent_instance = build_chat_completion_agent_by_session_code(
+                session_code=session_code,
+                username=request.user.username,
+                version=execute_kwargs.version,
+            )
+            if _input:
+                # 处理 chat_history 为 None 或空列表的情况（如编辑第一条消息时）
+                if not agent_instance.chat_history:
+                    agent_instance.chat_history = []
+                agent_instance.chat_history.append(ChatPrompt(role="user", content=_input))
+            elif not agent_instance.chat_history:
+                raise ClientBlueException(message="The chat history cannot be empty. Please provide 'input' parameter.")
             # 执行 agent
             if execute_kwargs.stream:
                 generator = agent_instance.execute(execute_kwargs)
@@ -453,6 +447,7 @@ class ChatCompletionViewSet(PluginViewSet):
             thread_id=thread_id,
             chat_history=chat_history,
             username=username,
+            version=execute_kwargs.version,
         )
         execute_kwargs.session_code = session_code
         result = execute_agent_with_save(agent_instance, execute_kwargs, session_code, username)
@@ -460,7 +455,7 @@ class ChatCompletionViewSet(PluginViewSet):
             return self.streaming_response(result, session_code=session_code)
         return Response(result)
 
-    def _handle_flow_agent(self, request, session_code: str, username: str):
+    def _handle_flow_agent(self, data: dict, session_code: str, username: str):
         """处理 Flow Agent 请求
 
         通过 chat_completion 接口复用流式 SSE 机制，轮询 flow agent 任务状态并推送。
@@ -471,22 +466,22 @@ class ChatCompletionViewSet(PluginViewSet):
         3. 通过 SSE 流式推送轮询结果
         4. 用户点击「停止」→ revoke bkflow 任务（不可恢复）
 
+        :param data: ``ChatCompletionRequestSerializer.validated_data``
         """
-        task_id = request.data.get("task_id")
-        flow_start_params = request.data.get("flow_start_params", {})
-        poll_interval = request.data.get("poll_interval", agent_settings.FLOW_AGENT_POLL_INTERVAL)
-        poll_timeout = request.data.get("poll_timeout", agent_settings.FLOW_AGENT_POLL_TIMEOUT)
+        task_id = data["task_id"] or None
+        flow_start_params = dict(data["flow_start_params"])
+        # serializer 已用 FloatField 校验，此处仅做 None → 默认值 回落
+        poll_interval = (
+            data["poll_interval"] if data["poll_interval"] is not None else agent_settings.FLOW_AGENT_POLL_INTERVAL
+        )
+        poll_timeout = (
+            data["poll_timeout"] if data["poll_timeout"] is not None else agent_settings.FLOW_AGENT_POLL_TIMEOUT
+        )
 
         logger.info(
             f"[FLOW_AGENT] _handle_flow_agent: session_code={session_code}, username={username}, task_id={task_id}"
         )
 
-        # 参数校验
-        try:
-            poll_interval = float(poll_interval)
-            poll_timeout = float(poll_timeout)
-        except (TypeError, ValueError):
-            raise ClientBlueException(message="poll_interval and poll_timeout must be valid numbers")
         if poll_interval <= 0:
             raise ClientBlueException(message=f"poll_interval must be positive, got {poll_interval}")
         if poll_timeout <= 0:

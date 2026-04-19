@@ -26,6 +26,34 @@ uv-install:
 	uv --version
 	uv sync --inexact
 
+.PHONY: test
+# 注意：tests/packages/opentelemetry 通过 conftest 的 pytest.importorskip 控制是否运行；
+# 仅当安装 `pip install aidev-bkplugin[opentelemetry]` 后才会被纳入。
+test:
+	$(eval path ?= ${ROOT_DIR}/tests)
+	$(eval maxfail ?= --maxfail=2)
+	$(eval warnings ?= --disable-pytest-warnings)
+	$(eval markers ?= not slow)
+	${pytest} ${path} \
+		-m "${markers}" \
+		${maxfail} \
+		${warnings} \
+		--durations=20 \
+		-vv \
+		${reuse_db} ${args}
+
+.PHONY: ci-test
+ci-test:
+	$(eval path ?= ${ROOT_DIR}/tests)
+	$(eval maxfail ?= --maxfail=2)
+	$(eval warnings ?= --disable-pytest-warnings)
+	$(eval markers ?= not slow)
+	${pytest} ${path} \
+		-m "${markers}" \
+		--durations=30 \
+		--cov-config ${ROOT_DIR}/pyproject.toml \
+		--cov ${ROOT_DIR}/aidev_bkplugin
+
 build:
 	uv pip install build
 	uv run -m build

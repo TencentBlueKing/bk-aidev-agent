@@ -1,5 +1,5 @@
 import time
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -45,32 +45,40 @@ class CachedEntry:
 class AgentConfigManager:
     """智能体配置管理器"""
 
-    _config_cache: dict[str, CachedEntry] = {}
+    # 缓存 key 为 (agent_code, version_or_latest)，避免不同版本互相污染
+    _config_cache: dict[tuple[str, str], CachedEntry] = {}
     CACHE_TTL = 300  # 缓存过期时间（秒）
 
     @classmethod
     def get_config(
-        cls, agent_code: str, resource_manager: AbstractBKAidevResourceManager, force_refresh: bool = False, **kwargs
+        cls,
+        agent_code: str,
+        resource_manager: AbstractBKAidevResourceManager,
+        force_refresh: bool = False,
+        version: Optional[str] = None,
+        **kwargs,
     ) -> AgentConfig:
         """
         获取智能体配置
         :param agent_code: 智能体代码
+        :param resource_manager: API 资源客户端
         :param force_refresh: 是否强制刷新配置
-        :param api_client: API客户端
-        :return: AgentConfig实例
+        :param version: 可选的 agent 配置版本；为空表示取最新版（与历史行为一致），不同版本走独立缓存槽
+        :return: AgentConfig 实例
         """
+        cache_key = (agent_code, version or "latest")
         # 检查缓存中是否存在且不需要强制刷新
-        if not force_refresh and agent_code in cls._config_cache:
-            cached_entry = cls._config_cache[agent_code]
+        if not force_refresh and cache_key in cls._config_cache:
+            cached_entry = cls._config_cache[cache_key]
             # 检查缓存是否过期
             if not cached_entry.is_expired(cls.CACHE_TTL):
                 return cached_entry.config
             # 如果过期，从缓存中删除
-            del cls._config_cache[agent_code]
+            del cls._config_cache[cache_key]
 
         # 实时从AIDev平台拉取配置
         try:
-            res = resource_manager.retrieve_agent_config(agent_code)
+            res = resource_manager.retrieve_agent_config(agent_code, version=version)
         except Exception as e:
             # 添加适当的错误处理或日志记录
             raise ValueError(f"Failed to retrieve agent config: {e}")
@@ -122,5 +130,5 @@ class AgentConfigManager:
         )
 
         # 更新缓存
-        cls._config_cache[agent_code] = CachedEntry(config, time.time())
+        cls._config_cache[cache_key] = CachedEntry(config, time.time())
         return config

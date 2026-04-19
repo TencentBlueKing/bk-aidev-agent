@@ -40,4 +40,8 @@ for _setting in dir(_module):
     if _setting == _setting.upper():
         locals()[_setting] = getattr(_module, _setting)
 
+# 日志
+if locals().get("LOGGING"):
+    locals()["LOGGING"]["loggers"]["bkapi_client_core"] = {"handlers": ["root"], "level": "DEBUG", "propagate": True}
+
 ROOT_URLCONF = "bk_plugin.patch.urls"

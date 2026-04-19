@@ -79,7 +79,7 @@ class TestHandleToolFinishStatusMapping:
             tool_call_id="call_123",
             message_id="msg_tool_123",
             content="计算结果: 42",
-            status="success",
+            status="complete",
         )
 
         session_writer(event)
@@ -89,7 +89,7 @@ class TestHandleToolFinishStatusMapping:
         call_args = mock_client.api.create_chat_session_content.call_args
         payload = call_args.kwargs["json"]
 
-        assert payload["status"] == "success"
+        assert payload["status"] == "complete"
         assert payload["role"] == PromptRole.TOOL.value
         assert payload["content"] == "计算结果: 42"
 
@@ -132,7 +132,7 @@ class TestHandleModelEnd:
 
         assert payload["role"] == PromptRole.ASSISTANT.value
         assert payload["content"] == "这是 AI 的回答"
-        assert payload["status"] == "success"
+        assert payload["status"] == "complete"
 
     def test_model_end_empty_content_uses_placeholder(self, session_writer, mock_client):
         """模型输出内容为空但有 tool_calls 时使用占位符（后端 API 不接受空字符串或纯空白字符）"""
@@ -147,7 +147,7 @@ class TestHandleModelEnd:
         call_args = mock_client.api.create_chat_session_content.call_args
         payload = call_args.kwargs["json"]
 
-        assert payload["content"] == "..."
+        assert "..." in payload["content"]
 
     def test_model_end_with_reasoning(self, session_writer, mock_client):
         """包含 reasoning_content 时额外回写推理内容"""

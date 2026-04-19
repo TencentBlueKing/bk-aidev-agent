@@ -10,6 +10,31 @@ dependencies = [
     "django>=4.2.28,<5.0",
 ]
 
+[project.optional-dependencies]
+# OpenTelemetry 可选 extras：
+#   pip install aidev-bkplugin[opentelemetry]
+# 版本与 template/{{cookiecutter.project_name}}/pyproject.toml 中的 OTel 版本组合对齐，
+# 保证导入 aidev_bkplugin.packages.opentelemetry 子包时无跨主版本不兼容。
+opentelemetry = [
+    "opentelemetry-api==1.33.1",
+    "opentelemetry-sdk==1.33.1",
+    "opentelemetry-exporter-otlp==1.33.1",
+    "opentelemetry-exporter-otlp-proto-common==1.33.1",
+    "opentelemetry-exporter-otlp-proto-grpc==1.33.1",
+    "opentelemetry-exporter-otlp-proto-http==1.33.1",
+    "opentelemetry-instrumentation==0.54b1",
+    "opentelemetry-instrumentation-langchain==0.38.10",
+    "opentelemetry-semantic-conventions==0.54b1",
+    "opentelemetry-semantic-conventions-ai==0.4.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=7.4.4,<9",
+    "pytest-mock>=3.14.0",
+    "pytest-django>=4.7.0,<5.0",
+    "djangorestframework>=3.16.1",
+]
 
 [tool.pdm.build]
 includes = ["aidev_bkplugin"]
@@ -17,3 +42,8 @@ includes = ["aidev_bkplugin"]
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "tests.settings"
+addopts = "-vv --maxfail=2 --disable-pytest-warnings"
+testpaths = ["tests"]

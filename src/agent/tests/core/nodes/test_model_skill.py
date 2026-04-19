@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from aidev_agent.core.graphs.react.skill_middleware import SkillsPromptMiddleware
 from aidev_agent.core.nodes.model.pydantic_models import ProcessorContext
+from aidev_agent.core.tools.skill import SkillOptions
 from aidev_agent.core.tools.skill.registry import SkillRegistry
 
 
@@ -74,9 +75,11 @@ class TestSkillRegistry:
         assert [s["name"] for s in skills_before] == ["existing-skill"]
 
         # 注册一个新 provider，提供另一个技能
-        new_provider = MockSkillProvider([
-            {"name": "new-skill", "description": "new desc", "path": "/fake/path"},
-        ])
+        new_provider = MockSkillProvider(
+            [
+                {"name": "new-skill", "description": "new desc", "path": "/fake/path"},
+            ]
+        )
         registry.register_provider(new_provider)
 
         # _loaded 应被重置为 False
@@ -94,9 +97,11 @@ class TestSkillRegistry:
         registry = SkillRegistry([])
         assert registry._loaded is False
 
-        new_provider = MockSkillProvider([
-            {"name": "only-skill", "description": "desc", "path": "/fake"},
-        ])
+        new_provider = MockSkillProvider(
+            [
+                {"name": "only-skill", "description": "desc", "path": "/fake"},
+            ]
+        )
         registry.register_provider(new_provider)
 
         skills = registry.list_skills()
@@ -139,7 +144,7 @@ class TestSkillOptionsRuntime:
 
 
 class TestSkillRuntimeBackend:
-    def test_execute_in_skill_scripts_dir(self, tmp_path: Path):
+    def test_execute_in_skill_scripts_dir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         from aidev_agent.core.tools.runtime_tools import RuntimeBackendResolver, get_execute_tool
         from aidev_agent.core.tools.runtime_tools.local_backend import FilesystemBackend
 
@@ -149,6 +154,14 @@ class TestSkillRuntimeBackend:
         scripts_dir.mkdir(parents=True)
         (scripts_dir / "run.sh").write_text("echo skill-run-ok\n", encoding="utf-8")
 
+        # 安全校验默认只允许 /workspace,/home,/tmp,/app 下的脚本，
+        # 而 pytest 在 macOS 上的 tmp_path 实际是 /private/var/folders/...
+        # 这里将 tmp_path 加入白名单，保证脚本能被允许执行。
+        monkeypatch.setattr(
+            "aidev_agent.core.tools.runtime_tools.security.DEFAULT_ALLOWED_SCRIPT_DIRS",
+            [str(tmp_path)],
+        )
+
         resolver = RuntimeBackendResolver(default_runtime="local")
         resolver.register_runtime("local", FilesystemBackend(root_dir=str(tmp_path), virtual_mode=True))
         resolver.register_runtime(
@@ -157,7 +170,8 @@ class TestSkillRuntimeBackend:
         )
 
         execute_tool = get_execute_tool(resolver)
-        out = execute_tool.invoke({"command": "bash run.sh", "target_runtime": "local_my-skill"})
+        script_path = str(scripts_dir / "run.sh")
+        out = execute_tool.invoke({"command": f"bash {script_path}", "target_runtime": "local_my-skill"})
         assert "skill-run-ok" in out
 
 
@@ -172,6 +186,12 @@ class TestReActBuilderSkillsIntegration:
         scripts_dir = skill_md.parent / "scripts"
         scripts_dir.mkdir(parents=True)
         (scripts_dir / "run.sh").write_text("echo skill-run-ok\n", encoding="utf-8")
+
+        # 同上：将 tmp_path 加入安全校验白名单
+        monkeypatch.setattr(
+            "aidev_agent.core.tools.runtime_tools.security.DEFAULT_ALLOWED_SCRIPT_DIRS",
+            [str(tmp_path)],
+        )
 
         llm = MagicMock()
         llm.model_name = "gpt-4o"

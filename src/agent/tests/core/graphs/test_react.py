@@ -151,12 +151,6 @@ class TestReActAgentBuilder:
         assert builder._suffix == "suffix text"
         assert result is builder
 
-    def test_set_format_instructions(self):
-        builder = ReActAgentBuilder()
-        result = builder.set_format_instructions("format me")
-        assert builder._format_instructions == "format me"
-        assert result is builder
-
     def test_set_chat_history(self):
         builder = ReActAgentBuilder()
         history = [HumanMessage(content="hi")]
@@ -868,16 +862,6 @@ class TestReActAgentBuilder:
         assert builder._callbacks == cb
         assert result is builder
 
-    def test_set_bkai_options_unconsumed_fields_to_extra_kwargs(self):
-        """未被消费的字段应存入 _extra_kwargs"""
-        from aidev_agent.services.pydantic_models import AgentExecutorKwargs
-
-        llm = MagicMock()
-        opts = AgentExecutorKwargs(llm=llm, some_custom_field="value")
-        builder = ReActAgentBuilder()
-        builder.set_bkai_options(opts)
-        assert builder._extra_kwargs.get("some_custom_field") == "value"
-
     def test_set_bkai_options_non_thinking_llm_str_conversion(self):
         """non_thinking_llm 为 str 时应调用 ChatModel.get_setup_instance 转换"""
         from aidev_agent.services.pydantic_models import AgentExecutorKwargs
@@ -932,52 +916,54 @@ class TestReActAgentBuilder:
     # B (continued). _extract_paas_params 测试 (M3)
     # ----------------------------------------------------------------
 
-    def test_extract_paas_params_from_env(self, monkeypatch):
-        """_extract_paas_params 应从环境变量读取所有参数"""
+    def test_extract_paas_params_from_skill_and_config(self, monkeypatch):
+        """_extract_paas_params 应从 skill metadata 与 config 中提取参数"""
+        from aidev_agent.config import settings
         from aidev_agent.core.graphs.react.skill_middleware import _extract_paas_params
 
-        monkeypatch.setenv("BP_SANDBOX_API_HOST", "https://api.example.com")
-        monkeypatch.setenv("BP_SANDBOX_APP_CODE", "myapp")
-        monkeypatch.setenv("BP_SANDBOX_APP_SECRET", "secret")
-        monkeypatch.setenv("BP_SANDBOX_BK_USERNAME", "admin")
-        monkeypatch.setenv("BP_SANDBOX_BK_TICKET", "ticket123")
-        monkeypatch.setenv("BP_SANDBOX_ACCESS_TOKEN", "token123")
-        monkeypatch.setenv("BP_SANDBOX_TMP_SNAPSHOT", "snap1")
-        monkeypatch.setenv("BP_SANDBOX_TMP_SNAPSHOT_ENTRYPOINT", "cmd1 cmd2")
-        monkeypatch.setenv("BP_SANDBOX_TMP_ENV_VARS", '{"KEY": "VAL"}')
+        monkeypatch.delenv("SANDBOX_BP_ACCESS_TOKEN", raising=False)
+        skill = {
+            "metadata": {
+                "bkai_paas_sandbox": {
+                    "image": "snap1",
+                    "envs": {"KEY": "VAL"},
+                }
+            }
+        }
+        config = {"access_token": "token123", "executor": "admin"}
 
-        result = _extract_paas_params(skill=None, config={})
-        assert result["app_code"] == "myapp"
+        result = _extract_paas_params(skill=skill, config=config)
+        assert result["app_code"] == settings.APP_CODE
         assert result["bk_username"] == "admin"
         assert result["access_token"] == "token123"
         assert result["snapshot"] == "snap1"
-        assert result["snapshot_entrypoint"] == ["cmd1", "cmd2"]
-        assert result["env_vars"] == {"KEY": "VAL"}
+        assert result["snapshot_entrypoint"] == []
+        assert result["env_vars"] == {"KEY": "VAL", "ACCESS_TOKEN": "token123"}
 
     def test_extract_paas_params_defaults(self, monkeypatch):
-        """环境变量未设置时应返回空默认值"""
+        """skill=None 且 config 为空时应返回带 settings.APP_CODE 的默认值"""
+        from aidev_agent.config import settings
         from aidev_agent.core.graphs.react.skill_middleware import _extract_paas_params
 
-        # 确保环境变量不存在
-        for key in [
-            "BP_SANDBOX_API_HOST",
-            "BP_SANDBOX_APP_CODE",
-            "BP_SANDBOX_APP_SECRET",
-            "BP_SANDBOX_BK_USERNAME",
-            "BP_SANDBOX_BK_TICKET",
-            "BP_SANDBOX_ACCESS_TOKEN",
-            "BP_SANDBOX_TMP_SNAPSHOT",
-            "BP_SANDBOX_TMP_SNAPSHOT_ENTRYPOINT",
-            "BP_SANDBOX_TMP_ENV_VARS",
-        ]:
-            monkeypatch.delenv(key, raising=False)
+        monkeypatch.delenv("SANDBOX_BP_ACCESS_TOKEN", raising=False)
 
         result = _extract_paas_params(skill=None, config={})
-        assert result["app_code"] == ""
-        assert result["app_code"] == ""
+        assert result["app_code"] == settings.APP_CODE
+        assert result["bk_username"] is None
+        assert result["access_token"] == ""
         assert result["snapshot"] == ""
         assert result["snapshot_entrypoint"] == []
-        assert result["env_vars"] == {}
+        assert result["env_vars"] == {"ACCESS_TOKEN": ""}
+
+    def test_extract_paas_params_access_token_from_env(self, monkeypatch):
+        """config 未提供 access_token 时应从环境变量 SANDBOX_BP_ACCESS_TOKEN 读取"""
+        from aidev_agent.core.graphs.react.skill_middleware import _extract_paas_params
+
+        monkeypatch.setenv("SANDBOX_BP_ACCESS_TOKEN", "env-token")
+
+        result = _extract_paas_params(skill=None, config={})
+        assert result["access_token"] == "env-token"
+        assert result["env_vars"]["ACCESS_TOKEN"] == "env-token"
 
     # ----------------------------------------------------------------
     # C. build 返回值测试

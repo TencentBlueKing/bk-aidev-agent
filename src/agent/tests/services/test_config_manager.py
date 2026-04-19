@@ -1,4 +1,5 @@
 import time
+from typing import Optional
 from unittest.mock import Mock
 
 from aidev_agent.api.abstract_client import AbstractBKAidevResourceManager
@@ -11,6 +12,7 @@ class MockResourceManager(AbstractBKAidevResourceManager):
     def __init__(self, config_data=None):
         self.config_data = config_data or {}
         self.call_count = 0
+        self.last_version = None
 
     def retrieve_knowledgebase(self, id: int, **kwargs) -> dict:
         return {"id": id, "name": f"Knowledgebase {id}"}
@@ -21,8 +23,9 @@ class MockResourceManager(AbstractBKAidevResourceManager):
     def get_chat_session_context(self, session_code: str, **kwargs) -> list[dict]:
         return []
 
-    def retrieve_agent_config(self, agent_code: str, **kwargs) -> dict:
+    def retrieve_agent_config(self, agent_code: str, version: Optional[str] = None, **kwargs) -> dict:
         self.call_count += 1
+        self.last_version = version
         if agent_code in self.config_data:
             return self.config_data[agent_code]
         return {
@@ -96,8 +99,8 @@ def test_cache_storage_and_retrieval():
     # Verify the configs are the same object (cached)
     assert config1 is config2
 
-    # Verify cache contains the entry
-    assert "test_agent_1" in AgentConfigManager._config_cache
+    # Verify cache contains the entry (cache key is (agent_code, version_or_latest))
+    assert ("test_agent_1", "latest") in AgentConfigManager._config_cache
 
 
 def test_cache_expiration():
@@ -113,7 +116,7 @@ def test_cache_expiration():
     assert mock_manager.call_count == 1
 
     # Manually expire the cache entry
-    cached_entry = AgentConfigManager._config_cache["test_agent_2"]
+    cached_entry = AgentConfigManager._config_cache[("test_agent_2", "latest")]
     cached_entry.timestamp = time.time() - AgentConfigManager.CACHE_TTL - 1  # Make it 61 seconds old
 
     # Get config again (should refresh due to expiration)
@@ -169,8 +172,8 @@ def test_multiple_agents_cache_isolation():
     assert config2.agent_code == "agent_b"
 
     # Verify cache contains both entries
-    assert "agent_a" in AgentConfigManager._config_cache
-    assert "agent_b" in AgentConfigManager._config_cache
+    assert ("agent_a", "latest") in AgentConfigManager._config_cache
+    assert ("agent_b", "latest") in AgentConfigManager._config_cache
 
     # Get config again for both agents (should use cache)
     config1_cached = AgentConfigManager.get_config("agent_a", mock_manager)
@@ -182,3 +185,42 @@ def test_multiple_agents_cache_isolation():
     # Verify the cached configs are the same as originals
     assert config1 is config1_cached
     assert config2 is config2_cached
+
+
+def test_version_passes_through_to_resource_manager():
+    """version 必须透传到 resource_manager.retrieve_agent_config"""
+    AgentConfigManager._config_cache.clear()
+    mock_manager = MockResourceManager()
+
+    AgentConfigManager.get_config("agent_v", mock_manager, version="v2")
+    assert mock_manager.last_version == "v2"
+
+    # 不传 version → 走 latest
+    AgentConfigManager.get_config("agent_v_latest", mock_manager)
+    assert mock_manager.last_version is None
+
+
+def test_version_isolates_cache_slot():
+    """同一 agent_code 不同 version 走独立缓存槽，互不污染"""
+    AgentConfigManager._config_cache.clear()
+    mock_manager = MockResourceManager()
+
+    config_latest = AgentConfigManager.get_config("agent_v", mock_manager)
+    assert mock_manager.call_count == 1
+    config_v1 = AgentConfigManager.get_config("agent_v", mock_manager, version="v1")
+    assert mock_manager.call_count == 2
+    config_v2 = AgentConfigManager.get_config("agent_v", mock_manager, version="v2")
+    assert mock_manager.call_count == 3
+
+    # 三个 slot 同时存在
+    assert ("agent_v", "latest") in AgentConfigManager._config_cache
+    assert ("agent_v", "v1") in AgentConfigManager._config_cache
+    assert ("agent_v", "v2") in AgentConfigManager._config_cache
+
+    # 同 version 复访命中缓存
+    AgentConfigManager.get_config("agent_v", mock_manager, version="v1")
+    assert mock_manager.call_count == 3
+
+    # 不同版本 config 实例彼此独立
+    assert config_latest is not config_v1
+    assert config_v1 is not config_v2

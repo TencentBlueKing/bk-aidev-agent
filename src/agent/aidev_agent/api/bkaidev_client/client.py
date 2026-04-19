@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import json
+from typing import Optional
 
 from bkapi_client_core.base import Operation, OperationGroup
 from bkapi_client_core.client import BaseClient, RequestContextBuilder
@@ -333,7 +334,12 @@ class Client(BaseClient, AbstractBKAidevResourceManager):
         result = self.api.create_knowledgebase_query(data=data)
         return result.get("data", {})
 
-    def retrieve_agent_config(self, agent_code: str, **kwargs) -> dict:
+    def retrieve_agent_config(self, agent_code: str, version: Optional[str] = None, **kwargs) -> dict:
+        params = kwargs.pop("params", None) or {}
+        if version is not None:
+            params["version"] = version
+        if params:
+            kwargs["params"] = params
         return self.api.retrieve_agent_config(path_params={"agent_code": agent_code}, **kwargs).get("data", {})
 
     def retrieve_skill(self, skill_id: str, version: str, **kwargs) -> dict:
@@ -365,9 +371,9 @@ class Client(BaseClient, AbstractBKAidevResourceManager):
 
     def get_flow_agent_task_node_info(self, task_id: str, node_id: str, **kwargs) -> dict:
         """Get flow agent task node info"""
-        return self.api.flow_agent_task_node_info(
-            path_params={"task_id": task_id, "node_id": node_id}, **kwargs
-        ).get("data", {})
+        return self.api.flow_agent_task_node_info(path_params={"task_id": task_id, "node_id": node_id}, **kwargs).get(
+            "data", {}
+        )
 
     def stop_flow_agent_task(self, session_code: str, **kwargs) -> dict:
         """Stop (revoke) a flow agent task"""

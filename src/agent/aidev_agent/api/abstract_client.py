@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from langchain_core.tools import StructuredTool
 
@@ -23,8 +23,11 @@ class AbstractBKAidevResourceManager(ABC):
         """Get chat session context"""
 
     @abstractmethod
-    def retrieve_agent_config(self, agent_code: str, **kwargs) -> dict:
-        """Retrieve agent config by agent code"""
+    def retrieve_agent_config(self, agent_code: str, version: Optional[str] = None, **kwargs) -> dict:
+        """Retrieve agent config by agent code.
+
+        :param version: 可选的 agent 配置版本；为空时由后端返回最新版本（与历史行为一致）。
+        """
 
     @abstractmethod
     def retrieve_skill(self, skill_id: str, version: str, **kwargs) -> dict:

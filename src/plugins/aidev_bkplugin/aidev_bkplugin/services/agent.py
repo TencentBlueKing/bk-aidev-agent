@@ -17,8 +17,15 @@ from bkapi_client_core.exceptions import HTTPResponseError
 from django.conf import settings
 from django.core.cache import cache
 from langgraph.checkpoint.memory import MemorySaver
-from opentelemetry import trace
-from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
+# OpenTelemetry 是可选 extras（pip install aidev-bkplugin[opentelemetry]）。
+# 未安装时 trace context 注入功能降级为 no-op，其余流程不受影响。
+try:
+    from opentelemetry import trace
+    from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+except ImportError:
+    trace = None
+    TraceContextTextMapPropagator = None
 
 from .factory import agent_config_factory, agent_factory
 from ..constants import AGUI_PROTOCOL_VERSION
@@ -36,16 +43,17 @@ def _get_checkpointer():
 def build_chat_completion_agent_by_session_code(
     session_code: str,
     username: str = "",
+    version: str | None = None,
 ) -> ChatCompletionAgent:
     """构建 ChatCompletionAgent
 
     Args:
         session_code: 会话标识
-        client: BKAidev API 客户端（提供时启用回写）
         username: 用户名
+        version: 主 agent 配置版本；为空走最新版
 
     Returns:
-        ChatCompletionAgent 实例，如果提供了 client 则配置回写回调
+        ChatCompletionAgent 实例
     """
     agent_cls = agent_factory.get(settings.DEFAULT_NAME)
     config_manager = agent_config_factory.get(settings.DEFAULT_NAME)
@@ -61,13 +69,14 @@ def build_chat_completion_agent_by_session_code(
         checkpointer=_get_checkpointer(),
         event_handler=event_handler,
         username=username,
+        version=version,
     )
 
     return agent_instance
 
 
 def build_chat_completion_agent_by_chat_history(
-    chat_history: list[ChatPrompt], username: str = ""
+    chat_history: list[ChatPrompt], username: str = "", version: str | None = None
 ) -> ChatCompletionAgent:
     role_contents = get_agent_role_info()
     if role_contents:
@@ -81,19 +90,29 @@ def build_chat_completion_agent_by_chat_history(
         config_manager_class=config_manager,
         checkpointer=_get_checkpointer(),
         username=username,
+        version=version,
     )
     return agent_instance
 
 
-def get_agent_config_info(username: str | None = None):
-    agent_info_key = f"get_agent_config_info:{username or 'default'}"
+def get_agent_config_info(username: str | None = None, version: str | None = None):
+    """读取 agent 配置；按 ``(username, version)`` 维度做缓存隔离。
+
+    :param version: agent 配置版本；为空时不传给后端，由后端返回最新版本，
+        与历史行为兼容；缓存 key 落到 ``:latest`` 以避免污染指定版本的缓存。
+    """
+    agent_info_key = f"get_agent_config_info:{username or 'default'}:{version or 'latest'}"
 
     agent_info = cache.get(agent_info_key)
     if not agent_info:
         client = BKAidevApi.get_client()
-        result = client.api.retrieve_agent_config(
-            path_params={"agent_code": settings.APP_CODE}, headers={"X-BKAIDEV-USER": username}
-        )
+        api_kwargs: dict = {
+            "path_params": {"agent_code": settings.APP_CODE},
+            "headers": {"X-BKAIDEV-USER": username},
+        }
+        if version:
+            api_kwargs["params"] = {"version": version}
+        result = client.api.retrieve_agent_config(**api_kwargs)
         agent_info = result["data"]
         otel_env_info = agent_info.pop("otel_info", None)
         if otel_env_info:
@@ -157,6 +176,7 @@ def run_bkplugin_invoke(
         thread_id=execute_kwargs.session_code or str(uuid.uuid4()),
         chat_history=chat_history,
         username=username,
+        version=execute_kwargs.version,
     )
     return chat_completion_agent.execute(execute_kwargs)
 
@@ -168,7 +188,7 @@ def build_execute_kwargs(_execute_kwargs: dict, username: str | None = None) -> 
     execute_kwargs.executor = execute_kwargs.executor or username or "anonymous"
     execute_kwargs.caller_executor = execute_kwargs.caller_executor or username or "anonymous"
     execute_kwargs.caller_order_type = execute_kwargs.caller_order_type or "ai_chat"
-    if not execute_kwargs.caller_trace_context:
+    if not execute_kwargs.caller_trace_context and trace is not None:
         current_span = trace.get_current_span()
         if current_span is not None and current_span.get_span_context().is_valid:
             carrier: dict[str, str] = {}
@@ -197,6 +217,7 @@ def run_chat_completion_with_thread_id(
         input_text=input_text,
         username=username,
         save_content=save_content,
+        version=execute_kwargs.version,
     )
     execute_kwargs.session_code = session_code
     result = execute_agent_with_save(agent_instance, execute_kwargs, session_code, username)
@@ -297,7 +318,9 @@ def save_chat_history_to_session(session_code: str, chat_history: list[ChatPromp
         )
 
 
-def _build_session_agent_for_thread(session_code: str, username: str) -> ChatCompletionAgent:
+def _build_session_agent_for_thread(
+    session_code: str, username: str, version: str | None = None
+) -> ChatCompletionAgent:
     agent_cls = agent_factory.get(settings.DEFAULT_NAME)
     config_manager = agent_config_factory.get(settings.DEFAULT_NAME)
 
@@ -315,11 +338,17 @@ def _build_session_agent_for_thread(session_code: str, username: str) -> ChatCom
         checkpointer=_get_checkpointer(),
         event_handler=event_handler,
         username=username,
+        version=version,
     )
 
 
 def build_chat_completion_agent_by_thread_id(
-    thread_id: str, input_text: str, username: str, agent_code: str | None = None, save_content: bool = True
+    thread_id: str,
+    input_text: str,
+    username: str,
+    agent_code: str | None = None,
+    save_content: bool = True,
+    version: str | None = None,
 ) -> tuple[ChatCompletionAgent, str]:
     """
     通过 thread_id 构建 Agent
@@ -330,6 +359,7 @@ def build_chat_completion_agent_by_thread_id(
         username: 用户名
         agent_code: 智能体代码
         save_content: 是否保存会话内容
+        version: 主 agent 配置版本；为空走最新版
 
     Returns:
         tuple[agent_instance, session_code]
@@ -343,7 +373,7 @@ def build_chat_completion_agent_by_thread_id(
     if save_content and input_text:
         save_session_content(session_code, PromptRole.USER.value, input_text, username)
 
-    return _build_session_agent_for_thread(session_code, username), session_code
+    return _build_session_agent_for_thread(session_code, username, version=version), session_code
 
 
 def build_chat_completion_agent_by_thread_id_with_chat_history(
@@ -351,6 +381,7 @@ def build_chat_completion_agent_by_thread_id_with_chat_history(
     chat_history: list[ChatPrompt],
     username: str,
     agent_code: str | None = None,
+    version: str | None = None,
 ) -> tuple[ChatCompletionAgent, str]:
     """
     通过 thread_id 构建 Agent，并先将传入的 chat_history 写入对应 session。
@@ -360,6 +391,7 @@ def build_chat_completion_agent_by_thread_id_with_chat_history(
         chat_history: 会话历史
         username: 用户名
         agent_code: 智能体代码
+        version: 主 agent 配置版本；为空走最新版
 
     Returns:
         tuple[agent_instance, session_code]
@@ -367,7 +399,7 @@ def build_chat_completion_agent_by_thread_id_with_chat_history(
     agent_code = agent_code or settings.APP_CODE
     session_code = get_or_create_session_by_thread_id(username, thread_id, agent_code)
     save_chat_history_to_session(session_code=session_code, chat_history=chat_history, username=username)
-    return _build_session_agent_for_thread(session_code, username), session_code
+    return _build_session_agent_for_thread(session_code, username, version=version), session_code
 
 
 def execute_agent_with_save(
