@@ -33,6 +33,7 @@ import type { IUseChatHelperOptions } from './type';
 
 export * from './agent';
 export * from './event';
+export * from './http';
 export * from './mediator';
 export * from './message';
 export * from './session';
