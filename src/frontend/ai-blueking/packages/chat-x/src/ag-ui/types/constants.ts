@@ -28,10 +28,10 @@ export enum MessageContentType {
   Binary = 'binary',
   FlowAgent = 'flow_agent',
   Function = 'function',
-  KeyValue = 'key-value',
-  KnowledgeRag = 'knowledge-rag',
+  KeyValue = 'key_value',
+  KnowledgeRag = 'knowledge_rag',
   Other = 'other',
-  ReferenceDocument = 'reference-document',
+  ReferenceDocument = 'reference_document',
   Text = 'text',
 }
 

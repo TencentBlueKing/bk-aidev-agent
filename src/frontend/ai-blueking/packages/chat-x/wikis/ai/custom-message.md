@@ -213,8 +213,8 @@ Activity 消息通过 `activityType` 字段分发到不同的子组件。库内�
 | activityType         | 组件                  | 用途                                                |
 | -------------------- | --------------------- | --------------------------------------------------- |
 | `flow_agent`         | `FlowAgentContent`    | BkFlow 流程执行（节点列表、状态统计、节点详情 Tab） |
-| `knowledge-rag`      | `KnowledgeRagContent` | 知识库检索（检索摘要 + 引用文档列表）               |
-| `reference-document` | `ReferenceDocContent` | 引用文档列表                                        |
+| `knowledge_rag`      | `KnowledgeRagContent` | 知识库检索（检索摘要 + 引用文档列表）               |
+| `reference_document` | `ReferenceDocContent` | 引用文档列表                                        |
 
 分发机制在 `activity-message.vue` 中：
 

@@ -65,10 +65,10 @@ domain: message
 | `activityType`    | 模式           | 标题文案                             | 图标             | 内容区                              |
 | ----------------- | -------------- | ------------------------------------ | ---------------- | ----------------------------------- |
 | `'knowledge_rag'` | 知识检索模式   | 检索中 / 检索完成（随 status 切换）  | Loading / 文档   | Markdown 检索摘要 + 引用列表        |
-| `'flow-agent'`    | FlowAgent 模式 | 执行情况: 成功 N / 失败 N / 执行中 N | Loading / 箭头   | 任务节点树 + 节点详情（自定义 Tab） |
+| `'flow_agent'`    | FlowAgent 模式 | 执行情况: 成功 N / 失败 N / 执行中 N | Loading / 箭头   | 任务节点树 + 节点详情（自定义 Tab） |
 | 其他任意值        | 引用文档模式   | 引用 N 篇资料作为参考                | 文档图标（固定） | 引用文档列表                        |
 
-> **注意：** 只有值严格等于 `'knowledge_rag'` 才进入知识检索模式；严格等于 `'flow-agent'`（`MessageContentType.FlowAgent`）才进入 FlowAgent 模式；其他值均按引用文档模式处理。
+> **注意：** 只有值严格等于 `'knowledge_rag'` 才进入知识检索模式；严格等于 `'flow_agent'`（`MessageContentType.FlowAgent`）才进入 FlowAgent 模式；其他值均按引用文档模式处理。
 
 ## 引用文档模式
 
@@ -258,7 +258,7 @@ domain: message
 
 ## FlowAgent 执行情况模式
 
-`activityType` 设为 `MessageContentType.FlowAgent`（`'flow-agent'`），`content` 传入 `BkFlowMessageContent` 对象。用于展示蓝鲸标准运维（BkFlow）任务的执行状态、节点列表和统计信息。
+`activityType` 设为 `MessageContentType.FlowAgent`（`'flow_agent'`），`content` 传入 `BkFlowMessageContent` 对象。用于展示蓝鲸标准运维（BkFlow）任务的执行状态、节点列表和统计信息。
 
 ### 核心交互
 
@@ -270,7 +270,7 @@ domain: message
 ### 内部渲染结构
 
 ```
-FlowAgentContent（activityType = 'flow-agent'）
+FlowAgentContent（activityType = 'flow_agent'）
 ├── ActivityLayout（公共折叠布局容器）
 │   └── #title
 │       ├── Loading / ArrowIcon（随 status 切换）
@@ -367,7 +367,7 @@ const messages = [
   {
     id: '3',
     role: 'activity',
-    activityType: MessageContentType.FlowAgent, // 'flow-agent'
+    activityType: MessageContentType.FlowAgent, // 'flow_agent'
     status: MessageStatus.Streaming,
     content: {
       task_id: 100,
@@ -430,9 +430,9 @@ type BkFlowNode = {
 };
 
 enum MessageContentType {
-  FlowAgent = 'flow-agent',
-  KnowledgeRag = 'knowledge-rag',
-  ReferenceDocument = 'reference-document',
+  FlowAgent = 'flow_agent',
+  KnowledgeRag = 'knowledge_rag',
+  ReferenceDocument = 'reference_document',
   // ...
 }
 ```
@@ -483,7 +483,7 @@ enum MessageContentType {
 | 属性名       | 类型                                                                        | 默认值 | 说明                                                      |
 | ------------ | --------------------------------------------------------------------------- | ------ | --------------------------------------------------------- |
 | content      | `ReferenceDocumentContent[] \| KnowledgeRagContent \| BkFlowMessageContent` | -      | 内容数据，格式随 `activityType` 不同                      |
-| activityType | `'knowledge_rag' \| 'flow-agent' \| 'reference_document' \| string`         | -      | 活动类型，决定渲染模式（知识检索 / FlowAgent / 引用文档） |
+| activityType | `'knowledge_rag' \| 'flow_agent' \| 'reference_document' \| string`         | -      | 活动类型，决定渲染模式（知识检索 / FlowAgent / 引用文档） |
 | status       | `MessageStatus`                                                             | -      | 消息状态，仅在 `knowledge_rag` 模式下影响标题和图标       |
 | id           | `string \| number`                                                          | -      | 消息 ID                                                   |
 | messageId    | `string \| number`                                                          | -      | 消息唯一标识                                              |
@@ -514,9 +514,9 @@ interface KnowledgeRagContent {
 
 // activityType 枚举值
 enum MessageContentType {
-  FlowAgent = 'flow-agent',
-  KnowledgeRag = 'knowledge-rag',
-  ReferenceDocument = 'reference-document',
+  FlowAgent = 'flow_agent',
+  KnowledgeRag = 'knowledge_rag',
+  ReferenceDocument = 'reference_document',
   // ...
 }
 ```
@@ -525,7 +525,7 @@ enum MessageContentType {
 
 - **知识检索过程**：以 `knowledge_rag` 模式展示 RAG 检索全过程，从"检索中"到"检索完成"的状态流转
 - **参考资料引用**：以 `reference_document` 模式展示 AI 回复所引用的参考文档列表
-- **FlowAgent 执行监控**：以 `flow-agent` 模式展示 BkFlow 流程执行状态、节点列表和详情
+- **FlowAgent 执行监控**：以 `flow_agent` 模式展示 BkFlow 流程执行状态、节点列表和详情
 - **流式场景**：`pending` → `streaming` → `complete` 状态变化配合流式响应实时更新
 - **自动渲染**：通过 `MessageContainer` 或 `MessageRender` 自动处理 `role: 'activity'` 消息，无需手动引入
 

@@ -330,7 +330,7 @@ enum MessageContentType {
   ReferenceDocument = 'reference_document', // ReferenceDocumentContent[]，引用列表
   Binary = 'binary',
   Function = 'function',
-  KeyValue = 'key-value',
+  KeyValue = 'key_value',
   KnowledgeRag = 'knowledge_rag',
   Other = 'other',
 }

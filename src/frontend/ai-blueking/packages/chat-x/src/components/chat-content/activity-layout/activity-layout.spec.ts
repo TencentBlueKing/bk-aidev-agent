@@ -32,9 +32,9 @@ import ActivityLayout from './activity-layout.vue';
 
 vi.mock('../../../ag-ui/types/constants', () => ({
   MessageContentType: {
-    FlowAgent: 'flow-agent',
-    KnowledgeRag: 'knowledge-rag',
-    ReferenceDocument: 'reference-document',
+    FlowAgent: 'flow_agent',
+    KnowledgeRag: 'knowledge_rag',
+    ReferenceDocument: 'reference_document',
   },
 }));
 
@@ -61,7 +61,7 @@ describe('ActivityLayout', () => {
   describe('渲染测试', () => {
     it('应该正确渲染组件', () => {
       wrapper = mount(ActivityLayout, {
-        props: { activityType: 'reference-document' },
+        props: { activityType: 'reference_document' },
       });
 
       expect(wrapper.find('.ai-activity-message').exists()).toBe(true);
@@ -69,7 +69,7 @@ describe('ActivityLayout', () => {
 
     it('应该渲染标题区域', () => {
       wrapper = mount(ActivityLayout, {
-        props: { activityType: 'reference-document' },
+        props: { activityType: 'reference_document' },
       });
 
       expect(wrapper.find('.ai-activity-message-title').exists()).toBe(true);
@@ -77,7 +77,7 @@ describe('ActivityLayout', () => {
 
     it('应该渲染内容区域', () => {
       wrapper = mount(ActivityLayout, {
-        props: { activityType: 'reference-document' },
+        props: { activityType: 'reference_document' },
         slots: {
           default: () => h('div', { class: 'test-content' }, '内容'),
         },
@@ -91,7 +91,7 @@ describe('ActivityLayout', () => {
   describe('折叠功能测试', () => {
     it('默认应该展开显示内容', () => {
       wrapper = mount(ActivityLayout, {
-        props: { activityType: 'reference-document' },
+        props: { activityType: 'reference_document' },
         slots: {
           default: () => h('div', { class: 'test-content' }),
         },
@@ -103,7 +103,7 @@ describe('ActivityLayout', () => {
     it('点击标题应该切换折叠状态', async () => {
       wrapper = mount(ActivityLayout, {
         props: {
-          activityType: 'reference-document',
+          activityType: 'reference_document',
           collapsed: false,
           'onUpdate:collapsed': (val: boolean) => wrapper.setProps({ collapsed: val }),
         },
@@ -123,7 +123,7 @@ describe('ActivityLayout', () => {
     it('折叠时 collapsed-icon 应该有 is-collapsed 类', async () => {
       wrapper = mount(ActivityLayout, {
         props: {
-          activityType: 'reference-document',
+          activityType: 'reference_document',
           collapsed: false,
           'onUpdate:collapsed': (val: boolean) => wrapper.setProps({ collapsed: val }),
         },
@@ -137,7 +137,7 @@ describe('ActivityLayout', () => {
     it('折叠时内容区域应该隐藏', async () => {
       wrapper = mount(ActivityLayout, {
         props: {
-          activityType: 'reference-document',
+          activityType: 'reference_document',
           collapsed: false,
           'onUpdate:collapsed': async (val: boolean) => {
             await wrapper.setProps({ collapsed: val });
@@ -160,7 +160,7 @@ describe('ActivityLayout', () => {
   describe('FlowAgent 特殊处理测试', () => {
     it('FlowAgent 类型不应该渲染折叠图标', () => {
       wrapper = mount(ActivityLayout, {
-        props: { activityType: 'flow-agent' },
+        props: { activityType: 'flow_agent' },
       });
 
       expect(wrapper.find('.collapsed-icon').exists()).toBe(false);
@@ -168,7 +168,7 @@ describe('ActivityLayout', () => {
 
     it('非 FlowAgent 类型应该渲染折叠图标', () => {
       wrapper = mount(ActivityLayout, {
-        props: { activityType: 'reference-document' },
+        props: { activityType: 'reference_document' },
       });
 
       expect(wrapper.find('.collapsed-icon').exists()).toBe(true);
@@ -179,7 +179,7 @@ describe('ActivityLayout', () => {
   describe('Slot 测试', () => {
     it('应该支持 title scoped slot', () => {
       wrapper = mount(ActivityLayout, {
-        props: { activityType: 'reference-document' },
+        props: { activityType: 'reference_document' },
         slots: {
           title: ({ collapsed }: { collapsed: boolean }) =>
             h('span', { class: 'custom-title', 'data-collapsed': String(collapsed) }, '自定义标题'),
@@ -192,7 +192,7 @@ describe('ActivityLayout', () => {
 
     it('应该支持默认 slot', () => {
       wrapper = mount(ActivityLayout, {
-        props: { activityType: 'reference-document' },
+        props: { activityType: 'reference_document' },
         slots: {
           default: () => h('div', { class: 'custom-content' }, '自定义内容'),
         },

@@ -383,20 +383,23 @@ enum MessageContentType {
   // 二进制内容
   Binary = 'binary',
 
+  // FlowAgent 流程执行
+  FlowAgent = 'flow_agent',
+
   // 函数调用
   Function = 'function',
 
   // 键值对
-  KeyValue = 'key-value',
+  KeyValue = 'key_value',
 
   // 知识检索
-  KnowledgeRag = 'knowledge-rag',
+  KnowledgeRag = 'knowledge_rag',
 
   // 其他
   Other = 'other',
 
   // 引用文档
-  ReferenceDocument = 'reference-document',
+  ReferenceDocument = 'reference_document',
 
   // 文本
   Text = 'text',

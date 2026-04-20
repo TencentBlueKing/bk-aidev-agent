@@ -80,9 +80,9 @@ vi.mock('../../../lang/lang', () => ({
 
 vi.mock('../../../ag-ui/types/constants', () => ({
   MessageContentType: {
-    FlowAgent: 'flow-agent',
-    KnowledgeRag: 'knowledge-rag',
-    ReferenceDocument: 'reference-document',
+    FlowAgent: 'flow_agent',
+    KnowledgeRag: 'knowledge_rag',
+    ReferenceDocument: 'reference_document',
   },
   MessageStatus: {
     Pending: 'pending',
@@ -167,7 +167,7 @@ describe('ActivityMessage', () => {
     it('应该正确渲染组件', () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'reference-document',
+          activityType: 'reference_document',
           content: [{ name: '文档1', url: 'https://example.com', originFile: '' }],
         },
       });
@@ -178,7 +178,7 @@ describe('ActivityMessage', () => {
     it('应该渲染标题区域', () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'reference-document',
+          activityType: 'reference_document',
           content: [{ name: '文档1', url: 'https://example.com', originFile: '' }],
         },
       });
@@ -189,7 +189,7 @@ describe('ActivityMessage', () => {
     it('应该渲染 DocumentIcon', () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'reference-document',
+          activityType: 'reference_document',
           content: [{ name: '文档1', url: 'https://example.com', originFile: '' }],
         },
       });
@@ -200,7 +200,7 @@ describe('ActivityMessage', () => {
     it('应该渲染 CollapsedIcon', () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'reference-document',
+          activityType: 'reference_document',
           content: [{ name: '文档1', url: 'https://example.com', originFile: '' }],
         },
       });
@@ -217,7 +217,7 @@ describe('ActivityMessage', () => {
 
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'reference-document',
+          activityType: 'reference_document',
           content,
         },
       });
@@ -228,7 +228,7 @@ describe('ActivityMessage', () => {
     it('应该渲染 ReferenceContent 组件', () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'reference-document',
+          activityType: 'reference_document',
           content: [{ name: '文档1', url: 'https://example.com', originFile: '' }],
         },
       });
@@ -239,7 +239,7 @@ describe('ActivityMessage', () => {
     it('应该处理空的 content 数组', () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'reference-document',
+          activityType: 'reference_document',
           content: [],
         },
       });
@@ -252,7 +252,7 @@ describe('ActivityMessage', () => {
     it('默认应该展开显示内容', () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'reference-document',
+          activityType: 'reference_document',
           content: [{ name: '文档1', url: 'https://example.com', originFile: '' }],
         },
       });
@@ -263,7 +263,7 @@ describe('ActivityMessage', () => {
     it('点击标题应该切换折叠状态', async () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'reference-document',
+          activityType: 'reference_document',
           content: [{ name: '文档1', url: 'https://example.com', originFile: '' }],
           collapsed: false,
           'onUpdate:collapsed': (val: boolean) => wrapper.setProps({ collapsed: val }),
@@ -280,7 +280,7 @@ describe('ActivityMessage', () => {
     it('折叠时 collapsed-icon 应该有 is-collapsed 类', async () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'reference-document',
+          activityType: 'reference_document',
           content: [{ name: '文档1', url: 'https://example.com', originFile: '' }],
         },
       });
@@ -292,10 +292,10 @@ describe('ActivityMessage', () => {
   });
 
   describe('KnowledgeRag 类型测试', () => {
-    it('activityType 为 knowledge-rag 且 status 为 pending 时应该渲染 AiLoading', () => {
+    it('activityType 为 knowledge_rag 且 status 为 pending 时应该渲染 AiLoading', () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'knowledge-rag',
+          activityType: 'knowledge_rag',
           status: 'pending',
           content: {
             content: '检索内容',
@@ -308,10 +308,10 @@ describe('ActivityMessage', () => {
       expect(wrapper.find('.mock-document-icon').exists()).toBe(false);
     });
 
-    it('activityType 为 knowledge-rag 且无 status 时应该显示 DocumentIcon', () => {
+    it('activityType 为 knowledge_rag 且无 status 时应该显示 DocumentIcon', () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'knowledge-rag',
+          activityType: 'knowledge_rag',
           content: {
             content: '检索内容',
             referenceDocument: [],
@@ -323,10 +323,10 @@ describe('ActivityMessage', () => {
       expect(wrapper.find('.mock-document-icon').exists()).toBe(true);
     });
 
-    it('activityType 为 knowledge-rag 且 status 为 pending 时应该显示检索中', () => {
+    it('activityType 为 knowledge_rag 且 status 为 pending 时应该显示检索中', () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'knowledge-rag',
+          activityType: 'knowledge_rag',
           status: 'pending',
           content: {
             content: '检索内容',
@@ -338,10 +338,10 @@ describe('ActivityMessage', () => {
       expect(wrapper.find('.ai-activity-message-title-text').text()).toBe('检索中');
     });
 
-    it('activityType 为 knowledge-rag 且 status 为 streaming 时应该显示检索中', () => {
+    it('activityType 为 knowledge_rag 且 status 为 streaming 时应该显示检索中', () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'knowledge-rag',
+          activityType: 'knowledge_rag',
           status: 'streaming',
           content: {
             content: '检索内容',
@@ -353,10 +353,10 @@ describe('ActivityMessage', () => {
       expect(wrapper.find('.ai-activity-message-title-text').text()).toBe('检索中');
     });
 
-    it('activityType 为 knowledge-rag 且 status 为 complete 时应该显示检索完成', () => {
+    it('activityType 为 knowledge_rag 且 status 为 complete 时应该显示检索完成', () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'knowledge-rag',
+          activityType: 'knowledge_rag',
           status: 'complete',
           content: {
             content: '检索内容',
@@ -368,10 +368,10 @@ describe('ActivityMessage', () => {
       expect(wrapper.find('.ai-activity-message-title-text').text()).toBe('检索完成');
     });
 
-    it('activityType 为 knowledge-rag 时应该渲染 MarkdownContent', () => {
+    it('activityType 为 knowledge_rag 时应该渲染 MarkdownContent', () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'knowledge-rag',
+          activityType: 'knowledge_rag',
           content: {
             content: '这是检索内容',
             referenceDocument: [],
@@ -383,10 +383,10 @@ describe('ActivityMessage', () => {
       expect(wrapper.find('.mock-markdown-content').exists()).toBe(true);
     });
 
-    it('activityType 非 knowledge-rag 时不应该渲染 knowledge-rag-content', () => {
+    it('activityType 非 knowledge_rag 时不应该渲染 knowledge-rag-content', () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'reference-document',
+          activityType: 'reference_document',
           content: [{ name: '文档1', url: 'https://example.com', originFile: '' }],
         },
       });
@@ -395,10 +395,10 @@ describe('ActivityMessage', () => {
       expect(wrapper.find('.mock-document-icon').exists()).toBe(true);
     });
 
-    it('status 为 pending 且非 knowledge-rag 时应该显示 DocumentIcon', () => {
+    it('status 为 pending 且非 knowledge_rag 时应该显示 DocumentIcon', () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'reference-document',
+          activityType: 'reference_document',
           status: 'pending',
           content: [{ name: '文档1', url: 'https://example.com', originFile: '' }],
         },
@@ -413,7 +413,7 @@ describe('ActivityMessage', () => {
     it('应该渲染 FlowAgentContent', () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'flow-agent',
+          activityType: 'flow_agent',
           content: {},
         },
       });
@@ -425,7 +425,7 @@ describe('ActivityMessage', () => {
       const content = { task_name: '测试任务', nodes: {} };
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'flow-agent',
+          activityType: 'flow_agent',
           content,
           status: 'streaming',
         },
@@ -437,7 +437,7 @@ describe('ActivityMessage', () => {
     it('应将 uid 作为 messageUid 传递给 FlowAgentContent', () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'flow-agent',
+          activityType: 'flow_agent',
           content: {},
           uid: 'activity-uid-1',
         },
@@ -451,7 +451,7 @@ describe('ActivityMessage', () => {
     it('应该具有正确的类名结构', () => {
       wrapper = mount(ActivityMessage, {
         props: {
-          activityType: 'reference-document',
+          activityType: 'reference_document',
           content: [{ name: '文档1', url: 'https://example.com', originFile: '' }],
         },
       });
