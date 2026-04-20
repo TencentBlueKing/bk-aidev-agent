@@ -64,6 +64,7 @@ const aiBluekingEmitNames = [
   'share-messages',
   'sdk-error',
   'new-chat',
+  'new-chat-created',
   'history-click',
   'auto-generate-name',
   'help-click',

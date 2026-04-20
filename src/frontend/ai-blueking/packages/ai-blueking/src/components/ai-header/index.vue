@@ -286,7 +286,14 @@
     // V2: 如果有 sessionBusinessManager，调用它创建新会话
     if (props.sessionBusinessManager) {
       try {
-        await props.sessionBusinessManager.createNewSession();
+        const session = await props.sessionBusinessManager.createNewSession();
+        if (session) {
+          emit('new-chat-created', {
+            sessionCode: session.sessionCode,
+            sessionName: session.sessionName,
+            createdAt: session.createdAt,
+          });
+        }
       } catch (error) {
         console.error('Failed to create new session:', error);
         Message({

@@ -8,7 +8,7 @@
  */
 
 import type { CreateSessionOptions, IEventEmitter, SessionBusinessConfig } from './types';
-import type { IAgentModule, ISessionModule } from '@blueking/chat-helper';
+import type { IAgentModule, ISession, ISessionModule } from '@blueking/chat-helper';
 
 /**
  * 会话业务管理器
@@ -90,11 +90,12 @@ export class SessionBusinessManager {
    * await sessionBusinessManager.createNewSession();
    * ```
    */
-  async createNewSession(): Promise<void> {
-    return this.createSession({
+  async createNewSession(): Promise<ISession | null> {
+    await this.createSession({
       name: '新会话',
       sessionCode: `new_session_${Date.now()}`,
     });
+    return this.sessionModule.current.value;
   }
 
   /**

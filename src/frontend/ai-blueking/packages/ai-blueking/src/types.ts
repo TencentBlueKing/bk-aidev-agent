@@ -78,6 +78,7 @@ export interface AIBluekingEmits {
 
   // Header 相关事件
   (e: 'new-chat'): void;
+  (e: 'new-chat-created', session: { sessionCode: string; sessionName?: string; createdAt?: string }): void;
   (e: 'history-click', event: Event): void;
   (e: 'auto-generate-name'): void;
   (e: 'help-click'): void;

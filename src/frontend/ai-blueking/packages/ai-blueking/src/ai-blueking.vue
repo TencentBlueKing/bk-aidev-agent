@@ -49,6 +49,7 @@
             @history-session-rename="handleHistorySessionRename"
             @history-session-switch="handleHistorySessionSwitch"
             @new-chat="handleNewChat"
+            @new-chat-created="handleNewChatCreated"
             @rename="handleRename"
             @share="handleShare"
             @toggle-compression="handleToggleCompression"
@@ -226,6 +227,7 @@
     hasSessionContents,
     autoGenerateLoading,
     handleNewChat,
+    handleNewChatCreated,
     handleHistoryClick,
     handleHistorySessionSwitch,
     handleHistorySessionDelete,

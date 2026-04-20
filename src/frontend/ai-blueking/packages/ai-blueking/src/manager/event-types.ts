@@ -66,8 +66,8 @@ export interface UIEventData {
   'nimbus-restore': Record<string, never>;
   'popup-click': Record<string, never>;
   'popup-shortcut-click': { shortcut: IShortcut };
-  'dragging': PositionAndSize;
-  'resizing': PositionAndSize;
+  dragging: PositionAndSize;
+  resizing: PositionAndSize;
   'drag-stop': PositionAndSize;
   'resize-stop': PositionAndSize;
   'compression-toggle': { compressed: boolean };
@@ -118,7 +118,7 @@ export interface BusinessEventData {
   'receive-text': Record<string, never>;
   'receive-end': Record<string, never>;
   'receive-error': { error: Error };
-  'stop': Record<string, never>;
+  stop: Record<string, never>;
   'chat-regenerate': { messageId: string };
   'chat-retry': { messageId: string };
   'message-deleted': { messageId: number };
@@ -160,12 +160,13 @@ export type HeaderEvent =
  */
 export interface HeaderEventData {
   'new-chat': Record<string, never>;
+  'new-chat-created': { session: { sessionCode: string; sessionName?: string; createdAt?: string } };
   'history-click': { event: Event };
   'auto-generate-name': Record<string, never>;
   'help-click': Record<string, never>;
-  'rename': { newName: string };
-  'share': Record<string, never>;
-  'close': Record<string, never>;
+  rename: { newName: string };
+  share: Record<string, never>;
+  close: Record<string, never>;
   'toggle-compression': Record<string, never>;
 }
 
@@ -176,9 +177,7 @@ export interface HeaderEventData {
 /**
  * 消息选择事件名称
  */
-export type MessageSelectionEvent =
-  | 'transfer-messages'
-  | 'share-messages';
+export type MessageSelectionEvent = 'transfer-messages' | 'share-messages';
 
 /**
  * 消息选择事件数据映射
@@ -195,16 +194,14 @@ export interface MessageSelectionEventData {
 /**
  * ChatBot 内部事件名称
  */
-export type ChatBotInternalEvent =
-  | 'agent-info-loaded'
-  | 'error';
+export type ChatBotInternalEvent = 'agent-info-loaded' | 'error';
 
 /**
  * ChatBot 内部事件数据映射
  */
 export interface ChatBotInternalEventData {
   'agent-info-loaded': { chatHelper: IChatHelper };
-  'error': { error: Error };
+  error: { error: Error };
 }
 
 // ============================================================================
@@ -226,22 +223,16 @@ export type ComponentEventData = UIEventData & Pick<BusinessEventData, 'shortcut
  * 所有内部事件类型
  * 用于 ComponentManager 和业务管理器
  */
-export type InternalEvent =
-  | UIEvent
-  | BusinessEvent
-  | HeaderEvent
-  | MessageSelectionEvent
-  | ChatBotInternalEvent;
+export type InternalEvent = UIEvent | BusinessEvent | HeaderEvent | MessageSelectionEvent | ChatBotInternalEvent;
 
 /**
  * 所有内部事件数据
  */
-export type InternalEventData =
-  & UIEventData
-  & BusinessEventData
-  & HeaderEventData
-  & MessageSelectionEventData
-  & ChatBotInternalEventData;
+export type InternalEventData = UIEventData &
+  BusinessEventData &
+  HeaderEventData &
+  MessageSelectionEventData &
+  ChatBotInternalEventData;
 
 // ============================================================================
 // 事件桥接映射
@@ -262,8 +253,8 @@ export const EVENT_BRIDGE_MAP: Record<InternalEvent, string | null> = {
   'nimbus-restore': null, // 内部事件，不对外暴露
   'popup-click': null, // 内部事件，不对外暴露
   'popup-shortcut-click': null, // 通过 shortcut-click 统一暴露
-  'dragging': 'dragging',
-  'resizing': 'resizing',
+  dragging: 'dragging',
+  resizing: 'resizing',
   'drag-stop': 'drag-stop',
   'resize-stop': 'resize-stop',
   'compression-toggle': null, // 内部事件，不对外暴露
@@ -276,7 +267,7 @@ export const EVENT_BRIDGE_MAP: Record<InternalEvent, string | null> = {
   'receive-text': 'receive-text',
   'receive-end': 'receive-end',
   'receive-error': null, // 通过 sdk-error 统一暴露
-  'stop': 'stop',
+  stop: 'stop',
   'chat-regenerate': null, // 内部事件
   'chat-retry': null, // 内部事件
   'message-deleted': null, // 内部事件
@@ -294,12 +285,13 @@ export const EVENT_BRIDGE_MAP: Record<InternalEvent, string | null> = {
 
   // Header 事件
   'new-chat': 'new-chat',
+  'new-chat-created': 'new-chat-created',
   'history-click': 'history-click',
   'auto-generate-name': 'auto-generate-name',
   'help-click': 'help-click',
-  'rename': 'rename',
-  'share': 'share',
-  'close': 'close',
+  rename: 'rename',
+  share: 'share',
+  close: 'close',
   'toggle-compression': null, // 内部事件
 
   // 消息选择事件
@@ -308,7 +300,7 @@ export const EVENT_BRIDGE_MAP: Record<InternalEvent, string | null> = {
 
   // ChatBot 内部事件
   'agent-info-loaded': null, // 内部事件
-  'error': null, // 通过 sdk-error 统一暴露
+  error: null, // 通过 sdk-error 统一暴露
 } as const;
 
 /**
@@ -334,16 +326,12 @@ export function getExternalEventName(internalEvent: InternalEvent): string | nul
 /**
  * 事件回调类型（泛型）
  */
-export type EventCallback<T extends InternalEvent> = (
-  data: InternalEventData[T]
-) => void;
+export type EventCallback<T extends InternalEvent> = (data: InternalEventData[T]) => void;
 
 /**
  * ComponentManager 事件回调类型
  */
-export type ComponentEventCallback<T extends ComponentEvent> = (
-  data: ComponentEventData[T]
-) => void;
+export type ComponentEventCallback<T extends ComponentEvent> = (data: ComponentEventData[T]) => void;
 
 // ============================================================================
 // Vue Emit 参数类型转换
@@ -353,10 +341,7 @@ export type ComponentEventCallback<T extends ComponentEvent> = (
  * 将内部事件数据转换为 Vue emit 参数
  * 某些事件需要特殊处理（如解构对象为多个参数）
  */
-export function transformEventDataToEmitArgs(
-  event: InternalEvent,
-  data: InternalEventData[InternalEvent]
-): unknown[] {
+export function transformEventDataToEmitArgs(event: InternalEvent, data: InternalEventData[InternalEvent]): unknown[] {
   switch (event) {
     // 简单值事件：直接返回值
     case 'send-message':
@@ -376,6 +361,7 @@ export function transformEventDataToEmitArgs(
     case 'sdk-error':
     case 'transfer-messages':
     case 'share-messages':
+    case 'new-chat-created':
       return [data];
 
     // 无参数事件

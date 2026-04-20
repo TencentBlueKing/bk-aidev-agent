@@ -64,10 +64,7 @@ export interface UseEventBridgeReturn {
    * @param event 内部事件名
    * @param data 事件数据
    */
-  forwardToManager: <T extends InternalEvent>(
-    event: T,
-    data: InternalEventData[T]
-  ) => void;
+  forwardToManager: <T extends InternalEvent>(event: T, data: InternalEventData[T]) => void;
 }
 
 /**
@@ -78,41 +75,28 @@ export interface UseEventBridgeReturn {
  *
  * @param forwardToManager useEventBridge 返回的 forwardToManager 函数
  */
-export function createEventForwarders(
-  forwardToManager: UseEventBridgeReturn['forwardToManager']
-) {
+export function createEventForwarders(forwardToManager: UseEventBridgeReturn['forwardToManager']) {
   return {
     // 消息事件
-    sendMessage: (content: string) =>
-      forwardToManager('send-message', { content }),
-    receiveStart: () =>
-      forwardToManager('receive-start', {}),
-    receiveText: () =>
-      forwardToManager('receive-text', {}),
-    receiveEnd: () =>
-      forwardToManager('receive-end', {}),
-    stop: () =>
-      forwardToManager('stop', {}),
+    sendMessage: (content: string) => forwardToManager('send-message', { content }),
+    receiveStart: () => forwardToManager('receive-start', {}),
+    receiveText: () => forwardToManager('receive-text', {}),
+    receiveEnd: () => forwardToManager('receive-end', {}),
+    stop: () => forwardToManager('stop', {}),
 
     // Header 事件
-    newChat: () =>
-      forwardToManager('new-chat', {}),
-    historyClick: (event: Event) =>
-      forwardToManager('history-click', { event }),
-    autoGenerateName: () =>
-      forwardToManager('auto-generate-name', {}),
-    helpClick: () =>
-      forwardToManager('help-click', {}),
-    rename: (newName: string) =>
-      forwardToManager('rename', { newName }),
-    share: () =>
-      forwardToManager('share', {}),
+    newChat: () => forwardToManager('new-chat', {}),
+    newChatCreated: (session: { sessionCode: string; sessionName?: string; createdAt?: string }) =>
+      forwardToManager('new-chat-created', { session }),
+    historyClick: (event: Event) => forwardToManager('history-click', { event }),
+    autoGenerateName: () => forwardToManager('auto-generate-name', {}),
+    helpClick: () => forwardToManager('help-click', {}),
+    rename: (newName: string) => forwardToManager('rename', { newName }),
+    share: () => forwardToManager('share', {}),
 
     // 消息选择事件
-    transferMessages: (messageIds: string[]) =>
-      forwardToManager('transfer-messages', { messageIds }),
-    shareMessages: (messageIds: string[]) =>
-      forwardToManager('share-messages', { messageIds }),
+    transferMessages: (messageIds: string[]) => forwardToManager('transfer-messages', { messageIds }),
+    shareMessages: (messageIds: string[]) => forwardToManager('share-messages', { messageIds }),
   };
 }
 
@@ -159,14 +143,11 @@ export function useEventBridge(options: UseEventBridgeOptions): UseEventBridgeRe
         // 转换事件数据为 emit 参数
         const args = transformEventDataToEmitArgs(
           internalEvent as InternalEvent,
-          data as InternalEventData[InternalEvent]
+          data as InternalEventData[InternalEvent],
         );
 
         if (debug) {
-          console.debug(
-            `[useEventBridge] ${internalEvent} -> ${externalEvent}`,
-            args
-          );
+          console.debug(`[useEventBridge] ${internalEvent} -> ${externalEvent}`, args);
         }
 
         // 发射 Vue emit
@@ -174,20 +155,14 @@ export function useEventBridge(options: UseEventBridgeOptions): UseEventBridgeRe
       };
 
       // 直接订阅 ComponentManager 的事件
-      const unsubscribe = componentManager.on(
-        internalEvent as InternalEvent,
-        bridgeCallback as any
-      );
+      const unsubscribe = componentManager.on(internalEvent as InternalEvent, bridgeCallback as any);
 
       unsubscribers.push(unsubscribe);
     }
   };
 
   // 转发事件到 Manager
-  const forwardToManager = <T extends InternalEvent>(
-    event: T,
-    data: InternalEventData[T]
-  ): void => {
+  const forwardToManager = <T extends InternalEvent>(event: T, data: InternalEventData[T]): void => {
     if (debug) {
       console.debug(`[useEventBridge] Forwarding to manager: ${event}`, data);
     }

@@ -77,6 +77,10 @@ export function useSessionHandlers(params: UseSessionHandlersParams) {
     forwarders.newChat();
   };
 
+  const handleNewChatCreated = (session: { sessionCode: string; sessionName?: string; createdAt?: string }) => {
+    forwarders.newChatCreated(session);
+  };
+
   const handleHistoryClick = (event: Event) => {
     forwarders.historyClick(event);
   };
@@ -187,6 +191,7 @@ export function useSessionHandlers(params: UseSessionHandlersParams) {
     hasSessionContents,
     autoGenerateLoading,
     handleNewChat,
+    handleNewChatCreated,
     handleHistoryClick,
     handleHistorySessionSwitch,
     handleHistorySessionDelete,

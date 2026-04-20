@@ -60,4 +60,6 @@ export type AIHeaderEmits = {
   'history-session-switch': [sessionCode: string];
   'history-session-delete': [sessionCode: string];
   'history-session-rename': [sessionCode: string, newName: string];
+  // 新增会话成功事件
+  'new-chat-created': [session: { sessionCode: string; sessionName?: string; createdAt?: string }];
 };
