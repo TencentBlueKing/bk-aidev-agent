@@ -173,7 +173,7 @@ await chatHelper.message.sendMessage({
 
 根据使用模式选择对应的错误处理方式：
 
-**ChatBot / AIBlueking 模式**：监听 `error` 事件：
+**ChatBot 模式**：监听 `error` 事件：
 
 ```vue
 <ChatBot url="/api/" @error="handleError" />
@@ -182,6 +182,19 @@ await chatHelper.message.sendMessage({
 ```ts
 const handleError = (error: Error) => {
   console.error('请求错误:', error.message);
+  // 显示错误提示
+};
+```
+
+**AIBlueking 模式**：监听 `sdk-error` 事件：
+
+```vue
+<AIBlueking url="/api/" @sdk-error="handleSdkError" />
+```
+
+```ts
+const handleSdkError = (data: { apiName: string; code: number; message: string; data: unknown }) => {
+  console.error('SDK 错误:', data.apiName, data.message);
   // 显示错误提示
 };
 ```

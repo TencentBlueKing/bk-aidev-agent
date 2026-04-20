@@ -138,15 +138,18 @@ export default {
 
 | 方法 / 属性 | 类型 | 说明 |
 |-------------|------|------|
-| `sendMessage(text)` | `(text: string) => void` | 以编程方式发送消息 |
+| `sendMessage(text)` | `(text: string) => Promise<void>` | 以编程方式发送消息 |
 | `stopGeneration()` | `() => void` | 停止当前正在生成的响应 |
-| `switchSession(code)` | `(code: string) => void` | 切换到指定会话 |
+| `switchSession(code)` | `(code: string) => Promise<void>` | 切换到指定会话 |
 | `setCiteText(text)` | `(text: string) => void` | 设置引用文本到输入框 |
 | `focusInput()` | `() => void` | 聚焦输入框 |
-| `selectShortcut(shortcut)` | `(shortcut: Shortcut) => void` | 以编程方式选中一个快捷指令 |
-| `getChatHelper()` | `() => ChatHelper` | 获取内部 `chatHelper` 实例，用于高级操作 |
-| `messages` | `Ref<Message[]>` | 当前会话的消息列表（响应式） |
-| `currentSession` | `Ref<Session>` | 当前会话信息（响应式） |
+| `selectShortcut(shortcut, selectedText?)` | `(shortcut: IShortcut, selectedText?: string) => void` | 选择快捷指令并显示表单 |
+| `sendShortcut(shortcut, selectedText?)` | `(shortcut: IShortcut, selectedText?: string) => Promise<void>` | 直接发送快捷指令（跳过表单） |
+| `enterShareMode()` | `() => void` | 进入分享选择模式 |
+| `exitShareMode()` | `() => void` | 退出分享选择模式 |
+| `getChatHelper()` | `() => IChatHelper \| null` | 获取内部 `chatHelper` 实例，用于高级操作 |
+| `messages` | `ComputedRef<Message[]>` | 当前会话的消息列表（响应式） |
+| `currentSession` | `Ref<ISession \| null>` | 当前会话信息（响应式） |
 | `isGenerating` | `Ref<boolean>` | 是否正在生成中（响应式） |
 
 ## 独立模式 vs 集成模式

@@ -147,6 +147,7 @@ export interface BusinessEventData {
  */
 export type HeaderEvent =
   | 'new-chat'
+  | 'new-chat-created'
   | 'history-click'
   | 'auto-generate-name'
   | 'help-click'

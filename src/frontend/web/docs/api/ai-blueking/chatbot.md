@@ -31,58 +31,135 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 
 ## Props
 
+### 基础配置
+
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `url` | `string` | `''` | API 地址（独立模式必填） |
-| `chatHelper` | `IChatHelper` | - | 外部 chatHelper（集成模式传入，与 `url` 二选一） |
+| `chatHelper` | `IChatHelper` | — | 外部 chatHelper（集成模式传入，与 `url` 二选一） |
+| `requestOptions` | `IRequestOptions` | — | 请求配置（仅独立模式，含 `headers` / `data`） |
+
+### 会话配置
+
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
 | `autoLoad` | `boolean` | `true` | 是否自动加载最近会话 |
-| `sessionCode` | `string` | - | 指定初始会话编码 |
+| `sessionCode` | `string` | — | 指定初始会话编码 |
+
+### 快捷方式与资源
+
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
 | `shortcuts` | `IShortcut[]` | `[]` | 快捷指令列表 |
-| `shortcutLimit` | `number` | `10` | 快捷指令显示上限 |
 | `resources` | `IAiSlashMenuItem[]` | `[]` | 资源列表（`@` 触发） |
-| `prompts` | `string[]` | - | 预设提示词（`/` 触发） |
-| `helloText` | `string` | - | 欢迎语 |
-| `placeholder` | `string` | - | 输入框占位符 |
+| `prompts` | `string[]` | — | 预设提示词（`/` 触发） |
+
+### 界面配置
+
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `helloText` | `string` | — | 欢迎语 |
+| `placeholder` | `string` | — | 输入框占位符 |
+| `renderMode` | `RenderMode` | `'chat'` | 渲染模式：`chat`（默认）、`share`（分享）、`test`（测试） |
+| `height` | `string \| number` | — | 容器高度 |
+| `maxWidth` | `string \| number` | — | 最大宽度 |
+| `extCls` | `string` | — | 额外 CSS 类名 |
+| `placement` | `'left' \| 'right'` | `'left'` | 执行情况侧面板位置 |
+
+### 分享与选择
+
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
 | `enableSelection` | `boolean` | `false` | 是否启用多选模式（分享用） |
 | `shareLoading` | `boolean` | `false` | 分享加载状态 |
-| `height` | `string \| number` | - | 容器高度 |
-| `maxWidth` | `string \| number` | - | 最大宽度 |
-| `extCls` | `string` | - | 额外 CSS 类名 |
-| `requestOptions` | `IRequestOptions` | - | 请求配置（仅独立模式，含 `headers` / `data`） |
-| `messageToolsTippyOptions` | `object` | - | 消息工具栏 Tippy 配置 |
+
+### 高级配置
+
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `messageToolsTippyOptions` | `MessageToolsTippyOptions` | — | 消息工具栏 Tippy 配置（如 `appendTo`，用于控制弹窗挂载位置和层级） |
+| `resizeProps` | `{ disabled?, initialDivide?, max?, min? }` | — | ResizeLayout 配置（执行情况侧面板拖拽） |
 
 ## Events
+
+### 消息事件
 
 | 事件名 | 参数 | 说明 |
 | --- | --- | --- |
 | `send-message` | `(message: string)` | 用户发送消息 |
-| `receive-start` | - | 流式响应开始（仅独立模式） |
-| `receive-text` | - | 流式接收文本（仅独立模式） |
-| `receive-end` | - | 流式响应结束（仅独立模式） |
-| `stop` | - | 用户停止生成 |
+| `receive-start` | — | 流式响应开始（仅独立模式） |
+| `receive-text` | — | 流式接收文本（仅独立模式） |
+| `receive-end` | — | 流式响应结束（仅独立模式） |
+| `stop` | — | 用户停止生成 |
 | `error` | `(error: Error)` | 发生错误 |
-| `session-switched` | `(session: ISession \| null)` | 会话切换完成 |
-| `shortcut-click` | `({ shortcut, source })` | 快捷指令点击 |
-| `agent-info-loaded` | `(chatHelper: IChatHelper)` | Agent 信息加载完成（独立模式） |
 | `feedback` | `(tool, message, reasonList, otherReason)` | 反馈提交成功 |
+
+### 会话事件
+
+| 事件名 | 参数 | 说明 |
+| --- | --- | --- |
+| `session-switched` | `(session: ISession \| null)` | 会话切换完成 |
+| `agent-info-loaded` | `(chatHelper: IChatHelper)` | Agent 信息加载完成（仅独立模式） |
+
+### 快捷方式事件
+
+| 事件名 | 参数 | 说明 |
+| --- | --- | --- |
+| `shortcut-click` | `({ shortcut, source })` | 快捷指令点击 |
+
+### 分享事件
+
+| 事件名 | 参数 | 说明 |
+| --- | --- | --- |
 | `confirm-share` | `(messages: Message[])` | 确认分享 |
-| `cancel-share` | - | 取消分享 |
-| `request-share` | - | 请求进入分享模式 |
+| `cancel-share` | — | 取消分享 |
+| `request-share` | — | 请求进入分享模式 |
+
+### 执行情况事件
+
+| 事件名 | 参数 | 说明 |
+| --- | --- | --- |
+| `execution-panel-change` | `(isCollapse: boolean)` | 执行情况面板展开/折叠 |
 
 ## Expose 方法
 
-| 方法/属性 | 类型 | 说明 |
+### 消息操作
+
+| 方法 | 类型 | 说明 |
 | --- | --- | --- |
-| `sendMessage` | `(message: string) => void` | 编程式发送消息 |
+| `sendMessage` | `(message: string) => Promise<void>` | 编程式发送消息 |
 | `stopGeneration` | `() => void` | 停止当前生成 |
-| `switchSession` | `(sessionCode: string) => Promise<void>` | 切换到指定会话 |
 | `setCiteText` | `(text: string) => void` | 设置引用文本 |
 | `focusInput` | `() => void` | 聚焦输入框 |
-| `selectShortcut` | `(shortcut, text?) => void` | 选择快捷指令并填充文本 |
+
+### 快捷方式操作
+
+| 方法 | 类型 | 说明 |
+| --- | --- | --- |
+| `selectShortcut` | `(shortcut: IShortcut, selectedText?: string) => void` | 选择快捷指令并显示表单，不会自动提交 |
+| `sendShortcut` | `(shortcut: IShortcut, selectedText?: string) => Promise<void>` | 直接发送快捷指令（跳过表单） |
+
+### 会话操作
+
+| 方法 | 类型 | 说明 |
+| --- | --- | --- |
+| `switchSession` | `(sessionCode: string) => Promise<void>` | 切换到指定会话 |
+
+### 分享操作
+
+| 方法 | 类型 | 说明 |
+| --- | --- | --- |
+| `enterShareMode` | `() => void` | 进入分享选择模式 |
+| `exitShareMode` | `() => void` | 退出分享选择模式 |
+
+### 其他
+
+| 方法/属性 | 类型 | 说明 |
+| --- | --- | --- |
 | `getChatHelper` | `() => IChatHelper \| null` | 获取内部 chatHelper 实例 |
 | `messages` | `ComputedRef<Message[]>` | 当前消息列表（只读） |
-| `currentSession` | `ComputedRef<ISession \| null>` | 当前会话（只读） |
-| `isGenerating` | `ComputedRef<boolean>` | 是否正在生成（只读） |
+| `currentSession` | `Ref<ISession \| null>` | 当前会话（响应式） |
+| `isGenerating` | `Ref<boolean>` | 是否正在生成（响应式） |
 
 ### 使用 Expose
 

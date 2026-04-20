@@ -128,13 +128,14 @@
       <i
         v-if="props.showNewChatIcon && enableChatSession !== false"
         v-bk-tooltips="{
-          content: getPermissionTooltip(t('新增会话')),
+          content: isCreatingChat ? t('正在创建会话...') : getPermissionTooltip(t('新增会话')),
           boundary: 'parent',
         }"
-        :class="['bkai-icon', 'bkai-xinzengliaotian', { disabled: !hasPermission }]"
+        :class="['bkai-icon', 'bkai-xinzengliaotian', { disabled: !hasPermission || isCreatingChat }]"
         :style="getPermissionStyle()"
-        @click="hasPermission ? handleNewChat() : undefined"
-      ></i>
+        @click="hasPermission && !isCreatingChat ? handleNewChat() : undefined"
+      >
+      </i>
       <!-- 历史会话按钮 -->
       <i
         v-if="props.showHistoryIcon && enableChatSession !== false"
@@ -281,29 +282,38 @@
     return { cursor: hasPermission.value ? 'pointer' : 'not-allowed' };
   };
 
+  // 新增会话防抖状态
+  const isCreatingChat = ref(false);
+
   // 事件处理
   const handleNewChat = async () => {
-    // V2: 如果有 sessionBusinessManager，调用它创建新会话
-    if (props.sessionBusinessManager) {
-      try {
-        const session = await props.sessionBusinessManager.createNewSession();
-        if (session) {
-          emit('new-chat-created', {
-            sessionCode: session.sessionCode,
-            sessionName: session.sessionName,
-            createdAt: session.createdAt,
+    if (isCreatingChat.value) return;
+    isCreatingChat.value = true;
+    try {
+      // V2: 如果有 sessionBusinessManager，调用它创建新会话
+      if (props.sessionBusinessManager) {
+        try {
+          const session = await props.sessionBusinessManager.createNewSession();
+          if (session) {
+            emit('new-chat-created', {
+              sessionCode: session.sessionCode,
+              sessionName: session.sessionName,
+              createdAt: session.createdAt,
+            });
+          }
+        } catch (error) {
+          console.error('Failed to create new session:', error);
+          Message({
+            theme: 'error',
+            message: t('创建会话失败'),
           });
         }
-      } catch (error) {
-        console.error('Failed to create new session:', error);
-        Message({
-          theme: 'error',
-          message: t('创建会话失败'),
-        });
       }
+      // 同时 emit 事件，保持 V1 兼容性
+      emit('new-chat');
+    } finally {
+      isCreatingChat.value = false;
     }
-    // 同时 emit 事件，保持 V1 兼容性
-    emit('new-chat');
   };
 
   const handleHistoryClick = (event: Event) => {
@@ -541,6 +551,17 @@
           background: transparent;
         }
       }
+    }
+
+    // 新增会话 loading 样式
+    .new-chat-loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: inherit;
+      border-radius: inherit;
     }
 
     // 重命名 tooltip 样式

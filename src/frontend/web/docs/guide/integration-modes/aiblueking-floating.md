@@ -29,6 +29,8 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { AIBlueking } from '@blueking/ai-blueking';
+import '@blueking/ai-blueking/dist/vue3/style.css';
+// Vue 2 项目使用：import '@blueking/ai-blueking/dist/vue2/style.css';
 import type { AIBluekingExpose } from '@blueking/ai-blueking';
 
 const aiBluekingRef = ref<AIBluekingExpose>();
@@ -91,19 +93,52 @@ Nimbus 是页面右下角的浮球入口，点击后展开对话面板。可通�
 
 通过 `ref` 获取 `AIBlueking` 实例后，可调用以下方法：
 
+### 面板控制
+
 | 方法 | 类型 | 说明 |
 |------|------|------|
-| `show(sessionCode?)` | `(sessionCode?: string) => void` | 展开面板，可选传入会话 Code 直接打开指定会话 |
+| `show(sessionCode?, options?)` | `(sessionCode?: string, options?: { isTemporary?: boolean }) => Promise<void>` | 展开面板，可选传入会话 Code 和是否临时会话 |
 | `hide()` | `() => void` | 收起面板 |
-| `sendMessage(text)` | `(text: string) => void` | 以编程方式发送消息 |
+| `handleShow(sessionCode?)` | `(sessionCode?: string) => Promise<void>` | 展开面板（内部方法） |
+| `handleClose()` | `() => void` | 收起面板（内部方法） |
+
+### 消息操作
+
+| 方法 | 类型 | 说明 |
+|------|------|------|
+| `sendMessage(text)` | `(text: string) => Promise<void>` | 以编程方式发送消息 |
 | `stopGeneration()` | `() => void` | 停止当前正在生成的响应 |
-| `addNewSession()` | `() => Promise<Session>` | 创建新会话并自动切换 |
-| `switchToSession(code)` | `(code: string) => void` | 切换到指定会话 |
-| `updateSessionName(code, name)` | `(code: string, name: string) => Promise<void>` | 更新指定会话的名称 |
-| `updatePosition(left, top)` | `(left: number, top: number) => void` | 更新面板位置 |
-| `updateSize(width, height)` | `(width: number, height: number) => void` | 更新面板尺寸 |
 | `setCiteText(text)` | `(text: string) => void` | 设置引用文本到输入框 |
 | `focusInput()` | `() => void` | 聚焦输入框 |
+
+### 快捷方式操作
+
+| 方法 | 类型 | 说明 |
+|------|------|------|
+| `selectShortcut(shortcut, selectedText?)` | `(shortcut: IShortcut, selectedText?: string) => void` | 选择快捷指令并显示表单，不会自动提交 |
+| `sendShortcut(shortcut, selectedText?)` | `(shortcut: IShortcut, selectedText?: string) => Promise<void>` | 直接发送快捷指令（跳过表单） |
+
+### 会话管理
+
+| 方法 | 类型 | 说明 |
+|------|------|------|
+| `addNewSession(options?)` | `(options?: CreateSessionOptions) => Promise<void>` | 创建新会话并自动切换 |
+| `switchToSession(code)` | `(code: string) => Promise<void>` | 切换到指定会话 |
+| `updateSessionName(code, name)` | `(sessionCode: string, newName: string) => Promise<void>` | 更新指定会话的名称 |
+
+### 容器控制
+
+| 方法 | 类型 | 说明 |
+|------|------|------|
+| `updatePosition(x, y)` | `(x: number, y: number) => void` | 更新面板位置 |
+| `updateSize(w, h)` | `(w: number, h: number) => void` | 更新面板尺寸 |
+| `updatePositionAndSize(x, y, w, h)` | `(x: number, y: number, w: number, h: number) => void` | 同时更新位置和尺寸 |
+
+### 其他
+
+| 方法 | 类型 | 说明 |
+|------|------|------|
+| `getChatHelper()` | `() => IChatHelper \| null` | 获取内部 chatHelper 实例 |
 
 ## 内部结构
 

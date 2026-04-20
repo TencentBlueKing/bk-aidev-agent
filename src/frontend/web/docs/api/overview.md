@@ -34,6 +34,10 @@
 // 主组件
 import { AIBlueking, ChatBot } from '@blueking/ai-blueking';
 
+// 样式引入（按 Vue 版本选择）
+import '@blueking/ai-blueking/dist/vue3/style.css';  // Vue 3
+// import '@blueking/ai-blueking/dist/vue2/style.css';  // Vue 2
+
 // Composables
 import { useChatBootstrap } from '@blueking/ai-blueking';
 

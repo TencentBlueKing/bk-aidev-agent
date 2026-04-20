@@ -109,11 +109,14 @@ Vue.use(VueCompositionAPI);
 使用 AI 小鲸组件前，请确保引入对应的样式文件：
 
 ```ts
-// 引入 ai-blueking 样式（已包含 chat-x 样式）
-import '@blueking/ai-blueking/dist/style.css';
+// Vue 3 项目：引入 ai-blueking 样式（已包含 chat-x 样式）
+import '@blueking/ai-blueking/dist/vue3/style.css';
 
-// 如果仅使用 chat-x
-import '@blueking/chat-x/dist/style.css';
+// Vue 2 项目：引入 ai-blueking 样式
+import '@blueking/ai-blueking/dist/vue2/style.css';
+
+// 如果仅使用 chat-x（Vue 3）
+import '@blueking/chat-x/dist/vue3/style.css';
 ```
 
 ## 认证配置
