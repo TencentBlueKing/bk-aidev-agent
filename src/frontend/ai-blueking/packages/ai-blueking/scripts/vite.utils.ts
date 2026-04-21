@@ -78,18 +78,14 @@ function getExternal(formats: LibraryFormats[], version: VueVersion) {
       // Vue3: externalize vue、bkui-vue、vue-tippy
       // chat-x / chat-helper 通过 alias 从源码编译内联，确保版本一致（避免业务方依赖版本未同步导致的问题）
       // 其他所有第三方 npm 包（如 mermaid、highlight.js 等）继续 external，避免递归打包导致体积爆炸
-      if (
-        /^vue$/.test(id) ||
-        /^bkui-vue/.test(id) ||
-        /^vue-tippy/.test(id)
-      ) {
+      if (/^vue$/.test(id) || /^bkui-vue/.test(id) || /^vue-tippy/.test(id)) {
         return true;
       }
       // 同 monorepo 下的 @blueking 包从源码内联，确保版本一致
       if (id.startsWith('@blueking/chat-x') || id.startsWith('@blueking/chat-helper')) {
         return false;
       }
-      // external 所有其他第三方 npm 包名（非相对路径、非绝对路径），包括 chat-x 的第三方依赖（mermaid 等）
+      // external 所有其他第三方 npm 包名（非相对路径、非绝对路径），包括 chat-x 的第三方依赖
       if (!id.startsWith('.') && !id.startsWith('/')) {
         return true;
       }
@@ -196,6 +192,29 @@ export const createBuildConfig = (
             '@blueking/bkui-library': 'BKUI',
             'tippy.js': 'tippy',
             'vue-tippy': 'VueTippy',
+            dompurify: 'DOMPurify',
+            'lodash/throttle': 'lodash',
+            'lodash/debounce': 'lodash',
+            'markdown-it-footnote': 'markdownItFootnote',
+            'markdown-it-ins': 'markdownItIns',
+            'markdown-it-mark': 'markdownItMark',
+            'markdown-it-sub': 'markdownItSub',
+            'markdown-it-sup': 'markdownItSup',
+            'markdown-it-task-checkbox': 'markdownItTaskCheckbox',
+            'highlight.js': 'hljs',
+            'highlight.js/styles/github-dark.css': 'hljs',
+            katex: 'katex',
+            'katex/dist/katex.min.css': 'katex',
+            zod: 'zod',
+            'tippy.js/dist/tippy.css': 'tippy',
+            'linkify-it': 'linkifyIt',
+            mdurl: 'mdurl',
+            'punycode.js': 'punycode',
+            entities: 'entities',
+            'uc.micro': 'ucMicro',
+            'bkui-vue/lib/icon': 'BKUIVUE',
+            'vue-draggable-resizable': 'VueDraggableResizable',
+            'vue-draggable-resizable/style.css': 'VueDraggableResizable',
           },
         },
       },
