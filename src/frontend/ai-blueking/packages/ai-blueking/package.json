@@ -67,20 +67,9 @@
     "@blueking/chat-helper": "0.0.1-beta.38",
     "@blueking/chat-x": "0.0.29",
     "bkui-vue": "2.0.2-beta.81",
-    "dompurify": "^3.3.1",
-    "highlight.js": "^11.11.1",
-    "katex": "^0.16.27",
-    "lodash": "^4.17.21",
-    "markdown-it-footnote": "^4.0.0",
-    "markdown-it-ins": "^4.0.0",
-    "markdown-it-mark": "^4.0.0",
-    "markdown-it-sub": "^2.0.0",
-    "markdown-it-sup": "^2.0.0",
-    "markdown-it-task-checkbox": "^1.0.6",
     "tippy.js": "^6.3.7",
     "vue-draggable-resizable": "^3.0.0",
-    "vue-tippy": "^6.7.1",
-    "zod": "^4.3.6"
+    "vue-tippy": "^6.7.1"
   },
   "devDependencies": {
     "@types/node": "^25.0.1",

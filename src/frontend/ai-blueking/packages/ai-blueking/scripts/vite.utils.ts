@@ -75,17 +75,17 @@ function getExternal(formats: LibraryFormats[], version: VueVersion) {
     }
 
     if (isVue3) {
-      // Vue3: externalize vue、bkui-vue、vue-tippy
-      // chat-x / chat-helper 通过 alias 从源码编译内联，确保版本一致（避免业务方依赖版本未同步导致的问题）
-      // 其他所有第三方 npm 包（如 mermaid、highlight.js 等）继续 external，避免递归打包导致体积爆炸
-      if (/^vue$/.test(id) || /^bkui-vue/.test(id) || /^vue-tippy/.test(id)) {
+      // Vue3: externalize vue、bkui-vue、vue-tippy、chat-x
+      // chat-x 作为独立包发布，其第三方依赖由 chat-x 自行管理，业务方安装 ai-blueking 时自动安装 chat-x 及其依赖
+      // chat-helper 从源码内联，确保版本一致且避免业务方依赖版本未同步导致的问题
+      if (/^vue$/.test(id) || /^bkui-vue/.test(id) || /^vue-tippy/.test(id) || id.startsWith('@blueking/chat-x')) {
         return true;
       }
-      // 同 monorepo 下的 @blueking 包从源码内联，确保版本一致
-      if (id.startsWith('@blueking/chat-x') || id.startsWith('@blueking/chat-helper')) {
+      // chat-helper 从源码内联
+      if (id.startsWith('@blueking/chat-helper')) {
         return false;
       }
-      // external 所有其他第三方 npm 包名（非相对路径、非绝对路径），包括 chat-x 的第三方依赖
+      // external 所有其他第三方 npm 包名（非相对路径、非绝对路径）
       if (!id.startsWith('.') && !id.startsWith('/')) {
         return true;
       }
@@ -125,12 +125,16 @@ export const createCommonConfig = (prefix = 'bk', isIIFE = false): UserConfig =>
   resolve: {
     alias: [
       // Vue2 非IIFE: chat-x 不 external，需从源码编译以走 vue → bkui-library alias
-      // Vue3: chat-x 不再 external，通过 alias 从源码内联打包，确保版本一致且 Tree Shaking 更友好
-      {
-        find: '@blueking/chat-x',
-        replacement: resolve(__dirname, '../../chat-x/src'),
-      },
-      // chat-helper 同 chat-x，从源码编译内联打包，确保版本一致且 Tree Shaking 更友好
+      // Vue3: chat-x 已 external，此 alias 仅在开发时生效（生产构建走 node_modules 中的 chat-x）
+      ...(process.env.NODE_ENV === 'development'
+        ? [
+            {
+              find: '@blueking/chat-x',
+              replacement: resolve(__dirname, '../../chat-x/src'),
+            },
+          ]
+        : []),
+      // chat-helper 从源码编译内联打包，确保版本一致且 Tree Shaking 更友好
       {
         find: '@blueking/chat-helper',
         replacement: resolve(__dirname, '../../chat-helper/src'),

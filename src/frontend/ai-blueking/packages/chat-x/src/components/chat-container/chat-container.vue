@@ -669,6 +669,8 @@
       flex-direction: column;
       align-items: center;
       width: 100%;
+      max-width: 1000px;
+      margin: 0 auto;
       padding: 16px;
       text-align: center;
 

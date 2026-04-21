@@ -116,7 +116,7 @@ importers:
         specifier: 0.0.1-beta.38
         version: 0.0.1-beta.38(vue@3.5.27(typescript@5.9.3))
       '@blueking/chat-x':
-        specifier: '>=0.0.29'
+        specifier: 0.0.29
         version: 0.0.29(typescript@5.9.3)
       bkui-vue:
         specifier: 2.0.2-beta.81
