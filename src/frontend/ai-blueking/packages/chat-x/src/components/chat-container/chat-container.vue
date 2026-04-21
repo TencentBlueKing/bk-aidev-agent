@@ -687,7 +687,33 @@
 
       .ai-welcome-remark {
         width: 100%;
+        max-height: 240px;
         margin-bottom: 24px;
+        overflow-y: auto;
+
+        &::-webkit-scrollbar {
+          width: 4px;
+        }
+
+        &::-webkit-scrollbar-track {
+          background: transparent;
+        }
+
+        &::-webkit-scrollbar-thumb {
+          background: #dcdee5;
+          border-radius: 2px;
+        }
+
+        &::-webkit-scrollbar-thumb:hover {
+          background: #c4c6cc;
+        }
+
+        scrollbar-width: thin;
+        scrollbar-color: #dcdee5 transparent;
+
+        .ai-markdown-content {
+          height: auto;
+        }
       }
     }
   }

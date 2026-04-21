@@ -75,14 +75,22 @@ function getExternal(formats: LibraryFormats[], version: VueVersion) {
     }
 
     if (isVue3) {
-      // Vue3: externalize vue、bkui-vue、vue-tippy、chat-helper、chat-x（与宿主 Vue3 ref 同源）
+      // Vue3: externalize vue、bkui-vue、vue-tippy
+      // chat-x / chat-helper 通过 alias 从源码编译内联，确保版本一致（避免业务方依赖版本未同步导致的问题）
+      // 其他所有第三方 npm 包（如 mermaid、highlight.js 等）继续 external，避免递归打包导致体积爆炸
       if (
         /^vue$/.test(id) ||
         /^bkui-vue/.test(id) ||
-        /^vue-tippy/.test(id) ||
-        /^@blueking\/chat-helper/.test(id) ||
-        /^@blueking\/chat-x/.test(id)
+        /^vue-tippy/.test(id)
       ) {
+        return true;
+      }
+      // 同 monorepo 下的 @blueking 包从源码内联，确保版本一致
+      if (id.startsWith('@blueking/chat-x') || id.startsWith('@blueking/chat-helper')) {
+        return false;
+      }
+      // external 所有其他第三方 npm 包名（非相对路径、非绝对路径），包括 chat-x 的第三方依赖（mermaid 等）
+      if (!id.startsWith('.') && !id.startsWith('/')) {
         return true;
       }
     } else {
@@ -121,20 +129,16 @@ export const createCommonConfig = (prefix = 'bk', isIIFE = false): UserConfig =>
   resolve: {
     alias: [
       // Vue2 非IIFE: chat-x 不 external，需从源码编译以走 vue → bkui-library alias
-      // Vue3: chat-x 已 external，此 alias 不生效（external 优先级高于 resolve.alias）
+      // Vue3: chat-x 不再 external，通过 alias 从源码内联打包，确保版本一致且 Tree Shaking 更友好
       {
         find: '@blueking/chat-x',
         replacement: resolve(__dirname, '../../chat-x/src'),
       },
-      // chat-helper 是 external，仅开发时指向源码方便调试
-      ...(process.env.NODE_ENV === 'development'
-        ? [
-            {
-              find: '@blueking/chat-helper',
-              replacement: resolve(__dirname, '../../chat-helper/src'),
-            },
-          ]
-        : []),
+      // chat-helper 同 chat-x，从源码编译内联打包，确保版本一致且 Tree Shaking 更友好
+      {
+        find: '@blueking/chat-helper',
+        replacement: resolve(__dirname, '../../chat-helper/src'),
+      },
     ],
   },
   // 包含 icon 资源文件
