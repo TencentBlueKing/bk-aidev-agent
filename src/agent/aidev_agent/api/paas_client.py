@@ -55,16 +55,12 @@ class Client(BaseClient):
 
 
 class BkPaaSSandboxApi:
-    _api_name = "paasv3"
+    _api_name = "paasv3" if settings.RUN_VER == "ieod" else "bkpaas3"
 
     @classmethod
     def get_client_by_request(cls, request):
-        return _partial(Client, _get_client_by_request)(
-            request, endpoint=get_endpoint(cls._api_name, stage=settings.BK_APIGW_STAGE)
-        )
+        return _partial(Client, _get_client_by_request)(request, endpoint=get_endpoint(cls._api_name, stage="prod"))
 
     @classmethod
     def get_client_by_username(cls, username):
-        return _partial(Client, _get_client_by_username)(
-            username, endpoint=get_endpoint(cls._api_name, stage=settings.BK_APIGW_STAGE)
-        )
+        return _partial(Client, _get_client_by_username)(username, endpoint=get_endpoint(cls._api_name, stage="prod"))
