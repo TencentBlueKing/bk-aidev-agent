@@ -23,6 +23,27 @@ logger = getLogger(__name__)
 env = Env()
 
 
+# 表示「RabbitMQ 连接自身已损坏、不可再用」的异常集合
+# 注意：NoFreeChannels / AMQPChannelError 不在此列——它们仅表示 channel 级别问题，
+# 连接本身仍然有效，业务异常应自然向上抛，不由连接池吞噬重试。
+_CONNECTION_BROKEN_EXCEPTIONS: tuple = (
+    pika.exceptions.ConnectionClosed,  # 含 ConnectionClosedByBroker / ByClient
+    pika.exceptions.StreamLostError,
+    pika.exceptions.ConnectionWrongStateError,
+    ConnectionResetError,
+    BrokenPipeError,
+)
+
+# 获取/创建连接时可重试的异常集合
+_CONNECTION_ACQUIRE_RETRY_EXCEPTIONS: tuple = (
+    pika.exceptions.AMQPConnectionError,
+    pika.exceptions.StreamLostError,
+    ConnectionResetError,
+    BrokenPipeError,
+    OSError,
+)
+
+
 class RabbitMQConnectionPool:
     """RabbitMQ 连接池
 
@@ -63,6 +84,29 @@ class RabbitMQConnectionPool:
         params.heartbeat = 60  # 心跳间隔
         params.blocked_connection_timeout = 300  # 阻塞超时
         return pika.BlockingConnection(params)
+
+    def _create_connection_with_retry(self, max_retries: int = 2) -> pika.BlockingConnection:
+        """创建连接并对「连接获取/建立失败」做有限重试。
+
+        仅在 get_connection() 内部使用；connection() 上下文在 yield 之后不再重试，
+        避免把 channel 级业务异常误判为连接故障并掩盖原始堆栈。
+        """
+        last_error: Optional[BaseException] = None
+        for attempt in range(max_retries + 1):
+            try:
+                return self._create_connection()
+            except _CONNECTION_ACQUIRE_RETRY_EXCEPTIONS as e:
+                last_error = e
+                if attempt < max_retries:
+                    logger.warning(
+                        f"RabbitMQ create connection failed (attempt {attempt + 1}/{max_retries + 1}): {e}, retrying..."
+                    )
+                    continue
+                logger.error(f"RabbitMQ create connection failed after {max_retries + 1} attempts: {e}")
+                raise
+        # 理论不可达：循环要么 return 要么 raise
+        assert last_error is not None
+        raise last_error
 
     def _is_connection_valid(self, connection: pika.BlockingConnection) -> bool:
         """检查连接是否有效
@@ -107,12 +151,12 @@ class RabbitMQConnectionPool:
         except queue.Empty:
             pass
 
-        # 池中没有可用连接，尝试创建新连接
+        # 池中没有可用连接，尝试创建新连接（带有限重试）
         with self._created_lock:
             if self._created_count < self._pool_size:
                 self._created_count += 1
                 try:
-                    connection = self._create_connection()
+                    connection = self._create_connection_with_retry()
                     logger.debug(f"Created new connection, total: {self._created_count}")
                     return connection
                 except Exception:
@@ -168,71 +212,40 @@ class RabbitMQConnectionPool:
 
     @contextmanager
     def connection(self):
-        """上下文管理器方式获取连接
+        """上下文管理器方式获取连接。
+
+        契约（修复 NoFreeChannels 被次生 RuntimeError 掩盖问题）：
+        - 连接「获取/建立」失败的重试已下沉到 get_connection() 内部；
+        - 本上下文在 yield 之后**不对 AMQPConnectionError / AMQPChannelError 做 catch+continue 重试**，
+          任何来自使用方（含 pika 的 NoFreeChannels / ChannelClosed 等）的异常都自然向上抛；
+        - 仅针对「连接本身已损坏」的异常（ConnectionClosed / StreamLostError / ConnectionWrongStateError /
+          ConnectionResetError / BrokenPipeError）关闭连接并递减计数，不重试，原样上抛。
 
         使用示例：
             with pool.connection() as conn:
-                channel = conn.channel()
-                # 使用 channel...
+                with some_channel_ctx(conn) as channel:
+                    # 使用 channel...
 
         Yields:
-            RabbitMQ 连接
-
-        Raises:
-            pika.exceptions.AMQPConnectionError: 连接失败时抛出
+            pika.BlockingConnection
         """
-        conn = None
-        max_retries = 2  # 最多重试 2 次（共 3 次尝试）
-        last_error = None
-
-        for attempt in range(max_retries + 1):
-            try:
-                conn = self.get_connection()
-                yield conn
-                # 成功完成，正常归还连接
+        conn = self.get_connection()
+        broken = False
+        try:
+            yield conn
+        except _CONNECTION_BROKEN_EXCEPTIONS as e:
+            broken = True
+            logger.warning(f"RabbitMQ connection broken during use: {e}")
+            raise
+        finally:
+            if broken:
+                # 连接已损坏，关闭并递减计数，不归还到池
+                self._close_connection(conn)
+                with self._created_lock:
+                    self._created_count = max(0, self._created_count - 1)
+            else:
+                # 正常完成 或 业务异常（NoFreeChannels / AMQPChannelError 等）：连接仍可用，归还
                 self.release_connection(conn)
-                conn = None
-                return
-            except (
-                pika.exceptions.StreamLostError,
-                pika.exceptions.AMQPConnectionError,
-                pika.exceptions.AMQPChannelError,
-                ConnectionResetError,
-                BrokenPipeError,
-                OSError,
-            ) as e:
-                # 连接相关的异常，标记连接失效并重试
-                last_error = e
-                if conn:
-                    self._close_connection(conn)
-                    with self._created_lock:
-                        self._created_count = max(0, self._created_count - 1)
-                    conn = None
-
-                if attempt < max_retries:
-                    logger.warning(
-                        f"RabbitMQ connection error (attempt {attempt + 1}/{max_retries + 1}): {e}, retrying..."
-                    )
-                    continue
-                else:
-                    logger.error(f"RabbitMQ connection error after {max_retries + 1} attempts: {e}")
-                    raise
-            except Exception:
-                # 其他非连接相关异常，不重试，标记连接失效
-                if conn:
-                    self._close_connection(conn)
-                    with self._created_lock:
-                        self._created_count = max(0, self._created_count - 1)
-                    conn = None
-                raise
-            finally:
-                # 如果 conn 还在，说明是正常退出或者需要归还
-                if conn:
-                    self.release_connection(conn)
-
-        # 如果执行到这里，说明所有重试都失败了
-        if last_error:
-            raise last_error
 
     def close(self) -> None:
         """关闭连接池，释放所有连接"""
@@ -434,8 +447,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         main_queue_name = self._get_queue_name(thread_id)
 
         try:
-            with self._with_connection() as connection:
-                channel = connection.channel()
+            with self._with_connection() as connection, self._channel(connection) as channel:
                 # 尝试被动声明来检查队列是否存在
                 try:
                     channel.queue_declare(queue=main_queue_name, durable=True, passive=True)
@@ -471,9 +483,8 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                     # 参数不匹配，需要删除旧队列
                     logger.warning(f"Queue {main_queue_name} has incompatible arguments, will be deleted")
 
-            # 使用新连接删除旧队列（因为上面的 channel 可能已关闭）
-            with self._with_connection() as connection:
-                channel = connection.channel()
+            # 使用新连接删除旧队列（因为上面的 channel 因 PRECONDITION_FAILED 已被 RabbitMQ 关闭）
+            with self._with_connection() as connection, self._channel(connection) as channel:
                 channel.queue_delete(queue=main_queue_name)
                 logger.info(f"Deleted incompatible queue {main_queue_name}")
                 return True
@@ -548,9 +559,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
 
         # 批量推送到 RabbitMQ
         try:
-            with self._with_connection() as connection:
-                channel = connection.channel()
-
+            with self._with_connection() as connection, self._channel(connection) as channel:
                 for thread_id, messages in messages_to_flush.items():
                     if not messages:
                         continue
@@ -592,8 +601,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         Returns:
             恢复的消息数量
         """
-        with self._with_connection() as connection:
-            channel = connection.channel()
+        with self._with_connection() as connection, self._channel(connection) as channel:
             main_queue_name, dlq_name = self._ensure_queue_with_dlx(channel, thread_id)
 
             # 检查死信队列中的消息数量
@@ -664,8 +672,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
     def _get_dlq_count(self, thread_id: str) -> int:
         """获取死信队列中的消息数量"""
         try:
-            with self._with_connection() as connection:
-                channel = connection.channel()
+            with self._with_connection() as connection, self._channel(connection) as channel:
                 dlq_name = self._get_dlq_name(thread_id)
                 try:
                     dlq_info = channel.queue_declare(queue=dlq_name, durable=True, passive=True)
@@ -723,8 +730,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             logger.debug("[Streaming] rabbitmq flush thread_id=%s, count=%d", thread_id, len(messages_to_flush))
 
             try:
-                with self._with_connection() as connection:
-                    channel = connection.channel()
+                with self._with_connection() as connection, self._channel(connection) as channel:
                     queue_name = self._ensure_queue(channel, thread_id)
 
                     for message in messages_to_flush:
@@ -760,8 +766,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         Returns:
             消息列表
         """
-        with self._with_connection() as connection:
-            channel = connection.channel()
+        with self._with_connection() as connection, self._channel(connection) as channel:
             main_queue_name = self._ensure_queue(channel, thread_id)
 
             # 查询主队列中有多少消息
@@ -868,21 +873,21 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                 main_queue_name = self._get_queue_name(thread_id)
                 dlq_name = self._get_dlq_name(thread_id)
 
-                # 检查主队列（独立 channel）
+                # 检查主队列（独立 channel，避免 passive declare 的 404 关闭 channel 后影响 DLQ 检查）
                 try:
-                    channel = connection.channel()
-                    queue_info = channel.queue_declare(queue=main_queue_name, durable=True, passive=True)
-                    if queue_info.method.message_count > 0:
-                        return True
+                    with self._channel(connection) as channel:
+                        queue_info = channel.queue_declare(queue=main_queue_name, durable=True, passive=True)
+                        if queue_info.method.message_count > 0:
+                            return True
                 except Exception:
                     pass
 
                 # 检查死信队列（独立 channel）
                 try:
-                    channel = connection.channel()
-                    dlq_info = channel.queue_declare(queue=dlq_name, durable=True, passive=True)
-                    if dlq_info.method.message_count > 0:
-                        return True
+                    with self._channel(connection) as channel:
+                        dlq_info = channel.queue_declare(queue=dlq_name, durable=True, passive=True)
+                        if dlq_info.method.message_count > 0:
+                            return True
                 except Exception:
                     pass
 
@@ -919,12 +924,12 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             True 表示成功清空，False 表示失败或队列不存在
         """
         try:
-            channel = connection.channel()
-            if passive_check:
-                channel.queue_declare(queue=queue_name, durable=True, passive=True)
-            channel.queue_purge(queue=queue_name)
-            logger.debug(f"Purged queue {queue_name}")
-            return True
+            with self._channel(connection) as channel:
+                if passive_check:
+                    channel.queue_declare(queue=queue_name, durable=True, passive=True)
+                channel.queue_purge(queue=queue_name)
+                logger.debug(f"Purged queue {queue_name}")
+                return True
         except Exception as e:
             if not passive_check:  # 非被动检查模式下才记录警告
                 logger.warning(f"Failed to purge queue {queue_name}: {e}")
@@ -958,8 +963,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         在消费完成后调用，主动释放资源，避免空队列空占 1 小时以及死信交换机永久残留。
         """
         try:
-            with self._with_connection() as connection:
-                channel = connection.channel()
+            with self._with_connection() as connection, self._channel(connection) as channel:
                 # 收集所有需要删除的队列名
                 queue_names = [
                     self._get_queue_name(thread_id),
@@ -1010,8 +1014,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
     def request_cancel(self, thread_id: str) -> None:
         """请求取消该 thread_id 的流。幂等：向取消队列投递一条消息，生产者轮询时消费到即退出。"""
         try:
-            with self._with_connection() as connection:
-                channel = connection.channel()
+            with self._with_connection() as connection, self._channel(connection) as channel:
                 cancel_queue_name = self._get_cancel_queue_name(thread_id)
                 channel.queue_declare(
                     queue=cancel_queue_name,
@@ -1031,8 +1034,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
     def is_cancel_requested(self, thread_id: str) -> bool:
         """检查是否已请求取消该 thread_id 的流；若存在取消消息则消费一条并返回 True。"""
         try:
-            with self._with_connection() as connection:
-                channel = connection.channel()
+            with self._with_connection() as connection, self._channel(connection) as channel:
                 cancel_queue_name = self._get_cancel_queue_name(thread_id)
                 try:
                     channel.queue_declare(queue=cancel_queue_name, durable=True, passive=True)
@@ -1063,8 +1065,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
     def get_cached_count(self, thread_id: str) -> int:
         """获取主队列中的消息数量"""
         try:
-            with self._with_connection() as connection:
-                channel = connection.channel()
+            with self._with_connection() as connection, self._channel(connection) as channel:
                 queue_name = self._get_queue_name(thread_id)
                 queue_info = channel.queue_declare(queue=queue_name, durable=True, passive=True)
                 return queue_info.method.message_count
@@ -1113,8 +1114,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         delivery_tags = []
 
         try:
-            with self._with_connection() as connection:
-                channel = connection.channel()
+            with self._with_connection() as connection, self._channel(connection) as channel:
                 dlq_name = self._get_dlq_name(thread_id)
 
                 # 先获取 DLQ 中的消息数量

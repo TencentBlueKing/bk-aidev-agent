@@ -3,6 +3,7 @@ import json
 import os
 import time
 import uuid
+from contextlib import contextmanager
 from logging import getLogger
 from typing import Any
 
@@ -49,6 +50,29 @@ class MultiProcessMixin:
     CANCEL_SIGNAL_TTL_MS = QueueTTLConfig.CANCEL_SIGNAL_TTL_MS
     STOPPED_SIGNAL_TTL_MS = QueueTTLConfig.STOPPED_SIGNAL_TTL_MS
     WAIT_POLL_INTERVAL = QueueTTLConfig.WAIT_POLL_INTERVAL
+
+    # ==================== Channel 生命周期统一入口 ====================
+
+    @contextmanager
+    def _channel(self, connection: Any):
+        """获取 pika channel 的**唯一入口**，保证 channel 在使用后被关闭。
+
+        Why：pika BlockingConnection 的 channel_max（默认 2047）是连接级上限，
+        裸调 connection.channel() 不关会导致 channel number 单调递增，
+        最终抛 pika.exceptions.NoFreeChannels。
+
+        约定：本模块（以及继承本 Mixin 的 RabbitMQMessageHandler）
+        **禁止**直接使用 connection.channel()；必须使用：
+            with self._channel(connection) as channel:
+                ...
+        """
+        channel = connection.channel()
+        try:
+            yield channel
+        finally:
+            with contextlib.suppress(Exception):
+                if channel.is_open:
+                    channel.close()
 
     def _get_consumer_queue_name(self, thread_id: str) -> str:
         """获取控制队列名"""
@@ -116,8 +140,7 @@ class MultiProcessMixin:
 
         import pika
 
-        with self._with_connection() as connection:
-            channel = connection.channel()
+        with self._with_connection() as connection, self._channel(connection) as channel:
             consumer_queue, exit_queue = self._ensure_consumer_queues(channel, thread_id)
 
             # 先读取旧消费者信息（用于日志）
@@ -175,8 +198,7 @@ class MultiProcessMixin:
                 return False
 
             try:
-                with self._with_connection() as connection:
-                    channel = connection.channel()
+                with self._with_connection() as connection, self._channel(connection) as channel:
                     exit_queue = self._get_consumer_exit_queue_name(thread_id)
 
                     # 尝试先被动声明检查队列是否存在
@@ -209,8 +231,7 @@ class MultiProcessMixin:
         Raises:
             ConsumerPreemptedError: 当前消费者已被新消费者抢占
         """
-        with self._with_connection() as connection:
-            channel = connection.channel()
+        with self._with_connection() as connection, self._channel(connection) as channel:
             consumer_queue = self._get_consumer_queue_name(thread_id)
 
             # 尝试先被动声明检查队列是否存在
@@ -256,8 +277,7 @@ class MultiProcessMixin:
         is_preempted = False
         active_consumer_id = None
 
-        with self._with_connection() as connection:
-            channel = connection.channel()
+        with self._with_connection() as connection, self._channel(connection) as channel:
             consumer_queue = self._get_consumer_queue_name(thread_id)
 
             try:
@@ -302,8 +322,7 @@ class MultiProcessMixin:
     def has_active_consumer(self, thread_id: str) -> bool:
         """检查指定 thread_id 是否仍有活跃消费者。"""
         try:
-            with self._with_connection() as connection:
-                channel = connection.channel()
+            with self._with_connection() as connection, self._channel(connection) as channel:
                 consumer_queue = self._get_consumer_queue_name(thread_id)
 
                 try:
@@ -332,8 +351,7 @@ class MultiProcessMixin:
         import pika
 
         try:
-            with self._with_connection() as connection:
-                channel = connection.channel()
+            with self._with_connection() as connection, self._channel(connection) as channel:
                 exit_queue = self._get_consumer_exit_queue_name(thread_id)
 
                 payload = json.dumps(
@@ -414,8 +432,7 @@ class MultiProcessMixin:
             True 表示成功设置取消信号
         """
         try:
-            with self._with_connection() as connection:
-                channel = connection.channel()
+            with self._with_connection() as connection, self._channel(connection) as channel:
                 cancel_queue = self._get_cancel_queue_name(thread_id)
 
                 # 声明取消信号队列
@@ -441,8 +458,7 @@ class MultiProcessMixin:
             True 表示存在取消信号，应该停止
         """
         try:
-            with self._with_connection() as connection:
-                channel = connection.channel()
+            with self._with_connection() as connection, self._channel(connection) as channel:
                 cancel_queue = self._get_cancel_queue_name(thread_id)
 
                 # 先被动声明检查队列是否存在
@@ -477,8 +493,7 @@ class MultiProcessMixin:
             thread_id: 线程ID / session_code
         """
         try:
-            with self._with_connection() as connection:
-                channel = connection.channel()
+            with self._with_connection() as connection, self._channel(connection) as channel:
                 cancel_queue = self._get_cancel_queue_name(thread_id)
 
                 # 尝试清空取消信号队列
@@ -512,8 +527,7 @@ class MultiProcessMixin:
             True 表示成功发送通知
         """
         try:
-            with self._with_connection() as connection:
-                channel = connection.channel()
+            with self._with_connection() as connection, self._channel(connection) as channel:
                 cancelled_queue = self._get_cancelled_queue_name(thread_id)
 
                 # 声明通知队列
@@ -552,8 +566,7 @@ class MultiProcessMixin:
                 return False
 
             try:
-                with self._with_connection() as connection:
-                    channel = connection.channel()
+                with self._with_connection() as connection, self._channel(connection) as channel:
                     cancelled_queue = self._get_cancelled_queue_name(thread_id)
 
                     # 先被动声明检查队列是否存在
@@ -581,8 +594,7 @@ class MultiProcessMixin:
             thread_id: 线程ID / session_code
         """
         try:
-            with self._with_connection() as connection:
-                channel = connection.channel()
+            with self._with_connection() as connection, self._channel(connection) as channel:
                 cancelled_queue = self._get_cancelled_queue_name(thread_id)
 
                 try:
@@ -608,8 +620,7 @@ class MultiProcessMixin:
             thread_id: 线程ID / session_code
         """
         try:
-            with self._with_connection() as connection:
-                channel = connection.channel()
+            with self._with_connection() as connection, self._channel(connection) as channel:
                 stopped_queue = self._get_stopped_queue_name(thread_id)
 
                 # 声明停止状态队列
@@ -633,8 +644,7 @@ class MultiProcessMixin:
             True 表示已停止
         """
         try:
-            with self._with_connection() as connection:
-                channel = connection.channel()
+            with self._with_connection() as connection, self._channel(connection) as channel:
                 stopped_queue = self._get_stopped_queue_name(thread_id)
 
                 # 先被动声明检查队列是否存在
@@ -668,8 +678,7 @@ class MultiProcessMixin:
             thread_id: 线程ID / session_code
         """
         try:
-            with self._with_connection() as connection:
-                channel = connection.channel()
+            with self._with_connection() as connection, self._channel(connection) as channel:
                 stopped_queue = self._get_stopped_queue_name(thread_id)
 
                 try:
@@ -697,8 +706,7 @@ class MultiProcessMixin:
         AMQP 0-9-1 规范中 queue.delete 对不存在的队列不会抛出 channel error，
         因此无需为每个队列创建独立的 channel，也无需先 passive declare 检查。
         """
-        channel = connection.channel()
-        try:
+        with self._channel(connection) as channel:
             for queue_name in self._get_signal_queue_names(thread_id):
                 try:
                     channel.queue_delete(queue=queue_name)
@@ -706,7 +714,3 @@ class MultiProcessMixin:
                 except Exception as e:
                     # 队列不存在或删除失败，忽略
                     logger.exception(f"Failed to delete signal queue {queue_name}: {e}")
-        finally:
-            if channel and channel.is_open:
-                with contextlib.suppress(Exception):
-                    channel.close()
