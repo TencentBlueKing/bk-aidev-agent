@@ -18,11 +18,13 @@ to the current version of the project delivered to anyone in the future.
 
 from pydantic import BaseModel, Field
 
+from aidev_agent.config import settings
+
 
 class ToolNodeSettings(BaseModel):
     """ToolNode wrappers settings."""
 
     use_timer: bool = True
     use_result_limit: bool = True
-    result_limit_thrd: int = Field(default=10000, ge=1, description="结果长度限制阈值")
+    result_limit_thrd: int = Field(default=settings.TOOL_RESULT_LIMIT_THRD, ge=1, description="结果长度限制阈值")
     use_json_repair_on_error: bool = True
