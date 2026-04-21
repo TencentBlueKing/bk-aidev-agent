@@ -1,14 +1,14 @@
 [project]
 name = "ai-plugin"
-version = "2.0.0rc21"
+version = "2.0.0rc22"
 description = ""
 readme = "readme.md"
 authors = [{ name = "blueking" }]
 requires-python = "~=3.11.9"
 dependencies = [
-    "aidev-agent==2.0.0rc21",
-    "aidev-bkplugin==2.0.0rc21",
-    "aidev-wxbot==2.0.0rc21",
+    "aidev-agent==2.0.0rc22",
+    "aidev-bkplugin==2.0.0rc22",
+    "aidev-wxbot==2.0.0rc22",
     "aidev-ai-blueking==2.1.1b25",
     "bk-plugin-framework>=2.3.9",
     "bkapi-bk-apigateway==1.0.12",
