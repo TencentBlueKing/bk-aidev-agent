@@ -20,7 +20,7 @@ wheels = [
 
 [[package]]
 name = "aidev-agent"
-version = "2.0.0rc30"
+version = "2.0.0rc31"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
@@ -49,14 +49,14 @@ dependencies = [
     { name = "werkzeug" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e3/69/765d8a4a9fc2f49bfe8683e93bbaf0eb591cbc9129282670acda7d1a8bb9/aidev_agent-2.0.0rc30.tar.gz", hash = "sha256:179a181594cdf9b2345fe65d44d3aa62770aa7df32471d0159a15a98c4f63989", size = 416320, upload-time = "2026-04-22T02:54:17.948Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bf/e3/a1eacfd829ad0f022087d037ab40265a35f9154bf85709b078da0974fe98/aidev_agent-2.0.0rc31.tar.gz", hash = "sha256:0f212dfacf176aa8b131a083591bdc70bd99246c17ed7b35fe17c4e2d7d4ebca", size = 419884, upload-time = "2026-04-22T09:33:34.9Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e6/df/f936016d0fae29608e091aef7927df08dce7c4fa06f8ad6fc5af5e8b5deb/aidev_agent-2.0.0rc30-py3-none-any.whl", hash = "sha256:0614d92d89f7fffc79563e144c114aa37b8c1e9d480ecced73b04ca84d070528", size = 349263, upload-time = "2026-04-22T02:54:15.223Z" },
+    { url = "https://files.pythonhosted.org/packages/87/78/f441f808e716fef0997a6c640b71e6864c99cef2af324a291c7429e97598/aidev_agent-2.0.0rc31-py3-none-any.whl", hash = "sha256:a6eb776f94730252fe1a7705a98fcd420f1334016a57b3a36e6632fbdef132ed", size = 350727, upload-time = "2026-04-22T09:33:31.117Z" },
 ]
 
 [[package]]
 name = "aidev-bkplugin"
-version = "2.0.0rc30"
+version = "2.0.0rc31"
 source = { editable = "." }
 dependencies = [
     { name = "aidev-agent" },
@@ -88,7 +88,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aidev-agent", specifier = ">=2.0.0rc30" },
+    { name = "aidev-agent", specifier = ">=2.0.0rc31" },
     { name = "blueapps", specifier = ">=4.15.1,<5.0" },
     { name = "django", specifier = ">=4.2.28,<5.0" },
     { name = "opentelemetry-api", marker = "extra == 'opentelemetry'", specifier = "==1.33.1" },

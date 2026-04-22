@@ -1,8 +1,8 @@
 ag-ui-protocol==0.1.10
-aidev-agent==2.0.0rc30
+aidev-agent==2.0.0rc31
 aidev-ai-blueking==2.1.1b26
-aidev-bkplugin==2.0.0rc30
-aidev-wxbot==2.0.0rc30
+aidev-bkplugin==2.0.0rc31
+aidev-wxbot==2.0.0rc31
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.3
 aiosignal==1.4.0
