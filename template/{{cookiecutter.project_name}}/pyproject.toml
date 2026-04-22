@@ -9,7 +9,7 @@ dependencies = [
     "aidev-agent==2.0.0rc30",
     "aidev-bkplugin==2.0.0rc30",
     "aidev-wxbot==2.0.0rc30",
-    "aidev-ai-blueking==2.1.1b25",
+    "aidev-ai-blueking==2.1.1b26",
     "bk-plugin-framework>=2.3.9",
     "bkapi-bk-apigateway==1.0.12",
     "celery==5.4.0",
