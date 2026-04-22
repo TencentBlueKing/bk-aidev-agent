@@ -72,9 +72,9 @@
       opacity: 0.6;
     }
 
-    &-label {
-      font-weight: 700;
-    }
+    // &-label {
+    //   font-weight: 700;
+    // }
 
     &-desc {
       font-weight: 400;
