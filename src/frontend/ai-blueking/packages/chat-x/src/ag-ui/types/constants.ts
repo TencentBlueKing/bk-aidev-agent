@@ -24,6 +24,12 @@
  * IN THE SOFTWARE.
  */
 
+export enum InterruptReason {
+  HumanApproval = 'human_approval', // 人工审批
+  UserMultiChoice = 'user_multi_choice', // 用户多选
+  UserSingleChoice = 'user_single_choice', // 用户单选
+}
+
 export enum MessageContentType {
   Binary = 'binary',
   FlowAgent = 'flow_agent',
@@ -46,6 +52,7 @@ export enum MessageRole {
   HiddenSystem = 'hidden-system',
   HiddenUser = 'hidden-user',
   Info = 'info',
+  Interrupt = 'interrupt',
   Loading = 'loading',
   Pause = 'pause',
   Placeholder = 'placeholder',
@@ -69,5 +76,10 @@ export enum MessageStatus {
   Stop = 'stop',
   StopLoading = 'stop-loading',
   Streaming = 'streaming',
+  Success = 'success',
+}
+
+export enum RunFinishedOutcome {
+  Interrupt = 'interrupt',
   Success = 'success',
 }

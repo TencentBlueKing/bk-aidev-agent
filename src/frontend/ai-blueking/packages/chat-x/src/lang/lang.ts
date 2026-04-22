@@ -129,6 +129,9 @@ export const lang = {
   有效证据: 'Valid Evidence',
   全屏: 'Full Screen',
   退出全屏: 'Exit Full Screen',
+  请选择以继续: 'Please choose to continue',
+  继续: 'Continue',
+  '收到信息：': 'Received: ',
 } as const;
 
 export const t = (key: keyof typeof lang) => {

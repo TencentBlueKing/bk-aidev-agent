@@ -24,7 +24,8 @@
  * IN THE SOFTWARE.
  */
 
-export * from './constants';
-export * from './contents';
-export * from './interrupt';
-export * from './messages';
+export { default as InterruptChoiceList } from './interrupt-choice-list.vue';
+export { default as InterruptMessage } from './interrupt-message.vue';
+export { default as InterruptOptionBtn } from './interrupt-option-btn.vue';
+export { default as InterruptResult } from './interrupt-result.vue';
+export * from './types';

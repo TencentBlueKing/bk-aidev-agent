@@ -224,7 +224,11 @@ Use Shift + Enter to enter a new line`
       if (messageState.value === MessageStatus.Disabled) {
         return;
       }
-      if (messageState.value === MessageStatus.Fetching) {
+      if (
+        messageState.value === MessageStatus.Fetching ||
+        messageState.value === MessageStatus.Streaming ||
+        messageState.value === MessageStatus.Pending
+      ) {
         return;
       }
       handleSendMessage();

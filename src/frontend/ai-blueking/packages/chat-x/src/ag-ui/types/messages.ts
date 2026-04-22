@@ -27,6 +27,7 @@
 import type { OldShortcut, Shortcut } from '../../types';
 import type { MessageContentType, MessageRole, MessageStatus } from './constants';
 import type { ContentMap, InputContent } from './contents';
+import type { InterruptMessage } from './interrupt';
 
 export interface ActivityMessage extends BaseMessage<
   MessageRole.Activity,
@@ -128,6 +129,7 @@ export type MessageMap = AIBluekingMessageMap & {
   [MessageRole.HiddenSystem]: HiddenSystemMessage;
   [MessageRole.HiddenUser]: HiddenUserMessage;
   [MessageRole.Info]: InfoMessage;
+  [MessageRole.Interrupt]: InterruptMessage;
   [MessageRole.Loading]: LoadingMessage;
   [MessageRole.Pause]: PauseMessage;
   [MessageRole.Placeholder]: PlaceholderMessage;
