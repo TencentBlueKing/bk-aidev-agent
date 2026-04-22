@@ -41,6 +41,7 @@
       flex: 0 0 16px;
       align-items: center;
       padding-top: 2px;
+      font-size: 14px;
     }
 
     &-body {

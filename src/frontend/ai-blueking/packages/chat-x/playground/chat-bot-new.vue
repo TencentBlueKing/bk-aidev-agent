@@ -510,7 +510,12 @@
           type: InterruptReason.UserSingleChoice,
           title: '请选择方案以继续：',
           choices: [
-            { id: 'p1', value: 'p1', label: '方案 1： 户外趣味团建' },
+            {
+              id: 'p1',
+              value: 'p1',
+              label:
+                '方案 1： 户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建',
+            },
             { id: 'p2', value: 'p2', label: '方案 2： 室内沉浸式团建' },
             { id: 'p3', value: 'p3', label: '方案 3： 轻手工共创团建' },
           ],
@@ -562,7 +567,6 @@
   ]);
 
   const handleInterruptResume = (message: InterruptMessage, payload: InterruptResumePayload) => {
-    // eslint-disable-next-line no-console
     console.log('[playground] interrupt resume', message, payload);
   };
 
