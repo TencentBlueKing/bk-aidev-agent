@@ -62,6 +62,7 @@ export const defaultProps = {
   showMoreIcon: true,
   initialSessionCode: '',
   autoSwitchToInitialSession: false,
+  alwaysCreateNewSession: false,
   loadRecentSessionOnMount: true,
   prompts: (): string[] => [],
   dropdownMenuConfig: (): DropdownMenuConfig => ({

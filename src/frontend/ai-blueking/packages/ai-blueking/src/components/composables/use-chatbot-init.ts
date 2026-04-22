@@ -168,6 +168,7 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
       autoSwitchToInitialSession: !!props.sessionCode,
       loadRecentSessionOnMount: props.autoLoad,
       initialSessionCode: props.sessionCode,
+      alwaysCreateNewSession: props.alwaysCreateNewSession,
     });
 
     const chatMgr = new ChatBusinessManager(newHelper.agent, newHelper.message, newHelper.session, null, {

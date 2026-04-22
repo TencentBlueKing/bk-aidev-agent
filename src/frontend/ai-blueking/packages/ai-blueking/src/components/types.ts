@@ -95,6 +95,8 @@ export interface ChatBotExpose {
 export interface ChatBotProps {
   /** 是否自动加载 */
   autoLoad?: boolean;
+  /** 是否始终创建新会话（初始化时不判断最近会话是否有内容，直接新建） */
+  alwaysCreateNewSession?: boolean;
 
   // === 模式选择 ===
   /**

@@ -143,6 +143,8 @@ export interface AIBluekingExpose {
 export interface AIBluekingProps {
   /** 是否自动切换到初始会话 */
   autoSwitchToInitialSession?: boolean;
+  /** 是否始终创建新会话（初始化时不判断最近会话是否有内容，直接新建） */
+  alwaysCreateNewSession?: boolean;
   /**
    * Nimbus 悬浮球点击前的钩子函数
    * 返回 false 阻止默认的 showPanel 行为，返回 true 或不返回则继续默认行为
