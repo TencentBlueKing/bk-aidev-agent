@@ -207,6 +207,10 @@ export default createVue2Wrapper(AIBlueking, {
       type: Boolean,
       default: false,
     },
+    alwaysCreateNewSession: {
+      type: Boolean,
+      default: false,
+    },
     loadRecentSessionOnMount: {
       type: Boolean,
       default: true,
@@ -426,6 +430,10 @@ export const ChatBotV2 = createVue2Wrapper(ChatBot, {
     autoLoad: {
       type: Boolean,
       default: true,
+    },
+    alwaysCreateNewSession: {
+      type: Boolean,
+      default: false,
     },
     sessionCode: {
       type: String,

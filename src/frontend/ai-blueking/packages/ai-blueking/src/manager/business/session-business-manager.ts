@@ -185,14 +185,15 @@ export class SessionBusinessManager {
    * 初始化逻辑优先级：
    * 1. 如果指定了 initialSessionCode，切换到该会话
    * 2. 如果会话列表不为空：
-   *    - 通过 sessionContentCount 判断最近会话是否有内容
+   *    - 通过 sessionContentCount 判断最近会话是否有内容（alwaysCreateNewSession 为 true 时跳过判断，直接新建）
    *    - 有内容 → 直接创建新会话（不切换，避免加载消息）
    *    - 无内容 → 切换到该会话（跳过消息加载）
    * 3. 如果会话列表为空，创建新会话
    *
    * @param options.skipLoadSessions 是否跳过加载会话列表（当 useChatBootstrap 已预加载时设为 true）
+   * @param options.alwaysCreateNewSession 是否始终创建新会话（优先级高于 config 中的配置）
    */
-  async loadRecentSession(options?: { skipLoadSessions?: boolean }): Promise<void> {
+  async loadRecentSession(options?: { skipLoadSessions?: boolean; alwaysCreateNewSession?: boolean }): Promise<void> {
     try {
       // 如果不跳过，则加载会话列表
       // useChatBootstrap 会并行预加载会话列表，此时可传入 skipLoadSessions: true
@@ -213,9 +214,11 @@ export class SessionBusinessManager {
         const recentSession = sessions[0];
         // 使用 sessionContentCount 判断是否有内容（后端返回的字段）
         const hasContents = (recentSession.sessionContentCount ?? 0) > 0;
+        // options 优先级高于 config
+        const forceNewSession = options?.alwaysCreateNewSession ?? this.config.alwaysCreateNewSession ?? false;
 
-        if (hasContents) {
-          // 有内容，直接创建新会话，不切换到旧会话（避免不必要的消息加载）
+        if (hasContents || forceNewSession) {
+          // 有内容，或强制新建，直接创建新会话，不切换到旧会话（避免不必要的消息加载）
           await this.createNewSession();
         } else {
           // 无内容，切换到该会话（跳过消息加载，因为空会话没有消息）

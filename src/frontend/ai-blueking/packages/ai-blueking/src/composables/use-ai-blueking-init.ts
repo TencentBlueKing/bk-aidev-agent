@@ -116,6 +116,7 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
   const sessionBusinessManager = new SessionBusinessManager(chatHelper.session, chatHelper.agent, null, {
     enableChatSession: props.enableChatSession,
     initialSessionCode: props.initialSessionCode,
+    alwaysCreateNewSession: props.alwaysCreateNewSession,
   });
 
   const shareBusinessManager = new ShareBusinessManager(chatHelper.message, chatHelper.session);

@@ -65,6 +65,7 @@
           <!-- ChatBot 核心组件（仅聊天区域） -->
           <ChatBot
             ref="chatBotRef"
+            :always-create-new-session="props.alwaysCreateNewSession"
             :auto-load="props.loadRecentSessionOnMount"
             :chat-helper="chatHelper"
             :hello-text="props.helloText"
