@@ -123,6 +123,7 @@
             commonTippyOptions,
             handleAgentAction,
             onAgentFeedback,
+            onInterruptResume,
             onUserAction,
             onUserInputConfirm,
             onUserShortcutConfirm,
@@ -139,16 +140,17 @@
             :messages="messages"
             :on-agent-action="handleAgentAction"
             :on-agent-feedback="onAgentFeedback"
+            :on-interrupt-resume="onInterruptResume"
             :on-user-action="onUserAction"
             :on-user-input-confirm="onUserInputConfirm"
             :on-user-shortcut-confirm="onUserShortcutConfirm"
             :render-mode="renderMode"
             @stop-streaming="emits('stopStreaming')"
           >
-            <template #default="{ message, messageToolsStatus }">
+            <template #default="{ message, messageToolsStatus, onInterruptResume: slotOnInterruptResume }">
               <slot
                 name="message"
-                v-bind="{ message, messageToolsStatus }"
+                v-bind="{ message, messageToolsStatus, onInterruptResume: slotOnInterruptResume }"
               />
             </template>
           </MessageContainer>
@@ -285,6 +287,7 @@
       messageStatus: MessageContainerProps['messageStatus'];
       messageToolsStatus: MessageContainerProps['messageToolsStatus'];
       onAgentFeedback?: MessageContainerProps['onAgentFeedback'];
+      onInterruptResume?: MessageContainerProps['onInterruptResume'];
       onUserAction?: MessageContainerProps['onUserAction'];
       onUserInputConfirm?: (message: Message, content: UserMessage['content'], docSchema: TagSchema) => Promise<void>;
       onUserShortcutConfirm?: (message: Message, formModel: Record<string, unknown>) => Promise<void>;
@@ -293,6 +296,7 @@
     message: (props: {
       message: Message;
       messageToolsStatus: MessageContainerProps['messageToolsStatus'];
+      onInterruptResume?: MessageContainerProps['onInterruptResume'];
     }) => null | undefined | VNode;
     welcome: (props: { openingRemark: ChatContainerProps['openingRemark'] }) => null | undefined | VNode;
   }>();

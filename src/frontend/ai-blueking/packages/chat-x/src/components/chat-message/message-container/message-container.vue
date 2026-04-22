@@ -36,7 +36,7 @@
         >
           <slot
             name="default"
-            v-bind="{ message, messageToolsStatus }"
+            v-bind="{ message, messageToolsStatus, onInterruptResume: props.onInterruptResume }"
           >
             <MessageRender
               :key="index"
@@ -47,6 +47,7 @@
                 (content: UserMessage['content'], docSchema: TagSchema) =>
                   handleUserInputConfirm(message, content, docSchema)
               "
+              :on-interrupt-resume="props.onInterruptResume"
               :on-shortcut-confirm="
                 (formModel: Record<string, unknown>) => handleUserShortcutConfirm(message, formModel)
               "
@@ -114,6 +115,8 @@
 
   import { type Message, type UserMessage, MessageRole, MessageStatus } from '../../../ag-ui/types';
   import { CONST_MESSAGE_TOOLS, RenderMode } from '../../../common';
+
+  import type { OnInterruptResume } from '../../../ag-ui/types/interrupt';
   import { type MessageGroup, useClipboard, useContainerScrollProvider } from '../../../composables';
   import { ArrowDownIcon, CloseCircleIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
@@ -137,6 +140,7 @@
     messageToolsTippyOptions?: MessageToolsProps['tippyOptions'];
     onAgentAction?: AgentActionCallback;
     onAgentFeedback?: AgentFeedbackCallback;
+    onInterruptResume?: OnInterruptResume; // ag-ui human-in-the-loop 中断响应回调
     onUserAction?: UserActionCallback;
     renderMode?: RenderMode;
   } & {

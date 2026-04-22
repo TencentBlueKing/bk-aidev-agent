@@ -125,6 +125,9 @@ export const lang = {
   '你好，我是小鲸': 'Hello, I am BlueKing AI Bot',
   清空搜索: 'Clear Search',
   搜索结果为空: 'Search Result is Empty',
+  请选择以继续: 'Please choose to continue',
+  继续: 'Continue',
+  '收到信息：': 'Received: ',
 } as const;
 
 export const t = (key: keyof typeof lang) => {
