@@ -86,7 +86,7 @@ modules:
             description: bkpaas grant apps
           {% endif %}
           - name: MESSAGE_HANDLER_TYPE
-            value: "rabbitmq"
+            value: "inmemory"
             description: message handler type for multi-process mode
       processes:
         - name: web
