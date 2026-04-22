@@ -152,6 +152,12 @@ class MultiProcessMixin:
                     f"Consumer preempted for thread_id={thread_id}: old={old_consumer_id[:8]}, new={consumer_id[:8]}"
                 )
 
+        logger.info(
+            "[RabbitMQ] consumer acquired thread_id=%s consumer_id=%s preempted_old=%s",
+            thread_id,
+            consumer_id[:8],
+            old_consumer_id[:8] if old_consumer_id else None,
+        )
         return consumer_id
 
     def wait_for_previous_consumer(self, thread_id: str, timeout: float = 3.0) -> bool:
@@ -255,6 +261,7 @@ class MultiProcessMixin:
 
         is_preempted = False
         active_consumer_id = None
+        release_outcome = "empty_control_queue"
 
         with self._with_connection() as connection:
             channel = connection.channel()
@@ -263,7 +270,11 @@ class MultiProcessMixin:
             try:
                 channel.queue_declare(queue=consumer_queue, passive=True)
             except Exception:
-                logger.debug(f"Skip release for missing consumer queue, thread_id={thread_id}")
+                logger.info(
+                    "[RabbitMQ] consumer released thread_id=%s consumer_id=%s reason=missing_queue",
+                    thread_id,
+                    consumer_id[:8],
+                )
                 return
 
             consumer_queue, exit_queue = self._ensure_consumer_queues(channel, thread_id)
@@ -280,11 +291,12 @@ class MultiProcessMixin:
                 if active_consumer_id == consumer_id:
                     # 正常结束：消费掉控制队列中的注册信息（ack 删除）
                     channel.basic_ack(delivery_tag=method_frame.delivery_tag)
-                    logger.debug(f"Consumer {consumer_id[:8]} released normally for thread_id={thread_id}")
+                    release_outcome = "normal"
                 else:
                     # 被抢占：放回控制队列中的消息
                     channel.basic_reject(delivery_tag=method_frame.delivery_tag, requeue=True)
                     is_preempted = True
+                    release_outcome = "preempted"
 
         if is_preempted:
             # 被抢占：将 DLQ 中自己消费过的消息恢复到主队列，然后发送退出信号
@@ -298,6 +310,13 @@ class MultiProcessMixin:
             finally:
                 # 无论恢复消息是否成功，都要向退出通知队列发送信号，避免新消费者无限等待
                 self._send_exit_signal(thread_id, consumer_id)
+
+        logger.info(
+            "[RabbitMQ] consumer released thread_id=%s consumer_id=%s reason=%s",
+            thread_id,
+            consumer_id[:8],
+            release_outcome,
+        )
 
     def has_active_consumer(self, thread_id: str) -> bool:
         """检查指定 thread_id 是否仍有活跃消费者。"""

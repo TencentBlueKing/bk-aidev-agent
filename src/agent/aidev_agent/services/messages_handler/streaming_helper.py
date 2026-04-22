@@ -410,6 +410,14 @@ class GeneratorStreamingHelper:
         )
         return producer_thread, is_resuming, enable_heartbeat_check
 
+    # ---- L1 观测：consumer 循环内联耗时 WARNING 阈值（秒），仅日志用途 ----
+    _CHECK_CONSUMER_SLOW_SEC = 2.0
+    _GET_SLOW_SEC = 5.0
+    _YIELD_SLOW_SEC = 10.0
+    # consumer progress 心跳：每 N 条 yield 或每 M 秒（取先到者）
+    _CONSUMER_PROGRESS_EVERY_N = 50
+    _CONSUMER_PROGRESS_EVERY_SECONDS = 10.0
+
     def _consume_stream_messages(
         self,
         consumer_id: str,
@@ -418,80 +426,182 @@ class GeneratorStreamingHelper:
         enable_heartbeat_check: bool,
         on_complete: Callable[[], None] | None = None,
     ) -> Generator[Any, None, None]:
-        """消费者循环：读取队列、处理控制消息并向上游产出业务消息。"""
+        """消费者循环：读取队列、处理控制消息并向上游产出业务消息。
+
+        纯观测日志（零行为改动）：
+        - 入口 / 出口 INFO，`finally` 带 reason / consumed / iter；
+        - `check_consumer` / `get` / `yield` 内联耗时度量，超阈值打 WARNING；
+        - 每 N 条 yield 或 10s 打 1 条 progress INFO；
+        - 最外层 unexpected 异常打 ERROR 后 `raise`。
+        """
         consumer_draining = False
         consumer_drain_start = 0.0
         last_message_time = time.time()
 
-        while True:
-            try:
-                if not consumer_draining and self._is_cancelled(cancel_event):
-                    logger.info(
-                        f"Stream cancel detected for thread_id={self.thread_id}, "
-                        f"entering drain mode to wait for RUN_FINISHED"
-                    )
-                    consumer_draining = True
-                    consumer_drain_start = time.time()
+        consumer_id_short = consumer_id[:8] if consumer_id else "?"
+        loop_iter = 0
+        yielded_total = 0
+        exit_reason = "unknown"
+        last_progress_ts = time.time()
 
-                if consumer_draining and (time.time() - consumer_drain_start > self.CANCEL_DRAIN_TIMEOUT):
-                    logger.exception(
-                        f"Consumer drain timeout ({self.CANCEL_DRAIN_TIMEOUT}s) "
-                        f"for thread_id={self.thread_id}, force exit"
-                    )
-                    if hasattr(self.message_handler, "mark_stopped"):
-                        self.message_handler.mark_stopped(self.thread_id)
-                    # 通知 stop 接口：流已结束，可以继续后续操作
-                    self._notify_consumer_cancelled_safely()
-                    # 发送 RUN_FINISHED 事件，确保前端收到标准的结束信号
-                    yield emit_run_finished_event(thread_id=self.thread_id, run_id=RunId.CANCELLED)
-                    return
+        logger.info(
+            "[RabbitMQ] consumer loop enter thread_id=%s consumer_id=%s is_resuming=%s heartbeat_check=%s",
+            self.thread_id,
+            consumer_id_short,
+            is_resuming,
+            enable_heartbeat_check,
+        )
 
-                self.message_handler.check_consumer(self.thread_id, consumer_id)
-                messages = self.message_handler.get(self.thread_id, timeout=0.5)
+        def _maybe_log_progress() -> None:
+            nonlocal last_progress_ts
+            now = time.time()
+            if yielded_total and (
+                yielded_total % self._CONSUMER_PROGRESS_EVERY_N == 0
+                or now - last_progress_ts >= self._CONSUMER_PROGRESS_EVERY_SECONDS
+            ):
+                logger.info(
+                    "[RabbitMQ] consumer progress thread_id=%s consumer_id=%s consumed_total=%d iter=%d",
+                    self.thread_id,
+                    consumer_id_short,
+                    yielded_total,
+                    loop_iter,
+                )
+                last_progress_ts = now
 
-                if messages:
-                    last_message_time = time.time()
+        try:
+            while True:
+                loop_iter += 1
+                try:
+                    if not consumer_draining and self._is_cancelled(cancel_event):
+                        logger.info(
+                            f"Stream cancel detected for thread_id={self.thread_id}, "
+                            f"entering drain mode to wait for RUN_FINISHED"
+                        )
+                        consumer_draining = True
+                        consumer_drain_start = time.time()
 
-                for item in messages:
-                    if item == HEARTBEAT_CHUNK:
-                        logger.debug(f"Received heartbeat for thread_id={self.thread_id}")
-                        continue
-                    if item == EOD_CHUNK:
-                        should_notify_cancelled = self._should_notify_consumer_cancelled_on_complete(cancel_event)
-                        if on_complete:
-                            try:
-                                on_complete()
-                            except Exception as e:
-                                logger.exception(f"on_complete callback error: {e}")
-                        self.message_handler.mark_completed(self.thread_id)
-                        logger.info(f"Stream completed for thread_id={self.thread_id}")
-                        if should_notify_cancelled:
-                            # cancel 可能已发出但 Agent 恰好也完成了，此时仍需通知 stop 接口。
-                            self._notify_consumer_cancelled_safely()
-                        return
-                    if item == CANCELLED_CHUNK:
+                    if consumer_draining and (time.time() - consumer_drain_start > self.CANCEL_DRAIN_TIMEOUT):
+                        logger.exception(
+                            f"Consumer drain timeout ({self.CANCEL_DRAIN_TIMEOUT}s) "
+                            f"for thread_id={self.thread_id}, force exit"
+                        )
                         if hasattr(self.message_handler, "mark_stopped"):
                             self.message_handler.mark_stopped(self.thread_id)
-                        logger.info(f"Stream cancelled for thread_id={self.thread_id}, DLQ content preserved")
-                        # 通知 stop 接口：流已结束，可以继续后续操作
                         self._notify_consumer_cancelled_safely()
-                        # 发送 RUN_FINISHED 事件，确保前端收到标准的结束信号
                         yield emit_run_finished_event(thread_id=self.thread_id, run_id=RunId.CANCELLED)
+                        yielded_total += 1
+                        exit_reason = "drain_timeout"
                         return
-                    if is_resuming and self._should_filter_on_resume(item):
-                        logger.debug(f"Filtered thinking event in resume mode for thread_id={self.thread_id}")
-                        continue
-                    yield item
-            except ConsumerPreemptedError:
-                logger.info(
-                    f"Consumer {consumer_id[:8]} preempted for thread_id={self.thread_id}, yielding to new consumer"
-                )
-                raise
-            except TimeoutError:
-                if enable_heartbeat_check and (time.time() - last_message_time > HEARTBEAT_TIMEOUT):
-                    logger.error(f"心跳超时 thread_id={self.thread_id}，超过 {HEARTBEAT_TIMEOUT}s 未收到任何消息")
-                    raise RuntimeError(f"生产者心跳超时：超过 {HEARTBEAT_TIMEOUT}s 未收到任何消息，生产者可能已崩溃")
-                continue
+
+                    t_check = time.time()
+                    self.message_handler.check_consumer(self.thread_id, consumer_id)
+                    check_elapsed = time.time() - t_check
+                    if check_elapsed > self._CHECK_CONSUMER_SLOW_SEC:
+                        logger.warning(
+                            "[RabbitMQ] check_consumer slow thread_id=%s consumer_id=%s elapsed=%.2fs",
+                            self.thread_id,
+                            consumer_id_short,
+                            check_elapsed,
+                        )
+
+                    t_get = time.time()
+                    messages = self.message_handler.get(self.thread_id, timeout=0.5)
+                    get_elapsed = time.time() - t_get
+                    if get_elapsed > self._GET_SLOW_SEC:
+                        logger.warning(
+                            "[RabbitMQ] get slow thread_id=%s consumer_id=%s elapsed=%.2fs got=%d",
+                            self.thread_id,
+                            consumer_id_short,
+                            get_elapsed,
+                            len(messages),
+                        )
+
+                    if messages:
+                        last_message_time = time.time()
+
+                    for item in messages:
+                        if item == HEARTBEAT_CHUNK:
+                            logger.debug(f"Received heartbeat for thread_id={self.thread_id}")
+                            continue
+                        if item == EOD_CHUNK:
+                            should_notify_cancelled = self._should_notify_consumer_cancelled_on_complete(cancel_event)
+                            if on_complete:
+                                try:
+                                    on_complete()
+                                except Exception as e:
+                                    logger.exception(f"on_complete callback error: {e}")
+                            self.message_handler.mark_completed(self.thread_id)
+                            logger.info(f"Stream completed for thread_id={self.thread_id}")
+                            if should_notify_cancelled:
+                                # cancel 可能已发出但 Agent 恰好也完成了，此时仍需通知 stop 接口。
+                                self._notify_consumer_cancelled_safely()
+                            exit_reason = "completed"
+                            return
+                        if item == CANCELLED_CHUNK:
+                            if hasattr(self.message_handler, "mark_stopped"):
+                                self.message_handler.mark_stopped(self.thread_id)
+                            logger.info(f"Stream cancelled for thread_id={self.thread_id}, DLQ content preserved")
+                            self._notify_consumer_cancelled_safely()
+                            yield emit_run_finished_event(thread_id=self.thread_id, run_id=RunId.CANCELLED)
+                            yielded_total += 1
+                            exit_reason = "cancelled"
+                            return
+                        if is_resuming and self._should_filter_on_resume(item):
+                            logger.debug(f"Filtered thinking event in resume mode for thread_id={self.thread_id}")
+                            continue
+                        t_yield = time.time()
+                        yield item
+                        yield_elapsed = time.time() - t_yield
+                        yielded_total += 1
+                        if yield_elapsed > self._YIELD_SLOW_SEC:
+                            # H1 直接证据：下游消费慢 / SSE 发送缓冲满 / 网关 buffering
+                            logger.warning(
+                                "[RabbitMQ] yield slow thread_id=%s consumer_id=%s elapsed=%.2fs yielded_total=%d",
+                                self.thread_id,
+                                consumer_id_short,
+                                yield_elapsed,
+                                yielded_total,
+                            )
+                        _maybe_log_progress()
+                except ConsumerPreemptedError:
+                    logger.info(
+                        f"Consumer {consumer_id[:8]} preempted for thread_id={self.thread_id}, yielding to new consumer"
+                    )
+                    exit_reason = "preempted"
+                    raise
+                except TimeoutError:
+                    if enable_heartbeat_check and (time.time() - last_message_time > HEARTBEAT_TIMEOUT):
+                        logger.error(f"心跳超时 thread_id={self.thread_id}，超过 {HEARTBEAT_TIMEOUT}s 未收到任何消息")
+                        exit_reason = "starved"
+                        raise RuntimeError(
+                            f"生产者心跳超时：超过 {HEARTBEAT_TIMEOUT}s 未收到任何消息，生产者可能已崩溃"
+                        )
+                    continue
+                except Exception as exc:
+                    # L-5：避免 unexpected 异常被上层 _wrap_streaming_with_status 吞成沉默
+                    logger.error(
+                        "[RabbitMQ] consumer loop unexpected exception thread_id=%s consumer_id=%s "
+                        "loop_iter=%d yielded_total=%d exc=%r",
+                        self.thread_id,
+                        consumer_id_short,
+                        loop_iter,
+                        yielded_total,
+                        exc,
+                    )
+                    exit_reason = "error"
+                    raise
+        except GeneratorExit:
+            exit_reason = "generator_exit"
+            raise
+        finally:
+            logger.info(
+                "[RabbitMQ] consumer loop exit thread_id=%s consumer_id=%s reason=%s consumed=%d iter=%d",
+                self.thread_id,
+                consumer_id_short,
+                exit_reason,
+                yielded_total,
+                loop_iter,
+            )
 
     def stream(
         self,
@@ -581,6 +691,8 @@ class GeneratorStreamingHelper:
                 start_time = time.time()
                 fast_cleanup_at = start_time + grace if done_event_seen else None
                 deadline = start_time + delay
+                # L-6 观测：区分 A1「消费者从未来过」/ A2「消费者到过又走了」
+                consumer_ever_seen = False
 
                 while True:
                     if not handler.has_pending_messages(thread_id):
@@ -588,19 +700,34 @@ class GeneratorStreamingHelper:
                         return
 
                     has_active_consumer = handler.has_active_consumer(thread_id)
+                    if has_active_consumer:
+                        consumer_ever_seen = True
                     now = time.time()
                     should_cleanup_now = False
+                    trigger_reason = ""
 
-                    if (
+                    fast_grace_hit = (
                         done_event_seen
                         and not has_active_consumer
                         and fast_cleanup_at is not None
                         and now >= fast_cleanup_at
-                        or now >= deadline
-                    ):
+                    )
+                    deadline_hit = now >= deadline
+                    if fast_grace_hit or deadline_hit:
                         should_cleanup_now = True
+                        trigger_reason = "fast_grace" if fast_grace_hit and not deadline_hit else "deadline"
 
                     if should_cleanup_now:
+                        logger.info(
+                            "[RabbitMQ] orphan cleanup triggered thread_id=%s elapsed=%.1fs "
+                            "reason=%s done_event_seen=%s had_active_consumer=%s consumer_ever_seen=%s",
+                            thread_id,
+                            now - start_time,
+                            trigger_reason,
+                            done_event_seen,
+                            has_active_consumer,
+                            consumer_ever_seen,
+                        )
                         handler.mark_completed(thread_id)
                         logger.info(f"Cleaned up orphaned session data for thread_id={thread_id}")
                         return
