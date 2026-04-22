@@ -10,12 +10,14 @@
   import ActivityMessage from '../activity-message/activity-message.vue';
   import AssistantMessage from '../assistant-message/assistant-message.vue';
   import InfoMessage from '../info-message/info-message.vue';
+  import { InterruptMessage as InterruptMessageComp } from '../interrupt-message';
   import LoadingMessage from '../loading-message/loading-message.vue';
   import ReasoningMessage from '../reasoning-message/reasoning-message.vue';
   import ToolMessage from '../tool-message/tool-message.vue';
   import UserMessage from '../user-message/user-message.vue';
 
   import type { Message, MessageStatus } from '../../../ag-ui/types';
+  import type { OnInterruptResume } from '../../../ag-ui/types/interrupt';
   import type { Token } from '../../../markdown-it';
   import type { MessageToolsProps } from '../../message-tools/message-tools.vue';
   import type { UserMessageActionsProps } from '../user-message/user-message.vue';
@@ -29,6 +31,7 @@
     Partial<UserMessageActionsProps> &
       Pick<MessageToolsProps, 'onAction' | 'tippyOptions'> & {
         message: Partial<Message>;
+        onInterruptResume?: OnInterruptResume;
       }
   >();
 
@@ -68,6 +71,11 @@
         return h(ToolMessage, props.message);
       case MessageRole.Activity:
         return h(ActivityMessage, props.message);
+      case MessageRole.Interrupt:
+        return h(InterruptMessageComp, {
+          ...props.message,
+          onInterruptResume: props.onInterruptResume,
+        });
       case MessageRole.Loading:
         return h(LoadingMessage, props.message);
       default:

@@ -17,6 +17,7 @@
       :model-value="userInput"
       :on-agent-action="handleAgentAction"
       :on-custom-tab-change="handleCustomTabChange"
+      :on-interrupt-resume="handleInterruptResume"
       :on-send-message="handleSendMessage"
       :on-stop-sending="handleStopSending"
       :on-upload="handleUpload"
@@ -38,10 +39,11 @@
       @stop-streaming="handleStopStreaming"
       @update:model-value="handleUpdateInputValue"
     >
-      <template #message="{ message, messageToolsStatus }">
+      <template #message="{ message, messageToolsStatus, onInterruptResume }">
         <MessageRender
           :message="message"
           :message-tools-status="messageToolsStatus"
+          :on-interrupt-resume="onInterruptResume"
         >
           <template #codeHeader="{ language }">
             <span
@@ -69,6 +71,8 @@
   import {
     type ActivityMessage,
     type AssistantMessage,
+    type InterruptMessage,
+    type InterruptResumePayload,
     type Message,
     type ToolMessage,
     type UserMessage,
@@ -76,11 +80,13 @@
     ChatContainer,
     CopyIcon,
     EditIcon,
+    InterruptReason,
     MessageContentType,
     MessageRender,
     MessageRole,
     MessageStatus,
     RenderMode,
+    RunFinishedOutcome,
   } from '../src';
   import { streamContent } from './markdown';
   import { MOCK_PROMPTS, MOCK_RESOURCES } from './mock';
@@ -376,7 +382,75 @@
       status: MessageStatus.Complete,
       messageId: 'msg_activity_ref',
     } as ActivityMessage,
+    // ===== ag-ui human-in-the-loop 验证用 mock，验证完后回滚 =====
+    {
+      id: 'msg_interrupt_single',
+      messageId: 'msg_interrupt_single',
+      role: MessageRole.Interrupt,
+      status: MessageStatus.Complete,
+      content: '',
+      interrupt: {
+        id: 'int-single-1',
+        reason: InterruptReason.UserSingleChoice,
+        payload: {
+          type: InterruptReason.UserSingleChoice,
+          title: '请选择方案以继续：',
+          choices: [
+            { id: 'p1', value: 'p1', label: '方案 1： 户外趣味团建' },
+            { id: 'p2', value: 'p2', label: '方案 2： 室内沉浸式团建' },
+            { id: 'p3', value: 'p3', label: '方案 3： 轻手工共创团建' },
+          ],
+        },
+      },
+    } as InterruptMessage,
+    {
+      id: 'msg_interrupt_multi',
+      messageId: 'msg_interrupt_multi',
+      role: MessageRole.Interrupt,
+      status: MessageStatus.Complete,
+      content: '',
+      interrupt: {
+        id: 'int-multi-1',
+        reason: InterruptReason.UserMultiChoice,
+        payload: {
+          type: InterruptReason.UserMultiChoice,
+          title: '请选择需要的辅助项（多选）：',
+          choices: [
+            { id: 'a', value: 'a', label: '场地预订' },
+            { id: 'b', value: 'b', label: '物资采购' },
+            { id: 'c', value: 'c', label: '行程接送' },
+          ],
+        },
+      },
+    } as InterruptMessage,
+    {
+      id: 'msg_interrupt_done',
+      messageId: 'msg_interrupt_done',
+      role: MessageRole.Interrupt,
+      status: MessageStatus.Complete,
+      content: '',
+      outcome: RunFinishedOutcome.Success,
+      interrupt: {
+        id: 'int-done-1',
+        reason: InterruptReason.UserSingleChoice,
+        payload: {
+          type: InterruptReason.UserSingleChoice,
+          title: '请选择方案以继续：',
+          selected: 'p3',
+          choices: [
+            { id: 'p1', value: 'p1', label: '方案 1： 户外趣味团建' },
+            { id: 'p2', value: 'p2', label: '方案 2： 室内沉浸式团建' },
+            { id: 'p3', value: 'p3', label: '方案 3： 轻手工团建' },
+          ],
+        },
+      },
+    } as InterruptMessage,
   ]);
+
+  const handleInterruptResume = (message: InterruptMessage, payload: InterruptResumePayload) => {
+    // eslint-disable-next-line no-console
+    console.log('[playground] interrupt resume', message, payload);
+  };
 
   const shortcuts = shallowRef<Shortcut[]>([
     {
