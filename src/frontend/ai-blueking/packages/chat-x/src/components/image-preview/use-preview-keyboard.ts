@@ -52,11 +52,13 @@ export function usePreviewKeyboard(options: PreviewKeyboardOptions) {
   };
 
   const bind = () => {
+    if (typeof document === 'undefined') return;
     document.addEventListener('keydown', handleKeydown);
     document.body.style.overflow = 'hidden';
   };
 
   const unbind = () => {
+    if (typeof document === 'undefined') return;
     document.removeEventListener('keydown', handleKeydown);
     document.body.style.overflow = '';
   };

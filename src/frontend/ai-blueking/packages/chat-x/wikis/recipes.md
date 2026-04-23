@@ -315,8 +315,3 @@ sinceVersion: '1.0.0'
   </MessageContainer>
 </template>
 ```
-
-</think>
-
-<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>
-StrReplace

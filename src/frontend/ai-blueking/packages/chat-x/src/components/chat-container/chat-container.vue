@@ -670,8 +670,8 @@
       align-items: center;
       width: 100%;
       max-width: 1000px;
-      margin: 0 auto;
       padding: 16px;
+      margin: 0 auto;
       text-align: center;
 
       .ai-blueking-banner-icon {
@@ -692,6 +692,8 @@
         max-height: 240px;
         margin-bottom: 24px;
         overflow-y: auto;
+        scrollbar-color: #dcdee5 transparent;
+        scrollbar-width: thin;
 
         &::-webkit-scrollbar {
           width: 4px;
@@ -709,9 +711,6 @@
         &::-webkit-scrollbar-thumb:hover {
           background: #c4c6cc;
         }
-
-        scrollbar-width: thin;
-        scrollbar-color: #dcdee5 transparent;
 
         .ai-markdown-content {
           height: auto;

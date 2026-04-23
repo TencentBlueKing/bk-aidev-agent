@@ -1,8 +1,45 @@
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitepress';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SSR_STUB = path.resolve(__dirname, 'ssr-stub.ts');
+const SSR_STUB_PACKAGES = ['bkui-vue', 'mermaid', 'tippy.js', 'vue-tippy'];
+
+/**
+ * 仅在 SSR 模式下，把 bkui-vue / mermaid 等会在模块顶层访问 document/window
+ * 的依赖重定向到 ssr-stub.ts，避免 vitepress build 时阻塞。
+ * 浏览器水合阶段会重新加载真实模块，不影响最终运行。
+ */
+/**
+ * vitepress build 会顺序跑 client + ssr 两次构建，且共用同一份 plugin 实例。
+ * 通过 configResolved 的 build.ssr 标记区分当前阶段，仅在 SSR 构建时把
+ * bkui-vue / mermaid / vue-tippy / tippy.js 重定向到本地 stub。
+ *
+ * 这些库会在模块顶层访问 document/window（如 bkui-vue 的
+ * `document.addEventListener`、bkui-vue config-provider 的 `setPrefixVariable`
+ * 同步访问 `document.documentElement`、mermaid 经 d3-selection 访问 document），
+ * 在 Node SSR 环境中会立即抛 ReferenceError 阻塞 vitepress build。
+ *
+ * 浏览器水合阶段配合 markdown 输出整体 <ClientOnly> 包裹，
+ * 真实组件由浏览器加载真实模块渲染，最终用户体验不受影响。
+ */
+const createSsrStubPlugin = () => {
+  let isSsr = false;
+  return {
+    name: 'chat-x-wiki:ssr-stub',
+    enforce: 'pre' as const,
+    configResolved(config: { build?: { ssr?: boolean | string } }) {
+      isSsr = !!config?.build?.ssr;
+    },
+    resolveId(id: string) {
+      if (!isSsr) return null;
+      const matched = SSR_STUB_PACKAGES.some(pkg => id === pkg || id.startsWith(`${pkg}/`) || id.includes(`/${pkg}/`));
+      return matched ? SSR_STUB : null;
+    },
+  };
+};
+const ssrStubPlugin = createSsrStubPlugin();
 
 export default defineConfig({
   title: '蓝鲸 AI 对话组件库',
@@ -12,9 +49,11 @@ export default defineConfig({
   srcExclude: ['README.md'],
 
   vite: {
+    plugins: [ssrStubPlugin],
     resolve: {
       alias: {
         '@blueking/chat-x': path.resolve(__dirname, '../../src/index.ts'),
+        'bkui-vue': path.resolve(__dirname, '../../node_modules/bkui-vue/lib/index.js'),
       },
     },
   },
@@ -109,10 +148,34 @@ export default defineConfig({
   },
   markdown: {
     theme: 'github-dark',
+    // 文档站内嵌的 chat-x demo 间接依赖 bkui-vue（provideGlobalConfig 同步访问 document）
+    // 与 mermaid（d3-selection 需要 DOM），它们均无法在 Node SSR 环境运行。
+    // 这里把每个页面的 markdown 主体整体包到 <ClientOnly> 中，
+    // SSR 阶段输出占位，真正渲染留到浏览器水合后执行，避免构建期 document 报错。
+    config(md) {
+      const defaultRender = md.render.bind(md);
+      md.render = (src, env) => {
+        const html = defaultRender(src, env);
+        return `<ClientOnly>${html}</ClientOnly>`;
+      };
+    },
   },
 });
 
 /* ===================== 侧边栏配置 ===================== */
+
+function sidebarAI() {
+  return [
+    {
+      text: 'AI 专题',
+      items: [
+        { text: 'MCP 服务', link: 'mcp' },
+        { text: '自定义消息类型', link: 'custom-message' },
+        { text: '最佳实践', link: 'best-practices' },
+      ],
+    },
+  ];
+}
 
 function sidebarAPI() {
   return [
@@ -289,19 +352,6 @@ function sidebarGuide() {
         { text: '架构总览', link: 'architecture' },
         { text: '设计理念', link: 'design-philosophy' },
         { text: '用例食谱', link: 'recipes' },
-      ],
-    },
-  ];
-}
-
-function sidebarAI() {
-  return [
-    {
-      text: 'AI 专题',
-      items: [
-        { text: 'MCP 服务', link: 'mcp' },
-        { text: '自定义消息类型', link: 'custom-message' },
-        { text: '最佳实践', link: 'best-practices' },
       ],
     },
   ];

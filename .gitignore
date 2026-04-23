@@ -175,6 +175,12 @@ src/aidev/support-files/apidocs/
 src/frontend/web/docs/.vitepress/cache/
 src/frontend/web/docs/.vitepress/temp/
 src/frontend/web/docs/.vitepress/dist/
+src/frontend/ai-blueking/packages/chat-x/wikis/.vitepress/cache/
+src/frontend/ai-blueking/packages/chat-x/wikis/.vitepress/temp/
+src/frontend/ai-blueking/packages/chat-x/wikis/.vitepress/dist/
+
+# vercel
+.vercel/
 
 # node_modules
 src/frontend/node_modules/

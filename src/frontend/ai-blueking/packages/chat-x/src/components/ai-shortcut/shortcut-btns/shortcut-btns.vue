@@ -17,7 +17,7 @@
     <Tippy
       v-if="hiddenShortcuts.length > 0"
       ref="moreMenuRef"
-      :append-to="body"
+      :append-to="getBody"
       :arrow="false"
       interactive
       :offset="[0, 6]"
@@ -67,7 +67,8 @@
   import type { Shortcut } from '../../../types';
 
   import 'tippy.js/dist/tippy.css';
-  const body = document.body;
+  // 改为惰性获取，避免在 SSR 阶段直接访问 document
+  const getBody = () => document.body;
   const props = defineProps<{
     shortcuts: Shortcut[];
   }>();

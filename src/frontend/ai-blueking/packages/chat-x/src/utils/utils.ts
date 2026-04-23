@@ -24,6 +24,7 @@
  * IN THE SOFTWARE.
  */
 export const getCookieByName = (name: string) => {
+  if (typeof document === 'undefined') return null;
   const cookie = document.cookie.split(';').find(c => c.trim().startsWith(`${name}=`));
   return cookie ? cookie.split('=')[1] : null;
 };

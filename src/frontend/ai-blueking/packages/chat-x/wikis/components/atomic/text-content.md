@@ -68,7 +68,7 @@ div.text-content
 `content` 使用 `{{ }}` 文本插值渲染，HTML 标签会被转义，不会执行脚本：
 
 <div class="demo">
-  <TextContent content='<script>alert("xss")</script> 这段脚本不会执行' />
+  <TextContent :content="`&lt;script&gt;alert('xss')&lt;/script&gt; 这段脚本不会执行`" />
 </div>
 
 ## API

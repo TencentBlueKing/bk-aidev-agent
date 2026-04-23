@@ -16,11 +16,16 @@
     "lint:ai": "pnpm --filter @blueking/ai-blueking lint:all",
     "build:mcp": "pnpm --filter @blueking/chat-x mcp:build",
     "dev:mcp": "pnpm --filter @blueking/chat-x mcp:dev",
-    "wiki:dev": "pnpm --filter @blueking/chat-x wiki:dev"
+    "dev:wiki": "pnpm --filter @blueking/chat-x wiki:dev",
+    "build:wiki": "pnpm --filter @blueking/chat-x wiki:build"
   },
   "devDependencies": {
     "@blueking/bkui-lint": "0.1.8",
     "@types/node": "^25.0.1",
     "typescript": "~5.9.3"
+  },
+  "packageManager": "pnpm@10.17.1",
+  "engines": {
+    "node": ">=22"
   }
 }

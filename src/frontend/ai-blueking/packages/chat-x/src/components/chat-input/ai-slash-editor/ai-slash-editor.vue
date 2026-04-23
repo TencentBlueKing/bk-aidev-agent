@@ -9,7 +9,7 @@
     />
     <Tippy
       ref="tippyRef"
-      :append-to="body"
+      :append-to="getBody"
       :arrow="false"
       :hide-on-click="true"
       :interactive="true"
@@ -84,7 +84,7 @@
 
   const editorRef = useTemplateRef<HTMLDivElement>('editorRef');
   const tippyRef = useTemplateRef<InstanceType<typeof Tippy> & ReturnType<typeof useTippy>>('tippyRef');
-  const body = document.body;
+  const getBody = () => document.body;
 
   let mentionDecorations: monacoEditor.IEditorDecorationsCollection | null = null;
 

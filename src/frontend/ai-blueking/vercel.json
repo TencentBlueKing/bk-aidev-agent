@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vitepress",
+  "installCommand": "pnpm install --no-frozen-lockfile",
+  "buildCommand": "pnpm --filter @blueking/chat-x wiki:build",
+  "outputDirectory": "packages/chat-x/wikis/.vitepress/dist",
+  "git": {
+    "deploymentEnabled": {
+      "feat/vercel": true
+    }
+  }
+}
