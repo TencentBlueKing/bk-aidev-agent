@@ -1,6 +1,6 @@
 {
   "name": "@blueking/ai-blueking",
-  "version": "2.1.1-beta.26",
+  "version": "2.1.1-beta.28",
   "description": "AI 小鲸 V2 - 基于新架构的智能对话组件",
   "license": "MIT",
   "author": "Tencent BlueKing",
@@ -64,8 +64,8 @@
     "vue": "^3.5.24"
   },
   "dependencies": {
-    "@blueking/chat-helper": "0.0.1-beta.38",
-    "@blueking/chat-x": "0.0.29",
+    "@blueking/chat-helper": "workspace:*",
+    "@blueking/chat-x": "workspace:*",
     "bkui-vue": "2.0.2-beta.81",
     "tippy.js": "^6.3.7",
     "vue-draggable-resizable": "^3.0.0",

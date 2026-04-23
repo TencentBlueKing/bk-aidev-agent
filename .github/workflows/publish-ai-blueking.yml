@@ -48,6 +48,31 @@ jobs:
         working-directory: src/frontend/ai-blueking
         run: pnpm install --no-frozen-lockfile
 
+      - name: Verify workspace dependencies are published
+        working-directory: src/frontend/ai-blueking/packages/ai-blueking
+        run: |
+          set -eo pipefail
+          # pnpm publish 会将 workspace:* 替换为本地 package.json 中的版本号，
+          # 但不会检查该版本是否已发布到 npm。如果依赖包还未发布，消费者安装会 404。
+          node -e '
+            const pkg = require("./package.json");
+            const deps = { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies };
+            for (const [name, version] of Object.entries(deps)) {
+              if (version.startsWith("workspace:")) {
+                const depPkg = require("../" + name.split("/").pop() + "/package.json");
+                console.log(name + "@" + depPkg.version);
+              }
+            }
+          ' | while IFS='@' read -r name version; do
+            echo "Checking ${name}@${version} on npm..."
+            if ! npm view "${name}@${version}" version 2>/dev/null; then
+              echo "::error::${name}@${version} 尚未发布到 npm，请先发布 ${name} 再发布 ai-blueking"
+              exit 1
+            else
+              echo "  ✓ ${name}@${version} exists on npm"
+            fi
+          done
+
       - name: Bump version
         id: bump-version
         working-directory: src/frontend/ai-blueking/packages/ai-blueking
@@ -95,7 +120,7 @@ jobs:
 
       - name: Publish ai-blueking to npm
         working-directory: src/frontend/ai-blueking/packages/ai-blueking
-        run: npm publish --ignore-scripts --access public --tag ${{ steps.bump-version.outputs.npm_tag }}
+        run: pnpm publish --no-git-checks --access public --tag ${{ steps.bump-version.outputs.npm_tag }}
 
       - name: Convert version to Python format
         id: py-version

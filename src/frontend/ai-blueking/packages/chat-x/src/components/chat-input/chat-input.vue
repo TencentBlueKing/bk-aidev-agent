@@ -1,5 +1,5 @@
 <template>
-  <div class="chat-input-container">
+  <div class="chat-input-container" :style="{ '--chat-z-index': CHAT_Z_INDEX }">
     <slot name="top" />
     <div
       class="chat-input"
@@ -321,7 +321,7 @@ Use Shift + Enter to enter a new line`
       border-radius: 8px;
 
       &::before {
-        z-index: v-bind(CHAT_Z_INDEX);
+        z-index: var(--chat-z-index);
 
         @include border.linear-gradient-border(180deg, #6cbaff, #3a84ff);
       }
