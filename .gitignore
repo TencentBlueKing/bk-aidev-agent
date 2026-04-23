@@ -181,6 +181,7 @@ src/frontend/ai-blueking/packages/chat-x/wikis/.vitepress/dist/
 
 # vercel
 .vercel/
+src/frontend/web/dist/
 
 # node_modules
 src/frontend/node_modules/
