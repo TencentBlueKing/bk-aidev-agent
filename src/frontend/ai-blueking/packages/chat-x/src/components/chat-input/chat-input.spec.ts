@@ -35,16 +35,27 @@ import ChatInput from './chat-input.vue';
 import type { UploadFile } from '../../types';
 import type { IAiSlashMenuItem } from '../../types/editor';
 
-// Mock common
-vi.mock('../../common', () => ({
-  CHAT_Z_INDEX: 1000,
-  isEn: false,
-  commonSVGProps: {
-    class: 'mock-svg-icon',
-    xmlns: 'http://www.w3.org/2000/svg',
-    viewBox: '0 0 24 24',
-  },
+const mockBkMessage = vi.fn();
+vi.mock('bkui-vue', () => ({
+  Message: (...args: unknown[]) => mockBkMessage(...args),
 }));
+
+// Mock common
+vi.mock('../../common', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../common')>();
+  return {
+    ...actual,
+    CHAT_Z_INDEX: 1000,
+    isEn: false,
+    MAX_UPLOAD_FILES: 3,
+    MAX_UPLOAD_FILE_SIZE: 2.5 * 1024 * 1024,
+    commonSVGProps: {
+      class: 'mock-svg-icon',
+      xmlns: 'http://www.w3.org/2000/svg',
+      viewBox: '0 0 24 24',
+    },
+  };
+});
 
 // Mock edix
 vi.mock('../../edix', () => ({

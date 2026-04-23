@@ -90,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onBeforeUnmount, shallowRef, watch } from 'vue';
+  import { computed, onBeforeUnmount, shallowRef } from 'vue';
 
   import { ArrowLeftIcon, ArrowRightPreviewIcon, ImageBrokenIcon, PreviewCloseIcon } from '../../icons/image-preview';
   import { t } from '../../lang/lang';
@@ -137,7 +137,13 @@
     return { url, name: file.name, file };
   };
 
+  // visible 必须参与计算：关闭时会 revoke blob URL，若仅依赖 props.images，
+  // computed 缓存仍指向已失效的 url，再次打开预览会加载失败。
   const normalizedImages = computed<ImageItem[]>(() => {
+    if (!visible.value) {
+      revokeObjectUrls();
+      return [];
+    }
     revokeObjectUrls();
     return props.images.map(img => {
       if (img instanceof File) return fileToImageItem(img);
@@ -145,10 +151,6 @@
       if (img.file && !img.url) return { ...img, url: fileToImageItem(img.file).url };
       return img;
     });
-  });
-
-  watch(visible, val => {
-    if (!val) revokeObjectUrls();
   });
 
   onBeforeUnmount(revokeObjectUrls);

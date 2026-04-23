@@ -62,5 +62,24 @@ export const formatFileSize = (file?: File): string => {
   const size = file.size;
   const units = ['B', 'KB', 'M', 'GB'];
   const index = Math.floor(Math.log2(size) / 10);
-  return `${(size / Math.pow(1024, index)).toFixed(2)} ${units[index]}`;
+  return `${(size / 1024 ** index).toFixed(2)} ${units[index]}`;
+};
+
+/**
+ * 未成功添加的文件统一提示（中文在数量为 1 时不带「n个」前缀）
+ */
+export const formatUploadNotAddedMessage = (count: number, maxMb: string, isEn: boolean): string => {
+  if (count < 1) {
+    return '';
+  }
+  if (isEn) {
+    // if (count === 1) {
+    //   return `The file was not uploaded; it may exceed ${maxMb} MB or the upload count limit.`;
+    // }
+    return `${count} files were not uploaded; they may exceed ${maxMb} MB or the upload count limit.`;
+  }
+  // if (count === 1) {
+  //   return `文件未上传，可能文件超过 ${maxMb} MB或超出上传个数`;
+  // }
+  return `有 ${count} 个文件未上传，可能文件超过 ${maxMb} MB或超出上传个数`;
 };

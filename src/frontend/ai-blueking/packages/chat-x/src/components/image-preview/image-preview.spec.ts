@@ -267,6 +267,31 @@ describe('ImagePreview', () => {
       expect(wrapper.find('.ai-image-preview-img').exists()).toBe(true);
     });
 
+    it('关闭后再次打开 File 预览应重新生成可用的 blob URL', async () => {
+      const file = new File(['dummy'], 'photo.png', { type: 'image/png' });
+
+      wrapper = mount(ImagePreview, {
+        props: {
+          visible: true,
+          images: [file],
+          'onUpdate:visible': (v: boolean) => wrapper.setProps({ visible: v }),
+        },
+        global: {
+          stubs: { Teleport: true },
+        },
+      });
+
+      const firstSrc = wrapper.find('.ai-image-preview-img').attributes('src');
+      expect(firstSrc).toMatch(/^blob:/);
+
+      await wrapper.setProps({ visible: false });
+      await wrapper.setProps({ visible: true });
+
+      const secondSrc = wrapper.find('.ai-image-preview-img').attributes('src');
+      expect(secondSrc).toMatch(/^blob:/);
+      expect(secondSrc).not.toBe(firstSrc);
+    });
+
     it('应该支持混合类型 images（string + File + ImageItem）', () => {
       const file = new File(['dummy'], 'photo.png', { type: 'image/png' });
 

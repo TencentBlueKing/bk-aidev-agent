@@ -125,7 +125,7 @@ export const CONST_UPDATE_TOOLS = [
 
 export const MAX_UPLOAD_FILES = 3; // 最大上传文件数量
 
-export const MAX_UPLOAD_FILE_SIZE = 2.5 * 1024 * 1024; // 最大上传文件大小 2.5MB
+export const MAX_UPLOAD_FILE_SIZE = 2.4 * 1024 * 1024; // 最大上传文件大小 2.5MB
 
 /**
  * 关键词高亮类名

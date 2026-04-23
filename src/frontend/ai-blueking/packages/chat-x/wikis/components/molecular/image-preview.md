@@ -238,8 +238,8 @@ Teleport(to="body")
 
 > **ObjectURL 生命周期管理**：组件内部维护 `objectUrls` 数组，在以下时机自动回收：
 >
-> - `images` prop 变化触发 `normalizedImages` 重新计算时
-> - `visible` 从 `true` 变为 `false` 时
+> - `normalizedImages` 计算属性重算时（会先 `revokeObjectUrls`，再按当前 `images` 与 `visible` 生成新列表）
+> - **`visible` 为 `false` 时**：计算属性直接清空并 `revokeObjectURL`，避免仅依赖 `props.images` 时 computed 仍缓存**已失效**的 blob URL，导致关闭预览后再次打开加载失败
 > - 组件 `onBeforeUnmount` 时
 
 ## API

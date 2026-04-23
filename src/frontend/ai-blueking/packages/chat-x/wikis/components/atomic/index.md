@@ -10,7 +10,7 @@
 | `ToolBtn`          | 工具栏图标按钮；内置 10 个预置 SVG 图标（含 `activeLike`/`activeUnLike`），Tippy tooltip，`active`/`disabled` 态 | `MessageTools`                                          | [查看](./tool-btn.md)          |
 | `ShortcutBtn`      | 单个快捷指令按钮；`btn`/`menu` 两种布局，图标支持 URL / CSS 类名 / 函数 / 组件                                   | `ShortcutBtns`、`AiSelection`、`ChatInput`              | [查看](./shortcut-btn.md)      |
 | `ShortcutBtns`     | 快捷指令按钮组；内置 `useObserverVisibleList` 响应式溢出，超出容器宽度自动收入"更多"菜单                         | `ChatInput`                                             | [查看](./shortcut-btns.md)     |
-| `FileUploadBtn`    | 文件上传触发按钮；多选、类型过滤、2.5MB 大小校验、文件数上限（`max(maxFiles, 3)`）                               | `ChatInput`                                             | [查看](./file-upload-btn.md)   |
+| `FileUploadBtn`    | 文件上传触发按钮；多选、类型过滤、单文件约 2.4MB 过滤；个数上限由 `ChatInput` 统一处理                         | `ChatInput`                                             | [查看](./file-upload-btn.md)   |
 | `AiLoading`        | AI 思考中动画；SVG 三色（蓝→紫→粉）渐变脉冲，`uid` 隔离多实例渐变 ID                                             | `LoadingMessage`、`ReasoningMessage`、`ActivityMessage` | [查看](./ai-loading.md)        |
 | `HighlightKeyword` | 关键词高亮；函数式组件，通过 `inject` 获取搜索关键词，匹配文本自动高亮                                           | `ExecutionSummary`                                      | [查看](./highlight-keyword.md) |
 | `SelectionFooter`  | 选择操作栏；消息多选模式底部栏，提供全选/取消/确认操作                                                           | `ChatContainer`                                         | [查看](./selection-footer.md)  |

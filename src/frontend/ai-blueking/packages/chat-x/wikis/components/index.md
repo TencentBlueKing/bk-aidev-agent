@@ -27,7 +27,7 @@
 | `ToolBtn`       | 工具栏图标按钮；内置 10 个预置图标，支持激活 / 禁用态 | [查看](./atomic/tool-btn.md)        |
 | `ShortcutBtn`   | 单个快捷指令按钮；`btn` / `menu` 两种布局             | [查看](./atomic/shortcut-btn.md)    |
 | `ShortcutBtns`  | 快捷指令按钮组；响应式溢出自动收入"更多"菜单          | [查看](./atomic/shortcut-btns.md)   |
-| `FileUploadBtn` | 文件上传触发按钮；多选、类型过滤、2.5MB 校验          | [查看](./atomic/file-upload-btn.md) |
+| `FileUploadBtn` | 文件上传触发按钮；多选、类型过滤、单文件约 2.4MB 校验 | [查看](./atomic/file-upload-btn.md) |
 | `AiLoading`     | AI 思考中三色渐变脉冲动画                             | [查看](./atomic/ai-loading.md)      |
 
 ### 内容渲染

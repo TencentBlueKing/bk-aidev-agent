@@ -373,7 +373,7 @@ chat-input-container
   />
 </div>
 
-## 文件上传
+## 文件上传 {#file-upload}
 
 `supportUpload` 默认为 `true`，底部工具栏自动显示文件上传按钮。传入 `onUpload` 回调后即可处理文件上传：
 
@@ -382,6 +382,12 @@ chat-input-container
 - `onUpload` 每次传入**单个** `File`，返回 `{ download_url?: string }`
 - 文件自动去重（基于 `name + size + lastModified` 复合键），不会重复上传
 - 发送成功后，`uploadFiles` 自动清空
+
+**个数与大小校验（与 `FileUploadBtn` 分工）**：
+
+- 列表最多保留 **`MAX_UPLOAD_FILES`（3）** 个待发送附件；已满时再次选择/拖入/粘贴文件会弹出 **bkui-vue `Message` 错误提示**（`formatUploadNotAddedMessage`），且不会继续入队。
+- 在未满的前提下：空文件、单文件大小 **`>= MAX_UPLOAD_FILE_SIZE`（约 2.4MB）**、或与已有文件重复的项会被跳过；若本轮有任意文件因此未加入列表，会在处理结束后弹出**同一条文案风格**的错误提示，汇总未成功添加的数量。
+- `FileUploadBtn` 仅在按钮层过滤**空文件与单文件超大**，把合法文件以数组形式 `upload` 上来；**个数上限与重复校验**在 `ChatInput` 的 `handleUpload` 中统一处理，避免与按钮层各弹一条提示。
 
 **发送内容格式**（有文件时）：
 

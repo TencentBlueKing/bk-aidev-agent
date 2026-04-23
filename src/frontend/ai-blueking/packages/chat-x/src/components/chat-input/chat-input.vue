@@ -1,5 +1,8 @@
 <template>
-  <div class="chat-input-container" :style="{ '--chat-z-index': CHAT_Z_INDEX }">
+  <div
+    class="chat-input-container"
+    :style="{ '--chat-z-index': CHAT_Z_INDEX }"
+  >
     <slot name="top" />
     <div
       class="chat-input"
@@ -81,8 +84,10 @@
 <script setup lang="ts">
   import { computed, ref as deepRef, shallowRef, useTemplateRef, watchPostEffect } from 'vue';
 
+  import { Message } from 'bkui-vue';
+
   import { type UserMessage, MessageContentType, MessageStatus } from '../../ag-ui/types';
-  import { CHAT_Z_INDEX, isEn } from '../../common';
+  import { CHAT_Z_INDEX, isEn, MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../../common';
   import { type KeyboardPayload, docToString } from '../../edix';
   import { CloseIcon } from '../../icons';
   import {
@@ -93,6 +98,7 @@
     type UploadFile,
     UploadStatus,
   } from '../../types';
+  import { formatUploadNotAddedMessage } from '../../utils';
   import FileUploadBtn from '../ai-buttons/file-upload-btn/file-upload-btn.vue';
   import ShortcutBtn from '../ai-shortcut/shortcut-btn/shortcut-btn.vue';
   import ShortcutBtns from '../ai-shortcut/shortcut-btns/shortcut-btns.vue';
@@ -235,14 +241,35 @@ Use Shift + Enter to enter a new line`
     emit('deleteShortcut');
   };
   const fileKey = (f: File) => `${f.name}_${f.size}_${f.lastModified}`;
+  const maxUploadMb = (MAX_UPLOAD_FILE_SIZE / (1024 * 1024)).toFixed(1);
   const handleUpload = async (files: File[]) => {
     if (!props.supportUpload) {
       return;
     }
+    if (uploadFiles.value.length >= MAX_UPLOAD_FILES) {
+      if (files.length > 0) {
+        Message({
+          message: formatUploadNotAddedMessage(files.length, maxUploadMb, isEn),
+          theme: 'error',
+        });
+      }
+      return;
+    }
     const existingKeys = new Set(uploadFiles.value.map(item => (item.file ? fileKey(item.file) : '')));
-    for (const file of files) {
+    let notUploadedCount = 0;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (uploadFiles.value.length >= MAX_UPLOAD_FILES) {
+        notUploadedCount += files.length - i;
+        break;
+      }
       const key = fileKey(file);
       if (existingKeys.has(key)) {
+        notUploadedCount += 1;
+        continue;
+      }
+      if (file.size <= 0 || file.size >= MAX_UPLOAD_FILE_SIZE) {
+        notUploadedCount += 1;
         continue;
       }
       existingKeys.add(key);
@@ -264,6 +291,12 @@ Use Shift + Enter to enter a new line`
         .catch(() => {
           fileItem.status = UploadStatus.Error;
         });
+    }
+    if (notUploadedCount > 0) {
+      Message({
+        message: formatUploadNotAddedMessage(notUploadedCount, maxUploadMb, isEn),
+        theme: 'error',
+      });
     }
   };
   const handleDeleteFile = (file: Partial<UploadFile>) => {
