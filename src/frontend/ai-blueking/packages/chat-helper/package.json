@@ -1,6 +1,6 @@
 {
   "name": "@blueking/chat-helper",
-  "version": "0.0.1-beta.38",
+  "version": "0.0.2",
   "description": "",
   "main": "./dist/index.ts.js",
   "types": "./dist/index.d.ts",
