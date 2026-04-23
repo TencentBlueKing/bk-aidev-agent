@@ -1,0 +1,70 @@
+name: Deploy Docs to GitHub Pages
+
+on:
+  push:
+    branches: [2.0.0]
+    paths:
+      - 'src/frontend/web/**'
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: '部署分支'
+        required: false
+        type: string
+        default: '2.0.0'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_branch || '2.0.0' }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: "src/frontend/pnpm-lock.yaml"
+
+      - name: Install dependencies
+        working-directory: src/frontend
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build VitePress
+        working-directory: src/frontend/web
+        env:
+          VITEPRESS_BASE: /bk-aidev-agent/
+        run: pnpm build
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: src/frontend/web/dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
