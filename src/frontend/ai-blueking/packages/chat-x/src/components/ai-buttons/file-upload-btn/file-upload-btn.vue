@@ -30,9 +30,10 @@
   import { Message } from 'bkui-vue';
   import { directive as vTippy } from 'vue-tippy';
 
-  import { isEn, MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../../../common';
+  import { isEn, MAX_UPLOAD_FILE_SIZE } from '../../../common';
   import { FileUploadIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
+  import { formatUploadNotAddedMessage } from '../../../utils';
 
   import type { AITippyProps } from '../../../types';
 
@@ -44,9 +45,9 @@
     multiple?: boolean;
     tippyOptions?: AITippyProps;
   };
-  const props = withDefaults(defineProps<FileUploadBtnProps>(), {
-    accept: 'image/*', // 默认只允许上传图片
-    maxFiles: 3,
+  withDefaults(defineProps<FileUploadBtnProps>(), {
+    accept: 'image/*', // 默认允许常见图片类型（含 SVG）
+    maxFiles: 3, // 预留/文档用；实际上传个数由上层（如 ChatInput）校验
     multiple: true,
   });
   const emit = defineEmits<{
@@ -62,18 +63,27 @@
     const target = event.target as HTMLInputElement;
     const files = target.files;
     if (files?.length) {
-      if (files.length > Math.max(props.maxFiles, MAX_UPLOAD_FILES)) {
+      const maxMb = (MAX_UPLOAD_FILE_SIZE / (1024 * 1024)).toFixed(1);
+      const picked = Array.from(files);
+      const toEmit: File[] = [];
+      let sizeRejected = 0;
+      for (const file of picked) {
+        if (file.size > 0 && file.size < MAX_UPLOAD_FILE_SIZE) {
+          toEmit.push(file);
+        } else {
+          sizeRejected += 1;
+        }
+      }
+      // 上传个数上限由上层（如 ChatInput）统一处理并提示，避免与按钮层「单次截断」各弹一条 Message
+      if (sizeRejected > 0) {
         Message({
-          message: isEn ? `You can only upload up to ${props.maxFiles} files` : `最多上传${props.maxFiles}个文件`,
+          message: formatUploadNotAddedMessage(sizeRejected, maxMb, isEn),
           theme: 'error',
         });
-        return;
       }
-      // 限制最大上传文件数量
-      emit(
-        'upload',
-        Array.from(files).filter(file => file.size > 0 && file.size < MAX_UPLOAD_FILE_SIZE),
-      );
+      if (toEmit.length) {
+        emit('upload', toEmit);
+      }
     }
     target.value = '';
   };

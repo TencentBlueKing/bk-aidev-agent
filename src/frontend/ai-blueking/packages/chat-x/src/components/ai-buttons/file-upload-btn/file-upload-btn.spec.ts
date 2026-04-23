@@ -57,11 +57,15 @@ vi.mock('../../../lang/lang', () => ({
   t: (key: string) => key,
 }));
 
-vi.mock('../../../common', () => ({
-  isEn: false,
-  MAX_UPLOAD_FILE_SIZE: 2.5 * 1024 * 1024,
-  MAX_UPLOAD_FILES: 3,
-}));
+vi.mock('../../../common', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../../common')>();
+  return {
+    ...actual,
+    isEn: false,
+    MAX_UPLOAD_FILE_SIZE: 2.5 * 1024 * 1024,
+    MAX_UPLOAD_FILES: 3,
+  };
+});
 
 // ============= 辅助函数 =============
 
@@ -159,7 +163,7 @@ describe('FileUploadBtn', () => {
 
   // ---------- Props 测试 ----------
   describe('Props 测试', () => {
-    it('accept 默认值应该为 image/*', () => {
+    it('accept 默认值应该为 image/*（含 SVG）', () => {
       wrapper = mount(FileUploadBtn);
 
       const input = wrapper.find('input[type="file"]');
@@ -285,7 +289,7 @@ describe('FileUploadBtn', () => {
 
   // ---------- 文件验证测试 ----------
   describe('文件验证测试', () => {
-    it('超过最大文件数量应该显示错误提示', async () => {
+    it('单次多选时发出全部尺寸合法的文件，不在按钮层按个数截断或提示', async () => {
       wrapper = mount(FileUploadBtn, {
         props: { maxFiles: 2 },
       });
@@ -298,11 +302,10 @@ describe('FileUploadBtn', () => {
       ];
       await triggerFileChange(wrapper, files);
 
-      expect(mockMessage).toHaveBeenCalledWith({
-        message: '最多上传2个文件',
-        theme: 'error',
-      });
-      expect(wrapper.emitted('upload')).toBeFalsy();
+      expect(mockMessage).not.toHaveBeenCalled();
+      const emitted = wrapper.emitted('upload')?.[0]?.[0] as File[];
+      expect(emitted).toHaveLength(4);
+      expect(emitted.map(f => f.name)).toEqual(['a.png', 'b.png', 'c.png', 'd.png']);
     });
 
     it('文件数量不超过限制时不应该显示错误', async () => {
@@ -324,6 +327,10 @@ describe('FileUploadBtn', () => {
       const emptyFile = createFile('empty.png', 0);
       await triggerFileChange(wrapper, [validFile, emptyFile]);
 
+      expect(mockMessage).toHaveBeenCalledWith({
+        message: '有 1 个文件未上传，可能文件超过 2.5 MB或超出上传个数',
+        theme: 'error',
+      });
       const emittedFiles = wrapper.emitted('upload')?.[0]?.[0] as File[];
       expect(emittedFiles).toHaveLength(1);
       expect(emittedFiles[0].name).toBe('valid.png');
@@ -336,22 +343,25 @@ describe('FileUploadBtn', () => {
       const oversizedFile = createFile('huge.png', 3 * 1024 * 1024);
       await triggerFileChange(wrapper, [validFile, oversizedFile]);
 
+      expect(mockMessage).toHaveBeenCalledWith({
+        message: '有 1 个文件未上传，可能文件超过 2.5 MB或超出上传个数',
+        theme: 'error',
+      });
       const emittedFiles = wrapper.emitted('upload')?.[0]?.[0] as File[];
       expect(emittedFiles).toHaveLength(1);
       expect(emittedFiles[0].name).toBe('small.png');
     });
 
-    it('maxFiles 取 props.maxFiles 和 MAX_UPLOAD_FILES 的较大值', async () => {
+    it('maxFiles 较小仍一次发出多选的全部合法文件（个数由上层处理）', async () => {
       wrapper = mount(FileUploadBtn, {
         props: { maxFiles: 1 },
       });
 
-      // MAX_UPLOAD_FILES = 3，Math.max(1, 3) = 3，所以 4 个文件才会超限
       const files = [createFile('a.png', 1024), createFile('b.png', 1024), createFile('c.png', 1024)];
       await triggerFileChange(wrapper, files);
 
       expect(mockMessage).not.toHaveBeenCalled();
-      expect(wrapper.emitted('upload')).toBeTruthy();
+      expect((wrapper.emitted('upload')?.[0]?.[0] as File[]).map(f => f.name)).toEqual(['a.png', 'b.png', 'c.png']);
     });
   });
 
@@ -389,15 +399,17 @@ describe('FileUploadBtn', () => {
       expect(wrapper.emitted('upload')).toBeFalsy();
     });
 
-    it('所有文件都被过滤后应该触发 upload 事件并返回空数组', async () => {
+    it('所有文件都被过滤后不应触发 upload 但应提示错误', async () => {
       wrapper = mount(FileUploadBtn);
 
       const emptyFile = createFile('empty.png', 0);
       await triggerFileChange(wrapper, [emptyFile]);
 
-      expect(wrapper.emitted('upload')).toBeTruthy();
-      const emittedFiles = wrapper.emitted('upload')?.[0]?.[0] as File[];
-      expect(emittedFiles).toHaveLength(0);
+      expect(wrapper.emitted('upload')).toBeFalsy();
+      expect(mockMessage).toHaveBeenCalledWith({
+        message: '有 1 个文件未上传，可能文件超过 2.5 MB或超出上传个数',
+        theme: 'error',
+      });
     });
 
     it('刚好等于最大尺寸的文件应该被过滤', async () => {
@@ -406,8 +418,11 @@ describe('FileUploadBtn', () => {
       const maxSizeFile = createFile('max.png', 2.5 * 1024 * 1024);
       await triggerFileChange(wrapper, [maxSizeFile]);
 
-      const emittedFiles = wrapper.emitted('upload')?.[0]?.[0] as File[];
-      expect(emittedFiles).toHaveLength(0);
+      expect(wrapper.emitted('upload')).toBeFalsy();
+      expect(mockMessage).toHaveBeenCalledWith({
+        message: '有 1 个文件未上传，可能文件超过 2.5 MB或超出上传个数',
+        theme: 'error',
+      });
     });
   });
 });

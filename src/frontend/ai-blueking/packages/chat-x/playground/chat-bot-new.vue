@@ -31,7 +31,7 @@
       }"
       :resources="MOCK_RESOURCES"
       :shortcuts="shortcuts"
-      :support-upload="false"
+      :support-upload="true"
       @delete-shortcut="handleDeleteShortcut"
       @select-shortcut="handleSelectShortcut"
       @shortcut-close="handleShortcutClose"
@@ -67,6 +67,8 @@
 
 <script setup lang="ts">
   import { ref as deepRef, onMounted, shallowRef } from 'vue';
+
+  import { tr } from 'zod/locales';
 
   import {
     type ActivityMessage,

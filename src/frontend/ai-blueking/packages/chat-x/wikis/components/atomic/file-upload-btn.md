@@ -4,10 +4,10 @@ slug: file-upload-btn
 category: atomic
 description: >-
   聊天输入框内置的文件上传触发按钮，点击后弹出系统文件选择框。内部包含隐藏的 `<input type="file">`
-  与可见的图标按钮，并内置文件数量及大小校验逻辑。
+  与可见的图标按钮；在按钮层过滤空文件与超过单文件大小上限的文件，**上传个数上限由上层（如 ChatInput）统一处理**。
 aiSummary: >
-  FileUploadBtn 提供隐藏 file input 与图标按钮，选择文件后 emit upload，并内置数量与单文件大小上限校验。
-  常用于 ChatInput 工具条；与 FileContent 等展示列表配合形成「选择 → 展示 → 发送」链路。
+  FileUploadBtn 提供隐藏 file input 与图标按钮，选择后在按钮层过滤空文件与超大单文件并 emit upload；
+  个数上限不在此截断，由 ChatInput 等与 FileContent 配合完成「选择 → 展示 → 发送」链路。
 relatedComponents:
   - slug: chat-input
     relation: 输入区附件上传按钮常见挂载位置
@@ -29,7 +29,7 @@ domain: media
 
 > **层级**：原子组件 · **功能域**：文件与图片
 
-聊天输入框内置的文件上传触发按钮，点击后弹出系统文件选择框。内部包含隐藏的 `<input type="file">` 与可见的图标按钮，并内置文件数量及大小校验逻辑。
+聊天输入框内置的文件上传触发按钮，点击后弹出系统文件选择框。内部包含隐藏的 `<input type="file">` 与可见的图标按钮；在按钮层对**单文件**做大小与空文件过滤，**已选文件个数上限**由上层（如 `ChatInput`）统一校验并提示，避免按钮与输入区各弹一条错误提示。
 
 ## 组件结构
 
@@ -48,26 +48,30 @@ domain: media
 ```
 用户选择文件
   │
-  ├─ files.length > Math.max(maxFiles, MAX_UPLOAD_FILES[3])
-  │       ↓ true → bkui-vue Message.error("最多上传 N 个文件")，终止，不 emit
+  ├─ 遍历所选文件：size > 0 且 size < MAX_UPLOAD_FILE_SIZE（约 2.4MB）→ 加入 toEmit
+  │       size 为 0 或 ≥ 上限 → sizeRejected += 1
   │
-  └─ emit('upload', files.filter(f => f.size > 0 && f.size < MAX_UPLOAD_FILE_SIZE[2.5MB]))
-        ↓
-      target.value = ''（重置 input，允许再次选择同一文件）
+  ├─ sizeRejected > 0 → bkui-vue Message.error（formatUploadNotAddedMessage，说明可能超大或超出个数等）
+  │
+  ├─ toEmit.length > 0 → emit('upload', toEmit)
+  │
+  └─ target.value = ''（重置 input，允许再次选择同一文件）
 ```
 
 **关键边界行为**：
 
-| 场景                                      | 结果                                                        |
-| ----------------------------------------- | ----------------------------------------------------------- |
-| 文件数超过 `Math.max(maxFiles, 3)`        | 弹出错误 toast，**不触发** `upload`                         |
-| 文件数未超限，但部分文件被大小过滤        | **仍触发** `upload`，payload 为过滤后的数组（可能为空数组） |
-| `file.size === 0`                         | 被过滤（空文件）                                            |
-| `file.size >= 2.5MB`（即 `2621440` 字节） | 被过滤（使用严格小于 `<`，等于 2.5MB 也会被过滤）           |
-| `maxFiles` 设为小于 3 的值（如 `1`）      | 实际限制取 `Math.max(1, 3) = 3`，不低于全局下限             |
-| 选择后取消                                | `files.length === 0`，不触发 `upload`                       |
+| 场景                                                         | 结果                                                                 |
+| ------------------------------------------------------------ | -------------------------------------------------------------------- |
+| 一次多选超过上层允许个数（如 `ChatInput` 内已达 3 个）       | 由 **ChatInput** 侧 toast 并丢弃/不计入，不在本按钮内按个数提前拦截 |
+| 部分文件因空文件或单文件超大被过滤                           | 弹出错误 toast；若仍有合法文件，**仍触发** `upload`（payload 为合法子集） |
+| 全部被过滤（均为空或超大）                                   | 仅 toast，**不触发** `upload`                                        |
+| `file.size === 0`                                          | 计入未添加提示，不进入 `upload` payload                              |
+| `file.size >= MAX_UPLOAD_FILE_SIZE`（与全局常量一致，约 2.4MB） | 计入未添加提示，不进入 `upload` payload（比较为严格 `<`）           |
+| 选择后取消                                                   | `files.length === 0`，不触发 `upload`                                |
 
 > `multiple` prop 声明存在但当前模板中 `input` 的 `multiple` 属性为**硬编码**（非 `:multiple="multiple"` 绑定），始终允许多选，该 prop 暂时无实际效果。
+
+> **`maxFiles` prop**：当前版本在按钮内**不参与截断或计数校验**，仅作类型与文档预留；列表最多几个文件由上层（如 `ChatInput` 的 `MAX_UPLOAD_FILES`）控制。详见 [ChatInput 文件上传](../molecular/chat-input.md#file-upload)。
 
 ## 基础用法
 
@@ -126,31 +130,6 @@ domain: media
 
 > `accept` 仅影响文件选择框的过滤 UI，不做服务端验证，请在 `upload` 回调中自行校验 MIME 类型。
 
-## 限制上传数量
-
-`maxFiles` 限制单次选择的文件上传上限，实际生效值为 `Math.max(maxFiles, 3)`，不会低于全局下限 3：
-
-```vue
-<template>
-  <!-- maxFiles=5：可一次选 5 个文件 -->
-  <FileUploadBtn
-    :max-files="5"
-    @upload="handleUpload"
-  />
-
-  <!-- maxFiles=1：实际等效 maxFiles=3（取 Math.max(1,3)） -->
-  <FileUploadBtn
-    :max-files="1"
-    @upload="handleUpload"
-  />
-</template>
-```
-
-<div class="demo" style="display: flex; gap: 12px;">
-  <FileUploadBtn :max-files="5" @upload="handleUpload" />
-  <FileUploadBtn :max-files="1" @upload="handleUpload" />
-</div>
-
 ## 自定义图标
 
 通过默认插槽替换上传图标：
@@ -173,18 +152,18 @@ domain: media
 
 ### Props
 
-| 属性名       | 类型           | 默认值      | 说明                                                   |
-| ------------ | -------------- | ----------- | ------------------------------------------------------ |
-| accept       | `string`       | `'image/*'` | 文件选择框过滤类型，遵循 `<input accept>` 规范         |
-| maxFiles     | `number`       | `3`         | 单次选择文件数上限；实际限制为 `Math.max(maxFiles, 3)` |
-| multiple     | `boolean`      | `true`      | 声明属性（当前版本未实际绑定到 input，始终多选）       |
-| tippyOptions | `AITippyProps` | —           | 扩展 tooltip 配置，会与内置配置合并                    |
+| 属性名       | 类型           | 默认值      | 说明                                                                 |
+| ------------ | -------------- | ----------- | -------------------------------------------------------------------- |
+| accept       | `string`       | `'image/*'` | 文件选择框过滤类型，遵循 `<input accept>` 规范                       |
+| maxFiles     | `number`       | `3`         | 预留字段，**当前不在按钮内生效**；个数上限见 `ChatInput` 与全局常量 |
+| multiple     | `boolean`      | `true`      | 声明属性（当前版本未实际绑定到 input，始终多选）                     |
+| tippyOptions | `AITippyProps` | —           | 扩展 tooltip 配置，会与内置配置合并                                |
 
 ### Events
 
 | 事件名 | 参数              | 说明                                                                                      |
 | ------ | ----------------- | ----------------------------------------------------------------------------------------- |
-| upload | `(files: File[])` | 校验通过后触发；`files` 为过滤掉空文件和超大文件（≥ 2.5MB）后的数组；超出数量限制时不触发 |
+| upload | `(files: File[])` | 当存在至少一个合法文件时触发；`files` 为过滤掉空文件与单文件超大（`size >= MAX_UPLOAD_FILE_SIZE`，约 2.4MB）后的数组；个数截断不在此组件内完成 |
 
 ### Slots
 
