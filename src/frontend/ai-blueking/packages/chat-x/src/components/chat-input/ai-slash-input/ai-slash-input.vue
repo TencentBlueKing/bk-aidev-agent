@@ -39,7 +39,7 @@
     </div>
     <Tippy
       ref="tippyRef"
-      :append-to="body"
+      :append-to="getBody"
       :arrow="false"
       :hide-on-click="true"
       :interactive="true"
@@ -146,7 +146,7 @@
   let editor: ReturnType<typeof createEditor>;
   /* 清理编辑器 */
   let cleanup: () => void;
-  const body = document.body;
+  const getBody = () => document.body;
 
   const { commandSelection, GetCursorPosition, GetDocSnapshot, docSnapshot } = useCommandSelection();
 
