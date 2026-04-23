@@ -83,7 +83,7 @@ jobs:
 
       - name: Publish chat-helper to npm
         working-directory: src/frontend/ai-blueking/packages/chat-helper
-        run: npm publish --access public --provenance --tag ${{ steps.bump-version.outputs.npm_tag }}
+        run: pnpm publish --no-git-checks --access public --tag ${{ steps.bump-version.outputs.npm_tag }}
 
       - name: Configure git
         run: |

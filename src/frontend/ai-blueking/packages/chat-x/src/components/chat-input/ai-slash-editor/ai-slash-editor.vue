@@ -2,6 +2,7 @@
   <div
     class="ai-slash-editor-wrapper"
     :class="{ 'ai-slash-editor-wrapper_disabled': disabled }"
+    :style="{ '--editor-menu-z-index': EDITOR_MENU_Z_INDEX }"
   >
     <div
       ref="editorRef"
@@ -651,7 +652,7 @@
 
   .ai-slash-suggestions {
     position: fixed;
-    z-index: v-bind(EDITOR_MENU_Z_INDEX);
+    z-index: var(--editor-menu-z-index);
     display: flex;
     flex-direction: column;
     background: #fff;

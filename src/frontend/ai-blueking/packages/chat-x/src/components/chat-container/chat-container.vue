@@ -1,5 +1,8 @@
 <template>
-  <div class="ai-chat-container">
+  <div
+    class="ai-chat-container"
+    :style="{ '--resize-main-width': resizeMainWidth }"
+  >
     <div
       v-if="chatLoading"
       class="ai-chat-container-loading"
@@ -579,7 +582,7 @@
 
       .bk-resize-layout-main {
         position: relative;
-        width: v-bind(resizeMainWidth);
+        width: var(--resize-main-width);
 
         // width: 100%;
         padding: 8px;
@@ -691,6 +694,7 @@
         width: 100%;
         max-height: 240px;
         margin-bottom: 24px;
+        flex-shrink: 0;
         overflow-y: auto;
 
         &::-webkit-scrollbar {

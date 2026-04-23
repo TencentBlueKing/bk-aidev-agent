@@ -9,6 +9,7 @@
           left: `${position.x}px`,
           top: `${position.y}px`,
           zIndex: SELECTION_Z_INDEX,
+          '--selection-z-index': SELECTION_Z_INDEX,
         }"
         @mousedown.stop
       >
@@ -342,7 +343,7 @@
 
   .ai-selection-popover {
     position: fixed;
-    z-index: v-bind(SELECTION_Z_INDEX);
+    z-index: var(--selection-z-index);
     height: 32px;
     padding: 0 12px;
     pointer-events: auto;
