@@ -54,7 +54,6 @@ class AgentConfigManager:
         cls,
         agent_code: str,
         resource_manager: AbstractBKAidevResourceManager,
-        force_refresh: bool = False,
         version: Optional[str] = None,
         **kwargs,
     ) -> AgentConfig:
@@ -62,20 +61,9 @@ class AgentConfigManager:
         获取智能体配置
         :param agent_code: 智能体代码
         :param resource_manager: API 资源客户端
-        :param force_refresh: 是否强制刷新配置
         :param version: 可选的 agent 配置版本；为空表示取最新版（与历史行为一致），不同版本走独立缓存槽
         :return: AgentConfig 实例
         """
-        cache_key = (agent_code, version or "latest")
-        # 检查缓存中是否存在且不需要强制刷新
-        if not force_refresh and cache_key in cls._config_cache:
-            cached_entry = cls._config_cache[cache_key]
-            # 检查缓存是否过期
-            if not cached_entry.is_expired(cls.CACHE_TTL):
-                return cached_entry.config
-            # 如果过期，从缓存中删除
-            del cls._config_cache[cache_key]
-
         # 实时从AIDev平台拉取配置
         try:
             res = resource_manager.retrieve_agent_config(agent_code, version=version)
@@ -128,7 +116,4 @@ class AgentConfigManager:
             temperature=prompt_setting.get("temperature"),
             max_tokens=prompt_setting.get("max_tokens"),
         )
-
-        # 更新缓存
-        cls._config_cache[cache_key] = CachedEntry(config, time.time())
         return config
