@@ -9,17 +9,12 @@
 
 ### 1.2 本地开发环境配置
 
-1. 初始化项目环境，通过 `uv`（>=0.7.14）或 `pip` 管理依赖，虚拟环境将创建在项目根目录 `.venv` 下
+1. 初始化项目环境，推荐使用 `uv`（>=0.7.14）管理依赖，虚拟环境将创建在项目根目录 `.venv` 下
 
 ```bash
 # 使用 uv 管理依赖
 curl -LsSf https://astral.sh/uv/install.sh | sh
 make init # 如果没有make命令则使用 uv sync
-
-# 使用 pip 管理依赖
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
 ```
 
 ### 1.3 本地环境变量配置
