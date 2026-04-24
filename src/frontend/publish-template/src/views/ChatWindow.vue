@@ -482,7 +482,7 @@
     justify-content: space-between;
     padding: 10px 12px;
     border-radius: 6px;
-    margin-bottom: 4px;
+    margin-bottom: 8px;
     cursor: pointer;
     background-color: #fff;
     color: #4d4f56;
@@ -539,9 +539,9 @@
   }
 
   .session-name {
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 500;
-    color: inherit;
+    color: #4d4f56;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -609,6 +609,9 @@
     position: relative;
     background: #fff;
     .ai-chatbot :deep(.collapse-button.is-right) {
+      right: auto;
+    }
+    .ai-chatbot :deep(.ai-is-collapse .collapse-button.is-right) {
       right: 0;
       border-radius: 4px 0 0 4px;
     }
