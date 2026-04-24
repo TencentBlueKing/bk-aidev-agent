@@ -15,7 +15,6 @@ from aidev_agent.services.event_handlers import AGUISessionWriter
 from aidev_agent.services.pydantic_models import ChatPrompt, ExecuteKwargs
 from bkapi_client_core.exceptions import HTTPResponseError
 from django.conf import settings
-from django.core.cache import cache
 from langgraph.checkpoint.memory import MemorySaver
 
 # OpenTelemetry 是可选 extras（pip install aidev-bkplugin[opentelemetry]）。
@@ -101,23 +100,18 @@ def get_agent_config_info(username: str | None = None, version: str | None = Non
     :param version: agent 配置版本；为空时不传给后端，由后端返回最新版本，
         与历史行为兼容；缓存 key 落到 ``:latest`` 以避免污染指定版本的缓存。
     """
-    agent_info_key = f"get_agent_config_info:{username or 'default'}:{version or 'latest'}"
-
-    agent_info = cache.get(agent_info_key)
-    if not agent_info:
-        client = BKAidevApi.get_client()
-        api_kwargs: dict = {
-            "path_params": {"agent_code": settings.APP_CODE},
-            "headers": {"X-BKAIDEV-USER": username},
-        }
-        if version:
-            api_kwargs["params"] = {"version": version}
-        result = client.api.retrieve_agent_config(**api_kwargs)
-        agent_info = result["data"]
-        otel_env_info = agent_info.pop("otel_info", None)
-        if otel_env_info:
-            agent_info["otel_info"] = json.loads(base64.b64decode(otel_env_info).decode())
-        cache.set(agent_info_key, agent_info, settings.DEFAULT_CACHE_TIMEOUT)
+    client = BKAidevApi.get_client()
+    api_kwargs: dict = {
+        "path_params": {"agent_code": settings.APP_CODE},
+        "headers": {"X-BKAIDEV-USER": username},
+    }
+    if version:
+        api_kwargs["params"] = {"version": version}
+    result = client.api.retrieve_agent_config(**api_kwargs)
+    agent_info = result["data"]
+    otel_env_info = agent_info.pop("otel_info", None)
+    if otel_env_info:
+        agent_info["otel_info"] = json.loads(base64.b64decode(otel_env_info).decode())
     return agent_info
 
 
