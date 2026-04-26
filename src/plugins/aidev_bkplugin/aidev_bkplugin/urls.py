@@ -3,16 +3,16 @@
 from django.urls import include, re_path
 from rest_framework.routers import DefaultRouter
 
-from .views.builtin import (
-    AgentInfoViewSet,
-    ChatCompletionViewSet,
-    ChatGroupViewSet,
+from .views.agent import AgentInfoViewSet
+from .views.chat import ChatCompletionViewSet
+from .views.chat_group import ChatGroupViewSet
+from .views.flow_agent import FlowAgentViewSet
+from .views.session import (
     ChatSessionContentFeedbackViewSet,
     ChatSessionContentViewSet,
     ChatSessionShareView,
     ChatSessionViewSet,
 )
-from .views.flow_agent import FlowAgentViewSet
 
 _router = DefaultRouter()
 _router.register("agent", AgentInfoViewSet, "agent_info")

@@ -9,8 +9,7 @@ from rest_framework.views import Response
 
 from aidev_bkplugin.services.agent import build_execute_kwargs
 from aidev_bkplugin.utils import bkaidev_api_client, get_flow_agent_client
-
-from .builtin import IgnoreClientContentNegotiation, PluginViewSet
+from aidev_bkplugin.views.base import IgnoreClientContentNegotiation, PluginViewSet
 
 logger = getLogger(__name__)
 

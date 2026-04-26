@@ -10,13 +10,10 @@ from rest_framework.response import Response
 from aidev_bkplugin.packages.apigw.permissions import ApigwPermission
 from aidev_bkplugin.permissions import AgentPluginPermission
 from aidev_bkplugin.services.agent import get_agent_version
-from aidev_bkplugin.views.builtin import (
-    AgentInfoViewSet,
-    ChatCompletionViewSet,
-    ChatSessionContentViewSet,
-    ChatSessionViewSet,
-    PluginViewSet,
-)
+from aidev_bkplugin.views.agent import AgentInfoViewSet
+from aidev_bkplugin.views.base import PluginViewSet
+from aidev_bkplugin.views.chat import ChatCompletionViewSet
+from aidev_bkplugin.views.session import ChatSessionContentViewSet, ChatSessionViewSet
 
 USER_MODEL = get_user_model()
 

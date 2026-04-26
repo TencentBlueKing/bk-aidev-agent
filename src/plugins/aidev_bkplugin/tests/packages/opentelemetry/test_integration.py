@@ -434,17 +434,17 @@ class TestCompleteAgentExecution:
 
     def test_streaming_response_span_lifecycle(self, tracer_and_exporter):
         """
-        测试流式响应场景下的 span 生命周期管理
+                测试流式响应场景下的 span 生命周期管理
 
-        这个测试验证在流式响应（StreamingHttpResponse）的场景下：
-        1. BkAidevAgentInjector 的 root span 能够正确关闭
-        2. 不会导致线程的 trace 被污染
-        3. 所有 span 都能正确结束，没有泄露
+                这个测试验证在流式响应（StreamingHttpResponse）的场景下：
+                1. BkAidevAgentInjector 的 root span 能够正确关闭
+                2. 不会导致线程的 trace 被污染
+                3. 所有 span 都能正确结束，没有泄露
 
-        背景：
-        在 aidev_bkplugin/views/builtin.py 的 ChatCompletionViewSet.create 中，
-        当使用流式响应时，StreamingHttpResponse 会在返回时立即结束 HTTP span。
-        如果 BkAidevAgentInjector 的 span 没有正确结束，会导致该线程的 trace 被污染。
+                背景：
+        在 aidev_bkplugin/views/chat.py 的 ChatCompletionViewSet.create 中，
+                当使用流式响应时，StreamingHttpResponse 会在返回时立即结束 HTTP span。
+                如果 BkAidevAgentInjector 的 span 没有正确结束，会导致该线程的 trace 被污染。
         """
         tracer, exporter = tracer_and_exporter
 
