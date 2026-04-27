@@ -233,7 +233,7 @@
   import { type Message, type UserMessage, MessageStatus } from '../../ag-ui/types';
   import { LOADING_MESSAGE_ID, RenderMode } from '../../common';
   import { useMessageGroup } from '../../composables';
-  import { useCommonTippyProvider } from '../../composables/use-common';
+  import { useCommonTippyProvider, useRenderModeProvider } from '../../composables/use-common';
   import { EXECUTION_TAB_NAME, useCustomTabProvider } from '../../composables/use-custom-tab';
   import { useGlobalConfig } from '../../composables/use-global-config';
   import { OverflowTips as vOverflowTips } from '../../directives';
@@ -314,6 +314,9 @@
     required: false,
     default: RenderMode.Chat,
   });
+
+  useRenderModeProvider({ renderMode });
+
   const resizeProps = computed(() => ({
     collapsible: false,
     immediate: true,
@@ -695,10 +698,10 @@
       }
 
       .ai-welcome-remark {
+        flex-shrink: 0;
         width: 100%;
         max-height: 240px;
         margin-bottom: 24px;
-        flex-shrink: 0;
         overflow-y: auto;
         scrollbar-color: #dcdee5 transparent;
         scrollbar-width: thin;

@@ -99,7 +99,7 @@
 
   import '../src/styles/global.scss';
 
-  const chatMode = shallowRef<RenderMode>(RenderMode.Test);
+  const chatMode = shallowRef<RenderMode>(RenderMode.Share);
   const openingRemark = shallowRef(`你好，我是小鲸
 我是由蓝鲸智云开发的智能助手
 我可以帮助你完成各种任务`);

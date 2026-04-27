@@ -95,7 +95,10 @@
           >
             <HighlightKeyword :text="node.name" />
           </span>
-          <span class="flow-agent-node-trailing">
+          <span
+            v-if="renderMode !== RenderMode.Share"
+            class="flow-agent-node-trailing"
+          >
             <span class="flow-agent-node-time">{{ formatElapsedTime(node.elapsed_time) }}</span>
             <span
               class="flow-agent-node-detail-btn"
@@ -122,8 +125,9 @@
   import { Loading } from 'bkui-vue';
 
   import { MessageContentType, MessageStatus } from '../../../ag-ui/types/constants';
+  import { RenderMode } from '../../../common/constants';
   import { useContainerScrollConsumer } from '../../../composables';
-  import { useCommonTippyInject } from '../../../composables/use-common';
+  import { useCommonTippyInject, useRenderModeInject } from '../../../composables/use-common';
   import { useCustomTabConsumer } from '../../../composables/use-custom-tab';
   import { OverflowTips as vOverflowTips } from '../../../directives/overflow-tips';
   import {
@@ -187,6 +191,8 @@
   });
 
   const taskExpanded = ref(true);
+
+  const renderMode = useRenderModeInject();
 
   const isLoading = computed(() => {
     return props.status === MessageStatus.Pending || props.status === MessageStatus.Streaming;

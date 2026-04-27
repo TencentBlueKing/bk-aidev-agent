@@ -24,7 +24,9 @@
  * IN THE SOFTWARE.
  */
 
-import { type ComputedRef, computed, inject, provide, shallowRef } from 'vue';
+import { type ComputedRef, type MaybeRef, computed, inject, provide, shallowRef, toValue } from 'vue';
+
+import { RenderMode } from '../common/constants';
 
 import type { AITippyProps } from '../types';
 
@@ -33,6 +35,7 @@ import type { AITippyProps } from '../types';
  */
 export const KEYWORD_TOKEN = Symbol('KEYWORD_TOKEN');
 
+export const RENDER_MODE_TOKEN = Symbol('RENDER_MODE_TOKEN');
 export const COMMON_TIPPY_OPTIONS_TOKEN = Symbol('COMMON_TIPPY_OPTIONS_TOKEN');
 export const useKeywordProvider = () => {
   const keyword = shallowRef('');
@@ -44,7 +47,20 @@ export const useKeywordProvider = () => {
     keyword,
   };
 };
+export const useRenderModeProvider = ({ renderMode }: { renderMode: MaybeRef<RenderMode> }) => {
+  provide(
+    RENDER_MODE_TOKEN,
+    computed(() => toValue(renderMode)),
+  );
+  return { renderMode };
+};
 
+export const useRenderModeInject = () => {
+  return inject<ComputedRef<RenderMode>>(
+    RENDER_MODE_TOKEN,
+    computed(() => RenderMode.Chat),
+  );
+};
 export const useCommonTippyProvider = (options: { tippyOptions: ComputedRef<AITippyProps | undefined> }) => {
   provide(COMMON_TIPPY_OPTIONS_TOKEN, options.tippyOptions);
 };
@@ -64,7 +80,7 @@ export const useKeywordMatch = (getSearchTexts: () => (string | undefined)[]) =>
     if (!kw) return null;
     return getSearchTexts()
       .filter(Boolean)
-      .some(text => text!.toLowerCase().includes(kw));
+      .some(text => text?.toLowerCase().includes(kw));
   });
   return { keywordMatched, keyword };
 };

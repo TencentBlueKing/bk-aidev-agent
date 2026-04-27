@@ -23,7 +23,7 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { type ComputedRef, computed, defineComponent, h, nextTick } from 'vue';
+import { type ComputedRef, computed, defineComponent, h, nextTick, shallowRef } from 'vue';
 
 import { mount } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
@@ -34,7 +34,11 @@ import {
   useKeywordInject,
   useKeywordMatch,
   useKeywordProvider,
+  useRenderModeInject,
+  useRenderModeProvider,
 } from './use-common';
+
+import { RenderMode } from '../common/constants';
 
 import type { AITippyProps } from '../types';
 
@@ -110,6 +114,62 @@ describe('use-common', () => {
       await nextTick();
 
       expect(injected?.value).toEqual({ placement: 'bottom' });
+
+      wrapper.unmount();
+    });
+  });
+
+  describe('useRenderModeProvider / useRenderModeInject', () => {
+    it('未提供 renderMode 时应返回 Chat 默认值', () => {
+      let injected: ComputedRef<RenderMode> | undefined;
+
+      const Child = defineComponent({
+        setup() {
+          injected = useRenderModeInject();
+          return {};
+        },
+        render() {
+          return h('div');
+        },
+      });
+
+      const wrapper = mount(Child);
+
+      expect(injected?.value).toBe(RenderMode.Chat);
+
+      wrapper.unmount();
+    });
+
+    it('子组件应能 inject 到父组件提供的响应式 renderMode', async () => {
+      let injected: ComputedRef<RenderMode> | undefined;
+      const renderMode = shallowRef(RenderMode.Chat);
+
+      const Child = defineComponent({
+        setup() {
+          injected = useRenderModeInject();
+          return {};
+        },
+        render() {
+          return h('div');
+        },
+      });
+
+      const Parent = defineComponent({
+        setup() {
+          useRenderModeProvider({ renderMode });
+          return {};
+        },
+        render() {
+          return h(Child);
+        },
+      });
+
+      const wrapper = mount(Parent);
+      expect(injected?.value).toBe(RenderMode.Chat);
+
+      renderMode.value = RenderMode.Share;
+      await nextTick();
+      expect(injected?.value).toBe(RenderMode.Share);
 
       wrapper.unmount();
     });
