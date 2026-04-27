@@ -5,10 +5,9 @@ from ag_ui.core import BaseEvent
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 
-from aidev_agent.api import BKAidevApi
-from aidev_agent.api.abstract_client import AbstractBKAidevResourceManager
 from aidev_agent.config import settings
 from aidev_agent.enums import AgentBuildType, AgentType
+from aidev_agent.packages.resource_manager.registry import resource_manager as resource_manager_factory
 from aidev_agent.services.agent.registry import (
     AgentBuildContext,
     ChatBuildExtras,
@@ -52,7 +51,6 @@ class AgentInstanceFactory:
         session_code: Optional[str] = None,
         agent_cls: type[CommonQAAgent] | None = None,
         callbacks: List[Any] | None = None,
-        resource_manager: AbstractBKAidevResourceManager | None = None,
         auth_headers: dict[str, str] | None = None,
         temperature: float = None,
         max_tokens: int = None,
@@ -68,13 +66,15 @@ class AgentInstanceFactory:
         """
         初始化Agent工厂实例（受 ``_token`` 闸口保护，外部请走 :meth:`build_agent`）
 
+        资源管理器一律从全局 ``resource_manager`` 工厂注册器取（默认 ``AgentResourceManager``），
+        plugin / 测试侧替换实现请用 ``resource_manager.replace_defaults(...)``。
+
         :param agent_code: Agent代码
         :param agent_type: Agent类型 ("chat", "task", "workflow"等)
         :param build_type: 构建类型 ("session", "direct")
         :param session_code: 会话代码 (build_type="session"时必需)
         :param agent_cls: Agent类
         :param callbacks: 回调函数列表
-        :param resource_manager:  bkaidev 资源管理
         :param temperature: 模型温度
         :param max_tokens: 模型最大回复长度
         :param switch_agent_by_scene: 是否根据场景切换智能体
@@ -89,7 +89,7 @@ class AgentInstanceFactory:
             raise RuntimeError(
                 "AgentInstanceFactory 不可直接实例化，请通过 AgentInstanceFactory.build_agent(...) 构造。"
             )
-        self.resource_manager = resource_manager or BKAidevApi.get_client()
+        self.resource_manager = resource_manager_factory()
         self.agent_code = agent_code
         self.agent_type = agent_type
         self.build_type = build_type
@@ -116,7 +116,6 @@ class AgentInstanceFactory:
         session_context_data: Optional[List[dict]] = None,
         agent_cls: Type[CommonQAAgent] | None = CommonQAAgent,
         callbacks: List[Any] | None = None,
-        resource_manager: AbstractBKAidevResourceManager | None = None,
         temperature: float | None = None,
         max_tokens: int | None = settings.MAX_TOKENS,
         switch_agent_by_scene: bool = False,
@@ -130,6 +129,10 @@ class AgentInstanceFactory:
     ):
         """
         构建Agent实例
+
+        资源管理器一律从全局 ``resource_manager`` 工厂注册器取；plugin / 测试侧替换实现请用
+        ``resource_manager.replace_defaults(...)``，不再通过参数注入。
+
         :param agent_code: Agent代码
         :param agent_type: Agent类型 ("chat", "task", "workflow"等)
         :param build_type: 构建类型 ("session", "direct")
@@ -137,7 +140,6 @@ class AgentInstanceFactory:
         :param session_context_data: 会话上下文数据 (build_type="direct"时使用)
         :param agent_cls: Agent类
         :param callbacks: 回调函数列表
-        :param resource_manager: 资源管理类
         :param temperature: 模型温度
         :param max_tokens: 模型最大回复长度
         :param switch_agent_by_scene: 是否根据场景切换智能体
@@ -159,7 +161,6 @@ class AgentInstanceFactory:
             session_code=session_code,
             agent_cls=agent_cls,
             callbacks=callbacks,
-            resource_manager=resource_manager,
             temperature=temperature,
             max_tokens=max_tokens,
             switch_agent_by_scene=switch_agent_by_scene,
@@ -191,11 +192,7 @@ class AgentInstanceFactory:
         本工厂不替它们做版本路由（一律传 None → 最新版）。
         """
         version = self.version if agent_code == self.agent_code else None
-        return self.config_manager_class.get_config(
-            agent_code=agent_code,
-            resource_manager=self.resource_manager,
-            version=version,
-        )
+        return self.config_manager_class.get_config(agent_code=agent_code, version=version)
 
     # ============== 内部方法 ==============
 

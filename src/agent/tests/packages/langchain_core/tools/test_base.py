@@ -19,9 +19,9 @@ to the current version of the project delivered to anyone in the future.
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from aidev_agent.api.bk_aidev import BKAidevApi
 from aidev_agent.config import settings
 from aidev_agent.packages.langchain_core.tools.base import Tool, make_mcp_tools, make_structured_tool
+from aidev_agent.packages.resource_manager.registry import resource_manager
 from aidev_agent.services.pydantic_models import AgentOptions, ExecuteKwargs
 from langchain_core.tools import StructuredTool
 from langchain_core.tools.base import ToolException
@@ -412,11 +412,11 @@ def test_make_structured_tool_with_extra(mock_session_class, sample_weather_tool
 def test_make_structured_tool_real_execution():
     """测试真实的工具执行 - 使用 weather-query 工具"""
     # 获取真实的工具配置
-    client = BKAidevApi.get_client()
+    rm = resource_manager()
     tool_code = "weather-query"
 
-    # 使用 client 的 construct_tool 方法构造工具
-    structured_tool = client.construct_tool(tool_code)
+    # 使用 ResourceManager 的 construct_tool 方法构造工具
+    structured_tool = rm.construct_tool(tool_code)
 
     # 验证工具创建成功
     assert isinstance(structured_tool, StructuredTool)

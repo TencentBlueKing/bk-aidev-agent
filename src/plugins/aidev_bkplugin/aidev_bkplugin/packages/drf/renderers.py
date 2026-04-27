@@ -58,11 +58,12 @@ class APIRenderer(JSONRenderer):
         if isinstance(response.data, dict):
             code = response.data["code"]
             message = response.data["message"]
-            errors = response.data["data"]
-            if error_message := message.get("message"):
-                message = error_message
-            else:
-                message = self.pretty_dict(json.loads(json.dumps(message, cls=self.encoder_class)))
+            errors = response.data.get("data")
+            if isinstance(message, dict):
+                if error_message := message.get("message"):
+                    message = error_message
+                else:
+                    message = self.pretty_dict(json.loads(json.dumps(message, cls=self.encoder_class)))
 
         res_data = {
             "error": {

@@ -5,8 +5,8 @@ from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 
-from aidev_agent.api.bk_aidev import BKAidevApi
 from aidev_agent.packages.langchain_core.retrievers.protocol import Filter, ScalarFilter, VectorFilter
+from aidev_agent.packages.resource_manager.registry import resource_manager
 from aidev_agent.utils.decorator import timeit
 from aidev_agent.utils.module_loading import import_string
 
@@ -56,8 +56,7 @@ class BkRetriever(BaseRetriever):
             return obj.internal_query
         except ImportError:
             # 不能resource则使用sdk
-            client = BKAidevApi.get_client()
-            return client.knowledge_query
+            return resource_manager().knowledge_query
 
     def _search_knowledge_by_client(self, data: dict):
         if "knowledge_template_id" in data and data["knowledge_template_id"] is None:

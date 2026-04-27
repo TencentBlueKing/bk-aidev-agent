@@ -1,16 +1,8 @@
 # -*- coding: utf-8 -*-
 
-import json
-from typing import Optional
-
 from bkapi_client_core.base import Operation, OperationGroup
 from bkapi_client_core.client import BaseClient, RequestContextBuilder
 from bkapi_client_core.property import bind_property
-
-from aidev_agent.api.abstract_client import AbstractBKAidevResourceManager
-from aidev_agent.config import settings
-from aidev_agent.enums import CredentialType
-from aidev_agent.packages.langchain_core.tools import Tool, ToolExtra, make_structured_tool
 
 
 class OpenApiGroup(OperationGroup):
@@ -310,56 +302,11 @@ class AidevRequestContextBuilder(RequestContextBuilder):
         super().build_data(context, data)
 
 
-class Client(BaseClient, AbstractBKAidevResourceManager):
+class Client(BaseClient):
+    """蓝鲸 AIDev OpenAPI 纯客户端"""
+
     _build_class = AidevRequestContextBuilder
     api = bind_property(OpenApiGroup, name="api")
-
-    def construct_tool(self, tool_code, **kwargs):
-        retrieve_tool = self.api.retrieve_tool if kwargs.pop("appspace", True) else self.api.appspace_retrieve_tool
-        result = retrieve_tool(path_params={"tool_code": tool_code}, **kwargs)
-        result["data"]["tool_cn_name"] = result["data"]["tool_name"]
-        if result["data"].get("credential_type", "") != CredentialType.NULL.value:
-            tool = Tool.model_validate(result["data"])
-            tool.extra = ToolExtra(
-                header={
-                    "X-Bkapi-Authorization": json.dumps(
-                        {"bk_app_code": settings.APP_CODE, "bk_app_secret": settings.SECRET_KEY}
-                    )
-                }
-            )
-            return make_structured_tool(tool)
-        return make_structured_tool(Tool.model_validate(result["data"]))
-
-    def knowledge_query(self, data: dict):
-        result = self.api.create_knowledgebase_query(data=data)
-        return result.get("data", {})
-
-    def retrieve_agent_config(self, agent_code: str, version: Optional[str] = None, **kwargs) -> dict:
-        params = kwargs.pop("params", None) or {}
-        if version is not None:
-            params["version"] = version
-        if params:
-            kwargs["params"] = params
-        return self.api.retrieve_agent_config(path_params={"agent_code": agent_code}, **kwargs).get("data", {})
-
-    def retrieve_skill(self, skill_id: str, version: str, **kwargs) -> dict:
-        params = kwargs.pop("params", {})
-        params["version"] = version
-        return self.api.retrieve_resource_v1_skill(path_params={"skill_id": skill_id}, params=params, **kwargs).get(
-            "data", {}
-        )
-
-    def get_chat_session_context(self, session_code: str, **kwargs) -> list[dict]:
-        """Get chat session context"""
-        return self.api.get_chat_session_context(path_params={"session_code": session_code}, **kwargs).get("data", [])
-
-    def retrieve_knowledgebase(self, id: int, **kwargs) -> dict:
-        """Get knowledgebase details"""
-        return self.api.appspace_retrieve_knowledgebase(path_params={"id": id}, **kwargs).get("data", {})
-
-    def retrieve_knowledge(self, id: int, **kwargs) -> dict:
-        """Get knowledge details"""
-        return self.api.appspace_retrieve_knowledge(path_params={"id": id}, **kwargs).get("data", {})
 
     def start_flow_agent(self, data: dict, **kwargs) -> dict:
         """Start a flow agent task"""

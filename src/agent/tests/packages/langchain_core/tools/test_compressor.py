@@ -21,13 +21,13 @@ from typing import Any, TypedDict
 from unittest.mock import MagicMock, patch
 
 import pytest
-from aidev_agent.api import BKAidevApi
 from aidev_agent.config import settings
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
 from aidev_agent.packages.langchain_core.tools.enhance import (
     _build_extended_schema,
     create_enhanced_tool,
 )
+from aidev_agent.packages.resource_manager.registry import resource_manager
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
@@ -395,8 +395,7 @@ def test_compressor_success_returns_compressed_result():
 def test_compressed_tool_with_chatmodel_without_intent():
     """测试 EnhancedTool 与 ChatModel 集成 - 不启用 intent (真实请求)"""
     # 获取 weather-query 工具
-    client = BKAidevApi.get_client()
-    weather_tool = client.construct_tool("weather-query")
+    weather_tool = resource_manager().construct_tool("weather-query")
 
     # 创建压缩工具（不启用 intent）
     compressed_tool = create_enhanced_tool(
@@ -431,8 +430,7 @@ def test_compressed_tool_with_chatmodel_without_intent():
 def test_compressed_tool_with_chatmodel_with_intent():
     """测试 EnhancedTool 与 ChatModel 集成 - 启用 intent (真实请求)"""
     # 获取 weather-query 工具
-    client = BKAidevApi.get_client()
-    weather_tool = client.construct_tool("weather-query")
+    weather_tool = resource_manager().construct_tool("weather-query")
 
     # 创建压缩工具（启用 intent）
     compressed_tool = create_enhanced_tool(

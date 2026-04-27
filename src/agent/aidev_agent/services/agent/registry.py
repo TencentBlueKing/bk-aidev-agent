@@ -23,7 +23,7 @@ from aidev_agent.utils.factory import SimpleFactory
 if TYPE_CHECKING:
     from langgraph.checkpoint.base import BaseCheckpointSaver
 
-    from aidev_agent.api.abstract_client import AbstractBKAidevResourceManager
+    from aidev_agent.packages.resource_manager import ResourceManagerProtocol
     from aidev_agent.services.common_agent import CommonQAAgent
     from aidev_agent.services.config_manager import AgentConfig, AgentConfigManager
     from aidev_agent.services.protocols import FlowAgentClient, FlowAgentPollClient
@@ -90,7 +90,7 @@ class AgentBuildContext:
     agent_code: str
     agent_type: AgentType
     config_manager_class: Type["AgentConfigManager"]
-    resource_manager: "AbstractBKAidevResourceManager"
+    resource_manager: "ResourceManagerProtocol"
     agent_config: Optional["AgentConfig"] = None
     """主智能体配置（CHAT 路径在 ``_make_build_context`` 时预读；FLOW 路径不依赖配置，
     保持 ``None`` 以避免对未注册 agent_code 的 FLOW 任务发出无意义请求）。

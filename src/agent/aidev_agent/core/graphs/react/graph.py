@@ -54,9 +54,9 @@ if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
     from langgraph.store.base import BaseStore
 
-from aidev_agent.api.bk_aidev import BKAidevApi
 from aidev_agent.core.tools.skill.bkai_provider import BKAiProvider
 from aidev_agent.core.tools.skill.types import SkillOptions, SkillProvider
+from aidev_agent.packages.resource_manager.registry import resource_manager
 
 ResponseT = TypeVar("ResponseT")
 
@@ -377,7 +377,7 @@ class ReActAgentBuilder:
             self.add_skill_sources(
                 [
                     BKAiProvider(
-                        client=BKAidevApi.get_client(),
+                        client=resource_manager(),
                         related_skills=options.skills,
                     )
                 ]

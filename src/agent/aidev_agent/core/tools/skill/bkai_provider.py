@@ -13,13 +13,13 @@ import logging
 import re
 from typing import Any
 
-from aidev_agent.api.abstract_client import AbstractBKAidevResourceManager
 from aidev_agent.core.tools.skill.types import SkillOptions
 from aidev_agent.core.tools.skill.utils import (
     apply_optional_frontmatter_fields,
     extract_instructions,
     parse_frontmatter,
 )
+from aidev_agent.packages.resource_manager import ResourceManagerProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +47,8 @@ class BKAiProvider:
 
     Attributes
     ----------
-    client : AbstractBKAidevResourceManager
-        BK-AIDev API 客户端
+    client : ResourceManagerProtocol
+        业务级资源管理器（含 ``retrieve_skill`` 方法）
     related_skills : list[dict[str, Any]]
         技能列表，来自 agent_info.related_skills
     """
@@ -58,7 +58,7 @@ class BKAiProvider:
 
     def __init__(
         self,
-        client: AbstractBKAidevResourceManager,
+        client: ResourceManagerProtocol,
         related_skills: list[dict[str, Any]],
     ) -> None:
         """
@@ -67,7 +67,7 @@ class BKAiProvider:
         Parameters
         ----------
         client
-            BK-AIDev API 客户端，用于调用 retrieve_skill()
+            业务级资源管理器，用于调用 retrieve_skill()
         related_skills
             从 agent_info.related_skills 传入的技能列表。
             每个元素是一个 dict，包含以下关键字段：

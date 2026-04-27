@@ -2,7 +2,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from aidev_agent.api.abstract_client import AbstractBKAidevResourceManager
+from aidev_agent.packages.resource_manager.registry import resource_manager
 from aidev_agent.services.pydantic_models import AgentOptions, IntentRecognition, KnowledgebaseSettings
 
 
@@ -39,22 +39,22 @@ class AgentConfigManager:
     def get_config(
         cls,
         agent_code: str,
-        resource_manager: AbstractBKAidevResourceManager,
         version: Optional[str] = None,
         **kwargs,
     ) -> AgentConfig:
         """
         获取智能体配置
+
+        资源管理器从全局 ``resource_manager`` 工厂注册器取（默认 ``AgentResourceManager``）；
+        plugin / 测试侧需要替换实现时使用 ``resource_manager.replace_defaults(...)``。
+
         :param agent_code: 智能体代码
-        :param resource_manager: API 资源客户端
         :param version: 可选的 agent 配置版本；为空表示取最新版
         :return: AgentConfig 实例
         """
-        # 实时从AIDev平台拉取配置
         try:
-            res = resource_manager.retrieve_agent_config(agent_code, version=version)
+            res = resource_manager().retrieve_agent_config(agent_code, version=version)
         except Exception as e:
-            # 添加适当的错误处理或日志记录
             raise ValueError(f"Failed to retrieve agent config: {e}")
 
         # 处理特殊字段,兼容特殊role

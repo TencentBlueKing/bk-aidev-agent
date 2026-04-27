@@ -28,7 +28,6 @@ def _build_factory(version=None):
     _FakeConfigManager.get_config.reset_mock()
     return AgentInstanceFactory(
         agent_code="main_agent",
-        resource_manager=MagicMock(),
         config_manager_class=_FakeConfigManager,
         version=version,
         _token=_FACTORY_TOKEN,
@@ -38,22 +37,14 @@ def _build_factory(version=None):
 def test_version_passes_through_for_main_agent_code():
     factory = _build_factory(version="v2")
     factory.get_agent_config("main_agent")
-    _FakeConfigManager.get_config.assert_called_once_with(
-        agent_code="main_agent",
-        resource_manager=factory.resource_manager,
-        version="v2",
-    )
+    _FakeConfigManager.get_config.assert_called_once_with(agent_code="main_agent", version="v2")
 
 
 def test_version_not_inherited_by_sub_agent_code():
     """子 agent_code 必须走 None（最新版），不继承父 version。"""
     factory = _build_factory(version="v2")
     factory.get_agent_config("sub_agent_code")
-    _FakeConfigManager.get_config.assert_called_once_with(
-        agent_code="sub_agent_code",
-        resource_manager=factory.resource_manager,
-        version=None,
-    )
+    _FakeConfigManager.get_config.assert_called_once_with(agent_code="sub_agent_code", version=None)
 
 
 def test_no_version_means_latest_for_all():
