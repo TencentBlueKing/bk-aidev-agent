@@ -17,3 +17,6 @@ SINGLE_CHAT_TYPE = "single"
 
 # 流式响应提示
 THINKING_MESSAGE = "正在思考中..."
+
+# RabbitMQ 队列自动过期时间
+QUEUE_EXPIRES_MS = 360000

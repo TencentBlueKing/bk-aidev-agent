@@ -26,6 +26,7 @@ from urllib.parse import quote, urlsplit, urlunsplit
 from aidev_wxbot.api.bkaidev import BkAiDevApi
 from aidev_wxbot.context import Context, Message
 from aidev_wxbot.context.message import MsgType
+from aidev_wxbot.wxaibot.constants import QUEUE_EXPIRES_MS
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,14 @@ class LlmChunkMsg(BaseModel):
     def _is_think_only_chunk(self, message_data: dict) -> bool:
         return bool(message_data.get("think_content")) and not message_data.get("content")
 
+    @staticmethod
+    def _safe_delete_queue(rabbitmq_client, queue_name: str):
+        """安全删除队列，忽略异常以避免影响主流程"""
+        try:
+            rabbitmq_client.delete_queue(queue_name)
+        except Exception:
+            pass
+
     def append_to_cache(self, rabbitmq_client):
         """将消息内容发送到RabbitMQ队列"""
         try:
@@ -123,7 +132,9 @@ class LlmChunkMsg(BaseModel):
                 "timestamp": time.time(),
             }
             # 使用独立的连接发送消息，避免并发冲突
-            rabbitmq_client.declare_queue(queue_name, durable=False, auto_delete=False)
+            rabbitmq_client.declare_queue(
+                queue_name, durable=False, auto_delete=False, arguments={"x-expires": QUEUE_EXPIRES_MS}
+            )
             success = rabbitmq_client.publish_message("", queue_name, message_data)
             if not success:
                 logger.error(f"发送消息到队列 {queue_name} 失败")
@@ -140,6 +151,7 @@ class LlmChunkMsg(BaseModel):
 
             # 检查消息是否超时
             if time.time() - stream_time > settings.MAX_MESSAGE_TIME:  # 消息时间太久
+                self._safe_delete_queue(rabbitmq_client, queue_name)
                 return stream_msg("消息超时！请重新发送！", True, self.stream_id)
 
             # 等待队列中有消息
@@ -177,6 +189,7 @@ class LlmChunkMsg(BaseModel):
                         break
                 except Exception as e:
                     logger.error(f"stream_id:{self.stream_id} 读取队列消息出错: {e}")
+                    self._safe_delete_queue(rabbitmq_client, queue_name)
                     return stream_msg("读取消息失败，请重试", True, self.stream_id)
 
             if not latest_message_data:

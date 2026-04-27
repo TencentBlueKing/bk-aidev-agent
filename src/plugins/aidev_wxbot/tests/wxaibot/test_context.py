@@ -6,6 +6,7 @@ import pytest
 try:
     import django  # noqa: F401
     from aidev_wxbot.wxaibot.context import CHUNK_FLUSH_THRESHOLD, LlmChunkMsg, stream_msg
+    from aidev_wxbot.wxaibot.constants import QUEUE_EXPIRES_MS
     from django.conf import settings
 
     _wxbot_available = True
@@ -150,6 +151,63 @@ class TestLlmChunkMsg:
         assert out["stream"]["finish"] is False
         assert out["stream"]["content"] == "<think>think-9</think>"
         assert rabbitmq_client.get_message_calls == 10
+
+    def test_wxaibot_msg_json_from_cache_deletes_queue_on_timeout_and_consume_error(self):
+        """超时和消费异常分支均应安全删除队列，防止泄漏"""
+
+        class TrackDeleteRabbitMQClient:
+            def __init__(self, messages=None, get_message_error=False):
+                self.deleted_queue = None
+                self.messages = messages or []
+                self._get_message_error = get_message_error
+
+            def get_queue_info(self, queue_name):
+                return {"message_count": len(self.messages)}
+
+            def get_message(self, queue_name, auto_ack=True):
+                if self._get_message_error:
+                    raise RuntimeError("connection reset")
+                if not self.messages:
+                    return None
+                return self.messages.pop(0)
+
+            def delete_queue(self, queue_name):
+                self.deleted_queue = queue_name
+
+        # 超时场景
+        settings.MAX_MESSAGE_TIME = 1
+        stream_id = f"sid_{int(__import__('time').time()) - 10}"
+        client = TrackDeleteRabbitMQClient()
+        out = LlmChunkMsg(stream_id=stream_id).wxaibot_msg_json_from_cache(client)
+        assert out["stream"]["finish"] is True
+        assert client.deleted_queue == stream_id
+
+        # 消费异常场景
+        settings.MAX_MESSAGE_TIME = 300
+        client = TrackDeleteRabbitMQClient(get_message_error=True)
+        out = LlmChunkMsg(stream_id="sid_9999999999").wxaibot_msg_json_from_cache(client)
+        assert out["stream"]["finish"] is True
+        assert client.deleted_queue == "sid_9999999999"
+
+    def test_append_to_cache_declares_queue_with_expires(self):
+        """declare_queue 应携带 x-expires 参数"""
+
+        class StubRabbitMQClient:
+            def __init__(self):
+                self.declared_queue_args = None
+
+            def declare_queue(self, queue_name, **kwargs):
+                self.declared_queue_args = kwargs
+                return True
+
+            def publish_message(self, exchange, queue_name, message_data):
+                return True
+
+        rabbitmq_client = StubRabbitMQClient()
+        msg = LlmChunkMsg(stream_id="sid_test", content="hello")
+        msg.append_to_cache(rabbitmq_client)
+
+        assert rabbitmq_client.declared_queue_args["arguments"]["x-expires"] == QUEUE_EXPIRES_MS
 
 
 @pytest.mark.skipif(not _wxbot_available, reason="Django and aidev_wxbot required")
