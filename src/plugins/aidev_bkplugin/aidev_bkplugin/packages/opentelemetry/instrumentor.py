@@ -78,12 +78,12 @@ class BkAidevAgentInstrumentor(BaseInstrumentor):
             tracer = self._otel_service.get_tracer(__name__)
         # 注入 Agent 启动的消息头
         wrap_function_wrapper(
-            module="aidev_agent.services.chat",
+            module="aidev_agent.services.agent.chat",
             name="ChatCompletionAgent._execute",
             wrapper=ChatCompletionAgentExecuteByAgentWrapper(tracer, self._otel_service_config),
         )
         wrap_function_wrapper(
-            module="aidev_agent.services.chat",
+            module="aidev_agent.services.agent.chat",
             name="ChatCompletionAgent._get_agent",
             wrapper=ChatCompletionAgentGetAgentWrapper(tracer, self._otel_service_config),
         )
@@ -120,8 +120,8 @@ class BkAidevAgentInstrumentor(BaseInstrumentor):
             bool: 是否成功取消插桩
         """
         self.stop_otel_service()
-        unwrap("aidev_agent.services.chat", "ChatCompletionAgent._execute")
-        unwrap("aidev_agent.services.chat", "ChatCompletionAgent._get_agent")
+        unwrap("aidev_agent.services.agent.chat", "ChatCompletionAgent._execute")
+        unwrap("aidev_agent.services.agent.chat", "ChatCompletionAgent._get_agent")
         unwrap("aidev_agent.core.nodes.knowledge", "AgentKnowledgeNode.__call__")
         try:
             unwrap(_E2B_BACKEND_MODULE, _E2B_ENSURE_SANDBOX)

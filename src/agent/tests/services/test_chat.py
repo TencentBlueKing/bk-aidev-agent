@@ -11,12 +11,13 @@ from aidev_agent.enums import PromptRole
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
 from aidev_agent.packages.langchain_core.models.mock import MockChatModel, MockResponse
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
-from aidev_agent.services.chat import ChatCompletionAgent, ExecuteKwargs
+from aidev_agent.services.agent import ChatCompletionAgent
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
 from aidev_agent.services.messages_handler.streaming_helper import GeneratorStreamingHelper
 from aidev_agent.services.pydantic_models import (
     AgentOptions,
     ChatPrompt,
+    ExecuteKwargs,
     IntentRecognition,
 )
 from aidev_agent.utils.event import RunId
@@ -904,12 +905,23 @@ class TestCommonAgentChatStreamingWithAgentLegacyStreaming:
         assert normalized_text == "你好\n我可以帮你什么?"
 
 
+def _make_dummy_chat_ctx():
+    """构造仅满足 ``ChatAgentBuilder.__init__`` 的最小化 ctx
+    （``_handle_last_human_message`` 在 ``session_context_data=[]`` 时直接 return）。
+    """
+    from aidev_agent.services.agent import AgentBuildContext
+
+    ctx = MagicMock(spec=AgentBuildContext)
+    ctx.session_context_data = []
+    return ctx
+
+
 class TestFilterUnmatchedToolCalls:
     """测试过滤没有匹配工具结果的 assistant 消息"""
 
     def test_filter_assistant_without_tool_calls(self):
         """case 1: assistant 消息没有 tool_calls，应该保留"""
-        from aidev_agent.services.agent import AgentInstanceFactory
+        from aidev_agent.services.agent.chat import ChatAgentBuilder
 
         chat_history = [
             ChatPrompt(id="1", role="user", content="你好"),
@@ -917,14 +929,14 @@ class TestFilterUnmatchedToolCalls:
             ChatPrompt(id="3", role="user", content="今天天气怎么样？"),
         ]
 
-        factory = AgentInstanceFactory(agent_code="test", agent_type="chat")
-        filtered = factory._filter_unmatched_tool_calls(chat_history)
+        builder = ChatAgentBuilder(_make_dummy_chat_ctx())
+        filtered = builder._filter_unmatched_tool_calls(chat_history)
 
         assert len(filtered) == 3, "没有 tool_calls 的消息应该全部保留"
 
     def test_filter_assistant_with_matched_tool_calls(self):
         """case 2: assistant 消息有 tool_calls 且有对应的 tool 结果，应该保留"""
-        from aidev_agent.services.agent import AgentInstanceFactory
+        from aidev_agent.services.agent.chat import ChatAgentBuilder
 
         chat_history = [
             ChatPrompt(id="1", role="user", content="今天广州天气怎么样？"),
@@ -950,8 +962,8 @@ class TestFilterUnmatchedToolCalls:
             ChatPrompt(id="4", role="assistant", content="广州今天多云，温度25度。"),
         ]
 
-        factory = AgentInstanceFactory(agent_code="test", agent_type="chat")
-        filtered = factory._filter_unmatched_tool_calls(chat_history)
+        builder = ChatAgentBuilder(_make_dummy_chat_ctx())
+        filtered = builder._filter_unmatched_tool_calls(chat_history)
 
         assert len(filtered) == 4, "完整匹配的工具调用链应该保留"
         assert filtered[1].role == "assistant", "assistant 消息应该保留"
@@ -959,7 +971,7 @@ class TestFilterUnmatchedToolCalls:
 
     def test_filter_assistant_with_unmatched_tool_calls(self):
         """case 3: assistant 消息有 tool_calls 但没有对应的 tool 结果，应该被过滤"""
-        from aidev_agent.services.agent import AgentInstanceFactory
+        from aidev_agent.services.agent.chat import ChatAgentBuilder
 
         chat_history = [
             ChatPrompt(id="1", role="user", content="今天广州天气怎么样？"),
@@ -980,8 +992,8 @@ class TestFilterUnmatchedToolCalls:
             ChatPrompt(id="4", role="assistant", content="抱歉，查询失败。"),
         ]
 
-        factory = AgentInstanceFactory(agent_code="test", agent_type="chat")
-        filtered = factory._filter_unmatched_tool_calls(chat_history)
+        builder = ChatAgentBuilder(_make_dummy_chat_ctx())
+        filtered = builder._filter_unmatched_tool_calls(chat_history)
 
         # 有 tool_calls 但没有结果的 assistant 消息被过滤
         assert len(filtered) == 2, "没有匹配结果的 assistant 消息应该被过滤"
@@ -993,7 +1005,7 @@ class TestFilterUnmatchedToolCalls:
 
     def test_filter_multiple_tool_calls_partial_match(self):
         """case 4: assistant 消息有多个 tool_calls，仅部分有对应结果，保留消息但移除未匹配的 tool_calls"""
-        from aidev_agent.services.agent import AgentInstanceFactory
+        from aidev_agent.services.agent.chat import ChatAgentBuilder
 
         chat_history = [
             ChatPrompt(id="1", role="user", content="帮我查询广州和深圳的天气"),
@@ -1024,8 +1036,8 @@ class TestFilterUnmatchedToolCalls:
             ChatPrompt(id="4", role="assistant", content="广州今天多云。"),
         ]
 
-        factory = AgentInstanceFactory(agent_code="test", agent_type="chat")
-        filtered = factory._filter_unmatched_tool_calls(chat_history)
+        builder = ChatAgentBuilder(_make_dummy_chat_ctx())
+        filtered = builder._filter_unmatched_tool_calls(chat_history)
 
         # assistant 消息应该保留，但只有 call_gz 这个 tool_call
         assert len(filtered) == 4, "部分匹配时应该保留 assistant 消息"
@@ -1048,7 +1060,7 @@ class TestFilterUnmatchedToolCalls:
 
     def test_filter_multiple_unmatched_assistant_messages(self):
         """case 5: 多条连续的 assistant 消息都有 tool_calls，只有最后一条有完整结果"""
-        from aidev_agent.services.agent import AgentInstanceFactory
+        from aidev_agent.services.agent.chat import ChatAgentBuilder
 
         chat_history = [
             ChatPrompt(id="1", role="user", content="帮我创建需求"),
@@ -1093,8 +1105,8 @@ class TestFilterUnmatchedToolCalls:
             ChatPrompt(id="7", role="assistant", content="需求已创建完成。"),
         ]
 
-        factory = AgentInstanceFactory(agent_code="test", agent_type="chat")
-        filtered = factory._filter_unmatched_tool_calls(chat_history)
+        builder = ChatAgentBuilder(_make_dummy_chat_ctx())
+        filtered = builder._filter_unmatched_tool_calls(chat_history)
 
         # 前 3 条 assistant 消息(id=2,3,4)的 tool_calls 都没有匹配的结果，应该被过滤
         # id=5 的 assistant 有匹配结果，应该保留
@@ -1114,10 +1126,10 @@ class TestFilterUnmatchedToolCalls:
 
     def test_filter_empty_chat_history(self):
         """case 6: 空聊天历史，应该返回空列表"""
-        from aidev_agent.services.agent import AgentInstanceFactory
+        from aidev_agent.services.agent.chat import ChatAgentBuilder
 
-        factory = AgentInstanceFactory(agent_code="test", agent_type="chat")
-        filtered = factory._filter_unmatched_tool_calls([])
+        builder = ChatAgentBuilder(_make_dummy_chat_ctx())
+        filtered = builder._filter_unmatched_tool_calls([])
 
         assert filtered == [], "空聊天历史应该返回空列表"
 
@@ -1170,20 +1182,24 @@ class TestCancelScenarios:
         writer = _ConcreteWriter()
         llm = MockChatModel(
             mock_responses=[
-                MockResponse(content="", tool_calls=[{"name": "slow_task", "args": {"seconds": 5.0}, "id": "call_slow"}]),
+                MockResponse(
+                    content="", tool_calls=[{"name": "slow_task", "args": {"seconds": 5.0}, "id": "call_slow"}]
+                ),
                 MockResponse(content="任务已完成"),
             ],
-            stream_chunk_size=2, loop=False,
+            stream_chunk_size=2,
+            loop=False,
         )
         thread_id = "test_cancel_no_output"
         agent = ChatCompletionAgent(
-            thread_id=thread_id, chat_model=llm,
+            thread_id=thread_id,
+            chat_model=llm,
             chat_history=[ChatPrompt(role="user", content="执行一个慢任务")],
-            tools=[slow_task], event_handler=writer,
+            tools=[slow_task],
+            event_handler=writer,
         )
 
         first_event = threading.Event()
-        orig_handler = agent.event_handler
 
         results = []
         stream_done = threading.Event()
@@ -1215,16 +1231,21 @@ class TestCancelScenarios:
         llm = MockChatModel(
             mock_responses=[
                 MockResponse(content="让我帮你查一下。"),
-                MockResponse(content="", tool_calls=[{"name": "slow_task", "args": {"seconds": 5.0}, "id": "call_slow"}]),
+                MockResponse(
+                    content="", tool_calls=[{"name": "slow_task", "args": {"seconds": 5.0}, "id": "call_slow"}]
+                ),
                 MockResponse(content="查询完成"),
             ],
-            stream_chunk_size=2, loop=False,
+            stream_chunk_size=2,
+            loop=False,
         )
         thread_id = "test_cancel_with_output"
         agent = ChatCompletionAgent(
-            thread_id=thread_id, chat_model=llm,
+            thread_id=thread_id,
+            chat_model=llm,
             chat_history=[ChatPrompt(role="user", content="执行一个慢任务")],
-            tools=[slow_task], event_handler=writer,
+            tools=[slow_task],
+            event_handler=writer,
         )
 
         text_started = threading.Event()
@@ -1259,7 +1280,8 @@ class TestCancelScenarios:
 
         with patch.object(llm, "_astream", side_effect=Exception("Authentication failed")):
             agent = ChatCompletionAgent(
-                chat_model=llm, chat_history=[ChatPrompt(role="user", content="hi")],
+                chat_model=llm,
+                chat_history=[ChatPrompt(role="user", content="hi")],
                 event_handler=writer,
             )
             results = [json.loads(each[6:]) for each in agent.execute(ExecuteKwargs(stream=True))]
@@ -1269,7 +1291,8 @@ class TestCancelScenarios:
         assert "Authentication failed" in error_events[0].get("message", "")
 
         error_contents = [
-            c for c in writer.created_contents
+            c
+            for c in writer.created_contents
             if c.get("role") == PromptRole.ASSISTANT.value and c.get("status") == "fail"
         ]
         assert len(error_contents) >= 1
@@ -1282,7 +1305,8 @@ class TestCancelScenarios:
         writer = _ConcreteWriter()
         llm = MockChatModel(responses=["你好，我可以帮你。"], stream_chunk_size=2)
         agent = ChatCompletionAgent(
-            chat_model=llm, chat_history=[ChatPrompt(role="user", content="你好")],
+            chat_model=llm,
+            chat_history=[ChatPrompt(role="user", content="你好")],
             event_handler=writer,
         )
         results = [json.loads(each[6:]) for each in agent.execute(ExecuteKwargs(stream=True))]
@@ -1322,7 +1346,9 @@ class TestSessionWriterCancelUnit:
         assert writer.is_cancelled is True
         assert any(c.get("role") == PromptRole.REASONING.value for c in writer.created_contents)
         assert any(
-            c.get("role") == PromptRole.ASSISTANT.value and c.get("status") == "fail" and c.get("content") == "用户已取消"
+            c.get("role") == PromptRole.ASSISTANT.value
+            and c.get("status") == "fail"
+            and c.get("content") == "用户已取消"
             for c in writer.created_contents
         )
 
@@ -1338,7 +1364,9 @@ class TestSessionWriterCancelUnit:
     def test_cancel_run_finished_no_output_writes_paused(self):
         """RUN_FINISHED(cancelled) + 无 AI 输出 → 补写"用户已取消"（Flow Agent 任务已启动场景）"""
         writer = _ConcreteWriter()
-        writer.handle_run_finished(RunFinishedEvent(type=EventType.RUN_FINISHED, thread_id="t1", run_id=RunId.CANCELLED))
+        writer.handle_run_finished(
+            RunFinishedEvent(type=EventType.RUN_FINISHED, thread_id="t1", run_id=RunId.CANCELLED)
+        )
 
         assert writer.is_cancelled is True
         assert any(c.get("content") == "用户已取消" and c.get("status") == "fail" for c in writer.created_contents)
@@ -1347,7 +1375,9 @@ class TestSessionWriterCancelUnit:
         """取消 + model_end 已回写 → 不补写暂停消息（AI 已输出文本场景）"""
         writer = _ConcreteWriter()
         writer._model_end_written = True
-        writer.handle_run_finished(RunFinishedEvent(type=EventType.RUN_FINISHED, thread_id="t1", run_id=RunId.CANCELLED))
+        writer.handle_run_finished(
+            RunFinishedEvent(type=EventType.RUN_FINISHED, thread_id="t1", run_id=RunId.CANCELLED)
+        )
 
         assert not any(c.get("content") == "用户已取消" and c.get("status") == "fail" for c in writer.created_contents)
 

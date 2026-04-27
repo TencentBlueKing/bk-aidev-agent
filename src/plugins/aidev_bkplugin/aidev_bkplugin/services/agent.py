@@ -9,8 +9,7 @@ from urllib.parse import urlparse
 import pkg_resources
 from aidev_agent.api.bk_aidev import BKAidevApi
 from aidev_agent.enums import AgentBuildType, ChatContentStatus, PromptRole, StreamEventType
-from aidev_agent.services.agent import AgentInstanceFactory
-from aidev_agent.services.chat import ChatCompletionAgent
+from aidev_agent.services.agent import AgentInstanceFactory, ChatCompletionAgent
 from aidev_agent.services.event_handlers import AGUISessionWriter
 from aidev_agent.services.pydantic_models import ChatPrompt, ExecuteKwargs
 from bkapi_client_core.exceptions import HTTPResponseError

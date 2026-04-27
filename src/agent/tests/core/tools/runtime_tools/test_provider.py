@@ -323,7 +323,7 @@ class TestWriteFileToolGenerator:
             tmppath = Path(tmpdir)
             (tmppath / "test.txt").write_text("old content")
 
-            backend = FilesystemBackend(root_dir=tmpdir)
+            backend = FilesystemBackend(root_dir=tmpdir, virtual_mode=True)
             provider = _local_provider(backend)
             tool = get_write_file_tool(provider)
 

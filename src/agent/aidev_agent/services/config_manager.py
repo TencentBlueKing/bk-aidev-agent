@@ -1,4 +1,3 @@
-import time
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -30,24 +29,11 @@ class AgentConfig(BaseModel):
     max_tokens: int | None = Field(None, description="最大回复长度")
 
 
-class CachedEntry:
-    """缓存条目，包含配置和过期时间"""
-
-    def __init__(self, config: AgentConfig, timestamp: float):
-        self.config = config
-        self.timestamp = timestamp
-
-    def is_expired(self, ttl: int = 10) -> bool:
-        """检查缓存是否过期，默认10秒过期时间"""
-        return time.time() - self.timestamp > ttl
-
-
 class AgentConfigManager:
-    """智能体配置管理器"""
+    """智能体配置管理器。
 
-    # 缓存 key 为 (agent_code, version_or_latest)，避免不同版本互相污染
-    _config_cache: dict[tuple[str, str], CachedEntry] = {}
-    CACHE_TTL = 300  # 缓存过期时间（秒）
+    SDK 不再做进程内缓存，全部依赖 PaaS 平台侧的统一缓存。
+    """
 
     @classmethod
     def get_config(
@@ -61,7 +47,7 @@ class AgentConfigManager:
         获取智能体配置
         :param agent_code: 智能体代码
         :param resource_manager: API 资源客户端
-        :param version: 可选的 agent 配置版本；为空表示取最新版（与历史行为一致），不同版本走独立缓存槽
+        :param version: 可选的 agent 配置版本；为空表示取最新版
         :return: AgentConfig 实例
         """
         # 实时从AIDev平台拉取配置

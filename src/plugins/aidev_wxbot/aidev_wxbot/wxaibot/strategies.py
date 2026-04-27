@@ -20,8 +20,9 @@ from logging import getLogger
 from typing import TYPE_CHECKING, Protocol
 
 from aidev_agent.config import settings as agent_settings
+from aidev_agent.enums import AgentBuildType, AgentType
+from aidev_agent.services.agent import AgentInstanceFactory
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
-from aidev_agent.services.flow_agent import FlowAgentCompletionAgent
 from aidev_bkplugin.services.agent import (
     build_execute_kwargs,
     get_agent_config_info,
@@ -147,18 +148,28 @@ class FlowAgentStrategy:
         # 3. 保存用户输入
         save_session_content(session_code, "user", content, rtx_username)
 
-        # 4. 构建 agent 依赖
-        agent_instance = FlowAgentCompletionAgent(
-            resource_manager=WxFlowAgentClient(username, rtx_username=rtx_username),
+        # 4. 构建 agent 依赖（统一走 AgentInstanceFactory）
+        # FlowAgent 不需要工厂 SESSION 路径的会话上下文清洗，统一走 DIRECT；
+        # session_code 通过工厂 __init__ 透传到 factory.session_code，再由
+        # FlowAgentCompletionAgent.build 取用。
+        agent_instance = AgentInstanceFactory.build_agent(
+            agent_type=AgentType.FLOW,
+            build_type=AgentBuildType.DIRECT,
             session_code=session_code,
-            flow_start_params={"session_code": session_code},
-            poll_interval=float(agent_settings.FLOW_AGENT_POLL_INTERVAL),
-            poll_timeout=float(agent_settings.FLOW_AGENT_POLL_TIMEOUT),
+            session_context_data=[],
             event_handler=AGUISessionWriter(
                 session_code=session_code,
                 client=bkaidev_api_client,
                 username=rtx_username,
             ),
+            username=rtx_username,
+            # 通过 **extra 透传给 FlowAgentCompletionAgent.build(ctx)；
+            # flow_resource_manager 是 flow start 接口专用 client（带特殊认证），与
+            # 工厂的 resource_manager（用于会话上下文等通用 API）解耦。
+            flow_resource_manager=WxFlowAgentClient(username, rtx_username=rtx_username),
+            flow_start_params={"session_code": session_code},
+            poll_interval=float(agent_settings.FLOW_AGENT_POLL_INTERVAL),
+            poll_timeout=float(agent_settings.FLOW_AGENT_POLL_TIMEOUT),
         )
 
         # 5. 执行并消费 SSE 流

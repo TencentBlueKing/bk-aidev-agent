@@ -19,7 +19,7 @@ import copy
 import time
 import uuid
 from logging import getLogger
-from typing import Any, Callable, Generator
+from typing import Any, Callable, ClassVar, Generator
 
 from ag_ui.core import BaseEvent, CustomEvent, EventType, RunErrorEvent, RunStartedEvent
 from ag_ui.encoder import EventEncoder
@@ -28,6 +28,8 @@ from pydantic import BaseModel, Field
 from aidev_agent.api import BKAidevApi
 from aidev_agent.config import settings as agent_settings
 from aidev_agent.core.ag_ui.types import CustomMessageType
+from aidev_agent.enums import AgentType
+from aidev_agent.services.agent.registry import AgentBuildContext, FlowBuildExtras
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper, StreamCancelledError
 from aidev_agent.services.protocols import FlowAgentClient, FlowAgentPollClient
 from aidev_agent.utils.event import RunId, emit_run_finished_event
@@ -55,26 +57,21 @@ class FlowAgentCompletionAgent(BaseModel):
     3. 将状态变化转换为自定义 SSE 事件推送给前端
     """
 
-    # 会话标识
+    agent_type: ClassVar[AgentType] = AgentType.FLOW
+
     thread_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     session_code: str | None = None
 
-    # 启动参数 —— 由前端传入
     flow_start_params: dict = Field(default_factory=dict, description="传给 flow_agent/start/ 接口的请求体")
 
-    # 已有的 task_id —— 如果指定了则跳过 start 直接轮询
     task_id: str | None = Field(default=None, description="已有的 task_id，指定后跳过 start 直接轮询")
 
-    # 资源管理器（用于调用 flow agent start API）
     resource_manager: FlowAgentClient | None = None
 
-    # 轮询客户端（用于轮询 task_info）
     poll_client: FlowAgentPollClient | None = None
 
-    # 用户名（用于认证）
     username: str | None = None
 
-    # 轮询配置
     poll_interval: float = Field(
         default_factory=lambda: float(agent_settings.FLOW_AGENT_POLL_INTERVAL),
         description="轮询间隔（秒）",
@@ -84,10 +81,9 @@ class FlowAgentCompletionAgent(BaseModel):
         description="轮询超时时间（秒）",
     )
 
-    # 事件处理器（用于回写数据库等）
     event_handler: Callable[[BaseEvent], None] | None = None
 
-    # 运行时状态：任务是否已启动根据flow_agent_start判断
+    # 运行时状态：任务是否已启动根据 flow_agent_start 判断
     # 用于取消时决定发 RUN_FINISHED（已启动）还是 RUN_ERROR（未启动）
     _task_started: bool = False
 
@@ -95,6 +91,38 @@ class FlowAgentCompletionAgent(BaseModel):
         arbitrary_types_allowed = True
 
     # ---------- 公共入口 ----------
+
+    def build(self, ctx: AgentBuildContext) -> "FlowAgentCompletionAgent":
+        """在 ``self``（``cls()`` 空种子实例）上原地装配 fully-built ``FlowAgentCompletionAgent`` 并返回。
+
+        FlowAgent 不需要 chat_model / tools / knowledge 等装配，仅依赖：
+        - 通用字段：``ctx.session_code`` / ``ctx.username`` / ``ctx.resource_manager``
+        - Flow 专属字段：``ctx.flow.{flow_resource_manager, poll_client, task_id,
+          flow_start_params, poll_interval, poll_timeout}``
+
+        注意：``flow.flow_resource_manager`` 是 flow start 接口专用 client
+        （通常带特殊认证），与 ``ctx.resource_manager``（用于通用 API）解耦；
+        缺省时回落到 ``ctx.resource_manager``。
+
+        可选字段（``poll_client`` / ``event_handler``）仅在提供时覆盖，缺省时保留种子默认值。
+        """
+        flow = ctx.flow or FlowBuildExtras()
+        self.resource_manager = flow.flow_resource_manager or ctx.resource_manager
+        self.session_code = ctx.session_code
+        self.task_id = flow.task_id
+        self.flow_start_params = flow.flow_start_params or {}
+        self.poll_interval = (
+            flow.poll_interval if flow.poll_interval is not None else float(agent_settings.FLOW_AGENT_POLL_INTERVAL)
+        )
+        self.poll_timeout = (
+            flow.poll_timeout if flow.poll_timeout is not None else float(agent_settings.FLOW_AGENT_POLL_TIMEOUT)
+        )
+        self.username = ctx.username
+        if flow.poll_client is not None:
+            self.poll_client = flow.poll_client
+        if ctx.event_handler is not None:
+            self.event_handler = ctx.event_handler
+        return self
 
     def execute(self, execute_kwargs=None) -> Generator[str, None, None]:
         """执行 Flow Agent，返回 SSE 编码的字符串生成器
@@ -122,10 +150,11 @@ class FlowAgentCompletionAgent(BaseModel):
 
         logger.info(
             "[FLOW_AGENT] _run_flow started: session_code=%s, task_id=%s, skip_start=%s",
-            self.session_code, self.task_id, bool(self.task_id),
+            self.session_code,
+            self.task_id,
+            bool(self.task_id),
         )
 
-        # 0. RUN_STARTED
         run_started_event = RunStartedEvent(type=EventType.RUN_STARTED, run_id=run_id, thread_id=self.thread_id)
         self._dispatch_event(run_started_event)
         yield encoder.encode(run_started_event)
@@ -143,13 +172,13 @@ class FlowAgentCompletionAgent(BaseModel):
                 yield encoder.encode(error_event)
                 return
 
-            # 1. 获取 task_id：优先使用已指定的 task_id，否则调用 start 接口
+            # 优先使用已指定的 task_id，否则调用 start 接口
             task_id = self.task_id
             if not task_id:
                 logger.debug(
-                    "[FLOW_AGENT] Calling start_flow_agent: "
-                    "flow_start_params=%s, client_type=%s",
-                    self.flow_start_params, type(start_client).__name__,
+                    "[FLOW_AGENT] Calling start_flow_agent: flow_start_params=%s, client_type=%s",
+                    self.flow_start_params,
+                    type(start_client).__name__,
                 )
 
                 start_result = start_client.start_flow_agent(data=self.flow_start_params)
@@ -162,7 +191,6 @@ class FlowAgentCompletionAgent(BaseModel):
 
             logger.info("[FLOW_AGENT] task_id=%s, skip_start=%s", task_id, bool(self.task_id))
 
-            # 2. 发送 flow_agent_start 事件
             # 仅在未指定 task_id 时发送 start 事件（指定 task_id 表示直接轮询已有任务）
             if not self.task_id:
                 start_event = self._make_custom_event(
@@ -171,21 +199,20 @@ class FlowAgentCompletionAgent(BaseModel):
                 )
                 self._dispatch_event(start_event)
                 yield encoder.encode(start_event)
-                # 标记任务已启动
                 self._task_started = True
             else:
-                # 已有 task_id，视为任务已启动
                 self._task_started = True
                 logger.info("[FLOW_AGENT] Existing task_id provided, skip flow_agent_start event: task_id=%s", task_id)
 
-            # 3. 轮询任务状态 —— 直接使用 SDK 的 client 调平台 API Gateway，不经过 plugin 层中转
+            # 轮询任务状态 —— 直接使用 SDK 的 client 调平台 API Gateway，不经过 plugin 层中转
             poll_client = self._get_poll_client()
             yield from self._poll_task(poll_client, str(task_id), encoder, run_id)
 
         except StreamCancelledError as e:
             # 任务被取消，通过 generator 机制向外传递异常
             logger.info(
-                "[FLOW_AGENT] StreamCancelledError caught, re-raising: %s", e,
+                "[FLOW_AGENT] StreamCancelledError caught, re-raising: %s",
+                e,
             )
             raise
         except Exception as e:
@@ -208,14 +235,15 @@ class FlowAgentCompletionAgent(BaseModel):
         # 保存最后一次成功轮询的 task_info，用于取消时构造 revoke 事件
         last_task_info: dict | None = None
         logger.info(
-            "[FLOW_AGENT] Polling started: task_id=%s, session_code=%s, "
-            "poll_interval=%ss, poll_timeout=%ss",
-            task_id, self.session_code, self.poll_interval, self.poll_timeout,
+            "[FLOW_AGENT] Polling started: task_id=%s, session_code=%s, poll_interval=%ss, poll_timeout=%ss",
+            task_id,
+            self.session_code,
+            self.poll_interval,
+            self.poll_timeout,
         )
         _poll_count = 0
         while True:
             _poll_count += 1
-            # 检查是否被取消
             if GeneratorStreamingHelper.is_cancelled(stream_thread_id):
                 logger.info("[FLOW_AGENT] Task cancelled: task_id=%s, poll_count=%d", task_id, _poll_count)
 
@@ -223,7 +251,6 @@ class FlowAgentCompletionAgent(BaseModel):
                 # - 已启动（flow_agent_start 已发送）：再轮询一次拿 revoke 状态，发 flow_agent_result + RUN_FINISHED
                 # - 未启动（任务还没真正开始）：发 RUN_ERROR，触发暂停补写逻辑
                 if self._task_started:
-                    # 发送 revoke 状态的 flow_agent_result 事件
                     yield from self._emit_cancel_result(encoder, task_id, last_task_info)
                     logger.info("[FLOW_AGENT] Task already started, sending RUN_FINISHED: task_id=%s", task_id)
                     yield emit_run_finished_event(
@@ -238,7 +265,6 @@ class FlowAgentCompletionAgent(BaseModel):
                     yield encoder.encode(error_event)
                 return
 
-            # 检查超时
             elapsed = time.time() - start_time
             if elapsed > self.poll_timeout:
                 logger.warning(f"[FLOW_AGENT] Poll timeout ({self.poll_timeout}s) for task_id={task_id}")
@@ -247,10 +273,9 @@ class FlowAgentCompletionAgent(BaseModel):
                 )
                 return
 
-            # 获取任务信息
             try:
                 task_info = client.get_flow_agent_task_info(task_id)
-                consecutive_failures = 0  # 成功后重置计数
+                consecutive_failures = 0
             except Exception as e:
                 consecutive_failures += 1
                 logger.warning(
@@ -268,14 +293,12 @@ class FlowAgentCompletionAgent(BaseModel):
                         f"Failed to get task info after {MAX_CONSECUTIVE_FAILURES} consecutive attempts",
                     )
                     return
-                # 网络异常时不直接退出，等下一次轮询重试
                 self._interruptible_sleep(self.poll_interval, stream_thread_id)
                 continue
 
             # 保存最后一次成功轮询结果，用于取消时构造 revoke 事件
             last_task_info = task_info
 
-            # 发送 flow_agent_result 事件（完整数据包）
             result_event = self._make_custom_event(
                 name=CustomMessageType.FLOW_AGENT_RESULT.value,
                 value=task_info,
@@ -283,10 +306,9 @@ class FlowAgentCompletionAgent(BaseModel):
             self._dispatch_event(result_event)
             yield encoder.encode(result_event)
 
-            # 检查任务是否结束（兼容 task_state 和 state 两种字段名）
+            # 兼容 task_state 和 state 两种字段名
             task_state = task_info.get("task_state", task_info.get("state", ""))
 
-            # 调试日志：前3次和状态变化时打印
             if _poll_count <= 3 or task_state in FLOW_TASK_END_STATES:
                 logger.debug(
                     f"[FLOW_AGENT] Poll #{_poll_count}: task_id={task_id}, "
@@ -298,7 +320,7 @@ class FlowAgentCompletionAgent(BaseModel):
                     f"[FLOW_AGENT] Task finished: task_id={task_id}, task_state={task_state}, "
                     f"poll_count={_poll_count}, elapsed={time.time() - start_time:.1f}s"
                 )
-                # 发送 flow_agent_end 事件（兼容 task_outputs 和 outputs 两种字段名）
+                # 兼容 task_outputs 和 outputs 两种字段名
                 end_value = {
                     "task_id": str(task_id),
                     "task_outputs": task_info.get("task_outputs", task_info.get("outputs", {})),
@@ -314,11 +336,9 @@ class FlowAgentCompletionAgent(BaseModel):
                 self._dispatch_event(end_event)
                 yield encoder.encode(end_event)
 
-                # 发送 RUN_FINISHED
                 yield from self._emit_finish(encoder, run_id)
                 return
 
-            # 等待下次轮询（可中断，快速响应取消信号）
             self._interruptible_sleep(self.poll_interval, stream_thread_id)
 
     # ---------- 辅助方法 ----------
@@ -383,7 +403,6 @@ class FlowAgentCompletionAgent(BaseModel):
             encoder: SSE 编码器（此参数保留以兼容现有调用，但不再使用）
             run_id: 当前 run 的唯一标识
         """
-        # 使用通用的事件发送函数，并传入事件处理器
         yield emit_run_finished_event(
             thread_id=self.thread_id,
             run_id=run_id,
@@ -425,19 +444,17 @@ class FlowAgentCompletionAgent(BaseModel):
             revoke_info = copy.deepcopy(last_task_info)
             revoke_info["task_state"] = FLOW_TASK_REVOKED_STATE
 
-            # 更新 nodes 中 RUNNING 状态的节点为 REVOKED
+            # 更新 nodes 中 RUNNING 状态的节点为 REVOKED，并重新统计 state_counts
             nodes = revoke_info.get("nodes", {})
             state_counts: dict[str, int] = {}
-            for node_id, node_info in nodes.items():
+            for node_info in nodes.values():
                 if isinstance(node_info, dict):
                     node_state = node_info.get("state", "")
                     if node_state == FLOW_TASK_RUNNING_STATE:
                         node_info["state"] = FLOW_TASK_REVOKED_STATE
                         node_state = FLOW_TASK_REVOKED_STATE
-                    # 重新统计各状态的节点数
                     state_counts[node_state] = state_counts.get(node_state, 0) + 1
 
-            # 更新 statistics
             revoke_info["statistics"] = {
                 "total": last_task_info.get("statistics", {}).get("total", len(nodes)),
                 "state_counts": state_counts,
@@ -451,7 +468,8 @@ class FlowAgentCompletionAgent(BaseModel):
         yield encoder.encode(revoke_event)
         logger.info(
             "[FLOW_AGENT] Emitted cancel result event: task_id=%s, task_state=REVOKED, nodes_count=%d",
-            task_id, len(revoke_info.get("nodes", {})),
+            task_id,
+            len(revoke_info.get("nodes", {})),
         )
 
     def _dispatch_event(self, event: BaseEvent) -> None:

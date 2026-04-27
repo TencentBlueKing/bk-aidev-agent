@@ -3,12 +3,11 @@
 import uuid
 
 from aidev_agent.config import settings as agent_settings
-from aidev_agent.enums import AgentType, PromptRole
-from aidev_agent.services.chat import ChatPrompt
+from aidev_agent.enums import AgentBuildType, AgentType, PromptRole
+from aidev_agent.services.agent import AgentInstanceFactory
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
-from aidev_agent.services.flow_agent import FlowAgentCompletionAgent
 from aidev_agent.services.messages_handler import ConsumerPreemptedError, StreamCancelledError
-from aidev_agent.services.pydantic_models import ExecuteKwargs
+from aidev_agent.services.pydantic_models import ChatPrompt, ExecuteKwargs
 from blueapps.core.exceptions import ClientBlueException
 from django.http.response import StreamingHttpResponse
 from rest_framework.views import Response
@@ -209,17 +208,25 @@ class ChatCompletionViewSet(PluginViewSet):
         if session_code:
             event_handler = AGUISessionWriter(session_code=session_code, client=bkaidev_api_client, username=username)
 
-        # 构建 resource_manager：传入带认证头的 client
-        resource_manager = _FlowAgentLocalClient(username=username)
-
-        agent_instance = FlowAgentCompletionAgent(
-            resource_manager=resource_manager,
+        # FlowAgent 不需要工厂 SESSION 路径的会话上下文清洗（_get_agent_config /
+        # _check_agent_switch / get_chat_session_context 等），统一走 DIRECT；
+        # session_code 通过工厂 __init__ 透传到 factory.session_code，再由
+        # FlowAgentCompletionAgent.build 取用。
+        agent_instance = AgentInstanceFactory.build_agent(
+            agent_type=AgentType.FLOW,
+            build_type=AgentBuildType.DIRECT,
             session_code=session_code or None,
+            session_context_data=[],
+            event_handler=event_handler,
+            username=username,
+            # 通过 **extra 透传给 FlowAgentCompletionAgent.build(ctx)；
+            # flow_resource_manager 是 flow start 接口专用 client（带特殊认证），与
+            # 工厂的 resource_manager（用于会话上下文等通用 API）解耦。
+            flow_resource_manager=_FlowAgentLocalClient(username=username),
             task_id=task_id,
             flow_start_params=flow_start_params,
             poll_interval=poll_interval,
             poll_timeout=poll_timeout,
-            event_handler=event_handler,
         )
 
         try:
