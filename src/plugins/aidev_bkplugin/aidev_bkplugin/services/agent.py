@@ -129,7 +129,7 @@ def build_session_detail_url(session_code: str, username: str | None = None) -> 
         # 从 saas_url 提取域名：https://xxx.bkapps.woa.com/bk_plugin/... → https://xxx.bkapps.woa.com
         parsed = urlparse(saas_url)
         base_url = f"{parsed.scheme}://{parsed.netloc}"
-        return f"{base_url}/page/?session={session_code}"
+        return f"{base_url}/chat-window/?session={session_code}"
     except Exception as e:
         logger.warning(f"[build_session_detail_url] 构建会话详情 URL 失败: session_code={session_code}, error={e}")
         return ""
