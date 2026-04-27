@@ -9,7 +9,7 @@ description: >-
 aiSummary: >
   ChatContainer 提供完整 AI 对话布局：分栏（ResizeLayout）、消息列表（MessageContainer）、输入（ChatInput）、执行摘要（ExecutionSummary）、快捷表单（ShortcutRender）与多选栏（SelectionFooter）。
   内置 useMessageGroup、分享与自定义 Tab 等能力；对 MessageContainer/ChatInput 下推 inputStatus（末尾 Loading 占位时推导 Fetching），适合一站式接入。
-  通过 props 传入 messages、shortcuts 等，事件与 ChatInput/MessageContainer 对齐。
+  通过 props 传入 messages、shortcuts 等，事件与 ChatInput/MessageContainer 对齐；renderMode 会通过内部 provide 下传给子内容组件。
 relatedComponents:
   - slug: message-container
     relation: 消息列表与滚动区域
@@ -188,6 +188,7 @@ domain: input
 - **执行摘要**：侧边栏展示工具调用 / FlowAgent 执行记录，支持关键词搜索和对话定位
 - **自定义 Tab**：通过 `useCustomTabProvider` 支持动态添加自定义 Tab（如节点详情）
 - **分享模式**：内置消息多选分享流程，选中用户消息后确认分享
+- **渲染模式注入**：`renderMode` 会通过内部 Provider 下传给后代内容组件；例如 FlowAgent 节点在 `Share` 模式下隐藏耗时和「详情」入口
 - **空状态欢迎页**：无消息时展示欢迎语和开场白
 
 ## 组件结构
@@ -682,7 +683,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | confirmShare   | `(messages: Message[])`                | 确认分享，携带选中的消息             |
 | collapseChange | `(isCollapse: boolean, width: number)` | 侧边栏折叠/展开状态变化              |
 | selectShortcut | `(shortcut: Shortcut)`                 | 选择快捷指令（继承自 ChatInput）     |
-| deleteShortcut | `(shortcut: Shortcut)`                 | 删除已选快捷指令（继承自 ChatInput） |
+| deleteShortcut | —                                      | 删除已选快捷指令（继承自 ChatInput） |
 
 ### Slots
 
@@ -701,15 +702,17 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | addCustomTab    | `(tab: CustomTab) => void`  | 添加自定义 Tab |
 | removeCustomTab | `(tabName: string) => void` | 移除自定义 Tab |
 | selectCustomTab | `(tab: CustomTab) => void`  | 切换到指定 Tab |
+| enterShareMode  | `() => void`                | 手动进入分享多选模式 |
+| exitShareMode   | `() => void`                | 退出分享多选模式，并清空已选消息 |
 
 ## 渲染模式
 
-通过 `v-model:render-mode` 控制容器的渲染行为：
+通过 `v-model:render-mode` 控制容器的渲染行为。`ChatContainer` 会把当前 `renderMode` 注入给后代组件，供内容渲染根据场景收敛交互能力。
 
 | `renderMode` | 侧边栏 Tab / 折叠按钮 | 底部输入区域                      | MessageTools 工具栏   | 说明                             |
 | ------------ | ---------------------- | --------------------------------- | --------------------- | -------------------------------- |
 | `Chat`       | 正常显示               | 正常显示（ChatInput / ShortcutRender / SelectionFooter） | 全部工具按钮          | 默认对话模式                     |
-| `Share`      | **隐藏**               | **隐藏**                          | **隐藏**（多选模式）  | 分享预览模式，仅展示消息         |
+| `Share`      | **隐藏**               | **隐藏**                          | **隐藏**（多选模式）  | 分享预览模式，仅展示消息；FlowAgent 节点会隐藏耗时和「详情」入口 |
 | `Test`       | 正常显示               | 正常显示                          | 过滤掉「分享」按钮    | 测试/嵌入模式，隐藏分享入口     |
 
 ```vue

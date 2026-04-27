@@ -28,6 +28,8 @@ import { defineComponent, h } from 'vue';
 import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { RenderMode } from '../../../common/constants';
+import { useRenderModeProvider } from '../../../composables/use-common';
 import FlowAgentContent from './flow-agent-content.vue';
 
 import type { BkFlowMessageContent } from '../../../ag-ui/types/contents';
@@ -259,6 +261,24 @@ describe('FlowAgentContent', () => {
       expect(items.length).toBe(2);
       expect(wrapper.text()).toContain('节点一');
       expect(wrapper.text()).toContain('节点二');
+    });
+
+    it('renderMode 为 Share 时不应渲染节点耗时和详情入口', () => {
+      const Parent = defineComponent({
+        setup() {
+          useRenderModeProvider({ renderMode: RenderMode.Share });
+          return () =>
+            h(FlowAgentContent, {
+              content: createContent(),
+            });
+        },
+      });
+
+      wrapper = mount(Parent);
+
+      expect(wrapper.find('.flow-agent-node-trailing').exists()).toBe(false);
+      expect(wrapper.find('.flow-agent-node-time').exists()).toBe(false);
+      expect(wrapper.find('.flow-agent-node-detail-btn').exists()).toBe(false);
     });
   });
 

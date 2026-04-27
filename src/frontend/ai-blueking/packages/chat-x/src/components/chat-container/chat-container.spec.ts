@@ -44,6 +44,7 @@ const mockMessageGroupsRef = vi.hoisted(() => {
     }>
   >([]);
 });
+const mockUseRenderModeProvider = vi.hoisted(() => vi.fn());
 
 vi.mock('bkui-vue', () => {
   const Button = defineComponent({
@@ -143,6 +144,7 @@ vi.mock('../../composables/use-common', () => ({
   useKeywordProvider: () => ({
     keyword: { value: '' },
   }),
+  useRenderModeProvider: mockUseRenderModeProvider,
 }));
 
 vi.mock('../../composables/use-global-config', () => ({
@@ -642,6 +644,17 @@ describe('ChatContainer', () => {
 
       const mc = wrapper.findComponent({ name: 'MessageContainer' });
       expect(mc.attributes('data-render-mode')).toBe(RenderMode.Test);
+    });
+
+    it('应将 renderMode 提供给后代组件', () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, renderMode: RenderMode.Share },
+      });
+
+      const providerOptions = mockUseRenderModeProvider.mock.calls.at(-1)?.[0] as {
+        renderMode: { value: RenderMode };
+      };
+      expect(providerOptions.renderMode.value).toBe(RenderMode.Share);
     });
 
     it('renderMode 为 Share 时侧边栏 Tab 和折叠按钮不应渲染', () => {

@@ -267,6 +267,8 @@ domain: message
 - **节点列表**：每个节点显示状态圆点、名称和耗时；hover 时出现「详情」按钮
 - **节点详情**：点击「详情」按钮会通过 `useCustomTabConsumer` 在 `ChatContainer` 侧边栏新增自定义 Tab，展示节点配置（基础信息、输入参数、输出参数）
 
+> `FlowAgentContent` 会读取 `ChatContainer` 注入的 `renderMode`。当 `renderMode === RenderMode.Share` 时，节点列表仅展示状态和名称，不展示节点耗时与「详情」按钮，避免分享预览中出现可交互的节点详情入口。独立使用 `ActivityMessage` 且没有上层 Provider 时，默认按 `Chat` 模式渲染。
+
 ### 内部渲染结构
 
 ```
@@ -393,6 +395,7 @@ const messages = [
 | `success`   | FINISHED                                                                            | #18B456 |
 | `failed`    | FAILED / REVOKED / ROLL_BACK_FAILED                                                 | #EA3636 |
 | `suspended` | SUSPENDED                                                                           | #F59500 |
+| `pending`   | PENDING                                                                             | #DCDEE5 |
 
 ### 节点详情 Tab
 
@@ -484,7 +487,7 @@ enum MessageContentType {
 | ------------ | --------------------------------------------------------------------------- | ------ | --------------------------------------------------------- |
 | content      | `ReferenceDocumentContent[] \| KnowledgeRagContent \| BkFlowMessageContent` | -      | 内容数据，格式随 `activityType` 不同                      |
 | activityType | `'knowledge_rag' \| 'flow_agent' \| 'reference_document' \| string`         | -      | 活动类型，决定渲染模式（知识检索 / FlowAgent / 引用文档） |
-| status       | `MessageStatus`                                                             | -      | 消息状态，仅在 `knowledge_rag` 模式下影响标题和图标       |
+| status       | `MessageStatus`                                                             | -      | 消息状态；在 `knowledge_rag` 模式下影响标题和图标，在 `flow_agent` 模式下影响标题 Loading 状态 |
 | id           | `string \| number`                                                          | -      | 消息 ID                                                   |
 | messageId    | `string \| number`                                                          | -      | 消息唯一标识                                              |
 
