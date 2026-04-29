@@ -88,10 +88,12 @@ def close_thread_loop() -> None:
     _thread_local.loop = None
 
 
-def run_coro_sync(coro):
+def run_coro_sync(coro, timeout=None):
     """Run a coroutine synchronously and release worker-thread loops afterward."""
     loop = get_event_loop()
     try:
+        if timeout is not None:
+            coro = asyncio.wait_for(coro, timeout=timeout)
         return loop.run_until_complete(coro)
     finally:
         if threading.current_thread() is not threading.main_thread():

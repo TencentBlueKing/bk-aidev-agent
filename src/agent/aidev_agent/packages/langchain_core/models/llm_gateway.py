@@ -85,6 +85,7 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
                 endpoint,
                 headers=self.default_headers,
                 json=data,
+                timeout=settings.REQUEST_API_TIMEOUT,
             )
             resp.raise_for_status()
             result = resp.json()

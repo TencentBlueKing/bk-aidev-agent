@@ -11,6 +11,7 @@ from aidev_agent.enums import FineGrainedScoreType, IndependentQueryMode, Knowle
 class ExecuteKwargs(BaseModel):
     stream: bool = False
     stream_timeout: int = 30
+    invoke_timeout: Optional[int] = None
     passthrough_input: bool = False
     run_agent: bool = False
     # 新增参数

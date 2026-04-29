@@ -3,8 +3,7 @@
 import json
 from logging import getLogger
 
-from bk_plugin_framework.kit.api import custom_authentication_classes
-from bk_plugin_framework.kit.decorators import inject_user_token, login_exempt
+from bk_plugin_framework.kit.decorators import inject_user_token
 from django.conf import settings
 from django.http.response import StreamingHttpResponse
 from django.utils.decorators import method_decorator
@@ -15,6 +14,8 @@ from rest_framework.status import is_success
 from rest_framework.views import APIView, Response
 from rest_framework.viewsets import ViewSetMixin
 
+from aidev_bkplugin.packages.drf.authentication import custom_authentication_classes
+from aidev_bkplugin.packages.drf.decorators import login_exempt
 from aidev_bkplugin.permissions import AgentPluginPermission
 from aidev_bkplugin.utils import bkaidev_api_client, get_flow_agent_client
 

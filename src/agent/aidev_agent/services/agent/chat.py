@@ -157,7 +157,10 @@ class ChatCompletionAgent(BaseModel):
 
         else:
             try:
-                result = run_coro_sync(agent_e.ainvoke({"messages": messages, "execute_kwargs": execute_kwargs}, cfg))
+                result = run_coro_sync(
+                    agent_e.ainvoke({"messages": messages, "execute_kwargs": execute_kwargs}, cfg),
+                    timeout=execute_kwargs.invoke_timeout,
+                )
                 result_output = result.get("messages")[-1]
                 return_data = {
                     "choices": [{"delta": {"role": "assistant", "content": result_output.content}}],
