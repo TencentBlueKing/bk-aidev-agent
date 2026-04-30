@@ -31,6 +31,7 @@ import ShortcutRender from './ai-shortcut/shortcut-render/shortcut-render.vue';
 import ChatContainer from './chat-container/chat-container.vue';
 import ContentRender from './chat-content/content-render/content-render.vue';
 import ChatInput from './chat-input/chat-input.vue';
+import { InterruptMessage } from './chat-message/interrupt-message';
 import MessageContainer from './chat-message/message-container/message-container.vue';
 import MessageRender from './chat-message/message-render/message-render.vue';
 import ExecutionSummary from './execution-summary/execution-summary.vue';
@@ -54,6 +55,7 @@ export {
   HighlightKeyword,
   ImagePreview,
   ImagePreviewGroup,
+  InterruptMessage,
   MessageContainer,
   MessageLoading,
   MessageRender,
