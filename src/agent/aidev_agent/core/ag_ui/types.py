@@ -44,6 +44,12 @@ class CustomEventNames(str, Enum):
     OnToolNodeFinish = "on_tool_node_finish"
 
 
+class SessionPersistenceEventNames(str, Enum):
+    """会话回写用 CustomEvent.name；ChatModelEnd 默认不进入 SSE。"""
+
+    ChatModelEnd = "aidev_session_chat_model_end"
+
+
 State = dict[str, Any]
 
 

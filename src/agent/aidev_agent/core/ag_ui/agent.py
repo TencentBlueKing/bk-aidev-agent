@@ -8,7 +8,6 @@ from typing import Any, Callable, Literal
 from ag_ui.core import (
     CustomEvent,
     EventType,
-    RawEvent,
     RunAgentInput,
     RunErrorEvent,
     RunFinishedEvent,
@@ -34,11 +33,14 @@ from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
     ToolMessage,
+    message_to_dict,
 )
 from langchain_core.runnables import RunnableConfig, ensure_config
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
+
+from aidev_agent.utils.event import RunId
 
 from .events import (
     ExtendThinkingEndEvent,
@@ -52,6 +54,7 @@ from .types import (
     MessageSnapshotEventExtend,
     RunMetadata,
     SchemaKeys,
+    SessionPersistenceEventNames,
     State,
 )
 from .utils import (
@@ -66,7 +69,6 @@ from .utils import (
     resolve_message_content,
     resolve_reasoning_content,
 )
-from aidev_agent.utils.event import RunId
 
 ProcessedEvents = (
     TextMessageStartEvent
@@ -78,7 +80,6 @@ ProcessedEvents = (
     | StateSnapshotEvent
     | StateDeltaEvent
     | MessageSnapshotEventExtend
-    | RawEvent
     | CustomEvent
     | RunStartedEvent
     | RunFinishedEvent
@@ -111,9 +112,7 @@ class LangGraphAgent:
         self._cancel_checker = cancel_checker
 
     def _dispatch_event(self, event: ProcessedEvents) -> str:
-        if event.type == EventType.RAW:
-            event.event = make_json_safe(event.event)
-        elif event.raw_event:
+        if getattr(event, "raw_event", None):
             event.raw_event = make_json_safe(event.raw_event)
 
         return event
@@ -240,7 +239,16 @@ class LangGraphAgent:
                     )
                 )
 
-            yield self._dispatch_event(RawEvent(type=EventType.RAW, event=event))
+            if event_type == LangGraphEventTypes.OnChatModelEnd.value:
+                out = event.get("data", {}).get("output")
+                if out is not None:
+                    yield self._dispatch_event(
+                        CustomEvent(
+                            type=EventType.CUSTOM,
+                            name=SessionPersistenceEventNames.ChatModelEnd.value,
+                            value={"output": message_to_dict(out)},
+                        )
+                    )
 
             async for single_event in self._handle_single_event(event, state):
                 yield single_event

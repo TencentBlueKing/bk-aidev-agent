@@ -19,8 +19,9 @@ from abc import ABC, abstractmethod
 from logging import getLogger
 from typing import Any, Callable
 
-from ag_ui.core import BaseEvent, EventType, RunErrorEvent
+from ag_ui.core import BaseEvent, CustomEvent, EventType, RunErrorEvent
 from ag_ui.core.events import RawEvent, TextMessageContentEvent, TextMessageEndEvent, TextMessageStartEvent
+from langchain_core.messages import messages_from_dict
 
 from aidev_agent.core.ag_ui.types import (
     CustomEventNames,
@@ -28,6 +29,7 @@ from aidev_agent.core.ag_ui.types import (
     ExtendFunctionCall,
     ExtendToolCall,
     LangGraphEventTypes,
+    SessionPersistenceEventNames,
 )
 from aidev_agent.core.ag_ui.utils import camel_to_snake
 from aidev_agent.enums import ActivityType, PromptRole
@@ -179,11 +181,17 @@ class BaseSessionWriter(ABC):
     def _dispatch_custom_event_direct(self, event) -> None:
         """分发直接的 CUSTOM 类型事件（非 RAW 包裹）
 
-        Flow Agent 直接产出 CustomEvent(type=CUSTOM)，不经过 LangGraph 的 RawEvent 包裹。
+        LangGraph 流式已不产出 RawEvent；工具节点完成、知识库结果等与 RAW 路径对齐到此。
         """
         event_name = getattr(event, "name", "")
 
-        if event_name == CustomMessageType.FLOW_AGENT_START.value:
+        if event_name == SessionPersistenceEventNames.ChatModelEnd.value:
+            self.handle_model_end(event)
+        elif event_name == CustomEventNames.OnToolNodeFinish.value:
+            self.handle_tool_finish(event)
+        elif event_name == CustomMessageType.KNOWLEDGE_RAG_RESULT.value:
+            self.handle_reference_document(event)
+        elif event_name == CustomMessageType.FLOW_AGENT_START.value:
             self.handle_flow_agent_start(event)
         elif event_name == CustomMessageType.FLOW_AGENT_RESULT.value:
             self.handle_flow_agent_result(event)
@@ -274,9 +282,9 @@ class BaseSessionWriter(ABC):
         thinking_content = self._thinking_content.strip() if self._thinking_content else ""
 
         # 判断是否有 assistant 内容已流式输出或已通过 handle_model_end 回写
-        has_assistant_output = any(
-            mid not in self._written_message_ids for mid in self._streaming_messages
-        ) or self._model_end_written
+        has_assistant_output = (
+            any(mid not in self._written_message_ids for mid in self._streaming_messages) or self._model_end_written
+        )
 
         # 取消 + 无 AI 输出：回写已有内容 + 补写"用户已取消" + status=fail
         if self._is_cancelled and not has_assistant_output:
@@ -353,8 +361,7 @@ class BaseSessionWriter(ABC):
             thinking_content: 已累积的 thinking 内容
         """
         logger.info(
-            "Writing cancelled messages: session_code=%s, "
-            "has_thinking=%s, streaming_messages=%d, _is_cancelled=%s",
+            "Writing cancelled messages: session_code=%s, has_thinking=%s, streaming_messages=%d, _is_cancelled=%s",
             self.session_code,
             bool(thinking_content),
             len(self._streaming_messages),
@@ -396,15 +403,21 @@ class BaseSessionWriter(ABC):
         self._streaming_messages.clear()
         self._thinking_content = ""
 
-    def handle_model_end(self, event: RawEvent) -> None:
+    def handle_model_end(self, event: RawEvent | CustomEvent) -> None:
         """处理模型输出结束事件，回写 assistant 消息
 
         Args:
-            event: 包含 on_chat_model_end 数据的原始事件
+            event: RawEvent（on_chat_model_end）或 CustomEvent（aidev_session_chat_model_end）
         """
-        output_message = event.event.get("data", {}).get("output")
-        if not output_message:
-            return
+        if isinstance(event, CustomEvent):
+            inner = (event.value or {}).get("output") if isinstance(event.value, dict) else None
+            if not inner:
+                return
+            output_message = messages_from_dict([inner])[0]
+        else:
+            output_message = event.event.get("data", {}).get("output")
+            if not output_message:
+                return
 
         message_id = output_message.id
 
@@ -441,13 +454,13 @@ class BaseSessionWriter(ABC):
         # 标记 model_end 已回写，取消时不需要补写暂停消息
         self._model_end_written = True
 
-    def handle_tool_finish(self, event: RawEvent) -> None:
+    def handle_tool_finish(self, event: RawEvent | CustomEvent) -> None:
         """处理工具执行完成事件，回写 tool 消息
 
         Args:
-            event: 包含 on_tool_node_finish 数据的原始事件
+            event: RawEvent 或 on_tool_node_finish 的 CustomEvent（value 为 ToolMessage）
         """
-        output_message = event.event.get("data")
+        output_message = event.value if isinstance(event, CustomEvent) else event.event.get("data")
         if not output_message:
             return
 
@@ -544,13 +557,16 @@ class BaseSessionWriter(ABC):
         self._streaming_messages.clear()
         self._thinking_content = ""
 
-    def handle_reference_document(self, event: RawEvent) -> None:
+    def handle_reference_document(self, event: RawEvent | CustomEvent) -> None:
         """处理引用文档事件，回写 activity 消息
 
         Args:
-            event: 包含 reference_document 数据的原始事件
+            event: RawEvent（on_custom_event）或 knowledge_rag_result 的 CustomEvent
         """
-        event_data = event.event.get("data", {})
+        if isinstance(event, CustomEvent):
+            event_data = event.value if isinstance(event.value, dict) else {}
+        else:
+            event_data = event.event.get("data", {})
         message_id = event_data.get("message_id")
         reference_documents = [dict_keys_camel_to_snake(each) for each in event_data.get("data", [])]
 

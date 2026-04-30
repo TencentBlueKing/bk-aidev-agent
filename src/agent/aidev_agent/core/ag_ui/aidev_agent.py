@@ -25,7 +25,7 @@ from .events import (
     ExtendToolCallResultEvent,
     ExtendToolCallStartEvent,
 )
-from .types import CustomMessageType, MessagesInProgressRecord
+from .types import CustomEventNames, CustomMessageType, MessagesInProgressRecord, SessionPersistenceEventNames
 
 logger = getLogger(__name__)
 
@@ -88,12 +88,28 @@ class EventDispatcher:
         """处理自定义事件"""
         custom_event_handlers = {
             CustomMessageType.KNOWLEDGE_RAG_RESULT.value: self._handle_reference_document,
+            CustomEventNames.OnToolNodeFinish.value: self._handle_tool_node_finish_from_custom,
         }
 
         handler = custom_event_handlers.get(event.name)
         if handler:
             return handler(event)
         return self.agent._parent_dispatch(event)
+
+    def _handle_tool_node_finish_from_custom(self, event: CustomEvent) -> str:
+        tool_msg = event.value
+        is_error = getattr(tool_msg, "status", None) == "error" or bool(getattr(tool_msg, "error", None))
+        return self.agent._parent_dispatch(
+            ExtendToolCallResultEvent(
+                type=EventType.TOOL_CALL_RESULT,
+                tool_call_id=tool_msg.tool_call_id,
+                message_id=tool_msg.id or str(uuid.uuid4()),
+                content=tool_msg.content,
+                role="tool",
+                duration=tool_msg.additional_kwargs.get("duration", None),
+                error=is_error,
+            )
+        )
 
     def _handle_reference_document(self, event: CustomEvent) -> str:
         """处理引用文档事件（CustomEvent 格式）"""
@@ -131,7 +147,7 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
     2. EventDispatcher: 内部事件分发器，处理特定事件类型的转换（如工具事件）
     3. cancel_checker: 取消检测回调，返回 True 表示应该取消，Agent 会优雅地发送 RunFinishedEvent
 
-    注意：BaseSessionWriter 已实现完整的事件分发逻辑，会自行处理 RAW/RUN_ERROR 等事件类型
+    注意：BaseSessionWriter 处理 CUSTOM（含会话专用名）与 RUN_ERROR 等；RAW 仅保留兼容，流式不再产出
     """
 
     def __init__(
@@ -166,11 +182,18 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         """运行 Agent 并生成编码后的事件流"""
         event_encoder = EventEncoder()
         temp_message_emitted = False
+        skip_encode_custom = frozenset({SessionPersistenceEventNames.ChatModelEnd.value})
+
         async for event in super().run(input):
             try:
                 # 特殊处理：不输出 message snapshot 事件
                 if getattr(event, "type", "") == EventType.MESSAGES_SNAPSHOT.value:
                     logger.debug(f"message snapshot: {event}")
+                elif (
+                    getattr(event, "type", "") == EventType.CUSTOM.value
+                    and getattr(event, "name", "") in skip_encode_custom
+                ):
+                    continue
                 else:
                     yield event_encoder.encode(event)
 
