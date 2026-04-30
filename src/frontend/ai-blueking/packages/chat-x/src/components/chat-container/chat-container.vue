@@ -208,7 +208,9 @@
               @delete-shortcut="handleCloseShortcut"
               @select-shortcut="handleSelectShortcut"
               @update:model-value="handleUpdateModelValue"
-            />
+            >
+              <template #top> </template>
+            </ChatInput>
           </template>
         </template>
       </template>
@@ -230,7 +232,7 @@
 
   import { Button, ResizeLayout, Tab } from 'bkui-vue';
 
-  import { type Message, type UserMessage, MessageStatus } from '../../ag-ui/types';
+  import { type Message, type UserMessage, MessageRole, MessageStatus } from '../../ag-ui/types';
   import { LOADING_MESSAGE_ID, RenderMode } from '../../common';
   import { useMessageGroup } from '../../composables';
   import { useCommonTippyProvider, useRenderModeProvider } from '../../composables/use-common';
@@ -243,6 +245,7 @@
   import ShortcutRender from '../ai-shortcut/shortcut-render/shortcut-render.vue';
   import ContentRender from '../chat-content/content-render/content-render.vue';
   import ChatInput, { type ChatInputEmits, type ChatInputProps } from '../chat-input/chat-input.vue';
+  import InterruptMessage from '../chat-message/interrupt-message/interrupt-message.vue';
   import MessageContainer, {
     type MessageContainerEmits,
     type MessageContainerProps,

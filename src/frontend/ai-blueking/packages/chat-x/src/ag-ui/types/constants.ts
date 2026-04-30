@@ -24,7 +24,11 @@
  * IN THE SOFTWARE.
  */
 
+import { t } from '../../lang/lang';
+import { APPROVAL_STATUS } from './interrupt';
+
 export enum InterruptReason {
+  AIDevToolApproval = 'ai_dev:tool_approval', // AI dev 第三方审批
   HumanApproval = 'human_approval', // 人工审批
   UserMultiChoice = 'user_multi_choice', // 用户多选
   UserSingleChoice = 'user_single_choice', // 用户单选
@@ -83,3 +87,12 @@ export enum RunFinishedOutcome {
   Interrupt = 'interrupt',
   Success = 'success',
 }
+
+export const APPROVAL_STATUS_MAP: Record<APPROVAL_STATUS, string> = {
+  [APPROVAL_STATUS.ABANDONED]: t('已废弃'),
+  [APPROVAL_STATUS.APPROVED]: t('已批准'),
+  [APPROVAL_STATUS.CANCELLED]: t('已取消'),
+  [APPROVAL_STATUS.EXPIRED]: t('已过期'),
+  [APPROVAL_STATUS.PENDING]: t('评审中'),
+  [APPROVAL_STATUS.REJECTED]: t('已拒绝'),
+};

@@ -73,23 +73,21 @@
   import {
     type ActivityMessage,
     type AssistantMessage,
-    type InterruptMessage,
-    type InterruptResumePayload,
     type Message,
+    type OnInterruptResume,
     type ToolMessage,
     type UserMessage,
     AgentIcon,
     ChatContainer,
     CopyIcon,
     EditIcon,
-    InterruptReason,
     MessageContentType,
     MessageRender,
     MessageRole,
     MessageStatus,
     RenderMode,
-    RunFinishedOutcome,
   } from '../src';
+  import { MOCK_INTERRUPT_MESSAGES } from './interrupt';
   import { streamContent } from './markdown';
   import { MOCK_PROMPTS, MOCK_RESOURCES } from './mock';
   import { uploadFileToSession } from './upload-file';
@@ -99,7 +97,7 @@
 
   import '../src/styles/global.scss';
 
-  const chatMode = shallowRef<RenderMode>(RenderMode.Share);
+  const chatMode = shallowRef<RenderMode>(RenderMode.Chat);
   const openingRemark = shallowRef(`你好，我是小鲸
 我是由蓝鲸智云开发的智能助手
 我可以帮助你完成各种任务`);
@@ -384,78 +382,11 @@
       status: MessageStatus.Complete,
       messageId: 'msg_activity_ref',
     } as ActivityMessage,
-    // ===== ag-ui human-in-the-loop 验证用 mock，验证完后回滚 =====
-    {
-      id: 'msg_interrupt_single',
-      messageId: 'msg_interrupt_single',
-      role: MessageRole.Interrupt,
-      status: MessageStatus.Complete,
-      content: '',
-      interrupt: {
-        id: 'int-single-1',
-        reason: InterruptReason.UserSingleChoice,
-        payload: {
-          type: InterruptReason.UserSingleChoice,
-          title: '请选择方案以继续：',
-          choices: [
-            {
-              id: 'p1',
-              value: 'p1',
-              label:
-                '方案 1： 户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建户外趣味团建',
-            },
-            { id: 'p2', value: 'p2', label: '方案 2： 室内沉浸式团建' },
-            { id: 'p3', value: 'p3', label: '方案 3： 轻手工共创团建' },
-          ],
-        },
-      },
-    } as InterruptMessage,
-    {
-      id: 'msg_interrupt_multi',
-      messageId: 'msg_interrupt_multi',
-      role: MessageRole.Interrupt,
-      status: MessageStatus.Complete,
-      content: '',
-      interrupt: {
-        id: 'int-multi-1',
-        reason: InterruptReason.UserMultiChoice,
-        payload: {
-          type: InterruptReason.UserMultiChoice,
-          title: '请选择需要的辅助项（多选）：',
-          choices: [
-            { id: 'a', value: 'a', label: '场地预订' },
-            { id: 'b', value: 'b', label: '物资采购' },
-            { id: 'c', value: 'c', label: '行程接送' },
-          ],
-        },
-      },
-    } as InterruptMessage,
-    {
-      id: 'msg_interrupt_done',
-      messageId: 'msg_interrupt_done',
-      role: MessageRole.Interrupt,
-      status: MessageStatus.Complete,
-      content: '',
-      outcome: RunFinishedOutcome.Success,
-      interrupt: {
-        id: 'int-done-1',
-        reason: InterruptReason.UserSingleChoice,
-        payload: {
-          type: InterruptReason.UserSingleChoice,
-          title: '请选择方案以继续：',
-          selected: 'p3',
-          choices: [
-            { id: 'p1', value: 'p1', label: '方案 1： 户外趣味团建' },
-            { id: 'p2', value: 'p2', label: '方案 2： 室内沉浸式团建' },
-            { id: 'p3', value: 'p3', label: '方案 3： 轻手工团建' },
-          ],
-        },
-      },
-    } as InterruptMessage,
+    ...MOCK_INTERRUPT_MESSAGES,
   ]);
 
-  const handleInterruptResume = (message: InterruptMessage, payload: InterruptResumePayload) => {
-    console.log('[playground] interrupt resume', message, payload);
+  const handleInterruptResume: OnInterruptResume = (interrupt, payload) => {
+    console.log('[playground] interrupt resume', interrupt, payload);
   };
 
   const shortcuts = shallowRef<Shortcut[]>([

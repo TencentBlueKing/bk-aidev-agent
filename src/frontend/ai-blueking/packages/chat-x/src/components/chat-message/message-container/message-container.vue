@@ -115,8 +115,6 @@
 
   import { type Message, type UserMessage, MessageRole, MessageStatus } from '../../../ag-ui/types';
   import { CONST_MESSAGE_TOOLS, RenderMode } from '../../../common';
-
-  import type { OnInterruptResume } from '../../../ag-ui/types/interrupt';
   import { type MessageGroup, useClipboard, useContainerScrollProvider } from '../../../composables';
   import { ArrowDownIcon, CloseCircleIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
@@ -125,6 +123,7 @@
   import MessageTools, { type MessageToolsProps } from '../../message-tools/message-tools.vue';
   import MessageRender from '../message-render/message-render.vue';
 
+  import type { OnInterruptResume } from '../../../ag-ui/types/interrupt';
   import type { IToolBtn, TagSchema } from '../../../types';
 
   export type MessageContainerEmits = {
