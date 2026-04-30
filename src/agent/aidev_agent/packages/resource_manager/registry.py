@@ -11,13 +11,14 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional, Protocol
+from typing import Any, Optional, Protocol, runtime_checkable
 
 from langchain_core.tools import StructuredTool
 
 from aidev_agent.utils.factory import SimpleFactory
 
 
+@runtime_checkable
 class ResourceManagerProtocol(Protocol):
     """业务侧资源管理协议。
 
@@ -54,6 +55,38 @@ class ResourceManagerProtocol(Protocol):
 
     def knowledge_query(self, data: dict[str, Any]) -> dict:
         """提交知识库查询并返回业务结果（``data`` 字段）。"""
+        ...
+
+    def start_flow_agent(self, data: dict, **kwargs) -> dict:
+        """启动 flow agent 任务，返回包含 task_id 的字典。"""
+        ...
+
+    def get_flow_agent_task_info(self, task_id: str, **kwargs) -> dict:
+        """获取 flow agent 任务信息。"""
+        ...
+
+    def retry_flow_agent_node(self, session_code: str, node_id: str, **kwargs) -> dict:
+        """重试 flow agent 任务节点。"""
+        ...
+
+    def skip_flow_agent_node(self, session_code: str, node_id: str, **kwargs) -> dict:
+        """跳过 flow agent 任务节点。"""
+        ...
+
+    def stop_flow_agent_task(self, session_code: str, **kwargs) -> dict:
+        """停止 flow agent 任务。"""
+        ...
+
+    def pause_flow_agent_task(self, session_code: str, **kwargs) -> dict:
+        """暂停 flow agent 任务。"""
+        ...
+
+    def resume_flow_agent_task(self, session_code: str, **kwargs) -> dict:
+        """恢复 flow agent 任务。"""
+        ...
+
+    def get_flow_agent_task_node_info(self, task_id: str, node_id: str, **kwargs) -> dict:
+        """获取 flow agent 任务节点信息。"""
         ...
 
 

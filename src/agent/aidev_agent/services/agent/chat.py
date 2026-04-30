@@ -132,7 +132,7 @@ class ChatCompletionAgent(BaseModel):
 
     def convert_history_to_messages(self) -> list[BaseMessage]:
         if not self.chat_history:
-            raise ValueError("The chat history cannot be empty.")
+            return []
         return self._chat_history_to_langchain_messages(self._convert_contents(self.chat_history))
 
     @property

@@ -8,7 +8,7 @@
 from logging import getLogger
 from typing import Any
 
-from aidev_agent.api.bkaidev_client.client import Client
+from aidev_agent.api.bk_aidev import Client
 from aidev_agent.enums import SessionsStatus
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
 
@@ -22,7 +22,7 @@ class AGUISessionWriter(BaseSessionWriter):
 
     Example:
         ```python
-        from aidev_agent.api.bkaidev_client.client import Client
+        from aidev_agent.api.bk_aidev import Client
         from aidev_agent.services.event_handlers import AGUISessionWriter
 
         client = Client(...)

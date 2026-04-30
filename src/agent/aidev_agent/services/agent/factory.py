@@ -354,7 +354,6 @@ class AgentInstanceFactory:
             # FLOW 路径不依赖 agent 配置（与原行为保持一致），跳过预读
             flow_extras = FlowBuildExtras(
                 flow_resource_manager=remaining_extra.pop("flow_resource_manager", None),
-                poll_client=remaining_extra.pop("poll_client", None),
                 task_id=remaining_extra.pop("task_id", None),
                 flow_start_params=remaining_extra.pop("flow_start_params", None) or {},
                 poll_interval=remaining_extra.pop("poll_interval", None),

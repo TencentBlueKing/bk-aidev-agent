@@ -23,15 +23,14 @@ from typing import Any, Callable, ClassVar, Generator
 
 from ag_ui.core import BaseEvent, CustomEvent, EventType, RunErrorEvent, RunStartedEvent
 from ag_ui.encoder import EventEncoder
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SkipValidation
 
-from aidev_agent.api import BKAidevApi
 from aidev_agent.config import settings as agent_settings
 from aidev_agent.core.ag_ui.types import CustomMessageType
 from aidev_agent.enums import AgentType
+from aidev_agent.packages.resource_manager.registry import ResourceManagerProtocol, resource_manager
 from aidev_agent.services.agent.registry import AgentBuildContext, FlowBuildExtras
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper, StreamCancelledError
-from aidev_agent.services.protocols import FlowAgentClient, FlowAgentPollClient
 from aidev_agent.utils.event import RunId, emit_run_finished_event
 
 logger = getLogger(__name__)
@@ -60,15 +59,19 @@ class FlowAgentCompletionAgent(BaseModel):
     agent_type: ClassVar[AgentType] = AgentType.FLOW
 
     thread_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+
     session_code: str | None = None
 
     flow_start_params: dict = Field(default_factory=dict, description="传给 flow_agent/start/ 接口的请求体")
 
     task_id: str | None = Field(default=None, description="已有的 task_id，指定后跳过 start 直接轮询")
 
-    resource_manager: FlowAgentClient | None = None
+    resume_from_node: str | None = Field(
+        default=None,
+        description="节点恢复操作类型（retry/skip），指定后发送 flow_agent_restart 事件",
+    )
 
-    poll_client: FlowAgentPollClient | None = None
+    resource_manager: SkipValidation[ResourceManagerProtocol | None] = None
 
     username: str | None = None
 
@@ -97,14 +100,15 @@ class FlowAgentCompletionAgent(BaseModel):
 
         FlowAgent 不需要 chat_model / tools / knowledge 等装配，仅依赖：
         - 通用字段：``ctx.session_code`` / ``ctx.username`` / ``ctx.resource_manager``
-        - Flow 专属字段：``ctx.flow.{flow_resource_manager, poll_client, task_id,
+        - Flow 专属字段：``ctx.flow.{flow_resource_manager, task_id,
           flow_start_params, poll_interval, poll_timeout}``
 
-        注意：``flow.flow_resource_manager`` 是 flow start 接口专用 client
-        （通常带特殊认证），与 ``ctx.resource_manager``（用于通用 API）解耦；
-        缺省时回落到 ``ctx.resource_manager``。
+        ``resource_manager`` 取值优先级：
+        1. ``flow.flow_resource_manager``（plugin 层注入的带认证实现）
+        2. ``ctx.resource_manager``（工厂装配的通用实现）
+        3. 全局 ``resource_manager()`` 工厂注册器的默认实现
 
-        可选字段（``poll_client`` / ``event_handler``）仅在提供时覆盖，缺省时保留种子默认值。
+        可选字段（``event_handler``）仅在提供时覆盖，缺省时保留种子默认值。
         """
         flow = ctx.flow or FlowBuildExtras()
         self.resource_manager = flow.flow_resource_manager or ctx.resource_manager
@@ -118,8 +122,6 @@ class FlowAgentCompletionAgent(BaseModel):
             flow.poll_timeout if flow.poll_timeout is not None else float(agent_settings.FLOW_AGENT_POLL_TIMEOUT)
         )
         self.username = ctx.username
-        if flow.poll_client is not None:
-            self.poll_client = flow.poll_client
         if ctx.event_handler is not None:
             self.event_handler = ctx.event_handler
         return self
@@ -191,7 +193,10 @@ class FlowAgentCompletionAgent(BaseModel):
 
             logger.info("[FLOW_AGENT] task_id=%s, skip_start=%s", task_id, bool(self.task_id))
 
-            # 仅在未指定 task_id 时发送 start 事件（指定 task_id 表示直接轮询已有任务）
+            # 发送启动/恢复事件：
+            # - 未指定 task_id：发送 flow_agent_start（新任务启动）
+            # - 指定 task_id 且 resume_from_node：发送 flow_agent_restart（节点重试/跳过后恢复轮询）
+            # - 指定 task_id 且无 resume_from_node：跳过启动事件（直接轮询已有任务）
             if not self.task_id:
                 start_event = self._make_custom_event(
                     name=CustomMessageType.FLOW_AGENT_START.value,
@@ -200,13 +205,24 @@ class FlowAgentCompletionAgent(BaseModel):
                 self._dispatch_event(start_event)
                 yield encoder.encode(start_event)
                 self._task_started = True
+            elif self.resume_from_node:
+                resumed_event = self._make_custom_event(
+                    name=CustomMessageType.FLOW_AGENT_RESTART.value,
+                    value={"task_id": str(task_id), "action": self.resume_from_node},
+                )
+                self._dispatch_event(resumed_event)
+                yield encoder.encode(resumed_event)
+                self._task_started = True
+                logger.info(
+                    "[FLOW_AGENT] Node resumed: task_id=%s, action=%s", task_id, self.resume_from_node,
+                )
             else:
                 self._task_started = True
                 logger.info("[FLOW_AGENT] Existing task_id provided, skip flow_agent_start event: task_id=%s", task_id)
 
-            # 轮询任务状态 —— 直接使用 SDK 的 client 调平台 API Gateway，不经过 plugin 层中转
-            poll_client = self._get_poll_client()
-            yield from self._poll_task(poll_client, str(task_id), encoder, run_id)
+            # 轮询任务状态
+            rm = self._get_client()
+            yield from self._poll_task(rm, str(task_id), encoder, run_id)
 
         except StreamCancelledError as e:
             # 任务被取消，通过 generator 机制向外传递异常
@@ -220,7 +236,7 @@ class FlowAgentCompletionAgent(BaseModel):
             yield from self._emit_error_and_finish(encoder, run_id, str(e))
 
     def _poll_task(
-        self, client: FlowAgentPollClient, task_id: str, encoder: EventEncoder, run_id: str
+        self, client: ResourceManagerProtocol, task_id: str, encoder: EventEncoder, run_id: str
     ) -> Generator[str, None, None]:
         """轮询任务状态并产出 SSE 事件
 
@@ -246,7 +262,6 @@ class FlowAgentCompletionAgent(BaseModel):
             _poll_count += 1
             if GeneratorStreamingHelper.is_cancelled(stream_thread_id):
                 logger.info("[FLOW_AGENT] Task cancelled: task_id=%s, poll_count=%d", task_id, _poll_count)
-
                 # 根据任务是否已启动决定事件类型：
                 # - 已启动（flow_agent_start 已发送）：再轮询一次拿 revoke 状态，发 flow_agent_result + RUN_FINISHED
                 # - 未启动（任务还没真正开始）：发 RUN_ERROR，触发暂停补写逻辑
@@ -336,7 +351,7 @@ class FlowAgentCompletionAgent(BaseModel):
                 self._dispatch_event(end_event)
                 yield encoder.encode(end_event)
 
-                yield from self._emit_finish(encoder, run_id)
+                yield from self._emit_finish(run_id)
                 return
 
             self._interruptible_sleep(self.poll_interval, stream_thread_id)
@@ -362,21 +377,15 @@ class FlowAgentCompletionAgent(BaseModel):
             if GeneratorStreamingHelper.is_cancelled(thread_id):
                 return
 
-    def _get_client(self) -> FlowAgentClient:
-        """获取 API 客户端（用于 start 接口等需要特殊认证的场景）"""
+    def _get_client(self) -> ResourceManagerProtocol:
+        """获取资源管理器（用于 start 接口等需要特殊认证的场景）
+
+        优先使用外部注入的 resource_manager（plugin 层传入的带认证实现），
+        否则从全局 ``resource_manager`` 工厂注册器取默认实现。
+        """
         if self.resource_manager is not None:
             return self.resource_manager
-        return BKAidevApi.get_client()
-
-    def _get_poll_client(self) -> FlowAgentPollClient:
-        """获取轮询专用客户端
-
-        优先使用外部传入的 poll_client，否则使用默认的 BKAidevApi.get_client()。
-        轮询 task_info 需要传递用户认证信息（X-BKAIDEV-USER header）。
-        """
-        if self.poll_client is not None:
-            return self.poll_client
-        return BKAidevApi.get_client()
+        return resource_manager()
 
     def _emit_error_and_finish(self, encoder: EventEncoder, run_id: str, message: str) -> Generator[str, None, None]:
         """发送 RUN_ERROR + RUN_FINISHED 事件对
@@ -392,15 +401,14 @@ class FlowAgentCompletionAgent(BaseModel):
         error_event = RunErrorEvent(type=EventType.RUN_ERROR, message=message)
         self._dispatch_event(error_event)
         yield encoder.encode(error_event)
-        yield from self._emit_finish(encoder, run_id)
+        yield from self._emit_finish(run_id)
 
-    def _emit_finish(self, encoder: EventEncoder, run_id: str) -> Generator[str, None, None]:
+    def _emit_finish(self, run_id: str) -> Generator[str, None, None]:
         """发送 RUN_FINISHED 事件
 
         使用通用的事件发送函数，确保统一的事件格式和编码。
 
         Args:
-            encoder: SSE 编码器（此参数保留以兼容现有调用，但不再使用）
             run_id: 当前 run 的唯一标识
         """
         yield emit_run_finished_event(

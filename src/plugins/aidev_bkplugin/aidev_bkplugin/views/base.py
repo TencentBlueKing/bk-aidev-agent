@@ -3,7 +3,8 @@
 import json
 from logging import getLogger
 
-from bk_plugin_framework.kit.decorators import inject_user_token
+from bk_plugin_framework.kit.api import custom_authentication_classes
+from bk_plugin_framework.kit.decorators import inject_user_token, login_exempt
 from django.conf import settings
 from django.http.response import StreamingHttpResponse
 from django.utils.decorators import method_decorator
@@ -14,10 +15,9 @@ from rest_framework.status import is_success
 from rest_framework.views import APIView, Response
 from rest_framework.viewsets import ViewSetMixin
 
-from aidev_bkplugin.packages.drf.authentication import custom_authentication_classes
-from aidev_bkplugin.packages.drf.decorators import login_exempt
 from aidev_bkplugin.permissions import AgentPluginPermission
-from aidev_bkplugin.utils import bkaidev_api_client, get_flow_agent_client
+from aidev_bkplugin.utils import bkaidev_api_client
+from aidev_agent.packages.resource_manager.agent import AgentResourceManager
 
 
 class IgnoreClientContentNegotiation(DefaultContentNegotiation):
@@ -35,21 +35,14 @@ logger = getLogger(__name__)
 client = bkaidev_api_client
 
 
-class _FlowAgentLocalClient:
-    """
-    包装 flow agent start 接口，自动附加用户认证信息
+class PluginResourceManager(AgentResourceManager):
+    """Plugin 层 ResourceManager，自动附加用户认证信息。
+
+    传入 username，基类 ``get_client()`` 自动通过 bkoauth 获取 access_token 并注入用户认证。
     """
 
     def __init__(self, username: str):
-        self._username = username
-
-    def start_flow_agent(self, **kwargs) -> dict:
-        flow_client, auth_headers = get_flow_agent_client(self._username)
-        headers = kwargs.pop("headers", {})
-        # auth_headers 提供认证信息，调用方传入的 headers 可覆盖
-        auth_headers.update(headers)
-        kwargs["headers"] = auth_headers
-        return flow_client.start_flow_agent(**kwargs)
+        super().__init__(username=username)
 
 
 @method_decorator(login_exempt, name="dispatch")

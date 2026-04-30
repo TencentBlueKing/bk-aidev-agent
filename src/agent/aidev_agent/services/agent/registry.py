@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     from aidev_agent.packages.resource_manager import ResourceManagerProtocol
     from aidev_agent.services.common_agent import CommonQAAgent
     from aidev_agent.services.config_manager import AgentConfig, AgentConfigManager
-    from aidev_agent.services.protocols import FlowAgentClient, FlowAgentPollClient
 
 
 # ============================== 构建期上下文 ==============================
@@ -49,12 +48,11 @@ class FlowBuildExtras:
     """Flow agent 构建期专属字段（仅在 ``agent_type == FLOW`` 时填充）
 
     与 ``AgentBuildContext.resource_manager`` 解耦：``flow_resource_manager`` 是 flow
-    start 接口专用 client（通常带特殊认证），缺省时由 ``FlowAgentCompletionAgent.build``
-    回落到 ``ctx.resource_manager``。
+    start 接口专用资源管理器（通常带特殊认证），缺省时由 ``FlowAgentCompletionAgent.build``
+    回落到 ``ctx.resource_manager``，最终回落到全局 ``resource_manager()`` 工厂。
     """
 
-    flow_resource_manager: Optional["FlowAgentClient"] = None
-    poll_client: Optional["FlowAgentPollClient"] = None
+    flow_resource_manager: Optional["ResourceManagerProtocol"] = None
     task_id: Optional[str] = None
     flow_start_params: dict = field(default_factory=dict)
     poll_interval: Optional[float] = None

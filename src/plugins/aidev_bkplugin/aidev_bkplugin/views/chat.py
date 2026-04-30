@@ -21,7 +21,7 @@ from aidev_bkplugin.services.agent import (
     get_or_create_session_by_thread_id,
 )
 from aidev_bkplugin.utils import bkaidev_api_client
-from aidev_bkplugin.views.base import IgnoreClientContentNegotiation, PluginViewSet, _FlowAgentLocalClient, logger
+from aidev_bkplugin.views.base import IgnoreClientContentNegotiation, PluginViewSet, PluginResourceManager, logger
 
 
 class ChatCompletionViewSet(PluginViewSet):
@@ -222,7 +222,7 @@ class ChatCompletionViewSet(PluginViewSet):
             # 通过 **extra 透传给 FlowAgentCompletionAgent.build(ctx)；
             # flow_resource_manager 是 flow start 接口专用 client（带特殊认证），与
             # 工厂的 resource_manager（用于会话上下文等通用 API）解耦。
-            flow_resource_manager=_FlowAgentLocalClient(username=username),
+            flow_resource_manager=PluginResourceManager(username=username),
             task_id=task_id,
             flow_start_params=flow_start_params,
             poll_interval=poll_interval,

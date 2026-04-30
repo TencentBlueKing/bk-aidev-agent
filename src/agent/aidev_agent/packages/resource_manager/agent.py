@@ -1,78 +1,52 @@
 # -*- coding: utf-8 -*-
 """``AgentResourceManager``：``ResourceManagerProtocol`` 的默认实现。
 
-持有底层 ``Client``（``aidev_agent.api.bkaidev_client.client``）做 HTTP 调用；
-业务装配（``Tool / ToolExtra / settings`` 拼装、``version`` 入 ``params``、
-``data`` 字段抽取等）收敛在本类内部，``Client`` 只负责 OpenAPI operation 调用。
+负责 Client 创建 / 用户认证注入；业务方法由 ``BaseResourceManager`` 提供。
 """
 
 from __future__ import annotations
 
-import json
-from typing import Any, Optional
-
-from langchain_core.tools import StructuredTool
+from logging import getLogger
+from typing import TYPE_CHECKING, Any
 
 from aidev_agent.api.bk_aidev import BKAidevApi
-from aidev_agent.api.bkaidev_client.client import Client
-from aidev_agent.config import settings
-from aidev_agent.enums import CredentialType
-from aidev_agent.packages.langchain_core.tools import Tool, ToolExtra, make_structured_tool
+from aidev_agent.packages.resource_manager.base import BaseResourceManager
+
+try:
+    from bkoauth import get_access_token_by_user
+except ImportError:
+    get_access_token_by_user = None
+
+if TYPE_CHECKING:
+    from aidev_agent.api.bk_aidev import Client
+
+logger = getLogger(__name__)
 
 
-class AgentResourceManager:
-    """``ResourceManagerProtocol`` 的默认实现，包装底层 ``Client``。
+class AgentResourceManager(BaseResourceManager):
+    """``ResourceManagerProtocol`` 的默认实现。
 
-    ``client`` 默认走 ``BKAidevApi.get_client()`` 自取；测试 / 多租户场景可显式注入。
+    应用态：只传 app_code + app_secret。
+    用户态：额外传 username / access_token，自动处理 bkoauth 认证。
     """
 
-    def __init__(self, client: Optional[Client] = None) -> None:
-        self.client = client if client is not None else BKAidevApi.get_client()
-
-    def retrieve_knowledgebase(self, id: int, **kwargs) -> dict:
-        return self.client.api.appspace_retrieve_knowledgebase(path_params={"id": id}, **kwargs).get("data", {})
-
-    def retrieve_knowledge(self, id: int, **kwargs) -> dict:
-        return self.client.api.appspace_retrieve_knowledge(path_params={"id": id}, **kwargs).get("data", {})
-
-    def get_chat_session_context(self, session_code: str, **kwargs) -> list[dict]:
-        return self.client.api.get_chat_session_context(path_params={"session_code": session_code}, **kwargs).get(
-            "data", []
+    def get_client(self, **kwargs: Any) -> Client:
+        """获取已完成认证信息注入的 API Client。"""
+        # 1. 创建 Client
+        client = BKAidevApi.get_client(
+            app_code=self.app_code,
+            app_secret=self.app_secret,
+            **kwargs,
         )
 
-    def retrieve_agent_config(self, agent_code: str, version: Optional[str] = None, **kwargs) -> dict:
-        params = kwargs.pop("params", None) or {}
-        if version is not None:
-            params["version"] = version
-        if params:
-            kwargs["params"] = params
-        return self.client.api.retrieve_agent_config(path_params={"agent_code": agent_code}, **kwargs).get("data", {})
-
-    def retrieve_skill(self, skill_id: str, version: str, **kwargs) -> dict:
-        params = kwargs.pop("params", {})
-        params["version"] = version
-        return self.client.api.retrieve_resource_v1_skill(
-            path_params={"skill_id": skill_id}, params=params, **kwargs
-        ).get("data", {})
-
-    def construct_tool(self, tool_code: str, **kwargs) -> StructuredTool:
-        retrieve_tool = (
-            self.client.api.retrieve_tool if kwargs.pop("appspace", True) else self.client.api.appspace_retrieve_tool
-        )
-        result = retrieve_tool(path_params={"tool_code": tool_code}, **kwargs)
-        result["data"]["tool_cn_name"] = result["data"]["tool_name"]
-        if result["data"].get("credential_type", "") != CredentialType.NULL.value:
-            tool = Tool.model_validate(result["data"])
-            tool.extra = ToolExtra(
-                header={
-                    "X-Bkapi-Authorization": json.dumps(
-                        {"bk_app_code": settings.APP_CODE, "bk_app_secret": settings.SECRET_KEY}
-                    )
-                }
-            )
-            return make_structured_tool(tool)
-        return make_structured_tool(Tool.model_validate(result["data"]))
-
-    def knowledge_query(self, data: dict[str, Any]) -> dict:
-        result = self.client.api.create_knowledgebase_query(data=data)
-        return result.get("data", {})
+        # 2. 注入用户认证
+        access_token = self.access_token
+        if not access_token and self.username and get_access_token_by_user is not None:
+            try:
+                token = get_access_token_by_user(self.username)
+                access_token = getattr(token, "access_token", None)
+            except Exception:
+                logger.warning("get access_token by username failed: %s", self.username)
+                access_token = None
+        client.update_bkapi_authorization(access_token=access_token, bk_username=self.username or "")
+        return client

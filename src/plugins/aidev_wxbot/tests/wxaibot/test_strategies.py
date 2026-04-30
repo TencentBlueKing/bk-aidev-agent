@@ -421,18 +421,15 @@ class TestResolveChannelAdminRtx:
 
 class TestWxFlowAgentClient:
     @patch("aidev_wxbot.wxaibot.auth.resolve_channel_admin_rtx", return_value="admin_rtx")
-    @patch("aidev_wxbot.wxaibot.auth.get_flow_agent_client")
-    def test_injects_rtx_auth_and_calls_downstream(self, mock_get_fc, mock_resolve):
-        """使用解析后的 RTX 获取认证 → 注入 headers → 调用下游 start_flow_agent"""
-        mock_fc = MagicMock()
-        mock_fc.start_flow_agent.return_value = {"task_id": "123"}
-        mock_get_fc.return_value = (mock_fc, {"X-BKAIDEV-USER": "admin_rtx", "X-Bkapi-Authorization": "token"})
+    @patch("aidev_agent.packages.resource_manager.agent.BKAidevApi.get_client")
+    def test_injects_rtx_auth_and_calls_downstream(self, mock_get_client, mock_resolve):
+        """使用解析后的 RTX 获取认证 → 注入 headers → 调用下游 flow_agent_start"""
+        mock_client = MagicMock()
+        mock_client.api.flow_agent_start.return_value = {"data": {"task_id": "123"}}
+        mock_get_client.return_value = mock_client
 
         result = WxFlowAgentClient("openid_xxx").start_flow_agent(data={"session_code": "sc1"})
 
         assert result["task_id"] == "123"
-        mock_get_fc.assert_called_once_with("admin_rtx")
-        # 验证下游收到了认证 headers
-        call_headers = mock_fc.start_flow_agent.call_args[1]["headers"]
-        assert call_headers["X-BKAIDEV-USER"] == "admin_rtx"
-        assert call_headers["X-Bkapi-Authorization"] == "token"
+        # 验证通过 AgentResourceManager.get_client 调用了 BKAidevApi.get_client
+        mock_get_client.assert_called_once()

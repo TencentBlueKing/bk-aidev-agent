@@ -10,8 +10,8 @@ from rest_framework.views import Response
 
 from aidev_bkplugin.constants import AGUI_PROTOCOL_VERSION
 from aidev_bkplugin.services.agent import get_agent_config_info
-from aidev_bkplugin.utils import get_flow_agent_client, is_local_dev
-from aidev_bkplugin.views.base import PluginViewSet, client, logger
+from aidev_bkplugin.utils import is_local_dev
+from aidev_bkplugin.views.base import PluginViewSet, client, logger, PluginResourceManager
 
 
 class ChatSessionViewSet(PluginViewSet):
@@ -150,11 +150,8 @@ class ChatSessionContentViewSet(PluginViewSet):
                 agent_info = get_agent_config_info(username)
                 if agent_info.get("agent_type") == "flow":
                     logger.info(f"Flow agent detected, revoking flow task for session_code={session_code}")
-                    flow_client, flow_headers = get_flow_agent_client(username)
-                    revoke_result = flow_client.stop_flow_agent_task(
-                        session_code=session_code,
-                        headers=flow_headers,
-                    )
+                    rm = PluginResourceManager(username=username)
+                    revoke_result = rm.stop_flow_agent_task(session_code=session_code)
                     logger.info(f"[FLOW_AGENT] revoke 调用成功: session_code={session_code}, result={revoke_result}")
                     # revoke 后更新 session 中的 flow_agent_status 为 failed
                     try:

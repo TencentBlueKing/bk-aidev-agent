@@ -3,14 +3,14 @@
 企微渠道认证适配。
 封装企微渠道特有的身份解析和 API Gateway 认证逻辑：
 - resolve_channel_admin_rtx: 从渠道配置获取管理员 RTX，用于 bkoauth 认证
-- WxFlowAgentClient: 满足 FlowAgentClient 协议的企微认证适配器
+- WxFlowAgentClient: 满足 ResourceManagerProtocol 中 flow agent 方法的企微认证适配器
 """
 
 from __future__ import annotations
 
 from logging import getLogger
 
-from aidev_bkplugin.utils import get_flow_agent_client
+from aidev_bkplugin.views.base import PluginResourceManager
 
 from ..api.bkaidev import BkAiDevApi
 
@@ -41,32 +41,17 @@ def resolve_channel_admin_rtx(fallback_username: str) -> str:
     return fallback_username
 
 
-class WxFlowAgentClient:
-    """
-    企微渠道的 FlowAgentClient —— 复用 bkplugin 的认证体系。
-    使用渠道管理员 RTX 获取 access_token 进行 Gateway 认证，
-    满足 FlowAgentClient 协议
-    """
+class WxFlowAgentClient(PluginResourceManager):
 
     def __init__(self, username: str, rtx_username: str | None = None):
         self._username = username
-        self._rtx_username = rtx_username or resolve_channel_admin_rtx(username)
+        rtx = rtx_username or resolve_channel_admin_rtx(username)
+        super().__init__(username=rtx)
 
-    def start_flow_agent(self, data: dict | None = None, **kwargs) -> dict:
-        """启动 flow agent 任务，满足 FlowAgentClient 协议。"""
+    def start_flow_agent(self, data: dict | None = None) -> dict:
+        """启动 flow agent 任务，满足 ResourceManagerProtocol 协议。"""
         logger.info(
             f"[WxFlowAgentClient] start_flow_agent: "
-            f"wx_user={self._username}, rtx_user={self._rtx_username}"
+            f"wx_user={self._username}, rtx_user={self.username}"
         )
-        flow_client, auth_headers = get_flow_agent_client(self._rtx_username)
-
-        if "X-Bkapi-Authorization" not in auth_headers:
-            logger.warning(
-                f"[WxFlowAgentClient] 未获取到 access_token，"
-                f"rtx_user={self._rtx_username}，Gateway 认证可能失败"
-            )
-
-        headers = kwargs.pop("headers", {})
-        auth_headers.update(headers)
-        kwargs["headers"] = auth_headers
-        return flow_client.start_flow_agent(data=data or {}, **kwargs)
+        return super().start_flow_agent(data=data or {})

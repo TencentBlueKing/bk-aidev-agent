@@ -142,6 +142,7 @@ class CustomMessageType(Enum):
     FLOW_AGENT_START = "flow_agent_start"
     FLOW_AGENT_RESULT = "flow_agent_result"
     FLOW_AGENT_END = "flow_agent_end"
+    FLOW_AGENT_RESTART = "flow_agent_restart"
 
 
 class ExtendBaseMessage(BaseModel):

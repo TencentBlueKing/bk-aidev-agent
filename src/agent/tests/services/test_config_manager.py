@@ -46,7 +46,7 @@ class MockResourceManager:
     def construct_tool(self, tool_code: str, **kwargs):
         pass
 
-    def knowledge_query(self, data: dict) -> dict:
+    def knowledge_query(self, data: dict, **kwargs) -> dict:
         return {}
 
 
