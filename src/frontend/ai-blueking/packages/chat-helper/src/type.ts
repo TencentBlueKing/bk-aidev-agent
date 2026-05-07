@@ -29,10 +29,12 @@ import type { IResponse } from './http/fetch';
 
 export interface IUseChatHelperOptions {
   protocol?: ISSEProtocol;
+  /** 自定义拦截器，优先级高于内置 requestData 拦截器 */
   interceptors?: {
     request?: (config: IRequestConfig) => IRequestConfig;
     response?: (response: IResponse) => IResponse;
   };
+ /** 全局默认请求配置，通过内置拦截器自动合并到每次请求（函数形式可延迟求值） */
   requestData: {
     data?: (() => Record<string, unknown>) | Record<string, unknown>;
     headers?: (() => Record<string, string>) | Record<string, string>;

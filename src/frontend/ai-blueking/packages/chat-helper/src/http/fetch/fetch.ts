@@ -31,12 +31,14 @@ export interface ApiResponse<T = unknown> {
   message: string;
 }
 
-// 请求配置接口
+/** 单次请求配置，优先级高于 `requestData` 全局默认值 */
 export interface IRequestConfig {
   baseURL?: string;
   controller?: AbortController;
   credentials?: 'include' | 'omit' | 'same-origin';
+  /** 请求体；可传函数以便延迟求值（在 `prepareRequest` 中通过 `getValue` 解析） */
   data?: (() => unknown) | unknown;
+  /** 请求头；可传函数以便延迟求值，便于动态注入（如 token） */
   headers?: (() => Record<string, string>) | Record<string, string>;
   method?: string;
   mode?: 'cors' | 'no-cors' | 'same-origin';
@@ -49,7 +51,6 @@ export interface IRequestConfig {
   validateStatus?: (status: number) => boolean;
 }
 
-// 错误接口
 export interface IRequestError extends Error {
   code?: string;
   config: IRequestConfig;
@@ -57,7 +58,6 @@ export interface IRequestError extends Error {
   response?: IResponse;
 }
 
-// 响应接口
 export interface IResponse<T = unknown> {
   config: IRequestConfig;
   data: T;
@@ -66,7 +66,6 @@ export interface IResponse<T = unknown> {
   statusText: string;
 }
 
-// SSE 配置接口
 export interface ISSEConfig extends ISSEProtocol, Omit<IRequestConfig, 'responseType'> {}
 
 export interface ISSEProtocol {
@@ -76,7 +75,6 @@ export interface ISSEProtocol {
   onStart?: () => void;
 }
 
-// 拦截器接口
 interface IInterceptor<T> {
   fulfilled?: (value: T) => T;
   rejected?: (error: unknown) => unknown;
@@ -139,7 +137,6 @@ export class FetchClient {
     };
   }
 
-  // 应用响应拦截器的错误处理
   applyResponseErrorInterceptors(error: unknown): unknown {
     let rejectedError: unknown = error;
     this.interceptors.response.forEach(interceptor => {
@@ -150,7 +147,6 @@ export class FetchClient {
     return rejectedError;
   }
 
-  // 创建新实例
   create(config?: IRequestConfig): FetchClient {
     return new FetchClient(mergeConfig(this.defaults, config || {}));
   }
@@ -179,15 +175,10 @@ export class FetchClient {
     return this.request<T>({ ...config, url, method: 'POST', data });
   }
 
-  // 准备请求：合并配置、应用拦截器、构建 URL 和请求体
   prepareRequest(config: IRequestConfig, isStream = false) {
-    // 合并配置
     const mergedConfig = mergeConfig(this.defaults, config);
-
-    // 总的请求配置
     let requestConfig = mergedConfig;
 
-    // 应用请求拦截器
     this.interceptors.request.forEach(interceptor => {
       if (interceptor.fulfilled) {
         try {
@@ -201,23 +192,19 @@ export class FetchClient {
       }
     });
 
-    // 构建完整 URL
     let url = requestConfig.url || '';
     if (requestConfig.baseURL && !url.startsWith('http')) {
       url = requestConfig.baseURL + url;
     }
     url = buildURL(url, requestConfig.params);
 
-    // 处理请求体
     let body: BodyInit | null | undefined = getValue(requestConfig.data) as BodyInit | null | undefined;
     const headers = new Headers(getValue(requestConfig.headers));
 
-    // 流式请求设置 Accept 头
     if (isStream && !headers.has('Accept')) {
       headers.set('Accept', 'text/event-stream');
     }
 
-    // 处理请求体
     if (body !== undefined && body !== null) {
       if (requestConfig.transformRequest) {
         body = requestConfig.transformRequest(body, getValue(requestConfig.headers)) as BodyInit | null | undefined;
@@ -232,10 +219,7 @@ export class FetchClient {
       }
     }
 
-    // 创建 AbortController
-    const controller = requestConfig.controller ? requestConfig.controller : new AbortController();
-
-    // 请求配置
+    const controller = requestConfig.controller ?? new AbortController();
     const fetchConfig = {
       method: requestConfig.method,
       credentials: requestConfig.credentials,
@@ -258,25 +242,20 @@ export class FetchClient {
   }
 
   async request<T = unknown>(config: IRequestConfig): Promise<T> {
-    // 准备请求
     const { url, fetchConfig, requestConfig, controller } = this.prepareRequest(config);
 
-    // 创建超时控制
     const timeoutId =
       requestConfig.timeout && requestConfig.timeout > 0
         ? setTimeout(() => controller.abort(), requestConfig.timeout)
         : undefined;
 
     try {
-      // 发送请求
       const fetchResponse = await fetch(url, fetchConfig);
 
-      // 清除超时定时器
       if (timeoutId) {
         clearTimeout(timeoutId);
       }
 
-      // 解析响应数据
       let data: unknown;
       const responseType = requestConfig.responseType || 'json';
 
@@ -304,12 +283,10 @@ export class FetchClient {
         data = null;
       }
 
-      // 应用响应转换
       if (requestConfig.transformResponse) {
         data = requestConfig.transformResponse(data);
       }
 
-      // 构建响应对象
       const response: IResponse<ApiResponse<T>> = {
         data: data as ApiResponse<T>,
         status: fetchResponse.status,
@@ -318,7 +295,6 @@ export class FetchClient {
         config: requestConfig,
       };
 
-      // 验证状态码
       const validateStatus = requestConfig.validateStatus || this.defaults.validateStatus!;
       if (!validateStatus(fetchResponse.status)) {
         const message =
@@ -327,7 +303,6 @@ export class FetchClient {
         throw createError(message, requestConfig, `ERR_BAD_RESPONSE`, response);
       }
 
-      // 应用响应拦截器
       let finalResponse: IResponse<ApiResponse<T>> = response;
       this.interceptors.response.forEach(interceptor => {
         if (interceptor.fulfilled) {
@@ -342,12 +317,11 @@ export class FetchClient {
         }
       });
 
-      // 等待所有异步拦截器完成
       if (finalResponse instanceof Promise) {
         finalResponse = await finalResponse;
       }
 
-      // 检查业务逻辑状态码
+      // 检查业务状态码（区别于 HTTP 状态码）
       const apiResponse = finalResponse.data as ApiResponse<T>;
       if (![0, 'success'].includes(apiResponse.code)) {
         throw createError(apiResponse.message, requestConfig, apiResponse.code, finalResponse);
@@ -355,18 +329,15 @@ export class FetchClient {
 
       return apiResponse.data;
     } catch (error: unknown) {
-      // 清除超时定时器
       if (timeoutId) {
         clearTimeout(timeoutId);
       }
 
-      // 处理中断错误
       if (error instanceof Error && error.name === 'AbortError') {
         const requestError = createError('Request timeout', requestConfig, 'ECONNABORTED', undefined);
         throw this.applyResponseErrorInterceptors(requestError);
       }
 
-      // 处理其他错误
       const requestError =
         (error as IRequestError).isAxiosError === true
           ? (error as IRequestError)
@@ -376,21 +347,16 @@ export class FetchClient {
     }
   }
 
-  // SSE 流式请求便捷方法
   stream(url: string, config?: ISSEConfig) {
     return this.streamRequest({ ...config, url });
   }
 
-  // SSE 流式请求
   async streamRequest(config: ISSEConfig) {
-    // 准备请求（标记为流式请求）
     const { url, fetchConfig, requestConfig } = this.prepareRequest(config, true);
 
     try {
-      // 发送请求
       const fetchResponse = await fetch(url, fetchConfig);
 
-      // 验证状态码
       const validateStatus = requestConfig.validateStatus || this.defaults.validateStatus!;
       if (!validateStatus(fetchResponse.status)) {
         let message = `Request failed with status code ${fetchResponse.status}`;
@@ -407,10 +373,8 @@ export class FetchClient {
         return;
       }
 
-      // 触发 onStart 回调
       config.onStart?.();
 
-      // 获取 reader
       const reader = fetchResponse.body?.pipeThrough(new window.TextDecoderStream()).getReader();
       if (!reader) {
         const error = new Error('IResponse body is not readable');
@@ -418,10 +382,9 @@ export class FetchClient {
         return;
       }
 
-      // 临时存储数据
+      // 缓存跨行分片数据
       let temp = '';
 
-      // 判断是否为 JSON 字符串
       const isJson = (str: string): boolean => {
         try {
           JSON.parse(str);
@@ -435,7 +398,6 @@ export class FetchClient {
       while (true) {
         const { value, done } = await reader.read();
 
-        // 接口完成
         if (done) {
           config.onDone?.();
           break;
@@ -466,7 +428,6 @@ export class FetchClient {
   }
 }
 
-// 构建完整 URL
 function buildURL(url: string, params?: Record<string, unknown>): string {
   if (!params) return url;
 
@@ -491,7 +452,6 @@ function buildURL(url: string, params?: Record<string, unknown>): string {
   return url;
 }
 
-// 创建错误对象
 function createError(
   message: string,
   config: IRequestConfig,
@@ -506,25 +466,22 @@ function createError(
   return error;
 }
 
-// 获取值
 function getValue<T>(value: (() => T) | T): T {
   return typeof value === 'function' ? (value as () => T)() : value;
 }
 
-// 判断是否是普通对象（排除类实例如 AbortController、Headers 等）
+/** 排除 AbortController、Headers 等类实例，只对普通对象深度合并 */
 function isPlainObject(value: unknown): boolean {
   if (!value || typeof value !== 'object') return false;
   const proto = Object.getPrototypeOf(value);
   return proto === Object.prototype || proto === null;
 }
 
-// 合并配置
 function mergeConfig(config1: IRequestConfig, config2: IRequestConfig): IRequestConfig {
   const output: Record<string, unknown> = { ...config1 };
 
   for (const key in config2) {
     const value2 = config2[key as keyof IRequestConfig];
-    // 只对普通对象进行深度合并，类实例（如 AbortController）直接赋值
     if (isPlainObject(value2)) {
       const value1 = config1[key as keyof IRequestConfig];
       output[key] = mergeConfig((value1 as IRequestConfig) || {}, value2 as IRequestConfig);
@@ -536,8 +493,6 @@ function mergeConfig(config1: IRequestConfig, config2: IRequestConfig): IRequest
   return output as IRequestConfig;
 }
 
-// 创建默认实例
 const fetchClient = new FetchClient();
 
-// 导出默认实例
 export default fetchClient;

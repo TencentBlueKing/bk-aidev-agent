@@ -26,16 +26,79 @@
 
 import { FetchClient } from './fetch';
 
+import type { IRequestConfig } from './fetch';
 import type { IUseChatHelperOptions } from '../../type';
 
 export type * from './fetch';
+
+/** 仅支持 body 的 HTTP 方法 */
+const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/** 排除 FormData / Blob / ArrayBuffer 等，只对普通对象展开合并 */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/** 解析「函数 | 值」两种形式，支持延迟求值（如响应式 token） */
+function resolveValue<T>(value: (() => T) | T | undefined): T | undefined {
+  return typeof value === 'function' ? (value as () => T)() : value;
+}
+
+/**
+ * 注册全局默认请求配置拦截器，将 `requestData.headers/data` 自动合并到每次请求。
+ * - `headers` 注入所有请求；`data` 仅注入 POST/PUT/PATCH/DELETE，避免 GET/HEAD body 报错。
+ * - 优先级最低（单次 IRequestConfig > 用户拦截器 > 本拦截器）。
+ */
+function registerRequestDataInterceptor(client: FetchClient, opts: IUseChatHelperOptions): void {
+  const { headers: extraHeadersFn, data: extraDataFn } = opts.requestData;
+  if (!extraHeadersFn && !extraDataFn) return;
+
+  client.interceptors.request.use((config: IRequestConfig): IRequestConfig => {
+    let result = config;
+
+    if (extraHeadersFn) {
+      const extra = resolveValue(extraHeadersFn);
+      if (extra && Object.keys(extra).length > 0) {
+        const existing = resolveValue(config.headers) ?? {};
+        result = { ...result, headers: { ...existing, ...extra } };
+      }
+    }
+
+    const method = (config.method ?? 'GET').toUpperCase();
+    if (extraDataFn && BODY_METHODS.has(method)) {
+      const extra = resolveValue(extraDataFn);
+      if (extra && Object.keys(extra).length > 0) {
+        const existing = resolveValue(config.data);
+        if (existing == null) {
+          // body 为空（如 clearSession POST undefined）：直接用 extra 作为 body
+          result = { ...result, data: extra };
+        } else if (isPlainObject(existing)) {
+          // body 是普通对象：浅合并，extra 字段优先级更低（existing 已有同名字段时保留）
+          result = { ...result, data: { ...extra, ...(existing as Record<string, unknown>) } };
+        } else {
+          // body 是 FormData / Blob / string 等：跳过注入，避免破坏原始 body
+          console.warn(
+            '[chat-helper] requestData.data 无法注入：当前请求体不是普通对象（FormData/Blob/string 等），已跳过合并。',
+            { method, existingType: typeof existing },
+          );
+        }
+      }
+    }
+
+    return result;
+  });
+}
 
 export const useFetch = (options: IUseChatHelperOptions) => {
   const fetchClient = new FetchClient({
     baseURL: options.requestData.urlPrefix,
   });
 
-  // 用户定义拦截器
+  // 先注册默认拦截器（优先级低），再注册用户拦截器（优先级高）
+  registerRequestDataInterceptor(fetchClient, options);
+
   if (options.interceptors?.request) {
     fetchClient.interceptors.request.use(options.interceptors.request);
   }
@@ -45,12 +108,13 @@ export const useFetch = (options: IUseChatHelperOptions) => {
 
   // 重置 fetchClient 配置
   const reset = (newOptions: IUseChatHelperOptions) => {
-    // 更新 baseURL
     fetchClient.defaults.baseURL = newOptions.requestData.urlPrefix;
 
-    // 清空并重新注册拦截器
+    // 清空并重新注册所有拦截器
     fetchClient.interceptors.request.clear();
     fetchClient.interceptors.response.clear();
+
+    registerRequestDataInterceptor(fetchClient, newOptions);
 
     if (newOptions.interceptors?.request) {
       fetchClient.interceptors.request.use(newOptions.interceptors.request);
