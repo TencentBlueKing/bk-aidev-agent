@@ -4,7 +4,7 @@ import express from "express"
 import { version } from "../../package.json"
 import container from "markdown-it-container"
 
-const base = process.env.VITEPRESS_BASE || '/'
+const base = process.env.VITEPRESS_BASE || '__DOCS_BASE__/'
 const require = createRequire(import.meta.url)
 const { createMockAguiRouter } = require("./mock-agui-routes.cjs")
 
