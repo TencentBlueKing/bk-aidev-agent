@@ -26,7 +26,7 @@
 
 import { ref } from 'vue';
 
-import { AGUIProtocol, ApprovalInterruptTicketStatus } from '../event';
+import { AGUIProtocol, ApprovalInterruptTicketStatus, type IResume } from '../event';
 import { MessageRole, MessageStatus } from '../message';
 
 import type { IRequestConfig, ISSEProtocol } from '../http';
@@ -76,7 +76,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     }
   };
 
-  const streamRequest = async (sessionCode: string, url?: string, config?: IRequestConfig) => {
+  const streamRequest = async (sessionCode: string, url?: string, config?: IRequestConfig, resume?: IResume) => {
     // ag-ui 协议需要注入消息模块
     if (usedProtocol instanceof AGUIProtocol) {
       usedProtocol.injectMessageModule(mediator.message);
@@ -105,6 +105,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       method: 'POST',
       data: {
         session_code: sessionCode,
+        resume,
         execute_kwargs: {
           stream: true,
         },
