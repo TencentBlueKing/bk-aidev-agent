@@ -26,12 +26,12 @@
 
 import { ref } from 'vue';
 
-import { AGUIProtocol } from '../event';
+import { AGUIProtocol, ApprovalInterruptTicketStatus } from '../event';
 import { MessageRole, MessageStatus } from '../message';
 
 import type { IRequestConfig, ISSEProtocol } from '../http';
 import type { IMediatorModule } from '../mediator';
-import type { IMessageProperty, IUserMessage } from '../message/type';
+import type { IInterruptMessage, IMessageProperty, IUserMessage } from '../message/type';
 import type { IAgentInfo } from './type';
 import { SessionStatus } from '../session/type';
 
@@ -160,6 +160,33 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
   };
 
   /**
+   * 轮询接口，判断是否可以继续聊天
+   * @param sessionCode - 会话编码
+   * @returns 是否可以继续聊天
+   */
+  const pollResumeSession = (sessionCode: string) => {
+    const lastMessage = mediator.message?.list.value.at(-1) as IInterruptMessage;
+    const isInterruptMessage = lastMessage?.role === MessageRole.Interrupt;
+    const isTicketPending = lastMessage?.content?.interrupt?.metadata?.ticket?.status === ApprovalInterruptTicketStatus.Pending;
+    if (isInterruptMessage && isTicketPending) {
+      setTimeout(() => {
+        // 如果会话不匹配，则不继续轮询
+        if (sessionCode !== mediator.session?.current?.value?.sessionCode) return;
+        // 轮询接口，判断是否可以继续聊天
+        mediator.http?.session.isResumeSession(sessionCode).then(res => {
+          if (res) {
+            // 可以继续聊天，重新发起聊天
+            streamRequest(sessionCode)
+          } else {
+            // 不可以继续聊天，继续轮询
+            pollResumeSession(sessionCode);
+          }
+        });
+      }, 30000)
+    }
+  };
+
+  /**
    * 中止聊天（纯前端中止，后端继续处理）
    */
   const abortChat = () => {
@@ -254,6 +281,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     stopChat,
     getAgentInfo,
     reset,
+    pollResumeSession,
   };
 };
 

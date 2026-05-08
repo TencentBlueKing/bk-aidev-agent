@@ -70,6 +70,7 @@ import {
   CustomEventName,
   EventType,
   FlowTaskState,
+  RunFinishedOutcome,
 } from './type';
 
 import type { ISSEProtocol } from '../http/fetch';
@@ -292,10 +293,23 @@ export class AGUIProtocol implements ISSEProtocol {
   /**
    * 处理运行完成事件
    */
-  handleRunFinishedEvent(_event: IRunFinishedEvent) {
+  handleRunFinishedEvent(event: IRunFinishedEvent) {
     const message = this.messageModule.getCurrentLoadingMessage();
-    if (message) {
+    if (message && (!event.outcome || event.outcome === RunFinishedOutcome.Success)) {
+      // 正常结束，标记为完成
       message.status = MessageStatus.Complete;
+      // 如果是中断消息的后续消息，则更新中断消息内容
+      if (message.role === MessageRole.Interrupt) {
+        message.content = event;
+      }
+    }
+    if (event.outcome === RunFinishedOutcome.Interrupt) {
+      // 如果是中断消息，则创建一个中断消息
+      this.messageModule.plusMessage({
+        role: MessageRole.Interrupt,
+        content: event,
+        status: MessageStatus.Pending,
+      });
     }
   }
 
