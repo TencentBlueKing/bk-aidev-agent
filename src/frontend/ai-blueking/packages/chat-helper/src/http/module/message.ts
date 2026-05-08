@@ -98,6 +98,14 @@ export const useMessage = (fetchClient: FetchClient) => {
   const getFlowAgentTaskNodeInfo = (taskId: number, nodeId: string, config?: IRequestConfig) =>
     fetchClient.get<IFlowAgentTaskNodeInfo>(`flow_agent/${taskId}/task_node_info/${nodeId}/`, undefined, config);
 
+  // 重试流程引擎任务节点
+  const retryFlowAgentTaskNode = (sessionCode: string, nodeId: string, taskId: number, config?: IRequestConfig) =>
+    fetchClient.post<void>(`flow_agent/${sessionCode}/node/${nodeId}/retry/`, { task_id: taskId }, config);
+
+  // 跳过流程引擎任务节点
+  const skipFlowAgentTaskNode = (sessionCode: string, nodeId: string, taskId: number, config?: IRequestConfig) =>
+    fetchClient.post<void>(`flow_agent/${sessionCode}/node/${nodeId}/skip/`, { task_id: taskId }, config);
+
   return {
     getMessages,
     plusMessage,
@@ -108,5 +116,7 @@ export const useMessage = (fetchClient: FetchClient) => {
     stopChat,
     getFlowAgentTaskInfo,
     getFlowAgentTaskNodeInfo,
+    retryFlowAgentTaskNode,
+    skipFlowAgentTaskNode,
   };
 };
