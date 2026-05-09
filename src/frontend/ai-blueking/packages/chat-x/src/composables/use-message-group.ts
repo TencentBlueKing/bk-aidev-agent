@@ -66,7 +66,9 @@ const SEARCH_TEXT_EXTRACTORS: Record<string, SearchTextExtractor> = {
   [MessageContentType.FlowAgent](message) {
     const content = (message as ActivityMessage).content as BkFlowMessageContent;
     if (!content) return [];
-    return [content.task_name, ...Object.values(content.nodes ?? {}).map(n => n.name)].filter(Boolean);
+    return content
+      .flatMap(task => [task.task_name, ...Object.values(task.nodes ?? {}).map(n => n.name)])
+      .filter(Boolean);
   },
 };
 

@@ -255,17 +255,20 @@ const activityComponentMap: Record<string, Component> = {
 
 **Props**：
 
-- `content?: BkFlowMessageContent` — 流程数据（nodes、statistics、task_state 等）
+- `content?: BkFlowMessageContent` — 流程任务数组（每个任务包含 nodes、statistics、task_state 等）
 - `status?: MessageStatus` — 消息状态（Pending/Streaming 时显示加载动画）
 
 **内容数据结构**（`BkFlowMessageContent`）：
 
 ```typescript
-type BkFlowMessageContent = {
+type BkFlowMessageContent = BkFlowTask[];
+
+type BkFlowTask = {
   nodes: Record<string, BkFlowNode>;
   statistics: { state_counts: Record<string, number>; total: number };
   task_id: number;
   task_name: string;
+  task_outputs: unknown;
   task_state: string;
 };
 
@@ -285,13 +288,13 @@ type BkFlowNode = {
 ```typescript
 const { addCustomTab } = useCustomTabConsumer<CustomBkFlowTabData>()!;
 
-function handleNodeDetail(node: BkFlowNode) {
+function handleNodeDetail(task: BkFlowTask, node: BkFlowNode) {
   addCustomTab?.({
     label: node.name,
-    name: node.id,
+    name: `${task.task_id}|${node.id}|${node.name}`,
     data: {
       component: BkFlowNodeDetail,      // 渲染组件
-      props: { node_id: node.id, ... }, // 组件 props
+      props: { node_id: node.id, task_id: task.task_id, ... }, // 组件 props
     },
   });
 }

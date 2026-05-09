@@ -32,7 +32,7 @@ import { RenderMode } from '../../../common/constants';
 import { useRenderModeProvider } from '../../../composables/use-common';
 import FlowAgentContent from './flow-agent-content.vue';
 
-import type { BkFlowMessageContent } from '../../../ag-ui/types/contents';
+import type { BkFlowMessageContent, BkFlowTask } from '../../../ag-ui/types/contents';
 
 const { mockAddCustomTab, mockRemoveCustomTab, mockScrollRef } = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -139,7 +139,7 @@ vi.mock('./flow-agent-node-detail.vue', () => ({
   }),
 }));
 
-const createNode = (overrides: Partial<BkFlowMessageContent['nodes'][string]> = {}) => ({
+const createNode = (overrides: Partial<BkFlowTask['nodes'][string]> = {}) => ({
   elapsed_time: 3,
   finish_time: '',
   id: 'n1',
@@ -153,7 +153,7 @@ const createNode = (overrides: Partial<BkFlowMessageContent['nodes'][string]> = 
   ...overrides,
 });
 
-const createContent = (overrides: Partial<BkFlowMessageContent> = {}): BkFlowMessageContent => ({
+const createTask = (overrides: Partial<BkFlowTask> = {}): BkFlowTask => ({
   nodes: {
     n1: createNode({ id: 'n1', name: '节点一' }),
     n2: createNode({ id: 'n2', name: '节点二', state: 'RUNNING', elapsed_time: 1 }),
@@ -168,6 +168,8 @@ const createContent = (overrides: Partial<BkFlowMessageContent> = {}): BkFlowMes
   task_state: 'FINISHED',
   ...overrides,
 });
+
+const createContent = (overrides: Partial<BkFlowTask> = {}): BkFlowMessageContent => [createTask(overrides)];
 
 describe('FlowAgentContent', () => {
   let wrapper: VueWrapper;
@@ -211,6 +213,36 @@ describe('FlowAgentContent', () => {
       expect(text).toContain('成功');
       expect(text).toContain('2');
       expect(text).toContain('执行中');
+      expect(text).toContain('1');
+    });
+
+    it('应汇总多个任务的 statistics.state_counts', () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: [
+            createTask({
+              statistics: {
+                state_counts: { FINISHED: 2 },
+                total: 2,
+              },
+            }),
+            createTask({
+              task_id: 101,
+              statistics: {
+                state_counts: { RUNNING: 2, FAILED: 1 },
+                total: 3,
+              },
+            }),
+          ],
+        },
+      });
+
+      const text = wrapper.find('.flow-agent-title-label').element.parentElement?.textContent ?? '';
+      expect(text).toContain('成功');
+      expect(text).toContain('2');
+      expect(text).toContain('执行中');
+      expect(text).toContain('2');
+      expect(text).toContain('失败');
       expect(text).toContain('1');
     });
 
@@ -263,6 +295,61 @@ describe('FlowAgentContent', () => {
       expect(wrapper.text()).toContain('节点二');
     });
 
+    it('应渲染多个任务及各自节点', () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: [
+            createTask(),
+            createTask({
+              task_id: 101,
+              task_name: '第二任务',
+              nodes: {
+                n3: createNode({ id: 'n3', name: '节点三', state: 'PENDING' }),
+              },
+              statistics: {
+                state_counts: { PENDING: 1 },
+                total: 1,
+              },
+            }),
+          ],
+        },
+      });
+
+      expect(wrapper.findAll('.flow-agent-task-group').length).toBe(2);
+      expect(wrapper.findAll('.flow-agent-node-item').length).toBe(3);
+      expect(wrapper.text()).toContain('测试任务');
+      expect(wrapper.text()).toContain('第二任务');
+      expect(wrapper.text()).toContain('节点三');
+    });
+
+    it('点击任务箭头应只折叠当前任务节点列表', async () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: [
+            createTask(),
+            createTask({
+              task_id: 101,
+              task_name: '第二任务',
+              nodes: {
+                n3: createNode({ id: 'n3', name: '节点三' }),
+              },
+            }),
+          ],
+        },
+      });
+
+      const arrows = wrapper.findAll('.flow-agent-task-arrow');
+      const nodeGroups = wrapper.findAll('.flow-agent-task-nodes');
+      await arrows[0].trigger('click');
+
+      expect(nodeGroups[0].isVisible()).toBe(false);
+      expect(nodeGroups[1].isVisible()).toBe(true);
+
+      await arrows[0].trigger('click');
+
+      expect(nodeGroups[0].isVisible()).toBe(true);
+    });
+
     it('renderMode 为 Share 时不应渲染节点耗时和详情入口', () => {
       const Parent = defineComponent({
         setup() {
@@ -301,7 +388,16 @@ describe('FlowAgentContent', () => {
       mockScrollRef.value = { autoScrollEnabled: true };
       wrapper = mount(FlowAgentContent, {
         props: {
-          content: createContent(),
+          content: [
+            createTask(),
+            createTask({
+              task_id: 101,
+              task_name: '第二任务',
+              nodes: {
+                n3: createNode({ id: 'n3', name: '节点三' }),
+              },
+            }),
+          ],
         },
       });
 
@@ -309,6 +405,7 @@ describe('FlowAgentContent', () => {
 
       expect(mockRemoveCustomTab).toHaveBeenCalledWith('100|n1|节点一');
       expect(mockRemoveCustomTab).toHaveBeenCalledWith('100|n2|节点二');
+      expect(mockRemoveCustomTab).toHaveBeenCalledWith('101|n3|节点三');
     });
 
     it('无滚动上下文时卸载不应调用 removeCustomTab', () => {

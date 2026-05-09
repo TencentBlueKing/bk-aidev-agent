@@ -33,26 +33,29 @@
       </span>
     </template>
     <div
-      v-if="taskData"
+      v-for="task in taskList"
+      :key="task.task_id"
       class="flow-agent-task-group"
     >
-      <div class="flow-agent-task-header">
+      <div
+        class="flow-agent-task-header"
+        @click.stop="toggleTaskExpanded(task)"
+      >
         <span
-          v-if="false"
           class="flow-agent-task-arrow"
-          :class="{ 'is-expanded': taskExpanded }"
+          :class="{ 'is-expanded': isTaskExpanded(task) }"
         >
           <ArrowRightIcon />
         </span>
         <span class="flow-agent-task-state-icon">
           <Loading
-            v-if="taskConvergedState === 'running'"
+            v-if="getTaskConvergedState(task) === 'running'"
             mode="spin"
             size="mini"
             theme="primary"
           />
           <component
-            :is="taskStateIcon"
+            :is="getTaskStateIcon(task)"
             v-else
           />
         </span>
@@ -60,16 +63,16 @@
           v-overflow-tips="{ ...commonTippyOptions }"
           class="flow-agent-task-name"
         >
-          <HighlightKeyword :text="taskData.task_name" />
+          <HighlightKeyword :text="task.task_name" />
         </span>
-        <span class="flow-agent-task-time">{{ taskTotalTime }}</span>
+        <span class="flow-agent-task-time">{{ getTaskTotalTime(task) }}</span>
       </div>
       <div
-        v-show="taskExpanded"
+        v-show="isTaskExpanded(task)"
         class="flow-agent-task-nodes"
       >
         <div
-          v-for="node in nodeList"
+          v-for="node in getNodeList(task)"
           :key="node.id"
           class="flow-agent-node-item"
         >
@@ -102,7 +105,7 @@
             <span class="flow-agent-node-time">{{ formatElapsedTime(node.elapsed_time) }}</span>
             <span
               class="flow-agent-node-detail-btn"
-              @click.stop="handleNodeDetail(node)"
+              @click.stop="handleNodeDetail(task, node)"
             >
               <NodeOutputIcon />
               {{ t('详情') }}
@@ -113,14 +116,14 @@
     </div>
   </ActivityLayout>
   <!-- <div
-    v-if="taskData?.task_outputs"
+    v-if="taskList.some(task => task.task_outputs)"
     class="flow-agent-task-outputs"
   >
-    {{ typeof taskData.task_outputs === 'object' ? JSON.stringify(taskData.task_outputs) : taskData.task_outputs }}
+    {{ taskList.map(task => task.task_outputs).filter(Boolean) }}
   </div> -->
 </template>
 <script setup lang="ts">
-  import { cloneVNode, computed, onUnmounted, ref } from 'vue';
+  import { type ComputedRef, cloneVNode, computed, onUnmounted, shallowRef } from 'vue';
 
   import { Loading } from 'bkui-vue';
 
@@ -145,7 +148,7 @@
   import BkFlowNodeDetail from './flow-agent-node-detail.vue';
 
   import type { MessageStatus as MessageStatusType } from '../../../ag-ui/types/constants';
-  import type { BkFlowMessageContent, BkFlowNode } from '../../../ag-ui/types/contents';
+  import type { BkFlowMessageContent, BkFlowNode, BkFlowTask } from '../../../ag-ui/types/contents';
   import type { CustomBkFlowTabData } from '../../../types';
 
   type ConvergedState = 'failed' | 'pending' | 'running' | 'success' | 'suspended';
@@ -190,30 +193,40 @@
     default: false,
   });
 
-  const taskExpanded = ref(true);
-
   const renderMode = useRenderModeInject();
 
   const isLoading = computed(() => {
     return props.status === MessageStatus.Pending || props.status === MessageStatus.Streaming;
   });
 
-  const taskData = computed(() => props.content);
+  const taskList = computed(() =>
+    Array.isArray(props.content) ? props.content : [props.content ?? {}],
+  ) as ComputedRef<BkFlowTask[]>;
+  const taskExpandedMap = shallowRef<Record<number, boolean>>({});
 
-  const taskConvergedState = computed(() => getConvergedState(taskData.value?.task_state ?? ''));
+  const isTaskExpanded = (task: BkFlowTask) => taskExpandedMap.value[task.task_id] !== false;
 
-  const taskStateIcon = computed(() => {
-    const icon = STATE_ICON_MAP[taskConvergedState.value];
+  const toggleTaskExpanded = (task: BkFlowTask) => {
+    taskExpandedMap.value = {
+      ...taskExpandedMap.value,
+      [task.task_id]: !isTaskExpanded(task),
+    };
+  };
+
+  const getTaskConvergedState = (task: BkFlowTask) => getConvergedState(task.task_state ?? '');
+
+  const getTaskStateIcon = (task: BkFlowTask) => {
+    const icon = STATE_ICON_MAP[getTaskConvergedState(task)];
     return icon ? cloneVNode(icon) : cloneVNode(BkFlowSuspendedIcon);
-  });
+  };
 
-  const taskTotalTime = computed(() => {
-    const nodes = Object.values(taskData.value?.nodes ?? {});
+  const getTaskTotalTime = (task: BkFlowTask) => {
+    const nodes = getNodeList(task);
     const total = nodes.reduce((sum, node) => sum + node.elapsed_time, 0);
     return formatElapsedTime(total);
-  });
+  };
 
-  const nodeList = computed(() => Object.values(props.content?.nodes ?? {}));
+  const getNodeList = (task: BkFlowTask) => Object.values(task.nodes ?? {});
 
   const getConvergedState = (state: string): ConvergedState => {
     if (state === 'FINISHED') return 'success';
@@ -225,7 +238,6 @@
   };
 
   const visibleStats = computed(() => {
-    const stateCounts = props.content?.statistics?.state_counts ?? {};
     const aggregated: Record<ConvergedState, number> = {
       failed: 0,
       pending: 0,
@@ -234,8 +246,10 @@
       suspended: 0,
     };
 
-    for (const [state, count] of Object.entries(stateCounts)) {
-      aggregated[getConvergedState(state)] += count;
+    for (const task of taskList.value) {
+      for (const [state, count] of Object.entries(task.statistics?.state_counts ?? {})) {
+        aggregated[getConvergedState(state)] += count;
+      }
     }
 
     return STATE_CONFIG.filter(s => aggregated[s.key] > 0).map(s => ({
@@ -261,8 +275,8 @@
     return parts.join('');
   };
 
-  const handleNodeDetail = (node: BkFlowNode) => {
-    const taskId = props.content?.task_id;
+  const handleNodeDetail = (task: BkFlowTask, node: BkFlowNode) => {
+    const taskId = task.task_id;
     if (taskId != null) {
       addCustomTab?.({
         label: node.name,
@@ -275,7 +289,7 @@
             node_id: node.id,
             node_name: node.name,
             task_id: taskId,
-            task_name: props.content?.task_name,
+            task_name: task.task_name,
             data: {},
           },
         },
@@ -288,9 +302,10 @@
     if (!provideContainerScrollData?.value) {
       return;
     }
-    const taskId = props.content?.task_id;
-    for (const node of nodeList.value) {
-      removeCustomTab?.(`${taskId}|${node.id}|${node.name}`);
+    for (const task of taskList.value) {
+      for (const node of getNodeList(task)) {
+        removeCustomTab?.(`${task.task_id}|${node.id}|${node.name}`);
+      }
     }
   });
 </script>

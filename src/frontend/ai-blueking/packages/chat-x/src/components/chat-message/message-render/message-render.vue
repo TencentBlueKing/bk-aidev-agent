@@ -67,6 +67,7 @@
       case MessageRole.Tool:
         return h(ToolMessage, props.message);
       case MessageRole.Activity:
+        console.log('props.message', props.message.content);
         return h(ActivityMessage, props.message);
       case MessageRole.Loading:
         return h(LoadingMessage, props.message);

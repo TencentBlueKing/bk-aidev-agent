@@ -258,12 +258,12 @@ domain: message
 
 ## FlowAgent 执行情况模式
 
-`activityType` 设为 `MessageContentType.FlowAgent`（`'flow_agent'`），`content` 传入 `BkFlowMessageContent` 对象。用于展示蓝鲸标准运维（BkFlow）任务的执行状态、节点列表和统计信息。
+`activityType` 设为 `MessageContentType.FlowAgent`（`'flow_agent'`），`content` 传入 `BkFlowMessageContent` 任务数组。用于展示一个或多个蓝鲸标准运维（BkFlow）任务的执行状态、节点列表和统计信息。
 
 ### 核心交互
 
-- **标题栏**：显示「执行情况」+ 各状态计数（执行中 / 成功 / 失败 / 挂起），颜色区分
-- **任务组**：可折叠/展开的任务行，带状态图标和总耗时
+- **标题栏**：显示「执行情况」+ 所有任务聚合后的各状态计数（执行中 / 成功 / 失败 / 挂起），颜色区分
+- **任务组**：逐个展示任务行，带状态图标和总耗时
 - **节点列表**：每个节点显示状态圆点、名称和耗时；hover 时出现「详情」按钮
 - **节点详情**：点击「详情」按钮会通过 `useCustomTabConsumer` 在 `ChatContainer` 侧边栏新增自定义 Tab，展示节点配置（基础信息、输入参数、输出参数）
 
@@ -278,7 +278,7 @@ FlowAgentContent（activityType = 'flow_agent'）
 │       ├── Loading / ArrowIcon（随 status 切换）
 │       └── 执行情况：执行中 N / 成功 N / 失败 N / 挂起 N
 └── #default
-    └── TaskGroup
+    └── TaskGroup × N
         ├── TaskHeader（可折叠/展开）
         │   ├── 状态图标（running=Loading / success / failed / suspended）
         │   ├── task_name（HighlightKeyword 支持搜索高亮）
@@ -311,54 +311,56 @@ FlowAgentContent（activityType = 'flow_agent'）
   const collapsed = ref(false);
   const status = ref(MessageStatus.Complete);
 
-  const flowContent: BkFlowMessageContent = {
-    task_id: 100,
-    task_name: '数据清洗流程',
-    task_state: 'FINISHED',
-    task_outputs: [],
-    statistics: {
-      total: 3,
-      state_counts: { FINISHED: 2, FAILED: 1 },
+  const flowContent: BkFlowMessageContent = [
+    {
+      task_id: 100,
+      task_name: '数据清洗流程',
+      task_state: 'FINISHED',
+      task_outputs: [],
+      statistics: {
+        total: 3,
+        state_counts: { FINISHED: 2, FAILED: 1 },
+      },
+      nodes: {
+        node1: {
+          id: 'node1',
+          name: '数据拉取',
+          state: 'FINISHED',
+          elapsed_time: 12,
+          start_time: '2025-01-01 10:00:00',
+          finish_time: '2025-01-01 10:00:12',
+          loop: 1,
+          retry: 0,
+          skip: false,
+          type: 'ServiceActivity',
+        },
+        node2: {
+          id: 'node2',
+          name: '数据转换',
+          state: 'FINISHED',
+          elapsed_time: 45,
+          start_time: '2025-01-01 10:00:12',
+          finish_time: '2025-01-01 10:00:57',
+          loop: 1,
+          retry: 0,
+          skip: false,
+          type: 'ServiceActivity',
+        },
+        node3: {
+          id: 'node3',
+          name: '结果写入',
+          state: 'FAILED',
+          elapsed_time: 3,
+          start_time: '2025-01-01 10:00:57',
+          finish_time: '2025-01-01 10:01:00',
+          loop: 1,
+          retry: 0,
+          skip: false,
+          type: 'ServiceActivity',
+        },
+      },
     },
-    nodes: {
-      node1: {
-        id: 'node1',
-        name: '数据拉取',
-        state: 'FINISHED',
-        elapsed_time: 12,
-        start_time: '2025-01-01 10:00:00',
-        finish_time: '2025-01-01 10:00:12',
-        loop: 1,
-        retry: 0,
-        skip: false,
-        type: 'ServiceActivity',
-      },
-      node2: {
-        id: 'node2',
-        name: '数据转换',
-        state: 'FINISHED',
-        elapsed_time: 45,
-        start_time: '2025-01-01 10:00:12',
-        finish_time: '2025-01-01 10:00:57',
-        loop: 1,
-        retry: 0,
-        skip: false,
-        type: 'ServiceActivity',
-      },
-      node3: {
-        id: 'node3',
-        name: '结果写入',
-        state: 'FAILED',
-        elapsed_time: 3,
-        start_time: '2025-01-01 10:00:57',
-        finish_time: '2025-01-01 10:01:00',
-        loop: 1,
-        retry: 0,
-        skip: false,
-        type: 'ServiceActivity',
-      },
-    },
-  };
+  ];
 </script>
 ```
 
@@ -371,16 +373,18 @@ const messages = [
     role: 'activity',
     activityType: MessageContentType.FlowAgent, // 'flow_agent'
     status: MessageStatus.Streaming,
-    content: {
-      task_id: 100,
-      task_name: '数据清洗流程',
-      task_state: 'RUNNING',
-      task_outputs: [],
-      statistics: { total: 3, state_counts: { RUNNING: 1, FINISHED: 2 } },
-      nodes: {
-        /* ... */
+    content: [
+      {
+        task_id: 100,
+        task_name: '数据清洗流程',
+        task_state: 'RUNNING',
+        task_outputs: [],
+        statistics: { total: 3, state_counts: { RUNNING: 1, FINISHED: 2 } },
+        nodes: {
+          /* ... */
+        },
       },
-    },
+    ],
   },
 ];
 ```
@@ -408,14 +412,16 @@ const messages = [
 ### 相关类型定义
 
 ```typescript
-import { MessageContentType, type BkFlowMessageContent, type BkFlowNode } from '@blueking/chat-x';
+import { MessageContentType, type BkFlowMessageContent, type BkFlowNode, type BkFlowTask } from '@blueking/chat-x';
 
-type BkFlowMessageContent = {
+type BkFlowMessageContent = BkFlowTask[];
+
+type BkFlowTask = {
   nodes: Record<string, BkFlowNode>;
   statistics: { state_counts: Record<string, number>; total: number };
   task_id: number;
   task_name: string;
-  task_outputs: unknown[];
+  task_outputs: unknown;
   task_state: string;
 };
 

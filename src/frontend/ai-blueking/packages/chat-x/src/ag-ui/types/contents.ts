@@ -70,17 +70,7 @@ declare global {
   interface AIBluekingContentMap {}
 }
 
-export type BkFlowMessageContent = {
-  nodes: Record<string, BkFlowNode>;
-  statistics: {
-    state_counts: Record<string, number>;
-    total: number;
-  };
-  task_id: number;
-  task_name: string;
-  task_outputs: unknown;
-  task_state: string;
-};
+export type BkFlowMessageContent = BkFlowTask[];
 
 export type BkFlowNode = {
   elapsed_time: number;
@@ -93,6 +83,18 @@ export type BkFlowNode = {
   start_time: string;
   state: string;
   type: string;
+};
+
+export type BkFlowTask = {
+  nodes: Record<string, BkFlowNode>;
+  statistics: {
+    state_counts: Record<string, number>;
+    total: number;
+  };
+  task_id: number;
+  task_name: string;
+  task_outputs: unknown;
+  task_state: string;
 };
 
 export type KnowledgeRagMessageContent = {

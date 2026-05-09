@@ -414,7 +414,7 @@ describe('ActivityMessage', () => {
       wrapper = mount(ActivityMessage, {
         props: {
           activityType: 'flow_agent',
-          content: {},
+          content: [],
         },
       });
 
@@ -422,7 +422,7 @@ describe('ActivityMessage', () => {
     });
 
     it('应该将 content 和 status 传递给 FlowAgentContent', () => {
-      const content = { task_name: '测试任务', nodes: {} };
+      const content = [{ task_name: '测试任务', nodes: {} }];
       wrapper = mount(ActivityMessage, {
         props: {
           activityType: 'flow_agent',
@@ -438,7 +438,7 @@ describe('ActivityMessage', () => {
       wrapper = mount(ActivityMessage, {
         props: {
           activityType: 'flow_agent',
-          content: {},
+          content: [],
           uid: 'activity-uid-1',
         },
       });

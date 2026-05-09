@@ -119,7 +119,7 @@ const isExecutionMessage = (m: Message): boolean => {
 | 消息类型   | 搜索范围                                                     |
 | ---------- | ------------------------------------------------------------ |
 | toolCall   | `function.name`、`mcpName`、`description`、`arguments`、`id` |
-| flow_agent | `task_name`、各节点 `name`                                   |
+| flow_agent | 各任务 `task_name`、各节点 `name`                             |
 
 ## 分享模式
 
