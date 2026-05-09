@@ -16,7 +16,7 @@ wheels = [
 
 [[package]]
 name = "aidev-agent"
-version = "2.0.0rc222"
+version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
@@ -45,14 +45,14 @@ dependencies = [
     { name = "werkzeug" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4a/a9/771e7e9f844e3ead1145d78f5ba9167e6dc5c1a460a006b67ee89d2cd8d0/aidev_agent-2.0.0rc222.tar.gz", hash = "sha256:18010596127e2251a3309e25d209767a2f50e5447be125c6a60b6d9769490e49", size = 440552, upload-time = "2026-05-09T03:36:35.444Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ab/e9/130849fe6ae52af78a50b1e84cc9e53137fc14e5fc4b14b605f265c805df/aidev_agent-2.0.0.tar.gz", hash = "sha256:4e172531d6d3718ada5f59a54a8cd87d7ad8907a1194a061d99ad3c13ff34929", size = 440423, upload-time = "2026-05-09T05:51:56.066Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f0/ff/2045e211c767d98ceae4b310646c2b81848e0800d76c35e4f0d1036a2e67/aidev_agent-2.0.0rc222-py3-none-any.whl", hash = "sha256:ba74991398dae0a029f8d37fa3cc7217d4cf84adc90fd6ce3f16efcb286b1329", size = 366748, upload-time = "2026-05-09T03:36:38.764Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/63/a10d48ed6e6383aa0954d56835b495e767bfdccfeff0f4a9c8e4eacf15c5/aidev_agent-2.0.0-py3-none-any.whl", hash = "sha256:a2b738ce4e2e5efa6a107626b37069a6f653c3ddb2eeefa7a7e480022903befb", size = 366691, upload-time = "2026-05-09T05:51:52.992Z" },
 ]
 
 [[package]]
 name = "aidev-bkplugin"
-version = "2.0.0rc222"
+version = "2.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "aidev-agent" },
@@ -84,7 +84,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aidev-agent", specifier = ">=2.0.0rc222" },
+    { name = "aidev-agent", specifier = ">=2.0.0" },
     { name = "blueapps", specifier = ">=4.15.1,<5.0" },
     { name = "django", specifier = ">=4.2.28,<5.0" },
     { name = "opentelemetry-api", marker = "extra == 'opentelemetry'", specifier = "==1.33.1" },
