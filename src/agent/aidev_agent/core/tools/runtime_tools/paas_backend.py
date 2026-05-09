@@ -697,7 +697,6 @@ class PaasSandboxBackend:
             f"app_code={self._app_code!r}, has_access_token={bool(self._access_token)}, "
             f"bk_username={self._bk_username!r}, command={command[:80]!r}"
         )
-        res = self._run(["/bin/sh", "-c", command], timeout=int(timeout))
 
         output = res.stdout
         if res.stderr:
