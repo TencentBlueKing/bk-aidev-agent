@@ -158,7 +158,7 @@ export class AGUIProtocol implements ISSEProtocol {
       const value = event.value as IFlowAgentEndCustomValue;
       this.messageModule.plusMessage({
         role: MessageRole.Assistant,
-        content: value.task_outputs.join('\n'),
+        content: value.map(item => item.task_outputs.join('\n')).join('\n'),
         status: MessageStatus.Complete,
       });
     }
@@ -182,13 +182,13 @@ export class AGUIProtocol implements ISSEProtocol {
     this.messageModule.plusMessage({
       role: MessageRole.Activity,
       activityType: ActivityType.FlowAgent,
-      content: {
+      content: value.map(item => ({
         nodes: {},
-        task_id: Number(value.task_id),
+        task_id: Number(item.task_id),
         task_name: '',
         task_outputs: [],
         task_state: FlowTaskState.Created,
-      },
+      })),
       status: MessageStatus.Streaming,
     });
   }

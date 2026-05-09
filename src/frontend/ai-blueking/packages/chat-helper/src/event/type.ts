@@ -183,9 +183,9 @@ export type IEvent =
   | IToolCallResultEvent
   | IToolCallStartEvent;
 
-export interface IFlowAgentEndCustomValue {
+export type IFlowAgentEndCustomValue = {
   task_outputs: string[];
-}
+}[];
 
 export interface IFlowAgentNode {
   /** 耗时(s) */
@@ -198,17 +198,17 @@ export interface IFlowAgentNode {
   state: FlowNodeState;
 }
 
-export interface IFlowAgentResultCustomValue {
+export type IFlowAgentResultCustomValue = {
   nodes: Record<string, IFlowAgentNode>;
   task_id: number;
   task_name: string;
   task_outputs: string[];
   task_state: FlowTaskState;
-}
+}[];
 
-export interface IFlowAgentStartCustomValue {
+export type IFlowAgentStartCustomValue = {
   task_id: string;
-}
+}[];
 
 export type IKnowledgeRagResultCustomValue = IReferenceDocumentCustomValue;
 
