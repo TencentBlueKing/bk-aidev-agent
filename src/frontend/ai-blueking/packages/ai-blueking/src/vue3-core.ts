@@ -24,15 +24,11 @@
  * IN THE SOFTWARE.
  */
 
-// 引入 icon 资源
-// @ts-ignore - icon 资源文件不需要类型检查
-import './assets/icon/iconcool.js';
+// Vue3 核心导出（不含预编译 CSS 副作用）
+// 供 Vue2 入口引用，避免混入 chat-x/dist/index.css 中已固化的 .bk-* 样式
 
-// 引入 chat-x 预构建 CSS，合并进 ai-blueking 的 style.css（消费方无感知）
-// 使用相对路径绕过 createCommonConfig 中的 @blueking/chat-x alias（alias 指向 src 用于 Vue2 源码编译）
-import '../../chat-x/dist/index.css';
-import './assets/icon/style.css';
+// 导出默认组件
+export { default } from './ai-blueking.vue';
 
-// 复用核心导出（icon/CSS 副作用已在此文件顶部引入）
-export { default } from './vue3-core';
-export * from './vue3-core';
+// 导出所有 V2 模块
+export * from './index';

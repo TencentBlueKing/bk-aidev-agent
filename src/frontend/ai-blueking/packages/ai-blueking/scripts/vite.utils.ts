@@ -102,10 +102,14 @@ function getExternal(formats: LibraryFormats[], version: VueVersion) {
   };
 }
 
+const VUE2_BKUI_PREFIX = 'ai-bk';
+
 function getPrefix(version: VueVersion, formats: LibraryFormats[]) {
-  const isVue3 = version === VueVersion.Vue3;
-  const isIIFE = formats.includes('iife');
-  return isVue3 && !isIIFE ? 'bk' : env.BKUI_PREFIX || 'bk';
+  if (env.BKUI_PREFIX) {
+    return env.BKUI_PREFIX;
+  }
+  // 仅 Vue2 默认使用独立前缀 ai-bk，Vue3 所有格式保持 bk 前缀
+  return version === VueVersion.Vue2 ? VUE2_BKUI_PREFIX : 'bk';
 }
 
 export const createCommonConfig = (prefix = 'bk', isIIFE = false): UserConfig => ({
@@ -113,6 +117,12 @@ export const createCommonConfig = (prefix = 'bk', isIIFE = false): UserConfig =>
     preprocessorOptions: {
       scss: {
         additionalData: `$bk-prefix: ${prefix};`,
+      },
+      less: {
+        modifyVars: {
+          'bk-prefix': prefix,
+        },
+        javascriptEnabled: true,
       },
     },
   },
@@ -167,6 +177,18 @@ export const createBuildConfig = (
   const prefix = getPrefix(version, formats);
 
   const vue2Alias = isVue2 && !isIIFE ? [{ find: 'vue', replacement: '@blueking/bkui-library' }] : [];
+
+  // Vue2 构建: 始终从 chat-x 源码编译，避免混入 chat-x/dist/index.css 中已固化的产物
+  // Vue3: chat-x 已 external，alias 仅在开发时生效（由 createCommonConfig 处理）
+  const chatxAlias =
+    isVue2
+      ? [
+          {
+            find: '@blueking/chat-x',
+            replacement: resolve(__dirname, '../../chat-x/src'),
+          },
+        ]
+      : [];
 
   // 注意：不能用 ...createCommonConfig() 展开，否则 commonConfig.resolve 会覆盖 buildConfig.resolve
   // 必须通过 mergeConfig 深度合并，确保 resolve.alias 数组被拼接而非覆盖
@@ -229,6 +251,7 @@ export const createBuildConfig = (
           find: '@',
           replacement: resolve(process.cwd(), 'src'),
         },
+        ...chatxAlias,
         ...vue2Alias,
       ],
     },

@@ -6,8 +6,15 @@
  *
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
  */
+import { ConfigProvider } from 'bkui-vue';
 import { createApp, h } from 'vue';
 import type { Component } from 'vue';
+
+declare const BKUI_PREFIX: string | undefined;
+
+interface GlobalBkuiPrefix {
+  BKUI_PREFIX?: string;
+}
 
 /**
  * Vue2 Prop 定义（与 Vue 2 Options API 的 props 字段一致）
@@ -82,16 +89,23 @@ export function createVue2Wrapper(Vue3Component: Component, config: Vue2WrapperC
             const slotArg = Object.keys(slotBuilders).length > 0 ? slotBuilders : undefined;
 
             return h(
-              Vue3Component,
+              ConfigProvider,
+              { prefix: getRuntimeBkuiPrefix() },
               {
-                ...that.$attrs,
-                ...explicit,
-                ...buildEmitHandlers(emit, emitNames),
-                ref: (el: unknown) => {
-                  that.componentInstance = el as null | Record<string, unknown>;
-                },
+                default: () =>
+                  h(
+                    Vue3Component,
+                    {
+                      ...that.$attrs,
+                      ...explicit,
+                      ...buildEmitHandlers(emit, emitNames),
+                      ref: (el: unknown) => {
+                        that.componentInstance = el as null | Record<string, unknown>;
+                      },
+                    },
+                    slotArg,
+                  ),
               },
-              slotArg,
             );
           };
         },
@@ -176,4 +190,13 @@ function buildEmitHandlers(
     };
   }
   return handlers;
+}
+
+function getRuntimeBkuiPrefix(): string {
+  if (typeof BKUI_PREFIX === 'string' && BKUI_PREFIX.length > 0) {
+    return BKUI_PREFIX;
+  }
+
+  const globalPrefix = (globalThis as GlobalBkuiPrefix).BKUI_PREFIX;
+  return typeof globalPrefix === 'string' && globalPrefix.length > 0 ? globalPrefix : 'bk';
 }

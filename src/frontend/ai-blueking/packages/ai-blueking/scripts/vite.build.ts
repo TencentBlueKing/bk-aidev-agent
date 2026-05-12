@@ -25,7 +25,6 @@
  */
 import { LibraryFormats, UserConfig, build } from 'vite';
 
-import bkuiHack from './bkui-hack';
 import { VueVersion, createBuildConfig } from './vite.utils';
 
 const buildLib = async (
@@ -47,7 +46,4 @@ const buildLib = async (
   // 构建 Vue2 版本：vue 被 alias 到 @blueking/bkui-library，bkui-vue/vue-tippy 等打包进产物
   await buildLib(VueVersion.Vue2, ['es', 'umd'], true);
   await buildLib(VueVersion.Vue2, ['iife']);
-
-  // Vue2 CSS 后处理
-  bkuiHack();
 })();

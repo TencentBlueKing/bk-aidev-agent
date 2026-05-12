@@ -26,7 +26,7 @@
 import { ChatBot } from './components';
 import { t } from './lang';
 import { createVue2Wrapper } from './vue2-wrapper';
-import AIBlueking from './vue3';
+import AIBlueking from './vue3-core';
 
 import type { ChatBotExpose } from './components/types';
 import type { AIBluekingExpose } from './types';

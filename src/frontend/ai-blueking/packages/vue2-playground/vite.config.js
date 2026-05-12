@@ -24,7 +24,7 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['vue'],
     include: [
-      '@tencent/bk-magic-vue',
+      'bk-magic-vue',
     ],
   },
 });
