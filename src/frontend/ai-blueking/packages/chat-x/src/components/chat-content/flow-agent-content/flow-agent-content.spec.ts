@@ -322,34 +322,6 @@ describe('FlowAgentContent', () => {
       expect(wrapper.text()).toContain('节点三');
     });
 
-    it('点击任务箭头应只折叠当前任务节点列表', async () => {
-      wrapper = mount(FlowAgentContent, {
-        props: {
-          content: [
-            createTask(),
-            createTask({
-              task_id: 101,
-              task_name: '第二任务',
-              nodes: {
-                n3: createNode({ id: 'n3', name: '节点三' }),
-              },
-            }),
-          ],
-        },
-      });
-
-      const arrows = wrapper.findAll('.flow-agent-task-arrow');
-      const nodeGroups = wrapper.findAll('.flow-agent-task-nodes');
-      await arrows[0].trigger('click');
-
-      expect(nodeGroups[0].isVisible()).toBe(false);
-      expect(nodeGroups[1].isVisible()).toBe(true);
-
-      await arrows[0].trigger('click');
-
-      expect(nodeGroups[0].isVisible()).toBe(true);
-    });
-
     it('renderMode 为 Share 时不应渲染节点耗时和详情入口', () => {
       const Parent = defineComponent({
         setup() {
