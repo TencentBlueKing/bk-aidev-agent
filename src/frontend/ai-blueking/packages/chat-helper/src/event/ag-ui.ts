@@ -79,7 +79,7 @@ import type { ISSEProtocol } from '../http/fetch';
  * @param message - 消息模块
  */
 export class AGUIProtocol implements ISSEProtocol {
-  private messageModule: IMessageModule;
+  public messageModule: IMessageModule;
   private onDoneCallback?: () => void;
   private onErrorCallback?: (error: unknown) => void;
   private onMessageCallback?: (message: IEvent) => void;
@@ -186,7 +186,7 @@ export class AGUIProtocol implements ISSEProtocol {
         nodes: {},
         task_id: Number(item.task_id),
         task_name: '',
-        task_outputs: [],
+        task_outputs: [] as string[],
         task_state: FlowTaskState.Created,
       })),
       status: MessageStatus.Streaming,
