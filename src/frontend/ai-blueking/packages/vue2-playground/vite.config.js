@@ -23,8 +23,5 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ['vue'],
-    include: [
-      'bk-magic-vue',
-    ],
   },
 });

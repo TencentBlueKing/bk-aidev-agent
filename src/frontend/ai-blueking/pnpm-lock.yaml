@@ -290,9 +290,6 @@ importers:
       '@blueking/bkui-library':
         specifier: 0.0.0-beta.6
         version: 0.0.0-beta.6
-      '@blueking/chat-helper':
-        specifier: workspace:*
-        version: link:../chat-helper
       bk-magic-vue:
         specifier: latest
         version: 2.5.9(vue@2.7.16)
