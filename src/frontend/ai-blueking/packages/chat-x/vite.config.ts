@@ -34,6 +34,7 @@ import { vitePluginHighlightGithubDarkScope } from './vite-plugins/highlight-git
 const resolve = (dir: string) => path.resolve(__dirname, dir);
 const packageJson = JSON.parse(fs.readFileSync(resolve('./package.json'), 'utf-8'));
 const externals = Object.keys(packageJson.dependencies || {});
+const BKUI_PREFIX = 'bk';
 /**
  * 依赖默认 external，但 highlight.js 的样式需打入包内，
  * 以便走 `vitePluginHighlightGithubDarkScope` 做选择器收敛并合并进 dist/index.css。
@@ -54,6 +55,13 @@ export default defineConfig(({ mode }) => {
       mode === 'preview' ? unstableRolldownAdapter(analyzer()) : undefined,
     ].filter(Boolean),
     root: resolve('./playground'),
+    css: {
+      preprocessorOptions: {
+        scss: {
+          additionalData: `$bk-prefix: ${BKUI_PREFIX};`,
+        },
+      },
+    },
     build: {
       emptyOutDir: true,
       target: 'es2015',

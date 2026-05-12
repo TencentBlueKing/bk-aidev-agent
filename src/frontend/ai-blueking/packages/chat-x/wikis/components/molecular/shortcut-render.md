@@ -533,6 +533,10 @@ interface BaseShortcutComponent {
 }
 ```
 
+## 样式说明
+
+组件内部使用 SCSS 变量 `$bk-prefix` 拼接 bkui-vue 组件类名（如 `Form`、`FormItem`、`Radio`、`Checkbox` 等），替代原先硬编码的 `.bk-*` 类名选择器，确保在不同构建环境下类名前缀的一致性。
+
 ## 关联组件
 
 - [ShortcutBtn](../atomic/shortcut-btn.md) — 与 Shortcut 数据模型一致的入口按钮

@@ -201,8 +201,8 @@
         justify-content: center;
         width: 100%;
 
-        .bk-exception-page {
-          .bk-exception-img {
+        .#{$bk-prefix}-exception-page {
+          .#{$bk-prefix}-exception-img {
             height: 200px;
           }
         }

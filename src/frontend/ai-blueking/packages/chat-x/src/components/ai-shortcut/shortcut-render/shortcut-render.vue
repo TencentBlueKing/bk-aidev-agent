@@ -274,16 +274,16 @@
           }
         }
 
-        .bk-form-label {
+        .#{$bk-prefix}-form-label {
           font-size: 12px;
           color: #4d4f56;
         }
 
-        .bk-form-item {
+        .#{$bk-prefix}-form-item {
           margin-bottom: 16px;
 
-          .bk-radio-label,
-          .bk-checkbox-label {
+          .#{$bk-prefix}-radio-label,
+          .#{$bk-prefix}-checkbox-label {
             font-size: 12px;
           }
 
