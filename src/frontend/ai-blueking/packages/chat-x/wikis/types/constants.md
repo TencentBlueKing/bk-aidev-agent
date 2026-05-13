@@ -41,6 +41,7 @@ enum MessageRole {
   HiddenSystem = 'hidden-system',
   HiddenUser = 'hidden-user',
   Info = 'info',
+  Interrupt = 'interrupt',
   Loading = 'loading',
   Pause = 'pause',
   Placeholder = 'placeholder',
@@ -76,6 +77,42 @@ enum MessageStatus {
 | 枚举值          | 说明 |
 | --------------- | ---- |
 | `Fetching`      | 请求中：与 `useMessageGroup` 在末尾用户消息后注入的 Loading 占位（`LOADING_MESSAGE_ID`）配合时，`ChatContainer` 会将传入输入区与列表底部的状态推导为该值，便于展示「停止」与禁止重复发送。 |
+
+### InterruptReason
+
+human-in-the-loop 中断原因枚举，用于 `Interrupt.reason` 区分中断类型并选择对应的 UI 渲染器。
+
+```typescript
+enum InterruptReason {
+  AIDevToolApproval = 'ai_dev:tool_approval',
+  HumanApproval = 'human_approval',
+  UserMultiChoice = 'user_multi_choice',
+  UserSingleChoice = 'user_single_choice',
+}
+```
+
+### APPROVAL_STATUS
+
+AI Dev 工具审批单状态枚举，`AIDevToolApprovalInterrupt.metadata.ticket.status` 使用该类型。
+
+```typescript
+enum APPROVAL_STATUS {
+  ABANDONED = 'abandoned',
+  APPROVED = 'approved',
+  CANCELLED = 'cancelled',
+  EXPIRED = 'expired',
+  PENDING = 'pending',
+  REJECTED = 'rejected',
+}
+```
+
+### RunFinishedOutcome
+
+AG-UI `RUN_FINISHED` 事件的结束结果类型。中断结果不再是字符串枚举，而是对象联合类型；`type: 'interrupt'` 时，中断列表放在 `interrupts` 字段中。
+
+```typescript
+type RunFinishedOutcome = { interrupts: Interrupt[]; type: 'interrupt' } | { type: 'success' };
+```
 
 ### MessageContentType
 

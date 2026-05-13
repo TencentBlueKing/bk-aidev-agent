@@ -112,6 +112,9 @@ enum MessageRole {
   // 信息消息
   Info = 'info',
 
+  // human-in-the-loop 中断消息
+  Interrupt = 'interrupt',
+
   // 加载中消息
   Loading = 'loading',
 
@@ -341,6 +344,53 @@ const knowledgeRagMessage: ActivityMessage = {
 | `name`       | `string` | 文档名称         |
 | `url`        | `string` | 文档预览链接     |
 | `originFile` | `string` | 文档原始文件链接 |
+
+### InterruptMessage
+
+human-in-the-loop 中断消息，对应 AG-UI `RUN_FINISHED` 事件的 `outcome` 对象结构。`type: 'interrupt'` 时，组件从 `outcome.interrupts` 渲染中断卡片；`type: 'success'` 表示 resume 后的成功结果，不渲染中断卡片。
+
+```typescript
+type RunFinishedOutcome = { interrupts: Interrupt[]; type: 'interrupt' } | { type: 'success' };
+
+interface InterruptMessage extends BaseMessage<MessageRole.Interrupt, string> {
+  message?: string;
+  outcome?: RunFinishedOutcome;
+  result?: unknown;
+  runId?: string;
+  threadId?: string;
+}
+
+const interruptMessage: InterruptMessage = {
+  id: 'interrupt-message-1',
+  messageId: 'interrupt-message-1',
+  role: MessageRole.Interrupt,
+  content: '',
+  status: MessageStatus.Complete,
+  runId: 'run_ai_dev_tool_approval',
+  threadId: 'thread_ai_dev_tool_approval',
+  outcome: {
+    type: 'interrupt',
+    interrupts: [
+      {
+        id: 'interrupt_ai_dev_tool_approval',
+        reason: InterruptReason.AIDevToolApproval,
+        toolCallId: 'tool_call_review_ticket',
+        message: '算法方案评审单正在评审中',
+        metadata: {
+          ticket: {
+            approvers: ['张三', '李四'],
+            sn: 'REV-2026-04-24-001',
+            status: APPROVAL_STATUS.PENDING,
+            submit_time: '2026-04-24 14:30:15',
+            title: '算法方案评审单',
+            url: 'https://example.com/review-tickets/REV-2026-04-24-001',
+          },
+        },
+      },
+    ],
+  },
+};
+```
 
 ### InfoMessage
 

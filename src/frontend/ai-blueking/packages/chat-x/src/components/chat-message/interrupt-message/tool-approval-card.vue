@@ -65,7 +65,7 @@
   import { Button } from 'bkui-vue';
 
   import { APPROVAL_STATUS_MAP } from '../../../ag-ui/types/constants';
-  import { APPROVAL_STATUS } from '../../../ag-ui/types/interrupt';
+  import { APPROVAL_STATUS } from '../../../ag-ui/types/constants';
   import { useClipboard } from '../../../composables';
   import { useCommonTippyInject } from '../../../composables/use-common';
   import { OverflowTips as vOverflowTips } from '../../../directives/overflow-tips';
