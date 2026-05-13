@@ -1,7 +1,7 @@
 {
   "name": "ai-blueking-docs",
-  "version": "2.0.0",
-  "description": "AI 小鲸智能对话组件文档 — v2.0",
+  "version": "2.1.4-beta.2",
+  "description": "AI 小鲸智能对话组件文档 — v2.1",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -58,6 +58,9 @@
     "monaco-editor-vue3": "^0.1.6",
     "shiki": "^2.5.0",
     "vitepress": "^1.6.3"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
   },
   "type": "module",
   "engines": {
