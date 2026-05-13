@@ -170,6 +170,7 @@ MessageRender
 │     ├── 'tool'       → ToolMessage（转发 message）
 │     ├── 'activity'   → ActivityMessage（转发 message）
 │     ├── 'loading'    → LoadingMessage（转发 message）
+│     ├── 'interrupt'  → InterruptMessage（转发 message + onInterruptResume）
 │     │
 │     └── 其他 / 未知   → null（不渲染任何内容）
 ```
@@ -442,6 +443,7 @@ slot 参数类型与 `AssistantMessage` 的 slot 保持一致（`Partial<Assista
 | messageToolsStatus | `MessageToolsStatus`                                                       | —      | 工具按钮状态；**仅转发给 `UserMessage`**          |
 | onAction           | `(tool: IToolBtn) => Promise<string[] \| void>`                            | —      | 工具操作回调；**仅转发给 `UserMessage`**          |
 | onInputConfirm     | `(content: UserMessage['content'], docSchema: TagSchema) => Promise<void>` | —      | 用户编辑确认回调；**仅转发给 `UserMessage`**      |
+| onInterruptResume  | `(interrupt: Interrupt, payload?: Record<string, any>) => Promise<void>`   | —      | 中断响应回调；**仅转发给 `InterruptMessage`**     |
 | onShortcutConfirm  | `(formModel: Record<string, unknown>) => Promise<void>`                    | —      | 用户快捷指令提交回调；**仅转发给 `UserMessage`**  |
 | tippyOptions       | `Partial<Omit<TippyOptions, 'getReferenceClientRect' \| 'triggerTarget'>>` | —      | 自定义 Tippy 配置；**仅转发给 `UserMessage`**     |
 
@@ -463,6 +465,7 @@ slot 参数类型与 `AssistantMessage` 的 slot 保持一致（`Partial<Assista
 | `tool`        | `ToolMessage`      | `message`                                                                                               | 工具调用返回结果      |
 | `activity`    | `ActivityMessage`  | `message`                                                                                               | 知识检索 / 引用文档   |
 | `loading`     | `LoadingMessage`   | `message`（字段被忽略，组件无 Props）                                                                   | 等待响应的加载占位    |
+| `interrupt`   | `InterruptMessage` | `message` + `onInterruptResume`                                                                         | human-in-the-loop 中断 |
 | 其他 / 未知   | —                  | —                                                                                                       | 返回 `null`，不渲染   |
 
 ## 类型定义
