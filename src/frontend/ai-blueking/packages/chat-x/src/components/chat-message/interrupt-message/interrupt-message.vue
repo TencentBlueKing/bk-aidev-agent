@@ -33,23 +33,18 @@
   import { t } from '../../../lang/lang';
   import ToolApprovalCard from './tool-approval-card.vue';
 
-  import type { InterruptItem, InterruptMessage, OnInterruptResume } from '../../../ag-ui/types/interrupt';
+  import type { Interrupt, InterruptMessage, OnInterruptResume } from '../../../ag-ui/types/interrupt';
 
   const interruptRenderers: Partial<Record<InterruptReason, Component>> = {
     [InterruptReason.AIDevToolApproval]: ToolApprovalCard,
   };
 
-  const props = defineProps<
-    Partial<InterruptMessage> & {
-      interrupt?: InterruptItem[];
-      onInterruptResume?: OnInterruptResume;
-    }
-  >();
+  const props = defineProps<Partial<InterruptMessage> & { onInterruptResume?: OnInterruptResume }>();
 
-  const interruptList = computed(() => props.interrupt ?? []);
+  const interruptList = computed(() => (props.outcome?.type === 'interrupt' ? props.outcome.interrupts : []));
   const displayMessage = computed(() => props.message || props.content);
 
-  const getRenderer = (item: InterruptItem) => interruptRenderers[item.reason];
+  const getRenderer = (item: Interrupt) => interruptRenderers[item.reason];
 </script>
 
 <style lang="scss">

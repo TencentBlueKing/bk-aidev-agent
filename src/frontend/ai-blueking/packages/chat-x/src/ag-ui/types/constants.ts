@@ -25,7 +25,15 @@
  */
 
 import { t } from '../../lang/lang';
-import { APPROVAL_STATUS } from './interrupt';
+
+export enum APPROVAL_STATUS {
+  ABANDONED = 'abandoned', // 已废弃
+  APPROVED = 'approved', // 已批准
+  CANCELLED = 'cancelled', // 已取消
+  EXPIRED = 'expired', // 已过期
+  PENDING = 'pending', // 待审批
+  REJECTED = 'rejected', // 已拒绝
+}
 
 export enum InterruptReason {
   AIDevToolApproval = 'ai_dev:tool_approval', // AI dev 第三方审批
@@ -70,7 +78,6 @@ export enum MessageRole {
   Tool = 'tool',
   User = 'user',
 }
-
 export enum MessageStatus {
   Complete = 'complete',
   Disabled = 'disabled',
@@ -80,11 +87,6 @@ export enum MessageStatus {
   Stop = 'stop',
   StopLoading = 'stop-loading',
   Streaming = 'streaming',
-  Success = 'success',
-}
-
-export enum RunFinishedOutcome {
-  Interrupt = 'interrupt',
   Success = 'success',
 }
 

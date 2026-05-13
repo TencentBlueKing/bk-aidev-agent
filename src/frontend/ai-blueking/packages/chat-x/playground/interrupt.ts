@@ -23,9 +23,26 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { APPROVAL_STATUS, InterruptReason, MessageRole, MessageStatus, RunFinishedOutcome } from '../src';
+import { APPROVAL_STATUS, InterruptReason, MessageRole, MessageStatus } from '../src';
 
-import type { Message } from '../src';
+import type { Interrupt, Message } from '../src';
+
+const approvalInterrupt: Interrupt = {
+  id: 'interrupt_ai_dev_tool_approval',
+  reason: InterruptReason.AIDevToolApproval,
+  toolCallId: 'tool_call_review_ticket',
+  message: '算法方案评审单正在评审中',
+  metadata: {
+    ticket: {
+      approvers: ['张三', '李四', 'xddddssss', 'ddd'],
+      sn: 'REV-2026-04-24-001',
+      status: APPROVAL_STATUS.PENDING,
+      submit_time: '2026-04-24 14:30:15',
+      title: '算法方案评审单',
+      url: 'https://example.com/review-tickets/REV-2026-04-24-001',
+    },
+  },
+};
 
 export const MOCK_INTERRUPT_MESSAGES: Message[] = [
   {
@@ -41,25 +58,11 @@ export const MOCK_INTERRUPT_MESSAGES: Message[] = [
     role: MessageRole.Interrupt,
     status: MessageStatus.Complete,
     content: '',
-    outcome: RunFinishedOutcome.Interrupt,
     runId: 'run_ai_dev_tool_approval',
     threadId: 'thread_ai_dev_tool_approval',
-    interrupt: [
-      {
-        reason: InterruptReason.AIDevToolApproval,
-        toolCallId: 'tool_call_review_ticket',
-        message: '算法方案评审单正在评审中',
-        metadata: {
-          ticket: {
-            approvers: ['张三', '李四', 'xddddssss', 'ddd'],
-            sn: 'REV-2026-04-24-001',
-            status: APPROVAL_STATUS.PENDING,
-            submit_time: '2026-04-24 14:30:15',
-            title: '算法方案评审单',
-            url: 'https://example.com/review-tickets/REV-2026-04-24-001',
-          },
-        },
-      },
-    ],
+    outcome: {
+      type: 'interrupt',
+      interrupts: [approvalInterrupt],
+    },
   },
 ];

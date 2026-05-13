@@ -25,17 +25,8 @@
  * IN THE SOFTWARE.
  */
 
-import type { InterruptReason, MessageRole, RunFinishedOutcome } from './constants';
+import type { APPROVAL_STATUS, InterruptReason, MessageRole } from './constants';
 import type { BaseMessage } from './messages';
-
-export enum APPROVAL_STATUS {
-  ABANDONED = 'abandoned', // 已废弃
-  APPROVED = 'approved', // 已批准
-  CANCELLED = 'cancelled', // 已取消
-  EXPIRED = 'expired', // 已过期
-  PENDING = 'pending', // 待审批
-  REJECTED = 'rejected', // 已拒绝
-}
 
 export type AIDevToolApprovalInterrupt = BaseInterrupt<
   InterruptReason.AIDevToolApproval,
@@ -58,19 +49,23 @@ export type AIDevToolApprovalInterrupt = BaseInterrupt<
 >;
 
 export type BaseInterrupt<T extends InterruptReason, M extends Record<string, any>> = {
+  expiresAt?: string;
+  id: string;
   message?: string;
   metadata?: M;
   properties?: Record<string, any>;
   reason: T;
+  // responseSchema?: JSONSchema4;
   toolCallId: string;
 };
 
-export type InterruptItem = AIDevToolApprovalInterrupt | BaseInterrupt<InterruptReason, Record<string, any>>;
+export type Interrupt = AIDevToolApprovalInterrupt | BaseInterrupt<InterruptReason, Record<string, any>>;
 
+export type InterruptItem = Interrupt;
 /**
  * 中断消息
  *
- * 对应 AG-UI 协议 `RUN_FINISHED { outcome: "interrupt", interrupt }` 事件。
+ * 对应 AG-UI 协议 `RUN_FINISHED { outcome: { type: "interrupt", interrupts } }` 事件。
  * 当 Agent 需要 human-in-the-loop（审批 / 补充信息 / 策略阻断等）时，
  * 会派生此类型消息以驱动 UI 渲染等待用户响应；用户响应后通过
  * `RunAgentInput.resume = { interruptId, payload }` 把结果回传给 Agent。
@@ -78,14 +73,14 @@ export type InterruptItem = AIDevToolApprovalInterrupt | BaseInterrupt<Interrupt
  * @see https://docs.ag-ui.com/drafts/interrupts
  */
 export interface InterruptMessage extends BaseMessage<MessageRole.Interrupt, string> {
-  /** outcome === interrupt 时，中断消息内容 */
-  interrupt?: InterruptItem[];
   message?: string;
-  /** 是否已被用户响应（rsume）过，用于 UI 区分"等待响应 / 已处理"两种态 */
+  /** 是否已被用户响应（resume）过，用于 UI 区分"等待响应 / 已处理"两种态 */
   outcome?: RunFinishedOutcome;
-  /** outcome === success 用户 resume 时回传给 Agent 的 payload，便于回放与持久化 */
+  /** outcome.type === success 用户 resume 时回传给 Agent 的 payload，便于回放与持久化 */
   result?: any;
   runId?: string;
   threadId?: string;
 }
-export type OnInterruptResume = (interrupt: InterruptItem, payload?: Record<string, any>) => Promise<void> | void;
+
+export type OnInterruptResume = (interrupt: Interrupt, payload?: Record<string, any>) => Promise<void> | void;
+export type RunFinishedOutcome = { interrupts: Interrupt[]; type: 'interrupt' } | { type: 'success' };
