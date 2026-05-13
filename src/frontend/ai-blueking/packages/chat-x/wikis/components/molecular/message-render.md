@@ -5,7 +5,7 @@ category: molecular
 description: 统一的消息渲染入口，通过 `message.role` 字段自动派发到对应的子组件。整个渲染过程由一个 `computed` 属性完成，无额外状态。
 aiSummary: >
   MessageRender 是单条消息的渲染入口，根据 message.role 派发到 UserMessage、AssistantMessage、ReasoningMessage、
-  ToolMessage、ActivityMessage、InfoMessage、LoadingMessage 等。Assistant 默认通过插槽用 ContentRender 渲染正文，可被默认插槽覆盖。
+  ToolMessage、ActivityMessage、InfoMessage、LoadingMessage、InterruptMessageRender 等。Assistant 默认通过插槽用 ContentRender 渲染正文，可被默认插槽覆盖。
   无独立状态，通常由 MessageContainer 内部调用而非业务直接挂载。
 relatedComponents:
   - slug: message-container
@@ -170,7 +170,7 @@ MessageRender
 │     ├── 'tool'       → ToolMessage（转发 message）
 │     ├── 'activity'   → ActivityMessage（转发 message）
 │     ├── 'loading'    → LoadingMessage（转发 message）
-│     ├── 'interrupt'  → InterruptMessage（转发 message + onInterruptResume）
+│     ├── 'interrupt'  → InterruptMessageRender（转发 message + onInterruptResume）
 │     │
 │     └── 其他 / 未知   → null（不渲染任何内容）
 ```
@@ -443,7 +443,7 @@ slot 参数类型与 `AssistantMessage` 的 slot 保持一致（`Partial<Assista
 | messageToolsStatus | `MessageToolsStatus`                                                       | —      | 工具按钮状态；**仅转发给 `UserMessage`**          |
 | onAction           | `(tool: IToolBtn) => Promise<string[] \| void>`                            | —      | 工具操作回调；**仅转发给 `UserMessage`**          |
 | onInputConfirm     | `(content: UserMessage['content'], docSchema: TagSchema) => Promise<void>` | —      | 用户编辑确认回调；**仅转发给 `UserMessage`**      |
-| onInterruptResume  | `(interrupt: Interrupt, payload?: Record<string, any>) => Promise<void>`   | —      | 中断响应回调；**仅转发给 `InterruptMessage`**     |
+| onInterruptResume  | `(interrupt: Interrupt, payload?: Record<string, any>) => Promise<void>`   | —      | 中断响应回调；**仅转发给 `InterruptMessageRender`**     |
 | onShortcutConfirm  | `(formModel: Record<string, unknown>) => Promise<void>`                    | —      | 用户快捷指令提交回调；**仅转发给 `UserMessage`**  |
 | tippyOptions       | `Partial<Omit<TippyOptions, 'getReferenceClientRect' \| 'triggerTarget'>>` | —      | 自定义 Tippy 配置；**仅转发给 `UserMessage`**     |
 
@@ -465,7 +465,7 @@ slot 参数类型与 `AssistantMessage` 的 slot 保持一致（`Partial<Assista
 | `tool`        | `ToolMessage`      | `message`                                                                                               | 工具调用返回结果      |
 | `activity`    | `ActivityMessage`  | `message`                                                                                               | 知识检索 / 引用文档   |
 | `loading`     | `LoadingMessage`   | `message`（字段被忽略，组件无 Props）                                                                   | 等待响应的加载占位    |
-| `interrupt`   | `InterruptMessage` | `message` + `onInterruptResume`                                                                         | human-in-the-loop 中断 |
+| `interrupt`   | `InterruptMessageRender` | `message` + `onInterruptResume`                                                                         | human-in-the-loop 中断 |
 | 其他 / 未知   | —                  | —                                                                                                       | 返回 `null`，不渲染   |
 
 ## 类型定义
