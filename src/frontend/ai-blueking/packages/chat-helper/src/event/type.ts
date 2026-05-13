@@ -93,7 +93,7 @@ export enum FlowTaskState {
 }
 
 /** 运行完成结果 */
-export enum RunFinishedOutcome {
+export enum RunFinishedOutcomeType {
   Success = 'success',
   Interrupt = 'interrupt'
 }
@@ -294,6 +294,13 @@ export interface IResume {
   payload: Record<string, unknown>;
 }
 
+export type IRunFinishedOutcome = {
+  type: RunFinishedOutcomeType.Success;
+} | {
+  type: RunFinishedOutcomeType.Interrupt;
+  interrupts: IApprovalInterrupt[];
+}
+
 /**
  * 标记 Agent 运行正常结束
  * 返回最终结果 result
@@ -303,8 +310,7 @@ export interface IRunFinishedEvent extends IBaseEvent {
   runId: number;
   threadId: string;
   type: EventType.RunFinished;
-  outcome?: RunFinishedOutcome;
-  interrupt?: IApprovalInterrupt;
+  outcome?: IRunFinishedOutcome;
 }
 
 /**
