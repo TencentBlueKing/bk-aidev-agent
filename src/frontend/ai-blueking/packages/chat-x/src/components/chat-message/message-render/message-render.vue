@@ -10,7 +10,7 @@
   import ActivityMessage from '../activity-message/activity-message.vue';
   import AssistantMessage from '../assistant-message/assistant-message.vue';
   import InfoMessage from '../info-message/info-message.vue';
-  import { InterruptMessage as InterruptMessageComp } from '../interrupt-message';
+  import { InterruptMessageRender } from '../interrupt-message';
   import LoadingMessage from '../loading-message/loading-message.vue';
   import ReasoningMessage from '../reasoning-message/reasoning-message.vue';
   import ToolMessage from '../tool-message/tool-message.vue';
@@ -70,10 +70,9 @@
       case MessageRole.Tool:
         return h(ToolMessage, props.message);
       case MessageRole.Activity:
-        console.log('props.message', props.message.content);
         return h(ActivityMessage, props.message);
       case MessageRole.Interrupt:
-        return h(InterruptMessageComp, {
+        return h(InterruptMessageRender, {
           ...props.message,
           onInterruptResume: props.onInterruptResume,
         });

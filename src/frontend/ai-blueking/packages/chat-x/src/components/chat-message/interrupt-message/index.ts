@@ -24,4 +24,4 @@
  * IN THE SOFTWARE.
  */
 
-export { default as InterruptMessage } from './interrupt-message.vue';
+export { default as InterruptMessageRender } from './interrupt-message.vue';
