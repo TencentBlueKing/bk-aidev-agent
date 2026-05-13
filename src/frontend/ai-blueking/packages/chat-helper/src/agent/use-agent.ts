@@ -26,7 +26,7 @@
 
 import { ref } from 'vue';
 
-import { AGUIProtocol, ApprovalInterruptTicketStatus, type IResume } from '../event';
+import { AGUIProtocol, ApprovalInterruptTicketStatus, RunFinishedOutcomeType, type IResume } from '../event';
 import { MessageRole, MessageStatus } from '../message';
 
 import type { IRequestConfig, ISSEProtocol } from '../http';
@@ -168,7 +168,8 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
   const pollResumeSession = (sessionCode: string) => {
     const lastMessage = mediator.message?.list.value.at(-1) as IInterruptMessage;
     const isInterruptMessage = lastMessage?.role === MessageRole.Interrupt;
-    const isTicketPending = lastMessage?.content?.interrupt?.metadata?.ticket?.status === ApprovalInterruptTicketStatus.Pending;
+    const isTicketPending = lastMessage?.content?.outcome?.type === RunFinishedOutcomeType.Interrupt
+      && lastMessage?.content?.outcome?.interrupts?.some(interrupt => interrupt.metadata?.ticket?.status === ApprovalInterruptTicketStatus.Pending);
     if (isInterruptMessage && isTicketPending) {
       setTimeout(() => {
         // 如果会话不匹配，则不继续轮询
