@@ -306,7 +306,7 @@ class ChatCompletionAgent(BaseModel):
                             else:
                                 new_content.append(each_content)
                         each.content = new_content
-                    messages.append(HumanMessage(id=each.id, content=str(each.content)))
+                    messages.append(HumanMessage(id=each.id, content=each.content))
                 case PromptRole.ASSISTANT.value | PromptRole.AI.value:
                     tool_calls = self._extract_tool_calls(bp)
                     messages.append(AIMessage(id=each.id, content=each.content, tool_calls=tool_calls))
