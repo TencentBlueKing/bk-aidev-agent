@@ -1,7 +1,7 @@
 import { createRequire } from "node:module"
 import { defineConfig } from "vitepress"
 import express from "express"
-import { version } from "../../package.json"
+import { version } from "../../../ai-blueking/packages/ai-blueking/package.json"
 import container from "markdown-it-container"
 
 const base = process.env.VITEPRESS_BASE || '__DOCS_BASE__/'

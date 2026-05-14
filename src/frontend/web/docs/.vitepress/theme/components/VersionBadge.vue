@@ -5,7 +5,7 @@
 </template>
 
 <script>
-import { version } from '../../../../package.json'
+import { version } from '../../../../../ai-blueking/packages/ai-blueking/package.json'
 
 export default {
   data() {

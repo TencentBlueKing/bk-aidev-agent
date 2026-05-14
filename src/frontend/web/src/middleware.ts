@@ -3,15 +3,18 @@ import path from 'node:path';
 import type { Context, Middleware } from 'koa';
 import send from 'koa-send';
 
-const DOCS_BASE_PLACEHOLDER = '__DOCS_BASE__/';
+const DOCS_BASE_PLACEHOLDER = '__DOCS_BASE__';
 
 /** Static file extensions — served directly, no rewriting */
 const STATIC_EXTS = new Set([
-  '.js', '.css', '.woff', '.woff2', '.ttf', '.eot',
+  '.woff', '.woff2', '.ttf', '.eot',
   '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp',
   '.mp4', '.webm', '.mp3', '.wav',
   '.json', '.map', '.txt', '.xml',
 ]);
+
+/** File extensions that may contain __DOCS_BASE__/ placeholder and need rewriting */
+const REPLACEABLE_EXTS = new Set(['.html', '.js', '.css']);
 
 export interface DocsMiddlewareOptions {
   /** 文档站的静态文件目录，默认为包内的 dist/static/ */
@@ -20,20 +23,19 @@ export interface DocsMiddlewareOptions {
   globals?: Record<string, string>;
 }
 
-// HTML file cache: filename → raw content (before replacement)
-const htmlCache = new Map<string, string>();
-
 /**
- * 预热 HTML 缓存，读取所有 .html 文件到内存。
+ * 预热缓存，读取所有可替换文件（.html / .js / .css）到内存。
+ * @param staticDir - 静态文件目录
+ * @param cache - 实例级缓存 Map
  */
-export function warmCache(staticDir: string): void {
+export function warmCache(staticDir: string, cache: Map<string, string>): void {
   const walk = (dir: string) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         walk(full);
-      } else if (entry.name.endsWith('.html')) {
-        htmlCache.set(full, fs.readFileSync(full, 'utf-8'));
+      } else if (REPLACEABLE_EXTS.has(path.extname(entry.name).toLowerCase())) {
+        cache.set(full, fs.readFileSync(full, 'utf-8'));
       }
     }
   };
@@ -68,15 +70,16 @@ function buildGlobalsScript(globals: Record<string, string>): string {
 
 /**
  * 创建文档站 Koa 中间件。
- * 挂载到任意路由后，自动将 HTML 中的 __DOCS_BASE__/ 替换为实际路径。
+ * 挂载到任意路由后，自动将 HTML 和 JS 文件中的 __DOCS_BASE__/ 替换为实际路径。
  */
 export function createDocsMiddleware(options: DocsMiddlewareOptions = {}): Middleware {
   const staticDir = options.staticDir || path.resolve(__dirname, 'static');
   const globals = options.globals || {};
+  const contentCache = new Map<string, string>();
 
   // Pre-warm cache on startup
   if (fs.existsSync(staticDir)) {
-    warmCache(staticDir);
+    warmCache(staticDir, contentCache);
   }
 
   return async (ctx: Context) => {
@@ -84,6 +87,73 @@ export function createDocsMiddleware(options: DocsMiddlewareOptions = {}): Middl
     if (ctx.method !== 'GET' && ctx.method !== 'HEAD') return;
 
     const reqPath = ctx.path || '/';
+    const ext = path.extname(reqPath).toLowerCase();
+
+    // Replaceable files (.js, .html): read, replace placeholder, serve
+    if (REPLACEABLE_EXTS.has(ext)) {
+      let filePath = reqPath;
+      if (ext === '.html') {
+        filePath = reqPath === '/' ? '/index.html' : reqPath;
+      }
+
+      const fullPath = path.join(staticDir, filePath);
+      const staticRoot = path.resolve(staticDir);
+      if (!fullPath.startsWith(staticRoot + path.sep) && fullPath !== staticRoot) {
+        ctx.status = 403;
+        ctx.body = 'Forbidden';
+        return;
+      }
+
+      const basePath = resolveBasePath(ctx).replace(/\/$/, '');
+
+      let rawContent = contentCache.get(fullPath);
+      if (rawContent === undefined && fs.existsSync(fullPath)) {
+        rawContent = fs.readFileSync(fullPath, 'utf-8');
+        contentCache.set(fullPath, rawContent);
+      }
+
+      // SPA fallback for HTML
+      if (rawContent === undefined && ext === '.html') {
+        const indexPath = path.join(staticDir, 'index.html');
+        rawContent = contentCache.get(indexPath);
+        if (rawContent === undefined && fs.existsSync(indexPath)) {
+          rawContent = fs.readFileSync(indexPath, 'utf-8');
+          contentCache.set(indexPath, rawContent);
+        }
+      }
+
+      if (rawContent === undefined) {
+        ctx.status = 404;
+        ctx.body = 'Not Found';
+        return;
+      }
+
+      const basePathNoSlash = basePath.replace(/^\//, '');
+      const content = rawContent
+        .replaceAll('/' + DOCS_BASE_PLACEHOLDER, '/' + basePathNoSlash)
+        .replaceAll(DOCS_BASE_PLACEHOLDER, basePath);
+
+      if (ext === '.html') {
+        // Inject global variables if configured
+        let html = content;
+        if (Object.keys(globals).length > 0) {
+          html = html.replace('</head>', `${buildGlobalsScript(globals)}\n</head>`);
+        }
+        ctx.set('Content-Type', 'text/html; charset=utf-8');
+        ctx.set('Cache-Control', 'no-cache');
+        ctx.body = html;
+      } else if (ext === '.css') {
+        ctx.set('Content-Type', 'text/css; charset=utf-8');
+        ctx.set('Cache-Control', 'public, max-age=31536000, immutable');
+        ctx.body = content;
+      } else {
+        ctx.set('Content-Type', 'application/javascript; charset=utf-8');
+        ctx.set('Cache-Control', 'public, max-age=31536000, immutable');
+        ctx.set('X-Content-Type-Options', 'nosniff');
+        ctx.body = content;
+      }
+      return;
+    }
 
     // Static assets: serve directly with long cache
     if (isStaticFile(reqPath)) {
@@ -100,29 +170,12 @@ export function createDocsMiddleware(options: DocsMiddlewareOptions = {}): Middl
       return;
     }
 
-    // HTML pages: read, replace, serve
-    let htmlPath = reqPath === '/' ? '/index.html' : reqPath;
-    if (!htmlPath.endsWith('.html')) {
-      htmlPath += '.html';
-    }
-
-    const fullPath = path.join(staticDir, htmlPath);
-    const basePath = resolveBasePath(ctx);
-
-    // Try to serve the requested HTML file, fallback to index.html (SPA)
-    let rawHtml = htmlCache.get(fullPath);
-    if (rawHtml === undefined && fs.existsSync(fullPath)) {
-      rawHtml = fs.readFileSync(fullPath, 'utf-8');
-      htmlCache.set(fullPath, rawHtml);
-    }
-    if (rawHtml === undefined) {
-      // SPA fallback
-      const indexPath = path.join(staticDir, 'index.html');
-      rawHtml = htmlCache.get(indexPath);
-      if (rawHtml === undefined && fs.existsSync(indexPath)) {
-        rawHtml = fs.readFileSync(indexPath, 'utf-8');
-        htmlCache.set(indexPath, rawHtml);
-      }
+    // SPA fallback for paths without extension
+    const indexPath = path.join(staticDir, 'index.html');
+    let rawHtml = contentCache.get(indexPath);
+    if (rawHtml === undefined && fs.existsSync(indexPath)) {
+      rawHtml = fs.readFileSync(indexPath, 'utf-8');
+      contentCache.set(indexPath, rawHtml);
     }
 
     if (rawHtml === undefined) {
@@ -131,10 +184,9 @@ export function createDocsMiddleware(options: DocsMiddlewareOptions = {}): Middl
       return;
     }
 
-    // Replace placeholder with actual base path
+    const basePath = resolveBasePath(ctx).replace(/\/$/, '');
     let html = rawHtml.replaceAll(DOCS_BASE_PLACEHOLDER, basePath);
 
-    // Inject global variables if configured
     if (Object.keys(globals).length > 0) {
       html = html.replace('</head>', `${buildGlobalsScript(globals)}\n</head>`);
     }

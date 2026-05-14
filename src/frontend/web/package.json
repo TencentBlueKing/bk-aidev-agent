@@ -1,6 +1,6 @@
 {
   "name": "ai-blueking-docs",
-  "version": "2.1.4-beta.2",
+  "version": "2.1.6-beta.4",
   "description": "AI 小鲸智能对话组件文档 — v2.1",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
@@ -27,7 +27,7 @@
     "preview": "VITEPRESS_BASE=/ vitepress build docs && PORT=4173 node ./server.cjs",
     "preview:no-mock": "VITEPRESS_BASE=/ vitepress preview docs",
     "server": "node ./server.cjs",
-    "prepublishOnly": "pnpm build:all"
+    "prepublishOnly": "pnpm build:npm"
   },
   "peerDependencies": {
     "@koa/router": ">=10.0.0",
@@ -49,7 +49,7 @@
     "@types/koa": "^3.0.2",
     "@types/koa-send": "^4.1.6",
     "@types/koa__router": "^12.0.5",
-    "esbuild": "^0.20.0",
+    "esbuild": "^0.20.2",
     "koa": "^2.14.0",
     "koa-mount": "^4.2.0",
     "koa-send": "^5.0.0",
