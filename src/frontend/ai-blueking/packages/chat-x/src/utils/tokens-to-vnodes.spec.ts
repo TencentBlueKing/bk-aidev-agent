@@ -28,6 +28,72 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Options, Renderer, Token } from '../markdown-it';
 import { tokensToVNodes } from './tokens-to-vnodes';
 
+const makeHtmlToken = (content: string, type: 'html_inline' | 'html_block' = 'html_inline'): Token =>
+  ({
+    type,
+    tag: '',
+    nesting: 0,
+    content,
+    children: null,
+    hidden: false,
+    level: 0,
+    markup: '',
+    info: '',
+    meta: null,
+    block: false,
+    attrs: null,
+    map: null,
+    attrIndex: () => -1,
+    attrPush: () => {},
+    attrSet: () => {},
+    attrGet: () => null,
+    attrJoin: () => {},
+  }) as unknown as Token;
+
+const makeTextToken = (content: string): Token =>
+  ({
+    type: 'text',
+    tag: '',
+    nesting: 0,
+    content,
+    children: null,
+    hidden: false,
+    level: 0,
+    markup: '',
+    info: '',
+    meta: null,
+    block: false,
+    attrs: null,
+    map: null,
+    attrIndex: () => -1,
+    attrPush: () => {},
+    attrSet: () => {},
+    attrGet: () => null,
+    attrJoin: () => {},
+  }) as unknown as Token;
+
+const makeInlineToken = (children: Token[]): Token =>
+  ({
+    type: 'inline',
+    tag: '',
+    nesting: 0,
+    content: '',
+    children,
+    hidden: false,
+    level: 0,
+    markup: '',
+    info: '',
+    meta: null,
+    block: false,
+    attrs: null,
+    map: null,
+    attrIndex: () => -1,
+    attrPush: () => {},
+    attrSet: () => {},
+    attrGet: () => null,
+    attrJoin: () => {},
+  }) as unknown as Token;
+
 describe('tokensToVNodes', () => {
   describe('renderer.rules 自定义块', () => {
     it('应将 mditOptions 作为规则第三参传入 markdown-it 规则', () => {
@@ -57,6 +123,77 @@ describe('tokensToVNodes', () => {
       });
 
       expect(rule).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('mergeHtmlInlineTokens - HTML 标签合并', () => {
+    const render = (tokens: Token[]) =>
+      tokensToVNodes([makeInlineToken(tokens)], { html: true, sanitizeHtmlFragment: (h: string) => h });
+
+    it('合并连续的 html_inline token 为单个 span', () => {
+      const tokens = [
+        makeHtmlToken('<font color="red">'),
+        makeHtmlToken('<b>'),
+        makeTextToken('标题'),
+        makeHtmlToken('</b>'),
+        makeHtmlToken('</font>'),
+      ];
+      const vnodes = render(tokens);
+      expect(vnodes).toHaveLength(1);
+      expect(vnodes[0].props.innerHTML).toBe('<font color="red"><b>标题</b></font>');
+    });
+
+    it('不合并非连续的 html_inline token', () => {
+      const softbreak = {
+        type: 'softbreak',
+        tag: '',
+        nesting: 0,
+        content: '',
+        children: null,
+        hidden: false,
+        level: 0,
+        markup: '',
+        info: '',
+        meta: null,
+        block: false,
+        attrs: null,
+        map: null,
+        attrIndex: () => -1,
+        attrPush: () => {},
+        attrSet: () => {},
+        attrGet: () => null,
+        attrJoin: () => {},
+      } as unknown as Token;
+      const tokens = [
+        makeHtmlToken('<b>'),
+        makeTextToken('A'),
+        makeHtmlToken('</b>'),
+        softbreak,
+        makeHtmlToken('<div>'),
+        makeTextToken('B'),
+        makeHtmlToken('</div>'),
+      ];
+      const vnodes = render(tokens);
+      expect(vnodes.length).toBeGreaterThan(1);
+    });
+
+    it('单个 html_inline token 不受影响', () => {
+      const tokens = [makeHtmlToken('<br>')];
+      const vnodes = render(tokens);
+      expect(vnodes).toHaveLength(1);
+      expect(vnodes[0].props.innerHTML).toBe('<br>');
+    });
+
+    it('合并时保留 html_block 语义', () => {
+      const tokens = [
+        makeHtmlToken('<div>', 'html_block'),
+        makeTextToken('content'),
+        makeHtmlToken('</div>', 'html_block'),
+      ];
+      const vnodes = render(tokens);
+      expect(vnodes).toHaveLength(1);
+      expect(vnodes[0].type).toBe('div');
+      expect(vnodes[0].props.innerHTML).toBe('<div>content</div>');
     });
   });
 });

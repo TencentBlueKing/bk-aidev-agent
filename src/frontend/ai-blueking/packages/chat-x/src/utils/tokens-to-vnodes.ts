@@ -48,6 +48,12 @@ export interface TokenToVNodeOptions {
    * HTML 净化函数，用于处理 innerHTML 的内容
    */
   sanitize?: (html: string) => string;
+  /**
+   * HTML 片段净化函数，用于流式场景下 html_inline/html_block token 的净化。
+   * 与 sanitize 不同，此函数不会自动闭合未匹配的标签，
+   * 因为流式渲染中 HTML 标签可能被拆分到不同的 token 中。
+   */
+  sanitizeHtmlFragment?: (html: string) => string;
 }
 
 // 定义栈节点的接口
@@ -162,6 +168,48 @@ const simpleHash = (str: string): string => {
 };
 
 /**
+ * 合并连续的 html_inline/html_block 和 text token。
+ * 流式场景下 markdown-it 会把 <font color="red"><b>标题</b></font>
+ * 拆成 5 个独立 token，每个被单独包裹在 <span> 中导致标签无法嵌套。
+ * 合并后用单个 wrapper 渲染即可正确显示。
+ */
+const mergeHtmlInlineTokens = (tokens: Token[]): Token[] => {
+  const merged: Token[] = [];
+  let i = 0;
+  while (i < tokens.length) {
+    const token = tokens[i];
+    const isMergeable = token.type === 'html_inline' || token.type === 'html_block' || token.type === 'text';
+    if (isMergeable) {
+      let content = token.content;
+      let j = i + 1;
+      while (j < tokens.length) {
+        const next = tokens[j];
+        if (next.type !== 'html_inline' && next.type !== 'html_block' && next.type !== 'text') break;
+        content += next.content;
+        j++;
+      }
+      if (j > i + 1) {
+        const hasBlock = tokens.slice(i, j).some(t => t.type === 'html_block');
+        merged.push({
+          ...token,
+          content,
+          type: hasBlock ? 'html_block' : 'html_inline',
+          tag: '',
+          nesting: 0,
+        } as Token);
+      } else {
+        merged.push(token);
+      }
+      i = j;
+    } else {
+      merged.push(token);
+      i++;
+    }
+  }
+  return merged;
+};
+
+/**
  * 内部递归函数，不重置 key 计数器
  */
 const tokensToVNodesInternal = (tokens: Token[], options: TokenToVNodeOptions): VNode[] => {
@@ -196,8 +244,8 @@ const tokensToVNodesInternal = (tokens: Token[], options: TokenToVNodeOptions): 
     // 2. Inline Tokens
     if (token.type === 'inline') {
       if (token.children && token.children.length > 0) {
-        // 使用内部函数递归，不重置计数器
-        const inlineVNodes = tokensToVNodesInternal(token.children, options);
+        const mergedChildren = mergeHtmlInlineTokens(token.children);
+        const inlineVNodes = tokensToVNodesInternal(mergedChildren, options);
         parent.children.push(...inlineVNodes);
       } else {
         // Text 节点通常不需要 key
@@ -244,7 +292,8 @@ const tokensToVNodesInternal = (tokens: Token[], options: TokenToVNodeOptions): 
     if (token.type === 'html_block' || token.type === 'html_inline') {
       if (options.html) {
         const tag = token.type === 'html_inline' ? 'span' : 'div';
-        const safeHtml = options.sanitize ? options.sanitize(token.content) : token.content;
+        const fragmentSanitizer = options.sanitizeHtmlFragment ?? options.sanitize;
+        const safeHtml = fragmentSanitizer ? fragmentSanitizer(token.content) : token.content;
         parent.children.push(
           h(tag, {
             innerHTML: safeHtml,

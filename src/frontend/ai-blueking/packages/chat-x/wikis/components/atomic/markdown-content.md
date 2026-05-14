@@ -157,8 +157,8 @@ AI 消息内容渲染的核心原子组件，集成代码高亮、LaTeX 公式�
 ## 组件结构与渲染流程
 
 ```
-props.content → completeMarkdownSyntax → md.parse → groupTokens → groupedTokens
-                                                                          │
+props.content → completeMarkdownSyntax → md.parse（html: true）→ groupTokens → groupedTokens
+                                                                               │
                           div.ai-markdown-content（contain: layout style）
                                         │
                         status === 'error' → CommonErrorContent（:content）
@@ -173,11 +173,20 @@ props.content → completeMarkdownSyntax → md.parse → groupTokens → groupe
                     ↓             ↓                    ↓               ↓
            MermaidContent  LatexContent        CodeContent    VNodeRenderer
            @mounted         @mounted           @mounted       @vue:mounted
-                    │
-                    └──── handleTokenMounted（throttle 100ms）→ containerScroll.toScrollBottom()
+                    │                                              │
+                    └──── handleTokenMounted（throttle 100ms）      │
+                         → containerScroll.toScrollBottom()        │
+                                                         sanitize（DOMPurify + sanitizeCSS）
+                                                         sanitizeHtmlFragment（流式片段净化）
 ```
 
 `VNodeRenderer` 的 `options` 中包含与当前 `MarkdownIt` 实例一致的 `mditOptions`（即 `md.options`），以便 `tokensToVNodes` 调用 `renderer.rules` 时第三参与 markdown-it 原生规则签名一致。
+
+`MarkdownIt` 构造时开启 `html: true`，允许行内 HTML 标签（如 `<font>`、`<div>`）通过 markdown-it 解析为 `html_inline` / `html_block` token。
+
+两组净化函数各司其职：
+- `sanitize`：DOMPurify 全局过滤后，再对 `style` 属性值进行 CSS 属性白名单校验（`sanitizeCSS`），用于最终渲染的完整 HTML。
+- `sanitizeHtmlFragment`：轻量级片段净化，**不自动闭合标签**，专用于流式渲染中拆分到多个 token 的 HTML 标签场景。
 
 ### Token 分组（groupTokens）
 
@@ -375,14 +384,23 @@ props.content → completeMarkdownSyntax → md.parse → groupTokens → groupe
 
 ### 安全性
 
-`VNodeRenderer` 渲染的 HTML 统一经过 DOMPurify 过滤，并额外允许 KaTeX 所需标签：
+HTML 渲染采用两层安全策略：
+
+**第一层 — DOMPurify**：全局过滤，移除危险标签和属性，同时允许 KaTeX 和 `<font>` 标签所需的内容：
 
 ```typescript
 const domPurifyConfig = {
-  ADD_TAGS: ['semantics', 'mrow', 'mi', 'mo', 'mn', 'msup', 'msub', 'mfrac', 'mtext', 'annotation'],
-  ADD_ATTR: ['xmlns', 'mathvariant', 'encoding', 'style'],
+  ADD_TAGS: ['font', 'semantics', 'mrow', 'mi', 'mo', 'mn', 'msup', 'msub', 'mfrac', 'mtext', 'annotation'],
+  ADD_ATTR: ['xmlns', 'mathvariant', 'encoding', 'style', 'color', 'size', 'face'],
+  FORBID_TAGS: ['style'],
 };
 ```
+
+> `FORBID_TAGS: ['style']` 防止 `<style>` 标签注入全局 CSS，样式属性通过 `style` 属性（attribute）而非 `<style>` 标签（tag）控制。
+
+**第二层 — CSS 属性白名单**（`sanitizeCSS`）：DOMPurify 处理后，对 `style` 属性值做二次过滤，仅保留白名单内的安全 CSS 属性，拦截 `url()`、`expression()`、`javascript:` 等危险模式。
+
+**流式场景 — `sanitizeHtmlFragment`**：流式渲染中 HTML 标签可能被拆分到多个 `html_inline` token（如 `<font color="red">` 和 `</font>` 分属不同 token），DOMPurify 会自动闭合未匹配标签导致样式丢失。`sanitizeHtmlFragment` 只做危险模式匹配不自动闭合，专用于此场景。
 
 > `CodeContent`、`MermaidContent`、`LatexContent` 各自内部处理安全性（KaTeX `errorColor`、highlight.js 转义等），不经过 DOMPurify。
 

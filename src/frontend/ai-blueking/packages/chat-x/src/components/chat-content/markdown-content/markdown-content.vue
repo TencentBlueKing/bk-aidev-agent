@@ -70,6 +70,8 @@
   import MarkdownIt from '../../../markdown-it/index';
   import { markdownItLatex, markdownItMermaid } from '../../../plugins';
   import { markdownItContainer } from '../../../plugins/markdown-container';
+  import { sanitizeCSS } from '../../../utils/css-sanitizer';
+  import { sanitizeHtmlFragment } from '../../../utils/html-sanitizer';
   // import { markdownAnimationAttrs } from '../../../plugins/markdown-animation-attrs';
   import { completeMarkdownSyntax } from '../../../utils/stream-markdown-completer';
   import { CodeContent, MermaidContent } from '../../markdown-token';
@@ -82,10 +84,18 @@
   import './markdown-content.css';
   import 'katex/dist/katex.min.css';
 
-  // DOMPurify 配置：允许 KaTeX 生成的标签和属性
   const domPurifyConfig: DOMPurifyConfig = {
-    ADD_TAGS: ['semantics', 'mrow', 'mi', 'mo', 'mn', 'msup', 'msub', 'mfrac', 'mtext', 'annotation'],
-    ADD_ATTR: ['xmlns', 'mathvariant', 'encoding', 'style'],
+    ADD_TAGS: ['font', 'semantics', 'mrow', 'mi', 'mo', 'mn', 'msup', 'msub', 'mfrac', 'mtext', 'annotation'],
+    ADD_ATTR: ['xmlns', 'mathvariant', 'encoding', 'style', 'color', 'size', 'face'],
+    FORBID_TAGS: ['style'],
+  };
+
+  const sanitize = (html: string): string => {
+    const safeHtml = dompurify.sanitize(html, domPurifyConfig);
+    return safeHtml.replace(/\sstyle="([^"]*)"/gi, (_match, value) => {
+      const safeCss = sanitizeCSS(value);
+      return safeCss ? ` style="${safeCss}"` : '';
+    });
   };
 
   defineSlots<{
@@ -103,7 +113,7 @@
 
   // 代码高亮由 CodeContent 组件处理，不在 MarkdownIt 解析时进行
   // 这样可以避免流式输入时的同步高亮开销，提升性能
-  const md = new MarkdownIt()
+  const md = new MarkdownIt({ html: true })
     // .use(markdownAnimationAttrs)
     .use(markdownItFootnote)
     .use(markdownItIns)
@@ -122,7 +132,8 @@
     html: true,
     mditOptions: md.options,
     renderer: md.renderer,
-    sanitize: (html: string) => dompurify.sanitize(html, domPurifyConfig),
+    sanitize,
+    sanitizeHtmlFragment,
   };
 
   // 检查 token 组中是否包含 mermaid 代码块
