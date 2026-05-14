@@ -70,6 +70,7 @@ import {
   CustomEventName,
   EventType,
   FlowTaskState,
+  IApprovalResultCustomValue,
   RunFinishedOutcomeType,
 } from './type';
 
@@ -141,6 +142,9 @@ export class AGUIProtocol implements ISSEProtocol {
         break;
       case CustomEventName.TempMessage:
         this.handleTempMessageCustomEvent(event);
+        break;
+      case CustomEventName.ApprovalResult:
+        this.handleApprovalResultCustomEvent(event);
         break;
       default:
         break;
@@ -295,13 +299,9 @@ export class AGUIProtocol implements ISSEProtocol {
    */
   handleRunFinishedEvent(event: IRunFinishedEvent) {
     const message = this.messageModule.getCurrentLoadingMessage();
-    if (message && (!event.outcome || event.outcome.type === RunFinishedOutcomeType.Success)) {
+    if (message && !event.outcome) {
       // 正常结束，标记为完成
       message.status = MessageStatus.Complete;
-      // 如果是中断消息的后续消息，则更新中断消息内容
-      if (message.role === MessageRole.Interrupt) {
-        message.content = event;
-      }
     }
     if (event.outcome?.type === RunFinishedOutcomeType.Interrupt) {
       // 如果是中断消息，则创建一个中断消息
@@ -359,6 +359,18 @@ export class AGUIProtocol implements ISSEProtocol {
       content: value.message,
       status: value.status,
     });
+  }
+
+  /**
+   * 自定义事件 处理审批结果
+   */
+  handleApprovalResultCustomEvent(event: ICustomEvent) {
+    const value = event.value as IApprovalResultCustomValue;
+    const message = this.messageModule.getCurrentLoadingMessage();
+    if (message) {
+      message.content = value;
+      message.status = MessageStatus.Complete;
+    }
   }
 
   /**

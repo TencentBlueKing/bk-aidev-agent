@@ -37,6 +37,7 @@ export enum CustomEventName {
   KnowledgeRagTextContent = 'knowledge_rag_text_content',
   ReferenceDocument = 'reference_document',
   TempMessage = 'temp_message',
+  ApprovalResult = 'approval_result',
 }
 
 export enum EventType {
@@ -103,6 +104,7 @@ export enum ApprovalInterruptTicketStatus {
   Abandoned = 'abandoned',
   Approved = 'approved',
   Cancelled = 'cancelled',
+  Draft = 'draft',
   Expired = 'expired',
   Rejected = 'rejected',
   Pending = 'pending',
@@ -110,7 +112,7 @@ export enum ApprovalInterruptTicketStatus {
 
 /** 中断原因 */
 export enum InterruptReason {
-  AIDevToolApproval = 'aidev_tool_approval',
+  AIDevToolApproval = 'aidev:tool_approval',
 }
 
 /** 恢复状态 */
@@ -165,7 +167,8 @@ export interface ICustomEvent extends IBaseEvent {
     | IKnowledgeRagResultCustomValue
     | IKnowledgeRagTextContentCustomValue
     | IReferenceDocumentCustomValue
-    | ITempMessageCustomValue;
+    | ITempMessageCustomValue
+    | IApprovalResultCustomValue;
 }
 
 export type IEvent =
@@ -369,6 +372,8 @@ export interface ITempMessageCustomValue {
   message: string;
   status: MessageStatus;
 }
+
+export type IApprovalResultCustomValue = IRunFinishedEvent
 
 export interface ITextMessageChunkEvent extends IBaseEvent {
   delta?: string;
