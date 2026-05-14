@@ -32,7 +32,7 @@ dependencies = [
     "e2b-code-interpreter>=2.6.0",
 ]
 name = "aidev-agent"
-version = "2.0.1"
+version = "2.0.2"
 description = "bkaidev agent builder"
 
 [dependency-groups]
