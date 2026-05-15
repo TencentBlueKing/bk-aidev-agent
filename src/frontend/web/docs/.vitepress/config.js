@@ -54,6 +54,7 @@ export default defineConfig({
           text: "功能说明",
           items: [
             { text: "聊天交互", link: "/guide/core-features/chat-interaction" },
+            { text: "蓝鲸行内富文本", link: "/guide/core-features/markdown-inline-style" },
             { text: "内容引用", link: "/guide/core-features/content-referencing" },
             { text: "快捷指令", link: "/guide/core-features/shortcuts" },
             { text: "提示词与资源", link: "/guide/core-features/prompts" },

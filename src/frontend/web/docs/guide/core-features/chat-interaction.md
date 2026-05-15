@@ -117,11 +117,12 @@ enum MessageStatus {
 AI 小鲸支持多种内容渲染格式：
 
 - **Markdown**：支持标题、列表、表格、链接、图片等标准 Markdown 语法
+- **蓝鲸行内富文本**（v2.1.4-beta.6+）：`::bk{color=red; bold}重点:/bk::` 等安全行内样式，详见 [蓝鲸行内富文本](/guide/core-features/markdown-inline-style)
 - **代码高亮**：支持语法高亮、行号显示、代码复制
 - **LaTeX 公式**：通过 KaTeX 渲染数学公式
 - **Mermaid 图表**：支持流程图、时序图、甘特图等 Mermaid 图表
 
-所有 Markdown 内容都经过安全处理，防止 XSS 攻击。
+所有 Markdown 内容都经过安全处理，防止 XSS 攻击。**不解析任意 HTML 标签**；若需彩色标题、背景高亮等，请让模型使用蓝鲸行内富文本语法，并在 AIDev Agent 系统提示词中约定格式（参见上文链接中的 LLM 配置示例）。
 
 ## 停止生成
 

@@ -267,18 +267,21 @@ AI 选区组件，用于在页面中通过选区触发快捷指令。
 
 ## ContentRender
 
-内容渲染组件，支持 Markdown 渲染。
+内容渲染组件，支持 Markdown 渲染（含 v2.1.4-beta.6+ 蓝鲸行内富文本 `::bk{...}...:/bk::`，不解析任意 HTML）。
 
 ### Props
 
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `content` | `string` | `''` | 要渲染的内容（支持 Markdown 格式） |
+| `content` | `string` | `''` | 要渲染的内容（支持 Markdown 及蓝鲸行内富文本） |
 
 ### 用法示例
 
 ```vue
 <template>
   <ContentRender content="## 标题\n这是一段 **Markdown** 内容。" />
+  <ContentRender content="::bk{color=red; bold}重要:/bk::" />
 </template>
 ```
+
+行内富文本语法与 LLM 提示词配置见 [蓝鲸行内富文本](/guide/core-features/markdown-inline-style)。
