@@ -389,6 +389,8 @@ ai-chat-container
 | `getSideTabRenderComponent` | `(h, tab, { removeCustomTab }) => VNode \| undefined`。返回自定义 Tab 标签 VNode；未返回时使用默认图标 + `tab.label` + 关闭按钮 |
 | `getSideRenderComponent` | `(h, props) => VNode \| undefined`。返回侧栏内容区组件 VNode；未返回时使用 `selectedTab.data.component` |
 
+侧栏内容区实现上会以 **`selectedTab.name` 作为外层 `key`**，切换 Tab 时重建子树，避免插槽与局部状态残留；当前 Tab 的 `:is` 由内部 **`computed`** 根据 `getSideRenderComponent(h, selectedTab.data.props)` 与 `data.component` 解析，保证 Tab 切换或 `onCustomTabChange` 异步更新 props 后内容类型与数据一致。
+
 ```vue
 <template>
   <ChatContainer
@@ -420,7 +422,7 @@ ai-chat-container
 
 ### 自定义 Tab 与「在对话中定位」
 
-`addCustomTab` 的 `data` 可携带 **`messageUid`**（与对应活动消息的 `message.uid` 一致）。`ChatContainer` 在侧栏用 `<component :is>` 渲染自定义 Tab 时，会向子组件提供 **`locateButton` 插槽**：默认渲染「在对话中定位」按钮，点击后调用内部 `handleLocateMessageGroup(messageUid)`，优先滚动到主区域 `document.getElementById(messageUid)`；若不存在该节点，则在当前 `messageGroups` 中查找包含 `message.uid === messageUid` 的消息组，并滚动到该组的容器（`MessageGroup.uid` 作为组级 `id`）。
+`addCustomTab` 的 `data` 可携带 **`messageUid`**（与对应活动消息的 `message.uid` 一致）。`ChatContainer` 在侧栏用 `<component :is="sideRenderComponent">`（内部计算属性，见上文「侧栏渲染扩展」）渲染自定义 Tab 时，会向子组件提供 **`locateButton` 插槽**：默认渲染「在对话中定位」按钮，点击后调用内部 `handleLocateMessageGroup(messageUid)`，优先滚动到主区域 `document.getElementById(messageUid)`；若不存在该节点，则在当前 `messageGroups` 中查找包含 `message.uid === messageUid` 的消息组，并滚动到该组的容器（`MessageGroup.uid` 作为组级 `id`）。
 
 子组件若需展示该按钮，请在模板中声明 `<slot name="locateButton" />`（例如 FlowAgent 节点详情标题栏）。`FlowAgentContent` 等会在打开节点详情 Tab 时将 `messageUid` 写入 `data`，与 `ActivityMessage` 下传给内容区的 `message-uid` 对齐。
 

@@ -140,7 +140,7 @@
   </div> -->
 </template>
 <script setup lang="ts">
-  import { type ComputedRef, cloneVNode, computed, onUnmounted, shallowRef, watch } from 'vue';
+  import { type ComputedRef, cloneVNode, computed, onMounted, onUnmounted, shallowRef, watch } from 'vue';
 
   import { Loading } from 'bkui-vue';
 
@@ -159,6 +159,7 @@
     NodeOutputIcon,
   } from '../../../icons';
   import { t } from '../../../lang/lang';
+  import { formatElapsedTime } from '../../../utils/utils';
   import AiLoading from '../../ai-loading/ai-loading.vue';
   import HighlightKeyword from '../../highlight-keyword/highlight-keyword';
   import ActivityLayout from '../activity-layout/activity-layout.vue';
@@ -207,33 +208,10 @@
   const { addCustomTab, removeCustomTab, selectedTab } = useCustomTabConsumer<CustomBkFlowTabData>()!;
   /** 与 addCustomTab 的 name 保持一致，用于 task / node 选中态 */
   const selectedTabName = computed(() => selectedTab.value?.name ?? '');
-  const getTaskTabName = (task: BkFlowTask) => (task.task_id != null ? `${task.task_id}` : '');
-  const getConfidenceTabName = (task: BkFlowTask) => (task.task_id != null ? `${task.task_id}` : '');
-  const getNodeTabName = (task: BkFlowTask, node: BkFlowNode) =>
-    task.task_id != null ? `${task.task_id}|${node.id}|${node.name}` : '';
+
   /** 用户手动切换 Tab 后不再沿用 is_active 默认高亮 */
   const hasUserSelectedTab = shallowRef(false);
-  const skipNextTabSelectionMark = shallowRef(false);
-  const hasAutoOpenedActiveTask = shallowRef(false);
-  const markUserTabSelection = () => {
-    hasUserSelectedTab.value = true;
-  };
-  const displaySelectedTabName = computed(() => {
-    if (hasUserSelectedTab.value) {
-      return selectedTabName.value;
-    }
-    const activeTask = taskList.value.find(task => task.is_active);
-    if (activeTask?.task_id != null) {
-      return getTaskTabName(activeTask);
-    }
-    return selectedTabName.value;
-  });
-  const isTaskSelected = (task: BkFlowTask) => {
-    const name = displaySelectedTabName.value;
-    return name === getTaskTabName(task) || name === getConfidenceTabName(task);
-  };
-  const isNodeSelected = (task: BkFlowTask, node: BkFlowNode) =>
-    displaySelectedTabName.value === getNodeTabName(task, node);
+
   const provideContainerScrollData = useContainerScrollConsumer();
   const collapsed = defineModel<boolean>('collapsed', {
     default: false,
@@ -249,6 +227,34 @@
     Array.isArray(props.content) ? props.content : [props.content ?? {}],
   ) as ComputedRef<BkFlowTask[]>;
   const taskExpandedMap = shallowRef<Record<number, boolean>>({});
+
+  const getTaskTabName = (task: BkFlowTask) => (task.task_id != null ? `${task.task_id}` : '');
+  const getConfidenceTabName = (task: BkFlowTask) => (task.task_id != null ? `${task.task_id}` : '');
+  const getNodeTabName = (task: BkFlowTask, node: BkFlowNode) =>
+    task.task_id != null ? `${task.task_id}|${node.id}|${node.name}` : '';
+
+  const displaySelectedTabName = computed(() => {
+    if (hasUserSelectedTab.value) {
+      return selectedTabName.value;
+    }
+    const activeTask = taskList.value.find(task => task.is_active);
+    if (activeTask?.task_id != null) {
+      return getTaskTabName(activeTask);
+    }
+    return selectedTabName.value;
+  });
+
+  const markUserTabSelection = () => {
+    hasUserSelectedTab.value = true;
+  };
+
+  const isTaskSelected = (task: BkFlowTask) => {
+    const name = displaySelectedTabName.value;
+    return name === getTaskTabName(task) || name === getConfidenceTabName(task);
+  };
+
+  const isNodeSelected = (task: BkFlowTask, node: BkFlowNode) =>
+    displaySelectedTabName.value === getNodeTabName(task, node);
 
   const isTaskExpanded = (task: BkFlowTask) => taskExpandedMap.value[task.task_id] !== false;
 
@@ -304,42 +310,6 @@
     }));
   });
 
-  const formatElapsedTime = (seconds: number): string => {
-    if (seconds < 1) return '<1s';
-
-    const d = Math.floor(seconds / 86400);
-    const h = Math.floor((seconds % 86400) / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-
-    const parts: string[] = [];
-    if (d > 0) parts.push(`${d}d`);
-    if (h > 0) parts.push(`${h}h`);
-    if (m > 0) parts.push(`${m}m`);
-    if (s > 0) parts.push(`${s}s`);
-
-    return parts.join('');
-  };
-
-  const openTaskTab = (task: BkFlowTask, extraProps?: Record<string, unknown>) => {
-    const taskId = task.task_id;
-    if (taskId == null) return;
-    addCustomTab?.({
-      label: task.task_name,
-      name: getTaskTabName(task),
-      data: {
-        component: BkFlowNodeDetail,
-        messageUid: props.messageUid,
-        props: {
-          loading: true,
-          task_id: taskId,
-          task_name: task.task_name,
-          data: {},
-          ...extraProps,
-        },
-      },
-    });
-  };
   const handleNodeDetail = (task: BkFlowTask, node: BkFlowNode) => {
     const taskId = task.task_id;
     if (taskId != null) {
@@ -362,9 +332,9 @@
       });
     }
   };
-  const handleTaskConfidence = (task: BkFlowTask) => {
-    const taskId = task.task_id;
-    if (taskId == null) return;
+  const handleTaskConfidence = (task?: BkFlowTask) => {
+    const taskId = task?.task_id;
+    if (!taskId) return;
     markUserTabSelection();
     addCustomTab?.({
       label: t('有效证据'),
@@ -382,25 +352,15 @@
       },
     });
   };
-  watch(
-    () => taskList.value,
-    () => {
-      if (hasAutoOpenedActiveTask.value || hasUserSelectedTab.value) return;
-      const activeTask = taskList.value.find(task => task.is_active && task.has_confidence);
-      if (!activeTask) return;
-      hasAutoOpenedActiveTask.value = true;
-      skipNextTabSelectionMark.value = true;
-      openTaskTab(activeTask);
-    },
-    { immediate: true },
-  );
   watch(selectedTabName, (_name, oldName) => {
     if (oldName === undefined) return;
-    if (skipNextTabSelectionMark.value) {
-      skipNextTabSelectionMark.value = false;
+    markUserTabSelection();
+  });
+  onMounted(() => {
+    if (!provideContainerScrollData?.value) {
       return;
     }
-    markUserTabSelection();
+    handleTaskConfidence(taskList.value.find(task => task.is_active && task.has_confidence));
   });
   onUnmounted(() => {
     // 这里用于判断是否是在 message-container 中被销毁的.

@@ -23,56 +23,26 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-export const getCookieByName = (name: string) => {
-  if (typeof document === 'undefined') return null;
-  const cookie = document.cookie.split(';').find(c => c.trim().startsWith(`${name}=`));
-  return cookie ? cookie.split('=')[1] : null;
-};
+import { describe, expect, it } from 'vitest';
 
-/**
- *
- * @param duration 耗时，单位：毫秒
- * @returns 返回格式化后的耗时字符串，如：1m 30s 500ms
- */
-export const formatDuration = (duration: number) => {
-  const minutes = Math.floor(duration / 60000);
-  const seconds = Math.floor((duration % 60000) / 1000);
-  const milliseconds = duration % 1000;
+import { formatElapsedTime } from './utils';
 
-  const parts: string[] = [];
+describe('formatElapsedTime', () => {
+  it('不足 1 秒时应返回 <1s', () => {
+    expect(formatElapsedTime(0)).toBe('<1s');
+    expect(formatElapsedTime(0.5)).toBe('<1s');
+  });
 
-  if (minutes > 0) {
-    parts.push(`${minutes} m`);
-  }
+  it('应拼接天、时、分、秒中非零部分', () => {
+    expect(formatElapsedTime(45)).toBe('45s');
+    expect(formatElapsedTime(90)).toBe('1m30s');
+    expect(formatElapsedTime(3661)).toBe('1h1m1s');
+    expect(formatElapsedTime(90061)).toBe('1d1h1m1s');
+  });
 
-  if (seconds > 0) {
-    parts.push(`${seconds} s`);
-  }
-
-  if (milliseconds > 0 || parts.length === 0) {
-    parts.push(`${milliseconds} ms`);
-  }
-
-  return parts.join(' ');
-};
-
-export const generateUUID = () => {
-  return `id_${Math.random().toString(36).substring(2, 9)}`;
-};
-
-export const formatElapsedTime = (seconds: number): string => {
-  if (seconds < 1) return '<1s';
-
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-
-  const parts: string[] = [];
-  if (d > 0) parts.push(`${d}d`);
-  if (h > 0) parts.push(`${h}h`);
-  if (m > 0) parts.push(`${m}m`);
-  if (s > 0) parts.push(`${s}s`);
-
-  return parts.join('');
-};
+  it('整分钟/整小时等中间为零的项应省略', () => {
+    expect(formatElapsedTime(60)).toBe('1m');
+    expect(formatElapsedTime(3600)).toBe('1h');
+    expect(formatElapsedTime(86400)).toBe('1d');
+  });
+});

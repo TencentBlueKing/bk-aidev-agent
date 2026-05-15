@@ -44,9 +44,7 @@
                         }
                       },
                     },
-                    getSideTabRenderComponent?.(h, tab, {
-                      removeCustomTab,
-                    }) ?? [
+                    getSideTabRenderComponent?.(h, tab, { removeCustomTab }) ?? [
                       h(tab.name === EXECUTION_TAB_NAME ? ExecutionIcon : NodeTabIcon, {
                         class: 'ai-execution-summary-icon',
                       }),
@@ -84,9 +82,12 @@
             />
           </template>
           <template v-if="selectedTab">
-            <div class="ai-chat-container-message-slot">
+            <div
+              :key="selectedTab.name"
+              class="ai-chat-container-message-slot"
+            >
               <component
-                :is="getSideRenderComponent?.(h, selectedTab?.data?.props ?? {}) ?? selectedTab?.data?.component"
+                :is="sideRenderComponent"
                 :key="selectedTab.name"
                 v-bind="selectedTab?.data?.props"
               >
@@ -334,6 +335,10 @@
     ...props.resizeProps,
     placement: props.placement,
   }));
+
+  const sideRenderComponent = computed(() => {
+    return props.getSideRenderComponent?.(h, selectedTab.value.data?.props ?? {}) ?? selectedTab.value.data?.component;
+  });
   useGlobalConfig({
     supportUpload: computed(() => props.supportUpload ?? false),
   });

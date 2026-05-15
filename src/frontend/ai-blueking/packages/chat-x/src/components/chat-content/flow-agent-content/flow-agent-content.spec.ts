@@ -420,25 +420,40 @@ describe('FlowAgentContent', () => {
       expect(wrapper.find('.flow-agent-task-header').classes()).toContain('is-selected');
     });
 
-    it('is_active 且 task_tab 为 true 时应自动打开任务 Tab', () => {
+    it('is_active 且 has_confidence 为 true 时应在挂载后自动打开有效证据 Tab', () => {
       wrapper = mount(FlowAgentContent, {
         props: {
           content: createContent({
             is_active: true,
-            task_tab: true,
-          } as Partial<BkFlowTask>),
+            has_confidence: true,
+          }),
         },
       });
 
       expect(mockAddCustomTab).toHaveBeenCalled();
       const payload = mockAddCustomTab.mock.calls[0]?.[0] as {
-        data?: { props?: { task_id?: number } };
+        data?: { props?: { has_confidence?: boolean; task_id?: number } };
         label?: string;
         name?: string;
       };
-      expect(payload?.label).toBe('测试任务');
+      expect(payload?.label).toBe('有效证据');
       expect(payload?.name).toBe('100');
+      expect(payload?.data?.props?.has_confidence).toBe(true);
       expect(payload?.data?.props?.task_id).toBe(100);
+    });
+
+    it('无消息容器滚动上下文时不应自动打开有效证据 Tab', () => {
+      mockScrollRef.value = undefined as unknown as { autoScrollEnabled: boolean };
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent({
+            is_active: true,
+            has_confidence: true,
+          }),
+        },
+      });
+
+      expect(mockAddCustomTab).not.toHaveBeenCalled();
     });
   });
 

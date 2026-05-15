@@ -1156,7 +1156,7 @@
   };
 
   const getSideTabRenderComponent = (createElement: typeof h, tab: CustomTab<Record<string, unknown>>) => {
-    console.info(tab);
+    console.info('getSideTabRenderComponent', tab.name);
     if (tab.name === '634859') {
       return createElement('div', {}, 'dddd');
     }

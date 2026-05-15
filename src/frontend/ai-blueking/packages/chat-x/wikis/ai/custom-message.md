@@ -328,7 +328,7 @@ Flow / KnowledgeRag 等子组件的外框：
   - 任务 Tab：`name = String(task_id)`
   - 节点 Tab：`name = \`${task_id}|${node.id}|${node.name}\``
   - 有效证据：`has_confidence` + 独立 Tab
-  - `is_active && has_confidence` 时首次自动 `openTaskTab`
+  - `is_active && has_confidence` 且在 `MessageContainer` 滚动上下文内时，挂载后自动打开「有效证据」Tab（`handleTaskConfidence`）
   - 组件在 `MessageContainer` 内卸载时批量 `removeCustomTab`
 - **默认详情组件**：`BkFlowNodeDetail`（需 `<slot name="locateButton" />`）
 - **应用覆盖**：`ChatContainer` 的 `getSideRenderComponent` / `onCustomTabChange`（详见侧栏文档）
