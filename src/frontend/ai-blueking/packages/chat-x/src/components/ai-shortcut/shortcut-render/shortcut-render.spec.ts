@@ -60,7 +60,7 @@ vi.mock('bkui-vue', () => {
     setup(props, { slots }) {
       return () =>
         h('div', { class: 'mock-form-item', 'data-property': props.property }, [
-          h('label', { class: 'mock-label' }, props.label),
+          slots.label ? slots.label() : h('label', { class: 'mock-label' }, props.label),
           slots.default?.(),
         ]);
     },
@@ -304,6 +304,26 @@ describe('ShortcutRender', () => {
       });
 
       expect(wrapper.find('.mock-input').exists()).toBe(true);
+    });
+
+    it('应通过 label 插槽渲染 component.name', () => {
+      const components: ShortcutComponent[] = [
+        {
+          key: 'name',
+          name: '姓名',
+          type: 'input',
+        },
+      ];
+
+      wrapper = mount(ShortcutRender, {
+        props: {
+          id: 'test',
+          name: '测试',
+          components,
+        },
+      });
+
+      expect(wrapper.find('.shortcut-render-form-label').text()).toBe('姓名');
     });
 
     it('应该渲染 textarea 类型组件', () => {

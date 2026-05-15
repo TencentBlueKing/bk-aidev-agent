@@ -53,7 +53,10 @@
       </template>
       <template v-else>
         <div class="execution-summary-content-empty">
-          <Exception type="empty" />
+          <Exception
+            class="empty-exception"
+            type="empty"
+          />
           <div class="execution-summary-content-empty-text">
             {{ keyword ? t('搜索结果为空') : t('暂无数据') }}
             <Button
@@ -201,8 +204,8 @@
         justify-content: center;
         width: 100%;
 
-        .#{$bk-prefix}-exception-page {
-          .#{$bk-prefix}-exception-img {
+        .empty-exception {
+          img {
             height: 200px;
           }
         }

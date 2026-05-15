@@ -25,6 +25,11 @@
             class="shortcut-render-form-item"
             :style="{ gridColumn: getGridColumn(component, index) }"
           >
+            <template #label>
+              <span class="shortcut-render-form-label">
+                {{ component.name ?? component.formItemProps?.label }}
+              </span>
+            </template>
             <component :is="getComponent(component)" />
           </Form.FormItem>
         </template>
@@ -107,6 +112,7 @@
     const { options: oldOptions, ...oldProps } = component ?? {};
     const options = (componentOptions ?? oldOptions) as { label: string; value: string }[];
     const componentProps = {
+      class: `shortcut-render-form-item_${component.type}`,
       ...oldProps,
       ...otherProps,
       modelValue: localFormModel[component.key],
@@ -148,6 +154,7 @@
           componentProps,
           options?.map(option =>
             h(Checkbox, {
+              class: 'shortcut-render-form-item_checkbox',
               ...option,
             }),
           ),
@@ -159,6 +166,7 @@
           componentProps,
           options?.map(option =>
             h(Radio, {
+              class: 'shortcut-render-form-item_radio',
               ...option,
             }),
           ),
@@ -274,17 +282,21 @@
           }
         }
 
-        .#{$bk-prefix}-form-label {
+        &-label {
           font-size: 12px;
           color: #4d4f56;
         }
 
-        .#{$bk-prefix}-form-item {
+        &-item {
           margin-bottom: 16px;
 
-          .#{$bk-prefix}-radio-label,
-          .#{$bk-prefix}-checkbox-label {
+          &_radio,
+          &_checkbox {
             font-size: 12px;
+
+            span {
+              font-size: 12px;
+            }
           }
 
           &:last-child {

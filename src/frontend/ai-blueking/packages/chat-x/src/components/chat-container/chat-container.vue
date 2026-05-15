@@ -12,12 +12,15 @@
     <ResizeLayout
       v-else
       class="ai-chat-container-resize-layout"
-      :class="{ 'ai-is-collapse': isCollapse || executionGroups?.length < 1 || renderMode === RenderMode.Share }"
+      :class="{
+        'ai-is-collapse':
+          isCollapse || (!keyword?.length && executionGroups?.length < 1) || renderMode === RenderMode.Share,
+      }"
       v-bind="resizeProps"
       @resizing="handleResizing"
     >
       <template #aside>
-        <template v-if="!isCollapse && executionGroups?.length && renderMode !== RenderMode.Share">
+        <template v-if="!isCollapse && (executionGroups?.length || keyword?.length) && renderMode !== RenderMode.Share">
           <Tab
             :active="selectedTab.name"
             class="ai-chat-container-tab"
@@ -28,6 +31,7 @@
             <TabPanel
               v-for="tab in tabs"
               :key="tab.name"
+              class="ai-chat-container-tab-panel"
               :label="
                 () =>
                   h(
@@ -40,7 +44,9 @@
                         }
                       },
                     },
-                    [
+                    getSideTabRenderComponent?.(h, tab, {
+                      removeCustomTab,
+                    }) ?? [
                       h(tab.name === EXECUTION_TAB_NAME ? ExecutionIcon : NodeTabIcon, {
                         class: 'ai-execution-summary-icon',
                       }),
@@ -80,7 +86,7 @@
           <template v-if="selectedTab">
             <div class="ai-chat-container-message-slot">
               <component
-                :is="selectedTab?.data?.component"
+                :is="getSideRenderComponent?.(h, selectedTab?.data?.props ?? {}) ?? selectedTab?.data?.component"
                 :key="selectedTab.name"
                 v-bind="selectedTab?.data?.props"
               >
@@ -262,6 +268,14 @@
   export type ChatContainerProps = {
     chatLoading?: boolean;
     commonTippyOptions?: AITippyProps;
+    // 用于获取侧边栏组件的渲染
+    getSideRenderComponent?: (createElement: typeof h, props?: Record<string, unknown>) => undefined | VNode;
+    // 用于获取侧边栏 tab 的渲染
+    getSideTabRenderComponent?: (
+      createElement: typeof h,
+      tab: CustomTab<Record<string, unknown>>,
+      events: { removeCustomTab: typeof removeCustomTab },
+    ) => undefined | VNode;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     onCustomTabChange?: (tab: CustomTab<CustomBkFlowTabData>) => Promise<any>;
     openingRemark?: string;
@@ -397,7 +411,7 @@
   watch(
     () => executionGroups.value,
     newVal => {
-      if (!newVal.length) {
+      if (!newVal.length && !keyword.value) {
         resetCustomTab();
       }
     },
@@ -524,7 +538,7 @@
     &-tab {
       padding: 0 16px;
 
-      .#{$bk-prefix}-tab-header-nav {
+      .bk-tab-header-nav {
         &::-webkit-scrollbar {
           display: inline;
           width: unset;
@@ -532,11 +546,11 @@
         }
       }
 
-      .#{$bk-prefix}-tab-content {
+      .bk-tab-content {
         display: none;
       }
 
-      .#{$bk-prefix}-tab-header-item {
+      .bk-tab-header-item {
         padding: 0 16px;
         font-size: 14px;
       }
@@ -570,35 +584,29 @@
       height: 100%;
       border: none !important;
 
-      .#{$bk-prefix}-resize-layout-main,
-      .#{$bk-prefix}-resize-layout-aside {
-        display: flex;
-        flex-direction: column;
+      > main,
+      > aside {
+        display: flex !important;
+        flex-direction: column !important;
         height: 100%;
-
-        &-content {
-          display: flex;
-          flex-direction: column;
-          height: 100%;
-        }
       }
 
-      .#{$bk-prefix}-resize-layout-main {
+      > aside > div:first-child {
+        display: flex !important;
+        flex-direction: column !important;
+        height: 100% !important;
+      }
+
+      > main {
         position: relative;
         width: var(--resize-main-width);
-
-        // width: 100%;
         padding: 8px;
         overflow: visible;
       }
 
-      .#{$bk-prefix}-resize-layout-aside {
-        display: flex;
-      }
-
       &.ai-is-collapse {
-        .#{$bk-prefix}-resize-layout-aside {
-          flex: 0 0 0;
+        > aside {
+          flex: 0 0 0 !important;
           width: 0;
           padding: 0;
           border: none;
@@ -607,11 +615,7 @@
             display: none;
           }
 
-          .#{$bk-prefix}-resize-trigger {
-            display: none;
-          }
-
-          .#{$bk-prefix}-resize-proxy {
+          > i {
             display: none;
           }
         }

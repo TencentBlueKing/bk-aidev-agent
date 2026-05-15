@@ -37,7 +37,7 @@ export const lang = {
   删除: 'Delete',
   引用: 'Quote',
   重新生成: 'Regenerate',
-  '重新生成将清空下文内容': 'Regenerating will clear the content below',
+  重新生成将清空下文内容: 'Regenerating will clear the content below',
   提交: 'Submit',
   取消: 'Cancel',
   预览内容: 'Preview Content',
@@ -125,6 +125,7 @@ export const lang = {
   '你好，我是小鲸': 'Hello, I am BlueKing AI Bot',
   清空搜索: 'Clear Search',
   搜索结果为空: 'Search Result is Empty',
+  有效证据: 'Valid Evidence',
 } as const;
 
 export const t = (key: keyof typeof lang) => {

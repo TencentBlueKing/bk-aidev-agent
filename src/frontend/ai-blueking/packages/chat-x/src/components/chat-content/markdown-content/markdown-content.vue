@@ -100,9 +100,6 @@
   const containerScrollConsumer = useContainerScrollConsumer();
 
   const groupedTokens = shallowRef<Token[][]>([]);
-
-  // 代码高亮由 CodeContent 组件处理，不在 MarkdownIt 解析时进行
-  // 这样可以避免流式输入时的同步高亮开销，提升性能
   const md = new MarkdownIt()
     // .use(markdownAnimationAttrs)
     .use(markdownItBkInlineStyle)

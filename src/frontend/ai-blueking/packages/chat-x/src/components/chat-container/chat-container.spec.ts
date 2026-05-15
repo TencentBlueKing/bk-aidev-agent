@@ -23,27 +23,55 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { defineComponent, h } from 'vue';
+import { type Ref, defineComponent, h, nextTick } from 'vue';
 
-import { type VueWrapper, mount } from '@vue/test-utils';
+import { type ComponentMountingOptions, type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MessageRole, MessageStatus } from '../../ag-ui/types';
 import { LOADING_MESSAGE_ID, RenderMode } from '../../common';
-import ChatContainer from './chat-container.vue';
+import ChatContainer, { type ChatContainerProps } from './chat-container.vue';
 
 import type { AssistantMessage, Message, UserMessage } from '../../ag-ui/types';
+
+/** defineExpose 暴露的实例 API */
+type ChatContainerExposed = {
+  addCustomTab: (tab: { data?: Record<string, unknown>; label: string; name: string }) => void;
+  enterShareMode: () => void;
+  exitShareMode: () => void;
+  removeCustomTab: (name: string) => void;
+  selectCustomTab: (tab: unknown) => void;
+  selectedTab: unknown;
+};
+
+/** 测试 mount 时使用的 props 集合 */
+type ChatContainerMountProps = ChatContainerProps & {
+  messages: Message[];
+  messageStatus: MessageStatus;
+  modelValue: string;
+  renderMode?: RenderMode;
+};
+
+type MockMessageGroup = {
+  messages: Array<{ id?: string }>;
+};
+
+const getChatContainerExposed = (w: VueWrapper): ChatContainerExposed => w.vm as unknown as ChatContainerExposed;
+
+const getMountProps = (w: VueWrapper): ChatContainerMountProps => w.props() as ChatContainerMountProps;
 
 /** 供 useMessageGroup mock 注入，用于验证 inputStatus 对 Loading 占位消息的推导 */
 const mockMessageGroupsRef = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { ref } = require('vue');
-  return ref<
-    Array<{
-      messages: Array<{ id?: string }>;
-    }>
-  >([]);
+  const { ref: vueRef } = require('vue');
+  return vueRef([]) as Ref<MockMessageGroup[]>;
 });
+const mockExecutionGroupsRef = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { ref: vueRef } = require('vue');
+  return vueRef([]) as Ref<unknown[]>;
+});
+const mockUseMessageGroup = vi.hoisted(() => vi.fn());
 const mockUseRenderModeProvider = vi.hoisted(() => vi.fn());
 
 vi.mock('bkui-vue', () => {
@@ -57,19 +85,19 @@ vi.mock('bkui-vue', () => {
     emits: ['click'],
     setup(_, { slots, emit }) {
       return () =>
-        h(
-          'button',
-          { class: 'mock-bk-button', type: 'button', onClick: () => emit('click') },
-          slots.default?.(),
-        );
+        h('button', { class: 'mock-bk-button', type: 'button', onClick: () => emit('click') }, slots.default?.());
     },
   });
 
   const TabPanel = defineComponent({
     name: 'TabPanel',
     props: { name: String, label: [String, Function] },
-    setup(_, { slots }) {
-      return () => h('div', { class: 'mock-tab-panel' }, slots.default?.());
+    setup(props, { slots }) {
+      return () =>
+        h('div', { class: 'mock-tab-panel', 'data-name': props.name }, [
+          typeof props.label === 'function' ? props.label() : props.label,
+          slots.default?.(),
+        ]);
     },
   });
 
@@ -118,25 +146,27 @@ vi.mock('../../lang/lang', () => ({
 }));
 
 vi.mock('../../composables', () => ({
-  useMessageGroup: vi.fn((_options: { messages: { value: Message[] } }) => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { computed, shallowRef } = require('vue');
-    const messageGroups = mockMessageGroupsRef;
-    const executionGroups = computed(() => []);
-    const isShareMode = shallowRef(false);
-    const isAllSelected = computed(() => false);
-    return {
-      messageGroups,
-      executionGroups,
-      isShareMode,
-      isAllSelected,
-      onToggleShareAll: vi.fn(),
-      onCancelShare: vi.fn(() => {
-        isShareMode.value = false;
-      }),
-      onConfirmShare: vi.fn(() => []),
-    };
-  }),
+  useMessageGroup: mockUseMessageGroup.mockImplementation(
+    (_options: { keyword: { value: string }; messages: { value: Message[] } }) => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { computed, shallowRef } = require('vue');
+      const messageGroups = mockMessageGroupsRef;
+      const executionGroups = computed(() => mockExecutionGroupsRef.value);
+      const isShareMode = shallowRef(false);
+      const isAllSelected = computed(() => false);
+      return {
+        messageGroups,
+        executionGroups,
+        isShareMode,
+        isAllSelected,
+        onToggleShareAll: vi.fn(),
+        onCancelShare: vi.fn(() => {
+          isShareMode.value = false;
+        }),
+        onConfirmShare: vi.fn(() => []),
+      };
+    },
+  ),
 }));
 
 vi.mock('../../composables/use-common', () => ({
@@ -356,16 +386,29 @@ const createAssistantMessage = (id: string, content: string): AssistantMessage =
 describe('ChatContainer', () => {
   let wrapper: VueWrapper;
 
-  const defaultProps = {
-    messages: [] as Message[],
+  const defaultProps: ChatContainerMountProps = {
+    messages: [],
     messageStatus: MessageStatus.Complete,
     /** ChatInput 必填 v-model，避免测试告警 */
     modelValue: '',
   };
 
+  /** welcome 插槽单测：仅注入 welcome，避免补齐全部 slots 类型 */
+  const mountWithWelcomeSlot = (openingRemark: string) => {
+    const options = {
+      props: { ...defaultProps, openingRemark },
+      slots: {
+        welcome: ({ openingRemark: remark }: { openingRemark?: string }) =>
+          h('div', { class: 'custom-welcome' }, `自定义: ${remark ?? ''}`),
+      },
+    } as unknown as ComponentMountingOptions<typeof ChatContainer>;
+    return mount(ChatContainer, options);
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockMessageGroupsRef.value = [];
+    mockExecutionGroupsRef.value = [];
   });
 
   afterEach(() => {
@@ -435,13 +478,7 @@ describe('ChatContainer', () => {
     });
 
     it('应该支持 welcome 插槽自定义欢迎内容', () => {
-      wrapper = mount(ChatContainer, {
-        props: { ...defaultProps, openingRemark: '默认开场白' },
-        slots: {
-          welcome: ({ openingRemark }: { openingRemark: string }) =>
-            h('div', { class: 'custom-welcome' }, `自定义: ${openingRemark}`),
-        },
-      });
+      wrapper = mountWithWelcomeSlot('默认开场白');
 
       expect(wrapper.find('.custom-welcome').exists()).toBe(true);
       expect(wrapper.find('.custom-welcome').text()).toBe('自定义: 默认开场白');
@@ -449,13 +486,7 @@ describe('ChatContainer', () => {
     });
 
     it('使用 welcome 插槽时应替换整块默认欢迎区（含 Banner 与默认标题）', () => {
-      wrapper = mount(ChatContainer, {
-        props: { ...defaultProps, openingRemark: '默认开场白' },
-        slots: {
-          welcome: ({ openingRemark }: { openingRemark: string }) =>
-            h('div', { class: 'custom-welcome' }, `自定义: ${openingRemark}`),
-        },
-      });
+      wrapper = mountWithWelcomeSlot('默认开场白');
 
       expect(wrapper.find('.mock-banner-icon').exists()).toBe(false);
       expect(wrapper.find('.ai-welcome-title').exists()).toBe(false);
@@ -530,11 +561,11 @@ describe('ChatContainer', () => {
         props: defaultProps,
       });
 
-      const vm = wrapper.vm;
-      expect(vm.selectedTab).toBeDefined();
-      expect(vm.addCustomTab).toBeDefined();
-      expect(vm.removeCustomTab).toBeDefined();
-      expect(vm.selectCustomTab).toBeDefined();
+      const exposed = getChatContainerExposed(wrapper);
+      expect(exposed.selectedTab).toBeDefined();
+      expect(exposed.addCustomTab).toBeDefined();
+      expect(exposed.removeCustomTab).toBeDefined();
+      expect(exposed.selectCustomTab).toBeDefined();
     });
 
     it('应该暴露 enterShareMode 和 exitShareMode 方法', () => {
@@ -542,9 +573,9 @@ describe('ChatContainer', () => {
         props: defaultProps,
       });
 
-      const vm = wrapper.vm;
-      expect(typeof vm.enterShareMode).toBe('function');
-      expect(typeof vm.exitShareMode).toBe('function');
+      const exposed = getChatContainerExposed(wrapper);
+      expect(typeof exposed.enterShareMode).toBe('function');
+      expect(typeof exposed.exitShareMode).toBe('function');
     });
   });
 
@@ -554,7 +585,7 @@ describe('ChatContainer', () => {
         props: defaultProps,
       });
 
-      expect(wrapper.props().placement).toBe('left');
+      expect(getMountProps(wrapper).placement).toBe('left');
     });
 
     it('应该接收 placement 属性', () => {
@@ -562,7 +593,7 @@ describe('ChatContainer', () => {
         props: { ...defaultProps, placement: 'right' },
       });
 
-      expect(wrapper.props().placement).toBe('right');
+      expect(getMountProps(wrapper).placement).toBe('right');
     });
   });
 
@@ -698,6 +729,67 @@ describe('ChatContainer', () => {
       });
 
       expect(wrapper.find('.mock-chat-input').exists()).toBe(true);
+    });
+  });
+
+  describe('侧边栏渲染扩展', () => {
+    it('应接收 getSideRenderComponent 与 getSideTabRenderComponent 属性', () => {
+      const getSideRenderComponent = vi.fn();
+      const getSideTabRenderComponent = vi.fn();
+
+      wrapper = mount(ChatContainer, {
+        props: {
+          ...defaultProps,
+          getSideRenderComponent,
+          getSideTabRenderComponent,
+        },
+      });
+
+      expect(getMountProps(wrapper).getSideRenderComponent).toBe(getSideRenderComponent);
+      expect(getMountProps(wrapper).getSideTabRenderComponent).toBe(getSideTabRenderComponent);
+    });
+
+    it('有搜索关键词且 executionGroups 为空时展开侧栏仍应展示 Tab', async () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages },
+      });
+
+      const keywordRef = mockUseMessageGroup.mock.calls.at(-1)?.[0]?.keyword as { value: string };
+      keywordRef.value = 'search';
+      await nextTick();
+
+      getChatContainerExposed(wrapper).addCustomTab({ label: '自定义 Tab', name: 'custom-tab' });
+      await nextTick();
+
+      expect(wrapper.find('.ai-chat-container-tab').exists()).toBe(true);
+      expect(wrapper.find('.ai-chat-container-resize-layout').classes()).not.toContain('ai-is-collapse');
+    });
+
+    it('传入 getSideTabRenderComponent 时应优先使用其渲染 Tab 标签', async () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      const getSideTabRenderComponent = vi.fn((createElement, tab) =>
+        createElement('span', { class: 'custom-tab-label' }, tab.name),
+      );
+
+      wrapper = mount(ChatContainer, {
+        props: {
+          ...defaultProps,
+          messages,
+          getSideTabRenderComponent,
+        },
+      });
+
+      const keywordRef = mockUseMessageGroup.mock.calls.at(-1)?.[0]?.keyword as { value: string };
+      keywordRef.value = 'search';
+      await nextTick();
+
+      getChatContainerExposed(wrapper).addCustomTab({ label: '自定义 Tab', name: 'custom-tab' });
+      await nextTick();
+
+      expect(getSideTabRenderComponent).toHaveBeenCalled();
+      expect(wrapper.find('.custom-tab-label').exists()).toBe(true);
     });
   });
 });

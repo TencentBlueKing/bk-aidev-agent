@@ -173,6 +173,7 @@ t('未定义的文本'); // ✗ 编译报错
 | `挂起`       | Pending           |
 | `待执行`     | To Be Executed    |
 | `详情`       | Details           |
+| `有效证据`   | Valid Evidence    |
 | `节点`       | Node              |
 | `节点配置`   | Node Config       |
 | `节点输出`   | Node Output       |

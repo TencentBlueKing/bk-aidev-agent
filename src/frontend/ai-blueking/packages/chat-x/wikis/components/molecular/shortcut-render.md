@@ -466,7 +466,7 @@ const components: ShortcutComponent[] = [
 | ------------- | ------------------------------------ | ---- | ------------------------------------------------------------------------------------------ |
 | type          | 见[表单类型](#表单组件类型)          | ✓    | 控件类型；未知类型返回 `null`，不渲染                                                      |
 | key           | `string`                             | ✓    | 表单字段名；`submit` 事件返回对象以此为 key；同时作为校验 property                         |
-| name          | `string`                             | —    | 表单项标签（`Form.FormItem` 的 `label`）                                                   |
+| name          | `string`                             | —    | 表单项标签；优先于 `formItemProps.label`，通过 `#label` 插槽渲染为 `.shortcut-render-form-label` |
 | default       | `string`                             | —    | 字段初始值；优先于 `formModel`，在 `watchEffect` 中覆盖写入                                |
 | fillBack      | `boolean`                            | —    | `true` 时映射为 `required: true`（必填校验），同时标记回填语义                             |
 | placeholder   | `string`                             | —    | 占位文本（`input` / `textarea` / `number` 可用）                                           |
@@ -535,7 +535,7 @@ interface BaseShortcutComponent {
 
 ## 样式说明
 
-组件内部使用 SCSS 变量 `$bk-prefix` 拼接 bkui-vue 组件类名（如 `Form`、`FormItem`、`Radio`、`Checkbox` 等），替代原先硬编码的 `.bk-*` 类名选择器，确保在不同构建环境下类名前缀的一致性。
+表单项与控件会附加类型化 class，便于样式覆盖：`shortcut-render-form-item_{type}`（如 `_radio`、`_checkbox`），单选/多选项子项为 `shortcut-render-form-item_radio` / `shortcut-render-form-item_checkbox`。表单项标签使用 BEM 风格类名 `shortcut-render-form-label`。
 
 ## 关联组件
 

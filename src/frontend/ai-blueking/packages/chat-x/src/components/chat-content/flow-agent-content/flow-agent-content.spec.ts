@@ -34,13 +34,14 @@ import FlowAgentContent from './flow-agent-content.vue';
 
 import type { BkFlowMessageContent, BkFlowTask } from '../../../ag-ui/types/contents';
 
-const { mockAddCustomTab, mockRemoveCustomTab, mockScrollRef } = vi.hoisted(() => {
+const { mockAddCustomTab, mockRemoveCustomTab, mockScrollRef, mockSelectedTab } = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ref } = require('vue');
   return {
     mockAddCustomTab: vi.fn(),
     mockRemoveCustomTab: vi.fn(),
     mockScrollRef: ref({ autoScrollEnabled: true }),
+    mockSelectedTab: ref<undefined | { name?: string }>(undefined),
   };
 });
 
@@ -75,7 +76,11 @@ vi.mock('../../../composables', () => ({
 }));
 
 vi.mock('../../../composables/use-custom-tab', () => ({
-  useCustomTabConsumer: () => ({ addCustomTab: mockAddCustomTab, removeCustomTab: mockRemoveCustomTab }),
+  useCustomTabConsumer: () => ({
+    addCustomTab: mockAddCustomTab,
+    removeCustomTab: mockRemoveCustomTab,
+    selectedTab: mockSelectedTab,
+  }),
 }));
 
 // 与业务侧 icons 一致：导出为 VNode，供 cloneVNode / 模板使用
@@ -177,6 +182,7 @@ describe('FlowAgentContent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockScrollRef.value = { autoScrollEnabled: true };
+    mockSelectedTab.value = undefined;
   });
 
   afterEach(() => {
@@ -339,6 +345,101 @@ describe('FlowAgentContent', () => {
       expect(wrapper.find('.flow-agent-node-time').exists()).toBe(false);
       expect(wrapper.find('.flow-agent-node-detail-btn').exists()).toBe(false);
     });
+
+    it('renderMode 为 Share 时不应渲染任务耗时和有效证据入口', () => {
+      const Parent = defineComponent({
+        setup() {
+          useRenderModeProvider({ renderMode: RenderMode.Share });
+          return () =>
+            h(FlowAgentContent, {
+              content: createContent({ has_confidence: true }),
+            });
+        },
+      });
+
+      wrapper = mount(Parent);
+
+      expect(wrapper.find('.flow-agent-task-trailing').exists()).toBe(false);
+      expect(wrapper.find('.flow-agent-task-time').exists()).toBe(false);
+      expect(wrapper.find('.flow-agent-task-confidence-btn').exists()).toBe(false);
+    });
+  });
+
+  describe('有效证据', () => {
+    it('has_confidence 为 true 时应展示有效证据按钮', () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent({ has_confidence: true }),
+        },
+      });
+
+      expect(wrapper.find('.flow-agent-task-confidence-btn').exists()).toBe(true);
+      expect(wrapper.text()).toContain('有效证据');
+    });
+
+    it('has_confidence 为 true 时任务头应带 has-confidence 类', () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent({ has_confidence: true }),
+        },
+      });
+
+      expect(wrapper.find('.flow-agent-task-header').classes()).toContain('has-confidence');
+    });
+
+    it('点击有效证据应打开带 has_confidence 的自定义 Tab', async () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent({ has_confidence: true }),
+        },
+      });
+
+      await wrapper.find('.flow-agent-task-confidence-btn').trigger('click');
+
+      expect(mockAddCustomTab).toHaveBeenCalled();
+      const payload = mockAddCustomTab.mock.calls.at(-1)?.[0] as {
+        data?: { props?: { has_confidence?: boolean; task_id?: number } };
+        label?: string;
+        name?: string;
+      };
+      expect(payload?.label).toBe('有效证据');
+      expect(payload?.name).toBe('100');
+      expect(payload?.data?.props?.has_confidence).toBe(true);
+      expect(payload?.data?.props?.task_id).toBe(100);
+    });
+  });
+
+  describe('任务选中态', () => {
+    it('未手动选 Tab 时 is_active 任务应带 is-selected 类', () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent({ is_active: true }),
+        },
+      });
+
+      expect(wrapper.find('.flow-agent-task-header').classes()).toContain('is-selected');
+    });
+
+    it('is_active 且 task_tab 为 true 时应自动打开任务 Tab', () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent({
+            is_active: true,
+            task_tab: true,
+          } as Partial<BkFlowTask>),
+        },
+      });
+
+      expect(mockAddCustomTab).toHaveBeenCalled();
+      const payload = mockAddCustomTab.mock.calls[0]?.[0] as {
+        data?: { props?: { task_id?: number } };
+        label?: string;
+        name?: string;
+      };
+      expect(payload?.label).toBe('测试任务');
+      expect(payload?.name).toBe('100');
+      expect(payload?.data?.props?.task_id).toBe(100);
+    });
   });
 
   describe('task_outputs', () => {
@@ -375,6 +476,8 @@ describe('FlowAgentContent', () => {
 
       wrapper.unmount();
 
+      expect(mockRemoveCustomTab).toHaveBeenCalledWith('100');
+      expect(mockRemoveCustomTab).toHaveBeenCalledWith('101');
       expect(mockRemoveCustomTab).toHaveBeenCalledWith('100|n1|节点一');
       expect(mockRemoveCustomTab).toHaveBeenCalledWith('100|n2|节点二');
       expect(mockRemoveCustomTab).toHaveBeenCalledWith('101|n3|节点三');

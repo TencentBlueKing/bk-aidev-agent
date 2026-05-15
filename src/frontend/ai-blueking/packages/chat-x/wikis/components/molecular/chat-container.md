@@ -182,7 +182,7 @@ domain: input
 
 ## 核心能力
 
-- **分栏布局**：基于 `ResizeLayout` 的可拖拽分栏；**侧栏是否展示 Tab / 执行摘要、以及分栏是否进入折叠样式（`ai-is-collapse`）以 `executionGroups` 为准**（由 `useMessageGroup` 从消息中过滤出工具调用与 FlowAgent 执行记录），**不以原始 `messages.length` 判断**。因此仅有普通对话、尚无执行类消息时，侧栏内容与「执行情况」区域可能为空，布局上与无执行数据时一致
+- **分栏布局**：基于 `ResizeLayout` 的可拖拽分栏；**侧栏是否展示 Tab / 执行摘要、以及分栏是否进入折叠样式（`ai-is-collapse`）以 `executionGroups` 与执行情况搜索关键词 `keyword` 共同决定**（`executionGroups` 由 `useMessageGroup` 从消息中过滤工具调用与 FlowAgent 记录；`keyword` 来自 `ExecutionSummary` 的 `@update-keyword`）。当 `executionGroups` 为空且未输入搜索词时，侧栏 Tab 与执行摘要不展示；**用户正在搜索执行情况时（`keyword` 非空），即使暂无执行类消息也会保留侧栏**，避免搜索态被折叠
 - **消息分组**：内置 `useMessageGroup` 自动处理消息分组、Tool 合并、Loading 注入
 - **输入区状态推导**：传给 `MessageContainer` 与 `ChatInput` 的 `messageStatus` 为内部计算值 `inputStatus`：当分组中存在 id 为 `LOADING_MESSAGE_ID`（`'__loading__'`，由 `useMessageGroup` 注入的占位 Loading 消息）时，对内使用 `MessageStatus.Fetching`；否则使用外部传入的 `messageStatus`。用于在「已发用户消息、尚未流式」阶段与流式中一致地展示停止能力，并避免输入区重复发送
 - **执行摘要**：侧边栏展示工具调用 / FlowAgent 执行记录，支持关键词搜索和对话定位
@@ -200,9 +200,9 @@ ai-chat-container
     ├── aside（侧边栏）
     │   ├── Tab 标签页
     │   │   ├── 执行情况（默认 Tab）
-    │   │   └── 自定义 Tab × N（可关闭）
+    │   │   └── 自定义 Tab × N（可关闭；标签可由 `getSideTabRenderComponent` 自定义）
     │   ├── ExecutionSummary（执行情况 Tab 内容）
-    │   ├── 自定义 Tab 组件（通过 component :is 渲染，可向子组件注入 #locateButton）
+    │   ├── 自定义 Tab 组件（`getSideRenderComponent` 优先，否则 `data.component`；可向子组件注入 #locateButton）
     │   └── collapse-button（折叠按钮）
     └── main（主内容区）
         ├── MessageContainer（有消息时）
@@ -286,9 +286,9 @@ ai-chat-container
 
 侧边栏默认包含「执行情况」Tab，展示所有工具调用和 FlowAgent 类型的 Activity 消息。支持关键词搜索过滤和点击定位到对话中的消息位置。
 
-**展示条件**：当 `executionGroups` 为空时，不渲染侧栏 Tab 与 `ExecutionSummary`（折叠按钮亦隐藏）；主区域仍可正常展示 `messages` 中的对话内容。`renderMode === Share` 时侧栏隐藏，且分栏会应用与折叠一致的样式。
+**展示条件**：当 `executionGroups` 为空且 `keyword` 为空时，不渲染侧栏 Tab 与 `ExecutionSummary`（折叠按钮亦隐藏）；主区域仍可正常展示 `messages` 中的对话内容。用户在执行情况中输入搜索词后，侧栏会保持展示以显示「搜索结果为空」等状态。`renderMode === Share` 时侧栏隐藏，且分栏会应用与折叠一致的样式。
 
-**自定义 Tab 联动**：当 `executionGroups` 变为空（例如会话清空或仅剩无执行类消息）时，容器会**自动重置自定义 Tab**（`resetCustomTab`），避免残留节点详情等 Tab。
+**自定义 Tab 联动**：当 `executionGroups` 变为空且搜索词已清空时，容器会**自动重置自定义 Tab**（`resetCustomTab`），避免残留节点详情等 Tab；若用户仍在搜索（`keyword` 非空），不会触发重置。
 
 ```vue
 <template>
@@ -378,7 +378,45 @@ ai-chat-container
 
 ## 自定义 Tab
 
-通过 `ref` 获取组件实例后，使用 `addCustomTab` / `removeCustomTab` 动态管理侧边栏 Tab。若 **`executionGroups` 变为空**，容器会清空自定义 Tab 状态（与侧栏执行数据联动，见上文「侧边栏与执行摘要」）。
+通过 `ref` 获取组件实例后，使用 `addCustomTab` / `removeCustomTab` 动态管理侧边栏 Tab。若 **`executionGroups` 变为空且搜索词已清空**，容器会清空自定义 Tab 状态（与侧栏执行数据联动，见上文「侧边栏与执行摘要」）。
+
+### 侧栏渲染扩展
+
+应用层可通过以下 Props 覆盖默认 Tab 标签与侧栏内容区的渲染逻辑（例如 FlowAgent 节点详情使用业务自定义组件）：
+
+| Prop | 说明 |
+| ---- | ---- |
+| `getSideTabRenderComponent` | `(h, tab, { removeCustomTab }) => VNode \| undefined`。返回自定义 Tab 标签 VNode；未返回时使用默认图标 + `tab.label` + 关闭按钮 |
+| `getSideRenderComponent` | `(h, props) => VNode \| undefined`。返回侧栏内容区组件 VNode；未返回时使用 `selectedTab.data.component` |
+
+```vue
+<template>
+  <ChatContainer
+    :get-side-tab-render-component="renderSideTab"
+    :get-side-render-component="renderSidePanel"
+    ...
+  />
+</template>
+
+<script setup lang="ts">
+  import { h } from 'vue';
+  import type { CustomTab } from '@blueking/chat-x';
+
+  const renderSideTab = (createElement, tab, { removeCustomTab }) => {
+    if (tab.name.startsWith('custom-')) {
+      return createElement('span', {}, tab.label);
+    }
+    return undefined; // 走默认 Tab 标签
+  };
+
+  const renderSidePanel = (createElement, props) => {
+    if (props?.has_confidence) {
+      return createElement(MyConfidencePanel, props);
+    }
+    return undefined; // 走 tab.data.component
+  };
+</script>
+```
 
 ### 自定义 Tab 与「在对话中定位」
 
@@ -655,9 +693,11 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 
 | 属性名             | 类型                                                                         | 默认值   | 说明                                                                                                                                          |
 | ------------------ | ---------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| chatLoading        | `boolean`                                                                    | —        | 整体加载状态，`true` 时显示 Loading 遮罩                                                                                                      |
-| commonTippyOptions | `AITippyProps`                                                               | —        | 通用 Tippy 配置，传入的选项会注入到所有使用 `v-overflow-tips` 的子组件中                                                                      |
-| openingRemark      | `string`                                                                     | —        | 开场白，无消息时显示，支持 Markdown                                                                                                           |
+| chatLoading                 | `boolean`                                                                    | —        | 整体加载状态，`true` 时显示 Loading 遮罩                                                                                                      |
+| commonTippyOptions          | `AITippyProps`                                                               | —        | 通用 Tippy 配置，传入的选项会注入到所有使用 `v-overflow-tips` 的子组件中                                                                      |
+| getSideRenderComponent      | `(h, props?) => VNode \| undefined`                                          | —        | 自定义侧栏内容区渲染；未返回时使用 `selectedTab.data.component`                                                                               |
+| getSideTabRenderComponent   | `(h, tab, { removeCustomTab }) => VNode \| undefined`                        | —        | 自定义侧栏 Tab 标签渲染；未返回时使用默认图标 + 文案 + 关闭按钮                                                                               |
+| openingRemark               | `string`                                                                     | —        | 开场白，无消息时显示，支持 Markdown                                                                                                           |
 | placement          | `'left' \| 'right'`                                                          | `'left'` | 侧边栏位置                                                                                                                                    |
 | resizeProps        | `{ disabled?: boolean; initialDivide?: number \| string; max?: number; min?: number }` | —        | 透传给内部 `ResizeLayout` 的可选配置，与默认 `collapsible: false`、`immediate: true`、`min: 400` 合并；`placement` 始终取自本组件 `placement`；`initialDivide` 可为像素数字或百分比等字符串（与 bkui ResizeLayout 一致） |
 | onCustomTabChange  | `(tab: CustomTab) => Promise<any>`                                           | —        | 自定义 Tab 切换回调，返回值作为 Tab 组件 props                                                                                                |

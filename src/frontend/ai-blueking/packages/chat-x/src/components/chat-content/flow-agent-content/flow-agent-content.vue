@@ -39,13 +39,16 @@
     >
       <div
         class="flow-agent-task-header"
-        @click.stop="toggleTaskExpanded(task)"
+        :class="{
+          'has-confidence': task.has_confidence,
+          'is-selected': isTaskSelected(task),
+        }"
       >
         <span
           class="flow-agent-task-arrow"
           :class="{ 'is-expanded': isTaskExpanded(task) }"
         >
-          <ArrowRightIcon />
+          <ArrowRightIcon @click.stop="toggleTaskExpanded(task)" />
         </span>
         <span class="flow-agent-task-state-icon">
           <Loading
@@ -65,7 +68,20 @@
         >
           <HighlightKeyword :text="task.task_name" />
         </span>
-        <span class="flow-agent-task-time">{{ getTaskTotalTime(task) }}</span>
+        <span
+          v-if="renderMode !== RenderMode.Share"
+          class="flow-agent-task-trailing"
+        >
+          <span class="flow-agent-task-time">{{ getTaskTotalTime(task) }}</span>
+          <span
+            v-if="task.has_confidence"
+            class="flow-agent-task-action-btn flow-agent-task-confidence-btn"
+            @click.stop="handleTaskConfidence(task)"
+          >
+            <NodeOutputIcon />
+            {{ t('有效证据') }}
+          </span>
+        </span>
       </div>
       <div
         v-show="isTaskExpanded(task)"
@@ -75,6 +91,7 @@
           v-for="node in getNodeList(task)"
           :key="node.id"
           class="flow-agent-node-item"
+          :class="{ 'is-selected': isNodeSelected(task, node) }"
         >
           <span
             class="flow-agent-node-status"
@@ -123,7 +140,7 @@
   </div> -->
 </template>
 <script setup lang="ts">
-  import { type ComputedRef, cloneVNode, computed, onUnmounted, shallowRef } from 'vue';
+  import { type ComputedRef, cloneVNode, computed, onUnmounted, shallowRef, watch } from 'vue';
 
   import { Loading } from 'bkui-vue';
 
@@ -187,7 +204,36 @@
     status?: MessageStatusType;
   }>();
 
-  const { addCustomTab, removeCustomTab } = useCustomTabConsumer<CustomBkFlowTabData>()!;
+  const { addCustomTab, removeCustomTab, selectedTab } = useCustomTabConsumer<CustomBkFlowTabData>()!;
+  /** 与 addCustomTab 的 name 保持一致，用于 task / node 选中态 */
+  const selectedTabName = computed(() => selectedTab.value?.name ?? '');
+  const getTaskTabName = (task: BkFlowTask) => (task.task_id != null ? `${task.task_id}` : '');
+  const getConfidenceTabName = (task: BkFlowTask) => (task.task_id != null ? `${task.task_id}` : '');
+  const getNodeTabName = (task: BkFlowTask, node: BkFlowNode) =>
+    task.task_id != null ? `${task.task_id}|${node.id}|${node.name}` : '';
+  /** 用户手动切换 Tab 后不再沿用 is_active 默认高亮 */
+  const hasUserSelectedTab = shallowRef(false);
+  const skipNextTabSelectionMark = shallowRef(false);
+  const hasAutoOpenedActiveTask = shallowRef(false);
+  const markUserTabSelection = () => {
+    hasUserSelectedTab.value = true;
+  };
+  const displaySelectedTabName = computed(() => {
+    if (hasUserSelectedTab.value) {
+      return selectedTabName.value;
+    }
+    const activeTask = taskList.value.find(task => task.is_active);
+    if (activeTask?.task_id != null) {
+      return getTaskTabName(activeTask);
+    }
+    return selectedTabName.value;
+  });
+  const isTaskSelected = (task: BkFlowTask) => {
+    const name = displaySelectedTabName.value;
+    return name === getTaskTabName(task) || name === getConfidenceTabName(task);
+  };
+  const isNodeSelected = (task: BkFlowTask, node: BkFlowNode) =>
+    displaySelectedTabName.value === getNodeTabName(task, node);
   const provideContainerScrollData = useContainerScrollConsumer();
   const collapsed = defineModel<boolean>('collapsed', {
     default: false,
@@ -275,12 +321,32 @@
     return parts.join('');
   };
 
+  const openTaskTab = (task: BkFlowTask, extraProps?: Record<string, unknown>) => {
+    const taskId = task.task_id;
+    if (taskId == null) return;
+    addCustomTab?.({
+      label: task.task_name,
+      name: getTaskTabName(task),
+      data: {
+        component: BkFlowNodeDetail,
+        messageUid: props.messageUid,
+        props: {
+          loading: true,
+          task_id: taskId,
+          task_name: task.task_name,
+          data: {},
+          ...extraProps,
+        },
+      },
+    });
+  };
   const handleNodeDetail = (task: BkFlowTask, node: BkFlowNode) => {
     const taskId = task.task_id;
     if (taskId != null) {
+      markUserTabSelection();
       addCustomTab?.({
         label: node.name,
-        name: `${taskId}|${node.id}|${node.name}`,
+        name: getNodeTabName(task, node),
         data: {
           component: BkFlowNodeDetail,
           messageUid: props.messageUid,
@@ -296,6 +362,46 @@
       });
     }
   };
+  const handleTaskConfidence = (task: BkFlowTask) => {
+    const taskId = task.task_id;
+    if (taskId == null) return;
+    markUserTabSelection();
+    addCustomTab?.({
+      label: t('有效证据'),
+      name: getConfidenceTabName(task),
+      data: {
+        component: BkFlowNodeDetail,
+        messageUid: props.messageUid,
+        props: {
+          loading: true,
+          has_confidence: true,
+          task_id: taskId,
+          task_name: task.task_name,
+          data: {},
+        },
+      },
+    });
+  };
+  watch(
+    () => taskList.value,
+    () => {
+      if (hasAutoOpenedActiveTask.value || hasUserSelectedTab.value) return;
+      const activeTask = taskList.value.find(task => task.is_active && task.task_tab);
+      if (!activeTask) return;
+      hasAutoOpenedActiveTask.value = true;
+      skipNextTabSelectionMark.value = true;
+      openTaskTab(activeTask);
+    },
+    { immediate: true },
+  );
+  watch(selectedTabName, (_name, oldName) => {
+    if (oldName === undefined) return;
+    if (skipNextTabSelectionMark.value) {
+      skipNextTabSelectionMark.value = false;
+      return;
+    }
+    markUserTabSelection();
+  });
   onUnmounted(() => {
     // 这里用于判断是否是在 message-container 中被销毁的.
     // 如果是执行情况下的销毁，则不进行移除
@@ -303,8 +409,10 @@
       return;
     }
     for (const task of taskList.value) {
+      removeCustomTab?.(getTaskTabName(task));
+      removeCustomTab?.(getConfidenceTabName(task));
       for (const node of getNodeList(task)) {
-        removeCustomTab?.(`${task.task_id}|${node.id}|${node.name}`);
+        removeCustomTab?.(getNodeTabName(task, node));
       }
     }
   });
@@ -319,6 +427,7 @@
     $color-danger: #ea3636;
     $color-warning: #f59500;
     $color-hover-bg: #eaebf0;
+    $color-selected-bg: #e1ecff;
     $color-pending: #dcdee5;
     $status-colors: (
       success: $color-success,
@@ -340,6 +449,20 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    %flow-agent-action-btn {
+      display: none;
+      gap: 2px;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      color: $color-primary;
+      cursor: pointer;
+
+      &:hover {
+        color: $color-primary-light;
+      }
     }
 
     .ai-activity-message-title {
@@ -396,6 +519,41 @@
         &:hover {
           background: $color-hover-bg;
         }
+
+        &.has-confidence:hover {
+          .flow-agent-task-confidence-btn {
+            display: flex;
+          }
+
+          .flow-agent-task-time {
+            display: none;
+          }
+        }
+
+        &.is-selected {
+          background: $color-selected-bg;
+
+          &:hover {
+            background: $color-selected-bg;
+          }
+        }
+
+        &.has-confidence.is-selected {
+          .flow-agent-task-time {
+            display: none;
+          }
+        }
+      }
+
+      &-trailing {
+        display: flex;
+        flex-shrink: 0;
+        align-items: center;
+        margin-left: 8px;
+      }
+
+      &-action-btn {
+        @extend %flow-agent-action-btn;
       }
 
       &-arrow {
@@ -433,9 +591,9 @@
       }
 
       &-time {
-        flex-shrink: 0;
-        margin-left: 8px;
         color: $color-text-secondary;
+        text-align: right;
+        white-space: nowrap;
       }
     }
 
@@ -488,17 +646,7 @@
       }
 
       &-detail-btn {
-        display: none;
-        gap: 2px;
-        align-items: center;
-        justify-content: center;
-        font-size: 12px;
-        color: $color-primary;
-        cursor: pointer;
-
-        &:hover {
-          color: $color-primary-light;
-        }
+        @extend %flow-agent-action-btn;
       }
 
       &-item {
@@ -517,6 +665,14 @@
 
           .flow-agent-node-time {
             display: none;
+          }
+        }
+
+        &.is-selected {
+          background: $color-selected-bg;
+
+          &:hover {
+            background: $color-selected-bg;
           }
         }
       }

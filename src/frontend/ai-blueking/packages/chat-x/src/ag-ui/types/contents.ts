@@ -86,6 +86,8 @@ export type BkFlowNode = {
 };
 
 export type BkFlowTask = {
+  has_confidence?: boolean; // 是否有有效证据， 置信度
+  is_active?: boolean; // 是否默认激活
   nodes: Record<string, BkFlowNode>;
   statistics: {
     state_counts: Record<string, number>;
