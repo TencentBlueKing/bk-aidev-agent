@@ -24,8 +24,6 @@
  * IN THE SOFTWARE.
  */
 
-export * from './css-sanitizer';
 export * from './file';
-export * from './html-sanitizer';
 export * from './markdown-completer';
 export * from './utils';

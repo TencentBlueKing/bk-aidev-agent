@@ -157,8 +157,8 @@ AI 消息内容渲染的核心原子组件，集成代码高亮、LaTeX 公式�
 ## 组件结构与渲染流程
 
 ```
-props.content → completeMarkdownSyntax → md.parse（html: true）→ groupTokens → groupedTokens
-                                                                               │
+props.content → completeMarkdownSyntax → md.parse → groupTokens → groupedTokens
+                                                                          │
                           div.ai-markdown-content（contain: layout style）
                                         │
                         status === 'error' → CommonErrorContent（:content）
@@ -173,20 +173,11 @@ props.content → completeMarkdownSyntax → md.parse（html: true）→ groupTo
                     ↓             ↓                    ↓               ↓
            MermaidContent  LatexContent        CodeContent    VNodeRenderer
            @mounted         @mounted           @mounted       @vue:mounted
-                    │                                              │
-                    └──── handleTokenMounted（throttle 100ms）      │
-                         → containerScroll.toScrollBottom()        │
-                                                         sanitize（DOMPurify + sanitizeCSS）
-                                                         sanitizeHtmlFragment（流式片段净化）
+                    │
+                    └──── handleTokenMounted（throttle 100ms）→ containerScroll.toScrollBottom()
 ```
 
 `VNodeRenderer` 的 `options` 中包含与当前 `MarkdownIt` 实例一致的 `mditOptions`（即 `md.options`），以便 `tokensToVNodes` 调用 `renderer.rules` 时第三参与 markdown-it 原生规则签名一致。
-
-`MarkdownIt` 构造时开启 `html: true`，允许行内 HTML 标签（如 `<font>`、`<div>`）通过 markdown-it 解析为 `html_inline` / `html_block` token。
-
-两组净化函数各司其职：
-- `sanitize`：DOMPurify 全局过滤后，再对 `style` 属性值进行 CSS 属性白名单校验（`sanitizeCSS`），用于最终渲染的完整 HTML。
-- `sanitizeHtmlFragment`：轻量级片段净化，**不自动闭合标签**，专用于流式渲染中拆分到多个 token 的 HTML 标签场景。
 
 ### Token 分组（groupTokens）
 
@@ -372,6 +363,7 @@ props.content → completeMarkdownSyntax → md.parse（html: true）→ groupTo
 
 | 插件                        | 语法                | 功能                 |
 | --------------------------- | ------------------- | -------------------- |
+| `markdownItBkInlineStyle`   | 见下文「蓝鲸行内样式」 | 安全行内颜色/字号/粗斜体（非 HTML） |
 | `markdown-it-footnote`      | `[^1]`              | 脚注                 |
 | `markdown-it-ins`           | `++text++`          | 下划线               |
 | `markdown-it-mark`          | `==text==`          | 高亮                 |
@@ -382,25 +374,38 @@ props.content → completeMarkdownSyntax → md.parse（html: true）→ groupTo
 | `markdownItLatex`           | `$...$` / `$$...$$` | KaTeX 数学公式 token |
 | `markdownItContainer`       | `::: hljs-left` 等  | 自定义对齐容器（class 与 highlight.js 命名对齐） |
 
+### 蓝鲸行内样式（`markdownItBkInlineStyle`）
+
+不开启 `html: true`，由专用语法生成带白名单 `style` 的 `<span class="bk-md-inline-style">`。
+
+**语法**：`::bk{` *属性* `}` *正文* `:/bk::`
+
+- 属性写在 `{}` 内，使用 `;` 分隔；每项为 `键=值` 或 `键:值`。
+- 正文支持行内 Markdown（如 `**粗体**`）。
+- 结束标记必须为字面量 `:/bk::`，请勿在正文中出现该序列。
+
+**支持的键**：`color` / `c`、`background-color`、`font-size`、`bold`、`italic`（详见 `plugins/markdown-bk-inline-style.ts` 内注释）。
+
+**示例**：
+
+```markdown
+::bk{color:#c00;font-size:18px}**重要**:/bk::
+::bk{background-color:yellow}高亮:/bk::
+::bk{bold;italic}强调:/bk::
+```
+
 ### 安全性
 
-HTML 渲染采用两层安全策略：
+`MarkdownIt` **不**开启 `html: true`，用户无法插入任意 HTML 标签；行内彩色/字号等请使用上文「蓝鲸行内样式」扩展。
 
-**第一层 — DOMPurify**：全局过滤，移除危险标签和属性，同时允许 KaTeX 和 `<font>` 标签所需的内容：
+`VNodeRenderer` 渲染的 HTML 统一经过 DOMPurify 过滤，并额外允许 KaTeX 所需标签：
 
 ```typescript
 const domPurifyConfig = {
-  ADD_TAGS: ['font', 'semantics', 'mrow', 'mi', 'mo', 'mn', 'msup', 'msub', 'mfrac', 'mtext', 'annotation'],
-  ADD_ATTR: ['xmlns', 'mathvariant', 'encoding', 'style', 'color', 'size', 'face'],
-  FORBID_TAGS: ['style'],
+  ADD_TAGS: ['semantics', 'mrow', 'mi', 'mo', 'mn', 'msup', 'msub', 'mfrac', 'mtext', 'annotation'],
+  ADD_ATTR: ['xmlns', 'mathvariant', 'encoding', 'style'],
 };
 ```
-
-> `FORBID_TAGS: ['style']` 防止 `<style>` 标签注入全局 CSS，样式属性通过 `style` 属性（attribute）而非 `<style>` 标签（tag）控制。
-
-**第二层 — CSS 属性白名单**（`sanitizeCSS`）：DOMPurify 处理后，对 `style` 属性值做二次过滤，仅保留白名单内的安全 CSS 属性，拦截 `url()`、`expression()`、`javascript:` 等危险模式。
-
-**流式场景 — `sanitizeHtmlFragment`**：流式渲染中 HTML 标签可能被拆分到多个 `html_inline` token（如 `<font color="red">` 和 `</font>` 分属不同 token），DOMPurify 会自动闭合未匹配标签导致样式丢失。`sanitizeHtmlFragment` 只做危险模式匹配不自动闭合，专用于此场景。
 
 > `CodeContent`、`MermaidContent`、`LatexContent` 各自内部处理安全性（KaTeX `errorColor`、highlight.js 转义等），不经过 DOMPurify。
 

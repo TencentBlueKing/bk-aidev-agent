@@ -4,13 +4,11 @@
 
 ## 函数列表
 
-| 函数名                   | 说明                         |
-| ------------------------ | ---------------------------- |
-| `completeMarkdown`       | Markdown 语法补全            |
-| `completeMarkdownSyntax` | 流式 Markdown 语法补全       |
-| `sanitizeCSS`            | CSS 属性值安全过滤（白名单） |
-| `sanitizeHtmlFragment`   | HTML 片段净化（不自动闭合）  |
-| `getCookieByName`        | 获取 Cookie 值               |
+| 函数名                   | 说明                   |
+| ------------------------ | ---------------------- |
+| `completeMarkdown`       | Markdown 语法补全      |
+| `completeMarkdownSyntax` | 流式 Markdown 语法补全 |
+| `getCookieByName`        | 获取 Cookie 值         |
 
 ## Markdown 语法补全
 
@@ -60,49 +58,6 @@ console.log(lang); // 'zh-cn' 或 'en'
 // 获取不存在的 Cookie 返回 null
 const notExist = getCookieByName('not_exist');
 console.log(notExist); // null
-```
-
-## CSS 属性安全过滤
-
-### sanitizeCSS
-
-对 CSS 属性值做白名单校验，仅保留安全的 CSS 属性，拦截 `url()`、`expression()`、`javascript:`、`@import` 等危险模式。
-
-```typescript
-import { sanitizeCSS } from '@blueking/chat-x';
-
-// 保留安全属性
-sanitizeCSS('color: red'); // => 'color: red'
-sanitizeCSS('font-size: 16px; color: red'); // => 'font-size: 16px; color: red'
-
-// 过滤危险属性
-sanitizeCSS('position: absolute'); // => ''
-sanitizeCSS('z-index: 999'); // => ''
-
-// 过滤危险值
-sanitizeCSS('background: url(http://evil.com)'); // => ''
-sanitizeCSS('width: expression(alert(1))'); // => ''
-```
-
-## HTML 片段净化
-
-### sanitizeHtmlFragment
-
-轻量级 HTML 片段净化函数，用于流式渲染场景。与 DOMPurify 不同，此函数**不会自动闭合未匹配的标签**，因为流式渲染中 HTML 标签可能被拆分到不同的 `html_inline` token 中。
-
-```typescript
-import { sanitizeHtmlFragment } from '@blueking/chat-x';
-
-// 保留安全标签，不自动闭合
-sanitizeHtmlFragment('<font color="red">'); // => '<font color="red">'
-sanitizeHtmlFragment('</font>'); // => '</font>'
-
-// 剥离 script 和事件处理器
-sanitizeHtmlFragment('<script>alert(1)</script>'); // => ''
-sanitizeHtmlFragment('<img src=x onerror=alert(1)>'); // => '<img src=x >'
-
-// 过滤 style 属性中的危险 CSS
-sanitizeHtmlFragment('<div style="background: url(evil)">text</div>'); // => '<div>text</div>'
 ```
 
 ## 使用示例

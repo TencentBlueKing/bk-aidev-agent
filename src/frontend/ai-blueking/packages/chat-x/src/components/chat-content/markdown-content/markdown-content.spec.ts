@@ -116,16 +116,6 @@ vi.mock('../../../plugins/markdown-container', () => ({
   markdownItContainer: vi.fn(() => () => {}),
 }));
 
-// Mock CSS sanitizer
-vi.mock('../../../utils/css-sanitizer', () => ({
-  sanitizeCSS: vi.fn((css: string) => css),
-}));
-
-// Mock HTML sanitizer
-vi.mock('../../../utils/html-sanitizer', () => ({
-  sanitizeHtmlFragment: vi.fn((html: string) => html),
-}));
-
 // Mock utils
 vi.mock('../../../utils/stream-markdown-completer', () => ({
   completeMarkdownSyntax: (content: string) => ({
@@ -137,25 +127,10 @@ vi.mock('../../../utils/stream-markdown-completer', () => ({
 // Mock MarkdownIt
 vi.mock('../../../markdown-it/index', () => ({
   default: class MockMarkdownIt {
-    options: Record<string, any>;
     renderer = {
       render: vi.fn(),
     };
-    constructor(options?: Record<string, any>) {
-      this.options = options || {};
-    }
-    parse(content: string) {
-      // Return HTML tokens when content contains HTML tags, for testing html rendering
-      if (content.includes('<font') || content.includes('<style') || content.includes('<div')) {
-        return [
-          { type: 'paragraph_open', tag: 'p', nesting: 1, block: true, hidden: false },
-          {
-            type: 'inline', tag: '', nesting: 0, content: '', hidden: false,
-            children: [{ type: 'html_inline', tag: '', nesting: 0, content, children: null, hidden: false }],
-          },
-          { type: 'paragraph_close', tag: 'p', nesting: -1, block: true, hidden: false },
-        ];
-      }
+    parse() {
       return [];
     }
     use() {
@@ -167,7 +142,7 @@ vi.mock('../../../markdown-it/index', () => ({
 // Mock dompurify
 vi.mock('dompurify', () => ({
   default: {
-    sanitize: vi.fn((html: string) => html),
+    sanitize: (html: string) => html,
   },
 }));
 
@@ -242,33 +217,6 @@ describe('MarkdownContent', () => {
 
       expect(wrapper.find('.mock-error-content').exists()).toBe(false);
       expect(wrapper.find('.ai-markdown-body').exists()).toBe(true);
-    });
-  });
-
-  describe('HTML 渲染测试（html: true）', () => {
-    it('应该渲染 HTML 内容（带 font 标签）', () => {
-      wrapper = mount(MarkdownContent, {
-        props: { content: '<font color="red">红色文字</font>' },
-      });
-
-      expect(wrapper.find('.ai-markdown-content').exists()).toBe(true);
-      expect(wrapper.find('.ai-markdown-body').exists()).toBe(true);
-    });
-
-    it('应该过滤 style 标签（FORBID_TAGS 配置）', () => {
-      wrapper = mount(MarkdownContent, {
-        props: { content: '<style>body { background: red; }</style>文本' },
-      });
-
-      expect(wrapper.find('.ai-markdown-content').exists()).toBe(true);
-    });
-
-    it('应该处理含 style 属性的 HTML 标签', () => {
-      wrapper = mount(MarkdownContent, {
-        props: { content: '<div style="color: red">内容</div>' },
-      });
-
-      expect(wrapper.find('.ai-markdown-content').exists()).toBe(true);
     });
   });
 
