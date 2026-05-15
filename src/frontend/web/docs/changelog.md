@@ -1,5 +1,22 @@
 # 更新日志
 
+## v2.1.4-beta.6
+
+### 新功能
+
+- **蓝鲸行内富文本**：AI 消息支持 `::bk{属性}正文:/bk::` 语法，在安全白名单内渲染颜色、加粗、斜体、背景色、字号（1–72px），无需开启 HTML 解析
+- 行内正文仍支持标准 Markdown（加粗、链接、行内代码等）
+
+### 变更
+
+- Markdown 渲染**不再**解析任意 HTML 标签；行内样式请使用蓝鲸行内富文本语法，详见 [蓝鲸行内富文本](/guide/core-features/markdown-inline-style)
+
+### 文档
+
+- 新增 [蓝鲸行内富文本](/guide/core-features/markdown-inline-style) 指南，含 LLM / 系统提示词配置示例
+
+---
+
 ## v2.1.4-beta.2
 
 ### 新功能

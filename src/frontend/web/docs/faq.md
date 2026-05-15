@@ -214,3 +214,16 @@ const { protocol } = useChatHelper({
 ```
 
 常见的流式错误包括：网络断开、token 过期、服务端异常等。建议在错误处理中提供用户友好的提示信息。
+
+---
+
+## 如何让 AI 回复显示红色标题、背景高亮？
+
+v2.1.4-beta.6 起，消息区**不解析任意 HTML**。请在 AIDev Agent **系统提示词**中要求模型使用蓝鲸行内富文本语法，例如：
+
+```text
+::bk{color=red; bold}标题:/bk::
+::bk{background-color=yellow}重点:/bk::
+```
+
+完整语法、属性表与「撤离通知」类 LLM 提示词模板见 [蓝鲸行内富文本](/guide/core-features/markdown-inline-style)。用户侧的 `/` 提示词 prop 可放提问模板，格式约束建议写在系统提示词中。
