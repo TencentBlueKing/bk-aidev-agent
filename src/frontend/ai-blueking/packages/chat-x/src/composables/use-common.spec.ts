@@ -28,6 +28,7 @@ import { type ComputedRef, computed, defineComponent, h, nextTick, shallowRef } 
 import { mount } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 
+import { RenderMode } from '../common/constants';
 import {
   useCommonTippyInject,
   useCommonTippyProvider,
@@ -37,8 +38,6 @@ import {
   useRenderModeInject,
   useRenderModeProvider,
 } from './use-common';
-
-import { RenderMode } from '../common/constants';
 
 import type { AITippyProps } from '../types';
 
@@ -96,7 +95,7 @@ describe('use-common', () => {
         },
       });
 
-      const tippyOptions = computed<AITippyProps | undefined>(() => ({
+      const tippyOptions = computed<Partial<AITippyProps> | undefined>(() => ({
         placement: 'bottom',
       }));
 

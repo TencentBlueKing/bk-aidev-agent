@@ -24,8 +24,7 @@
  * IN THE SOFTWARE.
  */
 
-import { type ToolIconsMap } from '../icons/tools';
-
+import type { ToolIconsMap } from '../icons/tools';
 import type { TippyOptions } from 'vue-tippy';
 
 export enum MessageToolsStatus {
@@ -33,7 +32,7 @@ export enum MessageToolsStatus {
   Hidden = 'hidden', // 隐藏
 }
 
-export type AITippyProps = Partial<Pick<TippyOptions, 'appendTo' | 'zIndex'>>;
+export type AITippyProps = Partial<Pick<TippyOptions, 'appendTo' | 'placement' | 'zIndex'>>;
 
 export interface IToolBtn {
   description?: string;

@@ -323,12 +323,12 @@ Flow / KnowledgeRag 等子组件的外框：
 
 ### FlowAgent 要点（`FlowAgentContent`）
 
-- **内容类型**：`BkFlowMessageContent` = `BkFlowTask[]`（`task_id`、`nodes`、`statistics`、`has_confidence`、`is_active`、`task_tab` 等）
+- **内容类型**：`BkFlowMessageContent` = `BkFlowTask[]`（`task_id`、`nodes`、`statistics`、`has_confidence`、`is_active` 等）
 - **侧栏 Tab**：`useCustomTabConsumer()` → `addCustomTab` / `removeCustomTab`
   - 任务 Tab：`name = String(task_id)`
   - 节点 Tab：`name = \`${task_id}|${node.id}|${node.name}\``
   - 有效证据：`has_confidence` + 独立 Tab
-  - `is_active && task_tab` 时首次自动 `openTaskTab`
+  - `is_active && has_confidence` 时首次自动 `openTaskTab`
   - 组件在 `MessageContainer` 内卸载时批量 `removeCustomTab`
 - **默认详情组件**：`BkFlowNodeDetail`（需 `<slot name="locateButton" />`）
 - **应用覆盖**：`ChatContainer` 的 `getSideRenderComponent` / `onCustomTabChange`（详见侧栏文档）

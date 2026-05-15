@@ -386,7 +386,7 @@
     () => taskList.value,
     () => {
       if (hasAutoOpenedActiveTask.value || hasUserSelectedTab.value) return;
-      const activeTask = taskList.value.find(task => task.is_active && task.task_tab);
+      const activeTask = taskList.value.find(task => task.is_active && task.has_confidence);
       if (!activeTask) return;
       hasAutoOpenedActiveTask.value = true;
       skipNextTabSelectionMark.value = true;

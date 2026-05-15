@@ -265,7 +265,7 @@ domain: message
 - **标题栏**：显示「执行情况」+ 所有任务聚合后的各状态计数（执行中 / 成功 / 失败 / 挂起），颜色区分
 - **任务组**：逐个展示任务行，带状态图标、总耗时；点击箭头图标可折叠/展开节点列表
 - **有效证据**：`task.has_confidence === true` 时，任务行右侧展示「有效证据」按钮，点击后在侧栏打开置信度/证据详情 Tab（`props.has_confidence: true`）
-- **默认激活**：`task.is_active === true` 且存在 `task_tab` 时，首次加载会自动在侧栏打开该任务 Tab；用户手动切换 Tab 后不再沿用 `is_active` 默认高亮
+- **默认激活**：`task.is_active === true` 且 `task.has_confidence === true` 时，首次加载会自动在侧栏打开该任务 Tab；用户手动切换 Tab 后不再沿用 `is_active` 默认高亮
 - **选中态**：当前侧栏 Tab 与任务行 / 节点行联动高亮（`is-selected`）；任务 Tab 与「有效证据」Tab 均视为该任务的选中态
 - **节点列表**：每个节点显示状态圆点、名称和耗时；hover 时出现「详情」按钮
 - **节点详情**：点击「详情」会通过 `useCustomTabConsumer` 在 `ChatContainer` 侧边栏新增自定义 Tab，展示节点配置（基础信息、输入参数、输出参数）
@@ -430,8 +430,8 @@ import { MessageContentType, type BkFlowMessageContent, type BkFlowNode, type Bk
 type BkFlowMessageContent = BkFlowTask[];
 
 type BkFlowTask = {
-  has_confidence?: boolean; // 是否展示「有效证据」入口
-  is_active?: boolean; // 是否默认激活并自动打开侧栏 Tab
+  has_confidence?: boolean; // 是否展示「有效证据」入口；与 is_active 同时为 true 时首次加载自动打开任务 Tab
+  is_active?: boolean; // 是否默认激活；需配合 has_confidence 才会自动打开侧栏 Tab
   nodes: Record<string, BkFlowNode>;
   statistics: { state_counts: Record<string, number>; total: number };
   task_id: number;
