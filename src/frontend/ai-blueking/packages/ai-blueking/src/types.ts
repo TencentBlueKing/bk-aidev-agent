@@ -25,9 +25,9 @@ export type {
 // MessageContentType 从 chat-x 导出
 export { MessageContentType } from '@blueking/chat-x';
 
-import type { VNode } from 'vue';
+import { type VNode, h } from 'vue';
 
-import type { RenderMode } from '@blueking/chat-x';
+import type { CustomBkFlowTab, CustomTab, RenderMode } from '@blueking/chat-x';
 
 // 从 Manager 导入类型
 import type { PositionAndSize } from './manager/types';
@@ -41,6 +41,22 @@ import type {
 } from '@blueking/chat-helper';
 import type { IAiSlashMenuItem } from '@blueking/chat-x';
 import type { CreateSessionOptions } from './manager/business/types';
+
+/** 自定义侧栏内容区渲染（透传 ChatContainer.getSideRenderComponent） */
+export type GetSideRenderComponent = (
+  createElement: typeof h,
+  props?: Record<string, unknown>,
+) => VNode | undefined;
+
+/** 自定义侧栏 Tab 标签渲染（透传 ChatContainer.getSideTabRenderComponent） */
+export type GetSideTabRenderComponent = (
+  createElement: typeof h,
+  tab: CustomTab<Record<string, unknown>>,
+  events: { removeCustomTab: (tabName: string) => void },
+) => VNode | undefined;
+
+/** 侧栏自定义 Tab 切换时拉取详情（透传 ChatContainer.onCustomTabChange） */
+export type OnCustomTabChange = (tab: CustomBkFlowTab) => Promise<unknown>;
 
 /**
  * AIBlueking 组件 Emits 类型定义
@@ -241,6 +257,13 @@ export interface AIBluekingProps {
     max?: number;
     min?: number;
   };
+
+  /** 自定义侧栏内容区渲染 */
+  getSideRenderComponent?: GetSideRenderComponent;
+  /** 自定义侧栏 Tab 标签渲染 */
+  getSideTabRenderComponent?: GetSideTabRenderComponent;
+  /** 覆盖默认 Flow 节点详情拉取；未传则使用 ChatBot 内置逻辑 */
+  onCustomTabChange?: OnCustomTabChange;
 }
 
 /**

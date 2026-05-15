@@ -11,8 +11,13 @@ import type { ComputedRef, Ref } from 'vue';
 
 import type { RenderMode } from '@blueking/chat-x';
 
-import type { IShortcut } from '../types';
-import type { IChatHelper } from '../types';
+import type {
+  GetSideRenderComponent,
+  GetSideTabRenderComponent,
+  IChatHelper,
+  IShortcut,
+  OnCustomTabChange,
+} from '../types';
 import type { ISession } from '@blueking/chat-helper';
 import type { IAiSlashMenuItem, IToolBtn, Message } from '@blueking/chat-x';
 import type { TippyOptions } from 'vue-tippy';
@@ -166,7 +171,16 @@ export interface ChatBotProps {
     max?: number;
     min?: number;
   };
+
+  /** 自定义侧栏内容区渲染 */
+  getSideRenderComponent?: GetSideRenderComponent;
+  /** 自定义侧栏 Tab 标签渲染 */
+  getSideTabRenderComponent?: GetSideTabRenderComponent;
+  /** 覆盖默认 Flow 节点详情拉取；未传则使用内置逻辑 */
+  onCustomTabChange?: OnCustomTabChange;
 }
+
+export type { GetSideRenderComponent, GetSideTabRenderComponent, OnCustomTabChange };
 
 /**
  * 请求配置

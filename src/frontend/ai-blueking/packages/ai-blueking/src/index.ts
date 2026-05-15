@@ -63,7 +63,16 @@ export {
 } from './manager';
 
 // ==================== 类型导出 ====================
-export type { AIBluekingEmits, AIBluekingExpose, AIBluekingProps, DropdownMenuConfig, IShortcut } from './types';
+export type {
+  AIBluekingEmits,
+  AIBluekingExpose,
+  AIBluekingProps,
+  DropdownMenuConfig,
+  GetSideRenderComponent,
+  GetSideTabRenderComponent,
+  IShortcut,
+  OnCustomTabChange,
+} from './types';
 
 // 重导出 AG-UI SDK 类型（方便使用）
 export type { IAgentInfo, IMessage, ISession, MessageRole, MessageStatus } from '@blueking/chat-helper';

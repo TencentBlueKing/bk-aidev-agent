@@ -16,7 +16,9 @@
       :model-value="userInput"
       :on-agent-action="handleAgentAction"
       :on-agent-feedback="handleAgentFeedback"
-      :on-custom-tab-change="handleCustomTabChange"
+      :get-side-render-component="props.getSideRenderComponent"
+      :get-side-tab-render-component="props.getSideTabRenderComponent"
+      :on-custom-tab-change="effectiveOnCustomTabChange"
       :on-send-message="handleSendMessage"
       :on-stop-sending="handleStopSending"
       :on-upload="handleUpload"
@@ -240,7 +242,10 @@
   };
 
   // ==================== 自定义 Tab 数据加载 ====================
-  const handleCustomTabChange = async (tab: CustomBkFlowTab) => {
+  const effectiveOnCustomTabChange = async (tab: CustomBkFlowTab) => {
+    if (props.onCustomTabChange) {
+      return props.onCustomTabChange(tab);
+    }
     const tabProps = tab.data?.props;
     if (tabProps?.task_id != null && tabProps?.node_id) {
       return chatHelper.value?.message.getFlowAgentTaskNodeInfo(tabProps.task_id, tabProps.node_id);

@@ -264,6 +264,18 @@ export default createVue2Wrapper(AIBlueking, {
       type: Function,
       default: undefined,
     },
+    getSideRenderComponent: {
+      type: Function,
+      default: undefined,
+    },
+    getSideTabRenderComponent: {
+      type: Function,
+      default: undefined,
+    },
+    onCustomTabChange: {
+      type: Function,
+      default: undefined,
+    },
   },
   emitNames: [...aiBluekingEmitNames],
   exposeKeys: [...aiBluekingExposeKeys],
@@ -446,6 +458,18 @@ export const ChatBotV2 = createVue2Wrapper(ChatBot, {
     },
     resizeProps: {
       type: Object,
+      default: undefined,
+    },
+    getSideRenderComponent: {
+      type: Function,
+      default: undefined,
+    },
+    getSideTabRenderComponent: {
+      type: Function,
+      default: undefined,
+    },
+    onCustomTabChange: {
+      type: Function,
       default: undefined,
     },
   },
