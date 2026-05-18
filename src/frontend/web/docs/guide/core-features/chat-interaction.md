@@ -92,7 +92,7 @@ AI 小鲸支持丰富的消息角色类型，由 `MessageRole` 枚举定义。�
 | `Assistant` | AI 助手回复 | AI 生成的文本回复、工具调用 |
 | `Reasoning` | 深度思考 | AI 的思考过程，可折叠展示 |
 | `Tool` | 工具调用结果 | 工具执行的返回结果 |
-| `Activity` | 活动消息 | 知识库检索、参考文档等流程状态 |
+| `Activity` | 活动消息 | 知识库检索、参考文档、FlowAgent 流程等；Flow 节点「详情」可在侧栏打开自定义 Tab，见 [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization)（≥ v2.1.4-beta.7） |
 | `Info` | 信息消息 | 系统提示信息 |
 | `System` | 系统消息 | 系统级别的消息 |
 

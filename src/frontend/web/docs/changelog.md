@@ -1,5 +1,19 @@
 # 更新日志
 
+## v2.1.4-beta.7
+
+### 新功能
+
+- **侧栏 Tab 自定义渲染**：`ChatBot` / `AIBlueking` 支持 `getSideRenderComponent`、`getSideTabRenderComponent`、`onCustomTabChange`，用于自定义 FlowAgent 节点详情等内容区与 Tab 标签；未传 `onCustomTabChange` 时，Flow 节点 Tab 仍走内置 `getFlowAgentTaskNodeInfo`
+- 导出类型 `GetSideRenderComponent`、`GetSideTabRenderComponent`、`OnCustomTabChange`
+
+### 文档
+
+- 新增 [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization) 指南（含 composable 示例与 Playground 对照）
+- 更新 [ChatBot](/api/ai-blueking/chatbot)、[AIBlueking](/api/ai-blueking/aiblueking)、[类型定义](/api/ai-blueking/types) API 说明
+
+---
+
 ## v2.1.4-beta.6
 
 ### 新功能

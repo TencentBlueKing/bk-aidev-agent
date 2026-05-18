@@ -67,6 +67,12 @@ const router = createRouter({
       component: () => import('./views/CustomMessageSlotView.vue'),
       meta: { title: '自定义消息渲染', group: 'example' },
     },
+    {
+      path: '/examples/side-render',
+      name: 'SideRender',
+      component: () => import('./views/SideRenderView.vue'),
+      meta: { title: '侧栏渲染 side-render', group: 'example' },
+    },
   ],
 });
 
