@@ -29,7 +29,7 @@
 ## Workflow Preferences
 
 - 实现前先输出架构分析与方案，用户确认后再动手
-- 功能落地后同步更新 Skill 文档（项目内 `.cursor/skills/` 与全局 `~/.cursor/skills/`）和 references
+- 功能落地后同步更新 Skill 文档（项目内 `.cursor/skills/` 与全局 `~/.cursor/skills/`）和 references；主站 VitePress 文档更新遵循 `.agents/skills/ai-blueking-docs-update/`
 - 优先维护项目内 `.cursor/skills/`，全局同名 skill 若已软链到项目内则不再双份维护
 - playground 包通常不需要改动，除非用户明确要求
 - 骨架屏使用全局 `.ai-skeleton-element` class + 各组件本地尺寸类，无独立 Skeleton 组件

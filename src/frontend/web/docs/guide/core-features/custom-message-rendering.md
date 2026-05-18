@@ -605,4 +605,5 @@ your-project/
 
 - [@blueking/chat-x](/api/chat-x/components) - 原子对话 UI 组件库
 - [@blueking/ai-blueking](/api/ai-blueking/chatbot) - 小鲸业务组件
+- [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization) — 执行情况侧栏节点详情等（≥ v2.1.4-beta.7）
 - [ECharts 文档](https://echarts.apache.org/zh/index.html) - 图表配置参考

@@ -110,6 +110,10 @@ function openAI() {
 | `beforeNimbusClick` | `() => boolean \| Promise<boolean \| void> \| void` | — | Nimbus 点击前钩子函数，返回 `false` 阻止默认 showPanel 行为 |
 | `resizeProps` | `{ disabled?, initialDivide?, max?, min? }` | — | ResizeLayout 配置（执行情况侧面板拖拽） |
 
+### 侧栏自定义渲染 {#side-render-customization}
+
+与 [ChatBot](/api/ai-blueking/chatbot#side-render-customization) 相同，透传至内层 `ChatBot`（**≥ v2.1.4-beta.7**）：`getSideRenderComponent`、`getSideTabRenderComponent`、`onCustomTabChange`。详见 [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization)。
+
 ## Events
 
 ### 面板事件

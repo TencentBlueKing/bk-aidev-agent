@@ -61,6 +61,7 @@ export default defineConfig({
             { text: "会话管理", link: "/guide/core-features/session-management" },
             { text: "消息分享", link: "/guide/core-features/sharing" },
             { text: "消息自定义渲染", link: "/guide/core-features/custom-message-rendering" },
+            { text: "侧栏 Tab 自定义渲染", link: "/guide/core-features/side-render-customization" },
             { text: "UI 定制", link: "/guide/core-features/ui-customization" },
             { text: "Skill 指引", link: "/guide/core-features/skill-guide" },
           ],

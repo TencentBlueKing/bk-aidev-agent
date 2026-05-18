@@ -106,6 +106,13 @@ interface AIBluekingProps {
     max?: number;
     min?: number;
   };
+
+  /** 自定义侧栏内容区渲染（≥ v2.1.4-beta.7，透传内层 ChatBot） */
+  getSideRenderComponent?: GetSideRenderComponent;
+  /** 自定义侧栏 Tab 标签渲染（≥ v2.1.4-beta.7） */
+  getSideTabRenderComponent?: GetSideTabRenderComponent;
+  /** 侧栏自定义 Tab 切换时拉取详情（≥ v2.1.4-beta.7） */
+  onCustomTabChange?: OnCustomTabChange;
 }
 ```
 
@@ -254,8 +261,59 @@ interface ChatBotProps {
     max?: number;
     min?: number;
   };
+
+  /** 自定义侧栏内容区渲染（≥ v2.1.4-beta.7，透传 ChatContainer） */
+  getSideRenderComponent?: GetSideRenderComponent;
+  /** 自定义侧栏 Tab 标签渲染（≥ v2.1.4-beta.7） */
+  getSideTabRenderComponent?: GetSideTabRenderComponent;
+  /** 侧栏自定义 Tab 切换时拉取详情（≥ v2.1.4-beta.7） */
+  onCustomTabChange?: OnCustomTabChange;
 }
 ```
+
+## GetSideRenderComponent
+
+自定义侧栏**内容区**渲染函数（**≥ v2.1.4-beta.7**）。
+
+```typescript
+import type { h, VNode } from 'vue';
+
+type GetSideRenderComponent = (
+  createElement: typeof h,
+  props?: Record<string, unknown>,
+) => VNode | undefined;
+```
+
+- `props` 为当前选中 Tab 的 `data.props`（Flow 场景常为 snake_case）
+- 返回 `VNode`：作为侧栏内容根组件
+- 返回 `undefined`：使用 `addCustomTab` 注册的 `data.component`
+
+## GetSideTabRenderComponent
+
+自定义侧栏 **Tab 标签**渲染函数（**≥ v2.1.4-beta.7**）。
+
+```typescript
+import type { CustomTab } from '@blueking/chat-x';
+import type { h, VNode } from 'vue';
+
+type GetSideTabRenderComponent = (
+  createElement: typeof h,
+  tab: CustomTab<Record<string, unknown>>,
+  events: { removeCustomTab: (tabName: string) => void },
+) => VNode | undefined;
+```
+
+## OnCustomTabChange
+
+侧栏自定义 Tab 切换时的数据拉取（**≥ v2.1.4-beta.7**）。
+
+```typescript
+import type { CustomBkFlowTab } from '@blueking/chat-x';
+
+type OnCustomTabChange = (tab: CustomBkFlowTab) => Promise<unknown>;
+```
+
+`ChatBot` 未传入时，对 Flow 节点 Tab 默认调用 `chatHelper.message.getFlowAgentTaskNodeInfo(task_id, node_id)`。
 
 ## ChatBotExpose
 

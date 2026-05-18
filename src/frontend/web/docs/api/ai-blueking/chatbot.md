@@ -80,6 +80,16 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | `messageToolsTippyOptions` | `MessageToolsTippyOptions` | — | 消息工具栏 Tippy 配置（如 `appendTo`，用于控制弹窗挂载位置和层级） |
 | `resizeProps` | `{ disabled?, initialDivide?, max?, min? }` | — | ResizeLayout 配置（执行情况侧面板拖拽） |
 
+### 侧栏自定义渲染 {#side-render-customization}
+
+透传 `ChatContainer` 侧栏能力，用于 FlowAgent 节点详情等自定义 Tab。用法见 [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization)。
+
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `getSideRenderComponent` | `GetSideRenderComponent` | — | `(h, props) => VNode \| undefined`。返回 VNode 时作为侧栏内容根；返回 `undefined` 时使用 `addCustomTab` 的 `data.component` |
+| `getSideTabRenderComponent` | `GetSideTabRenderComponent` | — | `(h, tab, { removeCustomTab }) => VNode \| undefined`。自定义 Tab 标签；未返回时使用默认图标 + 文案 + 关闭按钮 |
+| `onCustomTabChange` | `OnCustomTabChange` | — | `(tab) => Promise<unknown>`。Tab 切换时拉取详情并写入 `data.props`；**未传**且为 Flow 节点 Tab（含 `task_id`、`node_id`）时，使用内置 `getFlowAgentTaskNodeInfo` |
+
 ## Events
 
 ### 消息事件
