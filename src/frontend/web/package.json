@@ -24,9 +24,11 @@
     "build": "VITEPRESS_BASE=/ vitepress build docs",
     "build:npm": "node scripts/build-npm.mjs",
     "build:all": "pnpm build:npm",
-    "preview": "VITEPRESS_BASE=/ vitepress build docs && PORT=4173 node ./server.cjs",
+    "preview": "VITEPRESS_BASE=/ vitepress build docs && PORT=4173 DOCS_BASE=/ node ./server.cjs",
+    "preview:npm": "pnpm build:npm && PORT=4173 DOCS_BASE=/ node ./server.cjs",
     "preview:no-mock": "VITEPRESS_BASE=/ vitepress preview docs",
     "server": "node ./server.cjs",
+    "start": "node ./server.cjs",
     "prepublishOnly": "pnpm build:npm"
   },
   "peerDependencies": {
@@ -35,7 +37,7 @@
     "koa-send": ">=4.0.0"
   },
   "dependencies": {
-    "@blueking/ai-blueking": "2.0.0-beta.1",
+    "@blueking/ai-blueking": "2.1.4-beta.8",
     "@blueking/chat-helper": "0.0.1-beta.30",
     "@blueking/chat-x": "0.0.3-beta.4",
     "bkui-vue": "^2.0.2-beta.81",

@@ -5,14 +5,12 @@
 </template>
 
 <script>
-import { version } from '../../../../../ai-blueking/packages/ai-blueking/package.json'
-
 export default {
   data() {
     return {
-      version
+      version: __AI_BLUEKING_VERSION__,
     }
-  }
+  },
 }
 </script>
 

@@ -1,8 +1,8 @@
 import { createRequire } from "node:module"
 import { defineConfig } from "vitepress"
 import express from "express"
-import { version } from "../../../ai-blueking/packages/ai-blueking/package.json"
 import container from "markdown-it-container"
+import { aiBluekingVersion as version } from "./utils/resolve-changelog-version.js"
 
 const base = process.env.VITEPRESS_BASE || '__DOCS_BASE__/'
 const require = createRequire(import.meta.url)
@@ -183,6 +183,7 @@ export default defineConfig({
     },
     envPrefix: "BK_",
     define: {
+      __AI_BLUEKING_VERSION__: JSON.stringify(version),
       "process.env.BK_STATIC_URL": JSON.stringify(process.env.BK_STATIC_URL),
       "process.env.BK_SITE_URL": JSON.stringify(process.env.BK_SITE_URL),
       "process.env.BK_API_URL_TMPL": JSON.stringify(process.env.BK_API_URL_TMPL),

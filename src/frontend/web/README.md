@@ -91,8 +91,16 @@ pnpm dev
 # 构建独立站点（base = /，用于 Express 服务直接部署）
 pnpm build
 
-# 预览独立站点（构建 + Express 服务，含 mock API）
+# 预览独立站点（pnpm build + Express，含 mock API）
 pnpm preview
+
+# 预览 npm 包构建产物（pnpm build:npm 后 dist/static/，含 __DOCS_BASE__ 替换）
+pnpm preview:npm
+
+# 生产静态服务（自动识别 dist/ 或 dist/static/）
+pnpm server
+# 或指定目录 / 注入 Demo 环境变量：
+# DOCS_STATIC_DIR=./dist/static DOCS_BASE=/ BK_API_URL_TMPL=https://... pnpm server
 
 # 构建 npm 包（base = __DOCS_BASE__/，用于中间件运行时替换）
 pnpm build:npm
