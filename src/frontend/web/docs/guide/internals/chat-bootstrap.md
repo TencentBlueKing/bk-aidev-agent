@@ -99,9 +99,9 @@ useChatBootstrap({ url: agentUrl });
 
 ### requestOptions
 
-- **类型**：`RequestOptions`
+- **类型**：`MaybeRefOrGetter<IRequestOptions>`
 - **必填**：否
-- **说明**：请求配置，包括自定义请求头和请求体数据
+- **说明**：请求配置；`headers` / `data` 支持对象、函数、`ref`、`computed`。`data` 对 GET 合并 query，对 POST 合并 body（与 [自定义请求](/guide/advanced-usage/custom-requests) 一致）
 
 ```typescript
 useChatBootstrap({

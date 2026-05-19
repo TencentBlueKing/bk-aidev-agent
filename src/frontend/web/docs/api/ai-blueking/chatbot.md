@@ -41,7 +41,7 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | --- | --- | --- | --- |
 | `url` | `string` | `''` | API 地址（独立模式必填） |
 | `chatHelper` | `IChatHelper` | — | 外部 chatHelper（集成模式传入，与 `url` 二选一） |
-| `requestOptions` | `IRequestOptions` | — | 请求配置（仅独立模式，含 `headers` / `data`） |
+| `requestOptions` | `MaybeRefOrGetter<IRequestOptions>` | — | 请求配置（仅独立模式；`headers` / `data` 支持对象、函数、`ref`、`computed`） |
 
 ### 会话配置
 

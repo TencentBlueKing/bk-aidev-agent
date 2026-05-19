@@ -317,10 +317,10 @@ activeReqOpts.value = directSendOpts
         <div class="sc-insight">
           <span class="insight-icon">💡</span>
           <span>
-            <strong>为什么要用包装函数而非直接传对象？</strong>
-            ChatHelper 在初始化时一次性捕获 <code>requestOptions</code> 的函数引用，后续每次请求都调用这些函数。
-            若直接传 <code>{ headers: activeReqOpts.value?.headers }</code>，ChatHelper 会固化此刻的值，后续修改 <code>activeReqOpts</code> 无效。
-            包装函数确保引用稳定，同时在调用时动态读取最新值。
+            <strong>单次请求临时注入：</strong>
+            可将 <code>activeReqOpts</code> 设为 ref，在发送前赋值、<code>finally</code> 中清空；
+            也可直接传 <code>computed</code> / <code>ref</code> 包裹的 <code>requestOptions</code>，后续请求会自动读取最新 headers / data。
+            下方示例仍使用包装函数，用于「仅某次 sendShortcut 注入」的场景。
           </span>
         </div>
 

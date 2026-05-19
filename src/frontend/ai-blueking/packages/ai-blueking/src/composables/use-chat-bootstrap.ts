@@ -19,6 +19,7 @@ import {
 
 import { AGUIProtocol, useChatHelper } from '@blueking/chat-helper';
 
+import { buildRequestDataFromOptions } from '../utils/build-request-data';
 import type { IChatHelper, IRequestOptions } from '../types';
 import type { IAgentInfo, ISession } from '@blueking/chat-helper';
 
@@ -42,8 +43,8 @@ export enum BootstrapPhase {
 export interface ChatBootstrapOptions {
   /** 是否自动初始化（默认 true） */
   autoInit?: boolean;
-  /** 请求配置 */
-  requestOptions?: IRequestOptions;
+  /** 请求配置（支持 ref/computed，替换后后续请求自动生效） */
+  requestOptions?: MaybeRefOrGetter<IRequestOptions | undefined>;
   /** API 服务地址（支持响应式） */
   url: MaybeRefOrGetter<string>;
   /** Protocol 事件回调 */
@@ -179,11 +180,7 @@ export function useChatBootstrap(options: ChatBootstrapOptions): ChatBootstrapRe
 
   // ==================== ChatHelper 创建（同步，生命周期内不变） ====================
   const chatHelper = useChatHelper({
-    requestData: {
-      urlPrefix: initialUrl,
-      headers: requestOptions?.headers,
-      data: requestOptions?.data,
-    },
+    requestData: buildRequestDataFromOptions(initialUrl, requestOptions),
     protocol,
   }) as unknown as IChatHelper;
 

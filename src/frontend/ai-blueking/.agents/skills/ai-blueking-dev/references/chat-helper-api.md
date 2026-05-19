@@ -15,12 +15,14 @@ const protocol = new AGUIProtocol({
 const chatHelper = useChatHelper({
   requestData: {
     urlPrefix: 'https://your-api.com/api/',
+    // 支持：对象 | 函数 | ref | computed（每次请求读取最新值）
     headers: () => ({
       Authorization: `Bearer ${getToken()}`,
     }),
     data: () => ({
       app_id: 'your-app-id',
     }),
+    // headers: computed(() => ({ Authorization: `Bearer ${token.value}` })),
   },
   protocol,
 });

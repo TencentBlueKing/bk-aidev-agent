@@ -12,10 +12,10 @@ interface IUseChatHelperOptions {
   requestData?: {
     /** API 地址前缀 */
     urlPrefix: string;
-    /** 自定义请求头，支持对象或返回对象的函数 */
-    headers?: Record<string, string> | (() => Record<string, string>);
-    /** 附加请求数据，支持对象或返回对象的函数 */
-    data?: Record<string, any> | (() => Record<string, any>);
+    /** 自定义请求头；支持对象、零参函数、ref、computed（每次请求前 resolveRequestValue） */
+    headers?: MaybeRequestValue<Record<string, string>>;
+    /** 附加数据；GET/HEAD/OPTIONS 合并 query，POST/PUT/PATCH/DELETE 合并 body */
+    data?: MaybeRequestValue<Record<string, unknown>>;
   };
   /** 自定义协议实例 */
   protocol?: AGUIProtocol;
@@ -26,6 +26,21 @@ interface IUseChatHelperOptions {
   };
 }
 ```
+
+## MaybeRequestValue
+
+延迟求值的请求字段类型，用于 `requestData.headers` / `requestData.data` 及小鲸 `IRequestOptions` 的同名字段。
+
+```typescript
+type MaybeRequestValue<T> = T | (() => MaybeRequestValue<T>);
+// 另支持 Vue 的 Ref / ComputedRef；每次请求前由 resolveRequestValue() 递归展开
+```
+
+| 写法 | 说明 |
+| --- | --- |
+| 普通对象 | 固定快照；适合不变配置 |
+| `() => object` | 每次请求调用函数 |
+| `ref` / `computed` | 修改 `.value` 后，下一次请求自动生效 |
 
 ## IAgentInfo
 

@@ -140,7 +140,7 @@ const requestOptions = {
 </script>
 ```
 
-> `headers` 推荐使用**函数形式**，确保每次请求时获取最新的认证 token，避免 token 过期问题。
+> `headers` / `data` 支持函数、`ref`、`computed`（v2.1.4-beta.9+），确保每次请求携带最新 token 与业务字段。详见 [自定义请求](/guide/advanced-usage/custom-requests)。
 
 ## 下一步
 

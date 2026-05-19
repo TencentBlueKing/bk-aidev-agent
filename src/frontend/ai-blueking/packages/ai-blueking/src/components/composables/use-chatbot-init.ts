@@ -7,13 +7,13 @@
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
  */
 
-import { onBeforeUnmount, ref, shallowRef, watch } from 'vue';
+import { onBeforeUnmount, ref, shallowRef, toValue, watch } from 'vue';
 import type { Ref } from 'vue';
 
 import { AGUIProtocol, useChatHelper } from '@blueking/chat-helper';
 
 import { ChatBusinessManager, SessionBusinessManager, ShortcutManager } from '../../manager';
-import { normalizeUrl } from '../../utils';
+import { buildRequestDataFromOptions, normalizeUrl } from '../../utils';
 
 import type { IChatHelper } from '../../types';
 import type { ChatBotProps } from '../types';
@@ -104,11 +104,10 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
     });
 
     const helper = useChatHelper({
-      requestData: {
-        urlPrefix: normalizeUrl(props.url!),
-        headers: props.requestOptions?.headers,
-        data: props.requestOptions?.data,
-      },
+      requestData: buildRequestDataFromOptions(
+        normalizeUrl(props.url!),
+        () => toValue(props.requestOptions),
+      ),
       protocol,
     }) as unknown as IChatHelper;
 

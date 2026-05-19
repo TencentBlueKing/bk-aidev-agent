@@ -7,6 +7,7 @@
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
  */
 
+export * from './build-request-data';
 export * from './message-utils';
 export * from './parse-custom-blocks';
 

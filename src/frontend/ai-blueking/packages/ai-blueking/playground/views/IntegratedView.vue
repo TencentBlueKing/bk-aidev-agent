@@ -4,8 +4,18 @@
       <h2>集成模式</h2>
       <p class="view-desc">完整的 AIBlueking 组件，包含 Nimbus 悬浮球、拖拽窗口、划词选择等功能</p>
     </div>
+    <DemoRequestOptionsBar
+      :token="token"
+      :app-id="appId"
+      :tenant-id="tenantId"
+      :preview-json="previewJson"
+      @rotate-token="rotateToken"
+      @rotate-app-id="rotateAppId"
+      @rotate-tenant-id="rotateTenantId"
+    />
     <AIBlueking
       :enable-popup="true"
+      :request-options="requestOptions"
       :url="apiUrl"
       @close="handleClose"
       @show="handleShow"
@@ -18,7 +28,21 @@
 
   import AIBlueking from '@blueking/ai-blueking';
 
+  import DemoRequestOptionsBar from '../components/DemoRequestOptionsBar.vue';
+  import { useDemoRequestOptions } from '../composables/use-demo-request-options';
+
   const apiUrl = ref(import.meta.env.VITE_API_URL || '');
+
+  const {
+    token,
+    appId,
+    tenantId,
+    requestOptions,
+    previewJson,
+    rotateToken,
+    rotateAppId,
+    rotateTenantId,
+  } = useDemoRequestOptions();
 
   const handleShow = () => {
     console.log('[Integrated] AIBlueking shown');

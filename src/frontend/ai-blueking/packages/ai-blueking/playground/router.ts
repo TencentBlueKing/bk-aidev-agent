@@ -44,6 +44,12 @@ const router = createRouter({
       meta: { title: 'URL 动态切换', group: 'example' },
     },
     {
+      path: '/examples/request-options',
+      name: 'RequestOptions',
+      component: () => import('./views/RequestOptionsView.vue'),
+      meta: { title: 'requestOptions 响应式', group: 'example' },
+    },
+    {
       path: '/examples/header-left-slot',
       name: 'HeaderLeftSlot',
       component: () => import('./views/HeaderLeftSlotView.vue'),

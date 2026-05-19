@@ -175,6 +175,33 @@ const handleCustomFlow = async () => {
 </script>
 ```
 
+### requestOptions 响应式示例
+
+```vue
+<script setup lang="ts">
+import { computed, ref } from 'vue';
+import { AIBlueking } from '@blueking/ai-blueking';
+
+const token = ref('initial-token');
+
+// 方式 1：外层 ref，整体替换后生效
+const requestOptions = ref({
+  headers: { Authorization: `Bearer ${token.value}` },
+  data: { app_id: 'my-app' },
+});
+
+// 方式 2：内层 ref/computed（推荐，细粒度更新）
+const requestOptionsReactive = {
+  headers: computed(() => ({ Authorization: `Bearer ${token.value}` })),
+  data: { tenant_id: 'default' },
+};
+</script>
+
+<template>
+  <AIBlueking url="/api/ai/" :request-options="requestOptionsReactive" />
+</template>
+```
+
 ## API 文档
 
 ### AIBlueking Props
@@ -187,7 +214,7 @@ const handleCustomFlow = async () => {
 | enablePopup | boolean | false | 是否启用选中文本弹窗 |
 | draggable | boolean | true | 是否可拖拽 |
 | hideNimbus | boolean | false | 是否隐藏悬浮球 |
-| requestOptions | IRequestOptions | - | 请求配置 |
+| requestOptions | `MaybeRefOrGetter<IRequestOptions>` | - | 请求配置（headers/data 支持对象、函数、ref、computed） |
 
 ### AIBlueking Emits
 

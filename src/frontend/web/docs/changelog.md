@@ -1,5 +1,19 @@
 # 更新日志
 
+## v2.1.4-beta.9
+
+### 优化
+
+- **`requestOptions` 响应式落地**：`headers` / `data` 支持普通对象、零参函数、`ref`、`computed`；外层 `requestOptions` 可为 `MaybeRefOrGetter`（`AIBlueking` / `ChatBot` / `useChatBootstrap`），整体替换后后续请求自动生效，切换 token 或租户无需重建组件
+- **`data` 按 HTTP 方法分流**：POST/PUT/PATCH/DELETE 合并进 body；GET/HEAD/OPTIONS 合并进 query（`params`）；body 为 FormData / Blob 等非 plain object 时跳过合并并输出警告
+- **`@blueking/chat-helper`**：新增 `resolveRequestValue`、`MaybeRequestValue` 类型，在 `requestData` 拦截器层统一解析
+
+### 文档
+
+- 更新 [自定义请求](/guide/advanced-usage/custom-requests)、[ChatBot](/api/ai-blueking/chatbot)、[AIBlueking](/api/ai-blueking/aiblueking)、[类型定义](/api/ai-blueking/types) 与 [chat-helper 类型](/api/chat-helper/types)
+
+---
+
 ## v2.1.4-beta.8
 
 ### 新功能

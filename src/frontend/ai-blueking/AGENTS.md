@@ -8,7 +8,7 @@
 - `ChatContainer` 的 `onCustomTabChange` 在应用层（`chat-bot.vue`）拉取接口数据并 return 回 tab；flow-agent 节点详情走此链路
 - `isCollapse` 变化需统一 emit `collapseChange`，不能只在手动折叠按钮处 emit；否则 `addCustomTab` 展开时外层 draggable 无法配合
 - `AIBlueking`/`ChatBot` 已支持 `codeHeader` 插槽透传，插槽参数为 `{ language, token }`；链路为 `AIBlueking -> ChatBot -> ChatContainer#message -> MessageRender#codeHeader`，用于代码块头部自定义动作（如插入/应用）
-- `requestOptions.data` 仅应注入支持 body 的请求方法（如 POST/PUT/PATCH/DELETE）；禁止注入 GET/HEAD，避免触发 `Request with GET/HEAD method cannot have body`
+- `requestOptions.data` 对 POST/PUT/PATCH/DELETE 合并进 body；对 GET/HEAD/OPTIONS 合并进 query（params）
 - `supportUpload` 需从 `ChatContainer -> MessageContainer -> MessageRender -> UserMessage` 全链路透传；否则用户消息编辑态 `ChatInput` 会回退到默认 `true` 与主输入区配置不一致
 - 自定义 `ChatContainer` 的 `#message` 插槽渲染 `MessageRender` 时，必须透传 `on-action`、`on-input-confirm`、`on-shortcut-confirm`、`tippy-options`；否则用户消息的工具操作（删除/编辑/复制/引用）全部失效，而 AI 消息的工具操作不受影响（AI 的 `MessageTools` 在 `MessageContainer` 内部渲染，不经过 `#message` 插槽）
 

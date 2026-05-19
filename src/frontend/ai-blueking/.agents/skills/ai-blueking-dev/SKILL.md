@@ -137,9 +137,22 @@ metadata:
 </template>
 ```
 
-### `requestOptions.data` 仅限 POST 方法
+### `requestOptions` 响应式
 
-`requestOptions.data` 仅应注入支持 body 的请求方法（POST/PUT/PATCH/DELETE），禁止注入 GET/HEAD，否则触发 `Request with GET/HEAD method cannot have body`。
+`requestOptions`（及 chat-helper 的 `requestData.headers` / `requestData.data`）支持：
+
+- 普通对象、`() => object`
+- `ref` / `computed`（修改 `.value` 后后续请求自动生效）
+- 外层 `requestOptions` 可为 `ref` / `computed`（AIBlueking / ChatBot / `useChatBootstrap`）
+
+旧写法无需修改；需要动态 token、租户 ID 时可直接传 `ref`，不必再包一层稳定闭包。
+
+### `requestOptions.data` 注入规则
+
+`requestOptions.data`（及 chat-helper `requestData.data`）按方法自动分流：
+
+- POST/PUT/PATCH/DELETE → 合并进请求体
+- GET/HEAD/OPTIONS → 合并进 query（`params`），不会写入 body
 
 ### 编程式渲染事件只用 emit
 

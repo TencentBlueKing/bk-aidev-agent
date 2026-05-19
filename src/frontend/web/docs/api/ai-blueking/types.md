@@ -16,7 +16,7 @@ interface AIBluekingProps {
   /** 渲染模式：chat(默认)、share(分享)、test(测试) */
   renderMode?: RenderMode;
   /** 请求配置 */
-  requestOptions?: IRequestOptions;
+  requestOptions?: MaybeRefOrGetter<IRequestOptions>;
   /** 自定义 CSS 类名 */
   extCls?: string;
   /** 输入框占位文本 */
@@ -213,7 +213,7 @@ interface ChatBotProps {
   /** ChatHelper 实例（集成模式，优先级高于 url） */
   chatHelper?: IChatHelper;
   /** 请求配置（仅独立模式有效） */
-  requestOptions?: IRequestOptions;
+  requestOptions?: MaybeRefOrGetter<IRequestOptions>;
 
   // 会话配置
   /** 是否自动加载 */
@@ -415,32 +415,49 @@ interface IShortcutComponent extends IAgentCommandComponent {
 
 ## IRequestOptions
 
-请求配置类型，支持静态值或动态函数形式。
+请求配置类型。`headers` / `data` 使用 `MaybeRequestValue`（来自 `@blueking/chat-helper`），支持普通对象、零参函数、`ref`、`computed`；组件 props 上整体可为 `MaybeRefOrGetter<IRequestOptions>`。
 
 ```typescript
+import type { MaybeRequestValue, RequestData, RequestHeaders } from '@blueking/chat-helper';
+import type { MaybeRefOrGetter } from 'vue';
+
 interface IRequestOptions {
-  /** 自定义请求头，支持对象或返回对象的函数 */
-  headers?: Record<string, string> | (() => Record<string, string>);
-  /** 附加请求数据，支持对象或返回对象的函数 */
-  data?: Record<string, unknown> | (() => Record<string, unknown>);
+  headers?: MaybeRequestValue<RequestHeaders>;
+  data?: MaybeRequestValue<RequestData>;
 }
+
+// AIBlueking / ChatBot / useChatBootstrap
+type RequestOptionsProp = MaybeRefOrGetter<IRequestOptions>;
 ```
+
+`data` 在 chat-helper 层按 HTTP 方法合并：**POST/PUT/PATCH/DELETE** → body；**GET/HEAD/OPTIONS** → query。
 
 ### 用法示例
 
 ```typescript
+import { computed, ref } from 'vue';
+
 // 静态配置
 const requestOptions: IRequestOptions = {
   headers: { 'X-Custom-Token': 'abc123' },
   data: { appCode: 'my-app' },
 };
 
-// 动态配置（每次请求时重新计算）
-const requestOptions: IRequestOptions = {
+// 函数：每次请求前求值
+const requestOptionsFn: IRequestOptions = {
   headers: () => ({ Authorization: `Bearer ${getToken()}` }),
   data: () => ({ timestamp: Date.now() }),
 };
+
+// ref / computed（推荐用于登录态、租户切换）
+const token = ref('a');
+const requestOptionsReactive = computed<IRequestOptions>(() => ({
+  headers: { Authorization: `Bearer ${token.value}` },
+  data: { app_id: 'my-app' },
+}));
 ```
+
+详见 [自定义请求](/guide/advanced-usage/custom-requests#响应式示例-ref-computed)。
 
 ## DropdownMenuConfig
 
@@ -557,7 +574,7 @@ interface ChatBootstrapOptions {
   /** API 地址前缀 */
   url?: string;
   /** 请求配置 */
-  requestOptions?: IRequestOptions;
+  requestOptions?: MaybeRefOrGetter<IRequestOptions>;
   /** 是否自动加载最近会话 */
   autoLoad?: boolean;
   /** 初始会话编码 */
