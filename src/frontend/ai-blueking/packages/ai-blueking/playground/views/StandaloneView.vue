@@ -5,6 +5,16 @@
       <p class="view-desc">ChatBot 组件独立使用，可嵌入到任意页面区域（无 Nimbus、无浮窗、无拖拽）</p>
     </div>
 
+    <DemoRequestOptionsBar
+      :token="token"
+      :app-id="appId"
+      :tenant-id="tenantId"
+      :preview-json="previewJson"
+      @rotate-token="rotateToken"
+      @rotate-app-id="rotateAppId"
+      @rotate-tenant-id="rotateTenantId"
+    />
+
     <div class="page-simulation">
       <div class="page-sidebar">
         <div class="page-sidebar-title">模拟页面导航</div>
@@ -18,6 +28,7 @@
         <div class="chatbot-wrapper">
           <ChatBot
             height="600px"
+            :request-options="requestOptions"
             :url="apiUrl"
             @error="handleError"
             @send-message="handleSendMessage"
@@ -31,7 +42,21 @@
 <script setup lang="ts">
   import { ChatBot } from '@blueking/ai-blueking';
 
+  import DemoRequestOptionsBar from '../components/DemoRequestOptionsBar.vue';
+  import { useDemoRequestOptions } from '../composables/use-demo-request-options';
+
   const apiUrl = import.meta.env.VITE_API_URL || '';
+
+  const {
+    token,
+    appId,
+    tenantId,
+    requestOptions,
+    previewJson,
+    rotateToken,
+    rotateAppId,
+    rotateTenantId,
+  } = useDemoRequestOptions();
 
   const handleSendMessage = (message: string) => {
     console.log('[Standalone] send:', message);

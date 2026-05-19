@@ -42,7 +42,7 @@ function openAI() {
 | `url` | `string` | `''` | API 地址（独立模式必填） |
 | `title` | `string` | `''` | 组件标题，显示在 Header 区域 |
 | `renderMode` | `RenderMode` | `'chat'` | 渲染模式：`chat`（默认）、`share`（分享）、`test`（测试） |
-| `requestOptions` | `IRequestOptions` | `{}` | 请求配置（含 `headers` / `data`，支持函数形式） |
+| `requestOptions` | `MaybeRefOrGetter<IRequestOptions>` | `{}` | 请求配置（`headers` / `data` 支持对象、函数、`ref`、`computed`） |
 | `extCls` | `string` | `''` | 额外 CSS 类名 |
 | `placeholder` | `string` | — | 输入框占位文本 |
 | `helloText` | `string` | `'你好，我是小鲸'` | 欢迎语 |

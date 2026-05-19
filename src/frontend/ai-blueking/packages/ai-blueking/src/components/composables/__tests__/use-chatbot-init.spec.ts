@@ -83,9 +83,13 @@ vi.mock('../../../manager', async () => {
   };
 });
 
-vi.mock('../../../utils', () => ({
-  normalizeUrl: vi.fn((url: string) => url),
-}));
+vi.mock('../../../utils', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../utils')>();
+  return {
+    ...actual,
+    normalizeUrl: vi.fn((url: string) => url),
+  };
+});
 
 import { useChatbotInit } from '../use-chatbot-init';
 import { AGUIProtocol, useChatHelper } from '@blueking/chat-helper';

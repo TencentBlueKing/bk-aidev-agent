@@ -19,7 +19,7 @@
 | height          | `string \| number`   | -       | 容器高度                                       |
 | maxWidth        | `string \| number`   | -       | 最大宽度                                       |
 | extCls          | `string`             | -       | 额外 CSS 类名                                  |
-| requestOptions  | `IRequestOptions`    | -       | 请求配置（仅独立模式，含 headers/data）        |
+| requestOptions  | `MaybeRefOrGetter<IRequestOptions>` | - | 请求配置（仅独立模式；headers/data 支持对象、函数、ref、computed） |
 | resizeProps     | `ResizeProps`        | -       | ResizeLayout 配置（执行情况侧面板拖拽）        |
 
 ## Events

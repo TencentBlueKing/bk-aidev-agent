@@ -18,14 +18,19 @@ export type {
   ISession,
   ISessionModule,
   ISupportUpload,
+  MaybeRequestValue,
   MessageRole,
   MessageStatus,
+  RequestData,
+  RequestHeaders,
 } from '@blueking/chat-helper';
 
 // MessageContentType 从 chat-x 导出
 export { MessageContentType } from '@blueking/chat-x';
 
-import { type VNode, h } from 'vue';
+import { type MaybeRefOrGetter, type VNode, h } from 'vue';
+
+import type { MaybeRequestValue, RequestData, RequestHeaders } from '@blueking/chat-helper';
 
 import type { CustomBkFlowTab, CustomTab, RenderMode } from '@blueking/chat-x';
 
@@ -222,8 +227,8 @@ export interface AIBluekingProps {
   /** 预设提示词列表 */
   prompts?: string[];
   // 其他配置
-  /** 请求配置 */
-  requestOptions?: IRequestOptions;
+  /** 请求配置（支持 ref/computed，替换后后续请求自动生效） */
+  requestOptions?: MaybeRefOrGetter<IRequestOptions>;
   /** 资源列表（输入 @ 触发） */
   resources?: IAiSlashMenuItem[];
   /** 快捷操作显示数量限制 */
@@ -324,11 +329,11 @@ export interface IChatHelper {
 }
 
 /**
- * 请求配置
+ * 请求配置（headers/data 支持对象、函数、ref、computed）
  */
 export interface IRequestOptions {
-  data?: (() => Record<string, unknown>) | Record<string, unknown>;
-  headers?: (() => Record<string, string>) | Record<string, string>;
+  data?: MaybeRequestValue<RequestData>;
+  headers?: MaybeRequestValue<RequestHeaders>;
 }
 
 /**

@@ -24,6 +24,11 @@
  * IN THE SOFTWARE.
  */
 
+import type { MaybeRequestValue, RequestHeaders } from './resolve-request-value';
+import { resolveRequestValue } from './resolve-request-value';
+
+export type { MaybeRequestValue, RequestData, RequestHeaders } from './resolve-request-value';
+
 // API 标准响应格式
 export interface ApiResponse<T = unknown> {
   code: number | string;
@@ -36,10 +41,10 @@ export interface IRequestConfig {
   baseURL?: string;
   controller?: AbortController;
   credentials?: 'include' | 'omit' | 'same-origin';
-  /** 请求体；可传函数以便延迟求值（在 `prepareRequest` 中通过 `getValue` 解析） */
-  data?: (() => unknown) | unknown;
-  /** 请求头；可传函数以便延迟求值，便于动态注入（如 token） */
-  headers?: (() => Record<string, string>) | Record<string, string>;
+  /** 请求体；支持对象/函数/ref 延迟求值（在 `prepareRequest` 中解析） */
+  data?: MaybeRequestValue<unknown>;
+  /** 请求头；支持对象/函数/ref 延迟求值，便于动态注入（如 token） */
+  headers?: MaybeRequestValue<RequestHeaders>;
   method?: string;
   mode?: 'cors' | 'no-cors' | 'same-origin';
   params?: Record<string, unknown>;
@@ -466,8 +471,8 @@ function createError(
   return error;
 }
 
-function getValue<T>(value: (() => T) | T): T {
-  return typeof value === 'function' ? (value as () => T)() : value;
+function getValue<T>(value: MaybeRequestValue<T> | undefined): T | undefined {
+  return resolveRequestValue(value);
 }
 
 /** 排除 AbortController、Headers 等类实例，只对普通对象深度合并 */

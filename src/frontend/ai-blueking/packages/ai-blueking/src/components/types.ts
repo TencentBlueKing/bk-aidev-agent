@@ -7,7 +7,7 @@
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
  */
 
-import type { ComputedRef, Ref } from 'vue';
+import type { ComputedRef, MaybeRefOrGetter, Ref } from 'vue';
 
 import type { RenderMode } from '@blueking/chat-x';
 
@@ -15,6 +15,7 @@ import type {
   GetSideRenderComponent,
   GetSideTabRenderComponent,
   IChatHelper,
+  IRequestOptions,
   IShortcut,
   OnCustomTabChange,
 } from '../types';
@@ -140,8 +141,8 @@ export interface ChatBotProps {
   prompts?: string[];
 
   // === 请求配置 ===
-  /** 请求选项（仅独立模式有效） */
-  requestOptions?: IRequestOptions;
+  /** 请求选项（仅独立模式有效；支持 ref/computed） */
+  requestOptions?: MaybeRefOrGetter<IRequestOptions>;
   /** 资源列表（输入 @ 触发） */
   resources?: IAiSlashMenuItem[];
   // === 会话配置 ===
@@ -182,13 +183,7 @@ export interface ChatBotProps {
 
 export type { GetSideRenderComponent, GetSideTabRenderComponent, OnCustomTabChange };
 
-/**
- * 请求配置
- */
-export interface IRequestOptions {
-  data?: (() => Record<string, unknown>) | Record<string, unknown>;
-  headers?: (() => Record<string, string>) | Record<string, string>;
-}
+export type { IRequestOptions } from '../types';
 
 export type MessageToolsTippyOptions = Partial<
   Omit<TippyOptions, 'content' | 'getReferenceClientRect' | 'triggerTarget'>

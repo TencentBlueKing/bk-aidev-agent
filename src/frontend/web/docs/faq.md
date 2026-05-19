@@ -95,21 +95,30 @@ Vue.use(VueCompositionAPI);
 
 ## 6. requestOptions 的 headers 为什么是函数？
 
-函数形式确保**每次请求时获取最新的 token**，避免 token 过期问题。
+v2.1.4-beta.9+ 在每次请求前通过 `resolveRequestValue` 求值，除零参函数外，也支持 **`ref` / `computed`** 与普通对象。函数或 `computed` 可在 token、租户切换后让**下一次请求**自动带上新值，无需重建组件。
 
 ```ts
-// ✅ 推荐：函数形式，每次请求时调用
+import { computed, ref } from 'vue';
+
+const token = ref(getToken());
+
+// ✅ 推荐：computed / 函数，随 token 变化
+const requestOptions = computed(() => ({
+  headers: { Authorization: `Bearer ${token.value}` },
+}));
+
+// ✅ 亦可：函数形式
 const requestOptions = {
   headers: () => ({ Authorization: `Bearer ${getToken()}` }),
 };
 
-// ❌ 不推荐：对象形式，token 会被固定
-const requestOptions = {
-  headers: { Authorization: `Bearer ${token}` },
+// ⚠️ 纯对象且 token 为 ref 时，需在对象内读 .value，或改用 computed
+const requestOptionsStatic = {
+  headers: { Authorization: `Bearer ${token.value}` }, // 仅捕获当前快照
 };
 ```
 
-如果 token 有效期很长且不会变化，也可以使用对象形式。
+`data` 会按方法写入 body 或 query，详见 [自定义请求](/guide/advanced-usage/custom-requests)。
 
 ---
 
