@@ -4,6 +4,7 @@
 
 ### 新功能
 
+- **`requestOptions` 响应式增强**：`headers` / `data` 支持普通对象、函数、`ref`、`computed`；外层 `requestOptions` 也可为 `ref` / `computed`，替换后后续请求自动生效。`data` 对 POST/PUT/PATCH/DELETE 写入 body，对 GET/HEAD/OPTIONS 自动转为 query 参数。能力在 `@blueking/chat-helper` 的 `requestData` 层统一实现，小鲸与直接使用 chat-helper 的业务均可受益
 - **Standalone 子入口**（`@blueking/ai-blueking/standalone`）：内联 Vue 3 runtime 与 chat-x，供非 Vue 宿主（React、Angular、纯 HTML 等）通过 `mountAIBlueking`、`mountChatBot` 挂载小鲸，无需宿主安装 Vue
 - 导出同源 `h`、`render`、`createApp`，支持自定义 VNode / 侧栏渲染；提供 `updateProps`、`expose` / `getExpose`、`unmount` 等挂载句柄 API
 - 构建产物：`dist/standalone/`（ES / UMD / IIFE），IIFE 全局名 `AIBluekingStandalone`
