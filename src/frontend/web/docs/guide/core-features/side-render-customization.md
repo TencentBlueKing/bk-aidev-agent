@@ -220,8 +220,29 @@ import type {
 
 本地调试：在 ai-blueking 包目录执行 `pnpm dev:ai`，访问侧栏渲染示例页。
 
+## Standalone 宿主注意 {#standalone-宿主注意}
+
+自 **v2.1.4-beta.8** 起，非 Vue 宿主通过 [`@blueking/ai-blueking/standalone`](/guide/integration-modes/standalone-bundle) 集成时，`getSideRenderComponent` 的 `createElement` **必须**使用本入口导出的 `h`：
+
+```typescript
+import { mountChatBot, h } from '@blueking/ai-blueking/standalone';
+
+mountChatBot('#root', {
+  props: {
+    url: '/api/',
+    getSideRenderComponent: (createElement, props) => {
+      // createElement 与 standalone 的 h 同源；也可直接写 h(...)
+      return h(MySidePanel, props);
+    },
+  },
+});
+```
+
+勿从 npm 的 `vue` 包单独 `import { h }`，否则 VNode 与组件内部 runtime 不一致会导致渲染异常。
+
 ## 相关文档
 
+- [Standalone 非 Vue 宿主集成](/guide/integration-modes/standalone-bundle)
 - [消息自定义渲染](/guide/core-features/custom-message-rendering) — 主对话区 `custom-component` 块
 - [ChatBot API — 侧栏自定义渲染](/api/ai-blueking/chatbot#side-render-customization)
 - [AIBlueking API](/api/ai-blueking/aiblueking)

@@ -46,4 +46,8 @@ const buildLib = async (
   // 构建 Vue2 版本：vue 被 alias 到 @blueking/bkui-library，bkui-vue/vue-tippy 等打包进产物
   await buildLib(VueVersion.Vue2, ['es', 'umd'], true);
   await buildLib(VueVersion.Vue2, ['iife']);
+
+  // Standalone：内联 Vue3 + chat-x，供非 Vue 宿主 mount / 同源 render
+  await buildLib(VueVersion.Standalone, ['es', 'umd'], false);
+  await buildLib(VueVersion.Standalone, ['iife'], false);
 })();

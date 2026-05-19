@@ -16,9 +16,27 @@
 
 | 场景 | 推荐方案 |
 | --- | --- |
-| 快速嵌入现有页面 | ChatBot |
-| 需要悬浮球、拖拽等完整交互 | AIBlueking |
+| 快速嵌入现有页面（Vue 3） | ChatBot |
+| 需要悬浮球、拖拽等完整交互（Vue 3） | AIBlueking |
+| **宿主不是 Vue**（React、Angular、纯 HTML 等） | [`/standalone`](/guide/integration-modes/standalone-bundle) 子入口 + `mountAIBlueking` |
 | 深度定制 UI 和交互逻辑 | 原子组件（ChatInput + MessageContainer） |
+
+---
+
+## 2.1. 非 Vue 页面如何接入小鲸？
+
+自 **v2.1.4-beta.8** 起，使用 `@blueking/ai-blueking/standalone`：
+
+```typescript
+import { mountAIBlueking } from '@blueking/ai-blueking/standalone';
+import '@blueking/ai-blueking/dist/standalone/style.css';
+
+mountAIBlueking('#ai-root', {
+  props: { url: 'https://your-aidev-url.com/api/' },
+});
+```
+
+自定义 `getSideRenderComponent` 时请从 **同一入口** 导入 `h`，勿混用外部 `vue` 包。详见 [Standalone 非 Vue 宿主集成](/guide/integration-modes/standalone-bundle)。
 
 ---
 
