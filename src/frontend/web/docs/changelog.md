@@ -1,5 +1,20 @@
 # 更新日志
 
+## v2.1.4-beta.8
+
+### 新功能
+
+- **Standalone 子入口**（`@blueking/ai-blueking/standalone`）：内联 Vue 3 runtime 与 chat-x，供非 Vue 宿主（React、Angular、纯 HTML 等）通过 `mountAIBlueking`、`mountChatBot` 挂载小鲸，无需宿主安装 Vue
+- 导出同源 `h`、`render`、`createApp`，支持自定义 VNode / 侧栏渲染；提供 `updateProps`、`expose` / `getExpose`、`unmount` 等挂载句柄 API
+- 构建产物：`dist/standalone/`（ES / UMD / IIFE），IIFE 全局名 `AIBluekingStandalone`
+
+### 文档
+
+- 新增 [Standalone 非 Vue 宿主集成](/guide/integration-modes/standalone-bundle) 指南
+- 新增 [Standalone API](/api/ai-blueking/standalone) 参考
+
+---
+
 ## v2.1.4-beta.7
 
 ### 新功能

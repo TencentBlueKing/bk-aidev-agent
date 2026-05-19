@@ -30,18 +30,20 @@ AI 小鲸 v2.0 由三层组成：**业务组件层**负责组装和编排，**�
 | `@blueking/chat-x` | 纯 UI 组件 | 不含任何业务逻辑，提供 `ChatInput`、`MessageContainer`、`ShortcutRender`、`AiSelection` 等原子级 UI 组件 |
 | `@blueking/chat-helper` | 状态管理 + API 调用 + 流式处理 | 提供 `useChatHelper()`、`AGUIProtocol` 流式协议以及 agent / session / message 等业务模块 |
 
-## 三种集成模式
+## 集成模式
 
 根据业务场景，你可以选择不同的集成方式：
 
-| 模式 | 组件 | 适用场景 | 复杂度 |
+| 模式 | 组件 / 入口 | 适用场景 | 复杂度 |
 | --- | --- | --- | --- |
 | 浮窗模式 | `AIBlueking` | SaaS 全局 AI 助手，右下角浮窗 | ⭐ (仅需 `url`) |
 | 页面嵌入 | `ChatBot` | 聊天作为页面主内容，嵌入 DOM | ⭐ (仅需 `url`) |
+| Standalone | `@blueking/ai-blueking/standalone` | **非 Vue 宿主**（React、纯 HTML 等），`mountAIBlueking` | ⭐⭐ |
 | 原子组件 | `chat-x` + `chat-helper` | 深度定制 | ⭐⭐⭐ |
 
 - **AIBlueking 浮窗模式**：全局 AI 助手入口，提供右下角浮球、可拖拽面板、划词弹窗和内置会话管理，适合 SaaS 产品全局集成。仅需传入 `url` 即可开箱即用。
 - **ChatBot 页面嵌入模式**：将聊天窗口嵌入到页面的指定区域（如侧边栏、主内容区），适合聊天作为核心功能的场景。同样仅需传入 `url`。
+- **Standalone 非 Vue 宿主**（v2.1.4-beta.8+）：宿主无 Vue 时，通过 `mountAIBlueking` / `mountChatBot` 挂载，bundle 内已含 Vue 3 runtime。详见 [Standalone 集成](/guide/integration-modes/standalone-bundle)。
 - **原子组件模式**：直接使用 `chat-x` 的 UI 组件和 `chat-helper` 的业务 SDK，自由组装，适合需要深度定制交互的场景。
 
 ## 核心特性

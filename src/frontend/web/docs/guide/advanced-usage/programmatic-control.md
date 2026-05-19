@@ -2,6 +2,10 @@
 
 AI 小鲸 v2.0 通过 Vue 的模板引用（template ref）机制，暴露了丰富的编程式 API，允许你从外部代码精确控制聊天组件的行为。
 
+::: info 非 Vue 宿主
+若页面**没有 Vue 运行时**（React、纯 HTML 等），请使用 **v2.1.4-beta.8+** 的 [Standalone 子入口](/guide/integration-modes/standalone-bundle)：通过 `mountAIBlueking` / `mountChatBot` 返回的 `expose` 调用与下文 ref API 相同的方法（如 `show`、`sendMessage`）。
+:::
+
 ## ChatBot 模板引用
 
 ### 获取引用

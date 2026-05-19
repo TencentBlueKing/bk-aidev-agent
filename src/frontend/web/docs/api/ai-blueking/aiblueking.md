@@ -2,6 +2,10 @@
 
 `AIBlueking` 是 AI 小鲸的顶层业务组件，在 `ChatBot` 基础上封装了完整的面板功能，包括弹窗模式、拖拽、缩放、会话管理侧边栏、悬浮球等能力。适用于 SaaS 平台快速集成 AI 助手场景。
 
+::: info 非 Vue 宿主
+宿主无 Vue 时，请使用 v2.1.4-beta.8+ 的 [`mountAIBlueking`](/api/ai-blueking/standalone#mountaiblueking)（`@blueking/ai-blueking/standalone`），见 [Standalone 集成指南](/guide/integration-modes/standalone-bundle)。
+:::
+
 ## 基本用法
 
 ```vue

@@ -2,6 +2,10 @@
 
 `ChatBot` 是 AI 小鲸的核心聊天组件，提供输入框、消息列表、快捷指令等完整的聊天交互能力。它支持**独立模式**和**集成模式**两种使用方式。
 
+::: info 非 Vue 宿主
+宿主无 Vue 时，请使用 v2.1.4-beta.8+ 的 [`mountChatBot`](/api/ai-blueking/standalone#mountchatbot)（`@blueking/ai-blueking/standalone`），见 [Standalone 集成指南](/guide/integration-modes/standalone-bundle)。
+:::
+
 ## 基本用法
 
 ```vue

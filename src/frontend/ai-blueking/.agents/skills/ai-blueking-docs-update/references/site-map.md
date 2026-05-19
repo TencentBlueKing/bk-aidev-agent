@@ -25,6 +25,7 @@
 | `/guide/integration-modes/aiblueking-floating` | `aiblueking-floating.md` |
 | `/guide/integration-modes/chatbot-embedded` | `chatbot-embedded.md` |
 | `/guide/integration-modes/atomic-composition` | `atomic-composition.md` |
+| `/guide/integration-modes/standalone-bundle` | `standalone-bundle.md` | 非 Vue 宿主、`/standalone`（≥ v2.1.4-beta.8） |
 
 ### 功能说明（core-features）
 
@@ -58,7 +59,7 @@
 
 | 包 | 目录 |
 | --- | --- |
-| `@blueking/ai-blueking` | `api/ai-blueking/`（chatbot、aiblueking、managers、types） |
+| `@blueking/ai-blueking` | `api/ai-blueking/`（chatbot、aiblueking、standalone、managers、types） |
 | `@blueking/chat-x` | `api/chat-x/`（components、types） |
 | `@blueking/chat-helper` | `api/chat-helper/`（sdk、types） |
 

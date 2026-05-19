@@ -47,6 +47,7 @@ export default defineConfig({
           items: [
             { text: "AIBlueking 浮窗模式", link: "/guide/integration-modes/aiblueking-floating" },
             { text: "ChatBot 页面嵌入模式", link: "/guide/integration-modes/chatbot-embedded" },
+            { text: "Standalone 非 Vue 宿主", link: "/guide/integration-modes/standalone-bundle" },
             { text: "原子组件组装", link: "/guide/integration-modes/atomic-composition" },
           ],
         },
@@ -99,6 +100,7 @@ export default defineConfig({
           items: [
             { text: "ChatBot 组件", link: "/api/ai-blueking/chatbot" },
             { text: "AIBlueking 组件", link: "/api/ai-blueking/aiblueking" },
+            { text: "Standalone 子入口", link: "/api/ai-blueking/standalone" },
             { text: "业务管理器", link: "/api/ai-blueking/managers" },
             { text: "类型定义", link: "/api/ai-blueking/types" },
           ],

@@ -34,6 +34,12 @@
       "require": "./dist/vue2/index.es.min.js",
       "default": "./dist/vue2/index.es.min.js"
     },
+    "./standalone": {
+      "types": "./dist/standalone.d.ts",
+      "import": "./dist/standalone/index.es.min.js",
+      "require": "./dist/standalone/index.umd.min.js",
+      "default": "./dist/standalone/index.es.min.js"
+    },
     "./dist/*": "./dist/*",
     "./src/*": "./src/*"
   },
@@ -47,6 +53,9 @@
       ],
       "vue2": [
         "./dist/vue2.d.ts"
+      ],
+      "standalone": [
+        "./dist/standalone.d.ts"
       ]
     }
   },
