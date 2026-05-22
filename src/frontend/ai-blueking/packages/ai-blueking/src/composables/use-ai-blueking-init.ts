@@ -90,6 +90,7 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     agentInfo,
     agentName: bootstrapAgentName,
     currentSession,
+    initialize: bootstrapInitialize,
   } = useChatBootstrap({
     url: normalizedUrl,
     requestOptions: props.requestOptions,
@@ -121,6 +122,30 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
 
   const shareBusinessManager = new ShareBusinessManager(chatHelper.message, chatHelper.session);
   const shortcutManager = new ShortcutManager(null, props.shortcuts || []);
+
+  // ==================== 会话就绪（供 show() 等待） ====================
+  let recentSessionPromise: Promise<void> | null = null;
+
+  const ensureRecentSessionLoaded = (): Promise<void> => {
+    if (!props.loadRecentSessionOnMount) {
+      return Promise.resolve();
+    }
+
+    if (!recentSessionPromise) {
+      recentSessionPromise = sessionBusinessManager
+        .loadRecentSession({ skipLoadSessions: true })
+        .finally(() => {
+          recentSessionPromise = null;
+        });
+    }
+
+    return recentSessionPromise;
+  };
+
+  const ensureSessionReady = async (): Promise<void> => {
+    await bootstrapInitialize();
+    await ensureRecentSessionLoaded();
+  };
 
   // ==================== Tippy 配置 ====================
   const messageToolsTippyOptions = {
@@ -186,7 +211,7 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
 
         if (props.loadRecentSessionOnMount) {
           try {
-            await sessionBusinessManager.loadRecentSession({ skipLoadSessions: true });
+            await ensureRecentSessionLoaded();
           } catch (err) {
             console.error('[AIBlueking] Failed to load recent session:', err);
           }
@@ -251,5 +276,6 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     agentResources,
     agentPrompts,
     handleError,
+    ensureSessionReady,
   };
 }

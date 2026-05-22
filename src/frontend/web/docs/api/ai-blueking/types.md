@@ -122,7 +122,7 @@ interface AIBluekingProps {
 
 ```typescript
 interface AIBluekingExpose {
-  // 面板控制
+  // 面板控制（await 后在 sessionList 就绪后 resolve；loadRecentSessionOnMount 时含当前会话初始化）
   show: (sessionCode?: string, options?: { isTemporary?: boolean }) => Promise<void>;
   hide: () => void;
   handleShow: (sessionCode?: string) => Promise<void>;

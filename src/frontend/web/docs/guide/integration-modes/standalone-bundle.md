@@ -50,7 +50,7 @@ const handle = mountAIBlueking('#ai-root', {
   },
 });
 
-// 编程式 API（与 Vue 模板 ref 的 expose 一致）
+// 编程式 API（与 Vue 模板 ref 的 expose 一致；show 在 sessionList 就绪后 resolve）
 await handle.expose?.show();
 handle.expose?.sendMessage('你好');
 handle.updateProps({ url: 'https://next-api.example.com/api/' });

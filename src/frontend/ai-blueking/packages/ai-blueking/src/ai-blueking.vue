@@ -192,6 +192,7 @@
     agentResources,
     agentPrompts,
     handleError,
+    ensureSessionReady,
   } = useAiBluekingInit({
     props,
     emit: emit as (event: string, ...args: unknown[]) => void,
@@ -232,6 +233,7 @@
     forwarders,
     forwardToManager,
     beforeNimbusClick: props.beforeNimbusClick,
+    ensureSessionReady,
   });
 
   // ==================== 3. 会话管理 ====================

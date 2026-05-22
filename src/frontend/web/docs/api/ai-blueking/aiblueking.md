@@ -186,7 +186,7 @@ function openAI() {
 
 | 方法 | 类型 | 说明 |
 | --- | --- | --- |
-| `show` | `(sessionCode?: string, options?: { isTemporary?: boolean }) => Promise<void>` | 显示面板，可选指定初始会话和是否临时会话 |
+| `show` | `(sessionCode?: string, options?: { isTemporary?: boolean }) => Promise<void>` | 显示面板；Promise 在 `sessionList` 就绪后 resolve（`loadRecentSessionOnMount` 时含当前会话初始化）。面板立即显示，可 `await` 后再读 `getChatHelper()?.session`。失败 reject 并触发 `sdk-error`（`apiName: 'init'`） |
 | `hide` | `() => void` | 隐藏面板 |
 | `handleShow` | `(sessionCode?: string) => Promise<void>` | 显示面板（内部方法，等同于 `show`） |
 | `handleClose` | `() => void` | 关闭面板（内部方法，等同于 `hide`） |
