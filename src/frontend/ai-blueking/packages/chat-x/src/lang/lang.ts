@@ -145,6 +145,8 @@ export const lang = {
   请选择以继续: 'Please choose to continue',
   继续: 'Continue',
   '收到信息：': 'Received: ',
+  待审批: 'Pending',
+  已审批: 'Approved',
 } as const;
 
 export const t = (key: keyof typeof lang) => {

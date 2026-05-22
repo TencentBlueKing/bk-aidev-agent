@@ -68,6 +68,14 @@ const unsupportedInterrupt: Interrupt = {
   message: '暂不支持的中断消息',
 };
 
+/** 与 message-render 透传一致：outcome / message 位于 content 内 */
+const buildInterruptProps = (outcome: { interrupts?: Interrupt[]; type: string }, message?: string) => ({
+  content: {
+    message,
+    outcome,
+  },
+});
+
 describe('InterruptMessage', () => {
   let wrapper: VueWrapper;
 
@@ -83,17 +91,15 @@ describe('InterruptMessage', () => {
 
   it('应该按设计稿渲染 AI Dev 工具审批单信息', () => {
     wrapper = mount(InterruptMessage, {
-      props: {
-        outcome: {
-          type: 'interrupt',
-          interrupts: [approvalInterrupt],
-        },
-      },
+      props: buildInterruptProps({
+        type: 'interrupt',
+        interrupts: [approvalInterrupt],
+      }),
     });
 
     expect(wrapper.find('.ai-interrupt-message').exists()).toBe(true);
     expect(wrapper.find('.ai-tool-approval-card__title').text()).toBe('算法方案评审单');
-    expect(wrapper.find('.ai-tool-approval-card__status').text()).toBe('评审中');
+    expect(wrapper.find('.ai-tool-approval-card__status').text()).toBe('待审批');
     expect(wrapper.text()).toContain('REV-2026-04-24-001');
     expect(wrapper.text()).toContain('2026-04-24 14:30:15');
     expect(wrapper.text()).toContain('张三、李四、王五');
@@ -103,10 +109,10 @@ describe('InterruptMessage', () => {
     const onInterruptResume = vi.fn();
     wrapper = mount(InterruptMessage, {
       props: {
-        outcome: {
+        ...buildInterruptProps({
           type: 'interrupt',
           interrupts: [approvalInterrupt],
-        },
+        }),
         onInterruptResume,
       },
     });
@@ -121,10 +127,10 @@ describe('InterruptMessage', () => {
     const onInterruptResume = vi.fn();
     wrapper = mount(InterruptMessage, {
       props: {
-        outcome: {
+        ...buildInterruptProps({
           type: 'interrupt',
           interrupts: [approvalInterrupt],
-        },
+        }),
         onInterruptResume,
       },
     });
@@ -137,12 +143,10 @@ describe('InterruptMessage', () => {
 
   it('不支持的中断类型应该显示兜底文案', () => {
     wrapper = mount(InterruptMessage, {
-      props: {
-        outcome: {
-          type: 'interrupt',
-          interrupts: [unsupportedInterrupt],
-        },
-      },
+      props: buildInterruptProps({
+        type: 'interrupt',
+        interrupts: [unsupportedInterrupt],
+      }),
     });
 
     expect(wrapper.find('.ai-interrupt-message__fallback').exists()).toBe(true);
@@ -151,14 +155,26 @@ describe('InterruptMessage', () => {
 
   it('success outcome 不渲染中断卡片', () => {
     wrapper = mount(InterruptMessage, {
-      props: {
-        outcome: {
-          type: 'success',
-        },
-      },
+      props: buildInterruptProps({
+        type: 'success',
+      }),
     });
 
     expect(wrapper.find('.ai-tool-approval-card').exists()).toBe(false);
     expect(wrapper.find('.ai-interrupt-message__fallback').exists()).toBe(false);
+  });
+
+  it('content.message 存在时应渲染提示文案', () => {
+    wrapper = mount(InterruptMessage, {
+      props: buildInterruptProps(
+        {
+          type: 'interrupt',
+          interrupts: [approvalInterrupt],
+        },
+        '需要关注技术评审单据',
+      ),
+    });
+
+    expect(wrapper.find('.ai-interrupt-message__content').text()).toBe('需要关注技术评审单据');
   });
 });

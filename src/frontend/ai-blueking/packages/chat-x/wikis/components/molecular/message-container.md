@@ -14,6 +14,8 @@ relatedComponents:
     relation: 常与 ChatInput 组合构成完整对话界面
   - slug: loading-message
     relation: 末尾为用户消息时自动追加 Loading 消息组
+  - slug: interrupt-message
+    relation: 透传 onInterruptResume；末条 interrupt 消息不触发组 hover
 sinceVersion: 1.0.0
 domain: message
 ---
@@ -386,6 +388,7 @@ domain: message
 - 每个消息组外层 DOM 的 `id` 为 **`MessageGroup.uid`**（由 `useMessageGroup` 生成），供执行摘要「在对话中定位」、侧栏自定义 Tab 等场景滚动锚定
 - `role: 'tool'` 消息**不会独立渲染**，而是被注入到对应 AssistantMessage 的 `toolCall.toolMessage` 字段
 - 若 `toolMessage.error` 存在，AssistantMessage 的 `status` 会被强制设为 `MessageStatus.Error`
+- 当消息组**最后一条**消息的 `role === 'interrupt'` 时，`mouseenter` **不会**设置 `isHover`，避免 AI 工具栏在审批卡片上误显
 - `MessageTools` 工具栏只在 `type === 'assistant'` 的消息组底部渲染（不依赖鼠标悬停，始终可见），且满足以下条件时**不渲染**：
   - `renderMode === RenderMode.Share`（分享预览模式）
   - 消息组的 `pause` 为 `true`（来源于 `message.property?.extra?.pause`）
@@ -916,6 +919,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
 | onUserAction             | `(tool: IToolBtn, message: Message) => Promise<string[] \| void>`                            | —       | 用户消息工具操作回调                                                                                                                     |
 | onUserInputConfirm       | `(message: Message, content: UserMessage['content'], docSchema: TagSchema) => Promise<void>` | —       | 用户编辑消息确认回调                                                                                                                     |
 | onUserShortcutConfirm    | `(message: Message, formModel: Record<string, unknown>) => Promise<void>`                    | —       | 用户快捷指令表单提交回调                                                                                                                 |
+| onInterruptResume        | `OnInterruptResume`                                                                          | —       | AG-UI human-in-the-loop 中断响应回调，透传给 `MessageRender` → `InterruptMessageRender`                                                  |
 | renderMode               | `RenderMode`                                                                                 | —       | 渲染模式。`Share` 模式下启用多选样式并隐藏工具栏；`Test` 模式下过滤掉「分享」按钮；不传或 `Chat` 为默认行为                              |
 
 ### v-model
@@ -966,6 +970,7 @@ enum MessageRole {
   Reasoning = 'reasoning',
   Activity = 'activity',
   Info = 'info',
+  Interrupt = 'interrupt',
   Loading = 'loading',
 }
 
@@ -983,5 +988,6 @@ enum MessageStatus {
 ## 关联组件
 
 - [MessageRender](./message-render.md) — 按组渲染每条消息时委托使用
+- [InterruptMessage 中断消息](./interrupt-message.md) — `role: 'interrupt'` 的渲染与 `onInterruptResume` 透传
 - [ChatInput](./chat-input.md) — 常与输入区组合构成完整对话界面
 - [LoadingMessage](./loading-message.md) — 末尾为用户消息时自动追加加载组
