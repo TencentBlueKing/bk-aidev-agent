@@ -191,10 +191,14 @@
   const messageTools = computed(() => {
     return CONST_MESSAGE_TOOLS.filter(tool => props.renderMode !== RenderMode.Test || tool.id !== 'share');
   });
-  const handleMouseEnter = (group: { isHover: boolean }) => {
+  const handleMouseEnter = (group: MessageGroup) => {
+    const lastMessage = group.messages?.at(-1);
+    if (lastMessage?.role === MessageRole.Interrupt) {
+      return;
+    }
     group.isHover = true;
   };
-  const handleMouseLeave = (group: { isHover: boolean }, e: MouseEvent) => {
+  const handleMouseLeave = (group: MessageGroup, e: MouseEvent) => {
     const related = (e as MouseEvent & { toElement?: Element }).toElement ?? e.relatedTarget;
     if (related instanceof Element && related.classList.contains('ai-user-feedback')) {
       return;

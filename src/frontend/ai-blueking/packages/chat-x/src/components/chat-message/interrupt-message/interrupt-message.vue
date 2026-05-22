@@ -41,8 +41,10 @@
 
   const props = defineProps<Partial<InterruptMessage> & { onInterruptResume?: OnInterruptResume }>();
 
-  const interruptList = computed(() => (props.outcome?.type === 'interrupt' ? props.outcome.interrupts : []));
-  const displayMessage = computed(() => props.message || props.content);
+  const interruptList = computed(() =>
+    props.content?.outcome?.type === 'interrupt' ? props.content.outcome.interrupts : [],
+  );
+  const displayMessage = computed(() => props.content?.message);
 
   const getRenderer = (item: Interrupt) => interruptRenderers[item.reason];
 </script>

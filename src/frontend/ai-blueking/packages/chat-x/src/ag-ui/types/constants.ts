@@ -30,13 +30,14 @@ export enum APPROVAL_STATUS {
   ABANDONED = 'abandoned', // 已废弃
   APPROVED = 'approved', // 已批准
   CANCELLED = 'cancelled', // 已取消
+  DRAFT = 'draft', // 草稿 - 待审批
   EXPIRED = 'expired', // 已过期
   PENDING = 'pending', // 待审批
   REJECTED = 'rejected', // 已拒绝
 }
 
 export enum InterruptReason {
-  AIDevToolApproval = 'ai_dev:tool_approval', // AI dev 第三方审批
+  AIDevToolApproval = 'aidev:tool_approval', // AI dev 第三方审批
   HumanApproval = 'human_approval', // 人工审批
   UserMultiChoice = 'user_multi_choice', // 用户多选
   UserSingleChoice = 'user_single_choice', // 用户单选
@@ -92,9 +93,10 @@ export enum MessageStatus {
 
 export const APPROVAL_STATUS_MAP: Record<APPROVAL_STATUS, string> = {
   [APPROVAL_STATUS.ABANDONED]: t('已废弃'),
-  [APPROVAL_STATUS.APPROVED]: t('已批准'),
+  [APPROVAL_STATUS.APPROVED]: t('已审批'),
   [APPROVAL_STATUS.CANCELLED]: t('已取消'),
   [APPROVAL_STATUS.EXPIRED]: t('已过期'),
-  [APPROVAL_STATUS.PENDING]: t('评审中'),
+  [APPROVAL_STATUS.PENDING]: t('待审批'),
   [APPROVAL_STATUS.REJECTED]: t('已拒绝'),
+  [APPROVAL_STATUS.DRAFT]: t('待审批'),
 };
