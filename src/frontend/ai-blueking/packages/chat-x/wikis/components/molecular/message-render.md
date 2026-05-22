@@ -14,6 +14,8 @@ relatedComponents:
     relation: role 为 assistant 时渲染 AI 回复与工具调用
   - slug: user-message
     relation: role 为 user 时渲染用户消息
+  - slug: interrupt-message
+    relation: role 为 interrupt 时渲染 InterruptMessageRender
 sinceVersion: 1.0.0
 domain: message
 ---
@@ -506,3 +508,5 @@ enum MessageToolsStatus {
 - [MessageContainer](./message-container.md) — 内部按组调用以渲染每条消息
 - [AssistantMessage](./assistant-message.md) — assistant 角色派发目标
 - [UserMessage](./user-message.md) — user 角色派发目标
+- [InterruptMessage 中断消息](./interrupt-message.md) — interrupt 角色派发目标
+- [ToolApprovalCard 审批卡片](./tool-approval-card.md) — AI Dev 审批中断子卡片

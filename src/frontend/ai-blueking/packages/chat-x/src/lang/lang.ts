@@ -37,7 +37,7 @@ export const lang = {
   删除: 'Delete',
   引用: 'Quote',
   重新生成: 'Regenerate',
-  '重新生成将清空下文内容': 'Regenerating will clear the content below',
+  重新生成将清空下文内容: 'Regenerating will clear the content below',
   提交: 'Submit',
   取消: 'Cancel',
   预览内容: 'Preview Content',
@@ -141,6 +141,8 @@ export const lang = {
   请选择以继续: 'Please choose to continue',
   继续: 'Continue',
   '收到信息：': 'Received: ',
+  待审批: 'Pending',
+  已审批: 'Approved',
 } as const;
 
 export const t = (key: keyof typeof lang) => {

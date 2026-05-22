@@ -72,15 +72,18 @@ export type InterruptItem = Interrupt;
  *
  * @see https://docs.ag-ui.com/drafts/interrupts
  */
-export interface InterruptMessage extends BaseMessage<MessageRole.Interrupt, string> {
-  message?: string;
-  /** 是否已被用户响应（resume）过，用于 UI 区分"等待响应 / 已处理"两种态 */
-  outcome?: RunFinishedOutcome;
-  /** outcome.type === success 用户 resume 时回传给 Agent 的 payload，便于回放与持久化 */
-  result?: any;
-  runId?: string;
-  threadId?: string;
-}
+export type InterruptMessage = BaseMessage<
+  MessageRole.Interrupt,
+  {
+    message?: string;
+    /** 是否已被用户响应（resume）过，用于 UI 区分"等待响应 / 已处理"两种态 */
+    outcome?: RunFinishedOutcome;
+    /** outcome.type === success 用户 resume 时回传给 Agent 的 payload，便于回放与持久化 */
+    result?: any;
+    runId?: string;
+    threadId?: string;
+  }
+>;
 
 export type OnInterruptResume = (interrupt: Interrupt, payload?: Record<string, any>) => Promise<void> | void;
 export type RunFinishedOutcome = { interrupts: Interrupt[]; type: 'interrupt' } | { type: 'success' };

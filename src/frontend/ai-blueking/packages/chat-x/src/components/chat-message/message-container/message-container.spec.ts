@@ -225,7 +225,7 @@ const buildGroups = (messages: Message[]): MessageGroup[] => {
       });
     } else if (msg.role === MessageRole.Assistant) {
       const lastGroup = groups[groups.length - 1];
-      if (lastGroup && lastGroup.type === MessageRole.Assistant) {
+      if (lastGroup?.type === MessageRole.Assistant) {
         lastGroup.messages.push(msg);
       } else {
         groups.push({
@@ -240,14 +240,14 @@ const buildGroups = (messages: Message[]): MessageGroup[] => {
       }
     } else if (msg.role === MessageRole.Tool) {
       const lastGroup = groups[groups.length - 1];
-      if (lastGroup && lastGroup.type === MessageRole.Assistant) {
+      if (lastGroup?.type === MessageRole.Assistant) {
         lastGroup.messages.push(msg);
       }
     }
   }
 
   const lastMsg = messages[messages.length - 1];
-  if (lastMsg && lastMsg.role === MessageRole.User) {
+  if (lastMsg?.role === MessageRole.User) {
     groups.push({
       uid: 'loading-group',
       messages: [
@@ -478,7 +478,7 @@ describe('MessageContainer', () => {
       const scrollBtns = wrapper.findAll('.mock-scroll-btn');
       const stopBtn = scrollBtns.find(btn => btn.text().includes('停止生成'));
       expect(stopBtn).toBeTruthy();
-      expect((stopBtn!.element as HTMLElement).style.display).toBe('none');
+      expect((stopBtn?.element as HTMLElement).style.display).toBe('none');
     });
 
     it('点击停止生成按钮应该触发 stopStreaming 事件', async () => {
@@ -571,6 +571,46 @@ describe('MessageContainer', () => {
       await nextTick();
 
       expect(getToolsVisibility(wrapper)).toBe('visible');
+    });
+
+    it('消息组最后一条为 Interrupt 时 mouseenter 不应显示 MessageTools', async () => {
+      const interruptMessage: Message = {
+        id: 'interrupt-1',
+        content: {
+          outcome: {
+            type: 'interrupt',
+            interrupts: [],
+          },
+        },
+        messageId: 2,
+        role: MessageRole.Interrupt,
+        status: MessageStatus.Complete,
+      };
+      const messageGroups: MessageGroup[] = [
+        {
+          uid: 'group-assistant-interrupt',
+          messages: [createAssistantMessage('1', 'Hello', 1), interruptMessage],
+          type: MessageRole.Assistant,
+          isHover: false,
+          checked: false,
+        },
+      ];
+
+      wrapper = mount(MessageContainer, {
+        props: {
+          ...defaultProps,
+          messages: messageGroups[0].messages,
+          messageGroups,
+        },
+      });
+
+      await nextTick();
+
+      const messageGroup = wrapper.find('.message-group');
+      await messageGroup.trigger('mouseenter');
+
+      expect(wrapper.find('.mock-message-tools').exists()).toBe(true);
+      expect(getToolsVisibility(wrapper)).toBe('hidden');
     });
   });
 

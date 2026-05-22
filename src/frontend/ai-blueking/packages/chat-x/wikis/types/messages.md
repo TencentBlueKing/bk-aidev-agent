@@ -347,47 +347,52 @@ const knowledgeRagMessage: ActivityMessage = {
 
 ### InterruptMessage
 
-human-in-the-loop 中断消息，对应 AG-UI `RUN_FINISHED` 事件的 `outcome` 对象结构。`type: 'interrupt'` 时，组件从 `outcome.interrupts` 渲染中断卡片；`type: 'success'` 表示 resume 后的成功结果，不渲染中断卡片。
+human-in-the-loop 中断消息，对应 AG-UI `RUN_FINISHED` 事件的 `outcome` 对象结构。`content.outcome.type === 'interrupt'` 时，[InterruptMessageRender](../components/molecular/interrupt-message.md) 从 `interrupts` 渲染审批卡片；`type: 'success'` 表示 resume 后的成功结果，不渲染中断卡片。类型详见 [中断类型 Interrupt](./interrupt.md)。
 
 ```typescript
 type RunFinishedOutcome = { interrupts: Interrupt[]; type: 'interrupt' } | { type: 'success' };
 
-interface InterruptMessage extends BaseMessage<MessageRole.Interrupt, string> {
-  message?: string;
-  outcome?: RunFinishedOutcome;
-  result?: unknown;
-  runId?: string;
-  threadId?: string;
-}
+type InterruptMessage = BaseMessage<
+  MessageRole.Interrupt,
+  {
+    message?: string;
+    outcome?: RunFinishedOutcome;
+    result?: unknown;
+    runId?: string;
+    threadId?: string;
+  }
+>;
 
 const interruptMessage: InterruptMessage = {
   id: 'interrupt-message-1',
   messageId: 'interrupt-message-1',
   role: MessageRole.Interrupt,
-  content: '',
-  status: MessageStatus.Complete,
-  runId: 'run_ai_dev_tool_approval',
-  threadId: 'thread_ai_dev_tool_approval',
-  outcome: {
-    type: 'interrupt',
-    interrupts: [
-      {
-        id: 'interrupt_ai_dev_tool_approval',
-        reason: InterruptReason.AIDevToolApproval,
-        toolCallId: 'tool_call_review_ticket',
-        message: '算法方案评审单正在评审中',
-        metadata: {
-          ticket: {
-            approvers: ['张三', '李四'],
-            sn: 'REV-2026-04-24-001',
-            status: APPROVAL_STATUS.PENDING,
-            submit_time: '2026-04-24 14:30:15',
-            title: '算法方案评审单',
-            url: 'https://example.com/review-tickets/REV-2026-04-24-001',
+  status: MessageStatus.Pending,
+  content: {
+    message: '算法方案评审单需要您关注',
+    runId: 'run_ai_dev_tool_approval',
+    threadId: 'thread_ai_dev_tool_approval',
+    outcome: {
+      type: 'interrupt',
+      interrupts: [
+        {
+          id: 'interrupt_ai_dev_tool_approval',
+          reason: InterruptReason.AIDevToolApproval,
+          toolCallId: 'tool_call_review_ticket',
+          message: '算法方案评审单需要您关注',
+          metadata: {
+            ticket: {
+              approvers: ['张三', '李四'],
+              sn: 'REV-2026-04-24-001',
+              status: APPROVAL_STATUS.PENDING,
+              submit_time: '2026-04-24 14:30:15',
+              title: '算法方案评审单',
+              url: 'https://example.com/review-tickets/REV-2026-04-24-001',
+            },
           },
         },
-      },
-    ],
+      ],
+    },
   },
 };
 ```

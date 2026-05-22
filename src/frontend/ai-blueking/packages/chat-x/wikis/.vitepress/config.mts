@@ -219,8 +219,9 @@ function sidebarAPI() {
       collapsed: false,
       items: [
         { text: '概览', link: 'types/' },
-        { text: '消息类型 Messages', link: 'types/messages' },
         { text: '常量枚举 Constants', link: 'types/constants' },
+        { text: '中断类型 Interrupt', link: 'types/interrupt' },
+        { text: '消息类型 Messages', link: 'types/messages' },
       ],
     },
     {
@@ -267,7 +268,9 @@ function sidebarComponents() {
         { text: 'ToolMessage 工具消息', link: 'molecular/tool-message' },
         { text: 'ActivityMessage 活动消息', link: 'molecular/activity-message' },
         { text: 'InfoMessage 信息消息', link: 'molecular/info-message' },
+        { text: 'InterruptMessage 中断消息', link: 'molecular/interrupt-message' },
         { text: 'LoadingMessage 加载消息', link: 'molecular/loading-message' },
+        { text: 'ToolApprovalCard 审批卡片', link: 'molecular/tool-approval-card' },
       ],
     },
     {

@@ -9,9 +9,20 @@
         class="ai-tool-approval-card__status"
         :class="`ai-tool-approval-card__status--${ticket.status}`"
       >
-        <span
-          v-if="ticket.status === APPROVAL_STATUS.PENDING"
+        <CheckCircleFillIcon
+          v-if="ticket.status === APPROVAL_STATUS.APPROVED"
           class="ai-tool-approval-card__status-icon"
+        />
+        <CloseCircleFillIcon
+          v-else-if="ticket.status === APPROVAL_STATUS.REJECTED"
+          class="ai-tool-approval-card__status-icon"
+        />
+        <Loading
+          v-else
+          class="ai-tool-approval-card__status-icon"
+          mode="spin"
+          size="mini"
+          theme="primary"
         />
         {{ statusText }}
       </span>
@@ -29,7 +40,7 @@
     </dl>
 
     <div class="ai-tool-approval-card__processor">
-      <span class="ai-tool-approval-card__processor-icon" />
+      <TimeIcon class="ai-tool-approval-card__processor-icon" />
       <span
         v-overflow-tips="{ ...commonTippyOptions }"
         class="ai-tool-approval-card__processor-text"
@@ -62,13 +73,14 @@
 <script setup lang="ts">
   import { computed } from 'vue';
 
-  import { Button } from 'bkui-vue';
+  import { Button, Loading } from 'bkui-vue';
 
   import { APPROVAL_STATUS_MAP } from '../../../ag-ui/types/constants';
   import { APPROVAL_STATUS } from '../../../ag-ui/types/constants';
   import { useClipboard } from '../../../composables';
   import { useCommonTippyInject } from '../../../composables/use-common';
   import { OverflowTips as vOverflowTips } from '../../../directives/overflow-tips';
+  import { CheckCircleFillIcon, CloseCircleFillIcon, TimeIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
 
   import type { AIDevToolApprovalInterrupt } from '../../../ag-ui/types/interrupt';
@@ -183,9 +195,6 @@
       flex: 0 0 16px;
       width: 16px;
       height: 16px;
-      border: 2px solid currentcolor;
-      border-left-color: transparent;
-      border-radius: 50%;
     }
 
     &__fields {
@@ -230,35 +239,10 @@
     }
 
     &__processor-icon {
-      position: relative;
       flex: 0 0 16px;
       width: 16px;
       height: 16px;
-      border: 1.5px solid #3a84ff;
-      border-radius: 50%;
-
-      &::before,
-      &::after {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        display: block;
-        width: 1.5px;
-        content: '';
-        background: #3a84ff;
-        border-radius: 1px;
-        transform-origin: top center;
-      }
-
-      &::before {
-        height: 5px;
-        transform: translate(-50%, -90%);
-      }
-
-      &::after {
-        height: 4px;
-        transform: translate(-50%, -10%) rotate(90deg);
-      }
+      color: #3a84ff;
     }
 
     &__processor-text {
