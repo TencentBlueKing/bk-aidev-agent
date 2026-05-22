@@ -21,16 +21,24 @@ export interface UsePanelContainerParams {
   beforeNimbusClick?: () => boolean | Promise<boolean | void> | void;
   chatBotRef: Ref<InstanceType<typeof ChatBot> | undefined>;
   componentManager: ComponentManager;
+  /** 等待 sessionList 与最近会话初始化完成（供 show() Promise 语义使用） */
+  ensureSessionReady?: () => Promise<void>;
   forwarders: EventForwarders;
   forwardToManager: ForwardToManagerFn;
 }
 
 export function usePanelContainer(params: UsePanelContainerParams) {
-  const { componentManager, chatBotRef, forwarders, forwardToManager, beforeNimbusClick } = params;
+  const { componentManager, chatBotRef, forwarders, forwardToManager, beforeNimbusClick, ensureSessionReady } =
+    params;
 
   // ==================== 面板控制 ====================
   const show = async (sessionCode?: string) => {
     componentManager.showPanel(sessionCode);
+
+    if (ensureSessionReady) {
+      await ensureSessionReady();
+    }
+
     if (sessionCode && chatBotRef.value) {
       await chatBotRef.value.switchSession(sessionCode);
     }

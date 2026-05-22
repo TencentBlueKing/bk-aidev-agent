@@ -4,12 +4,15 @@
 
 ### 优化
 
+- **`show()` 会话就绪 Promise**：`await show()` 在 `sessionList` 加载完成后 resolve；`loadRecentSessionOnMount` 为 `true` 时还会等待最近会话选定或创建完成。面板仍立即打开，初始化在后台进行；失败时 Promise reject，并触发 `sdk-error`（`apiName: 'init'`）
 - **`requestOptions` 响应式落地**：`headers` / `data` 支持普通对象、零参函数、`ref`、`computed`；外层 `requestOptions` 可为 `MaybeRefOrGetter`（`AIBlueking` / `ChatBot` / `useChatBootstrap`），整体替换后后续请求自动生效，切换 token 或租户无需重建组件
 - **`data` 按 HTTP 方法分流**：POST/PUT/PATCH/DELETE 合并进 body；GET/HEAD/OPTIONS 合并进 query（`params`）；body 为 FormData / Blob 等非 plain object 时跳过合并并输出警告
 - **`@blueking/chat-helper`**：新增 `resolveRequestValue`、`MaybeRequestValue` 类型，在 `requestData` 拦截器层统一解析
+- **`useChatBootstrap` 初始化并发**：`initialize()` 复用进行中的 Promise；`retry` / `updateConfig` 使用 `initGeneration` 丢弃过期初始化结果，避免 URL 切换后旧请求写回 `READY` 状态
 
 ### 文档
 
+- 更新 [编程式控制](/guide/advanced-usage/programmatic-control)、[会话管理](/guide/core-features/session-management)、[AIBlueking 浮窗模式](/guide/integration-modes/aiblueking-floating)
 - 更新 [自定义请求](/guide/advanced-usage/custom-requests)、[ChatBot](/api/ai-blueking/chatbot)、[AIBlueking](/api/ai-blueking/aiblueking)、[类型定义](/api/ai-blueking/types) 与 [chat-helper 类型](/api/chat-helper/types)
 
 ---

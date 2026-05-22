@@ -202,42 +202,36 @@ export function useChatBootstrap(options: ChatBootstrapOptions): ChatBootstrapRe
   const sessionList = computed(() => chatHelper.session.list.value ?? []);
 
   // ==================== 初始化流程 ====================
+  /** 进行中的初始化 Promise，供 show() 等并发调用复用 */
+  let initializePromise: Promise<void> | null = null;
+  /** 初始化世代号，用于丢弃 URL 变化或 retry 前的旧请求结果 */
+  let initGeneration = 0;
+
   /**
    * 执行初始化流程（并行获取 Agent 信息和会话列表）
-   *
-   * 优化：getAgentInfo 和 getSessions 并行执行，减少初始化时间
-   *
-   * 注意：
-   * - 初始化只会执行一次，后续调用会被忽略（除非通过 retry 或 updateConfig 重置）
-   * - 会话列表已在初始化时预加载，SessionBusinessManager.loadRecentSession() 会跳过重复加载
    */
-  const initialize = async (): Promise<void> => {
-    // 防止重复初始化：如果已经初始化过，直接返回
-    if (hasInitializedOnce.value) {
-      return;
-    }
-
-    // 防止并发初始化
-    if (isInitializing.value) {
-      return;
-    }
-
-    // 重置错误状态
+  const doInitialize = async (generation: number): Promise<void> => {
     error.value = null;
 
     try {
       phase.value = BootstrapPhase.LOADING_AGENT;
 
-      // 并行获取 Agent 信息和会话列表，优化初始化性能
       await Promise.all([
         chatHelper.agent.getAgentInfo(),
         chatHelper.session.getSessions(),
       ]);
 
-      // 初始化完成
+      if (generation !== initGeneration) {
+        return;
+      }
+
       phase.value = BootstrapPhase.READY;
       hasInitializedOnce.value = true;
     } catch (err) {
+      if (generation !== initGeneration) {
+        return;
+      }
+
       console.error('[useChatBootstrap] Initialization failed:', err);
       error.value = err as Error;
       phase.value = BootstrapPhase.ERROR;
@@ -246,15 +240,46 @@ export function useChatBootstrap(options: ChatBootstrapOptions): ChatBootstrapRe
   };
 
   /**
-   * 重试初始化
+   * 执行初始化流程（并行获取 Agent 信息和会话列表）
+   *
+   * 优化：getAgentInfo 和 getSessions 并行执行，减少初始化时间
+   *
+   * 注意：
+   * - 初始化只会执行一次，后续调用会复用进行中的 Promise 或立即返回（除非通过 retry 或 updateConfig 重置）
+   * - 会话列表已在初始化时预加载，SessionBusinessManager.loadRecentSession() 会跳过重复加载
    */
-  const retry = async (): Promise<void> => {
-    // 重置状态，允许重新初始化
+  const initialize = async (): Promise<void> => {
+    if (hasInitializedOnce.value) {
+      return;
+    }
+
+    if (initializePromise) {
+      return initializePromise;
+    }
+
+    const generation = initGeneration;
+    initializePromise = doInitialize(generation).finally(() => {
+      if (generation === initGeneration) {
+        initializePromise = null;
+      }
+    });
+
+    return initializePromise;
+  };
+
+  const resetBootstrapState = (): void => {
+    initGeneration += 1;
     phase.value = BootstrapPhase.IDLE;
     error.value = null;
     hasInitializedOnce.value = false;
+    initializePromise = null;
+  };
 
-    // 重新初始化
+  /**
+   * 重试初始化
+   */
+  const retry = async (): Promise<void> => {
+    resetBootstrapState();
     await initialize();
   };
 
@@ -264,10 +289,7 @@ export function useChatBootstrap(options: ChatBootstrapOptions): ChatBootstrapRe
    * @param newUrl 新的 URL
    */
   const updateConfig = async (newUrl: string): Promise<void> => {
-    // 重置状态，允许重新初始化
-    phase.value = BootstrapPhase.IDLE;
-    error.value = null;
-    hasInitializedOnce.value = false;
+    resetBootstrapState();
 
     // TODO: 调用 chatHelper.updateConfig({ urlPrefix: newUrl }) 更新配置
     // 目前 chatHelper 尚未实现此方法，暂时通过 http 模块直接更新

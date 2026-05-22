@@ -131,13 +131,33 @@ const aiBluekingRef = ref<AIBluekingExpose>();
 
 #### show - 显示窗口
 
-```typescript
-// 显示窗口
-aiBluekingRef.value?.show();
+`show()` 返回 `Promise<void>`。面板会**立即**显示；Promise 在会话初始化完成后 resolve：
 
-// 显示并自动加载指定会话
-aiBluekingRef.value?.show('session-code-123');
+- 始终等待 `sessionList`（`getSessions`）加载完成
+- `loadRecentSessionOnMount` 为 `true`（默认）时，还会等待最近会话选定或创建完成
+- 传入 `sessionCode` 时，在就绪后再切换到该会话
+
+初始化失败时 Promise reject，并触发 `@sdk-error`（`apiName: 'init'`）。
+
+```typescript
+// 推荐：等待会话就绪后再执行业务逻辑
+try {
+  await aiBluekingRef.value?.show();
+
+  const helper = aiBluekingRef.value?.getChatHelper();
+  console.log('会话列表:', helper?.session.list.value);
+  console.log('当前会话:', helper?.session.current.value);
+} catch (error) {
+  console.error('小鲸初始化失败:', error);
+}
+
+// 显示并切换到指定会话（切换发生在就绪之后）
+await aiBluekingRef.value?.show('session-code-123');
 ```
+
+::: info 与事件的区别
+不需要额外监听 `sessions-loaded` 等内部事件来判断「能否读 session」。对集成方而言，`await show()` 即表示可安全访问 `getChatHelper()?.session`。
+:::
 
 #### hide - 隐藏窗口
 
@@ -202,13 +222,17 @@ import type { AIBluekingExpose } from '@blueking/ai-blueking';
 const aiBluekingRef = ref<AIBluekingExpose>();
 const isVisible = ref(false);
 
-const toggleChat = () => {
+const toggleChat = async () => {
   if (isVisible.value) {
     aiBluekingRef.value?.hide();
     isVisible.value = false;
   } else {
-    aiBluekingRef.value?.show();
     isVisible.value = true;
+    try {
+      await aiBluekingRef.value?.show();
+    } catch {
+      isVisible.value = false;
+    }
   }
 };
 </script>

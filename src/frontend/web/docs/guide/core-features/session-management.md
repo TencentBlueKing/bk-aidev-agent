@@ -120,6 +120,16 @@ watch(currentSession, (session) => {
 
 > **性能优化**：`getAgentInfo()` 和 `getSessions()` 并行执行，减少初始化等待时间。`loadRecentSession` 接收 `skipLoadSessions: true`，避免重复请求会话列表。
 
+### 与 `show()` 的配合（≥ v2.1.4-beta.9）
+
+通过 `ref` 调用 `show()` 时，面板会立即打开，但返回的 Promise 会等到会话初始化完成后再 resolve：
+
+1. `getAgentInfo` + `getSessions`（bootstrap）
+2. `loadRecentSession`（当 `loadRecentSessionOnMount` 为 `true` 时）
+3. 若传入 `sessionCode`，再执行 `switchSession`
+
+因此集成方可在 `await aiBluekingRef.value?.show()` 之后安全读取 `getChatHelper()?.session.list` 与 `current`，无需再监听额外就绪事件。详见 [编程式控制 - show](/guide/advanced-usage/programmatic-control#show-显示窗口)。
+
 ## 多会话 UI
 
 ### AIBlueking 内置会话管理
