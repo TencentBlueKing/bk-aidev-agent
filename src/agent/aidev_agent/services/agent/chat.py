@@ -433,6 +433,9 @@ class ChatAgentBuilder:
         if chat.default_headers:
             kwargs["default_headers"] = chat.default_headers
 
+        if self.ctx.session_code:
+            kwargs["session_code"] = self.ctx.session_code
+
         return ChatModel.get_setup_instance(**kwargs)
 
     def build_chat_history(self, session_context_data: List[dict]) -> List[ChatPrompt]:

@@ -43,6 +43,7 @@ class ApiGwMixin(BaseModel):
             base_url = f"{BKAIDEV_URL}/openapi/aidev/gateway/llm/v1"
         kwargs["base_url"] = base_url
         auth_headers = kwargs.pop("auth_headers", {})
+        session_code = kwargs.pop("session_code", None)
         if not auth_headers:
             auth_headers = {
                 "bk_app_code": settings.APP_CODE,
@@ -52,6 +53,9 @@ class ApiGwMixin(BaseModel):
             kwargs["default_headers"].update({"X-Bkapi-Authorization": json.dumps(auth_headers)})
         else:
             kwargs["default_headers"] = {"X-Bkapi-Authorization": json.dumps(auth_headers)}
+        # 调用方显式提供 X-Session-ID 时不覆盖
+        if session_code:
+            kwargs["default_headers"].setdefault("X-Session-ID", session_code)
         return cls(**kwargs)
 
 
