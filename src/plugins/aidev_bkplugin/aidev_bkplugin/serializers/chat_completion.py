@@ -23,9 +23,25 @@ from aidev_bkplugin.services.agent_config import AgentConfigFetcher
 from aidev_bkplugin.services.agent_execution import build_execute_kwargs
 
 
+class ChatPromptContentField(serializers.Field):
+    """chat_history.content 字段：兼容字符串与多模态列表。"""
+
+    default_error_messages = {"invalid": "content must be a string or list[dict]"}
+
+    def to_internal_value(self, data):
+        if isinstance(data, str):
+            return data
+        if isinstance(data, list) and all(isinstance(item, dict) for item in data):
+            return data
+        self.fail("invalid")
+
+    def to_representation(self, value):
+        return value
+
+
 class ChatPromptItemSerializer(serializers.Serializer):
     role = serializers.CharField()
-    content = serializers.CharField(allow_blank=True)
+    content = ChatPromptContentField()
 
 
 class ChatCompletionRequestSerializer(serializers.Serializer):
