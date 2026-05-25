@@ -1,7 +1,9 @@
 # Skill 指引：借助 Vibe Coding 快速接入 AI 小鲸
 
 <script setup>
-const aidevUrl = import.meta.env.BK_AIDEV_URL || ''
+import { getRuntimeGlobal } from '../../.vitepress/theme/utils/runtime-globals'
+
+const aidevUrl = getRuntimeGlobal('BK_AIDEV_URL')
 </script>
 
 除了阅读本文档站手动集成，你还可以通过 AIDev **Skill 市场** 获取 `ai-blueking-guide` Skill，在 AI IDE 中以 **Vibe Coding** 的方式完成 AI 小鲸组件的接入——让 AI 帮你写集成代码，**Skill 的内容等同于本文档站**。

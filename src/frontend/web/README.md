@@ -16,7 +16,32 @@ npm install koa koa-mount @koa/router koa-send
 
 ## 使用
 
-### 基本挂载
+### NestJS / Express（推荐）
+
+```ts
+import {
+  createDocsAssetService,
+  getDefaultStaticDir,
+  resolveDocsBasePath,
+  dispatchMockAguiRequest,
+} from 'ai-blueking-docs';
+
+// siteUrl 与主站 SITE_URL 一致，如 '' 或 '/prod--foo'
+const docsBase = resolveDocsBasePath(siteUrl); // => '/docs' 或 '/prod--foo/docs'
+
+const assetService = createDocsAssetService({
+  staticDir: getDefaultStaticDir(),
+  basePath: docsBase,
+  globals: { BK_AIDEV_API_URL: process.env.BK_AIDEV_API_URL || '' },
+});
+
+// GET 请求：assetService.handleGet(relativePath) 返回 text/file/not_found
+// Mock API：dispatchMockAguiRequest(method, relativePath, body, res)
+```
+
+主站子路径部署时，入口链接与运行时 base 均使用 `SITE_URL + '/docs'`。
+
+### Koa 挂载（兼容）
 
 ```js
 const mount = require('koa-mount');
@@ -35,7 +60,7 @@ const { createDocsMiddleware, createMockAguiRouter } = require('ai-blueking-docs
 // 挂载文档站
 app.use(mount('/docs', createDocsMiddleware({
   globals: {
-    BK_API_URL_TMPL: process.env.BK_API_URL_TMPL || '',
+    BK_AIDEV_API_URL: process.env.BK_AIDEV_API_URL || '',
   }
 })));
 
@@ -48,13 +73,13 @@ app.use(mount('/docs/mock-agui/api', createMockAguiRouter()));
 ```js
 app.use(mount('/docs', createDocsMiddleware({
   globals: {
-    BK_API_URL_TMPL: 'https://api.example.com/prod/bk_plugin/plugin_api/',
+    BK_AIDEV_API_URL: 'https://api.example.com/prod/bk_plugin/plugin_api/',
     BK_AIDEV_URL: 'https://bkaidev.example.com',
   }
 })));
 ```
 
-注入的变量会作为 `window.BK_API_URL_TMPL` 等全局变量出现在 HTML 的 `<head>` 中。
+注入的变量会作为 `window.BK_AIDEV_API_URL` 等全局变量出现在 HTML 的 `<head>` 中。
 
 ### 卸载
 
@@ -100,7 +125,7 @@ pnpm preview:npm
 # 生产静态服务（自动识别 dist/ 或 dist/static/）
 pnpm server
 # 或指定目录 / 注入 Demo 环境变量：
-# DOCS_STATIC_DIR=./dist/static DOCS_BASE=/ BK_API_URL_TMPL=https://... pnpm server
+# DOCS_STATIC_DIR=./dist/static DOCS_BASE=/ BK_AIDEV_API_URL=https://... pnpm server
 
 # 构建 npm 包（base = __DOCS_BASE__/，用于中间件运行时替换）
 pnpm build:npm

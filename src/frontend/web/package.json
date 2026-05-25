@@ -1,6 +1,6 @@
 {
   "name": "ai-blueking-docs",
-  "version": "2.1.6",
+  "version": "2.1.7",
   "description": "AI 小鲸智能对话组件文档 — v2.1",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
@@ -24,8 +24,8 @@
     "build": "VITEPRESS_BASE=/ vitepress build docs",
     "build:npm": "node scripts/build-npm.mjs",
     "build:all": "pnpm build:npm",
-    "preview": "VITEPRESS_BASE=/ vitepress build docs && PORT=4173 DOCS_BASE=/ node ./server.cjs",
-    "preview:npm": "pnpm build:npm && PORT=4173 DOCS_BASE=/ node ./server.cjs",
+    "preview": "VITEPRESS_BASE=/ vitepress build docs && PORT=4173 DOCS_BASE=/ node --env-file=docs/.env ./server.cjs",
+    "preview:npm": "pnpm build:npm && PORT=4173 DOCS_BASE=/ node --env-file=docs/.env ./server.cjs",
     "preview:no-mock": "VITEPRESS_BASE=/ vitepress preview docs",
     "server": "node ./server.cjs",
     "start": "node ./server.cjs",

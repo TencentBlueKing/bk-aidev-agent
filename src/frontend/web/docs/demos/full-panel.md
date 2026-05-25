@@ -3,14 +3,14 @@
 AIBlueking 是一个功能完整的 AI 聊天面板组件，内置悬浮球（Nimbus）、拖拽、划词选择等交互能力，适用于 SaaS 全局 AI 助手场景。
 
 <script setup>
-import { defineAsyncComponent, onMounted } from 'vue'
-const apiUrl = import.meta.env.BK_API_URL_TMPL || ''
+import { defineAsyncComponent } from 'vue'
+import '@blueking/ai-blueking/dist/vue3/style.css'
+import { getRuntimeGlobal } from '../.vitepress/theme/utils/runtime-globals'
+
+const apiUrl = getRuntimeGlobal('BK_AIDEV_API_URL')
 const AIBlueking = apiUrl ? defineAsyncComponent({
   loader: () => import('@blueking/ai-blueking').then(m => m.default),
 }) : null
-onMounted(() => {
-  if (apiUrl) import('@blueking/ai-blueking/dist/vue3/style.css')
-})
 </script>
 
 <ClientOnly>
