@@ -181,14 +181,8 @@ export default defineConfig({
         "bkui-vue",
       ],
     },
-    envPrefix: "BK_",
     define: {
       __AI_BLUEKING_VERSION__: JSON.stringify(version),
-      "process.env.BK_STATIC_URL": JSON.stringify(process.env.BK_STATIC_URL),
-      "process.env.BK_SITE_URL": JSON.stringify(process.env.BK_SITE_URL),
-      "process.env.BK_API_URL_TMPL": JSON.stringify(process.env.BK_API_URL_TMPL),
-      "process.env.BK_API_GATEWAY_NAME": JSON.stringify(process.env.BK_API_GATEWAY_NAME),
-      "process.env.BK_AIDEV_URL": JSON.stringify(process.env.BK_AIDEV_URL),
     },
   },
 })

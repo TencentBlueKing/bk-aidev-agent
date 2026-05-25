@@ -6,7 +6,7 @@
  * - PORT — 监听端口，默认 5000
  * - DOCS_STATIC_DIR — 静态根目录；默认自动检测 dist/static（pnpm build:npm）或 dist（pnpm build）
  * - DOCS_BASE — 替换 HTML/JS/CSS 中的 __DOCS_BASE__，独立部署根路径填 `/` 或留空，默认 `/`
- * - BK_API_URL_TMPL、BK_AIDEV_URL 等 — 注入到 HTML <head>，供在线 Demo 使用（与 Koa 中间件 globals 一致）
+ * - BK_AIDEV_API_URL、BK_AIDEV_URL 等 — 注入到 HTML <head>，供在线 Demo 使用（与 Koa 中间件 globals 一致）
  * - MOCK_AGUI — 设为 `0` 可关闭 mock API
  */
 const express = require('express');
@@ -19,7 +19,7 @@ const REPLACEABLE_EXTS = new Set(['.html', '.js', '.css']);
 const GLOBAL_ENV_KEYS = [
   'BK_STATIC_URL',
   'BK_SITE_URL',
-  'BK_API_URL_TMPL',
+  'BK_AIDEV_API_URL',
   'BK_API_GATEWAY_NAME',
   'BK_AIDEV_URL',
 ];
@@ -117,11 +117,11 @@ function sendReplaceableFile(req, res, filePath, contentType) {
       return;
     }
     let body = replaceDocsBase(raw, docsBase);
-    if (contentType === 'text/html') {
+    if (contentType.startsWith('text/html')) {
       body = injectGlobals(body);
     }
     res.setHeader('Content-Type', contentType);
-    if (contentType === 'text/html') {
+    if (contentType.startsWith('text/html')) {
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
@@ -208,7 +208,7 @@ const server = app.listen(PORT, () => {
   if (globals.length > 0) {
     console.log(`[ai-blueking-docs] injected globals: ${globals.join(', ')}`);
   } else {
-    console.log('[ai-blueking-docs] tip: set BK_API_URL_TMPL / BK_AIDEV_URL for live demos');
+    console.log('[ai-blueking-docs] tip: set BK_AIDEV_API_URL / BK_AIDEV_URL for live demos');
   }
 });
 

@@ -3,14 +3,14 @@
 ChatBot 是一个可独立使用的轻量聊天组件，无需额外面板即可快速嵌入到任何页面中。
 
 <script setup>
-import { defineAsyncComponent, onMounted, ref } from 'vue'
-const apiUrl = import.meta.env.BK_API_URL_TMPL || ''
+import { defineAsyncComponent } from 'vue'
+import '@blueking/ai-blueking/dist/vue3/style.css'
+import { getRuntimeGlobal } from '../.vitepress/theme/utils/runtime-globals'
+
+const apiUrl = getRuntimeGlobal('BK_AIDEV_API_URL')
 const ChatBot = apiUrl ? defineAsyncComponent({
   loader: () => import('@blueking/ai-blueking').then(m => m.ChatBot),
 }) : null
-onMounted(() => {
-  if (apiUrl) import('@blueking/ai-blueking/dist/vue3/style.css')
-})
 const onAgentLoaded = (helper) => {
   if (helper?.session) {
     helper.session.createSession({
