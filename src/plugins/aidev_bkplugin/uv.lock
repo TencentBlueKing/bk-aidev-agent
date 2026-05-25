@@ -16,7 +16,7 @@ wheels = [
 
 [[package]]
 name = "aidev-agent"
-version = "2.0.2"
+version = "2.0.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
@@ -45,14 +45,14 @@ dependencies = [
     { name = "werkzeug" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/62/b9/70cdced736ccc63844834efc19a215f0457c89f18d087c7ad22b42826b90/aidev_agent-2.0.2.tar.gz", hash = "sha256:315ac2ba844778ddacd836ea47ae776893cf362c8ff6d3e801669208a6acc3b1", size = 438936, upload-time = "2026-05-14T06:34:33.727Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c3/43/62a14519da6664d38bf87eff4b2d1dd611642ffcd2a73e557b3bba14e1e0/aidev_agent-2.0.4.tar.gz", hash = "sha256:fe9729c338efe2ac00ed1986036242548379398b5934ea0600651067d15020d3", size = 441386, upload-time = "2026-05-25T04:47:30.32Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/16/c9/feed8d10b386131c84f17ce03f8a49755198d10e2e548b1a462e9edc2882/aidev_agent-2.0.2-py3-none-any.whl", hash = "sha256:e686aba744eb8013ce628f1c01f1cca4e66b3d9614414a9c4e66373822b75f63", size = 366696, upload-time = "2026-05-14T06:34:30.355Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/2f/9923dc440ea7e51c87db84f3faeb43e7cbf16805f5e9d450f25b87189eb4/aidev_agent-2.0.4-py3-none-any.whl", hash = "sha256:fd943f04a0d5eec135a584f89b4e0ad6a994cbc681c396667effc159375c294b", size = 366760, upload-time = "2026-05-25T04:47:26.94Z" },
 ]
 
 [[package]]
 name = "aidev-bkplugin"
-version = "2.0.2"
+version = "2.0.4"
 source = { editable = "." }
 dependencies = [
     { name = "aidev-agent" },
@@ -84,7 +84,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aidev-agent", specifier = ">=2.0.2" },
+    { name = "aidev-agent", specifier = ">=2.0.4" },
     { name = "blueapps", specifier = ">=4.15.1,<5.0" },
     { name = "django", specifier = ">=4.2.28,<5.0" },
     { name = "opentelemetry-api", marker = "extra == 'opentelemetry'", specifier = "==1.33.1" },
