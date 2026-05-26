@@ -60,6 +60,7 @@ function registerRequestDataInterceptor(client: FetchClient, opts: IUseChatHelpe
 
   client.interceptors.request.use((config: IRequestConfig): IRequestConfig => {
     let result = config;
+    const method = (config.method ?? 'GET').toUpperCase();
 
     if (extraHeadersFn) {
       const extra = resolveRequestValue(extraHeadersFn);
@@ -69,7 +70,6 @@ function registerRequestDataInterceptor(client: FetchClient, opts: IUseChatHelpe
       }
     }
 
-    const method = (config.method ?? 'GET').toUpperCase();
     if (extraDataFn) {
       const extra = resolveRequestValue(extraDataFn);
       if (extra && Object.keys(extra).length > 0) {
