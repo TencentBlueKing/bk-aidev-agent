@@ -40,6 +40,10 @@ vi.mock('bkui-vue', () => ({
   Message: (...args: unknown[]) => mockBkMessage(...args),
 }));
 
+vi.mock('../../lang/lang', () => ({
+  t: (key: string) => key,
+}));
+
 // Mock common
 vi.mock('../../common', async importOriginal => {
   const actual = await importOriginal<typeof import('../../common')>();
@@ -113,6 +117,7 @@ vi.mock('./input-attachment/input-attachment.vue', () => ({
     name: 'InputAttachment',
     props: {
       messageState: { type: String, default: '' },
+      sendDisabledTip: { type: String, default: '' },
     },
     emits: ['sendMessage', 'stopSending'],
     setup(_, { emit, slots }) {
@@ -554,6 +559,40 @@ describe('ChatInput', () => {
       await wrapper.find('.send-btn').trigger('click');
 
       expect(onSendMessage).toHaveBeenCalled();
+    });
+
+    it('存在发送阻断提示时应阻止点击发送', async () => {
+      const onSendMessage = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: 'test message',
+          sendDisabledTip: '当前会话有 3 个待审批单，如需继续，请先取消审批',
+          onSendMessage,
+        },
+      });
+
+      const inputAttachment = wrapper.findComponent({ name: 'InputAttachment' });
+      expect(inputAttachment.props('sendDisabledTip')).toBe('当前会话有 3 个待审批单，如需继续，请先取消审批');
+
+      await wrapper.find('.send-btn').trigger('click');
+      expect(onSendMessage).not.toHaveBeenCalled();
+    });
+
+    it('存在发送阻断提示时 Enter 键不应该发送消息', async () => {
+      const onSendMessage = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: 'hello',
+          sendDisabledTip: '当前会话有 1 个待审批单，如需继续，请先取消审批',
+          onSendMessage,
+        },
+      });
+
+      await wrapper.find('.mock-ai-slash-input').trigger('keydown', { key: 'Enter' });
+
+      expect(onSendMessage).not.toHaveBeenCalled();
     });
 
     it('点击停止应该调用 onStopSending', async () => {

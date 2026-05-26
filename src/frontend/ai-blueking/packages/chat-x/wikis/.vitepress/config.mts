@@ -225,6 +225,7 @@ function sidebarAPI() {
         { text: '常量枚举 Constants', link: 'types/constants' },
         { text: '中断类型 Interrupt', link: 'types/interrupt' },
         { text: '消息类型 Messages', link: 'types/messages' },
+        { text: '用户问题 Schema', link: 'types/schema' },
       ],
     },
     {

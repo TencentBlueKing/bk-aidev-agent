@@ -34,6 +34,10 @@ import type { AIDevToolApprovalInterrupt, Interrupt } from '../../../ag-ui/types
 
 const copyMock = vi.fn();
 
+vi.mock('vue-tippy', () => ({
+  directive: {},
+}));
+
 vi.mock('../../../composables', () => ({
   useClipboard: () => ({
     copy: copyMock,
@@ -99,10 +103,52 @@ describe('InterruptMessage', () => {
 
     expect(wrapper.find('.ai-interrupt-message').exists()).toBe(true);
     expect(wrapper.find('.ai-tool-approval-card__title').text()).toBe('算法方案评审单');
-    expect(wrapper.find('.ai-tool-approval-card__status').text()).toBe('待审批');
+    expect(wrapper.find('.ai-tool-approval-card__status').text()).toBe('评审中');
     expect(wrapper.text()).toContain('REV-2026-04-24-001');
     expect(wrapper.text()).toContain('2026-04-24 14:30:15');
     expect(wrapper.text()).toContain('张三、李四、王五');
+  });
+
+  it('revoked 状态应该显示已撤销并使用独立状态样式', () => {
+    wrapper = mount(InterruptMessage, {
+      props: buildInterruptProps({
+        type: 'interrupt',
+        interrupts: [
+          {
+            ...approvalInterrupt,
+            metadata: {
+              ticket: {
+                ...approvalInterrupt.metadata!.ticket,
+                approvers: [],
+                status: APPROVAL_STATUS.REVOKED,
+              },
+            },
+          },
+        ],
+      }),
+    });
+
+    const status = wrapper.find('.ai-tool-approval-card__status');
+    expect(status.text()).toBe('已撤销');
+    expect(status.classes()).toContain('ai-tool-approval-card__status--revoked');
+    expect(wrapper.text()).toContain('当前处理人：无');
+  });
+
+  it('待审批状态点击取消审批应透传取消动作，不直接处理平台请求', async () => {
+    const onInterruptResume = vi.fn();
+    wrapper = mount(InterruptMessage, {
+      props: {
+        ...buildInterruptProps({
+          type: 'interrupt',
+          interrupts: [approvalInterrupt],
+        }),
+        onInterruptResume,
+      },
+    });
+
+    await wrapper.find('.ai-tool-approval-card__cancel').trigger('click');
+
+    expect(onInterruptResume).toHaveBeenCalledWith(approvalInterrupt, { action: 'cancel' });
   });
 
   it('点击查看单据详情时只打开单据链接，不触发 resume', async () => {
@@ -135,7 +181,7 @@ describe('InterruptMessage', () => {
       },
     });
 
-    await wrapper.find('.ai-tool-approval-card__copy').trigger('click');
+    await wrapper.find('.ai-tool-approval-card__copy-icon').trigger('click');
 
     expect(copyMock).toHaveBeenCalledWith('https://example.com/ticket/REV-2026-04-24-001');
     expect(onInterruptResume).not.toHaveBeenCalled();

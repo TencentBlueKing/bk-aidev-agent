@@ -28,7 +28,7 @@ import { type Ref, defineComponent, h, nextTick } from 'vue';
 import { type ComponentMountingOptions, type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MessageRole, MessageStatus } from '../../ag-ui/types';
+import { type APPROVAL_STATUS, InterruptReason, MessageRole, MessageStatus } from '../../ag-ui/types';
 import { LOADING_MESSAGE_ID, RenderMode } from '../../common';
 import ChatContainer, { type ChatContainerProps } from './chat-container.vue';
 
@@ -327,14 +327,27 @@ vi.mock('../chat-input/chat-input.vue', () => ({
       supportUpload: Boolean,
       cite: String,
       shortcutId: String,
+      sendDisabledTip: String,
       onSendMessage: Function,
       onStopSending: Function,
       onUpload: Function,
       tippyOptions: Object,
     },
     emits: ['update:modelValue', 'update:cite', 'selectShortcut', 'deleteShortcut'],
-    setup() {
-      return () => h('div', { class: 'mock-chat-input' });
+    setup(_, { slots }) {
+      return () => h('div', { class: 'mock-chat-input' }, [slots.top?.(), slots.interrupt?.()]);
+    },
+  }),
+}));
+
+vi.mock('../chat-input/input-info-alert.vue', () => ({
+  default: defineComponent({
+    name: 'InputInfoAlert',
+    props: {
+      content: String,
+    },
+    setup(props) {
+      return () => h('div', { class: 'mock-input-info-alert' }, props.content);
     },
   }),
 }));
@@ -414,6 +427,36 @@ const createAssistantMessage = (id: string, content: string): AssistantMessage =
   role: MessageRole.Assistant,
   status: MessageStatus.Complete,
 });
+
+const createApprovalInterruptMessage = (id: string, status: APPROVAL_STATUS): Message =>
+  ({
+    id,
+    messageId: id,
+    role: MessageRole.Interrupt,
+    status: MessageStatus.Complete,
+    content: {
+      outcome: {
+        type: 'interrupt',
+        interrupts: [
+          {
+            id: `${id}-interrupt`,
+            reason: InterruptReason.AIDevToolApproval,
+            toolCallId: `${id}-tool`,
+            metadata: {
+              ticket: {
+                approvers: ['张三'],
+                sn: `REV-${id}`,
+                status,
+                submit_time: '2026-04-24 14:30:15',
+                title: '算法方案评审单',
+                url: 'https://example.com/ticket',
+              },
+            },
+          },
+        ],
+      },
+    },
+  }) as Message;
 
 describe('ChatContainer', () => {
   let wrapper: VueWrapper;
@@ -572,9 +615,7 @@ describe('ChatContainer', () => {
     });
 
     it('应该将 skills 属性透传给 ChatInput', () => {
-      const skills = [
-        { skill_code: 'test_skill', skill_name: 'Test Skill', description: 'A test skill', icon: '' },
-      ];
+      const skills = [{ skill_code: 'test_skill', skill_name: 'Test Skill', description: 'A test skill', icon: '' }];
 
       wrapper = mount(ChatContainer, {
         props: { ...defaultProps, skills },

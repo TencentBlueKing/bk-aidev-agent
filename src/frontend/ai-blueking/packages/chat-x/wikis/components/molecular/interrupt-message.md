@@ -105,7 +105,7 @@ InterruptMessageRender
 ├── content.message（可选）→ 顶部说明文案
 └── content.outcome.type === 'interrupt'
       └── v-for interrupts
-            ├── reason === aidev:tool_approval → ToolApprovalCard
+            ├── reason === aidev:tool_approval → ToolApprovalCard（透传 onInterruptResume，用于取消审批）
             └── 未注册 reason → 兜底块（item.message 或「暂不支持的中断消息」）
 
 content.outcome.type === 'success' → 不渲染任何中断卡片
@@ -171,6 +171,7 @@ content.outcome.type === 'success' → 不渲染任何中断卡片
   };
 
   const handleInterruptResume = async (interrupt, payload) => {
+    // ToolApprovalCard 点击「取消审批」时，payload 为 { action: 'cancel' }
     console.log(interrupt.id, payload);
   };
 </script>

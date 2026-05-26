@@ -4,6 +4,7 @@
     :style="{ '--chat-z-index': CHAT_Z_INDEX }"
   >
     <slot name="top" />
+    <slot name="interrupt" />
     <div
       class="chat-input"
       :style="{ maxHeight: maxHeight + 'px' }"
@@ -44,6 +45,7 @@
       />
       <InputAttachment
         :message-state="messageState"
+        :send-disabled-tip="sendDisabledTip"
         :tippy-options="tippyOptions"
         @send-message="handleSendMessage"
         @stop-sending="handleStopSending"
@@ -134,6 +136,7 @@
     placeholder?: string;
     prompts?: string[];
     resources?: IAiSlashMenuItem[];
+    sendDisabledTip?: string;
     shortcutId?: string;
     shortcuts?: Shortcut[];
     skills?: ISkillListItem[];
@@ -188,6 +191,9 @@ Use Shift + Enter to enter a new line`
   });
   const handleSendMessage = async () => {
     try {
+      if (props.sendDisabledTip) {
+        return;
+      }
       aiSlashInputRef.value?.cleanup?.();
       let content: undefined | UserMessage['content'] = undefined;
 
@@ -222,6 +228,9 @@ Use Shift + Enter to enter a new line`
         return;
       }
       if (messageState.value === MessageStatus.Disabled) {
+        return;
+      }
+      if (props.sendDisabledTip) {
         return;
       }
       if (

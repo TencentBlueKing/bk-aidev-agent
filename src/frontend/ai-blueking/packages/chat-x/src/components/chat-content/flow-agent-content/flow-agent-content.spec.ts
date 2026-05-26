@@ -23,7 +23,7 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { defineComponent, h } from 'vue';
+import { defineComponent, h, } from 'vue';
 
 import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -65,6 +65,7 @@ vi.mock('../../../ag-ui/types/constants', () => ({
   },
   MessageStatus: {
     Complete: 'complete',
+    Disabled: 'disabled',
     Pending: 'pending',
     Streaming: 'streaming',
     Success: 'success',
@@ -318,9 +319,7 @@ describe('FlowAgentContent', () => {
         },
       });
 
-      const pendingItem = wrapper
-        .findAll('.flow-agent-stat-tooltip-item')
-        .find(item => item.text().includes('待执行'));
+      const pendingItem = wrapper.findAll('.flow-agent-stat-tooltip-item').find(item => item.text().includes('待执行'));
       const count = pendingItem?.find('.flow-agent-stat-tooltip-count');
       expect(count?.attributes('style')).toContain('#4D4F56');
     });
