@@ -50,9 +50,14 @@ type BaseInterrupt<T extends InterruptReason, M extends Record<string, any>> = {
   metadata?: M;
   properties?: Record<string, any>;
   reason: T;
+  responseSchema?: T extends InterruptReason.UserMultiChoice
+    ? UserMultiChoiceQuestionSchema
+    : UserSingleChoiceQuestionSchema;
   toolCallId: string;
 };
 ```
+
+`responseSchema` 用于描述用户响应结构：`UserMultiChoice` 对应多选数组，其他用户问题场景对应单选字符串。具体 Schema 详见 [用户问题 Schema](./schema.md)。
 
 ## AIDevToolApprovalInterrupt
 
@@ -165,6 +170,7 @@ const message: InterruptMessage = {
 ## 关联文档
 
 - [常量枚举 Constants](./constants.md) — `InterruptReason`、`APPROVAL_STATUS`
+- [用户问题 Schema](./schema.md) — `responseSchema` 的单选/多选结构
 - [消息类型 Messages](./messages.md) — `InterruptMessage` 在消息联合类型中的位置
 - [InterruptMessage 中断消息](../components/molecular/interrupt-message.md)
 - [ToolApprovalCard 审批卡片](../components/molecular/tool-approval-card.md)

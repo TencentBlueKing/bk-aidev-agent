@@ -23,7 +23,7 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { defineComponent, h } from 'vue';
+import { defineComponent, h, nextTick } from 'vue';
 
 import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -33,6 +33,17 @@ import { useRenderModeProvider } from '../../../composables/use-common';
 import FlowAgentContent from './flow-agent-content.vue';
 
 import type { BkFlowMessageContent, BkFlowTask } from '../../../ag-ui/types/contents';
+
+/** v-show 折叠后 happy-dom 下 isVisible() 仍为 true，改断言 style.display */
+const expectTaskNodesCollapsed = (wrapper: VueWrapper, index: number) => {
+  const el = wrapper.findAll('.flow-agent-task-nodes')[index].element as HTMLElement;
+  expect(el.style.display).toBe('none');
+};
+
+const expectTaskNodesExpanded = (wrapper: VueWrapper, index: number) => {
+  const el = wrapper.findAll('.flow-agent-task-nodes')[index].element as HTMLElement;
+  expect(el.style.display).not.toBe('none');
+};
 
 const { mockAddCustomTab, mockRemoveCustomTab, mockScrollRef } = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -64,6 +75,7 @@ vi.mock('../../../ag-ui/types/constants', () => ({
   },
   MessageStatus: {
     Complete: 'complete',
+    Disabled: 'disabled',
     Pending: 'pending',
     Streaming: 'streaming',
     Success: 'success',
@@ -339,15 +351,16 @@ describe('FlowAgentContent', () => {
       });
 
       const arrows = wrapper.findAll('.flow-agent-task-arrow');
-      const nodeGroups = wrapper.findAll('.flow-agent-task-nodes');
       await arrows[0].trigger('click');
+      await nextTick();
 
-      expect(nodeGroups[0].isVisible()).toBe(false);
-      expect(nodeGroups[1].isVisible()).toBe(true);
+      expectTaskNodesCollapsed(wrapper, 0);
+      expectTaskNodesExpanded(wrapper, 1);
 
       await arrows[0].trigger('click');
+      await nextTick();
 
-      expect(nodeGroups[0].isVisible()).toBe(true);
+      expectTaskNodesExpanded(wrapper, 0);
     });
 
     it('renderMode 为 Share 时不应渲染节点耗时和详情入口', () => {

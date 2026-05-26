@@ -35,6 +35,8 @@ function useMessageGroup(options: {
 }): {
   messageGroups: Ref<MessageGroup[]>;
   executionGroups: ComputedRef<MessageGroup[]>;
+  pendingApprovalCount: ComputedRef<number>;
+  pendingApprovalTipText: ComputedRef<string>;
   isShareMode: ShallowRef<boolean>;
   isAllSelected: ComputedRef<boolean>;
   onToggleShareAll: (isAllSelected: boolean) => void;
@@ -121,6 +123,24 @@ const isExecutionMessage = (m: Message): boolean => {
 | toolCall   | `function.name`、`mcpName`、`description`、`arguments`、`id` |
 | flow_agent | 各任务 `task_name`、各节点 `name`                             |
 
+## 待审批统计
+
+`useMessageGroup` 会统计消息列表中处于待审批状态的 AI Dev 审批中断：
+
+```typescript
+const pendingApprovalStatusSet = new Set([APPROVAL_STATUS.PENDING, APPROVAL_STATUS.DRAFT]);
+```
+
+当 `MessageRole.Interrupt` 消息的 `content.outcome.type === 'interrupt'`，且其中断项满足 `reason === InterruptReason.AIDevToolApproval`、`metadata.ticket.status` 为 `pending` 或 `draft` 时，计入 `pendingApprovalCount`。
+
+`pendingApprovalTipText` 根据数量生成输入区提示文案：
+
+```typescript
+'当前会话有 {count} 个待审批单，如需继续，请先取消审批'
+```
+
+`ChatContainer` 会消费该返回值，向 `ChatInput` 传入 `sendDisabledTip` 并在输入区上方展示提示，从而阻止继续发送。
+
 ## 分享模式
 
 `useMessageGroup` 提供完整的分享模式支持：
@@ -150,12 +170,21 @@ const keyword = shallowRef('');
 const messages = computed(() => props.messages);
 const selectedUserMessages = deepRef<Message[]>([]);
 
-const { messageGroups, executionGroups, isShareMode, isAllSelected, onToggleShareAll, onCancelShare, onConfirmShare } =
-  useMessageGroup({
-    keyword,
-    messages,
-    selectedUserMessages,
-  });
+const {
+  messageGroups,
+  executionGroups,
+  pendingApprovalCount,
+  pendingApprovalTipText,
+  isShareMode,
+  isAllSelected,
+  onToggleShareAll,
+  onCancelShare,
+  onConfirmShare,
+} = useMessageGroup({
+  keyword,
+  messages,
+  selectedUserMessages,
+});
 ```
 
 ## 返回值说明
@@ -164,6 +193,8 @@ const { messageGroups, executionGroups, isShareMode, isAllSelected, onToggleShar
 | ---------------- | ----------------------------- | --------------------------------------------------------------------------- |
 | messageGroups    | `Ref<MessageGroup[]>`         | 完整消息分组列表                                                            |
 | executionGroups  | `ComputedRef<MessageGroup[]>` | 仅包含执行类消息的分组（工具调用 + FlowAgent），自动提取 `userMessageTitle` |
+| pendingApprovalCount | `ComputedRef<number>`      | 当前消息中待审批 AI Dev 审批中断的数量                                      |
+| pendingApprovalTipText | `ComputedRef<string>`    | 待审批阻塞发送提示文案；无待审批时为空字符串                                |
 | isShareMode      | `ShallowRef<boolean>`         | 是否处于分享模式                                                            |
 | isAllSelected    | `ComputedRef<boolean>`        | 所有用户消息组是否全部选中                                                  |
 | onToggleShareAll | `(checked: boolean) => void`  | 切换全选                                                                    |

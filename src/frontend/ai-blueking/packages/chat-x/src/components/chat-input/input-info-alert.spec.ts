@@ -23,9 +23,40 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+import { defineComponent, h } from 'vue';
 
-export * from './constants';
-export * from './contents';
-export * from './interrupt';
-export * from './messages';
-export * from './schema';
+import { type VueWrapper, mount } from '@vue/test-utils';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import InputInfoAlert from './input-info-alert.vue';
+
+vi.mock('../../icons', () => ({
+  InfoIcon: defineComponent({
+    name: 'InfoIcon',
+    setup() {
+      return () => h('span', { class: 'mock-info-icon' });
+    },
+  }),
+}));
+
+describe('InputInfoAlert', () => {
+  let wrapper: VueWrapper;
+
+  afterEach(() => {
+    wrapper?.unmount();
+  });
+
+  it('应该渲染提示内容和信息图标', () => {
+    wrapper = mount(InputInfoAlert, {
+      props: {
+        content: '当前会话有 1 个待审批单，如需继续，请先取消审批',
+      },
+    });
+
+    expect(wrapper.find('.chat-input-info-alert').exists()).toBe(true);
+    expect(wrapper.find('.mock-info-icon').exists()).toBe(true);
+    expect(wrapper.find('.chat-input-info-alert__text').text()).toBe(
+      '当前会话有 1 个待审批单，如需继续，请先取消审批',
+    );
+  });
+});

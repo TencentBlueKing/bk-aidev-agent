@@ -4,18 +4,29 @@
       <div class="ai-tool-approval-card__title-wrap">
         <span class="ai-tool-approval-card__title-bar" />
         <span class="ai-tool-approval-card__title">{{ ticket.title || t('算法方案评审单') }}</span>
+        <CopyIcon
+          v-tippy="{ ...commonTippyOptions, content: t('复制单据链接'), theme: 'ai-chat-box', offset: [0, 8] }"
+          class="ai-tool-approval-card__copy-icon"
+          :class="{ 'is-disabled': !copyText }"
+          @click="handleCopy"
+        />
       </div>
       <span
         class="ai-tool-approval-card__status"
-        :class="`ai-tool-approval-card__status--${ticket.status}`"
+        :class="`ai-tool-approval-card__status--${statusClass}`"
       >
         <CheckCircleFillIcon
           v-if="ticket.status === APPROVAL_STATUS.APPROVED"
           class="ai-tool-approval-card__status-icon"
         />
         <CloseCircleFillIcon
-          v-else-if="ticket.status === APPROVAL_STATUS.REJECTED"
+          v-else-if="dangerStatusSet.has(ticket.status)"
           class="ai-tool-approval-card__status-icon"
+        />
+        <RevokedIcon
+          v-else-if="ticket.status === APPROVAL_STATUS.REVOKED"
+          class="ai-tool-approval-card__status-icon"
+          :class="{ 'ai-tool-approval-card__status-icon--revoked': ticket.status === APPROVAL_STATUS.REVOKED }"
         />
         <Loading
           v-else
@@ -60,11 +71,13 @@
         <span class="ai-tool-approval-card__detail-icon" />
       </Button>
       <Button
-        class="ai-tool-approval-card__copy"
-        :disabled="!copyText"
-        @click="handleCopy"
+        v-if="isPendingApproval"
+        class="ai-tool-approval-card__cancel"
+        outline
+        theme="primary"
+        @click="handleCancelApproval"
       >
-        {{ t('复制单据') }}
+        {{ t('取消审批') }}
       </Button>
     </div>
   </section>
@@ -74,23 +87,32 @@
   import { computed } from 'vue';
 
   import { Button, Loading } from 'bkui-vue';
+  import { directive as vTippy } from 'vue-tippy';
 
   import { APPROVAL_STATUS_MAP } from '../../../ag-ui/types/constants';
   import { APPROVAL_STATUS } from '../../../ag-ui/types/constants';
   import { useClipboard } from '../../../composables';
   import { useCommonTippyInject } from '../../../composables/use-common';
   import { OverflowTips as vOverflowTips } from '../../../directives/overflow-tips';
-  import { CheckCircleFillIcon, CloseCircleFillIcon, TimeIcon } from '../../../icons';
+  import { CheckCircleFillIcon, CloseCircleFillIcon, CopyIcon, RevokedIcon, TimeIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
 
-  import type { AIDevToolApprovalInterrupt } from '../../../ag-ui/types/interrupt';
+  import type { AIDevToolApprovalInterrupt, OnInterruptResume } from '../../../ag-ui/types/interrupt';
 
   const props = defineProps<{
     interrupt: AIDevToolApprovalInterrupt;
+    onInterruptResume?: OnInterruptResume;
   }>();
 
   const commonTippyOptions = useCommonTippyInject();
   const { copy } = useClipboard();
+  const pendingStatusSet = new Set([APPROVAL_STATUS.PENDING, APPROVAL_STATUS.DRAFT]);
+  const dangerStatusSet = new Set([
+    APPROVAL_STATUS.ABANDONED,
+    APPROVAL_STATUS.CANCELLED,
+    APPROVAL_STATUS.EXPIRED,
+    APPROVAL_STATUS.REJECTED,
+  ]);
 
   const ticket = computed(
     () =>
@@ -104,8 +126,12 @@
       },
   );
 
-  const statusText = computed(() => APPROVAL_STATUS_MAP[ticket.value.status] ?? ticket.value.status);
-  const approverText = computed(() => ticket.value.approvers.filter(Boolean).join('、') || '--');
+  const isPendingApproval = computed(() => pendingStatusSet.has(ticket.value.status));
+  const statusClass = computed(() => (isPendingApproval.value ? 'pending' : ticket.value.status));
+  const statusText = computed(() =>
+    isPendingApproval.value ? t('评审中') : (APPROVAL_STATUS_MAP[ticket.value.status] ?? ticket.value.status),
+  );
+  const approverText = computed(() => ticket.value.approvers.filter(Boolean).join('、') || t('无'));
   const copyText = computed(() => ticket.value.url || ticket.value.sn);
 
   const handleOpenDetail = () => {
@@ -116,6 +142,10 @@
   const handleCopy = () => {
     if (!copyText.value) return;
     copy(copyText.value);
+  };
+
+  const handleCancelApproval = () => {
+    props.onInterruptResume?.(props.interrupt, { action: 'cancel' });
   };
 </script>
 
@@ -166,16 +196,38 @@
       white-space: nowrap;
     }
 
+    &__copy-icon {
+      flex: 0 0 16px;
+      width: 16px;
+      height: 16px;
+      color: #699df4;
+      cursor: pointer;
+
+      &:hover {
+        color: #3a84ff;
+      }
+
+      &.is-disabled {
+        color: #c4c6cc;
+        cursor: not-allowed;
+      }
+    }
+
     &__status {
       display: inline-flex;
       flex: 0 0 auto;
-      gap: 6px;
+      gap: 4px;
       align-items: center;
       height: 26px;
       padding: 0 12px;
       color: #ff9c00;
       background: #fff4e6;
       border-radius: 13px;
+
+      &--pending {
+        color: #3a84ff;
+        background: #e1ecff;
+      }
 
       &--approved {
         color: #14a568;
@@ -189,12 +241,23 @@
         color: #ea3636;
         background: #ffe6e6;
       }
+
+      &--revoked {
+        color: #f59500;
+        background: #fdeed8;
+      }
     }
 
     &__status-icon {
       flex: 0 0 16px;
       width: 16px;
       height: 16px;
+
+      &--revoked {
+        flex-basis: 18px;
+        width: 18px;
+        height: 18px;
+      }
     }
 
     &__fields {
@@ -266,8 +329,9 @@
     }
 
     &__detail {
-      flex: 0 0 160px;
+      flex: 1 1 auto;
       min-width: 0;
+      max-width: 296px;
       background: linear-gradient(90deg, #3a84ff 0%, #5a9cff 100%);
       border-color: transparent;
     }
@@ -291,11 +355,8 @@
       }
     }
 
-    &__copy {
+    &__cancel {
       flex: 0 0 86px;
-      color: #3a84ff;
-      background: #fff;
-      border-color: #3a84ff;
     }
   }
 </style>

@@ -32,9 +32,11 @@ import {
   // type Message,
   type Shortcut,
   type UserMessage,
+  APPROVAL_STATUS,
   AIBluekingIcon,
   // CopyIcon,
   DeleteIcon,
+  InterruptReason,
   MessageRole,
   MessageStatus,
   ShareIcon,
@@ -494,5 +496,50 @@ export const MOCK_MESSAGES = [
     name: 'react_agent',
     status: 'completed',
     messageId: 'lc_run--019b7205-6bb3-79a0-81ec-48e5fcb8fea0',
+  },
+  {
+    id: 'mock-revoked-approval-user',
+    role: MessageRole.User,
+    content: '查看一下已经撤销的算法方案评审单',
+    name: 'user',
+    status: MessageStatus.Complete,
+    messageId: 'mock-revoked-approval-user',
+  },
+  {
+    id: 'mock-revoked-approval-assistant',
+    role: MessageRole.Assistant,
+    content: '该第三方审批单据已撤销，当前无需继续审批：',
+    name: 'react_agent',
+    status: MessageStatus.Complete,
+    messageId: 'mock-revoked-approval-assistant',
+  },
+  {
+    id: 'mock-revoked-approval-interrupt',
+    role: MessageRole.Interrupt,
+    content: {
+      message: '',
+      outcome: {
+        type: 'interrupt',
+        interrupts: [
+          {
+            id: 'mock-revoked-approval-interrupt-item',
+            reason: InterruptReason.AIDevToolApproval,
+            toolCallId: 'mock-revoked-approval-tool-call',
+            metadata: {
+              ticket: {
+                approvers: [],
+                sn: 'REV-2026-04-24-002',
+                status: APPROVAL_STATUS.REVOKED,
+                submit_time: '2026-04-24 14:30:15',
+                title: '算法方案评审单',
+                url: 'https://example.com/ticket/REV-2026-04-24-002',
+              },
+            },
+          },
+        ],
+      },
+    },
+    status: MessageStatus.Complete,
+    messageId: 'mock-revoked-approval-interrupt',
   },
 ];
