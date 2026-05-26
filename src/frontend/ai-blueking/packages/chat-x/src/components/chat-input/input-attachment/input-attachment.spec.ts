@@ -307,6 +307,25 @@ describe('InputAttachment', () => {
       expect(wrapper.emitted('sendMessage')).toBeFalsy();
     });
 
+    it('存在发送阻断提示时点击 SendMessageIcon 不应该发出 sendMessage 事件', async () => {
+      wrapper = mount(InputAttachment, {
+        props: {
+          messageState: MessageStatus.Complete,
+          sendDisabledTip: '当前会话有 3 个待审批单，如需继续，请先取消审批',
+        },
+        global: {
+          directives: {
+            tippy: {},
+          },
+        },
+      });
+
+      await wrapper.find('.mock-send-icon').trigger('click');
+
+      expect(wrapper.emitted('sendMessage')).toBeFalsy();
+      expect(wrapper.find('.send-message-icon__disabled').exists()).toBe(true);
+    });
+
     it('Pending 状态点击 SendMessageIcon 不应该发送消息', async () => {
       wrapper = mount(InputAttachment, {
         props: {

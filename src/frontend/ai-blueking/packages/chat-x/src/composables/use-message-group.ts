@@ -30,14 +30,18 @@ import {
   type ActivityMessage,
   type AssistantMessage,
   type Message,
+  APPROVAL_STATUS,
+  InterruptReason,
   MessageContentType,
   MessageRole,
   MessageStatus,
 } from '../ag-ui/types';
 import { LOADING_MESSAGE_ID } from '../common/constants';
+import { t } from '../lang/lang';
 import { generateUUID } from '../utils';
 
 import type { BkFlowMessageContent } from '../ag-ui/types/contents';
+import type { InterruptMessage } from '../ag-ui/types/interrupt';
 
 export type MessageGroup = {
   checked: boolean;
@@ -96,6 +100,25 @@ const messageMatchesKeyword = (message: Message, keyword: string): boolean => {
   if (!extractor) return true;
   return extractor(message).some(text => text.toLowerCase().includes(keyword));
 };
+
+const pendingApprovalStatusSet = new Set([APPROVAL_STATUS.PENDING, APPROVAL_STATUS.DRAFT]);
+
+const countPendingApprovalInterrupts = (messages: Message[]): number =>
+  messages.reduce((count, message) => {
+    if (message.role !== MessageRole.Interrupt) {
+      return count;
+    }
+    const content = (message as InterruptMessage).content;
+    if (content?.outcome?.type !== 'interrupt') {
+      return count;
+    }
+    const pendingCount = content.outcome.interrupts.filter(
+      item =>
+        item.reason === InterruptReason.AIDevToolApproval &&
+        pendingApprovalStatusSet.has(item.metadata?.ticket?.status),
+    ).length;
+    return count + pendingCount;
+  }, 0);
 
 export const useMessageGroup = (options: {
   keyword?: ShallowRef<string>;
@@ -218,6 +241,16 @@ export const useMessageGroup = (options: {
         messages: group.messages.filter(isMatch),
       }));
   });
+  const pendingApprovalCount = computed(() => countPendingApprovalInterrupts(options.messages.value));
+  const pendingApprovalTipText = computed(() => {
+    if (!pendingApprovalCount.value) {
+      return '';
+    }
+    return t('当前会话有 {count} 个待审批单，如需继续，请先取消审批').replace(
+      '{count}',
+      String(pendingApprovalCount.value),
+    );
+  });
 
   /**
    * 是否为全选
@@ -282,6 +315,8 @@ export const useMessageGroup = (options: {
   return {
     messageGroups,
     executionGroups,
+    pendingApprovalCount,
+    pendingApprovalTipText,
     isShareMode,
     isAllSelected,
     onToggleShareAll,

@@ -28,7 +28,7 @@ import { defineComponent, h } from 'vue';
 import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MessageRole, MessageStatus } from '../../ag-ui/types';
+import { APPROVAL_STATUS, InterruptReason, MessageRole, MessageStatus } from '../../ag-ui/types';
 import { LOADING_MESSAGE_ID, RenderMode } from '../../common';
 import ChatContainer from './chat-container.vue';
 
@@ -123,11 +123,33 @@ vi.mock('../../composables', () => ({
     const { computed, shallowRef } = require('vue');
     const messageGroups = mockMessageGroupsRef;
     const executionGroups = computed(() => []);
+    const pendingApprovalCount = computed(() =>
+      _options.messages.value.reduce((count, message) => {
+        if (message.role !== MessageRole.Interrupt || message.content?.outcome?.type !== 'interrupt') {
+          return count;
+        }
+        return (
+          count +
+          message.content.outcome.interrupts.filter(
+            interrupt =>
+              interrupt.reason === InterruptReason.AIDevToolApproval &&
+              [APPROVAL_STATUS.PENDING, APPROVAL_STATUS.DRAFT].includes(interrupt.metadata?.ticket?.status),
+          ).length
+        );
+      }, 0),
+    );
+    const pendingApprovalTipText = computed(() =>
+      pendingApprovalCount.value
+        ? `当前会话有 ${pendingApprovalCount.value} 个待审批单，如需继续，请先取消审批`
+        : '',
+    );
     const isShareMode = shallowRef(false);
     const isAllSelected = computed(() => false);
     return {
       messageGroups,
       executionGroups,
+      pendingApprovalCount,
+      pendingApprovalTipText,
       isShareMode,
       isAllSelected,
       onToggleShareAll: vi.fn(),
@@ -265,14 +287,27 @@ vi.mock('../chat-input/chat-input.vue', () => ({
       supportUpload: Boolean,
       cite: String,
       shortcutId: String,
+      sendDisabledTip: String,
       onSendMessage: Function,
       onStopSending: Function,
       onUpload: Function,
       tippyOptions: Object,
     },
     emits: ['update:modelValue', 'update:cite', 'selectShortcut', 'deleteShortcut'],
-    setup() {
-      return () => h('div', { class: 'mock-chat-input' });
+    setup(_, { slots }) {
+      return () => h('div', { class: 'mock-chat-input' }, [slots.top?.(), slots.interrupt?.()]);
+    },
+  }),
+}));
+
+vi.mock('../chat-input/input-info-alert.vue', () => ({
+  default: defineComponent({
+    name: 'InputInfoAlert',
+    props: {
+      content: String,
+    },
+    setup(props) {
+      return () => h('div', { class: 'mock-input-info-alert' }, props.content);
     },
   }),
 }));
@@ -352,6 +387,35 @@ const createAssistantMessage = (id: string, content: string): AssistantMessage =
   role: MessageRole.Assistant,
   status: MessageStatus.Complete,
 });
+
+const createApprovalInterruptMessage = (id: string, status: APPROVAL_STATUS): Message => ({
+  id,
+  messageId: id,
+  role: MessageRole.Interrupt,
+  status: MessageStatus.Complete,
+  content: {
+    outcome: {
+      type: 'interrupt',
+      interrupts: [
+        {
+          id: `${id}-interrupt`,
+          reason: InterruptReason.AIDevToolApproval,
+          toolCallId: `${id}-tool`,
+          metadata: {
+            ticket: {
+              approvers: ['张三'],
+              sn: `REV-${id}`,
+              status,
+              submit_time: '2026-04-24 14:30:15',
+              title: '算法方案评审单',
+              url: 'https://example.com/ticket',
+            },
+          },
+        },
+      ],
+    },
+  },
+} as Message);
 
 describe('ChatContainer', () => {
   let wrapper: VueWrapper;
@@ -506,6 +570,22 @@ describe('ChatContainer', () => {
       const ci = wrapper.findComponent({ name: 'ChatInput' });
       expect(mc.props('messageStatus')).toBe(MessageStatus.Streaming);
       expect(ci.props('messageStatus')).toBe(MessageStatus.Streaming);
+    });
+
+    it('存在待审批第三方审批单时应通过 slot 展示提示，并将阻断文案传给 ChatInput', () => {
+      const messages = [
+        createApprovalInterruptMessage('pending-1', APPROVAL_STATUS.PENDING),
+        createApprovalInterruptMessage('draft-1', APPROVAL_STATUS.DRAFT),
+        createApprovalInterruptMessage('revoked-1', APPROVAL_STATUS.REVOKED),
+      ];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages },
+      });
+
+      const ci = wrapper.findComponent({ name: 'ChatInput' });
+      expect(ci.props('sendDisabledTip')).toBe('当前会话有 2 个待审批单，如需继续，请先取消审批');
+      expect(wrapper.find('.mock-input-info-alert').text()).toBe('当前会话有 2 个待审批单，如需继续，请先取消审批');
     });
   });
 

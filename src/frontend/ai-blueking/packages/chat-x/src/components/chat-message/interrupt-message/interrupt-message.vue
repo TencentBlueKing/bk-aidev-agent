@@ -14,6 +14,7 @@
         :is="getRenderer(item)"
         v-if="getRenderer(item)"
         :interrupt="item"
+        :on-interrupt-resume="onInterruptResume"
       />
       <div
         v-else
@@ -56,6 +57,8 @@
     gap: 8px;
     align-items: flex-start;
     width: 100%;
+    min-width: 326px;
+    max-width: 500px;
     font-size: 12px;
     line-height: 20px;
     color: #4d4f56;

@@ -2,10 +2,10 @@
 name: ToolApprovalCard 审批卡片
 slug: tool-approval-card
 category: molecular
-description: AI Dev 工具审批中断专用卡片，展示评审单状态、处理人与详情/复制操作。
+description: AI Dev 工具审批中断专用卡片，展示评审单状态、处理人与详情/复制/取消审批操作。
 aiSummary: >
   接收 AIDevToolApprovalInterrupt，从 metadata.ticket 渲染标题、状态徽章、单据编号、提交时间、当前处理人；
-  支持打开详情链接与复制 url/sn。由 InterruptMessageRender 在 reason 为 aidev:tool_approval 时挂载。
+  支持打开详情链接、复制 url/sn，并在 pending/draft 时通过 onInterruptResume 发起取消审批。由 InterruptMessageRender 在 reason 为 aidev:tool_approval 时挂载。
 relatedComponents:
   - slug: interrupt-message
     relation: InterruptMessageRender 按 reason 派发渲染
@@ -64,6 +64,26 @@ domain: message
       },
     },
   }
+
+  const revokedInterrupt = {
+    id: 'interrupt_revoked',
+    reason: InterruptReason.AIDevToolApproval,
+    toolCallId: 'tool_call_revoked',
+    metadata: {
+      ticket: {
+        approvers: [],
+        sn: 'REV-2026-04-24-004',
+        status: APPROVAL_STATUS.REVOKED,
+        submit_time: '2026-04-24 17:00:00',
+        title: '算法方案评审单',
+        url: 'https://example.com/review-tickets/REV-2026-04-24-004',
+      },
+    },
+  }
+
+  const handleInterruptResume = async (interrupt: { id: string }, payload?: Record<string, unknown>) => {
+    console.log('取消审批:', interrupt.id, payload)
+  }
 </script>
 
 # ToolApprovalCard 审批卡片
@@ -78,19 +98,20 @@ AI Dev 第三方工具审批（`InterruptReason.AIDevToolApproval`）专用卡�
 
 ```
 ToolApprovalCard
-├── 标题栏：左侧色条 + 单据标题 + 状态徽章（待审批/已审批/已拒绝等）
+├── 标题栏：左侧色条 + 单据标题 + 复制图标 + 状态徽章（评审中/已通过/已拒绝/已撤销等）
 ├── 字段区：单据编号、提交时间
 ├── 处理人：当前处理人（overflow-tips 省略）
-└── 操作区：查看单据详情（新窗口打开 url）、复制单据（url 或 sn）
+└── 操作区：查看单据详情（新窗口打开 url）、取消审批（仅 pending / draft）
 ```
 
 状态徽章样式：
 
 | `ticket.status`                         | 视觉     |
 | --------------------------------------- | -------- |
-| `pending`、`draft`                      | 橙色待办 |
+| `pending`、`draft`                      | 蓝色评审中 |
 | `approved`                              | 绿色通过 |
 | `rejected`、`cancelled`、`expired`、`abandoned` | 红色终态 |
+| `revoked`                               | 橙色已撤销 |
 
 ## 基础用法（待审批）
 
@@ -103,6 +124,7 @@ ToolApprovalCard
     :content="interruptMessage.content"
     role="interrupt"
     :status="interruptMessage.status"
+    :on-interrupt-resume="handleInterruptResume"
   />
 </template>
 
@@ -142,22 +164,39 @@ ToolApprovalCard
       outcome: { type: 'interrupt', interrupts: [interrupt] },
     },
   };
+
+  const handleInterruptResume = async (interrupt, payload) => {
+    console.log(interrupt.id, payload);
+  };
 </script>
 ```
 
 **渲染效果**（文档站直接挂载 `ToolApprovalCard` 预览卡片 UI）
 
 <div class="demo">
-  <ToolApprovalCard :interrupt="pendingInterrupt" />
+  <ToolApprovalCard
+    :interrupt="pendingInterrupt"
+    :on-interrupt-resume="handleInterruptResume"
+  />
 </div>
 
-## 已审批 / 已拒绝
+## 已通过 / 已拒绝 / 已撤销
 
 ```vue
-<InterruptMessageRender
-  :content="{ outcome: { type: 'interrupt', interrupts: [approvedInterrupt] } }"
-  role="interrupt"
-/>
+<div>
+  <InterruptMessageRender
+    :content="{ outcome: { type: 'interrupt', interrupts: [approvedInterrupt] } }"
+    role="interrupt"
+  />
+  <InterruptMessageRender
+    :content="{ outcome: { type: 'interrupt', interrupts: [rejectedInterrupt] } }"
+    role="interrupt"
+  />
+  <InterruptMessageRender
+    :content="{ outcome: { type: 'interrupt', interrupts: [revokedInterrupt] } }"
+    role="interrupt"
+  />
+</div>
 ```
 
 **渲染效果**
@@ -165,19 +204,21 @@ ToolApprovalCard
 <div class="demo" style="display: flex; flex-direction: column; gap: 12px;">
   <ToolApprovalCard :interrupt="approvedInterrupt" />
   <ToolApprovalCard :interrupt="rejectedInterrupt" />
+  <ToolApprovalCard :interrupt="revokedInterrupt" />
 </div>
 
 ## API
 
 ### Props
 
-| 属性名    | 类型                         | 默认值 | 说明                           |
-| --------- | ---------------------------- | ------ | ------------------------------ |
-| interrupt | `AIDevToolApprovalInterrupt` | —      | **必填**，含 `metadata.ticket` |
+| 属性名            | 类型                         | 默认值 | 说明                                         |
+| ----------------- | ---------------------------- | ------ | -------------------------------------------- |
+| interrupt         | `AIDevToolApprovalInterrupt` | —      | **必填**，含 `metadata.ticket`               |
+| onInterruptResume | `OnInterruptResume`          | —      | 取消审批时触发，payload 为 `{ action: 'cancel' }` |
 
 ### Events / Slots / Expose
 
-无。交互通过按钮点击在组件内部完成（打开链接、复制剪贴板）。
+无。打开链接、复制剪贴板在组件内部完成；取消审批通过 `onInterruptResume(interrupt, { action: 'cancel' })` 通知业务侧处理。
 
 ## 依赖
 

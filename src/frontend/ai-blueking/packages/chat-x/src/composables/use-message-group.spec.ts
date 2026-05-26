@@ -27,7 +27,7 @@ import { computed, ref as deepRef, nextTick, shallowRef } from 'vue';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MessageContentType, MessageRole, MessageStatus } from '../ag-ui/types';
+import { APPROVAL_STATUS, InterruptReason, MessageContentType, MessageRole, MessageStatus } from '../ag-ui/types';
 import { LOADING_MESSAGE_ID } from '../common/constants';
 import { useMessageGroup } from './use-message-group';
 
@@ -71,6 +71,36 @@ const createToolMessage = (id: string, toolCallId: string, content = 'result'): 
   toolCallId,
   duration: 100,
 });
+
+const createApprovalInterruptMessage = (id: string, status: APPROVAL_STATUS): Message =>
+  ({
+    id,
+    messageId: id,
+    role: MessageRole.Interrupt,
+    status: MessageStatus.Complete,
+    content: {
+      outcome: {
+        type: 'interrupt',
+        interrupts: [
+          {
+            id: `${id}-interrupt`,
+            reason: InterruptReason.AIDevToolApproval,
+            toolCallId: `${id}-tool`,
+            metadata: {
+              ticket: {
+                approvers: ['张三'],
+                sn: `REV-${id}`,
+                status,
+                submit_time: '2026-04-24 14:30:15',
+                title: '算法方案评审单',
+                url: 'https://example.com/ticket',
+              },
+            },
+          },
+        ],
+      },
+    },
+  }) as Message;
 
 const setupMessageGroup = (messages: Message[], keyword = '') => {
   const messagesRef = computed(() => messages);
@@ -263,6 +293,33 @@ describe('useMessageGroup', () => {
 
       expect(executionGroups.value.length).toBeGreaterThan(0);
       expect(typeof executionGroups.value[0]?.userMessageTitle).toBe('number');
+    });
+  });
+
+  describe('待审批单统计', () => {
+    it('应统计 pending 与 draft 的 AI Dev 工具审批中断数量', async () => {
+      const messages = [
+        createApprovalInterruptMessage('pending-1', APPROVAL_STATUS.PENDING),
+        createApprovalInterruptMessage('draft-1', APPROVAL_STATUS.DRAFT),
+        createApprovalInterruptMessage('revoked-1', APPROVAL_STATUS.REVOKED),
+      ];
+      const { pendingApprovalCount, pendingApprovalTipText } = setupMessageGroup(messages);
+      await nextTick();
+
+      expect(pendingApprovalCount.value).toBe(2);
+      expect(pendingApprovalTipText.value).toBe('当前会话有 2 个待审批单，如需继续，请先取消审批');
+    });
+
+    it('无待审批单时应返回空提示文案', async () => {
+      const messages = [
+        createApprovalInterruptMessage('approved-1', APPROVAL_STATUS.APPROVED),
+        createAssistantMessage('assistant-1', 'done'),
+      ];
+      const { pendingApprovalCount, pendingApprovalTipText } = setupMessageGroup(messages);
+      await nextTick();
+
+      expect(pendingApprovalCount.value).toBe(0);
+      expect(pendingApprovalTipText.value).toBe('');
     });
   });
 

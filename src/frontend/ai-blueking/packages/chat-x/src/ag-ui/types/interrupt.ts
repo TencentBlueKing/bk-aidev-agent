@@ -27,7 +27,7 @@
 
 import type { APPROVAL_STATUS, InterruptReason, MessageRole } from './constants';
 import type { BaseMessage } from './messages';
-
+import type { UserMultiChoiceQuestionSchema, UserSingleChoiceQuestionSchema } from './schema';
 export type AIDevToolApprovalInterrupt = BaseInterrupt<
   InterruptReason.AIDevToolApproval,
   {
@@ -55,7 +55,9 @@ export type BaseInterrupt<T extends InterruptReason, M extends Record<string, an
   metadata?: M;
   properties?: Record<string, any>;
   reason: T;
-  // responseSchema?: JSONSchema4;
+  responseSchema?: T extends InterruptReason.UserMultiChoice
+    ? typeof UserMultiChoiceQuestionSchema
+    : typeof UserSingleChoiceQuestionSchema;
   toolCallId: string;
 };
 

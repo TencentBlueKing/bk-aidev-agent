@@ -146,23 +146,32 @@ enum MessageRole {
 
 ```typescript
 enum MessageStatus {
-  // 等待中
-  Pending = 'pending',
-
-  // 流式输出中
-  Streaming = 'streaming',
-
   // 已完成
   Complete = 'complete',
+
+  // 已禁用
+  Disabled = 'disabled',
 
   // 错误
   Error = 'error',
 
+  // 请求中
+  Fetching = 'fetching',
+
+  // 等待中
+  Pending = 'pending',
+
   // 已停止
   Stop = 'stop',
 
-  // 已禁用
-  Disabled = 'disabled',
+  // 停止请求中
+  StopLoading = 'stop-loading',
+
+  // 流式输出中
+  Streaming = 'streaming',
+
+  // 成功
+  Success = 'success',
 }
 ```
 

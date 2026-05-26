@@ -34,11 +34,11 @@ export enum APPROVAL_STATUS {
   EXPIRED = 'expired', // 已过期
   PENDING = 'pending', // 待审批
   REJECTED = 'rejected', // 已拒绝
+  REVOKED = 'revoked', // 已撤销
 }
 
 export enum InterruptReason {
   AIDevToolApproval = 'aidev:tool_approval', // AI dev 第三方审批
-  HumanApproval = 'human_approval', // 人工审批
   UserMultiChoice = 'user_multi_choice', // 用户多选
   UserSingleChoice = 'user_single_choice', // 用户单选
 }
@@ -93,10 +93,11 @@ export enum MessageStatus {
 
 export const APPROVAL_STATUS_MAP: Record<APPROVAL_STATUS, string> = {
   [APPROVAL_STATUS.ABANDONED]: t('已废弃'),
-  [APPROVAL_STATUS.APPROVED]: t('已审批'),
+  [APPROVAL_STATUS.APPROVED]: t('已通过'),
   [APPROVAL_STATUS.CANCELLED]: t('已取消'),
   [APPROVAL_STATUS.EXPIRED]: t('已过期'),
   [APPROVAL_STATUS.PENDING]: t('待审批'),
   [APPROVAL_STATUS.REJECTED]: t('已拒绝'),
+  [APPROVAL_STATUS.REVOKED]: t('已撤销'),
   [APPROVAL_STATUS.DRAFT]: t('待审批'),
 };

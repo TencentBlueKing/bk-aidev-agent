@@ -24,8 +24,37 @@
  * IN THE SOFTWARE.
  */
 
-export * from './constants';
-export * from './contents';
-export * from './interrupt';
-export * from './messages';
-export * from './schema';
+import type { FromSchema, JSONSchema } from 'json-schema-to-ts';
+
+export const UserSingleChoiceQuestionSchema = {
+  properties: {
+    question: {
+      enum: [],
+      type: 'string',
+    },
+  },
+  required: ['question'],
+  type: 'object',
+} as const satisfies JSONSchema;
+
+export const UserMultiChoiceQuestionSchema = {
+  properties: {
+    question: {
+      items: {
+        enum: [],
+        type: 'string',
+      },
+      uniqueItems: true,
+      type: 'array',
+    },
+  },
+  required: ['question'],
+  type: 'object',
+} as const satisfies JSONSchema;
+
+// 兼容历史导出：默认用户问题 schema 表示多选。
+export const UserQuestionSchema = UserMultiChoiceQuestionSchema;
+
+export type UserMultiChoiceQuestion = FromSchema<typeof UserMultiChoiceQuestionSchema>;
+export type UserQuestion = UserMultiChoiceQuestion;
+export type UserSingleChoiceQuestion = FromSchema<typeof UserSingleChoiceQuestionSchema>;

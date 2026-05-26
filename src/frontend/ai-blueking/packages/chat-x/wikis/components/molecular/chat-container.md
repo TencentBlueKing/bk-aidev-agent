@@ -28,6 +28,7 @@ domain: input
 <script lang="ts" setup>
   import { ref } from 'vue'
   import ChatContainerComp from '../../../src/components/chat-container/chat-container.vue'
+  import { APPROVAL_STATUS, InterruptReason, MessageRole, MessageStatus } from '../../../src/ag-ui/types/constants'
 
   const inputBasic = ref('');
   const messagesBasic = ref([
@@ -148,6 +149,45 @@ domain: input
   };
 
   const inputShare = ref('');
+  const inputApproval = ref('');
+  const messagesApproval = ref([
+    {
+      id: 'approval-user',
+      messageId: 'approval-user',
+      role: MessageRole.User,
+      content: '请提交算法方案评审',
+      status: MessageStatus.Complete,
+    },
+    {
+      id: 'approval-interrupt',
+      messageId: 'approval-interrupt',
+      role: MessageRole.Interrupt,
+      status: MessageStatus.Pending,
+      content: {
+        message: '算法方案评审单需要您关注',
+        outcome: {
+          type: 'interrupt',
+          interrupts: [
+            {
+              id: 'interrupt_approval_demo',
+              reason: InterruptReason.AIDevToolApproval,
+              toolCallId: 'tool_call_approval_demo',
+              metadata: {
+                ticket: {
+                  approvers: ['张三', '李四'],
+                  sn: 'REV-2026-05-26-001',
+                  status: APPROVAL_STATUS.PENDING,
+                  submit_time: '2026-05-26 16:00:00',
+                  title: '算法方案评审单',
+                  url: 'https://example.com/review-tickets/REV-2026-05-26-001',
+                },
+              },
+            },
+          ],
+        },
+      },
+    },
+  ]);
 
   const handleSendMessage = async (content, docSchema) => {
     console.log('发送消息:', content);
@@ -172,6 +212,9 @@ domain: input
   const handleConfirmShare = (selectedMessages) => {
     console.log('分享消息:', selectedMessages);
   };
+  const handleInterruptResume = async (interrupt, payload) => {
+    console.log('处理中断:', interrupt.id, payload);
+  };
 </script>
 
 # ChatContainer 聊天容器
@@ -185,6 +228,7 @@ domain: input
 - **分栏布局**：基于 `ResizeLayout` 的可拖拽分栏；**侧栏是否展示 Tab / 执行摘要、以及分栏是否进入折叠样式（`ai-is-collapse`）以 `executionGroups` 为准**（由 `useMessageGroup` 从消息中过滤出工具调用与 FlowAgent 执行记录），**不以原始 `messages.length` 判断**。因此仅有普通对话、尚无执行类消息时，侧栏内容与「执行情况」区域可能为空，布局上与无执行数据时一致
 - **消息分组**：内置 `useMessageGroup` 自动处理消息分组、Tool 合并、Loading 注入
 - **输入区状态推导**：传给 `MessageContainer` 与 `ChatInput` 的 `messageStatus` 为内部计算值 `inputStatus`：当分组中存在 id 为 `LOADING_MESSAGE_ID`（`'__loading__'`，由 `useMessageGroup` 注入的占位 Loading 消息）时，对内使用 `MessageStatus.Fetching`；否则使用外部传入的 `messageStatus`。用于在「已发用户消息、尚未流式」阶段与流式中一致地展示停止能力，并避免输入区重复发送
+- **待审批发送阻塞**：当消息中存在 `AIDevToolApproval` 且状态为 `pending` / `draft` 的中断项时，`useMessageGroup` 会返回待审批提示，容器在输入区上方展示提示并通过 `ChatInput.sendDisabledTip` 禁止继续发送
 - **执行摘要**：侧边栏展示工具调用 / FlowAgent 执行记录，支持关键词搜索和对话定位
 - **自定义 Tab**：通过 `useCustomTabProvider` 支持动态添加自定义 Tab（如节点详情）
 - **分享模式**：内置消息多选分享流程，选中用户消息后确认分享
@@ -211,7 +255,7 @@ ai-chat-container
         │   └── welcome 插槽（默认：Banner + 欢迎标题 + 开场白 ContentRender；自定义则整块替换）
         ├── SelectionFooter（分享模式时）
         ├── ShortcutRender（有快捷指令时）
-        └── ChatInput（默认状态）
+        └── ChatInput（默认状态，待审批时通过 interrupt slot 展示 InputInfoAlert）
 ```
 
 ## 基础用法
@@ -561,6 +605,38 @@ ai-chat-container
   </div>
 </div>
 
+## 待审批阻塞发送
+
+当会话中存在待审批的 AI Dev 工具审批中断时，`ChatContainer` 会在输入框上方展示提示，并禁用发送按钮。用户需要在审批卡片中点击「取消审批」或等待状态变化后，才能继续发送新消息。
+
+```vue
+<template>
+  <ChatContainer
+    v-model="inputValue"
+    :messages="messages"
+    message-status="complete"
+    :on-interrupt-resume="handleInterruptResume"
+    :on-send-message="handleSendMessage"
+    :on-stop-sending="handleStopSending"
+  />
+</template>
+```
+
+**渲染效果**（待审批单存在时，输入区上方展示提示，发送按钮置灰）
+
+<div class="demo">
+  <div style="height: 480px; border: 1px solid #eaebf0; border-radius: 8px; overflow: hidden;">
+    <ChatContainerComp
+      v-model="inputApproval"
+      :messages="messagesApproval"
+      message-status="complete"
+      :on-interrupt-resume="handleInterruptResume"
+      :on-send-message="handleSendMessage"
+      :on-stop-sending="handleStopSending"
+    />
+  </div>
+</div>
+
 ## 分享模式
 
 点击消息工具栏的「分享」按钮后进入分享模式，底部出现 `SelectionFooter` 操作栏：
@@ -691,7 +767,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | ---------- | -------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | codeHeader | `{ language: string; token: Token[] }` | 代码块头部自定义操作区域，透传给 MessageRender → ContentRender → MarkdownContent → CodeContent |
 | default    | 消息列表相关绑定（messages 等）        | 自定义消息列表区域                                                                             |
-| message    | `{ message, messageToolsStatus }`      | 自定义单条消息渲染                                                                             |
+| message    | `{ message, messageToolsStatus, onInterruptResume }` | 自定义单条消息渲染；自定义渲染中断消息时需继续透传 `onInterruptResume`                         |
 | welcome    | `{ openingRemark: string }`            | 无消息时自定义欢迎页；传入则替换默认 Banner、标题与开场白区域（整块替换）                      |
 
 ### Expose

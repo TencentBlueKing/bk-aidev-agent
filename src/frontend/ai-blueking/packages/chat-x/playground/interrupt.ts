@@ -155,13 +155,28 @@ const cancelledScenario = createInterruptScenario({
   outcome: { type: 'interrupt', interrupts: [cancelledInterrupt] },
 });
 
-// —— 场景 5：用户已 resume（outcome.success + result，不渲染中断卡片）——
+// —— 场景 5：已撤销 ——
+const revokedInterrupt = createApprovalInterrupt({
+  id: 'interrupt_revoked',
+  sn: 'REV-2026-04-24-005',
+  status: APPROVAL_STATUS.REVOKED,
+  message: '算法方案评审单已撤销',
+});
+revokedInterrupt.metadata!.ticket.approvers = [];
+const revokedScenario = createInterruptScenario({
+  scenarioId: 'interrupt_revoked',
+  intro: '【已撤销】该评审单已由发起人自行撤销：',
+  interrupt: revokedInterrupt,
+  outcome: { type: 'interrupt', interrupts: [revokedInterrupt] },
+});
+
+// —— 场景 6：用户已 resume（outcome.success + result，不渲染中断卡片）——
 const resumedScenario = createInterruptScenario({
   scenarioId: 'interrupt_resumed',
   intro: '【已处理】您已确认关注该评审单，Agent 将继续执行：',
   interrupt: createApprovalInterrupt({
     id: 'interrupt_resumed',
-    sn: 'REV-2026-04-24-005',
+    sn: 'REV-2026-04-24-006',
     status: APPROVAL_STATUS.PENDING,
   }),
   outcome: { type: 'success' },
@@ -172,7 +187,7 @@ const resumedScenario = createInterruptScenario({
   },
 });
 
-// —— 场景 6：不支持的中断类型（走兜底文案）——
+// —— 场景 7：不支持的中断类型（走兜底文案）——
 const unsupportedInterrupt: Interrupt = {
   id: 'interrupt_unsupported',
   reason: 'unknown_reason' as InterruptReason,
@@ -192,6 +207,7 @@ export const MOCK_INTERRUPT_MESSAGES: Message[] = [
   ...approvedScenario,
   ...rejectedScenario,
   ...cancelledScenario,
+  ...revokedScenario,
   ...resumedScenario,
   ...unsupportedScenario,
 ];

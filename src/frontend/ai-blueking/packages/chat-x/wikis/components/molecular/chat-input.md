@@ -32,11 +32,13 @@ domain: input
   const inputStreaming = ref('');
   const inputComplete = ref('');
   const inputDisabled = ref('');
+  const inputBlocked = ref('这条消息暂时不能发送');
   const inputShortcut = ref('');
   const inputUpload = ref('');
   const inputSlot = ref('');
 
   const citeContent = ref('Vue 3 的 Composition API 提供了更灵活的逻辑组织方式，能够更好地进行代码复用和类型推断。');
+  const interruptTip = '当前会话有 1 个待审批单，如需继续，请先取消审批';
 
   const handleSendMessage = async (value, docSchema) => {
     console.log('发送消息:', value, docSchema);
@@ -85,6 +87,7 @@ domain: input
 ```
 chat-input-container
 ├── slot#top（容器顶部，在输入框框体外侧）
+├── slot#interrupt（容器顶部，在输入框框体外侧，通常展示中断/审批提示）
 └── chat-input（框体，受 inputMaxHeight 控制）
     ├── slot#input-header（默认：cite 不为空时渲染引用区）
     ├── slot#files（默认：有上传文件时渲染文件预览区）
@@ -158,6 +161,44 @@ chat-input-container
 | `disabled`                    | 灰色禁用，点击无效                                     | 灰色禁用                 |
 
 > **实现细节**：组件内部用 `messageState` 计算属性决定实际按钮状态：当 `messageStatus` 为 `pending`、`streaming` 或 `fetching` 时直接使用该状态（确保停止按钮始终可用）；否则当输入为空或仅含空白字符时强制为 `disabled`，其余情况使用 `messageStatus` 的值。`fetching` 时按 Enter **不会**触发发送（避免请求中与 Loading 占位阶段重复提交）。
+
+### sendDisabledTip（业务阻塞发送）
+
+当业务侧需要临时阻止发送但仍允许用户输入时，可传入 `sendDisabledTip`。组件会置灰发送按钮，按钮 tooltip 展示该文案，并拦截点击发送、按 Enter 发送和 `triggerSendMessage()`：
+
+```vue
+<template>
+  <ChatInput
+    v-model="inputValue"
+    message-status="complete"
+    :send-disabled-tip="interruptTip"
+    :on-send-message="handleSendMessage"
+    :on-stop-sending="handleStopSending"
+  >
+    <template #interrupt>
+      <div class="input-alert">{{ interruptTip }}</div>
+    </template>
+  </ChatInput>
+</template>
+```
+
+**渲染效果**
+
+<div class="demo">
+  <ChatInputComp
+    v-model="inputBlocked"
+    message-status="complete"
+    :send-disabled-tip="interruptTip"
+    :on-send-message="handleSendMessage"
+    :on-stop-sending="handleStopSending"
+  >
+    <template #interrupt>
+      <div style="width: 100%; max-width: 1000px; padding: 6px 8px; margin-bottom: 6px; font-size: 12px; line-height: 20px; color: #4d4f56; background: #f0f5ff; border: 1px solid #a3c5fd; border-radius: 4px;">
+        {{ interruptTip }}
+      </div>
+    </template>
+  </ChatInputComp>
+</div>
 
 ### Complete（可发送）
 
@@ -520,11 +561,12 @@ chat-input-container
 
 ## 自定义插槽
 
-组件提供 5 个插槽用于自定义各区域内容：
+组件提供 6 个插槽用于自定义各区域内容：
 
 | 插槽名         | 位置                                       | 默认行为                                   |
 | -------------- | ------------------------------------------ | ------------------------------------------ |
 | `top`          | 框体外部顶部（`.chat-input` 上方）         | 无                                         |
+| `interrupt`    | 框体外部顶部，位于 `top` 之后              | 无，通常用于展示审批/中断提示              |
 | `input-header` | 框体内部顶部（编辑器上方）                 | `cite` 不为空时渲染引用区（`CiteContent`） |
 | `files`        | 文件预览区                                 | 有上传文件时渲染 `FileContent`             |
 | `attachment`   | 底部工具栏快捷指令区（FileUploadBtn 右侧） | 快捷指令按钮列表 / 已选快捷指令            |
@@ -541,6 +583,11 @@ chat-input-container
     <!-- 框体外顶部，适合展示模型信息、Token 消耗等 -->
     <template #top>
       <div class="input-tips">当前模型: GPT-4 · 剩余 Token: 12,800</div>
+    </template>
+
+    <!-- 框体外顶部，适合展示中断、审批等业务提示 -->
+    <template #interrupt>
+      <div class="input-alert">当前会话有待审批单，暂时不能继续发送</div>
     </template>
 
     <!-- 替换引用区，可自定义引用样式 -->
@@ -572,7 +619,7 @@ chat-input-container
 </template>
 ```
 
-**渲染效果**（顶部自定义模型信息提示）
+**渲染效果**（顶部自定义模型信息与中断提示）
 
 <div class="demo">
   <ChatInputComp
@@ -585,6 +632,11 @@ chat-input-container
   >
     <template #top>
       <div style="padding: 6px 12px; font-size: 12px; color: #979ba5; text-align: center; background: #f5f7fa; border-radius: 4px 4px 0 0;">当前模型: GPT-4 · 剩余 Token: 12,800</div>
+    </template>
+    <template #interrupt>
+      <div style="width: 100%; max-width: 1000px; padding: 6px 8px; margin-bottom: 6px; font-size: 12px; line-height: 20px; color: #4d4f56; background: #f0f5ff; border: 1px solid #a3c5fd; border-radius: 4px;">
+        当前会话有待审批单，暂时不能继续发送
+      </div>
     </template>
   </ChatInputComp>
 </div>
@@ -632,6 +684,7 @@ chat-input-container
 | placeholder        | `string`                                                                   | 见默认值 | -    | 编辑器占位符，支持多行                                  |
 | inputMaxHeight     | `number`                                                                   | `200`    | -    | 框体最大高度（px），有文件时自动加上文件预览区高度      |
 | defaultUploadFiles | `UploadFile[]`                                                             | -        | -    | 预设已上传的文件列表                                    |
+| sendDisabledTip    | `string`                                                                   | -        | -    | 业务阻塞发送时的 tooltip 提示；传入后发送按钮置灰，点击、Enter 与 `triggerSendMessage()` 均不会发送 |
 | supportUpload      | `boolean`                                                                  | `true`   | -    | 是否显示文件上传按钮                                    |
 | tippyOptions       | `AITippyProps`                                                             | —        | -    | 透传给 FileUploadBtn 和 InputAttachment 的 tooltip 配置 |
 | onSendMessage      | `(content: UserMessage['content'], docSchema: TagSchema) => Promise<void>` | -        | -    | 发送消息回调，无文件时 content 为字符串，有文件时为数组 |
@@ -659,6 +712,7 @@ chat-input-container
 | 插槽名       | 参数                               | 说明                                                       |
 | ------------ | ---------------------------------- | ---------------------------------------------------------- |
 | top          | -                                  | 框体（`.chat-input`）外部顶部，适合展示模型/Token 信息     |
+| interrupt    | -                                  | 框体外部顶部，位于 `top` 后，适合展示审批/中断提示         |
 | input-header | -                                  | 框体内顶部，替换引用区（`CiteContent`）                    |
 | files        | `{ files: Partial<UploadFile>[] }` | 文件预览区                                                 |
 | attachment   | -                                  | 底部快捷指令区，`FileUploadBtn` 在其左侧，不受此 slot 影响 |

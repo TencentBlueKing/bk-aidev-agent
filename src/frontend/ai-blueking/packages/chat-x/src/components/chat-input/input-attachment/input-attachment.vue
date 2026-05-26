@@ -4,7 +4,10 @@
     <slot name="send-icon">
       <div
         class="send-message-icon"
-        :class="{ ['send-message-icon__' + messageState]: true }"
+        :class="[
+          messageState && `send-message-icon__${messageState}`,
+          { 'send-message-icon__disabled': sendDisabledTip },
+        ]"
       >
         <LoadingMessageIcon
           v-if="
@@ -19,7 +22,7 @@
           v-else
           v-tippy="{
             ...tippyOptions,
-            content: props.messageState === MessageStatus.Disabled ? undefined : t('发送'),
+            content: sendDisabledTip || (props.messageState === MessageStatus.Disabled ? undefined : t('发送')),
             theme: 'ai-chat-box',
             offset: [0, 16],
           }"
@@ -43,6 +46,7 @@
 
   const props = defineProps<{
     messageState?: MessageStatus;
+    sendDisabledTip?: string;
     tippyOptions?: AITippyProps;
   }>();
   const emit = defineEmits<{
@@ -54,6 +58,7 @@
   };
   const handleSendMessage = () => {
     if (
+      props.sendDisabledTip ||
       props.messageState === MessageStatus.Disabled ||
       props.messageState === MessageStatus.Pending ||
       props.messageState === MessageStatus.Streaming

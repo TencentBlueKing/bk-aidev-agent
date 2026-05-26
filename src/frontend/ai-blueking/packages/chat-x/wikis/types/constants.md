@@ -85,7 +85,6 @@ human-in-the-loop 中断原因枚举，用于 `Interrupt.reason` 区分中断类
 ```typescript
 enum InterruptReason {
   AIDevToolApproval = 'aidev:tool_approval',
-  HumanApproval = 'human_approval',
   UserMultiChoice = 'user_multi_choice',
   UserSingleChoice = 'user_single_choice',
 }
@@ -104,6 +103,7 @@ enum APPROVAL_STATUS {
   EXPIRED = 'expired',
   PENDING = 'pending',
   REJECTED = 'rejected',
+  REVOKED = 'revoked',
 }
 ```
 
@@ -114,12 +114,13 @@ enum APPROVAL_STATUS {
 ```typescript
 const APPROVAL_STATUS_MAP: Record<APPROVAL_STATUS, string> = {
   [APPROVAL_STATUS.ABANDONED]: '已废弃',
-  [APPROVAL_STATUS.APPROVED]: '已审批',
+  [APPROVAL_STATUS.APPROVED]: '已通过',
   [APPROVAL_STATUS.CANCELLED]: '已取消',
   [APPROVAL_STATUS.DRAFT]: '待审批',
   [APPROVAL_STATUS.EXPIRED]: '已过期',
   [APPROVAL_STATUS.PENDING]: '待审批',
   [APPROVAL_STATUS.REJECTED]: '已拒绝',
+  [APPROVAL_STATUS.REVOKED]: '已撤销',
 };
 ```
 
@@ -127,11 +128,12 @@ const APPROVAL_STATUS_MAP: Record<APPROVAL_STATUS, string> = {
 | ----------- | -------- |
 | `pending`   | 待审批   |
 | `draft`     | 待审批   |
-| `approved`  | 已审批   |
+| `approved`  | 已通过   |
 | `rejected`  | 已拒绝   |
 | `cancelled` | 已取消   |
 | `expired`   | 已过期   |
 | `abandoned` | 已废弃   |
+| `revoked`   | 已撤销   |
 
 ### RunFinishedOutcome
 
