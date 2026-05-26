@@ -9,11 +9,20 @@ function isFlowNodeTab(tab: { name: string }): boolean {
   return tab.name.includes('|');
 }
 
+export type SideRenderDetailSource = 'builtin' | 'custom';
+
+export interface UseSideRenderHandlersOptions {
+  /** 场景 1：builtin（ChatBot 内置 getFlowAgentTaskNodeInfo）；场景 2：custom（onCustomTabChange） */
+  detailSource?: SideRenderDetailSource;
+}
+
 /**
  * 侧栏自定义渲染（对齐 chat-x/playground/chat-bot-new.vue）。
- * 不传 onCustomTabChange，节点详情走 ChatBot 内置 getFlowAgentTaskNodeInfo。
+ * 场景 1 不传 onCustomTabChange；场景 2 由页面传入 onCustomTabChange。
  */
-export function useSideRenderHandlers() {
+export function useSideRenderHandlers(options: UseSideRenderHandlersOptions = {}) {
+  const detailSource = options.detailSource ?? 'builtin';
+
   const getSideRenderComponent: GetSideRenderComponent = (createElement, props) => {
     const raw = props ?? {};
     const taskIdRaw = raw.task_id;
@@ -25,6 +34,7 @@ export function useSideRenderHandlers() {
           : undefined;
 
     return createElement(CustomTabContent, {
+      detailSource,
       loading: Boolean(raw.loading),
       nodeId: typeof raw.node_id === 'string' ? raw.node_id : '',
       nodeName: typeof raw.node_name === 'string' ? raw.node_name : '',
