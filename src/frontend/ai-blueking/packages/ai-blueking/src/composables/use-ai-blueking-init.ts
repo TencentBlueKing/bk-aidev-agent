@@ -7,7 +7,7 @@
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
  */
 
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, toValue, watch } from 'vue';
 
 import { createComponentManager } from '../manager';
 import { SessionBusinessManager } from '../manager/business/session-business-manager';
@@ -93,7 +93,7 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     initialize: bootstrapInitialize,
   } = useChatBootstrap({
     url: normalizedUrl,
-    requestOptions: props.requestOptions,
+    requestOptions: () => toValue(props.requestOptions),
     autoInit: true,
     protocolCallbacks: {
       onStart: () => {
