@@ -1,19 +1,18 @@
 <template>
-  <div class="side-render-code-section">
-    <div class="code-section-header">
-      <div>
-        <div class="code-title">接入代码（可复制到业务项目）</div>
-        <p class="code-desc">
-          与页面顶部选中的场景一致，便于对照上方 demo 理解。
-        </p>
-      </div>
-    </div>
+  <section
+    class="side-render-code-section"
+    :class="{ 'is-embedded': embedded }"
+  >
+    <header class="code-section-header">
+      <h3 class="code-title">接入代码</h3>
+      <p class="code-desc">按阅读顺序复制到业务项目，与左侧 Demo 场景一致。</p>
+    </header>
 
     <div class="code-scenario-banner">
       <span class="code-scenario-banner__badge">{{ activeScenarioMeta.badge }}</span>
       <span class="code-scenario-banner__title">{{ activeScenarioMeta.title }}</span>
       <span class="code-scenario-banner__files">
-        推荐文件：
+        阅读顺序：
         <code
           v-for="file in recommendedFiles"
           :key="file"
@@ -31,20 +30,20 @@
         :key="props.activeScenario"
         class="code-blocks"
       >
-        <div
+        <article
           v-for="block in codeBlocks"
           :key="block.title"
           class="code-block"
         >
-          <div class="code-block-title">
-            {{ block.title }}
+          <header class="code-block-header">
+            <h4 class="code-block-title">{{ block.title }}</h4>
             <span
               v-if="block.fileHint"
               class="code-block-file"
             >
               {{ block.fileHint }}
             </span>
-          </div>
+          </header>
           <p
             v-if="block.desc"
             class="code-block-desc"
@@ -52,10 +51,10 @@
             {{ block.desc }}
           </p>
           <pre class="guide-code"><code>{{ block.code }}</code></pre>
-        </div>
+        </article>
       </div>
     </Transition>
-  </div>
+  </section>
 </template>
 
 <script setup lang="ts">
@@ -64,9 +63,16 @@
   import { getSideRenderCodeBlocks } from './side-render-code-examples';
   import { getSideRenderScenarioById, type SideRenderScenarioId } from './side-render-scenarios';
 
-  const props = defineProps<{
-    activeScenario: SideRenderScenarioId;
-  }>();
+  const props = withDefaults(
+    defineProps<{
+      activeScenario: SideRenderScenarioId;
+      /** 嵌入右栏文档流时减轻外层卡片样式 */
+      embedded?: boolean;
+    }>(),
+    {
+      embedded: false,
+    },
+  );
 
   const activeScenarioMeta = computed(() => getSideRenderScenarioById(props.activeScenario));
 
@@ -75,13 +81,14 @@
   const recommendedFiles = computed(() => {
     if (props.activeScenario === 'custom-fetch') {
       return [
-        'CustomTabContent.vue',
-        'use-side-render-handlers.ts',
-        'use-side-render-custom-tab-change.ts',
         'YourPage.vue',
+        'AIBlueking.vue（可选）',
+        'use-side-render-custom-tab-change.ts',
+        'use-side-render-handlers.ts',
+        'CustomTabContent.vue',
       ];
     }
-    return ['CustomTabContent.vue', 'use-side-render-handlers.ts', 'YourPage.vue'];
+    return ['YourPage.vue', 'AIBlueking.vue（可选）', 'use-side-render-handlers.ts', 'CustomTabContent.vue'];
   });
 </script>
 
@@ -93,17 +100,20 @@
     border-radius: 8px;
   }
 
+  .side-render-code-section.is-embedded {
+    padding: 16px;
+    margin: 0;
+    background: #fff;
+    border: 1px solid #dcdee5;
+    border-radius: 8px;
+  }
+
   .code-section-header {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px 16px;
-    align-items: flex-start;
-    justify-content: space-between;
     margin-bottom: 12px;
   }
 
   .code-title {
-    margin-bottom: 4px;
+    margin: 0 0 4px;
     font-size: 14px;
     font-weight: 600;
     color: #313238;
@@ -111,14 +121,9 @@
 
   .code-desc {
     margin: 0;
-    font-size: 13px;
+    font-size: 12px;
     line-height: 20px;
-    color: #63656e;
-
-    strong {
-      font-weight: 600;
-      color: #313238;
-    }
+    color: #979ba5;
   }
 
   .code-scenario-banner {
@@ -127,7 +132,7 @@
     gap: 8px 12px;
     align-items: center;
     padding: 10px 12px;
-    margin-bottom: 16px;
+    margin-bottom: 14px;
     background: #f5f7fa;
     border-radius: 4px;
   }
@@ -150,6 +155,7 @@
   .code-scenario-banner__files {
     flex: 1 1 100%;
     font-size: 12px;
+    line-height: 20px;
     color: #979ba5;
 
     code {
@@ -162,20 +168,32 @@
     }
   }
 
-  .code-block {
-    margin-bottom: 16px;
+  .code-blocks {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
 
-    &:last-child {
-      margin-bottom: 0;
+  .code-block {
+    padding-top: 4px;
+    border-top: 1px solid #f0f1f5;
+
+    &:first-child {
+      padding-top: 0;
+      border-top: none;
     }
   }
 
-  .code-block-title {
+  .code-block-header {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
     align-items: baseline;
     margin-bottom: 4px;
+  }
+
+  .code-block-title {
+    margin: 0;
     font-size: 13px;
     font-weight: 600;
     color: #313238;
@@ -196,7 +214,7 @@
 
   .guide-code {
     display: block;
-    padding: 12px 16px;
+    padding: 12px 14px;
     overflow-x: auto;
     font-size: 12px;
     line-height: 18px;

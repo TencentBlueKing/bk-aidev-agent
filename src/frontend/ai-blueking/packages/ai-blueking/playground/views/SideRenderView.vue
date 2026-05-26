@@ -1,114 +1,111 @@
 <template>
   <div class="side-render-view">
-    <div class="view-header">
+    <header class="view-header">
       <h2>侧栏渲染 (side-render / tab-render)</h2>
       <p class="view-desc">
-        可交互文档：在真实 FlowAgent SSE 下对比两种接入——<strong>仅自定义侧栏 UI</strong>（默认详情接口），或
-        <strong>UI + 详情拉取均自定义</strong>（<code>onCustomTabChange</code>）。对话区仍由内置
-        <code>FlowAgentContent</code> 负责，请勿覆盖 <code>#message</code> 插槽。
-      </p>
-      <p
-        v-if="flowAgentUrl"
-        class="view-env"
-      >
-        本页演示后台（Playground 本地配置）：<code>{{ flowAgentUrl }}</code>
-      </p>
-    </div>
-
-    <div class="scenario-switcher">
-      <div
-        class="scenario-tabs"
-        role="tablist"
-        aria-label="侧栏渲染接入场景"
-      >
-        <button
-          v-for="item in scenarios"
-          :key="item.id"
-          type="button"
-          role="tab"
-          class="scenario-tab"
-          :class="{ 'is-active': activeScenario === item.id }"
-          :aria-selected="activeScenario === item.id"
-          @click="activeScenario = item.id"
+        左侧试跑 Demo，右侧查看接入说明与代码。请勿覆盖 <code>#message</code> 插槽。
+        <span
+          v-if="flowAgentUrl"
+          class="view-env"
         >
-          <span class="scenario-tab__badge">{{ item.badge }}</span>
-          <span class="scenario-tab__title">{{ item.title }}</span>
-          <span class="scenario-tab__desc">{{ item.shortDesc }}</span>
-        </button>
-      </div>
+          API：<code>{{ flowAgentUrl }}</code>
+        </span>
+      </p>
+    </header>
 
-      <div class="scenario-summary">
-        <div class="scenario-summary__header">
-          <span class="scenario-summary__badge">{{ activeScenarioMeta.badge }}</span>
-          <h3>{{ activeScenarioMeta.title }}</h3>
-        </div>
-        <p>{{ activeScenarioMeta.longDesc }}</p>
-        <ul class="scenario-summary__props">
-          <li
-            v-for="prop in activeScenarioMeta.props"
-            :key="prop.name"
+    <div class="side-render-workbench">
+      <aside class="workbench-left">
+        <div class="scenario-switcher">
+          <div
+            class="scenario-tabs"
+            role="tablist"
+            aria-label="侧栏渲染接入场景"
           >
-            <code>{{ prop.name }}</code>
-            <span>{{ prop.note }}</span>
-          </li>
-        </ul>
-      </div>
-    </div>
+            <button
+              v-for="item in scenarios"
+              :key="item.id"
+              type="button"
+              role="tab"
+              class="scenario-tab"
+              :class="{ 'is-active': activeScenario === item.id }"
+              :aria-selected="activeScenario === item.id"
+              @click="activeScenario = item.id"
+            >
+              <span class="scenario-tab__badge">{{ item.badge }}</span>
+              <span class="scenario-tab__title">{{ item.title }}</span>
+              <span class="scenario-tab__desc">{{ item.shortDesc }}</span>
+            </button>
+          </div>
 
-    <div class="demo-section demo-section--live">
-      <div class="demo-title">交互演示</div>
-      <p class="demo-desc">
-        当前为 <strong>{{ activeScenarioMeta.badge }}</strong>。操作 <code>ChatBot</code>（切换场景会重建实例）：发送对话 →
-        <code>flow_agent_result</code> → 展开「执行情况」→ 点击节点「详情」。下方「接入代码」会随场景同步切换。
-      </p>
-      <SideRenderLiveDemo :active-scenario="activeScenario" />
-    </div>
-
-    <div class="usage-section">
-      <div class="usage-title">后端 SSE 事件（示例）</div>
-      <pre class="guide-code"><code>{{ sseExample }}</code></pre>
-    </div>
-
-    <div class="usage-section">
-      <div class="usage-title">接入步骤 · {{ activeScenarioMeta.badge }}</div>
-      <div class="usage-steps">
-        <div
-          v-for="(step, index) in integrationSteps"
-          :key="index"
-          class="usage-step"
-        >
-          <span class="step-num">{{ index + 1 }}</span>
-          <div
-            class="step-content"
-            v-html="step"
-          />
+          <div class="scenario-summary scenario-summary--compact">
+            <ul class="scenario-summary__try">
+              <li
+                v-for="(step, index) in activeScenarioMeta.trySteps"
+                :key="index"
+              >
+                {{ step }}
+              </li>
+            </ul>
+          </div>
         </div>
-      </div>
-      <p class="usage-note">
-        不要覆盖 <code>#message</code> 插槽来渲染 FlowAgent。Playground 源码：
-        <code>playground/components/side-render/</code>；主站文档见
-        <code>web/docs/guide/core-features/side-render-customization.md</code>。
-      </p>
-    </div>
 
-    <div class="usage-section">
-      <div class="usage-title">数据流 · {{ activeScenarioMeta.badge }}</div>
-      <div class="usage-steps">
-        <div
-          v-for="(step, index) in dataFlowSteps"
-          :key="index"
-          class="usage-step"
-        >
-          <span class="step-num">{{ index + 1 }}</span>
-          <div
-            class="step-content"
-            v-html="step"
-          />
+        <div class="demo-panel">
+          <p class="demo-panel__hint">
+            发送对话 → 展开「执行情况」→ 点击节点「详情」
+          </p>
+          <SideRenderLiveDemo :active-scenario="activeScenario" />
         </div>
+      </aside>
+
+      <div class="workbench-right">
+        <section class="doc-panel">
+          <h3 class="doc-panel__title">快速接入 · {{ activeScenarioMeta.badge }}</h3>
+          <p class="doc-panel__lead">{{ activeScenarioMeta.longDesc }}</p>
+          <ul class="doc-panel__props">
+            <li
+              v-for="prop in activeScenarioMeta.props"
+              :key="prop.name"
+            >
+              <code>{{ prop.name }}</code>
+              <span>{{ prop.note }}</span>
+            </li>
+          </ul>
+          <ol class="doc-panel__steps">
+            <li
+              v-for="(step, index) in integrationSteps"
+              :key="index"
+              v-html="step"
+            />
+          </ol>
+        </section>
+
+        <section class="doc-panel">
+          <h3 class="doc-panel__title">数据流</h3>
+          <ol class="doc-panel__steps doc-panel__steps--flow">
+            <li
+              v-for="(step, index) in dataFlowSteps"
+              :key="index"
+              v-html="step"
+            />
+          </ol>
+        </section>
+
+        <details class="doc-panel doc-panel--collapsible">
+          <summary class="doc-panel__title doc-panel__title--summary">后端 SSE 事件（示例）</summary>
+          <pre class="guide-code"><code>{{ sseExample }}</code></pre>
+        </details>
+
+        <SideRenderCodeSection
+          embedded
+          :active-scenario="activeScenario"
+        />
+
+        <p class="workbench-footnote">
+          Playground：<code>playground/components/side-render/</code> · 主站文档：
+          <code>web/docs/guide/core-features/side-render-customization.md</code>
+        </p>
       </div>
     </div>
-
-    <SideRenderCodeSection :active-scenario="activeScenario" />
   </div>
 </template>
 
@@ -135,32 +132,31 @@ data: {"type":"CUSTOM","name":"flow_agent_end","value":{"task_id":"10421","task_
 
   const integrationStepsByScenario: Record<SideRenderScenarioId, string[]> = {
     'default-api': [
-      '新建 <code>CustomTabContent.vue</code>（保留 <code>#locateButton</code>），根据 <code>loading</code>、<code>data</code> 等 props 渲染',
-      '实现 <code>useSideRenderHandlers</code>，提供 <code>getSideRenderComponent</code>（+ 可选 <code>getSideTabRenderComponent</code>）',
-      '页面挂载 <code>ChatBot</code>，传入 <code>url</code> 与上述 handlers，<strong>不要传</strong> <code>onCustomTabChange</code>',
-      '发送对话 → 点击节点「详情」→ 详情由 ChatBot 内置 <code>getFlowAgentTaskNodeInfo</code> 写入 <code>props.data</code>',
+      '在 <code>ChatBot</code> / <code>AIBlueking</code> 上传入 <code>getSideRenderComponent</code>',
+      '实现 <code>useSideRenderHandlers</code>，把 <code>tab.data.props</code> 映射给侧栏组件',
+      '新建 <code>CustomTabContent.vue</code> 展示 <code>loading</code> 与 <code>data</code>',
+      '<strong>不传</strong> <code>onCustomTabChange</code>，详情由内置接口写入 <code>props.data</code>',
     ],
     'custom-fetch': [
-      '侧栏内容组件与场景 1 相同（<code>CustomTabContent.vue</code>）',
-      '实现 <code>useSideRenderHandlers</code>（侧栏 UI 映射）',
-      '新增 <code>createOnCustomTabChange</code>（或等价逻辑），在回调中 <code>fetch</code> 自有详情接口并 <code>return</code> 结果',
-      '页面挂载 <code>ChatBot</code>，同时传入 <code>getSideRenderComponent</code> 与 <code>on-custom-tab-change</code>（内置拉取不再执行）',
-      '发送对话 → 点击「详情」→ 在 Network 与侧栏内核对自定义请求与 <code>props.data</code>',
+      '在入口组件上同时传入 <code>getSideRenderComponent</code> 与 <code>onCustomTabChange</code>',
+      '在 <code>onCustomTabChange</code> 中取 <code>task_id</code> / <code>node_id</code>，请求详情并 <code>return</code> 数据',
+      '侧栏组件直接读取 <code>props.data</code> 展示返回值',
+      '发送对话 → 点击「详情」→ 在 Network 与侧栏内核对请求与数据',
     ],
   };
 
   const dataFlowStepsByScenario: Record<SideRenderScenarioId, string[]> = {
     'default-api': [
-      'chat-helper 解析 <code>flow_agent_*</code> → Activity 消息',
-      '<strong>FlowAgentContent</strong> 点击「详情」→ <code>addCustomTab</code>',
-      '<strong>getSideRenderComponent</strong> 渲染自定义侧栏 UI',
-      '<strong>ChatBot</strong> 内置 <code>GET flow_agent/{taskId}/task_node_info/{nodeId}/</code> → <code>props.data</code>',
+      'SSE <code>flow_agent_*</code> → Activity 消息',
+      '点击「详情」→ <code>addCustomTab</code>',
+      '<code>getSideRenderComponent</code> 渲染侧栏 UI',
+      '内置详情接口 → <code>props.data</code>',
     ],
     'custom-fetch': [
-      'chat-helper 解析 <code>flow_agent_*</code> → Activity 消息',
-      '<strong>FlowAgentContent</strong> 点击「详情」→ <code>addCustomTab</code>（<code>loading: true</code>）',
-      '<strong>getSideRenderComponent</strong> 渲染自定义侧栏 UI（展示 loading）',
-      '<strong>onCustomTabChange(tab)</strong> 业务方请求详情 → 返回值合并为 <code>props.data</code>，<code>loading: false</code>',
+      'SSE <code>flow_agent_*</code> → Activity 消息',
+      '点击「详情」→ <code>addCustomTab</code>（<code>loading: true</code>）',
+      '<code>getSideRenderComponent</code> 展示 loading',
+      '<code>onCustomTabChange</code> 返回数据 → <code>props.data</code>，loading 结束',
     ],
   };
 
@@ -170,34 +166,53 @@ data: {"type":"CUSTOM","name":"flow_agent_end","value":{"task_id":"10421","task_
 
 <style scoped>
   .side-render-view {
-    max-width: 960px;
+    display: flex;
+    flex-direction: column;
+    max-width: none;
+    height: calc(100vh - 48px);
+    max-height: calc(100vh - 48px);
+    overflow: hidden;
   }
 
   .view-header {
-    margin-bottom: 24px;
+    flex-shrink: 0;
+    margin-bottom: 12px;
   }
 
   .view-header h2 {
-    margin: 0 0 8px;
-    font-size: 20px;
+    margin: 0 0 4px;
+    font-size: 18px;
     font-weight: 600;
     color: #313238;
   }
 
-  .view-desc,
-  .view-env {
-    margin: 0 0 8px;
-    font-size: 13px;
-    line-height: 22px;
+  .view-desc {
+    margin: 0;
+    font-size: 12px;
+    line-height: 20px;
     color: #63656e;
+  }
+
+  .view-env {
+    margin-left: 8px;
+    color: #979ba5;
+
+    code {
+      max-width: 280px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      vertical-align: bottom;
+      white-space: nowrap;
+      display: inline-block;
+    }
   }
 
   .view-desc code,
   .view-env code,
-  .scenario-summary__props code,
-  :deep(.step-content code),
-  .usage-note code,
-  .demo-desc code,
+  .doc-panel__props code,
+  .doc-panel__steps :deep(code),
+  .workbench-footnote code,
+  .demo-panel__hint code,
   .guide-code {
     padding: 1px 6px;
     font-size: 12px;
@@ -206,8 +221,34 @@ data: {"type":"CUSTOM","name":"flow_agent_end","value":{"task_id":"10421","task_
     border-radius: 3px;
   }
 
+  .side-render-workbench {
+    display: grid;
+    flex: 1;
+    grid-template-columns: minmax(400px, 52%) minmax(0, 1fr);
+    gap: 16px;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .workbench-left {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .workbench-right {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
   .scenario-switcher {
-    margin-bottom: 20px;
+    flex-shrink: 0;
     overflow: hidden;
     background: #fff;
     border: 1px solid #dcdee5;
@@ -223,9 +264,9 @@ data: {"type":"CUSTOM","name":"flow_agent_end","value":{"task_id":"10421","task_
   .scenario-tab {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
     align-items: flex-start;
-    padding: 14px 16px;
+    padding: 8px 12px;
     text-align: left;
     cursor: pointer;
     background: #f5f7fa;
@@ -254,7 +295,7 @@ data: {"type":"CUSTOM","name":"flow_agent_end","value":{"task_id":"10421","task_
   }
 
   .scenario-tab__title {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     color: #313238;
   }
@@ -265,46 +306,100 @@ data: {"type":"CUSTOM","name":"flow_agent_end","value":{"task_id":"10421","task_
     color: #979ba5;
   }
 
-  .scenario-summary {
-    padding: 16px;
+  .scenario-summary--compact {
+    padding: 8px 12px;
   }
 
-  .scenario-summary__header {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    margin-bottom: 8px;
+  .scenario-summary__try {
+    padding: 0;
+    padding-left: 16px;
+    margin: 0;
+    font-size: 11px;
+    line-height: 18px;
+    color: #63656e;
+  }
 
-    h3 {
-      margin: 0;
-      font-size: 15px;
-      font-weight: 600;
-      color: #313238;
+  .demo-panel {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    padding: 10px 12px;
+    background: #fff;
+    border: 1px solid #dcdee5;
+    border-radius: 8px;
+  }
+
+  .demo-panel__hint {
+    flex-shrink: 0;
+    margin: 0 0 8px;
+    font-size: 11px;
+    line-height: 18px;
+    color: #979ba5;
+  }
+
+  .demo-panel :deep(.side-render-live-demo) {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .doc-panel {
+    padding: 16px;
+    background: #fff;
+    border: 1px solid #dcdee5;
+    border-radius: 8px;
+  }
+
+  .doc-panel--collapsible {
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  .doc-panel__title {
+    margin: 0 0 10px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #313238;
+  }
+
+  .doc-panel__title--summary {
+    margin-bottom: 0;
+    cursor: pointer;
+    list-style: none;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    &::before {
+      display: inline-block;
+      margin-right: 6px;
+      content: '▸';
+      transition: transform 0.15s ease;
     }
   }
 
-  .scenario-summary__badge {
-    padding: 2px 8px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #3a84ff;
-    background: #e1ecff;
-    border-radius: 10px;
+  .doc-panel--collapsible[open] .doc-panel__title--summary::before {
+    transform: rotate(90deg);
   }
 
-  .scenario-summary p {
+  .doc-panel--collapsible .guide-code {
+    margin-top: 12px;
+  }
+
+  .doc-panel__lead {
     margin: 0 0 12px;
     font-size: 13px;
     line-height: 22px;
     color: #63656e;
   }
 
-  .scenario-summary__props {
+  .doc-panel__props {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
     padding: 0;
-    margin: 0;
+    margin: 0 0 14px;
     list-style: none;
 
     li {
@@ -319,44 +414,21 @@ data: {"type":"CUSTOM","name":"flow_agent_end","value":{"task_id":"10421","task_
     }
   }
 
-  .demo-section,
-  .usage-section {
-    padding: 16px;
-    margin-bottom: 20px;
-    background: #fff;
-    border: 1px solid #dcdee5;
-    border-radius: 8px;
-  }
-
-  .demo-section--live {
-    padding-bottom: 16px;
-  }
-
-  .view-desc strong,
-  :deep(.step-content strong) {
-    font-weight: 600;
-    color: #313238;
-  }
-
-  .demo-title,
-  .usage-title {
-    margin-bottom: 8px;
-    font-size: 14px;
-    font-weight: 600;
-    color: #313238;
-  }
-
-  .demo-desc {
-    margin-bottom: 12px;
+  .doc-panel__steps {
+    padding-left: 20px;
+    margin: 0;
     font-size: 13px;
+    line-height: 24px;
     color: #63656e;
+
+    :deep(strong) {
+      font-weight: 600;
+      color: #313238;
+    }
   }
 
-  .usage-note {
-    margin: 12px 0 0;
-    font-size: 12px;
-    line-height: 20px;
-    color: #979ba5;
+  .doc-panel__steps--flow {
+    list-style: decimal;
   }
 
   .guide-code {
@@ -370,35 +442,31 @@ data: {"type":"CUSTOM","name":"flow_agent_end","value":{"task_id":"10421","task_
     border-radius: 4px;
   }
 
-  .usage-steps {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .usage-step {
-    display: flex;
-    gap: 12px;
-    align-items: flex-start;
-  }
-
-  .step-num {
-    display: flex;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
+  .workbench-footnote {
+    margin: 0;
     font-size: 12px;
-    font-weight: 600;
-    color: #fff;
-    background: #3a84ff;
-    border-radius: 50%;
+    line-height: 20px;
+    color: #979ba5;
   }
 
-  :deep(.step-content) {
-    font-size: 13px;
-    line-height: 22px;
-    color: #63656e;
+  @media (max-width: 1100px) {
+    .side-render-view {
+      height: auto;
+      max-height: none;
+      overflow: visible;
+    }
+
+    .side-render-workbench {
+      grid-template-columns: 1fr;
+      overflow: visible;
+    }
+
+    .workbench-left {
+      min-height: 520px;
+    }
+
+    .workbench-right {
+      overflow: visible;
+    }
   }
 </style>

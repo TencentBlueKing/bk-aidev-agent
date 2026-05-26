@@ -20,7 +20,8 @@
 <style scoped>
   .side-render-live-demo {
     display: flex;
+    flex: 1;
     flex-direction: column;
-    gap: 0;
+    min-height: 0;
   }
 </style>

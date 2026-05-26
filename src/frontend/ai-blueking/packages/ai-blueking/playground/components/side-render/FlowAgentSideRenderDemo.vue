@@ -8,14 +8,11 @@
       <code>VITE_FLOW_AGENT_URL</code>（流程智能体插件 API 地址）
     </div>
     <template v-else>
-      <div
+      <details
         v-if="mode === 'custom-fetch'"
         class="flow-side-render-demo__trace"
       >
-        <div class="flow-side-render-demo__trace-title">自定义拉取观测</div>
-        <p class="flow-side-render-demo__trace-desc">
-          点击节点「详情」后，<code>onCustomTabChange</code> 会发起请求；侧栏内也会展示本次 URL。打开 DevTools → Network 可对照。
-        </p>
+        <summary class="flow-side-render-demo__trace-summary">自定义拉取观测</summary>
         <dl class="flow-side-render-demo__trace-meta">
           <div class="flow-side-render-demo__trace-row">
             <dt>最近请求</dt>
@@ -44,25 +41,27 @@
             <dd>{{ lastError }}</dd>
           </div>
         </dl>
-      </div>
+      </details>
 
-      <ChatBot
-        :key="chatBotKey"
-        height="640px"
-        :url="flowAgentUrl"
-        :get-side-render-component="getSideRenderComponent"
-        :get-side-tab-render-component="getSideTabRenderComponent"
-        :on-custom-tab-change="onCustomTabChange"
-        :hello-text="helloText"
-        :placeholder="'输入消息，触发流程智能体（FlowAgent）…'"
-        placement="left"
-        :resize-props="{
-          initialDivide: '55%',
-          min: 320,
-          max: 720,
-        }"
-        @error="handleError"
-      />
+      <div class="flow-side-render-demo__chat">
+        <ChatBot
+          :key="chatBotKey"
+          height="100%"
+          :url="flowAgentUrl"
+          :get-side-render-component="getSideRenderComponent"
+          :get-side-tab-render-component="getSideTabRenderComponent"
+          :on-custom-tab-change="onCustomTabChange"
+          :hello-text="helloText"
+          :placeholder="'输入消息，触发流程智能体（FlowAgent）…'"
+          placement="left"
+          :resize-props="{
+            initialDivide: '55%',
+            min: 320,
+            max: 720,
+          }"
+          @error="handleError"
+        />
+      </div>
     </template>
   </div>
 </template>
@@ -118,9 +117,9 @@
 
   const helloText = computed(() => {
     if (props.mode === 'custom-fetch') {
-      return '【场景 2】侧栏 UI 与详情拉取均由业务配置：getSideRenderComponent + onCustomTabChange。发送消息后点击节点「详情」，观察上方「自定义拉取观测」与侧栏内请求 URL。';
+      return '【场景 2】传入 onCustomTabChange 自定义详情拉取。发送消息后点击节点「详情」验证。';
     }
-    return '【场景 1】仅自定义侧栏 UI（getSideRenderComponent / getSideTabRenderComponent），节点详情走 ChatBot 内置 getFlowAgentTaskNodeInfo。发送消息后点击节点「详情」验证。';
+    return '【场景 1】仅自定义侧栏 UI，详情走内置接口。发送消息后点击节点「详情」验证。';
   });
 
   const handleError = (error: Error) => {
@@ -130,9 +129,22 @@
 
 <style scoped>
   .flow-side-render-demo {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
     overflow: hidden;
     border: 1px solid #dcdee5;
     border-radius: 8px;
+  }
+
+  .flow-side-render-demo__chat {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .flow-side-render-demo__chat :deep(.ai-chatbot) {
+    height: 100%;
   }
 
   .flow-side-render-demo__empty {
@@ -152,35 +164,36 @@
   }
 
   .flow-side-render-demo__trace {
-    padding: 12px 16px;
+    flex-shrink: 0;
+    padding: 6px 10px;
     background: #fff9f0;
     border-bottom: 1px solid #ffe8c3;
   }
 
-  .flow-side-render-demo__trace-title {
-    margin-bottom: 6px;
-    font-size: 13px;
+  .flow-side-render-demo__trace-summary {
+    font-size: 12px;
     font-weight: 600;
     color: #313238;
+    cursor: pointer;
+    list-style: none;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    &::before {
+      display: inline-block;
+      margin-right: 4px;
+      content: '▸';
+    }
   }
 
-  .flow-side-render-demo__trace-desc {
-    margin: 0 0 10px;
-    font-size: 12px;
-    line-height: 20px;
-    color: #63656e;
-  }
-
-  .flow-side-render-demo__trace-desc code {
-    padding: 0 4px;
-    font-size: 11px;
-    color: #ff9c01;
-    background: #fff3e0;
-    border-radius: 2px;
+  .flow-side-render-demo__trace[open] .flow-side-render-demo__trace-summary::before {
+    transform: rotate(90deg);
   }
 
   .flow-side-render-demo__trace-meta {
-    margin: 0;
+    margin: 8px 0 0;
   }
 
   .flow-side-render-demo__trace-row {
