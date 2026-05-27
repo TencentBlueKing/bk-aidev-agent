@@ -351,6 +351,11 @@ interface ChatBotExpose {
   currentSession: Ref<ISession | null>;
   /** 是否正在生成（响应式） */
   isGenerating: Ref<boolean>;
+
+  /** 是否已完成初始化（≥ v2.1.4-beta.13） */
+  isReady: boolean;
+  /** 等待初始化完成（≥ v2.1.4-beta.13） */
+  whenReady: () => Promise<void>;
 }
 ```
 
@@ -368,6 +373,7 @@ interface ChatBotEmits {
   'error': [error: Error];
   'session-switched': [session: ISession | null];
   'shortcut-click': [data: { shortcut: IShortcut; source: 'main' | 'popup' }];
+  /** 独立模式初始化完成（与 whenReady 成功时机一致） */
   'agent-info-loaded': [chatHelper: IChatHelper];
   'feedback': [tool: IToolBtn, message: Message, reasonList: string[], otherReason: string];
   'confirm-share': [messages: Message[]];

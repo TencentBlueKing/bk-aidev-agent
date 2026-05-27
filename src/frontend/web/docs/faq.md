@@ -147,20 +147,24 @@ const handleAgentAction = (action: string, message: IMessage) => {
 
 ## 8. 如何获取 chatHelper 实例？
 
-两种方式：
-
-**方式一**：通过 ChatBot 的 expose 方法：
+**推荐（≥ v2.1.4-beta.13）**：先 `await whenReady()`，再 `getChatHelper()`：
 
 ```ts
 const chatBotRef = ref<ChatBotExpose>();
+await chatBotRef.value?.whenReady();
 const helper = chatBotRef.value?.getChatHelper();
 ```
 
-**方式二**：监听 `agent-info-loaded` 事件：
+**方式一**：直接通过 expose（需自行保证初始化已完成）：
+
+```ts
+const helper = chatBotRef.value?.getChatHelper();
+```
+
+**方式二**：监听 `agent-info-loaded` 事件（独立模式，与 `whenReady` 成功时机一致）：
 
 ```ts
 const onReady = (chatHelper: IChatHelper) => {
-  // chatHelper 已就绪，可以进行操作
   console.log('会话列表:', chatHelper.session.list.value);
 };
 ```
@@ -168,6 +172,8 @@ const onReady = (chatHelper: IChatHelper) => {
 ```vue
 <ChatBot @agent-info-loaded="onReady" />
 ```
+
+嵌入页等待就绪也可用 `isReady` 做模板条件渲染。`AIBlueking` 场景请用 `await show()`，见 [编程式控制](/guide/advanced-usage/programmatic-control)。
 
 ---
 

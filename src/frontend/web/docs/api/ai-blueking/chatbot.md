@@ -113,7 +113,7 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | 事件名 | 参数 | 说明 |
 | --- | --- | --- |
 | `session-switched` | `(session: ISession \| null)` | 会话切换完成 |
-| `agent-info-loaded` | `(chatHelper: IChatHelper)` | Agent 信息加载完成（仅独立模式） |
+| `agent-info-loaded` | `(chatHelper: IChatHelper)` | 独立模式初始化完成（与 `whenReady` 成功时机一致，仅独立模式） |
 
 ### 快捷方式事件
 
@@ -166,6 +166,41 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | `enterShareMode` | `() => void` | 进入分享选择模式 |
 | `exitShareMode` | `() => void` | 退出分享选择模式 |
 
+### 初始化就绪（≥ v2.1.4-beta.13）
+
+| 方法/属性 | 类型 | 说明 |
+| --- | --- | --- |
+| `whenReady` | `() => Promise<void>` | 等待初始化完成（独立模式含 sessionList；失败时 reject，与 `error` 事件一致） |
+| `isReady` | `boolean` | 是否已完成初始化 |
+
+独立嵌入无 `show()` 时，建议在 `switchSession` / `sendMessage` 前 `await whenReady()`：
+
+```vue
+<template>
+  <ChatBot ref="chatbotRef" url="/api/ai" />
+</template>
+
+<script setup lang="ts">
+import { onMounted, ref } from 'vue';
+import { ChatBot, type ChatBotExpose } from '@blueking/ai-blueking';
+
+const chatbotRef = ref<ChatBotExpose>();
+
+onMounted(async () => {
+  await chatbotRef.value?.whenReady();
+  await chatbotRef.value?.switchSession('my-session');
+});
+</script>
+```
+
+::: warning URL 变更
+`url` 或 `chatHelper` 变化会触发重初始化，进行中的 `whenReady()` 会 reject（`ChatBotInitStaleError`），需重新调用 `whenReady()`。
+:::
+
+::: info AIBlueking 集成
+作为 `AIBlueking` 子组件且传入 `chatHelper` 时，`whenReady` 会立即 resolve；请使用 `await aiBluekingRef.show()` 等待会话就绪。
+:::
+
 ### 其他
 
 | 方法/属性 | 类型 | 说明 |
@@ -180,14 +215,19 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 ```vue
 <template>
   <ChatBot ref="chatbotRef" url="/api/ai" />
-  <button @click="chatbotRef?.sendMessage('你好')">发送</button>
+  <button @click="onSend">发送</button>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from 'vue';
-import { ChatBot } from '@blueking/ai-blueking';
+import { ChatBot, type ChatBotExpose } from '@blueking/ai-blueking';
 
-const chatbotRef = ref<InstanceType<typeof ChatBot>>();
+const chatbotRef = ref<ChatBotExpose>();
+
+const onSend = async () => {
+  await chatbotRef.value?.whenReady();
+  chatbotRef.value?.sendMessage('你好');
+};
 </script>
 ```
 
@@ -200,6 +240,7 @@ const chatbotRef = ref<InstanceType<typeof ChatBot>>();
 | 流式事件 | ✅ 触发 `receive-start/text/end` | ❌ 由外部 `chatHelper` 自行处理 |
 | `requestOptions` | ✅ 生效 | ❌ 不生效（由外部配置） |
 | Agent 信息加载 | 自动加载，触发 `agent-info-loaded` | 由外部控制 |
+| 等待就绪 | `await whenReady()` / `isReady`（≥ beta.13） | `whenReady` 立即 resolve，用父级 `show()` |
 | 数据控制权 | 组件内部管理 | 外部完全控制 |
 
 ### 独立模式示例

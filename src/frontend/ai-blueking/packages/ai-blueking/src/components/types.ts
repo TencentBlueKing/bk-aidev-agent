@@ -90,6 +90,11 @@ export interface ChatBotExpose {
   stopGeneration: () => void;
   // 会话操作
   switchSession: (sessionCode: string) => Promise<void>;
+
+  /** 是否已完成初始化（独立模式：含 sessionList；集成模式：manager 已挂载） */
+  isReady: boolean;
+  /** 等待初始化完成，语义对齐 AIBlueking ensureSessionReady */
+  whenReady: () => Promise<void>;
 }
 
 /**

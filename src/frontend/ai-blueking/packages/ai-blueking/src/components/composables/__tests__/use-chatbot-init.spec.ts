@@ -91,7 +91,7 @@ vi.mock('../../../utils', async (importOriginal) => {
   };
 });
 
-import { useChatbotInit } from '../use-chatbot-init';
+import { ChatBotInitStaleError, useChatbotInit } from '../use-chatbot-init';
 import { AGUIProtocol, useChatHelper } from '@blueking/chat-helper';
 import { ChatBusinessManager, SessionBusinessManager, ShortcutManager } from '../../../manager';
 
@@ -393,6 +393,134 @@ describe('useChatbotInit', () => {
       await flushPromises();
 
       expect((ChatBusinessManager as any).mock.calls.length).toBe(callCount);
+      wrapper.unmount();
+    });
+  });
+
+  describe('whenReady / isReady', () => {
+    it('should resolve whenReady after standalone init completes', async () => {
+      const emit = createMockEmit();
+      const { result, wrapper } = withSetup(() =>
+        useChatbotInit({
+          props: { url: 'https://api.example.com' } as ChatBotProps,
+          emit,
+          scrollToBottom: vi.fn().mockResolvedValue(undefined),
+        }),
+      );
+
+      await expect(result.whenReady()).resolves.toBeUndefined();
+      await flushPromises();
+
+      expect(result.isReady.value).toBe(true);
+      expect(result.isInitialized.value).toBe(true);
+      wrapper.unmount();
+    });
+
+    it('should reject whenReady when initialization fails', async () => {
+      const error = new Error('Network error');
+      mockHelper.agent.getAgentInfo.mockRejectedValue(error);
+      const emit = createMockEmit();
+
+      const { result, wrapper } = withSetup(() =>
+        useChatbotInit({
+          props: { url: 'https://api.example.com' } as ChatBotProps,
+          emit,
+          scrollToBottom: vi.fn().mockResolvedValue(undefined),
+        }),
+      );
+
+      await expect(result.whenReady()).rejects.toThrow('Network error');
+      await flushPromises();
+
+      expect(result.isReady.value).toBe(false);
+      wrapper.unmount();
+    });
+
+    it('should return the same in-flight promise for concurrent whenReady calls', async () => {
+      mockHelper.agent.getAgentInfo.mockImplementation(
+        () => new Promise<void>(() => {
+          /* hang until unmount */
+        }),
+      );
+      const emit = createMockEmit();
+      const { result, wrapper } = withSetup(() =>
+        useChatbotInit({
+          props: { url: 'https://api.example.com' } as ChatBotProps,
+          emit,
+          scrollToBottom: vi.fn().mockResolvedValue(undefined),
+        }),
+      );
+
+      await nextTick();
+
+      const first = result.whenReady();
+      const second = result.whenReady();
+      expect(first).toBe(second);
+
+      wrapper.unmount();
+    });
+
+    it('should resolve whenReady immediately in integration mode', async () => {
+      const propsChatHelper = createMockChatHelper();
+      const emit = createMockEmit();
+
+      const { result, wrapper } = withSetup(() =>
+        useChatbotInit({
+          props: { chatHelper: propsChatHelper } as ChatBotProps,
+          emit,
+          scrollToBottom: vi.fn().mockResolvedValue(undefined),
+        }),
+      );
+
+      await expect(result.whenReady()).resolves.toBeUndefined();
+      await flushPromises();
+
+      expect(result.isReady.value).toBe(true);
+      wrapper.unmount();
+    });
+
+    it('should reject whenReady with ChatBotInitStaleError when url changes during init', async () => {
+      let resolveSlowInit: (() => void) | null = null;
+
+      mockHelper.agent.getAgentInfo.mockImplementation(() => {
+        return new Promise<void>(resolve => {
+          resolveSlowInit = resolve;
+        });
+      });
+
+      const { result, wrapper, reactiveProps } = withSetupReactive({
+        url: 'https://api-v1.example.com',
+      });
+
+      const readyPromise = result.whenReady();
+      await nextTick();
+
+      reactiveProps.url = 'https://api-v2.example.com';
+      await nextTick();
+
+      await expect(readyPromise).rejects.toBeInstanceOf(ChatBotInitStaleError);
+
+      if (resolveSlowInit) {
+        resolveSlowInit();
+      }
+      await flushPromises();
+      wrapper.unmount();
+    });
+
+    it('should reject whenReady when props validation fails', async () => {
+      const emit = createMockEmit();
+      const { result, wrapper } = withSetup(() =>
+        useChatbotInit({
+          props: {} as ChatBotProps,
+          emit,
+          scrollToBottom: vi.fn().mockResolvedValue(undefined),
+        }),
+      );
+
+      await expect(result.whenReady()).rejects.toThrow();
+      await flushPromises();
+
+      expect(result.isReady.value).toBe(false);
       wrapper.unmount();
     });
   });

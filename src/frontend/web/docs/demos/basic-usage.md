@@ -155,14 +155,16 @@ const requestOptions = {
 
 | 方法 | 说明 |
 | --- | --- |
+| `whenReady()` | （≥ v2.1.4-beta.13）等待初始化完成（含 sessionList） |
+| `isReady` | （≥ v2.1.4-beta.13）是否已完成初始化（响应式） |
 | `sendMessage(text)` | 以编程方式发送消息 |
 | `switchSession(code)` | 切换到指定会话 |
 | `getChatHelper()` | 获取底层 chatHelper 实例，进行高级操作 |
-| `clearMessages()` | 清空当前会话消息 |
 
 ```ts
-// 示例：外部触发发送消息
+// 示例：等待就绪后发送
 const chatBotRef = ref<ChatBotExpose>();
+await chatBotRef.value?.whenReady();
 chatBotRef.value?.sendMessage('请帮我总结这段文字');
 
 // 示例：获取 chatHelper 进行高级操作

@@ -36,6 +36,8 @@ interface ISession {
 
 ![会话自动加载行为](/images/guide/session-autoload.png)
 
+**≥ v2.1.4-beta.13**：在外部调用 `switchSession` / `sendMessage` 前，可使用 `await chatBotRef.whenReady()` 确保 `getSessions` 与 `loadRecentSession` 已完成，语义对齐 `AIBlueking` 的 `await show()`。详见 [编程式控制 — whenReady](/guide/advanced-usage/programmatic-control#whenready-isready-等待初始化-v214-beta13)。
+
 ### sessionCode
 
 通过 `sessionCode` prop 可以指定要打开的会话：

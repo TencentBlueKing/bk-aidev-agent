@@ -70,6 +70,27 @@ chatBotRef.value?.setCiteText('这段文本将作为引用上下文发送');
 chatBotRef.value?.focusInput();
 ```
 
+#### whenReady / isReady - 等待初始化（≥ v2.1.4-beta.13）
+
+独立嵌入的 `ChatBot` 没有 `AIBlueking.show()`，可在挂载后等待会话列表与最近会话加载完成再操作：
+
+```typescript
+// Promise 方式（推荐）
+await chatBotRef.value?.whenReady();
+await chatBotRef.value?.switchSession('session-code-123');
+
+// 响应式判断
+if (chatBotRef.value?.isReady) {
+  chatBotRef.value.sendMessage('你好');
+}
+```
+
+::: warning
+`url` 变更会 reject 进行中的 `whenReady()`，需重新 `await whenReady()`。作为 `AIBlueking` 子组件时请使用 `await aiBluekingRef.show()`，勿依赖子 `ChatBot` 的 `whenReady`。
+:::
+
+与 `agent-info-loaded` 事件在独立模式下触发时机一致；事件适合声明式埋点，`whenReady` 适合 `async/await` 编排。
+
 ### 完整示例
 
 ```vue
@@ -246,6 +267,14 @@ const toggleChat = async () => {
 
 ```typescript
 import { watch } from 'vue';
+
+// 监听初始化就绪（≥ v2.1.4-beta.13）
+watch(
+  () => chatBotRef.value?.isReady,
+  (ready) => {
+    if (ready) console.log('ChatBot 已就绪');
+  },
+);
 
 // 监听消息列表变化
 watch(

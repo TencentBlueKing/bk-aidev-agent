@@ -1,5 +1,18 @@
 # 更新日志
 
+## v2.1.4-beta.13
+
+### 新功能
+
+- **`ChatBot.whenReady()` / `isReady`**（**≥ v2.1.4-beta.13**）：独立嵌入场景下，`await chatBotRef.whenReady()` 在 `getAgentInfo`、`getSessions` 与 `loadRecentSession` 完成后 resolve，语义对齐 `AIBlueking` 的 `show()` / `ensureSessionReady`；`isReady` 为只读响应式状态。集成模式（传入 `chatHelper`）下 `whenReady` 立即 resolve，会话就绪仍由父级 bootstrap 或 `show()` 保证
+- **`url` / `chatHelper` 变更重初始化**：进行中的 `whenReady()` 以 `ChatBotInitStaleError` reject，需重新 `await whenReady()`
+
+### 文档
+
+- 更新 [ChatBot API](/api/ai-blueking/chatbot)、[类型定义](/api/ai-blueking/types)、[编程式控制](/guide/advanced-usage/programmatic-control)、[会话管理](/guide/core-features/session-management) 与 [常见问题](/faq)
+
+---
+
 ## v2.1.4-beta.9
 
 ### 优化

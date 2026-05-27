@@ -48,6 +48,8 @@ function mountChatBot(
 ): StandaloneMountHandle<ChatBotExpose, ChatBotProps>;
 ```
 
+挂载完成后可通过 `handle.expose.whenReady()` / `expose.isReady` 等待独立模式初始化（≥ v2.1.4-beta.13），用法与 Vue 内 `ref` 一致，见 [ChatBot — 初始化就绪](/api/ai-blueking/chatbot#初始化就绪-v214-beta13)。
+
 ## mountStandaloneComponent
 
 挂载任意已注册的 Vue 组件（高级用法）。

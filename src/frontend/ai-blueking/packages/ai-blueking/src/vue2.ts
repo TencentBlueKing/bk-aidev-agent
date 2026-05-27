@@ -375,6 +375,8 @@ const chatBotExposeKeys = [
   'currentSession',
   'isGenerating',
   'messages',
+  'isReady',
+  'whenReady',
 ] as const;
 
 // 编译时断言：chatBotExposeKeys 与 ChatBotExpose 的 keys 完全一致
