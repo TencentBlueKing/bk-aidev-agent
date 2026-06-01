@@ -193,6 +193,7 @@
     agentPrompts,
     handleError,
     ensureSessionReady,
+    updateAgentInfo,
   } = useAiBluekingInit({
     props,
     emit: emit as (event: string, ...args: unknown[]) => void,
@@ -307,6 +308,7 @@
     updatePositionAndSize,
     setCiteText,
     focusInput,
+    updateAgentInfo,
   });
 </script>
 

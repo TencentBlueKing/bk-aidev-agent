@@ -256,6 +256,25 @@
 
   // ==================== 辅助方法 ====================
 
+  // 刷新 agentInfo 并更新内部状态
+  const updateAgentInfo = async () => {
+    const helper = chatHelper.value;
+    if (!helper) return null;
+
+    try {
+      await helper.agent.getAgentInfo();
+      const info = helper.agent.info.value ?? null;
+      if (info?.conversationSettings?.commands) {
+        shortcutManager.value?.setAgentShortcuts(info.conversationSettings.commands as IShortcut[]);
+      }
+      return info;
+    } catch (err) {
+      console.error('[ChatBot] Failed to update agentInfo:', err);
+      emit('error', err instanceof Error ? err : new Error(String(err)));
+      return null;
+    }
+  };
+
   // 切换会话
   const switchSession = async (sessionCode: string) => {
     if (!sessionBusinessManager.value) {
@@ -287,7 +306,9 @@
     messages,
     currentSession,
     isGenerating,
-    isReady,
+    get isReady() {
+      return isReady.value;
+    },
     whenReady,
     getChatHelper,
     setCiteText,
@@ -300,6 +321,7 @@
     sendShortcut: (shortcut: IShortcut, selectedText?: string) => {
       return sendShortcutDirectly(shortcut as unknown as Shortcut, selectedText);
     },
+    updateAgentInfo,
   });
 </script>
 

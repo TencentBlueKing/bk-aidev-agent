@@ -19,7 +19,7 @@ import type {
   IShortcut,
   OnCustomTabChange,
 } from '../types';
-import type { ISession } from '@blueking/chat-helper';
+import type { IAgentInfo, ISession } from '@blueking/chat-helper';
 import type { IAiSlashMenuItem, IToolBtn, Message } from '@blueking/chat-x';
 import type { TippyOptions } from 'vue-tippy';
 
@@ -91,10 +91,18 @@ export interface ChatBotExpose {
   // 会话操作
   switchSession: (sessionCode: string) => Promise<void>;
 
-  /** 是否已完成初始化（独立模式：含 sessionList；集成模式：manager 已挂载） */
-  isReady: boolean;
+  /**
+   * 主动刷新 agentInfo 并更新内部状态
+   * 业务方可调用此方法获取最新的 agent 信息，同时会自动更新 shortcuts 等状态
+   *
+   * @returns 最新的 agentInfo 数据，获取失败返回 null
+   */
+  updateAgentInfo: () => Promise<IAgentInfo | null>;
+
   /** 等待初始化完成，语义对齐 AIBlueking ensureSessionReady */
   whenReady: () => Promise<void>;
+  /** 是否已完成初始化（独立模式：含 sessionList；集成模式：manager 已挂载） */
+  isReady: boolean;
 }
 
 /**

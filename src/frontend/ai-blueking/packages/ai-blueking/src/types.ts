@@ -40,6 +40,7 @@ import type { PositionAndSize } from './manager/types';
 import type {
   IAgentCommand,
   IAgentCommandComponent,
+  IAgentInfo,
   IAgentModule,
   IMessageModule,
   ISessionModule,
@@ -48,10 +49,7 @@ import type { IAiSlashMenuItem } from '@blueking/chat-x';
 import type { CreateSessionOptions } from './manager/business/types';
 
 /** 自定义侧栏内容区渲染（透传 ChatContainer.getSideRenderComponent） */
-export type GetSideRenderComponent = (
-  createElement: typeof h,
-  props?: Record<string, unknown>,
-) => VNode | undefined;
+export type GetSideRenderComponent = (createElement: typeof h, props?: Record<string, unknown>) => VNode | undefined;
 
 /** 自定义侧栏 Tab 标签渲染（透传 ChatContainer.getSideTabRenderComponent） */
 export type GetSideTabRenderComponent = (
@@ -150,6 +148,13 @@ export interface AIBluekingExpose {
   stopGeneration: () => void;
 
   switchToSession: (sessionCode: string) => Promise<void>;
+  /**
+   * 主动刷新 agentInfo 并更新内部状态
+   * 业务方可调用此方法获取最新的 agent 信息，同时会自动更新 shortcuts 等状态
+   *
+   * @returns 最新的 agentInfo 数据，获取失败返回 null
+   */
+  updateAgentInfo: () => Promise<IAgentInfo | null>;
   // 容器控制
   updatePosition: (x: number, y: number) => void;
   updatePositionAndSize: (x: number, y: number, w: number, h: number) => void;
