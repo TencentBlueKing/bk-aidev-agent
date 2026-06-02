@@ -436,6 +436,8 @@ import type { MaybeRefOrGetter } from 'vue';
 interface IRequestOptions {
   headers?: MaybeRequestValue<RequestHeaders>;
   data?: MaybeRequestValue<RequestData>;
+  /** 上下文信息，合并到消息的 property.extra.context（≥ v2.1.4-beta.15） */
+  context?: MaybeRequestValue<RequestData | Array<Record<string, unknown>>>;
 }
 
 // AIBlueking / ChatBot / useChatBootstrap
@@ -443,6 +445,8 @@ type RequestOptionsProp = MaybeRefOrGetter<IRequestOptions>;
 ```
 
 `data` 在 chat-helper 层按 HTTP 方法合并：**POST/PUT/PATCH/DELETE** → body；**GET/HEAD/OPTIONS** → query。
+
+`context` 自动合并到消息的 `property.extra.context`，支持简单 KV（`Record`）和结构化数组两种格式；与快捷指令 context 合并时，key 冲突以 `requestOptions.context` 为准。详见 [自定义请求 — 上下文参数 context](/guide/advanced-usage/custom-requests#上下文参数-context)。
 
 ### 用法示例
 
@@ -467,6 +471,12 @@ const requestOptionsReactive = computed<IRequestOptions>(() => ({
   headers: { Authorization: `Bearer ${token.value}` },
   data: { app_id: 'my-app' },
 }));
+
+// context：注入业务上下文（≥ v2.1.4-beta.15）
+const requestOptionsWithContext: IRequestOptions = {
+  headers: { Authorization: `Bearer ${getToken()}` },
+  context: { page: 'dashboard', role: 'admin' },
+};
 ```
 
 详见 [自定义请求](/guide/advanced-usage/custom-requests#响应式示例-ref-computed)。

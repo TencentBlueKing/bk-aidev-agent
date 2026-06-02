@@ -1,5 +1,22 @@
 # 更新日志
 
+## v2.1.4-beta.15
+
+### 新功能
+
+- **`requestOptions.context`**（**≥ v2.1.4-beta.15**）：`requestOptions` 新增 `context` 字段，支持将业务上下文（如表单数据、用户信息）自动合并到消息的 `property.extra.context`。支持两种输入格式：
+  - `Record<string, unknown>`：简单 KV，自动转换为结构化条目
+  - `Array<Record<string, unknown>>`：数组，已有 `__key` 的结构化条目直接透传，简单 KV 自动转换
+- `context` 同样支持 `MaybeRequestValue`（普通对象、零参函数、`ref`、`computed`），与 `headers` / `data` 一致
+- 普通消息发送（`doSendMessage`）与快捷指令确认（`handleUserShortcutConfirm`）均自动合并 `context`；key 冲突时 `requestOptions.context` 覆盖快捷指令同名条目
+
+### 文档
+
+- 更新 [自定义请求](/guide/advanced-usage/custom-requests) 新增 `context` 用法与合并策略说明
+- 更新 [类型定义](/api/ai-blueking/types) `IRequestOptions` 接口增加 `context` 字段
+
+---
+
 ## v2.1.4-beta.14
 
 ### 新功能

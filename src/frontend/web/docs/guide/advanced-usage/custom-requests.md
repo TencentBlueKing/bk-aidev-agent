@@ -19,6 +19,8 @@ interface IRequestOptions {
   headers?: MaybeRequestValue<Record<string, string>>;
   /** 支持对象、零参函数、ref、computed；按 HTTP 方法写入 body 或 query */
   data?: MaybeRequestValue<Record<string, unknown>>;
+  /** 上下文信息，合并到消息的 property.extra.context（≥ v2.1.4-beta.15） */
+  context?: MaybeRequestValue<Record<string, unknown> | Array<Record<string, unknown>>>;
 }
 ```
 
@@ -127,6 +129,113 @@ const requestOptions = computed<IRequestOptions>(() => ({
 const requestOptions: IRequestOptions = {
   headers: computed(() => ({ Authorization: `Bearer ${token.value}` })),
   data: { locale: 'zh-cn' },
+};
+```
+
+## 上下文参数 context
+
+::: info 版本要求
+`context` 字段需要 **≥ v2.1.4-beta.15**。
+:::
+
+`requestOptions.context` 用于向消息注入业务上下文（如当前页面信息、用户选择、表单数据等），数据会自动合并到消息的 `property.extra.context` 中，后端可通过该字段获取上下文进行处理。
+
+### 支持的格式
+
+| 格式 | 说明 |
+| --- | --- |
+| `Record<string, unknown>` | 简单 KV，每个 entry 自动转换为结构化条目 |
+| `Array<Record<string, unknown>>` | 数组；已有 `__key` 的结构化条目直接透传，简单 KV 自动转换 |
+
+转换后的结构化条目格式：
+
+```typescript
+{
+  key: value,                    // 原始 KV
+  context_type: 'input',         // 固定值
+  __label: key,                  // 显示标签
+  __key: key,                    // 唯一标识（用于去重）
+  __value: value                 // 值
+}
+```
+
+### 基本用法
+
+```vue
+<template>
+  <ChatBot
+    url="/api/v1/agent/chat"
+    :request-options="requestOptions"
+  />
+</template>
+
+<script setup lang="ts">
+import { ChatBot } from '@blueking/ai-blueking';
+
+const requestOptions = {
+  headers: () => ({
+    Authorization: `Bearer ${getToken()}`,
+  }),
+  context: {
+    page: 'settings',
+    module: 'user-management',
+  },
+};
+</script>
+```
+
+发送消息时，`context` 会自动合并到 `property.extra.context`：
+
+```json
+{
+  "property": {
+    "extra": {
+      "context": [
+        { "page": "settings", "context_type": "input", "__label": "page", "__key": "page", "__value": "settings" },
+        { "module": "user-management", "context_type": "input", "__label": "module", "__key": "module", "__value": "user-management" }
+      ]
+    }
+  }
+}
+```
+
+### 结构化数组格式
+
+当需要更精细的控制时，可直接传入结构化数组：
+
+```typescript
+const requestOptions = {
+  context: [
+    { page: 'dashboard', context_type: 'input', __label: '页面', __key: 'page', __value: 'dashboard' },
+    { role: 'admin', context_type: 'system', __label: '角色', __key: 'role', __value: 'admin' },
+  ],
+};
+```
+
+### 与快捷指令 context 的合并
+
+当用户发送快捷指令时，快捷指令的表单数据会生成 `property.extra.context`。`requestOptions.context` 的条目会**追加**到快捷指令 context 之后；key 冲突时（以 `__key` 判断），`requestOptions` 的条目**覆盖**已有的快捷指令条目。
+
+```typescript
+// 快捷指令产生的 context: [{ code: '...', __key: 'code' }]
+// requestOptions.context: [{ code: 'override', __key: 'code' }, { page: 'settings', __key: 'page' }]
+// 最终合并结果: [{ code: 'override', __key: 'code' }, { page: 'settings', __key: 'page' }]
+```
+
+### 响应式 context
+
+与 `headers` / `data` 一致，`context` 支持 `MaybeRequestValue`，可使用函数、`ref` 或 `computed`：
+
+```typescript
+import { computed, ref } from 'vue';
+
+const currentPage = ref('dashboard');
+
+const requestOptions = {
+  context: computed(() => ({
+    page: currentPage.value,
+    timestamp: Date.now(),
+  })),
 };
 ```
 
