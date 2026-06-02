@@ -292,6 +292,7 @@ vi.mock('../chat-input/chat-input.vue', () => ({
       prompts: Array,
       resources: Array,
       shortcuts: Array,
+      skills: Array,
       supportUpload: Boolean,
       cite: String,
       shortcutId: String,
@@ -537,6 +538,19 @@ describe('ChatContainer', () => {
       const ci = wrapper.findComponent({ name: 'ChatInput' });
       expect(mc.props('messageStatus')).toBe(MessageStatus.Streaming);
       expect(ci.props('messageStatus')).toBe(MessageStatus.Streaming);
+    });
+
+    it('应该将 skills 属性透传给 ChatInput', () => {
+      const skills = [
+        { skill_code: 'test_skill', skill_name: 'Test Skill', description: 'A test skill', icon: '' },
+      ];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, skills },
+      });
+
+      const ci = wrapper.findComponent({ name: 'ChatInput' });
+      expect(ci.props('skills')).toEqual(skills);
     });
   });
 

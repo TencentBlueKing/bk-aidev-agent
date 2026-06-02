@@ -21,7 +21,7 @@ import type ChatBot from '../components/chat-bot.vue';
 import type { DraggableContainerExpose } from '../containers';
 import type { AIBluekingProps, IShortcut } from '../types';
 import type { UseEventBridgeReturn } from './use-event-bridge';
-import type { IAiSlashMenuItem } from '@blueking/chat-x';
+import type { IAiSlashMenuItem, ISkillListItem } from '@blueking/chat-x';
 
 export type EventForwarders = ReturnType<typeof createEventForwarders>;
 export type ForwardToManagerFn = UseEventBridgeReturn['forwardToManager'];
@@ -170,6 +170,15 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     return agentInfo.value?.conversationSettings?.predefinedQuestions ?? [];
   });
 
+  const agentSkills = computed<ISkillListItem[]>(() => {
+    return (agentInfo.value?.relatedSkills ?? []).map(skill => ({
+      skill_name: skill.skill_name,
+      skill_code: skill.skill_code,
+      description: skill.description,
+      icon: skill.icon,
+    }));
+  });
+
   // 监听 Bootstrap 初始化失败（如 Agent 信息获取失败），统一触发 sdk-error
   watch(
     () => bootstrapError.value,
@@ -300,6 +309,7 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     messageToolsTippyOptions,
     agentResources,
     agentPrompts,
+    agentSkills,
     handleError,
     ensureSessionReady,
     updateAgentInfo,

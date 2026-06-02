@@ -34,6 +34,7 @@
       :resources="effectiveResources"
       :shortcut-id="selectedShortcut?.id"
       :shortcuts="filteredShortcuts"
+      :skills="effectiveSkills"
       :support-upload="effectiveSupportUpload"
       @collapse-change="handleExecutionPanelChange"
       @confirm-share="handleConfirmShare"
@@ -203,6 +204,7 @@
     openingRemark,
     effectiveResources,
     effectivePrompts,
+    effectiveSkills,
     effectiveSupportUpload,
     chatbotStyle,
     filteredShortcuts,

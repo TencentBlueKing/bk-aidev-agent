@@ -208,6 +208,7 @@
               :resources="resources"
               :shortcut-id="selectedShortcut?.id"
               :shortcuts="shortcuts"
+              :skills="skills"
               :support-upload="supportUpload"
               :tippy-options="commonTippyOptions"
               @delete-shortcut="handleCloseShortcut"

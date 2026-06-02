@@ -83,6 +83,7 @@
             :session-code="props.initialSessionCode"
             :share-loading="isShareLoading"
             :shortcuts="props.shortcuts"
+            :skills="agentSkills"
             :style="{ height: props.hideHeader ? '100%' : 'calc(100% - 48px)' }"
             :url="normalizedUrl"
             @cancel-share="handleCancelShare"
@@ -192,6 +193,7 @@
     messageToolsTippyOptions,
     agentResources,
     agentPrompts,
+    agentSkills,
     handleError,
     ensureSessionReady,
     updateAgentInfo,

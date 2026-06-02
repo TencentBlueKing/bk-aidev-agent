@@ -20,7 +20,7 @@ import type {
   OnCustomTabChange,
 } from '../types';
 import type { IAgentInfo, ISession } from '@blueking/chat-helper';
-import type { IAiSlashMenuItem, IToolBtn, Message } from '@blueking/chat-x';
+import type { IAiSlashMenuItem, ISkillListItem, IToolBtn, Message } from '@blueking/chat-x';
 import type { TippyOptions } from 'vue-tippy';
 
 /**
@@ -169,6 +169,9 @@ export interface ChatBotProps {
   // === 快捷方式 ===
   /** 快捷方式列表 */
   shortcuts?: IShortcut[];
+
+  /** 技能列表（输入 / 触发） */
+  skills?: ISkillListItem[];
 
   // === 基础配置 ===
   /**
