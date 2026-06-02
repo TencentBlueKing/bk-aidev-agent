@@ -40,6 +40,7 @@
       <div class="chatbot-area">
         <ChatBot
           height="560px"
+          :use-agent-name="true"
           :request-options="requestOptions"
           :url="apiUrl"
           @error="handleError"

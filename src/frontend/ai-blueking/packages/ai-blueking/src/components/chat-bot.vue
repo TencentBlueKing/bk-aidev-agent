@@ -28,6 +28,7 @@
       :opening-remark="openingRemark"
       :placeholder="props.placeholder"
       :placement="props.placement"
+      :welcome-title="welcomeTitle"
       :prompts="effectivePrompts"
       :resize-props="props.resizeProps"
       :resources="effectiveResources"
@@ -103,6 +104,7 @@
     enableSelection: false,
     shareLoading: false,
     autoLoad: true,
+    useAgentName: false,
     shortcuts: () => [],
     resources: () => [],
     renderMode: RenderMode.Chat,
@@ -238,6 +240,12 @@
   // 初始化期间（含 URL 变化重新初始化），委托 ChatContainer 内置 loading
   // 独立模式和非独立模式（AIBlueking）统一处理
   const effectiveChatLoading = computed(() => !isInitialized.value || isMessagesLoading.value);
+
+  // 欢迎标题：useAgentName 为 true 时使用 agentName，否则由 ChatContainer 使用默认文案
+  const welcomeTitle = computed(() => {
+    if (!props.useAgentName) return undefined;
+    return chatHelper.value?.agent.info.value?.agentName || undefined;
+  });
 
   // 6. 分享确认（选择模式 UI 由 ChatContainer 内部管理）
   const { handleConfirmShare } = useShareSelection({

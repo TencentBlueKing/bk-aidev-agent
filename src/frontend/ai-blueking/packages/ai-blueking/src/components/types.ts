@@ -141,6 +141,8 @@ export interface ChatBotProps {
 
   /** 欢迎语 */
   helloText?: string;
+  /** 使用 agentName 作为欢迎标题 */
+  useAgentName?: boolean;
   /** 最大宽度 */
   maxWidth?: number | string;
 

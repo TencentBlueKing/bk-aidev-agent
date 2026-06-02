@@ -55,6 +55,7 @@ export const defaultProps = {
   teleportTo: 'body',
   placeholder: undefined as string | undefined,
   helloText: t('你好，我是小鲸'),
+  useAgentName: false,
   disabledInput: false,
   showHistoryIcon: true,
   showNewChatIcon: true,

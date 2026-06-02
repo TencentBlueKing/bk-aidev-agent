@@ -166,10 +166,10 @@
         >
           <slot
             name="welcome"
-            v-bind="{ openingRemark }"
+            v-bind="{ openingRemark, welcomeTitle }"
           >
             <AIBluekingBannerIcon />
-            <h2 class="ai-welcome-title">{{ t('你好，我是小鲸') }}</h2>
+            <h2 class="ai-welcome-title">{{ welcomeTitle ?? t('你好，我是小鲸') }}</h2>
             <div
               v-if="openingRemark"
               class="ai-welcome-remark"
@@ -287,6 +287,7 @@
       max?: number;
       min?: number;
     };
+    welcomeTitle?: string;
   };
   const TabPanel = Tab.TabPanel;
   defineSlots<{
@@ -309,7 +310,10 @@
       message: Message;
       messageToolsStatus: MessageContainerProps['messageToolsStatus'];
     }) => null | undefined | VNode;
-    welcome: (props: { openingRemark: ChatContainerProps['openingRemark'] }) => null | undefined | VNode;
+    welcome: (props: {
+      openingRemark: ChatContainerProps['openingRemark'];
+      welcomeTitle: ChatContainerProps['welcomeTitle'];
+    }) => null | undefined | VNode;
   }>();
   const props = withDefaults(
     defineProps<

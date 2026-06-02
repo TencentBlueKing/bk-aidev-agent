@@ -74,6 +74,7 @@
             :prompts="agentPrompts"
             :render-mode="props.renderMode"
             :request-options="props.requestOptions"
+            :use-agent-name="props.useAgentName"
             :get-side-render-component="props.getSideRenderComponent"
             :get-side-tab-render-component="props.getSideTabRenderComponent"
             :on-custom-tab-change="props.onCustomTabChange"

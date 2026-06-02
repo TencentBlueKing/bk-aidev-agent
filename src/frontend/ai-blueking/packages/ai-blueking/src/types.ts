@@ -206,6 +206,8 @@ export interface AIBluekingProps {
   extCls?: string;
   /** 欢迎语 */
   helloText?: string;
+  /** 使用 agentName 作为欢迎标题 */
+  useAgentName?: boolean;
 
   /** 是否隐藏默认触发器 */
   hideDefaultTrigger?: boolean;

@@ -140,6 +140,10 @@ export default createVue2Wrapper(AIBlueking, {
       type: String,
       default: () => t('你好，我是小鲸'),
     },
+    useAgentName: {
+      type: Boolean,
+      default: false,
+    },
     requestOptions: {
       type: Object,
       default: () => ({}),
@@ -413,6 +417,10 @@ export const ChatBotV2 = createVue2Wrapper(ChatBot, {
     helloText: {
       type: String,
       default: undefined,
+    },
+    useAgentName: {
+      type: Boolean,
+      default: false,
     },
     placeholder: {
       type: String,

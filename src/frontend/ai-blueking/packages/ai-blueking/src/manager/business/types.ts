@@ -30,6 +30,8 @@ export interface ChatBusinessConfig {
 export interface CreateSessionOptions {
   /** 是否为临时会话 */
   isTemporary?: boolean;
+  /** 会话标签 */
+  labels?: string[];
   /** 会话名称 */
   name?: string;
   /** 会话编码 */
