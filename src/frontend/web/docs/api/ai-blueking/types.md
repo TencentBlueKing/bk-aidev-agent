@@ -150,6 +150,9 @@ interface AIBluekingExpose {
   updateSize: (w: number, h: number) => void;
   updatePositionAndSize: (x: number, y: number, w: number, h: number) => void;
 
+  /** 主动刷新 agentInfo 并更新内部状态（≥ v2.1.4-beta.14） */
+  updateAgentInfo: () => Promise<IAgentInfo | null>;
+
   // 其他
   /** 获取 chatHelper 实例，用于访问 agent/session/message 等底层模块 */
   getChatHelper: () => IChatHelper | null;
@@ -356,6 +359,9 @@ interface ChatBotExpose {
   isReady: boolean;
   /** 等待初始化完成（≥ v2.1.4-beta.13） */
   whenReady: () => Promise<void>;
+
+  /** 主动刷新 agentInfo 并更新内部状态（≥ v2.1.4-beta.14） */
+  updateAgentInfo: () => Promise<IAgentInfo | null>;
 }
 ```
 

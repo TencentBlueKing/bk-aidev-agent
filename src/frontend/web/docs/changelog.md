@@ -1,5 +1,17 @@
 # 更新日志
 
+## v2.1.4-beta.14
+
+### 新功能
+
+- **`updateAgentInfo` 方法**（**≥ v2.1.4-beta.14**）：`ChatBot` / `AIBlueking` 均暴露 `updateAgentInfo()`，可主动刷新 agent 信息并自动同步 shortcuts 等内部状态；返回 `Promise<IAgentInfo | null>`
+
+### 文档
+
+- 更新 [ChatBot API](/api/ai-blueking/chatbot)、[AIBlueking API](/api/ai-blueking/aiblueking)、[类型定义](/api/ai-blueking/types)、[编程式控制](/guide/advanced-usage/programmatic-control)
+
+---
+
 ## v2.1.4-beta.13
 
 ### 新功能

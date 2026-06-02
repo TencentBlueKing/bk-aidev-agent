@@ -173,6 +173,12 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | `whenReady` | `() => Promise<void>` | 等待初始化完成（独立模式含 sessionList；失败时 reject，与 `error` 事件一致） |
 | `isReady` | `boolean` | 是否已完成初始化 |
 
+### Agent 信息（≥ v2.1.4-beta.14）
+
+| 方法 | 类型 | 说明 |
+| --- | --- | --- |
+| `updateAgentInfo` | `() => Promise<IAgentInfo \| null>` | 主动刷新 agentInfo 并更新内部状态（如 shortcuts）；返回最新数据，失败返回 `null` |
+
 独立嵌入无 `show()` 时，建议在 `switchSession` / `sendMessage` 前 `await whenReady()`：
 
 ```vue

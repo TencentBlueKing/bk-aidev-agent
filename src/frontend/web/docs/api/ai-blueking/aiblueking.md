@@ -223,6 +223,12 @@ function openAI() {
 | `updateSize` | `(w: number, h: number) => void` | 更新面板尺寸 |
 | `updatePositionAndSize` | `(x: number, y: number, w: number, h: number) => void` | 同时更新位置和尺寸 |
 
+### Agent 信息（≥ v2.1.4-beta.14）
+
+| 方法 | 类型 | 说明 |
+| --- | --- | --- |
+| `updateAgentInfo` | `() => Promise<IAgentInfo \| null>` | 主动刷新 agentInfo 并更新内部状态（如 shortcuts）；返回最新数据，失败返回 `null` |
+
 ### 其他
 
 | 方法 | 类型 | 说明 |

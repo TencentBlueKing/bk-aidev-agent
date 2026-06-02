@@ -70,6 +70,18 @@ chatBotRef.value?.setCiteText('这段文本将作为引用上下文发送');
 chatBotRef.value?.focusInput();
 ```
 
+#### updateAgentInfo - 刷新 Agent 信息（≥ v2.1.4-beta.14）
+
+主动从后端重新拉取 agentInfo 并自动更新内部状态（如 shortcuts）：
+
+```typescript
+// 刷新 agentInfo 并获取最新数据
+const info = await chatBotRef.value?.updateAgentInfo();
+console.log('最新 agent 信息:', info);
+```
+
+适用场景：后端更新了智能体的快捷指令或会话配置后，前端无需重建组件即可同步最新状态。
+
 #### whenReady / isReady - 等待初始化（≥ v2.1.4-beta.13）
 
 独立嵌入的 `ChatBot` 没有 `AIBlueking.show()`，可在挂载后等待会话列表与最近会话加载完成再操作：
@@ -213,6 +225,13 @@ aiBluekingRef.value?.updatePosition(100, 200);
 ```typescript
 // 设置窗口宽高 (width, height)
 aiBluekingRef.value?.updateSize(600, 800);
+```
+
+#### updateAgentInfo - 刷新 Agent 信息（≥ v2.1.4-beta.14）
+
+```typescript
+// 刷新 agentInfo 并获取最新数据（自动更新 shortcuts 等状态）
+const info = await aiBluekingRef.value?.updateAgentInfo();
 ```
 
 ### 完整示例
