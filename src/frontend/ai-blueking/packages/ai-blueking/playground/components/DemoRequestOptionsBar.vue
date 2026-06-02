@@ -24,13 +24,28 @@
         >
           切换 tenant_id（{{ tenantId }}）
         </button>
+        <button
+          class="demo-btn context-btn"
+          type="button"
+          @click="emit('rotate-context-env')"
+        >
+          切换 context.env（{{ contextEnv }}）
+        </button>
+        <button
+          class="demo-btn context-btn"
+          type="button"
+          @click="emit('rotate-context-region')"
+        >
+          切换 context.region（{{ contextRegion }}）
+        </button>
       </div>
     </div>
     <pre class="preview-json">{{ previewJson }}</pre>
     <p class="bar-hint">
       打开 DevTools → Network：GET（如 getAgentInfo / getSessions）应在 URL 上看到
       <code>app_id</code>、<code>tenant_id</code>；POST（如发消息）应在 Request Payload 中看到相同字段。
-      切换按钮后<strong>无需重建组件</strong>，下一次请求即生效。
+      切换按钮后<strong>无需重建组件</strong>，下一次请求即生效。 <code>context</code> 字段会合并到消息的
+      <code>property.extra.context</code>，与 shortcuts 表单数据同级。
     </p>
   </div>
 </template>
@@ -38,6 +53,8 @@
 <script setup lang="ts">
   defineProps<{
     appId: string;
+    contextEnv: string;
+    contextRegion: string;
     previewJson: string;
     tenantId: string;
     token: string;
@@ -45,6 +62,8 @@
 
   const emit = defineEmits<{
     'rotate-app-id': [];
+    'rotate-context-env': [];
+    'rotate-context-region': [];
     'rotate-tenant-id': [];
     'rotate-token': [];
   }>();
@@ -93,6 +112,16 @@
 
   .demo-btn:hover {
     background: #e1ecff;
+  }
+
+  .demo-btn.context-btn {
+    color: #2dcb56;
+    background: #f0fff4;
+    border-color: #95de64;
+  }
+
+  .demo-btn.context-btn:hover {
+    background: #d9f7be;
   }
 
   .preview-json {

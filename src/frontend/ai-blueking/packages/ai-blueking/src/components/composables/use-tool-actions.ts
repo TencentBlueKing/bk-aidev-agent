@@ -11,11 +11,11 @@ import type { Ref } from 'vue';
 
 import { MessageRole } from '@blueking/chat-x';
 
-import { findLastUserMessageBefore, findLastUserMessageIdBefore } from '../../utils';
+import { applyRequestOptionsContext, findLastUserMessageBefore, findLastUserMessageIdBefore } from '../../utils';
 
 import type { ChatBusinessManager } from '../../manager/business/chat-business-manager';
 import type { IShortcut } from '../../manager/business/types';
-import type { IChatHelper } from '../../types';
+import type { IChatHelper, IRequestOptions } from '../../types';
 import type { ChatBotEmitFn } from './use-chatbot-init';
 import type { IMessage, IUserMessage } from '@blueking/chat-helper';
 import type { IToolBtn, Message, Shortcut, TagSchema, UserMessage } from '@blueking/chat-x';
@@ -28,6 +28,8 @@ export interface UseToolActionsParams {
   buildShortcutProperty: (shortcut: Shortcut, formModel: Record<string, unknown>) => any;
   focusInput: () => void;
   getShortcutFromMessage: (message: Message) => IShortcut | null;
+  /** 返回最新 requestOptions 的 getter（每次调用时读取，确保响应式） */
+  getRequestOptions?: () => IRequestOptions | undefined;
   scrollToBottom: () => Promise<void>;
 }
 
@@ -55,6 +57,7 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
     scrollToBottom,
     getShortcutFromMessage,
     buildShortcutProperty,
+    getRequestOptions,
   } = params;
 
   /**
@@ -265,8 +268,14 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
     }
 
     try {
-      console.log('handleUserInputConfirm', messageId, sessionCode, content);
-      await chatHelper.value.agent.resendMessage(String(messageId), sessionCode, content as IUserMessage['content']);
+      const existingProperty = (message as unknown as { property?: Record<string, unknown> }).property;
+      const mergedProperty = applyRequestOptionsContext(existingProperty, getRequestOptions);
+      await chatBusinessManager.value?.resendMessageWithProperty(
+        String(messageId),
+        sessionCode,
+        typeof content === 'string' ? content : '',
+        mergedProperty,
+      );
       scrollToBottom();
     } catch (error) {
       console.error('[ChatBot] Failed to edit and resend message:', error);
@@ -303,9 +312,15 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
       }
 
       const property = buildShortcutProperty(shortcut as Shortcut, formModel);
+      const mergedProperty = applyRequestOptionsContext(property, getRequestOptions);
       const newContent = String(formModel.input ?? '');
 
-      await chatBusinessManager.value.resendMessageWithProperty(String(messageId), sessionCode, newContent, property);
+      await chatBusinessManager.value.resendMessageWithProperty(
+        String(messageId),
+        sessionCode,
+        newContent,
+        mergedProperty,
+      );
       scrollToBottom();
     } catch (error) {
       console.error('[ChatBot] Failed to edit shortcut message:', error);

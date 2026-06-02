@@ -29,6 +29,13 @@ vi.mock('../../../utils', () => ({
     }
     return undefined;
   }),
+  applyRequestOptionsContext: vi.fn((property: any, getRequestOptions?: () => any) => {
+    if (!getRequestOptions) return property;
+    const opts = getRequestOptions();
+    if (!opts?.context) return property;
+    return { ...(property ?? {}), extra: { ...((property ?? {}).extra ?? {}), context: opts.context } };
+  }),
+  resolveContextEntries: vi.fn(() => []),
 }));
 
 import { useToolActions } from '../use-tool-actions';
@@ -191,15 +198,21 @@ describe('useToolActions', () => {
   });
 
   describe('handleUserInputConfirm', () => {
-    it('should call agent.resendMessage with correct params', async () => {
+    it('should call resendMessageWithProperty with correct params', async () => {
       const params = createParams();
       (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+
       const { handleUserInputConfirm } = useToolActions(params);
 
       const message = createMockUserMessage({ id: 'msg-1' });
       await handleUserInputConfirm(message as any, 'new content', [] as any);
 
-      expect(params.chatHelper.value!.agent.resendMessage).toHaveBeenCalledWith('msg-1', 'session-1', 'new content');
+      expect(params.chatBusinessManager.value!.resendMessageWithProperty).toHaveBeenCalledWith(
+        'msg-1',
+        'session-1',
+        'new content',
+        undefined,
+      );
       expect(params.scrollToBottom).toHaveBeenCalled();
     });
 
@@ -252,6 +265,44 @@ describe('useToolActions', () => {
       await handleUserShortcutConfirm(message as any, {});
 
       expect(params.chatBusinessManager.value!.resendMessageWithProperty).not.toHaveBeenCalled();
+    });
+
+    it('should merge requestOptions.context into shortcut property', async () => {
+      const { applyRequestOptionsContext } = await import('../../../utils');
+      const shortcut = createMockShortcut();
+      const property = { extra: { command: 'cmd-1', context: [{ input: 'hello', __key: 'input' }] } };
+
+      (applyRequestOptionsContext as any).mockReturnValue({
+        extra: { command: 'cmd-1', context: [{ input: 'hello', __key: 'input' }, { env: 'prod', __key: 'env' }] },
+      });
+
+      const params = createParams({
+        getShortcutFromMessage: vi.fn().mockReturnValue(shortcut),
+        buildShortcutProperty: vi.fn().mockReturnValue(property),
+        getRequestOptions: () => ({ context: { env: 'prod' } }),
+      });
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+
+      const { handleUserShortcutConfirm } = useToolActions(params);
+
+      const message = createMockUserMessage({ id: 'msg-1' });
+      await handleUserShortcutConfirm(message as any, { input: 'new value' });
+
+      expect(applyRequestOptionsContext).toHaveBeenCalledWith(property, expect.any(Function));
+      expect(params.chatBusinessManager.value!.resendMessageWithProperty).toHaveBeenCalledWith(
+        'msg-1',
+        'session-1',
+        'new value',
+        expect.objectContaining({
+          extra: expect.objectContaining({
+            command: 'cmd-1',
+            context: expect.arrayContaining([
+              expect.objectContaining({ __key: 'input' }),
+              expect.objectContaining({ __key: 'env' }),
+            ]),
+          }),
+        }),
+      );
     });
   });
 

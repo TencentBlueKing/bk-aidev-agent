@@ -334,9 +334,20 @@ export interface IChatHelper {
 }
 
 /**
- * 请求配置（headers/data 支持对象、函数、ref、computed）
+ * 请求配置（headers/data/context 支持对象、函数、ref、computed）
+ * - headers: 合并到每个请求的 HTTP headers
+ * - data: POST/PUT/PATCH/DELETE 合并到 body；GET/HEAD/OPTIONS 合并到 query
+ * - context: 合并到消息的 property.extra.context（与 shortcuts 表单数据同级）
+ *   支持 Record<string, unknown>（自动转换）或 Array<Record<string, unknown>>（简单 KV 自动转换，结构化格式直接透传）
  */
 export interface IRequestOptions {
+  /**
+   * 上下文信息，合并到消息的 property.extra.context
+   * 支持两种格式：
+   * - Record<string, unknown>: 简单 KV，自动转换为结构化格式
+   * - Array<Record<string, unknown>>: 数组，简单 KV 自动转换，有 __key 的结构化条目直接透传
+   */
+  context?: MaybeRequestValue<RequestData | Array<Record<string, unknown>>>;
   data?: MaybeRequestValue<RequestData>;
   headers?: MaybeRequestValue<RequestHeaders>;
 }

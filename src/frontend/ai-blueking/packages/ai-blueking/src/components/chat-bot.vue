@@ -92,7 +92,7 @@
   // import SelectionFooter from './selection-footer/selection-footer.vue';
 
   import type { IShortcut } from '../manager/business/types';
-  import type { IChatHelper } from '../types';
+  import type { IChatHelper, IRequestOptions } from '../types';
   import type { ChatBotEmits, ChatBotExpose, ChatBotProps } from './types';
   import type { ISupportUpload } from '@blueking/chat-helper';
   import type { CustomBkFlowTab, IAiSlashMenuItem, Message, MessageToolsStatus, Shortcut } from '@blueking/chat-x';
@@ -169,7 +169,14 @@
     handleUpload,
     handleStopSending,
     stopGeneration,
-  } = useMessageSender({ emit, chatHelper, chatBusinessManager, selectedShortcut, selectedResources });
+  } = useMessageSender({
+    emit,
+    chatHelper,
+    chatBusinessManager,
+    getRequestOptions: () => props.requestOptions as IRequestOptions | undefined,
+    selectedShortcut,
+    selectedResources,
+  });
 
   // 3. 快捷指令
   const {
@@ -225,6 +232,7 @@
     scrollToBottom,
     getShortcutFromMessage,
     buildShortcutProperty,
+    getRequestOptions: () => props.requestOptions as IRequestOptions | undefined,
   });
 
   // 初始化期间（含 URL 变化重新初始化），委托 ChatContainer 内置 loading
