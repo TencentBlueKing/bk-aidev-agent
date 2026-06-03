@@ -226,7 +226,7 @@
               v-model:cite="cite"
               :message-status="inputStatus"
               :model-value="modelValue"
-              :on-send-message="onSendMessage"
+              :on-send-message="handleSendMessage"
               :on-stop-sending="onStopSending"
               :on-upload="onUpload"
               :placeholder="placeholder"
@@ -243,6 +243,11 @@
               @update:model-value="handleUpdateModelValue"
             >
               <template #interrupt>
+                <UserQuestionCard
+                  v-if="activeUserQuestionInterrupt"
+                  :interrupt="activeUserQuestionInterrupt"
+                  :on-resume="onInterruptResume"
+                />
                 <InputInfoAlert
                   v-if="pendingApprovalTipText"
                   :content="pendingApprovalTipText"
@@ -288,6 +293,7 @@
   import ContentRender from '../chat-content/content-render/content-render.vue';
   import ChatInput, { type ChatInputEmits, type ChatInputProps } from '../chat-input/chat-input.vue';
   import InputInfoAlert from '../chat-input/input-info-alert.vue';
+  import { buildUserQuestionFreeTextResume, UserQuestionCard } from '../chat-message/interrupt-message/user-question';
   import MessageContainer, {
     type MessageContainerEmits,
     type MessageContainerProps,
@@ -450,6 +456,7 @@
     onCancelShare,
     onConfirmShare,
     pendingApprovalTipText,
+    activeUserQuestionInterrupt,
   } = useMessageGroup({
     keyword,
     messages: computed(() => props.messages),
@@ -500,6 +507,21 @@
   };
   const handleUpdateModelValue = (value: string | TagSchema, selectedResourceList: IAiSlashMenuItem[]) => {
     emits('update:modelValue', value, selectedResourceList);
+  };
+
+  /**
+   * 发送拦截：存在激活的 UserQuestion 中断且为自由文本时，按 resume 回传而非发送新消息。
+   * @param content - 输入内容（字符串文本或文件数组）
+   * @param docSchema - 富文本结构
+   */
+  const handleSendMessage = async (content: UserMessage['content'], docSchema: TagSchema) => {
+    const activeQuestion = activeUserQuestionInterrupt.value;
+    if (props.onInterruptResume && activeQuestion && typeof content === 'string' && content.trim()) {
+      await props.onInterruptResume(buildUserQuestionFreeTextResume(activeQuestion, content.trim()), activeQuestion);
+      handleUpdateModelValue('', []);
+      return;
+    }
+    return props.onSendMessage?.(content, docSchema);
   };
 
   const handleCollapse = () => {

@@ -56,4 +56,4 @@ const md = new MarkdownIt({ html: true }).use(markdownItContainer, /^hljs-(left|
 
 ## 关联
 
-- [MarkdownContent](../components/atomic/markdown-content.md) — 实际接入与样式
+- [MarkdownContent](../components/rendering/markdown-content) — 实际接入与样式

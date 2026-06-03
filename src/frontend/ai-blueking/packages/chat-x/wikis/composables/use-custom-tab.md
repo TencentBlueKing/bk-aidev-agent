@@ -130,4 +130,4 @@ interface CustomTab<T = Record<string, unknown>> {
 
 ## 关联组件
 
-- [ChatContainer](../components/molecular/chat-container.md) — 侧栏 Tab 与自定义面板
+- [ChatContainer](../components/setup/chat-container) — 侧栏 Tab 与自定义面板

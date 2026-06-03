@@ -56,7 +56,7 @@ packages/
 │   ├── playground/       ← 开发调试
 │   └── dist/             ← 构建产物
 ├── chat-x/               ← 原子对话 UI 组件库（独立使用）
-│   ├── src/              ← 原子组件（ChatInput、MessageBubble、MarkdownRenderer 等）
+│   ├── src/              ← 对话能力组件（ChatInput、MessageContainer、ContentRender 等）
 │   ├── mcp/              ← MCP 工具子模块
 │   └── wikis/            ← VitePress 文档
 ├── chat-helper/          ← AG-UI SDK 工具库（HTTP、消息管理）
@@ -82,7 +82,7 @@ pnpm install   # 安装依赖
 pnpm dev:ai              # 启动 ai-blueking 开发服务器
 pnpm build:ai            # 构建 ai-blueking (Vue3 + Vue2)
 
-# Chat X (原子组件库)
+# Chat X (对话组件库)
 pnpm dev:ui              # 启动 chat-x 开发服务器
 pnpm build:ui            # 构建 chat-x
 pnpm test:ui             # 运行 chat-x 单元测试

@@ -356,7 +356,7 @@ const knowledgeRagMessage: ActivityMessage = {
 
 ### InterruptMessage
 
-human-in-the-loop 中断消息，对应 AG-UI `RUN_FINISHED` 事件的 `outcome` 对象结构。`content.outcome.type === 'interrupt'` 时，[InterruptMessageRender](../components/molecular/interrupt-message.md) 从 `interrupts` 渲染审批卡片；`type: 'success'` 表示 resume 后的成功结果，不渲染中断卡片。类型详见 [中断类型 Interrupt](./interrupt.md)。
+human-in-the-loop 中断消息，对应 AG-UI `RUN_FINISHED` 事件的 `outcome` 对象结构。`content.outcome.type === 'interrupt'` 时，[InterruptMessageRender](../components/agent/interrupt-message) 从 `interrupts` 渲染审批卡片或把 `UserQuestion` 交给输入区；`type: 'success'` 表示 resume 后的成功结果，`UserQuestion` 会根据 `result` 回显回答内容。类型详见 [中断类型 Interrupt](./interrupt.md)。
 
 ```typescript
 type RunFinishedOutcome = { interrupts: Interrupt[]; type: 'interrupt' } | { type: 'success' };
@@ -366,7 +366,7 @@ type InterruptMessage = BaseMessage<
   {
     message?: string;
     outcome?: RunFinishedOutcome;
-    result?: unknown;
+    result?: BaseResume<InterruptReason>;
     runId?: string;
     threadId?: string;
   }
@@ -542,6 +542,6 @@ interface CustomMessage extends BaseMessage<'custom-role'> {
 
 ## 关联组件
 
-- [MessageContainer](../components/molecular/message-container.md) — 消息列表
-- [MessageRender](../components/molecular/message-render.md) — 单条消息渲染
-- [ChatContainer](../components/molecular/chat-container.md) — 聊天容器
+- [MessageContainer](../components/setup/message-container) — 消息列表
+- [MessageRender](../components/message/message-render) — 单条消息渲染
+- [ChatContainer](../components/setup/chat-container) — 聊天容器

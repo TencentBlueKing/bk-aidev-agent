@@ -210,4 +210,4 @@ function useObserverVisibleList<T>(
 
 ## 关联组件
 
-- [ShortcutBtns](../components/atomic/shortcut-btns.md) — 快捷指令条与「更多」
+- [ShortcutBtns](../components/input/shortcut-btns.md) — 快捷指令条与「更多」

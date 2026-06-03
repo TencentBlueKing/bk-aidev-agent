@@ -497,8 +497,8 @@
     ...MOCK_INTERRUPT_MESSAGES,
   ]);
 
-  const handleInterruptResume: OnInterruptResume = (interrupt, payload) => {
-    console.log('[playground] interrupt resume', interrupt, payload);
+  const handleInterruptResume: OnInterruptResume = (payload, interrupt) => {
+    console.log('[playground] interrupt resume', payload, interrupt);
   };
 
   const shortcuts = shallowRef<Shortcut[]>([

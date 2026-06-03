@@ -220,6 +220,6 @@ interface MessageGroup {
 
 ## 关联组件
 
-- [ChatContainer](../components/molecular/chat-container.md) — 调用 useMessageGroup 并下传分组
-- [MessageContainer](../components/molecular/message-container.md) — 渲染 messageGroups
-- [ExecutionSummary](../components/molecular/execution-summary.md) — 消费 executionGroups
+- [ChatContainer](../components/setup/chat-container) — 调用 useMessageGroup 并下传分组
+- [MessageContainer](../components/setup/message-container) — 渲染 messageGroups
+- [ExecutionSummary](../components/agent/execution-summary) — 消费 executionGroups

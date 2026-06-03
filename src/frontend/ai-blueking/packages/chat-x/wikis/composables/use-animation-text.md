@@ -6,7 +6,7 @@ description: 文本淡入动画的组合式函数。将响应式文本按**增�
 aiSummary: >
   useAnimationText 接收 MaybeRef<string> 与可选 AnimationConfig（fadeDuration、easing），返回 chunks 与 animationStyle。
   监听文本变化：前缀追加则增量拆分为新 chunk 并触发动画，否则重置为单 chunk，适合流式输出逐段淡入。
-  全局样式已含 ai-markdown-fade-in。AnimationText 原子组件内部封装同一逻辑。
+  全局样式已含 ai-markdown-fade-in。AnimationText 组件内部封装同一逻辑。
 relatedComponents:
   - slug: animation-text
     relation: 封装 chunks 与样式渲染
@@ -263,7 +263,7 @@ sinceVersion: 1.0.0
 </script>
 ```
 
-> 详见 [AnimationText 组件文档](/components/atomic/animation-text)。
+> 详见 [AnimationText 组件文档](/components/rendering/animation-text)。
 
 ## API
 
@@ -331,5 +331,5 @@ function useAnimationText(
 
 ## 关联组件
 
-- [AnimationText](../components/atomic/animation-text.md) — 默认封装组件
-- [MarkdownContent](../components/atomic/markdown-content.md) — 富文本流式展示场景。
+- [AnimationText](../components/rendering/animation-text) — 默认封装组件
+- [MarkdownContent](../components/rendering/markdown-content) — 富文本流式展示场景。

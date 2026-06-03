@@ -27,7 +27,9 @@
 
 import type { APPROVAL_STATUS, InterruptReason, MessageRole } from './constants';
 import type { BaseMessage } from './messages';
-import type { UserMultiChoiceQuestionSchema, UserSingleChoiceQuestionSchema } from './schema';
+/**
+ * AI Dev 第三方工具审批中断
+ */
 export type AIDevToolApprovalInterrupt = BaseInterrupt<
   InterruptReason.AIDevToolApproval,
   {
@@ -55,13 +57,20 @@ export type BaseInterrupt<T extends InterruptReason, M extends Record<string, an
   metadata?: M;
   properties?: Record<string, any>;
   reason: T;
-  responseSchema?: T extends InterruptReason.UserMultiChoice
-    ? typeof UserMultiChoiceQuestionSchema
-    : typeof UserSingleChoiceQuestionSchema;
   toolCallId: string;
 };
 
-export type Interrupt = AIDevToolApprovalInterrupt | BaseInterrupt<InterruptReason, Record<string, any>>;
+export type BaseResume<T extends InterruptReason, P extends Record<string, any> = Record<string, any>> = {
+  interruptId: string;
+  payload: P;
+  reason: T;
+  status: 'cancelled' | 'resolved';
+};
+
+export type Interrupt =
+  | AIDevToolApprovalInterrupt
+  | BaseInterrupt<InterruptReason, Record<string, any>>
+  | UserQuestionInterrupt;
 
 export type InterruptItem = Interrupt;
 /**
@@ -81,11 +90,67 @@ export type InterruptMessage = BaseMessage<
     /** 是否已被用户响应（resume）过，用于 UI 区分"等待响应 / 已处理"两种态 */
     outcome?: RunFinishedOutcome;
     /** outcome.type === success 用户 resume 时回传给 Agent 的 payload，便于回放与持久化 */
-    result?: any;
+    result?: BaseResume<InterruptReason>; // 用户回答问题中断响应负载
     runId?: string;
     threadId?: string;
   }
 >;
+export type InterruptResume = ToolApprovalResume | UserQuestionResume;
 
-export type OnInterruptResume = (interrupt: Interrupt, payload?: Record<string, any>) => Promise<void> | void;
+/**
+ * 中断响应回调（统一约定：payload 在前，原始中断信息在后）
+ * @param payload 响应负载（resume payload）
+ * @param interrupt 中断原始信息
+ * @returns
+ */
+export type OnInterruptResume = (payload: InterruptResume, interrupt: Interrupt) => Promise<void> | void;
+
 export type RunFinishedOutcome = { interrupts: Interrupt[]; type: 'interrupt' } | { type: 'success' };
+
+/**
+ * 第三方工具审批中断的响应负载（取消审批等动作）
+ */
+export type ToolApprovalResume = { action: string };
+/**
+ * 用户对单个问题的回答
+ */
+export type UserQuestionAnswerItem = {
+  answer: UserQuestionOptionItem[]; // 用户已选择项；label 为 others 时 description 为自定义输入文本
+  multiSelect?: boolean; // 回显卡片用于还原 单选/多选 Tag
+  question: string; // 问题名称
+};
+
+/**
+ * 用户回答问题中断
+ */
+export type UserQuestionInterrupt = BaseInterrupt<
+  InterruptReason.UserQuestion,
+  {
+    questions: UserQuestionItem[];
+  }
+>;
+
+/**
+ * 用户回答问题中的单个问题
+ */
+export type UserQuestionItem = {
+  header: string; // 问题框标题
+  multiSelect: boolean; // 是否多选
+  options?: UserQuestionOptionItem[]; // 选项 label 为 others 时为用户自定义输入
+  question: string; // 问题名称
+};
+
+/**
+ * 用户回答问题选项；label 为 `others` 时代表用户自定义输入，description 为输入文本
+ */
+export type UserQuestionOptionItem = { description: string; label: string };
+
+/**
+ * 用户回答问题中断响应
+ */
+export type UserQuestionResume = BaseResume<
+  InterruptReason.UserQuestion,
+  {
+    answers: UserQuestionAnswerItem[];
+  }
+>;

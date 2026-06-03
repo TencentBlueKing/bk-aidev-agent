@@ -85,8 +85,7 @@ human-in-the-loop 中断原因枚举，用于 `Interrupt.reason` 区分中断类
 ```typescript
 enum InterruptReason {
   AIDevToolApproval = 'aidev:tool_approval',
-  UserMultiChoice = 'user_multi_choice',
-  UserSingleChoice = 'user_single_choice',
+  UserQuestion = 'aidev:user_question',
 }
 ```
 
@@ -309,6 +308,6 @@ console.log(
 
 ## 关联组件
 
-- [MessageTools](../components/molecular/message-tools.md) — 消息工具栏
-- [ChatInput](../components/molecular/chat-input.md) — 输入与状态
-- [MessageContainer](../components/molecular/message-container.md) — 工具与消息展示
+- [MessageTools](../components/feedback/message-tools) — 消息工具栏
+- [ChatInput](../components/input/chat-input) — 输入与状态
+- [MessageContainer](../components/setup/message-container) — 工具与消息展示

@@ -37,7 +37,7 @@ export function createServer(): McpServer {
 
   server.tool(
     'list_components',
-    '列出 @blueking/chat-x 文档索引中的全部条目：原子/分子组件、composables、指令、插件、类型、工具、edix、i18n、图标、主题等；支持按文档分类与组件功能域筛选，并返回 aiSummary',
+    '列出 @blueking/chat-x 文档索引中的全部条目：组件、composables、指令、插件、类型、工具、edix、i18n、图标、主题等；支持按 kind 与组件能力域 domain 筛选，并返回 aiSummary',
     listComponentsSchema,
     async args => listComponents(args),
   );
