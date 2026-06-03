@@ -25,7 +25,15 @@
  */
 import { APPROVAL_STATUS, InterruptReason, MessageRole, MessageStatus } from '../src';
 
-import type { Interrupt, InterruptMessage, Message, RunFinishedOutcome } from '../src';
+import type {
+  AIDevToolApprovalInterrupt,
+  Interrupt,
+  InterruptMessage,
+  Message,
+  RunFinishedOutcome,
+  UserQuestionInterrupt,
+  UserQuestionResume,
+} from '../src';
 
 type ApprovalInterruptOptions = {
   id: string;
@@ -37,7 +45,7 @@ type ApprovalInterruptOptions = {
 };
 
 /** 构造 AI Dev 工具审批类 Interrupt */
-const createApprovalInterrupt = (options: ApprovalInterruptOptions): Interrupt => ({
+const createApprovalInterrupt = (options: ApprovalInterruptOptions): AIDevToolApprovalInterrupt => ({
   id: options.id,
   reason: InterruptReason.AIDevToolApproval,
   toolCallId: options.toolCallId ?? `tool_call_${options.id}`,
@@ -162,7 +170,9 @@ const revokedInterrupt = createApprovalInterrupt({
   status: APPROVAL_STATUS.REVOKED,
   message: '算法方案评审单已撤销',
 });
-revokedInterrupt.metadata!.ticket.approvers = [];
+if (revokedInterrupt.metadata) {
+  revokedInterrupt.metadata.ticket.approvers = [];
+}
 const revokedScenario = createInterruptScenario({
   scenarioId: 'interrupt_revoked',
   intro: '【已撤销】该评审单已由发起人自行撤销：',
@@ -182,7 +192,8 @@ const resumedScenario = createInterruptScenario({
   outcome: { type: 'success' },
   result: {
     interruptId: 'interrupt_resumed',
-    status: 'acknowledged',
+    reason: InterruptReason.AIDevToolApproval,
+    status: 'resolved',
     payload: { action: 'view_ticket' },
   },
 });
@@ -201,7 +212,99 @@ const unsupportedScenario = createInterruptScenario({
   outcome: { type: 'interrupt', interrupts: [unsupportedInterrupt] },
 });
 
-/** playground 全量中断 mock：覆盖审批态 + resume 态 + 兜底态 */
+// —— 场景 8：用户回答问题（待回答，outcome.interrupt，渲染在 chat-input 上方）——
+const userQuestionInterrupt: UserQuestionInterrupt = {
+  id: 'interrupt_user_question',
+  reason: InterruptReason.UserQuestion,
+  toolCallId: 'tool_call_user_question',
+  message: '选择冒泡排序方案',
+  metadata: {
+    // 注意：不在 mock 中放 others 选项，由前端为每题自动追加 Others 输入项
+    questions: [
+      {
+        header: '选择冒泡排序方案',
+        multiSelect: false,
+        question: '请选择你想要的冒泡排序算法方案',
+        options: [
+          { label: 'A', description: '方案1：基础冒泡排序 - 最经典实现，易于理解，适合教学演示' },
+          { label: 'B', description: '方案2：优化版冒泡排序 - 加入标志位提前终止，适合部分有序数据' },
+          { label: 'C', description: '方案3：双向冒泡排序（鸡尾酒排序）- 正向反向交替，适合数据分布在两端' },
+        ],
+      },
+      {
+        header: '选择冒泡排序方案',
+        multiSelect: true,
+        question: '请选择语言（可多选）',
+        options: [
+          { label: 'Java', description: 'Java' },
+          { label: 'Python', description: 'Python' },
+          { label: 'Go', description: 'Go' },
+        ],
+      },
+      {
+        header: '选择冒泡排序方案',
+        multiSelect: false,
+        question: '请选择实现方式',
+        options: [{ label: 'best', description: '最佳方案' }],
+      },
+    ],
+  },
+};
+const userQuestionScenario = createInterruptScenario({
+  scenarioId: 'interrupt_user_question',
+  intro: '【待回答】请完成以下问题后继续：',
+  interrupt: userQuestionInterrupt,
+  outcome: { type: 'interrupt', interrupts: [userQuestionInterrupt] },
+  status: MessageStatus.Pending,
+});
+
+// —— 场景 9：用户回答问题（已回答，outcome.success，会话内回显）——
+// 与场景 8 的问题对齐，覆盖单选 / 多选 / Others 自定义输入三种回答形态
+const userQuestionAnsweredResult: UserQuestionResume = {
+  interruptId: 'interrupt_user_question_answered',
+  reason: InterruptReason.UserQuestion,
+  status: 'resolved',
+  payload: {
+    answers: [
+      // 单选：命中预设选项
+      {
+        question: '请选择你想要的冒泡排序算法方案',
+        multiSelect: false,
+        answer: [{ label: 'B', description: '方案2：优化版冒泡排序 - 加入标志位提前终止，适合部分有序数据' }],
+      },
+      // 多选：命中多个预设选项
+      {
+        question: '请选择语言（可多选）',
+        multiSelect: true,
+        answer: [
+          { label: 'Java', description: 'Java' },
+          { label: 'Python', description: 'Python' },
+        ],
+      },
+      // Others：用户自定义输入，label 为 others，description 为输入文本
+      {
+        question: '请选择实现方式',
+        multiSelect: false,
+        answer: [{ label: 'others', description: '希望提供 TypeScript 泛型版本，并附带单元测试' }],
+      },
+    ],
+  },
+};
+const userQuestionAnsweredScenario = createInterruptScenario({
+  scenarioId: 'interrupt_user_question_answered',
+  intro: '【已处理】您已回答以下问题：',
+  interrupt: {
+    id: 'interrupt_user_question_answered',
+    reason: InterruptReason.UserQuestion,
+    toolCallId: 'tool_call_user_question_answered',
+    message: '回答内容',
+    metadata: { questions: [] },
+  } as UserQuestionInterrupt,
+  outcome: { type: 'success' },
+  result: userQuestionAnsweredResult,
+});
+
+/** playground 全量中断 mock：覆盖审批态 + resume 态 + 兜底态 + 用户回答问题 */
 export const MOCK_INTERRUPT_MESSAGES: Message[] = [
   ...pendingScenario,
   ...approvedScenario,
@@ -210,4 +313,6 @@ export const MOCK_INTERRUPT_MESSAGES: Message[] = [
   ...revokedScenario,
   ...resumedScenario,
   ...unsupportedScenario,
+  ...userQuestionScenario,
+  ...userQuestionAnsweredScenario,
 ];

@@ -15,7 +15,7 @@ packages/
 │   ├── scripts/          ← Vite 构建脚本（Vue3 external / Vue2 从源码编译）
 │   └── playground/       ← 开发调试
 ├── chat-x/               ← @blueking/chat-x v0.0.19 — 原子对话 UI 组件库（独立使用）
-│   ├── src/              ← 原子组件（ChatInput、MessageBubble、MarkdownRenderer 等）
+│   ├── src/              ← 对话能力组件（ChatInput、MessageContainer、ContentRender 等）
 │   ├── mcp/              ← MCP 工具子模块
 │   └── wikis/            ← VitePress 文档
 ├── chat-helper/          ← @blueking/chat-helper v0.0.1-beta.36 — 工具库（HTTP、消息管理）
@@ -51,7 +51,7 @@ pnpm install   # Install dependencies
 pnpm dev:ai              # Start ai-blueking dev server
 pnpm build:ai            # Build ai-blueking (Vue3 + Vue2)
 
-# Chat X (原子组件库)
+# Chat X (对话组件库)
 pnpm dev:ui              # Start chat-x dev server
 pnpm build:ui            # Build chat-x
 pnpm test:ui             # Test chat-x

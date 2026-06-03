@@ -52,3 +52,4 @@ docs/superpowers/*
 packages/chat-x/mcp/generated/*
 .cursor
 .vercel
+.agents/

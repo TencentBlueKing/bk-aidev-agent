@@ -34,7 +34,7 @@ export const searchDocsSchema = {
 
 interface SearchResult {
   aiSummary?: string;
-  category: string;
+  kind: string;
   matches: string[];
   name: string;
   slug: string;
@@ -56,7 +56,7 @@ export function searchDocs(args: { limit: number; query: string }) {
       results.push({
         name: entry.name,
         slug: entry.slug,
-        category: entry.category,
+        kind: entry.kind,
         aiSummary: entry.aiSummary,
         matches: extractMatchContext(content, args.query),
       });

@@ -228,4 +228,4 @@ useMenuKeydown<T>(props: {
 
 ## 关联组件
 
-- [ChatInput](../components/molecular/chat-input.md) — `@` 菜单与 `/` 提示词列表
+- [ChatInput](../components/input/chat-input) — `@` 菜单与 `/` 提示词列表

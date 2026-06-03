@@ -30,7 +30,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { APPROVAL_STATUS, InterruptReason } from '../../../ag-ui/types/constants';
 import InterruptMessage from './interrupt-message.vue';
 
-import type { AIDevToolApprovalInterrupt, Interrupt } from '../../../ag-ui/types/interrupt';
+import type {
+  AIDevToolApprovalInterrupt,
+  Interrupt,
+  UserQuestionAnswerItem,
+  UserQuestionResume,
+} from '../../../ag-ui/types/interrupt';
 
 const copyMock = vi.fn();
 
@@ -70,6 +75,26 @@ const unsupportedInterrupt: Interrupt = {
   reason: 'unknown_reason' as InterruptReason,
   toolCallId: 'tool-call-2',
   message: '暂不支持的中断消息',
+};
+
+const userQuestionAnswers: UserQuestionAnswerItem[] = [
+  {
+    question: '请选择语言',
+    multiSelect: true,
+    answer: [
+      { label: 'Java', description: 'Java' },
+      { label: 'others', description: 'Rust' },
+    ],
+  },
+];
+
+const userQuestionResume: UserQuestionResume = {
+  interruptId: 'interrupt-user-question',
+  reason: InterruptReason.UserQuestion,
+  status: 'resolved',
+  payload: {
+    answers: userQuestionAnswers,
+  },
 };
 
 /** 与 message-render 透传一致：outcome / message 位于 content 内 */
@@ -148,7 +173,7 @@ describe('InterruptMessage', () => {
 
     await wrapper.find('.ai-tool-approval-card__cancel').trigger('click');
 
-    expect(onInterruptResume).toHaveBeenCalledWith(approvalInterrupt, { action: 'cancel' });
+    expect(onInterruptResume).toHaveBeenCalledWith({ action: 'cancel' }, approvalInterrupt);
   });
 
   it('点击查看单据详情时只打开单据链接，不触发 resume', async () => {
@@ -208,6 +233,22 @@ describe('InterruptMessage', () => {
 
     expect(wrapper.find('.ai-tool-approval-card').exists()).toBe(false);
     expect(wrapper.find('.ai-interrupt-message__fallback').exists()).toBe(false);
+  });
+
+  it('success outcome 存在 UserQuestion resume 时应回显回答内容', () => {
+    wrapper = mount(InterruptMessage, {
+      props: {
+        content: {
+          outcome: { type: 'success' },
+          result: userQuestionResume,
+        },
+      },
+    });
+
+    expect(wrapper.find('.ai-user-question-answered').exists()).toBe(true);
+    expect(wrapper.text()).toContain('请选择语言');
+    expect(wrapper.text()).toContain('Java');
+    expect(wrapper.text()).toContain('Rust');
   });
 
   it('content.message 存在时应渲染提示文案', () => {

@@ -250,6 +250,6 @@ erDiagram
 
 ## 关联组件
 
-- [MermaidContent](../components/atomic/mermaid-content.md) — Mermaid 渲染
-- [MarkdownContent](../components/atomic/markdown-content.md) — Markdown 内容
-- [ContentRender](../components/molecular/content-render.md) — 内容渲染
+- [MermaidContent](../components/rendering/mermaid-content) — Mermaid 渲染
+- [MarkdownContent](../components/rendering/markdown-content) — Markdown 内容
+- [ContentRender](../components/rendering/content-render) — 内容渲染

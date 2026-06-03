@@ -261,6 +261,6 @@ export const useClipboard = () => {
 
 ## 关联组件
 
-- [CodeContent](../components/atomic/code-content.md) — 代码块复制
-- [MessageContainer](../components/molecular/message-container.md) — 助手消息复制
-- [UserMessage](../components/molecular/user-message.md) — 用户消息复制
+- [CodeContent](../components/rendering/code-content) — 代码块复制
+- [MessageContainer](../components/setup/message-container) — 助手消息复制
+- [UserMessage](../components/message/user-message) — 用户消息复制

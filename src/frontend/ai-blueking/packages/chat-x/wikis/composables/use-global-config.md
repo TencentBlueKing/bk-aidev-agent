@@ -153,4 +153,4 @@ export function injectGlobalConfig(): GlobalConfig | undefined;
 
 ## 关联组件
 
-- [ChatContainer](../components/molecular/chat-container.md) — 调用 `useGlobalConfig` 注入 `supportUpload`
+- [ChatContainer](../components/setup/chat-container) — 调用 `useGlobalConfig` 注入 `supportUpload`

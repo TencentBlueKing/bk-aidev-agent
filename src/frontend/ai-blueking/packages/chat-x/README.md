@@ -458,7 +458,7 @@ CSS 变量 + `useGlobalConfig` 统一调整全局展示配置。
 
 | 工具                | 说明                                        |
 | ------------------- | ------------------------------------------- |
-| `list_components`   | 列出所有组件，支持按 domain / category 过滤 |
+| `list_components`   | 列出所有索引条目，支持按 kind / domain 过滤 |
 | `get_component_doc` | 获取指定组件文档，含 AI 摘要                |
 | `search_docs`       | 关键词搜索文档                              |
 

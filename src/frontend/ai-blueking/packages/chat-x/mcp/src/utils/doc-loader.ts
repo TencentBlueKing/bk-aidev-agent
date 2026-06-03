@@ -28,10 +28,10 @@ import { join, resolve } from 'node:path';
 
 export interface DocEntry {
   aiSummary: string;
-  category: string;
   description: string;
   docFile: string;
   domain?: string;
+  kind: string;
   name: string;
   relatedComponents: Array<{ relation: string; slug: string }>;
   slug: string;

@@ -2,13 +2,15 @@
 name: 用户问题 Schema
 slug: schema
 category: type
-description: human-in-the-loop 用户单选、多选问题的 JSON Schema 与推导类型。
+description: 历史 human-in-the-loop 用户问题 JSON Schema 工具；新 UserQuestion 中断协议以 Interrupt 文档为准。
 aiSummary: >
-  schema.ts 导出 UserSingleChoiceQuestionSchema、UserMultiChoiceQuestionSchema、UserQuestionSchema 及 FromSchema 推导类型。
-  BaseInterrupt.responseSchema 会根据 InterruptReason.UserSingleChoice / UserMultiChoice 约束问题响应结构。
+  schema.ts 仍导出 UserSingleChoiceQuestionSchema、UserMultiChoiceQuestionSchema、UserQuestionSchema 及 FromSchema 推导类型；
+  新的 aidev:user_question 中断不再通过 BaseInterrupt.responseSchema 区分单选/多选，而是在 metadata.questions[].multiSelect 中描述题型。
 relatedComponents:
-  - slug: interrupt-message
-    relation: 中断消息可携带 responseSchema 描述用户响应结构
+  - slug: interrupt
+    relation: 新 UserQuestionInterrupt 与 UserQuestionResume 协议
+  - slug: user-question-card
+    relation: 根据 metadata.questions 渲染单选、多选与 Others 输入
 sinceVersion: 2.0.0
 domain: message
 ---
@@ -17,15 +19,44 @@ domain: message
 
 > **分类**：type
 
-`src/ag-ui/types/schema.ts` 定义 human-in-the-loop 用户问题的 JSON Schema，并通过 `json-schema-to-ts` 推导 TypeScript 类型。该文件已从 `@blueking/chat-x` 包入口导出。
+`src/ag-ui/types/schema.ts` 保留了历史 JSON Schema 工具导出：
 
-## UserSingleChoiceQuestionSchema
+- `UserSingleChoiceQuestionSchema`
+- `UserMultiChoiceQuestionSchema`
+- `UserQuestionSchema`
+- `UserSingleChoiceQuestion`
+- `UserMultiChoiceQuestion`
+- `UserQuestion`
 
-单选问题的响应结构，`question` 为字符串：
+新的 `InterruptReason.UserQuestion`（`'aidev:user_question'`）协议不再依赖 `BaseInterrupt.responseSchema`，而是在 `UserQuestionInterrupt.metadata.questions[]` 中用 `multiSelect` 描述单选 / 多选题，并通过 `UserQuestionResume.payload.answers` 回传回答。
+
+## 新协议入口
 
 ```typescript
-import type { FromSchema } from 'json-schema-to-ts';
+type UserQuestionItem = {
+  header: string;
+  multiSelect: boolean;
+  options?: UserQuestionOptionItem[];
+  question: string;
+};
 
+type UserQuestionResume = {
+  interruptId: string;
+  reason: InterruptReason.UserQuestion;
+  status: 'cancelled' | 'resolved';
+  payload: {
+    answers: UserQuestionAnswerItem[];
+  };
+};
+```
+
+完整结构见 [中断类型 Interrupt](./interrupt.md#userquestioninterrupt)。
+
+## 历史导出
+
+### UserSingleChoiceQuestionSchema
+
+```typescript
 const UserSingleChoiceQuestionSchema = {
   properties: {
     question: {
@@ -36,17 +67,11 @@ const UserSingleChoiceQuestionSchema = {
   required: ['question'],
   type: 'object',
 } as const;
-
-type UserSingleChoiceQuestion = FromSchema<typeof UserSingleChoiceQuestionSchema>;
 ```
 
-## UserMultiChoiceQuestionSchema
-
-多选问题的响应结构，`question` 为字符串数组，且要求唯一：
+### UserMultiChoiceQuestionSchema
 
 ```typescript
-import type { FromSchema } from 'json-schema-to-ts';
-
 const UserMultiChoiceQuestionSchema = {
   properties: {
     question: {
@@ -61,54 +86,13 @@ const UserMultiChoiceQuestionSchema = {
   required: ['question'],
   type: 'object',
 } as const;
-
-type UserMultiChoiceQuestion = FromSchema<typeof UserMultiChoiceQuestionSchema>;
 ```
 
-## 兼容导出
+### UserQuestionSchema
 
-`UserQuestionSchema` 与 `UserQuestion` 保留为多选问题的别名：
-
-```typescript
-const UserQuestionSchema = UserMultiChoiceQuestionSchema;
-type UserQuestion = UserMultiChoiceQuestion;
-```
-
-## 与 Interrupt 的关系
-
-`BaseInterrupt.responseSchema` 会根据中断原因约束响应结构：
-
-```typescript
-type BaseInterrupt<T extends InterruptReason, M extends Record<string, any>> = {
-  responseSchema?: T extends InterruptReason.UserMultiChoice
-    ? UserMultiChoiceQuestionSchema
-    : UserSingleChoiceQuestionSchema;
-  // ...其他字段
-};
-```
-
-## 使用示例
-
-```typescript
-import {
-  InterruptReason,
-  UserMultiChoiceQuestionSchema,
-  type BaseInterrupt,
-} from '@blueking/chat-x';
-
-const interrupt: BaseInterrupt<InterruptReason.UserMultiChoice, Record<string, never>> = {
-  id: 'interrupt_question',
-  reason: InterruptReason.UserMultiChoice,
-  toolCallId: 'tool_call_question',
-  responseSchema: UserMultiChoiceQuestionSchema,
-};
-
-const payload = {
-  question: ['选项 A', '选项 B'],
-};
-```
+`UserQuestionSchema` 与 `UserQuestion` 仍为 `UserMultiChoiceQuestionSchema` / `UserMultiChoiceQuestion` 的别名。
 
 ## 关联文档
 
-- [中断类型 Interrupt](./interrupt.md) — `BaseInterrupt.responseSchema`
-- [常量枚举 Constants](./constants.md) — `InterruptReason.UserSingleChoice` / `UserMultiChoice`
+- [中断类型 Interrupt](./interrupt.md)
+- [UserQuestionCard 用户问题中断](../components/agent/user-question-card)
