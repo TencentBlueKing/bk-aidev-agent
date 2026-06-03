@@ -353,6 +353,7 @@ function sidebarComponents() {
         { text: 'ToolApprovalCard 工具审批', link: 'agent/tool-approval-card' },
         { text: 'InterruptMessage 中断消息', link: 'agent/interrupt-message' },
         { text: 'UserQuestionCard 用户问题', link: 'agent/user-question-card' },
+        { text: 'UserQuestionChoice 选择题', link: 'agent/user-question-choice' },
         { text: 'UserQuestionAnsweredCard 回答回显', link: 'agent/user-question-answered-card' },
         { text: 'UserQuestionOption 问题选项', link: 'agent/user-question-option' },
         { text: 'ExecutionSummary 执行摘要', link: 'agent/execution-summary' },

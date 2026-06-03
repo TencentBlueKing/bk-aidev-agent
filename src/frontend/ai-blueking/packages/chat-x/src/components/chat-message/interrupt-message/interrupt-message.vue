@@ -29,7 +29,17 @@
       v-if="userQuestionResume"
       :answers="answeredUserQuestion"
       :status="userQuestionResume.status"
-    />
+    >
+      <template
+        v-if="$slots.answeredQuestion"
+        #answer="slotProps"
+      >
+        <slot
+          name="answeredQuestion"
+          v-bind="slotProps"
+        />
+      </template>
+    </UserQuestionAnsweredCard>
   </div>
 </template>
 
@@ -48,6 +58,12 @@
     OnInterruptResume,
     UserQuestionAnswerItem,
   } from '../../../ag-ui/types/interrupt';
+  import type { UserQuestionAnsweredCardSlots } from './user-question/user-question-answered-card.vue';
+
+  defineSlots<{
+    // 已回答内容回显的自定义 slot，透传给 UserQuestionAnsweredCard 的 #answer
+    answeredQuestion: UserQuestionAnsweredCardSlots['answer'];
+  }>();
 
   const interruptRenderers: Partial<Record<InterruptReason, Component>> = {
     [InterruptReason.AIDevToolApproval]: ToolApprovalCard,

@@ -157,4 +157,40 @@ describe('UserQuestionCard', () => {
     await options[2].find('.ai-user-question-option__input').setValue('自定义');
     expect(wrapper.find('.ai-user-question-card__counter').text()).toBe('1 / 2');
   });
+
+  it('自定义 #question 表单 slot：通过 setAnswer 回传任意答案并驱动完成态', async () => {
+    const onResume = vi.fn();
+    const interrupt = buildInterrupt();
+    wrapper = mount(UserQuestionCard, {
+      props: { interrupt, onResume },
+      slots: {
+        // 模拟自定义表单：点击按钮即写入一条符合协议的答案
+        question: `
+          <template #question="{ question, setAnswer }">
+            <button
+              class="form-fill"
+              @click="setAnswer({ question: question.question, answer: [{ label: 'custom', description: question.question + '-填写' }] })"
+            >fill</button>
+          </template>
+        `,
+      },
+    });
+
+    const fillButtons = wrapper.findAll('.form-fill');
+    // 两题，需各自填写后才能完成
+    expect(fillButtons).toHaveLength(2);
+    await fillButtons[0].trigger('click');
+    expect(wrapper.find('.ai-user-question-card__counter').text()).toBe('1 / 2');
+    await fillButtons[1].trigger('click');
+    expect(wrapper.find('.ai-user-question-card__counter').text()).toBe('2 / 2');
+
+    await wrapper.find('.ai-user-question-card__complete').trigger('click');
+    expect(onResume).toHaveBeenCalledTimes(1);
+    const [payload] = onResume.mock.calls[0];
+    expect(payload.status).toBe('resolved');
+    expect(payload.payload.answers).toEqual([
+      { question: 'Q1', answer: [{ label: 'custom', description: 'Q1-填写' }] },
+      { question: 'Q2', answer: [{ label: 'custom', description: 'Q2-填写' }] },
+    ]);
+  });
 });

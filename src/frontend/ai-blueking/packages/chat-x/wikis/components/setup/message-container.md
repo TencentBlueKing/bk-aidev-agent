@@ -942,9 +942,10 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
 
 ### Slots
 
-| 插槽名  | 参数                                                                        | 说明                                             |
-| ------- | --------------------------------------------------------------------------- | ------------------------------------------------ |
-| default | `{ message: Message, messageToolsStatus: MessageToolsStatus \| undefined }` | 自定义单条消息渲染，消息分组和工具栏仍由容器管理 |
+| 插槽名           | 参数                                                                        | 说明                                                                                     |
+| ---------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| answeredQuestion | `{ item, index, status }`                                                   | 自定义 UserQuestion 已回答回显，透传给 MessageRender → InterruptMessageRender            |
+| default          | `{ message: Message, messageToolsStatus: MessageToolsStatus \| undefined }` | 自定义单条消息渲染，消息分组和工具栏仍由容器管理                                         |
 
 ## 类型定义
 

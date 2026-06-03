@@ -42,7 +42,26 @@
       @update:model-value="handleUpdateInputValue"
     >
       <template #message="{ message, messageToolsStatus, onInterruptResume }">
+        <template
+          v-if="
+            message.role === MessageRole.Interrupt && message.content.result?.reason === InterruptReason.UserQuestion
+          "
+        >
+          <InterruptMessageRender
+            v-bind="message"
+            :on-interrupt-resume="onInterruptResume"
+          >
+            <template #answeredQuestion="{ item }">
+              <div>
+                <div>
+                  <span> -------- {{ JSON.stringify(item) }} </span>
+                </div>
+              </div>
+            </template>
+          </InterruptMessageRender>
+        </template>
         <MessageRender
+          v-else
           :message="message"
           :message-tools-status="messageToolsStatus"
           :on-interrupt-resume="onInterruptResume"
@@ -63,12 +82,42 @@
           </template>
         </MessageRender>
       </template>
+      <!-- 自定义作答态：用下拉选择替代默认的选项列表，选中后通过 setAnswer 回传已组装答案 -->
+      <template #interruptQuestion="{ question, setAnswer, answer }">
+        <div>
+          <Select
+            :model-value="answer?.answer.at(0)?.label"
+            @change="
+              (value: string) =>
+                setAnswer(
+                  value
+                    ? {
+                        question: question.question,
+                        multiSelect: question.multiSelect,
+                        answer: [{ label: value, description: value }],
+                      }
+                    : undefined,
+                )
+            "
+          >
+            <Select.Option
+              v-for="option in question.options ?? []"
+              :id="option.label"
+              :key="option.label"
+              :name="option.description"
+            >
+            </Select.Option>
+          </Select>
+        </div>
+      </template>
     </ChatContainer>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref as deepRef, h, onMounted, shallowRef } from 'vue';
+  import { ref as deepRef, onMounted, shallowRef } from 'vue';
+
+  import { Select } from 'bkui-vue';
 
   import {
     type ActivityMessage,
@@ -81,6 +130,8 @@
     ChatContainer,
     CopyIcon,
     EditIcon,
+    InterruptMessageRender,
+    InterruptReason,
     MessageContentType,
     MessageRender,
     MessageRole,
