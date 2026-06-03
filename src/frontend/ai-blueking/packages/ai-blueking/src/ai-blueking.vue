@@ -195,6 +195,7 @@
     agentPrompts,
     agentSkills,
     handleError,
+    reportSdkError,
     ensureSessionReady,
     updateAgentInfo,
   } = useAiBluekingInit({
@@ -264,7 +265,7 @@
     sessionBusinessManager,
     chatBotRef,
     forwarders,
-    handleError,
+    reportSdkError,
     currentSession,
   });
 
@@ -273,7 +274,7 @@
     shareBusinessManager,
     chatBotRef,
     forwarders,
-    handleError,
+    reportSdkError,
   });
 
   // ==================== 5. 划词选择 ====================

@@ -45,6 +45,7 @@ export const langData = {
   取消: 'Cancel',
   确定: 'Confirm',
   分享链接已复制到剪贴板: 'Share link copied to clipboard',
+  请求失败: 'Request failed',
 } as const;
 
 export const zhLangData = {
@@ -55,6 +56,7 @@ export const zhLangData = {
   取消: '取消',
   确定: '确定',
   分享链接已复制到剪贴板: '分享链接已复制到剪贴板',
+  请求失败: '请求失败',
 };
 
 export const t = (key: string) => {

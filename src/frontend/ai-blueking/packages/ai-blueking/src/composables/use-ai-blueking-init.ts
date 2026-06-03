@@ -9,6 +9,9 @@
 
 import { computed, onBeforeUnmount, onMounted, ref, toValue, watch } from 'vue';
 
+import { Message } from 'bkui-vue';
+
+import { t } from '../lang';
 import { createComponentManager } from '../manager';
 import { SessionBusinessManager } from '../manager/business/session-business-manager';
 import { ShareBusinessManager } from '../manager/business/share-business-manager';
@@ -19,7 +22,7 @@ import { createEventForwarders, useEventBridge } from './use-event-bridge';
 
 import type ChatBot from '../components/chat-bot.vue';
 import type { DraggableContainerExpose } from '../containers';
-import type { AIBluekingProps, IShortcut } from '../types';
+import type { AIBluekingProps, IShortcut, ReportSdkErrorOptions, SdkErrorApiName } from '../types';
 import type { UseEventBridgeReturn } from './use-event-bridge';
 import type { IAiSlashMenuItem, ISkillListItem } from '@blueking/chat-x';
 
@@ -62,24 +65,86 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
   const forwarders = createEventForwarders(forwardToManager);
 
   // ==================== 错误处理 ====================
+  /** 已上报错误去重（同一 Error 实例只对外上报一次） */
+  const reportedErrors = new WeakSet<Error>();
+
+  /** 延迟上报裸 HTTP 错误，给业务 catch 优先上报语义化 apiName 的机会 */
+  let pendingHttpErrorReport: {
+    error: Error;
+    timer: ReturnType<typeof setTimeout>;
+  } | null = null;
+
+  let httpErrorApiNameContext: SdkErrorApiName | null = null;
+
+  const cancelPendingHttpErrorReport = () => {
+    if (pendingHttpErrorReport) {
+      clearTimeout(pendingHttpErrorReport.timer);
+      pendingHttpErrorReport = null;
+    }
+  };
+
   /**
-   * 统一的 SDK 错误发射器
-   * 所有错误通过此函数统一格式化后触发 sdk-error，避免散落的重复逻辑
+   * 统一 SDK 错误出口：toast + sdk-error 仅在此处发生
+   * apiName 表达业务语义；source 标识底层来源（http/protocol/business）
    */
-  const emitSdkError = (apiName: string, error: unknown) => {
+  const reportSdkError = (options: ReportSdkErrorOptions) => {
+    const { apiName, error, action, source, shouldToast = true } = options;
     const message = error instanceof Error ? error.message : String(error);
+    const errorObj = error instanceof Error ? error : null;
+
+    if (errorObj && reportedErrors.has(errorObj)) {
+      return;
+    }
+    if (errorObj) {
+      reportedErrors.add(errorObj);
+    }
+
+    if (source !== 'http' && errorObj && pendingHttpErrorReport?.error === errorObj) {
+      cancelPendingHttpErrorReport();
+    }
+
     console.error(`[AIBlueking] ${apiName} error:`, error);
+
+    if (shouldToast && props.errorToast !== false) {
+      Message({
+        message: message || t('请求失败'),
+        theme: 'error',
+      });
+    }
+
     componentManager.emitInternal('sdk-error', {
       apiName,
+      action,
+      source,
       code: -1,
       message,
       data: error,
     });
   };
 
+  const scheduleHttpErrorReport = (error: Error) => {
+    cancelPendingHttpErrorReport();
+    const apiName = httpErrorApiNameContext ?? (isBootstrapReady.value ? 'chat' : 'init');
+    const timer = setTimeout(() => {
+      pendingHttpErrorReport = null;
+      reportSdkError({ apiName, error, source: 'http' });
+    }, 0);
+    pendingHttpErrorReport = { error, timer };
+  };
+
+  const runWithHttpErrorApiName = async <T>(apiName: SdkErrorApiName, task: () => Promise<T>): Promise<T> => {
+    const previousApiName = httpErrorApiNameContext;
+    httpErrorApiNameContext = apiName;
+    try {
+      return await task();
+    } finally {
+      httpErrorApiNameContext = previousApiName;
+    }
+  };
+
   /** ChatBot 子组件 @error 回调 */
   const handleError = (error: Error) => {
-    emitSdkError('chat', error);
+    reportSdkError({ apiName: 'chat', error, source: 'business' });
   };
 
   // ==================== Bootstrap ====================
@@ -106,12 +171,23 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
         forwarders.receiveEnd();
       },
       onError: (error: unknown) => {
-        emitSdkError('chat', error);
+        reportSdkError({ apiName: 'chat', error, source: 'protocol' });
       },
     },
   });
 
   const chatHelper = bootstrapChatHelper;
+
+  // ==================== 统一错误处理 ====================
+  // 注册全局 HTTP 错误处理器：延迟上报，让业务 catch 优先使用 session/share/chat 等语义
+  chatHelper.onError?.(
+    (error: Error) => {
+      scheduleHttpErrorReport(error);
+    },
+    {
+      ignoreErrors: props.ignoreErrors,
+    },
+  );
 
   // ==================== Business Managers ====================
   const sessionBusinessManager = new SessionBusinessManager(chatHelper.session, chatHelper.agent, null, {
@@ -141,8 +217,10 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
   };
 
   const ensureSessionReady = async (): Promise<void> => {
-    await bootstrapInitialize();
-    await ensureRecentSessionLoaded();
+    await runWithHttpErrorApiName('init', async () => {
+      await bootstrapInitialize();
+      await ensureRecentSessionLoaded();
+    });
   };
 
   // ==================== Tippy 配置 ====================
@@ -179,12 +257,13 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     }));
   });
 
-  // 监听 Bootstrap 初始化失败（如 Agent 信息获取失败），统一触发 sdk-error
+  // 监听 Bootstrap 初始化失败（如 Agent 信息获取失败）
   watch(
     () => bootstrapError.value,
     err => {
       if (err) {
-        emitSdkError('init', err);
+        cancelPendingHttpErrorReport();
+        reportSdkError({ apiName: 'init', error: err, source: 'http' });
       }
     },
   );
@@ -216,7 +295,7 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
       }
       return info;
     } catch (err) {
-      emitSdkError('getAgentInfo', err);
+      reportSdkError({ apiName: 'getAgentInfo', error: err, source: 'http' });
       return null;
     }
   };
@@ -276,6 +355,7 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
   });
 
   onBeforeUnmount(() => {
+    cancelPendingHttpErrorReport();
     window.removeEventListener('keydown', handleKeydown);
     componentManager.destroy();
   });
@@ -303,6 +383,7 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     agentPrompts,
     agentSkills,
     handleError,
+    reportSdkError,
     ensureSessionReady,
     updateAgentInfo,
   };

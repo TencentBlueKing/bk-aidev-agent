@@ -17,7 +17,7 @@ import { copyToClipboard } from '../utils';
 
 import type ChatBot from '../components/chat-bot.vue';
 import type { ShareBusinessManager } from '../manager/business/share-business-manager';
-import type { IMessage } from '../types';
+import type { IMessage, ReportSdkErrorOptions } from '../types';
 import type { EventForwarders } from './use-ai-blueking-init';
 import type { Message } from '@blueking/chat-x';
 
@@ -25,11 +25,11 @@ export interface UseShareHandlersParams {
   chatBotRef: Ref<InstanceType<typeof ChatBot> | undefined>;
   forwarders: EventForwarders;
   shareBusinessManager: ShareBusinessManager;
-  handleError: (error: Error) => void;
+  reportSdkError: (options: ReportSdkErrorOptions) => void;
 }
 
 export function useShareHandlers(params: UseShareHandlersParams) {
-  const { shareBusinessManager, chatBotRef, forwarders, handleError } = params;
+  const { shareBusinessManager, chatBotRef, forwarders, reportSdkError } = params;
 
   const isShareLoading = ref(false);
 
@@ -70,7 +70,7 @@ export function useShareHandlers(params: UseShareHandlersParams) {
       forwarders.shareMessages(userMessageIds);
     } catch (error) {
       console.error('[AIBlueking] Failed to share messages:', error);
-      handleError(error as Error);
+      reportSdkError({ apiName: 'share', action: 'confirmShare', error, source: 'business' });
     } finally {
       isShareLoading.value = false;
     }

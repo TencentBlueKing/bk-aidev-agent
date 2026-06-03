@@ -22,7 +22,7 @@
 
 import type { ISession } from '@blueking/chat-helper';
 import type { PositionAndSize, IShortcut } from './types';
-import type { IChatHelper } from '../types';
+import type { IChatHelper, SdkErrorPayload } from '../types';
 
 // ============================================================================
 // UI 事件类型
@@ -135,7 +135,7 @@ export interface BusinessEventData {
   'shortcut-click': { shortcut: IShortcut; source: 'popup' | 'main' };
   // 错误事件
   'chat-error': { action: string; error: unknown };
-  'sdk-error': { apiName: string; code: number; message: string; data: unknown };
+  'sdk-error': SdkErrorPayload;
 }
 
 // ============================================================================

@@ -28,14 +28,12 @@ export type {
 // MessageContentType 从 chat-x 导出
 export { MessageContentType } from '@blueking/chat-x';
 
-import { type MaybeRefOrGetter, type VNode, h } from 'vue';
+import { type h, type MaybeRefOrGetter, type VNode } from 'vue';
 
-import type { MaybeRequestValue, RequestData, RequestHeaders } from '@blueking/chat-helper';
-
-import type { CustomBkFlowTab, CustomTab, RenderMode } from '@blueking/chat-x';
-
+import type { CreateSessionOptions } from './manager/business/types';
 // 从 Manager 导入类型
 import type { PositionAndSize } from './manager/types';
+import type { MaybeRequestValue, RequestData, RequestHeaders } from '@blueking/chat-helper';
 // 导入 chat-helper 类型用于扩展
 import type {
   IAgentCommand,
@@ -45,21 +43,33 @@ import type {
   IMessageModule,
   ISessionModule,
 } from '@blueking/chat-helper';
+import type { CustomBkFlowTab, CustomTab, RenderMode } from '@blueking/chat-x';
 import type { IAiSlashMenuItem } from '@blueking/chat-x';
-import type { CreateSessionOptions } from './manager/business/types';
 
-/** 自定义侧栏内容区渲染（透传 ChatContainer.getSideRenderComponent） */
-export type GetSideRenderComponent = (createElement: typeof h, props?: Record<string, unknown>) => VNode | undefined;
+/** sdk-error 业务语义 apiName */
+export type SdkErrorApiName = 'chat' | 'getAgentInfo' | 'init' | 'session' | 'share';
 
-/** 自定义侧栏 Tab 标签渲染（透传 ChatContainer.getSideTabRenderComponent） */
-export type GetSideTabRenderComponent = (
-  createElement: typeof h,
-  tab: CustomTab<Record<string, unknown>>,
-  events: { removeCustomTab: (tabName: string) => void },
-) => VNode | undefined;
+/** sdk-error 错误来源 */
+export type SdkErrorSource = 'business' | 'http' | 'protocol';
 
-/** 侧栏自定义 Tab 切换时拉取详情（透传 ChatContainer.onCustomTabChange） */
-export type OnCustomTabChange = (tab: CustomBkFlowTab) => Promise<unknown>;
+/** sdk-error 事件 payload */
+export interface SdkErrorPayload {
+  action?: string;
+  apiName: SdkErrorApiName;
+  code: number;
+  data: unknown;
+  message: string;
+  source?: SdkErrorSource;
+}
+
+/** 统一错误上报选项 */
+export interface ReportSdkErrorOptions {
+  action?: string;
+  apiName: SdkErrorApiName;
+  error: unknown;
+  shouldToast?: boolean;
+  source?: SdkErrorSource;
+}
 
 /**
  * AIBlueking 组件 Emits 类型定义
@@ -88,8 +98,8 @@ export interface AIBluekingEmits {
   // 会话事件
   (e: 'session-initialized', data: { openingRemark: string; predefinedQuestions: string[] }): void;
 
-  // 错误事件
-  (e: 'sdk-error', data: { apiName: string; code: number; data: unknown; message: string }): void;
+  // 错误事件（apiName 为业务语义，非 HTTP 层接口名）
+  (e: 'sdk-error', data: SdkErrorPayload): void;
 
   // 消息选择事件（与 useEventBridge transformEventDataToEmitArgs 单参 payload 一致）
   (e: 'transfer-messages', data: { messageIds: string[] }): void;
@@ -97,7 +107,7 @@ export interface AIBluekingEmits {
 
   // Header 相关事件
   (e: 'new-chat'): void;
-  (e: 'new-chat-created', session: { sessionCode: string; sessionName?: string; createdAt?: string }): void;
+  (e: 'new-chat-created', session: { createdAt?: string; sessionCode: string; sessionName?: string }): void;
   (e: 'history-click', event: Event): void;
   (e: 'auto-generate-name'): void;
   (e: 'help-click'): void;
@@ -167,23 +177,17 @@ export interface AIBluekingExpose {
  * AIBlueking 组件 Props 类型定义
  */
 export interface AIBluekingProps {
-  /** 是否自动切换到初始会话 */
-  autoSwitchToInitialSession?: boolean;
   /** 是否始终创建新会话（初始化时不判断最近会话是否有内容，直接新建） */
   alwaysCreateNewSession?: boolean;
-  /**
-   * Nimbus 悬浮球点击前的钩子函数
-   * 返回 false 阻止默认的 showPanel 行为，返回 true 或不返回则继续默认行为
-   * 可用于在点击后先执行自定义逻辑（如切换到固定 session）再决定是否打开面板
-   */
-  beforeNimbusClick?: () => boolean | Promise<boolean | void> | void;
+  /** 是否自动切换到初始会话 */
+  autoSwitchToInitialSession?: boolean;
   /** 默认聊天输入框位置 */
   defaultChatInputPosition?: 'bottom' | undefined;
   /** 默认高度 */
   defaultHeight?: number;
-
   /** 默认左侧位置 */
   defaultLeft?: number;
+
   /** 是否默认最小化 */
   defaultMinimize?: boolean;
   /** 默认顶部位置 */
@@ -193,46 +197,56 @@ export interface AIBluekingProps {
   defaultWidth?: number;
   /** 是否禁用输入 */
   disabledInput?: boolean;
-
   /** 是否可拖拽 */
   draggable?: boolean;
+
   /** 下拉菜单配置 */
   dropdownMenuConfig?: DropdownMenuConfig;
   /** 是否启用会话管理 */
   enableChatSession?: boolean;
   /** 是否启用选中文本弹窗 */
   enablePopup?: boolean;
+  /** 接口错误时是否自动弹出 Message 提示，默认 true；设为 false 可自行通过 sdk-error 事件处理（统一错误出口控制） */
+  errorToast?: boolean;
   /** 自定义 CSS 类名 */
   extCls?: string;
+  /** 自定义侧栏内容区渲染 */
+  getSideRenderComponent?: GetSideRenderComponent;
+  /** 自定义侧栏 Tab 标签渲染 */
+  getSideTabRenderComponent?: GetSideTabRenderComponent;
+
   /** 欢迎语 */
   helloText?: string;
-  /** 使用 agentName 作为欢迎标题 */
-  useAgentName?: boolean;
-
   /** 是否隐藏默认触发器 */
   hideDefaultTrigger?: boolean;
+
   /** 是否隐藏头部 */
   hideHeader?: boolean;
-
   // 功能开关
   /** 是否隐藏悬浮球 */
   hideNimbus?: boolean;
+  /** 忽略的接口错误 URL 模式（字符串包含匹配或正则），匹配的接口错误不会弹出 toast */
+  ignoreErrors?: Array<RegExp | string>;
   /** 初始会话编码 */
   initialSessionCode?: string;
+
   /** 挂载时是否加载最近会话 */
   loadRecentSessionOnMount?: boolean;
   /** 最大宽度 */
   maxWidth?: number | string;
-
   /** 最小化时的内边距 */
   miniPadding?: number;
   // Nimbus 配置
   /** 悬浮球大小 */
   nimbusSize?: 'large' | 'normal' | 'small';
+  /** 覆盖默认 Flow 节点详情拉取；未传则使用 ChatBot 内置逻辑 */
+  onCustomTabChange?: OnCustomTabChange;
   /** 输入框占位文本 */
   placeholder?: string;
   /** 预设提示词列表 */
   prompts?: string[];
+  /** 渲染模式：chat(默认)、share(分享)、test(测试) */
+  renderMode?: RenderMode;
   // 其他配置
   /** 请求配置（支持 ref/computed，替换后后续请求自动生效） */
   requestOptions?: MaybeRefOrGetter<IRequestOptions>;
@@ -255,11 +269,20 @@ export interface AIBluekingProps {
   teleportTo?: string;
   /** 组件标题 */
   title?: string;
+
   // 基础配置
   /** API 服务地址 */
   url?: string;
-  /** 渲染模式：chat(默认)、share(分享)、test(测试) */
-  renderMode?: RenderMode;
+
+  /** 使用 agentName 作为欢迎标题 */
+  useAgentName?: boolean;
+
+  /**
+   * Nimbus 悬浮球点击前的钩子函数
+   * 返回 false 阻止默认的 showPanel 行为，返回 true 或不返回则继续默认行为
+   * 可用于在点击后先执行自定义逻辑（如切换到固定 session）再决定是否打开面板
+   */
+  beforeNimbusClick?: () => boolean | Promise<boolean | void> | void;
   /** 快捷操作过滤函数 */
   shortcutFilter?: (shortcut: IShortcut, selectedText: string) => boolean;
   /** ResizeLayout 配置（执行情况侧面板拖拽） */
@@ -269,13 +292,6 @@ export interface AIBluekingProps {
     max?: number;
     min?: number;
   };
-
-  /** 自定义侧栏内容区渲染 */
-  getSideRenderComponent?: GetSideRenderComponent;
-  /** 自定义侧栏 Tab 标签渲染 */
-  getSideTabRenderComponent?: GetSideTabRenderComponent;
-  /** 覆盖默认 Flow 节点详情拉取；未传则使用 ChatBot 内置逻辑 */
-  onCustomTabChange?: OnCustomTabChange;
 }
 
 /**
@@ -286,6 +302,16 @@ export interface DropdownMenuConfig {
   showRename?: boolean;
   showShare?: boolean;
 }
+
+/** 自定义侧栏内容区渲染（透传 ChatContainer.getSideRenderComponent） */
+export type GetSideRenderComponent = (createElement: typeof h, props?: Record<string, unknown>) => undefined | VNode;
+
+/** 自定义侧栏 Tab 标签渲染（透传 ChatContainer.getSideTabRenderComponent） */
+export type GetSideTabRenderComponent = (
+  createElement: typeof h,
+  tab: CustomTab<Record<string, unknown>>,
+  events: { removeCustomTab: (tabName: string) => void },
+) => undefined | VNode;
 
 /**
  * Agent 信息的简化接口
@@ -310,9 +336,6 @@ export interface IAgentInfoData {
   };
 }
 
-// 重导出，方便使用
-export type { PositionAndSize };
-
 /**
  * ChatHelper 实例类型
  * 由 useChatHelper 返回的完整对象
@@ -323,6 +346,7 @@ export type { PositionAndSize };
  * - session.chooseSession(sessionCode): 选择会话并加载消息
  * - session.current: 当前会话信息，包含 sessionCode
  * - session.list: 会话列表
+ * - onError(handler, options): 注册全局错误处理器
  */
 export interface IChatHelper {
   /** Agent 模块 - 管理 agent 信息和聊天 */
@@ -333,7 +357,17 @@ export interface IChatHelper {
   message: IMessageModule;
   /** Session 模块 - 管理会话 */
   session: ISessionModule;
+  /**
+   * 注册全局错误处理器
+   * 所有 HTTP 错误（普通请求和流式请求）都会经过此处理器
+   * @param handler 错误处理函数
+   * @param options 配置选项，支持 ignoreErrors 忽略指定 URL 的错误
+   */
+  onError?: (handler: (error: Error) => void, options?: { ignoreErrors?: Array<RegExp | string> }) => void;
 }
+
+// 重导出，方便使用
+export type { PositionAndSize };
 
 /**
  * 请求配置（headers/data/context 支持对象、函数、ref、computed）
@@ -349,7 +383,7 @@ export interface IRequestOptions {
    * - Record<string, unknown>: 简单 KV，自动转换为结构化格式
    * - Array<Record<string, unknown>>: 数组，简单 KV 自动转换，有 __key 的结构化条目直接透传
    */
-  context?: MaybeRequestValue<RequestData | Array<Record<string, unknown>>>;
+  context?: MaybeRequestValue<Array<Record<string, unknown>> | RequestData>;
   data?: MaybeRequestValue<RequestData>;
   headers?: MaybeRequestValue<RequestHeaders>;
 }
@@ -419,3 +453,6 @@ export interface IShortcutComponent extends IAgentCommandComponent {
    */
   showSendButton?: boolean;
 }
+
+/** 侧栏自定义 Tab 切换时拉取详情（透传 ChatContainer.onCustomTabChange） */
+export type OnCustomTabChange = (tab: CustomBkFlowTab) => Promise<unknown>;

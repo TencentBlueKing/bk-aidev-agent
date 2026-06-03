@@ -525,8 +525,8 @@ export class AGUIProtocol implements ISSEProtocol {
   }
 
   onError(error: Error) {
-    // 创建一个错误消息
-    this.messageModule.plusMessage({
+    // 在聊天区域显示错误消息
+    this.messageModule?.plusMessage({
       role: MessageRole.Assistant,
       content: error.message,
       status: MessageStatus.Error,

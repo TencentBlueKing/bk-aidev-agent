@@ -10,7 +10,8 @@
 import { RenderMode } from '@blueking/chat-x';
 
 import { t } from '../lang';
-import type { DropdownMenuConfig, IShortcut, IRequestOptions } from '../types';
+
+import type { DropdownMenuConfig, IRequestOptions, IShortcut } from '../types';
 
 /**
  * AIBlueking 组件 Props 默认值
@@ -72,4 +73,6 @@ export const defaultProps = {
     showShare: true,
   }),
   defaultChatInputPosition: undefined as 'bottom' | undefined,
+  errorToast: true,
+  ignoreErrors: (): Array<RegExp | string> => [],
 };

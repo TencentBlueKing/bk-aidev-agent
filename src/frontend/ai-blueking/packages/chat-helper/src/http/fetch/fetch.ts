@@ -80,6 +80,15 @@ export interface ISSEProtocol {
   onStart?: () => void;
 }
 
+/** 全局错误处理器类型 */
+export type GlobalErrorHandler = (error: IRequestError) => void;
+
+/** 错误处理器配置 */
+export interface ErrorHandlerOptions {
+  /** 忽略的 URL 模式（字符串包含匹配或正则） */
+  ignoreErrors?: Array<string | RegExp>;
+}
+
 interface IInterceptor<T> {
   fulfilled?: (value: T) => T;
   rejected?: (error: unknown) => unknown;
@@ -120,6 +129,11 @@ export class FetchClient {
     response: InterceptorManager<IResponse>;
   };
 
+  /** 全局错误处理器 */
+  private globalErrorHandler?: GlobalErrorHandler;
+  /** 忽略的错误 URL 模式 */
+  private ignoreErrorPatterns: Array<string | RegExp> = [];
+
   constructor(config: IRequestConfig = {}) {
     this.defaults = mergeConfig(
       {
@@ -140,6 +154,41 @@ export class FetchClient {
       request: new InterceptorManager<IRequestConfig>(),
       response: new InterceptorManager<IResponse>(),
     };
+  }
+
+  /**
+   * 注册全局错误处理器
+   * 所有 HTTP 错误（request 和 streamRequest）都会经过此处理器
+   */
+  onError(handler: GlobalErrorHandler, options?: ErrorHandlerOptions): void {
+    this.globalErrorHandler = handler;
+    if (options?.ignoreErrors) {
+      this.ignoreErrorPatterns = options.ignoreErrors;
+    }
+  }
+
+  /** 判断是否应忽略该错误 */
+  private shouldIgnoreError(error: IRequestError): boolean {
+    // 同时匹配相对路径和完整 URL
+    const url = error.config?.url || '';
+    const baseURL = error.config?.baseURL || '';
+    const fullURL = baseURL && !url.startsWith('http') ? baseURL + url : url;
+
+    return this.ignoreErrorPatterns.some(pattern => {
+      if (typeof pattern === 'string') {
+        // 字符串模式：同时检查相对路径和完整 URL
+        return url.includes(pattern) || fullURL.includes(pattern);
+      }
+      // 正则模式：同时检查相对路径和完整 URL
+      return pattern.test(url) || pattern.test(fullURL);
+    });
+  }
+
+  /** 统一错误分发 */
+  private dispatchError(error: IRequestError): void {
+    if (this.globalErrorHandler && !this.shouldIgnoreError(error)) {
+      this.globalErrorHandler(error);
+    }
   }
 
   applyResponseErrorInterceptors(error: unknown): unknown {
@@ -340,6 +389,7 @@ export class FetchClient {
 
       if (error instanceof Error && error.name === 'AbortError') {
         const requestError = createError('Request timeout', requestConfig, 'ECONNABORTED', undefined);
+        this.dispatchError(requestError);
         throw this.applyResponseErrorInterceptors(requestError);
       }
 
@@ -348,6 +398,7 @@ export class FetchClient {
           ? (error as IRequestError)
           : createError((error as Error).message, requestConfig, (error as IRequestError).code, undefined);
 
+      this.dispatchError(requestError);
       throw this.applyResponseErrorInterceptors(requestError);
     }
   }
@@ -357,7 +408,26 @@ export class FetchClient {
   }
 
   async streamRequest(config: ISSEConfig) {
-    const { url, fetchConfig, requestConfig } = this.prepareRequest(config, true);
+    // 错误去重：标记是否已调用过全局错误处理器
+    let errorDispatched = false;
+
+    // 包装 onError 回调，统一调用全局错误处理器
+    const originalOnError = config.onError;
+    const wrappedOnError = (error: Error) => {
+      if (!errorDispatched) {
+        // 将 requestConfig 附加到错误对象，以便 shouldIgnoreError 能匹配 URL
+        const errorWithConfig = error as IRequestError;
+        if (!errorWithConfig.config) {
+          errorWithConfig.config = requestConfig;
+        }
+        this.dispatchError(errorWithConfig);
+        errorDispatched = true;
+      }
+      originalOnError?.(error);
+    };
+
+    const wrappedConfig = { ...config, onError: wrappedOnError };
+    const { url, fetchConfig, requestConfig } = this.prepareRequest(wrappedConfig, true);
 
     try {
       const fetchResponse = await fetch(url, fetchConfig);
@@ -374,16 +444,16 @@ export class FetchClient {
           message = `Request failed with status code ${fetchResponse.status}`;
         }
         const error = createError(message, requestConfig, `ERR_BAD_RESPONSE`, undefined);
-        config.onError?.(error);
+        wrappedOnError(error);
         return;
       }
 
-      config.onStart?.();
+      wrappedConfig.onStart?.();
 
       const reader = fetchResponse.body?.pipeThrough(new window.TextDecoderStream()).getReader();
       if (!reader) {
         const error = new Error('IResponse body is not readable');
-        config.onError?.(error);
+        wrappedOnError(error);
         return;
       }
 
@@ -404,7 +474,7 @@ export class FetchClient {
         const { value, done } = await reader.read();
 
         if (done) {
-          config.onDone?.();
+          wrappedConfig.onDone?.();
           break;
         }
 
@@ -413,7 +483,7 @@ export class FetchClient {
           const item = value.replace('data:', '').trim();
           if (isJson(item)) {
             const json = JSON.parse(item);
-            config.onMessage?.(json);
+            wrappedConfig.onMessage?.(json);
             temp = '';
           } else if (item) {
             temp = item;
@@ -423,10 +493,10 @@ export class FetchClient {
     } catch (error: unknown) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
-          config.onDone?.();
-        } else {
-          config.onError?.(error);
+          wrappedConfig.onDone?.();
+          return;
         }
+        wrappedOnError(error);
       }
       throw error;
     }

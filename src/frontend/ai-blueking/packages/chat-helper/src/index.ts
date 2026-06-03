@@ -73,5 +73,7 @@ export const useChatHelper = (options: IUseChatHelperOptions) => {
     message,
     http,
     reset,
+    /** 注册全局错误处理器，简化调用链 */
+    onError: http.onError,
   };
 };

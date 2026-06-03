@@ -101,22 +101,26 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     // 创建 AbortController
     abortController = new AbortController();
     // 发起聊天
-    mediator.http?.fetchClient.streamRequest({
-      url: url || 'chat_completion/',
-      method: 'POST',
-      data: {
-        session_code: sessionCode,
-        execute_kwargs: {
-          stream: true,
+    void mediator.http?.fetchClient
+      .streamRequest({
+        url: url || 'chat_completion/',
+        method: 'POST',
+        data: {
+          session_code: sessionCode,
+          execute_kwargs: {
+            stream: true,
+          },
         },
-      },
-      controller: abortController,
-      onDone,
-      onError,
-      onMessage,
-      onStart,
-      ...config,
-    });
+        controller: abortController,
+        onDone,
+        onError,
+        onMessage,
+        onStart,
+        ...config,
+      })
+      .catch(() => {
+        // 非 abort 错误已通过 onError 回调处理；abort 为正常结束
+      });
   };
 
   /**

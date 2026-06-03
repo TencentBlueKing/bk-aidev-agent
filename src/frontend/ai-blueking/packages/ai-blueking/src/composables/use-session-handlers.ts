@@ -13,7 +13,7 @@ import type { ComputedRef, Ref } from 'vue';
 import type ChatBot from '../components/chat-bot.vue';
 import type { SessionBusinessManager } from '../manager/business/session-business-manager';
 import type { CreateSessionOptions } from '../manager/business/types';
-import type { IChatHelper, ISession } from '../types';
+import type { IChatHelper, ISession, ReportSdkErrorOptions } from '../types';
 import type { EventForwarders } from './use-ai-blueking-init';
 import type { IMessageProperty } from '@blueking/chat-helper';
 
@@ -23,11 +23,11 @@ export interface UseSessionHandlersParams {
   currentSession: ComputedRef<ISession | null>;
   forwarders: EventForwarders;
   sessionBusinessManager: SessionBusinessManager;
-  handleError: (error: Error) => void;
+  reportSdkError: (options: ReportSdkErrorOptions) => void;
 }
 
 export function useSessionHandlers(params: UseSessionHandlersParams) {
-  const { chatHelper, sessionBusinessManager, chatBotRef, forwarders, handleError, currentSession } = params;
+  const { chatHelper, sessionBusinessManager, chatBotRef, forwarders, reportSdkError, currentSession } = params;
 
   // ==================== 会话状态 ====================
   const sessionName = ref('');
@@ -86,16 +86,31 @@ export function useSessionHandlers(params: UseSessionHandlersParams) {
   };
 
   const handleHistorySessionSwitch = async (sessionCode: string) => {
-    chatBotRef.value?.exitShareMode();
-    await sessionBusinessManager.switchSession(sessionCode);
+    try {
+      chatBotRef.value?.exitShareMode();
+      await sessionBusinessManager.switchSession(sessionCode);
+    } catch (error) {
+      console.error('[AIBlueking] Failed to switch history session:', error);
+      reportSdkError({ apiName: 'session', action: 'historySwitch', error, source: 'business' });
+    }
   };
 
   const handleHistorySessionDelete = async (sessionCode: string) => {
-    await sessionBusinessManager.deleteSession(sessionCode);
+    try {
+      await sessionBusinessManager.deleteSession(sessionCode);
+    } catch (error) {
+      console.error('[AIBlueking] Failed to delete history session:', error);
+      reportSdkError({ apiName: 'session', action: 'historyDelete', error, source: 'business' });
+    }
   };
 
   const handleHistorySessionRename = async (sessionCode: string, newName: string) => {
-    await sessionBusinessManager.updateSessionName(sessionCode, newName);
+    try {
+      await sessionBusinessManager.updateSessionName(sessionCode, newName);
+    } catch (error) {
+      console.error('[AIBlueking] Failed to rename history session:', error);
+      reportSdkError({ apiName: 'session', action: 'historyRename', error, source: 'business' });
+    }
   };
 
   const handleAutoGenerateName = async () => {
@@ -117,7 +132,7 @@ export function useSessionHandlers(params: UseSessionHandlersParams) {
       }
     } catch (error) {
       console.error('[AIBlueking] Failed to auto-generate session name:', error);
-      handleError(error as Error);
+      reportSdkError({ apiName: 'session', action: 'autoGenerateName', error, source: 'business' });
     } finally {
       autoGenerateLoading.value = false;
     }
@@ -145,7 +160,7 @@ export function useSessionHandlers(params: UseSessionHandlersParams) {
       sessionName.value = newName;
     } catch (error) {
       console.error('[AIBlueking] Failed to rename session:', error);
-      handleError(error as Error);
+      reportSdkError({ apiName: 'session', action: 'rename', error, source: 'business' });
     }
 
     forwarders.rename(newName);
@@ -181,7 +196,7 @@ export function useSessionHandlers(params: UseSessionHandlersParams) {
       sessionName.value = newName;
     } catch (error) {
       console.error('[AIBlueking] Failed to update session name:', error);
-      handleError(error as Error);
+      reportSdkError({ apiName: 'session', action: 'updateSessionName', error, source: 'business' });
     }
   };
 

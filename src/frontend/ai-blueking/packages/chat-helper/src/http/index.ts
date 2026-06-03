@@ -45,6 +45,8 @@ export const useHttp = (options: IUseChatHelperOptions) => {
   return {
     ...http,
     reset,
+    /** 注册全局错误处理器 */
+    onError: fetchClient.onError.bind(fetchClient),
   };
 };
 
