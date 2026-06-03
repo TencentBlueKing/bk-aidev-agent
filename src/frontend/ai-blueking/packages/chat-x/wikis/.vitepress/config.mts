@@ -77,12 +77,21 @@ export default defineConfig({
       },
       { text: '搭建对话', link: '/components/setup/chat-container', activeMatch: '/components/setup/' },
       { text: '消息系统', link: '/components/message/message-render', activeMatch: '/components/message/' },
-      { text: '内容渲染', link: '/components/rendering/content-render', activeMatch: '/components/rendering/|/components/media/' },
-      { text: '输入交互', link: '/components/input/chat-input', activeMatch: '/components/input/|/components/feedback/' },
+      {
+        text: '内容渲染',
+        link: '/components/rendering/content-render',
+        activeMatch: '/components/rendering/|/components/medias/',
+      },
+      {
+        text: '输入交互',
+        link: '/components/input/chat-input',
+        activeMatch: '/components/input/|/components/feedback/',
+      },
       { text: 'Agent 能力', link: '/components/agent/toolcall-render', activeMatch: '/components/agent/|/ai/' },
       {
         text: '扩展开发',
-        activeMatch: '/composables/|/directives/|/plugins/|/types/|/utils/|/edix/|/i18n/|/icons/|/theme/|/components/helper/',
+        activeMatch:
+          '/composables/|/directives/|/plugins/|/types/|/utils/|/edix/|/i18n/|/icons/|/theme/|/components/helper/',
         items: [
           { text: '组件总览', link: '/components/' },
           { text: '源码审计清单', link: '/components/inventory' },
@@ -318,12 +327,12 @@ function sidebarComponents() {
       text: '媒体文件',
       collapsed: false,
       items: [
-        { text: 'AiImage 图片展示', link: 'media/ai-image' },
-        { text: 'ImagePreview 图片预览', link: 'media/image-preview' },
-        { text: 'ImagePreviewGroup 图片预览组', link: 'media/image-preview-group' },
-        { text: 'PreviewToolbar 预览工具栏', link: 'media/preview-toolbar' },
-        { text: 'FileContent 文件内容', link: 'media/file-content' },
-        { text: 'ImageContent 图片内容', link: 'media/image-content' },
+        { text: 'AiImage 图片展示', link: 'medias/ai-image' },
+        { text: 'ImagePreview 图片预览', link: 'medias/image-preview' },
+        { text: 'ImagePreviewGroup 图片预览组', link: 'medias/image-preview-group' },
+        { text: 'PreviewToolbar 预览工具栏', link: 'medias/preview-toolbar' },
+        { text: 'FileContent 文件内容', link: 'medias/file-content' },
+        { text: 'ImageContent 图片内容', link: 'medias/image-content' },
       ],
     },
     {

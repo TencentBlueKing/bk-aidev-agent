@@ -53,7 +53,7 @@ sinceVersion: '1.0.0'
 | 字段     | 类型 | 说明 |
 | -------- | ---- | ---- |
 | `kind`   | 枚举 | `'all'` \| `'component'` \| `'composable'` \| `'directive'` \| `'plugin'` \| `'type'` \| `'util'` \| `'edix'` \| `'i18n'` \| `'icon'` \| `'theme'`，默认 `'all'`。 |
-| `domain` | 枚举 | `'all'` \| `'setup'` \| `'message'` \| `'rendering'` \| `'input'` \| `'agent'` \| `'feedback'` \| `'media'` \| `'helper'`，仅对 `kind: 'component'` 生效。 |
+| `domain` | 枚举 | `'all'` \| `'setup'` \| `'message'` \| `'rendering'` \| `'input'` \| `'agent'` \| `'feedback'` \| `'medias'` \| `'helper'`，仅对 `kind: 'component'` 生效。 |
 
 **返回值**
 
@@ -154,7 +154,7 @@ pnpm mcp:build
       "name": "从首行 # 标题解析",
       "slug": "文件名去掉 .md",
       "kind": "component",
-      "domain": "setup | message | rendering | input | agent | feedback | media | helper",
+      "domain": "setup | message | rendering | input | agent | feedback | medias | helper",
       "description": "标题行内联描述或首段摘要",
       "docFile": "docs/<slug>.md"
     }

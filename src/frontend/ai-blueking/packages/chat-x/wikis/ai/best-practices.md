@@ -26,7 +26,7 @@ sinceVersion: '1.0.0'
 name: 组件显示名
 slug: 唯一标识（用于 MCP 查询）
 kind: component
-domain: setup | message | rendering | input | agent | feedback | media | helper
+domain: setup | message | rendering | input | agent | feedback | medias | helper
 description: 一句话人类可读描述
 aiSummary: >
   2-4 句话面向 AI 的精确摘要，包含：
