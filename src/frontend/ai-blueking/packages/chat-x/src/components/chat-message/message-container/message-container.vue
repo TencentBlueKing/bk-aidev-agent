@@ -52,7 +52,17 @@
                 (formModel: Record<string, unknown>) => handleUserShortcutConfirm(message, formModel)
               "
               :tippy-options="messageToolsTippyOptions"
-            />
+            >
+              <template
+                v-if="$slots.answeredQuestion"
+                #answeredQuestion="slotProps"
+              >
+                <slot
+                  name="answeredQuestion"
+                  v-bind="slotProps"
+                />
+              </template>
+            </MessageRender>
           </slot>
         </template>
         <MessageTools
@@ -124,6 +134,7 @@
   import MessageRender from '../message-render/message-render.vue';
 
   import type { OnInterruptResume } from '../../../ag-ui/types/interrupt';
+  import type { UserQuestionAnsweredCardSlots } from '../interrupt-message/user-question/user-question-answered-card.vue';
   import type { IToolBtn, TagSchema } from '../../../types';
 
   export type MessageContainerEmits = {
@@ -179,6 +190,17 @@
   });
 
   defineEmits<MessageContainerEmits>();
+
+  defineSlots<{
+    // 自定义单条消息渲染（默认回退到内部 MessageRender）
+    default: (props: {
+      message: Message;
+      messageToolsStatus?: MessageToolsStatus;
+      onInterruptResume?: OnInterruptResume;
+    }) => unknown;
+    // 中断消息「已回答内容」回显的自定义 slot，透传给内部 MessageRender
+    answeredQuestion: UserQuestionAnsweredCardSlots['answer'];
+  }>();
 
   const messageContainerRef = useTemplateRef<HTMLElement>('messageContainerRef');
   const messageContainerBottomRef = useTemplateRef<HTMLElement>('messageContainerBottomRef');

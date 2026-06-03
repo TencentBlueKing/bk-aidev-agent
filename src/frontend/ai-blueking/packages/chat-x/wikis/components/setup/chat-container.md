@@ -669,6 +669,27 @@ ai-chat-container
 
 如果没有传入 `onInterruptResume`，输入框自由文本不会被中断逻辑截获，仍然走普通 `onSendMessage`，避免输入被静默清空。
 
+### 自定义题目渲染
+
+通过 `#interruptQuestion` slot 可覆盖输入区上方 `UserQuestionCard` 的默认选择题渲染，参数与 [UserQuestionCard](/components/agent/user-question-card) 的 `#question` 一致：
+
+```vue
+<ChatContainer
+  v-model="inputValue"
+  :messages="messages"
+  :on-interrupt-resume="handleInterruptResume"
+  :on-send-message="handleSendMessage"
+>
+  <template #interruptQuestion="{ question, qIndex, answer, setAnswer, confirm }">
+    <MyCustomForm
+      :model="question"
+      @change="setAnswer"
+      @submit="confirm"
+    />
+  </template>
+</ChatContainer>
+```
+
 ## 分享模式
 
 点击消息工具栏的「分享」按钮后进入分享模式，底部出现 `SelectionFooter` 操作栏：
@@ -795,12 +816,13 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 
 ### Slots
 
-| 插槽名     | 参数                                   | 说明                                                                                           |
-| ---------- | -------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| codeHeader | `{ language: string; token: Token[] }` | 代码块头部自定义操作区域，透传给 MessageRender → ContentRender → MarkdownContent → CodeContent |
-| default    | 消息列表相关绑定（messages 等）        | 自定义消息列表区域                                                                             |
-| message    | `{ message, messageToolsStatus, onInterruptResume }` | 自定义单条消息渲染；自定义渲染中断消息时需继续透传 `onInterruptResume`                         |
-| welcome    | `{ openingRemark: string }`            | 无消息时自定义欢迎页；传入则替换默认 Banner、标题与开场白区域（整块替换）                      |
+| 插槽名            | 参数                                                                                                              | 说明                                                                                           |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| codeHeader        | `{ language: string; token: Token[] }`                                                                            | 代码块头部自定义操作区域，透传给 MessageRender → ContentRender → MarkdownContent → CodeContent |
+| default           | 消息列表相关绑定（messages 等）                                                                                   | 自定义消息列表区域                                                                             |
+| interruptQuestion | `{ question, qIndex, answer, setAnswer, confirm }`                                                                  | 自定义 UserQuestion 单题渲染，透传至输入区上方 UserQuestionCard 的 `#question`                 |
+| message           | `{ message, messageToolsStatus, onInterruptResume }`                                                              | 自定义单条消息渲染；自定义渲染中断消息时需继续透传 `onInterruptResume`                         |
+| welcome           | `{ openingRemark: string }`                                                                                       | 无消息时自定义欢迎页；传入则替换默认 Banner、标题与开场白区域（整块替换）                      |
 
 ### Expose
 

@@ -35,27 +35,37 @@
     <template v-if="!isCollapsed">
       <div class="ai-user-question-card__body">
         <div
-          v-for="(question, qIndex) in normalizedQuestions"
+          v-for="(question, qIndex) in questions"
           :key="qIndex"
           class="ai-user-question-card__question"
         >
           <div class="ai-user-question-card__question-title">
             <span class="ai-user-question-card__question-text">{{ qIndex + 1 }}. {{ question.question }}</span>
-            <span class="ai-user-question-card__tag">
+            <span
+              v-if="question.multiSelect !== undefined"
+              class="ai-user-question-card__tag"
+            >
               {{ question.multiSelect ? t('多选') : t('单选') }}
             </span>
           </div>
           <div class="ai-user-question-card__options">
-            <UserQuestionOption
-              v-for="(option, oIndex) in question.displayOptions"
-              :key="oIndex"
-              :option="option"
-              :others-text="getOthersText(qIndex)"
-              :selected="isOptionSelected(qIndex, oIndex)"
-              @confirm="handleComplete"
-              @select="toggleOption(qIndex, oIndex)"
-              @update:others-text="setOthersText(qIndex, $event)"
-            />
+            <!-- 默认渲染选择题；业务方可覆盖此 slot 渲染任意表单，作答有效时通过 setAnswer 回传 -->
+            <slot
+              name="question"
+              v-bind="{
+                question,
+                qIndex,
+                answer: getAnswer(qIndex),
+                setAnswer: (answer: undefined | UserQuestionAnswerItem) => setAnswer(qIndex, answer),
+                confirm: handleComplete,
+              }"
+            >
+              <UserQuestionChoice
+                :question="question"
+                @answer="setAnswer(qIndex, $event)"
+                @confirm="handleComplete"
+              />
+            </slot>
           </div>
         </div>
       </div>
@@ -86,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, shallowRef } from 'vue';
+  import { type VNode, computed, shallowRef } from 'vue';
 
   import { Button } from 'bkui-vue';
 
@@ -95,14 +105,33 @@
   import { ArrowLeftIcon, EnterIcon, HelpDocIcon, SkipIcon } from '../../../../icons';
   import { t } from '../../../../lang/lang';
   import { useUserQuestion } from './use-user-question';
-  import UserQuestionOption from './user-question-option.vue';
+  import UserQuestionChoice from './user-question-choice.vue';
 
-  import type { OnInterruptResume, UserQuestionInterrupt } from '../../../../ag-ui/types/interrupt';
+  import type {
+    OnInterruptResume,
+    UserQuestionAnswerItem,
+    UserQuestionInterrupt,
+    UserQuestionItem,
+  } from '../../../../ag-ui/types/interrupt';
 
   const props = defineProps<{
     interrupt: UserQuestionInterrupt;
     onResume?: OnInterruptResume;
   }>();
+  export type UserQuestionCardSlots = {
+    question: (props: {
+      // 当前题已组装答案（undefined 表示未作答）
+      answer: undefined | UserQuestionAnswerItem;
+      // 触发「完成」（等价点击完成按钮）
+      confirm: () => void;
+      qIndex: number;
+      // 原始题目数据
+      question: UserQuestionItem;
+      // 写入/清空当前题答案；作答有效传已组装答案，无效传 undefined
+      setAnswer: (answer: undefined | UserQuestionAnswerItem) => void;
+    }) => null | undefined | VNode;
+  };
+  defineSlots<UserQuestionCardSlots>();
 
   // 注入通用 tippy 配置（供标题溢出提示使用）
   const commonTippyOptions = useCommonTippyInject();
@@ -110,14 +139,12 @@
   const isCollapsed = shallowRef(false);
 
   const {
-    normalizedQuestions,
+    questions,
     answeredCount,
     totalCount,
     completed,
-    isOptionSelected,
-    toggleOption,
-    getOthersText,
-    setOthersText,
+    getAnswer,
+    setAnswer,
     buildResolvePayload,
     buildSkipPayload,
   } = useUserQuestion(() => props.interrupt);

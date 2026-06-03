@@ -20,9 +20,12 @@
   import type { OnInterruptResume } from '../../../ag-ui/types/interrupt';
   import type { Token } from '../../../markdown-it';
   import type { MessageToolsProps } from '../../message-tools/message-tools.vue';
+  import type { UserQuestionAnsweredCardSlots } from '../interrupt-message/user-question/user-question-answered-card.vue';
   import type { UserMessageActionsProps } from '../user-message/user-message.vue';
 
   defineSlots<{
+    // 中断消息「已回答内容」回显的自定义 slot，透传给 InterruptMessageRender
+    answeredQuestion: UserQuestionAnsweredCardSlots['answer'];
     codeHeader: (props: { language: string; token: Token[] }) => null | undefined | VNode;
     default: (props: { content: string; status: MessageStatus }) => VNode;
   }>();
@@ -36,6 +39,8 @@
   >();
 
   const slots = useSlots();
+
+  type AnsweredQuestionSlotProps = Parameters<UserQuestionAnsweredCardSlots['answer']>[0];
 
   const messageComponent = computed(() => {
     switch (props.message.role) {
@@ -72,10 +77,15 @@
       case MessageRole.Activity:
         return h(ActivityMessage, props.message);
       case MessageRole.Interrupt:
-        return h(InterruptMessageRender, {
-          ...props.message,
-          onInterruptResume: props.onInterruptResume,
-        });
+        return h(
+          InterruptMessageRender,
+          { ...props.message, onInterruptResume: props.onInterruptResume },
+          slots.answeredQuestion
+            ? {
+                answeredQuestion: (slotProps: AnsweredQuestionSlotProps) => slots.answeredQuestion?.(slotProps),
+              }
+            : undefined,
+        );
       case MessageRole.Loading:
         return h(LoadingMessage, props.message);
       default:
