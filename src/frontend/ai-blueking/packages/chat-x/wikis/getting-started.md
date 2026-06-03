@@ -335,9 +335,9 @@ const assistantMessage: Message = {
 
 | 组件                | 说明         | 文档                                                               |
 | ------------------- | ------------ | ------------------------------------------------------------------ |
-| `AiImage`           | 图片展示     | [AiImage](./components/media/ai-image)                         |
-| `ImagePreview`      | 图片全屏预览 | [ImagePreview](./components/media/image-preview)            |
-| `ImagePreviewGroup` | 多图预览管理 | [ImagePreviewGroup](./components/media/image-preview-group.md) |
+| `AiImage`           | 图片展示     | [AiImage](./components/medias/ai-image)                         |
+| `ImagePreview`      | 图片全屏预览 | [ImagePreview](./components/medias/image-preview)            |
+| `ImagePreviewGroup` | 多图预览管理 | [ImagePreviewGroup](./components/medias/image-preview-group.md) |
 
 > 完整组件列表见 [组件文档](/components/)。
 

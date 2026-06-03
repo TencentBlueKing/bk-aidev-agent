@@ -112,7 +112,7 @@ const handleUserAction = (tool) => {
 - [ChatInput 聊天输入框](./components/input/chat-input)
 - [ToolcallRender 工具调用渲染器](./components/agent/toolcall-render)
 - [MessageTools 消息工具栏](./components/feedback/message-tools)
-- [AiImage 图片展示](./components/media/ai-image)
+- [AiImage 图片展示](./components/medias/ai-image)
 
 ### 通用
 

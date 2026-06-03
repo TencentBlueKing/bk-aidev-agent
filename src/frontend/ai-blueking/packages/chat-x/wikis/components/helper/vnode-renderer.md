@@ -147,4 +147,4 @@ export interface TokenToVNodeOptions {
 - [MarkdownContent](../rendering/markdown-content.md) — Markdown 主渲染器。
 - [CodeContent](../rendering/code-content.md) — 代码块渲染。
 - [MermaidContent](../rendering/mermaid-content.md) — Mermaid 图表渲染。
-- [ImageContent](../media/image-content.md) — 图片 token 渲染。
+- [ImageContent](../medias/image-content.md) — 图片 token 渲染。

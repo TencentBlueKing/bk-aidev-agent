@@ -191,4 +191,4 @@ type AITippyProps = Partial<Omit<TippyOptions, 'content' | 'getReferenceClientRe
 ## 关联组件
 
 - [ChatInput](/components/input/chat-input) — 默认内置上传入口
-- [FileContent](/components/media/file-content) — 选中文件列表展示
+- [FileContent](/components/medias/file-content) — 选中文件列表展示

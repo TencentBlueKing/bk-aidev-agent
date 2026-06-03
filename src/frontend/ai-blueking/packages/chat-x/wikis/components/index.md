@@ -26,7 +26,7 @@ aiSummary: >
 | 构建快捷指令与命令输入 | [ChatInput](./input/chat-input.md)、[AiSlashInput](./input/ai-slash-input.md)、[ShortcutRender](./input/shortcut-render.md) |
 | 处理 ToolCall / HITL 中断 | [ToolcallRender](./agent/toolcall-render.md)、[InterruptMessage](./agent/interrupt-message.md) |
 | 展示 FlowAgent / 知识召回活动 | [FlowAgentContent](./agent/flow-agent-content.md)、[KnowledgeRagContent](./agent/knowledge-rag-content.md) |
-| 图片预览与文件展示 | [AiImage](./media/ai-image.md)、[ImagePreviewGroup](./media/image-preview-group.md)、[FileContent](./media/file-content.md) |
+| 图片预览与文件展示 | [AiImage](./medias/ai-image.md)、[ImagePreviewGroup](./medias/image-preview-group.md)、[FileContent](./medias/file-content.md) |
 
 ## 能力域
 
@@ -71,12 +71,12 @@ aiSummary: >
 
 | 组件 | 说明 |
 | ---- | ---- |
-| [AiImage](./media/ai-image.md) | 图片展示与预览入口。 |
-| [ImagePreview](./media/image-preview.md) | 图片预览容器。 |
-| [ImagePreviewGroup](./media/image-preview-group.md) | 多图预览上下文。 |
-| [PreviewToolbar](./media/preview-toolbar.md) | 图片预览工具栏。 |
-| [FileContent](./media/file-content.md) | 文件附件展示。 |
-| [ImageContent](./media/image-content.md) | Markdown 图片 token 渲染。 |
+| [AiImage](./medias/ai-image.md) | 图片展示与预览入口。 |
+| [ImagePreview](./medias/image-preview.md) | 图片预览容器。 |
+| [ImagePreviewGroup](./medias/image-preview-group.md) | 多图预览上下文。 |
+| [PreviewToolbar](./medias/preview-toolbar.md) | 图片预览工具栏。 |
+| [FileContent](./medias/file-content.md) | 文件附件展示。 |
+| [ImageContent](./medias/image-content.md) | Markdown 图片 token 渲染。 |
 
 ### 输入交互
 
