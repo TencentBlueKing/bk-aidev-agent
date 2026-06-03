@@ -52,12 +52,12 @@ aiSummary: >
 | [ShortcutBtn 快捷指令按钮](/components/input/shortcut-btn) | 输入交互 | `src/components/ai-shortcut/shortcut-btn/shortcut-btn.vue` | 已覆盖 |
 | [ShortcutBtns 快捷指令按钮组](/components/input/shortcut-btns) | 输入交互 | `src/components/ai-shortcut/shortcut-btns/shortcut-btns.vue` | 已覆盖 |
 | [ShortcutRender 快捷指令表单](/components/input/shortcut-render) | 输入交互 | `src/components/ai-shortcut/shortcut-render/shortcut-render.vue` | 已覆盖 |
-| [AiImage 图片展示](/components/media/ai-image) | 媒体文件 | `src/components/image-preview/image.vue` | 已覆盖 |
-| [FileContent 文件内容](/components/media/file-content) | 媒体文件 | `src/components/chat-content/file-content/file-content.vue` | 已覆盖 |
-| [ImageContent 图片内容](/components/media/image-content) | 媒体文件 | `src/components/markdown-token/image-content/image-content.vue` | 已覆盖 |
-| [ImagePreview 图片预览](/components/media/image-preview) | 媒体文件 | `src/components/image-preview/image-preview.vue` | 已覆盖 |
-| [ImagePreviewGroup 图片预览组](/components/media/image-preview-group) | 媒体文件 | `src/components/image-preview/image-preview-group.vue` | 已覆盖 |
-| [PreviewToolbar 图片预览工具栏](/components/media/preview-toolbar) | 媒体文件 | `src/components/image-preview/preview-toolbar.vue` | 已覆盖 |
+| [AiImage 图片展示](/components/medias/ai-image) | 媒体文件 | `src/components/image-preview/image.vue` | 已覆盖 |
+| [FileContent 文件内容](/components/medias/file-content) | 媒体文件 | `src/components/chat-content/file-content/file-content.vue` | 已覆盖 |
+| [ImageContent 图片内容](/components/medias/image-content) | 媒体文件 | `src/components/markdown-token/image-content/image-content.vue` | 已覆盖 |
+| [ImagePreview 图片预览](/components/medias/image-preview) | 媒体文件 | `src/components/image-preview/image-preview.vue` | 已覆盖 |
+| [ImagePreviewGroup 图片预览组](/components/medias/image-preview-group) | 媒体文件 | `src/components/image-preview/image-preview-group.vue` | 已覆盖 |
+| [PreviewToolbar 图片预览工具栏](/components/medias/preview-toolbar) | 媒体文件 | `src/components/image-preview/preview-toolbar.vue` | 已覆盖 |
 | [ActivityMessage 活动消息](/components/message/activity-message) | 消息系统 | `src/components/chat-message/activity-message/activity-message.vue` | 已覆盖 |
 | [AssistantMessage AI 助手消息](/components/message/assistant-message) | 消息系统 | `src/components/chat-message/assistant-message/assistant-message.vue` | 已覆盖 |
 | [InfoMessage 信息消息](/components/message/info-message) | 消息系统 | `src/components/chat-message/info-message/info-message.vue` | 已覆盖 |
