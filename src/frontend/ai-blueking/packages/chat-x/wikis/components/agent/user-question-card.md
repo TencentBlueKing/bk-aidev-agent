@@ -89,9 +89,10 @@ sinceVersion: 1.0.0
 
 ## 交互能力
 
-- **单选 / 多选**：每道题通过 `multiSelect` 控制选择行为。
-- **Others 自由输入**：前端自动为每道题追加 `label: 'others'` 输入项，输入文本写入 `answer[].description`。
-- **完成校验**：所有题目均已作答后才允许点击「完成」；选择 Others 时必须输入非空文本。
+- **单选 / 多选**：每道题通过 `multiSelect` 控制选择行为；未传时不展示单选/多选标签，默认仍按单选处理。
+- **Others 自由输入**：默认 [UserQuestionChoice](/components/agent/user-question-choice) 为每道题追加 `label: 'others'` 输入项，输入文本写入 `answer[].description`。
+- **自定义作答形态**：通过 `#question` slot 可替换默认选择题，渲染任意表单；作答有效时调用 `setAnswer` 回传 `UserQuestionAnswerItem`，无效时传 `undefined`。
+- **完成校验**：所有题目均已作答（`setAnswer` 收到有效答案）后才允许点击「完成」。
 - **跳过**：点击「跳过」返回 `status: 'cancelled'` 与空 `answers`。
 - **自由文本兜底**：当存在待回答 UserQuestion 且业务配置了 `onInterruptResume` 时，用户也可以直接在 `ChatInput` 输入文本；容器会将文本转换为单条 Others 回答。
 
@@ -221,6 +222,30 @@ const payload = {
 
 如果没有配置 `onInterruptResume`，自由文本输入不会被截获，仍按普通 `onSendMessage` 发送，避免用户输入被静默清空。
 
+## 自定义题目渲染（#question slot）
+
+默认每道题由 [UserQuestionChoice](/components/agent/user-question-choice) 渲染；业务可覆盖 `#question` slot 接入自定义表单：
+
+```vue
+<template>
+  <UserQuestionCard
+    :interrupt="pendingInterrupt"
+    :on-resume="handleResume"
+  >
+    <template #question="{ question, qIndex, answer, setAnswer, confirm }">
+      <!-- 自定义表单：作答有效时 setAnswer(answerItem)，无效时 setAnswer(undefined) -->
+      <MyCustomForm
+        :model="question"
+        @change="setAnswer"
+        @submit="confirm"
+      />
+    </template>
+  </UserQuestionCard>
+</template>
+```
+
+`ChatContainer` 提供同名 `#interruptQuestion` slot，参数与 `#question` 一致，透传自输入区上方的 `UserQuestionCard`。
+
 ## API
 
 ### UserQuestionCard Props
@@ -237,12 +262,29 @@ const payload = {
 | answers | `UserQuestionAnswerItem[]`   | —            | 已回答内容列表               |
 | status  | `'resolved' \| 'cancelled'` | `'resolved'` | 回显状态，决定展示已回复/已取消 |
 
-### Events / Slots / Expose
+### UserQuestionCard Slots
+
+| 插槽名   | 参数                                                                                                              | 说明                                                                 |
+| -------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| question | `{ question, qIndex, answer, setAnswer, confirm }`                                                                | 自定义单题渲染；未覆盖时回退 [UserQuestionChoice](/components/agent/user-question-choice) |
+
+slot 参数说明：
+
+| 参数       | 类型                                              | 说明                                           |
+| ---------- | ------------------------------------------------- | ---------------------------------------------- |
+| question   | `UserQuestionItem`                                | 原始题目数据                                   |
+| qIndex     | `number`                                          | 题目序号（从 0 开始）                          |
+| answer     | `UserQuestionAnswerItem \| undefined`             | 当前题已组装答案，`undefined` 表示未作答       |
+| setAnswer  | `(answer: UserQuestionAnswerItem \| undefined) => void` | 写入/清空当前题答案                            |
+| confirm    | `() => void`                                      | 触发「完成」，等价点击底部完成按钮（需全部已答） |
+
+### Events / Expose
 
 无。
 
 ## 关联文档
 
 - [中断类型 Interrupt](../../types/interrupt.md)
+- [UserQuestionChoice 选择题](/components/agent/user-question-choice)
 - [InterruptMessage 中断消息](/components/agent/interrupt-message)
 - [ChatContainer 聊天容器](/components/setup/chat-container)

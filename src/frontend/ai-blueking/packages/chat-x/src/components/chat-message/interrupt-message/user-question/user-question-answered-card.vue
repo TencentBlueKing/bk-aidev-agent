@@ -23,20 +23,26 @@
             {{ item.multiSelect ? t('多选') : t('单选') }}
           </span>
         </div>
-        <p
-          v-for="(answer, answerIndex) in item.answer"
-          :key="answerIndex"
-          class="ai-user-question-answered__answer"
+        <!-- 默认逐条回显选择题答案；业务方可覆盖此 slot 渲染自定义表单的回显 -->
+        <slot
+          name="answer"
+          v-bind="{ item, index, status }"
         >
-          {{ answer.description || answer.label }}
-        </p>
+          <p
+            v-for="(answer, answerIndex) in item.answer"
+            :key="answerIndex"
+            class="ai-user-question-answered__answer"
+          >
+            {{ answer.description || answer.label }}
+          </p>
+        </slot>
       </div>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-  import { computed } from 'vue';
+  import { type VNode, computed } from 'vue';
 
   import { HelpDocIcon } from '../../../../icons';
   import { t } from '../../../../lang/lang';
@@ -51,6 +57,14 @@
     }>(),
     { status: 'resolved' },
   );
+  export type UserQuestionAnsweredCardSlots = {
+    answer: (props: {
+      index: number;
+      item: UserQuestionAnswerItem;
+      status: 'cancelled' | 'resolved';
+    }) => null | undefined | VNode;
+  };
+  defineSlots<UserQuestionAnsweredCardSlots>();
 
   const statusText = computed(() => (props.status === 'cancelled' ? t('已取消') : t('已回复')));
 </script>

@@ -457,10 +457,11 @@ slot 参数类型与 `AssistantMessage` 的 slot 保持一致（`Partial<Assista
 
 ### Slots
 
-| 插槽名     | 参数                                         | 说明                                                                                                    |
-| ---------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| codeHeader | `{ language: string; token: Token[] }`       | 代码块头部自定义操作区域，透传给 ContentRender → MarkdownContent → CodeContent；**仅对 assistant 生效** |
-| default    | `{ content: string, status: MessageStatus }` | 替换 AssistantMessage 的内容区域渲染；**仅对 `role: 'assistant'` 生效**                                 |
+| 插槽名           | 参数                                         | 说明                                                                                                    |
+| ---------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| answeredQuestion | `{ item, index, status }`                    | 自定义 UserQuestion 已回答回显，透传给 InterruptMessageRender → UserQuestionAnsweredCard 的 `#answer`   |
+| codeHeader       | `{ language: string; token: Token[] }`       | 代码块头部自定义操作区域，透传给 ContentRender → MarkdownContent → CodeContent；**仅对 assistant 生效** |
+| default          | `{ content: string, status: MessageStatus }` | 替换 AssistantMessage 的内容区域渲染；**仅对 `role: 'assistant'` 生效**                                 |
 
 ## 消息类型映射
 

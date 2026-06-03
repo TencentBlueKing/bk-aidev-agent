@@ -135,7 +135,7 @@ export type UserQuestionInterrupt = BaseInterrupt<
  */
 export type UserQuestionItem = {
   header: string; // 问题框标题
-  multiSelect: boolean; // 是否多选
+  multiSelect?: boolean; // 是否多选（仅选择题语义；自定义表单类问题可不传）
   options?: UserQuestionOptionItem[]; // 选项 label 为 others 时为用户自定义输入
   question: string; // 问题名称
 };

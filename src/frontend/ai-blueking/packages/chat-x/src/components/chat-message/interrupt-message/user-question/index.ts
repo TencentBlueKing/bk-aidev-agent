@@ -28,4 +28,5 @@ export * from './use-user-question';
 
 export { default as UserQuestionAnsweredCard } from './user-question-answered-card.vue';
 export { default as UserQuestionCard } from './user-question-card.vue';
+export { default as UserQuestionChoice } from './user-question-choice.vue';
 export { default as UserQuestionOption } from './user-question-option.vue';

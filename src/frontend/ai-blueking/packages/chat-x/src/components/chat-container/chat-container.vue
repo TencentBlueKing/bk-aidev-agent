@@ -215,7 +215,14 @@
                   v-if="activeUserQuestionInterrupt"
                   :interrupt="activeUserQuestionInterrupt"
                   :on-resume="onInterruptResume"
-                />
+                >
+                  <template #question="{ question, qIndex, answer, setAnswer, confirm }">
+                    <slot
+                      name="interruptQuestion"
+                      v-bind="{ question, qIndex, answer, setAnswer, confirm }"
+                    />
+                  </template>
+                </UserQuestionCard>
                 <InputInfoAlert
                   v-if="pendingApprovalTipText"
                   :content="pendingApprovalTipText"
@@ -275,6 +282,7 @@
     Shortcut,
     TagSchema,
   } from '../../types';
+  import type { UserQuestionCardSlots } from '../chat-message/interrupt-message/user-question/user-question-card.vue';
   import type { Token } from 'markdown-it/index.js';
   export type ChatContainerProps = {
     chatLoading?: boolean;
@@ -308,6 +316,7 @@
       onUserShortcutConfirm?: (message: Message, formModel: Record<string, unknown>) => Promise<void>;
       selectedUserMessages: Message[];
     }) => null | undefined | VNode;
+    interruptQuestion: UserQuestionCardSlots['question'];
     message: (props: {
       message: Message;
       messageToolsStatus: MessageContainerProps['messageToolsStatus'];

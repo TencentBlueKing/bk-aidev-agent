@@ -183,7 +183,7 @@ InterruptMessageRender
             └── 未注册 reason → 兜底块（item.message 或「暂不支持的中断消息」）
 
 content.outcome.type === 'success'
-└── result.reason === aidev:user_question → UserQuestionAnsweredCard 回显回答
+└── result.reason === aidev:user_question → UserQuestionAnsweredCard 回显回答（支持 #answeredQuestion 透传 #answer）
 ```
 
 | `InterruptReason`              | 子组件              |
@@ -282,21 +282,17 @@ content.outcome.type === 'success'
 
 ## UserQuestion 已回答回显（outcome.success）
 
-`outcome.type === 'success'` 且 `result.reason === InterruptReason.UserQuestion` 时，会话内回显用户回答：
+`outcome.type === 'success'` 且 `result.reason === InterruptReason.UserQuestion` 时，会话内回显用户回答。可通过 `#answeredQuestion` slot 自定义单题回显：
 
 ```vue
 <InterruptMessageRender
-  :content="{
-    outcome: { type: 'success' },
-    result: {
-      interruptId: 'interrupt_user_question',
-      reason: InterruptReason.UserQuestion,
-      status: 'resolved',
-      payload: { answers },
-    },
-  }"
+  :content="userQuestionAnsweredMessage.content"
   role="interrupt"
-/>
+>
+  <template #answeredQuestion="{ item, index, status }">
+    <MyCustomAnswerView :data="item" :index="index" :status="status" />
+  </template>
+</InterruptMessageRender>
 ```
 
 **渲染效果**
@@ -349,7 +345,15 @@ content.outcome.type === 'success'
 | content           | `InterruptMessage['content']` | — | 含 `message`、`outcome`、`result` 等      |
 | onInterruptResume | `OnInterruptResume` | —     | 用户完成中断操作后的回调（可选）          |
 
-### Events / Slots / Expose
+### Slots
+
+| 插槽名           | 参数                                              | 说明                                                                 |
+| ---------------- | ------------------------------------------------- | -------------------------------------------------------------------- |
+| answeredQuestion | `{ item, index, status }`                         | 自定义 UserQuestion 已回答内容回显，透传给 `UserQuestionAnsweredCard` 的 `#answer` |
+
+slot 参数与 [UserQuestionAnsweredCard](/components/agent/user-question-answered-card) 的 `#answer` 一致。
+
+### Events / Expose
 
 无。
 

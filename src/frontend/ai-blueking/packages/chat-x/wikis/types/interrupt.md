@@ -95,7 +95,8 @@ type UserQuestionInterrupt = BaseInterrupt<
 
 type UserQuestionItem = {
   header: string;
-  multiSelect: boolean;
+  /** 是否多选；仅选择题语义，自定义表单类问题可不传 */
+  multiSelect?: boolean;
   options?: UserQuestionOptionItem[];
   question: string;
 };
@@ -108,9 +109,10 @@ type UserQuestionOptionItem = {
 
 约定：
 
-- `multiSelect: false` 表示单选题，`true` 表示多选题。
-- 前端会为每道题追加 `label: 'others'` 的自由输入项；后端无需重复下发该选项。
+- `multiSelect: false` 表示单选题，`true` 表示多选题；**不传**时 UI 不展示单选/多选标签，默认选择题组件仍按单选行为处理。
+- 前端会为每道**选择题**追加 `label: 'others'` 的自由输入项；后端无需重复下发该选项。
 - 当用户选择 Others 时，`answer[].description` 为用户输入文本。
+- 业务可通过 `UserQuestionCard` 的 `#question` slot 渲染自定义表单；作答有效时调用 `setAnswer` 回传 `UserQuestionAnswerItem`，无效时传 `undefined`。
 
 ## Interrupt
 

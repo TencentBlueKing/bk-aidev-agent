@@ -89,4 +89,23 @@ describe('UserQuestionAnsweredCard', () => {
 
     expect(wrapper.find('.ai-user-question-answered__tag').exists()).toBe(false);
   });
+
+  it('自定义 #answer 回显 slot：替换默认逐条渲染', () => {
+    wrapper = mount(UserQuestionAnsweredCard, {
+      props: { answers },
+      slots: {
+        answer: `
+          <template #answer="{ item, index }">
+            <div class="custom-answer">{{ index }}-{{ item.question }}-{{ item.answer.length }}</div>
+          </template>
+        `,
+      },
+    });
+
+    const customAnswers = wrapper.findAll('.custom-answer');
+    expect(customAnswers).toHaveLength(2);
+    expect(customAnswers[0].text()).toBe('0-请选择方案-2');
+    // 默认逐条段落不再渲染
+    expect(wrapper.find('.ai-user-question-answered__answer').exists()).toBe(false);
+  });
 });
