@@ -28,11 +28,10 @@ import { z } from 'zod';
 import { type DocEntry, loadIndex } from '../utils/doc-loader.js';
 
 export const listComponentsSchema = {
-  category: z
+  kind: z
     .enum([
       'all',
-      'atomic',
-      'molecular',
+      'component',
       'composable',
       'directive',
       'plugin',
@@ -44,11 +43,11 @@ export const listComponentsSchema = {
       'theme',
     ])
     .default('all')
-    .describe('过滤分类：all 返回全部，或按具体分类筛选'),
+    .describe('过滤文档类型：all 返回全部，component 返回所有组件，其他值按 API 类型筛选'),
   domain: z
-    .enum(['all', 'message', 'input', 'content', 'media', 'tools', 'helper'])
+    .enum(['all', 'setup', 'message', 'rendering', 'input', 'agent', 'feedback', 'media', 'helper'])
     .default('all')
-    .describe('按功能域过滤（仅对组件生效，其他分类不受影响）'),
+    .describe('按能力域过滤（仅对 component 生效，其他 kind 不受影响）'),
 };
 
 type ListGroupKey =
@@ -63,9 +62,9 @@ type ListGroupKey =
   | 'types'
   | 'utils';
 
-export function listComponents(args: { category: string; domain: string }) {
+export function listComponents(args: { domain: string; kind: string }) {
   const index = loadIndex();
-  const { category, domain } = args;
+  const { domain, kind } = args;
 
   const result: Record<ListGroupKey, ReturnType<typeof mapEntry>[]> = {
     components: [],
@@ -80,34 +79,34 @@ export function listComponents(args: { category: string; domain: string }) {
     theme: [],
   };
 
-  if (shouldIncludeGroup('components', category)) {
-    result.components = filterComponentEntries(index.components, category, domain).map(mapEntry);
+  if (shouldIncludeGroup('components', kind)) {
+    result.components = filterComponentEntries(index.components, domain).map(mapEntry);
   }
-  if (shouldIncludeGroup('composables', category)) {
+  if (shouldIncludeGroup('composables', kind)) {
     result.composables = index.composables.map(mapEntry);
   }
-  if (shouldIncludeGroup('types', category)) {
+  if (shouldIncludeGroup('types', kind)) {
     result.types = index.types.map(mapEntry);
   }
-  if (shouldIncludeGroup('directives', category)) {
+  if (shouldIncludeGroup('directives', kind)) {
     result.directives = index.directives.map(mapEntry);
   }
-  if (shouldIncludeGroup('plugins', category)) {
+  if (shouldIncludeGroup('plugins', kind)) {
     result.plugins = index.plugins.map(mapEntry);
   }
-  if (shouldIncludeGroup('utils', category)) {
+  if (shouldIncludeGroup('utils', kind)) {
     result.utils = index.utils.map(mapEntry);
   }
-  if (shouldIncludeGroup('edix', category)) {
+  if (shouldIncludeGroup('edix', kind)) {
     result.edix = index.edix.map(mapEntry);
   }
-  if (shouldIncludeGroup('i18n', category)) {
+  if (shouldIncludeGroup('i18n', kind)) {
     result.i18n = index.i18n.map(mapEntry);
   }
-  if (shouldIncludeGroup('icons', category)) {
+  if (shouldIncludeGroup('icons', kind)) {
     result.icons = index.icons.map(mapEntry);
   }
-  if (shouldIncludeGroup('theme', category)) {
+  if (shouldIncludeGroup('theme', kind)) {
     result.theme = index.theme.map(mapEntry);
   }
 
@@ -121,10 +120,8 @@ export function listComponents(args: { category: string; domain: string }) {
   };
 }
 
-function filterComponentEntries(entries: DocEntry[], category: string, domain: string): DocEntry[] {
+function filterComponentEntries(entries: DocEntry[], domain: string): DocEntry[] {
   let result = entries;
-  if (category === 'atomic') result = result.filter(e => e.category === 'atomic');
-  else if (category === 'molecular') result = result.filter(e => e.category === 'molecular');
   if (domain !== 'all') result = result.filter(e => (e.domain ?? 'helper') === domain);
   return result;
 }
@@ -133,18 +130,17 @@ function mapEntry(entry: DocEntry) {
   return {
     name: entry.name,
     slug: entry.slug,
-    category: entry.category,
+    kind: entry.kind,
     description: entry.description,
     aiSummary: entry.aiSummary,
     ...(entry.domain !== undefined ? { domain: entry.domain } : {}),
   };
 }
 
-function shouldIncludeGroup(groupKey: ListGroupKey, category: string): boolean {
-  if (category === 'all') return true;
+function shouldIncludeGroup(groupKey: ListGroupKey, kind: string): boolean {
+  if (kind === 'all') return true;
   const single: Record<string, ListGroupKey> = {
-    atomic: 'components',
-    molecular: 'components',
+    component: 'components',
     composable: 'composables',
     directive: 'directives',
     plugin: 'plugins',
@@ -155,5 +151,5 @@ function shouldIncludeGroup(groupKey: ListGroupKey, category: string): boolean {
     icon: 'icons',
     theme: 'theme',
   };
-  return single[category] === groupKey;
+  return single[kind] === groupKey;
 }

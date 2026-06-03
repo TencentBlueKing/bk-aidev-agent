@@ -39,8 +39,7 @@ export enum APPROVAL_STATUS {
 
 export enum InterruptReason {
   AIDevToolApproval = 'aidev:tool_approval', // AI dev 第三方审批
-  UserMultiChoice = 'user_multi_choice', // 用户多选
-  UserSingleChoice = 'user_single_choice', // 用户单选
+  UserQuestion = 'aidev:user_question', // 用户回答问题
 }
 
 export enum MessageContentType {

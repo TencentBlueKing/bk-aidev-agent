@@ -307,6 +307,6 @@ export type ContainerScrollData = {
 
 ## 关联组件
 
-- [MessageContainer](../components/molecular/message-container.md) — Provider 与返回底部交互
-- [ScrollBtn](../components/atomic/scroll-btn.md) — 返回底部按钮
-- [ChatContainer](../components/molecular/chat-container.md) — 聊天主布局
+- [MessageContainer](../components/setup/message-container) — Provider 与返回底部交互
+- [ScrollBtn](../components/feedback/scroll-btn) — 返回底部按钮
+- [ChatContainer](../components/setup/chat-container) — 聊天主布局

@@ -32,7 +32,7 @@ import { APPROVAL_STATUS, InterruptReason, MessageRole, MessageStatus } from '..
 import { LOADING_MESSAGE_ID, RenderMode } from '../../common';
 import ChatContainer from './chat-container.vue';
 
-import type { AssistantMessage, Message, UserMessage } from '../../ag-ui/types';
+import type { AssistantMessage, Message, UserMessage, UserQuestionInterrupt } from '../../ag-ui/types';
 
 /** 供 useMessageGroup mock 注入，用于验证 inputStatus 对 Loading 占位消息的推导 */
 const mockMessageGroupsRef = vi.hoisted(() => {
@@ -143,11 +143,25 @@ vi.mock('../../composables', () => ({
         ? `当前会话有 ${pendingApprovalCount.value} 个待审批单，如需继续，请先取消审批`
         : '',
     );
+    const activeUserQuestionInterrupt = computed(() => {
+      for (let index = _options.messages.value.length - 1; index >= 0; index--) {
+        const message = _options.messages.value[index];
+        if (message.role !== MessageRole.Interrupt || message.content?.outcome?.type !== 'interrupt') {
+          continue;
+        }
+        const question = message.content.outcome.interrupts.find(
+          interrupt => interrupt.reason === InterruptReason.UserQuestion,
+        );
+        if (question) return question;
+      }
+      return undefined;
+    });
     const isShareMode = shallowRef(false);
     const isAllSelected = computed(() => false);
     return {
       messageGroups,
       executionGroups,
+      activeUserQuestionInterrupt,
       pendingApprovalCount,
       pendingApprovalTipText,
       isShareMode,
@@ -312,6 +326,27 @@ vi.mock('../chat-input/input-info-alert.vue', () => ({
   }),
 }));
 
+vi.mock('../chat-message/interrupt-message/user-question', () => ({
+  buildUserQuestionFreeTextResume: (interrupt: UserQuestionInterrupt, text: string) => ({
+    interruptId: interrupt.id,
+    reason: InterruptReason.UserQuestion,
+    status: 'resolved',
+    payload: {
+      answers: [{ question: '', answer: [{ label: 'others', description: text }] }],
+    },
+  }),
+  UserQuestionCard: defineComponent({
+    name: 'UserQuestionCard',
+    props: {
+      interrupt: Object,
+      onResume: Function,
+    },
+    setup() {
+      return () => h('div', { class: 'mock-user-question-card' });
+    },
+  }),
+}));
+
 vi.mock('../chat-message/message-container/message-container.vue', () => ({
   default: defineComponent({
     name: 'MessageContainer',
@@ -410,6 +445,36 @@ const createApprovalInterruptMessage = (id: string, status: APPROVAL_STATUS): Me
               title: '算法方案评审单',
               url: 'https://example.com/ticket',
             },
+          },
+        },
+      ],
+    },
+  },
+} as Message);
+
+const createUserQuestionInterruptMessage = (id: string): Message => ({
+  id,
+  messageId: id,
+  role: MessageRole.Interrupt,
+  status: MessageStatus.Pending,
+  content: {
+    outcome: {
+      type: 'interrupt',
+      interrupts: [
+        {
+          id: `${id}-interrupt`,
+          reason: InterruptReason.UserQuestion,
+          toolCallId: `${id}-tool`,
+          message: '请回答问题',
+          metadata: {
+            questions: [
+              {
+                header: '请回答问题',
+                multiSelect: false,
+                question: '请选择语言',
+                options: [{ label: 'A', description: 'Java' }],
+              },
+            ],
           },
         },
       ],
@@ -586,6 +651,48 @@ describe('ChatContainer', () => {
       const ci = wrapper.findComponent({ name: 'ChatInput' });
       expect(ci.props('sendDisabledTip')).toBe('当前会话有 2 个待审批单，如需继续，请先取消审批');
       expect(wrapper.find('.mock-input-info-alert').text()).toBe('当前会话有 2 个待审批单，如需继续，请先取消审批');
+    });
+
+    it('存在 UserQuestion 且未配置 onInterruptResume 时，应按普通消息发送且不清空输入', async () => {
+      const messages = [createUserQuestionInterruptMessage('user-question-1')];
+      const onSendMessage = vi.fn();
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, modelValue: '自由文本', onSendMessage },
+      });
+
+      const ci = wrapper.findComponent({ name: 'ChatInput' });
+      const send = ci.props('onSendMessage') as (content: string, docSchema: Record<string, unknown>) => Promise<void>;
+      const docSchema = {};
+      await send('自由文本', docSchema);
+
+      expect(onSendMessage).toHaveBeenCalledWith('自由文本', docSchema);
+      expect(wrapper.emitted('update:modelValue')).toBeUndefined();
+    });
+
+    it('存在 UserQuestion 且配置 onInterruptResume 时，应将自由文本转为 resume 并清空输入', async () => {
+      const messages = [createUserQuestionInterruptMessage('user-question-1')];
+      const onSendMessage = vi.fn();
+      const onInterruptResume = vi.fn();
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, modelValue: '自由文本', onInterruptResume, onSendMessage },
+      });
+
+      const ci = wrapper.findComponent({ name: 'ChatInput' });
+      const send = ci.props('onSendMessage') as (content: string, docSchema: Record<string, unknown>) => Promise<void>;
+      await send('自由文本', {});
+
+      expect(onInterruptResume).toHaveBeenCalledWith(
+        expect.objectContaining({
+          interruptId: 'user-question-1-interrupt',
+          reason: InterruptReason.UserQuestion,
+          status: 'resolved',
+        }),
+        expect.objectContaining({ id: 'user-question-1-interrupt' }),
+      );
+      expect(onSendMessage).not.toHaveBeenCalled();
+      expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['', []]);
     });
   });
 

@@ -107,7 +107,7 @@ AssistantMessage
 
 - [快速上手](./getting-started.md) — 安装、最小示例、完整示例
 - [架构总览](./architecture.md) — 组件层级、数据流、渲染管线
-- [设计理念](./design-philosophy.md) — AI 优先策略、原子设计、API 原则
+- [设计理念](./design-philosophy.md) — AI 优先策略、能力域架构、API 原则
 - [用例食谱](./recipes.md) — 11 个常见场景的最小代码
 - [自定义消息类型](./ai/custom-message.md) — 类型扩展完整流程
 - [MCP 服务](./ai/mcp.md) — AI IDE 集成指南

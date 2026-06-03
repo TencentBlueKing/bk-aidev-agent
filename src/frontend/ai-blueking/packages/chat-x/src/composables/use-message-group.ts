@@ -41,7 +41,7 @@ import { t } from '../lang/lang';
 import { generateUUID } from '../utils';
 
 import type { BkFlowMessageContent } from '../ag-ui/types/contents';
-import type { InterruptMessage } from '../ag-ui/types/interrupt';
+import type { InterruptMessage, UserQuestionInterrupt } from '../ag-ui/types/interrupt';
 
 export type MessageGroup = {
   checked: boolean;
@@ -102,6 +102,22 @@ const messageMatchesKeyword = (message: Message, keyword: string): boolean => {
 };
 
 const pendingApprovalStatusSet = new Set([APPROVAL_STATUS.PENDING, APPROVAL_STATUS.DRAFT]);
+
+/**
+ * 从后往前查找最近一条仍在等待用户响应（outcome=interrupt）的 UserQuestion 中断。
+ * 供 ChatContainer 在 chat-input 上方渲染交互浮层。
+ */
+const findActiveUserQuestion = (messages: Message[]): undefined | UserQuestionInterrupt => {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (message.role !== MessageRole.Interrupt) continue;
+    const content = (message as InterruptMessage).content;
+    if (content?.outcome?.type !== 'interrupt') continue;
+    const question = content.outcome.interrupts.find(item => item.reason === InterruptReason.UserQuestion);
+    if (question) return question as UserQuestionInterrupt;
+  }
+  return undefined;
+};
 
 const countPendingApprovalInterrupts = (messages: Message[]): number =>
   messages.reduce((count, message) => {
@@ -241,6 +257,7 @@ export const useMessageGroup = (options: {
         messages: group.messages.filter(isMatch),
       }));
   });
+  const activeUserQuestionInterrupt = computed(() => findActiveUserQuestion(options.messages.value));
   const pendingApprovalCount = computed(() => countPendingApprovalInterrupts(options.messages.value));
   const pendingApprovalTipText = computed(() => {
     if (!pendingApprovalCount.value) {
@@ -315,6 +332,7 @@ export const useMessageGroup = (options: {
   return {
     messageGroups,
     executionGroups,
+    activeUserQuestionInterrupt,
     pendingApprovalCount,
     pendingApprovalTipText,
     isShareMode,

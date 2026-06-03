@@ -54,7 +54,15 @@ import type {
   ContentMap,
   InputContent,
 
-  // 中断响应 Schema
+  // 中断类型
+  Interrupt,
+  InterruptMessage,
+  OnInterruptResume,
+  UserQuestionAnswerItem,
+  UserQuestionInterrupt,
+  UserQuestionResume,
+
+  // 历史用户问题 Schema
   UserQuestion,
   UserMultiChoiceQuestion,
   UserSingleChoiceQuestion,

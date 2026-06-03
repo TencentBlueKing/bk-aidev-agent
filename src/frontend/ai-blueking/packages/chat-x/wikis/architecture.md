@@ -9,7 +9,7 @@ aiSummary: >
   useMessageGroup 将其按角色分组为 MessageGroup[]，MessageRender 按 role
   switch 到具体组件（AssistantMessage、UserMessage 等），AssistantMessage 内
   ContentRender 再按内容类型分发到 MarkdownContent、CodeContent、MermaidContent
-  等原子渲染器。最小可用组合为 ChatInput + MessageContainer + useMessageGroup，
+  等内容渲染器。最小可用组合为 ChatInput + MessageContainer + useMessageGroup，
   ChatContainer 封装了完整对话界面。扩展自定义消息通过 declare global 类型合并
   + MessageRender 默认 slot 实现。
 relatedComponents: []
@@ -258,7 +258,7 @@ CSS 变量 + `useGlobalConfig` 统一调整全局展示配置。
 
 ## 相关文档
 
-- [设计理念](./design-philosophy.md) — 原子设计、功能域、API 设计原则、AI 优先策略
+- [设计理念](./design-philosophy.md) — 能力域架构、API 设计原则、AI 优先策略
 - [用例食谱](./recipes.md) — 11 个常见场景的最小代码
 - [自定义消息类型](./ai/custom-message.md) — 类型扩展完整流程
 - [MCP 服务](./ai/mcp.md) — AI IDE 如何通过 MCP 查询文档

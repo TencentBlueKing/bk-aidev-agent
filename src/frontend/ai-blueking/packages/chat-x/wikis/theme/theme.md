@@ -388,6 +388,6 @@ $selection-z-index: $shortcut-menu-z-index + 1;
 
 ## 关联组件
 
-- [ChatContainer](../components/molecular/chat-container.md) — 布局与主题根节点
-- [ChatInput](../components/molecular/chat-input.md) — 输入区变量与类名
-- [MessageContainer](../components/molecular/message-container.md) — 消息列表区域
+- [ChatContainer](../components/setup/chat-container) — 布局与主题根节点
+- [ChatInput](../components/input/chat-input) — 输入区变量与类名
+- [MessageContainer](../components/setup/message-container) — 消息列表区域

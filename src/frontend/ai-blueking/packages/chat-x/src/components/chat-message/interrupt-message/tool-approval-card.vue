@@ -145,7 +145,7 @@
   };
 
   const handleCancelApproval = () => {
-    props.onInterruptResume?.(props.interrupt, { action: 'cancel' });
+    props.onInterruptResume?.({ action: 'cancel' }, props.interrupt);
   };
 </script>
 

@@ -16,13 +16,20 @@
         :interrupt="item"
         :on-interrupt-resume="onInterruptResume"
       />
+      <!-- UserQuestion 的交互浮层渲染在 chat-input 上方，不在会话内渲染 -->
       <div
-        v-else
+        v-else-if="!isSlotRenderedInterrupt(item)"
         class="ai-interrupt-message__fallback"
       >
         {{ item.message || t('暂不支持的中断消息') }}
       </div>
     </template>
+    <!-- outcome.success 时在会话内回显用户已回答内容（含跳过=已取消态） -->
+    <UserQuestionAnsweredCard
+      v-if="userQuestionResume"
+      :answers="answeredUserQuestion"
+      :status="userQuestionResume.status"
+    />
   </div>
 </template>
 
@@ -33,12 +40,21 @@
   import { InterruptReason } from '../../../ag-ui/types/constants';
   import { t } from '../../../lang/lang';
   import ToolApprovalCard from './tool-approval-card.vue';
+  import { UserQuestionAnsweredCard } from './user-question';
 
-  import type { Interrupt, InterruptMessage, OnInterruptResume } from '../../../ag-ui/types/interrupt';
+  import type {
+    Interrupt,
+    InterruptMessage,
+    OnInterruptResume,
+    UserQuestionAnswerItem,
+  } from '../../../ag-ui/types/interrupt';
 
   const interruptRenderers: Partial<Record<InterruptReason, Component>> = {
     [InterruptReason.AIDevToolApproval]: ToolApprovalCard,
   };
+
+  // 这些中断类型的交互 UI 不在会话内渲染（如 UserQuestion 渲染在 chat-input 上方）
+  const slotRenderedReasons = new Set<InterruptReason>([InterruptReason.UserQuestion]);
 
   const props = defineProps<Partial<InterruptMessage> & { onInterruptResume?: OnInterruptResume }>();
 
@@ -48,6 +64,19 @@
   const displayMessage = computed(() => props.content?.message);
 
   const getRenderer = (item: Interrupt) => interruptRenderers[item.reason];
+  const isSlotRenderedInterrupt = (item: Interrupt) => slotRenderedReasons.has(item.reason);
+
+  // outcome.success 时定位 UserQuestion 的 resume 结果（用于回显问题与 已回复/已取消 状态）
+  const userQuestionResume = computed(() => {
+    if (props.content?.outcome?.type !== 'success') return undefined;
+    const result = props.content?.result;
+    return result?.reason === InterruptReason.UserQuestion ? result : undefined;
+  });
+
+  // 从 resume 结果中提取用户对各问题的回答用于回显（跳过态为空数组）
+  const answeredUserQuestion = computed<UserQuestionAnswerItem[]>(
+    () => (userQuestionResume.value?.payload?.answers ?? []) as UserQuestionAnswerItem[],
+  );
 </script>
 
 <style lang="scss">

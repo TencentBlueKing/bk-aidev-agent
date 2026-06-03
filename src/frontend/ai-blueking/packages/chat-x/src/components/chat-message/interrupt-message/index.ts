@@ -25,3 +25,4 @@
  */
 
 export { default as InterruptMessageRender } from './interrupt-message.vue';
+export * from './user-question';

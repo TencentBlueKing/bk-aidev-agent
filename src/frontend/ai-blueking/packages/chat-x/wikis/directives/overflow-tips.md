@@ -267,7 +267,7 @@ type OverflowTipsValue = Partial<TippyProps> & {
 
 ## 关联组件
 
-- [DescPanel](../components/atomic/desc-panel.md) — 描述区溢出
-- [ExecutionSummary](../components/molecular/execution-summary.md) — 侧栏摘要标签
-- [ToolcallRender](../components/molecular/toolcall-render.md) — 工具调用标题
-- [ChatInput](../components/molecular/chat-input.md) — `@` 菜单项（内部 AiSlashMenu）
+- [DescPanel](../components/rendering/desc-panel) — 描述区溢出
+- [ExecutionSummary](../components/agent/execution-summary) — 侧栏摘要标签
+- [ToolcallRender](../components/agent/toolcall-render) — 工具调用标题
+- [ChatInput](../components/input/chat-input) — `@` 菜单项（内部 AiSlashMenu）

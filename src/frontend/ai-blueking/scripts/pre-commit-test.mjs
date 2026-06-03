@@ -8,7 +8,7 @@
  */
 
 import { execSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { basename, dirname, extname, join, relative } from 'node:path';
 
 // git root 与当前 workspace 可能不在同一层（monorepo 场景）
@@ -21,8 +21,18 @@ const SRC_PATH = join(CHAT_X_PATH, 'src');
 const WIKI_PATH = join(CHAT_X_PATH, 'wikis');
 const TEST_SUFFIX = '.spec.ts';
 
-/** wiki 中组件文档可能存在的子目录 */
-const COMPONENT_WIKI_SUBDIRS = ['atomic', 'molecular'];
+/** 源码文件名与文档 slug 不一致的组件 */
+const COMPONENT_DOC_NAME_OVERRIDES = {
+  'components/image-preview/image.vue': 'ai-image',
+};
+
+const getComponentWikiSubdirs = () => {
+  const componentsWikiPath = join(WIKI_PATH, 'components');
+  if (!existsSync(componentsWikiPath)) return [];
+  return readdirSync(componentsWikiPath, { withFileTypes: true })
+    .filter(dirent => dirent.isDirectory())
+    .map(dirent => dirent.name);
+};
 
 /**
  * 过滤出 packages/chat-x/src 目录下的源文件（.vue / .ts，排除测试和类型定义）
@@ -92,11 +102,13 @@ const findWikiFiles = srcFiles => {
     let wikiFile = null;
 
     if (topDir === 'components' && parts.length >= 3) {
-      // 组件文档按名称在 atomic / molecular 子目录中查找
-      const docName = `${parts[2]}.md`;
-      wikiFile = COMPONENT_WIKI_SUBDIRS.map(sub => join(WIKI_PATH, 'components', sub, docName)).find(p =>
-        existsSync(p),
-      );
+      // 组件文档按能力域目录组织，按源码文件名对应的 slug 查找
+      const override = COMPONENT_DOC_NAME_OVERRIDES[relativePath];
+      const docSlug = override ?? basename(parts.at(-1), extname(parts.at(-1)));
+      const docName = `${docSlug}.md`;
+      wikiFile = getComponentWikiSubdirs()
+        .map(sub => join(WIKI_PATH, 'components', sub, docName))
+        .find(p => existsSync(p));
     } else if (parts.length >= 2) {
       // composables / directives / plugins 等直接按 topDir 映射
       const fileName = basename(parts[1], extname(parts[1]));

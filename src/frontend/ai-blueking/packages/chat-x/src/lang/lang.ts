@@ -150,6 +150,15 @@ export const lang = {
   '收到信息：': 'Received: ',
   待审批: 'Pending',
   已审批: 'Approved',
+  // 用户回答问题中断（human-in-the-loop）
+  完成: 'Done',
+  跳过: 'Skip',
+  单选: 'Single',
+  多选: 'Multiple',
+  其他: 'Others',
+  回答内容: 'Answers',
+  已回复: 'Replied',
+  '请输入...': 'Please enter...',
 } as const;
 
 export const t = (key: keyof typeof lang) => {
