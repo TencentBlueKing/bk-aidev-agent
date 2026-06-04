@@ -91,7 +91,7 @@ describe('AiSkillList', () => {
       expect(items[1].text()).toBe('Skill 2');
     });
 
-    it('应该正确显示 skill 描述', () => {
+    it('不应该显示 skill 描述', () => {
       wrapper = mount(AiSkillList, {
         props: {
           skills: defaultSkills,
@@ -100,8 +100,9 @@ describe('AiSkillList', () => {
       });
 
       const descs = wrapper.findAll('.ai-skill-list-item-desc');
-      expect(descs[0].text()).toBe('Description 1');
-      expect(descs[1].text()).toBe('Description 2');
+      expect(descs.length).toBe(0);
+      expect(wrapper.text()).not.toContain('Description 1');
+      expect(wrapper.text()).not.toContain('Description 2');
     });
 
     it('有 icon 时应该渲染 img 元素', () => {
