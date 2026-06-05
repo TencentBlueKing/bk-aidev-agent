@@ -26,6 +26,13 @@
 
 import type { IMessage } from '../message';
 
+export enum SessionStatus {
+  Running = 'running',
+  Finished = 'finished',
+  Failed = 'failed',
+  Cancelled = 'cancelled',
+}
+
 export interface ISession<ITool = unknown, IAnchorPathResources = unknown> {
   anchorPathResources?: IAnchorPathResources;
   comment?: string;
@@ -39,6 +46,7 @@ export interface ISession<ITool = unknown, IAnchorPathResources = unknown> {
   sessionName: string;
   tools?: ITool[];
   updatedAt?: string;
+  status?: SessionStatus;
   roleInfo?: {
     collectionId: number;
     collectionName: string;
@@ -68,6 +76,7 @@ export interface ISessionApi<IToolApi = unknown, IAnchorPathResourcesApi = unkno
   session_name: string;
   tools?: IToolApi[];
   updated_at?: string;
+  status?: SessionStatus;
   role_info?: {
     collection_id: number;
     collection_name: string;
