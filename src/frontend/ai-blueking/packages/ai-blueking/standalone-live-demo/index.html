@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI 小鲸 Standalone 本地验证（IIFE）</title>
+    <!-- 与文档一致：ES/UMD 需引入 style.css；IIFE 也会通过 JS 注入部分样式，双引无害 -->
+    <link rel="stylesheet" href="../dist/standalone/style.css" />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+          sans-serif;
+        background: #f0f1f5;
+        color: #313238;
+      }
+
+      .page-header {
+        padding: 16px 24px;
+        background: #fff;
+        border-bottom: 1px solid #dcdee5;
+      }
+
+      .page-header h1 {
+        margin: 0 0 8px;
+        font-size: 18px;
+        font-weight: 600;
+      }
+
+      .page-header p {
+        margin: 0;
+        font-size: 13px;
+        color: #979ba5;
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: flex-end;
+        padding: 16px 24px;
+        background: #fff;
+        border-bottom: 1px solid #dcdee5;
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 280px;
+        flex: 1;
+      }
+
+      .field label {
+        font-size: 12px;
+        color: #63656e;
+      }
+
+      .field input {
+        height: 32px;
+        padding: 0 10px;
+        border: 1px solid #c4c6cc;
+        border-radius: 2px;
+        font-size: 13px;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      button {
+        height: 32px;
+        padding: 0 14px;
+        border: 1px solid #c4c6cc;
+        border-radius: 2px;
+        background: #fff;
+        font-size: 13px;
+        cursor: pointer;
+      }
+
+      button:hover {
+        border-color: #3a84ff;
+        color: #3a84ff;
+      }
+
+      button.primary {
+        background: #3a84ff;
+        border-color: #3a84ff;
+        color: #fff;
+      }
+
+      button.primary:hover {
+        background: #699df4;
+        border-color: #699df4;
+        color: #fff;
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 1fr 320px;
+        gap: 16px;
+        padding: 16px 24px 24px;
+        min-height: calc(100vh - 180px);
+      }
+
+      @media (max-width: 960px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .panel {
+        background: #fff;
+        border: 1px solid #dcdee5;
+        border-radius: 4px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .panel-title {
+        padding: 10px 14px;
+        font-size: 13px;
+        font-weight: 500;
+        border-bottom: 1px solid #f0f1f5;
+        background: #fafbfd;
+      }
+
+      #chat-root {
+        flex: 1;
+        min-height: 560px;
+        position: relative;
+      }
+
+      #ai-root {
+        flex: 1;
+        min-height: 120px;
+        position: relative;
+      }
+
+      .log {
+        flex: 1;
+        margin: 0;
+        padding: 10px 12px;
+        font-size: 12px;
+        line-height: 1.5;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        background: #1e1e1e;
+        color: #d4d4d4;
+        overflow: auto;
+        max-height: calc(100vh - 200px);
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+
+      .hint {
+        padding: 8px 14px 12px;
+        font-size: 12px;
+        color: #979ba5;
+        border-top: 1px solid #f0f1f5;
+      }
+
+      .status {
+        padding: 0 24px 12px;
+        font-size: 12px;
+        color: #63656e;
+      }
+
+      .status code {
+        background: #f0f1f5;
+        padding: 1px 4px;
+        border-radius: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-header">
+      <h1>Standalone 本地验证（@blueking/ai-blueking/standalone）</h1>
+      <p>
+        按文档「方式二：&lt;script&gt; 直引（IIFE）」加载
+        <code>dist/standalone/index.iife.min.js</code>，全局变量
+        <code>AIBluekingStandalone</code>。请用 Live Server 打开本页（不要 file:// 直接打开）。
+      </p>
+    </header>
+
+    <div class="toolbar">
+      <div class="field">
+        <label for="api-url">AIDev API URL（props.url）</label>
+        <input
+          id="api-url"
+          type="url"
+          placeholder="https://your-aidev-url.com/api/"
+          autocomplete="off"
+        />
+      </div>
+      <div class="actions">
+        <button type="button" class="primary" id="btn-mount-chat">挂载 ChatBot</button>
+        <button type="button" id="btn-mount-ai">挂载 AIBlueking</button>
+        <button type="button" id="btn-show-panel">expose.show()</button>
+        <button type="button" id="btn-send">expose.sendMessage()</button>
+        <button type="button" id="btn-unmount-chat">卸载 ChatBot</button>
+        <button type="button" id="btn-unmount-ai">卸载 AIBlueking</button>
+      </div>
+    </div>
+
+    <p class="status" id="bundle-status">正在检测本地 bundle…</p>
+
+    <main class="layout">
+      <section class="panel">
+        <div class="panel-title">#chat-root — mountChatBot</div>
+        <div id="chat-root"></div>
+        <p class="hint">页面嵌入模式：容器需有高度。卸载后再挂载可验证 remount。</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">#ai-root — mountAIBlueking（enablePopup）</div>
+        <div id="ai-root"></div>
+        <p class="hint">浮窗模式：挂载后点击右下角 Nimbus 或使用「expose.show()」。</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">事件日志</div>
+        <pre class="log" id="log"></pre>
+      </section>
+    </main>
+
+    <!-- 文档：dist/standalone/index.iife.min.js → 全局 AIBluekingStandalone -->
+    <script src="../dist/standalone/index.iife.min.js"></script>
+    <script>
+      (function () {
+        var logEl = document.getElementById('log');
+        var statusEl = document.getElementById('bundle-status');
+        var urlInput = document.getElementById('api-url');
+
+        var chatHandle = null;
+        var aiHandle = null;
+
+        function log(message) {
+          var line = '[' + new Date().toLocaleTimeString() + '] ' + message;
+          logEl.textContent = line + '\n' + logEl.textContent;
+          console.log(line);
+        }
+
+        function getApiUrl() {
+          var url = urlInput.value.trim();
+          if (!url) {
+            alert('请先填写 AIDev API URL');
+            throw new Error('API URL is required');
+          }
+          if (!url.endsWith('/')) {
+            url += '/';
+          }
+          return url;
+        }
+
+        function getBundle() {
+          if (typeof AIBluekingStandalone === 'undefined') {
+            throw new Error('AIBluekingStandalone 未加载，请确认 ../dist/standalone/index.iife.min.js 存在且已 build');
+          }
+          return AIBluekingStandalone;
+        }
+
+        function commonOn(prefix) {
+          return {
+            'send-message': function (message) {
+              log(prefix + ' send-message: ' + message);
+            },
+            'sdk-error': function (payload) {
+              log(prefix + ' sdk-error: ' + JSON.stringify(payload));
+            },
+            error: function (err) {
+              log(prefix + ' error: ' + (err && err.message ? err.message : String(err)));
+            },
+            'agent-info-loaded': function () {
+              log(prefix + ' agent-info-loaded');
+            },
+          };
+        }
+
+        // URL 查询参数：?url=https://xxx/api/
+        var params = new URLSearchParams(window.location.search);
+        if (params.get('url')) {
+          urlInput.value = params.get('url');
+        }
+
+        try {
+          var bundle = getBundle();
+          statusEl.innerHTML =
+            'Bundle 已加载：<code>AIBluekingStandalone</code>，含 mountAIBlueking / mountChatBot / h / render';
+          log('AIBluekingStandalone keys: ' + Object.keys(bundle).slice(0, 12).join(', ') + '…');
+        } catch (e) {
+          statusEl.textContent = '加载失败：' + e.message;
+          log('ERROR: ' + e.message);
+          return;
+        }
+
+        document.getElementById('btn-mount-chat').addEventListener('click', function () {
+          try {
+            if (chatHandle) {
+              chatHandle.unmount();
+              chatHandle = null;
+            }
+            var bundle = getBundle();
+            chatHandle = bundle.mountChatBot('#chat-root', {
+              props: {
+                url: getApiUrl(),
+                height: '100%',
+                helloText: 'Standalone ChatBot 本地验证',
+              },
+              on: commonOn('ChatBot'),
+            });
+            log('mountChatBot 完成，expose 可用方法见控制台');
+            console.log('ChatBot expose', chatHandle.getExpose());
+          } catch (e) {
+            log('mountChatBot 失败: ' + e.message);
+            console.error(e);
+          }
+        });
+
+        document.getElementById('btn-mount-ai').addEventListener('click', function () {
+          try {
+            if (aiHandle) {
+              aiHandle.unmount();
+              aiHandle = null;
+            }
+            var bundle = getBundle();
+            aiHandle = bundle.mountAIBlueking('#ai-root', {
+              props: {
+                url: getApiUrl(),
+                enablePopup: true,
+                draggable: true,
+              },
+              on: commonOn('AIBlueking'),
+            });
+            log('mountAIBlueking 完成');
+            console.log('AIBlueking expose', aiHandle.getExpose());
+          } catch (e) {
+            log('mountAIBlueking 失败: ' + e.message);
+            console.error(e);
+          }
+        });
+
+        document.getElementById('btn-show-panel').addEventListener('click', function () {
+          var target = aiHandle || chatHandle;
+          if (!target || !target.expose) {
+            log('请先挂载组件');
+            return;
+          }
+          if (typeof target.expose.show === 'function') {
+            target.expose.show().then(function () {
+              log('expose.show() 已调用');
+            }).catch(function (e) {
+              log('expose.show() 失败: ' + e.message);
+            });
+          } else if (typeof target.expose.handleShow === 'function') {
+            target.expose.handleShow();
+            log('expose.handleShow() 已调用');
+          } else {
+            log('当前 expose 无 show / handleShow');
+          }
+        });
+
+        document.getElementById('btn-send').addEventListener('click', function () {
+          var target = chatHandle || aiHandle;
+          if (!target || !target.expose || typeof target.expose.sendMessage !== 'function') {
+            log('请先挂载 ChatBot 或 AIBlueking');
+            return;
+          }
+          target.expose
+            .sendMessage('来自 Standalone 演示页的测试消息')
+            .then(function () {
+              log('expose.sendMessage() 已调用');
+            })
+            .catch(function (e) {
+              log('sendMessage 失败: ' + e.message);
+            });
+        });
+
+        document.getElementById('btn-unmount-chat').addEventListener('click', function () {
+          if (chatHandle) {
+            chatHandle.unmount();
+            chatHandle = null;
+            document.getElementById('chat-root').innerHTML = '';
+            log('ChatBot 已卸载');
+          }
+        });
+
+        document.getElementById('btn-unmount-ai').addEventListener('click', function () {
+          if (aiHandle) {
+            aiHandle.unmount();
+            aiHandle = null;
+            document.getElementById('ai-root').innerHTML = '';
+            log('AIBlueking 已卸载');
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

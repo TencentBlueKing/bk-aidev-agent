@@ -22,8 +22,8 @@ function useChatHelper(options?: IUseChatHelperOptions): IChatHelper;
 | --- | --- | --- |
 | `requestData` | `{ urlPrefix, headers, data }` | 请求配置 |
 | `requestData.urlPrefix` | `string` | API 地址前缀 |
-| `requestData.headers` | `Record<string, string> \| () => Record<string, string>` | 自定义请求头 |
-| `requestData.data` | `Record<string, any> \| () => Record<string, any>` | 附加请求数据 |
+| `requestData.headers` | `MaybeRequestValue<Record<string, string>>` | 自定义请求头（对象 / 函数 / `ref` / `computed`） |
+| `requestData.data` | `MaybeRequestValue<Record<string, unknown>>` | 附加数据（GET 等 → query，POST 等 → body） |
 | `protocol` | `AGUIProtocol` | 自定义协议实例（可选） |
 | `interceptors` | `object` | 请求/响应拦截器（可选） |
 
@@ -42,10 +42,15 @@ function useChatHelper(options?: IUseChatHelperOptions): IChatHelper;
 ```typescript
 import { useChatHelper } from '@blueking/chat-helper';
 
+import { computed, ref } from 'vue';
+
+const token = ref(getToken());
+
 const chatHelper = useChatHelper({
   requestData: {
     urlPrefix: '/api/ai',
-    headers: () => ({ Authorization: `Bearer ${getToken()}` }),
+    headers: computed(() => ({ Authorization: `Bearer ${token.value}` })),
+    data: () => ({ app_id: 'my-app' }),
   },
 });
 

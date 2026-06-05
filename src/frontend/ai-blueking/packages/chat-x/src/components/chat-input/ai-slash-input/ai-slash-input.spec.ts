@@ -150,6 +150,19 @@ vi.mock('./ai-slash-menu/ai-slash-menu.vue', () => ({
   }),
 }));
 
+vi.mock('./ai-skill-list/ai-skill-list.vue', () => ({
+  default: defineComponent({
+    name: 'AiSkillList',
+    props: {
+      onSelect: { type: Function, default: null },
+      skills: { type: Array, default: () => [] },
+    },
+    setup() {
+      return () => h('div', { class: 'mock-ai-skill-list' });
+    },
+  }),
+}));
+
 // Mock commands and constants
 vi.mock('./command', () => ({
   DeleteTag: 'DeleteTag',
@@ -238,6 +251,21 @@ describe('AiSlashInput', () => {
         props: {
           modelValue: '',
           resources,
+        },
+      });
+
+      expect(wrapper.find('.ai-slash-input-wrapper').exists()).toBe(true);
+    });
+
+    it('应该接收 skills 属性', () => {
+      const skills = [
+        { skill_code: 'test_skill', skill_name: 'Test Skill', description: 'A test skill', icon: '' },
+      ];
+
+      wrapper = mount(AiSlashInput, {
+        props: {
+          modelValue: '',
+          skills,
         },
       });
 

@@ -180,7 +180,7 @@ domain: media
 ```typescript
 import type { TippyOptions } from 'vue-tippy';
 
-type AITippyProps = Partial<Omit<TippyOptions, 'content' | 'getReferenceClientRect' | 'theme' | 'triggerTarget'>>;
+type AITippyProps = Partial<Pick<TippyOptions, 'appendTo' | 'placement' | 'zIndex'>>;
 ```
 
 ## 关联组件

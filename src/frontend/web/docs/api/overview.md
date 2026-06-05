@@ -7,6 +7,7 @@
 | 包名 | 用途 | 关键导出 |
 | --- | --- | --- |
 | `@blueking/ai-blueking` | 业务组件层 | `AIBlueking`、`ChatBot`、Managers |
+| `@blueking/ai-blueking/standalone` | 非 Vue 宿主（v2.1.4-beta.8+） | `mountAIBlueking`、`mountChatBot`、内联 Vue 3 |
 | `@blueking/chat-x` | 纯 UI 组件 | `ChatInput`、`MessageContainer`、`MessageRender` |
 | `@blueking/chat-helper` | 业务 SDK | `useChatHelper`、`AGUIProtocol` |
 
@@ -22,6 +23,7 @@
 | --- | --- | --- |
 | SaaS 平台快速接入 | `AIBlueking` | 开箱即用，含弹窗、拖拽、会话管理等完整功能 |
 | 嵌入已有页面的聊天窗口 | `ChatBot` | 轻量级，仅包含核心聊天功能 |
+| 宿主无 Vue（React、纯 HTML 等） | `@blueking/ai-blueking/standalone` | `mountAIBlueking` / `mountChatBot`，见 [Standalone 指南](/guide/integration-modes/standalone-bundle) |
 | 自定义聊天界面 | `chat-x` + `chat-helper` | 最大灵活性，自由组合 UI 组件与业务逻辑 |
 
 ## 导入参考
@@ -31,12 +33,16 @@
 // @blueking/ai-blueking
 // ========================
 
-// 主组件
+// 主组件（Vue 3 宿主）
 import { AIBlueking, ChatBot } from '@blueking/ai-blueking';
 
 // 样式引入（按 Vue 版本选择）
 import '@blueking/ai-blueking/dist/vue3/style.css';  // Vue 3
 // import '@blueking/ai-blueking/dist/vue2/style.css';  // Vue 2
+
+// 非 Vue 宿主（v2.1.4-beta.8+）
+// import { mountAIBlueking } from '@blueking/ai-blueking/standalone';
+// import '@blueking/ai-blueking/dist/standalone/style.css';
 
 // Composables
 import { useChatBootstrap } from '@blueking/ai-blueking';

@@ -5,6 +5,16 @@
       <p class="view-desc">ChatBot 组件独立使用，可嵌入到任意页面区域（无 Nimbus、无浮窗、无拖拽）</p>
     </div>
 
+    <DemoRequestOptionsBar
+      :token="token"
+      :app-id="appId"
+      :tenant-id="tenantId"
+      :preview-json="previewJson"
+      @rotate-token="rotateToken"
+      @rotate-app-id="rotateAppId"
+      @rotate-tenant-id="rotateTenantId"
+    />
+
     <div class="page-simulation">
       <div class="page-sidebar">
         <div class="page-sidebar-title">模拟页面导航</div>
@@ -17,7 +27,9 @@
         <div class="page-main-header">主内容区域 — ChatBot 嵌入在此处</div>
         <div class="chatbot-wrapper">
           <ChatBot
+            ref="chatBotRef"
             height="600px"
+            :request-options="requestOptions"
             :url="apiUrl"
             @error="handleError"
             @send-message="handleSendMessage"
@@ -29,9 +41,18 @@
 </template>
 
 <script setup lang="ts">
-  import { ChatBot } from '@blueking/ai-blueking';
+  import { onMounted, ref } from 'vue';
+
+  import { ChatBot, type ChatBotExpose } from '@blueking/ai-blueking';
+
+  import DemoRequestOptionsBar from '../components/DemoRequestOptionsBar.vue';
+  import { useDemoRequestOptions } from '../composables/use-demo-request-options';
 
   const apiUrl = import.meta.env.VITE_API_URL || '';
+  const chatBotRef = ref<ChatBotExpose>();
+
+  const { token, appId, tenantId, requestOptions, previewJson, rotateToken, rotateAppId, rotateTenantId } =
+    useDemoRequestOptions();
 
   const handleSendMessage = (message: string) => {
     console.log('[Standalone] send:', message);
@@ -40,6 +61,11 @@
   const handleError = (error: Error) => {
     console.error('[Standalone] error:', error);
   };
+
+  onMounted(async () => {
+    await chatBotRef.value?.whenReady();
+    console.log('[Standalone] ChatBot ready, isReady:', chatBotRef.value?.isReady);
+  });
 </script>
 
 <style scoped>

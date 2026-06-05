@@ -90,6 +90,7 @@ export interface IAgentCommandComponentApi {
 
 export interface IAgentInfo {
   agentName?: string;
+  relatedSkills?: IRelatedSkill[];
   resources?: IAgentResourceItem[];
   saasUrl?: string;
   chatGroup?: {
@@ -111,6 +112,7 @@ export interface IAgentInfo {
 
 export interface IAgentInfoApi {
   agent_name: string;
+  related_skills?: IRelatedSkillApi[];
   resources?: IAgentResourceItem[];
   saas_url?: string;
   chat_group?: {
@@ -136,6 +138,22 @@ export interface IAgentResourceItem {
   id: null | number;
   name: string;
   type: string;
+}
+
+export interface IRelatedSkill {
+  description: string;
+  icon: string;
+  id: number;
+  skill_code: string;
+  skill_name: string;
+}
+
+export interface IRelatedSkillApi {
+  description: string;
+  icon: string;
+  id: number;
+  skill_code: string;
+  skill_name: string;
 }
 
 /** @deprecated 后端已改为扁平列表 IAgentResourceItem[]，不再使用分组结构 */

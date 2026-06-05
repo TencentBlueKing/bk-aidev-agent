@@ -18,7 +18,7 @@ import type { ShortcutManager } from '../../manager/business/shortcut-manager';
 import type { IChatHelper } from '../../types';
 import type { ChatBotProps } from '../types';
 import type { ISupportUpload } from '@blueking/chat-helper';
-import type { IAiSlashMenuItem, Message, Shortcut } from '@blueking/chat-x';
+import type { IAiSlashMenuItem, ISkillListItem, Message, Shortcut } from '@blueking/chat-x';
 
 export interface UseChatbotStateParams {
   chatBusinessManager: Ref<ChatBusinessManager | null>;
@@ -36,6 +36,7 @@ export interface UseChatbotStateReturn {
   currentSession: ComputedRef<any>;
   effectivePrompts: ComputedRef<string[]>;
   effectiveResources: ComputedRef<IAiSlashMenuItem[]>;
+  effectiveSkills: ComputedRef<ISkillListItem[]>;
   effectiveSupportUpload: ComputedRef<boolean>;
   filteredShortcuts: ComputedRef<Shortcut[]>;
   isGenerating: ComputedRef<boolean>;
@@ -103,12 +104,26 @@ export function useChatbotState(params: UseChatbotStateParams): UseChatbotStateR
   });
 
   /**
-   * 预设提示词列表（输入 / 触发）
+   * 预设提示词列表（输入 \ 触发）
    * 优先级：props 传入 > info 接口返回 > 空数组
    */
   const effectivePrompts = computed(() => {
     if (props.prompts?.length) return props.prompts;
     return chatHelper.value?.agent.info.value?.conversationSettings?.predefinedQuestions ?? [];
+  });
+
+  /**
+   * 技能列表（输入 / 触发）
+   * 优先级：props 传入 > info 接口返回 > 空数组
+   */
+  const effectiveSkills = computed<ISkillListItem[]>(() => {
+    if (props.skills?.length) return props.skills;
+    return (chatHelper.value?.agent.info.value?.relatedSkills ?? []).map(skill => ({
+      skill_name: skill.skill_name,
+      skill_code: skill.skill_code,
+      description: skill.description,
+      icon: skill.icon,
+    }));
   });
 
   /**
@@ -141,6 +156,7 @@ export function useChatbotState(params: UseChatbotStateParams): UseChatbotStateR
     openingRemark,
     effectiveResources,
     effectivePrompts,
+    effectiveSkills,
     effectiveSupportUpload,
     chatbotStyle,
     filteredShortcuts,

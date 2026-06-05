@@ -171,6 +171,8 @@ function sidebarAI() {
       items: [
         { text: 'MCP 服务', link: 'mcp' },
         { text: '自定义消息类型', link: 'custom-message' },
+        { text: '自定义侧栏 Tab 标签', link: 'custom-side-tab' },
+        { text: '自定义侧栏内容', link: 'custom-side-content' },
         { text: '最佳实践', link: 'best-practices' },
       ],
     },

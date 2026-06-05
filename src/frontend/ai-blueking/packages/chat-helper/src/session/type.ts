@@ -31,7 +31,6 @@ export interface ISession<ITool = unknown, IAnchorPathResources = unknown> {
   comment?: string;
   createdAt?: string;
   isTemporary?: boolean;
-  labels?: string[];
   model?: string;
   rate?: number;
   sessionCode: string;
@@ -52,6 +51,7 @@ export interface ISession<ITool = unknown, IAnchorPathResources = unknown> {
   sessionProperty?: {
     isAutoCalcPrompt?: boolean;
     isAutoClear?: boolean;
+    labels?: string[];
   };
 }
 
@@ -60,7 +60,6 @@ export interface ISessionApi<IToolApi = unknown, IAnchorPathResourcesApi = unkno
   comment?: string;
   created_at?: string;
   is_temporary?: boolean;
-  labels?: string[];
   model?: string;
   rate?: number;
   session_code: string;
@@ -81,6 +80,7 @@ export interface ISessionApi<IToolApi = unknown, IAnchorPathResourcesApi = unkno
   session_property?: {
     is_auto_clac_prompt?: boolean;
     is_auto_clear?: boolean;
+    labels?: string[];
   };
 }
 

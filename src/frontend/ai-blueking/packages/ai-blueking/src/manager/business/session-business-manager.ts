@@ -114,6 +114,9 @@ export class SessionBusinessManager {
         sessionName: options.name || '新会话',
         sessionCode: options.sessionCode || `session_${Date.now()}`,
         isTemporary: options.isTemporary || false,
+        sessionProperty: {
+          labels: options.labels,
+        },
       };
 
       // 调用 AG-UI SDK 创建会话

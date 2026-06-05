@@ -7,7 +7,7 @@
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
  */
 
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, toValue, watch } from 'vue';
 
 import { createComponentManager } from '../manager';
 import { SessionBusinessManager } from '../manager/business/session-business-manager';
@@ -21,7 +21,7 @@ import type ChatBot from '../components/chat-bot.vue';
 import type { DraggableContainerExpose } from '../containers';
 import type { AIBluekingProps, IShortcut } from '../types';
 import type { UseEventBridgeReturn } from './use-event-bridge';
-import type { IAiSlashMenuItem } from '@blueking/chat-x';
+import type { IAiSlashMenuItem, ISkillListItem } from '@blueking/chat-x';
 
 export type EventForwarders = ReturnType<typeof createEventForwarders>;
 export type ForwardToManagerFn = UseEventBridgeReturn['forwardToManager'];
@@ -90,9 +90,10 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     agentInfo,
     agentName: bootstrapAgentName,
     currentSession,
+    initialize: bootstrapInitialize,
   } = useChatBootstrap({
     url: normalizedUrl,
-    requestOptions: props.requestOptions,
+    requestOptions: () => toValue(props.requestOptions),
     autoInit: true,
     protocolCallbacks: {
       onStart: () => {
@@ -122,6 +123,28 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
   const shareBusinessManager = new ShareBusinessManager(chatHelper.message, chatHelper.session);
   const shortcutManager = new ShortcutManager(null, props.shortcuts || []);
 
+  // ==================== 会话就绪（供 show() 等待） ====================
+  let recentSessionPromise: Promise<void> | null = null;
+
+  const ensureRecentSessionLoaded = (): Promise<void> => {
+    if (!props.loadRecentSessionOnMount) {
+      return Promise.resolve();
+    }
+
+    if (!recentSessionPromise) {
+      recentSessionPromise = sessionBusinessManager.loadRecentSession({ skipLoadSessions: true }).finally(() => {
+        recentSessionPromise = null;
+      });
+    }
+
+    return recentSessionPromise;
+  };
+
+  const ensureSessionReady = async (): Promise<void> => {
+    await bootstrapInitialize();
+    await ensureRecentSessionLoaded();
+  };
+
   // ==================== Tippy 配置 ====================
   const messageToolsTippyOptions = {
     appendTo: (ref: Element) => {
@@ -147,6 +170,15 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     return agentInfo.value?.conversationSettings?.predefinedQuestions ?? [];
   });
 
+  const agentSkills = computed<ISkillListItem[]>(() => {
+    return (agentInfo.value?.relatedSkills ?? []).map(skill => ({
+      skill_name: skill.skill_name,
+      skill_code: skill.skill_code,
+      description: skill.description,
+      icon: skill.icon,
+    }));
+  });
+
   // 监听 Bootstrap 初始化失败（如 Agent 信息获取失败），统一触发 sdk-error
   watch(
     () => bootstrapError.value,
@@ -157,36 +189,63 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     },
   );
 
+  // ==================== Agent Info 处理 ====================
+  /**
+   * 处理 agentInfo 数据：ping saasUrl、更新 shortcutManager
+   * 供初始化 watcher 和 updateAgentInfo 复用
+   */
+  const processAgentInfo = (info: NonNullable<typeof agentInfo.value>) => {
+    if (info.saasUrl) {
+      fetch(info.saasUrl, {
+        method: 'GET',
+        credentials: 'include',
+      }).catch(() => {
+        // ping 请求，忽略错误
+      });
+    }
+
+    if (info.conversationSettings?.commands) {
+      shortcutManager.setAgentShortcuts(info.conversationSettings.commands as IShortcut[]);
+    }
+  };
+
+  /**
+   * 主动刷新 agentInfo 并更新内部状态
+   * 业务方可调用此方法获取最新的 agent 信息，同时会自动更新 shortcuts 等状态
+   *
+   * @returns 最新的 agentInfo 数据，获取失败返回 null
+   */
+  const updateAgentInfo = async (): Promise<typeof agentInfo.value> => {
+    try {
+      await chatHelper.agent.getAgentInfo();
+      const info = agentInfo.value;
+      if (info) {
+        processAgentInfo(info);
+      }
+      return info;
+    } catch (err) {
+      emitSdkError('getAgentInfo', err);
+      return null;
+    }
+  };
+
   // ==================== Agent 初始化 Watcher ====================
   watch(
     () => isBootstrapReady.value,
     async ready => {
       if (ready && agentInfo.value) {
-        const info = agentInfo.value;
+        processAgentInfo(agentInfo.value);
 
-        if (info.saasUrl) {
-          fetch(info.saasUrl, {
-            method: 'GET',
-            credentials: 'include',
-          }).catch(() => {
-            // ping 请求，忽略错误
-          });
-        }
-
-        if (info.conversationSettings) {
+        if (agentInfo.value.conversationSettings) {
           forwardToManager('session-initialized', {
-            openingRemark: info.conversationSettings.openingRemark || '',
-            predefinedQuestions: info.conversationSettings.predefinedQuestions || [],
+            openingRemark: agentInfo.value.conversationSettings.openingRemark || '',
+            predefinedQuestions: agentInfo.value.conversationSettings.predefinedQuestions || [],
           });
-
-          if (info.conversationSettings.commands) {
-            shortcutManager.setAgentShortcuts(info.conversationSettings.commands as IShortcut[]);
-          }
         }
 
         if (props.loadRecentSessionOnMount) {
           try {
-            await sessionBusinessManager.loadRecentSession({ skipLoadSessions: true });
+            await ensureRecentSessionLoaded();
           } catch (err) {
             console.error('[AIBlueking] Failed to load recent session:', err);
           }
@@ -250,6 +309,9 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     messageToolsTippyOptions,
     agentResources,
     agentPrompts,
+    agentSkills,
     handleError,
+    ensureSessionReady,
+    updateAgentInfo,
   };
 }

@@ -357,9 +357,19 @@ useChatHelper({
       Authorization: `Bearer ${getToken()}`,
       'X-Request-ID': generateRequestId(),
     }),
+
+    // 也支持 Vue ref / computed（每次请求读取最新值）
+    // headers: computed(() => ({ Authorization: `Bearer ${token.value}` })),
+    // data: ref({ app_id: currentAppId.value }),
   },
 });
 ```
+
+**响应式写法说明**：
+
+- `headers` / `data` 支持：普通对象、零参函数、`ref`、`computed`，以及「函数返回 ref/computed」。
+- 每次发起 HTTP 请求前都会重新解析，修改 `.value` 或替换外层 ref 后，后续请求自动使用新值。
+- `data` 对 POST/PUT/PATCH/DELETE 合并进请求体；对 GET/HEAD/OPTIONS 合并进 query（`params`），不会写入 body。
 
 ### interceptors（可选）
 

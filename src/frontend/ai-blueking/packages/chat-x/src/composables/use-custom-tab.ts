@@ -27,7 +27,8 @@
 import { type ShallowRef, ref as deepRef, inject, nextTick, provide, shallowRef } from 'vue';
 
 import { t } from '../lang/lang';
-import { type CustomTab } from '../types';
+
+import type { CustomTab } from '../types';
 
 export const CUSTOM_TAB_TOKEN = Symbol('CUSTOM_TAB_TOKEN');
 export const EXECUTION_TAB_NAME = 'execution';

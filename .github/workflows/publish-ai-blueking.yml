@@ -120,7 +120,8 @@ jobs:
 
       - name: Publish ai-blueking to npm
         working-directory: src/frontend/ai-blueking/packages/ai-blueking
-        run: pnpm publish --no-git-checks --access public --tag ${{ steps.bump-version.outputs.npm_tag }}
+        # 前置步骤已完成 chat-x、chat-helper、ai-blueking 构建；发布时跳过 prepublishOnly，避免重复构建。
+        run: pnpm publish --ignore-scripts --no-git-checks --access public --tag ${{ steps.bump-version.outputs.npm_tag }}
 
       - name: Convert version to Python format
         id: py-version

@@ -2,6 +2,10 @@
 
 AI 小鲸 v2.0 通过 Vue 的模板引用（template ref）机制，暴露了丰富的编程式 API，允许你从外部代码精确控制聊天组件的行为。
 
+::: info 非 Vue 宿主
+若页面**没有 Vue 运行时**（React、纯 HTML 等），请使用 **v2.1.4-beta.8+** 的 [Standalone 子入口](/guide/integration-modes/standalone-bundle)：通过 `mountAIBlueking` / `mountChatBot` 返回的 `expose` 调用与下文 ref API 相同的方法（如 `show`、`sendMessage`）。
+:::
+
 ## ChatBot 模板引用
 
 ### 获取引用
@@ -66,6 +70,39 @@ chatBotRef.value?.setCiteText('这段文本将作为引用上下文发送');
 chatBotRef.value?.focusInput();
 ```
 
+#### updateAgentInfo - 刷新 Agent 信息（≥ v2.1.4-beta.14）
+
+主动从后端重新拉取 agentInfo 并自动更新内部状态（如 shortcuts）：
+
+```typescript
+// 刷新 agentInfo 并获取最新数据
+const info = await chatBotRef.value?.updateAgentInfo();
+console.log('最新 agent 信息:', info);
+```
+
+适用场景：后端更新了智能体的快捷指令或会话配置后，前端无需重建组件即可同步最新状态。
+
+#### whenReady / isReady - 等待初始化（≥ v2.1.4-beta.13）
+
+独立嵌入的 `ChatBot` 没有 `AIBlueking.show()`，可在挂载后等待会话列表与最近会话加载完成再操作：
+
+```typescript
+// Promise 方式（推荐）
+await chatBotRef.value?.whenReady();
+await chatBotRef.value?.switchSession('session-code-123');
+
+// 响应式判断
+if (chatBotRef.value?.isReady) {
+  chatBotRef.value.sendMessage('你好');
+}
+```
+
+::: warning
+`url` 变更会 reject 进行中的 `whenReady()`，需重新 `await whenReady()`。作为 `AIBlueking` 子组件时请使用 `await aiBluekingRef.show()`，勿依赖子 `ChatBot` 的 `whenReady`。
+:::
+
+与 `agent-info-loaded` 事件在独立模式下触发时机一致；事件适合声明式埋点，`whenReady` 适合 `async/await` 编排。
+
 ### 完整示例
 
 ```vue
@@ -127,13 +164,33 @@ const aiBluekingRef = ref<AIBluekingExpose>();
 
 #### show - 显示窗口
 
-```typescript
-// 显示窗口
-aiBluekingRef.value?.show();
+`show()` 返回 `Promise<void>`。面板会**立即**显示；Promise 在会话初始化完成后 resolve：
 
-// 显示并自动加载指定会话
-aiBluekingRef.value?.show('session-code-123');
+- 始终等待 `sessionList`（`getSessions`）加载完成
+- `loadRecentSessionOnMount` 为 `true`（默认）时，还会等待最近会话选定或创建完成
+- 传入 `sessionCode` 时，在就绪后再切换到该会话
+
+初始化失败时 Promise reject，并触发 `@sdk-error`（`apiName: 'init'`）。
+
+```typescript
+// 推荐：等待会话就绪后再执行业务逻辑
+try {
+  await aiBluekingRef.value?.show();
+
+  const helper = aiBluekingRef.value?.getChatHelper();
+  console.log('会话列表:', helper?.session.list.value);
+  console.log('当前会话:', helper?.session.current.value);
+} catch (error) {
+  console.error('小鲸初始化失败:', error);
+}
+
+// 显示并切换到指定会话（切换发生在就绪之后）
+await aiBluekingRef.value?.show('session-code-123');
 ```
+
+::: info 与事件的区别
+不需要额外监听 `sessions-loaded` 等内部事件来判断「能否读 session」。对集成方而言，`await show()` 即表示可安全访问 `getChatHelper()?.session`。
+:::
 
 #### hide - 隐藏窗口
 
@@ -170,6 +227,13 @@ aiBluekingRef.value?.updatePosition(100, 200);
 aiBluekingRef.value?.updateSize(600, 800);
 ```
 
+#### updateAgentInfo - 刷新 Agent 信息（≥ v2.1.4-beta.14）
+
+```typescript
+// 刷新 agentInfo 并获取最新数据（自动更新 shortcuts 等状态）
+const info = await aiBluekingRef.value?.updateAgentInfo();
+```
+
 ### 完整示例
 
 ```vue
@@ -198,13 +262,17 @@ import type { AIBluekingExpose } from '@blueking/ai-blueking';
 const aiBluekingRef = ref<AIBluekingExpose>();
 const isVisible = ref(false);
 
-const toggleChat = () => {
+const toggleChat = async () => {
   if (isVisible.value) {
     aiBluekingRef.value?.hide();
     isVisible.value = false;
   } else {
-    aiBluekingRef.value?.show();
     isVisible.value = true;
+    try {
+      await aiBluekingRef.value?.show();
+    } catch {
+      isVisible.value = false;
+    }
   }
 };
 </script>
@@ -218,6 +286,14 @@ const toggleChat = () => {
 
 ```typescript
 import { watch } from 'vue';
+
+// 监听初始化就绪（≥ v2.1.4-beta.13）
+watch(
+  () => chatBotRef.value?.isReady,
+  (ready) => {
+    if (ready) console.log('ChatBot 已就绪');
+  },
+);
 
 // 监听消息列表变化
 watch(

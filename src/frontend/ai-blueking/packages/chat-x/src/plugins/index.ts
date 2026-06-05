@@ -24,5 +24,6 @@
  * IN THE SOFTWARE.
  */
 export * from './markdown-animation-attrs';
+export * from './markdown-bk-inline-style';
 export * from './markdown-latex';
 export * from './markdown-mermaid';

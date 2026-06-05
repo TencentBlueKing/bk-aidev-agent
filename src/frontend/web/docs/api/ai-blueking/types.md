@@ -16,7 +16,7 @@ interface AIBluekingProps {
   /** 渲染模式：chat(默认)、share(分享)、test(测试) */
   renderMode?: RenderMode;
   /** 请求配置 */
-  requestOptions?: IRequestOptions;
+  requestOptions?: MaybeRefOrGetter<IRequestOptions>;
   /** 自定义 CSS 类名 */
   extCls?: string;
   /** 输入框占位文本 */
@@ -106,6 +106,13 @@ interface AIBluekingProps {
     max?: number;
     min?: number;
   };
+
+  /** 自定义侧栏内容区渲染（≥ v2.1.4-beta.7，透传内层 ChatBot） */
+  getSideRenderComponent?: GetSideRenderComponent;
+  /** 自定义侧栏 Tab 标签渲染（≥ v2.1.4-beta.7） */
+  getSideTabRenderComponent?: GetSideTabRenderComponent;
+  /** 侧栏自定义 Tab 切换时拉取详情（≥ v2.1.4-beta.7） */
+  onCustomTabChange?: OnCustomTabChange;
 }
 ```
 
@@ -115,7 +122,7 @@ interface AIBluekingProps {
 
 ```typescript
 interface AIBluekingExpose {
-  // 面板控制
+  // 面板控制（await 后在 sessionList 就绪后 resolve；loadRecentSessionOnMount 时含当前会话初始化）
   show: (sessionCode?: string, options?: { isTemporary?: boolean }) => Promise<void>;
   hide: () => void;
   handleShow: (sessionCode?: string) => Promise<void>;
@@ -142,6 +149,9 @@ interface AIBluekingExpose {
   updatePosition: (x: number, y: number) => void;
   updateSize: (w: number, h: number) => void;
   updatePositionAndSize: (x: number, y: number, w: number, h: number) => void;
+
+  /** 主动刷新 agentInfo 并更新内部状态（≥ v2.1.4-beta.14） */
+  updateAgentInfo: () => Promise<IAgentInfo | null>;
 
   // 其他
   /** 获取 chatHelper 实例，用于访问 agent/session/message 等底层模块 */
@@ -206,7 +216,7 @@ interface ChatBotProps {
   /** ChatHelper 实例（集成模式，优先级高于 url） */
   chatHelper?: IChatHelper;
   /** 请求配置（仅独立模式有效） */
-  requestOptions?: IRequestOptions;
+  requestOptions?: MaybeRefOrGetter<IRequestOptions>;
 
   // 会话配置
   /** 是否自动加载 */
@@ -254,8 +264,59 @@ interface ChatBotProps {
     max?: number;
     min?: number;
   };
+
+  /** 自定义侧栏内容区渲染（≥ v2.1.4-beta.7，透传 ChatContainer） */
+  getSideRenderComponent?: GetSideRenderComponent;
+  /** 自定义侧栏 Tab 标签渲染（≥ v2.1.4-beta.7） */
+  getSideTabRenderComponent?: GetSideTabRenderComponent;
+  /** 侧栏自定义 Tab 切换时拉取详情（≥ v2.1.4-beta.7） */
+  onCustomTabChange?: OnCustomTabChange;
 }
 ```
+
+## GetSideRenderComponent
+
+自定义侧栏**内容区**渲染函数（**≥ v2.1.4-beta.7**）。
+
+```typescript
+import type { h, VNode } from 'vue';
+
+type GetSideRenderComponent = (
+  createElement: typeof h,
+  props?: Record<string, unknown>,
+) => VNode | undefined;
+```
+
+- `props` 为当前选中 Tab 的 `data.props`（Flow 场景常为 snake_case）
+- 返回 `VNode`：作为侧栏内容根组件
+- 返回 `undefined`：使用 `addCustomTab` 注册的 `data.component`
+
+## GetSideTabRenderComponent
+
+自定义侧栏 **Tab 标签**渲染函数（**≥ v2.1.4-beta.7**）。
+
+```typescript
+import type { CustomTab } from '@blueking/chat-x';
+import type { h, VNode } from 'vue';
+
+type GetSideTabRenderComponent = (
+  createElement: typeof h,
+  tab: CustomTab<Record<string, unknown>>,
+  events: { removeCustomTab: (tabName: string) => void },
+) => VNode | undefined;
+```
+
+## OnCustomTabChange
+
+侧栏自定义 Tab 切换时的数据拉取（**≥ v2.1.4-beta.7**）。
+
+```typescript
+import type { CustomBkFlowTab } from '@blueking/chat-x';
+
+type OnCustomTabChange = (tab: CustomBkFlowTab) => Promise<unknown>;
+```
+
+`ChatBot` 未传入时，对 Flow 节点 Tab 默认调用 `chatHelper.message.getFlowAgentTaskNodeInfo(task_id, node_id)`。
 
 ## ChatBotExpose
 
@@ -293,6 +354,14 @@ interface ChatBotExpose {
   currentSession: Ref<ISession | null>;
   /** 是否正在生成（响应式） */
   isGenerating: Ref<boolean>;
+
+  /** 是否已完成初始化（≥ v2.1.4-beta.13） */
+  isReady: boolean;
+  /** 等待初始化完成（≥ v2.1.4-beta.13） */
+  whenReady: () => Promise<void>;
+
+  /** 主动刷新 agentInfo 并更新内部状态（≥ v2.1.4-beta.14） */
+  updateAgentInfo: () => Promise<IAgentInfo | null>;
 }
 ```
 
@@ -310,6 +379,7 @@ interface ChatBotEmits {
   'error': [error: Error];
   'session-switched': [session: ISession | null];
   'shortcut-click': [data: { shortcut: IShortcut; source: 'main' | 'popup' }];
+  /** 独立模式初始化完成（与 whenReady 成功时机一致） */
   'agent-info-loaded': [chatHelper: IChatHelper];
   'feedback': [tool: IToolBtn, message: Message, reasonList: string[], otherReason: string];
   'confirm-share': [messages: Message[]];
@@ -357,32 +427,59 @@ interface IShortcutComponent extends IAgentCommandComponent {
 
 ## IRequestOptions
 
-请求配置类型，支持静态值或动态函数形式。
+请求配置类型。`headers` / `data` 使用 `MaybeRequestValue`（来自 `@blueking/chat-helper`），支持普通对象、零参函数、`ref`、`computed`；组件 props 上整体可为 `MaybeRefOrGetter<IRequestOptions>`。
 
 ```typescript
+import type { MaybeRequestValue, RequestData, RequestHeaders } from '@blueking/chat-helper';
+import type { MaybeRefOrGetter } from 'vue';
+
 interface IRequestOptions {
-  /** 自定义请求头，支持对象或返回对象的函数 */
-  headers?: Record<string, string> | (() => Record<string, string>);
-  /** 附加请求数据，支持对象或返回对象的函数 */
-  data?: Record<string, unknown> | (() => Record<string, unknown>);
+  headers?: MaybeRequestValue<RequestHeaders>;
+  data?: MaybeRequestValue<RequestData>;
+  /** 上下文信息，合并到消息的 property.extra.context（≥ v2.1.4-beta.15） */
+  context?: MaybeRequestValue<RequestData | Array<Record<string, unknown>>>;
 }
+
+// AIBlueking / ChatBot / useChatBootstrap
+type RequestOptionsProp = MaybeRefOrGetter<IRequestOptions>;
 ```
+
+`data` 在 chat-helper 层按 HTTP 方法合并：**POST/PUT/PATCH/DELETE** → body；**GET/HEAD/OPTIONS** → query。
+
+`context` 自动合并到消息的 `property.extra.context`，支持简单 KV（`Record`）和结构化数组两种格式；与快捷指令 context 合并时，key 冲突以 `requestOptions.context` 为准。详见 [自定义请求 — 上下文参数 context](/guide/advanced-usage/custom-requests#上下文参数-context)。
 
 ### 用法示例
 
 ```typescript
+import { computed, ref } from 'vue';
+
 // 静态配置
 const requestOptions: IRequestOptions = {
   headers: { 'X-Custom-Token': 'abc123' },
   data: { appCode: 'my-app' },
 };
 
-// 动态配置（每次请求时重新计算）
-const requestOptions: IRequestOptions = {
+// 函数：每次请求前求值
+const requestOptionsFn: IRequestOptions = {
   headers: () => ({ Authorization: `Bearer ${getToken()}` }),
   data: () => ({ timestamp: Date.now() }),
 };
+
+// ref / computed（推荐用于登录态、租户切换）
+const token = ref('a');
+const requestOptionsReactive = computed<IRequestOptions>(() => ({
+  headers: { Authorization: `Bearer ${token.value}` },
+  data: { app_id: 'my-app' },
+}));
+
+// context：注入业务上下文（≥ v2.1.4-beta.15）
+const requestOptionsWithContext: IRequestOptions = {
+  headers: { Authorization: `Bearer ${getToken()}` },
+  context: { page: 'dashboard', role: 'admin' },
+};
 ```
+
+详见 [自定义请求](/guide/advanced-usage/custom-requests#响应式示例-ref-computed)。
 
 ## DropdownMenuConfig
 
@@ -499,7 +596,7 @@ interface ChatBootstrapOptions {
   /** API 地址前缀 */
   url?: string;
   /** 请求配置 */
-  requestOptions?: IRequestOptions;
+  requestOptions?: MaybeRefOrGetter<IRequestOptions>;
   /** 是否自动加载最近会话 */
   autoLoad?: boolean;
   /** 初始会话编码 */

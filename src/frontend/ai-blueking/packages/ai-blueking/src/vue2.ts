@@ -23,10 +23,15 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+// Vue2 走 vue3-core 以避开 chat-x 预构建 CSS，但须单独引入 icon 字体（与 vue3.ts 一致，不含 chat-x/dist/index.css）
+// @ts-ignore - icon 资源文件不需要类型检查
+import './assets/icon/iconcool.js';
+import './assets/icon/style.css';
+
 import { ChatBot } from './components';
 import { t } from './lang';
 import { createVue2Wrapper } from './vue2-wrapper';
-import AIBlueking from './vue3';
+import AIBlueking from './vue3-core';
 
 import type { ChatBotExpose } from './components/types';
 import type { AIBluekingExpose } from './types';
@@ -134,6 +139,10 @@ export default createVue2Wrapper(AIBlueking, {
     helloText: {
       type: String,
       default: () => t('你好，我是小鲸'),
+    },
+    useAgentName: {
+      type: Boolean,
+      default: false,
     },
     requestOptions: {
       type: Object,
@@ -259,6 +268,18 @@ export default createVue2Wrapper(AIBlueking, {
       type: Function,
       default: undefined,
     },
+    getSideRenderComponent: {
+      type: Function,
+      default: undefined,
+    },
+    getSideTabRenderComponent: {
+      type: Function,
+      default: undefined,
+    },
+    onCustomTabChange: {
+      type: Function,
+      default: undefined,
+    },
   },
   emitNames: [...aiBluekingEmitNames],
   exposeKeys: [...aiBluekingExposeKeys],
@@ -358,6 +379,8 @@ const chatBotExposeKeys = [
   'currentSession',
   'isGenerating',
   'messages',
+  'isReady',
+  'whenReady',
 ] as const;
 
 // 编译时断言：chatBotExposeKeys 与 ChatBotExpose 的 keys 完全一致
@@ -394,6 +417,10 @@ export const ChatBotV2 = createVue2Wrapper(ChatBot, {
     helloText: {
       type: String,
       default: undefined,
+    },
+    useAgentName: {
+      type: Boolean,
+      default: false,
     },
     placeholder: {
       type: String,
@@ -441,6 +468,18 @@ export const ChatBotV2 = createVue2Wrapper(ChatBot, {
     },
     resizeProps: {
       type: Object,
+      default: undefined,
+    },
+    getSideRenderComponent: {
+      type: Function,
+      default: undefined,
+    },
+    getSideTabRenderComponent: {
+      type: Function,
+      default: undefined,
+    },
+    onCustomTabChange: {
+      type: Function,
       default: undefined,
     },
   },

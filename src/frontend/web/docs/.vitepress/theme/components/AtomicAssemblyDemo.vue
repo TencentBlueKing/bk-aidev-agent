@@ -54,7 +54,7 @@
   /** 会话标识，对应后端的 session code */
   const DEMO_SESSION_CODE = "atomic-stream-demo"
 
-  const API_PREFIX = "/mock-agui/api/"
+  const API_PREFIX = import.meta.env.BASE_URL + "mock-agui/api/"
 
   interface MessageLike {
     id?: number | string

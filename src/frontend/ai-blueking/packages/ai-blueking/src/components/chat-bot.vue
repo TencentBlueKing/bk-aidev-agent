@@ -16,7 +16,9 @@
       :model-value="userInput"
       :on-agent-action="handleAgentAction"
       :on-agent-feedback="handleAgentFeedback"
-      :on-custom-tab-change="handleCustomTabChange"
+      :get-side-render-component="props.getSideRenderComponent"
+      :get-side-tab-render-component="props.getSideTabRenderComponent"
+      :on-custom-tab-change="effectiveOnCustomTabChange"
       :on-send-message="handleSendMessage"
       :on-stop-sending="handleStopSending"
       :on-upload="handleUpload"
@@ -26,11 +28,13 @@
       :opening-remark="openingRemark"
       :placeholder="props.placeholder"
       :placement="props.placement"
+      :welcome-title="welcomeTitle"
       :prompts="effectivePrompts"
       :resize-props="props.resizeProps"
       :resources="effectiveResources"
       :shortcut-id="selectedShortcut?.id"
       :shortcuts="filteredShortcuts"
+      :skills="effectiveSkills"
       :support-upload="effectiveSupportUpload"
       @collapse-change="handleExecutionPanelChange"
       @confirm-share="handleConfirmShare"
@@ -90,7 +94,7 @@
   // import SelectionFooter from './selection-footer/selection-footer.vue';
 
   import type { IShortcut } from '../manager/business/types';
-  import type { IChatHelper } from '../types';
+  import type { IChatHelper, IRequestOptions } from '../types';
   import type { ChatBotEmits, ChatBotExpose, ChatBotProps } from './types';
   import type { ISupportUpload } from '@blueking/chat-helper';
   import type { CustomBkFlowTab, IAiSlashMenuItem, Message, MessageToolsStatus, Shortcut } from '@blueking/chat-x';
@@ -101,6 +105,7 @@
     enableSelection: false,
     shareLoading: false,
     autoLoad: true,
+    useAgentName: false,
     shortcuts: () => [],
     resources: () => [],
     renderMode: RenderMode.Chat,
@@ -149,7 +154,9 @@
     chatHelper,
     isStandaloneMode,
     isInitialized,
+    isReady,
     initError,
+    whenReady,
     chatBusinessManager,
     sessionBusinessManager,
     shortcutManager,
@@ -165,7 +172,14 @@
     handleUpload,
     handleStopSending,
     stopGeneration,
-  } = useMessageSender({ emit, chatHelper, chatBusinessManager, selectedShortcut, selectedResources });
+  } = useMessageSender({
+    emit,
+    chatHelper,
+    chatBusinessManager,
+    getRequestOptions: () => props.requestOptions as IRequestOptions | undefined,
+    selectedShortcut,
+    selectedResources,
+  });
 
   // 3. 快捷指令
   const {
@@ -190,6 +204,7 @@
     openingRemark,
     effectiveResources,
     effectivePrompts,
+    effectiveSkills,
     effectiveSupportUpload,
     chatbotStyle,
     filteredShortcuts,
@@ -221,11 +236,18 @@
     scrollToBottom,
     getShortcutFromMessage,
     buildShortcutProperty,
+    getRequestOptions: () => props.requestOptions as IRequestOptions | undefined,
   });
 
   // 初始化期间（含 URL 变化重新初始化），委托 ChatContainer 内置 loading
   // 独立模式和非独立模式（AIBlueking）统一处理
   const effectiveChatLoading = computed(() => !isInitialized.value || isMessagesLoading.value);
+
+  // 欢迎标题：useAgentName 为 true 时使用 agentName，否则由 ChatContainer 使用默认文案
+  const welcomeTitle = computed(() => {
+    if (!props.useAgentName) return undefined;
+    return chatHelper.value?.agent.info.value?.agentName || undefined;
+  });
 
   // 6. 分享确认（选择模式 UI 由 ChatContainer 内部管理）
   const { handleConfirmShare } = useShareSelection({
@@ -240,7 +262,10 @@
   };
 
   // ==================== 自定义 Tab 数据加载 ====================
-  const handleCustomTabChange = async (tab: CustomBkFlowTab) => {
+  const effectiveOnCustomTabChange = async (tab: CustomBkFlowTab) => {
+    if (props.onCustomTabChange) {
+      return props.onCustomTabChange(tab);
+    }
     const tabProps = tab.data?.props;
     if (tabProps?.task_id != null && tabProps?.node_id) {
       return chatHelper.value?.message.getFlowAgentTaskNodeInfo(tabProps.task_id, tabProps.node_id);
@@ -248,6 +273,25 @@
   };
 
   // ==================== 辅助方法 ====================
+
+  // 刷新 agentInfo 并更新内部状态
+  const updateAgentInfo = async () => {
+    const helper = chatHelper.value;
+    if (!helper) return null;
+
+    try {
+      await helper.agent.getAgentInfo();
+      const info = helper.agent.info.value ?? null;
+      if (info?.conversationSettings?.commands) {
+        shortcutManager.value?.setAgentShortcuts(info.conversationSettings.commands as IShortcut[]);
+      }
+      return info;
+    } catch (err) {
+      console.error('[ChatBot] Failed to update agentInfo:', err);
+      emit('error', err instanceof Error ? err : new Error(String(err)));
+      return null;
+    }
+  };
 
   // 切换会话
   const switchSession = async (sessionCode: string) => {
@@ -280,6 +324,10 @@
     messages,
     currentSession,
     isGenerating,
+    get isReady() {
+      return isReady.value;
+    },
+    whenReady,
     getChatHelper,
     setCiteText,
     focusInput,
@@ -291,6 +339,7 @@
     sendShortcut: (shortcut: IShortcut, selectedText?: string) => {
       return sendShortcutDirectly(shortcut as unknown as Shortcut, selectedText);
     },
+    updateAgentInfo,
   });
 </script>
 

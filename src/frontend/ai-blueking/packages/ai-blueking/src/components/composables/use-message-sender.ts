@@ -10,8 +10,9 @@
 import { shallowRef } from 'vue';
 import type { Ref, ShallowRef } from 'vue';
 
+import { applyRequestOptionsContext } from '../../utils';
 import type { ChatBusinessManager } from '../../manager/business/chat-business-manager';
-import type { IChatHelper } from '../../types';
+import type { IChatHelper, IRequestOptions } from '../../types';
 import type { ChatBotEmitFn } from './use-chatbot-init';
 import type { IUserMessage } from '@blueking/chat-helper';
 import type { IAiSlashMenuItem, TagSchema, UserMessage } from '@blueking/chat-x';
@@ -20,6 +21,8 @@ export interface UseMessageSenderParams {
   chatBusinessManager: Ref<ChatBusinessManager | null>;
   chatHelper: Ref<IChatHelper | null>;
   emit: ChatBotEmitFn;
+  /** 返回最新 requestOptions 的 getter（每次调用时读取，确保响应式） */
+  getRequestOptions?: () => IRequestOptions | undefined;
   selectedResources: ShallowRef<IAiSlashMenuItem[]>;
   selectedShortcut: Ref<null | { id?: string }>;
 }
@@ -36,7 +39,7 @@ export interface UseMessageSenderReturn {
 }
 
 export function useMessageSender(params: UseMessageSenderParams): UseMessageSenderReturn {
-  const { emit, chatHelper, chatBusinessManager, selectedShortcut, selectedResources } = params;
+  const { emit, chatHelper, chatBusinessManager, getRequestOptions, selectedShortcut, selectedResources } = params;
 
   const userInput = shallowRef<string | TagSchema>([[]]);
   const cite = shallowRef('');
@@ -71,8 +74,14 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
     const messageText = typeof message === 'string' ? message : '';
     emit('send-message', messageText);
 
+    // 合并 requestOptions.context 到 property.extra.context
+    const mergedProperty = applyRequestOptionsContext(options.property, getRequestOptions);
+
     // 发送消息
-    await chatBusinessManager.value.sendMessage(message, sessionCode, options);
+    await chatBusinessManager.value.sendMessage(message, sessionCode, {
+      ...options,
+      ...(mergedProperty ? { property: mergedProperty } : {}),
+    });
   };
 
   /**

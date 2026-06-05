@@ -1,16 +1,43 @@
 {
   "name": "ai-blueking-docs",
-  "version": "2.0.0",
-  "description": "AI 小鲸智能对话组件文档 — v2.0",
+  "version": "2.1.7",
+  "description": "AI 小鲸智能对话组件文档 — v2.1",
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/index.cjs",
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist/index.cjs",
+    "dist/index.mjs",
+    "dist/index.d.ts",
+    "dist/static/",
+    "README.md"
+  ],
   "scripts": {
     "dev": "vitepress dev docs --host",
-    "build": "vitepress build docs",
-    "preview": "vitepress build docs && PORT=4173 node ./server.cjs",
-    "preview:no-mock": "vitepress preview docs",
-    "server": "node ./server.cjs"
+    "build": "VITEPRESS_BASE=/ vitepress build docs",
+    "build:npm": "node scripts/build-npm.mjs",
+    "build:all": "pnpm build:npm",
+    "preview": "VITEPRESS_BASE=/ vitepress build docs && PORT=4173 DOCS_BASE=/ node --env-file=docs/.env ./server.cjs",
+    "preview:npm": "pnpm build:npm && PORT=4173 DOCS_BASE=/ node --env-file=docs/.env ./server.cjs",
+    "preview:no-mock": "VITEPRESS_BASE=/ vitepress preview docs",
+    "server": "node ./server.cjs",
+    "start": "node ./server.cjs",
+    "prepublishOnly": "pnpm build:npm"
+  },
+  "peerDependencies": {
+    "@koa/router": ">=10.0.0",
+    "koa": ">=2.0.0",
+    "koa-send": ">=4.0.0"
   },
   "dependencies": {
-    "@blueking/ai-blueking": "2.0.0-beta.1",
+    "@blueking/ai-blueking": "2.1.4-beta.8",
     "@blueking/chat-helper": "0.0.1-beta.30",
     "@blueking/chat-x": "0.0.3-beta.4",
     "bkui-vue": "^2.0.2-beta.81",
@@ -20,11 +47,22 @@
     "x-mavon-editor": "^0.0.20"
   },
   "devDependencies": {
+    "@koa/router": "^12.0.0",
+    "@types/koa": "^3.0.2",
+    "@types/koa-send": "^4.1.6",
+    "@types/koa__router": "^12.0.5",
+    "esbuild": "^0.20.2",
+    "koa": "^2.14.0",
+    "koa-mount": "^4.2.0",
+    "koa-send": "^5.0.0",
     "less": "^4.2.0",
     "markdown-it-container": "^3.0.0",
     "monaco-editor-vue3": "^0.1.6",
     "shiki": "^2.5.0",
     "vitepress": "^1.6.3"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
   },
   "type": "module",
   "engines": {

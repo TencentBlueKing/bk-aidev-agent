@@ -551,7 +551,6 @@ class ReActAgentBuilder:
         self,
         *,
         extra_tools: List[BaseTool] = None,
-        support_vision: bool = False,
         ignore_errors: bool = False,
         langchain_middleware: Sequence[AgentMiddleware],
     ) -> List[BaseTool]:
@@ -559,9 +558,6 @@ class ReActAgentBuilder:
         # 加载所有传入的工具
         if extra_tools:
             tools.extend(extra_tools or [])
-        # 加载图片工具
-        if support_vision:
-            tools.append(add_image_to_chat_context)
         # 加载由中间间导入的工具
         middleware_tools = [t for m in langchain_middleware for t in getattr(m, "tools", [])]
         tools.extend(middleware_tools)
@@ -862,7 +858,6 @@ class ReActAgentBuilder:
         tool_ignore_errors = use_structured_response
         tools: List[BaseTool] = self._prepare_agent_tools(
             extra_tools=self._extra_tools,
-            support_vision=self._support_vision,
             ignore_errors=tool_ignore_errors,
             langchain_middleware=self._langchain_middleware,
         )

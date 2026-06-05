@@ -136,7 +136,7 @@ import AIBlueking from '@blueking/ai-blueking/vue2';
 - **修改 chat-x 后**会由 Vite 自动热更新（workspace 链接，无需手动构建）
 - **修改 ai-blueking 自身代码**会自动热更新
 - **HTTP 层方法**须在业务层 `use-message.ts` 中透传/封装后，组件才能通过 `chatHelper.message` 调用
-- **requestOptions.data** 仅应注入支持 body 的请求方法（POST/PUT/PATCH/DELETE），禁止注入 GET/HEAD
+- **requestOptions.data** 对 POST/PUT/PATCH/DELETE 合并进 body；对 GET/HEAD/OPTIONS 合并进 query（params）
 
 ## 技术栈
 

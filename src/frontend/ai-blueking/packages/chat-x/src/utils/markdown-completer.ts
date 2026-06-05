@@ -138,7 +138,7 @@ export function completeMarkdownSyntax(content: string, options: MarkdownComplet
   const codeBlockResult = checkCodeBlock(lines);
   if (codeBlockResult.inCodeBlock) {
     return {
-      content: content + '\n```',
+      content: `${content}\n\`\`\``,
       suffix: '\n```',
     };
   }
@@ -257,7 +257,7 @@ function checkBeginEnd(lines: string[], fullCheck: boolean): string {
     const partialEnv = incompleteEndMatch[1] || '';
     const guessedEnv = guessEnvironmentName(partialEnv);
     if (guessedEnv) {
-      return guessedEnv.slice(partialEnv.length) + '}';
+      return `${guessedEnv.slice(partialEnv.length)}}`;
     }
     return '}';
   }
@@ -268,7 +268,7 @@ function checkBeginEnd(lines: string[], fullCheck: boolean): string {
     const partialEnv = incompleteBeginMatch[1] || '';
     const guessedEnv = guessEnvironmentName(partialEnv);
     if (guessedEnv) {
-      return guessedEnv.slice(partialEnv.length) + `}\\end{${guessedEnv}}`;
+      return `${guessedEnv.slice(partialEnv.length)}}\\end{${guessedEnv}}`;
     }
     return '}';
   }

@@ -74,11 +74,16 @@
             :prompts="agentPrompts"
             :render-mode="props.renderMode"
             :request-options="props.requestOptions"
+            :use-agent-name="props.useAgentName"
+            :get-side-render-component="props.getSideRenderComponent"
+            :get-side-tab-render-component="props.getSideTabRenderComponent"
+            :on-custom-tab-change="props.onCustomTabChange"
             :resize-props="props.resizeProps"
             :resources="agentResources"
             :session-code="props.initialSessionCode"
             :share-loading="isShareLoading"
             :shortcuts="props.shortcuts"
+            :skills="agentSkills"
             :style="{ height: props.hideHeader ? '100%' : 'calc(100% - 48px)' }"
             :url="normalizedUrl"
             @cancel-share="handleCancelShare"
@@ -188,7 +193,10 @@
     messageToolsTippyOptions,
     agentResources,
     agentPrompts,
+    agentSkills,
     handleError,
+    ensureSessionReady,
+    updateAgentInfo,
   } = useAiBluekingInit({
     props,
     emit: emit as (event: string, ...args: unknown[]) => void,
@@ -229,6 +237,7 @@
     forwarders,
     forwardToManager,
     beforeNimbusClick: props.beforeNimbusClick,
+    ensureSessionReady,
   });
 
   // ==================== 3. 会话管理 ====================
@@ -302,6 +311,7 @@
     updatePositionAndSize,
     setCiteText,
     focusInput,
+    updateAgentInfo,
   });
 </script>
 

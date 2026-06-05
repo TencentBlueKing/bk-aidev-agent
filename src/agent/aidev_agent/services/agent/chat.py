@@ -71,7 +71,7 @@ class ChatCompletionAgent(BaseModel):
         default=None, exclude=True, description="per-request 资源管理器（含正确 app_code / access_token）"
     )
 
-    IMAGE_FILE_PATTERN: ClassVar[re.Pattern] = re.compile(r"^\!\[.*\]\((http[^)]+/([^/]+?)\))")
+    IMAGE_FILE_PATTERN: ClassVar[re.Pattern] = re.compile(r"^!\[.*\]\((http[^)]+/([^/]+?))\)")
     TOOL_EXECUTION_INTERVAL: ClassVar[int] = 10
     UPLOAD_IMAGE_PROMPT_PREFIX: ClassVar[Any] = "我上传了个图片文件,文件名为{file_name}。"
     SKIP_PROMPT_ROLE: ClassVar[list[str]] = ["guide", "reasoning"]
@@ -306,7 +306,9 @@ class ChatCompletionAgent(BaseModel):
                             else:
                                 new_content.append(each_content)
                         each.content = new_content
-                    messages.append(HumanMessage(id=each.id, content=str(each.content)))
+                        messages.append(HumanMessage(id=each.id, content=each.content))
+                    else:
+                        messages.append(HumanMessage(id=each.id, content=str(each.content)))
                 case PromptRole.ASSISTANT.value | PromptRole.AI.value:
                     tool_calls = self._extract_tool_calls(bp)
                     messages.append(AIMessage(id=each.id, content=each.content, tool_calls=tool_calls))
@@ -357,8 +359,8 @@ class ChatCompletionAgent(BaseModel):
                 each.role = PromptRole.USER.value
                 match = self.IMAGE_FILE_PATTERN.search(each.content)
                 if match:
-                    file_path = match.group(2)
-                    each.content = self.UPLOAD_IMAGE_PROMPT_PREFIX.format(file_name=file_path)
+                    file_path, file_name = match.group(1), match.group(2)
+                    each.content = [{"type": "image_url", "image_url": {"url": file_path}}]
                     # 图片不计算实际大小，但不能为 0 —— 给一个大于 0 的占位值
                     self.files.append({"file_name": file_path, "file_size": 100})
                 else:
@@ -430,6 +432,9 @@ class ChatAgentBuilder:
 
         if chat.default_headers:
             kwargs["default_headers"] = chat.default_headers
+
+        if self.ctx.session_code:
+            kwargs["session_code"] = self.ctx.session_code
 
         return ChatModel.get_setup_instance(**kwargs)
 

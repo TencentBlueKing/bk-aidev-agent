@@ -25,7 +25,6 @@
  */
 import { LibraryFormats, UserConfig, build } from 'vite';
 
-import bkuiHack from './bkui-hack';
 import { VueVersion, createBuildConfig } from './vite.utils';
 
 const buildLib = async (
@@ -48,6 +47,7 @@ const buildLib = async (
   await buildLib(VueVersion.Vue2, ['es', 'umd'], true);
   await buildLib(VueVersion.Vue2, ['iife']);
 
-  // Vue2 CSS 后处理
-  bkuiHack();
+  // Standalone：内联 Vue3 + chat-x，供非 Vue 宿主 mount / 同源 render
+  await buildLib(VueVersion.Standalone, ['es', 'umd'], false);
+  await buildLib(VueVersion.Standalone, ['iife'], false);
 })();

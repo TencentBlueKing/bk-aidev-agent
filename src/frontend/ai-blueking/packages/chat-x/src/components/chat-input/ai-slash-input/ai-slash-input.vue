@@ -58,6 +58,11 @@
           :on-select="insertTagAtCursor"
           :resource-list="filteredResourceList"
         />
+        <AiSkillList
+          v-else-if="menuType === 'skill'"
+          :on-select="insertSkillAtCursor"
+          :skills="filteredSkills"
+        />
         <AiPromptList
           v-else-if="menuType === 'prompt'"
           :on-select="insertPromptAtCursor"
@@ -77,11 +82,12 @@
   import { type KeyboardPayload, createEditor, docToString, ReplaceAll, stringToDoc } from '../../../edix';
   import { RemoveIcon } from '../../../icons';
   import AiPromptList from './ai-prompt-list/ai-prompt-list.vue';
+  import AiSkillList from './ai-skill-list/ai-skill-list.vue';
   import AiSlashMenu from './ai-slash-menu/ai-slash-menu.vue';
   import { DeleteTag, InsertTag, InsertText } from './command';
   import { tagSchema } from './constants';
 
-  import type { IAiSlashMenuItem } from '../../../types/editor';
+  import type { IAiSlashMenuItem, ISkillListItem } from '../../../types/editor';
   import type { MentionState, TagSchema } from '../../../types/input';
 
   import 'tippy.js/dist/tippy.css';
@@ -100,11 +106,13 @@
       placeholder?: string;
       prompts?: string[];
       resources?: IAiSlashMenuItem[];
+      skills?: ISkillListItem[];
     }>(),
     {
       placeholder: isEn ? `Please enter content` : `请输入内容`,
       prompts: () => [],
       resources: () => [],
+      skills: () => [],
     },
   );
 
@@ -138,9 +146,10 @@
     };
   });
 
-  const menuType = shallowRef<'' | 'prompt' | 'slash'>('slash');
+  const menuType = shallowRef<'' | 'prompt' | 'skill' | 'slash'>('slash');
   const keyword = shallowRef<string>('');
   const filteredResourceList = shallowRef<IAiSlashMenuItem[]>([]);
+  const filteredSkills = shallowRef<ISkillListItem[]>([]);
   const filteredPrompts = shallowRef<string[]>([]);
 
   let editor: ReturnType<typeof createEditor>;
@@ -200,6 +209,10 @@
       handleShowSuggestions();
     }
     if (event.key === '/') {
+      menuType.value = 'skill';
+      handleShowSuggestions();
+    }
+    if (event.key === '\\') {
       menuType.value = 'prompt';
       handleShowSuggestions();
     }
@@ -225,8 +238,10 @@
     const text = node.textContent || '';
     const textBeforeCursor = text.slice(0, offset);
 
-    // 2. 正则匹配：查找光标前的最后一个 @
-    const regex = new RegExp(`(${menuType.value === 'slash' ? '@' : '/'}[^\\s]*)$`);
+    // 2. 正则匹配：查找光标前的最后一个触发字符
+    const triggerChar = menuType.value === 'slash' ? '@' : menuType.value === 'skill' ? '/' : '\\';
+    const escapedChar = triggerChar === '\\' ? '\\\\' : triggerChar;
+    const regex = new RegExp(`(${escapedChar}[^\\s]*)$`);
     const match = textBeforeCursor.match(regex);
 
     if (!match) return defaultState;
@@ -237,7 +252,7 @@
 
     // 3. 计算 "@" 符号在文本节点中的精确索引
     // match.index 是匹配开始的位置（可能包含前导空格），我们需要调整到 @ 的位置
-    const matchIndex = match.index! + match[0].indexOf(menuType.value === 'slash' ? '@' : '/');
+    const matchIndex = match.index! + match[0].indexOf(triggerChar);
 
     try {
       const rangeOfAt = document.createRange();
@@ -301,6 +316,11 @@
     editor.command(ReplaceAll, prompt);
     focusToEnd();
   };
+  const insertSkillAtCursor = (skill: ISkillListItem) => {
+    editor.command(ReplaceAll, `/${skill.skill_code} `);
+    tippyRef.value?.hide();
+    focusToEnd();
+  };
   watchEffect(() => {
     const resourceList = props.resources?.filter(
       item =>
@@ -312,16 +332,22 @@
     );
     if (!keyword.value) {
       filteredResourceList.value = resourceList;
+      filteredSkills.value = props.skills;
       filteredPrompts.value = props.prompts;
     } else {
       filteredResourceList.value = resourceList.filter(item =>
         item.name.toLowerCase().includes(keyword.value.toLowerCase()),
       );
+      filteredSkills.value = props.skills.filter(
+        skill =>
+          skill.skill_name.toLowerCase().includes(keyword.value.toLowerCase()) ||
+          skill.skill_code.toLowerCase().includes(keyword.value.toLowerCase()),
+      );
       filteredPrompts.value = props.prompts.filter(prompt =>
         prompt.toLowerCase().includes(keyword.value.toLowerCase()),
       );
     }
-    if (!filteredResourceList.value.length && !filteredPrompts.value.length) {
+    if (!filteredResourceList.value.length && !filteredSkills.value.length && !filteredPrompts.value.length) {
       tippyRef.value?.hide();
     }
   });
@@ -374,6 +400,9 @@
   const handleTippyShow = (): false | void => {
     if (menuType.value === 'slash') {
       return filteredResourceList.value.length < 1 ? false : undefined;
+    }
+    if (menuType.value === 'skill') {
+      return filteredSkills.value.length < 1 ? false : undefined;
     }
     return filteredPrompts.value.length < 1 ? false : undefined;
   };

@@ -13,6 +13,8 @@
       v-model:render-mode="chatMode"
       v-model:selected-shortcut="selectedShortcut"
       :enable-selection="false"
+      :get-side-render-component="getSideRenderComponent"
+      :get-side-tab-render-component="getSideTabRenderComponent"
       :messages="messages"
       :model-value="userInput"
       :on-agent-action="handleAgentAction"
@@ -64,7 +66,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref as deepRef, onMounted, shallowRef } from 'vue';
+  import { ref as deepRef, h, onMounted, shallowRef } from 'vue';
 
   import { tr } from 'zod/locales';
 
@@ -84,11 +86,12 @@
     MessageStatus,
     RenderMode,
   } from '../src';
+  import CustomTabContent from './custom-tab-content.vue';
   import { streamContent } from './markdown';
   import { MOCK_PROMPTS, MOCK_RESOURCES } from './mock';
   import { uploadFileToSession } from './upload-file';
 
-  import type { IAiSlashMenuItem, Shortcut, TagSchema } from '../src/types';
+  import type { CustomTab, IAiSlashMenuItem, Shortcut, TagSchema } from '../src/types';
   import type { IToolBtn } from '../src/types/tool';
 
   import '../src/styles/global.scss';
@@ -257,6 +260,8 @@
       content: [
         {
           task_id: 634859,
+          has_confidence: true,
+          is_active: true,
           task_name: 'benny-flow7_20260202160324',
           task_state: 'FAILED',
           nodes: {
@@ -531,6 +536,35 @@
             { label: '类型A', value: 'A' },
             { label: '类型B', value: 'B' },
           ],
+        },
+        {
+          name: '分析维度',
+          key: 'analysis_dimensions',
+          type: 'checkboxGroup',
+          required: false,
+          fillBack: false,
+          props: {
+            modelValue: ['trace', 'metrics'],
+            options: [
+              { label: '链路 Trace', value: 'trace' },
+              { label: '指标 Metrics', value: 'metrics' },
+              { label: '日志 Log', value: 'log' },
+            ],
+          },
+        },
+        {
+          name: '输出粒度',
+          key: 'output_granularity',
+          type: 'radioGroup',
+          required: true,
+          fillBack: false,
+          props: {
+            modelValue: 'summary',
+            options: [
+              { label: '摘要', value: 'summary' },
+              { label: '详细', value: 'detail' },
+            ],
+          },
         },
       ],
     },
@@ -1087,6 +1121,48 @@
     return MOCK_NODE_DETAIL;
   };
 
+  /**
+   * ChatContainer `getSideRenderComponent` 与侧栏 `<component :is="...">` 配合使用：
+   * - 返回 `undefined`：使用 `addCustomTab` 时 `data.component`（如 FlowAgent 里的 BkFlowNodeDetail）。
+   * - 返回 VNode：用 `createElement`（即 `h`）挂自定义根，例如 `createElement(CustomTabContent, props)`；
+   *   `props` 与 `tab.data.props` 一致（含 node_name、task_id、loading、data 等）。
+   * 将下方开关改为 `true` 时侧栏使用 `./custom-tab-content.vue` 覆盖默认的 BkFlowNodeDetail。
+   */
+  // const PLAYGROUND_GET_SIDE_VNODE_DEMO = true;
+
+  const getSideRenderComponent = (createElement: typeof h, props?: Record<string, unknown>) => {
+    // if (!PLAYGROUND_GET_SIDE_VNODE_DEMO) {
+    //   return undefined;
+    // }
+    const raw = props ?? {};
+    const taskIdRaw = raw.task_id;
+    const taskId =
+      typeof taskIdRaw === 'number'
+        ? taskIdRaw
+        : typeof taskIdRaw === 'string' && taskIdRaw !== ''
+          ? Number(taskIdRaw)
+          : undefined;
+    return createElement(CustomTabContent, {
+      loading: Boolean(raw.loading),
+      nodeId: typeof raw.node_id === 'string' ? raw.node_id : '',
+      nodeName: typeof raw.node_name === 'string' ? raw.node_name : '',
+      taskId: Number.isFinite(taskId as number) ? (taskId as number) : undefined,
+      taskName: typeof raw.task_name === 'string' ? raw.task_name : '',
+      data:
+        typeof raw.data === 'object' && raw.data !== null && !Array.isArray(raw.data)
+          ? (raw.data as Record<string, unknown>)
+          : {},
+    });
+  };
+
+  const getSideTabRenderComponent = (createElement: typeof h, tab: CustomTab<Record<string, unknown>>) => {
+    console.info('getSideTabRenderComponent', tab.name);
+    if (tab.name === '634859') {
+      return createElement('div', {}, 'dddd');
+    }
+    return undefined;
+  };
+
   const handleAgentAction = async (tool: IToolBtn) => {
     console.log('agent action:', tool);
     await new Promise(resolve => setTimeout(resolve, 2000));
@@ -1177,7 +1253,7 @@
 
   onMounted(() => {
     let content = '';
-    const chunkSize = 1000000000000000;
+    const chunkSize = 1999999999;
     const interval = setInterval(() => {
       content += streamContent.slice(content.length, content.length + chunkSize);
       const status = content.length >= streamContent.length ? MessageStatus.Complete : MessageStatus.Streaming;

@@ -91,6 +91,7 @@ vi.mock('./ai-slash-input/ai-slash-input.vue', () => ({
       placeholder: { type: String, default: '' },
       prompts: { type: Array, default: () => [] },
       resources: { type: Array, default: () => [] },
+      skills: { type: Array, default: () => [] },
     },
     emits: ['update:modelValue', 'keydown', 'upload'],
     setup(_, { emit, expose }) {
@@ -416,6 +417,21 @@ describe('ChatInput', () => {
         props: {
           modelValue: '',
           tippyOptions: { appendTo: 'parent' },
+        },
+      });
+
+      expect(wrapper.find('.chat-input-container').exists()).toBe(true);
+    });
+
+    it('应该正确接收 skills 属性', () => {
+      const skills = [
+        { skill_code: 'test_skill', skill_name: 'Test Skill', description: 'A test skill', icon: '' },
+      ];
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          skills,
         },
       });
 

@@ -18,16 +18,21 @@ export type {
   ISession,
   ISessionModule,
   ISupportUpload,
+  MaybeRequestValue,
   MessageRole,
   MessageStatus,
+  RequestData,
+  RequestHeaders,
 } from '@blueking/chat-helper';
 
 // MessageContentType 从 chat-x 导出
 export { MessageContentType } from '@blueking/chat-x';
 
-import type { VNode } from 'vue';
+import { type MaybeRefOrGetter, type VNode, h } from 'vue';
 
-import type { RenderMode } from '@blueking/chat-x';
+import type { MaybeRequestValue, RequestData, RequestHeaders } from '@blueking/chat-helper';
+
+import type { CustomBkFlowTab, CustomTab, RenderMode } from '@blueking/chat-x';
 
 // 从 Manager 导入类型
 import type { PositionAndSize } from './manager/types';
@@ -35,12 +40,26 @@ import type { PositionAndSize } from './manager/types';
 import type {
   IAgentCommand,
   IAgentCommandComponent,
+  IAgentInfo,
   IAgentModule,
   IMessageModule,
   ISessionModule,
 } from '@blueking/chat-helper';
 import type { IAiSlashMenuItem } from '@blueking/chat-x';
 import type { CreateSessionOptions } from './manager/business/types';
+
+/** 自定义侧栏内容区渲染（透传 ChatContainer.getSideRenderComponent） */
+export type GetSideRenderComponent = (createElement: typeof h, props?: Record<string, unknown>) => VNode | undefined;
+
+/** 自定义侧栏 Tab 标签渲染（透传 ChatContainer.getSideTabRenderComponent） */
+export type GetSideTabRenderComponent = (
+  createElement: typeof h,
+  tab: CustomTab<Record<string, unknown>>,
+  events: { removeCustomTab: (tabName: string) => void },
+) => VNode | undefined;
+
+/** 侧栏自定义 Tab 切换时拉取详情（透传 ChatContainer.onCustomTabChange） */
+export type OnCustomTabChange = (tab: CustomBkFlowTab) => Promise<unknown>;
 
 /**
  * AIBlueking 组件 Emits 类型定义
@@ -129,6 +148,13 @@ export interface AIBluekingExpose {
   stopGeneration: () => void;
 
   switchToSession: (sessionCode: string) => Promise<void>;
+  /**
+   * 主动刷新 agentInfo 并更新内部状态
+   * 业务方可调用此方法获取最新的 agent 信息，同时会自动更新 shortcuts 等状态
+   *
+   * @returns 最新的 agentInfo 数据，获取失败返回 null
+   */
+  updateAgentInfo: () => Promise<IAgentInfo | null>;
   // 容器控制
   updatePosition: (x: number, y: number) => void;
   updatePositionAndSize: (x: number, y: number, w: number, h: number) => void;
@@ -180,6 +206,8 @@ export interface AIBluekingProps {
   extCls?: string;
   /** 欢迎语 */
   helloText?: string;
+  /** 使用 agentName 作为欢迎标题 */
+  useAgentName?: boolean;
 
   /** 是否隐藏默认触发器 */
   hideDefaultTrigger?: boolean;
@@ -206,8 +234,8 @@ export interface AIBluekingProps {
   /** 预设提示词列表 */
   prompts?: string[];
   // 其他配置
-  /** 请求配置 */
-  requestOptions?: IRequestOptions;
+  /** 请求配置（支持 ref/computed，替换后后续请求自动生效） */
+  requestOptions?: MaybeRefOrGetter<IRequestOptions>;
   /** 资源列表（输入 @ 触发） */
   resources?: IAiSlashMenuItem[];
   /** 快捷操作显示数量限制 */
@@ -241,6 +269,13 @@ export interface AIBluekingProps {
     max?: number;
     min?: number;
   };
+
+  /** 自定义侧栏内容区渲染 */
+  getSideRenderComponent?: GetSideRenderComponent;
+  /** 自定义侧栏 Tab 标签渲染 */
+  getSideTabRenderComponent?: GetSideTabRenderComponent;
+  /** 覆盖默认 Flow 节点详情拉取；未传则使用 ChatBot 内置逻辑 */
+  onCustomTabChange?: OnCustomTabChange;
 }
 
 /**
@@ -301,11 +336,22 @@ export interface IChatHelper {
 }
 
 /**
- * 请求配置
+ * 请求配置（headers/data/context 支持对象、函数、ref、computed）
+ * - headers: 合并到每个请求的 HTTP headers
+ * - data: POST/PUT/PATCH/DELETE 合并到 body；GET/HEAD/OPTIONS 合并到 query
+ * - context: 合并到消息的 property.extra.context（与 shortcuts 表单数据同级）
+ *   支持 Record<string, unknown>（自动转换）或 Array<Record<string, unknown>>（简单 KV 自动转换，结构化格式直接透传）
  */
 export interface IRequestOptions {
-  data?: (() => Record<string, unknown>) | Record<string, unknown>;
-  headers?: (() => Record<string, string>) | Record<string, string>;
+  /**
+   * 上下文信息，合并到消息的 property.extra.context
+   * 支持两种格式：
+   * - Record<string, unknown>: 简单 KV，自动转换为结构化格式
+   * - Array<Record<string, unknown>>: 数组，简单 KV 自动转换，有 __key 的结构化条目直接透传
+   */
+  context?: MaybeRequestValue<RequestData | Array<Record<string, unknown>>>;
+  data?: MaybeRequestValue<RequestData>;
+  headers?: MaybeRequestValue<RequestHeaders>;
 }
 
 /**

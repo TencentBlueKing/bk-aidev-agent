@@ -39,10 +39,14 @@ const handleSendMessage = (message: string) => {
   console.log('发送:', message);
 };
 
-// 面板控制
-const showPanel = () => aiBluekingRef.value?.show();
+// 面板控制（show 返回 Promise，建议 await 后再读 session）
+const showPanel = async () => {
+  await aiBluekingRef.value?.show();
+};
 const hidePanel = () => aiBluekingRef.value?.hide();
-const showWithSession = (code: string) => aiBluekingRef.value?.show(code);
+const showWithSession = async (code: string) => {
+  await aiBluekingRef.value?.show(code);
+};
 </script>
 ```
 
@@ -97,7 +101,7 @@ Nimbus 是页面右下角的浮球入口，点击后展开对话面板。可通�
 
 | 方法 | 类型 | 说明 |
 |------|------|------|
-| `show(sessionCode?, options?)` | `(sessionCode?: string, options?: { isTemporary?: boolean }) => Promise<void>` | 展开面板，可选传入会话 Code 和是否临时会话 |
+| `show(sessionCode?, options?)` | `(sessionCode?: string, options?: { isTemporary?: boolean }) => Promise<void>` | 展开面板；`await` 后在 `sessionList` 就绪（且默认会完成最近会话初始化）后再 resolve。详见 [编程式控制](/guide/advanced-usage/programmatic-control#show-显示窗口) |
 | `hide()` | `() => void` | 收起面板 |
 | `handleShow(sessionCode?)` | `(sessionCode?: string) => Promise<void>` | 展开面板（内部方法） |
 | `handleClose()` | `() => void` | 收起面板（内部方法） |

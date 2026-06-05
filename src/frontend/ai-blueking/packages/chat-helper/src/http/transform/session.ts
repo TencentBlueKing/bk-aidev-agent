@@ -38,7 +38,6 @@ export const transferSessionApi2Session = (data: ISessionApi): ISession => {
     isTemporary: data.is_temporary,
     model: data.model,
     comment: data.comment,
-    labels: data.labels,
     rate: data.rate,
     updatedAt: data.updated_at,
     createdAt: data.created_at,
@@ -53,6 +52,7 @@ export const transferSessionApi2Session = (data: ISessionApi): ISession => {
     sessionProperty: {
       isAutoClear: data.session_property?.is_auto_clear,
       isAutoCalcPrompt: data.session_property?.is_auto_clac_prompt,
+      labels: data.session_property?.labels,
     },
   };
 };
@@ -70,7 +70,6 @@ export const transferSession2SessionApi = (data: ISession): ISessionApi => {
     is_temporary: data.isTemporary,
     model: data.model,
     comment: data.comment,
-    labels: data.labels,
     rate: data.rate,
     updated_at: data.updatedAt,
     created_at: data.createdAt,
@@ -85,6 +84,7 @@ export const transferSession2SessionApi = (data: ISession): ISessionApi => {
     session_property: {
       is_auto_clear: data.sessionProperty?.isAutoClear,
       is_auto_clac_prompt: data.sessionProperty?.isAutoCalcPrompt,
+      labels: data.sessionProperty?.labels,
     },
   };
 };

@@ -12,12 +12,15 @@
     <ResizeLayout
       v-else
       class="ai-chat-container-resize-layout"
-      :class="{ 'ai-is-collapse': isCollapse || executionGroups?.length < 1 || renderMode === RenderMode.Share }"
+      :class="{
+        'ai-is-collapse':
+          isCollapse || (!keyword?.length && executionGroups?.length < 1) || renderMode === RenderMode.Share,
+      }"
       v-bind="resizeProps"
       @resizing="handleResizing"
     >
       <template #aside>
-        <template v-if="!isCollapse && executionGroups?.length && renderMode !== RenderMode.Share">
+        <template v-if="!isCollapse && (executionGroups?.length || keyword?.length) && renderMode !== RenderMode.Share">
           <Tab
             :active="selectedTab.name"
             class="ai-chat-container-tab"
@@ -28,6 +31,7 @@
             <TabPanel
               v-for="tab in tabs"
               :key="tab.name"
+              class="ai-chat-container-tab-panel"
               :label="
                 () =>
                   h(
@@ -40,7 +44,7 @@
                         }
                       },
                     },
-                    [
+                    getSideTabRenderComponent?.(h, tab, { removeCustomTab }) ?? [
                       h(tab.name === EXECUTION_TAB_NAME ? ExecutionIcon : NodeTabIcon, {
                         class: 'ai-execution-summary-icon',
                       }),
@@ -78,9 +82,12 @@
             />
           </template>
           <template v-if="selectedTab">
-            <div class="ai-chat-container-message-slot">
+            <div
+              :key="selectedTab.name"
+              class="ai-chat-container-message-slot"
+            >
               <component
-                :is="selectedTab?.data?.component"
+                :is="sideRenderComponent"
                 :key="selectedTab.name"
                 v-bind="selectedTab?.data?.props"
               >
@@ -159,10 +166,10 @@
         >
           <slot
             name="welcome"
-            v-bind="{ openingRemark }"
+            v-bind="{ openingRemark, welcomeTitle }"
           >
             <AIBluekingBannerIcon />
-            <h2 class="ai-welcome-title">{{ t('你好，我是小鲸') }}</h2>
+            <h2 class="ai-welcome-title">{{ welcomeTitle ?? t('你好，我是小鲸') }}</h2>
             <div
               v-if="openingRemark"
               class="ai-welcome-remark"
@@ -201,6 +208,7 @@
               :resources="resources"
               :shortcut-id="selectedShortcut?.id"
               :shortcuts="shortcuts"
+              :skills="skills"
               :support-upload="supportUpload"
               :tippy-options="commonTippyOptions"
               @delete-shortcut="handleCloseShortcut"
@@ -262,6 +270,14 @@
   export type ChatContainerProps = {
     chatLoading?: boolean;
     commonTippyOptions?: AITippyProps;
+    // 用于获取侧边栏组件的渲染
+    getSideRenderComponent?: (createElement: typeof h, props?: Record<string, unknown>) => undefined | VNode;
+    // 用于获取侧边栏 tab 的渲染
+    getSideTabRenderComponent?: (
+      createElement: typeof h,
+      tab: CustomTab<Record<string, unknown>>,
+      events: { removeCustomTab: typeof removeCustomTab },
+    ) => undefined | VNode;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     onCustomTabChange?: (tab: CustomTab<CustomBkFlowTabData>) => Promise<any>;
     openingRemark?: string;
@@ -272,6 +288,7 @@
       max?: number;
       min?: number;
     };
+    welcomeTitle?: string;
   };
   const TabPanel = Tab.TabPanel;
   defineSlots<{
@@ -294,7 +311,10 @@
       message: Message;
       messageToolsStatus: MessageContainerProps['messageToolsStatus'];
     }) => null | undefined | VNode;
-    welcome: (props: { openingRemark: ChatContainerProps['openingRemark'] }) => null | undefined | VNode;
+    welcome: (props: {
+      openingRemark: ChatContainerProps['openingRemark'];
+      welcomeTitle: ChatContainerProps['welcomeTitle'];
+    }) => null | undefined | VNode;
   }>();
   const props = withDefaults(
     defineProps<
@@ -320,6 +340,10 @@
     ...props.resizeProps,
     placement: props.placement,
   }));
+
+  const sideRenderComponent = computed(() => {
+    return props.getSideRenderComponent?.(h, selectedTab.value.data?.props ?? {}) ?? selectedTab.value.data?.component;
+  });
   useGlobalConfig({
     supportUpload: computed(() => props.supportUpload ?? false),
   });
@@ -397,7 +421,7 @@
   watch(
     () => executionGroups.value,
     newVal => {
-      if (!newVal.length) {
+      if (!newVal.length && !keyword.value) {
         resetCustomTab();
       }
     },
@@ -570,35 +594,29 @@
       height: 100%;
       border: none !important;
 
-      .bk-resize-layout-main,
-      .bk-resize-layout-aside {
-        display: flex;
-        flex-direction: column;
+      > main,
+      > aside {
+        display: flex !important;
+        flex-direction: column !important;
         height: 100%;
-
-        &-content {
-          display: flex;
-          flex-direction: column;
-          height: 100%;
-        }
       }
 
-      .bk-resize-layout-main {
+      > aside > div:first-child {
+        display: flex !important;
+        flex-direction: column !important;
+        height: 100% !important;
+      }
+
+      > main {
         position: relative;
         width: var(--resize-main-width);
-
-        // width: 100%;
         padding: 8px;
         overflow: visible;
       }
 
-      .bk-resize-layout-aside {
-        display: flex;
-      }
-
       &.ai-is-collapse {
-        .bk-resize-layout-aside {
-          flex: 0 0 0;
+        > aside {
+          flex: 0 0 0 !important;
           width: 0;
           padding: 0;
           border: none;
@@ -607,11 +625,7 @@
             display: none;
           }
 
-          .bk-resize-trigger {
-            display: none;
-          }
-
-          .bk-resize-proxy {
+          > i {
             display: none;
           }
         }

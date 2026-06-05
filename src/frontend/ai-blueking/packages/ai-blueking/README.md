@@ -269,7 +269,7 @@ const handleError = (error: Error) => {
 
 | 事件名 | 参数 | 说明 |
 |--------|------|------|
-| `agent-info-loaded` | `chatHelper: IChatHelper` | Agent 信息加载完成 |
+| `agent-info-loaded` | `chatHelper: IChatHelper` | 独立模式初始化完成（与 `whenReady` 成功时机一致） |
 | `send-message` | `message: string` | 发送消息时触发 |
 | `session-switched` | `session: ISession` | 会话切换完成 |
 | `shortcut-click` | `{ shortcut, source }` | 快捷指令被点击 |
@@ -278,6 +278,16 @@ const handleError = (error: Error) => {
 | `cancel-share` | - | 取消分享（退出选择模式） |
 | `confirm-share` | `messages: Message[]` | 确认分享选中的消息 |
 | `error` | `error: Error` | 发生错误时触发 |
+
+### ChatBot Expose
+
+| 方法/属性 | 类型 | 说明 |
+|-----------|------|------|
+| `whenReady` | `() => Promise<void>` | 等待初始化完成（独立模式含 sessionList） |
+| `isReady` | `boolean` | 是否已完成初始化 |
+| `switchSession` | `(sessionCode: string) => Promise<void>` | 切换会话 |
+| `sendMessage` | `(message: string) => Promise<void>` | 发送消息 |
+| `getChatHelper` | `() => IChatHelper \| null` | 获取 chatHelper 实例 |
 
 ## 目录结构
 

@@ -28,6 +28,7 @@ export type CustomBkFlowTab = CustomTab<CustomBkFlowTabData>;
 
 export type CustomBkFlowTabData = CustomTabData<{
   data?: Partial<NodeDetailData>;
+  has_confidence?: boolean;
   loading?: boolean;
   node_id?: string;
   node_name?: string;

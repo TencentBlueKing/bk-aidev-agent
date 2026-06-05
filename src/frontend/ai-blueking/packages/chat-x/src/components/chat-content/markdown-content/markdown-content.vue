@@ -68,7 +68,7 @@
   import { MessageStatus } from '../../../ag-ui/types/constants';
   import { useContainerScrollConsumer } from '../../../composables';
   import MarkdownIt from '../../../markdown-it/index';
-  import { markdownItLatex, markdownItMermaid } from '../../../plugins';
+  import { markdownItBkInlineStyle, markdownItLatex, markdownItMermaid } from '../../../plugins';
   import { markdownItContainer } from '../../../plugins/markdown-container';
   // import { markdownAnimationAttrs } from '../../../plugins/markdown-animation-attrs';
   import { completeMarkdownSyntax } from '../../../utils/stream-markdown-completer';
@@ -100,11 +100,9 @@
   const containerScrollConsumer = useContainerScrollConsumer();
 
   const groupedTokens = shallowRef<Token[][]>([]);
-
-  // 代码高亮由 CodeContent 组件处理，不在 MarkdownIt 解析时进行
-  // 这样可以避免流式输入时的同步高亮开销，提升性能
   const md = new MarkdownIt()
     // .use(markdownAnimationAttrs)
+    .use(markdownItBkInlineStyle)
     .use(markdownItFootnote)
     .use(markdownItIns)
     .use(markdownItMark)

@@ -25,14 +25,21 @@
  */
 
 import { FetchClient } from './fetch';
+import { resolveRequestValue } from './resolve-request-value';
 
 import type { IRequestConfig } from './fetch';
 import type { IUseChatHelperOptions } from '../../type';
 
+export { FetchClient } from './fetch';
 export type * from './fetch';
+export type { MaybeRequestValue, RequestData, RequestHeaders } from './resolve-request-value';
+export { resolveRequestValue } from './resolve-request-value';
 
-/** 仅支持 body 的 HTTP 方法 */
+/** 使用请求体的 HTTP 方法 */
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/** 无请求体、通过 query 传参的 HTTP 方法 */
+const QUERY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /** 排除 FormData / Blob / ArrayBuffer 等，只对普通对象展开合并 */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -41,14 +48,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return proto === Object.prototype || proto === null;
 }
 
-/** 解析「函数 | 值」两种形式，支持延迟求值（如响应式 token） */
-function resolveValue<T>(value: (() => T) | T | undefined): T | undefined {
-  return typeof value === 'function' ? (value as () => T)() : value;
-}
-
 /**
  * 注册全局默认请求配置拦截器，将 `requestData.headers/data` 自动合并到每次请求。
- * - `headers` 注入所有请求；`data` 仅注入 POST/PUT/PATCH/DELETE，避免 GET/HEAD body 报错。
+ * - `headers` 注入所有请求
+ * - `data` 对 POST/PUT/PATCH/DELETE 合并进 body；对 GET/HEAD/OPTIONS 合并进 query（params）
  * - 优先级最低（单次 IRequestConfig > 用户拦截器 > 本拦截器）。
  */
 function registerRequestDataInterceptor(client: FetchClient, opts: IUseChatHelperOptions): void {
@@ -57,32 +60,38 @@ function registerRequestDataInterceptor(client: FetchClient, opts: IUseChatHelpe
 
   client.interceptors.request.use((config: IRequestConfig): IRequestConfig => {
     let result = config;
+    const method = (config.method ?? 'GET').toUpperCase();
 
     if (extraHeadersFn) {
-      const extra = resolveValue(extraHeadersFn);
+      const extra = resolveRequestValue(extraHeadersFn);
       if (extra && Object.keys(extra).length > 0) {
-        const existing = resolveValue(config.headers) ?? {};
+        const existing = resolveRequestValue(config.headers) ?? {};
         result = { ...result, headers: { ...existing, ...extra } };
       }
     }
 
-    const method = (config.method ?? 'GET').toUpperCase();
-    if (extraDataFn && BODY_METHODS.has(method)) {
-      const extra = resolveValue(extraDataFn);
+    if (extraDataFn) {
+      const extra = resolveRequestValue(extraDataFn);
       if (extra && Object.keys(extra).length > 0) {
-        const existing = resolveValue(config.data);
-        if (existing == null) {
-          // body 为空（如 clearSession POST undefined）：直接用 extra 作为 body
-          result = { ...result, data: extra };
-        } else if (isPlainObject(existing)) {
-          // body 是普通对象：浅合并，extra 字段优先级更低（existing 已有同名字段时保留）
-          result = { ...result, data: { ...extra, ...(existing as Record<string, unknown>) } };
-        } else {
-          // body 是 FormData / Blob / string 等：跳过注入，避免破坏原始 body
-          console.warn(
-            '[chat-helper] requestData.data 无法注入：当前请求体不是普通对象（FormData/Blob/string 等），已跳过合并。',
-            { method, existingType: typeof existing },
-          );
+        if (BODY_METHODS.has(method)) {
+          const existing = resolveRequestValue(config.data);
+          if (existing == null) {
+            // body 为空（如 clearSession POST undefined）：直接用 extra 作为 body
+            result = { ...result, data: extra };
+          } else if (isPlainObject(existing)) {
+            // body 是普通对象：浅合并，extra 字段优先级更低（existing 已有同名字段时保留）
+            result = { ...result, data: { ...extra, ...(existing as Record<string, unknown>) } };
+          } else {
+            // body 是 FormData / Blob / string 等：跳过注入，避免破坏原始 body
+            console.warn(
+              '[chat-helper] requestData.data 无法注入：当前请求体不是普通对象（FormData/Blob/string 等），已跳过合并。',
+              { method, existingType: typeof existing },
+            );
+          }
+        } else if (QUERY_METHODS.has(method)) {
+          const existingParams = config.params ?? {};
+          // query 浅合并，extra 优先级更低（单次请求的 params 同名字段优先）
+          result = { ...result, params: { ...extra, ...existingParams } };
         }
       }
     }

@@ -24,9 +24,8 @@
  * IN THE SOFTWARE.
  */
 
-import { type tagSchema } from '../components/chat-input/ai-slash-input/constants';
-
 import type { BinaryInputContent } from '../ag-ui/types/contents';
+import type { tagSchema } from '../components/chat-input/ai-slash-input/constants';
 import type { InferDoc } from '../edix';
 
 export const MessageState = {

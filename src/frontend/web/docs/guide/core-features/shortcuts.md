@@ -448,3 +448,5 @@ const onShortcutClick = (data: { shortcut: IShortcut; source: 'main' | 'popup' }
 ```
 
 > **注意**：后端需要通过 `command` 识别快捷操作类型，从 `context` 中获取表单数据进行处理。表单数据不再由前端拼接为 prompt 字符串。
+
+> **扩展**：除快捷指令表单数据外，还可通过 `requestOptions.context` 注入全局业务上下文（如页面信息、用户角色），两者会自动合并。详见 [自定义请求 — 上下文参数 context](/guide/advanced-usage/custom-requests#上下文参数-context)。

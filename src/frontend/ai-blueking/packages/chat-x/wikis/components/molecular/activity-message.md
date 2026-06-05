@@ -263,11 +263,14 @@ domain: message
 ### 核心交互
 
 - **标题栏**：显示「执行情况」+ 所有任务聚合后的各状态计数（执行中 / 成功 / 失败 / 挂起），颜色区分
-- **任务组**：逐个展示任务行，带状态图标和总耗时
+- **任务组**：逐个展示任务行，带状态图标、总耗时；点击箭头图标可折叠/展开节点列表
+- **有效证据**：`task.has_confidence === true` 时，任务行右侧展示「有效证据」按钮，点击后在侧栏打开置信度/证据详情 Tab（`props.has_confidence: true`）
+- **默认激活**：当 `MessageContainer` 已注入滚动上下文（`useContainerScrollProvider`，供 `FlowAgentContent` 内 `useContainerScrollConsumer` 读取）时，组件挂载后若存在 `task.is_active === true` 且 `task.has_confidence === true` 的任务，会自动在侧栏打开该任务的「有效证据」Tab；无滚动 Provider（例如独立演示）时不做自动打开。用户手动切换 Tab 后不再沿用 `is_active` 默认高亮
+- **选中态**：当前侧栏 Tab 与任务行 / 节点行联动高亮（`is-selected`）；任务 Tab 与「有效证据」Tab 均视为该任务的选中态
 - **节点列表**：每个节点显示状态圆点、名称和耗时；hover 时出现「详情」按钮
-- **节点详情**：点击「详情」按钮会通过 `useCustomTabConsumer` 在 `ChatContainer` 侧边栏新增自定义 Tab，展示节点配置（基础信息、输入参数、输出参数）
+- **节点详情**：点击「详情」会通过 `useCustomTabConsumer` 在 `ChatContainer` 侧边栏新增自定义 Tab，展示节点配置（基础信息、输入参数、输出参数）
 
-> `FlowAgentContent` 会读取 `ChatContainer` 注入的 `renderMode`。当 `renderMode === RenderMode.Share` 时，节点列表仅展示状态和名称，不展示节点耗时与「详情」按钮，避免分享预览中出现可交互的节点详情入口。独立使用 `ActivityMessage` 且没有上层 Provider 时，默认按 `Chat` 模式渲染。
+> `FlowAgentContent` 会读取 `ChatContainer` 注入的 `renderMode`。当 `renderMode === RenderMode.Share` 时，任务行不展示总耗时与「有效证据」，节点列表不展示耗时与「详情」按钮，避免分享预览中出现可交互入口。独立使用 `ActivityMessage` 且没有上层 Provider 时，默认按 `Chat` 模式渲染。
 
 ### 内部渲染结构
 
@@ -279,16 +282,16 @@ FlowAgentContent（activityType = 'flow_agent'）
 │       └── 执行情况：执行中 N / 成功 N / 失败 N / 挂起 N
 └── #default
     └── TaskGroup × N
-        ├── TaskHeader（可折叠/展开）
+        ├── TaskHeader（is-selected / has-confidence；箭头点击折叠）
         │   ├── 状态图标（running=Loading / success / failed / suspended）
         │   ├── task_name（HighlightKeyword 支持搜索高亮）
-        │   └── 总耗时
+        │   └── trailing：总耗时 + 「有效证据」（has_confidence 时）
         └── NodeList
-            └── NodeItem × N
+            └── NodeItem × N（is-selected 与侧栏 Tab 联动）
                 ├── 状态圆点（颜色对应状态）
                 ├── node.name（HighlightKeyword 支持搜索高亮）
                 ├── node.elapsed_time
-                └── 详情按钮（hover 显示）→ 打开自定义 Tab
+                └── 详情按钮（hover 显示）→ 打开节点详情 Tab
 ```
 
 ### 用法示例
@@ -401,9 +404,19 @@ const messages = [
 | `suspended` | SUSPENDED                                                                           | #F59500 |
 | `pending`   | PENDING                                                                             | #DCDEE5 |
 
+### 侧栏 Tab 命名规则
+
+| 场景       | `tab.name` 格式                          |
+| ---------- | ---------------------------------------- |
+| 任务详情   | `{task_id}`                              |
+| 有效证据   | `{task_id}`（与任务 Tab 同名，label 为「有效证据」） |
+| 节点详情   | `{task_id}\|{node.id}\|{node.name}`      |
+
+`CustomBkFlowTabData` 支持 `has_confidence?: boolean`，用于侧栏详情组件区分证据视图与节点视图。应用层可通过 `ChatContainer` 的 `getSideRenderComponent` 覆盖渲染组件。
+
 ### 节点详情 Tab
 
-点击节点的「详情」按钮，内部调用 `useCustomTabConsumer().addCustomTab()` 在 `ChatContainer` 侧边栏新开一个 Tab，渲染 `FlowAgentNodeDetail` 组件，该组件提供：
+点击节点的「详情」按钮，内部调用 `useCustomTabConsumer().addCustomTab()` 在 `ChatContainer` 侧边栏新开一个 Tab，渲染 `BkFlowNodeDetail`（或 `getSideRenderComponent` 返回的自定义组件），该组件提供：
 
 - **节点配置** Tab：基础信息表单（流程模板、节点名称、步骤名称、失败处理、超时控制）+ 输入参数表 + 输出参数表
 - **节点输出** Tab：结构化输出参数表
@@ -417,6 +430,8 @@ import { MessageContentType, type BkFlowMessageContent, type BkFlowNode, type Bk
 type BkFlowMessageContent = BkFlowTask[];
 
 type BkFlowTask = {
+  has_confidence?: boolean; // 是否展示「有效证据」入口；与 is_active 同时为 true 且在消息容器滚动上下文中时，挂载后自动打开「有效证据」侧栏 Tab
+  is_active?: boolean; // 是否默认激活；需配合 has_confidence 且存在滚动 Provider 才会自动打开侧栏「有效证据」Tab
   nodes: Record<string, BkFlowNode>;
   statistics: { state_counts: Record<string, number>; total: number };
   task_id: number;

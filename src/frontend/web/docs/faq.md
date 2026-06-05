@@ -16,9 +16,27 @@
 
 | 场景 | 推荐方案 |
 | --- | --- |
-| 快速嵌入现有页面 | ChatBot |
-| 需要悬浮球、拖拽等完整交互 | AIBlueking |
+| 快速嵌入现有页面（Vue 3） | ChatBot |
+| 需要悬浮球、拖拽等完整交互（Vue 3） | AIBlueking |
+| **宿主不是 Vue**（React、Angular、纯 HTML 等） | [`/standalone`](/guide/integration-modes/standalone-bundle) 子入口 + `mountAIBlueking` |
 | 深度定制 UI 和交互逻辑 | 原子组件（ChatInput + MessageContainer） |
+
+---
+
+## 2.1. 非 Vue 页面如何接入小鲸？
+
+自 **v2.1.4-beta.8** 起，使用 `@blueking/ai-blueking/standalone`：
+
+```typescript
+import { mountAIBlueking } from '@blueking/ai-blueking/standalone';
+import '@blueking/ai-blueking/dist/standalone/style.css';
+
+mountAIBlueking('#ai-root', {
+  props: { url: 'https://your-aidev-url.com/api/' },
+});
+```
+
+自定义 `getSideRenderComponent` 时请从 **同一入口** 导入 `h`，勿混用外部 `vue` 包。详见 [Standalone 非 Vue 宿主集成](/guide/integration-modes/standalone-bundle)。
 
 ---
 
@@ -77,21 +95,30 @@ Vue.use(VueCompositionAPI);
 
 ## 6. requestOptions 的 headers 为什么是函数？
 
-函数形式确保**每次请求时获取最新的 token**，避免 token 过期问题。
+v2.1.4-beta.9+ 在每次请求前通过 `resolveRequestValue` 求值，除零参函数外，也支持 **`ref` / `computed`** 与普通对象。函数或 `computed` 可在 token、租户切换后让**下一次请求**自动带上新值，无需重建组件。
 
 ```ts
-// ✅ 推荐：函数形式，每次请求时调用
+import { computed, ref } from 'vue';
+
+const token = ref(getToken());
+
+// ✅ 推荐：computed / 函数，随 token 变化
+const requestOptions = computed(() => ({
+  headers: { Authorization: `Bearer ${token.value}` },
+}));
+
+// ✅ 亦可：函数形式
 const requestOptions = {
   headers: () => ({ Authorization: `Bearer ${getToken()}` }),
 };
 
-// ❌ 不推荐：对象形式，token 会被固定
-const requestOptions = {
-  headers: { Authorization: `Bearer ${token}` },
+// ⚠️ 纯对象且 token 为 ref 时，需在对象内读 .value，或改用 computed
+const requestOptionsStatic = {
+  headers: { Authorization: `Bearer ${token.value}` }, // 仅捕获当前快照
 };
 ```
 
-如果 token 有效期很长且不会变化，也可以使用对象形式。
+`data` 会按方法写入 body 或 query，详见 [自定义请求](/guide/advanced-usage/custom-requests)。
 
 ---
 
@@ -120,20 +147,24 @@ const handleAgentAction = (action: string, message: IMessage) => {
 
 ## 8. 如何获取 chatHelper 实例？
 
-两种方式：
-
-**方式一**：通过 ChatBot 的 expose 方法：
+**推荐（≥ v2.1.4-beta.13）**：先 `await whenReady()`，再 `getChatHelper()`：
 
 ```ts
 const chatBotRef = ref<ChatBotExpose>();
+await chatBotRef.value?.whenReady();
 const helper = chatBotRef.value?.getChatHelper();
 ```
 
-**方式二**：监听 `agent-info-loaded` 事件：
+**方式一**：直接通过 expose（需自行保证初始化已完成）：
+
+```ts
+const helper = chatBotRef.value?.getChatHelper();
+```
+
+**方式二**：监听 `agent-info-loaded` 事件（独立模式，与 `whenReady` 成功时机一致）：
 
 ```ts
 const onReady = (chatHelper: IChatHelper) => {
-  // chatHelper 已就绪，可以进行操作
   console.log('会话列表:', chatHelper.session.list.value);
 };
 ```
@@ -141,6 +172,8 @@ const onReady = (chatHelper: IChatHelper) => {
 ```vue
 <ChatBot @agent-info-loaded="onReady" />
 ```
+
+嵌入页等待就绪也可用 `isReady` 做模板条件渲染。`AIBlueking` 场景请用 `await show()`，见 [编程式控制](/guide/advanced-usage/programmatic-control)。
 
 ---
 
@@ -214,3 +247,16 @@ const { protocol } = useChatHelper({
 ```
 
 常见的流式错误包括：网络断开、token 过期、服务端异常等。建议在错误处理中提供用户友好的提示信息。
+
+---
+
+## 如何让 AI 回复显示红色标题、背景高亮？
+
+v2.1.4-beta.6 起，消息区**不解析任意 HTML**。请在 AIDev Agent **系统提示词**中要求模型使用蓝鲸行内富文本语法，例如：
+
+```text
+::bk{color=red; bold}标题:/bk::
+::bk{background-color=yellow}重点:/bk::
+```
+
+完整语法、属性表与「撤离通知」类 LLM 提示词模板见 [蓝鲸行内富文本](/guide/core-features/markdown-inline-style)。用户侧的 `/` 提示词 prop 可放提问模板，格式约束建议写在系统提示词中。

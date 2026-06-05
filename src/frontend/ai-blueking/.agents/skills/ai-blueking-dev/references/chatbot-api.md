@@ -19,7 +19,7 @@
 | height          | `string \| number`   | -       | 容器高度                                       |
 | maxWidth        | `string \| number`   | -       | 最大宽度                                       |
 | extCls          | `string`             | -       | 额外 CSS 类名                                  |
-| requestOptions  | `IRequestOptions`    | -       | 请求配置（仅独立模式，含 headers/data）        |
+| requestOptions  | `MaybeRefOrGetter<IRequestOptions>` | - | 请求配置（仅独立模式；headers/data 支持对象、函数、ref、computed） |
 | resizeProps     | `ResizeProps`        | -       | ResizeLayout 配置（执行情况侧面板拖拽）        |
 
 ## Events
@@ -36,7 +36,7 @@
 > **注意**：AIBlueking 集成模式下，ChatBot 的 `@error` 不会被透传给业务方，所有错误统一通过 AIBlueking 的 `@sdk-error` 事件暴露。详见 [集成模式 - 错误处理](integration-patterns.md#错误处理模式)。
 | session-switched  | `(session: ISession \| null)`              | 会话切换完成                   |
 | shortcut-click    | `({ shortcut, source })`                   | 快捷指令点击                   |
-| agent-info-loaded | `(chatHelper: IChatHelper)`                | Agent 信息加载完成（独立模式） |
+| agent-info-loaded | `(chatHelper: IChatHelper)`                | 独立模式初始化完成（与 `whenReady` 成功时机一致） |
 | feedback          | `(tool, message, reasonList, otherReason)` | 反馈提交成功                   |
 | confirm-share     | `(messages: Message[])`                    | 确认分享                       |
 | cancel-share      | -                                          | 取消分享                       |
@@ -72,6 +72,8 @@
 | messages       | `ComputedRef<Message[]>`                 | 当前消息列表             |
 | currentSession | `ComputedRef<ISession \| null>`          | 当前会话                 |
 | isGenerating   | `ComputedRef<boolean>`                   | 是否正在生成             |
+| isReady        | `ComputedRef<boolean>`                   | 是否已完成初始化（独立模式含 sessionList） |
+| whenReady      | `() => Promise<void>`                    | 等待初始化完成，语义对齐 AIBlueking `ensureSessionReady` |
 
 ## ResizeProps 类型
 
@@ -111,6 +113,30 @@ ChatBot.onMounted()
 │   └── 否 → chooseSession(列表第一个)
 └── emit('agent-info-loaded', chatHelper)
 ```
+
+### 嵌入页等待就绪（whenReady）
+
+独立嵌入时无 `show()`，可在 `onMounted` 中 `await chatBotRef.whenReady()` 后再切换会话或发消息：
+
+```vue
+<ChatBot ref="chatBotRef" :url="apiUrl" />
+
+<script setup lang="ts">
+import { onMounted, ref } from 'vue';
+import { ChatBot, type ChatBotExpose } from '@blueking/ai-blueking';
+
+const chatBotRef = ref<ChatBotExpose>();
+
+onMounted(async () => {
+  await chatBotRef.value?.whenReady();
+  // sessionList 已加载，可安全 switchSession / sendMessage
+});
+</script>
+```
+
+- `isReady`：响应式判断是否就绪
+- `url` 变更导致重初始化时，进行中的 `whenReady()` 会以 `ChatBotInitStaleError` reject，需重新 `await whenReady()`
+- AIBlueking 集成模式：`whenReady` 立即 resolve，请使用 `AIBlueking.show()` 等待会话就绪
 
 ## AIHeader 事件（AIBlueking 集成模式）
 

@@ -363,6 +363,7 @@ props.content → completeMarkdownSyntax → md.parse → groupTokens → groupe
 
 | 插件                        | 语法                | 功能                 |
 | --------------------------- | ------------------- | -------------------- |
+| `markdownItBkInlineStyle`   | 见下文「蓝鲸行内样式」 | 安全行内颜色/字号/粗斜体（非 HTML） |
 | `markdown-it-footnote`      | `[^1]`              | 脚注                 |
 | `markdown-it-ins`           | `++text++`          | 下划线               |
 | `markdown-it-mark`          | `==text==`          | 高亮                 |
@@ -373,7 +374,29 @@ props.content → completeMarkdownSyntax → md.parse → groupTokens → groupe
 | `markdownItLatex`           | `$...$` / `$$...$$` | KaTeX 数学公式 token |
 | `markdownItContainer`       | `::: hljs-left` 等  | 自定义对齐容器（class 与 highlight.js 命名对齐） |
 
+### 蓝鲸行内样式（`markdownItBkInlineStyle`）
+
+不开启 `html: true`，由专用语法生成带白名单 `style` 的 `<span class="bk-md-inline-style">`。
+
+**语法**：`::bk{` *属性* `}` *正文* `:/bk::`
+
+- 属性写在 `{}` 内，使用 `;` 分隔；每项为 `键=值` 或 `键:值`。
+- 正文支持行内 Markdown（如 `**粗体**`）。
+- 结束标记必须为字面量 `:/bk::`，请勿在正文中出现该序列。
+
+**支持的键**：`color` / `c`、`background-color`、`font-size`、`bold`、`italic`（详见 `plugins/markdown-bk-inline-style.ts` 内注释）。
+
+**示例**：
+
+```markdown
+::bk{color:#c00;font-size:18px}**重要**:/bk::
+::bk{background-color:yellow}高亮:/bk::
+::bk{bold;italic}强调:/bk::
+```
+
 ### 安全性
+
+`MarkdownIt` **不**开启 `html: true`，用户无法插入任意 HTML 标签；行内彩色/字号等请使用上文「蓝鲸行内样式」扩展。
 
 `VNodeRenderer` 渲染的 HTML 统一经过 DOMPurify 过滤，并额外允许 KaTeX 所需标签：
 

@@ -11,6 +11,12 @@
           "fix": "none",
           "level": "error"
         }
+      },
+      "suspicious": {
+        "noDebugger": {
+          "fix": "none",
+          "level": "error"
+        }
       }
     }
   }

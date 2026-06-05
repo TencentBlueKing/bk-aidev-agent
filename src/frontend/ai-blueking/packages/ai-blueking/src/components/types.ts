@@ -7,14 +7,20 @@
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
  */
 
-import type { ComputedRef, Ref } from 'vue';
+import type { ComputedRef, MaybeRefOrGetter, Ref } from 'vue';
 
 import type { RenderMode } from '@blueking/chat-x';
 
-import type { IShortcut } from '../types';
-import type { IChatHelper } from '../types';
-import type { ISession } from '@blueking/chat-helper';
-import type { IAiSlashMenuItem, IToolBtn, Message } from '@blueking/chat-x';
+import type {
+  GetSideRenderComponent,
+  GetSideTabRenderComponent,
+  IChatHelper,
+  IRequestOptions,
+  IShortcut,
+  OnCustomTabChange,
+} from '../types';
+import type { IAgentInfo, ISession } from '@blueking/chat-helper';
+import type { IAiSlashMenuItem, ISkillListItem, IToolBtn, Message } from '@blueking/chat-x';
 import type { TippyOptions } from 'vue-tippy';
 
 /**
@@ -84,6 +90,19 @@ export interface ChatBotExpose {
   stopGeneration: () => void;
   // 会话操作
   switchSession: (sessionCode: string) => Promise<void>;
+
+  /**
+   * 主动刷新 agentInfo 并更新内部状态
+   * 业务方可调用此方法获取最新的 agent 信息，同时会自动更新 shortcuts 等状态
+   *
+   * @returns 最新的 agentInfo 数据，获取失败返回 null
+   */
+  updateAgentInfo: () => Promise<IAgentInfo | null>;
+
+  /** 等待初始化完成，语义对齐 AIBlueking ensureSessionReady */
+  whenReady: () => Promise<void>;
+  /** 是否已完成初始化（独立模式：含 sessionList；集成模式：manager 已挂载） */
+  isReady: boolean;
 }
 
 /**
@@ -122,6 +141,8 @@ export interface ChatBotProps {
 
   /** 欢迎语 */
   helloText?: string;
+  /** 使用 agentName 作为欢迎标题 */
+  useAgentName?: boolean;
   /** 最大宽度 */
   maxWidth?: number | string;
 
@@ -135,8 +156,8 @@ export interface ChatBotProps {
   prompts?: string[];
 
   // === 请求配置 ===
-  /** 请求选项（仅独立模式有效） */
-  requestOptions?: IRequestOptions;
+  /** 请求选项（仅独立模式有效；支持 ref/computed） */
+  requestOptions?: MaybeRefOrGetter<IRequestOptions>;
   /** 资源列表（输入 @ 触发） */
   resources?: IAiSlashMenuItem[];
   // === 会话配置 ===
@@ -148,6 +169,9 @@ export interface ChatBotProps {
   // === 快捷方式 ===
   /** 快捷方式列表 */
   shortcuts?: IShortcut[];
+
+  /** 技能列表（输入 / 触发） */
+  skills?: ISkillListItem[];
 
   // === 基础配置 ===
   /**
@@ -166,15 +190,18 @@ export interface ChatBotProps {
     max?: number;
     min?: number;
   };
+
+  /** 自定义侧栏内容区渲染 */
+  getSideRenderComponent?: GetSideRenderComponent;
+  /** 自定义侧栏 Tab 标签渲染 */
+  getSideTabRenderComponent?: GetSideTabRenderComponent;
+  /** 覆盖默认 Flow 节点详情拉取；未传则使用内置逻辑 */
+  onCustomTabChange?: OnCustomTabChange;
 }
 
-/**
- * 请求配置
- */
-export interface IRequestOptions {
-  data?: (() => Record<string, unknown>) | Record<string, unknown>;
-  headers?: (() => Record<string, string>) | Record<string, string>;
-}
+export type { GetSideRenderComponent, GetSideTabRenderComponent, OnCustomTabChange };
+
+export type { IRequestOptions } from '../types';
 
 export type MessageToolsTippyOptions = Partial<
   Omit<TippyOptions, 'content' | 'getReferenceClientRect' | 'triggerTarget'>

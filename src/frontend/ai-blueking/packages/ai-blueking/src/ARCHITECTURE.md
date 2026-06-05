@@ -314,6 +314,8 @@ interface ChatBotExpose {
   messages: Ref<IMessage[]>;
   currentSession: Ref<ISession | null>;
   isGenerating: Ref<boolean>;
+  isReady: boolean;
+  whenReady(): Promise<void>;
   getChatHelper(): IChatHelper | null;
   setCiteText(text: string): void;
   focusInput(): void;

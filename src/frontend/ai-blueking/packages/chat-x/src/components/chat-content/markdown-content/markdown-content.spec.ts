@@ -106,8 +106,9 @@ vi.mock('../vnode-renderer', () => ({
   }),
 }));
 
-// Mock markdown plugins
+// Mock markdown plugins（与 markdown-content.vue 中 .use() 的导入保持一致）
 vi.mock('../../../plugins', () => ({
+  markdownItBkInlineStyle: vi.fn(() => () => {}),
   markdownItLatex: vi.fn(() => () => {}),
   markdownItMermaid: vi.fn(() => () => {}),
 }));

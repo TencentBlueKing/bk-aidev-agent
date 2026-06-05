@@ -41,11 +41,14 @@ interface PackageJSON {
 }
 
 const LessCodeGlobalVar = 'AIBluekingV2';
+const StandaloneGlobalVar = 'AIBluekingStandalone';
 const env = loadEnv(process.env.NODE_ENV || 'production', process.cwd(), '');
 
 export enum VueVersion {
   Vue2 = 'vue2',
   Vue3 = 'vue3',
+  /** 内联 Vue3 + chat-x 等依赖，供非 Vue 宿主使用 */
+  Standalone = 'standalone',
 }
 
 export function getPackageInfo<T extends PackageJSON>(relativePth = '../package.json') {
@@ -58,8 +61,17 @@ export function getPackageInfo<T extends PackageJSON>(relativePth = '../package.
   return { pkg, pkgPath };
 }
 
+/** Standalone：全部打进 bundle，宿主无需预装 Vue / chat-x */
+function getStandaloneExternal() {
+  return (_id: string) => false;
+}
+
 function getExternal(formats: LibraryFormats[], version: VueVersion) {
   return (id: string) => {
+    if (version === VueVersion.Standalone) {
+      return getStandaloneExternal()(id);
+    }
+
     const isVue3 = version === VueVersion.Vue3;
     if (formats.includes('iife')) {
       return isVue3 && /^vue$/.test(id);
@@ -102,10 +114,14 @@ function getExternal(formats: LibraryFormats[], version: VueVersion) {
   };
 }
 
-function getPrefix(version: VueVersion, formats: LibraryFormats[]) {
-  const isVue3 = version === VueVersion.Vue3;
-  const isIIFE = formats.includes('iife');
-  return isVue3 && !isIIFE ? 'bk' : env.BKUI_PREFIX || 'bk';
+const VUE2_BKUI_PREFIX = 'ai-bk';
+
+function getPrefix(version: VueVersion, _formats: LibraryFormats[]) {
+  if (env.BKUI_PREFIX) {
+    return env.BKUI_PREFIX;
+  }
+  // 仅 Vue2 默认使用独立前缀 ai-bk，Vue3 / Standalone 保持 bk 前缀
+  return version === VueVersion.Vue2 ? VUE2_BKUI_PREFIX : 'bk';
 }
 
 export const createCommonConfig = (prefix = 'bk', isIIFE = false): UserConfig => ({
@@ -113,6 +129,12 @@ export const createCommonConfig = (prefix = 'bk', isIIFE = false): UserConfig =>
     preprocessorOptions: {
       scss: {
         additionalData: `$bk-prefix: ${prefix};`,
+      },
+      less: {
+        modifyVars: {
+          'bk-prefix': prefix,
+        },
+        javascriptEnabled: true,
       },
     },
   },
@@ -164,9 +186,25 @@ export const createBuildConfig = (
 ): UserConfig => {
   const isIIFE = formats.includes('iife');
   const isVue2 = version === VueVersion.Vue2;
+  const isStandalone = version === VueVersion.Standalone;
   const prefix = getPrefix(version, formats);
+  const distDirName = isStandalone ? 'standalone' : version;
+  const libEntry = isStandalone ? 'standalone.ts' : `${version}.ts`;
+  const libGlobalName = isStandalone ? StandaloneGlobalVar : LessCodeGlobalVar;
 
   const vue2Alias = isVue2 && !isIIFE ? [{ find: 'vue', replacement: '@blueking/bkui-library' }] : [];
+
+  // Vue2 / Standalone: 从 chat-x 源码编译并打进产物
+  // Vue3: chat-x 已 external，alias 仅在开发时生效（由 createCommonConfig 处理）
+  const chatxAlias =
+    isVue2 || isStandalone
+      ? [
+          {
+            find: '@blueking/chat-x',
+            replacement: resolve(__dirname, '../../chat-x/src'),
+          },
+        ]
+      : [];
 
   // 注意：不能用 ...createCommonConfig() 展开，否则 commonConfig.resolve 会覆盖 buildConfig.resolve
   // 必须通过 mergeConfig 深度合并，确保 resolve.alias 数组被拼接而非覆盖
@@ -176,17 +214,17 @@ export const createBuildConfig = (
       cssCodeSplit: !isIIFE,
       emptyOutDir,
       lib: {
-        entry: resolve(process.cwd(), `src/${version}.ts`),
+        entry: resolve(process.cwd(), `src/${libEntry}`),
         fileName: format => `index.${format}.min.js`,
         formats,
-        name: LessCodeGlobalVar,
+        name: libGlobalName,
       },
       minify: true,
       rollupOptions: {
         external: getExternal(formats, version),
         output: {
           assetFileNames: isIIFE ? undefined : () => 'style.css',
-          dir: resolve(process.cwd(), `dist/${version}`),
+          dir: resolve(process.cwd(), `dist/${distDirName}`),
           exports: 'named',
           globals: {
             vue: 'Vue',
@@ -229,6 +267,7 @@ export const createBuildConfig = (
           find: '@',
           replacement: resolve(process.cwd(), 'src'),
         },
+        ...chatxAlias,
         ...vue2Alias,
       ],
     },

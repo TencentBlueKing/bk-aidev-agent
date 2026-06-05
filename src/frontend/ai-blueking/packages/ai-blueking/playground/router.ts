@@ -44,6 +44,12 @@ const router = createRouter({
       meta: { title: 'URL 动态切换', group: 'example' },
     },
     {
+      path: '/examples/request-options',
+      name: 'RequestOptions',
+      component: () => import('./views/RequestOptionsView.vue'),
+      meta: { title: 'requestOptions 响应式', group: 'example' },
+    },
+    {
       path: '/examples/header-left-slot',
       name: 'HeaderLeftSlot',
       component: () => import('./views/HeaderLeftSlotView.vue'),
@@ -66,6 +72,12 @@ const router = createRouter({
       name: 'CustomMessageSlot',
       component: () => import('./views/CustomMessageSlotView.vue'),
       meta: { title: '自定义消息渲染', group: 'example' },
+    },
+    {
+      path: '/examples/side-render',
+      name: 'SideRender',
+      component: () => import('./views/SideRenderView.vue'),
+      meta: { title: '侧栏渲染 side-render', group: 'example' },
     },
   ],
 });

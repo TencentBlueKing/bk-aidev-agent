@@ -44,9 +44,15 @@ const requestOptions = {
 const handleSendMessage = (message: string) => console.log('发送:', message);
 const handleError = (error: Error) => console.error('错误:', error);
 
-// 外部控制
-const externalSend = () => chatBotRef.value?.sendMessage('Hello');
-const switchSession = (code: string) => chatBotRef.value?.switchSession(code);
+// 外部控制（≥ v2.1.4-beta.13 建议先 whenReady）
+const externalSend = async () => {
+  await chatBotRef.value?.whenReady();
+  chatBotRef.value?.sendMessage('Hello');
+};
+const switchSession = async (code: string) => {
+  await chatBotRef.value?.whenReady();
+  await chatBotRef.value?.switchSession(code);
+};
 </script>
 ```
 

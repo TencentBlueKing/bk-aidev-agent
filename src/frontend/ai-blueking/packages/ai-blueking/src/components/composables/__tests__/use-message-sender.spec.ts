@@ -1,10 +1,11 @@
-import { describe, it, expect } from 'vitest';
-import { ref, shallowRef } from 'vue';
+import { describe, it, expect, vi } from 'vitest';
+import { ref, shallowRef, computed } from 'vue';
 
 import { createMockChatHelper, createMockChatBusinessManager, createMockEmit } from '../../../__tests__/helpers';
 
 import { useMessageSender } from '../use-message-sender';
 import type { UseMessageSenderParams } from '../use-message-sender';
+import type { IRequestOptions } from '../../../types';
 
 function createParams(overrides: Partial<UseMessageSenderParams> = {}): UseMessageSenderParams {
   return {
@@ -158,6 +159,99 @@ describe('useMessageSender', () => {
       const { stopGeneration } = useMessageSender(params);
 
       await expect(stopGeneration()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('context merging', () => {
+    it('should merge requestOptions.context into property', async () => {
+      const params = createParams({
+        getRequestOptions: () => ({ context: { env: 'prod', region: 'ap-guangzhou' } }),
+      });
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      const { doSendMessage } = useMessageSender(params);
+
+      await doSendMessage('hello', { property: { extra: { command: 'cmd-1' } } });
+
+      const sentOptions = (params.chatBusinessManager.value!.sendMessage as any).mock.calls[0][2];
+      expect(sentOptions.property.extra.command).toBe('cmd-1');
+      expect(sentOptions.property.extra.context).toHaveLength(2);
+      expect(sentOptions.property.extra.context[0]).toMatchObject({
+        env: 'prod',
+        context_type: 'input',
+        __key: 'env',
+        __value: 'prod',
+      });
+      expect(sentOptions.property.extra.context[1]).toMatchObject({
+        region: 'ap-guangzhou',
+        context_type: 'input',
+        __key: 'region',
+        __value: 'ap-guangzhou',
+      });
+    });
+
+    it('should merge context with existing shortcut context', async () => {
+      const params = createParams({
+        getRequestOptions: () => ({ context: { env: 'prod' } }),
+      });
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      const { doSendMessage } = useMessageSender(params);
+
+      const shortcutContext = [
+        { input: 'hello', context_type: 'textarea', __label: 'Input', __key: 'input', __value: 'hello' },
+      ];
+      await doSendMessage('hello', { property: { extra: { context: shortcutContext } } });
+
+      const sentOptions = (params.chatBusinessManager.value!.sendMessage as any).mock.calls[0][2];
+      expect(sentOptions.property.extra.context).toHaveLength(2);
+      expect(sentOptions.property.extra.context[0]).toMatchObject({ __key: 'input' });
+      expect(sentOptions.property.extra.context[1]).toMatchObject({ __key: 'env' });
+    });
+
+    it('should override shortcut context entries with same __key', async () => {
+      const params = createParams({
+        getRequestOptions: () => ({ context: { input: 'new value' } }),
+      });
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      const { doSendMessage } = useMessageSender(params);
+
+      const shortcutContext = [
+        { input: 'old value', context_type: 'textarea', __label: 'Input', __key: 'input', __value: 'old value' },
+      ];
+      await doSendMessage('hello', { property: { extra: { context: shortcutContext } } });
+
+      const sentOptions = (params.chatBusinessManager.value!.sendMessage as any).mock.calls[0][2];
+      expect(sentOptions.property.extra.context).toHaveLength(1);
+      expect(sentOptions.property.extra.context[0]).toMatchObject({ __key: 'input', input: 'new value' });
+    });
+
+    it('should support dynamic context via getter function', async () => {
+      const contextValue = ref('prod');
+      const params = createParams({
+        getRequestOptions: () => ({ context: { env: contextValue.value } }),
+      });
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      const { doSendMessage } = useMessageSender(params);
+
+      await doSendMessage('hello');
+      const sentOptions1 = (params.chatBusinessManager.value!.sendMessage as any).mock.calls[0][2];
+      expect(sentOptions1.property.extra.context[0]).toMatchObject({ env: 'prod' });
+
+      contextValue.value = 'staging';
+      await doSendMessage('hello again');
+      const sentOptions2 = (params.chatBusinessManager.value!.sendMessage as any).mock.calls[1][2];
+      expect(sentOptions2.property.extra.context[0]).toMatchObject({ env: 'staging' });
+    });
+
+    it('should not modify property when getRequestOptions is not provided', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      const { doSendMessage } = useMessageSender(params);
+
+      await doSendMessage('hello', { property: { extra: { command: 'cmd-1' } } });
+
+      const sentOptions = (params.chatBusinessManager.value!.sendMessage as any).mock.calls[0][2];
+      expect(sentOptions.property.extra.command).toBe('cmd-1');
+      expect(sentOptions.property.extra.context).toBeUndefined();
     });
   });
 });

@@ -49,3 +49,10 @@ export const resourceTypeMap = {
 export type ResourceType = keyof typeof resourceTypeMap;
 
 export const noop = () => {};
+
+export interface ISkillListItem {
+  description: string;
+  icon: string;
+  skill_code: string;
+  skill_name: string;
+}

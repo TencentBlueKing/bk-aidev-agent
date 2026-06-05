@@ -67,6 +67,13 @@ export const transferAgentInfoApi2AgentInfo = (data: IAgentInfoApi): IAgentInfo 
       }
     : undefined,
   agentName: data?.agent_name,
+  relatedSkills: data?.related_skills?.map(skill => ({
+    id: skill.id,
+    skill_name: skill.skill_name,
+    skill_code: skill.skill_code,
+    description: skill.description,
+    icon: skill.icon,
+  })),
   chatGroup: data?.chat_group
     ? {
         enabled: data.chat_group.enabled,

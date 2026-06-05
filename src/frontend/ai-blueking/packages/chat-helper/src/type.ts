@@ -26,6 +26,9 @@
 
 import type { IRequestConfig, ISSEProtocol } from './http/fetch';
 import type { IResponse } from './http/fetch';
+import type { MaybeRequestValue, RequestData, RequestHeaders } from './http/fetch/resolve-request-value';
+
+export type { MaybeRequestValue, RequestData, RequestHeaders } from './http/fetch/resolve-request-value';
 
 export interface IUseChatHelperOptions {
   protocol?: ISSEProtocol;
@@ -34,10 +37,10 @@ export interface IUseChatHelperOptions {
     request?: (config: IRequestConfig) => IRequestConfig;
     response?: (response: IResponse) => IResponse;
   };
- /** 全局默认请求配置，通过内置拦截器自动合并到每次请求（函数形式可延迟求值） */
+  /** 全局默认请求配置，通过内置拦截器自动合并到每次请求（支持对象/函数/ref 延迟求值） */
   requestData: {
-    data?: (() => Record<string, unknown>) | Record<string, unknown>;
-    headers?: (() => Record<string, string>) | Record<string, string>;
+    data?: MaybeRequestValue<RequestData>;
+    headers?: MaybeRequestValue<RequestHeaders>;
     urlPrefix: string;
   };
 }

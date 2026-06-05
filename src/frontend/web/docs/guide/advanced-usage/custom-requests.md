@@ -7,10 +7,20 @@ AI 小鲸 v2.0 提供了灵活的请求自定义能力，允许你配置请求�
 `ChatBot` 和 `AIBlueking` 组件都接受 `requestOptions` 属性，用于全局配置所有 HTTP 请求。这是最常用的认证配置方式：
 
 ```typescript
+import type { MaybeRequestValue } from '@blueking/chat-helper';
+import type { MaybeRefOrGetter } from 'vue';
+import type { IRequestOptions } from '@blueking/ai-blueking';
+
+// 组件 props：整体可为 ref / computed
+type RequestOptionsProp = MaybeRefOrGetter<IRequestOptions>;
+
 interface IRequestOptions {
-  headers?: () => Record<string, string>;  // 动态请求头
-  data?: () => Record<string, unknown>;    // 附加请求体数据
-  context?: Record<string, string> | (() => Record<string, string>);  // 上下文信息
+  /** 支持对象、零参函数、ref、computed */
+  headers?: MaybeRequestValue<Record<string, string>>;
+  /** 支持对象、零参函数、ref、computed；按 HTTP 方法写入 body 或 query */
+  data?: MaybeRequestValue<Record<string, unknown>>;
+  /** 上下文信息，合并到消息的 property.extra.context（≥ v2.1.4-beta.15） */
+  context?: MaybeRequestValue<Record<string, unknown> | Array<Record<string, unknown>>>;
 }
 ```
 
@@ -74,10 +84,160 @@ const requestOptions = {
 
 ### 说明
 
-- `headers` 和 `data` 都是**函数**而非静态对象，每次请求时都会重新执行，确保获取到最新的值（如最新的 token）
-- `headers` 返回的键值对会合并到每个请求的 HTTP 头中
-- `data` 返回的键值对会合并到每个请求的 HTTP Body 中
-- 组件内部会通过 `watch` 深度监听 `requestOptions` 变化，动态更新 SDK 配置
+- `headers` / `data` 在**每次请求前**通过 `resolveRequestValue` 求值，支持普通对象、零参函数、`ref`、`computed`
+- `headers` 合并到每个请求的 HTTP 头
+- `data` 按方法自动分流：**POST/PUT/PATCH/DELETE** → 合并进 body；**GET/HEAD/OPTIONS** → 合并进 query（`params`）。在 Network 面板中，会话列表等 GET 应在 URL 上看到 `app_id` 等字段，发消息 POST 应在 Request Payload 中看到
+- 外层 `requestOptions` 可为 `ref` / `computed`，整体替换后同样生效（无需销毁重建 `ChatBot` / `AIBlueking`）
+- 直接使用 `@blueking/chat-helper` 时，在 `useChatHelper({ requestData: { headers, data } })` 中使用相同类型与分流规则
+
+### 响应式示例（ref / computed）
+
+::: tip 推荐
+需要随登录态、租户切换而更新时，优先使用内层 `computed`，或外层 `computed<IRequestOptions>`，比仅依赖函数闭包更直观。
+:::
+
+```vue
+<template>
+  <AIBlueking url="/api/v1/agent/chat" :request-options="requestOptions" />
+</template>
+
+<script setup lang="ts">
+import { computed, ref } from 'vue';
+import { AIBlueking, type IRequestOptions } from '@blueking/ai-blueking';
+
+const token = ref('token-alpha');
+const appId = ref('my-app');
+const tenantId = ref('tenant-001');
+
+const requestOptions = computed<IRequestOptions>(() => ({
+  headers: {
+    Authorization: `Bearer ${token.value}`,
+  },
+  data: {
+    app_id: appId.value,
+    tenant_id: tenantId.value,
+  },
+}));
+
+// 切换 token / app_id 后，下一次 getAgentInfo、getSessions、发消息等请求即携带新值
+</script>
+```
+
+内层字段也可单独使用 `computed`：
+
+```typescript
+const requestOptions: IRequestOptions = {
+  headers: computed(() => ({ Authorization: `Bearer ${token.value}` })),
+  data: { locale: 'zh-cn' },
+};
+```
+
+## 上下文参数 context
+
+::: info 版本要求
+`context` 字段需要 **≥ v2.1.4-beta.15**。
+:::
+
+`requestOptions.context` 用于向消息注入业务上下文（如当前页面信息、用户选择、表单数据等），数据会自动合并到消息的 `property.extra.context` 中，后端可通过该字段获取上下文进行处理。
+
+### 支持的格式
+
+| 格式 | 说明 |
+| --- | --- |
+| `Record<string, unknown>` | 简单 KV，每个 entry 自动转换为结构化条目 |
+| `Array<Record<string, unknown>>` | 数组；已有 `__key` 的结构化条目直接透传，简单 KV 自动转换 |
+
+转换后的结构化条目格式：
+
+```typescript
+{
+  key: value,                    // 原始 KV
+  context_type: 'input',         // 固定值
+  __label: key,                  // 显示标签
+  __key: key,                    // 唯一标识（用于去重）
+  __value: value                 // 值
+}
+```
+
+### 基本用法
+
+```vue
+<template>
+  <ChatBot
+    url="/api/v1/agent/chat"
+    :request-options="requestOptions"
+  />
+</template>
+
+<script setup lang="ts">
+import { ChatBot } from '@blueking/ai-blueking';
+
+const requestOptions = {
+  headers: () => ({
+    Authorization: `Bearer ${getToken()}`,
+  }),
+  context: {
+    page: 'settings',
+    module: 'user-management',
+  },
+};
+</script>
+```
+
+发送消息时，`context` 会自动合并到 `property.extra.context`：
+
+```json
+{
+  "property": {
+    "extra": {
+      "context": [
+        { "page": "settings", "context_type": "input", "__label": "page", "__key": "page", "__value": "settings" },
+        { "module": "user-management", "context_type": "input", "__label": "module", "__key": "module", "__value": "user-management" }
+      ]
+    }
+  }
+}
+```
+
+### 结构化数组格式
+
+当需要更精细的控制时，可直接传入结构化数组：
+
+```typescript
+const requestOptions = {
+  context: [
+    { page: 'dashboard', context_type: 'input', __label: '页面', __key: 'page', __value: 'dashboard' },
+    { role: 'admin', context_type: 'system', __label: '角色', __key: 'role', __value: 'admin' },
+  ],
+};
+```
+
+### 与快捷指令 context 的合并
+
+当用户发送快捷指令时，快捷指令的表单数据会生成 `property.extra.context`。`requestOptions.context` 的条目会**追加**到快捷指令 context 之后；key 冲突时（以 `__key` 判断），`requestOptions` 的条目**覆盖**已有的快捷指令条目。
+
+```typescript
+// 快捷指令产生的 context: [{ code: '...', __key: 'code' }]
+// requestOptions.context: [{ code: 'override', __key: 'code' }, { page: 'settings', __key: 'page' }]
+// 最终合并结果: [{ code: 'override', __key: 'code' }, { page: 'settings', __key: 'page' }]
+```
+
+### 响应式 context
+
+与 `headers` / `data` 一致，`context` 支持 `MaybeRequestValue`，可使用函数、`ref` 或 `computed`：
+
+```typescript
+import { computed, ref } from 'vue';
+
+const currentPage = ref('dashboard');
+
+const requestOptions = {
+  context: computed(() => ({
+    page: currentPage.value,
+    timestamp: Date.now(),
+  })),
+};
+```
 
 ## useChatBootstrap + ChatBot 组合模式
 

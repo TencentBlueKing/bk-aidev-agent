@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "jsx": "preserve",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ESNext"
+  },
+  "include": ["src/**/*.js", "src/**/*.vue"]
+}

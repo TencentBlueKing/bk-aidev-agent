@@ -33,8 +33,6 @@ import './assets/icon/iconcool.js';
 import '../../chat-x/dist/index.css';
 import './assets/icon/style.css';
 
-// 导出默认组件
-export { default } from './ai-blueking.vue';
-
-// 导出所有 V2 模块
-export * from './index';
+// 复用核心导出（icon/CSS 副作用已在此文件顶部引入）
+export { default } from './vue3-core';
+export * from './vue3-core';

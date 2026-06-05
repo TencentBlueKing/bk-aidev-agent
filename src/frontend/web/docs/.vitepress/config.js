@@ -1,16 +1,16 @@
 import { createRequire } from "node:module"
 import { defineConfig } from "vitepress"
 import express from "express"
-import { version } from "../../package.json"
 import container from "markdown-it-container"
+import { aiBluekingVersion as version } from "./utils/resolve-changelog-version.js"
 
-const base = process.env.VITEPRESS_BASE || '/'
+const base = process.env.VITEPRESS_BASE || '__DOCS_BASE__/'
 const require = createRequire(import.meta.url)
 const { createMockAguiRouter } = require("./mock-agui-routes.cjs")
 
 export default defineConfig({
   title: "AI 小鲸",
-  description: "智能对话组件文档 — v2.0",
+  description: "智能对话组件文档 — v2.1",
   lang: "zh-CN",
   base,
   /** 文档内嵌 bkui-vue / chat-x 等组件仅针对浅色主题调优，固定浅色避免深色模式样式错乱 */
@@ -47,6 +47,7 @@ export default defineConfig({
           items: [
             { text: "AIBlueking 浮窗模式", link: "/guide/integration-modes/aiblueking-floating" },
             { text: "ChatBot 页面嵌入模式", link: "/guide/integration-modes/chatbot-embedded" },
+            { text: "Standalone 非 Vue 宿主", link: "/guide/integration-modes/standalone-bundle" },
             { text: "原子组件组装", link: "/guide/integration-modes/atomic-composition" },
           ],
         },
@@ -54,11 +55,14 @@ export default defineConfig({
           text: "功能说明",
           items: [
             { text: "聊天交互", link: "/guide/core-features/chat-interaction" },
+            { text: "蓝鲸行内富文本", link: "/guide/core-features/markdown-inline-style" },
             { text: "内容引用", link: "/guide/core-features/content-referencing" },
             { text: "快捷指令", link: "/guide/core-features/shortcuts" },
             { text: "提示词与资源", link: "/guide/core-features/prompts" },
             { text: "会话管理", link: "/guide/core-features/session-management" },
             { text: "消息分享", link: "/guide/core-features/sharing" },
+            { text: "消息自定义渲染", link: "/guide/core-features/custom-message-rendering" },
+            { text: "侧栏 Tab 自定义渲染", link: "/guide/core-features/side-render-customization" },
             { text: "UI 定制", link: "/guide/core-features/ui-customization" },
             { text: "Skill 指引", link: "/guide/core-features/skill-guide" },
           ],
@@ -96,6 +100,7 @@ export default defineConfig({
           items: [
             { text: "ChatBot 组件", link: "/api/ai-blueking/chatbot" },
             { text: "AIBlueking 组件", link: "/api/ai-blueking/aiblueking" },
+            { text: "Standalone 子入口", link: "/api/ai-blueking/standalone" },
             { text: "业务管理器", link: "/api/ai-blueking/managers" },
             { text: "类型定义", link: "/api/ai-blueking/types" },
           ],
@@ -176,13 +181,8 @@ export default defineConfig({
         "bkui-vue",
       ],
     },
-    envPrefix: "BK_",
     define: {
-      "process.env.BK_STATIC_URL": JSON.stringify(process.env.BK_STATIC_URL),
-      "process.env.BK_SITE_URL": JSON.stringify(process.env.BK_SITE_URL),
-      "process.env.BK_API_URL_TMPL": JSON.stringify(process.env.BK_API_URL_TMPL),
-      "process.env.BK_API_GATEWAY_NAME": JSON.stringify(process.env.BK_API_GATEWAY_NAME),
-      "process.env.BK_AIDEV_URL": JSON.stringify(process.env.BK_AIDEV_URL),
+      __AI_BLUEKING_VERSION__: JSON.stringify(version),
     },
   },
 })

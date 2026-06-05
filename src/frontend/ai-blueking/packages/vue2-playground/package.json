@@ -10,7 +10,6 @@
     "@blueking/ai-blueking": "workspace:*",
     "@blueking/bkui-library": "0.0.0-beta.6",
     "bk-magic-vue": "latest",
-    "@blueking/chat-helper": "workspace:*",
     "tippy.js": "^6.3.7",
     "vue": "2.7.16",
     "vue-router": "^3.6.5"

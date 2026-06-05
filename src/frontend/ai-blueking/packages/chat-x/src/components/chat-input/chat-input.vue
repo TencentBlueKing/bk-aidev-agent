@@ -37,6 +37,7 @@
         :placeholder="placeholder"
         :prompts="prompts"
         :resources="resources"
+        :skills="skills"
         @keydown="handleKeyDown"
         @update:model-value="handleUpdateModelValue"
         @upload="handleUpload"
@@ -93,6 +94,7 @@
   import {
     type AITippyProps,
     type IAiSlashMenuItem,
+    type ISkillListItem,
     type Shortcut,
     type TagSchema,
     type UploadFile,
@@ -134,19 +136,23 @@
     resources?: IAiSlashMenuItem[];
     shortcutId?: string;
     shortcuts?: Shortcut[];
+    skills?: ISkillListItem[];
     supportUpload?: boolean; // 是否支持上传文件 默认是true
     tippyOptions?: AITippyProps; // tips配置
   };
   const props = withDefaults(defineProps<ChatInputProps>(), {
     placeholder: isEn
-      ? `Input "/" to trigger prompt
+      ? `Input "/" to trigger skill
+Input "\\" to trigger prompt
 Input "@" to trigger tool and MCP
 Use Shift + Enter to enter a new line`
-      : `输入 “/”唤出 Prompt
-输入“@”唤出 工具 和 MCP
+      : `输入 "/" 唤出 Skill
+输入 "\\" 唤出 Prompt
+输入 "@" 唤出 工具和 MCP
 通过 Shift + Enter 进行换行输入`,
     prompts: () => [],
     resources: () => [],
+    skills: () => [],
     inputMaxHeight: 200,
     supportUpload: true,
   });
