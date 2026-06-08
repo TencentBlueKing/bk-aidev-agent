@@ -1,7 +1,7 @@
 <template>
   <div
     class="ai-chat-container"
-    :style="{ '--resize-main-width': resizeMainWidth }"
+    :style="{ '--resize-main-width': resizeMainWidth, borderTopColor: isCollapse ? 'transparent' : '#eaebf0' }"
   >
     <div
       v-if="chatLoading"
@@ -20,7 +20,11 @@
       @resizing="handleResizing"
     >
       <template #aside>
-        <template v-if="!isCollapse && (executionGroups?.length || keyword?.length) && renderMode !== RenderMode.Share">
+        <div
+          v-if="!isCollapse && (executionGroups?.length || keyword?.length) && renderMode !== RenderMode.Share"
+          ref="fullScreenRef"
+          class="ai-full-screen-wrapper"
+        >
           <Tab
             :active="selectedTab.name"
             class="ai-chat-container-tab"
@@ -71,6 +75,27 @@
               "
               :name="tab.name"
             />
+            <template #setting>
+              <div class="screen-wrapper">
+                <ToolBtn
+                  class="screen-btn"
+                  :tippy-options="{
+                    ...commonTippyOptions,
+                    appendTo: isFullScreen ? fullScreenRef! : commonTippyOptions?.appendTo,
+                    content: isFullScreen ? t('退出全屏') : t('全屏'),
+                  }"
+                >
+                  <FullScreenIcon
+                    v-if="!isFullScreen"
+                    @click="enter"
+                  />
+                  <UnFullScreenIcon
+                    v-else
+                    @click="exit"
+                  />
+                </ToolBtn>
+              </div>
+            </template>
           </Tab>
           <template v-if="selectedTab?.name === EXECUTION_TAB_NAME">
             <ExecutionSummary
@@ -105,15 +130,14 @@
               </component>
             </div>
           </template>
-        </template>
+        </div>
         <div
           v-if="executionGroups?.length && renderMode !== RenderMode.Share"
           class="collapse-button"
-          :class="{ 'is-right': placement === 'right' }"
+          :class="{ 'is-right': placement === 'right', 'is-collapsed': isCollapse }"
           @click="handleCollapse"
         >
-          <ExecutionIcon />
-          {{ t('执行情况') }}
+          <CollapsedIcon />
         </div>
       </template>
       <template #main>
@@ -230,6 +254,7 @@
     nextTick,
     onUnmounted,
     shallowRef,
+    useTemplateRef,
     watch,
     withDirectives,
   } from 'vue';
@@ -241,11 +266,14 @@
   import { useMessageGroup } from '../../composables';
   import { useCommonTippyProvider, useRenderModeProvider } from '../../composables/use-common';
   import { EXECUTION_TAB_NAME, useCustomTabProvider } from '../../composables/use-custom-tab';
+  import { useFullScreen } from '../../composables/use-full-screen';
   import { useGlobalConfig } from '../../composables/use-global-config';
   import { OverflowTips as vOverflowTips } from '../../directives';
-  import { CloseIcon, ExecutionIcon, NodeTabIcon } from '../../icons';
+  import { FullScreenIcon, UnFullScreenIcon } from '../../icons';
+  import { CloseIcon, CollapsedIcon, ExecutionIcon, NodeTabIcon } from '../../icons';
   import { AIBluekingBannerIcon } from '../../icons';
   import { t } from '../../lang/lang';
+  import ToolBtn from '../ai-buttons/tool-btn/tool-btn.vue';
   import ShortcutRender from '../ai-shortcut/shortcut-render/shortcut-render.vue';
   import ContentRender from '../chat-content/content-render/content-render.vue';
   import ChatInput, { type ChatInputEmits, type ChatInputProps } from '../chat-input/chat-input.vue';
@@ -330,6 +358,9 @@
     required: false,
     default: RenderMode.Chat,
   });
+
+  const fullScreenRef = useTemplateRef<HTMLElement>('fullScreenRef');
+  const { isFullScreen, enter, exit } = useFullScreen(fullScreenRef);
 
   useRenderModeProvider({ renderMode });
 
@@ -536,6 +567,7 @@
     height: 100%;
     font-size: 12px;
     border: none;
+    border-top: 1px solid transparent;
 
     &-loading {
       display: flex;
@@ -543,6 +575,64 @@
       justify-content: center;
       width: 100%;
       height: 100%;
+    }
+
+    .collapse-button {
+      position: absolute;
+      top: 50%;
+      left: -16px;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      min-height: 64px;
+      padding: 8px 2px;
+      font-size: 14px;
+      color: #fff;
+      background: #dcdee5;
+      border-radius: 4px 0 0 4px;
+
+      // box-shadow: 2px 0 4px 0 #0000001a;
+      transform: translateY(-50%);
+
+      .ai-common-icon {
+        width: 14px;
+        height: 14px;
+        margin-bottom: 2px;
+        font-size: 14px;
+        transition: transform 0.2s ease-in-out;
+      }
+
+      &.is-collapsed {
+        .ai-common-icon {
+          transform: rotate(180deg);
+        }
+      }
+
+      &.is-right {
+        right: -17px;
+        left: auto;
+        border-radius: 0 4px 4px 0;
+
+        .ai-common-icon {
+          transform: rotate(180deg) !important;
+        }
+
+        &.is-collapsed {
+          .ai-common-icon {
+            transform: rotate(0deg) !important;
+          }
+        }
+      }
+
+      &:hover {
+        color: #fff;
+        cursor: pointer;
+        background: #3a84ff;
+        box-shadow: 2px 0 4px 0 #0000001a;
+      }
     }
 
     &-tab {
@@ -587,6 +677,41 @@
           opacity: 0.8;
         }
       }
+
+      .screen-wrapper {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+
+        // padding-left: 8px;
+        color: #979ba5;
+
+        &::before {
+          position: absolute;
+          top: 14px;
+          left: -8px;
+          display: block;
+          width: 1px;
+          height: 12px;
+          content: '';
+          background: #eaebf0;
+        }
+
+        .screen-btn {
+          font-size: 12px;
+        }
+
+        .ai-common-icon {
+          /* stylelint-disable-next-line no-descending-specificity */
+          &:hover {
+            color: #3a84ff;
+            cursor: pointer;
+          }
+        }
+      }
     }
 
     &-resize-layout {
@@ -611,7 +736,8 @@
         position: relative;
         width: var(--resize-main-width);
         padding: 8px;
-        overflow: visible;
+
+        // overflow: visible;
       }
 
       &.ai-is-collapse {
@@ -630,6 +756,12 @@
           }
         }
       }
+
+      .ai-full-screen-wrapper {
+        width: 100%;
+        height: 100%;
+        background-color: white;
+      }
     }
 
     &-message-slot {
@@ -640,47 +772,6 @@
         margin-left: auto;
         font-size: 12px;
         font-weight: normal;
-      }
-    }
-
-    .collapse-button {
-      position: absolute;
-      top: 50%;
-      left: -20px;
-      z-index: 2;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      width: 20px;
-      min-height: 96px;
-      padding: 8px 4px;
-      font-size: 12px;
-      color: #4d4f56;
-      background: #dcdee5;
-      border-radius: 4px 0 0 4px;
-
-      // box-shadow: 2px 0 4px 0 #0000001a;
-      transform: translateY(-50%);
-
-      &.is-right {
-        right: -21px;
-        left: auto;
-        border-radius: 0 4px 4px 0;
-      }
-
-      .ai-common-icon {
-        width: 12px;
-        height: 12px;
-        margin-bottom: 2px;
-        font-size: 12px;
-      }
-
-      &:hover {
-        color: #fff;
-        cursor: pointer;
-        background: #3a84ff;
-        box-shadow: 2px 0 4px 0 #0000001a;
       }
     }
 

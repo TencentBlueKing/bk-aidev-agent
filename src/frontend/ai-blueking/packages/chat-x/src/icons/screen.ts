@@ -24,12 +24,38 @@
  * IN THE SOFTWARE.
  */
 
-export * from './ai';
-export * from './content';
-export * from './execution';
-export * from './image-preview';
-export * from './input';
-export * from './messages';
-export * from './screen';
-export * from './shortcuts';
-export * from './tools';
+import { h } from 'vue';
+
+import { commonSVGProps } from '../common/icon';
+
+export const FullScreenIcon = h(
+  'svg',
+  {
+    ...commonSVGProps,
+    class: {
+      [commonSVGProps.class]: true,
+      'ai-full-screen-icon': true,
+    },
+  },
+  [
+    h('path', {
+      d: 'M85.333333 938.666667V768H0v213.333333c0 23.466667 19.2 42.666667 42.666667 42.666667H256v-85.333333H85.333333zM85.333333 85.333333h170.666667V0H42.666667C19.2 0 0 19.2 0 42.666667V256h85.333333V85.333333z m853.333334 853.333334H768v85.333333h213.333333c23.466667 0 42.666667-19.2 42.666667-42.666667V768h-85.333333v170.666667z m42.666666-938.666667H768v85.333333h170.666667v170.666667h85.333333V42.666667c0-23.466667-19.2-42.666667-42.666667-42.666667z',
+    }),
+  ],
+);
+
+export const UnFullScreenIcon = h(
+  'svg',
+  {
+    ...commonSVGProps,
+    class: {
+      [commonSVGProps.class]: true,
+      'ai-un-full-screen-icon': true,
+    },
+  },
+  [
+    h('path', {
+      d: 'M170.666667 853.333333v170.666667h85.333333V810.666667c0-23.466667-19.2-42.666667-42.666667-42.666667H0v85.333333h170.666667z m0-682.666666H0v85.333333h213.333333c23.466667 0 42.666667-19.2 42.666667-42.666667V0H170.666667v170.666667z m682.666666 682.666666h170.666667V768H810.666667c-23.466667 0-42.666667 19.2-42.666667 42.666667V1024h85.333333v-170.666667z m-42.666666-597.333333H1024V170.666667h-170.666667V0H768v213.333333c0 23.466667 19.2 42.666667 42.666667 42.666667z',
+    }),
+  ],
+);

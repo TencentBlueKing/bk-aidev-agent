@@ -186,6 +186,7 @@ domain: input
 - **消息分组**：内置 `useMessageGroup` 自动处理消息分组、Tool 合并、Loading 注入
 - **输入区状态推导**：传给 `MessageContainer` 与 `ChatInput` 的 `messageStatus` 为内部计算值 `inputStatus`：当分组中存在 id 为 `LOADING_MESSAGE_ID`（`'__loading__'`，由 `useMessageGroup` 注入的占位 Loading 消息）时，对内使用 `MessageStatus.Fetching`；否则使用外部传入的 `messageStatus`。用于在「已发用户消息、尚未流式」阶段与流式中一致地展示停止能力，并避免输入区重复发送
 - **执行摘要**：侧边栏展示工具调用 / FlowAgent 执行记录，支持关键词搜索和对话定位
+- **侧栏全屏**：Tab 栏右侧提供全屏/退出全屏按钮，基于 `useFullScreen` 将侧栏区域（`.ai-full-screen-wrapper`）以浏览器原生全屏展示；全屏时 Tippy 的 `appendTo` 自动切换为全屏容器，避免 tooltip 被遮挡
 - **自定义 Tab**：通过 `useCustomTabProvider` 支持动态添加自定义 Tab（如节点详情）
 - **分享模式**：内置消息多选分享流程，选中用户消息后确认分享
 - **渲染模式注入**：`renderMode` 会通过内部 Provider 下传给后代内容组件；例如 FlowAgent 节点在 `Share` 模式下隐藏耗时和「详情」入口
@@ -198,12 +199,14 @@ ai-chat-container
 ├── Loading（chatLoading 时）
 └── ResizeLayout
     ├── aside（侧边栏）
-    │   ├── Tab 标签页
-    │   │   ├── 执行情况（默认 Tab）
-    │   │   └── 自定义 Tab × N（可关闭；标签可由 `getSideTabRenderComponent` 自定义）
-    │   ├── ExecutionSummary（执行情况 Tab 内容）
-    │   ├── 自定义 Tab 组件（`getSideRenderComponent` 优先，否则 `data.component`；可向子组件注入 #locateButton）
-    │   └── collapse-button（折叠按钮）
+    │   ├── .ai-full-screen-wrapper（全屏目标容器，ref=fullScreenRef）
+    │   │   ├── Tab 标签页
+    │   │   │   ├── 执行情况（默认 Tab）
+    │   │   │   ├── 自定义 Tab × N（可关闭；标签可由 `getSideTabRenderComponent` 自定义）
+    │   │   │   └── #setting 插槽 → 全屏/退出全屏 ToolBtn（FullScreenIcon / UnFullScreenIcon）
+    │   │   ├── ExecutionSummary（执行情况 Tab 内容）
+    │   │   └── 自定义 Tab 组件（`getSideRenderComponent` 优先，否则 `data.component`；可向子组件注入 #locateButton）
+    │   └── collapse-button（折叠按钮，CollapsedIcon；折叠时图标旋转，hover 高亮 #3a84ff）
     └── main（主内容区）
         ├── MessageContainer（有消息时）
         │   └── 消息列表 + 工具栏
@@ -332,10 +335,12 @@ ai-chat-container
 
 侧边栏放置方向通过 `placement` 控制：
 
-| `placement` | 侧边栏位置   | 折叠按钮位置 |
-| ----------- | ------------ | ------------ |
-| `left`      | 左侧（默认） | 主区域左边缘 |
-| `right`     | 右侧         | 主区域右边缘 |
+| `placement` | 侧边栏位置   | 折叠按钮位置 | 折叠图标旋转 |
+| ----------- | ------------ | ------------ | ------------ |
+| `left`      | 左侧（默认） | 主区域左边缘 | 折叠时旋转 180° |
+| `right`     | 右侧         | 主区域右边缘 | 默认旋转 180°，折叠时恢复 0° |
+
+> 折叠按钮仅展示 `CollapsedIcon`（不再显示「执行情况」文案），通过图标旋转方向指示展开/折叠状态。
 
 **placement 对比**（左右两种布局）
 
@@ -375,6 +380,16 @@ ai-chat-container
     </div>
   </div>
 </div>
+
+## 侧栏全屏
+
+当侧栏 Tab 区域可见时，Tab 栏右侧（`#setting` 插槽）内置全屏切换按钮：
+
+- 点击 **全屏** 图标：调用 `useFullScreen(fullScreenRef).enter()`，将 `.ai-full-screen-wrapper` 进入浏览器原生全屏
+- 点击 **退出全屏** 图标：调用 `exit()` 退出；用户按 ESC 退出时 `isFullScreen` 也会自动同步
+- 全屏状态下，侧栏内 `v-overflow-tips` 的 `appendTo` 会指向全屏容器，避免 tooltip 挂载到 `document.body` 后被全屏层遮挡
+
+该能力由内部 `useFullScreen` composable 提供，详见 [useFullScreen](../../composables/use-full-screen.md)。
 
 ## 自定义 Tab
 
@@ -803,3 +818,5 @@ interface Shortcut {
 - [ShortcutRender](./shortcut-render.md) — 快捷指令表单
 - [ExecutionSummary](./execution-summary.md) — 执行摘要侧栏
 - [SelectionFooter](../atomic/selection-footer.md) — 多选操作栏
+- [ToolBtn](../atomic/tool-btn.md) — 侧栏全屏按钮（自定义插槽）
+- [useFullScreen](../../composables/use-full-screen.md) — 侧栏全屏控制

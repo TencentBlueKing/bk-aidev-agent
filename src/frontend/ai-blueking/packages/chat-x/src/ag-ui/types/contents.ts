@@ -86,6 +86,7 @@ export type BkFlowNode = {
 };
 
 export type BkFlowTask = {
+  confidence_title?: string; // 有效证据标题
   has_confidence?: boolean; // 是否有有效证据， 置信度
   is_active?: boolean; // 是否默认激活
   nodes: Record<string, BkFlowNode>;

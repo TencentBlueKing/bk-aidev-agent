@@ -228,23 +228,17 @@
     })),
   );
 
-  function formatValue(value: unknown): string {
+  const formatValue = (value: unknown): string => {
     if (value === null || value === undefined) return '--';
     if (typeof value === 'object') return JSON.stringify(value);
     return String(value);
-  }
+  };
 </script>
 
 <style lang="scss">
-  .flow-agent-node-detail {
-    $color-title: #313238;
-    $color-text: #4d4f56;
-    $color-text-secondary: #979ba5;
-    $color-primary: #3a84ff;
-    $color-border: #dcdee5;
-    $color-bg-light: #fafbfd;
-    $color-bg-tab: #f0f1f5;
+  @use '../../../styles/variables.scss' as variables;
 
+  .flow-agent-node-detail {
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -256,7 +250,7 @@
       align-items: center;
       margin: 0 0 16px;
       line-height: 24px;
-      color: $color-title;
+      color: variables.$color-title;
 
       &-content {
         flex: 1;
@@ -273,7 +267,7 @@
       align-items: center;
       height: 32px;
       padding: 4px;
-      background: $color-bg-tab;
+      background: variables.$color-bg-tab;
       border-radius: 2px;
     }
 
@@ -287,19 +281,20 @@
       padding: 5px 12px;
       font-size: 12px;
       line-height: 20px;
-      color: $color-text;
+      color: variables.$color-text;
       cursor: pointer;
       border-radius: 2px;
 
       &.is-active {
-        color: $color-primary;
+        color: variables.$color-primary;
         background: white;
         box-shadow: 1px 1px 4px 0 rgb(0 0 0 / 10%);
       }
     }
 
     .detail-body {
-      height: calc(100% - 72px);
+      flex: 1;
+      min-height: 0;
       padding: 16px 24px;
       margin: -16px -24px;
       margin-top: 16px;
@@ -333,7 +328,7 @@
 
     .info-form {
       overflow: hidden;
-      border: 1px solid $color-border;
+      border: 1px solid variables.$color-border;
       border-radius: 2px;
     }
 
@@ -341,7 +336,7 @@
       display: flex;
 
       &:not(:last-child) {
-        border-bottom: 1px solid $color-border;
+        border-bottom: 1px solid variables.$color-border;
       }
     }
 
@@ -354,9 +349,9 @@
       padding: 11px 16px;
       font-size: 12px;
       line-height: 20px;
-      color: $color-text;
-      background: $color-bg-light;
-      border-right: 1px solid $color-border;
+      color: variables.$color-text;
+      background: variables.$color-bg-light;
+      border-right: 1px solid variables.$color-border;
     }
 
     .info-value {
@@ -368,7 +363,7 @@
       padding: 11px 16px;
       font-size: 12px;
       line-height: 20px;
-      color: $color-text;
+      color: variables.$color-text;
       word-break: break-all;
     }
 
@@ -388,7 +383,7 @@
       font-size: 12px;
       line-height: 1;
       color: white;
-      background: $color-text-secondary;
+      background: variables.$color-text-secondary;
       border-radius: 1px;
       transform: scale(0.8);
     }

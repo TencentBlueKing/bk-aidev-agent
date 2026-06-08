@@ -191,6 +191,7 @@ function sidebarAPI() {
         { text: 'useAnimationText 文本动画', link: 'composables/use-animation-text' },
         { text: 'useMessageGroup 消息分组', link: 'composables/use-message-group' },
         { text: 'useCustomTab 自定义 Tab', link: 'composables/use-custom-tab' },
+        { text: 'useFullScreen 全屏控制', link: 'composables/use-full-screen' },
         { text: 'useCommandSelection 命令选择', link: 'composables/use-command-selection' },
         { text: 'useMenuKeydown 菜单键盘', link: 'composables/use-menu-keydown' },
         { text: 'useObserverVisibleList 可见列表', link: 'composables/use-observer-visible-list' },

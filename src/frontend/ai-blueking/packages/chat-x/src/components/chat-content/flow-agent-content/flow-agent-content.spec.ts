@@ -71,11 +71,9 @@ vi.mock('../../../ag-ui/types/constants', () => ({
   },
 }));
 
+// use-flow-tab 从 composables 桶导出消费 useCustomTabConsumer / useContainerScrollConsumer
 vi.mock('../../../composables', () => ({
   useContainerScrollConsumer: () => mockScrollRef,
-}));
-
-vi.mock('../../../composables/use-custom-tab', () => ({
   useCustomTabConsumer: () => ({
     addCustomTab: mockAddCustomTab,
     removeCustomTab: mockRemoveCustomTab,
@@ -88,9 +86,27 @@ vi.mock('../../../icons', () => ({
   ArrowRightIcon: h('span', { class: 'mock-arrow-right' }),
   BkFlowFailedIcon: h('span', { class: 'mock-bkflow-failed' }),
   BkFlowPendingIcon: h('span', { class: 'mock-bkflow-pending' }),
+  BkFlowSkippedIcon: h('span', { class: 'mock-bkflow-skipped' }),
   BkFlowSuccessIcon: h('span', { class: 'mock-bkflow-success' }),
   BkFlowSuspendedIcon: h('span', { class: 'mock-bkflow-suspended' }),
   NodeOutputIcon: h('span', { class: 'mock-node-output' }),
+}));
+
+// Mock tippy 样式与 vue-tippy：将 default / content 插槽同步渲染，便于断言 tooltip 内容
+vi.mock('tippy.js/dist/tippy.css', () => ({}));
+vi.mock('vue-tippy', () => ({
+  Tippy: defineComponent({
+    name: 'MockTippy',
+    props: {
+      arrow: { type: Boolean, default: false },
+      placement: { type: String, default: '' },
+      tag: { type: String, default: 'span' },
+      theme: { type: String, default: '' },
+    },
+    setup(props, { slots }) {
+      return () => h(props.tag, { class: 'mock-tippy' }, [slots.default?.(), slots.content?.()]);
+    },
+  }),
 }));
 
 vi.mock('../../../lang/lang', () => ({
@@ -215,11 +231,16 @@ describe('FlowAgentContent', () => {
         },
       });
 
-      const text = wrapper.find('.flow-agent-title-label').element.parentElement?.textContent ?? '';
-      expect(text).toContain('成功');
-      expect(text).toContain('2');
-      expect(text).toContain('执行中');
-      expect(text).toContain('1');
+      // 条内只展示图标 + 计数；文字标签下沉到 hover tooltip
+      const barText = wrapper.find('.ai-activity-message-title-text').text();
+      expect(barText).toContain('执行情况');
+      const barCounts = wrapper.findAll('.flow-agent-stat-count').map(item => item.text());
+      expect(barCounts).toContain('2');
+      expect(barCounts).toContain('1');
+
+      const tooltipText = wrapper.find('.flow-agent-stat-tooltip').text();
+      expect(tooltipText).toContain('成功');
+      expect(tooltipText).toContain('执行中');
     });
 
     it('应汇总多个任务的 statistics.state_counts', () => {
@@ -243,13 +264,12 @@ describe('FlowAgentContent', () => {
         },
       });
 
-      const text = wrapper.find('.flow-agent-title-label').element.parentElement?.textContent ?? '';
-      expect(text).toContain('成功');
-      expect(text).toContain('2');
-      expect(text).toContain('执行中');
-      expect(text).toContain('2');
-      expect(text).toContain('失败');
-      expect(text).toContain('1');
+      const tooltipText = wrapper.find('.flow-agent-stat-tooltip').text();
+      expect(tooltipText).toContain('成功');
+      expect(tooltipText).toContain('执行中');
+      expect(tooltipText).toContain('失败');
+      expect(tooltipText).toContain('2');
+      expect(tooltipText).toContain('1');
     });
 
     it('应正确展示待执行状态的统计', () => {
@@ -264,9 +284,26 @@ describe('FlowAgentContent', () => {
         },
       });
 
-      const text = wrapper.find('.flow-agent-title-label').element.parentElement?.textContent ?? '';
-      expect(text).toContain('待执行');
-      expect(text).toContain('2');
+      const tooltipText = wrapper.find('.flow-agent-stat-tooltip').text();
+      expect(tooltipText).toContain('待执行');
+      expect(tooltipText).toContain('2');
+    });
+
+    it('应展示跳过状态的统计', () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent({
+            statistics: {
+              state_counts: { FINISHED: 1, SKIPPED: 3 },
+              total: 4,
+            },
+          }),
+        },
+      });
+
+      const tooltipText = wrapper.find('.flow-agent-stat-tooltip').text();
+      expect(tooltipText).toContain('跳过');
+      expect(tooltipText).toContain('3');
     });
 
     it('待执行统计数字应使用主题灰 #4D4F56', () => {
@@ -281,8 +318,10 @@ describe('FlowAgentContent', () => {
         },
       });
 
-      const pendingItem = wrapper.findAll('.flow-agent-stat-item').find(item => item.text().includes('待执行'));
-      const count = pendingItem?.find('.flow-agent-stat-count');
+      const pendingItem = wrapper
+        .findAll('.flow-agent-stat-tooltip-item')
+        .find(item => item.text().includes('待执行'));
+      const count = pendingItem?.find('.flow-agent-stat-tooltip-count');
       expect(count?.attributes('style')).toContain('#4D4F56');
     });
   });

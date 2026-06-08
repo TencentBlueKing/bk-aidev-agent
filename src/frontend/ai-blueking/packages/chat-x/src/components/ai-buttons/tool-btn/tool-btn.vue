@@ -6,12 +6,14 @@
     :style="{ '--ai-tool-btn-active-color': id === 'like' || id === 'activeLike' ? '#3a84ff' : '#E71818' }"
     @click="handleClick"
   >
-    <template v-if="id in ToolIconsMap">
-      <component :is="ToolIconsMap[id]" />
-    </template>
-    <template v-else>
-      <div>{{ name }}</div>
-    </template>
+    <slot>
+      <template v-if="id && id in ToolIconsMap">
+        <component :is="ToolIconsMap[id]" />
+      </template>
+      <template v-else>
+        <div>{{ name }}</div>
+      </template>
+    </slot>
   </div>
 </template>
 <script setup lang="ts">

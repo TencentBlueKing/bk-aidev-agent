@@ -110,7 +110,11 @@ vi.mock('bkui-vue', () => {
     },
     emits: ['change'],
     setup(_, { slots }) {
-      return () => h('div', { class: 'mock-tab' }, slots.default?.());
+      return () =>
+        h('div', { class: 'mock-tab' }, [
+          slots.default?.(),
+          slots.setting ? h('div', { class: 'mock-tab-setting' }, slots.setting()) : null,
+        ]);
     },
   });
   (Tab as unknown as Record<string, unknown>).TabPanel = TabPanel;
@@ -242,10 +246,28 @@ vi.mock('../../icons', () => ({
       return () => h('span', { class: 'mock-close-icon' });
     },
   }),
+  CollapsedIcon: defineComponent({
+    name: 'CollapsedIcon',
+    setup() {
+      return () => h('span', { class: 'mock-collapsed-icon' });
+    },
+  }),
   ExecutionIcon: defineComponent({
     name: 'ExecutionIcon',
     setup() {
       return () => h('span', { class: 'mock-execution-icon' });
+    },
+  }),
+  FullScreenIcon: defineComponent({
+    name: 'FullScreenIcon',
+    setup() {
+      return () => h('span', { class: 'mock-full-screen-icon' });
+    },
+  }),
+  UnFullScreenIcon: defineComponent({
+    name: 'UnFullScreenIcon',
+    setup() {
+      return () => h('span', { class: 'mock-un-full-screen-icon' });
     },
   }),
   NodeTabIcon: defineComponent({
@@ -260,6 +282,15 @@ vi.mock('../../icons', () => ({
       return () => h('span', { class: 'mock-banner-icon' });
     },
   }),
+}));
+
+vi.mock('tippy.js/dist/tippy.css', () => ({}));
+
+vi.mock('vue-tippy', () => ({
+  directive: {
+    mounted: vi.fn(),
+    unmounted: vi.fn(),
+  },
 }));
 
 vi.mock('../ai-shortcut/shortcut-render/shortcut-render.vue', () => ({
@@ -555,17 +586,62 @@ describe('ChatContainer', () => {
   });
 
   describe('折叠测试', () => {
+    it('有 executionGroups 时应渲染折叠按钮且仅展示 CollapsedIcon', async () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      mockExecutionGroupsRef.value = [{ id: 'group-1' }];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages },
+      });
+      await nextTick();
+
+      expect(wrapper.find('.collapse-button').exists()).toBe(true);
+      expect(wrapper.find('.mock-collapsed-icon').exists()).toBe(true);
+      expect(wrapper.text()).not.toContain('执行情况');
+    });
+
+    it('侧栏折叠时折叠按钮应带 is-collapsed 类', async () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      mockExecutionGroupsRef.value = [{ id: 'group-1' }];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages },
+      });
+      await nextTick();
+
+      expect(wrapper.find('.collapse-button').classes()).toContain('is-collapsed');
+    });
+
     it('点击折叠按钮应该触发 collapseChange 事件', async () => {
       const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      mockExecutionGroupsRef.value = [{ id: 'group-1' }];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages },
+      });
+      await nextTick();
+
+      await wrapper.find('.collapse-button').trigger('click');
+
+      expect(wrapper.emitted('collapseChange')).toBeTruthy();
+    });
+  });
+
+  describe('全屏测试', () => {
+    it('侧栏展开时应渲染全屏按钮区域', async () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      mockExecutionGroupsRef.value = [{ id: 'group-1' }];
 
       wrapper = mount(ChatContainer, {
         props: { ...defaultProps, messages },
       });
 
-      // 需要有执行消息才会显示折叠按钮
-      // 由于 executionGroups 被 mock 为空，折叠按钮不会显示
-      // 这里测试组件本身的正确渲染
-      expect(wrapper.find('.ai-chat-container').exists()).toBe(true);
+      getChatContainerExposed(wrapper).addCustomTab({ label: '自定义 Tab', name: 'custom-tab' });
+      await nextTick();
+
+      expect(wrapper.find('.screen-wrapper').exists()).toBe(true);
+      expect(wrapper.find('.screen-btn').exists()).toBe(true);
+      expect(wrapper.find('.mock-full-screen-icon').exists()).toBe(true);
     });
   });
 

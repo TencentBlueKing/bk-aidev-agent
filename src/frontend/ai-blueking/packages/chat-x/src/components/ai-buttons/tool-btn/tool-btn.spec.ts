@@ -149,6 +149,31 @@ describe('ToolBtn', () => {
 
       expect(wrapper.text()).toContain('未知操作');
     });
+
+    it('传入默认 slot 时应优先渲染 slot 内容而非内置图标', () => {
+      const props = createToolBtnProps('copy', '复制', '复制内容');
+
+      wrapper = mount(ToolBtn, {
+        props,
+        slots: {
+          default: () => h('span', { class: 'custom-slot-icon' }, '全屏'),
+        },
+      });
+
+      expect(wrapper.find('.custom-slot-icon').exists()).toBe(true);
+      expect(wrapper.find('.mock-copy-icon').exists()).toBe(false);
+    });
+
+    it('未传 id 时应显示 name 文本', () => {
+      wrapper = mount(ToolBtn, {
+        props: {
+          name: '全屏',
+          description: '全屏',
+        },
+      });
+
+      expect(wrapper.text()).toContain('全屏');
+    });
   });
 
   describe('不同图标类型测试', () => {
