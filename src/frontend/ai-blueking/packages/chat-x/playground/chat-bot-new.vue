@@ -39,50 +39,82 @@
       @stop-streaming="handleStopStreaming"
       @update:model-value="handleUpdateInputValue"
     >
-      <template #message="{ message, messageToolsStatus, onInterruptResume }">
-        <template
-          v-if="
-            message.role === MessageRole.Interrupt && message.content.result?.reason === InterruptReason.UserQuestion
-          "
+      <template #group="{ group }">
+        <div class="group-messagesxxxx">
+          <div
+            v-for="(message, index) in group.messages"
+            :key="index"
+          >
+            <MessageRender
+              :key="index"
+              :message="message"
+              :on-input-confirm="
+                (content: UserMessage['content'], docSchema: TagSchema) =>
+                  handleUserInputConfirm(message, content, docSchema)
+              "
+              :on-shortcut-confirm="
+                (formModel: Record<string, unknown>) => handleUserShortcutConfirm(message, formModel)
+              "
+            >
+              <template #answeredQuestion="{ item }">
+                <div>{{ JSON.stringify(item) }}</div>
+              </template>
+            </MessageRender>
+          </div>
+        </div>
+      </template>
+      <!-- <template #message="{ message, messageToolsStatus, onInterruptResume }">
+        <template v-if="message.role === MessageRole.User">
+          <MessageRender :message="message"> </MessageRender>
+        </template>
+        <div
+          v-else
+          class="xxxxx"
         >
-          <InterruptMessageRender
-            v-bind="message"
+          <template
+            v-if="
+              message.role === MessageRole.Interrupt && message.content.result?.reason === InterruptReason.UserQuestion
+            "
+          >
+            <InterruptMessageRender
+              v-bind="message"
+              :on-interrupt-resume="onInterruptResume"
+            >
+              <template #answeredQuestion="{ item }">
+                <div>
+                  <div>
+                    <span> -------- {{ JSON.stringify(item) }} </span>
+                  </div>
+                </div>
+              </template>
+            </InterruptMessageRender>
+          </template>
+          <MessageRender
+            v-else
+            :message="message"
+            :message-tools-status="messageToolsStatus"
             :on-interrupt-resume="onInterruptResume"
           >
-            <template #answeredQuestion="{ item }">
-              <div>
-                <div>
-                  <span> -------- {{ JSON.stringify(item) }} </span>
-                </div>
-              </div>
+            <template #codeHeader="{ language }">
+              <span
+                class="code-header-action"
+                @click="handleCodeInsert(language)"
+              >
+                插入
+              </span>
+              <span
+                class="code-header-action"
+                @click="handleCodeApply(language)"
+              >
+                应用
+              </span>
             </template>
-          </InterruptMessageRender>
-        </template>
-        <MessageRender
-          v-else
-          :message="message"
-          :message-tools-status="messageToolsStatus"
-          :on-interrupt-resume="onInterruptResume"
-        >
-          <template #codeHeader="{ language }">
-            <span
-              class="code-header-action"
-              @click="handleCodeInsert(language)"
-            >
-              插入
-            </span>
-            <span
-              class="code-header-action"
-              @click="handleCodeApply(language)"
-            >
-              应用
-            </span>
-          </template>
-        </MessageRender>
-      </template>
+          </MessageRender>
+        </div>
+      </template> -->
       <!-- 自定义作答态：用下拉选择替代默认的选项列表，选中后通过 setAnswer 回传已组装答案 -->
       <template #interruptQuestion="{ question, setAnswer, answer }">
-        <div>
+        <div v-if="question.multiSelect">
           <Select
             :model-value="answer?.answer.at(0)?.label"
             @change="
@@ -107,6 +139,12 @@
             </Select.Option>
           </Select>
         </div>
+        <div v-else>
+          <UserQuestionChoice
+            :on-answer="setAnswer"
+            :question="question"
+          />
+        </div>
       </template>
     </ChatContainer>
   </div>
@@ -128,14 +166,14 @@
     ChatContainer,
     CopyIcon,
     EditIcon,
-    InterruptMessageRender,
-    InterruptReason,
     MessageContentType,
     MessageRender,
     MessageRole,
     MessageStatus,
     RenderMode,
+    UserQuestionChoice,
   } from '../src';
+  // import QuestionsContainer from '../src/components/ai-questions/questions-container.vue';
   import { MOCK_INTERRUPT_MESSAGES } from './interrupt';
   import { streamContent } from './markdown';
   import { MOCK_PROMPTS, MOCK_RESOURCES } from './mock';

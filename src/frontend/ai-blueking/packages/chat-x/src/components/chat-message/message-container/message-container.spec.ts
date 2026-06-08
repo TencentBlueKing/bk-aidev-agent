@@ -631,6 +631,50 @@ describe('MessageContainer', () => {
       expect(wrapper.find('.custom-message').exists()).toBe(true);
       expect(wrapper.find('.custom-message').text()).toBe('Custom: Hello');
     });
+
+    it('应该支持 group 插槽自定义整组渲染', async () => {
+      const messages: Message[] = [createAssistantMessage('1', 'Hello', 1)];
+      const messageGroups = buildGroups(messages);
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups },
+        slots: {
+          group: ({ group }: { group: MessageGroup }) =>
+            h('div', { class: 'custom-group', 'data-uid': group.uid, 'data-type': group.type }, 'Custom Group'),
+        },
+      });
+
+      await nextTick();
+
+      expect(wrapper.find('.custom-group').exists()).toBe(true);
+      expect(wrapper.find('.custom-group').attributes('data-uid')).toBe('group-1');
+      expect(wrapper.find('.custom-group').attributes('data-type')).toBe(MessageRole.Assistant);
+      expect(wrapper.find('.mock-message-render').exists()).toBe(false);
+      expect(wrapper.find('.mock-message-tools').exists()).toBe(false);
+    });
+
+    it('group 插槽应接收完整的消息组数据', async () => {
+      const messages: Message[] = [createUserMessage('1', 'Hello', 1), createAssistantMessage('2', 'Hi!', 2)];
+      const messageGroups = buildGroups(messages);
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups },
+        slots: {
+          group: ({ group }: { group: MessageGroup }) =>
+            h('div', { class: 'custom-group', 'data-messages-count': group.messages.length }, group.type),
+        },
+      });
+
+      await nextTick();
+
+      const customGroups = wrapper.findAll('.custom-group');
+      // 用户组 + 助手组（末条为助手消息时不追加 Loading 组）
+      expect(customGroups.length).toBe(2);
+      expect(customGroups[0].attributes('data-messages-count')).toBe('1');
+      expect(customGroups[0].text()).toBe(MessageRole.User);
+      expect(customGroups[1].attributes('data-messages-count')).toBe('1');
+      expect(customGroups[1].text()).toBe(MessageRole.Assistant);
+    });
   });
 
   describe('Actions 测试', () => {
