@@ -27,7 +27,7 @@ def flow_agent_env(monkeypatch):
     from aidev_bkplugin.views import chat as mod
 
     session_manager = MagicMock()
-    monkeypatch.setattr(mod, "SessionManager", lambda username: session_manager)
+    monkeypatch.setattr(mod, "SessionManager", lambda **kwargs: session_manager)
 
     # build_agent 返回 execute() 产出空流的 agent，便于走完后续分支而不真正轮询
     agent_instance = MagicMock()
@@ -38,7 +38,7 @@ def flow_agent_env(monkeypatch):
     writer_cls = MagicMock()
     monkeypatch.setattr(mod, "AGUISessionWriter", writer_cls)
     monkeypatch.setattr(mod, "PluginResourceManager", lambda username: MagicMock())
-    monkeypatch.setattr(mod.AgentHelper, "get_client", staticmethod(lambda: MagicMock()))
+    monkeypatch.setattr(mod.AgentHelper, "get_client", staticmethod(lambda *args, **kwargs: MagicMock()))
 
     view = mod.ChatCompletionViewSet()
     monkeypatch.setattr(view, "streaming_response", lambda generator, session_code="": "STREAM")
@@ -54,7 +54,7 @@ def test_resume_pending_hit_resumes_task_and_clears_marker(flow_agent_env):
     view, build_agent, sm, writer_cls = flow_agent_env
     sm.get_flow_info.return_value = {"task_id": "t1", "resume_pending": True}
 
-    view._handle_flow_agent(_data(), "sc-1", "alice", turn_id="turn-1")
+    view._handle_flow_agent(_data(), "sc-1", "alice", turn_id="turn-1", resource_manager=MagicMock())
 
     assert build_agent.call_args.kwargs["task_id"] == "t1"
     assert writer_cls.call_args.kwargs["task_id"] == "t1"
@@ -65,7 +65,7 @@ def test_resume_pending_without_task_id_starts_new_but_clears_marker(flow_agent_
     view, build_agent, sm, _writer_cls = flow_agent_env
     sm.get_flow_info.return_value = {"task_id": "", "resume_pending": True}
 
-    view._handle_flow_agent(_data(), "sc-1", "alice", turn_id="turn-1")
+    view._handle_flow_agent(_data(), "sc-1", "alice", turn_id="turn-1", resource_manager=MagicMock())
 
     assert build_agent.call_args.kwargs["task_id"] is None
     sm.set_flow_resume_pending.assert_called_once_with("sc-1", False)
@@ -75,7 +75,7 @@ def test_no_marker_starts_new_task_without_touching_marker(flow_agent_env):
     view, build_agent, sm, _writer_cls = flow_agent_env
     sm.get_flow_info.return_value = {"task_id": "t1"}  # 无 resume_pending
 
-    view._handle_flow_agent(_data(), "sc-1", "alice", turn_id="turn-1")
+    view._handle_flow_agent(_data(), "sc-1", "alice", turn_id="turn-1", resource_manager=MagicMock())
 
     assert build_agent.call_args.kwargs["task_id"] is None
     sm.set_flow_resume_pending.assert_not_called()
@@ -86,7 +86,7 @@ def test_flow_http_does_not_install_second_terminal_status_writer(flow_agent_env
     sm.get_flow_info.return_value = {}
     view._wrap_streaming_with_status = MagicMock(side_effect=AssertionError("duplicate terminal writer"))
 
-    result = view._handle_flow_agent(_data(), "sc-1", "alice", turn_id="turn-1")
+    result = view._handle_flow_agent(_data(), "sc-1", "alice", turn_id="turn-1", resource_manager=MagicMock())
 
     assert result == "STREAM"
     writer_cls.return_value.set_streaming_started.assert_called_once_with()

@@ -12,6 +12,7 @@ from logging import getLogger
 
 from aidev_agent.enums import AgentBuildType, PromptRole, SessionsStatus
 from aidev_agent.packages.resource_manager.agent import AgentResourceManager
+from aidev_agent.packages.resource_manager.registry import ResourceManagerProtocol
 from aidev_agent.pydantic_models import AgentConfig, ChatPrompt
 from aidev_agent.services.agent import AgentInstanceFactory, ChatCompletionAgent
 from aidev_agent.services.common_agent import common_agent_factory
@@ -55,12 +56,17 @@ class AgentBuilder:
         username: str = "",
         agent_code: str | None = None,
         session_manager: SessionManager | None = None,
+        resource_manager: ResourceManagerProtocol | None = None,
         turn_id: str = "",
         model: str = "",
     ):
         self.username = username
-        self.agent_code = agent_code or settings.APP_CODE
-        self.session_manager = session_manager or SessionManager(username=username, agent_code=agent_code)
+        self.resource_manager = resource_manager
+        rm_agent_code = resource_manager.get_agent_code() if resource_manager else ""
+        self.agent_code = agent_code or rm_agent_code or settings.APP_CODE
+        self.session_manager = session_manager or SessionManager(
+            username=username, agent_code=self.agent_code, resource_manager=self.resource_manager
+        )
         self.turn_id = turn_id
         # 模型热更新：非空时覆盖 agent 配置的 chat_model
         self.model = model or ""
@@ -148,21 +154,28 @@ class AgentBuilder:
         version: str | None = None,
         channel_type: str | None = None,
     ) -> ChatCompletionAgent:
-        """SESSION 路径 agent 装配；client 取自 ``AgentHelper.get_client()``（应用态）。"""
+        """SESSION 路径 agent 装配；client 取自注入的 ``resource_manager``，未注入时回落应用态。"""
         agent_cls = common_agent_factory.get()
+        # 兜底须先于 event_handler 构造：否则 writer 拿应用态 client、agent 拿用户态 rm，同一次装配两套身份
+        if not self.resource_manager and self.username:
+            self.resource_manager = LLMOverrideResourceManager(username=self.username, model=self.model)
+        elif self.model and isinstance(self.resource_manager, LLMOverrideResourceManager):
+            # 注入的 rm 保留用户态认证，仅补上 model 覆盖能力
+            self.resource_manager.model = self.model
         event_handler = AGUISessionWriter(
-            session_code=session_code, client=AgentHelper.get_client(), username=self.username, turn_id=self.turn_id
-        )
-        resource_manager = (
-            LLMOverrideResourceManager(username=self.username, model=self.model) if self.username else None
+            session_code=session_code,
+            client=AgentHelper.get_client(resource_manager=self.resource_manager),
+            username=self.username,
+            turn_id=self.turn_id,
         )
         return AgentInstanceFactory.build_agent(
+            agent_code=self.agent_code,
             build_type=AgentBuildType.SESSION,
             session_code=session_code,
             agent_cls=agent_cls,
             checkpointer=AgentHelper.get_checkpointer(),
             event_handler=event_handler,
-            resource_manager=resource_manager,
+            resource_manager=self.resource_manager,
             username=self.username,
             version=version,
             channel_type=channel_type,

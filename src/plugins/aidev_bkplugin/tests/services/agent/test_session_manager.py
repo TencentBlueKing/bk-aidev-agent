@@ -7,7 +7,9 @@ from aidev_bkplugin.constants import AGUI_PROTOCOL_VERSION
 
 
 @pytest.fixture
-def session_manager():
+def session_manager(mock_plugin_rm_client):
+    # 依赖 mock_plugin_rm_client 以保证 patch 先于构造生效：
+    # SessionManager 在 __init__ 即绑定 resource_manager，晚于构造的 patch 不再起作用。
     return SessionManager(username="alice", agent_code="bk-aidev")
 
 

@@ -22,7 +22,7 @@ from rest_framework.views import Response
 from aidev_bkplugin.constants import AGUI_PROTOCOL_VERSION, DEFAULT_SESSION_PAGE, DEFAULT_SESSION_PAGE_SIZE
 from aidev_bkplugin.services.agent_config import AgentConfigFetcher
 from aidev_bkplugin.utils import is_local_dev
-from aidev_bkplugin.views.base import PluginResourceManager, PluginViewSet, client, logger
+from aidev_bkplugin.views.base import PluginResourceManager, PluginViewSet, logger
 
 
 def _parse_positive_int(value, default):
@@ -56,7 +56,7 @@ class ChatSessionViewSet(PluginViewSet):
         if has_pagination:
             params["page"] = _parse_positive_int(page, DEFAULT_SESSION_PAGE)
             params["page_size"] = _parse_positive_int(page_size, DEFAULT_SESSION_PAGE_SIZE)
-        result = client.api.list_chat_session(headers={"X-BKAIDEV-USER": request.user.username}, params=params)
+        result = self.client.api.list_chat_session(headers={"X-BKAIDEV-USER": request.user.username}, params=params)
         data = result["data"]
         if not isinstance(data, dict):
             # 旧后端未分页（返回数组）：在 Agent 侧过滤协议版本
@@ -65,7 +65,7 @@ class ChatSessionViewSet(PluginViewSet):
 
     @action(["POST"], url_path="batch_delete", detail=False)
     def batch_delete(self, request):
-        result = client.api.batch_delete_chat_session(json=request.data)
+        result = self.client.api.batch_delete_chat_session(json=request.data)
         return Response(data=result["data"])
 
     def create(self, request):
@@ -75,26 +75,26 @@ class ChatSessionViewSet(PluginViewSet):
             "protocol_version": AGUI_PROTOCOL_VERSION,
             "session_type": self.session_type,
         }
-        result = client.api.create_chat_session(json=data, headers={"X-BKAIDEV-USER": request.user.username})
+        result = self.client.api.create_chat_session(json=data, headers={"X-BKAIDEV-USER": request.user.username})
         return Response(data=result["data"])
 
     def update(self, request, pk, **kwargs):
-        result = client.api.update_chat_session(path_params={"session_code": pk}, json=request.data)
+        result = self.client.api.update_chat_session(path_params={"session_code": pk}, json=request.data)
         return Response(data=result["data"])
 
     def retrieve(self, request, pk, **kwargs):
-        result = client.api.retrieve_chat_session(path_params={"session_code": pk})
+        result = self.client.api.retrieve_chat_session(path_params={"session_code": pk})
         return Response(data=result["data"])
 
     @action(["POST"], url_path="ai_rename", detail=True)
     def ai_rename(self, request, pk, **kwargs):
-        result = client.api.rename_chat_session(path_params={"session_code": pk})
+        result = self.client.api.rename_chat_session(path_params={"session_code": pk})
         return Response(data=result["data"])
 
     @action(["GET"], url_path="is_resume", detail=True)
     def is_resume(self, request, pk, **kwargs):
         logger.info(f"[is_resume][agent] 收到轮询请求, pk={pk}, kwargs={kwargs}, request_path={request.path}")
-        result = client.api.is_resume_session(path_params={"session_code": pk})
+        result = self.client.api.is_resume_session(path_params={"session_code": pk})
         # is_resume_session 返回 True/False（收到回调即为 True）
         data = result.get("data", False)
         is_resume = bool(data) if isinstance(data, (bool, int)) else False
@@ -119,13 +119,13 @@ class ChatSessionViewSet(PluginViewSet):
             },
         )
         logger.info(f"upload_chat_session_file data: {_data}")
-        result = client.api.upload_chat_session_file(
+        result = self.client.api.upload_chat_session_file(
             **_data,
         )
         return Response(data=result["data"])
 
     def destroy(self, request, pk, **kwargs):
-        result = client.api.destroy_chat_session(path_params={"session_code": pk})
+        result = self.client.api.destroy_chat_session(path_params={"session_code": pk})
         return Response(data=result["data"])
 
     # ------------------------------------------------------------------
@@ -143,16 +143,17 @@ class ChatSessionViewSet(PluginViewSet):
             status_code = 500
         return Response(data={"message": str(exc)}, status=status_code)
 
-    @staticmethod
-    def _check_session_owner(request, session_code: str, require_access: bool = False) -> None:
+    def _check_session_owner(self, request, session_code: str, require_access: bool = False) -> None:
         """校验 session 归属
+
+        改为实例方法：归属校验须走 ``self.client`` 的用户态凭证，静态方法拿不到按请求构造的 client。
         :param require_access: 是否校验会话归属。默认 False
         """
         if not require_access:
             return
         username = request.user.username
         try:
-            client.api.retrieve_chat_session(
+            self.client.api.retrieve_chat_session(
                 path_params={"session_code": session_code},
                 headers={"X-BKAIDEV-USER": username},
             )
@@ -275,25 +276,25 @@ class ChatSessionViewSet(PluginViewSet):
 class ChatSessionContentViewSet(PluginViewSet):
     def create(self, request):
         username = request.user.username
-        result = client.api.create_chat_session_content(json=request.data, headers={"X-BKAIDEV-USER": username})
+        result = self.client.api.create_chat_session_content(json=request.data, headers={"X-BKAIDEV-USER": username})
         return Response(data=result["data"])
 
     @action(["GET"], url_path="content", detail=False)
     def content(self, request, **kwargs):
-        result = client.api.get_chat_session_contents(params=request.query_params)
+        result = self.client.api.get_chat_session_contents(params=request.query_params)
         return Response(data=result["data"])
 
     def destroy(self, request, pk, **kwargs):
-        result = client.api.destroy_chat_session_content(path_params={"id": pk})
+        result = self.client.api.destroy_chat_session_content(path_params={"id": pk})
         return Response(data=result["data"])
 
     def update(self, request, pk, **kwargs):
-        result = client.api.update_chat_session_content(path_params={"id": pk}, json=request.data)
+        result = self.client.api.update_chat_session_content(path_params={"id": pk}, json=request.data)
         return Response(data=result["data"])
 
     @action(["POST"], url_path="batch_delete", detail=False)
     def batch_delete(self, request):
-        result = client.api.batch_delete_chat_session_content(json=request.data)
+        result = self.client.api.batch_delete_chat_session_content(json=request.data)
         return Response(data=result["data"])
 
     @action(["POST"], url_path="stop", detail=False)
@@ -362,7 +363,7 @@ class ChatSessionContentViewSet(PluginViewSet):
                     logger.info(f"[FLOW_AGENT] revoke 调用成功: session_code={session_code}, result={revoke_result}")
                     # revoke 后更新 session 中的 flow_agent_status 为 failed
                     try:
-                        client.api.update_chat_session(
+                        self.client.api.update_chat_session(
                             path_params={"session_code": session_code},
                             json={"flow_agent_status": "failed"},
                             headers={"X-BKAIDEV-USER": username},
@@ -378,7 +379,7 @@ class ChatSessionContentViewSet(PluginViewSet):
         platform_payload.pop("run_id", None)
         if producer_active is not None:
             platform_payload["producer_active"] = producer_active
-        result = client.api.stop_chat_session_content(json=platform_payload, headers={"X-BKAIDEV-USER": username})
+        result = self.client.api.stop_chat_session_content(json=platform_payload, headers={"X-BKAIDEV-USER": username})
 
         return Response(data=result["data"])
 
@@ -386,26 +387,26 @@ class ChatSessionContentViewSet(PluginViewSet):
 class ChatSessionContentFeedbackViewSet(PluginViewSet):
     def create(self, request):
         username = request.user.username
-        result = client.api.create_feedback(json=request.data, headers={"X-BKAIDEV-USER": username})
+        result = self.client.api.create_feedback(json=request.data, headers={"X-BKAIDEV-USER": username})
         return Response(data=result["data"])
 
     @action(["GET"], url_path="reasons", detail=False)
     def reasons(self, request, **kwargs):
-        result = client.api.get_feedback_reasons(params=request.query_params)
+        result = self.client.api.get_feedback_reasons(params=request.query_params)
         return Response(data=result["data"])
 
 
 class ChatSessionShareView(PluginViewSet):
     def create(self, request):
         username = request.user.username
-        result = client.api.share_chat_session(
+        result = self.client.api.share_chat_session(
             json=request.data,
             headers={"X-BKAIDEV-USER": username},
         )
         return Response(data=result["data"])
 
     def retrieve(self, request, pk, **kwargs):
-        result = client.api.get_shared_chat(
+        result = self.client.api.get_shared_chat(
             path_params={"share_token": pk},
         )
         return Response(data=result["data"])

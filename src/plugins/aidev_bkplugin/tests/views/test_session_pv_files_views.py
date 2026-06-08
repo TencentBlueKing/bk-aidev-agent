@@ -41,9 +41,12 @@ base_mod.IgnoreClientContentNegotiation = object
 base_mod.PluginResourceManager = MagicMock()
 base_mod.PluginResourceManager.return_value.resolve_access_token.return_value = None
 base_mod.PluginViewSet = object
-base_mod.client = SimpleNamespace(api=MagicMock())
 base_mod.logger = MagicMock()
 sys.modules["aidev_bkplugin.views.base"] = base_mod
+
+# view 层已改为按请求取 ``self.client``，不再有模块级 client 可 patch；
+# 这里保留一个跨用例共享的 fake client，由 view fixture 注入到实例上。
+fake_client = SimpleNamespace(api=MagicMock())
 
 agent_config_mod = types.ModuleType("aidev_bkplugin.services.agent_config")
 agent_config_mod.AgentConfigFetcher = MagicMock()
@@ -72,7 +75,10 @@ def _request(query_params=None, username="alice", method="GET", cookies=None, me
 
 @pytest.fixture
 def view():
-    return session_mod.ChatSessionViewSet()
+    instance = session_mod.ChatSessionViewSet()
+    # PluginViewSet 是假基类（object），client 非 property，可直接实例赋值
+    instance.client = fake_client
+    return instance
 
 
 @pytest.fixture
@@ -86,11 +92,11 @@ def mock_svc():
 
 @pytest.fixture(autouse=True)
 def _reset_retrieve_chat_session_mock():
-    """base_mod.client 是 module 级 mock，跨测试共享；每个用例前重置 retrieve_chat_session
+    """fake_client 是 module 级 mock，跨测试共享；每个用例前重置 retrieve_chat_session
     的 side_effect / return_value / call_history，避免 TestCheckSessionOwner 里配的
     side_effect 泄露到后续 TestPvFiles* 用例（那些用例默认应"归属校验通过"）。
     """
-    session_mod.client.api.retrieve_chat_session.reset_mock(side_effect=True, return_value=True)
+    fake_client.api.retrieve_chat_session.reset_mock(side_effect=True, return_value=True)
     yield
 
 
@@ -197,13 +203,13 @@ class TestCheckSessionOwner:
     def test_default_skips_owner_check(self, view):
         """默认 require_access=False：直接跳过，不调用 retrieve_chat_session（对齐平台侧 PV 只读入口）。"""
         view._check_session_owner(_request(username="alice"), "s1")
-        session_mod.client.api.retrieve_chat_session.assert_not_called()
+        fake_client.api.retrieve_chat_session.assert_not_called()
 
     def test_owner_ok_passes_through(self, view):
         """require_access=True 且归属校验通过：调 client.api.retrieve_chat_session 无异常，不抛。"""
-        # base_mod.client.api 默认是 MagicMock，任意调用返回新 MagicMock；autouse 已重置 side_effect
+        # fake_client.api 默认是 MagicMock，任意调用返回新 MagicMock；autouse 已重置 side_effect
         view._check_session_owner(_request(username="alice"), "s1", require_access=True)
-        session_mod.client.api.retrieve_chat_session.assert_called_once_with(
+        fake_client.api.retrieve_chat_session.assert_called_once_with(
             path_params={"session_code": "s1"},
             headers={"X-BKAIDEV-USER": "alice"},
         )
@@ -211,7 +217,7 @@ class TestCheckSessionOwner:
     @pytest.mark.parametrize("status", [403, 404])
     def test_owner_denied_or_not_found_translates_to_client_error(self, view, status):
         """require_access=True 时：403（非归属）/ 404（会话不存在）→ ClientBlueException，附带对应 code。"""
-        session_mod.client.api.retrieve_chat_session.side_effect = self._make_http_error(status)
+        fake_client.api.retrieve_chat_session.side_effect = self._make_http_error(status)
 
         from blueapps.core.exceptions import ClientBlueException
 
@@ -223,7 +229,7 @@ class TestCheckSessionOwner:
         """require_access=True 时：非 403/404 的 HTTPResponseError 原样抛出，不被吞掉。"""
         from bkapi_client_core.exceptions import HTTPResponseError
 
-        session_mod.client.api.retrieve_chat_session.side_effect = self._make_http_error(500)
+        fake_client.api.retrieve_chat_session.side_effect = self._make_http_error(500)
 
         with pytest.raises(HTTPResponseError):
             view._check_session_owner(_request(username="alice"), "s1", require_access=True)
@@ -231,7 +237,7 @@ class TestCheckSessionOwner:
     def test_pv_files_does_not_check_owner_by_default(self, view, mock_svc):
         """集成：pv_files 默认 require_access=False，即使归属校验会 403，也照常放行调用 Service。"""
         # 即便配置了 403 side_effect，pv_files 因默认跳过归属校验，根本不会触发
-        session_mod.client.api.retrieve_chat_session.side_effect = self._make_http_error(403)
+        fake_client.api.retrieve_chat_session.side_effect = self._make_http_error(403)
 
         instance, _ = mock_svc
         instance.list_files.return_value = {"count": 0, "results": []}
@@ -239,7 +245,7 @@ class TestCheckSessionOwner:
         response = view.pv_files(_request(username="alice"), pk="s1")
         assert response.data == {"count": 0, "results": []}
         instance.list_files.assert_called_once()
-        session_mod.client.api.retrieve_chat_session.assert_not_called()
+        fake_client.api.retrieve_chat_session.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

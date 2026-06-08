@@ -11,13 +11,15 @@ from __future__ import annotations
 
 import os
 from logging import getLogger
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 from urllib.parse import urlparse
 
-from aidev_agent.packages.resource_manager import resource_manager
+from aidev_agent.packages.resource_manager import ResourceManagerProtocol
+from aidev_agent.packages.resource_manager.registry import resource_manager as resource_manager_factory
+from django.conf import settings
+
 from aidev_bkplugin.models import Checkpoint, Write
 from aidev_bkplugin.packages.checkpoint import BKDjangoSaver
-from django.conf import settings
 
 from .agent_config import AgentConfigFetcher
 
@@ -31,20 +33,21 @@ class AgentHelper:
     """无状态 helper 集合：按 ``@classmethod`` 暴露 client / 版本 / URL / HTML 工具。"""
 
     @classmethod
-    def get_client(cls, **kwargs: Any) -> "Client":
-        """通过 ``resource_manager().get_client(**kwargs)`` 取应用态 ``Client``。
+    def get_client(cls, resource_manager: Optional[ResourceManagerProtocol] = None, **kwargs: Any) -> "Client":
+        """通过 ``resource_manager.get_client(**kwargs)`` 取 ``Client``。
 
-        替代历史 ``utils.bkaidev_api_client``。``kwargs`` 透传给底层 ``BKAidevApi.get_client``，
-        默认实例不含用户认证（``username`` / ``access_token`` 都为空），用户态请通过
-        ``AGUISessionWriter(..., username=...)`` 等 header 透传，或在调用层显式构造
-        ``AgentResourceManager(username=...)``。
+        替代历史 ``utils.bkaidev_api_client``。``kwargs`` 透传给底层 ``BKAidevApi.get_client``。
+        传入 ``resource_manager``（如 view 层的 ``PluginResourceManager(username=...)``）时得到
+        用户态 client；不传则回落全局单例，为应用态、不含用户认证，此时用户身份需靠
+        ``AGUISessionWriter(..., username=...)`` 等 header 透传。
         """
-        return resource_manager().get_client(**kwargs)
+        resource_manager = resource_manager or resource_manager_factory()
+        return resource_manager.get_client(**kwargs)
 
     @classmethod
     def get_checkpointer(cls):
         """LangGraph 持久化 checkpointer；使用 Django ORM 存储 checkpoint，支持 interrupt/resume。"""
-        logger.info('[AgentHelper] get_checkpointer: 创建 BKDjangoSaver 实例')
+        logger.info("[AgentHelper] get_checkpointer: 创建 BKDjangoSaver 实例")
         return BKDjangoSaver(checkpoint_model=Checkpoint, writes_model=Write)
 
     @classmethod

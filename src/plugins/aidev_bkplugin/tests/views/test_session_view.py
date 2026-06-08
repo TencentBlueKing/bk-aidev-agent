@@ -45,11 +45,21 @@ def _session(session_code, protocol_version=AGUI_PROTOCOL_VERSION):
     return {"session_code": session_code, "protocol_version": protocol_version}
 
 
-def test_list_without_pagination_returns_legacy_array(monkeypatch):
+def _view(view_cls, api):
+    """构造 view 并注入 mock client。
+
+    view 层已改为按请求取 ``self.client``，不再有模块级 client 可 patch；
+    此处 ``PluginViewSet`` 是假基类（object），``client`` 非 property，可直接实例赋值。
+    """
+    view = view_cls()
+    view.client = SimpleNamespace(api=api)
+    return view
+
+
+def test_list_without_pagination_returns_legacy_array():
     api = MagicMock()
     api.list_chat_session.return_value = {"data": [_session("v2"), _session("v1", "v1")]}
-    monkeypatch.setattr(session_mod, "client", SimpleNamespace(api=api))
-    view = session_mod.ChatSessionViewSet()
+    view = _view(session_mod.ChatSessionViewSet, api)
 
     response = view.list(_request())
 
@@ -60,7 +70,7 @@ def test_list_without_pagination_returns_legacy_array(monkeypatch):
     )
 
 
-def test_list_with_pagination_returns_paginated_data(monkeypatch):
+def test_list_with_pagination_returns_paginated_data():
     api = MagicMock()
     # 平台已按 protocol_version 过滤，返回纯 v2 分页结构，Agent 侧原样透传
     paginated = {
@@ -70,8 +80,7 @@ def test_list_with_pagination_returns_paginated_data(monkeypatch):
         "results": [_session("v2")],
     }
     api.list_chat_session.return_value = {"data": paginated}
-    monkeypatch.setattr(session_mod, "client", SimpleNamespace(api=api))
-    view = session_mod.ChatSessionViewSet()
+    view = _view(session_mod.ChatSessionViewSet, api)
 
     response = view.list(_request({"page": "1", "page_size": "20"}))
 
@@ -87,22 +96,20 @@ def test_list_with_pagination_returns_paginated_data(monkeypatch):
     )
 
 
-def test_list_with_pagination_handles_legacy_backend_array(monkeypatch):
+def test_list_with_pagination_handles_legacy_backend_array():
     api = MagicMock()
     api.list_chat_session.return_value = {"data": [_session("v2"), _session("v1", "v1")]}
-    monkeypatch.setattr(session_mod, "client", SimpleNamespace(api=api))
 
-    response = session_mod.ChatSessionViewSet().list(_request({"page": "1", "page_size": "20"}))
+    response = _view(session_mod.ChatSessionViewSet, api).list(_request({"page": "1", "page_size": "20"}))
 
     assert response.data == [_session("v2")]
 
 
-def test_list_pagination_params_invalid_fallback_to_default(monkeypatch):
+def test_list_pagination_params_invalid_fallback_to_default():
     """非法分页参数（0、负数、非数字）回退默认值，并以整数透传给平台"""
     api = MagicMock()
     api.list_chat_session.return_value = {"data": [_session("v2")]}
-    monkeypatch.setattr(session_mod, "client", SimpleNamespace(api=api))
-    view = session_mod.ChatSessionViewSet()
+    view = _view(session_mod.ChatSessionViewSet, api)
 
     # page=0、page_size=abc 均非法，应回退默认值
     view.list(_request({"page": "0", "page_size": "abc"}))
@@ -141,10 +148,9 @@ def test_stop_clears_stale_notification_before_sending_cancel(monkeypatch, run_i
         ),
     )
     monkeypatch.setattr(session_mod.AgentConfigFetcher, "get_info", lambda **kwargs: {"agent_type": "chat"})
-    monkeypatch.setattr(session_mod, "client", SimpleNamespace(api=api))
 
     request_data = {"session_code": session_code, **({"run_id": run_id} if run_id else {})}
-    response = session_mod.ChatSessionContentViewSet().stop(_request(data=request_data))
+    response = _view(session_mod.ChatSessionContentViewSet, api).stop(_request(data=request_data))
 
     assert response.data == {"stopped": True}
     assert call_order == [
@@ -170,9 +176,9 @@ def test_stop_omits_producer_state_when_detection_fails(monkeypatch):
     monkeypatch.setattr(session_mod.message_handler_factory, "get", lambda: handler)
     monkeypatch.setattr(session_mod.GeneratorStreamingHelper, "cancel", lambda *args, **kwargs: True)
     monkeypatch.setattr(session_mod.AgentConfigFetcher, "get_info", lambda **kwargs: {"agent_type": "chat"})
-    monkeypatch.setattr(session_mod, "client", SimpleNamespace(api=api))
 
-    response = session_mod.ChatSessionContentViewSet().stop(_request(data={"session_code": "session-stop"}))
+    view = _view(session_mod.ChatSessionContentViewSet, api)
+    response = view.stop(_request(data={"session_code": "session-stop"}))
 
     assert response.data == {"stopped": True}
     api.stop_chat_session_content.assert_called_once_with(

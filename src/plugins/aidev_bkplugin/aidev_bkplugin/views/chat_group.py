@@ -5,7 +5,7 @@ import copy
 from django.conf import settings
 from rest_framework.views import Response
 
-from aidev_bkplugin.views.base import PluginViewSet, client
+from aidev_bkplugin.views.base import PluginViewSet
 
 
 class ChatGroupViewSet(PluginViewSet):
@@ -18,5 +18,5 @@ class ChatGroupViewSet(PluginViewSet):
         data["chat_group_type"] = settings.CHAT_GROUP_TYPE
         data["username"] = username
 
-        result = client.api.create_chat_group(json=request.data, headers={"X-BKAIDEV-USER": username})
+        result = self.client.api.create_chat_group(json=request.data, headers={"X-BKAIDEV-USER": username})
         return Response(data=result["data"])

@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """Session 管理。
 
-封装 chat session 的取/建、内容持久化；底层 client 通过
-``resource_manager().get_client()`` 获取（应用态 + ``X-BKAIDEV-USER`` header），
-不直接依赖 ``aidev_agent.api.bk_aidev.BKAidevApi``。
+封装 chat session 的取/建、内容持久化；底层 client 取自构造时注入的 ``resource_manager``，
+未注入时回落 ``resource_manager()`` 全局单例（应用态），不直接依赖
+``aidev_agent.api.bk_aidev.BKAidevApi``。
 """
 
 from __future__ import annotations
@@ -14,7 +14,8 @@ from logging import getLogger
 from typing import Iterable
 
 from aidev_agent.enums import ChatContentStatus, PromptRole, SessionsStatus
-from aidev_agent.packages.resource_manager import resource_manager
+from aidev_agent.packages.resource_manager import ResourceManagerProtocol
+from aidev_agent.packages.resource_manager.registry import resource_manager as resource_manager_factory
 from aidev_agent.pydantic_models import ChatPrompt
 from django.conf import settings
 
@@ -29,13 +30,22 @@ STALE_SESSION_THRESHOLD_SECONDS = 1800  # 30 分钟
 class SessionManager:
     """会话管理：取/建 session、持久化 chat history、保存 AI 回复。
 
-    所有 HTTP 调用经由 ``resource_manager().get_client()``，业务侧 import 上不再耦合
+    所有 HTTP 调用经由 ``self.resource_manager.get_client()``，业务侧 import 上不再耦合
     ``BKAidevApi``；用户名通过 ``X-BKAIDEV-USER`` header 透传给后端识别用户。
+
+    ``resource_manager`` 由调用方（通常是 view 层的 ``get_resource_manager()``）按请求注入；
+    缺省时回落全局单例，此时为纯应用态、不带用户 ``access_token``。
     """
 
-    def __init__(self, username: str, agent_code: str | None = None):
+    def __init__(
+        self,
+        username: str,
+        agent_code: str | None = None,
+        resource_manager: ResourceManagerProtocol | None = None,
+    ):
         self.username = username
         self.agent_code = agent_code or settings.APP_CODE
+        self.resource_manager = resource_manager or resource_manager_factory()
 
     @staticmethod
     def generate_session_code(username: str, agent_code: str, thread_id: str) -> str:
@@ -44,7 +54,7 @@ class SessionManager:
         return hashlib.md5(raw_string.encode()).hexdigest()
 
     def _client(self):
-        return resource_manager().get_client()
+        return self.resource_manager.get_client()
 
     def _user_headers(self) -> dict:
         return {"X-BKAIDEV-USER": self.username}
@@ -54,8 +64,7 @@ class SessionManager:
 
         使用平台 get_or_create 幂等接口，替代 retrieve+create 两步操作。
         """
-        rm = resource_manager()
-        rm.get_or_create_session(
+        self.resource_manager.get_or_create_session(
             session_code=session_code,
             session_name=session_name,
             protocol_version=AGUI_PROTOCOL_VERSION,
