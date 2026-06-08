@@ -178,6 +178,12 @@
             :render-mode="renderMode"
             @stop-streaming="emits('stopStreaming')"
           >
+            <template #group="{ group }">
+              <slot
+                name="group"
+                v-bind="{ group }"
+              />
+            </template>
             <template #default="{ message, messageToolsStatus, onInterruptResume: slotOnInterruptResume }">
               <slot
                 name="message"
@@ -285,7 +291,7 @@
 
   import { type Message, type UserMessage, MessageStatus } from '../../ag-ui/types';
   import { LOADING_MESSAGE_ID, RenderMode } from '../../common';
-  import { useMessageGroup } from '../../composables';
+  import { type MessageGroup, useMessageGroup } from '../../composables';
   import { useCommonTippyProvider, useRenderModeProvider } from '../../composables/use-common';
   import { EXECUTION_TAB_NAME, useCustomTabProvider } from '../../composables/use-custom-tab';
   import { useFullScreen } from '../../composables/use-full-screen';
@@ -361,6 +367,7 @@
       onUserShortcutConfirm?: (message: Message, formModel: Record<string, unknown>) => Promise<void>;
       selectedUserMessages: Message[];
     }) => null | undefined | VNode;
+    group: (props: { group: MessageGroup }) => unknown;
     interruptQuestion: UserQuestionCardSlots['question'];
     message: (props: {
       message: Message;

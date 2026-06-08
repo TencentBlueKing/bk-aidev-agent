@@ -392,8 +392,19 @@ vi.mock('../chat-message/message-container/message-container.vue', () => ({
       renderMode: String,
     },
     emits: ['stopStreaming', 'update:selectedUserMessages'],
-    setup(props) {
-      return () => h('div', { class: 'mock-message-container', 'data-render-mode': props.renderMode });
+    setup(props, { slots }) {
+      return () =>
+        h(
+          'div',
+          { class: 'mock-message-container', 'data-render-mode': props.renderMode },
+          (
+            props.messageGroups as Array<{
+              messages: Array<{ id?: string }>;
+              type: string;
+              uid: string;
+            }>
+          )?.map(group => slots.group?.({ group }) ?? h('div', { class: 'default-group-fallback' })),
+        );
     },
   }),
 }));
@@ -626,6 +637,29 @@ describe('ChatContainer', () => {
 
       expect(wrapper.find('.ai-welcome-remark').exists()).toBe(true);
       expect(wrapper.find('.mock-content-render').text()).toBe('欢迎使用');
+    });
+
+    it('应该支持 group 插槽自定义消息组渲染', () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      mockMessageGroupsRef.value = [
+        { messages: [{ id: '1' }], type: MessageRole.User, uid: 'group-user-1' },
+        { messages: [{ id: '2' }], type: MessageRole.Assistant, uid: 'group-assistant-2' },
+      ];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages },
+        slots: {
+          group: ({ group }: { group: { type: string; uid: string } }) =>
+            h('div', { class: 'custom-group', 'data-uid': group.uid, 'data-type': group.type }, 'Custom Group'),
+        },
+      });
+
+      const customGroups = wrapper.findAll('.custom-group');
+      expect(customGroups.length).toBe(2);
+      expect(customGroups[0].attributes('data-uid')).toBe('group-user-1');
+      expect(customGroups[0].attributes('data-type')).toBe(MessageRole.User);
+      expect(customGroups[1].attributes('data-uid')).toBe('group-assistant-2');
+      expect(customGroups[1].attributes('data-type')).toBe(MessageRole.Assistant);
     });
   });
 

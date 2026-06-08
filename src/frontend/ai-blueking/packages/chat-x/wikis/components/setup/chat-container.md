@@ -257,6 +257,8 @@ ai-chat-container
     │   └── collapse-button（折叠按钮，CollapsedIcon；折叠时图标旋转，hover 高亮 #3a84ff）
     └── main（主内容区）
         ├── MessageContainer（有消息时）
+        │   ├── #group 插槽（可选，自定义消息组内容）
+        │   ├── #message 插槽（可选，自定义单条消息）
         │   └── 消息列表 + 工具栏
         ├── 欢迎页（无消息时，容器 .ai-welcome-content）
         │   └── welcome 插槽（默认：Banner + 欢迎标题 + 开场白 ContentRender；自定义则整块替换）
@@ -724,6 +726,25 @@ ai-chat-container
 
 如果没有传入 `onInterruptResume`，输入框自由文本不会被中断逻辑截获，仍然走普通 `onSendMessage`，避免输入被静默清空。
 
+## 自定义消息组渲染
+
+通过 `#group` 插槽可替换单个消息组的默认内容，透传至内部 `MessageContainer`。外层消息组容器（`id`、hover、选中背景）仍由 `MessageContainer` 管理。
+
+> **注意**：提供 `#group` 后需自行编排组内全部 UI（Checkbox、消息列表、`MessageTools`）；若只需替换单条消息，请使用 `#message` 插槽。详见 [MessageContainer 自定义消息组渲染](/components/setup/message-container#自定义消息组渲染)。
+
+```vue
+<ChatContainer
+  v-model="inputValue"
+  :messages="messages"
+  message-status="complete"
+  :on-send-message="handleSendMessage"
+>
+  <template #group="{ group }">
+    <MyCustomGroup :group="group" />
+  </template>
+</ChatContainer>
+```
+
 ### 自定义题目渲染
 
 通过 `#interruptQuestion` slot 可覆盖输入区上方 `UserQuestionCard` 的默认选择题渲染，参数与 [UserQuestionCard](/components/agent/user-question-card) 的 `#question` 一致：
@@ -877,6 +898,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | ----------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | codeHeader        | `{ language: string; token: Token[] }`                                                                            | 代码块头部自定义操作区域，透传给 MessageRender → ContentRender → MarkdownContent → CodeContent |
 | default           | 消息列表相关绑定（messages 等）                                                                                   | 自定义消息列表区域                                                                             |
+| group             | `{ group: MessageGroup }`                                                                                         | 自定义单个消息组内容，透传至 MessageContainer 的 `#group`；替换默认 Checkbox、消息列表与工具栏   |
 | interruptQuestion | `{ question, qIndex, answer, setAnswer, confirm }`                                                                  | 自定义 UserQuestion 单题渲染，透传至输入区上方 UserQuestionCard 的 `#question`                 |
 | message           | `{ message, messageToolsStatus, onInterruptResume }`                                                              | 自定义单条消息渲染；自定义渲染中断消息时需继续透传 `onInterruptResume`                         |
 | welcome           | `{ openingRemark: string }`                                                                                       | 无消息时自定义欢迎页；传入则替换默认 Banner、标题与开场白区域（整块替换）                      |
@@ -924,7 +946,19 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 ## 类型定义
 
 ```typescript
-import { ChatContainer, RenderMode, type CustomTab, type Shortcut, type Message } from '@blueking/chat-x';
+import { ChatContainer, RenderMode, MessageRole, type CustomTab, type MessageGroup, type Shortcut, type Message } from '@blueking/chat-x';
+
+// 消息组（由 useMessageGroup 生成）
+interface MessageGroup {
+  checked: boolean;
+  isHover: boolean;
+  messages: Message[];
+  pause?: boolean;
+  startTime?: number;
+  type: MessageRole;
+  uid: string;
+  userMessageTitle?: number | string;
+}
 
 // 自定义 Tab（data 可与 messageUid 组合，供侧栏定位主对话）
 interface CustomTab<T = Record<string, unknown>> {

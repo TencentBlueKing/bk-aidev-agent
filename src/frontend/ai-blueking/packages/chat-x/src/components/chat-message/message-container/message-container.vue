@@ -14,76 +14,81 @@
       @mouseenter="handleMouseEnter(group)"
       @mouseleave="e => handleMouseLeave(group, e)"
     >
-      <Checkbox
-        v-if="enableSelection && group.type !== MessageRole.Loading"
-        class="message-group-checkbox"
-        :model-value="group.checked"
-        @update:model-value="(checked: boolean) => handleCheckboxChange(group, checked)"
-      />
-      <div
-        class="message-group-messages"
-        :class="{
-          'message-group-enabled-selection':
-            renderMode === RenderMode.Share || (enableSelection && group.type !== MessageRole.Loading),
-        }"
-        :style="{
-          width: enableSelection && group.type !== MessageRole.Loading ? 'calc(100% - 16px)' : '100%',
-        }"
+      <slot
+        name="group"
+        v-bind="{ group }"
       >
-        <template
-          v-for="(message, index) in group.messages"
-          :key="index"
-        >
-          <slot
-            name="default"
-            v-bind="{ message, messageToolsStatus, onInterruptResume: props.onInterruptResume }"
-          >
-            <MessageRender
-              :key="index"
-              :message="message"
-              :message-tools-status="messageToolsStatus"
-              :on-action="(tool: IToolBtn) => handleUserAction(tool, message)"
-              :on-input-confirm="
-                (content: UserMessage['content'], docSchema: TagSchema) =>
-                  handleUserInputConfirm(message, content, docSchema)
-              "
-              :on-interrupt-resume="props.onInterruptResume"
-              :on-shortcut-confirm="
-                (formModel: Record<string, unknown>) => handleUserShortcutConfirm(message, formModel)
-              "
-              :tippy-options="messageToolsTippyOptions"
-            >
-              <template
-                v-if="$slots.answeredQuestion"
-                #answeredQuestion="slotProps"
-              >
-                <slot
-                  name="answeredQuestion"
-                  v-bind="slotProps"
-                />
-              </template>
-            </MessageRender>
-          </slot>
-        </template>
-        <MessageTools
-          v-if="
-            renderMode !== RenderMode.Share &&
-            !(enableSelection && group.type !== MessageRole.Loading) &&
-            !group.pause &&
-            group.type === MessageRole.Assistant &&
-            messageToolsStatus !== MessageToolsStatus.Hidden
-          "
-          :message-tools="messageTools"
-          :message-tools-status="messageToolsStatus"
-          :on-action="(tool: IToolBtn) => handleAgentAction(tool, group.messages)"
-          :style="{ visibility: group.isHover ? 'visible' : 'hidden' }"
-          :tippy-options="props.messageToolsTippyOptions"
-          @feedback="
-            (tool: IToolBtn, reasonList: string[], otherReason: string) =>
-              props.onAgentFeedback?.(tool, group.messages, reasonList, otherReason)
-          "
+        <Checkbox
+          v-if="enableSelection && group.type !== MessageRole.Loading"
+          class="message-group-checkbox"
+          :model-value="group.checked"
+          @update:model-value="(checked: boolean) => handleCheckboxChange(group, checked)"
         />
-      </div>
+        <div
+          class="message-group-messages"
+          :class="{
+            'message-group-enabled-selection':
+              renderMode === RenderMode.Share || (enableSelection && group.type !== MessageRole.Loading),
+          }"
+          :style="{
+            width: enableSelection && group.type !== MessageRole.Loading ? 'calc(100% - 16px)' : '100%',
+          }"
+        >
+          <template
+            v-for="(message, index) in group.messages"
+            :key="index"
+          >
+            <slot
+              name="default"
+              v-bind="{ message, messageToolsStatus, onInterruptResume: props.onInterruptResume }"
+            >
+              <MessageRender
+                :key="index"
+                :message="message"
+                :message-tools-status="messageToolsStatus"
+                :on-action="(tool: IToolBtn) => handleUserAction(tool, message)"
+                :on-input-confirm="
+                  (content: UserMessage['content'], docSchema: TagSchema) =>
+                    handleUserInputConfirm(message, content, docSchema)
+                "
+                :on-interrupt-resume="props.onInterruptResume"
+                :on-shortcut-confirm="
+                  (formModel: Record<string, unknown>) => handleUserShortcutConfirm(message, formModel)
+                "
+                :tippy-options="messageToolsTippyOptions"
+              >
+                <template
+                  v-if="$slots.answeredQuestion"
+                  #answeredQuestion="slotProps"
+                >
+                  <slot
+                    name="answeredQuestion"
+                    v-bind="slotProps"
+                  />
+                </template>
+              </MessageRender>
+            </slot>
+          </template>
+          <MessageTools
+            v-if="
+              renderMode !== RenderMode.Share &&
+              !(enableSelection && group.type !== MessageRole.Loading) &&
+              !group.pause &&
+              group.type === MessageRole.Assistant &&
+              messageToolsStatus !== MessageToolsStatus.Hidden
+            "
+            :message-tools="messageTools"
+            :message-tools-status="messageToolsStatus"
+            :on-action="(tool: IToolBtn) => handleAgentAction(tool, group.messages)"
+            :style="{ visibility: group.isHover ? 'visible' : 'hidden' }"
+            :tippy-options="props.messageToolsTippyOptions"
+            @feedback="
+              (tool: IToolBtn, reasonList: string[], otherReason: string) =>
+                props.onAgentFeedback?.(tool, group.messages, reasonList, otherReason)
+            "
+          />
+        </div>
+      </slot>
     </div>
     <div
       ref="messageContainerBottomRef"
@@ -134,8 +139,8 @@
   import MessageRender from '../message-render/message-render.vue';
 
   import type { OnInterruptResume } from '../../../ag-ui/types/interrupt';
-  import type { UserQuestionAnsweredCardSlots } from '../interrupt-message/user-question/user-question-answered-card.vue';
   import type { IToolBtn, TagSchema } from '../../../types';
+  import type { UserQuestionAnsweredCardSlots } from '../interrupt-message/user-question/user-question-answered-card.vue';
 
   export type MessageContainerEmits = {
     (e: 'stopStreaming'): void;
@@ -192,14 +197,15 @@
   defineEmits<MessageContainerEmits>();
 
   defineSlots<{
+    // 中断消息「已回答内容」回显的自定义 slot，透传给内部 MessageRender
+    answeredQuestion: UserQuestionAnsweredCardSlots['answer'];
     // 自定义单条消息渲染（默认回退到内部 MessageRender）
     default: (props: {
       message: Message;
       messageToolsStatus?: MessageToolsStatus;
       onInterruptResume?: OnInterruptResume;
     }) => unknown;
-    // 中断消息「已回答内容」回显的自定义 slot，透传给内部 MessageRender
-    answeredQuestion: UserQuestionAnsweredCardSlots['answer'];
+    group: (props: { group: MessageGroup }) => unknown;
   }>();
 
   const messageContainerRef = useTemplateRef<HTMLElement>('messageContainerRef');

@@ -813,9 +813,69 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
   </div>
 </div>
 
+## 自定义消息组渲染
+
+使用 `#group` 插槽可替换单个消息组的默认内容（Checkbox、消息列表、`MessageTools`）。外层 `.message-group` 容器（含 `id`、hover 状态、选中背景色）仍由 `MessageContainer` 管理。
+
+> **注意**：提供 `#group` 后需自行编排组内全部 UI；若只需替换单条消息，请使用 `#default` 插槽。
+
+```vue
+<template>
+  <MessageContainer
+    :messages="messages"
+    :message-groups="messageGroups"
+    message-status="complete"
+    :on-agent-action="handleAgentAction"
+    @stop-streaming="handleStopStreaming"
+  >
+    <template #group="{ group }">
+      <div class="custom-group">
+        <span class="custom-group-label">{{ group.type }}</span>
+        <div
+          v-for="message in group.messages"
+          :key="message.id"
+          class="custom-group-message"
+        >
+          {{ typeof message.content === 'string' ? message.content : JSON.stringify(message.content) }}
+        </div>
+      </div>
+    </template>
+  </MessageContainer>
+</template>
+```
+
+**渲染效果**（简化自定义组布局，不含默认 Checkbox 与工具栏）
+
+<div class="demo">
+  <div style="height: 300px; border: 1px solid #eaebf0; border-radius: 8px; overflow: hidden;">
+    <MessageContainerComp
+      :messages="messagesBasic"
+      :message-groups="groupsBasic"
+      message-status="complete"
+      :on-agent-action="handleAgentAction"
+      :on-agent-feedback="handleAgentFeedback"
+      :on-user-action="handleUserAction"
+      @stop-streaming="handleStopStreaming"
+    >
+      <template #group="{ group }">
+        <div style="display: flex; flex-direction: column; gap: 8px; width: 100%;">
+          <span style="font-size: 12px; color: #979ba5;">{{ group.type }}</span>
+          <div
+            v-for="message in group.messages"
+            :key="message.id"
+            style="padding: 8px 12px; background: #f5f7fa; border-radius: 4px; font-size: 13px;"
+          >
+            {{ typeof message.content === 'string' ? message.content.slice(0, 80) + (message.content.length > 80 ? '…' : '') : JSON.stringify(message.content) }}
+          </div>
+        </div>
+      </template>
+    </MessageContainerComp>
+  </div>
+</div>
+
 ## 自定义消息渲染
 
-使用默认插槽替换单条消息的渲染，插槽参数包含 `message` 和 `messageToolsStatus`：
+使用默认插槽替换单条消息的渲染，插槽参数包含 `message`、`messageToolsStatus` 和 `onInterruptResume`：
 
 ```vue
 <template>
@@ -826,10 +886,11 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
     :on-user-action="handleUserAction"
     @stop-streaming="handleStopStreaming"
   >
-    <template #default="{ message, messageToolsStatus }">
+    <template #default="{ message, messageToolsStatus, onInterruptResume }">
       <MyCustomMessage
         :message="message"
         :message-tools-status="messageToolsStatus"
+        :on-interrupt-resume="onInterruptResume"
       />
     </template>
   </MessageContainer>
@@ -942,15 +1003,28 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
 
 ### Slots
 
-| 插槽名           | 参数                                                                        | 说明                                                                                     |
-| ---------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| answeredQuestion | `{ item, index, status }`                                                   | 自定义 UserQuestion 已回答回显，透传给 MessageRender → InterruptMessageRender            |
-| default          | `{ message: Message, messageToolsStatus: MessageToolsStatus \| undefined }` | 自定义单条消息渲染，消息分组和工具栏仍由容器管理                                         |
+| 插槽名           | 参数                                                                                                        | 说明                                                                                     |
+| ---------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| answeredQuestion | `{ item, index, status }`                                                                                   | 自定义 UserQuestion 已回答回显，透传给 MessageRender → InterruptMessageRender            |
+| default          | `{ message: Message, messageToolsStatus?: MessageToolsStatus, onInterruptResume?: OnInterruptResume }`     | 自定义单条消息渲染；消息分组外层容器与 `#group` 未覆盖时的工具栏仍由容器管理             |
+| group            | `{ group: MessageGroup }`                                                                                   | 自定义单个消息组内容，替换默认 Checkbox、消息列表与 `MessageTools`；外层组容器仍由组件管理 |
 
 ## 类型定义
 
 ```typescript
-import { MessageRole, MessageStatus, MessageToolsStatus, type Message, type IToolBtn } from '@blueking/chat-x';
+import { MessageRole, MessageStatus, MessageToolsStatus, type Message, type MessageGroup, type IToolBtn } from '@blueking/chat-x';
+
+// 消息组（由 useMessageGroup 生成，也可手动传入 messageGroups）
+interface MessageGroup {
+  checked: boolean;
+  isHover: boolean;
+  messages: Message[];
+  pause?: boolean;
+  startTime?: number;
+  type: MessageRole;
+  uid: string;
+  userMessageTitle?: number | string;
+}
 
 // onAgentAction 回调类型
 // messages 为当前消息组全部消息（可含 reasoning / activity 等）
