@@ -30,7 +30,7 @@ export enum CustomEventName {
   FlowAgentEnd = 'flow_agent_end',
   FlowAgentResult = 'flow_agent_result',
   FlowAgentStart = 'flow_agent_start',
-  FlowAgentRestart = 'flow_agent_restart',
+  FlowAgentUpdate = 'flow_agent_update',
   KnowledgeRagEnd = 'knowledge_rag_end',
   KnowledgeRagResult = 'knowledge_rag_result',
   KnowledgeRagStart = 'knowledge_rag_start',
@@ -113,6 +113,7 @@ export enum ApprovalInterruptTicketStatus {
 /** 中断原因 */
 export enum InterruptReason {
   AIDevToolApproval = 'aidev:tool_approval',
+  UserQuestion = 'aidev:user_question',
 }
 
 /** 恢复状态 */
@@ -291,17 +292,35 @@ export type IApprovalInterrupt = IInterrupt<
   }
 >;
 
+export type IUserQuestionInterrupt = IInterrupt<
+  InterruptReason.UserQuestion,
+  {
+    questions:  {
+      header: string;
+      multiSelect?: boolean;
+      options?: { description: string; label: string }[];
+      question: string;
+    }[];
+  }
+>;
+
 export interface IResume {
   interruptId: string;
   status: ResumeStatus;
-  payload: Record<string, unknown>;
+  payload: {
+    answers: {
+      answer: { description: string; label: string }[];
+      multiSelect?: boolean;
+      question: string;
+    }[];
+  };
 }
 
 export type IRunFinishedOutcome = {
   type: RunFinishedOutcomeType.Success;
 } | {
   type: RunFinishedOutcomeType.Interrupt;
-  interrupts: IApprovalInterrupt[];
+  interrupts: Array<IApprovalInterrupt | IUserQuestionInterrupt>;
 }
 
 /**

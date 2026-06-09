@@ -71,6 +71,19 @@ export enum MessageType {
   Text = 'text',
 }
 
+export enum UserOperation {
+  FlowNodeRetry = 'flow_node_retry',
+  FlowNodeSkip = 'flow_node_skip',
+  ApprovalCancel = 'approval_cancel',
+}
+
+export type IUserOperationPayload = {
+  node_id: string;
+  task_id: string;
+} | {
+  interrupt_id: number;
+}
+
 export interface IActivityMessage extends IBaseMessage {
   activityType: ActivityType;
   content: IFlowAgentResultCustomValue | IKnowledgeRag | IReferenceDocument;

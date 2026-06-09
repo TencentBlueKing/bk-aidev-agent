@@ -146,6 +146,9 @@ export class AGUIProtocol implements ISSEProtocol {
       case CustomEventName.ApprovalResult:
         this.handleApprovalResultCustomEvent(event);
         break;
+      case CustomEventName.FlowAgentUpdate:
+        this.handleFlowAgentUpdateCustomEvent(event);
+        break;
       default:
         break;
     }
@@ -195,6 +198,22 @@ export class AGUIProtocol implements ISSEProtocol {
         task_state: FlowTaskState.Created,
       })),
       status: MessageStatus.Streaming,
+    });
+  }
+
+  /**
+   * 自定义事件 处理流程编排任务更新
+   */
+  handleFlowAgentUpdateCustomEvent(event: ICustomEvent) {
+    const value = event.value as IFlowAgentResultCustomValue;
+    this.messageModule.list.value.forEach(item => {
+      if (item.role === MessageRole.Activity && item.activityType === ActivityType.FlowAgent) {
+        const isSameTask = (item.content as IFlowAgentResultCustomValue)[0].task_id === value[0].task_id;
+        // 通过第一个 task_id 判断是否是同一个任务，是的话直接更新消息内容
+        if (isSameTask) {
+          item.content = value;
+        }
+      }
     });
   }
 
@@ -299,17 +318,18 @@ export class AGUIProtocol implements ISSEProtocol {
    */
   handleRunFinishedEvent(event: IRunFinishedEvent) {
     const message = this.messageModule.getCurrentLoadingMessage();
-    if (message && !event.outcome) {
-      // 正常结束，标记为完成
-      message.status = MessageStatus.Complete;
-    }
+    message.status = MessageStatus.Complete;
+    // 如果是中断消息，则创建一个中断消息
     if (event.outcome?.type === RunFinishedOutcomeType.Interrupt) {
-      // 如果是中断消息，则创建一个中断消息
       this.messageModule.plusMessage({
         role: MessageRole.Interrupt,
         content: event,
         status: MessageStatus.Pending,
       });
+    }
+    // 二次返回，直接更新消息内容
+    if (event.outcome?.type === RunFinishedOutcomeType.Success) {
+      message.content = event;
     }
   }
 

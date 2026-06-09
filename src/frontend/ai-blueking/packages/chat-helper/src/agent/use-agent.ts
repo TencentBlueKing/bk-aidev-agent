@@ -26,12 +26,12 @@
 
 import { ref } from 'vue';
 
-import { AGUIProtocol, ApprovalInterruptTicketStatus, RunFinishedOutcomeType, type IResume } from '../event';
-import { MessageRole, MessageStatus } from '../message';
+import { AGUIProtocol, ApprovalInterruptTicketStatus, IApprovalInterrupt, RunFinishedOutcomeType, type IResume } from '../event';
+import { MessageRole, MessageStatus, UserOperation } from '../message';
 
 import type { IRequestConfig, ISSEProtocol } from '../http';
 import type { IMediatorModule } from '../mediator';
-import type { IInterruptMessage, IMessageProperty, IUserMessage } from '../message/type';
+import type { IInterruptMessage, IMessageProperty, IUserMessage, IUserOperationPayload } from '../message/type';
 import type { IAgentInfo } from './type';
 import { SessionStatus } from '../session/type';
 
@@ -77,7 +77,28 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     }
   };
 
-  const streamRequest = async (sessionCode: string, url?: string, config?: IRequestConfig, resume?: IResume) => {
+  const userOperationStreamRequest = (sessionCode: string, operation: UserOperation, payload: IUserOperationPayload, config?: IRequestConfig) => {
+    return mediator.http?.message.userOperation(sessionCode, operation, payload, config)
+      .then(() => {
+        if (operation !== UserOperation.ApprovalCancel) {
+          streamRequest({ sessionCode, config });
+        }
+      });
+  }
+
+  const streamRequest = async ({
+    sessionCode,
+    url,
+    config,
+    resume,
+    input,
+  }: {
+    sessionCode: string;
+    url?: string;
+    config?: IRequestConfig;
+    resume?: IResume;
+    input?: string;
+  }) => {
     // ag-ui 协议需要注入消息模块
     if (usedProtocol instanceof AGUIProtocol) {
       usedProtocol.injectMessageModule(mediator.message);
@@ -107,8 +128,10 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       data: {
         session_code: sessionCode,
         resume,
+        input,
         execute_kwargs: {
           stream: true,
+          persist_input: !!input,
         },
       },
       controller: abortController,
@@ -144,7 +167,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       ...(property && { property }),
     });
     // 发起聊天
-    streamRequest(sessionCode, url, config);
+    streamRequest({ sessionCode, url, config });
   };
 
   /**
@@ -156,7 +179,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
    */
   const resumeStreamingChat = (sessionCode: string, url?: string, config?: IRequestConfig) => {
     if (mediator.session?.current.value?.status === SessionStatus.Running) {
-      streamRequest(sessionCode, url, config);
+      streamRequest({ sessionCode, url, config });
     }
   };
 
@@ -169,7 +192,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     const lastMessage = mediator.message?.list.value.at(-1) as IInterruptMessage;
     const isInterruptMessage = lastMessage?.role === MessageRole.Interrupt;
     const isTicketPending = lastMessage?.content?.outcome?.type === RunFinishedOutcomeType.Interrupt
-      && lastMessage?.content?.outcome?.interrupts?.some(interrupt => interrupt.metadata?.ticket?.status === ApprovalInterruptTicketStatus.Pending);
+      && lastMessage?.content?.outcome?.interrupts?.some(interrupt => (interrupt as IApprovalInterrupt).metadata?.ticket?.status === ApprovalInterruptTicketStatus.Pending);
     if (isInterruptMessage && isTicketPending) {
       setTimeout(() => {
         // 如果会话不匹配，则不继续轮询
@@ -178,7 +201,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
         mediator.http?.session.isResumeSession(sessionCode).then(res => {
           if (res) {
             // 可以继续聊天，重新发起聊天
-            streamRequest(sessionCode)
+            streamRequest({ sessionCode })
           } else {
             // 不可以继续聊天，继续轮询
             pollResumeSession(sessionCode);
@@ -256,7 +279,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     });
 
     // 6. 立即发起流式请求（不等待删除和创建的 API 完成）
-    streamRequest(sessionCode, url, config);
+    streamRequest({ sessionCode, url, config });
 
     // 7. 在后台等待 API 完成，处理可能的错误
     Promise.all([deletePromise, createPromise])['catch'](error => {
@@ -284,6 +307,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     getAgentInfo,
     reset,
     pollResumeSession,
+    userOperationStreamRequest,
   };
 };
 
