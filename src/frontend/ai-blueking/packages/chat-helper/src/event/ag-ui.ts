@@ -318,7 +318,9 @@ export class AGUIProtocol implements ISSEProtocol {
    */
   handleRunFinishedEvent(event: IRunFinishedEvent) {
     const message = this.messageModule.getCurrentLoadingMessage();
-    message.status = MessageStatus.Complete;
+    if (message) {
+      message.status = MessageStatus.Complete;
+    }
     // 如果是中断消息，则创建一个中断消息
     if (event.outcome?.type === RunFinishedOutcomeType.Interrupt) {
       this.messageModule.plusMessage({

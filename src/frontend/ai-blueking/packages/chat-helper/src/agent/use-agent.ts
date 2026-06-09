@@ -103,10 +103,27 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     if (usedProtocol instanceof AGUIProtocol) {
       usedProtocol.injectMessageModule(mediator.message);
     }
+    if (input) {
+      // 列表新增一个用户消息
+      mediator.message?.list.value.push({
+        role: MessageRole.User,
+        content: input,
+        status: MessageStatus.Complete,
+        sessionCode,
+      });
+    }
     // 事件代理
     const onDone = () => {
       isChatting.value = false;
       usedProtocol.onDone?.call(usedProtocol);
+      if (input) {
+        // 刷新列表，获取前端 mock message 的 id，并更新到列表中
+        mediator.http?.message?.getMessages(sessionCode).then(res => {
+          const lastUserMessage = mediator.message?.list.value.findLast(item => item.role === MessageRole.User);
+          const lastApiUserMessage = res.findLast(item => item.role === MessageRole.User);
+          lastUserMessage.id = lastApiUserMessage.id;
+        });
+      }
     };
     const onError = (error: Error) => {
       isChatting.value = false;
