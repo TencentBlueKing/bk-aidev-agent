@@ -18,6 +18,7 @@ domain: tools
 <script lang="ts" setup>
   import { ref } from 'vue';
   import ToolBtn from '../../../src/components/ai-buttons/tool-btn/tool-btn.vue';
+  import { FullScreenIcon } from '../../../src/icons/screen';
 
   const activeId = ref<string | null>(null);
   const toggleActive = (data) => {
@@ -47,8 +48,9 @@ div.ai-tool-btn（v-tippy，flex，min-width: 20px，height: 20px，border-radiu
   disabled=true → .is-disabled（color: #979ba5; cursor: not-allowed）
   :not(.is-disabled):hover → color: #4d4f56; background: #eaebf0
   │
-  ├── [id in ToolIconsMap] → <component :is="ToolIconsMap[id]" />（SVG 图标，font-size: 16px 控制大小）
-  └── [id not in ToolIconsMap] → <div>{{ name }}</div>（文本回退，XSS 安全）
+  └── <slot>（默认内容，可完全自定义）
+        ├── [id && id in ToolIconsMap] → <component :is="ToolIconsMap[id]" />（SVG 图标）
+        └── [其他] → <div>{{ name }}</div>（文本回退，XSS 安全）
 
 Tippy：content=description, theme='ai-chat-box', disabled=true 时 onShow 返回 false 不显示
 click 事件：disabled=true 时被 JS 拦截，不触发 emit
@@ -73,7 +75,7 @@ click 事件：disabled=true 时被 JS 拦截，不触发 emit
 | `activeLike`   | 点赞（实心）   | 激活态填充图标           |
 | `activeUnLike` | 不满意（实心） | 激活态填充图标           |
 
-> `id` 不在上表时，组件渲染 `<div>{{ name }}</div>` 作为文本回退。此时 `id` 的 TypeScript 类型会报错（`keyof typeof ToolIconsMap`），建议优先使用预置 ID。
+> 未传入 `id`、或 `id` 不在上表时，组件渲染 `<div>{{ name }}</div>` 作为文本回退。也可通过默认插槽完全自定义按钮内容（如全屏图标），此时可不传 `id`。
 
 ## 基础用法
 
@@ -255,7 +257,7 @@ click 事件：disabled=true 时被 JS 拦截，不触发 emit
 
 ## 未知 ID 的文本回退
 
-`id` 不在 `ToolIconsMap` 时渲染 `name` 文本，适用于自定义扩展场景（注意 TypeScript 会报类型错误）：
+`id` 不在 `ToolIconsMap` 时渲染 `name` 文本，适用于自定义扩展场景：
 
 <div class="demo">
   <div class="flex-gap-6">
@@ -264,13 +266,43 @@ click 事件：disabled=true 时被 JS 拦截，不触发 emit
   </div>
 </div>
 
+## 自定义插槽内容
+
+通过默认插槽可完全替换内置图标/文本，适用于预置 `ToolIconsMap` 未覆盖的图标场景（如侧栏全屏按钮）：
+
+```vue
+<template>
+  <ToolBtn
+    description="全屏"
+    :tippy-options="{ content: '全屏' }"
+    @click="handleFullScreen"
+  >
+    <FullScreenIcon />
+  </ToolBtn>
+</template>
+
+<script setup lang="ts">
+  import { ToolBtn, FullScreenIcon } from '@blueking/chat-x';
+
+  const handleFullScreen = () => {
+    // 进入全屏逻辑
+  };
+</script>
+```
+
+<div class="demo">
+  <ToolBtn description="全屏" :tippy-options="{ content: '全屏' }" @click="handleClick">
+    <FullScreenIcon />
+  </ToolBtn>
+</div>
+
 ## API
 
 ### Props
 
 | 属性名       | 类型                                                                       | 必填 | 默认值 | 说明                                                                                                               |
 | ------------ | -------------------------------------------------------------------------- | ---- | ------ | ------------------------------------------------------------------------------------------------------------------ |
-| id           | `keyof typeof ToolIconsMap`                                                | 是   | —      | 按钮标识；在 `ToolIconsMap` 中时渲染对应 SVG 图标，否则渲染 `name` 文本                                            |
+| id           | `keyof typeof ToolIconsMap`                                                | 否   | —      | 按钮标识；在 `ToolIconsMap` 中时渲染对应 SVG 图标，否则渲染 `name` 文本；使用插槽自定义内容时可省略                  |
 | name         | `string`                                                                   | 否   | —      | 按钮名称；`id` 无对应图标时作为文本内容渲染                                                                        |
 | description  | `string`                                                                   | 否   | —      | Tippy tooltip 内容；`disabled=true` 时不显示 tooltip                                                               |
 | active       | `boolean`                                                                  | 否   | —      | 激活态；`true` 时追加 `.is-active`（字色由 `id` 决定：`like`/`activeLike` 为蓝色 `#3a84ff`，其他为红色 `#E71818`） |
@@ -283,12 +315,18 @@ click 事件：disabled=true 时被 JS 拦截，不触发 emit
 | ------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | click  | `(data: IToolBtn & { active?: boolean; disabled?: boolean }, event: MouseEvent)` | 点击时触发；`data` 为组件当前全量 props（含 `active`/`disabled`）；`disabled=true` 时不触发 |
 
+### Slots
+
+| 插槽名  | 说明                                                                                       |
+| ------- | ------------------------------------------------------------------------------------------ |
+| default | 按钮内容；传入时替换默认的图标/文本渲染逻辑，常用于自定义 SVG 图标（如全屏、退出全屏按钮） |
+
 ## 类型定义
 
 ```typescript
 // 来自 @blueking/chat-x 导出
 interface IToolBtn {
-  id: keyof typeof ToolIconsMap; // 限定为预置 ID
+  id?: keyof typeof ToolIconsMap; // 预置 ID；省略时走 name 文本或插槽
   name?: string;
   description?: string;
 }

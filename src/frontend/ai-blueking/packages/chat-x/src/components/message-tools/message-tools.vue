@@ -38,7 +38,7 @@
         :key="tool.id"
       >
         <Tippy
-          v-if="['like', 'unlike'].includes(tool.id)"
+          v-if="tool.id === 'like' || tool.id === 'unlike'"
           ref="feedbackTippyRef"
           v-bind="tippyProps"
           @show="handleTippyShow(tool.id)"

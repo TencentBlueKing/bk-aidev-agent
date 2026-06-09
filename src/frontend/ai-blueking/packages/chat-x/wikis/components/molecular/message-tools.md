@@ -434,9 +434,9 @@ const CONST_UPDATE_TOOLS = [
 import { MessageToolsStatus, type IToolBtn } from '@blueking/chat-x';
 
 interface IToolBtn {
-  id: string; // 工具唯一标识；与 ToolIconsMap 匹配时显示内置图标，否则显示 name 文本
-  name: string; // 工具名称，无对应图标时显示；也用作 tooltip fallback
-  description: string; // tooltip 文本
+  id?: keyof typeof ToolIconsMap; // 工具唯一标识；与 ToolIconsMap 匹配时显示内置图标，否则显示 name 文本
+  name?: string; // 工具名称，无对应图标时显示；也用作 tooltip fallback
+  description?: string; // tooltip 文本
 }
 
 enum MessageToolsStatus {

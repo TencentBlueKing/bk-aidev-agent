@@ -41,6 +41,7 @@ export const transferSessionApi2Session = (data: ISessionApi): ISession => {
     rate: data.rate,
     updatedAt: data.updated_at,
     createdAt: data.created_at,
+    status: data.status,
     roleInfo: data.role_info
       ? {
           collectionId: data.role_info.collection_id,
@@ -73,6 +74,7 @@ export const transferSession2SessionApi = (data: ISession): ISessionApi => {
     rate: data.rate,
     updated_at: data.updatedAt,
     created_at: data.createdAt,
+    status: data.status,
     role_info: data.roleInfo
       ? {
           collection_id: data.roleInfo.collectionId,

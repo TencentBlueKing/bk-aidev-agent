@@ -29,6 +29,7 @@ export * from './use-clipboard';
 export * from './use-command-selection';
 export * from './use-container-scroll';
 export * from './use-custom-tab';
+export * from './use-full-screen';
 export * from './use-global-config';
 export * from './use-menu-keydown';
 export * from './use-message-group';

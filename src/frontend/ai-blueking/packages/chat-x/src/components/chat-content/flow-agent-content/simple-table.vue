@@ -49,16 +49,12 @@
 </script>
 
 <style lang="scss">
-  .ai-simple-table {
-    $color-title: #313238;
-    $color-text: #4d4f56;
-    $color-text-secondary: #979ba5;
-    $color-border: #dcdee5;
-    $color-bg-light: #fafbfd;
+  @use '../../../styles/variables.scss' as variables;
 
+  .ai-simple-table {
     width: 100%;
     border-collapse: collapse;
-    border: 1px solid $color-border;
+    border: 1px solid variables.$color-border;
 
     th,
     td {
@@ -66,17 +62,17 @@
       font-size: 12px;
       line-height: 20px;
       text-align: left;
-      border-bottom: 1px solid $color-border;
+      border-bottom: 1px solid variables.$color-border;
     }
 
     th {
       font-weight: normal;
-      color: $color-title;
-      background: $color-bg-light;
+      color: variables.$color-title;
+      background: variables.$color-bg-light;
     }
 
     td {
-      color: $color-text;
+      color: variables.$color-text;
       background: white;
     }
 
@@ -89,7 +85,7 @@
     }
 
     .is-empty {
-      color: $color-text-secondary;
+      color: variables.$color-text-secondary;
       text-align: center;
     }
   }

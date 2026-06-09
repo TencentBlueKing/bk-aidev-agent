@@ -68,8 +68,6 @@
 <script setup lang="ts">
   import { ref as deepRef, h, onMounted, shallowRef } from 'vue';
 
-  import { tr } from 'zod/locales';
-
   import {
     type ActivityMessage,
     type AssistantMessage,
@@ -349,9 +347,11 @@
             },
           },
           task_outputs: [],
+          confidence_title: '证据汇总',
         },
         {
           task_id: 634860,
+          confidence_title: '证据汇总',
           task_name: '模型评估流_20260202161510',
           task_state: 'FINISHED',
           nodes: {

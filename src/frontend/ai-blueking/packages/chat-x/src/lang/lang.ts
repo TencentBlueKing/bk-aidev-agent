@@ -72,6 +72,7 @@ export const lang = {
   失败: 'Failed',
   挂起: 'Pending',
   待执行: 'To Be Executed',
+  跳过: 'Skipped',
   详情: 'Details',
   节点: 'Node',
   节点配置: 'Node Config',
@@ -126,6 +127,8 @@ export const lang = {
   清空搜索: 'Clear Search',
   搜索结果为空: 'Search Result is Empty',
   有效证据: 'Valid Evidence',
+  全屏: 'Full Screen',
+  退出全屏: 'Exit Full Screen',
 } as const;
 
 export const t = (key: keyof typeof lang) => {

@@ -33,6 +33,7 @@ import type { IRequestConfig, ISSEProtocol } from '../http';
 import type { IMediatorModule } from '../mediator';
 import type { IMessageProperty, IUserMessage } from '../message/type';
 import type { IAgentInfo } from './type';
+import { SessionStatus } from '../session/type';
 
 /**
  * Agent 模块
@@ -153,8 +154,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
    * @param config - 请求配置（可选）
    */
   const resumeStreamingChat = (sessionCode: string, url?: string, config?: IRequestConfig) => {
-    const lastMessage = mediator.message?.list.value.at(-1);
-    if (lastMessage?.status === MessageStatus.Streaming || lastMessage?.role === MessageRole.User) {
+    if (mediator.session?.current.value?.status === SessionStatus.Running) {
       streamRequest(sessionCode, url, config);
     }
   };

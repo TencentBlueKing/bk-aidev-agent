@@ -5,60 +5,114 @@
     class="flow-agent-activity"
   >
     <template #title>
-      <span
-        class="ai-activity-message-title-icon"
-        :class="{
-          'icon-collapsed': collapsed,
+      <!-- hover 整条执行情况栏展示统计 tooltip（设计稿 annotation） -->
+      <Tippy
+        class="flow-agent-title-bar"
+        theme="ai-chat-box-light light"
+        v-bind="{
+          ...commonTippyOptions,
+          tag: 'div',
+          arrow: true,
+          followCursor: false,
+          offset: [0, 10],
         }"
       >
-        <AiLoading
-          v-if="isLoading"
-          :size="12"
-        />
-        <ArrowRightIcon v-else />
-      </span>
-      <span class="ai-activity-message-title-text">
-        <span class="flow-agent-title-label">{{ t('执行情况') }}: </span>
         <span
-          v-for="stat in visibleStats"
-          :key="stat.key"
-          class="flow-agent-stat-item"
+          class="ai-activity-message-title-icon"
+          :class="{
+            'icon-collapsed': collapsed,
+          }"
         >
-          {{ stat.label }}：<span
-            class="flow-agent-stat-count"
-            :style="{ color: stat.color }"
-            >{{ stat.display }}</span
-          >
+          <AiLoading
+            v-if="isLoading"
+            :size="12"
+          />
+          <ArrowRightIcon v-else />
         </span>
-      </span>
+        <span class="ai-activity-message-title-text">
+          <span class="flow-agent-title-label">{{ t('执行情况') }}：</span>
+          <span
+            v-for="stat in visibleStats"
+            :key="stat.key"
+            class="flow-agent-stat-item"
+          >
+            <Loading
+              v-if="stat.key === 'running'"
+              class="flow-agent-stat-loading"
+              mode="spin"
+              size="mini"
+              theme="primary"
+            />
+            <span
+              v-else
+              class="flow-agent-stat-dot"
+              :style="{ borderColor: stat.dotColor }"
+            />
+            <span
+              class="flow-agent-stat-count"
+              :style="{ color: stat.color }"
+              >{{ stat.display }}</span
+            >
+          </span>
+        </span>
+        <template #content>
+          <div class="flow-agent-stat-tooltip">
+            <div
+              v-for="stat in visibleStats"
+              :key="stat.key"
+              class="flow-agent-stat-tooltip-item"
+            >
+              <span class="flow-agent-stat-tooltip-status">
+                <Loading
+                  v-if="stat.key === 'running'"
+                  mode="spin"
+                  size="mini"
+                  theme="primary"
+                />
+                <span
+                  v-else
+                  class="flow-agent-stat-dot"
+                  :style="{ borderColor: stat.dotColor }"
+                />
+              </span>
+              <span class="flow-agent-stat-tooltip-label">{{ stat.label }}：</span>
+              <span
+                class="flow-agent-stat-tooltip-count"
+                :style="{ color: stat.color }"
+                >{{ stat.display }}</span
+              >
+            </div>
+          </div>
+        </template>
+      </Tippy>
     </template>
     <div
-      v-for="task in taskList"
-      :key="task.task_id"
+      v-for="task in viewTasks"
+      :key="task.taskId"
       class="flow-agent-task-group"
     >
       <div
         class="flow-agent-task-header"
         :class="{
-          'has-confidence': task.has_confidence,
-          'is-selected': isTaskSelected(task),
+          'has-confidence': task.hasConfidence,
+          'is-selected': isTaskSelected(task.raw),
         }"
       >
         <span
           class="flow-agent-task-arrow"
-          :class="{ 'is-expanded': isTaskExpanded(task) }"
+          :class="{ 'is-expanded': isTaskExpanded(task.raw) }"
         >
-          <ArrowRightIcon @click.stop="toggleTaskExpanded(task)" />
+          <ArrowRightIcon @click.stop="toggleTaskExpanded(task.raw)" />
         </span>
         <span class="flow-agent-task-state-icon">
           <Loading
-            v-if="getTaskConvergedState(task) === 'running'"
+            v-if="task.convergedState === 'running'"
             mode="spin"
             size="mini"
             theme="primary"
           />
           <component
-            :is="getTaskStateIcon(task)"
+            :is="task.stateIcon"
             v-else
           />
         </span>
@@ -66,39 +120,36 @@
           v-overflow-tips="{ ...commonTippyOptions }"
           class="flow-agent-task-name"
         >
-          <HighlightKeyword :text="task.task_name" />
+          <HighlightKeyword :text="task.taskName" />
         </span>
         <span
-          v-if="renderMode !== RenderMode.Share"
+          v-if="showActions"
           class="flow-agent-task-trailing"
         >
-          <span class="flow-agent-task-time">{{ getTaskTotalTime(task) }}</span>
+          <span class="flow-agent-task-time">{{ task.totalTimeText }}</span>
           <span
-            v-if="task.has_confidence"
+            v-if="task.hasConfidence"
             class="flow-agent-task-action-btn flow-agent-task-confidence-btn"
-            @click.stop="handleTaskConfidence(task)"
+            @click.stop="openConfidence(task.raw)"
           >
             <NodeOutputIcon />
-            {{ t('有效证据') }}
+            {{ task.confidenceTitle ?? t('有效证据') }}
           </span>
         </span>
       </div>
       <div
-        v-show="isTaskExpanded(task)"
+        v-show="isTaskExpanded(task.raw)"
         class="flow-agent-task-nodes"
       >
         <div
-          v-for="node in getNodeList(task)"
+          v-for="node in task.nodes"
           :key="node.id"
           class="flow-agent-node-item"
-          :class="{ 'is-selected': isNodeSelected(task, node) }"
+          :class="{ 'is-selected': isNodeSelected(task.raw, node.raw) }"
         >
-          <span
-            class="flow-agent-node-status"
-            :class="`is-${getConvergedState(node.state)}`"
-          >
+          <span class="flow-agent-node-status">
             <Loading
-              v-if="getConvergedState(node.state) === 'running'"
+              v-if="node.convergedState === 'running'"
               mode="spin"
               size="mini"
               theme="primary"
@@ -106,6 +157,7 @@
             <span
               v-else
               class="flow-agent-status-dot"
+              :style="{ borderColor: node.dotColor }"
             />
           </span>
           <span
@@ -116,13 +168,13 @@
             <HighlightKeyword :text="node.name" />
           </span>
           <span
-            v-if="renderMode !== RenderMode.Share"
+            v-if="showActions"
             class="flow-agent-node-trailing"
           >
-            <span class="flow-agent-node-time">{{ formatElapsedTime(node.elapsed_time) }}</span>
+            <span class="flow-agent-node-time">{{ node.elapsedTimeText }}</span>
             <span
               class="flow-agent-node-detail-btn"
-              @click.stop="handleNodeDetail(task, node)"
+              @click.stop="openNodeDetail(task.raw, node.raw)"
             >
               <NodeOutputIcon />
               {{ t('详情') }}
@@ -132,72 +184,29 @@
       </div>
     </div>
   </ActivityLayout>
-  <!-- <div
-    v-if="taskList.some(task => task.task_outputs)"
-    class="flow-agent-task-outputs"
-  >
-    {{ taskList.map(task => task.task_outputs).filter(Boolean) }}
-  </div> -->
 </template>
 <script setup lang="ts">
-  import { type ComputedRef, cloneVNode, computed, onMounted, onUnmounted, shallowRef, watch } from 'vue';
+  import { computed, toRef } from 'vue';
 
   import { Loading } from 'bkui-vue';
+  import { Tippy } from 'vue-tippy';
 
   import { MessageContentType, MessageStatus } from '../../../ag-ui/types/constants';
   import { RenderMode } from '../../../common/constants';
-  import { useContainerScrollConsumer } from '../../../composables';
   import { useCommonTippyInject, useRenderModeInject } from '../../../composables/use-common';
-  import { useCustomTabConsumer } from '../../../composables/use-custom-tab';
   import { OverflowTips as vOverflowTips } from '../../../directives/overflow-tips';
-  import {
-    ArrowRightIcon,
-    BkFlowFailedIcon,
-    BkFlowPendingIcon,
-    BkFlowSuccessIcon,
-    BkFlowSuspendedIcon,
-    NodeOutputIcon,
-  } from '../../../icons';
+  import { ArrowRightIcon, NodeOutputIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
-  import { formatElapsedTime } from '../../../utils/utils';
   import AiLoading from '../../ai-loading/ai-loading.vue';
   import HighlightKeyword from '../../highlight-keyword/highlight-keyword';
   import ActivityLayout from '../activity-layout/activity-layout.vue';
-  import BkFlowNodeDetail from './flow-agent-node-detail.vue';
+  import { useFlowAgent } from './use-flow-agent';
+  import { useFlowTab } from './use-flow-tab';
 
   import type { MessageStatus as MessageStatusType } from '../../../ag-ui/types/constants';
-  import type { BkFlowMessageContent, BkFlowNode, BkFlowTask } from '../../../ag-ui/types/contents';
-  import type { CustomBkFlowTabData } from '../../../types';
+  import type { BkFlowMessageContent } from '../../../ag-ui/types/contents';
 
-  type ConvergedState = 'failed' | 'pending' | 'running' | 'success' | 'suspended';
-
-  const commonTippyOptions = useCommonTippyInject();
-
-  const RUNNING_STATES = new Set([
-    'CREATED',
-    'LOOP_READY',
-    'READY',
-    'RUNNING',
-    'BLOCKED',
-    'ROLLING_BACK',
-    'ROLL_BACK_SUCCESS',
-  ]);
-  const FAILED_STATES = new Set(['FAILED', 'REVOKED', 'ROLL_BACK_FAILED']);
-
-  const STATE_CONFIG: { color: string; key: ConvergedState; label: string }[] = [
-    { color: '#3A84FF', key: 'running', label: t('执行中') },
-    { color: '#18B456', key: 'success', label: t('成功') },
-    { color: '#EA3636', key: 'failed', label: t('失败') },
-    { color: '#F59500', key: 'suspended', label: t('挂起') },
-    { color: '#4D4F56', key: 'pending', label: t('待执行') },
-  ];
-
-  const STATE_ICON_MAP: Record<string, typeof BkFlowSuccessIcon> = {
-    success: BkFlowSuccessIcon,
-    failed: BkFlowFailedIcon,
-    suspended: BkFlowSuspendedIcon,
-    pending: BkFlowPendingIcon,
-  };
+  import 'tippy.js/dist/tippy.css';
 
   const props = defineProps<{
     content?: BkFlowMessageContent;
@@ -205,200 +214,51 @@
     status?: MessageStatusType;
   }>();
 
-  const { addCustomTab, removeCustomTab, selectedTab } = useCustomTabConsumer<CustomBkFlowTabData>()!;
-  /** 与 addCustomTab 的 name 保持一致，用于 task / node 选中态 */
-  const selectedTabName = computed(() => selectedTab.value?.name ?? '');
-
-  /** 用户手动切换 Tab 后不再沿用 is_active 默认高亮 */
-  const hasUserSelectedTab = shallowRef(false);
-
-  const provideContainerScrollData = useContainerScrollConsumer();
+  const commonTippyOptions = useCommonTippyInject();
   const collapsed = defineModel<boolean>('collapsed', {
     default: false,
   });
 
   const renderMode = useRenderModeInject();
+  /** 分享态下隐藏耗时与详情等交互入口 */
+  const showActions = computed(() => renderMode.value !== RenderMode.Share);
 
-  const isLoading = computed(() => {
-    return props.status === MessageStatus.Pending || props.status === MessageStatus.Streaming;
-  });
+  const isLoading = computed(() => props.status === MessageStatus.Pending || props.status === MessageStatus.Streaming);
 
-  const taskList = computed(() =>
-    Array.isArray(props.content) ? props.content : [props.content ?? {}],
-  ) as ComputedRef<BkFlowTask[]>;
-  const taskExpandedMap = shallowRef<Record<number, boolean>>({});
+  // 视图模型层：任务 / 节点视图模型、统计概览、展开态
+  const { isTaskExpanded, taskList, toggleTaskExpanded, viewTasks, visibleStats } = useFlowAgent(
+    toRef(props, 'content'),
+  );
 
-  const getTaskTabName = (task: BkFlowTask) => (task.task_id != null ? `${task.task_id}` : '');
-  const getConfidenceTabName = (task: BkFlowTask) => (task.task_id != null ? `${task.task_id}` : '');
-  const getNodeTabName = (task: BkFlowTask, node: BkFlowNode) =>
-    task.task_id != null ? `${task.task_id}|${node.id}|${node.name}` : '';
-
-  const displaySelectedTabName = computed(() => {
-    if (hasUserSelectedTab.value) {
-      return selectedTabName.value;
-    }
-    const activeTask = taskList.value.find(task => task.is_active);
-    if (activeTask?.task_id != null) {
-      return getTaskTabName(activeTask);
-    }
-    return selectedTabName.value;
-  });
-
-  const markUserTabSelection = () => {
-    hasUserSelectedTab.value = true;
-  };
-
-  const isTaskSelected = (task: BkFlowTask) => {
-    const name = displaySelectedTabName.value;
-    return name === getTaskTabName(task) || name === getConfidenceTabName(task);
-  };
-
-  const isNodeSelected = (task: BkFlowTask, node: BkFlowNode) =>
-    displaySelectedTabName.value === getNodeTabName(task, node);
-
-  const isTaskExpanded = (task: BkFlowTask) => taskExpandedMap.value[task.task_id] !== false;
-
-  const toggleTaskExpanded = (task: BkFlowTask) => {
-    taskExpandedMap.value = {
-      ...taskExpandedMap.value,
-      [task.task_id]: !isTaskExpanded(task),
-    };
-  };
-
-  const getTaskConvergedState = (task: BkFlowTask) => getConvergedState(task.task_state ?? '');
-
-  const getTaskStateIcon = (task: BkFlowTask) => {
-    const icon = STATE_ICON_MAP[getTaskConvergedState(task)];
-    return icon ? cloneVNode(icon) : cloneVNode(BkFlowSuspendedIcon);
-  };
-
-  const getTaskTotalTime = (task: BkFlowTask) => {
-    const nodes = getNodeList(task);
-    const total = nodes.reduce((sum, node) => sum + node.elapsed_time, 0);
-    return formatElapsedTime(total);
-  };
-
-  const getNodeList = (task: BkFlowTask) => Object.values(task.nodes ?? {});
-
-  const getConvergedState = (state: string): ConvergedState => {
-    if (state === 'FINISHED') return 'success';
-    if (FAILED_STATES.has(state)) return 'failed';
-    if (state === 'SUSPENDED') return 'suspended';
-    if (state === 'PENDING') return 'pending';
-    if (RUNNING_STATES.has(state)) return 'running';
-    return 'running';
-  };
-
-  const visibleStats = computed(() => {
-    const aggregated: Record<ConvergedState, number> = {
-      failed: 0,
-      pending: 0,
-      running: 0,
-      success: 0,
-      suspended: 0,
-    };
-
-    for (const task of taskList.value) {
-      for (const [state, count] of Object.entries(task.statistics?.state_counts ?? {})) {
-        aggregated[getConvergedState(state)] += count;
-      }
-    }
-
-    return STATE_CONFIG.filter(s => aggregated[s.key] > 0).map(s => ({
-      ...s,
-      display: aggregated[s.key] > 99 ? '99+' : String(aggregated[s.key]),
-    }));
-  });
-
-  const handleNodeDetail = (task: BkFlowTask, node: BkFlowNode) => {
-    const taskId = task.task_id;
-    if (taskId != null) {
-      markUserTabSelection();
-      addCustomTab?.({
-        label: node.name,
-        name: getNodeTabName(task, node),
-        data: {
-          component: BkFlowNodeDetail,
-          messageUid: props.messageUid,
-          props: {
-            loading: true,
-            node_id: node.id,
-            node_name: node.name,
-            task_id: taskId,
-            task_name: task.task_name,
-            data: {},
-          },
-        },
-      });
-    }
-  };
-  const handleTaskConfidence = (task?: BkFlowTask) => {
-    const taskId = task?.task_id;
-    if (!taskId) return;
-    markUserTabSelection();
-    addCustomTab?.({
-      label: t('有效证据'),
-      name: getConfidenceTabName(task),
-      data: {
-        component: BkFlowNodeDetail,
-        messageUid: props.messageUid,
-        props: {
-          loading: true,
-          has_confidence: true,
-          task_id: taskId,
-          task_name: task.task_name,
-          data: {},
-        },
-      },
-    });
-  };
-  watch(selectedTabName, (_name, oldName) => {
-    if (oldName === undefined) return;
-    markUserTabSelection();
-  });
-  onMounted(() => {
-    if (!provideContainerScrollData?.value) {
-      return;
-    }
-    handleTaskConfidence(taskList.value.find(task => task.is_active && task.has_confidence));
-  });
-  onUnmounted(() => {
-    // 这里用于判断是否是在 message-container 中被销毁的.
-    // 如果是执行情况下的销毁，则不进行移除
-    if (!provideContainerScrollData?.value) {
-      return;
-    }
-    for (const task of taskList.value) {
-      removeCustomTab?.(getTaskTabName(task));
-      removeCustomTab?.(getConfidenceTabName(task));
-      for (const node of getNodeList(task)) {
-        removeCustomTab?.(getNodeTabName(task, node));
-      }
-    }
+  // 自定义 Tab 集成层：选中态、打开节点详情 / 有效证据、生命周期
+  const { isNodeSelected, isTaskSelected, openConfidence, openNodeDetail } = useFlowTab({
+    messageUid: toRef(props, 'messageUid'),
+    taskList,
   });
 </script>
 <style lang="scss">
+  // 状态圆环：空心环，颜色由视图模型按状态注入（模板内联 borderColor）。
+  // 置于文件顶层 placeholder，供组件内（node 状态点）与根级（tooltip 统计点）共用，
+  // 因统计 tooltip 内容会被 tippy 挂载到 body（脱离组件容器）。
+  %flow-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border: 1.5px solid transparent;
+    border-radius: 50%;
+  }
+
   .flow-agent-activity {
     $color-text: #4d4f56;
     $color-text-secondary: #979ba5;
     $color-primary: #3a84ff;
     $color-primary-light: #699df4;
-    $color-success: #18b456;
-    $color-danger: #ea3636;
-    $color-warning: #f59500;
     $color-hover-bg: #eaebf0;
     $color-selected-bg: #e1ecff;
-    $color-pending: #dcdee5;
-    $status-colors: (
-      success: $color-success,
-      failed: $color-danger,
-      suspended: $color-warning,
-      running: $color-primary,
-      pending: $color-pending,
-    );
 
     font-size: 12px;
 
+    /* ---------- 通用 placeholder ---------- */
     %flex-center {
       display: flex;
       align-items: center;
@@ -411,7 +271,61 @@
       white-space: nowrap;
     }
 
-    %flow-agent-action-btn {
+    // 16×16 状态图标容器（task 状态图标 / node 状态点共用）
+    %icon-box {
+      flex-shrink: 0;
+      width: 16px;
+      height: 16px;
+      margin-right: 8px;
+
+      @extend %flex-center;
+    }
+
+    // 行内主标题文本（task / node 名称共用截断与配色）
+    %row-name {
+      flex: 1;
+      color: $color-text;
+
+      @extend %text-truncate;
+    }
+
+    // 行尾区域：耗时 / 操作按钮容器（task / node 共用）
+    %row-trailing {
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      margin-left: 8px;
+    }
+
+    // 行尾耗时文本（task / node 共用）
+    %row-time {
+      color: $color-text-secondary;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    // 单行容器：固定高度 + hover / 选中态背景（task header / node item 共用）
+    %row {
+      display: flex;
+      align-items: center;
+      height: 32px;
+      border-radius: 2px;
+
+      &:hover {
+        background: $color-hover-bg;
+      }
+
+      &.is-selected {
+        background: $color-selected-bg;
+
+        &:hover {
+          background: $color-selected-bg;
+        }
+      }
+    }
+
+    // hover 行时浮现的操作按钮（详情 / 有效证据），默认隐藏
+    %action-btn {
       display: none;
       gap: 2px;
       align-items: center;
@@ -425,6 +339,7 @@
       }
     }
 
+    /* ---------- 标题：执行情况栏 ---------- */
     .ai-activity-message-title {
       width: 100%;
       height: 40px;
@@ -434,12 +349,21 @@
       &-icon {
         font-size: 14px;
         font-weight: bold;
-        color: #4d4f56;
+        color: $color-text;
         transform: rotate(90deg);
 
         &.icon-collapsed {
           transform: rotate(0deg);
         }
+      }
+
+      // 覆盖基础布局：执行情况栏需横向排布标签与各状态统计项
+      &-text {
+        display: flex;
+        flex: 1;
+        align-items: center;
+        min-width: 0;
+        overflow: hidden;
       }
     }
 
@@ -448,72 +372,72 @@
       font-size: 12px;
     }
 
-    .flow-agent-title-label {
-      font-weight: bold;
+    // 撑满整条以承载 hover 区域（设计稿 hover 整体出 tooltip）
+    .flow-agent-title-bar {
+      display: flex;
+      flex: 1;
+      align-items: center;
+      min-width: 0;
+      height: 100%;
     }
 
+    .flow-agent-title-label {
+      flex-shrink: 0;
+      font-weight: bold;
+      color: #313238;
+    }
+
+    /* ---------- 统计项（标题栏内联展示） ---------- */
     .flow-agent-stat {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+
       &-item {
-        margin-left: 8px;
+        display: inline-flex;
+        flex-shrink: 0;
+        gap: 4px;
+        align-items: center;
+        margin-right: 16px;
         white-space: nowrap;
       }
 
+      &-loading {
+        width: 16px;
+        height: 16px;
+
+        @extend %flex-center;
+      }
+
       &-count {
+        font-family: Arial, sans-serif;
+        font-size: 14px;
         font-weight: bold;
+        line-height: 1;
       }
     }
 
+    /* ---------- 任务行 ---------- */
     .flow-agent-task {
       &-group {
         padding: 0;
       }
 
       &-header {
-        display: flex;
-        align-items: center;
-        height: 32px;
         padding: 0 12px 0 13px;
         cursor: pointer;
-        border-radius: 2px;
 
-        &:hover {
-          background: $color-hover-bg;
+        @extend %row;
+
+        // hover / 选中态下隐藏耗时，露出「有效证据」按钮
+        &.has-confidence:hover .flow-agent-task-confidence-btn {
+          display: flex;
         }
 
-        &.has-confidence:hover {
-          .flow-agent-task-confidence-btn {
-            display: flex;
-          }
-
-          .flow-agent-task-time {
-            display: none;
-          }
+        &.has-confidence:hover .flow-agent-task-time,
+        &.has-confidence.is-selected .flow-agent-task-time {
+          display: none;
         }
-
-        &.is-selected {
-          background: $color-selected-bg;
-
-          &:hover {
-            background: $color-selected-bg;
-          }
-        }
-
-        &.has-confidence.is-selected {
-          .flow-agent-task-time {
-            display: none;
-          }
-        }
-      }
-
-      &-trailing {
-        display: flex;
-        flex-shrink: 0;
-        align-items: center;
-        margin-left: 8px;
-      }
-
-      &-action-btn {
-        @extend %flow-agent-action-btn;
       }
 
       &-arrow {
@@ -522,7 +446,7 @@
         height: 12px;
         margin-right: 4px;
         font-size: 12px;
-        color: #979ba5;
+        color: $color-text-secondary;
         transform: rotate(90deg);
         transition: transform 0.15s;
 
@@ -534,91 +458,37 @@
       }
 
       &-state-icon {
-        flex-shrink: 0;
-        width: 16px;
-        height: 16px;
-        margin-right: 8px;
-
-        @extend %flex-center;
+        @extend %icon-box;
       }
 
       &-name {
-        flex: 1;
         font-weight: bold;
-        color: $color-text;
 
-        @extend %text-truncate;
-      }
-
-      &-time {
-        color: $color-text-secondary;
-        text-align: right;
-        white-space: nowrap;
-      }
-    }
-
-    .flow-agent-state-svg {
-      width: 14px;
-      height: 14px;
-    }
-
-    .flow-agent-node {
-      &-status {
-        flex-shrink: 0;
-        width: 16px;
-        height: 16px;
-        margin-right: 8px;
-
-        @extend %flex-center;
-
-        @each $state, $color in $status-colors {
-          &.is-#{$state} .flow-agent-status-dot {
-            border-color: $color;
-          }
-        }
-
-        .flow-agent-status-dot {
-          width: 8px;
-          height: 8px;
-          border: 1.5px solid transparent;
-          border-radius: 50%;
-        }
-      }
-
-      &-name {
-        flex: 1;
-        color: $color-text;
-
-        @extend %text-truncate;
+        @extend %row-name;
       }
 
       &-trailing {
-        display: flex;
-        flex-shrink: 0;
-        align-items: center;
-        margin-left: 8px;
+        @extend %row-trailing;
       }
 
       &-time {
-        color: $color-text-secondary;
-        text-align: right;
-        white-space: nowrap;
+        @extend %row-time;
       }
 
-      &-detail-btn {
-        @extend %flow-agent-action-btn;
+      &-action-btn {
+        @extend %action-btn;
       }
+    }
 
+    /* ---------- 节点行 ---------- */
+    .flow-agent-node {
       &-item {
-        display: flex;
-        align-items: center;
-        height: 32px;
         padding: 0 12px 0 34px;
-        border-radius: 2px;
 
+        @extend %row;
+
+        // hover 行时隐藏耗时，露出「详情」按钮
         &:hover {
-          background: $color-hover-bg;
-
           .flow-agent-node-detail-btn {
             display: flex;
           }
@@ -627,22 +497,73 @@
             display: none;
           }
         }
+      }
 
-        &.is-selected {
-          background: $color-selected-bg;
+      &-status {
+        @extend %icon-box;
 
-          &:hover {
-            background: $color-selected-bg;
-          }
+        .flow-agent-status-dot {
+          @extend %flow-dot;
         }
+      }
+
+      &-name {
+        @extend %row-name;
+      }
+
+      &-trailing {
+        @extend %row-trailing;
+      }
+
+      &-time {
+        @extend %row-time;
+      }
+
+      &-detail-btn {
+        @extend %action-btn;
       }
     }
   }
 
-  .flow-agent-task-outputs {
-    font-size: 12px;
-    line-height: 20px;
-    color: #4d4f56;
-    word-break: break-all;
+  // 统计 tooltip：状态图标 + 文字标签 + 计数（设计稿 hover 整体出 tooltip）。
+  // 内容被 tippy 挂载到 body，故置于根级；ai-chat-box-light 主题已将 .tippy-content
+  // padding 置 0，此处内边距对齐设计稿（12/16）。
+  .flow-agent-stat-dot {
+    @extend %flow-dot;
+  }
+
+  .flow-agent-stat-tooltip {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 16px;
+    border-radius: 4px;
+    box-shadow: 0 0 20px 0 rgb(0 0 0 / 16%);
+
+    &-item {
+      display: flex;
+      align-items: center;
+      font-size: 12px;
+      line-height: 20px;
+      white-space: nowrap;
+    }
+
+    &-status {
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      margin-right: 4px;
+    }
+
+    &-label {
+      color: #4d4f56;
+    }
+
+    &-count {
+      font-weight: bold;
+    }
   }
 </style>

@@ -83,3 +83,12 @@ $toolcallStatusMap: (
 $chat-input-min-width: 168px;
 $chat-input-max-width: 1000px;
 $content-loading-icon-color-list: (#cddffe, #699df4, #1768ef);
+
+// 通用语义色（bkui 标准色），供各组件复用，避免重复硬编码
+$color-title: #313238; // 标题 / 主文字
+$color-text: #4d4f56; // 常规文字
+$color-text-secondary: #979ba5; // 次要文字 / 占位
+$color-primary: #3a84ff; // 主题色
+$color-border: #dcdee5; // 边框
+$color-bg-light: #fafbfd; // 浅背景
+$color-bg-tab: #f0f1f5; // 分段控件 / tab 背景

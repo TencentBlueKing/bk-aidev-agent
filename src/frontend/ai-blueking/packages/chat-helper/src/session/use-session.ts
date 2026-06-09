@@ -79,8 +79,8 @@ export const useSession = (mediator: IMediatorModule) => {
   const chooseSession = async (sessionCode: string, options?: { loadMessages?: boolean }) => {
     // 中止当前聊天
     mediator.agent?.abortChat();
-    // 选择会话
-    current.value = list.value.find(item => item.sessionCode === sessionCode) ?? null;
+    // 从接口更新当前会话信息
+    await getSession(sessionCode);
 
     // 默认加载消息，但允许跳过（新会话消息必定为空，无需加载）
     if (options?.loadMessages !== false) {

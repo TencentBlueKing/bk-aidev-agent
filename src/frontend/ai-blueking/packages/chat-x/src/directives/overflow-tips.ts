@@ -28,7 +28,7 @@ import type { ObjectDirective } from 'vue';
 
 import tippy, { type Instance, type Props } from 'tippy.js';
 
-import { type noop } from '../types';
+import type { noop } from '../types';
 
 import 'tippy.js/dist/tippy.css';
 

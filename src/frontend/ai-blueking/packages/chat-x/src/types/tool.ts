@@ -36,6 +36,6 @@ export type AITippyProps = Partial<Pick<TippyOptions, 'appendTo' | 'placement' |
 
 export interface IToolBtn {
   description?: string;
-  id: keyof typeof ToolIconsMap;
+  id?: keyof typeof ToolIconsMap;
   name?: string;
 }

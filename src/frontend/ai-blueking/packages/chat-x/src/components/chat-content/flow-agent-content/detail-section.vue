@@ -15,10 +15,9 @@
 </script>
 
 <style lang="scss">
-  .ai-detail-section {
-    $color-title: #313238;
-    $color-primary: #3a84ff;
+  @use '../../../styles/variables.scss' as variables;
 
+  .ai-detail-section {
     margin-bottom: 16px;
 
     .section-heading {
@@ -31,14 +30,14 @@
     .section-bar {
       width: 2px;
       height: 16px;
-      background: $color-primary;
+      background: variables.$color-primary;
     }
 
     .section-text {
       font-size: 14px;
       font-weight: bold;
       line-height: 22px;
-      color: $color-title;
+      color: variables.$color-title;
     }
   }
 </style>

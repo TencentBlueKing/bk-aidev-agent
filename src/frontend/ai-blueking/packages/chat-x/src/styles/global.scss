@@ -1,5 +1,6 @@
 @use 'sass:list';
 @use 'variables.scss' as variables;
+@import 'tippy.js/themes/light.css';
 
 .tippy-box[data-theme~='ai-chat-box'] {
   .tippy-content {
@@ -9,7 +10,8 @@
 }
 
 .tippy-box[data-theme~='ai-chat-box-light'] {
-  box-shadow: none !important;
+   box-shadow: 0 0 20px 0 rgb(0 0 0 / 16%);
+
 
   .tippy-content {
     padding: 0 !important;
