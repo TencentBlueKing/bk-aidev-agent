@@ -136,7 +136,7 @@ export type ContentMap = AIBluekingContentMap & {
 
 ### 推荐写法（含 `codeHeader`）
 
-Playground [`chat-bot-new.vue`](../../playground/chat-bot-new.vue) 与 ai-blueking `ChatBot` 均采用此模式：
+Playground `playground/chat-bot-new.vue` 与 ai-blueking `ChatBot` 均采用此模式：
 
 ```vue
 <ChatContainer :messages="messages" ...>
@@ -333,7 +333,7 @@ Flow / KnowledgeRag 等子组件的外框：
 - **默认详情组件**：`BkFlowNodeDetail`（需 `<slot name="locateButton" />`）
 - **应用覆盖**：`ChatContainer` 的 `getSideRenderComponent` / `onCustomTabChange`（详见侧栏文档）
 
-KnowledgeRag / ReferenceDoc 模式见 [ActivityMessage](../components/molecular/activity-message.md)。
+KnowledgeRag / ReferenceDoc 模式见 [ActivityMessage](../components/message/activity-message.md)。
 
 ## 侧栏自定义 Tab（与消息联动）
 
@@ -361,8 +361,8 @@ Activity（尤其 FlowAgent）可在对话区点击「详情」等操作，通�
 
 - [自定义侧栏 Tab 标签](./custom-side-tab.md)
 - [自定义侧栏内容](./custom-side-content.md)
-- [ChatContainer](../components/molecular/chat-container.md)
-- [ActivityMessage](../components/molecular/activity-message.md)
+- [ChatContainer](../components/setup/chat-container.md)
+- [ActivityMessage](../components/message/activity-message.md)
 - [useCustomTab](../composables/use-custom-tab.md)
 - [架构总览](../architecture.md)
 - [最佳实践](./best-practices.md)

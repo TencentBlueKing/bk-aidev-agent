@@ -182,12 +182,12 @@ type GetSideRenderComponent = (
 
 ### Playground：CustomTabContent
 
-[`playground/custom-tab-content.vue`](../../playground/custom-tab-content.vue) 演示业务自定义侧栏：
+`playground/custom-tab-content.vue` 演示业务自定义侧栏：
 
 - 头部保留 **`<slot name="locateButton" />`**，由容器注入定位按钮
 - 根据 `loading` / `taskId` / `nodeName` 等 props 展示骨架或元数据
 
-[`playground/chat-bot-new.vue`](../../playground/chat-bot-new.vue) 中 `getSideRenderComponent` 将 `tab.data.props` 映射为组件 camelCase props：
+`playground/chat-bot-new.vue` 中 `getSideRenderComponent` 将 `tab.data.props` 映射为组件 camelCase props：
 
 ```typescript
 const getSideRenderComponent = (createElement: typeof h, props?: Record<string, unknown>) => {
@@ -298,5 +298,5 @@ const getSideRenderComponent = (createElement: typeof h, props?: Record<string, 
 
 - [自定义侧栏 Tab 标签](./custom-side-tab.md) — `getSideTabRenderComponent`
 - [useCustomTab](../composables/use-custom-tab.md) — Provider / Consumer API
-- [ChatContainer](../components/molecular/chat-container.md) — 侧栏、expose、`collapseChange`
+- [ChatContainer](../components/setup/chat-container.md) — 侧栏、expose、`collapseChange`
 - [自定义消息类型](./custom-message.md) — Activity / FlowAgent 与 `addCustomTab` 关系

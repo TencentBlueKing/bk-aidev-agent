@@ -100,7 +100,7 @@ useFullScreen(target?)
 
 `ChatContainer` 将侧栏包裹在 `.ai-full-screen-wrapper` 中，通过 `useFullScreen(fullScreenRef)` 控制侧栏全屏；Tab 栏 `#setting` 插槽内的 `ToolBtn` 使用自定义插槽渲染 `FullScreenIcon` / `UnFullScreenIcon`。
 
-详见 [ChatContainer 侧栏全屏](../components/molecular/chat-container.md#侧栏全屏)。
+详见 [ChatContainer 侧栏全屏](../components/setup/chat-container.md#侧栏全屏)。
 
 ## API
 
@@ -145,5 +145,5 @@ declare function useFullScreen(target?: MaybeRef<HTMLElement | null>): UseFullSc
 
 ## 关联组件
 
-- [ChatContainer](../components/molecular/chat-container.md) — 内置侧栏全屏按钮
-- [ToolBtn](../components/atomic/tool-btn.md) — 全屏按钮自定义插槽
+- [ChatContainer](../components/setup/chat-container.md) — 内置侧栏全屏按钮
+- [ToolBtn](../components/feedback/tool-btn.md) — 全屏按钮自定义插槽
