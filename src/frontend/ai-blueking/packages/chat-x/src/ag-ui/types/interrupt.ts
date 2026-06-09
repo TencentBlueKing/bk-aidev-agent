@@ -27,6 +27,23 @@
 
 import type { APPROVAL_STATUS, InterruptReason, MessageRole } from './constants';
 import type { BaseMessage } from './messages';
+
+/**
+ * 可恢复操作（resume operation）枚举。
+ *
+ * 统一标识用户在「中断消息 / 活动消息」上触发的、需回传 Agent 处理的动作；
+ * 业务侧通过 `onInterruptResume` 回调的 `payload.operation` 字段进行分支处理。
+ * 新增操作类型只需在此扩展，回调契约与透传链路保持不变。
+ */
+export enum InterruptResumeOperation {
+  /** 主动取消第三方工具审批：在 interrupt 记录上写入取消结果 */
+  ApprovalCancel = 'approval_cancel',
+  /** 重试失败的流程节点：bkflow 节点状态重置为可执行 */
+  FlowNodeRetry = 'flow_node_retry',
+  /** 跳过失败的流程节点：bkflow 节点标记为已跳过 */
+  FlowNodeSkip = 'flow_node_skip',
+}
+
 /**
  * AI Dev 第三方工具审批中断
  */
@@ -67,6 +84,19 @@ export type BaseResume<T extends InterruptReason, P extends Record<string, any> 
   status: 'cancelled' | 'resolved';
 };
 
+/**
+ * 流程节点（flow-agent）操作响应负载：重试 / 跳过失败节点。
+ * 流程节点不属于 interrupt，故节点定位信息（taskId / nodeId）随 payload 一并回传，
+ * 此时 `onInterruptResume` 的第二个 `interrupt` 参数为空。
+ */
+export type FlowNodeResume = {
+  operation: InterruptResumeOperation.FlowNodeRetry | InterruptResumeOperation.FlowNodeSkip;
+  payload: {
+    node_id: string; // 节点 ID
+    task_id: number; // 任务 ID
+  };
+};
+
 export type Interrupt =
   | AIDevToolApprovalInterrupt
   | BaseInterrupt<InterruptReason, Record<string, any>>
@@ -95,22 +125,26 @@ export type InterruptMessage = BaseMessage<
     threadId?: string;
   }
 >;
-export type InterruptResume = ToolApprovalResume | UserQuestionResume;
+
+export type InterruptResume = FlowNodeResume | ToolApprovalResume | UserQuestionResume;
 
 /**
  * 中断响应回调（统一约定：payload 在前，原始中断信息在后）
- * @param payload 响应负载（resume payload）
- * @param interrupt 中断原始信息
+ * @param payload 响应负载（resume payload），通过 `payload.operation` 区分动作类型
+ * @param interrupt 中断原始信息；流程节点等非中断来源的操作可不传
  * @returns
  */
-export type OnInterruptResume = (payload: InterruptResume, interrupt: Interrupt) => Promise<void> | void;
+export type OnInterruptResume = (payload: InterruptResume, interrupt?: Interrupt) => Promise<void> | void;
 
 export type RunFinishedOutcome = { interrupts: Interrupt[]; type: 'interrupt' } | { type: 'success' };
 
 /**
  * 第三方工具审批中断的响应负载（取消审批等动作）
  */
-export type ToolApprovalResume = { action: string };
+export type ToolApprovalResume = {
+  operation: InterruptResumeOperation.ApprovalCancel;
+  payload: { interrupt_id: number | string };
+};
 /**
  * 用户对单个问题的回答
  */

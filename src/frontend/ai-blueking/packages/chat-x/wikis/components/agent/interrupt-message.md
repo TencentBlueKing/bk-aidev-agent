@@ -248,8 +248,8 @@ content.outcome.type === 'success'
   };
 
   const handleInterruptResume = async (payload, interrupt) => {
-    // ToolApprovalCard 点击「取消审批」时，payload 为 { action: 'cancel' }
-    console.log(payload, interrupt.id);
+    // ToolApprovalCard 点击「取消审批」时，payload 为 ToolApprovalResume
+    console.log(payload, interrupt?.id);
   };
 </script>
 ```

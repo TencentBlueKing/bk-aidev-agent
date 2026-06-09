@@ -74,9 +74,9 @@
 
     <!-- AIBlueking 集成模式示例 — 点击右下角悬浮球测试 -->
     <AIBlueking
+      :hello-text="'你好！请按照页面上方的 Prompt 指南，让我输出图表、iframe 或表单内容来测试自定义渲染。'"
       :title="'自定义渲染 Demo'"
       :url="apiUrl"
-      :hello-text="'你好！请按照页面上方的 Prompt 指南，让我输出图表、iframe 或表单内容来测试自定义渲染。'"
     >
       <template #message="{ message }">
         <CustomMessageRenderer :message="message" />
@@ -195,7 +195,7 @@
 
 <script setup>
 import { ChatBot } from '@blueking/ai-blueking';
-import CustomMessageRenderer from './CustomMessageRenderer.vue';
+import CustomMessageRenderer from '../components/CustomMessageRenderer.vue';
 <\/script>
 
 <!-- CustomMessageRenderer.vue 核心逻辑 -->
@@ -204,8 +204,8 @@ import { computed } from 'vue';
 import { MessageRender } from '@blueking/chat-x';
 import { parseCustomBlocks } from './parse-custom-blocks';
 import ChartWidget from './ChartWidget.vue';
-import IframeWidget from './IframeWidget.vue';
-import FormWidget from './FormWidget.vue';
+import IframeWidget from '../components/IframeWidget.vue';
+import FormWidget from '../components/FormWidget.vue';
 
 const props = defineProps({ message: Object });
 const blocks = computed(() => parseCustomBlocks(props.message.content || ''));
@@ -321,8 +321,8 @@ const blocks = computed(() => parseCustomBlocks(props.message.content || ''));
 
   .demo-actions {
     display: flex;
-    gap: 8px;
     flex-wrap: wrap;
+    gap: 8px;
     margin-bottom: 16px;
   }
 
@@ -382,9 +382,9 @@ const blocks = computed(() => parseCustomBlocks(props.message.content || ''));
 
   .step-num {
     display: flex;
+    flex-shrink: 0;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
     width: 24px;
     height: 24px;
     font-size: 12px;

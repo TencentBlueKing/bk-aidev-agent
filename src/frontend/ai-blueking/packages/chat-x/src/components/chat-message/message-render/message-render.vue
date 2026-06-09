@@ -75,7 +75,7 @@
       case MessageRole.Tool:
         return h(ToolMessage, props.message);
       case MessageRole.Activity:
-        return h(ActivityMessage, props.message);
+        return h(ActivityMessage, { ...props.message, onInterruptResume: props.onInterruptResume });
       case MessageRole.Interrupt:
         return h(
           InterruptMessageRender,

@@ -176,7 +176,7 @@ MessageRender
 │     ├── 'info'       → InfoMessage（转发 message）
 │     ├── 'reasoning'  → ReasoningMessage（转发 message）
 │     ├── 'tool'       → ToolMessage（转发 message）
-│     ├── 'activity'   → ActivityMessage（转发 message）
+│     ├── 'activity'   → ActivityMessage（转发 message + onInterruptResume）
 │     ├── 'loading'    → LoadingMessage（转发 message）
 │     ├── 'interrupt'  → InterruptMessageRender（转发 message + onInterruptResume）
 │     │
@@ -451,7 +451,7 @@ slot 参数类型与 `AssistantMessage` 的 slot 保持一致（`Partial<Assista
 | messageToolsStatus | `MessageToolsStatus`                                                       | —      | 工具按钮状态；**仅转发给 `UserMessage`**          |
 | onAction           | `(tool: IToolBtn) => Promise<string[] \| void>`                            | —      | 工具操作回调；**仅转发给 `UserMessage`**          |
 | onInputConfirm     | `(content: UserMessage['content'], docSchema: TagSchema) => Promise<void>` | —      | 用户编辑确认回调；**仅转发给 `UserMessage`**      |
-| onInterruptResume  | `(payload: InterruptResume, interrupt: Interrupt) => Promise<void>`        | —      | 中断响应回调；**仅转发给 `InterruptMessageRender`**     |
+| onInterruptResume  | `(payload: InterruptResume, interrupt?: Interrupt) => Promise<void>`         | —      | 中断 / FlowAgent 节点操作回调；转发给 `InterruptMessageRender` 与 `ActivityMessage`（后者仅 `flow_agent` 子组件消费） |
 | onShortcutConfirm  | `(formModel: Record<string, unknown>) => Promise<void>`                    | —      | 用户快捷指令提交回调；**仅转发给 `UserMessage`**  |
 | tippyOptions       | `Partial<Omit<TippyOptions, 'getReferenceClientRect' \| 'triggerTarget'>>` | —      | 自定义 Tippy 配置；**仅转发给 `UserMessage`**     |
 
@@ -472,7 +472,7 @@ slot 参数类型与 `AssistantMessage` 的 slot 保持一致（`Partial<Assista
 | `info`        | `InfoMessage`      | `message`                                                                                               | 系统信息 / 会话分隔符 |
 | `reasoning`   | `ReasoningMessage` | `message`                                                                                               | AI 思考过程（可折叠） |
 | `tool`        | `ToolMessage`      | `message`                                                                                               | 工具调用返回结果      |
-| `activity`    | `ActivityMessage`  | `message`                                                                                               | 知识检索 / 引用文档   |
+| `activity`    | `ActivityMessage`  | `message` + `onInterruptResume`                                                                         | 知识检索 / 引用文档 / FlowAgent 执行（节点重试 / 跳过） |
 | `loading`     | `LoadingMessage`   | `message`（字段被忽略，组件无 Props）                                                                   | 等待响应的加载占位    |
 | `interrupt`   | `InterruptMessageRender` | `message` + `onInterruptResume`                                                                         | human-in-the-loop 中断 |
 | 其他 / 未知   | —                  | —                                                                                                       | 返回 `null`，不渲染   |

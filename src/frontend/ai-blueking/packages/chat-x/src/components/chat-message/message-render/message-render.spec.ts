@@ -114,9 +114,14 @@ vi.mock('../activity-message/activity-message.vue', () => ({
     name: 'ActivityMessage',
     props: {
       content: { type: Array, default: () => [] },
+      onInterruptResume: { type: Function, default: undefined },
     },
-    setup() {
-      return () => h('div', { class: 'mock-activity-message' });
+    setup(props) {
+      return () =>
+        h('div', {
+          class: 'mock-activity-message',
+          'data-has-on-interrupt-resume': props.onInterruptResume ? 'true' : undefined,
+        });
     },
   }),
 }));
@@ -261,6 +266,24 @@ describe('MessageRender', () => {
       });
 
       expect(wrapper.find('.mock-activity-message').exists()).toBe(true);
+    });
+
+    it('应该将 onInterruptResume 传递给 ActivityMessage', () => {
+      const onInterruptResume = vi.fn();
+
+      wrapper = mount(MessageRender, {
+        props: {
+          message: {
+            role: MessageRole.Activity,
+            content: [],
+          },
+          onInterruptResume,
+        },
+      });
+
+      const activity = wrapper.find('.mock-activity-message');
+      expect(activity.exists()).toBe(true);
+      expect(activity.attributes('data-has-on-interrupt-resume')).toBe('true');
     });
   });
 

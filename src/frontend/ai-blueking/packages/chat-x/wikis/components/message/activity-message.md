@@ -63,6 +63,8 @@ sinceVersion: 1.0.0
 
 组件会将父级传入消息上的 **`uid`** 以 **`message-uid`** 形式透传给各活动子组件（`FlowAgentContent` / `KnowledgeRagContent` / `ReferenceDocContent`），用于侧栏自定义 Tab、`addCustomTab` 的 `data.messageUid` 与主对话区「在对话中定位」联动（详见 [ChatContainer](/components/setup/chat-container)）。
 
+`onInterruptResume` 仅由 `FlowAgentContent` 消费（失败节点「重试 / 跳过」），由 `MessageRender` 从 `ChatContainer` 透传；知识检索、引用文档等活动子组件忽略该 prop。
+
 ## 三种工作模式
 
 组件根据 `activityType` 的值决定渲染模式：
@@ -272,7 +274,8 @@ sinceVersion: 1.0.0
 - **有效证据**：`task.has_confidence === true` 时，任务行右侧展示「有效证据」按钮，点击后在侧栏打开置信度/证据详情 Tab（`props.has_confidence: true`）
 - **默认激活**：当 `MessageContainer` 已注入滚动上下文（`useContainerScrollProvider`，供 `FlowAgentContent` 内 `useContainerScrollConsumer` 读取）时，组件挂载后若存在 `task.is_active === true` 且 `task.has_confidence === true` 的任务，会自动在侧栏打开该任务的「有效证据」Tab；无滚动 Provider（例如独立演示）时不做自动打开。用户手动切换 Tab 后不再沿用 `is_active` 默认高亮
 - **选中态**：当前侧栏 Tab 与任务行 / 节点行联动高亮（`is-selected`）；任务 Tab 与「有效证据」Tab 均视为该任务的选中态
-- **节点列表**：每个节点显示状态圆点、名称和耗时；hover 时出现「详情」按钮
+- **节点列表**：每个节点显示状态圆点、名称和耗时；hover 时出现行尾操作按钮组
+- **失败节点操作**：失败且 `retryable` / `skippable` 为 `true` 的节点，hover 时额外展示「重试」「跳过」按钮，点击后通过 `onInterruptResume` 回传 Agent（不传 `interrupt`）
 - **节点详情**：点击「详情」会通过 `useCustomTabConsumer` 在 `ChatContainer` 侧边栏新增自定义 Tab，展示节点配置（基础信息、输入参数、输出参数）
 
 > `FlowAgentContent` 会读取 `ChatContainer` 注入的 `renderMode`。当 `renderMode === RenderMode.Share` 时，任务行不展示总耗时与「有效证据」，节点列表不展示耗时与「详情」按钮，避免分享预览中出现可交互入口。独立使用 `ActivityMessage` 且没有上层 Provider 时，默认按 `Chat` 模式渲染。
@@ -296,7 +299,10 @@ FlowAgentContent（activityType = 'flow_agent'）
                 ├── 状态圆点（颜色对应状态）
                 ├── node.name（HighlightKeyword 支持搜索高亮）
                 ├── node.elapsed_time
-                └── 详情按钮（hover 显示）→ 打开节点详情 Tab
+                └── 行尾操作按钮组（hover 显示）
+                    ├── 重试（失败 + retryable）→ onInterruptResume
+                    ├── 跳过（失败 + skippable）→ onInterruptResume
+                    └── 详情 → 打开节点详情 Tab
 ```
 
 ### 用法示例
@@ -452,7 +458,9 @@ type BkFlowNode = {
   loop: number;
   name: string;
   retry: number;
+  retryable?: boolean;
   skip: boolean;
+  skippable?: boolean;
   start_time: string;
   state: string;
   type: string;
@@ -516,6 +524,7 @@ enum MessageContentType {
 | status       | `MessageStatus`                                                             | -      | 消息状态；在 `knowledge_rag` 模式下影响标题和图标，在 `flow_agent` 模式下影响标题 Loading 状态 |
 | id           | `string \| number`                                                          | -      | 消息 ID                                                   |
 | messageId    | `string \| number`                                                          | -      | 消息唯一标识                                              |
+| onInterruptResume | `OnInterruptResume`                                                    | -      | 仅 `flow_agent` 子组件消费；失败节点「重试 / 跳过」回调，由 `MessageRender` 透传 |
 
 ### v-model
 

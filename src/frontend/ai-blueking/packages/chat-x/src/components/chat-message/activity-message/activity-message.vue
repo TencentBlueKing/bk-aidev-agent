@@ -5,6 +5,7 @@
     v-model:collapsed="collapsed"
     :content="content"
     :message-uid="uid"
+    :on-interrupt-resume="onInterruptResume"
     :status="status"
   />
 </template>
@@ -16,6 +17,7 @@
   import KnowledgeRagContent from '../../chat-content/knowledge-rag-content/knowledge-rag-content.vue';
   import ReferenceDocContent from '../../chat-content/reference-doc-content/reference-doc-content.vue';
 
+  import type { OnInterruptResume } from '../../../ag-ui/types/interrupt';
   import type { ActivityMessage } from '../../../ag-ui/types/messages';
 
   const activityComponentMap: Record<string, Component> = {
@@ -24,7 +26,8 @@
     [MessageContentType.ReferenceDocument]: ReferenceDocContent,
   };
 
-  const props = defineProps<Partial<ActivityMessage>>();
+  // onInterruptResume 仅 FlowAgent 子组件消费（节点重试 / 跳过）；其余活动组件忽略该 prop
+  const props = defineProps<Partial<ActivityMessage> & { onInterruptResume?: OnInterruptResume }>();
   const collapsed = defineModel<boolean>('collapsed', {
     default: false,
   });

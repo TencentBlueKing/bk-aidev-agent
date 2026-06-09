@@ -91,6 +91,7 @@
 
   import { APPROVAL_STATUS_MAP } from '../../../ag-ui/types/constants';
   import { APPROVAL_STATUS } from '../../../ag-ui/types/constants';
+  import { InterruptResumeOperation } from '../../../ag-ui/types/interrupt';
   import { useClipboard } from '../../../composables';
   import { useCommonTippyInject } from '../../../composables/use-common';
   import { OverflowTips as vOverflowTips } from '../../../directives/overflow-tips';
@@ -145,7 +146,10 @@
   };
 
   const handleCancelApproval = () => {
-    props.onInterruptResume?.({ action: 'cancel' }, props.interrupt);
+    props.onInterruptResume?.(
+      { operation: InterruptResumeOperation.ApprovalCancel, payload: { interrupt_id: props.interrupt.id } },
+      props.interrupt,
+    );
   };
 </script>
 

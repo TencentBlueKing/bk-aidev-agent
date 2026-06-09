@@ -99,6 +99,7 @@ vi.mock('../../chat-content/flow-agent-content/flow-agent-content.vue', () => ({
       status: { type: String, default: '' },
       collapsed: { type: Boolean, default: false },
       messageUid: { type: String, default: '' },
+      onInterruptResume: { type: Function, default: undefined },
     },
     emits: ['update:collapsed'],
     setup(props) {
@@ -109,6 +110,7 @@ vi.mock('../../chat-content/flow-agent-content/flow-agent-content.vue', () => ({
             class: 'mock-flow-agent-content',
             'data-status': props.status,
             'data-message-uid': props.messageUid || '',
+            'data-has-on-interrupt-resume': props.onInterruptResume ? 'true' : undefined,
           },
           'FlowAgentContent',
         );
@@ -444,6 +446,19 @@ describe('ActivityMessage', () => {
       });
 
       expect(wrapper.find('.mock-flow-agent-content').attributes('data-message-uid')).toBe('activity-uid-1');
+    });
+
+    it('应将 onInterruptResume 传递给 FlowAgentContent', () => {
+      const onInterruptResume = vi.fn();
+      wrapper = mount(ActivityMessage, {
+        props: {
+          activityType: 'flow_agent',
+          content: [],
+          onInterruptResume,
+        },
+      });
+
+      expect(wrapper.find('.mock-flow-agent-content').attributes('data-has-on-interrupt-resume')).toBe('true');
     });
   });
 

@@ -221,11 +221,11 @@ ToolApprovalCard
 | 属性名            | 类型                         | 默认值 | 说明                                         |
 | ----------------- | ---------------------------- | ------ | -------------------------------------------- |
 | interrupt         | `AIDevToolApprovalInterrupt` | —      | **必填**，含 `metadata.ticket`               |
-| onInterruptResume | `OnInterruptResume`          | —      | 取消审批时触发，签名为 `(payload, interrupt)`，payload 为 `{ action: 'cancel' }` |
+| onInterruptResume | `OnInterruptResume`          | —      | 取消审批时触发，签名为 `(payload, interrupt)`，payload 为 `{ operation: InterruptResumeOperation.ApprovalCancel, payload: { interrupt_id } }` |
 
 ### Events / Slots / Expose
 
-无。打开链接、复制剪贴板在组件内部完成；取消审批通过 `onInterruptResume({ action: 'cancel' }, interrupt)` 通知业务侧处理。
+无。打开链接、复制剪贴板在组件内部完成；取消审批通过 `onInterruptResume({ operation: InterruptResumeOperation.ApprovalCancel, payload: { interrupt_id: interrupt.id } }, interrupt)` 通知业务侧处理。
 
 ## 依赖
 

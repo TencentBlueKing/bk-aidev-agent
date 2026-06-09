@@ -41,12 +41,16 @@ sinceVersion: 1.0.0
       nodes: {
         n1: { id: 'n1', name: '采集主机指标', state: 'FINISHED', elapsed_time: 12, type: 'task', loop: 0, retry: 0, skip: false, start_time: '', finish_time: '' },
         n2: { id: 'n2', name: '分析异常项', state: 'FINISHED', elapsed_time: 65, type: 'task', loop: 0, retry: 0, skip: false, start_time: '', finish_time: '' },
-        n3: { id: 'n3', name: '推送告警', state: 'FAILED', elapsed_time: 3, type: 'task', loop: 0, retry: 1, skip: false, start_time: '', finish_time: '' },
+        n3: { id: 'n3', name: '推送告警', state: 'FAILED', elapsed_time: 3, type: 'task', loop: 0, retry: 1, skip: false, retryable: true, skippable: true, start_time: '', finish_time: '' },
       },
     },
   ];
 
   // 执行中任务：含运行中 / 待执行 / 挂起多种状态
+  const handleInterruptResume = async (payload: { operation: string; payload?: Record<string, unknown> }) => {
+    console.log('flow node resume:', payload);
+  };
+
   const runningContent = [
     {
       task_id: 200,
@@ -83,8 +87,9 @@ sinceVersion: 1.0.0
 - **状态聚合统计**：汇总所有任务的 `statistics.state_counts`，在标题栏按「执行中 / 成功 / 失败 / 挂起 / 待执行」分类展示带颜色的计数（超过 99 显示 `99+`）
 - **两级折叠**：任务整体由 `ActivityLayout` 折叠；每个任务节点列表可单独展开/收起
 - **耗时格式化**：节点耗时与任务总耗时按 `d/h/m/s` 紧凑展示，小于 1 秒显示 `<1s`
-- **详情入口联动**：hover 节点行显示「详情」按钮，点击后通过自定义 Tab 挂载 `FlowAgentNodeDetail`
-- **分享态降级**：`RenderMode.Share` 下隐藏耗时与详情入口，仅保留只读的执行状态
+- **节点行尾操作**：hover 失败节点行显示「重试 / 跳过 / 详情」按钮组（间距 12px）；成功 / 运行中等非失败节点仅显示「详情」。重试 / 跳过依赖节点 `retryable` / `skippable` 能力位，通过 `onInterruptResume` 回传 Agent
+- **详情入口联动**：「详情」按钮点击后通过自定义 Tab 挂载 `FlowAgentNodeDetail`
+- **分享态降级**：`RenderMode.Share` 下隐藏耗时与行尾操作按钮，仅保留只读的执行状态
 
 ## 状态映射
 
@@ -107,16 +112,20 @@ sinceVersion: 1.0.0
   <FlowAgentContent
     :content="flowContent"
     :message-uid="messageUid"
+    :on-interrupt-resume="handleInterruptResume"
     :status="status"
   />
 </template>
 
 <script setup lang="ts">
   import { FlowAgentContent } from '@blueking/chat-x';
-  import type { BkFlowMessageContent } from '@blueking/chat-x';
+  import type { BkFlowMessageContent, OnInterruptResume } from '@blueking/chat-x';
 
   const messageUid = 'flow-msg-1';
   const status = 'success';
+  const handleInterruptResume: OnInterruptResume = async payload => {
+    console.log('flow node resume:', payload);
+  };
   const flowContent: BkFlowMessageContent = [
     {
       task_id: 100,
@@ -127,19 +136,20 @@ sinceVersion: 1.0.0
       nodes: {
         n1: { id: 'n1', name: '采集主机指标', state: 'FINISHED', elapsed_time: 12, type: 'task', loop: 0, retry: 0, skip: false, start_time: '', finish_time: '' },
         n2: { id: 'n2', name: '分析异常项', state: 'FINISHED', elapsed_time: 65, type: 'task', loop: 0, retry: 0, skip: false, start_time: '', finish_time: '' },
-        n3: { id: 'n3', name: '推送告警', state: 'FAILED', elapsed_time: 3, type: 'task', loop: 0, retry: 1, skip: false, start_time: '', finish_time: '' },
+        n3: { id: 'n3', name: '推送告警', state: 'FAILED', elapsed_time: 3, type: 'task', loop: 0, retry: 1, skip: false, retryable: true, skippable: true, start_time: '', finish_time: '' },
       },
     },
   ];
 </script>
 ```
 
-**渲染效果**（hover 节点行可看到耗时切换为「详情」按钮，点击会向侧栏自定义 Tab 注入节点详情）
+**渲染效果**（hover 失败节点行可看到「重试 / 跳过 / 详情」按钮组；点击「详情」会向侧栏自定义 Tab 注入节点详情）
 
 <div class="demo">
   <FlowAgentContentComp
     :content="completedContent"
     message-uid="flow-msg-1"
+    :on-interrupt-resume="handleInterruptResume"
     status="success"
   />
   <p v-if="lastTab" style="margin-top: 8px; font-size: 12px; color: #979ba5;">已打开详情 Tab：{{ lastTab }}</p>
@@ -156,6 +166,32 @@ sinceVersion: 1.0.0
     status="streaming"
   />
 </div>
+
+## 失败节点重试 / 跳过
+
+失败节点（`convergedState === 'failed'`）且具备对应能力位时，hover 行尾展示「重试」或「跳过」按钮。点击后调用 `onInterruptResume`，**不传** `interrupt` 参数：
+
+```typescript
+// 重试
+onInterruptResume?.({
+  operation: InterruptResumeOperation.FlowNodeRetry,
+  payload: { node_id: node.id, task_id: task.task_id },
+});
+
+// 跳过
+onInterruptResume?.({
+  operation: InterruptResumeOperation.FlowNodeSkip,
+  payload: { node_id: node.id, task_id: task.task_id },
+});
+```
+
+| 按钮 | 显隐条件                              | `operation`          |
+| ---- | ------------------------------------- | ---------------------- |
+| 重试 | 失败态且 `node.retryable === true`    | `flow_node_retry`      |
+| 跳过 | 失败态且 `node.skippable === true`    | `flow_node_skip`       |
+| 详情 | 始终展示（Share 模式除外）            | —（打开侧栏 Tab，不走 resume） |
+
+行尾操作由内部 composable [`useFlowNodeActions`](/composables/use-flow-node-actions) 聚合为声明式列表，组件层仅遍历渲染。
 
 ## 节点详情联动
 
@@ -201,7 +237,10 @@ ActivityLayout（activity-type=flow_agent，v-model:collapsed）
             ├── node-name（HighlightKeyword + 溢出提示）
             └── node-trailing（非 Share 态）
                 ├── node-time（节点耗时，hover 时隐藏）
-                └── node-detail-btn（hover 时显示，点击挂载详情 Tab）
+                └── node-actions（hover 时显示按钮组，间距 12px）
+                    ├── node-action-btn「重试」（失败 + retryable）
+                    ├── node-action-btn「跳过」（失败 + skippable）
+                    └── node-action-btn「详情」（始终，点击挂载详情 Tab）
 ```
 
 ## API
@@ -212,6 +251,7 @@ ActivityLayout（activity-type=flow_agent，v-model:collapsed）
 | ---------- | ------------------------ | ---- | ----------- | -------------------------------------------------------------------------- |
 | content    | `BkFlowMessageContent`   | 否   | `[{}]`      | 任务数组；传入单个 `BkFlowTask` 时自动包装为单元素数组                       |
 | messageUid | `string`                 | 否   | —           | 所属消息唯一标识，注入到节点详情 Tab 的 `data.messageUid`，用于异步回填数据 |
+| onInterruptResume | `OnInterruptResume` | 否   | —           | 节点「重试 / 跳过」与第三方审批取消复用同一回调，按 `payload.operation` 分流；流程节点操作时不传 `interrupt` |
 | status     | `MessageStatus`          | 否   | —           | 消息状态；`pending` / `streaming` 时标题栏显示加载动画                       |
 
 ### Emits
@@ -252,7 +292,9 @@ interface BkFlowNode {
   type: string;
   loop: number;
   retry: number;
+  retryable?: boolean; // 是否可重试（失败节点「重试」按钮显隐）
   skip: boolean;
+  skippable?: boolean; // 是否可跳过（失败节点「跳过」按钮显隐）
   start_time: string;
   finish_time: string;
 }
@@ -273,11 +315,14 @@ interface BkFlowNode {
 3. **任务总耗时为节点累加**：`task-time` 由各节点 `elapsed_time` 求和得到，并非任务级独立字段。
 4. **`task_outputs` 暂不渲染**：模板中任务输出展示区块已注释，传入也不会显示。
 5. **未知状态兜底为 `running`**：`getConvergedState` 对未识别的原始状态统一归为运行中。
-6. **Share 模式降级**：`RenderMode.Share` 下不渲染节点耗时与「详情」按钮，仅保留只读执行状态。
+6. **Share 模式降级**：`RenderMode.Share` 下不渲染节点耗时与行尾操作按钮（重试 / 跳过 / 详情），仅保留只读执行状态。
+7. **`onInterruptResume` 透传链路**：`MessageRender` → `ActivityMessage` → `FlowAgentContent`；未传入时重试 / 跳过按钮仍展示但点击无回调。
 
 ## 关联组件
 
 - [FlowAgentNodeDetail](/components/agent/flow-agent-node-detail) — 节点详情面板
 - [ActivityLayout](/components/helper/activity-layout) — 可折叠活动容器
 - [ChatContainer](/components/setup/chat-container) — 侧栏自定义 Tab 挂载场景
+- [useFlowNodeActions](/composables/use-flow-node-actions) — 节点行尾操作聚合 composable
+- [中断类型 Interrupt](/types/interrupt) — `InterruptResumeOperation`、`FlowNodeResume`、`OnInterruptResume`
 - [使用建议] 优先通过上层组合组件（`MessageRender`）使用；直接使用前请确认 `content` 数据结构来自对应类型定义。

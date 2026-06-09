@@ -28,6 +28,7 @@ import { defineComponent, h, nextTick } from 'vue';
 import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { InterruptResumeOperation } from '../../../ag-ui/types/interrupt';
 import { RenderMode } from '../../../common/constants';
 import { useRenderModeProvider } from '../../../composables/use-common';
 import FlowAgentContent from './flow-agent-content.vue';
@@ -102,6 +103,8 @@ vi.mock('../../../icons', () => ({
   BkFlowSuccessIcon: h('span', { class: 'mock-bkflow-success' }),
   BkFlowSuspendedIcon: h('span', { class: 'mock-bkflow-suspended' }),
   NodeOutputIcon: h('span', { class: 'mock-node-output' }),
+  RebuildIcon: h('span', { class: 'mock-rebuild' }),
+  SkipIcon: h('span', { class: 'mock-skip' }),
 }));
 
 // Mock tippy 样式与 vue-tippy：将 default / content 插槽同步渲染，便于断言 tooltip 内容
@@ -330,9 +333,7 @@ describe('FlowAgentContent', () => {
         },
       });
 
-      const pendingItem = wrapper
-        .findAll('.flow-agent-stat-tooltip-item')
-        .find(item => item.text().includes('待执行'));
+      const pendingItem = wrapper.findAll('.flow-agent-stat-tooltip-item').find(item => item.text().includes('待执行'));
       const count = pendingItem?.find('.flow-agent-stat-tooltip-count');
       expect(count?.attributes('style')).toContain('#4D4F56');
     });
@@ -423,7 +424,7 @@ describe('FlowAgentContent', () => {
 
       expect(wrapper.find('.flow-agent-node-trailing').exists()).toBe(false);
       expect(wrapper.find('.flow-agent-node-time').exists()).toBe(false);
-      expect(wrapper.find('.flow-agent-node-detail-btn').exists()).toBe(false);
+      expect(wrapper.find('.flow-agent-node-actions').exists()).toBe(false);
     });
 
     it('renderMode 为 Share 时不应渲染任务耗时和有效证据入口', () => {
@@ -591,6 +592,110 @@ describe('FlowAgentContent', () => {
       expect(mockRemoveCustomTab).not.toHaveBeenCalled();
     });
 
+    it('失败节点可重试/可跳过时应展示重试与跳过按钮', () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent({
+            nodes: {
+              n1: createNode({
+                id: 'n1',
+                name: '失败节点',
+                state: 'FAILED',
+                retryable: true,
+                skippable: true,
+              }),
+            },
+          }),
+        },
+      });
+
+      const actionTexts = wrapper.findAll('.flow-agent-node-action-btn').map(btn => btn.text());
+      expect(actionTexts).toContain('重试');
+      expect(actionTexts).toContain('跳过');
+      expect(actionTexts).toContain('详情');
+    });
+
+    it('失败节点不可重试/不可跳过时不应展示重试与跳过按钮', () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent({
+            nodes: {
+              n1: createNode({
+                id: 'n1',
+                name: '失败节点',
+                state: 'FAILED',
+                retryable: false,
+                skippable: false,
+              }),
+            },
+          }),
+        },
+      });
+
+      const actionTexts = wrapper.findAll('.flow-agent-node-action-btn').map(btn => btn.text());
+      expect(actionTexts).not.toContain('重试');
+      expect(actionTexts).not.toContain('跳过');
+      expect(actionTexts).toContain('详情');
+    });
+
+    it('点击重试应通过 onInterruptResume 回传 flow_node_retry', async () => {
+      const onInterruptResume = vi.fn();
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent({
+            nodes: {
+              n1: createNode({
+                id: 'n1',
+                name: '失败节点',
+                state: 'FAILED',
+                retryable: true,
+              }),
+            },
+          }),
+          onInterruptResume,
+        },
+      });
+
+      const retryBtn = wrapper.findAll('.flow-agent-node-action-btn').find(btn => btn.text().includes('重试'));
+      expect(retryBtn).toBeTruthy();
+      await retryBtn?.trigger('click');
+
+      expect(onInterruptResume).toHaveBeenCalledWith({
+        operation: InterruptResumeOperation.FlowNodeRetry,
+        payload: { node_id: 'n1', task_id: 100 },
+      });
+      expect(onInterruptResume.mock.calls[0]).toHaveLength(1);
+    });
+
+    it('点击跳过应通过 onInterruptResume 回传 flow_node_skip', async () => {
+      const onInterruptResume = vi.fn();
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent({
+            nodes: {
+              n1: createNode({
+                id: 'n1',
+                name: '失败节点',
+                state: 'FAILED',
+                skippable: true,
+              }),
+            },
+          }),
+          onInterruptResume,
+        },
+      });
+
+      const skipBtn = wrapper.findAll('.flow-agent-node-action-btn').find(btn => btn.text().includes('跳过'));
+      expect(skipBtn).toBeTruthy();
+      await skipBtn?.trigger('click');
+
+      expect(onInterruptResume).toHaveBeenCalledWith({
+        operation: InterruptResumeOperation.FlowNodeSkip,
+        payload: { node_id: 'n1', task_id: 100 },
+      });
+      expect(onInterruptResume.mock.calls[0]).toHaveLength(1);
+    });
+
     it('打开节点详情时应将 messageUid 传入自定义 Tab 的 data', async () => {
       const messageUid = 'flow-msg-uid-1';
       wrapper = mount(FlowAgentContent, {
@@ -600,8 +705,9 @@ describe('FlowAgentContent', () => {
         },
       });
 
-      const detailBtn = wrapper.find('.flow-agent-node-detail-btn');
-      await detailBtn.trigger('click');
+      const detailBtn = wrapper.findAll('.flow-agent-node-action-btn').find(btn => btn.text().includes('详情'));
+      expect(detailBtn).toBeTruthy();
+      await detailBtn?.trigger('click');
 
       expect(mockAddCustomTab).toHaveBeenCalled();
       const payload = mockAddCustomTab.mock.calls[0]?.[0] as { data?: { messageUid?: string } };

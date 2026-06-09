@@ -28,6 +28,7 @@ import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { APPROVAL_STATUS, InterruptReason } from '../../../ag-ui/types/constants';
+import { InterruptResumeOperation } from '../../../ag-ui/types/interrupt';
 import InterruptMessage from './interrupt-message.vue';
 
 import type {
@@ -143,7 +144,7 @@ describe('InterruptMessage', () => {
             ...approvalInterrupt,
             metadata: {
               ticket: {
-                ...approvalInterrupt.metadata!.ticket,
+                ...approvalInterrupt.metadata?.ticket,
                 approvers: [],
                 status: APPROVAL_STATUS.REVOKED,
               },
@@ -173,7 +174,13 @@ describe('InterruptMessage', () => {
 
     await wrapper.find('.ai-tool-approval-card__cancel').trigger('click');
 
-    expect(onInterruptResume).toHaveBeenCalledWith({ action: 'cancel' }, approvalInterrupt);
+    expect(onInterruptResume).toHaveBeenCalledWith(
+      {
+        operation: InterruptResumeOperation.ApprovalCancel,
+        payload: { interrupt_id: approvalInterrupt.id },
+      },
+      approvalInterrupt,
+    );
   });
 
   it('点击查看单据详情时只打开单据链接，不触发 resume', async () => {

@@ -13,8 +13,6 @@
       v-model:render-mode="chatMode"
       v-model:selected-shortcut="selectedShortcut"
       :enable-selection="false"
-      :get-side-render-component="getSideRenderComponent"
-      :get-side-tab-render-component="getSideTabRenderComponent"
       :messages="messages"
       :model-value="userInput"
       :on-agent-action="handleAgentAction"
@@ -41,7 +39,7 @@
       @stop-streaming="handleStopStreaming"
       @update:model-value="handleUpdateInputValue"
     >
-      <template #group="{ group }">
+      <!-- <template #group="{ group }">
         <div class="group-messagesxxxx">
           <div
             v-for="(message, index) in group.messages"
@@ -54,6 +52,7 @@
                 (content: UserMessage['content'], docSchema: TagSchema) =>
                   handleUserInputConfirm(message, content, docSchema)
               "
+              :on-interrupt-resume="handleInterruptResume"
               :on-shortcut-confirm="
                 (formModel: Record<string, unknown>) => handleUserShortcutConfirm(message, formModel)
               "
@@ -64,7 +63,7 @@
             </MessageRender>
           </div>
         </div>
-      </template>
+      </template> -->
       <!-- <template #message="{ message, messageToolsStatus, onInterruptResume }">
         <template v-if="message.role === MessageRole.User">
           <MessageRender :message="message"> </MessageRender>
@@ -115,7 +114,7 @@
         </div>
       </template> -->
       <!-- 自定义作答态：用下拉选择替代默认的选项列表，选中后通过 setAnswer 回传已组装答案 -->
-      <template #interruptQuestion="{ question, setAnswer, answer }">
+      <!-- <template #interruptQuestion="{ question, setAnswer, answer }">
         <div v-if="question.multiSelect">
           <Select
             :model-value="answer?.answer.at(0)?.label"
@@ -147,16 +146,15 @@
             :question="question"
           />
         </div>
-      </template>
+      </template> -->
     </ChatContainer>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref as deepRef, h, onMounted, shallowRef } from 'vue';
+  import { ref as deepRef, onMounted, shallowRef } from 'vue';
 
-  import { Select } from 'bkui-vue';
-
+  // import { Select } from 'bkui-vue';
   import {
     type ActivityMessage,
     type AssistantMessage,
@@ -389,7 +387,9 @@
               elapsed_time: 300,
               loop: 1,
               retry: 0,
+              retryable: true,
               skip: false,
+              skippable: true,
             },
             n1a2b3c4d5e6f7890abcdef12345678: {
               id: 'n1a2b3c4d5e6f7890abcdef12345678',
@@ -586,6 +586,7 @@
   ]);
 
   const handleInterruptResume: OnInterruptResume = (payload, interrupt) => {
+    // 取消审批与流程节点重试 / 跳过复用同一回调，业务侧按 payload.operation 分流处理
     console.log('[playground] interrupt resume', payload, interrupt);
   };
 
@@ -1227,38 +1228,37 @@
    */
   // const PLAYGROUND_GET_SIDE_VNODE_DEMO = true;
 
-  const getSideRenderComponent = (createElement: typeof h, props?: Record<string, unknown>) => {
-    // if (!PLAYGROUND_GET_SIDE_VNODE_DEMO) {
-    //   return undefined;
-    // }
-    const raw = props ?? {};
-    const taskIdRaw = raw.task_id;
-    const taskId =
-      typeof taskIdRaw === 'number'
-        ? taskIdRaw
-        : typeof taskIdRaw === 'string' && taskIdRaw !== ''
-          ? Number(taskIdRaw)
-          : undefined;
-    return createElement(CustomTabContent, {
-      loading: Boolean(raw.loading),
-      nodeId: typeof raw.node_id === 'string' ? raw.node_id : '',
-      nodeName: typeof raw.node_name === 'string' ? raw.node_name : '',
-      taskId: Number.isFinite(taskId as number) ? (taskId as number) : undefined,
-      taskName: typeof raw.task_name === 'string' ? raw.task_name : '',
-      data:
-        typeof raw.data === 'object' && raw.data !== null && !Array.isArray(raw.data)
-          ? (raw.data as Record<string, unknown>)
-          : {},
-    });
-  };
+  // const getSideRenderComponent = (createElement: typeof h, props?: Record<string, unknown>) => {
+  //   // if (!PLAYGROUND_GET_SIDE_VNODE_DEMO) {
+  //   //   return undefined;
+  //   // }
+  //   const raw = props ?? {};
+  //   const taskIdRaw = raw.task_id;
+  //   const taskId =
+  //     typeof taskIdRaw === 'number'
+  //       ? taskIdRaw
+  //       : typeof taskIdRaw === 'string' && taskIdRaw !== ''
+  //         ? Number(taskIdRaw)
+  //         : undefined;
+  //   return createElement(CustomTabContent, {
+  //     loading: Boolean(raw.loading),
+  //     nodeId: typeof raw.node_id === 'string' ? raw.node_id : '',
+  //     nodeName: typeof raw.node_name === 'string' ? raw.node_name : '',
+  //     taskId: Number.isFinite(taskId as number) ? (taskId as number) : undefined,
+  //     taskName: typeof raw.task_name === 'string' ? raw.task_name : '',
+  //     data:
+  //       typeof raw.data === 'object' && raw.data !== null && !Array.isArray(raw.data)
+  //         ? (raw.data as Record<string, unknown>)
+  //         : {},
+  //   });
+  // };
 
-  const getSideTabRenderComponent = (createElement: typeof h, tab: CustomTab<Record<string, unknown>>) => {
-    console.info('getSideTabRenderComponent', tab.name);
-    if (tab.name === '634859') {
-      return createElement('div', {}, 'dddd');
-    }
-    return undefined;
-  };
+  // const getSideTabRenderComponent = (createElement: typeof h, tab: CustomTab<Record<string, unknown>>) => {
+  //   if (tab.name === '634859') {
+  //     return createElement('div', {}, 'dddd');
+  //   }
+  //   return undefined;
+  // };
 
   const handleAgentAction = async (tool: IToolBtn) => {
     console.log('agent action:', tool);

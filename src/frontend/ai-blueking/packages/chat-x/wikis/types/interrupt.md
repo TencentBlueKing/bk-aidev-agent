@@ -28,7 +28,24 @@ AG-UI [Interrupts](https://docs.ag-ui.com/drafts/interrupts) 协议相关类型�
 中断链路分为两段：
 
 1. Agent 返回 `RUN_FINISHED { outcome: { type: 'interrupt', interrupts } }`，前端渲染等待用户处理的 UI。
-2. 用户操作后调用 `onInterruptResume(payload, interrupt)`，业务侧将 `payload` 作为 `RunAgentInput.resume` 回传给 Agent。
+2. 用户操作后调用 `onInterruptResume(payload, interrupt?)`，业务侧按 `payload.operation` 分支处理，并将 `payload` 作为 `RunAgentInput.resume` 回传给 Agent。
+
+## InterruptResumeOperation
+
+统一标识用户在「中断消息 / 活动消息」上触发的、需回传 Agent 处理的动作：
+
+```typescript
+enum InterruptResumeOperation {
+  /** 主动取消第三方工具审批 */
+  ApprovalCancel = 'approval_cancel',
+  /** 重试失败的流程节点（bkflow） */
+  FlowNodeRetry = 'flow_node_retry',
+  /** 跳过失败的流程节点（bkflow） */
+  FlowNodeSkip = 'flow_node_skip',
+}
+```
+
+业务侧通过 `onInterruptResume` 回调的 `payload.operation` 字段进行分支处理；新增操作类型只需扩展此枚举，回调契约与透传链路保持不变。
 
 ## RunFinishedOutcome
 
@@ -125,6 +142,41 @@ type Interrupt =
   | BaseInterrupt<InterruptReason, Record<string, any>>;
 ```
 
+## InterruptResume 联合类型
+
+```typescript
+type InterruptResume = FlowNodeResume | ToolApprovalResume | UserQuestionResume;
+```
+
+| 类型                 | `operation` / `reason`              | 说明                                                         |
+| -------------------- | ----------------------------------- | ------------------------------------------------------------ |
+| `ToolApprovalResume` | `InterruptResumeOperation.ApprovalCancel` | 第三方工具审批取消                                           |
+| `FlowNodeResume`     | `flow_node_retry` / `flow_node_skip` | FlowAgent 失败节点重试 / 跳过；**无**对应 `Interrupt` 项     |
+| `UserQuestionResume` | `InterruptReason.UserQuestion`（`reason` 字段） | 用户回答问题                                                 |
+
+### ToolApprovalResume
+
+```typescript
+type ToolApprovalResume = {
+  operation: InterruptResumeOperation.ApprovalCancel;
+  payload: { interrupt_id: number | string };
+};
+```
+
+### FlowNodeResume
+
+流程节点不属于 interrupt，节点定位信息（`task_id` / `node_id`）随 `payload` 回传；此时 `onInterruptResume` 的第二个 `interrupt` 参数**不传**。
+
+```typescript
+type FlowNodeResume = {
+  operation: InterruptResumeOperation.FlowNodeRetry | InterruptResumeOperation.FlowNodeSkip;
+  payload: {
+    node_id: string;
+    task_id: number;
+  };
+};
+```
+
 ## BaseResume / UserQuestionResume
 
 `UserQuestion` 的 resume payload 为单个对象，与 `chat-helper` 的 `IResume` 保持一致：
@@ -200,19 +252,25 @@ type InterruptMessage = BaseMessage<
 
 ## OnInterruptResume
 
-用户完成中断操作后的回调（由 `ChatContainer` / `MessageContainer` / `MessageRender` 透传）：
+用户完成中断操作或 FlowAgent 节点操作后的回调（由 `ChatContainer` / `MessageContainer` / `MessageRender` 透传）：
 
 ```typescript
 type OnInterruptResume = (
   payload: InterruptResume,
-  interrupt: Interrupt,
+  interrupt?: Interrupt,
 ) => Promise<void> | void;
 ```
 
-| 参数        | 说明                                                                       |
-| ----------- | -------------------------------------------------------------------------- |
-| `payload`   | 用户操作产生的 resume 负载；审批取消为 `{ action: 'cancel' }`，用户问题为 `UserQuestionResume` |
-| `interrupt` | 原始中断项，业务侧可读取 `interrupt.id`、`toolCallId`、`metadata` 等上下文 |
+| 参数        | 说明                                                                                                       |
+| ----------- | ---------------------------------------------------------------------------------------------------------- |
+| `payload`   | 用户操作产生的 resume 负载；通过 `payload.operation`（或 `UserQuestionResume.reason`）区分动作类型         |
+| `interrupt` | 原始中断项；审批取消、用户问题等中断来源**必传**；FlowAgent 节点重试 / 跳过等非中断来源**不传**             |
+
+| `payload.operation`              | 触发场景                         | `interrupt` |
+| -------------------------------- | -------------------------------- | ----------- |
+| `approval_cancel`                | `ToolApprovalCard` 取消审批      | 必传        |
+| `flow_node_retry` / `flow_node_skip` | `FlowAgentContent` 失败节点操作 | 不传        |
+| —（`UserQuestionResume`）        | `UserQuestionCard` 提交回答      | 必传        |
 
 ## 使用示例
 
@@ -220,6 +278,7 @@ type OnInterruptResume = (
 import {
   APPROVAL_STATUS,
   InterruptReason,
+  InterruptResumeOperation,
   MessageRole,
   MessageStatus,
   type InterruptMessage,
@@ -276,7 +335,20 @@ const message: InterruptMessage = {
 };
 
 const handleInterruptResume: OnInterruptResume = async (payload, interrupt) => {
-  console.log('resume', interrupt.id, payload);
+  if ('operation' in payload) {
+    switch (payload.operation) {
+      case InterruptResumeOperation.ApprovalCancel:
+        console.log('取消审批', payload.payload.interrupt_id, interrupt?.id);
+        break;
+      case InterruptResumeOperation.FlowNodeRetry:
+      case InterruptResumeOperation.FlowNodeSkip:
+        console.log('流程节点操作', payload.operation, payload.payload);
+        break;
+    }
+    return;
+  }
+  // UserQuestionResume
+  console.log('用户问题 resume', interrupt?.id, payload);
 };
 ```
 

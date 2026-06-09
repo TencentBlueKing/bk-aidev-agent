@@ -40,6 +40,10 @@ export interface FlowNodeVM {
   id: string;
   name: string;
   raw: BkFlowNode;
+  /** 是否可重试（失败节点行尾「重试」按钮的显隐依据） */
+  retryable: boolean;
+  /** 是否可跳过（失败节点行尾「跳过」按钮的显隐依据） */
+  skippable: boolean;
 }
 
 /** 统计概览项视图模型 */
@@ -98,6 +102,8 @@ export const useFlowAgent = (contentRef: Ref<BkFlowMessageContent | undefined>) 
           id: node.id,
           name: node.name,
           raw: node,
+          retryable: Boolean(node.retryable),
+          skippable: Boolean(node.skippable),
         };
       });
       const totalElapsed = nodes.reduce((sum, node) => sum + node.raw.elapsed_time, 0);
