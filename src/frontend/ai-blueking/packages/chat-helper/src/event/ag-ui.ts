@@ -330,7 +330,7 @@ export class AGUIProtocol implements ISSEProtocol {
       });
     }
     // 二次返回，直接更新消息内容
-    if (event.outcome?.type === RunFinishedOutcomeType.Success) {
+    if (event.outcome?.type === RunFinishedOutcomeType.Success && message?.role === MessageRole.Interrupt) {
       message.content = event;
     }
   }
