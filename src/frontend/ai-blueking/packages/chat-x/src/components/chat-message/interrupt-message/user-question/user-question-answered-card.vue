@@ -76,7 +76,7 @@
     width: 100%;
     min-width: 326px;
     max-width: 500px;
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
     color: #4d4f56;
     background: #fff;
     border: 1px solid #dcdee5;
@@ -107,15 +107,15 @@
     }
 
     &__title {
-      font-size: 12px;
-      line-height: 20px;
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height-compact, 20px);
       color: #313238;
     }
 
     &__status {
       flex: 0 0 auto;
-      font-size: 12px;
-      line-height: 20px;
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height-compact, 20px);
       color: #979ba5;
     }
 
@@ -140,8 +140,8 @@
     }
 
     &__question-text {
-      font-size: 12px;
-      line-height: 20px;
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height-compact, 20px);
       color: #313238;
       overflow-wrap: break-word;
     }
@@ -152,7 +152,7 @@
       align-items: center;
       height: 16px;
       padding: 0 6px;
-      font-size: 12px;
+      font-size: var(--ai-font-size, 12px);
       line-height: 16px;
       color: #1768ef;
       background: #e1ecff;
@@ -162,8 +162,8 @@
 
     &__answer {
       margin: 0;
-      font-size: 12px;
-      line-height: 20px;
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height-compact, 20px);
       color: #979ba5;
       overflow-wrap: break-word;
     }

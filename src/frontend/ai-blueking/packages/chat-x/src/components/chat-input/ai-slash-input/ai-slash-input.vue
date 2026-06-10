@@ -443,7 +443,7 @@
         align-items: center;
         height: 18px;
         padding: 0 2px 0 6px;
-        font-size: 12px;
+        font-size: var(--ai-font-size, 12px);
         color: list.nth($color, 2);
         background: list.nth($color, 1);
         border-radius: 2px;
@@ -477,9 +477,9 @@
     .ai-slash-input {
       width: 100%;
       min-height: 100%;
-      padding: 8px;
-      font-size: 12px;
-      line-height: 1.5;
+      padding: var(--ai-spacing-comfortable, 8px);
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height-compact, 20px);
       color: #4d4f56;
       outline: none;
       border: none;

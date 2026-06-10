@@ -72,7 +72,7 @@
       align-items: center;
 
       .select-all-text {
-        font-size: 12px;
+        font-size: var(--ai-font-size, 12px);
         color: #63656e;
       }
     }

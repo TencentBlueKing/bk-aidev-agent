@@ -71,7 +71,7 @@
     max-height: 258px;
     padding: 8px;
     overflow-y: auto;
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
     color: #4d4f56;
     background: #fff;
     border: 1px solid #dcdee5;
@@ -113,9 +113,9 @@
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 12px;
+          font-size: var(--ai-font-size, 12px);
           font-weight: 700;
-          line-height: 20px;
+          line-height: var(--ai-line-height-compact, 20px);
           color: #fff;
           background: #3a84ff;
           border-radius: 2px;

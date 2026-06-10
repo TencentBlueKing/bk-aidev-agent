@@ -912,6 +912,53 @@ describe('ChatContainer', () => {
     });
   });
 
+  describe('size 字号主题测试', () => {
+    it('传入 size 为 normal 时根元素 data-ai-size 应为 normal', () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, size: 'normal' },
+      });
+
+      expect(wrapper.find('.ai-chat-container').attributes('data-ai-size')).toBe('normal');
+    });
+
+    it('未传 size 时根元素 data-ai-size 默认应为 small', () => {
+      wrapper = mount(ChatContainer, {
+        props: defaultProps,
+      });
+
+      expect(wrapper.find('.ai-chat-container').attributes('data-ai-size')).toBe('small');
+    });
+
+    it('挂载时应将 size 同步到 document.body，供浮层继承字号主题', () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, size: 'normal' },
+      });
+
+      expect(document.body.dataset.aiSize).toBe('normal');
+    });
+
+    it('size 变更时应更新 document.body.dataset.aiSize', async () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, size: 'small' },
+      });
+      expect(document.body.dataset.aiSize).toBe('small');
+
+      await wrapper.setProps({ size: 'normal' });
+      expect(document.body.dataset.aiSize).toBe('normal');
+    });
+
+    it('卸载时应清理 document.body 上的字号主题标记', () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, size: 'normal' },
+      });
+      expect(document.body.dataset.aiSize).toBe('normal');
+
+      wrapper.unmount();
+      wrapper = undefined as unknown as VueWrapper;
+      expect(document.body.dataset.aiSize).toBeUndefined();
+    });
+  });
+
   describe('resizeProps 测试', () => {
     it('ResizeLayout 应接收默认合并后的 resize 相关 props', () => {
       wrapper = mount(ChatContainer, {

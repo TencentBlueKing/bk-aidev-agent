@@ -103,7 +103,7 @@
       justify-content: flex-start;
       width: 24px;
       height: 24px;
-      font-size: 16px;
+      font-size: var(--ai-icon-size, 16px);
       color: #979ba5;
 
       &:hover {

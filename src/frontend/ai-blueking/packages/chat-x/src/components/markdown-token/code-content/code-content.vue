@@ -267,7 +267,7 @@
 
       .code-header-language {
         margin-right: auto;
-        font-size: 12px;
+        font-size: var(--ai-font-size, 12px);
         color: #999;
       }
     }

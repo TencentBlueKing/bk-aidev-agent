@@ -145,6 +145,8 @@ sinceVersion: 1.0.0
   };
 
   const inputShare = ref('');
+  const inputSizeNormal = ref('');
+  const inputSizeSmall = ref('');
   const inputApproval = ref('');
   const messagesApproval = ref([
     {
@@ -238,12 +240,13 @@ sinceVersion: 1.0.0
 - **自定义 Tab**：通过 `useCustomTabProvider` 支持动态添加自定义 Tab（如节点详情）
 - **分享模式**：内置消息多选分享流程，选中用户消息后确认分享
 - **渲染模式注入**：`renderMode` 会通过内部 Provider 下传给后代内容组件；例如 FlowAgent 节点在 `Share` 模式下隐藏耗时和「详情」入口
+- **字号主题**：通过 `size` 控制 `small`（默认 12px）/ `normal`（14px）两档字号；根节点设置 `data-ai-size`，子组件通过 CSS 变量（`--ai-font-size` 等）响应式缩放；浮层（Tippy / Teleport）会同步 `document.body.dataset.aiSize`，卸载时自动清理
 - **空状态欢迎页**：无消息时展示欢迎语和开场白
 
 ## 组件结构
 
 ```
-ai-chat-container
+ai-chat-container（:data-ai-size="size"）
 ├── Loading（chatLoading 时）
 └── ResizeLayout
     ├── aside（侧边栏）
@@ -334,6 +337,63 @@ ai-chat-container
     />
   </div>
 </div>
+
+## 字号主题
+
+通过 `size` 切换两档字号主题。未传时默认为 `small`（12px 基准字号）；设为 `normal` 时使用 14px 基准字号，并联动行高、间距与图标尺寸。
+
+```vue
+<template>
+  <ChatContainer
+    v-model="inputValue"
+    :messages="messages"
+    message-status="complete"
+    size="normal"
+    :on-send-message="handleSendMessage"
+  />
+</template>
+```
+
+**渲染效果**（左右对比 `size="small"` 与 `size="normal"`）
+
+<div class="demo" style="display: flex; gap: 16px;">
+  <div style="flex: 1;">
+    <p style="margin: 0 0 4px; font-size: 12px; color: #979ba5;">size = "small"（默认）</p>
+    <div style="height: 400px; border: 1px solid #eaebf0; border-radius: 8px; overflow: hidden;">
+      <ChatContainerComp
+        v-model="inputSizeSmall"
+        :messages="messagesBasic"
+        message-status="complete"
+        size="small"
+        :on-send-message="handleSendMessage"
+        :on-stop-sending="handleStopSending"
+        :on-agent-action="handleAgentAction"
+        :on-agent-feedback="handleAgentFeedback"
+        :on-user-action="handleUserAction"
+        @stop-streaming="handleStopStreaming"
+      />
+    </div>
+  </div>
+  <div style="flex: 1;">
+    <p style="margin: 0 0 4px; font-size: 12px; color: #979ba5;">size = "normal"</p>
+    <div style="height: 400px; border: 1px solid #eaebf0; border-radius: 8px; overflow: hidden;">
+      <ChatContainerComp
+        v-model="inputSizeNormal"
+        :messages="messagesBasic"
+        message-status="complete"
+        size="normal"
+        :on-send-message="handleSendMessage"
+        :on-stop-sending="handleStopSending"
+        :on-agent-action="handleAgentAction"
+        :on-agent-feedback="handleAgentFeedback"
+        :on-user-action="handleUserAction"
+        @stop-streaming="handleStopStreaming"
+      />
+    </div>
+  </div>
+</div>
+
+> CSS 变量与档位取值详见 [主题配置 — 字号主题](../../theme/theme#字号主题)。
 
 ## 侧边栏与执行摘要
 
@@ -866,6 +926,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | getSideTabRenderComponent   | `(h, tab, { removeCustomTab }) => VNode \| undefined`                        | —        | 自定义侧栏 Tab 标签渲染；未返回时使用默认图标 + 文案 + 关闭按钮                                                                               |
 | openingRemark               | `string`                                                                     | —        | 开场白，无消息时显示，支持 Markdown                                                                                                           |
 | placement          | `'left' \| 'right'`                                                          | `'left'` | 侧边栏位置                                                                                                                                    |
+| size               | `'normal' \| 'small'`                                                        | `'small'` | 字号主题档位：`small` 为 12px 基准，`normal` 为 14px 基准；根节点设置 `data-ai-size` 并注入 `useGlobalConfig`                                |
 | resizeProps        | `{ disabled?: boolean; initialDivide?: number \| string; max?: number; min?: number }` | —        | 透传给内部 `ResizeLayout` 的可选配置，与默认 `collapsible: false`、`immediate: true`、`min: 400` 合并；`placement` 始终取自本组件 `placement`；`initialDivide` 可为像素数字或百分比等字符串（与 bkui ResizeLayout 一致） |
 | onCustomTabChange  | `(tab: CustomTab) => Promise<any>`                                           | —        | 自定义 Tab 切换回调，返回值作为 Tab 组件 props                                                                                                |
 
@@ -984,3 +1045,5 @@ interface Shortcut {
 - [SelectionFooter](/components/input/selection-footer) — 多选操作栏
 - [ToolBtn](/components/feedback/tool-btn) — 侧栏全屏按钮（自定义插槽）
 - [useFullScreen](/composables/use-full-screen) — 侧栏全屏控制
+- [useGlobalConfig](/composables/use-global-config) — 注入 `size` 与 `supportUpload`
+- [主题配置](/theme/theme) — 字号主题 CSS 变量

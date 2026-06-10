@@ -41,8 +41,8 @@
     flex-direction: column;
     align-items: flex-start;
     width: 100%;
-    font-size: 12px;
-    line-height: 1.5;
+    font-size: var(--ai-font-size, 12px);
+    line-height: var(--ai-line-height, 20px);
     color: #313238;
 
     &-content {

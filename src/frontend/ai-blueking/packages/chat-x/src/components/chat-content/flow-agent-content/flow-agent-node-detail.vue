@@ -243,7 +243,7 @@
     flex-direction: column;
     height: 100%;
     padding: 16px 24px;
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
 
     .detail-title {
       display: flex;
@@ -279,8 +279,8 @@
       justify-content: center;
       height: 24px;
       padding: 5px 12px;
-      font-size: 12px;
-      line-height: 20px;
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height-compact, 20px);
       color: variables.$color-text;
       cursor: pointer;
       border-radius: 2px;
@@ -347,8 +347,8 @@
       width: 140px;
       min-height: 42px;
       padding: 11px 16px;
-      font-size: 12px;
-      line-height: 20px;
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height-compact, 20px);
       color: variables.$color-text;
       background: variables.$color-bg-light;
       border-right: 1px solid variables.$color-border;
@@ -361,8 +361,8 @@
       align-items: center;
       min-height: 42px;
       padding: 11px 16px;
-      font-size: 12px;
-      line-height: 20px;
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height-compact, 20px);
       color: variables.$color-text;
       word-break: break-all;
     }
@@ -380,7 +380,7 @@
       min-width: 18px;
       height: 14px;
       padding: 0 2px;
-      font-size: 12px;
+      font-size: var(--ai-font-size, 12px);
       line-height: 1;
       color: white;
       background: variables.$color-text-secondary;

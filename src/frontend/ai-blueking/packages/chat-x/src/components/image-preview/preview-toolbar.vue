@@ -177,7 +177,7 @@
 
     &-pages {
       padding: 0 8px;
-      font-size: 12px;
+      font-size: var(--ai-font-size, 12px);
       line-height: 28px;
       color: #dcdee5;
       white-space: nowrap;
@@ -194,7 +194,7 @@
       display: flex;
       gap: 4px;
       align-items: center;
-      font-size: 12px;
+      font-size: var(--ai-font-size, 12px);
       color: #dcdee5;
       white-space: nowrap;
 

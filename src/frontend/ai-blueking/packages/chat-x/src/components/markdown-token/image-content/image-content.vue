@@ -230,7 +230,7 @@
       gap: 6px;
       align-items: center;
       padding: 4px 8px;
-      font-size: 12px;
+      font-size: var(--ai-font-size, 12px);
       color: #979ba5;
       background-color: #f5f7fa;
       border-radius: 2px;

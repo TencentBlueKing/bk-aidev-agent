@@ -336,7 +336,8 @@
     .ai-markdown-body {
       // 内容包含：限制布局、绘制和样式计算的范围
       contain: content;
-      font-size: 12px;
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height, 20px);
 
       // light 主题作为默认值，优先级高于 github-markdown.css 的 @media 查询
       background-color: transparent;

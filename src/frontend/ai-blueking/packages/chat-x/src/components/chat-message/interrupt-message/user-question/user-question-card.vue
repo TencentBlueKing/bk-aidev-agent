@@ -31,67 +31,71 @@
         />
       </div>
     </header>
-
-    <template v-if="!isCollapsed">
-      <div class="ai-user-question-card__body">
-        <div
-          v-for="(question, qIndex) in questions"
-          :key="qIndex"
-          class="ai-user-question-card__question"
-        >
-          <div class="ai-user-question-card__question-title">
-            <span class="ai-user-question-card__question-text">{{ qIndex + 1 }}. {{ question.question }}</span>
-            <span
-              v-if="question.multiSelect !== undefined"
-              class="ai-user-question-card__tag"
-            >
-              {{ question.multiSelect ? t('多选') : t('单选') }}
-            </span>
-          </div>
-          <div class="ai-user-question-card__options">
-            <!-- 默认渲染选择题；业务方可覆盖此 slot 渲染任意表单，作答有效时通过 setAnswer 回传 -->
-            <slot
-              name="question"
-              v-bind="{
-                question,
-                qIndex,
-                answer: getAnswer(qIndex),
-                setAnswer: (answer: undefined | UserQuestionAnswerItem) => setAnswer(qIndex, answer),
-                confirm: handleComplete,
-              }"
-            >
-              <UserQuestionChoice
-                :question="question"
-                @answer="setAnswer(qIndex, $event)"
-                @confirm="handleComplete"
-              />
-            </slot>
-          </div>
+    <!-- 折叠用 v-show 而非 v-if：保留 UserQuestionChoice 及自定义 slot 的勾选态，避免卸载丢失选中 -->
+    <div
+      v-show="!isCollapsed"
+      class="ai-user-question-card__body"
+    >
+      <div
+        v-for="(question, qIndex) in questions"
+        :key="qIndex"
+        class="ai-user-question-card__question"
+      >
+        <div class="ai-user-question-card__question-title">
+          <span class="ai-user-question-card__question-text">{{ qIndex + 1 }}. {{ question.question }}</span>
+          <span
+            v-if="question.multiSelect !== undefined"
+            class="ai-user-question-card__tag"
+          >
+            {{ question.multiSelect ? t('多选') : t('单选') }}
+          </span>
+        </div>
+        <div class="ai-user-question-card__options">
+          <!-- 默认渲染选择题；业务方可覆盖此 slot 渲染任意表单，作答有效时通过 setAnswer 回传 -->
+          <slot
+            name="question"
+            v-bind="{
+              question,
+              qIndex,
+              answer: getAnswer(qIndex),
+              setAnswer: (answer: undefined | UserQuestionAnswerItem) => setAnswer(qIndex, answer),
+              confirm: handleComplete,
+            }"
+          >
+            <UserQuestionChoice
+              :question="question"
+              @answer="setAnswer(qIndex, $event)"
+              @confirm="handleComplete"
+            />
+          </slot>
         </div>
       </div>
+    </div>
 
-      <footer class="ai-user-question-card__footer">
-        <Button
-          class="ai-user-question-card__complete"
-          :disabled="!completed"
-          size="small"
-          theme="primary"
-          @click="handleComplete"
-        >
-          <EnterIcon class="ai-user-question-card__enter-icon" />
-          {{ t('完成') }}
-        </Button>
-        <Button
-          class="ai-user-question-card__skip"
-          size="small"
-          text
-          @click="handleSkip"
-        >
-          <SkipIcon class="ai-user-question-card__skip-icon" />
-          {{ t('跳过') }}
-        </Button>
-      </footer>
-    </template>
+    <footer
+      v-show="!isCollapsed"
+      class="ai-user-question-card__footer"
+    >
+      <Button
+        class="ai-user-question-card__complete"
+        :disabled="!completed"
+        size="small"
+        theme="primary"
+        @click="handleComplete"
+      >
+        <EnterIcon class="ai-user-question-card__enter-icon" />
+        {{ t('完成') }}
+      </Button>
+      <Button
+        class="ai-user-question-card__skip"
+        size="small"
+        text
+        @click="handleSkip"
+      >
+        <SkipIcon class="ai-user-question-card__skip-icon" />
+        {{ t('跳过') }}
+      </Button>
+    </footer>
   </section>
 </template>
 
@@ -186,7 +190,7 @@
     min-width: variables.$chat-input-min-width;
     max-width: variables.$chat-input-max-width;
     margin-bottom: 8px;
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
     color: #4d4f56;
     background: #fff;
     border: 1px solid #dcdee5;
@@ -233,8 +237,8 @@
     &__title {
       overflow: hidden;
       text-overflow: ellipsis;
-      font-size: 12px;
-      line-height: 20px;
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height-compact, 20px);
       color: #313238;
       white-space: nowrap;
     }
@@ -248,8 +252,8 @@
 
     &__counter {
       font-family: Arial, sans-serif;
-      font-size: 12px;
-      line-height: 20px;
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height-compact, 20px);
       color: #979ba5;
     }
 
@@ -302,8 +306,8 @@
     }
 
     &__question-text {
-      font-size: 12px;
-      line-height: 20px;
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height-compact, 20px);
       color: #313238;
       overflow-wrap: break-word;
     }
@@ -336,9 +340,14 @@
       border-top: 1px solid #dcdee5;
     }
 
+    &__complete,
+    &__skip {
+      font-size: var(--ai-font-size, 12px) !important;
+    }
+
     &__enter-icon {
       margin-right: 4px;
-      font-size: 12px;
+      font-size: 12px; // 图标尺寸固定，不随 size 主题缩放
       line-height: 1;
     }
 

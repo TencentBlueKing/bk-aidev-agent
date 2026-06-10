@@ -87,6 +87,36 @@ describe('use-global-config', () => {
       expect(returned?.supportUpload).toBe(supportUpload);
       expect(returned?.supportUpload?.value).toBe(false);
     });
+
+    it('应透传 size 配置给后代', async () => {
+      const size = computed<'normal' | 'small'>(() => 'normal');
+      const supportUpload = computed(() => false);
+      let injected: ReturnType<typeof injectGlobalConfig> | undefined;
+
+      const Child = defineComponent({
+        setup() {
+          injected = injectGlobalConfig();
+          return {};
+        },
+        render() {
+          return h('div');
+        },
+      });
+      const Parent = defineComponent({
+        setup() {
+          useGlobalConfig({ supportUpload, size });
+          return {};
+        },
+        render() {
+          return h(Child);
+        },
+      });
+
+      const wrapper = mount(Parent);
+      await nextTick();
+      expect(injected?.size?.value).toBe('normal');
+      wrapper.unmount();
+    });
   });
 
   describe('injectGlobalConfig', () => {
