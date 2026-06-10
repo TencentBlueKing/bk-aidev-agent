@@ -391,13 +391,11 @@ vi.mock('../chat-input/input-info-alert.vue', () => ({
 }));
 
 vi.mock('../chat-message/interrupt-message/user-question', () => ({
-  buildUserQuestionFreeTextResume: (interrupt: UserQuestionInterrupt, text: string) => ({
-    interruptId: interrupt.id,
+  buildSkipResumePayload: (interrupt?: UserQuestionInterrupt) => ({
+    interruptId: interrupt?.id ?? '',
     reason: InterruptReason.UserQuestion,
-    status: 'resolved',
-    payload: {
-      answers: [{ question: '', answer: [{ label: 'others', description: text }] }],
-    },
+    status: 'cancelled',
+    payload: { answers: [] },
   }),
   UserQuestionCard: defineComponent({
     name: 'UserQuestionCard',
@@ -767,7 +765,7 @@ describe('ChatContainer', () => {
       expect(wrapper.find('.mock-input-info-alert').text()).toBe('当前会话有 2 个待审批单，如需继续，请先取消审批');
     });
 
-    it('存在 UserQuestion 且未配置 onInterruptResume 时，应按普通消息发送且不清空输入', async () => {
+    it('存在 UserQuestion 时，发送消息应附带 skip resume 选项且不清空输入', async () => {
       const messages = [createUserQuestionInterruptMessage('user-question-1')];
       const onSendMessage = vi.fn();
 
@@ -776,37 +774,43 @@ describe('ChatContainer', () => {
       });
 
       const ci = wrapper.findComponent({ name: 'ChatInput' });
-      const send = ci.props('onSendMessage') as (content: string, docSchema: Record<string, unknown>) => Promise<void>;
+      const send = ci.props('onSendMessage') as (
+        content: string,
+        docSchema: Record<string, unknown>,
+        options?: { interrupt?: UserQuestionInterrupt; payload?: unknown },
+      ) => Promise<void>;
       const docSchema = {};
       await send('自由文本', docSchema);
 
-      expect(onSendMessage).toHaveBeenCalledWith('自由文本', docSchema);
+      expect(onSendMessage).toHaveBeenCalledWith('自由文本', docSchema, {
+        payload: expect.objectContaining({
+          interruptId: 'user-question-1-interrupt',
+          reason: InterruptReason.UserQuestion,
+          status: 'cancelled',
+          payload: { answers: [] },
+        }),
+        interrupt: expect.objectContaining({ id: 'user-question-1-interrupt' }),
+      });
       expect(wrapper.emitted('update:modelValue')).toBeUndefined();
     });
 
-    it('存在 UserQuestion 且配置 onInterruptResume 时，应将自由文本转为 resume 并清空输入', async () => {
-      const messages = [createUserQuestionInterruptMessage('user-question-1')];
+    it('无 UserQuestion 时，发送消息不应附带第三参数 options', async () => {
       const onSendMessage = vi.fn();
-      const onInterruptResume = vi.fn();
 
       wrapper = mount(ChatContainer, {
-        props: { ...defaultProps, messages, modelValue: '自由文本', onInterruptResume, onSendMessage },
+        props: { ...defaultProps, modelValue: '普通消息', onSendMessage },
       });
 
       const ci = wrapper.findComponent({ name: 'ChatInput' });
-      const send = ci.props('onSendMessage') as (content: string, docSchema: Record<string, unknown>) => Promise<void>;
-      await send('自由文本', {});
+      const send = ci.props('onSendMessage') as (
+        content: string,
+        docSchema: Record<string, unknown>,
+        options?: unknown,
+      ) => Promise<void>;
+      const docSchema = {};
+      await send('普通消息', docSchema);
 
-      expect(onInterruptResume).toHaveBeenCalledWith(
-        expect.objectContaining({
-          interruptId: 'user-question-1-interrupt',
-          reason: InterruptReason.UserQuestion,
-          status: 'resolved',
-        }),
-        expect.objectContaining({ id: 'user-question-1-interrupt' }),
-      );
-      expect(onSendMessage).not.toHaveBeenCalled();
-      expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['', []]);
+      expect(onSendMessage).toHaveBeenCalledWith('普通消息', docSchema, undefined);
     });
   });
 

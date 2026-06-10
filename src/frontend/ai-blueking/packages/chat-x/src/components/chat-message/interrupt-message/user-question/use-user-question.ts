@@ -90,12 +90,7 @@ export const useUserQuestion = (getInterrupt: () => undefined | UserQuestionInte
   });
 
   /** 跳过：cancelled + 空答案 */
-  const buildSkipPayload = (): UserQuestionResume => ({
-    interruptId: getInterrupt()?.id ?? '',
-    reason: InterruptReason.UserQuestion,
-    status: 'cancelled',
-    payload: { answers: [] },
-  });
+  const buildSkipPayload = (): UserQuestionResume => buildSkipResumePayload(getInterrupt());
 
   return {
     questions,
@@ -113,14 +108,9 @@ export const useUserQuestion = (getInterrupt: () => undefined | UserQuestionInte
  * 自由文本 resume（用户在 chat-input 直接输入而非走结构化选择）。
  * 多题场景下信息有损：统一作为单条 Others 自由文本回传。
  */
-export const buildUserQuestionFreeTextResume = (
-  interrupt: UserQuestionInterrupt,
-  text: string,
-): UserQuestionResume => ({
-  interruptId: interrupt.id,
+export const buildSkipResumePayload = (interrupt?: UserQuestionInterrupt): UserQuestionResume => ({
+  interruptId: interrupt?.id ?? '',
   reason: InterruptReason.UserQuestion,
-  status: 'resolved',
-  payload: {
-    answers: [{ question: '', answer: [{ label: OTHERS_OPTION_LABEL, description: text }] }],
-  },
+  status: 'cancelled',
+  payload: { answers: [] },
 });
