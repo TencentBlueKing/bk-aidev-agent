@@ -333,6 +333,7 @@ class SpecialVariablesMiddleware:
             "qa_context": ctx.state.get("knowledge_qa_content"),
             "query": chat_history[-1].content if chat_history else "",
             "use_general_knowledge_on_miss": self.use_general_knowledge_on_miss,
+            "has_tools": bool(ctx.tools),
             "chat_history": history_non_system_messages,
             "history_system_prompt": history_system_prompt,
             "rejection_response": self.rejection_message,

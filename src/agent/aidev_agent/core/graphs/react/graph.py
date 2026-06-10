@@ -76,6 +76,7 @@ from aidev_agent.enums import Decision
 from aidev_agent.packages.langchain_core.models.utils import is_model_without_function_calling
 from aidev_agent.packages.langgraph.streaming.streaming_protocol import AgentStreamAdapter
 from aidev_agent.pydantic_models import AgentExecutorKwargs, KnowledgeSettings, ModelContextSettings
+from aidev_agent.core.tools.knowledge import make_knowledge_retrieval_tool
 
 if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
@@ -698,6 +699,7 @@ class ReActAgentBuilder:
         extra_tools: List[BaseTool] = None,
         ignore_errors: bool = False,
         langchain_middleware: Sequence[AgentMiddleware],
+        enable_agentic_rag_tool: bool = False,
     ) -> List[BaseTool]:
         tools: List[BaseTool] = []
         # 加载所有传入的工具
@@ -729,6 +731,17 @@ class ReActAgentBuilder:
             a2a_tools = get_agent_tools(self._a2a_specs, self._a2a_resolver)
             tools.extend(a2a_tools)
 
+        if enable_agentic_rag_tool:
+            # Agentic RAG模式：将知识检索作为工具
+            knowledge_tool = make_knowledge_retrieval_tool(
+                llm=self._knowledge_llm,
+                knowledge_query_options=self._knowledge_query_options,
+                chat_history=self._chat_history,
+            )
+            if knowledge_tool:
+                tools.append(knowledge_tool)
+                logger.info("[ReActAgentBuilder] Agentic RAG 模式已启用，知识检索工具已添加到工具列表")
+                
         # 为所有工具添加忽略错误表示
         if ignore_errors:
             # NOTE: 在 StructuredChatAgent 中修改 tools 中的参数
@@ -1150,20 +1163,29 @@ class ReActAgentBuilder:
         if self._enable_a2a_tool:
             self._prepare_a2a()
 
+        # 判断使用哪种RAG模式
+        enable_agentic_rag_tool = self._knowledge_query_options.enable_agentic_rag_tool
+        enable_knowledge_node = self._knowledge_query_options.enable_knowledge_node
+
         # 统一处理 tools
         tool_ignore_errors = self._compute_use_structured_response()
         tools: List[BaseTool] = self._prepare_agent_tools(
             extra_tools=self._extra_tools,
             ignore_errors=tool_ignore_errors,
             langchain_middleware=self._langchain_middleware,
+            enable_agentic_rag_tool=enable_agentic_rag_tool,
         )
 
-        # 统一处理 knowledge_node
-        knowledge_node = self._prepare_agent_knowledge_node(
-            knowledge_llm=self._knowledge_llm,
-            knowledge_query_options=self._knowledge_query_options,
-            chat_history=self._chat_history,
-        )
+        # 两步RAG模式：创建独立的knowledge_node
+        if enable_knowledge_node:
+            knowledge_node = self._prepare_agent_knowledge_node(
+                knowledge_llm=self._knowledge_llm,
+                knowledge_query_options=self._knowledge_query_options,
+                chat_history=self._chat_history,
+            )
+            logger.info("[ReActAgentBuilder] 两步RAG 模式已启用，使用独立的knowledge节点")
+        else:
+            knowledge_node = None
 
         # 统一处理 model_node
         model_node = self._prepare_agent_model_node(

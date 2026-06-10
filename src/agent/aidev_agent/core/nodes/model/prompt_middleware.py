@@ -74,7 +74,10 @@ class DecisionSystemMiddleware:
 
     _ATOM_GENERAL_TOOL_CALLING_SYSTEM_CORE = (
         "负责回答用户最新提问。"
-        "{% if use_general_knowledge_on_miss %}请用通识知识回答。{% endif -%}"
+        "{% if use_general_knowledge_on_miss %}"
+        "{% if has_tools %}请优先判断是否有相关工具可调用，仅当工具与问题无关时，才使用通识知识回答。{% endif -%}"
+        "{% if not has_tools %}请用通识知识回答。{% endif -%}"
+        "{% endif -%}"
         "{% if not use_general_knowledge_on_miss %}如果无法使用提供的工具回答，请使用拒答文案'{{rejection_response}}'拒绝回答。{% endif -%}"
     )
 

@@ -245,6 +245,15 @@ class KnowledgeSettings(BaseModel):
         default=os.getenv("ENABLE_QUERY_CLARIFICATION", "true").lower() == "true",
         description="当用户查询模糊时是否启用查询澄清",
     )
+    enable_knowledge_node: bool = Field(
+        default=os.getenv("ENABLE_KNOWLEDGE_NODE", "true").lower() == "true",
+        description="控制是否开启两步 RAG 使用 knowledge",
+    )
+    enable_agentic_rag_tool: bool = Field(
+        default=os.getenv("ENABLE_AGENTIC_RAG_TOOL", "false").lower() == "true",
+        description="控制是否开启知识库召回工具",
+    )
+
 
 
 class IntentRecognition(BaseModel):
