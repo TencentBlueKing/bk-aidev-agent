@@ -404,6 +404,7 @@ export interface IToolCallEndEvent extends IBaseEvent {
 export interface IToolCallResultEvent extends IBaseEvent {
   content: string;
   duration?: number;
+  isError?: boolean;
   messageId: string;
   toolCallId: string;
   type: EventType.ToolCallResult;

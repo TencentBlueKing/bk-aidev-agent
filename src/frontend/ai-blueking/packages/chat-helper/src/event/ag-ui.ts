@@ -486,7 +486,7 @@ export class AGUIProtocol implements ISSEProtocol {
       role: MessageRole.Tool,
       content: event.content,
       duration: event.duration,
-      status: MessageStatus.Complete,
+      status: event.isError ? MessageStatus.Error : MessageStatus.Complete,
       toolCallId: event.toolCallId,
       messageId: event.messageId,
     });
