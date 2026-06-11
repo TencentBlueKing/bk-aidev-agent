@@ -27,12 +27,6 @@
         <div class="ai-skill-list-item-name">
           {{ skill.skill_name }}
         </div>
-        <div
-          v-if="skill.description"
-          class="ai-skill-list-item-desc"
-        >
-          {{ skill.description }}
-        </div>
       </div>
     </div>
   </div>
@@ -67,9 +61,10 @@
   .ai-skill-list {
     display: flex;
     flex-direction: column;
-    width: 330px;
+    box-sizing: border-box;
+    width: 365px;
     max-height: 258px;
-    padding: 8px;
+    padding: 4px 0;
     overflow-y: auto;
     font-size: 12px;
     color: #4d4f56;
@@ -80,31 +75,27 @@
 
     .ai-skill-list-item {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
+      box-sizing: border-box;
       width: 100%;
-      padding: 8px 10px;
-      margin-bottom: 4px;
+      height: 32px;
+      padding: 0 10px;
       cursor: pointer;
-      background-color: #f5f7fa;
+      background-color: transparent;
       border-radius: 2px;
 
-      &:last-child {
-        margin-bottom: 0;
-      }
-
       &:hover {
-        background-color: #eaebf0;
+        background-color: #e1ecff;
       }
 
       &.is-active {
-        background-color: #eaebf0;
+        background-color: #f5f7fa;
       }
 
       &-icon {
         flex-shrink: 0;
         width: 20px;
         height: 20px;
-        margin-top: 1px;
         margin-right: 8px;
         object-fit: contain;
         border-radius: 2px;
@@ -125,23 +116,16 @@
       &-info {
         display: flex;
         flex: 1;
-        flex-direction: column;
+        align-items: center;
         min-width: 0;
       }
 
       &-name {
+        overflow: hidden;
         line-height: 20px;
         color: #313238;
-      }
-
-      &-desc {
-        display: -webkit-box;
-        overflow: hidden;
-        line-height: 18px;
-        color: #979ba5;
         text-overflow: ellipsis;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
+        white-space: nowrap;
       }
     }
   }
