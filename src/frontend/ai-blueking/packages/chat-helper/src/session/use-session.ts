@@ -79,11 +79,18 @@ export const useSession = (mediator: IMediatorModule) => {
   const chooseSession = async (sessionCode: string, options?: { loadMessages?: boolean }) => {
     // 中止当前聊天
     mediator.agent?.abortChat();
-    // 从接口更新当前会话信息
-    await getSession(sessionCode);
+    const shouldLoadMessages = options?.loadMessages !== false;
+    const localSession = list.value.find(item => item.sessionCode === sessionCode);
+    // 新会话或明确空会话已在本地列表中，无需额外 GET 会话详情。
+    if (!shouldLoadMessages && localSession) {
+      current.value = localSession;
+    } else {
+      // 从接口更新当前会话信息
+      await getSession(sessionCode);
+    }
 
     // 默认加载消息，但允许跳过（新会话消息必定为空，无需加载）
-    if (options?.loadMessages !== false) {
+    if (shouldLoadMessages) {
       // 获取会话内容
       await mediator.message?.getMessages(sessionCode);
       // 继续聊天

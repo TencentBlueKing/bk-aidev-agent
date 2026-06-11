@@ -183,6 +183,20 @@ export class SessionBusinessManager {
   }
 
   /**
+   * 判断会话是否为空（无历史消息）
+   */
+  private isSessionEmpty(session: ISession): boolean {
+    return session.sessionContentCount === 0;
+  }
+
+  /**
+   * 从会话列表中查找指定会话
+   */
+  private findSession(sessionCode: string): ISession | undefined {
+    return this.sessionList.value.find(session => session.sessionCode === sessionCode);
+  }
+
+  /**
    * 加载最近会话（初始化入口）
    *
    * 初始化逻辑优先级：
@@ -198,6 +212,11 @@ export class SessionBusinessManager {
    */
   async loadRecentSession(options?: { skipLoadSessions?: boolean; alwaysCreateNewSession?: boolean }): Promise<void> {
     try {
+      const current = this.currentSession.value;
+      if (current?.sessionCode) {
+        return;
+      }
+
       // 如果不跳过，则加载会话列表
       // useChatBootstrap 会并行预加载会话列表，此时可传入 skipLoadSessions: true
       if (!options?.skipLoadSessions) {
@@ -208,7 +227,10 @@ export class SessionBusinessManager {
 
       // 优先级1：如果有初始会话编码，切换到它
       if (this.config.initialSessionCode) {
-        await this.switchSession(this.config.initialSessionCode);
+        const target = this.findSession(this.config.initialSessionCode);
+        await this.switchSession(this.config.initialSessionCode, {
+          loadMessages: target ? !this.isSessionEmpty(target) : true,
+        });
         return;
       }
 
