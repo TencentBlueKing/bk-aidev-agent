@@ -1,6 +1,9 @@
 <template>
   <div class="ai-assistant-message">
-    <div class="ai-assistant-message-content">
+    <div
+      v-if="content"
+      class="ai-assistant-message-content"
+    >
       <slot
         v-bind="{
           content,
@@ -19,7 +22,7 @@
         :key="toolCall.id"
       >
         <ToolCallRender
-          :status="status"
+          :status="toolCall.toolMessage?.status ?? status"
           :tool-call="toolCall"
         />
       </template>
