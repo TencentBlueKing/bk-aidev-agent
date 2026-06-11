@@ -1,0 +1,49 @@
+name: Sync PyPI Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "PyPI package name to mirror"
+        required: false
+        type: string
+        default: "aidev-ai-blueking"
+      version:
+        description: "Version to mirror (leave empty for latest)"
+        required: false
+        type: string
+        default: ""
+      source_index:
+        description: "Source PyPI index URL"
+        required: false
+        type: string
+        default: "https://pypi.org"
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install twine
+        run: pip install twine
+
+      - name: Sync release
+        env:
+          TENCENT_PYPI_USER: ${{ secrets.TENCENT_PYPI_USER }}
+          TENCENT_PYPI_TOKEN: ${{ secrets.TENCENT_PYPI_TOKEN }}
+          TARGET_PYPI_REPOSITORY_URL: ${{ secrets.TARGET_PYPI_REPOSITORY_URL }}
+        run: |
+          python scripts/sync_pypi_release.py \
+            --package "${{ inputs.package }}" \
+            ${{ inputs.version && format('--version {0}', inputs.version) || '' }} \
+            --source-index "${{ inputs.source_index }}"
