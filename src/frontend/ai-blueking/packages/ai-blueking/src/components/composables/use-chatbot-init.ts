@@ -12,6 +12,7 @@ import type { Ref } from 'vue';
 
 import { AGUIProtocol, useChatHelper } from '@blueking/chat-helper';
 
+import { runAgentBootstrap } from '../../bootstrap/agent-bootstrap';
 import { ChatBusinessManager, SessionBusinessManager, ShortcutManager } from '../../manager';
 import { normalizeUrl } from '../../utils';
 
@@ -187,7 +188,7 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
     // 5. 执行初始化流程
     try {
       if (isStandaloneMode.value) {
-        await Promise.all([newHelper.agent.getAgentInfo(), newHelper.session.getSessions()]);
+        await runAgentBootstrap(newHelper);
         if (currentGen !== initGeneration) return;
 
         await sessionMgr.loadRecentSession({ skipLoadSessions: true });

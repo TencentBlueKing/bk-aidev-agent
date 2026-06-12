@@ -164,15 +164,6 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
       if (ready && agentInfo.value) {
         const info = agentInfo.value;
 
-        if (info.saasUrl) {
-          fetch(info.saasUrl, {
-            method: 'GET',
-            credentials: 'include',
-          }).catch(() => {
-            // ping 请求，忽略错误
-          });
-        }
-
         if (info.conversationSettings) {
           forwardToManager('session-initialized', {
             openingRemark: info.conversationSettings.openingRemark || '',

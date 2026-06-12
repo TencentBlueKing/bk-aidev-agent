@@ -7,17 +7,11 @@
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
  */
 
-import {
-  type ComputedRef,
-  type MaybeRefOrGetter,
-  type Ref,
-  computed,
-  ref,
-  toValue,
-  watch,
-} from 'vue';
+import { type ComputedRef, type MaybeRefOrGetter, type Ref, computed, ref, toValue, watch } from 'vue';
 
 import { AGUIProtocol, useChatHelper } from '@blueking/chat-helper';
+
+import { runAgentBootstrap } from '../bootstrap/agent-bootstrap';
 
 import type { IChatHelper, IRequestOptions } from '../types';
 import type { IAgentInfo, ISession } from '@blueking/chat-helper';
@@ -139,12 +133,7 @@ export interface ChatBootstrapReturn {
  */
 export function useChatBootstrap(options: ChatBootstrapOptions): ChatBootstrapReturn {
   // ==================== 配置处理 ====================
-  const {
-    url: urlOption,
-    requestOptions,
-    autoInit = true,
-    protocolCallbacks,
-  } = options;
+  const { url: urlOption, requestOptions, autoInit = true, protocolCallbacks } = options;
 
   // 获取初始 URL 值
   const initialUrl = toValue(urlOption);
@@ -231,11 +220,8 @@ export function useChatBootstrap(options: ChatBootstrapOptions): ChatBootstrapRe
     try {
       phase.value = BootstrapPhase.LOADING_AGENT;
 
-      // 并行获取 Agent 信息和会话列表，优化初始化性能
-      await Promise.all([
-        chatHelper.agent.getAgentInfo(),
-        chatHelper.session.getSessions(),
-      ]);
+      // 并行获取 Agent 信息和会话列表，并执行通用 bootstrap 副作用（如 saasUrl ping）
+      await runAgentBootstrap(chatHelper);
 
       // 初始化完成
       phase.value = BootstrapPhase.READY;
@@ -281,7 +267,7 @@ export function useChatBootstrap(options: ChatBootstrapOptions): ChatBootstrapRe
       httpModule.updateConfig({ urlPrefix: newUrl });
     } else {
       console.warn(
-        '[useChatBootstrap] chatHelper.http.updateConfig is not implemented yet, URL change may not take effect'
+        '[useChatBootstrap] chatHelper.http.updateConfig is not implemented yet, URL change may not take effect',
       );
     }
 
@@ -310,7 +296,7 @@ export function useChatBootstrap(options: ChatBootstrapOptions): ChatBootstrapRe
           // 此处仅防止 unhandled promise rejection
         });
       }
-    }
+    },
   );
 
   // ==================== 自动初始化 ====================
