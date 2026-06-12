@@ -89,6 +89,13 @@
       }
     }
 
+    .ai-doc-link-icon {
+      flex: 0 0 14px;
+      width: 14px;
+      height: 14px;
+      margin-right: 8px;
+    }
+
     .ai-common-icon:not(.ai-doc-link-icon) {
       display: none;
       flex: 0 0 14px;
