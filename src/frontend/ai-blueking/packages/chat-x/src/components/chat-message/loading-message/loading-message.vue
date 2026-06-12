@@ -15,6 +15,6 @@
     display: flex;
     gap: 8px;
     align-items: center;
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
   }
 </style>

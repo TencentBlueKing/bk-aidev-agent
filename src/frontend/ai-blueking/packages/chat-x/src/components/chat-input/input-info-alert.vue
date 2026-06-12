@@ -36,8 +36,8 @@
       justify-content: center;
       width: 16px;
       height: 16px;
-      margin-top: 2px;
-      font-size: 12px;
+      margin-top: 3px;
+      font-size: 12px; // 图标尺寸固定，不随 size 主题缩放
       font-weight: 600;
       line-height: 16px;
       color: #3a84ff;
@@ -46,8 +46,8 @@
     &__text {
       flex: 1 1 auto;
       min-width: 0;
-      font-size: 12px;
-      line-height: 20px;
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height-compact, 20px);
     }
   }
 </style>

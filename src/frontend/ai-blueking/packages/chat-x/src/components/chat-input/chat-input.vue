@@ -89,7 +89,13 @@
 
   import { Message } from 'bkui-vue';
 
-  import { type UserMessage, MessageContentType, MessageStatus } from '../../ag-ui/types';
+  import {
+    type Interrupt,
+    type InterruptResume,
+    type UserMessage,
+    MessageContentType,
+    MessageStatus,
+  } from '../../ag-ui/types';
   import { CHAT_Z_INDEX, isEn, MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../../common';
   import { type KeyboardPayload, docToString } from '../../edix';
   import { CloseIcon } from '../../icons';
@@ -128,7 +134,11 @@
     inputMaxHeight?: number;
     messageStatus?: MessageStatus;
     modelValue: string | TagSchema;
-    onSendMessage?: (message: UserMessage['content'], docSchema: TagSchema) => Promise<void>;
+    onSendMessage?: (
+      message: UserMessage['content'],
+      docSchema: TagSchema,
+      options?: { interrupt?: Interrupt; payload?: InterruptResume },
+    ) => Promise<void>;
     onStopSending?: () => Promise<void>;
     onUpload?: (files: File) => Promise<{
       download_url?: string;

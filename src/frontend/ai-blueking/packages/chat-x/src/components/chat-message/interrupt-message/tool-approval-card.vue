@@ -160,7 +160,7 @@
     gap: 16px;
     width: 100%;
     padding: 16px;
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
     line-height: 18px;
     color: #4d4f56;
     background: linear-gradient(145deg, #f7f9ff 0%, #f9faff 25%, #fafcff 50%, #fcfdff 75%, #fff 100%);

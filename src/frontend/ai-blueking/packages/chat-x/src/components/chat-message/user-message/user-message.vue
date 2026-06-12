@@ -264,14 +264,14 @@
     flex-direction: column;
     gap: 6px;
     align-items: flex-end;
-    font-size: 12px;
-    line-height: 1.5;
+    font-size: var(--ai-font-size, 12px);
+    line-height: var(--ai-line-height, 20px);
     color: #313238;
 
     &-content {
       display: flex;
       width: fit-content;
-      padding: 8px 12px;
+      padding: 8px var(--ai-spacing-comfortable, 8px);
       word-break: break-all;
       background-color: #e1ecff;
       border-radius: 4px;

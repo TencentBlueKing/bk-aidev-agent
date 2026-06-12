@@ -28,13 +28,17 @@ import { type ComputedRef, inject, provide } from 'vue';
 
 export const GLOBAL_CONFIG_TOKEN = Symbol('GLOBAL_CONFIG_TOKEN');
 
+export type AiSizeMode = 'normal' | 'small';
+
 export type GlobalConfig = {
+  size?: ComputedRef<AiSizeMode>;
   supportUpload: ComputedRef<boolean>;
 };
 
 export const useGlobalConfig = (options: GlobalConfig) => {
   provide(GLOBAL_CONFIG_TOKEN, options);
   return {
+    size: options.size,
     supportUpload: options.supportUpload,
   };
 };

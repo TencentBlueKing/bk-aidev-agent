@@ -1,6 +1,7 @@
 <template>
   <div
     class="ai-chat-container"
+    :data-ai-size="size"
     :style="{ '--resize-main-width': resizeMainWidth, borderTopColor: isCollapse ? 'transparent' : '#eaebf0' }"
   >
     <div
@@ -295,7 +296,7 @@
   import { useCommonTippyProvider, useRenderModeProvider } from '../../composables/use-common';
   import { EXECUTION_TAB_NAME, useCustomTabProvider } from '../../composables/use-custom-tab';
   import { useFullScreen } from '../../composables/use-full-screen';
-  import { useGlobalConfig } from '../../composables/use-global-config';
+  import { type AiSizeMode, useGlobalConfig } from '../../composables/use-global-config';
   import { OverflowTips as vOverflowTips } from '../../directives';
   import { FullScreenIcon, UnFullScreenIcon } from '../../icons';
   import { CloseIcon, CollapsedIcon, ExecutionIcon, NodeTabIcon } from '../../icons';
@@ -306,7 +307,7 @@
   import ContentRender from '../chat-content/content-render/content-render.vue';
   import ChatInput, { type ChatInputEmits, type ChatInputProps } from '../chat-input/chat-input.vue';
   import InputInfoAlert from '../chat-input/input-info-alert.vue';
-  import { buildUserQuestionFreeTextResume, UserQuestionCard } from '../chat-message/interrupt-message/user-question';
+  import { buildSkipResumePayload, UserQuestionCard } from '../chat-message/interrupt-message/user-question';
   import MessageContainer, {
     type MessageContainerEmits,
     type MessageContainerProps,
@@ -347,6 +348,8 @@
       max?: number;
       min?: number;
     };
+    /** 字号主题档位：small(默认 12px) / normal(14px) */
+    size?: AiSizeMode;
     welcomeTitle?: string;
   };
   const TabPanel = Tab.TabPanel;
@@ -387,6 +390,7 @@
     >(),
     {
       placement: 'left',
+      size: 'small',
     },
   );
   const renderMode = defineModel<RenderMode>('renderMode', {
@@ -411,8 +415,20 @@
     return props.getSideRenderComponent?.(h, selectedTab.value.data?.props ?? {}) ?? selectedTab.value.data?.component;
   });
   useGlobalConfig({
+    size: computed(() => props.size ?? 'small'),
     supportUpload: computed(() => props.supportUpload ?? false),
   });
+  // 浮层（tippy / Teleport 内容）会挂载到 body，脱离 .ai-chat-container 的 data-ai-size 作用域。
+  // 将当前 size 同步到 body，使这些浮层也能继承字号主题变量；容器内内容仍由更近的容器属性控制。
+  watch(
+    () => props.size ?? 'small',
+    size => {
+      if (typeof document !== 'undefined') {
+        document.body.dataset.aiSize = size;
+      }
+    },
+    { immediate: true },
+  );
   const selectedShortcut = defineModel<null | Shortcut>('selectedShortcut', {
     required: false,
   });
@@ -532,12 +548,16 @@
    */
   const handleSendMessage = async (content: UserMessage['content'], docSchema: TagSchema) => {
     const activeQuestion = activeUserQuestionInterrupt.value;
-    if (props.onInterruptResume && activeQuestion && typeof content === 'string' && content.trim()) {
-      await props.onInterruptResume(buildUserQuestionFreeTextResume(activeQuestion, content.trim()), activeQuestion);
-      handleUpdateModelValue('', []);
-      return;
-    }
-    return props.onSendMessage?.(content, docSchema);
+    return props.onSendMessage?.(
+      content,
+      docSchema,
+      activeQuestion
+        ? {
+            payload: buildSkipResumePayload(activeQuestion), // 跳过中断时回传空答案
+            interrupt: activeQuestion, // 跳过中断时回传中断对象
+          }
+        : undefined,
+    );
   };
 
   const handleCollapse = () => {
@@ -596,6 +616,10 @@
   };
   onUnmounted(() => {
     resetCustomTab();
+    // 卸载时清理 body 上的字号主题标记，避免残留影响其他场景
+    if (typeof document !== 'undefined') {
+      delete document.body.dataset.aiSize;
+    }
   });
 
   defineExpose({
@@ -617,7 +641,7 @@
     flex-direction: column;
     width: 100%;
     height: 100%;
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
     border: none;
     border-top: 1px solid transparent;
 
@@ -753,7 +777,7 @@
         }
 
         .screen-btn {
-          font-size: 12px;
+          font-size: var(--ai-font-size, 12px);
         }
 
         .ai-common-icon {
@@ -822,7 +846,7 @@
 
       .ai-locate-button {
         margin-left: auto;
-        font-size: 12px;
+        font-size: var(--ai-font-size, 12px);
         font-weight: normal;
       }
     }

@@ -22,7 +22,7 @@
     align-items: center;
     justify-content: center;
     height: 0;
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
     border-bottom: 1px dashed #dcdee5;
 
     &-content {

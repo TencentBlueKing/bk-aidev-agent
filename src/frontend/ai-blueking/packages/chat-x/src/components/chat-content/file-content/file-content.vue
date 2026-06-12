@@ -181,7 +181,7 @@
         max-width: 170px;
         height: 48px;
         padding: 4px 8px;
-        font-size: 12px;
+        font-size: var(--ai-font-size, 12px);
         background: #eaebf0;
         border-radius: 4px;
 
@@ -197,7 +197,7 @@
             flex: 0 0 12px;
             width: 12px;
             height: 12px;
-            font-size: 12px;
+            font-size: 12px; // 图标尺寸固定，不随 size 主题缩放
           }
 
           .file-name {
@@ -208,7 +208,7 @@
           }
 
           .file-type {
-            font-size: 12px;
+            font-size: var(--ai-font-size, 12px);
             color: #4d4f56;
           }
         }

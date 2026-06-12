@@ -168,6 +168,31 @@ chat-input-container
 
 > **实现细节**：组件内部用 `messageState` 计算属性决定实际按钮状态：当 `messageStatus` 为 `pending`、`streaming` 或 `fetching` 时直接使用该状态（确保停止按钮始终可用）；否则当输入为空或仅含空白字符时强制为 `disabled`，其余情况使用 `messageStatus` 的值。`fetching` 时按 Enter **不会**触发发送（避免请求中与 Loading 占位阶段重复提交）。
 
+### onSendMessage 第三参数 options（UserQuestion 上下文）
+
+`ChatInput` 自身调用 `onSendMessage` 时只传前两个参数。当组件被 [ChatContainer](/components/setup/chat-container) 包裹且存在待回答 `UserQuestion` 中断时，容器会在用户点击发送时注入第三个参数：
+
+| 字段        | 类型               | 说明                                                                 |
+| ----------- | ------------------ | -------------------------------------------------------------------- |
+| `interrupt` | `Interrupt`        | 当前激活的 `UserQuestionInterrupt`                                   |
+| `payload`   | `InterruptResume`  | skip resume（`status: 'cancelled'`，`payload.answers` 为空数组）     |
+
+此场景下容器**不会**自动清空 `modelValue`，业务侧需在 `onSendMessage` 内自行处理消息发送与 `resumeAgent` 的先后顺序。结构化作答仍通过 `UserQuestionCard` → `onInterruptResume` 完成。
+
+```typescript
+const handleSendMessage = async (
+  content: UserMessage['content'],
+  docSchema: TagSchema,
+  options?: { interrupt?: Interrupt; payload?: InterruptResume },
+) => {
+  if (options?.interrupt && options?.payload) {
+    await resumeAgent({ interruptId: options.interrupt.id, resume: options.payload });
+    return;
+  }
+  await sendMessage(content, docSchema);
+};
+```
+
 ### sendDisabledTip（业务阻塞发送）
 
 当业务侧需要临时阻止发送但仍允许用户输入时，可传入 `sendDisabledTip`。组件会置灰发送按钮，按钮 tooltip 展示该文案，并拦截点击发送、按 Enter 发送和 `triggerSendMessage()`：
@@ -693,7 +718,7 @@ chat-input-container
 | sendDisabledTip    | `string`                                                                   | -        | -    | 业务阻塞发送时的 tooltip 提示；传入后发送按钮置灰，点击、Enter 与 `triggerSendMessage()` 均不会发送 |
 | supportUpload      | `boolean`                                                                  | `true`   | -    | 是否显示文件上传按钮                                    |
 | tippyOptions       | `AITippyProps`                                                             | —        | -    | 透传给 FileUploadBtn 和 InputAttachment 的 tooltip 配置 |
-| onSendMessage      | `(content: UserMessage['content'], docSchema: TagSchema) => Promise<void>` | -        | -    | 发送消息回调，无文件时 content 为字符串，有文件时为数组 |
+| onSendMessage      | `(content: UserMessage['content'], docSchema: TagSchema, options?: { interrupt?: Interrupt; payload?: InterruptResume }) => Promise<void>` | -        | -    | 发送消息回调，无文件时 content 为字符串，有文件时为数组；经 [ChatContainer](/components/setup/chat-container) 使用时，存在待回答 UserQuestion 会传入第三参数 `options` |
 | onStopSending      | `() => Promise<void>`                                                      | -        | -    | 停止发送回调，点击停止按钮时触发                        |
 | onUpload           | `(file: File) => Promise<{ download_url?: string }>`                       | -        | -    | 文件上传回调（每次单文件）                              |
 
@@ -789,6 +814,13 @@ type SendContent =
       // 有文件时：数组
       { type: 'binary'; url?: string; mimeType: string; filename: string } | { type: 'text'; text: string }
     >;
+
+// onSendMessage 完整签名（第三参数由 ChatContainer 在 UserQuestion 场景注入）
+type OnSendMessage = (
+  content: SendContent,
+  docSchema: TagSchema,
+  options?: { interrupt?: Interrupt; payload?: InterruptResume },
+) => Promise<void>;
 ```
 
 ## 完整集成示例

@@ -82,7 +82,7 @@
     justify-content: center;
     height: 28px;
     padding: 0 4px;
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
     color: #313238;
     white-space: nowrap;
     background: transparent;
@@ -120,9 +120,9 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 16px;
-      height: 16px;
-      font-size: 16px;
+      width: var(--ai-icon-size-sm, 16px);
+      height: var(--ai-icon-size-sm, 16px);
+      font-size: var(--ai-icon-size-sm, 16px);
       color: #979ba5;
     }
 

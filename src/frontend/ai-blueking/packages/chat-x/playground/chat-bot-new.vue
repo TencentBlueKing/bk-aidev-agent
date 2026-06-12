@@ -31,6 +31,7 @@
       }"
       :resources="MOCK_RESOURCES"
       :shortcuts="shortcuts"
+      :size="'normal'"
       :support-upload="true"
       @delete-shortcut="handleDeleteShortcut"
       @select-shortcut="handleSelectShortcut"
@@ -200,34 +201,34 @@
       content: '帮我分析一下最近的 Trace 数据，并帮我查询一下慢请求的详细信息，并检查下服务健康状况',
       messageId: 'msg_user_1',
     },
-    {
-      id: 'msg_assistant_1',
-      role: MessageRole.Assistant,
-      content: '好的，我来帮您分析 Trace 数据，需要先调用相关工具获取信息。',
-      status: MessageStatus.Complete,
-      messageId: 'msg_assistant_1',
-      toolCalls: [
-        {
-          id: 'tc_1',
-          type: MessageContentType.Function,
-          function: {
-            name: 'Trace 分析',
-            arguments: JSON.stringify({ app_code: 'bk-monitor', time_range: '1h' }),
-            description: '分析应用的 Trace 数据，获取慢请求和错误请求',
-          },
-        },
-        {
-          id: 'tc_2',
-          type: MessageContentType.Function,
-          function: {
-            name: '日志查询',
-            arguments: JSON.stringify({ keyword: 'error', count: 20 }),
-            description: '查询应用的错误日志',
-            mcpName: 'bk-log',
-          },
-        },
-      ],
-    } as AssistantMessage,
+    // {
+    //   id: 'msg_assistant_1',
+    //   role: MessageRole.Assistant,
+    //   content: '好的，我来帮您分析 Trace 数据，需要先调用相关工具获取信息。',
+    //   status: MessageStatus.Complete,
+    //   messageId: 'msg_assistant_1',
+    //   toolCalls: [
+    //     {
+    //       id: 'tc_1',
+    //       type: MessageContentType.Function,
+    //       function: {
+    //         name: 'Trace 分析',
+    //         arguments: JSON.stringify({ app_code: 'bk-monitor', time_range: '1h' }),
+    //         description: '分析应用的 Trace 数据，获取慢请求和错误请求',
+    //       },
+    //     },
+    //     {
+    //       id: 'tc_2',
+    //       type: MessageContentType.Function,
+    //       function: {
+    //         name: '日志查询',
+    //         arguments: JSON.stringify({ keyword: 'error', count: 20 }),
+    //         description: '查询应用的错误日志',
+    //         mcpName: 'bk-log',
+    //       },
+    //     },
+    //   ],
+    // } as AssistantMessage,
     {
       id: 'msg_tool_1',
       role: MessageRole.Tool,
@@ -267,7 +268,7 @@
     {
       id: 'msg_assistant_3',
       role: MessageRole.Assistant,
-      content: '正在查询慢请求详情和服务健康状态。',
+      // content: '正在查询慢请求详情和服务健康状态。',
       status: MessageStatus.Complete,
       messageId: 'msg_assistant_3',
       toolCalls: [

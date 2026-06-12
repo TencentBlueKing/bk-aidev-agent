@@ -145,6 +145,8 @@ sinceVersion: 1.0.0
   };
 
   const inputShare = ref('');
+  const inputSizeNormal = ref('');
+  const inputSizeSmall = ref('');
   const inputApproval = ref('');
   const messagesApproval = ref([
     {
@@ -232,18 +234,19 @@ sinceVersion: 1.0.0
 - **消息分组**：内置 `useMessageGroup` 自动处理消息分组、Tool 合并、Loading 注入
 - **输入区状态推导**：传给 `MessageContainer` 与 `ChatInput` 的 `messageStatus` 为内部计算值 `inputStatus`：当分组中存在 id 为 `LOADING_MESSAGE_ID`（`'__loading__'`，由 `useMessageGroup` 注入的占位 Loading 消息）时，对内使用 `MessageStatus.Fetching`；否则使用外部传入的 `messageStatus`。用于在「已发用户消息、尚未流式」阶段与流式中一致地展示停止能力，并避免输入区重复发送
 - **待审批发送阻塞**：当消息中存在 `AIDevToolApproval` 且状态为 `pending` / `draft` 的中断项时，`useMessageGroup` 会返回待审批提示，容器在输入区上方展示提示并通过 `ChatInput.sendDisabledTip` 禁止继续发送
-- **用户问题中断**：当消息中存在待回答 `UserQuestion` 中断时，容器会在输入区上方挂载 `UserQuestionCard`；若配置了 `onInterruptResume`，用户也可直接在输入框输入自由文本并作为 Others 回答 resume
+- **用户问题中断**：当消息中存在待回答 `UserQuestion` 中断时，容器会在输入区上方挂载 `UserQuestionCard`；结构化作答走 `onInterruptResume`，用户在输入框直接发送时走 `onSendMessage` 并在第三参数附带 skip 用的 `payload`（`status: 'cancelled'`）与 `interrupt`，且不会自动清空输入框
 - **执行摘要**：侧边栏展示工具调用 / FlowAgent 执行记录，支持关键词搜索和对话定位
 - **侧栏全屏**：Tab 栏右侧提供全屏/退出全屏按钮，基于 `useFullScreen` 将侧栏区域（`.ai-full-screen-wrapper`）以浏览器原生全屏展示；全屏时 Tippy 的 `appendTo` 自动切换为全屏容器，避免 tooltip 被遮挡
 - **自定义 Tab**：通过 `useCustomTabProvider` 支持动态添加自定义 Tab（如节点详情）
 - **分享模式**：内置消息多选分享流程，选中用户消息后确认分享
 - **渲染模式注入**：`renderMode` 会通过内部 Provider 下传给后代内容组件；例如 FlowAgent 节点在 `Share` 模式下隐藏耗时和「详情」入口
+- **字号主题**：通过 `size` 控制 `small`（默认 12px）/ `normal`（14px）两档字号；根节点设置 `data-ai-size`，子组件通过 CSS 变量（`--ai-font-size` 等）响应式缩放；浮层（Tippy / Teleport）会同步 `document.body.dataset.aiSize`，卸载时自动清理
 - **空状态欢迎页**：无消息时展示欢迎语和开场白
 
 ## 组件结构
 
 ```
-ai-chat-container
+ai-chat-container（:data-ai-size="size"）
 ├── Loading（chatLoading 时）
 └── ResizeLayout
     ├── aside（侧边栏）
@@ -334,6 +337,63 @@ ai-chat-container
     />
   </div>
 </div>
+
+## 字号主题
+
+通过 `size` 切换两档字号主题。未传时默认为 `small`（12px 基准字号）；设为 `normal` 时使用 14px 基准字号，并联动行高、间距与图标尺寸。
+
+```vue
+<template>
+  <ChatContainer
+    v-model="inputValue"
+    :messages="messages"
+    message-status="complete"
+    size="normal"
+    :on-send-message="handleSendMessage"
+  />
+</template>
+```
+
+**渲染效果**（左右对比 `size="small"` 与 `size="normal"`）
+
+<div class="demo" style="display: flex; gap: 16px;">
+  <div style="flex: 1;">
+    <p style="margin: 0 0 4px; font-size: 12px; color: #979ba5;">size = "small"（默认）</p>
+    <div style="height: 400px; border: 1px solid #eaebf0; border-radius: 8px; overflow: hidden;">
+      <ChatContainerComp
+        v-model="inputSizeSmall"
+        :messages="messagesBasic"
+        message-status="complete"
+        size="small"
+        :on-send-message="handleSendMessage"
+        :on-stop-sending="handleStopSending"
+        :on-agent-action="handleAgentAction"
+        :on-agent-feedback="handleAgentFeedback"
+        :on-user-action="handleUserAction"
+        @stop-streaming="handleStopStreaming"
+      />
+    </div>
+  </div>
+  <div style="flex: 1;">
+    <p style="margin: 0 0 4px; font-size: 12px; color: #979ba5;">size = "normal"</p>
+    <div style="height: 400px; border: 1px solid #eaebf0; border-radius: 8px; overflow: hidden;">
+      <ChatContainerComp
+        v-model="inputSizeNormal"
+        :messages="messagesBasic"
+        message-status="complete"
+        size="normal"
+        :on-send-message="handleSendMessage"
+        :on-stop-sending="handleStopSending"
+        :on-agent-action="handleAgentAction"
+        :on-agent-feedback="handleAgentFeedback"
+        :on-user-action="handleUserAction"
+        @stop-streaming="handleStopStreaming"
+      />
+    </div>
+  </div>
+</div>
+
+> CSS 变量与档位取值详见 [主题配置 — 字号主题](../../theme/theme#字号主题)。
 
 ## 侧边栏与执行摘要
 
@@ -700,7 +760,10 @@ ai-chat-container
 
 ## 用户问题中断
 
-当会话中最近一条待处理 interrupt 包含 `InterruptReason.UserQuestion` 时，`ChatContainer` 会在 `ChatInput` 上方显示 [UserQuestionCard](/components/agent/user-question-card)。用户完成或跳过后通过 `onInterruptResume(payload, interrupt)` 通知业务侧继续 Agent。
+当会话中最近一条待处理 interrupt 包含 `InterruptReason.UserQuestion` 时，`ChatContainer` 会在 `ChatInput` 上方显示 [UserQuestionCard](/components/agent/user-question-card)。
+
+- **结构化作答**：用户在卡片内完成选择或点击「跳过」后，通过 `onInterruptResume(payload, interrupt)` 回传 `UserQuestionResume`。
+- **输入框发送**：用户也可在输入框直接点击发送；容器会调用 `onSendMessage(content, docSchema, options)`，其中 `options.interrupt` 为当前激活的 UserQuestion，`options.payload` 为 `buildSkipResumePayload` 生成的 skip resume（`status: 'cancelled'`，`answers: []`）。此时**不会自动清空**输入框，由业务侧在 `onSendMessage` 内决定如何处理 `content` 与中断恢复。
 
 ```vue
 <template>
@@ -714,17 +777,34 @@ ai-chat-container
 </template>
 
 <script setup lang="ts">
-  import { type OnInterruptResume } from '@blueking/chat-x';
+  import {
+    type OnInterruptResume,
+    type UserMessage,
+    type TagSchema,
+    type Interrupt,
+    type InterruptResume,
+  } from '@blueking/chat-x';
 
   const handleInterruptResume: OnInterruptResume = async (payload, interrupt) => {
-    // UserQuestion 完成时 payload 为 UserQuestionResume
-    // 自由文本输入也会转换为 label: 'others' 的单条回答
+    // UserQuestionCard 完成 / 跳过时 payload 为 UserQuestionResume
     await resumeAgent({ interruptId: interrupt.id, resume: payload });
+  };
+
+  const handleSendMessage = async (
+    content: UserMessage['content'],
+    docSchema: TagSchema,
+    options?: { interrupt?: Interrupt; payload?: InterruptResume },
+  ) => {
+    if (options?.interrupt && options?.payload) {
+      // 存在 UserQuestion 时发送：附带 skip resume，content 仍为输入框文本
+      await resumeAgent({ interruptId: options.interrupt.id, resume: options.payload });
+      // 业务侧自行决定是否将 content 作为新用户消息继续发送
+      return;
+    }
+    await sendMessage(content, docSchema);
   };
 </script>
 ```
-
-如果没有传入 `onInterruptResume`，输入框自由文本不会被中断逻辑截获，仍然走普通 `onSendMessage`，避免输入被静默清空。
 
 ## 自定义消息组渲染
 
@@ -866,6 +946,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | getSideTabRenderComponent   | `(h, tab, { removeCustomTab }) => VNode \| undefined`                        | —        | 自定义侧栏 Tab 标签渲染；未返回时使用默认图标 + 文案 + 关闭按钮                                                                               |
 | openingRemark               | `string`                                                                     | —        | 开场白，无消息时显示，支持 Markdown                                                                                                           |
 | placement          | `'left' \| 'right'`                                                          | `'left'` | 侧边栏位置                                                                                                                                    |
+| size               | `'normal' \| 'small'`                                                        | `'small'` | 字号主题档位：`small` 为 12px 基准，`normal` 为 14px 基准；根节点设置 `data-ai-size` 并注入 `useGlobalConfig`                                |
 | resizeProps        | `{ disabled?: boolean; initialDivide?: number \| string; max?: number; min?: number }` | —        | 透传给内部 `ResizeLayout` 的可选配置，与默认 `collapsible: false`、`immediate: true`、`min: 400` 合并；`placement` 始终取自本组件 `placement`；`initialDivide` 可为像素数字或百分比等字符串（与 bkui ResizeLayout 一致） |
 | onCustomTabChange  | `(tab: CustomTab) => Promise<any>`                                           | —        | 自定义 Tab 切换回调，返回值作为 Tab 组件 props                                                                                                |
 
@@ -984,3 +1065,5 @@ interface Shortcut {
 - [SelectionFooter](/components/input/selection-footer) — 多选操作栏
 - [ToolBtn](/components/feedback/tool-btn) — 侧栏全屏按钮（自定义插槽）
 - [useFullScreen](/composables/use-full-screen) — 侧栏全屏控制
+- [useGlobalConfig](/composables/use-global-config) — 注入 `size` 与 `supportUpload`
+- [主题配置](/theme/theme) — 字号主题 CSS 变量

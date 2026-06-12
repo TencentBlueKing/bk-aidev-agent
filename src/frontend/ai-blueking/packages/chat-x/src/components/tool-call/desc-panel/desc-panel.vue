@@ -62,7 +62,7 @@
 
     .desc-title {
       margin-bottom: 6px;
-      font-size: 12px;
+      font-size: var(--ai-font-size, 12px);
       font-weight: bold;
       color: #313238;
     }

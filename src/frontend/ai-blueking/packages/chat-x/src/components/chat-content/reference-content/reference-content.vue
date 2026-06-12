@@ -76,7 +76,7 @@
       width: 100%;
       overflow: hidden;
       text-overflow: ellipsis;
-      font-size: 12px;
+      font-size: var(--ai-font-size, 12px);
       white-space: nowrap;
     }
 

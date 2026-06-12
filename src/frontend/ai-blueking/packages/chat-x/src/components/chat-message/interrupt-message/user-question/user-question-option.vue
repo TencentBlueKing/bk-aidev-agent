@@ -92,9 +92,9 @@
       width: 20px;
       height: 20px;
       font-family: Arial, sans-serif;
-      font-size: 12px;
+      font-size: var(--ai-font-size, 12px);
       font-weight: 700;
-      line-height: 20px;
+      line-height: var(--ai-line-height-compact, 20px);
       color: #4d4f56;
       background: #dcdee5;
       border-radius: 2px;
@@ -113,8 +113,8 @@
     &__text {
       flex: 1 1 auto;
       min-width: 0;
-      font-size: 12px;
-      line-height: 20px;
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height-compact, 20px);
       color: #4d4f56;
       overflow-wrap: break-word;
     }
@@ -124,8 +124,8 @@
       min-width: 0;
       height: 20px;
       padding: 0;
-      font-size: 12px;
-      line-height: 20px;
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height-compact, 20px);
       color: #4d4f56;
       outline: none;
       background: transparent;

@@ -243,7 +243,7 @@
       gap: 4px;
       align-items: center;
       justify-content: center;
-      font-size: 12px;
+      font-size: var(--ai-font-size, 12px);
       color: #fff;
       cursor: pointer;
       background: rgb(0 0 0 / 60%);

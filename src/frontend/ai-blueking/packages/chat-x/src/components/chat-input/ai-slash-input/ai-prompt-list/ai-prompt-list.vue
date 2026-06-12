@@ -38,7 +38,7 @@
     max-height: 258px;
     padding: 8px;
     overflow-y: auto;
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
     color: #4d4f56;
     background: #fff;
     border: 1px solid #dcdee5;

@@ -138,12 +138,33 @@ describe('UserQuestionCard', () => {
     expect(payload.payload.answers).toHaveLength(0);
   });
 
-  it('点击箭头可折叠，仅保留标题栏', async () => {
+  it('点击箭头可折叠，body 与 footer 通过 v-show 隐藏而非卸载', async () => {
     wrapper = mount(UserQuestionCard, { props: { interrupt: buildInterrupt() } });
 
     await wrapper.find('.ai-user-question-card__arrow').trigger('click');
     expect(wrapper.classes()).toContain('ai-user-question-card--collapsed');
-    expect(wrapper.find('.ai-user-question-card__body').exists()).toBe(false);
+    // v-show 保留 DOM，避免折叠时丢失勾选态
+    const body = wrapper.find('.ai-user-question-card__body');
+    const footer = wrapper.find('.ai-user-question-card__footer');
+    expect(body.exists()).toBe(true);
+    expect(footer.exists()).toBe(true);
+    expect((body.element as HTMLElement).style.display).toBe('none');
+    expect((footer.element as HTMLElement).style.display).toBe('none');
+  });
+
+  it('折叠后再展开应保留已选答案', async () => {
+    wrapper = mount(UserQuestionCard, { props: { interrupt: buildInterrupt() } });
+
+    const options = wrapper.findAll('.ai-user-question-option');
+    await options[0].trigger('click');
+    expect(wrapper.find('.ai-user-question-card__counter').text()).toBe('1 / 2');
+
+    await wrapper.find('.ai-user-question-card__arrow').trigger('click');
+    expect(wrapper.find('.ai-user-question-card__counter').text()).toBe('1 / 2');
+
+    await wrapper.find('.ai-user-question-card__arrow').trigger('click');
+    expect(wrapper.findAll('.ai-user-question-option')[0].classes()).toContain('ai-user-question-option--selected');
+    expect(wrapper.find('.ai-user-question-card__counter').text()).toBe('1 / 2');
   });
 
   it('选中 Others 但未输入文本不计为已答', async () => {

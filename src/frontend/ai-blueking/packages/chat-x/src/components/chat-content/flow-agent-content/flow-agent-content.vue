@@ -271,7 +271,7 @@
     $color-hover-bg: #eaebf0;
     $color-selected-bg: #e1ecff;
 
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
 
     /* ---------- 通用 placeholder ---------- */
     %flex-center {
@@ -344,7 +344,7 @@
       gap: 2px;
       align-items: center;
       justify-content: center;
-      font-size: 12px;
+      font-size: var(--ai-font-size, 12px);
       color: $color-primary;
       cursor: pointer;
 
@@ -398,7 +398,7 @@
 
     .ai-activity-message-content {
       padding: 8px 0;
-      font-size: 12px;
+      font-size: var(--ai-font-size, 12px);
     }
 
     // 撑满整条以承载 hover 区域（设计稿 hover 整体出 tooltip）
@@ -474,7 +474,7 @@
         width: 12px;
         height: 12px;
         margin-right: 4px;
-        font-size: 12px;
+        font-size: 12px; // 图标尺寸固定，不随 size 主题缩放
         color: $color-text-secondary;
         transform: rotate(90deg);
         transition: transform 0.15s;
@@ -580,8 +580,8 @@
     &-item {
       display: flex;
       align-items: center;
-      font-size: 12px;
-      line-height: 20px;
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height-compact, 20px);
       white-space: nowrap;
     }
 

@@ -40,7 +40,7 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
 
     &-title {
       display: flex;

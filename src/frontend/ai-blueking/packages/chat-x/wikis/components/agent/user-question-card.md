@@ -94,7 +94,7 @@ sinceVersion: 1.0.0
 - **自定义作答形态**：通过 `#question` slot 可替换默认选择题，渲染任意表单；作答有效时调用 `setAnswer` 回传 `UserQuestionAnswerItem`，无效时传 `undefined`。
 - **完成校验**：所有题目均已作答（`setAnswer` 收到有效答案）后才允许点击「完成」。
 - **跳过**：点击「跳过」返回 `status: 'cancelled'` 与空 `answers`。
-- **自由文本兜底**：当存在待回答 UserQuestion 且业务配置了 `onInterruptResume` 时，用户也可以直接在 `ChatInput` 输入文本；容器会将文本转换为单条 Others 回答。
+- **输入框发送**：存在待回答 UserQuestion 时，用户也可在 `ChatInput` 直接发送；`ChatContainer` 会调用 `onSendMessage` 并在第三参数附带与「跳过」等价的 skip `payload` 及 `interrupt`，输入框内容不会自动清空。
 
 ## 数据协议
 
@@ -220,7 +220,24 @@ const payload = {
 />
 ```
 
-如果没有配置 `onInterruptResume`，自由文本输入不会被截获，仍按普通 `onSendMessage` 发送，避免用户输入被静默清空。
+- 卡片内「完成 / 跳过」→ `onInterruptResume(payload, interrupt)`
+- 输入框直接发送 → `onSendMessage(content, docSchema, { interrupt, payload })`，其中 `payload` 由 `buildSkipResumePayload(interrupt)` 生成（`status: 'cancelled'`）
+
+## 工具函数 buildSkipResumePayload
+
+从 `@blueking/chat-x` 导出，用于构造 UserQuestion 的 skip resume（与卡片「跳过」及输入框发送时容器注入的 `options.payload` 一致）：
+
+```typescript
+import { buildSkipResumePayload, InterruptReason } from '@blueking/chat-x';
+
+const payload = buildSkipResumePayload(interrupt);
+// {
+//   interruptId: interrupt.id,
+//   reason: InterruptReason.UserQuestion,
+//   status: 'cancelled',
+//   payload: { answers: [] },
+// }
+```
 
 ## 自定义题目渲染（#question slot）
 
