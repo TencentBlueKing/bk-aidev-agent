@@ -12,19 +12,12 @@ import type { ComputedRef, Ref } from 'vue';
 
 import { AGUIProtocol, useChatHelper } from '@blueking/chat-helper';
 
+import { runAgentBootstrap } from '../../bootstrap/agent-bootstrap';
 import { ChatBusinessManager, SessionBusinessManager, ShortcutManager } from '../../manager';
 import { buildRequestDataFromOptions, normalizeUrl } from '../../utils';
 
 import type { IChatHelper } from '../../types';
 import type { ChatBotProps } from '../types';
-
-/** URL / chatHelper 变更导致上一轮初始化被取代 */
-export class ChatBotInitStaleError extends Error {
-  constructor() {
-    super('[ChatBot] Initialization was superseded by a newer init');
-    this.name = 'ChatBotInitStaleError';
-  }
-}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ChatBotEmitFn = (...args: any[]) => void;
@@ -45,6 +38,14 @@ export interface UseChatbotInitReturn {
   sessionBusinessManager: Ref<null | SessionBusinessManager>;
   shortcutManager: Ref<null | ShortcutManager>;
   whenReady: () => Promise<void>;
+}
+
+/** URL / chatHelper 变更导致上一轮初始化被取代 */
+export class ChatBotInitStaleError extends Error {
+  constructor() {
+    super('[ChatBot] Initialization was superseded by a newer init');
+    this.name = 'ChatBotInitStaleError';
+  }
 }
 
 export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitReturn {
@@ -115,10 +116,7 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
     });
 
     const helper = useChatHelper({
-      requestData: buildRequestDataFromOptions(
-        normalizeUrl(props.url!),
-        () => toValue(props.requestOptions),
-      ),
+      requestData: buildRequestDataFromOptions(normalizeUrl(props.url!), () => toValue(props.requestOptions)),
       protocol,
     }) as unknown as IChatHelper;
 
@@ -148,12 +146,12 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
    * 使用 generation counter 防止快速连续 URL 变化导致的竞态
    */
   let initGeneration = 0;
-  let initializeInFlight: Promise<void> | null = null;
-  let readyResolved: Promise<void> | null = null;
-  let settleInFlight: {
+  let initializeInFlight: null | Promise<void> = null;
+  let readyResolved: null | Promise<void> = null;
+  let settleInFlight: null | {
     reject: (error: Error) => void;
     resolve: () => void;
-  } | null = null;
+  } = null;
 
   const abortInFlightInit = (error?: Error) => {
     if (settleInFlight) {
@@ -218,7 +216,7 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
 
     try {
       if (isStandaloneMode.value) {
-        await Promise.all([newHelper.agent.getAgentInfo(), newHelper.session.getSessions()]);
+        await runAgentBootstrap(newHelper);
         assertGeneration(currentGen);
 
         await sessionMgr.loadRecentSession({ skipLoadSessions: true });

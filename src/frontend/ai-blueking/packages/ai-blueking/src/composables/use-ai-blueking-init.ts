@@ -124,7 +124,7 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
   const shortcutManager = new ShortcutManager(null, props.shortcuts || []);
 
   // ==================== 会话就绪（供 show() 等待） ====================
-  let recentSessionPromise: Promise<void> | null = null;
+  let recentSessionPromise: null | Promise<void> = null;
 
   const ensureRecentSessionLoaded = (): Promise<void> => {
     if (!props.loadRecentSessionOnMount) {
@@ -191,19 +191,11 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
 
   // ==================== Agent Info 处理 ====================
   /**
-   * 处理 agentInfo 数据：ping saasUrl、更新 shortcutManager
+   * 处理 agentInfo 数据：更新 shortcutManager
    * 供初始化 watcher 和 updateAgentInfo 复用
+   * 注意：ping saasUrl 已移至 runAgentBootstrap 统一处理
    */
   const processAgentInfo = (info: NonNullable<typeof agentInfo.value>) => {
-    if (info.saasUrl) {
-      fetch(info.saasUrl, {
-        method: 'GET',
-        credentials: 'include',
-      }).catch(() => {
-        // ping 请求，忽略错误
-      });
-    }
-
     if (info.conversationSettings?.commands) {
       shortcutManager.setAgentShortcuts(info.conversationSettings.commands as IShortcut[]);
     }
