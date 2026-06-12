@@ -30,9 +30,9 @@ export const getCookieByName = (name: string) => {
 };
 
 /**
- *
+ * 将毫秒耗时格式化为紧凑字符串（数字与单位之间不留空格）
  * @param duration 耗时，单位：毫秒
- * @returns 返回格式化后的耗时字符串，如：1m 30s 500ms
+ * @returns 如 1m30s500ms；与 formatElapsedTime 风格一致
  */
 export const formatDuration = (duration: number) => {
   const minutes = Math.floor(duration / 60000);
@@ -42,18 +42,18 @@ export const formatDuration = (duration: number) => {
   const parts: string[] = [];
 
   if (minutes > 0) {
-    parts.push(`${minutes} m`);
+    parts.push(`${minutes}m`);
   }
 
   if (seconds > 0) {
-    parts.push(`${seconds} s`);
+    parts.push(`${seconds}s`);
   }
 
   if (milliseconds > 0 || parts.length === 0) {
-    parts.push(`${milliseconds} ms`);
+    parts.push(`${milliseconds}ms`);
   }
 
-  return parts.join(' ');
+  return parts.join('');
 };
 
 export const generateUUID = () => {
