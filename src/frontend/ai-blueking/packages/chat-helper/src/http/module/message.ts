@@ -108,7 +108,7 @@ export const useMessage = (fetchClient: FetchClient) => {
 
   // 用户操作
   const userOperation = (sessionCode: string, operation: UserOperation, payload: IUserOperationPayload, config?: IRequestConfig) =>
-    fetchClient.post<void>(`plugin_api/user_operation/`, { session_code: sessionCode,  operation, payload }, config);
+    fetchClient.post<void>(`user_operation/`, { session_code: sessionCode,  operation, payload }, config);
 
   return {
     getMessages,

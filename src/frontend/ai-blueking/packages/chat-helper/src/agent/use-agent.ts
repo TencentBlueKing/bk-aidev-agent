@@ -124,6 +124,8 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
           lastUserMessage.id = lastApiUserMessage.id;
         });
       }
+      // 轮询接口，判断是否可以继续聊天
+      pollResumeSession(sessionCode);
     };
     const onError = (error: Error) => {
       isChatting.value = false;
