@@ -278,9 +278,9 @@
       min-width: 0;
 
       dt {
-        width: 50px;
-        min-width: 50px;
+        flex-shrink: 0;
         color: #979ba5;
+        white-space: nowrap;
       }
 
       dd {
