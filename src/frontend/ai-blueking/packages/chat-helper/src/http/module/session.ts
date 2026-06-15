@@ -29,9 +29,39 @@ import {
   transferSessionFeedback2SessionFeedbackApi,
   transferSessionFeedbackApi2SessionFeedback,
 } from '../transform/session';
+import { resolveRequestValue } from '../fetch';
 
 import type { ISession, ISessionApi, ISessionFeedback, ISessionFeedbackApi } from '../../session/type';
 import type { FetchClient, IRequestConfig } from '../fetch';
+
+/** 上传接口传输用文件名前缀，与原始展示名解耦 */
+const UPLOAD_FILE_NAME_PREFIX = 'upload_file';
+
+/** 从原始文件名提取 ASCII 安全扩展名，用于保留文件类型 */
+const getSafeFileExtension = (fileName: string): string => {
+  const extension = fileName.split('.').pop();
+  if (!extension || extension === fileName) {
+    return '';
+  }
+
+  const safeExtension = extension.replace(/[^A-Za-z0-9]/g, '').slice(0, 20).toLowerCase();
+  return safeExtension ? `.${safeExtension}` : '';
+};
+
+/**
+ * 生成上传接口使用的 ASCII 安全文件名。
+ * 中文等非 ASCII 原名不能用于 URL path / Content-Disposition（浏览器与后端均可能编码失败），
+ * 原始 file.name 仍保留在 File 对象上，由 chat-x 发送消息时作为展示名使用。
+ */
+const buildSafeUploadFileName = (file: File): string => {
+  const suffix = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  return `${UPLOAD_FILE_NAME_PREFIX}_${suffix}${getSafeFileExtension(file.name)}`;
+};
+
+/** Content-Disposition 仅允许 ASCII，须与 upload path 中的 file_name 一致 */
+const buildUploadContentDisposition = (fileName: string): string => {
+  return `attachment; filename="${fileName}"`;
+};
 
 /**
  * session 相关 http 接口
@@ -89,13 +119,19 @@ export const useSession = (fetchClient: FetchClient) => {
       .post<ISessionApi>(`session/${sessionCode}/ai_rename/`, undefined, config)
       .then(res => transferSessionApi2Session(res));
 
-  // 上传文件到会话
+  // 上传文件到会话（传输名与展示名分离，见 buildSafeUploadFileName）
   const uploadFile = (sessionCode: string, file: File, config?: IRequestConfig) => {
-    const fileName = encodeURIComponent(file.name);
+    const safeFileName = buildSafeUploadFileName(file);
+    const fileName = encodeURIComponent(safeFileName);
+    const headers = resolveRequestValue(config?.headers) ?? {};
+
     return file.arrayBuffer().then(content =>
       fetchClient.post<{ download_url?: string }>(`session/${sessionCode}/upload/${fileName}/`, content, {
         ...config,
-        headers: { 'Content-Disposition': `attachment; filename="${file.name}"` },
+        headers: {
+          ...headers,
+          'Content-Disposition': buildUploadContentDisposition(safeFileName),
+        },
       }),
     );
   };
