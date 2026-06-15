@@ -3,9 +3,9 @@ name: ToolApprovalCard 工具审批卡片
 slug: tool-approval-card
 kind: component
 domain: agent
-description: 渲染 AIDevToolApproval 中断的审批信息与取消操作。
+description: 渲染 AIDevToolApproval 中断的审批信息与取消操作，支持只读回显态。
 aiSummary: >
-  渲染 AIDevToolApproval 中断的审批信息与取消操作。
+  渲染 AIDevToolApproval 中断的审批信息与取消操作；outcome.success 回显时以 readonly 只读展示。
   源码位置：src/components/chat-message/interrupt-message/tool-approval-card.vue。
 relatedComponents:
   - slug: interrupt-message
@@ -91,7 +91,7 @@ sinceVersion: 1.0.0
 
 - **源码位置**：`src/components/chat-message/interrupt-message/tool-approval-card.vue`
 - **能力域**：Agent 能力
-- **能力说明**：渲染 AIDevToolApproval 中断的审批信息与取消操作。
+- **能力说明**：渲染 AIDevToolApproval 中断的审批信息与取消操作；`readonly` 时用于 outcome.success 只读回显。
 
 
 
@@ -108,8 +108,10 @@ ToolApprovalCard
 ├── 标题栏：左侧色条 + 单据标题 + 复制图标 + 状态徽章（评审中/已通过/已拒绝/已撤销等）
 ├── 字段区：单据编号、提交时间
 ├── 处理人：当前处理人（overflow-tips 省略）
-└── 操作区：查看单据详情（新窗口打开 url）、取消审批（仅 pending / draft）
+└── 操作区：查看单据详情（新窗口打开 url）、取消审批（仅 pending / draft 且非 readonly）
 ```
+
+`readonly` 为 `true` 时用于 `outcome.success` 结果回显：隐藏「取消审批」按钮，不接受审批取消交互。通常由 [InterruptMessageRender](/components/agent/interrupt-message) 内部传入，业务侧无需手动设置。
 
 状态徽章样式：
 
@@ -214,6 +216,26 @@ ToolApprovalCard
   <ToolApprovalCard :interrupt="revokedInterrupt" />
 </div>
 
+## 只读回显（readonly）
+
+`outcome.success` 时 [InterruptMessageRender](/components/agent/interrupt-message) 会将 `AIDevToolApprovalResume.payload.metaData` 还原为 `interrupt` 形态，并以 `readonly` 挂载本组件：
+
+```vue
+<ToolApprovalCard
+  :interrupt="approvedInterrupt"
+  readonly
+/>
+```
+
+**渲染效果**（待审批态下 readonly 不展示「取消审批」）
+
+<div class="demo">
+  <ToolApprovalCard
+    :interrupt="pendingInterrupt"
+    readonly
+  />
+</div>
+
 ## API
 
 ### Props
@@ -222,6 +244,7 @@ ToolApprovalCard
 | ----------------- | ---------------------------- | ------ | -------------------------------------------- |
 | interrupt         | `AIDevToolApprovalInterrupt` | —      | **必填**，含 `metadata.ticket`               |
 | onInterruptResume | `OnInterruptResume`          | —      | 取消审批时触发，签名为 `(payload, interrupt)`，payload 为 `{ operation: InterruptResumeOperation.ApprovalCancel, payload: { interrupt_id } }` |
+| readonly          | `boolean`                    | —      | 只读回显态（`outcome.success` 结果回显）：隐藏取消审批按钮，不接受交互 |
 
 ### Events / Slots / Expose
 

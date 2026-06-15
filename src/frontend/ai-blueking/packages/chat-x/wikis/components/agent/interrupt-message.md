@@ -3,9 +3,9 @@ name: InterruptMessage 中断消息
 slug: interrupt-message
 kind: component
 domain: agent
-description: 渲染 human-in-the-loop 中断消息，分发工具审批，并回显用户问题回答结果。
+description: 渲染 human-in-the-loop 中断消息，分发工具审批，并按 reason 回显 resume 结果。
 aiSummary: >
-  渲染 human-in-the-loop 中断消息，分发工具审批，并回显用户问题回答结果。
+  渲染 human-in-the-loop 中断消息，分发工具审批，并按 reason 回显 resume 结果（审批单 / 用户回答）。
   源码位置：src/components/chat-message/interrupt-message/interrupt-message.vue。
 relatedComponents:
   - slug: message-render
@@ -87,7 +87,18 @@ sinceVersion: 1.0.0
         interruptId: 'interrupt_resumed',
         reason: InterruptReason.AIDevToolApproval,
         status: 'resolved',
-        payload: {},
+        payload: {
+          metaData: {
+            ticket: {
+              approvers: ['张三', '李四'],
+              sn: 'REV-2026-04-24-001',
+              status: APPROVAL_STATUS.APPROVED,
+              submit_time: '2026-04-24 14:30:15',
+              title: '算法方案评审单',
+              url: 'https://example.com/review-tickets/REV-2026-04-24-001',
+            },
+          },
+        },
       },
     },
   }
@@ -160,7 +171,7 @@ sinceVersion: 1.0.0
 
 - **源码位置**：`src/components/chat-message/interrupt-message/interrupt-message.vue`
 - **能力域**：Agent 能力
-- **能力说明**：渲染 human-in-the-loop 中断消息，分发工具审批，并回显用户问题回答结果。
+- **能力说明**：渲染 human-in-the-loop 中断消息，分发工具审批，并按 `result.reason` 回显 resume 结果。
 
 
 
@@ -169,7 +180,7 @@ sinceVersion: 1.0.0
 human-in-the-loop 中断消息渲染器（导出名 **`InterruptMessageRender`**）。对应 `MessageRole.Interrupt`，解析 `content.outcome` 渲染审批卡片或兜底提示。
 
 > 通常由 [MessageRender](/components/message/message-render) 自动调用，无需业务侧直接引入。
-> `UserQuestion` 的待回答卡片由 [ChatContainer](/components/setup/chat-container) 放在输入区上方，本组件只负责 success 后的会话内回答回显。
+> `UserQuestion` 的待回答卡片由 [ChatContainer](/components/setup/chat-container) 放在输入区上方，本组件在 `outcome.success` 时按 `result.reason` 回显审批单或用户回答。
 
 ## 渲染架构
 
@@ -183,12 +194,15 @@ InterruptMessageRender
             └── 未注册 reason → 兜底块（item.message 或「暂不支持的中断消息」）
 
 content.outcome.type === 'success'
-└── result.reason === aidev:user_question → UserQuestionAnsweredCard 回显回答（支持 #answeredQuestion 透传 #answer）
+└── resultRenderers[result.reason]
+      ├── aidev:tool_approval → ToolApprovalCard（readonly，隐藏取消审批）
+      └── aidev:user_question → UserQuestionAnsweredCard（支持 #answeredQuestion 透传 #answer）
 ```
 
 | `InterruptReason`              | 子组件              |
 | ------------------------------ | ------------------- |
-| `aidev:tool_approval`          | `ToolApprovalCard`  |
+| `aidev:tool_approval`（待审批） | `ToolApprovalCard`  |
+| `aidev:tool_approval`（已处理） | `ToolApprovalCard`（`readonly`，只读回显） |
 | `aidev:user_question`（待回答） | 输入区 `UserQuestionCard`，本组件不渲染 |
 | `aidev:user_question`（已回答） | `UserQuestionAnsweredCard` |
 | 其他 / 未注册                  | 兜底文案区域        |
@@ -280,6 +294,23 @@ content.outcome.type === 'success'
   <InterruptMessageRender v-bind="userQuestionMessage" />
 </div>
 
+## AIDevToolApproval 已处理回显（outcome.success）
+
+`outcome.type === 'success'` 且 `result.reason === InterruptReason.AIDevToolApproval` 时，会话内以只读 `ToolApprovalCard` 回显审批单。`result.payload.metaData` 需透传中断时的 `metadata`（含 `ticket`）：
+
+```vue
+<InterruptMessageRender
+  :content="resumedMessage.content"
+  role="interrupt"
+/>
+```
+
+**渲染效果**
+
+<div class="demo">
+  <InterruptMessageRender v-bind="resumedMessage" />
+</div>
+
 ## UserQuestion 已回答回显（outcome.success）
 
 `outcome.type === 'success'` 且 `result.reason === InterruptReason.UserQuestion` 时，会话内回显用户回答。可通过 `#answeredQuestion` slot 自定义单题回显：
@@ -299,14 +330,6 @@ content.outcome.type === 'success'
 
 <div class="demo">
   <InterruptMessageRender v-bind="userQuestionAnsweredMessage" />
-</div>
-
-## 其他已 resume（outcome.success）
-
-非 `UserQuestion` 的 success 态不渲染中断卡片，仅保留可选顶部 `content.message`：
-
-<div class="demo">
-  <InterruptMessageRender v-bind="resumedMessage" />
 </div>
 
 ## 不支持的中断类型（兜底）

@@ -71,7 +71,7 @@
         <span class="ai-tool-approval-card__detail-icon" />
       </Button>
       <Button
-        v-if="isPendingApproval"
+        v-if="isPendingApproval && !readonly"
         class="ai-tool-approval-card__cancel"
         outline
         theme="primary"
@@ -103,6 +103,8 @@
   const props = defineProps<{
     interrupt: AIDevToolApprovalInterrupt;
     onInterruptResume?: OnInterruptResume;
+    // 只读回显态（outcome.success 结果回显）：隐藏取消审批按钮，不接受交互
+    readonly?: boolean;
   }>();
 
   const commonTippyOptions = useCommonTippyInject();

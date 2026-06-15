@@ -33,6 +33,7 @@ import InterruptMessage from './interrupt-message.vue';
 
 import type {
   AIDevToolApprovalInterrupt,
+  AIDevToolApprovalResume,
   Interrupt,
   UserQuestionAnswerItem,
   UserQuestionResume,
@@ -95,6 +96,15 @@ const userQuestionResume: UserQuestionResume = {
   status: 'resolved',
   payload: {
     answers: userQuestionAnswers,
+  },
+};
+
+const approvalResume: AIDevToolApprovalResume = {
+  interruptId: 'interrupt-1',
+  reason: InterruptReason.AIDevToolApproval,
+  status: 'resolved',
+  payload: {
+    metaData: approvalInterrupt.metadata!,
   },
 };
 
@@ -256,6 +266,22 @@ describe('InterruptMessage', () => {
     expect(wrapper.text()).toContain('请选择语言');
     expect(wrapper.text()).toContain('Java');
     expect(wrapper.text()).toContain('Rust');
+  });
+
+  it('success outcome 存在 AIDevToolApproval resume 时应只读回显审批单', () => {
+    wrapper = mount(InterruptMessage, {
+      props: {
+        content: {
+          outcome: { type: 'success' },
+          result: approvalResume,
+        },
+      },
+    });
+
+    expect(wrapper.find('.ai-tool-approval-card').exists()).toBe(true);
+    expect(wrapper.find('.ai-tool-approval-card__title').text()).toBe('算法方案评审单');
+    expect(wrapper.text()).toContain('REV-2026-04-24-001');
+    expect(wrapper.find('.ai-tool-approval-card__cancel').exists()).toBe(false);
   });
 
   it('content.message 存在时应渲染提示文案', () => {

@@ -27,8 +27,10 @@ import { APPROVAL_STATUS, InterruptReason, MessageRole, MessageStatus } from '..
 
 import type {
   AIDevToolApprovalInterrupt,
+  AIDevToolApprovalResume,
   Interrupt,
   InterruptMessage,
+  InterruptResult,
   Message,
   RunFinishedOutcome,
   UserQuestionInterrupt,
@@ -82,7 +84,7 @@ const createInterruptScenario = (params: {
   interrupt: Interrupt;
   intro: string;
   outcome: RunFinishedOutcome;
-  result?: unknown;
+  result?: InterruptResult;
   scenarioId: string;
   status?: MessageStatus;
 }): Message[] => {
@@ -194,8 +196,19 @@ const resumedScenario = createInterruptScenario({
     interruptId: 'interrupt_resumed',
     reason: InterruptReason.AIDevToolApproval,
     status: 'resolved',
-    payload: { action: 'view_ticket' },
-  },
+    payload: {
+      metaData: {
+        ticket: {
+          approvers: ['张三', '李四', '王五'],
+          sn: 'REV-2026-04-24-006',
+          status: APPROVAL_STATUS.APPROVED,
+          submit_time: '2026-04-24 14:30:15',
+          title: '算法方案评审单',
+          url: 'https://example.com/review-tickets/REV-2026-04-24-006',
+        },
+      },
+    },
+  } satisfies AIDevToolApprovalResume,
 });
 
 // —— 场景 7：不支持的中断类型（走兜底文案）——
