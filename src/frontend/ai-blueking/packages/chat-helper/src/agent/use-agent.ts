@@ -209,10 +209,13 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
    */
   const pollResumeSession = (sessionCode: string) => {
     const lastMessage = mediator.message?.list.value.at(-1) as IInterruptMessage;
-    const isInterruptMessage = lastMessage?.role === MessageRole.Interrupt;
-    const isTicketPending = lastMessage?.content?.outcome?.type === RunFinishedOutcomeType.Interrupt
-      && lastMessage?.content?.outcome?.interrupts?.some(interrupt => (interrupt as IApprovalInterrupt).metadata?.ticket?.status === ApprovalInterruptTicketStatus.Pending);
-    if (isInterruptMessage && isTicketPending) {
+    const getIsTicketLoading = () => {
+      const isInterruptMessage = lastMessage?.role === MessageRole.Interrupt;
+      const isTicketPending = lastMessage?.content?.outcome?.type === RunFinishedOutcomeType.Interrupt
+        && lastMessage?.content?.outcome?.interrupts?.some(interrupt => [ApprovalInterruptTicketStatus.Pending, ApprovalInterruptTicketStatus.Draft].includes((interrupt as IApprovalInterrupt).metadata?.ticket?.status) );
+      return isInterruptMessage && isTicketPending;
+    }
+    if (getIsTicketLoading()) {
       setTimeout(() => {
         // 如果会话不匹配，则不继续轮询
         if (sessionCode !== mediator.session?.current?.value?.sessionCode) return;
