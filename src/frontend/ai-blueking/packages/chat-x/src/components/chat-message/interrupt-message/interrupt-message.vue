@@ -75,10 +75,10 @@
 
   // 由审批结果还原出 interrupt 形态，复用 ToolApprovalCard 渲染（回显态只读）
   const toApprovalInterrupt = (result: AIDevToolApprovalResume): AIDevToolApprovalInterrupt => ({
-    id: result.interruptId,
+    id: result.interruptId || result.id || '',
     reason: InterruptReason.AIDevToolApproval,
     toolCallId: '',
-    metadata: result.payload.metaData,
+    metadata: result.payload.metadata,
   });
 
   // outcome.success 时按 reason 分发 result 渲染：component + 组件 props 适配

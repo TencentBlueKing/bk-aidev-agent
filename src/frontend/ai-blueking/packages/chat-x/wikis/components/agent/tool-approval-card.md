@@ -218,7 +218,7 @@ ToolApprovalCard
 
 ## 只读回显（readonly）
 
-`outcome.success` 时 [InterruptMessageRender](/components/agent/interrupt-message) 会将 `AIDevToolApprovalResume.payload.metaData` 还原为 `interrupt` 形态，并以 `readonly` 挂载本组件：
+`outcome.success` 时 [InterruptMessageRender](/components/agent/interrupt-message) 会将 `AIDevToolApprovalResume.payload.metadata` 还原为 `interrupt` 形态，并以 `readonly` 挂载本组件：
 
 ```vue
 <ToolApprovalCard

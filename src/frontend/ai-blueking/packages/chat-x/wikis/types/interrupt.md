@@ -102,12 +102,12 @@ type AIDevToolApprovalInterrupt = BaseInterrupt<
 
 ## AIDevToolApprovalResume
 
-AI Dev 第三方工具审批中断响应（resume 后用于 `outcome.success` 时会话内回显审批单）。`payload.metaData` 透传中断时的 `metadata`（含 `ticket`），以便复用 `ToolApprovalCard` 只读渲染：
+AI Dev 第三方工具审批中断响应（resume 后用于 `outcome.success` 时会话内回显审批单）。`payload.metadata` 透传中断时的 `metadata`（含 `ticket`），以便复用 `ToolApprovalCard` 只读渲染：
 
 ```typescript
 type AIDevToolApprovalResume = BaseResume<
   InterruptReason.AIDevToolApproval,
-  { metaData: AIDevToolApprovalInterruptPayloadMetaData }
+  { metadata: AIDevToolApprovalInterruptPayloadMetaData }
 >;
 ```
 

@@ -75,7 +75,7 @@ export type AIDevToolApprovalInterruptPayloadMetaData = {
  */
 export type AIDevToolApprovalResume = BaseResume<
   InterruptReason.AIDevToolApproval,
-  { metaData: AIDevToolApprovalInterruptPayloadMetaData }
+  { metadata: AIDevToolApprovalInterruptPayloadMetaData }
 >;
 
 export type BaseInterrupt<T extends InterruptReason, M extends Record<string, any>> = {
@@ -89,6 +89,7 @@ export type BaseInterrupt<T extends InterruptReason, M extends Record<string, an
 };
 
 export type BaseResume<T extends InterruptReason, P extends Record<string, any> = Record<string, any>> = {
+  id?: string; // 兼容 id === interruptId
   interruptId: string;
   payload: P;
   reason: T;

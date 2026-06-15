@@ -88,7 +88,7 @@ sinceVersion: 1.0.0
         reason: InterruptReason.AIDevToolApproval,
         status: 'resolved',
         payload: {
-          metaData: {
+          metadata: {
             ticket: {
               approvers: ['张三', '李四'],
               sn: 'REV-2026-04-24-001',
@@ -296,7 +296,7 @@ content.outcome.type === 'success'
 
 ## AIDevToolApproval 已处理回显（outcome.success）
 
-`outcome.type === 'success'` 且 `result.reason === InterruptReason.AIDevToolApproval` 时，会话内以只读 `ToolApprovalCard` 回显审批单。`result.payload.metaData` 需透传中断时的 `metadata`（含 `ticket`）：
+`outcome.type === 'success'` 且 `result.reason === InterruptReason.AIDevToolApproval` 时，会话内以只读 `ToolApprovalCard` 回显审批单。`result.payload.metadata` 需透传中断时的 `metadata`（含 `ticket`）：
 
 ```vue
 <InterruptMessageRender

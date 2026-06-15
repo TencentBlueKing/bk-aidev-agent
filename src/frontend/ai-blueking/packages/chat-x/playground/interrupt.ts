@@ -197,7 +197,7 @@ const resumedScenario = createInterruptScenario({
     reason: InterruptReason.AIDevToolApproval,
     status: 'resolved',
     payload: {
-      metaData: {
+      metadata: {
         ticket: {
           approvers: ['张三', '李四', '王五'],
           sn: 'REV-2026-04-24-006',
