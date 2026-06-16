@@ -96,7 +96,7 @@ export enum FlowTaskState {
 /** 运行完成结果 */
 export enum RunFinishedOutcomeType {
   Success = 'success',
-  Interrupt = 'interrupt'
+  Interrupt = 'interrupt',
 }
 
 /** 审批状态 */
@@ -288,14 +288,14 @@ export type IApprovalInterrupt = IInterrupt<
       submit_time: string;
       title: string;
       url: string;
-    }
+    };
   }
 >;
 
 export type IUserQuestionInterrupt = IInterrupt<
   InterruptReason.UserQuestion,
   {
-    questions:  {
+    questions: {
       header: string;
       multiSelect?: boolean;
       options?: { description: string; label: string }[];
@@ -307,7 +307,7 @@ export type IUserQuestionInterrupt = IInterrupt<
 export interface IResume {
   interruptId: string;
   status: ResumeStatus;
-  payload: {
+  payload?: {
     answers: {
       answer: { description: string; label: string }[];
       multiSelect?: boolean;
@@ -316,12 +316,14 @@ export interface IResume {
   };
 }
 
-export type IRunFinishedOutcome = {
-  type: RunFinishedOutcomeType.Success;
-} | {
-  type: RunFinishedOutcomeType.Interrupt;
-  interrupts: Array<IApprovalInterrupt | IUserQuestionInterrupt>;
-}
+export type IRunFinishedOutcome =
+  | {
+      type: RunFinishedOutcomeType.Success;
+    }
+  | {
+      type: RunFinishedOutcomeType.Interrupt;
+      interrupts: Array<IApprovalInterrupt | IUserQuestionInterrupt>;
+    };
 
 /**
  * 标记 Agent 运行正常结束
@@ -392,7 +394,7 @@ export interface ITempMessageCustomValue {
   status: MessageStatus;
 }
 
-export type IApprovalResultCustomValue = IRunFinishedEvent
+export type IApprovalResultCustomValue = IRunFinishedEvent;
 
 export interface ITextMessageChunkEvent extends IBaseEvent {
   delta?: string;

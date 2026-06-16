@@ -71,6 +71,22 @@ describe('useInterruptResume', () => {
     );
   });
 
+  it('approval_cancel 应保留字符串 interrupt_id', async () => {
+    const params = createParams();
+    const { handleInterruptResume } = useInterruptResume(params);
+
+    await handleInterruptResume({
+      operation: InterruptResumeOperation.ApprovalCancel,
+      payload: { interrupt_id: 'interrupt-1' },
+    });
+
+    expect(params.chatHelper.value!.agent.userOperationStreamRequest).toHaveBeenCalledWith(
+      'session-1',
+      UserOperation.ApprovalCancel,
+      { interrupt_id: 'interrupt-1' },
+    );
+  });
+
   it('ask-user-question 结构化回答应调用 streamRequest', async () => {
     const params = createParams();
     const { handleInterruptResume } = useInterruptResume(params);

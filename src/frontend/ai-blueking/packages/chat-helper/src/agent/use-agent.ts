@@ -26,7 +26,14 @@
 
 import { ref } from 'vue';
 
-import { AGUIProtocol, ApprovalInterruptTicketStatus, IApprovalInterrupt, RunFinishedOutcomeType, type IResume } from '../event';
+import {
+  AGUIProtocol,
+  ApprovalInterruptTicketStatus,
+  IApprovalInterrupt,
+  ResumeStatus,
+  RunFinishedOutcomeType,
+  type IResume,
+} from '../event';
 import { MessageRole, MessageStatus, UserOperation } from '../message';
 
 import type { IRequestConfig, ISSEProtocol } from '../http';
@@ -77,14 +84,18 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     }
   };
 
-  const userOperationStreamRequest = (sessionCode: string, operation: UserOperation, payload: IUserOperationPayload, config?: IRequestConfig) => {
-    return mediator.http?.message.userOperation(sessionCode, operation, payload, config)
-      .then(() => {
-        if (operation !== UserOperation.ApprovalCancel) {
-          streamRequest({ sessionCode, config });
-        }
-      });
-  }
+  const userOperationStreamRequest = (
+    sessionCode: string,
+    operation: UserOperation,
+    payload: IUserOperationPayload,
+    config?: IRequestConfig,
+  ) => {
+    return mediator.http?.message.userOperation(sessionCode, operation, payload, config).then(() => {
+      if (operation !== UserOperation.ApprovalCancel) {
+        streamRequest({ sessionCode, config });
+      }
+    });
+  };
 
   const streamRequest = async ({
     sessionCode,
@@ -146,11 +157,11 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       method: 'POST',
       data: {
         session_code: sessionCode,
-        resume,
         input,
         execute_kwargs: {
           stream: true,
-          persist_input: !!input,
+          persist_input: resume ? false : !!input,
+          ...(resume ? { resume: [resume] } : {}),
         },
       },
       controller: abortController,
@@ -209,12 +220,18 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
    */
   const pollResumeSession = (sessionCode: string) => {
     const lastMessage = mediator.message?.list.value.at(-1) as IInterruptMessage;
+    const pendingApprovalInterrupt =
+      lastMessage?.content?.outcome?.type === RunFinishedOutcomeType.Interrupt
+        ? lastMessage.content.outcome.interrupts.find(interrupt =>
+            [ApprovalInterruptTicketStatus.Pending, ApprovalInterruptTicketStatus.Draft].includes(
+              (interrupt as IApprovalInterrupt).metadata?.ticket?.status,
+            ),
+          )
+        : undefined;
     const getIsTicketLoading = () => {
       const isInterruptMessage = lastMessage?.role === MessageRole.Interrupt;
-      const isTicketPending = lastMessage?.content?.outcome?.type === RunFinishedOutcomeType.Interrupt
-        && lastMessage?.content?.outcome?.interrupts?.some(interrupt => [ApprovalInterruptTicketStatus.Pending, ApprovalInterruptTicketStatus.Draft].includes((interrupt as IApprovalInterrupt).metadata?.ticket?.status) );
-      return isInterruptMessage && isTicketPending;
-    }
+      return isInterruptMessage && !!pendingApprovalInterrupt;
+    };
     if (getIsTicketLoading()) {
       setTimeout(() => {
         // 如果会话不匹配，则不继续轮询
@@ -222,14 +239,20 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
         // 轮询接口，判断是否可以继续聊天
         mediator.http?.session.isResumeSession(sessionCode).then(res => {
           if (res) {
-            // 可以继续聊天，重新发起聊天
-            streamRequest({ sessionCode })
+            // 可以继续聊天，重新发起聊天（携带 execute_kwargs.resume 通知后端恢复中断）
+            streamRequest({
+              sessionCode,
+              resume: {
+                interruptId: pendingApprovalInterrupt.id,
+                status: ResumeStatus.Resolved,
+              },
+            });
           } else {
             // 不可以继续聊天，继续轮询
             pollResumeSession(sessionCode);
           }
         });
-      }, 30000)
+      }, 30000);
     }
   };
 

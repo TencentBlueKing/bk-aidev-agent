@@ -116,13 +116,12 @@ export function useInterruptResume(params: UseInterruptResumeParams): UseInterru
       userOperationStreamRequest: (
         sessionCode: string,
         operation: UserOperation,
-        payload: { interrupt_id: number } | { node_id: string; task_id: string },
+        payload: { interrupt_id: number | string } | { node_id: string; task_id: string },
       ) => Promise<void>;
     };
 
     if (payload.operation === InterruptResumeOperation.ApprovalCancel) {
-      const interruptId = Number(payload.payload.interrupt_id);
-      await agent.userOperationStreamRequest(sessionCode, operation, { interrupt_id: interruptId });
+      await agent.userOperationStreamRequest(sessionCode, operation, { interrupt_id: payload.payload.interrupt_id });
       return;
     }
 
