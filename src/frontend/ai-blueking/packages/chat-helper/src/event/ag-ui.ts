@@ -530,14 +530,23 @@ export class AGUIProtocol implements ISSEProtocol {
    * 处理工具调用结果事件
    */
   handleToolCallResultEvent(event: IToolCallResultEvent) {
-    this.messageModule.plusMessage({
-      role: MessageRole.Tool,
-      content: event.content,
-      duration: event.duration,
-      status: MessageStatus.Complete,
-      toolCallId: event.toolCallId,
-      messageId: event.messageId,
-    });
+    const message = this.messageModule.getCurrentLoadingMessage();
+    if (message?.role === MessageRole.Interrupt) {
+      // 如果是中断消息，则更新消息内容
+      message.content.result = JSON.parse(event.content);
+      message.content.outcome.type = RunFinishedOutcomeType.Success;
+      message.status = MessageStatus.Complete;
+    } else {
+      // 否则创建一个工具调用结果消息
+      this.messageModule.plusMessage({
+        role: MessageRole.Tool,
+        content: event.content,
+        duration: event.duration,
+        status: MessageStatus.Complete,
+        toolCallId: event.toolCallId,
+        messageId: event.messageId,
+      });
+    }
   }
 
   /**

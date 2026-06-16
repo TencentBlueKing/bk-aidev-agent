@@ -53,6 +53,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
   const isChatting = ref(false);
   let usedProtocol: ISSEProtocol = protocol || new AGUIProtocol();
   let abortController: AbortController | null = null;
+  let longPollTimer: ReturnType<typeof setTimeout> | null = null;
 
   const getAgentInfo = () => {
     isInfoLoading.value = true;
@@ -93,6 +94,9 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     return mediator.http?.message.userOperation(sessionCode, operation, payload, config).then(() => {
       if (operation !== UserOperation.ApprovalCancel) {
         streamRequest({ sessionCode, config });
+      } else {
+        clearLongPollTimer();
+        pollResumeSession(sessionCode);
       }
     });
   };
@@ -160,8 +164,8 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
         input,
         execute_kwargs: {
           stream: true,
-          persist_input: resume ? false : !!input,
-          ...(resume ? { resume: [resume] } : {}),
+          persist_input: !!input,
+          resume
         },
       },
       controller: abortController,
@@ -233,26 +237,32 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       return isInterruptMessage && !!pendingApprovalInterrupt;
     };
     if (getIsTicketLoading()) {
-      setTimeout(() => {
-        // 如果会话不匹配，则不继续轮询
-        if (sessionCode !== mediator.session?.current?.value?.sessionCode) return;
-        // 轮询接口，判断是否可以继续聊天
-        mediator.http?.session.isResumeSession(sessionCode).then(res => {
-          if (res) {
-            // 可以继续聊天，重新发起聊天（携带 execute_kwargs.resume 通知后端恢复中断）
-            streamRequest({
-              sessionCode,
-              resume: {
-                interruptId: pendingApprovalInterrupt.id,
-                status: ResumeStatus.Resolved,
-              },
-            });
-          } else {
-            // 不可以继续聊天，继续轮询
+      // 轮询接口，判断是否可以继续聊天
+      mediator.http?.session.isResumeSession(sessionCode).then(res => {
+        if (res) {
+          // 可以继续聊天，重新发起聊天（携带 execute_kwargs.resume 通知后端恢复中断）
+          streamRequest({
+            sessionCode,
+            resume: {
+              interruptId: pendingApprovalInterrupt.id,
+              status: ResumeStatus.Resolved,
+            },
+          });
+        } else {
+          longPollTimer = setTimeout(() => {
+              // 如果会话不匹配，则不继续轮询
+            if (sessionCode !== mediator.session?.current?.value?.sessionCode) return;
             pollResumeSession(sessionCode);
-          }
-        });
-      }, 30000);
+          }, 30000);
+        }
+      });
+    }
+  };
+
+  const clearLongPollTimer = () => {
+    if (longPollTimer) {
+      clearTimeout(longPollTimer);
+      longPollTimer = null;
     }
   };
 
