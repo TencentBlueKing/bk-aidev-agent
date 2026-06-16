@@ -9,7 +9,7 @@
 
 import type { Ref } from 'vue';
 
-import { UserOperation, type IResume } from '@blueking/chat-helper';
+import { ResumeStatus, UserOperation, type IResume } from '@blueking/chat-helper';
 import {
   InterruptReason,
   InterruptResumeOperation,
@@ -45,15 +45,21 @@ export interface UseInterruptResumeReturn {
   ) => Promise<void>;
 }
 
-function isUserOperationResume(payload: InterruptResume): payload is ToolApprovalResume | {
-  operation: InterruptResumeOperation.FlowNodeRetry | InterruptResumeOperation.FlowNodeSkip;
-  payload: { node_id: string; task_id: number };
-} {
+function isUserOperationResume(payload: InterruptResume): payload is
+  | ToolApprovalResume
+  | {
+      operation: InterruptResumeOperation.FlowNodeRetry | InterruptResumeOperation.FlowNodeSkip;
+      payload: { node_id: string; task_id: number };
+    } {
   return 'operation' in payload;
 }
 
 function isUserQuestionResume(payload: InterruptResume): payload is UserQuestionResume {
   return 'interruptId' in payload && 'reason' in payload && payload.reason === InterruptReason.UserQuestion;
+}
+
+function toResumeStatus(status: UserQuestionResume['status']): ResumeStatus {
+  return status === 'cancelled' ? ResumeStatus.Cancelled : ResumeStatus.Resolved;
 }
 
 function getSessionCode(chatHelper: IChatHelper | null): string {
@@ -67,7 +73,7 @@ function getSessionCode(chatHelper: IChatHelper | null): string {
 function toIResume(resume: UserQuestionResume): IResume {
   return {
     interruptId: resume.interruptId,
-    status: resume.status,
+    status: toResumeStatus(resume.status),
     payload: resume.payload,
   };
 }
@@ -80,10 +86,11 @@ function buildFreeTextUserQuestionResume(
   interrupt: UserQuestionInterrupt | undefined,
   text: string,
   baseResume: UserQuestionResume,
-): IResume {
+): UserQuestionResume {
   const firstQuestion = interrupt?.metadata?.questions?.[0]?.question ?? '';
   return {
     interruptId: baseResume.interruptId,
+    reason: InterruptReason.UserQuestion,
     status: 'resolved',
     payload: {
       answers: [
@@ -139,11 +146,7 @@ export function useInterruptResume(params: UseInterruptResumeParams): UseInterru
 
     const sessionCode = getSessionCode(helper);
     const agent = helper.agent as typeof helper.agent & {
-      streamRequest: (options: {
-        sessionCode: string;
-        resume?: IResume;
-        input?: string;
-      }) => Promise<void>;
+      streamRequest: (options: { sessionCode: string; resume?: IResume; input?: string }) => Promise<void>;
     };
 
     await agent.streamRequest({
