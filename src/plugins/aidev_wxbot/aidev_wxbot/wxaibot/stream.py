@@ -19,13 +19,24 @@ from typing import TYPE_CHECKING, Generator
 
 from ag_ui.core.events import EventType
 
-from .context import CHUNK_FLUSH_THRESHOLD, LlmChunkMsg
+from .context import CHUNK_FLUSH_THRESHOLD, THINKING_MSG, LlmChunkMsg
 from .formatters import handle_flow_custom_event
 
 if TYPE_CHECKING:
     from ..utils.rabbitmq import RabbitMQClient
 
 logger = getLogger(__name__)
+
+
+def _is_thinking_placeholder(content: str) -> bool:
+    return content == THINKING_MSG
+
+
+def _ensure_stream_started(stream_started: bool, stream_id: str, rabbitmq_client: "RabbitMQClient") -> bool:
+    if stream_started:
+        return True
+    LlmChunkMsg(stream_id=stream_id).append_to_cache(rabbitmq_client)
+    return True
 
 
 def iter_sse_lines(stream_generator: Generator, stream_id: str) -> Generator[dict, None, None]:
@@ -92,6 +103,7 @@ def consume_chat_stream(
     added_content = ""
     think_content = ""
     first_logged = False
+    stream_started = False
 
     try:
         for chunk_json in iter_sse_lines(stream_generator, stream_id):
@@ -103,8 +115,9 @@ def consume_chat_stream(
 
             if event_type == EventType.TEXT_MESSAGE_CONTENT:
                 text_content = chunk_json.get("delta", "")
-                if text_content == "正在思考...":
+                if _is_thinking_placeholder(text_content):
                     continue
+                stream_started = _ensure_stream_started(stream_started, stream_id, rabbitmq_client)
                 added_content += text_content
                 if think_content:
                     llm_chunk.think_content = llm_chunk.think_content + think_content
@@ -117,10 +130,9 @@ def consume_chat_stream(
 
             elif event_type == EventType.THINKING_TEXT_MESSAGE_CONTENT:
                 think_text = chunk_json.get("delta", "")
-                if think_text == "正在思考...":
+                if _is_thinking_placeholder(think_text):
                     continue
-                if not think_content:
-                    LlmChunkMsg(stream_id=stream_id).append_to_cache(rabbitmq_client)
+                stream_started = _ensure_stream_started(stream_started, stream_id, rabbitmq_client)
                 think_content += think_text
                 if len(think_content) > CHUNK_FLUSH_THRESHOLD:
                     llm_chunk.think_content = llm_chunk.think_content + think_content
@@ -187,7 +199,10 @@ def consume_flow_stream(
 
             if event_type == EventType.CUSTOM:
                 handle_flow_custom_event(
-                    chunk_json.get("name", ""), chunk_json, llm_chunk, rabbitmq_client,
+                    chunk_json.get("name", ""),
+                    chunk_json,
+                    llm_chunk,
+                    rabbitmq_client,
                     session_code=session_code,
                 )
 
@@ -206,6 +221,4 @@ def consume_flow_stream(
 
     except RuntimeError as e:
         logger.error(f"stream_id:{stream_id} flow stream 处理错误: {e}")
-        LlmChunkMsg(content=f"流程处理异常: {e}", is_finish=True, stream_id=stream_id).append_to_cache(
-            rabbitmq_client
-        )
+        LlmChunkMsg(content=f"流程处理异常: {e}", is_finish=True, stream_id=stream_id).append_to_cache(rabbitmq_client)
