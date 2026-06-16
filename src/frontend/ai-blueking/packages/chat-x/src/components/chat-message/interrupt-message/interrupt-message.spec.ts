@@ -104,7 +104,7 @@ const approvalResume: AIDevToolApprovalResume = {
   reason: InterruptReason.AIDevToolApproval,
   status: 'resolved',
   payload: {
-    metaData: approvalInterrupt.metadata!,
+    metadata: approvalInterrupt.metadata!,
   },
 };
 
