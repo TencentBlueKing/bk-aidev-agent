@@ -4,11 +4,11 @@ slug: interrupt
 category: type
 description: AG-UI human-in-the-loop 中断相关类型，含 Interrupt、UserQuestion、InterruptMessage 与 resume 回调。
 aiSummary: >
-  定义 RunFinishedOutcome、BaseInterrupt、AIDevToolApprovalInterrupt、UserQuestionInterrupt、BaseResume、InterruptMessage 与 OnInterruptResume。
+  定义 RunFinishedOutcome、BaseInterrupt、AIDevToolApprovalInterrupt、AIDevToolApprovalResume、UserQuestionInterrupt、InterruptResult、BaseResume、InterruptMessage 与 OnInterruptResume。
   与 MessageRole.Interrupt、InterruptMessageRender、UserQuestionCard、ToolApprovalCard 配合，对应 RUN_FINISHED outcome。
 relatedComponents:
   - slug: interrupt-message
-    relation: 根据 outcome.interrupts 与 reason 渲染中断 UI，success 时回显 UserQuestion 回答
+    relation: 根据 outcome.interrupts 与 reason 渲染中断 UI，success 时按 result.reason 回显审批单或用户回答
   - slug: user-question-card
     relation: UserQuestion 交互面板，挂载在 ChatInput 上方
   - slug: tool-approval-card
@@ -60,7 +60,7 @@ type RunFinishedOutcome =
 | `type`        | 说明                                                                 |
 | ------------- | -------------------------------------------------------------------- |
 | `'interrupt'` | 等待用户响应；`interrupts` 驱动 UI 渲染审批卡片、用户问题面板等       |
-| `'success'`   | 用户已通过 `resume` 处理；若 `result.reason === UserQuestion` 则回显回答内容 |
+| `'success'`   | 用户已通过 `resume` 处理；按 `result.reason` 在会话内回显审批单（`AIDevToolApproval`）或用户回答（`UserQuestion`） |
 
 ## BaseInterrupt
 
@@ -83,18 +83,31 @@ type BaseInterrupt<T extends InterruptReason, M extends Record<string, any>> = {
 AI Dev 第三方工具审批中断，`reason` 为 `InterruptReason.AIDevToolApproval`（`'aidev:tool_approval'`）：
 
 ```typescript
+type AIDevToolApprovalInterruptPayloadMetaData = {
+  ticket: {
+    approvers: string[];
+    sn: string;
+    status: APPROVAL_STATUS;
+    submit_time: string;
+    title: string;
+    url: string;
+  };
+};
+
 type AIDevToolApprovalInterrupt = BaseInterrupt<
   InterruptReason.AIDevToolApproval,
-  {
-    ticket: {
-      approvers: string[];
-      sn: string;
-      status: APPROVAL_STATUS;
-      submit_time: string;
-      title: string;
-      url: string;
-    };
-  }
+  AIDevToolApprovalInterruptPayloadMetaData
+>;
+```
+
+## AIDevToolApprovalResume
+
+AI Dev 第三方工具审批中断响应（resume 后用于 `outcome.success` 时会话内回显审批单）。`payload.metadata` 透传中断时的 `metadata`（含 `ticket`），以便复用 `ToolApprovalCard` 只读渲染：
+
+```typescript
+type AIDevToolApprovalResume = BaseResume<
+  InterruptReason.AIDevToolApproval,
+  { metadata: AIDevToolApprovalInterruptPayloadMetaData }
 >;
 ```
 
@@ -142,7 +155,17 @@ type Interrupt =
   | BaseInterrupt<InterruptReason, Record<string, any>>;
 ```
 
+## InterruptResult
+
+中断处理结果（resume 后回传/持久化，用于 `outcome.success` 时会话内回显）。按 `reason` 区分不同结果形态，统一具备 `BaseResume` 的 `{ interruptId, reason, status }`；新增中断类型的回显结果只需在此联合扩展：
+
+```typescript
+type InterruptResult = AIDevToolApprovalResume | UserQuestionResume;
+```
+
 ## InterruptResume 联合类型
+
+用户操作后通过 `onInterruptResume` 回传的负载（与 `InterruptResult` 用途不同：`InterruptResume` 侧重**动作回传**，`InterruptResult` 侧重**success 态会话内回显**）：
 
 ```typescript
 type InterruptResume = FlowNodeResume | ToolApprovalResume | UserQuestionResume;
@@ -235,7 +258,7 @@ type InterruptMessage = BaseMessage<
   {
     message?: string;
     outcome?: RunFinishedOutcome;
-    result?: BaseResume<InterruptReason>;
+    result?: InterruptResult;
     runId?: string;
     threadId?: string;
   }
@@ -246,7 +269,7 @@ type InterruptMessage = BaseMessage<
 | ---------- | ------------------------------------------------------------ |
 | `message`  | 消息组顶部可选说明文案，由 `InterruptMessageRender` 展示     |
 | `outcome`  | `type: 'interrupt'` 时从 `interrupts` 渲染交互；`success` 时进入已处理态 |
-| `result`   | 用户 resume 后回传的单对象 payload；`UserQuestion` 会用于会话内回显 |
+| `result`   | 用户 resume 后回传/持久化的 `InterruptResult`；按 `reason` 在会话内回显审批单或用户回答 |
 | `runId`    | 关联 AG-UI run 标识                                          |
 | `threadId` | 关联会话线程标识                                             |
 

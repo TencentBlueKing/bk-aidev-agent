@@ -24,12 +24,13 @@
         {{ item.message || t('暂不支持的中断消息') }}
       </div>
     </template>
-    <!-- outcome.success 时在会话内回显用户已回答内容（含跳过=已取消态） -->
-    <UserQuestionAnsweredCard
-      v-if="userQuestionResume"
-      :answers="answeredUserQuestion"
-      :status="userQuestionResume.status"
+    <!-- outcome.success 时按 reason 在会话内回显 resume 结果（审批单 / 已回答内容等） -->
+    <component
+      :is="resultRender.component"
+      v-if="resultRender"
+      v-bind="resultRender.props"
     >
+      <!-- #answer 仅 UserQuestionAnsweredCard 消费，其它结果卡片忽略此 slot -->
       <template
         v-if="$slots.answeredQuestion"
         #answer="slotProps"
@@ -39,7 +40,7 @@
           v-bind="slotProps"
         />
       </template>
-    </UserQuestionAnsweredCard>
+    </component>
   </div>
 </template>
 
@@ -53,10 +54,13 @@
   import { UserQuestionAnsweredCard } from './user-question';
 
   import type {
+    AIDevToolApprovalInterrupt,
+    AIDevToolApprovalResume,
     Interrupt,
     InterruptMessage,
+    InterruptResult,
     OnInterruptResume,
-    UserQuestionAnswerItem,
+    UserQuestionResume,
   } from '../../../ag-ui/types/interrupt';
   import type { UserQuestionAnsweredCardSlots } from './user-question/user-question-answered-card.vue';
 
@@ -67,6 +71,31 @@
 
   const interruptRenderers: Partial<Record<InterruptReason, Component>> = {
     [InterruptReason.AIDevToolApproval]: ToolApprovalCard,
+  };
+
+  // 由审批结果还原出 interrupt 形态，复用 ToolApprovalCard 渲染（回显态只读）
+  const toApprovalInterrupt = (result: AIDevToolApprovalResume): AIDevToolApprovalInterrupt => ({
+    id: result.interruptId || result.id || '',
+    reason: InterruptReason.AIDevToolApproval,
+    toolCallId: '',
+    metadata: result.payload.metadata,
+  });
+
+  // outcome.success 时按 reason 分发 result 渲染：component + 组件 props 适配
+  // 新增结果类型只需在此扩展一条映射，模板与透传链路保持不变
+  type ResultRenderer = (result: InterruptResult) => { component: Component; props: Record<string, unknown> };
+  const resultRenderers: Partial<Record<InterruptReason, ResultRenderer>> = {
+    [InterruptReason.AIDevToolApproval]: result => ({
+      component: ToolApprovalCard,
+      props: { interrupt: toApprovalInterrupt(result as AIDevToolApprovalResume), readonly: true },
+    }),
+    [InterruptReason.UserQuestion]: result => ({
+      component: UserQuestionAnsweredCard,
+      props: {
+        answers: (result as UserQuestionResume).payload?.answers ?? [],
+        status: result.status,
+      },
+    }),
   };
 
   // 这些中断类型的交互 UI 不在会话内渲染（如 UserQuestion 渲染在 chat-input 上方）
@@ -82,17 +111,13 @@
   const getRenderer = (item: Interrupt) => interruptRenderers[item.reason];
   const isSlotRenderedInterrupt = (item: Interrupt) => slotRenderedReasons.has(item.reason);
 
-  // outcome.success 时定位 UserQuestion 的 resume 结果（用于回显问题与 已回复/已取消 状态）
-  const userQuestionResume = computed(() => {
+  // outcome.success 时按 reason 解析 result，得到要渲染的组件与其 props
+  const resultRender = computed(() => {
     if (props.content?.outcome?.type !== 'success') return undefined;
     const result = props.content?.result;
-    return result?.reason === InterruptReason.UserQuestion ? result : undefined;
+    if (!result) return undefined;
+    return resultRenderers[result.reason]?.(result);
   });
-
-  // 从 resume 结果中提取用户对各问题的回答用于回显（跳过态为空数组）
-  const answeredUserQuestion = computed<UserQuestionAnswerItem[]>(
-    () => (userQuestionResume.value?.payload?.answers ?? []) as UserQuestionAnswerItem[],
-  );
 </script>
 
 <style lang="scss">

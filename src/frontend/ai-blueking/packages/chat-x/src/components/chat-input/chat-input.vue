@@ -399,14 +399,25 @@ Use Shift + Enter to enter a new line`
         padding: 8px 8px 0;
       }
 
+      // 已选快捷指令 tag：默认态与 bkui Tag 一致，hover 使用 shortcut 语义色
       .selected-shortcut-btn {
         height: 24px;
         padding: 0 10px;
         color: #3a84ff;
         background: #e1ecff;
+        transition: background-color 0.2s, color 0.2s;
 
         .ai-common-icon {
           color: #3a84ff;
+        }
+
+        &:hover {
+          color: #1768ef;
+          background: #cddffe;
+
+          .ai-common-icon {
+            color: #3a84ff;
+          }
         }
       }
     }

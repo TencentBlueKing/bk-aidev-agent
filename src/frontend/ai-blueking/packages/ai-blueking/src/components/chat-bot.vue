@@ -16,6 +16,7 @@
       :model-value="userInput"
       :on-agent-action="handleAgentAction"
       :on-agent-feedback="handleAgentFeedback"
+      :on-interrupt-resume="handleInterruptResume"
       :get-side-render-component="props.getSideRenderComponent"
       :get-side-tab-render-component="props.getSideTabRenderComponent"
       :on-custom-tab-change="effectiveOnCustomTabChange"
@@ -45,13 +46,14 @@
       @stop-streaming="handleStopStreaming"
       @update:model-value="handleUpdateModelValue"
     >
-      <template #message="{ message, messageToolsStatus }">
+      <template #message="{ message, messageToolsStatus, onInterruptResume }">
         <!-- 消费方提供了 #message slot 时，优先使用消费方的渲染 -->
         <slot
           v-if="slots.message"
           name="message"
           :message="message"
           :message-tools-status="messageToolsStatus"
+          :on-interrupt-resume="onInterruptResume"
         />
         <!-- 否则使用默认的 MessageRender -->
         <MessageRender
@@ -60,6 +62,7 @@
           :message-tools-status="messageToolsStatus"
           :on-action="tool => handleUserAction(tool, message)"
           :on-input-confirm="(content, docSchema) => handleUserInputConfirm(message, content, docSchema)"
+          :on-interrupt-resume="onInterruptResume"
           :on-shortcut-confirm="formModel => handleUserShortcutConfirm(message, formModel)"
           :tippy-options="messageToolsTippyOptions"
         >
@@ -87,6 +90,7 @@
 
   import { useChatbotInit } from './composables/use-chatbot-init';
   import { useChatbotState } from './composables/use-chatbot-state';
+  import { useInterruptResume } from './composables/use-interrupt-resume';
   import { useMessageSender } from './composables/use-message-sender';
   import { useShareSelection } from './composables/use-share-selection';
   import { useShortcuts } from './composables/use-shortcuts';
@@ -97,7 +101,14 @@
   import type { IChatHelper, IRequestOptions } from '../types';
   import type { ChatBotEmits, ChatBotExpose, ChatBotProps } from './types';
   import type { ISupportUpload } from '@blueking/chat-helper';
-  import type { CustomBkFlowTab, IAiSlashMenuItem, Message, MessageToolsStatus, Shortcut } from '@blueking/chat-x';
+  import type {
+    CustomBkFlowTab,
+    IAiSlashMenuItem,
+    Message,
+    MessageToolsStatus,
+    OnInterruptResume,
+    Shortcut,
+  } from '@blueking/chat-x';
 
   const props = withDefaults(defineProps<ChatBotProps>(), {
     chatHelper: undefined,
@@ -116,7 +127,11 @@
   const slots = useSlots();
   defineSlots<{
     codeHeader?: (props: { language: string; token: unknown[] }) => unknown;
-    message?: (props: { message: Message; messageToolsStatus?: MessageToolsStatus }) => unknown;
+    message?: (props: {
+      message: Message;
+      messageToolsStatus?: MessageToolsStatus;
+      onInterruptResume?: OnInterruptResume;
+    }) => unknown;
   }>();
 
   // ==================== Template Refs ====================
@@ -162,6 +177,11 @@
     shortcutManager,
   } = useChatbotInit({ props, emit, scrollToBottom });
 
+  const { handleInterruptResume, resumeUserQuestionWithInput } = useInterruptResume({
+    chatHelper,
+    emit,
+  });
+
   // 2. 消息发送（先于 shortcuts，解决循环依赖）
   const {
     userInput,
@@ -177,6 +197,7 @@
     chatHelper,
     chatBusinessManager,
     getRequestOptions: () => props.requestOptions as IRequestOptions | undefined,
+    resumeUserQuestionWithInput,
     selectedShortcut,
     selectedResources,
   });

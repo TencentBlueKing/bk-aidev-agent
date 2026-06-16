@@ -49,22 +49,33 @@ export enum InterruptResumeOperation {
  */
 export type AIDevToolApprovalInterrupt = BaseInterrupt<
   InterruptReason.AIDevToolApproval,
-  {
-    ticket: {
-      // approvers 审批人
-      approvers: string[];
-      // 单据编号
-      sn: string;
-      // 单据状态
-      status: APPROVAL_STATUS;
-      // 提交时间
-      submit_time: string;
-      // 单据标题
-      title: string;
-      // 单据链接
-      url: string;
-    };
-  }
+  AIDevToolApprovalInterruptPayloadMetaData
+>;
+
+export type AIDevToolApprovalInterruptPayloadMetaData = {
+  ticket: {
+    // approvers 审批人
+    approvers: string[];
+    // 单据编号
+    sn: string;
+    // 单据状态
+    status: APPROVAL_STATUS;
+    // 提交时间
+    submit_time: string;
+    // 单据标题
+    title: string;
+    // 单据链接
+    url: string;
+  };
+};
+
+/**
+ * AI Dev 第三方工具审批中断响应（resume 后用于 outcome.success 时会话内回显审批单）。
+ * payload 透传中断时的 metaData（含 ticket），以便复用 ToolApprovalCard 渲染。
+ */
+export type AIDevToolApprovalResume = BaseResume<
+  InterruptReason.AIDevToolApproval,
+  { metadata: AIDevToolApprovalInterruptPayloadMetaData }
 >;
 
 export type BaseInterrupt<T extends InterruptReason, M extends Record<string, any>> = {
@@ -78,6 +89,7 @@ export type BaseInterrupt<T extends InterruptReason, M extends Record<string, an
 };
 
 export type BaseResume<T extends InterruptReason, P extends Record<string, any> = Record<string, any>> = {
+  id?: string; // 兼容 id === interruptId
   interruptId: string;
   payload: P;
   reason: T;
@@ -119,12 +131,19 @@ export type InterruptMessage = BaseMessage<
     message?: string;
     /** 是否已被用户响应（resume）过，用于 UI 区分"等待响应 / 已处理"两种态 */
     outcome?: RunFinishedOutcome;
-    /** outcome.type === success 用户 resume 时回传给 Agent 的 payload，便于回放与持久化 */
-    result?: BaseResume<InterruptReason>; // 用户回答问题中断响应负载
+    /** outcome.type === success 用户 resume 后回传/持久化的结果，用于会话内按 reason 回显 */
+    result?: InterruptResult;
     runId?: string;
     threadId?: string;
   }
 >;
+
+/**
+ * 中断处理结果（resume 后回传/持久化，用于 outcome.success 时会话内回显）。
+ * 按 reason 区分不同结果形态，统一具备 BaseResume 的 { interruptId, reason, status }；
+ * 新增中断类型的回显结果只需在此联合扩展。
+ */
+export type InterruptResult = AIDevToolApprovalResume | UserQuestionResume;
 
 export type InterruptResume = FlowNodeResume | ToolApprovalResume | UserQuestionResume;
 
@@ -137,7 +156,6 @@ export type InterruptResume = FlowNodeResume | ToolApprovalResume | UserQuestion
 export type OnInterruptResume = (payload: InterruptResume, interrupt?: Interrupt) => Promise<void> | void;
 
 export type RunFinishedOutcome = { interrupts: Interrupt[]; type: 'interrupt' } | { type: 'success' };
-
 /**
  * 第三方工具审批中断的响应负载（取消审批等动作）
  */
@@ -145,6 +163,7 @@ export type ToolApprovalResume = {
   operation: InterruptResumeOperation.ApprovalCancel;
   payload: { interrupt_id: number | string };
 };
+
 /**
  * 用户对单个问题的回答
  */

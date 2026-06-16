@@ -296,6 +296,11 @@
       align-items: flex-end;
       margin-bottom: 12px;
 
+      // 编辑态输入框贴合内容高度，不沿用主输入区的 4 行最小高度
+      .ai-slash-input {
+        min-height: auto;
+      }
+
       .user-edit-footer {
         display: flex;
         gap: 8px;

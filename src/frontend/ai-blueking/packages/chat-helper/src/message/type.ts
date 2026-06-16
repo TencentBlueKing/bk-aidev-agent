@@ -77,12 +77,14 @@ export enum UserOperation {
   ApprovalCancel = 'approval_cancel',
 }
 
-export type IUserOperationPayload = {
-  node_id: string;
-  task_id: string;
-} | {
-  interrupt_id: number;
-}
+export type IUserOperationPayload =
+  | {
+      node_id: string;
+      task_id: string;
+    }
+  | {
+      interrupt_id: number | string;
+    };
 
 export interface IActivityMessage extends IBaseMessage {
   activityType: ActivityType;
