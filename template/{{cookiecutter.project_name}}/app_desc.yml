@@ -103,3 +103,7 @@ modules:
         - name: celery
           procCommand: celery -A blueapps.core.celery worker -P threads -Q plugin_schedule -l INFO -c 2 --max-tasks-per-child 256
           targetReplicas: 1
+        - name: wxaibot
+          procCommand: /bin/bash bin/start_wxaibot.sh
+          resQuotaPlan: 4C4G
+          replicas: 1
