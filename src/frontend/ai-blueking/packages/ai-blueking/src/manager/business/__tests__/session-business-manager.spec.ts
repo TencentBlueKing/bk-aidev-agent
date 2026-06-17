@@ -132,6 +132,34 @@ describe('SessionBusinessManager.loadRecentSession', () => {
     expect(sessionModule.chooseSession).toHaveBeenCalledWith('initial-without-count', { loadMessages: true });
   });
 
+  // 回归：alwaysCreateNewSession 为 true 时即使最近会话是空会话，也必须真正新建，
+  // 不能被「复用空会话」逻辑改写成切换到已有空会话。
+  it('should always create a new session when alwaysCreateNewSession is true even if recent session is empty', async () => {
+    sessionModule.list.value = [
+      {
+        sessionCode: 'recent-empty',
+        sessionName: '空会话',
+        sessionContentCount: 0,
+      },
+    ];
+
+    await manager.loadRecentSession({ skipLoadSessions: true, alwaysCreateNewSession: true });
+
+    expect(sessionModule.createSession).toHaveBeenCalledTimes(1);
+    // 不能复用切换到已有的空会话
+    expect(sessionModule.chooseSession).not.toHaveBeenCalledWith('recent-empty', { loadMessages: false });
+  });
+
+  // skipLoadSessions 时不应在新建路径里重复拉取会话列表
+  it('should not reload sessions when creating during loadRecentSession with skipLoadSessions', async () => {
+    sessionModule.list.value = [];
+
+    await manager.loadRecentSession({ skipLoadSessions: true });
+
+    expect(sessionModule.createSession).toHaveBeenCalledTimes(1);
+    expect(sessionModule.getSessions).not.toHaveBeenCalled();
+  });
+
   it('should not re-switch after createNewSession when loadRecentSession is called again', async () => {
     sessionModule.list.value = [];
 
@@ -144,6 +172,109 @@ describe('SessionBusinessManager.loadRecentSession', () => {
     await manager.loadRecentSession({ skipLoadSessions: true });
 
     expect(sessionModule.chooseSession).not.toHaveBeenCalled();
+    expect(sessionModule.createSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('SessionBusinessManager.createNewSession', () => {
+  let sessionModule: ReturnType<typeof createSessionModule>;
+  let manager: SessionBusinessManager;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionModule = createSessionModule();
+    manager = new SessionBusinessManager(sessionModule as never, null, null, {});
+  });
+
+  it('should return null when current session is already empty', async () => {
+    const emptySession: ISession = {
+      sessionCode: 'current-empty',
+      sessionName: '空会话',
+      sessionContentCount: 0,
+    };
+    sessionModule.current.value = emptySession;
+    sessionModule.list.value = [emptySession];
+
+    const result = await manager.createNewSession();
+
+    expect(result).toBeNull();
+    expect(sessionModule.createSession).not.toHaveBeenCalled();
+    expect(sessionModule.chooseSession).not.toHaveBeenCalled();
+  });
+
+  it('should switch to latest empty session instead of creating new one', async () => {
+    sessionModule.current.value = null;
+    sessionModule.list.value = [
+      { sessionCode: 'latest-empty', sessionName: '空会话', sessionContentCount: 0 },
+      { sessionCode: 'old-session', sessionName: '旧会话', sessionContentCount: 5 },
+    ];
+
+    const result = await manager.createNewSession();
+
+    expect(result).toBeNull();
+    expect(sessionModule.chooseSession).toHaveBeenCalledWith('latest-empty', { loadMessages: false });
+    expect(sessionModule.createSession).not.toHaveBeenCalled();
+  });
+
+  it('should create new session when latest session has content', async () => {
+    sessionModule.current.value = null;
+    sessionModule.list.value = [{ sessionCode: 'has-content', sessionName: '有内容', sessionContentCount: 3 }];
+
+    const result = await manager.createNewSession();
+
+    expect(result).not.toBeNull();
+    expect(sessionModule.createSession).toHaveBeenCalled();
+    expect(sessionModule.chooseSession).not.toHaveBeenCalled();
+  });
+
+  it('should create new session when session list is empty', async () => {
+    sessionModule.current.value = null;
+    sessionModule.list.value = [];
+
+    const result = await manager.createNewSession();
+
+    expect(result).not.toBeNull();
+    expect(sessionModule.createSession).toHaveBeenCalled();
+  });
+
+  // 回归：聊天后 sessionContentCount 快照仍为 0，但实时消息列表已有真实内容，
+  // 此时应真正新建会话，而不是把当前会话误判为空导致点击无反应。
+  it('should create new session when current session has live messages despite stale count', async () => {
+    const chattedSession: ISession = {
+      sessionCode: 'chatted-session',
+      sessionName: '新会话',
+      sessionContentCount: 0,
+    };
+    sessionModule.current.value = chattedSession;
+    sessionModule.list.value = [chattedSession];
+
+    const messageModule = { list: ref([{ role: 'user', content: 'hi' }]) };
+    manager = new SessionBusinessManager(sessionModule as never, null, null, {}, messageModule as never);
+
+    const result = await manager.createNewSession();
+
+    expect(result).not.toBeNull();
+    expect(sessionModule.createSession).toHaveBeenCalled();
+    // 不能把刚聊过的当前会话当作空会话复用
+    expect(sessionModule.chooseSession).not.toHaveBeenCalledWith('chatted-session', { loadMessages: false });
+  });
+
+  // pause 预设消息不算真实内容，仍应按空会话处理
+  it('should treat session with only pause messages as empty', async () => {
+    const emptySession: ISession = {
+      sessionCode: 'pause-only',
+      sessionName: '空会话',
+      sessionContentCount: 0,
+    };
+    sessionModule.current.value = emptySession;
+    sessionModule.list.value = [emptySession];
+
+    const messageModule = { list: ref([{ role: 'pause', content: 'x', property: { extra: { pause: true } } }]) };
+    manager = new SessionBusinessManager(sessionModule as never, null, null, {}, messageModule as never);
+
+    const result = await manager.createNewSession();
+
+    expect(result).toBeNull();
     expect(sessionModule.createSession).not.toHaveBeenCalled();
   });
 });

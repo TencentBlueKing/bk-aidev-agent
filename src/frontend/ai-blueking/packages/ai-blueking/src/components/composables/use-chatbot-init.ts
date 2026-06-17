@@ -193,13 +193,19 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
       throw err;
     }
 
-    const sessionMgr = new SessionBusinessManager(newHelper.session, newHelper.agent, null, {
-      enableChatSession: true,
-      autoSwitchToInitialSession: !!props.sessionCode,
-      loadRecentSessionOnMount: props.autoLoad,
-      initialSessionCode: props.sessionCode,
-      alwaysCreateNewSession: props.alwaysCreateNewSession,
-    });
+    const sessionMgr = new SessionBusinessManager(
+      newHelper.session,
+      newHelper.agent,
+      null,
+      {
+        enableChatSession: true,
+        autoSwitchToInitialSession: !!props.sessionCode,
+        loadRecentSessionOnMount: props.autoLoad,
+        initialSessionCode: props.sessionCode,
+        alwaysCreateNewSession: props.alwaysCreateNewSession,
+      },
+      newHelper.message,
+    );
 
     const chatMgr = new ChatBusinessManager(newHelper.agent, newHelper.message, newHelper.session, null, {
       openingRemark: props.helloText,

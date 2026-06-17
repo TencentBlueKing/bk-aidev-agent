@@ -128,12 +128,20 @@
       <i
         v-if="props.showNewChatIcon && enableChatSession !== false"
         v-bk-tooltips="{
-          content: isCreatingChat ? t('正在创建会话...') : getPermissionTooltip(t('新增会话')),
+          content: isCreatingChat
+            ? t('正在创建会话...')
+            : !hasSessionContents
+              ? t('当前已是新会话')
+              : getPermissionTooltip(t('新增会话')),
           boundary: 'parent',
         }"
-        :class="['bkai-icon', 'bkai-xinzengliaotian', { disabled: !hasPermission || isCreatingChat }]"
+        :class="[
+          'bkai-icon',
+          'bkai-xinzengliaotian',
+          { disabled: !hasPermission || isCreatingChat || !hasSessionContents },
+        ]"
         :style="getPermissionStyle()"
-        @click="hasPermission && !isCreatingChat ? handleNewChat() : undefined"
+        @click="hasPermission && !isCreatingChat && hasSessionContents ? handleNewChat() : undefined"
       >
       </i>
       <!-- 历史会话按钮 -->

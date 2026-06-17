@@ -7,12 +7,35 @@
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
  */
 
+import type { IMessage, IMessageProperty } from '@blueking/chat-helper';
+
 /**
  * 消息基础接口，用于泛型约束
  */
 interface IMessageLike {
   id?: number | string;
   role: string;
+}
+
+/**
+ * 判断消息列表中是否存在「真实会话内容」。
+ *
+ * pause 预设消息（property.extra.pause）仅用于初始化展示，不算用户发起的真实对话；
+ * 其余消息均视为真实内容。
+ *
+ * 这是「当前会话是否为空」的统一判断口径：sessionContentCount 是后端快照，聊天过程中
+ * 不会更新，因此发消息后必须以实时消息列表为准。UI（hasSessionContents）与业务管理器
+ * （createNewSession）都应使用此函数，避免两处判断不一致。
+ *
+ * @param messages 消息列表
+ * @returns 是否存在真实会话内容
+ */
+export function hasRealMessageContent(messages: readonly IMessage[]): boolean {
+  return messages.some(msg => {
+    if (!('property' in msg)) return true;
+    const { property } = msg as { property?: IMessageProperty };
+    return !property?.extra?.pause;
+  });
 }
 
 /**

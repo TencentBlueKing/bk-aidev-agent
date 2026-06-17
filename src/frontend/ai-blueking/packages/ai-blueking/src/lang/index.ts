@@ -46,6 +46,8 @@ export const langData = {
   确定: 'Confirm',
   分享链接已复制到剪贴板: 'Share link copied to clipboard',
   请求失败: 'Request failed',
+  当前已是新会话: 'Already in a new session',
+  '正在创建会话...': 'Creating session...',
 } as const;
 
 export const zhLangData = {

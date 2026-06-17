@@ -10,12 +10,13 @@
 import { ref, watch } from 'vue';
 import type { ComputedRef, Ref } from 'vue';
 
+import { hasRealMessageContent } from '../utils/message-utils';
+
 import type ChatBot from '../components/chat-bot.vue';
 import type { SessionBusinessManager } from '../manager/business/session-business-manager';
 import type { CreateSessionOptions } from '../manager/business/types';
 import type { IChatHelper, ISession, ReportSdkErrorOptions } from '../types';
 import type { EventForwarders } from './use-ai-blueking-init';
-import type { IMessageProperty } from '@blueking/chat-helper';
 
 export interface UseSessionHandlersParams {
   chatBotRef: Ref<InstanceType<typeof ChatBot> | undefined>;
@@ -38,16 +39,10 @@ export function useSessionHandlers(params: UseSessionHandlersParams) {
   // ==================== 辅助方法 ====================
 
   /**
-   * 判断消息列表中是否存在真实会话内容（排除 promptSetting pause 预设消息）
-   * pause 消息通过 property.extra.pause 标识，仅用于初始化展示，不算用户发起的会话
+   * 判断当前会话消息列表中是否存在真实会话内容（排除 promptSetting pause 预设消息）
+   * 与业务管理器 createNewSession 共用 hasRealMessageContent，保证判断口径一致
    */
-  const checkHasRealContents = () => {
-    return chatHelper.message.list.value.some(msg => {
-      if (!('property' in msg)) return true;
-      const { property } = msg as { property?: IMessageProperty };
-      return !property?.extra?.pause;
-    });
-  };
+  const checkHasRealContents = () => hasRealMessageContent(chatHelper.message.list.value);
 
   // ==================== Watchers ====================
 

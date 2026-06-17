@@ -190,11 +190,17 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
   );
 
   // ==================== Business Managers ====================
-  const sessionBusinessManager = new SessionBusinessManager(chatHelper.session, chatHelper.agent, null, {
-    enableChatSession: props.enableChatSession,
-    initialSessionCode: props.initialSessionCode,
-    alwaysCreateNewSession: props.alwaysCreateNewSession,
-  });
+  const sessionBusinessManager = new SessionBusinessManager(
+    chatHelper.session,
+    chatHelper.agent,
+    null,
+    {
+      enableChatSession: props.enableChatSession,
+      initialSessionCode: props.initialSessionCode,
+      alwaysCreateNewSession: props.alwaysCreateNewSession,
+    },
+    chatHelper.message,
+  );
 
   const shareBusinessManager = new ShareBusinessManager(chatHelper.message, chatHelper.session);
   const shortcutManager = new ShortcutManager(null, props.shortcuts || []);

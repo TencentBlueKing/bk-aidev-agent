@@ -7,8 +7,10 @@
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
  */
 
+import { hasRealMessageContent } from '../../utils/message-utils';
+
 import type { CreateSessionOptions, IEventEmitter, SessionBusinessConfig } from './types';
-import type { IAgentModule, ISession, ISessionModule } from '@blueking/chat-helper';
+import type { IAgentModule, IMessageModule, ISession, ISessionModule } from '@blueking/chat-helper';
 
 /**
  * 会话业务管理器
@@ -23,6 +25,7 @@ export class SessionBusinessManager {
   private agentModule: IAgentModule | null;
   private config: SessionBusinessConfig;
   private eventEmitter: IEventEmitter | null;
+  private messageModule: IMessageModule | null;
   private sessionModule: ISessionModule;
 
   /**
@@ -37,11 +40,13 @@ export class SessionBusinessManager {
     agentModule: IAgentModule | null = null,
     eventEmitter: IEventEmitter | null = null,
     config: SessionBusinessConfig = {},
+    messageModule: IMessageModule | null = null,
   ) {
     this.sessionModule = sessionModule;
     this.agentModule = agentModule;
     this.eventEmitter = eventEmitter;
     this.config = config;
+    this.messageModule = messageModule;
   }
 
   get currentSession() {
@@ -81,21 +86,50 @@ export class SessionBusinessManager {
    * 提供给 UI 组件直接调用的简洁 API，无需传递任何参数。
    * 自动生成会话编码，使用默认会话名称。
    *
-   * @returns Promise<void>
-   * @throws Error 当会话功能被禁用或创建失败时
+   * 智能复用逻辑：
+   * - 当前会话已是空会话 → 不创建，返回 null
+   * - sessionList 最新会话是空会话 → 切换到它，返回 null（非新建）
+   * - 否则 → 创建新会话，返回新会话
    *
-   * @example
-   * ```ts
-   * // 在组件中使用
-   * await sessionBusinessManager.createNewSession();
-   * ```
+   * @returns 新创建的会话；如果复用了已有空会话则返回 null
    */
   async createNewSession(): Promise<ISession | null> {
+    // 如果当前会话已经是空会话，无需创建（以实时消息列表为准，而非后端快照）
+    const current = this.currentSession.value;
+    if (current?.sessionCode && this.isCurrentSessionEmpty(current)) {
+      return null;
+    }
+
+    // 刷新会话列表，确保 sessionContentCount 是最新的
+    await this.loadSessions();
+
+    // 如果 sessionList 最新的会话是空会话，直接切换到它，避免重复创建。
+    // 对「当前正在使用的会话」用实时消息判断，避免后端 count 滞后时误复用刚聊过的会话。
+    const sessions = this.sessionList.value;
+    if (sessions.length > 0) {
+      const latestSession = sessions[0];
+      const latestIsEmpty =
+        latestSession.sessionCode === current?.sessionCode
+          ? this.isCurrentSessionEmpty(latestSession)
+          : this.isSessionEmpty(latestSession);
+      if (latestIsEmpty) {
+        await this.switchSession(latestSession.sessionCode, { loadMessages: false });
+        return null;
+      }
+    }
+
     await this.createSession({
       name: '新会话',
-      sessionCode: `new_session_${Date.now()}`,
+      sessionCode: this.generateSessionCode(),
     });
     return this.sessionModule.current.value;
+  }
+
+  /**
+   * 生成新会话编码
+   */
+  private generateSessionCode(): string {
+    return `new_session_${Date.now()}`;
   }
 
   /**
@@ -184,9 +218,32 @@ export class SessionBusinessManager {
 
   /**
    * 判断会话是否为空（无历史消息）
+   *
+   * 同时检查 sessionContentCount 和 list 中的最新值。
+   * 因为单条会话 API（getSession）可能不返回 session_content_count，
+   * 但列表 API（getSessions）始终包含该字段，所以优先使用 list 中的值。
+   * 如果两者都没有，保守处理：当作有内容（loadMessages）。
    */
   private isSessionEmpty(session: ISession): boolean {
-    return session.sessionContentCount === 0;
+    const listEntry = this.findSession(session.sessionCode);
+    const count = listEntry?.sessionContentCount ?? session.sessionContentCount;
+    if (count == null) return false;
+    return count === 0;
+  }
+
+  /**
+   * 判断「当前会话」是否为空（无真实消息）
+   *
+   * 与 isSessionEmpty 的区别：当前会话的消息已加载到 messageModule，
+   * sessionContentCount 是后端快照，聊天发消息后不会更新，会导致误判为空。
+   * 因此优先以实时消息列表为准（与 UI 的 hasSessionContents 同源），
+   * 仅在无消息模块或消息列表为空时，回退到 sessionContentCount 判断。
+   */
+  private isCurrentSessionEmpty(session: ISession): boolean {
+    if (this.messageModule && hasRealMessageContent(this.messageModule.list.value)) {
+      return false;
+    }
+    return this.isSessionEmpty(session);
   }
 
   /**
@@ -243,8 +300,10 @@ export class SessionBusinessManager {
         const forceNewSession = options?.alwaysCreateNewSession ?? this.config.alwaysCreateNewSession ?? false;
 
         if (hasContents || forceNewSession) {
-          // 有内容，或强制新建，直接创建新会话，不切换到旧会话（避免不必要的消息加载）
-          await this.createNewSession();
+          // 有内容，或强制新建，直接创建新会话，不切换到旧会话（避免不必要的消息加载）。
+          // 这里已明确判定必须新建，故直接调用 createSession，不走带「复用空会话」的
+          // createNewSession：既避免重复 loadSessions，也保证 alwaysCreateNewSession 语义不被复用逻辑改写。
+          await this.createSession({ name: '新会话', sessionCode: this.generateSessionCode() });
         } else {
           // 无内容，切换到该会话（跳过消息加载，因为空会话没有消息）
           await this.switchSession(recentSession.sessionCode, { loadMessages: false });
@@ -252,8 +311,8 @@ export class SessionBusinessManager {
         return;
       }
 
-      // 优先级3：会话列表为空，通过统一入口创建新会话
-      await this.createNewSession();
+      // 优先级3：会话列表为空，直接创建新会话
+      await this.createSession({ name: '新会话', sessionCode: this.generateSessionCode() });
     } catch (error) {
       console.error('Failed to load recent session:', error);
       throw error;
