@@ -80,17 +80,17 @@
 
     .send-message-icon {
       display: flex;
-      flex: 0 0 24px;
+      flex: 0 0 32px;
       align-items: center;
       justify-content: center;
-      width: 24px;
-      height: 24px;
+      width: 32px;
+      height: 32px;
       margin-left: auto;
-      font-size: 14px;
+      font-size: 16px;
       color: #fff;
       cursor: pointer;
       background: #3a84ff;
-      border-radius: 4px;
+      border-radius: 8px;
 
       // &__active {
       //   color: #fff;
