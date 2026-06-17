@@ -128,7 +128,7 @@ domain: message
 │
 ├── .ai-user-message-content（气泡：bg #e1ecff，padding 8×12，border-radius 4px）
 │     v-if: cite 为数组 → KeyValueContent（title + key/value 列表）
-│     v-else-if: content  → MarkdownContent × N（每个 text 项一个实例）
+│     v-else-if: content  → TextContent × N（textParts 中每个文本片段一个实例）
 │
 └── MessageTools（.ai-user-message-tools）
       v-if: messageToolsStatus !== 'hidden'
@@ -147,7 +147,7 @@ domain: message
 │     @submit(formModel) → onShortcutConfirm(formModel) + isEdit=false
 │
 └── ChatInput（v-else，带自定义 #send-icon slot）
-      v-model: editContent（仅含文本内容，数组时取第一个 text 项）
+      v-model: editContent（取 textParts[0]，即第一个文本片段）
       defaultUploadFiles: binaryFiles
       #send-icon slot → .user-edit-footer
             Button "取消" → isEdit=false
@@ -156,7 +156,7 @@ domain: message
 
 ## 基础用法
 
-`content` 为字符串时，通过 `MarkdownContent` 渲染（支持 Markdown 语法）。
+`content` 为字符串时，通过 `TextContent` 渲染（内部使用 `MarkdownContent`，支持 Markdown 语法）。
 
 ```vue
 <template>
@@ -190,7 +190,7 @@ domain: message
 - **图片文件**（`binaryImageFiles`）：判断 `url` 存在或 `mimeType` / `file.type` 以 `image/` 开头的文件，统一放入一个 `FileContent`（`readonly=true`）中渲染，支持点击缩略图全屏预览
 - **非图片文件**（`binaryNonImageFiles`）：每个文件单独渲染在 `FileContent`（`readonly=true`）中
 
-`text` 项按顺序各渲染一个 `MarkdownContent`。
+`text` 项经 `textParts` 计算属性统一为 `string[]`，按顺序各渲染一个 `TextContent`。
 
 ```vue
 <script setup lang="ts">
@@ -350,11 +350,11 @@ domain: message
 **`editContent` 的初始化逻辑**（仅文本部分，二进制文件通过 `defaultUploadFiles` 恢复）：
 
 ```
-content 为 string     → editContent = content
-textContent 为 string → editContent = textContent
-textContent 为 array  → editContent = textContent[0]?.text（取第一个文本项）
-binaryFiles 有值      → 进入编辑模式（editContent 可为空）
+textParts 有值  → editContent = textParts[0]（取第一个文本片段）
+binaryFiles 有值 → 进入编辑模式（editContent 可为空）
 ```
+
+`textParts` 由 `content` 统一计算：`string` 转为单元素数组，`InputContent[]` 则过滤出 `type: 'text'` 且非空的项并映射为 `string[]`。
 
 ```vue
 <template>

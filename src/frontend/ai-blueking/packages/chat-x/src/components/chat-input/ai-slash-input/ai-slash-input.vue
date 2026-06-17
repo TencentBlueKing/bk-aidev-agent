@@ -22,6 +22,7 @@
                 :class="`mention-tag-${item.data.type}`"
                 contenteditable="false"
                 :data-tag-type="item.data.type"
+                :data-tag-value="item.data.value"
               >
                 {{ item.data.label }}
                 <RemoveIcon
@@ -84,7 +85,7 @@
   import AiPromptList from './ai-prompt-list/ai-prompt-list.vue';
   import AiSkillList from './ai-skill-list/ai-skill-list.vue';
   import AiSlashMenu from './ai-slash-menu/ai-slash-menu.vue';
-  import { DeleteTag, InsertTag, InsertText } from './command';
+  import { DeleteTag, InsertSkillTag, InsertTag, InsertText } from './command';
   import { tagSchema } from './constants';
 
   import type { IAiSlashMenuItem, ISkillListItem } from '../../../types/editor';
@@ -317,7 +318,11 @@
     focusToEnd();
   };
   const insertSkillAtCursor = (skill: ISkillListItem) => {
-    editor.command(ReplaceAll, `/${skill.skill_code} `);
+    editor.command(GetCursorPosition);
+    const { column, line } = commandSelection.value;
+    editor.command(DeleteTag, [line, column - keyword.value.length - 1], [line, column]);
+    editor.command(InsertSkillTag, [line, column], skill);
+    editor.command(InsertText, [line, column + keyword.value.length + 1 + 1], ' ');
     tippyRef.value?.hide();
     focusToEnd();
   };
@@ -330,15 +335,24 @@
           ),
         ),
     );
+    const skillList = props.skills?.filter(
+      skill =>
+        !text.value?.some(line =>
+          line.some(
+            lineItem =>
+              lineItem.type === 'tag' && lineItem.data.value === skill.skill_code && lineItem.data.type === 'skill',
+          ),
+        ),
+    );
     if (!keyword.value) {
       filteredResourceList.value = resourceList;
-      filteredSkills.value = props.skills;
+      filteredSkills.value = skillList;
       filteredPrompts.value = props.prompts;
     } else {
       filteredResourceList.value = resourceList.filter(item =>
         item.name.toLowerCase().includes(keyword.value.toLowerCase()),
       );
-      filteredSkills.value = props.skills.filter(
+      filteredSkills.value = skillList.filter(
         skill =>
           skill.skill_name.toLowerCase().includes(keyword.value.toLowerCase()) ||
           skill.skill_code.toLowerCase().includes(keyword.value.toLowerCase()),

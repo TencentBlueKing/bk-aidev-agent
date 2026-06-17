@@ -29,7 +29,7 @@
         </div>
       </template>
       <div
-        v-if="(citeContent || textContent).length"
+        v-if="citeContent || textParts.length"
         class="ai-user-message-content"
       >
         <template v-if="Array.isArray(citeContent)">
@@ -40,18 +40,12 @@
           />
         </template>
         <!-- agui user message content 显示-->
-        <template
-          v-for="(item, index) in Array.isArray(textContent) ? textContent : [textContent]"
+        <TextContent
+          v-for="(text, index) in textParts"
           v-else-if="content"
           :key="index"
-        >
-          <template v-if="typeof item === 'string'">
-            <MarkdownContent :content="item" />
-          </template>
-          <template v-else-if="item.type === MessageContentType.Text">
-            <MarkdownContent :content="item.text" />
-          </template>
-        </template>
+          :content="text"
+        />
       </div>
       <MessageTools
         v-if="messageToolsStatus !== MessageToolsStatus.Hidden"
@@ -123,7 +117,7 @@
   import CiteContent from '../../chat-content/cite-content/cite-content.vue';
   import FileContent from '../../chat-content/file-content/file-content.vue';
   import KeyValueContent from '../../chat-content/key-value-content/key-value-content.vue';
-  import MarkdownContent from '../../chat-content/markdown-content/markdown-content.vue';
+  import TextContent from '../../chat-content/text-content/text-content.vue';
   import ChatInput from '../../chat-input/chat-input.vue';
   import MessageTools, { type MessageToolsProps } from '../../message-tools/message-tools.vue';
 
@@ -198,27 +192,18 @@
   });
   const binaryImageFiles = computed(() => binaryFiles.value.filter(f => isBinaryImage(f)));
   const binaryNonImageFiles = computed(() => binaryFiles.value.filter(f => !isBinaryImage(f)));
-  // 文本内容
-  const textContent = computed(() => {
-    if (!props.content) return '';
-    if (typeof props.content === 'string') return props.content;
-    return props.content?.filter(
-      (item): item is TextInputContent => item.type === MessageContentType.Text && !!item.text?.trim(),
-    );
+  // 文本内容（统一为 string[]，兼容 content 为 string 或 InputContent[]）
+  const textParts = computed((): string[] => {
+    if (!props.content) return [];
+    if (typeof props.content === 'string') return [props.content];
+    return props.content
+      .filter((item): item is TextInputContent => item.type === MessageContentType.Text && !!item.text?.trim())
+      .map(item => item.text);
   });
   const handleAction = async (tool: IToolBtn) => {
     if (tool.id === 'edit') {
-      if (typeof props.content === 'string') {
-        editContent.value = props.content;
-        isEdit.value = true;
-      }
-      if (typeof textContent.value === 'string') {
-        editContent.value = textContent.value;
-        isEdit.value = true;
-      }
-      if (Array.isArray(textContent.value)) {
-        const item = textContent.value.at(0);
-        editContent.value = typeof item === 'string' ? item : item?.text || '';
+      if (textParts.value.length) {
+        editContent.value = textParts.value[0] ?? '';
         isEdit.value = true;
       }
       if (binaryFiles.value.length) {
@@ -276,12 +261,11 @@
       background-color: #e1ecff;
       border-radius: 4px;
 
-      p {
-        margin-bottom: 0;
-      }
-
-      p + p {
-        margin-bottom: 1rem;
+      :deep(.text-content) {
+        width: auto;
+        padding: 0;
+        background-color: transparent;
+        border-radius: 0;
       }
     }
 

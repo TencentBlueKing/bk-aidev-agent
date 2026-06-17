@@ -34,14 +34,16 @@ import AiSlashInput from './ai-slash-input.vue';
 import type { IAiSlashMenuItem } from '../../../types/editor';
 
 /** 与 edix Editor.command 行为对齐：执行命令函数并传入伪造的 doc / selection，供 GetDocSnapshot 等逻辑使用 */
-const { editorCommand } = vi.hoisted(() => {
+const { editorCommand, editorOptions } = vi.hoisted(() => {
   const fakeDoc = [[{ type: 'text', text: 'internal-snapshot' }]] as unknown[];
+  const options: { onKeyDown?: (event: { key: string; preventDefault?: () => void }) => unknown } = {};
   return {
     editorCommand: vi.fn((fn: (...args: unknown[]) => unknown, ...args: unknown[]) => {
       if (typeof fn === 'function') {
         fn(fakeDoc, [], ...args);
       }
     }),
+    editorOptions: options,
   };
 });
 
@@ -87,8 +89,8 @@ vi.mock('../../../composables', () => {
   const docSnapshot = { value: [] as unknown[] };
   return {
     useCommandSelection: () => ({
-      commandSelection: { value: { column: 0, line: 0 } },
-      GetCursorPosition: vi.fn(),
+      commandSelection: { value: { column: 5, line: 0 } },
+      GetCursorPosition: 'GetCursorPosition',
       GetDocSnapshot: ((doc: unknown) => {
         docSnapshot.value = doc as unknown[];
       }) as (...args: unknown[]) => void,
@@ -99,10 +101,13 @@ vi.mock('../../../composables', () => {
 
 // Mock edix（command 需执行 EditorCommand，否则 GetDocSnapshot 无法写入 docSnapshot）
 vi.mock('../../../edix', () => ({
-  createEditor: () => ({
-    command: editorCommand,
-    input: vi.fn(() => vi.fn()),
-  }),
+  createEditor: (options: { onKeyDown?: (event: { key: string; preventDefault?: () => void }) => unknown }) => {
+    editorOptions.onKeyDown = options.onKeyDown;
+    return {
+      command: editorCommand,
+      input: vi.fn(() => vi.fn()),
+    };
+  },
   ReplaceAll: 'ReplaceAll',
   stringToDoc: (str: string) => [[{ type: 'text', text: str }]],
   docToString: (doc: unknown) => {
@@ -157,8 +162,19 @@ vi.mock('./ai-skill-list/ai-skill-list.vue', () => ({
       onSelect: { type: Function, default: null },
       skills: { type: Array, default: () => [] },
     },
-    setup() {
-      return () => h('div', { class: 'mock-ai-skill-list' });
+    setup(props) {
+      return () =>
+        h('div', {
+          class: 'mock-ai-skill-list',
+          'data-skills-count': String(props.skills?.length ?? 0),
+          onClick: () =>
+            props.onSelect?.({
+              skill_code: 'test_skill',
+              skill_name: 'Test Skill',
+              description: '',
+              icon: '',
+            }),
+        });
     },
   }),
 }));
@@ -166,6 +182,7 @@ vi.mock('./ai-skill-list/ai-skill-list.vue', () => ({
 // Mock commands and constants
 vi.mock('./command', () => ({
   DeleteTag: 'DeleteTag',
+  InsertSkillTag: 'InsertSkillTag',
   InsertTag: 'InsertTag',
   InsertText: 'InsertText',
 }));
@@ -351,6 +368,80 @@ describe('AiSlashInput', () => {
       });
 
       expect(wrapper.find('.ai-slash-input').attributes('spellcheck')).toBe('false');
+    });
+
+    it('skill 标签应渲染 data-tag-value 属性', () => {
+      wrapper = mount(AiSlashInput, {
+        props: {
+          modelValue: [
+            [
+              {
+                type: 'tag',
+                data: { label: 'Test Skill', value: 'test_skill', type: 'skill' },
+              },
+            ],
+          ],
+        },
+      });
+
+      const tag = wrapper.find('[data-tag-type="skill"]');
+      expect(tag.exists()).toBe(true);
+      expect(tag.attributes('data-tag-value')).toBe('test_skill');
+    });
+  });
+
+  describe('Skill 过滤与插入', () => {
+    const openSkillMenu = async () => {
+      editorOptions.onKeyDown?.({ key: '/', preventDefault: vi.fn() });
+      await nextTick();
+    };
+
+    it('已插入的 skill 不应出现在 AiSkillList 的 skills 列表中', async () => {
+      const skills = [
+        { skill_code: 'skill1', skill_name: 'Skill 1', description: '', icon: '' },
+        { skill_code: 'skill2', skill_name: 'Skill 2', description: '', icon: '' },
+      ];
+
+      wrapper = mount(AiSlashInput, {
+        props: {
+          modelValue: [
+            [
+              {
+                type: 'tag',
+                data: { label: 'Skill 1', value: 'skill1', type: 'skill' },
+              },
+            ],
+          ],
+          skills,
+        },
+      });
+      await nextTick();
+      await openSkillMenu();
+
+      const skillList = wrapper.findComponent({ name: 'AiSkillList' });
+      expect(skillList.exists()).toBe(true);
+      expect(skillList.props('skills')).toHaveLength(1);
+      expect(skillList.props('skills')[0].skill_code).toBe('skill2');
+    });
+
+    it('选择 skill 时应调用 InsertSkillTag 命令', async () => {
+      wrapper = mount(AiSlashInput, {
+        props: {
+          modelValue: '',
+          skills: [{ skill_code: 'test_skill', skill_name: 'Test Skill', description: '', icon: '' }],
+        },
+      });
+      await nextTick();
+      await openSkillMenu();
+      editorCommand.mockClear();
+
+      await wrapper.find('.mock-ai-skill-list').trigger('click');
+      await nextTick();
+
+      const insertSkillCalls = editorCommand.mock.calls.filter(
+        call => (call[0] as unknown) === 'InsertSkillTag',
+      );
+      expect(insertSkillCalls.length).toBeGreaterThan(0);
     });
   });
 

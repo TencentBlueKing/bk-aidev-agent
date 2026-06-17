@@ -112,14 +112,14 @@ vi.mock('../../chat-content/key-value-content/key-value-content.vue', () => ({
   }),
 }));
 
-vi.mock('../../chat-content/markdown-content/markdown-content.vue', () => ({
+vi.mock('../../chat-content/text-content/text-content.vue', () => ({
   default: defineComponent({
-    name: 'MarkdownContent',
+    name: 'TextContent',
     props: {
       content: { type: String, default: '' },
     },
     setup(props) {
-      return () => h('div', { class: 'mock-markdown-content' }, props.content);
+      return () => h('div', { class: 'mock-text-content' }, props.content);
     },
   }),
 }));
@@ -212,14 +212,14 @@ describe('UserMessage', () => {
       expect(wrapper.find('.ai-user-message').exists()).toBe(true);
     });
 
-    it('应该渲染 MarkdownContent', () => {
+    it('应该渲染 TextContent', () => {
       wrapper = mount(UserMessage, {
         props: {
           content: '用户消息内容',
         },
       });
 
-      expect(wrapper.find('.mock-markdown-content').exists()).toBe(true);
+      expect(wrapper.find('.mock-text-content').exists()).toBe(true);
     });
 
     it('应该正确显示 content 内容', () => {
@@ -229,7 +229,7 @@ describe('UserMessage', () => {
         props: { content },
       });
 
-      expect(wrapper.find('.mock-markdown-content').text()).toBe(content);
+      expect(wrapper.find('.mock-text-content').text()).toBe(content);
     });
 
     it('应该渲染 MessageTools', () => {
@@ -281,7 +281,7 @@ describe('UserMessage', () => {
         } as any,
       });
 
-      expect(wrapper.findAll('.mock-markdown-content').length).toBe(2);
+      expect(wrapper.findAll('.mock-text-content').length).toBe(2);
     });
   });
 
@@ -378,7 +378,7 @@ describe('UserMessage', () => {
       });
 
       expect(wrapper.find('.mock-file-content').exists()).toBe(true);
-      expect(wrapper.find('.mock-markdown-content').exists()).toBe(true);
+      expect(wrapper.find('.mock-text-content').exists()).toBe(true);
     });
 
     it('图片类型的二进制文件应被归类为 binaryImageFiles', () => {
@@ -444,7 +444,7 @@ describe('UserMessage', () => {
         } as any,
       });
 
-      expect(wrapper.find('.mock-markdown-content').exists()).toBe(true);
+      expect(wrapper.find('.mock-text-content').exists()).toBe(true);
     });
 
     it('应该渲染多个 Text 类型的内容', () => {
@@ -457,7 +457,7 @@ describe('UserMessage', () => {
         } as any,
       });
 
-      expect(wrapper.findAll('.mock-markdown-content').length).toBe(2);
+      expect(wrapper.findAll('.mock-text-content').length).toBe(2);
     });
   });
 

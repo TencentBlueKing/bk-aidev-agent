@@ -23,7 +23,26 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { schema, voidNode } from '../../../edix';
+import { docToString, schema, voidNode } from '../../../edix';
+
+import type { VoidNode } from '../../../edix/doc/types';
+import type { TagSchema } from '../../../types/input';
+
+type TagNodeData = {
+  label: string;
+  type: string;
+  value: string;
+};
+
+export const tagNodeToMessageString = (node: VoidNode) => {
+  const data = node.data as TagNodeData;
+  if (data.type === 'skill') {
+    return `/${data.value}`;
+  }
+  return `@${data.label}`;
+};
+
+export const tagSchemaToMessageString = (doc: TagSchema) => docToString(doc, tagNodeToMessageString);
 
 export const tagSchema = schema({
   multiline: true,
@@ -33,7 +52,7 @@ export const tagSchema = schema({
         return node.contentEditable === 'false' && node.dataset.tagType !== undefined;
       },
       data: e => ({ label: e.textContent!, value: e.dataset.tagValue!, type: e.dataset.tagType! }),
-      plain: d => d.label,
+      plain: d => (d.type === 'skill' ? `/${d.value}` : d.label),
     }),
   },
 });

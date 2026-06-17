@@ -116,6 +116,18 @@ describe('AiSkillList', () => {
       const icons = wrapper.findAll('.ai-skill-list-item-icon');
       expect(icons.length).toBe(2);
     });
+
+    it('无 icon 时应渲染首字母 fallback 图标', () => {
+      wrapper = mount(AiSkillList, {
+        props: {
+          skills: [defaultSkills[0]],
+          onSelect: vi.fn(),
+        },
+      });
+
+      expect(wrapper.find('.ai-skill-list-item-icon--fallback').exists()).toBe(true);
+      expect(wrapper.find('.ai-skill-list-item-icon--fallback').text()).toBe('S');
+    });
   });
 
   describe('事件测试', () => {

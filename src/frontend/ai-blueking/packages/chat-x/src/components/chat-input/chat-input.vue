@@ -89,8 +89,9 @@
 
   import { type UserMessage, MessageContentType, MessageStatus } from '../../ag-ui/types';
   import { CHAT_Z_INDEX, isEn, MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../../common';
-  import { type KeyboardPayload, docToString } from '../../edix';
+  import { type KeyboardPayload } from '../../edix';
   import { CloseIcon } from '../../icons';
+  import { tagSchemaToMessageString } from './ai-slash-input/constants';
   import {
     type AITippyProps,
     type IAiSlashMenuItem,
@@ -171,7 +172,7 @@ Use Shift + Enter to enter a new line`
     if (props.modelValue?.length < 1) {
       return MessageStatus.Disabled;
     }
-    if (Array.isArray(props.modelValue) && !docToString(props.modelValue).trim()) {
+    if (Array.isArray(props.modelValue) && !tagSchemaToMessageString(props.modelValue).trim()) {
       return MessageStatus.Disabled;
     }
     return props.messageStatus;
@@ -193,7 +194,7 @@ Use Shift + Enter to enter a new line`
 
       // 如果没有上传文件，则使用输入框的值
       if (!uploadFiles.value?.length) {
-        content = typeof props.modelValue === 'string' ? props.modelValue : docToString(props.modelValue);
+        content = typeof props.modelValue === 'string' ? props.modelValue : tagSchemaToMessageString(props.modelValue);
       } else {
         // 如果上传了文件，则使用上传的文件
         content = uploadFiles.value?.slice().map(file => ({
@@ -206,7 +207,7 @@ Use Shift + Enter to enter a new line`
         if (props.modelValue) {
           content.push({
             type: MessageContentType.Text,
-            text: docToString(props.modelValue as TagSchema),
+            text: tagSchemaToMessageString(props.modelValue as TagSchema),
           });
         }
       }

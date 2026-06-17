@@ -296,9 +296,12 @@ vi.mock('vue-tippy', () => ({
 vi.mock('../ai-shortcut/shortcut-render/shortcut-render.vue', () => ({
   default: defineComponent({
     name: 'ShortcutRender',
+    props: {
+      class: { type: [String, Object, Array], default: '' },
+    },
     emits: ['close', 'submit'],
-    setup() {
-      return () => h('div', { class: 'mock-shortcut-render' });
+    setup(props) {
+      return () => h('div', { class: ['mock-shortcut-render', props.class] });
     },
   }),
 }));
@@ -531,6 +534,42 @@ describe('ChatContainer', () => {
 
       expect(wrapper.find('.ai-welcome-remark').exists()).toBe(true);
       expect(wrapper.find('.mock-content-render').text()).toBe('欢迎使用');
+    });
+
+    it('空态下选中快捷指令时应为 ShortcutRender 添加 is-welcome-overlay 类', () => {
+      wrapper = mount(ChatContainer, {
+        props: {
+          ...defaultProps,
+          messages: [],
+          selectedShortcut: {
+            id: 'shortcut1',
+            name: '测试快捷指令',
+            components: [{ id: 'c1', key: 'field1', type: 'input', name: '字段1' }],
+          },
+        },
+      });
+
+      expect(wrapper.find('.mock-shortcut-render.is-welcome-overlay').exists()).toBe(true);
+      expect(wrapper.find('.ai-welcome-content').exists()).toBe(true);
+    });
+
+    it('有消息时选中快捷指令不应添加 is-welcome-overlay 类', () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+
+      wrapper = mount(ChatContainer, {
+        props: {
+          ...defaultProps,
+          messages,
+          selectedShortcut: {
+            id: 'shortcut1',
+            name: '测试快捷指令',
+            components: [{ id: 'c1', key: 'field1', type: 'input', name: '字段1' }],
+          },
+        },
+      });
+
+      expect(wrapper.find('.mock-shortcut-render').exists()).toBe(true);
+      expect(wrapper.find('.mock-shortcut-render.is-welcome-overlay').exists()).toBe(false);
     });
   });
 

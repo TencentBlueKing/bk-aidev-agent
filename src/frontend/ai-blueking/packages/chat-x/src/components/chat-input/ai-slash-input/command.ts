@@ -28,7 +28,7 @@ import { Transaction } from '../../../edix/doc/edit';
 
 import type { EditorCommand } from '../../../edix';
 import type { Position } from '../../../edix/doc/types';
-import type { IAiSlashMenuItem } from '../../../types/editor';
+import type { IAiSlashMenuItem, ISkillListItem } from '../../../types/editor';
 
 export const DeleteTag: EditorCommand<[Position, Position]> = (_doc, _selection, start: Position, end: Position) => {
   return new Transaction().delete(start, end);
@@ -58,6 +58,25 @@ export const InsertText: EditorCommand<[Position, string]> = (_doc, _selection, 
     [
       {
         text: text,
+      },
+    ],
+  ]);
+};
+
+export const InsertSkillTag: EditorCommand<[Position, ISkillListItem]> = (
+  _doc,
+  _selection,
+  start: Position,
+  skill: ISkillListItem,
+) => {
+  return new Transaction().insert(start, [
+    [
+      {
+        data: {
+          label: skill.skill_name,
+          value: skill.skill_code,
+          type: 'skill',
+        },
       },
     ],
   ]);

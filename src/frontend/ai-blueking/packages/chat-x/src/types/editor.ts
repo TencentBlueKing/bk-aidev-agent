@@ -40,6 +40,7 @@ export interface IAiSlashMenuItem {
 
 export const resourceTypeMap = {
   tool: '工具',
+  skill: 'Skill',
   mcp: 'MCP',
   doc: '知识库',
   knowledgebase: '知识库',

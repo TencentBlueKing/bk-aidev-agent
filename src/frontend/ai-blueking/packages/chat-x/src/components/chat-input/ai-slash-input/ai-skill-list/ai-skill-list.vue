@@ -116,7 +116,7 @@
       &-info {
         display: flex;
         flex: 1;
-        align-items: center;
+        align-items: flex-start;
         min-width: 0;
       }
 

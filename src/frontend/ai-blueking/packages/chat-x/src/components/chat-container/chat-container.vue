@@ -216,6 +216,7 @@
           <ShortcutRender
             v-else-if="selectedShortcut?.components?.length"
             v-bind="selectedShortcut"
+            :class="{ 'is-welcome-overlay': !messages?.length }"
             @close="handleShortcutRenderClose"
             @submit="handleShortcutRenderSubmit"
           />
@@ -738,6 +739,24 @@
         padding: 8px;
 
         // overflow: visible;
+
+        // 空态下快捷指令保持在输入框位置（贴底），内容过高时向上生长并遮挡欢迎内容，而非被压缩
+        .shortcut-render.is-welcome-overlay {
+          position: absolute;
+          right: 8px;
+          bottom: 8px;
+          left: 8px;
+          z-index: 1;
+
+          // 覆盖自身的 width: 100%，由 left/right 决定宽度，避免超出
+          width: auto;
+          max-height: calc(100% - 16px);
+
+          // 高度随内容自然撑开，超过可视高度时由外层 max-height 兜底滚动
+          .shortcut-render-content {
+            max-height: none;
+          }
+        }
       }
 
       &.ai-is-collapse {
@@ -780,17 +799,20 @@
       flex-direction: column;
       align-items: center;
       width: 100%;
+      min-height: 0;
       max-width: 1000px;
       padding: 16px;
       margin: 0 auto;
       text-align: center;
 
       .ai-blueking-banner-icon {
+        flex-shrink: 0;
         width: 309px;
-        height: 100%;
+        height: auto;
       }
 
       .ai-welcome-title {
+        flex-shrink: 0;
         margin: 0 0 16px;
         font-size: 20px;
         font-weight: 600;
@@ -799,9 +821,9 @@
       }
 
       .ai-welcome-remark {
-        flex-shrink: 0;
+        flex: 0 1 auto;
         width: 100%;
-        max-height: 240px;
+        min-height: 0;
         margin-bottom: 24px;
         overflow-y: auto;
         scrollbar-color: #dcdee5 transparent;
