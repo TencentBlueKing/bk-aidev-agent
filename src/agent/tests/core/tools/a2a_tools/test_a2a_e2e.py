@@ -5,6 +5,9 @@ Test classes:
 - TestAddSubagentSpecsE2E: E2E tests for add_subagent_specs → build → invoke (D-04)
 - TestBackendCallPath: Backend call path integration tests (D-05)
 - TestAgentSpecBoundary: AgentSpec boundary condition tests (TEST-01, TEST-02)
+
+注意：A2A Server 端到端测试已迁移至 test_a2a_backend_e2e.py 中的
+TestA2AProtocolE2E / TestA2AServerManualE2E / TestA2ABackendE2E。
 """
 
 from __future__ import annotations
@@ -12,10 +15,9 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-from aidev_agent.api.bk_agent import BkAgentApi
 from aidev_agent.config import settings
 from aidev_agent.core.graphs.react.graph import ReActAgentBuilder
-from aidev_agent.core.tools.a2a_tools.bkai_backend import BkaiBackend
+from aidev_agent.core.tools.a2a_tools.bkai_backend import BkAiBackend
 from aidev_agent.core.tools.a2a_tools.local_backend import LocalBackend
 from aidev_agent.core.tools.a2a_tools.provider import AgentBackendResolver, get_agent_tools
 from aidev_agent.core.tools.a2a_tools.types import AgentBackendType, AgentResult, AgentSpec
@@ -136,14 +138,14 @@ class TestBackendCallPath:
 
     @pytest.mark.skip(reason="get_agent_tools() no longer accepts resource_manager parameter")
     def test_bkai_backend_call_path(self):
-        """BkaiBackend: get_agent_tools → tool.func() → backend.execute() call path."""
+        """BkAiBackend: get_agent_tools → tool.func() → backend.execute() call path."""
         resource_manager = MagicMock()
         resource_manager.api.create_chat_session_content.return_value = {
             "data": {"content": "Sub-agent response"},
         }
 
         resolver = AgentBackendResolver()
-        resolver.register("bkai", BkaiBackend)
+        resolver.register("bkai", BkAiBackend)
 
         specs = [
             AgentSpec(
@@ -163,7 +165,7 @@ class TestBackendCallPath:
             state={},
         )
 
-        # Verify resource_manager was called (BkaiBackend uses it for HTTP)
+        # Verify resource_manager was called (BkAiBackend uses it for HTTP)
         resource_manager.api.create_chat_session_content.assert_called_once()
 
     def test_local_backend_call_path(self):
@@ -261,7 +263,7 @@ class TestAgentSpecBoundary:
 
 
 # =============================================================================
-# TestBkaiBackendE2E — E2E 真实 API 网关调用测试
+# TestBkAiBackendE2E — E2E 真实 API 网关调用测试
 # =============================================================================
 
 
@@ -273,7 +275,7 @@ requires_api_credentials = pytest.mark.skipif(
 
 @pytest.mark.e2e
 @requires_api_credentials
-class TestBkaiBackendE2E:
+class TestBkAiBackendE2E:
     """E2E 真实 API 网关调用测试。"""
 
     @pytest.mark.skip(reason="E2E test requires valid BKAI API gateway connectivity")
@@ -282,7 +284,9 @@ class TestBkaiBackendE2E:
 
         宽松断言策略：验证 status=completed 且 result 非空。
         """
-        backend = BkaiBackend()
+        from aidev_agent.api.bk_agent import BkAgentApi
+
+        backend = BkAiBackend()
         client = BkAgentApi.get_client(agent_code="ai-judge-0319")
         spec = AgentSpec(
             name="ai-judge-0319",
@@ -296,12 +300,15 @@ class TestBkaiBackendE2E:
         assert result.status == "completed", f"Expected completed, got: {result}"
         assert result.result, f"Expected non-empty result, got: {result}"
 
+    @pytest.mark.skip(reason="E2E test requires valid BKAI API gateway connectivity")
     def test_invoke_ai_judge_response_structure(self):
         """探测真实响应格式，记录响应结构用于迭代解析逻辑。
 
         此测试打印完整响应，帮助理解 API 网关返回格式。
         """
-        backend = BkaiBackend()
+        from aidev_agent.api.bk_agent import BkAgentApi
+
+        backend = BkAiBackend()
         client = BkAgentApi.get_client(agent_code="ai-judge-0319")
         spec = AgentSpec(
             name="ai-judge-0319",

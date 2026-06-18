@@ -4,27 +4,10 @@
 from __future__ import annotations
 
 import ast
-import importlib
 from typing import Any
 
 import pytest
-
-
-def _import_types_module():
-    """直接导入 types 模块，避免触发 __init__.py 中的依赖链。"""
-    spec = importlib.util.spec_from_file_location(
-        "aidev_agent.core.tools.a2a_tools.types",
-        "aidev_agent/core/tools/a2a_tools/types.py",
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-types_mod = _import_types_module()
-AgentSpec = types_mod.AgentSpec
-AgentBackendType = types_mod.AgentBackendType
-AgentBackend = types_mod.AgentBackend
+from aidev_agent.core.tools.a2a_tools.types import AgentBackend, AgentBackendType, AgentSpec
 
 
 class TestSpecCreateBKAI:
@@ -108,6 +91,9 @@ class TestBackendProtocolSignature:
 
     def test_backend_protocol_signature(self) -> None:
         class DummyBackend:
+            def new_session(self, spec: AgentSpec, **kwargs: Any) -> str:
+                return "test-session"
+
             def execute(self, spec: AgentSpec, message: str, **kwargs: Any) -> dict[str, Any]:
                 return {"result": "ok"}
 
@@ -124,7 +110,9 @@ class TestSpecNoGraphsNodesImport:
     """Test 8: AgentSpec 不导入 graphs 或 nodes 模块。"""
 
     def test_spec_no_graphs_nodes_import(self) -> None:
-        # 直接读取 types.py 源码，避免触发 __init__.py 依赖链
+        # 直接读取 types.py 源码，验证无 graphs/nodes 依赖
+        import aidev_agent.core.tools.a2a_tools.types as types_mod
+
         types_path = types_mod.__file__
         assert types_path is not None
         with open(types_path) as f:
@@ -244,6 +232,9 @@ class TestAgentBackendReturnType:
         from aidev_agent.core.tools.a2a_tools.types import AgentBackend, AgentResult
 
         class CorrectBackend:
+            def new_session(self, spec: AgentSpec, **kwargs: Any) -> str:
+                return "test-session"
+
             def execute(self, spec: AgentSpec, message: str, **kwargs: Any) -> AgentResult:
                 return AgentResult(status="completed")
 

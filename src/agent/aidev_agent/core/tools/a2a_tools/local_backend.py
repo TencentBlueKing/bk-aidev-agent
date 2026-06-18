@@ -2,21 +2,25 @@
 from __future__ import annotations
 
 import dataclasses
-import json
+import uuid
 from logging import getLogger
 from typing import Any
 
 from aidev_agent.config import settings
-from aidev_agent.core.tools.a2a_tools.progress import build_enriched_result, count_tool_calls, detect_intermediate_step
-from aidev_agent.core.tools.a2a_tools.provider import _A2A_SUBAGENT_FLAG
 from aidev_agent.core.tools.a2a_tools.types import AgentResult, AgentSpec, ExitReason
+from aidev_agent.core.tools.a2a_tools.utils import (
+    build_enriched_result,
+    consume_sse_stream,
+    extract_child_execute_kwargs,
+)
 from aidev_agent.enums import SessionsStatus
-from aidev_agent.pydantic_models import ExecuteKwargs
 
 logger = getLogger(__name__)
 
 _ERR_MISSING_AGENT_INSTANCE = "Missing agent_cls in spec.params"
 _ERR_MISSING_CTX = "Missing ctx in spec.params"
+_ERR_EMPTY_SESSION_CODE = "session_code must not be empty for LocalBackend"
+_ERR_EMPTY_RESOURCE_MANAGER = "ctx.resource_manager must not be empty for LocalBackend"
 
 
 class LocalBackend:
@@ -35,7 +39,118 @@ class LocalBackend:
     - ``session_code``：会话标识；必须非空（由调用方 Task/Member 保证）。
     """
 
-    def prepare_session(self, rm: Any, agent_name: str, session_code: str, message: str, executor: str) -> list[dict]:
+    def new_session(self, spec: AgentSpec, **kwargs: Any) -> str:
+        """创建新会话，返回 uuid4 hex 字符串。"""
+        return uuid.uuid4().hex
+
+    def execute(
+        self, spec: AgentSpec, message: str, *, session_code: str = "", config: Any = None, **kwargs: Any
+    ) -> AgentResult:
+        """执行子 Agent 调用（统一入口 + 可观测性）。
+
+        执行流程：
+        1. 校验 session_code / agent_cls / ctx / rm 必须存在
+        2. 从 config 获取 execute_kwargs 和 executor，构造子 Agent execute_kwargs
+        3. 准备平台 session（创建、保存用户输入、加载历史）
+        4. 更新 event_handler 的 session_code
+        5. 注入 session_code + session_context_data 到 ctx
+        6. 实例化 agent_cls 并 build 子 Agent（历史消息由 build 内部管道处理）
+        7. 执行子 Agent
+        8. 更新 session 状态为 FINISHED
+
+        Args:
+            spec: Agent 规格，``params`` 必须含 ``agent_cls`` / ``ctx``
+            message: 发给子 Agent 的消息文本
+            session_code: 会话标识；必须非空（由调用方 Task/Member 保证）
+            config: RunnableConfig，从中获取 execute_kwargs 和 executor
+            **kwargs: 运行时参数（``progress_callback`` 等）
+
+        Returns:
+            AgentResult 标准化富结果（不可变 Pydantic 模型）
+        """
+        # 1. session_code 必须非空
+        if not session_code:
+            raise ValueError(_ERR_EMPTY_SESSION_CODE)
+
+        # 2. 从 spec.params 获取 agent_cls、ctx
+        # 通过 agent_cls 和 ctx 构造子 Agent, 子Agent和父Agent运行在同一个环境中
+        # 由SDK开发者注入 agent_cls, 并且保证 agent_cls 的安全性，本处不做约束
+        # checkpointer 和父Agent共享，默认使用 django orm 持久化到数据库中
+        # 对话列表除了持久化到数据库，同时还通过 rm 回写平台或者文件，使用 session_code 区分不同会话
+        agent_cls = spec.params.get("agent_cls")
+        if agent_cls is None:
+            raise ValueError(_ERR_MISSING_AGENT_INSTANCE)
+        ctx = spec.params.get("ctx")
+        if ctx is None:
+            raise ValueError(_ERR_MISSING_CTX)
+        rm = getattr(ctx, "resource_manager", None)
+        if not rm:
+            raise ValueError(_ERR_EMPTY_RESOURCE_MANAGER)
+
+        # 3. 从 config 获取 execute_kwargs 和 executor，构造子 Agent execute_kwargs
+        # executor 从构造好的 ExecuteKwargs 取（与 BkAiBackend 一致；由 model_copy() 继承自父 ek）
+        # invoke_timeout 由 spec.timeout_seconds 注入（BkAiBackend 不传，超时由 HTTP 层控制）
+        # caller_bk_app_code 从 spec.params 取（与 BkAiBackend 一致；provider 不通过 kwargs 传该字段）
+        caller_bk_app_code = spec.params.get("caller_bk_app_code", "")
+        state = kwargs.get("state")
+        child_execute_kwargs = extract_child_execute_kwargs(
+            config,
+            state=state,
+            session_code=session_code,
+            caller_bk_app_code=caller_bk_app_code,
+            invoke_timeout=spec.timeout_seconds,
+        )
+        executor = child_execute_kwargs.executor or ""
+
+        # 4. 准备性工作，从 BkAi 平台获取对话历史
+        # 步骤 4-7 都会修改平台 session 状态（_prepare_session 内部置 RUNNING），
+        # 任一步失败必须由下方 try 的 except 分支兜底为 FAILED，否则 session 残留 RUNNING
+        try:
+            session_context_data = self._prepare_session(rm, spec.name, session_code, message, executor)
+            progress_callback = kwargs.get("progress_callback")
+
+            # 5. 更新 event_handler session_code（AGUISessionWriter 由 ChatAgentBuilder 构造）
+            event_handler = getattr(ctx, "event_handler", None)
+            if event_handler:
+                event_handler.session_code = session_code
+
+            # 6. 注入 session_code + session_context_data 到 ctx
+            ctx = dataclasses.replace(ctx, session_code=session_code, session_context_data=session_context_data)
+
+            # 7. 实例化 agent_cls 并 build（历史消息由 build 内部管道处理）
+            agent_instance = agent_cls()
+            subagent = agent_instance.build(ctx)
+            # 8. 执行子 Agent
+            result_text, events, tool_count = self._run_subagent(
+                subagent,
+                execute_kwargs=child_execute_kwargs,
+                progress_callback=progress_callback,
+            )
+
+            # 10. 更新 session 状态为 FINISHED
+            try:
+                rm.update_session_status(session_code, SessionsStatus.FINISHED.value)
+            except Exception as exc:
+                logger.warning("LocalBackend update session status to FINISHED failed: %s", exc, exc_info=True)
+
+            return build_enriched_result(
+                status="completed",
+                agent_name=spec.name,
+                agent_type=spec.backend_type,
+                summary=result_text,
+                tool_calls=tool_count,
+                exit_reason=ExitReason.COMPLETED.value,
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("LocalBackend.execute failed for %s: %s", spec.name, exc)
+            try:
+                rm.update_session_status(session_code, SessionsStatus.FAILED.value)
+            except Exception:
+                logger.warning("LocalBackend update session status to FAILED failed: %s", session_code)
+            raise
+
+    # ==================== 内部方法 ====================
+    def _prepare_session(self, rm: Any, agent_name: str, session_code: str, message: str, executor: str) -> list[dict]:
         """准备平台 session：创建、保存用户输入、加载历史。
 
         执行流程：
@@ -84,240 +199,44 @@ class LocalBackend:
 
         return session_context_data
 
-    def execute(
-        self, spec: AgentSpec, message: str, *, session_code: str = "", config: Any = None, **kwargs: Any
-    ) -> AgentResult:
-        """执行子 Agent 调用（统一入口 + 可观测性）。
-
-        执行流程：
-        1. 校验 session_code / agent_cls / ctx / rm 必须存在
-        2. 从 config 获取 execute_kwargs 和 executor，构造子 Agent execute_kwargs
-        3. 准备平台 session（创建、保存用户输入、加载历史）
-        4. 更新 event_handler 的 session_code
-        5. 注入 session_code + session_context_data 到 ctx + 注入嵌套保护标志（D-09）
-        6. 实例化 agent_cls 并 build 子 Agent（历史消息由 build 内部管道处理）
-        7. 执行子 Agent
-        8. 更新 session 状态为 FINISHED
-
-        Args:
-            spec: Agent 规格，``params`` 必须含 ``agent_cls`` / ``ctx``
-            message: 发给子 Agent 的消息文本
-            session_code: 会话标识；必须非空（由调用方 Task/Member 保证）
-            config: RunnableConfig，从中获取 execute_kwargs 和 executor
-            **kwargs: 运行时参数（``progress_callback`` 等）
-
-        Returns:
-            AgentResult 标准化富结果（不可变 Pydantic 模型）
-        """
-        # 1. session_code 必须非空
-        if not session_code:
-            raise ValueError("session_code must not be empty for LocalBackend")
-
-        # 2. 从 spec.params 获取 agent_cls、ctx
-        agent_cls = spec.params.get("agent_cls")
-        if agent_cls is None:
-            raise ValueError(_ERR_MISSING_AGENT_INSTANCE)
-        ctx = spec.params.get("ctx")
-        if ctx is None:
-            raise ValueError(_ERR_MISSING_CTX)
-
-        # 3. 获取 rm
-        rm = getattr(ctx, "resource_manager", None)
-        if not rm:
-            raise ValueError("ctx.resource_manager must not be empty for LocalBackend")
-
-        # 4. 从 config 获取 execute_kwargs 和 executor，构造子 Agent execute_kwargs
-        executor = ""
-        caller_bk_app_code = kwargs.get("caller_bk_app_code", "")
-        subagent_execute_kwargs = self._extract_execute_kwargs(
-            config, session_code=session_code, caller_bk_app_code=caller_bk_app_code
-        )
-        if config and isinstance(config, dict):
-            ek = config.get("configurable", {}).get("execute_kwargs")
-            if ek and hasattr(ek, "executor"):
-                executor = ek.executor or ""
-
-        try:
-            # 5. 准备平台 session（创建、保存用户输入、加载历史）
-            session_context_data = self.prepare_session(rm, spec.name, session_code, message, executor)
-
-            # 6. 更新 event_handler session_code（AGUISessionWriter 由 ChatAgentBuilder 构造）
-            event_handler = getattr(ctx, "event_handler", None)
-            if event_handler:
-                event_handler.session_code = session_code
-
-            # 7. 注入 session_code + session_context_data 到 ctx
-            ctx = dataclasses.replace(ctx, session_code=session_code, session_context_data=session_context_data)
-
-            # 8. 注入嵌套保护标志（D-09）
-            existing_extra = dict(getattr(ctx, "extra", None) or {})
-            existing_extra[_A2A_SUBAGENT_FLAG] = True
-            ctx = dataclasses.replace(ctx, extra=existing_extra)
-
-            # 9. 实例化 agent_cls 并 build（历史消息由 build 内部管道处理）
-            agent_instance = agent_cls()
-            subagent = agent_instance.build(ctx)
-
-            # 10. 执行子 Agent
-            progress_callback = kwargs.get("progress_callback")
-            result_text, events = self._run_subagent(
-                subagent,
-                timeout_seconds=spec.timeout_seconds,
-                execute_kwargs=subagent_execute_kwargs,
-                progress_callback=progress_callback,
-            )
-
-            # 11. 更新 session 状态为 FINISHED
-            try:
-                rm.update_session_status(session_code, SessionsStatus.FINISHED.value)
-            except Exception as exc:
-                logger.warning("LocalBackend update session status to FINISHED failed: %s", exc, exc_info=True)
-
-            return build_enriched_result(
-                status="completed",
-                agent_name=spec.name,
-                agent_type=spec.backend_type,
-                summary=result_text,
-                tool_calls=count_tool_calls(events),
-                exit_reason=ExitReason.COMPLETED.value,
-            )
-        except Exception as exc:  # pylint: disable=broad-except
-            logger.warning("LocalBackend.execute failed for %s: %s", spec.name, exc)
-            try:
-                rm.update_session_status(session_code, SessionsStatus.FAILED.value)
-            except Exception:
-                logger.warning("LocalBackend update session status to FAILED failed: %s", session_code)
-            return build_enriched_result(
-                status="failed",
-                agent_name=spec.name,
-                agent_type=spec.backend_type,
-                error=str(exc),
-                exit_reason=ExitReason.BACKEND_ERROR.value,
-            )
-
-    # ==================== 内部方法 ====================
-
-    def _extract_execute_kwargs(self, config: Any, *, session_code: str = "", caller_bk_app_code: str = "") -> Any:
-        """从 config 中提取主 Agent 的 execute_kwargs 并构造子 Agent 的 execute_kwargs。
-
-        ExecuteKwargs 是 Pydantic model，复制并覆盖关键字段（stream、persist_input、
-        session_code、caller_bk_app_code、invoke_timeout）。
-
-        Args:
-            config: 运行时配置，可包含 configurable.execute_kwargs
-            session_code: 子 Agent 的会话 code
-            caller_bk_app_code: 调用方 app_code（从 kwargs 获取）
-
-        Returns:
-            构造好的 ExecuteKwargs 对象
-        """
-        base = ExecuteKwargs()
-        # 从 config 获取主 Agent 的 execute_kwargs
-        if config and isinstance(config, dict):
-            ek = config.get("configurable", {}).get("execute_kwargs")
-            if ek and isinstance(ek, ExecuteKwargs):
-                base = ek.model_copy()
-
-        base.stream = True
-        base.persist_input = True
-        base.session_code = session_code
-        if caller_bk_app_code:
-            base.caller_bk_app_code = caller_bk_app_code
-
-        return base
-
     def _run_subagent(
         self,
         subagent: Any,
         *,
-        timeout_seconds: int,
-        execute_kwargs: Any = None,
+        execute_kwargs: Any,
         progress_callback: Any = None,
-    ) -> tuple[str, list[dict[str, Any]]]:
-        """流式执行子 Agent，收集文本结果和完整事件列表（供 api_calls 统计）。
+    ) -> tuple[str, list[dict[str, Any]], int]:
+        """流式执行子 Agent，收集文本结果、事件列表和工具调用次数。
 
-        execute_kwargs 由 execute() 中 _extract_execute_kwargs 处理好传入，
+        execute_kwargs 由 execute() 中 extract_child_execute_kwargs 处理好传入，
         已包含 stream=True、persist_input=True、session_code、invoke_timeout 等字段。
+        本方法不再修改 execute_kwargs，仅负责执行和事件收集。
+
+        流式循环（解析/累积/心跳/error raise/tool_count 递增）委托给
+        ``consume_sse_stream`` 公共函数，与 BkAiBackend 共用同一套逻辑。本方法
+        仅负责：
+        - 调用 ``subagent.execute`` 拿到流式结果
+        - 非流式返回的兜底（兼容 mock 返回 dict / str 的场景，tool_count=0）
+
+        异常处理：本方法不捕获异常（含 consume_sse_stream 抛出的 error 事件
+        RuntimeError），直接向上抛出，由 execute() 的统一 except 处理。
 
         Args:
             subagent: 已 build 的子 Agent（messages 已含当前用户消息）
-            timeout_seconds: 超时秒数
             execute_kwargs: 由 execute() 处理好的 ExecuteKwargs
             progress_callback: 心跳回调
 
         Returns:
-            (result_text, events_list)
+            ``(result_text, events_list, tool_count)``：文本、事件列表、
+            TOOL_CALL_START 事件累计次数
         """
-        # execute_kwargs 若未传入，构造默认 ExecuteKwargs
-        if execute_kwargs is None:
-            from aidev_agent.pydantic_models import ExecuteKwargs
-
-            execute_kwargs = ExecuteKwargs(stream=True, invoke_timeout=timeout_seconds)
-        else:
-            if hasattr(execute_kwargs, "invoke_timeout") and execute_kwargs.invoke_timeout is None:
-                execute_kwargs.invoke_timeout = timeout_seconds
-
         result = subagent.execute(execute_kwargs)
 
-        # 兼容非流式返回（mock 可能返回 dict）
+        # 兼容非流式返回（mock 可能返回 dict），无事件可统计 → tool_count=0
         if not hasattr(result, "__iter__") or isinstance(result, (dict, str)):
-            return self._extract_text(result), []
+            return self._extract_text(result), [], 0
 
-        text_parts: list[str] = []
-        events: list[dict[str, Any]] = []
-
-        try:
-            for line in result:
-                event = self._parse_sse(line)
-                if event is None:
-                    continue
-                events.append(event)
-                if event.get("type") == "TEXT_MESSAGE_START":
-                    text_parts.clear()
-                elif event.get("type") == "TEXT_MESSAGE_CONTENT":
-                    delta = event.get("delta", "")
-                    if isinstance(delta, str):
-                        text_parts.append(delta)
-
-                if progress_callback:
-                    step_content = detect_intermediate_step(event, events)
-                    if step_content:
-                        progress_callback("subagent.intermediate_steps", content=step_content)
-                    progress_callback(
-                        "subagent.heartbeat",
-                        tool_count=count_tool_calls(events),
-                        iteration=len(events),
-                    )
-
-            return "".join(text_parts), events
-        except TimeoutError:
-            subagent_name = getattr(subagent, "name", None) or getattr(subagent, "agent_code", None) or "unknown"
-            logger.warning(
-                "A2A subagent timeout | agent_name=%s timeout_seconds=%s backend_type=local",
-                subagent_name,
-                timeout_seconds,
-            )
-            raise
-
-    @staticmethod
-    def _parse_sse(line: str) -> dict[str, Any] | None:
-        """解析 SSE 编码行 "data: <json>" 为 dict。
-
-        Args:
-            line: SSE 编码行，格式为 "data: <json>" 或 "data: [DONE]"
-
-        Returns:
-            解析后的 dict，无法解析时返回 None
-        """
-        if not line.startswith("data: "):
-            return None
-        data_str = line[6:]
-        if data_str.strip() == "[DONE]":
-            return None
-        try:
-            return json.loads(data_str)
-        except (json.JSONDecodeError, ValueError):
-            return None
+        return consume_sse_stream(result, progress_callback=progress_callback, emit_elapsed=False)
 
     @staticmethod
     def _extract_text(result: Any) -> str:

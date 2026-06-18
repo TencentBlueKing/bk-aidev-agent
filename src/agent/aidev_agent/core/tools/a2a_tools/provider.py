@@ -33,9 +33,6 @@ from aidev_agent.core.tools.a2a_tools.types import (
 
 logger = logging.getLogger("aidev-agent")
 
-# 嵌套保护标记：configurable 中的 key
-_A2A_SUBAGENT_FLAG = "is_a2a_subagent"
-
 
 class AgentBackendResolver:
     """Agent 后端注册与解析器。
@@ -128,18 +125,22 @@ def _find_agent_spec(specs: list[AgentSpec], agent_name: str) -> AgentSpec | Non
 
 
 def _check_nesting(config: RunnableConfig | None) -> bool:
-    """检查是否处于子 Agent 嵌套调用中。
+    """检查是否已达到最大嵌套深度。
+
+    从 ``configurable.execute_kwargs`` 中读取 ``spawn_depth`` 和 ``max_spawn_depth``，
+    当 ``spawn_depth >= max_spawn_depth`` 时返回 True（禁止再创建子 Agent）。
 
     Args:
         config: 运行时配置
 
     Returns:
-        True 表示当前已经是子 Agent，不允许再创建
+        True 表示已达到最大嵌套深度，不允许再创建子 Agent
     """
-    if config is None:
+    if config is None or not isinstance(config, dict):
         return False
-    if isinstance(config, dict):
-        return bool(config.get("configurable", {}).get(_A2A_SUBAGENT_FLAG, False))
+    ek = config.get("configurable", {}).get("execute_kwargs")
+    if ek and hasattr(ek, "spawn_depth") and hasattr(ek, "max_spawn_depth"):
+        return ek.spawn_depth >= ek.max_spawn_depth
     return False
 
 
@@ -257,7 +258,7 @@ def get_agent_tools(
         """调用子 Agent 执行任务或进行对话。"""
         # 1. 嵌套保护
         if _check_nesting(config):
-            raise RuntimeError("子 Agent 不允许再创建子 Agent（禁止嵌套调用）")
+            raise RuntimeError("已达到最大嵌套深度，不允许再创建子 Agent")
 
         # 2. 查找目标 Agent 规格
         spec = _find_agent_spec(specs, agent_name)
@@ -281,10 +282,10 @@ def get_agent_tools(
             member_info = team_info.get(effective_member_name, {})
             session_code = member_info.get("session_code", "")
             if not session_code:
-                session_code = uuid.uuid4().hex
+                session_code = backend.new_session(spec)
             extra_response_fields = {"session_code": session_code, "member_name": effective_member_name}
         else:
-            session_code = uuid.uuid4().hex
+            session_code = backend.new_session(spec)
 
         # 6. 中断信号检查（D-03）
         raw_progress_callback = _extract_progress_callback(config)
@@ -314,6 +315,7 @@ def get_agent_tools(
             session_code=session_code,
             config=config,
             progress_callback=progress_callback,
+            state=state,
         )
         wrapper = backend_result.model_dump()
         wrapper["agent_name"] = agent_name
@@ -325,8 +327,23 @@ def get_agent_tools(
         message: str,
         config: RunnableConfig | None = None,
         state: Annotated[dict[str, Any], InjectedState] = None,  # type: ignore[assignment]
+        tool_runtime: ToolRuntime = None,
     ) -> str:
         """向已初始化的成员 Agent 发送消息（仅 member 模式）。"""
+        # 0. 嵌套保护（CR #5：send_messages 不再是旁路入口，与 agent_call 对齐）
+        if _check_nesting(config):
+            return json.dumps(
+                {
+                    "status": "failed",
+                    "agent_name": member_name,
+                    "exit_reason": ExitReason.BACKEND_ERROR.value,
+                    "error": "已达到最大嵌套深度，不允许再创建子 Agent",
+                    "api_calls": 0,
+                    "duration_seconds": 0,
+                },
+                ensure_ascii=False,
+            )
+
         # 1. 从 state 获取 session_code
         team_info = (state or {}).get("bk_agent_team", {}) if state else {}
         member = team_info.get(member_name, {})
@@ -354,7 +371,23 @@ def get_agent_tools(
 
         # 3. 调用 backend.execute
         backend = resolver.resolve(spec)
-        backend_result = backend.execute(spec, message, session_code=session_code, config=config)
+
+        # 3.1 构造 progress_callback 闭包（与 agent_call 一致：intermediate_steps → dispatch_custom_event）
+        raw_progress_callback = _extract_progress_callback(config)
+        progress_callback = _make_progress_callback(
+            raw_progress_callback=raw_progress_callback,
+            tool_call_id=tool_runtime.tool_call_id if tool_runtime else "",
+            dispatch_config=tool_runtime.config if tool_runtime else config,
+        )
+
+        backend_result = backend.execute(
+            spec,
+            message,
+            session_code=session_code,
+            config=config,
+            progress_callback=progress_callback,
+            state=state,
+        )
         return json.dumps(backend_result.model_dump(), ensure_ascii=False)
 
     description = _build_tool_description(specs)

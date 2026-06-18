@@ -85,7 +85,14 @@ def _try_writeback(resource_manager, session_code: str, pv: dict) -> dict:
     return updated_pv
 
 
-def make_pv_node(client: Client, app_code: str, resource_manager=None) -> Callable[[dict, RunnableConfig], dict]:
+def make_pv_node(
+    client: Client,
+    app_code: str,
+    resource_manager=None,
+    *,
+    enable_pv_by_paas_runtime: bool = True,
+    enable_pv_by_subagent: bool = True,
+) -> Callable[[dict, RunnableConfig], dict]:
     """构建 PV 节点。
 
     PV 节点在第一次 paas_sandbox tool_call 前惰性创建 Volume，写入 state。
@@ -95,6 +102,8 @@ def make_pv_node(client: Client, app_code: str, resource_manager=None) -> Callab
         client: PaaS API Client 实例。
         app_code: 应用编码。
         resource_manager: per-request resource manager，用于写回 chat-session sandbox PV ID。
+        enable_pv_by_paas_runtime: 是否在检测到 paas_sandbox tool_call 时创建 PV，默认 True
+        enable_pv_by_subagent: 是否在检测到 Agent/sendMessages tool_call 时复用或创建 PV，默认 True
 
     Returns:
         可用于 LangGraph node 的 callable，接受 (state, config) 参数
@@ -118,7 +127,7 @@ def make_pv_node(client: Client, app_code: str, resource_manager=None) -> Callab
                     return {"runtime_paas_sbx_pv": [retried_pv]}
             return {}
 
-        # 步骤 2：检查最后一条消息是否为 AIMessage 且包含 paas_sandbox tool_call
+        # 步骤 2：检查最后一条消息是否包含 paas_sandbox 或 agent tool_call
         messages = state.get("messages", [])
         if not messages:
             return {}
@@ -127,10 +136,21 @@ def make_pv_node(client: Client, app_code: str, resource_manager=None) -> Callab
         if not isinstance(last_message, AIMessage) or not last_message.tool_calls:
             return {}
 
-        has_paas_sandbox = any(
+        should_create_pv = False
+
+        if enable_pv_by_paas_runtime and any(
             tc.get("args", {}).get("target_runtime", "").startswith("paas_sandbox") for tc in last_message.tool_calls
-        )
-        if not has_paas_sandbox:
+        ):
+            should_create_pv = True
+
+        if (
+            enable_pv_by_subagent
+            and not should_create_pv
+            and any(tc.get("name") in ("Agent", "sendMessages") for tc in last_message.tool_calls)
+        ):
+            should_create_pv = True
+
+        if not should_create_pv:
             return {}
 
         # 步骤 3：使用 thread_id 构造 volume_name（thread_id 始终存在，session_code 可选）

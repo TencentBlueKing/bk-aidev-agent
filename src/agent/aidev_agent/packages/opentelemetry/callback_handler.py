@@ -50,6 +50,7 @@ from .utils import (
     _safe_detach_context,
     _set_span_attribute,
     dont_throw,
+    extract_token_usage,
 )
 
 logger = logging.getLogger(__name__)
@@ -312,6 +313,11 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         # 工具调用计数器
         self.tool_call_counter = 0
         self.rag_call_counter = 0
+
+        # Token 用量累加计数器（一个 handler 生命周期 = 一轮 Agent 执行，与 root span 对齐）
+        self._total_input_tokens = 0
+        self._total_output_tokens = 0
+        self._total_total_tokens = 0
 
         # Trace Context 传播
         self.parent_trace_context = parent_trace_context
@@ -714,6 +720,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
 
         # 顶层 workflow 结束 → 在当前线程结束 root span（与执行 Agent 同线程）
         if is_top_level_workflow:
+            self._write_session_totals()  # 在 _finalize_injector 之前
             self._finalize_injector()
 
     @dont_throw
@@ -738,6 +745,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             is_top_level = parent_run_id is None or parent_run_id not in self.spans
             if is_top_level:
                 self._detach_root_attach_token()
+                self._write_session_totals()  # 在 _finalize_injector 之前（流式关流视为成功）
                 self._finalize_injector()
             return
 
@@ -747,6 +755,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         if is_top_level:
             # 顶层 chain 错误：先 detach root attach（保持栈平衡），再统一走 injector 收尾
             self._detach_root_attach_token()
+            self._write_session_totals()  # 在 _finalize_injector(error=error) 之前
             self._finalize_injector(error=error)
 
         # 处理 Chain Span 本身的错误
@@ -827,11 +836,36 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             if id is not None and id != "":
                 _set_span_attribute(span, "gen_ai.response.id", id)
 
+        # token usage 提取 + 累加 + 设 LLM span 属性（D-01/D-02/D-04）
+        usage = extract_token_usage(response)
+        if usage is not None:
+            _set_span_attribute(span, "gen_ai.usage.input_tokens", usage["input_tokens"])
+            _set_span_attribute(span, "gen_ai.usage.output_tokens", usage["output_tokens"])
+            _set_span_attribute(span, "gen_ai.usage.total_tokens", usage["total_tokens"])
+            # 扩展字段：官方扁平化 semconv 命名（D-03 Claude's Discretion 决议，research_open_questions A1），仅当模型返回时设置
+            if usage.get("cached_tokens") is not None:
+                _set_span_attribute(span, "gen_ai.usage.cache_read.input_tokens", usage["cached_tokens"])
+            if usage.get("reasoning_tokens") is not None:
+                _set_span_attribute(span, "gen_ai.usage.reasoning.output_tokens", usage["reasoning_tokens"])
+            # 累加到实例计数器（D-04；提取失败时 usage 为 None 不计入）
+            self._total_input_tokens += usage["input_tokens"]
+            self._total_output_tokens += usage["output_tokens"]
+            self._total_total_tokens += usage["total_tokens"]
+
         # 提取响应内容
         set_chat_response(span, response)
         # 设置状态为成功
         span.set_status(Status(StatusCode.OK))
         self._end_span(span, run_id)
+
+    def _write_session_totals(self) -> None:
+        """把本轮 token 累加值写入 root span 汇总属性（必须在 _finalize_injector 之前调用）。"""
+        root = self.root_span
+        if root is None:
+            return
+        _set_span_attribute(root, "agent.session.total_input_tokens", self._total_input_tokens)
+        _set_span_attribute(root, "agent.session.total_output_tokens", self._total_output_tokens)
+        _set_span_attribute(root, "agent.session.total_tokens", self._total_total_tokens)
 
     @dont_throw
     async def on_llm_error(

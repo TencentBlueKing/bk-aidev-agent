@@ -416,3 +416,201 @@ def test_pv_node_retry_writeback_failure_returns_empty():
     client.create_agent_sandbox_volume.request.assert_not_called()
     resource_manager.update_chat_session_sandbox_pv_id.assert_called_once_with("test-session", "runtime-vol-id")
     assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# 辅助函数：subagent tool_call 测试
+# ---------------------------------------------------------------------------
+
+
+def _make_ai_message_with_agent_tool(tool_name: str = "Agent"):
+    """创建带有 Agent 工具调用的 AIMessage。"""
+    return AIMessage(content="", tool_calls=[{"name": tool_name, "args": {"message": "test"}, "id": "tc3"}])
+
+
+# ---------------------------------------------------------------------------
+# execute_kwargs source 处理测试
+# ---------------------------------------------------------------------------
+
+
+def test_pv_node_retries_execute_kwargs_session_pv():
+    """state 中已有 source='execute_kwargs' session PV 时，仍需写回平台。
+
+    只有 platform 来源才跳过回写；execute_kwargs 等其他来源都应触发回写，
+    成功后 source 升级为 platform 并返回更新后的 PV。
+    """
+    client = _make_mock_client()
+    resource_manager = _make_mock_resource_manager()
+    pv_node = make_pv_node(
+        client=client,
+        app_code="test-app",
+        resource_manager=resource_manager,
+        enable_pv_by_subagent=True,
+    )
+
+    state = {
+        "runtime_paas_sbx_pv": [
+            {
+                "type": "paas-sbx-pv",
+                "volume_id": "ek-vol-id",
+                "volume_name": "agent-pv-test-thread",
+                "mount_path": "session",
+                "source": "execute_kwargs",
+            }
+        ],
+        "messages": [_make_ai_message_with_paas_sandbox()],
+    }
+    config = _make_config(session_code="test-session")
+
+    result = pv_node(state, config)
+
+    # 不应重新创建 PV
+    client.create_agent_sandbox_volume.request.assert_not_called()
+    # 应触发写回
+    resource_manager.update_chat_session_sandbox_pv_id.assert_called_once_with("test-session", "ek-vol-id")
+    # 写回成功后 source 升级为 platform
+    assert result == {
+        "runtime_paas_sbx_pv": [
+            {
+                "type": "paas-sbx-pv",
+                "volume_id": "ek-vol-id",
+                "volume_name": "agent-pv-test-thread",
+                "mount_path": "session",
+                "source": "platform",
+            }
+        ]
+    }
+
+
+# ---------------------------------------------------------------------------
+# subagent tool_call 检测测试
+# ---------------------------------------------------------------------------
+
+
+def test_pv_node_subagent_reuses_existing_pv():
+    """enable_pv_by_subagent=True 且 Agent tool_call 检测到，已有 session PV 时直接复用。"""
+    client = _make_mock_client()
+    resource_manager = _make_mock_resource_manager()
+    pv_node = make_pv_node(
+        client=client,
+        app_code="test-app",
+        resource_manager=resource_manager,
+        enable_pv_by_paas_runtime=False,
+        enable_pv_by_subagent=True,
+    )
+
+    state = {
+        "runtime_paas_sbx_pv": [
+            {
+                "type": "paas-sbx-pv",
+                "volume_id": "existing-vol",
+                "volume_name": "agent-pv-test-thread",
+                "mount_path": "session",
+                "source": "runtime",
+            }
+        ],
+        "messages": [_make_ai_message_with_agent_tool("Agent")],
+    }
+    config = _make_config(session_code="test-session")
+
+    pv_node(state, config)
+    # 已有 session PV，不应创建新的
+    client.create_agent_sandbox_volume.request.assert_not_called()
+    # runtime source 应尝试写回
+    resource_manager.update_chat_session_sandbox_pv_id.assert_called_once()
+
+
+def test_pv_node_subagent_sendmessages_reuses_existing_pv():
+    """enable_pv_by_subagent=True 且 sendMessages tool_call 检测到，已有 session PV 时复用。"""
+    client = _make_mock_client()
+    resource_manager = _make_mock_resource_manager()
+    pv_node = make_pv_node(
+        client=client,
+        app_code="test-app",
+        resource_manager=resource_manager,
+        enable_pv_by_paas_runtime=False,
+        enable_pv_by_subagent=True,
+    )
+
+    state = {
+        "runtime_paas_sbx_pv": [
+            {
+                "type": "paas-sbx-pv",
+                "volume_id": "existing-vol-2",
+                "volume_name": "agent-pv-test-thread",
+                "mount_path": "session",
+                "source": "runtime",
+            }
+        ],
+        "messages": [_make_ai_message_with_agent_tool("sendMessages")],
+    }
+    config = _make_config(session_code="test-session")
+
+    pv_node(state, config)
+    client.create_agent_sandbox_volume.request.assert_not_called()
+    resource_manager.update_chat_session_sandbox_pv_id.assert_called_once()
+
+
+def test_pv_node_subagent_creates_pv_when_none_exists():
+    """enable_pv_by_subagent=True，Agent tool_call 检测到，无现有 PV 时创建新 PV。"""
+    client = _make_mock_client()
+    pv_node = make_pv_node(
+        client=client,
+        app_code="test-app",
+        enable_pv_by_paas_runtime=False,
+        enable_pv_by_subagent=True,
+    )
+
+    state = {
+        "runtime_paas_sbx_pv": [],
+        "messages": [_make_ai_message_with_agent_tool("Agent")],
+    }
+    config = _make_config()
+
+    result = pv_node(state, config)
+    client.create_agent_sandbox_volume.request.assert_called_once()
+    pv = result["runtime_paas_sbx_pv"][0]
+    assert pv["type"] == "paas-sbx-pv"
+    assert pv["mount_path"] == "session"
+    assert pv["source"] == "runtime"
+
+
+def test_pv_node_subagent_disabled_ignores_agent_tool():
+    """enable_pv_by_subagent=False 时，Agent tool_call 被忽略，返回 {}。"""
+    client = _make_mock_client()
+    pv_node = make_pv_node(
+        client=client,
+        app_code="test-app",
+        enable_pv_by_subagent=False,
+    )
+
+    state = {
+        "runtime_paas_sbx_pv": [],
+        "messages": [_make_ai_message_with_agent_tool("Agent")],
+    }
+    config = _make_config()
+
+    result = pv_node(state, config)
+    assert result == {}
+    client.create_agent_sandbox_volume.request.assert_not_called()
+
+
+def test_pv_node_paas_runtime_disabled_ignores_paas_sandbox():
+    """enable_pv_by_paas_runtime=False 时，paas_sandbox tool_call 被忽略。"""
+    client = _make_mock_client()
+    pv_node = make_pv_node(
+        client=client,
+        app_code="test-app",
+        enable_pv_by_paas_runtime=False,
+        enable_pv_by_subagent=False,
+    )
+
+    state = {
+        "runtime_paas_sbx_pv": [],
+        "messages": [_make_ai_message_with_paas_sandbox()],
+    }
+    config = _make_config()
+
+    result = pv_node(state, config)
+    assert result == {}
+    client.create_agent_sandbox_volume.request.assert_not_called()

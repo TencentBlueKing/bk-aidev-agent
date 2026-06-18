@@ -28,9 +28,10 @@ def _validate_skill_name(name: str, directory_name: str) -> tuple[bool, str]:
         return False, f"技能名称长度 ({len(name)}) 超过限制 ({MAX_SKILL_NAME_LENGTH})"
 
     if not SKILL_NAME_PATTERN.match(name):
-        return (
-            False,
-            "技能名称格式无效：仅允许小写字母、数字和连字符，不能以连字符开头或结尾，不能有连续连字符",
+        # 不再强制小写字母/数字/连字符格式，仅打警告
+        logger.warning(
+            f"技能名称 '{name}' 不符合推荐格式（仅允许小写字母、数字和连字符，"
+            f"不能以连字符开头或结尾，不能有连续连字符）"
         )
 
     if name != directory_name:
@@ -81,6 +82,11 @@ def _parse_skill_metadata(content: str, skill_path: str, directory_name: str) ->
     }
 
     apply_optional_frontmatter_fields(result, frontmatter)
+
+    # frontmatter 未声明 runtime 时兜底为 "local"，
+    # 否则 ReActAgentBuilder._prepare_skills 会因 runtime 为 None 而跳过该技能。
+    if "runtime" not in result:
+        result["runtime"] = "local"
 
     return result
 

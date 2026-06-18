@@ -39,6 +39,13 @@ version = "2.2.1post1"
 description = "bkaidev agent builder"
 
 [project.optional-dependencies]
+# A2A 协议可选 extras：
+#   pip install aidev-agent[a2a]
+# 包含 A2A 和 ACP 协议所需的 SDK 依赖，不使用这两种后端时无需安装。
+a2a = [
+    "a2a-sdk>=1.1.0",
+    "agent-client-protocol>=0.10.1",
+]
 # OpenTelemetry 可选 extras：
 #   pip install aidev-agent[opentelemetry]
 # 版本与 template/{{cookiecutter.project_name}}/pyproject.toml 中的 OTel 版本组合对齐，

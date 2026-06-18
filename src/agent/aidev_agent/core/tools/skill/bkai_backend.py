@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from typing import Any, cast
+
+from typing_extensions import NotRequired, TypedDict
 
 from aidev_agent.packages.resource_manager import ResourceManagerProtocol
 
@@ -26,6 +28,35 @@ logger = logging.getLogger(__name__)
 
 # path 格式: api://{skill_id}/{version}
 _PATH_PATTERN = re.compile(r"^api://([^/]+)/(.+)$")
+
+
+class BkAiMeta(TypedDict):
+    """本后端注入到 ``SkillOptions["metadata"]`` 的平台特定字段。
+
+    ``SkillOptions["metadata"]`` 是 Agent Skills 规范定义的自由键值对，声明为
+    ``dict[str, Any]``。本 TypedDict 只声明 **BkAiBackend 关心的键**，用于在写入处
+    获得类型保护；``metadata`` 中的其他键（如 SKILL.md frontmatter 自带的 ``author``）
+    仍会原样保留，本后端不解析也不干预。
+
+    ============================  ===============  ==========================================
+    键                            值类型           读取方
+    ============================  ===============  ==========================================
+    ``callee_agent_code``         ``str``          本模块 ``fetch_instructions``
+    ``bkai_paas_sandbox``         ``dict``         ``graphs/react/skill_middleware.py``（跨模块）
+    ============================  ===============  ==========================================
+
+    ``bkai_paas_sandbox`` 的值为平台返回的 sandbox 配置，下游实际消费的子字段为
+    ``image`` (str)、``envs`` (dict)、``envs_mask`` (list[str])。
+
+    .. warning::
+       SKILL.md frontmatter 中的 ``metadata`` 块在
+       :func:`~aidev_agent.core.tools.skill.utils.apply_optional_frontmatter_fields`
+       中是**整体赋值**，会覆盖已注入的键。因此这些字段必须在 frontmatter 合并
+       **之后**写入。
+    """
+
+    callee_agent_code: NotRequired[str]
+    bkai_paas_sandbox: NotRequired[dict]
 
 
 class BkAiBackend:
@@ -119,7 +150,7 @@ class BkAiBackend:
         # 从 path 解析 skill_id 和 version
         skill_id, version = self._parse_path(skill.get("path", ""))
         # 获取主调用智能体 callee_agent_code
-        callee_agent_code = skill.get("callee_agent_code")
+        callee_agent_code = skill.get("metadata", {}).get("callee_agent_code")
         if not skill_id:
             logger.warning(f"技能 {skill_name} 的 path 格式无效，无法获取指引")
             return ""
@@ -250,8 +281,6 @@ class BkAiBackend:
             "description": skill_description,
             "path": f"api://{skill_id}/{version}",
         }
-        if callee_agent_code:
-            skill_options["callee_agent_code"] = callee_agent_code
 
         # 从 API 获取可选字段（frontmatter）
         try:
@@ -265,11 +294,11 @@ class BkAiBackend:
                     convert_list_elements=True,
                 )
 
-            # 将 sandbox 信息写入 metadata["metadata"]["bkai_paas_sandbox"]
+            # 将 sandbox 信息写入 metadata["bkai_paas_sandbox"]
             sandbox = cached.get("sandbox")
             if sandbox:
-                skill_options.setdefault("metadata", {})
-                skill_options["metadata"]["bkai_paas_sandbox"] = sandbox
+                meta = cast(BkAiMeta, skill_options.setdefault("metadata", {}))
+                meta["bkai_paas_sandbox"] = sandbox
                 if "envs" in sandbox and "WORKSPACE" in sandbox["envs"]:
                     workspace_dir = sandbox["envs"]["WORKSPACE"]
                     skill_path_desc = (
@@ -281,6 +310,13 @@ class BkAiBackend:
                     skill_options["description"] = (skill_options["description"] or "") + skill_path_desc
         except Exception as e:
             logger.warning(f"获取技能 {skill_name} 的 frontmatter 失败，仅使用基本字段: {e}")
+
+        # 平台注入字段必须在 frontmatter 合并之后写入：
+        # apply_optional_frontmatter_fields 对 metadata 是整体赋值，
+        # 若提前写入会被 SKILL.md 中的 metadata 块覆盖。
+        if callee_agent_code:
+            meta = cast(BkAiMeta, skill_options.setdefault("metadata", {}))
+            meta["callee_agent_code"] = callee_agent_code
 
         # 如果 frontmatter 中没有提供 runtime，默认指定为 "paas"
         if "runtime" not in skill_options:

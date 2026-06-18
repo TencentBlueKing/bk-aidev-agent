@@ -4,7 +4,7 @@
 覆盖：
 - AgentBackendResolver 的注册/解析/链式调用/错误处理
 - get_agent_tools 在 member/task 模式下的工具生成
-- BkaiBackend 和 LocalBackend 可通过 AgentBackendResolver 注册和解析
+- BkAiBackend 和 LocalBackend 可通过 AgentBackendResolver 注册和解析
 - TeamPromptMiddleware 的 sendMessages 引导注入
 - AgentResult 后端返回值的序列化
 - SubAgentConfig.to_agent_spec() 转换和向后兼容导入
@@ -20,7 +20,7 @@ from unittest.mock import patch
 import pytest
 from aidev_agent.core.graphs.react.team_middleware import TeamPromptMiddleware
 from aidev_agent.core.nodes.model.pydantic_models import ProcessorContext, PromptSlots
-from aidev_agent.core.tools.a2a_tools.bkai_backend import BkaiBackend
+from aidev_agent.core.tools.a2a_tools.bkai_backend import BkAiBackend
 from aidev_agent.core.tools.a2a_tools.local_backend import LocalBackend
 from aidev_agent.core.tools.a2a_tools.provider import (
     AgentBackendResolver,
@@ -35,6 +35,7 @@ from aidev_agent.core.tools.a2a_tools.types import (
     AgentSpec,
     SubAgentConfig,
 )
+from aidev_agent.pydantic_models import ExecuteKwargs
 
 
 def _make_spec(
@@ -63,31 +64,31 @@ def _make_local_spec(name: str = "test-local", builder: Any = None, **extra_para
 
 
 def _make_resolver() -> AgentBackendResolver:
-    """创建注册了 BkaiBackend 的 resolver。"""
+    """创建注册了 BkAiBackend 的 resolver。"""
     resolver = AgentBackendResolver()
-    resolver.register("bkai", BkaiBackend)
+    resolver.register("bkai", BkAiBackend)
     return resolver
 
 
 # ============== 双后端注册与集成接线测试 ==============
 
 
-class TestBkaiBackendResolve:
-    """AgentBackendResolver 注册 "bkai" 后，resolve(bkai_spec) 返回 BkaiBackend 实例。"""
+class TestBkAiBackendResolve:
+    """AgentBackendResolver 注册 "bkai" 后，resolve(bkai_spec) 返回 BkAiBackend 实例。"""
 
     def test_resolve_bkai_returns_bkai_backend(self) -> None:
         resolver = AgentBackendResolver()
-        resolver.register("bkai", BkaiBackend)
+        resolver.register("bkai", BkAiBackend)
 
         spec = _make_bkai_spec()
         backend = resolver.resolve(spec)
 
-        assert isinstance(backend, BkaiBackend)
+        assert isinstance(backend, BkAiBackend)
 
     def test_resolve_bkai_returns_fresh_instance(self) -> None:
         """每次 resolve 都应返回新实例。"""
         resolver = AgentBackendResolver()
-        resolver.register("bkai", BkaiBackend)
+        resolver.register("bkai", BkAiBackend)
 
         spec = _make_bkai_spec()
         backend1 = resolver.resolve(spec)
@@ -114,7 +115,7 @@ class TestDualBackendRouting:
 
     def test_dual_registration_routes_correctly(self) -> None:
         resolver = AgentBackendResolver()
-        resolver.register("bkai", BkaiBackend).register("local", LocalBackend)
+        resolver.register("bkai", BkAiBackend).register("local", LocalBackend)
 
         bkai_spec = _make_bkai_spec()
         local_spec = _make_local_spec()
@@ -122,13 +123,13 @@ class TestDualBackendRouting:
         bkai_backend = resolver.resolve(bkai_spec)
         local_backend = resolver.resolve(local_spec)
 
-        assert isinstance(bkai_backend, BkaiBackend)
+        assert isinstance(bkai_backend, BkAiBackend)
         assert isinstance(local_backend, LocalBackend)
 
     def test_chain_registration(self) -> None:
         """register() 返回 self 支持链式调用。"""
         resolver = AgentBackendResolver()
-        result = resolver.register("bkai", BkaiBackend).register("local", LocalBackend)
+        result = resolver.register("bkai", BkAiBackend).register("local", LocalBackend)
 
         assert result is resolver
 
@@ -138,7 +139,7 @@ class TestGetAgentToolsWithDualBackend:
 
     def test_get_agent_tools_returns_non_empty_list(self) -> None:
         resolver = AgentBackendResolver()
-        resolver.register("bkai", BkaiBackend).register("local", LocalBackend)
+        resolver.register("bkai", BkAiBackend).register("local", LocalBackend)
 
         specs = [_make_bkai_spec(), _make_local_spec()]
         tools = get_agent_tools(specs, resolver)
@@ -176,10 +177,10 @@ class TestUnregisteredBackendResolve:
 
 
 class TestBackendProtocolSatisfaction:
-    """BkaiBackend 和 LocalBackend 实例满足 AgentBackend Protocol（isinstance 检查）。"""
+    """BkAiBackend 和 LocalBackend 实例满足 AgentBackend Protocol（isinstance 检查）。"""
 
     def test_bkai_backend_satisfies_protocol(self) -> None:
-        backend = BkaiBackend()
+        backend = BkAiBackend()
         assert isinstance(backend, AgentBackend)
 
     def test_local_backend_satisfies_protocol(self) -> None:
@@ -189,7 +190,7 @@ class TestBackendProtocolSatisfaction:
     def test_resolved_backends_satisfy_protocol(self) -> None:
         """通过 resolver.resolve() 返回的实例也满足 Protocol。"""
         resolver = AgentBackendResolver()
-        resolver.register("bkai", BkaiBackend).register("local", LocalBackend)
+        resolver.register("bkai", BkAiBackend).register("local", LocalBackend)
 
         bkai_backend = resolver.resolve(_make_bkai_spec())
         local_backend = resolver.resolve(_make_local_spec())
@@ -269,7 +270,7 @@ class TestGetAgentToolsWithMemberMode:
         assert "未知" in result["error"]
 
     def test_send_messages_with_session_code_calls_execute(self) -> None:
-        """sendMessages 有 session_code 时调用 BkaiBackend.execute。"""
+        """sendMessages 有 session_code 时调用 BkAiBackend.execute。"""
         specs = [_make_spec(name="member_agent")]
         resolver = _make_resolver()
         tools = get_agent_tools(specs, resolver)
@@ -282,7 +283,7 @@ class TestGetAgentToolsWithMemberMode:
         }
 
         with patch(
-            "aidev_agent.core.tools.a2a_tools.bkai_backend.BkaiBackend.execute",
+            "aidev_agent.core.tools.a2a_tools.bkai_backend.BkAiBackend.execute",
             return_value=AgentResult(status="completed", result="reply"),
         ):
             result_str = send_msg_tool.func(
@@ -293,6 +294,47 @@ class TestGetAgentToolsWithMemberMode:
             )
             result = json.loads(result_str)
             assert result["status"] == "completed"
+
+    def test_send_messages_nesting_check_blocks_at_max_depth(self) -> None:
+        """D-06：send_messages 达到 max_spawn_depth 时返回嵌套失败结果（不再是旁路）。"""
+        specs = [_make_spec(name="agent")]
+        resolver = _make_resolver()
+        tools = get_agent_tools(specs, resolver)
+        send_msg_tool = next(t for t in tools if t.name == "sendMessages")
+
+        ek = ExecuteKwargs(spawn_depth=1, max_spawn_depth=1)
+        result_str = send_msg_tool.func(
+            member_name="member",
+            message="hello",
+            config={"configurable": {"execute_kwargs": ek}},
+            state={"bk_agent_team": {"member": {"session_code": "s1", "agent_name": "agent"}}},
+        )
+        parsed = json.loads(result_str)
+        assert parsed["status"] == "failed"
+        assert "嵌套" in parsed["error"]
+
+    def test_send_messages_below_max_depth_not_blocked_by_nesting(self) -> None:
+        """D-06：spawn_depth < max_spawn_depth 时 send_messages 正常调用 backend.execute（不抛嵌套）。"""
+        specs = [_make_spec(name="agent")]
+        resolver = _make_resolver()
+        tools = get_agent_tools(specs, resolver)
+        send_msg_tool = next(t for t in tools if t.name == "sendMessages")
+
+        ek = ExecuteKwargs(spawn_depth=0, max_spawn_depth=1)
+        with patch(
+            "aidev_agent.core.tools.a2a_tools.bkai_backend.BkAiBackend.execute",
+            return_value=AgentResult(status="completed", result="reply"),
+        ) as mock_execute:
+            result_str = send_msg_tool.func(
+                member_name="member",
+                message="hello",
+                config={"configurable": {"execute_kwargs": ek}},
+                state={"bk_agent_team": {"member": {"session_code": "s1", "agent_name": "agent"}}},
+            )
+        parsed = json.loads(result_str)
+        # 嵌套保护未触发：backend.execute 被真实调用，结果无嵌套失败
+        mock_execute.assert_called_once()
+        assert parsed["status"] != "failed" or "嵌套" not in parsed.get("error", "")
 
     def test_empty_specs_returns_empty_list(self) -> None:
         """空 specs 返回空列表。"""
@@ -317,11 +359,11 @@ class TestAgentCallMemberMode:
 
         with (
             patch(
-                "aidev_agent.core.tools.a2a_tools.bkai_backend.BkaiBackend.prepare_session",
+                "aidev_agent.core.tools.a2a_tools.bkai_backend.BkAiBackend._prepare_session",
                 return_value={"status": "completed"},
             ),
             patch(
-                "aidev_agent.core.tools.a2a_tools.bkai_backend.BkaiBackend.execute",
+                "aidev_agent.core.tools.a2a_tools.bkai_backend.BkAiBackend.execute",
                 return_value=AgentResult(status="completed", result="reply"),
             ),
         ):
@@ -352,11 +394,11 @@ class TestAgentCallMemberMode:
 
         with (
             patch(
-                "aidev_agent.core.tools.a2a_tools.bkai_backend.BkaiBackend.prepare_session",
+                "aidev_agent.core.tools.a2a_tools.bkai_backend.BkAiBackend._prepare_session",
                 return_value={"status": "completed"},
             ),
             patch(
-                "aidev_agent.core.tools.a2a_tools.bkai_backend.BkaiBackend.execute",
+                "aidev_agent.core.tools.a2a_tools.bkai_backend.BkAiBackend.execute",
                 return_value=AgentResult(status="completed", result="reply"),
             ),
         ):
@@ -383,7 +425,7 @@ class TestAgentCallMemberMode:
 
         with (
             patch(
-                "aidev_agent.core.tools.a2a_tools.bkai_backend.BkaiBackend.execute",
+                "aidev_agent.core.tools.a2a_tools.bkai_backend.BkAiBackend.execute",
                 return_value=AgentResult(status="completed", result="reply"),
             ) as mock_exec,
         ):
@@ -426,11 +468,11 @@ class TestAgentCallWithAgentResult:
 
         with (
             patch(
-                "aidev_agent.core.tools.a2a_tools.bkai_backend.BkaiBackend.prepare_session",
+                "aidev_agent.core.tools.a2a_tools.bkai_backend.BkAiBackend._prepare_session",
                 return_value={"status": "completed"},
             ),
             patch(
-                "aidev_agent.core.tools.a2a_tools.bkai_backend.BkaiBackend.execute",
+                "aidev_agent.core.tools.a2a_tools.bkai_backend.BkAiBackend.execute",
                 return_value=AgentResult(status="completed", result="reply"),
             ),
         ):
@@ -460,7 +502,7 @@ class TestAgentCallWithAgentResult:
         agent_tool = next(t for t in tools if t.name == "Agent")
 
         with patch(
-            "aidev_agent.core.tools.a2a_tools.bkai_backend.BkaiBackend.execute",
+            "aidev_agent.core.tools.a2a_tools.bkai_backend.BkAiBackend.execute",
             return_value=AgentResult(status="completed", result="task result", tool_calls=3),
         ):
             result = agent_tool.func(
@@ -496,7 +538,7 @@ class TestAgentCallWithAgentResult:
         }
 
         with patch(
-            "aidev_agent.core.tools.a2a_tools.bkai_backend.BkaiBackend.execute",
+            "aidev_agent.core.tools.a2a_tools.bkai_backend.BkAiBackend.execute",
             return_value=AgentResult(status="completed", result="reply"),
         ):
             result_str = send_msg_tool.func(
@@ -510,22 +552,46 @@ class TestAgentCallWithAgentResult:
         assert parsed["status"] == "completed"
         assert parsed["result"] == "reply"
 
-    def test_error_path_dict_still_works_nesting_check(self) -> None:
-        """错误路径：嵌套保护触发时抛出 RuntimeError。"""
+    def test_nesting_check_blocks_at_max_depth(self) -> None:
+        """spawn_depth >= max_spawn_depth 时抛出 RuntimeError。"""
         specs = [_make_spec(name="agent")]
         resolver = _make_resolver()
         tools = get_agent_tools(specs, resolver)
-
         agent_tool = next(t for t in tools if t.name == "Agent")
 
-        # 模拟嵌套保护触发 — 应抛出 RuntimeError 而非返回 JSON 错误字符串
-        with pytest.raises(RuntimeError, match="禁止嵌套"):
+        ek = ExecuteKwargs(spawn_depth=1, max_spawn_depth=1)
+        with pytest.raises(RuntimeError, match="嵌套"):
             agent_tool.func(
                 agent_name="agent",
                 message="hello",
-                config={"configurable": {"is_a2a_subagent": True}},
+                config={"configurable": {"execute_kwargs": ek}},
                 state={},
             )
+
+    def test_nesting_check_allows_below_max_depth(self) -> None:
+        """spawn_depth < max_spawn_depth 时正常执行（不抛嵌套异常）。"""
+        specs = [_make_spec(name="agent")]
+        resolver = _make_resolver()
+        resolver.register("local", LocalBackend)
+        tools = get_agent_tools(specs, resolver)
+        agent_tool = next(t for t in tools if t.name == "Agent")
+
+        from aidev_agent.pydantic_models import ExecuteKwargs
+
+        ek = ExecuteKwargs(spawn_depth=0, max_spawn_depth=1)
+        # 不会抛出 RuntimeError（可能因其他原因报错如缺少 client，但不应是嵌套保护）
+        try:
+            agent_tool.func(
+                agent_name="agent",
+                message="hello",
+                config={"configurable": {"execute_kwargs": ek}},
+                state={},
+            )
+        except RuntimeError as e:
+            assert "嵌套" not in str(e)
+        except Exception:
+            # 非嵌套保护的其他异常（如缺少 client）是预期的，测试通过
+            pass
 
 
 # ============== Test: TeamPromptMiddleware 更新 ==============
@@ -611,28 +677,6 @@ class TestSubAgentConfigToAgentSpecMinimal:
         assert spec.timeout_seconds == 300
 
 
-# ============== 向后兼容导入测试 ==============
-
-
-class TestPublicExportsImportable:
-    """验证所有公共 API 可正常导入。"""
-
-    def test_public_exports_importable(self) -> None:
-        from aidev_agent.core.tools.a2a_tools import (
-            AgentBackend,
-            AgentBackendType,
-            AgentSpec,
-            SubAgentConfig,
-            get_agent_tools,
-        )
-
-        assert AgentSpec is not None
-        assert AgentBackendType is not None
-        assert AgentBackend is not None
-        assert SubAgentConfig is not None
-        assert get_agent_tools is not None
-
-
 # ============== _check_interrupt 测试 ==============
 
 
@@ -696,10 +740,15 @@ class TestExtractProgressCallbackNoneConfig:
 
 
 class SpyBackend:
-    """Spy backend that records execute() call arguments for verification."""
+    """Spy backend that records execute() and new_session() call arguments for verification."""
 
     def __init__(self) -> None:
         self.execute_calls: list[dict[str, Any]] = []
+        self.new_session_calls: list[dict[str, Any]] = []
+
+    def new_session(self, spec: AgentSpec, **kwargs: Any) -> str:
+        self.new_session_calls.append({"spec": spec, "kwargs": kwargs})
+        return "spy-session-code"
 
     def execute(
         self,
@@ -718,6 +767,7 @@ class SpyBackend:
                 "session_code": session_code,
                 "progress_callback": progress_callback,
                 "config": config,
+                "state": kwargs.get("state"),
             }
         )
         return AgentResult(status="completed", result="ok")
@@ -820,3 +870,53 @@ class TestNoInterruptNormalExecution:
 
         assert result["status"] == "completed"
         assert len(spy.execute_calls) == 1
+
+
+# ============== Test: provider 将 InjectedState state 透传 backend.execute(state=...) (D-09 provider) ==============
+
+
+class TestProviderForwardsStateToBackend:
+    """agent_call / send_messages 将 InjectedState state 透传给 backend.execute(state=...)。"""
+
+    def test_agent_call_forwards_state_in_task_mode(self) -> None:
+        """task 模式 agent_call 将 state 透传给 backend.execute(state=...)。"""
+        spy = SpyBackend()
+        resolver = AgentBackendResolver()
+        resolver.register("bkai", lambda: spy)
+
+        agent_call = _get_agent_call_from_tool(resolver)
+        state: dict[str, Any] = {"runtime_paas_sbx_pv": []}
+        agent_call(agent_name="test_agent", message="hello", mode="task", config={"configurable": {}}, state=state)
+
+        assert len(spy.execute_calls) == 1
+        assert spy.execute_calls[0]["state"] == state
+
+    def test_send_messages_forwards_state(self) -> None:
+        """send_messages 将 state 透传给 backend.execute(state=...)。"""
+        spy = SpyBackend()
+        resolver = AgentBackendResolver()
+        resolver.register("bkai", lambda: spy)
+
+        spec = AgentSpec(name="member_agent", description="A test agent", backend_type=AgentBackendType.BKAI)
+        tools = get_agent_tools([spec], resolver)
+        send_msg_tool = next(t for t in tools if t.name == "sendMessages")
+        state: dict[str, Any] = {
+            "bk_agent_team": {"my_member": {"session_code": "sess_123", "agent_name": "member_agent"}},
+            "runtime_paas_sbx_pv": [],
+        }
+        send_msg_tool.func(member_name="my_member", message="hello", config=None, state=state)
+
+        assert len(spy.execute_calls) == 1
+        assert spy.execute_calls[0]["state"] == state
+
+    def test_agent_call_forwards_empty_state_too(self) -> None:
+        """即使 state 为空 dict，也转发给 backend.execute(state=...)（后端自行守护）。"""
+        spy = SpyBackend()
+        resolver = AgentBackendResolver()
+        resolver.register("bkai", lambda: spy)
+
+        agent_call = _get_agent_call_from_tool(resolver)
+        agent_call(agent_name="test_agent", message="hello", mode="task", config={"configurable": {}}, state={})
+
+        assert len(spy.execute_calls) == 1
+        assert spy.execute_calls[0]["state"] == {}

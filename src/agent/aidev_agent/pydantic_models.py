@@ -45,6 +45,16 @@ class ExecuteKwargs(BaseModel):
         ),
     )
 
+    # A2A 嵌套控制
+    spawn_depth: int = Field(default=0, description="当前嵌套深度，主 Agent 为 0")
+    spawned_by: str | None = Field(default=None, description="父会话 session_code")
+    max_spawn_depth: int = Field(default=1, description="最大嵌套深度")
+    tool_deny: list[str] = Field(default_factory=list, description="工具黑名单（工具名）")
+    tool_allow: list[str] = Field(default_factory=list, description="工具白名单（工具名），非空时仅允许列表内工具")
+
+    # A2A PV 共享
+    sandbox_pv_id: str | None = Field(default=None, description="父 Agent 的沙箱 PV ID，子 Agent 通过此字段复用父 PV")
+
 
 class SessionTool(BaseModel):
     tool_id: int
@@ -446,5 +456,6 @@ class AgentConfig(BaseModel):
         default_factory=list,
         description="关联子智能体列表，从 API 响应顶层 related_agents 读取，每条含 agent_code/agent_name/description/api_url",
     )
+    max_spawn_depth: int = Field(default=1, description="最大 Agent 嵌套深度")
     # 原始配置信息（来自 retrieve_agent_config 的完整字典，含 otel_info 等平台透传字段）
     agent_info: dict | None = Field(None, description="智能体配置信息，agent_info 接口的原始值，仅仅用于数据上报")

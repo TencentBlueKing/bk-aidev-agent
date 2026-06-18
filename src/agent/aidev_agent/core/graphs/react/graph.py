@@ -46,7 +46,7 @@ from aidev_agent.core.graphs.react.skill_middleware import (
     _extract_local_params,
     _extract_paas_params,
 )
-from aidev_agent.core.graphs.react.team_middleware import TeamInfo, TeamPromptMiddleware
+from aidev_agent.core.graphs.react.team_middleware import TeamInfo, TeamPromptMiddleware, ToolFilterMiddleware
 from aidev_agent.core.nodes.interrupt import (
     ItsmApprovalStrategy,
     UserQuestionStrategy,
@@ -57,9 +57,9 @@ from aidev_agent.core.nodes.model import ModelNodeSettings
 from aidev_agent.core.nodes.model import build_model_node as std_make_model_node
 from aidev_agent.core.nodes.pv import add_pv_info, make_pv_node
 from aidev_agent.core.nodes.tool import ToolNodeSettings, build_tool_node
-from aidev_agent.core.tools.a2a_tools.bkai_backend import BkaiBackend
-from aidev_agent.core.tools.a2a_tools.local_backend import LocalBackend
-from aidev_agent.core.tools.a2a_tools.provider import AgentBackendResolver, get_agent_tools
+from aidev_agent.core.tools.a2a_tools import AgentBackendResolver, get_agent_tools
+from aidev_agent.core.tools.a2a_tools import BkAiBackend as BkAiA2ABackend
+from aidev_agent.core.tools.a2a_tools import LocalBackend as LocalA2ABackend
 from aidev_agent.core.tools.ask_user_question import ask_user_question as _ask_user_question_tool
 from aidev_agent.core.tools.knowledge import make_knowledge_retrieval_tool
 from aidev_agent.core.tools.runtime_tools import get_client_tools_with_runtime
@@ -67,6 +67,7 @@ from aidev_agent.core.tools.runtime_tools.e2b_backend import E2BSandboxBackend
 from aidev_agent.core.tools.runtime_tools.local_backend import FilesystemBackend
 from aidev_agent.core.tools.runtime_tools.paas_backend import PaasSandboxBackend
 from aidev_agent.core.tools.skill.bkai_backend import BkAiBackend
+from aidev_agent.core.tools.skill.local_backend import LocalBackend as LocalSkillBackend
 from aidev_agent.core.tools.skill.provider import SkillRegistry
 from aidev_agent.core.tools.skill.types import SkillOptions, SkillProviderBackend
 from aidev_agent.core.tools.task import TeamTaskRecord, get_task_tools
@@ -296,7 +297,7 @@ class ReActAgentBuilder:
     def enable_a2a_backend_local(self, enable: bool = True) -> "ReActAgentBuilder":
         """启用/禁用 A2A 本地后端类型（local）。
 
-        - enable=True：注册 a2a 后端类型 ``local`` -> ``LocalBackend``
+        - enable=True：注册 a2a 后端类型 ``local`` -> ``LocalA2ABackend``
         - enable=False：移除 a2a 后端类型 ``local``
 
         Args:
@@ -306,7 +307,7 @@ class ReActAgentBuilder:
             self（支持链式调用）。
         """
         if enable:
-            self._a2a_backend_types["local"] = LocalBackend
+            self._a2a_backend_types["local"] = LocalA2ABackend
             return self
 
         self._a2a_backend_types.pop("local", None)
@@ -315,7 +316,7 @@ class ReActAgentBuilder:
     def enable_a2a_backend_bkai(self, enable: bool = True) -> "ReActAgentBuilder":
         """启用/禁用 A2A 蓝鲸智能体后端类型（bkai）。
 
-        - enable=True：注册 a2a 后端类型 ``bkai`` -> ``BkaiBackend``
+        - enable=True：注册 a2a 后端类型 ``bkai`` -> ``BkAiA2ABackend``
         - enable=False：移除 a2a 后端类型 ``bkai``
 
         Args:
@@ -325,7 +326,7 @@ class ReActAgentBuilder:
             self（支持链式调用）。
         """
         if enable:
-            self._a2a_backend_types["bkai"] = BkaiBackend
+            self._a2a_backend_types["bkai"] = BkAiA2ABackend
             return self
 
         self._a2a_backend_types.pop("bkai", None)
@@ -543,19 +544,35 @@ class ReActAgentBuilder:
             self._model_context_options = options.model_context_options
 
         # Skills（从配置链路传入的关联技能配置 list）
+        # options.skills 允许混合两种元素：
+        #   1. 满足 SkillProviderBackend 协议的后端实例（如 LocalSkillBackend）——直接作为 source 注册
+        #   2. 平台下发的技能配置 dict ——聚合后交给 BkAiBackend 解析
         if options.skills is not None and options.skills:
             self.set_enable_skills(True)
-            # 优先使用 per-request resource_manager（含调试Agent自己的app_code / access_token），
-            self.add_skill_sources(
-                [
-                    BkAiBackend(
-                        client=self._resource_manager,
-                        related_skills=options.skills,
-                    )
-                ]
-            )
+            skill_backends: list[str | SkillProviderBackend] = [
+                s for s in options.skills if isinstance(s, SkillProviderBackend)
+            ]
+            related_skills = [s for s in options.skills if not isinstance(s, SkillProviderBackend)]
+
+            if skill_backends:
+                self.add_skill_sources(skill_backends)
+            # 仅在确有平台技能配置时构造 BkAiBackend，避免注册空后端
+            if related_skills:
+                # 优先使用 per-request resource_manager（含调试Agent自己的app_code / access_token），
+                self.add_skill_sources(
+                    [
+                        BkAiBackend(
+                            client=self._resource_manager,
+                            related_skills=related_skills,
+                        )
+                    ]
+                )
+
             self.set_enable_runtime_tool(True)
             self.enable_runtime_paas(True)
+            # 存在本地技能后端时才启用 local runtime（LocalSkillBackend 的技能默认 runtime="local"）
+            if any(isinstance(s, LocalSkillBackend) for s in skill_backends):
+                self.enable_runtime_local(True)
 
         # RuntimeBackendResolver（由调用方构造并注入）
         if options.runtime_backend_resolver is not None:
@@ -568,6 +585,11 @@ class ReActAgentBuilder:
             self.enable_task(settings.BKAI_TOOL_TASK_ENABLED)
             self.enable_a2a_backend_local(True).enable_a2a_backend_bkai(True)
             self.add_subagent_specs(options.subagent_specs)
+            # A2A 子 Agent PV 共享需要 PaaS 沙箱 runtime 支持；
+            # 仅在 A2A 工具实际启用时才开启，避免配置关闭时多余启用
+            if settings.BKAI_TOOL_A2A_ENABLED:
+                self.set_enable_runtime_tool(True)
+                self.enable_runtime_paas(True)
 
         return self
 
@@ -639,6 +661,14 @@ class ReActAgentBuilder:
             raise ValueError(
                 "ReActAgentBuilder 构建失败：启用了 runtime_tool 但未提供 runtime_backend_resolver，"
                 "请通过 AgentExecutorKwargs.runtime_backend_resolver 传入"
+            )
+
+        # A2A 依赖 PaaS 沙箱：子 Agent PV 创建需要 paas_client，仅启用 A2A 而未启用
+        # paas_sandbox runtime 时，paas_client 为 None，调用 Agent/sendMessages 会触发崩溃
+        if self._enable_a2a_tool and not (self._enable_runtime_tool and "paas_sandbox" in self._runtime_types):
+            raise ValueError(
+                "ReActAgentBuilder 构建失败：启用了 A2A 工具但未启用 PaaS 沙箱 runtime，"
+                "请同时调用 set_enable_runtime_tool(True) 和 enable_runtime_paas(True)"
             )
 
     def _prepare_agent_knowledge_node(
@@ -719,6 +749,7 @@ class ReActAgentBuilder:
         # Team middleware registration (A2A Agent paradigm)
         if self._a2a_specs and self._a2a_resolver is not None:
             node_options.extra_template_middlewares.append(TeamPromptMiddleware(specs=self._a2a_specs))
+            node_options.extra_tool_middlewares.append(ToolFilterMiddleware())
 
         # 创建模型节点
         model_node = std_make_model_node(
@@ -864,6 +895,7 @@ class ReActAgentBuilder:
             client=paas_client,
             app_code=paas_app_code,
             resource_manager=self._resource_manager,
+            enable_pv_by_subagent=bool(self._enable_a2a_tool),
         )
 
     def _prepare_agent_interrupt_node(self, *, tools: List[BaseTool]):

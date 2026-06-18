@@ -25,6 +25,7 @@ import traceback
 from enum import Enum
 from typing import Any, Dict, List
 
+from langchain_core.outputs import LLMResult
 from opentelemetry import context as context_api
 from opentelemetry import trace
 from opentelemetry.trace import Span
@@ -328,3 +329,82 @@ def get_otel_endpoint_by_env() -> List[Dict[str, Any]]:
     }
     config.update(get_otel_endpoints_base_config())
     return [config]
+
+
+def extract_token_usage(response: LLMResult) -> dict[str, int] | None:
+    """从 LLMResult 多路径提取 token usage（等价 services/token_usage.py，独立维护）。
+
+    Args:
+        response: LangChain LLMResult
+
+    Returns:
+        dict[str, int] | None: {"input_tokens", "output_tokens", "total_tokens"} 必含，
+        扩展字段 "cached_tokens" / "reasoning_tokens" 仅当模型返回时存在；无法提取返回 None。
+    """
+    usage = _get_raw_usage(response)
+    if usage is None:
+        return None
+    usage_dict = _coerce_usage_dict(usage)
+    if usage_dict is None:
+        return None
+    input_tokens = int(usage_dict.get("prompt_tokens") or usage_dict.get("input_tokens") or 0)
+    output_tokens = int(usage_dict.get("completion_tokens") or usage_dict.get("output_tokens") or 0)
+    total_tokens = int(usage_dict.get("total_tokens") or input_tokens + output_tokens)
+    result: dict[str, int] = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+    }
+    # D-03 扩展字段：从 UsageMetadata 实际 key 提取（非 D-03 字面 legacy key），缺失不上报
+    input_details = usage_dict.get("input_token_details") or {}
+    output_details = usage_dict.get("output_token_details") or {}
+    cached = input_details.get("cache_read")
+    reasoning = output_details.get("reasoning")
+    if cached is not None:
+        result["cached_tokens"] = int(cached)
+    if reasoning is not None:
+        result["reasoning_tokens"] = int(reasoning)
+    return result
+
+
+def _get_raw_usage(response: LLMResult) -> Any | None:
+    """先从 llm_output 提取，None 则回落 generations 的 usage_metadata。"""
+    usage = _get_usage_from_llm_output(response.llm_output or {})
+    if usage is not None:
+        return usage
+    return _get_usage_from_generations(response.generations or [])
+
+
+def _get_usage_from_llm_output(llm_output: dict[str, Any]) -> Any | None:
+    """从 llm_output 的 token_usage / usage key 提取。"""
+    return next((llm_output[key] for key in ("token_usage", "usage") if llm_output.get(key)), None)
+
+
+def _get_usage_from_generations(generation_groups: list[list[Any]]) -> Any | None:
+    """reversed 遍历 generation 组提取 usage_metadata。"""
+    for generation_group in reversed(generation_groups):
+        usage = _get_usage_from_generation_group(generation_group)
+        if usage is not None:
+            return usage
+    return None
+
+
+def _get_usage_from_generation_group(generation_group: list[Any]) -> Any | None:
+    """reversed 遍历单个 generation 组，从 message.usage_metadata 提取。"""
+    for generation in reversed(generation_group):
+        message = getattr(generation, "message", None)
+        usage = getattr(message, "usage_metadata", None)
+        if usage is not None:
+            return usage
+    return None
+
+
+def _coerce_usage_dict(usage: Any) -> dict[str, Any] | None:
+    """依次尝试 to_dict_recursive / model_dump / dict 归一化，非 dict 返回 None。"""
+    for method_name in ("to_dict_recursive", "model_dump", "dict"):
+        if hasattr(usage, method_name):
+            usage = getattr(usage, method_name)()
+            break
+    if not isinstance(usage, dict):
+        return None
+    return usage

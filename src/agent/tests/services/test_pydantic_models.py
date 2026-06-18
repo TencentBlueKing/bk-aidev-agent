@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from aidev_agent.pydantic_models import (
     AgentExecutorKwargs,
     AgentOptions,
@@ -11,6 +12,40 @@ from aidev_agent.pydantic_models import (
     SessionContentExtra,
 )
 from aidev_agent.services.common_agent import CommonQAAgent
+
+
+class TestExecuteKwargsSandboxPvId:
+    """Tests for ExecuteKwargs.sandbox_pv_id field (Phase 39)."""
+
+    def test_default_is_none(self):
+        """ExecuteKwargs() has sandbox_pv_id=None by default."""
+        ek = ExecuteKwargs()
+        assert hasattr(ek, "sandbox_pv_id")
+        assert ek.sandbox_pv_id is None
+
+    def test_stores_value_correctly(self):
+        """ExecuteKwargs(sandbox_pv_id='vol-abc') stores the value correctly."""
+        ek = ExecuteKwargs(sandbox_pv_id="vol-abc")
+        assert ek.sandbox_pv_id == "vol-abc"
+
+    def test_model_dump_includes_sandbox_pv_id(self):
+        """ExecuteKwargs().model_dump() includes sandbox_pv_id=None in output."""
+        ek = ExecuteKwargs()
+        d = ek.model_dump()
+        assert "sandbox_pv_id" in d
+        assert d["sandbox_pv_id"] is None
+
+    def test_model_copy_preserves_sandbox_pv_id(self):
+        """ExecuteKwargs(sandbox_pv_id='vol-abc').model_copy() preserves sandbox_pv_id."""
+        ek = ExecuteKwargs(sandbox_pv_id="vol-abc")
+        ek2 = ek.model_copy()
+        assert ek2.sandbox_pv_id == "vol-abc"
+
+    def test_model_dump_with_value_includes_sandbox_pv_id(self):
+        """model_dump() with sandbox_pv_id='vol-abc' includes the value."""
+        ek = ExecuteKwargs(sandbox_pv_id="vol-abc")
+        d = ek.model_dump()
+        assert d["sandbox_pv_id"] == "vol-abc"
 
 
 def test_chat_prompt():

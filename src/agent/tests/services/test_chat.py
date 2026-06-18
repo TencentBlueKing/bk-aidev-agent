@@ -2815,3 +2815,83 @@ class TestBuildKnowledgeQueryOptions:
         builder = ChatAgentBuilder(ctx)
         options = builder.build_knowledge_query_options()
         assert options.enable_agentic_rag_tool is expected
+
+
+class TestFetchExecutePv:
+    """Tests for ChatCompletionAgent._fetch_execute_pv() (Phase 39)."""
+
+    def test_returns_empty_when_no_execute_kwargs(self):
+        """_fetch_execute_pv() returns [] when _execute_kwargs is not set."""
+        agent = _seed_agent()
+        agent.thread_id = "test-thread"
+        result = agent._fetch_execute_pv()
+        assert result == []
+
+    def test_returns_empty_when_sandbox_pv_id_is_none(self):
+        """_fetch_execute_pv() returns [] when sandbox_pv_id is None."""
+        agent = _seed_agent()
+        agent.thread_id = "test-thread"
+        agent._execute_kwargs = ExecuteKwargs(sandbox_pv_id=None)
+        result = agent._fetch_execute_pv()
+        assert result == []
+
+    def test_returns_pv_entry_when_sandbox_pv_id_is_set(self):
+        """_fetch_execute_pv() returns PV entry with source='execute_kwargs' when sandbox_pv_id is set."""
+        agent = _seed_agent()
+        agent.thread_id = "test-thread"
+        agent._execute_kwargs = ExecuteKwargs(sandbox_pv_id="vol-abc-123")
+        result = agent._fetch_execute_pv()
+        assert len(result) == 1
+        pv = result[0]
+        assert pv["type"] == "paas-sbx-pv"
+        assert pv["volume_id"] == "vol-abc-123"
+        assert pv["mount_path"] == "session"
+        assert pv["source"] == "execute_kwargs"
+        assert pv["volume_name"] == "agent-pv-test-thread"
+
+    def test_returns_empty_on_exception(self):
+        """_fetch_execute_pv() returns [] on exception (fail-safe)."""
+        agent = _seed_agent()
+        agent.thread_id = "test-thread"
+
+        # Create a broken _execute_kwargs that raises on attribute access
+        class _BrokenKwargs:
+            @property
+            def sandbox_pv_id(self):
+                raise RuntimeError("simulated failure")
+
+        agent._execute_kwargs = _BrokenKwargs()
+        result = agent._fetch_execute_pv()
+        assert result == []
+
+    def test_short_circuit_priority(self):
+        """_fetch_execute_pv() takes priority over _fetch_platform_pv via short-circuit or.
+
+        When sandbox_pv_id is set, _fetch_execute_pv() returns non-empty list,
+        so _fetch_platform_pv() should never be called.
+        """
+        agent = _seed_agent()
+        agent.thread_id = "test-thread"
+        agent._execute_kwargs = ExecuteKwargs(sandbox_pv_id="vol-priority")
+
+        with patch.object(agent, "_fetch_platform_pv") as mock_platform_pv:
+            mock_platform_pv.return_value = [{"source": "platform", "volume_id": "vol-from-platform"}]
+            result = agent._fetch_execute_pv() or mock_platform_pv()
+            # _fetch_platform_pv is called here explicitly to simulate the or pattern
+            # But we verify the short-circuit: _fetch_execute_pv returns truthy,
+            # so in actual _execute usage _fetch_platform_pv would not be called
+            assert len(result) == 1
+            assert result[0]["source"] == "execute_kwargs"
+
+    def test_falls_back_to_platform_when_empty(self):
+        """When sandbox_pv_id is None, _fetch_execute_pv() returns [] and falls through to platform."""
+        agent = _seed_agent()
+        agent.thread_id = "test-thread"
+        agent._execute_kwargs = ExecuteKwargs(sandbox_pv_id=None)
+
+        with patch.object(agent, "_fetch_platform_pv") as mock_platform_pv:
+            mock_platform_pv.return_value = [{"source": "platform", "volume_id": "vol-platform"}]
+            result = agent._fetch_execute_pv() or agent._fetch_platform_pv()
+            assert len(result) == 1
+            assert result[0]["source"] == "platform"
+            assert result[0]["volume_id"] == "vol-platform"

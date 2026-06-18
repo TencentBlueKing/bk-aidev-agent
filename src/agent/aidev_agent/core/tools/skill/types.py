@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from typing_extensions import NotRequired, TypedDict
 
@@ -11,6 +11,11 @@ class SkillOptions(TypedDict):
     """Skill metadata parsed from SKILL.md YAML frontmatter.
 
     Follows Agent Skills spec (https://agentskills.io/specification).
+
+    ``metadata`` 是规范定义的自由键值对，各 backend 可在其中注入自己的扩展字段，
+    值类型不限于 str（例如 BkAiBackend 会写入结构化的 dict）。具体键名与值类型的
+    契约由写入方声明，见各 backend 内部的 TypedDict（如
+    :class:`~aidev_agent.core.tools.skill.bkai_backend.BkAiMeta`）。
     """
 
     name: str
@@ -18,12 +23,11 @@ class SkillOptions(TypedDict):
     path: str
     license: NotRequired[str]
     compatibility: NotRequired[str]
-    metadata: NotRequired[dict[str, str]]
+    metadata: NotRequired[dict[str, Any]]
     allowed_tools: NotRequired[list[str]]
     instructions: NotRequired[str]
     runtime: NotRequired[str]
     approval: NotRequired[dict]
-    callee_agent_code: NotRequired[str]
 
 
 @runtime_checkable

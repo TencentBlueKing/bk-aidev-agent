@@ -21,15 +21,16 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
-from aidev_agent.packages.opentelemetry.callback_handler import (
-    BkAidevAgentCallbackHandler,
-    BkAidevAgentInjector,
-)
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+from aidev_agent.packages.opentelemetry.callback_handler import (
+    BkAidevAgentCallbackHandler,
+    BkAidevAgentInjector,
+)
 
 
 @pytest.fixture
@@ -431,3 +432,276 @@ class TestBkAidevAgentCallbackHandler:
         assert rag_span.attributes["query"] == "测试查询"
         assert "knowledge_bases" in rag_span.attributes
         assert "knowledge_items" in rag_span.attributes
+
+    def _run_llm_call(self, handler, token_usage, *, use_chat=False):
+        """构造一次带 token_usage 的 LLM 调用并执行 on_llm_start/on_llm_end。
+
+        返回 run_id，便于调用方精确断言该次调用的 span 属性。
+        """
+        run_id = uuid4()
+        if use_chat:
+            asyncio.run(
+                handler.on_chat_model_start(
+                    serialized={"name": "test_chat_model"},
+                    messages=[[HumanMessage(content="你好")]],
+                    run_id=run_id,
+                    parent_run_id=None,
+                )
+            )
+        else:
+            asyncio.run(
+                handler.on_llm_start(
+                    serialized={"name": "test_llm"},
+                    prompts=["请回答这个问题"],
+                    run_id=run_id,
+                    parent_run_id=None,
+                )
+            )
+        llm_result = LLMResult(
+            generations=[[ChatGeneration(message=AIMessage(content="答案"))]],
+            llm_output={"model_name": "qwen3", "token_usage": token_usage},
+        )
+        asyncio.run(
+            handler.on_llm_end(
+                response=llm_result,
+                run_id=run_id,
+                parent_run_id=None,
+            )
+        )
+        return run_id
+
+    def test_llm_generate_span_token_usage_attributes(self, tracer_and_exporter):
+        """Test 1: llm.generate span 设 gen_ai.usage.input_tokens/output_tokens/total_tokens 为 int"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, debug=True)
+
+        self._run_llm_call(
+            handler,
+            {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        )
+
+        spans = exporter.get_finished_spans()
+        span = next(s for s in spans if s.name == "llm.generate")
+        assert span.attributes["gen_ai.usage.input_tokens"] == 10
+        assert span.attributes["gen_ai.usage.output_tokens"] == 5
+        assert span.attributes["gen_ai.usage.total_tokens"] == 15
+
+    def test_chat_model_generate_span_token_usage_attributes(self, tracer_and_exporter):
+        """Test 2: chat_model.generate span 设 gen_ai.usage.*（同一 on_llm_end 路径）"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, debug=True)
+
+        self._run_llm_call(
+            handler,
+            {"prompt_tokens": 20, "completion_tokens": 8, "total_tokens": 28},
+            use_chat=True,
+        )
+
+        spans = exporter.get_finished_spans()
+        span = next(s for s in spans if s.name == "chat_model.generate")
+        assert span.attributes["gen_ai.usage.input_tokens"] == 20
+        assert span.attributes["gen_ai.usage.output_tokens"] == 8
+        assert span.attributes["gen_ai.usage.total_tokens"] == 28
+
+    def _make_root_span_handler(self, tracer):
+        """构造带有效 injector 的 handler，使顶层 chain 能创建 root span。
+
+        injector.on_bk_agent_start 会解引用 execute_kwargs.session_code 等字段，
+        故必须传入一个带完整属性的 ExecuteKwargs mock，否则 root span 无法创建。
+        """
+        execute_kwargs = MagicMock()
+        execute_kwargs.executor = "test-executor"
+        execute_kwargs.session_code = "test-session-123"
+        execute_kwargs.caller_bk_app_code = "test-app"
+        execute_kwargs.caller_bk_biz_env = "domestic_biz"
+        execute_kwargs.caller_bk_biz_id = 123
+        execute_kwargs.caller_executor = "test-user"
+        execute_kwargs.caller_order_type = "ai_chat"
+        injector = BkAidevAgentInjector(tracer=tracer, debug=True)
+        handler = BkAidevAgentCallbackHandler(
+            tracer=tracer,
+            debug=True,
+            injector=injector,
+            start_inputs={"input": "x"},
+            start_execute_kwargs=execute_kwargs,
+            start_agent_info={"agent_id": "a", "agent_code": "c", "agent_name": "n"},
+        )
+        return handler
+
+    def test_root_span_session_total_tokens_normal_path(self, tracer_and_exporter):
+        """Test 3: root span agent.session.total_*_tokens == 2 次 LLM 调用累加和（on_chain_end 正常路径）"""
+        tracer, exporter = tracer_and_exporter
+        handler = self._make_root_span_handler(tracer)
+
+        chain_run_id = uuid4()
+        asyncio.run(
+            handler.on_chain_start(
+                serialized={"name": "wf"},
+                inputs={"input": "x"},
+                run_id=chain_run_id,
+                parent_run_id=None,
+            )
+        )
+
+        self._run_llm_call(handler, {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
+        self._run_llm_call(handler, {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
+
+        asyncio.run(
+            handler.on_chain_end(
+                outputs={"output": "r"},
+                run_id=chain_run_id,
+                parent_run_id=None,
+            )
+        )
+
+        spans = exporter.get_finished_spans()
+        root = next(s for s in spans if s.name == "agent.execution")
+        assert root.attributes["agent.session.total_input_tokens"] == 20
+        assert root.attributes["agent.session.total_output_tokens"] == 10
+        assert root.attributes["agent.session.total_tokens"] == 30
+
+    def test_root_span_session_total_tokens_on_chain_error(self, tracer_and_exporter):
+        """Test 4: on_chain_error 顶层路径 root span 仍有 agent.session.total_*_tokens"""
+        tracer, exporter = tracer_and_exporter
+        handler = self._make_root_span_handler(tracer)
+
+        chain_run_id = uuid4()
+        asyncio.run(
+            handler.on_chain_start(
+                serialized={"name": "wf"},
+                inputs={"input": "x"},
+                run_id=chain_run_id,
+                parent_run_id=None,
+            )
+        )
+
+        self._run_llm_call(handler, {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
+        self._run_llm_call(handler, {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
+
+        asyncio.run(
+            handler.on_chain_error(
+                error=ValueError("boom"),
+                run_id=chain_run_id,
+                parent_run_id=None,
+            )
+        )
+
+        spans = exporter.get_finished_spans()
+        root = next(s for s in spans if s.name == "agent.execution")
+        assert root.attributes["agent.session.total_input_tokens"] == 20
+        assert root.attributes["agent.session.total_output_tokens"] == 10
+        assert root.attributes["agent.session.total_tokens"] == 30
+
+    def test_root_span_session_total_tokens_generator_exit(self, tracer_and_exporter):
+        """Test 5: on_chain_error GeneratorExit 关流路径 root span 仍有汇总"""
+        tracer, exporter = tracer_and_exporter
+        handler = self._make_root_span_handler(tracer)
+
+        chain_run_id = uuid4()
+        asyncio.run(
+            handler.on_chain_start(
+                serialized={"name": "wf"},
+                inputs={"input": "x"},
+                run_id=chain_run_id,
+                parent_run_id=None,
+            )
+        )
+
+        self._run_llm_call(handler, {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
+        self._run_llm_call(handler, {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
+
+        asyncio.run(
+            handler.on_chain_error(
+                error=GeneratorExit(),
+                run_id=chain_run_id,
+                parent_run_id=None,
+            )
+        )
+
+        spans = exporter.get_finished_spans()
+        root = next(s for s in spans if s.name == "agent.execution")
+        assert root.attributes["agent.session.total_input_tokens"] == 20
+        assert root.attributes["agent.session.total_output_tokens"] == 10
+        assert root.attributes["agent.session.total_tokens"] == 30
+
+    def test_malformed_llm_output_no_usage_attributes(self, tracer_and_exporter):
+        """Test 6: 畸形 llm_output → 无 gen_ai.usage.* 属性、计数器不变、不抛异常"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, debug=True)
+
+        run_id = uuid4()
+        asyncio.run(
+            handler.on_llm_start(
+                serialized={"name": "test_llm"},
+                prompts=["请回答这个问题"],
+                run_id=run_id,
+                parent_run_id=None,
+            )
+        )
+        malformed = LLMResult(
+            generations=[[ChatGeneration(message=AIMessage(content="x"))]],
+            llm_output=None,
+        )
+        asyncio.run(
+            handler.on_llm_end(
+                response=malformed,
+                run_id=run_id,
+                parent_run_id=None,
+            )
+        )
+
+        spans = exporter.get_finished_spans()
+        span = next(s for s in spans if s.name == "llm.generate")
+        assert all(not k.startswith("gen_ai.usage") for k in span.attributes)
+        assert handler._total_input_tokens == 0
+        assert handler._total_output_tokens == 0
+        assert handler._total_total_tokens == 0
+
+    def test_usage_metadata_details_sets_cache_and_reasoning(self, tracer_and_exporter):
+        """Test 7: usage_metadata 有 details → cached_tokens/reasoning_tokens 属性被设置"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, debug=True)
+
+        run_id = uuid4()
+        asyncio.run(
+            handler.on_llm_start(
+                serialized={"name": "test_llm"},
+                prompts=["请回答这个问题"],
+                run_id=run_id,
+                parent_run_id=None,
+            )
+        )
+        llm_result = LLMResult(
+            generations=[
+                [
+                    ChatGeneration(
+                        message=AIMessage(
+                            content="答案",
+                            usage_metadata={
+                                "input_tokens": 10,
+                                "output_tokens": 5,
+                                "total_tokens": 15,
+                                "input_token_details": {"cache_read": 3},
+                                "output_token_details": {"reasoning": 2},
+                            },
+                        )
+                    )
+                ]
+            ],
+            llm_output={"model_name": "qwen3"},
+        )
+        asyncio.run(
+            handler.on_llm_end(
+                response=llm_result,
+                run_id=run_id,
+                parent_run_id=None,
+            )
+        )
+
+        spans = exporter.get_finished_spans()
+        span = next(s for s in spans if s.name == "llm.generate")
+        assert span.attributes["gen_ai.usage.input_tokens"] == 10
+        assert span.attributes["gen_ai.usage.output_tokens"] == 5
+        assert span.attributes["gen_ai.usage.total_tokens"] == 15
+        assert span.attributes["gen_ai.usage.cache_read.input_tokens"] == 3
+        assert span.attributes["gen_ai.usage.reasoning.output_tokens"] == 2

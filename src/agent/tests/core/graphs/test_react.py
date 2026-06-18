@@ -1139,7 +1139,15 @@ class TestReActAgentBuilder:
         """build() 在 enable_a2a_tool=True 时应调用 _prepare_a2a"""
         llm = MagicMock()
         llm.model_name = "gpt-4o"
-        builder = ReActAgentBuilder().set_llm(llm).enable_a2a_tool(True).enable_a2a_backend_local(True)
+        builder = (
+            ReActAgentBuilder()
+            .set_llm(llm)
+            .enable_a2a_tool(True)
+            .enable_a2a_backend_local(True)
+            .set_enable_runtime_tool(True)
+            .enable_runtime_paas(True)
+        )
+        builder._runtime_backend_resolver = MagicMock()
         with (
             patch("aidev_agent.core.graphs.react.graph.std_make_model_node", return_value=MagicMock()),
             patch(
@@ -1151,6 +1159,30 @@ class TestReActAgentBuilder:
             builder.build()
         mock_prepare_a2a.assert_called_once()
         assert builder._a2a_resolver is not None
+
+    def test_build_raises_when_a2a_without_paas_sandbox(self):
+        """启用 A2A 但未启用 PaaS 沙箱 runtime 时应抛 ValueError（PV 缺失会崩溃）"""
+        llm = MagicMock()
+        llm.model_name = "gpt-4o"
+        builder = (
+            ReActAgentBuilder()
+            .set_llm(llm)
+            .enable_a2a_tool(True)
+            .enable_a2a_backend_local(True)
+            .set_enable_runtime_tool(True)
+            .enable_runtime_local(True)  # 仅启用 local，未启用 paas_sandbox
+        )
+        builder._runtime_backend_resolver = MagicMock()
+        with pytest.raises(ValueError, match="未启用 PaaS 沙箱 runtime"):
+            builder.build()
+
+    def test_build_raises_when_a2a_without_runtime_tool(self):
+        """启用 A2A 但未启用 runtime_tool 时应抛 ValueError"""
+        llm = MagicMock()
+        llm.model_name = "gpt-4o"
+        builder = ReActAgentBuilder().set_llm(llm).enable_a2a_tool(True).enable_a2a_backend_local(True)
+        with pytest.raises(ValueError, match="未启用 PaaS 沙箱 runtime"):
+            builder.build()
 
     # ----------------------------------------------------------------
     # B (continued). _compute_use_structured_response 测试 (P0)

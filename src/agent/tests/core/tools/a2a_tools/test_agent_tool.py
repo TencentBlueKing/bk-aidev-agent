@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import pathlib
 from typing import Any
 
 import pytest
@@ -21,6 +22,8 @@ from aidev_agent.core.tools.a2a_tools.agent_tool import (
     _try_extract_member_info,
     _try_extract_task_lifecycle,
 )
+from aidev_agent.core.tools.a2a_tools.bkai_backend import BkAiBackend
+from aidev_agent.core.tools.a2a_tools.provider import AgentBackendResolver, get_agent_tools
 from aidev_agent.core.tools.a2a_tools.types import (
     AGENT_TOOL_NAME,
     KEY_AGENT_NAME,
@@ -29,6 +32,8 @@ from aidev_agent.core.tools.a2a_tools.types import (
     KEY_SESSION_CODE,
     KEY_STATUS,
     KEY_TOOL_CALLS,
+    AgentBackendType,
+    AgentSpec,
 )
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import StructuredTool
@@ -543,15 +548,9 @@ class TestProviderIntegration:
 
     def test_agent_tool_is_a2a_agent_tool_instance(self) -> None:
         """get_agent_tools() 返回的第一个工具是 A2AAgentTool 实例。"""
-        from aidev_agent.core.tools.a2a_tools.provider import get_agent_tools
-        from aidev_agent.core.tools.a2a_tools.types import AgentBackendType, AgentSpec
-
         specs = [AgentSpec(name="test", description="test", backend_type=AgentBackendType.BKAI, params={})]
-        from aidev_agent.core.tools.a2a_tools.bkai_backend import BkaiBackend
-        from aidev_agent.core.tools.a2a_tools.provider import AgentBackendResolver
-
         resolver = AgentBackendResolver()
-        resolver.register("bkai", BkaiBackend)
+        resolver.register("bkai", BkAiBackend)
         tools = get_agent_tools(specs, resolver)
 
         agent_tool = next(t for t in tools if t.name == "Agent")
@@ -559,15 +558,9 @@ class TestProviderIntegration:
 
     def test_send_messages_is_structured_tool_instance(self) -> None:
         """get_agent_tools() 返回的第二个工具（sendMessages）是 StructuredTool 实例。"""
-        from aidev_agent.core.tools.a2a_tools.provider import get_agent_tools
-        from aidev_agent.core.tools.a2a_tools.types import AgentBackendType, AgentSpec
-
         specs = [AgentSpec(name="test", description="test", backend_type=AgentBackendType.BKAI, params={})]
-        from aidev_agent.core.tools.a2a_tools.bkai_backend import BkaiBackend
-        from aidev_agent.core.tools.a2a_tools.provider import AgentBackendResolver
-
         resolver = AgentBackendResolver()
-        resolver.register("bkai", BkaiBackend)
+        resolver.register("bkai", BkAiBackend)
         tools = get_agent_tools(specs, resolver)
 
         send_msg_tool = next(t for t in tools if t.name == "sendMessages")
@@ -576,8 +569,6 @@ class TestProviderIntegration:
 
     def test_provider_no_team_wrapper_reference(self) -> None:
         """provider.py 中无 'team_wrapper' 代码引用。"""
-        import pathlib
-
         provider_path = pathlib.Path(__file__).parent.parent.parent.parent.parent / (
             "aidev_agent/core/tools/a2a_tools/provider.py"
         )

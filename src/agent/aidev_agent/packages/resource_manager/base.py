@@ -238,7 +238,7 @@ class BaseResourceManager(abc.ABC):
 
         封装 POST /api/bkaidev/resource/chat/v1/session_content/ 接口。
         供 LocalBackend 等通过 resource_manager 直接写回 session_content，
-        不经过 BkaiBackend.save_session_content（BkaiBackend 是远端子 Agent 写入路径）。
+        不经过 BkAiBackend.save_session_content（BkAiBackend 是远端子 Agent 写入路径）。
 
         Args:
             session_code: 会话 code

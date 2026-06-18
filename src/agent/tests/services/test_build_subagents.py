@@ -7,7 +7,7 @@
 - params 含 agent_cls / ctx 两个 key
 - agent_cls 是 ChatCompletionAgent 类（由 LocalBackend 运行时实例化）
 - ctx 是 AgentBuildContext 类型，agent_code/agent_type 正确
-- 子 ctx.agent_config.related_agents 被清空（递归断开）
+- 子 ctx.agent_config.related_agents 保留自身值（Phase 33: 支持 max_spawn_depth > 1）
 - 子 ctx 的 session 字段被重置
 - ctx.resource_manager 与父共享同一实例
 - ctx.username / event_handler 沿用父
@@ -177,8 +177,8 @@ def test_ctx_is_agent_build_context():
 # ============== Test 6 ==============
 
 
-def test_child_related_agents_cleared():
-    """即使子 config 原本含 related_agents（嵌套），子 ctx.agent_config.related_agents 必须被清空（递归断开 ）。"""
+def test_child_related_agents_preserved():
+    """子 ctx.agent_config.related_agents 保留自身值（Phase 33: 移除清空，支持 max_spawn_depth > 1）。"""
     # mock 子 config 故意带 nested related_agents
     nested_child_config = _make_agent_config(
         agent_code="child_code",
@@ -195,7 +195,8 @@ def test_child_related_agents_cleared():
     )
     specs = builder.build_subagents("parent_code")
     child_ctx = specs[0].params["ctx"]
-    assert child_ctx.agent_config.related_agents == []
+    # Phase 33: related_agents 不再被清空，子 Agent 保留自身 related_agents
+    assert len(child_ctx.agent_config.related_agents) == 2
 
 
 # ============== Test 7 ==============

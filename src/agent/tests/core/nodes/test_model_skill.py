@@ -127,14 +127,18 @@ class TestSkillOptionsRuntime:
         assert skills[0]["runtime"] == "sandbox"
 
     def test_skill_without_runtime_field(self, tmp_path: Path):
-        """Skill without runtime declared should not have runtime key in metadata."""
+        """Skill without runtime declared should fall back to "local".
+
+        ReActAgentBuilder._prepare_skills skips skills whose runtime is None, so
+        LocalBackend defaults undeclared runtime to "local" to keep them usable.
+        """
         skills_root = tmp_path / "skills"
         _write_skill(skills_root, name="local-skill", description="desc", body="Body")
 
         registry = SkillRegistry([str(skills_root)])
         skills = registry.list_skills()
         assert len(skills) == 1
-        assert "runtime" not in skills[0]
+        assert skills[0]["runtime"] == "local"
 
     def test_skill_runtime_local(self, tmp_path: Path):
         """Skill with runtime=local should have it in metadata."""

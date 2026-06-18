@@ -1,22 +1,24 @@
 # -*- coding: utf-8 -*-
-"""A2A progress 工具函数单元测试。阶段 26 新增。
+"""A2A utils 工具函数单元测试。阶段 26 新增，原 test_progress.py 合并而来。
 
 覆盖：
 - build_enriched_result() 返回 AgentResult（D-02）
-- count_tool_calls() 统计 TOOL_CALL_START
 - sanitize_error_message() 脱敏
+- detect_intermediate_step() 步骤描述
+
+注：count_tool_calls 已合并到 consume_sse_stream 内部递增计数器，
+原统计逻辑由 consume_sse_stream 返回的 tool_count 直接提供，不再独立测试。
 """
 
 from __future__ import annotations
 
 import json
 
-from aidev_agent.core.tools.a2a_tools.progress import (
+from aidev_agent.core.tools.a2a_tools.types import AgentResult, ExitReason
+from aidev_agent.core.tools.a2a_tools.utils import (
     build_enriched_result,
-    count_tool_calls,
     sanitize_error_message,
 )
-from aidev_agent.core.tools.a2a_tools.types import AgentResult, ExitReason
 
 
 class TestBuildEnrichedResult:
@@ -98,29 +100,6 @@ class TestBuildEnrichedResult:
         assert "error" not in d
 
 
-class TestCountToolCalls:
-    """count_tool_calls() 统计验证。"""
-
-    def test_counts_tool_call_start_events(self) -> None:
-        """统计 TOOL_CALL_START 事件次数。"""
-        events = [
-            {"type": "TEXT_MESSAGE_CONTENT", "delta": "hello"},
-            {"type": "TOOL_CALL_START", "tool": "search"},
-            {"type": "TOOL_CALL_START", "tool": "calculator"},
-            {"type": "TEXT_MESSAGE_CONTENT", "delta": "world"},
-        ]
-        assert count_tool_calls(events) == 2
-
-    def test_empty_events_returns_zero(self) -> None:
-        """空事件列表返回 0。"""
-        assert count_tool_calls([]) == 0
-
-    def test_no_tool_calls_returns_zero(self) -> None:
-        """无 TOOL_CALL_START 事件返回 0。"""
-        events = [{"type": "TEXT_MESSAGE_CONTENT", "delta": "hi"}]
-        assert count_tool_calls(events) == 0
-
-
 class TestSanitizeErrorMessage:
     """sanitize_error_message() 脱敏验证。"""
 
@@ -149,3 +128,45 @@ class TestSanitizeErrorMessage:
         """干净消息保持不变。"""
         msg = "Something went wrong"
         assert sanitize_error_message(msg) == msg
+
+    def test_redacts_project_api_key(self) -> None:
+        """D-10：sk-proj- 前缀的项目级 OpenAI key 被脱敏。"""
+        msg = "Error: sk-proj-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP123456"
+        result = sanitize_error_message(msg)
+        assert "sk-proj-" not in result
+        assert "REDACTED_API_KEY" in result
+
+    def test_redacts_url_encoded_access_token(self) -> None:
+        """D-10：URL 编码的 access_token（%3D）被脱敏。"""
+        msg = "token=access_token%3Dsecrettoken1234567890xyz"
+        result = sanitize_error_message(msg)
+        assert "secrettoken1234567890" not in result
+        assert "REDACTED" in result
+
+    def test_redacts_bk_token(self) -> None:
+        """D-10：蓝鲸 bk_token 被脱敏。"""
+        msg = "auth bk_token=mybksecret1234567890abc"
+        result = sanitize_error_message(msg)
+        assert "mybksecret1234567890" not in result
+        assert "REDACTED" in result
+
+    def test_redacts_app_secret(self) -> None:
+        """D-10：蓝鲸 app_secret 被脱敏。"""
+        msg = "config app_secret=myappsecret1234567890def"
+        result = sanitize_error_message(msg)
+        assert "myappsecret1234567890" not in result
+        assert "REDACTED" in result
+
+    def test_redacts_app_code(self) -> None:
+        """D-10：蓝鲸 app_code 被脱敏。"""
+        msg = "app_code=bk-app-code-12345"
+        result = sanitize_error_message(msg)
+        assert "bk-app-code-12345" not in result
+        assert "REDACTED" in result
+
+    def test_redacts_url_encoded_bearer(self) -> None:
+        """D-10：URL 编码的 Bearer token（%20）被脱敏。"""
+        msg = "Bearer%20eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0"
+        result = sanitize_error_message(msg)
+        assert "eyJhbGci" not in result
+        assert "REDACTED" in result

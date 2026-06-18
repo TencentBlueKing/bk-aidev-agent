@@ -156,6 +156,7 @@ class ChatCompletionAgent(BaseModel):
         description="RuntimeBackendResolver 引用，由 ChatAgentBuilder 构造，用于执行结束后关闭沙箱资源",
     )
     agent_info: dict | None = Field(default=None, description="原始配置信息，来自 AgentConfig.agent_info")
+    max_spawn_depth: int = Field(default=1, description="最大 Agent 嵌套深度，来自 AgentConfig.max_spawn_depth")
 
     IMAGE_FILE_PATTERN: ClassVar[re.Pattern] = re.compile(r"^!\[.*\]\((http[^)]+/([^/]+?))\)")
     TOOL_EXECUTION_INTERVAL: ClassVar[int] = 10
@@ -207,6 +208,7 @@ class ChatCompletionAgent(BaseModel):
         # 构造 RuntimeBackendResolver（在 ChatAgentBuilder 层管理生命周期）
         self.runtime_backend_resolver = builder.build_runtime_backend_resolver()
         self.agent_info = getattr(ctx.agent_config, "agent_info", None) if ctx.agent_config else None
+        self.max_spawn_depth = ctx.agent_config.max_spawn_depth if ctx.agent_config else 1
 
         if chat.agent_cls is not None:
             self.agent_cls = chat.agent_cls
@@ -581,6 +583,33 @@ class ChatCompletionAgent(BaseModel):
             }
         ]
 
+    def _fetch_execute_pv(self) -> list[dict]:
+        """从 execute_kwargs 读取 sandbox_pv_id，构造 execute_kwargs 来源的 PV 条目。
+
+        若 execute_kwargs.sandbox_pv_id 存在，直接构造 PV dict 返回；
+        失败时返回空列表，不阻塞图执行。
+
+        Returns:
+            PV 条目列表，source 为 'execute_kwargs'；若无 sandbox_pv_id 则返回空列表。
+        """
+        try:
+            ek = getattr(self, "_execute_kwargs", None)
+            sandbox_pv_id = ek.sandbox_pv_id if ek else None
+        except Exception:
+            logger.warning("fetch execute PV failed: thread_id=%s", self.thread_id, exc_info=True)
+            return []
+        if not sandbox_pv_id:
+            return []
+        return [
+            {
+                "type": "paas-sbx-pv",
+                "volume_id": sandbox_pv_id,
+                "volume_name": f"agent-pv-{self.thread_id}",
+                "mount_path": "session",
+                "source": "execute_kwargs",
+            }
+        ]
+
     # ---------- messages 处理流水线（Phase 11.4: 从 agent.py 整合） ----------
     def _sync_checkpoint_messages(self, agent_e: Runnable, cfg: RunnableConfig) -> list[BaseMessage]:
         """同步 checkpoint 中的消息，返回 checkpoint 中非系统消息列表。
@@ -840,7 +869,14 @@ class ChatCompletionAgent(BaseModel):
         agent_e, cfg = self._get_agent(messages, execute_kwargs=execute_kwargs)
         cfg.setdefault("configurable", {})
         cfg["configurable"]["thread_id"] = self.thread_id
+        # D-01/D-03: spawn_depth/spawned_by 由 ExecuteKwargs 默认值（主 Agent）或 _extract_execute_kwargs（子 Agent）提供，这里不再覆盖。
+        # D-02: 仅主 Agent（无父会话）读 AgentConfig.max_spawn_depth；子 Agent 由 _extract_execute_kwargs 继承父值（Phase 33 D-02）
+        if execute_kwargs.spawned_by is None:
+            execute_kwargs.max_spawn_depth = self.max_spawn_depth
+        execute_kwargs.tool_deny = execute_kwargs.tool_deny or []
+        execute_kwargs.tool_allow = execute_kwargs.tool_allow or []
         cfg["configurable"]["execute_kwargs"] = execute_kwargs
+        self._execute_kwargs = execute_kwargs
 
         # 清除 checkpoint 中的旧消息，避免与平台消息重复
         # 平台传入的 messages 已包含完整历史，无需拼接
@@ -850,7 +886,7 @@ class ChatCompletionAgent(BaseModel):
 
         # platform_pv 统一在此构造，下传给 _stream_with_legacy / _stream / _invoke
         state: dict[str, Any] = {}
-        platform_pv = self._fetch_platform_pv()
+        platform_pv = self._fetch_execute_pv() or self._fetch_platform_pv()
         if platform_pv:
             state["runtime_paas_sbx_pv"] = platform_pv
 
@@ -1746,8 +1782,8 @@ class ChatAgentBuilder:
         - LOCAL 路径：通过 `resource_manager.get_agent_config(agent_code=child_agent_code, version=None)` 获取子 Agent 配置
           每条子 Agent 产出 ``AgentSpec(params={"agent_cls", "ctx"})``，
           让 LocalBackend 在运行时 ``agent_cls()`` 创建实例再 ``.build(ctx)``
-        - **硬约束**：子 ``agent_config.related_agents`` 被清空，实现递归断开 ——
-          即使配置里有嵌套 subagents 也不会生成第二层 AgentSpec
+        - 子 Agent 保留自身 ``related_agents``，支持 ``max_spawn_depth > 1``；
+          嵌套深度由 ``ExecuteKwargs.spawn_depth`` 和 ``_check_nesting`` 控制
 
         Args:
             agent_code: 父 Agent 的 agent_code（仅用于日志输出，与子 Agent 无关）
@@ -1819,8 +1855,9 @@ class ChatAgentBuilder:
                 # 1. 取子 Agent 配置（version=None → 最新版；子 agent_code 不继承父 version 语义）
                 child_config = self.ctx.resource_manager.get_agent_config(agent_code=child_agent_code, version=None)
 
-                # 2. 递归断开：清空子 config 的 related_agents
-                child_config = child_config.model_copy(update={"related_agents": []})
+                # 2. 保留子 config 的 related_agents，支持 max_spawn_depth > 1
+                #    （Phase 33 起不再递归清空；LocalBackend 运行时会按 max_spawn_depth 控制是否继续 spawn）
+                # child_config 直接使用，不修改 related_agents
 
                 # 3. 构造子 ChatBuildExtras：与父共享 agent_cls/auth_headers/checkpointer；
                 #   仅 callbacks 隔离避免事件双发
@@ -1854,7 +1891,7 @@ class ChatAgentBuilder:
                     extra={},
                 )
 
-                # 5. 构造子 Agent 规格（agent_cls + ctx，由 LocalBackend 运行时实例化并 build）
+                # 4. 构造子 Agent 规格（agent_cls + ctx，由 LocalBackend 运行时实例化并 build）
                 specs.append(
                     AgentSpec(
                         name=child_agent_code,

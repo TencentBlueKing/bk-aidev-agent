@@ -483,11 +483,50 @@ class TestBkAiBackend:
         provider = BkAiBackend(mock_client, related_skills)
         skill = provider.discover()[0]
 
-        assert skill["callee_agent_code"] == "agent_a"
+        assert skill["metadata"]["callee_agent_code"] == "agent_a"
         mock_client.retrieve_skill.assert_any_call(skill_id="1", version="1.0", callee_agent_code="agent_a")
 
         provider.fetch_instructions(skill)
         assert mock_client.retrieve_skill.call_args.kwargs["callee_agent_code"] == "agent_a"
+
+    def test_callee_agent_code_survives_frontmatter_metadata(self, mock_client):
+        """Test callee_agent_code is not clobbered by SKILL.md's own metadata block.
+
+        apply_optional_frontmatter_fields assigns metadata wholesale, so platform-injected
+        keys must be written after the frontmatter merge.
+        """
+        mock_client.retrieve_skill.return_value = {
+            "skill_markdown": "---\nname: t\ndescription: d\nmetadata:\n  author: someone\n---\nbody",
+        }
+        related_skills = [
+            {
+                "id": 1,
+                "skill_name": "t",
+                "skill_description": "d",
+                "version": "1.0",
+                "callee_agent_code": "agent_a",
+            },
+        ]
+        skill = BkAiBackend(mock_client, related_skills).discover()[0]
+
+        assert skill["metadata"]["callee_agent_code"] == "agent_a"
+        assert skill["metadata"]["author"] == "someone"
+
+    def test_callee_agent_code_survives_api_failure(self, mock_client):
+        """Test callee_agent_code is still set when the frontmatter API call fails"""
+        mock_client.retrieve_skill.side_effect = RuntimeError("api down")
+        related_skills = [
+            {
+                "id": 1,
+                "skill_name": "t",
+                "skill_description": "d",
+                "version": "1.0",
+                "callee_agent_code": "agent_b",
+            },
+        ]
+        skill = BkAiBackend(mock_client, related_skills).discover()[0]
+
+        assert skill["metadata"]["callee_agent_code"] == "agent_b"
 
     # ------------------------------------------------------------------
     # sandbox → metadata["metadata"]["bkai_paas_sandbox"]

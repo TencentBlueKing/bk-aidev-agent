@@ -4,7 +4,7 @@
 以 AgentSpec + AgentBackend 为核心的多智能体范式。
 
 该模块包含：
-- AgentBackendType: Agent 后端类型枚举（BKAI / LOCAL）
+- AgentBackendType: Agent 后端类型枚举（BKAI / LOCAL / ACP / A2A）
 - ExitReason: 子 Agent 退出原因分类枚举（Phase 23）
 - AgentSpec: 统一的声明式 Agent 定义
 - AgentBackend: Agent 后端执行合约 Protocol（Phase 23 扩展 progress_callback）
@@ -32,6 +32,12 @@ class AgentBackendType(str, Enum):
 
     LOCAL = "local"
     """本地智能体（Fork 自身）。"""
+
+    ACP = "acp"
+    """ACP 协议客户端（ndJSON over stdio）。"""
+
+    A2A = "a2a"
+    """A2A 协议客户端（HTTP/JSON-RPC 传输）。"""
 
 
 class ExitReason(str, Enum):
@@ -117,6 +123,22 @@ class AgentBackend(Protocol):
     Returns:
         AgentResult 标准化富结果（阶段 26：frozen BaseModel）
     """
+
+    def new_session(self, spec: AgentSpec, **kwargs: Any) -> str:
+        """创建新会话并返回 session_code。
+
+        Backend 自行管理 session 的创建方式：
+        - Local / Bkai / A2A: 返回 uuid4().hex
+        - ACP: 通过 spawn_agent_process 调用 ACP 协议创建会话，返回 ACP session_id
+
+        Args:
+            spec: Agent 规格
+            **kwargs: 后端特定的额外参数（如 ACP 的 command, args, cwd, env）
+
+        Returns:
+            session_code 字符串
+        """
+        ...
 
     def execute(
         self,
