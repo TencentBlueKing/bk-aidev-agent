@@ -1,5 +1,40 @@
 # 更新日志
 
+## v2.1.4
+
+v2.1.4 正式版整合了 beta.2 至 beta.25 的所有功能与修复，以下是面向用户的核心更新摘要。
+
+### 新功能
+
+- **消息自定义渲染**（≥ v2.1.4-beta.2）：支持在 AI 对话中嵌入自定义组件（图表、iframe、表单等），通过 `parseCustomBlocks` 解析 `custom-component` 代码块，详见 [消息自定义渲染](/guide/core-features/custom-message-rendering)
+- **蓝鲸行内富文本**（≥ v2.1.4-beta.6）：AI 消息支持 `::bk{属性}正文:/bk::` 语法渲染颜色、加粗、背景色、字号等样式，无需开启 HTML 解析，详见 [蓝鲸行内富文本](/guide/core-features/markdown-inline-style)
+- **侧栏 Tab 自定义渲染**（≥ v2.1.4-beta.7）：`ChatBot` / `AIBlueking` 支持 `getSideRenderComponent`、`getSideTabRenderComponent`、`onCustomTabChange`，用于自定义 FlowAgent 节点详情等内容区与 Tab 标签
+- **Standalone 非 Vue 宿主集成**（≥ v2.1.4-beta.8）：新增 `@blueking/ai-blueking/standalone` 子入口，内联 Vue 3 runtime，供 React、Angular、纯 HTML 等非 Vue 宿主通过 `mountAIBlueking`、`mountChatBot` 挂载小鲸，详见 [Standalone 非 Vue 宿主集成](/guide/integration-modes/standalone-bundle)
+- **`requestOptions` 响应式增强**（≥ v2.1.4-beta.8）：`headers` / `data` 支持普通对象、函数、`ref`、`computed`；外层 `requestOptions` 可为 `ref` / `computed`，切换 token 或租户无需重建组件
+- **`requestOptions.context` 业务上下文**（≥ v2.1.4-beta.15）：新增 `context` 字段，支持将业务上下文自动合并到消息的 `property.extra.context`，详见 [自定义请求](/guide/advanced-usage/custom-requests)
+- **`ChatBot.whenReady()` / `isReady`**（≥ v2.1.4-beta.13）：独立嵌入场景下，`await chatBotRef.whenReady()` 在初始化完成后 resolve；`isReady` 为只读响应式状态
+- **`updateAgentInfo` 方法**（≥ v2.1.4-beta.14）：可主动刷新 agent 信息并自动同步 shortcuts 等内部状态
+- **错误处理增强**（≥ v2.1.4-beta.25）：新增 `reportSdkError` 方法、`errorToast` prop、`ignoreErrors` prop，支持更灵活的错误控制
+
+### 优化
+
+- **`show()` 会话就绪 Promise**（≥ v2.1.4-beta.9）：`await show()` 在 `sessionList` 加载完成后 resolve，面板仍立即打开
+- **HTTP 错误统一处理**（≥ v2.1.4-beta.25）：`@blueking/chat-helper` 的 `FetchClient` 新增 `onError` 全局错误处理器
+- **`sdk-error` 事件增强**（≥ v2.1.4-beta.25）：payload 新增 `source` 和 `action` 字段，便于区分错误类型
+
+### 修复
+
+- **中文文件名上传**（≥ v2.1.4-beta.25）：修复上传包含中文等非 ASCII 字符的图片时编码失败的问题
+- **会话初始化幂等**（≥ v2.1.4-beta.20）：修复 `AIBlueking` 在 `v-show` 隐藏挂载后再次调用 `show()` 时可能重复初始化的问题
+- **空会话切换优化**（≥ v2.1.4-beta.20）：空会话切换时跳过历史消息加载
+
+### 升级建议
+
+- 若业务方使用 `^2.1.4-beta.12` 等 semver 范围，建议锁定明确版本号或升级到 **2.1.4**
+- 详细变更记录请参考下方各 beta 版本说明
+
+---
+
 ## v2.1.4-beta.25
 
 ### 新功能
