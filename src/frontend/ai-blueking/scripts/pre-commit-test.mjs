@@ -157,7 +157,7 @@ const runTests = testFiles => {
     return true;
   } catch {
     console.error('\n❌ 测试失败！请修复测试后再提交。\n');
-    console.log('💡 提示：可以使用 @update-test 命令让 AI 帮助修复测试\n');
+    console.log('💡 提示：可让 AI 使用 chat-x-update-docs skill 帮助修复测试\n');
     return false;
   }
 };
@@ -168,9 +168,7 @@ const runTests = testFiles => {
  * @param {{ target: string, src: string }[]} items 未更新的文件列表
  */
 const showNotUpdatedWarning = (type, items) => {
-  const isTest = type === 'test';
-  const label = isTest ? '测试文件' : 'Wiki 文档';
-  const command = isTest ? 'update-test' : 'update-wiki';
+  const label = type === 'test' ? '测试文件' : 'Wiki 文档';
 
   console.log(`\n⚠️  检测到以下源文件改动，但对应的${label}未更新：\n`);
 
@@ -182,14 +180,12 @@ const showNotUpdatedWarning = (type, items) => {
 
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
-  console.log(`  💡 请使用 Cursor 的 ${command} 命令来更新${label}：`);
+  console.log(`  💡 测试与文档需在提交前同步更新。请在 Cursor 聊天中让 AI 使用`);
+  console.log('     chat-x-update-docs skill 自动分析改动并同步 test + wiki：');
   console.log('');
-  console.log('     1. 在 Cursor 中按 Cmd+Shift+P (Mac) 或 Ctrl+Shift+P (Windows)');
-  console.log(`     2. 输入 "${command}" 并选择该命令`);
-  console.log(`     3. AI 将自动分析改动并更新${label}`);
+  console.log('     例如输入：「提交前同步这次改动对应的 test 和 wiki」');
   console.log('');
-  console.log('  或者直接在 Cursor 聊天中输入：');
-  console.log(`     @${command}`);
+  console.log('  skill 位置：packages/chat-x/.agents/skills/chat-x-update-docs/');
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
@@ -224,7 +220,7 @@ const main = () => {
 
   if (testFilesMap.length === 0) {
     console.log('\n⚠️  源文件改动但没有找到对应的测试文件');
-    console.log('💡 提示：可以使用 @update-test 命令让 AI 帮助创建测试\n');
+    console.log('💡 提示：可让 AI 使用 chat-x-update-docs skill 帮助创建测试\n');
   } else {
     const notUpdatedTests = findUnstaged(testFilesMap, stagedSet);
     if (notUpdatedTests.length > 0) {

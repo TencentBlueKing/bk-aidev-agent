@@ -11,6 +11,7 @@
 - `requestOptions.data` 对 POST/PUT/PATCH/DELETE 合并进 body；对 GET/HEAD/OPTIONS 合并进 query（params）
 - `supportUpload` 需从 `ChatContainer -> MessageContainer -> MessageRender -> UserMessage` 全链路透传；否则用户消息编辑态 `ChatInput` 会回退到默认 `true` 与主输入区配置不一致
 - 自定义 `ChatContainer` 的 `#message` 插槽渲染 `MessageRender` 时，必须透传 `on-action`、`on-input-confirm`、`on-shortcut-confirm`、`tippy-options`；否则用户消息的工具操作（删除/编辑/复制/引用）全部失效，而 AI 消息的工具操作不受影响（AI 的 `MessageTools` 在 `MessageContainer` 内部渲染，不经过 `#message` 插槽）
+- `ChatInput` 发送按钮图标尺寸由 `input-attachment.vue` 的全局类 `.send-message-icon` 控制，图标走 `.ai-common-icon`（全局 `width/height:1em`），故尺寸由 `font-size` 驱动；该全局类经 `InputAttachment` 作用于所有 `ChatInput` 实例（主输入区 chat-container、用户消息编辑态 user-message、中断/追问卡片 interrupt-message / user-question-card），改一处全量生效
 
 ## Selection & Share Flow
 
@@ -25,6 +26,32 @@
 ## TypeScript Patterns
 
 - 避免 `IShortcut & Shortcut` 整块交叉类型，当两个接口同名字段类型冲突（如 `fillRegx: RegExp` vs `string`、`components` 结构差异）时会产生 `never`；改用 `Shortcut & Pick<IShortcut, 'supportUpload'>` 只扩展所需字段
+
+## 编码约定（详见 chat-x-dev skill）
+
+- `.ts` 文件顶部带项目 MIT license 头，`.vue` 文件不带；SFC 顺序固定 `template → script setup → style`，import 分组 vue → 三方 → 内部相对 → `import type`
+- 样式统一 `&-element` 嵌套（不用 `&__element`），class 一律 `ai-` 前缀 BEM + `&.is-xxx` 状态；字号用 `var(--ai-font-size, 12px)` 必带兜底；语义色 `@use styles/variables.scss`；禁止 `:deep`
+- composable 用箭头函数 + `Symbol` token 的 `useXxx`(provide)/`injectXxx`(inject 兜底 undefined)；只放数据逻辑，UI 交互态留组件本地；优先 `shallowRef`/`shallowReactive`
+- 类型扩展走 `declare global` 声明合并（`AIBluekingMessageMap`/`AIBluekingContentMap`），不加组件泛型逐层透传；i18n 所有可见文案走 `t('中文')` 并同步 `src/lang/lang.ts`（漏加会类型报错）
+
+## Skills 与文档体系
+
+- 项目已沉淀 4 个 skill：`.agents/skills/chat-x-dev`（库内编码规范）、`skills/blueking-chat-x`（消费方使用导航，注意在 `skills/` 而非 `.agents/skills/`）、`.agents/skills/chat-x-update-docs`（提交前同步 test+wiki）、`.agents/skills/chat-x-tapd-dev`（TAPD 开发闭环）
+- 组件 API 真相源是 `wikis/` + chat-x MCP（`chat-x-mcp`：`list_components`/`get_component_doc`/`search_docs`，由 `mcp/scripts/build-index.ts` 从 wikis 构建索引）；不要凭记忆臆测 props/events/slots
+- `wikis/components/` 已按能力域目录组织（agent/feedback/helper/input/medias/message/rendering/setup），文档带 frontmatter；源码↔文档映射见 `wikis/components/inventory.md`，VitePress 侧边栏在 `wikis/.vitepress/config.mts` 手动维护
+
+## Git 与提交校验
+
+- `.git` 在 monorepo 根 `liang-ai-agent/.git`（workspace 为 `packages/chat-x`），沙箱内 `git commit`/`git push`/`gh pr create` 会报 `index.lock: Operation not permitted`，需 `required_permissions: ["all"]`；`git fetch` 用 `["network"]`
+- git remote：origin = 个人 fork `liangling0628/bk-aidev-agent`，upstream = `TencentBlueKing/bk-aidev-agent`；本仓库未启用 GPG 签名，可直接代提交
+- commit-msg 走 `@blueking/bkui-lint/verify-commit.mjs`：`type: subject` 的 subject（含 `--story=`/`--bug=` 后缀）须 1–50 字符；任何情况不得用 `--no-verify`
+- pre-commit `scripts/pre-commit-test.mjs`：staged 的 `packages/chat-x/src` 改动，若对应 colocated `*.spec.ts` 或 `wikis/components/**` 已存在却未一并 stage 则拦截提交，并自动跑相关 vitest（测试不过无法提交）；slug override `components/image-preview/image.vue → ai-image`
+- TAPD 单据 workspace_id 固定 `70093903`（蓝鲸开发工具）；19 位 ID = `10`+workspace_id(8 位)+短 ID(9 位)，分支名用完整 ID、commit/PR title 后缀用短 ID
+
+## Figma 设计稿开发
+
+- Figma MCP（`user-figma`）默认可能未连接当前工作区，可检查 `~/.cursor/projects/<proj>/mcps/` 是否出现 `user-figma` 目录来判断；未连接时需让用户在 Cursor 启用后再继续
+- 读取设计稿规格优先用 `get_design_context`（传 fileKey + nodeId），比 `get_metadata` 更有用（后者只给结构）；首次调用若要求 Code Connect 映射，确认不需要时传 `disableCodeConnect: true` 直接拿设计上下文，避免循环
 
 ## Workflow Preferences
 
