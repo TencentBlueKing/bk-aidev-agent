@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+from aidev_agent.enums import ChannelType
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
 from aidev_agent.services.messages_handler.constants import TimeoutConfig
 from aidev_agent.services.messages_handler.factory import message_handler_factory
@@ -17,6 +18,11 @@ from aidev_bkplugin.views.base import PluginResourceManager, PluginViewSet, clie
 class ChatSessionViewSet(PluginViewSet):
     session_type: str = "dev" if is_local_dev() else "agent"
 
+    @property
+    def channel_type(self):
+        """会话创建/查询入口的默认渠道"""
+        return ChannelType.POPUP.value
+
     def list(self, request):
         result = client.api.list_chat_session(
             headers={"X-BKAIDEV-USER": request.user.username}, params={"session_type": self.session_type}
@@ -30,7 +36,12 @@ class ChatSessionViewSet(PluginViewSet):
         return Response(data=result["data"])
 
     def create(self, request):
-        data = {**request.data, "protocol_version": AGUI_PROTOCOL_VERSION, "session_type": self.session_type}
+        data = {
+            "channel_type": self.channel_type,
+            **request.data,
+            "protocol_version": AGUI_PROTOCOL_VERSION,
+            "session_type": self.session_type,
+        }
         result = client.api.create_chat_session(json=data, headers={"X-BKAIDEV-USER": request.user.username})
         return Response(data=result["data"])
 
