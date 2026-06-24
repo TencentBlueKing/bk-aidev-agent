@@ -389,6 +389,7 @@ class BkpluginFlow(BkpluginAgentRunner):
         user = self.username or ""
         params = dict(execute_payload.get("flow_start_params") or {})
         params["session_code"] = session_code
+        params.setdefault("channel_type", ChannelType.BKPLUGIN.value)
         turn_id = execute_payload.get("turn_id") or ""
         handler = AGUISessionWriter(
             session_code=session_code,

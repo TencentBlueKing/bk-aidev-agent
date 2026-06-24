@@ -89,6 +89,7 @@ class FlowAgentViewSet(PluginViewSet):
         session_code = request.data.get("session_code", "")
         context = request.data.get("context", [])
         execute_kwargs_data = request.data.get("execute_kwargs", {})
+        channel_type = request.data.get("channel_type", "")
 
         try:
             flow_start_params = {
@@ -96,6 +97,8 @@ class FlowAgentViewSet(PluginViewSet):
             }
             if context:
                 flow_start_params["context"] = context
+            if channel_type:
+                flow_start_params["channel_type"] = channel_type
             if execute_kwargs_data:
                 execute_kwargs = build_execute_kwargs(execute_kwargs_data, username)
                 flow_start_params["execute_kwargs"] = {

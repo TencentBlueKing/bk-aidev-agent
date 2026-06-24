@@ -168,7 +168,7 @@ class FlowAgentStrategy:
             # flow_resource_manager 是 flow start 接口专用 client（带特殊认证），与
             # 工厂的 resource_manager（用于会话上下文等通用 API）解耦。
             flow_resource_manager=WxFlowAgentClient(username, rtx_username=rtx_username),
-            flow_start_params={"session_code": session_code},
+            flow_start_params={"session_code": session_code, "channel_type": ChannelType.RTX.value},
             poll_interval=float(agent_settings.FLOW_AGENT_POLL_INTERVAL),
             poll_timeout=float(agent_settings.FLOW_AGENT_POLL_TIMEOUT),
         )

@@ -92,7 +92,9 @@ class ChatCompletionViewSet(PluginViewSet):
                 turn_id = self._save_user_input(session_code, username, _input, turn_id)
                 if hasattr(execute_kwargs, "turn_id"):
                     execute_kwargs.turn_id = turn_id
-                return self._handle_flow_agent(data, session_code, username, turn_id=turn_id)
+                return self._handle_flow_agent(
+                    data, session_code, username, turn_id=turn_id, channel_type=self.channel_type
+                )
 
             if thread_id:
                 # chat_history 已经过 serializer 校验，元素必含 role/content
@@ -233,7 +235,15 @@ class ChatCompletionViewSet(PluginViewSet):
                 return resolved
         return ""
 
-    def _handle_flow_agent(self, data: dict, session_code: str, username: str, *, turn_id: str):
+    def _handle_flow_agent(
+        self,
+        data: dict,
+        session_code: str,
+        username: str,
+        *,
+        turn_id: str,
+        channel_type: str = "",
+    ):
         """处理 Flow Agent 请求
 
         通过 chat_completion 接口复用流式 SSE 机制，轮询 flow agent 任务状态并推送。
@@ -245,6 +255,7 @@ class ChatCompletionViewSet(PluginViewSet):
         4. 用户点击「停止」→ revoke bkflow 任务（不可恢复）
 
         :param data: ``ChatCompletionRequestSerializer.validated_data``
+        :param channel_type: 调用渠道，透传给 flow_agent/start/接口
         """
         task_id = data["task_id"] or None
         flow_start_params = dict(data["flow_start_params"])
@@ -257,7 +268,8 @@ class ChatCompletionViewSet(PluginViewSet):
         )
 
         logger.info(
-            f"[FLOW_AGENT] _handle_flow_agent: session_code={session_code}, username={username}, task_id={task_id}"
+            f"[FLOW_AGENT] _handle_flow_agent: session_code={session_code}, username={username}, task_id={task_id}, "
+            f"channel_type={channel_type}"
         )
 
         if poll_interval <= 0:
@@ -270,6 +282,9 @@ class ChatCompletionViewSet(PluginViewSet):
         # 并将它们作为 ${input} / ${chat_history} constants 传给 bkflow 任务
         if session_code:
             flow_start_params.setdefault("session_code", session_code)
+        # 透传调用渠道，避免后端 create_task 把 popup/rtx 等真实渠道误改为 API
+        if channel_type:
+            flow_start_params.setdefault("channel_type", channel_type)
 
         # 构建 event_handler（如果有 session_code）
         event_handler = None

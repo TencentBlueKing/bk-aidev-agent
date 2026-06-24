@@ -70,7 +70,9 @@ class OpenapiAgentAbilitiesViewSet(OpenapiPluginViewSet):
 
 
 class OpenapiChatSessionViewSet(OpenapiPluginViewSet, ChatSessionViewSet):
-    pass
+    @property
+    def channel_type(self):
+        return ChannelType.API.value
 
 
 class OpenapiChatSessionContentViewSet(OpenapiPluginViewSet, ChatSessionContentViewSet):
