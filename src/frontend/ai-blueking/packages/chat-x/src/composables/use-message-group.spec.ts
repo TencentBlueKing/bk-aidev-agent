@@ -28,7 +28,7 @@ import { computed, ref as deepRef, nextTick, shallowRef } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { APPROVAL_STATUS, InterruptReason, MessageContentType, MessageRole, MessageStatus } from '../ag-ui/types';
-import { LOADING_MESSAGE_ID } from '../common/constants';
+import { LOADING_MESSAGE_ID, RenderMode } from '../common/constants';
 import { useMessageGroup } from './use-message-group';
 
 import type { AssistantMessage, Message, ToolMessage, UserMessage } from '../ag-ui/types';
@@ -102,18 +102,20 @@ const createApprovalInterruptMessage = (id: string, status: APPROVAL_STATUS): Me
     },
   }) as Message;
 
-const setupMessageGroup = (messages: Message[], keyword = '') => {
+const setupMessageGroup = (messages: Message[], keyword = '', renderMode?: RenderMode) => {
   const messagesRef = computed(() => messages);
   const selectedUserMessages = deepRef<Message[] | undefined>([]);
   const keywordRef = shallowRef(keyword);
+  const renderModeRef = shallowRef(renderMode);
 
   const result = useMessageGroup({
     keyword: keywordRef,
     messages: messagesRef,
+    renderMode: renderModeRef,
     selectedUserMessages,
   });
 
-  return { ...result, selectedUserMessages, keywordRef, messagesRef };
+  return { ...result, selectedUserMessages, keywordRef, messagesRef, renderModeRef };
 };
 
 describe('useMessageGroup', () => {
@@ -207,6 +209,14 @@ describe('useMessageGroup', () => {
 
       const lastGroup = messageGroups.value.at(-1);
       expect(lastGroup?.type).toBe(MessageRole.Assistant);
+    });
+
+    it('renderMode 为 Share 时末尾为用户消息不应追加 Loading 组', async () => {
+      const { messageGroups } = setupMessageGroup([createUserMessage('1')], '', RenderMode.Share);
+      await nextTick();
+
+      expect(messageGroups.value.length).toBe(1);
+      expect(messageGroups.value[0]?.type).toBe(MessageRole.User);
     });
   });
 

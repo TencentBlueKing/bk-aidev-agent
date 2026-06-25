@@ -23,8 +23,8 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import type { ComputedRef, Ref, ShallowRef } from 'vue';
-import { computed, ref as deepRef, shallowRef, watch, watchEffect } from 'vue';
+import type { ComputedRef, MaybeRef, Ref, ShallowRef } from 'vue';
+import { computed, ref as deepRef, shallowRef, toValue, watch, watchEffect } from 'vue';
 
 import {
   type ActivityMessage,
@@ -36,7 +36,7 @@ import {
   MessageRole,
   MessageStatus,
 } from '../ag-ui/types';
-import { LOADING_MESSAGE_ID } from '../common/constants';
+import { LOADING_MESSAGE_ID, RenderMode } from '../common/constants';
 import { t } from '../lang/lang';
 import { generateUUID } from '../utils';
 
@@ -139,6 +139,7 @@ const countPendingApprovalInterrupts = (messages: Message[]): number =>
 export const useMessageGroup = (options: {
   keyword?: ShallowRef<string>;
   messages: ComputedRef<Message[]>;
+  renderMode?: MaybeRef<RenderMode>;
   selectedUserMessages: Ref<Message[] | undefined>;
 }) => {
   const messageGroups = deepRef<MessageGroup[]>([]);
@@ -200,7 +201,9 @@ export const useMessageGroup = (options: {
         pause: assistantMessages?.some(m => m.property?.extra?.pause) ?? false,
       });
     }
-    if (options.messages.value.at(-1)?.role === MessageRole.User) {
+    const shouldAppendLoading =
+      options.messages.value.at(-1)?.role === MessageRole.User && toValue(options.renderMode) !== RenderMode.Share;
+    if (shouldAppendLoading) {
       list.push({
         messages: [
           {

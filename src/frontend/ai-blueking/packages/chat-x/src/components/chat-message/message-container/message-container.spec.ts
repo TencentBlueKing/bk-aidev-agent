@@ -861,6 +861,25 @@ describe('MessageContainer', () => {
       expect(loadingRender).toBeTruthy();
     });
 
+    it('renderMode 为 Share 时不应渲染 Loading 消息组', async () => {
+      const messages: Message[] = [createUserMessage('1', 'Hello', 1)];
+
+      wrapper = mount(MessageContainer, {
+        props: {
+          ...defaultProps,
+          messages,
+          messageGroups: buildGroups(messages),
+          renderMode: RenderMode.Share,
+        },
+      });
+
+      await nextTick();
+
+      const messageRenders = wrapper.findAll('.mock-message-render');
+      const loadingRender = messageRenders.find(r => r.attributes('data-role') === MessageRole.Loading);
+      expect(loadingRender).toBeUndefined();
+    });
+
     it('最后一条消息是助手消息时不应该追加 Loading 消息组', async () => {
       const messages: Message[] = [createUserMessage('1', 'Hello', 1), createAssistantMessage('2', 'Hi!', 2)];
 
@@ -1365,6 +1384,23 @@ describe('MessageContainer', () => {
 
       const messageGroupMessages = wrapper.find('.message-group-messages');
       expect(messageGroupMessages.classes()).toContain('message-group-enabled-selection');
+    });
+
+    it('renderMode 为 Share 时流式状态不应显示停止生成按钮', async () => {
+      wrapper = mount(MessageContainer, {
+        props: {
+          ...defaultProps,
+          messageStatus: MessageStatus.Streaming,
+          renderMode: RenderMode.Share,
+        },
+      });
+
+      await nextTick();
+
+      const scrollBtns = wrapper.findAll('.mock-scroll-btn');
+      const stopBtn = scrollBtns.find(btn => btn.text().includes('停止生成'));
+      expect(stopBtn).toBeTruthy();
+      expect((stopBtn?.element as HTMLElement).style.display).toBe('none');
     });
 
     it('renderMode 为 Test 时 MessageTools 应过滤掉 share 按钮', async () => {
