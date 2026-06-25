@@ -111,6 +111,35 @@ vi.mock('./ai-slash-input/ai-slash-input.vue', () => ({
   }),
 }));
 
+// Mock ModelSelector
+vi.mock('./model-selector', () => ({
+  ModelSelector: defineComponent({
+    name: 'ModelSelector',
+    props: {
+      models: { type: Array, default: () => [] },
+      modelValue: { type: String, default: '' },
+    },
+    emits: ['update:modelValue', 'change'],
+    setup(props, { emit }) {
+      return () =>
+        h(
+          'div',
+          {
+            class: 'mock-model-selector',
+            onClick: () => {
+              const model = (props.models as Array<{ id: string; name: string }>)[0];
+              if (model) {
+                emit('update:modelValue', model.id);
+                emit('change', model);
+              }
+            },
+          },
+          'ModelSelector',
+        );
+    },
+  }),
+}));
+
 // Mock InputAttachment
 vi.mock('./input-attachment/input-attachment.vue', () => ({
   default: defineComponent({
@@ -126,6 +155,7 @@ vi.mock('./input-attachment/input-attachment.vue', () => ({
           h('button', { class: 'send-btn', onClick: () => emit('sendMessage') }, 'Send'),
           h('button', { class: 'stop-btn', onClick: () => emit('stopSending') }, 'Stop'),
           slots.default?.(),
+          slots['before-send']?.(),
           slots['send-icon']?.(),
         ]);
     },
@@ -371,6 +401,30 @@ describe('ChatInput', () => {
       expect(wrapper.find('.chat-input-container').exists()).toBe(true);
     });
 
+    it('应该正确接收 models', () => {
+      const models = [{ id: 'gpt-4', name: 'GPT-4' }];
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          models,
+        },
+      });
+
+      expect(wrapper.find('.mock-model-selector').exists()).toBe(true);
+    });
+
+    it('models 为空时不应渲染 ModelSelector', () => {
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          models: [],
+        },
+      });
+
+      expect(wrapper.find('.mock-model-selector').exists()).toBe(false);
+    });
+
     it('应该正确接收 shortcuts', () => {
       const shortcuts = [
         { id: 'shortcut1', name: '快捷指令1' },
@@ -546,6 +600,21 @@ describe('ChatInput', () => {
   });
 
   describe('事件测试', () => {
+    it('ModelSelector 变更时应触发 modelChange 事件', async () => {
+      const models = [{ id: 'gpt-4', name: 'GPT-4' }];
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          models,
+        },
+      });
+
+      await wrapper.find('.mock-model-selector').trigger('click');
+
+      expect(wrapper.emitted('modelChange')?.[0]).toEqual([{ id: 'gpt-4', name: 'GPT-4' }]);
+    });
+
     it('点击发送应该调用 onSendMessage', async () => {
       const onSendMessage = vi.fn();
 
@@ -715,6 +784,23 @@ describe('ChatInput', () => {
       });
 
       expect(wrapper.find('.custom-send-icon').exists()).toBe(true);
+    });
+
+    it('应该支持 model-selector slot 覆盖默认模型选择器', () => {
+      const models = [{ id: 'gpt-4', name: 'GPT-4' }];
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          models,
+        },
+        slots: {
+          'model-selector': '<div class="custom-model-selector">Custom Model</div>',
+        },
+      });
+
+      expect(wrapper.find('.custom-model-selector').exists()).toBe(true);
+      expect(wrapper.find('.mock-model-selector').exists()).toBe(false);
     });
 
     it('无自定义 attachment slot 时应该渲染默认的 ShortcutBtns', () => {

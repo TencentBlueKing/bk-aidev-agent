@@ -33,6 +33,7 @@ sinceVersion: 1.0.0
 ### Slots
 
 - `default`
+- `before-send`（发送按钮左侧区域，ChatInput 默认在此渲染 ModelSelector）
 - `send-icon`
 
 ### Expose

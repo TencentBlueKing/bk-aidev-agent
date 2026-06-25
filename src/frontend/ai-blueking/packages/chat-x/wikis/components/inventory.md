@@ -47,6 +47,7 @@ aiSummary: >
 | [ChatInput 聊天输入框](/components/input/chat-input) | 输入交互 | `src/components/chat-input/chat-input.vue` | 已覆盖 |
 | [FileUploadBtn 文件上传按钮](/components/input/file-upload-btn) | 输入交互 | `src/components/ai-buttons/file-upload-btn/file-upload-btn.vue` | 已覆盖 |
 | [InputAttachment 输入附件区](/components/input/input-attachment) | 输入交互 | `src/components/chat-input/input-attachment/input-attachment.vue` | 已覆盖 |
+| [ModelSelector 模型选择器](/components/input/model-selector) | 输入交互 | `src/components/chat-input/model-selector/model-selector.vue` | 已覆盖 |
 | [InputInfoAlert 输入提示条](/components/input/input-info-alert) | 输入交互 | `src/components/chat-input/input-info-alert.vue` | 已覆盖 |
 | [SelectionFooter 多选操作栏](/components/input/selection-footer) | 输入交互 | `src/components/selection-footer/selection-footer.vue` | 已覆盖 |
 | [ShortcutBtn 快捷指令按钮](/components/input/shortcut-btn) | 输入交互 | `src/components/ai-shortcut/shortcut-btn/shortcut-btn.vue` | 已覆盖 |

@@ -346,6 +346,7 @@ function sidebarComponents() {
         { text: 'AiSlashMenu 资源菜单', link: 'input/ai-slash-menu' },
         { text: 'AiPromptList Prompt 列表', link: 'input/ai-prompt-list' },
         { text: 'InputAttachment 输入附件区', link: 'input/input-attachment' },
+        { text: 'ModelSelector 模型选择器', link: 'input/model-selector' },
         { text: 'InputInfoAlert 输入提示条', link: 'input/input-info-alert' },
         { text: 'FileUploadBtn 文件上传按钮', link: 'input/file-upload-btn' },
         { text: 'ShortcutRender 快捷指令表单', link: 'input/shortcut-render' },

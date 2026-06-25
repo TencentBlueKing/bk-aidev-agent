@@ -36,7 +36,8 @@
 
 ## Skills 与文档体系
 
-- 项目已沉淀 4 个 skill：`.agents/skills/chat-x-dev`（库内编码规范）、`skills/blueking-chat-x`（消费方使用导航，注意在 `skills/` 而非 `.agents/skills/`）、`.agents/skills/chat-x-update-docs`（提交前同步 test+wiki）、`.agents/skills/chat-x-tapd-dev`（TAPD 开发闭环）
+- 项目已沉淀 5 个 skill：`.agents/skills/chat-x-dev`（库内编码规范）、`skills/blueking-chat-x`（消费方使用导航，注意在 `skills/` 而非 `.agents/skills/`）、`.agents/skills/chat-x-update-docs`（提交前同步 test+wiki）、`.agents/skills/chat-x-tapd-dev`（TAPD 开发闭环）、`.agents/skills/chat-x-figma-dev`（Figma 设计稿出码，复用 chat-x-dev 编码规范不重复）
+- 写/审 skill 的硬约束（用户反复纠正）：`description` 只写「何时触发」不写工作流/做什么；线性步骤用编号列表而非流程图（`digraph`）；skill 须自包含、不耦合或对比外部 skill（如 bkmonitor-figma-dev）；reference 里的变量/清单表标注为「快照，以源码为准」
 - 组件 API 真相源是 `wikis/` + chat-x MCP（`chat-x-mcp`：`list_components`/`get_component_doc`/`search_docs`，由 `mcp/scripts/build-index.ts` 从 wikis 构建索引）；不要凭记忆臆测 props/events/slots
 - `wikis/components/` 已按能力域目录组织（agent/feedback/helper/input/medias/message/rendering/setup），文档带 frontmatter；源码↔文档映射见 `wikis/components/inventory.md`，VitePress 侧边栏在 `wikis/.vitepress/config.mts` 手动维护
 
@@ -47,11 +48,16 @@
 - commit-msg 走 `@blueking/bkui-lint/verify-commit.mjs`：`type: subject` 的 subject（含 `--story=`/`--bug=` 后缀）须 1–50 字符；任何情况不得用 `--no-verify`
 - pre-commit `scripts/pre-commit-test.mjs`：staged 的 `packages/chat-x/src` 改动，若对应 colocated `*.spec.ts` 或 `wikis/components/**` 已存在却未一并 stage 则拦截提交，并自动跑相关 vitest（测试不过无法提交）；slug override `components/image-preview/image.vue → ai-image`
 - TAPD 单据 workspace_id 固定 `70093903`（蓝鲸开发工具）；19 位 ID = `10`+workspace_id(8 位)+短 ID(9 位)，分支名用完整 ID、commit/PR title 后缀用短 ID
+- TAPD 回写评论：`comments_create` 传 Markdown（`**`/反引号/列表）会在 TAPD 页面渲染为空 `<div></div>`（API `comments_get` 仍能读到正文，UI 看不到）；故 `description` 用纯文本，创建后用 `get_workitem_change_history`（`object_type` 单数 `story`/`bug`/`task`）校验 `value_after`，为空则用 `comments_update` 以纯文本兜底；评论展示在单据「动态」Tab（标题常为系统生成的「在状态 [xxx] 添加」）
+- upstream 特性基线分支名是 `feat/human_in_the_loop`（下划线），不是 `feat/human-in-the-loop`（连字符）
 
 ## Figma 设计稿开发
 
 - Figma MCP（`user-figma`）默认可能未连接当前工作区，可检查 `~/.cursor/projects/<proj>/mcps/` 是否出现 `user-figma` 目录来判断；未连接时需让用户在 Cursor 启用后再继续
 - 读取设计稿规格优先用 `get_design_context`（传 fileKey + nodeId），比 `get_metadata` 更有用（后者只给结构）；首次调用若要求 Code Connect 映射，确认不需要时传 `disableCodeConnect: true` 直接拿设计上下文，避免循环
+- Figma 出码组件选型优先级（按控件类型分流）：bkui-vue 同名基础控件（按钮/输入/下拉/表单/开关/tab 等通用控件，优先用）→ chat-x 自有原子对话复合块（消息/工具条/渲染块等，查 `wikis/`/MCP，勿用基础控件硬拼重复造）→ 已装同名 npm 包 → 自研
+- Figma 主题/token「先验证再映射」：skill reference 的变量表只是快照，套用前必须回源码（`src/styles/size-theme.scss` / `variables.scss`）确认目标变量/map 真实存在且在用；查无对应变量/主题未启用时，直接用设计稿的具体 hex/px 值并注释来源，不要臆造引用不存在的变量
+- chat-x 图标用自有 SVG 体系（`src/icons/*.ts`，`h('svg', commonSVGProps)`，尺寸由 `font-size`(1em) 驱动、色由 `currentColor` 驱动），不使用 bkui-vue 图标；缺失图标按现有模式新增并补 barrel 导出；主题为 size-theme CSS 变量（`[data-ai-size]` small/normal，引用必带兜底）+ `variables.scss` 语义色/map，无暗色模式
 
 ## Workflow Preferences
 

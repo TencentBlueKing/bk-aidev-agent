@@ -1,6 +1,7 @@
 <template>
   <div class="ai-input-attachment">
     <slot name="default" />
+    <slot name="before-send" />
     <slot name="send-icon">
       <div
         class="send-message-icon"
