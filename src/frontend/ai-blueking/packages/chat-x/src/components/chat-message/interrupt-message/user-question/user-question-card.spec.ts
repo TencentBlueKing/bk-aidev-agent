@@ -27,6 +27,8 @@
 import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { Button } from 'bkui-vue';
+
 import { InterruptReason } from '../../../../ag-ui/types/constants';
 import UserQuestionCard from './user-question-card.vue';
 
@@ -136,6 +138,40 @@ describe('UserQuestionCard', () => {
     expect(itrpt).toEqual(interrupt);
     expect(payload.status).toBe('cancelled');
     expect(payload.payload.answers).toHaveLength(0);
+  });
+
+  it('点击完成后完成按钮 loading、跳过按钮禁用，且防重复提交', async () => {
+    const onResume = vi.fn();
+    wrapper = mount(UserQuestionCard, { props: { interrupt: buildInterrupt(), onResume } });
+
+    const options = wrapper.findAll('.ai-user-question-option');
+    await options[0].trigger('click');
+    await options[3].trigger('click');
+
+    const completeBtn = wrapper.find('.ai-user-question-card__complete');
+    const skipBtn = wrapper.find('.ai-user-question-card__skip');
+    await completeBtn.trigger('click');
+    await completeBtn.trigger('click');
+
+    expect(onResume).toHaveBeenCalledTimes(1);
+    expect(completeBtn.findComponent(Button).props('loading')).toBe(true);
+    expect(skipBtn.findComponent(Button).props('disabled')).toBe(true);
+    expect(wrapper.find('.ai-user-question-card__enter-icon').exists()).toBe(false);
+  });
+
+  it('点击跳过后跳过按钮 loading、完成按钮禁用，且防重复提交', async () => {
+    const onResume = vi.fn();
+    wrapper = mount(UserQuestionCard, { props: { interrupt: buildInterrupt(), onResume } });
+
+    const skipBtn = wrapper.find('.ai-user-question-card__skip');
+    const completeBtn = wrapper.find('.ai-user-question-card__complete');
+    await skipBtn.trigger('click');
+    await skipBtn.trigger('click');
+
+    expect(onResume).toHaveBeenCalledTimes(1);
+    expect(skipBtn.findComponent(Button).props('loading')).toBe(true);
+    expect(completeBtn.findComponent(Button).props('disabled')).toBe(true);
+    expect(wrapper.find('.ai-user-question-card__skip-icon').exists()).toBe(false);
   });
 
   it('点击箭头可折叠，body 与 footer 通过 v-show 隐藏而非卸载', async () => {

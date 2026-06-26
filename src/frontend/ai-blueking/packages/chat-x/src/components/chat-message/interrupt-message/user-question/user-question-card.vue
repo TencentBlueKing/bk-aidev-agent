@@ -78,21 +78,30 @@
     >
       <Button
         class="ai-user-question-card__complete"
-        :disabled="!completed"
+        :disabled="!completed || pendingAction === 'skip'"
+        :loading="pendingAction === 'complete'"
         size="small"
         theme="primary"
         @click="handleComplete"
       >
-        <EnterIcon class="ai-user-question-card__enter-icon" />
+        <EnterIcon
+          v-if="pendingAction !== 'complete'"
+          class="ai-user-question-card__enter-icon"
+        />
         {{ t('完成') }}
       </Button>
       <Button
         class="ai-user-question-card__skip"
+        :disabled="pendingAction === 'complete'"
+        :loading="pendingAction === 'skip'"
         size="small"
         text
         @click="handleSkip"
       >
-        <SkipIcon class="ai-user-question-card__skip-icon" />
+        <SkipIcon
+          v-if="pendingAction !== 'skip'"
+          class="ai-user-question-card__skip-icon"
+        />
         {{ t('跳过') }}
       </Button>
     </footer>
@@ -170,12 +179,19 @@
     }
   };
 
+  // 完成/跳过为同步 resume，无法拿到请求结果；点击后立即在被点按钮上显示 loading 并禁用两个按钮，
+  // 待后台数据刷新使 activeUserQuestionInterrupt 失效（整卡卸载）后该状态随实例销毁自然消失
+  const pendingAction = shallowRef<'complete' | 'skip' | null>(null);
+
   const handleComplete = () => {
-    if (!completed.value) return;
+    if (!completed.value || pendingAction.value !== null) return;
+    pendingAction.value = 'complete';
     props.onResume?.(buildResolvePayload(), props.interrupt);
   };
 
   const handleSkip = () => {
+    if (pendingAction.value !== null) return;
+    pendingAction.value = 'skip';
     props.onResume?.(buildSkipPayload(), props.interrupt);
   };
 </script>
