@@ -31,6 +31,7 @@ sinceVersion: 1.0.0
 function useMessageGroup(options: {
   keyword?: ShallowRef<string>;
   messages: ComputedRef<Message[]>;
+  renderMode?: MaybeRef<RenderMode>;
   selectedUserMessages: Ref<Message[] | undefined>;
 }): {
   messageGroups: Ref<MessageGroup[]>;
@@ -67,7 +68,7 @@ role=user  role=tool     其他 role
  成组           后 continue
 
 ④ 遍历结束后将剩余 assistantMessages 推入 list
-⑤ 末尾为 user 消息 → 追加 Loading 消息组
+⑤ 末尾为 user 消息 → 追加 Loading 消息组（`renderMode` 为 `Share` 时不追加）
 ```
 
 注入的占位 Loading 消息使用固定 id：`LOADING_MESSAGE_ID`（`'__loading__'`，定义于 `common/constants`）。`ChatContainer` 据此判断是否在「请求中」阶段，并向 `ChatInput` / `MessageContainer` 下传 `MessageStatus.Fetching`，与流式中的停止、防重复发送行为对齐。

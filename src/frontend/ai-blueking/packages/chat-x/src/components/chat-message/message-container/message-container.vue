@@ -4,7 +4,7 @@
     class="ai-message-container"
   >
     <div
-      v-for="(group, groupIndex) in messageGroups"
+      v-for="(group, groupIndex) in visibleMessageGroups"
       :id="group.uid"
       :key="groupIndex"
       class="message-group"
@@ -98,10 +98,11 @@
     <div class="ai-message-fixed-bottom">
       <ScrollBtn
         v-show="
-          messageStatus === MessageStatus.Streaming ||
-          messageStatus === MessageStatus.StopLoading ||
-          messageStatus === MessageStatus.Fetching ||
-          messageStatus === MessageStatus.Pending
+          renderMode !== RenderMode.Share &&
+          (messageStatus === MessageStatus.Streaming ||
+            messageStatus === MessageStatus.StopLoading ||
+            messageStatus === MessageStatus.Fetching ||
+            messageStatus === MessageStatus.Pending)
         "
         :loading="messageStatus === MessageStatus.StopLoading"
         :title="messageStatus === MessageStatus.StopLoading ? t('正在停止') : t('停止生成')"
@@ -219,6 +220,12 @@
   const messageTools = computed(() => {
     return CONST_MESSAGE_TOOLS.filter(tool => props.renderMode !== RenderMode.Test || tool.id !== 'share');
   });
+  // Share 模式仅展示历史消息，过滤自动注入或外部传入的 Loading 占位组
+  const visibleMessageGroups = computed(() =>
+    props.renderMode === RenderMode.Share
+      ? props.messageGroups.filter(group => group.type !== MessageRole.Loading)
+      : props.messageGroups,
+  );
   const handleMouseEnter = (group: MessageGroup) => {
     const lastMessage = group.messages?.at(-1);
     if (lastMessage?.role === MessageRole.Interrupt) {

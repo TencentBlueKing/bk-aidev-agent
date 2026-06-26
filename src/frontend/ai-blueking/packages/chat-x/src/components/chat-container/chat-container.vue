@@ -492,6 +492,7 @@
   } = useMessageGroup({
     keyword,
     messages: computed(() => props.messages),
+    renderMode: computed(() => renderMode.value),
     selectedUserMessages,
   });
 
