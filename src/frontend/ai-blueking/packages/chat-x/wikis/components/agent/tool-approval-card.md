@@ -108,10 +108,12 @@ ToolApprovalCard
 ├── 标题栏：左侧色条 + 单据标题 + 复制图标 + 状态徽章（评审中/已通过/已拒绝/已撤销等）
 ├── 字段区：单据编号、提交时间
 ├── 处理人：当前处理人（overflow-tips 省略）
-└── 操作区：查看单据详情（新窗口打开 url）、取消审批（仅 pending / draft 且非 readonly）
+└── 操作区：查看单据详情（新窗口打开 url）、取消审批（仅 pending / draft 且非 readonly；点击后 loading 防重复提交）
 ```
 
 `readonly` 为 `true` 时用于 `outcome.success` 结果回显：隐藏「取消审批」按钮，不接受审批取消交互。通常由 [InterruptMessageRender](/components/agent/interrupt-message) 内部传入，业务侧无需手动设置。
+
+取消审批为同步 `onInterruptResume`，组件无法在回调内获知请求结果。点击后「取消审批」按钮立即进入 loading 并忽略重复点击；待后台刷新使卡片卸载/重建后状态随实例销毁。
 
 状态徽章样式：
 

@@ -27,6 +27,8 @@
 import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { Button } from 'bkui-vue';
+
 import { APPROVAL_STATUS, InterruptReason } from '../../../ag-ui/types/constants';
 import { InterruptResumeOperation } from '../../../ag-ui/types/interrupt';
 import InterruptMessage from './interrupt-message.vue';
@@ -191,6 +193,26 @@ describe('InterruptMessage', () => {
       },
       approvalInterrupt,
     );
+  });
+
+  it('点击取消审批后按钮进入 loading 并防重复提交', async () => {
+    const onInterruptResume = vi.fn();
+    wrapper = mount(InterruptMessage, {
+      props: {
+        ...buildInterruptProps({
+          type: 'interrupt',
+          interrupts: [approvalInterrupt],
+        }),
+        onInterruptResume,
+      },
+    });
+
+    const cancelBtn = wrapper.find('.ai-tool-approval-card__cancel');
+    await cancelBtn.trigger('click');
+    await cancelBtn.trigger('click');
+
+    expect(onInterruptResume).toHaveBeenCalledTimes(1);
+    expect(cancelBtn.findComponent(Button).props('loading')).toBe(true);
   });
 
   it('点击查看单据详情时只打开单据链接，不触发 resume', async () => {

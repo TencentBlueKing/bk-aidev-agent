@@ -73,6 +73,7 @@
       <Button
         v-if="isPendingApproval && !readonly"
         class="ai-tool-approval-card__cancel"
+        :loading="cancelling"
         outline
         theme="primary"
         @click="handleCancelApproval"
@@ -84,7 +85,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed } from 'vue';
+  import { computed, shallowRef } from 'vue';
 
   import { Button, Loading } from 'bkui-vue';
   import { directive as vTippy } from 'vue-tippy';
@@ -147,7 +148,13 @@
     copy(copyText.value);
   };
 
+  // 取消审批为同步 resume，无法拿到请求结果；点击后立即进入 loading 并禁用按钮防重复提交，
+  // 待后台数据刷新使按钮 v-if 失效（卡片卸载/重建）后该状态随实例销毁自然消失
+  const cancelling = shallowRef(false);
+
   const handleCancelApproval = () => {
+    if (cancelling.value) return;
+    cancelling.value = true;
     props.onInterruptResume?.(
       { operation: InterruptResumeOperation.ApprovalCancel, payload: { interrupt_id: props.interrupt.id } },
       props.interrupt,
