@@ -193,48 +193,75 @@ vi.mock('../../directives', () => ({
 
 vi.mock('../../composables/use-custom-tab', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { shallowRef, ref: deepRef, provide } = require('vue');
+  const { shallowRef, ref: deepRef, computed, provide } = require('vue');
   const CUSTOM_TAB_TOKEN = Symbol('CUSTOM_TAB_TOKEN');
   const EXECUTION_TAB_NAME = 'execution';
+  const DEFAULT_TAB_ORDER = 100;
   return {
     CUSTOM_TAB_TOKEN,
+    DEFAULT_TAB_ORDER,
     EXECUTION_TAB_NAME,
-    useCustomTabProvider: vi.fn((_options: { onTabChange?: (tab: unknown) => void }) => {
-      const EXECUTION_TAB = { label: '执行情况', name: EXECUTION_TAB_NAME };
-      const tabs = shallowRef([EXECUTION_TAB]);
-      const selectedTab = deepRef(EXECUTION_TAB);
-      const isCollapse = shallowRef(true);
+    useCustomTabProvider: vi.fn(
+      (_options: { executionTabVisible?: () => boolean | undefined; onTabChange?: (tab: unknown) => void }) => {
+        const EXECUTION_TAB = { closable: false, label: '执行情况', name: EXECUTION_TAB_NAME, order: 0 };
+        const tabs = shallowRef([EXECUTION_TAB]);
+        const selectedTab = deepRef(EXECUTION_TAB);
+        const isCollapse = shallowRef(true);
 
-      const addCustomTab = vi.fn((tab: { label: string; name: string }) => {
-        if (!tabs.value.find((t: { name: string }) => t.name === tab.name)) {
-          tabs.value = [...tabs.value, tab];
-        }
-        isCollapse.value = false;
-      });
-      const removeCustomTab = vi.fn((name: string) => {
-        tabs.value = tabs.value.filter((t: { name: string }) => t.name !== name);
-      });
-      const selectCustomTab = vi.fn((tab: unknown) => {
-        selectedTab.value = tab ?? EXECUTION_TAB;
-        _options.onTabChange?.(tab);
-      });
-      const resetCustomTab = vi.fn(() => {
-        tabs.value = [EXECUTION_TAB];
-        selectedTab.value = EXECUTION_TAB;
-        isCollapse.value = true;
-      });
+        const isExecutionVisible = () => _options.executionTabVisible?.() ?? true;
+        const displayTabs = computed(() =>
+          tabs.value
+            .filter((tab: { name: string; visible?: boolean }) =>
+              tab.name === EXECUTION_TAB_NAME ? isExecutionVisible() : tab.visible !== false,
+            )
+            .slice()
+            .sort(
+              (a: { order?: number }, b: { order?: number }) =>
+                (a.order ?? DEFAULT_TAB_ORDER) - (b.order ?? DEFAULT_TAB_ORDER),
+            ),
+        );
 
-      provide(CUSTOM_TAB_TOKEN, {
-        tabs,
-        selectedTab,
-        addCustomTab,
-        removeCustomTab,
-        selectCustomTab,
-        resetCustomTab,
-      });
+        const addCustomTab = vi.fn((tab: { label: string; name: string }) => {
+          if (!tabs.value.find((t: { name: string }) => t.name === tab.name)) {
+            tabs.value = [...tabs.value, tab];
+          }
+          isCollapse.value = false;
+        });
+        const removeCustomTab = vi.fn((name: string) => {
+          tabs.value = tabs.value.filter((t: { name: string }) => t.name !== name);
+        });
+        const selectCustomTab = vi.fn((tab: unknown) => {
+          selectedTab.value = tab ?? EXECUTION_TAB;
+          _options.onTabChange?.(tab);
+        });
+        const resetCustomTab = vi.fn(() => {
+          tabs.value = [EXECUTION_TAB];
+          selectedTab.value = EXECUTION_TAB;
+          isCollapse.value = true;
+        });
 
-      return { tabs, selectedTab, isCollapse, addCustomTab, removeCustomTab, selectCustomTab, resetCustomTab };
-    }),
+        provide(CUSTOM_TAB_TOKEN, {
+          tabs,
+          displayTabs,
+          selectedTab,
+          addCustomTab,
+          removeCustomTab,
+          selectCustomTab,
+          resetCustomTab,
+        });
+
+        return {
+          tabs,
+          displayTabs,
+          selectedTab,
+          isCollapse,
+          addCustomTab,
+          removeCustomTab,
+          selectCustomTab,
+          resetCustomTab,
+        };
+      },
+    ),
     useCustomTabConsumer: vi.fn(() => undefined),
   };
 });

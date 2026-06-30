@@ -14,14 +14,21 @@
       class="ai-chat-container-resize-layout"
       :class="{
         'ai-is-collapse':
-          isCollapse || (!keyword?.length && executionGroups?.length < 1) || renderMode === RenderMode.Share,
+          isCollapse ||
+          (displayTabs.length > 0 && !keyword?.length && executionGroups?.length < 1) ||
+          renderMode === RenderMode.Share,
       }"
       v-bind="resizeProps"
       @resizing="handleResizing"
     >
       <template #aside>
         <div
-          v-if="!isCollapse && (executionGroups?.length || keyword?.length) && renderMode !== RenderMode.Share"
+          v-if="
+            !isCollapse &&
+            displayTabs.length > 0 &&
+            (executionGroups?.length || keyword?.length) &&
+            renderMode !== RenderMode.Share
+          "
           ref="fullScreenRef"
           class="ai-full-screen-wrapper"
         >
@@ -33,7 +40,7 @@
             @change="handleUpdateTabActive"
           >
             <TabPanel
-              v-for="tab in tabs"
+              v-for="tab in displayTabs"
               :key="tab.name"
               class="ai-chat-container-tab-panel"
               :label="
@@ -62,7 +69,7 @@
                         ),
                         [[vOverflowTips, { ...commonTippyOptions, text: tab.label ?? '' }]],
                       ),
-                      tab.name !== EXECUTION_TAB_NAME
+                      tab.closable !== false && tab.name !== EXECUTION_TAB_NAME
                         ? h(CloseIcon, {
                             class: 'ai-execution-close-icon',
                             onClick: () => {
@@ -97,7 +104,7 @@
               </div>
             </template>
           </Tab>
-          <template v-if="selectedTab?.name === EXECUTION_TAB_NAME">
+          <template v-if="selectedTab?.name === EXECUTION_TAB_NAME && executionTabVisible !== false">
             <ExecutionSummary
               v-if="!isCollapse"
               :message-groups="executionGroups"
@@ -132,7 +139,7 @@
           </template>
         </div>
         <div
-          v-if="executionGroups?.length && renderMode !== RenderMode.Share"
+          v-if="displayTabs.length > 0 && executionGroups?.length && renderMode !== RenderMode.Share"
           class="collapse-button"
           :class="{ 'is-right': placement === 'right', 'is-collapsed': isCollapse }"
           @click="handleCollapse"
@@ -299,6 +306,8 @@
   export type ChatContainerProps = {
     chatLoading?: boolean;
     commonTippyOptions?: AITippyProps;
+    // 执行情况 Tab 是否展示，缺省 true；为 false 时从 Tab 栏隐藏，选中态自动切到首个可见 Tab
+    executionTabVisible?: boolean;
     // 用于获取侧边栏组件的渲染
     getSideRenderComponent?: (createElement: typeof h, props?: Record<string, unknown>) => undefined | VNode;
     // 用于获取侧边栏 tab 的渲染
@@ -353,6 +362,7 @@
     >(),
     {
       placement: 'left',
+      executionTabVisible: true,
     },
   );
   const renderMode = defineModel<RenderMode>('renderMode', {
@@ -399,8 +409,9 @@
 
   useCommonTippyProvider({ tippyOptions: computed(() => props.commonTippyOptions ?? {}) });
 
-  const { tabs, selectedTab, isCollapse, addCustomTab, removeCustomTab, selectCustomTab, resetCustomTab } =
+  const { displayTabs, tabs, selectedTab, isCollapse, addCustomTab, removeCustomTab, selectCustomTab, resetCustomTab } =
     useCustomTabProvider<CustomBkFlowTabData>({
+      executionTabVisible: () => props.executionTabVisible,
       onTabChange: async tab => {
         const tabProps = selectedTab.value.data?.props || {
           loading: true,
@@ -799,8 +810,8 @@
       flex-direction: column;
       align-items: center;
       width: 100%;
-      min-height: 0;
       max-width: 1000px;
+      min-height: 0;
       padding: 16px;
       margin: 0 auto;
       text-align: center;

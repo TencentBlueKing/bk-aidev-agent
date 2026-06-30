@@ -409,7 +409,7 @@ const messages = [
 | 场景       | `tab.name` 格式                          |
 | ---------- | ---------------------------------------- |
 | 任务详情   | `{task_id}`                              |
-| 有效证据   | `{task_id}`（与任务 Tab 同名，label 为「有效证据」） |
+| 有效证据   | `{task_id}`（与任务 Tab 同名，label 为「有效证据」，`order: 10` 固定排在「执行情况」之后、节点详情之前） |
 | 节点详情   | `{task_id}\|{node.id}\|{node.name}`      |
 
 `CustomBkFlowTabData` 支持 `has_confidence?: boolean`，用于侧栏详情组件区分证据视图与节点视图。应用层可通过 `ChatContainer` 的 `getSideRenderComponent` 覆盖渲染组件。

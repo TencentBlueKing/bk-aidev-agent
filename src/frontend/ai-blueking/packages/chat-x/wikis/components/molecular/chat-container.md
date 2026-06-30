@@ -395,6 +395,20 @@ ai-chat-container
 
 通过 `ref` 获取组件实例后，使用 `addCustomTab` / `removeCustomTab` 动态管理侧边栏 Tab。若 **`executionGroups` 变为空且搜索词已清空**，容器会清空自定义 Tab 状态（与侧栏执行数据联动，见上文「侧边栏与执行摘要」）。
 
+### Tab 排序与显隐
+
+`CustomTab` 支持 `order` / `visible` / `closable` 三个可选字段，用于控制 Tab 栏的排序与显隐：
+
+| 字段 | 默认值 | 说明 |
+| ---- | ------ | ---- |
+| `order` | `100` | 排序权重，升序，越小越靠前。「执行情况」固定 `0`；FlowAgent「有效证据」固定 `10`（紧随执行情况），节点详情走默认 `100` |
+| `visible` | `true` | 是否在 Tab 栏展示。`false` 时从栏内隐藏，但仍可被 `addCustomTab` / `selectCustomTab` 程序化选中；若被隐藏的 Tab 当前正被选中，则自动切到首个可见 Tab、内容不再渲染 |
+| `closable` | `true` | 是否展示关闭按钮。「执行情况」强制不可关闭 |
+
+- 排序为稳定排序，`order` 相同的 Tab 保持插入先后顺序。
+- 「执行情况」Tab 的显隐统一由 `executionTabVisible` Prop 控制（见 Props 表），不通过 `visible` 字段配置。
+- 同名（同 `name`）`addCustomTab` 会**合并更新**已有 Tab，可用于运行时调整 `order` / `visible` / `label`。
+
 ### 侧栏渲染扩展
 
 应用层可通过以下 Props 覆盖默认 Tab 标签与侧栏内容区的渲染逻辑（例如 FlowAgent 节点详情使用业务自定义组件）：
@@ -712,6 +726,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | ------------------ | ---------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | chatLoading                 | `boolean`                                                                    | —        | 整体加载状态，`true` 时显示 Loading 遮罩                                                                                                      |
 | commonTippyOptions          | `AITippyProps`                                                               | —        | 通用 Tippy 配置（`appendTo` / `placement` / `zIndex`），传入的选项会注入到所有使用 `v-overflow-tips` 的子组件中                                 |
+| executionTabVisible         | `boolean`                                                                    | `true`   | 「执行情况」Tab 是否展示；为 `false` 时从 Tab 栏隐藏，若其正被选中则自动切到首个可见 Tab，内容不再渲染                                          |
 | getSideRenderComponent      | `(h, props?) => VNode \| undefined`                                          | —        | 自定义侧栏内容区渲染；未返回时使用 `selectedTab.data.component`                                                                               |
 | getSideTabRenderComponent   | `(h, tab, { removeCustomTab }) => VNode \| undefined`                        | —        | 自定义侧栏 Tab 标签渲染；未返回时使用默认图标 + 文案 + 关闭按钮                                                                               |
 | openingRemark               | `string`                                                                     | —        | 开场白，无消息时显示，支持 Markdown                                                                                                           |
