@@ -94,6 +94,7 @@ sinceVersion: 1.0.0
 - **自定义作答形态**：通过 `#question` slot 可替换默认选择题，渲染任意表单；作答有效时调用 `setAnswer` 回传 `UserQuestionAnswerItem`，无效时传 `undefined`。
 - **完成校验**：所有题目均已作答（`setAnswer` 收到有效答案）后才允许点击「完成」。
 - **跳过**：点击「跳过」返回 `status: 'cancelled'` 与空 `answers`。
+- **提交 loading**：完成/跳过为同步 `onResume`，组件无法在回调内获知请求结果。点击后当前按钮进入 loading、另一按钮禁用，并忽略重复点击；待后台刷新使 `UserQuestionCard` 卸载后状态随实例销毁。
 - **输入框发送**：存在待回答 UserQuestion 时，用户也可在 `ChatInput` 直接发送；`ChatContainer` 会调用 `onSendMessage` 并在第三参数附带与「跳过」等价的 skip `payload` 及 `interrupt`，输入框内容不会自动清空。
 
 ## 数据协议

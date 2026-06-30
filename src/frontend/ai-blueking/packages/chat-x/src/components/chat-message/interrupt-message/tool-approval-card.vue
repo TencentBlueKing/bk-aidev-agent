@@ -73,6 +73,8 @@
       <Button
         v-if="isPendingApproval && !readonly"
         class="ai-tool-approval-card__cancel"
+        :disabled="cancelling || isShareContext"
+        :loading="cancelling"
         outline
         theme="primary"
         @click="handleCancelApproval"
@@ -84,7 +86,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed } from 'vue';
+  import { computed, shallowRef } from 'vue';
 
   import { Button, Loading } from 'bkui-vue';
   import { directive as vTippy } from 'vue-tippy';
@@ -92,8 +94,9 @@
   import { APPROVAL_STATUS_MAP } from '../../../ag-ui/types/constants';
   import { APPROVAL_STATUS } from '../../../ag-ui/types/constants';
   import { InterruptResumeOperation } from '../../../ag-ui/types/interrupt';
+  import { RenderMode } from '../../../common/constants';
   import { useClipboard } from '../../../composables';
-  import { useCommonTippyInject } from '../../../composables/use-common';
+  import { useCommonTippyInject, useRenderModeInject } from '../../../composables/use-common';
   import { OverflowTips as vOverflowTips } from '../../../directives/overflow-tips';
   import { CheckCircleFillIcon, CloseCircleFillIcon, CopyIcon, RevokedIcon, TimeIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
@@ -108,6 +111,9 @@
   }>();
 
   const commonTippyOptions = useCommonTippyInject();
+  const renderMode = useRenderModeInject();
+  // 只读分享渲染（RenderMode.Share）下禁用审批单的交互按钮
+  const isShareContext = computed(() => renderMode.value === RenderMode.Share);
   const { copy } = useClipboard();
   const pendingStatusSet = new Set([APPROVAL_STATUS.PENDING, APPROVAL_STATUS.DRAFT]);
   const dangerStatusSet = new Set([
@@ -147,7 +153,13 @@
     copy(copyText.value);
   };
 
+  // 取消审批为同步 resume，无法拿到请求结果；点击后立即进入 loading 并禁用按钮防重复提交，
+  // 待后台数据刷新使按钮 v-if 失效（卡片卸载/重建）后该状态随实例销毁自然消失
+  const cancelling = shallowRef(false);
+
   const handleCancelApproval = () => {
+    if (cancelling.value) return;
+    cancelling.value = true;
     props.onInterruptResume?.(
       { operation: InterruptResumeOperation.ApprovalCancel, payload: { interrupt_id: props.interrupt.id } },
       props.interrupt,
