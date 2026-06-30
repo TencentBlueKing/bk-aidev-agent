@@ -153,6 +153,8 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       isChatting.value = true;
       usedProtocol.onStart?.call(usedProtocol);
     };
+    // 获取最后一条消息的 id
+    const lastMessageId = mediator.message?.list.value.at(-1)?.id;
     // 创建 AbortController
     abortController = new AbortController();
     // 发起聊天
@@ -165,6 +167,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
         execute_kwargs: {
           stream: true,
           persist_input: !!input,
+          last_message_id: lastMessageId,
           resume
         },
       },
