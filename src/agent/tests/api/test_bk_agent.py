@@ -1,9 +1,29 @@
 # -*- coding: utf-8 -*-
-"""BkAgentApi 客户端单元测试。"""
+"""BkAgentApi 客户端单元测试."""
 
 from unittest.mock import MagicMock, patch
 
+import pytest
 from aidev_agent.api.bk_agent import BkAgentApi, Client
+
+
+@pytest.fixture
+def configured_api_url_tmpl(monkeypatch):
+    """设置 BK_API_URL_TMPL 模板并重算 APIGW_URL_FORMAT。
+
+    测试环境未配置 BK_API_URL_TMPL（为 None），导致 APIGW_URL_FORMAT
+    退化为 "None/{stage}"，get_endpoint 的 api_name 参数被忽略。
+    本 fixture 提供一个含 {api_name} 的真实模板，使 get_endpoint 正常工作。
+    """
+    tmpl = "http://{api_name}.test.com"
+    monkeypatch.setattr("aidev_agent.api.constants.settings.BK_API_URL_TMPL", tmpl)
+    monkeypatch.setattr(
+        "aidev_agent.api.constants.APIGW_URL_FORMAT",
+        "{}/{{stage}}".format(tmpl),
+    )
+    # bk_agent.py / utils.py 已 import APIGW_URL_FORMAT，需同步 patch
+    monkeypatch.setattr("aidev_agent.api.bk_agent.APIGW_URL_FORMAT", "{}/{{stage}}".format(tmpl))
+    monkeypatch.setattr("aidev_agent.api.utils.APIGW_URL_FORMAT", "{}/{{stage}}".format(tmpl))
 
 
 class TestClientOperations:
@@ -45,7 +65,7 @@ class TestBkAgentApiGetClient:
         mock_get_client.assert_called_once()
 
     @patch("aidev_agent.api.bk_agent._get_client_by_settings")
-    def test_get_client_endpoint_contains_bp_prefix(self, mock_get_client: MagicMock) -> None:
+    def test_get_client_endpoint_contains_bp_prefix(self, mock_get_client: MagicMock, configured_api_url_tmpl) -> None:
         """get_client(agent_code='my_agent') 的 endpoint 包含 bp-my_agent。"""
         mock_client = MagicMock(spec=Client)
         mock_get_client.return_value = mock_client
@@ -160,7 +180,9 @@ class TestBkAgentApiValidateEndpoint:
         assert call_kwargs.kwargs["endpoint"] == "http://host/bp-test/"
 
     @patch("aidev_agent.api.bk_agent._get_client_by_settings")
-    def test_validate_endpoint_with_empty_endpoint_noop(self, mock_get_client: MagicMock) -> None:
+    def test_validate_endpoint_with_empty_endpoint_noop(
+        self, mock_get_client: MagicMock, configured_api_url_tmpl
+    ) -> None:
         """validate_endpoint=True 但 endpoint 为空时，不触发校验，正常自动构建。"""
         mock_client = MagicMock(spec=Client)
         mock_get_client.return_value = mock_client

@@ -153,6 +153,10 @@ BKAI_TOOL_TEAM_ENABLED = env.bool("BKAI_TOOL_TEAM_ENABLED", True)
 BKAI_TOOL_TASK_ENABLED = env.bool("BKAI_TOOL_TASK_ENABLED", True)
 # BKAI 子智能体配置
 BKAI_A2A_SESSION_TEMPORARY = env.bool("BKAI_A2A_SESSION_TEMPORARY", False)
+# LLM 重试策略: "sdk" 由 aidev 自主控制重试, "llm_gw" 由模型网关 Retry-After 头控制重试
+LLM_RETRY_STRATEGY = env.str("LLM_RETRY_STRATEGY", "llm_gw")
+# 质量判断模型配置（用于 quality_gate 判断模型是否完成任务）
+JUDGMENT_LLM_MODEL = env.str("JUDGMENT_LLM_MODEL", "aidev-chat-fast")
 # end: 配置
 
 

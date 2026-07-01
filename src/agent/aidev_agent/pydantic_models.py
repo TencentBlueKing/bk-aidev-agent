@@ -338,6 +338,10 @@ class AgentExecutorKwargs(BaseModel):
         default=None, description="用于知识检索的模型（BaseChatModel；未设置时通常与 llm 相同）"
     )
     non_thinking_llm: Optional[Any] = Field(default=None, description="非深度思考模型（BaseChatModel 或 str）")
+    fast_llm: Optional[Any] = Field(
+        default=None,
+        description="快速/轻量模型（BaseChatModel），用于 quality_gate 判断 LLM 等辅助任务；未设置时回退到 non_thinking_llm",
+    )
 
     # 模型上下文配置（由上层从 AgentConfig 转换而来，控制 LLM 推理行为）
     model_context_options: Optional[ModelContextSettings] = Field(

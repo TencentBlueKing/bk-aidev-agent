@@ -99,6 +99,9 @@ class ChatCompletionAgent(BaseModel):
     种子实例不可执行（``execute()`` 假设非空）。"""
     chat_model_non_thinking: BaseChatModel | None = None
     """非思考模型；由 :meth:`ChatAgentBuilder.build_chat_model_non_thinking` 填充。"""
+    chat_model_fast: BaseChatModel | None = None
+    """快速/轻量模型；由 :meth:`ChatAgentBuilder.build_chat_model_fast` 填充。
+    用于 quality_gate 判断 LLM 等辅助任务。"""
     non_thinking_llm: str | None = Field(default=None, deprecated="使用 chat_model_non_thinking 替代")
     chat_history: list[ChatPrompt] | None = None
     files: list[dict] = Field(default_factory=list)
@@ -166,6 +169,7 @@ class ChatCompletionAgent(BaseModel):
         # 构建 chat_model 和 chat_model_non_thinking
         self.chat_model = builder.build_chat_model()
         self.chat_model_non_thinking = builder.build_chat_model_non_thinking()
+        self.chat_model_fast = builder.build_chat_model_fast()
         # 构建需要依赖resource_manager的资源
         self.resource_manager = ctx.resource_manager
         self.skills = builder.build_skills()
@@ -308,7 +312,7 @@ class ChatCompletionAgent(BaseModel):
         }
 
         header_value = json.dumps(attrs, ensure_ascii=True)
-        for model in (self.chat_model, self.chat_model_non_thinking):
+        for model in (self.chat_model, self.chat_model_non_thinking, self.chat_model_fast):
             if model is None or not hasattr(model, "default_headers"):
                 continue
             if model.default_headers is None:
@@ -968,6 +972,7 @@ class ChatCompletionAgent(BaseModel):
         return self.agent_cls.get_agent_executor(
             llm=self.chat_model,
             non_thinking_llm=self.chat_model_non_thinking or self.chat_model,
+            fast_llm=self.chat_model_fast,
             extra_tools=self.tools,
             chat_history=messages[:-1],
             tool_execution_interval=self.TOOL_EXECUTION_INTERVAL,
@@ -1136,6 +1141,9 @@ class ChatAgentBuilder:
         if self.ctx.session_code:
             kwargs["session_code"] = self.ctx.session_code
 
+        if settings.LLM_RETRY_STRATEGY == "sdk":
+            kwargs["max_retries"] = 0
+
         return ChatModel.get_setup_instance(**kwargs)
 
     def build_chat_model_non_thinking(self) -> BaseChatModel | None:
@@ -1150,6 +1158,35 @@ class ChatAgentBuilder:
         chat = self.ctx.chat or ChatBuildExtras()
         if chat.auth_headers:
             kwargs["auth_headers"] = chat.auth_headers
+
+        if settings.LLM_RETRY_STRATEGY == "sdk":
+            kwargs["max_retries"] = 0
+
+        return ChatModel.get_setup_instance(**kwargs)
+
+    def build_chat_model_fast(self) -> BaseChatModel | None:
+        """构建快速/轻量模型（用于 quality_gate 判断 LLM 等辅助任务）。
+
+        当前从环境变量 ``settings.JUDGMENT_LLM_MODEL`` 读取模型名（默认
+        ``SRE3-6-35B-A3B-nothinking``）。待配置平台改造完成后，改为从
+        ``agent_config.fast_llm`` 读取（与 ``build_chat_model_non_thinking``
+        读 ``agent_config.non_thinking_llm`` 对称）。
+        """
+        model_name = settings.JUDGMENT_LLM_MODEL
+        base_url = settings.LLM_GW_ENDPOINT
+        if not model_name or not base_url:
+            return None
+        kwargs: dict[str, Any] = {
+            "model": model_name,
+            "base_url": base_url,
+        }
+        chat = self.ctx.chat or ChatBuildExtras()
+        if chat.auth_headers:
+            kwargs["auth_headers"] = chat.auth_headers
+
+        if settings.LLM_RETRY_STRATEGY == "sdk":
+            kwargs["max_retries"] = 0
+
         return ChatModel.get_setup_instance(**kwargs)
 
     def build_chat_history(self, session_context_data: List[dict]) -> List[ChatPrompt]:

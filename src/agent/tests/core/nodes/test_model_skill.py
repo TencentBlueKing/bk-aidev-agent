@@ -197,7 +197,7 @@ class TestReActBuilderSkillsIntegration:
 
         captured = {}
 
-        def _fake_make_model_node(*, llm, non_thinking_llm, tools, node_options):
+        def _fake_make_model_node(*, llm, non_thinking_llm, judge_llm, tools, node_options):
             captured["tools"] = tools
             captured["node_options"] = node_options
             return MagicMock()

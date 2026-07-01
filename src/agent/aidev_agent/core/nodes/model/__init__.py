@@ -1,15 +1,26 @@
 # -*- coding: utf-8 -*-
-"""Model node package.
+"""模型节点包。
 
-This package groups the model node implementation (`build_model_node`) and its
-strongly-coupled context processing utilities (previously under
-`aidev_agent.core.nodes.context_processor`).
+本包组织了模型节点实现（`build_model_node`）及其
+强耦合的上下文处理工具（前身在 `aidev_agent.core.nodes.context_processor` 下）。
 """
 
 from .basic_middleware import get_beijing_now
 from .context_assembly import ContextAssembly
 from .node import ModelState, build_model_node
-from .pydantic_models import ModelNodeSettings
+from .pydantic_models import (
+    RETRYABLE_EXCEPTIONS,
+    ModelChainConfig,
+    ModelNodeSettings,
+    RecoveryException,
+    RecoveryNudgeError,
+    RecoveryPrefillError,
+    RecoveryRetryableException,
+    RecoveryRetryError,
+    RetryableRateLimitError,
+    TruncationError,
+)
+from .quality_gate import QualityGate
 from .token_compression import (
     ChatHistoryCompressionMiddleware,
     CompressionState,
@@ -19,6 +30,8 @@ from .token_compression import (
     ToolOutputLengthCompressionMiddleware,
     ToolOutputTokenCompressionMiddleware,
 )
+from .tool_call_repair import ParsedToolCall, parse_standalone_plain_text_tool_call_blocks
+from .utils import promote_plain_text_tool_call_message, should_promote_message
 
 __all__ = [
     "ChatHistoryCompressionMiddleware",
@@ -26,11 +39,25 @@ __all__ = [
     "ContextAssembly",
     "KnowledgeCompressionMiddleware",
     "KnowledgeCompressor",
+    "ModelChainConfig",
     "ModelState",
     "ModelNodeSettings",
+    "ParsedToolCall",
+    "QualityGate",
+    "RecoveryException",
+    "RecoveryNudgeError",
+    "RecoveryPrefillError",
+    "RecoveryRetryError",
+    "RecoveryRetryableException",
+    "RETRYABLE_EXCEPTIONS",
+    "RetryableRateLimitError",
     "ToolOutputCompressor",
     "ToolOutputLengthCompressionMiddleware",
     "ToolOutputTokenCompressionMiddleware",
+    "TruncationError",
     "build_model_node",
     "get_beijing_now",
+    "parse_standalone_plain_text_tool_call_blocks",
+    "promote_plain_text_tool_call_message",
+    "should_promote_message",
 ]

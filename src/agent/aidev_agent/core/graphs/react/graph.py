@@ -91,13 +91,13 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_task_state_schema(schemas: List[type]) -> type:
-    """Resolve state schema by merging multiple TypedDict schemas.
+    """通过合并多个 TypedDict schemas 来解析状态 schema。
 
     Args:
-        schemas: List of TypedDict schemas to merge
+        schemas: 要合并的 TypedDict schemas 列表
 
     Returns:
-        A new TypedDict class with all fields from input schemas
+        包含所有输入 schemas 字段的新 TypedDict 类
     """
     all_annotations = {}
     for schema in schemas:
@@ -145,6 +145,7 @@ class ReActAgentBuilder:
         self._llm: BaseChatModel | None = None
         self._knowledge_llm: BaseChatModel | None = None
         self._non_thinking_llm: BaseChatModel | None = None
+        self._fast_llm: BaseChatModel | None = None
         self._support_vision: bool = False
         self._llm_token_limit: int = 28000
         # 对话设置
@@ -517,6 +518,8 @@ class ReActAgentBuilder:
         if options.non_thinking_llm is not None:
             self._non_thinking_llm = options.non_thinking_llm
             self._knowledge_llm = options.non_thinking_llm
+        if options.fast_llm is not None:
+            self._fast_llm = options.fast_llm
         if options.knowledge_llm is not None:
             self._knowledge_llm = options.knowledge_llm
         if options.extra_tools is not None:
@@ -641,6 +644,7 @@ class ReActAgentBuilder:
         *,
         llm: BaseChatModel,
         non_thinking_llm: BaseChatModel,
+        judge_llm: BaseChatModel | None,
         tools: List[BaseTool],
     ):
         """创建模型节点。
@@ -651,6 +655,7 @@ class ReActAgentBuilder:
         Args:
             llm: 语言模型
             non_thinking_llm: 非深度思考模型
+            judge_llm: 判断用 LLM（quality_gate 任务完成度判断）；None 时 fail-open
             tools: 工具列表
 
         Returns:
@@ -697,6 +702,7 @@ class ReActAgentBuilder:
         model_node = std_make_model_node(
             llm=llm,
             non_thinking_llm=non_thinking_llm,
+            judge_llm=judge_llm,
             tools=tools,
             node_options=node_options,
         )
@@ -1052,6 +1058,10 @@ class ReActAgentBuilder:
             raise ValueError("ReActAgentBuilder 构建失败：缺少 llm，请先调用 set_llm(...) 或 set_bkai_options(...)")
         callbacks = list(self._callbacks or [])
         non_thinking_llm = self._non_thinking_llm or self._llm
+        # 判断 LLM：仅使用显式配置的 fast_llm；未配置时为 None（fail-open）。
+        # 不回退到 non_thinking_llm/llm——判断模型是独立的轻量模型，
+        # 回退到主模型会导致每次正常响应多一次主模型调用。
+        judge_llm = self._fast_llm
 
         self._prepare_agent_options()
 
@@ -1118,6 +1128,7 @@ class ReActAgentBuilder:
         model_node = self._prepare_agent_model_node(
             llm=self._llm,
             non_thinking_llm=non_thinking_llm,
+            judge_llm=judge_llm,
             tools=tools,
         )
 

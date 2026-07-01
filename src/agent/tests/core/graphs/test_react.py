@@ -486,7 +486,7 @@ class TestReActAgentBuilder:
 
         captured_tools = {}
 
-        def _fake_make_model_node(*, llm, non_thinking_llm, tools, node_options):
+        def _fake_make_model_node(*, llm, non_thinking_llm, judge_llm, tools, node_options):
             captured_tools["tools"] = tools
             return MagicMock()
 
@@ -522,7 +522,7 @@ class TestReActAgentBuilder:
 
         captured_tools = {}
 
-        def _fake_make_model_node(*, llm, non_thinking_llm, tools, node_options):
+        def _fake_make_model_node(*, llm, non_thinking_llm, judge_llm, tools, node_options):
             captured_tools["tools"] = tools
             return MagicMock()
 
@@ -596,7 +596,7 @@ class TestReActAgentBuilder:
 
         captured_node_options = {}
 
-        def _fake_make_model_node(*, llm, non_thinking_llm, tools, node_options):
+        def _fake_make_model_node(*, llm, non_thinking_llm, judge_llm, tools, node_options):
             captured_node_options["opts"] = node_options
             return MagicMock()
 
@@ -1171,7 +1171,7 @@ class TestReActAgentBuilder:
 
         captured = {}
 
-        def _fake_make_model_node(*, llm, non_thinking_llm, tools, node_options):
+        def _fake_make_model_node(*, llm, non_thinking_llm, judge_llm, tools, node_options):
             captured["non_thinking_llm"] = non_thinking_llm
             return MagicMock()
 

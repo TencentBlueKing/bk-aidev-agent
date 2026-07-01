@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Protocol
 
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import AIMessage, AnyMessage, BaseMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
@@ -53,6 +54,28 @@ class PromptSlots:
 
 
 @dataclass
+class ModelChainState:
+    """模型节点恢复循环的每次调用恢复计数器。
+
+    跟踪多层恢复链的重试计数和回退数据，
+    处理模型响应异常（空内容、仅思考响应、截断等）。
+    """
+
+    empty_content_retries: int = 0
+    thinking_prefill_retries: int = 0
+    post_tool_empty_retried: bool = False
+    length_continue_retries: int = 0
+    truncated_tool_call_retries: int = 0
+    max_tokens_override: int | None = None  # D-10
+
+    # 从 ModelChainConfig 注入的恢复上限。
+    max_empty_retries: int = 3
+    max_thinking_prefill_retries: int = 2
+    max_truncation_retries: int = 3
+    max_truncated_tool_call_retries: int = 3
+
+
+@dataclass
 class ProcessorContext:
     """中间件共享上下文。
 
@@ -77,6 +100,10 @@ class ProcessorContext:
     metadata: Dict[str, Any] = field(default_factory=dict)
     # 跨 ReAct 周期的缓存（由 ContextAssembly 注入，用于存储消息切割缓存、压缩状态等）
     assembly_cache: Optional[Dict[str, Any]] = None
+    # 注意：max_tokens_override 不在此处——它在 ModelChainState 上
+    messages: List[BaseMessage] = field(default_factory=list)
+    model_chain_state: Optional[ModelChainState] = None
+    response: Optional[AIMessage | AnyMessage] = None
 
 
 class Middleware(Protocol):
@@ -89,6 +116,34 @@ class Middleware(Protocol):
 
 
 DEFAULT_ENABLE_PARALLEL_TOOL_CALLS: bool = True
+
+
+class ModelChainConfig(BaseModel):
+    """模型链的不可变配置。
+
+    控制当模型返回异常响应（空内容、纯思考、截断等）时的重试行为。
+    """
+
+    max_empty_retries: int = Field(
+        default=3,
+        description="空内容响应的最大重试次数",
+    )
+    max_thinking_prefill_retries: int = Field(
+        default=2,
+        description="纯思考响应（无文本输出）的 prefill 重试次数",
+    )
+    max_truncation_retries: int = Field(
+        default=3,
+        description="文本截断的最大重试次数",
+    )
+    max_truncated_tool_call_retries: int = Field(
+        default=3,
+        description="工具调用截断的最大重试次数",
+    )
+    enable_judgment_llm: bool = Field(
+        default=True,
+        description="是否在内容响应上调用判断 LLM 评估任务完成度。关闭可省去每次正常响应的额外 LLM 调用",
+    )
 
 
 class ModelNodeSettings(BaseModel):
@@ -112,6 +167,20 @@ class ModelNodeSettings(BaseModel):
     max_model_retries: int = Field(
         default=10,
         description="模型调用失败或返回无效消息时的最大重试次数。默认为 10。可通过环境变量 MODEL_MAX_RETRIES 配置。",
+    )
+
+    # ---------------------------------------------------------------------
+    # Stability / recovery settings
+    # ---------------------------------------------------------------------
+
+    use_tool_call_promotion: bool = Field(
+        default=True,
+        description="是否启用纯文本工具调用提升（将文本中的工具调用格式解析为原生 tool_calls）",
+    )
+
+    model_chain_config: ModelChainConfig = Field(
+        default_factory=ModelChainConfig,
+        description="模型链配置（空内容、纯思考、截断等异常场景的重试行为）",
     )
 
     # ---------------------------------------------------------------------
@@ -178,3 +247,49 @@ class ModelNodeSettings(BaseModel):
         description="(internal) Extra tool pipeline middlewares injected by graph layer.",
         exclude=True,
     )
+
+
+# =============================================================================
+# Recovery Exceptions（从 recovery_exceptions.py 迁移而来 — D-14）
+# =============================================================================
+
+
+class RecoveryException(Exception):
+    """所有恢复触发异常的基类。"""
+
+    def __init__(self, response: AIMessage, message: str = ""):
+        self.response = response
+        super().__init__(message or self.__class__.__name__)
+
+
+class RecoveryRetryableException(RecoveryException):
+    """可重试异常的中间基类（被 RunnableRetry 捕获）。"""
+
+
+class RecoveryNudgeError(RecoveryRetryableException):
+    """工具后空响应 — 发送提示并重试。"""
+
+
+class RecoveryPrefillError(RecoveryRetryableException):
+    """仅思考响应 — 追加 prefill 并重试。"""
+
+
+class TruncationError(RecoveryRetryableException):
+    """截断响应 — 继续或重建 chain 并重试。"""
+
+
+class RecoveryRetryError(RecoveryRetryableException):
+    """空内容 — 简单重试。"""
+
+
+class RetryableRateLimitError(RecoveryRetryableException):
+    """429 限流 — 睡眠后重试。"""
+
+
+RETRYABLE_EXCEPTIONS: tuple[type[RecoveryRetryableException], ...] = (
+    RecoveryNudgeError,
+    RecoveryPrefillError,
+    TruncationError,
+    RecoveryRetryError,
+    RetryableRateLimitError,
+)

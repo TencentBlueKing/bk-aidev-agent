@@ -22,15 +22,13 @@ import logging
 from typing import Annotated, Any, Dict, List
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, AnyMessage, BaseMessage, HumanMessage
-from langchain_core.runnables import Runnable, RunnableConfig, RunnableLambda
+from langchain_core.messages import AnyMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from langgraph._internal._runnable import RunnableCallable
 from langgraph.graph.message import add_messages
 from langgraph.store.base import BaseStore
 from typing_extensions import Required, TypedDict
-
-from aidev_agent.packages.langchain_core.output_parsers import StructuredOutputToToolMessageParser
 
 from .basic_middleware import (
     BaseVariablesMiddleware,
@@ -39,6 +37,7 @@ from .basic_middleware import (
     SpecialVariablesPostMiddleware,
 )
 from .context_assembly import ContextAssembly
+from .model_chain import _build_model_chain
 from .prompt_middleware import (
     BeijingTimeMiddleware,
     DecisionSystemMiddleware,
@@ -48,7 +47,8 @@ from .prompt_middleware import (
     RoleDefinitionMiddleware,
     StructuredChatFormatMiddleware,
 )
-from .pydantic_models import ModelNodeSettings, ProcessorContext
+from .pydantic_models import ModelChainState, ModelNodeSettings, ProcessorContext
+from .quality_gate import QualityGate
 from .token_compression import (
     ChatHistoryCompressionMiddleware,
     KnowledgeCompressionMiddleware,
@@ -59,59 +59,6 @@ from .token_compression import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-class InvalidModelMessageError(Exception):
-    """模型返回了无效 message（content 和 tool_calls 均为空）时抛出。"""
-
-
-def _is_invalid_message(message: AnyMessage) -> bool:
-    """
-    判断模型返回的 message 是否无效。
-
-    无效条件（任一满足即无效）:
-    1. message 不是 AIMessage 类型
-    2. message.content 为空且 message.tool_calls 为空
-
-    Args:
-        message: LangChain 的 message 对象
-
-    Returns:
-        bool: True 表示无效，需要重试；False 表示有效
-    """
-
-    # 条件 1: 不是 AIMessage
-    if not isinstance(message, AIMessage):
-        return True
-
-    # 条件 2: content 和 tool_calls 都为空
-    has_content = False
-    has_tool_calls = False
-
-    # 检查 content
-    if message.content:
-        # 多模态内容，只要 list 长度大于 0 就认为有内容
-        # 返回有问题不会解析出 list，所以只要 list 存在且非空就是有效的
-        has_content = (isinstance(message.content, str) and message.content.strip() != "") or (
-            isinstance(message.content, list) and len(message.content) > 0
-        )
-
-    # 检查 tool_calls
-    if message.tool_calls:
-        has_tool_calls = len(message.tool_calls) > 0
-
-    return not has_content and not has_tool_calls
-
-
-def _validate_model_message(message: AnyMessage) -> AnyMessage:
-    """校验模型返回的 message，无效时抛出 InvalidModelMessageError 触发 with_retry 重试。"""
-    if _is_invalid_message(message):
-        raise InvalidModelMessageError(
-            f"Model returned invalid message: "
-            f"content={repr(message.content)[:100]}, "
-            f"tool_calls={len(message.tool_calls) if hasattr(message, 'tool_calls') else 'N/A'}"
-        )
-    return message
 
 
 class ModelState(TypedDict, total=False):
@@ -126,146 +73,28 @@ class ModelState(TypedDict, total=False):
     messages: Required[Annotated[list[AnyMessage], add_messages]]
 
 
-def _extract_query_text_and_images(query: Any) -> tuple[Any, list[dict[str, Any]]]:
-    """从 query 中提取文本和图片（OpenAI-style content list）。"""
-
-    if not isinstance(query, list):
-        return query, []
-
-    text_parts: list[str] = []
-    image_contents: list[dict[str, Any]] = []
-    for item in query:
-        if not isinstance(item, dict):
-            continue
-        item_type = item.get("type")
-        if item_type == "text":
-            text = item.get("text")
-            if isinstance(text, str):
-                text_parts.append(text)
-        elif item_type == "image_url":
-            image_contents.append(item)
-
-    return "\n".join(text_parts), image_contents
-
-
-def _attach_images_to_last_human_message(messages: list[BaseMessage], image_contents: list[dict[str, Any]]) -> None:
-    """将图片内容挂载到最后一条 HumanMessage，避免丢失多模态输入。"""
-
-    if not image_contents:
-        return
-
-    for idx in range(len(messages) - 1, -1, -1):
-        if not isinstance(messages[idx], HumanMessage):
-            continue
-
-        human_message = messages[idx]
-        rendered_text = human_message.content if isinstance(human_message.content, str) else ""
-        multimodal_content: list[dict[str, Any]] = []
-        if rendered_text:
-            multimodal_content.append({"type": "text", "text": rendered_text})
-        multimodal_content.extend(image_contents)
-        messages[idx] = human_message.model_copy(update={"content": multimodal_content})
-        return
-
-
-def _prepare_model_chain(
-    *,
-    llm: BaseChatModel,
-    context_assembly: ContextAssembly,
-    use_structured_response: bool,
-    enable_parallel_tool_calls: bool,
-    max_retries: int,
-    state: ModelState,
-    config: RunnableConfig,
-    store: BaseStore,
-) -> tuple[Runnable, list[BaseMessage]]:
-    """
-    准备模型推理所需的 LLM chain 和渲染后的 messages。
-
-    抽取 model_node 和 amodel_node 的公共逻辑，包括：
-    - 获取工具列表
-    - 获取 prompt 模板
-    - 准备上下文变量
-    - 渲染 prompt -> messages
-    - 构建 LLM chain（含校验和重试）
-
-    Args:
-        llm: 语言模型
-        context_assembly: 上下文组件实例
-        use_structured_response: 是否使用结构化输出模式
-        enable_parallel_tool_calls: 是否启用并行工具调用
-        max_retries: 最大重试次数
-        state: 状态字典
-        config: Runnable 配置
-        store: LangGraph Store
-
-    Returns:
-        tuple: (llm_chain, messages)
-            - llm_chain: LLM chain（含校验模块和 with_retry）
-            - messages: 渲染后的消息列表（可观测点）
-    """
-
-    # 创建共享的 ProcessorContext（整个 node 执行过程中复用）
-    ctx = ProcessorContext(
-        state=state,
-        config=config,
-        store=store,
-        llm=llm,
-    )
-
-    # 使用 ContextAssembly 获取工具
-    tools = context_assembly.get_choice_tools(ctx)
-    # 使用 ContextAssembly 选择 prompt 模板（会设置 ctx.chat_prompt_template）
-    chat_prompt_template = context_assembly.get_chat_prompt_template(ctx)
-    # 使用 ContextAssembly 准备上下文变量
-    context_variables = context_assembly.get_chat_prompt_variables(ctx)
-    image_contents: list[dict[str, Any]] = []
-    query, image_contents = _extract_query_text_and_images(context_variables.get("query"))
-    if image_contents:
-        context_variables = {**context_variables, "query": query}
-
-    # 渲染 prompt -> messages（可观测点）
-    prompt_value = chat_prompt_template.invoke(context_variables, config=config)
-    messages: list[BaseMessage] = prompt_value.to_messages()
-    _attach_images_to_last_human_message(messages, image_contents)
-
-    # 根据模式构建不同的 llm_chain（不含 prompt）
-    if use_structured_response:
-        # 创建结构化输出解析器（用于 use_structured_response 模式）
-        # 传递 llm 以支持 DeepSeek R1 等模型的特殊处理
-        # 注意：不传递 tools，工具存在性校验由 ToolNode 负责
-        tool_message_parser = StructuredOutputToToolMessageParser(
-            llm=llm,
-            enable_parallel_tool_calls=enable_parallel_tool_calls,
-        )
-        # 结构化输出模式：llm 输出经过 parser 转换为带 tool_calls 的 AIMessage
-        llm_chain: Runnable = llm | tool_message_parser
-        # 添加工具描述到上下文变量
-    else:
-        # 原生工具调用模式：使用 bind_tools 绑定工具
-        llm_chain = llm.bind_tools(tools) if tools else llm
-
-    # 在 chain 末尾添加校验模块，无效消息抛异常触发 with_retry 重试
-    llm_chain = (llm_chain | RunnableLambda(_validate_model_message)).with_retry(
-        retry_if_exception_type=(InvalidModelMessageError,),
-        stop_after_attempt=max_retries,
-    )
-
-    return llm_chain, messages
+# ---------------------------------------------------------------------------
+# build_model_node
+# ---------------------------------------------------------------------------
 
 
 def build_model_node(
     *,
     llm: BaseChatModel,
     non_thinking_llm: BaseChatModel = None,
+    judge_llm: BaseChatModel | None = None,
     tools: List[BaseTool],
     node_options: ModelNodeSettings | None = None,
 ) -> RunnableCallable:
     """创建标准 QA 场景的模型节点。
 
+    模型节点内部包含 recovery 循环，处理模型响应异常（空内容、纯思考、截断等），
+    无需在 graph 层添加额外的 recovery 节点。
+
     Args:
         llm: 语言模型
         non_thinking_llm: 辅助模型
+        judge_llm: 判断用 LLM（用于 quality_gate 评估任务完成度）；None 时 fail-open
         tools: 工具列表（全量工具，内部会根据 state 决策筛选）
         node_options: 模型节点选项（可选，不传则使用默认值）
 
@@ -278,8 +107,11 @@ def build_model_node(
 
     use_structured_response = node_options.use_structured_response
     enable_parallel_tool_calls = node_options.enable_parallel_tool_calls
-
-    # NOTE: `chat_prompt_templates` is kept for backwards compatibility but is no longer used.
+    model_chain_config = node_options.model_chain_config
+    quality_gate = QualityGate(
+        judge_llm=judge_llm,
+        enable_judgment_llm=model_chain_config.enable_judgment_llm,
+    )
 
     # 在内部构建 ContextAssembly，并手动加载所有必需的中间件
     context_assembly = ContextAssembly(tools=tools)
@@ -324,6 +156,7 @@ def build_model_node(
     tool_output_compressor = ToolOutputCompressor(
         non_thinking_llm, compressor_type=node_options.tool_output_compressor_type
     )
+    # 基于 Token 超限的工具输出压缩
     context_assembly.add_middleware(
         "variable",
         ToolOutputLengthCompressionMiddleware(
@@ -331,7 +164,7 @@ def build_model_node(
             tool_output_compressor_func=tool_output_compressor,
         ),
     )
-    # 基于 Token 超限的工具输出压缩
+    # 工具压缩后重新渲染agent_scratchpad
     context_assembly.add_middleware(
         "variable",
         ToolOutputTokenCompressionMiddleware(
@@ -340,7 +173,6 @@ def build_model_node(
             token_margin=node_options.token_margin,
         ),
     )
-    # 工具压缩后重新渲染agent_scratchpad
     context_assembly.add_middleware(
         "variable",
         SpecialVariablesPostMiddleware(use_structured_response=use_structured_response),
@@ -349,7 +181,6 @@ def build_model_node(
         "variable",
         DeepSeekR1VariablesMiddleware(use_deepseek_r1_models_process=node_options.use_deepseek_r1_models_process),
     )
-
     context_assembly.add_middleware(
         "variable",
         ChatHistoryCompressionMiddleware(
@@ -357,10 +188,19 @@ def build_model_node(
             token_margin=node_options.token_margin,
         ),
     )
-
-    # Extension: allow graph layer to inject additional tool middlewares
     for m in getattr(node_options, "extra_tool_middlewares", []) or []:
         context_assembly.add_middleware("tool", m)
+
+    # 在闭包作用域中一次性构建共享的 LCEL 模型链。
+    model_chain = _build_model_chain(
+        llm=llm,
+        context_assembly=context_assembly,
+        model_chain_config=model_chain_config,
+        quality_gate=quality_gate,
+        use_structured_response=use_structured_response,
+        enable_parallel_tool_calls=enable_parallel_tool_calls,
+        use_tool_call_promotion=node_options.use_tool_call_promotion,
+    )
 
     def model_node(
         state: ModelState,
@@ -368,36 +208,25 @@ def build_model_node(
         *,
         store: BaseStore,
     ) -> Dict[str, Any]:
-        """
-        同步模型推理节点。
-
-        - 根据 state 中的 decision 选择合适的 ReAct Prompt
-        - 支持两种模式：
-          - use_structured_response=True: 使用结构化输出 + tool_message_parser
-          - use_structured_response=False: 使用原生 function calling (bind_tools)
-
-        Args:
-            state: 类型安全的状态字典
-            config: Runnable 配置
-            store: LangGraph Store
-
-        Returns:
-            包含 messages 的字典
-        """
-        llm_chain, messages = _prepare_model_chain(
-            llm=llm,
-            context_assembly=context_assembly,
-            use_structured_response=use_structured_response,
-            enable_parallel_tool_calls=enable_parallel_tool_calls,
-            max_retries=node_options.max_model_retries,
+        """同步模型推理节点（含内部恢复循环）。"""
+        ctx = ProcessorContext(
             state=state,
             config=config,
             store=store,
+            llm=llm,
+            model_chain_state=ModelChainState(
+                max_empty_retries=model_chain_config.max_empty_retries,
+                max_thinking_prefill_retries=model_chain_config.max_thinking_prefill_retries,
+                max_truncation_retries=model_chain_config.max_truncation_retries,
+                max_truncated_tool_call_retries=model_chain_config.max_truncated_tool_call_retries,
+            ),
+            messages=[],
+            response=None,
         )
-
-        response = llm_chain.invoke(messages, config=config)
-
-        return {"messages": [response]}
+        # 断言链运行时必填字段（中间件路径不校验）
+        assert ctx.config is not None and ctx.state is not None
+        final_ctx = model_chain.invoke(ctx)
+        return {"messages": [final_ctx.response]}
 
     async def amodel_node(
         state: ModelState,
@@ -405,35 +234,24 @@ def build_model_node(
         *,
         store: BaseStore,
     ) -> Dict[str, Any]:
-        """
-        异步模型推理节点。
-
-        - 根据 state 中的 decision 选择合适的 ReAct Prompt
-        - 支持两种模式：
-          - use_structured_response=True: 使用结构化输出 + tool_message_parser
-          - use_structured_response=False: 使用原生 function calling (bind_tools)
-
-        Args:
-            state: 类型安全的状态字典
-            config: Runnable 配置
-            store: LangGraph Store
-
-        Returns:
-            包含 messages 的字典
-        """
-        llm_chain, messages = _prepare_model_chain(
-            llm=llm,
-            context_assembly=context_assembly,
-            use_structured_response=use_structured_response,
-            enable_parallel_tool_calls=enable_parallel_tool_calls,
-            max_retries=node_options.max_model_retries,
+        """异步模型推理节点（含内部恢复循环）。"""
+        ctx = ProcessorContext(
             state=state,
             config=config,
             store=store,
+            llm=llm,
+            model_chain_state=ModelChainState(
+                max_empty_retries=model_chain_config.max_empty_retries,
+                max_thinking_prefill_retries=model_chain_config.max_thinking_prefill_retries,
+                max_truncation_retries=model_chain_config.max_truncation_retries,
+                max_truncated_tool_call_retries=model_chain_config.max_truncated_tool_call_retries,
+            ),
+            messages=[],
+            response=None,
         )
-
-        response = await llm_chain.ainvoke(messages, config=config)
-
-        return {"messages": [response]}
+        # 断言链运行时必填字段（中间件路径不校验）
+        assert ctx.config is not None and ctx.state is not None
+        final_ctx = await model_chain.ainvoke(ctx)
+        return {"messages": [final_ctx.response]}
 
     return RunnableCallable(model_node, amodel_node, trace=True)
