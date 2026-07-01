@@ -146,7 +146,10 @@
           v-for="node in task.nodes"
           :key="node.id"
           class="flow-agent-node-item"
-          :class="{ 'is-selected': isNodeSelected(task.raw, node.raw) }"
+          :class="{
+            'is-selected': isNodeSelected(task.raw, node.raw),
+            'is-pending': isNodePending(task, node),
+          }"
         >
           <span class="flow-agent-node-status">
             <Loading
@@ -177,10 +180,27 @@
               <span
                 v-for="action in getNodeActions(task, node)"
                 :key="action.id"
+                v-tippy="
+                  action.tooltip
+                    ? { ...commonTippyOptions, content: action.tooltip, theme: 'ai-chat-box', offset: [0, 8] }
+                    : { content: '' }
+                "
                 class="flow-agent-node-action-btn"
-                @click.stop="action.run()"
+                :class="{ 'is-disabled': action.disabled }"
+                @click.stop="handleActionClick(action)"
               >
-                <component :is="action.icon" />
+                <!-- 进行中：图标切换为 loading 菊花（与节点执行中态一致） -->
+                <Loading
+                  v-if="action.loading"
+                  class="flow-agent-node-action-loading"
+                  mode="spin"
+                  size="mini"
+                  theme="primary"
+                />
+                <component
+                  :is="action.icon"
+                  v-else
+                />
                 {{ action.label }}
               </span>
             </span>
@@ -194,7 +214,7 @@
   import { computed, toRef } from 'vue';
 
   import { Loading } from 'bkui-vue';
-  import { Tippy } from 'vue-tippy';
+  import { Tippy, directive as vTippy } from 'vue-tippy';
 
   import { MessageContentType, MessageStatus } from '../../../ag-ui/types/constants';
   import { RenderMode } from '../../../common/constants';
@@ -206,7 +226,7 @@
   import HighlightKeyword from '../../highlight-keyword/highlight-keyword';
   import ActivityLayout from '../activity-layout/activity-layout.vue';
   import { useFlowAgent } from './use-flow-agent';
-  import { useFlowNodeActions } from './use-flow-node-actions';
+  import { type FlowNodeActionVM, useFlowNodeActions } from './use-flow-node-actions';
   import { useFlowTab } from './use-flow-tab';
 
   import type { MessageStatus as MessageStatusType } from '../../../ag-ui/types/constants';
@@ -246,10 +266,18 @@
   });
 
   // 节点行尾操作层：聚合「详情 / 重试 / 跳过」为声明式操作列表
-  const { getNodeActions } = useFlowNodeActions({
+  const { getNodeActions, isNodePending } = useFlowNodeActions({
     onInterruptResume: toRef(props, 'onInterruptResume'),
     openNodeDetail,
   });
+
+  /** 点击节点行尾操作：禁用态（重试 / 跳过进行中）拦截，避免重复提交 */
+  const handleActionClick = (action: FlowNodeActionVM) => {
+    if (action.disabled) {
+      return;
+    }
+    action.run();
+  };
 </script>
 <style lang="scss">
   // 状态圆环：空心环，颜色由视图模型按状态注入（模板内联 borderColor）。
@@ -516,8 +544,10 @@
 
         @extend %row;
 
-        // hover 行时隐藏耗时，露出操作按钮组（详情 / 重试 / 跳过）
-        &:hover {
+        // hover 行、或节点有进行中的 resume 操作时：隐藏耗时，露出操作按钮组（详情 / 重试 / 跳过）。
+        // pending 态常驻显示，保证鼠标移出后仍能看到「重试中 / 跳过中」的反馈（设计稿 annotation）
+        &:hover,
+        &.is-pending {
           .flow-agent-node-actions {
             display: flex;
           }
@@ -558,6 +588,26 @@
         display: flex;
 
         @extend %action-btn-visual;
+
+        // 进行中 / 被另一操作阻塞：置灰禁用，屏蔽 hover 高亮（设计稿失效色 #c4c6cc）
+        &.is-disabled {
+          color: #c4c6cc;
+          cursor: not-allowed;
+
+          &:hover {
+            color: #c4c6cc;
+          }
+        }
+      }
+
+      // 进行中按钮的 loading 图标：尺寸跟随字号，与文案基线对齐
+      &-action-loading {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1em;
+        height: 1em;
+        font-size: var(--ai-font-size, 12px);
       }
     }
   }
