@@ -202,7 +202,7 @@
     flex-direction: column;
     width: 100%;
     overflow: hidden;
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
     background: #fff;
     border-radius: 8px;
 
@@ -283,7 +283,7 @@
         }
 
         &-label {
-          font-size: 12px;
+          font-size: var(--ai-font-size, 12px);
           color: #4d4f56;
         }
 
@@ -292,10 +292,10 @@
 
           &_radio,
           &_checkbox {
-            font-size: 12px;
+            font-size: var(--ai-font-size, 12px);
 
             span {
-              font-size: 12px;
+              font-size: var(--ai-font-size, 12px);
             }
           }
 

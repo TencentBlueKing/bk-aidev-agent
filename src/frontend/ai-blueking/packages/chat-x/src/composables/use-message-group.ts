@@ -23,21 +23,25 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import type { ComputedRef, Ref, ShallowRef } from 'vue';
-import { computed, ref as deepRef, shallowRef, watch, watchEffect } from 'vue';
+import type { ComputedRef, MaybeRef, Ref, ShallowRef } from 'vue';
+import { computed, ref as deepRef, shallowRef, toValue, watch, watchEffect } from 'vue';
 
 import {
   type ActivityMessage,
   type AssistantMessage,
   type Message,
+  APPROVAL_STATUS,
+  InterruptReason,
   MessageContentType,
   MessageRole,
   MessageStatus,
 } from '../ag-ui/types';
-import { LOADING_MESSAGE_ID } from '../common/constants';
+import { LOADING_MESSAGE_ID, RenderMode } from '../common/constants';
+import { t } from '../lang/lang';
 import { generateUUID } from '../utils';
 
 import type { BkFlowMessageContent } from '../ag-ui/types/contents';
+import type { InterruptMessage, UserQuestionInterrupt } from '../ag-ui/types/interrupt';
 
 export type MessageGroup = {
   checked: boolean;
@@ -97,9 +101,45 @@ const messageMatchesKeyword = (message: Message, keyword: string): boolean => {
   return extractor(message).some(text => text.toLowerCase().includes(keyword));
 };
 
+const pendingApprovalStatusSet = new Set([APPROVAL_STATUS.PENDING, APPROVAL_STATUS.DRAFT]);
+
+/**
+ * 从后往前查找最近一条仍在等待用户响应（outcome=interrupt）的 UserQuestion 中断。
+ * 供 ChatContainer 在 chat-input 上方渲染交互浮层。
+ */
+const findActiveUserQuestion = (messages: Message[]): undefined | UserQuestionInterrupt => {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (message.role !== MessageRole.Interrupt) continue;
+    const content = (message as InterruptMessage).content;
+    if (content?.outcome?.type !== 'interrupt') continue;
+    const question = content.outcome.interrupts.find(item => item.reason === InterruptReason.UserQuestion);
+    if (question) return question as UserQuestionInterrupt;
+  }
+  return undefined;
+};
+
+const countPendingApprovalInterrupts = (messages: Message[]): number =>
+  messages.reduce((count, message) => {
+    if (message.role !== MessageRole.Interrupt) {
+      return count;
+    }
+    const content = (message as InterruptMessage).content;
+    if (content?.outcome?.type !== 'interrupt') {
+      return count;
+    }
+    const pendingCount = content.outcome.interrupts.filter(
+      item =>
+        item.reason === InterruptReason.AIDevToolApproval &&
+        pendingApprovalStatusSet.has(item.metadata?.ticket?.status),
+    ).length;
+    return count + pendingCount;
+  }, 0);
+
 export const useMessageGroup = (options: {
   keyword?: ShallowRef<string>;
   messages: ComputedRef<Message[]>;
+  renderMode?: MaybeRef<RenderMode>;
   selectedUserMessages: Ref<Message[] | undefined>;
 }) => {
   const messageGroups = deepRef<MessageGroup[]>([]);
@@ -161,7 +201,9 @@ export const useMessageGroup = (options: {
         pause: assistantMessages?.some(m => m.property?.extra?.pause) ?? false,
       });
     }
-    if (options.messages.value.at(-1)?.role === MessageRole.User) {
+    const shouldAppendLoading =
+      options.messages.value.at(-1)?.role === MessageRole.User && toValue(options.renderMode) !== RenderMode.Share;
+    if (shouldAppendLoading) {
       list.push({
         messages: [
           {
@@ -217,6 +259,17 @@ export const useMessageGroup = (options: {
         isHover: false,
         messages: group.messages.filter(isMatch),
       }));
+  });
+  const activeUserQuestionInterrupt = computed(() => findActiveUserQuestion(options.messages.value));
+  const pendingApprovalCount = computed(() => countPendingApprovalInterrupts(options.messages.value));
+  const pendingApprovalTipText = computed(() => {
+    if (!pendingApprovalCount.value) {
+      return '';
+    }
+    return t('当前会话有 {count} 个待审批单，如需继续，请先取消审批').replace(
+      '{count}',
+      String(pendingApprovalCount.value),
+    );
   });
 
   /**
@@ -282,6 +335,9 @@ export const useMessageGroup = (options: {
   return {
     messageGroups,
     executionGroups,
+    activeUserQuestionInterrupt,
+    pendingApprovalCount,
+    pendingApprovalTipText,
     isShareMode,
     isAllSelected,
     onToggleShareAll,

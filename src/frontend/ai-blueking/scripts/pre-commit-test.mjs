@@ -8,7 +8,7 @@
  */
 
 import { execSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { basename, dirname, extname, join, relative } from 'node:path';
 
 // git root 与当前 workspace 可能不在同一层（monorepo 场景）
@@ -21,8 +21,18 @@ const SRC_PATH = join(CHAT_X_PATH, 'src');
 const WIKI_PATH = join(CHAT_X_PATH, 'wikis');
 const TEST_SUFFIX = '.spec.ts';
 
-/** wiki 中组件文档可能存在的子目录 */
-const COMPONENT_WIKI_SUBDIRS = ['atomic', 'molecular'];
+/** 源码文件名与文档 slug 不一致的组件 */
+const COMPONENT_DOC_NAME_OVERRIDES = {
+  'components/image-preview/image.vue': 'ai-image',
+};
+
+const getComponentWikiSubdirs = () => {
+  const componentsWikiPath = join(WIKI_PATH, 'components');
+  if (!existsSync(componentsWikiPath)) return [];
+  return readdirSync(componentsWikiPath, { withFileTypes: true })
+    .filter(dirent => dirent.isDirectory())
+    .map(dirent => dirent.name);
+};
 
 /**
  * 过滤出 packages/chat-x/src 目录下的源文件（.vue / .ts，排除测试和类型定义）
@@ -92,11 +102,13 @@ const findWikiFiles = srcFiles => {
     let wikiFile = null;
 
     if (topDir === 'components' && parts.length >= 3) {
-      // 组件文档按名称在 atomic / molecular 子目录中查找
-      const docName = `${parts[2]}.md`;
-      wikiFile = COMPONENT_WIKI_SUBDIRS.map(sub => join(WIKI_PATH, 'components', sub, docName)).find(p =>
-        existsSync(p),
-      );
+      // 组件文档按能力域目录组织，按源码文件名对应的 slug 查找
+      const override = COMPONENT_DOC_NAME_OVERRIDES[relativePath];
+      const docSlug = override ?? basename(parts.at(-1), extname(parts.at(-1)));
+      const docName = `${docSlug}.md`;
+      wikiFile = getComponentWikiSubdirs()
+        .map(sub => join(WIKI_PATH, 'components', sub, docName))
+        .find(p => existsSync(p));
     } else if (parts.length >= 2) {
       // composables / directives / plugins 等直接按 topDir 映射
       const fileName = basename(parts[1], extname(parts[1]));
@@ -145,7 +157,7 @@ const runTests = testFiles => {
     return true;
   } catch {
     console.error('\n❌ 测试失败！请修复测试后再提交。\n');
-    console.log('💡 提示：可以使用 @update-test 命令让 AI 帮助修复测试\n');
+    console.log('💡 提示：可让 AI 使用 chat-x-update-docs skill 帮助修复测试\n');
     return false;
   }
 };
@@ -156,9 +168,7 @@ const runTests = testFiles => {
  * @param {{ target: string, src: string }[]} items 未更新的文件列表
  */
 const showNotUpdatedWarning = (type, items) => {
-  const isTest = type === 'test';
-  const label = isTest ? '测试文件' : 'Wiki 文档';
-  const command = isTest ? 'update-test' : 'update-wiki';
+  const label = type === 'test' ? '测试文件' : 'Wiki 文档';
 
   console.log(`\n⚠️  检测到以下源文件改动，但对应的${label}未更新：\n`);
 
@@ -170,14 +180,12 @@ const showNotUpdatedWarning = (type, items) => {
 
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
-  console.log(`  💡 请使用 Cursor 的 ${command} 命令来更新${label}：`);
+  console.log(`  💡 测试与文档需在提交前同步更新。请在 Cursor 聊天中让 AI 使用`);
+  console.log('     chat-x-update-docs skill 自动分析改动并同步 test + wiki：');
   console.log('');
-  console.log('     1. 在 Cursor 中按 Cmd+Shift+P (Mac) 或 Ctrl+Shift+P (Windows)');
-  console.log(`     2. 输入 "${command}" 并选择该命令`);
-  console.log(`     3. AI 将自动分析改动并更新${label}`);
+  console.log('     例如输入：「提交前同步这次改动对应的 test 和 wiki」');
   console.log('');
-  console.log('  或者直接在 Cursor 聊天中输入：');
-  console.log(`     @${command}`);
+  console.log('  skill 位置：packages/chat-x/.agents/skills/chat-x-update-docs/');
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
@@ -212,7 +220,7 @@ const main = () => {
 
   if (testFilesMap.length === 0) {
     console.log('\n⚠️  源文件改动但没有找到对应的测试文件');
-    console.log('💡 提示：可以使用 @update-test 命令让 AI 帮助创建测试\n');
+    console.log('💡 提示：可让 AI 使用 chat-x-update-docs skill 帮助创建测试\n');
   } else {
     const notUpdatedTests = findUnstaged(testFilesMap, stagedSet);
     if (notUpdatedTests.length > 0) {

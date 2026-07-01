@@ -3,10 +3,10 @@ name: 设计理念
 slug: design-philosophy
 category: guide
 description: >
-  @blueking/chat-x 的 AI 优先设计策略、原子设计方法论、功能域划分和 API 设计原则。
+  @blueking/chat-x 的 AI 优先设计策略、能力域信息架构、源码事实校准和 API 设计原则。
 aiSummary: >
   chat-x 以 AI 优先为核心设计理念：结构化 frontmatter 元数据、AI 专用摘要、MCP 服务
-  让 AI Agent 在 1-2 次工具调用内选择组件。架构上采用原子设计分层 + 6 功能域组织，
+  让 AI Agent 在 1-2 次工具调用内选择组件。架构上以 src/components 为真相源，按能力域组织组件文档，
   API 设计遵循：只读 Props、回写 v-model、通知 emit、可覆盖函数 prop、自定义 slot、
   数据逻辑 composable。类型系统通过 declare global 声明合并实现零侵入扩展。
 relatedComponents: []
@@ -31,9 +31,9 @@ sinceVersion: '1.0.0'
 
 | 策略                   | 实现                                                                                                                             | 消费者                           |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| **结构化 Frontmatter** | 每个组件/API 页面顶部 YAML 元数据：`name`、`slug`、`category`、`domain`、`description`、`aiSummary`、`relatedComponents`         | MCP 索引、AI Agent               |
+| **结构化 Frontmatter** | 每个组件/API 页面顶部 YAML 元数据：`name`、`slug`、`kind`、`domain`、`description`、`aiSummary`、`relatedComponents`             | MCP 索引、AI Agent               |
 | **AI 专用摘要**        | `aiSummary` 字段：2-4 句话，包含组件职责、必填 props、关键行为、常见搭配                                                         | MCP `get_component_doc` 返回头部 |
-| **MCP 服务**           | 内置 `@modelcontextprotocol/sdk` Server，暴露 `list_components`（支持 domain/category 过滤）、`get_component_doc`、`search_docs` | AI IDE（Cursor 等）              |
+| **MCP 服务**           | 内置 `@modelcontextprotocol/sdk` Server，暴露 `list_components`（支持 kind/domain 过滤）、`get_component_doc`、`search_docs`     | AI IDE（Cursor 等）              |
 | **文档清洗**           | `build-index` 自动剥离 `<script setup>`、`<div class="demo">` 等 VitePress 运行时代码，只保留对 AI 有用的内容                    | MCP 返回的文档                   |
 | **功能域导航**         | 按使用场景（而非实现细节）组织组件，AI 可通过 `domain` 参数快速缩小范围                                                          | MCP `list_components` 过滤       |
 | **关联组件图谱**       | `relatedComponents` 字段明确标注组件间关系和协作方式                                                                             | MCP 索引、页面底部               |
@@ -54,64 +54,49 @@ AI Agent 收到需求：「添加一个带工具调用的 AI 对话界面」
 
 整个过程 **4 次 MCP 调用**，无需阅读完整文档。
 
-## 原子设计方法论
+## 能力域信息架构
 
-### 为什么分层
+### 为什么按能力域组织
 
-AI Chat 界面的复杂度在于**组合爆炸**：消息类型 × 内容格式 × 交互模式 × 布局变体。原子设计通过分层约束依赖方向：
+AI Chat 界面的复杂度在于**组合爆炸**：消息类型 × 内容格式 × 交互模式 × Agent 中断 × 布局变体。用户查文档时真正的问题通常是“我要搭建对话 / 渲染消息 / 处理输入 / 展示工具调用”，而不是“我要找某个内部层级的组件”。
 
-```
-原子组件 → 不依赖本库其他组件，只接收 Props
-   ↑
-分子组件 → 组合多个原子/分子组件，实现完整功能区域
-   ↑
-组合组件 → ChatContainer 封装标准对话页面
-```
+新的信息架构直接对齐能力域：完整容器放在“搭建对话”，消息角色放在“消息系统”，Markdown/代码/引用放在“内容渲染”，输入和快捷指令放在“输入交互”，ToolCall/HITL/FlowAgent 放在“Agent 能力”。这样人类和 AI Agent 都能先缩小问题域，再进入具体组件。
 
-### 原子组件（Atomic）
+### 源码事实校准
 
-**单一职责**，不导入本库其他业务组件。通过 Props 接收数据，通过 Events 通知父组件。
+组件文档以 `packages/chat-x/src/components` 为真相源。每个组件页面都应能回答：
 
-| 特征     | 说明                                              |
-| -------- | ------------------------------------------------- |
-| 依赖方向 | 只依赖 Vue、bkui-vue 等外部库，不依赖本库其他组件 |
-| 状态管理 | 无内部业务状态，或只有极少的 UI 状态（如 hover）  |
-| 可复用性 | 可在任意上下文中独立使用                          |
+| 问题 | 文档来源 |
+| ---- | -------- |
+| 组件真实存在吗 | 源码文件路径 |
+| 有哪些 Props / Emits / Slots / Expose | 组件源码中的 `defineProps`、`defineEmits`、`<slot>`、`defineExpose` |
+| 由谁组合、依赖谁 | 源码 import 与模板引用 |
+| 是否可直接业务使用 | 是否导出、是否为空文件、是否只是内部链路组件 |
 
-**代表**：`AiImage`（图片展示）、`CodeContent`（代码块高亮）、`ToolBtn`（工具按钮）、`ScrollBtn`（滚动按钮）、`MarkdownContent`（Markdown 渲染）
+文档中如果出现源码没有的能力，应删除或降级为“上层组件能力”；源码中已有但文档缺失的组件，应补齐页面并纳入 [组件源码审计清单](./components/inventory.md)。
 
-### 分子组件（Molecular）
+### 顶层组合
 
-**组合多个原子组件**，形成完整的功能区域。承担业务逻辑编排。
-
-| 特征     | 说明                                                 |
-| -------- | ---------------------------------------------------- |
-| 依赖方向 | 导入本库原子组件和/或其他分子组件                    |
-| 状态管理 | 管理区域级状态（如消息列表的滚动位置、工具栏的显隐） |
-| 数据流   | 通过 Props 接收业务数据，通过回调/事件与父组件通信   |
-
-**代表**：`MessageContainer`（消息列表 + 滚动 + 工具栏）、`ChatInput`（编辑器 + 附件 + 快捷指令）、`AssistantMessage`（正文 + 工具调用列表）、`ImagePreviewGroup`（多图预览管理）
-
-### 组合组件（Composition）
-
-`ChatContainer` 作为唯一的顶层组合组件，将分子组件 + `ResizeLayout` + `useMessageGroup` 等编排为标准对话页面，对外暴露 `ChatContainerProps`（合并了 `ChatInputProps` + `MessageContainerProps` 的大部分字段）。
+`ChatContainer` 作为唯一的完整对话容器，将 `MessageContainer`、`ChatInput`、`ShortcutRender`、`ExecutionSummary`、`SelectionFooter` 与 `useMessageGroup` 等编排为标准对话页面，对外暴露 `ChatContainerProps`（合并了 `ChatInputProps` + `MessageContainerProps` 的大部分字段）。
 
 **设计决策**：不提供多种组合组件，而是提供一个「完整版」 + 自由组合的「零件」，避免 API 表面积膨胀。
 
 ## 功能域划分
 
-组件按使用者心智模型的 **6 个功能域** 组织，而非实现细节（文件路径、内部依赖）：
+组件按使用者心智模型的 **8 个功能域** 组织：
 
-| 功能域         | 心智模型              | 核心组件                                                                                          |
-| -------------- | --------------------- | ------------------------------------------------------------------------------------------------- |
-| **消息展示**   | 「我要展示对话列表」  | MessageContainer、MessageRender、AssistantMessage、UserMessage、ReasoningMessage、ActivityMessage |
-| **输入交互**   | 「我要让用户输入」    | ChatInput、AiSelection、ShortcutBtns、ShortcutRender、ChatContainer                               |
-| **内容渲染**   | 「我要渲染富文本」    | ContentRender、MarkdownContent、CodeContent、LatexContent、MermaidContent、AnimationText          |
-| **文件与图片** | 「我要处理附件/图片」 | AiImage、ImagePreview、ImagePreviewGroup、FileContent、FileUploadBtn                              |
-| **工具与反馈** | 「我要加工具栏/反馈」 | MessageTools、ToolBtn、UserFeedback、ToolcallRender、DeleteTool                                   |
-| **辅助组件**   | 「我要加辅助功能」    | ScrollBtn、DescPanel、HighlightKeyword、CiteContent、ExecutionSummary、SelectionFooter            |
+| 功能域 | 心智模型 | 核心组件 |
+| ------ | -------- | -------- |
+| **对话搭建** | 「我要搭一个聊天界面」 | ChatContainer、MessageContainer |
+| **消息系统** | 「我要展示不同角色消息」 | MessageRender、AssistantMessage、UserMessage、ReasoningMessage、ActivityMessage |
+| **内容渲染** | 「我要渲染富文本」 | ContentRender、MarkdownContent、CodeContent、LatexContent、MermaidContent、AnimationText |
+| **输入交互** | 「我要让用户输入和选择」 | ChatInput、AiSlashInput、ShortcutRender、AiSelection、SelectionFooter |
+| **Agent 能力** | 「我要处理工具调用和中断」 | ToolcallRender、InterruptMessage、ToolApprovalCard、UserQuestionCard、FlowAgentContent |
+| **工具与反馈** | 「我要加消息操作」 | MessageTools、ToolBtn、DeleteTool、UserFeedback、ScrollBtn |
+| **媒体文件** | 「我要处理图片/文件」 | AiImage、ImagePreview、ImagePreviewGroup、FileContent、ImageContent |
+| **辅助能力** | 「我要理解内部辅助组件」 | ActivityLayout、AiLoading、MessageLoading、HighlightKeyword、VNodeRenderer |
 
-**为什么这样分**：对齐开发者（和 AI Agent）的问题——「我在做消息列表 / 输入框 / 富文本 / 媒体 / 工具条」，而不是「我在找 `components/atomic/` 下的某个文件」。AI Agent 通过 MCP 的 `domain` 参数可直接按功能域检索。
+**为什么这样分**：对齐开发者（和 AI Agent）的问题——「我在做消息列表 / 输入框 / 富文本 / 媒体 / 工具条」，而不是按内部层级找文件。AI Agent 通过 MCP 的 `domain` 参数可直接按能力域检索。
 
 ## API 设计原则
 

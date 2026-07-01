@@ -95,6 +95,8 @@ export const useSession = (mediator: IMediatorModule) => {
       await mediator.message?.getMessages(sessionCode);
       // 继续聊天
       mediator.agent?.resumeStreamingChat(sessionCode);
+      // 轮询接口，判断是否可以继续聊天
+      mediator.agent?.pollResumeSession(sessionCode);
     } else {
       // 新会话，清空消息列表
       if (mediator.message) {

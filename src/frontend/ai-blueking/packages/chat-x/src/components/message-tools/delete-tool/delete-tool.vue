@@ -106,7 +106,7 @@
   .ai-delete-confirm {
     width: 280px;
     padding: 16px;
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
     color: #4d4f56;
     background: #fff;
     border: 1px solid #dcdee5;

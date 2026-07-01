@@ -310,34 +310,34 @@ const assistantMessage: Message = {
 
 | 组件               | 说明                     | 文档                                                            |
 | ------------------ | ------------------------ | --------------------------------------------------------------- |
-| `ChatContainer`    | 完整对话布局（推荐入口） | [ChatContainer](./components/molecular/chat-container.md)       |
-| `MessageContainer` | 消息列表容器             | [MessageContainer](./components/molecular/message-container.md) |
-| `MessageRender`    | 单条消息渲染             | [MessageRender](./components/molecular/message-render.md)       |
+| `ChatContainer`    | 完整对话布局（推荐入口） | [ChatContainer](./components/setup/chat-container)       |
+| `MessageContainer` | 消息列表容器             | [MessageContainer](./components/setup/message-container) |
+| `MessageRender`    | 单条消息渲染             | [MessageRender](./components/message/message-render)       |
 
 ### 输入交互
 
 | 组件             | 说明                                            | 文档                                                        |
 | ---------------- | ----------------------------------------------- | ----------------------------------------------------------- |
-| `ChatInput`      | 聊天输入框，支持 `/` Prompt、`@` 资源、文件上传 | [ChatInput](./components/molecular/chat-input.md)           |
-| `AiSelection`    | AI 划词选择浮窗                                 | [AiSelection](./components/molecular/ai-selection.md)       |
-| `ShortcutBtns`   | 快捷指令按钮组                                  | [ShortcutBtns](./components/atomic/shortcut-btns.md)        |
-| `ShortcutRender` | 快捷指令表单渲染器                              | [ShortcutRender](./components/molecular/shortcut-render.md) |
+| `ChatInput`      | 聊天输入框，支持 `/` Prompt、`@` 资源、文件上传 | [ChatInput](./components/input/chat-input)           |
+| `AiSelection`    | AI 划词选择浮窗                                 | [AiSelection](./components/input/ai-selection)       |
+| `ShortcutBtns`   | 快捷指令按钮组                                  | [ShortcutBtns](./components/input/shortcut-btns.md)        |
+| `ShortcutRender` | 快捷指令表单渲染器                              | [ShortcutRender](./components/input/shortcut-render) |
 
 ### 内容渲染
 
 | 组件              | 说明                     | 文档                                                       |
 | ----------------- | ------------------------ | ---------------------------------------------------------- |
-| `ContentRender`   | 内容渲染器（按类型分发） | [ContentRender](./components/molecular/content-render.md)  |
-| `MarkdownContent` | Markdown 渲染            | [MarkdownContent](./components/atomic/markdown-content.md) |
-| `CodeContent`     | 代码块高亮               | [CodeContent](./components/atomic/code-content.md)         |
+| `ContentRender`   | 内容渲染器（按类型分发） | [ContentRender](./components/rendering/content-render)  |
+| `MarkdownContent` | Markdown 渲染            | [MarkdownContent](./components/rendering/markdown-content) |
+| `CodeContent`     | 代码块高亮               | [CodeContent](./components/rendering/code-content)         |
 
 ### 文件与图片
 
 | 组件                | 说明         | 文档                                                               |
 | ------------------- | ------------ | ------------------------------------------------------------------ |
-| `AiImage`           | 图片展示     | [AiImage](./components/atomic/ai-image.md)                         |
-| `ImagePreview`      | 图片全屏预览 | [ImagePreview](./components/molecular/image-preview.md)            |
-| `ImagePreviewGroup` | 多图预览管理 | [ImagePreviewGroup](./components/molecular/image-preview-group.md) |
+| `AiImage`           | 图片展示     | [AiImage](./components/medias/ai-image)                         |
+| `ImagePreview`      | 图片全屏预览 | [ImagePreview](./components/medias/image-preview)            |
+| `ImagePreviewGroup` | 多图预览管理 | [ImagePreviewGroup](./components/medias/image-preview-group.md) |
 
 > 完整组件列表见 [组件文档](/components/)。
 
@@ -603,9 +603,9 @@ import {
 
 - 阅读 [架构总览](./architecture.md) 了解组件层级与数据流
 - 浏览 [用例食谱](./recipes.md) 查看 11 个常见场景的最小代码
-- 阅读 [ChatContainer](./components/molecular/chat-container.md) 了解一站式方案的完整配置
-- 阅读 [ChatInput](./components/molecular/chat-input.md) 了解输入框的 `/` Prompt、`@` 资源等高级功能
-- 阅读 [MessageContainer](./components/molecular/message-container.md) 了解消息容器的自定义用法
+- 阅读 [ChatContainer](./components/setup/chat-container) 了解一站式方案的完整配置
+- 阅读 [ChatInput](./components/input/chat-input) 了解输入框的 `/` Prompt、`@` 资源等高级功能
+- 阅读 [MessageContainer](./components/setup/message-container) 了解消息容器的自定义用法
 - 了解 [自定义消息类型](./ai/custom-message.md) 扩展图表、审批单等非标准消息
 - 查看 [Composables](./composables/) 了解可复用的组合式函数
 - 了解 [主题配置](./theme/theme.md) 自定义组件外观

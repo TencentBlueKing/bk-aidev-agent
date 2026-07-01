@@ -114,9 +114,31 @@ vi.mock('../activity-message/activity-message.vue', () => ({
     name: 'ActivityMessage',
     props: {
       content: { type: Array, default: () => [] },
+      onInterruptResume: { type: Function, default: undefined },
     },
-    setup() {
-      return () => h('div', { class: 'mock-activity-message' });
+    setup(props) {
+      return () =>
+        h('div', {
+          class: 'mock-activity-message',
+          'data-has-on-interrupt-resume': props.onInterruptResume ? 'true' : undefined,
+        });
+    },
+  }),
+}));
+
+/** 与 message-render 中 `InterruptMessageRender` 命名导出一致，避免真实中断组件链路过重 */
+vi.mock('../interrupt-message', () => ({
+  InterruptMessageRender: defineComponent({
+    name: 'InterruptMessageRender',
+    props: {
+      onInterruptResume: { type: Function, default: undefined },
+    },
+    setup(props) {
+      return () =>
+        h('div', {
+          class: 'mock-interrupt-message-render',
+          'data-has-on-interrupt-resume': props.onInterruptResume ? 'true' : undefined,
+        });
     },
   }),
 }));
@@ -245,6 +267,57 @@ describe('MessageRender', () => {
 
       expect(wrapper.find('.mock-activity-message').exists()).toBe(true);
     });
+
+    it('应该将 onInterruptResume 传递给 ActivityMessage', () => {
+      const onInterruptResume = vi.fn();
+
+      wrapper = mount(MessageRender, {
+        props: {
+          message: {
+            role: MessageRole.Activity,
+            content: [],
+          },
+          onInterruptResume,
+        },
+      });
+
+      const activity = wrapper.find('.mock-activity-message');
+      expect(activity.exists()).toBe(true);
+      expect(activity.attributes('data-has-on-interrupt-resume')).toBe('true');
+    });
+  });
+
+  describe('Interrupt 消息渲染测试', () => {
+    it('应该通过 InterruptMessageRender 渲染 Interrupt 消息', () => {
+      wrapper = mount(MessageRender, {
+        props: {
+          message: {
+            role: MessageRole.Interrupt,
+            content: '',
+          },
+        },
+      });
+
+      expect(wrapper.find('.mock-interrupt-message-render').exists()).toBe(true);
+    });
+
+    it('应该将 onInterruptResume 传递给 InterruptMessageRender', () => {
+      const onInterruptResume = vi.fn();
+
+      wrapper = mount(MessageRender, {
+        props: {
+          message: {
+            role: MessageRole.Interrupt,
+            content: '',
+          },
+          onInterruptResume,
+        },
+      });
+
+      const interrupt = wrapper.find('.mock-interrupt-message-render');
+      expect(interrupt.exists()).toBe(true);
+      expect(interrupt.attributes('data-has-on-interrupt-resume')).toBe('true');
+    });
   });
 
   describe('Loading 消息渲染测试', () => {
@@ -328,6 +401,7 @@ describe('MessageRender', () => {
       expect(wrapper.find('.mock-user-message').exists()).toBe(false);
       expect(wrapper.find('.mock-assistant-message').exists()).toBe(false);
       expect(wrapper.find('.mock-info-message').exists()).toBe(false);
+      expect(wrapper.find('.mock-interrupt-message-render').exists()).toBe(false);
     });
 
     it('应该处理空 message', () => {

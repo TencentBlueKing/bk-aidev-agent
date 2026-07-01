@@ -29,7 +29,7 @@
     height: 28px;
     padding: 0 8px;
     margin-bottom: 4px;
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
     color: #4d4f56;
     background: #f5f7fa;
     border-radius: 4px;

@@ -193,4 +193,4 @@ export const useCommandSelection = () => {
 
 ## 关联组件
 
-- [ChatInput](../components/molecular/chat-input.md) — AiSlashInput 子模块使用
+- [ChatInput](../components/input/chat-input) — AiSlashInput 子模块使用

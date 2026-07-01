@@ -27,9 +27,12 @@ Provider/Consumer 模式的自定义 Tab 管理，用于 `ChatContainer` 侧边�
 
 ```typescript
 function useCustomTabProvider<T extends Record<string, unknown>>(options: {
+  // 执行情况 Tab 是否展示，缺省 true；传 getter 以保持响应式
+  executionTabVisible?: () => boolean | undefined;
   onTabChange?: (tab: CustomTab<T>) => void;
 }): {
   tabs: ShallowRef<CustomTab<T>[]>;
+  displayTabs: ComputedRef<CustomTab<T>[]>;
   selectedTab: Ref<CustomTab<T>>;
   isCollapse: ShallowRef<boolean>;
   addCustomTab: (tab: CustomTab<T>) => void;
@@ -46,6 +49,7 @@ function useCustomTabConsumer<T extends Record<string, unknown>>():
   | undefined
   | {
       tabs: ShallowRef<CustomTab<T>[]>;
+      displayTabs: ComputedRef<CustomTab<T>[]>;
       selectedTab: ShallowRef<CustomTab<T> | null>;
       addCustomTab: (tab: CustomTab<T>) => void;
       removeCustomTab: (tabName: string) => void;
@@ -94,19 +98,21 @@ tabManager?.removeCustomTab('node-detail-123');
 
 ## 内置常量
 
-| 常量名               | 值            | 说明                      |
-| -------------------- | ------------- | ------------------------- |
-| `EXECUTION_TAB_NAME` | `'execution'` | 执行情况 Tab 的固定标识   |
-| `CUSTOM_TAB_TOKEN`   | `Symbol`      | provide/inject 注入 Token |
+| 常量名               | 值            | 说明                                       |
+| -------------------- | ------------- | ------------------------------------------ |
+| `EXECUTION_TAB_NAME` | `'execution'` | 执行情况 Tab 的固定标识                    |
+| `DEFAULT_TAB_ORDER`  | `100`         | Tab 默认排序权重；执行情况固定为 `0`       |
+| `CUSTOM_TAB_TOKEN`   | `Symbol`      | provide/inject 注入 Token                  |
 
 ## 返回值说明
 
 | 属性/方法名     | 类型                        | 说明                                              |
 | --------------- | --------------------------- | ------------------------------------------------- |
-| tabs            | `ShallowRef<CustomTab[]>`   | 所有 Tab 列表（含默认的执行情况 Tab）             |
-| selectedTab     | `Ref<CustomTab>`            | 当前选中的 Tab                                    |
+| tabs            | `ShallowRef<CustomTab[]>`   | 所有 Tab 列表（含默认的执行情况 Tab，保留隐藏项） |
+| displayTabs     | `ComputedRef<CustomTab[]>`  | Tab 栏实际展示列表：过滤 `visible === false`，按 `order` 升序稳定排序 |
+| selectedTab     | `Ref<CustomTab>`            | 当前选中的 Tab；选中项被隐藏时自动回退到首个可见 Tab |
 | isCollapse      | `ShallowRef<boolean>`       | 侧边栏折叠状态；`addCustomTab` 时自动设为 `false` |
-| addCustomTab    | `(tab: CustomTab) => void`  | 添加 Tab（同名 Tab 不重复添加）                   |
+| addCustomTab    | `(tab: CustomTab) => void`  | 添加 Tab；同名 Tab 合并更新（可改 `order` / `visible` / `label`） |
 | removeCustomTab | `(tabName: string) => void` | 移除指定 Tab                                      |
 | selectCustomTab | `(tab: CustomTab) => void`  | 切换到指定 Tab，触发 `onTabChange` 回调           |
 | resetCustomTab  | `() => void`                  | 重置为仅保留「执行情况」Tab、折叠侧栏并选中默认 Tab；`ChatContainer` 在卸载时调用，避免残留自定义 Tab |
@@ -119,15 +125,24 @@ interface CustomTab<T = Record<string, unknown>> {
   name: string;
   /** 可与 `component` / `props` 并列；用于侧栏「在对话中定位」与主消息 `message.uid` 对齐 */
   data?: T & { messageUid?: string };
+  /** 排序权重，升序，越小越靠前；缺省 100，执行情况默认 0 */
+  order?: number;
+  /** 是否在 Tab 栏展示，缺省 true；false 时仍可被程序化选中，但内容不渲染、会自动切到首个可见 Tab */
+  visible?: boolean;
+  /** 是否可关闭，缺省 true；执行情况强制不可关闭 */
+  closable?: boolean;
 }
 ```
 
 ## 设计特点
 
 - `tabs` 使用 `shallowRef`，`addCustomTab` 通过展开新数组触发更新，避免 `UnwrapRef<T>` 类型问题
-- 默认的「执行情况」Tab 始终存在且不可关闭
-- `addCustomTab` 同时展开侧边栏（`isCollapse = false`）并在 `nextTick` 后自动选中新 Tab
+- 默认的「执行情况」Tab 始终存在且不可关闭，`order` 固定 `0`；可通过 `executionTabVisible` 配置显隐
+- `displayTabs` 负责「过滤显隐 + 按 `order` 排序」；原始 `tabs` 仍保留全部 Tab 供程序化选中与查找
+- 排序为稳定排序，`order` 相同的 Tab 保持插入先后顺序
+- 选中的 Tab 被配置隐藏时，内容不再渲染，自动切换到首个可见 Tab
+- `addCustomTab` 同时展开侧边栏（`isCollapse = false`）并在 `nextTick` 后自动选中目标 Tab；同名 Tab 合并更新
 
 ## 关联组件
 
-- [ChatContainer](../components/molecular/chat-container.md) — 侧栏 Tab 与自定义面板
+- [ChatContainer](../components/setup/chat-container) — 侧栏 Tab 与自定义面板

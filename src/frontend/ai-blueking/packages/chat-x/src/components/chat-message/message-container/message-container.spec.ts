@@ -225,7 +225,7 @@ const buildGroups = (messages: Message[]): MessageGroup[] => {
       });
     } else if (msg.role === MessageRole.Assistant) {
       const lastGroup = groups[groups.length - 1];
-      if (lastGroup && lastGroup.type === MessageRole.Assistant) {
+      if (lastGroup?.type === MessageRole.Assistant) {
         lastGroup.messages.push(msg);
       } else {
         groups.push({
@@ -240,14 +240,14 @@ const buildGroups = (messages: Message[]): MessageGroup[] => {
       }
     } else if (msg.role === MessageRole.Tool) {
       const lastGroup = groups[groups.length - 1];
-      if (lastGroup && lastGroup.type === MessageRole.Assistant) {
+      if (lastGroup?.type === MessageRole.Assistant) {
         lastGroup.messages.push(msg);
       }
     }
   }
 
   const lastMsg = messages[messages.length - 1];
-  if (lastMsg && lastMsg.role === MessageRole.User) {
+  if (lastMsg?.role === MessageRole.User) {
     groups.push({
       uid: 'loading-group',
       messages: [
@@ -478,7 +478,7 @@ describe('MessageContainer', () => {
       const scrollBtns = wrapper.findAll('.mock-scroll-btn');
       const stopBtn = scrollBtns.find(btn => btn.text().includes('停止生成'));
       expect(stopBtn).toBeTruthy();
-      expect((stopBtn!.element as HTMLElement).style.display).toBe('none');
+      expect((stopBtn?.element as HTMLElement).style.display).toBe('none');
     });
 
     it('点击停止生成按钮应该触发 stopStreaming 事件', async () => {
@@ -572,6 +572,46 @@ describe('MessageContainer', () => {
 
       expect(getToolsVisibility(wrapper)).toBe('visible');
     });
+
+    it('消息组最后一条为 Interrupt 时 mouseenter 不应显示 MessageTools', async () => {
+      const interruptMessage: Message = {
+        id: 'interrupt-1',
+        content: {
+          outcome: {
+            type: 'interrupt',
+            interrupts: [],
+          },
+        },
+        messageId: 2,
+        role: MessageRole.Interrupt,
+        status: MessageStatus.Complete,
+      };
+      const messageGroups: MessageGroup[] = [
+        {
+          uid: 'group-assistant-interrupt',
+          messages: [createAssistantMessage('1', 'Hello', 1), interruptMessage],
+          type: MessageRole.Assistant,
+          isHover: false,
+          checked: false,
+        },
+      ];
+
+      wrapper = mount(MessageContainer, {
+        props: {
+          ...defaultProps,
+          messages: messageGroups[0].messages,
+          messageGroups,
+        },
+      });
+
+      await nextTick();
+
+      const messageGroup = wrapper.find('.message-group');
+      await messageGroup.trigger('mouseenter');
+
+      expect(wrapper.find('.mock-message-tools').exists()).toBe(true);
+      expect(getToolsVisibility(wrapper)).toBe('hidden');
+    });
   });
 
   describe('Slot 测试', () => {
@@ -590,6 +630,50 @@ describe('MessageContainer', () => {
 
       expect(wrapper.find('.custom-message').exists()).toBe(true);
       expect(wrapper.find('.custom-message').text()).toBe('Custom: Hello');
+    });
+
+    it('应该支持 group 插槽自定义整组渲染', async () => {
+      const messages: Message[] = [createAssistantMessage('1', 'Hello', 1)];
+      const messageGroups = buildGroups(messages);
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups },
+        slots: {
+          group: ({ group }: { group: MessageGroup }) =>
+            h('div', { class: 'custom-group', 'data-uid': group.uid, 'data-type': group.type }, 'Custom Group'),
+        },
+      });
+
+      await nextTick();
+
+      expect(wrapper.find('.custom-group').exists()).toBe(true);
+      expect(wrapper.find('.custom-group').attributes('data-uid')).toBe('group-1');
+      expect(wrapper.find('.custom-group').attributes('data-type')).toBe(MessageRole.Assistant);
+      expect(wrapper.find('.mock-message-render').exists()).toBe(false);
+      expect(wrapper.find('.mock-message-tools').exists()).toBe(false);
+    });
+
+    it('group 插槽应接收完整的消息组数据', async () => {
+      const messages: Message[] = [createUserMessage('1', 'Hello', 1), createAssistantMessage('2', 'Hi!', 2)];
+      const messageGroups = buildGroups(messages);
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups },
+        slots: {
+          group: ({ group }: { group: MessageGroup }) =>
+            h('div', { class: 'custom-group', 'data-messages-count': group.messages.length }, group.type),
+        },
+      });
+
+      await nextTick();
+
+      const customGroups = wrapper.findAll('.custom-group');
+      // 用户组 + 助手组（末条为助手消息时不追加 Loading 组）
+      expect(customGroups.length).toBe(2);
+      expect(customGroups[0].attributes('data-messages-count')).toBe('1');
+      expect(customGroups[0].text()).toBe(MessageRole.User);
+      expect(customGroups[1].attributes('data-messages-count')).toBe('1');
+      expect(customGroups[1].text()).toBe(MessageRole.Assistant);
     });
   });
 
@@ -775,6 +859,25 @@ describe('MessageContainer', () => {
       const messageRenders = wrapper.findAll('.mock-message-render');
       const loadingRender = messageRenders.find(r => r.attributes('data-role') === MessageRole.Loading);
       expect(loadingRender).toBeTruthy();
+    });
+
+    it('renderMode 为 Share 时不应渲染 Loading 消息组', async () => {
+      const messages: Message[] = [createUserMessage('1', 'Hello', 1)];
+
+      wrapper = mount(MessageContainer, {
+        props: {
+          ...defaultProps,
+          messages,
+          messageGroups: buildGroups(messages),
+          renderMode: RenderMode.Share,
+        },
+      });
+
+      await nextTick();
+
+      const messageRenders = wrapper.findAll('.mock-message-render');
+      const loadingRender = messageRenders.find(r => r.attributes('data-role') === MessageRole.Loading);
+      expect(loadingRender).toBeUndefined();
     });
 
     it('最后一条消息是助手消息时不应该追加 Loading 消息组', async () => {
@@ -1281,6 +1384,23 @@ describe('MessageContainer', () => {
 
       const messageGroupMessages = wrapper.find('.message-group-messages');
       expect(messageGroupMessages.classes()).toContain('message-group-enabled-selection');
+    });
+
+    it('renderMode 为 Share 时流式状态不应显示停止生成按钮', async () => {
+      wrapper = mount(MessageContainer, {
+        props: {
+          ...defaultProps,
+          messageStatus: MessageStatus.Streaming,
+          renderMode: RenderMode.Share,
+        },
+      });
+
+      await nextTick();
+
+      const scrollBtns = wrapper.findAll('.mock-scroll-btn');
+      const stopBtn = scrollBtns.find(btn => btn.text().includes('停止生成'));
+      expect(stopBtn).toBeTruthy();
+      expect((stopBtn?.element as HTMLElement).style.display).toBe('none');
     });
 
     it('renderMode 为 Test 时 MessageTools 应过滤掉 share 按钮', async () => {

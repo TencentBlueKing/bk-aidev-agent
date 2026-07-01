@@ -9,23 +9,27 @@ import type { CustomBkFlowTab } from '@blueking/chat-x';
 const chatContainerPropsRef = { current: {} as Record<string, unknown> };
 const chatHelperRef = ref(createMockChatHelper());
 
-vi.mock('@blueking/chat-x', () => ({
-  RenderMode: { Chat: 'chat', Share: 'share', Test: 'test' },
-  ChatContainer: defineComponent({
-    name: 'ChatContainer',
-    props: {
-      getSideRenderComponent: { type: Function, default: undefined },
-      getSideTabRenderComponent: { type: Function, default: undefined },
-      onCustomTabChange: { type: Function, default: undefined },
-    },
-    setup(props) {
-      chatContainerPropsRef.current = props;
-      return () => h('div', { class: 'chat-container-stub' });
-    },
-  }),
-  MessageRender: defineComponent({ name: 'MessageRender', template: '<motion />' }),
-  ChatInput: defineComponent({ name: 'ChatInput', template: '<motion />' }),
-}));
+vi.mock('@blueking/chat-x', async importOriginal => {
+  const actual = await importOriginal<typeof import('@blueking/chat-x')>();
+  return {
+    ...actual,
+    RenderMode: { Chat: 'chat', Share: 'share', Test: 'test' },
+    ChatContainer: defineComponent({
+      name: 'ChatContainer',
+      props: {
+        getSideRenderComponent: { type: Function, default: undefined },
+        getSideTabRenderComponent: { type: Function, default: undefined },
+        onCustomTabChange: { type: Function, default: undefined },
+      },
+      setup(props) {
+        chatContainerPropsRef.current = props;
+        return () => h('div', { class: 'chat-container-stub' });
+      },
+    }),
+    MessageRender: defineComponent({ name: 'MessageRender', template: '<motion />' }),
+    ChatInput: defineComponent({ name: 'ChatInput', template: '<motion />' }),
+  };
+});
 
 vi.mock('../composables/use-chatbot-init', () => ({
   useChatbotInit: () => ({

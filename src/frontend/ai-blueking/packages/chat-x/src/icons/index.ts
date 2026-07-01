@@ -29,6 +29,7 @@ export * from './content';
 export * from './execution';
 export * from './image-preview';
 export * from './input';
+export * from './interrupt';
 export * from './messages';
 export * from './screen';
 export * from './shortcuts';

@@ -24,17 +24,20 @@
  * IN THE SOFTWARE.
  */
 import { type IMessageApi, type MessageRole, type MessageStatus } from '../message/type';
+import type { JSONSchema4 } from 'json-schema';
 
 export enum CustomEventName {
   FlowAgentEnd = 'flow_agent_end',
   FlowAgentResult = 'flow_agent_result',
   FlowAgentStart = 'flow_agent_start',
+  FlowAgentUpdate = 'flow_agent_update',
   KnowledgeRagEnd = 'knowledge_rag_end',
   KnowledgeRagResult = 'knowledge_rag_result',
   KnowledgeRagStart = 'knowledge_rag_start',
   KnowledgeRagTextContent = 'knowledge_rag_text_content',
   ReferenceDocument = 'reference_document',
   TempMessage = 'temp_message',
+  ApprovalResult = 'approval_result',
 }
 
 export enum EventType {
@@ -68,42 +71,55 @@ export enum EventType {
 
 /** BKFlow 收敛后的节点状态 - task.node 的状态枚举 */
 export enum FlowNodeState {
-  /** 失败 */
   Failed = 'failed',
-  /** 执行中 */
   Running = 'running',
-  /** 成功 */
   Success = 'success',
-  /** 挂起 */
   Suspended = 'suspended',
 }
 
 /** BKFLOW 原始状态 - task 的状态枚举 */
 export enum FlowTaskState {
-  /** 执行中 */
   Blocked = 'BLOCKED',
-  /** 执行中 */
   Created = 'CREATED',
-  /** 失败 */
   Failed = 'FAILED',
-  /** 成功 */
   Finished = 'FINISHED',
-  /** 执行中 */
   LoopReady = 'LOOP_READY',
-  /** 执行中 */
   Ready = 'READY',
-  /** 失败 */
   Revoked = 'REVOKED',
-  /** 失败 */
   RollBackFailed = 'ROLL_BACK_FAILED',
-  /** 执行中 */
   RollBackSuccess = 'ROLL_BACK_SUCCESS',
-  /** 执行中 */
   RollingBack = 'ROLLING_BACK',
-  /** 执行中 */
   Running = 'RUNNING',
-  /** 挂起 */
   Suspended = 'SUSPENDED',
+}
+
+/** 运行完成结果 */
+export enum RunFinishedOutcomeType {
+  Success = 'success',
+  Interrupt = 'interrupt',
+}
+
+/** 审批状态 */
+export enum ApprovalInterruptTicketStatus {
+  Abandoned = 'abandoned',
+  Approved = 'approved',
+  Cancelled = 'cancelled',
+  Draft = 'draft',
+  Expired = 'expired',
+  Rejected = 'rejected',
+  Pending = 'pending',
+}
+
+/** 中断原因 */
+export enum InterruptReason {
+  AIDevToolApproval = 'aidev:tool_approval',
+  UserQuestion = 'aidev:user_question',
+}
+
+/** 恢复状态 */
+export enum ResumeStatus {
+  Resolved = 'resolved',
+  Cancelled = 'cancelled',
 }
 
 /**
@@ -152,7 +168,8 @@ export interface ICustomEvent extends IBaseEvent {
     | IKnowledgeRagResultCustomValue
     | IKnowledgeRagTextContentCustomValue
     | IReferenceDocumentCustomValue
-    | ITempMessageCustomValue;
+    | ITempMessageCustomValue
+    | IApprovalResultCustomValue;
 }
 
 export type IEvent =
@@ -188,14 +205,14 @@ export type IFlowAgentEndCustomValue = {
 }[];
 
 export interface IFlowAgentNode {
-  /** 耗时(s) */
   elapsed_time: number;
-  /** 节点id */
   id: string;
-  /** 节点名称 */
   name: string;
-  /** 节点状态 */
   state: FlowNodeState;
+  retry: number;
+  skip: boolean;
+  retryable: boolean;
+  skippable: boolean;
 }
 
 export type IFlowAgentResultCustomValue = {
@@ -251,15 +268,73 @@ export interface IRunErrorEvent extends IBaseEvent {
   type: EventType.RunError;
 }
 
+export interface IInterrupt<T extends InterruptReason, P extends Record<string, unknown>> {
+  id: string;
+  reason: T;
+  message?: string;
+  toolCallId?: string;
+  responseSchema?: JSONSchema4;
+  expiresAt?: string;
+  metadata?: P;
+}
+
+export type IApprovalInterrupt = IInterrupt<
+  InterruptReason.AIDevToolApproval,
+  {
+    ticket: {
+      approvers: string[];
+      sn: string;
+      status: ApprovalInterruptTicketStatus;
+      submit_time: string;
+      title: string;
+      url: string;
+    };
+  }
+>;
+
+export type IUserQuestionInterrupt = IInterrupt<
+  InterruptReason.UserQuestion,
+  {
+    questions: {
+      header: string;
+      multiSelect?: boolean;
+      options?: { description: string; label: string }[];
+      question: string;
+    }[];
+  }
+>;
+
+export interface IResume {
+  interruptId: string;
+  status: ResumeStatus;
+  payload?: {
+    answers: {
+      answer: { description: string; label: string }[];
+      multiSelect?: boolean;
+      question: string;
+    }[];
+  };
+}
+
+export type IRunFinishedOutcome =
+  | {
+      type: RunFinishedOutcomeType.Success;
+    }
+  | {
+      type: RunFinishedOutcomeType.Interrupt;
+      interrupts: Array<IApprovalInterrupt | IUserQuestionInterrupt>;
+    };
+
 /**
  * 标记 Agent 运行正常结束
  * 返回最终结果 result
  */
 export interface IRunFinishedEvent extends IBaseEvent {
-  result?: unknown;
+  result?: IResume;
   runId: number;
   threadId: string;
   type: EventType.RunFinished;
+  outcome?: IRunFinishedOutcome;
 }
 
 /**
@@ -318,6 +393,8 @@ export interface ITempMessageCustomValue {
   message: string;
   status: MessageStatus;
 }
+
+export type IApprovalResultCustomValue = IRunFinishedEvent;
 
 export interface ITextMessageChunkEvent extends IBaseEvent {
   delta?: string;

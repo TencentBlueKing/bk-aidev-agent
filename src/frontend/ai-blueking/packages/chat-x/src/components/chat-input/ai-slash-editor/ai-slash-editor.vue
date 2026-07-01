@@ -592,7 +592,7 @@
           align-items: center;
           height: 18px;
           padding: 0 2px 0 6px;
-          font-size: 12px;
+          font-size: var(--ai-font-size, 12px);
           color: list.nth($color, 2);
           background: list.nth($color, 1);
           border-radius: 2px;

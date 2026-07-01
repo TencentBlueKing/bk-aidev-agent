@@ -1,232 +1,138 @@
+---
+name: 组件总览
+slug: components
+kind: guide
+description: '@blueking/chat-x 组件能力地图，按对话搭建、消息系统、内容渲染、输入交互、Agent 能力等场景组织。'
+aiSummary: >
+  @blueking/chat-x 组件文档以 src/components 为真相源，按能力域组织。
+  推荐先从 ChatContainer、MessageContainer、ChatInput、MessageRender、ContentRender 五个入口理解组件链路。
+---
+
 # 组件总览
 
-`@blueking/chat-x` 的组件按原子设计方法论分为两层：**原子组件**（基础 UI 单元）和**分子组件**（业务功能单元）。
+`@blueking/chat-x` 的组件现在按 **能力域** 组织，而不是按实现层级组织。开发时请先判断“我要完成什么能力”，再进入对应文档。
+
+> 本轮文档以 `packages/chat-x/src/components` 为真相源校准。完整覆盖关系见 [组件源码审计清单](./inventory.md)。
 
 ## 快速选择
 
-| 场景                        | 推荐组件                             |
-| --------------------------- | ------------------------------------ |
-| 接入完整聊天界面（推荐）    | `ChatContainer`                      |
-| 自定义布局的聊天界面        | `MessageContainer` + `ChatInput`     |
-| 仅渲染消息列表              | `MessageRender`                      |
-| 仅渲染单条消息内容          | `ContentRender`                      |
-| 渲染 Markdown / 代码 / 图表 | `MarkdownContent`                    |
-| 流式文字打字机效果          | `AnimationText` / `useAnimationText` |
-| AI 划词快捷操作             | `AiSelection`                        |
-| 快捷指令入口                | `ShortcutBtns` + `ShortcutRender`    |
+| 场景 | 推荐入口 |
+| ---- | -------- |
+| 接入完整聊天界面 | [ChatContainer](./setup/chat-container.md) |
+| 自定义聊天布局 | [MessageContainer](./setup/message-container.md) + [ChatInput](./input/chat-input.md) |
+| 渲染一条消息 | [MessageRender](./message/message-render.md) |
+| 渲染消息正文内容 | [ContentRender](./rendering/content-render.md) |
+| 渲染 Markdown / 代码 / 公式 / 图表 | [MarkdownContent](./rendering/markdown-content.md) |
+| 构建快捷指令与命令输入 | [ChatInput](./input/chat-input.md)、[AiSlashInput](./input/ai-slash-input.md)、[ShortcutRender](./input/shortcut-render.md) |
+| 处理 ToolCall / HITL 中断 | [ToolcallRender](./agent/toolcall-render.md)、[InterruptMessage](./agent/interrupt-message.md) |
+| 展示 FlowAgent / 知识召回活动 | [FlowAgentContent](./agent/flow-agent-content.md)、[KnowledgeRagContent](./agent/knowledge-rag-content.md) |
+| 图片预览与文件展示 | [AiImage](./medias/ai-image.md)、[ImagePreviewGroup](./medias/image-preview-group.md)、[FileContent](./medias/file-content.md) |
 
-## 原子组件
+## 能力域
 
-职责单一、可独立使用，是分子组件的构建块。→ [查看原子组件详细列表](./atomic/index.md)
+### 搭建对话
 
-### 交互
+| 组件 | 说明 |
+| ---- | ---- |
+| [ChatContainer](./setup/chat-container.md) | 完整对话容器，组合消息列表、输入区、快捷指令、执行摘要、选择分享与自定义 Tab。 |
+| [MessageContainer](./setup/message-container.md) | 消息列表容器，负责消息分组、滚动、工具栏与消息插槽透传。 |
 
-| 组件名          | 说明                                                  | 文档                                |
-| --------------- | ----------------------------------------------------- | ----------------------------------- |
-| `ScrollBtn`     | 操作按钮（停止生成 / 返回底部）                       | [查看](./atomic/scroll-btn.md)      |
-| `ToolBtn`       | 工具栏图标按钮；内置 10 个预置图标，支持激活 / 禁用态 | [查看](./atomic/tool-btn.md)        |
-| `ShortcutBtn`   | 单个快捷指令按钮；`btn` / `menu` 两种布局             | [查看](./atomic/shortcut-btn.md)    |
-| `ShortcutBtns`  | 快捷指令按钮组；响应式溢出自动收入"更多"菜单          | [查看](./atomic/shortcut-btns.md)   |
-| `FileUploadBtn` | 文件上传触发按钮；多选、类型过滤、单文件约 2.4MB 校验 | [查看](./atomic/file-upload-btn.md) |
-| `AiLoading`     | AI 思考中三色渐变脉冲动画                             | [查看](./atomic/ai-loading.md)      |
+### 消息系统
+
+| 组件 | 说明 |
+| ---- | ---- |
+| [MessageRender](./message/message-render.md) | 按 `message.role` 分发到具体消息组件。 |
+| [AssistantMessage](./message/assistant-message.md) | 渲染 AI 回复主体、工具调用与文件内容。 |
+| [UserMessage](./message/user-message.md) | 渲染用户消息，包含编辑态、引用、文件与快捷指令确认。 |
+| [ReasoningMessage](./message/reasoning-message.md) | 渲染推理过程。 |
+| [ToolMessage](./message/tool-message.md) | 渲染工具返回内容。 |
+| [ActivityMessage](./message/activity-message.md) | 按活动类型分发 FlowAgent、知识召回、引用文档等内容。 |
+| [InfoMessage](./message/info-message.md) | 渲染系统信息提示。 |
+| [LoadingMessage](./message/loading-message.md) | 渲染消息列表中的加载占位。 |
 
 ### 内容渲染
 
-| 组件名               | 说明                                                | 文档                                     |
-| -------------------- | --------------------------------------------------- | ---------------------------------------- |
-| `MarkdownContent`    | Markdown 全功能渲染；流式补全、代码高亮、图表、公式 | [查看](./atomic/markdown-content.md)     |
-| `AnimationText`      | 流式文本打字机动画                                  | [查看](./atomic/animation-text.md)       |
-| `CodeContent`        | 代码块高亮；`highlight.js` 分行缓存，流式支持       | [查看](./atomic/code-content.md)         |
-| `MermaidContent`     | Mermaid 图表渲染；三级去重防抖                      | [查看](./atomic/mermaid-content.md)      |
-| `LatexContent`       | LaTeX 公式渲染；5 次降级重试                        | [查看](./atomic/latex-content.md)        |
-| `TextContent`        | 纯文本气泡；XSS 安全，无 Markdown                   | [查看](./atomic/text-content.md)         |
-| `ImageContent`       | 图片渲染；三态状态机，流式防抖                      | [查看](./atomic/image-content.md)        |
-| `CiteContent`        | 引用片段气泡，配合 `ChatInput` 使用                 | [查看](./atomic/cite-content.md)         |
-| `ReferenceContent`   | 引用文档列表，安全跳转                              | [查看](./atomic/reference-content.md)    |
-| `KeyValueContent`    | 键值对展示；固定行高，超长截断                      | [查看](./atomic/key-value-content.md)    |
-| `DescPanel`          | 描述面板；JSON 解析 → 键值 / 索引 / 纯文本          | [查看](./atomic/desc-panel.md)           |
-| `CommonErrorContent` | 通用错误提示；红色图标 + 文本                       | [查看](./atomic/common-error-content.md) |
+| 组件 | 说明 |
+| ---- | ---- |
+| [ContentRender](./rendering/content-render.md) | 按 `MessageContentType` 分发正文内容。 |
+| [MarkdownContent](./rendering/markdown-content.md) | Markdown 主渲染器，集成代码、公式、错误降级和 `codeHeader` 插槽。 |
+| [CodeContent](./rendering/code-content.md) | 代码块高亮与复制。 |
+| [LatexContent](./rendering/latex-content.md) | LaTeX 公式渲染。 |
+| [MermaidContent](./rendering/mermaid-content.md) | Mermaid 图表渲染。 |
+| [AnimationText](./rendering/animation-text.md) | 流式文本动画。 |
+| [TextContent](./rendering/text-content.md) | 纯文本渲染。 |
+| [CiteContent](./rendering/cite-content.md) | 引用片段渲染。 |
+| [ReferenceContent](./rendering/reference-content.md) | 引用来源列表渲染。 |
+| [KeyValueContent](./rendering/key-value-content.md) | 键值结构展示。 |
+| [DescPanel](./rendering/desc-panel.md) | 文本或 JSON 描述面板。 |
+| [CommonErrorContent](./rendering/common-error-content.md) | 通用错误内容。 |
 
-## 分子组件
+### 媒体文件
 
-由原子组件组合而成，提供完整业务功能。→ [查看分子组件详细列表](./molecular/index.md)
+| 组件 | 说明 |
+| ---- | ---- |
+| [AiImage](./medias/ai-image.md) | 图片展示与预览入口。 |
+| [ImagePreview](./medias/image-preview.md) | 图片预览容器。 |
+| [ImagePreviewGroup](./medias/image-preview-group.md) | 多图预览上下文。 |
+| [PreviewToolbar](./medias/preview-toolbar.md) | 图片预览工具栏。 |
+| [FileContent](./medias/file-content.md) | 文件附件展示。 |
+| [ImageContent](./medias/image-content.md) | Markdown 图片 token 渲染。 |
 
-### 顶层容器（直接使用）
+### 输入交互
 
-| 组件名             | 说明                                                                 | 文档                                     |
-| ------------------ | -------------------------------------------------------------------- | ---------------------------------------- |
-| `ChatContainer`    | 完整聊天容器；整合消息列表 + 输入框 + 执行摘要 + 分栏布局 + 分享模式 | [查看](./molecular/chat-container.md)    |
-| `MessageContainer` | 消息列表容器；自动滚动管理、Teleport 挂载点注册                      | [查看](./molecular/message-container.md) |
-| `ChatInput`        | 聊天输入框；`/` Prompt、`@` 资源、引用、文件上传、快捷指令           | [查看](./molecular/chat-input.md)        |
-| `AiSelection`      | AI 划词弹窗；全局事件监听定位选区，触发快捷指令                      | [查看](./molecular/ai-selection.md)      |
+| 组件 | 说明 |
+| ---- | ---- |
+| [ChatInput](./input/chat-input.md) | 聊天主输入区。 |
+| [AiSlashInput](./input/ai-slash-input.md) | 富文本命令输入，支持 `/` Prompt 与 `@` 资源标签。 |
+| [AiSlashEditor](./input/ai-slash-editor.md) | 富文本编辑器实现。 |
+| [AiSlashMenu](./input/ai-slash-menu.md) | 资源选择菜单。 |
+| [AiPromptList](./input/ai-prompt-list.md) | Prompt 列表。 |
+| [InputAttachment](./input/input-attachment.md) | 输入附件区布局。 |
+| [InputInfoAlert](./input/input-info-alert.md) | 输入提示条。 |
+| [FileUploadBtn](./input/file-upload-btn.md) | 文件选择按钮。 |
+| [ShortcutRender](./input/shortcut-render.md) | 快捷指令表单渲染。 |
+| [ShortcutBtn](./input/shortcut-btn.md) | 单个快捷指令按钮。 |
+| [ShortcutBtns](./input/shortcut-btns.md) | 快捷指令按钮组。 |
+| [AiSelection](./input/ai-selection.md) | 划词选择浮窗。 |
+| [SelectionFooter](./input/selection-footer.md) | 多选操作栏。 |
 
-### 渲染调度
+### Agent 能力
 
-| 组件名           | 说明                                                          | 文档                                   |
-| ---------------- | ------------------------------------------------------------- | -------------------------------------- |
-| `MessageRender`  | 消息级调度器；按 `role` 分发到对应消息组件                    | [查看](./molecular/message-render.md)  |
-| `ContentRender`  | 内容级调度器；按 `MessageContentType` 分发到原子组件          | [查看](./molecular/content-render.md)  |
-| `ToolcallRender` | Tool Call 渲染；折叠 / 展开 + 四态状态机                      | [查看](./molecular/toolcall-render.md) |
-| `ShortcutRender` | 快捷指令表单渲染；动态注册 Vue 组件，`watchEffect` 初始化表单 | [查看](./molecular/shortcut-render.md) |
+| 组件 | 说明 |
+| ---- | ---- |
+| [ToolcallRender](./agent/toolcall-render.md) | 工具调用渲染器。 |
+| [ToolApprovalCard](./agent/tool-approval-card.md) | 工具审批卡片。 |
+| [InterruptMessage](./agent/interrupt-message.md) | 中断消息渲染器。 |
+| [UserQuestionCard](./agent/user-question-card.md) | 用户问题中断交互面板。 |
+| [UserQuestionChoice](./agent/user-question-choice.md) | 用户问题默认选择题渲染。 |
+| [UserQuestionAnsweredCard](./agent/user-question-answered-card.md) | 用户问题回答回显。 |
+| [UserQuestionOption](./agent/user-question-option.md) | 用户问题选项行。 |
+| [ExecutionSummary](./agent/execution-summary.md) | 执行摘要面板。 |
+| [FlowAgentContent](./agent/flow-agent-content.md) | FlowAgent 执行内容。 |
+| [FlowAgentNodeDetail](./agent/flow-agent-node-detail.md) | FlowAgent 节点详情。 |
+| [KnowledgeRagContent](./agent/knowledge-rag-content.md) | 知识召回内容。 |
+| [ReferenceDocContent](./agent/reference-doc-content.md) | 引用文档活动内容。 |
+| [DetailSection](./agent/detail-section.md) | 详情分段容器。 |
+| [SimpleTable](./agent/simple-table.md) | 简易表格。 |
 
-### 消息类型
+### 工具与反馈
 
-| 组件名             | 触发条件                     | 说明                                          | 文档                                     |
-| ------------------ | ---------------------------- | --------------------------------------------- | ---------------------------------------- |
-| `UserMessage`      | `role: user`                 | 用户消息气泡；蓝色背景，支持复制              | [查看](./molecular/user-message.md)      |
-| `AssistantMessage` | `role: assistant`            | AI 消息；完整状态机，含推理 / ToolCall / 文件 | [查看](./molecular/assistant-message.md) |
-| `LoadingMessage`   | `assistant` + `Pending`      | AI 思考中占位动画                             | [查看](./molecular/loading-message.md)   |
-| `ReasoningMessage` | `assistant` + 推理内容       | 推理过程折叠面板                              | [查看](./molecular/reasoning-message.md) |
-| `ActivityMessage`  | `assistant` + `activityType` | 文件引用 / 搜索结果等活动消息                 | [查看](./molecular/activity-message.md)  |
-| `ToolMessage`      | `role: tool`                 | Tool 返回结果；`DescPanel` 渲染 JSON          | [查看](./molecular/tool-message.md)      |
-| `InfoMessage`      | `role: info`                 | 系统信息提示；居中灰色气泡                    | [查看](./molecular/info-message.md)      |
+| 组件 | 说明 |
+| ---- | ---- |
+| [MessageTools](./feedback/message-tools.md) | 消息工具栏。 |
+| [ToolBtn](./feedback/tool-btn.md) | 工具栏图标按钮。 |
+| [DeleteTool](./feedback/delete-tool.md) | 删除确认按钮。 |
+| [UserFeedback](./feedback/user-feedback.md) | 用户反馈弹层。 |
+| [ScrollBtn](./feedback/scroll-btn.md) | 停止生成 / 返回底部按钮。 |
 
-### 通用功能
+### 辅助能力
 
-| 组件名                | 说明                                              | 文档                                     |
-| --------------------- | ------------------------------------------------- | ---------------------------------------- |
-| `MessageTools`        | 消息工具栏；复制 / 点赞 / 踩 / 重新生成           | [查看](./molecular/message-tools.md)     |
-| `MessageUserFeedback` | 用户反馈弹层；踩后弹出原因选择表单                | [查看](./molecular/user-feedback.md)     |
-| `ExecutionSummary`    | 执行摘要面板；时间线展示工具调用和 FlowAgent 记录 | [查看](./molecular/execution-summary.md) |
-| `FileContent`         | 附件文件展示；图标 + 文件名 + 大小                | [查看](./molecular/file-content.md)      |
-
-## 组件层级关系
-
-```
-ChatContainer（完整聊天容器）
-├── ResizeLayout（分栏布局）
-│   ├── aside（侧边栏）
-│   │   ├── Tab（执行情况 + 自定义 Tab）
-│   │   ├── ExecutionSummary（执行摘要面板）
-│   │   │   ├── HighlightKeyword（关键词高亮）
-│   │   │   └── MessageRender × N
-│   │   └── 自定义 Tab 组件（component :is）
-│   └── main（主内容区）
-│       ├── MessageContainer
-│       ├── SelectionFooter（分享模式）
-│       ├── ShortcutRender（快捷指令表单）
-│       └── ChatInput
-└── 欢迎页（无消息时）
-
-MessageContainer
-├── useContainerScrollProvider（滚动管理）
-├── useGlobalConfig（Teleport 挂载点注册）
-├── MessageRender × N
-│   ├── UserMessage          [role: user]
-│   │   ├── TextContent / KeyValueContent
-│   │   └── FileContent?
-│   ├── AssistantMessage     [role: assistant]
-│   │   ├── ReasoningMessage?
-│   │   │   └── MarkdownContent
-│   │   ├── ActivityMessage?
-│   │   │   └── AiLoading
-│   │   ├── ContentRender
-│   │   │   ├── MarkdownContent
-│   │   │   │   ├── CodeContent
-│   │   │   │   ├── MermaidContent
-│   │   │   │   ├── LatexContent
-│   │   │   │   └── ImageContent
-│   │   │   ├── TextContent
-│   │   │   ├── CiteContent
-│   │   │   ├── ReferenceContent
-│   │   │   └── KeyValueContent
-│   │   ├── ToolcallRender?
-│   │   │   └── ToolMessage
-│   │   └── FileContent?
-│   ├── LoadingMessage       [assistant + Pending]
-│   │   └── AiLoading
-│   ├── InfoMessage          [role: info]
-│   ├── ToolMessage          [role: tool]
-│   │   └── DescPanel
-│   └── ActivityMessage      [role: assistant + activityType]
-└── MessageTools（每条消息悬浮工具栏）
-    ├── ToolBtn × N
-    └── MessageUserFeedback（踩后弹出）
-
-ChatInput
-├── CiteContent?（引用气泡）
-├── AiSlashInput（富文本编辑器）
-│   ├── / → Prompt 菜单
-│   └── @ → 资源菜单
-├── ShortcutBtns?
-│   ├── ShortcutBtn × N（可见）
-│   └── ShortcutBtn × N（更多菜单）
-└── FileUploadBtn?
-
-AiSelection（全局划词弹窗）
-└── ShortcutBtn × N（快捷指令列表）
-```
-
-## 引入方式
-
-### 常用组件
-
-```typescript
-import {
-  // 顶层容器
-  ChatContainer,
-  MessageContainer,
-  ChatInput,
-  AiSelection,
-
-  // 调度器（按需使用）
-  MessageRender,
-  ContentRender,
-
-  // 原子内容渲染
-  MarkdownContent,
-  AnimationText,
-  TextContent,
-  CiteContent,
-  ReferenceContent,
-
-  // 交互原子
-  ScrollBtn,
-  ToolBtn,
-  ShortcutBtn,
-  ShortcutBtns,
-
-  // 枚举 & 类型
-  MessageStatus,
-  MessageRole,
-  MessageContentType,
-  type Message,
-  type Shortcut,
-} from '@blueking/chat-x';
-```
-
-### 完整导入（含内部组件）
-
-```typescript
-import {
-  // 消息类型组件
-  UserMessage,
-  AssistantMessage,
-  LoadingMessage,
-  ReasoningMessage,
-  ActivityMessage,
-  ToolMessage,
-  InfoMessage,
-
-  // 功能组件
-  MessageTools,
-  MessageUserFeedback,
-  ExecutionSummary,
-  FileContent,
-  ToolcallRender,
-  ShortcutRender,
-
-  // 原子内部组件
-  AiLoading,
-  FileUploadBtn,
-  HighlightKeyword,
-  SelectionFooter,
-  CodeContent,
-  MermaidContent,
-  LatexContent,
-  ImageContent,
-  KeyValueContent,
-  DescPanel,
-  CommonErrorContent,
-} from '@blueking/chat-x';
-```
+| 组件 | 说明 |
+| ---- | ---- |
+| [ActivityLayout](./helper/activity-layout.md) | 活动消息折叠布局。 |
+| [AiLoading](./helper/ai-loading.md) | 三点加载动画。 |
+| [MessageLoading](./helper/message-loading.md) | 品牌加载动画。 |
+| [HighlightKeyword](./helper/highlight-keyword.md) | 关键词高亮。 |
+| [VNodeRenderer](./helper/vnode-renderer.md) | Markdown token 到 VNode 的内部渲染桥。 |
+| [QuestionsContainer](./helper/questions-container.md) | 空源码占位，无可用功能。 |
+| [SelectionQuestion](./helper/selection-question.md) | 空源码占位，无可用功能。 |

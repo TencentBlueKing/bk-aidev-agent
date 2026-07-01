@@ -2,11 +2,11 @@
 name: useGlobalConfig
 slug: use-global-config
 category: composable
-description: 在聊天根容器与子组件之间通过 provide/inject 共享全局展示配置（如是否支持上传）。
+description: 在聊天根容器与子组件之间通过 provide/inject 共享全局展示配置（字号主题档位、是否支持上传等）。
 aiSummary: >
-  useGlobalConfig 接收 GlobalConfig（含 supportUpload: ComputedRef<boolean>），以 GLOBAL_CONFIG_TOKEN provide 给后代；
-  injectGlobalConfig 在子组件中取出配置，无 Provider 时返回 undefined。ChatContainer 在 setup 中调用 useGlobalConfig；
-  UserMessage 等通过 injectGlobalConfig 读取 supportUpload。
+  useGlobalConfig 接收 GlobalConfig（含 size?: ComputedRef<AiSizeMode>、supportUpload: ComputedRef<boolean>），以 GLOBAL_CONFIG_TOKEN provide 给后代；
+  injectGlobalConfig 在子组件中取出配置，无 Provider 时返回 undefined。ChatContainer 在 setup 中调用 useGlobalConfig 注入 size 与 supportUpload；
+  后代组件可通过 injectGlobalConfig 读取配置；字号主题主要通过根节点 data-ai-size 与 CSS 变量生效。
 relatedComponents:
   - slug: chat-container
     relation: 根容器调用 useGlobalConfig 注入 supportUpload
@@ -18,23 +18,31 @@ sinceVersion: 1.0.0
   import { useGlobalConfig } from '../../src/composables/use-global-config';
 
   const uploadEnabled = ref(true);
+  const sizeMode = ref<'normal' | 'small'>('small');
   const supportUpload = computed(() => uploadEnabled.value);
+  const size = computed(() => sizeMode.value);
 
-  const { supportUpload: rootSupportUpload } = useGlobalConfig({ supportUpload });
+  const { size: rootSize, supportUpload: rootSupportUpload } = useGlobalConfig({ size, supportUpload });
 </script>
 
 # useGlobalConfig 全局配置
 
 > **分类**：composable
 
-在聊天容器根组件与子组件之间通过 Vue `provide` / `inject` 共享**全局展示相关配置**（当前主要为是否支持上传 `supportUpload`）。与 Teleport 插槽 ID 无关。
+在聊天容器根组件与子组件之间通过 Vue `provide` / `inject` 共享**全局展示相关配置**（当前包括字号主题档位 `size`、是否支持上传 `supportUpload`）。与 Teleport 插槽 ID 无关。
+
+> 字号主题主要通过 `ChatContainer` 根节点的 `data-ai-size` 与 CSS 变量（`--ai-font-size` 等）生效；`GlobalConfig.size` 供后代在逻辑层读取当前档位，样式层无需逐组件传参。
 
 ## 工作原理
 
 ```
 ChatContainer（根）
-  ├── useGlobalConfig({ supportUpload: computed(() => props.supportUpload ?? false) })
-  │     └── provide(GLOBAL_CONFIG_TOKEN, { supportUpload })
+  ├── :data-ai-size="size"（CSS 变量作用域）
+  ├── useGlobalConfig({
+  │     size: computed(() => props.size ?? 'small'),
+  │     supportUpload: computed(() => props.supportUpload ?? false),
+  │   })
+  │     └── provide(GLOBAL_CONFIG_TOKEN, { size, supportUpload })
   │
   └── MessageContainer → … → UserMessage 等
 
@@ -55,8 +63,15 @@ UserMessage（后代）
       <input type="checkbox" v-model="uploadEnabled" />
       模拟 supportUpload 为 true
     </label>
+    <label style="display: flex; align-items: center; gap: 8px;">
+      <select v-model="sizeMode" style="padding: 2px 6px;">
+        <option value="small">size = small（12px）</option>
+        <option value="normal">size = normal（14px）</option>
+      </select>
+    </label>
     <div style="background: #f5f7fa; padding: 10px 14px; border-radius: 4px; line-height: 1.8;">
       <div><strong>useGlobalConfig 返回值：</strong></div>
+      <div>rootSize.value = <span style="color: #3a84ff;">{{ rootSize }}</span></div>
       <div>rootSupportUpload.value = <span style="color: #3a84ff;">{{ rootSupportUpload }}</span></div>
     </div>
     <div style="font-size: 12px; color: #979ba5;">
@@ -74,10 +89,12 @@ UserMessage（后代）
   import { useGlobalConfig } from '@blueking/chat-x';
 
   const props = defineProps<{
+    size?: 'normal' | 'small';
     supportUpload?: boolean;
   }>();
 
   useGlobalConfig({
+    size: computed(() => props.size ?? 'small'),
     supportUpload: computed(() => props.supportUpload ?? false),
   });
 </script>
@@ -106,11 +123,15 @@ import type { ComputedRef } from 'vue';
 
 export const GLOBAL_CONFIG_TOKEN: unique symbol;
 
+export type AiSizeMode = 'normal' | 'small';
+
 export type GlobalConfig = {
+  size?: ComputedRef<AiSizeMode>;
   supportUpload: ComputedRef<boolean>;
 };
 
 export function useGlobalConfig(options: GlobalConfig): {
+  size?: ComputedRef<AiSizeMode>;
   supportUpload: ComputedRef<boolean>;
 };
 
@@ -127,12 +148,14 @@ export function injectGlobalConfig(): GlobalConfig | undefined;
 
 | 字段            | 说明                                                                     |
 | --------------- | ------------------------------------------------------------------------ |
+| `size`          | 可选。字号主题档位 `normal`（14px）/ `small`（12px），与 `ChatContainer.size` 对齐 |
 | `supportUpload` | 是否支持上传，与根容器 `ChatContainer` 的 `supportUpload` 等展示策略对齐 |
 
 ### `useGlobalConfig(options)`
 
 | 参数                    | 说明                                                                                  |
 | ----------------------- | ------------------------------------------------------------------------------------- |
+| `options.size`          | 可选。字号主题档位，建议使用 `computed(() => props.size ?? 'small')` 与根 props 同步 |
 | `options.supportUpload` | 是否支持上传，建议使用 `computed(() => props.supportUpload ?? false)` 与根 props 同步 |
 
 - 调用后立即 `provide(GLOBAL_CONFIG_TOKEN, options)`。
@@ -153,4 +176,5 @@ export function injectGlobalConfig(): GlobalConfig | undefined;
 
 ## 关联组件
 
-- [ChatContainer](../components/molecular/chat-container.md) — 调用 `useGlobalConfig` 注入 `supportUpload`
+- [ChatContainer](../components/setup/chat-container) — 调用 `useGlobalConfig` 注入 `size` 与 `supportUpload`
+- [主题配置](../theme/theme) — `data-ai-size` 与 CSS 变量说明

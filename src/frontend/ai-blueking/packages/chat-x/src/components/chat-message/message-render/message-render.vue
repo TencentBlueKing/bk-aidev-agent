@@ -10,17 +10,22 @@
   import ActivityMessage from '../activity-message/activity-message.vue';
   import AssistantMessage from '../assistant-message/assistant-message.vue';
   import InfoMessage from '../info-message/info-message.vue';
+  import { InterruptMessageRender } from '../interrupt-message';
   import LoadingMessage from '../loading-message/loading-message.vue';
   import ReasoningMessage from '../reasoning-message/reasoning-message.vue';
   import ToolMessage from '../tool-message/tool-message.vue';
   import UserMessage from '../user-message/user-message.vue';
 
   import type { Message, MessageStatus } from '../../../ag-ui/types';
+  import type { OnInterruptResume } from '../../../ag-ui/types/interrupt';
   import type { Token } from '../../../markdown-it';
   import type { MessageToolsProps } from '../../message-tools/message-tools.vue';
+  import type { UserQuestionAnsweredCardSlots } from '../interrupt-message/user-question/user-question-answered-card.vue';
   import type { UserMessageActionsProps } from '../user-message/user-message.vue';
 
   defineSlots<{
+    // 中断消息「已回答内容」回显的自定义 slot，透传给 InterruptMessageRender
+    answeredQuestion: UserQuestionAnsweredCardSlots['answer'];
     codeHeader: (props: { language: string; token: Token[] }) => null | undefined | VNode;
     default: (props: { content: string; status: MessageStatus }) => VNode;
   }>();
@@ -29,10 +34,13 @@
     Partial<UserMessageActionsProps> &
       Pick<MessageToolsProps, 'onAction' | 'tippyOptions'> & {
         message: Partial<Message>;
+        onInterruptResume?: OnInterruptResume;
       }
   >();
 
   const slots = useSlots();
+
+  type AnsweredQuestionSlotProps = Parameters<UserQuestionAnsweredCardSlots['answer']>[0];
 
   const messageComponent = computed(() => {
     switch (props.message.role) {
@@ -67,8 +75,17 @@
       case MessageRole.Tool:
         return h(ToolMessage, props.message);
       case MessageRole.Activity:
-        console.log('props.message', props.message.content);
-        return h(ActivityMessage, props.message);
+        return h(ActivityMessage, { ...props.message, onInterruptResume: props.onInterruptResume });
+      case MessageRole.Interrupt:
+        return h(
+          InterruptMessageRender,
+          { ...props.message, onInterruptResume: props.onInterruptResume },
+          slots.answeredQuestion
+            ? {
+                answeredQuestion: (slotProps: AnsweredQuestionSlotProps) => slots.answeredQuestion?.(slotProps),
+              }
+            : undefined,
+        );
       case MessageRole.Loading:
         return h(LoadingMessage, props.message);
       default:

@@ -37,10 +37,13 @@ export type CustomBkFlowTabData = CustomTabData<{
 }>;
 
 export type CustomTab<T extends CustomTabData<Record<string, unknown>>> = {
+  closable?: boolean; // 是否可关闭，缺省 true；执行情况 Tab 强制不可关闭
   data?: T & { messageUid?: string };
   icon?: string;
   label: string; // 显示标签
   name: string; // 唯一标识
+  order?: number; // 排序权重，升序，越小越靠前；缺省 100，执行情况默认 0
+  visible?: boolean; // 是否在 Tab 栏展示，缺省 true；false 时仍可被程序化选中，但内容不渲染、会自动切到首个可见 Tab
 };
 
 export type CustomTabData<T extends Record<string, unknown>> = {

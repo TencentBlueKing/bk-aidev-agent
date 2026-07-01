@@ -50,9 +50,10 @@ sinceVersion: '1.0.0'
 
 **参数（Zod schema）**
 
-| 字段       | 类型 | 说明                                                                                                                 |
-| ---------- | ---- | -------------------------------------------------------------------------------------------------------------------- |
-| `category` | 枚举 | `'all'` \| `'atomic'` \| `'molecular'` \| `'composable'` \| `'type'`，默认 `'all'`。`all` 返回全部；否则按分类筛选。 |
+| 字段     | 类型 | 说明 |
+| -------- | ---- | ---- |
+| `kind`   | 枚举 | `'all'` \| `'component'` \| `'composable'` \| `'directive'` \| `'plugin'` \| `'type'` \| `'util'` \| `'edix'` \| `'i18n'` \| `'icon'` \| `'theme'`，默认 `'all'`。 |
+| `domain` | 枚举 | `'all'` \| `'setup'` \| `'message'` \| `'rendering'` \| `'input'` \| `'agent'` \| `'feedback'` \| `'medias'` \| `'helper'`，仅对 `kind: 'component'` 生效。 |
 
 **返回值**
 
@@ -60,13 +61,13 @@ MCP 标准 `content` 数组，其中一条 `type: 'text'`，`text` 为 **JSON �
 
 ```json
 {
-  "components": [{ "name": "...", "slug": "...", "category": "atomic|molecular", "description": "..." }],
-  "composables": [{ "name": "...", "slug": "...", "category": "composable", "description": "..." }],
-  "types": [{ "name": "...", "slug": "...", "category": "type", "description": "..." }]
+  "components": [{ "name": "...", "slug": "...", "kind": "component", "domain": "message", "description": "..." }],
+  "composables": [{ "name": "...", "slug": "...", "kind": "composable", "description": "..." }],
+  "types": [{ "name": "...", "slug": "...", "kind": "type", "description": "..." }]
 }
 ```
 
-当 `category` 为 `composable` 或 `type` 时，`list_components` 实现会只返回对应分组（`atomic`/`molecular` 合并在 `components` 中）。
+当 `kind` 为 `component` 时可继续用 `domain` 缩小能力域；其他 `kind` 不受 `domain` 影响。
 
 **调用示例（语义）**
 
@@ -112,7 +113,8 @@ MCP 标准 `content` 数组，其中一条 `type: 'text'`，`text` 为 **JSON �
     {
       "name": "...",
       "slug": "...",
-      "category": "molecular",
+      "kind": "component",
+      "domain": "message",
       "matches": ["...关键词附近的片段（最多 3 段）..."]
     }
   ]
@@ -137,7 +139,7 @@ pnpm mcp:build
 
 脚本会：
 
-1. 扫描 `wikis/components/atomic/*.md`、`wikis/components/molecular/*.md`、`wikis/composables/*.md`、`wikis/types/*.md`（见 `build-index.ts` 中的 `glob`）。
+1. 扫描 `wikis/components/*/*.md`、`wikis/composables/*.md`、`wikis/types/*.md` 等索引目录（见 `build-index.ts` 中的 `GLOB_PATTERNS`）。
 2. 去掉 `<script setup>...</script>`，将清洗后的正文写入 `dist/mcp/generated/docs/<slug>.md`。
 3. 写入 **`dist/mcp/generated/index.json`**。
 
@@ -151,16 +153,17 @@ pnpm mcp:build
     {
       "name": "从首行 # 标题解析",
       "slug": "文件名去掉 .md",
-      "category": "atomic | molecular",
+      "kind": "component",
+      "domain": "setup | message | rendering | input | agent | feedback | medias | helper",
       "description": "标题行内联描述或首段摘要",
       "docFile": "docs/<slug>.md"
     }
   ],
   "composables": [
-    /* 同上，category 为 composable */
+    /* 同上，kind 为 composable */
   ],
   "types": [
-    /* 同上，category 为 type */
+    /* 同上，kind 为 type */
   ]
 }
 ```

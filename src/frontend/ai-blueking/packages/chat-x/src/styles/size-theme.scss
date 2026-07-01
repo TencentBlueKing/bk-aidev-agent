@@ -1,0 +1,24 @@
+// 字号主题（size theme）token 定义
+// 通过根节点 [data-ai-size] 切换；所有引用处务必带兜底值，保证无 provider 场景退回 small。
+// 取值依据 docs/superpowers/specs/2026-06-09-ai-blueking-size-theme-design.md
+
+// 默认（small / 12px 主题）
+:root,
+[data-ai-size='small'] {
+  --ai-font-size: 12px;
+  --ai-line-height: 20px;
+  --ai-line-height-compact: 20px;
+  --ai-spacing-comfortable: 8px;
+  --ai-icon-size: 16px;
+  --ai-icon-size-sm: 16px;
+}
+
+// normal / 14px 主题
+[data-ai-size='normal'] {
+  --ai-font-size: 14px;
+  --ai-line-height: 24px;
+  --ai-line-height-compact: 22px;
+  --ai-spacing-comfortable: 12px;
+  --ai-icon-size: 20px;
+  --ai-icon-size-sm: 18px;
+}

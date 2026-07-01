@@ -6,9 +6,6 @@
     },
     {
       "path": "./packages/chat-helper/tsconfig.json"
-    },
-    {
-      "path": "./packages/mcp/tsconfig.json"
     }
   ]
 }

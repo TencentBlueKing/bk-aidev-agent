@@ -112,7 +112,7 @@
     width: 260px;
     max-height: 200px;
     overflow-y: auto;
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
     background: #fff;
     border: 1px solid #dcdee5;
     border-radius: 2px;

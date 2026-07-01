@@ -140,7 +140,7 @@
     min-width: variables.$chat-input-min-width;
     max-width: variables.$chat-input-max-width;
     overflow: hidden;
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
     color: #4d4f56;
 
     &-item {
@@ -173,7 +173,7 @@
 
       // width: 32px;
       padding: 0 6px;
-      font-size: 12px;
+      font-size: var(--ai-font-size, 12px);
 
       &-icon {
         display: flex;

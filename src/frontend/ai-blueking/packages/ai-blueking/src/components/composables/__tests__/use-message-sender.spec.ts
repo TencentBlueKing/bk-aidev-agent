@@ -105,6 +105,30 @@ describe('useMessageSender', () => {
 
       expect(params.emit).toHaveBeenCalledWith('error', expect.any(Error));
     });
+
+    it('存在 ask-user-question options 时应走 resumeUserQuestionWithInput', async () => {
+      const resumeUserQuestionWithInput = vi.fn().mockResolvedValue(undefined);
+      const params = createParams({ resumeUserQuestionWithInput });
+      const sender = useMessageSender(params);
+      sender.cite.value = 'cited text';
+      sender.userInput.value = '保留输入';
+
+      const options = {
+        payload: {
+          interruptId: 'interrupt-1',
+          reason: 'user_question',
+          status: 'cancelled',
+          payload: { answers: [] },
+        },
+      };
+
+      await sender.handleSendMessage('自由文本', [] as any, options as any);
+
+      expect(resumeUserQuestionWithInput).toHaveBeenCalledWith('自由文本', options);
+      expect(sender.userInput.value).toEqual([[]]);
+      expect(sender.cite.value).toBe('');
+      expect(params.chatBusinessManager.value!.sendMessage).not.toHaveBeenCalled();
+    });
   });
 
   describe('handleUpload', () => {

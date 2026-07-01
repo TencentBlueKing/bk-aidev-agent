@@ -112,6 +112,9 @@ enum MessageRole {
   // 信息消息
   Info = 'info',
 
+  // human-in-the-loop 中断消息
+  Interrupt = 'interrupt',
+
   // 加载中消息
   Loading = 'loading',
 
@@ -143,23 +146,32 @@ enum MessageRole {
 
 ```typescript
 enum MessageStatus {
-  // 等待中
-  Pending = 'pending',
-
-  // 流式输出中
-  Streaming = 'streaming',
-
   // 已完成
   Complete = 'complete',
+
+  // 已禁用
+  Disabled = 'disabled',
 
   // 错误
   Error = 'error',
 
+  // 请求中
+  Fetching = 'fetching',
+
+  // 等待中
+  Pending = 'pending',
+
   // 已停止
   Stop = 'stop',
 
-  // 已禁用
-  Disabled = 'disabled',
+  // 停止请求中
+  StopLoading = 'stop-loading',
+
+  // 流式输出中
+  Streaming = 'streaming',
+
+  // 成功
+  Success = 'success',
 }
 ```
 
@@ -342,6 +354,58 @@ const knowledgeRagMessage: ActivityMessage = {
 | `url`        | `string` | 文档预览链接     |
 | `originFile` | `string` | 文档原始文件链接 |
 
+### InterruptMessage
+
+human-in-the-loop 中断消息，对应 AG-UI `RUN_FINISHED` 事件的 `outcome` 对象结构。`content.outcome.type === 'interrupt'` 时，[InterruptMessageRender](../components/agent/interrupt-message) 从 `interrupts` 渲染审批卡片或把 `UserQuestion` 交给输入区；`type: 'success'` 表示 resume 后的成功结果，`UserQuestion` 会根据 `result` 回显回答内容。类型详见 [中断类型 Interrupt](./interrupt.md)。
+
+```typescript
+type RunFinishedOutcome = { interrupts: Interrupt[]; type: 'interrupt' } | { type: 'success' };
+
+type InterruptMessage = BaseMessage<
+  MessageRole.Interrupt,
+  {
+    message?: string;
+    outcome?: RunFinishedOutcome;
+    result?: BaseResume<InterruptReason>;
+    runId?: string;
+    threadId?: string;
+  }
+>;
+
+const interruptMessage: InterruptMessage = {
+  id: 'interrupt-message-1',
+  messageId: 'interrupt-message-1',
+  role: MessageRole.Interrupt,
+  status: MessageStatus.Pending,
+  content: {
+    message: '算法方案评审单需要您关注',
+    runId: 'run_ai_dev_tool_approval',
+    threadId: 'thread_ai_dev_tool_approval',
+    outcome: {
+      type: 'interrupt',
+      interrupts: [
+        {
+          id: 'interrupt_ai_dev_tool_approval',
+          reason: InterruptReason.AIDevToolApproval,
+          toolCallId: 'tool_call_review_ticket',
+          message: '算法方案评审单需要您关注',
+          metadata: {
+            ticket: {
+              approvers: ['张三', '李四'],
+              sn: 'REV-2026-04-24-001',
+              status: APPROVAL_STATUS.PENDING,
+              submit_time: '2026-04-24 14:30:15',
+              title: '算法方案评审单',
+              url: 'https://example.com/review-tickets/REV-2026-04-24-001',
+            },
+          },
+        },
+      ],
+    },
+  },
+};
+```
+
 ### InfoMessage
 
 信息消息：
@@ -478,6 +542,6 @@ interface CustomMessage extends BaseMessage<'custom-role'> {
 
 ## 关联组件
 
-- [MessageContainer](../components/molecular/message-container.md) — 消息列表
-- [MessageRender](../components/molecular/message-render.md) — 单条消息渲染
-- [ChatContainer](../components/molecular/chat-container.md) — 聊天容器
+- [MessageContainer](../components/setup/message-container) — 消息列表
+- [MessageRender](../components/message/message-render) — 单条消息渲染
+- [ChatContainer](../components/setup/chat-container) — 聊天容器

@@ -26,12 +26,19 @@
 
 import { ref } from 'vue';
 
-import { AGUIProtocol } from '../event';
-import { MessageRole, MessageStatus } from '../message';
+import {
+  AGUIProtocol,
+  ApprovalInterruptTicketStatus,
+  IApprovalInterrupt,
+  ResumeStatus,
+  RunFinishedOutcomeType,
+  type IResume,
+} from '../event';
+import { MessageRole, MessageStatus, UserOperation } from '../message';
 
 import type { IRequestConfig, ISSEProtocol } from '../http';
 import type { IMediatorModule } from '../mediator';
-import type { IMessageProperty, IUserMessage } from '../message/type';
+import type { IInterruptMessage, IMessageProperty, IUserMessage, IUserOperationPayload } from '../message/type';
 import type { IAgentInfo } from './type';
 import { SessionStatus } from '../session/type';
 
@@ -46,6 +53,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
   const isChatting = ref(false);
   let usedProtocol: ISSEProtocol = protocol || new AGUIProtocol();
   let abortController: AbortController | null = null;
+  let longPollTimer: ReturnType<typeof setTimeout> | null = null;
 
   const getAgentInfo = () => {
     isInfoLoading.value = true;
@@ -77,15 +85,62 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     }
   };
 
-  const streamRequest = async (sessionCode: string, url?: string, config?: IRequestConfig) => {
+  const userOperationStreamRequest = (
+    sessionCode: string,
+    operation: UserOperation,
+    payload: IUserOperationPayload,
+    config?: IRequestConfig,
+  ) => {
+    return mediator.http?.message.userOperation(sessionCode, operation, payload, config).then(() => {
+      if (operation !== UserOperation.ApprovalCancel) {
+        streamRequest({ sessionCode, config });
+      } else {
+        clearLongPollTimer();
+        pollResumeSession(sessionCode);
+      }
+    });
+  };
+
+  const streamRequest = async ({
+    sessionCode,
+    url,
+    config,
+    resume,
+    input,
+  }: {
+    sessionCode: string;
+    url?: string;
+    config?: IRequestConfig;
+    resume?: IResume;
+    input?: string;
+  }) => {
     // ag-ui 协议需要注入消息模块
     if (usedProtocol instanceof AGUIProtocol) {
       usedProtocol.injectMessageModule(mediator.message);
+    }
+    if (input) {
+      // 列表新增一个用户消息
+      mediator.message?.list.value.push({
+        role: MessageRole.User,
+        content: input,
+        status: MessageStatus.Complete,
+        sessionCode,
+      });
     }
     // 事件代理
     const onDone = () => {
       isChatting.value = false;
       usedProtocol.onDone?.call(usedProtocol);
+      if (input) {
+        // 刷新列表，获取前端 mock message 的 id，并更新到列表中
+        mediator.http?.message?.getMessages(sessionCode).then(res => {
+          const lastUserMessage = mediator.message?.list.value.findLast(item => item.role === MessageRole.User);
+          const lastApiUserMessage = res.findLast(item => item.role === MessageRole.User);
+          lastUserMessage.id = lastApiUserMessage.id;
+        });
+      }
+      // 轮询接口，判断是否可以继续聊天
+      pollResumeSession(sessionCode);
     };
     const onError = (error: Error) => {
       isChatting.value = false;
@@ -98,6 +153,8 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       isChatting.value = true;
       usedProtocol.onStart?.call(usedProtocol);
     };
+    // 获取最后一条消息的 id
+    const lastMessageId = mediator.message?.list.value.at(-1)?.id;
     // 创建 AbortController
     abortController = new AbortController();
     // 发起聊天
@@ -107,8 +164,12 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
         method: 'POST',
         data: {
           session_code: sessionCode,
+          input,
           execute_kwargs: {
             stream: true,
+            persist_input: !!input,
+            last_message_id: lastMessageId,
+            resume,
           },
         },
         controller: abortController,
@@ -147,7 +208,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       ...(property && { property }),
     });
     // 发起聊天
-    streamRequest(sessionCode, url, config);
+    streamRequest({ sessionCode, url, config });
   };
 
   /**
@@ -159,7 +220,56 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
    */
   const resumeStreamingChat = (sessionCode: string, url?: string, config?: IRequestConfig) => {
     if (mediator.session?.current.value?.status === SessionStatus.Running) {
-      streamRequest(sessionCode, url, config);
+      streamRequest({ sessionCode, url, config });
+    }
+  };
+
+  /**
+   * 轮询接口，判断是否可以继续聊天
+   * @param sessionCode - 会话编码
+   * @returns 是否可以继续聊天
+   */
+  const pollResumeSession = (sessionCode: string) => {
+    const lastMessage = mediator.message?.list.value.at(-1) as IInterruptMessage;
+    const pendingApprovalInterrupt =
+      lastMessage?.content?.outcome?.type === RunFinishedOutcomeType.Interrupt
+        ? lastMessage.content.outcome.interrupts.find(interrupt =>
+            [ApprovalInterruptTicketStatus.Pending, ApprovalInterruptTicketStatus.Draft].includes(
+              (interrupt as IApprovalInterrupt).metadata?.ticket?.status,
+            ),
+          )
+        : undefined;
+    const getIsTicketLoading = () => {
+      const isInterruptMessage = lastMessage?.role === MessageRole.Interrupt;
+      return isInterruptMessage && !!pendingApprovalInterrupt;
+    };
+    if (getIsTicketLoading()) {
+      // 轮询接口，判断是否可以继续聊天
+      mediator.http?.session.isResumeSession(sessionCode).then(res => {
+        if (res) {
+          // 可以继续聊天，重新发起聊天（携带 execute_kwargs.resume 通知后端恢复中断）
+          streamRequest({
+            sessionCode,
+            resume: {
+              interruptId: pendingApprovalInterrupt.id,
+              status: ResumeStatus.Resolved,
+            },
+          });
+        } else {
+          longPollTimer = setTimeout(() => {
+              // 如果会话不匹配，则不继续轮询
+            if (sessionCode !== mediator.session?.current?.value?.sessionCode) return;
+            pollResumeSession(sessionCode);
+          }, 30000);
+        }
+      });
+    }
+  };
+
+  const clearLongPollTimer = () => {
+    if (longPollTimer) {
+      clearTimeout(longPollTimer);
+      longPollTimer = null;
     }
   };
 
@@ -231,7 +341,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     });
 
     // 6. 立即发起流式请求（不等待删除和创建的 API 完成）
-    streamRequest(sessionCode, url, config);
+    streamRequest({ sessionCode, url, config });
 
     // 7. 在后台等待 API 完成，处理可能的错误
     Promise.all([deletePromise, createPromise])['catch'](error => {
@@ -258,6 +368,10 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     stopChat,
     getAgentInfo,
     reset,
+    pollResumeSession,
+    clearLongPollTimer,
+    userOperationStreamRequest,
+    streamRequest,
   };
 };
 

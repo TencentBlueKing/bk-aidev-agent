@@ -25,7 +25,7 @@
  */
 import { transferMessage2MessageApi, transferMessageApi2Message } from '../transform/message';
 
-import type { IFlowAgentTaskNodeInfo, IMessage, IMessageApi } from '../../message/type';
+import type { IFlowAgentTaskNodeInfo, IMessage, IMessageApi, IUserOperationPayload, UserOperation } from '../../message/type';
 import type { FetchClient, IRequestConfig } from '../fetch';
 
 /**
@@ -98,6 +98,18 @@ export const useMessage = (fetchClient: FetchClient) => {
   const getFlowAgentTaskNodeInfo = (taskId: number, nodeId: string, config?: IRequestConfig) =>
     fetchClient.get<IFlowAgentTaskNodeInfo>(`flow_agent/${taskId}/task_node_info/${nodeId}/`, undefined, config);
 
+  // 重试流程引擎任务节点
+  const retryFlowAgentTaskNode = (sessionCode: string, nodeId: string, taskId: number, config?: IRequestConfig) =>
+    fetchClient.post<void>(`flow_agent/${sessionCode}/node/${nodeId}/retry/`, { task_id: taskId }, config);
+
+  // 跳过流程引擎任务节点
+  const skipFlowAgentTaskNode = (sessionCode: string, nodeId: string, taskId: number, config?: IRequestConfig) =>
+    fetchClient.post<void>(`flow_agent/${sessionCode}/node/${nodeId}/skip/`, { task_id: taskId }, config);
+
+  // 用户操作
+  const userOperation = (sessionCode: string, operation: UserOperation, payload: IUserOperationPayload, config?: IRequestConfig) =>
+    fetchClient.post<void>(`user_operation/`, { session_code: sessionCode,  operation, payload }, config);
+
   return {
     getMessages,
     plusMessage,
@@ -108,5 +120,8 @@ export const useMessage = (fetchClient: FetchClient) => {
     stopChat,
     getFlowAgentTaskInfo,
     getFlowAgentTaskNodeInfo,
+    retryFlowAgentTaskNode,
+    skipFlowAgentTaskNode,
+    userOperation,
   };
 };

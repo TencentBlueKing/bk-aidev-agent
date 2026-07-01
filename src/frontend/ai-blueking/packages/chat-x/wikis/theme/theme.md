@@ -4,8 +4,8 @@ slug: theme
 category: theme
 description: '`@blueking/chat-x` 使用 SCSS 变量和 CSS 类来控制样式，支持通过覆盖变量或样式来自定义主题。'
 aiSummary: >
-  说明通过 SCSS 变量（尺寸、颜色、z-index）与 CSS 类覆盖（chat-input、用户/助手消息、shortcut-btns、ai-markdown-body、tool-btn 等）自定义主题。
-  含渐变边框 mixin、ai-markdown-fade-in 与弹窗过渡。暗色示例通过根 class 切换。组件随包引入样式，业务侧按需覆写。
+  说明通过 SCSS 变量（尺寸、颜色、z-index）、字号主题 CSS 变量（data-ai-size 切换 small/normal）与 CSS 类覆盖自定义主题。
+  ChatContainer.size 控制根节点 data-ai-size；浮层同步 document.body.dataset.aiSize。含渐变边框 mixin、骨架屏类 ai-skeleton-element 等。
 relatedComponents:
   - slug: chat-container
     relation: 整体布局与侧栏
@@ -30,6 +30,51 @@ sinceVersion: 1.0.0
 // 引入组件时会自动引入样式
 import { ChatInput, MessageContainer } from '@blueking/chat-x';
 ```
+
+## 字号主题
+
+组件库通过根节点 `[data-ai-size]` 切换两档字号主题，内部组件统一引用 CSS 变量（均带兜底值，无 provider 时退回 `small`）。
+
+### 切换方式
+
+| 方式 | 说明 |
+| ---- | ---- |
+| `ChatContainer` 的 `size` prop | 推荐。根节点 `.ai-chat-container` 设置 `data-ai-size`；同时通过 `useGlobalConfig` 注入 `size` 供逻辑层读取 |
+| 手动设置 `data-ai-size` | 在任意祖先元素上设置 `data-ai-size="small"` 或 `data-ai-size="normal"`，后代继承 CSS 变量 |
+| `document.body.dataset.aiSize` | `ChatContainer` 会自动同步，供 Tippy / Teleport 等挂载到 `body` 的浮层继承字号变量；容器卸载时清理 |
+
+```vue
+<template>
+  <ChatContainer v-model="input" :messages="messages" size="normal" />
+</template>
+```
+
+### CSS 变量
+
+定义于 `src/styles/size-theme.scss`，随 `global.scss` 自动引入：
+
+| 变量名 | `small`（默认） | `normal` | 说明 |
+| ------ | --------------- | -------- | ---- |
+| `--ai-font-size` | `12px` | `14px` | 基准字号 |
+| `--ai-line-height` | `20px` | `24px` | 标准行高 |
+| `--ai-line-height-compact` | `20px` | `22px` | 紧凑行高 |
+| `--ai-spacing-comfortable` | `8px` | `12px` | 舒适间距（如消息气泡水平内边距） |
+| `--ai-icon-size` | `16px` | `20px` | 标准图标尺寸 |
+| `--ai-icon-size-sm` | `16px` | `18px` | 小号图标尺寸 |
+
+组件样式中统一使用 `var(--ai-font-size, 12px)` 等形式引用，保证无 `data-ai-size` 时仍退回 small 档位。
+
+```scss
+// 示例：在自定义样式中复用字号主题变量
+.my-custom-panel {
+  font-size: var(--ai-font-size, 12px);
+  line-height: var(--ai-line-height, 20px);
+}
+```
+
+### 骨架屏
+
+全局类 `.ai-skeleton-element` 用于加载占位（如 FlowAgent 节点详情、UserFeedback 原因列表）。可通过 `.skeleton-element-lg` 修饰尺寸。详见各业务组件文档中的加载态说明。
 
 ## SCSS 变量
 
@@ -388,6 +433,7 @@ $selection-z-index: $shortcut-menu-z-index + 1;
 
 ## 关联组件
 
-- [ChatContainer](../components/molecular/chat-container.md) — 布局与主题根节点
-- [ChatInput](../components/molecular/chat-input.md) — 输入区变量与类名
-- [MessageContainer](../components/molecular/message-container.md) — 消息列表区域
+- [ChatContainer](../components/setup/chat-container) — 布局与字号主题根节点（`size` prop）
+- [useGlobalConfig](../composables/use-global-config) — 注入 `size` 供后代读取
+- [ChatInput](../components/input/chat-input) — 输入区变量与类名
+- [MessageContainer](../components/setup/message-container) — 消息列表区域

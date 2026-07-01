@@ -11,6 +11,7 @@ import { hasRealMessageContent } from '../../utils/message-utils';
 
 import type { CreateSessionOptions, IEventEmitter, SessionBusinessConfig } from './types';
 import type { IAgentModule, IMessageModule, ISession, ISessionModule } from '@blueking/chat-helper';
+import type { Ref } from 'vue';
 
 /**
  * 会话业务管理器
@@ -49,34 +50,34 @@ export class SessionBusinessManager {
     this.messageModule = messageModule;
   }
 
-  get currentSession() {
+  get currentSession(): Ref<ISession | null> {
     return this.sessionModule.current;
   }
 
-  get isCreateLoading() {
+  get isCreateLoading(): Ref<boolean> {
     return this.sessionModule.isCreateLoading;
   }
 
-  get isCurrentLoading() {
+  get isCurrentLoading(): Ref<boolean> {
     return this.sessionModule.isCurrentLoading;
   }
 
-  get isDeleteLoading() {
+  get isDeleteLoading(): Ref<boolean> {
     return this.sessionModule.isDeleteLoading;
   }
 
-  get isListLoading() {
+  get isListLoading(): Ref<boolean> {
     return this.sessionModule.isListLoading;
   }
 
-  get isUpdateLoading() {
+  get isUpdateLoading(): Ref<boolean> {
     return this.sessionModule.isUpdateLoading;
   }
 
   /**
    * 暴露 AG-UI SDK 的响应式状态
    */
-  get sessionList() {
+  get sessionList(): Ref<ISession[]> {
     return this.sessionModule.list;
   }
 

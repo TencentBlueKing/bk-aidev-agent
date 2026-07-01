@@ -35,10 +35,10 @@ const __dirname = dirname(__filename);
 
 interface DocEntry {
   aiSummary: string;
-  category: string;
   description: string;
   docFile: string;
   domain?: string;
+  kind: string;
   name: string;
   relatedComponents: Array<{ relation: string; slug: string }>;
   slug: string;
@@ -61,12 +61,14 @@ interface DocIndex {
 }
 
 const DOMAIN_MAP: Record<string, { label: string }> = {
-  message: { label: '消息展示' },
+  setup: { label: '对话搭建' },
+  message: { label: '消息系统' },
+  rendering: { label: '内容渲染' },
   input: { label: '输入交互' },
-  content: { label: '内容渲染' },
-  media: { label: '文件与图片' },
-  tools: { label: '工具与反馈' },
-  helper: { label: '辅助组件' },
+  agent: { label: 'Agent 能力' },
+  feedback: { label: '工具与反馈' },
+  media: { label: '媒体文件' },
+  helper: { label: '辅助能力' },
 };
 
 const WIKIS_DIR = resolve(__dirname, '../../wikis');
@@ -76,8 +78,7 @@ const DOCS_DIR = join(GENERATED_DIR, 'docs');
 type IndexGroupKey = keyof Omit<DocIndex, 'domains' | 'generatedAt' | 'version'>;
 
 const GLOB_PATTERNS: Array<{ group: IndexGroupKey; pattern: string }> = [
-  { pattern: 'components/atomic/*.md', group: 'components' },
-  { pattern: 'components/molecular/*.md', group: 'components' },
+  { pattern: 'components/*/*.md', group: 'components' },
   { pattern: 'composables/*.md', group: 'composables' },
   { pattern: 'directives/*.md', group: 'directives' },
   { pattern: 'plugins/*.md', group: 'plugins' },
@@ -192,10 +193,22 @@ function extractHeadingMeta(body: string): { description: string; name: string }
   return { name, description: firstSentence.slice(0, 80) };
 }
 
-function inferCategoryFromGroup(group: IndexGroupKey, filePath: string): string {
-  const rel = relative(WIKIS_DIR, filePath).replace(/\\/g, '/');
-  if (rel.includes('components/atomic/')) return 'atomic';
-  if (rel.includes('components/molecular/')) return 'molecular';
+function inferGroupFromRel(rel: string): IndexGroupKey | undefined {
+  if (/^components\/[^/]+\/[^/]+\.md$/.test(rel)) return 'components';
+  if (/^composables\/[^/]+\.md$/.test(rel)) return 'composables';
+  if (/^directives\/[^/]+\.md$/.test(rel)) return 'directives';
+  if (/^plugins\/[^/]+\.md$/.test(rel)) return 'plugins';
+  if (/^types\/[^/]+\.md$/.test(rel)) return 'types';
+  if (/^utils\/[^/]+\.md$/.test(rel)) return 'utils';
+  if (/^edix\/[^/]+\.md$/.test(rel)) return 'edix';
+  if (/^i18n\/[^/]+\.md$/.test(rel)) return 'i18n';
+  if (/^icons\/[^/]+\.md$/.test(rel)) return 'icons';
+  if (/^theme\/[^/]+\.md$/.test(rel)) return 'theme';
+  return undefined;
+}
+
+function inferKindFromGroup(group: IndexGroupKey): string {
+  if (group === 'components') return 'component';
   if (group === 'composables') return 'composable';
   if (group === 'directives') return 'directive';
   if (group === 'plugins') return 'plugin';
@@ -205,7 +218,7 @@ function inferCategoryFromGroup(group: IndexGroupKey, filePath: string): string 
   if (group === 'i18n') return 'i18n';
   if (group === 'icons') return 'icon';
   if (group === 'theme') return 'theme';
-  return 'unknown';
+  return group;
 }
 
 function initDomains(): Record<string, { components: string[]; label: string }> {
@@ -247,10 +260,7 @@ async function main() {
     if (fileName === 'index') continue;
 
     const rel = relative(WIKIS_DIR, file).replace(/\\/g, '/');
-    const group = GLOB_PATTERNS.find(({ pattern }) => {
-      const prefix = pattern.replace('*.md', '');
-      return rel.startsWith(prefix) && rel.endsWith('.md');
-    })?.group;
+    const group = inferGroupFromRel(rel);
     if (!group) continue;
 
     const raw = readFileSync(file, 'utf-8');
@@ -266,9 +276,11 @@ async function main() {
     }
     seenSlugs.add(slug);
 
-    const inferredCategory = inferCategoryFromGroup(group, file);
-    const category =
-      typeof data.category === 'string' && data.category.trim() ? data.category.trim() : inferredCategory;
+    const inferredKind = inferKindFromGroup(group);
+    const kind =
+      typeof data.kind === 'string' && data.kind.trim()
+        ? data.kind.trim()
+        : inferredKind;
 
     const headingMeta = extractHeadingMeta(body);
     const name = typeof data.name === 'string' && data.name.trim() ? data.name.trim() : headingMeta.name || slug;
@@ -299,7 +311,7 @@ async function main() {
     const entry: DocEntry = {
       name,
       slug,
-      category,
+      kind,
       description,
       aiSummary,
       relatedComponents,

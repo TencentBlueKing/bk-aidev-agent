@@ -76,7 +76,7 @@
       width: 100%;
       overflow: hidden;
       text-overflow: ellipsis;
-      font-size: 12px;
+      font-size: var(--ai-font-size, 12px);
       white-space: nowrap;
     }
 
@@ -87,6 +87,13 @@
       .ai-common-icon {
         display: flex !important;
       }
+    }
+
+    .ai-doc-link-icon {
+      flex: 0 0 14px;
+      width: 14px;
+      height: 14px;
+      margin-right: 8px;
     }
 
     .ai-common-icon:not(.ai-doc-link-icon) {

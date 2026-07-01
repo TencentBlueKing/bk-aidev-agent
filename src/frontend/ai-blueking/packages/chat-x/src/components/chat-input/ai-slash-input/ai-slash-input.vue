@@ -457,7 +457,7 @@
         align-items: center;
         height: 18px;
         padding: 0 2px 0 6px;
-        font-size: 12px;
+        font-size: var(--ai-font-size, 12px);
         color: list.nth($color, 2);
         background: list.nth($color, 1);
         border-radius: 2px;
@@ -489,11 +489,14 @@
     }
 
     .ai-slash-input {
+      box-sizing: border-box;
       width: 100%;
-      min-height: 100%;
-      padding: 8px;
-      font-size: 12px;
-      line-height: 1.5;
+
+      // 默认保持 4 行高度，避免输入内容后 placeholder 消失导致高度抖动
+      min-height: calc(var(--ai-line-height-compact, 20px) * 4 + var(--ai-spacing-comfortable, 8px) * 2);
+      padding: var(--ai-spacing-comfortable, 8px);
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height-compact, 20px);
       color: #4d4f56;
       outline: none;
       border: none;

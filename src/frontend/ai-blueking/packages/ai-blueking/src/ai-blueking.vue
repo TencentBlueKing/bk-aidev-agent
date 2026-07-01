@@ -110,11 +110,13 @@
             </template>
             <template
               v-if="$slots.message"
-              #message="slotProps"
+              #message="{ message, messageToolsStatus, onInterruptResume }"
             >
               <slot
                 name="message"
-                v-bind="slotProps"
+                :message="message"
+                :message-tools-status="messageToolsStatus"
+                :on-interrupt-resume="onInterruptResume"
               />
             </template>
           </ChatBot>
@@ -162,14 +164,18 @@
   import NimbusButton from './views/nimbus.vue';
 
   import type { AIBluekingEmits, AIBluekingExpose, AIBluekingProps, ISession } from './types';
-  import type { Message, MessageToolsStatus } from '@blueking/chat-x';
+  import type { Message, MessageToolsStatus, OnInterruptResume } from '@blueking/chat-x';
 
   const props = withDefaults(defineProps<AIBluekingProps>(), defaultProps);
   const emit = defineEmits<AIBluekingEmits>();
   defineSlots<{
     codeHeader?: (props: { language: string; token: unknown[] }) => unknown;
     headerLeft?: () => unknown;
-    message?: (props: { message: Message; messageToolsStatus?: MessageToolsStatus }) => unknown;
+    message?: (props: {
+      message: Message;
+      messageToolsStatus?: MessageToolsStatus;
+      onInterruptResume?: OnInterruptResume;
+    }) => unknown;
   }>();
 
   // ==================== 1. 核心初始化 ====================

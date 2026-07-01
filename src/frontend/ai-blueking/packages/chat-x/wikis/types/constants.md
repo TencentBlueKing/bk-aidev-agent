@@ -41,6 +41,7 @@ enum MessageRole {
   HiddenSystem = 'hidden-system',
   HiddenUser = 'hidden-user',
   Info = 'info',
+  Interrupt = 'interrupt',
   Loading = 'loading',
   Pause = 'pause',
   Placeholder = 'placeholder',
@@ -76,6 +77,70 @@ enum MessageStatus {
 | 枚举值          | 说明 |
 | --------------- | ---- |
 | `Fetching`      | 请求中：与 `useMessageGroup` 在末尾用户消息后注入的 Loading 占位（`LOADING_MESSAGE_ID`）配合时，`ChatContainer` 会将传入输入区与列表底部的状态推导为该值，便于展示「停止」与禁止重复发送。 |
+
+### InterruptReason
+
+human-in-the-loop 中断原因枚举，用于 `Interrupt.reason` 区分中断类型并选择对应的 UI 渲染器。
+
+```typescript
+enum InterruptReason {
+  AIDevToolApproval = 'aidev:tool_approval',
+  UserQuestion = 'aidev:user_question',
+}
+```
+
+### APPROVAL_STATUS
+
+AI Dev 工具审批单状态枚举，`AIDevToolApprovalInterrupt.metadata.ticket.status` 使用该类型。
+
+```typescript
+enum APPROVAL_STATUS {
+  ABANDONED = 'abandoned',
+  APPROVED = 'approved',
+  CANCELLED = 'cancelled',
+  DRAFT = 'draft',
+  EXPIRED = 'expired',
+  PENDING = 'pending',
+  REJECTED = 'rejected',
+  REVOKED = 'revoked',
+}
+```
+
+### APPROVAL_STATUS_MAP
+
+审批单状态到展示文案的映射，供 `ToolApprovalCard` 等组件使用：
+
+```typescript
+const APPROVAL_STATUS_MAP: Record<APPROVAL_STATUS, string> = {
+  [APPROVAL_STATUS.ABANDONED]: '已废弃',
+  [APPROVAL_STATUS.APPROVED]: '已通过',
+  [APPROVAL_STATUS.CANCELLED]: '已取消',
+  [APPROVAL_STATUS.DRAFT]: '待审批',
+  [APPROVAL_STATUS.EXPIRED]: '已过期',
+  [APPROVAL_STATUS.PENDING]: '待审批',
+  [APPROVAL_STATUS.REJECTED]: '已拒绝',
+  [APPROVAL_STATUS.REVOKED]: '已撤销',
+};
+```
+
+| 状态值      | 展示文案 |
+| ----------- | -------- |
+| `pending`   | 待审批   |
+| `draft`     | 待审批   |
+| `approved`  | 已通过   |
+| `rejected`  | 已拒绝   |
+| `cancelled` | 已取消   |
+| `expired`   | 已过期   |
+| `abandoned` | 已废弃   |
+| `revoked`   | 已撤销   |
+
+### RunFinishedOutcome
+
+AG-UI `RUN_FINISHED` 事件的结束结果类型。中断结果不再是字符串枚举，而是对象联合类型；`type: 'interrupt'` 时，中断列表放在 `interrupts` 字段中。
+
+```typescript
+type RunFinishedOutcome = { interrupts: Interrupt[]; type: 'interrupt' } | { type: 'success' };
+```
 
 ### MessageContentType
 
@@ -243,6 +308,6 @@ console.log(
 
 ## 关联组件
 
-- [MessageTools](../components/molecular/message-tools.md) — 消息工具栏
-- [ChatInput](../components/molecular/chat-input.md) — 输入与状态
-- [MessageContainer](../components/molecular/message-container.md) — 工具与消息展示
+- [MessageTools](../components/feedback/message-tools) — 消息工具栏
+- [ChatInput](../components/input/chat-input) — 输入与状态
+- [MessageContainer](../components/setup/message-container) — 工具与消息展示

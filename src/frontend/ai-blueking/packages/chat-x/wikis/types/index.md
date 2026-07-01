@@ -8,6 +8,8 @@
 | --------- | -------- | ---------------------- |
 | Message   | 消息类型 | [查看](./messages.md)  |
 | Constants | 常量枚举 | [查看](./constants.md) |
+| Interrupt | 中断类型 | [查看](./interrupt.md) |
+| Schema    | 用户问题 Schema | [查看](./schema.md) |
 
 ## 引入类型
 
@@ -51,6 +53,19 @@ import type {
   ContentType,
   ContentMap,
   InputContent,
+
+  // 中断类型
+  Interrupt,
+  InterruptMessage,
+  OnInterruptResume,
+  UserQuestionAnswerItem,
+  UserQuestionInterrupt,
+  UserQuestionResume,
+
+  // 历史用户问题 Schema
+  UserQuestion,
+  UserMultiChoiceQuestion,
+  UserSingleChoiceQuestion,
 } from '@blueking/chat-x';
 ```
 
@@ -73,5 +88,8 @@ import {
   CONST_USER_MESSAGE_TOOLS,
   CONST_UPDATE_TOOLS,
   DEFAULT_SHORTCUTS,
+  UserQuestionSchema,
+  UserMultiChoiceQuestionSchema,
+  UserSingleChoiceQuestionSchema,
 } from '@blueking/chat-x';
 ```

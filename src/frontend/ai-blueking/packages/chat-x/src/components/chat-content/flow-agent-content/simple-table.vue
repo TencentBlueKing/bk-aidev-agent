@@ -59,8 +59,8 @@
     th,
     td {
       padding: 11px 16px;
-      font-size: 12px;
-      line-height: 20px;
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height-compact, 20px);
       text-align: left;
       border-bottom: 1px solid variables.$color-border;
     }

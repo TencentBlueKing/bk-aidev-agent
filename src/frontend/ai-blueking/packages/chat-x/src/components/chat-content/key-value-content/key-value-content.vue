@@ -35,14 +35,14 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
     color: #4d4f56;
 
     .ai-key-value-title {
       display: flex;
       gap: 4px;
       align-items: center;
-      font-size: 12px;
+      font-size: var(--ai-font-size, 12px);
       font-weight: 700;
       color: #3a84ff;
 
@@ -74,7 +74,7 @@
     .item-value {
       overflow: hidden;
       text-overflow: ellipsis;
-      font-size: 12px;
+      font-size: var(--ai-font-size, 12px);
       word-break: break-all;
     }
   }

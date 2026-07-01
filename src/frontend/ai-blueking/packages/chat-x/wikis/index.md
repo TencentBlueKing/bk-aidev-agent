@@ -31,7 +31,7 @@ features:
     details: ContentRender → MarkdownContent → CodeContent / LatexContent / MermaidContent，按 token 类型自动分发，支持 180+ 语言代码高亮
   - icon: 🧩
     title: 渐进式组合
-    details: 最小组合 ChatInput + MessageContainer，完整方案 ChatContainer 一行搞定。原子/分子分层设计，按需引入
+    details: 最小组合 ChatInput + MessageContainer，完整方案 ChatContainer 一行搞定。文档按对话搭建、消息系统、内容渲染、输入交互、Agent 能力等场景组织
   - icon: 🔧
     title: 快捷指令与斜杠命令
     details: 内置 / 和 @ 触发的命令系统，支持文本、数字、下拉、复选等表单组件，一键发起结构化对话

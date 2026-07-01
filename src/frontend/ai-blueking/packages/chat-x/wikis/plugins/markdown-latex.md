@@ -208,6 +208,6 @@ KaTeX 限制：
 
 ## 关联组件
 
-- [LatexContent](../components/atomic/latex-content.md) — KaTeX 渲染
-- [MarkdownContent](../components/atomic/markdown-content.md) — Markdown 内容
-- [ContentRender](../components/molecular/content-render.md) — 内容渲染
+- [LatexContent](../components/rendering/latex-content) — KaTeX 渲染
+- [MarkdownContent](../components/rendering/markdown-content) — Markdown 内容
+- [ContentRender](../components/rendering/content-render) — 内容渲染

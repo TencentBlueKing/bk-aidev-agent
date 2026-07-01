@@ -24,6 +24,24 @@
  * IN THE SOFTWARE.
  */
 
+import { t } from '../../lang/lang';
+
+export enum APPROVAL_STATUS {
+  ABANDONED = 'abandoned', // 已废弃
+  APPROVED = 'approved', // 已批准
+  CANCELLED = 'cancelled', // 已取消
+  DRAFT = 'draft', // 草稿 - 待审批
+  EXPIRED = 'expired', // 已过期
+  PENDING = 'pending', // 待审批
+  REJECTED = 'rejected', // 已拒绝
+  REVOKED = 'revoked', // 已撤销
+}
+
+export enum InterruptReason {
+  AIDevToolApproval = 'aidev:tool_approval', // AI dev 第三方审批
+  UserQuestion = 'aidev:user_question', // 用户回答问题
+}
+
 export enum MessageContentType {
   Binary = 'binary',
   FlowAgent = 'flow_agent',
@@ -46,6 +64,7 @@ export enum MessageRole {
   HiddenSystem = 'hidden-system',
   HiddenUser = 'hidden-user',
   Info = 'info',
+  Interrupt = 'interrupt',
   Loading = 'loading',
   Pause = 'pause',
   Placeholder = 'placeholder',
@@ -59,7 +78,6 @@ export enum MessageRole {
   Tool = 'tool',
   User = 'user',
 }
-
 export enum MessageStatus {
   Complete = 'complete',
   Disabled = 'disabled',
@@ -71,3 +89,14 @@ export enum MessageStatus {
   Streaming = 'streaming',
   Success = 'success',
 }
+
+export const APPROVAL_STATUS_MAP: Record<APPROVAL_STATUS, string> = {
+  [APPROVAL_STATUS.ABANDONED]: t('已废弃'),
+  [APPROVAL_STATUS.APPROVED]: t('已通过'),
+  [APPROVAL_STATUS.CANCELLED]: t('已取消'),
+  [APPROVAL_STATUS.EXPIRED]: t('已过期'),
+  [APPROVAL_STATUS.PENDING]: t('待审批'),
+  [APPROVAL_STATUS.REJECTED]: t('已拒绝'),
+  [APPROVAL_STATUS.REVOKED]: t('已撤销'),
+  [APPROVAL_STATUS.DRAFT]: t('待审批'),
+};

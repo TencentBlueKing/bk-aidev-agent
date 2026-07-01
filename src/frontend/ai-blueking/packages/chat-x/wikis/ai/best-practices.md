@@ -25,9 +25,8 @@ sinceVersion: '1.0.0'
 ---
 name: 组件显示名
 slug: 唯一标识（用于 MCP 查询）
-category: component
-domain: message | input | content | media | tools | helper
-componentType: atomic | molecular
+kind: component
+domain: setup | message | rendering | input | agent | feedback | medias | helper
 description: 一句话人类可读描述
 aiSummary: >
   2-4 句话面向 AI 的精确摘要，包含：
@@ -80,7 +79,7 @@ AI Agent 即可使用三个工具：
 
 | 工具                | 参数                   | 用途                                             |
 | ------------------- | ---------------------- | ------------------------------------------------ |
-| `list_components`   | `domain?`, `category?` | 按功能域/分类过滤组件列表                        |
+| `list_components`   | `kind?`, `domain?` | 按文档类型/能力域过滤组件列表                    |
 | `get_component_doc` | `slug`                 | 获取组件完整文档（含 AI 摘要，已清洗运行时代码） |
 | `search_docs`       | `keyword`              | 按关键词搜索文档                                 |
 

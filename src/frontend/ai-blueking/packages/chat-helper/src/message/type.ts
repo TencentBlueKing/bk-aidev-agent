@@ -24,7 +24,7 @@
  * IN THE SOFTWARE.
  */
 
-import type { IFlowAgentResultCustomValue } from '../event/type';
+import type { IFlowAgentResultCustomValue, IRunFinishedEvent } from '../event/type';
 
 export enum ActivityType {
   FlowAgent = 'flow_agent',
@@ -54,6 +54,7 @@ export enum MessageRole {
   TemplateUser = 'template-user',
   Tool = 'tool',
   User = 'user',
+  Interrupt = 'interrupt',
 }
 
 export enum MessageStatus {
@@ -69,6 +70,21 @@ export enum MessageType {
   Function = 'function',
   Text = 'text',
 }
+
+export enum UserOperation {
+  FlowNodeRetry = 'flow_node_retry',
+  FlowNodeSkip = 'flow_node_skip',
+  ApprovalCancel = 'approval_cancel',
+}
+
+export type IUserOperationPayload =
+  | {
+      node_id: string;
+      task_id: string;
+    }
+  | {
+      interrupt_id: number | string;
+    };
 
 export interface IActivityMessage extends IBaseMessage {
   activityType: ActivityType;
@@ -150,6 +166,16 @@ export interface IDeveloperMessage extends IBaseMessage {
 export interface IDeveloperMessageApi extends IBaseMessageApi {
   content: string;
   role: MessageRole.Developer;
+}
+
+export interface IInterruptMessage extends IBaseMessage {
+  content: IRunFinishedEvent;
+  role: MessageRole.Interrupt;
+}
+
+export interface IInterruptMessageApi extends IBaseMessageApi {
+  content: IRunFinishedEvent;
+  role: MessageRole.Interrupt;
 }
 
 export interface IFlowAgentTaskNodeInfo {
@@ -313,7 +339,8 @@ export type IMessage =
   | ITemplateSystemMessage
   | ITemplateUserMessage
   | IToolMessage
-  | IUserMessage;
+  | IUserMessage
+  | IInterruptMessage;
 
 export type IMessageApi =
   | IActivityMessageApi
@@ -336,7 +363,8 @@ export type IMessageApi =
   | ITemplateSystemMessageApi
   | ITemplateUserMessageApi
   | IToolMessageApi
-  | IUserMessageApi;
+  | IUserMessageApi
+  | IInterruptMessageApi;
 
 /**
  * 消息属性 - 用于传递引用内容或快捷键相关信息

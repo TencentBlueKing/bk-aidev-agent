@@ -103,34 +103,16 @@ const handleUserAction = (tool) => {
 
 ### 组件
 
-#### 原子组件
-基础 UI 单元，是构建复杂组件的最小单位：
-
-**交互组件**
-- [ScrollBtn 滚动按钮](./components/atomic/scroll-btn.md)
-- [ToolBtn 工具按钮](./components/atomic/tool-btn.md)
-- [ShortcutBtn 快捷指令按钮](./components/atomic/shortcut-btn.md)
-- [ShortcutBtns 快捷指令按钮组](./components/atomic/shortcut-btns.md)
-
-**内容渲染组件**
-- [MarkdownContent Markdown 内容渲染](./components/atomic/markdown-content.md)
-- [CodeContent 代码块渲染](./components/atomic/code-content.md)
-- [MermaidContent Mermaid 图表渲染](./components/atomic/mermaid-content.md)
-- [LatexContent LaTeX 公式渲染](./components/atomic/latex-content.md)
-- [ImageContent 图片渲染](./components/atomic/image-content.md)
-- [AnimationText 动画文本](./components/atomic/animation-text.md)
-
-#### 分子组件
-由原子组件组合而成的复杂组件：
-- [ChatInput 聊天输入框](./components/molecular/chat-input.md)
-- [MessageContainer 消息容器](./components/molecular/message-container.md)
-- [MessageRender 消息渲染器](./components/molecular/message-render.md)
-- [ContentRender 内容渲染器](./components/molecular/content-render.md)
-- [MessageTools 消息工具栏](./components/molecular/message-tools.md)
-- [MessageUserFeedback 用户反馈](./components/molecular/user-feedback.md)
-- [AiSelection AI 选择弹窗](./components/molecular/ai-selection.md)
-- [ShortcutRender 快捷指令渲染器](./components/molecular/shortcut-render.md)
-- [ToolcallRender 工具调用渲染器](./components/molecular/toolcall-render.md)
+#### 能力域
+- [组件总览](./components/)
+- [组件源码审计清单](./components/inventory.md)
+- [ChatContainer 完整容器](./components/setup/chat-container)
+- [MessageRender 消息渲染器](./components/message/message-render)
+- [ContentRender 内容渲染器](./components/rendering/content-render)
+- [ChatInput 聊天输入框](./components/input/chat-input)
+- [ToolcallRender 工具调用渲染器](./components/agent/toolcall-render)
+- [MessageTools 消息工具栏](./components/feedback/message-tools)
+- [AiImage 图片展示](./components/medias/ai-image)
 
 ### 通用
 

@@ -2,17 +2,18 @@
   <div class="toolcall-desc">
     <div class="desc-title">{{ title }}</div>
     <div class="desc-panel">
-      <template v-if="typeof data === 'object'">
+      <!-- null 的 typeof 为 object，需排除，避免 v-for 异常；键/值统一转字符串以满足 HighlightKeyword -->
+      <template v-if="data !== null && typeof data === 'object'">
         <div
           v-for="(value, key) in data"
           :key="key"
           class="desc-panel-item"
         >
-          <span class="desc-label"><HighlightKeyword :text="key" />:</span>
+          <span class="desc-label"><HighlightKeyword :text="String(key)" />:</span>
           <span class="desc-value">
             <HighlightKeyword
               style="word-break: break-all"
-              :text="typeof value === 'object' && value ? JSON.stringify(value) : value"
+              :text="formatHighlightSegment(value)"
             />
           </span>
         </div>
@@ -20,7 +21,7 @@
       <template v-else
         ><HighlightKeyword
           :style="{ wordBreak: 'break-all' }"
-          :text="data"
+          :text="formatHighlightSegment(data)"
       /></template>
     </div>
   </div>
@@ -34,9 +35,17 @@
     desc?: string;
     title: string;
   }>();
-  const data = computed<Record<string, string>>(() => {
+
+  /** JSON 解析后的标量 / 嵌套对象均转为可展示的字符串，供 HighlightKeyword（String prop）使用 */
+  const formatHighlightSegment = (value: unknown): string => {
+    if (value === undefined || value === null) return '';
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+  };
+
+  const data = computed(() => {
     try {
-      return JSON.parse(props.desc || '');
+      return JSON.parse(props.desc || '') as unknown;
     } catch {
       return props.desc;
     }
@@ -53,7 +62,7 @@
 
     .desc-title {
       margin-bottom: 6px;
-      font-size: 12px;
+      font-size: var(--ai-font-size, 12px);
       font-weight: bold;
       color: #313238;
     }

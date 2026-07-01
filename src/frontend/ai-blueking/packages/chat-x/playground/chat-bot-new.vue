@@ -13,12 +13,11 @@
       v-model:render-mode="chatMode"
       v-model:selected-shortcut="selectedShortcut"
       :enable-selection="false"
-      :get-side-render-component="getSideRenderComponent"
-      :get-side-tab-render-component="getSideTabRenderComponent"
       :messages="messages"
       :model-value="userInput"
       :on-agent-action="handleAgentAction"
       :on-custom-tab-change="handleCustomTabChange"
+      :on-interrupt-resume="handleInterruptResume"
       :on-send-message="handleSendMessage"
       :on-stop-sending="handleStopSending"
       :on-upload="handleUpload"
@@ -32,6 +31,7 @@
       }"
       :resources="MOCK_RESOURCES"
       :shortcuts="shortcuts"
+      :size="'normal'"
       :support-upload="true"
       @delete-shortcut="handleDeleteShortcut"
       @select-shortcut="handleSelectShortcut"
@@ -40,38 +40,127 @@
       @stop-streaming="handleStopStreaming"
       @update:model-value="handleUpdateInputValue"
     >
-      <template #message="{ message, messageToolsStatus }">
-        <MessageRender
-          :message="message"
-          :message-tools-status="messageToolsStatus"
+      <!-- <template #group="{ group }">
+        <div class="group-messagesxxxx">
+          <div
+            v-for="(message, index) in group.messages"
+            :key="index"
+          >
+            <MessageRender
+              :key="index"
+              :message="message"
+              :on-input-confirm="
+                (content: UserMessage['content'], docSchema: TagSchema) =>
+                  handleUserInputConfirm(message, content, docSchema)
+              "
+              :on-interrupt-resume="handleInterruptResume"
+              :on-shortcut-confirm="
+                (formModel: Record<string, unknown>) => handleUserShortcutConfirm(message, formModel)
+              "
+            >
+              <template #answeredQuestion="{ item }">
+                <div>{{ JSON.stringify(item) }}</div>
+              </template>
+            </MessageRender>
+          </div>
+        </div>
+      </template> -->
+      <!-- <template #message="{ message, messageToolsStatus, onInterruptResume }">
+        <template v-if="message.role === MessageRole.User">
+          <MessageRender :message="message"> </MessageRender>
+        </template>
+        <div
+          v-else
+          class="xxxxx"
         >
-          <template #codeHeader="{ language }">
-            <span
-              class="code-header-action"
-              @click="handleCodeInsert(language)"
+          <template
+            v-if="
+              message.role === MessageRole.Interrupt && message.content.result?.reason === InterruptReason.UserQuestion
+            "
+          >
+            <InterruptMessageRender
+              v-bind="message"
+              :on-interrupt-resume="onInterruptResume"
             >
-              插入
-            </span>
-            <span
-              class="code-header-action"
-              @click="handleCodeApply(language)"
-            >
-              应用
-            </span>
+              <template #answeredQuestion="{ item }">
+                <div>
+                  <div>
+                    <span> -------- {{ JSON.stringify(item) }} </span>
+                  </div>
+                </div>
+              </template>
+            </InterruptMessageRender>
           </template>
-        </MessageRender>
-      </template>
+          <MessageRender
+            v-else
+            :message="message"
+            :message-tools-status="messageToolsStatus"
+            :on-interrupt-resume="onInterruptResume"
+          >
+            <template #codeHeader="{ language }">
+              <span
+                class="code-header-action"
+                @click="handleCodeInsert(language)"
+              >
+                插入
+              </span>
+              <span
+                class="code-header-action"
+                @click="handleCodeApply(language)"
+              >
+                应用
+              </span>
+            </template>
+          </MessageRender>
+        </div>
+      </template> -->
+      <!-- 自定义作答态：用下拉选择替代默认的选项列表，选中后通过 setAnswer 回传已组装答案 -->
+      <!-- <template #interruptQuestion="{ question, setAnswer, answer }">
+        <div v-if="question.multiSelect">
+          <Select
+            :model-value="answer?.answer.at(0)?.label"
+            @change="
+              (value: string) =>
+                setAnswer(
+                  value
+                    ? {
+                        question: question.question,
+                        multiSelect: question.multiSelect,
+                        answer: [{ label: value, description: value }],
+                      }
+                    : undefined,
+                )
+            "
+          >
+            <Select.Option
+              v-for="option in question.options ?? []"
+              :id="option.label"
+              :key="option.label"
+              :name="option.description"
+            >
+            </Select.Option>
+          </Select>
+        </div>
+        <div v-else>
+          <UserQuestionChoice
+            :on-answer="setAnswer"
+            :question="question"
+          />
+        </div>
+      </template> -->
     </ChatContainer>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref as deepRef, h, onMounted, shallowRef } from 'vue';
+  import { ref as deepRef, onMounted, shallowRef } from 'vue';
 
+  // import { Select } from 'bkui-vue';
   import {
     type ActivityMessage,
     type AssistantMessage,
     type Message,
+    type OnInterruptResume,
     type ToolMessage,
     type UserMessage,
     AgentIcon,
@@ -83,8 +172,10 @@
     MessageRole,
     MessageStatus,
     RenderMode,
+    UserQuestionChoice,
   } from '../src';
   import CustomTabContent from './custom-tab-content.vue';
+  import { MOCK_INTERRUPT_MESSAGES } from './interrupt';
   import { streamContent } from './markdown';
   import { MOCK_PROMPTS, MOCK_RESOURCES } from './mock';
   import { uploadFileToSession } from './upload-file';
@@ -110,34 +201,34 @@
       content: '帮我分析一下最近的 Trace 数据，并帮我查询一下慢请求的详细信息，并检查下服务健康状况',
       messageId: 'msg_user_1',
     },
-    {
-      id: 'msg_assistant_1',
-      role: MessageRole.Assistant,
-      content: '好的，我来帮您分析 Trace 数据，需要先调用相关工具获取信息。',
-      status: MessageStatus.Complete,
-      messageId: 'msg_assistant_1',
-      toolCalls: [
-        {
-          id: 'tc_1',
-          type: MessageContentType.Function,
-          function: {
-            name: 'Trace 分析',
-            arguments: JSON.stringify({ app_code: 'bk-monitor', time_range: '1h' }),
-            description: '分析应用的 Trace 数据，获取慢请求和错误请求',
-          },
-        },
-        {
-          id: 'tc_2',
-          type: MessageContentType.Function,
-          function: {
-            name: '日志查询',
-            arguments: JSON.stringify({ keyword: 'error', count: 20 }),
-            description: '查询应用的错误日志',
-            mcpName: 'bk-log',
-          },
-        },
-      ],
-    } as AssistantMessage,
+    // {
+    //   id: 'msg_assistant_1',
+    //   role: MessageRole.Assistant,
+    //   content: '好的，我来帮您分析 Trace 数据，需要先调用相关工具获取信息。',
+    //   status: MessageStatus.Complete,
+    //   messageId: 'msg_assistant_1',
+    //   toolCalls: [
+    //     {
+    //       id: 'tc_1',
+    //       type: MessageContentType.Function,
+    //       function: {
+    //         name: 'Trace 分析',
+    //         arguments: JSON.stringify({ app_code: 'bk-monitor', time_range: '1h' }),
+    //         description: '分析应用的 Trace 数据，获取慢请求和错误请求',
+    //       },
+    //     },
+    //     {
+    //       id: 'tc_2',
+    //       type: MessageContentType.Function,
+    //       function: {
+    //         name: '日志查询',
+    //         arguments: JSON.stringify({ keyword: 'error', count: 20 }),
+    //         description: '查询应用的错误日志',
+    //         mcpName: 'bk-log',
+    //       },
+    //     },
+    //   ],
+    // } as AssistantMessage,
     {
       id: 'msg_tool_1',
       role: MessageRole.Tool,
@@ -177,7 +268,7 @@
     {
       id: 'msg_assistant_3',
       role: MessageRole.Assistant,
-      content: '正在查询慢请求详情和服务健康状态。',
+      // content: '正在查询慢请求详情和服务健康状态。',
       status: MessageStatus.Complete,
       messageId: 'msg_assistant_3',
       toolCalls: [
@@ -297,7 +388,9 @@
               elapsed_time: 300,
               loop: 1,
               retry: 0,
+              retryable: true,
               skip: false,
+              skippable: true,
             },
             n1a2b3c4d5e6f7890abcdef12345678: {
               id: 'n1a2b3c4d5e6f7890abcdef12345678',
@@ -490,7 +583,13 @@
       status: MessageStatus.Complete,
       messageId: 'msg_activity_ref',
     } as ActivityMessage,
+    ...MOCK_INTERRUPT_MESSAGES,
   ]);
+
+  const handleInterruptResume: OnInterruptResume = (payload, interrupt) => {
+    // 取消审批与流程节点重试 / 跳过复用同一回调，业务侧按 payload.operation 分流处理
+    console.log('[playground] interrupt resume', payload, interrupt);
+  };
 
   const shortcuts = shallowRef<Shortcut[]>([
     {
@@ -1130,38 +1229,37 @@
    */
   // const PLAYGROUND_GET_SIDE_VNODE_DEMO = true;
 
-  const getSideRenderComponent = (createElement: typeof h, props?: Record<string, unknown>) => {
-    // if (!PLAYGROUND_GET_SIDE_VNODE_DEMO) {
-    //   return undefined;
-    // }
-    const raw = props ?? {};
-    const taskIdRaw = raw.task_id;
-    const taskId =
-      typeof taskIdRaw === 'number'
-        ? taskIdRaw
-        : typeof taskIdRaw === 'string' && taskIdRaw !== ''
-          ? Number(taskIdRaw)
-          : undefined;
-    return createElement(CustomTabContent, {
-      loading: Boolean(raw.loading),
-      nodeId: typeof raw.node_id === 'string' ? raw.node_id : '',
-      nodeName: typeof raw.node_name === 'string' ? raw.node_name : '',
-      taskId: Number.isFinite(taskId as number) ? (taskId as number) : undefined,
-      taskName: typeof raw.task_name === 'string' ? raw.task_name : '',
-      data:
-        typeof raw.data === 'object' && raw.data !== null && !Array.isArray(raw.data)
-          ? (raw.data as Record<string, unknown>)
-          : {},
-    });
-  };
+  // const getSideRenderComponent = (createElement: typeof h, props?: Record<string, unknown>) => {
+  //   // if (!PLAYGROUND_GET_SIDE_VNODE_DEMO) {
+  //   //   return undefined;
+  //   // }
+  //   const raw = props ?? {};
+  //   const taskIdRaw = raw.task_id;
+  //   const taskId =
+  //     typeof taskIdRaw === 'number'
+  //       ? taskIdRaw
+  //       : typeof taskIdRaw === 'string' && taskIdRaw !== ''
+  //         ? Number(taskIdRaw)
+  //         : undefined;
+  //   return createElement(CustomTabContent, {
+  //     loading: Boolean(raw.loading),
+  //     nodeId: typeof raw.node_id === 'string' ? raw.node_id : '',
+  //     nodeName: typeof raw.node_name === 'string' ? raw.node_name : '',
+  //     taskId: Number.isFinite(taskId as number) ? (taskId as number) : undefined,
+  //     taskName: typeof raw.task_name === 'string' ? raw.task_name : '',
+  //     data:
+  //       typeof raw.data === 'object' && raw.data !== null && !Array.isArray(raw.data)
+  //         ? (raw.data as Record<string, unknown>)
+  //         : {},
+  //   });
+  // };
 
-  const getSideTabRenderComponent = (createElement: typeof h, tab: CustomTab<Record<string, unknown>>) => {
-    console.info('getSideTabRenderComponent', tab.name);
-    if (tab.name === '634859') {
-      return createElement('div', {}, 'dddd');
-    }
-    return undefined;
-  };
+  // const getSideTabRenderComponent = (createElement: typeof h, tab: CustomTab<Record<string, unknown>>) => {
+  //   if (tab.name === '634859') {
+  //     return createElement('div', {}, 'dddd');
+  //   }
+  //   return undefined;
+  // };
 
   const handleAgentAction = async (tool: IToolBtn) => {
     console.log('agent action:', tool);

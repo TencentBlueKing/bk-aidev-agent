@@ -54,6 +54,13 @@ export const OverflowTips: ObjectDirective<OverflowElement, Partial<Props> & { d
       }
       isMouseenter = true;
       if (!instance) {
+        // text / disabled 为指令扩展字段，不可传入 tippy（否则会触发「text is not a valid prop」等开发态警告）
+        const src: Partial<Props> & { disabled?: boolean; text?: string } = {
+          ...(binding.value ?? {}),
+        };
+        const overflowTipText = src.text;
+        delete src.text;
+        delete src.disabled;
         instance = tippy(
           el,
           Object.assign(
@@ -61,9 +68,9 @@ export const OverflowTips: ObjectDirective<OverflowElement, Partial<Props> & { d
             {
               trigger: 'mouseenter',
               delay: [DelayMs, 0],
-              content: binding.value?.text || binding.value?.content || el.innerText,
-              placement: binding.value?.placement || 'auto',
-              theme: binding.value?.theme || 'ai-chat-box',
+              content: overflowTipText || src.content || el.innerText,
+              placement: src.placement || 'auto',
+              theme: src.theme || 'ai-chat-box',
               onShow: () => {
                 if (!getIsEllipsis(el)) {
                   return false;
@@ -75,9 +82,7 @@ export const OverflowTips: ObjectDirective<OverflowElement, Partial<Props> & { d
                 instance = undefined;
               },
             },
-            {
-              ...binding.value,
-            },
+            src,
           ),
         );
         // 初始化第一次进入时 tippy 可能出现不展示的情况 这里直接延时处理

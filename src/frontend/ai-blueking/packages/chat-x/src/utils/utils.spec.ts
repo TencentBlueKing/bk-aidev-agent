@@ -25,7 +25,20 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { formatElapsedTime } from './utils';
+import { formatDuration, formatElapsedTime } from './utils';
+
+describe('formatDuration', () => {
+  it('数字与单位之间、各段之间均不留空格', () => {
+    expect(formatDuration(90500)).toBe('1m30s500ms');
+    expect(formatDuration(30000)).toBe('30s');
+    expect(formatDuration(60000)).toBe('1m');
+  });
+
+  it('不足 1 秒时应展示毫秒', () => {
+    expect(formatDuration(0)).toBe('0ms');
+    expect(formatDuration(500)).toBe('500ms');
+  });
+});
 
 describe('formatElapsedTime', () => {
   it('不足 1 秒时应返回 <1s', () => {

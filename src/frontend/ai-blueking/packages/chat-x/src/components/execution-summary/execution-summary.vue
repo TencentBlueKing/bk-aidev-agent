@@ -168,7 +168,7 @@
         .content-item-title {
           overflow: hidden;
           text-overflow: ellipsis;
-          font-size: 12px;
+          font-size: var(--ai-font-size, 12px);
           font-weight: bold;
           line-height: 22px;
           color: #4d4f56;
@@ -178,7 +178,7 @@
         .content-item-locate {
           padding-left: 4px;
           margin-left: auto;
-          font-size: 12px;
+          font-size: var(--ai-font-size, 12px);
         }
 
         .content-item-messages {

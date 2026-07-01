@@ -4,7 +4,7 @@
     class="ai-message-container"
   >
     <div
-      v-for="(group, groupIndex) in messageGroups"
+      v-for="(group, groupIndex) in visibleMessageGroups"
       :id="group.uid"
       :key="groupIndex"
       class="message-group"
@@ -14,65 +14,81 @@
       @mouseenter="handleMouseEnter(group)"
       @mouseleave="e => handleMouseLeave(group, e)"
     >
-      <Checkbox
-        v-if="enableSelection && group.type !== MessageRole.Loading"
-        class="message-group-checkbox"
-        :model-value="group.checked"
-        @update:model-value="(checked: boolean) => handleCheckboxChange(group, checked)"
-      />
-      <div
-        class="message-group-messages"
-        :class="{
-          'message-group-enabled-selection':
-            renderMode === RenderMode.Share || (enableSelection && group.type !== MessageRole.Loading),
-        }"
-        :style="{
-          width: enableSelection && group.type !== MessageRole.Loading ? 'calc(100% - 16px)' : '100%',
-        }"
+      <slot
+        name="group"
+        v-bind="{ group }"
       >
-        <template
-          v-for="(message, index) in group.messages"
-          :key="index"
-        >
-          <slot
-            name="default"
-            v-bind="{ message, messageToolsStatus }"
-          >
-            <MessageRender
-              :key="index"
-              :message="message"
-              :message-tools-status="messageToolsStatus"
-              :on-action="(tool: IToolBtn) => handleUserAction(tool, message)"
-              :on-input-confirm="
-                (content: UserMessage['content'], docSchema: TagSchema) =>
-                  handleUserInputConfirm(message, content, docSchema)
-              "
-              :on-shortcut-confirm="
-                (formModel: Record<string, unknown>) => handleUserShortcutConfirm(message, formModel)
-              "
-              :tippy-options="messageToolsTippyOptions"
-            />
-          </slot>
-        </template>
-        <MessageTools
-          v-if="
-            renderMode !== RenderMode.Share &&
-            !(enableSelection && group.type !== MessageRole.Loading) &&
-            !group.pause &&
-            group.type === MessageRole.Assistant &&
-            messageToolsStatus !== MessageToolsStatus.Hidden
-          "
-          :message-tools="messageTools"
-          :message-tools-status="messageToolsStatus"
-          :on-action="(tool: IToolBtn) => handleAgentAction(tool, group.messages)"
-          :style="{ visibility: group.isHover ? 'visible' : 'hidden' }"
-          :tippy-options="props.messageToolsTippyOptions"
-          @feedback="
-            (tool: IToolBtn, reasonList: string[], otherReason: string) =>
-              props.onAgentFeedback?.(tool, group.messages, reasonList, otherReason)
-          "
+        <Checkbox
+          v-if="enableSelection && group.type !== MessageRole.Loading"
+          class="message-group-checkbox"
+          :model-value="group.checked"
+          @update:model-value="(checked: boolean) => handleCheckboxChange(group, checked)"
         />
-      </div>
+        <div
+          class="message-group-messages"
+          :class="{
+            'message-group-enabled-selection':
+              renderMode === RenderMode.Share || (enableSelection && group.type !== MessageRole.Loading),
+          }"
+          :style="{
+            width: enableSelection && group.type !== MessageRole.Loading ? 'calc(100% - 16px)' : '100%',
+          }"
+        >
+          <template
+            v-for="(message, index) in group.messages"
+            :key="index"
+          >
+            <slot
+              name="default"
+              v-bind="{ message, messageToolsStatus, onInterruptResume: props.onInterruptResume }"
+            >
+              <MessageRender
+                :key="index"
+                :message="message"
+                :message-tools-status="messageToolsStatus"
+                :on-action="(tool: IToolBtn) => handleUserAction(tool, message)"
+                :on-input-confirm="
+                  (content: UserMessage['content'], docSchema: TagSchema) =>
+                    handleUserInputConfirm(message, content, docSchema)
+                "
+                :on-interrupt-resume="props.onInterruptResume"
+                :on-shortcut-confirm="
+                  (formModel: Record<string, unknown>) => handleUserShortcutConfirm(message, formModel)
+                "
+                :tippy-options="messageToolsTippyOptions"
+              >
+                <template
+                  v-if="$slots.answeredQuestion"
+                  #answeredQuestion="slotProps"
+                >
+                  <slot
+                    name="answeredQuestion"
+                    v-bind="slotProps"
+                  />
+                </template>
+              </MessageRender>
+            </slot>
+          </template>
+          <MessageTools
+            v-if="
+              renderMode !== RenderMode.Share &&
+              !(enableSelection && group.type !== MessageRole.Loading) &&
+              !group.pause &&
+              group.type === MessageRole.Assistant &&
+              messageToolsStatus !== MessageToolsStatus.Hidden
+            "
+            :message-tools="messageTools"
+            :message-tools-status="messageToolsStatus"
+            :on-action="(tool: IToolBtn) => handleAgentAction(tool, group.messages)"
+            :style="{ visibility: group.isHover ? 'visible' : 'hidden' }"
+            :tippy-options="props.messageToolsTippyOptions"
+            @feedback="
+              (tool: IToolBtn, reasonList: string[], otherReason: string) =>
+                props.onAgentFeedback?.(tool, group.messages, reasonList, otherReason)
+            "
+          />
+        </div>
+      </slot>
     </div>
     <div
       ref="messageContainerBottomRef"
@@ -82,10 +98,11 @@
     <div class="ai-message-fixed-bottom">
       <ScrollBtn
         v-show="
-          messageStatus === MessageStatus.Streaming ||
-          messageStatus === MessageStatus.StopLoading ||
-          messageStatus === MessageStatus.Fetching ||
-          messageStatus === MessageStatus.Pending
+          renderMode !== RenderMode.Share &&
+          (messageStatus === MessageStatus.Streaming ||
+            messageStatus === MessageStatus.StopLoading ||
+            messageStatus === MessageStatus.Fetching ||
+            messageStatus === MessageStatus.Pending)
         "
         :loading="messageStatus === MessageStatus.StopLoading"
         :title="messageStatus === MessageStatus.StopLoading ? t('正在停止') : t('停止生成')"
@@ -122,7 +139,9 @@
   import MessageTools, { type MessageToolsProps } from '../../message-tools/message-tools.vue';
   import MessageRender from '../message-render/message-render.vue';
 
+  import type { OnInterruptResume } from '../../../ag-ui/types/interrupt';
   import type { IToolBtn, TagSchema } from '../../../types';
+  import type { UserQuestionAnsweredCardSlots } from '../interrupt-message/user-question/user-question-answered-card.vue';
 
   export type MessageContainerEmits = {
     (e: 'stopStreaming'): void;
@@ -137,6 +156,7 @@
     messageToolsTippyOptions?: MessageToolsProps['tippyOptions'];
     onAgentAction?: AgentActionCallback;
     onAgentFeedback?: AgentFeedbackCallback;
+    onInterruptResume?: OnInterruptResume; // ag-ui human-in-the-loop 中断响应回调
     onUserAction?: UserActionCallback;
     renderMode?: RenderMode;
   } & {
@@ -177,6 +197,18 @@
 
   defineEmits<MessageContainerEmits>();
 
+  defineSlots<{
+    // 中断消息「已回答内容」回显的自定义 slot，透传给内部 MessageRender
+    answeredQuestion: UserQuestionAnsweredCardSlots['answer'];
+    // 自定义单条消息渲染（默认回退到内部 MessageRender）
+    default: (props: {
+      message: Message;
+      messageToolsStatus?: MessageToolsStatus;
+      onInterruptResume?: OnInterruptResume;
+    }) => unknown;
+    group: (props: { group: MessageGroup }) => unknown;
+  }>();
+
   const messageContainerRef = useTemplateRef<HTMLElement>('messageContainerRef');
   const messageContainerBottomRef = useTemplateRef<HTMLElement>('messageContainerBottomRef');
 
@@ -188,10 +220,20 @@
   const messageTools = computed(() => {
     return CONST_MESSAGE_TOOLS.filter(tool => props.renderMode !== RenderMode.Test || tool.id !== 'share');
   });
-  const handleMouseEnter = (group: { isHover: boolean }) => {
+  // Share 模式仅展示历史消息，过滤自动注入或外部传入的 Loading 占位组
+  const visibleMessageGroups = computed(() =>
+    props.renderMode === RenderMode.Share
+      ? props.messageGroups.filter(group => group.type !== MessageRole.Loading)
+      : props.messageGroups,
+  );
+  const handleMouseEnter = (group: MessageGroup) => {
+    const lastMessage = group.messages?.at(-1);
+    if (lastMessage?.role === MessageRole.Interrupt) {
+      return;
+    }
     group.isHover = true;
   };
-  const handleMouseLeave = (group: { isHover: boolean }, e: MouseEvent) => {
+  const handleMouseLeave = (group: MessageGroup, e: MouseEvent) => {
     const related = (e as MouseEvent & { toElement?: Element }).toElement ?? e.relatedTarget;
     if (related instanceof Element && related.classList.contains('ai-user-feedback')) {
       return;

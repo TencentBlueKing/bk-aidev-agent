@@ -15,7 +15,9 @@ import type { ChatBusinessManager } from '../../manager/business/chat-business-m
 import type { IChatHelper, IRequestOptions } from '../../types';
 import type { ChatBotEmitFn } from './use-chatbot-init';
 import type { IUserMessage } from '@blueking/chat-helper';
-import type { IAiSlashMenuItem, TagSchema, UserMessage } from '@blueking/chat-x';
+import type { IAiSlashMenuItem, Interrupt, InterruptResume, TagSchema, UserMessage } from '@blueking/chat-x';
+
+import type { UseInterruptResumeReturn } from './use-interrupt-resume';
 
 export interface UseMessageSenderParams {
   chatBusinessManager: Ref<ChatBusinessManager | null>;
@@ -23,6 +25,7 @@ export interface UseMessageSenderParams {
   emit: ChatBotEmitFn;
   /** 返回最新 requestOptions 的 getter（每次调用时读取，确保响应式） */
   getRequestOptions?: () => IRequestOptions | undefined;
+  resumeUserQuestionWithInput?: UseInterruptResumeReturn['resumeUserQuestionWithInput'];
   selectedResources: ShallowRef<IAiSlashMenuItem[]>;
   selectedShortcut: Ref<null | { id?: string }>;
 }
@@ -31,7 +34,11 @@ export interface UseMessageSenderReturn {
   cite: Ref<string>;
   userInput: ShallowRef<string | TagSchema>;
   doSendMessage: (message: IUserMessage['content'], options?: { property?: Record<string, unknown> }) => Promise<void>;
-  handleSendMessage: (content: UserMessage['content'], docSchema: TagSchema) => Promise<void>;
+  handleSendMessage: (
+    content: UserMessage['content'],
+    docSchema: TagSchema,
+    options?: { interrupt?: Interrupt; payload?: InterruptResume },
+  ) => Promise<void>;
   handleStopSending: () => Promise<void>;
   handleUpdateModelValue: (value: string | TagSchema, resourceList: IAiSlashMenuItem[]) => void;
   handleUpload: (file: File) => Promise<{ download_url?: string }>;
@@ -39,7 +46,15 @@ export interface UseMessageSenderReturn {
 }
 
 export function useMessageSender(params: UseMessageSenderParams): UseMessageSenderReturn {
-  const { emit, chatHelper, chatBusinessManager, getRequestOptions, selectedShortcut, selectedResources } = params;
+  const {
+    emit,
+    chatHelper,
+    chatBusinessManager,
+    getRequestOptions,
+    resumeUserQuestionWithInput,
+    selectedShortcut,
+    selectedResources,
+  } = params;
 
   const userInput = shallowRef<string | TagSchema>([[]]);
   const cite = shallowRef('');
@@ -104,8 +119,20 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
   /**
    * 处理发送消息
    */
-  const handleSendMessage = async (content: UserMessage['content'], _docSchema: TagSchema) => {
+  const handleSendMessage = async (
+    content: UserMessage['content'],
+    _docSchema: TagSchema,
+    options?: { interrupt?: Interrupt; payload?: InterruptResume },
+  ) => {
     try {
+      if (options?.payload && resumeUserQuestionWithInput) {
+        userInput.value = [[]];
+        cite.value = '';
+        selectedResources.value = [];
+        await resumeUserQuestionWithInput(content, options);
+        return;
+      }
+
       const extra: Record<string, unknown> = {};
       if (cite.value) {
         extra.cite = cite.value;
@@ -116,8 +143,8 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
       if (selectedResources.value.length) {
         extra.resources = selectedResources.value;
       }
-      const options = Object.keys(extra).length ? { property: { extra } } : {};
-      await doSendMessage(content as IUserMessage['content'], options);
+      const sendOptions = Object.keys(extra).length ? { property: { extra } } : {};
+      await doSendMessage(content as IUserMessage['content'], sendOptions);
     } catch (error) {
       console.error('Failed to send message:', error);
       emit('error', error as Error);

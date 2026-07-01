@@ -26,7 +26,7 @@
 
 import { type Ref, computed, onMounted, onUnmounted, shallowRef, watch } from 'vue';
 
-import { useContainerScrollConsumer, useCustomTabConsumer } from '../../../composables';
+import { DEFAULT_TAB_ORDER, useContainerScrollConsumer, useCustomTabConsumer } from '../../../composables';
 import { t } from '../../../lang/lang';
 import BkFlowNodeDetail from './flow-agent-node-detail.vue';
 
@@ -86,8 +86,12 @@ export const useFlowTab = (options: { messageUid: Ref<string | undefined>; taskL
     if (taskId == null) return;
     markUserTabSelection();
     customTab.addCustomTab?.({
+      // 是否可关闭由后端下发的 closable 控制，缺省（undefined）保持默认可关闭
+      closable: node.closable,
       label: node.name,
       name: buildNodeTabName(task, node),
+      // 排序优先采用后端下发的 tab_order（越小越靠前），缺省回退默认权重
+      order: node.tab_order ?? DEFAULT_TAB_ORDER,
       data: {
         component: BkFlowNodeDetail,
         messageUid: messageUid.value,
@@ -108,8 +112,13 @@ export const useFlowTab = (options: { messageUid: Ref<string | undefined>; taskL
     if (!taskId) return;
     markUserTabSelection();
     customTab.addCustomTab?.({
+      // 是否可关闭由后端下发的 closable 控制，缺省（undefined）保持默认可关闭
+      closable: task.closable,
       label: t('有效证据'),
       name: buildConfidenceTabName(task),
+      // 排序优先采用后端下发的 tab_order（越小越靠前）；
+      // 缺省回退 10，固定排在「执行情况」(order 0) 之后、节点详情(默认 100)之前
+      order: task.tab_order ?? 10,
       data: {
         component: BkFlowNodeDetail,
         messageUid: messageUid.value,

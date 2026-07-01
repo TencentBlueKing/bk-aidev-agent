@@ -150,7 +150,7 @@ const getSideTabRenderComponent = (createElement, tab, { removeCustomTab }) => {
 
 ## Playground 参考
 
-[`playground/chat-bot-new.vue`](../../playground/chat-bot-new.vue) 中注册了 `getSideTabRenderComponent`：当 `tab.name === '634859'` 时返回简单文本节点，用于验证「覆盖默认标签」路径；其余 Tab 返回 `undefined` 走默认 UI。
+`playground/chat-bot-new.vue` 中注册了 `getSideTabRenderComponent`：当 `tab.name === '634859'` 时返回简单文本节点，用于验证「覆盖默认标签」路径；其余 Tab 返回 `undefined` 走默认 UI。
 
 ```typescript
 const getSideTabRenderComponent = (createElement: typeof h, tab: CustomTab<Record<string, unknown>>) => {
@@ -185,5 +185,5 @@ const getSideTabRenderComponent = (createElement: typeof h, tab: CustomTab<Recor
 
 - [自定义侧栏内容](./custom-side-content.md) — `getSideRenderComponent`、`onCustomTabChange`、`locateButton`
 - [useCustomTab](../composables/use-custom-tab.md) — `addCustomTab` / `removeCustomTab` / Provider-Consumer
-- [ChatContainer](../components/molecular/chat-container.md) — 侧栏整体行为与 expose API
+- [ChatContainer](../components/setup/chat-container.md) — 侧栏整体行为与 expose API
 - [自定义消息类型](./custom-message.md) — FlowAgent 内 `addCustomTab` 场景

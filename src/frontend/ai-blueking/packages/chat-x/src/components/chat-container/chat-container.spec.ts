@@ -28,11 +28,11 @@ import { type Ref, defineComponent, h, nextTick } from 'vue';
 import { type ComponentMountingOptions, type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MessageRole, MessageStatus } from '../../ag-ui/types';
+import { APPROVAL_STATUS, InterruptReason, MessageRole, MessageStatus } from '../../ag-ui/types';
 import { LOADING_MESSAGE_ID, RenderMode } from '../../common';
 import ChatContainer, { type ChatContainerProps } from './chat-container.vue';
 
-import type { AssistantMessage, Message, UserMessage } from '../../ag-ui/types';
+import type { AssistantMessage, Message, UserMessage, UserQuestionInterrupt } from '../../ag-ui/types';
 
 /** defineExpose 暴露的实例 API */
 type ChatContainerExposed = {
@@ -54,6 +54,8 @@ type ChatContainerMountProps = ChatContainerProps & {
 
 type MockMessageGroup = {
   messages: Array<{ id?: string }>;
+  type?: string;
+  uid?: string;
 };
 
 const getChatContainerExposed = (w: VueWrapper): ChatContainerExposed => w.vm as unknown as ChatContainerExposed;
@@ -156,11 +158,47 @@ vi.mock('../../composables', () => ({
       const { computed, shallowRef } = require('vue');
       const messageGroups = mockMessageGroupsRef;
       const executionGroups = computed(() => mockExecutionGroupsRef.value);
+      const pendingApprovalCount = computed(() =>
+        _options.messages.value.reduce((count, message) => {
+          if (message.role !== MessageRole.Interrupt || message.content?.outcome?.type !== 'interrupt') {
+            return count;
+          }
+          return (
+            count +
+            message.content.outcome.interrupts.filter(
+              interrupt =>
+                interrupt.reason === InterruptReason.AIDevToolApproval &&
+                [APPROVAL_STATUS.PENDING, APPROVAL_STATUS.DRAFT].includes(interrupt.metadata?.ticket?.status),
+            ).length
+          );
+        }, 0),
+      );
+      const pendingApprovalTipText = computed(() =>
+        pendingApprovalCount.value
+          ? `当前会话有 ${pendingApprovalCount.value} 个待审批单，如需继续，请先取消审批`
+          : '',
+      );
+      const activeUserQuestionInterrupt = computed(() => {
+        for (let index = _options.messages.value.length - 1; index >= 0; index--) {
+          const message = _options.messages.value[index];
+          if (message.role !== MessageRole.Interrupt || message.content?.outcome?.type !== 'interrupt') {
+            continue;
+          }
+          const question = message.content.outcome.interrupts.find(
+            interrupt => interrupt.reason === InterruptReason.UserQuestion,
+          );
+          if (question) return question;
+        }
+        return undefined;
+      });
       const isShareMode = shallowRef(false);
       const isAllSelected = computed(() => false);
       return {
         messageGroups,
         executionGroups,
+        activeUserQuestionInterrupt,
+        pendingApprovalCount,
+        pendingApprovalTipText,
         isShareMode,
         isAllSelected,
         onToggleShareAll: vi.fn(),
@@ -193,48 +231,75 @@ vi.mock('../../directives', () => ({
 
 vi.mock('../../composables/use-custom-tab', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { shallowRef, ref: deepRef, provide } = require('vue');
+  const { shallowRef, ref: deepRef, computed, provide } = require('vue');
   const CUSTOM_TAB_TOKEN = Symbol('CUSTOM_TAB_TOKEN');
   const EXECUTION_TAB_NAME = 'execution';
+  const DEFAULT_TAB_ORDER = 100;
   return {
     CUSTOM_TAB_TOKEN,
+    DEFAULT_TAB_ORDER,
     EXECUTION_TAB_NAME,
-    useCustomTabProvider: vi.fn((_options: { onTabChange?: (tab: unknown) => void }) => {
-      const EXECUTION_TAB = { label: '执行情况', name: EXECUTION_TAB_NAME };
-      const tabs = shallowRef([EXECUTION_TAB]);
-      const selectedTab = deepRef(EXECUTION_TAB);
-      const isCollapse = shallowRef(true);
+    useCustomTabProvider: vi.fn(
+      (_options: { executionTabVisible?: () => boolean | undefined; onTabChange?: (tab: unknown) => void }) => {
+        const EXECUTION_TAB = { closable: false, label: '执行情况', name: EXECUTION_TAB_NAME, order: 0 };
+        const tabs = shallowRef([EXECUTION_TAB]);
+        const selectedTab = deepRef(EXECUTION_TAB);
+        const isCollapse = shallowRef(true);
 
-      const addCustomTab = vi.fn((tab: { label: string; name: string }) => {
-        if (!tabs.value.find((t: { name: string }) => t.name === tab.name)) {
-          tabs.value = [...tabs.value, tab];
-        }
-        isCollapse.value = false;
-      });
-      const removeCustomTab = vi.fn((name: string) => {
-        tabs.value = tabs.value.filter((t: { name: string }) => t.name !== name);
-      });
-      const selectCustomTab = vi.fn((tab: unknown) => {
-        selectedTab.value = tab ?? EXECUTION_TAB;
-        _options.onTabChange?.(tab);
-      });
-      const resetCustomTab = vi.fn(() => {
-        tabs.value = [EXECUTION_TAB];
-        selectedTab.value = EXECUTION_TAB;
-        isCollapse.value = true;
-      });
+        const isExecutionVisible = () => _options.executionTabVisible?.() ?? true;
+        const displayTabs = computed(() =>
+          tabs.value
+            .filter((tab: { name: string; visible?: boolean }) =>
+              tab.name === EXECUTION_TAB_NAME ? isExecutionVisible() : tab.visible !== false,
+            )
+            .slice()
+            .sort(
+              (a: { order?: number }, b: { order?: number }) =>
+                (a.order ?? DEFAULT_TAB_ORDER) - (b.order ?? DEFAULT_TAB_ORDER),
+            ),
+        );
 
-      provide(CUSTOM_TAB_TOKEN, {
-        tabs,
-        selectedTab,
-        addCustomTab,
-        removeCustomTab,
-        selectCustomTab,
-        resetCustomTab,
-      });
+        const addCustomTab = vi.fn((tab: { label: string; name: string }) => {
+          if (!tabs.value.find((t: { name: string }) => t.name === tab.name)) {
+            tabs.value = [...tabs.value, tab];
+          }
+          isCollapse.value = false;
+        });
+        const removeCustomTab = vi.fn((name: string) => {
+          tabs.value = tabs.value.filter((t: { name: string }) => t.name !== name);
+        });
+        const selectCustomTab = vi.fn((tab: unknown) => {
+          selectedTab.value = tab ?? EXECUTION_TAB;
+          _options.onTabChange?.(tab);
+        });
+        const resetCustomTab = vi.fn(() => {
+          tabs.value = [EXECUTION_TAB];
+          selectedTab.value = EXECUTION_TAB;
+          isCollapse.value = true;
+        });
 
-      return { tabs, selectedTab, isCollapse, addCustomTab, removeCustomTab, selectCustomTab, resetCustomTab };
-    }),
+        provide(CUSTOM_TAB_TOKEN, {
+          tabs,
+          displayTabs,
+          selectedTab,
+          addCustomTab,
+          removeCustomTab,
+          selectCustomTab,
+          resetCustomTab,
+        });
+
+        return {
+          tabs,
+          displayTabs,
+          selectedTab,
+          isCollapse,
+          addCustomTab,
+          removeCustomTab,
+          selectCustomTab,
+          resetCustomTab,
+        };
+      },
+    ),
     useCustomTabConsumer: vi.fn(() => undefined),
   };
 });
@@ -330,14 +395,46 @@ vi.mock('../chat-input/chat-input.vue', () => ({
       supportUpload: Boolean,
       cite: String,
       shortcutId: String,
+      sendDisabledTip: String,
       onSendMessage: Function,
       onStopSending: Function,
       onUpload: Function,
       tippyOptions: Object,
     },
     emits: ['update:modelValue', 'update:cite', 'selectShortcut', 'deleteShortcut'],
+    setup(_, { slots }) {
+      return () => h('div', { class: 'mock-chat-input' }, [slots.top?.(), slots.interrupt?.()]);
+    },
+  }),
+}));
+
+vi.mock('../chat-input/input-info-alert.vue', () => ({
+  default: defineComponent({
+    name: 'InputInfoAlert',
+    props: {
+      content: String,
+    },
+    setup(props) {
+      return () => h('div', { class: 'mock-input-info-alert' }, props.content);
+    },
+  }),
+}));
+
+vi.mock('../chat-message/interrupt-message/user-question', () => ({
+  buildSkipResumePayload: (interrupt?: UserQuestionInterrupt) => ({
+    interruptId: interrupt?.id ?? '',
+    reason: InterruptReason.UserQuestion,
+    status: 'cancelled',
+    payload: { answers: [] },
+  }),
+  UserQuestionCard: defineComponent({
+    name: 'UserQuestionCard',
+    props: {
+      interrupt: Object,
+      onResume: Function,
+    },
     setup() {
-      return () => h('div', { class: 'mock-chat-input' });
+      return () => h('div', { class: 'mock-user-question-card' });
     },
   }),
 }));
@@ -361,8 +458,19 @@ vi.mock('../chat-message/message-container/message-container.vue', () => ({
       renderMode: String,
     },
     emits: ['stopStreaming', 'update:selectedUserMessages'],
-    setup(props) {
-      return () => h('div', { class: 'mock-message-container', 'data-render-mode': props.renderMode });
+    setup(props, { slots }) {
+      return () =>
+        h(
+          'div',
+          { class: 'mock-message-container', 'data-render-mode': props.renderMode },
+          (
+            props.messageGroups as Array<{
+              messages: Array<{ id?: string }>;
+              type: string;
+              uid: string;
+            }>
+          )?.map(group => slots.group?.({ group }) ?? h('div', { class: 'default-group-fallback' })),
+        );
     },
   }),
 }));
@@ -417,6 +525,67 @@ const createAssistantMessage = (id: string, content: string): AssistantMessage =
   role: MessageRole.Assistant,
   status: MessageStatus.Complete,
 });
+
+const createApprovalInterruptMessage = (id: string, status: APPROVAL_STATUS): Message =>
+  ({
+    id,
+    messageId: id,
+    role: MessageRole.Interrupt,
+    status: MessageStatus.Complete,
+    content: {
+      outcome: {
+        type: 'interrupt',
+        interrupts: [
+          {
+            id: `${id}-interrupt`,
+            reason: InterruptReason.AIDevToolApproval,
+            toolCallId: `${id}-tool`,
+            metadata: {
+              ticket: {
+                approvers: ['张三'],
+                sn: `REV-${id}`,
+                status,
+                submit_time: '2026-04-24 14:30:15',
+                title: '算法方案评审单',
+                url: 'https://example.com/ticket',
+              },
+            },
+          },
+        ],
+      },
+    },
+  }) as Message;
+
+const createUserQuestionInterruptMessage = (id: string): Message =>
+  ({
+    id,
+    messageId: id,
+    role: MessageRole.Interrupt,
+    status: MessageStatus.Pending,
+    content: {
+      outcome: {
+        type: 'interrupt',
+        interrupts: [
+          {
+            id: `${id}-interrupt`,
+            reason: InterruptReason.UserQuestion,
+            toolCallId: `${id}-tool`,
+            message: '请回答问题',
+            metadata: {
+              questions: [
+                {
+                  header: '请回答问题',
+                  multiSelect: false,
+                  question: '请选择语言',
+                  options: [{ label: 'A', description: 'Java' }],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  }) as Message;
 
 describe('ChatContainer', () => {
   let wrapper: VueWrapper;
@@ -571,6 +740,29 @@ describe('ChatContainer', () => {
       expect(wrapper.find('.mock-shortcut-render').exists()).toBe(true);
       expect(wrapper.find('.mock-shortcut-render.is-welcome-overlay').exists()).toBe(false);
     });
+
+    it('应该支持 group 插槽自定义消息组渲染', () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      mockMessageGroupsRef.value = [
+        { messages: [{ id: '1' }], type: MessageRole.User, uid: 'group-user-1' },
+        { messages: [{ id: '2' }], type: MessageRole.Assistant, uid: 'group-assistant-2' },
+      ];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages },
+        slots: {
+          group: ({ group }: { group: { type: string; uid: string } }) =>
+            h('div', { class: 'custom-group', 'data-uid': group.uid, 'data-type': group.type }, 'Custom Group'),
+        },
+      });
+
+      const customGroups = wrapper.findAll('.custom-group');
+      expect(customGroups.length).toBe(2);
+      expect(customGroups[0].attributes('data-uid')).toBe('group-user-1');
+      expect(customGroups[0].attributes('data-type')).toBe(MessageRole.User);
+      expect(customGroups[1].attributes('data-uid')).toBe('group-assistant-2');
+      expect(customGroups[1].attributes('data-type')).toBe(MessageRole.Assistant);
+    });
   });
 
   describe('ChatInput 测试', () => {
@@ -621,6 +813,70 @@ describe('ChatContainer', () => {
 
       const ci = wrapper.findComponent({ name: 'ChatInput' });
       expect(ci.props('skills')).toEqual(skills);
+    });
+
+    it('存在待审批第三方审批单时应通过 slot 展示提示，并将阻断文案传给 ChatInput', () => {
+      const messages = [
+        createApprovalInterruptMessage('pending-1', APPROVAL_STATUS.PENDING),
+        createApprovalInterruptMessage('draft-1', APPROVAL_STATUS.DRAFT),
+        createApprovalInterruptMessage('revoked-1', APPROVAL_STATUS.REVOKED),
+      ];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages },
+      });
+
+      const ci = wrapper.findComponent({ name: 'ChatInput' });
+      expect(ci.props('sendDisabledTip')).toBe('当前会话有 2 个待审批单，如需继续，请先取消审批');
+      expect(wrapper.find('.mock-input-info-alert').text()).toBe('当前会话有 2 个待审批单，如需继续，请先取消审批');
+    });
+
+    it('存在 UserQuestion 时，发送消息应附带 skip resume 选项且不清空输入', async () => {
+      const messages = [createUserQuestionInterruptMessage('user-question-1')];
+      const onSendMessage = vi.fn();
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, modelValue: '自由文本', onSendMessage },
+      });
+
+      const ci = wrapper.findComponent({ name: 'ChatInput' });
+      const send = ci.props('onSendMessage') as (
+        content: string,
+        docSchema: Record<string, unknown>,
+        options?: { interrupt?: UserQuestionInterrupt; payload?: unknown },
+      ) => Promise<void>;
+      const docSchema = {};
+      await send('自由文本', docSchema);
+
+      expect(onSendMessage).toHaveBeenCalledWith('自由文本', docSchema, {
+        payload: expect.objectContaining({
+          interruptId: 'user-question-1-interrupt',
+          reason: InterruptReason.UserQuestion,
+          status: 'cancelled',
+          payload: { answers: [] },
+        }),
+        interrupt: expect.objectContaining({ id: 'user-question-1-interrupt' }),
+      });
+      expect(wrapper.emitted('update:modelValue')).toBeUndefined();
+    });
+
+    it('无 UserQuestion 时，发送消息不应附带第三参数 options', async () => {
+      const onSendMessage = vi.fn();
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, modelValue: '普通消息', onSendMessage },
+      });
+
+      const ci = wrapper.findComponent({ name: 'ChatInput' });
+      const send = ci.props('onSendMessage') as (
+        content: string,
+        docSchema: Record<string, unknown>,
+        options?: unknown,
+      ) => Promise<void>;
+      const docSchema = {};
+      await send('普通消息', docSchema);
+
+      expect(onSendMessage).toHaveBeenCalledWith('普通消息', docSchema, undefined);
     });
   });
 
@@ -723,6 +979,53 @@ describe('ChatContainer', () => {
       });
 
       expect(getMountProps(wrapper).placement).toBe('right');
+    });
+  });
+
+  describe('size 字号主题测试', () => {
+    it('传入 size 为 normal 时根元素 data-ai-size 应为 normal', () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, size: 'normal' },
+      });
+
+      expect(wrapper.find('.ai-chat-container').attributes('data-ai-size')).toBe('normal');
+    });
+
+    it('未传 size 时根元素 data-ai-size 默认应为 small', () => {
+      wrapper = mount(ChatContainer, {
+        props: defaultProps,
+      });
+
+      expect(wrapper.find('.ai-chat-container').attributes('data-ai-size')).toBe('small');
+    });
+
+    it('挂载时应将 size 同步到 document.body，供浮层继承字号主题', () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, size: 'normal' },
+      });
+
+      expect(document.body.dataset.aiSize).toBe('normal');
+    });
+
+    it('size 变更时应更新 document.body.dataset.aiSize', async () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, size: 'small' },
+      });
+      expect(document.body.dataset.aiSize).toBe('small');
+
+      await wrapper.setProps({ size: 'normal' });
+      expect(document.body.dataset.aiSize).toBe('normal');
+    });
+
+    it('卸载时应清理 document.body 上的字号主题标记', () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, size: 'normal' },
+      });
+      expect(document.body.dataset.aiSize).toBe('normal');
+
+      wrapper.unmount();
+      wrapper = undefined as unknown as VueWrapper;
+      expect(document.body.dataset.aiSize).toBeUndefined();
     });
   });
 

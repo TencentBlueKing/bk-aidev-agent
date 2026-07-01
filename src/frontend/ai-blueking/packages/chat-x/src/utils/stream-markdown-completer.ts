@@ -1095,9 +1095,19 @@ function checkSingleMarker(line: string, marker: string): string {
   for (let i = 0; i < lineWithoutDouble.length; i++) {
     if (lineWithoutDouble[i] === marker) {
       // 检查是否被转义
-      if (i === 0 || lineWithoutDouble[i - 1] !== '\\') {
-        count++;
+      if (i > 0 && lineWithoutDouble[i - 1] === '\\') {
+        continue;
       }
+
+      // 下划线不支持词内强调（CommonMark intraword emphasis）：
+      // 当 `_` 两侧都是单词字符（如 "你好_AA"、"foo_bar"）时，
+      // markdown-it 不会将其识别为强调定界符，因此补全闭合符号会导致多出一个 `_`，
+      // 这里直接跳过，不计入待补全的计数。
+      if (marker === '_' && isWordChar(lineWithoutDouble[i - 1]) && isWordChar(lineWithoutDouble[i + 1])) {
+        continue;
+      }
+
+      count++;
     }
   }
 
@@ -1282,6 +1292,15 @@ function isIncompleteLatexInput(content: string, mathStartPos: number): boolean 
   }
 
   return false;
+}
+
+/**
+ * 判断字符是否为「单词字符」（字母 / 数字，含 CJK 等任意语言文字）。
+ * 用于下划线强调的词内（intraword）判定。
+ */
+function isWordChar(char: string | undefined): boolean {
+  if (!char) return false;
+  return /[\p{L}\p{N}]/u.test(char);
 }
 
 function parseLatexCommand(content: string, startIdx: number): null | { cmd: string; endIdx: number } {

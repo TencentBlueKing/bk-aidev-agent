@@ -21,8 +21,8 @@ const SSR_STUB_PACKAGES = ['bkui-vue', 'mermaid', 'tippy.js', 'vue-tippy'];
  * 同步访问 `document.documentElement`、mermaid 经 d3-selection 访问 document），
  * 在 Node SSR 环境中会立即抛 ReferenceError 阻塞 vitepress build。
  *
- * 浏览器水合阶段配合 markdown 输出整体 <ClientOnly> 包裹，
- * 真实组件由浏览器加载真实模块渲染，最终用户体验不受影响。
+ * 只有包含真实 demo/SFC 的 Markdown 页面会延迟到 ClientOnly 渲染；
+ * 纯文档页面保持 SSR 输出，避免静态 HTML 首屏正文为空。
  */
 const createSsrStubPlugin = () => {
   let isSsr = false;
@@ -40,6 +40,14 @@ const createSsrStubPlugin = () => {
   };
 };
 const ssrStubPlugin = createSsrStubPlugin();
+const FENCED_CODE_BLOCK_RE = /(^|\n)(`{3,}|~{3,})[^\n]*\n[\s\S]*?\n\2(?=\n|$)/g;
+const CLIENT_ONLY_MARKERS = [/^<script\s+setup\b/m, /^<template\b/m, /<div\s+class=["']demo["']/];
+
+const stripFencedCodeBlocks = (src: string) => src.replace(FENCED_CODE_BLOCK_RE, '\n');
+const shouldRenderMarkdownInClientOnly = (src: string) => {
+  const markdownBody = stripFencedCodeBlocks(src);
+  return CLIENT_ONLY_MARKERS.some(marker => marker.test(markdownBody));
+};
 
 export default defineConfig({
   title: '蓝鲸 AI 对话组件库',
@@ -67,12 +75,28 @@ export default defineConfig({
         link: '/introduction',
         activeMatch: '/introduction|/getting-started|/architecture|/design-philosophy|/recipes',
       },
-      { text: '组件', link: '/components/', activeMatch: '/components/' },
-      { text: 'AI 专题', link: '/ai/mcp', activeMatch: '/ai/' },
+      { text: '搭建对话', link: '/components/setup/chat-container', activeMatch: '/components/setup/' },
+      { text: '消息系统', link: '/components/message/message-render', activeMatch: '/components/message/' },
       {
-        text: 'API 参考',
-        activeMatch: '/composables/|/directives/|/plugins/|/types/|/utils/|/edix/|/i18n/|/icons/|/theme/',
+        text: '内容渲染',
+        link: '/components/rendering/content-render',
+        activeMatch: '/components/rendering/|/components/medias/',
+      },
+      {
+        text: '输入交互',
+        link: '/components/input/chat-input',
+        activeMatch: '/components/input/|/components/feedback/',
+      },
+      { text: 'Agent 能力', link: '/components/agent/toolcall-render', activeMatch: '/components/agent/|/ai/' },
+      {
+        text: '扩展开发',
+        activeMatch:
+          '/composables/|/directives/|/plugins/|/types/|/utils/|/edix/|/i18n/|/icons/|/theme/|/components/helper/',
         items: [
+          { text: '组件总览', link: '/components/' },
+          { text: '源码审计清单', link: '/components/inventory' },
+          { text: 'MCP 服务', link: '/ai/mcp' },
+          { text: '自定义消息类型', link: '/ai/custom-message' },
           { text: 'Composables 组合式函数', link: '/composables/' },
           { text: 'Directives 指令', link: '/directives/' },
           { text: 'Plugins 插件', link: '/plugins/' },
@@ -148,15 +172,11 @@ export default defineConfig({
   },
   markdown: {
     theme: 'github-dark',
-    // 文档站内嵌的 chat-x demo 间接依赖 bkui-vue（provideGlobalConfig 同步访问 document）
-    // 与 mermaid（d3-selection 需要 DOM），它们均无法在 Node SSR 环境运行。
-    // 这里把每个页面的 markdown 主体整体包到 <ClientOnly> 中，
-    // SSR 阶段输出占位，真正渲染留到浏览器水合后执行，避免构建期 document 报错。
     config(md) {
       const defaultRender = md.render.bind(md);
       md.render = (src, env) => {
         const html = defaultRender(src, env);
-        return `<ClientOnly>${html}</ClientOnly>`;
+        return shouldRenderMarkdownInClientOnly(src) ? `<ClientOnly>${html}</ClientOnly>` : html;
       };
     },
   },
@@ -191,6 +211,7 @@ function sidebarAPI() {
         { text: 'useAnimationText 文本动画', link: 'composables/use-animation-text' },
         { text: 'useMessageGroup 消息分组', link: 'composables/use-message-group' },
         { text: 'useCustomTab 自定义 Tab', link: 'composables/use-custom-tab' },
+        { text: 'useFlowNodeActions 节点行尾操作', link: 'composables/use-flow-node-actions' },
         { text: 'useFullScreen 全屏控制', link: 'composables/use-full-screen' },
         { text: 'useCommandSelection 命令选择', link: 'composables/use-command-selection' },
         { text: 'useMenuKeydown 菜单键盘', link: 'composables/use-menu-keydown' },
@@ -222,8 +243,10 @@ function sidebarAPI() {
       collapsed: false,
       items: [
         { text: '概览', link: 'types/' },
-        { text: '消息类型 Messages', link: 'types/messages' },
         { text: '常量枚举 Constants', link: 'types/constants' },
+        { text: '中断类型 Interrupt', link: 'types/interrupt' },
+        { text: '消息类型 Messages', link: 'types/messages' },
+        { text: '用户问题 Schema', link: 'types/schema' },
       ],
     },
     {
@@ -256,85 +279,124 @@ function sidebarComponents() {
   return [
     {
       text: '概览',
-      items: [{ text: '组件总览', link: '' }],
-    },
-    {
-      text: '消息展示',
-      collapsed: false,
       items: [
-        { text: 'MessageContainer 消息容器', link: 'molecular/message-container' },
-        { text: 'MessageRender 消息渲染器', link: 'molecular/message-render' },
-        { text: 'AssistantMessage AI 助手消息', link: 'molecular/assistant-message' },
-        { text: 'UserMessage 用户消息', link: 'molecular/user-message' },
-        { text: 'ReasoningMessage 推理消息', link: 'molecular/reasoning-message' },
-        { text: 'ToolMessage 工具消息', link: 'molecular/tool-message' },
-        { text: 'ActivityMessage 活动消息', link: 'molecular/activity-message' },
-        { text: 'InfoMessage 信息消息', link: 'molecular/info-message' },
-        { text: 'LoadingMessage 加载消息', link: 'molecular/loading-message' },
+        { text: '组件总览', link: '' },
+        { text: '源码审计清单', link: 'inventory' },
       ],
     },
     {
-      text: '输入交互',
+      text: '搭建对话',
       collapsed: false,
       items: [
-        { text: 'ChatInput 聊天输入框', link: 'molecular/chat-input' },
-        { text: 'AiSelection AI 选择弹窗', link: 'molecular/ai-selection' },
-        { text: 'ShortcutRender 快捷指令渲染器', link: 'molecular/shortcut-render' },
-        { text: 'ShortcutBtn 快捷指令按钮', link: 'atomic/shortcut-btn' },
-        { text: 'ShortcutBtns 快捷指令按钮组', link: 'atomic/shortcut-btns' },
-        { text: 'ChatContainer 聊天容器', link: 'molecular/chat-container' },
+        { text: 'ChatContainer 完整容器', link: 'setup/chat-container' },
+        { text: 'MessageContainer 消息列表', link: 'setup/message-container' },
+      ],
+    },
+    {
+      text: '消息系统',
+      collapsed: false,
+      items: [
+        { text: 'MessageRender 消息渲染器', link: 'message/message-render' },
+        { text: 'AssistantMessage AI 助手消息', link: 'message/assistant-message' },
+        { text: 'UserMessage 用户消息', link: 'message/user-message' },
+        { text: 'ReasoningMessage 推理消息', link: 'message/reasoning-message' },
+        { text: 'ToolMessage 工具消息', link: 'message/tool-message' },
+        { text: 'ActivityMessage 活动消息', link: 'message/activity-message' },
+        { text: 'InfoMessage 信息消息', link: 'message/info-message' },
+        { text: 'LoadingMessage 加载消息', link: 'message/loading-message' },
       ],
     },
     {
       text: '内容渲染',
       collapsed: false,
       items: [
-        { text: 'ContentRender 内容渲染器', link: 'molecular/content-render' },
-        { text: 'MarkdownContent Markdown', link: 'atomic/markdown-content' },
-        { text: 'CodeContent 代码块', link: 'atomic/code-content' },
-        { text: 'LatexContent LaTeX 公式', link: 'atomic/latex-content' },
-        { text: 'MermaidContent Mermaid 图表', link: 'atomic/mermaid-content' },
-        { text: 'AnimationText 动画文本', link: 'atomic/animation-text' },
+        { text: 'ContentRender 内容渲染器', link: 'rendering/content-render' },
+        { text: 'MarkdownContent Markdown', link: 'rendering/markdown-content' },
+        { text: 'CodeContent 代码块', link: 'rendering/code-content' },
+        { text: 'LatexContent LaTeX 公式', link: 'rendering/latex-content' },
+        { text: 'MermaidContent Mermaid 图表', link: 'rendering/mermaid-content' },
+        { text: 'AnimationText 动画文本', link: 'rendering/animation-text' },
+        { text: 'TextContent 文本内容', link: 'rendering/text-content' },
+        { text: 'CiteContent 引用内容', link: 'rendering/cite-content' },
+        { text: 'ReferenceContent 引用来源', link: 'rendering/reference-content' },
+        { text: 'KeyValueContent 键值内容', link: 'rendering/key-value-content' },
+        { text: 'DescPanel 描述面板', link: 'rendering/desc-panel' },
+        { text: 'CommonErrorContent 错误内容', link: 'rendering/common-error-content' },
       ],
     },
     {
-      text: '文件与图片',
+      text: '媒体文件',
       collapsed: false,
       items: [
-        { text: 'AiImage 图片展示', link: 'atomic/ai-image' },
-        { text: 'ImagePreview 图片预览', link: 'molecular/image-preview' },
-        { text: 'ImagePreviewGroup 图片预览组', link: 'molecular/image-preview-group' },
-        { text: 'FileContent 文件内容', link: 'molecular/file-content' },
-        { text: 'ImageContent 图片内容', link: 'atomic/image-content' },
-        { text: 'FileUploadBtn 文件上传按钮', link: 'atomic/file-upload-btn' },
+        { text: 'AiImage 图片展示', link: 'medias/ai-image' },
+        { text: 'ImagePreview 图片预览', link: 'medias/image-preview' },
+        { text: 'ImagePreviewGroup 图片预览组', link: 'medias/image-preview-group' },
+        { text: 'PreviewToolbar 预览工具栏', link: 'medias/preview-toolbar' },
+        { text: 'FileContent 文件内容', link: 'medias/file-content' },
+        { text: 'ImageContent 图片内容', link: 'medias/image-content' },
+      ],
+    },
+    {
+      text: '输入交互',
+      collapsed: false,
+      items: [
+        { text: 'ChatInput 聊天输入框', link: 'input/chat-input' },
+        { text: 'AiSlashInput 富文本命令输入', link: 'input/ai-slash-input' },
+        { text: 'AiSlashEditor 富文本编辑器', link: 'input/ai-slash-editor' },
+        { text: 'AiSlashMenu 资源菜单', link: 'input/ai-slash-menu' },
+        { text: 'AiPromptList Prompt 列表', link: 'input/ai-prompt-list' },
+        { text: 'InputAttachment 输入附件区', link: 'input/input-attachment' },
+        { text: 'InputInfoAlert 输入提示条', link: 'input/input-info-alert' },
+        { text: 'FileUploadBtn 文件上传按钮', link: 'input/file-upload-btn' },
+        { text: 'ShortcutRender 快捷指令表单', link: 'input/shortcut-render' },
+        { text: 'ShortcutBtn 快捷指令按钮', link: 'input/shortcut-btn' },
+        { text: 'ShortcutBtns 快捷指令按钮组', link: 'input/shortcut-btns' },
+        { text: 'AiSelection 划词选择', link: 'input/ai-selection' },
+        { text: 'SelectionFooter 多选操作栏', link: 'input/selection-footer' },
+      ],
+    },
+    {
+      text: 'Agent 能力',
+      collapsed: false,
+      items: [
+        { text: 'ToolcallRender 工具调用渲染器', link: 'agent/toolcall-render' },
+        { text: 'ToolApprovalCard 工具审批', link: 'agent/tool-approval-card' },
+        { text: 'InterruptMessage 中断消息', link: 'agent/interrupt-message' },
+        { text: 'UserQuestionCard 用户问题', link: 'agent/user-question-card' },
+        { text: 'UserQuestionChoice 选择题', link: 'agent/user-question-choice' },
+        { text: 'UserQuestionAnsweredCard 回答回显', link: 'agent/user-question-answered-card' },
+        { text: 'UserQuestionOption 问题选项', link: 'agent/user-question-option' },
+        { text: 'ExecutionSummary 执行摘要', link: 'agent/execution-summary' },
+        { text: 'FlowAgentContent 执行内容', link: 'agent/flow-agent-content' },
+        { text: 'FlowAgentNodeDetail 节点详情', link: 'agent/flow-agent-node-detail' },
+        { text: 'KnowledgeRagContent 知识召回', link: 'agent/knowledge-rag-content' },
+        { text: 'ReferenceDocContent 引用文档活动', link: 'agent/reference-doc-content' },
+        { text: 'DetailSection 详情分段', link: 'agent/detail-section' },
+        { text: 'SimpleTable 简易表格', link: 'agent/simple-table' },
       ],
     },
     {
       text: '工具与反馈',
       collapsed: false,
       items: [
-        { text: 'MessageTools 消息工具栏', link: 'molecular/message-tools' },
-        { text: 'ToolBtn 工具按钮', link: 'atomic/tool-btn' },
-        { text: 'UserFeedback 用户反馈', link: 'molecular/user-feedback' },
-        { text: 'ToolcallRender 工具调用渲染器', link: 'molecular/toolcall-render' },
-        { text: 'DeleteTool 删除确认按钮', link: 'molecular/delete-tool' },
+        { text: 'MessageTools 消息工具栏', link: 'feedback/message-tools' },
+        { text: 'ToolBtn 工具按钮', link: 'feedback/tool-btn' },
+        { text: 'DeleteTool 删除确认', link: 'feedback/delete-tool' },
+        { text: 'UserFeedback 用户反馈', link: 'feedback/user-feedback' },
+        { text: 'ScrollBtn 滚动按钮', link: 'feedback/scroll-btn' },
       ],
     },
     {
-      text: '辅助组件',
+      text: '辅助能力',
       collapsed: false,
       items: [
-        { text: 'ScrollBtn 滚动按钮', link: 'atomic/scroll-btn' },
-        { text: 'DescPanel 描述面板', link: 'atomic/desc-panel' },
-        { text: 'HighlightKeyword 关键词高亮', link: 'atomic/highlight-keyword' },
-        { text: 'CiteContent 引用内容', link: 'atomic/cite-content' },
-        { text: 'TextContent 文本内容', link: 'atomic/text-content' },
-        { text: 'KeyValueContent 键值对内容', link: 'atomic/key-value-content' },
-        { text: 'ReferenceContent 引用文档', link: 'atomic/reference-content' },
-        { text: 'CommonErrorContent 错误内容', link: 'atomic/common-error-content' },
-        { text: 'AiLoading 加载动画', link: 'atomic/ai-loading' },
-        { text: 'ExecutionSummary 执行摘要', link: 'molecular/execution-summary' },
-        { text: 'SelectionFooter 选择操作栏', link: 'atomic/selection-footer' },
+        { text: 'ActivityLayout 活动布局', link: 'helper/activity-layout' },
+        { text: 'AiLoading 三点加载', link: 'helper/ai-loading' },
+        { text: 'MessageLoading 品牌加载', link: 'helper/message-loading' },
+        { text: 'HighlightKeyword 关键词高亮', link: 'helper/highlight-keyword' },
+        { text: 'VNodeRenderer VNode 渲染器', link: 'helper/vnode-renderer' },
+        { text: 'QuestionsContainer 空占位', link: 'helper/questions-container' },
+        { text: 'SelectionQuestion 空占位', link: 'helper/selection-question' },
       ],
     },
   ];

@@ -370,6 +370,14 @@ export const transferMessageApi2Message = (data: IMessageApi): IMessage => {
       };
       return result;
     }
+
+    case MessageRole.Interrupt: {
+      const result = {
+        ...baseMessage,
+        ...data,
+      };
+      return result;
+    }
   }
 };
 
@@ -657,6 +665,14 @@ export const transferMessage2MessageApi = (data: IMessage): IMessageApi => {
           : userContent,
         property: userData.property,
         role: userData.role,
+      };
+      return result;
+    }
+
+    case MessageRole.Interrupt: {
+      const result = {
+        ...baseMessage,
+        ...data,
       };
       return result;
     }

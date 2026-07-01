@@ -42,7 +42,8 @@ export class ChatBusinessManager {
    */
   private autoRenameSessionIfNeeded(sessionCode: string): void {
     // 没有 sessionModule 则跳过
-    if (!this.sessionModule) {
+    const sessionModule = this.sessionModule;
+    if (!sessionModule) {
       return;
     }
 
@@ -53,7 +54,12 @@ export class ChatBusinessManager {
     }
 
     // 异步执行重命名，不阻塞后续流程
-    this.sessionModule.renameSession(sessionCode).catch((error: unknown) => {
+    const renameTask = sessionModule.renameSession(sessionCode);
+    if (!renameTask) {
+      return;
+    }
+
+    renameTask.catch((error: unknown) => {
       console.error('[ChatBusinessManager] Auto rename session failed:', error);
     });
   }
@@ -84,25 +90,25 @@ export class ChatBusinessManager {
   /**
    * 是否正在生成
    */
-  get isGenerating() {
+  get isGenerating(): Ref<boolean> {
     return this._isGenerating;
   }
 
   /**
    * 停止生成接口是否正在调用中
    */
-  get isStopLoading() {
+  get isStopLoading(): Ref<boolean> {
     return this._isStopLoading;
   }
 
-  get isMessagesLoading() {
+  get isMessagesLoading(): Ref<boolean> {
     return this.messageModule.isListLoading;
   }
 
   /**
    * 暴露消息列表
    */
-  get messages() {
+  get messages(): Ref<IMessage[]> {
     return this.messageModule.list;
   }
 
@@ -205,7 +211,7 @@ export class ChatBusinessManager {
       const messages = this.messages.value;
 
       // 使用工具函数查找 AI 消息组之前最近的用户消息
-      const lastUserMessage = findLastUserMessageBefore(messages, aiMessages[0]);
+      const lastUserMessage = findLastUserMessageBefore<IMessage>(messages, aiMessages[0]);
 
       if (!lastUserMessage) {
         throw new Error('No user message found before AI messages');

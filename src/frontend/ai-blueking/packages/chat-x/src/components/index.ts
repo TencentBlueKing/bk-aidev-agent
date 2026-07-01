@@ -33,8 +33,8 @@ import ShortcutRender from './ai-shortcut/shortcut-render/shortcut-render.vue';
 import ChatContainer from './chat-container/chat-container.vue';
 import commonErrorContent from './chat-content/common-error-content/common-error-content.vue';
 import ContentRender from './chat-content/content-render/content-render.vue';
-import VNodeRenderer from './chat-content/vnode-renderer';
 import ChatInput from './chat-input/chat-input.vue';
+export * from './chat-content';
 import MessageContainer from './chat-message/message-container/message-container.vue';
 import MessageRender from './chat-message/message-render/message-render.vue';
 import ExecutionSummary from './execution-summary/execution-summary.vue';
@@ -47,6 +47,14 @@ import MessageTools from './message-tools/message-tools.vue';
 import MessageUserFeedback from './message-tools/user-feedback/user-feedback.vue';
 import SelectionFooter from './selection-footer/selection-footer.vue';
 import ToolCallRender from './tool-call/toolcall-render/toolcall-render.vue';
+// import {
+//   InterruptMessageRender,
+//   UserQuestionAnsweredCard,
+//   UserQuestionCard,
+//   UserQuestionChoice,
+//   UserQuestionOption,
+// } from './chat-message/interrupt-message';
+export * from './chat-message/interrupt-message';
 export * from './markdown-token';
 export {
   AiImage,
@@ -71,5 +79,4 @@ export {
   ShortcutBtns,
   ShortcutRender,
   ToolCallRender,
-  VNodeRenderer,
 };

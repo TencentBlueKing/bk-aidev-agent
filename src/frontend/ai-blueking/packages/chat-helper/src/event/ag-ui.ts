@@ -70,6 +70,8 @@ import {
   CustomEventName,
   EventType,
   FlowTaskState,
+  IApprovalResultCustomValue,
+  RunFinishedOutcomeType,
 } from './type';
 
 import type { ISSEProtocol } from '../http/fetch';
@@ -141,6 +143,12 @@ export class AGUIProtocol implements ISSEProtocol {
       case CustomEventName.TempMessage:
         this.handleTempMessageCustomEvent(event);
         break;
+      case CustomEventName.ApprovalResult:
+        this.handleApprovalResultCustomEvent(event);
+        break;
+      case CustomEventName.FlowAgentUpdate:
+        this.handleFlowAgentUpdateCustomEvent(event);
+        break;
       default:
         break;
     }
@@ -190,6 +198,22 @@ export class AGUIProtocol implements ISSEProtocol {
         task_state: FlowTaskState.Created,
       })),
       status: MessageStatus.Streaming,
+    });
+  }
+
+  /**
+   * 自定义事件 处理流程编排任务更新
+   */
+  handleFlowAgentUpdateCustomEvent(event: ICustomEvent) {
+    const value = event.value as IFlowAgentResultCustomValue;
+    this.messageModule.list.value.forEach(item => {
+      if (item.role === MessageRole.Activity && item.activityType === ActivityType.FlowAgent) {
+        const isSameTask = (item.content as IFlowAgentResultCustomValue)[0].task_id === value[0].task_id;
+        // 通过第一个 task_id 判断是否是同一个任务，是的话直接更新消息内容
+        if (isSameTask) {
+          item.content = value;
+        }
+      }
     });
   }
 
@@ -292,10 +316,22 @@ export class AGUIProtocol implements ISSEProtocol {
   /**
    * 处理运行完成事件
    */
-  handleRunFinishedEvent(_event: IRunFinishedEvent) {
+  handleRunFinishedEvent(event: IRunFinishedEvent) {
     const message = this.messageModule.getCurrentLoadingMessage();
     if (message) {
       message.status = MessageStatus.Complete;
+    }
+    // 如果是中断消息，则创建一个中断消息
+    if (event.outcome?.type === RunFinishedOutcomeType.Interrupt) {
+      this.messageModule.plusMessage({
+        role: MessageRole.Interrupt,
+        content: event,
+        status: MessageStatus.Pending,
+      });
+    }
+    // 二次返回，直接更新消息内容
+    if (event.outcome?.type === RunFinishedOutcomeType.Success && message?.role === MessageRole.Interrupt) {
+      message.content = event;
     }
   }
 
@@ -345,6 +381,18 @@ export class AGUIProtocol implements ISSEProtocol {
       content: value.message,
       status: value.status,
     });
+  }
+
+  /**
+   * 自定义事件 处理审批结果
+   */
+  handleApprovalResultCustomEvent(event: ICustomEvent) {
+    const value = event.value as IApprovalResultCustomValue;
+    const message = this.messageModule.getCurrentLoadingMessage();
+    if (message) {
+      message.content = value;
+      message.status = MessageStatus.Complete;
+    }
   }
 
   /**
@@ -482,14 +530,23 @@ export class AGUIProtocol implements ISSEProtocol {
    * 处理工具调用结果事件
    */
   handleToolCallResultEvent(event: IToolCallResultEvent) {
-    this.messageModule.plusMessage({
-      role: MessageRole.Tool,
-      content: event.content,
-      duration: event.duration,
-      status: event.isError ? MessageStatus.Error : MessageStatus.Complete,
-      toolCallId: event.toolCallId,
-      messageId: event.messageId,
-    });
+    const message = this.messageModule.getCurrentLoadingMessage();
+    if (message?.role === MessageRole.Interrupt) {
+      // 如果是中断消息，则更新消息内容
+      message.content.result = JSON.parse(event.content);
+      message.content.outcome.type = RunFinishedOutcomeType.Success;
+      message.status = MessageStatus.Complete;
+    } else {
+      // 否则创建一个工具调用结果消息
+      this.messageModule.plusMessage({
+        role: MessageRole.Tool,
+        content: event.content,
+        duration: event.duration,
+        status: event.isError ? MessageStatus.Error : MessageStatus.Complete,
+        toolCallId: event.toolCallId,
+        messageId: event.messageId,
+      });
+    }
   }
 
   /**

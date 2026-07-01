@@ -136,6 +136,10 @@ export const useSession = (fetchClient: FetchClient) => {
     );
   };
 
+  // 轮询接口，判断是否可以继续聊天
+  const isResumeSession = (sessionCode: string, config?: IRequestConfig) =>
+    fetchClient.get<boolean>(`session/${sessionCode}/is_resume/`, undefined, config);
+
   return {
     clearSession,
     getSessions,
@@ -148,5 +152,6 @@ export const useSession = (fetchClient: FetchClient) => {
     getSessionFeedbackReasons,
     renameSession,
     uploadFile,
+    isResumeSession,
   };
 };

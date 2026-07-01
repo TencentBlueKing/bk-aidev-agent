@@ -34,8 +34,8 @@
     &-text {
       flex: 1;
       margin-left: 20px;
-      font-size: 12px;
-      line-height: 20px;
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height-compact, 20px);
       color: #4d4f56;
     }
   }

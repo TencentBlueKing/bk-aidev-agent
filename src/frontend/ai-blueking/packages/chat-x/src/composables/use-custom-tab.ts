@@ -24,7 +24,17 @@
  * IN THE SOFTWARE.
  */
 
-import { type ShallowRef, ref as deepRef, inject, nextTick, provide, shallowRef } from 'vue';
+import {
+  type ComputedRef,
+  type ShallowRef,
+  computed,
+  ref as deepRef,
+  inject,
+  nextTick,
+  provide,
+  shallowRef,
+  watch,
+} from 'vue';
 
 import { t } from '../lang/lang';
 
@@ -32,29 +42,60 @@ import type { CustomTab } from '../types';
 
 export const CUSTOM_TAB_TOKEN = Symbol('CUSTOM_TAB_TOKEN');
 export const EXECUTION_TAB_NAME = 'execution';
+/** 自定义 Tab 默认排序权重；执行情况固定为 0，业务自定义 Tab 缺省回退到此值 */
+export const DEFAULT_TAB_ORDER = 100;
 
 export function useCustomTabProvider<T extends Record<string, unknown>>(options: {
+  /** 执行情况 Tab 是否展示，缺省 true；传 getter 以保持响应式 */
+  executionTabVisible?: () => boolean | undefined;
   onTabChange?: (tab: CustomTab<T>) => void;
 }) {
   const EXECUTION_TAB: CustomTab<T> = {
+    closable: false,
     label: t('执行情况'),
     name: EXECUTION_TAB_NAME,
+    order: 0,
   };
   const tabs = shallowRef<CustomTab<T>[]>([EXECUTION_TAB]);
   const selectedTab = deepRef<CustomTab<T>>(EXECUTION_TAB);
   const isCollapse = shallowRef(true);
 
+  /** 执行情况显隐由外部配置控制，缺省可见 */
+  const isExecutionVisible = computed(() => options.executionTabVisible?.() ?? true);
+  const isTabVisible = (tab: CustomTab<T>) =>
+    tab.name === EXECUTION_TAB_NAME ? isExecutionVisible.value : tab.visible !== false;
+
+  /**
+   * Tab 栏实际展示列表：过滤掉不可见 Tab，并按 order 升序稳定排序（同 order 保持插入顺序）。
+   * 原始 tabs 仍保留全部 Tab，供程序化选中与查找。
+   */
+  const displayTabs = computed(() =>
+    tabs.value
+      .filter(isTabVisible)
+      .slice()
+      .sort((a, b) => (a.order ?? DEFAULT_TAB_ORDER) - (b.order ?? DEFAULT_TAB_ORDER)),
+  );
+
   const addCustomTab = (tab: CustomTab<T>) => {
-    if (!tabs.value.find(t => t.name === tab.name)) {
+    const index = tabs.value.findIndex(item => item.name === tab.name);
+    if (index === -1) {
       tabs.value = [...tabs.value, tab];
+    } else {
+      // 同名 Tab 合并更新，支持运行时调整 order / visible / label 等元信息
+      const next = tabs.value.slice();
+      next[index] = { ...next[index], ...tab };
+      tabs.value = next;
     }
     isCollapse.value = false;
     nextTick(() => {
-      selectCustomTab(tab);
+      selectCustomTab(tabs.value.find(item => item.name === tab.name)!);
     });
   };
   const removeCustomTab = (tabName: CustomTab<T>['name']) => {
     tabs.value = tabs.value.filter(tab => tab.name !== tabName);
+    if (displayTabs.value.length === 0) {
+      isCollapse.value = true;
+    }
   };
   const selectCustomTab = (tab: CustomTab<T>) => {
     selectedTab.value = tab ?? EXECUTION_TAB;
@@ -67,8 +108,22 @@ export function useCustomTabProvider<T extends Record<string, unknown>>(options:
     isCollapse.value = true;
   };
 
+  /**
+   * 选中 Tab 被隐藏时（如执行情况被配置隐藏），不渲染其内容，自动切到首个可见 Tab；
+   * 无可见 Tab 时保持原选中，由模板内容守卫兜底为空。
+   */
+  watch(displayTabs, list => {
+    if (isTabVisible(selectedTab.value)) {
+      return;
+    }
+    if (list.length) {
+      selectCustomTab(list[0]);
+    }
+  });
+
   provide(CUSTOM_TAB_TOKEN, {
     tabs,
+    displayTabs,
     selectedTab,
     addCustomTab,
     removeCustomTab,
@@ -78,6 +133,7 @@ export function useCustomTabProvider<T extends Record<string, unknown>>(options:
 
   return {
     tabs,
+    displayTabs,
     selectedTab,
     isCollapse,
     addCustomTab,
@@ -92,6 +148,7 @@ export const useCustomTabConsumer = <T extends Record<string, unknown>>() => {
     | undefined
     | {
         addCustomTab: (tab: CustomTab<T>) => void;
+        displayTabs: ComputedRef<CustomTab<T>[]>;
         removeCustomTab: (tabName: CustomTab<T>['name']) => void;
         selectCustomTab: (tab: CustomTab<T>) => void;
         selectedTab: ShallowRef<CustomTab<T> | null>;

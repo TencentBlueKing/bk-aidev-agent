@@ -1,6 +1,7 @@
 <template>
   <div
     class="ai-chat-container"
+    :data-ai-size="size"
     :style="{ '--resize-main-width': resizeMainWidth, borderTopColor: isCollapse ? 'transparent' : '#eaebf0' }"
   >
     <div
@@ -14,14 +15,21 @@
       class="ai-chat-container-resize-layout"
       :class="{
         'ai-is-collapse':
-          isCollapse || (!keyword?.length && executionGroups?.length < 1) || renderMode === RenderMode.Share,
+          isCollapse ||
+          (displayTabs.length > 0 && !keyword?.length && executionGroups?.length < 1) ||
+          renderMode === RenderMode.Share,
       }"
       v-bind="resizeProps"
       @resizing="handleResizing"
     >
       <template #aside>
         <div
-          v-if="!isCollapse && (executionGroups?.length || keyword?.length) && renderMode !== RenderMode.Share"
+          v-if="
+            !isCollapse &&
+            displayTabs.length > 0 &&
+            (executionGroups?.length || keyword?.length) &&
+            renderMode !== RenderMode.Share
+          "
           ref="fullScreenRef"
           class="ai-full-screen-wrapper"
         >
@@ -33,7 +41,7 @@
             @change="handleUpdateTabActive"
           >
             <TabPanel
-              v-for="tab in tabs"
+              v-for="tab in displayTabs"
               :key="tab.name"
               class="ai-chat-container-tab-panel"
               :label="
@@ -62,7 +70,7 @@
                         ),
                         [[vOverflowTips, { ...commonTippyOptions, text: tab.label ?? '' }]],
                       ),
-                      tab.name !== EXECUTION_TAB_NAME
+                      tab.closable !== false && tab.name !== EXECUTION_TAB_NAME
                         ? h(CloseIcon, {
                             class: 'ai-execution-close-icon',
                             onClick: () => {
@@ -97,7 +105,7 @@
               </div>
             </template>
           </Tab>
-          <template v-if="selectedTab?.name === EXECUTION_TAB_NAME">
+          <template v-if="selectedTab?.name === EXECUTION_TAB_NAME && executionTabVisible !== false">
             <ExecutionSummary
               v-if="!isCollapse"
               :message-groups="executionGroups"
@@ -132,7 +140,7 @@
           </template>
         </div>
         <div
-          v-if="executionGroups?.length && renderMode !== RenderMode.Share"
+          v-if="displayTabs.length > 0 && executionGroups?.length && renderMode !== RenderMode.Share"
           class="collapse-button"
           :class="{ 'is-right': placement === 'right', 'is-collapsed': isCollapse }"
           @click="handleCollapse"
@@ -154,6 +162,7 @@
             commonTippyOptions,
             handleAgentAction,
             onAgentFeedback,
+            onInterruptResume,
             onUserAction,
             onUserInputConfirm,
             onUserShortcutConfirm,
@@ -170,16 +179,23 @@
             :messages="messages"
             :on-agent-action="handleAgentAction"
             :on-agent-feedback="onAgentFeedback"
+            :on-interrupt-resume="onInterruptResume"
             :on-user-action="onUserAction"
             :on-user-input-confirm="onUserInputConfirm"
             :on-user-shortcut-confirm="onUserShortcutConfirm"
             :render-mode="renderMode"
             @stop-streaming="emits('stopStreaming')"
           >
-            <template #default="{ message, messageToolsStatus }">
+            <template #group="{ group }">
+              <slot
+                name="group"
+                v-bind="{ group }"
+              />
+            </template>
+            <template #default="{ message, messageToolsStatus, onInterruptResume: slotOnInterruptResume }">
               <slot
                 name="message"
-                v-bind="{ message, messageToolsStatus }"
+                v-bind="{ message, messageToolsStatus, onInterruptResume: slotOnInterruptResume }"
               />
             </template>
           </MessageContainer>
@@ -225,12 +241,13 @@
               v-model:cite="cite"
               :message-status="inputStatus"
               :model-value="modelValue"
-              :on-send-message="onSendMessage"
+              :on-send-message="handleSendMessage"
               :on-stop-sending="onStopSending"
               :on-upload="onUpload"
               :placeholder="placeholder"
               :prompts="prompts"
               :resources="resources"
+              :send-disabled-tip="pendingApprovalTipText"
               :shortcut-id="selectedShortcut?.id"
               :shortcuts="shortcuts"
               :skills="skills"
@@ -239,7 +256,26 @@
               @delete-shortcut="handleCloseShortcut"
               @select-shortcut="handleSelectShortcut"
               @update:model-value="handleUpdateModelValue"
-            />
+            >
+              <template #interrupt>
+                <UserQuestionCard
+                  v-if="activeUserQuestionInterrupt"
+                  :interrupt="activeUserQuestionInterrupt"
+                  :on-resume="onInterruptResume"
+                >
+                  <template #question="{ question, qIndex, answer, setAnswer, confirm }">
+                    <slot
+                      name="interruptQuestion"
+                      v-bind="{ question, qIndex, answer, setAnswer, confirm }"
+                    />
+                  </template>
+                </UserQuestionCard>
+                <InputInfoAlert
+                  v-if="pendingApprovalTipText"
+                  :content="pendingApprovalTipText"
+                />
+              </template>
+            </ChatInput>
           </template>
         </template>
       </template>
@@ -264,11 +300,11 @@
 
   import { type Message, type UserMessage, MessageStatus } from '../../ag-ui/types';
   import { LOADING_MESSAGE_ID, RenderMode } from '../../common';
-  import { useMessageGroup } from '../../composables';
+  import { type MessageGroup, useMessageGroup } from '../../composables';
   import { useCommonTippyProvider, useRenderModeProvider } from '../../composables/use-common';
   import { EXECUTION_TAB_NAME, useCustomTabProvider } from '../../composables/use-custom-tab';
   import { useFullScreen } from '../../composables/use-full-screen';
-  import { useGlobalConfig } from '../../composables/use-global-config';
+  import { type AiSizeMode, useGlobalConfig } from '../../composables/use-global-config';
   import { OverflowTips as vOverflowTips } from '../../directives';
   import { FullScreenIcon, UnFullScreenIcon } from '../../icons';
   import { CloseIcon, CollapsedIcon, ExecutionIcon, NodeTabIcon } from '../../icons';
@@ -278,6 +314,8 @@
   import ShortcutRender from '../ai-shortcut/shortcut-render/shortcut-render.vue';
   import ContentRender from '../chat-content/content-render/content-render.vue';
   import ChatInput, { type ChatInputEmits, type ChatInputProps } from '../chat-input/chat-input.vue';
+  import InputInfoAlert from '../chat-input/input-info-alert.vue';
+  import { buildSkipResumePayload, UserQuestionCard } from '../chat-message/interrupt-message/user-question';
   import MessageContainer, {
     type MessageContainerEmits,
     type MessageContainerProps,
@@ -295,10 +333,13 @@
     Shortcut,
     TagSchema,
   } from '../../types';
+  import type { UserQuestionCardSlots } from '../chat-message/interrupt-message/user-question/user-question-card.vue';
   import type { Token } from 'markdown-it/index.js';
   export type ChatContainerProps = {
     chatLoading?: boolean;
     commonTippyOptions?: AITippyProps;
+    // 执行情况 Tab 是否展示，缺省 true；为 false 时从 Tab 栏隐藏，选中态自动切到首个可见 Tab
+    executionTabVisible?: boolean;
     // 用于获取侧边栏组件的渲染
     getSideRenderComponent?: (createElement: typeof h, props?: Record<string, unknown>) => undefined | VNode;
     // 用于获取侧边栏 tab 的渲染
@@ -317,6 +358,8 @@
       max?: number;
       min?: number;
     };
+    /** 字号主题档位：small(默认 12px) / normal(14px) */
+    size?: AiSizeMode;
     welcomeTitle?: string;
   };
   const TabPanel = Tab.TabPanel;
@@ -331,14 +374,18 @@
       messageStatus: MessageContainerProps['messageStatus'];
       messageToolsStatus: MessageContainerProps['messageToolsStatus'];
       onAgentFeedback?: MessageContainerProps['onAgentFeedback'];
+      onInterruptResume?: MessageContainerProps['onInterruptResume'];
       onUserAction?: MessageContainerProps['onUserAction'];
       onUserInputConfirm?: (message: Message, content: UserMessage['content'], docSchema: TagSchema) => Promise<void>;
       onUserShortcutConfirm?: (message: Message, formModel: Record<string, unknown>) => Promise<void>;
       selectedUserMessages: Message[];
     }) => null | undefined | VNode;
+    group: (props: { group: MessageGroup }) => unknown;
+    interruptQuestion: UserQuestionCardSlots['question'];
     message: (props: {
       message: Message;
       messageToolsStatus: MessageContainerProps['messageToolsStatus'];
+      onInterruptResume?: MessageContainerProps['onInterruptResume'];
     }) => null | undefined | VNode;
     welcome: (props: {
       openingRemark: ChatContainerProps['openingRemark'];
@@ -353,6 +400,8 @@
     >(),
     {
       placement: 'left',
+      executionTabVisible: true,
+      size: 'small',
     },
   );
   const renderMode = defineModel<RenderMode>('renderMode', {
@@ -377,8 +426,20 @@
     return props.getSideRenderComponent?.(h, selectedTab.value.data?.props ?? {}) ?? selectedTab.value.data?.component;
   });
   useGlobalConfig({
+    size: computed(() => props.size ?? 'small'),
     supportUpload: computed(() => props.supportUpload ?? false),
   });
+  // 浮层（tippy / Teleport 内容）会挂载到 body，脱离 .ai-chat-container 的 data-ai-size 作用域。
+  // 将当前 size 同步到 body，使这些浮层也能继承字号主题变量；容器内内容仍由更近的容器属性控制。
+  watch(
+    () => props.size ?? 'small',
+    size => {
+      if (typeof document !== 'undefined') {
+        document.body.dataset.aiSize = size;
+      }
+    },
+    { immediate: true },
+  );
   const selectedShortcut = defineModel<null | Shortcut>('selectedShortcut', {
     required: false,
   });
@@ -399,8 +460,9 @@
 
   useCommonTippyProvider({ tippyOptions: computed(() => props.commonTippyOptions ?? {}) });
 
-  const { tabs, selectedTab, isCollapse, addCustomTab, removeCustomTab, selectCustomTab, resetCustomTab } =
+  const { displayTabs, tabs, selectedTab, isCollapse, addCustomTab, removeCustomTab, selectCustomTab, resetCustomTab } =
     useCustomTabProvider<CustomBkFlowTabData>({
+      executionTabVisible: () => props.executionTabVisible,
       onTabChange: async tab => {
         const tabProps = selectedTab.value.data?.props || {
           loading: true,
@@ -437,9 +499,12 @@
     onToggleShareAll,
     onCancelShare,
     onConfirmShare,
+    pendingApprovalTipText,
+    activeUserQuestionInterrupt,
   } = useMessageGroup({
     keyword,
     messages: computed(() => props.messages),
+    renderMode: computed(() => renderMode.value),
     selectedUserMessages,
   });
 
@@ -487,6 +552,25 @@
   };
   const handleUpdateModelValue = (value: string | TagSchema, selectedResourceList: IAiSlashMenuItem[]) => {
     emits('update:modelValue', value, selectedResourceList);
+  };
+
+  /**
+   * 发送拦截：存在激活的 UserQuestion 中断且为自由文本时，按 resume 回传而非发送新消息。
+   * @param content - 输入内容（字符串文本或文件数组）
+   * @param docSchema - 富文本结构
+   */
+  const handleSendMessage = async (content: UserMessage['content'], docSchema: TagSchema) => {
+    const activeQuestion = activeUserQuestionInterrupt.value;
+    return props.onSendMessage?.(
+      content,
+      docSchema,
+      activeQuestion
+        ? {
+            payload: buildSkipResumePayload(activeQuestion), // 跳过中断时回传空答案
+            interrupt: activeQuestion, // 跳过中断时回传中断对象
+          }
+        : undefined,
+    );
   };
 
   const handleCollapse = () => {
@@ -545,6 +629,10 @@
   };
   onUnmounted(() => {
     resetCustomTab();
+    // 卸载时清理 body 上的字号主题标记，避免残留影响其他场景
+    if (typeof document !== 'undefined') {
+      delete document.body.dataset.aiSize;
+    }
   });
 
   defineExpose({
@@ -566,7 +654,7 @@
     flex-direction: column;
     width: 100%;
     height: 100%;
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
     border: none;
     border-top: 1px solid transparent;
 
@@ -702,7 +790,7 @@
         }
 
         .screen-btn {
-          font-size: 12px;
+          font-size: var(--ai-font-size, 12px);
         }
 
         .ai-common-icon {
@@ -789,7 +877,7 @@
 
       .ai-locate-button {
         margin-left: auto;
-        font-size: 12px;
+        font-size: var(--ai-font-size, 12px);
         font-weight: normal;
       }
     }
@@ -799,8 +887,8 @@
       flex-direction: column;
       align-items: center;
       width: 100%;
-      min-height: 0;
       max-width: 1000px;
+      min-height: 0;
       padding: 16px;
       margin: 0 auto;
       text-align: center;

@@ -73,19 +73,24 @@ declare global {
 export type BkFlowMessageContent = BkFlowTask[];
 
 export type BkFlowNode = {
+  closable?: boolean; // 是否可关闭 缺省为 true
   elapsed_time: number;
   finish_time: string;
   id: string;
   loop: number;
   name: string;
   retry: number;
+  retryable?: boolean; // 是否可重试
   skip: boolean;
+  skippable?: boolean; // 是否可跳过
   start_time: string;
   state: string;
+  tab_order?: number; // 排序 越小 越在前
   type: string;
 };
 
 export type BkFlowTask = {
+  closable?: boolean; // 是否可关闭 缺省为 true
   confidence_title?: string; // 有效证据标题
   has_confidence?: boolean; // 是否有有效证据， 置信度
   is_active?: boolean; // 是否默认激活
@@ -94,6 +99,7 @@ export type BkFlowTask = {
     state_counts: Record<string, number>;
     total: number;
   };
+  tab_order?: number; // 排序 越小 越在前
   task_id: number;
   task_name: string;
   task_outputs: unknown;

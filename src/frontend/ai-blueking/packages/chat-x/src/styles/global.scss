@@ -1,5 +1,6 @@
 @use 'sass:list';
 @use 'variables.scss' as variables;
+@use 'size-theme.scss';
 @import 'tippy.js/themes/light.css';
 
 .tippy-box[data-theme~='ai-chat-box'] {

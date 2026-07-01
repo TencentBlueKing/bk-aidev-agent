@@ -4,6 +4,7 @@
     :style="{ '--chat-z-index': CHAT_Z_INDEX }"
   >
     <slot name="top" />
+    <slot name="interrupt" />
     <div
       class="chat-input"
       :style="{ maxHeight: maxHeight + 'px' }"
@@ -44,6 +45,7 @@
       />
       <InputAttachment
         :message-state="messageState"
+        :send-disabled-tip="sendDisabledTip"
         :tippy-options="tippyOptions"
         @send-message="handleSendMessage"
         @stop-sending="handleStopSending"
@@ -87,7 +89,13 @@
 
   import { Message } from 'bkui-vue';
 
-  import { type UserMessage, MessageContentType, MessageStatus } from '../../ag-ui/types';
+  import {
+    type Interrupt,
+    type InterruptResume,
+    type UserMessage,
+    MessageContentType,
+    MessageStatus,
+  } from '../../ag-ui/types';
   import { CHAT_Z_INDEX, isEn, MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../../common';
   import { type KeyboardPayload } from '../../edix';
   import { CloseIcon } from '../../icons';
@@ -127,7 +135,11 @@
     inputMaxHeight?: number;
     messageStatus?: MessageStatus;
     modelValue: string | TagSchema;
-    onSendMessage?: (message: UserMessage['content'], docSchema: TagSchema) => Promise<void>;
+    onSendMessage?: (
+      message: UserMessage['content'],
+      docSchema: TagSchema,
+      options?: { interrupt?: Interrupt; payload?: InterruptResume },
+    ) => Promise<void>;
     onStopSending?: () => Promise<void>;
     onUpload?: (files: File) => Promise<{
       download_url?: string;
@@ -135,6 +147,7 @@
     placeholder?: string;
     prompts?: string[];
     resources?: IAiSlashMenuItem[];
+    sendDisabledTip?: string;
     shortcutId?: string;
     shortcuts?: Shortcut[];
     skills?: ISkillListItem[];
@@ -189,6 +202,9 @@ Use Shift + Enter to enter a new line`
   });
   const handleSendMessage = async () => {
     try {
+      if (props.sendDisabledTip) {
+        return;
+      }
       aiSlashInputRef.value?.cleanup?.();
       let content: undefined | UserMessage['content'] = undefined;
 
@@ -225,7 +241,14 @@ Use Shift + Enter to enter a new line`
       if (messageState.value === MessageStatus.Disabled) {
         return;
       }
-      if (messageState.value === MessageStatus.Fetching) {
+      if (props.sendDisabledTip) {
+        return;
+      }
+      if (
+        messageState.value === MessageStatus.Fetching ||
+        messageState.value === MessageStatus.Streaming ||
+        messageState.value === MessageStatus.Pending
+      ) {
         return;
       }
       handleSendMessage();
@@ -377,14 +400,25 @@ Use Shift + Enter to enter a new line`
         padding: 8px 8px 0;
       }
 
+      // 已选快捷指令 tag：默认态与 bkui Tag 一致，hover 使用 shortcut 语义色
       .selected-shortcut-btn {
         height: 24px;
         padding: 0 10px;
         color: #3a84ff;
         background: #e1ecff;
+        transition: background-color 0.2s, color 0.2s;
 
         .ai-common-icon {
           color: #3a84ff;
+        }
+
+        &:hover {
+          color: #1768ef;
+          background: #cddffe;
+
+          .ai-common-icon {
+            color: #3a84ff;
+          }
         }
       }
     }

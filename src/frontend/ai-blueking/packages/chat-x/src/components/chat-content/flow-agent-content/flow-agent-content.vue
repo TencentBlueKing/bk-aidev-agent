@@ -101,8 +101,9 @@
         <span
           class="flow-agent-task-arrow"
           :class="{ 'is-expanded': isTaskExpanded(task.raw) }"
+          @click.stop="toggleTaskExpanded(task.raw)"
         >
-          <ArrowRightIcon @click.stop="toggleTaskExpanded(task.raw)" />
+          <ArrowRightIcon />
         </span>
         <span class="flow-agent-task-state-icon">
           <Loading
@@ -172,12 +173,16 @@
             class="flow-agent-node-trailing"
           >
             <span class="flow-agent-node-time">{{ node.elapsedTimeText }}</span>
-            <span
-              class="flow-agent-node-detail-btn"
-              @click.stop="openNodeDetail(task.raw, node.raw)"
-            >
-              <NodeOutputIcon />
-              {{ t('详情') }}
+            <span class="flow-agent-node-actions">
+              <span
+                v-for="action in getNodeActions(task, node)"
+                :key="action.id"
+                class="flow-agent-node-action-btn"
+                @click.stop="action.run()"
+              >
+                <component :is="action.icon" />
+                {{ action.label }}
+              </span>
             </span>
           </span>
         </div>
@@ -201,16 +206,20 @@
   import HighlightKeyword from '../../highlight-keyword/highlight-keyword';
   import ActivityLayout from '../activity-layout/activity-layout.vue';
   import { useFlowAgent } from './use-flow-agent';
+  import { useFlowNodeActions } from './use-flow-node-actions';
   import { useFlowTab } from './use-flow-tab';
 
   import type { MessageStatus as MessageStatusType } from '../../../ag-ui/types/constants';
   import type { BkFlowMessageContent } from '../../../ag-ui/types/contents';
+  import type { OnInterruptResume } from '../../../ag-ui/types/interrupt';
 
   import 'tippy.js/dist/tippy.css';
 
   const props = defineProps<{
     content?: BkFlowMessageContent;
     messageUid?: string;
+    /** resume 回调：节点「重试 / 跳过」与第三方审批取消复用同一回调，按 payload.operation 分流 */
+    onInterruptResume?: OnInterruptResume;
     status?: MessageStatusType;
   }>();
 
@@ -235,6 +244,12 @@
     messageUid: toRef(props, 'messageUid'),
     taskList,
   });
+
+  // 节点行尾操作层：聚合「详情 / 重试 / 跳过」为声明式操作列表
+  const { getNodeActions } = useFlowNodeActions({
+    onInterruptResume: toRef(props, 'onInterruptResume'),
+    openNodeDetail,
+  });
 </script>
 <style lang="scss">
   // 状态圆环：空心环，颜色由视图模型按状态注入（模板内联 borderColor）。
@@ -256,7 +271,7 @@
     $color-hover-bg: #eaebf0;
     $color-selected-bg: #e1ecff;
 
-    font-size: 12px;
+    font-size: var(--ai-font-size, 12px);
 
     /* ---------- 通用 placeholder ---------- */
     %flex-center {
@@ -324,19 +339,33 @@
       }
     }
 
-    // hover 行时浮现的操作按钮（详情 / 有效证据），默认隐藏
-    %action-btn {
-      display: none;
+    // 行尾操作按钮外观（图标 + 文案），不含显隐控制，供单按钮与按钮组复用
+    %action-btn-visual {
       gap: 2px;
       align-items: center;
       justify-content: center;
-      font-size: 12px;
+      font-size: var(--ai-font-size, 12px);
       color: $color-primary;
       cursor: pointer;
 
       &:hover {
         color: $color-primary-light;
       }
+    }
+
+    // hover 行时浮现的单个操作按钮（有效证据），默认隐藏
+    %action-btn {
+      display: none;
+
+      @extend %action-btn-visual;
+    }
+
+    // 节点行尾操作按钮组容器：默认隐藏，行 hover 时整体浮现（设计稿按钮间距 12px）。
+    // 经由 placeholder 提前输出基础选择器，避免与 hover 态选择器产生降序特异性告警。
+    %node-actions {
+      display: none;
+      gap: 12px;
+      align-items: center;
     }
 
     /* ---------- 标题：执行情况栏 ---------- */
@@ -369,7 +398,7 @@
 
     .ai-activity-message-content {
       padding: 8px 0;
-      font-size: 12px;
+      font-size: var(--ai-font-size, 12px);
     }
 
     // 撑满整条以承载 hover 区域（设计稿 hover 整体出 tooltip）
@@ -445,7 +474,7 @@
         width: 12px;
         height: 12px;
         margin-right: 4px;
-        font-size: 12px;
+        font-size: 12px; // 图标尺寸固定，不随 size 主题缩放
         color: $color-text-secondary;
         transform: rotate(90deg);
         transition: transform 0.15s;
@@ -487,9 +516,9 @@
 
         @extend %row;
 
-        // hover 行时隐藏耗时，露出「详情」按钮
+        // hover 行时隐藏耗时，露出操作按钮组（详情 / 重试 / 跳过）
         &:hover {
-          .flow-agent-node-detail-btn {
+          .flow-agent-node-actions {
             display: flex;
           }
 
@@ -519,8 +548,16 @@
         @extend %row-time;
       }
 
-      &-detail-btn {
-        @extend %action-btn;
+      // 操作按钮组容器：默认隐藏，行 hover 时整体浮现；多按钮按设计稿间距 12px 排布
+      &-actions {
+        @extend %node-actions;
+      }
+
+      // 容器内单个操作按钮（详情 / 重试 / 跳过）共用外观
+      &-action-btn {
+        display: flex;
+
+        @extend %action-btn-visual;
       }
     }
   }
@@ -543,8 +580,8 @@
     &-item {
       display: flex;
       align-items: center;
-      font-size: 12px;
-      line-height: 20px;
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height-compact, 20px);
       white-space: nowrap;
     }
 

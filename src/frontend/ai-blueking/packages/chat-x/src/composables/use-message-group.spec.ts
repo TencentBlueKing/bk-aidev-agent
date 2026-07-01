@@ -27,8 +27,8 @@ import { computed, ref as deepRef, nextTick, shallowRef } from 'vue';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MessageContentType, MessageRole, MessageStatus } from '../ag-ui/types';
-import { LOADING_MESSAGE_ID } from '../common/constants';
+import { APPROVAL_STATUS, InterruptReason, MessageContentType, MessageRole, MessageStatus } from '../ag-ui/types';
+import { LOADING_MESSAGE_ID, RenderMode } from '../common/constants';
 import { useMessageGroup } from './use-message-group';
 
 import type { AssistantMessage, Message, ToolMessage, UserMessage } from '../ag-ui/types';
@@ -72,18 +72,50 @@ const createToolMessage = (id: string, toolCallId: string, content = 'result'): 
   duration: 100,
 });
 
-const setupMessageGroup = (messages: Message[], keyword = '') => {
+const createApprovalInterruptMessage = (id: string, status: APPROVAL_STATUS): Message =>
+  ({
+    id,
+    messageId: id,
+    role: MessageRole.Interrupt,
+    status: MessageStatus.Complete,
+    content: {
+      outcome: {
+        type: 'interrupt',
+        interrupts: [
+          {
+            id: `${id}-interrupt`,
+            reason: InterruptReason.AIDevToolApproval,
+            toolCallId: `${id}-tool`,
+            metadata: {
+              ticket: {
+                approvers: ['张三'],
+                sn: `REV-${id}`,
+                status,
+                submit_time: '2026-04-24 14:30:15',
+                title: '算法方案评审单',
+                url: 'https://example.com/ticket',
+              },
+            },
+          },
+        ],
+      },
+    },
+  }) as Message;
+
+const setupMessageGroup = (messages: Message[], keyword = '', renderMode?: RenderMode) => {
   const messagesRef = computed(() => messages);
   const selectedUserMessages = deepRef<Message[] | undefined>([]);
   const keywordRef = shallowRef(keyword);
+  const renderModeRef = shallowRef(renderMode);
 
   const result = useMessageGroup({
     keyword: keywordRef,
     messages: messagesRef,
+    renderMode: renderModeRef,
     selectedUserMessages,
   });
 
-  return { ...result, selectedUserMessages, keywordRef, messagesRef };
+  return { ...result, selectedUserMessages, keywordRef, messagesRef, renderModeRef };
 };
 
 describe('useMessageGroup', () => {
@@ -178,6 +210,14 @@ describe('useMessageGroup', () => {
       const lastGroup = messageGroups.value.at(-1);
       expect(lastGroup?.type).toBe(MessageRole.Assistant);
     });
+
+    it('renderMode 为 Share 时末尾为用户消息不应追加 Loading 组', async () => {
+      const { messageGroups } = setupMessageGroup([createUserMessage('1')], '', RenderMode.Share);
+      await nextTick();
+
+      expect(messageGroups.value.length).toBe(1);
+      expect(messageGroups.value[0]?.type).toBe(MessageRole.User);
+    });
   });
 
   describe('Tool 消息关联', () => {
@@ -263,6 +303,33 @@ describe('useMessageGroup', () => {
 
       expect(executionGroups.value.length).toBeGreaterThan(0);
       expect(typeof executionGroups.value[0]?.userMessageTitle).toBe('number');
+    });
+  });
+
+  describe('待审批单统计', () => {
+    it('应统计 pending 与 draft 的 AI Dev 工具审批中断数量', async () => {
+      const messages = [
+        createApprovalInterruptMessage('pending-1', APPROVAL_STATUS.PENDING),
+        createApprovalInterruptMessage('draft-1', APPROVAL_STATUS.DRAFT),
+        createApprovalInterruptMessage('revoked-1', APPROVAL_STATUS.REVOKED),
+      ];
+      const { pendingApprovalCount, pendingApprovalTipText } = setupMessageGroup(messages);
+      await nextTick();
+
+      expect(pendingApprovalCount.value).toBe(2);
+      expect(pendingApprovalTipText.value).toBe('当前会话有 2 个待审批单，如需继续，请先取消审批');
+    });
+
+    it('无待审批单时应返回空提示文案', async () => {
+      const messages = [
+        createApprovalInterruptMessage('approved-1', APPROVAL_STATUS.APPROVED),
+        createAssistantMessage('assistant-1', 'done'),
+      ];
+      const { pendingApprovalCount, pendingApprovalTipText } = setupMessageGroup(messages);
+      await nextTick();
+
+      expect(pendingApprovalCount.value).toBe(0);
+      expect(pendingApprovalTipText.value).toBe('');
     });
   });
 
