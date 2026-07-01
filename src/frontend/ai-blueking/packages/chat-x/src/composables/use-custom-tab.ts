@@ -62,7 +62,7 @@ export function useCustomTabProvider<T extends Record<string, unknown>>(options:
 
   /** 执行情况显隐由外部配置控制，缺省可见 */
   const isExecutionVisible = computed(() => options.executionTabVisible?.() ?? true);
-  const isTabVisible = (tab: CustomTab<T>) =>
+  const isTabVisible = (tab: Pick<CustomTab<T>, 'name' | 'visible'>) =>
     tab.name === EXECUTION_TAB_NAME ? isExecutionVisible.value : tab.visible !== false;
 
   /**
