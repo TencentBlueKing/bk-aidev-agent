@@ -24,10 +24,10 @@
  * IN THE SOFTWARE.
  */
 
-import type { Component, Ref } from 'vue';
+import { type Ref, shallowRef } from 'vue';
+import type { Component } from 'vue';
 
 import { InterruptResumeOperation } from '../../../ag-ui/types/interrupt';
-// TODO: 重试 / 跳过 图标暂复用 CopyIcon，待设计补充专用图标后替换
 import { NodeOutputIcon, RebuildIcon, SkipIcon } from '../../../icons';
 import { t } from '../../../lang/lang';
 
@@ -43,15 +43,24 @@ export type FlowNodeActionId =
 
 /** 节点行尾操作视图模型：详情 / 重试 / 跳过统一为同一渲染单元（图标 + 文案 + 点击） */
 export interface FlowNodeActionVM {
+  /** 是否禁用点击（任一 resume 操作进行中时，重试 / 跳过均禁用） */
+  disabled: boolean;
   /** 按钮图标组件 */
   icon: Component;
   /** 唯一标识，用于 v-for key 与样式钩子 */
   id: FlowNodeActionId;
-  /** 国际化文案 */
+  /** 国际化文案（进行中时切换为「重试中 / 跳过中」） */
   label: string;
+  /** 是否处于进行中态：图标切换为 loading，文案切换为进行中文案 */
+  loading: boolean;
+  /** 因另一操作进行中而禁用时的 hover 提示（设计稿 annotation） */
+  tooltip?: string;
   /** 点击执行 */
   run: () => void;
 }
+
+/** 节点级 resume 进行中操作（重试 / 跳过其一） */
+type FlowNodePendingOp = InterruptResumeOperation.FlowNodeRetry | InterruptResumeOperation.FlowNodeSkip;
 
 /**
  * 单条 resume 操作定义：声明「何时可见 + 用哪个操作枚举」，便于后续扩展更多节点动作。
@@ -60,8 +69,12 @@ export interface FlowNodeActionVM {
  */
 interface FlowNodeResumeActionDef {
   icon: Component;
-  id: InterruptResumeOperation.FlowNodeRetry | InterruptResumeOperation.FlowNodeSkip;
+  id: FlowNodePendingOp;
+  /** 被另一操作阻塞（禁用）时的 hover 提示；文案描述「正在进行的那个操作」 */
+  blockedTip: () => string;
   label: () => string;
+  /** 本操作进行中时的文案（重试中 / 跳过中） */
+  pendingLabel: () => string;
   /** 该操作是否对当前节点可见 */
   visible: (node: FlowNodeVM) => boolean;
 }
@@ -72,18 +85,31 @@ interface FlowNodeResumeActionDef {
  */
 const RESUME_ACTION_DEFS: FlowNodeResumeActionDef[] = [
   {
+    // 重试被跳过阻塞时的提示
+    blockedTip: () => t('任务正在跳过中，不可重试'),
     icon: RebuildIcon,
     id: InterruptResumeOperation.FlowNodeRetry,
     label: () => t('重试'),
+    pendingLabel: () => t('重试中'),
     visible: node => node.convergedState === 'failed' && node.retryable,
   },
   {
+    // 跳过被重试阻塞时的提示
+    blockedTip: () => t('任务正在重试中，不可跳过'),
     icon: SkipIcon,
     id: InterruptResumeOperation.FlowNodeSkip,
     label: () => t('跳过'),
+    pendingLabel: () => t('跳过中'),
     visible: node => node.convergedState === 'failed' && node.skippable,
   },
 ];
+
+/**
+ * 节点 pending 键：`task_id:node_id:retry`。
+ * 携带 retry 计数——重试再次失败（retry 计数 +1）会生成新键，pending 自动失效、
+ * 按钮重新可用；无需手动清理，天然随后端状态更新收敛。
+ */
+const nodePendingKey = (task: BkFlowTask, node: BkFlowNode) => `${task.task_id}:${node.id}:${node.retry}`;
 
 /**
  * flow-agent 节点行尾操作 composable。
@@ -99,27 +125,52 @@ export const useFlowNodeActions = (options: {
 }) => {
   const { onInterruptResume, openNodeDetail } = options;
 
-  /** 触发 resume 回调；流程节点无 interrupt，定位信息随 payload 回传 */
+  /** node 键 -> 进行中的 resume 操作；点击后写入，收到后端新状态（键变化）后自动失效 */
+  const pendingMap = shallowRef<Record<string, FlowNodePendingOp>>({});
+
+  /** 触发 resume 回调；先置 pending 防重复点击，流程节点无 interrupt，定位信息随 payload 回传 */
   const resume = (operation: FlowNodeResume['operation'], task: BkFlowTask, node: BkFlowNode) => {
+    const key = nodePendingKey(task, node);
+    // 已有进行中操作则忽略（重试 / 跳过点击后二者均禁用，防重复提交）
+    if (pendingMap.value[key]) {
+      return;
+    }
+    pendingMap.value = { ...pendingMap.value, [key]: operation };
     onInterruptResume.value?.({ payload: { node_id: node.id, task_id: task.task_id }, operation });
   };
 
+  /** 当前节点是否有进行中的 resume 操作（供视图层常驻显示按钮组） */
+  const isNodePending = (task: FlowTaskVM, node: FlowNodeVM): boolean =>
+    pendingMap.value[nodePendingKey(task.raw, node.raw)] !== undefined;
+
   /** 计算单个节点行尾应展示的操作列表（重试 / 跳过按需，详情恒在末尾） */
   const getNodeActions = (task: FlowTaskVM, node: FlowNodeVM): FlowNodeActionVM[] => {
-    const actions: FlowNodeActionVM[] = RESUME_ACTION_DEFS.filter(def => def.visible(node)).map(def => ({
-      icon: def.icon,
-      id: def.id,
-      label: def.label(),
-      run: () => resume(def.id, task.raw, node.raw),
-    }));
+    const pendingOp = pendingMap.value[nodePendingKey(task.raw, node.raw)];
+    const actions: FlowNodeActionVM[] = RESUME_ACTION_DEFS.filter(def => def.visible(node)).map(def => {
+      const isSelfPending = pendingOp === def.id;
+      // 另一操作进行中：本按钮禁用并给出 hover 提示
+      const isBlockedByOther = pendingOp !== undefined && !isSelfPending;
+      return {
+        // 任一 resume 操作进行中，重试 / 跳过均禁用
+        disabled: pendingOp !== undefined,
+        icon: def.icon,
+        id: def.id,
+        label: isSelfPending ? def.pendingLabel() : def.label(),
+        loading: isSelfPending,
+        run: () => resume(def.id, task.raw, node.raw),
+        tooltip: isBlockedByOther ? def.blockedTip() : undefined,
+      };
+    });
     actions.push({
+      disabled: false,
       icon: NodeOutputIcon,
       id: 'detail',
       label: t('详情'),
+      loading: false,
       run: () => openNodeDetail(task.raw, node.raw),
     });
     return actions;
   };
 
-  return { getNodeActions };
+  return { getNodeActions, isNodePending };
 };
