@@ -14,22 +14,14 @@
       v-else
       class="ai-chat-container-resize-layout"
       :class="{
-        'ai-is-collapse':
-          isCollapse ||
-          (displayTabs.length > 0 && !keyword?.length && executionGroups?.length < 1) ||
-          renderMode === RenderMode.Share,
+        'ai-is-collapse': isCollapse || (displayTabs.length > 0 && !keyword?.length && executionGroups?.length < 1),
       }"
       v-bind="resizeProps"
       @resizing="handleResizing"
     >
       <template #aside>
         <div
-          v-if="
-            !isCollapse &&
-            displayTabs.length > 0 &&
-            (executionGroups?.length || keyword?.length) &&
-            renderMode !== RenderMode.Share
-          "
+          v-if="!isCollapse && displayTabs.length > 0 && (executionGroups?.length || keyword?.length)"
           ref="fullScreenRef"
           class="ai-full-screen-wrapper"
         >
@@ -140,7 +132,7 @@
           </template>
         </div>
         <div
-          v-if="displayTabs.length > 0 && executionGroups?.length && renderMode !== RenderMode.Share"
+          v-if="displayTabs.length > 0 && executionGroups?.length"
           class="collapse-button"
           :class="{ 'is-right': placement === 'right', 'is-collapsed': isCollapse }"
           @click="handleCollapse"

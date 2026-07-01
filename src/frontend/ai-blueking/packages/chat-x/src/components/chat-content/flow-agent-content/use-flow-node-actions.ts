@@ -118,12 +118,14 @@ const nodePendingKey = (task: BkFlowTask, node: BkFlowNode) => `${task.task_id}:
  * 操作列表，组件层只需遍历渲染，显隐与点击行为均收敛于此，便于复用、单测与扩展。
  */
 export const useFlowNodeActions = (options: {
+  /** 隐藏重试 / 跳过等交互式 resume 操作（分享态只读，仅保留「详情」查看入口） */
+  hideResumeActions?: Ref<boolean>;
   /** resume 回调（与第三方审批取消同一回调，按 payload.operation 分流） */
   onInterruptResume: Ref<OnInterruptResume | undefined>;
   /** 打开节点详情侧栏（复用 useFlowTab 的能力） */
   openNodeDetail: (task: BkFlowTask, node: BkFlowNode) => void;
 }) => {
-  const { onInterruptResume, openNodeDetail } = options;
+  const { hideResumeActions, onInterruptResume, openNodeDetail } = options;
 
   /** node 键 -> 进行中的 resume 操作；点击后写入，收到后端新状态（键变化）后自动失效 */
   const pendingMap = shallowRef<Record<string, FlowNodePendingOp>>({});
@@ -146,21 +148,25 @@ export const useFlowNodeActions = (options: {
   /** 计算单个节点行尾应展示的操作列表（重试 / 跳过按需，详情恒在末尾） */
   const getNodeActions = (task: FlowTaskVM, node: FlowNodeVM): FlowNodeActionVM[] => {
     const pendingOp = pendingMap.value[nodePendingKey(task.raw, node.raw)];
-    const actions: FlowNodeActionVM[] = RESUME_ACTION_DEFS.filter(def => def.visible(node)).map(def => {
-      const isSelfPending = pendingOp === def.id;
-      // 另一操作进行中：本按钮禁用并给出 hover 提示
-      const isBlockedByOther = pendingOp !== undefined && !isSelfPending;
-      return {
-        // 任一 resume 操作进行中，重试 / 跳过均禁用
-        disabled: pendingOp !== undefined,
-        icon: def.icon,
-        id: def.id,
-        label: isSelfPending ? def.pendingLabel() : def.label(),
-        loading: isSelfPending,
-        run: () => resume(def.id, task.raw, node.raw),
-        tooltip: isBlockedByOther ? def.blockedTip() : undefined,
-      };
-    });
+    // 分享态只读：过滤掉重试 / 跳过等交互式 resume 操作，仅保留「详情」查看入口
+    const resumeDefs = hideResumeActions?.value ? [] : RESUME_ACTION_DEFS;
+    const actions: FlowNodeActionVM[] = resumeDefs
+      .filter(def => def.visible(node))
+      .map(def => {
+        const isSelfPending = pendingOp === def.id;
+        // 另一操作进行中：本按钮禁用并给出 hover 提示
+        const isBlockedByOther = pendingOp !== undefined && !isSelfPending;
+        return {
+          // 任一 resume 操作进行中，重试 / 跳过均禁用
+          disabled: pendingOp !== undefined,
+          icon: def.icon,
+          id: def.id,
+          label: isSelfPending ? def.pendingLabel() : def.label(),
+          loading: isSelfPending,
+          run: () => resume(def.id, task.raw, node.raw),
+          tooltip: isBlockedByOther ? def.blockedTip() : undefined,
+        };
+      });
     actions.push({
       disabled: false,
       icon: NodeOutputIcon,

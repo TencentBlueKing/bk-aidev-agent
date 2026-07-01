@@ -26,6 +26,8 @@ sinceVersion: 2.0.0
 
 ```typescript
 function useFlowNodeActions(options: {
+  /** 隐藏重试 / 跳过等交互式 resume 操作（分享态只读，仅保留「详情」查看入口） */
+  hideResumeActions?: Ref<boolean>;
   /** resume 回调（与第三方审批取消同一回调，按 payload.operation 分流） */
   onInterruptResume: Ref<OnInterruptResume | undefined>;
   /** 打开节点详情侧栏（复用 useFlowTab 的能力） */
@@ -76,9 +78,11 @@ interface FlowNodeActionVM {
 | ---- | ------------------ | ------------------------------------------ | --------------------------------------------- |
 | 重试 | `flow_node_retry`  | `convergedState === 'failed'` 且 `retryable` | 调用 `onInterruptResume`，**不传** `interrupt` |
 | 跳过 | `flow_node_skip`   | `convergedState === 'failed'` 且 `skippable` | 同上                                          |
-| 详情 | `detail`           | 始终（Share 模式由上层组件隐藏整组）       | 调用 `openNodeDetail(task.raw, node.raw)`     |
+| 详情 | `detail`           | 始终（含 Share 分享态）                     | 调用 `openNodeDetail(task.raw, node.raw)`     |
 
 展示顺序：重试 → 跳过 → 详情。
+
+> **分享态过滤**：传入 `hideResumeActions`（`Ref<boolean>`，如 `RenderMode.Share`）为 `true` 时，`getNodeActions` 直接过滤掉重试 / 跳过，仅返回「详情」查看入口；用于只读分享场景放开查看、禁止交互。
 
 ## pending 态与防重复提交
 
@@ -117,6 +121,8 @@ import { useFlowNodeActions } from '@blueking/chat-x';
 // 或相对路径：'./use-flow-node-actions'
 
 const { getNodeActions, isNodePending } = useFlowNodeActions({
+  // 分享态只读：过滤重试 / 跳过，仅保留详情
+  hideResumeActions: computed(() => renderMode.value === RenderMode.Share),
   onInterruptResume: toRef(props, 'onInterruptResume'),
   openNodeDetail,
 });

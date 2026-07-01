@@ -239,7 +239,7 @@ sinceVersion: 1.0.0
 - **侧栏全屏**：Tab 栏右侧提供全屏/退出全屏按钮，基于 `useFullScreen` 将侧栏区域（`.ai-full-screen-wrapper`）以浏览器原生全屏展示；全屏时 Tippy 的 `appendTo` 自动切换为全屏容器，避免 tooltip 被遮挡
 - **自定义 Tab**：通过 `useCustomTabProvider` 支持动态添加自定义 Tab（如节点详情）
 - **分享模式**：内置消息多选分享流程，选中用户消息后确认分享
-- **渲染模式注入**：`renderMode` 会通过内部 Provider 下传给后代内容组件；例如 FlowAgent 节点在 `Share` 模式下隐藏耗时和「详情」入口
+- **渲染模式注入**：`renderMode` 会通过内部 Provider 下传给后代内容组件；`Share` 分享态开放流程智能体只读查看（侧栏 Tab / 执行情况 / 节点「详情」「有效证据」/ 耗时均保留），仅隐藏底部输入区与「重试 / 跳过」等交互操作
 - **字号主题**：通过 `size` 控制 `small`（默认 12px）/ `normal`（14px）两档字号；根节点设置 `data-ai-size`，子组件通过 CSS 变量（`--ai-font-size` 等）响应式缩放；浮层（Tippy / Teleport）会同步 `document.body.dataset.aiSize`，卸载时自动清理
 - **空状态欢迎页**：无消息时展示欢迎语和开场白
 
@@ -399,7 +399,7 @@ ai-chat-container（:data-ai-size="size"）
 
 侧边栏默认包含「执行情况」Tab，展示所有工具调用和 FlowAgent 类型的 Activity 消息。支持关键词搜索过滤和点击定位到对话中的消息位置。
 
-**展示条件**：当 `executionGroups` 为空且 `keyword` 为空时，不渲染侧栏 Tab 与 `ExecutionSummary`（折叠按钮亦隐藏）；主区域仍可正常展示 `messages` 中的对话内容。用户在执行情况中输入搜索词后，侧栏会保持展示以显示「搜索结果为空」等状态。`renderMode === Share` 时侧栏隐藏，且分栏会应用与折叠一致的样式。
+**展示条件**：当 `executionGroups` 为空且 `keyword` 为空时，不渲染侧栏 Tab 与 `ExecutionSummary`（折叠按钮亦隐藏）；主区域仍可正常展示 `messages` 中的对话内容。用户在执行情况中输入搜索词后，侧栏会保持展示以显示「搜索结果为空」等状态。`renderMode === Share` 分享态同样按上述执行数据条件展示侧栏（开放只读查看流程智能体详情/证据/执行情况），不再强制隐藏折叠；仅底部输入区保持隐藏。
 
 **自定义 Tab 联动**：当 `executionGroups` 变为空且搜索词已清空时，容器会**自动重置自定义 Tab**（`resetCustomTab`），避免残留节点详情等 Tab；若用户仍在搜索（`keyword` 非空），不会触发重置。
 
@@ -974,7 +974,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | modelValue       | `string \| TagSchema` | 输入框内容，支持纯文本或标签结构                             |
 | selectedShortcut | `Shortcut \| null`    | 当前选中的快捷指令                                           |
 | cite             | `string`              | 引用内容                                                     |
-| renderMode       | `RenderMode`          | 渲染模式（默认 `Chat`）。`Share` 模式隐藏侧边栏和折叠按钮；`Test` 模式隐藏分享按钮 |
+| renderMode       | `RenderMode`          | 渲染模式（默认 `Chat`）。`Share` 分享态开放侧栏只读查看（流程智能体详情/证据/执行情况），隐藏底部输入区与「重试/跳过」等交互；`Test` 模式隐藏分享按钮 |
 
 ### Events
 
@@ -1017,7 +1017,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | `renderMode` | 侧边栏 Tab / 折叠按钮 | 底部输入区域                      | MessageTools 工具栏   | 说明                             |
 | ------------ | ---------------------- | --------------------------------- | --------------------- | -------------------------------- |
 | `Chat`       | 正常显示               | 正常显示（ChatInput / ShortcutRender / SelectionFooter） | 全部工具按钮          | 默认对话模式                     |
-| `Share`      | **隐藏**               | **隐藏**                          | **隐藏**（多选模式）  | 分享预览模式，仅展示消息；FlowAgent 节点会隐藏耗时和「详情」入口 |
+| `Share`      | **按执行数据展示**（开放只读查看） | **隐藏**             | **隐藏**（多选模式）  | 分享预览模式；开放流程智能体侧栏详情/证据/执行情况与耗时，仅隐藏「重试/跳过」等交互 |
 | `Test`       | 正常显示               | 正常显示                          | 过滤掉「分享」按钮    | 测试/嵌入模式，隐藏分享入口     |
 
 ```vue
