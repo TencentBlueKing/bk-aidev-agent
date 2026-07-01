@@ -156,6 +156,19 @@
   let editor: ReturnType<typeof createEditor>;
   /* 清理编辑器 */
   let cleanup: () => void;
+  // 卸载前需清理延迟任务，避免 setTimeout 回调在 window 已销毁后仍执行
+  let suggestionTimer: null | ReturnType<typeof setTimeout> = null;
+  let focusTimer: null | ReturnType<typeof setTimeout> = null;
+  const clearPendingTimers = () => {
+    if (suggestionTimer !== null) {
+      clearTimeout(suggestionTimer);
+      suggestionTimer = null;
+    }
+    if (focusTimer !== null) {
+      clearTimeout(focusTimer);
+      focusTimer = null;
+    }
+  };
   const getBody = () => document.body;
 
   const { commandSelection, GetCursorPosition, GetDocSnapshot, docSnapshot } = useCommandSelection();
@@ -175,7 +188,11 @@
   );
   /* 显示提示 */
   const handleShowSuggestions = () => {
-    setTimeout(() => {
+    if (suggestionTimer !== null) {
+      clearTimeout(suggestionTimer);
+    }
+    suggestionTimer = setTimeout(() => {
+      suggestionTimer = null;
       const mentionState = getMentionState();
       keyword.value = mentionState.query || '';
       // 设置 tippy 位置（仅在 keyword 为空时，即刚输入 '/' 或 '@' 时）
@@ -228,6 +245,8 @@
       rect: null,
       coordinates: null,
     };
+
+    if (typeof window === 'undefined') return defaultState;
 
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) return defaultState;
@@ -302,7 +321,13 @@
     focusToEnd();
   };
   const focusToEnd = () => {
-    setTimeout(() => {
+    if (focusTimer !== null) {
+      clearTimeout(focusTimer);
+    }
+    focusTimer = setTimeout(() => {
+      focusTimer = null;
+      if (typeof window === 'undefined') return;
+
       const selection = window.getSelection();
       const range = document.createRange();
       if (editorRef.value && selection) {
@@ -425,6 +450,7 @@
     editorRef.value?.addEventListener('paste', handlePaste);
   });
   onUnmounted(() => {
+    clearPendingTimers();
     editor.command(ReplaceAll, '');
     cleanup?.();
     editorRef.value?.removeEventListener('paste', handlePaste);
