@@ -123,10 +123,7 @@
         >
           <HighlightKeyword :text="task.taskName" />
         </span>
-        <span
-          v-if="showActions"
-          class="flow-agent-task-trailing"
-        >
+        <span class="flow-agent-task-trailing">
           <span class="flow-agent-task-time">{{ task.totalTimeText }}</span>
           <span
             v-if="task.hasConfidence"
@@ -171,10 +168,7 @@
           >
             <HighlightKeyword :text="node.name" />
           </span>
-          <span
-            v-if="showActions"
-            class="flow-agent-node-trailing"
-          >
+          <span class="flow-agent-node-trailing">
             <span class="flow-agent-node-time">{{ node.elapsedTimeText }}</span>
             <span class="flow-agent-node-actions">
               <span
@@ -249,8 +243,8 @@
   });
 
   const renderMode = useRenderModeInject();
-  /** 分享态下隐藏耗时与详情等交互入口 */
-  const showActions = computed(() => renderMode.value !== RenderMode.Share);
+  /** 分享态只读：保留「详情 / 有效证据 / 耗时」查看入口，仅隐藏「重试 / 跳过」等交互操作 */
+  const isShareMode = computed(() => renderMode.value === RenderMode.Share);
 
   const isLoading = computed(() => props.status === MessageStatus.Pending || props.status === MessageStatus.Streaming);
 
@@ -265,8 +259,9 @@
     taskList,
   });
 
-  // 节点行尾操作层：聚合「详情 / 重试 / 跳过」为声明式操作列表
+  // 节点行尾操作层：聚合「详情 / 重试 / 跳过」为声明式操作列表；分享态隐藏交互式 resume 操作
   const { getNodeActions, isNodePending } = useFlowNodeActions({
+    hideResumeActions: isShareMode,
     onInterruptResume: toRef(props, 'onInterruptResume'),
     openNodeDetail,
   });

@@ -174,9 +174,7 @@ vi.mock('../../composables', () => ({
         }, 0),
       );
       const pendingApprovalTipText = computed(() =>
-        pendingApprovalCount.value
-          ? `当前会话有 ${pendingApprovalCount.value} 个待审批单，如需继续，请先取消审批`
-          : '',
+        pendingApprovalCount.value ? `当前会话有 ${pendingApprovalCount.value} 个待审批单，如需继续，请先取消审批` : '',
       );
       const activeUserQuestionInterrupt = computed(() => {
         for (let index = _options.messages.value.length - 1; index >= 0; index--) {
@@ -803,9 +801,7 @@ describe('ChatContainer', () => {
     });
 
     it('应该将 skills 属性透传给 ChatInput', () => {
-      const skills = [
-        { skill_code: 'test_skill', skill_name: 'Test Skill', description: 'A test skill', icon: '' },
-      ];
+      const skills = [{ skill_code: 'test_skill', skill_name: 'Test Skill', description: 'A test skill', icon: '' }];
 
       wrapper = mount(ChatContainer, {
         props: { ...defaultProps, skills },
@@ -1120,25 +1116,37 @@ describe('ChatContainer', () => {
       expect(providerOptions.renderMode.value).toBe(RenderMode.Share);
     });
 
-    it('renderMode 为 Share 时侧边栏 Tab 和折叠按钮不应渲染', () => {
+    it('renderMode 为 Share 且有 executionGroups 时应开放折叠按钮与侧栏 Tab（只读查看）', async () => {
       const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      mockExecutionGroupsRef.value = [{ id: 'group-1' }];
 
       wrapper = mount(ChatContainer, {
         props: { ...defaultProps, messages, renderMode: RenderMode.Share },
       });
+      await nextTick();
 
-      expect(wrapper.find('.ai-chat-container-tab').exists()).toBe(false);
-      expect(wrapper.find('.collapse-button').exists()).toBe(false);
+      // 折叠按钮开放
+      expect(wrapper.find('.collapse-button').exists()).toBe(true);
+
+      // 展开侧栏后，Tab（节点详情/证据/执行情况面板）在分享态可见
+      getChatContainerExposed(wrapper).addCustomTab({ label: '自定义 Tab', name: 'custom-tab' });
+      await nextTick();
+      expect(wrapper.find('.ai-chat-container-tab').exists()).toBe(true);
     });
 
-    it('renderMode 为 Share 时 ResizeLayout 应应用 ai-is-collapse（与 executionGroups 无关）', () => {
+    it('renderMode 为 Share 时不再强制 ai-is-collapse（展开后侧栏展开）', async () => {
       const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      mockExecutionGroupsRef.value = [{ id: 'group-1' }];
 
       wrapper = mount(ChatContainer, {
         props: { ...defaultProps, messages, renderMode: RenderMode.Share },
       });
+      await nextTick();
 
-      expect(wrapper.find('.ai-chat-container-resize-layout').classes()).toContain('ai-is-collapse');
+      getChatContainerExposed(wrapper).addCustomTab({ label: '自定义 Tab', name: 'custom-tab' });
+      await nextTick();
+
+      expect(wrapper.find('.ai-chat-container-resize-layout').classes()).not.toContain('ai-is-collapse');
     });
 
     it('renderMode 为 Share 时底部输入区域（ChatInput、SelectionFooter、ShortcutRender）不应渲染', () => {

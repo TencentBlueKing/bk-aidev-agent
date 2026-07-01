@@ -84,8 +84,9 @@ vi.mock('../../../ag-ui/types/constants', () => ({
   },
 }));
 
-// use-flow-tab 从 composables 桶导出消费 useCustomTabConsumer / useContainerScrollConsumer
+// use-flow-tab 从 composables 桶导出消费 useCustomTabConsumer / useContainerScrollConsumer / DEFAULT_TAB_ORDER
 vi.mock('../../../composables', () => ({
+  DEFAULT_TAB_ORDER: 100,
   useContainerScrollConsumer: () => mockScrollRef,
   useCustomTabConsumer: () => ({
     addCustomTab: mockAddCustomTab,
@@ -411,25 +412,35 @@ describe('FlowAgentContent', () => {
       expectTaskNodesExpanded(wrapper, 0);
     });
 
-    it('renderMode 为 Share 时不应渲染节点耗时和详情入口', () => {
+    it('renderMode 为 Share 时应保留节点耗时与详情查看入口，但隐藏重试/跳过', () => {
       const Parent = defineComponent({
         setup() {
           useRenderModeProvider({ renderMode: RenderMode.Share });
           return () =>
             h(FlowAgentContent, {
-              content: createContent(),
+              // 失败可重试/可跳过节点：非分享态会出现重试/跳过，用于验证分享态被过滤
+              content: createContent({
+                nodes: {
+                  n1: createNode({ id: 'n1', name: '失败节点', state: 'FAILED', retryable: true, skippable: true }),
+                },
+              }),
             });
         },
       });
 
       wrapper = mount(Parent);
 
-      expect(wrapper.find('.flow-agent-node-trailing').exists()).toBe(false);
-      expect(wrapper.find('.flow-agent-node-time').exists()).toBe(false);
-      expect(wrapper.find('.flow-agent-node-actions').exists()).toBe(false);
+      // 只读查看入口保留：行尾容器、耗时、详情按钮
+      expect(wrapper.find('.flow-agent-node-trailing').exists()).toBe(true);
+      expect(wrapper.find('.flow-agent-node-time').exists()).toBe(true);
+      const actionTexts = wrapper.findAll('.flow-agent-node-action-btn').map(btn => btn.text());
+      expect(actionTexts).toContain('详情');
+      // 交互式 resume 操作被过滤
+      expect(actionTexts).not.toContain('重试');
+      expect(actionTexts).not.toContain('跳过');
     });
 
-    it('renderMode 为 Share 时不应渲染任务耗时和有效证据入口', () => {
+    it('renderMode 为 Share 时应保留任务耗时与有效证据查看入口', () => {
       const Parent = defineComponent({
         setup() {
           useRenderModeProvider({ renderMode: RenderMode.Share });
@@ -442,9 +453,9 @@ describe('FlowAgentContent', () => {
 
       wrapper = mount(Parent);
 
-      expect(wrapper.find('.flow-agent-task-trailing').exists()).toBe(false);
-      expect(wrapper.find('.flow-agent-task-time').exists()).toBe(false);
-      expect(wrapper.find('.flow-agent-task-confidence-btn').exists()).toBe(false);
+      expect(wrapper.find('.flow-agent-task-trailing').exists()).toBe(true);
+      expect(wrapper.find('.flow-agent-task-time').exists()).toBe(true);
+      expect(wrapper.find('.flow-agent-task-confidence-btn').exists()).toBe(true);
     });
   });
 

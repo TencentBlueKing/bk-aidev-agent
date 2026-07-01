@@ -95,6 +95,7 @@ const createTaskVM = (overrides: Partial<FlowTaskVM> = {}): FlowTaskVM =>
   }) as FlowTaskVM;
 
 const mountActions = (options?: {
+  hideResumeActions?: boolean;
   node?: Partial<FlowNodeVM>;
   onInterruptResume?: ReturnType<typeof vi.fn>;
 }) => {
@@ -106,6 +107,7 @@ const mountActions = (options?: {
     defineComponent({
       setup() {
         apiRef.value = useFlowNodeActions({
+          hideResumeActions: ref(options?.hideResumeActions ?? false),
           onInterruptResume: ref(onInterruptResume),
           openNodeDetail,
         });
@@ -157,6 +159,15 @@ describe('useFlowNodeActions', () => {
       node: { retryable: false, skippable: false },
     });
 
+    expect(actions.map(action => action.id)).toEqual(['detail']);
+
+    wrapper.unmount();
+  });
+
+  it('hideResumeActions 为 true（分享态）时应过滤重试/跳过，仅保留详情', () => {
+    const { actions, wrapper } = mountActions({ hideResumeActions: true });
+
+    // 即便节点失败可重试/可跳过，分享态也只保留详情查看入口
     expect(actions.map(action => action.id)).toEqual(['detail']);
 
     wrapper.unmount();
