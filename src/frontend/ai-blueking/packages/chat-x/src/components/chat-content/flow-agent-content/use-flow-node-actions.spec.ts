@@ -100,26 +100,32 @@ const mountActions = (options?: {
 }) => {
   const onInterruptResume = options?.onInterruptResume ?? vi.fn();
   const openNodeDetail = vi.fn();
-  const actionsRef = ref<ReturnType<typeof useFlowNodeActions>['getNodeActions']>();
+  const apiRef = ref<ReturnType<typeof useFlowNodeActions>>();
 
   const wrapper = mount(
     defineComponent({
       setup() {
-        const { getNodeActions } = useFlowNodeActions({
+        apiRef.value = useFlowNodeActions({
           onInterruptResume: ref(onInterruptResume),
           openNodeDetail,
         });
-        actionsRef.value = getNodeActions;
         return () => h('div');
       },
     }),
   );
 
+  const api = apiRef.value;
+  if (!api) {
+    throw new Error('useFlowNodeActions 未初始化');
+  }
+
   const task = createTaskVM();
   const node = createNodeVM(options?.node);
-  const actions = actionsRef.value!(task, node);
+  // 每次调用重新派生，便于断言点击后 pending 态变化
+  const getActions = () => api.getNodeActions(task, node);
+  const isNodePending = () => api.isNodePending(task, node);
 
-  return { wrapper, actions, onInterruptResume, openNodeDetail, task, node };
+  return { wrapper, actions: getActions(), getActions, isNodePending, onInterruptResume, openNodeDetail, task, node };
 };
 
 describe('useFlowNodeActions', () => {
@@ -192,6 +198,80 @@ describe('useFlowNodeActions', () => {
     actions.find(action => action.id === 'detail')?.run();
 
     expect(openNodeDetail).toHaveBeenCalledWith(task.raw, node.raw);
+
+    wrapper.unmount();
+  });
+
+  it('初始态下重试/跳过/详情均未禁用且非 loading', () => {
+    const { actions, isNodePending, wrapper } = mountActions();
+
+    expect(actions.every(action => action.disabled === false)).toBe(true);
+    expect(actions.every(action => action.loading === false)).toBe(true);
+    expect(actions.every(action => action.tooltip === undefined)).toBe(true);
+    expect(isNodePending()).toBe(false);
+
+    wrapper.unmount();
+  });
+
+  it('点击重试后：重试进入 loading+禁用+「重试中」，跳过禁用并提示，详情不受影响', () => {
+    const { actions, getActions, isNodePending, wrapper } = mountActions();
+
+    actions.find(action => action.id === InterruptResumeOperation.FlowNodeRetry)?.run();
+
+    const next = getActions();
+
+    expect(next.find(action => action.id === InterruptResumeOperation.FlowNodeRetry)).toMatchObject({
+      disabled: true,
+      loading: true,
+      label: '重试中',
+      tooltip: undefined,
+    });
+    expect(next.find(action => action.id === InterruptResumeOperation.FlowNodeSkip)).toMatchObject({
+      disabled: true,
+      loading: false,
+      label: '跳过',
+      tooltip: '任务正在重试中，不可跳过',
+    });
+    expect(next.find(action => action.id === 'detail')).toMatchObject({ disabled: false, loading: false });
+    expect(isNodePending()).toBe(true);
+
+    wrapper.unmount();
+  });
+
+  it('点击跳过后：跳过进入 loading+禁用+「跳过中」，重试禁用并提示', () => {
+    const { actions, getActions, wrapper } = mountActions();
+
+    actions.find(action => action.id === InterruptResumeOperation.FlowNodeSkip)?.run();
+
+    const next = getActions();
+
+    expect(next.find(action => action.id === InterruptResumeOperation.FlowNodeSkip)).toMatchObject({
+      disabled: true,
+      loading: true,
+      label: '跳过中',
+      tooltip: undefined,
+    });
+    expect(next.find(action => action.id === InterruptResumeOperation.FlowNodeRetry)).toMatchObject({
+      disabled: true,
+      loading: false,
+      label: '重试',
+      tooltip: '任务正在跳过中，不可重试',
+    });
+
+    wrapper.unmount();
+  });
+
+  it('进行中重复点击重试/跳过不应再次触发 onInterruptResume（防重复提交）', () => {
+    const onInterruptResume = vi.fn();
+    const { actions, getActions, wrapper } = mountActions({ onInterruptResume });
+
+    actions.find(action => action.id === InterruptResumeOperation.FlowNodeRetry)?.run();
+    // pending 后再次点击重试、以及点击被阻塞的跳过均应被忽略
+    const next = getActions();
+    next.find(action => action.id === InterruptResumeOperation.FlowNodeRetry)?.run();
+    next.find(action => action.id === InterruptResumeOperation.FlowNodeSkip)?.run();
+
+    expect(onInterruptResume).toHaveBeenCalledTimes(1);
 
     wrapper.unmount();
   });

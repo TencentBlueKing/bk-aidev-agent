@@ -122,6 +122,8 @@ vi.mock('vue-tippy', () => ({
       return () => h(props.tag, { class: 'mock-tippy' }, [slots.default?.(), slots.content?.()]);
     },
   }),
+  // v-tippy 指令：测试中为无操作，避免真实 tippy 依赖
+  directive: {},
 }));
 
 vi.mock('../../../lang/lang', () => ({
@@ -712,6 +714,73 @@ describe('FlowAgentContent', () => {
       expect(mockAddCustomTab).toHaveBeenCalled();
       const payload = mockAddCustomTab.mock.calls[0]?.[0] as { data?: { messageUid?: string } };
       expect(payload?.data?.messageUid).toBe(messageUid);
+    });
+  });
+
+  describe('重试/跳过 pending 交互', () => {
+    const mountFailedNode = (onInterruptResume = vi.fn()) => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent({
+            nodes: {
+              n1: createNode({
+                id: 'n1',
+                name: '失败节点',
+                state: 'FAILED',
+                retryable: true,
+                skippable: true,
+              }),
+            },
+          }),
+          onInterruptResume,
+        },
+      });
+      return onInterruptResume;
+    };
+
+    const findBtn = (text: string) =>
+      wrapper.findAll('.flow-agent-node-action-btn').find(btn => btn.text().includes(text));
+
+    it('点击重试后：节点行进入 pending 态，重试变 loading+重试中，重试/跳过均禁用', async () => {
+      mountFailedNode();
+
+      await findBtn('重试')?.trigger('click');
+
+      expect(wrapper.find('.flow-agent-node-item').classes()).toContain('is-pending');
+
+      const retryBtn = findBtn('重试中');
+      expect(retryBtn).toBeTruthy();
+      expect(retryBtn?.find('.mock-bk-loading').exists()).toBe(true);
+      expect(retryBtn?.classes()).toContain('is-disabled');
+
+      const skipBtn = findBtn('跳过');
+      expect(skipBtn?.classes()).toContain('is-disabled');
+    });
+
+    it('pending 态下再次点击重试或点击被禁用的跳过不应重复回传', async () => {
+      const onInterruptResume = mountFailedNode();
+
+      await findBtn('重试')?.trigger('click');
+      await findBtn('重试中')?.trigger('click');
+      await findBtn('跳过')?.trigger('click');
+
+      expect(onInterruptResume).toHaveBeenCalledTimes(1);
+      expect(onInterruptResume).toHaveBeenCalledWith({
+        operation: InterruptResumeOperation.FlowNodeRetry,
+        payload: { node_id: 'n1', task_id: 100 },
+      });
+    });
+
+    it('点击跳过后：跳过变 loading+跳过中，重试/跳过均禁用', async () => {
+      mountFailedNode();
+
+      await findBtn('跳过')?.trigger('click');
+
+      const skipBtn = findBtn('跳过中');
+      expect(skipBtn).toBeTruthy();
+      expect(skipBtn?.find('.mock-bk-loading').exists()).toBe(true);
+      expect(skipBtn?.classes()).toContain('is-disabled');
+      expect(findBtn('重试')?.classes()).toContain('is-disabled');
     });
   });
 });
