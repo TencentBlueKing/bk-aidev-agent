@@ -16,6 +16,8 @@ relatedComponents:
     relation: 快捷指令含 components 时由外层唤起表单渲染
   - slug: chat-container
     relation: 顶层聊天布局中作为输入区子组件
+  - slug: model-selector
+    relation: 传入 models 后在发送按钮左侧默认展示模型选择器
   - slug: cite-content
     relation: 消息引用区展示选中的上下文片段
 sinceVersion: 1.0.0
@@ -35,6 +37,18 @@ sinceVersion: 1.0.0
   const inputShortcut = ref('');
   const inputUpload = ref('');
   const inputSlot = ref('');
+  const inputModel = ref('');
+  const selectedModelId = ref('gpt-4');
+
+  const models = [
+    { id: 'gpt-4', name: 'GPT-4', capabilities: [{ text: '深度思考', theme: 'primary' }] },
+    { id: 'claude', name: 'Claude 3', capabilities: [{ text: '快速思考', theme: 'success' }] },
+    { id: 'deepseek', name: 'DeepSeek' },
+  ];
+
+  const handleModelChange = (model) => {
+    console.log('模型切换:', model);
+  };
 
   const citeContent = ref('Vue 3 的 Composition API 提供了更灵活的逻辑组织方式，能够更好地进行代码复用和类型推断。');
   const interruptTip = '当前会话有 1 个待审批单，如需继续，请先取消审批';
@@ -102,6 +116,7 @@ chat-input-container
         ├── FileUploadBtn（仅当 supportUpload 为 true 时显示，在 slot#attachment 外部）
         ├── 分隔线（仅当 supportUpload 为 true 且有快捷指令时显示）
         ├── slot#attachment（默认：ShortcutBtns 或已选 ShortcutBtn + 关闭图标）
+        ├── slot#before-send（默认：传入 models 时渲染 ModelSelector）
         └── slot#send-icon（默认：发送/停止图标，仅替换图标，按钮容器保留）
 ```
 
@@ -672,6 +687,67 @@ const handleSendMessage = async (
   </ChatInputComp>
 </div>
 
+## 模型选择
+
+传入 `models` 后，会在发送按钮左侧展示 [ModelSelector](/components/input/model-selector)。选中值通过 `v-model:selected-model-id` 双向绑定，`@model-change` 可获取完整模型对象。
+
+```vue
+<template>
+  <ChatInput
+    v-model="inputValue"
+    v-model:selected-model-id="selectedModelId"
+    :message-status="messageStatus"
+    :models="models"
+    :on-send-message="handleSendMessage"
+    @model-change="handleModelChange"
+  />
+</template>
+
+<script setup lang="ts">
+  import { ref } from 'vue';
+  import { ChatInput, MessageStatus, type IModelOption, type TagSchema } from '@blueking/chat-x';
+
+  const inputValue = ref('');
+  const selectedModelId = ref('gpt-4');
+  const messageStatus = ref(MessageStatus.Complete);
+  const models: IModelOption[] = [
+    { id: 'gpt-4', name: 'GPT-4', capabilities: [{ text: '深度思考', theme: 'primary' }] },
+    { id: 'claude', name: 'Claude 3' },
+  ];
+
+  const handleSendMessage = async (content: string, docSchema: TagSchema) => {
+    /* 发送时可读取 selectedModelId.value */
+  };
+
+  const handleModelChange = (model: IModelOption) => {
+    console.log('切换模型:', model);
+  };
+</script>
+```
+
+<div class="demo">
+  <ChatInputComp
+    v-model="inputModel"
+    v-model:selected-model-id="selectedModelId"
+    message-status="complete"
+    :models="models"
+    :on-send-message="handleSendMessage"
+    @model-change="handleModelChange"
+  />
+</div>
+
+也可通过 `#model-selector` 插槽完全自定义选择器，插槽参数为 `{ models, selectedModel }`：
+
+```vue
+<template>
+  <ChatInput v-model="inputValue" :models="models">
+    <template #model-selector="{ models, selectedModel }">
+      <span>当前：{{ selectedModel || '未选择' }}（共 {{ models.length }} 个）</span>
+    </template>
+  </ChatInput>
+</template>
+```
+
 ## Expose（模板引用）
 
 通过 `ref` 获取组件实例后可调用以下方法：
@@ -706,11 +782,13 @@ const handleSendMessage = async (
 | 属性名             | 类型                                                                       | 默认值   | 必填 | 说明                                                    |
 | ------------------ | -------------------------------------------------------------------------- | -------- | ---- | ------------------------------------------------------- |
 | modelValue         | `string \| TagSchema`                                                      | -        | ✅   | 编辑器的值，支持 `v-model`                              |
+| selectedModelId    | `string`                                                                   | -        | -    | 当前选中的模型 id，支持 `v-model:selected-model-id`     |
 | messageStatus      | `MessageStatus`                                                            | -        | -    | 消息状态，控制按钮；输入为空时内部强制 `disabled`       |
 | cite               | `string`                                                                   | `''`     | -    | 引用内容，支持 `v-model:cite`，不为空时显示引用区       |
 | prompts            | `string[]`                                                                 | `[]`     | -    | Prompt 模板列表，输入 `/` 触发                          |
 | resources          | `IAiSlashMenuItem[]`                                                       | `[]`     | -    | 资源列表，输入 `@` 触发，按 `type` 分组展示             |
 | shortcuts          | `Shortcut[]`                                                               | -        | -    | 快捷指令列表，显示在底部工具栏                          |
+| models             | `IModelOption[]`                                                           | -        | -    | 可选模型列表，传入后在发送按钮左侧展示模型选择器        |
 | shortcutId         | `string`                                                                   | -        | -    | 当前选中的快捷指令 ID，匹配时列表收起为已选样式         |
 | placeholder        | `string`                                                                   | 见默认值 | -    | 编辑器占位符，支持多行                                  |
 | inputMaxHeight     | `number`                                                                   | `200`    | -    | 框体最大高度（px），有文件时自动加上文件预览区高度      |
@@ -735,6 +813,7 @@ const handleSendMessage = async (
 | 事件名            | 参数                                                                     | 触发时机                                                  |
 | ----------------- | ------------------------------------------------------------------------ | --------------------------------------------------------- |
 | update:modelValue | `(value: string \| TagSchema, selectedResourceList: IAiSlashMenuItem[])` | 编辑器值变化时触发；第二个参数为当前已选中的 `@` 资源列表 |
+| modelChange       | `(model: IModelOption)`                                                  | 用户切换模型时触发                                        |
 | selectShortcut    | `(shortcut: Shortcut)`                                                   | 点击底部快捷指令按钮                                      |
 | deleteShortcut    | -                                                                        | 点击已选快捷指令旁的关闭按钮                              |
 
@@ -747,6 +826,7 @@ const handleSendMessage = async (
 | input-header | -                                  | 框体内顶部，替换引用区（`CiteContent`）                    |
 | files        | `{ files: Partial<UploadFile>[] }` | 文件预览区                                                 |
 | attachment   | -                                  | 底部快捷指令区，`FileUploadBtn` 在其左侧，不受此 slot 影响 |
+| model-selector | `{ models: IModelOption[]; selectedModel: string \| undefined }` | 发送按钮左侧模型选择区，默认渲染 ModelSelector             |
 | send-icon    | -                                  | 发送按钮内图标，按钮的点击逻辑和样式仍由组件控制           |
 
 ### Expose

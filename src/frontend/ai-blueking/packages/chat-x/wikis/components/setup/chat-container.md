@@ -959,6 +959,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | modelValue       | `string \| TagSchema` | 输入框内容，支持纯文本或标签结构                             |
 | selectedShortcut | `Shortcut \| null`    | 当前选中的快捷指令                                           |
 | cite             | `string`              | 引用内容                                                     |
+| selectedModelId  | `string`              | 当前选中的模型 id（透传至 ChatInput 模型选择器）             |
 | renderMode       | `RenderMode`          | 渲染模式（默认 `Chat`）。`Share` 模式隐藏侧边栏和折叠按钮；`Test` 模式隐藏分享按钮 |
 
 ### Events
@@ -972,6 +973,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | collapseChange | `(isCollapse: boolean, width: number)` | 侧边栏折叠/展开状态变化              |
 | selectShortcut | `(shortcut: Shortcut)`                 | 选择快捷指令（继承自 ChatInput）     |
 | deleteShortcut | —                                      | 删除已选快捷指令（继承自 ChatInput） |
+| modelChange    | `(model: IModelOption)`                | 切换模型（继承自 ChatInput）         |
 
 ### Slots
 

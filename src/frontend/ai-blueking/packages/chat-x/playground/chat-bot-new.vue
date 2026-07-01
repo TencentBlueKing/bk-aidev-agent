@@ -11,10 +11,12 @@
     <ChatContainer
       v-model:cite="cite"
       v-model:render-mode="chatMode"
+      v-model:selected-model-id="selectedModelId"
       v-model:selected-shortcut="selectedShortcut"
       :enable-selection="false"
       :messages="messages"
       :model-value="userInput"
+      :models="MOCK_MODELS"
       :on-agent-action="handleAgentAction"
       :on-custom-tab-change="handleCustomTabChange"
       :on-interrupt-resume="handleInterruptResume"
@@ -31,9 +33,10 @@
       }"
       :resources="MOCK_RESOURCES"
       :shortcuts="shortcuts"
-      :size="'normal'"
+      :size="'small'"
       :support-upload="true"
       @delete-shortcut="handleDeleteShortcut"
+      @model-change="handleModelChange"
       @select-shortcut="handleSelectShortcut"
       @shortcut-close="handleShortcutClose"
       @shortcut-submit="handleShortcutSubmit"
@@ -159,6 +162,7 @@
   import {
     type ActivityMessage,
     type AssistantMessage,
+    type IModelOption,
     type Message,
     type OnInterruptResume,
     type ToolMessage,
@@ -177,7 +181,7 @@
   import CustomTabContent from './custom-tab-content.vue';
   import { MOCK_INTERRUPT_MESSAGES } from './interrupt';
   import { streamContent } from './markdown';
-  import { MOCK_PROMPTS, MOCK_RESOURCES } from './mock';
+  import { MOCK_MODELS, MOCK_PROMPTS, MOCK_RESOURCES } from './mock';
   import { uploadFileToSession } from './upload-file';
 
   import type { CustomTab, IAiSlashMenuItem, Shortcut, TagSchema } from '../src/types';
@@ -192,6 +196,11 @@
   const cite = shallowRef('');
   const userInput = shallowRef<string | TagSchema>('');
   const selectedShortcut = deepRef<null | Shortcut>(null);
+  // 模型选择器：默认选中首个模型
+  const selectedModelId = shallowRef<string>(MOCK_MODELS[0].id);
+  const handleModelChange = (model: IModelOption) => {
+    console.log('model change:', model);
+  };
   const messages = deepRef<Message[]>([
     // 第一轮：用户提问 + assistant 调用工具 + tool 返回
     {

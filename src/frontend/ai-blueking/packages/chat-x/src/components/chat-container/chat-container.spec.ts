@@ -362,6 +362,8 @@ vi.mock('../chat-input/chat-input.vue', () => ({
       resources: Array,
       shortcuts: Array,
       skills: Array,
+      models: Array,
+      selectedModelId: String,
       supportUpload: Boolean,
       cite: String,
       shortcutId: String,
@@ -371,7 +373,7 @@ vi.mock('../chat-input/chat-input.vue', () => ({
       onUpload: Function,
       tippyOptions: Object,
     },
-    emits: ['update:modelValue', 'update:cite', 'selectShortcut', 'deleteShortcut'],
+    emits: ['update:modelValue', 'update:cite', 'update:selectedModelId', 'selectShortcut', 'deleteShortcut', 'modelChange'],
     setup(_, { slots }) {
       return () => h('div', { class: 'mock-chat-input' }, [slots.top?.(), slots.interrupt?.()]);
     },
@@ -747,6 +749,31 @@ describe('ChatContainer', () => {
 
       const ci = wrapper.findComponent({ name: 'ChatInput' });
       expect(ci.props('skills')).toEqual(skills);
+    });
+
+    it('应该将 models 与 selectedModelId 透传给 ChatInput', () => {
+      const models = [{ id: 'gpt-4', name: 'GPT-4' }];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, models, selectedModelId: 'gpt-4' },
+      });
+
+      const ci = wrapper.findComponent({ name: 'ChatInput' });
+      expect(ci.props('models')).toEqual(models);
+      expect(ci.props('selectedModelId')).toBe('gpt-4');
+    });
+
+    it('ChatInput 触发 modelChange 时应向上冒泡', async () => {
+      const models = [{ id: 'gpt-4', name: 'GPT-4' }];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, models },
+      });
+
+      const ci = wrapper.findComponent({ name: 'ChatInput' });
+      await ci.vm.$emit('modelChange', models[0]);
+
+      expect(wrapper.emitted('modelChange')?.[0]).toEqual([models[0]]);
     });
 
     it('存在待审批第三方审批单时应通过 slot 展示提示，并将阻断文案传给 ChatInput', () => {
