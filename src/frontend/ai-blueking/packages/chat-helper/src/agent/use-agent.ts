@@ -107,12 +107,14 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     config,
     resume,
     input,
+    lastMessageId,
   }: {
     sessionCode: string;
     url?: string;
     config?: IRequestConfig;
     resume?: IResume;
     input?: string;
+    lastMessageId?: string;
   }) => {
     // ag-ui 协议需要注入消息模块
     if (usedProtocol instanceof AGUIProtocol) {
@@ -153,8 +155,6 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       isChatting.value = true;
       usedProtocol.onStart?.call(usedProtocol);
     };
-    // 获取最后一条消息的 id
-    const lastMessageId = mediator.message?.list.value.at(-1)?.id;
     // 创建 AbortController
     abortController = new AbortController();
     // 发起聊天
@@ -216,7 +216,8 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
    */
   const resumeStreamingChat = (sessionCode: string, url?: string, config?: IRequestConfig) => {
     if (mediator.session?.current.value?.status === SessionStatus.Running) {
-      streamRequest({ sessionCode, url, config });
+      const lastMessageId = mediator.message?.list.value.at(-1)?.id;
+      streamRequest({ sessionCode, url, config, lastMessageId });
     }
   };
 
