@@ -19,7 +19,7 @@ to the current version of the project delivered to anyone in the future.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Annotated, Any, Callable, Dict, List, Optional, Sequence, Tuple, get_type_hints
+from typing import TYPE_CHECKING, Annotated, Any, Callable, List, Optional, Sequence, Tuple, get_type_hints
 
 from langchain.agents.middleware.types import (
     AgentMiddleware,
@@ -38,7 +38,7 @@ from langgraph.constants import END, START
 from langgraph.graph import add_messages
 from langgraph.graph.state import StateGraph
 from langgraph.store.memory import InMemoryStore
-from langgraph.types import Command, interrupt
+from langgraph.types import Command
 from typing_extensions import Literal, TypedDict, TypeVar
 
 from aidev_agent.config import settings
@@ -63,7 +63,7 @@ from aidev_agent.core.nodes.tool.approval_wrapper import (
 from aidev_agent.core.tools.a2a_tools.bkai_backend import BkaiBackend
 from aidev_agent.core.tools.a2a_tools.local_backend import LocalBackend
 from aidev_agent.core.tools.a2a_tools.provider import AgentBackendResolver, get_agent_tools
-from aidev_agent.core.tools.add_image_to_chat_context import add_image_to_chat_context
+from aidev_agent.core.tools.knowledge import make_knowledge_retrieval_tool
 from aidev_agent.core.tools.runtime_tools import get_client_tools_with_runtime
 from aidev_agent.core.tools.runtime_tools.e2b_backend import E2BSandboxBackend
 from aidev_agent.core.tools.runtime_tools.local_backend import FilesystemBackend
@@ -76,7 +76,6 @@ from aidev_agent.enums import Decision
 from aidev_agent.packages.langchain_core.models.utils import is_model_without_function_calling
 from aidev_agent.packages.langgraph.streaming.streaming_protocol import AgentStreamAdapter
 from aidev_agent.pydantic_models import AgentExecutorKwargs, KnowledgeSettings, ModelContextSettings
-from aidev_agent.core.tools.knowledge import make_knowledge_retrieval_tool
 
 if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
@@ -85,7 +84,6 @@ if TYPE_CHECKING:
     from aidev_agent.core.tools.a2a_tools.types import AgentSpec
 
 from aidev_agent.core.ag_ui.types import LangGraphEventTypes
-from aidev_agent.packages.resource_manager.registry import resource_manager
 
 ResponseT = TypeVar("ResponseT")
 
@@ -736,12 +734,11 @@ class ReActAgentBuilder:
             knowledge_tool = make_knowledge_retrieval_tool(
                 llm=self._knowledge_llm,
                 knowledge_query_options=self._knowledge_query_options,
-                chat_history=self._chat_history,
             )
             if knowledge_tool:
                 tools.append(knowledge_tool)
                 logger.info("[ReActAgentBuilder] Agentic RAG 模式已启用，知识检索工具已添加到工具列表")
-                
+
         # 为所有工具添加忽略错误表示
         if ignore_errors:
             # NOTE: 在 StructuredChatAgent 中修改 tools 中的参数
