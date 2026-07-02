@@ -5,13 +5,38 @@ from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 
-from aidev_agent.packages.langchain_core.retrievers.protocol import Filter, ScalarFilter, VectorFilter
+from aidev_agent.packages.langchain_core.retrievers.protocol import Filter, IndexType, ScalarFilter, VectorFilter
 from aidev_agent.packages.resource_manager.registry import resource_manager
 from aidev_agent.pydantic_models import KnowledgeSettings
 from aidev_agent.utils.decorator import timeit
 from aidev_agent.utils.module_loading import import_string
 
 logger = logging.getLogger(__name__)
+
+
+INDEX_GROUP_TO_DEFAULT_TYPE = {
+    "full_text_indexes": IndexType.VECTOR_FULL_TEXT.value,
+    "vector_indexes": IndexType.VECTOR_MULTI_COLUMN.value,
+}
+
+
+def _collect_supported_indexes(index_config: dict | None) -> list[dict]:
+    if not index_config:
+        return []
+
+    supported_indexes = []
+    for index_group, default_index_type in INDEX_GROUP_TO_DEFAULT_TYPE.items():
+        for index in index_config.get(index_group) or []:
+            index_name = index.get("index_name")
+            if not index_name:
+                continue
+            supported_indexes.append(
+                {
+                    "index_name": index_name,
+                    "index_type": index.get("index_type") or default_index_type,
+                }
+            )
+    return supported_indexes
 
 
 class BkRetriever(BaseRetriever):
@@ -100,51 +125,48 @@ class BkRetriever(BaseRetriever):
             custom_index_name_key = "tool_resource_index_names"
         else:
             raise ValueError(f"不支持的 resource 类型：{resource_type}")
-        if knowledges:
-            supported_ids = [knowledge.get("id") for knowledge in knowledges]
-            for knowledge in knowledges:
-                all_index_names = []
-                supported_index_names = []
-                if index_config := knowledge.get("index_config"):
-                    for index_type in ["full_text_indexes", "vector_indexes"]:
-                        if indexes := index_config.get(index_type):
-                            for index in indexes:
-                                if index_name := index.get("index_name"):
-                                    supported_index_names.append(index_name)
+        if not knowledges:
+            return
 
-                    custom_index_names = kwargs.get(custom_index_name_key, {})
-                    custom_index_names_type = custom_index_names.get(knowledge_type)
-                    if custom_index_names and custom_index_names_type:
-                        if not set(list(custom_index_names_type.keys())).issubset(set(supported_ids)):
-                            raise ValueError(
-                                f"传入的 {knowledge_type} 类型的 ID 有：{supported_ids}，"
-                                f"但传入的 {knowledge_type} 类型的自定义的向量索引 ID 有："
-                                f"{list(custom_index_names_type.keys())}，"
-                                "请确保后者是前者的子集！"
-                            )
-                        if custom_index_names_type_id := custom_index_names_type.get(knowledge.get("id")):
-                            if not set(custom_index_names_type_id).issubset(set(supported_index_names)):
-                                raise ValueError(
-                                    f"{knowledge_type} 类型的知识（库）ID {knowledge.get('id')} "
-                                    f"支持的向量索引有：{supported_index_names}，"
-                                    f"但传入的自定义向量索引为：{custom_index_names_type_id}，"
-                                    "请传入支持的向量索引的子集！"
-                                )
-                            all_index_names = custom_index_names_type_id
-                if not all_index_names:
-                    all_index_names = supported_index_names
-                if not all_index_names:
-                    raise RuntimeError(f"{knowledge_type} 类型的知识（库）ID {knowledge.get('id')} 的索引为空！")
-                index_query_kwargs.extend(
-                    [
-                        {
-                            "index_name": index_name,
-                            "index_value": query,
-                            knowledge_type_to_id_type[knowledge_type]: knowledge["id"],
-                        }
-                        for index_name in all_index_names
-                    ]
-                )
+        supported_ids = [knowledge.get("id") for knowledge in knowledges]
+        for knowledge in knowledges:
+            all_indexes = []
+            supported_indexes = _collect_supported_indexes(knowledge.get("index_config"))
+            supported_index_names = [index["index_name"] for index in supported_indexes]
+
+            custom_index_names = kwargs.get(custom_index_name_key, {})
+            custom_index_names_type = custom_index_names.get(knowledge_type)
+            if custom_index_names and custom_index_names_type:
+                if not set(list(custom_index_names_type.keys())).issubset(set(supported_ids)):
+                    raise ValueError(
+                        f"传入的 {knowledge_type} 类型的 ID 有：{supported_ids}，"
+                        f"但传入的 {knowledge_type} 类型的自定义的向量索引 ID 有："
+                        f"{list(custom_index_names_type.keys())}，"
+                        "请确保后者是前者的子集！"
+                    )
+                if custom_index_names_type_id := custom_index_names_type.get(knowledge.get("id")):
+                    if not set(custom_index_names_type_id).issubset(set(supported_index_names)):
+                        raise ValueError(
+                            f"{knowledge_type} 类型的知识（库）ID {knowledge.get('id')} "
+                            f"支持的向量索引有：{supported_index_names}，"
+                            f"但传入的自定义向量索引为：{custom_index_names_type_id}，"
+                            "请传入支持的向量索引的子集！"
+                        )
+                    custom_index_names_set = set(custom_index_names_type_id)
+                    all_indexes = [index for index in supported_indexes if index["index_name"] in custom_index_names_set]
+            if not all_indexes:
+                all_indexes = supported_indexes
+            if not all_indexes:
+                raise RuntimeError(f"{knowledge_type} 类型的知识（库）ID {knowledge.get('id')} 的索引为空！")
+            for index in all_indexes:
+                query_kwargs = {
+                    "index_name": index["index_name"],
+                    "index_value": query,
+                    knowledge_type_to_id_type[knowledge_type]: knowledge["id"],
+                }
+                if index_type := index.get("index_type"):
+                    query_kwargs["index_type"] = index_type
+                index_query_kwargs.append(query_kwargs)
 
     def _construct_simple_filter(
         self, query, index_name, knowledge_id, knowledge_base_id, topk, scalar_expression, **kwargs
