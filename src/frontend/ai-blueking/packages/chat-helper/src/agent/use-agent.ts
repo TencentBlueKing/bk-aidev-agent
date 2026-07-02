@@ -52,7 +52,8 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
   const isInfoLoading = ref(false);
   const isChatting = ref(false);
   let usedProtocol: ISSEProtocol = protocol || new AGUIProtocol();
-  let abortController: AbortController | null = null;
+  let chatAbortController: AbortController | null = null;
+  let resumeAbortController: AbortController | null = null;
   let longPollTimer: ReturnType<typeof setTimeout> | null = null;
 
   const getAgentInfo = () => {
@@ -156,7 +157,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       usedProtocol.onStart?.call(usedProtocol);
     };
     // 创建 AbortController
-    abortController = new AbortController();
+    chatAbortController = new AbortController();
     // 发起聊天
     void mediator.http?.fetchClient
       .streamRequest({
@@ -172,7 +173,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
             resume,
           },
         },
-        controller: abortController,
+        controller: chatAbortController,
         onDone,
         onError,
         onMessage,
@@ -245,8 +246,11 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       return isInterruptMessage && !!pendingApprovalInterrupt;
     };
     if (getIsTicketLoading()) {
+      // 清除轮询定时器和中断轮询控制器
+      clearLongPollTimer();
+      resumeAbortController = new AbortController();
       // 轮询接口，判断是否可以继续聊天
-      mediator.http?.session.isResumeSession(sessionCode).then(res => {
+      mediator.http?.session.isResumeSession(sessionCode, { controller: resumeAbortController }).then(res => {
         if (res) {
           // 可以继续聊天，重新发起聊天（携带 execute_kwargs.resume 通知后端恢复中断）
           streamRequest({
@@ -268,18 +272,18 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
   };
 
   const clearLongPollTimer = () => {
-    if (longPollTimer) {
-      clearTimeout(longPollTimer);
-      longPollTimer = null;
-    }
+    clearTimeout(longPollTimer);
+    longPollTimer = null;
+    resumeAbortController?.abort?.();
+    resumeAbortController = null;
   };
 
   /**
    * 中止聊天（纯前端中止，后端继续处理）
    */
   const abortChat = () => {
-    abortController?.abort?.();
-    abortController = null;
+    chatAbortController?.abort?.();
+    chatAbortController = null;
   };
 
   /**
