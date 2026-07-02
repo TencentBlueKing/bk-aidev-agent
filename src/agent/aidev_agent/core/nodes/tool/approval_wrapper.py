@@ -291,8 +291,11 @@ def _interrupt_payload_from_target(
     ticket_sn = ticket.get("sn", "")
     # 工具调用参数随 interrupt 一并落库，供续流/历史回填重建 assistant.tool_calls 时使用
     tool_args = dict(target.args) if isinstance(target.args, dict) else {}
+    # 使用 ticket_sn 作为唯一后缀，避免同一工具多次触发审批时 id 重复
+    # （部分模型如 kimi-chat 的 tool_call_id 是确定性的）
+    interrupt_id_suffix = f"-{ticket_sn}" if ticket_sn else ""
     payload = {
-        "id": approval_data.get("interrupt_id") or f"int-approval-{target.target_id}",
+        "id": approval_data.get("interrupt_id") or f"int-approval-{target.target_id}{interrupt_id_suffix}",
         "reason": TOOL_APPROVAL_REASON,
         "toolCallId": target.target_id,
         "message": approval_data.get("message") or f"执行「{target.target_name}」前需要人工审批。",
