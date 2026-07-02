@@ -503,13 +503,7 @@ class TestReActAgentBuilder:
                 return_value=(MagicMock(), {}),
             ),
         ):
-            (
-                ReActAgentBuilder()
-                .set_llm(llm)
-                .set_enable_skills(True)
-                .set_skill_sources([provider])
-                .build()
-            )
+            (ReActAgentBuilder().set_llm(llm).set_enable_skills(True).set_skill_sources([provider]).build())
 
         activate_tool = next(t for t in captured_tools["tools"] if t.name == "activate_skill")
         approval_map = (activate_tool.metadata or {}).get("skill_approval_map", {})
@@ -839,7 +833,7 @@ class TestReActAgentBuilder:
             ) as mock_request:
                 command = approval_check(state, {"configurable": {"execute_kwargs": MagicMock(resume=None)}})
 
-            assert command.goto == "tools"
+            assert command.goto == "pv_node"
             updated_messages = command.update["messages"]
             assert len(updated_messages) == 1
             updated_ai_message = updated_messages[0]
@@ -882,9 +876,11 @@ class TestReActAgentBuilder:
                 "aidev_agent.core.graphs.react.graph.request_approval_decision",
                 return_value=True,
             ) as mock_request:
-                command = approval_check(state, {"configurable": {"execute_kwargs": MagicMock(resume=[{"approved": True}] )}})
+                command = approval_check(
+                    state, {"configurable": {"execute_kwargs": MagicMock(resume=[{"approved": True}])}}
+                )
 
-            assert command.goto == "tools"
+            assert command.goto == "pv_node"
             updated_ai_message = next(msg for msg in command.update["messages"] if isinstance(msg, AIMessage))
             approval_state = updated_ai_message.additional_kwargs["tool_approval"]
             assert approval_state["call_1"]["status"] == "approved"
@@ -933,7 +929,7 @@ class TestReActAgentBuilder:
             ) as mock_request:
                 command = approval_check(state, {"configurable": {"execute_kwargs": MagicMock(resume=None)}})
 
-            assert command.goto == "tools"
+            assert command.goto == "pv_node"
             updated_ai_message = command.update["messages"][0]
             approval_state = updated_ai_message.additional_kwargs["tool_approval"]
             assert approval_state["call_skill_1"]["status"] == "approved"
@@ -984,7 +980,7 @@ class TestReActAgentBuilder:
             ) as mock_request:
                 command = approval_check(state, {"configurable": {"execute_kwargs": MagicMock(resume=None)}})
 
-            assert command.goto == "tools"
+            assert command.goto == "pv_node"
             updated_ai_message = command.update["messages"][0]
             approval_state = updated_ai_message.additional_kwargs["tool_approval"]
             assert approval_state["call_mcp_1"]["status"] == "approved"

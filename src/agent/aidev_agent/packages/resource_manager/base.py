@@ -350,7 +350,7 @@ class BaseResourceManager(abc.ABC):
             knowledgebase_ids=res["knowledgebase_settings"]["knowledgebases"],
             tool_codes=tool_codes,
             related_tools=related_tools_data,
-            opening_mark=conversation_settings.get("opening_remark") or None,
+            opening_mark=conversation_settings.get("opening_remark"),
             mcp_server_config=res.get("mcp_server_config", {}).get("mcpServers", {}),
             related_skills=related_skills,
             approval_settings=res.get("approval_settings") or {},

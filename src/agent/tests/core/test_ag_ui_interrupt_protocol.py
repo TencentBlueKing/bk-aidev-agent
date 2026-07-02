@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 from ag_ui.core import EventType, RunFinishedEvent, RunStartedEvent
-from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
 from aidev_agent.core.ag_ui.agent import LangGraphAGUIAgent
+from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
 from aidev_agent.core.ag_ui.approval import ApprovalOutcomeBuilder
 from aidev_agent.core.ag_ui.types import (
     AgentInput,
@@ -37,14 +37,13 @@ async def test_aidev_agent_run_exposes_messages_snapshot(monkeypatch):
 
     agent = AidevAGUIAgent(name="outer-agent", graph=MagicMock())
     chunks = [
-        chunk
-        async for chunk in agent.run(AgentInput(thread_id="thread-3", run_id="run-3", state={}, messages=[]))
+        chunk async for chunk in agent.run(AgentInput(thread_id="thread-3", run_id="run-3", state={}, messages=[]))
     ]
     payloads = [json.loads(chunk[6:]) for chunk in chunks]
 
     assert [payload["type"] for payload in payloads] == [
-        EventType.RUN_STARTED.value,
         EventType.MESSAGES_SNAPSHOT.value,
+        EventType.RUN_STARTED.value,
         EventType.RUN_FINISHED.value,
     ]
 
@@ -86,6 +85,7 @@ def test_event_dispatcher_suppresses_skill_approval_without_need_approval():
 # 审批续流终态形态：ApprovalOutcomeBuilder.upgrade_content_to_success
 #                  / ApprovalOutcomeBuilder.build_run_finished_payload
 # ---------------------------------------------------------------------------
+
 
 def _approval_interrupt_dict() -> dict:
     """构造一条典型的"中断态"interrupt 结构（status=pending），供后续升级测试使用。"""
@@ -162,12 +162,13 @@ def test_upgrade_content_to_success_returns_none_for_invalid():
     assert ApprovalOutcomeBuilder.upgrade_content_to_success(None, "approved") is None
     assert ApprovalOutcomeBuilder.upgrade_content_to_success("not-a-json", "approved") is None
     assert ApprovalOutcomeBuilder.upgrade_content_to_success({}, "approved") is None
-    assert ApprovalOutcomeBuilder.upgrade_content_to_success(
-        {"outcome": {"type": "other"}}, "approved"
-    ) is None
-    assert ApprovalOutcomeBuilder.upgrade_content_to_success(
-        {"outcome": {"type": "interrupt", "interrupts": []}}, "approved"
-    ) is None
+    assert ApprovalOutcomeBuilder.upgrade_content_to_success({"outcome": {"type": "other"}}, "approved") is None
+    assert (
+        ApprovalOutcomeBuilder.upgrade_content_to_success(
+            {"outcome": {"type": "interrupt", "interrupts": []}}, "approved"
+        )
+        is None
+    )
 
 
 def test_build_run_finished_payload_matches_success_content():
@@ -184,6 +185,7 @@ def test_build_run_finished_payload_matches_success_content():
 # ---------------------------------------------------------------------------
 # 续流场景：AidevAGUIAgent.run 首条 SSE 事件应为带 result 的 RUN_FINISHED
 # ---------------------------------------------------------------------------
+
 
 async def _fake_parent_run_normal(self, input):  # noqa: ARG001
     yield RunStartedEvent(type=EventType.RUN_STARTED, thread_id="t", run_id="r")
@@ -220,14 +222,15 @@ async def test_resume_emits_terminal_run_finished_before_run_started(monkeypatch
     ]
     payloads = [json.loads(chunk[6:]) for chunk in chunks]
 
-    # 第一条必须是 RUN_FINISHED（终态回放），随后才是 SDK 的 RUN_STARTED / RUN_FINISHED
+    # 首条 MESSAGES_SNAPSHOT 之后紧跟 RUN_FINISHED（终态回放），随后才是 SDK 的 RUN_STARTED / RUN_FINISHED
     assert [p["type"] for p in payloads] == [
+        EventType.MESSAGES_SNAPSHOT.value,
         EventType.RUN_FINISHED.value,
         EventType.RUN_STARTED.value,
         EventType.RUN_FINISHED.value,
     ]
 
-    first = payloads[0]
+    first = payloads[1]
     assert first["outcome"]["type"] == "success"
     assert first["outcome"]["interrupts"][0]["metadata"]["status"] == "approved"
     assert first["outcome"]["interrupts"][0]["metadata"]["ticket"]["status"] == "approved"
@@ -256,7 +259,7 @@ async def test_resume_run_id_falls_back_to_interrupt_id(monkeypatch):
         approval_interrupts=[_approval_interrupt_dict()],
     )
     chunks = [chunk async for chunk in agent.run(AgentInput(thread_id="t", run_id="r", state={}, messages=[]))]
-    first = json.loads(chunks[0][6:])
+    first = json.loads(chunks[1][6:])
     assert first["type"] == EventType.RUN_FINISHED.value
     assert first["runId"] == "int-approval-call-x"
     assert first["outcome"]["interrupts"][0]["metadata"]["status"] == "rejected"
@@ -271,6 +274,7 @@ async def test_normal_chat_does_not_emit_resume_run_finished(monkeypatch):
     chunks = [chunk async for chunk in agent.run(AgentInput(thread_id="t", run_id="r", state={}, messages=[]))]
     payloads = [json.loads(chunk[6:]) for chunk in chunks]
     assert [p["type"] for p in payloads] == [
+        EventType.MESSAGES_SNAPSHOT.value,
         EventType.RUN_STARTED.value,
         EventType.RUN_FINISHED.value,
     ]
@@ -291,6 +295,7 @@ async def test_resume_skipped_for_non_approval_interrupt(monkeypatch):
     chunks = [chunk async for chunk in agent.run(AgentInput(thread_id="t", run_id="r", state={}, messages=[]))]
     payloads = [json.loads(chunk[6:]) for chunk in chunks]
     assert [p["type"] for p in payloads] == [
+        EventType.MESSAGES_SNAPSHOT.value,
         EventType.RUN_STARTED.value,
         EventType.RUN_FINISHED.value,
     ]
