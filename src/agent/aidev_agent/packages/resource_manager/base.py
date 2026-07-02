@@ -382,9 +382,18 @@ class BaseResourceManager(abc.ABC):
             "data", {}
         )
 
-    def retrieve_skill(self, skill_id: str, version: str, **kwargs) -> dict:
+    def retrieve_skill(
+        self,
+        skill_id: str,
+        version: str | None = None,
+        callee_agent_code: str | None = None,
+        **kwargs,
+    ) -> dict:
         params = kwargs.pop("params", {})
-        params["version"] = version
+        if version is not None:
+            params["version"] = version
+        if callee_agent_code is not None:
+            params["callee_agent_code"] = callee_agent_code
         client = self.get_client()
         return client.api.retrieve_resource_v1_skill(path_params={"skill_id": skill_id}, params=params, **kwargs).get(
             "data", {}

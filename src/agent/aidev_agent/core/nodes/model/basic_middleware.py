@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -265,7 +266,15 @@ class BaseVariablesMiddleware:
 
 
 class SpecialVariablesMiddleware:
-    """构建特殊变量（beijing_now/context_type/context 等）。"""
+    """构建特殊变量（beijing_now/context_type/context 等）。
+
+    beijing_now 和 timestamp 会缓存在 assembly_cache 中，同一轮对话内保持不变，
+    从而避免每次 ReAct 循环都重新生成时间字符串破坏 prompt cache。
+    超过 BEIJING_NOW_TTL_SECONDS 秒后自动刷新。
+    """
+
+    # 北京时间缓存超时时间（秒），同一轮对话内 beijing_now 在此时间内保持不变
+    BEIJING_NOW_TTL_SECONDS: int = 3600
 
     def __init__(
         self,
@@ -279,6 +288,24 @@ class SpecialVariablesMiddleware:
         self.use_general_knowledge_on_miss = use_general_knowledge_on_miss
         self.rejection_message = rejection_message
         self.enable_parallel_tool_calls = enable_parallel_tool_calls
+
+    def _get_beijing_now_cached(self, cache: Optional[Dict[str, Any]]) -> tuple[str, int]:
+        """从 assembly_cache 获取缓存的 beijing_now / timestamp，超时则刷新。"""
+        if isinstance(cache, dict):
+            cached_timestamp = cache.get("_beijing_timestamp")
+            if cached_timestamp and time.time() - cached_timestamp < self.BEIJING_NOW_TTL_SECONDS:
+                beijing_str = cache.get("_beijing_now")
+                if beijing_str:
+                    return beijing_str, cached_timestamp
+
+        now_str = get_beijing_now()
+        now_ts = beijing_to_timestamp(now_str)
+
+        if isinstance(cache, dict):
+            cache["_beijing_now"] = now_str
+            cache["_beijing_timestamp"] = now_ts
+
+        return now_str, now_ts
 
     def __call__(self, ctx: ProcessorContext, next: NextFunction) -> None:
         chat_history: List[BaseMessage] = ctx.metadata.get("chat_history", [])
@@ -296,9 +323,11 @@ class SpecialVariablesMiddleware:
         else:
             agent_scratchpad = tool_messages
 
+        beijing_now, timestamp = self._get_beijing_now_cached(ctx.assembly_cache)
+
         special_vars = {
-            "beijing_now": get_beijing_now(),
-            "timestamp": beijing_to_timestamp(get_beijing_now()),
+            "beijing_now": beijing_now,
+            "timestamp": timestamp,
             "context_type": get_context_type_from_state(ctx.state),
             "context": ctx.state.get("knowledge_content"),
             "qa_context": ctx.state.get("knowledge_qa_content"),
