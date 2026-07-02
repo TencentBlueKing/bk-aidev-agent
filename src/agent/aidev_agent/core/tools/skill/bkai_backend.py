@@ -33,18 +33,10 @@ class BkAiBackend:
     BK-AIDev 技能后端 - 从预配置技能列表和 API 集成。
 
     该后端从 Agent 构建时传入的 related_skills 列表（来自 agent_info）
-    直接构建技能元数据。在 ``convert_to_options`` 中会调用 API 获取
-    frontmatter 可选字段（license, allowed_tools 等），结果通过类级别缓存
-    避免重复请求。
+    直接构建技能元数据。在 ``convert_to_options`` 中会调用 API 获取 frontmatter 可选字段（license, allowed_tools 等）。
+    由于技能返回值可能受环境变量配置影响，相同 skill_id + version 的 API 返回也不保证稳定，因此每次都直接调用 API，不做类级别缓存。
 
-    激活时通过 ``fetch_instructions`` 从缓存中取出正文指引。
-
-    Notes
-    -----
-    _bkai_skill_cache 是类级别缓存，以 (skill_id, version) 为 key，
-    value 为 retrieve_skill 的完整返回 dict（附加 ``_cache_instructions``
-    和 ``_cache_frontmatter`` 两个解析后字段）。
-    相同 skill_id + version 的数据只会从 API 拉取一次，所有实例共享。
+    激活时通过 ``fetch_instructions`` 实时获取正文指引。
 
     Attributes
     ----------
@@ -53,9 +45,6 @@ class BkAiBackend:
     related_skills : list[dict[str, Any]]
         技能列表，来自 agent_info.related_skills
     """
-
-    # 类级别缓存：key 为 (skill_id, version)，value 为完整 API 返回 + 解析字段
-    _bkai_skill_cache: dict[tuple[str, str], dict[str, Any]] = {}
 
     def __init__(
         self,
@@ -113,7 +102,7 @@ class BkAiBackend:
         获取技能的完整指引文本。
 
         从 path 字段解析 skill_id 和 version，通过 ``_get_skill_data``
-        获取缓存数据，返回其中的 ``_cache_instructions``。
+        获取最新数据，返回其中的 ``_cache_instructions``。
 
         Parameters
         ----------
@@ -129,12 +118,14 @@ class BkAiBackend:
 
         # 从 path 解析 skill_id 和 version
         skill_id, version = self._parse_path(skill.get("path", ""))
+        # 获取主调用智能体 callee_agent_code
+        callee_agent_code = skill.get("callee_agent_code")
         if not skill_id:
             logger.warning(f"技能 {skill_name} 的 path 格式无效，无法获取指引")
             return ""
 
         try:
-            cached = self._get_skill_data(skill_id, version)
+            cached = self._get_skill_data(skill_id, version, callee_agent_code)
             return cached.get("_cache_instructions", "")
         except Exception as e:
             logger.error(
@@ -143,17 +134,19 @@ class BkAiBackend:
             )
             return ""
 
-    # -- 数据获取与缓存 -------------------------------------------------------
+    # -- 数据获取 -------------------------------------------------------------
 
-    def _get_skill_data(self, skill_id: str, version: str) -> dict[str, Any]:
+    def _get_skill_data(
+        self, skill_id: str, version: str | None, callee_agent_code: str | None = None
+    ) -> dict[str, Any]:
         """
         根据 (skill_id, version) 获取完整的技能数据。
 
-        优先从类级别缓存中读取；缓存未命中时调用
-        ``self.client.retrieve_skill()`` 获取，解析 frontmatter
-        并缓存结果。
+        每次调用 ``self.client.retrieve_skill()`` 获取最新数据，并解析
+        frontmatter。技能返回值可能受环境变量配置影响，相同 skill_id +
+        version 的返回也不保证稳定，因此这里不做缓存。
 
-        缓存的 dict 除了 API 原始字段外，还包含：
+        返回的 dict 除了 API 原始字段外，还包含：
         - ``_cache_instructions``: 正文（去掉 frontmatter 后的内容）
         - ``_cache_frontmatter``: 解析后的 frontmatter dict（或空 dict）
 
@@ -167,16 +160,13 @@ class BkAiBackend:
         Returns
         -------
         dict[str, Any]
-            缓存的完整技能数据
+            完整技能数据
         """
-        cache_key = (str(skill_id), str(version))
-
-        if cache_key in BkAiBackend._bkai_skill_cache:
-            logger.debug(f"使用缓存数据: skill_id={skill_id}, v={version}")
-            return BkAiBackend._bkai_skill_cache[cache_key]
-
         logger.debug(f"调用 API 获取数据: skill_id={skill_id}, v={version}")
-        api_response = self.client.retrieve_skill(skill_id=skill_id, version=version)
+        retrieve_kwargs: dict[str, Any] = {"skill_id": skill_id, "version": version}
+        if callee_agent_code is not None:
+            retrieve_kwargs["callee_agent_code"] = callee_agent_code
+        api_response = self.client.retrieve_skill(**retrieve_kwargs)
 
         # 解析 skill_markdown 中的 frontmatter 和正文
         raw_markdown = api_response.get("skill_markdown", "")
@@ -186,8 +176,7 @@ class BkAiBackend:
         api_response["_cache_instructions"] = instructions
         api_response["_cache_frontmatter"] = frontmatter or {}
 
-        BkAiBackend._bkai_skill_cache[cache_key] = api_response
-        logger.debug(f"已缓存技能数据: skill_id={skill_id}, v={version} (instructions_len={len(instructions)})")
+        logger.debug(f"已获取技能数据: skill_id={skill_id}, v={version} (instructions_len={len(instructions)})")
         return api_response
 
     # -- 辅助方法 -----------------------------------------------------------
@@ -245,7 +234,8 @@ class BkAiBackend:
         skill_id = skill_data.get("id")  # int 类型
         skill_name: str = skill_data.get("skill_name")
         skill_description: str = skill_data.get("skill_description") or skill_data.get("description", "")
-        version = skill_data.get("version", "latest")
+        version: str = skill_data.get("version", "latest")
+        callee_agent_code: str | None = skill_data.get("callee_agent_code")
 
         # 验证必需字段（skill_id 从 1 开始，0 即为非法值）
         if not all([skill_id, skill_name, skill_description]):
@@ -260,10 +250,12 @@ class BkAiBackend:
             "description": skill_description,
             "path": f"api://{skill_id}/{version}",
         }
+        if callee_agent_code:
+            skill_options["callee_agent_code"] = callee_agent_code
 
-        # 从 API 缓存中获取可选字段（frontmatter）
+        # 从 API 获取可选字段（frontmatter）
         try:
-            cached = self._get_skill_data(str(skill_id), str(version))
+            cached = self._get_skill_data(str(skill_id), str(version), callee_agent_code=callee_agent_code)
             frontmatter = cached.get("_cache_frontmatter", {})
             if frontmatter:
                 apply_optional_frontmatter_fields(
@@ -316,18 +308,3 @@ class BkAiBackend:
         if match:
             return match.group(1), match.group(2)
         return "", ""
-
-    @classmethod
-    def clear_cache(cls) -> None:
-        """
-        清空类级别的技能数据缓存。
-
-        所有 BkAiBackend 实例共享此缓存，清空后
-        下次访问会重新从 API 拉取。
-
-        在以下场景下使用：
-        - 需要重新从 API 获取最新数据
-        - 长期运行需要定期清理内存
-        """
-        cls._bkai_skill_cache.clear()
-        logger.info("已清空 BkAiBackend 类级别缓存")
