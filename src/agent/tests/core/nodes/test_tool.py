@@ -1534,3 +1534,29 @@ class TestToolApprovalCreatePayload:
         assert payload["tool_code"] == "query-time"
         assert payload["mcp_name"] == "time-server"
         assert payload["tool_args"] == {"timezone": "Asia/Shanghai"}
+
+    def test_create_approval_payload_resolves_mcp_name_from_binding(self):
+        from unittest.mock import MagicMock, patch
+
+        from aidev_agent.core.nodes.tool.approval_wrapper import ApprovalTarget, _create_approval_from_target
+
+        target = ApprovalTarget(
+            target_type="mcp",
+            target_id="call_1",
+            target_name="get_ticket_info",
+            target_code="get_ticket_info",
+            args={"query_param": {"sn": "DE2026070600000005"}},
+            approval={"mcp_name": "itsm-mcp", "approvers": ["admin"]},
+            tool=None,
+        )
+        mock_client = MagicMock()
+        mock_client.api.create_tool_approval.return_value = {"data": {"callback_token": "token", "ticket": {}}}
+
+        with patch(
+            "aidev_agent.core.nodes.tool.approval_wrapper.BKAidevApi.get_client",
+            return_value=mock_client,
+        ):
+            _create_approval_from_target(target, None)
+
+        payload = mock_client.api.create_tool_approval.call_args.kwargs["json"]
+        assert payload["mcp_name"] == "itsm-mcp"

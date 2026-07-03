@@ -295,10 +295,7 @@ class BaseSessionWriter(ABC):
                 source = inner
 
         metadata = {}
-        if isinstance(source, dict):
-            raw_metadata = source.get("metadata")
-        else:
-            raw_metadata = getattr(source, "metadata", None)
+        raw_metadata = source.get("metadata") if isinstance(source, dict) else getattr(source, "metadata", None)
         if isinstance(raw_metadata, dict):
             metadata = raw_metadata
 
@@ -521,13 +518,10 @@ class BaseSessionWriter(ABC):
         outcome = getattr(event, "outcome", None)
         # 兼容 outcome 为 dict 或对象的情况
         outcome_type = (
-            outcome.get("type")
-            if isinstance(outcome, dict)
-            else getattr(outcome, "type", None) if outcome else None
+            outcome.get("type") if isinstance(outcome, dict) else getattr(outcome, "type", None) if outcome else None
         )
         logger.info(
-            "[ToolApproval] handle_run_finished outcome check: outcome=%s, outcome_type=%s, "
-            "outcome_type_attr=%s",
+            "[ToolApproval] handle_run_finished outcome check: outcome=%s, outcome_type=%s, outcome_type_attr=%s",
             outcome,
             type(outcome).__name__ if outcome else None,
             outcome_type,
@@ -535,9 +529,7 @@ class BaseSessionWriter(ABC):
         if outcome and outcome_type == "interrupt":
             # 读取 interrupts 数据
             interrupts = (
-                outcome.get("interrupts")
-                if isinstance(outcome, dict)
-                else getattr(outcome, "interrupts", [])
+                outcome.get("interrupts") if isinstance(outcome, dict) else getattr(outcome, "interrupts", [])
             ) or []
             # 防御性检查：如果任何 interrupt_id 已在 _written_message_ids 中，说明已写入过，跳过整个 interrupt 分支
             already_written = any(
@@ -589,6 +581,7 @@ class BaseSessionWriter(ABC):
                     "tool_name": metadata.get("toolName") or serialized.get("toolName") or serialized.get("toolName"),
                     "tool_args": tool_args,
                     "callback_token": metadata.get("callbackToken") or serialized.get("callbackToken"),
+                    "ticket_id": ticket.get("id") or metadata.get("ticketId") or serialized.get("ticketId"),
                     "ticket_sn": ticket.get("sn") or metadata.get("ticketSn") or serialized.get("ticketSn"),
                     "graph_thread_id": getattr(event, "thread_id", ""),
                 }
@@ -699,7 +692,9 @@ class BaseSessionWriter(ABC):
         # 处理最终回复内容
         # 有延迟的审批 tool_calls 时，视为"尚未调用工具"，不使用"正在调用工具..."占位
         content = self._resolve_content(
-            output_message.content, tool_calls, reasoning_content,
+            output_message.content,
+            tool_calls,
+            reasoning_content,
             has_deferred_tool_calls=bool(deferred_tool_calls),
         )
 
@@ -1047,7 +1042,9 @@ class BaseSessionWriter(ABC):
                 immediate_tool_calls.append(tool_call_dict)
         return immediate_tool_calls, deferred_tool_calls
 
-    def _resolve_content(self, content: str, tool_calls: list, reasoning_content: str | None, *, has_deferred_tool_calls: bool = False) -> str:
+    def _resolve_content(
+        self, content: str, tool_calls: list, reasoning_content: str | None, *, has_deferred_tool_calls: bool = False
+    ) -> str:
         """解析最终回复内容
 
         对于 DeepSeek reasoning 模型，最终回复可能在 reasoning_content 而不是 content。
@@ -1190,7 +1187,9 @@ class BaseSessionWriter(ABC):
 
         if matched_tool_call:
             # 从延迟列表中移除已处理的 tool_call
-            remaining = [tc for tc in self._deferred_approval_tool_calls[matched_assistant_id] if tc.get("id") != tool_call_id]
+            remaining = [
+                tc for tc in self._deferred_approval_tool_calls[matched_assistant_id] if tc.get("id") != tool_call_id
+            ]
             if remaining:
                 self._deferred_approval_tool_calls[matched_assistant_id] = remaining
             else:
