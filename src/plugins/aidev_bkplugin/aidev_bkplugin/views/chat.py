@@ -324,6 +324,7 @@ class ChatCompletionViewSet(PluginViewSet):
                 client=AgentHelper.get_client(),
                 username=username,
                 turn_id=turn_id,
+                task_id=str(task_id) if task_id else "",
             )
 
         # FlowAgent 不需要工厂 SESSION 路径的会话上下文清洗（_get_agent_config /
