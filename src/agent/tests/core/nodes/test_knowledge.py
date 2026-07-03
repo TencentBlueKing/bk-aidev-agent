@@ -6,6 +6,11 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from langchain_core.messages import HumanMessage
+from langgraph.graph import END, START, StateGraph
+from langgraph.store.memory import InMemoryStore
+from typing_extensions import TypedDict
+
 from aidev_agent.core.nodes.knowledge import (
     AgentKnowledgeNode,
     AidevKnowledgeNode,
@@ -15,10 +20,6 @@ from aidev_agent.core.nodes.knowledge import (
 )
 from aidev_agent.enums import Decision
 from aidev_agent.pydantic_models import AgentOptions, KnowledgebaseSettings, KnowledgeSettings
-from langchain_core.messages import HumanMessage
-from langgraph.graph import END, START, StateGraph
-from langgraph.store.memory import InMemoryStore
-from typing_extensions import TypedDict
 
 # ============================================================================
 # 测试状态定义
