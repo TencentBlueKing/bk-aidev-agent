@@ -31,6 +31,7 @@ export enum CustomEventName {
   FlowAgentResult = 'flow_agent_result',
   FlowAgentStart = 'flow_agent_start',
   FlowAgentUpdate = 'flow_agent_update',
+  FlowAgentRestart = 'flow_agent_restart',
   KnowledgeRagEnd = 'knowledge_rag_end',
   KnowledgeRagResult = 'knowledge_rag_result',
   KnowledgeRagStart = 'knowledge_rag_start',
@@ -165,6 +166,7 @@ export interface ICustomEvent extends IBaseEvent {
     | IFlowAgentEndCustomValue
     | IFlowAgentResultCustomValue
     | IFlowAgentStartCustomValue
+    | IFlowAgentRestartCustomValue
     | IKnowledgeRagResultCustomValue
     | IKnowledgeRagTextContentCustomValue
     | IReferenceDocumentCustomValue
@@ -217,7 +219,7 @@ export interface IFlowAgentNode {
 
 export type IFlowAgentResultCustomValue = {
   nodes: Record<string, IFlowAgentNode>;
-  task_id: number;
+  task_id: string;
   task_name: string;
   task_outputs: string[];
   task_state: FlowTaskState;
@@ -226,6 +228,8 @@ export type IFlowAgentResultCustomValue = {
 export type IFlowAgentStartCustomValue = {
   task_id: string;
 }[];
+
+export type IFlowAgentRestartCustomValue = IFlowAgentStartCustomValue
 
 export type IKnowledgeRagResultCustomValue = IReferenceDocumentCustomValue;
 
