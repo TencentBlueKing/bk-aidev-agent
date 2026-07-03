@@ -253,6 +253,8 @@ def _resolve_mcp_name(target: ApprovalTarget) -> str:
     if target.target_type != "mcp":
         return ""
     approval = target.approval or {}
+    if mcp_name := approval.get("mcp_name"):
+        return str(mcp_name)
     target_info = approval.get("target") or {}
     if mcp_code := approval.get("mcp_code"):
         return str(mcp_code)
