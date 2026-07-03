@@ -1503,3 +1503,34 @@ class TestToolMsgContentLen:
         msg = ToolMessage(content=12345, tool_call_id="test")
         result = _tool_msg_content_len(msg)
         assert result == 5  # str(12345) = "12345"
+
+
+class TestToolApprovalCreatePayload:
+    def test_create_approval_payload_includes_resource_fields(self):
+        from unittest.mock import MagicMock, patch
+
+        from aidev_agent.core.nodes.tool.approval_wrapper import ApprovalTarget, _create_approval_from_target
+
+        target = ApprovalTarget(
+            target_type="mcp",
+            target_id="call_1",
+            target_name="Query Time",
+            target_code="query-time",
+            args={"timezone": "Asia/Shanghai"},
+            approval={"mcp_code": "time-server", "approvers": ["admin"]},
+            tool=None,
+        )
+        mock_client = MagicMock()
+        mock_client.api.create_tool_approval.return_value = {"data": {"callback_token": "token", "ticket": {}}}
+
+        with patch(
+            "aidev_agent.core.nodes.tool.approval_wrapper.BKAidevApi.get_client",
+            return_value=mock_client,
+        ):
+            _create_approval_from_target(target, None)
+
+        payload = mock_client.api.create_tool_approval.call_args.kwargs["json"]
+        assert payload["tool_name"] == "Query Time"
+        assert payload["tool_code"] == "query-time"
+        assert payload["mcp_name"] == "time-server"
+        assert payload["tool_args"] == {"timezone": "Asia/Shanghai"}
