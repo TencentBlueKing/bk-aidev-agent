@@ -513,22 +513,12 @@ class ChatCompletionAgent(BaseModel):
         graph_thread_id: str | None = None,
         resume: bool = False,
     ) -> Generator[Any, None, None]:
-        """使用队列处理器缓存流式请求，支持断点续传
+        """使用队列处理器缓存流式请求，支持断点续传。
 
-        断点续传逻辑：
-        1. 如果流正在运行或已完成，且有未消费的缓存消息，则从 client_index 位置续传
-        2. 否则开始新的流式请求
-
-        客户端在消费时应该在每次成功接收后更新 client_index，
-        以便在连接中断后能够从正确的位置继续。
-
-        Args:
-            agui_entry: AGUI Agent 入口
-            agent_input: Agent 输入参数
-            queue_thread_id: 队列标识ID（用于断点续传），默认使用 agent_input.thread_id
-
-        Yields:
-            流式响应数据
+        两阶段输出：
+        1. 同步直传头部帧到RUN_STARTED，
+           绕过 RabbitMQ buffer 避免 gevent 环境下的顺序竞态。
+        2. 后续运行时事件交给队列管理，支持断点续传。
         """
         helper = GeneratorStreamingHelper(
             thread_id=queue_thread_id or agent_input.thread_id,
@@ -537,7 +527,37 @@ class ChatCompletionAgent(BaseModel):
         producer = self._build_resume_aware_producer(
             agui_entry, agent_input, agent_e=agent_e, cfg=cfg, graph_thread_id=graph_thread_id, resume=resume
         )
-        return helper.stream(producer, on_complete=self._on_complete)
+
+        # ---- 阶段 1：同步拉取头部帧并直接 yield ----
+        head_frames = []
+        remaining_producer = self._extract_head_frames(producer, head_frames)
+        for frame in head_frames:
+            yield frame
+
+        # ---- 阶段 2：剩余帧交给队列管理（支持断点续传）----
+        yield from helper.stream(remaining_producer, on_complete=self._on_complete)
+
+    @staticmethod
+    def _extract_head_frames(
+        producer: Generator[Any, None, None],
+        head_frames: list,
+    ) -> Generator[Any, None, None]:
+        """从 producer 中同步提取头部帧（到 RUN_STARTED 为止），返回剩余帧 generator。
+
+        事件流结构：MESSAGES_SNAPSHOT → [RUN_FINISHED] → RUN_STARTED → STEP_* ...
+        RUN_STARTED 是 Agent 图执行的起点，之前的帧为初始化/回放事件。
+        """
+        RUN_STARTED_MARKER = '"type":"RUN_STARTED"'
+
+        def _remaining() -> Generator[Any, None, None]:
+            yield from producer
+
+        for frame in producer:
+            head_frames.append(frame)
+            if isinstance(frame, str) and RUN_STARTED_MARKER in frame:
+                break
+
+        return _remaining()
 
     def _build_resume_aware_producer(
         self,
