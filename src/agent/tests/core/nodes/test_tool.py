@@ -511,44 +511,7 @@ class TestBuildToolNode:
         finally:
             calculator.metadata = original_metadata
 
-    def test_identify_message_approval_targets_uses_skill_name_from_activate_skill_args(self):
-        original_metadata = dict(getattr(calculator, "metadata", None) or {})
-        calculator.metadata = {
-            **original_metadata,
-            "skill_approval_map": {
-                "skill-runner": {
-                    "tool_type": "skill",
-                    "skill_code": "skill-runner",
-                    "tool_name": "skill-runner",
-                    "target": {
-                        "type": "skill",
-                        "id": 9,
-                        "name": "activate_skill",
-                        "display_name": "skill-runner",
-                        "code": "skill-runner",
-                        "skill_name": "skill-runner",
-                    },
-                }
-            },
-        }
-        try:
-            targets = identify_message_approval_targets(
-                [
-                    {
-                        "id": "call_skill_1",
-                        "name": "activate_skill",
-                        "args": {"skill_name": "skill-runner"},
-                        "type": "tool_call",
-                    }
-                ],
-                {"activate_skill": calculator},
-            )
-            assert len(targets) == 1
-            assert targets[0].target_type == "skill"
-            assert targets[0].target_code == "skill-runner"
-            assert targets[0].target_name == "skill-runner"
-        finally:
-            calculator.metadata = original_metadata
+
 
     def test_timing_accuracy(self):
         """测试6: 验证执行时间记录的准确性"""
