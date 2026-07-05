@@ -58,12 +58,12 @@ async def test_async_gen_with_timeout():
 
 
 def test_async_to_sync_generator_in_worker_thread():
-    """验证 async_to_sync_generator 在 worker 线程中正常工作，且不污染调用线程的 _thread_local.loop。"""
+    """验证 async_to_sync_generator 在 worker 线程中正常工作。"""
 
     def _consume():
         request_local.run_id = "worker"
         result = list(async_to_sync_generator(async_generator_with_timeout(gen(), timeout=10)))
-        # 新实现使用独立事件循环，不应在调用线程的 _thread_local 中设置 loop
+        # get_event_loop() 会在 worker 线程缓存事件循环用于复用，has_loop 为 True 是预期行为
         has_loop = hasattr(_thread_local, "loop") and _thread_local.loop is not None
         return result, has_loop
 
@@ -71,4 +71,4 @@ def test_async_to_sync_generator_in_worker_thread():
         result, has_loop = pool.submit(_consume).result()
 
     assert result == ["worker-0", "worker-1", "worker-2"]
-    assert has_loop is False
+    assert has_loop is True

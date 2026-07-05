@@ -459,13 +459,20 @@ class TestCommonAgentChatStreaming:
             result_content = list(result)
 
             # 验证错误消息被正确捕获
-            # 响应格式: data: {"event": "error", "code": "...", "message": "..."}
-            last_content = result_content[-1]
-            assert last_content.startswith("data: ")
-            assert json.loads(last_content[5:])["type"] == "RUN_ERROR"
-            assert json.loads(last_content[5:])["message"].startswith(
+            # 当前实现：RUN_ERROR 后跟 RUN_FINISHED 作为结束信号
+            error_events = [
+                c for c in result_content
+                if c.startswith("data: ") and json.loads(c[6:]).get("type") == "RUN_ERROR"
+            ]
+            assert len(error_events) >= 1
+            error_payload = json.loads(error_events[0][6:])
+            assert error_payload["message"].startswith(
                 "模型调用异常: Authentication failed for model gptoss-999b"
             )
+            # 最后一条事件应为 RUN_FINISHED
+            last_content = result_content[-1]
+            assert last_content.startswith("data: ")
+            assert json.loads(last_content[6:])["type"] == "RUN_FINISHED"
 
     def test_tool_call_error_case(self):
         """case 6: 工具调用错误处理
@@ -2085,7 +2092,7 @@ class TestTerminalResumeReplay:
 
         with patch(f"{_CHAT_MODULE}.run_coro_sync", return_value=state) as mock_run:
             replay = agent._build_terminal_resume_replay(
-                agui_entry, agent_input, MagicMock(), {"configurable": {"thread_id": "session"}}, "graph-1"
+                agui_entry, agent_input, MagicMock(), {"configurable": {"thread_id": "session"}}
             )
 
         assert replay is not None
@@ -2095,11 +2102,11 @@ class TestTerminalResumeReplay:
         assert EventType.MESSAGES_SNAPSHOT not in types_seq
         assert EventType.RUN_STARTED in types_seq
         assert EventType.RUN_FINISHED in types_seq
-        # aget_state 应被调用，且重放查询定位到 graph_thread_id
+        # aget_state 应被调用，且重放查询定位到 agent_input.thread_id
         mock_run.assert_called_once()
 
-    def test_build_replay_uses_graph_thread_id_in_cfg(self):
-        """aget_state 的 cfg 应把 thread_id 显式指向 graph_thread_id，避免误读 session thread"""
+    def test_build_replay_uses_agent_input_thread_id_in_cfg(self):
+        """aget_state 的 cfg 应把 thread_id 显式指向 agent_input.thread_id"""
         agent = _seed_agent()
         agui_entry = _mock_agui_entry()
         agent_input = SimpleNamespace(thread_id="t1", run_id="r1")
@@ -2108,11 +2115,11 @@ class TestTerminalResumeReplay:
 
         with patch(f"{_CHAT_MODULE}.run_coro_sync", return_value=state):
             agent._build_terminal_resume_replay(
-                agui_entry, agent_input, agent_e, {"configurable": {"thread_id": "session"}}, "graph-1"
+                agui_entry, agent_input, agent_e, {"configurable": {"thread_id": "session"}}
             )
 
         replay_cfg = agent_e.aget_state.call_args.args[0]
-        assert replay_cfg["configurable"]["thread_id"] == "graph-1"
+        assert replay_cfg["configurable"]["thread_id"] == "t1"
 
     def test_build_replay_returns_none_when_not_terminal(self):
         """graph 仍有 next 节点（未终态）→ 返回 None，由调用方回退正常 astream"""
@@ -2120,7 +2127,7 @@ class TestTerminalResumeReplay:
         state = _fake_graph_state(next_nodes=("agent",), messages=[HumanMessage(content="hi", id="1")])
         with patch(f"{_CHAT_MODULE}.run_coro_sync", return_value=state):
             replay = agent._build_terminal_resume_replay(
-                _mock_agui_entry(), SimpleNamespace(thread_id="t1", run_id="r1"), MagicMock(), {}, "graph-1"
+                _mock_agui_entry(), SimpleNamespace(thread_id="t1", run_id="r1"), MagicMock(), {}
             )
         assert replay is None
 
@@ -2132,7 +2139,7 @@ class TestTerminalResumeReplay:
         )
         with patch(f"{_CHAT_MODULE}.run_coro_sync", return_value=state):
             replay = agent._build_terminal_resume_replay(
-                _mock_agui_entry(), SimpleNamespace(thread_id="t1", run_id="r1"), MagicMock(), {}, "graph-1"
+                _mock_agui_entry(), SimpleNamespace(thread_id="t1", run_id="r1"), MagicMock(), {}
             )
         assert replay is None
 
@@ -2142,7 +2149,7 @@ class TestTerminalResumeReplay:
         state = _fake_graph_state(messages=[SystemMessage(content="sys", id="0")])
         with patch(f"{_CHAT_MODULE}.run_coro_sync", return_value=state):
             replay = agent._build_terminal_resume_replay(
-                _mock_agui_entry(), SimpleNamespace(thread_id="t1", run_id="r1"), MagicMock(), {}, "graph-1"
+                _mock_agui_entry(), SimpleNamespace(thread_id="t1", run_id="r1"), MagicMock(), {}
             )
         assert replay is None
 
@@ -2151,7 +2158,7 @@ class TestTerminalResumeReplay:
         agent = _seed_agent()
         with patch(f"{_CHAT_MODULE}.run_coro_sync", side_effect=Exception("checkpoint unavailable")):
             replay = agent._build_terminal_resume_replay(
-                _mock_agui_entry(), SimpleNamespace(thread_id="t1", run_id="r1"), MagicMock(), {}, "graph-1"
+                _mock_agui_entry(), SimpleNamespace(thread_id="t1", run_id="r1"), MagicMock(), {}
             )
         assert replay is None
 
@@ -2168,7 +2175,7 @@ class TestTerminalResumeReplay:
             patch(f"{_CHAT_MODULE}.async_to_sync_generator", return_value=iter(["X"])),
         ):
             producer = agent._build_resume_aware_producer(
-                agui_entry, agent_input, agent_e=None, cfg=None, graph_thread_id=None, resume=False
+                agui_entry, agent_input, agent_e=None, cfg=None, resume=False
             )
             out = list(producer)
 
@@ -2177,7 +2184,7 @@ class TestTerminalResumeReplay:
         agui_entry.run.assert_called_once_with(agent_input)
 
     def test_producer_resume_missing_context_uses_astream(self):
-        """resume=True 但缺少 agent_e/cfg/graph_thread_id → 不查 checkpoint，直接 astream"""
+        """resume=True 但缺少 agent_e/cfg → 不查 checkpoint，直接 astream"""
         agent = _seed_agent()
         agui_entry = _mock_agui_entry()
         agent_input = SimpleNamespace(thread_id="t1", run_id="r1")
@@ -2187,7 +2194,7 @@ class TestTerminalResumeReplay:
             patch(f"{_CHAT_MODULE}.async_to_sync_generator", return_value=iter(["X"])),
         ):
             producer = agent._build_resume_aware_producer(
-                agui_entry, agent_input, agent_e=None, cfg=None, graph_thread_id=None, resume=True
+                agui_entry, agent_input, agent_e=None, cfg=None, resume=True
             )
             out = list(producer)
 
@@ -2209,7 +2216,6 @@ class TestTerminalResumeReplay:
                 agent_input,
                 agent_e=MagicMock(),
                 cfg={"configurable": {}},
-                graph_thread_id="graph-1",
                 resume=True,
             )
             out = list(producer)
@@ -2233,7 +2239,6 @@ class TestTerminalResumeReplay:
                 agent_input,
                 agent_e=MagicMock(),
                 cfg={"configurable": {}},
-                graph_thread_id="graph-1",
                 resume=True,
             )
             out = list(producer)
@@ -2257,7 +2262,6 @@ class TestTerminalResumeReplay:
                 agent_input,
                 agent_e=MagicMock(),
                 cfg={"configurable": {}},
-                graph_thread_id="graph-1",
                 resume=True,
             )
             # 仅构造、未迭代

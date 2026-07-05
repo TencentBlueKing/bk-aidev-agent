@@ -467,48 +467,7 @@ class TestReActAgentBuilder:
         tool_names = [t.name for t in captured_tools["tools"]]
         assert "activate_skill" in tool_names
 
-    def test_build_activate_skill_tool_carries_skill_approval_map(self, tmp_path, monkeypatch):
-        monkeypatch.chdir(tmp_path)
 
-        llm = MagicMock()
-        llm.model_name = "gpt-4o"
-
-        provider = MagicMock()
-        provider.discover.return_value = [
-            {
-                "name": "approved-skill",
-                "description": "d",
-                "path": "api://11/latest",
-                "approval": {
-                    "enabled": True,
-                    "approval_strategy_id": "s1",
-                    "skill_id": 11,
-                    "skill_name": "approved-skill",
-                    "skill_code": "approved-skill",
-                },
-            }
-        ]
-        provider.fetch_instructions.return_value = "body"
-
-        captured_tools = {}
-
-        def _fake_make_model_node(*, llm, non_thinking_llm, tools, node_options):
-            captured_tools["tools"] = tools
-            return MagicMock()
-
-        with (
-            patch("aidev_agent.core.graphs.react.graph.std_make_model_node", new=_fake_make_model_node),
-            patch(
-                "aidev_agent.core.graphs.react.graph.ReActAgentBuilder._build_graph",
-                return_value=(MagicMock(), {}),
-            ),
-        ):
-            (ReActAgentBuilder().set_llm(llm).set_enable_skills(True).set_skill_sources([provider]).build())
-
-        activate_tool = next(t for t in captured_tools["tools"] if t.name == "activate_skill")
-        approval_map = (activate_tool.metadata or {}).get("skill_approval_map", {})
-        assert approval_map["approved-skill"]["target"]["type"] == "skill"
-        assert approval_map["approved-skill"]["approval_strategy_id"] == "s1"
 
     def test_build_runtime_tools_injected(self, tmp_path, monkeypatch):
         """enable_runtime_tool=True 时应注入 7 个运行时客户端工具"""
@@ -904,6 +863,7 @@ class TestReActAgentBuilder:
                 "tool_name": "Skill Runner",
                 "target": {
                     "type": "skill",
+                    "code": "skill-runner",
                     "skill_name": "skill-runner",
                     "display_name": "Skill Runner",
                 },

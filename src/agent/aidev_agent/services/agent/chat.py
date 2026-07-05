@@ -407,40 +407,16 @@ class ChatCompletionAgent(BaseModel):
     def _stream(
         self, agent_e: Runnable, cfg: RunnableConfig, messages: list[BaseMessage], execute_kwargs: ExecuteKwargs
     ) -> Generator[Any, None, None]:
-        # 使用 session_code 作为 stream_thread_id，以支持断点续传（RabbitMQ 队列标识）
-        # 当用户刷新页面重新进入同一会话时，可以从 RabbitMQ 队列恢复之前的流
-        stream_thread_id = execute_kwargs.session_code or self.thread_id
         # 兼容前端：``execute_kwargs.resume`` 历史协议为 ``list[ResumeItem]``，部分前端会直接
         # 传单条 dict（如 ``{"interruptId": "...", "status": "resolved"}``），此处统一归一化为
         # 列表，确保后续 ``hydrate_resume_payload`` / LangGraph 续流逻辑接收到一致形态。
         if isinstance(execute_kwargs.resume, dict):
             execute_kwargs.resume = [execute_kwargs.resume]
-        # 普通请求继续使用新的 graph_thread_id，避免 LangGraph checkpoint 累积历史消息；
-        # resume 请求必须复用中断时的 thread_id，才能找到中断前的 checkpoint。
-        # 调用方注入优先：若 ``execute_kwargs.thread_id`` 已显式指定（例如平台调试入口在自身
-        # 进程内已经通过 ORM 查到 graph_thread_id，不希望 SDK 再绕一次 openapi/网关反查），
-        # 直接使用调用方传入的值；否则回退到原有的反查兜底逻辑。
-        if execute_kwargs.resume:
-            graph_thread_id = (
-                execute_kwargs.thread_id
-                or ApprovalStateHandler().get_graph_thread_id_from_interrupt_content(stream_thread_id)
-            )
-            if not graph_thread_id:
-                raise AgentException(
-                    message=(
-                        "resume 请求缺少可恢复的 graph_thread_id，未能从 role=interrupt 会话内容"
-                        "的 property.builtin_property 定位到待恢复中断"
-                    )
-                )
-        else:
-            graph_thread_id = stream_thread_id
+
         logger.info(
-            "[ToolApproval] _stream: execute_kwargs.resume=%s, execute_kwargs.thread_id=%s, "
-            "stream_thread_id=%s, graph_thread_id=%s",
+            "[ToolApproval] _stream: resume=%s, thread_id=%s",
             bool(execute_kwargs.resume),
-            repr(execute_kwargs.thread_id),
-            repr(stream_thread_id),
-            repr(graph_thread_id),
+            repr(self.thread_id),
         )
 
         # 拉取平台已存在的 sandbox PV 注入 state（runtime_paas_sbx_pv）
@@ -449,7 +425,7 @@ class ChatCompletionAgent(BaseModel):
         if platform_pv:
             state["runtime_paas_sbx_pv"] = platform_pv
         body = {
-            "thread_id": graph_thread_id,
+            "thread_id": self.thread_id,
             "run_id": messages[-1].id or uuid.uuid4().hex,
             "state": state,
             "messages": langchain_messages_to_agui(messages),
@@ -473,7 +449,7 @@ class ChatCompletionAgent(BaseModel):
         approve_result = None
         approval_interrupts = []
         if execute_kwargs.resume:
-            approval_info = self._query_approval_status(execute_kwargs.session_code or self.thread_id)
+            approval_info = self._query_approval_status(self.thread_id)
             if approval_info is not None:
                 approve_result = approval_info["approve_result"]
                 approval_interrupts = approval_info.get("interrupts") or []
@@ -485,7 +461,7 @@ class ChatCompletionAgent(BaseModel):
             event_handler=self.event_handler,
             config=cfg,
             tools={each.name: each for each in self.tools} if self.tools else {},
-            cancel_checker=make_cancel_checker(stream_thread_id),
+            cancel_checker=make_cancel_checker(self.thread_id),
             mcp_fetch_failures=getattr(self, "mcp_fetch_failures", []) or [],
             approve_result=approve_result,
             approval_interrupts=approval_interrupts,
@@ -494,11 +470,10 @@ class ChatCompletionAgent(BaseModel):
         return self._stream_with_queue(
             agui_entry,
             agent_input,
-            queue_thread_id=stream_thread_id,
+            queue_thread_id=self.thread_id,
             background_only=execute_kwargs.background_only,
             agent_e=agent_e,
             cfg=cfg,
-            graph_thread_id=graph_thread_id,
             resume=bool(execute_kwargs.resume),
         )
 
@@ -510,7 +485,6 @@ class ChatCompletionAgent(BaseModel):
         background_only: bool = False,
         agent_e: Runnable | None = None,
         cfg: RunnableConfig | None = None,
-        graph_thread_id: str | None = None,
         resume: bool = False,
     ) -> Generator[Any, None, None]:
         """使用队列处理器缓存流式请求，支持断点续传。
@@ -525,7 +499,7 @@ class ChatCompletionAgent(BaseModel):
             defer_cleanup_on_complete=background_only,
         )
         producer = self._build_resume_aware_producer(
-            agui_entry, agent_input, agent_e=agent_e, cfg=cfg, graph_thread_id=graph_thread_id, resume=resume
+            agui_entry, agent_input, agent_e=agent_e, cfg=cfg, resume=resume
         )
 
         # ---- 阶段 1：同步拉取头部帧并直接 yield ----
@@ -565,7 +539,6 @@ class ChatCompletionAgent(BaseModel):
         agent_input: AgentInput,
         agent_e: Runnable | None,
         cfg: RunnableConfig | None,
-        graph_thread_id: str | None,
         resume: bool,
     ) -> Generator[Any, None, None]:
         """构造「resume 感知」的生产者生成器（方案 B 兜底入口）。
@@ -580,14 +553,13 @@ class ChatCompletionAgent(BaseModel):
         """
 
         def _gen() -> Generator[Any, None, None]:
-            if resume and agent_e is not None and cfg is not None and graph_thread_id:
-                replay = self._build_terminal_resume_replay(agui_entry, agent_input, agent_e, cfg, graph_thread_id)
+            if resume and agent_e is not None and cfg is not None and agent_input.thread_id:
+                replay = self._build_terminal_resume_replay(agui_entry, agent_input, agent_e, cfg)
                 if replay is not None:
                     logger.info(
                         "[ResumeReplay] graph terminal, replay persisted turn from checkpoint "
-                        "(scheme B fallback), thread_id=%s, graph_thread_id=%s",
+                        "(scheme B fallback), thread_id=%s",
                         agent_input.thread_id,
-                        graph_thread_id,
                     )
                     yield from replay
                     return
@@ -601,7 +573,6 @@ class ChatCompletionAgent(BaseModel):
         agent_input: AgentInput,
         agent_e: Runnable,
         cfg: RunnableConfig,
-        graph_thread_id: str,
     ) -> Generator[Any, None, None] | None:
         """方案 B：resume 的 graph 已终态时，从 checkpoint 重放完整 turn。
 
@@ -613,14 +584,15 @@ class ChatCompletionAgent(BaseModel):
         说明：重放仅用于把已落库内容交付前端，**不**再次触发 event_handler 落库（后台
         drain 阶段的 BaseSessionWriter 已持久化该 turn），故绕过 ``_dispatch_event``。
         """
+        thread_id = agent_input.thread_id
         try:
             replay_cfg = dict(cfg)
-            replay_cfg["configurable"] = {**cfg.get("configurable", {}), "thread_id": graph_thread_id}
+            replay_cfg["configurable"] = {**cfg.get("configurable", {}), "thread_id": thread_id}
             state = run_coro_sync(agent_e.aget_state(replay_cfg))
         except Exception:
             logger.warning(
-                "[ResumeReplay] aget_state failed, fallback to astream, graph_thread_id=%s",
-                graph_thread_id,
+                "[ResumeReplay] aget_state failed, fallback to astream, thread_id=%s",
+                thread_id,
                 exc_info=True,
             )
             return None
@@ -632,10 +604,10 @@ class ChatCompletionAgent(BaseModel):
         if not is_terminal:
             logger.info(
                 "[ResumeReplay] graph not terminal (next=%s, interrupts=%d), use normal resume astream, "
-                "graph_thread_id=%s",
+                "thread_id=%s",
                 next_nodes,
                 len(interrupts),
-                graph_thread_id,
+                thread_id,
             )
             return None
 
@@ -644,8 +616,8 @@ class ChatCompletionAgent(BaseModel):
         non_system = [m for m in messages if not isinstance(m, SystemMessage)]
         if not non_system:
             logger.info(
-                "[ResumeReplay] terminal graph has no replayable messages, fallback to astream, graph_thread_id=%s",
-                graph_thread_id,
+                "[ResumeReplay] terminal graph has no replayable messages, fallback to astream, thread_id=%s",
+                thread_id,
             )
             return None
 
