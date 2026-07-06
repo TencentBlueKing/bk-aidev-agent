@@ -387,10 +387,10 @@ export class FetchClient {
         clearTimeout(timeoutId);
       }
 
+      // 用户手动取消请求
       if (error instanceof Error && error.name === 'AbortError') {
-        const requestError = createError('Request timeout', requestConfig, 'ECONNABORTED', undefined);
-        this.dispatchError(requestError);
-        throw this.applyResponseErrorInterceptors(requestError);
+        console.warn('User canceled request', error.message);
+        return;
       }
 
       const requestError =

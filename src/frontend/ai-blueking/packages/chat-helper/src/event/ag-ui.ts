@@ -71,6 +71,7 @@ import {
   EventType,
   FlowTaskState,
   IApprovalResultCustomValue,
+  IFlowAgentRestartCustomValue,
   RunFinishedOutcomeType,
 } from './type';
 
@@ -125,6 +126,9 @@ export class AGUIProtocol implements ISSEProtocol {
       case CustomEventName.FlowAgentEnd:
         this.handleFlowAgentEndCustomEvent(event);
         break;
+      case CustomEventName.FlowAgentRestart:
+        this.handleFlowAgentRestartCustomEvent(event);
+        break;
       case CustomEventName.ReferenceDocument:
         this.handleReferenceDocumentCustomEvent(event);
         break;
@@ -173,6 +177,22 @@ export class AGUIProtocol implements ISSEProtocol {
   }
 
   /**
+   * 自定义事件 处理流程编排任务重启
+   */
+  handleFlowAgentRestartCustomEvent(event: ICustomEvent) {
+    const value = event.value as IFlowAgentRestartCustomValue;
+    this.messageModule.list.value.forEach(item => {
+      if (item.role === MessageRole.Activity && item.activityType === ActivityType.FlowAgent) {
+        const isSameTask = (item.content as IFlowAgentResultCustomValue)[0].task_id === value[0].task_id;
+        // 通过第一个 task_id 判断是否是同一个任务，是的话直接更新消息状态为 streaming
+        if (isSameTask) {
+          item.status = MessageStatus.Streaming;
+        }
+      }
+    });
+  }
+
+  /**
    * 自定义事件 处理流程编排任务结果（增量更新节点状态）
    */
   handleFlowAgentResultCustomEvent(event: ICustomEvent) {
@@ -192,7 +212,7 @@ export class AGUIProtocol implements ISSEProtocol {
       activityType: ActivityType.FlowAgent,
       content: value.map(item => ({
         nodes: {},
-        task_id: Number(item.task_id),
+        task_id: item.task_id,
         task_name: '',
         task_outputs: [] as string[],
         task_state: FlowTaskState.Created,
