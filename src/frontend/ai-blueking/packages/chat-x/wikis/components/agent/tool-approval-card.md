@@ -105,9 +105,9 @@ AI Dev 第三方工具审批（`InterruptReason.AIDevToolApproval`）专用卡�
 
 ```
 ToolApprovalCard
-├── 标题栏：左侧色条 + 单据标题 + 复制图标 + 状态徽章（评审中/已通过/已拒绝/已撤销等）
+├── 标题栏：左侧色条 + 单据标题 + 复制图标 + 状态徽章（审批中/已通过/已拒绝/已撤销等）
 ├── 字段区：单据编号、提交时间
-├── 处理人：当前处理人（overflow-tips 省略）
+├── 处理人：仅 `pending` / `draft` 时展示当前处理人（overflow-tips 省略）
 └── 操作区：查看单据详情（新窗口打开 url）、取消审批（仅 pending / draft 且非 readonly；点击后 loading 防重复提交；分享只读渲染下禁用）
 ```
 
@@ -121,7 +121,7 @@ ToolApprovalCard
 
 | `ticket.status`                         | 视觉     |
 | --------------------------------------- | -------- |
-| `pending`、`draft`                      | 蓝色评审中 |
+| `pending`、`draft`                      | 蓝色审批中 |
 | `approved`                              | 绿色通过 |
 | `rejected`、`cancelled`、`expired`、`abandoned` | 红色终态 |
 | `revoked`                               | 橙色已撤销 |

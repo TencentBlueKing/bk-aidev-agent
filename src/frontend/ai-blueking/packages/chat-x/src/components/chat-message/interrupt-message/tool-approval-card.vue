@@ -50,7 +50,10 @@
       </div>
     </dl>
 
-    <div class="ai-tool-approval-card__processor">
+    <div
+      v-if="isPendingApproval"
+      class="ai-tool-approval-card__processor"
+    >
       <TimeIcon class="ai-tool-approval-card__processor-icon" />
       <span
         v-overflow-tips="{ ...commonTippyOptions }"
@@ -138,7 +141,7 @@
   const isPendingApproval = computed(() => pendingStatusSet.has(ticket.value.status));
   const statusClass = computed(() => (isPendingApproval.value ? 'pending' : ticket.value.status));
   const statusText = computed(() =>
-    isPendingApproval.value ? t('评审中') : (APPROVAL_STATUS_MAP[ticket.value.status] ?? ticket.value.status),
+    isPendingApproval.value ? t('审批中') : (APPROVAL_STATUS_MAP[ticket.value.status] ?? ticket.value.status),
   );
   const approverText = computed(() => ticket.value.approvers.filter(Boolean).join('、') || t('无'));
   const copyText = computed(() => ticket.value.url || ticket.value.sn);
