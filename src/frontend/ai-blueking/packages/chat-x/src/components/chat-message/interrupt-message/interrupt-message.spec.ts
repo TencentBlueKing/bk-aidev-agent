@@ -25,9 +25,8 @@
  */
 
 import { type VueWrapper, mount } from '@vue/test-utils';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
 import { Button } from 'bkui-vue';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { APPROVAL_STATUS, InterruptReason } from '../../../ag-ui/types/constants';
 import { InterruptResumeOperation } from '../../../ag-ui/types/interrupt';
@@ -141,7 +140,8 @@ describe('InterruptMessage', () => {
 
     expect(wrapper.find('.ai-interrupt-message').exists()).toBe(true);
     expect(wrapper.find('.ai-tool-approval-card__title').text()).toBe('算法方案评审单');
-    expect(wrapper.find('.ai-tool-approval-card__status').text()).toBe('评审中');
+    expect(wrapper.find('.ai-tool-approval-card__status').text()).toBe('审批中');
+    expect(wrapper.find('.ai-tool-approval-card__processor').exists()).toBe(true);
     expect(wrapper.text()).toContain('REV-2026-04-24-001');
     expect(wrapper.text()).toContain('2026-04-24 14:30:15');
     expect(wrapper.text()).toContain('张三、李四、王五');
@@ -169,7 +169,8 @@ describe('InterruptMessage', () => {
     const status = wrapper.find('.ai-tool-approval-card__status');
     expect(status.text()).toBe('已撤销');
     expect(status.classes()).toContain('ai-tool-approval-card__status--revoked');
-    expect(wrapper.text()).toContain('当前处理人：无');
+    // 非 pending/draft 终态不展示当前处理人区域
+    expect(wrapper.find('.ai-tool-approval-card__processor').exists()).toBe(false);
   });
 
   it('待审批状态点击取消审批应透传取消动作，不直接处理平台请求', async () => {
