@@ -265,7 +265,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
               // 如果会话不匹配，则不继续轮询
             if (sessionCode !== mediator.session?.current?.value?.sessionCode) return;
             pollResumeSession(sessionCode);
-          }, 15000);
+          }, 10000);
         }
       });
     }
