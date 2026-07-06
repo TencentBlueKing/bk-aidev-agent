@@ -581,7 +581,6 @@ class BaseSessionWriter(ABC):
                     "tool_name": metadata.get("toolName") or serialized.get("toolName") or serialized.get("toolName"),
                     "tool_args": tool_args,
                     "callback_token": metadata.get("callbackToken") or serialized.get("callbackToken"),
-                    "ticket_id": ticket.get("id") or metadata.get("ticketId") or serialized.get("ticketId"),
                     "ticket_sn": ticket.get("sn") or metadata.get("ticketSn") or serialized.get("ticketSn"),
                     "graph_thread_id": getattr(event, "thread_id", ""),
                 }

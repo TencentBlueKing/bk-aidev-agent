@@ -1090,9 +1090,10 @@ class ChatAgentBuilder:
             elif resource_type == "mcp_tool":
                 mcp_id = binding_data.get("mcp_id")
                 binding["mcp_id"] = mcp_id
-                # 从 resources 映射解析 mcp_name（即 mcp_code/服务器名），用于与工具 metadata 中的 mcp_name 匹配
-                mcp_code = resource_id_map.get(("mcp", mcp_id)) if mcp_id else None
-                binding["mcp_name"] = mcp_code or binding_data.get("mcp_name")
+                # 优先使用平台 runtime binding 下发的 mcp_name/mcp_code，resources 映射仅作兜底
+                mcp_code = binding_data.get("mcp_code") or (resource_id_map.get(("mcp", mcp_id)) if mcp_id else None)
+                binding["mcp_code"] = mcp_code
+                binding["mcp_name"] = binding_data.get("mcp_name") or mcp_code
                 binding["tool_code"] = binding_data.get("mcp_tool_name", "")
                 binding["tool_name"] = binding_data.get("mcp_tool_name", "")
             bindings.append(binding)
