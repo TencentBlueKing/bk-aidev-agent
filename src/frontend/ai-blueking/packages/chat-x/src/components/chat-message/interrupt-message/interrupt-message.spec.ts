@@ -253,7 +253,7 @@ describe('InterruptMessage', () => {
           {
             ...approvalInterrupt,
             metadata: {
-              ticket: { ...approvalInterrupt.metadata!.ticket, status: APPROVAL_STATUS.APPROVED },
+              ticket: { ...approvalInterrupt.metadata?.ticket, status: APPROVAL_STATUS.APPROVED },
             },
           },
         ],
@@ -271,7 +271,7 @@ describe('InterruptMessage', () => {
           {
             ...approvalInterrupt,
             metadata: {
-              ticket: { ...approvalInterrupt.metadata!.ticket, status: APPROVAL_STATUS.REJECTED },
+              ticket: { ...approvalInterrupt.metadata?.ticket, status: APPROVAL_STATUS.REJECTED },
             },
           },
         ],
@@ -291,7 +291,7 @@ describe('InterruptMessage', () => {
           {
             ...approvalInterrupt,
             metadata: {
-              ticket: { ...approvalInterrupt.metadata!.ticket, status: APPROVAL_STATUS.CANCELLED },
+              ticket: { ...approvalInterrupt.metadata?.ticket, status: APPROVAL_STATUS.CANCELLED },
             },
           },
         ],
@@ -376,20 +376,32 @@ describe('InterruptMessage', () => {
     expect(wrapper.text()).toContain('Rust');
   });
 
-  it('success outcome 存在 AIDevToolApproval resume 时应只读回显审批单', () => {
+  it('success outcome 存在 AIDevToolApproval resume 时应可交互回显审批单', async () => {
+    const onInterruptResume = vi.fn();
     wrapper = mount(InterruptMessage, {
       props: {
         content: {
           outcome: { type: 'success' },
           result: approvalResume,
         },
+        onInterruptResume,
       },
     });
 
     expect(wrapper.find('.ai-tool-approval-card').exists()).toBe(true);
     expect(wrapper.find('.ai-tool-approval-card__title').text()).toBe('算法方案评审单');
     expect(wrapper.text()).toContain('REV-2026-04-24-001');
-    expect(wrapper.find('.ai-tool-approval-card__cancel').exists()).toBe(false);
+    // readonly=false：回显审批单仍可交互，pending 态展示可点击的取消审批按钮与刷新图标
+    expect(wrapper.find('.ai-tool-approval-card__refresh-icon').exists()).toBe(true);
+    const cancelBtn = wrapper.find('.ai-tool-approval-card__cancel');
+    expect(cancelBtn.exists()).toBe(true);
+
+    // 点击取消审批应透传取消动作，interrupt 由 result.payload.metadata 还原
+    await cancelBtn.trigger('click');
+    expect(onInterruptResume).toHaveBeenCalledWith(
+      { operation: InterruptResumeOperation.ApprovalCancel, payload: { interrupt_id: approvalResume.interruptId } },
+      expect.objectContaining({ id: approvalResume.interruptId, reason: InterruptReason.AIDevToolApproval }),
+    );
   });
 
   it('content.message 存在时应渲染提示文案', () => {

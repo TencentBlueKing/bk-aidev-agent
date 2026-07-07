@@ -122,6 +122,7 @@ export const lang = {
   取消审批: 'Cancel Approval',
   已取消审批: 'Approval Cancelled',
   刷新单据状态: 'Refresh Ticket Status',
+  单据已取消审批: 'Approval Cancelled',
   '该单据已被拒绝，无法取消': 'This ticket has been rejected and cannot be cancelled',
   '该单据已通过，无法取消': 'This ticket has been approved and cannot be cancelled',
   '单据已取消，无需重复点击': 'This ticket has been cancelled, no need to click again',
