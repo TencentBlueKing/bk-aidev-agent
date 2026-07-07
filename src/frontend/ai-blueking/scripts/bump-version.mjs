@@ -36,8 +36,18 @@ function main() {
     process.exit(1);
   }
   const pkgPath = `${dir}/package.json`;
-  const current = JSON.parse(readFileSync(pkgPath, 'utf8')).version;
-  const next = computeNextVersion(current, explicitArg || undefined);
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+  const current = pkg.version;
+  let next = computeNextVersion(current, explicitArg || undefined);
+  // 自动自增时，跳过 npm 上已存在的版本号：分支 package.json 落后于 npm（回写没落地）、
+  // 或有人手动发过某个版本时，避免算出一个已发布的版本号导致 publish 撞车。
+  // 显式指定版本号则不跳过，尊重调用方意图。
+  if (!explicitArg) {
+    while (npmVersionExists(pkg.name, next)) {
+      console.error(`[bump] ${pkg.name}@${next} 已在 npm 存在，跳过`);
+      next = computeNextVersion(next);
+    }
+  }
   // 用 npm version 写回 package.json，保持与旧逻辑一致的行为与格式
   execFileSync('npm', ['version', next, '--no-git-tag-version'], {
     cwd: dir,
@@ -47,6 +57,20 @@ function main() {
   console.error(`[bump] ${dir}: ${current} -> ${next} (tag: ${tag})`); // 日志走 stderr
   process.stdout.write(`version=${next}\n`);
   process.stdout.write(`npm_tag=${tag}\n`);
+}
+
+// 查询 npm 上某个精确版本是否已发布。不存在时 npm view 以非零退出，捕获后视为「不存在」。
+function npmVersionExists(name, version) {
+  try {
+    const out = execFileSync('npm', ['view', `${name}@${version}`, 'version'], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .toString()
+      .trim();
+    return out.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 // 仅在被直接执行时跑 CLI；被 import 时只导出纯函数
