@@ -26,6 +26,7 @@ from aidev_agent.services.messages_handler.streaming_helper import GeneratorStre
 from aidev_agent.utils.event import RunId
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import ToolException, tool
+from langgraph.checkpoint.memory import MemorySaver
 
 
 class _ConcreteWriter(BaseSessionWriter):
@@ -112,6 +113,7 @@ class TestCommonAgentChatStreaming:
         )
         agent = ChatCompletionAgent(
             chat_model=llm,
+            checkpointer=MemorySaver(),
             chat_history=[
                 ChatPrompt(
                     id="1",
@@ -152,6 +154,7 @@ class TestCommonAgentChatStreaming:
         )
         agent = ChatCompletionAgent(
             chat_model=llm,
+            checkpointer=MemorySaver(),
             chat_history=[
                 ChatPrompt(id="1", role="user", content="今天广州天气怎么样？"),
             ],
@@ -212,6 +215,7 @@ class TestCommonAgentChatStreaming:
         )
         agent = ChatCompletionAgent(
             chat_model=llm,
+            checkpointer=MemorySaver(),
             chat_history=[
                 ChatPrompt(id="1", role="user", content="今天广州和深圳的天气怎么样？"),
             ],
@@ -275,6 +279,7 @@ class TestCommonAgentChatStreaming:
         )
         agent = ChatCompletionAgent(
             chat_model=llm,
+            checkpointer=MemorySaver(),
             chat_history=[ChatPrompt(id="1", role="user", content="今天广州天气怎么样？")],
             tools=[get_weather],
         )
@@ -332,6 +337,7 @@ class TestCommonAgentChatStreaming:
         # 创建Agent，直接传入mock的MCP工具
         agent = ChatCompletionAgent(
             chat_model=llm,
+            checkpointer=MemorySaver(),
             chat_history=[
                 ChatPrompt(id="1", role="user", content="现在上海是几点？"),
             ],
@@ -385,6 +391,7 @@ class TestCommonAgentChatStreaming:
         agent = ChatCompletionAgent(
             thread_id=thread_id,
             chat_model=llm,
+            checkpointer=MemorySaver(),
             chat_history=[
                 ChatPrompt(
                     id="1",
@@ -406,6 +413,7 @@ class TestCommonAgentChatStreaming:
         agent2 = ChatCompletionAgent(
             thread_id=thread_id,
             chat_model=llm,
+            checkpointer=MemorySaver(),
             chat_history=[
                 ChatPrompt(
                     id="1",
@@ -441,6 +449,7 @@ class TestCommonAgentChatStreaming:
         with patch.object(llm, "_astream", side_effect=Exception("Authentication failed for model gptoss-999b")):
             agent = ChatCompletionAgent(
                 chat_model=llm,
+                checkpointer=MemorySaver(),
                 chat_history=[
                     ChatPrompt(role="user", content="nonono"),
                 ],
@@ -450,13 +459,20 @@ class TestCommonAgentChatStreaming:
             result_content = list(result)
 
             # 验证错误消息被正确捕获
-            # 响应格式: data: {"event": "error", "code": "...", "message": "..."}
-            last_content = result_content[-1]
-            assert last_content.startswith("data: ")
-            assert json.loads(last_content[5:])["type"] == "RUN_ERROR"
-            assert json.loads(last_content[5:])["message"].startswith(
+            # 当前实现：RUN_ERROR 后跟 RUN_FINISHED 作为结束信号
+            error_events = [
+                c for c in result_content
+                if c.startswith("data: ") and json.loads(c[6:]).get("type") == "RUN_ERROR"
+            ]
+            assert len(error_events) >= 1
+            error_payload = json.loads(error_events[0][6:])
+            assert error_payload["message"].startswith(
                 "模型调用异常: Authentication failed for model gptoss-999b"
             )
+            # 最后一条事件应为 RUN_FINISHED
+            last_content = result_content[-1]
+            assert last_content.startswith("data: ")
+            assert json.loads(last_content[6:])["type"] == "RUN_FINISHED"
 
     def test_tool_call_error_case(self):
         """case 6: 工具调用错误处理
@@ -482,6 +498,7 @@ class TestCommonAgentChatStreaming:
         )
         agent = ChatCompletionAgent(
             chat_model=llm,
+            checkpointer=MemorySaver(),
             chat_history=[
                 ChatPrompt(role="user", content="今天深圳天气"),
             ],
@@ -527,6 +544,7 @@ class TestCommonAgentChatStreaming:
         llm = MockChatModel(responses=["你好，我可以帮你。"], stream_chunk_size=2)
         agent = ChatCompletionAgent(
             chat_model=llm,
+            checkpointer=MemorySaver(),
             chat_history=[ChatPrompt(role="user", content="你好")],
             mcp_fetch_failures=mcp_failures,
         )
@@ -570,6 +588,7 @@ class TestCommonAgentChatStreaming:
         llm = MockChatModel(responses=["收到。"], stream_chunk_size=2)
         agent = ChatCompletionAgent(
             chat_model=llm,
+            checkpointer=MemorySaver(),
             chat_history=[ChatPrompt(role="user", content="hi")],
             mcp_fetch_failures=mcp_failures,
         )
@@ -604,6 +623,7 @@ class TestCommonAgentChatStreaming:
         with patch.object(BkRetriever, "_query_instance", return_value=knowledge_query_result) as mocked_query_instance:
             agent = ChatCompletionAgent(
                 chat_model=MockChatModel(responses=["根据知识库，云桌面黑屏的处理方法是重启"]),
+                checkpointer=MemorySaver(),
                 chat_history=[
                     ChatPrompt(role="user", content="云桌面黑屏怎么处理?"),
                 ],
@@ -643,6 +663,7 @@ class TestCommonAgentChatStreaming:
         agent = ChatCompletionAgent(
             thread_id=thread_id,
             chat_model=llm,
+            checkpointer=MemorySaver(),
             chat_history=[ChatPrompt(role="user", content="执行一个慢任务")],
             tools=[slow_task],
         )
@@ -675,6 +696,7 @@ class TestCommonAgentChatStreaming:
         llm = MockChatModel(responses=["<result>云桌面黑屏处理步骤</result>"], stream_chunk_size=3)
         agent = ChatCompletionAgent(
             chat_model=llm,
+            checkpointer=MemorySaver(),
             chat_history=[
                 ChatPrompt(
                     role="system",
@@ -707,6 +729,7 @@ class TestOnComplete:
         """event_handler 为 None 或不含 set_streaming_finished 时不报错"""
         agent = ChatCompletionAgent(
             chat_model=MockChatModel(responses=["ok"]),
+            checkpointer=MemorySaver(),
             chat_history=[ChatPrompt(role="user", content="hi")],
             event_handler=event_handler,
         )
@@ -717,6 +740,7 @@ class TestOnComplete:
         mock_handler = MagicMock(spec=BaseSessionWriter)
         agent = ChatCompletionAgent(
             chat_model=MockChatModel(responses=["ok"]),
+            checkpointer=MemorySaver(),
             chat_history=[ChatPrompt(role="user", content="hi")],
             event_handler=mock_handler,
         )
@@ -729,6 +753,7 @@ class TestOnComplete:
         llm = MockChatModel(responses=["hello"], stream_chunk_size=2)
         agent = ChatCompletionAgent(
             chat_model=llm,
+            checkpointer=MemorySaver(),
             chat_history=[ChatPrompt(role="user", content="hi")],
             event_handler=mock_handler,
         )
@@ -753,6 +778,7 @@ class TestCommonAgentChatStreamingLive:
             knowledgebase = json.load(fi)
         agent = ChatCompletionAgent(
             chat_model=self.llm,
+            checkpointer=MemorySaver(),
             chat_history=[
                 ChatPrompt(role="user", content="云桌面黑屏怎么处理?"),
             ],
@@ -767,6 +793,7 @@ class TestCommonAgentChatStreamingLive:
         """case 2: 工具调用 legacy streaming"""
         agent = ChatCompletionAgent(
             chat_model=self.llm,
+            checkpointer=MemorySaver(),
             chat_history=[
                 ChatPrompt(role="user", content="今天广州天气怎么样?"),
             ],
@@ -788,6 +815,7 @@ class TestCommonAgentChatStreamingLive:
             knowledgebase = json.load(fi)
         agent = ChatCompletionAgent(
             chat_model=self.llm,
+            checkpointer=MemorySaver(),
             chat_history=[
                 ChatPrompt(role="user", content="云桌面黑屏怎么处理?"),
             ],
@@ -802,6 +830,7 @@ class TestCommonAgentChatStreamingLive:
         """case 4: 工具调用 new streaming"""
         agent = ChatCompletionAgent(
             chat_model=self.llm,
+            checkpointer=MemorySaver(),
             chat_history=[
                 ChatPrompt(role="user", content="今天广州天气怎么样?"),
             ],
@@ -830,6 +859,7 @@ class TestCommonAgentChatStreamingWithAgentLegacyStreaming:
         )
         agent = ChatCompletionAgent(
             chat_model=llm,
+            checkpointer=MemorySaver(),
             chat_history=[
                 ChatPrompt(
                     id="1",
@@ -862,6 +892,7 @@ class TestCommonAgentChatStreamingWithAgentLegacyStreaming:
         )
         agent = ChatCompletionAgent(
             chat_model=llm,
+            checkpointer=MemorySaver(),
             chat_history=[
                 ChatPrompt(
                     id="1",
@@ -1214,6 +1245,7 @@ class TestCancelScenarios:
         agent = ChatCompletionAgent(
             thread_id=thread_id,
             chat_model=llm,
+            checkpointer=MemorySaver(),
             chat_history=[ChatPrompt(role="user", content="执行一个慢任务")],
             tools=[slow_task],
             event_handler=writer,
@@ -1263,6 +1295,7 @@ class TestCancelScenarios:
         agent = ChatCompletionAgent(
             thread_id=thread_id,
             chat_model=llm,
+            checkpointer=MemorySaver(),
             chat_history=[ChatPrompt(role="user", content="执行一个慢任务")],
             tools=[slow_task],
             event_handler=writer,
@@ -1301,6 +1334,7 @@ class TestCancelScenarios:
         with patch.object(llm, "_astream", side_effect=Exception("Authentication failed")):
             agent = ChatCompletionAgent(
                 chat_model=llm,
+                checkpointer=MemorySaver(),
                 chat_history=[ChatPrompt(role="user", content="hi")],
                 event_handler=writer,
             )
@@ -1326,6 +1360,7 @@ class TestCancelScenarios:
         llm = MockChatModel(responses=["你好，我可以帮你。"], stream_chunk_size=2)
         agent = ChatCompletionAgent(
             chat_model=llm,
+            checkpointer=MemorySaver(),
             chat_history=[ChatPrompt(role="user", content="你好")],
             event_handler=writer,
         )
@@ -1560,6 +1595,7 @@ class TestAgentFactory2Chat:
                 agent_type=AT.CHAT,
                 build_type=AgentBuildType.DIRECT,
                 resource_manager=rm,
+                checkpointer=MemorySaver(),
             )
 
         return agent
@@ -1596,6 +1632,7 @@ class TestAgentFactory2Chat:
         legacy_config = _build_legacy_agent_config()
         agent = ChatCompletionAgent(
             chat_model=MockChatModel(responses=["hi"]),
+            checkpointer=MemorySaver(),
             chat_model_non_thinking=MockChatModel(responses=["hi"]),
             agent_cls=agent_cls,
             agent_options=legacy_config.agent_options,
@@ -1620,6 +1657,7 @@ class TestAgentFactory2Chat:
         migrated_non_thinking = MockChatModel(responses=["non-thinking"])
         agent = ChatCompletionAgent(
             chat_model=MockChatModel(responses=["hi"]),
+            checkpointer=MemorySaver(),
             non_thinking_llm="legacy-lite",
             agent_options=legacy_config.agent_options,
             messages=[HumanMessage(content="hi")],
@@ -1687,6 +1725,7 @@ class TestAgentFactory2Chat:
                 agent_type=AT.CHAT,
                 build_type=AgentBuildType.DIRECT,
                 resource_manager=rm,
+                checkpointer=MemorySaver(),
             )
 
         assert agent.chat_model is not None
@@ -1717,6 +1756,7 @@ class TestAgentFactory2Chat:
                 agent_type=AT.CHAT,
                 build_type=AgentBuildType.DIRECT,
                 resource_manager=rm,
+                checkpointer=MemorySaver(),
             )
 
         assert agent.chat_model_non_thinking is not None
@@ -1746,6 +1786,7 @@ class TestAgentFactory2Chat:
                 agent_type=AT.CHAT,
                 build_type=AgentBuildType.DIRECT,
                 resource_manager=rm,
+                checkpointer=MemorySaver(),
             )
 
         # non_thinking_llm 回退到 llm_code，所以 chat_model_non_thinking 使用主模型
@@ -1834,7 +1875,7 @@ def _fake_graph_state(next_nodes=(), interrupts=None, messages=None):
 
 def _seed_agent() -> ChatCompletionAgent:
     """方法不依赖 self 的运行期状态，用最小种子实例即可。"""
-    return ChatCompletionAgent(chat_model=MockChatModel(responses=["x"]))
+    return ChatCompletionAgent(chat_model=MockChatModel(responses=["x"]), checkpointer=MemorySaver())
 
 
 def _mock_agui_entry(emit_approval_finished: bool = False) -> MagicMock:
@@ -1917,10 +1958,7 @@ class TestTerminalResumeReplay:
         agent_input = SimpleNamespace(thread_id="t1", run_id="r1")
         replayable = [AIMessage(content="hello world", id="ai-1")]
 
-        events = [
-            _parse_sse(e)
-            for e in agent._terminal_replay_event_stream(agui_entry, agent_input, replayable)
-        ]
+        events = [_parse_sse(e) for e in agent._terminal_replay_event_stream(agui_entry, agent_input, replayable)]
         types_seq = [e["type"] for e in events]
         assert types_seq == [
             EventType.RUN_STARTED,
@@ -1930,11 +1968,16 @@ class TestTerminalResumeReplay:
             EventType.RUN_FINISHED,
         ]
         # message_id 须保留 DB 原值，前端按 id 合并不会产生新卡片
-        text_events = [e for e in events if e["type"] in (
-            EventType.TEXT_MESSAGE_START,
-            EventType.TEXT_MESSAGE_CONTENT,
-            EventType.TEXT_MESSAGE_END,
-        )]
+        text_events = [
+            e
+            for e in events
+            if e["type"]
+            in (
+                EventType.TEXT_MESSAGE_START,
+                EventType.TEXT_MESSAGE_CONTENT,
+                EventType.TEXT_MESSAGE_END,
+            )
+        ]
         assert all(e["messageId"] == "ai-1" for e in text_events)
         content_event = next(e for e in events if e["type"] == EventType.TEXT_MESSAGE_CONTENT)
         assert content_event["delta"] == "hello world"
@@ -1953,10 +1996,7 @@ class TestTerminalResumeReplay:
             ToolMessage(content="ok", id="tool-1", tool_call_id="call-1"),
         ]
 
-        events = [
-            _parse_sse(e)
-            for e in agent._terminal_replay_event_stream(agui_entry, agent_input, replayable)
-        ]
+        events = [_parse_sse(e) for e in agent._terminal_replay_event_stream(agui_entry, agent_input, replayable)]
         types_seq = [e["type"] for e in events]
         assert types_seq == [
             EventType.RUN_STARTED,
@@ -1967,12 +2007,17 @@ class TestTerminalResumeReplay:
             EventType.RUN_FINISHED,
         ]
         # tool_call_id 链路保持一致
-        tc_events = [e for e in events if e["type"] in (
-            EventType.TOOL_CALL_START,
-            EventType.TOOL_CALL_ARGS,
-            EventType.TOOL_CALL_END,
-            EventType.TOOL_CALL_RESULT,
-        )]
+        tc_events = [
+            e
+            for e in events
+            if e["type"]
+            in (
+                EventType.TOOL_CALL_START,
+                EventType.TOOL_CALL_ARGS,
+                EventType.TOOL_CALL_END,
+                EventType.TOOL_CALL_RESULT,
+            )
+        ]
         assert all(e["toolCallId"] == "call-1" for e in tc_events)
         args_event = next(e for e in events if e["type"] == EventType.TOOL_CALL_ARGS)
         assert json.loads(args_event["delta"]) == {"x": 1}
@@ -1990,10 +2035,7 @@ class TestTerminalResumeReplay:
             AIMessage(content="reply", id="ai-1"),
         ]
 
-        events = [
-            _parse_sse(e)
-            for e in agent._terminal_replay_event_stream(agui_entry, agent_input, replayable)
-        ]
+        events = [_parse_sse(e) for e in agent._terminal_replay_event_stream(agui_entry, agent_input, replayable)]
         # 只补发 AIMessage 的 TEXT_MESSAGE_* 三段
         types_seq = [e["type"] for e in events]
         assert types_seq == [
@@ -2015,10 +2057,7 @@ class TestTerminalResumeReplay:
             f"{_CHAT_MODULE}.langchain_messages_to_streaming_events",
             side_effect=RuntimeError("boom"),
         ):
-            events = [
-                _parse_sse(e)
-                for e in agent._terminal_replay_event_stream(agui_entry, agent_input, replayable)
-            ]
+            events = [_parse_sse(e) for e in agent._terminal_replay_event_stream(agui_entry, agent_input, replayable)]
 
         # 即便补发失败，仍要保证 RUN_STARTED → RUN_FINISHED 的最小骨架
         types_seq = [e["type"] for e in events]
@@ -2034,15 +2073,9 @@ class TestTerminalResumeReplay:
         agent_input = SimpleNamespace(thread_id="t1", run_id="r1")
 
         # None
-        events_none = [
-            _parse_sse(e)
-            for e in agent._terminal_replay_event_stream(agui_entry, agent_input, None)
-        ]
+        events_none = [_parse_sse(e) for e in agent._terminal_replay_event_stream(agui_entry, agent_input, None)]
         # 空 list
-        events_empty = [
-            _parse_sse(e)
-            for e in agent._terminal_replay_event_stream(agui_entry, agent_input, [])
-        ]
+        events_empty = [_parse_sse(e) for e in agent._terminal_replay_event_stream(agui_entry, agent_input, [])]
 
         for events in (events_none, events_empty):
             assert [e["type"] for e in events] == [
@@ -2059,7 +2092,7 @@ class TestTerminalResumeReplay:
 
         with patch(f"{_CHAT_MODULE}.run_coro_sync", return_value=state) as mock_run:
             replay = agent._build_terminal_resume_replay(
-                agui_entry, agent_input, MagicMock(), {"configurable": {"thread_id": "session"}}, "graph-1"
+                agui_entry, agent_input, MagicMock(), {"configurable": {"thread_id": "session"}}
             )
 
         assert replay is not None
@@ -2069,11 +2102,11 @@ class TestTerminalResumeReplay:
         assert EventType.MESSAGES_SNAPSHOT not in types_seq
         assert EventType.RUN_STARTED in types_seq
         assert EventType.RUN_FINISHED in types_seq
-        # aget_state 应被调用，且重放查询定位到 graph_thread_id
+        # aget_state 应被调用，且重放查询定位到 agent_input.thread_id
         mock_run.assert_called_once()
 
-    def test_build_replay_uses_graph_thread_id_in_cfg(self):
-        """aget_state 的 cfg 应把 thread_id 显式指向 graph_thread_id，避免误读 session thread"""
+    def test_build_replay_uses_agent_input_thread_id_in_cfg(self):
+        """aget_state 的 cfg 应把 thread_id 显式指向 agent_input.thread_id"""
         agent = _seed_agent()
         agui_entry = _mock_agui_entry()
         agent_input = SimpleNamespace(thread_id="t1", run_id="r1")
@@ -2082,11 +2115,11 @@ class TestTerminalResumeReplay:
 
         with patch(f"{_CHAT_MODULE}.run_coro_sync", return_value=state):
             agent._build_terminal_resume_replay(
-                agui_entry, agent_input, agent_e, {"configurable": {"thread_id": "session"}}, "graph-1"
+                agui_entry, agent_input, agent_e, {"configurable": {"thread_id": "session"}}
             )
 
         replay_cfg = agent_e.aget_state.call_args.args[0]
-        assert replay_cfg["configurable"]["thread_id"] == "graph-1"
+        assert replay_cfg["configurable"]["thread_id"] == "t1"
 
     def test_build_replay_returns_none_when_not_terminal(self):
         """graph 仍有 next 节点（未终态）→ 返回 None，由调用方回退正常 astream"""
@@ -2094,17 +2127,19 @@ class TestTerminalResumeReplay:
         state = _fake_graph_state(next_nodes=("agent",), messages=[HumanMessage(content="hi", id="1")])
         with patch(f"{_CHAT_MODULE}.run_coro_sync", return_value=state):
             replay = agent._build_terminal_resume_replay(
-                _mock_agui_entry(), SimpleNamespace(thread_id="t1", run_id="r1"), MagicMock(), {}, "graph-1"
+                _mock_agui_entry(), SimpleNamespace(thread_id="t1", run_id="r1"), MagicMock(), {}
             )
         assert replay is None
 
     def test_build_replay_returns_none_when_pending_interrupt(self):
         """终态但首个 task 仍有 pending interrupt → 返回 None"""
         agent = _seed_agent()
-        state = _fake_graph_state(interrupts=[{"value": "need approval"}], messages=[HumanMessage(content="hi", id="1")])
+        state = _fake_graph_state(
+            interrupts=[{"value": "need approval"}], messages=[HumanMessage(content="hi", id="1")]
+        )
         with patch(f"{_CHAT_MODULE}.run_coro_sync", return_value=state):
             replay = agent._build_terminal_resume_replay(
-                _mock_agui_entry(), SimpleNamespace(thread_id="t1", run_id="r1"), MagicMock(), {}, "graph-1"
+                _mock_agui_entry(), SimpleNamespace(thread_id="t1", run_id="r1"), MagicMock(), {}
             )
         assert replay is None
 
@@ -2114,7 +2149,7 @@ class TestTerminalResumeReplay:
         state = _fake_graph_state(messages=[SystemMessage(content="sys", id="0")])
         with patch(f"{_CHAT_MODULE}.run_coro_sync", return_value=state):
             replay = agent._build_terminal_resume_replay(
-                _mock_agui_entry(), SimpleNamespace(thread_id="t1", run_id="r1"), MagicMock(), {}, "graph-1"
+                _mock_agui_entry(), SimpleNamespace(thread_id="t1", run_id="r1"), MagicMock(), {}
             )
         assert replay is None
 
@@ -2123,7 +2158,7 @@ class TestTerminalResumeReplay:
         agent = _seed_agent()
         with patch(f"{_CHAT_MODULE}.run_coro_sync", side_effect=Exception("checkpoint unavailable")):
             replay = agent._build_terminal_resume_replay(
-                _mock_agui_entry(), SimpleNamespace(thread_id="t1", run_id="r1"), MagicMock(), {}, "graph-1"
+                _mock_agui_entry(), SimpleNamespace(thread_id="t1", run_id="r1"), MagicMock(), {}
             )
         assert replay is None
 
@@ -2140,7 +2175,7 @@ class TestTerminalResumeReplay:
             patch(f"{_CHAT_MODULE}.async_to_sync_generator", return_value=iter(["X"])),
         ):
             producer = agent._build_resume_aware_producer(
-                agui_entry, agent_input, agent_e=None, cfg=None, graph_thread_id=None, resume=False
+                agui_entry, agent_input, agent_e=None, cfg=None, resume=False
             )
             out = list(producer)
 
@@ -2149,7 +2184,7 @@ class TestTerminalResumeReplay:
         agui_entry.run.assert_called_once_with(agent_input)
 
     def test_producer_resume_missing_context_uses_astream(self):
-        """resume=True 但缺少 agent_e/cfg/graph_thread_id → 不查 checkpoint，直接 astream"""
+        """resume=True 但缺少 agent_e/cfg → 不查 checkpoint，直接 astream"""
         agent = _seed_agent()
         agui_entry = _mock_agui_entry()
         agent_input = SimpleNamespace(thread_id="t1", run_id="r1")
@@ -2159,7 +2194,7 @@ class TestTerminalResumeReplay:
             patch(f"{_CHAT_MODULE}.async_to_sync_generator", return_value=iter(["X"])),
         ):
             producer = agent._build_resume_aware_producer(
-                agui_entry, agent_input, agent_e=None, cfg=None, graph_thread_id=None, resume=True
+                agui_entry, agent_input, agent_e=None, cfg=None, resume=True
             )
             out = list(producer)
 
@@ -2181,7 +2216,6 @@ class TestTerminalResumeReplay:
                 agent_input,
                 agent_e=MagicMock(),
                 cfg={"configurable": {}},
-                graph_thread_id="graph-1",
                 resume=True,
             )
             out = list(producer)
@@ -2205,7 +2239,6 @@ class TestTerminalResumeReplay:
                 agent_input,
                 agent_e=MagicMock(),
                 cfg={"configurable": {}},
-                graph_thread_id="graph-1",
                 resume=True,
             )
             out = list(producer)
@@ -2229,7 +2262,6 @@ class TestTerminalResumeReplay:
                 agent_input,
                 agent_e=MagicMock(),
                 cfg={"configurable": {}},
-                graph_thread_id="graph-1",
                 resume=True,
             )
             # 仅构造、未迭代

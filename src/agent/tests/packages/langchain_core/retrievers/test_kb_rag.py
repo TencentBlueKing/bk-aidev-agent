@@ -19,10 +19,11 @@ to the current version of the project delivered to anyone in the future.
 from unittest.mock import MagicMock, patch
 
 import pytest
+from langchain_core.documents import Document
+
 from aidev_agent.enums import Decision, FineGrainedScoreType
 from aidev_agent.packages.langchain_core.retrievers.kb_rag import KnowledgeRag
 from aidev_agent.pydantic_models import KnowledgeSettings
-from langchain_core.documents import Document
 
 
 def create_mock_llm_response(content: str):
@@ -176,12 +177,12 @@ class TestKnowledgeRag:
 
         searched_docs = [
             [
-                {"metadata": {"uid": "doc1"}, "page_content": "content1"},
-                {"metadata": {"uid": "doc2"}, "page_content": "content2"},
+                {"metadata": {"uid": "doc1", "__score__": 0.1}, "page_content": "content1"},
+                {"metadata": {"uid": "doc2", "__score__": 0.2}, "page_content": "content2"},
             ],
             [
-                {"metadata": {"uid": "doc2"}, "page_content": "content2"},
-                {"metadata": {"uid": "doc3"}, "page_content": "content3"},
+                {"metadata": {"uid": "doc2", "__score__": 0.3}, "page_content": "content2"},
+                {"metadata": {"uid": "doc3", "__score__": 0.4}, "page_content": "content3"},
             ],
         ]
         weights = [0.5, 0.5]
@@ -195,6 +196,29 @@ class TestKnowledgeRag:
         # 验证 rrf_score 被添加到 metadata
         for doc in result:
             assert "rrf_score" in doc["metadata"]
+            assert doc["metadata"]["__score__"] == doc["metadata"]["rrf_score"]
+            assert "retrieval_score" in doc["metadata"]
+
+    def test_weighted_reciprocal_rank_fusion_uses_rrf_score_as_final_score(self):
+        """RRF 后的最终分应覆盖单路召回分，避免 EMBEDDING 二次排序翻转。"""
+        rag = KnowledgeRag()
+        searched_docs = [
+            [
+                {"metadata": {"uid": "154140716", "__score__": 0.882688969373703}, "page_content": "154140716"},
+                {"metadata": {"uid": "154140719", "__score__": 0.8799408078193665}, "page_content": "154140719"},
+            ],
+            [
+                {"metadata": {"uid": "154140719", "__score__": 0.8966792523860931}, "page_content": "154140719"},
+                {"metadata": {"uid": "154140716", "__score__": 0.8952388763427734}, "page_content": "154140716"},
+            ],
+        ]
+
+        result = rag.weighted_reciprocal_rank_fusion(searched_docs, weights=[0.2, 0.8])
+
+        assert [doc["metadata"]["uid"] for doc in result[:2]] == ["154140719", "154140716"]
+        assert result[0]["metadata"]["retrieval_score"] == 0.8799408078193665
+        assert result[0]["metadata"]["__score__"] == result[0]["metadata"]["rrf_score"]
+        assert result[0]["metadata"]["__score__"] > result[1]["metadata"]["__score__"]
 
     def test_weighted_reciprocal_rank_fusion_mismatched_lengths(self):
         """测试 weighted_reciprocal_rank_fusion 方法 - 结果列表和权重列表长度不匹配"""

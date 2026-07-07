@@ -28,14 +28,15 @@ def flow_agent_env(monkeypatch):
     build_agent = MagicMock(return_value=agent_instance)
     monkeypatch.setattr(mod.AgentInstanceFactory, "build_agent", staticmethod(build_agent))
 
-    monkeypatch.setattr(mod, "AGUISessionWriter", MagicMock())
+    writer_cls = MagicMock()
+    monkeypatch.setattr(mod, "AGUISessionWriter", writer_cls)
     monkeypatch.setattr(mod, "PluginResourceManager", lambda username: MagicMock())
     monkeypatch.setattr(mod.AgentHelper, "get_client", staticmethod(lambda: MagicMock()))
 
     view = mod.ChatCompletionViewSet()
     monkeypatch.setattr(view, "streaming_response", lambda generator, session_code="": "STREAM")
 
-    return view, build_agent, session_manager
+    return view, build_agent, session_manager, writer_cls
 
 
 def _data():
@@ -43,17 +44,18 @@ def _data():
 
 
 def test_resume_pending_hit_resumes_task_and_clears_marker(flow_agent_env):
-    view, build_agent, sm = flow_agent_env
+    view, build_agent, sm, writer_cls = flow_agent_env
     sm.get_flow_info.return_value = {"task_id": "t1", "resume_pending": True}
 
     view._handle_flow_agent(_data(), "sc-1", "alice", turn_id="turn-1")
 
     assert build_agent.call_args.kwargs["task_id"] == "t1"
+    assert writer_cls.call_args.kwargs["task_id"] == "t1"
     sm.set_flow_resume_pending.assert_called_once_with("sc-1", False)
 
 
 def test_resume_pending_without_task_id_starts_new_but_clears_marker(flow_agent_env):
-    view, build_agent, sm = flow_agent_env
+    view, build_agent, sm, _writer_cls = flow_agent_env
     sm.get_flow_info.return_value = {"task_id": "", "resume_pending": True}
 
     view._handle_flow_agent(_data(), "sc-1", "alice", turn_id="turn-1")
@@ -63,7 +65,7 @@ def test_resume_pending_without_task_id_starts_new_but_clears_marker(flow_agent_
 
 
 def test_no_marker_starts_new_task_without_touching_marker(flow_agent_env):
-    view, build_agent, sm = flow_agent_env
+    view, build_agent, sm, _writer_cls = flow_agent_env
     sm.get_flow_info.return_value = {"task_id": "t1"}  # 无 resume_pending
 
     view._handle_flow_agent(_data(), "sc-1", "alice", turn_id="turn-1")

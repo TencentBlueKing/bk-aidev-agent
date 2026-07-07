@@ -433,6 +433,7 @@ class KnowledgeRag:
 
         返回:
         - 一个按照融合分数降序排序后的文档列表，每个文档的 `metadata` 字段中增加一个 `rrf_score` 字段。
+          同时将 `__score__` 更新为最终融合分，原始召回分保存在 `retrieval_score`。
         """
 
         if len(searched_docs) != len(weights):
@@ -450,7 +451,11 @@ class KnowledgeRag:
                         doc_content[doc_id] = doc
 
         for doc_id, score in fusion_scores.items():
-            doc_content[doc_id]["metadata"]["rrf_score"] = score
+            metadata = doc_content[doc_id]["metadata"]
+            if "__score__" in metadata and "retrieval_score" not in metadata:
+                metadata["retrieval_score"] = metadata["__score__"]
+            metadata["rrf_score"] = score
+            metadata["__score__"] = score
 
         sorted_docs = sorted(doc_content.values(), key=lambda x: x["metadata"]["rrf_score"], reverse=True)
 

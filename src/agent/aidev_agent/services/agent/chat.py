@@ -30,8 +30,6 @@ from aidev_agent.core.ag_ui.utils import (
     langchain_messages_to_agui,
     langchain_messages_to_streaming_events,
 )
-
-# 延迟导入：遵守 services → tools 依赖方向，避免模块级 import 违规
 from aidev_agent.core.tools.a2a_tools.types import AgentBackendType, AgentSpec
 from aidev_agent.core.tools.runtime_tools import RuntimeBackendResolver
 from aidev_agent.enums import AgentType, PromptRole
@@ -53,6 +51,11 @@ from aidev_agent.services.event_handlers.base import BaseSessionWriter
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
 from aidev_agent.utils.async_utils import async_to_sync_generator
 from aidev_agent.utils.loop import run_coro_sync
+from aidev_agent.utils.migrations import (
+    migration_chat_model_non_thinking_from_non_thinking_llm_v1,
+    migration_knowledge_query_options_from_agent_options_v1,
+    migration_model_context_options_from_agent_options_v1,
+)
 
 logger = getLogger(__name__)
 
@@ -91,7 +94,9 @@ class ChatCompletionAgent(BaseModel):
     """聊天模型；种子实例（``ChatCompletionAgent()``）为 ``None``，``build(ctx)``
     装配后由 :meth:`ChatAgentBuilder.build_chat_model` 填充为非空 ``BaseChatModel``。
     种子实例不可执行（``execute()`` 假设非空）。"""
-    non_thinking_llm: str | None = None
+    chat_model_non_thinking: BaseChatModel | None = None
+    """非思考模型；由 :meth:`ChatAgentBuilder.build_chat_model_non_thinking` 填充。"""
+    non_thinking_llm: str | None = Field(default=None, deprecated="使用 chat_model_non_thinking 替代")
     chat_history: list[ChatPrompt] | None = None
     files: list[dict] = Field(default_factory=list)
     tools: Optional[list[StructuredTool]] = None
@@ -100,17 +105,21 @@ class ChatCompletionAgent(BaseModel):
     executor_info: Optional[dict] = None
     knowledge_bases: Optional[list[dict]] = None
     knowledges: Optional[list[dict]] = None
+    knowledge_query_options: Any = None
+    model_context_options: ModelContextSettings | None = None
+    agent_options: AgentOptions | None = Field(
+        default=None,
+        deprecated="使用 model_context_options and knowledge_query_options 替代",
+    )
     support_vision: bool = False
     file_store: ByteStore | None = None
-    role_prompt: str | None = None
-    agent_prompt: str | None = None
+    role_prompt: str | None = Field(default=None, deprecated="已经被纳入 chat_history 管理")
     max_token_size: int | None = None
     callbacks: list[BaseCallbackHandler] | None = None
     agent_cls: CommonAgentProtocol = Field(default_factory=CommonQAAgent)
     """通用 agent 实例（实现 ``CommonAgentProtocol``）；ChatCompletionAgent 在 ``_get_agent`` 阶段
     通过 ``self.agent_cls.get_agent_executor(...)`` 触发执行器构建。
     字段名保留为 ``agent_cls`` 避免外部破坏，但语义已是「实例」。"""
-    agent_options: AgentOptions = Field(default_factory=AgentOptions)
     messages: list[BaseMessage] = Field(default_factory=list)
     checkpointer: BaseCheckpointSaver | None = None
 
@@ -151,7 +160,7 @@ class ChatCompletionAgent(BaseModel):
         builder.handle_agent_switch()
 
         self.chat_model = builder.build_chat_model()
-        self.non_thinking_llm = builder.build_non_thinking_llm()
+        self.chat_model_non_thinking = builder.build_chat_model_non_thinking()
         self.skills = builder.build_skills()
         # 先构建 executor_info，供 build_tools / construct_mcp 使用同一凭证源
         self.executor_info = builder.build_executor_info()
@@ -160,9 +169,12 @@ class ChatCompletionAgent(BaseModel):
         self.mcp_fetch_failures = builder.mcp_fetch_failures
         self.knowledge_bases = builder.build_knowledge_bases()
         self.knowledges = builder.build_knowledge_items()
+        self.knowledge_query_options = builder.build_knowledge_query_options()
+        self.model_context_options = builder.build_model_context_options()
+        if ctx.agent_config and ctx.agent_config.agent_options is not None:
+            self.agent_options = ctx.agent_config.agent_options
+        self.support_vision = builder.build_support_vision()
         self.chat_history = builder.build_chat_history(ctx.session_context_data)
-        self.agent_options = builder.build_agent_options()
-        self.agent_prompt = builder.build_agent_prompt()
         self.checkpointer = builder.build_checkpointer()
         self.subagent_specs = builder.build_subagents(ctx.agent_code)
         self.role_prompt = builder.get_role_prompt()
@@ -180,6 +192,7 @@ class ChatCompletionAgent(BaseModel):
         return self
 
     def execute(self, execute_kwargs: ExecuteKwargs) -> Generator[str, None, None] | str:
+        self.migration_v1()
         if not self.messages:
             self.messages = self.convert_history_to_messages()
         messages = self.messages
@@ -339,6 +352,7 @@ class ChatCompletionAgent(BaseModel):
     def _execute(self, messages: list[BaseMessage], execute_kwargs: ExecuteKwargs):
         if not messages:
             raise ValueError("The messages list cannot be empty.")
+        self._update_aidev_agent_header(execute_kwargs)
         agent_e, cfg = self._get_agent(messages, execute_kwargs=execute_kwargs)
         cfg.setdefault("configurable", {})
         cfg["configurable"]["thread_id"] = self.thread_id
@@ -393,38 +407,16 @@ class ChatCompletionAgent(BaseModel):
     def _stream(
         self, agent_e: Runnable, cfg: RunnableConfig, messages: list[BaseMessage], execute_kwargs: ExecuteKwargs
     ) -> Generator[Any, None, None]:
-        # 使用 session_code 作为 stream_thread_id，以支持断点续传（RabbitMQ 队列标识）
-        # 当用户刷新页面重新进入同一会话时，可以从 RabbitMQ 队列恢复之前的流
-        stream_thread_id = execute_kwargs.session_code or self.thread_id
         # 兼容前端：``execute_kwargs.resume`` 历史协议为 ``list[ResumeItem]``，部分前端会直接
         # 传单条 dict（如 ``{"interruptId": "...", "status": "resolved"}``），此处统一归一化为
         # 列表，确保后续 ``hydrate_resume_payload`` / LangGraph 续流逻辑接收到一致形态。
         if isinstance(execute_kwargs.resume, dict):
             execute_kwargs.resume = [execute_kwargs.resume]
-        # 普通请求继续使用新的 graph_thread_id，避免 LangGraph checkpoint 累积历史消息；
-        # resume 请求必须复用中断时的 thread_id，才能找到中断前的 checkpoint。
-        # 调用方注入优先：若 ``execute_kwargs.thread_id`` 已显式指定（例如平台调试入口在自身
-        # 进程内已经通过 ORM 查到 graph_thread_id，不希望 SDK 再绕一次 openapi/网关反查），
-        # 直接使用调用方传入的值；否则回退到原有的反查兜底逻辑。
-        if execute_kwargs.resume:
-            graph_thread_id = execute_kwargs.thread_id or ApprovalStateHandler() \
-                .get_graph_thread_id_from_interrupt_content(stream_thread_id)
-            if not graph_thread_id:
-                raise AgentException(
-                    message=(
-                        "resume 请求缺少可恢复的 graph_thread_id，未能从 role=interrupt 会话内容"
-                        "的 property.builtin_property 定位到待恢复中断"
-                    )
-                )
-        else:
-            graph_thread_id = f"{stream_thread_id}_{uuid.uuid4().hex[:8]}"
+
         logger.info(
-            "[ToolApproval] _stream: execute_kwargs.resume=%s, execute_kwargs.thread_id=%s, "
-            "stream_thread_id=%s, graph_thread_id=%s",
+            "[ToolApproval] _stream: resume=%s, thread_id=%s",
             bool(execute_kwargs.resume),
-            repr(execute_kwargs.thread_id),
-            repr(stream_thread_id),
-            repr(graph_thread_id),
+            repr(self.thread_id),
         )
 
         # 拉取平台已存在的 sandbox PV 注入 state（runtime_paas_sbx_pv）
@@ -433,7 +425,7 @@ class ChatCompletionAgent(BaseModel):
         if platform_pv:
             state["runtime_paas_sbx_pv"] = platform_pv
         body = {
-            "thread_id": graph_thread_id,
+            "thread_id": self.thread_id,
             "run_id": messages[-1].id or uuid.uuid4().hex,
             "state": state,
             "messages": langchain_messages_to_agui(messages),
@@ -457,7 +449,7 @@ class ChatCompletionAgent(BaseModel):
         approve_result = None
         approval_interrupts = []
         if execute_kwargs.resume:
-            approval_info = self._query_approval_status(execute_kwargs.session_code or self.thread_id)
+            approval_info = self._query_approval_status(self.thread_id)
             if approval_info is not None:
                 approve_result = approval_info["approve_result"]
                 approval_interrupts = approval_info.get("interrupts") or []
@@ -469,7 +461,7 @@ class ChatCompletionAgent(BaseModel):
             event_handler=self.event_handler,
             config=cfg,
             tools={each.name: each for each in self.tools} if self.tools else {},
-            cancel_checker=make_cancel_checker(stream_thread_id),
+            cancel_checker=make_cancel_checker(self.thread_id),
             mcp_fetch_failures=getattr(self, "mcp_fetch_failures", []) or [],
             approve_result=approve_result,
             approval_interrupts=approval_interrupts,
@@ -478,11 +470,10 @@ class ChatCompletionAgent(BaseModel):
         return self._stream_with_queue(
             agui_entry,
             agent_input,
-            queue_thread_id=stream_thread_id,
+            queue_thread_id=self.thread_id,
             background_only=execute_kwargs.background_only,
             agent_e=agent_e,
             cfg=cfg,
-            graph_thread_id=graph_thread_id,
             resume=bool(execute_kwargs.resume),
         )
 
@@ -494,34 +485,53 @@ class ChatCompletionAgent(BaseModel):
         background_only: bool = False,
         agent_e: Runnable | None = None,
         cfg: RunnableConfig | None = None,
-        graph_thread_id: str | None = None,
         resume: bool = False,
     ) -> Generator[Any, None, None]:
-        """使用队列处理器缓存流式请求，支持断点续传
+        """使用队列处理器缓存流式请求，支持断点续传。
 
-        断点续传逻辑：
-        1. 如果流正在运行或已完成，且有未消费的缓存消息，则从 client_index 位置续传
-        2. 否则开始新的流式请求
-
-        客户端在消费时应该在每次成功接收后更新 client_index，
-        以便在连接中断后能够从正确的位置继续。
-
-        Args:
-            agui_entry: AGUI Agent 入口
-            agent_input: Agent 输入参数
-            queue_thread_id: 队列标识ID（用于断点续传），默认使用 agent_input.thread_id
-
-        Yields:
-            流式响应数据
+        两阶段输出：
+        1. 同步直传头部帧到RUN_STARTED，
+           绕过 RabbitMQ buffer 避免 gevent 环境下的顺序竞态。
+        2. 后续运行时事件交给队列管理，支持断点续传。
         """
         helper = GeneratorStreamingHelper(
             thread_id=queue_thread_id or agent_input.thread_id,
             defer_cleanup_on_complete=background_only,
         )
         producer = self._build_resume_aware_producer(
-            agui_entry, agent_input, agent_e=agent_e, cfg=cfg, graph_thread_id=graph_thread_id, resume=resume
+            agui_entry, agent_input, agent_e=agent_e, cfg=cfg, resume=resume
         )
-        return helper.stream(producer, on_complete=self._on_complete)
+
+        # ---- 阶段 1：同步拉取头部帧并直接 yield ----
+        head_frames = []
+        remaining_producer = self._extract_head_frames(producer, head_frames)
+        for frame in head_frames:
+            yield frame
+
+        # ---- 阶段 2：剩余帧交给队列管理（支持断点续传）----
+        yield from helper.stream(remaining_producer, on_complete=self._on_complete)
+
+    @staticmethod
+    def _extract_head_frames(
+        producer: Generator[Any, None, None],
+        head_frames: list,
+    ) -> Generator[Any, None, None]:
+        """从 producer 中同步提取头部帧（到 RUN_STARTED 为止），返回剩余帧 generator。
+
+        事件流结构：MESSAGES_SNAPSHOT → [RUN_FINISHED] → RUN_STARTED → STEP_* ...
+        RUN_STARTED 是 Agent 图执行的起点，之前的帧为初始化/回放事件。
+        """
+        RUN_STARTED_MARKER = '"type":"RUN_STARTED"'
+
+        def _remaining() -> Generator[Any, None, None]:
+            yield from producer
+
+        for frame in producer:
+            head_frames.append(frame)
+            if isinstance(frame, str) and RUN_STARTED_MARKER in frame:
+                break
+
+        return _remaining()
 
     def _build_resume_aware_producer(
         self,
@@ -529,7 +539,6 @@ class ChatCompletionAgent(BaseModel):
         agent_input: AgentInput,
         agent_e: Runnable | None,
         cfg: RunnableConfig | None,
-        graph_thread_id: str | None,
         resume: bool,
     ) -> Generator[Any, None, None]:
         """构造「resume 感知」的生产者生成器（方案 B 兜底入口）。
@@ -544,14 +553,13 @@ class ChatCompletionAgent(BaseModel):
         """
 
         def _gen() -> Generator[Any, None, None]:
-            if resume and agent_e is not None and cfg is not None and graph_thread_id:
-                replay = self._build_terminal_resume_replay(agui_entry, agent_input, agent_e, cfg, graph_thread_id)
+            if resume and agent_e is not None and cfg is not None and agent_input.thread_id:
+                replay = self._build_terminal_resume_replay(agui_entry, agent_input, agent_e, cfg)
                 if replay is not None:
                     logger.info(
                         "[ResumeReplay] graph terminal, replay persisted turn from checkpoint "
-                        "(scheme B fallback), thread_id=%s, graph_thread_id=%s",
+                        "(scheme B fallback), thread_id=%s",
                         agent_input.thread_id,
-                        graph_thread_id,
                     )
                     yield from replay
                     return
@@ -565,7 +573,6 @@ class ChatCompletionAgent(BaseModel):
         agent_input: AgentInput,
         agent_e: Runnable,
         cfg: RunnableConfig,
-        graph_thread_id: str,
     ) -> Generator[Any, None, None] | None:
         """方案 B：resume 的 graph 已终态时，从 checkpoint 重放完整 turn。
 
@@ -577,14 +584,15 @@ class ChatCompletionAgent(BaseModel):
         说明：重放仅用于把已落库内容交付前端，**不**再次触发 event_handler 落库（后台
         drain 阶段的 BaseSessionWriter 已持久化该 turn），故绕过 ``_dispatch_event``。
         """
+        thread_id = agent_input.thread_id
         try:
             replay_cfg = dict(cfg)
-            replay_cfg["configurable"] = {**cfg.get("configurable", {}), "thread_id": graph_thread_id}
+            replay_cfg["configurable"] = {**cfg.get("configurable", {}), "thread_id": thread_id}
             state = run_coro_sync(agent_e.aget_state(replay_cfg))
         except Exception:
             logger.warning(
-                "[ResumeReplay] aget_state failed, fallback to astream, graph_thread_id=%s",
-                graph_thread_id,
+                "[ResumeReplay] aget_state failed, fallback to astream, thread_id=%s",
+                thread_id,
                 exc_info=True,
             )
             return None
@@ -596,10 +604,10 @@ class ChatCompletionAgent(BaseModel):
         if not is_terminal:
             logger.info(
                 "[ResumeReplay] graph not terminal (next=%s, interrupts=%d), use normal resume astream, "
-                "graph_thread_id=%s",
+                "thread_id=%s",
                 next_nodes,
                 len(interrupts),
-                graph_thread_id,
+                thread_id,
             )
             return None
 
@@ -608,9 +616,8 @@ class ChatCompletionAgent(BaseModel):
         non_system = [m for m in messages if not isinstance(m, SystemMessage)]
         if not non_system:
             logger.info(
-                "[ResumeReplay] terminal graph has no replayable messages, fallback to astream, "
-                "graph_thread_id=%s",
-                graph_thread_id,
+                "[ResumeReplay] terminal graph has no replayable messages, fallback to astream, thread_id=%s",
+                thread_id,
             )
             return None
 
@@ -664,8 +671,7 @@ class ChatCompletionAgent(BaseModel):
                     yield encoder.encode(ev)
                     event_count += 1
                 logger.info(
-                    "[ResumeReplay] streamed %d incremental events from checkpoint fragment, "
-                    "thread_id=%s",
+                    "[ResumeReplay] streamed %d incremental events from checkpoint fragment, thread_id=%s",
                     event_count,
                     agent_input.thread_id,
                 )
@@ -691,6 +697,17 @@ class ChatCompletionAgent(BaseModel):
         # 流式执行结束后释放资源
         self.release_resources()
 
+    def migration_v1(self) -> None:
+        """兼容 v1 旧构造参数，统一迁移到当前运行时协议。"""
+        if not isinstance(self.model_context_options, ModelContextSettings):
+            self.model_context_options = migration_model_context_options_from_agent_options_v1(self.agent_options)
+        if not isinstance(self.knowledge_query_options, KnowledgeSettings):
+            self.knowledge_query_options = migration_knowledge_query_options_from_agent_options_v1(self.agent_options)
+        if not isinstance(self.chat_model_non_thinking, BaseChatModel):
+            self.chat_model_non_thinking = migration_chat_model_non_thinking_from_non_thinking_llm_v1(
+                self.non_thinking_llm,
+            )
+
     def _get_agent(
         self, messages: list[BaseMessage], *, execute_kwargs: ExecuteKwargs
     ) -> tuple[Runnable, RunnableConfig]:
@@ -699,24 +716,21 @@ class ChatCompletionAgent(BaseModel):
         execute_kwargs 有携带了 trace 上下文，以便于不要让 trace 断掉
         """
         if self.knowledge_bases:
-            self.agent_options.knowledge_query_options.knowledge_bases = self.knowledge_bases
+            self.knowledge_query_options.knowledge_bases = self.knowledge_bases
         if self.knowledges:
-            self.agent_options.knowledge_query_options.knowledge_items = self.knowledges
+            self.knowledge_query_options.knowledge_items = self.knowledges
         logger.info(f"callbacks: {self.callbacks}")
         return self.agent_cls.get_agent_executor(
             llm=self.chat_model,
-            knowledge_llm=self.chat_model
-            if self.non_thinking_llm is None
-            else ChatModel.get_setup_instance(model=self.non_thinking_llm),
+            non_thinking_llm=self.chat_model_non_thinking or self.chat_model,
             extra_tools=self.tools,
             chat_history=messages[:-1],
             tool_execution_interval=self.TOOL_EXECUTION_INTERVAL,
             support_vision=self.support_vision,
             file_store=self.file_store,
-            role_prompt=self.role_prompt,
-            agent_prompt=self.agent_prompt,
             callbacks=self.callbacks,
-            agent_options=self.agent_options,
+            knowledge_query_options=self.knowledge_query_options,
+            model_context_options=self.model_context_options,
             skills=self.skills,
             subagent_specs=self.subagent_specs,
             executor_info=self.executor_info,
@@ -791,7 +805,7 @@ class ChatCompletionAgent(BaseModel):
                 each.role = PromptRole.USER.value
                 match = self.IMAGE_FILE_PATTERN.search(each.content)
                 if match:
-                    file_path, file_name = match.group(1), match.group(2)
+                    file_path, _ = match.group(1), match.group(2)
                     each.content = [{"type": "image_url", "image_url": {"url": file_path}}]
                     # 图片不计算实际大小，但不能为 0 —— 给一个大于 0 的占位值
                     self.files.append({"file_name": file_path, "file_size": 100})
@@ -813,7 +827,7 @@ class ChatAgentBuilder:
     - 模型 / 工具 / 知识 / 技能装配
     - 聊天历史构建（含 tool_calls 过滤、think 移除、role_history 拼接、modify_last_system_message）
     - executor_info / checkpointer 取值
-    - role_prompt / agent_prompt / agent_options 取值
+    - model_context_options / knowledge_query_options 取值
     - handle_agent_switch（替换 system 消息）
     - specific_resources 提取（``_handle_last_human_message``）
 
@@ -879,18 +893,37 @@ class ChatAgentBuilder:
 
         return ChatModel.get_setup_instance(**kwargs)
 
+    def build_chat_model_non_thinking(self) -> BaseChatModel | None:
+        """构建非思考模型 (返回 ChatModel 实例)"""
+        model_name = self.ctx.agent_config.non_thinking_llm
+        if not model_name:
+            return None
+        kwargs: dict[str, Any] = {
+            "model": model_name,
+            "base_url": settings.LLM_GW_ENDPOINT,
+        }
+        chat = self.ctx.chat or ChatBuildExtras()
+        if chat.auth_headers:
+            kwargs["auth_headers"] = chat.auth_headers
+        return ChatModel.get_setup_instance(**kwargs)
+
     def build_chat_history(self, session_context_data: List[dict]) -> List[ChatPrompt]:
         """构建聊天历史"""
         config = self.ctx.agent_config
-        role_history = (
-            [
-                ChatPrompt(role=each["role"].replace("hidden-", ""), content=each["content"])
-                for each in config.role_prompts
-                if each.get("role") in ["user", "assistant", "hidden-user", "hidden-assistant", "hidden-system"]
-            ]
-            if config.role_prompts
-            else []
-        )
+        role_prompt_roles = {
+            PromptRole.USER.value,
+            PromptRole.ASSISTANT.value,
+            PromptRole.SYSTEM.value,
+            PromptRole.PAUSE.value,
+            "hidden-user",
+            "hidden-assistant",
+            "hidden-system",
+        }
+        role_history = [
+            ChatPrompt(role=each["role"].replace("hidden-", ""), content=each["content"])
+            for each in (config.role_prompts or [])
+            if each.get("content") and each.get("role") in role_prompt_roles
+        ]
 
         chat_history = [
             ChatPrompt.model_validate(each)
@@ -954,7 +987,6 @@ class ChatAgentBuilder:
             mcp_server_config = config.mcp_server_config
         mcp_result = self.ctx.resource_manager.construct_mcp(
             mcp_config=mcp_server_config,
-            agent_options=config.agent_options,
             username=self.ctx.username,
             executor_info=self._executor_info,
         )
@@ -1033,7 +1065,8 @@ class ChatAgentBuilder:
             if strategy is None:
                 logger.warning(
                     "[ToolApproval] 绑定引用了不存在的策略: approval_strategy_id=%s, binding=%s",
-                    strategy_id, binding_data,
+                    strategy_id,
+                    binding_data,
                 )
                 continue
             resource_type = binding_data.get("resource_type", "")
@@ -1057,9 +1090,10 @@ class ChatAgentBuilder:
             elif resource_type == "mcp_tool":
                 mcp_id = binding_data.get("mcp_id")
                 binding["mcp_id"] = mcp_id
-                # 从 resources 映射解析 mcp_name（即 mcp_code/服务器名），用于与工具 metadata 中的 mcp_name 匹配
-                mcp_code = resource_id_map.get(("mcp", mcp_id)) if mcp_id else None
-                binding["mcp_name"] = mcp_code or binding_data.get("mcp_name")
+                # 优先使用平台 runtime binding 下发的 mcp_name/mcp_code，resources 映射仅作兜底
+                mcp_code = binding_data.get("mcp_code") or (resource_id_map.get(("mcp", mcp_id)) if mcp_id else None)
+                binding["mcp_code"] = mcp_code
+                binding["mcp_name"] = binding_data.get("mcp_name") or mcp_code
                 binding["tool_code"] = binding_data.get("mcp_tool_name", "")
                 binding["tool_name"] = binding_data.get("mcp_tool_name", "")
             bindings.append(binding)
@@ -1161,12 +1195,7 @@ class ChatAgentBuilder:
         #   此处直接复用；仅在极端情况下（ctx.chat 为 None 或 checkpointer 缺失）
         #   fallback，新建实例也仅对当前这一批 subagents 生效
         parent_chat = self.ctx.chat
-        shared_checkpointer = (
-            parent_chat.checkpointer
-            if parent_chat is not None and parent_chat.checkpointer is not None
-            else MemorySaver()
-        )
-
+        shared_checkpointer = parent_chat.checkpointer
         specs: list[Any] = []
         for agent in related_agents:
             child_agent_code = agent.get("agent_code", "")
@@ -1270,13 +1299,17 @@ class ChatAgentBuilder:
             return KnowledgeSettings.model_validate(data)
         return migration_knowledge_query_options_from_agent_options_v1(self.ctx.agent_config.agent_options)
 
-    def build_agent_options(self) -> AgentOptions:
-        """构建Agent选项"""
-        return self.ctx.agent_config.agent_options
+    def build_model_context_options(self) -> ModelContextSettings | None:
+        """从 AgentConfig 构建 ModelContextSettings；新协议为空时兼容旧 agent_options。"""
+        data = self.ctx.agent_config.model_context_options_data
+        if data:
+            return ModelContextSettings.model_validate(data)
+        return migration_model_context_options_from_agent_options_v1(self.ctx.agent_config.agent_options)
 
-    def build_agent_prompt(self) -> str | None:
-        """构建Agent提示词"""
-        return self.ctx.agent_config.agent_prompt
+    def build_support_vision(self) -> bool:
+        """从 prompt_setting.support_upload.vision 构建 support_vision"""
+        support_upload = self.ctx.agent_config.model_context_options_data.get("support_upload") or {}
+        return bool(support_upload.get("vision", False))
 
     def build_executor_info(self) -> dict:
         """构建执行用户信息，包含 access_token / app_code / app_secret 用于沙箱认证和 MCP 调用"""
@@ -1335,8 +1368,10 @@ class ChatAgentBuilder:
                 f"ChatAgentBuilder: handling last human message with resources in session_context_data->[{item}]"
             )
             if item.get("role") == PromptRole.USER.value:
-                if item.get("extra", {}).get("resources"):
-                    self._specific_resources = item.get("extra", {}).get("resources")
+                # item.get("extra") 有可能为 None, 和 item.get("extra", {}) 不等价
+                extra = item.get("extra") or {}
+                if extra.get("resources"):
+                    self._specific_resources = extra.get("resources")
                 break
 
     def _filter_unmatched_tool_calls(self, chat_history: List[ChatPrompt]) -> List[ChatPrompt]:

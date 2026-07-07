@@ -73,7 +73,7 @@ class ResourceManagerProtocol(Protocol):
         """
         ...
 
-    def retrieve_skill(self, skill_id: str, version: str, **kwargs) -> dict:
+    def retrieve_skill(self, skill_id: str, version: str | None, callee_agent_code: str | None, **kwargs) -> dict:
         """按 skill_id + version 取回技能详情。"""
         ...
 

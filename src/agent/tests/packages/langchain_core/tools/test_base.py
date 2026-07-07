@@ -183,7 +183,7 @@ def test_make_structured_tool_basic(sample_weather_tool_data):
     assert isinstance(structured_tool, StructuredTool)
     assert structured_tool.name == "weather-query"
     assert structured_tool.description == "查询中国国内天气情况"
-    assert structured_tool.metadata == {"tool_name": "天气查询"}
+    assert structured_tool.metadata == {"tool_id": None, "tool_code": "weather-query", "tool_name": "天气查询"}
 
     # 验证参数模型
     assert structured_tool.args_schema is not None

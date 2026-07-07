@@ -87,12 +87,16 @@ class EventDispatcher:
         """处理工具节点完成事件"""
         tool_msg = event.event.get("data")
         is_error = getattr(tool_msg, "status", None) == "error" or bool(getattr(tool_msg, "error", None))
+        # 确保 content 是字符串类型（ToolCallResultEvent.content 要求 str）
+        content = tool_msg.content
+        if not isinstance(content, str):
+            content = str(content) if content else ""
         return self.agent._parent_dispatch(
             ExtendToolCallResultEvent(
                 type=EventType.TOOL_CALL_RESULT,
                 tool_call_id=tool_msg.tool_call_id,
                 message_id=tool_msg.id or str(uuid.uuid4()),
-                content=tool_msg.content,
+                content=content,
                 role="tool",
                 duration=tool_msg.additional_kwargs.get("duration", None),
                 is_error=is_error,
@@ -120,12 +124,16 @@ class EventDispatcher:
     def _handle_tool_node_finish_from_custom(self, event: CustomEvent) -> str:
         tool_msg = event.value
         is_error = getattr(tool_msg, "status", None) == "error" or bool(getattr(tool_msg, "error", None))
+        # 确保 content 是字符串类型（ToolCallResultEvent.content 要求 str）
+        content = tool_msg.content
+        if not isinstance(content, str):
+            content = str(content) if content else ""
         return self.agent._parent_dispatch(
             ExtendToolCallResultEvent(
                 type=EventType.TOOL_CALL_RESULT,
                 tool_call_id=tool_msg.tool_call_id,
                 message_id=tool_msg.id or str(uuid.uuid4()),
-                content=tool_msg.content,
+                content=content,
                 role="tool",
                 duration=tool_msg.additional_kwargs.get("duration", None),
                 is_error=is_error,
@@ -141,12 +149,16 @@ class EventDispatcher:
         - 事件名 on_tool_node_immediate 不被 BaseSessionWriter 识别，不会写 DB
         """
         tool_msg = event.value
+        # 确保 content 是字符串类型（ToolCallResultEvent.content 要求 str）
+        content = tool_msg.content
+        if not isinstance(content, str):
+            content = str(content) if content else ""
         return self.agent._parent_dispatch(
             ExtendToolCallResultEvent(
                 type=EventType.TOOL_CALL_RESULT,
                 tool_call_id=tool_msg.tool_call_id,
                 message_id=tool_msg.id or str(uuid.uuid4()),
-                content=tool_msg.content,
+                content=content,
                 role="tool",
                 duration=None,
                 is_error=False,

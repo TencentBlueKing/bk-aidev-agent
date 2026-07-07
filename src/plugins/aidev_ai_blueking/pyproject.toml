@@ -1,11 +1,11 @@
 [project]
 name = "aidev-ai-blueking"
-version = "2.2.0b4"
+version = "2.2.0b6"
 description = "小鲸静态资源包"
 readme = "readme.md"
 requires-python = ">=3.11.9, <4"
 dependencies = [
-    "aidev-agent>=2.2.0rc167",
+    "aidev-agent>=2.2.0rc192",
     "django>=4.2.28,<5.0",
 ]
 

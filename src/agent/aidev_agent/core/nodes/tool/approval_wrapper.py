@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -83,8 +84,7 @@ def _approval_config(tool: Any | None) -> dict[str, Any] | None:
         target.get(key) for key in ("type", "id", "code", "mcp_name", "display_name")
     )
     has_direct_identity = any(
-        approval.get(key)
-        for key in ("tool_type", "tool_code", "tool_name", "mcp_code", "approvers")
+        approval.get(key) for key in ("tool_type", "tool_code", "tool_name", "mcp_code", "approvers")
     )
     return approval if has_target_identity or has_direct_identity else None
 
@@ -110,7 +110,10 @@ def _approval_target_metadata(
         "type": target_type,
         "id": target.get("id") or approval.get("id") or metadata.get("tool_id"),
         "name": target.get("name") or tool_name,
-        "display_name": target.get("display_name") or approval.get("tool_name") or metadata.get("tool_name") or tool_name,
+        "display_name": target.get("display_name")
+        or approval.get("tool_name")
+        or metadata.get("tool_name")
+        or tool_name,
         "code": target_code,
         "mcp_name": target.get("mcp_name") or approval.get("mcp_code") or metadata.get("mcp_name"),
     }
@@ -245,6 +248,24 @@ def _rejected_message(request: ToolCallRequest) -> ToolMessage:
     )
 
 
+def _resolve_mcp_name(target: ApprovalTarget) -> str:
+    """解析 MCP 服务名，非 mcp 类型返回空字符串。"""
+    if target.target_type != "mcp":
+        return ""
+    approval = target.approval or {}
+    if mcp_name := approval.get("mcp_name"):
+        return str(mcp_name)
+    target_info = approval.get("target") or {}
+    if mcp_code := approval.get("mcp_code"):
+        return str(mcp_code)
+    if mcp_name := target_info.get("mcp_name"):
+        return str(mcp_name)
+    metadata = _tool_metadata(target.tool)
+    if mcp_name := metadata.get("mcp_name"):
+        return str(mcp_name)
+    return ""
+
+
 def _create_approval_from_target(target: ApprovalTarget, execute_kwargs: Any | None) -> dict[str, Any]:
     client = BKAidevApi.get_client()
     session_code = ""
@@ -262,6 +283,9 @@ def _create_approval_from_target(target: ApprovalTarget, execute_kwargs: Any | N
         "run_id": target.target_id,
         "tool_call_id": target.target_id,
         "tool_type": target.target_type,
+        "tool_name": target.target_name,
+        "tool_code": target.target_code,
+        "mcp_name": _resolve_mcp_name(target),
         "tool_args": target.args,
         "approvers": approvers,
         "ticket_title": f"执行「{target.target_name}」需要审批",
@@ -291,8 +315,10 @@ def _interrupt_payload_from_target(
     ticket_sn = ticket.get("sn", "")
     # 工具调用参数随 interrupt 一并落库，供续流/历史回填重建 assistant.tool_calls 时使用
     tool_args = dict(target.args) if isinstance(target.args, dict) else {}
+    # 使用唯一后缀避免同一工具多次触发审批时 id 重复
+    interrupt_id_suffix = f"-{ticket_sn}" if ticket_sn else f"-{uuid.uuid4().hex[:8]}"
     payload = {
-        "id": approval_data.get("interrupt_id") or f"int-approval-{target.target_id}",
+        "id": f"int-approval-{target.target_id}{interrupt_id_suffix}",
         "reason": TOOL_APPROVAL_REASON,
         "toolCallId": target.target_id,
         "message": approval_data.get("message") or f"执行「{target.target_name}」前需要人工审批。",
