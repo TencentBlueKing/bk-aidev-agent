@@ -26,7 +26,8 @@ import type { ChatBotEmitFn } from './use-chatbot-init';
 
 const OTHERS_OPTION_LABEL = 'others';
 
-const USER_OPERATION_MAP: Record<InterruptResumeOperation, UserOperation> = {
+// ApprovalRefresh 无对应后端 userOperation，仅触发一次轮询拉取单据最新状态，故不在此映射内
+const USER_OPERATION_MAP: Partial<Record<InterruptResumeOperation, UserOperation>> = {
   [InterruptResumeOperation.ApprovalCancel]: UserOperation.ApprovalCancel,
   [InterruptResumeOperation.FlowNodeRetry]: UserOperation.FlowNodeRetry,
   [InterruptResumeOperation.FlowNodeSkip]: UserOperation.FlowNodeSkip,
@@ -118,7 +119,20 @@ export function useInterruptResume(params: UseInterruptResumeParams): UseInterru
     }
 
     const sessionCode = getSessionCode(helper);
+
+    // 刷新审批单状态：复用 chat-x（chat-helper）的轮询能力，主动拉取一次单据最新状态即可
+    if (payload.operation === InterruptResumeOperation.ApprovalRefresh) {
+      const agent = helper.agent as typeof helper.agent & {
+        pollResumeSession: (sessionCode: string) => void;
+      };
+      agent.pollResumeSession(sessionCode);
+      return;
+    }
+
     const operation = USER_OPERATION_MAP[payload.operation];
+    if (!operation) {
+      throw new Error(`[ChatBot] Unsupported interrupt resume operation: ${payload.operation}`);
+    }
     const agent = helper.agent as typeof helper.agent & {
       userOperationStreamRequest: (
         sessionCode: string,

@@ -87,6 +87,19 @@ describe('useInterruptResume', () => {
     );
   });
 
+  it('approval_refresh 应调用 pollResumeSession 拉取单据最新状态', async () => {
+    const params = createParams();
+    const { handleInterruptResume } = useInterruptResume(params);
+
+    await handleInterruptResume({
+      operation: InterruptResumeOperation.ApprovalRefresh,
+      payload: { interrupt_id: 987654 },
+    });
+
+    expect(params.chatHelper.value!.agent.pollResumeSession).toHaveBeenCalledWith('session-1');
+    expect(params.chatHelper.value!.agent.userOperationStreamRequest).not.toHaveBeenCalled();
+  });
+
   it('ask-user-question 结构化回答应调用 streamRequest', async () => {
     const params = createParams();
     const { handleInterruptResume } = useInterruptResume(params);

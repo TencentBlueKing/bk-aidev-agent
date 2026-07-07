@@ -127,7 +127,6 @@
     CloseCircleFillIcon,
     CopyIcon,
     RebuildIcon,
-    ReloadIcon,
     RevokedIcon,
     TimeIcon,
   } from '../../../icons';
