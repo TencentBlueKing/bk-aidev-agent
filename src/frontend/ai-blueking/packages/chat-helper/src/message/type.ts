@@ -30,6 +30,7 @@ export enum ActivityType {
   FlowAgent = 'flow_agent',
   KnowledgeRag = 'knowledge_rag',
   ReferenceDocument = 'reference_document',
+  Interrupt = 'interrupt',
 }
 
 export enum MessageRole {

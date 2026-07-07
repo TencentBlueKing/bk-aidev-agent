@@ -110,7 +110,14 @@ export class AGUIProtocol implements ISSEProtocol {
    * 处理活动快照事件
    * 记录活动的完整状态
    */
-  handleActivitySnapshotEvent(_event: IActivitySnapshotEvent) {}
+  handleActivitySnapshotEvent(event: IActivitySnapshotEvent) {
+    if (event.activityType === ActivityType.Interrupt) {
+      const interruptMessage = this.messageModule.getMessageByMessageId(event.messageId);
+      if (interruptMessage.role === MessageRole.Interrupt) {
+        interruptMessage.content = event.content as IApprovalResultCustomValue;
+      }
+    }
+  }
 
   /**
    * 处理自定义事件
