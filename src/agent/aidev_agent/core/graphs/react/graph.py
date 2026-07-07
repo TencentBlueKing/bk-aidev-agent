@@ -18,6 +18,7 @@ to the current version of the project delivered to anyone in the future.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import TYPE_CHECKING, Annotated, Any, Callable, List, Optional, Sequence, Tuple, get_type_hints
 
@@ -27,7 +28,7 @@ from langchain.agents.middleware.types import (
 )
 from langchain_core.callbacks import dispatch_custom_event
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.stores import ByteStore
 from langchain_core.tools import BaseTool
@@ -983,6 +984,29 @@ class ReActAgentBuilder:
             if not approval_targets:
                 return Command(goto="pv_node")
 
+            # 收集本轮对话（最后一条 HumanMessage 之后）已有审批终态的 (tool_code, args) → status，
+            # 同一轮中同工具同参数复用已有审批结果（如工具执行失败后 model 自动重试）。
+            _finalized_tool_signatures: dict[str, str] = {}
+            if _is_resuming:
+                _turn_start = 0
+                for i in range(len(messages) - 1, -1, -1):
+                    if isinstance(messages[i], HumanMessage):
+                        _turn_start = i + 1
+                        break
+                for msg in messages[_turn_start:]:
+                    if not isinstance(msg, AIMessage):
+                        continue
+                    approval_map = msg.additional_kwargs.get("tool_approval", {})
+                    if not isinstance(approval_map, dict):
+                        continue
+                    for tc in msg.tool_calls or []:
+                        record = approval_map.get(tc.get("id", ""))
+                        if isinstance(record, dict) and record.get("status") in ("approved", "rejected"):
+                            code = record.get("toolCode") or tc.get("name", "")
+                            sig = f"{code}::{json.dumps(tc.get('args', {}), sort_keys=True)}"
+                            # 保留最新的终态（后出现的覆盖前面的）
+                            _finalized_tool_signatures[sig] = record["status"]
+
             updated_message = last_message
             for target in approval_targets:
                 existing_record = get_tool_call_approval_record_from_state(state, target.target_id)
@@ -991,6 +1015,15 @@ class ReActAgentBuilder:
                 if existing_status == "approved":
                     continue
                 if existing_status == "rejected":
+                    continue
+
+                # 同轮次同工具同参数已有审批终态，直接复用结果
+                _target_sig = f"{target.target_code}::{json.dumps(target.args or {}, sort_keys=True)}"
+                _prior_status = _finalized_tool_signatures.get(_target_sig)
+                if _prior_status:
+                    updated_message = update_tool_call_approval_record(
+                        updated_message, target, status=_prior_status, interrupt_payload=None
+                    )
                     continue
 
                 interrupt_holder: dict[str, dict] = {}
@@ -1003,10 +1036,13 @@ class ReActAgentBuilder:
                         config=config,
                     )
 
-                # 判断当前 target 是否属于本次续流恢复：resume interruptId 中包含 target_id
-                # 则视为 resuming（不重新创建工单）；否则是续流后新产生的审批，需正常创建。
+                # 判断当前 target 是否属于本次续流恢复：
+                # interrupt_id 格式为 "int-approval-{target_id}-{suffix}"，
+                # 用 startswith 精确匹配避免 :1 误匹配 :10。
+                _approval_id_prefix = f"int-approval-{target.target_id}-"
                 _target_is_resuming = _is_resuming and any(
-                    target.target_id in interrupt_id for interrupt_id in _resume_interrupt_ids
+                    interrupt_id.startswith(_approval_id_prefix)
+                    for interrupt_id in _resume_interrupt_ids
                 )
 
                 approved = request_approval_decision(
