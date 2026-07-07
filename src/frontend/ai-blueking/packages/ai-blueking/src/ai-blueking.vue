@@ -1,6 +1,6 @@
 <template>
   <teleport :to="props.teleportTo">
-    <div :class="['ai-blueking-v2', props.extCls]">
+    <div :class="['ai-blueking-v2', props.extCls, attrs.class]">
       <!-- 可拖拽容器 -->
       <draggable-container
         ref="draggableContainerRef"
@@ -148,6 +148,8 @@
 </template>
 
 <script setup lang="ts">
+  import { useAttrs } from 'vue';
+
   import { AiSelection } from '@blueking/chat-x';
 
   import AIHeader from './components/ai-header/index.vue';
@@ -166,8 +168,12 @@
   import type { AIBluekingEmits, AIBluekingExpose, AIBluekingProps, ISession } from './types';
   import type { Message, MessageToolsStatus, OnInterruptResume } from '@blueking/chat-x';
 
+  // 根节点为 teleport，无法自动继承 class 等透传属性，改为手动合并到内层容器
+  defineOptions({ inheritAttrs: false });
+
   const props = withDefaults(defineProps<AIBluekingProps>(), defaultProps);
   const emit = defineEmits<AIBluekingEmits>();
+  const attrs = useAttrs();
   defineSlots<{
     codeHeader?: (props: { language: string; token: unknown[] }) => unknown;
     headerLeft?: () => unknown;
