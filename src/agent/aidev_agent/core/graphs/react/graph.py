@@ -1053,6 +1053,8 @@ class ReActAgentBuilder:
                     interrupt_payload=existing_record.get("interrupt") if isinstance(existing_record, dict) else None,
                 )
                 status = "approved" if approved else "rejected"
+                # 实时更新签名集合，供同一次节点执行中后续 target 复用
+                _finalized_tool_signatures[_target_sig] = status
                 updated_message = update_tool_call_approval_record(
                     updated_message,
                     target,
