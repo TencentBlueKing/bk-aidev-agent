@@ -467,8 +467,6 @@ class TestReActAgentBuilder:
         tool_names = [t.name for t in captured_tools["tools"]]
         assert "activate_skill" in tool_names
 
-
-
     def test_build_runtime_tools_injected(self, tmp_path, monkeypatch):
         """enable_runtime_tool=True 时应注入 7 个运行时客户端工具"""
         monkeypatch.chdir(tmp_path)
@@ -1039,18 +1037,19 @@ class TestReActAgentBuilder:
         assert result["bk_username"] == "admin"
         assert result["snapshot"] == "snap1"
         assert result["snapshot_entrypoint"] == []
-        assert result["env_vars"] == {"KEY": "VAL", "ACCESS_TOKEN": "token123"}
+        assert result["env_vars"] == {"KEY": "VAL", "ACCESS_TOKEN": "token123", "BKAI_USERNAME": "admin"}
 
     def test_extract_paas_params_defaults(self, monkeypatch):
         """skill=None 且 config 为空时应返回带 settings.APP_CODE 的默认值"""
         monkeypatch.delenv("SANDBOX_BP_ACCESS_TOKEN", raising=False)
+        monkeypatch.delenv("BKAI_USERNAME", raising=False)
 
         result = _extract_paas_params(skill=None, config={})
         assert result["app_code"] == settings.APP_CODE
         assert result["bk_username"] is None
         assert result["snapshot"] == ""
         assert result["snapshot_entrypoint"] == []
-        assert result["env_vars"] == {"ACCESS_TOKEN": ""}
+        assert result["env_vars"] == {"ACCESS_TOKEN": "", "BKAI_USERNAME": ""}
 
     def test_extract_paas_params_access_token_from_env(self, monkeypatch):
         """config 未提供 access_token 时应从环境变量 SANDBOX_BP_ACCESS_TOKEN 读取"""
@@ -1058,6 +1057,13 @@ class TestReActAgentBuilder:
 
         result = _extract_paas_params(skill=None, config={})
         assert result["env_vars"]["ACCESS_TOKEN"] == "env-token"
+
+    def test_extract_paas_params_bkai_username_from_executor(self, monkeypatch):
+        """沙箱环境变量应注入明文 BKAI_USERNAME，优先使用 executor。"""
+        monkeypatch.setenv("BKAI_USERNAME", "env-user")
+
+        result = _extract_paas_params(skill=None, config={"executor": "admin"})
+        assert result["env_vars"]["BKAI_USERNAME"] == "admin"
 
     # ----------------------------------------------------------------
     # C. build 返回值测试
