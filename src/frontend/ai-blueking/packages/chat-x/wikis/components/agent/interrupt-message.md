@@ -195,14 +195,14 @@ InterruptMessageRender
 
 content.outcome.type === 'success'
 └── resultRenderers[result.reason]
-      ├── aidev:tool_approval → ToolApprovalCard（readonly，隐藏取消审批）
+      ├── aidev:tool_approval → ToolApprovalCard（可交互回显，透传 onInterruptResume）
       └── aidev:user_question → UserQuestionAnsweredCard（支持 #answeredQuestion 透传 #answer）
 ```
 
 | `InterruptReason`              | 子组件              |
 | ------------------------------ | ------------------- |
 | `aidev:tool_approval`（待审批） | `ToolApprovalCard`  |
-| `aidev:tool_approval`（已处理） | `ToolApprovalCard`（`readonly`，只读回显） |
+| `aidev:tool_approval`（已处理） | `ToolApprovalCard`（可交互回显，仍可取消 / 刷新） |
 | `aidev:user_question`（待回答） | 输入区 `UserQuestionCard`，本组件不渲染 |
 | `aidev:user_question`（已回答） | `UserQuestionAnsweredCard` |
 | 其他 / 未注册                  | 兜底文案区域        |
@@ -296,7 +296,7 @@ content.outcome.type === 'success'
 
 ## AIDevToolApproval 已处理回显（outcome.success）
 
-`outcome.type === 'success'` 且 `result.reason === InterruptReason.AIDevToolApproval` 时，会话内以只读 `ToolApprovalCard` 回显审批单。`result.payload.metadata` 需透传中断时的 `metadata`（含 `ticket`）：
+`outcome.type === 'success'` 且 `result.reason === InterruptReason.AIDevToolApproval` 时，会话内以可交互 `ToolApprovalCard` 回显审批单（`readonly: false`）：待审批态仍可取消 / 刷新，终态展示置灰的取消按钮。`result.payload.metadata` 需透传中断时的 `metadata`（含 `ticket`）：
 
 ```vue
 <InterruptMessageRender

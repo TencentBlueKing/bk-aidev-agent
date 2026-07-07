@@ -87,7 +87,7 @@
   const resultRenderers: Partial<Record<InterruptReason, ResultRenderer>> = {
     [InterruptReason.AIDevToolApproval]: result => ({
       component: ToolApprovalCard,
-      props: { interrupt: toApprovalInterrupt(result as AIDevToolApprovalResume), readonly: true },
+      props: { interrupt: toApprovalInterrupt(result as AIDevToolApprovalResume), readonly: false },
     }),
     [InterruptReason.UserQuestion]: result => ({
       component: UserQuestionAnsweredCard,

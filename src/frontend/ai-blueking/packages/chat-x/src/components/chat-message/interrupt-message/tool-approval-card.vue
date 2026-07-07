@@ -177,9 +177,9 @@
   // 各终态下「取消审批」置灰按钮的 hover 提示；未覆盖的终态（已废弃 / 已过期等）走通用兜底文案
   const cancelDisabledTipMap: Partial<Record<APPROVAL_STATUS, string>> = {
     [APPROVAL_STATUS.APPROVED]: t('该单据已通过，无法取消'),
-    [APPROVAL_STATUS.CANCELLED]: t('单据已取消，无需重复点击'),
+    [APPROVAL_STATUS.CANCELLED]: t('单据已取消审批'),
     [APPROVAL_STATUS.REJECTED]: t('该单据已被拒绝，无法取消'),
-    [APPROVAL_STATUS.REVOKED]: t('单据已取消，无需重复点击'),
+    [APPROVAL_STATUS.REVOKED]: t('单据已取消审批'),
   };
 
   const isPendingApproval = computed(() => pendingStatusSet.has(ticket.value.status));
