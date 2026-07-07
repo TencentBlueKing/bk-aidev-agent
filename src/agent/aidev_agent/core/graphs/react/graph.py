@@ -965,6 +965,20 @@ class ReActAgentBuilder:
             _cfg_execute_kwargs = config.get("configurable", {}).get("execute_kwargs")
             _is_resuming = bool(getattr(_cfg_execute_kwargs, "resume", None)) if _cfg_execute_kwargs else False
 
+            # 提取 resume 列表中所有 interruptId，
+            # 用于精确判断某个 target 是否属于本次续流恢复的对象。
+            _resume_interrupt_ids: set[str] = set()
+            if _is_resuming:
+                _resume_items = getattr(_cfg_execute_kwargs, "resume", None) or []
+                if isinstance(_resume_items, dict):
+                    _resume_items = [_resume_items]
+                for item in _resume_items:
+                    interrupt_id = (
+                        item.get("interruptId", "") if isinstance(item, dict) else getattr(item, "interruptId", "")
+                    )
+                    if interrupt_id:
+                        _resume_interrupt_ids.add(interrupt_id)
+
             approval_targets = identify_message_approval_targets(last_message.tool_calls, tool_map)
             if not approval_targets:
                 return Command(goto="pv_node")
@@ -989,10 +1003,16 @@ class ReActAgentBuilder:
                         config=config,
                     )
 
+                # 判断当前 target 是否属于本次续流恢复：resume interruptId 中包含 target_id
+                # 则视为 resuming（不重新创建工单）；否则是续流后新产生的审批，需正常创建。
+                _target_is_resuming = _is_resuming and any(
+                    target.target_id in interrupt_id for interrupt_id in _resume_interrupt_ids
+                )
+
                 approved = request_approval_decision(
                     target,
                     execute_kwargs=_cfg_execute_kwargs,
-                    is_resuming=_is_resuming,
+                    is_resuming=_target_is_resuming,
                     on_interrupt=_emit_interrupt,
                     interrupt_payload=existing_record.get("interrupt") if isinstance(existing_record, dict) else None,
                 )
