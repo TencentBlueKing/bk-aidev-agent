@@ -13,6 +13,31 @@ on:
         required: false
         type: string
         default: "2.0.0"
+      publish_chat_x:
+        description: "同时发布 chat-x"
+        required: false
+        type: boolean
+        default: true
+      publish_chat_helper:
+        description: "同时发布 chat-helper"
+        required: false
+        type: boolean
+        default: true
+      chat_x_version:
+        description: "chat-x 版本号（留空则自动 patch 自增）"
+        required: false
+        type: string
+        default: ""
+      chat_helper_version:
+        description: "chat-helper 版本号（留空则自动 patch 自增）"
+        required: false
+        type: string
+        default: ""
+      npm_tag:
+        description: "npm dist-tag 覆盖，作用于本次所有包（留空则各自按版本号解析）"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -48,12 +73,55 @@ jobs:
         working-directory: src/frontend/ai-blueking
         run: pnpm install --no-frozen-lockfile
 
+      # ---- 1. 先完成所有 bump（子包按勾选条件执行），确保 workspace 版本在 build 前就位 ----
+      - name: Bump chat-x
+        id: bump-chatx
+        if: ${{ inputs.publish_chat_x }}
+        working-directory: src/frontend/ai-blueking
+        run: node scripts/bump-version.mjs packages/chat-x "${{ inputs.chat_x_version }}" "${{ inputs.npm_tag }}" >> "$GITHUB_OUTPUT"
+
+      - name: Bump chat-helper
+        id: bump-helper
+        if: ${{ inputs.publish_chat_helper }}
+        working-directory: src/frontend/ai-blueking
+        run: node scripts/bump-version.mjs packages/chat-helper "${{ inputs.chat_helper_version }}" "${{ inputs.npm_tag }}" >> "$GITHUB_OUTPUT"
+
+      - name: Bump ai-blueking
+        id: bump-version
+        working-directory: src/frontend/ai-blueking
+        run: node scripts/bump-version.mjs packages/ai-blueking "${{ inputs.version }}" "${{ inputs.npm_tag }}" >> "$GITHUB_OUTPUT"
+
+      # ---- 2. 无条件构建三个包（ai-blueking 依赖 chat-x/chat-helper 的 dist；未勾选发布也需要它们的构建产物） ----
+      - name: Build chat-x
+        working-directory: src/frontend/ai-blueking
+        run: pnpm --filter @blueking/chat-x build
+
+      - name: Build chat-helper
+        working-directory: src/frontend/ai-blueking
+        run: pnpm --filter @blueking/chat-helper build
+
+      - name: Build ai-blueking
+        working-directory: src/frontend/ai-blueking
+        run: pnpm --filter @blueking/ai-blueking build
+
+      # ---- 3. 条件发布子包 ----
+      - name: Publish chat-x to npm
+        if: ${{ inputs.publish_chat_x }}
+        working-directory: src/frontend/ai-blueking/packages/chat-x
+        run: pnpm publish --no-git-checks --access public --tag ${{ steps.bump-chatx.outputs.npm_tag }}
+
+      - name: Publish chat-helper to npm
+        if: ${{ inputs.publish_chat_helper }}
+        working-directory: src/frontend/ai-blueking/packages/chat-helper
+        run: pnpm publish --no-git-checks --access public --tag ${{ steps.bump-helper.outputs.npm_tag }}
+
+      # ---- 4. 校验 workspace 依赖已在 npm（含刚发布的包，带 registry 传播重试） ----
       - name: Verify workspace dependencies are published
         working-directory: src/frontend/ai-blueking/packages/ai-blueking
         run: |
           set -eo pipefail
-          # pnpm publish 会将 workspace:* 替换为本地 package.json 中的版本号，
-          # 但不会检查该版本是否已发布到 npm。如果依赖包还未发布，消费者安装会 404。
+          # pnpm publish 会将 workspace:* 替换为本地 package.json 中的版本号，但不检查是否已发布。
+          # 刚发布的包在 npm registry 有数秒可见延迟，这里带重试。
           node -e '
             const pkg = require("./package.json");
             const deps = { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies };
@@ -65,59 +133,20 @@ jobs:
             }
           ' | while IFS='@' read -r name version; do
             echo "Checking ${name}@${version} on npm..."
-            if ! npm view "${name}@${version}" version 2>/dev/null; then
+            ok=""
+            for i in 1 2 3 4 5 6; do
+              if npm view "${name}@${version}" version >/dev/null 2>&1; then
+                ok="1"; echo "  ✓ ${name}@${version} exists on npm"; break
+              fi
+              echo "  … 未可见，等待 registry 传播（第 ${i} 次）"; sleep 10
+            done
+            if [ -z "$ok" ]; then
               echo "::error::${name}@${version} 尚未发布到 npm，请先发布 ${name} 再发布 ai-blueking"
               exit 1
-            else
-              echo "  ✓ ${name}@${version} exists on npm"
             fi
           done
 
-      - name: Bump version
-        id: bump-version
-        working-directory: src/frontend/ai-blueking/packages/ai-blueking
-        run: |
-          resolve_tag() {
-            local ver="$1"
-            if echo "$ver" | grep -qE -- '-alpha\.'; then echo "alpha"
-            elif echo "$ver" | grep -qE -- '-beta\.'; then echo "beta"
-            elif echo "$ver" | grep -qE -- '-rc\.'; then echo "rc"
-            else echo "latest"
-            fi
-          }
-          if [ -n "${{ inputs.version }}" ]; then
-            npm version "${{ inputs.version }}" --no-git-tag-version
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-            echo "npm_tag=$(resolve_tag '${{ inputs.version }}')" >> "$GITHUB_OUTPUT"
-          else
-            CURRENT=$(node -p "require('./package.json').version")
-            if echo "$CURRENT" | grep -qE -- '-(alpha|beta|rc)\.'; then
-              # 预发布版本：自增预发布号，如 2.1.0-beta.4 -> 2.1.0-beta.5
-              PREFIX=$(echo "$CURRENT" | sed -E 's/([0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.)([0-9]+)/\1/')
-              NUM=$(echo "$CURRENT" | sed -E 's/[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.([0-9]+)/\2/')
-              NEW_VERSION="${PREFIX}$((NUM + 1))"
-              npm version "$NEW_VERSION" --no-git-tag-version
-              echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-              echo "npm_tag=$(resolve_tag "$NEW_VERSION")" >> "$GITHUB_OUTPUT"
-            else
-              echo "::error::当前版本 $CURRENT 是正式版，正式版必须通过手动触发并指定版本号发布"
-              exit 1
-            fi
-          fi
-          echo "Publishing version: $(node -p "require('./package.json').version")"
-
-      - name: Build chat-x (dependency)
-        working-directory: src/frontend/ai-blueking
-        run: pnpm --filter @blueking/chat-x build
-
-      - name: Build chat-helper (dependency)
-        working-directory: src/frontend/ai-blueking
-        run: pnpm --filter @blueking/chat-helper build
-
-      - name: Build ai-blueking
-        working-directory: src/frontend/ai-blueking
-        run: pnpm --filter @blueking/ai-blueking build
-
+      # ---- 5. 发布 ai-blueking（workspace:* 已解析到刚 bump 的本地版本） ----
       - name: Publish ai-blueking to npm
         working-directory: src/frontend/ai-blueking/packages/ai-blueking
         # 前置步骤已完成 chat-x、chat-helper、ai-blueking 构建；发布时跳过 prepublishOnly，避免重复构建。
@@ -166,5 +195,13 @@ jobs:
         run: |
           git add -A
           git diff --cached --quiet && echo "No changes to commit" && exit 0
-          git commit -m "chore(release): ai-blueking@${{ steps.bump-version.outputs.version }} [skip ci]"
+          MSG="chore(release): ai-blueking@${{ steps.bump-version.outputs.version }}"
+          if [ "${{ inputs.publish_chat_x }}" = "true" ]; then
+            MSG="${MSG}, chat-x@${{ steps.bump-chatx.outputs.version }}"
+          fi
+          if [ "${{ inputs.publish_chat_helper }}" = "true" ]; then
+            MSG="${MSG}, chat-helper@${{ steps.bump-helper.outputs.version }}"
+          fi
+          MSG="${MSG} [skip ci]"
+          git commit -m "${MSG}"
           git push origin HEAD:${{ github.event_name == 'push' && github.ref_name || inputs.target_branch }}

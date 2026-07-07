@@ -13,6 +13,11 @@ on:
         required: false
         type: string
         default: '2.0.0'
+      npm_tag:
+        description: 'npm dist-tag 覆盖（留空则按版本号自动解析：beta/rc/latest）'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -46,36 +51,8 @@ jobs:
 
       - name: Bump version
         id: bump-version
-        working-directory: src/frontend/ai-blueking/packages/chat-helper
-        run: |
-          resolve_tag() {
-            local ver="$1"
-            if echo "$ver" | grep -qE -- '-alpha\.'; then echo "alpha"
-            elif echo "$ver" | grep -qE -- '-beta\.'; then echo "beta"
-            elif echo "$ver" | grep -qE -- '-rc\.'; then echo "rc"
-            else echo "latest"
-            fi
-          }
-          if [ -n "${{ inputs.version }}" ]; then
-            npm version "${{ inputs.version }}" --no-git-tag-version
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-            echo "npm_tag=$(resolve_tag '${{ inputs.version }}')" >> "$GITHUB_OUTPUT"
-          else
-            CURRENT=$(node -p "require('./package.json').version")
-            if echo "$CURRENT" | grep -qE -- '-(alpha|beta|rc)\.'; then
-              # 预发布版本：自增预发布号，如 0.0.2-beta.1 -> 0.0.2-beta.2
-              PREFIX=$(echo "$CURRENT" | sed -E 's/([0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.)([0-9]+)/\1/')
-              NUM=$(echo "$CURRENT" | sed -E 's/[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.([0-9]+)/\2/')
-              NEW_VERSION="${PREFIX}$((NUM + 1))"
-              npm version "$NEW_VERSION" --no-git-tag-version
-              echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-              echo "npm_tag=$(resolve_tag "$NEW_VERSION")" >> "$GITHUB_OUTPUT"
-            else
-              echo "::error::当前版本 $CURRENT 是正式版，正式版必须通过手动触发并指定版本号发布"
-              exit 1
-            fi
-          fi
-          echo "Publishing version: $(node -p "require('./package.json').version")"
+        working-directory: src/frontend/ai-blueking
+        run: node scripts/bump-version.mjs packages/chat-helper "${{ inputs.version }}" "${{ inputs.npm_tag }}" >> "$GITHUB_OUTPUT"
 
       - name: Build chat-helper
         working-directory: src/frontend/ai-blueking
