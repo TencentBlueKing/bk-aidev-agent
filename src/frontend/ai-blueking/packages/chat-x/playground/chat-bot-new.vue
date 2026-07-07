@@ -31,7 +31,7 @@
       }"
       :resources="MOCK_RESOURCES"
       :shortcuts="shortcuts"
-      :size="'normal'"
+      :size="'small'"
       :support-upload="true"
       @delete-shortcut="handleDeleteShortcut"
       @select-shortcut="handleSelectShortcut"
