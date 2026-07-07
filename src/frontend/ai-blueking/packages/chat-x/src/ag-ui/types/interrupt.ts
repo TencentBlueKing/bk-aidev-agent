@@ -38,6 +38,8 @@ import type { BaseMessage } from './messages';
 export enum InterruptResumeOperation {
   /** 主动取消第三方工具审批：在 interrupt 记录上写入取消结果 */
   ApprovalCancel = 'approval_cancel',
+  /** 刷新第三方工具审批：刷新审批单状态 */
+  ApprovalRefresh = 'approval_refresh',
   /** 重试失败的流程节点：bkflow 节点状态重置为可执行 */
   FlowNodeRetry = 'flow_node_retry',
   /** 跳过失败的流程节点：bkflow 节点标记为已跳过 */
@@ -157,10 +159,11 @@ export type OnInterruptResume = (payload: InterruptResume, interrupt?: Interrupt
 
 export type RunFinishedOutcome = { interrupts: Interrupt[]; type: 'interrupt' } | { type: 'success' };
 /**
- * 第三方工具审批中断的响应负载（取消审批等动作）
+ * 第三方工具审批中断的响应负载（取消审批 / 刷新审批单状态）。
+ * 两种操作 payload 结构一致（仅传 interrupt_id），由 operation 区分动作。
  */
 export type ToolApprovalResume = {
-  operation: InterruptResumeOperation.ApprovalCancel;
+  operation: InterruptResumeOperation.ApprovalCancel | InterruptResumeOperation.ApprovalRefresh;
   payload: { interrupt_id: number | string };
 };
 

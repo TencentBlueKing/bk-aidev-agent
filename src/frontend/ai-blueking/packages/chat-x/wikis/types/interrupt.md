@@ -38,6 +38,8 @@ AG-UI [Interrupts](https://docs.ag-ui.com/drafts/interrupts) 协议相关类型�
 enum InterruptResumeOperation {
   /** 主动取消第三方工具审批 */
   ApprovalCancel = 'approval_cancel',
+  /** 刷新第三方工具审批：刷新审批单状态 */
+  ApprovalRefresh = 'approval_refresh',
   /** 重试失败的流程节点（bkflow） */
   FlowNodeRetry = 'flow_node_retry',
   /** 跳过失败的流程节点（bkflow） */
@@ -173,7 +175,7 @@ type InterruptResume = FlowNodeResume | ToolApprovalResume | UserQuestionResume;
 
 | 类型                 | `operation` / `reason`              | 说明                                                         |
 | -------------------- | ----------------------------------- | ------------------------------------------------------------ |
-| `ToolApprovalResume` | `InterruptResumeOperation.ApprovalCancel` | 第三方工具审批取消                                           |
+| `ToolApprovalResume` | `InterruptResumeOperation.ApprovalCancel` / `ApprovalRefresh` | 第三方工具审批取消 / 刷新审批单状态                           |
 | `FlowNodeResume`     | `flow_node_retry` / `flow_node_skip` | FlowAgent 失败节点重试 / 跳过；**无**对应 `Interrupt` 项     |
 | `UserQuestionResume` | `InterruptReason.UserQuestion`（`reason` 字段） | 用户回答问题                                                 |
 
@@ -181,7 +183,7 @@ type InterruptResume = FlowNodeResume | ToolApprovalResume | UserQuestionResume;
 
 ```typescript
 type ToolApprovalResume = {
-  operation: InterruptResumeOperation.ApprovalCancel;
+  operation: InterruptResumeOperation.ApprovalCancel | InterruptResumeOperation.ApprovalRefresh;
   payload: { interrupt_id: number | string };
 };
 ```
@@ -362,6 +364,9 @@ const handleInterruptResume: OnInterruptResume = async (payload, interrupt) => {
     switch (payload.operation) {
       case InterruptResumeOperation.ApprovalCancel:
         console.log('取消审批', payload.payload.interrupt_id, interrupt?.id);
+        break;
+      case InterruptResumeOperation.ApprovalRefresh:
+        console.log('刷新审批单', payload.payload.interrupt_id, interrupt?.id);
         break;
       case InterruptResumeOperation.FlowNodeRetry:
       case InterruptResumeOperation.FlowNodeSkip:

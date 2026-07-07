@@ -216,6 +216,91 @@ describe('InterruptMessage', () => {
     expect(cancelBtn.findComponent(Button).props('loading')).toBe(true);
   });
 
+  it('审批中点击刷新图标透传刷新动作，2s 冷却内不可重复刷新', async () => {
+    const onInterruptResume = vi.fn();
+    wrapper = mount(InterruptMessage, {
+      props: {
+        ...buildInterruptProps({
+          type: 'interrupt',
+          interrupts: [approvalInterrupt],
+        }),
+        onInterruptResume,
+      },
+    });
+
+    const refreshIcon = wrapper.find('.ai-tool-approval-card__refresh-icon');
+    expect(refreshIcon.exists()).toBe(true);
+
+    await refreshIcon.trigger('click');
+    // 冷却中第二次点击不再触发
+    await refreshIcon.trigger('click');
+
+    expect(onInterruptResume).toHaveBeenCalledTimes(1);
+    expect(onInterruptResume).toHaveBeenCalledWith(
+      {
+        operation: InterruptResumeOperation.ApprovalRefresh,
+        payload: { interrupt_id: approvalInterrupt.id },
+      },
+      approvalInterrupt,
+    );
+  });
+
+  it('终态不展示刷新图标', () => {
+    wrapper = mount(InterruptMessage, {
+      props: buildInterruptProps({
+        type: 'interrupt',
+        interrupts: [
+          {
+            ...approvalInterrupt,
+            metadata: {
+              ticket: { ...approvalInterrupt.metadata!.ticket, status: APPROVAL_STATUS.APPROVED },
+            },
+          },
+        ],
+      }),
+    });
+
+    expect(wrapper.find('.ai-tool-approval-card__refresh-icon').exists()).toBe(false);
+  });
+
+  it('终态应保留置灰的取消审批按钮，取消/撤销态文案为已取消审批', () => {
+    wrapper = mount(InterruptMessage, {
+      props: buildInterruptProps({
+        type: 'interrupt',
+        interrupts: [
+          {
+            ...approvalInterrupt,
+            metadata: {
+              ticket: { ...approvalInterrupt.metadata!.ticket, status: APPROVAL_STATUS.REJECTED },
+            },
+          },
+        ],
+      }),
+    });
+
+    const rejectBtn = wrapper.find('.ai-tool-approval-card__cancel');
+    expect(rejectBtn.exists()).toBe(true);
+    expect(rejectBtn.text()).toBe('取消审批');
+    expect(rejectBtn.findComponent(Button).props('disabled')).toBe(true);
+
+    wrapper.unmount();
+    wrapper = mount(InterruptMessage, {
+      props: buildInterruptProps({
+        type: 'interrupt',
+        interrupts: [
+          {
+            ...approvalInterrupt,
+            metadata: {
+              ticket: { ...approvalInterrupt.metadata!.ticket, status: APPROVAL_STATUS.CANCELLED },
+            },
+          },
+        ],
+      }),
+    });
+
+    expect(wrapper.find('.ai-tool-approval-card__cancel').text()).toBe('已取消审批');
+  });
+
   it('点击查看单据详情时只打开单据链接，不触发 resume', async () => {
     const onInterruptResume = vi.fn();
     wrapper = mount(InterruptMessage, {

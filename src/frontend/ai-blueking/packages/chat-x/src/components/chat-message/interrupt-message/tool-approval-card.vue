@@ -10,6 +10,14 @@
           :class="{ 'is-disabled': !copyText }"
           @click="handleCopy"
         />
+        <!-- 审批中态提供刷新图标：取消为后端轮询、无法实时返回，用户可手动拉取单据最新状态；每次刷新 2s 冷却 -->
+        <RebuildIcon
+          v-if="isPendingApproval && !readonly"
+          v-tippy="{ ...commonTippyOptions, content: t('刷新单据状态'), theme: 'ai-chat-box', offset: [0, 8] }"
+          class="ai-tool-approval-card__refresh-icon"
+          :class="{ 'is-disabled': refreshCooldown || isShareContext }"
+          @click="handleRefresh"
+        />
       </div>
       <span
         class="ai-tool-approval-card__status"
@@ -71,8 +79,9 @@
         @click="handleOpenDetail"
       >
         {{ t('查看单据详情') }}
-        <span class="ai-tool-approval-card__detail-icon" />
+        <ArrowLeftIcon class="ai-tool-approval-card__detail-icon" />
       </Button>
+      <!-- 待审批态：可点「取消审批」；点击后按钮进入 loading（同步 resume 无结果，防重复提交） -->
       <Button
         v-if="isPendingApproval && !readonly"
         class="ai-tool-approval-card__cancel"
@@ -84,12 +93,26 @@
       >
         {{ t('取消审批') }}
       </Button>
+      <!-- 终态：保留「取消审批」按钮但置灰，hover 显示当前状态无法取消的原因（tooltip 挂在外层 span，规避 disabled 按钮不触发 hover） -->
+      <span
+        v-else-if="!readonly"
+        v-tippy="{ ...commonTippyOptions, content: cancelDisabledTip, theme: 'ai-chat-box', offset: [0, 8] }"
+        class="ai-tool-approval-card__cancel-wrap"
+      >
+        <Button
+          class="ai-tool-approval-card__cancel"
+          disabled
+          outline
+        >
+          {{ cancelButtonText }}
+        </Button>
+      </span>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-  import { computed, shallowRef } from 'vue';
+  import { computed, onUnmounted, shallowRef } from 'vue';
 
   import { Button, Loading } from 'bkui-vue';
   import { directive as vTippy } from 'vue-tippy';
@@ -101,10 +124,21 @@
   import { useClipboard } from '../../../composables';
   import { useCommonTippyInject, useRenderModeInject } from '../../../composables/use-common';
   import { OverflowTips as vOverflowTips } from '../../../directives/overflow-tips';
-  import { CheckCircleFillIcon, CloseCircleFillIcon, CopyIcon, RevokedIcon, TimeIcon } from '../../../icons';
+  import {
+    ArrowLeftIcon,
+    CheckCircleFillIcon,
+    CloseCircleFillIcon,
+    CopyIcon,
+    RebuildIcon,
+    RevokedIcon,
+    TimeIcon,
+  } from '../../../icons';
   import { t } from '../../../lang/lang';
 
   import type { AIDevToolApprovalInterrupt, OnInterruptResume } from '../../../ag-ui/types/interrupt';
+
+  // 刷新单据状态的冷却时长（ms）：取消为后端轮询，短时间内重复刷新无意义
+  const REFRESH_COOLDOWN_MS = 2000;
 
   const props = defineProps<{
     interrupt: AIDevToolApprovalInterrupt;
@@ -138,6 +172,16 @@
       },
   );
 
+  // 用户自行取消 / 撤销后的终态：按钮文案改为「已取消审批」
+  const cancelledStatusSet = new Set([APPROVAL_STATUS.CANCELLED, APPROVAL_STATUS.REVOKED]);
+  // 各终态下「取消审批」置灰按钮的 hover 提示；未覆盖的终态（已废弃 / 已过期等）走通用兜底文案
+  const cancelDisabledTipMap: Partial<Record<APPROVAL_STATUS, string>> = {
+    [APPROVAL_STATUS.APPROVED]: t('该单据已通过，无法取消'),
+    [APPROVAL_STATUS.CANCELLED]: t('单据已取消，无需重复点击'),
+    [APPROVAL_STATUS.REJECTED]: t('该单据已被拒绝，无法取消'),
+    [APPROVAL_STATUS.REVOKED]: t('单据已取消，无需重复点击'),
+  };
+
   const isPendingApproval = computed(() => pendingStatusSet.has(ticket.value.status));
   const statusClass = computed(() => (isPendingApproval.value ? 'pending' : ticket.value.status));
   const statusText = computed(() =>
@@ -145,6 +189,10 @@
   );
   const approverText = computed(() => ticket.value.approvers.filter(Boolean).join('、') || t('无'));
   const copyText = computed(() => ticket.value.url || ticket.value.sn);
+  const cancelButtonText = computed(() =>
+    cancelledStatusSet.has(ticket.value.status) ? t('已取消审批') : t('取消审批'),
+  );
+  const cancelDisabledTip = computed(() => cancelDisabledTipMap[ticket.value.status] ?? t('当前状态无法取消审批'));
 
   const handleOpenDetail = () => {
     if (!ticket.value.url) return;
@@ -156,18 +204,42 @@
     copy(copyText.value);
   };
 
-  // 取消审批为同步 resume，无法拿到请求结果；点击后立即进入 loading 并禁用按钮防重复提交，
+  // 取消审批为同步 resume，无法拿到请求结果；点击后按钮立即进入 loading 并禁用防重复提交，
   // 待后台数据刷新使按钮 v-if 失效（卡片卸载/重建）后该状态随实例销毁自然消失
   const cancelling = shallowRef(false);
+  // 刷新为后端轮询、无法实时返回，故做 2s 冷却节流：冷却中刷新图标置灰不可点
+  const refreshCooldown = shallowRef(false);
+  let cooldownTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const startRefreshCooldown = () => {
+    refreshCooldown.value = true;
+    clearTimeout(cooldownTimer);
+    cooldownTimer = setTimeout(() => {
+      refreshCooldown.value = false;
+    }, REFRESH_COOLDOWN_MS);
+  };
 
   const handleCancelApproval = () => {
     if (cancelling.value) return;
     cancelling.value = true;
+    // 取消后进入后台轮询，2s 内不允许刷新，之后可继续手动刷新拉取最新状态
+    startRefreshCooldown();
     props.onInterruptResume?.(
       { operation: InterruptResumeOperation.ApprovalCancel, payload: { interrupt_id: props.interrupt.id } },
       props.interrupt,
     );
   };
+
+  const handleRefresh = () => {
+    if (refreshCooldown.value || isShareContext.value) return;
+    startRefreshCooldown();
+    props.onInterruptResume?.(
+      { operation: InterruptResumeOperation.ApprovalRefresh, payload: { interrupt_id: props.interrupt.id } },
+      props.interrupt,
+    );
+  };
+
+  onUnmounted(() => clearTimeout(cooldownTimer));
 </script>
 
 <style lang="scss">
@@ -218,6 +290,23 @@
     }
 
     &__copy-icon {
+      flex: 0 0 16px;
+      width: 16px;
+      height: 16px;
+      color: #699df4;
+      cursor: pointer;
+
+      &:hover {
+        color: #3a84ff;
+      }
+
+      &.is-disabled {
+        color: #c4c6cc;
+        cursor: not-allowed;
+      }
+    }
+
+    &__refresh-icon {
       flex: 0 0 16px;
       width: 16px;
       height: 16px;
@@ -350,34 +439,33 @@
     }
 
     &__detail {
-      flex: 1 1 auto;
-      min-width: 0;
+      flex: 0 1 auto;
+      width: 296px;
       max-width: 296px;
       background: linear-gradient(90deg, #3a84ff 0%, #5a9cff 100%);
       border-color: transparent;
     }
 
     &__detail-icon {
-      position: relative;
-      width: 16px;
-      height: 16px;
+      width: 12px;
+      height: 12px;
       margin-left: 4px;
+      font-size: 12px;
+      transform: rotate(180deg);
 
-      &::before {
-        position: absolute;
-        top: 4px;
-        left: 4px;
-        width: 7px;
-        height: 7px;
-        content: '';
-        border-top: 2px solid currentcolor;
-        border-right: 2px solid currentcolor;
-        transform: rotate(45deg);
+      path {
+        stroke-width: 120;
       }
     }
 
     &__cancel {
-      flex: 0 0 86px;
+      flex: 1 0 auto;
+      min-width: 86px;
+    }
+
+    &__cancel-wrap {
+      display: inline-flex;
+      flex: 1 0 auto;
     }
   }
 </style>

@@ -120,6 +120,12 @@ export const lang = {
   复制单据: 'Copy Ticket',
   复制单据链接: 'Copy Ticket Link',
   取消审批: 'Cancel Approval',
+  已取消审批: 'Approval Cancelled',
+  刷新单据状态: 'Refresh Ticket Status',
+  '该单据已被拒绝，无法取消': 'This ticket has been rejected and cannot be cancelled',
+  '该单据已通过，无法取消': 'This ticket has been approved and cannot be cancelled',
+  '单据已取消，无需重复点击': 'This ticket has been cancelled, no need to click again',
+  当前状态无法取消审批: 'Approval cannot be cancelled in the current status',
   '当前会话有 {count} 个待审批单，如需继续，请先取消审批':
     'There are {count} pending approval tickets in the current conversation. To continue, cancel approval first.',
   暂不支持的中断消息: 'Unsupported interrupt message',
