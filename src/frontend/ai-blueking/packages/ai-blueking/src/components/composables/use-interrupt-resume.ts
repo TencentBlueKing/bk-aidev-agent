@@ -146,10 +146,15 @@ export function useInterruptResume(params: UseInterruptResumeParams): UseInterru
       return;
     }
 
-    await agent.userOperationStreamRequest(sessionCode, operation, {
-      node_id: payload.payload.node_id,
-      task_id: String(payload.payload.task_id),
-    });
+    if (
+      payload.operation === InterruptResumeOperation.FlowNodeRetry ||
+      payload.operation === InterruptResumeOperation.FlowNodeSkip
+    ) {
+      await agent.userOperationStreamRequest(sessionCode, operation, {
+        node_id: payload.payload.node_id,
+        task_id: String(payload.payload.task_id),
+      });
+    }
   };
 
   const handleUserQuestionResume = async (payload: UserQuestionResume, input?: string) => {
