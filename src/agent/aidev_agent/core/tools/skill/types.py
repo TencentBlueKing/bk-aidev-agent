@@ -23,6 +23,7 @@ class SkillOptions(TypedDict):
     instructions: NotRequired[str]
     runtime: NotRequired[str]
     approval: NotRequired[dict]
+    callee_agent_code: NotRequired[str]
 
 
 @runtime_checkable

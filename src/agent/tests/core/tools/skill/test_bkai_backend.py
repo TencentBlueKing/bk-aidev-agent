@@ -6,15 +6,6 @@ import pytest
 from aidev_agent.core.tools.skill.bkai_backend import BkAiBackend
 from aidev_agent.core.tools.skill.types import SkillOptions
 
-
-@pytest.fixture(autouse=True)
-def _clear_class_cache():
-    """每个测试前后清空类级别缓存，避免测试间污染"""
-    BkAiBackend.clear_cache()
-    yield
-    BkAiBackend.clear_cache()
-
-
 # ---------------------------------------------------------------------------
 # 共用的 mock 数据
 # ---------------------------------------------------------------------------
@@ -121,9 +112,9 @@ class TestBkAiBackend:
         assert provider.client is mock_client
         assert provider.related_skills == related_skills
         assert len(provider.skill_options) == 2
-        # __init__ -> _build_skill_options -> _convert_to_metadata -> _get_skill_data
-        # 所以缓存中应该有条目（每个 skill 对应一个 API 调用）
-        assert len(BkAiBackend._bkai_skill_cache) == 2
+        # __init__ -> _build_skill_options -> convert_to_options -> _get_skill_data
+        # 每个 skill 对应一次 API 调用
+        assert mock_client.retrieve_skill.call_count == 2
 
     def test_repr(self, mock_client, related_skills):
         """Test __repr__"""
@@ -241,45 +232,54 @@ class TestBkAiBackend:
     # _get_skill_data()
     # ------------------------------------------------------------------
 
-    def test_get_skill_data_caches_api_response(self, mock_client, related_skills):
-        """Test _get_skill_data caches complete API response with parsed fields"""
-        BkAiBackend(mock_client, related_skills)
+    def test_get_skill_data_parses_api_response(self, mock_client):
+        """Test _get_skill_data returns complete API response with parsed fields"""
+        provider = BkAiBackend(mock_client, [])
 
-        cached = BkAiBackend._bkai_skill_cache.get(("6", "0.0.1"))
-        assert cached is not None
-        assert "_cache_instructions" in cached
-        assert "_cache_frontmatter" in cached
-        assert "PDF Create Skill" in cached["_cache_instructions"]
-        assert cached["_cache_frontmatter"].get("license") == "Proprietary"
+        data = provider._get_skill_data("6", "0.0.1")
 
-    def test_get_skill_data_no_duplicate_api_calls(self, mock_client, related_skills):
-        """Test _get_skill_data does not call API again for cached key"""
-        provider = BkAiBackend(mock_client, related_skills)
-        initial_call_count = mock_client.retrieve_skill.call_count
+        assert "_cache_instructions" in data
+        assert "_cache_frontmatter" in data
+        assert "PDF Create Skill" in data["_cache_instructions"]
+        assert data["_cache_frontmatter"].get("license") == "Proprietary"
 
-        # Call again for same key — should hit cache
-        provider._get_skill_data("6", "0.0.1")
-        assert mock_client.retrieve_skill.call_count == initial_call_count
+    def test_get_skill_data_refetches_same_skill_version_for_env_changes(self, mock_client):
+        """Test same skill_id/version is refetched because skill envs may change the API response"""
+        provider = BkAiBackend(mock_client, [])
+        mock_client.retrieve_skill.side_effect = [
+            {
+                "skill_markdown": "# First\n\nInstructions.",
+                "sandbox": {"envs": {"SKILL_ENV": "first"}},
+            },
+            {
+                "skill_markdown": "# Second\n\nInstructions.",
+                "sandbox": {"envs": {"SKILL_ENV": "second"}},
+            },
+        ]
+
+        first = provider._get_skill_data("6", "0.0.1")
+        second = provider._get_skill_data("6", "0.0.1")
+
+        assert first["sandbox"]["envs"]["SKILL_ENV"] == "first"
+        assert second["sandbox"]["envs"]["SKILL_ENV"] == "second"
+        assert mock_client.retrieve_skill.call_count == 2
 
     def test_get_skill_data_empty_markdown(self, mock_client):
         """Test _get_skill_data handles empty skill_markdown"""
         mock_client.retrieve_skill.return_value = {"id": "1", "version": "1.0"}
-        related_skills = [
-            {"id": 1, "skill_name": "empty", "skill_description": "Empty", "version": "1.0"},
-        ]
-        BkAiBackend(mock_client, related_skills)
+        provider = BkAiBackend(mock_client, [])
 
-        cached = BkAiBackend._bkai_skill_cache.get(("1", "1.0"))
-        assert cached is not None
-        assert cached["_cache_instructions"] == ""
-        assert cached["_cache_frontmatter"] == {}
+        data = provider._get_skill_data("1", "1.0")
+
+        assert data["_cache_instructions"] == ""
+        assert data["_cache_frontmatter"] == {}
 
     # ------------------------------------------------------------------
     # fetch_instructions()
     # ------------------------------------------------------------------
 
     def test_fetch_instructions_returns_body(self, mock_client, related_skills):
-        """Test fetch_instructions() returns instructions from cache"""
+        """Test fetch_instructions() returns instructions from API response"""
         provider = BkAiBackend(mock_client, related_skills)
         skill = provider.discover()[0]
 
@@ -287,16 +287,22 @@ class TestBkAiBackend:
         assert "PDF Create Skill" in instructions
         assert "---" not in instructions
 
-    def test_fetch_instructions_uses_cache(self, mock_client, related_skills):
-        """Test fetch_instructions() does not trigger extra API calls"""
+    def test_fetch_instructions_refetches_latest_data(self, mock_client):
+        """Test fetch_instructions() triggers a fresh API call for the same skill_id/version"""
+        mock_client.retrieve_skill.side_effect = [
+            {"skill_markdown": "# Initial\n\nOld instructions."},
+            {"skill_markdown": "# Latest\n\nNew instructions."},
+        ]
+        related_skills = [
+            {"id": 1, "skill_name": "env-skill", "skill_description": "Test", "version": "1.0"},
+        ]
         provider = BkAiBackend(mock_client, related_skills)
-        call_count_after_init = mock_client.retrieve_skill.call_count
-
         skill = provider.discover()[0]
-        provider.fetch_instructions(skill)
 
-        # No additional API calls — data already cached during __init__
-        assert mock_client.retrieve_skill.call_count == call_count_after_init
+        instructions = provider.fetch_instructions(skill)
+
+        assert "Latest" in instructions
+        assert mock_client.retrieve_skill.call_count == 2
 
     def test_fetch_instructions_invalid_path(self, mock_client):
         """Test fetch_instructions() handles invalid path format"""
@@ -354,32 +360,21 @@ class TestBkAiBackend:
         assert BkAiBackend._parse_path("api://") == ("", "")
 
     # ------------------------------------------------------------------
-    # clear_cache()
+    # 无类级别缓存
     # ------------------------------------------------------------------
 
-    def test_clear_cache(self, mock_client, related_skills):
-        """Test clear_cache() clears class-level cache"""
-        provider = BkAiBackend(mock_client, related_skills)
-        assert len(BkAiBackend._bkai_skill_cache) > 0
+    def test_no_class_level_cache_attribute(self):
+        """Test BkAiBackend no longer exposes class-level skill cache"""
+        assert not hasattr(BkAiBackend, "_bkai_skill_cache")
 
-        BkAiBackend.clear_cache()
-
-        assert len(BkAiBackend._bkai_skill_cache) == 0
-        # skill_options should remain intact
-        assert len(provider.skill_options) == 2
-
-    # ------------------------------------------------------------------
-    # 跨实例缓存共享
-    # ------------------------------------------------------------------
-
-    def test_class_level_cache_shared_across_instances(self, mock_client, related_skills):
-        """Test that class-level cache is shared across different BkAiBackend instances"""
+    def test_instances_do_not_share_cached_skill_data(self, mock_client, related_skills):
+        """Test each BkAiBackend instance fetches skill data independently"""
         BkAiBackend(mock_client, related_skills)
         call_count_after_p1 = mock_client.retrieve_skill.call_count
 
         BkAiBackend(mock_client, related_skills)
-        # Second instance should hit cache, no new API calls
-        assert mock_client.retrieve_skill.call_count == call_count_after_p1
+
+        assert mock_client.retrieve_skill.call_count == call_count_after_p1 + len(related_skills)
 
     # ------------------------------------------------------------------
     # Protocol & Integration
@@ -473,6 +468,26 @@ class TestBkAiBackend:
         provider = BkAiBackend(mock_client, related_skills)
         skill = provider.discover()[0]
         assert skill["path"] == "api://6/0.0.1"
+
+    def test_callee_agent_code_passed_to_retrieve_skill(self, mock_client):
+        """Test callee_agent_code is preserved and passed when fetching skill data"""
+        related_skills = [
+            {
+                "id": 1,
+                "skill_name": "env-skill",
+                "skill_description": "Uses skill envs",
+                "version": "1.0",
+                "callee_agent_code": "agent_a",
+            },
+        ]
+        provider = BkAiBackend(mock_client, related_skills)
+        skill = provider.discover()[0]
+
+        assert skill["callee_agent_code"] == "agent_a"
+        mock_client.retrieve_skill.assert_any_call(skill_id="1", version="1.0", callee_agent_code="agent_a")
+
+        provider.fetch_instructions(skill)
+        assert mock_client.retrieve_skill.call_args.kwargs["callee_agent_code"] == "agent_a"
 
     # ------------------------------------------------------------------
     # sandbox → metadata["metadata"]["bkai_paas_sandbox"]

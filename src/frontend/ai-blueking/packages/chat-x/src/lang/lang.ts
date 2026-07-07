@@ -104,6 +104,7 @@ export const lang = {
   更多: 'More',
   算法方案评审单: 'Algorithm Plan Review Ticket',
   评审中: 'Reviewing',
+  审批中: 'Approving',
   已废弃: 'Abandoned',
   已批准: 'Approved',
   已通过: 'Approved',

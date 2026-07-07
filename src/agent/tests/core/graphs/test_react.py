@@ -467,55 +467,6 @@ class TestReActAgentBuilder:
         tool_names = [t.name for t in captured_tools["tools"]]
         assert "activate_skill" in tool_names
 
-    def test_build_activate_skill_tool_carries_skill_approval_map(self, tmp_path, monkeypatch):
-        monkeypatch.chdir(tmp_path)
-
-        llm = MagicMock()
-        llm.model_name = "gpt-4o"
-
-        provider = MagicMock()
-        provider.discover.return_value = [
-            {
-                "name": "approved-skill",
-                "description": "d",
-                "path": "api://11/latest",
-                "approval": {
-                    "enabled": True,
-                    "approval_strategy_id": "s1",
-                    "skill_id": 11,
-                    "skill_name": "approved-skill",
-                    "skill_code": "approved-skill",
-                },
-            }
-        ]
-        provider.fetch_instructions.return_value = "body"
-
-        captured_tools = {}
-
-        def _fake_make_model_node(*, llm, non_thinking_llm, tools, node_options):
-            captured_tools["tools"] = tools
-            return MagicMock()
-
-        with (
-            patch("aidev_agent.core.graphs.react.graph.std_make_model_node", new=_fake_make_model_node),
-            patch(
-                "aidev_agent.core.graphs.react.graph.ReActAgentBuilder._build_graph",
-                return_value=(MagicMock(), {}),
-            ),
-        ):
-            (
-                ReActAgentBuilder()
-                .set_llm(llm)
-                .set_enable_skills(True)
-                .set_skill_sources([provider])
-                .build()
-            )
-
-        activate_tool = next(t for t in captured_tools["tools"] if t.name == "activate_skill")
-        approval_map = (activate_tool.metadata or {}).get("skill_approval_map", {})
-        assert approval_map["approved-skill"]["target"]["type"] == "skill"
-        assert approval_map["approved-skill"]["approval_strategy_id"] == "s1"
-
     def test_build_runtime_tools_injected(self, tmp_path, monkeypatch):
         """enable_runtime_tool=True 时应注入 7 个运行时客户端工具"""
         monkeypatch.chdir(tmp_path)
@@ -839,7 +790,7 @@ class TestReActAgentBuilder:
             ) as mock_request:
                 command = approval_check(state, {"configurable": {"execute_kwargs": MagicMock(resume=None)}})
 
-            assert command.goto == "tools"
+            assert command.goto == "pv_node"
             updated_messages = command.update["messages"]
             assert len(updated_messages) == 1
             updated_ai_message = updated_messages[0]
@@ -882,9 +833,11 @@ class TestReActAgentBuilder:
                 "aidev_agent.core.graphs.react.graph.request_approval_decision",
                 return_value=True,
             ) as mock_request:
-                command = approval_check(state, {"configurable": {"execute_kwargs": MagicMock(resume=[{"approved": True}] )}})
+                command = approval_check(
+                    state, {"configurable": {"execute_kwargs": MagicMock(resume=[{"approved": True}])}}
+                )
 
-            assert command.goto == "tools"
+            assert command.goto == "pv_node"
             updated_ai_message = next(msg for msg in command.update["messages"] if isinstance(msg, AIMessage))
             approval_state = updated_ai_message.additional_kwargs["tool_approval"]
             assert approval_state["call_1"]["status"] == "approved"
@@ -908,6 +861,7 @@ class TestReActAgentBuilder:
                 "tool_name": "Skill Runner",
                 "target": {
                     "type": "skill",
+                    "code": "skill-runner",
                     "skill_name": "skill-runner",
                     "display_name": "Skill Runner",
                 },
@@ -933,7 +887,7 @@ class TestReActAgentBuilder:
             ) as mock_request:
                 command = approval_check(state, {"configurable": {"execute_kwargs": MagicMock(resume=None)}})
 
-            assert command.goto == "tools"
+            assert command.goto == "pv_node"
             updated_ai_message = command.update["messages"][0]
             approval_state = updated_ai_message.additional_kwargs["tool_approval"]
             assert approval_state["call_skill_1"]["status"] == "approved"
@@ -984,7 +938,7 @@ class TestReActAgentBuilder:
             ) as mock_request:
                 command = approval_check(state, {"configurable": {"execute_kwargs": MagicMock(resume=None)}})
 
-            assert command.goto == "tools"
+            assert command.goto == "pv_node"
             updated_ai_message = command.update["messages"][0]
             approval_state = updated_ai_message.additional_kwargs["tool_approval"]
             assert approval_state["call_mcp_1"]["status"] == "approved"
@@ -1083,18 +1037,19 @@ class TestReActAgentBuilder:
         assert result["bk_username"] == "admin"
         assert result["snapshot"] == "snap1"
         assert result["snapshot_entrypoint"] == []
-        assert result["env_vars"] == {"KEY": "VAL", "ACCESS_TOKEN": "token123"}
+        assert result["env_vars"] == {"KEY": "VAL", "ACCESS_TOKEN": "token123", "BKAI_USERNAME": "admin"}
 
     def test_extract_paas_params_defaults(self, monkeypatch):
         """skill=None 且 config 为空时应返回带 settings.APP_CODE 的默认值"""
         monkeypatch.delenv("SANDBOX_BP_ACCESS_TOKEN", raising=False)
+        monkeypatch.delenv("BKAI_USERNAME", raising=False)
 
         result = _extract_paas_params(skill=None, config={})
         assert result["app_code"] == settings.APP_CODE
         assert result["bk_username"] is None
         assert result["snapshot"] == ""
         assert result["snapshot_entrypoint"] == []
-        assert result["env_vars"] == {"ACCESS_TOKEN": ""}
+        assert result["env_vars"] == {"ACCESS_TOKEN": "", "BKAI_USERNAME": ""}
 
     def test_extract_paas_params_access_token_from_env(self, monkeypatch):
         """config 未提供 access_token 时应从环境变量 SANDBOX_BP_ACCESS_TOKEN 读取"""
@@ -1102,6 +1057,13 @@ class TestReActAgentBuilder:
 
         result = _extract_paas_params(skill=None, config={})
         assert result["env_vars"]["ACCESS_TOKEN"] == "env-token"
+
+    def test_extract_paas_params_bkai_username_from_executor(self, monkeypatch):
+        """沙箱环境变量应注入明文 BKAI_USERNAME，优先使用 executor。"""
+        monkeypatch.setenv("BKAI_USERNAME", "env-user")
+
+        result = _extract_paas_params(skill=None, config={"executor": "admin"})
+        assert result["env_vars"]["BKAI_USERNAME"] == "admin"
 
     # ----------------------------------------------------------------
     # C. build 返回值测试

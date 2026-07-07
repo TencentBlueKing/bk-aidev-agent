@@ -511,44 +511,7 @@ class TestBuildToolNode:
         finally:
             calculator.metadata = original_metadata
 
-    def test_identify_message_approval_targets_uses_skill_name_from_activate_skill_args(self):
-        original_metadata = dict(getattr(calculator, "metadata", None) or {})
-        calculator.metadata = {
-            **original_metadata,
-            "skill_approval_map": {
-                "skill-runner": {
-                    "tool_type": "skill",
-                    "skill_code": "skill-runner",
-                    "tool_name": "skill-runner",
-                    "target": {
-                        "type": "skill",
-                        "id": 9,
-                        "name": "activate_skill",
-                        "display_name": "skill-runner",
-                        "code": "skill-runner",
-                        "skill_name": "skill-runner",
-                    },
-                }
-            },
-        }
-        try:
-            targets = identify_message_approval_targets(
-                [
-                    {
-                        "id": "call_skill_1",
-                        "name": "activate_skill",
-                        "args": {"skill_name": "skill-runner"},
-                        "type": "tool_call",
-                    }
-                ],
-                {"activate_skill": calculator},
-            )
-            assert len(targets) == 1
-            assert targets[0].target_type == "skill"
-            assert targets[0].target_code == "skill-runner"
-            assert targets[0].target_name == "skill-runner"
-        finally:
-            calculator.metadata = original_metadata
+
 
     def test_timing_accuracy(self):
         """测试6: 验证执行时间记录的准确性"""
@@ -1540,3 +1503,60 @@ class TestToolMsgContentLen:
         msg = ToolMessage(content=12345, tool_call_id="test")
         result = _tool_msg_content_len(msg)
         assert result == 5  # str(12345) = "12345"
+
+
+class TestToolApprovalCreatePayload:
+    def test_create_approval_payload_includes_resource_fields(self):
+        from unittest.mock import MagicMock, patch
+
+        from aidev_agent.core.nodes.tool.approval_wrapper import ApprovalTarget, _create_approval_from_target
+
+        target = ApprovalTarget(
+            target_type="mcp",
+            target_id="call_1",
+            target_name="Query Time",
+            target_code="query-time",
+            args={"timezone": "Asia/Shanghai"},
+            approval={"mcp_code": "time-server", "approvers": ["admin"]},
+            tool=None,
+        )
+        mock_client = MagicMock()
+        mock_client.api.create_tool_approval.return_value = {"data": {"callback_token": "token", "ticket": {}}}
+
+        with patch(
+            "aidev_agent.core.nodes.tool.approval_wrapper.BKAidevApi.get_client",
+            return_value=mock_client,
+        ):
+            _create_approval_from_target(target, None)
+
+        payload = mock_client.api.create_tool_approval.call_args.kwargs["json"]
+        assert payload["tool_name"] == "Query Time"
+        assert payload["tool_code"] == "query-time"
+        assert payload["mcp_name"] == "time-server"
+        assert payload["tool_args"] == {"timezone": "Asia/Shanghai"}
+
+    def test_create_approval_payload_resolves_mcp_name_from_binding(self):
+        from unittest.mock import MagicMock, patch
+
+        from aidev_agent.core.nodes.tool.approval_wrapper import ApprovalTarget, _create_approval_from_target
+
+        target = ApprovalTarget(
+            target_type="mcp",
+            target_id="call_1",
+            target_name="get_ticket_info",
+            target_code="get_ticket_info",
+            args={"query_param": {"sn": "DE2026070600000005"}},
+            approval={"mcp_name": "itsm-mcp", "approvers": ["admin"]},
+            tool=None,
+        )
+        mock_client = MagicMock()
+        mock_client.api.create_tool_approval.return_value = {"data": {"callback_token": "token", "ticket": {}}}
+
+        with patch(
+            "aidev_agent.core.nodes.tool.approval_wrapper.BKAidevApi.get_client",
+            return_value=mock_client,
+        ):
+            _create_approval_from_target(target, None)
+
+        payload = mock_client.api.create_tool_approval.call_args.kwargs["json"]
+        assert payload["mcp_name"] == "itsm-mcp"

@@ -53,6 +53,7 @@ def make_knowledge_retrieval_tool(
     Args:
         llm: 语言模型，用于知识库检索中的相关性判断和内容处理
         knowledge_query_options: 知识库检索配置
+        chat_history: 聊天历史记录
 
     Returns:
         StructuredTool 实例，如果未配置知识库则返回 None
@@ -65,6 +66,19 @@ def make_knowledge_retrieval_tool(
     # 如果没有配置知识库，返回 None
     if not knowledge_query_options.knowledge_bases and not knowledge_query_options.knowledge_items:
         return None
+
+    # 提取知识库名称，用于丰富工具描述
+    kb_names = []
+    if knowledge_query_options.knowledge_bases:
+        kb_names = [kb.get("name", "") for kb in knowledge_query_options.knowledge_bases if kb.get("name")]
+    
+    # 构建工具描述
+    base_description = "检索私域知识库以获取相关信息。当需要查询企业内部知识、文档或历史问答时使用此工具。"
+    if kb_names:
+        kb_names_str = "、".join(kb_names)
+        description = f"{base_description}\n当前可检索的知识库名称包括：{kb_names_str}"
+    else:
+        description = base_description
 
     def knowledge_retrieval(query: str) -> list:
         """执行知识库检索。
@@ -86,7 +100,7 @@ def make_knowledge_retrieval_tool(
     return StructuredTool.from_function(
         func=knowledge_retrieval,
         name="knowledge_retrieval",
-        description="检索私域知识库以获取相关信息。当需要查询企业内部知识、文档或历史问答时使用此工具。",
+        description=description,
         args_schema=KnowledgeRetrievalInput,
         metadata={"tool_name": "知识库检索"},
     )

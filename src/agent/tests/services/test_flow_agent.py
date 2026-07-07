@@ -479,8 +479,8 @@ class TestFlowAgentRetrySkip:
             assert resumed_events[0]["value"][0]["task_id"] == "existing_task_001"
             assert resumed_events[0]["value"][0]["action"] == action
 
-            # 3) 正常轮询产生 flow_agent_result 事件
-            result_events = _find_custom_events(events, CustomMessageType.FLOW_AGENT_RESULT.value)
+            # 3) resume 场景轮询通过 flow_agent_update 事件推送给前端
+            result_events = _find_custom_events(events, CustomMessageType.FLOW_AGENT_UPDATE.value)
             assert len(result_events) == 2  # RUNNING + FINISHED
 
             # 4) flow_agent_end 正常

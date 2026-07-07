@@ -350,7 +350,7 @@ class BaseResourceManager(abc.ABC):
             knowledgebase_ids=res["knowledgebase_settings"]["knowledgebases"],
             tool_codes=tool_codes,
             related_tools=related_tools_data,
-            opening_mark=conversation_settings.get("opening_remark") or None,
+            opening_mark=conversation_settings.get("opening_remark"),
             mcp_server_config=res.get("mcp_server_config", {}).get("mcpServers", {}),
             related_skills=related_skills,
             approval_settings=res.get("approval_settings") or {},
@@ -382,9 +382,18 @@ class BaseResourceManager(abc.ABC):
             "data", {}
         )
 
-    def retrieve_skill(self, skill_id: str, version: str, **kwargs) -> dict:
+    def retrieve_skill(
+        self,
+        skill_id: str,
+        version: str | None = None,
+        callee_agent_code: str | None = None,
+        **kwargs,
+    ) -> dict:
         params = kwargs.pop("params", {})
-        params["version"] = version
+        if version is not None:
+            params["version"] = version
+        if callee_agent_code is not None:
+            params["callee_agent_code"] = callee_agent_code
         client = self.get_client()
         return client.api.retrieve_resource_v1_skill(path_params={"skill_id": skill_id}, params=params, **kwargs).get(
             "data", {}

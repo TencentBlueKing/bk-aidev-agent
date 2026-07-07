@@ -18,8 +18,9 @@ to the current version of the project delivered to anyone in the future.
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import TYPE_CHECKING, Annotated, Any, Callable, Dict, List, Optional, Sequence, Tuple, get_type_hints
+from typing import TYPE_CHECKING, Annotated, Any, Callable, List, Optional, Sequence, Tuple, get_type_hints
 
 from langchain.agents.middleware.types import (
     AgentMiddleware,
@@ -27,7 +28,7 @@ from langchain.agents.middleware.types import (
 )
 from langchain_core.callbacks import dispatch_custom_event
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.stores import ByteStore
 from langchain_core.tools import BaseTool
@@ -38,7 +39,7 @@ from langgraph.constants import END, START
 from langgraph.graph import add_messages
 from langgraph.graph.state import StateGraph
 from langgraph.store.memory import InMemoryStore
-from langgraph.types import Command, interrupt
+from langgraph.types import Command
 from typing_extensions import Literal, TypedDict, TypeVar
 
 from aidev_agent.config import settings
@@ -63,7 +64,7 @@ from aidev_agent.core.nodes.tool.approval_wrapper import (
 from aidev_agent.core.tools.a2a_tools.bkai_backend import BkaiBackend
 from aidev_agent.core.tools.a2a_tools.local_backend import LocalBackend
 from aidev_agent.core.tools.a2a_tools.provider import AgentBackendResolver, get_agent_tools
-from aidev_agent.core.tools.add_image_to_chat_context import add_image_to_chat_context
+from aidev_agent.core.tools.knowledge import make_knowledge_retrieval_tool
 from aidev_agent.core.tools.runtime_tools import get_client_tools_with_runtime
 from aidev_agent.core.tools.runtime_tools.e2b_backend import E2BSandboxBackend
 from aidev_agent.core.tools.runtime_tools.local_backend import FilesystemBackend
@@ -84,7 +85,6 @@ if TYPE_CHECKING:
     from aidev_agent.core.tools.a2a_tools.types import AgentSpec
 
 from aidev_agent.core.ag_ui.types import LangGraphEventTypes
-from aidev_agent.packages.resource_manager.registry import resource_manager
 
 ResponseT = TypeVar("ResponseT")
 
@@ -698,6 +698,7 @@ class ReActAgentBuilder:
         extra_tools: List[BaseTool] = None,
         ignore_errors: bool = False,
         langchain_middleware: Sequence[AgentMiddleware],
+        enable_agentic_rag_tool: bool = False,
     ) -> List[BaseTool]:
         tools: List[BaseTool] = []
         # 加载所有传入的工具
@@ -728,6 +729,16 @@ class ReActAgentBuilder:
         if self._a2a_specs and self._a2a_resolver is not None:
             a2a_tools = get_agent_tools(self._a2a_specs, self._a2a_resolver)
             tools.extend(a2a_tools)
+
+        if enable_agentic_rag_tool:
+            # Agentic RAG模式：将知识检索作为工具
+            knowledge_tool = make_knowledge_retrieval_tool(
+                llm=self._knowledge_llm,
+                knowledge_query_options=self._knowledge_query_options,
+            )
+            if knowledge_tool:
+                tools.append(knowledge_tool)
+                logger.info("[ReActAgentBuilder] Agentic RAG 模式已启用，知识检索工具已添加到工具列表")
 
         # 为所有工具添加忽略错误表示
         if ignore_errors:
@@ -955,9 +966,46 @@ class ReActAgentBuilder:
             _cfg_execute_kwargs = config.get("configurable", {}).get("execute_kwargs")
             _is_resuming = bool(getattr(_cfg_execute_kwargs, "resume", None)) if _cfg_execute_kwargs else False
 
+            # 提取 resume 列表中所有 interruptId，
+            # 用于精确判断某个 target 是否属于本次续流恢复的对象。
+            _resume_interrupt_ids: set[str] = set()
+            if _is_resuming:
+                _resume_items = getattr(_cfg_execute_kwargs, "resume", None) or []
+                if isinstance(_resume_items, dict):
+                    _resume_items = [_resume_items]
+                for item in _resume_items:
+                    interrupt_id = (
+                        item.get("interruptId", "") if isinstance(item, dict) else getattr(item, "interruptId", "")
+                    )
+                    if interrupt_id:
+                        _resume_interrupt_ids.add(interrupt_id)
+
             approval_targets = identify_message_approval_targets(last_message.tool_calls, tool_map)
             if not approval_targets:
                 return Command(goto="pv_node")
+
+            # 收集本轮对话（最后一条 HumanMessage 之后）已有审批终态的 (tool_code, args) → status，
+            # 同一轮中同工具同参数复用已有审批结果（如工具执行失败后 model 自动重试）。
+            _finalized_tool_signatures: dict[str, str] = {}
+            if _is_resuming:
+                _turn_start = 0
+                for i in range(len(messages) - 1, -1, -1):
+                    if isinstance(messages[i], HumanMessage):
+                        _turn_start = i + 1
+                        break
+                for msg in messages[_turn_start:]:
+                    if not isinstance(msg, AIMessage):
+                        continue
+                    approval_map = msg.additional_kwargs.get("tool_approval", {})
+                    if not isinstance(approval_map, dict):
+                        continue
+                    for tc in msg.tool_calls or []:
+                        record = approval_map.get(tc.get("id", ""))
+                        if isinstance(record, dict) and record.get("status") in ("approved", "rejected"):
+                            code = record.get("toolCode") or tc.get("name", "")
+                            sig = f"{code}::{json.dumps(tc.get('args', {}), sort_keys=True)}"
+                            # 保留最新的终态（后出现的覆盖前面的）
+                            _finalized_tool_signatures[sig] = record["status"]
 
             updated_message = last_message
             for target in approval_targets:
@@ -967,6 +1015,15 @@ class ReActAgentBuilder:
                 if existing_status == "approved":
                     continue
                 if existing_status == "rejected":
+                    continue
+
+                # 同轮次同工具同参数已有审批终态，直接复用结果
+                _target_sig = f"{target.target_code}::{json.dumps(target.args or {}, sort_keys=True)}"
+                _prior_status = _finalized_tool_signatures.get(_target_sig)
+                if _prior_status:
+                    updated_message = update_tool_call_approval_record(
+                        updated_message, target, status=_prior_status, interrupt_payload=None
+                    )
                     continue
 
                 interrupt_holder: dict[str, dict] = {}
@@ -979,14 +1036,25 @@ class ReActAgentBuilder:
                         config=config,
                     )
 
+                # 判断当前 target 是否属于本次续流恢复：
+                # interrupt_id 格式为 "int-approval-{target_id}-{suffix}"，
+                # 用 startswith 精确匹配避免 :1 误匹配 :10。
+                _approval_id_prefix = f"int-approval-{target.target_id}-"
+                _target_is_resuming = _is_resuming and any(
+                    interrupt_id.startswith(_approval_id_prefix)
+                    for interrupt_id in _resume_interrupt_ids
+                )
+
                 approved = request_approval_decision(
                     target,
                     execute_kwargs=_cfg_execute_kwargs,
-                    is_resuming=_is_resuming,
+                    is_resuming=_target_is_resuming,
                     on_interrupt=_emit_interrupt,
                     interrupt_payload=existing_record.get("interrupt") if isinstance(existing_record, dict) else None,
                 )
                 status = "approved" if approved else "rejected"
+                # 实时更新签名集合，供同一次节点执行中后续 target 复用
+                _finalized_tool_signatures[_target_sig] = status
                 updated_message = update_tool_call_approval_record(
                     updated_message,
                     target,
@@ -1150,20 +1218,29 @@ class ReActAgentBuilder:
         if self._enable_a2a_tool:
             self._prepare_a2a()
 
+        # 判断使用哪种RAG模式
+        enable_agentic_rag_tool = self._knowledge_query_options.enable_agentic_rag_tool
+        enable_knowledge_node = self._knowledge_query_options.enable_knowledge_node
+
         # 统一处理 tools
         tool_ignore_errors = self._compute_use_structured_response()
         tools: List[BaseTool] = self._prepare_agent_tools(
             extra_tools=self._extra_tools,
             ignore_errors=tool_ignore_errors,
             langchain_middleware=self._langchain_middleware,
+            enable_agentic_rag_tool=enable_agentic_rag_tool,
         )
 
-        # 统一处理 knowledge_node
-        knowledge_node = self._prepare_agent_knowledge_node(
-            knowledge_llm=self._knowledge_llm,
-            knowledge_query_options=self._knowledge_query_options,
-            chat_history=self._chat_history,
-        )
+        # 两步RAG模式：创建独立的knowledge_node
+        if enable_knowledge_node:
+            knowledge_node = self._prepare_agent_knowledge_node(
+                knowledge_llm=self._knowledge_llm,
+                knowledge_query_options=self._knowledge_query_options,
+                chat_history=self._chat_history,
+            )
+            logger.info("[ReActAgentBuilder] 两步RAG 模式已启用，使用独立的knowledge节点")
+        else:
+            knowledge_node = None
 
         # 统一处理 model_node
         model_node = self._prepare_agent_model_node(
