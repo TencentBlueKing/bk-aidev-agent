@@ -53,7 +53,7 @@ def _extract_paas_params(skill: SkillOptions, config: dict) -> dict:
         - client: 由 ReActAgentBuilder._prepare_skills() 通过 resource_manager.get_paas_sbx_client 注入
         - snapshot / env_vars: 从 skill metadata 的 bkai_paas_sandbox 字段获取
 
-    env_vars 中的 ACCESS_TOKEN 由本函数根据 executor_info 和平台环境解析，
+    env_vars 中的 ACCESS_TOKEN / BKAI_USERNAME 由本函数根据 executor_info 和平台环境解析，
     避免调用全局 resource_manager()（app_code=bkaidev）导致凭证不一致。
     """
     # 由平台测试页传入 app_code
@@ -80,6 +80,7 @@ def _extract_paas_params(skill: SkillOptions, config: dict) -> dict:
     access_token = _token_from_config or _token_from_env
 
     env_vars["ACCESS_TOKEN"] = access_token or os.getenv("SANDBOX_BP_ACCESS_TOKEN", "")
+    env_vars["BKAI_USERNAME"] = config.get("executor") or os.getenv("BKAI_USERNAME", "")
     logger.info(
         f"[credential] _extract_paas_params: "
         f"app_code={app_code}, "
