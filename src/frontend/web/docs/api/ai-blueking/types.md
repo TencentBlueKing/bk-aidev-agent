@@ -111,6 +111,9 @@ interface AIBluekingProps {
     min?: number;
   };
 
+  /** 「执行情况」Tab 是否展示，缺省 true（≥ v2.2.0-beta.11，透传内层 ChatBot）；该 Tab order 固定 0 且不可关闭 */
+  executionTabVisible?: boolean;
+
   /** 自定义侧栏内容区渲染（≥ v2.1.4-beta.7，透传内层 ChatBot） */
   getSideRenderComponent?: GetSideRenderComponent;
   /** 自定义侧栏 Tab 标签渲染（≥ v2.1.4-beta.7） */
@@ -326,6 +329,9 @@ interface ChatBotProps {
     max?: number;
     min?: number;
   };
+
+  /** 「执行情况」Tab 是否展示，缺省 true（≥ v2.2.0-beta.11，透传 ChatContainer）；该 Tab order 固定 0 且不可关闭 */
+  executionTabVisible?: boolean;
 
   /** 自定义侧栏内容区渲染（≥ v2.1.4-beta.7，透传 ChatContainer） */
   getSideRenderComponent?: GetSideRenderComponent;

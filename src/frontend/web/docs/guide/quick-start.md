@@ -56,10 +56,11 @@ const handleError = (error: Error) => console.error('错误:', error);
 </template>
 
 <script>
-import { ChatBot } from '@blueking/ai-blueking';
+// Vue 2 需从 /vue2 子路径引入，ChatBot 对应具名导出 ChatBotV2
+import { ChatBotV2 } from '@blueking/ai-blueking/vue2';
 
 export default {
-  components: { ChatBot },
+  components: { ChatBot: ChatBotV2 },
   methods: {
     handleError(error) {
       console.error('错误:', error);
@@ -88,20 +89,14 @@ import { AIBlueking } from '@blueking/ai-blueking';
 挂载后页面右下角会出现 Nimbus 浮球图标，点击即可展开对话面板。
 
 ::: warning Vue 2 用户注意
-Vue 2 项目需要额外安装 `@vue/composition-api` 以获得组合式 API 支持：
-
-```bash
-npm install @vue/composition-api
-```
-
-并在入口文件中注册：
+Vue 2 项目需从 `/vue2` 子路径引入，且 `AIBlueking` 为**默认导出**（`ChatBot` 对应具名导出 `ChatBotV2`）：
 
 ```js
-import Vue from 'vue';
-import VueCompositionAPI from '@vue/composition-api';
-
-Vue.use(VueCompositionAPI);
+import AIBlueking from '@blueking/ai-blueking/vue2';
+import '@blueking/ai-blueking/dist/vue2/style.css';
 ```
+
+v2 的 Vue 2 构建已内置独立的 Vue 3 运行时（`vue` 被 alias 到 `@blueking/bkui-library` 并打包进产物），**无需**再安装 `@vue/composition-api`。
 :::
 
 ## 样式引入
@@ -116,7 +111,7 @@ import '@blueking/ai-blueking/dist/vue3/style.css';
 import '@blueking/ai-blueking/dist/vue2/style.css';
 
 // 如果仅使用 chat-x（Vue 3）
-import '@blueking/chat-x/dist/vue3/style.css';
+import '@blueking/chat-x/dist/index.css';
 ```
 
 ## 认证配置

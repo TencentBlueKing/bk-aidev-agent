@@ -4,8 +4,8 @@
       v-if="!flowAgentUrl"
       class="flow-side-render-demo__empty"
     >
-      请在 <code>packages/ai-blueking/.env.local</code> 中配置
-      <code>VITE_FLOW_AGENT_URL</code>（流程智能体插件 API 地址）
+      请在 <code>packages/ai-blueking/.env.local</code> 中配置 <code>VITE_FLOW_AGENT_URL</code>（流程智能体插件 API
+      地址）
     </div>
     <template v-else>
       <details
@@ -43,11 +43,20 @@
         </dl>
       </details>
 
+      <label class="flow-side-render-demo__toggle">
+        <input
+          v-model="executionTabVisible"
+          type="checkbox"
+        />
+        <span>展示「执行情况」Tab（<code>executionTabVisible</code>）</span>
+      </label>
+
       <div class="flow-side-render-demo__chat">
         <ChatBot
           :key="chatBotKey"
           height="100%"
           :url="flowAgentUrl"
+          :execution-tab-visible="executionTabVisible"
           :get-side-render-component="getSideRenderComponent"
           :get-side-tab-render-component="getSideTabRenderComponent"
           :on-custom-tab-change="onCustomTabChange"
@@ -67,7 +76,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed } from 'vue';
+  import { computed, ref } from 'vue';
 
   import { ChatBot, type GetSideRenderComponent } from '@blueking/ai-blueking';
 
@@ -88,6 +97,9 @@
 
   const flowAgentUrl = import.meta.env.VITE_FLOW_AGENT_URL || '';
 
+  // 「执行情况」Tab 显隐开关：缺省 true；置 false 后从 Tab 栏隐藏（该 Tab order 固定 0 且不可关闭）
+  const executionTabVisible = ref(true);
+
   const builtinHandlers = useSideRenderHandlers({ detailSource: 'builtin' });
   const customHandlers = useSideRenderHandlers({ detailSource: 'custom' });
 
@@ -101,16 +113,10 @@
 
   const customFetch = useSideRenderCustomTabChange(flowAgentUrl);
 
-  const onCustomTabChange = computed(() =>
-    props.mode === 'custom-fetch' ? customFetch.onCustomTabChange : undefined,
-  );
+  const onCustomTabChange = computed(() => (props.mode === 'custom-fetch' ? customFetch.onCustomTabChange : undefined));
 
-  const lastRequestUrl = computed(() =>
-    props.mode === 'custom-fetch' ? customFetch.lastRequestUrl.value : null,
-  );
-  const lastFetchedAt = computed(() =>
-    props.mode === 'custom-fetch' ? customFetch.lastFetchedAt.value : null,
-  );
+  const lastRequestUrl = computed(() => (props.mode === 'custom-fetch' ? customFetch.lastRequestUrl.value : null));
+  const lastFetchedAt = computed(() => (props.mode === 'custom-fetch' ? customFetch.lastFetchedAt.value : null));
   const lastError = computed(() => (props.mode === 'custom-fetch' ? customFetch.lastError.value : null));
 
   const chatBotKey = computed(() => `side-render-${props.mode}`);
@@ -136,6 +142,32 @@
     overflow: hidden;
     border: 1px solid #dcdee5;
     border-radius: 8px;
+  }
+
+  .flow-side-render-demo__toggle {
+    display: flex;
+    flex-shrink: 0;
+    gap: 6px;
+    align-items: center;
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 18px;
+    color: #63656e;
+    cursor: pointer;
+    background: #f5f7fa;
+    border-bottom: 1px solid #dcdee5;
+
+    input {
+      cursor: pointer;
+    }
+
+    code {
+      padding: 1px 5px;
+      font-size: 11px;
+      color: #3a84ff;
+      background: #f0f5ff;
+      border-radius: 3px;
+    }
   }
 
   .flow-side-render-demo__chat {

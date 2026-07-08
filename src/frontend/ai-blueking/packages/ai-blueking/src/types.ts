@@ -208,6 +208,8 @@ export interface AIBluekingProps {
   enablePopup?: boolean;
   /** 接口错误时是否自动弹出 Message 提示，默认 true；设为 false 可自行通过 sdk-error 事件处理（统一错误出口控制） */
   errorToast?: boolean;
+  /** 「执行情况」Tab 是否展示，缺省 true；为 false 时从 Tab 栏隐藏（该 Tab order 固定 0 且不可关闭） */
+  executionTabVisible?: boolean;
   /** 自定义 CSS 类名 */
   extCls?: string;
   /** 自定义侧栏内容区渲染 */

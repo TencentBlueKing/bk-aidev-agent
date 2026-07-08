@@ -1,5 +1,11 @@
 # 更新日志
 
+## v2.2.0
+
+### 新功能
+
+- **「执行情况」Tab 显隐配置**（≥ v2.2.0-beta.11）：`ChatBot` / `AIBlueking` 新增 `executionTabVisible` prop（缺省 `true`），可将默认的「执行情况」Tab 从侧栏 Tab 栏隐藏。该 Tab 始终存在、不可关闭、`order` 固定 `0`；置 `false` 时若其为当前选中项会自动切到首个可见 Tab，详见 [侧栏 Tab 自定义渲染 · 执行情况 Tab 显隐](/guide/core-features/side-render-customization#execution-tab-visible)
+
 ## v2.1.4
 
 v2.1.4 正式版整合了 beta.2 至 beta.25 的所有功能与修复，以下是面向用户的核心更新摘要。

@@ -280,6 +280,10 @@ export default createVue2Wrapper(AIBlueking, {
       type: Function,
       default: undefined,
     },
+    executionTabVisible: {
+      type: Boolean,
+      default: undefined,
+    },
   },
   emitNames: [...aiBluekingEmitNames],
   exposeKeys: [...aiBluekingExposeKeys],
@@ -480,6 +484,10 @@ export const ChatBotV2 = createVue2Wrapper(ChatBot, {
     },
     onCustomTabChange: {
       type: Function,
+      default: undefined,
+    },
+    executionTabVisible: {
+      type: Boolean,
       default: undefined,
     },
   },

@@ -31,9 +31,19 @@
 // ❌ v1.x - 默认导入
 import AIBlueking from '@blueking/ai-blueking';
 
-// ✅ v2.0 - 具名导入
+// ✅ v2.0 (Vue 3) - 具名导入
 import { AIBlueking, ChatBot } from '@blueking/ai-blueking';
 ```
+
+::: warning Vue 2 例外
+上述具名导入仅适用于 **Vue 3** 入口。**Vue 2** 需从 `/vue2` 子路径引入，且 `AIBlueking` 仍为**默认导出**，`ChatBot` 对应具名导出 `ChatBotV2`：
+
+```typescript
+// ✅ v2.0 (Vue 2)
+import AIBlueking from '@blueking/ai-blueking/vue2';       // 默认导出
+import { ChatBotV2 } from '@blueking/ai-blueking/vue2';    // 具名导出
+```
+:::
 
 ### 新增的独立导入
 
@@ -127,6 +137,8 @@ import { useChatBootstrap } from '@blueking/ai-blueking';
 | `stop()` | `stopGeneration()` | 重命名，明确停止的是生成过程 |
 | `showPanel()` | `show()` | 简化命名 |
 | `hidePanel()` | `hide()` | 简化命名 |
+| `handleShortcutClick(payload, false)` | `selectShortcut(shortcut, selectedText?)` | 拆分为独立方法；只显示表单，不自动提交 |
+| `handleShortcutClick(payload, true)` | `sendShortcut(shortcut, selectedText?)` | 拆分为独立方法；跳过表单直接发送 |
 
 ### 方法迁移示例
 
@@ -147,6 +159,34 @@ aiBluekingRef.value?.hide();
 chatBotRef.value?.sendMessage('你好');
 chatBotRef.value?.stopGeneration();
 ```
+
+## 获取 Agent 信息 / 快捷指令
+
+v1.x 中 `agentInfo` 直接挂在组件实例上，v2.0 已移除，需通过 `getChatHelper()` 获取：
+
+```typescript
+// ❌ v1.x - 直接读实例属性
+const commands = aiRef.value?.agentInfo?.conversationSettings?.commands;
+
+// ✅ v2.0 - 通过 getChatHelper 读取（agent.info 是 ref，需 .value）
+const chatHelper = aiBluekingRef.value?.getChatHelper();
+const commands = chatHelper?.agent?.info?.value?.conversationSettings?.commands;
+```
+
+拿到某个 `command` 后，用 `sendShortcut` / `selectShortcut` 触发（替代 v1.x 的 `handleShortcutClick`）：
+
+```typescript
+// 直接发送（等价旧版 handleShortcutClick(payload, true)）
+aiBluekingRef.value?.sendShortcut(command);
+// 只显示表单、等用户确认（等价旧版 handleShortcutClick(payload, false)）
+aiBluekingRef.value?.selectShortcut(command);
+```
+
+::: warning Vue 2 差异
+`getChatHelper`、`selectShortcut`、`sendShortcut` 在 Vue 2 / Vue 3 用法一致。但 Vue 3 额外暴露了 `updateAgentInfo()`（主动刷新并返回最新 agentInfo），**Vue 2 未暴露该方法**，只能通过 `getChatHelper().agent.info.value` 读取。
+
+此外 `agentInfo` 为挂载后异步加载，`getChatHelper()` 在未就绪时可能返回 `null`，使用前请做空值兜底。
+:::
 
 ## v2.0 新功能
 
@@ -203,10 +243,13 @@ npm install @blueking/ai-blueking@latest
 ### 第二步：修改导入语句
 
 ```typescript
-// 将所有默认导入改为具名导入
+// Vue 3：将所有默认导入改为具名导入
 // Before: import AIBlueking from '@blueking/ai-blueking';
 // After:
 import { AIBlueking } from '@blueking/ai-blueking';
+
+// Vue 2：保持默认导入，但改用 /vue2 子路径
+import AIBlueking from '@blueking/ai-blueking/vue2';
 ```
 
 ### 第三步：更新属性名
@@ -260,13 +303,13 @@ import type { AIBluekingExpose, ChatBotExpose } from '@blueking/ai-blueking';
 
 **问题**：`Module has no default export`
 
-**原因**：v2.0 移除了默认导出，改为具名导出
+**原因**：v2.0 的 **Vue 3** 入口移除了默认导出，改为具名导出（Vue 2 入口 `/vue2` 不受影响，`AIBlueking` 仍为默认导出）
 
 **解决**：
 ```typescript
 // Before
 import AIBlueking from '@blueking/ai-blueking';
-// After
+// After（Vue 3）
 import { AIBlueking } from '@blueking/ai-blueking';
 ```
 
