@@ -773,6 +773,10 @@ class GeneratorStreamingHelper:
                     logger.exception(f"Error joining producer thread for thread_id={self.thread_id}: {e}")
             if consumer_exit_reason == "completed":
                 self._cleanup_replay_session_if_idle()
+            elif self._supports_replay_from_start() and producer_thread is None and consumer_exit_reason is None:
+                # Existing replay logs have no producer to run the normal orphan-cleanup finally block.
+                # If this consumer disconnects before EOD, schedule the same delayed cleanup path here.
+                self._schedule_session_cleanup(done_event_seen=False)
 
     def _schedule_session_cleanup(self, done_event_seen: bool = False) -> None:
         """生产者完成后延迟清理孤立的会话资源。
