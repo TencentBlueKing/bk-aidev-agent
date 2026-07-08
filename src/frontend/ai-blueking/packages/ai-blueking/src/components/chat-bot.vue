@@ -10,6 +10,7 @@
       v-model:render-mode="internalRenderMode"
       :chat-loading="effectiveChatLoading"
       :common-tippy-options="messageToolsTippyOptions"
+      :execution-tab-visible="props.executionTabVisible"
       :message-status="messageStatus"
       :message-tools-status="messageToolsStatus"
       :messages="messages"

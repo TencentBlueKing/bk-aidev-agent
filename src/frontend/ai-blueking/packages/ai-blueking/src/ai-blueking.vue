@@ -68,6 +68,7 @@
             :always-create-new-session="props.alwaysCreateNewSession"
             :auto-load="props.loadRecentSessionOnMount"
             :chat-helper="chatHelper"
+            :execution-tab-visible="props.executionTabVisible"
             :hello-text="props.helloText"
             :message-tools-tippy-options="messageToolsTippyOptions"
             :placeholder="props.placeholder"

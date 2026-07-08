@@ -90,6 +90,7 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
+| `executionTabVisible` | `boolean` | `true` | 「执行情况」Tab 是否展示（**≥ v2.2.0-beta.11**）。该 Tab 始终存在、不可关闭、`order` 固定 `0`；置 `false` 仅将其从 Tab 栏隐藏，若当前选中的正是它则自动切到首个可见 Tab |
 | `getSideRenderComponent` | `GetSideRenderComponent` | — | `(h, props) => VNode \| undefined`。返回 VNode 时作为侧栏内容根；返回 `undefined` 时使用 `addCustomTab` 的 `data.component` |
 | `getSideTabRenderComponent` | `GetSideTabRenderComponent` | — | `(h, tab, { removeCustomTab }) => VNode \| undefined`。自定义 Tab 标签；未返回时使用默认图标 + 文案 + 关闭按钮 |
 | `onCustomTabChange` | `OnCustomTabChange` | — | `(tab) => Promise<unknown>`。Tab 切换时拉取详情并写入 `data.props`；**未传**且为 Flow 节点 Tab（含 `task_id`、`node_id`）时，使用内置 `getFlowAgentTaskNodeInfo` |

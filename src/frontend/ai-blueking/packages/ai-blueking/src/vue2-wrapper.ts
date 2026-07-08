@@ -71,45 +71,50 @@ export function createVue2Wrapper(Vue3Component: Component, config: Vue2WrapperC
         unWatchStack: Array<() => void>;
       };
 
-      that.app = createApp({
-        setup() {
-          return () => {
-            const explicit: Record<string, unknown> = {};
-            for (const key of propKeys) {
-              explicit[key] = that[key];
-            }
-
-            const slotBuilders: Record<string, (slotProps: unknown) => unknown> = {};
-            for (const slotName of slots) {
-              const scoped = that.$scopedSlots?.[slotName];
-              if (scoped !== undefined) {
-                slotBuilders[slotName] = (slotProps: unknown) => scoped(slotProps);
+      // Vue3 的 app 实例挂载一次后不可再挂载（unmount 不会重置内部 isMounted），
+      // 因此 deepWatch 触发重挂时必须创建全新的 app 实例，否则卸载后无法再渲染。
+      const buildApp = (): ReturnType<typeof createApp> =>
+        createApp({
+          setup() {
+            return () => {
+              const explicit: Record<string, unknown> = {};
+              for (const key of propKeys) {
+                explicit[key] = that[key];
               }
-            }
-            const slotArg = Object.keys(slotBuilders).length > 0 ? slotBuilders : undefined;
 
-            return h(
-              ConfigProvider,
-              { prefix: getRuntimeBkuiPrefix() },
-              {
-                default: () =>
-                  h(
-                    Vue3Component,
-                    {
-                      ...that.$attrs,
-                      ...explicit,
-                      ...buildEmitHandlers(emit, emitNames),
-                      ref: (el: unknown) => {
-                        that.componentInstance = el as null | Record<string, unknown>;
+              const slotBuilders: Record<string, (slotProps: unknown) => unknown> = {};
+              for (const slotName of slots) {
+                const scoped = that.$scopedSlots?.[slotName];
+                if (scoped !== undefined) {
+                  slotBuilders[slotName] = (slotProps: unknown) => scoped(slotProps);
+                }
+              }
+              const slotArg = Object.keys(slotBuilders).length > 0 ? slotBuilders : undefined;
+
+              return h(
+                ConfigProvider,
+                { prefix: getRuntimeBkuiPrefix() },
+                {
+                  default: () =>
+                    h(
+                      Vue3Component,
+                      {
+                        ...that.$attrs,
+                        ...explicit,
+                        ...buildEmitHandlers(emit, emitNames),
+                        ref: (el: unknown) => {
+                          that.componentInstance = el as null | Record<string, unknown>;
+                        },
                       },
-                    },
-                    slotArg,
-                  ),
-              },
-            );
-          };
-        },
-      });
+                      slotArg,
+                    ),
+                },
+              );
+            };
+          },
+        });
+
+      that.app = buildApp();
 
       for (const path of deepWatchProps) {
         that.unWatchStack.push(
@@ -118,6 +123,8 @@ export function createVue2Wrapper(Vue3Component: Component, config: Vue2WrapperC
             () => {
               if (that.app) {
                 that.app.unmount();
+                // 重建全新 app 实例后再挂载（复用同一实例会因 isMounted 未重置而静默失败）
+                that.app = buildApp();
                 that.app.mount(that.$el);
               }
             },

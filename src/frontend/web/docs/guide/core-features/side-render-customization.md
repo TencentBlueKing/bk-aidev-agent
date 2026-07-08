@@ -19,6 +19,30 @@
 
 底层机制与 `@blueking/chat-x` 的 `ChatContainer` 一致，详见 chat-x Wiki「自定义侧栏内容 / Tab 标签」。
 
+## 「执行情况」Tab 显隐 {#execution-tab-visible}
+
+侧栏默认的「执行情况」Tab **始终存在、不可关闭**，`order` 固定为 `0`，恒排在所有业务自定义 Tab 之前。自 **v2.2.0-beta.11** 起，可通过 `executionTabVisible` 控制其显隐，透传至 `ChatBot` 与 `AIBlueking`：
+
+```vue
+<template>
+  <!-- 隐藏默认「执行情况」Tab，仅保留业务自定义 Tab -->
+  <AIBlueking :execution-tab-visible="false" />
+  <!-- ChatBot 同理 -->
+  <ChatBot :execution-tab-visible="false" />
+</template>
+```
+
+| Prop | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `executionTabVisible` | `boolean` | `true` | 「执行情况」Tab 是否展示；置 `false` 仅将其从 Tab 栏隐藏 |
+
+::: info 行为说明
+
+- 缺省 `true`，即默认展示「执行情况」Tab；无需配置即可保持原有行为。
+- 置 `false` 后该 Tab 从标签栏隐藏；若当前选中的正是它，选中态会**自动切到首个可见 Tab**，隐藏 Tab 的内容不再渲染。
+- 该 Tab 的 `order`（`0`）与不可关闭特性由 `@blueking/chat-x` 内部保证，业务侧无法通过 `addCustomTab` 覆盖。
+:::
+
 ## 数据流
 
 ```mermaid

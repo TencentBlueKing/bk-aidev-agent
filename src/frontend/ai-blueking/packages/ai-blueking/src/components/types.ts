@@ -127,6 +127,8 @@ export interface ChatBotProps {
   // === 功能开关 ===
   /** 是否启用消息选择 */
   enableSelection?: boolean;
+  /** 「执行情况」Tab 是否展示，缺省 true；为 false 时从 Tab 栏隐藏（该 Tab order 固定 0 且不可关闭） */
+  executionTabVisible?: boolean;
 
   // === 渲染模式 ===
   /** 渲染模式：chat(默认)、share(分享)、test(测试) */

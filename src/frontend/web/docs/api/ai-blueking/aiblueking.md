@@ -120,6 +120,10 @@ function openAI() {
 
 与 [ChatBot](/api/ai-blueking/chatbot#side-render-customization) 相同，透传至内层 `ChatBot`（**≥ v2.1.4-beta.7**）：`getSideRenderComponent`、`getSideTabRenderComponent`、`onCustomTabChange`。详见 [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization)。
 
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `executionTabVisible` | `boolean` | `true` | 「执行情况」Tab 是否展示（**≥ v2.2.0-beta.11**），透传至内层 `ChatBot`。该 Tab 始终存在、不可关闭、`order` 固定 `0`；置 `false` 仅将其从 Tab 栏隐藏 |
+
 ## Events
 
 ### 面板事件
