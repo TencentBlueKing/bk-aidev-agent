@@ -464,6 +464,13 @@ export class AGUIProtocol implements ISSEProtocol {
    * 处理文本消息开始事件
    */
   handleTextMessageStartEvent(event: ITextMessageStartEvent) {
+    const message = this.messageModule.getMessageByMessageId(event.messageId);
+    if (message) {
+      message.content = '';
+      message.status = MessageStatus.Streaming;
+      return;
+    }
+
     this.messageModule.plusMessage({
       role: event.role as MessageRole.Assistant,
       content: '',
