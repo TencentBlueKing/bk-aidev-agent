@@ -3,9 +3,9 @@ name: ToolApprovalCard 工具审批卡片
 slug: tool-approval-card
 kind: component
 domain: agent
-description: 渲染 AIDevToolApproval 中断的审批信息与取消/刷新操作，readonly prop 支持纯只读展示。
+description: 渲染 AIDevToolApproval 中断的审批信息、可选工具参数与取消/刷新操作，readonly prop 支持纯只读展示。
 aiSummary: >
-  渲染 AIDevToolApproval 中断的审批信息与取消/刷新操作；readonly prop 可用于纯只读展示（outcome.success 回显已改为可交互，不再使用 readonly）。
+  渲染 AIDevToolApproval 中断的审批信息、可选 metadata.toolArgs 工具参数与取消/刷新操作；readonly prop 可用于纯只读展示（outcome.success 回显已改为可交互，不再使用 readonly）。
   源码位置：src/components/chat-message/interrupt-message/tool-approval-card.vue。
 relatedComponents:
   - slug: interrupt-message
@@ -29,6 +29,12 @@ sinceVersion: 1.0.0
         submit_time: '2026-04-24 14:30:15',
         title: '算法方案评审单',
         url: 'https://example.com/review-tickets/REV-2026-04-24-001',
+      },
+      // 可选工具参数：有内容时审批卡片内展示格式化 JSON
+      toolArgs: {
+        path: '/tmp/demo.py',
+        force: true,
+        timeout: 30,
       },
     },
   }
@@ -107,9 +113,12 @@ AI Dev 第三方工具审批（`InterruptReason.AIDevToolApproval`）专用卡�
 ToolApprovalCard
 ├── 标题栏：左侧色条 + 单据标题 + 复制图标 + 状态徽章（审批中/已通过/已拒绝/已撤销等）
 ├── 字段区：单据编号、提交时间
+├── ToolApprovalArgs：有 metadata.toolArgs 时展示格式化 JSON（超高可展开/收起）；无参数或空对象不渲染
 ├── 处理人：仅 `pending` / `draft` 时展示当前处理人（overflow-tips 省略）
 └── 操作区：查看单据详情（新窗口打开 url）、取消审批（仅 pending / draft 且非 readonly；点击后 loading 防重复提交；分享只读渲染下禁用）
 ```
+
+**工具参数区**（内部子组件 `ToolApprovalArgs`，未对外导出）：读取 `interrupt.metadata.toolArgs`，以两空格缩进 JSON 展示。内容超过折叠高度时可「展开更多 / 收起」；`toolArgs` 缺省或为空对象时整块不渲染。
 
 **标题栏刷新图标**（仅 `pending` / `draft` 且非 `readonly` 时展示，复制图标右侧）：取消审批为后端轮询、状态无法实时返回，用户可点击刷新图标主动拉取单据最新状态，`hover` 显示 tooltip「刷新单据状态」。刷新做 **2s 冷却节流**（冷却中图标置灰不可点）；点击「取消审批」也会触发一次 2s 冷却，即取消后需间隔 2s 才能继续刷新。分享只读渲染下刷新图标禁用。
 
@@ -180,6 +189,11 @@ ToolApprovalCard
         submit_time: '2026-04-24 14:30:15',
         title: '算法方案评审单',
         url: 'https://example.com/tickets/001',
+      },
+      toolArgs: {
+        path: '/tmp/demo.py',
+        force: true,
+        timeout: 30,
       },
     },
   };
@@ -262,7 +276,7 @@ ToolApprovalCard
 
 | 属性名            | 类型                         | 默认值 | 说明                                         |
 | ----------------- | ---------------------------- | ------ | -------------------------------------------- |
-| interrupt         | `AIDevToolApprovalInterrupt` | —      | **必填**，含 `metadata.ticket`               |
+| interrupt         | `AIDevToolApprovalInterrupt` | —      | **必填**，含 `metadata.ticket`；可选 `metadata.toolArgs`（有内容时渲染参数区） |
 | onInterruptResume | `OnInterruptResume`          | —      | 取消审批 / 刷新时触发，签名为 `(payload, interrupt)`，payload 为 `{ operation, payload: { interrupt_id } }`，`operation` 取 `InterruptResumeOperation.ApprovalCancel`（取消）或 `InterruptResumeOperation.ApprovalRefresh`（刷新），两者 payload 结构一致 |
 | readonly          | `boolean`                    | —      | 纯只读展示：隐藏取消 / 刷新按钮，不接受交互（`outcome.success` 回显已改为可交互，框架内部不再传入） |
 
