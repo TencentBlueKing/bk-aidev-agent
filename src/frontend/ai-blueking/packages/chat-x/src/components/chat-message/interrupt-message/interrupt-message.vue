@@ -73,7 +73,7 @@
     [InterruptReason.AIDevToolApproval]: ToolApprovalCard,
   };
 
-  // 由审批结果还原出 interrupt 形态，复用 ToolApprovalCard 渲染（回显态只读）
+  // 由审批结果还原出 interrupt 形态，复用 ToolApprovalCard 渲染（回显态可交互：取消/刷新）
   const toApprovalInterrupt = (result: AIDevToolApprovalResume): AIDevToolApprovalInterrupt => ({
     id: result.interruptId || result.id || '',
     reason: InterruptReason.AIDevToolApproval,
@@ -87,7 +87,12 @@
   const resultRenderers: Partial<Record<InterruptReason, ResultRenderer>> = {
     [InterruptReason.AIDevToolApproval]: result => ({
       component: ToolApprovalCard,
-      props: { interrupt: toApprovalInterrupt(result as AIDevToolApprovalResume), readonly: false },
+      // 与 interrupt 态一致透传 onInterruptResume，否则取消/刷新点击无回调
+      props: {
+        interrupt: toApprovalInterrupt(result as AIDevToolApprovalResume),
+        onInterruptResume: props.onInterruptResume,
+        readonly: false,
+      },
     }),
     [InterruptReason.UserQuestion]: result => ({
       component: UserQuestionAnsweredCard,

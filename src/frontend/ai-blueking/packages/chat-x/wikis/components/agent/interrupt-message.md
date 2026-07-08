@@ -296,7 +296,7 @@ content.outcome.type === 'success'
 
 ## AIDevToolApproval 已处理回显（outcome.success）
 
-`outcome.type === 'success'` 且 `result.reason === InterruptReason.AIDevToolApproval` 时，会话内以可交互 `ToolApprovalCard` 回显审批单（`readonly: false`）：待审批态仍可取消 / 刷新，终态展示置灰的取消按钮。`result.payload.metadata` 需透传中断时的 `metadata`（含 `ticket`）：
+`outcome.type === 'success'` 且 `result.reason === InterruptReason.AIDevToolApproval` 时，会话内以可交互 `ToolApprovalCard` 回显审批单（`readonly: false`）：待审批态仍可取消 / 刷新，终态展示置灰的取消按钮。`resultRenderers` 须与 interrupt 态一样透传 `onInterruptResume`，否则取消 / 刷新无回调。`result.payload.metadata` 需透传中断时的 `metadata`（含 `ticket`）：
 
 ```vue
 <InterruptMessageRender
