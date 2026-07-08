@@ -97,7 +97,11 @@ def get_args(tool) -> dict:
     elif tool.args_schema and issubclass(tool.args_schema, BaseModelV1):
         json_schema = tool.args_schema.schema()
     else:
-        input_schema = tool.get_input_schema()
+        # 使用 tool_call_schema 而非 get_input_schema()：前者剔除 InjectedState /
+        # ToolRuntime 等 LLM 不可见的注入参数，避免含 Callable 字段（如
+        # ToolRuntime.stream_writer）的 schema 在 model_json_schema() 时抛
+        # PydanticInvalidForJsonSchema。
+        input_schema = tool.tool_call_schema
         json_schema = input_schema.model_json_schema()
     # 安全地获取properties
     properties = json_schema.get("properties")

@@ -21,18 +21,15 @@ from typing import Any, Callable
 
 from ag_ui.core import BaseEvent, CustomEvent, EventType, RunErrorEvent
 from ag_ui.core.events import RawEvent, TextMessageContentEvent, TextMessageEndEvent, TextMessageStartEvent
-from langchain_core.messages import messages_from_dict
 
+from aidev_agent.core.ag_ui.event_builders import build_model_end_payload, should_switch_thinking_step
+from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
 from aidev_agent.core.ag_ui.types import (
-    CustomEventNames,
     CustomMessageType,
-    ExtendFunctionCall,
-    ExtendToolCall,
     LangGraphEventTypes,
     SessionPersistenceEventNames,
 )
-from aidev_agent.core.ag_ui.utils import camel_to_snake
-from aidev_agent.core.nodes.tool.approval_wrapper import is_approval_configured
+from aidev_agent.core.ag_ui.utils import camel_to_snake, get_interrupt_value, unwrap_interrupt_source
 from aidev_agent.enums import ActivityType, PromptRole
 from aidev_agent.utils.event import RunId
 
@@ -120,6 +117,9 @@ class BaseSessionWriter(ABC):
         # 用于追踪 thinking/reasoning 内容
         # key: "thinking", value: {"content": str}
         self._thinking_content: str = ""
+        # 追踪当前 thinking step 是否活跃（用于 should_switch_thinking_step 判定，
+        # DB 侧事件不含 index，用此标志替代 thinking_process 存在性判定）
+        self._thinking_active: bool = False
         # 用于追踪 flow_agent_result 记录，确保同一个 task_id 只有一条记录（后续轮询更新而非创建）
         self._flow_result_content_id: int | None = None
         self._flow_result_message_id: str | None = None
@@ -166,6 +166,10 @@ class BaseSessionWriter(ABC):
             self.handle_thinking_message_content(event)
         elif event.type == EventType.THINKING_TEXT_MESSAGE_END:
             self.handle_thinking_message_end(event)
+        elif event.type == EventType.TOOL_CALL_RESULT:
+            self.handle_tool_call_result(event)
+        elif event.type == EventType.ACTIVITY_SNAPSHOT:
+            self.handle_activity_snapshot(event)
         elif event.type == EventType.RUN_FINISHED:
             self.handle_run_finished(event)
 
@@ -179,12 +183,15 @@ class BaseSessionWriter(ABC):
             self._dispatch_custom_event(event)
 
     def _dispatch_custom_event(self, event: RawEvent) -> None:
-        """分发自定义事件（从 RAW 事件中解析的 on_custom_event）"""
+        """分发自定义事件（从 RAW 事件中解析的 on_custom_event）
+
+        注：OnToolNodeFinish 分支已移除（防御性清理）。Plan A 重建后的 _convert_raw_event
+        已把 on_tool_node_finish 转换为 ExtendToolCallResultEvent，DB 侧 __call__ 收到的
+        是 TOOL_CALL_RESULT 类型而非 RAW 包裹的 CustomEvent，此分支理论上永远不会触发。
+        """
         event_name = event.event.get("name", "")
 
-        if event_name == CustomEventNames.OnToolNodeFinish.value:
-            self.handle_tool_finish(event)
-        elif event_name == CustomMessageType.KNOWLEDGE_RAG_RESULT.value:
+        if event_name == CustomMessageType.KNOWLEDGE_RAG_RESULT.value:
             self.handle_reference_document(event)
         elif event_name == CustomMessageType.FLOW_AGENT_START.value:
             self.handle_flow_agent_start(event)
@@ -197,13 +204,15 @@ class BaseSessionWriter(ABC):
         """分发直接的 CUSTOM 类型事件（非 RAW 包裹）
 
         LangGraph 流式已不产出 RawEvent；工具节点完成、知识库结果等与 RAW 路径对齐到此。
+
+        注：OnToolNodeFinish 分支已移除（防御性清理）。覆写 _handle_on_custom_event
+        已把 OnToolNodeFinish CustomEvent 转换为 ExtendToolCallResultEvent，DB 侧 __call__
+        收到的 event.type 是 TOOL_CALL_RESULT 而非 CUSTOM，此分支理论上永远不会触发。
         """
         event_name = getattr(event, "name", "")
 
         if event_name == SessionPersistenceEventNames.ChatModelEnd.value:
             self.handle_model_end(event)
-        elif event_name == CustomEventNames.OnToolNodeFinish.value:
-            self.handle_tool_finish(event)
         elif event_name == CustomMessageType.KNOWLEDGE_RAG_RESULT.value:
             self.handle_reference_document(event)
         elif event_name == CustomMessageType.FLOW_AGENT_START.value:
@@ -257,8 +266,25 @@ class BaseSessionWriter(ABC):
             return
 
     def handle_thinking_message_start(self, event: BaseEvent) -> None:
-        """处理 thinking 消息开始事件，重置 thinking 内容"""
-        self._thinking_content = ""
+        """处理 thinking 消息开始事件
+
+        使用共享 should_switch_thinking_step 决定 _thinking_content 清空时机：
+        - 新 turn 开始（_thinking_active=False）：清空 _thinking_content
+        - 同 turn 内 step 切换（_thinking_active=True）：不清空，累积多 step 内容
+
+        DB 侧事件不含 index，用 _thinking_active 替代 thinking_process 的存在性判定。
+        通过构造 thinking_process={"index": 0}（当 _thinking_active=True 时）与
+        reasoning_data={"index": 1} 触发共享函数的 switch=True 分支，复用同一份判定逻辑：
+        - _thinking_active=True 时 should_switch_thinking_step 返回 True（step 切换），不清空
+        - _thinking_active=False 时 should_switch_thinking_step 返回 False（无前序 step），清空
+        """
+        thinking_process = {"index": 0} if self._thinking_active else None
+        reasoning_data = {"index": 1, "type": "text", "text": ""}
+        if not should_switch_thinking_step(thinking_process, reasoning_data):
+            # 新 turn 开始，清空
+            self._thinking_content = ""
+        # step 切换时不清空，保留前序 step 内容
+        self._thinking_active = True
 
     def handle_thinking_message_content(self, event: BaseEvent) -> None:
         """处理 thinking 消息内容事件，累积 thinking 内容"""
@@ -267,73 +293,22 @@ class BaseSessionWriter(ABC):
         self._thinking_content += delta
 
     def handle_thinking_message_end(self, event: BaseEvent) -> None:
-        """处理 thinking 消息结束事件"""
+        """处理 thinking 消息结束事件
+
+        不重置 _thinking_active：SSE 侧 step 切换时先发 THINKING_TEXT_MESSAGE_END
+        再发 THINKING_END/THINKING_START/THINKING_TEXT_MESSAGE_START，若此处重置
+        _thinking_active，下一个 START 会被误判为新 turn 开始而清空前序 step 内容。
+        _thinking_active 只在 turn 级清理点（handle_model_end/handle_run_finished/
+        handle_run_error/_write_cancelled_messages）重置。
+        """
 
     @staticmethod
     def _unwrap_interrupt_source(source: Any) -> Any:
-        if not isinstance(source, dict) or source.get("type") != "RUN_FINISHED":
-            return source
-
-        outcome = source.get("outcome")
-        if not isinstance(outcome, dict) or outcome.get("type") != "interrupt":
-            return source
-
-        interrupts = outcome.get("interrupts") or []
-        if interrupts:
-            return interrupts[0]
-        return source
+        return unwrap_interrupt_source(source)
 
     @staticmethod
     def _get_interrupt_value(source: Any, *keys: str) -> Any:
-        source = BaseSessionWriter._unwrap_interrupt_source(source)
-        # LangGraph Interrupt 对象：实际 payload 在 source.value 中，
-        # 需要解包后才能按 dict 方式查找 callbackToken、metadata 等字段
-        original_source = source
-        if not isinstance(source, dict) and hasattr(source, "value"):
-            inner = source.value
-            if isinstance(inner, dict):
-                source = inner
-
-        metadata = {}
-        raw_metadata = source.get("metadata") if isinstance(source, dict) else getattr(source, "metadata", None)
-        if isinstance(raw_metadata, dict):
-            metadata = raw_metadata
-
-        nested_candidates = []
-        if isinstance(metadata.get("ticket"), dict):
-            nested_candidates.append(metadata["ticket"])
-        if isinstance(metadata.get("approval"), dict):
-            nested_candidates.append(metadata["approval"])
-        if isinstance(metadata.get("target"), dict):
-            nested_candidates.append(metadata["target"])
-        if isinstance(metadata.get("execution"), dict):
-            nested_candidates.append(metadata["execution"])
-
-        for candidate in nested_candidates:
-            for key in keys:
-                if key in candidate and candidate[key] is not None:
-                    return candidate[key]
-
-        for key in keys:
-            if key in metadata and metadata[key] is not None:
-                return metadata[key]
-
-        for key in keys:
-            if isinstance(source, dict):
-                if key in source and source[key] is not None:
-                    return source[key]
-            else:
-                value = getattr(source, key, None)
-                if value is not None:
-                    return value
-
-        # 兜底：对于 Interrupt 对象（source 已被替换为 value），
-        # 仍尝试从原始对象的属性中查找（如 Interrupt.id）
-        if original_source is not source:
-            for key in keys:
-                value = getattr(original_source, key, None)
-                if value is not None:
-                    return value
+        return get_interrupt_value(source, *keys)
 
     def _get_interrupt_id(self, source: Any) -> str | None:
         return self._get_interrupt_value(source, "id", "interruptId")
@@ -546,6 +521,7 @@ class BaseSessionWriter(ABC):
                 )
                 self._streaming_messages.clear()
                 self._thinking_content = ""
+                self._thinking_active = False
                 return
 
             serialized_interrupts = [
@@ -599,10 +575,37 @@ class BaseSessionWriter(ABC):
                     content=run_finished_content,
                     builtin_property=builtin_property,
                 )
+        elif outcome and outcome_type != "interrupt":
+            # ask_user_question 续流的 DB 写入改由 handle_activity_snapshot 接管
+            # （ACTIVITY_SNAPSHOT 事件经 _dispatch_event 派发到 DB writer）。
+            # approval 的 interrupt 状态由审批回调 API 更新。
+            logger.info(
+                "[handle_run_finished] outcome != interrupt, session_code=%s, outcome_type=%s",
+                self.session_code,
+                outcome_type,
+            )
 
         # 清理
         self._streaming_messages.clear()
         self._thinking_content = ""
+        self._thinking_active = False
+
+    def _resolve_pending_interrupts(self) -> None:
+        """续流成功后更新 DB 中的 pending interrupt 记录为 resolved。
+
+        BaseSessionWriter 默认空实现（无 DB 查询能力）。子类（如 AGUISessionWriter）
+        可重写此方法，从 DB 查询 pending 的 interrupt 记录并更新为 resolved 终态。
+        """
+
+    def handle_activity_snapshot(self, event: BaseEvent) -> None:
+        """处理 ACTIVITY_SNAPSHOT 事件（ask_user_question 续流首帧回放）。
+
+        默认空实现。子类（如 AGUISessionWriter）可重写此方法，从事件 content
+        提取终态数据（answers）更新 DB 中的 pending interrupt 记录为 resolved。
+
+        此方法替代了原 _resolve_pending_interrupts 的 DB 查询路径——
+        ACTIVITY_SNAPSHOT 事件携带终态 content（含 answers），无需再从 DB 查询。
+        """
 
     def _write_cancelled_messages(self, thinking_content: str) -> None:
         """回写取消/暂停场景下的消息
@@ -660,48 +663,51 @@ class BaseSessionWriter(ABC):
         # 清理
         self._streaming_messages.clear()
         self._thinking_content = ""
+        self._thinking_active = False
 
     def handle_model_end(self, event: RawEvent | CustomEvent) -> None:
         """处理模型输出结束事件，回写 assistant 消息
 
         Args:
             event: RawEvent（on_chat_model_end）或 CustomEvent（aidev_session_chat_model_end）
+
+        CustomEvent 分支直接读 SSE 侧 build_model_end_payload 构造的扁平 payload
+        （message_id/content/tool_calls/deferred_tool_calls/reasoning_content/reasoning_duration），
+        不再 messages_from_dict 反序列化、不再二次推导 tool_calls/content。
+        RawEvent 分支（理论上已不触发，见 _dispatch_custom_event_direct 注释）保留兼容，
+        统一调 build_model_end_payload 构造 payload，逻辑与 CustomEvent 分支一致。
         """
         if isinstance(event, CustomEvent):
-            inner = (event.value or {}).get("output") if isinstance(event.value, dict) else None
-            if not inner:
+            payload = event.value if isinstance(event.value, dict) else None
+            if not payload:
                 return
-            output_message = messages_from_dict([inner])[0]
+            message_id = payload["message_id"]
+            content = payload["content"]
+            tool_calls = payload["tool_calls"]
+            deferred_tool_calls = payload["deferred_tool_calls"]
+            reasoning_content = payload.get("reasoning_content")
+            reasoning_duration = payload.get("reasoning_duration", 0)
         else:
+            # RawEvent 路径保留（LangGraph 直产 RawEvent 的兼容场景，理论上已不触发）
             output_message = event.event.get("data", {}).get("output")
             if not output_message:
                 return
-
-        message_id = output_message.id
+            payload = build_model_end_payload(output_message, self._tools_mapping)
+            message_id = payload["message_id"]
+            content = payload["content"]
+            tool_calls = payload["tool_calls"]
+            deferred_tool_calls = payload["deferred_tool_calls"]
+            reasoning_content = payload["reasoning_content"]
+            reasoning_duration = payload["reasoning_duration"]
 
         if message_id in self._written_message_ids:
             return
-
-        # 构建 tool_calls，过滤需要审批的工具（审批通过执行后再补充写入）
-        tool_calls, deferred_tool_calls = self._build_tool_calls_with_approval_filter(output_message)
-
-        # 处理 reasoning 内容（如 deepseek-reasoner）
-        reasoning_content = output_message.additional_kwargs.get("reasoning_content")
-
-        # 处理最终回复内容
-        # 有延迟的审批 tool_calls 时，视为"尚未调用工具"，不使用"正在调用工具..."占位
-        content = self._resolve_content(
-            output_message.content,
-            tool_calls,
-            reasoning_content,
-            has_deferred_tool_calls=bool(deferred_tool_calls),
-        )
 
         if reasoning_content:
             self._write_reasoning_message(
                 message_id=message_id,
                 reasoning_content=reasoning_content,
-                output_message=output_message,
+                duration=reasoning_duration,
             )
 
         self._write_assistant_message(
@@ -719,6 +725,7 @@ class BaseSessionWriter(ABC):
         self._streaming_messages.pop(message_id, None)
         # 清空 thinking 内容，避免 handle_run_finished 重复回写
         self._thinking_content = ""
+        self._thinking_active = False
         # 标记 model_end 已回写，取消时不需要补写暂停消息
         self._model_end_written = True
 
@@ -757,6 +764,49 @@ class BaseSessionWriter(ABC):
                 "message_id": tool_call_id,
                 "tool_call_id": tool_call_id,
                 "additional_kwargs": output_message.additional_kwargs,
+            },
+        )
+        self._written_message_ids.add(tool_call_id)
+
+    def handle_tool_call_result(self, event: ExtendToolCallResultEvent) -> None:
+        """处理工具调用结果事件，回写 tool 消息
+
+        直接消费 ExtendToolCallResultEvent 的结构化字段，替代 handle_tool_finish 的二次解包。
+        _immediate 场景通过 skip_db 标记跳过 DB 写入。
+        additional_metadata 携带完整 additional_kwargs，零信息丢失写入 builtin_property。
+
+        Args:
+            event: ExtendToolCallResultEvent（含 tool_call_id / message_id / content / is_error /
+                additional_metadata / skip_db）
+        """
+        # _immediate 场景跳过 DB 写入
+        if getattr(event, "skip_db", False):
+            return
+
+        tool_call_id = event.tool_call_id
+        if tool_call_id in self._written_message_ids:
+            return
+
+        # 直接使用事件字段，不再从 event.value 解包 ToolMessage
+        is_error = bool(event.is_error) if event.is_error is not None else False
+        platform_status = "fail" if is_error else "complete"
+
+        # 补充写入延迟的 tool_calls 到对应的 assistant 消息
+        if not is_error:
+            self._flush_deferred_tool_call(tool_call_id, tool_name=None)
+
+        # additional_metadata 携带完整 additional_kwargs dict
+        additional_metadata = getattr(event, "additional_metadata", None) or {}
+
+        self._create_session_content(
+            message_id=event.message_id,
+            role=PromptRole.TOOL.value,
+            content=event.content,
+            status=platform_status,
+            builtin_property={
+                "message_id": tool_call_id,
+                "tool_call_id": tool_call_id,
+                "additional_kwargs": additional_metadata,
             },
         )
         self._written_message_ids.add(tool_call_id)
@@ -833,6 +883,7 @@ class BaseSessionWriter(ABC):
         # 清理
         self._streaming_messages.clear()
         self._thinking_content = ""
+        self._thinking_active = False
 
     def handle_reference_document(self, event: RawEvent | CustomEvent) -> None:
         """处理引用文档事件，回写 activity 消息
@@ -1007,70 +1058,6 @@ class BaseSessionWriter(ABC):
             logger.warning("handle_flow_agent_start: task_id 为空，跳过持久化: event_data=%s", event_data)
 
     # ---------- handle_model_end 辅助方法 ----------
-
-    def _build_tool_calls(self, output_message: Any) -> list:
-        """从模型输出中构建 tool_calls 列表"""
-        tool_calls, _ = self._build_tool_calls_with_approval_filter(output_message)
-        return tool_calls
-
-    def _build_tool_calls_with_approval_filter(self, output_message: Any) -> tuple[list, list]:
-        """从模型输出中构建 tool_calls 列表，将需要审批的工具分离出来延迟写入。
-
-        Returns:
-            (immediate_tool_calls, deferred_tool_calls)
-            - immediate_tool_calls: 不需要审批的工具调用，立即写入
-            - deferred_tool_calls: 需要审批的工具调用，待审批通过执行后补充写入
-        """
-        immediate_tool_calls = []
-        deferred_tool_calls = []
-        for each in output_message.tool_calls or []:
-            _tool = self._tools_mapping.get(each["name"])
-            tool_call_dict = ExtendToolCall(
-                id=each["id"],
-                function=ExtendFunctionCall(
-                    name=each["name"],
-                    arguments=json.dumps(each["args"]),
-                    description=_tool.description if _tool else "",
-                    mcp_name=_tool.metadata.get("mcp_name", "") if _tool and _tool.metadata else "",
-                ),
-            ).model_dump()
-
-            if is_approval_configured(_tool):
-                deferred_tool_calls.append(tool_call_dict)
-            else:
-                immediate_tool_calls.append(tool_call_dict)
-        return immediate_tool_calls, deferred_tool_calls
-
-    def _resolve_content(
-        self, content: str, tool_calls: list, reasoning_content: str | None, *, has_deferred_tool_calls: bool = False
-    ) -> str:
-        """解析最终回复内容
-
-        对于 DeepSeek reasoning 模型，最终回复可能在 reasoning_content 而不是 content。
-        当有 tool_calls 时，content 为空是正常的（AI 只是调用工具）。
-        当没有 tool_calls 且 content 为空时，尝试使用 reasoning_content 作为回复内容。
-
-        Args:
-            content: 原始回复内容
-            tool_calls: 立即写入的 tool_calls 列表
-            reasoning_content: reasoning 内容（如 deepseek-reasoner）
-            has_deferred_tool_calls: 是否有延迟写入的审批 tool_calls
-        """
-        content_stripped = content.strip() if content else ""
-
-        if not content_stripped and has_deferred_tool_calls:
-            # 所有 tool_calls 都是审批延迟的，工具尚未执行，避免把 reasoning_content 误当作 assistant 内容
-            return ""
-        if not content_stripped and not tool_calls and reasoning_content:
-            # reasoning 模型的最终回复在 reasoning_content 中
-            return reasoning_content
-        elif not content_stripped and tool_calls:
-            # 有立即写入的 tool_calls 但 content 为空/只有空白字符，使用一个有意义的占位符
-            return "正在调用工具..."
-        elif not content_stripped:
-            # 没有 tool_calls 也没有内容，使用空字符串（可能会失败）
-            return ""
-        return content_stripped
 
     def _write_reasoning_message(
         self,
@@ -1249,7 +1236,7 @@ class BaseSessionWriter(ABC):
     def _safe_call(self, fn: Callable, message_id: str, action: str, **kwargs: Any) -> Any:
         """安全调用回写函数，统一处理异常和日志
 
-        D-02: 写入失败时不阻断 Agent 执行，但递增 _write_error_count，
+        写入失败时不阻断 Agent 执行，但递增 _write_error_count，
         供 set_streaming_finished 判断 session 最终状态。
 
         Args:

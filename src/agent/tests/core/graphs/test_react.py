@@ -11,10 +11,11 @@ import pytest
 from aidev_agent.config import settings
 from aidev_agent.core.graphs.react.graph import ReActAgentBuilder
 from aidev_agent.core.graphs.react.skill_middleware import SkillsPromptMiddleware, _extract_paas_params
+from aidev_agent.core.nodes.interrupt import ItsmApprovalStrategy, make_interrupt_node
 from aidev_agent.core.nodes.tool import ToolNodeSettings
 from aidev_agent.packages.langchain_core.models import ChatModel
 from aidev_agent.packages.langgraph.streaming.streaming_protocol import AgentStreamAdapter
-from aidev_agent.pydantic_models import AgentExecutorKwargs
+from aidev_agent.pydantic_models import AgentExecutorKwargs, KnowledgeSettings
 from langchain.agents.middleware.types import AgentMiddleware
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
@@ -414,7 +415,9 @@ class TestReActAgentBuilder:
                 return_value=(MagicMock(), {}),
             ),
         ):
-            ReActAgentBuilder().set_llm(llm).set_tools([calculator, multiplier]).build()
+            ReActAgentBuilder().set_llm(llm).set_tools([calculator, multiplier]).set_enable_ask_user_question_tool(
+                False
+            ).build()
             kwargs = mock_prepare_tools.call_args.kwargs
             assert kwargs["extra_tools"] == [calculator, multiplier]
 
@@ -427,6 +430,50 @@ class TestReActAgentBuilder:
             langchain_middleware=[mw],
         )
         assert calculator in tools
+
+    def test_init_enable_agentic_rag_tool_default_false(self):
+        """__init__ 应将 _enable_agentic_rag_tool 默认设为 False"""
+        builder = ReActAgentBuilder()
+        assert builder._enable_agentic_rag_tool is False
+
+    def test_set_bkai_options_maps_enable_agentic_rag_tool(self):
+        """set_bkai_options 应从 knowledge_query_options 提取 enable_agentic_rag_tool"""
+        opts = AgentExecutorKwargs(
+            knowledge_query_options=KnowledgeSettings(enable_agentic_rag_tool=True),
+        )
+        builder = ReActAgentBuilder()
+        builder.set_bkai_options(opts)
+        assert builder._enable_agentic_rag_tool is True
+
+        # 不传 knowledge_query_options 时保持 False
+        opts2 = AgentExecutorKwargs()
+        builder2 = ReActAgentBuilder()
+        builder2.set_bkai_options(opts2)
+        assert builder2._enable_agentic_rag_tool is False
+
+    def test_prepare_agent_tools_uses_self_enable_agentic_rag_tool(self):
+        """_prepare_agent_tools 应根据 self._enable_agentic_rag_tool 决定是否添加知识工具"""
+        sentinel = MagicMock(spec=BaseTool)
+        builder = ReActAgentBuilder()
+        builder._knowledge_llm = MagicMock()
+        builder._knowledge_query_options = KnowledgeSettings(enable_agentic_rag_tool=True)
+
+        with patch(
+            "aidev_agent.core.graphs.react.graph.make_knowledge_retrieval_tool",
+            return_value=sentinel,
+        ) as mock_make:
+            # enable_agentic_rag_tool=True → 知识工具被添加
+            builder._enable_agentic_rag_tool = True
+            tools = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
+            assert sentinel in tools
+            mock_make.assert_called_once()
+
+            # enable_agentic_rag_tool=False → 知识工具不被添加
+            mock_make.reset_mock()
+            builder._enable_agentic_rag_tool = False
+            tools = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
+            assert sentinel not in tools
+            mock_make.assert_not_called()
 
     def test_build_activate_skill_tool_injected(self, tmp_path, monkeypatch):
         """enable_skills=True 时应注入 activate_skill 工具"""
@@ -751,9 +798,9 @@ class TestReActAgentBuilder:
     # B (continued). _should_continue 测试
     # ----------------------------------------------------------------
 
-    def test_should_continue_returns_pv_node_when_tool_calls(self):
+    def test_should_continue_returns_approval_check_when_tool_calls(self):
         msg = AIMessage(content="", tool_calls=[{"id": "1", "name": "calc", "args": {}}])
-        assert ReActAgentBuilder._should_continue({"messages": [msg]}) == "pv_node"
+        assert ReActAgentBuilder._should_continue({"messages": [msg]}) == "approval_check"
 
     def test_should_continue_returns_end_when_no_tool_calls(self):
         msg = AIMessage(content="done")
@@ -770,7 +817,7 @@ class TestReActAgentBuilder:
             "approval": {"approval_enabled": True},
         }
         try:
-            approval_check = ReActAgentBuilder._make_approval_check_node([calculator])
+            approval_check = make_interrupt_node([ItsmApprovalStrategy([calculator])])
             state = {
                 "messages": [
                     AIMessage(
@@ -785,7 +832,7 @@ class TestReActAgentBuilder:
             }
 
             with patch(
-                "aidev_agent.core.graphs.react.graph.request_approval_decision",
+                "aidev_agent.core.nodes.interrupt.itsm_approval.request_approval_decision",
                 side_effect=[True, False],
             ) as mock_request:
                 command = approval_check(state, {"configurable": {"execute_kwargs": MagicMock(resume=None)}})
@@ -797,6 +844,7 @@ class TestReActAgentBuilder:
             approval_state = updated_ai_message.additional_kwargs["tool_approval"]
             assert approval_state["call_1"]["status"] == "approved"
             assert approval_state["call_2"]["status"] == "rejected"
+            # 两个 target 各调一次 request_approval_decision（D-05 复刻 11.1 _check for 循环）
             assert mock_request.call_count == 2
         finally:
             calculator.metadata = original_metadata
@@ -809,7 +857,7 @@ class TestReActAgentBuilder:
             "approval": {"approval_enabled": True},
         }
         try:
-            approval_check = ReActAgentBuilder._make_approval_check_node([calculator])
+            approval_check = make_interrupt_node([ItsmApprovalStrategy([calculator])])
             state = {
                 "messages": [
                     AIMessage(
@@ -830,7 +878,7 @@ class TestReActAgentBuilder:
             }
 
             with patch(
-                "aidev_agent.core.graphs.react.graph.request_approval_decision",
+                "aidev_agent.core.nodes.interrupt.itsm_approval.request_approval_decision",
                 return_value=True,
             ) as mock_request:
                 command = approval_check(
@@ -843,9 +891,9 @@ class TestReActAgentBuilder:
             assert approval_state["call_1"]["status"] == "approved"
             assert approval_state["call_2"]["status"] == "approved"
             assert mock_request.call_count == 1
-            target = mock_request.call_args.args[0]
-            assert target.target_id == "call_2"
-            assert mock_request.call_args.kwargs["interrupt_payload"] == {"id": "int-approval-call_2"}
+            # call_2 是唯一 pending target，其 interrupt_payload 应复用已有记录
+            payload = mock_request.call_args.kwargs["interrupt_payload"]
+            assert payload == {"id": "int-approval-call_2"}
         finally:
             calculator.metadata = original_metadata
 
@@ -868,7 +916,7 @@ class TestReActAgentBuilder:
             },
         }
         try:
-            approval_check = ReActAgentBuilder._make_approval_check_node([calculator])
+            approval_check = make_interrupt_node([ItsmApprovalStrategy([calculator])])
             state = {
                 "messages": [
                     AIMessage(
@@ -882,19 +930,19 @@ class TestReActAgentBuilder:
             }
 
             with patch(
-                "aidev_agent.core.graphs.react.graph.request_approval_decision",
+                "aidev_agent.core.nodes.interrupt.itsm_approval.request_approval_decision",
                 return_value=True,
-            ) as mock_request:
+            ):
                 command = approval_check(state, {"configurable": {"execute_kwargs": MagicMock(resume=None)}})
 
             assert command.goto == "pv_node"
             updated_ai_message = command.update["messages"][0]
             approval_state = updated_ai_message.additional_kwargs["tool_approval"]
             assert approval_state["call_skill_1"]["status"] == "approved"
-            target = mock_request.call_args.args[0]
-            assert target.target_type == "skill"
-            assert target.target_code == "skill-runner"
-            assert target.target_name == "Skill Runner"
+            # 验证 skill metadata 正确识别
+            assert approval_state["call_skill_1"]["toolName"] == "Skill Runner"
+            assert approval_state["call_skill_1"]["toolCode"] == "skill-runner"
+            assert approval_state["call_skill_1"]["type"] == "skill"
         finally:
             calculator.metadata = original_metadata
 
@@ -919,7 +967,7 @@ class TestReActAgentBuilder:
             },
         }
         try:
-            approval_check = ReActAgentBuilder._make_approval_check_node([calculator])
+            approval_check = make_interrupt_node([ItsmApprovalStrategy([calculator])])
             state = {
                 "messages": [
                     AIMessage(
@@ -933,19 +981,19 @@ class TestReActAgentBuilder:
             }
 
             with patch(
-                "aidev_agent.core.graphs.react.graph.request_approval_decision",
+                "aidev_agent.core.nodes.interrupt.itsm_approval.request_approval_decision",
                 return_value=True,
-            ) as mock_request:
+            ):
                 command = approval_check(state, {"configurable": {"execute_kwargs": MagicMock(resume=None)}})
 
             assert command.goto == "pv_node"
             updated_ai_message = command.update["messages"][0]
             approval_state = updated_ai_message.additional_kwargs["tool_approval"]
             assert approval_state["call_mcp_1"]["status"] == "approved"
-            target = mock_request.call_args.args[0]
-            assert target.target_type == "mcp"
-            assert target.target_code == "query-time"
-            assert target.target_name == "Query Time"
+            # 验证 mcp metadata 正确识别
+            assert approval_state["call_mcp_1"]["toolName"] == "Query Time"
+            assert approval_state["call_mcp_1"]["toolCode"] == "query-time"
+            assert approval_state["call_mcp_1"]["type"] == "mcp"
         finally:
             calculator.metadata = original_metadata
 
@@ -1099,7 +1147,7 @@ class TestReActAgentBuilder:
         """无工具时图应为 START -> model -> END（无 tools 节点）"""
         llm = MagicMock()
         llm.model_name = "gpt-4o"
-        builder = ReActAgentBuilder().set_llm(llm)
+        builder = ReActAgentBuilder().set_llm(llm).set_enable_ask_user_question_tool(False)
         graph, cfg = builder.build()
         # The compiled graph should not have a 'tools' node
         node_names = set(graph.nodes.keys())

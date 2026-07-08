@@ -1,7 +1,5 @@
 from enum import Enum
-from typing import Annotated, Any, Literal, TypedDict
-
-from typing import List
+from typing import Annotated, Any, List, Literal, TypedDict
 
 from ag_ui.core import (
     ActivityMessage as AGUIActivityMessage,
@@ -18,8 +16,6 @@ from ag_ui.core import (
     ToolMessage,
     UserMessage,
 )
-from typing import Dict
-
 from ag_ui.core.events import MessagesSnapshotEvent
 from ag_ui.core.types import ConfiguredBaseModel
 from langchain_core.messages import ChatMessage
@@ -242,6 +238,7 @@ class MessageSnapshotEventExtend(MessagesSnapshotEvent):
 
 class ResumeItem(ConfiguredBaseModel):
     """恢复请求项，用于提交中断处理结果"""
+
     interruptId: str
     status: Literal["resolved", "cancelled"]
     payload: Any | None = None
@@ -249,13 +246,17 @@ class ResumeItem(ConfiguredBaseModel):
 
 class AgentInput(RunAgentInput):
     """扩展的 Agent 输入，添加 resume 字段支持中断恢复"""
-    thread_id: str | None = None
+
+    thread_id: str
     run_id: str | None = None
     messages: list[ExtendMessage]
     tools: list[Tool] = Field(default_factory=list)
     context: list[Context] = Field(default_factory=list)
     forwarded_props: Any = Field(default_factory=dict)
     resume: list[ResumeItem] | None = Field(default=None, description="中断恢复请求")
+    stream_input: Any = Field(
+        default=None, description="stream 输入（chat.py 预处理，供 agent.py.prepare_stream 使用）"
+    )
 
 
 class ActivityMessage(ChatMessage):

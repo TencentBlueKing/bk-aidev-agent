@@ -100,6 +100,7 @@ def _render_prompt_contents(prompt, variables: dict) -> list[str]:
     """Render a ChatPromptTemplate and return message contents."""
     payload = dict(variables)
     payload.setdefault("history_system_prompt", "")
+    payload.setdefault("has_tools", False)
     value = prompt.invoke(payload, config={})
     return [m.content for m in value.to_messages()]
 

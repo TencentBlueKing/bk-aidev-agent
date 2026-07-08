@@ -1,17 +1,18 @@
 # -*- coding: utf-8 -*-
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 from logging import getLogger
 from typing import Any, Callable
 
 from ag_ui.core import (
+    ActivitySnapshotEvent,
     BaseEvent,
     CustomEvent,
     EventType,
-    RawEvent,
     RunAgentInput,
     RunErrorEvent,
     RunFinishedEvent,
+    RunStartedEvent,
     TextMessageContentEvent,
     TextMessageEndEvent,
     TextMessageStartEvent,
@@ -20,19 +21,19 @@ from ag_ui.core import (
     ToolCallStartEvent,
 )
 from ag_ui.encoder import EventEncoder
+from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 from langgraph.graph.state import CompiledStateGraph
 
+from aidev_agent.core.nodes.tool.approval_wrapper import TOOL_APPROVAL_REASON
 from aidev_agent.exceptions import extract_model_error_message
-from aidev_agent.core.nodes.tool.approval_wrapper import TOOL_APPROVAL_REASON, is_approval_configured
 
 from .agent import LangGraphAGUIAgent
 from .approval import ApprovalOutcomeBuilder, ApproveResultLiteral
-from .events import (
-    ExtendToolCallResultEvent,
-    ExtendToolCallStartEvent,
-)
+from .ask_user_question import AskUserQuestionOutcomeBuilder
+from .event_builders import build_tool_result_event, enhance_tool_call, is_tool_approval_required
+from .events import ExtendToolCallStartEvent
 from .types import (
     AgentInput,
     CustomEventNames,
@@ -41,183 +42,12 @@ from .types import (
     MessageSnapshotEventExtend,
     RunFinishedSuccessOutcome,
     SessionPersistenceEventNames,
+    State,
     serialize_run_finished_outcome,
 )
+from .utils import langchain_messages_to_streaming_events
 
 logger = getLogger(__name__)
-
-
-class EventDispatcher:
-    """事件分发器，用于处理不同类型事件的分发逻辑"""
-
-    def __init__(self, agent: "AidevAGUIAgent"):
-        self.agent = agent
-        self._suppressed_tool_call_ids: set[str] = set()
-        self._dispatch_handlers = {
-            EventType.RAW: self._handle_raw_event,
-            EventType.CUSTOM: self._handle_custom_event,
-            EventType.TOOL_CALL_START: self._handle_tool_call_start,
-            EventType.TOOL_CALL_ARGS: self._handle_tool_call_args,
-            EventType.TOOL_CALL_END: self._handle_tool_call_end,
-        }
-
-    def dispatch(self, event: BaseEvent) -> str:
-        """根据事件类型调用对应的处理方法"""
-        handler = self._dispatch_handlers.get(event.type)
-        if handler:
-            return handler(event)
-        return self.agent._parent_dispatch(event)
-
-    def _handle_raw_event(self, event: RawEvent) -> str:
-        """处理 RAW 事件"""
-        event_name = event.event.get("name", "")
-
-        raw_event_handlers = {
-            "on_tool_node_finish": self._handle_tool_node_finish,
-            "on_tool_node_start": self._handle_tool_node_start,
-            CustomMessageType.KNOWLEDGE_RAG_RESULT.value: self._handle_reference_document_raw,
-        }
-
-        handler = raw_event_handlers.get(event_name)
-        if handler:
-            return handler(event)
-        return self.agent._parent_dispatch(event)
-
-    def _handle_tool_node_finish(self, event: RawEvent) -> str:
-        """处理工具节点完成事件"""
-        tool_msg = event.event.get("data")
-        is_error = getattr(tool_msg, "status", None) == "error" or bool(getattr(tool_msg, "error", None))
-        # 确保 content 是字符串类型（ToolCallResultEvent.content 要求 str）
-        content = tool_msg.content
-        if not isinstance(content, str):
-            content = str(content) if content else ""
-        return self.agent._parent_dispatch(
-            ExtendToolCallResultEvent(
-                type=EventType.TOOL_CALL_RESULT,
-                tool_call_id=tool_msg.tool_call_id,
-                message_id=tool_msg.id or str(uuid.uuid4()),
-                content=content,
-                role="tool",
-                duration=tool_msg.additional_kwargs.get("duration", None),
-                is_error=is_error,
-            )
-        )
-
-    def _handle_tool_node_start(self, event: RawEvent) -> str:
-        """处理工具节点开始事件"""
-        # 当前不处理，直接返回
-        return ""
-
-    def _handle_custom_event(self, event: CustomEvent) -> str:
-        """处理自定义事件"""
-        custom_event_handlers = {
-            CustomMessageType.KNOWLEDGE_RAG_RESULT.value: self._handle_reference_document,
-            CustomEventNames.OnToolNodeFinish.value: self._handle_tool_node_finish_from_custom,
-            CustomEventNames.OnToolNodeImmediate.value: self._handle_tool_node_immediate,
-        }
-
-        handler = custom_event_handlers.get(event.name)
-        if handler:
-            return handler(event)
-        return self.agent._parent_dispatch(event)
-
-    def _handle_tool_node_finish_from_custom(self, event: CustomEvent) -> str:
-        tool_msg = event.value
-        is_error = getattr(tool_msg, "status", None) == "error" or bool(getattr(tool_msg, "error", None))
-        # 确保 content 是字符串类型（ToolCallResultEvent.content 要求 str）
-        content = tool_msg.content
-        if not isinstance(content, str):
-            content = str(content) if content else ""
-        return self.agent._parent_dispatch(
-            ExtendToolCallResultEvent(
-                type=EventType.TOOL_CALL_RESULT,
-                tool_call_id=tool_msg.tool_call_id,
-                message_id=tool_msg.id or str(uuid.uuid4()),
-                content=content,
-                role="tool",
-                duration=tool_msg.additional_kwargs.get("duration", None),
-                is_error=is_error,
-            )
-        )
-
-    def _handle_tool_node_immediate(self, event: CustomEvent) -> str:
-        """处理子 Agent 中间步骤事件，转为 ExtendToolCallResultEvent 但不触发 DB 写入
-
-        与 _handle_tool_node_finish_from_custom 的区别：
-        - duration 为 None（中间步骤无耗时概念）
-        - is_error 为 False（中间步骤不可能是错误）
-        - 事件名 on_tool_node_immediate 不被 BaseSessionWriter 识别，不会写 DB
-        """
-        tool_msg = event.value
-        # 确保 content 是字符串类型（ToolCallResultEvent.content 要求 str）
-        content = tool_msg.content
-        if not isinstance(content, str):
-            content = str(content) if content else ""
-        return self.agent._parent_dispatch(
-            ExtendToolCallResultEvent(
-                type=EventType.TOOL_CALL_RESULT,
-                tool_call_id=tool_msg.tool_call_id,
-                message_id=tool_msg.id or str(uuid.uuid4()),
-                content=content,
-                role="tool",
-                duration=None,
-                is_error=False,
-            )
-        )
-
-    def _handle_reference_document(self, event: CustomEvent) -> str:
-        """处理引用文档事件（CustomEvent 格式）"""
-        value = event.raw_event.get("data", {}).get("data", [])
-        return self.agent._parent_dispatch(
-            CustomEvent(type=EventType.CUSTOM, name=event.raw_event.get("name"), value=value)
-        )
-
-    def _handle_reference_document_raw(self, event: RawEvent) -> str:
-        """处理引用文档事件（RawEvent 格式）
-
-        将 LangGraph 的 on_custom_event 原始事件转换为标准的 RawEvent 继续传递给 BaseSessionWriter
-        """
-        # 直接传递 RawEvent，让 BaseSessionWriter 处理
-        return self.agent._parent_dispatch(event)
-
-    def _handle_tool_call_start(self, event: ToolCallStartEvent) -> str:
-        """处理工具调用开始事件，添加描述信息
-
-        对于需要审批的工具，抑制流式 TOOL_CALL 事件，
-        审批通知由 approval_check 节点通过 ManuallyEmitMessage 事件发送。
-        """
-        if self._tool_needs_approval(event.tool_call_name):
-            logger.info(f"[EventDispatcher] 抑制需要审批的工具流式事件: {event.tool_call_name} ({event.tool_call_id})")
-            self._suppressed_tool_call_ids.add(event.tool_call_id)
-            return ""
-
-        _tool = self.agent._tool_mapping.get(event.tool_call_name, None)
-        _event = ExtendToolCallStartEvent(
-            **{
-                **event.model_dump(),
-                "description": _tool.description if _tool else "",
-                "mcp_name": _tool.metadata.get("mcp_name") if _tool and _tool.metadata else "",
-            }
-        )
-        return self.agent._parent_dispatch(_event)
-
-    def _handle_tool_call_args(self, event: ToolCallArgsEvent) -> str:
-        """处理工具调用参数事件，抑制已标记为需要审批的工具"""
-        if event.tool_call_id in self._suppressed_tool_call_ids:
-            return ""
-        return self.agent._parent_dispatch(event)
-
-    def _handle_tool_call_end(self, event: ToolCallEndEvent) -> str:
-        """处理工具调用结束事件，抑制已标记为需要审批的工具"""
-        if event.tool_call_id in self._suppressed_tool_call_ids:
-            self._suppressed_tool_call_ids.discard(event.tool_call_id)
-            return ""
-        return self.agent._parent_dispatch(event)
-
-    def _tool_needs_approval(self, tool_call_name: str) -> bool:
-        """检查工具是否需要审批"""
-        _tool = self.agent._tool_mapping.get(tool_call_name, None)
-        return is_approval_configured(_tool)
 
 
 class AidevAGUIAgent(LangGraphAGUIAgent):
@@ -225,10 +55,11 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
 
     事件处理机制：
     1. event_handler: 通用事件钩子，接收所有 BaseEvent，用于 BaseSessionWriter 等外部处理器
-    2. EventDispatcher: 内部事件分发器，处理特定事件类型的转换（如工具事件）
+    2. _dispatch_event: DB + SSE 纯分发，event_handler 和 super()._dispatch_event 收到同一个
+       事件对象（转换/抑制已在构造侧 _handle_single_event 覆写完成）
     3. cancel_checker: 取消检测回调，返回 True 表示应该取消，Agent 会优雅地发送 RunFinishedEvent
 
-    注意：BaseSessionWriter 处理 CUSTOM（含会话专用名）与 RUN_ERROR 等；RAW 仅保留兼容，流式不再产出
+    注意：BaseSessionWriter 处理 CUSTOM（含会话专用名）与 RUN_ERROR 等；RAW 路径已删除（死代码，AG-UI 路径从不构造 RawEvent）
     """
 
     def __init__(
@@ -244,14 +75,16 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         mcp_fetch_failures: list[dict] | None = None,
         approve_result: ApproveResultLiteral | None = None,
         approval_interrupts: list[dict] | None = None,
+        ask_user_question_interrupts: list[dict] | None = None,
     ):
         super().__init__(name=name, graph=graph, description=description, config=config, cancel_checker=cancel_checker)
         self._tool_mapping = tools or {}
         self._event_handler = event_handler
-        self._event_dispatcher = EventDispatcher(self)
+        self._suppressed_tool_call_ids: set[str] = set()
         self._mcp_fetch_failures = mcp_fetch_failures or []
         self._approve_result = approve_result
         self._approval_interrupts = approval_interrupts or []
+        self._ask_user_question_interrupts = ask_user_question_interrupts or []
 
     @staticmethod
     def _format_mcp_fetch_failure_message(failures: list[dict[str, Any]]) -> str:
@@ -278,18 +111,9 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
             )
         )
 
-        # 续流场景：在 SDK 任何事件之前，先回放一条"终态形态"的 RUN_FINISHED，
-        # 让前端能立即据此把原中断卡片更新为审批最终状态（approved / rejected / cancelled）。
-        # 仅对"审批中断恢复"场景触发；普通续聊或其他类型恢复不发。
-        if self._should_emit_resume_approval_finished():
-            try:
-                resume_finished = self._build_resume_approval_finished_event(input)
-                # 仅做 SSE 输出，不进入 _dispatch_event：
-                #   - 不再向 BaseSessionWriter 重复派发（DB 已在审批回调 / cancel 落库时刷写）
-                #   - 不进入 EventDispatcher 转换（这是一条纯回放事件，不参与工具事件路由）
-                yield event_encoder.encode(resume_finished)
-            except Exception:
-                logger.exception("[Approval] Failed to emit resume RUN_FINISHED event")
+        # 续流场景：在 SDK 任何事件之前，先回放一条"终态形态"事件
+        for chunk in self._emit_resume_replay_events(input, event_encoder):
+            yield chunk
 
         async for event in super().run(input):
             try:
@@ -326,11 +150,14 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
                         TextMessageEndEvent(type=EventType.TEXT_MESSAGE_END, message_id=compress_log_id)
                     )
                 else:
-                    # RUN_FINISHED 事件：SSE 输出仅保留 metadata.ticket，减少冗余字段
+                    # RUN_FINISHED 事件：approval 中断的 SSE 输出仅保留 metadata.ticket，减少冗余字段。
+                    # 非 approval 中断（如 ask_user_question）保留完整 metadata，前端需 questions 数组渲染卡片。
                     if getattr(event, "type", "") == EventType.RUN_FINISHED.value:
                         _outcome = getattr(event, "outcome", None)
                         if isinstance(_outcome, dict) and _outcome.get("type") == "interrupt":
                             for _interrupt in _outcome.get("interrupts", []):
+                                if _interrupt.get("reason") != TOOL_APPROVAL_REASON:
+                                    continue
                                 _metadata = _interrupt.get("metadata")
                                 if isinstance(_metadata, dict):
                                     _interrupt["metadata"] = (
@@ -355,8 +182,135 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
                 logger.exception(f"Failed to encode event: {e}")
                 raise e
 
+    def _emit_resume_replay_events(
+        self, input: RunAgentInput, event_encoder: EventEncoder
+    ) -> Generator[str, None, None]:
+        """续流首帧回放：在 SDK 任何事件之前先回放一条"终态形态"事件。
+
+        让前端能立即据此把原中断卡片更新为最终状态（关闭弹窗）。
+        支持 approval（RUN_FINISHED）和 ask_user_question（ACTIVITY_SNAPSHOT）两种中断类型。
+
+        注意：此方法仅负责 SSE 输出。ask_user_question 路径的 DB 写入由
+        handle_activity_snapshot 消费经 _dispatch_event 派发的 ACTIVITY_SNAPSHOT 事件完成。
+        """
+        resume_event = self._build_resume_finished_event(input)
+        if resume_event is not None:
+            try:
+                # D-01: ask_user_question 路径的 ACTIVITY_SNAPSHOT 走 _dispatch_event，
+                # 让 DB writer 通过 handle_activity_snapshot 消费事件写入 DB。
+                # approval 路径的 RUN_FINISHED 保持直发（D-02），不走 _dispatch_event——
+                # approval 续流首帧是"回放"（DB 已在审批回调时落库），走 _dispatch_event
+                # 会让 handle_run_finished 重复触发后台续流 worker。
+                if getattr(resume_event, "type", None) == EventType.ACTIVITY_SNAPSHOT:
+                    self._dispatch_event(resume_event)
+                yield event_encoder.encode(resume_event)
+                if getattr(resume_event, "type", None) == EventType.ACTIVITY_SNAPSHOT:
+                    updated_snapshot = self._build_updated_messages_snapshot(input)
+                    if updated_snapshot is not None:
+                        yield event_encoder.encode(updated_snapshot)
+            except Exception:
+                logger.exception("[Resume] Failed to emit resume event")
+
+    def _build_resume_finished_event(self, input: RunAgentInput) -> RunFinishedEvent | None:
+        """构造续流首条"终态形态"事件（支持 approval 和 ask_user_question）。
+
+        approval 路径：依赖 ``approve_result`` + ``approval_interrupts``（chat.py 从 DB 查询）。
+        ask_user_question 路径：依赖 ``ask_user_question_interrupts``（chat.py 从 graph state 获取）。
+
+        返回 None 表示不需要发首帧回放。
+        """
+        # approval 续流首帧回放
+        if self._should_emit_resume_approval_finished():
+            return self._build_resume_approval_finished_event(input)
+
+        # ask_user_question 续流首帧回放
+        if self._ask_user_question_interrupts:
+            return self._build_resume_ask_user_question_finished_event(input)
+
+        return None
+
+    def _resolve_resume_context(self, input: RunAgentInput) -> tuple[str, list]:
+        """从 input.resume / forwarded_props 解析 (interruptId, answers)。
+
+        chat.py 把 resume 放在 forwarded_props.command.resume（非 AgentInput.resume），
+        前端传的 resume 可能是单 dict 或 list。返回 (interrupt_id, resume_answers)，
+        interrupt_id 为空时用 self._ask_user_question_interrupts[0].id 兜底。
+        """
+        interrupt_id: str = ""
+        resume_answers: list = []
+        resume_value = None
+        if isinstance(input, AgentInput):
+            if input.resume:
+                resume_value = input.resume
+            elif input.forwarded_props:
+                resume_value = (input.forwarded_props or {}).get("command", {}).get("resume")
+        if resume_value:
+            if isinstance(resume_value, dict):
+                resume_value = [resume_value]
+            if isinstance(resume_value, list) and resume_value:
+                first = resume_value[0]
+                if isinstance(first, dict):
+                    interrupt_id = first.get("interruptId") or ""
+                    resume_payload = first.get("payload") or {}
+                    if isinstance(resume_payload, dict):
+                        resume_answers = resume_payload.get("answers") or []
+        if not interrupt_id and self._ask_user_question_interrupts:
+            interrupt_id = (self._ask_user_question_interrupts[0] or {}).get("id", "") or ""
+        return interrupt_id, resume_answers
+
+    def _build_updated_messages_snapshot(self, input: RunAgentInput):
+        """构造续流后的 MESSAGES_SNAPSHOT，将 interrupt 消息更新为终态形态。
+
+        前端 handleActivitySnapshotEvent 只更新 message.content 不触发 computed 重新计算，
+        需要通过 MESSAGES_SNAPSHOT 替换整个数组引用让 activeUserQuestionInterrupt 失效。
+
+        从 input.messages 中找到 role=interrupt 的消息，替换其 content 为
+        ACTIVITY_SNAPSHOT 的终态 content（outcome.type=success），其余消息不变。
+        """
+        messages = list(getattr(input, "messages", []) or [])
+        if not messages:
+            return None
+
+        # WR-03：复用 _resolve_resume_context 解析 resume（与 _build_resume_ask_user_question_finished_event 共享）
+        interrupt_id, resume_answers = self._resolve_resume_context(input)
+
+        # 复用 AskUserQuestionOutcomeBuilder 构造终态 content（与 ACTIVITY_SNAPSHOT 一致），
+        # 确保 MESSAGES_SNAPSHOT 的 outcome 也含 interrupts 字段。
+        # D-05: resume_answers 通过参数注入 builder，不再需要调用方后修正。
+        outcome_dict, result_dict = AskUserQuestionOutcomeBuilder.build_run_finished_payload(
+            self._ask_user_question_interrupts, "resolved", resume_answers=resume_answers
+        )
+        terminal_content = {
+            "message": "用户问题已回答",
+            "outcome": outcome_dict,
+            "result": [result_dict] if result_dict else [],
+            "runId": interrupt_id,
+            "threadId": input.thread_id or "",
+        }
+
+        # 替换 interrupt 消息的 content
+        updated_messages = []
+        found_interrupt = False
+        for msg in messages:
+            msg_dict = msg if isinstance(msg, dict) else (msg.model_dump() if hasattr(msg, "model_dump") else dict(msg))
+            # 找到 role=interrupt 的消息，替换 content
+            if not found_interrupt and msg_dict.get("role") == "interrupt":
+                msg_dict = dict(msg_dict)
+                msg_dict["content"] = terminal_content
+                msg_dict["status"] = "complete"
+                found_interrupt = True
+            updated_messages.append(msg_dict)
+
+        if not found_interrupt:
+            return None
+
+        return MessageSnapshotEventExtend(
+            type=EventType.MESSAGES_SNAPSHOT,
+            messages=updated_messages,
+        )
+
     def _should_emit_resume_approval_finished(self) -> bool:
-        """是否需要在续流首位发送"终态 RUN_FINISHED"。
+        """是否需要在续流首位发送"终态 RUN_FINISHED"（approval 专用）。
 
         触发条件（&，全部满足）：
 
@@ -374,9 +328,43 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         first = self._approval_interrupts[0] or {}
         return isinstance(first, dict) and first.get("reason") == TOOL_APPROVAL_REASON
 
-    def _build_resume_approval_finished_event(
-        self, input: RunAgentInput
-    ) -> RunFinishedEvent:
+    def _build_resume_ask_user_question_finished_event(self, input: RunAgentInput):
+        """构造 ask_user_question 续流首条 ACTIVITY_SNAPSHOT 事件。
+
+        前端通过 ACTIVITY_SNAPSHOT（activityType=interrupt）关闭弹窗：
+        - content.outcome.type = "success"
+        - content.result[0] 含 interruptId / payload.answers / reason / status
+        - content.runId = interruptId（前端据此关联弹窗）
+        - content.threadId
+        - replace = true（替换原弹窗内容）
+        """
+        # WR-03：复用 _resolve_resume_context 解析 resume（与 _build_updated_messages_snapshot 共享）
+        interrupt_id, resume_answers = self._resolve_resume_context(input)
+
+        # 调用 AskUserQuestionOutcomeBuilder 构造终态 (outcome, result)——
+        # 与 approval 续流路径对称（ApprovalOutcomeBuilder.build_run_finished_payload）。
+        # outcome 含 interrupts 字段（深拷贝 + status 刷写为 resolved），让前端能拿到已答问题的历史中断数据。
+        # D-05: resume_answers 通过参数注入 builder，不再需要调用方后修正。
+        outcome_dict, result_dict = AskUserQuestionOutcomeBuilder.build_run_finished_payload(
+            self._ask_user_question_interrupts, "resolved", resume_answers=resume_answers
+        )
+        content = {
+            "message": "用户问题已回答",
+            "outcome": outcome_dict,
+            "result": [result_dict] if result_dict else [],
+            "runId": interrupt_id,
+            "threadId": input.thread_id or "",
+        }
+
+        return ActivitySnapshotEvent(
+            type=EventType.ACTIVITY_SNAPSHOT,
+            messageId=interrupt_id,
+            activityType="interrupt",
+            content=content,
+            replace=True,
+        )
+
+    def _build_resume_approval_finished_event(self, input: RunAgentInput) -> RunFinishedEvent:
         """构造续流首条"终态形态" RUN_FINISHED 事件。
 
         - ``run_id`` 优先取前端续流请求 ``input.resume[0].interruptId``，
@@ -407,25 +395,154 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
             result=result_dict,
         )
 
+    def build_terminal_replay_stream(
+        self,
+        agent_input: AgentInput,
+        replayable_messages: list[BaseMessage] | None = None,
+    ) -> Generator[Any, None, None]:
+        """把终态 checkpoint 重建成与正常流一致的 AG-UI 编码事件序列。
+
+        续流（resume）场景仍然不下发终态 ``MESSAGES_SNAPSHOT``——前端 SNAPSHOT 是
+        覆盖式语义，会把前端已渲染的历史消息全部覆盖。同样不发 ``STATE_SNAPSHOT``——
+        其经 ``get_state_snapshot`` 依赖 ``agui_entry.active_run`` 运行期状态，而重放
+        路径下 ``agui_entry.run`` 从未执行，该状态未初始化。
+
+        关于"片段语义"：调用方在续流路径下跳过了 checkpoint 同步，故 checkpoint 中的
+        ``messages`` 是**完整 turn**
+        （``[Human, AI(tool_call), Tool, AI(回复)]``）而非历史上的"仅新增片段"。
+        但 ``langchain_messages_to_streaming_events`` 主动过滤
+        ``Human/System/Interrupt/Activity``，只下发 ``AI/Tool`` 的可重放事件，
+        因此最终前端拿到的仍是"前端缺的那段"（worker 异步跑完 + 30s 队列窗口已过
+        的兜底场景下，前端无法通过方案 A 队列接管拿到 worker 写的事件流）：
+        前端按 ``message_id`` / ``tool_call_id`` 增量合并，与正常 astream 路径下
+        的渲染同构，不会撞覆盖式语义。
+        """
+        encoder = EventEncoder()
+        run_id = agent_input.run_id or uuid.uuid4().hex
+
+        # 1) 审批中断恢复：先回放终态 RUN_FINISHED，让前端把原中断卡片更新为最终状态
+        #    （approved / rejected / cancelled），与 AidevAGUIAgent.run 续流首条事件同源。
+        try:
+            if self._should_emit_resume_approval_finished():
+                yield encoder.encode(self._build_resume_approval_finished_event(agent_input))
+        except Exception:
+            logger.exception("[ResumeReplay] emit resume approval RUN_FINISHED failed")
+
+        # 2) RUN_STARTED
+        yield encoder.encode(
+            RunStartedEvent(type=EventType.RUN_STARTED, thread_id=agent_input.thread_id, run_id=run_id)
+        )
+
+        # 3) 把 checkpoint 「片段」消息逐条转为流式增量事件下发，补齐前端缺失的本轮 worker 续流内容。
+        #    转换器内部会跳过 Human/System/Interrupt/Activity 消息，只下发 AI/Tool 的可重放事件。
+        if replayable_messages:
+            try:
+                event_count = 0
+                for ev in langchain_messages_to_streaming_events(replayable_messages):
+                    yield encoder.encode(ev)
+                    event_count += 1
+                logger.info(
+                    "[ResumeReplay] streamed %d incremental events from checkpoint fragment, thread_id=%s",
+                    event_count,
+                    agent_input.thread_id,
+                )
+            except Exception:
+                logger.exception(
+                    "[ResumeReplay] failed to stream checkpoint fragment, thread_id=%s",
+                    agent_input.thread_id,
+                )
+
+        # 4) RUN_FINISHED（续流场景不下发 MESSAGES_SNAPSHOT，前端复用已有消息状态 + 上面补发的增量事件）
+        yield encoder.encode(
+            RunFinishedEvent(
+                type=EventType.RUN_FINISHED,
+                thread_id=agent_input.thread_id,
+                run_id=run_id,
+                outcome=serialize_run_finished_outcome(RunFinishedSuccessOutcome()),
+            )
+        )
+
+    async def _handle_single_event(self, event: Any, state: State) -> AsyncGenerator[BaseEvent, None]:
+        """覆写：super + 拦截 TOOL_CALL_* yield，审批抑制 + 工具增强在构造侧完成（D-01）。
+
+        MRO: AidevAGUIAgent → LangGraphAGUIAgent（PredictState 注入）→ LangGraphAgent（4 子方法分发）。
+        super()._handle_single_event 执行完整链路后，拦截 yield 的 TOOL_CALL_* 事件：
+        - ToolCallStartEvent: 审批工具抑制（不 yield + 记录 id），非审批工具 enhance 后 yield ExtendToolCallStartEvent
+        - ToolCallArgsEvent: 已抑制 id 的不 yield
+        - ToolCallEndEvent: 已抑制 id 的不 yield + discard
+
+        覆盖所有 TOOL_CALL 来源（_handle_*_stream_event 子方法 + _handle_on_chat_model_end_event + ManuallyEmitToolCall），
+        不需覆写 3 个子方法。ManuallyEmitToolCall 的 tool_call_id 不在 _suppressed_tool_call_ids（手动发射不审批），透传。
+        """
+        async for ev in super()._handle_single_event(event, state):
+            if isinstance(ev, ToolCallStartEvent):
+                if is_tool_approval_required(ev.tool_call_name, self._tool_mapping):
+                    logger.info(f"[AidevAGUIAgent] 抑制需要审批的工具流式事件: {ev.tool_call_name} ({ev.tool_call_id})")
+                    self._suppressed_tool_call_ids.add(ev.tool_call_id)
+                    continue  # suppress
+                enhanced = enhance_tool_call(ev.tool_call_name, self._tool_mapping)
+                ev = ExtendToolCallStartEvent(**{**ev.model_dump(), **enhanced})
+            elif isinstance(ev, ToolCallArgsEvent):
+                if ev.tool_call_id in self._suppressed_tool_call_ids:
+                    continue  # suppress
+            elif isinstance(ev, ToolCallEndEvent):
+                if ev.tool_call_id in self._suppressed_tool_call_ids:
+                    self._suppressed_tool_call_ids.discard(ev.tool_call_id)
+                    continue  # suppress
+            yield ev
+
+    async def _handle_on_custom_event(self, event: Any) -> AsyncGenerator[BaseEvent, None]:
+        """覆写：处理 OnToolNodeFinish/OnToolNodeImmediate/KnowledgeRag CUSTOM 转换（D-04）。
+
+        D-01 后子方法 yield Event（不 dispatch），_dispatch_event 由 _handle_stream_events 消费侧执行。
+        原先在 _convert_event CUSTOM 分支中做的 CUSTOM→ToolCallResultEvent/透传转换，
+        现在在构造侧（本覆写）完成，yield 转换后的 Event。
+
+        分支顺序与原 _convert_custom_event 保持一致：KNOWLEDGE_RAG_RESULT 优先（D-14 透传），
+        OnToolNodeFinish/OnToolNodeImmediate 随后（→ ToolCallResultEvent），其余委托 super()。
+        """
+        name = event.get("name", "")
+        if name == CustomMessageType.KNOWLEDGE_RAG_RESULT.value:
+            # 旧 _handle_reference_document 从 event.raw_event.get("data",{}).get("data",[]) 取出数组，
+            # 构造 value=list 的新 CustomEvent 只推给 SSE。但 D-12 合流后 DB 也会收到这个精简事件，
+            # 而 DB 侧 handle_reference_document 依赖 event.value 是 dict 才能取 message_id（base.py:861-862
+            # 的 isinstance(event.value, dict) 判断）——list 会 fallback 到 {}，导致 message_id=None、
+            # reference_documents=[]、直接 return，知识库引用文档不再写库（数据丢失回归）。
+            #
+            # 修复：直接透传构造完整 dict 的 CustomEvent（原样保留 value=event["data"]）。
+            # 该 event["data"] 即 {"message_id":..., "data":[...], "duration":...} 完整 dict。
+            # 透传后 DB 收到 event.value 是完整 dict → isinstance(dict) 为 True → message_id 正确提取 → 写库正常。
+            # SSE 前端消费 event.value.data 字段，多出的 message_id/duration 被容错忽略，不破坏 SSE 协议。
+            yield CustomEvent(
+                type=EventType.CUSTOM,
+                name=name,
+                value=event["data"],
+                raw_event=event,
+            )
+            return
+        elif name == CustomEventNames.OnToolNodeFinish.value:
+            yield build_tool_result_event(event["data"], is_immediate=False)
+            return
+        elif name == CustomEventNames.OnToolNodeImmediate.value:
+            yield build_tool_result_event(event["data"], is_immediate=True)
+            return
+        async for ev in super()._handle_on_custom_event(event):
+            yield ev
+
     def _dispatch_event(self, event: BaseEvent) -> str:
-        """分发事件，使用 EventDispatcher 处理不同类型的事件"""
-        # 触发外部事件处理器（如 BaseSessionWriter）
+        """DB + SSE 纯分发（转换已在构造侧 _handle_single_event 覆写完成）。"""
         if self._event_handler:
             try:
                 self._event_handler(event)
             except Exception as e:
                 logger.exception(f"Event handler failed: {e}")
 
-        return self._event_dispatcher.dispatch(event)
-
-    def _parent_dispatch(self, event: BaseEvent) -> str:
-        """调用父类的事件分发方法"""
         return super()._dispatch_event(event)
 
-    async def _handle_stream_events(self, input: RunAgentInput) -> AsyncGenerator[str, None]:
+    async def _handle_stream_events(self, input: RunAgentInput, config: RunnableConfig) -> AsyncGenerator[str, None]:
         """处理流事件，添加异常处理"""
         try:
-            async for event in super()._handle_stream_events(input):
+            async for event in super()._handle_stream_events(input, config):
                 yield event
         except Exception as e:
             logger.exception(f"Failed to handle stream events: {e}")
@@ -435,7 +552,7 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
             yield self._dispatch_event(
                 RunFinishedEvent(
                     type=EventType.RUN_FINISHED,
-                    thread_id=input.thread_id or "",
+                    thread_id=input.thread_id,
                     run_id=self.active_run.get("id", "") if self.active_run else "",
                     outcome=serialize_run_finished_outcome(RunFinishedSuccessOutcome()),
                 )

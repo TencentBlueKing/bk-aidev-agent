@@ -20,7 +20,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 # ---------------------------------------------------------------------------
 
 
-def _should_continue(state: dict) -> Literal["pv_node", "end"]:
+def _should_continue(state: dict) -> Literal["approval_check", "end"]:
     """条件路由函数：决定 model 节点后的下一步（与 graph.py 一致）。"""
     messages = state.get("messages", [])
     if not messages:
@@ -29,7 +29,7 @@ def _should_continue(state: dict) -> Literal["pv_node", "end"]:
     last_message = messages[-1]
 
     if isinstance(last_message, AIMessage) and last_message.tool_calls:
-        return "pv_node"
+        return "approval_check"
 
     return "end"
 
@@ -39,12 +39,12 @@ def _should_continue(state: dict) -> Literal["pv_node", "end"]:
 # ---------------------------------------------------------------------------
 
 
-def test_should_continue_returns_pv_node():
-    """AIMessage 有 tool_calls 时，_should_continue 返回 'pv_node'。"""
+def test_should_continue_returns_approval_check():
+    """AIMessage 有 tool_calls 时，_should_continue 返回 'approval_check'。"""
     ai_msg = AIMessage(content="", tool_calls=[{"id": "tc1", "name": "test_tool", "args": {}}])
     state = {"messages": [ai_msg]}
     result = _should_continue(state)
-    assert result == "pv_node"
+    assert result == "approval_check"
 
 
 def test_should_continue_returns_end():

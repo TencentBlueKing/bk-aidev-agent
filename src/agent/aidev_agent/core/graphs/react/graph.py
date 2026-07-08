@@ -18,7 +18,6 @@ to the current version of the project delivered to anyone in the future.
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import TYPE_CHECKING, Annotated, Any, Callable, List, Optional, Sequence, Tuple, get_type_hints
 
@@ -26,9 +25,8 @@ from langchain.agents.middleware.types import (
     AgentMiddleware,
     AgentState,
 )
-from langchain_core.callbacks import dispatch_custom_event
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.stores import ByteStore
 from langchain_core.tools import BaseTool
@@ -39,7 +37,6 @@ from langgraph.constants import END, START
 from langgraph.graph import add_messages
 from langgraph.graph.state import StateGraph
 from langgraph.store.memory import InMemoryStore
-from langgraph.types import Command
 from typing_extensions import Literal, TypedDict, TypeVar
 
 from aidev_agent.config import settings
@@ -50,17 +47,16 @@ from aidev_agent.core.graphs.react.skill_middleware import (
     _extract_paas_params,
 )
 from aidev_agent.core.graphs.react.team_middleware import TeamInfo, TeamPromptMiddleware
+from aidev_agent.core.nodes.interrupt import (
+    ItsmApprovalStrategy,
+    UserQuestionStrategy,
+    make_interrupt_node,
+)
 from aidev_agent.core.nodes.knowledge import make_knowledge_node
 from aidev_agent.core.nodes.model import ModelNodeSettings
 from aidev_agent.core.nodes.model import build_model_node as std_make_model_node
 from aidev_agent.core.nodes.pv import add_pv_info, make_pv_node
 from aidev_agent.core.nodes.tool import ToolNodeSettings, build_tool_node
-from aidev_agent.core.nodes.tool.approval_wrapper import (
-    get_tool_call_approval_record_from_state,
-    identify_message_approval_targets,
-    request_approval_decision,
-    update_tool_call_approval_record,
-)
 from aidev_agent.core.tools.a2a_tools.bkai_backend import BkaiBackend
 from aidev_agent.core.tools.a2a_tools.local_backend import LocalBackend
 from aidev_agent.core.tools.a2a_tools.provider import AgentBackendResolver, get_agent_tools
@@ -83,8 +79,6 @@ if TYPE_CHECKING:
     from langgraph.store.base import BaseStore
 
     from aidev_agent.core.tools.a2a_tools.types import AgentSpec
-
-from aidev_agent.core.ag_ui.types import LangGraphEventTypes
 
 ResponseT = TypeVar("ResponseT")
 
@@ -126,6 +120,10 @@ class DefaultState(TypedDict):
     knowledge_qa_content: list
     with_qa_response: list
     runtime_paas_sbx_pv: Annotated[list[dict], add_pv_info]
+    # ask_user_question 中断策略写入的用户答案（D-07），无 reducer 直接覆盖。
+    # UserQuestionStrategy.interrupt 续流时写入 {tool_call_id: resolved_answer}，
+    # ask_user_question 工具函数通过 InjectedState 读取。
+    ask_user_question_answers: dict[str, Any]
 
 
 class KnowledgeInputState(TypedDict):
@@ -176,9 +174,11 @@ class ReActAgentBuilder:
         self._runtime_backend_resolver = None
         self._runtime_types: dict[str, type] = {}  # runtime_name -> backend_class
         self._enable_security_runtime: bool = True  # 默认启用安全校验
+        self._enable_ask_user_question_tool: bool = True
         # Graph 运行时参数设置
         self._model_context_options: ModelContextSettings | None = None
         self._knowledge_query_options: KnowledgeSettings | None = None
+        self._enable_agentic_rag_tool: bool = False
         self._executor_info: dict | None = None
         self._callbacks: list | None = None
         self._file_store: ByteStore | None = None
@@ -402,6 +402,16 @@ class ReActAgentBuilder:
         self._enable_runtime_tool = bool(enable_runtime_tool)
         return self
 
+    def set_enable_ask_user_question_tool(self, enable: bool = True) -> "ReActAgentBuilder":
+        """启用/禁用 ask_user_question 工具（D-02, D-03）。
+
+        默认开启。业务侧可通过 ``builder.set_enable_ask_user_question_tool(False)``
+        关闭。工具注册到 tool_node，LLM 调用时内部通过 ``interrupt()`` 暂停图执行，
+        等待用户回答（D-01）。
+        """
+        self._enable_ask_user_question_tool = bool(enable)
+        return self
+
     def register_runtime_type(self, name: str, cls: type) -> "ReActAgentBuilder":
         """注册 runtime 名称到 backend 类的映射。
 
@@ -525,6 +535,7 @@ class ReActAgentBuilder:
             self._executor_info = options.executor_info
         if options.knowledge_query_options is not None:
             self._knowledge_query_options = options.knowledge_query_options
+            self._enable_agentic_rag_tool = options.knowledge_query_options.enable_agentic_rag_tool
         if options.model_context_options is not None:
             self._model_context_options = options.model_context_options
 
@@ -698,7 +709,6 @@ class ReActAgentBuilder:
         extra_tools: List[BaseTool] = None,
         ignore_errors: bool = False,
         langchain_middleware: Sequence[AgentMiddleware],
-        enable_agentic_rag_tool: bool = False,
     ) -> List[BaseTool]:
         tools: List[BaseTool] = []
         # 加载所有传入的工具
@@ -730,7 +740,7 @@ class ReActAgentBuilder:
             a2a_tools = get_agent_tools(self._a2a_specs, self._a2a_resolver)
             tools.extend(a2a_tools)
 
-        if enable_agentic_rag_tool:
+        if self._enable_agentic_rag_tool:
             # Agentic RAG模式：将知识检索作为工具
             knowledge_tool = make_knowledge_retrieval_tool(
                 llm=self._knowledge_llm,
@@ -905,33 +915,19 @@ class ReActAgentBuilder:
         )
 
     @staticmethod
-    def _should_continue(state: dict) -> Literal["pv_node", "end"]:
+    def _should_continue(state: dict) -> Literal["approval_check", "end"]:
         """条件路由函数：决定 model 节点后的下一步。
 
         检查模型输出是否包含 tool_calls：
-        - 如果有 tool_calls，路由到 pv_node 节点（惰性创建 PV）
+        - 如果有 tool_calls，路由到 approval_check 节点（审批检查）
         - 否则路由到 end 结束对话
 
         Args:
             state: 当前状态字典
 
         Returns:
-            "pv_node" 或 "end"
+            "approval_check" 或 "end"
         """
-        messages = state.get("messages", [])
-        if not messages:
-            return "end"
-
-        last_message = messages[-1]
-
-        if isinstance(last_message, AIMessage) and last_message.tool_calls:
-            return "pv_node"
-
-        return "end"
-
-    @staticmethod
-    def _should_continue_with_approval(state: dict) -> "Literal['approval_check', 'end']":
-        """条件路由函数：决定 model 节点后的下一步（带审批检查）。"""
         messages = state.get("messages", [])
         if not messages:
             return "end"
@@ -942,129 +938,6 @@ class ReActAgentBuilder:
             return "approval_check"
 
         return "end"
-
-    @staticmethod
-    def _make_approval_check_node(tools: List[BaseTool]):
-        """创建审批检查节点函数。
-
-        在 model 节点之后、tools 节点之前检查工具是否需要审批。
-        如果需要审批，会基于 tool_call 逐个识别审批目标并写回消息级审批状态。
-        审批通过的 tool_call 继续执行，审批拒绝的 tool_call 由 tools 节点包装器返回拒绝结果。
-        """
-        tool_map = {tool.name: tool for tool in tools}
-
-        def _check(state: dict, config: RunnableConfig) -> Command:
-            messages = state.get("messages", [])
-            if not messages:
-                return Command(goto="end")
-
-            last_message = messages[-1]
-
-            if not isinstance(last_message, AIMessage) or not last_message.tool_calls:
-                return Command(goto="end")
-
-            _cfg_execute_kwargs = config.get("configurable", {}).get("execute_kwargs")
-            _is_resuming = bool(getattr(_cfg_execute_kwargs, "resume", None)) if _cfg_execute_kwargs else False
-
-            # 提取 resume 列表中所有 interruptId，
-            # 用于精确判断某个 target 是否属于本次续流恢复的对象。
-            _resume_interrupt_ids: set[str] = set()
-            if _is_resuming:
-                _resume_items = getattr(_cfg_execute_kwargs, "resume", None) or []
-                if isinstance(_resume_items, dict):
-                    _resume_items = [_resume_items]
-                for item in _resume_items:
-                    interrupt_id = (
-                        item.get("interruptId", "") if isinstance(item, dict) else getattr(item, "interruptId", "")
-                    )
-                    if interrupt_id:
-                        _resume_interrupt_ids.add(interrupt_id)
-
-            approval_targets = identify_message_approval_targets(last_message.tool_calls, tool_map)
-            if not approval_targets:
-                return Command(goto="pv_node")
-
-            # 收集本轮对话（最后一条 HumanMessage 之后）已有审批终态的 (tool_code, args) → status，
-            # 同一轮中同工具同参数复用已有审批结果（如工具执行失败后 model 自动重试）。
-            _finalized_tool_signatures: dict[str, str] = {}
-            if _is_resuming:
-                _turn_start = 0
-                for i in range(len(messages) - 1, -1, -1):
-                    if isinstance(messages[i], HumanMessage):
-                        _turn_start = i + 1
-                        break
-                for msg in messages[_turn_start:]:
-                    if not isinstance(msg, AIMessage):
-                        continue
-                    approval_map = msg.additional_kwargs.get("tool_approval", {})
-                    if not isinstance(approval_map, dict):
-                        continue
-                    for tc in msg.tool_calls or []:
-                        record = approval_map.get(tc.get("id", ""))
-                        if isinstance(record, dict) and record.get("status") in ("approved", "rejected"):
-                            code = record.get("toolCode") or tc.get("name", "")
-                            sig = f"{code}::{json.dumps(tc.get('args', {}), sort_keys=True)}"
-                            # 保留最新的终态（后出现的覆盖前面的）
-                            _finalized_tool_signatures[sig] = record["status"]
-
-            updated_message = last_message
-            for target in approval_targets:
-                existing_record = get_tool_call_approval_record_from_state(state, target.target_id)
-                existing_status = existing_record.get("status") if isinstance(existing_record, dict) else None
-
-                if existing_status == "approved":
-                    continue
-                if existing_status == "rejected":
-                    continue
-
-                # 同轮次同工具同参数已有审批终态，直接复用结果
-                _target_sig = f"{target.target_code}::{json.dumps(target.args or {}, sort_keys=True)}"
-                _prior_status = _finalized_tool_signatures.get(_target_sig)
-                if _prior_status:
-                    updated_message = update_tool_call_approval_record(
-                        updated_message, target, status=_prior_status, interrupt_payload=None
-                    )
-                    continue
-
-                interrupt_holder: dict[str, dict] = {}
-
-                def _emit_interrupt(payload: dict[str, Any]) -> None:
-                    interrupt_holder["payload"] = payload
-                    dispatch_custom_event(
-                        LangGraphEventTypes.OnInterrupt.value,
-                        payload,
-                        config=config,
-                    )
-
-                # 判断当前 target 是否属于本次续流恢复：
-                # interrupt_id 格式为 "int-approval-{target_id}-{suffix}"，
-                # 用 startswith 精确匹配避免 :1 误匹配 :10。
-                _approval_id_prefix = f"int-approval-{target.target_id}-"
-                _target_is_resuming = _is_resuming and any(
-                    interrupt_id.startswith(_approval_id_prefix)
-                    for interrupt_id in _resume_interrupt_ids
-                )
-
-                approved = request_approval_decision(
-                    target,
-                    execute_kwargs=_cfg_execute_kwargs,
-                    is_resuming=_target_is_resuming,
-                    on_interrupt=_emit_interrupt,
-                    interrupt_payload=existing_record.get("interrupt") if isinstance(existing_record, dict) else None,
-                )
-                status = "approved" if approved else "rejected"
-                # 实时更新签名集合，供同一次节点执行中后续 target 复用
-                _finalized_tool_signatures[_target_sig] = status
-                updated_message = update_tool_call_approval_record(
-                    updated_message,
-                    target,
-                    status=status,
-                    interrupt_payload=interrupt_holder.get("payload")
-                    or (existing_record.get("interrupt") if isinstance(existing_record, dict) else None),
-                )
-            return Command(update={"messages": [updated_message]}, goto="pv_node")
-
-        return _check
 
     def _build_graph(
         self,
@@ -1133,31 +1006,18 @@ class ReActAgentBuilder:
         if tool_node:
             graph.add_node("pv_node", pv_node)
             graph.add_node("tools", tool_node)
-            # 如果提供了 tools 列表，添加 approval_check 节点（审批闭环）
-            if tools:
-                approval_check_func = self._make_approval_check_node(tools)
-                graph.add_node("approval_check", approval_check_func)
-                # model → (should_continue) → approval_check / end
-                graph.add_conditional_edges(
-                    "model",
-                    self._should_continue_with_approval,
-                    {
-                        "approval_check": "approval_check",
-                        "end": END,
-                    },
-                )
-                # approval_check 内部通过 Command(goto=...) 决定下一步：
-                # 审批通过 → pv_node（再到 tools）；拒绝 → model；无需审批 → pv_node
-            else:
-                # model → (should_continue) → pv_node / end
-                graph.add_conditional_edges(
-                    "model",
-                    self._should_continue,
-                    {
-                        "pv_node": "pv_node",
-                        "end": END,
-                    },
-                )
+            approval_check_func = make_interrupt_node([ItsmApprovalStrategy(tools), UserQuestionStrategy()])
+            graph.add_node("approval_check", approval_check_func)
+            # model → (should_continue) → approval_check / end
+            graph.add_conditional_edges(
+                "model",
+                self._should_continue,
+                {
+                    "approval_check": "approval_check",
+                    "end": END,
+                },
+            )
+            # approval_check 内部通过 Command(goto=...) 决定下一步
             # pv_node → tools → model (形成 ReAct 循环)
             graph.add_edge("pv_node", "tools")
             graph.add_edge("tools", "model")
@@ -1219,8 +1079,21 @@ class ReActAgentBuilder:
             self._prepare_a2a()
 
         # 判断使用哪种RAG模式
-        enable_agentic_rag_tool = self._knowledge_query_options.enable_agentic_rag_tool
-        enable_knowledge_node = self._knowledge_query_options.enable_knowledge_node
+        knowledge_query_options = self._knowledge_query_options
+        enable_knowledge_node = (
+            knowledge_query_options.enable_knowledge_node if knowledge_query_options is not None else False
+        )
+
+        # ask_user_question 工具注入（D-01/D-02）。局部 import 避免模块加载时
+        # 的循环 import（graph.py 在模块依赖图中较早被导入）。
+        if self._enable_ask_user_question_tool:
+            from aidev_agent.core.tools.ask_user_question import (
+                ask_user_question as _ask_user_question_tool,
+            )
+
+            if self._extra_tools is None:
+                self._extra_tools = []
+            self._extra_tools.append(_ask_user_question_tool)
 
         # 统一处理 tools
         tool_ignore_errors = self._compute_use_structured_response()
@@ -1228,7 +1101,6 @@ class ReActAgentBuilder:
             extra_tools=self._extra_tools,
             ignore_errors=tool_ignore_errors,
             langchain_middleware=self._langchain_middleware,
-            enable_agentic_rag_tool=enable_agentic_rag_tool,
         )
 
         # 两步RAG模式：创建独立的knowledge_node

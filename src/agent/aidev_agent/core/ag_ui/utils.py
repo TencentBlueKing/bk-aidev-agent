@@ -73,6 +73,45 @@ from ...enums import PromptRole
 DEFAULT_SCHEMA_KEYS = ["tools"]
 
 
+def get_schema_keys(graph, config, constant_schema_keys: list[str]) -> SchemaKeys:
+    """独立计算 graph 的 schema keys（11.8: 从 agent.py.get_schema_keys 抽出）。
+
+    接收 graph 和 constant_schema_keys 参数（替代 self.graph / self.constant_schema_keys），
+    使 chat.py 可在 agui_entry 构造前直接调用，消除循环依赖。
+    """
+    try:
+        input_schema = graph.get_input_jsonschema(config)
+        output_schema = graph.get_output_jsonschema(config)
+        config_schema = (
+            graph.get_context_jsonschema(config).get("definitions", {}).get("Config", {}).get("properties", {})
+        )
+
+        input_schema_keys = list(input_schema["properties"].keys()) if "properties" in input_schema else []
+        output_schema_keys = list(output_schema["properties"].keys()) if "properties" in output_schema else []
+        config_schema_keys = list(config_schema.keys()) if isinstance(config_schema, dict) else []
+        context_schema_keys = []
+
+        if hasattr(graph, "context_schema") and graph.context_schema is not None:
+            context_schema = graph.context_schema().schema()
+            context_schema_keys = (
+                list(context_schema["properties"].keys()) if "properties" in context_schema else []
+            )
+
+        return {
+            "input": [*input_schema_keys, *constant_schema_keys],
+            "output": [*output_schema_keys, *constant_schema_keys],
+            "config": config_schema_keys,
+            "context": context_schema_keys,
+        }
+    except Exception:
+        return {
+            "input": constant_schema_keys,
+            "output": constant_schema_keys,
+            "config": [],
+            "context": [],
+        }
+
+
 def filter_object_by_schema_keys(obj: dict[str, Any], schema_keys: list[str]) -> dict[str, Any]:
     if not obj:
         return {}
@@ -614,4 +653,72 @@ def _tool_message_to_event(message: ToolMessage) -> BaseEvent:
         is_error=is_error or None,
         duration=(message.additional_kwargs or {}).get("duration"),
     )
+
+
+def unwrap_interrupt_source(source: Any) -> Any:
+    """从 RUN_FINISHED 事件中解包出 interrupt[0]。"""
+    if not isinstance(source, dict) or source.get("type") != "RUN_FINISHED":
+        return source
+
+    outcome = source.get("outcome")
+    if not isinstance(outcome, dict) or outcome.get("type") != "interrupt":
+        return source
+
+    interrupts = outcome.get("interrupts") or []
+    if interrupts:
+        return interrupts[0]
+    return source
+
+
+def get_interrupt_value(source: Any, *keys: str) -> Any:
+    """从 interrupt 对象/dict 中按多个候选 key 查找值。"""
+    source = unwrap_interrupt_source(source)
+    # LangGraph Interrupt 对象：实际 payload 在 source.value 中，
+    # 需要解包后才能按 dict 方式查找 callbackToken、metadata 等字段
+    original_source = source
+    if not isinstance(source, dict) and hasattr(source, "value"):
+        inner = source.value
+        if isinstance(inner, dict):
+            source = inner
+
+    metadata = {}
+    raw_metadata = source.get("metadata") if isinstance(source, dict) else getattr(source, "metadata", None)
+    if isinstance(raw_metadata, dict):
+        metadata = raw_metadata
+
+    nested_candidates = []
+    if isinstance(metadata.get("ticket"), dict):
+        nested_candidates.append(metadata["ticket"])
+    if isinstance(metadata.get("approval"), dict):
+        nested_candidates.append(metadata["approval"])
+    if isinstance(metadata.get("target"), dict):
+        nested_candidates.append(metadata["target"])
+    if isinstance(metadata.get("execution"), dict):
+        nested_candidates.append(metadata["execution"])
+
+    for candidate in nested_candidates:
+        for key in keys:
+            if key in candidate and candidate[key] is not None:
+                return candidate[key]
+
+    for key in keys:
+        if key in metadata and metadata[key] is not None:
+            return metadata[key]
+
+    for key in keys:
+        if isinstance(source, dict):
+            if key in source and source[key] is not None:
+                return source[key]
+        else:
+            value = getattr(source, key, None)
+            if value is not None:
+                return value
+
+    # 兜底：对于 Interrupt 对象（source 已被替换为 value），
+    # 仍尝试从原始对象的属性中查找（如 Interrupt.id）
+    if original_source is not source:
+        for key in keys:
+            value = getattr(original_source, key, None)
+            if value is not None:
+                return value
 

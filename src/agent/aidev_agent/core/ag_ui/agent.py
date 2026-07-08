@@ -6,6 +6,7 @@ from logging import getLogger
 from typing import Any, Callable, Literal
 
 from ag_ui.core import (
+    BaseEvent,
     CustomEvent,
     EventType,
     RunAgentInput,
@@ -28,13 +29,8 @@ from ag_ui.core import (
     ToolCallEndEvent,
     ToolCallStartEvent,
 )
-from .types import Interrupt, RunFinishedInterruptOutcome, RunFinishedSuccessOutcome
 from langchain_core.messages import (
-    BaseMessage,
-    HumanMessage,
-    SystemMessage,
     ToolMessage,
-    message_to_dict,
 )
 from langchain_core.runnables import RunnableConfig, ensure_config
 from langgraph.graph.state import CompiledStateGraph
@@ -42,28 +38,31 @@ from langgraph.types import Command
 
 from aidev_agent.utils.event import RunId
 
+from .event_builders import build_model_end_payload, should_end_thinking, should_switch_thinking_step
 from .events import (
     ExtendThinkingEndEvent,
 )
 from .types import (
     CustomEventNames,
+    Interrupt,
     LangGraphEventTypes,
     LangGraphReasoning,
     MessageInProgress,
     MessagesInProgressRecord,
     MessageSnapshotEventExtend,
+    RunFinishedInterruptOutcome,
+    RunFinishedSuccessOutcome,
     RunMetadata,
     SchemaKeys,
     SessionPersistenceEventNames,
-    serialize_run_finished_outcome,
     State,
+    serialize_run_finished_outcome,
 )
 from .utils import (
     DEFAULT_SCHEMA_KEYS,
-    agui_messages_to_langchain,
     camel_to_snake,
     filter_object_by_schema_keys,
-    get_stream_payload_input,
+    get_schema_keys,
     json_safe_stringify,
     langchain_messages_to_agui,
     make_json_safe,
@@ -109,6 +108,7 @@ class LangGraphAgent:
         self.messages_in_process: MessagesInProgressRecord = {}
         self.active_run: RunMetadata | None = None
         self.constant_schema_keys = ["messages", "tools"]
+        self.front_end_display = True
         # 取消检测回调，返回 True 表示应该取消
         self._cancel_checker = cancel_checker
 
@@ -119,16 +119,34 @@ class LangGraphAgent:
         return event
 
     async def run(self, input: RunAgentInput) -> AsyncGenerator[str, None]:
+        # 获取 forwarded_props, 并且进行命名格式转换
+        # aidev_agent sdk使用 和 bkai平台的数据保存 都是 snake 格式
+        # 根据当前 AGUI 协议，后端向前端推送的都是 camel 格式
         forwarded_props = {}
         if hasattr(input, "forwarded_props") and input.forwarded_props:
             forwarded_props = {camel_to_snake(k): v for k, v in input.forwarded_props.items()}
-        async for event_str in self._handle_stream_events(
-            input.model_copy(update={"forwarded_props": forwarded_props})
-        ):
+        # 更新 RunAgentInput 和 config
+        # 避免 input state 和 input messages 为空
+        # 强制要求 config 的 configurable 中的 thread_id 指向 thread_id
+        input = input.model_copy(
+            update={
+                "forwarded_props": forwarded_props,
+                "state": input.state or {},
+                "messages": input.messages or [],
+            }
+        )
+        config = ensure_config(self.config.copy() if self.config else {})
+        config["configurable"] = {
+            **(config.get("configurable", {})),
+            "thread_id": input.thread_id,
+        }
+        # 启动流，并且把事件推送出去
+        async for event_str in self._handle_stream_events(input, config):
             yield event_str
 
-    async def _handle_stream_events(self, input: RunAgentInput) -> AsyncGenerator[str, None]:
-        thread_id = input.thread_id or str(uuid.uuid4())
+    async def _handle_stream_events(self, input: RunAgentInput, config: RunnableConfig) -> AsyncGenerator[str, None]:
+        thread_id = input.thread_id
+        assert thread_id, "input.thread_id must not be empty"
         INITIAL_ACTIVE_RUN = {
             "id": input.run_id,
             "thread_id": thread_id,
@@ -143,12 +161,6 @@ class LangGraphAgent:
         node_name_input = forwarded_props.get("node_name", None) if forwarded_props else None
 
         self.active_run["manually_emitted_state"] = None
-
-        config = ensure_config(self.config.copy() if self.config else {})
-        config["configurable"] = {
-            **(config.get("configurable", {})),
-            "thread_id": thread_id,
-        }
 
         agent_state = await self.graph.aget_state(config)
         resume_input = forwarded_props.get("command", {}).get("resume", None)
@@ -239,20 +251,8 @@ class LangGraphAgent:
                         raw_event=event,
                     )
                 )
-
-            if event_type == LangGraphEventTypes.OnChatModelEnd.value:
-                out = event.get("data", {}).get("output")
-                if out is not None:
-                    yield self._dispatch_event(
-                        CustomEvent(
-                            type=EventType.CUSTOM,
-                            name=SessionPersistenceEventNames.ChatModelEnd.value,
-                            value={"output": message_to_dict(out)},
-                        )
-                    )
-
             async for single_event in self._handle_single_event(event, state):
-                yield single_event
+                yield self._dispatch_event(single_event)
 
         # 如果被取消，跳过正常的状态获取，直接发送结束事件
         if _cancelled:
@@ -288,6 +288,7 @@ class LangGraphAgent:
             self.active_run = INITIAL_ACTIVE_RUN
             return
 
+        # Agent 已经退出，检查状态和退出原因
         state = await self.graph.aget_state(config)
 
         tasks = state.tasks if len(state.tasks) > 0 else None
@@ -311,16 +312,12 @@ class LangGraphAgent:
             yield ev
 
         final_snapshot_events = self._build_terminal_snapshot_events(state_values)
-        yield self._dispatch_event(
-            final_snapshot_events[0]
-        )
+        yield self._dispatch_event(final_snapshot_events[0])
 
         # 续流（resume）场景不再下发终态 MESSAGES_SNAPSHOT：
         # resume 时 state["messages"] 仅来自中断点的 checkpoint，并非完整会话历史
         if not resume_input:
-            yield self._dispatch_event(
-                final_snapshot_events[1]
-            )
+            yield self._dispatch_event(final_snapshot_events[1])
 
         # 构造 outcome（使用官方类型）
         if interrupt_values:
@@ -349,8 +346,17 @@ class LangGraphAgent:
         if not isinstance(value, dict):
             value = {"message": str(value)}
 
-        metadata = LangGraphAgent._normalize_interrupt_metadata(value)
-        interrupt_id = value.get("id") or value.get("interruptId") or f"int-{uuid.uuid4().hex[:12]}"
+        _metadata = value.get("metadata")
+        metadata = _metadata.copy() if isinstance(_metadata, dict) else {}
+        interrupt_id = value.get("id") or value.get("interruptId")
+        if not interrupt_id:
+            logger.warning(
+                "Interrupt value missing id/interruptId, generated fallback. reason=%s, toolCallId=%s, message=%s",
+                value.get("reason"),
+                value.get("toolCallId"),
+                str(value.get("message"))[:200],
+            )
+            interrupt_id = f"int-{uuid.uuid4().hex[:12]}"
         return Interrupt(
             id=interrupt_id,
             reason=value.get("reason") or "tool_call",
@@ -359,12 +365,9 @@ class LangGraphAgent:
             metadata=metadata or None,
         )
 
-    @staticmethod
-    def _normalize_interrupt_metadata(value: dict[str, Any]) -> dict[str, Any]:
-        metadata = value.get("metadata")
-        return metadata.copy() if isinstance(metadata, dict) else {}
-
-    def _build_terminal_snapshot_events(self, state_values: State) -> tuple[StateSnapshotEvent, MessageSnapshotEventExtend]:
+    def _build_terminal_snapshot_events(
+        self, state_values: State
+    ) -> tuple[StateSnapshotEvent, MessageSnapshotEventExtend]:
         return (
             StateSnapshotEvent(
                 type=EventType.STATE_SNAPSHOT,
@@ -377,43 +380,20 @@ class LangGraphAgent:
         )
 
     async def prepare_stream(self, input: RunAgentInput, agent_state: State, config: RunnableConfig):
-        state_input = input.state or {}
-        messages = input.messages or []
-        forwarded_props = input.forwarded_props or {}
+        forwarded_props = input.forwarded_props
         thread_id = input.thread_id
-        config["configurable"]["thread_id"] = thread_id
         interrupts = agent_state.tasks[0].interrupts if agent_state.tasks and len(agent_state.tasks) > 0 else []
         has_active_interrupts = len(interrupts) > 0
         resume_input = forwarded_props.get("command", {}).get("resume", None)
 
-        if resume_input:
-            state = agent_state.values.copy() if agent_state.values else state_input
-            langchain_messages = []
-        else:
-            # 不再依赖 checkpoint 中的 messages，直接使用后端数据库传来的完整历史
-            state_input["messages"] = []
-            langchain_messages = agui_messages_to_langchain(messages)
-            state = self.langgraph_default_merge_state(state_input, langchain_messages, input)
+        state = input.state
 
+        # 运行时状态设置（保留在 agent.py，供 _handle_stream_events / _handle_single_event 读取）
         self.active_run["current_graph_state"] = agent_state.values.copy()
         self.active_run["current_graph_state"].update(state)
-
         self.active_run["schema_keys"] = self.get_schema_keys(config)
 
-        non_system_messages = [msg for msg in langchain_messages if not isinstance(msg, SystemMessage)]
-        if not resume_input and len(agent_state.values.get("messages", [])) > len(non_system_messages):
-            # Find the last user message by working backwards from the last message
-            last_user_message = None
-            for i in range(len(langchain_messages) - 1, -1, -1):
-                if isinstance(langchain_messages[i], HumanMessage):
-                    last_user_message = langchain_messages[i]
-                    break
-
-            if last_user_message:
-                return await self.prepare_regenerate_stream(
-                    input=input, message_checkpoint=last_user_message, config=config
-                )
-
+        # interrupt 事件构造（保留在 agent.py）
         events_to_dispatch = []
         if has_active_interrupts and not resume_input:
             interrupt_values = [self._normalize_interrupt_value(interrupt.value) for interrupt in interrupts]
@@ -436,75 +416,22 @@ class LangGraphAgent:
                 "events_to_dispatch": events_to_dispatch,
             }
 
+        # continue 模式 state 更新
         if self.active_run["mode"] == "continue":
             await self.graph.aupdate_state(config, state, as_node=self.active_run.get("node_name"))
 
-        if resume_input:
-            stream_input = Command(resume=resume_input)
-        else:
-            payload_input = get_stream_payload_input(
-                mode=self.active_run["mode"],
-                state=state,
-                schema_keys=self.active_run["schema_keys"],
-            )
-            stream_input = {**forwarded_props, **payload_input} if payload_input else None
-
-        subgraphs_stream_enabled = input.forwarded_props.get("stream_subgraphs") if input.forwarded_props else False
-
-        # 普通请求传完整消息历史；resume 请求直接传 Command(resume=...) 给 LangGraph。
-        if isinstance(stream_input, Command):
-            stream_payload = stream_input
-        else:
-            stream_messages = stream_input["messages"] if stream_input else []
-            stream_payload = {**state, "messages": stream_messages}
-        kwargs = self.get_stream_kwargs(
-            input=stream_payload,
-            config=config,
-            subgraphs=bool(subgraphs_stream_enabled),
-            version="v2",
-        )
-
-        stream_input_final = kwargs.pop("input")
-        stream = self.graph.astream_events(stream_input_final, **kwargs)
-        return {"stream": stream, "state": state, "config": config}
-
-    async def prepare_regenerate_stream(  # pylint: disable=too-many-arguments
-        self,
-        input: RunAgentInput,
-        message_checkpoint: HumanMessage,
-        config: RunnableConfig,
-    ):
-        thread_id = input.thread_id
-
-        time_travel_checkpoint = await self.get_checkpoint_before_message(message_checkpoint.id, thread_id)
-        if time_travel_checkpoint is None:
-            return None
-
-        fork = await self.graph.aupdate_state(
-            time_travel_checkpoint.config,
-            time_travel_checkpoint.values,
-            as_node=time_travel_checkpoint.next[0] if time_travel_checkpoint.next else "__start__",
-        )
-
-        stream_input = self.langgraph_default_merge_state(time_travel_checkpoint.values, [message_checkpoint], input)
-        subgraphs_stream_enabled = input.forwarded_props.get("stream_subgraphs") if input.forwarded_props else False
-        if resume := input.forwarded_props.get("command", {}).get("resume"):
-            stream_input = Command(resume=resume)
+        # 统一 stream 启动
+        subgraphs_stream_enabled = forwarded_props.get("stream_subgraphs") if forwarded_props else False
 
         kwargs = self.get_stream_kwargs(
-            input=stream_input,
-            fork=fork,
+            input=input.stream_input,
             subgraphs=bool(subgraphs_stream_enabled),
             version="v2",
             config=config,
         )
         stream = self.graph.astream_events(**kwargs)
 
-        return {
-            "stream": stream,
-            "state": time_travel_checkpoint.values,
-            "config": config,
-        }
+        return {"stream": stream, "state": state, "config": config}
 
     def get_message_in_progress(self, run_id: str) -> MessageInProgress | None:
         return self.messages_in_process.get(run_id)
@@ -517,72 +444,8 @@ class LangGraphAgent:
         }
 
     def get_schema_keys(self, config) -> SchemaKeys:
-        try:
-            input_schema = self.graph.get_input_jsonschema(config)
-            output_schema = self.graph.get_output_jsonschema(config)
-            config_schema = (
-                self.graph.get_context_jsonschema(config).get("definitions", {}).get("Config", {}).get("properties", {})
-            )
-
-            input_schema_keys = list(input_schema["properties"].keys()) if "properties" in input_schema else []
-            output_schema_keys = list(output_schema["properties"].keys()) if "properties" in output_schema else []
-            config_schema_keys = list(config_schema.keys()) if isinstance(config_schema, dict) else []
-            context_schema_keys = []
-
-            if hasattr(self.graph, "context_schema") and self.graph.context_schema is not None:
-                context_schema = self.graph.context_schema().schema()
-                context_schema_keys = (
-                    list(context_schema["properties"].keys()) if "properties" in context_schema else []
-                )
-
-            return {
-                "input": [*input_schema_keys, *self.constant_schema_keys],
-                "output": [*output_schema_keys, *self.constant_schema_keys],
-                "config": config_schema_keys,
-                "context": context_schema_keys,
-            }
-        except Exception:
-            return {
-                "input": self.constant_schema_keys,
-                "output": self.constant_schema_keys,
-                "config": [],
-                "context": [],
-            }
-
-    def langgraph_default_merge_state(self, state: State, messages: list[BaseMessage], input: RunAgentInput) -> State:
-        # 直接使用传入的 messages（后端数据库的完整历史）
-        merged_messages = messages
-        tools = input.tools or []
-        tools_as_dicts = []
-        if tools:
-            for tool in tools:
-                if hasattr(tool, "model_dump"):
-                    tools_as_dicts.append(tool.model_dump())
-                elif hasattr(tool, "dict"):
-                    tools_as_dicts.append(tool.dict())
-                else:
-                    tools_as_dicts.append(tool)
-
-        all_tools = [*state.get("tools", []), *tools_as_dicts]
-
-        # Remove duplicates based on tool name
-        seen_names = set()
-        unique_tools = []
-        for tool in all_tools:
-            tool_name = tool.get("name") if isinstance(tool, dict) else getattr(tool, "name", None)
-            if tool_name and tool_name not in seen_names:
-                seen_names.add(tool_name)
-                unique_tools.append(tool)
-            elif not tool_name:
-                # Keep tools without names (shouldn't happen, but just in case)
-                unique_tools.append(tool)
-
-        return {
-            **state,
-            "messages": merged_messages,
-            "tools": unique_tools,
-            "ag-ui": {"tools": unique_tools, "context": input.context or []},
-        }
+        # 转为独立的工具函数，但是不影响调用方
+        return get_schema_keys(self.graph, config, self.constant_schema_keys)
 
     def get_state_snapshot(self, state: State) -> State:
         schema_keys = self.active_run["schema_keys"]
@@ -594,381 +457,390 @@ class LangGraphAgent:
         self,
         event: Any,
         state: State,  # noqa: ARG002
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[BaseEvent, None]:
         event_type = event.get("event")
         if event_type == LangGraphEventTypes.OnChatModelStream:
-            should_emit_messages = event["metadata"].get("emit-messages", True)
-            should_emit_tool_calls = event["metadata"].get("emit-tool-calls", True)
-
-            if event["data"]["chunk"].response_metadata.get("finish_reason", None):
-                return
-
-            current_stream = self.get_message_in_progress(self.active_run["id"])
-            has_current_stream = bool(current_stream and current_stream.get("id"))
-            tool_call_data = (
-                event["data"]["chunk"].tool_call_chunks[0] if event["data"]["chunk"].tool_call_chunks else None
-            )
-            predict_state_metadata = event["metadata"].get("predict_state", [])
-            tool_call_used_to_predict_state = False
-            if tool_call_data and tool_call_data.get("name") and predict_state_metadata:
-                tool_call_used_to_predict_state = any(
-                    predict_tool.get("tool") == tool_call_data["name"] for predict_tool in predict_state_metadata
-                )
-
-            # 判断是否为并行工具调用切换：当前 chunk 带有 name+id（新工具起始），
-            # 且 current_stream 中已有另一个工具在进行中（tool_call_id 不同）
-            is_parallel_tool_switch = (
-                tool_call_data
-                and tool_call_data.get("name")
-                and tool_call_data.get("id")
-                and has_current_stream
-                and current_stream.get("tool_call_id")
-                and current_stream["tool_call_id"] != tool_call_data["id"]
-            )
-
-            is_tool_call_start_event = (
-                tool_call_data
-                and tool_call_data.get("name")
-                and (not has_current_stream or not current_stream.get("tool_call_id") or is_parallel_tool_switch)
-            )
-            is_tool_call_args_event = (
-                has_current_stream
-                and current_stream.get("tool_call_id")
-                and tool_call_data
-                and tool_call_data.get("args")
-            )
-            is_tool_call_end_event = has_current_stream and current_stream.get("tool_call_id") and not tool_call_data
-
-            if is_tool_call_start_event or is_tool_call_end_event or is_tool_call_args_event:
-                self.active_run["has_function_streaming"] = True
-
-            reasoning_data = resolve_reasoning_content(event["data"]["chunk"]) if event["data"]["chunk"] else None
-            message_content = (
-                resolve_message_content(event["data"]["chunk"].content)
-                if event["data"]["chunk"] and event["data"]["chunk"].content
-                else None
-            )
-            is_message_content_event = tool_call_data is None and message_content
-            is_message_end_event = (
-                has_current_stream
-                and not current_stream.get("tool_call_id")
-                and not is_message_content_event
-                and not is_tool_call_start_event
-            )
-
-            if reasoning_data:
-                for each in self.handle_thinking_event(reasoning_data):
-                    yield each
-
-            if reasoning_data is None and self.active_run.get("thinking_process", None) is not None:
-                yield self._dispatch_event(
-                    ThinkingTextMessageEndEvent(
-                        type=EventType.THINKING_TEXT_MESSAGE_END,
-                    )
-                )
-                yield self._dispatch_event(
-                    ExtendThinkingEndEvent(
-                        duration=event.get("data", {}).get("chunk").additional_kwargs.get("reasoning_time", 0),
-                        type=EventType.THINKING_END,
-                    )
-                )
-                self.active_run["thinking_process"] = None
-
-            if tool_call_used_to_predict_state:
-                yield self._dispatch_event(
-                    CustomEvent(
-                        type=EventType.CUSTOM,
-                        name="PredictState",
-                        value=predict_state_metadata,
-                        raw_event=event,
-                    )
-                )
-
-            if is_tool_call_end_event:
-                yield self._dispatch_event(
-                    ToolCallEndEvent(
-                        type=EventType.TOOL_CALL_END,
-                        tool_call_id=current_stream["tool_call_id"],
-                        raw_event=event,
-                    )
-                )
-                self.messages_in_process[self.active_run["id"]] = None
-                return
-
-            if is_message_end_event:
-                yield self._dispatch_event(
-                    TextMessageEndEvent(
-                        type=EventType.TEXT_MESSAGE_END,
-                        message_id=current_stream["id"],
-                        raw_event=event,
-                    )
-                )
-                self.messages_in_process[self.active_run["id"]] = None
-                return
-
-            if is_tool_call_start_event and should_emit_tool_calls:
-                if has_current_stream and not current_stream.get("tool_call_id"):
-                    yield self._dispatch_event(
-                        TextMessageEndEvent(
-                            type=EventType.TEXT_MESSAGE_END,
-                            message_id=current_stream["id"],
-                            raw_event=event,
-                        )
-                    )
-                elif is_parallel_tool_switch:
-                    # 并行工具调用切换：先结束上一个工具调用
-                    yield self._dispatch_event(
-                        ToolCallEndEvent(
-                            type=EventType.TOOL_CALL_END,
-                            tool_call_id=current_stream["tool_call_id"],
-                            raw_event=event,
-                        )
-                    )
-                yield self._dispatch_event(
-                    ToolCallStartEvent(
-                        type=EventType.TOOL_CALL_START,
-                        tool_call_id=tool_call_data["id"],
-                        tool_call_name=tool_call_data["name"],
-                        parent_message_id=event["data"]["chunk"].id,
-                        raw_event=event,
-                    )
-                )
-                self.set_message_in_progress(
-                    self.active_run["id"],
-                    MessageInProgress(
-                        id=event["data"]["chunk"].id,
-                        tool_call_id=tool_call_data["id"],
-                        tool_call_name=tool_call_data["name"],
-                    ),
-                )
-                current_stream = self.get_message_in_progress(self.active_run["id"])
-                if tool_call_data.get("args"):
-                    yield self._dispatch_event(
-                        ToolCallArgsEvent(
-                            type=EventType.TOOL_CALL_ARGS,
-                            tool_call_id=current_stream["tool_call_id"],
-                            delta=tool_call_data["args"],
-                            raw_event=event,
-                        )
-                    )
-                return
-
-            if is_tool_call_args_event and should_emit_tool_calls:
-                yield self._dispatch_event(
-                    ToolCallArgsEvent(
-                        type=EventType.TOOL_CALL_ARGS,
-                        tool_call_id=current_stream["tool_call_id"],
-                        delta=tool_call_data["args"],
-                        raw_event=event,
-                    )
-                )
-                return
-
-            if is_message_content_event and should_emit_messages:
-                if not bool(current_stream and current_stream.get("id")):
-                    yield self._dispatch_event(
-                        TextMessageStartEvent(
-                            type=EventType.TEXT_MESSAGE_START,
-                            role="assistant",
-                            message_id=event["data"]["chunk"].id,
-                            raw_event=event,
-                        )
-                    )
-                    # 标记已有 AI 文本输出，用于取消时决定发 RUN_ERROR 还是 RUN_FINISHED
-                    self.active_run["has_text_output"] = True
-                    self.set_message_in_progress(
-                        self.active_run["id"],
-                        MessageInProgress(
-                            id=event["data"]["chunk"].id,
-                            tool_call_id=None,
-                            tool_call_name=None,
-                        ),
-                    )
-                    current_stream = self.get_message_in_progress(self.active_run["id"])
-
-                yield self._dispatch_event(
-                    TextMessageContentEvent(
-                        type=EventType.TEXT_MESSAGE_CONTENT,
-                        message_id=current_stream["id"],
-                        delta=message_content,
-                        raw_event=event,
-                    )
-                )
-                return
-
+            async for ev in self._handle_on_chat_model_stream_event(event):
+                yield ev
         elif event_type == LangGraphEventTypes.OnChatModelEnd:
-            if self.get_message_in_progress(self.active_run["id"]) and self.get_message_in_progress(
-                self.active_run["id"]
-            ).get("tool_call_id"):
-                resolved = self._dispatch_event(
-                    ToolCallEndEvent(
-                        type=EventType.TOOL_CALL_END,
-                        tool_call_id=self.get_message_in_progress(self.active_run["id"])["tool_call_id"],
-                        raw_event=event,
-                    )
-                )
-                if resolved:
-                    self.messages_in_process[self.active_run["id"]] = None
-                yield resolved
-            elif self.get_message_in_progress(self.active_run["id"]) and self.get_message_in_progress(
-                self.active_run["id"]
-            ).get("id"):
-                resolved = self._dispatch_event(
-                    TextMessageEndEvent(
-                        type=EventType.TEXT_MESSAGE_END,
-                        message_id=self.get_message_in_progress(self.active_run["id"])["id"],
-                        raw_event=event,
-                    )
-                )
-                if resolved:
-                    self.messages_in_process[self.active_run["id"]] = None
-                yield resolved
-
+            async for ev in self._handle_on_chat_model_end_event(event):
+                yield ev
         elif event_type == LangGraphEventTypes.OnCustomEvent:
-            # 如果接收到 front_end_display 标识位的信息，则更新 front_end_display
-            custom_data = event.get("data", {})
-            if isinstance(custom_data, dict) and "front_end_display" in custom_data:
-                self.front_end_display = custom_data["front_end_display"]
-                if not self.front_end_display:
-                    return
+            async for ev in self._handle_on_custom_event(event):
+                yield ev
+        elif event_type == LangGraphEventTypes.OnToolEnd:
+            async for ev in self._handle_on_tool_end_event(event):
+                yield ev
 
-            if event["name"] == CustomEventNames.ManuallyEmitMessage:
-                yield self._dispatch_event(
-                    TextMessageStartEvent(
-                        type=EventType.TEXT_MESSAGE_START,
-                        role="assistant",
-                        message_id=event["data"]["message_id"],
-                        raw_event=event,
-                    )
-                )
-                # 标记已有 AI 文本输出
-                self.active_run["has_text_output"] = True
-                yield self._dispatch_event(
-                    TextMessageContentEvent(
-                        type=EventType.TEXT_MESSAGE_CONTENT,
-                        message_id=event["data"]["message_id"],
-                        delta=event["data"]["message"],
-                        raw_event=event,
-                    )
-                )
-                yield self._dispatch_event(
-                    TextMessageEndEvent(
-                        type=EventType.TEXT_MESSAGE_END,
-                        message_id=event["data"]["message_id"],
-                        raw_event=event,
-                    )
-                )
+    async def _handle_on_chat_model_stream_event(self, event: Any) -> AsyncGenerator[BaseEvent, None]:
+        """协调器：解析 chunk → ctx + thinking/PredictState + 按 event 类型分发到子方法（D-02）。"""
+        # 当 front_end_display 为 False 时，跳过OnChatModelStream事件
+        if not self.front_end_display:
+            return
+        should_emit_messages = event["metadata"].get("emit-messages", True)
+        should_emit_tool_calls = event["metadata"].get("emit-tool-calls", True)
 
-            elif event["name"] == CustomEventNames.ManuallyEmitToolCall:
-                yield self._dispatch_event(
-                    ToolCallStartEvent(
-                        type=EventType.TOOL_CALL_START,
-                        tool_call_id=event["data"]["id"],
-                        tool_call_name=event["data"]["name"],
-                        parent_message_id=event["data"]["id"],
-                        raw_event=event,
-                    )
-                )
-                yield self._dispatch_event(
-                    ToolCallArgsEvent(
-                        type=EventType.TOOL_CALL_ARGS,
-                        tool_call_id=event["data"]["id"],
-                        delta=event["data"]["args"]
-                        if isinstance(event["data"]["args"], str)
-                        else json.dumps(event["data"]["args"]),
-                        raw_event=event,
-                    )
-                )
-                yield self._dispatch_event(
-                    ToolCallEndEvent(
-                        type=EventType.TOOL_CALL_END,
-                        tool_call_id=event["data"]["id"],
-                        raw_event=event,
-                    )
-                )
+        if event["data"]["chunk"].response_metadata.get("finish_reason", None):
+            return
 
-            elif event["name"] == CustomEventNames.ManuallyEmitState:
-                self.active_run["manually_emitted_state"] = event["data"]
-                yield self._dispatch_event(
-                    StateSnapshotEvent(
-                        type=EventType.STATE_SNAPSHOT,
-                        snapshot=self.get_state_snapshot(self.active_run["manually_emitted_state"]),
-                        raw_event=event,
-                    )
-                )
-
-            yield self._dispatch_event(
-                CustomEvent(
-                    type=EventType.CUSTOM,
-                    name=event["name"],
-                    value=event["data"],
-                    raw_event=event,
-                )
+        current_stream = self.get_message_in_progress(self.active_run["id"])
+        has_current_stream = bool(current_stream and current_stream.get("id"))
+        tool_call_data = event["data"]["chunk"].tool_call_chunks[0] if event["data"]["chunk"].tool_call_chunks else None
+        predict_state_metadata = event["metadata"].get("predict_state", [])
+        tool_call_used_to_predict_state = False
+        if tool_call_data and tool_call_data.get("name") and predict_state_metadata:
+            tool_call_used_to_predict_state = any(
+                predict_tool.get("tool") == tool_call_data["name"] for predict_tool in predict_state_metadata
             )
 
-        elif event_type == LangGraphEventTypes.OnToolEnd:
-            tool_call_output = event["data"]["output"]
+        # 判断是否为并行工具调用切换：当前 chunk 带有 name+id（新工具起始），
+        # 且 current_stream 中已有另一个工具在进行中（tool_call_id 不同）
+        is_parallel_tool_switch = (
+            tool_call_data
+            and tool_call_data.get("name")
+            and tool_call_data.get("id")
+            and has_current_stream
+            and current_stream.get("tool_call_id")
+            and current_stream["tool_call_id"] != tool_call_data["id"]
+        )
 
-            if isinstance(tool_call_output, Command):
-                # Extract ToolMessages from Command.update
-                messages = tool_call_output.update.get("messages", [])
-                tool_messages = [m for m in messages if isinstance(m, ToolMessage)]
+        is_tool_call_start_event = (
+            tool_call_data
+            and tool_call_data.get("name")
+            and (not has_current_stream or not current_stream.get("tool_call_id") or is_parallel_tool_switch)
+        )
+        is_tool_call_args_event = (
+            has_current_stream and current_stream.get("tool_call_id") and tool_call_data and tool_call_data.get("args")
+        )
+        is_tool_call_end_event = has_current_stream and current_stream.get("tool_call_id") and not tool_call_data
 
-                # Process each tool message
-                for tool_msg in tool_messages:
-                    if not self.active_run["has_function_streaming"]:
-                        yield self._dispatch_event(
-                            ToolCallStartEvent(
-                                type=EventType.TOOL_CALL_START,
-                                tool_call_id=tool_msg.tool_call_id,
-                                tool_call_name=tool_msg.name,
-                                parent_message_id=tool_msg.id,
-                                raw_event=event,
-                            )
-                        )
-                        yield self._dispatch_event(
-                            ToolCallArgsEvent(
-                                type=EventType.TOOL_CALL_ARGS,
-                                tool_call_id=tool_msg.tool_call_id,
-                                delta=json.dumps(event["data"].get("input", {})),
-                                raw_event=event,
-                            )
-                        )
-                        yield self._dispatch_event(
-                            ToolCallEndEvent(
-                                type=EventType.TOOL_CALL_END,
-                                tool_call_id=tool_msg.tool_call_id,
-                                raw_event=event,
-                            )
-                        )
+        if is_tool_call_start_event or is_tool_call_end_event or is_tool_call_args_event:
+            self.active_run["has_function_streaming"] = True
 
+        reasoning_data = resolve_reasoning_content(event["data"]["chunk"]) if event["data"]["chunk"] else None
+        message_content = (
+            resolve_message_content(event["data"]["chunk"].content)
+            if event["data"]["chunk"] and event["data"]["chunk"].content
+            else None
+        )
+        is_message_content_event = tool_call_data is None and message_content
+        is_message_end_event = (
+            has_current_stream
+            and not current_stream.get("tool_call_id")
+            and not is_message_content_event
+            and not is_tool_call_start_event
+        )
+
+        # thinking 逻辑保留在协调器（D-02：不拆分）
+        if reasoning_data:
+            for each in self.handle_thinking_event(reasoning_data):
+                yield each
+
+        if should_end_thinking(self.active_run.get("thinking_process"), reasoning_data):
+            yield ThinkingTextMessageEndEvent(
+                type=EventType.THINKING_TEXT_MESSAGE_END,
+            )
+            yield ExtendThinkingEndEvent(
+                duration=event.get("data", {}).get("chunk").additional_kwargs.get("reasoning_time", 0),
+                type=EventType.THINKING_END,
+            )
+            self.active_run["thinking_process"] = None
+
+        # PredictState 逻辑保留在协调器（D-02：不拆分）
+        if tool_call_used_to_predict_state:
+            yield CustomEvent(
+                type=EventType.CUSTOM,
+                name="PredictState",
+                value=predict_state_metadata,
+                raw_event=event,
+            )
+
+        ctx = {
+            "current_stream": current_stream,
+            "has_current_stream": has_current_stream,
+            "tool_call_data": tool_call_data,
+            "is_parallel_tool_switch": is_parallel_tool_switch,
+            "is_tool_call_start_event": is_tool_call_start_event,
+            "is_tool_call_args_event": is_tool_call_args_event,
+            "is_tool_call_end_event": is_tool_call_end_event,
+            "is_message_content_event": is_message_content_event,
+            "is_message_end_event": is_message_end_event,
+            "message_content": message_content,
+            "should_emit_messages": should_emit_messages,
+            "should_emit_tool_calls": should_emit_tool_calls,
+        }
+
+        if is_tool_call_end_event:
+            async for ev in self._handle_tool_call_end_stream_event(event, ctx):
+                yield ev
+        elif is_message_end_event:
+            async for ev in self._handle_message_end_stream_event(event, ctx):
+                yield ev
+        elif is_tool_call_start_event and should_emit_tool_calls:
+            async for ev in self._handle_tool_call_start_stream_event(event, ctx):
+                yield ev
+        elif is_tool_call_args_event and should_emit_tool_calls:
+            async for ev in self._handle_tool_call_args_stream_event(event, ctx):
+                yield ev
+        elif is_message_content_event and should_emit_messages:
+            async for ev in self._handle_message_content_stream_event(event, ctx):
+                yield ev
+
+    async def _handle_tool_call_end_stream_event(self, event: Any, ctx: dict) -> AsyncGenerator[BaseEvent, None]:
+        """tool_call_end 分支（D-02 拆分自 _handle_on_chat_model_stream_event）。"""
+        current_stream = ctx["current_stream"]
+        yield ToolCallEndEvent(
+            type=EventType.TOOL_CALL_END,
+            tool_call_id=current_stream["tool_call_id"],
+            raw_event=event,
+        )
+        self.messages_in_process[self.active_run["id"]] = None
+
+    async def _handle_message_end_stream_event(self, event: Any, ctx: dict) -> AsyncGenerator[BaseEvent, None]:
+        """message_end 分支（D-02 拆分自 _handle_on_chat_model_stream_event）。"""
+        current_stream = ctx["current_stream"]
+        yield TextMessageEndEvent(
+            type=EventType.TEXT_MESSAGE_END,
+            message_id=current_stream["id"],
+            raw_event=event,
+        )
+        self.messages_in_process[self.active_run["id"]] = None
+
+    async def _handle_tool_call_start_stream_event(self, event: Any, ctx: dict) -> AsyncGenerator[BaseEvent, None]:
+        """tool_call_start 分支（D-02 拆分自 _handle_on_chat_model_stream_event）。"""
+        current_stream = ctx["current_stream"]
+        has_current_stream = ctx["has_current_stream"]
+        is_parallel_tool_switch = ctx["is_parallel_tool_switch"]
+        tool_call_data = ctx["tool_call_data"]
+
+        if has_current_stream and not current_stream.get("tool_call_id"):
+            yield TextMessageEndEvent(
+                type=EventType.TEXT_MESSAGE_END,
+                message_id=current_stream["id"],
+                raw_event=event,
+            )
+        elif is_parallel_tool_switch:
+            # 并行工具调用切换：先结束上一个工具调用
+            yield ToolCallEndEvent(
+                type=EventType.TOOL_CALL_END,
+                tool_call_id=current_stream["tool_call_id"],
+                raw_event=event,
+            )
+        yield ToolCallStartEvent(
+            type=EventType.TOOL_CALL_START,
+            tool_call_id=tool_call_data["id"],
+            tool_call_name=tool_call_data["name"],
+            parent_message_id=event["data"]["chunk"].id,
+            raw_event=event,
+        )
+        self.set_message_in_progress(
+            self.active_run["id"],
+            MessageInProgress(
+                id=event["data"]["chunk"].id,
+                tool_call_id=tool_call_data["id"],
+                tool_call_name=tool_call_data["name"],
+            ),
+        )
+        current_stream = self.get_message_in_progress(self.active_run["id"])
+        if tool_call_data.get("args"):
+            yield ToolCallArgsEvent(
+                type=EventType.TOOL_CALL_ARGS,
+                tool_call_id=current_stream["tool_call_id"],
+                delta=tool_call_data["args"],
+                raw_event=event,
+            )
+
+    async def _handle_tool_call_args_stream_event(self, event: Any, ctx: dict) -> AsyncGenerator[BaseEvent, None]:
+        """tool_call_args 分支（D-02 拆分自 _handle_on_chat_model_stream_event）。"""
+        current_stream = ctx["current_stream"]
+        tool_call_data = ctx["tool_call_data"]
+        yield ToolCallArgsEvent(
+            type=EventType.TOOL_CALL_ARGS,
+            tool_call_id=current_stream["tool_call_id"],
+            delta=tool_call_data["args"],
+            raw_event=event,
+        )
+
+    async def _handle_message_content_stream_event(self, event: Any, ctx: dict) -> AsyncGenerator[BaseEvent, None]:
+        """message_content 分支（D-02 拆分自 _handle_on_chat_model_stream_event）。"""
+        current_stream = ctx["current_stream"]
+        message_content = ctx["message_content"]
+
+        if not bool(current_stream and current_stream.get("id")):
+            yield TextMessageStartEvent(
+                type=EventType.TEXT_MESSAGE_START,
+                role="assistant",
+                message_id=event["data"]["chunk"].id,
+                raw_event=event,
+            )
+            # 标记已有 AI 文本输出，用于取消时决定发 RUN_ERROR 还是 RUN_FINISHED
+            self.active_run["has_text_output"] = True
+            self.set_message_in_progress(
+                self.active_run["id"],
+                MessageInProgress(
+                    id=event["data"]["chunk"].id,
+                    tool_call_id=None,
+                    tool_call_name=None,
+                ),
+            )
+            current_stream = self.get_message_in_progress(self.active_run["id"])
+
+        yield TextMessageContentEvent(
+            type=EventType.TEXT_MESSAGE_CONTENT,
+            message_id=current_stream["id"],
+            delta=message_content,
+            raw_event=event,
+        )
+
+    async def _handle_on_chat_model_end_event(self, event: Any) -> AsyncGenerator[BaseEvent, None]:
+        # ChatModelEnd CustomEvent：把"模型这一轮的完整输出快照"分发给 DB 侧。
+        # SSE 侧 AidevAGUIAgent.run() 通过 skip_encode_custom 跳过编码（不进入 SSE 输出）。
+        # 顺序：在消息收尾事件（ToolCallEnd/TextMessageEnd）之后发出，确保 DB 侧拿到的是收尾后的完整态。
+        # output is None 主要见于模型供应商 adapter 异常路径，不构造事件。
+        out = event.get("data", {}).get("output")
+        if out is not None:
+            yield CustomEvent(
+                type=EventType.CUSTOM,
+                name=SessionPersistenceEventNames.ChatModelEnd.value,
+                value=build_model_end_payload(out, getattr(self, "_tool_mapping", {}) or {}),
+            )
+
+        if self.get_message_in_progress(self.active_run["id"]) and self.get_message_in_progress(
+            self.active_run["id"]
+        ).get("tool_call_id"):
+            yield ToolCallEndEvent(
+                type=EventType.TOOL_CALL_END,
+                tool_call_id=self.get_message_in_progress(self.active_run["id"])["tool_call_id"],
+                raw_event=event,
+            )
+            self.messages_in_process[self.active_run["id"]] = None
+        elif self.get_message_in_progress(self.active_run["id"]) and self.get_message_in_progress(
+            self.active_run["id"]
+        ).get("id"):
+            yield TextMessageEndEvent(
+                type=EventType.TEXT_MESSAGE_END,
+                message_id=self.get_message_in_progress(self.active_run["id"])["id"],
+                raw_event=event,
+            )
+            self.messages_in_process[self.active_run["id"]] = None
+
+    async def _handle_on_custom_event(self, event: Any) -> AsyncGenerator[BaseEvent, None]:
+        # 如果接收到 front_end_display 标识位的信息，则更新 front_end_display
+        custom_data = event.get("data", {})
+        if isinstance(custom_data, dict) and "front_end_display" in custom_data:
+            self.front_end_display = custom_data["front_end_display"]
+            if not self.front_end_display:
                 return
 
-            if not self.active_run["has_function_streaming"]:
-                yield self._dispatch_event(
-                    ToolCallStartEvent(
+        if event["name"] == CustomEventNames.ManuallyEmitMessage:
+            yield TextMessageStartEvent(
+                type=EventType.TEXT_MESSAGE_START,
+                role="assistant",
+                message_id=event["data"]["message_id"],
+                raw_event=event,
+            )
+            # 标记已有 AI 文本输出
+            self.active_run["has_text_output"] = True
+            yield TextMessageContentEvent(
+                type=EventType.TEXT_MESSAGE_CONTENT,
+                message_id=event["data"]["message_id"],
+                delta=event["data"]["message"],
+                raw_event=event,
+            )
+            yield TextMessageEndEvent(
+                type=EventType.TEXT_MESSAGE_END,
+                message_id=event["data"]["message_id"],
+                raw_event=event,
+            )
+
+        elif event["name"] == CustomEventNames.ManuallyEmitToolCall:
+            yield ToolCallStartEvent(
+                type=EventType.TOOL_CALL_START,
+                tool_call_id=event["data"]["id"],
+                tool_call_name=event["data"]["name"],
+                parent_message_id=event["data"]["id"],
+                raw_event=event,
+            )
+            yield ToolCallArgsEvent(
+                type=EventType.TOOL_CALL_ARGS,
+                tool_call_id=event["data"]["id"],
+                delta=event["data"]["args"]
+                if isinstance(event["data"]["args"], str)
+                else json.dumps(event["data"]["args"]),
+                raw_event=event,
+            )
+            yield ToolCallEndEvent(
+                type=EventType.TOOL_CALL_END,
+                tool_call_id=event["data"]["id"],
+                raw_event=event,
+            )
+
+        elif event["name"] == CustomEventNames.ManuallyEmitState:
+            self.active_run["manually_emitted_state"] = event["data"]
+            yield StateSnapshotEvent(
+                type=EventType.STATE_SNAPSHOT,
+                snapshot=self.get_state_snapshot(self.active_run["manually_emitted_state"]),
+                raw_event=event,
+            )
+
+        yield CustomEvent(
+            type=EventType.CUSTOM,
+            name=event["name"],
+            value=event["data"],
+            raw_event=event,
+        )
+
+    async def _handle_on_tool_end_event(self, event: Any) -> AsyncGenerator[BaseEvent, None]:
+        tool_call_output = event["data"]["output"]
+
+        if isinstance(tool_call_output, Command):
+            # Extract ToolMessages from Command.update
+            messages = tool_call_output.update.get("messages", [])
+            tool_messages = [m for m in messages if isinstance(m, ToolMessage)]
+
+            # Process each tool message
+            for tool_msg in tool_messages:
+                if not self.active_run["has_function_streaming"]:
+                    yield ToolCallStartEvent(
                         type=EventType.TOOL_CALL_START,
-                        tool_call_id=tool_call_output.tool_call_id,
-                        tool_call_name=tool_call_output.name,
-                        parent_message_id=tool_call_output.id,
+                        tool_call_id=tool_msg.tool_call_id,
+                        tool_call_name=tool_msg.name,
+                        parent_message_id=tool_msg.id,
                         raw_event=event,
                     )
-                )
-                yield self._dispatch_event(
-                    ToolCallArgsEvent(
+                    yield ToolCallArgsEvent(
                         type=EventType.TOOL_CALL_ARGS,
-                        tool_call_id=tool_call_output.tool_call_id,
-                        delta=dump_json_safe(event["data"]["input"]),
+                        tool_call_id=tool_msg.tool_call_id,
+                        delta=json.dumps(event["data"].get("input", {})),
                         raw_event=event,
                     )
-                )
-                yield self._dispatch_event(
-                    ToolCallEndEvent(
+                    yield ToolCallEndEvent(
                         type=EventType.TOOL_CALL_END,
-                        tool_call_id=tool_call_output.tool_call_id,
+                        tool_call_id=tool_msg.tool_call_id,
                         raw_event=event,
                     )
-                )
+
+            return
+
+        if not self.active_run["has_function_streaming"]:
+            yield ToolCallStartEvent(
+                type=EventType.TOOL_CALL_START,
+                tool_call_id=tool_call_output.tool_call_id,
+                tool_call_name=tool_call_output.name,
+                parent_message_id=tool_call_output.id,
+                raw_event=event,
+            )
+            yield ToolCallArgsEvent(
+                type=EventType.TOOL_CALL_ARGS,
+                tool_call_id=tool_call_output.tool_call_id,
+                delta=dump_json_safe(event["data"]["input"]),
+                raw_event=event,
+            )
+            yield ToolCallEndEvent(
+                type=EventType.TOOL_CALL_END,
+                tool_call_id=tool_call_output.tool_call_id,
+                raw_event=event,
+            )
 
     def handle_thinking_event(self, reasoning_data: LangGraphReasoning) -> Generator[str, Any, str | None]:
         if not reasoning_data or "type" not in reasoning_data or "text" not in reasoning_data:
@@ -976,80 +848,33 @@ class LangGraphAgent:
 
         thinking_step_index = reasoning_data.get("index")
 
-        if (
-            self.active_run.get("thinking_process")
-            and self.active_run["thinking_process"].get("index")
-            and self.active_run["thinking_process"]["index"] != thinking_step_index
-        ):
+        if should_switch_thinking_step(self.active_run.get("thinking_process"), reasoning_data):
             if self.active_run["thinking_process"].get("type"):
-                yield self._dispatch_event(
-                    ThinkingTextMessageEndEvent(
-                        type=EventType.THINKING_TEXT_MESSAGE_END,
-                    )
+                yield ThinkingTextMessageEndEvent(
+                    type=EventType.THINKING_TEXT_MESSAGE_END,
                 )
-            yield self._dispatch_event(
-                ThinkingEndEvent(
-                    type=EventType.THINKING_END,
-                )
+            yield ThinkingEndEvent(
+                type=EventType.THINKING_END,
             )
             self.active_run["thinking_process"] = None
 
         if not self.active_run.get("thinking_process"):
-            yield self._dispatch_event(
-                ThinkingStartEvent(
-                    type=EventType.THINKING_START,
-                )
+            yield ThinkingStartEvent(
+                type=EventType.THINKING_START,
             )
             self.active_run["thinking_process"] = {"index": thinking_step_index}
 
         if self.active_run["thinking_process"].get("type") != reasoning_data["type"]:
-            yield self._dispatch_event(
-                ThinkingTextMessageStartEvent(
-                    type=EventType.THINKING_TEXT_MESSAGE_START,
-                )
+            yield ThinkingTextMessageStartEvent(
+                type=EventType.THINKING_TEXT_MESSAGE_START,
             )
             self.active_run["thinking_process"]["type"] = reasoning_data["type"]
 
         if self.active_run["thinking_process"].get("type"):
-            yield self._dispatch_event(
-                ThinkingTextMessageContentEvent(
-                    type=EventType.THINKING_TEXT_MESSAGE_CONTENT,
-                    delta=reasoning_data["text"],
-                )
+            yield ThinkingTextMessageContentEvent(
+                type=EventType.THINKING_TEXT_MESSAGE_CONTENT,
+                delta=reasoning_data["text"],
             )
-
-    async def get_checkpoint_before_message(self, message_id: str, thread_id: str):
-        if not thread_id:
-            raise ValueError("Missing thread_id in config")
-
-        history_list = []
-        async for snapshot in self.graph.aget_state_history({"configurable": {"thread_id": thread_id}}):
-            history_list.append(snapshot)
-
-        history_list.reverse()
-        for idx, snapshot in enumerate(history_list):
-            messages = snapshot.values.get("messages", [])
-            if any(getattr(m, "id", None) == message_id for m in messages):
-                if idx == 0:
-                    # No snapshot before this
-                    # Return synthetic "empty before" version
-                    empty_snapshot = snapshot
-                    empty_snapshot.values["messages"] = []
-                    return empty_snapshot
-
-                snapshot_values_without_messages = snapshot.values.copy()
-                del snapshot_values_without_messages["messages"]
-                checkpoint = history_list[idx - 1]
-
-                merged_values = {
-                    **checkpoint.values,
-                    **snapshot_values_without_messages,
-                }
-                checkpoint = checkpoint._replace(values=merged_values)
-
-                return checkpoint
-
-        raise ValueError("Message ID not found in history")
 
     def handle_node_change(self, node_name: str | None):
         """
@@ -1091,7 +916,6 @@ class LangGraphAgent:
         version: Literal["v1", "v2"] = "v2",
         config: RunnableConfig | None = None,
         context: dict[str, Any] | None = None,
-        fork: Any | None = None,
     ):
         kwargs = {
             "input": input,
@@ -1112,9 +936,6 @@ class LangGraphAgent:
 
         if config:
             kwargs["config"] = config
-
-        if fork:
-            kwargs.update(fork)
 
         return kwargs
 
@@ -1194,7 +1015,7 @@ class LangGraphAGUIAgent(LangGraphAgent):
 
         return super()._dispatch_event(event)
 
-    async def _handle_single_event(self, event: Any, state: State) -> AsyncGenerator[str, None]:
+    async def _handle_single_event(self, event: Any, state: State) -> AsyncGenerator[BaseEvent, None]:
         """Override to add custom event processing for PredictState events"""
 
         # First, check if this is a raw event that should generate a PredictState event
@@ -1205,17 +1026,3 @@ class LangGraphAGUIAgent(LangGraphAgent):
         # Call the parent method to handle all other events
         async for event_str in super()._handle_single_event(event, state):
             yield event_str
-
-    def langgraph_default_merge_state(self, state: State, messages: list[BaseMessage], input: Any) -> State:
-        """Override to add CopilotKit actions to the state"""
-        merged_state = super().langgraph_default_merge_state(state, messages, input)
-        # Extract tools from the merged state and add them as CopilotKit actions
-        agui_properties = merged_state.get("ag-ui", {}) or merged_state
-
-        return {
-            **merged_state,
-            "copilotkit": {
-                "actions": agui_properties.get("tools", []),
-                "context": agui_properties.get("context", []),
-            },
-        }

@@ -10,6 +10,7 @@ from logging import getLogger
 from typing import Any
 
 from aidev_agent.api.bk_aidev import Client
+from aidev_agent.core.ag_ui.ask_user_question import ASK_USER_QUESTION_REASON, AskUserQuestionOutcomeBuilder
 from aidev_agent.core.ag_ui.types import RunFinishedOutcomeType
 from aidev_agent.enums import ActivityType, PromptRole, SessionsStatus
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
@@ -24,9 +25,6 @@ class AGUISessionWriter(BaseSessionWriter):
 
     Example:
         ```python
-        from aidev_agent.api.bk_aidev import Client
-        from aidev_agent.services.event_handlers import AGUISessionWriter
-
         client = Client(...)
         writer = AGUISessionWriter(
             session_code="xxx",
@@ -126,9 +124,7 @@ class AGUISessionWriter(BaseSessionWriter):
         outcome = getattr(event, "outcome", None)
         # 兼容 outcome 为 dict 或对象的情况
         outcome_type = (
-            outcome.get("type")
-            if isinstance(outcome, dict)
-            else getattr(outcome, "type", None) if outcome else None
+            outcome.get("type") if isinstance(outcome, dict) else getattr(outcome, "type", None) if outcome else None
         )
         if outcome and outcome_type == RunFinishedOutcomeType.INTERRUPT.value:
             graph_thread_id = getattr(event, "thread_id", "")
@@ -140,19 +136,176 @@ class AGUISessionWriter(BaseSessionWriter):
                 )
             ]
             self._set_pending_interrupt_context(graph_thread_id=graph_thread_id, interrupts=interrupts)
-            try:
-                # 延迟导入避免循环依赖：
-                # agui_writer -> approval_resume -> agent_builder -> services.agent -> chat -> event_handlers
-                from aidev_bkplugin.services.approval_resume import start_approval_resume_worker
 
-                start_approval_resume_worker(self.session_code, self.username, graph_thread_id, interrupts)
-            except Exception:
-                logger.exception(
-                    "[AGUISessionWriter] 触发后台续流失败: session_code=%s", self.session_code
+            # 仅对 approval 中断启动后台续流 worker。
+            # ask_user_question 中断由前端直接续流（用户选择后调 chat_completion），
+            # 不需要后台轮询；如果启动 worker 会抢先续流，干扰前端续流。
+            first_interrupt = interrupts[0] if interrupts else {}
+            first_reason = first_interrupt.get("reason") if isinstance(first_interrupt, dict) else None
+            if first_reason == "aidev:tool_approval":
+                try:
+                    # 延迟导入避免循环依赖：
+                    # agui_writer -> approval_resume -> agent_builder -> services.agent -> chat -> event_handlers
+                    from aidev_bkplugin.services.approval_resume import start_approval_resume_worker
+
+                    start_approval_resume_worker(self.session_code, self.username, graph_thread_id, interrupts)
+                except Exception:
+                    logger.exception("[AGUISessionWriter] 触发后台续流失败: session_code=%s", self.session_code)
+            else:
+                logger.info(
+                    "[AGUISessionWriter] 非 approval 中断（reason=%s），跳过后台续流 worker: session_code=%s",
+                    first_reason,
+                    self.session_code,
                 )
             return
 
         self._clear_pending_interrupt_context()
+
+    def handle_activity_snapshot(self, event) -> None:
+        """处理 ACTIVITY_SNAPSHOT 事件：从事件 content 提取 answers 更新 DB interrupt 记录。
+
+        替代原 _resolve_pending_interrupts 的 DB 查询路径。
+        ACTIVITY_SNAPSHOT 事件携带终态 content（outcome/result/answers），
+        无需再从 DB 查询 pending 记录——但仍需从 DB 查 content_id（BaseSessionWriter
+        每次请求是新实例，内存中无 content_id 映射）。
+
+        数据源变更：不再使用实例属性注入，改为从 event.content（JSON 解析后的 dict）的 result[0].payload.answers 提取。
+        """
+        # 从事件 content 提取 answers 和 interrupt_id
+        content = getattr(event, "content", None)
+        if isinstance(content, str):
+            try:
+                content = json.loads(content)
+            except (TypeError, ValueError):
+                logger.exception("[AskUserQuestion] handle_activity_snapshot: content JSON 解析失败")
+                return
+        if not isinstance(content, dict):
+            return
+
+        # 从 content.result[0] 提取 answers（D-03 数据源变更）
+        result_list = content.get("result") or []
+        if not result_list or not isinstance(result_list[0], dict):
+            return
+        first_result = result_list[0]
+        resume_answers = first_result.get("payload", {}).get("answers") or []
+
+        # 从 content.outcome.interrupts[0] 提取 interrupt_id / reason
+        outcome_obj = content.get("outcome") or {}
+        interrupt_list = outcome_obj.get("interrupts") or []
+        if not interrupt_list:
+            return
+        first_intr = interrupt_list[0] if isinstance(interrupt_list[0], dict) else {}
+        intr_reason = first_intr.get("reason")
+        intr_id = first_intr.get("id")
+        if intr_reason != ASK_USER_QUESTION_REASON:
+            return
+        if not intr_id:
+            return
+
+        message_id = intr_id
+
+        # 从 DB 查询 pending interrupt 记录的 content_id
+        headers = {"X-BKAIDEV-USER": self.username} if self.username else {}
+        try:
+            contents = (
+                self.client.api.get_chat_session_contents(
+                    params={"session_code": self.session_code},
+                    headers=headers,
+                ).get("data")
+                or []
+            )
+        except Exception:
+            logger.exception(
+                "[AskUserQuestion] handle_activity_snapshot: 查询 session contents 失败: session_code=%s",
+                self.session_code,
+            )
+            return
+
+        content_id = None
+        raw_db_content = None
+        db_item = None
+        for item in reversed(contents):
+            if item.get("role") != PromptRole.INTERRUPT.value:
+                continue
+            if item.get("status") != "pending":
+                continue
+            raw_content = item.get("content")
+            try:
+                parsed = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(parsed, dict):
+                continue
+            parsed_outcome = parsed.get("outcome") or {}
+            parsed_interrupts = parsed_outcome.get("interrupts") or []
+            if not parsed_interrupts:
+                continue
+            parsed_first = parsed_interrupts[0] if isinstance(parsed_interrupts[0], dict) else {}
+            if parsed_first.get("id") == message_id and parsed_first.get("reason") == ASK_USER_QUESTION_REASON:
+                content_id = item.get("id")
+                raw_db_content = parsed
+                db_item = item
+                break
+
+        if content_id is None or raw_db_content is None:
+            logger.warning(
+                "[AskUserQuestion] handle_activity_snapshot: 未找到 pending interrupt 记录, "
+                "message_id=%s, session_code=%s",
+                message_id,
+                self.session_code,
+            )
+            return
+
+        upgraded = AskUserQuestionOutcomeBuilder.upgrade_content_to_success(
+            raw_db_content, "resolved", resume_answers=resume_answers
+        )
+        if upgraded is None:
+            logger.warning(
+                "[AskUserQuestion] handle_activity_snapshot: upgrade_content_to_success 返回 None, content_id=%s",
+                content_id,
+            )
+            return
+
+        try:
+            prop = db_item.get("property")
+            if isinstance(prop, str):
+                try:
+                    prop = json.loads(prop)
+                except (TypeError, ValueError):
+                    prop = {}
+            if not isinstance(prop, dict):
+                prop = {}
+            updated_builtin = prop.get("builtin_property") or {}
+            if not isinstance(updated_builtin, dict):
+                updated_builtin = {}
+            updated_builtin["status"] = "resolved"
+            updated_builtin["message_id"] = message_id
+            updated_builtin["interrupt_id"] = message_id
+            updated_builtin["reason"] = ASK_USER_QUESTION_REASON
+            self._do_update_content(
+                content_id=content_id,
+                payload={
+                    "content": upgraded,
+                    "status": "complete",
+                    "property": {
+                        "builtin_property": updated_builtin,
+                        "turn_id": self.turn_id,
+                    },
+                },
+                headers=headers,
+            )
+            logger.info(
+                "[AskUserQuestion] interrupt 记录更新为 resolved: content_id=%s, message_id=%s, session_code=%s",
+                content_id,
+                message_id,
+                self.session_code,
+            )
+        except Exception:
+            logger.exception(
+                "[AskUserQuestion] handle_activity_snapshot: 更新 interrupt 记录失败, content_id=%s, session_code=%s",
+                content_id,
+                self.session_code,
+            )
 
     def _ensure_session_property_cache(self) -> None:
         if self._cached_session_property is not None:

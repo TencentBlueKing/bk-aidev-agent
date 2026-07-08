@@ -22,8 +22,10 @@ from typing import Callable
 
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool
+from langgraph.errors import GraphBubbleUp
 from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt.tool_node import AsyncToolCallWrapper, ToolCallRequest, ToolCallWrapper
+from langgraph.prebuilt.tool_node import ToolRuntime
 from langgraph.types import Command
 
 from .approval_wrapper import approval_async_wrapper, approval_sync_wrapper
@@ -36,8 +38,12 @@ logger = logging.getLogger(__name__)
 
 
 def default_tool_call_handler(error: Exception) -> str:
-    """
-    处理工具执行异常，返回不包含异常类型的错误消息
+    """处理工具执行异常，返回不包含异常类型的错误消息。
+
+    GraphBubbleUp（GraphInterrupt 基类）在此重新抛出，确保 interrupt() 不被
+    ToolNode 的 ``except Exception`` 吞掉。此 handler 作为 ``handle_tool_errors``
+    的默认值传入 ToolNode，在 ``_handle_tool_error`` 的 callable 路径中被调用，
+    异常会穿过 ``except Exception`` 块正确传播。
 
     Args:
         error: 捕获的异常对象
@@ -50,6 +56,9 @@ def default_tool_call_handler(error: Exception) -> str:
         # ValueError: Invalid input -> "Invalid input"
         # KeyError: 'missing_key' -> "'missing_key'"
     """
+    # GraphBubbleUp（GraphInterrupt 基类）必须透传，不能被转为 error ToolMessage
+    if isinstance(error, GraphBubbleUp):
+        raise error
     logger.exception("Tool execution error: %s", error)
     error_message = str(error)
 
@@ -208,8 +217,12 @@ def build_tool_node(
     node_options = node_options or ToolNodeSettings()
 
     # 组合包装器：内置包装器 + 用户自定义包装器
-    sync_wrapper_list: list[ToolCallWrapper] = [approval_sync_wrapper]
-    async_wrapper_list: list[AsyncToolCallWrapper] = [approval_async_wrapper]
+    sync_wrapper_list: list[ToolCallWrapper] = [
+        approval_sync_wrapper,
+    ]
+    async_wrapper_list: list[AsyncToolCallWrapper] = [
+        approval_async_wrapper,
+    ]
     # 是否启用参数校验失败时自动修复重试（响应式）
     if node_options.use_json_repair_on_error:
         sync_wrapper_list.append(json_repair_on_error_sync_wrapper)

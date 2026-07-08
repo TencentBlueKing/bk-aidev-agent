@@ -1330,6 +1330,39 @@ class TestDefaultToolCallHandler:
         result = default_tool_call_handler(error)
         assert result == "工具执行失败"
 
+    def test_graph_bubble_up_is_reraised(self):
+        """GraphBubbleUp（GraphInterrupt 基类）必须重新抛出，不能被转为 error 字符串。
+
+        这是 interrupt() 正常工作的核心保障：ToolNode 的 _arun_one 用 except Exception
+        捕获中间件链异常并调用 default_tool_call_handler，如果 GraphBubbleUp 被转为
+        字符串而非抛出，interrupt() 会被吞掉，图不会暂停。
+        """
+        from langgraph.errors import GraphBubbleUp
+
+        from aidev_agent.core.nodes.tool.node import default_tool_call_handler
+
+        error = GraphBubbleUp("interrupt value")
+        with pytest.raises(GraphBubbleUp):
+            default_tool_call_handler(error)
+
+    def test_graph_interrupt_subclass_is_reraised(self):
+        """GraphInterrupt（GraphBubbleUp 子类）也必须重新抛出。"""
+        from langgraph.errors import GraphInterrupt
+
+        from aidev_agent.core.nodes.tool.node import default_tool_call_handler
+
+        error = GraphInterrupt("interrupt payload")
+        with pytest.raises(GraphInterrupt):
+            default_tool_call_handler(error)
+
+    def test_non_bubbleup_exception_returns_string(self):
+        """普通异常仍返回字符串，不受 GraphBubbleUp 判断影响。"""
+        from aidev_agent.core.nodes.tool.node import default_tool_call_handler
+
+        error = ValueError("something went wrong")
+        result = default_tool_call_handler(error)
+        assert result == "something went wrong"
+
 
 class TestWrapperChaining:
     """测试 wrapper 链式组合函数"""
