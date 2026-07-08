@@ -270,6 +270,21 @@ class GeneratorStreamingHelper:
         except Exception:
             return False
 
+    def _has_active_producer(self) -> bool:
+        """当前是否仍有活跃 producer 在生产（可能位于其他进程）。
+
+        延迟清理线程用它避免删掉仍在生产中的会话日志；不支持探测的 handler 返回 False，
+        沿用旧行为。探测异常时保守返回 True，宁可交由 TTL 兜底也不误删。
+        """
+        checker = getattr(self.message_handler, "has_active_producer", None)
+        if not callable(checker):
+            return False
+        try:
+            return bool(checker(self.thread_id))
+        except Exception:
+            logger.exception("Error checking active producer for thread_id=%s", self.thread_id)
+            return True
+
     def _get_consumer_messages(
         self,
         *,
@@ -773,9 +788,15 @@ class GeneratorStreamingHelper:
                     logger.exception(f"Error joining producer thread for thread_id={self.thread_id}: {e}")
             if consumer_exit_reason == "completed":
                 self._cleanup_replay_session_if_idle()
-            elif self._supports_replay_from_start() and producer_thread is None and consumer_exit_reason is None:
-                # Existing replay logs have no producer to run the normal orphan-cleanup finally block.
-                # If this consumer disconnects before EOD, schedule the same delayed cleanup path here.
+            elif (
+                self._supports_replay_from_start()
+                and not should_consume_stopped
+                and producer_thread is None
+                and consumer_exit_reason is None
+            ):
+                # 纯 replay 消费者（本进程未起 producer）在读到 EOD 之前断开时，没有 producer 的
+                # finally 兜底清理孤立日志，这里补一次延迟清理。排除 should_consume_stopped：
+                # 已停止会话是用户主动查看的历史内容，保留到 TTL，不在查看后主动回收。
                 self._schedule_session_cleanup(done_event_seen=False)
 
     def _schedule_session_cleanup(self, done_event_seen: bool = False) -> None:
@@ -819,6 +840,23 @@ class GeneratorStreamingHelper:
                     )
                     deadline_hit = now >= deadline
                     if fast_grace_hit or deadline_hit:
+                        # 到达清理时机：仅当会话确实孤立（无活跃 consumer、无活跃 producer）才回收。
+                        # 若仍有 producer 在生产，或有消费者正在 replay，则不删，交由各自的清理路径兜底：
+                        # producer 完成后会自调度清理；活跃消费者完成时走 _cleanup_replay_session_if_idle、
+                        # 断开时会重新调度清理。这样避免删掉进行中的会话或活跃消费者所需的日志。
+                        producer_active = self._has_active_producer()
+                        if has_active_consumer or producer_active:
+                            logger.info(
+                                "[RabbitMQ] orphan cleanup deferred thread_id=%s elapsed=%.1fs "
+                                "reason=%s had_active_consumer=%s producer_active=%s consumer_ever_seen=%s",
+                                thread_id,
+                                now - start_time,
+                                "fast_grace" if fast_grace_hit and not deadline_hit else "deadline",
+                                has_active_consumer,
+                                producer_active,
+                                consumer_ever_seen,
+                            )
+                            return
                         should_cleanup_now = True
                         trigger_reason = "fast_grace" if fast_grace_hit and not deadline_hit else "deadline"
 

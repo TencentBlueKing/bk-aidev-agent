@@ -735,6 +735,32 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             logger.warning(f"Error checking active consumers for thread_id={thread_id}: {e}")
             return False
 
+    def has_active_producer(self, thread_id: str) -> bool:
+        """检查是否有活跃 producer 正在生产该会话（支持跨进程）。
+
+        producer 通过一个绑定 dedicated connection 的 exclusive queue 持有生产权
+        （见 acquire_producer / release_producer）。该队列存在即代表某进程仍在生产：
+        - passive 声明成功 → 队列存在 → 仍在生产；
+        - RESOURCE_LOCKED(405) → 队列被生产者连接独占 → 仍在生产；
+        - NOT_FOUND(404) → 无活跃 producer。
+
+        供延迟清理线程判断，避免删掉仍在生产中的会话日志。
+        """
+        lock_queue = self._get_producer_lock_queue_name(thread_id)
+        try:
+            with self._with_channel() as channel:
+                try:
+                    channel.queue_declare(queue=lock_queue, passive=True)
+                    return True
+                except pika.exceptions.ChannelClosedByBroker as e:
+                    return getattr(e, "reply_code", None) == 405
+        except pika.exceptions.ChannelClosedByBroker as e:
+            return getattr(e, "reply_code", None) == 405
+        except Exception as e:
+            logger.warning(f"Error checking active producer for thread_id={thread_id}: {e}")
+            # 探测失败时保守认为可能仍在生产，避免误删；由 TTL 兜底回收
+            return True
+
     @contextmanager
     def _with_replay_lock(self, thread_id: str, timeout: float = 3.0) -> Iterator[Any]:
         """串行化同一会话的非破坏性 replay，避免并发 peek 分摊消息。"""

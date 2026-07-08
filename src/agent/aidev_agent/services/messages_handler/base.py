@@ -234,6 +234,14 @@ class BaseMessageQueueHandler(ABC):
         """
         return False
 
+    def has_active_producer(self, thread_id: str) -> bool:
+        """检查指定 thread_id 当前是否仍有活跃 producer 在生产。
+
+        默认返回 False。支持跨进程生产者互斥的消息处理器应覆盖此方法，
+        供延迟清理线程判断，避免删掉仍在生产中的会话。
+        """
+        return False
+
     @abstractmethod
     def get_dlq_messages(self, thread_id: str) -> list[Any]:
         """获取死信队列中的所有消息（不移除）
