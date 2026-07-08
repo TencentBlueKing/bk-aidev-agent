@@ -115,6 +115,7 @@ export class AGUIProtocol implements ISSEProtocol {
     if (event.activityType === ActivityType.Interrupt) {
       if (message?.role === MessageRole.Interrupt) {
         message.content = event.content as IApprovalResultCustomValue;
+        message.status = MessageStatus.Complete;
       }
     }
   }
