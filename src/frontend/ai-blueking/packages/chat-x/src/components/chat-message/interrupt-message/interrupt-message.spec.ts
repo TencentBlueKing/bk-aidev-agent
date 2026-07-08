@@ -396,7 +396,8 @@ describe('InterruptMessage', () => {
     const cancelBtn = wrapper.find('.ai-tool-approval-card__cancel');
     expect(cancelBtn.exists()).toBe(true);
 
-    // 点击取消审批应透传取消动作，interrupt 由 result.payload.metadata 还原
+    // 回归：resultRenderers 须透传 onInterruptResume，否则取消点击调用次数为 0
+    // interrupt 由 result.payload.metadata 还原
     await cancelBtn.trigger('click');
     expect(onInterruptResume).toHaveBeenCalledWith(
       { operation: InterruptResumeOperation.ApprovalCancel, payload: { interrupt_id: approvalResume.interruptId } },
