@@ -94,6 +94,8 @@ type AIDevToolApprovalInterruptPayloadMetaData = {
     title: string;
     url: string;
   };
+  /** 工具参数，审批卡片内格式化 JSON 展示，缺省或空对象时不渲染参数区 */
+  toolArgs?: Record<string, any>;
 };
 
 type AIDevToolApprovalInterrupt = BaseInterrupt<
@@ -104,7 +106,7 @@ type AIDevToolApprovalInterrupt = BaseInterrupt<
 
 ## AIDevToolApprovalResume
 
-AI Dev 第三方工具审批中断响应（resume 后用于 `outcome.success` 时会话内回显审批单）。`payload.metadata` 透传中断时的 `metadata`（含 `ticket`），以便复用 `ToolApprovalCard` 只读渲染：
+AI Dev 第三方工具审批中断响应（resume 后用于 `outcome.success` 时会话内回显审批单）。`payload.metadata` 透传中断时的 `metadata`（含 `ticket` 与可选 `toolArgs`），以便复用 `ToolApprovalCard` 渲染：
 
 ```typescript
 type AIDevToolApprovalResume = BaseResume<

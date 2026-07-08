@@ -43,7 +43,44 @@ type ApprovalInterruptOptions = {
   sn: string;
   status: APPROVAL_STATUS;
   title?: string;
+  toolArgs?: Record<string, unknown>;
   toolCallId?: string;
+};
+
+/** 短参数：JSON ≤3 行，参数区不出现展开/收起 */
+const MOCK_TOOL_ARGS_SHORT: Record<string, unknown> = {
+  a: 1,
+  b: 2,
+};
+
+/** 长参数：JSON >3 行，用于验证参数区折叠/展开 */
+const MOCK_TOOL_ARGS_LONG: Record<string, unknown> = {
+  algorithm: 'bubble_sort',
+  language: 'typescript',
+  optimization: {
+    early_exit: true,
+    cocktail: false,
+  },
+  dataset: {
+    size: 10000,
+    distribution: 'partially_sorted',
+    seed: {
+      size: 10000,
+      distribution: 'partially_sorted',
+      seed: {
+        size: 10000,
+        distribution:
+          'partially_sortedpartially_sortedpartially_sortedpartially_sortedpartially_sortedpartially_sortedpartially_sortedpartially_sortedpartially_sorted',
+        seed: 42,
+      },
+    },
+  },
+  benchmarks: [
+    { name: 'random', expected_ms: 120 },
+    { name: 'nearly_sorted', expected_ms: 30 },
+    { name: 'reversed', expected_ms: 200 },
+  ],
+  notes: '请重点评审提前终止标志位与边界条件处理是否正确',
 };
 
 /** 构造 AI Dev 工具审批类 Interrupt */
@@ -61,6 +98,8 @@ const createApprovalInterrupt = (options: ApprovalInterruptOptions): AIDevToolAp
       title: options.title ?? '算法方案评审单',
       url: `https://example.com/review-tickets/${options.sn}`,
     },
+    // 未传 toolArgs 时不写入字段，方便覆盖「无参数不渲染」场景
+    ...(options.toolArgs ? { toolArgs: options.toolArgs } : {}),
   },
 });
 
@@ -108,64 +147,84 @@ const createInterruptScenario = (params: {
   ];
 };
 
-// —— 场景 1：待审批（outcome.interrupt，消息 Pending，等待 resume）——
+// —— 场景 1：待审批 + 长参数（可展开/收起）——
 const pendingInterrupt = createApprovalInterrupt({
   id: 'interrupt_pending',
   sn: 'REV-2026-04-24-001',
   status: APPROVAL_STATUS.PENDING,
   message: '算法方案评审单正在评审中',
+  toolArgs: MOCK_TOOL_ARGS_LONG,
 });
 const pendingScenario = createInterruptScenario({
   scenarioId: 'interrupt_pending',
-  intro: '【待审批】已生成算法方案，关联评审单待您处理：',
+  intro: '【待审批 · 长参数】已生成算法方案，关联评审单待您处理：',
   interrupt: pendingInterrupt,
   outcome: { type: 'interrupt', interrupts: [pendingInterrupt] },
   status: MessageStatus.Pending,
 });
 
-// —— 场景 2：已批准（单据 approved，仍展示审批卡片）——
+// —— 场景 2：草稿（与 pending 同属待审批交互）+ 长参数 ——
+const draftInterrupt = createApprovalInterrupt({
+  id: 'interrupt_draft',
+  sn: 'REV-2026-04-24-000',
+  status: APPROVAL_STATUS.DRAFT,
+  message: '算法方案评审单草稿待提交审批',
+  toolArgs: MOCK_TOOL_ARGS_LONG,
+});
+const draftScenario = createInterruptScenario({
+  scenarioId: 'interrupt_draft',
+  intro: '【草稿 · 长参数】评审单处于草稿态，交互同待审批：',
+  interrupt: draftInterrupt,
+  outcome: { type: 'interrupt', interrupts: [draftInterrupt] },
+  status: MessageStatus.Pending,
+});
+
+// —— 场景 3：已批准 + 短参数（无展开）——
 const approvedInterrupt = createApprovalInterrupt({
   id: 'interrupt_approved',
   sn: 'REV-2026-04-24-002',
   status: APPROVAL_STATUS.APPROVED,
   message: '算法方案评审单已通过',
+  toolArgs: MOCK_TOOL_ARGS_SHORT,
 });
 const approvedScenario = createInterruptScenario({
   scenarioId: 'interrupt_approved',
-  intro: '【已批准】评审单已通过，可继续后续流程：',
+  intro: '【已批准 · 短参数】评审单已通过，可继续后续流程：',
   interrupt: approvedInterrupt,
   outcome: { type: 'interrupt', interrupts: [approvedInterrupt] },
 });
 
-// —— 场景 3：已拒绝 ——
+// —— 场景 4：已拒绝 + 短参数 ——
 const rejectedInterrupt = createApprovalInterrupt({
   id: 'interrupt_rejected',
   sn: 'REV-2026-04-24-003',
   status: APPROVAL_STATUS.REJECTED,
   message: '算法方案评审单已被拒绝',
+  toolArgs: MOCK_TOOL_ARGS_SHORT,
 });
 const rejectedScenario = createInterruptScenario({
   scenarioId: 'interrupt_rejected',
-  intro: '【已拒绝】评审单未通过，请根据意见调整后重提：',
+  intro: '【已拒绝 · 短参数】评审单未通过，请根据意见调整后重提：',
   interrupt: rejectedInterrupt,
   outcome: { type: 'interrupt', interrupts: [rejectedInterrupt] },
 });
 
-// —— 场景 4：已取消 ——
+// —— 场景 5：已取消 + 短参数 ——
 const cancelledInterrupt = createApprovalInterrupt({
   id: 'interrupt_cancelled',
   sn: 'REV-2026-04-24-004',
   status: APPROVAL_STATUS.CANCELLED,
   message: '算法方案评审单已取消',
+  toolArgs: MOCK_TOOL_ARGS_SHORT,
 });
 const cancelledScenario = createInterruptScenario({
   scenarioId: 'interrupt_cancelled',
-  intro: '【已取消】该评审单已被发起人撤销：',
+  intro: '【已取消 · 短参数】该评审单已被发起人取消：',
   interrupt: cancelledInterrupt,
   outcome: { type: 'interrupt', interrupts: [cancelledInterrupt] },
 });
 
-// —— 场景 5：已撤销 ——
+// —— 场景 6：已撤销 · 无参数（不渲染参数区）——
 const revokedInterrupt = createApprovalInterrupt({
   id: 'interrupt_revoked',
   sn: 'REV-2026-04-24-005',
@@ -177,19 +236,50 @@ if (revokedInterrupt.metadata) {
 }
 const revokedScenario = createInterruptScenario({
   scenarioId: 'interrupt_revoked',
-  intro: '【已撤销】该评审单已由发起人自行撤销：',
+  intro: '【已撤销 · 无参数】该评审单已由发起人自行撤销：',
   interrupt: revokedInterrupt,
   outcome: { type: 'interrupt', interrupts: [revokedInterrupt] },
 });
 
-// —— 场景 6：用户已 resume（outcome.success + result，不渲染中断卡片）——
+// —— 场景 7：已过期 + 短参数 ——
+const expiredInterrupt = createApprovalInterrupt({
+  id: 'interrupt_expired',
+  sn: 'REV-2026-04-24-007',
+  status: APPROVAL_STATUS.EXPIRED,
+  message: '算法方案评审单已过期',
+  toolArgs: MOCK_TOOL_ARGS_SHORT,
+});
+const expiredScenario = createInterruptScenario({
+  scenarioId: 'interrupt_expired',
+  intro: '【已过期 · 短参数】评审单已超过审批时效：',
+  interrupt: expiredInterrupt,
+  outcome: { type: 'interrupt', interrupts: [expiredInterrupt] },
+});
+
+// —— 场景 8：已废弃 + 短参数 ——
+const abandonedInterrupt = createApprovalInterrupt({
+  id: 'interrupt_abandoned',
+  sn: 'REV-2026-04-24-008',
+  status: APPROVAL_STATUS.ABANDONED,
+  message: '算法方案评审单已废弃',
+  toolArgs: MOCK_TOOL_ARGS_SHORT,
+});
+const abandonedScenario = createInterruptScenario({
+  scenarioId: 'interrupt_abandoned',
+  intro: '【已废弃 · 短参数】评审单已被废弃，无法继续流转：',
+  interrupt: abandonedInterrupt,
+  outcome: { type: 'interrupt', interrupts: [abandonedInterrupt] },
+});
+
+// —— 场景 9：outcome.success 回显审批单（短参数）——
 const resumedScenario = createInterruptScenario({
   scenarioId: 'interrupt_resumed',
-  intro: '【已处理】您已确认关注该评审单，Agent 将继续执行：',
+  intro: '【已处理 · success 回显】您已确认关注该评审单，Agent 将继续执行：',
   interrupt: createApprovalInterrupt({
     id: 'interrupt_resumed',
     sn: 'REV-2026-04-24-006',
     status: APPROVAL_STATUS.PENDING,
+    toolArgs: MOCK_TOOL_ARGS_SHORT,
   }),
   outcome: { type: 'success' },
   result: {
@@ -206,6 +296,7 @@ const resumedScenario = createInterruptScenario({
           title: '算法方案评审单',
           url: 'https://example.com/review-tickets/REV-2026-04-24-006',
         },
+        toolArgs: MOCK_TOOL_ARGS_SHORT,
       },
     },
   } satisfies AIDevToolApprovalResume,
@@ -317,14 +408,22 @@ const userQuestionAnsweredScenario = createInterruptScenario({
   result: userQuestionAnsweredResult,
 });
 
-/** playground 全量中断 mock：覆盖审批态 + resume 态 + 兜底态 + 用户回答问题 */
-export const MOCK_INTERRUPT_MESSAGES: Message[] = [
+/** playground 审批单据专用 mock：覆盖全状态 + 长/短/无参数展示 */
+export const MOCK_APPROVAL_MESSAGES: Message[] = [
   ...pendingScenario,
+  ...draftScenario,
   ...approvedScenario,
   ...rejectedScenario,
   ...cancelledScenario,
   ...revokedScenario,
+  ...expiredScenario,
+  ...abandonedScenario,
   ...resumedScenario,
+];
+
+/** playground 全量中断 mock：审批 + resume + 兜底 + 用户回答问题 */
+export const MOCK_INTERRUPT_MESSAGES: Message[] = [
+  ...MOCK_APPROVAL_MESSAGES,
   ...unsupportedScenario,
   ...userQuestionScenario,
   ...userQuestionAnsweredScenario,

@@ -69,6 +69,10 @@ export type AIDevToolApprovalInterruptPayloadMetaData = {
     // 单据链接
     url: string;
   };
+  /**
+   * 工具参数
+   */
+  toolArgs?: Record<string, any>;
 };
 
 /**

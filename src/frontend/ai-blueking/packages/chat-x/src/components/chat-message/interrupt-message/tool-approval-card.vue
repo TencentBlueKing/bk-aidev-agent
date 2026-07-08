@@ -57,7 +57,8 @@
         <dd>{{ ticket.submit_time || '--' }}</dd>
       </div>
     </dl>
-
+    <!-- 工具参数展示：内容超过 3 行时支持展开/收起，无参数时不渲染 -->
+    <ToolApprovalArgs :tool-args="interrupt.metadata?.toolArgs" />
     <div
       v-if="isPendingApproval"
       class="ai-tool-approval-card__processor"
@@ -134,6 +135,7 @@
     TimeIcon,
   } from '../../../icons';
   import { t } from '../../../lang/lang';
+  import ToolApprovalArgs from './tool-approval-args.vue';
 
   import type { AIDevToolApprovalInterrupt, OnInterruptResume } from '../../../ag-ui/types/interrupt';
 
