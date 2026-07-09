@@ -23,6 +23,7 @@ from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
 from aidev_agent.core.ag_ui.types import (
     AgentInput,
     InterruptMessage,
+    MessageSnapshotEventExtend,
     RunFinishedSuccessOutcome,
     serialize_run_finished_outcome,
 )
@@ -531,7 +532,42 @@ class ChatCompletionAgent(BaseModel):
             yield frame
 
         # ---- 阶段 2：剩余帧交给队列管理（支持断点续传）----
-        yield from helper.stream(remaining_producer, on_complete=self._on_complete)
+        # gap 兜底：队列头被 prune 后若慢消费者游标落到被删段之前，用当前 graph checkpoint
+        # 重建一份 MESSAGES_SNAPSHOT 让前端 reset，再从队列尾续读，避免丢内容。
+        snapshot_provider = self._make_gap_snapshot_provider(agent_e, cfg)
+        yield from helper.stream(
+            remaining_producer, on_complete=self._on_complete, snapshot_provider=snapshot_provider
+        )
+
+    def _make_gap_snapshot_provider(
+        self, agent_e: Runnable | None, cfg: RunnableConfig | None
+    ) -> Callable[[], list] | None:
+        """构造 replay gap 兜底用的快照 provider：从 graph checkpoint 重建当前 MESSAGES_SNAPSHOT。
+
+        数据源为 LangGraph checkpoint state 的 messages（已落库消息的事实源，与终态快照同源），
+        经 ``langchain_messages_to_agui`` 转为 AG-UI 消息后编码为一帧 SSE。任何异常/无消息返回空，
+        消费端据此优雅降级。返回 None 表示缺少 graph/cfg，无法重建（消费端将跳过被删段）。
+        """
+        if agent_e is None or cfg is None:
+            return None
+
+        def _provider() -> list:
+            try:
+                state = run_coro_sync(agent_e.aget_state(cfg), timeout=5)
+                values = getattr(state, "values", None) or {}
+                messages = values.get("messages", []) if isinstance(values, dict) else []
+                agui_messages = langchain_messages_to_agui(messages)
+                if not agui_messages:
+                    return []
+                frame = EventEncoder().encode(
+                    MessageSnapshotEventExtend(type=EventType.MESSAGES_SNAPSHOT, messages=agui_messages)
+                )
+                return [frame]
+            except Exception:
+                logger.exception("[GapResync] rebuild snapshot failed")
+                return []
+
+        return _provider
 
     @staticmethod
     def _collect_replay_message_ids(message_handler: Any, thread_id: str | None) -> set[str]:

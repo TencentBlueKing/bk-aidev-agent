@@ -2420,3 +2420,38 @@ class _FakeReplayHandler:
 
     def get_messages_since(self, thread_id, offset, timeout=None):  # noqa: ARG002
         return self._cached[offset:], len(self._cached)
+
+
+class TestGapSnapshotProvider:
+    """replay gap 兜底 provider：从 graph checkpoint 重建当前 MESSAGES_SNAPSHOT。"""
+
+    def test_builds_snapshot_frame_from_checkpoint(self):
+        agent = _seed_agent()
+        state = SimpleNamespace(values={"messages": [AIMessage(content="hi", id="a1")]})
+        provider = agent._make_gap_snapshot_provider(MagicMock(), {"configurable": {}})
+        with patch(f"{_CHAT_MODULE}.run_coro_sync", return_value=state):
+            frames = provider()
+
+        assert len(frames) == 1
+        data = _parse_sse(frames[0])
+        assert data["type"] == EventType.MESSAGES_SNAPSHOT
+        ids = [(m.get("messageId") or m.get("id")) for m in data["messages"]]
+        assert "a1" in ids
+
+    def test_returns_none_without_graph_or_cfg(self):
+        agent = _seed_agent()
+        assert agent._make_gap_snapshot_provider(None, {"configurable": {}}) is None
+        assert agent._make_gap_snapshot_provider(MagicMock(), None) is None
+
+    def test_returns_empty_on_error(self):
+        agent = _seed_agent()
+        provider = agent._make_gap_snapshot_provider(MagicMock(), {"configurable": {}})
+        with patch(f"{_CHAT_MODULE}.run_coro_sync", side_effect=RuntimeError("boom")):
+            assert provider() == []
+
+    def test_returns_empty_when_no_messages(self):
+        agent = _seed_agent()
+        state = SimpleNamespace(values={"messages": []})
+        provider = agent._make_gap_snapshot_provider(MagicMock(), {"configurable": {}})
+        with patch(f"{_CHAT_MODULE}.run_coro_sync", return_value=state):
+            assert provider() == []
