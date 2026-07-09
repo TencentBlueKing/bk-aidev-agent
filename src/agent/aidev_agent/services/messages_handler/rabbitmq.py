@@ -336,6 +336,10 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         self._buffer_lock = threading.Lock()
         self._buffer_condition = threading.Condition(self._buffer_lock)
         self._flushing_threads: set[str] = set()
+        # 每个 thread 的单调递增消息序号：publish 时写入 message header，
+        # 消费者据此做 prune-稳定续读（seq > since_seq），不再依赖队列 list 下标。
+        self._seq_counters: dict[str, int] = {}
+        self._seq_lock = threading.Lock()
         self._replay_wait_condition = threading.Condition()
         self._producer_lock_connections: dict[str, pika.BlockingConnection] = {}
         self._producer_lock_guard = threading.Lock()
@@ -867,12 +871,15 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                     queue_name = self._ensure_queue(channel, thread_id)
 
                     for message in messages_to_flush:
+                        seq = self._next_seq(thread_id)
                         body = pickle.dumps(message)
                         channel.basic_publish(
                             exchange="",
                             routing_key=queue_name,
                             body=body,
-                            properties=pika.BasicProperties(delivery_mode=2),
+                            properties=pika.BasicProperties(
+                                delivery_mode=2, headers={self._MSG_SEQ_HEADER: seq}
+                            ),
                         )
 
                     logger.debug(f"Flushed {len(messages_to_flush)} messages to queue {queue_name}")
@@ -1034,6 +1041,20 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             self._flushing_threads.discard(thread_id)
             self._buffer_condition.notify_all()
 
+    # 消息序号所用的 RabbitMQ message header key
+    _MSG_SEQ_HEADER = "x-msg-seq"
+
+    def _next_seq(self, thread_id: str) -> int:
+        """分配该 thread 的下一个单调递增消息序号。
+
+        publish 顺序即 seq 顺序（同一 thread 的 flush 由 ``_flushing_threads`` 串行化），
+        供消费者按 seq 续读；``clear`` 时会重置计数器（新 producer 启动前会 clear 队列）。
+        """
+        with self._seq_lock:
+            nxt = self._seq_counters.get(thread_id, 0) + 1
+            self._seq_counters[thread_id] = nxt
+            return nxt
+
     def flush(self, thread_id: Optional[str] = None) -> None:
         """立即推送缓冲区中的消息到 RabbitMQ
 
@@ -1051,12 +1072,15 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                     queue_name = self._ensure_queue(channel, thread_id)
 
                     for message in messages_to_flush:
+                        seq = self._next_seq(thread_id)
                         body = pickle.dumps(message)
                         channel.basic_publish(
                             exchange="",
                             routing_key=queue_name,
                             body=body,
-                            properties=pika.BasicProperties(delivery_mode=2),
+                            properties=pika.BasicProperties(
+                                delivery_mode=2, headers={self._MSG_SEQ_HEADER: seq}
+                            ),
                         )
             except Exception as e:
                 logger.error(f"Error flushing messages for {thread_id}: {e}")
@@ -1114,51 +1138,66 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
 
             return messages
 
-    def _peek_queue_messages(self, channel: Any, queue_name: str) -> list[Any]:
-        """非破坏性读取队列中的全部消息。"""
-        messages = []
+    def _peek_queue_messages(self, channel: Any, queue_name: str) -> list[tuple[int, Any]]:
+        """非破坏性读取队列中的全部消息，返回 ``(seq, message)`` 有序列表。
+
+        ``seq`` 取自 publish 时写入的 message header；对升级前无 header 的旧消息，
+        按 peek 顺序回退为 1-based 位置序号（未 prune 时与旧 list 下标行为一致）。
+        """
+        items: list[tuple[int, Any]] = []
         delivery_tags = []
 
         try:
             queue_info = channel.queue_declare(queue=queue_name, durable=True, passive=True)
             message_count = queue_info.method.message_count
-            for _ in range(message_count):
-                method_frame, _, body = channel.basic_get(queue=queue_name, auto_ack=False)
+            for idx in range(1, message_count + 1):
+                method_frame, properties, body = channel.basic_get(queue=queue_name, auto_ack=False)
                 if not method_frame:
                     break
                 delivery_tags.append(method_frame.delivery_tag)
-                messages.append(pickle.loads(body))
+                seq = None
+                headers = getattr(properties, "headers", None) if properties is not None else None
+                if headers:
+                    seq = headers.get(self._MSG_SEQ_HEADER)
+                items.append((seq if isinstance(seq, int) else idx, pickle.loads(body)))
         finally:
             for tag in delivery_tags:
                 channel.basic_nack(delivery_tag=tag, requeue=True)
 
-        return messages
+        return items
 
     def get_messages_since(self, thread_id: str, offset: int, timeout: Optional[float] = None) -> tuple[list[Any], int]:
-        """从会话日志的指定 offset 开始读取消息，读取后不删除底层缓存。"""
+        """从会话日志的指定 seq 游标之后读取消息，读取后不删除底层缓存。
+
+        ``offset`` 是消费者的 seq 游标（``since_seq``，0 表示从头）；返回 ``(payloads, cursor)``，
+        其中 ``payloads`` 为 ``seq > since_seq`` 的消息体，``cursor`` 为本轮可见的最大 seq。
+        采用 seq（而非 list 下标）使得队列头部被 prune 后消费者仍能正确续读、不重不漏。
+        """
         start_time = time.time()
         deadline = start_time + timeout if timeout is not None else None
-        offset = max(offset, 0)
+        since_seq = max(offset, 0)
 
         while True:
             try:
                 with self._with_replay_lock(thread_id) as channel:
                     main_queue_name = self._ensure_queue(channel=channel, thread_id=thread_id)
-                    all_messages = self._peek_queue_messages(channel, main_queue_name)
+                    items = self._peek_queue_messages(channel, main_queue_name)
 
                     # 兼容升级前已经进入 DLQ 的旧缓存：仅在主队列为空时恢复一次。
-                    if not all_messages and self._get_dlq_count(thread_id) > 0:
+                    if not items and self._get_dlq_count(thread_id) > 0:
                         restored = self._restore_from_dlq(thread_id)
                         logger.info(
                             "[RabbitMQ] restored legacy DLQ messages before replay thread_id=%s restored=%d",
                             thread_id,
                             restored,
                         )
-                        all_messages = self._peek_queue_messages(channel, main_queue_name)
+                        items = self._peek_queue_messages(channel, main_queue_name)
 
-                next_offset = len(all_messages)
-                if next_offset > offset:
-                    return all_messages[offset:], next_offset
+                if items:
+                    max_seq = max(seq for seq, _ in items)
+                    if max_seq > since_seq:
+                        payloads = [message for seq, message in items if seq > since_seq]
+                        return payloads, max_seq
             except Exception:
                 logger.exception("Error in get_messages_since for thread_id=%s", thread_id)
 
@@ -1432,6 +1471,10 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         with self._buffer_lock:
             if thread_id in self._message_buffer:
                 self._message_buffer[thread_id] = []
+
+        # 重置该 thread 的消息序号（新 producer 启动前会 clear，seq 从 1 重新计起）
+        with self._seq_lock:
+            self._seq_counters.pop(thread_id, None)
 
         # 检查并迁移不兼容的旧队列
         self._migrate_queue_if_needed(thread_id)

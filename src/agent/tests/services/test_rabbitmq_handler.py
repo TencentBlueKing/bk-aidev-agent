@@ -353,6 +353,47 @@ class TestRabbitMQMessageHandler:
 
         self._wait_until_empty(handler, thread_id, timeout=1.0)
 
+    def test_seq_cursor_is_prune_stable(self, handler, thread_id):
+        """seq 游标对头部 prune 稳定：删掉队列头部后，消费者按 seq 续读不重不漏。
+
+        同时验证 publish 写入的 seq header 在多次 peek（basic_nack requeue）后仍存活。
+        这是「producer 落库后 prune RabbitMQ 头部」重构的地基。
+        """
+        for message in ["m1", "m2", "m3"]:
+            handler.put(thread_id, message)
+        handler.flush(thread_id)
+
+        # 首次全量读取：cursor = 最大 seq = 3
+        msgs, cursor = handler.get_messages_since(thread_id, 0, timeout=1)
+        assert msgs == ["m1", "m2", "m3"]
+        assert cursor == 3
+
+        # 再次 peek：seq header 在 requeue 后存活 → cursor 稳定不变
+        msgs_again, cursor_again = handler.get_messages_since(thread_id, 0, timeout=1)
+        assert msgs_again == ["m1", "m2", "m3"]
+        assert cursor_again == 3
+
+        # 模拟头部 prune：破坏性删除队列头 2 条（seq 1、2）
+        main_queue = handler._get_queue_name(thread_id)
+        with handler._with_channel() as channel:
+            for _ in range(2):
+                method_frame, _, _ = channel.basic_get(queue=main_queue, auto_ack=True)
+                assert method_frame is not None
+
+        # prune 后从头读：只剩 m3，且 cursor 仍为 3（seq 不回退）
+        msgs_pruned, cursor_pruned = handler.get_messages_since(thread_id, 0, timeout=1)
+        assert msgs_pruned == ["m3"]
+        assert cursor_pruned == 3
+
+        # 用被 prune 覆盖的旧 cursor=2 续读：仍只得 m3，不重复已删的 m1/m2、不漏 m3
+        msgs_tail, cursor_tail = handler.get_messages_since(thread_id, 2, timeout=1)
+        assert msgs_tail == ["m3"]
+        assert cursor_tail == 3
+
+        # 用 cursor=3 续读：无新消息 → 超时（不会把 m3 再发一遍）
+        with pytest.raises(TimeoutError):
+            handler.get_messages_since(thread_id, 3, timeout=0.3)
+
     def test_replay_reader_does_not_block_producer_flush(self, handler, thread_id, monkeypatch):
         """正在等待增量的 replay consumer 不应阻塞 producer flush 新消息。"""
         handler.put(thread_id, "seed")
