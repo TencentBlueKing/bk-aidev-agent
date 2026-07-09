@@ -44,10 +44,11 @@ packages/ai-blueking/
 ### 2. ✅ 依赖配置
 
 **package.json 已配置**：
+
 - 包名: `@blueking/ai-blueking@2.0.0`
 - 依赖:
-  - `@blueking/chat-helper` (workspace:*)
-  - `@blueking/chat-x` (workspace:*)
+  - `@blueking/chat-helper` (workspace:\*)
+  - `@blueking/chat-x` (workspace:\*)
   - `bkui-vue@^2.0.1`
   - `vue@^3.5.24`
   - `tippy.js` / `vue-tippy`
@@ -56,10 +57,12 @@ packages/ai-blueking/
 ### 3. ✅ 构建配置
 
 **支持多版本构建**：
+
 - Vue3 版本（主要）: ES、UMD、IIFE 格式
 - Vue2 兼容层（保留结构）
 
 **构建脚本**：
+
 - `vite.build.ts` - 主构建脚本
 - `vite.dev.ts` - 开发服务器配置
 - `vite.utils.ts` - 通用构建工具函数
@@ -67,6 +70,7 @@ packages/ai-blueking/
 ### 4. ✅ TypeScript 配置
 
 创建了完整的 TypeScript 配置：
+
 - `tsconfig.json` - 主配置
 - `tsconfig.build.json` - 构建配置（生成类型声明）
 - `tsconfig.node.json` - Node 脚本配置
@@ -95,18 +99,22 @@ packages/ai-blueking/
 ## 验证结果
 
 ### ✅ Workspace 识别
+
 ```bash
 $ pnpm list --depth 0 --filter @blueking/ai-blueking
 @blueking/ai-blueking@2.0.0
 ```
 
 ### ✅ 依赖链接
+
 - `@blueking/chat-helper` → 正确链接
 - `@blueking/chat-x` → 正确链接
 - 所有其他依赖正确安装
 
 ### ⚠️ 已知警告
+
 以下警告不影响功能：
+
 - Peer dependency 版本不匹配（ESLint、highlight.js）
 - 这些是次要问题，不影响核心功能
 
@@ -116,7 +124,7 @@ $ pnpm list --depth 0 --filter @blueking/ai-blueking
 
 ```bash
 # 在 monorepo 根目录
-cd /data/home/vincenttgao/project/gitcode/bk-aidev-agent/src/frontend/bkui-chat-x
+cd bk-aidev-agent/src/frontend/ai-blueking
 
 # 启动开发服务器
 pnpm dev:ai
@@ -143,27 +151,32 @@ pnpm lint:ai
 ## 下一步建议
 
 ### 1. 测试验证
+
 - [ ] 在 playground 中测试基本功能
 - [ ] 验证 AIBlueking 完整组件
 - [ ] 验证 ChatBot 核心组件
 - [ ] 测试事件系统
 
 ### 2. 集成测试
+
 - [ ] 在实际项目中集成测试
 - [ ] 验证与 chat-helper 的交互
 - [ ] 验证与 chat-x 的交互
 
 ### 3. 构建优化
+
 - [ ] 运行构建检查产物
 - [ ] 验证类型声明文件
 - [ ] 检查打包体积
 
 ### 4. 文档完善
+
 - [ ] 添加更多使用示例
 - [ ] 完善 API 文档
 - [ ] 添加迁移指南（从 V1 到 V2）
 
 ### 5. CI/CD
+
 - [ ] 配置自动化测试
 - [ ] 配置自动发布流程
 - [ ] 设置版本管理
@@ -180,11 +193,13 @@ pnpm lint:ai
 ## 注意事项
 
 ### Vue2 支持
+
 - 当前 Vue2 版本是占位实现
 - V2 代码基于 Vue3 Composition API
 - 如需 Vue2 支持，需要额外开发兼容层
 
 ### 导入路径
+
 在其他项目中使用时：
 
 ```typescript
@@ -196,6 +211,7 @@ import AIBlueking from '@blueking/ai-blueking/vue2';
 ```
 
 ### 环境变量
+
 如需配置环境变量，在项目根目录创建 `.env` 文件：
 
 ```bash
@@ -206,18 +222,21 @@ BKUI_PREFIX=bk
 ## 问题排查
 
 ### 依赖安装失败
+
 ```bash
 # 清理并重新安装
 pnpm install --force
 ```
 
 ### TypeScript 错误
+
 ```bash
 # 重新生成类型
 pnpm --filter @blueking/ai-blueking dts
 ```
 
 ### 构建失败
+
 ```bash
 # 检查构建日志
 pnpm --filter @blueking/ai-blueking build 2>&1 | tee build.log
