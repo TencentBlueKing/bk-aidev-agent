@@ -465,6 +465,30 @@ class TestRabbitMQMessageHandler:
         assert [handler._extract_message_id(m) for m in msgs] == ["m4"]
         assert cursor == 4
 
+    def test_prune_keeps_eod_for_completion(self, handler, thread_id):
+        """全部消息落库后 prune，EOD 仍保留 → 完成判定/pending 判定不受影响。"""
+        handler.put(thread_id, _sse_event("TEXT_MESSAGE_START", "m1"))
+        handler.put(thread_id, _sse_event("TEXT_MESSAGE_END", "m1"))
+        handler.put(thread_id, EOD_CHUNK)
+        handler.flush(thread_id)
+
+        handler.prune_committed(thread_id, {"m1"})  # 删 m1 两条，EOD 保留
+
+        remaining, _ = handler.get_messages_since(thread_id, 0, timeout=1)
+        assert remaining == [EOD_CHUNK]
+        assert handler.has_pending_messages(thread_id) is True
+        assert handler.is_empty(thread_id) is False
+
+    def test_mark_completed_after_prune_clears_all(self, handler, thread_id):
+        """prune 之后 mark_completed 仍能清空所有队列。"""
+        handler.put(thread_id, _sse_event("TEXT_MESSAGE_START", "m1"))
+        handler.put(thread_id, _sse_event("TEXT_MESSAGE_END", "m1"))
+        handler.flush(thread_id)
+        handler.prune_committed(thread_id, {"m1"})
+
+        handler.mark_completed(thread_id)
+        assert handler.is_empty(thread_id) is True
+
     def test_adaptive_flush_interval_ramps_min_to_max(self, handler):
         """flush 间隔随会话时长从 MIN 线性升到 MAX。"""
         assert handler._adaptive_flush_interval(0) == handler._FLUSH_INTERVAL_MIN
