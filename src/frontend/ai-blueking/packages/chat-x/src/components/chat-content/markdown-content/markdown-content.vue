@@ -350,6 +350,14 @@
         background-color: #282c34;
       }
 
+      ol > li {
+        list-style: decimal;
+      }
+
+      ul > li {
+        list-style: disc;
+      }
+
       .hljs-left {
         text-align: left;
       }
