@@ -465,6 +465,24 @@ class TestRabbitMQMessageHandler:
         assert [handler._extract_message_id(m) for m in msgs] == ["m4"]
         assert cursor == 4
 
+    def test_adaptive_flush_interval_ramps_min_to_max(self, handler):
+        """flush 间隔随会话时长从 MIN 线性升到 MAX。"""
+        assert handler._adaptive_flush_interval(0) == handler._FLUSH_INTERVAL_MIN
+        assert handler._adaptive_flush_interval(-1) == handler._FLUSH_INTERVAL_MIN
+        assert handler._adaptive_flush_interval(handler._FLUSH_INTERVAL_RAMP_SECONDS) == handler._FLUSH_INTERVAL_MAX
+        assert handler._adaptive_flush_interval(10 * handler._FLUSH_INTERVAL_RAMP_SECONDS) == handler._FLUSH_INTERVAL_MAX
+        mid = handler._adaptive_flush_interval(handler._FLUSH_INTERVAL_RAMP_SECONDS / 2)
+        assert handler._FLUSH_INTERVAL_MIN < mid < handler._FLUSH_INTERVAL_MAX
+
+    def test_should_flush_now_first_immediate_then_gated(self, handler, thread_id):
+        """首次立即 flush；未到自适应间隔则跳过，超过则再次 flush。"""
+        t0 = 1000.0
+        assert handler._should_flush_now(thread_id, t0) is True
+        # 距上次仅 0.05s < MIN(0.1s) → 不 flush
+        assert handler._should_flush_now(thread_id, t0 + 0.05) is False
+        # 距上次 0.2s > 早期间隔(~0.1s) → flush
+        assert handler._should_flush_now(thread_id, t0 + 0.25) is True
+
     def test_replay_reader_does_not_block_producer_flush(self, handler, thread_id, monkeypatch):
         """正在等待增量的 replay consumer 不应阻塞 producer flush 新消息。"""
         handler.put(thread_id, "seed")

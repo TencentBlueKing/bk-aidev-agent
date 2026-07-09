@@ -340,6 +340,10 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         # 消费者据此做 prune-稳定续读（seq > since_seq），不再依赖队列 list 下标。
         self._seq_counters: dict[str, int] = {}
         self._seq_lock = threading.Lock()
+        # 每个 thread 的 flush 计时：{"start": 会话首次进入 buffer 的时刻, "last": 上次 daemon flush 时刻}
+        # 用于 daemon 的自适应 flush 间隔（前密后疏）；显式 flush 不受此限。
+        self._thread_flush_ts: dict[str, dict] = {}
+        self._flush_ts_lock = threading.Lock()
         self._replay_wait_condition = threading.Condition()
         self._producer_lock_connections: dict[str, pika.BlockingConnection] = {}
         self._producer_lock_guard = threading.Lock()
@@ -839,8 +843,8 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                 if self._daemon_stop_event.wait(timeout=0.1):
                     break
 
-                # 批量推送消息
-                self._flush_messages()
+                # 批量推送消息（daemon 走自适应间隔：前密后疏）
+                self._flush_messages(respect_interval=True)
             except Exception as e:
                 logger.error(f"Error in daemon worker: {e}")
 
@@ -850,8 +854,13 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         except Exception as e:
             logger.error(f"Error flushing messages on daemon exit: {e}")
 
-    def _flush_messages(self) -> None:
-        """批量推送缓冲区中的所有消息到 RabbitMQ"""
+    def _flush_messages(self, respect_interval: bool = False) -> None:
+        """批量推送缓冲区中的所有消息到 RabbitMQ
+
+        respect_interval=True（daemon tick）：每个 thread 按自适应间隔（前密后疏）决定本轮是否
+        flush，未到间隔的留在 buffer 下轮再推。显式 flush / daemon 退出前的兜底 flush 传 False，
+        无条件推送所有消息，保证收尾不残留。
+        """
         with self._buffer_lock:
             if not self._message_buffer:
                 return
@@ -860,8 +869,11 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         if not thread_ids:
             return
 
+        now = time.time()
         flushed = False
         for thread_id in thread_ids:
+            if respect_interval and not self._should_flush_now(thread_id, now):
+                continue
             messages_to_flush = self._take_thread_buffer_for_flush(thread_id)
             if not messages_to_flush:
                 continue
@@ -1054,6 +1066,29 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             nxt = self._seq_counters.get(thread_id, 0) + 1
             self._seq_counters[thread_id] = nxt
             return nxt
+
+    # daemon flush 自适应间隔：从 MIN 在 RAMP 秒内线性增到 MAX（前期 token 快达，后期降 IO）
+    _FLUSH_INTERVAL_MIN = 0.1
+    _FLUSH_INTERVAL_MAX = 0.5
+    _FLUSH_INTERVAL_RAMP_SECONDS = 10.0
+
+    def _adaptive_flush_interval(self, age_seconds: float) -> float:
+        if age_seconds <= 0:
+            return self._FLUSH_INTERVAL_MIN
+        ratio = min(age_seconds / self._FLUSH_INTERVAL_RAMP_SECONDS, 1.0)
+        return self._FLUSH_INTERVAL_MIN + (self._FLUSH_INTERVAL_MAX - self._FLUSH_INTERVAL_MIN) * ratio
+
+    def _should_flush_now(self, thread_id: str, now: float) -> bool:
+        """daemon tick 时判断该 thread 是否到达自适应 flush 间隔（首次立即 flush）。"""
+        with self._flush_ts_lock:
+            state = self._thread_flush_ts.get(thread_id)
+            if state is None:
+                self._thread_flush_ts[thread_id] = {"start": now, "last": now}
+                return True
+            if now - state["last"] >= self._adaptive_flush_interval(now - state["start"]):
+                state["last"] = now
+                return True
+            return False
 
     def flush(self, thread_id: Optional[str] = None) -> None:
         """立即推送缓冲区中的消息到 RabbitMQ
@@ -1541,6 +1576,9 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         # 重置该 thread 的消息序号（新 producer 启动前会 clear，seq 从 1 重新计起）
         with self._seq_lock:
             self._seq_counters.pop(thread_id, None)
+        # 重置该 thread 的 flush 计时，下轮从 MIN 间隔重新起步
+        with self._flush_ts_lock:
+            self._thread_flush_ts.pop(thread_id, None)
 
         # 检查并迁移不兼容的旧队列
         self._migrate_queue_if_needed(thread_id)
