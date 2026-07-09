@@ -498,6 +498,19 @@ class ChatCompletionAgent(BaseModel):
             thread_id=queue_thread_id or agent_input.thread_id,
             defer_cleanup_on_complete=background_only,
         )
+
+        # 落库后裁剪 RabbitMQ 已提交前缀：writer 每落库一条消息，就把已落库 messageId 集合
+        # 回调给 message_handler，从主队列头部删掉这些消息，避免长会话队列无限堆积。
+        # 已删内容必可由 MySQL 快照恢复；handler 不支持 prune 时为 no-op。
+        qtid = queue_thread_id or agent_input.thread_id
+        if isinstance(self.event_handler, BaseSessionWriter):
+            message_handler = helper.message_handler
+
+            def _prune_committed(committed_message_ids: set[str]) -> None:
+                message_handler.prune_committed(qtid, committed_message_ids)
+
+            self.event_handler.commit_hook = _prune_committed
+
         producer = self._build_resume_aware_producer(
             agui_entry, agent_input, agent_e=agent_e, cfg=cfg, resume=resume
         )

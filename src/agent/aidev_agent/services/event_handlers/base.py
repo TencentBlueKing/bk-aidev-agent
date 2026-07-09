@@ -136,8 +136,21 @@ class BaseSessionWriter(ABC):
         # 用于追踪已写入的 assistant 消息的 builtin_property，以便后续追加 tool_calls 时合并
         # key: assistant_message_id, value: builtin_property dict
         self._assistant_builtin_properties: dict[str, dict] = {}
+        # 可选的「落库后」回调：入参为当前已落库 messageId 集合。
+        # 上层(如流式链路)据此裁剪 RabbitMQ 已提交前缀，避免长会话队列堆积；默认关闭。
+        self.commit_hook: Callable[[set[str]], None] | None = None
 
     # ---------- 公共事件入口 ----------
+
+    def _notify_committed(self) -> None:
+        """落库有新增时，把当前已落库 messageId 集合通知给 commit_hook（如 RabbitMQ prune）。"""
+        hook = self.commit_hook
+        if hook is None or not self._written_message_ids:
+            return
+        try:
+            hook(set(self._written_message_ids))
+        except Exception:
+            logger.exception("commit_hook failed for session_code=%s", self.session_code)
 
     def set_tools(self, tools: list | None) -> None:
         self._tools_mapping = {tool.name: tool for tool in tools} if tools else {}
@@ -148,6 +161,7 @@ class BaseSessionWriter(ABC):
         Args:
             event: AG-UI 事件
         """
+        committed_before = len(self._written_message_ids)
         if event.type == EventType.RAW:
             self._dispatch_raw_event(event)
         elif event.type == EventType.CUSTOM:
@@ -168,6 +182,10 @@ class BaseSessionWriter(ABC):
             self.handle_thinking_message_end(event)
         elif event.type == EventType.RUN_FINISHED:
             self.handle_run_finished(event)
+
+        # 本次事件若产生了新的落库消息，通知 commit_hook（用于裁剪已提交队列前缀）
+        if len(self._written_message_ids) > committed_before:
+            self._notify_committed()
 
     def _dispatch_raw_event(self, event: RawEvent) -> None:
         """分发原始事件到类型化处理方法"""
