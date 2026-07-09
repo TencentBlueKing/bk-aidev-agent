@@ -17,7 +17,7 @@ from urllib.parse import quote
 import pika
 from environs import Env
 
-from .base import BaseMessageQueueHandler, QueueTTLConfig
+from .base import BaseMessageQueueHandler, QueueTTLConfig, ReplayGapError
 from .constants import HEARTBEAT_CHUNK, QueueNamePrefixes
 from .multi_process_mixin import MultiProcessMixin
 
@@ -1178,6 +1178,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         since_seq = max(offset, 0)
 
         while True:
+            items: Optional[list[tuple[int, Any]]] = None
             try:
                 with self._with_replay_lock(thread_id) as channel:
                     main_queue_name = self._ensure_queue(channel=channel, thread_id=thread_id)
@@ -1192,14 +1193,21 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                             restored,
                         )
                         items = self._peek_queue_messages(channel, main_queue_name)
-
-                if items:
-                    max_seq = max(seq for seq, _ in items)
-                    if max_seq > since_seq:
-                        payloads = [message for seq, message in items if seq > since_seq]
-                        return payloads, max_seq
             except Exception:
                 logger.exception("Error in get_messages_since for thread_id=%s", thread_id)
+                items = None
+
+            # gap 检测与返回放在 try 之外：ReplayGapError 需向上层传播（不被上面的 except 吞掉）
+            if items:
+                seqs = [seq for seq, _ in items]
+                max_seq = max(seqs)
+                min_seq = min(seqs)
+                # 消费者游标落在「已被 prune 的段」之前：队列已无法续读，需上层重拉 MySQL 快照补齐
+                if since_seq > 0 and min_seq > since_seq + 1:
+                    raise ReplayGapError(thread_id=thread_id, since_seq=since_seq, min_seq=min_seq)
+                if max_seq > since_seq:
+                    payloads = [message for seq, message in items if seq > since_seq]
+                    return payloads, max_seq
 
             if deadline is not None and time.time() >= deadline:
                 raise TimeoutError("No message available within timeout")

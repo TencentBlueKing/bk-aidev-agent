@@ -9,7 +9,7 @@ from ag_ui.encoder import EventEncoder
 
 from aidev_agent.utils.event import RunId, emit_run_finished_event
 
-from .base import BaseMessageQueueHandler, ConsumerPreemptedError
+from .base import BaseMessageQueueHandler, ConsumerPreemptedError, ReplayGapError
 from .constants import (
     CANCELLED_CHUNK,
     EOD_CHUNK,
@@ -508,6 +508,7 @@ class GeneratorStreamingHelper:
         is_resuming: bool,
         enable_heartbeat_check: bool,
         on_complete: Callable[[], None] | None = None,
+        snapshot_provider: Callable[[], list] | None = None,
     ) -> Generator[Any, None, str]:
         """消费者循环：读取队列、处理控制消息并向上游产出业务消息。
 
@@ -661,6 +662,35 @@ class GeneratorStreamingHelper:
                                 yielded_total,
                             )
                         _maybe_log_progress()
+                except ReplayGapError as gap:
+                    # 队列头部已被 prune，本消费者游标落在被删段之前：重拉一份当前 DB 快照让前端
+                    # reset，再把游标跳到队列当前最小 seq 之前，从队列尾续读（被删段由快照补齐）。
+                    logger.warning(
+                        "[RabbitMQ] replay gap thread_id=%s consumer_id=%s since_seq=%d min_seq=%d, re-sync snapshot",
+                        self.thread_id,
+                        consumer_id_short,
+                        gap.since_seq,
+                        gap.min_seq,
+                    )
+                    if snapshot_provider is not None:
+                        try:
+                            for frame in snapshot_provider() or []:
+                                yield frame
+                                yielded_total += 1
+                        except Exception:
+                            logger.exception(
+                                "[RabbitMQ] snapshot_provider failed on replay gap thread_id=%s", self.thread_id
+                            )
+                    else:
+                        logger.warning(
+                            "[RabbitMQ] replay gap without snapshot_provider thread_id=%s, "
+                            "pruned segment [%d,%d) will be skipped",
+                            self.thread_id,
+                            gap.since_seq + 1,
+                            gap.min_seq,
+                        )
+                    replay_offset = max(gap.min_seq - 1, 0)
+                    continue
                 except ConsumerPreemptedError:
                     logger.info(
                         f"Consumer {consumer_id[:8]} preempted for thread_id={self.thread_id}, yielding to new consumer"
@@ -719,6 +749,7 @@ class GeneratorStreamingHelper:
         self,
         generator: Generator[Any, None, None],
         on_complete: Callable[[], None] | None = None,
+        snapshot_provider: Callable[[], list] | None = None,
     ) -> Generator[Any, None, None]:
         """使用队列处理器缓存流式请求
 
@@ -729,6 +760,9 @@ class GeneratorStreamingHelper:
             generator: 数据生成器
             on_complete: 流完成时的回调函数，用于及时更新 session status 等外部状态。
                 replay-from-start handler 在 producer 完成时调用；旧 handler 在消费到 EOD 后调用。
+            snapshot_provider: 可选的「重拉当前 DB 快照」回调，返回若干 SSE 帧。
+                当队列头部被 prune、消费者游标落到被删段之前（``ReplayGapError``）时调用，
+                yield 一份最新快照让前端 reset，再从队列尾续读，避免丢内容。
 
         Yields:
             生成器产生的数据
@@ -769,6 +803,7 @@ class GeneratorStreamingHelper:
                 is_resuming=is_resuming,
                 enable_heartbeat_check=enable_heartbeat_check,
                 on_complete=on_complete,
+                snapshot_provider=snapshot_provider,
             )
         except GeneratorExit:
             # 客户端断开连接，不清理队列，消息已在死信队列中保留

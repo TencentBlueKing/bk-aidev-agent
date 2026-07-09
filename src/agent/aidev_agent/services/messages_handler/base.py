@@ -36,6 +36,22 @@ class StreamCancelledError(Exception):
     """流被用户主动取消（停止会话）"""
 
 
+class ReplayGapError(Exception):
+    """消费者游标落在已被 prune 的段之前，无法从队列续读。
+
+    发生在「producer 落库后裁剪队列头部」时，慢消费者的游标落后于队列当前最小 seq：
+    此时缺失的 seq 段只能由 MySQL 快照恢复，上层需重拉快照补齐，再从 ``min_seq`` 续读。
+    """
+
+    def __init__(self, thread_id: str, since_seq: int, min_seq: int):
+        self.thread_id = thread_id
+        self.since_seq = since_seq
+        self.min_seq = min_seq
+        super().__init__(
+            f"replay gap for thread_id={thread_id}: since_seq={since_seq} < min_seq={min_seq}"
+        )
+
+
 @runtime_checkable
 class ConsumerManagementProtocol(Protocol):
     """消费者管理协议

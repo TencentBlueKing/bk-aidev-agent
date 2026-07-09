@@ -5,10 +5,12 @@
 （仍有活跃 producer / consumer 时不回收会话日志，避免误删进行中的会话）。
 """
 
+import threading
 import time
 from unittest.mock import MagicMock
 
-from aidev_agent.services.messages_handler import GeneratorStreamingHelper
+from aidev_agent.services.messages_handler import EOD_CHUNK, GeneratorStreamingHelper
+from aidev_agent.services.messages_handler.base import ReplayGapError
 
 
 class _HandlerWithoutProducerAPI:
@@ -108,3 +110,70 @@ class TestOrphanCleanupGuard:
 
         time.sleep(0.3)
         handler.mark_completed.assert_not_called()
+
+
+class TestReplayGapRecovery:
+    """队列头部被 prune、消费者游标落到被删段之前时，消费循环重拉快照补齐再续。"""
+
+    def _make_handler(self, get_side_effect) -> MagicMock:
+        handler = MagicMock()
+        handler.supports_replay_from_start.return_value = True
+        handler.check_cancel_signal.return_value = False
+        handler.is_cancel_requested.return_value = False
+        handler.get_messages_since.side_effect = get_side_effect
+        return handler
+
+    def test_consumer_resyncs_snapshot_on_replay_gap(self):
+        handler = self._make_handler(
+            [
+                ReplayGapError(thread_id="t", since_seq=1, min_seq=4),
+                ([EOD_CHUNK], 4),
+            ]
+        )
+        helper = GeneratorStreamingHelper(handler, "t")
+
+        snapshot_calls = []
+
+        def _provider():
+            snapshot_calls.append(1)
+            return ["data: SNAPSHOT\n\n"]
+
+        gen = helper._consume_stream_messages(
+            consumer_id="c",
+            cancel_event=threading.Event(),
+            is_resuming=True,
+            enable_heartbeat_check=False,
+            snapshot_provider=_provider,
+        )
+        out = list(gen)
+
+        # gap 时重拉了一次快照并 yield 给下游
+        assert snapshot_calls == [1]
+        assert "data: SNAPSHOT\n\n" in out
+        # 第二次读取用重置后的游标 min_seq-1=3
+        assert handler.get_messages_since.call_count == 2
+        second_call = handler.get_messages_since.call_args_list[1]
+        assert second_call.args[1] == 3
+
+    def test_replay_gap_without_provider_skips_segment(self):
+        """无 snapshot_provider 时不崩溃：跳过被删段、游标重置后继续。"""
+        handler = self._make_handler(
+            [
+                ReplayGapError(thread_id="t", since_seq=1, min_seq=4),
+                ([EOD_CHUNK], 4),
+            ]
+        )
+        helper = GeneratorStreamingHelper(handler, "t")
+
+        gen = helper._consume_stream_messages(
+            consumer_id="c",
+            cancel_event=threading.Event(),
+            is_resuming=True,
+            enable_heartbeat_check=False,
+            snapshot_provider=None,
+        )
+        out = list(gen)
+
+        assert out == []  # 无快照可补，但不抛异常
+        assert handler.get_messages_since.call_count == 2
+        assert handler.get_messages_since.call_args_list[1].args[1] == 3

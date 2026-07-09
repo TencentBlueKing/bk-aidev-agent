@@ -12,6 +12,7 @@ from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
 from aidev_agent.pydantic_models import ChatPrompt, ExecuteKwargs
 from aidev_agent.services.agent import ChatCompletionAgent
 from aidev_agent.services.messages_handler import EOD_CHUNK, GeneratorStreamingHelper
+from aidev_agent.services.messages_handler.base import ReplayGapError
 from aidev_agent.services.messages_handler.constants import HEARTBEAT_CHUNK
 from aidev_agent.services.messages_handler.rabbitmq import RabbitMQMessageHandler
 from aidev_agent.utils.async_utils import async_to_sync_generator
@@ -443,6 +444,26 @@ class TestRabbitMQMessageHandler:
         handler.put(thread_id, _sse_event("TEXT_MESSAGE_START", "m1"))
         handler.flush(thread_id)
         assert handler.prune_committed(thread_id, set()) == 0
+
+    def test_get_messages_since_raises_replay_gap_after_prune(self, handler, thread_id):
+        """消费者游标落在被 prune 段之前时，get_messages_since 抛 ReplayGapError（需上层重拉快照）。"""
+        for message_id in ["m1", "m2", "m3", "m4"]:
+            handler.put(thread_id, _sse_event("TEXT_MESSAGE_START", message_id))
+        handler.flush(thread_id)
+
+        # 删掉 m1/m2/m3(seq 1-3)，队列最小 seq 变为 4
+        assert handler.prune_committed(thread_id, {"m1", "m2", "m3"}) == 3
+
+        # 游标 since_seq=1 落在被删段 [2,4) 之前 → gap
+        with pytest.raises(ReplayGapError) as exc:
+            handler.get_messages_since(thread_id, 1, timeout=1)
+        assert exc.value.min_seq == 4
+        assert exc.value.since_seq == 1
+
+        # 游标 since_seq=3(恰好 min_seq-1) 不算 gap，正常返回 m4
+        msgs, cursor = handler.get_messages_since(thread_id, 3, timeout=1)
+        assert [handler._extract_message_id(m) for m in msgs] == ["m4"]
+        assert cursor == 4
 
     def test_replay_reader_does_not_block_producer_flush(self, handler, thread_id, monkeypatch):
         """正在等待增量的 replay consumer 不应阻塞 producer flush 新消息。"""
