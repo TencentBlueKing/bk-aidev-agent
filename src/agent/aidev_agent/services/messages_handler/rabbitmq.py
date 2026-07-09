@@ -18,7 +18,7 @@ import pika
 from environs import Env
 
 from .base import BaseMessageQueueHandler, QueueTTLConfig
-from .constants import QueueNamePrefixes
+from .constants import HEARTBEAT_CHUNK, QueueNamePrefixes
 from .multi_process_mixin import MultiProcessMixin
 
 logger = getLogger(__name__)
@@ -1205,6 +1205,64 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                 raise TimeoutError("No message available within timeout")
 
             self._wait_for_replay_retry(deadline, self.REPLAY_MESSAGE_RETRY_INTERVAL)
+
+    @staticmethod
+    def _extract_message_id(message: Any) -> Optional[str]:
+        """从队列中的 SSE 字符串块解析 messageId；控制块/非文本块返回 None。"""
+        if not isinstance(message, str) or not message.startswith("data: "):
+            return None
+        try:
+            payload = json.loads(message[len("data: ") :])
+        except (json.JSONDecodeError, ValueError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        return payload.get("messageId") or payload.get("message_id")
+
+    def prune_committed(self, thread_id: str, committed_message_ids: set[str]) -> int:
+        """从主队列头部破坏性删除「已落库消息」的前缀，遇到未落库消息立即停止。
+
+        逐条从队列头判断（任一不满足即停止，保留该条及其后所有消息）：
+          - 心跳块（``HEARTBEAT_CHUNK``）：瞬时块，删除；
+          - 文本事件且其 ``messageId ∈ committed_message_ids``：内容已落 MySQL，删除。
+        保留并停止：``EOD``/``CANCELLED`` 等控制块、``messageId`` 未落库、以及无法识别的块。
+
+        已删内容一定能由 MySQL 快照恢复，故删除安全；慢消费者若游标落到被删段之前，
+        由上层「检测 gap → 重拉快照」兜底（见消费循环）。返回删除条数。
+        """
+        if not committed_message_ids:
+            return 0
+
+        pruned = 0
+        try:
+            with self._with_replay_lock(thread_id) as channel:
+                main_queue_name = self._ensure_queue(channel=channel, thread_id=thread_id)
+                while True:
+                    method_frame, _, body = channel.basic_get(queue=main_queue_name, auto_ack=False)
+                    if not method_frame:
+                        break
+                    try:
+                        message = pickle.loads(body)
+                    except Exception:
+                        channel.basic_nack(delivery_tag=method_frame.delivery_tag, requeue=True)
+                        break
+
+                    message_id = self._extract_message_id(message)
+                    prunable = message == HEARTBEAT_CHUNK or (
+                        message_id is not None and message_id in committed_message_ids
+                    )
+                    if prunable:
+                        channel.basic_ack(delivery_tag=method_frame.delivery_tag)
+                        pruned += 1
+                    else:
+                        channel.basic_nack(delivery_tag=method_frame.delivery_tag, requeue=True)
+                        break
+        except Exception:
+            logger.exception("Error pruning committed messages for thread_id=%s", thread_id)
+
+        if pruned:
+            logger.debug("[RabbitMQ] pruned %d committed messages from head thread_id=%s", pruned, thread_id)
+        return pruned
 
     def _get_block(self, thread_id: str, timeout: Optional[float] = None) -> list[Any]:
         """阻塞方式获取消息

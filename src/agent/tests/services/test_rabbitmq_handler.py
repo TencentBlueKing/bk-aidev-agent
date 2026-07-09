@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import json
 import os
 import pickle
 import threading
@@ -11,8 +12,19 @@ from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
 from aidev_agent.pydantic_models import ChatPrompt, ExecuteKwargs
 from aidev_agent.services.agent import ChatCompletionAgent
 from aidev_agent.services.messages_handler import EOD_CHUNK, GeneratorStreamingHelper
+from aidev_agent.services.messages_handler.constants import HEARTBEAT_CHUNK
 from aidev_agent.services.messages_handler.rabbitmq import RabbitMQMessageHandler
 from aidev_agent.utils.async_utils import async_to_sync_generator
+
+
+def _sse_event(event_type: str, message_id: str | None = None, delta: str | None = None) -> str:
+    """构造队列里实际存放的 SSE 事件字符串（data: {json}\\n\\n）。"""
+    payload: dict = {"type": event_type}
+    if message_id is not None:
+        payload["messageId"] = message_id
+    if delta is not None:
+        payload["delta"] = delta
+    return f"data: {json.dumps(payload)}\n\n"
 
 # 标记：所有测试均需要 RabbitMQ
 pytestmark = pytest.mark.skipif(
@@ -393,6 +405,44 @@ class TestRabbitMQMessageHandler:
         # 用 cursor=3 续读：无新消息 → 超时（不会把 m3 再发一遍）
         with pytest.raises(TimeoutError):
             handler.get_messages_since(thread_id, 3, timeout=0.3)
+
+    def test_prune_committed_removes_committed_prefix_and_stops(self, handler, thread_id):
+        """prune_committed 删除已落库消息前缀 + 心跳，遇未落库消息即停并保留其及 EOD。"""
+        handler.put(thread_id, _sse_event("TEXT_MESSAGE_START", "m1"))
+        handler.put(thread_id, _sse_event("TEXT_MESSAGE_CONTENT", "m1", "hel"))
+        handler.put(thread_id, _sse_event("TEXT_MESSAGE_END", "m1"))
+        handler.put(thread_id, HEARTBEAT_CHUNK)
+        handler.put(thread_id, _sse_event("TEXT_MESSAGE_START", "m2"))
+        handler.put(thread_id, _sse_event("TEXT_MESSAGE_CONTENT", "m2", "lo"))
+        handler.put(thread_id, EOD_CHUNK)
+        handler.flush(thread_id)
+
+        # 仅 m1 落库 → 删除 m1 的 3 条 + 心跳，遇未落库的 m2 停止
+        pruned = handler.prune_committed(thread_id, {"m1"})
+        assert pruned == 4
+
+        # 剩余：m2 的 2 条 + EOD（m2 未落库 → 保留；EOD 控制块 → 保留；心跳已删）
+        remaining, _ = handler.get_messages_since(thread_id, 0, timeout=1)
+        ids = [handler._extract_message_id(m) for m in remaining]
+        assert "m1" not in ids
+        assert ids.count("m2") == 2
+        assert EOD_CHUNK in remaining
+        assert HEARTBEAT_CHUNK not in remaining
+
+    def test_prune_committed_noop_when_head_uncommitted(self, handler, thread_id):
+        """队列头即未落库消息时，prune 不删任何东西。"""
+        handler.put(thread_id, _sse_event("TEXT_MESSAGE_START", "m1"))
+        handler.put(thread_id, _sse_event("TEXT_MESSAGE_CONTENT", "m1", "x"))
+        handler.flush(thread_id)
+
+        assert handler.prune_committed(thread_id, {"other"}) == 0
+        remaining, _ = handler.get_messages_since(thread_id, 0, timeout=1)
+        assert len(remaining) == 2
+
+    def test_prune_committed_empty_committed_set_is_noop(self, handler, thread_id):
+        handler.put(thread_id, _sse_event("TEXT_MESSAGE_START", "m1"))
+        handler.flush(thread_id)
+        assert handler.prune_committed(thread_id, set()) == 0
 
     def test_replay_reader_does_not_block_producer_flush(self, handler, thread_id, monkeypatch):
         """正在等待增量的 replay consumer 不应阻塞 producer flush 新消息。"""

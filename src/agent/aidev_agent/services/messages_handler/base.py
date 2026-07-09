@@ -242,6 +242,14 @@ class BaseMessageQueueHandler(ABC):
         """
         return False
 
+    def prune_committed(self, thread_id: str, committed_message_ids: set[str]) -> int:
+        """删除队列头部「messageId 已落库」的消息前缀，返回删除条数。
+
+        默认 no-op（返回 0）。支持从头 prune 已提交日志的处理器应覆盖此方法，
+        使 RabbitMQ 只保留未落库的在途消息，避免队列随长会话无限堆积。
+        """
+        return 0
+
     @abstractmethod
     def get_dlq_messages(self, thread_id: str) -> list[Any]:
         """获取死信队列中的所有消息（不移除）
