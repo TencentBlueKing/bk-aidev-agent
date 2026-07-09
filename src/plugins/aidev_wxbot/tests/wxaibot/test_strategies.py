@@ -389,8 +389,8 @@ class TestResolveChannelAdminRtx:
     @patch("aidev_wxbot.wxaibot.auth.BkAiDevApi")
     def test_returns_contact_from_config(self, mock_api_cls):
         """正常路径：从渠道配置获取管理员 RTX"""
-        mock_api_cls.return_value.retrieve_agent_channel_configs.return_value = [{"config": {"contact": "weilunli"}}]
-        assert resolve_channel_admin_rtx("T14070043A") == "weilunli"
+        mock_api_cls.return_value.retrieve_agent_channel_configs.return_value = [{"config": {"contact": "channel_admin_rtx"}}]
+        assert resolve_channel_admin_rtx("A000000A") == "channel_admin_rtx"
 
     @pytest.mark.parametrize(
         "configs",
@@ -405,7 +405,7 @@ class TestResolveChannelAdminRtx:
     def test_fallback_to_original_username(self, mock_api_cls, configs):
         """异常路径：配置不可用时降级为原始 username"""
         mock_api_cls.return_value.retrieve_agent_channel_configs.return_value = configs
-        assert resolve_channel_admin_rtx("T14070043A") == "T14070043A"
+        assert resolve_channel_admin_rtx("A000000A") == "A000000A"
 
     @patch("aidev_wxbot.wxaibot.auth.BkAiDevApi")
     def test_api_exception_fallback(self, mock_api_cls):
