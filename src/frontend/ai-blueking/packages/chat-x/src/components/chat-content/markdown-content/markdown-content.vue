@@ -350,11 +350,15 @@
         background-color: #282c34;
       }
 
-      ol > li {
+      li {
+        list-style: inherit;
+      }
+
+      ol li {
         list-style: decimal;
       }
 
-      ul > li {
+      ul li {
         list-style: disc;
       }
 
