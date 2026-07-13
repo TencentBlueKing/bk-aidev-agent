@@ -72,7 +72,7 @@ AI 消息的操作工具栏组件，由**左侧消息工具区**和**右侧更�
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  .message-tools-container                           │
+│  .ai-message-tools-container                           │
 │  ┌─────────────────────┐  │  ┌───────────────────┐ │
 │  │  messageTools        │  │  │  updateTools      │ │
 │  │  copy cite rebuild…  │  │  │  like unlike del  │ │

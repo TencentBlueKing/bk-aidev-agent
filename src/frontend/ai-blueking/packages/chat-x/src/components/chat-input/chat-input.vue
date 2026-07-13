@@ -1,6 +1,6 @@
 <template>
   <div
-    class="chat-input-container"
+    class="ai-chat-input-container"
     :style="{ '--chat-z-index': CHAT_Z_INDEX }"
   >
     <slot name="top" />
@@ -361,7 +361,7 @@ Use Shift + Enter to enter a new line`
   @use '../../styles/variables.scss' as variables;
   @use '../../styles/border.scss' as border;
 
-  .chat-input-container {
+  .ai-chat-input-container {
     display: flex;
     flex-direction: column;
     align-items: center;

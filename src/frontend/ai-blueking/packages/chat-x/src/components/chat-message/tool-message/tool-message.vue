@@ -1,5 +1,5 @@
 <template>
-  <div class="tool-message">
+  <div class="ai-tool-message">
     <DescPanel
       :desc="content || (typeof error === 'string' ? error : undefined)"
       :title="t('返回内容')"
@@ -14,7 +14,7 @@
   defineProps<Partial<ToolMessage>>();
 </script>
 <style lang="scss">
-  .tool-message {
+  .ai-tool-message {
     display: flex;
     flex-direction: column;
     align-items: flex-start;

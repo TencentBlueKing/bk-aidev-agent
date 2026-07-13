@@ -1,7 +1,7 @@
 <template>
   <div
     ref="messageToolsRef"
-    class="message-tools-container"
+    class="ai-message-tools-container"
   >
     <div
       class="message-tools"
@@ -187,7 +187,7 @@
   });
 </script>
 <style lang="scss">
-  .message-tools-container {
+  .ai-message-tools-container {
     display: flex;
     align-items: center;
     width: 100%;

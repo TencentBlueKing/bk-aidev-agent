@@ -46,7 +46,7 @@ describe('TextContent', () => {
         props: { content: '文本内容' },
       });
 
-      expect(wrapper.find('.text-content').exists()).toBe(true);
+      expect(wrapper.find('.ai-text-content').exists()).toBe(true);
     });
 
     it('应该正确渲染 content 内容', () => {
@@ -78,7 +78,7 @@ describe('TextContent', () => {
         props: { content: '' },
       });
 
-      expect(wrapper.find('.text-content').exists()).toBe(true);
+      expect(wrapper.find('.ai-text-content').exists()).toBe(true);
       expect(wrapper.text()).toBe('');
     });
 
@@ -131,7 +131,7 @@ describe('TextContent', () => {
         props: { content: '文本' },
       });
 
-      expect(wrapper.find('.text-content').exists()).toBe(true);
+      expect(wrapper.find('.ai-text-content').exists()).toBe(true);
     });
   });
 });

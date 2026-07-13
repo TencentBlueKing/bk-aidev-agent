@@ -2,7 +2,7 @@
   <div
     :key="svgDomStr"
     ref="mermaidContentRef"
-    class="mermaid-content"
+    class="ai-mermaid-content"
     v-html="svgDomStr"
   />
 </template>
@@ -117,7 +117,7 @@
 </script>
 
 <style lang="scss">
-  .mermaid-content {
+  .ai-mermaid-content {
     width: 100%;
     min-height: 0;
     padding: 8px 12px;

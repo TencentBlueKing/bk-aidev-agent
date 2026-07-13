@@ -74,7 +74,7 @@ describe('MermaidContent', () => {
         },
       });
 
-      expect(wrapper.find('.mermaid-content').exists()).toBe(true);
+      expect(wrapper.find('.ai-mermaid-content').exists()).toBe(true);
     });
   });
 
@@ -92,7 +92,7 @@ describe('MermaidContent', () => {
         },
       });
 
-      expect(wrapper.find('.mermaid-content').exists()).toBe(true);
+      expect(wrapper.find('.ai-mermaid-content').exists()).toBe(true);
     });
 
     it('应该忽略非 mermaid fence', () => {
@@ -108,7 +108,7 @@ describe('MermaidContent', () => {
         },
       });
 
-      expect(wrapper.find('.mermaid-content').exists()).toBe(true);
+      expect(wrapper.find('.ai-mermaid-content').exists()).toBe(true);
     });
   });
 
@@ -141,7 +141,7 @@ describe('MermaidContent', () => {
         },
       });
 
-      expect(wrapper.find('.mermaid-content').exists()).toBe(true);
+      expect(wrapper.find('.ai-mermaid-content').exists()).toBe(true);
     });
 
     it('应该处理空内容', () => {
@@ -157,7 +157,7 @@ describe('MermaidContent', () => {
         },
       });
 
-      expect(wrapper.find('.mermaid-content').exists()).toBe(true);
+      expect(wrapper.find('.ai-mermaid-content').exists()).toBe(true);
     });
 
     it('应该处理没有 info 的 token', () => {
@@ -172,7 +172,7 @@ describe('MermaidContent', () => {
         },
       });
 
-      expect(wrapper.find('.mermaid-content').exists()).toBe(true);
+      expect(wrapper.find('.ai-mermaid-content').exists()).toBe(true);
     });
   });
 
@@ -190,7 +190,7 @@ describe('MermaidContent', () => {
         },
       });
 
-      expect(wrapper.find('.mermaid-content').exists()).toBe(true);
+      expect(wrapper.find('.ai-mermaid-content').exists()).toBe(true);
     });
   });
 });

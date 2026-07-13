@@ -1,5 +1,5 @@
 <template>
-  <div class="flow-agent-node-detail">
+  <div class="ai-flow-agent-node-detail">
     <h3 class="detail-title">
       <template v-if="loading">
         <span>{{ t('节点') }}：</span>
@@ -238,7 +238,7 @@
 <style lang="scss">
   @use '../../../styles/variables.scss' as variables;
 
-  .flow-agent-node-detail {
+  .ai-flow-agent-node-detail {
     display: flex;
     flex-direction: column;
     height: 100%;

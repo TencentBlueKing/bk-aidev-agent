@@ -147,16 +147,16 @@ export function useCounter(initial = 0) {
 
 ## 组件结构
 
-根类名为 **`.code-content-wrapper`**：外层宽度、下边距以及 **`.code-content-header`**（深色顶栏）在任意父级下均生效。**代码区** `.hljs-pre`、行内高亮等样式选择器为 **`.ai-message-container .code-content-wrapper`**，仅在消息列表（`MessageContainer` 根上的 `ai-message-container`）内与对话区一致。Wiki 与业务中若要完整还原代码区外观，请将 `CodeContent` 包在带 `ai-message-container` 类名的父节点内。
+根类名为 **`.ai-code-content-wrapper`**：外层宽度、下边距以及 **`.code-content-header`**（深色顶栏）在任意父级下均生效。**代码区** `.hljs-pre`、行内高亮等样式选择器为 **`.ai-message-container .ai-code-content-wrapper`**，仅在消息列表（`MessageContainer` 根上的 `ai-message-container`）内与对话区一致。Wiki 与业务中若要完整还原代码区外观，请将 `CodeContent` 包在带 `ai-message-container` 类名的父节点内。
 
 ```
-.code-content-wrapper
+.ai-code-content-wrapper
 ├── .code-content-header（深色顶栏；不依赖 .ai-message-container）
 │     ├── .code-header-language（token.info）
 │     ├── slot#header（{ language, token }）
 │     └── ToolBtn id="copy"
 │
-└── .hljs-pre（完整 padding / 背景 / code 字体：需父级为 .ai-message-container .code-content-wrapper）
+└── .hljs-pre（完整 padding / 背景 / code 字体：需父级为 .ai-message-container .ai-code-content-wrapper）
       └── <code class="hljs language-{raw-info}">
             ├── v-for completedLines → <span class="code-line" />
             └── v-if currentLineText → <span class="code-line current-line" />

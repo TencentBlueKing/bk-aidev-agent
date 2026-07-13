@@ -12,7 +12,7 @@
         {{ title }}
       </span>
     </template>
-    <div class="knowledge-rag-content">
+    <div class="ai-knowledge-rag-content">
       <MarkdownContent :content="content?.content || ''" />
     </div>
     <ReferenceContent :content="content?.referenceDocument || []" />
@@ -48,7 +48,7 @@
   });
 </script>
 <style lang="scss">
-  .knowledge-rag-content {
+  .ai-knowledge-rag-content {
     display: flex;
     flex-direction: column;
     padding: 6px 14px;

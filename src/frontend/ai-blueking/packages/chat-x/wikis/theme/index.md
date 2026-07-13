@@ -14,7 +14,7 @@
 
 ```scss
 // 自定义输入框样式
-.chat-input-container .chat-input {
+.ai-chat-input-container .chat-input {
   background: #fafafa;
   border-radius: 12px;
 }
@@ -29,7 +29,7 @@
 
 ```scss
 .dark-theme {
-  .chat-input-container .chat-input {
+  .ai-chat-input-container .chat-input {
     background: #2d2d2d;
   }
 

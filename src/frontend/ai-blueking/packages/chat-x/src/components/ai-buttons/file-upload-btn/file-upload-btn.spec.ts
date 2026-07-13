@@ -123,7 +123,7 @@ describe('FileUploadBtn', () => {
     it('应该正确渲染组件根元素', () => {
       wrapper = mount(FileUploadBtn);
 
-      expect(wrapper.find('.file-upload-btn').exists()).toBe(true);
+      expect(wrapper.find('.ai-file-upload-btn').exists()).toBe(true);
     });
 
     it('应该渲染隐藏的 file input', () => {

@@ -261,7 +261,7 @@
       background-color: #e1ecff;
       border-radius: 4px;
 
-      :deep(.text-content) {
+      :deep(.ai-text-content) {
         width: auto;
         padding: 0;
         background-color: transparent;

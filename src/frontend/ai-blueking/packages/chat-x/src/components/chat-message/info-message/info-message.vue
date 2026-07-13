@@ -1,9 +1,9 @@
 <template>
-  <div class="info-message">
+  <div class="ai-info-message">
     <div
       v-for="(text, index) in Array.isArray(content) ? content : [content]"
       :key="index"
-      class="info-message-content"
+      class="ai-info-message-content"
     >
       {{ text }}
     </div>
@@ -16,7 +16,7 @@
   defineProps<Partial<InfoMessage>>();
 </script>
 <style lang="scss">
-  .info-message {
+  .ai-info-message {
     display: flex;
     flex-direction: column;
     align-items: center;

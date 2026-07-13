@@ -821,7 +821,7 @@
         // overflow: visible;
 
         // 空态下快捷指令保持在输入框位置（贴底），内容过高时向上生长并遮挡欢迎内容，而非被压缩
-        .shortcut-render.is-welcome-overlay {
+        .ai-shortcut-render.is-welcome-overlay {
           position: absolute;
           right: 8px;
           bottom: 8px;
@@ -833,7 +833,7 @@
           max-height: calc(100% - 16px);
 
           // 高度随内容自然撑开，超过可视高度时由外层 max-height 兜底滚动
-          .shortcut-render-content {
+          .ai-shortcut-render-content {
             max-height: none;
           }
         }

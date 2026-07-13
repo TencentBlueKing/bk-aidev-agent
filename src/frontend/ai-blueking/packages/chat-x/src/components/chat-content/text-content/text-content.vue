@@ -1,5 +1,5 @@
 <template>
-  <div class="text-content">
+  <div class="ai-text-content">
     {{ content }}
   </div>
 </template>
@@ -9,7 +9,7 @@
   }>();
 </script>
 <style lang="scss">
-  .text-content {
+  .ai-text-content {
     display: flex;
     width: fit-content;
     padding: 8px 12px;

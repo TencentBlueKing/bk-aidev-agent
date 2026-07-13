@@ -1,6 +1,6 @@
 <template>
-  <div class="shortcut-render">
-    <div class="shortcut-render-header">
+  <div class="ai-shortcut-render">
+    <div class="ai-shortcut-render-header">
       <ThinkingIcon class="header-icon" />
       <span class="header-name">{{ alias || name }}</span>
       <CloseIcon
@@ -8,7 +8,7 @@
         @click="handleClose"
       />
     </div>
-    <div class="shortcut-render-content">
+    <div class="ai-shortcut-render-content">
       <Form
         ref="formRef"
         class="shortcut-render-form"
@@ -196,7 +196,7 @@
 <style lang="scss">
   @use '../../../styles/border.scss' as border;
 
-  .shortcut-render {
+  .ai-shortcut-render {
     position: relative;
     display: flex;
     flex-direction: column;

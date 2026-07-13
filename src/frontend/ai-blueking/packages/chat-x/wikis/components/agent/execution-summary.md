@@ -160,10 +160,10 @@ sinceVersion: 1.0.0
 ## 组件结构
 
 ```
-execution-summary
-├── execution-summary-header
+ai-execution-summary
+├── ai-execution-summary-header
 │   └── Input（关键词搜索框，clearable）
-└── execution-summary-content
+└── ai-execution-summary-content
     ├── 有数据时：
     │   └── content-item × N（时间线节点）
     │       ├── timeline-dot（时间节点圆点）

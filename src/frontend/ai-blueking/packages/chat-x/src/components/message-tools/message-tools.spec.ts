@@ -186,7 +186,7 @@ describe('MessageTools', () => {
     it('应该正确渲染组件', () => {
       wrapper = mount(MessageTools);
 
-      expect(wrapper.find('.message-tools-container').exists()).toBe(true);
+      expect(wrapper.find('.ai-message-tools-container').exists()).toBe(true);
     });
 
     it('应该渲染默认的 messageTools', () => {
@@ -303,7 +303,7 @@ describe('MessageTools', () => {
         },
       });
 
-      expect(wrapper.find('.message-tools-container').exists()).toBe(true);
+      expect(wrapper.find('.ai-message-tools-container').exists()).toBe(true);
     });
 
     it('应该处理空的 updateTools', () => {
@@ -313,7 +313,7 @@ describe('MessageTools', () => {
         },
       });
 
-      expect(wrapper.find('.message-tools-container').exists()).toBe(true);
+      expect(wrapper.find('.ai-message-tools-container').exists()).toBe(true);
     });
   });
 
@@ -354,7 +354,7 @@ describe('MessageTools', () => {
     it('应该具有正确的类名结构', () => {
       wrapper = mount(MessageTools);
 
-      expect(wrapper.find('.message-tools-container').exists()).toBe(true);
+      expect(wrapper.find('.ai-message-tools-container').exists()).toBe(true);
       expect(wrapper.findAll('.message-tools').length).toBe(2);
     });
 
@@ -475,7 +475,7 @@ describe('MessageTools', () => {
     it('不传 tippyOptions 时组件应正常渲染', () => {
       wrapper = mount(MessageTools);
 
-      expect(wrapper.find('.message-tools-container').exists()).toBe(true);
+      expect(wrapper.find('.ai-message-tools-container').exists()).toBe(true);
       expect(wrapper.props().tippyOptions).toBeUndefined();
     });
 

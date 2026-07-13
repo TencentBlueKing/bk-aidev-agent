@@ -49,7 +49,7 @@ describe('DescPanel', () => {
         },
       });
 
-      expect(wrapper.find('.toolcall-desc').exists()).toBe(true);
+      expect(wrapper.find('.ai-toolcall-desc').exists()).toBe(true);
     });
 
     it('应该渲染标题', () => {
@@ -159,7 +159,7 @@ describe('DescPanel', () => {
         },
       });
 
-      expect(wrapper.find('.toolcall-desc').exists()).toBe(true);
+      expect(wrapper.find('.ai-toolcall-desc').exists()).toBe(true);
     });
 
     it('应该处理 undefined desc', () => {
@@ -169,7 +169,7 @@ describe('DescPanel', () => {
         },
       });
 
-      expect(wrapper.find('.toolcall-desc').exists()).toBe(true);
+      expect(wrapper.find('.ai-toolcall-desc').exists()).toBe(true);
     });
 
     it('应该处理空对象 JSON', () => {
@@ -220,7 +220,7 @@ describe('DescPanel', () => {
         },
       });
 
-      expect(wrapper.find('.toolcall-desc').exists()).toBe(true);
+      expect(wrapper.find('.ai-toolcall-desc').exists()).toBe(true);
       expect(wrapper.find('.desc-title').exists()).toBe(true);
       expect(wrapper.find('.desc-panel').exists()).toBe(true);
     });

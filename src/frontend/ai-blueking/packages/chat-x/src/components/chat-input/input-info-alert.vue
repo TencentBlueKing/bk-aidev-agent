@@ -1,7 +1,7 @@
 <template>
-  <div class="chat-input-info-alert">
-    <InfoIcon class="chat-input-info-alert__icon" />
-    <span class="chat-input-info-alert__text">{{ content }}</span>
+  <div class="ai-chat-input-info-alert">
+    <InfoIcon class="ai-chat-input-info-alert__icon" />
+    <span class="ai-chat-input-info-alert__text">{{ content }}</span>
   </div>
 </template>
 
@@ -15,7 +15,7 @@
 <style lang="scss">
   @use '../../styles/variables.scss' as variables;
 
-  .chat-input-info-alert {
+  .ai-chat-input-info-alert {
     display: flex;
     gap: 8px;
     align-items: flex-start;

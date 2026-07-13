@@ -39,7 +39,7 @@ sinceVersion: 1.0.0
 ## 组件结构
 
 ```
-.file-upload-btn（display: flex，align-items: center）
+.ai-file-upload-btn（display: flex，align-items: center）
 ├── input[type="file"]（.file-upload-btn-input，display: none，multiple，:accept）
 │     触发后走 handleFileInputChange → 校验 → emit upload → target.value = ''
 └── span.ai-shortcut-btn.file-upload-btn-icon（24×24px，color: #979ba5，hover: cursor: pointer）

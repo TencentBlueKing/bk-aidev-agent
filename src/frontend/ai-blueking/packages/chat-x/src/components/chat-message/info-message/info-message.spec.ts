@@ -48,7 +48,7 @@ describe('InfoMessage', () => {
         },
       });
 
-      expect(wrapper.find('.info-message').exists()).toBe(true);
+      expect(wrapper.find('.ai-info-message').exists()).toBe(true);
     });
 
     it('应该正确渲染字符串 content', () => {
@@ -58,7 +58,7 @@ describe('InfoMessage', () => {
         props: { content },
       });
 
-      expect(wrapper.find('.info-message-content').text()).toBe(content);
+      expect(wrapper.find('.ai-info-message-content').text()).toBe(content);
     });
 
     it('应该正确渲染数组 content', () => {
@@ -68,7 +68,7 @@ describe('InfoMessage', () => {
         props: { content },
       });
 
-      const items = wrapper.findAll('.info-message-content');
+      const items = wrapper.findAll('.ai-info-message-content');
       expect(items.length).toBe(3);
       expect(items[0].text()).toBe('消息1');
       expect(items[1].text()).toBe('消息2');
@@ -96,7 +96,7 @@ describe('InfoMessage', () => {
         },
       });
 
-      expect(wrapper.find('.info-message').exists()).toBe(true);
+      expect(wrapper.find('.ai-info-message').exists()).toBe(true);
     });
 
     it('应该处理空数组 content', () => {
@@ -106,8 +106,8 @@ describe('InfoMessage', () => {
         },
       });
 
-      expect(wrapper.find('.info-message').exists()).toBe(true);
-      expect(wrapper.findAll('.info-message-content').length).toBe(0);
+      expect(wrapper.find('.ai-info-message').exists()).toBe(true);
+      expect(wrapper.findAll('.ai-info-message-content').length).toBe(0);
     });
 
     it('应该处理 undefined content', () => {
@@ -115,7 +115,7 @@ describe('InfoMessage', () => {
         props: {},
       });
 
-      expect(wrapper.find('.info-message').exists()).toBe(true);
+      expect(wrapper.find('.ai-info-message').exists()).toBe(true);
     });
 
     it('应该处理单元素数组 content', () => {
@@ -125,8 +125,8 @@ describe('InfoMessage', () => {
         },
       });
 
-      expect(wrapper.findAll('.info-message-content').length).toBe(1);
-      expect(wrapper.find('.info-message-content').text()).toBe('单条消息');
+      expect(wrapper.findAll('.ai-info-message-content').length).toBe(1);
+      expect(wrapper.find('.ai-info-message-content').text()).toBe('单条消息');
     });
 
     it('应该处理特殊字符的 content', () => {
@@ -136,7 +136,7 @@ describe('InfoMessage', () => {
         props: { content },
       });
 
-      expect(wrapper.find('.info-message-content').text()).toBe(content);
+      expect(wrapper.find('.ai-info-message-content').text()).toBe(content);
       expect(wrapper.find('script').exists()).toBe(false);
     });
   });
@@ -149,8 +149,8 @@ describe('InfoMessage', () => {
         },
       });
 
-      expect(wrapper.find('.info-message').exists()).toBe(true);
-      expect(wrapper.find('.info-message-content').exists()).toBe(true);
+      expect(wrapper.find('.ai-info-message').exists()).toBe(true);
+      expect(wrapper.find('.ai-info-message-content').exists()).toBe(true);
     });
   });
 });

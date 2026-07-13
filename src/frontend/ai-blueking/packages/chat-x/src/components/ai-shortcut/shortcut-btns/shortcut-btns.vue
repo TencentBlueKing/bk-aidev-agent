@@ -1,7 +1,7 @@
 <template>
   <div
     ref="containerRef"
-    class="shortcut-btns"
+    class="ai-shortcut-btns"
   >
     <template
       v-for="(shortcut, index) in shortcuts"
@@ -9,7 +9,7 @@
     >
       <ShortcutBtn
         :ref="el => setItemRef(el, index)"
-        :class="['shortcut-btns-item', { 'shortcut-btns-item-hidden': !visibleItems.includes(shortcut) }]"
+        :class="['ai-shortcut-btns-item', { 'ai-shortcut-btns-item-hidden': !visibleItems.includes(shortcut) }]"
         :shortcut="shortcut"
         @click="handleSelectShortcut(shortcut)"
       />
@@ -32,14 +32,14 @@
     >
       <ShortcutBtn
         ref="moreBtnRef"
-        class="shortcut-btns-item shortcut-btns-more"
+        class="ai-shortcut-btns-item ai-shortcut-btns-more"
         @click="handleToggleMoreMenu"
       >
-        <MoreAgentIcon class="shortcut-btns-more-icon" />
+        <MoreAgentIcon class="ai-shortcut-btns-more-icon" />
         <span>{{ t('更多') }}</span>
       </ShortcutBtn>
       <template #content>
-        <div class="shortcut-menu">
+        <div class="ai-shortcut-menu">
           <ShortcutBtn
             v-for="shortcut in hiddenShortcuts"
             :key="shortcut.id"
@@ -131,7 +131,7 @@
   @use '../../../styles/variables.scss' as variables;
   @use '../../../styles/border.scss' as border;
 
-  .shortcut-btns {
+  .ai-shortcut-btns {
     position: relative;
     display: flex;
     gap: 4px;
@@ -186,7 +186,7 @@
     }
   }
 
-  .shortcut-menu {
+  .ai-shortcut-menu {
     @include menu.ai-common-menu-style;
   }
 </style>

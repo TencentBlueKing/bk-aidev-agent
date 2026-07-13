@@ -122,7 +122,7 @@ describe('ExecutionSummary', () => {
         props: { messageGroups: [] },
       });
 
-      expect(wrapper.find('.execution-summary').exists()).toBe(true);
+      expect(wrapper.find('.ai-execution-summary').exists()).toBe(true);
     });
 
     it('应该渲染搜索输入框', () => {
@@ -143,7 +143,7 @@ describe('ExecutionSummary', () => {
         props: { messageGroups: groups },
       });
 
-      const items = wrapper.findAll('.execution-summary-content-item');
+      const items = wrapper.findAll('.ai-execution-summary-content-item');
       expect(items.length).toBe(2);
     });
 
@@ -152,7 +152,7 @@ describe('ExecutionSummary', () => {
         props: { messageGroups: [] },
       });
 
-      expect(wrapper.find('.execution-summary-content-empty').exists()).toBe(true);
+      expect(wrapper.find('.ai-execution-summary-content-empty').exists()).toBe(true);
       expect(wrapper.find('.mock-exception').exists()).toBe(true);
     });
   });
@@ -198,7 +198,7 @@ describe('ExecutionSummary', () => {
         props: { messageGroups: [group] },
       });
 
-      const item = wrapper.find('.execution-summary-content-item');
+      const item = wrapper.find('.ai-execution-summary-content-item');
       await item.trigger('mouseenter');
 
       const locateBtn = wrapper.find('.content-item-locate');
@@ -215,7 +215,7 @@ describe('ExecutionSummary', () => {
         props: { messageGroups: [] },
       });
 
-      expect(wrapper.find('.execution-summary-content-empty-text').text()).toContain('暂无数据');
+      expect(wrapper.find('.ai-execution-summary-content-empty-text').text()).toContain('暂无数据');
     });
   });
 
@@ -230,7 +230,7 @@ describe('ExecutionSummary', () => {
         props: { messageGroups: groups },
       });
 
-      const items = wrapper.findAll('.execution-summary-content-item');
+      const items = wrapper.findAll('.ai-execution-summary-content-item');
       expect(items[0]?.find('.timeline-line').exists()).toBe(true);
       expect(items[1]?.find('.timeline-line').exists()).toBe(false);
     });

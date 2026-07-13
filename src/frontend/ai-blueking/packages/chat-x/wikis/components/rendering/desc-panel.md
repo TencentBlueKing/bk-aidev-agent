@@ -37,7 +37,7 @@ sinceVersion: 1.0.0
 ## 组件结构
 
 ```
-.toolcall-desc（flex column，gap: 4px，padding: 12px，background: #f5f7fa）
+.ai-toolcall-desc（flex column，gap: 4px，padding: 12px，background: #f5f7fa）
 ├── .desc-title（font-size: 12px，font-weight: bold，color: #313238，margin-bottom: 6px）
 │     └── {{ title }}
 └── .desc-panel（flex column，gap: 4px）

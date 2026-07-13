@@ -331,13 +331,13 @@
 
     const result = tryRenderKatex(content, displayMode);
     if (result && !hasKatexError(result)) {
-      const className = displayMode ? 'block-katex' : 'inline-katex';
+      const className = displayMode ? 'ai-block-katex' : 'ai-inline-katex';
       return `<span class="${className}">${result}</span>`;
     }
 
     // 渲染失败，返回原始内容
     const escapedContent = content.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    return `<span class="katex-loading" style="color: #666; font-style: italic;">${escapedContent}</span>`;
+    return `<span class="ai-katex-loading" style="color: #666; font-style: italic;">${escapedContent}</span>`;
   };
 
   /**
@@ -403,7 +403,7 @@
       if (!token) continue;
 
       if (token.type === 'math_block') {
-        html += `<div class="block-latex-wrapper">${renderLatexToken(token)}</div>`;
+        html += `<div class="ai-block-latex-wrapper">${renderLatexToken(token)}</div>`;
       } else if (token.type === 'math_inline') {
         html += renderLatexToken(token);
       } else if (token.type === 'inline' && token.children) {
@@ -434,7 +434,7 @@
   });
 
   const wrapperTag = computed(() => (isBlockOnly.value ? 'div' : 'span'));
-  const wrapperClass = computed(() => (isBlockOnly.value ? 'block-latex-content' : 'inline-latex-content'));
+  const wrapperClass = computed(() => (isBlockOnly.value ? 'ai-block-latex-content' : 'ai-inline-latex-content'));
 
   /**
    * 节流的 LaTeX 渲染函数
@@ -460,7 +460,7 @@
 </script>
 
 <style lang="scss">
-  .inline-latex-content {
+  .ai-inline-latex-content {
     display: inline;
     vertical-align: baseline;
 
@@ -470,7 +470,7 @@
     }
   }
 
-  .block-latex-content {
+  .ai-block-latex-content {
     display: block;
     width: 100%;
     margin: 16px 0;
@@ -482,22 +482,22 @@
     }
   }
 
-  .block-latex-wrapper {
+  .ai-block-latex-wrapper {
     display: block;
     width: 100%;
     margin: 16px 0;
     text-align: center;
   }
 
-  .inline-katex {
+  .ai-inline-katex {
     display: inline;
   }
 
-  .block-katex {
+  .ai-block-katex {
     display: block;
   }
 
-  .katex-loading {
+  .ai-katex-loading {
     display: inline;
   }
 </style>

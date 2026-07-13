@@ -91,7 +91,7 @@ sinceVersion: 1.0.0
 ## 组件结构
 
 ```
-chat-input-container
+ai-chat-input-container
 ├── slot#top（容器顶部，在输入框框体外侧）
 ├── slot#interrupt（容器顶部，在输入框框体外侧，通常展示中断/审批提示）
 └── chat-input（框体，受 inputMaxHeight 控制）

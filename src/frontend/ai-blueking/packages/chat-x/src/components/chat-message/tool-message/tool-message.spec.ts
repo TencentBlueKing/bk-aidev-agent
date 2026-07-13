@@ -73,7 +73,7 @@ describe('ToolMessage', () => {
         },
       });
 
-      expect(wrapper.find('.tool-message').exists()).toBe(true);
+      expect(wrapper.find('.ai-tool-message').exists()).toBe(true);
     });
 
     it('应该渲染 DescPanel 组件', () => {
@@ -190,7 +190,7 @@ describe('ToolMessage', () => {
         },
       });
 
-      expect(wrapper.find('.tool-message').exists()).toBe(true);
+      expect(wrapper.find('.ai-tool-message').exists()).toBe(true);
     });
 
     it('应该处理 undefined content', () => {
@@ -198,7 +198,7 @@ describe('ToolMessage', () => {
         props: {},
       });
 
-      expect(wrapper.find('.tool-message').exists()).toBe(true);
+      expect(wrapper.find('.ai-tool-message').exists()).toBe(true);
     });
 
     it('应该处理特殊字符的 content', () => {
@@ -220,7 +220,7 @@ describe('ToolMessage', () => {
         },
       });
 
-      expect(wrapper.find('.tool-message').exists()).toBe(true);
+      expect(wrapper.find('.ai-tool-message').exists()).toBe(true);
     });
   });
 });

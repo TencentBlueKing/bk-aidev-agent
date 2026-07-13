@@ -1,5 +1,5 @@
 <template>
-  <span class="md-image-wrapper">
+  <span class="ai-md-image-wrapper">
     <!-- 加载中、URL 不完整、或 URL 不稳定时显示 Loading -->
     <span
       v-if="showLoading"
@@ -215,7 +215,7 @@
 </script>
 
 <style lang="scss">
-  .md-image-wrapper {
+  .ai-md-image-wrapper {
     display: inline-block;
     vertical-align: middle;
 

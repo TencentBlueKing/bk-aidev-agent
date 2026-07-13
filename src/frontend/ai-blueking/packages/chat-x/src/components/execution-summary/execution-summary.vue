@@ -1,20 +1,20 @@
 <template>
-  <div class="execution-summary">
-    <div class="execution-summary-header">
+  <div class="ai-execution-summary">
+    <div class="ai-execution-summary-header">
       <Input
         v-model="keyword"
-        class="execution-summary-header-input"
+        class="ai-execution-summary-header-input"
         clearable
         :placeholder="t('搜索 关键字')"
         @update:model-value="emits('updateKeyword', $event)"
       />
     </div>
-    <div class="execution-summary-content">
+    <div class="ai-execution-summary-content">
       <template v-if="messageGroups.length">
         <div
           v-for="(group, index) in messageGroups"
           :key="group.uid"
-          class="execution-summary-content-item"
+          class="ai-execution-summary-content-item"
           @mouseenter="hoverGroupId = group.uid"
           @mouseleave="hoverGroupId = undefined"
         >
@@ -52,12 +52,12 @@
         </div>
       </template>
       <template v-else>
-        <div class="execution-summary-content-empty">
+        <div class="ai-execution-summary-content-empty">
           <Exception
             class="empty-exception"
             type="empty"
           />
-          <div class="execution-summary-content-empty-text">
+          <div class="ai-execution-summary-content-empty-text">
             {{ keyword ? t('搜索结果为空') : t('暂无数据') }}
             <Button
               v-if="keyword"
@@ -116,7 +116,7 @@
   };
 </script>
 <style lang="scss">
-  .execution-summary {
+  .ai-execution-summary {
     display: flex;
     flex: 1;
     flex-direction: column;

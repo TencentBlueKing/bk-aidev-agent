@@ -79,7 +79,7 @@ describe('ImageContent', () => {
         },
       });
 
-      expect(wrapper.find('.md-image-wrapper').exists()).toBe(true);
+      expect(wrapper.find('.ai-md-image-wrapper').exists()).toBe(true);
     });
   });
 
@@ -124,7 +124,7 @@ describe('ImageContent', () => {
       });
 
       // 应该开始加载
-      expect(wrapper.find('.md-image-wrapper').exists()).toBe(true);
+      expect(wrapper.find('.ai-md-image-wrapper').exists()).toBe(true);
     });
 
     it('应该接受 https:// URL', () => {
@@ -134,7 +134,7 @@ describe('ImageContent', () => {
         },
       });
 
-      expect(wrapper.find('.md-image-wrapper').exists()).toBe(true);
+      expect(wrapper.find('.ai-md-image-wrapper').exists()).toBe(true);
     });
 
     it('应该接受 data: URL', () => {
@@ -144,7 +144,7 @@ describe('ImageContent', () => {
         },
       });
 
-      expect(wrapper.find('.md-image-wrapper').exists()).toBe(true);
+      expect(wrapper.find('.ai-md-image-wrapper').exists()).toBe(true);
     });
 
     it('应该接受相对路径', () => {
@@ -154,7 +154,7 @@ describe('ImageContent', () => {
         },
       });
 
-      expect(wrapper.find('.md-image-wrapper').exists()).toBe(true);
+      expect(wrapper.find('.ai-md-image-wrapper').exists()).toBe(true);
     });
 
     it('应该接受带扩展名的文件路径', () => {
@@ -164,7 +164,7 @@ describe('ImageContent', () => {
         },
       });
 
-      expect(wrapper.find('.md-image-wrapper').exists()).toBe(true);
+      expect(wrapper.find('.ai-md-image-wrapper').exists()).toBe(true);
     });
   });
 
@@ -211,7 +211,7 @@ describe('ImageContent', () => {
         },
       });
 
-      expect(wrapper.find('.md-image-wrapper').exists()).toBe(true);
+      expect(wrapper.find('.ai-md-image-wrapper').exists()).toBe(true);
     });
 
     it('应该处理 localhost URL', () => {
@@ -221,7 +221,7 @@ describe('ImageContent', () => {
         },
       });
 
-      expect(wrapper.find('.md-image-wrapper').exists()).toBe(true);
+      expect(wrapper.find('.ai-md-image-wrapper').exists()).toBe(true);
     });
   });
 
@@ -233,7 +233,7 @@ describe('ImageContent', () => {
         },
       });
 
-      expect(wrapper.find('.md-image-wrapper').exists()).toBe(true);
+      expect(wrapper.find('.ai-md-image-wrapper').exists()).toBe(true);
     });
   });
 });

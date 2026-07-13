@@ -114,7 +114,7 @@ describe('FlowAgentNodeDetail', () => {
         props: baseProps,
       });
 
-      expect(wrapper.find('.flow-agent-node-detail').exists()).toBe(true);
+      expect(wrapper.find('.ai-flow-agent-node-detail').exists()).toBe(true);
     });
 
     it('应该渲染节点标题', () => {
@@ -318,7 +318,7 @@ describe('FlowAgentNodeDetail', () => {
         props: baseProps,
       });
 
-      expect(wrapper.find('.flow-agent-node-detail').exists()).toBe(true);
+      expect(wrapper.find('.ai-flow-agent-node-detail').exists()).toBe(true);
     });
 
     it('loading 时不应该渲染数据内容', () => {

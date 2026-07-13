@@ -1,5 +1,5 @@
 <template>
-  <div class="code-content-wrapper">
+  <div class="ai-code-content-wrapper">
     <div class="code-content-header">
       <span class="code-header-language">{{ language }}</span>
       <slot
@@ -248,7 +248,7 @@
 </script>
 
 <style lang="scss">
-  .code-content-wrapper {
+  .ai-code-content-wrapper {
     width: 100%;
     margin-bottom: 12px;
 
@@ -273,7 +273,7 @@
     }
   }
 
-  .ai-message-container .code-content-wrapper {
+  .ai-message-container .ai-code-content-wrapper {
     .hljs-pre {
       padding: 8px 16px;
       margin: 0;

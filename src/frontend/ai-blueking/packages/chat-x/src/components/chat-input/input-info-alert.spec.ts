@@ -53,9 +53,9 @@ describe('InputInfoAlert', () => {
       },
     });
 
-    expect(wrapper.find('.chat-input-info-alert').exists()).toBe(true);
+    expect(wrapper.find('.ai-chat-input-info-alert').exists()).toBe(true);
     expect(wrapper.find('.mock-info-icon').exists()).toBe(true);
-    expect(wrapper.find('.chat-input-info-alert__text').text()).toBe(
+    expect(wrapper.find('.ai-chat-input-info-alert__text').text()).toBe(
       '当前会话有 1 个待审批单，如需继续，请先取消审批',
     );
   });

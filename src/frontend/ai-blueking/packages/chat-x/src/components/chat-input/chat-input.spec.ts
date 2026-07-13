@@ -283,7 +283,7 @@ describe('ChatInput', () => {
         },
       });
 
-      expect(wrapper.find('.chat-input-container').exists()).toBe(true);
+      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
     });
 
     it('应该渲染 chat-input 容器', () => {
@@ -365,7 +365,7 @@ describe('ChatInput', () => {
         },
       });
 
-      expect(wrapper.find('.chat-input-container').exists()).toBe(true);
+      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
     });
 
     it('应该正确接收 prompts', () => {
@@ -378,7 +378,7 @@ describe('ChatInput', () => {
         },
       });
 
-      expect(wrapper.find('.chat-input-container').exists()).toBe(true);
+      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
     });
 
     it('应该正确接收 resources', () => {
@@ -391,7 +391,7 @@ describe('ChatInput', () => {
         },
       });
 
-      expect(wrapper.find('.chat-input-container').exists()).toBe(true);
+      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
     });
 
     it('应该正确接收 shortcuts', () => {
@@ -437,7 +437,7 @@ describe('ChatInput', () => {
         },
       });
 
-      expect(wrapper.find('.chat-input-container').exists()).toBe(true);
+      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
     });
 
     it('应该正确接收 tippyOptions 属性', () => {
@@ -448,7 +448,7 @@ describe('ChatInput', () => {
         },
       });
 
-      expect(wrapper.find('.chat-input-container').exists()).toBe(true);
+      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
     });
 
     it('应该正确接收 skills 属性', () => {
@@ -463,7 +463,7 @@ describe('ChatInput', () => {
         },
       });
 
-      expect(wrapper.find('.chat-input-container').exists()).toBe(true);
+      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
     });
   });
 
@@ -824,7 +824,7 @@ describe('ChatInput', () => {
         },
       });
 
-      expect(wrapper.find('.chat-input-container').exists()).toBe(true);
+      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
     });
 
     it('无 shortcuts 时不应该渲染 ShortcutBtns', () => {
@@ -847,7 +847,7 @@ describe('ChatInput', () => {
 
       // v-if="shortcuts && !selectedShortcut" - 空数组也是 falsy 在渲染条件里
       // 需要确认实际逻辑
-      expect(wrapper.find('.chat-input-container').exists()).toBe(true);
+      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
     });
 
     it('shortcutId 对应的 shortcut 不存在时不应该显示 ShortcutBtn', () => {
@@ -875,7 +875,7 @@ describe('ChatInput', () => {
         },
       });
 
-      expect(wrapper.find('.chat-input-container').exists()).toBe(true);
+      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
       expect(wrapper.find('.chat-input').exists()).toBe(true);
     });
   });
@@ -1036,7 +1036,7 @@ describe('ChatInput', () => {
         },
       });
 
-      expect(wrapper.find('.chat-input-container').exists()).toBe(true);
+      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
     });
 
     it('有 shortcuts 或 selectedShortcut 时应该显示分隔线', () => {

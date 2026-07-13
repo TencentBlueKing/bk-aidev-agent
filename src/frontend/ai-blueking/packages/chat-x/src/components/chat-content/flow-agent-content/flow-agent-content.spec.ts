@@ -232,7 +232,7 @@ describe('FlowAgentContent', () => {
       });
 
       expect(wrapper.find('.mock-activity-layout').exists()).toBe(true);
-      expect(wrapper.find('.flow-agent-activity').exists()).toBe(true);
+      expect(wrapper.find('.ai-flow-agent-activity').exists()).toBe(true);
     });
   });
 

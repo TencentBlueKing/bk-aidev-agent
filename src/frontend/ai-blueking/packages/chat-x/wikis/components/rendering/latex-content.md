@@ -89,12 +89,12 @@ Markdown Token 层的 LaTeX 公式渲染基础组件，基于 **KaTeX** 实现�
 props.token（Token[]）
 │
 ├─ token.type === 'math_block'（单块且 token.length ≤ 1）
-│    wrapperTag = 'div'，wrapperClass = 'block-latex-content'
-│    └─ <div class="block-latex-wrapper">
+│    wrapperTag = 'div'，wrapperClass = 'ai-block-latex-content'
+│    └─ <div class="ai-block-latex-wrapper">
 │          └─ renderLatexToken(token) → <span class="block-katex">KaTeX HTML</span>
 │
 ├─ token.type === 'math_inline'（或混合 token 数组）
-│    wrapperTag = 'span'，wrapperClass = 'inline-latex-content'
+│    wrapperTag = 'span'，wrapperClass = 'ai-inline-latex-content'
 │    └─ renderLatexToken(token) → <span class="inline-katex">KaTeX HTML</span>
 │
 ├─ token.type === 'inline'（含 children）
@@ -144,7 +144,7 @@ const displayMode = token.type === 'math_block' || token.meta?.displayMode === t
 
 ## 行内公式
 
-`math_inline` 类型，包装为 `span.inline-latex-content`，嵌入文字流中渲染：
+`math_inline` 类型，包装为 `span.ai-inline-latex-content`，嵌入文字流中渲染：
 
 ```vue
 <template>
@@ -290,9 +290,9 @@ const displayMode = token.type === 'math_block' || token.meta?.displayMode === t
 
 | 类名                    | 标签   | 作用                                                                                        |
 | ----------------------- | ------ | ------------------------------------------------------------------------------------------- |
-| `.block-latex-content`  | `div`  | 单一 `math_block` 时的外层，`text-align: center`，`overflow: auto hidden`，`margin: 16px 0` |
-| `.inline-latex-content` | `span` | 混合/行内时的外层，`display: inline`，`vertical-align: baseline`                            |
-| `.block-latex-wrapper`  | `div`  | 每个 `math_block` token 的包装，`text-align: center`，`margin: 16px 0`                      |
+| `.ai-block-latex-content`  | `div`  | 单一 `math_block` 时的外层，`text-align: center`，`overflow: auto hidden`，`margin: 16px 0` |
+| `.ai-inline-latex-content` | `span` | 混合/行内时的外层，`display: inline`，`vertical-align: baseline`                            |
+| `.ai-block-latex-wrapper`  | `div`  | 每个 `math_block` token 的包装，`text-align: center`，`margin: 16px 0`                      |
 | `.block-katex`          | `span` | 块级 KaTeX 输出                                                                             |
 | `.inline-katex`         | `span` | 行内 KaTeX 输出                                                                             |
 | `.katex-loading`        | `span` | 渲染失败降级态，斜体灰色显示原始 LaTeX 文本                                                 |

@@ -381,7 +381,7 @@ describe('ActivityMessage', () => {
         },
       });
 
-      expect(wrapper.find('.knowledge-rag-content').exists()).toBe(true);
+      expect(wrapper.find('.ai-knowledge-rag-content').exists()).toBe(true);
       expect(wrapper.find('.mock-markdown-content').exists()).toBe(true);
     });
 
@@ -393,7 +393,7 @@ describe('ActivityMessage', () => {
         },
       });
 
-      expect(wrapper.find('.knowledge-rag-content').exists()).toBe(false);
+      expect(wrapper.find('.ai-knowledge-rag-content').exists()).toBe(false);
       expect(wrapper.find('.mock-document-icon').exists()).toBe(true);
     });
 

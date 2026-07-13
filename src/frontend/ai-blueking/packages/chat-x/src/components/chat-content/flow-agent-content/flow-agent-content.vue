@@ -2,7 +2,7 @@
   <ActivityLayout
     v-model:collapsed="collapsed"
     :activity-type="MessageContentType.FlowAgent"
-    class="flow-agent-activity"
+    class="ai-flow-agent-activity"
   >
     <template #title>
       <!-- hover 整条执行情况栏展示统计 tooltip（设计稿 annotation） -->
@@ -286,7 +286,7 @@
     border-radius: 50%;
   }
 
-  .flow-agent-activity {
+  .ai-flow-agent-activity {
     $color-text: #4d4f56;
     $color-text-secondary: #979ba5;
     $color-primary: #3a84ff;

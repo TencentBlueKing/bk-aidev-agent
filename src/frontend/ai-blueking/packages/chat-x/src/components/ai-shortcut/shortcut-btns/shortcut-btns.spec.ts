@@ -144,7 +144,7 @@ describe('ShortcutBtns', () => {
         props: { shortcuts },
       });
 
-      expect(wrapper.find('.shortcut-btns').exists()).toBe(true);
+      expect(wrapper.find('.ai-shortcut-btns').exists()).toBe(true);
     });
 
     it('应该渲染所有快捷指令按钮', () => {
@@ -219,7 +219,7 @@ describe('ShortcutBtns', () => {
         props: { shortcuts },
       });
 
-      expect(wrapper.find('.shortcut-btns').exists()).toBe(true);
+      expect(wrapper.find('.ai-shortcut-btns').exists()).toBe(true);
     });
 
     it('每个按钮应该有 shortcut-btns-item 类名', () => {
@@ -229,7 +229,7 @@ describe('ShortcutBtns', () => {
         props: { shortcuts },
       });
 
-      expect(wrapper.find('.shortcut-btns-item').exists()).toBe(true);
+      expect(wrapper.find('.ai-shortcut-btns-item').exists()).toBe(true);
     });
   });
 
@@ -239,7 +239,7 @@ describe('ShortcutBtns', () => {
         props: { shortcuts: [] },
       });
 
-      expect(wrapper.find('.shortcut-btns').exists()).toBe(true);
+      expect(wrapper.find('.ai-shortcut-btns').exists()).toBe(true);
       expect(wrapper.findAll('.mock-shortcut-btn').length).toBe(0);
     });
 
@@ -260,7 +260,7 @@ describe('ShortcutBtns', () => {
         props: { shortcuts },
       });
 
-      expect(wrapper.find('.shortcut-btns').exists()).toBe(true);
+      expect(wrapper.find('.ai-shortcut-btns').exists()).toBe(true);
     });
   });
 

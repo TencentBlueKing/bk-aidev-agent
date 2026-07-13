@@ -35,7 +35,7 @@ sinceVersion: 1.0.0
 ## 组件结构
 
 ```
-div.text-content
+div.ai-text-content
   display: flex; width: fit-content
   padding: 8px 12px; border-radius: 4px
   background-color: #e1ecff（浅蓝色气泡）

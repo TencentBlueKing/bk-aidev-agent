@@ -81,7 +81,7 @@ describe('LatexContent', () => {
         },
       });
 
-      expect(wrapper.find('.inline-latex-content').exists()).toBe(true);
+      expect(wrapper.find('.ai-inline-latex-content').exists()).toBe(true);
     });
 
     it('应该渲染块级公式', () => {
@@ -96,7 +96,7 @@ describe('LatexContent', () => {
         },
       });
 
-      expect(wrapper.find('.block-latex-content').exists()).toBe(true);
+      expect(wrapper.find('.ai-block-latex-content').exists()).toBe(true);
     });
   });
 
@@ -128,7 +128,7 @@ describe('LatexContent', () => {
         },
       });
 
-      expect(wrapper.html()).toContain('block-latex-wrapper');
+      expect(wrapper.html()).toContain('ai-block-latex-wrapper');
     });
 
     it('应该解析带 meta displayMode 的 token', () => {

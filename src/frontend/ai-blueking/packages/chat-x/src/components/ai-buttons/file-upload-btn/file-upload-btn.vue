@@ -1,5 +1,5 @@
 <template>
-  <div class="file-upload-btn">
+  <div class="ai-file-upload-btn">
     <input
       ref="fileInputRef"
       :accept="accept"
@@ -89,7 +89,7 @@
   };
 </script>
 <style lang="scss">
-  .file-upload-btn {
+  .ai-file-upload-btn {
     display: flex;
     align-items: center;
 

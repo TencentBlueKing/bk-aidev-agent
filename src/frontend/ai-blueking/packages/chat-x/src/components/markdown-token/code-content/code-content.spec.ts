@@ -114,7 +114,7 @@ describe('CodeContent', () => {
         },
       });
 
-      expect(wrapper.find('.code-content-wrapper').exists()).toBe(true);
+      expect(wrapper.find('.ai-code-content-wrapper').exists()).toBe(true);
     });
 
     it('应该渲染 pre 和 code 元素', () => {
@@ -267,7 +267,7 @@ describe('CodeContent', () => {
         },
       });
 
-      expect(wrapper.find('.code-content-wrapper').exists()).toBe(true);
+      expect(wrapper.find('.ai-code-content-wrapper').exists()).toBe(true);
     });
 
     it('应该处理空内容', () => {
@@ -283,7 +283,7 @@ describe('CodeContent', () => {
         },
       });
 
-      expect(wrapper.find('.code-content-wrapper').exists()).toBe(true);
+      expect(wrapper.find('.ai-code-content-wrapper').exists()).toBe(true);
     });
 
     it('应该处理没有语言的代码块', () => {
@@ -315,7 +315,7 @@ describe('CodeContent', () => {
         },
       });
 
-      expect(wrapper.find('.code-content-wrapper').exists()).toBe(true);
+      expect(wrapper.find('.ai-code-content-wrapper').exists()).toBe(true);
     });
 
     it('应该处理多行代码', () => {
@@ -349,7 +349,7 @@ describe('CodeContent', () => {
         },
       });
 
-      expect(wrapper.find('.code-content-wrapper').exists()).toBe(true);
+      expect(wrapper.find('.ai-code-content-wrapper').exists()).toBe(true);
     });
   });
 
@@ -466,7 +466,7 @@ describe('CodeContent', () => {
         },
       });
 
-      expect(wrapper.find('.code-content-wrapper').exists()).toBe(true);
+      expect(wrapper.find('.ai-code-content-wrapper').exists()).toBe(true);
       expect(wrapper.find('.hljs-pre').exists()).toBe(true);
     });
 

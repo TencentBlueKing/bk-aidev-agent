@@ -236,7 +236,7 @@ describe('ShortcutRender', () => {
         },
       });
 
-      expect(wrapper.find('.shortcut-render').exists()).toBe(true);
+      expect(wrapper.find('.ai-shortcut-render').exists()).toBe(true);
     });
 
     it('应该正确渲染标题', () => {
@@ -487,9 +487,9 @@ describe('ShortcutRender', () => {
         },
       });
 
-      expect(wrapper.find('.shortcut-render').exists()).toBe(true);
-      expect(wrapper.find('.shortcut-render-header').exists()).toBe(true);
-      expect(wrapper.find('.shortcut-render-content').exists()).toBe(true);
+      expect(wrapper.find('.ai-shortcut-render').exists()).toBe(true);
+      expect(wrapper.find('.ai-shortcut-render-header').exists()).toBe(true);
+      expect(wrapper.find('.ai-shortcut-render-content').exists()).toBe(true);
     });
   });
 
@@ -503,7 +503,7 @@ describe('ShortcutRender', () => {
         },
       });
 
-      expect(wrapper.find('.shortcut-render').exists()).toBe(true);
+      expect(wrapper.find('.ai-shortcut-render').exists()).toBe(true);
     });
 
     it('应该处理空 name', () => {
@@ -514,7 +514,7 @@ describe('ShortcutRender', () => {
         },
       });
 
-      expect(wrapper.find('.shortcut-render').exists()).toBe(true);
+      expect(wrapper.find('.ai-shortcut-render').exists()).toBe(true);
     });
 
     it('应该处理特殊字符的 name', () => {

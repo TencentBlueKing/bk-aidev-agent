@@ -1,5 +1,5 @@
 <template>
-  <div class="toolcall-desc">
+  <div class="ai-toolcall-desc">
     <div class="desc-title">{{ title }}</div>
     <div class="desc-panel">
       <!-- null 的 typeof 为 object，需排除，避免 v-for 异常；键/值统一转字符串以满足 HighlightKeyword -->
@@ -52,7 +52,7 @@
   });
 </script>
 <style lang="scss">
-  .toolcall-desc {
+  .ai-toolcall-desc {
     display: flex;
     flex-direction: column;
     gap: 4px;
