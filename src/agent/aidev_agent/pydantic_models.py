@@ -159,6 +159,10 @@ class KnowledgeSettings(BaseModel):
         default=int(os.getenv("KNOWLEDGE_ROUGH_RECALL_TOPK", "10")),
         description="知识类资源粗召 topk 值",
     )
+    rrf_weights: dict[str, float] = Field(
+        default_factory=dict,
+        description="dense 与 bm25 召回通道的 RRF 融合权重",
+    )
     self_query_threshold_top_n: int = Field(
         default=int(os.getenv("SELF_QUERY_THRESHOLD_TOP_N", "0")),
         description="self query 判断结构化数据的 top_n 阈值",
@@ -253,7 +257,6 @@ class KnowledgeSettings(BaseModel):
         default=os.getenv("ENABLE_AGENTIC_RAG_TOOL", "false").lower() == "true",
         description="控制是否开启知识库召回工具",
     )
-
 
 
 class IntentRecognition(BaseModel):

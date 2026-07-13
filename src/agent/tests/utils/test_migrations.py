@@ -81,3 +81,11 @@ def test_migration_knowledge_query_options_from_agent_options_v1_does_not_dump_d
 
     assert migrated.knowledge_resource_rough_recall_topk == 5
     assert "rejection_message" not in options.knowledge_query_options.model_dump(exclude_unset=True)
+
+
+def test_legacy_knowledge_options_preserve_100_percent_dense_rrf_weights():
+    options = AgentOptions(knowledge_query_options=KnowledgebaseSettings(rrf_weights={"dense": 1.0, "bm25": 0.0}))
+
+    migrated = migration_knowledge_query_options_from_agent_options_v1(options)
+
+    assert migrated.rrf_weights == {"dense": 1.0, "bm25": 0.0}

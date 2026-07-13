@@ -153,7 +153,9 @@ class BkRetriever(BaseRetriever):
                             "请传入支持的向量索引的子集！"
                         )
                     custom_index_names_set = set(custom_index_names_type_id)
-                    all_indexes = [index for index in supported_indexes if index["index_name"] in custom_index_names_set]
+                    all_indexes = [
+                        index for index in supported_indexes if index["index_name"] in custom_index_names_set
+                    ]
             if not all_indexes:
                 all_indexes = supported_indexes
             if not all_indexes:
@@ -213,6 +215,7 @@ class BkRetriever(BaseRetriever):
             "index_query_kwargs": index_query_kwargs,
             "knowledge_template_id": knowledge_query_options.knowledge_template_id,
             "with_scalar_data": knowledge_query_options.with_scalar_data,
+            "rrf_weights": knowledge_query_options.rrf_weights,
             "raw": True,  # 知识库查询接口集成了本文件中的重排逻辑，设置为True防止循环重排。下同
             "type": "index_specific",
         }
