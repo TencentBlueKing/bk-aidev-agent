@@ -185,7 +185,7 @@
   import CustomTabContent from './custom-tab-content.vue';
   import { MOCK_INTERRUPT_MESSAGES } from './interrupt';
   import { streamContent } from './markdown';
-  import { MOCK_MODELS, MOCK_PROMPTS, MOCK_RESOURCES } from './mock';
+  import { MOCK_ARTIFACTS_MESSAGES, MOCK_MODELS, MOCK_PROMPTS, MOCK_RESOURCES } from './mock';
   import { uploadFileToSession } from './upload-file';
 
   import type { CustomTab, IAiSlashMenuItem, Shortcut, TagSchema } from '../src/types';
@@ -206,6 +206,7 @@
     console.log('model change:', model);
   };
   const messages = deepRef<Message[]>([
+    ...MOCK_ARTIFACTS_MESSAGES,
     // 第一轮：用户提问 + assistant 调用工具 + tool 返回
     {
       id: 'msg_user_1',
@@ -1392,31 +1393,6 @@
     console.log('delete message');
     messages.value = [];
   };
-
-  onMounted(() => {
-    let content = '';
-    const chunkSize = 1999999999;
-    const interval = setInterval(() => {
-      content += streamContent.slice(content.length, content.length + chunkSize);
-      const status = content.length >= streamContent.length ? MessageStatus.Complete : MessageStatus.Streaming;
-      const message = messages.value.find(m => m.id === 'stream_assistant');
-      if (message) {
-        message.content = content;
-        message.status = status;
-      } else {
-        messages.value.push({
-          id: 'stream_assistant',
-          role: MessageRole.Assistant,
-          messageId: 'stream_assistant',
-          status,
-          content,
-        } as AssistantMessage);
-      }
-      if (content.length >= streamContent.length) {
-        clearInterval(interval);
-      }
-    }, 16);
-  });
 </script>
 
 <style lang="scss">
