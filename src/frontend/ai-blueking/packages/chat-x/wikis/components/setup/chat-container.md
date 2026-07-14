@@ -399,9 +399,9 @@ ai-chat-container（:data-ai-size="size"）
 
 侧边栏默认包含「执行情况」Tab，展示所有工具调用和 FlowAgent 类型的 Activity 消息。支持关键词搜索过滤和点击定位到对话中的消息位置。
 
-**展示条件**：当 `executionGroups` 为空且 `keyword` 为空时，不渲染侧栏 Tab 与 `ExecutionSummary`（折叠按钮亦隐藏）；主区域仍可正常展示 `messages` 中的对话内容。用户在执行情况中输入搜索词后，侧栏会保持展示以显示「搜索结果为空」等状态。`renderMode === Share` 分享态同样按上述执行数据条件展示侧栏（开放只读查看流程智能体详情/证据/执行情况），不再强制隐藏折叠；仅底部输入区保持隐藏。
+**展示条件**：当 `executionGroups` 为空且 `keyword` 为空时，不渲染侧栏 Tab 与 `ExecutionSummary`（折叠按钮亦隐藏）；主区域仍可正常展示 `messages` 中的对话内容。用户在执行情况中输入搜索词后，侧栏会保持展示以显示「搜索结果为空」等状态。`renderMode === Share` 分享态同样按上述执行数据条件展示侧栏（开放只读查看流程智能体详情/证据/执行情况），不再强制隐藏折叠；仅底部输入区保持隐藏。**例外**：当[「文件产物」Tab](#内置-文件产物-tab)存在时，侧栏不再受「`executionGroups` 为空」约束，可独立展示文件预览。
 
-**自定义 Tab 联动**：当 `executionGroups` 变为空且搜索词已清空时，容器会**自动重置自定义 Tab**（`resetCustomTab`），避免残留节点详情等 Tab；若用户仍在搜索（`keyword` 非空），不会触发重置。
+**自定义 Tab 联动**：当 `executionGroups` 变为空且搜索词已清空时，容器会**自动重置自定义 Tab**（`resetCustomTab`），避免残留节点详情等 Tab；若用户仍在搜索（`keyword` 非空）或存在「文件产物」Tab，不会触发重置。
 
 ```vue
 <template>
@@ -558,6 +558,18 @@ ai-chat-container（:data-ai-size="size"）
   };
 </script>
 ```
+
+### 内置「文件产物」Tab
+
+除「执行情况」外，容器内置一个按需出现的固定 Tab —— **「文件产物」**（`name: 'file-artifact'`），用于聚合预览当前会话所有 `AssistantMessage.property.artifacts`：
+
+- **触发**：点击 AI 回复中的文件卡片（[ArtifactFileCard](/components/message/assistant-message)）时，容器通过 `useArtifactPreviewProvider` 命中该文件并 `addCustomTab` 弹出侧栏
+- **排序 / 关闭**：`order: -1` 排在「执行情况」之前，`closable: false` 不可关闭
+- **显隐解耦**：该 Tab 存在时，侧栏展示不再受「`executionGroups` 为空」约束（即使当前会话没有执行类消息，也能独立展示文件产物侧栏）；会话切换或无文件产物时自动移除并重置命中态
+- **内容**：由 [FileArtifactPanel](/components/message/file-artifact-panel) 渲染文件列表与预览（HTML 走 `fetch` + `iframe srcdoc`，其余类型用 `previewUrl` 的 PDF）
+- **状态管理**：命中与切换由 [useArtifactPreview](/composables/use-artifact-preview) 提供（Provider 在容器内、Consumer 在文件卡片内）
+
+详见 [FileArtifactPanel 文件产物预览](/components/message/file-artifact-panel) 与 [useArtifactPreview 文件产物预览](/composables/use-artifact-preview)。
 
 ### 自定义 Tab 与「在对话中定位」
 

@@ -33,6 +33,7 @@
     <MessageArtifacts
       v-if="artifacts && artifacts.length > 0"
       :artifacts="artifacts"
+      :message-uid="messageUid"
     />
   </div>
 </template>
@@ -47,6 +48,8 @@
   import type { AssistantMessage } from '../../../ag-ui/types/messages';
   const props = defineProps<Partial<AssistantMessage>>();
   const artifacts = computed(() => props.property?.artifacts);
+  // 唯一消息标识：优先 uid，回退 id，供文件产物命中唯一文件与「在对话中定位」
+  const messageUid = computed(() => props.uid ?? (props.id != null ? String(props.id) : ''));
 </script>
 
 <style lang="scss">
@@ -64,6 +67,7 @@
       flex-direction: column;
       gap: 16px;
       width: 100%;
+      margin-bottom: 12px;
     }
 
     &-tools {

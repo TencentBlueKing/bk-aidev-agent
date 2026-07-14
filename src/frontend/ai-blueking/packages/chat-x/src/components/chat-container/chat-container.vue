@@ -14,14 +14,18 @@
       v-else
       class="ai-chat-container-resize-layout"
       :class="{
-        'ai-is-collapse': isCollapse || (displayTabs.length > 0 && !keyword?.length && executionGroups?.length < 1),
+        'ai-is-collapse':
+          isCollapse ||
+          (displayTabs.length > 0 && !keyword?.length && executionGroups?.length < 1 && !hasFileArtifactTab),
       }"
       v-bind="resizeProps"
       @resizing="handleResizing"
     >
       <template #aside>
         <div
-          v-if="!isCollapse && displayTabs.length > 0 && (executionGroups?.length || keyword?.length)"
+          v-if="
+            !isCollapse && displayTabs.length > 0 && (executionGroups?.length || keyword?.length || hasFileArtifactTab)
+          "
           ref="fullScreenRef"
           class="ai-full-screen-wrapper"
         >
@@ -49,7 +53,7 @@
                       },
                     },
                     getSideTabRenderComponent?.(h, tab, { removeCustomTab }) ?? [
-                      h(tab.name === EXECUTION_TAB_NAME ? ExecutionIcon : NodeTabIcon, {
+                      h(getSideTabIcon(tab.name), {
                         class: 'ai-execution-summary-icon',
                       }),
                       withDirectives(
@@ -106,7 +110,15 @@
               @update-keyword="handleUpdateKeyword"
             />
           </template>
-          <template v-if="selectedTab">
+          <template v-else-if="selectedTab?.name === FILE_ARTIFACT_TAB_NAME">
+            <FileArtifactPanel
+              :active-id="activeArtifactId"
+              :artifacts="sessionArtifacts"
+              style="height: calc(100% - 40px)"
+              @select="setActiveArtifactId"
+            />
+          </template>
+          <template v-if="selectedTab && selectedTab.name !== FILE_ARTIFACT_TAB_NAME">
             <div
               :key="selectedTab.name"
               class="ai-chat-container-message-slot"
@@ -132,7 +144,7 @@
           </template>
         </div>
         <div
-          v-if="displayTabs.length > 0 && executionGroups?.length"
+          v-if="displayTabs.length > 0 && (executionGroups?.length || hasFileArtifactTab)"
           class="collapse-button"
           :class="{ 'is-right': placement === 'right', 'is-collapsed': isCollapse }"
           @click="handleCollapse"
@@ -293,6 +305,7 @@
   import { type Message, type UserMessage, MessageStatus } from '../../ag-ui/types';
   import { LOADING_MESSAGE_ID, RenderMode } from '../../common';
   import { type MessageGroup, useMessageGroup } from '../../composables';
+  import { FILE_ARTIFACT_TAB_NAME, useArtifactPreviewProvider } from '../../composables/use-artifact-preview';
   import { useCommonTippyProvider, useRenderModeProvider } from '../../composables/use-common';
   import { EXECUTION_TAB_NAME, useCustomTabProvider } from '../../composables/use-custom-tab';
   import { useFullScreen } from '../../composables/use-full-screen';
@@ -300,13 +313,14 @@
   import { OverflowTips as vOverflowTips } from '../../directives';
   import { FullScreenIcon, UnFullScreenIcon } from '../../icons';
   import { CloseIcon, CollapsedIcon, ExecutionIcon, NodeTabIcon } from '../../icons';
-  import { AIBluekingBannerIcon } from '../../icons';
+  import { AIBluekingBannerIcon, ArtifactTabIcon } from '../../icons';
   import { t } from '../../lang/lang';
   import ToolBtn from '../ai-buttons/tool-btn/tool-btn.vue';
   import ShortcutRender from '../ai-shortcut/shortcut-render/shortcut-render.vue';
   import ContentRender from '../chat-content/content-render/content-render.vue';
   import ChatInput, { type ChatInputEmits, type ChatInputProps } from '../chat-input/chat-input.vue';
   import InputInfoAlert from '../chat-input/input-info-alert.vue';
+  import FileArtifactPanel from '../chat-message/assistant-message/message-artifacts/file-artifact-panel.vue';
   import { buildSkipResumePayload, UserQuestionCard } from '../chat-message/interrupt-message/user-question';
   import MessageContainer, {
     type MessageContainerEmits,
@@ -456,6 +470,10 @@
     useCustomTabProvider<CustomBkFlowTabData>({
       executionTabVisible: () => props.executionTabVisible,
       onTabChange: async tab => {
+        // 文件产物 Tab 数据自包含（previewUrl 已在 artifact 上），无需走异步拉取
+        if (tab.name === FILE_ARTIFACT_TAB_NAME) {
+          return;
+        }
         const tabProps = selectedTab.value.data?.props || {
           loading: true,
           data: {},
@@ -486,6 +504,7 @@
   const {
     messageGroups,
     executionGroups,
+    sessionArtifacts,
     isShareMode,
     isAllSelected,
     onToggleShareAll,
@@ -500,6 +519,29 @@
     selectedUserMessages,
   });
 
+  /** 侧栏是否存在「文件产物」Tab，用于放开侧栏对 executionGroups 的显隐强耦合 */
+  const hasFileArtifactTab = computed(() => tabs.value.some(tab => tab.name === FILE_ARTIFACT_TAB_NAME));
+
+  // 文件卡片点击 → 命中文件并弹出/切换到固定的「文件产物」侧栏 Tab（排在执行情况之前，不可关闭）
+  const { activeArtifactId, setActiveArtifactId } = useArtifactPreviewProvider({
+    onOpen: () => {
+      addCustomTab({
+        closable: false,
+        label: t('文件产物'),
+        name: FILE_ARTIFACT_TAB_NAME,
+        order: -1,
+      });
+    },
+  });
+
+  // 会话切换 / 无文件产物时清理：移除 Tab 并重置命中态，避免残留
+  watch(sessionArtifacts, list => {
+    if (!list.length) {
+      removeCustomTab(FILE_ARTIFACT_TAB_NAME);
+      setActiveArtifactId('');
+    }
+  });
+
   watch(isCollapse, newVal => {
     if (newVal) {
       keyword.value = '';
@@ -510,7 +552,8 @@
   watch(
     () => executionGroups.value,
     newVal => {
-      if (!newVal.length && !keyword.value) {
+      // 文件产物 Tab 存在时不因执行组为空而重置，避免误清文件预览侧栏
+      if (!newVal.length && !keyword.value && !hasFileArtifactTab.value) {
         resetCustomTab();
       }
     },
@@ -584,6 +627,16 @@
       return;
     }
     dom.scrollIntoView({ behavior: 'smooth' });
+  };
+  // 侧栏 Tab 默认图标：执行情况用 ExecutionIcon，文件产物用 ArtifactTabIcon，其余用 NodeTabIcon
+  const getSideTabIcon = (name: string) => {
+    if (name === EXECUTION_TAB_NAME) {
+      return ExecutionIcon;
+    }
+    if (name === FILE_ARTIFACT_TAB_NAME) {
+      return ArtifactTabIcon;
+    }
+    return NodeTabIcon;
   };
   const handleUpdateTabActive = (name: string) => {
     selectCustomTab(tabs.value.find(tab => tab.name === name)!);

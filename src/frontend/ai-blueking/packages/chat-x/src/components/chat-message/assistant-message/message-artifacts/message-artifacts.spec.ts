@@ -28,6 +28,7 @@ import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AIFileType } from '../../../../ag-ui/types/file';
+import ArtifactFileCard from './artifact-file-card.vue';
 import MessageArtifacts from './message-artifacts.vue';
 
 import type { AIFileInfo } from '../../../../ag-ui/types/file';
@@ -78,5 +79,16 @@ describe('MessageArtifacts', () => {
     wrapper = mount(MessageArtifacts, { props: { artifacts: [] } });
 
     expect(wrapper.find('.ai-artifact-file-card').exists()).toBe(false);
+  });
+
+  it('应该向卡片透传 messageUid 与消息内下标 index，用于命中唯一文件', () => {
+    const artifacts = [createFile({ outputId: 'a' }), createFile({ outputId: 'b' })];
+
+    wrapper = mount(MessageArtifacts, { props: { artifacts, messageUid: 'msg-1' } });
+
+    const cards = wrapper.findAllComponents(ArtifactFileCard);
+    expect(cards[0].props('messageUid')).toBe('msg-1');
+    expect(cards[0].props('index')).toBe(0);
+    expect(cards[1].props('index')).toBe(1);
   });
 });
