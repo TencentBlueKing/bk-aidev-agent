@@ -56,22 +56,46 @@ def deduplicate_knowledge_chunks(knowledge_chunks):
     return list({item["metadata"]["uid"]: item for item in knowledge_chunks}.values())
 
 
-def deduplicate_knowledge_file_paths(knowledge_chunks):
-    """按照 file path 进行去重，且只保留 metadata，且按照 fine grained score 进行降序排序"""
+def resolve_display_sort_key(fine_grained_score_type) -> str:
+    """确定展示排序使用的分数字段。
+
+    - EMBEDDING（「保留原始顺序」）：按 ``rrf_score`` 排序，尊重资源侧多路 RRF 融合顺序
+      （已含 BM25 词法通道），不被各通道原始 ``fine_grained_score``（emb/bm25 量纲不一）打乱；
+    - LLM / EXCLUSIVE_SIMILARITY_MODEL：仍按 ``fine_grained_score`` 重排（这两种本就是重排语义）。
+
+    注意：拒答分级用的仍是 ``fine_grained_score``（见 ``separate_docs_by_scores``），此处只改
+    展示排序键，不影响拒答阈值判定。
+    """
+
+    if str(getattr(fine_grained_score_type, "value", fine_grained_score_type)) == "EMBEDDING":
+        return "rrf_score"
+    return "fine_grained_score"
+
+
+def _sort_score(item, sort_key: str) -> float:
+    """取排序分：优先 sort_key，缺失时回退 fine_grained_score，保证无回归。"""
+    metadata = item.get("metadata", {}) if isinstance(item, dict) else {}
+    if sort_key in metadata:
+        return metadata.get(sort_key) or 0
+    return metadata.get("fine_grained_score", 0) or 0
+
+
+def deduplicate_knowledge_file_paths(knowledge_chunks, sort_key: str = "fine_grained_score"):
+    """按照 file path 进行去重，且只保留 metadata，且按照指定分数（默认 fine_grained_score）降序排序"""
     unique_items = list(
         {item["metadata"]["file_path"]: {"metadata": item["metadata"]} for item in knowledge_chunks}.values()
     )
-    return sorted(unique_items, key=lambda x: x["metadata"]["fine_grained_score"], reverse=True)
+    return sorted(unique_items, key=lambda x: _sort_score(x, sort_key), reverse=True)
 
 
-def filter_and_select_topk(items, score_threshold, topk):
+def filter_and_select_topk(items, score_threshold, topk, sort_key: str = "fine_grained_score"):
     if score_threshold:
         filtered_items = [
             item for item in items if item.get("metadata", {}).get("fine_grained_score", 0) >= score_threshold
         ]
     else:
         filtered_items = items
-    sorted_items = sorted(filtered_items, key=lambda x: x["metadata"]["fine_grained_score"], reverse=True)
+    sorted_items = sorted(filtered_items, key=lambda x: _sort_score(x, sort_key), reverse=True)
     return sorted_items[:topk]
 
 
