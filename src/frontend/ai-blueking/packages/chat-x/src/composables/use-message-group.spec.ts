@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/consistent-type-imports */
 /*
  * Tencent is pleased to support the open source community by making
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) available.
@@ -28,10 +29,13 @@ import { computed, ref as deepRef, nextTick, shallowRef } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { APPROVAL_STATUS, InterruptReason, MessageContentType, MessageRole, MessageStatus } from '../ag-ui/types';
+import { AIFileType } from '../ag-ui/types/file';
 import { LOADING_MESSAGE_ID, RenderMode } from '../common/constants';
+import { buildArtifactId } from './use-artifact-preview';
 import { useMessageGroup } from './use-message-group';
 
 import type { AssistantMessage, Message, ToolMessage, UserMessage } from '../ag-ui/types';
+import type { AIFileInfo } from '../ag-ui/types/file';
 
 vi.mock('../utils', async importOriginal => {
   const actual = await importOriginal<typeof import('../utils')>();
@@ -59,6 +63,16 @@ const createAssistantMessage = (
   messageId: id,
   role: MessageRole.Assistant,
   status: MessageStatus.Complete,
+  ...overrides,
+});
+
+const createFile = (overrides: Partial<AIFileInfo> = {}): AIFileInfo => ({
+  name: 'file.pdf',
+  outputId: 'output-1',
+  previewUrl: 'https://example.com/preview.pdf',
+  size: 1024,
+  type: AIFileType.Pdf,
+  url: 'https://example.com/download.pdf',
   ...overrides,
 });
 
@@ -303,6 +317,51 @@ describe('useMessageGroup', () => {
 
       expect(executionGroups.value.length).toBeGreaterThan(0);
       expect(typeof executionGroups.value[0]?.userMessageTitle).toBe('number');
+    });
+  });
+
+  describe('sessionArtifacts', () => {
+    it('无文件产物时应返回空数组', async () => {
+      const { sessionArtifacts } = setupMessageGroup([createAssistantMessage('1', 'plain')]);
+      await nextTick();
+
+      expect(sessionArtifacts.value).toEqual([]);
+    });
+
+    it('应拍平所有 AssistantMessage 的 artifacts 并生成唯一 id', async () => {
+      const messages: Message[] = [
+        createAssistantMessage('a1', 'with files', {
+          uid: 'msg-a',
+          property: { artifacts: [createFile({ outputId: 'o1' }), createFile({ outputId: 'o2' })] },
+        }),
+        createUserMessage('u1'),
+        createAssistantMessage('a2', 'more files', {
+          uid: 'msg-b',
+          property: { artifacts: [createFile({ outputId: 'o3' })] },
+        }),
+      ];
+      const { sessionArtifacts } = setupMessageGroup(messages);
+      await nextTick();
+
+      expect(sessionArtifacts.value.map(item => item.artifactId)).toEqual([
+        buildArtifactId('msg-a', 0, 'o1'),
+        buildArtifactId('msg-a', 1, 'o2'),
+        buildArtifactId('msg-b', 0, 'o3'),
+      ]);
+      expect(sessionArtifacts.value[0]?.messageUid).toBe('msg-a');
+    });
+
+    it('仅统计 AssistantMessage 的 artifacts，忽略其它角色', async () => {
+      const messages: Message[] = [
+        createAssistantMessage('a1', 'files', {
+          uid: 'msg-a',
+          property: { artifacts: [createFile({ outputId: 'o1' })] },
+        }),
+      ];
+      const { sessionArtifacts } = setupMessageGroup(messages);
+      await nextTick();
+
+      expect(sessionArtifacts.value.length).toBe(1);
     });
   });
 

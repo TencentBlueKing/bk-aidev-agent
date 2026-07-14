@@ -39,6 +39,7 @@ import {
 import { LOADING_MESSAGE_ID, RenderMode } from '../common/constants';
 import { t } from '../lang/lang';
 import { generateUUID } from '../utils';
+import { type SessionArtifact, buildArtifactId } from './use-artifact-preview';
 
 import type { BkFlowMessageContent } from '../ag-ui/types/contents';
 import type { InterruptMessage, UserQuestionInterrupt } from '../ag-ui/types/interrupt';
@@ -260,6 +261,32 @@ export const useMessageGroup = (options: {
         messages: group.messages.filter(isMatch),
       }));
   });
+  /**
+   * 会话级文件产物：拍平所有 AssistantMessage 的 property.artifacts，
+   * 用 messageUid + 消息内下标 + outputId 生成全局唯一 id（文件名可能重复，不可作唯一键）。
+   */
+  const sessionArtifacts = computed<SessionArtifact[]>(() => {
+    const list: SessionArtifact[] = [];
+    for (const message of options.messages.value) {
+      if (message.role !== MessageRole.Assistant) {
+        continue;
+      }
+      const artifacts = (message as AssistantMessage).property?.artifacts;
+      if (!artifacts?.length) {
+        continue;
+      }
+      const messageUid = message.uid ?? String(message.id);
+      artifacts.forEach((file, index) => {
+        list.push({
+          ...file,
+          artifactId: buildArtifactId(messageUid, index, file.outputId),
+          messageUid,
+        });
+      });
+    }
+    return list;
+  });
+
   const activeUserQuestionInterrupt = computed(() => findActiveUserQuestion(options.messages.value));
   const pendingApprovalCount = computed(() => countPendingApprovalInterrupts(options.messages.value));
   const pendingApprovalTipText = computed(() => {
@@ -335,6 +362,7 @@ export const useMessageGroup = (options: {
   return {
     messageGroups,
     executionGroups,
+    sessionArtifacts,
     activeUserQuestionInterrupt,
     pendingApprovalCount,
     pendingApprovalTipText,

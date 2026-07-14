@@ -23,16 +23,20 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+import { cloneVNode } from 'vue';
 
-export * from './use-animation-text';
-export * from './use-artifact-preview';
-export * from './use-clipboard';
-export * from './use-command-selection';
-export * from './use-container-scroll';
-export * from './use-custom-tab';
-export * from './use-full-screen';
-export * from './use-global-config';
-export * from './use-menu-keydown';
-export * from './use-message-group';
-export * from './use-observer-visible-list';
-export * from './use-parent-scrolling';
+import { AIFileType } from '../../../../ag-ui/types/file';
+import { HtmlIcon, JpgIcon, JsonIcon, MarkdownIcon, PdfIcon, TxtIcon } from '../../../../icons/file';
+
+/** 文件类型 → 图标映射；未命中类型兜底用文本图标 */
+export const FILE_ICON_MAP = {
+  [AIFileType.Html]: HtmlIcon,
+  [AIFileType.Jpg]: JpgIcon,
+  [AIFileType.Json]: JsonIcon,
+  [AIFileType.Markdown]: MarkdownIcon,
+  [AIFileType.Pdf]: PdfIcon,
+  [AIFileType.Txt]: TxtIcon,
+} as const;
+
+/** 图标为共享 VNode，克隆后再渲染，避免同类型多处复用同一实例 */
+export const getFileIcon = (type: AIFileType) => cloneVNode(FILE_ICON_MAP[type] ?? TxtIcon);

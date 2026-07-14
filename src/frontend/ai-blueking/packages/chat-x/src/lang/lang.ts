@@ -175,6 +175,12 @@ export const lang = {
   回答内容: 'Answers',
   已回复: 'Replied',
   '请输入...': 'Please enter...',
+  // 文件产物预览
+  文件产物: 'File Artifacts',
+  文件列表: 'File List',
+  搜索文件关键字: 'Search file keyword',
+  预览加载失败: 'Failed to load preview',
+  暂无可预览的文件: 'No file to preview',
 } as const;
 
 export const t = (key: keyof typeof lang) => {

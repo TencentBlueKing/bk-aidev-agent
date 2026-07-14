@@ -36,6 +36,7 @@ function useMessageGroup(options: {
 }): {
   messageGroups: Ref<MessageGroup[]>;
   executionGroups: ComputedRef<MessageGroup[]>;
+  sessionArtifacts: ComputedRef<SessionArtifact[]>;
   pendingApprovalCount: ComputedRef<number>;
   pendingApprovalTipText: ComputedRef<string>;
   isShareMode: ShallowRef<boolean>;
@@ -124,6 +125,28 @@ const isExecutionMessage = (m: Message): boolean => {
 | toolCall   | `function.name`、`mcpName`、`description`、`arguments`、`id` |
 | flow_agent | 各任务 `task_name`、各节点 `name`                             |
 
+## sessionArtifacts 会话级文件产物
+
+`sessionArtifacts` 拍平当前会话所有 `AssistantMessage.property.artifacts`，供 `ChatContainer` 侧栏「文件产物」Tab 聚合预览。由于同一会话可能出现「多个 AssistantMessage + 同名文件」，文件名不可作为唯一键，统一用 `messageUid`（回退 `String(id)`）+ 消息内下标 + `outputId` 通过 [`buildArtifactId`](./use-artifact-preview) 生成全局唯一 `artifactId`：
+
+```typescript
+const sessionArtifacts = computed(() => {
+  const list = [];
+  for (const message of messages.value) {
+    if (message.role !== MessageRole.Assistant) continue;
+    const artifacts = message.property?.artifacts;
+    if (!artifacts?.length) continue;
+    const messageUid = message.uid ?? String(message.id);
+    artifacts.forEach((file, index) => {
+      list.push({ ...file, artifactId: buildArtifactId(messageUid, index, file.outputId), messageUid });
+    });
+  }
+  return list;
+});
+```
+
+预览命中与侧栏交互见 [useArtifactPreview](./use-artifact-preview) 与 [FileArtifactPanel](../components/message/file-artifact-panel)。
+
 ## 待审批统计
 
 `useMessageGroup` 会统计消息列表中处于待审批状态的 AI Dev 审批中断：
@@ -194,6 +217,7 @@ const {
 | ---------------- | ----------------------------- | --------------------------------------------------------------------------- |
 | messageGroups    | `Ref<MessageGroup[]>`         | 完整消息分组列表                                                            |
 | executionGroups  | `ComputedRef<MessageGroup[]>` | 仅包含执行类消息的分组（工具调用 + FlowAgent），自动提取 `userMessageTitle` |
+| sessionArtifacts | `ComputedRef<SessionArtifact[]>` | 拍平会话所有 AssistantMessage 文件产物，含全局唯一 `artifactId`         |
 | pendingApprovalCount | `ComputedRef<number>`      | 当前消息中待审批 AI Dev 审批中断的数量                                      |
 | pendingApprovalTipText | `ComputedRef<string>`    | 待审批阻塞发送提示文案；无待审批时为空字符串                                |
 | isShareMode      | `ShallowRef<boolean>`         | 是否处于分享模式                                                            |
