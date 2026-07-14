@@ -150,7 +150,7 @@ export const ArtifactTabIcon = h(
   ],
 );
 
-export const DownloadIcon = h(
+export const DownloadFileIcon = h(
   'svg',
   {
     ...commonSVGProps,

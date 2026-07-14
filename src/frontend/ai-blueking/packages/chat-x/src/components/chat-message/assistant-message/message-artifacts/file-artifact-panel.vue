@@ -103,7 +103,7 @@
 
   import { AIFileType } from '../../../../ag-ui/types/file';
   import { OverflowTips as vOverflowTips } from '../../../../directives/overflow-tips';
-  import { DownloadIcon } from '../../../../icons/file';
+  import { DownloadFileIcon } from '../../../../icons/file';
   import { t } from '../../../../lang/lang';
   import ArtifactFileCard from './artifact-file-card.vue';
   import { getFileIcon } from './file-icon';
@@ -122,7 +122,7 @@
   }>();
 
   // 下载图标为共享 VNode，每处渲染克隆一份，避免多处复用同一实例
-  const getDownloadIcon = () => cloneVNode(DownloadIcon);
+  const getDownloadIcon = () => cloneVNode(DownloadFileIcon);
 
   const keyword = shallowRef('');
 

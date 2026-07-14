@@ -41,7 +41,7 @@
 
   import { useArtifactPreviewConsumer } from '../../../../composables/use-artifact-preview';
   import { OverflowTips as vOverflowTips } from '../../../../directives/overflow-tips';
-  import { DownloadIcon } from '../../../../icons/file';
+  import { DownloadFileIcon } from '../../../../icons/file';
   import { t } from '../../../../lang/lang';
   import { getFileIcon } from './file-icon';
 
@@ -73,7 +73,7 @@
 
   // 图标为共享 VNode，克隆后再渲染，避免同类型多卡复用同一实例
   const fileIcon = computed(() => getFileIcon(props.file.type));
-  const downloadIcon = computed(() => cloneVNode(DownloadIcon));
+  const downloadIcon = computed(() => cloneVNode(DownloadFileIcon));
 
   const downloadTippy = computed(() => ({
     content: t('下载'),
