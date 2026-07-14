@@ -24,9 +24,26 @@
  * IN THE SOFTWARE.
  */
 
-export * from './constants';
-export * from './contents';
-export * from './file';
-export * from './interrupt';
-export * from './messages';
-export * from './schema';
+export enum AIFileType {
+  Html = 'html',
+  Jpg = 'jpg',
+  Json = 'json',
+  Markdown = 'markdown',
+  Pdf = 'pdf',
+  Txt = 'txt',
+}
+
+export type AIFileInfo = {
+  /* 文件名称 */
+  name: string;
+  /* 输出ID */
+  outputId: string;
+  /* 预览URL */
+  previewUrl: string;
+  /* 文件大小 */
+  size: number;
+  /* 文件类型 */
+  type: AIFileType;
+  /* 文件URL */
+  url: string;
+};
