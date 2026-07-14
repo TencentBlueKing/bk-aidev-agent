@@ -211,6 +211,7 @@ function sidebarAPI() {
         { text: 'useAnimationText 文本动画', link: 'composables/use-animation-text' },
         { text: 'useMessageGroup 消息分组', link: 'composables/use-message-group' },
         { text: 'useCustomTab 自定义 Tab', link: 'composables/use-custom-tab' },
+        { text: 'useArtifactPreview 文件产物预览', link: 'composables/use-artifact-preview' },
         { text: 'useFlowNodeActions 节点行尾操作', link: 'composables/use-flow-node-actions' },
         { text: 'useFullScreen 全屏控制', link: 'composables/use-full-screen' },
         { text: 'useCommandSelection 命令选择', link: 'composables/use-command-selection' },
@@ -298,6 +299,7 @@ function sidebarComponents() {
       items: [
         { text: 'MessageRender 消息渲染器', link: 'message/message-render' },
         { text: 'AssistantMessage AI 助手消息', link: 'message/assistant-message' },
+        { text: 'FileArtifactPanel 文件产物预览', link: 'message/file-artifact-panel' },
         { text: 'UserMessage 用户消息', link: 'message/user-message' },
         { text: 'ReasoningMessage 推理消息', link: 'message/reasoning-message' },
         { text: 'ToolMessage 工具消息', link: 'message/tool-message' },

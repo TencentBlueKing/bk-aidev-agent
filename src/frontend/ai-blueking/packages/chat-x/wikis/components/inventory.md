@@ -62,6 +62,7 @@ aiSummary: >
 | [PreviewToolbar 图片预览工具栏](/components/medias/preview-toolbar) | 媒体文件 | `src/components/image-preview/preview-toolbar.vue` | 已覆盖 |
 | [ActivityMessage 活动消息](/components/message/activity-message) | 消息系统 | `src/components/chat-message/activity-message/activity-message.vue` | 已覆盖 |
 | [AssistantMessage AI 助手消息](/components/message/assistant-message) | 消息系统 | `src/components/chat-message/assistant-message/assistant-message.vue` | 已覆盖 |
+| [FileArtifactPanel 文件产物预览](/components/message/file-artifact-panel) | 消息系统 | `src/components/chat-message/assistant-message/message-artifacts/file-artifact-panel.vue` | 已覆盖 |
 | [InfoMessage 信息消息](/components/message/info-message) | 消息系统 | `src/components/chat-message/info-message/info-message.vue` | 已覆盖 |
 | [LoadingMessage 加载消息](/components/message/loading-message) | 消息系统 | `src/components/chat-message/loading-message/loading-message.vue` | 已覆盖 |
 | [MessageRender 消息渲染器](/components/message/message-render) | 消息系统 | `src/components/chat-message/message-render/message-render.vue` | 已覆盖 |

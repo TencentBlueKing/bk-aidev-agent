@@ -14,6 +14,8 @@ relatedComponents:
     relation: 工具结果通过 toolCall.toolMessage 内联或独立 tool 消息关联展示
   - slug: toolcall-render
     relation: 多条工具调用由 ToolcallRender 统一渲染
+  - slug: file-artifact-panel
+    relation: property.artifacts 文件产物点击后在侧栏预览
 sinceVersion: 1.0.0
 ---
 
@@ -658,8 +660,13 @@ interface ToolMessage extends BaseMessage<MessageRole.Tool, string> {
 - **自动渲染**：通过 `MessageContainer` 对 `role: 'assistant'` 消息自动处理，无需手动引入
 - **自定义内容渲染**：通过默认插槽替换内置 Markdown 渲染器，保留工具调用渲染
 
+## 文件产物
+
+当 `property.artifacts` 非空时，消息底部渲染文件卡片列表；点击卡片会在 `ChatContainer` 侧栏「文件产物」Tab 内聚合预览当前会话所有文件。为在多消息、同名文件场景下命中唯一文件，`AssistantMessage` 会把自身 `uid`（回退 `id`）作为 `messageUid` 与卡片下标一并透传。预览状态由 [useArtifactPreview](/composables/use-artifact-preview) 管理，面板渲染见 [FileArtifactPanel 文件产物预览](/components/message/file-artifact-panel)。
+
 ## 关联组件
 
 - [MessageRender](/components/message/message-render) — assistant 角色由其实例化
 - [ToolMessage](/components/message/tool-message) — 工具执行结果可通过 toolCall.toolMessage 内联
 - [ToolcallRender](/components/agent/toolcall-render) — 工具调用列表渲染
+- [FileArtifactPanel](/components/message/file-artifact-panel) — 文件产物侧栏预览
