@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 2026-07-14 · CrawSyncer 扩展全配置同步
+
+- **变更**：`CrawSyncer` 从「只写 `SOUL.md`」泛化为「同步一组配置产物」——新增 `artifacts_provider()` 回调（`{相对路径: 内容}`，逐产物写入 + 读回校验）；新增 `agent_config_to_artifacts(config)` 把平台 `AgentConfig` 渲染成 `SOUL.md`（Prompt）+ `agent-config.json`（聚合 MCP / Skills / tools）。`soul_provider` 与 `soul_written_bytes` / `soul_verified` 保留为向后兼容别名。
+- **范围**：同步 Prompt / MCP / Skills 三类（平台 `AgentConfig` 不含内核运行期 Memory）；内核侧消费产物（`agent apply`）为部署侧机制，不在本层。
+- **验证**：单测 `tests/packages/craw/` 29 → 36 例；colima sim 跨容器实跑（agent 写全配置产物到共享卷 → openclaw 侧 `SOUL.md` + `agent-config.json` 落盘、读回一致）。
+
 ## 2026-07-14 · Craw 适配层（packages/craw）
 
 - **背景**：AIDEV 插件对接 CLI 形态内核（OpenClaw / Hermes）此前散落在业务插件的 extend 层，各写一套转发与 registry 覆盖。
