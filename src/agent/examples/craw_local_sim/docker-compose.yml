@@ -1,0 +1,59 @@
+# craw 本地模拟：agent（aidev_agent SDK）+ craw（OpenClaw 内核 API 服务）。
+#
+# 两条链路：
+#   1. agent --localhost--> craw：agent 容器共享 openclaw 网络栈
+#      （network_mode: service:openclaw），经 127.0.0.1:18789 调
+#      /v1/chat/completions —— 与 K8s 同 Pod localhost 语义一致；
+#   2. agent --read/write--> craw（周期任务）：共享卷 craw-home
+#      （openclaw 侧挂 /workspace），CrawSyncer 周期 health 读 + SOUL.md 写。
+#
+# 启动（凭据不入库，经 --env-file 注入 BKAI_ACCESS_TOKEN 等）：
+#   ./run.sh    # 等价 docker compose --env-file ./agent.env up -d --wait
+services:
+  openclaw:
+    image: bkai-openclaw-agent:${OPENCLAW_IMAGE_VERSION:-0.2.1}
+    container_name: craw-sim-openclaw
+    environment:
+      - BKAI_OPENCLAW_MODE=paas
+      - BKAI_OPENCLAW_HTTP_API=1
+      - OPENCLAW_GATEWAY_ARGS=--bind lan --allow-unconfigured
+      - OPENCLAW_GATEWAY_PORT=18789
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-craw-local-sim}
+      - BKAI_AGENT=${BKAI_AGENT:?agent.env 需提供 BKAI_AGENT（AIDEV agent code）}
+      - BKAI_AIDEV_API_KEY=${BKAI_ACCESS_TOKEN:?agent.env 需提供 BKAI_ACCESS_TOKEN}
+    ports:
+      - "${OPENCLAW_PORT_HOST:-18789}:18789" # 宿主机可直连裸 API / 浏览器开 dashboard
+    volumes:
+      - craw-home:/workspace
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:18789/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  agent:
+    image: ${AGENT_IMAGE:?agent.env 需提供 AGENT_IMAGE（含 SDK 运行依赖 /app/.venv 的镜像）}
+    container_name: craw-sim-agent
+    network_mode: "service:openclaw" # 共享网络栈 → craw 即 127.0.0.1（同 Pod 语义）
+    depends_on:
+      openclaw:
+        condition: service_healthy
+    entrypoint: ["sleep", "infinity"] # 场景脚本经 docker compose exec 触发
+    environment:
+      - PYTHONPATH=/sdk-src
+      - MESSAGE_HANDLER_TYPE=inmemory
+      - BKAI_CRAW_BACKEND=openclaw
+      - BKAI_CRAW_API_URL=http://127.0.0.1:18789
+      - BKAI_CRAW_API_KEY=${OPENCLAW_GATEWAY_TOKEN:-craw-local-sim}
+      - BKAI_CRAW_HOME=/craw-home
+      - BKAI_CRAW_SYNC_INTERVAL=${BKAI_CRAW_SYNC_INTERVAL:-5}
+      - APP_CODE=${APP_CODE:-}
+      - APP_SECRET=${APP_SECRET:-}
+      - BKAI_ACCESS_TOKEN=${BKAI_ACCESS_TOKEN:-}
+    volumes:
+      - ../..:/sdk-src # bk-aidev-agent/src/agent（开发中的 SDK 源码，PYTHONPATH 优先生效）
+      - craw-home:/craw-home
+
+volumes:
+  craw-home:
