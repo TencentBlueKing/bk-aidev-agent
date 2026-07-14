@@ -27,6 +27,7 @@
 import type { OldShortcut, Shortcut } from '../../types';
 import type { MessageContentType, MessageRole, MessageStatus } from './constants';
 import type { ContentMap, InputContent } from './contents';
+import type { AIFileInfo } from './file';
 import type { InterruptMessage } from './interrupt';
 
 export interface ActivityMessage extends BaseMessage<
@@ -61,6 +62,8 @@ export interface BaseMessage<T extends MessageType, C = string> {
   status: MessageStatus;
   uid?: string;
   property?: {
+    /* 附件 */
+    artifacts?: AIFileInfo[];
     extra?: {
       cite:
         | {
