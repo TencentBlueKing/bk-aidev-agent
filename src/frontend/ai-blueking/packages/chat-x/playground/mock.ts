@@ -27,15 +27,13 @@
 
 import {
   // type AssistantMessage,
-  type AIFileInfo,
   type IAiSlashMenuItem,
   // type InfoMessage,
-  type Message,
+  // type Message,
   type Shortcut,
   type UserMessage,
-  AIBluekingIcon,
-  AIFileType,
   APPROVAL_STATUS,
+  AIBluekingIcon,
   // CopyIcon,
   DeleteIcon,
   InterruptReason,
@@ -108,81 +106,6 @@ export const MOCK_SHORTCUTS = [
     name: '不满意',
   },
 ] as Shortcut[];
-
-// AI 生成的文件产物（覆盖全部支持的 AIFileType 类型；最后一项无 url 用于验证「有 url 才显示下载」）
-export const MOCK_FILE_ARTIFACTS: AIFileInfo[] = [
-  {
-    name: '项目立项书.pdf',
-    outputId: 'artifact-pdf',
-    previewUrl: 'https://example.com/preview/project.pdf',
-    size: 245_760,
-    type: AIFileType.Pdf,
-    url: 'https://example.com/download/project.pdf',
-  },
-  {
-    name: '系统配置系统配置系统配置系统配置系统配置系统配置系统配置系统配置.md',
-    outputId: 'artifact-markdown',
-    previewUrl: 'https://example.com/preview/config.md',
-    size: 4_096,
-    type: AIFileType.Markdown,
-    url: 'https://example.com/download/config.md',
-  },
-  {
-    name: 'demo.json',
-    outputId: 'artifact-json',
-    previewUrl: 'https://example.com/preview/demo.json',
-    size: 1_280,
-    type: AIFileType.Json,
-    url: 'https://example.com/download/demo.json',
-  },
-  {
-    name: '自然风光.jpg',
-    outputId: 'artifact-jpg',
-    previewUrl: 'https://example.com/preview/scenery.jpg',
-    size: 1_048_576,
-    type: AIFileType.Jpg,
-    url: 'https://example.com/download/scenery.jpg',
-  },
-  {
-    name: 'dashboard_preview.html',
-    outputId: 'artifact-html',
-    previewUrl: 'https://example.com/preview/dashboard.html',
-    size: 8_192,
-    type: AIFileType.Html,
-    url: 'https://example.com/download/dashboard.html',
-  },
-  {
-    name: '会议纪要草稿.txt',
-    outputId: 'artifact-txt',
-    previewUrl: 'https://example.com/preview/meeting.txt',
-    size: 2_048,
-    type: AIFileType.Txt,
-    url: '',
-  },
-];
-
-// 带文件产物的会话消息，用于 playground 调试 artifacts 展示
-export const MOCK_ARTIFACTS_MESSAGES = [
-  {
-    id: 'mock-artifacts-user',
-    role: MessageRole.User,
-    content: '帮我把监控方案的相关文件生成出来',
-    name: 'user',
-    status: MessageStatus.Complete,
-    messageId: 'mock-artifacts-user',
-  },
-  {
-    id: 'mock-artifacts-assistant',
-    role: MessageRole.Assistant,
-    content: '收到，我已经为你设计好，请查阅',
-    name: 'react_agent',
-    status: MessageStatus.Complete,
-    messageId: 'mock-artifacts-assistant',
-    property: {
-      artifacts: MOCK_FILE_ARTIFACTS,
-    },
-  },
-] as Message[];
 
 export const MOCK_USER_MESSAGE = {
   id: '1',

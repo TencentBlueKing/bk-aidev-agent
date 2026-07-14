@@ -177,7 +177,7 @@
   import CustomTabContent from './custom-tab-content.vue';
   import { MOCK_INTERRUPT_MESSAGES } from './interrupt';
   import { streamContent } from './markdown';
-  import { MOCK_ARTIFACTS_MESSAGES, MOCK_PROMPTS, MOCK_RESOURCES } from './mock';
+  import { MOCK_PROMPTS, MOCK_RESOURCES } from './mock';
   import { uploadFileToSession } from './upload-file';
 
   import type { CustomTab, IAiSlashMenuItem, Shortcut, TagSchema } from '../src/types';
@@ -192,7 +192,399 @@
   const cite = shallowRef('');
   const userInput = shallowRef<string | TagSchema>('');
   const selectedShortcut = deepRef<null | Shortcut>(null);
-  const messages = deepRef<Message[]>([...MOCK_ARTIFACTS_MESSAGES]);
+  const messages = deepRef<Message[]>([
+    // 第一轮：用户提问 + assistant 调用工具 + tool 返回
+    {
+      id: 'msg_user_1',
+      role: MessageRole.User,
+      status: MessageStatus.Complete,
+      content: '帮我分析一下最近的 Trace 数据，并帮我查询一下慢请求的详细信息，并检查下服务健康状况',
+      messageId: 'msg_user_1',
+    },
+    // {
+    //   id: 'msg_assistant_1',
+    //   role: MessageRole.Assistant,
+    //   content: '好的，我来帮您分析 Trace 数据，需要先调用相关工具获取信息。',
+    //   status: MessageStatus.Complete,
+    //   messageId: 'msg_assistant_1',
+    //   toolCalls: [
+    //     {
+    //       id: 'tc_1',
+    //       type: MessageContentType.Function,
+    //       function: {
+    //         name: 'Trace 分析',
+    //         arguments: JSON.stringify({ app_code: 'bk-monitor', time_range: '1h' }),
+    //         description: '分析应用的 Trace 数据，获取慢请求和错误请求',
+    //       },
+    //     },
+    //     {
+    //       id: 'tc_2',
+    //       type: MessageContentType.Function,
+    //       function: {
+    //         name: '日志查询',
+    //         arguments: JSON.stringify({ keyword: 'error', count: 20 }),
+    //         description: '查询应用的错误日志',
+    //         mcpName: 'bk-log',
+    //       },
+    //     },
+    //   ],
+    // } as AssistantMessage,
+    {
+      id: 'msg_tool_1',
+      role: MessageRole.Tool,
+      content: JSON.stringify({ total: 1523, slow_requests: 12, error_requests: 3, p99: '230ms' }),
+      status: MessageStatus.Complete,
+      messageId: 'msg_tool_1',
+      toolCallId: 'tc_1',
+      duration: 2300,
+    } as ToolMessage,
+    {
+      id: 'msg_tool_2',
+      role: MessageRole.Tool,
+      content: JSON.stringify({ logs: ['[ERROR] Connection timeout', '[ERROR] Service unavailable'] }),
+      status: MessageStatus.Error,
+      messageId: 'msg_tool_2',
+      toolCallId: 'tc_2',
+      duration: 5100,
+      error: '日志服务响应超时',
+    } as ToolMessage,
+    {
+      id: 'msg_assistant_2',
+      role: MessageRole.Assistant,
+      content:
+        '根据 Trace 分析结果：\n- 最近 1 小时共 **1523** 条 Trace\n- 慢请求 **12** 条，错误请求 **3** 条\n- P99 延迟为 **230ms**\n\n日志查询出现超时，建议稍后重试。',
+      status: MessageStatus.Complete,
+      messageId: 'msg_assistant_2',
+    },
+
+    // 第二轮：用户追问 + assistant 调用工具 + tool 返回
+    {
+      id: 'msg_user_2',
+      role: MessageRole.User,
+      content: '帮我看看慢请求的详细信息，并检查下服务健康状况',
+      status: MessageStatus.Complete,
+      messageId: 'msg_user_2',
+    },
+    {
+      id: 'msg_assistant_3',
+      role: MessageRole.Assistant,
+      // content: '正在查询慢请求详情和服务健康状态。',
+      status: MessageStatus.Complete,
+      messageId: 'msg_assistant_3',
+      toolCalls: [
+        {
+          id: 'tc_3',
+          type: MessageContentType.Function,
+          function: {
+            name: '慢请求详情',
+            arguments: JSON.stringify({ app_code: 'bk-monitor', threshold: '200ms' }),
+            description: '获取超过阈值的慢请求详细信息',
+          },
+        },
+        {
+          id: 'tc_4',
+          type: MessageContentType.Function,
+          function: {
+            name: '服务健康检查',
+            arguments: JSON.stringify({ service: 'bk-monitor-web' }),
+            description: '检查服务运行状态和健康指标',
+            mcpName: 'bk-monitor',
+          },
+        },
+        {
+          id: 'tc_5',
+          type: MessageContentType.Function,
+          function: {
+            name: '告警查询',
+            arguments: JSON.stringify({ biz_id: 2, status: 'abnormal' }),
+            description: '查询当前活跃的告警事件',
+          },
+        },
+      ],
+    } as AssistantMessage,
+    {
+      id: 'msg_tool_3',
+      role: MessageRole.Tool,
+      content: JSON.stringify([
+        { trace_id: 'abc123', duration: '350ms', endpoint: '/api/query' },
+        { trace_id: 'def456', duration: '280ms', endpoint: '/api/search' },
+      ]),
+      status: MessageStatus.Complete,
+      messageId: 'msg_tool_3',
+      toolCallId: 'tc_3',
+      duration: 1800,
+    } as ToolMessage,
+    {
+      id: 'msg_tool_4',
+      role: MessageRole.Tool,
+      content: JSON.stringify({ status: 'healthy', cpu: '45%', memory: '62%', uptime: '72h' }),
+      status: MessageStatus.Complete,
+      messageId: 'msg_tool_4',
+      toolCallId: 'tc_4',
+      duration: 800,
+    } as ToolMessage,
+    {
+      id: 'msg_tool_5',
+      role: MessageRole.Tool,
+      content: JSON.stringify({ alerts: [{ name: 'CPU 使用率过高', level: 'warning' }] }),
+      status: MessageStatus.Pending,
+      messageId: 'msg_tool_5',
+      toolCallId: 'tc_5',
+      duration: 0,
+    } as ToolMessage,
+    {
+      id: 'msg_assistant_4',
+      role: MessageRole.Assistant,
+      content:
+        '慢请求分析：\n1. `/api/query` 耗时 350ms（trace_id: abc123）\n2. `/api/search` 耗时 280ms（trace_id: def456）\n\n服务健康状态良好，CPU 45%，内存 62%，已运行 72 小时。告警查询仍在进行中。',
+      status: MessageStatus.Complete,
+      messageId: 'msg_assistant_4',
+    },
+
+    // Activity Messages
+    {
+      id: 'msg_activity_bkflow',
+      role: MessageRole.Activity,
+      activityType: MessageContentType.FlowAgent,
+      content: [
+        {
+          task_id: 634859,
+          has_confidence: true,
+          is_active: true,
+          task_name: 'benny-flow7_20260202160324',
+          task_state: 'FAILED',
+          nodes: {
+            n4a62453cafb35859861dc0e3aa5e62d: {
+              id: 'n4a62453cafb35859861dc0e3aa5e62d',
+              name: 'deepseek-v3-0324',
+              type: 'ServiceActivity',
+              state: 'FINISHED',
+              start_time: '2026-02-02 16:03:31 +0800',
+              finish_time: '2026-02-02 16:03:31 +0800',
+              elapsed_time: 0,
+              loop: 1,
+              retry: 0,
+              skip: false,
+            },
+            n3fafcafa4063431b1eeab8659f8edda: {
+              id: 'n3fafcafa4063431b1eeab8659f8edda',
+              name: 'deepseek-r1',
+              type: 'ServiceActivity',
+              state: 'FINISHED',
+              start_time: '2026-02-02 16:03:31 +0800',
+              finish_time: '2026-02-02 16:03:35 +0800',
+              elapsed_time: 4,
+              loop: 1,
+              retry: 0,
+              skip: false,
+            },
+            n9967f451c043155bcba6f969f48417f: {
+              id: 'n9967f451c043155bcba6f969f48417f',
+              name: 'qwen3',
+              type: 'ServiceActivity',
+              state: 'FAILED',
+              start_time: '2026-02-02 16:03:36 +0800',
+              finish_time: '2026-02-02 16:08:36 +0800',
+              elapsed_time: 300,
+              loop: 1,
+              retry: 0,
+              retryable: true,
+              skip: false,
+              skippable: true,
+            },
+            n1a2b3c4d5e6f7890abcdef12345678: {
+              id: 'n1a2b3c4d5e6f7890abcdef12345678',
+              name: 'claude-4-opus',
+              type: 'ServiceActivity',
+              state: 'RUNNING',
+              start_time: '2026-02-02 16:08:40 +0800',
+              finish_time: '',
+              elapsed_time: 62,
+              loop: 1,
+              retry: 0,
+              skip: false,
+            },
+            nfedcba0987654321abcdef00000001: {
+              id: 'nfedcba0987654321abcdef00000001',
+              name: 'gemini-2.5-pro',
+              type: 'ServiceActivity',
+              state: 'SUSPENDED',
+              start_time: '2026-02-02 16:09:00 +0800',
+              finish_time: '',
+              elapsed_time: 86520,
+              loop: 1,
+              retry: 0,
+              skip: false,
+            },
+            n00000000000000000000000000000002: {
+              id: 'n00000000000000000000000000000002',
+              name: '待调度工具节点',
+              type: 'ServiceActivity',
+              state: 'PENDING',
+              start_time: '',
+              finish_time: '',
+              elapsed_time: 0,
+              loop: 1,
+              retry: 0,
+              skip: false,
+            },
+          },
+          statistics: {
+            total: 6,
+            state_counts: {
+              FINISHED: 2,
+              FAILED: 1,
+              RUNNING: 1,
+              SUSPENDED: 1,
+              PENDING: 1,
+            },
+          },
+          task_outputs: [],
+          confidence_title: '证据汇总',
+        },
+        {
+          task_id: 634860,
+          confidence_title: '证据汇总',
+          task_name: '模型评估流_20260202161510',
+          task_state: 'FINISHED',
+          nodes: {
+            nflow860_prepare: {
+              id: 'nflow860_prepare',
+              name: '准备评估数据集',
+              type: 'ServiceActivity',
+              state: 'FINISHED',
+              start_time: '2026-02-02 16:15:10 +0800',
+              finish_time: '2026-02-02 16:15:35 +0800',
+              elapsed_time: 25,
+              loop: 1,
+              retry: 0,
+              skip: false,
+            },
+            nflow860_eval: {
+              id: 'nflow860_eval',
+              name: '执行模型质量评估',
+              type: 'ServiceActivity',
+              state: 'FINISHED',
+              start_time: '2026-02-02 16:15:36 +0800',
+              finish_time: '2026-02-02 16:18:18 +0800',
+              elapsed_time: 162,
+              loop: 1,
+              retry: 0,
+              skip: false,
+            },
+            nflow860_report: {
+              id: 'nflow860_report',
+              name: '生成评估报告',
+              type: 'ServiceActivity',
+              state: 'FINISHED',
+              start_time: '2026-02-02 16:18:19 +0800',
+              finish_time: '2026-02-02 16:18:31 +0800',
+              elapsed_time: 12,
+              loop: 1,
+              retry: 0,
+              skip: false,
+            },
+          },
+          statistics: {
+            total: 3,
+            state_counts: {
+              FINISHED: 3,
+            },
+          },
+          task_outputs: {
+            score: 0.92,
+            report_url: 'https://example.com/reports/model-eval-634860',
+          },
+        },
+        {
+          task_id: 634861,
+          task_name: '告警收敛流_20260202162045',
+          task_state: 'RUNNING',
+          nodes: {
+            nflow861_collect: {
+              id: 'nflow861_collect',
+              name: '拉取告警事件',
+              type: 'ServiceActivity',
+              state: 'FINISHED',
+              start_time: '2026-02-02 16:20:45 +0800',
+              finish_time: '2026-02-02 16:21:03 +0800',
+              elapsed_time: 18,
+              loop: 1,
+              retry: 0,
+              skip: false,
+            },
+            nflow861_group: {
+              id: 'nflow861_group',
+              name: '按服务与维度聚合',
+              type: 'ServiceActivity',
+              state: 'RUNNING',
+              start_time: '2026-02-02 16:21:04 +0800',
+              finish_time: '',
+              elapsed_time: 47,
+              loop: 1,
+              retry: 0,
+              skip: false,
+            },
+            nflow861_notify: {
+              id: 'nflow861_notify',
+              name: '发送收敛结果通知',
+              type: 'ServiceActivity',
+              state: 'PENDING',
+              start_time: '',
+              finish_time: '',
+              elapsed_time: 0,
+              loop: 1,
+              retry: 0,
+              skip: false,
+            },
+          },
+          statistics: {
+            total: 3,
+            state_counts: {
+              FINISHED: 1,
+              RUNNING: 1,
+              PENDING: 1,
+            },
+          },
+          task_outputs: [],
+        },
+      ],
+      status: MessageStatus.Complete,
+      messageId: 'msg_activity_bkflow',
+    } as ActivityMessage,
+    {
+      id: 'msg_activity_rag',
+      role: MessageRole.Activity,
+      activityType: MessageContentType.KnowledgeRag,
+      content: {
+        content:
+          '根据知识库检索到以下相关内容：\n\n**Trace 数据分析指南**\n\n在蓝鲸监控中，Trace 数据可以通过 APM 模块进行查询和分析...',
+        referenceDocument: [
+          { name: 'Trace 数据分析指南', originFile: 'trace-guide.md', url: 'https://example.com/docs/trace-guide' },
+          { name: 'APM 接入文档', originFile: 'apm-setup.md', url: 'https://example.com/docs/apm-setup' },
+        ],
+      },
+      status: MessageStatus.Complete,
+      messageId: 'msg_activity_rag',
+    } as ActivityMessage,
+    {
+      id: 'msg_activity_ref',
+      role: MessageRole.Activity,
+      activityType: MessageContentType.ReferenceDocument,
+      content: [
+        {
+          name: '蓝鲸监控产品白皮书',
+          originFile: 'bkmonitor-whitepaper.pdf',
+          url: 'https://example.com/docs/whitepaper',
+        },
+        { name: '告警策略配置手册', originFile: 'alert-config.md', url: 'https://example.com/docs/alert-config' },
+        { name: 'SLI/SLO 最佳实践', originFile: 'sli-slo-best-practice.md', url: 'https://example.com/docs/sli-slo' },
+      ],
+      status: MessageStatus.Complete,
+      messageId: 'msg_activity_ref',
+    } as ActivityMessage,
+    ...MOCK_INTERRUPT_MESSAGES,
+  ]);
 
   const handleInterruptResume: OnInterruptResume = (payload, interrupt) => {
     // 取消审批与流程节点重试 / 跳过复用同一回调，业务侧按 payload.operation 分流处理
@@ -956,6 +1348,31 @@
     console.log('delete message');
     messages.value = [];
   };
+
+  onMounted(() => {
+    let content = '';
+    const chunkSize = 1999999999;
+    const interval = setInterval(() => {
+      content += streamContent.slice(content.length, content.length + chunkSize);
+      const status = content.length >= streamContent.length ? MessageStatus.Complete : MessageStatus.Streaming;
+      const message = messages.value.find(m => m.id === 'stream_assistant');
+      if (message) {
+        message.content = content;
+        message.status = status;
+      } else {
+        messages.value.push({
+          id: 'stream_assistant',
+          role: MessageRole.Assistant,
+          messageId: 'stream_assistant',
+          status,
+          content,
+        } as AssistantMessage);
+      }
+      if (content.length >= streamContent.length) {
+        clearInterval(interval);
+      }
+    }, 16);
+  });
 </script>
 
 <style lang="scss">

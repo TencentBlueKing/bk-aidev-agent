@@ -1,6 +1,5 @@
 <template>
   <div class="ai-assistant-message">
-    <!-- 内容 -->
     <div
       v-if="content"
       class="ai-assistant-message-content"
@@ -17,7 +16,6 @@
         />
       </slot>
     </div>
-    <!-- 工具调用 -->
     <template v-if="toolCalls && toolCalls.length > 0">
       <template
         v-for="toolCall in toolCalls"
@@ -29,24 +27,15 @@
         />
       </template>
     </template>
-    <!-- 生成文件产物 -->
-    <MessageArtifacts
-      v-if="artifacts && artifacts.length > 0"
-      :artifacts="artifacts"
-    />
   </div>
 </template>
 <script setup lang="ts">
-  import { computed } from 'vue';
-
   import { MessageContentType } from '../../../ag-ui/types/constants';
   import ContentRender from '../../chat-content/content-render/content-render.vue';
   import ToolCallRender from '../../tool-call/toolcall-render/toolcall-render.vue';
-  import MessageArtifacts from './message-artifacts/message-artifacts.vue';
 
   import type { AssistantMessage } from '../../../ag-ui/types/messages';
-  const props = defineProps<Partial<AssistantMessage>>();
-  const artifacts = computed(() => props.property?.artifacts);
+  defineProps<Partial<AssistantMessage>>();
 </script>
 
 <style lang="scss">
