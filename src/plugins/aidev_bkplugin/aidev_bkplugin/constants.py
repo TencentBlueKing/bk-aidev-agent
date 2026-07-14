@@ -3,6 +3,10 @@
 # AG-UI 协议版本
 AGUI_PROTOCOL_VERSION = "v2"
 
+# 会话列表默认分页参数
+DEFAULT_SESSION_PAGE = 1
+DEFAULT_SESSION_PAGE_SIZE = 20
+
 # 用户操作类型
 # - FLOW_NODE_RETRY：重试 flow 节点
 # - FLOW_NODE_SKIP：跳过 flow 节点
