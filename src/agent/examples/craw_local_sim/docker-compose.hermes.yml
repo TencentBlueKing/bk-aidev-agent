@@ -1,0 +1,67 @@
+# craw 本地模拟 · Hermes 变体：agent + hermes gateway api_server。
+#
+# 与 openclaw 变体同构（见 docker-compose.yml 头注），差异：
+#   - craw 侧跑 `hermes gateway`，api_server 平台经 API_SERVER_* env 启用
+#     （entrypoint ci 分支 exec "$@"，staging 仍自动完成）；
+#   - api_server 只绑 loopback —— agent 容器共享网络栈后经 127.0.0.1:8642 可达，
+#     正好复刻 bkai-cli 池模式的 loopback 内核形态；
+#   - HermesBackend 会带 X-Hermes-Session-Id / X-Hermes-Session-Key（记忆按用户隔离）。
+#
+# 启动：./run-hermes.sh
+services:
+  hermes:
+    image: ${HERMES_IMAGE:?agent.env 需提供 HERMES_IMAGE（hermes 内核镜像）}
+    container_name: craw-sim-hermes
+    environment:
+      - BKAI_HERMES_MODE=ci # entrypoint 走 exec "$@"（staging 后直跑下方 command）
+      - BKAI_AIDEV_API_KEY=${BKAI_ACCESS_TOKEN:?agent.env 需提供 BKAI_ACCESS_TOKEN}
+      - API_SERVER_ENABLED=true
+      - API_SERVER_KEY=${HERMES_API_SERVER_KEY:-craw-local-sim}
+      - API_SERVER_PORT=8642
+      # 0.0.0.0 才能被宿主机经映射端口直连（hermes 强制要求配 KEY，上面已配）；
+      # 容器内 loopback 调用不受影响
+      - API_SERVER_HOST=0.0.0.0
+      # —— MCP Token 隔离实测用（值来自 --env-file,不入库;shell 内引用,绝不回显）——
+      - REAL_MCP_ACCESS_TOKEN=${REAL_MCP_ACCESS_TOKEN:-}
+      - FAKE_MCP_ACCESS_TOKEN=${FAKE_MCP_ACCESS_TOKEN:-}
+    command: ["hermes", "gateway"]
+    ports:
+      - "${HERMES_PORT_HOST:-8642}:8642" # 宿主机可直连 api_server 裸 API
+      - "${POOL_PORT_HOST:-8788}:8788" # bkai-cli 池模式反代（Token 隔离实测）
+    volumes:
+      - craw-home:/craw-home
+      # 本机 bkai-cli 仓（池模式反代 + mcp egress）；仅 Token 隔离实测需真实路径，
+      # 其余场景可不设（默认挂当前目录占位）
+      - ${BKAI_CLI_SRC:-.}:/bkai-cli:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8642/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  agent:
+    image: ${AGENT_IMAGE:?agent.env 需提供 AGENT_IMAGE（含 SDK 运行依赖 /app/.venv 的镜像）}
+    container_name: craw-sim-agent-hermes
+    network_mode: "service:hermes" # 共享网络栈 → loopback api_server 可达（同 Pod 语义）
+    depends_on:
+      hermes:
+        condition: service_healthy
+    entrypoint: ["sleep", "infinity"]
+    environment:
+      - PYTHONPATH=/sdk-src
+      - MESSAGE_HANDLER_TYPE=inmemory
+      - BKAI_CRAW_BACKEND=hermes
+      - BKAI_CRAW_API_URL=http://127.0.0.1:8642
+      - BKAI_CRAW_API_KEY=${HERMES_API_SERVER_KEY:-craw-local-sim}
+      - BKAI_CRAW_HOME=/craw-home
+      - BKAI_CRAW_SYNC_INTERVAL=${BKAI_CRAW_SYNC_INTERVAL:-5}
+      - APP_CODE=${APP_CODE:-}
+      - APP_SECRET=${APP_SECRET:-}
+      - BKAI_ACCESS_TOKEN=${BKAI_ACCESS_TOKEN:-}
+    volumes:
+      - ../..:/sdk-src
+      - craw-home:/craw-home
+
+volumes:
+  craw-home:
