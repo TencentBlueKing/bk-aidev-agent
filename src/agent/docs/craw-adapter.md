@@ -26,14 +26,15 @@ AIDEV 平台/插件                     SDK packages/craw                 craw�
 │ (enable_chat_ │              │  └─ CrawBackend     │             │ Hermes  :8642    │
 │  takeover)    │              ├─────────────────────┤             │ /v1/chat/        │
 │ celery beat 等│──②配置同步──▶│ CrawSyncer          │──read/write▶│  completions     │
-└──────────────┘              │  read: health/状态   │  共享卷/HTTP │ workspace/SOUL.md│
-                              │  write: SOUL/配置    │             └──────────────────┘
+└──────────────┘              │  read: health/状态   │  共享卷/HTTP │ SOUL.md +        │
+                              │  write: Prompt/MCP/  │             │ agent-config.json│
+                              │        Skills 产物   │             └──────────────────┘
                               └─────────────────────┘
    周期任务(cron) = 内核原生定时调度（OpenClaw cron.* / Hermes 定时任务），非本包 CrawSyncer
 ```
 
 1. **对话转发（Proxy）**：`CrawCompletionAgent` 实现 SDK `AgentProtocol`（`build`/`execute`/`stop`），把 CHAT 执行转发给 craw 的 OpenAI 兼容 `/v1/chat/completions`；流式 SSE 逐 chunk 翻译成 AG-UI 事件（`RUN_STARTED → TEXT_MESSAGE_* → RUN_FINISHED`），经 `event_handler` 自动落库；非流式返回与原生 `ChatCompletionAgent` 同构。
-2. **配置同步（CrawSyncer，可选运维工具）**：`CrawSyncer.run_cycle()` = read（`backend.health()` + 可选状态文件）+ write（`soul_provider()` 产出的人设内容写入 craw home 的 `SOUL.md`，写后读回校验）。宿主把 `run_cycle` 挂 celery beat 即可；本地模拟用 `run_forever(max_cycles=N)`。**这是配置/人设同步，不是周期任务（cron）**——后者是内核原生能力（OpenClaw `cron.*` / Hermes 定时任务），由用户对话下单或经内核 cron 接口排期，内核到点执行并投递结果。
+2. **配置同步（CrawSyncer，可选运维工具）**：`CrawSyncer.run_cycle()` = read（`backend.health()` + 可选状态文件）+ write（把平台 Agent 定义下发到 craw home，逐产物写后读回校验）。同步粒度由 provider 决定：`soul_provider()` 只下发人设 `SOUL.md`（最小形态）；`artifacts_provider()` 下发一组产物 `{相对路径: 内容}`，配合 `agent_config_to_artifacts(config)` 可把平台 `AgentConfig` 渲染成 `SOUL.md`（Prompt）+ `agent-config.json`（聚合 MCP / Skills / tools）整组下发。宿主把 `run_cycle` 挂 celery beat 即可；本地模拟用 `run_forever(max_cycles=N)`。**这是配置/人设同步，不是周期任务（cron）**——后者是内核原生能力（OpenClaw `cron.*` / Hermes 定时任务），由用户对话下单或经内核 cron 接口排期，内核到点执行并投递结果。内核如何**消费**这些产物（`agent apply` 应用成运行时人设与工具）是部署侧机制，不在本层职责内；平台 `AgentConfig` 不含内核运行期 Memory，故同步 Prompt / MCP / Skills 三类。
 
 ## 用户 Token 隔离
 
