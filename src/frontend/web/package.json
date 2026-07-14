@@ -37,7 +37,7 @@
     "koa-send": ">=4.0.0"
   },
   "dependencies": {
-    "@blueking/ai-blueking": "2.1.4-beta.8",
+    "@blueking/ai-blueking": "2.2.1-beta.2",
     "@blueking/chat-helper": "0.0.1-beta.30",
     "@blueking/chat-x": "0.0.3-beta.4",
     "bkui-vue": "^2.0.2-beta.81",

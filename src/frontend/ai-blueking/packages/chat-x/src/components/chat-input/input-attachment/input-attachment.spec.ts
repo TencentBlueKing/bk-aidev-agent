@@ -239,7 +239,7 @@ describe('InputAttachment', () => {
   });
 
   describe('事件测试', () => {
-    it('点击 SendMessageIcon 应该发出 sendMessage 事件', async () => {
+    it('点击发送按钮容器应该发出 sendMessage 事件', async () => {
       wrapper = mount(InputAttachment, {
         props: {
           messageState: MessageStatus.Complete,
@@ -251,7 +251,8 @@ describe('InputAttachment', () => {
         },
       });
 
-      await wrapper.find('.mock-send-icon').trigger('click');
+      // 点击绑定在 .send-message-icon 容器上，覆盖图标与空白区域
+      await wrapper.find('.send-message-icon').trigger('click');
 
       expect(wrapper.emitted('sendMessage')).toBeTruthy();
     });
@@ -290,7 +291,7 @@ describe('InputAttachment', () => {
       expect(wrapper.emitted('stopSending')).toBeTruthy();
     });
 
-    it('Disabled 状态点击 SendMessageIcon 不应该发出 sendMessage 事件', async () => {
+    it('Disabled 状态点击发送按钮容器不应该发出 sendMessage 事件', async () => {
       wrapper = mount(InputAttachment, {
         props: {
           messageState: MessageStatus.Disabled,
@@ -302,12 +303,12 @@ describe('InputAttachment', () => {
         },
       });
 
-      await wrapper.find('.mock-send-icon').trigger('click');
+      await wrapper.find('.send-message-icon').trigger('click');
 
       expect(wrapper.emitted('sendMessage')).toBeFalsy();
     });
 
-    it('存在发送阻断提示时点击 SendMessageIcon 不应该发出 sendMessage 事件', async () => {
+    it('存在发送阻断提示时点击发送按钮容器不应该发出 sendMessage 事件', async () => {
       wrapper = mount(InputAttachment, {
         props: {
           messageState: MessageStatus.Complete,
@@ -320,13 +321,13 @@ describe('InputAttachment', () => {
         },
       });
 
-      await wrapper.find('.mock-send-icon').trigger('click');
+      await wrapper.find('.send-message-icon').trigger('click');
 
       expect(wrapper.emitted('sendMessage')).toBeFalsy();
       expect(wrapper.find('.send-message-icon__disabled').exists()).toBe(true);
     });
 
-    it('Pending 状态点击 SendMessageIcon 不应该发送消息', async () => {
+    it('Pending 状态点击发送按钮容器不应该发送消息', async () => {
       wrapper = mount(InputAttachment, {
         props: {
           messageState: MessageStatus.Pending,
@@ -338,11 +339,13 @@ describe('InputAttachment', () => {
         },
       });
 
-      // Pending 状态显示的是 LoadingIcon
+      // Pending 状态显示 LoadingIcon，点击容器不应发出 sendMessage
       expect(wrapper.find('.mock-loading-icon').exists()).toBe(true);
+      await wrapper.find('.send-message-icon').trigger('click');
+      expect(wrapper.emitted('sendMessage')).toBeFalsy();
     });
 
-    it('Streaming 状态点击 SendMessageIcon 不应该发送消息', async () => {
+    it('Streaming 状态点击发送按钮容器不应该发送消息', async () => {
       wrapper = mount(InputAttachment, {
         props: {
           messageState: MessageStatus.Streaming,
@@ -354,8 +357,10 @@ describe('InputAttachment', () => {
         },
       });
 
-      // Streaming 状态显示的是 LoadingIcon
+      // Streaming 状态显示 LoadingIcon，点击容器不应发出 sendMessage
       expect(wrapper.find('.mock-loading-icon').exists()).toBe(true);
+      await wrapper.find('.send-message-icon').trigger('click');
+      expect(wrapper.emitted('sendMessage')).toBeFalsy();
     });
   });
 

@@ -23,8 +23,13 @@
           </div>
 
           <!-- 添加会话 -->
-          <BkButton class="add-session-btn" @click="createNewSession">
-            <Plus class="f22" />
+          <BkButton
+            class="add-session-btn"
+            :loading="isCreatingSession"
+            :disabled="!chatHelperInstance || isCreatingSession"
+            @click="createNewSession"
+          >
+            <Plus v-if="!isCreatingSession" class="f22" />
             <span>添加会话</span>
           </BkButton>
 
@@ -184,6 +189,11 @@
 
   const isSessionListLoading = computed(() => !chatHelperInstance.value);
 
+  /** 创建会话中：复用 chat-helper session.isCreateLoading，避免重复点击 */
+  const isCreatingSession = computed(
+    () => chatHelperInstance.value?.session.isCreateLoading.value ?? false
+  );
+
   const filteredSessionList = computed(() => {
     if (!searchQuery.value) return sessionList.value;
     const query = searchQuery.value.toLowerCase();
@@ -307,12 +317,21 @@
   };
 
   const createNewSession = async () => {
-    if (!chatHelperInstance.value) return;
+    if (!chatHelperInstance.value || isCreatingSession.value) return;
     try {
       const sessionCode = `new_session_${Date.now()}`;
       await chatHelperInstance.value.session.createSession({
         sessionCode,
         sessionName: "新会话",
+      });
+      const activeCode =
+        chatHelperInstance.value.session.current.value?.sessionCode ??
+        sessionCode;
+      await router.replace({
+        query: {
+          ...router.currentRoute.value.query,
+          session: activeCode,
+        },
       });
     } catch (e) {
       console.error("创建会话失败:", e);

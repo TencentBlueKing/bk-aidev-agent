@@ -8,6 +8,7 @@
           messageState && `send-message-icon__${messageState}`,
           { 'send-message-icon__disabled': sendDisabledTip },
         ]"
+        @click="handleSendMessage"
       >
         <LoadingMessageIcon
           v-if="
@@ -26,7 +27,6 @@
             theme: 'ai-chat-box',
             offset: [0, 16],
           }"
-          @click="handleSendMessage"
         />
       </div>
     </slot>
