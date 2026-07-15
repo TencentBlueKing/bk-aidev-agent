@@ -24,10 +24,13 @@
  * IN THE SOFTWARE.
  */
 
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
 import type { IMediatorModule } from '../mediator';
-import type { ISession, ISessionFeedback } from './type';
+import type { ISession, ISessionFeedback, ISessionListParams, ISessionListResult } from './type';
+
+/** 会话列表默认每页条数 */
+const DEFAULT_PAGE_SIZE = 20;
 
 /**
  * 使用会话模块，主要做业务的组合
@@ -37,13 +40,19 @@ import type { ISession, ISessionFeedback } from './type';
 export const useSession = (mediator: IMediatorModule) => {
   const list = ref<ISession[]>([]);
   const current = ref<ISession | null>(null);
+  const page = ref(0);
+  const numPages = ref(0);
+  const count = ref(0);
   const isCurrentLoading = ref(false);
   const isListLoading = ref(false);
+  const isLoadingMore = ref(false);
   const isCreateLoading = ref(false);
   const isUpdateLoading = ref(false);
   const isDeleteLoading = ref(false);
   const isBatchDeleteLoading = ref(false);
   const isRenameLoading = ref(false);
+
+  const hasMore = computed(() => page.value > 0 && page.value < numPages.value);
 
   /**
    * 更新 list 中的 session，并同步更新 current
@@ -58,16 +67,49 @@ export const useSession = (mediator: IMediatorModule) => {
     }
   };
 
-  const getSessions = () => {
+  /**
+   * 拉取会话列表（默认第 1 页并替换本地 list）
+   */
+  const getSessions = (params?: ISessionListParams) => {
     isListLoading.value = true;
+    const requestParams: ISessionListParams = {
+      page: params?.page ?? 1,
+      page_size: params?.page_size ?? DEFAULT_PAGE_SIZE,
+    };
     return mediator.http?.session
-      .getSessions()
-      .then((res: ISession[]) => {
-        list.value = res;
+      .getSessions(requestParams)
+      .then((res: ISessionListResult) => {
+        list.value = res.results;
+        page.value = res.page;
+        numPages.value = res.numPages;
+        count.value = res.count;
       })
       .finally(() => {
         isListLoading.value = false;
       });
+  };
+
+  /**
+   * 加载下一页会话并追加到 list（按 sessionCode 去重）
+   */
+  const loadMoreSessions = async (pageSize = DEFAULT_PAGE_SIZE) => {
+    if (!hasMore.value || isListLoading.value || isLoadingMore.value) return;
+    isLoadingMore.value = true;
+    try {
+      const res = await mediator.http?.session.getSessions({
+        page: page.value + 1,
+        page_size: pageSize,
+      });
+      if (!res) return;
+      const existing = new Set(list.value.map(s => s.sessionCode));
+      const appended = res.results.filter(s => !existing.has(s.sessionCode));
+      list.value = [...list.value, ...appended];
+      page.value = res.page;
+      numPages.value = res.numPages;
+      count.value = res.count;
+    } finally {
+      isLoadingMore.value = false;
+    }
   };
 
   /**
@@ -129,6 +171,7 @@ export const useSession = (mediator: IMediatorModule) => {
       const res = await mediator.http?.session.plusSession(session);
       if (res) {
         list.value.unshift(res); // 新会话插入到列表头部
+        count.value += 1;
         // 新会话默认不加载消息（消息必定为空），优化 UX
         await chooseSession(res.sessionCode, { loadMessages: options?.loadMessages ?? false });
       }
@@ -154,6 +197,7 @@ export const useSession = (mediator: IMediatorModule) => {
     try {
       await mediator.http?.session.deleteSession(sessionCode);
       list.value = list.value.filter(item => item.sessionCode !== sessionCode);
+      count.value = Math.max(0, count.value - 1);
       // 如果当前会话被删除，选择第一个会话
       if (current.value?.sessionCode === sessionCode && list.value[0]?.sessionCode) {
         await chooseSession(list.value[0].sessionCode);
@@ -175,7 +219,10 @@ export const useSession = (mediator: IMediatorModule) => {
       await mediator.http?.session.batchDeleteSessions(sessionCodes);
 
       const deletedSet = new Set(sessionCodes);
+      const beforeLength = list.value.length;
       list.value = list.value.filter(item => !deletedSet.has(item.sessionCode));
+      const removedCount = beforeLength - list.value.length;
+      count.value = Math.max(0, count.value - removedCount);
 
       if (current.value && deletedSet.has(current.value.sessionCode)) {
         if (list.value.length > 0) {
@@ -232,8 +279,12 @@ export const useSession = (mediator: IMediatorModule) => {
   const reset = () => {
     list.value = [];
     current.value = null;
+    page.value = 0;
+    numPages.value = 0;
+    count.value = 0;
     isCurrentLoading.value = false;
     isListLoading.value = false;
+    isLoadingMore.value = false;
     isCreateLoading.value = false;
     isUpdateLoading.value = false;
     isDeleteLoading.value = false;
@@ -244,13 +295,19 @@ export const useSession = (mediator: IMediatorModule) => {
   return {
     list,
     current,
+    page,
+    numPages,
+    count,
+    hasMore,
     isCurrentLoading,
     isListLoading,
+    isLoadingMore,
     isCreateLoading,
     isUpdateLoading,
     isDeleteLoading,
     isBatchDeleteLoading,
     getSessions,
+    loadMoreSessions,
     chooseSession,
     getSession,
     createSession,

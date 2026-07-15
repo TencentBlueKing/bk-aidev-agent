@@ -93,6 +93,28 @@ export interface ISessionApi<IToolApi = unknown, IAnchorPathResourcesApi = unkno
   };
 }
 
+/** 会话列表分页请求参数 */
+export interface ISessionListParams {
+  page?: number;
+  page_size?: number;
+}
+
+/** 会话列表分页 API 响应（snake_case） */
+export interface ISessionListApi {
+  page: number;
+  num_pages: number;
+  count: number;
+  results: ISessionApi[];
+}
+
+/** 会话列表分页结果（camelCase） */
+export interface ISessionListResult {
+  page: number;
+  numPages: number;
+  count: number;
+  results: ISession[];
+}
+
 export interface ISessionFeedback {
   comment: string;
   labels: string[];

@@ -39,6 +39,7 @@ export const langData = {
   '确认删除会话 ?': 'Confirm delete session?',
   搜索为空: 'No search results',
   暂无对话: 'No conversations',
+  '加载中...': 'Loading...',
   转人工: 'Transfer to human',
   缩小高度: 'Shrink height',
   全选: 'Select all',
