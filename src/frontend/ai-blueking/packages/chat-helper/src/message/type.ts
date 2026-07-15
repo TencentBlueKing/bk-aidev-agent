@@ -368,6 +368,15 @@ export type IMessageApi =
   | IUserMessageApi
   | IInterruptMessageApi;
 
+export interface IMessageArtifact {
+  name: string;
+  outputId: string;
+  previewUrl?: string;
+  size: number;
+  type: string;
+  url: string;
+}
+
 /**
  * 消息属性 - 用于传递引用内容或快捷键相关信息
  * 该类型设计为灵活的结构，由外部调用方决定具体内容
@@ -375,6 +384,7 @@ export type IMessageApi =
 export interface IMessageProperty {
   /** 其他扩展字段 */
   [key: string]: unknown;
+  artifacts?: IMessageArtifact[];
   extra?: {
     /** 其他扩展字段 */
     [key: string]: unknown;

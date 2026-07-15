@@ -36,6 +36,7 @@ import {
 import {
   type IActivityDeltaEvent,
   type IActivitySnapshotEvent,
+  type IArtifactsGeneratedCustomValue,
   type ICustomEvent,
   type IEvent,
   type IFlowAgentEndCustomValue,
@@ -129,11 +130,23 @@ export class AGUIProtocol implements ISSEProtocol {
     }
   }
 
+  handleArtifactsGeneratedCustomEvent(event: ICustomEvent) {
+    const message = this.messageModule.list.value.findLast(item => item.role === MessageRole.Assistant);
+    if (message) {
+      const value = event.value as IArtifactsGeneratedCustomValue;
+      message.property ??= {};
+      message.property.artifacts = value.artifacts;
+    }
+  }
+
   /**
    * 处理自定义事件
    */
   handleCustomEvent(event: ICustomEvent) {
     switch (event.name) {
+      case CustomEventName.ArtifactsGenerated:
+        this.handleArtifactsGeneratedCustomEvent(event);
+        break;
       case CustomEventName.FlowAgentStart:
         this.handleFlowAgentStartCustomEvent(event);
         break;
