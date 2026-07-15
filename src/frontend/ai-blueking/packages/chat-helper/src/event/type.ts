@@ -23,10 +23,11 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { type IMessageApi, type MessageRole, type MessageStatus } from '../message/type';
+import { type IMessageApi, type IMessageArtifact, type MessageRole, type MessageStatus } from '../message/type';
 import type { JSONSchema4 } from 'json-schema';
 
 export enum CustomEventName {
+  ArtifactsGenerated = 'artifacts_generated',
   FlowAgentEnd = 'flow_agent_end',
   FlowAgentResult = 'flow_agent_result',
   FlowAgentStart = 'flow_agent_start',
@@ -150,6 +151,12 @@ export interface IActivitySnapshotEvent extends IBaseEvent {
   type: EventType.ActivitySnapshot;
 }
 
+export interface IArtifactsGeneratedCustomValue {
+  artifacts: IMessageArtifact[];
+  runId: string;
+  status: MessageStatus;
+}
+
 export interface IBaseEvent {
   timestamp?: number;
   type: EventType;
@@ -163,6 +170,7 @@ export interface ICustomEvent extends IBaseEvent {
   name: CustomEventName;
   type: EventType.Custom;
   value:
+    | IArtifactsGeneratedCustomValue
     | IFlowAgentEndCustomValue
     | IFlowAgentResultCustomValue
     | IFlowAgentStartCustomValue
