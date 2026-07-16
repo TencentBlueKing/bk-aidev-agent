@@ -3,11 +3,13 @@ name: AiPromptList Prompt 列表
 slug: ai-prompt-list
 kind: component
 domain: input
-description: / Prompt 选择列表，供 AiSlashInput 插入模板文本。
+description: \ Prompt 选择列表，供 AiSlashInput 插入模板文本。
 aiSummary: >
-  / Prompt 选择列表，供 AiSlashInput 插入模板文本。
+  \ Prompt 选择列表，供 AiSlashInput 插入模板文本。
   源码位置：src/components/chat-input/ai-slash-input/ai-prompt-list/ai-prompt-list.vue。
-relatedComponents: []
+relatedComponents:
+  - slug: ai-slash-input
+    relation: 输入 \ 时由 AiSlashInput tippy 菜单渲染
 sinceVersion: 1.0.0
 ---
 
@@ -18,13 +20,13 @@ sinceVersion: 1.0.0
 ## 源码事实
 
 - **源码位置**：`src/components/chat-input/ai-slash-input/ai-prompt-list/ai-prompt-list.vue`
-- **能力说明**：/ Prompt 选择列表，供 AiSlashInput 插入模板文本。
+- **能力说明**：`\` Prompt 选择列表，供 AiSlashInput 插入模板文本。
 
 ## API 摘要
 
 ### Props
 
-- `{ onSelect: (prompt: string) =`
+- `{ onSelect: (prompt: string) => void; prompts: string[]; }`
 
 ### Emits
 

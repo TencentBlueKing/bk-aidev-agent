@@ -75,6 +75,7 @@
 
     .ai-skill-list-item {
       display: flex;
+      flex-shrink: 0;
       align-items: center;
       box-sizing: border-box;
       width: 100%;

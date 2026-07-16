@@ -462,8 +462,15 @@ export class AGUIProtocol implements ISSEProtocol {
 
   /**
    * 处理文本消息开始事件
+   * 断线续传时 DLQ 会重放事件：同 messageId 已存在则重置内容，避免重复气泡/文本翻倍
    */
   handleTextMessageStartEvent(event: ITextMessageStartEvent) {
+    const existing = this.messageModule.getMessageByMessageId(event.messageId);
+    if (existing) {
+      existing.content = '';
+      existing.status = MessageStatus.Streaming;
+      return;
+    }
     this.messageModule.plusMessage({
       role: event.role as MessageRole.Assistant,
       content: '',
