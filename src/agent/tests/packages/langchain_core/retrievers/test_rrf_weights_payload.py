@@ -19,7 +19,7 @@ def test_index_specific_search_forwards_100_percent_dense_rrf_weights(monkeypatc
             {
                 "id": 26,
                 "index_config": {
-                    "vector_indexes": [{"index_name": "full_text", "index_type": "vector-bm25"}],
+                    "vector_indexes": [{"index_name": "gid", "index_type": "vector-multi_column"}],
                 },
             }
         ],
