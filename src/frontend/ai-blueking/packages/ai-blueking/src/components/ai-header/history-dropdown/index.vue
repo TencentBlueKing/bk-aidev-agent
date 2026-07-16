@@ -1,5 +1,8 @@
 <template>
-  <div class="bkai-history-dropdown">
+  <div
+    class="bkai-history-dropdown"
+    @scroll="handleScroll"
+  >
     <div class="history-dropdown-header">
       <h1 class="history-dropdown-header-title">{{ t('历史会话') }}</h1>
       <history-search
@@ -29,6 +32,19 @@
             @rename-confirm="handleRenameConfirm"
           />
         </history-group>
+        <div
+          v-if="isLoadingMore"
+          class="history-dropdown-loading"
+        >
+          <span class="history-dropdown-loading-dots">
+            <i
+              v-for="i in 3"
+              :key="i"
+              class="history-dropdown-loading-dot"
+              :style="{ '--dot-index': i - 1 }"
+            />
+          </span>
+        </div>
       </template>
       <bk-exception
         v-else
@@ -57,6 +73,8 @@
   const props = defineProps<HistoryDropdownProps>();
   const emit = defineEmits<HistoryDropdownEmits>();
 
+  const SCROLL_THRESHOLD = 40;
+
   const searchKey = ref('');
   const editingSessionCode = ref<null | string>(null);
 
@@ -64,6 +82,19 @@
    * 当前会话编码
    */
   const currentSessionCode = computed(() => props.sessionBusinessManager.currentSession.value?.sessionCode);
+
+  const isLoadingMore = computed(() => props.sessionBusinessManager.isLoadingMore.value);
+
+  /**
+   * 滚动触底加载下一页
+   */
+  const handleScroll = (e: Event) => {
+    const el = e.target as HTMLElement;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight > SCROLL_THRESHOLD) return;
+    if (!props.sessionBusinessManager.hasMoreSessions.value) return;
+    if (props.sessionBusinessManager.isLoadingMore.value) return;
+    void props.sessionBusinessManager.loadMoreSessions();
+  };
 
   /**
    * 分组后的会话列表（按时间分组）
@@ -166,9 +197,7 @@
    * 再 emit 事件触发后端 API 调用。API 失败时由上层负责回滚。
    */
   const handleRenameConfirm = (sessionCode: string, newName: string) => {
-    const session = props.sessionBusinessManager.sessionList.value.find(
-      s => s.sessionCode === sessionCode,
-    );
+    const session = props.sessionBusinessManager.sessionList.value.find(s => s.sessionCode === sessionCode);
     if (session) {
       session.sessionName = newName;
     }
@@ -212,6 +241,53 @@
 
     .history-dropdown-content {
       margin-top: 10px;
+    }
+
+    .history-dropdown-loading {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 0;
+      font-size: 12px;
+      line-height: 20px;
+      color: #979ba5;
+
+      &-dots {
+        display: inline-flex;
+        gap: 3px;
+        align-items: center;
+      }
+
+      &-dot {
+        width: 5px;
+        height: 5px;
+        background: #c4c6cc;
+        border-radius: 50%;
+        animation: history-dropdown-loading-dot 1.2s ease-in-out infinite;
+        animation-delay: calc(var(--dot-index, 0) * 0.16s);
+      }
+    }
+  }
+
+  @keyframes history-dropdown-loading-dot {
+    0%,
+    100% {
+      opacity: 0.3;
+      transform: translateY(0) scale(0.85);
+    }
+
+    40% {
+      opacity: 1;
+      transform: translateY(-3px) scale(1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bkai-history-dropdown .history-dropdown-loading-dot {
+      opacity: 1;
+      transform: none;
+      animation: none;
     }
   }
 </style>

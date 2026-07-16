@@ -11,7 +11,7 @@ import { hasRealMessageContent } from '../../utils/message-utils';
 
 import type { CreateSessionOptions, IEventEmitter, SessionBusinessConfig } from './types';
 import type { IAgentModule, IMessageModule, ISession, ISessionModule } from '@blueking/chat-helper';
-import type { Ref } from 'vue';
+import type { ComputedRef, Ref } from 'vue';
 
 /**
  * 会话业务管理器
@@ -70,8 +70,26 @@ export class SessionBusinessManager {
     return this.sessionModule.isListLoading;
   }
 
+  get isLoadingMore(): Ref<boolean> {
+    return this.sessionModule.isLoadingMore;
+  }
+
   get isUpdateLoading(): Ref<boolean> {
     return this.sessionModule.isUpdateLoading;
+  }
+
+  /**
+   * 是否还有更多会话可加载
+   */
+  get hasMoreSessions(): ComputedRef<boolean> {
+    return this.sessionModule.hasMore;
+  }
+
+  /**
+   * 会话总数（后端分页 count）
+   */
+  get sessionCount(): Ref<number> {
+    return this.sessionModule.count;
   }
 
   /**
@@ -321,7 +339,7 @@ export class SessionBusinessManager {
   }
 
   /**
-   * 加载会话列表
+   * 加载会话列表（重置为第 1 页）
    */
   async loadSessions(): Promise<void> {
     try {
@@ -334,6 +352,22 @@ export class SessionBusinessManager {
       console.error('Failed to load sessions:', error);
       this.emit('session-error', {
         action: 'load',
+        error,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * 加载下一页会话并追加到列表
+   */
+  async loadMoreSessions(): Promise<void> {
+    try {
+      await this.sessionModule.loadMoreSessions();
+    } catch (error) {
+      console.error('Failed to load more sessions:', error);
+      this.emit('session-error', {
+        action: 'loadMore',
         error,
       });
       throw error;
