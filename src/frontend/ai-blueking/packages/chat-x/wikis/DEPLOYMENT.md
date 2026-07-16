@@ -26,7 +26,7 @@
 只需要做一次：
 
 1. 登录 https://vercel.com，进入 **Add New… → Project**
-2. 选择 GitHub 仓库 `liangling0628/bk-aidev-agent`（或你 fork 的仓库）
+2. 选择 GitHub 仓库 (你 fork 的仓库)
 3. 关键配置：
    - **Root Directory** 选择 `src/frontend/ai-blueking`
    - Framework Preset 会自动识别为 VitePress
