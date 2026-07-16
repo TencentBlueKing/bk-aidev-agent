@@ -11,7 +11,7 @@ def test_index_specific_search_forwards_100_percent_dense_rrf_weights(monkeypatc
 
     monkeypatch.setattr(BkRetriever, "_search_knowledge_by_client", capture_request)
     retriever = BkRetriever()
-    knowledge_options = KnowledgeSettings(rrf_weights={"dense": 1.0, "bm25": 0.0})
+    knowledge_options = KnowledgeSettings(rrf_weights={"dense": 1.0, "sparse": 0.0})
 
     retriever.search_knowledge_index_specific(
         knowledge_items=[],
@@ -28,4 +28,4 @@ def test_index_specific_search_forwards_100_percent_dense_rrf_weights(monkeypatc
         knowledge_query_options=knowledge_options,
     )
 
-    assert captured_payload["rrf_weights"] == {"dense": 1.0, "bm25": 0.0}
+    assert captured_payload["rrf_weights"] == {"dense": 1.0, "sparse": 0.0}

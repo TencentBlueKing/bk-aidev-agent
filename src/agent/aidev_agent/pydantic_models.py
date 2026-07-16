@@ -161,7 +161,7 @@ class KnowledgeSettings(BaseModel):
     )
     rrf_weights: dict[str, float] = Field(
         default_factory=dict,
-        description="dense 与 bm25 召回通道的 RRF 融合权重",
+        description="dense 与 sparse 召回通道的 RRF 融合权重",
     )
     self_query_threshold_top_n: int = Field(
         default=int(os.getenv("SELF_QUERY_THRESHOLD_TOP_N", "0")),
