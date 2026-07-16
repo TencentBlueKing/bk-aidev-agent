@@ -41,6 +41,7 @@ aiSummary: >
 | [VNodeRenderer VNode 渲染器](/components/helper/vnode-renderer) | 辅助能力 | `src/components/chat-content/vnode-renderer.ts` | 已覆盖 |
 | [AiPromptList Prompt 列表](/components/input/ai-prompt-list) | 输入交互 | `src/components/chat-input/ai-slash-input/ai-prompt-list/ai-prompt-list.vue` | 已覆盖 |
 | [AiSelection 划词选择](/components/input/ai-selection) | 输入交互 | `src/components/ai-selection/ai-selection.vue` | 已覆盖 |
+| [AiSkillList Skill 列表](/components/input/ai-skill-list) | 输入交互 | `src/components/chat-input/ai-slash-input/ai-skill-list/ai-skill-list.vue` | 已覆盖 |
 | [AiSlashEditor 富文本编辑器](/components/input/ai-slash-editor) | 输入交互 | `src/components/chat-input/ai-slash-editor/ai-slash-editor.vue` | 已覆盖 |
 | [AiSlashInput 富文本命令输入](/components/input/ai-slash-input) | 输入交互 | `src/components/chat-input/ai-slash-input/ai-slash-input.vue` | 已覆盖 |
 | [AiSlashMenu 资源菜单](/components/input/ai-slash-menu) | 输入交互 | `src/components/chat-input/ai-slash-input/ai-slash-menu/ai-slash-menu.vue` | 已覆盖 |

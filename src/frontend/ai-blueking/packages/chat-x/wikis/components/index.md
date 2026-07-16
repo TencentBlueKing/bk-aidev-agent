@@ -23,7 +23,7 @@ aiSummary: >
 | 渲染一条消息 | [MessageRender](./message/message-render.md) |
 | 渲染消息正文内容 | [ContentRender](./rendering/content-render.md) |
 | 渲染 Markdown / 代码 / 公式 / 图表 | [MarkdownContent](./rendering/markdown-content.md) |
-| 构建快捷指令与命令输入 | [ChatInput](./input/chat-input.md)、[AiSlashInput](./input/ai-slash-input.md)、[ShortcutRender](./input/shortcut-render.md) |
+| 构建快捷指令与命令输入 | [ChatInput](./input/chat-input.md)、[AiSlashInput](./input/ai-slash-input.md)、[AiSkillList](./input/ai-skill-list.md)、[ShortcutRender](./input/shortcut-render.md) |
 | 处理 ToolCall / HITL 中断 | [ToolcallRender](./agent/toolcall-render.md)、[InterruptMessage](./agent/interrupt-message.md) |
 | 展示 FlowAgent / 知识召回活动 | [FlowAgentContent](./agent/flow-agent-content.md)、[KnowledgeRagContent](./agent/knowledge-rag-content.md) |
 | 图片预览与文件展示 | [AiImage](./medias/ai-image.md)、[ImagePreviewGroup](./medias/image-preview-group.md)、[FileContent](./medias/file-content.md) |
@@ -83,9 +83,10 @@ aiSummary: >
 | 组件 | 说明 |
 | ---- | ---- |
 | [ChatInput](./input/chat-input.md) | 聊天主输入区。 |
-| [AiSlashInput](./input/ai-slash-input.md) | 富文本命令输入，支持 `/` Prompt 与 `@` 资源标签。 |
+| [AiSlashInput](./input/ai-slash-input.md) | 富文本命令输入，支持 `/` Skill、`\` Prompt 与 `@` 资源标签。 |
 | [AiSlashEditor](./input/ai-slash-editor.md) | 富文本编辑器实现。 |
 | [AiSlashMenu](./input/ai-slash-menu.md) | 资源选择菜单。 |
+| [AiSkillList](./input/ai-skill-list.md) | Skill 列表。 |
 | [AiPromptList](./input/ai-prompt-list.md) | Prompt 列表。 |
 | [InputAttachment](./input/input-attachment.md) | 输入附件区布局。 |
 | [InputInfoAlert](./input/input-info-alert.md) | 输入提示条。 |

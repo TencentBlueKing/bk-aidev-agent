@@ -316,9 +316,24 @@ const handleSendMessage = async (
   />
 </div>
 
-## Prompt 模板（`/` 触发）
+## Skill 列表（`/` 触发）
 
-通过 `prompts` 传入字符串数组，用户在编辑器中输入 `/` 唤出 Prompt 菜单，支持模糊搜索，选择后自动填入编辑器：
+通过 `skills` 传入 Skill 列表，用户在编辑器中输入 `/` 唤出 [AiSkillList](/components/input/ai-skill-list) 菜单，支持按名称/编码模糊搜索，选择后以 Skill 标签嵌入编辑器。无 icon 或 icon 加载失败时展示首字母 fallback。已插入的 Skill 不会再出现在下拉菜单中（自动去重）。
+
+```vue
+<script setup lang="ts">
+  import type { ISkillListItem } from '@blueking/chat-x';
+
+  const skills: ISkillListItem[] = [
+    { skill_code: 'translate', skill_name: '翻译', description: '翻译文本', icon: '' },
+    { skill_code: 'summarize', skill_name: '总结', description: '总结内容', icon: 'https://example.com/icon.png' },
+  ];
+</script>
+```
+
+## Prompt 模板（`\` 触发）
+
+通过 `prompts` 传入字符串数组，用户在编辑器中输入 `\` 唤出 Prompt 菜单，支持模糊搜索，选择后自动填入编辑器：
 
 ```vue
 <script setup lang="ts">
@@ -708,7 +723,8 @@ const handleSendMessage = async (
 | modelValue         | `string \| TagSchema`                                                      | -        | ✅   | 编辑器的值，支持 `v-model`                              |
 | messageStatus      | `MessageStatus`                                                            | -        | -    | 消息状态，控制按钮；输入为空时内部强制 `disabled`       |
 | cite               | `string`                                                                   | `''`     | -    | 引用内容，支持 `v-model:cite`，不为空时显示引用区       |
-| prompts            | `string[]`                                                                 | `[]`     | -    | Prompt 模板列表，输入 `/` 触发                          |
+| skills             | `ISkillListItem[]`                                                         | `[]`     | -    | Skill 列表，输入 `/` 触发，选中后插入 Skill 标签        |
+| prompts            | `string[]`                                                                 | `[]`     | -    | Prompt 模板列表，输入 `\` 触发                          |
 | resources          | `IAiSlashMenuItem[]`                                                       | `[]`     | -    | 资源列表，输入 `@` 触发，按 `type` 分组展示             |
 | shortcuts          | `Shortcut[]`                                                               | -        | -    | 快捷指令列表，显示在底部工具栏                          |
 | shortcutId         | `string`                                                                   | -        | -    | 当前选中的快捷指令 ID，匹配时列表收起为已选样式         |
@@ -725,8 +741,9 @@ const handleSendMessage = async (
 ### 默认占位符
 
 ```
-输入 "/"唤出 Prompt
-输入"@"唤出工具
+输入 "/" 唤出 Skill
+输入 "\" 唤出 Prompt
+输入 "@" 唤出 工具和 MCP
 通过 Shift + Enter 进行换行输入
 ```
 
