@@ -31,9 +31,24 @@ POLL_INTERVAL_SECONDS = 5
 
 
 class CommonInputsFormMixin:
-    command = {"ui:component": {"name": "bk-input", "props": {"type": "string"}}}
-    input = {"ui:component": {"name": "bk-input", "props": {"type": "string"}}}
-    session_code = {"ui:component": {"name": "bk-input", "props": {"type": "string"}}}
+    input = {
+        "ui:component": {
+            "name": "bk-input",
+            "props": {"type": "string", "placeholder": "本轮提问内容"},
+        }
+    }
+    session_code = {
+        "ui:component": {
+            "name": "bk-input",
+            "props": {"type": "string", "placeholder": "会话 ID，多轮续聊时填写，单轮建议留空"},
+        }
+    }
+    command = {
+        "ui:component": {
+            "name": "bk-input",
+            "props": {"type": "string", "placeholder": "命令 -- 快捷指令调用"},
+        }
+    }
     chat_history = {
         "type": "array",
         "title": "chat_history",
@@ -41,8 +56,22 @@ class CommonInputsFormMixin:
             "type": "object",
             "title": "history",
             "properties": {
-                "role": {"type": "string", "title": "role"},
-                "content": {"type": "string", "title": "content"},
+                "role": {
+                    "type": "string",
+                    "title": "role",
+                    "ui:component": {
+                        "name": "bk-input",
+                        "props": {"type": "string", "placeholder": "消息角色，如 user / assistant / system"},
+                    },
+                },
+                "content": {
+                    "type": "string",
+                    "title": "content",
+                    "ui:component": {
+                        "name": "bk-input",
+                        "props": {"type": "string", "placeholder": "该条历史消息的文本内容"},
+                    },
+                },
             },
         },
     }
