@@ -163,6 +163,14 @@ class KnowledgeSettings(BaseModel):
         default_factory=dict,
         description="dense 与 sparse 召回通道的 RRF 融合权重",
     )
+    recall_channels: list[str] | None = Field(
+        default=None,
+        description="向量召回通道；未传沿用平台兼容策略，空列表表示纯标量召回",
+    )
+    scalar_expression: str = Field(
+        default="",
+        description="step-1 根级标量检索表达式",
+    )
     self_query_threshold_top_n: int = Field(
         default=int(os.getenv("SELF_QUERY_THRESHOLD_TOP_N", "0")),
         description="self query 判断结构化数据的 top_n 阈值",

@@ -89,3 +89,17 @@ def test_legacy_knowledge_options_preserve_100_percent_dense_rrf_weights():
     migrated = migration_knowledge_query_options_from_agent_options_v1(options)
 
     assert migrated.rrf_weights == {"dense": 1.0, "sparse": 0.0}
+
+
+def test_legacy_knowledge_options_preserve_pure_scalar_retrieval_layers():
+    options = AgentOptions(
+        knowledge_query_options=KnowledgebaseSettings(
+            recall_channels=[],
+            scalar_expression='eq("status","enabled")',
+        )
+    )
+
+    migrated = migration_knowledge_query_options_from_agent_options_v1(options)
+
+    assert migrated.recall_channels == []
+    assert migrated.scalar_expression == 'eq("status","enabled")'

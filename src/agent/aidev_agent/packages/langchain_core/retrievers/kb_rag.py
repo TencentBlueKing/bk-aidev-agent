@@ -876,6 +876,7 @@ class KnowledgeRag:
                 knowledge_bases=knowledge_bases,
                 query=query_for_search,
                 topk=knowledge_query_options.knowledge_resource_rough_recall_topk,
+                knowledge_query_options=knowledge_query_options,
                 **kwargs,
             )
 
