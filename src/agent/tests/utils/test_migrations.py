@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+import pytest
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
 from aidev_agent.packages.langchain_core.models.mock import MockChatModel
 from aidev_agent.pydantic_models import AgentOptions, IntentRecognition, KnowledgebaseSettings, KnowledgeSettings
@@ -83,12 +84,19 @@ def test_migration_knowledge_query_options_from_agent_options_v1_does_not_dump_d
     assert "rejection_message" not in options.knowledge_query_options.model_dump(exclude_unset=True)
 
 
-def test_legacy_knowledge_options_preserve_100_percent_dense_rrf_weights():
-    options = AgentOptions(knowledge_query_options=KnowledgebaseSettings(rrf_weights={"dense": 1.0, "sparse": 0.0}))
+@pytest.mark.parametrize(
+    "rrf_weights",
+    [
+        {"dense": 1.0, "sparse": 0.0},
+        {"dense": 0.0, "sparse": 1.0},
+    ],
+)
+def test_legacy_knowledge_options_preserve_extreme_rrf_weights(rrf_weights):
+    options = AgentOptions(knowledge_query_options=KnowledgebaseSettings(rrf_weights=rrf_weights))
 
     migrated = migration_knowledge_query_options_from_agent_options_v1(options)
 
-    assert migrated.rrf_weights == {"dense": 1.0, "sparse": 0.0}
+    assert migrated.rrf_weights == rrf_weights
 
 
 def test_legacy_knowledge_options_preserve_pure_scalar_retrieval_layers():
