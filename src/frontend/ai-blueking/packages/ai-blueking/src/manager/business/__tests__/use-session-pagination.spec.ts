@@ -105,6 +105,22 @@ describe('useSession pagination', () => {
     expect(session.hasMore.value).toBe(false);
   });
 
+  // HTTP 层会将旧接口数组响应规范化为 page=1 / numPages=1，此处验证业务层不会误触发加载更多
+  it('should not load more for legacy non-paginated list shape', async () => {
+    const legacyList = [
+      { sessionCode: 's1', sessionName: '会话1' },
+      { sessionCode: 's2', sessionName: '会话2' },
+    ];
+    getSessionsMock.mockResolvedValue(createPageResult(1, 1, legacyList, legacyList.length));
+
+    await session.getSessions();
+    await session.loadMoreSessions();
+
+    expect(session.list.value).toEqual(legacyList);
+    expect(session.hasMore.value).toBe(false);
+    expect(getSessionsMock).toHaveBeenCalledTimes(1);
+  });
+
   it('should not request again while loading more', async () => {
     let resolveSecond!: (value: ISessionListResult) => void;
     getSessionsMock

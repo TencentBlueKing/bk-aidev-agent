@@ -47,6 +47,31 @@ const UPLOAD_FILE_NAME_PREFIX = 'upload_file';
 /** 会话列表默认每页条数 */
 const DEFAULT_PAGE_SIZE = 20;
 
+/**
+ * 将会话列表接口响应统一为分页结构。
+ * 兼容两类后台：
+ * 1. 分页：`{ page, num_pages, count, results }`
+ * 2. 未分页（旧接口）：直接返回 `ISessionApi[]`
+ */
+const normalizeSessionListResponse = (res: ISessionListApi | ISessionApi[]) => {
+  if (Array.isArray(res)) {
+    return {
+      page: 1,
+      numPages: 1,
+      count: res.length,
+      results: res.map(transferSessionApi2Session),
+    };
+  }
+
+  const results = Array.isArray(res?.results) ? res.results : [];
+  return {
+    page: res?.page ?? 1,
+    numPages: res?.num_pages ?? 1,
+    count: res?.count ?? results.length,
+    results: results.map(transferSessionApi2Session),
+  };
+};
+
 /** 从原始文件名提取 ASCII 安全扩展名，用于保留文件类型 */
 const getSafeFileExtension = (fileName: string): string => {
   const extension = fileName.split('.').pop();
@@ -83,10 +108,10 @@ export const useSession = (fetchClient: FetchClient) => {
   const clearSession = (sessionCode: string, config?: IRequestConfig) =>
     fetchClient.post(`chat_completion/${sessionCode}/clear/`, undefined, config);
 
-  // 获取会话列表（分页）
+  // 获取会话列表（分页；兼容未支持分页的后台返回数组）
   const getSessions = (params?: ISessionListParams, config?: IRequestConfig) =>
     fetchClient
-      .get<ISessionListApi>(
+      .get<ISessionListApi | ISessionApi[]>(
         `session/`,
         {
           page: params?.page ?? 1,
@@ -94,12 +119,7 @@ export const useSession = (fetchClient: FetchClient) => {
         },
         config,
       )
-      .then(res => ({
-        page: res.page,
-        numPages: res.num_pages,
-        count: res.count,
-        results: res.results.map(transferSessionApi2Session),
-      }));
+      .then(normalizeSessionListResponse);
 
   // 新增会话
   const plusSession = (data: ISession, config?: IRequestConfig) =>
