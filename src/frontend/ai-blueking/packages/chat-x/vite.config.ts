@@ -80,7 +80,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
-      allowedHosts: ['localhost', '127.0.0.1', 'appdev.woa.com'],
+      allowedHosts: ['localhost', '127.0.0.1', 'appdev.example.com'],
     },
   };
 });

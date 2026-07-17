@@ -12,9 +12,14 @@ function createSessionModule(overrides: Record<string, unknown> = {}) {
   const sessionModule = {
     current,
     list,
+    page: ref(0),
+    numPages: ref(0),
+    count: ref(0),
+    hasMore: ref(false),
     getSessions: vi.fn().mockImplementation(async () => {
       // default: no-op, list controlled by tests
     }),
+    loadMoreSessions: vi.fn().mockResolvedValue(undefined),
     chooseSession: vi.fn().mockImplementation(async (sessionCode: string) => {
       const target = list.value.find(item => item.sessionCode === sessionCode) ?? null;
       current.value = target;
@@ -34,6 +39,7 @@ function createSessionModule(overrides: Record<string, unknown> = {}) {
     isCurrentLoading: ref(false),
     isDeleteLoading: ref(false),
     isListLoading: ref(false),
+    isLoadingMore: ref(false),
     isUpdateLoading: ref(false),
     ...overrides,
   };
@@ -276,5 +282,34 @@ describe('SessionBusinessManager.createNewSession', () => {
 
     expect(result).toBeNull();
     expect(sessionModule.createSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('SessionBusinessManager pagination', () => {
+  let sessionModule: ReturnType<typeof createSessionModule>;
+  let manager: SessionBusinessManager;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionModule = createSessionModule();
+    manager = new SessionBusinessManager(sessionModule as never, null, null, {});
+  });
+
+  it('should call getSessions when loadSessions', async () => {
+    await manager.loadSessions();
+    expect(sessionModule.getSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it('should call loadMoreSessions when loadMoreSessions', async () => {
+    await manager.loadMoreSessions();
+    expect(sessionModule.loadMoreSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it('should expose hasMoreSessions and isLoadingMore from session module', () => {
+    sessionModule.hasMore.value = true;
+    sessionModule.isLoadingMore.value = true;
+
+    expect(manager.hasMoreSessions.value).toBe(true);
+    expect(manager.isLoadingMore.value).toBe(true);
   });
 });

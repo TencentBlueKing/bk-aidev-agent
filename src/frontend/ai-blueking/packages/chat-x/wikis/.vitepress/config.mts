@@ -344,6 +344,7 @@ function sidebarComponents() {
         { text: 'AiSlashInput 富文本命令输入', link: 'input/ai-slash-input' },
         { text: 'AiSlashEditor 富文本编辑器', link: 'input/ai-slash-editor' },
         { text: 'AiSlashMenu 资源菜单', link: 'input/ai-slash-menu' },
+        { text: 'AiSkillList Skill 列表', link: 'input/ai-skill-list' },
         { text: 'AiPromptList Prompt 列表', link: 'input/ai-prompt-list' },
         { text: 'InputAttachment 输入附件区', link: 'input/input-attachment' },
         { text: 'InputInfoAlert 输入提示条', link: 'input/input-info-alert' },

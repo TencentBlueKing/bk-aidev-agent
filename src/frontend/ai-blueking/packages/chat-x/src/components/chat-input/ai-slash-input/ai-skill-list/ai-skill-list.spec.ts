@@ -24,6 +24,8 @@
  * IN THE SOFTWARE.
  */
 
+import { nextTick } from 'vue';
+
 import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -113,8 +115,13 @@ describe('AiSkillList', () => {
         },
       });
 
-      const icons = wrapper.findAll('.ai-skill-list-item-icon');
-      expect(icons.length).toBe(2);
+      const items = wrapper.findAll('.ai-skill-list-item');
+      expect(items[0].find('img.ai-skill-list-item-icon').exists()).toBe(false);
+      expect(items[0].find('.ai-skill-list-item-icon--fallback').exists()).toBe(true);
+      expect(items[1].find('img.ai-skill-list-item-icon').exists()).toBe(true);
+      expect(items[1].find('img.ai-skill-list-item-icon').attributes('src')).toBe(
+        'https://example.com/icon.png',
+      );
     });
 
     it('无 icon 时应渲染首字母 fallback 图标', () => {
@@ -125,6 +132,24 @@ describe('AiSkillList', () => {
         },
       });
 
+      expect(wrapper.find('.ai-skill-list-item-icon--fallback').exists()).toBe(true);
+      expect(wrapper.find('.ai-skill-list-item-icon--fallback').text()).toBe('S');
+    });
+
+    it('icon 加载失败时应切换为首字母 fallback 图标', async () => {
+      wrapper = mount(AiSkillList, {
+        props: {
+          skills: [defaultSkills[1]],
+          onSelect: vi.fn(),
+        },
+      });
+
+      expect(wrapper.find('img.ai-skill-list-item-icon').exists()).toBe(true);
+
+      await wrapper.find('img.ai-skill-list-item-icon').trigger('error');
+      await nextTick();
+
+      expect(wrapper.find('img.ai-skill-list-item-icon').exists()).toBe(false);
       expect(wrapper.find('.ai-skill-list-item-icon--fallback').exists()).toBe(true);
       expect(wrapper.find('.ai-skill-list-item-icon--fallback').text()).toBe('S');
     });

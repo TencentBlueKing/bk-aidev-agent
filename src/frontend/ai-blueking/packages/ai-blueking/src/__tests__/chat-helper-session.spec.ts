@@ -16,6 +16,7 @@ function createMediator() {
     agent: {
       abortChat: vi.fn(),
       resumeStreamingChat: vi.fn(),
+      pollResumeSession: vi.fn(),
     },
     http: {
       session: {

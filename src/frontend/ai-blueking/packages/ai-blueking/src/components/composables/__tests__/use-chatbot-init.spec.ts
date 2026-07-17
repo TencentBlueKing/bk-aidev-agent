@@ -25,7 +25,13 @@ vi.mock('@blueking/chat-helper', async () => {
         handleRole: vi.fn(),
       },
       session: {
-        getSessions: vi.fn().mockResolvedValue([]),
+        getSessions: vi.fn().mockResolvedValue(undefined),
+        loadMoreSessions: vi.fn().mockResolvedValue(undefined),
+        hasMore: ref(false),
+        isLoadingMore: ref(false),
+        page: ref(0),
+        numPages: ref(0),
+        count: ref(0),
         chooseSession: vi.fn().mockResolvedValue(undefined),
         current: ref(null),
         list: ref([]),
@@ -138,7 +144,7 @@ describe('useChatbotInit', () => {
     vi.clearAllMocks();
     mockHelper = getMockHelper();
     mockHelper.agent.getAgentInfo.mockResolvedValue({});
-    mockHelper.session.getSessions.mockResolvedValue([]);
+    mockHelper.session.getSessions.mockResolvedValue(undefined);
     mockHelper.session.list.value = [];
     mockHelper.session.current.value = null;
   });

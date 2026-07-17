@@ -45,7 +45,7 @@ TEST_KNOWLEDGE_BASES = [
         "name": "bkbase知识库",
         "scene_type": "default",
         "total_file_size": 9662,
-        "updated_by": "jassyzhang",
+        "updated_by": "xiaoming",
     }
 ]
 
