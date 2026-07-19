@@ -17,6 +17,7 @@ to the current version of the project delivered to anyone in the future.
 """
 
 import json
+import logging
 import os
 from typing import AsyncIterator, Iterator, Optional, Type, Union
 
@@ -33,6 +34,8 @@ from aidev_agent.api.domains import BKAIDEV_URL
 from aidev_agent.config import settings
 from aidev_agent.exceptions import AIDevException
 from aidev_agent.utils.datetimes import get_current_timestamp_in_milliseconds
+
+logger = logging.getLogger(__name__)
 
 
 class ApiGwMixin(BaseModel):
@@ -62,6 +65,7 @@ class ApiGwMixin(BaseModel):
 class ChatModel(RawChatOpenAI, ApiGwMixin):
     remote_tokenizer: bool = True
     max_content_length: Optional[int] = None
+    fallback_model: str | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -124,6 +128,41 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
 
         return rtn
 
+    def _get_fallback_model(self) -> "ChatModel | None":
+        if not self.fallback_model or self.fallback_model == self.model_name:
+            return None
+        return self.model_copy(update={"model_name": self.fallback_model, "fallback_model": None})
+
+    def _generate(self, *args, **kwargs) -> ChatResult:
+        try:
+            return super()._generate(*args, **kwargs)
+        except Exception:
+            fallback = self._get_fallback_model()
+            if fallback is None:
+                raise
+            logger.warning(
+                "LLM request failed, switching to fallback model: primary=%s fallback=%s",
+                self.model_name,
+                fallback.model_name,
+                exc_info=True,
+            )
+            return fallback._generate(*args, **kwargs)
+
+    async def _agenerate(self, *args, **kwargs) -> ChatResult:
+        try:
+            return await super()._agenerate(*args, **kwargs)
+        except Exception:
+            fallback = self._get_fallback_model()
+            if fallback is None:
+                raise
+            logger.warning(
+                "Async LLM request failed, switching to fallback model: primary=%s fallback=%s",
+                self.model_name,
+                fallback.model_name,
+                exc_info=True,
+            )
+            return await fallback._agenerate(*args, **kwargs)
+
     def _convert_chunk_to_generation_chunk(
         self,
         chunk: dict,
@@ -175,21 +214,50 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
         """对reasoning_content字段进行时间统计"""
         reasoning_start_time = 0
         last_reasoning_content = ""
-        for chunk in super()._stream(*args, **kwargs):
-            chunk, reasoning_start_time, last_reasoning_content = self._process_reasoning_chunk(
-                chunk, reasoning_start_time, last_reasoning_content
+        emitted = False
+        try:
+            for chunk in super()._stream(*args, **kwargs):
+                emitted = True
+                chunk, reasoning_start_time, last_reasoning_content = self._process_reasoning_chunk(
+                    chunk, reasoning_start_time, last_reasoning_content
+                )
+                yield chunk
+        except Exception:
+            fallback = self._get_fallback_model()
+            if emitted or fallback is None:
+                raise
+            logger.warning(
+                "Streaming LLM request failed before output, switching to fallback model: primary=%s fallback=%s",
+                self.model_name,
+                fallback.model_name,
+                exc_info=True,
             )
-            yield chunk
+            yield from fallback._stream(*args, **kwargs)
 
     async def _astream(self, *args, **kwargs) -> AsyncIterator[ChatGenerationChunk]:
         """对reasoning_content字段进行时间统计"""
         reasoning_start_time = 0
         last_reasoning_content = ""
-        async for chunk in super()._astream(*args, **kwargs):
-            chunk, reasoning_start_time, last_reasoning_content = self._process_reasoning_chunk(
-                chunk, reasoning_start_time, last_reasoning_content
+        emitted = False
+        try:
+            async for chunk in super()._astream(*args, **kwargs):
+                emitted = True
+                chunk, reasoning_start_time, last_reasoning_content = self._process_reasoning_chunk(
+                    chunk, reasoning_start_time, last_reasoning_content
+                )
+                yield chunk
+        except Exception:
+            fallback = self._get_fallback_model()
+            if emitted or fallback is None:
+                raise
+            logger.warning(
+                "Async streaming LLM request failed before output, switching to fallback model: primary=%s fallback=%s",
+                self.model_name,
+                fallback.model_name,
+                exc_info=True,
             )
-            yield chunk
+            async for chunk in fallback._astream(*args, **kwargs):
+                yield chunk
 
 
 class Embeddings(RawOpenAIEmbeddings, ApiGwMixin):

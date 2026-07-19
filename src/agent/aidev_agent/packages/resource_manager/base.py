@@ -345,6 +345,7 @@ class BaseResourceManager(abc.ABC):
             agent_code=agent_code,
             agent_name=res["agent_name"],
             chat_model=prompt_setting.get("llm_code", ""),
+            fallback_llm_code=prompt_setting.get("fallback_llm_code"),
             non_thinking_llm=prompt_setting.get("non_thinking_llm") or prompt_setting.get("llm_code", ""),
             role_prompts=role_prompts or None,
             knowledgebase_ids=res["knowledgebase_settings"]["knowledgebases"],

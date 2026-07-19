@@ -1116,6 +1116,7 @@ class ChatAgentBuilder:
 
         kwargs: dict[str, Any] = {
             "model": config.chat_model,
+            "fallback_model": config.fallback_llm_code,
             "base_url": settings.LLM_GW_ENDPOINT,
         }
 
