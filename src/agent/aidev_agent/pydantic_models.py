@@ -391,7 +391,7 @@ class AgentConfig(BaseModel):
     agent_code: str = Field(..., description="智能体代码")
     agent_name: str = Field(..., description="智能体名称")
     chat_model: str = Field(..., description="LLM模型名称")
-    fallback_llm_code: str | None = Field(default=None, description="主模型请求失败时使用的备用模型")
+    fallback_model: str | None = Field(default=None, description="主模型请求失败时使用的备用模型")
     non_thinking_llm: str = Field(..., description="非深度思考模型")
     role_prompts: list[dict[Literal["role", "content"], str]] | None = Field(None, description="角色提示词(平台)")
     model_context_options_data: dict = Field(

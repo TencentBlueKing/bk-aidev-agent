@@ -131,7 +131,7 @@ class TestChatAgentBuilderTransparentSessionCode:
 
     def test_fallback_model_forwarded_to_get_setup_instance(self):
         ctx = _make_chat_ctx(session_code="conv-fallback")
-        ctx.agent_config.fallback_llm_code = "backup-llm"
+        ctx.agent_config.fallback_model = "backup-llm"
         builder = ChatAgentBuilder(ctx)
 
         with patch.object(ChatModel, "get_setup_instance", return_value=MagicMock()) as mocked:
