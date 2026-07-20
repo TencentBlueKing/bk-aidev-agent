@@ -14,12 +14,12 @@ asgiref==3.10.0
 attrs==25.4.0
 bashlex==0.18
 billiard==4.2.2
-bk-plugin-framework==2.3.9
-bk-plugin-runtime==2.1.7
+bk-plugin-framework==2.3.13
+bk-plugin-runtime==2.1.9
 bkapi-bk-apigateway==1.0.12
 bkapi-client-core==1.2.0
 bkoauth==0.1.0
-blueapps==4.15.8
+blueapps[opentelemetry]==4.16rc5
 bracex==2.6
 cachetools==5.5.2
 celery==5.4.0
