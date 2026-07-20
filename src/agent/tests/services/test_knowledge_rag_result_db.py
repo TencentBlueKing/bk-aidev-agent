@@ -128,24 +128,24 @@ class TestKnowledgeRagResultDBWrite:
         assert builtin_prop["message_id"] == KNOWLEDGE_MESSAGE_ID
         assert KNOWLEDGE_MESSAGE_ID in writer._written_message_ids
 
-    def test_handle_reference_document_does_not_write_when_value_is_list(self):
-        """反向回归防护：如果 event.value 是 list（旧的精简转换结果），
-        handle_reference_document 应该不写入（因为 fallback 到 {} 后 reference_documents 为空）。
-        这个测试证明旧精简逻辑确实导致数据丢失，从而验证 D-14 修复的必要性。
+    def test_handle_reference_document_does_not_write_when_raw_event_missing(self):
+        """防护：如果 CustomEvent 的 raw_event 为 None 或缺少 data 字段，
+        handle_reference_document 应不写入（因为 event_data={} → reference_documents=[] → return）。
         """
         writer = _ConcreteSessionWriter.__new__(_ConcreteSessionWriter)
         writer._written_message_ids = set()
         writer._create_session_content = MagicMock()
 
-        # 构造旧精简逻辑会产生的 event：value 是 list（不是 dict）
+        # 构造 raw_event 为 None 的 event（边界情况）
         simplified_event = CustomEvent(
             type=EventType.CUSTOM,
             name=CustomMessageType.KNOWLEDGE_RAG_RESULT.value,
-            value=REFERENCE_DOC_DATA,  # list，不是 dict —— 旧精简逻辑的结果
+            value=REFERENCE_DOC_DATA,  # list，不是 dict
+            raw_event=None,
         )
         writer.handle_reference_document(simplified_event)
 
-        # 旧精简逻辑导致：isinstance(list, dict) 为 False → event_data={} → reference_documents=[] → return
+        # raw_event=None → event_data={} → reference_documents=[] → return
         writer._create_session_content.assert_not_called()
         assert KNOWLEDGE_MESSAGE_ID not in writer._written_message_ids
 

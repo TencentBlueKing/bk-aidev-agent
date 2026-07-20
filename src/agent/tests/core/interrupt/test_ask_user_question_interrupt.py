@@ -415,9 +415,9 @@ async def test_resume_first_frame_calls_outcome_builder(monkeypatch):
         )
     ]
 
-    # builder 应被调用至少 2 次（_build_resume_ask_user_question_finished_event 1 次 + _build_updated_messages_snapshot 1 次）
-    assert call_count["n"] >= 2, (
-        f"AskUserQuestionOutcomeBuilder.build_run_finished_payload 应被调用 >=2 次（ACTIVITY_SNAPSHOT + MESSAGES_SNAPSHOT），"
+    # Phase 14.2: builder 仅被调用 1 次（RunFinishedEvent，MESSAGES_SNAPSHOT 已取消）
+    assert call_count["n"] >= 1, (
+        f"AskUserQuestionOutcomeBuilder.build_run_finished_payload 应被调用 >=1 次（RunFinishedEvent），"
         f"实际 {call_count['n']} 次"
     )
     # 确保确实产生了 SSE 事件（非空流）
@@ -497,32 +497,20 @@ async def test_resume_first_frame_result_answers_from_resume_payload(monkeypatch
     ]
     payloads = [json.loads(chunk[6:]) for chunk in chunks]
 
-    # 找到 ACTIVITY_SNAPSHOT 事件
-    activity_snapshot = next(p for p in payloads if p["type"] == EventType.ACTIVITY_SNAPSHOT.value)
-    content = activity_snapshot["content"]
-    result_list = content["result"]
-    assert isinstance(result_list, list) and len(result_list) == 1
-    result_item = result_list[0]
+    # Phase 14.2: ACTIVITY_SNAPSHOT 已改为 RunFinishedEvent
+    # RunFinishedEvent 的 result 是 dict（非 list），内含 payload.answers
+    run_finished = next(p for p in payloads if p["type"] == EventType.RUN_FINISHED.value)
+    result_dict = run_finished.get("result", {})
+    assert isinstance(result_dict, dict)
 
     # WR-01 核心断言：result.payload.answers 等于 resume payload 的 answers（非空，非 metadata.answers）
-    assert result_item["payload"]["answers"] == expected_answers, (
-        f"ACTIVITY_SNAPSHOT result.payload.answers 应等于 resume payload answers "
-        f"({expected_answers})，实际: {result_item['payload']['answers']}"
+    assert result_dict.get("payload", {}).get("answers") == expected_answers, (
+        f"RunFinishedEvent result.payload.answers 应等于 resume payload answers "
+        f"({expected_answers})，实际: {result_dict.get('payload', {}).get('answers')}"
     )
 
-    # MESSAGES_SNAPSHOT 的 interrupt 消息 content.result[0].payload.answers 也应一致
-    # 注意：流中有两个 MESSAGES_SNAPSHOT——首帧（原始 interrupt content）和 ACTIVITY_SNAPSHOT 后的更新帧（终态 content）。
-    # 需取第二个（更新帧），其 interrupt 消息 content 含终态 result。
+    # Phase 14.2: MESSAGES_SNAPSHOT 已取消（D-03），仅保留首帧 MESSAGES_SNAPSHOT
     messages_snapshots = [p for p in payloads if p["type"] == EventType.MESSAGES_SNAPSHOT.value]
-    assert len(messages_snapshots) >= 2, (
-        f"应至少有 2 个 MESSAGES_SNAPSHOT（首帧 + 更新帧），实际: {len(messages_snapshots)}"
-    )
-    updated_snapshot = messages_snapshots[-1]
-    interrupt_msgs = [m for m in updated_snapshot.get("messages", []) if m.get("role") == "interrupt"]
-    assert interrupt_msgs, "更新后的 MESSAGES_SNAPSHOT 应包含 interrupt 消息"
-    updated_result = interrupt_msgs[0]["content"]["result"]
-    assert isinstance(updated_result, list) and len(updated_result) == 1
-    assert updated_result[0]["payload"]["answers"] == expected_answers, (
-        f"MESSAGES_SNAPSHOT result.payload.answers 应等于 resume payload answers "
-        f"({expected_answers})，实际: {updated_result[0]['payload']['answers']}"
+    assert len(messages_snapshots) >= 1, (
+        f"应至少有 1 个 MESSAGES_SNAPSHOT（首帧），实际: {len(messages_snapshots)}"
     )

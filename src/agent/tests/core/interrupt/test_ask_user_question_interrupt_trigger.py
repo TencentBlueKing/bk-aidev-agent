@@ -8,14 +8,15 @@
 3. 续流（Command(resume=...)）后图恢复，interrupt() 返回值成为 ToolMessage 内容
 """
 
+import json
 from typing import Any, List, Optional, Sequence
 
 import pytest
 from aidev_agent.core.ag_ui.ask_user_question import ASK_USER_QUESTION_REASON
 from aidev_agent.core.graphs.react.graph import ReActAgentBuilder
-from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
@@ -52,7 +53,6 @@ class _FakeToolCallingLLM(BaseChatModel):
         else:
             msg = responses[idx]
         object.__setattr__(self, "_call_index", idx + 1)
-        from langchain_core.outputs import ChatGeneration, ChatResult
         return ChatResult(generations=[ChatGeneration(message=msg)])
 
     async def _agenerate(self, messages: List[BaseMessage], stop: Optional[List[str]] = None, **kwargs: Any):
@@ -132,7 +132,7 @@ async def test_ask_user_question_triggers_interrupt():
     tasks = state.tasks or []
     interrupts = []
     for task in tasks:
-        for intr in (task.interrupts or []):
+        for intr in task.interrupts or []:
             interrupts.append(intr)
     assert interrupts, "state.tasks 中无 interrupt 记录，interrupt() 未触发"
 
@@ -140,7 +140,6 @@ async def test_ask_user_question_triggers_interrupt():
     first_intr = interrupts[0]
     value = first_intr.value
     if isinstance(value, str):
-        import json
         value = json.loads(value)
     assert isinstance(value, dict), f"interrupt.value 非 dict: {type(value)}"
     assert value.get("reason") == ASK_USER_QUESTION_REASON, (
@@ -206,13 +205,12 @@ async def test_ask_user_question_interrupt_payload_structure():
     tasks = state.tasks or []
     interrupts = []
     for task in tasks:
-        for intr in (task.interrupts or []):
+        for intr in task.interrupts or []:
             interrupts.append(intr)
     assert interrupts, "无 interrupt 记录"
 
     value = interrupts[0].value
     if isinstance(value, str):
-        import json
         value = json.loads(value)
 
     assert value["reason"] == ASK_USER_QUESTION_REASON

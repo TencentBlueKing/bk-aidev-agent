@@ -12,6 +12,7 @@ from aidev_agent.core.ag_ui.types import (
     ExtendAssistantMessage,
     MessageSnapshotEventExtend,
     ResumeItem,
+    RunFinishedInterruptOutcome,
     RunFinishedSuccessOutcome,
     serialize_run_finished_outcome,
 )
@@ -77,9 +78,7 @@ async def test_handle_single_event_suppresses_approval_tool_call(monkeypatch):
     }
     agent = AidevAGUIAgent(name="test-agent", graph=MagicMock(), tools={"skill_tool": tool})
 
-    events = [
-        ev async for ev in agent._handle_single_event({"event": "on_chat_model_stream"}, {})
-    ]
+    events = [ev async for ev in agent._handle_single_event({"event": "on_chat_model_stream"}, {})]
 
     # 审批工具的 ToolCallStartEvent 被抑制（不 yield）
     assert len(events) == 0
@@ -104,9 +103,7 @@ async def test_handle_single_event_enhances_non_approval_tool_call(monkeypatch):
     tool.metadata = {}
     agent = AidevAGUIAgent(name="test-agent", graph=MagicMock(), tools={"normal_tool": tool})
 
-    events = [
-        ev async for ev in agent._handle_single_event({"event": "on_chat_model_stream"}, {})
-    ]
+    events = [ev async for ev in agent._handle_single_event({"event": "on_chat_model_stream"}, {})]
 
     assert len(events) == 1
     assert isinstance(events[0], ExtendToolCallStartEvent)
@@ -374,7 +371,6 @@ async def test_run_finished_preserves_ask_user_question_metadata(monkeypatch):
 
     async def _fake_parent_run_interrupt(self, input):  # noqa: ARG001
         yield RunStartedEvent(type=EventType.RUN_STARTED, thread_id="t", run_id="r")
-        from aidev_agent.core.ag_ui.types import RunFinishedInterruptOutcome
 
         outcome = serialize_run_finished_outcome(
             RunFinishedInterruptOutcome(interrupts=[_ask_user_question_interrupt_dict()])
@@ -411,7 +407,6 @@ async def test_run_finished_still_truncates_approval_metadata(monkeypatch):
 
     async def _fake_parent_run_approval(self, input):  # noqa: ARG001
         yield RunStartedEvent(type=EventType.RUN_STARTED, thread_id="t", run_id="r")
-        from aidev_agent.core.ag_ui.types import RunFinishedInterruptOutcome
 
         outcome = serialize_run_finished_outcome(RunFinishedInterruptOutcome(interrupts=[_approval_interrupt_dict()]))
         yield RunFinishedEvent(
@@ -444,7 +439,10 @@ async def test_run_finished_still_truncates_approval_metadata(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_resume_ask_user_question_emits_first_frame_run_finished(monkeypatch):
-    """ask_user_question 续流时应发首帧 RUN_FINISHED（outcome=success），关闭前端弹窗。"""
+    """ask_user_question 续流时应发首帧 RUN_FINISHED（outcome=success），关闭前端弹窗。
+
+    Phase 14.2: 续流首帧从 ACTIVITY_SNAPSHOT 改为 RUN_FINISHED（与 approval 对齐）。
+    """
     monkeypatch.setattr(LangGraphAGUIAgent, "run", _fake_parent_run_normal)
 
     auq_interrupts = [_ask_user_question_interrupt_dict()]
@@ -487,44 +485,38 @@ async def test_resume_ask_user_question_emits_first_frame_run_finished(monkeypat
     ]
     payloads = [json.loads(chunk[6:]) for chunk in chunks]
 
-    # 首条 MESSAGES_SNAPSHOT 之后紧跟 ACTIVITY_SNAPSHOT（首帧回放，关闭弹窗）
+    # Phase 14.2: 首条 MESSAGES_SNAPSHOT 之后紧跟 RUN_FINISHED（续流首帧回放），
+    # 然后是额外的 MESSAGES_SNAPSHOT（更新 interrupt 卡片终态），
+    # 最后是 SDK 的 RUN_STARTED / RUN_FINISHED
     types = [p["type"] for p in payloads]
     assert types[0] == EventType.MESSAGES_SNAPSHOT.value
-    assert types[1] == EventType.ACTIVITY_SNAPSHOT.value, f"首帧回放 ACTIVITY_SNAPSHOT 未发出，types={types}"
+    assert types[1] == EventType.RUN_FINISHED.value, f"首帧回放 RUN_FINISHED 未发出，types={types}"
 
-    activity_snapshot = payloads[1]
-    assert activity_snapshot["activityType"] == "interrupt"
-    assert activity_snapshot["messageId"] == auq_interrupts[0]["id"]
-    assert activity_snapshot["replace"] is True
-
-    content = activity_snapshot["content"]
-    assert content["outcome"]["type"] == "success"
-    # 修复后 outcome 含 interrupts 字段（来自 AskUserQuestionOutcomeBuilder.build_run_finished_payload）
-    assert "interrupts" in content["outcome"], "outcome 应含 interrupts 字段"
-    assert len(content["outcome"]["interrupts"]) > 0, "interrupts 应非空"
+    # RUN_FINISHED 事件：顶层 outcome / result / runId
+    run_finished = payloads[1]
+    assert run_finished["runId"] == auq_interrupts[0]["id"], "runId 应为 interruptId，让前端据此关闭弹窗"
+    assert run_finished["outcome"]["type"] == "success"
+    assert "interrupts" in run_finished["outcome"], "outcome 应含 interrupts 字段"
+    assert len(run_finished["outcome"]["interrupts"]) > 0, "interrupts 应非空"
     # interrupts[0] 应为已答问题的历史快照，status 刷写为 resolved
-    auq_interrupt = content["outcome"]["interrupts"][0]
+    auq_interrupt = run_finished["outcome"]["interrupts"][0]
     assert auq_interrupt["reason"] == "aidev:user_question"
     assert auq_interrupt["metadata"]["status"] == "resolved"
-    assert content["runId"] == auq_interrupts[0]["id"], "runId 应为 interruptId，让前端据此关闭弹窗"
 
-    # result 是数组，每项含 interruptId/payload/reason/status（前端协议）
-    result_list = content.get("result")
-    assert isinstance(result_list, list), f"result 应为数组，实际: {type(result_list)}"
-    assert len(result_list) == 1
-    result_item = result_list[0]
-    assert result_item["interruptId"] == auq_interrupts[0]["id"]
-    assert result_item["reason"] == "aidev:user_question"
-    assert result_item["status"] == "resolved"
+    # result 是 dict（来自 AskUserQuestionOutcomeBuilder.build_run_finished_payload）
+    result = run_finished.get("result")
+    assert isinstance(result, dict), f"result 应为 dict，实际: {type(result)}"
+    assert result["interruptId"] == auq_interrupts[0]["id"]
+    assert result["reason"] == "aidev:user_question"
+    assert result["status"] == "resolved"
     # WR-02 修复：断言 answers 内容等于 resume payload 的值，而非仅 key 存在。
-    # resume payload（第 433 行）answers = [{"question": "q", "answer": [{"label": "a", "description": "d"}]}]
-    # 修复前 builder 从 metadata.answers 取值（fixture metadata 无 answers）→ []，此断言会失败
-    assert result_item["payload"]["answers"] == [{"question": "q", "answer": [{"label": "a", "description": "d"}]}], (
+    # resume payload answers = [{"question": "q", "answer": [{"label": "a", "description": "d"}]}]
+    assert result["payload"]["answers"] == [{"question": "q", "answer": [{"label": "a", "description": "d"}]}], (
         "result.payload.answers 应来自 resume payload（用户刚提交的答案），而非空的 metadata.answers"
     )
 
-    # ACTIVITY_SNAPSHOT 之后应推送额外的 MESSAGES_SNAPSHOT，将 interrupt 消息更新为终态
-    assert types[2] == EventType.MESSAGES_SNAPSHOT.value, f"ACTIVITY_SNAPSHOT 后应推送 MESSAGES_SNAPSHOT，types={types}"
+    # RUN_FINISHED 之后应推送额外的 MESSAGES_SNAPSHOT，将 interrupt 消息更新为终态
+    assert types[2] == EventType.MESSAGES_SNAPSHOT.value, f"RUN_FINISHED 后应推送 MESSAGES_SNAPSHOT，types={types}"
     updated_snapshot = payloads[2]
     updated_messages = updated_snapshot.get("messages", [])
     interrupt_msgs = [m for m in updated_messages if m.get("role") == "interrupt"]
@@ -534,7 +526,7 @@ async def test_resume_ask_user_question_emits_first_frame_run_finished(monkeypat
     assert updated_interrupt["content"]["outcome"]["type"] == "success", (
         "interrupt 消息 content.outcome.type 应为 success"
     )
-    # MESSAGES_SNAPSHOT 的 terminal_content 也应含 interrupts（与 ACTIVITY_SNAPSHOT 一致，使用同一个 builder）
+    # MESSAGES_SNAPSHOT 的 content.outcome 也应含 interrupts
     assert "interrupts" in updated_interrupt["content"]["outcome"], (
         "MESSAGES_SNAPSHOT 的 outcome 也应含 interrupts 字段"
     )

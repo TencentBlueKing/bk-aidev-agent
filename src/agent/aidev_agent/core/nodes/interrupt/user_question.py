@@ -11,47 +11,13 @@ from langgraph.types import Command, interrupt
 from aidev_agent.core.ag_ui.ask_user_question import (
     ASK_USER_QUESTION_REASON,
     AskUserQuestionHandler,
+    parse_resume_answers,
 )
 from aidev_agent.core.ag_ui.types import LangGraphEventTypes
 
 logger = logging.getLogger(__name__)
 
 ASK_USER_QUESTION_TOOL_NAME = "ask_user_question"
-
-
-def _extract_answer_from_resume(resume_value: Any) -> Any:
-    """从 interrupt() 的返回值（ResumeItem 列表）中提取用户答案。
-
-    interrupt() 返回 Command(resume=...) 的 resume 值。生产环境中 chat.py 传入
-    [ResumeItem(...)] 列表，每项含 interruptId/status/payload，用户答案在
-    payload.answers 中。直接 graph.ainvoke(Command(resume=...)) 测试场景中
-    resume 值可能是裸 answers 字典。
-
-    Returns:
-        提取出的用户答案（answers 列表或原始值），供写入 state 供工具函数读取。
-    """
-    if resume_value is None:
-        return None
-    # ResumeItem 列表形态：[{"interruptId": ..., "status": ..., "payload": {"answers": [...]}}]
-    if isinstance(resume_value, list) and resume_value:
-        first = resume_value[0]
-        if isinstance(first, dict):
-            payload = first.get("payload")
-            if isinstance(payload, dict) and "answers" in payload:
-                return payload["answers"]
-            # payload 本身可能就是答案
-            if payload is not None:
-                return payload
-        return first
-    # 裸字典形态：{"answers": [...]} 或 {"interruptId": ..., "payload": {"answers": [...]}}
-    if isinstance(resume_value, dict):
-        if "answers" in resume_value:
-            return resume_value["answers"]
-        payload = resume_value.get("payload")
-        if isinstance(payload, dict) and "answers" in payload:
-            return payload["answers"]
-        return resume_value
-    return resume_value
 
 
 class UserQuestionStrategy:
@@ -114,7 +80,7 @@ class UserQuestionStrategy:
 
         answer = interrupt(payload)  # 首次抛 GraphInterrupt，续流返回 answer
 
-        resolved_answer = _extract_answer_from_resume(answer)
+        resolved_answer = parse_resume_answers(answer)
         logger.info(
             "[AskUserQuestion] interrupt() 返回: tool_call_id=%s, answer=%s",
             tool_call_id,
@@ -128,4 +94,4 @@ class UserQuestionStrategy:
         )
 
 
-__all__ = ["UserQuestionStrategy", "_extract_answer_from_resume", "ASK_USER_QUESTION_TOOL_NAME"]
+__all__ = ["UserQuestionStrategy", "ASK_USER_QUESTION_TOOL_NAME"]

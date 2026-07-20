@@ -5,11 +5,15 @@
 如果中间的 AIMessage(tool_call) 或 InterruptRecord 缺失，前端显示会丢失中间部分。
 """
 
+import json
+
 import pytest
 from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
+from aidev_agent.core.ag_ui.ask_user_question import ASK_USER_QUESTION_REASON, AskUserQuestionOutcomeBuilder
 from aidev_agent.core.ag_ui.types import (
     AgentInput,
 )
+from aidev_agent.core.ag_ui.utils import get_schema_keys
 from aidev_agent.core.graphs.react.graph import ReActAgentBuilder
 from aidev_agent.enums import PromptRole
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
@@ -17,6 +21,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.memory import MemorySaver
+from tests.core.ag_ui._prepare_stream_helper import prepare_stream_data_for_agent
 
 
 class _FakeToolCallingLLM(BaseChatModel):
@@ -87,38 +92,44 @@ class _RecordingSessionWriter(BaseSessionWriter):
     def set_streaming_finished(self):
         pass
 
-    def handle_activity_snapshot(self, event) -> None:
-        """D-03/D-04: 从 ACTIVITY_SNAPSHOT 事件 content 提取 answers 更新 DB interrupt 记录。"""
-        import json as _json
+    def handle_run_finished(self, event) -> None:
+        """Phase 14.2: 重写以支持 ask_user_question 续流终态写入。
 
-        from aidev_agent.core.ag_ui.ask_user_question import (
-            ASK_USER_QUESTION_REASON,
-            AskUserQuestionOutcomeBuilder,
+        super().handle_run_finished(event) 处理流式消息回写 + interrupt 首次落库，
+        非 interrupt 分支调用 _handle_ask_user_question_resume_finished 完成 DB 更新。
+        """
+        super().handle_run_finished(event)
+
+        outcome = getattr(event, "outcome", None)
+        outcome_type = (
+            outcome.get("type") if isinstance(outcome, dict) else getattr(outcome, "type", None) if outcome else None
         )
-        from aidev_agent.enums import PromptRole
+        if outcome and outcome_type != "interrupt":
+            self._handle_ask_user_question_resume_finished(event)
 
-        content = getattr(event, "content", None)
-        if isinstance(content, str):
-            try:
-                content = _json.loads(content)
-            except (TypeError, ValueError):
-                return
-        if not isinstance(content, dict):
+    def _handle_ask_user_question_resume_finished(self, event) -> None:
+        """Phase 14.2: 从 RunFinishedEvent outcome/result 提取数据更新 DB interrupt 记录。
+
+        替代原 handle_activity_snapshot（已删除），逻辑从 event.outcome.interrupts[0] +
+        event.result.payload.answers 提取数据，查 in-memory _db_records 更新。
+        """
+        outcome = getattr(event, "outcome", None)
+        if isinstance(outcome, dict):
+            interrupts = outcome.get("interrupts") or []
+        else:
+            interrupts = getattr(outcome, "interrupts", []) if outcome else []
+        if not interrupts:
             return
-        result_list = content.get("result") or []
-        if not result_list or not isinstance(result_list[0], dict):
+        first_interrupt = interrupts[0] if isinstance(interrupts[0], dict) else {}
+        if first_interrupt.get("reason") != ASK_USER_QUESTION_REASON:
             return
-        resume_answers = result_list[0].get("payload", {}).get("answers") or []
-        outcome_obj = content.get("outcome") or {}
-        interrupt_list = outcome_obj.get("interrupts") or []
-        if not interrupt_list:
+        interrupt_id = first_interrupt.get("id")
+        if not interrupt_id:
             return
-        first_intr = interrupt_list[0] if isinstance(interrupt_list[0], dict) else {}
-        if first_intr.get("reason") != ASK_USER_QUESTION_REASON:
-            return
-        message_id = first_intr.get("id")
-        if not message_id:
-            return
+        result = getattr(event, "result", None)
+        resume_answers = []
+        if isinstance(result, dict):
+            resume_answers = result.get("payload", {}).get("answers") or []
 
         for content_id, rec in self._db_records.items():
             if rec.get("role") != PromptRole.INTERRUPT.value:
@@ -128,7 +139,7 @@ class _RecordingSessionWriter(BaseSessionWriter):
             raw_content = rec.get("content")
             if isinstance(raw_content, str):
                 try:
-                    parsed = _json.loads(raw_content)
+                    parsed = json.loads(raw_content)
                 except (TypeError, ValueError):
                     continue
             else:
@@ -139,7 +150,7 @@ class _RecordingSessionWriter(BaseSessionWriter):
             if not parsed_intrs:
                 continue
             parsed_first = parsed_intrs[0] if isinstance(parsed_intrs[0], dict) else {}
-            if parsed_first.get("id") != message_id:
+            if parsed_first.get("id") != interrupt_id:
                 continue
             upgraded = AskUserQuestionOutcomeBuilder.upgrade_content_to_success(
                 parsed, "resolved", resume_answers=resume_answers
@@ -168,8 +179,6 @@ def _extract_ask_user_question_interrupts(graph, config) -> list[dict]:
     续流时 graph checkpoint 保留了中断记录，测试需像生产一样提取并传给 AidevAGUIAgent，
     否则 _build_resume_ask_user_question_finished_event 不会触发，writer 拿不到 resume_answers。
     """
-    from aidev_agent.core.ag_ui.ask_user_question import ASK_USER_QUESTION_REASON
-
     try:
         agent_state = graph.get_state(config)
         tasks = agent_state.tasks if agent_state.tasks else []
@@ -178,8 +187,6 @@ def _extract_ask_user_question_interrupts(graph, config) -> list[dict]:
             for intr in task.interrupts or []:
                 value = intr.value
                 if isinstance(value, str):
-                    import json
-
                     try:
                         value = json.loads(value)
                     except Exception:
@@ -257,9 +264,6 @@ async def test_interrupt_writes_assistant_and_interrupt_records():
     )
 
     # Phase 11.8: 预处理前移到 agent_input 构造之前（消除 model_copy + 消除 agui_entry 依赖）
-    from aidev_agent.core.ag_ui.utils import get_schema_keys
-    from tests.core.ag_ui._prepare_stream_helper import prepare_stream_data_for_agent
-
     agent_state = await graph.aget_state(config)
     schema_keys = get_schema_keys(graph, config, ["messages", "tools", "copilotkit"])
     preprocessed = prepare_stream_data_for_agent(
@@ -335,9 +339,6 @@ async def test_resume_preserves_prior_messages_and_writes_final_reply():
     config = _config_with_thread(cfg, "test-db-write-2")
 
     # Phase 11.8: 预处理前移（消除 model_copy + 消除 agui_entry 依赖）
-    from aidev_agent.core.ag_ui.utils import get_schema_keys
-    from tests.core.ag_ui._prepare_stream_helper import prepare_stream_data_for_agent
-
     # 第一次调用 — 触发中断
     agent_input1 = AgentInput(
         thread_id="test-db-write-2",

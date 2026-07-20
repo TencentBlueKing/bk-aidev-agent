@@ -23,9 +23,10 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from aidev_agent.core.ag_ui.utils import get_interrupt_value
+from aidev_agent.enums import PromptRole
 
 # ---------------------------------------------------------------------- #
-# 常量（D-15, D-16）
+# 常量
 # ---------------------------------------------------------------------- #
 
 ASK_USER_QUESTION_REASON = "aidev:user_question"
@@ -39,9 +40,18 @@ ASK_USER_QUESTION_REASON = "aidev:user_question"
 ASK_USER_QUESTION_STATE_KEY = "ask_user_question"
 """ask_user_question 状态在 ``additional_kwargs`` 中的 key（D-10 旁路）。"""
 
+INTERRUPT_STATUS_PENDING = "pending"
+"""中断状态：待处理。"""
+
+INTERRUPT_STATUS_RESOLVED = "resolved"
+"""中断状态：已解决。"""
+
+INTERRUPT_STATUS_CANCELLED = "cancelled"
+"""中断状态：已取消。"""
+
 
 # ---------------------------------------------------------------------- #
-# D-09 完整问题模型 Pydantic 定义
+# 完整问题模型 Pydantic 定义
 # ---------------------------------------------------------------------- #
 
 
@@ -53,7 +63,7 @@ class AskUserQuestionOption(BaseModel):
 
 
 class AskUserQuestionItem(BaseModel):
-    """单问题项 —— 协议 metadata.questions 数组元素（D-02）。"""
+    """单问题项 —— 协议 metadata.questions 数组元素。"""
 
     header: str
     multiSelect: bool = False
@@ -62,15 +72,15 @@ class AskUserQuestionItem(BaseModel):
 
 
 class AskUserQuestionMetadata(BaseModel):
-    """ask_user_question interrupt 的 metadata 字段（D-02, D-04）。
+    """ask_user_question interrupt 的 metadata 字段。
 
     metadata 仅含 questions 数组（+ 运行时 type/status 字段），所有
-    ask_user_question 专属字段承载于 ``metadata.questions`` 内（D-08），
+    ask_user_question 专属字段承载于 ``metadata.questions`` 内，
     顶层复用 AG-UI ``Interrupt`` 模型，不修改 ``ag_ui/types.py``。
     """
 
     type: Literal["ask_user_question"] = "ask_user_question"
-    status: Literal["pending", "resolved", "cancelled"] = "pending"
+    status: Literal["pending", "resolved", "cancelled"] = INTERRUPT_STATUS_PENDING
     questions: list[AskUserQuestionItem]
 
 
@@ -128,43 +138,10 @@ class AskUserQuestionOutcomeBuilder:
         }
 
     @classmethod
-    def build_run_finished_payload(
-        cls,
-        interrupts: list[dict],
-        status: str,
-        resume_answers: list | None = None,
-    ) -> tuple[dict, dict]:
-        """构造续流首条 ``RUN_FINISHED`` 事件需要的 ``(outcome, result)`` 字典对。
-
-        与 ``ApprovalOutcomeBuilder.build_run_finished_payload`` 形态对称：
-        ``outcome.type == "success"``，``result`` 为 ``interrupts[0]`` 的
-        扁平化版本。差异：``status`` 为 ``"resolved" | "cancelled"``（无审批
-        三态），``_apply_status_to_interrupt_metadata`` 不刷写 ticket。
-
-        Args:
-            interrupts: ask_user_question 中断记录列表（深拷贝后使用，入参不污染）。
-            status: 终态状态（``"resolved" | "cancelled"``）。
-            resume_answers: 用户本轮 resume 提交的 answers（权威来源）。
-                首次中断入库时 metadata 不含 answers（answers 只走 resume payload），
-                因此 ``_build_result_from_first_interrupt`` 从 metadata 取到的 answers
-                永远为 None。传入此参数后注入到 ``result["payload"]["answers"]``，
-                与 ``upgrade_content_to_success`` 对称。None 或空列表时保留 builder 默认 ``[]``。
-        """
-        safe_interrupts = copy.deepcopy(interrupts) if interrupts else []
-        cls._apply_status_to_interrupt_metadata(safe_interrupts, status)
-        outcome = {"type": "success", "interrupts": safe_interrupts}
-        result = cls._build_result_from_first_interrupt(safe_interrupts[0]) if safe_interrupts else {}
-        # D-05: resume_answers 是用户刚提交答案的权威来源（首次中断入库时 metadata 无 answers，
-        # answers 只走 resume payload），注入到 result["payload"]["answers"]，与 upgrade_content_to_success 对称。
-        if resume_answers and isinstance(result, dict):
-            result["payload"]["answers"] = list(resume_answers)
-        return outcome, result
-
-    @classmethod
     def upgrade_content_to_success(
         cls,
         content: Any,
-        status: str = "resolved",
+        status: str = INTERRUPT_STATUS_RESOLVED,
         resume_answers: list | None = None,
     ) -> dict | None:
         """将 ask_user_question 中断 content 升级为"终态形态"。
@@ -215,6 +192,39 @@ class AskUserQuestionOutcomeBuilder:
         if resume_answers and isinstance(new_content["result"], dict):
             new_content["result"]["payload"]["answers"] = list(resume_answers)
         return new_content
+
+    @classmethod
+    def build_run_finished_payload(
+        cls,
+        interrupts: list[dict],
+        status: str,
+        resume_answers: list | None = None,
+    ) -> tuple[dict, dict]:
+        """构造续流首条 ``RUN_FINISHED`` 事件需要的 ``(outcome, result)`` 字典对。
+
+        与 ``ApprovalOutcomeBuilder.build_run_finished_payload`` 形态对称：
+        ``outcome.type == "success"``，``result`` 为 ``interrupts[0]`` 的
+        扁平化版本。差异：``status`` 为 ``"resolved" | "cancelled"``（无审批
+        三态），``_apply_status_to_interrupt_metadata`` 不刷写 ticket。
+
+        Args:
+            interrupts: ask_user_question 中断记录列表（深拷贝后使用，入参不污染）。
+            status: 终态状态（``"resolved" | "cancelled"``）。
+            resume_answers: 用户本轮 resume 提交的 answers（权威来源）。
+                首次中断入库时 metadata 不含 answers（answers 只走 resume payload），
+                因此 ``_build_result_from_first_interrupt`` 从 metadata 取到的 answers
+                永远为 None。传入此参数后注入到 ``result["payload"]["answers"]``，
+                与 ``upgrade_content_to_success`` 对称。None 或空列表时保留 builder 默认 ``[]``。
+        """
+        safe_interrupts = copy.deepcopy(interrupts) if interrupts else []
+        cls._apply_status_to_interrupt_metadata(safe_interrupts, status)
+        outcome = {"type": "success", "interrupts": safe_interrupts}
+        result = cls._build_result_from_first_interrupt(safe_interrupts[0]) if safe_interrupts else {}
+        # D-05: resume_answers 是用户刚提交答案的权威来源（首次中断入库时 metadata 无 answers，
+        # answers 只走 resume payload），注入到 result["payload"]["answers"]，与 upgrade_content_to_success 对称。
+        if resume_answers and isinstance(result, dict):
+            result["payload"]["answers"] = list(resume_answers)
+        return outcome, result
 
 
 # ---------------------------------------------------------------------- #
@@ -267,7 +277,7 @@ class AskUserQuestionHandler:
         interrupt_id = f"int-question-{tool_call_id}-{uuid.uuid4().hex[:8]}"
         metadata: dict[str, Any] = {
             "type": "ask_user_question",
-            "status": "pending",
+            "status": INTERRUPT_STATUS_PENDING,
             "questions": questions,
         }
         # D-05: expiresAt 顶层字段，未传入时自动生成 24h 后过期
@@ -366,12 +376,144 @@ class AskUserQuestionHandler:
         return AskUserQuestionOutcomeBuilder
 
 
+# ---------------------------------------------------------------------- #
+# 协议层纯函数（Phase 14.1 — 从 services/nodes 层下沉的协议解析逻辑）
+# ---------------------------------------------------------------------- #
+
+
+def find_pending_interrupt(contents: list[dict], interrupt_id: str) -> tuple[Any, dict, dict] | None:
+    """遍历 DB contents 找匹配的 pending ask_user_question interrupt 记录。
+
+    逆序遍历（最新记录优先），双重过滤 ``role == PromptRole.INTERRUPT.value``
+    + ``status == "pending"``，解析 content JSON，匹配 ``interrupts[0].id``
+    且 ``reason == ASK_USER_QUESTION_REASON``。
+
+    Returns:
+        ``(content_id, raw_db_content, db_item)`` 元组，或 None（未找到）。
+    """
+    for item in reversed(contents):
+        if not isinstance(item, dict):
+            continue
+        if item.get("role") != PromptRole.INTERRUPT.value:
+            continue
+        if item.get("status") != INTERRUPT_STATUS_PENDING:
+            continue
+        raw_content = item.get("content")
+        try:
+            parsed = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        parsed_outcome = parsed.get("outcome") or {}
+        parsed_interrupts = parsed_outcome.get("interrupts") or []
+        if not parsed_interrupts:
+            continue
+        parsed_first = parsed_interrupts[0] if isinstance(parsed_interrupts[0], dict) else {}
+        if parsed_first.get("id") == interrupt_id and parsed_first.get("reason") == ASK_USER_QUESTION_REASON:
+            return item.get("id"), parsed, item
+    return None
+
+
+def build_updated_builtin_property(db_item: dict, interrupt_id: str, status: str) -> dict:
+    """从 DB item 的 property 构造更新后的 builtin_property 字段。
+
+    保留已有字段，追加/覆写 ``status`` / ``message_id`` / ``interrupt_id``
+    / ``reason``（``ASK_USER_QUESTION_REASON``）。用于续流成功后更新 DB
+    interrupt 记录。
+
+    Returns:
+        更新后的 builtin_property dict（不修改入参 db_item）。
+    """
+    prop = db_item.get("property") if isinstance(db_item, dict) else None
+    if isinstance(prop, str):
+        try:
+            prop = json.loads(prop)
+        except (TypeError, ValueError):
+            prop = {}
+    if not isinstance(prop, dict):
+        prop = {}
+    raw_builtin = prop.get("builtin_property")
+    if not isinstance(raw_builtin, dict):
+        raw_builtin = {}
+    updated_builtin = dict(raw_builtin)
+    updated_builtin["status"] = status
+    updated_builtin["message_id"] = interrupt_id
+    updated_builtin["interrupt_id"] = interrupt_id
+    updated_builtin["reason"] = ASK_USER_QUESTION_REASON
+    return updated_builtin
+
+
+def filter_ask_user_question_interrupts(tasks: Any) -> list[dict]:
+    """从 graph state tasks 过滤 reason == ASK_USER_QUESTION 的 interrupts。
+
+    双层遍历 ``for task in tasks`` → ``for intr in task.interrupts or []``，
+    ``intr.value`` 为 str 时 ``json.loads`` 解析，过滤 reason 匹配的 value。
+
+    Returns:
+        匹配的 interrupt value（dict）列表。
+    """
+    interrupts: list[dict] = []
+    if not tasks:
+        return interrupts
+    for task in tasks:
+        for intr in getattr(task, "interrupts", None) or []:
+            value = getattr(intr, "value", intr)
+            if isinstance(value, str):
+                try:
+                    value = json.loads(value)
+                except (TypeError, ValueError):
+                    continue
+            if isinstance(value, dict) and value.get("reason") == ASK_USER_QUESTION_REASON:
+                interrupts.append(value)
+    return interrupts
+
+
+def parse_resume_answers(resume_value: Any) -> Any:
+    """从 interrupt() 的返回值（ResumeItem 列表）中提取用户答案。
+
+    interrupt() 返回 Command(resume=...) 的 resume 值。生产环境中 chat.py
+    传入 ``[ResumeItem(...)]`` 列表，每项含 interruptId/status/payload，
+    用户答案在 ``payload.answers`` 中。直接 graph.ainvoke(Command(resume=...))
+    测试场景中 resume 值可能是裸 answers 字典。
+
+    Returns:
+        提取出的用户答案（answers 列表或原始值），供写入 state 供工具函数读取。
+    """
+    if resume_value is None:
+        return None
+    if isinstance(resume_value, list) and resume_value:
+        first = resume_value[0]
+        if isinstance(first, dict):
+            payload = first.get("payload")
+            if isinstance(payload, dict) and "answers" in payload:
+                return payload["answers"]
+            if payload is not None:
+                return payload
+        return first
+    if isinstance(resume_value, dict):
+        if "answers" in resume_value:
+            return resume_value["answers"]
+        payload = resume_value.get("payload")
+        if isinstance(payload, dict) and "answers" in payload:
+            return payload["answers"]
+        return resume_value
+    return resume_value
+
+
 __all__ = [
     "ASK_USER_QUESTION_REASON",
     "ASK_USER_QUESTION_STATE_KEY",
+    "INTERRUPT_STATUS_CANCELLED",
+    "INTERRUPT_STATUS_PENDING",
+    "INTERRUPT_STATUS_RESOLVED",
     "AskUserQuestionHandler",
     "AskUserQuestionItem",
     "AskUserQuestionOutcomeBuilder",
     "AskUserQuestionMetadata",
     "AskUserQuestionOption",
+    "find_pending_interrupt",
+    "build_updated_builtin_property",
+    "filter_ask_user_question_interrupts",
+    "parse_resume_answers",
 ]

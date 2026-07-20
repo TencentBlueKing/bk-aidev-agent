@@ -22,6 +22,7 @@ from typing import Any, Callable
 from ag_ui.core import BaseEvent, CustomEvent, EventType, RunErrorEvent
 from ag_ui.core.events import RawEvent, TextMessageContentEvent, TextMessageEndEvent, TextMessageStartEvent
 
+from aidev_agent.core.ag_ui.ask_user_question import ASK_USER_QUESTION_REASON, AskUserQuestionHandler
 from aidev_agent.core.ag_ui.event_builders import build_model_end_payload, should_switch_thinking_step
 from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
 from aidev_agent.core.ag_ui.types import (
@@ -168,8 +169,6 @@ class BaseSessionWriter(ABC):
             self.handle_thinking_message_end(event)
         elif event.type == EventType.TOOL_CALL_RESULT:
             self.handle_tool_call_result(event)
-        elif event.type == EventType.ACTIVITY_SNAPSHOT:
-            self.handle_activity_snapshot(event)
         elif event.type == EventType.RUN_FINISHED:
             self.handle_run_finished(event)
 
@@ -542,44 +541,64 @@ class BaseSessionWriter(ABC):
                 # 直接从 serialized_interrupts（即 content 中的数据）提取 builtin_property，
                 # 避免 AG-UI Interrupt 对象序列化时丢失审批字段
                 serialized = serialized_interrupts[idx] if idx < len(serialized_interrupts) else {}
-                metadata = serialized.get("metadata") or {}
-                ticket = metadata.get("ticket") or {}
-                # 工具入参：优先取 metadata.toolArgs，兜底取 serialized.toolArgs
-                tool_args = metadata.get("toolArgs")
-                if not isinstance(tool_args, dict):
-                    tool_args = serialized.get("toolArgs")
-                if not isinstance(tool_args, dict):
-                    tool_args = {}
-                builtin_property = {
-                    "message_id": interrupt_id,
-                    "type": metadata.get("type") or serialized.get("type") or "tool_approval",
-                    "interrupt_id": interrupt_id,
-                    "reason": serialized.get("reason"),
-                    "tool_call_id": serialized.get("toolCallId") or serialized.get("tool_call_id"),
-                    "tool_name": metadata.get("toolName") or serialized.get("toolName") or serialized.get("toolName"),
-                    "tool_args": tool_args,
-                    "callback_token": metadata.get("callbackToken") or serialized.get("callbackToken"),
-                    "ticket_sn": ticket.get("sn") or metadata.get("ticketSn") or serialized.get("ticketSn"),
-                    "graph_thread_id": getattr(event, "thread_id", ""),
-                }
-                # 记录从 outcome.interrupts 提取的字段，方便排查是否完整
-                logger.info(
-                    "[ToolApproval] handle_run_finished interrupt builtin_property: "
-                    "interrupt_id=%s, callback_token=%s, ticket_sn=%s, tool_name=%s, keys=%s",
-                    interrupt_id,
-                    builtin_property.get("callback_token"),
-                    builtin_property.get("ticket_sn"),
-                    builtin_property.get("tool_name"),
-                    list(builtin_property.keys()),
-                )
+                serialized_reason = serialized.get("reason")
+
+                if serialized_reason == ASK_USER_QUESTION_REASON:
+                    # ask_user_question 路径：启用 extract_builtin_property（D-02）
+                    # 字段集：questions/options/answers/multiSelect（无 callback_token/ticket_sn/tool_name）
+                    builtin_property = AskUserQuestionHandler().extract_builtin_property(
+                        interrupt_id, interrupt, graph_thread_id=getattr(event, "thread_id", "")
+                    )
+                    logger.info(
+                        "[AskUserQuestion] handle_run_finished interrupt builtin_property: "
+                        "interrupt_id=%s, reason=%s, keys=%s",
+                        interrupt_id,
+                        serialized_reason,
+                        list(builtin_property.keys()),
+                    )
+                else:
+                    # approval 路径：现有逻辑零改动（base.py 原 L543-562）
+                    metadata = serialized.get("metadata") or {}
+                    ticket = metadata.get("ticket") or {}
+                    # 工具入参：优先取 metadata.toolArgs，兜底取 serialized.toolArgs
+                    tool_args = metadata.get("toolArgs")
+                    if not isinstance(tool_args, dict):
+                        tool_args = serialized.get("toolArgs")
+                    if not isinstance(tool_args, dict):
+                        tool_args = {}
+                    builtin_property = {
+                        "message_id": interrupt_id,
+                        "type": metadata.get("type") or serialized.get("type") or "tool_approval",
+                        "interrupt_id": interrupt_id,
+                        "reason": serialized.get("reason"),
+                        "tool_call_id": serialized.get("toolCallId") or serialized.get("tool_call_id"),
+                        "tool_name": metadata.get("toolName")
+                        or serialized.get("toolName")
+                        or serialized.get("toolName"),
+                        "tool_args": tool_args,
+                        "callback_token": metadata.get("callbackToken") or serialized.get("callbackToken"),
+                        "ticket_sn": ticket.get("sn") or metadata.get("ticketSn") or serialized.get("ticketSn"),
+                        "graph_thread_id": getattr(event, "thread_id", ""),
+                    }
+                    # 记录从 outcome.interrupts 提取的字段，方便排查是否完整
+                    logger.info(
+                        "[ToolApproval] handle_run_finished interrupt builtin_property: "
+                        "interrupt_id=%s, callback_token=%s, ticket_sn=%s, tool_name=%s, keys=%s",
+                        interrupt_id,
+                        builtin_property.get("callback_token"),
+                        builtin_property.get("ticket_sn"),
+                        builtin_property.get("tool_name"),
+                        list(builtin_property.keys()),
+                    )
+
                 self._upsert_interrupt_session_content(
                     message_id=interrupt_id,
                     content=run_finished_content,
                     builtin_property=builtin_property,
                 )
         elif outcome and outcome_type != "interrupt":
-            # ask_user_question 续流的 DB 写入改由 handle_activity_snapshot 接管
-            # （ACTIVITY_SNAPSHOT 事件经 _dispatch_event 派发到 DB writer）。
+            # ask_user_question 续流的 DB 写入由 AGUISessionWriter.handle_run_finished
+            # 的 _handle_ask_user_question_resume_finished 完成（消费 RunFinishedEvent）。
             # approval 的 interrupt 状态由审批回调 API 更新。
             logger.info(
                 "[handle_run_finished] outcome != interrupt, session_code=%s, outcome_type=%s",
@@ -597,16 +616,6 @@ class BaseSessionWriter(ABC):
 
         BaseSessionWriter 默认空实现（无 DB 查询能力）。子类（如 AGUISessionWriter）
         可重写此方法，从 DB 查询 pending 的 interrupt 记录并更新为 resolved 终态。
-        """
-
-    def handle_activity_snapshot(self, event: BaseEvent) -> None:
-        """处理 ACTIVITY_SNAPSHOT 事件（ask_user_question 续流首帧回放）。
-
-        默认空实现。子类（如 AGUISessionWriter）可重写此方法，从事件 content
-        提取终态数据（answers）更新 DB 中的 pending interrupt 记录为 resolved。
-
-        此方法替代了原 _resolve_pending_interrupts 的 DB 查询路径——
-        ACTIVITY_SNAPSHOT 事件携带终态 content（含 answers），无需再从 DB 查询。
         """
 
     def _write_cancelled_messages(self, thinking_content: str) -> None:
@@ -894,7 +903,7 @@ class BaseSessionWriter(ABC):
             event: RawEvent（on_custom_event）或 knowledge_rag_result 的 CustomEvent
         """
         if isinstance(event, CustomEvent):
-            event_data = event.value if isinstance(event.value, dict) else {}
+            event_data = event.raw_event.get("data", {}) if event.raw_event else {}
         else:
             event_data = event.event.get("data", {})
         message_id = event_data.get("message_id")
@@ -945,7 +954,6 @@ class BaseSessionWriter(ABC):
             },
         )
         self._written_message_ids.add(message_id)
-
 
     def handle_flow_agent_result(self, event) -> None:
         """处理 Flow Agent 结果事件，回写 activity 消息

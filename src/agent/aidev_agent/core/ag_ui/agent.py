@@ -371,9 +371,7 @@ class LangGraphAgent:
             metadata=metadata or None,
         )
 
-    async def _emit_run_end_extras(
-        self, state_values: State, thread_id: str
-    ) -> AsyncGenerator[Any, None]:
+    async def _emit_run_end_extras(self, state_values: State, thread_id: str) -> AsyncGenerator[Any, None]:
         """本轮 run 收尾扩展点：MESSAGES_SNAPSHOT 之后、RUN_FINISHED 之前每 run 触发一次。
 
         父类默认 no-op；子类覆写以 yield 自定义事件，异常须自行兜底避免阻断 RUN_FINISHED。

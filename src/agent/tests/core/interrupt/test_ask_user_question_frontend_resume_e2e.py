@@ -21,16 +21,22 @@
 3. 观察续流后 DB interrupt 记录是否被更新为 resolved
 """
 
+import json
+
 import pytest
 from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
+from aidev_agent.core.ag_ui.ask_user_question import ASK_USER_QUESTION_REASON
 from aidev_agent.core.ag_ui.types import AgentInput
+from aidev_agent.core.ag_ui.utils import get_schema_keys
 from aidev_agent.core.graphs.react.graph import ReActAgentBuilder
 from aidev_agent.enums import PromptRole
+from aidev_agent.services.agent.chat import ChatAgentBuilder, ChatPrompt
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.memory import MemorySaver
+from tests.core.ag_ui._prepare_stream_helper import prepare_stream_data_for_agent
 
 
 class _FakeToolCallingLLM(BaseChatModel):
@@ -172,8 +178,6 @@ def _extract_ask_user_question_interrupts(graph, config) -> list[dict]:
     使 _build_resume_ask_user_question_finished_event 能触发 ACTIVITY_SNAPSHOT 事件，
     经 _dispatch_event 派发给 writer 的 handle_activity_snapshot。
     """
-    from aidev_agent.core.ag_ui.ask_user_question import ASK_USER_QUESTION_REASON
-
     try:
         agent_state = graph.get_state(config)
         tasks = agent_state.tasks if agent_state.tasks else []
@@ -182,8 +186,6 @@ def _extract_ask_user_question_interrupts(graph, config) -> list[dict]:
             for intr in task.interrupts or []:
                 value = intr.value
                 if isinstance(value, str):
-                    import json
-
                     try:
                         value = json.loads(value)
                     except Exception:
@@ -227,9 +229,6 @@ async def test_resume_with_frontend_dict_format_updates_interrupt():
     )
 
     # Phase 11.8: 预处理前移（消除 model_copy + 消除 agui_entry 依赖）
-    from aidev_agent.core.ag_ui.utils import get_schema_keys
-    from tests.core.ag_ui._prepare_stream_helper import prepare_stream_data_for_agent
-
     agent_state1 = await graph.aget_state(config)
     schema_keys1 = get_schema_keys(graph, config, ["messages", "tools", "copilotkit"])
     preprocessed1 = prepare_stream_data_for_agent(
@@ -389,8 +388,6 @@ def test_filter_unmatched_tool_calls_preserves_ask_user_question():
     如果 _filter_unmatched_tool_calls 过滤掉这条 assistant 消息，续流时
     MESSAGES_SNAPSHOT 会丢失 AI(AskUser) 部分。
     """
-    from aidev_agent.services.agent.chat import ChatAgentBuilder, ChatPrompt
-
     builder = ChatAgentBuilder.__new__(ChatAgentBuilder)
     # 构造 chat_history：user -> assistant(tool_call=ask_user_question) -> interrupt
     chat_history = [

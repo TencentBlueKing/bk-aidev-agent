@@ -5,7 +5,6 @@ from logging import getLogger
 from typing import Any, Callable
 
 from ag_ui.core import (
-    ActivitySnapshotEvent,
     BaseEvent,
     CustomEvent,
     EventType,
@@ -100,9 +99,7 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
             lines.append(f"[{server_name}] {message}")
         return "\n".join(lines)
 
-    async def _emit_run_end_extras(
-        self, state_values: State, thread_id: str
-    ) -> AsyncGenerator[Any, None]:
+    async def _emit_run_end_extras(self, state_values: State, thread_id: str) -> AsyncGenerator[Any, None]:
         """RUN_FINISHED 前的通用扩展点：若注入了 hook，转发其产出的事件序列。
 
         本方法不感知任何业务语义（如 PV / PaaS / artifacts），业务实现由构造时注入的
@@ -120,7 +117,6 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
             dispatch_event=self._dispatch_event,
         ):
             yield ev
-
 
     async def run(self, input: RunAgentInput) -> AsyncGenerator[str, None]:
         """运行 Agent 并生成编码后的事件流"""
@@ -214,28 +210,33 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         """续流首帧回放：在 SDK 任何事件之前先回放一条"终态形态"事件。
 
         让前端能立即据此把原中断卡片更新为最终状态（关闭弹窗）。
-        支持 approval（RUN_FINISHED）和 ask_user_question（ACTIVITY_SNAPSHOT）两种中断类型。
+        支持 approval 和 ask_user_question 两种中断类型，统一构造 RunFinishedEvent。
 
-        注意：此方法仅负责 SSE 输出。ask_user_question 路径的 DB 写入由
-        handle_activity_snapshot 消费经 _dispatch_event 派发的 ACTIVITY_SNAPSHOT 事件完成。
+        注意：ask_user_question 路径的 RunFinishedEvent 走 _dispatch_event（DB writer
+        通过 handle_run_finished 消费事件写 DB），approval 路径的 RunFinishedEvent
+        保持直发（DB 已在审批回调时落库）。
+
+        ask_user_question 路径额外推送 MESSAGES_SNAPSHOT：前端 handleRunFinishedEvent
+        只标记 loading 完成，不更新消息列表中的 interrupt 卡片内容。前端依赖
+        MESSAGES_SNAPSHOT 的覆盖式语义来渲染 interrupt 卡片的 resolved 终态
+        （outcome.type=success + result.payload.answers）。
         """
         resume_event = self._build_resume_finished_event(input)
         if resume_event is not None:
             try:
-                # D-01: ask_user_question 路径的 ACTIVITY_SNAPSHOT 走 _dispatch_event，
-                # 让 DB writer 通过 handle_activity_snapshot 消费事件写入 DB。
-                # approval 路径的 RUN_FINISHED 保持直发（D-02），不走 _dispatch_event——
-                # approval 续流首帧是"回放"（DB 已在审批回调时落库），走 _dispatch_event
-                # 会让 handle_run_finished 重复触发后台续流 worker。
-                if getattr(resume_event, "type", None) == EventType.ACTIVITY_SNAPSHOT:
-                    self._dispatch_event(resume_event)
+                self._dispatch_event(resume_event)
                 yield event_encoder.encode(resume_event)
-                if getattr(resume_event, "type", None) == EventType.ACTIVITY_SNAPSHOT:
-                    updated_snapshot = self._build_updated_messages_snapshot(input)
-                    if updated_snapshot is not None:
-                        yield event_encoder.encode(updated_snapshot)
             except Exception:
                 logger.exception("[Resume] Failed to emit resume event")
+
+            # ask_user_question 续流：推送 MESSAGES_SNAPSHOT 让前端渲染 interrupt 卡片终态
+            if self._ask_user_question_interrupts:
+                try:
+                    snapshot = self._build_updated_messages_snapshot(input, resume_event)
+                    if snapshot is not None:
+                        yield event_encoder.encode(snapshot)
+                except Exception:
+                    logger.exception("[Resume] Failed to emit MESSAGES_SNAPSHOT for ask_user_question")
 
     def _build_resume_finished_event(self, input: RunAgentInput) -> RunFinishedEvent | None:
         """构造续流首条"终态形态"事件（支持 approval 和 ask_user_question）。
@@ -254,6 +255,76 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
             return self._build_resume_ask_user_question_finished_event(input)
 
         return None
+
+    def _build_updated_messages_snapshot(
+        self, input: RunAgentInput, resume_event: RunFinishedEvent
+    ) -> MessageSnapshotEventExtend | None:
+        """构造续流后的 MESSAGES_SNAPSHOT，将 interrupt 消息更新为终态形态。
+
+        前端 handleRunFinishedEvent 只标记 loading 完成，不更新消息列表中 interrupt 卡片的 content。
+        前端依赖 MESSAGES_SNAPSHOT 的覆盖式语义（list.value = messages.map(...)）来触发 Vue 响应式更新，
+        渲染 interrupt 卡片的 resolved 终态（outcome.type=success + result.payload.answers）。
+
+        从 input.messages 中找到 role=interrupt 的消息，替换其 content 为 RunFinishedEvent 的终态 content（outcome + result），其余消息不变。
+
+        仅 ask_user_question 路径调用；approval 路径的 DB 已在后台 worker 写好，
+        input.messages 中的 interrupt 记录已是 resolved 终态，无需额外处理。
+        """
+        messages = list(getattr(input, "messages", []) or [])
+        if not messages:
+            return None
+
+        # 从 RunFinishedEvent 提取终态 outcome / result
+        outcome = getattr(resume_event, "outcome", None)
+        result = getattr(resume_event, "result", None)
+        if outcome is None:
+            return None
+
+        # 序列化为 dict（与 MESSAGES_SNAPSHOT 的 API 格式一致）
+        if hasattr(outcome, "model_dump"):
+            outcome_dict = outcome.model_dump(mode="json", by_alias=True, exclude_none=True)
+        else:
+            outcome_dict = outcome if isinstance(outcome, dict) else {}
+        if hasattr(result, "model_dump"):
+            result_dict = result.model_dump(mode="json", by_alias=True, exclude_none=True)
+        else:
+            result_dict = result if isinstance(result, dict) else {}
+
+        # 构造与 DB 中 upgrade_content_to_success 输出一致的终态 content：
+        # {"outcome": {type, interrupts}, "result": {id, interruptId, status, payload, ...}}
+        # 注意：result 是单个 dict（不是 list），与 DB 落库格式一致。
+        terminal_content = {
+            "outcome": outcome_dict,
+            "result": result_dict,
+        }
+
+        # 替换 interrupt 消息的 content
+        updated_messages = []
+        found_interrupt = False
+        for msg in messages:
+            msg_dict = msg if isinstance(msg, dict) else (msg.model_dump() if hasattr(msg, "model_dump") else dict(msg))
+            if msg_dict.get("content") == "正在调用工具...":
+                msg_dict["content"] = ""
+            if not found_interrupt and msg_dict.get("role") == "interrupt":
+                msg_dict = dict(msg_dict)
+                msg_dict["content"] = terminal_content
+                msg_dict["status"] = "complete"
+                # 补充 DB 中断消息的顶层字段（前端可能依赖这些字段渲染卡片）
+                interrupts = outcome_dict.get("interrupts", [])
+                if interrupts:
+                    first = interrupts[0]
+                    msg_dict["reason"] = first.get("reason", "")
+                    msg_dict["interrupt_id"] = first.get("id", "")
+                found_interrupt = True
+            updated_messages.append(msg_dict)
+
+        if not found_interrupt:
+            return None
+
+        return MessageSnapshotEventExtend(
+            type=EventType.MESSAGES_SNAPSHOT,
+            messages=updated_messages,
+        )
 
     def _resolve_resume_context(self, input: RunAgentInput) -> tuple[str, list]:
         """从 input.resume / forwarded_props 解析 (interruptId, answers)。
@@ -284,57 +355,6 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
             interrupt_id = (self._ask_user_question_interrupts[0] or {}).get("id", "") or ""
         return interrupt_id, resume_answers
 
-    def _build_updated_messages_snapshot(self, input: RunAgentInput):
-        """构造续流后的 MESSAGES_SNAPSHOT，将 interrupt 消息更新为终态形态。
-
-        前端 handleActivitySnapshotEvent 只更新 message.content 不触发 computed 重新计算，
-        需要通过 MESSAGES_SNAPSHOT 替换整个数组引用让 activeUserQuestionInterrupt 失效。
-
-        从 input.messages 中找到 role=interrupt 的消息，替换其 content 为
-        ACTIVITY_SNAPSHOT 的终态 content（outcome.type=success），其余消息不变。
-        """
-        messages = list(getattr(input, "messages", []) or [])
-        if not messages:
-            return None
-
-        # WR-03：复用 _resolve_resume_context 解析 resume（与 _build_resume_ask_user_question_finished_event 共享）
-        interrupt_id, resume_answers = self._resolve_resume_context(input)
-
-        # 复用 AskUserQuestionOutcomeBuilder 构造终态 content（与 ACTIVITY_SNAPSHOT 一致），
-        # 确保 MESSAGES_SNAPSHOT 的 outcome 也含 interrupts 字段。
-        # D-05: resume_answers 通过参数注入 builder，不再需要调用方后修正。
-        outcome_dict, result_dict = AskUserQuestionOutcomeBuilder.build_run_finished_payload(
-            self._ask_user_question_interrupts, "resolved", resume_answers=resume_answers
-        )
-        terminal_content = {
-            "message": "用户问题已回答",
-            "outcome": outcome_dict,
-            "result": [result_dict] if result_dict else [],
-            "runId": interrupt_id,
-            "threadId": input.thread_id or "",
-        }
-
-        # 替换 interrupt 消息的 content
-        updated_messages = []
-        found_interrupt = False
-        for msg in messages:
-            msg_dict = msg if isinstance(msg, dict) else (msg.model_dump() if hasattr(msg, "model_dump") else dict(msg))
-            # 找到 role=interrupt 的消息，替换 content
-            if not found_interrupt and msg_dict.get("role") == "interrupt":
-                msg_dict = dict(msg_dict)
-                msg_dict["content"] = terminal_content
-                msg_dict["status"] = "complete"
-                found_interrupt = True
-            updated_messages.append(msg_dict)
-
-        if not found_interrupt:
-            return None
-
-        return MessageSnapshotEventExtend(
-            type=EventType.MESSAGES_SNAPSHOT,
-            messages=updated_messages,
-        )
-
     def _should_emit_resume_approval_finished(self) -> bool:
         """是否需要在续流首位发送"终态 RUN_FINISHED"（approval 专用）。
 
@@ -354,40 +374,27 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         first = self._approval_interrupts[0] or {}
         return isinstance(first, dict) and first.get("reason") == TOOL_APPROVAL_REASON
 
-    def _build_resume_ask_user_question_finished_event(self, input: RunAgentInput):
-        """构造 ask_user_question 续流首条 ACTIVITY_SNAPSHOT 事件。
+    def _build_resume_ask_user_question_finished_event(self, input: RunAgentInput) -> RunFinishedEvent:
+        """构造 ask_user_question 续流首条 RunFinishedEvent 事件（与 approval 路径对称）。
 
-        前端通过 ACTIVITY_SNAPSHOT（activityType=interrupt）关闭弹窗：
-        - content.outcome.type = "success"
-        - content.result[0] 含 interruptId / payload.answers / reason / status
-        - content.runId = interruptId（前端据此关联弹窗）
-        - content.threadId
-        - replace = true（替换原弹窗内容）
+        通过 RunFinishedEvent（outcome.type=success）关闭弹窗：
+        - outcome.interrupts 含完整中断数据（深拷贝 + status 刷写为 resolved）
+        - result 含 interruptId / payload.answers / reason / status
+        - run_id = interruptId（前端据此关联弹窗）
         """
-        # WR-03：复用 _resolve_resume_context 解析 resume（与 _build_updated_messages_snapshot 共享）
         interrupt_id, resume_answers = self._resolve_resume_context(input)
 
         # 调用 AskUserQuestionOutcomeBuilder 构造终态 (outcome, result)——
         # 与 approval 续流路径对称（ApprovalOutcomeBuilder.build_run_finished_payload）。
-        # outcome 含 interrupts 字段（深拷贝 + status 刷写为 resolved），让前端能拿到已答问题的历史中断数据。
-        # D-05: resume_answers 通过参数注入 builder，不再需要调用方后修正。
         outcome_dict, result_dict = AskUserQuestionOutcomeBuilder.build_run_finished_payload(
             self._ask_user_question_interrupts, "resolved", resume_answers=resume_answers
         )
-        content = {
-            "message": "用户问题已回答",
-            "outcome": outcome_dict,
-            "result": [result_dict] if result_dict else [],
-            "runId": interrupt_id,
-            "threadId": input.thread_id or "",
-        }
-
-        return ActivitySnapshotEvent(
-            type=EventType.ACTIVITY_SNAPSHOT,
-            messageId=interrupt_id,
-            activityType="interrupt",
-            content=content,
-            replace=True,
+        return RunFinishedEvent(
+            type=EventType.RUN_FINISHED,
+            thread_id=input.thread_id or "",
+            run_id=interrupt_id,
+            outcome=outcome_dict,
+            result=result_dict,
         )
 
     def _build_resume_approval_finished_event(self, input: RunAgentInput) -> RunFinishedEvent:
@@ -529,20 +536,12 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         """
         name = event.get("name", "")
         if name == CustomMessageType.KNOWLEDGE_RAG_RESULT.value:
-            # 旧 _handle_reference_document 从 event.raw_event.get("data",{}).get("data",[]) 取出数组，
-            # 构造 value=list 的新 CustomEvent 只推给 SSE。但 D-12 合流后 DB 也会收到这个精简事件，
-            # 而 DB 侧 handle_reference_document 依赖 event.value 是 dict 才能取 message_id（base.py:861-862
-            # 的 isinstance(event.value, dict) 判断）——list 会 fallback 到 {}，导致 message_id=None、
-            # reference_documents=[]、直接 return，知识库引用文档不再写库（数据丢失回归）。
-            #
-            # 修复：直接透传构造完整 dict 的 CustomEvent（原样保留 value=event["data"]）。
-            # 该 event["data"] 即 {"message_id":..., "data":[...], "duration":...} 完整 dict。
-            # 透传后 DB 收到 event.value 是完整 dict → isinstance(dict) 为 True → message_id 正确提取 → 写库正常。
-            # SSE 前端消费 event.value.data 字段，多出的 message_id/duration 被容错忽略，不破坏 SSE 协议。
+            # value 为纯 list 供 SSE 渲染（前端只认 list 格式），
+            # raw_event 保留完整 dict 供 DB 侧提取 message_id + data
             yield CustomEvent(
                 type=EventType.CUSTOM,
                 name=name,
-                value=event["data"],
+                value=event.get("data", {}).get("data", []),
                 raw_event=event,
             )
             return
