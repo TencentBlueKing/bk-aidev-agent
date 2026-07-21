@@ -12,7 +12,7 @@ from logging import getLogger
 
 from aidev_agent.enums import AgentBuildType, PromptRole, SessionsStatus
 from aidev_agent.packages.resource_manager.agent import AgentResourceManager
-from aidev_agent.pydantic_models import ChatPrompt
+from aidev_agent.pydantic_models import AgentConfig, ChatPrompt
 from aidev_agent.services.agent import AgentInstanceFactory, ChatCompletionAgent
 from aidev_agent.services.common_agent import common_agent_factory
 from aidev_agent.services.event_handlers import AGUISessionWriter
@@ -22,6 +22,25 @@ from .agent_helpers import AgentHelper
 from .agent_session import SessionManager
 
 logger = getLogger(__name__)
+
+
+class LLMOverrideResourceManager(AgentResourceManager):
+    """带 model 热切换覆盖的 resource manager。
+
+    在 ``get_agent_config`` 装配 ``AgentConfig`` 后，用传入的 ``model`` 覆盖 ``chat_model``，
+    实现已发布智能体在聊天时动态切换模型，无需重新发布智能体。
+    ``model`` 为空时不覆盖，行为与 ``AgentResourceManager`` 完全一致。
+    """
+
+    def __init__(self, username: str = "", model: str = ""):
+        super().__init__(username=username)
+        self.model = model or ""
+
+    def get_agent_config(self, agent_code: str, version: str | None = None, **kwargs) -> AgentConfig:
+        config = super().get_agent_config(agent_code, version=version, **kwargs)
+        if self.model:
+            config.chat_model = self.model
+        return config
 
 
 class AgentBuilder:
@@ -37,11 +56,14 @@ class AgentBuilder:
         agent_code: str | None = None,
         session_manager: SessionManager | None = None,
         turn_id: str = "",
+        model: str = "",
     ):
         self.username = username
         self.agent_code = agent_code or settings.APP_CODE
         self.session_manager = session_manager or SessionManager(username=username, agent_code=agent_code)
         self.turn_id = turn_id
+        # 模型热更新：非空时覆盖 agent 配置的 chat_model
+        self.model = model or ""
 
     def by_session_code(
         self,
@@ -131,7 +153,9 @@ class AgentBuilder:
         event_handler = AGUISessionWriter(
             session_code=session_code, client=AgentHelper.get_client(), username=self.username, turn_id=self.turn_id
         )
-        resource_manager = AgentResourceManager(username=self.username) if self.username else None
+        resource_manager = (
+            LLMOverrideResourceManager(username=self.username, model=self.model) if self.username else None
+        )
         return AgentInstanceFactory.build_agent(
             build_type=AgentBuildType.SESSION,
             session_code=session_code,

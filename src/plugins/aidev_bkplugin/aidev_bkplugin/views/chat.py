@@ -17,7 +17,7 @@ from aidev_bkplugin.services.agent_builder import AgentBuilder
 from aidev_bkplugin.services.agent_execution import AgentExecutor
 from aidev_bkplugin.services.agent_helpers import AgentHelper
 from aidev_bkplugin.services.agent_session import SessionManager
-from aidev_bkplugin.views.base import IgnoreClientContentNegotiation, PluginResourceManager, PluginViewSet, logger
+from aidev_bkplugin.views.base import IgnoreClientContentNegotiation, PluginResourceManager, PluginViewSet, client, logger
 
 
 class ChatCompletionViewSet(PluginViewSet):
@@ -110,6 +110,7 @@ class ChatCompletionViewSet(PluginViewSet):
                     execute_kwargs=execute_kwargs,
                     turn_id=turn_id,
                     channel_type=self.channel_type,
+                    model=data.get("model", ""),
                 )
 
             # 走到这里 thread_id 必为空（上面已 return）；由 serializer 中的 uuid 兜底规则可推出
@@ -119,7 +120,25 @@ class ChatCompletionViewSet(PluginViewSet):
             turn_id = self._save_user_input(session_code, username, _input, turn_id)
             if hasattr(execute_kwargs, "turn_id"):
                 execute_kwargs.turn_id = turn_id
-            agent_instance = AgentBuilder(username=request.user.username, turn_id=turn_id).by_session_code(
+            # 模型热更新持久化：model 非空时写回 session.resources.model，使 get session 反映当前模型
+            # 写回失败不阻塞 chat 主流程（平台 5xx/网络抖动时仅记录日志）
+            model = data.get("model", "")
+            if model:
+                try:
+                    client.api.update_chat_session(
+                        path_params={"session_code": session_code},
+                        json={"model": model},
+                        headers={"X-BKAIDEV-USER": username},
+                    )
+                except Exception:
+                    logger.exception(
+                        "[chat_completion] 写回 session.resources.model 失败: session_code=%s, model=%s",
+                        session_code,
+                        model,
+                    )
+            agent_instance = AgentBuilder(
+                username=request.user.username, turn_id=turn_id, model=model
+            ).by_session_code(
                 session_code,
                 version=execute_kwargs.version,
                 channel_type=self.channel_type,
@@ -183,17 +202,32 @@ class ChatCompletionViewSet(PluginViewSet):
         execute_kwargs: ExecuteKwargs,
         turn_id: str,
         channel_type: str,
+        model: str = "",
     ):
         """
         通过 thread_id 自动管理会话，使用 chat_history 初始化，自动保存到 session
         """
-        builder = AgentBuilder(username=username, turn_id=turn_id)
+        builder = AgentBuilder(username=username, turn_id=turn_id, model=model)
         agent_instance, session_code = builder.by_thread_id_with_chat_history(
             thread_id=thread_id,
             chat_history=chat_history,
             version=execute_kwargs.version,
             channel_type=channel_type,
         )
+        # 模型热更新持久化：model 非空时写回 session.resources.model（写回失败不阻塞主流程）
+        if model:
+            try:
+                client.api.update_chat_session(
+                    path_params={"session_code": session_code},
+                    json={"model": model},
+                    headers={"X-BKAIDEV-USER": username},
+                )
+            except Exception:
+                logger.exception(
+                    "[chat_completion] 写回 session.resources.model 失败: session_code=%s, model=%s",
+                    session_code,
+                    model,
+                )
         turn_id = builder.turn_id or turn_id
         execute_kwargs.session_code = session_code
         if hasattr(execute_kwargs, "turn_id"):

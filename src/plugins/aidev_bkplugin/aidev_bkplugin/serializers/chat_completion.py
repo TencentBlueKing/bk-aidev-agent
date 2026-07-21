@@ -21,6 +21,7 @@ from rest_framework import serializers
 
 from aidev_bkplugin.services.agent_execution import build_execute_kwargs
 from aidev_bkplugin.services.agent_config import AgentConfigFetcher
+from aidev_bkplugin.services.llm import LLMService
 
 
 class ChatPromptContentField(serializers.Field):
@@ -67,6 +68,11 @@ class ChatCompletionRequestSerializer(serializers.Serializer):
     session_code = serializers.CharField(required=False, allow_blank=True, default="")
     thread_id = serializers.CharField(required=False, allow_blank=True, default="")
 
+    # 模型热更新：覆盖智能体原配置的 chat_model / non_thinking_llm，需在当前空间可用模型列表内
+    model = serializers.CharField(
+        required=False, allow_blank=True, default="", help_text="热切换模型 llm_code，需在当前空间可用模型列表内"
+    )
+
     # 流程智能体
     task_id = serializers.CharField(required=False, allow_blank=True, default="")
     flow_start_params = serializers.DictField(required=False, default=dict)
@@ -104,5 +110,10 @@ class ChatCompletionRequestSerializer(serializers.Serializer):
         if not thread_id and not attrs.get("session_code"):
             thread_id = str(uuid.uuid4())
         attrs["thread_id"] = thread_id
+
+        # model 热切换授权校验：非空时校验是否在当前空间可用模型列表内，避免越权切换到未授权模型
+        model = attrs.get("model", "")
+        if model and not LLMService.is_llm_accessible(username=username, llm_code=model):
+            raise serializers.ValidationError({"model": f"模型 {model} 不在当前空间可用模型列表内"})
 
         return attrs

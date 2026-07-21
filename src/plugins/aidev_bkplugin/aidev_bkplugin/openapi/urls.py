@@ -15,6 +15,7 @@ from aidev_bkplugin.openapi.views import (
     OpenapiChatCompletionViewSet,
     OpenapiChatSessionContentViewSet,
     OpenapiChatSessionViewSet,
+    OpenapiLLMViewSet,
     OpenapiUserOperationViewSet,
 )
 
@@ -25,6 +26,7 @@ _router.register("session", OpenapiChatSessionViewSet, "session")
 _router.register("session_content", OpenapiChatSessionContentViewSet, "session_content")
 _router.register("agent", OpenapiAgentInfoViewSet, "agent_info")
 _router.register("user_operation", OpenapiUserOperationViewSet, "user_operation")
+_router.register("llms", OpenapiLLMViewSet, "openapi_llms")
 
 
 urlpatterns = [
