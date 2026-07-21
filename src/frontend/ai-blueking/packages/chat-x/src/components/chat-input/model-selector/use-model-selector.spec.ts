@@ -31,24 +31,32 @@ import { describe, expect, it } from 'vitest';
 
 import { useModelSelector } from './use-model-selector';
 
-import type { IModelOption } from './types';
+import type { IModelOption, IModelProperty } from './types';
 
-const models: IModelOption[] = [
-  { id: 'gpt-4', name: 'GPT-4' },
-  { id: 'claude', name: 'Claude 3' },
-  { id: 'deepseek', name: 'DeepSeek' },
-];
+// 构造贴合后端结构的模型选项，补齐必填字段，便于用例聚焦 llm_name 逻辑
+const createModel = (id: number, llmName: string, property: IModelProperty = {}): IModelOption => ({
+  id,
+  llm_code: llmName,
+  llm_name: llmName,
+  llm_type: 'chat.completion',
+  max_token_size: 4096,
+  property,
+  space_auth_mode: 'PUBLIC',
+  user_auth_mode: 'PUBLIC',
+});
+
+const models: IModelOption[] = [createModel(1, 'GPT-4'), createModel(2, 'Claude 3'), createModel(3, 'DeepSeek')];
 
 describe('useModelSelector', () => {
   it('关键字为空时应返回完整模型列表', async () => {
     let result: ReturnType<typeof useModelSelector> | undefined;
-    const selectedId = ref<string | undefined>('gpt-4');
+    const selectedModel = ref<string | undefined>('GPT-4');
 
     const Host = defineComponent({
       setup() {
         result = useModelSelector({
           models: computed(() => models),
-          selectedId,
+          selectedModel,
         });
         return () => h('div');
       },
@@ -63,13 +71,13 @@ describe('useModelSelector', () => {
 
   it('应按模型名过滤列表（不区分大小写）', async () => {
     let result: ReturnType<typeof useModelSelector> | undefined;
-    const selectedId = ref<string | undefined>();
+    const selectedModel = ref<string | undefined>();
 
     const Host = defineComponent({
       setup() {
         result = useModelSelector({
           models: computed(() => models),
-          selectedId,
+          selectedModel,
         });
         return () => h('div');
       },
@@ -78,22 +86,22 @@ describe('useModelSelector', () => {
     const wrapper = mount(Host);
     await nextTick();
 
-    result!.keyword.value = 'claude';
+    result?.keyword.value = 'claude';
     await nextTick();
-    expect(result?.filteredModels.value).toEqual([{ id: 'claude', name: 'Claude 3' }]);
+    expect(result?.filteredModels.value).toEqual([models[1]]);
 
     wrapper.unmount();
   });
 
-  it('应根据 selectedId 解析当前选中模型', async () => {
+  it('应根据 selectedModel 解析当前选中模型', async () => {
     let result: ReturnType<typeof useModelSelector> | undefined;
-    const selectedId = ref<string | undefined>('deepseek');
+    const selectedModel = ref<string | undefined>('DeepSeek');
 
     const Host = defineComponent({
       setup() {
         result = useModelSelector({
           models: computed(() => models),
-          selectedId,
+          selectedModel,
         });
         return () => h('div');
       },
@@ -102,19 +110,19 @@ describe('useModelSelector', () => {
     const wrapper = mount(Host);
     await nextTick();
 
-    expect(result?.selectedModel.value).toEqual({ id: 'deepseek', name: 'DeepSeek' });
+    expect(result?.currentModel.value).toEqual(models[2]);
     wrapper.unmount();
   });
 
   it('resetKeyword 应清空搜索关键字', async () => {
     let result: ReturnType<typeof useModelSelector> | undefined;
-    const selectedId = ref<string | undefined>();
+    const selectedModel = ref<string | undefined>();
 
     const Host = defineComponent({
       setup() {
         result = useModelSelector({
           models: computed(() => models),
-          selectedId,
+          selectedModel,
         });
         return () => h('div');
       },
@@ -123,7 +131,7 @@ describe('useModelSelector', () => {
     const wrapper = mount(Host);
     await nextTick();
 
-    result!.keyword.value = 'gpt';
+    result?.keyword.value = 'gpt';
     await nextTick();
     result?.resetKeyword();
     await nextTick();

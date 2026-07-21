@@ -19,11 +19,11 @@ sinceVersion: 1.0.0
   import { ref } from 'vue'
   import ModelSelectorComp from '../../../src/components/chat-input/model-selector/model-selector.vue'
 
-  const selectedModelId = ref('gpt-4')
+  const selectedModel = ref('GPT-4')
   const models = [
-    { id: 'gpt-4', name: 'GPT-4', capabilities: [{ text: '深度思考', theme: 'primary' }] },
-    { id: 'claude', name: 'Claude 3', capabilities: [{ text: '快速思考', theme: 'success' }] },
-    { id: 'deepseek', name: 'DeepSeek', capabilities: [{ text: '图生文', theme: 'warning' }] },
+    { id: 1, llm_name: 'GPT-4', description: 'GPT-4 通用模型', property: { support_thinking: true } },
+    { id: 2, llm_name: 'Claude 3', property: { support_thinking_quick: true } },
+    { id: 3, llm_name: 'DeepSeek', property: { support_vision: true } },
   ]
 
   const handleModelChange = (model) => {
@@ -55,10 +55,12 @@ ModelSelector（Tippy 容器，theme: ai-model-selector）
 
 ## 基础用法
 
+选中值为模型的 `llm_name`；能力标签由组件依据 `property`（`support_thinking` / `support_thinking_quick` / `support_vision`）自动派生，无需调用方传入。
+
 ```vue
 <template>
   <ModelSelector
-    v-model="selectedModelId"
+    v-model="selectedModel"
     :models="models"
     @change="handleModelChange"
   />
@@ -68,10 +70,24 @@ ModelSelector（Tippy 容器，theme: ai-model-selector）
   import { ref } from 'vue';
   import { ModelSelector, type IModelOption } from '@blueking/chat-x';
 
-  const selectedModelId = ref('gpt-4');
+  // 选中值为 llm_name
+  const selectedModel = ref('DeepSeek-V4-Pro-Online-32k');
   const models: IModelOption[] = [
-    { id: 'gpt-4', name: 'GPT-4', capabilities: [{ text: '深度思考', theme: 'primary' }] },
-    { id: 'claude', name: 'Claude 3' },
+    {
+      id: 119,
+      llm_code: 'DeepSeek-V4-Pro-Online-32k',
+      llm_name: 'DeepSeek-V4-Pro-Online-32k',
+      llm_type: 'chat.completion',
+      space_auth_mode: 'APPLY',
+      user_auth_mode: 'PUBLIC',
+      max_token_size: 4096,
+      icon: 'https://example.com/deepseek.png',
+      description: 'DeepSeek-V4-Pro 旗舰版本，支持超长上下文与复杂任务处理',
+      base_model: 'deepseek',
+      tag_names: [],
+      // support_thinking → 深度思考、support_vision → 图生文
+      property: { support_thinking: true, support_vision: true, max_model_len: 32000 },
+    },
   ];
 
   const handleModelChange = (model: IModelOption) => {
@@ -82,7 +98,7 @@ ModelSelector（Tippy 容器，theme: ai-model-selector）
 
 <div class="demo">
   <ModelSelectorComp
-    v-model="selectedModelId"
+    v-model="selectedModel"
     :models="models"
     @change="handleModelChange"
   />
@@ -102,9 +118,9 @@ ModelSelector（Tippy 容器，theme: ai-model-selector）
 
 ### v-model
 
-| 属性名 | 类型     | 说明               |
-| ------ | -------- | ------------------ |
-| —      | `string` | 当前选中的模型 id |
+| 属性名 | 类型     | 说明                          |
+| ------ | -------- | ----------------------------- |
+| —      | `string` | 当前选中模型的 `llm_name` 值 |
 
 ### Events
 
@@ -115,31 +131,56 @@ ModelSelector（Tippy 容器，theme: ai-model-selector）
 ## 类型定义
 
 ```typescript
-import type { IModelCapability, IModelOption, ModelCapabilityTheme } from '@blueking/chat-x';
+import type { IModelCapability, IModelOption, IModelProperty, ModelCapabilityTheme } from '@blueking/chat-x';
 
 type ModelCapabilityTheme = 'default' | 'primary' | 'success' | 'warning';
 
+// 能力标签由组件依据 property 派生（文案走内置 i18n）
 interface IModelCapability {
   theme?: ModelCapabilityTheme;
   text: string;
 }
 
+// 模型能力属性，决定派生出的能力标签
+interface IModelProperty {
+  agent_type?: string;
+  default?: boolean;
+  is_self_host?: boolean;
+  max_model_len?: number;
+  support_summary?: boolean;
+  support_thinking?: boolean; // → 深度思考
+  support_thinking_quick?: boolean; // → 快速思考
+  support_tools?: boolean;
+  support_vision?: boolean; // → 图生文
+  support_window?: boolean;
+}
+
+// 模型选项，贴合后端模型接口结构
 interface IModelOption {
-  capabilities?: IModelCapability[];
-  disabled?: boolean;
-  icon?: Component | string;
-  id: string;
-  name: string;
+  base_model?: string;
+  description?: string; // 选项 hover 的 title 提示
+  disabled?: boolean; // 前端扩展字段，禁用项不可选中
+  icon?: string;
+  id: number;
+  llm_code: string;
+  llm_name: string; // 展示名，同时作为选中值
+  llm_type: string;
+  max_token_size: number;
+  property: IModelProperty;
+  space_auth_mode: string;
+  tag_names?: string[];
+  user_auth_mode: string;
 }
 ```
 
 ## 注意事项
 
 1. `models` 为空或 `disabled` 为 `true` 时，下拉不会展开。
-2. 能力标签文案由调用方提供，不走内置 i18n。
-3. 展开面板后会自动聚焦搜索框；列表支持键盘上下选择与 Enter 确认（复用 `useMenuKeydown`）。
+2. 选中值为模型的 `llm_name`；能力标签由组件依据 `property` 的 `support_thinking` / `support_thinking_quick` / `support_vision` 派生，文案走内置 i18n。
+3. `description` 会作为选项 hover 的 `title` 提示展示。
+4. 展开面板后会自动聚焦搜索框；列表支持键盘上下选择与 Enter 确认（复用 `useMenuKeydown`）。
 
 ## 关联组件
 
 - [ChatInput](/components/input/chat-input)：传入 `models` 后默认在发送按钮左侧渲染本组件，也可通过 `#model-selector` 插槽完全自定义。
-- [ChatContainer](/components/setup/chat-container)：透传 `models` 与 `v-model:selected-model-id`，并向上 emit `modelChange`。
+- [ChatContainer](/components/setup/chat-container)：透传 `models` 与 `v-model:selected-model`，并向上 emit `modelChange`。

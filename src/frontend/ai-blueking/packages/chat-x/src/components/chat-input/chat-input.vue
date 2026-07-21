@@ -80,11 +80,11 @@
         <template #before-send>
           <slot
             name="model-selector"
-            v-bind="{ models, selectedModel: selectedModelId }"
+            v-bind="{ models, selectedModel }"
           >
             <ModelSelector
               v-if="models?.length"
-              v-model="selectedModelId"
+              v-model="selectedModel"
               class="chat-input-model-selector"
               :models="models"
               :tippy-options="tippyOptions"
@@ -142,8 +142,8 @@
     required: false,
     default: '',
   });
-  // 当前选中的模型 id（v-model:selectedModelId）
-  const selectedModelId = defineModel<string>('selectedModelId', {
+  // 当前选中的模型（值为 llm_name，v-model:selectedModel）
+  const selectedModel = defineModel<string>('selectedModel', {
     required: false,
   });
   const maxHeight = shallowRef(200);

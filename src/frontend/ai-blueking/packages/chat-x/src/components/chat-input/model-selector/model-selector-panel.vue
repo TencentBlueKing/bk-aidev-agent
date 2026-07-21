@@ -24,10 +24,11 @@
         :key="model.id"
         class="ai-model-selector-panel-option"
         :class="{
-          'is-selected': model.id === selectedId,
+          'is-selected': model.llm_name === selectedName,
           'is-active': index === activeIndex,
           'is-disabled': model.disabled,
         }"
+        :title="model.description"
         @click="handleSelect(model)"
       >
         <span
@@ -35,27 +36,22 @@
           class="ai-model-selector-panel-option-icon"
         >
           <img
-            v-if="typeof model.icon === 'string'"
             alt=""
             :src="model.icon"
-          />
-          <component
-            :is="model.icon"
-            v-else
           />
         </span>
         <span
           class="ai-model-selector-panel-option-name"
-          :title="model.name"
+          :title="model.llm_name"
         >
-          {{ model.name }}
+          {{ model.llm_name }}
         </span>
         <span
-          v-if="model.capabilities?.length"
+          v-if="capabilityMap.get(model.llm_name)?.length"
           class="ai-model-selector-panel-option-tags"
         >
           <span
-            v-for="(capability, capabilityIndex) in model.capabilities"
+            v-for="(capability, capabilityIndex) in capabilityMap.get(model.llm_name)"
             :key="capabilityIndex"
             class="ai-model-capability-tag"
             :class="`is-${capability.theme || 'default'}`"
@@ -80,24 +76,32 @@
 </template>
 
 <script setup lang="ts">
-  import { nextTick, shallowRef, useTemplateRef, watch } from 'vue';
+  import { computed, nextTick, shallowRef, useTemplateRef, watch } from 'vue';
 
   import { Input as BkInput, Exception } from 'bkui-vue';
 
   import { useMenuKeydown } from '../../../composables/use-menu-keydown';
   import { SearchIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
+  import { resolveModelCapabilities } from './capabilities';
 
-  import type { IModelOption } from './types';
+  import type { IModelCapability, IModelOption } from './types';
 
   const props = defineProps<{
     /** 待展示的模型列表（已按关键字过滤） */
     models: IModelOption[];
     /** 搜索框占位文案 */
     searchPlaceholder?: string;
-    /** 当前选中模型 id */
-    selectedId?: string;
+    /** 当前选中模型的 llm_name */
+    selectedName?: string;
   }>();
+
+  /** 预计算每个模型的能力标签，避免模板内重复派生（键为 llm_name） */
+  const capabilityMap = computed(() => {
+    const map = new Map<string, IModelCapability[]>();
+    props.models.forEach(model => map.set(model.llm_name, resolveModelCapabilities(model)));
+    return map;
+  });
   const emit = defineEmits<{
     (e: 'select', model: IModelOption): void;
   }>();

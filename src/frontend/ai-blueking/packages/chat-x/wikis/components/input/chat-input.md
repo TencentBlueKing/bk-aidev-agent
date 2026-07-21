@@ -38,12 +38,12 @@ sinceVersion: 1.0.0
   const inputUpload = ref('');
   const inputSlot = ref('');
   const inputModel = ref('');
-  const selectedModelId = ref('gpt-4');
+  const selectedModelId = ref('GPT-4');
 
   const models = [
-    { id: 'gpt-4', name: 'GPT-4', capabilities: [{ text: '深度思考', theme: 'primary' }] },
-    { id: 'claude', name: 'Claude 3', capabilities: [{ text: '快速思考', theme: 'success' }] },
-    { id: 'deepseek', name: 'DeepSeek' },
+    { id: 1, llm_name: 'GPT-4', property: { support_thinking: true } },
+    { id: 2, llm_name: 'Claude 3', property: { support_thinking_quick: true } },
+    { id: 3, llm_name: 'DeepSeek', property: { support_vision: true } },
   ];
 
   const handleModelChange = (model) => {
@@ -704,13 +704,13 @@ const handleSendMessage = async (
 
 ## 模型选择
 
-传入 `models` 后，会在发送按钮左侧展示 [ModelSelector](/components/input/model-selector)。选中值通过 `v-model:selected-model-id` 双向绑定，`@model-change` 可获取完整模型对象。
+传入 `models` 后，会在发送按钮左侧展示 [ModelSelector](/components/input/model-selector)。选中值（模型的 `llm_name`）通过 `v-model:selected-model` 双向绑定，`@model-change` 可获取完整模型对象。能力标签由组件依据 `property` 自动派生。
 
 ```vue
 <template>
   <ChatInput
     v-model="inputValue"
-    v-model:selected-model-id="selectedModelId"
+    v-model:selected-model="selectedModel"
     :message-status="messageStatus"
     :models="models"
     :on-send-message="handleSendMessage"
@@ -723,15 +723,16 @@ const handleSendMessage = async (
   import { ChatInput, MessageStatus, type IModelOption, type TagSchema } from '@blueking/chat-x';
 
   const inputValue = ref('');
-  const selectedModelId = ref('gpt-4');
+  // 选中值为 llm_name
+  const selectedModel = ref('GPT-4');
   const messageStatus = ref(MessageStatus.Complete);
   const models: IModelOption[] = [
-    { id: 'gpt-4', name: 'GPT-4', capabilities: [{ text: '深度思考', theme: 'primary' }] },
-    { id: 'claude', name: 'Claude 3' },
+    { id: 1, llm_name: 'GPT-4', property: { support_thinking: true } },
+    { id: 2, llm_name: 'Claude 3', property: {} },
   ];
 
   const handleSendMessage = async (content: string, docSchema: TagSchema) => {
-    /* 发送时可读取 selectedModelId.value */
+    /* 发送时可读取 selectedModel.value */
   };
 
   const handleModelChange = (model: IModelOption) => {
@@ -743,7 +744,7 @@ const handleSendMessage = async (
 <div class="demo">
   <ChatInputComp
     v-model="inputModel"
-    v-model:selected-model-id="selectedModelId"
+    v-model:selected-model="selectedModelId"
     message-status="complete"
     :models="models"
     :on-send-message="handleSendMessage"
@@ -797,7 +798,7 @@ const handleSendMessage = async (
 | 属性名             | 类型                                                                       | 默认值   | 必填 | 说明                                                    |
 | ------------------ | -------------------------------------------------------------------------- | -------- | ---- | ------------------------------------------------------- |
 | modelValue         | `string \| TagSchema`                                                      | -        | ✅   | 编辑器的值，支持 `v-model`                              |
-| selectedModelId    | `string`                                                                   | -        | -    | 当前选中的模型 id，支持 `v-model:selected-model-id`     |
+| selectedModel      | `string`                                                                   | -        | -    | 当前选中模型的 `llm_name`，支持 `v-model:selected-model` |
 | messageStatus      | `MessageStatus`                                                            | -        | -    | 消息状态，控制按钮；输入为空时内部强制 `disabled`       |
 | cite               | `string`                                                                   | `''`     | -    | 引用内容，支持 `v-model:cite`，不为空时显示引用区       |
 | skills             | `ISkillListItem[]`                                                         | `[]`     | -    | Skill 列表，输入 `/` 触发，选中后插入 Skill 标签        |
