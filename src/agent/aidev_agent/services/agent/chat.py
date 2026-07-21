@@ -36,7 +36,7 @@ from aidev_agent.core.tools.a2a_tools.types import AgentBackendType, AgentSpec
 from aidev_agent.core.tools.runtime_tools import RuntimeBackendResolver
 from aidev_agent.enums import AgentType, PromptRole
 from aidev_agent.exceptions import AgentException
-from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
+from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel, ChatModelRunnable
 from aidev_agent.packages.langgraph.streaming.streaming_protocol import AgentStreamAdapter
 from aidev_agent.packages.resource_manager.registry import resource_manager
 from aidev_agent.pydantic_models import (
@@ -93,9 +93,9 @@ class ChatCompletionAgent(BaseModel):
     agent_type: ClassVar[AgentType] = AgentType.CHAT
 
     thread_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    chat_model: BaseChatModel | None = None
+    chat_model: ChatModelRunnable | None = None
     """聊天模型；种子实例（``ChatCompletionAgent()``）为 ``None``，``build(ctx)``
-    装配后由 :meth:`ChatAgentBuilder.build_chat_model` 填充为非空 ``BaseChatModel``。
+    装配后由 :meth:`ChatAgentBuilder.build_chat_model` 填充为非空聊天模型 Runnable。
     种子实例不可执行（``execute()`` 假设非空）。"""
     chat_model_non_thinking: BaseChatModel | None = None
     """非思考模型；由 :meth:`ChatAgentBuilder.build_chat_model_non_thinking` 填充。"""
@@ -1106,7 +1106,7 @@ class ChatAgentBuilder:
 
     # ---------- 公共：装配方法（被 ChatCompletionAgent.build 调用） ----------
 
-    def build_chat_model(self) -> BaseChatModel:
+    def build_chat_model(self) -> ChatModelRunnable:
         """构建聊天模型"""
         config = self.ctx.agent_config
         chat = self.ctx.chat or ChatBuildExtras()
