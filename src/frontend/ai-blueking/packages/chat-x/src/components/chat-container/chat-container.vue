@@ -231,8 +231,10 @@
           <template v-else>
             <ChatInput
               v-model:cite="cite"
+              v-model:selected-model-id="selectedModelId"
               :message-status="inputStatus"
               :model-value="modelValue"
+              :models="models"
               :on-send-message="handleSendMessage"
               :on-stop-sending="onStopSending"
               :on-upload="onUpload"
@@ -246,6 +248,7 @@
               :support-upload="supportUpload"
               :tippy-options="commonTippyOptions"
               @delete-shortcut="handleCloseShortcut"
+              @model-change="emits('modelChange', $event)"
               @select-shortcut="handleSelectShortcut"
               @update:model-value="handleUpdateModelValue"
             >
@@ -438,6 +441,10 @@
   const cite = defineModel<string>('cite', {
     required: false,
     default: '',
+  });
+  // 当前选中的模型 id，透传给 ChatInput 的模型选择器（v-model:selectedModelId）
+  const selectedModelId = defineModel<string>('selectedModelId', {
+    required: false,
   });
 
   const emits = defineEmits<

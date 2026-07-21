@@ -3,15 +3,18 @@ name: ChatContainer 聊天容器
 slug: chat-container
 kind: component
 domain: setup
-description: 完整对话容器，组合消息列表、输入区、快捷指令、执行摘要、分享选择和自定义 Tab。
+description: 完整对话容器，组合消息列表、输入区、模型选择、快捷指令、执行摘要、分享选择和自定义 Tab。
 aiSummary: >
-  完整对话容器，组合消息列表、输入区、快捷指令、执行摘要、分享选择和自定义 Tab。
+  完整对话容器，组合消息列表、输入区、模型选择、快捷指令、执行摘要、分享选择和自定义 Tab。
+  透传 models / selectedModelId；支持 welcomeTitle 与 #welcome。
   源码位置：src/components/chat-container/chat-container.vue。
 relatedComponents:
   - slug: message-container
     relation: 消息列表与滚动区域
   - slug: chat-input
     relation: 对话输入与快捷指令入口
+  - slug: model-selector
+    relation: 透传 models / selectedModelId，在输入区展示模型选择器
   - slug: shortcut-render
     relation: 快捷指令表单浮层
   - slug: execution-summary
@@ -27,6 +30,13 @@ sinceVersion: 1.0.0
   import { APPROVAL_STATUS, InterruptReason, MessageRole, MessageStatus } from '../../../src/ag-ui/types/constants'
 
   const inputBasic = ref('');
+  const inputModel = ref('');
+  const selectedModelId = ref('gpt-4');
+  const models = [
+    { id: 'gpt-4', name: 'GPT-4', capabilities: [{ text: '深度思考', theme: 'primary' }] },
+    { id: 'claude', name: 'Claude 3', capabilities: [{ text: '快速思考', theme: 'success' }] },
+    { id: 'deepseek', name: 'DeepSeek', capabilities: [{ text: '图生文', theme: 'warning' }] },
+  ];
   const messagesBasic = ref([
     {
       id: '1',
@@ -213,35 +223,29 @@ sinceVersion: 1.0.0
   const handleInterruptResume = async (payload, interrupt) => {
     console.log('处理中断:', payload, interrupt.id);
   };
+  const handleModelChange = (model) => {
+    console.log('切换模型:', model);
+  };
 </script>
 
 # ChatContainer 聊天容器
-## 源码事实
 
-- **源码位置**：`src/components/chat-container/chat-container.vue`
-- **能力域**：对话搭建
-- **能力说明**：完整对话容器，组合消息列表、输入区、快捷指令、执行摘要、分享选择和自定义 Tab。
+> **能力域**：对话搭建 ｜ **源码**：`src/components/chat-container/chat-container.vue`
 
-
-
-> **能力域**：对话搭建
-
-顶层聊天容器组件，整合了 `MessageContainer`（消息列表）、`ChatInput`（输入框）、`ExecutionSummary`（执行摘要面板）、`ShortcutRender`（快捷指令表单）和 `SelectionFooter`（多选操作栏）。提供完整的 AI 对话界面布局能力。
+顶层聊天容器，整合 `MessageContainer`（消息列表）、`ChatInput`（输入框）、`ExecutionSummary`（执行摘要）、`ShortcutRender`（快捷指令表单）和 `SelectionFooter`（多选操作栏），提供完整 AI 对话界面布局。
 
 ## 核心能力
 
-- **分栏布局**：基于 `ResizeLayout` 的可拖拽分栏；**侧栏是否展示 Tab / 执行摘要、以及分栏是否进入折叠样式（`ai-is-collapse`）以 `executionGroups` 与执行情况搜索关键词 `keyword` 共同决定**（`executionGroups` 由 `useMessageGroup` 从消息中过滤工具调用与 FlowAgent 记录；`keyword` 来自 `ExecutionSummary` 的 `@update-keyword`）。当 `executionGroups` 为空且未输入搜索词时，侧栏 Tab 与执行摘要不展示；**用户正在搜索执行情况时（`keyword` 非空），即使暂无执行类消息也会保留侧栏**，避免搜索态被折叠
-- **消息分组**：内置 `useMessageGroup` 自动处理消息分组、Tool 合并、Loading 注入
-- **输入区状态推导**：传给 `MessageContainer` 与 `ChatInput` 的 `messageStatus` 为内部计算值 `inputStatus`：当分组中存在 id 为 `LOADING_MESSAGE_ID`（`'__loading__'`，由 `useMessageGroup` 注入的占位 Loading 消息）时，对内使用 `MessageStatus.Fetching`；否则使用外部传入的 `messageStatus`。用于在「已发用户消息、尚未流式」阶段与流式中一致地展示停止能力，并避免输入区重复发送
-- **待审批发送阻塞**：当消息中存在 `AIDevToolApproval` 且状态为 `pending` / `draft` 的中断项时，`useMessageGroup` 会返回待审批提示，容器在输入区上方展示提示并通过 `ChatInput.sendDisabledTip` 禁止继续发送
-- **用户问题中断**：当消息中存在待回答 `UserQuestion` 中断时，容器会在输入区上方挂载 `UserQuestionCard`；结构化作答走 `onInterruptResume`，用户在输入框直接发送时走 `onSendMessage` 并在第三参数附带 skip 用的 `payload`（`status: 'cancelled'`）与 `interrupt`，且不会自动清空输入框
-- **执行摘要**：侧边栏展示工具调用 / FlowAgent 执行记录，支持关键词搜索和对话定位
-- **侧栏全屏**：Tab 栏右侧提供全屏/退出全屏按钮，基于 `useFullScreen` 将侧栏区域（`.ai-full-screen-wrapper`）以浏览器原生全屏展示；全屏时 Tippy 的 `appendTo` 自动切换为全屏容器，避免 tooltip 被遮挡
-- **自定义 Tab**：通过 `useCustomTabProvider` 支持动态添加自定义 Tab（如节点详情）
-- **分享模式**：内置消息多选分享流程，选中用户消息后确认分享
-- **渲染模式注入**：`renderMode` 会通过内部 Provider 下传给后代内容组件；`Share` 分享态开放流程智能体只读查看（侧栏 Tab / 执行情况 / 节点「详情」「有效证据」/ 耗时均保留），仅隐藏底部输入区与「重试 / 跳过」等交互操作
-- **字号主题**：通过 `size` 控制 `small`（默认 12px）/ `normal`（14px）两档字号；根节点设置 `data-ai-size`，子组件通过 CSS 变量（`--ai-font-size` 等）响应式缩放；浮层（Tippy / Teleport）会同步 `document.body.dataset.aiSize`，卸载时自动清理
-- **空状态欢迎页**：无消息时展示欢迎语和开场白
+- **分栏布局**：基于 `ResizeLayout`；侧栏 Tab / 执行摘要是否展示，以及是否进入 `ai-is-collapse`，由 `executionGroups` 与搜索词 `keyword` 共同决定。无执行数据且未搜索时隐藏侧栏；搜索中（`keyword` 非空）即使暂无执行消息也保留侧栏
+- **消息分组**：内置 `useMessageGroup`，自动分组、Tool 合并、Loading 注入
+- **输入区状态推导**：对内 `messageStatus` 取 `inputStatus`——分组中存在 `LOADING_MESSAGE_ID`（`'__loading__'`）时用 `MessageStatus.Fetching`，否则用外部 `messageStatus`，保证「已发未流式」阶段也能停止、并避免重复发送
+- **待审批发送阻塞**：存在 `AIDevToolApproval` 且为 `pending` / `draft` 时，输入区上方提示，并通过 `ChatInput.sendDisabledTip` 禁止发送
+- **用户问题中断**：待回答 `UserQuestion` 时挂载 `UserQuestionCard`；结构化作答走 `onInterruptResume`，输入框直接发送走 `onSendMessage`（第三参数带 skip `payload` 与 `interrupt`），且不自动清空输入框
+- **执行摘要 / 侧栏全屏 / 自定义 Tab**：侧栏展示工具调用与 FlowAgent 记录，支持搜索定位；Tab 栏可全屏；`useCustomTabProvider` 支持动态 Tab
+- **模型选择**：透传 `models`、`v-model:selectedModelId` 与 `@modelChange` 至 `ChatInput`，传入 `models` 后在发送按钮左侧展示 [ModelSelector](/components/input/model-selector)
+- **分享模式 / 渲染模式**：内置多选分享；`renderMode` 经 Provider 下传。`Share` 态开放侧栏只读查看，隐藏底部输入与「重试 / 跳过」等交互
+- **字号主题**：`size` 为 `small`（默认 12px）/ `normal`（14px）；根节点 `data-ai-size`，浮层同步 `document.body.dataset.aiSize`
+- **空状态欢迎页**：无消息时展示 Banner、`welcomeTitle`（默认「你好，我是小鲸」）与 `openingRemark`
 
 ## 组件结构
 
@@ -253,21 +257,18 @@ ai-chat-container（:data-ai-size="size"）
     │   ├── .ai-full-screen-wrapper（全屏目标容器，ref=fullScreenRef）
     │   │   ├── Tab 标签页
     │   │   │   ├── 执行情况（默认 Tab）
-    │   │   │   ├── 自定义 Tab × N（可关闭；标签可由 `getSideTabRenderComponent` 自定义）
-    │   │   │   └── #setting 插槽 → 全屏/退出全屏 ToolBtn（FullScreenIcon / UnFullScreenIcon）
+    │   │   │   ├── 自定义 Tab × N（可关闭；标签可由 getSideTabRenderComponent 自定义）
+    │   │   │   └── #setting → 全屏/退出全屏 ToolBtn
     │   │   ├── ExecutionSummary（执行情况 Tab 内容）
-    │   │   └── 自定义 Tab 组件（`getSideRenderComponent` 优先，否则 `data.component`；可向子组件注入 #locateButton）
-    │   └── collapse-button（折叠按钮，CollapsedIcon；折叠时图标旋转，hover 高亮 #3a84ff）
+    │   │   └── 自定义 Tab 组件（getSideRenderComponent 优先，否则 data.component；可注入 #locateButton）
+    │   └── collapse-button（CollapsedIcon）
     └── main（主内容区）
-        ├── MessageContainer（有消息时）
-        │   ├── #group 插槽（可选，自定义消息组内容）
-        │   ├── #message 插槽（可选，自定义单条消息）
-        │   └── 消息列表 + 工具栏
-        ├── 欢迎页（无消息时，容器 .ai-welcome-content）
-        │   └── welcome 插槽（默认：Banner + 欢迎标题 + 开场白 ContentRender；自定义则整块替换）
-        ├── SelectionFooter（分享模式时）
+        ├── MessageContainer（有消息时；#group / #message 可自定义）
+        ├── 欢迎页（无消息时 .ai-welcome-content）
+        │   └── #welcome（默认：Banner + welcomeTitle + openingRemark；自定义则整块替换）
+        ├── SelectionFooter（分享模式）
         ├── ShortcutRender（有快捷指令时）
-        └── ChatInput（默认状态，待审批时通过 interrupt slot 展示 InputInfoAlert）
+        └── ChatInput（透传 models / selectedModelId；interrupt 槽展示 UserQuestionCard / InputInfoAlert）
 ```
 
 ## 基础用法
@@ -607,7 +608,7 @@ ai-chat-container（:data-ai-size="size"）
 
 ## 开场白
 
-无消息时展示欢迎页，通过 `openingRemark` 设置开场白内容（支持 Markdown）：
+无消息时展示欢迎页：`welcomeTitle` 控制标题（未传时默认「你好，我是小鲸」），`openingRemark` 为开场白（支持 Markdown）：
 
 ```vue
 <template>
@@ -615,6 +616,7 @@ ai-chat-container（:data-ai-size="size"）
     v-model="inputValue"
     :messages="[]"
     :message-status="messageStatus"
+    welcome-title="你好，我是小鲸"
     opening-remark="你好！我是 AI 小鲸 🐳，可以帮你：\n\n- 编写和优化代码\n- 解答技术问题\n- 分析和调试错误"
     :on-send-message="handleSendMessage"
   />
@@ -623,7 +625,7 @@ ai-chat-container（:data-ai-size="size"）
 
 ### 自定义欢迎内容
 
-通过 `welcome` 插槽可完全自定义欢迎页内容，插槽参数 `openingRemark` 为传入的开场白文本：
+通过 `#welcome` 可整块替换默认欢迎区，插槽参数为 `{ openingRemark, welcomeTitle }`：
 
 ```vue
 <template>
@@ -631,12 +633,14 @@ ai-chat-container（:data-ai-size="size"）
     v-model="inputValue"
     :messages="[]"
     :message-status="messageStatus"
-    opening-remark="欢迎使用 AI 助手"
+    welcome-title="欢迎使用 AI 助手"
+    opening-remark="选择一个快捷入口开始对话"
     :on-send-message="handleSendMessage"
   >
-    <template #welcome="{ openingRemark }">
+    <template #welcome="{ openingRemark, welcomeTitle }">
       <div class="my-welcome">
-        <h3>{{ openingRemark }}</h3>
+        <h3>{{ welcomeTitle }}</h3>
+        <p>{{ openingRemark }}</p>
         <div class="quick-actions">
           <button @click="handleQuickAction('code')">写代码</button>
           <button @click="handleQuickAction('debug')">调试</button>
@@ -648,7 +652,7 @@ ai-chat-container（:data-ai-size="size"）
 </template>
 ```
 
-> **注意**：使用 `welcome` 插槽后，将**整块替换**默认欢迎区（含 Banner 图标、默认欢迎标题与 `openingRemark` 的 `ContentRender` 渲染），需自行编排完整欢迎页；插槽参数 `openingRemark` 仍可用于读取传入的开场白文本。
+> **注意**：使用 `#welcome` 后将**整块替换**默认欢迎区（Banner、标题与开场白的 `ContentRender`），需自行编排完整欢迎页。
 
 **渲染效果**
 
@@ -658,6 +662,7 @@ ai-chat-container（:data-ai-size="size"）
       v-model="inputEmpty"
       :messages="[]"
       message-status="complete"
+      welcome-title="你好，我是小鲸"
       opening-remark="你好！我是 AI 小鲸，可以帮你：\n\n- 编写和优化代码\n- 解答技术问题\n- 分析和调试错误"
       :on-send-message="handleSendMessage"
     />
@@ -912,6 +917,66 @@ ai-chat-container（:data-ai-size="size"）
 3. 底部 `SelectionFooter` 提供全选、取消、确认操作
 4. 确认后触发 `confirmShare` 事件，携带选中的消息列表
 
+## 模型选择
+
+`ChatContainer` 将 `models`、`v-model:selected-model-id` 与 `@model-change` 透传至内部 [ChatInput](/components/input/chat-input)。传入 `models` 后，发送按钮左侧展示 [ModelSelector](/components/input/model-selector)；发送时可读取当前 `selectedModelId`。
+
+```vue
+<template>
+  <ChatContainer
+    v-model="inputValue"
+    v-model:selected-model-id="selectedModelId"
+    :messages="messages"
+    message-status="complete"
+    :models="models"
+    :on-send-message="handleSendMessage"
+    @model-change="handleModelChange"
+  />
+</template>
+
+<script setup lang="ts">
+  import { ref } from 'vue';
+  import { ChatContainer, type IModelOption, type Message, type TagSchema } from '@blueking/chat-x';
+
+  const inputValue = ref('');
+  const selectedModelId = ref('gpt-4');
+  const messages = ref<Message[]>([]);
+  const models: IModelOption[] = [
+    { id: 'gpt-4', name: 'GPT-4', capabilities: [{ text: '深度思考', theme: 'primary' }] },
+    { id: 'claude', name: 'Claude 3', capabilities: [{ text: '快速思考', theme: 'success' }] },
+    { id: 'deepseek', name: 'DeepSeek', capabilities: [{ text: '图生文', theme: 'warning' }] },
+  ];
+
+  const handleSendMessage = async (content: string, docSchema: TagSchema) => {
+    // 发送时可读取 selectedModelId.value
+  };
+  const handleModelChange = (model: IModelOption) => {
+    console.log('切换模型:', model);
+  };
+</script>
+```
+
+**渲染效果**（输入区发送按钮左侧可切换模型）
+
+<div class="demo">
+  <div style="height: 480px; border: 1px solid #eaebf0; border-radius: 8px; overflow: hidden;">
+    <ChatContainerComp
+      v-model="inputModel"
+      v-model:selected-model-id="selectedModelId"
+      :messages="messagesBasic"
+      message-status="complete"
+      :models="models"
+      :on-send-message="handleSendMessage"
+      :on-stop-sending="handleStopSending"
+      :on-agent-action="handleAgentAction"
+      :on-agent-feedback="handleAgentFeedback"
+      :on-user-action="handleUserAction"
+      @model-change="handleModelChange"
+      @stop-streaming="handleStopStreaming"
+    />
+  </div>
+</div>
+
 ## 快捷指令
 
 通过 `v-model:selectedShortcut` 管理快捷指令选中状态：
@@ -952,29 +1017,32 @@ ai-chat-container（:data-ai-size="size"）
 
 ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`（排除 `enableSelection` 和 `messageGroups`），另外新增：
 
-| 属性名             | 类型                                                                         | 默认值   | 说明                                                                                                                                          |
-| ------------------ | ---------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| chatLoading                 | `boolean`                                                                    | —        | 整体加载状态，`true` 时显示 Loading 遮罩                                                                                                      |
-| commonTippyOptions          | `AITippyProps`                                                               | —        | 通用 Tippy 配置（`appendTo` / `placement` / `zIndex`），传入的选项会注入到所有使用 `v-overflow-tips` 的子组件中                                 |
-| executionTabVisible         | `boolean`                                                                    | `true`   | 「执行情况」Tab 是否展示；为 `false` 时从 Tab 栏隐藏，若其正被选中则自动切到首个可见 Tab，内容不再渲染                                          |
-| getSideRenderComponent      | `(h, props?) => VNode \| undefined`                                          | —        | 自定义侧栏内容区渲染；未返回时使用 `selectedTab.data.component`                                                                               |
-| getSideTabRenderComponent   | `(h, tab, { removeCustomTab }) => VNode \| undefined`                        | —        | 自定义侧栏 Tab 标签渲染；未返回时使用默认图标 + 文案 + 关闭按钮                                                                               |
-| openingRemark               | `string`                                                                     | —        | 开场白，无消息时显示，支持 Markdown                                                                                                           |
-| placement          | `'left' \| 'right'`                                                          | `'left'` | 侧边栏位置                                                                                                                                    |
-| size               | `'normal' \| 'small'`                                                        | `'small'` | 字号主题档位：`small` 为 12px 基准，`normal` 为 14px 基准；根节点设置 `data-ai-size` 并注入 `useGlobalConfig`                                |
-| resizeProps        | `{ disabled?: boolean; initialDivide?: number \| string; max?: number; min?: number }` | —        | 透传给内部 `ResizeLayout` 的可选配置，与默认 `collapsible: false`、`immediate: true`、`min: 400` 合并；`placement` 始终取自本组件 `placement`；`initialDivide` 可为像素数字或百分比等字符串（与 bkui ResizeLayout 一致） |
-| onCustomTabChange  | `(tab: CustomTab) => Promise<any>`                                           | —        | 自定义 Tab 切换回调，返回值作为 Tab 组件 props                                                                                                |
+| 属性名                    | 类型                                                                                  | 默认值    | 说明                                                                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| chatLoading               | `boolean`                                                                             | —         | 整体加载状态，`true` 时显示 Loading 遮罩                                                                                             |
+| commonTippyOptions        | `AITippyProps`                                                                        | —         | 通用 Tippy 配置，注入到所有使用 `v-overflow-tips` 的子组件                                                                           |
+| executionTabVisible       | `boolean`                                                                             | `true`    | 「执行情况」Tab 是否展示；为 `false` 时从 Tab 栏隐藏，若正被选中则切到首个可见 Tab                                                   |
+| getSideRenderComponent    | `(h, props?) => VNode \| undefined`                                                   | —         | 自定义侧栏内容区渲染；未返回时使用 `selectedTab.data.component`                                                                      |
+| getSideTabRenderComponent | `(h, tab, { removeCustomTab }) => VNode \| undefined`                                 | —         | 自定义侧栏 Tab 标签渲染；未返回时使用默认图标 + 文案 + 关闭按钮                                                                      |
+| models                    | `IModelOption[]`                                                                      | —         | 可选模型列表（继承自 ChatInput）；传入后在发送按钮左侧展示 ModelSelector                                                             |
+| openingRemark             | `string`                                                                              | —         | 开场白，无消息时显示，支持 Markdown                                                                                                  |
+| placement                 | `'left' \| 'right'`                                                                   | `'left'`  | 侧边栏位置                                                                                                                           |
+| resizeProps               | `{ disabled?: boolean; initialDivide?: number \| string; max?: number; min?: number }` | —         | 透传给内部 `ResizeLayout`；与默认 `collapsible: false`、`immediate: true`、`min: 400` 合并；`placement` 始终取自本组件               |
+| size                      | `'normal' \| 'small'`                                                                 | `'small'` | 字号主题：`small` 12px / `normal` 14px；根节点设置 `data-ai-size` 并注入 `useGlobalConfig`                                           |
+| welcomeTitle              | `string`                                                                              | —         | 欢迎页标题；未传时默认展示「你好，我是小鲸」                                                                                         |
+| onCustomTabChange         | `(tab: CustomTab) => Promise<any>`                                                    | —         | 自定义 Tab 切换回调，返回值作为 Tab 组件 props                                                                                       |
 
-> 完整 Props 列表请参考 [ChatInput](/components/input/chat-input) 和 [MessageContainer](/components/setup/message-container) 文档。
+> 其余 Props（如 `messages`、`messageStatus`、`onSendMessage`、`shortcuts` 等）继承自 [ChatInput](/components/input/chat-input) 与 [MessageContainer](/components/setup/message-container)。
 
 ### v-model
 
-| 属性名           | 类型                  | 说明                                                         |
-| ---------------- | --------------------- | ------------------------------------------------------------ |
-| modelValue       | `string \| TagSchema` | 输入框内容，支持纯文本或标签结构                             |
-| selectedShortcut | `Shortcut \| null`    | 当前选中的快捷指令                                           |
-| cite             | `string`              | 引用内容                                                     |
-| renderMode       | `RenderMode`          | 渲染模式（默认 `Chat`）。`Share` 分享态开放侧栏只读查看（流程智能体详情/证据/执行情况），隐藏底部输入区与「重试/跳过」等交互；`Test` 模式隐藏分享按钮 |
+| 属性名           | 类型                  | 说明                                                                                                                                              |
+| ---------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| modelValue       | `string \| TagSchema` | 输入框内容，支持纯文本或标签结构                                                                                                                  |
+| selectedShortcut | `Shortcut \| null`    | 当前选中的快捷指令                                                                                                                                |
+| cite             | `string`              | 引用内容                                                                                                                                          |
+| renderMode       | `RenderMode`          | 渲染模式（默认 `Chat`）。`Share` 开放侧栏只读查看并隐藏底部输入与交互操作；`Test` 隐藏分享按钮                                                    |
+| selectedModelId  | `string`              | 当前选中的模型 id，透传至 ChatInput 的 ModelSelector                                                                                              |
 
 ### Events
 
@@ -987,17 +1055,18 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | collapseChange | `(isCollapse: boolean, width: number)` | 侧边栏折叠/展开状态变化              |
 | selectShortcut | `(shortcut: Shortcut)`                 | 选择快捷指令（继承自 ChatInput）     |
 | deleteShortcut | —                                      | 删除已选快捷指令（继承自 ChatInput） |
+| modelChange    | `(model: IModelOption)`                | 切换模型（继承自 ChatInput）         |
 
 ### Slots
 
-| 插槽名            | 参数                                                                                                              | 说明                                                                                           |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| codeHeader        | `{ language: string; token: Token[] }`                                                                            | 代码块头部自定义操作区域，透传给 MessageRender → ContentRender → MarkdownContent → CodeContent |
-| default           | 消息列表相关绑定（messages 等）                                                                                   | 自定义消息列表区域                                                                             |
-| group             | `{ group: MessageGroup }`                                                                                         | 自定义单个消息组内容，透传至 MessageContainer 的 `#group`；替换默认 Checkbox、消息列表与工具栏   |
-| interruptQuestion | `{ question, qIndex, answer, setAnswer, confirm }`                                                                  | 自定义 UserQuestion 单题渲染，透传至输入区上方 UserQuestionCard 的 `#question`                 |
-| message           | `{ message, messageToolsStatus, onInterruptResume }`                                                              | 自定义单条消息渲染；自定义渲染中断消息时需继续透传 `onInterruptResume`                         |
-| welcome           | `{ openingRemark: string }`                                                                                       | 无消息时自定义欢迎页；传入则替换默认 Banner、标题与开场白区域（整块替换）                      |
+| 插槽名            | 参数                                                                                         | 说明                                                                                                     |
+| ----------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| codeHeader        | `{ language: string; token: Token[] }`                                                       | 代码块头部自定义操作区域（定义于类型；透传链路同 MessageRender）                                         |
+| default           | `{ messages, messageStatus, messageGroups, selectedUserMessages, messageToolsStatus, isShareMode, commonTippyOptions, handleAgentAction, onAgentFeedback, onInterruptResume, onUserAction, onUserInputConfirm, onUserShortcutConfirm }` | 自定义消息列表区域；未提供时渲染默认 `MessageContainer`                                                  |
+| group             | `{ group: MessageGroup }`                                                                    | 自定义单个消息组，透传至 MessageContainer `#group`；替换默认 Checkbox、消息列表与工具栏                  |
+| interruptQuestion | `{ question, qIndex, answer, setAnswer, confirm }`                                           | 自定义 UserQuestion 单题渲染，透传至 UserQuestionCard `#question`                                        |
+| message           | `{ message, messageToolsStatus, onInterruptResume }`                                         | 自定义单条消息；自定义中断消息时需继续透传 `onInterruptResume`                                           |
+| welcome           | `{ openingRemark?: string; welcomeTitle?: string }`                                          | 无消息时自定义欢迎页；传入则整块替换默认 Banner、标题与开场白                                            |
 
 ### Expose
 
@@ -1042,7 +1111,16 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 ## 类型定义
 
 ```typescript
-import { ChatContainer, RenderMode, MessageRole, type CustomTab, type MessageGroup, type Shortcut, type Message } from '@blueking/chat-x';
+import {
+  ChatContainer,
+  RenderMode,
+  MessageRole,
+  type CustomTab,
+  type IModelOption,
+  type MessageGroup,
+  type Shortcut,
+  type Message,
+} from '@blueking/chat-x';
 
 // 消息组（由 useMessageGroup 生成）
 interface MessageGroup {
@@ -1060,7 +1138,20 @@ interface MessageGroup {
 interface CustomTab<T = Record<string, unknown>> {
   label: string;
   name: string;
-  data?: T & { messageUid?: string };
+  icon?: string;
+  order?: number; // 缺省 100；「执行情况」固定 0
+  visible?: boolean; // 缺省 true；false 时栏内隐藏，仍可程序化选中
+  closable?: boolean; // 缺省 true；「执行情况」强制不可关闭
+  data?: T & { messageUid?: string; component?: Component; props?: Record<string, unknown> };
+}
+
+// 模型选项（透传至 ChatInput / ModelSelector）
+interface IModelOption {
+  id: string;
+  name: string;
+  icon?: Component | string;
+  disabled?: boolean;
+  capabilities?: { text: string; theme?: 'default' | 'primary' | 'success' | 'warning' }[];
 }
 
 // 快捷指令
@@ -1075,10 +1166,11 @@ interface Shortcut {
 
 - [MessageContainer](/components/setup/message-container) — 消息列表区域
 - [ChatInput](/components/input/chat-input) — 输入与快捷指令
+- [ModelSelector](/components/input/model-selector) — 模型选择器（透传 `models` / `selectedModelId`）
 - [ShortcutRender](/components/input/shortcut-render) — 快捷指令表单
 - [ExecutionSummary](/components/agent/execution-summary) — 执行摘要侧栏
 - [SelectionFooter](/components/input/selection-footer) — 多选操作栏
-- [ToolBtn](/components/feedback/tool-btn) — 侧栏全屏按钮（自定义插槽）
+- [ToolBtn](/components/feedback/tool-btn) — 侧栏全屏按钮
 - [useFullScreen](/composables/use-full-screen) — 侧栏全屏控制
 - [useGlobalConfig](/composables/use-global-config) — 注入 `size` 与 `supportUpload`
 - [主题配置](/theme/theme) — 字号主题 CSS 变量

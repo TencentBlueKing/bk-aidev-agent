@@ -1,6 +1,11 @@
 <template>
   <div class="ai-input-attachment">
-    <slot name="default" />
+    <div class="ai-input-attachment-default">
+      <slot name="default" />
+    </div>
+    <div class="ai-input-attachment-before-send">
+      <slot name="before-send" />
+    </div>
     <slot name="send-icon">
       <div
         class="send-message-icon"
@@ -75,17 +80,36 @@
     flex: 0 0 40px;
     gap: 6px;
     align-items: center;
+    width: 100%;
     height: 40px;
     padding: 0 12px;
 
+    &-default {
+      display: flex;
+      flex: 1;
+      gap: 8px;
+      align-items: center;
+      width: 1px;
+      height: 100%;
+    }
+
+    &-before-send {
+      display: flex;
+      flex: 0 0 140px;
+      align-items: center;
+      justify-content: center;
+      width: fit-content;
+      height: 100%;
+    }
+
     .send-message-icon {
+      right: 12px;
       display: flex;
       flex: 0 0 32px;
       align-items: center;
       justify-content: center;
       width: 32px;
       height: 32px;
-      margin-left: auto;
       font-size: 16px;
       color: #fff;
       cursor: pointer;
