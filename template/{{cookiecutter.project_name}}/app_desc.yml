@@ -106,5 +106,4 @@ modules:
           targetReplicas: 1
         - name: wxaibot
           procCommand: /bin/bash bin/start_wxaibot.sh
-          resQuotaPlan: 4C4G
-          replicas: 1
+          targetReplicas: 1
