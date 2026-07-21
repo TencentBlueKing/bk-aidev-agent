@@ -15,6 +15,17 @@ from aidev_bkplugin.utils import is_local_dev
 from aidev_bkplugin.views.base import PluginResourceManager, PluginViewSet, client, logger
 
 
+def _parse_positive_int(value, default):
+    """将分页参数解析为正整数，缺失或非法（非数字、小于 1）时回退默认值"""
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= 1 else default
+
+
 class ChatSessionViewSet(PluginViewSet):
     session_type: str = "dev" if is_local_dev() else "agent"
 
@@ -33,15 +44,12 @@ class ChatSessionViewSet(PluginViewSet):
         # 兼容旧前端：仅当显式传入 page 或 page_size 时启用分页，否则保持数组返回
         has_pagination = page is not None or page_size is not None
         if has_pagination:
-            params["page"] = page or DEFAULT_SESSION_PAGE
-            params["page_size"] = page_size or DEFAULT_SESSION_PAGE_SIZE
+            params["page"] = _parse_positive_int(page, DEFAULT_SESSION_PAGE)
+            params["page_size"] = _parse_positive_int(page_size, DEFAULT_SESSION_PAGE_SIZE)
         result = client.api.list_chat_session(headers={"X-BKAIDEV-USER": request.user.username}, params=params)
         data = result["data"]
-        if isinstance(data, dict) and "results" in data:
-            data["results"] = [
-                each for each in data["results"] if each.get("protocol_version") == AGUI_PROTOCOL_VERSION
-            ]
-        else:
+        if not isinstance(data, dict):
+            # 旧后端未分页（返回数组）：在 Agent 侧过滤协议版本
             data = [each for each in data if each.get("protocol_version") == AGUI_PROTOCOL_VERSION]
         return Response(data=data)
 

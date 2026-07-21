@@ -56,27 +56,27 @@ def test_list_without_pagination_returns_legacy_array(monkeypatch):
 
 def test_list_with_pagination_returns_paginated_data(monkeypatch):
     api = MagicMock()
-    api.list_chat_session.return_value = {
-        "data": {
-            "page": 1,
-            "num_pages": 1,
-            "count": 2,
-            "results": [_session("v2"), _session("v1", "v1")],
-        }
+    # 平台已按 protocol_version 过滤，返回纯 v2 分页结构，Agent 侧原样透传
+    paginated = {
+        "page": 1,
+        "num_pages": 1,
+        "count": 1,
+        "results": [_session("v2")],
     }
+    api.list_chat_session.return_value = {"data": paginated}
     monkeypatch.setattr(session_mod, "client", SimpleNamespace(api=api))
     view = session_mod.ChatSessionViewSet()
 
     response = view.list(_request({"page": "1", "page_size": "20"}))
 
-    assert response.data == {"page": 1, "num_pages": 1, "count": 2, "results": [_session("v2")]}
+    assert response.data == paginated
     api.list_chat_session.assert_called_once_with(
         headers={"X-BKAIDEV-USER": "alice"},
         params={
             "session_type": view.session_type,
             "protocol_version": AGUI_PROTOCOL_VERSION,
-            "page": "1",
-            "page_size": "20",
+            "page": 1,
+            "page_size": 20,
         },
     )
 
@@ -89,3 +89,24 @@ def test_list_with_pagination_handles_legacy_backend_array(monkeypatch):
     response = session_mod.ChatSessionViewSet().list(_request({"page": "1", "page_size": "20"}))
 
     assert response.data == [_session("v2")]
+
+
+def test_list_pagination_params_invalid_fallback_to_default(monkeypatch):
+    """非法分页参数（0、负数、非数字）回退默认值，并以整数透传给平台"""
+    api = MagicMock()
+    api.list_chat_session.return_value = {"data": [_session("v2")]}
+    monkeypatch.setattr(session_mod, "client", SimpleNamespace(api=api))
+    view = session_mod.ChatSessionViewSet()
+
+    # page=0、page_size=abc 均非法，应回退默认值
+    view.list(_request({"page": "0", "page_size": "abc"}))
+
+    api.list_chat_session.assert_called_once_with(
+        headers={"X-BKAIDEV-USER": "alice"},
+        params={
+            "session_type": view.session_type,
+            "protocol_version": AGUI_PROTOCOL_VERSION,
+            "page": session_mod.DEFAULT_SESSION_PAGE,
+            "page_size": session_mod.DEFAULT_SESSION_PAGE_SIZE,
+        },
+    )
