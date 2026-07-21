@@ -196,6 +196,14 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/agent/{agent_code}/",
     )
 
+    # 应用态模型列表：供已发布智能体入口（如小鲸）拉取空间可用模型，配合 chat_completion 的 llm 字段实现模型热切换
+    list_app_v1_llms = bind_property(
+        Operation,
+        name="list_app_v1_llms",
+        method="GET",
+        path="/openapi/aidev/app/v1/llms/",
+    )
+
     create_tool_approval = bind_property(
         Operation,
         name="create_tool_approval",

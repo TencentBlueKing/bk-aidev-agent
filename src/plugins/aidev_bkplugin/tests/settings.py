@@ -27,7 +27,9 @@ CACHES = {
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.auth",
-    # 不注册 aidev_bkplugin，避免 apps.py 在测试启动时加载 OTel/grpc 等运行时副作用模块
+    # 注册 aidev_bkplugin 让 models.Checkpoint/Write 获得 app_label；用轻量 BkpluginTestConfig
+    # 避免 apps.py ready() 的 OTel/httpx/远程 AgentConfigFetcher 副作用
+    "tests.test_apps.BkpluginTestConfig",
 ]
 
 MIDDLEWARE: list = []

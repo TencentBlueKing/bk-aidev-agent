@@ -192,3 +192,34 @@ class TestChatCompletionRequestSerializerThreadIdFallback:
     def test_thread_id_not_generated_when_session_code_present(self):
         data = self._validated({"session_code": "s-1"})
         assert data["thread_id"] == ""
+
+
+class TestChatCompletionRequestSerializerLLMHotSwap:
+    """llm 热切换字段：默认空串放行；非空时走 LLMService.is_llm_accessible 空间授权校验。"""
+
+    @pytest.fixture(autouse=True)
+    def _stub_llm_accessible(self):
+        with patch("aidev_bkplugin.serializers.chat_completion.LLMService") as m:
+            m.is_llm_accessible.return_value = True
+            yield m
+
+    def _validated(self, payload: dict, username: str = "u") -> dict:
+        s = ChatCompletionRequestSerializer(data=payload, context={"username": username})
+        s.is_valid(raise_exception=True)
+        return s.validated_data
+
+    def test_llm_defaults_to_empty_and_passes(self):
+        data = self._validated({"input": "hi"})
+        assert data["llm"] == ""
+
+    def test_accessible_llm_passes_through(self, _stub_llm_accessible):
+        _stub_llm_accessible.is_llm_accessible.return_value = True
+        data = self._validated({"input": "hi", "llm": "gpt-4"}, username="alice")
+        assert data["llm"] == "gpt-4"
+        _stub_llm_accessible.is_llm_accessible.assert_called_once_with(username="alice", llm_code="gpt-4")
+
+    def test_inaccessible_llm_rejected(self, _stub_llm_accessible):
+        _stub_llm_accessible.is_llm_accessible.return_value = False
+        s = ChatCompletionRequestSerializer(data={"input": "hi", "llm": "gpt-4"}, context={"username": "u"})
+        with pytest.raises(ValidationError):
+            s.is_valid(raise_exception=True)

@@ -14,6 +14,7 @@ from aidev_bkplugin.services.agent_helpers import AgentHelper
 from aidev_bkplugin.views.agent import AgentInfoViewSet
 from aidev_bkplugin.views.base import PluginViewSet
 from aidev_bkplugin.views.chat import ChatCompletionViewSet
+from aidev_bkplugin.views.llm import LLMViewSet
 from aidev_bkplugin.views.session import ChatSessionContentViewSet, ChatSessionViewSet
 from aidev_bkplugin.views.user_operation import UserOperationViewSet
 
@@ -85,4 +86,10 @@ class OpenapiAgentInfoViewSet(OpenapiPluginViewSet, AgentInfoViewSet):
 
 
 class OpenapiUserOperationViewSet(OpenapiPluginViewSet, UserOperationViewSet):
+    pass
+
+
+class OpenapiLLMViewSet(OpenapiPluginViewSet, LLMViewSet):
+    """应用态 LLM 列表接口：供小鲸等已发布智能体入口拉取空间可用模型。"""
+
     pass

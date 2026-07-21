@@ -75,9 +75,9 @@ def test_by_thread_id_skips_save_when_save_content_false():
     sm.save_content.assert_not_called()
 
 
-def test_by_session_code_passes_user_resource_manager():
+def test_by_session_code_passes_llm_override_resource_manager():
     from aidev_agent.packages.resource_manager.agent import AgentResourceManager
-    from aidev_bkplugin.services.agent_builder import AgentBuilder
+    from aidev_bkplugin.services.agent_builder import AgentBuilder, LLMOverrideResourceManager
 
     build_p, factory_p, client_p = _patch_factories()
     with build_p as mock_build, factory_p as mock_factory, client_p:
@@ -86,5 +86,47 @@ def test_by_session_code_passes_user_resource_manager():
         AgentBuilder(username="alice").by_session_code("sc-1")
 
     rm = mock_build.call_args.kwargs["resource_manager"]
+    assert isinstance(rm, LLMOverrideResourceManager)
     assert isinstance(rm, AgentResourceManager)
     assert rm.username == "alice"
+    assert rm.llm == ""
+
+
+def test_by_session_code_attaches_llm_to_resource_manager():
+    from aidev_bkplugin.services.agent_builder import AgentBuilder, LLMOverrideResourceManager
+
+    build_p, factory_p, client_p = _patch_factories()
+    with build_p as mock_build, factory_p as mock_factory, client_p:
+        mock_factory.return_value = MagicMock()
+        mock_build.return_value = MagicMock()
+        AgentBuilder(username="alice", llm="gpt-4").by_session_code("sc-1")
+
+    rm = mock_build.call_args.kwargs["resource_manager"]
+    assert isinstance(rm, LLMOverrideResourceManager)
+    assert rm.llm == "gpt-4"
+
+
+def test_llm_override_resource_manager_overrides_chat_model_when_llm_set():
+    from aidev_agent.packages.resource_manager.agent import AgentResourceManager
+    from aidev_bkplugin.services.agent_builder import LLMOverrideResourceManager
+
+    config = MagicMock(name="agent_config")
+    with patch.object(AgentResourceManager, "get_agent_config", return_value=config):
+        rm = LLMOverrideResourceManager(username="alice", llm="gpt-4")
+        result = rm.get_agent_config("x")
+    assert result is config
+    assert config.chat_model == "gpt-4"
+    assert config.non_thinking_llm == "gpt-4"
+
+
+def test_llm_override_resource_manager_keeps_original_when_llm_empty():
+    from aidev_agent.packages.resource_manager.agent import AgentResourceManager
+    from aidev_bkplugin.services.agent_builder import LLMOverrideResourceManager
+
+    config = MagicMock(name="agent_config")
+    config.chat_model = "orig"
+    config.non_thinking_llm = "orig"
+    with patch.object(AgentResourceManager, "get_agent_config", return_value=config):
+        LLMOverrideResourceManager(username="alice", llm="").get_agent_config("x")
+    assert config.chat_model == "orig"
+    assert config.non_thinking_llm == "orig"

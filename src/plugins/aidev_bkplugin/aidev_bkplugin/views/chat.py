@@ -110,6 +110,7 @@ class ChatCompletionViewSet(PluginViewSet):
                     execute_kwargs=execute_kwargs,
                     turn_id=turn_id,
                     channel_type=self.channel_type,
+                    llm=data.get("llm", ""),
                 )
 
             # 走到这里 thread_id 必为空（上面已 return）；由 serializer 中的 uuid 兜底规则可推出
@@ -119,7 +120,9 @@ class ChatCompletionViewSet(PluginViewSet):
             turn_id = self._save_user_input(session_code, username, _input, turn_id)
             if hasattr(execute_kwargs, "turn_id"):
                 execute_kwargs.turn_id = turn_id
-            agent_instance = AgentBuilder(username=request.user.username, turn_id=turn_id).by_session_code(
+            agent_instance = AgentBuilder(
+                username=request.user.username, turn_id=turn_id, llm=data.get("llm", "")
+            ).by_session_code(
                 session_code,
                 version=execute_kwargs.version,
                 channel_type=self.channel_type,
@@ -183,11 +186,12 @@ class ChatCompletionViewSet(PluginViewSet):
         execute_kwargs: ExecuteKwargs,
         turn_id: str,
         channel_type: str,
+        llm: str = "",
     ):
         """
         通过 thread_id 自动管理会话，使用 chat_history 初始化，自动保存到 session
         """
-        builder = AgentBuilder(username=username, turn_id=turn_id)
+        builder = AgentBuilder(username=username, turn_id=turn_id, llm=llm)
         agent_instance, session_code = builder.by_thread_id_with_chat_history(
             thread_id=thread_id,
             chat_history=chat_history,
