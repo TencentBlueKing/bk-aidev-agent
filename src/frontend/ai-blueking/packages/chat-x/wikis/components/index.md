@@ -89,6 +89,7 @@ aiSummary: >
 | [AiSkillList](./input/ai-skill-list.md) | Skill 列表。 |
 | [AiPromptList](./input/ai-prompt-list.md) | Prompt 列表。 |
 | [InputAttachment](./input/input-attachment.md) | 输入附件区布局。 |
+| [ModelSelector](./input/model-selector.md) | 模型下拉选择器，支持搜索与能力标签。 |
 | [InputInfoAlert](./input/input-info-alert.md) | 输入提示条。 |
 | [FileUploadBtn](./input/file-upload-btn.md) | 文件选择按钮。 |
 | [ShortcutRender](./input/shortcut-render.md) | 快捷指令表单渲染。 |

@@ -133,6 +133,8 @@ export const lang = {
   检索中: 'Searching',
   检索完成: 'Search Completed',
   上传文件: 'Upload File',
+  选择模型: 'Select model',
+  搜索模型关键字: 'Search models',
   '请求中...': 'Requesting...',
   取消满意: 'Cancel satisfied',
   取消不满意: 'Cancel dissatisfied',

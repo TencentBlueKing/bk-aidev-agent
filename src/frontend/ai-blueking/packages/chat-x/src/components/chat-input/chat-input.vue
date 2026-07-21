@@ -77,6 +77,21 @@
             </ShortcutBtn>
           </slot>
         </template>
+        <template #before-send>
+          <slot
+            name="model-selector"
+            v-bind="{ models, selectedModel: selectedModelId }"
+          >
+            <ModelSelector
+              v-if="models?.length"
+              v-model="selectedModelId"
+              class="chat-input-model-selector"
+              :models="models"
+              :tippy-options="tippyOptions"
+              @change="handleModelChange"
+            />
+          </slot>
+        </template>
         <template #send-icon>
           <slot name="send-icon" />
         </template>
@@ -99,7 +114,6 @@
   import { CHAT_Z_INDEX, isEn, MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../../common';
   import { type KeyboardPayload } from '../../edix';
   import { CloseIcon } from '../../icons';
-  import { tagSchemaToMessageString } from './ai-slash-input/constants';
   import {
     type AITippyProps,
     type IAiSlashMenuItem,
@@ -116,7 +130,11 @@
   import CiteContent from '../chat-content/cite-content/cite-content.vue';
   import FileContent from '../chat-content/file-content/file-content.vue';
   import AiSlashInput from './ai-slash-input/ai-slash-input.vue';
+  import { tagSchemaToMessageString } from './ai-slash-input/constants';
   import InputAttachment from './input-attachment/input-attachment.vue';
+  import { ModelSelector } from './model-selector';
+
+  import type { IModelOption } from './model-selector';
 
   const aiSlashInputRef = useTemplateRef<InstanceType<typeof AiSlashInput>>('aiSlashInputRef');
   const filesRef = useTemplateRef<HTMLDivElement>('filesRef');
@@ -124,16 +142,22 @@
     required: false,
     default: '',
   });
+  // 当前选中的模型 id（v-model:selectedModelId）
+  const selectedModelId = defineModel<string>('selectedModelId', {
+    required: false,
+  });
   const maxHeight = shallowRef(200);
   export type ChatInputEmits = {
     (e: 'selectShortcut', shortcut: Shortcut): void;
     (e: 'deleteShortcut'): void;
     (e: 'update:modelValue', value: string | TagSchema, selectedResourceList: IAiSlashMenuItem[]): void;
+    (e: 'modelChange', model: IModelOption): void;
   };
   export type ChatInputProps = {
     defaultUploadFiles?: UploadFile[];
     inputMaxHeight?: number;
     messageStatus?: MessageStatus;
+    models?: IModelOption[]; // 可选模型列表，传入后在发送按钮左侧展示模型选择器
     modelValue: string | TagSchema;
     onSendMessage?: (
       message: UserMessage['content'],
@@ -270,6 +294,9 @@ Use Shift + Enter to enter a new line`
   const handleDeleteShortcut = () => {
     emit('deleteShortcut');
   };
+  const handleModelChange = (model: IModelOption) => {
+    emit('modelChange', model);
+  };
   const fileKey = (f: File) => `${f.name}_${f.size}_${f.lastModified}`;
   const maxUploadMb = (MAX_UPLOAD_FILE_SIZE / (1024 * 1024)).toFixed(1);
   const handleUpload = async (files: File[]) => {
@@ -400,13 +427,20 @@ Use Shift + Enter to enter a new line`
         padding: 8px 8px 0;
       }
 
+      // 模型选择器靠右与发送按钮成组：吸收左侧剩余空间，把自身与发送按钮一起推到右端
+      .chat-input-model-selector {
+        margin-left: auto;
+      }
+
       // 已选快捷指令 tag：默认态与 bkui Tag 一致，hover 使用 shortcut 语义色
       .selected-shortcut-btn {
         height: 24px;
         padding: 0 10px;
         color: #3a84ff;
         background: #e1ecff;
-        transition: background-color 0.2s, color 0.2s;
+        transition:
+          background-color 0.2s,
+          color 0.2s;
 
         .ai-common-icon {
           color: #3a84ff;

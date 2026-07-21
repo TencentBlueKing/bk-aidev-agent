@@ -394,6 +394,21 @@ describe('InputAttachment', () => {
 
       expect(wrapper.find('.custom-send-icon').exists()).toBe(true);
     });
+
+    it('应该支持 before-send slot', () => {
+      wrapper = mount(InputAttachment, {
+        slots: {
+          'before-send': '<div class="custom-before-send">Before Send</div>',
+        },
+        global: {
+          directives: {
+            tippy: {},
+          },
+        },
+      });
+
+      expect(wrapper.find('.custom-before-send').exists()).toBe(true);
+    });
   });
 
   describe('边界情况测试', () => {

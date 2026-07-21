@@ -34,7 +34,9 @@ import ChatContainer from './chat-container/chat-container.vue';
 import commonErrorContent from './chat-content/common-error-content/common-error-content.vue';
 import ContentRender from './chat-content/content-render/content-render.vue';
 import ChatInput from './chat-input/chat-input.vue';
+import { ModelSelector } from './chat-input/model-selector';
 export * from './chat-content';
+export type { IModelCapability, IModelOption, ModelCapabilityTheme } from './chat-input/model-selector';
 import MessageContainer from './chat-message/message-container/message-container.vue';
 import MessageRender from './chat-message/message-render/message-render.vue';
 import ExecutionSummary from './execution-summary/execution-summary.vue';
@@ -73,6 +75,7 @@ export {
   MessageRender,
   MessageTools,
   MessageUserFeedback,
+  ModelSelector,
   ScrollBtn,
   SelectionFooter,
   ShortcutBtn,

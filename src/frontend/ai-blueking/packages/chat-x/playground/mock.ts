@@ -28,12 +28,13 @@
 import {
   // type AssistantMessage,
   type IAiSlashMenuItem,
+  type IModelOption,
   // type InfoMessage,
   // type Message,
   type Shortcut,
   type UserMessage,
-  APPROVAL_STATUS,
   AIBluekingIcon,
+  APPROVAL_STATUS,
   // CopyIcon,
   DeleteIcon,
   InterruptReason,
@@ -42,6 +43,55 @@ import {
   ShareIcon,
   t,
 } from '../src';
+
+// 模型图标示例：演示「图片地址（string）」形态；组件形态见下方直接用 AIBluekingIcon
+const DEEPSEEK_ICON =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%234a6cf7'/%3E%3C/svg%3E";
+
+// 模型选择器 mock 数据：icon 同时演示「Vue 组件」与「图片地址」两种形态，capabilities 演示三种语义色
+export const MOCK_MODELS: IModelOption[] = [
+  {
+    id: 'hunyuan-turbos',
+    name: 'hunyuan-turbos',
+    icon: AIBluekingIcon,
+    capabilities: [
+      { text: '图生文', theme: 'warning' },
+      { text: '深度思考', theme: 'primary' },
+    ],
+  },
+  {
+    id: 'hy3-hunyuan',
+    name: 'Hy3 hunyuan',
+    icon: AIBluekingIcon,
+    capabilities: [
+      { text: '图生文', theme: 'warning' },
+      { text: '快速思考', theme: 'success' },
+    ],
+  },
+  {
+    id: 'deepseek-r1',
+    name: 'Deepseek - R1',
+    icon: DEEPSEEK_ICON,
+    capabilities: [{ text: '深度思考', theme: 'primary' }],
+  },
+  {
+    id: 'deepseek-v3',
+    name: 'Deepseek - V3',
+    icon: DEEPSEEK_ICON,
+    capabilities: [{ text: '快速思考', theme: 'success' }],
+  },
+  {
+    id: 'gpt-4o',
+    name: 'GPT-4o',
+    icon: DEEPSEEK_ICON,
+  },
+  {
+    id: 'legacy-model',
+    name: 'Legacy Model（已停用）',
+    icon: DEEPSEEK_ICON,
+    disabled: true,
+  },
+];
 
 export const MOCK_SHORTCUTS = [
   {
