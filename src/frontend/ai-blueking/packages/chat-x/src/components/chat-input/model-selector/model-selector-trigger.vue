@@ -8,17 +8,12 @@
       class="ai-model-selector-trigger-icon"
     >
       <img
-        v-if="typeof model.icon === 'string'"
         alt=""
         :src="model.icon"
       />
-      <component
-        :is="model.icon"
-        v-else
-      />
     </span>
     <span class="ai-model-selector-trigger-name">
-      {{ model?.name || placeholder }}
+      {{ model?.llm_name || placeholder }}
     </span>
     <ArrowLeftIcon class="ai-model-selector-trigger-arrow" />
   </div>

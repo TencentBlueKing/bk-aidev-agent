@@ -44,53 +44,53 @@ import {
   t,
 } from '../src';
 
-// 模型图标示例：演示「图片地址（string）」形态；组件形态见下方直接用 AIBluekingIcon
+// 模型图标示例：图标为图片地址（string），贴合后端返回的 icon 字段
 const DEEPSEEK_ICON =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%234a6cf7'/%3E%3C/svg%3E";
 
-// 模型选择器 mock 数据：icon 同时演示「Vue 组件」与「图片地址」两种形态，capabilities 演示三种语义色
+// 生成贴合后端结构的模型 mock，补齐公共字段，聚焦 property（能力标签由其派生）与 description
+const createMockModel = (id: number, llmName: string, extra: Partial<IModelOption> = {}): IModelOption => ({
+  id,
+  llm_code: llmName,
+  llm_name: llmName,
+  llm_type: 'chat.completion',
+  max_token_size: 4096,
+  space_auth_mode: 'PUBLIC',
+  user_auth_mode: 'PUBLIC',
+  base_model: 'hunyuan',
+  icon: DEEPSEEK_ICON,
+  tag_names: [],
+  property: {},
+  ...extra,
+});
+
+// 模型选择器 mock 数据：property 派生能力标签（图生文/深度思考/快速思考），description 作为选项 hover 提示
 export const MOCK_MODELS: IModelOption[] = [
-  {
-    id: 'hunyuan-turbos',
-    name: 'hunyuan-turbos',
-    icon: AIBluekingIcon,
-    capabilities: [
-      { text: '图生文', theme: 'warning' },
-      { text: '深度思考', theme: 'primary' },
-    ],
-  },
-  {
-    id: 'hy3-hunyuan',
-    name: 'Hy3 hunyuan',
-    icon: AIBluekingIcon,
-    capabilities: [
-      { text: '图生文', theme: 'warning' },
-      { text: '快速思考', theme: 'success' },
-    ],
-  },
-  {
-    id: 'deepseek-r1',
-    name: 'Deepseek - R1',
-    icon: DEEPSEEK_ICON,
-    capabilities: [{ text: '深度思考', theme: 'primary' }],
-  },
-  {
-    id: 'deepseek-v3',
-    name: 'Deepseek - V3',
-    icon: DEEPSEEK_ICON,
-    capabilities: [{ text: '快速思考', theme: 'success' }],
-  },
-  {
-    id: 'gpt-4o',
-    name: 'GPT-4o',
-    icon: DEEPSEEK_ICON,
-  },
-  {
-    id: 'legacy-model',
-    name: 'Legacy Model（已停用）',
-    icon: DEEPSEEK_ICON,
+  createMockModel(1, 'hunyuan-turbos', {
+    description: '混元 turbos 模型，支持视觉理解与深度思考',
+    property: { max_model_len: 32000, support_thinking: true, support_vision: true },
+  }),
+  createMockModel(2, 'Hy3 hunyuan', {
+    description: '混元 Hy3 模型，支持视觉理解与快速思考',
+    property: { max_model_len: 32000, support_thinking_quick: true, support_vision: true },
+  }),
+  createMockModel(3, 'Deepseek - R1', {
+    base_model: 'deepseek',
+    description: 'DeepSeek R1 推理模型，支持深度思考',
+    property: { max_model_len: 64000, support_thinking: true },
+  }),
+  createMockModel(4, 'Deepseek - V3', {
+    base_model: 'deepseek',
+    description: 'DeepSeek V3 通用模型，支持快速思考',
+    property: { max_model_len: 64000, support_thinking_quick: true },
+  }),
+  createMockModel(5, 'GPT-4o', {
+    base_model: 'openai',
+    description: 'GPT-4o 通用对话模型',
+  }),
+  createMockModel(6, 'Legacy Model（已停用）', {
     disabled: true,
-  },
+  }),
 ];
 
 export const MOCK_SHORTCUTS = [

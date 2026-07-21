@@ -79,10 +79,23 @@ vi.mock('vue-tippy', () => ({
   }),
 }));
 
+// 构造贴合后端结构的模型选项，补齐必填字段
+const createModel = (id: number, llmName: string, extra: Partial<IModelOption> = {}): IModelOption => ({
+  id,
+  llm_code: llmName,
+  llm_name: llmName,
+  llm_type: 'chat.completion',
+  max_token_size: 4096,
+  property: {},
+  space_auth_mode: 'PUBLIC',
+  user_auth_mode: 'PUBLIC',
+  ...extra,
+});
+
 const mockModels: IModelOption[] = [
-  { id: 'gpt-4', name: 'GPT-4', capabilities: [{ text: '深度思考', theme: 'primary' }] },
-  { id: 'claude', name: 'Claude 3', disabled: true },
-  { id: 'deepseek', name: 'DeepSeek' },
+  createModel(1, 'GPT-4', { property: { support_thinking: true } }),
+  createModel(2, 'Claude 3', { disabled: true }),
+  createModel(3, 'DeepSeek'),
 ];
 
 describe('ModelSelector', () => {
@@ -111,7 +124,7 @@ describe('ModelSelector', () => {
       wrapper = mount(ModelSelector, {
         props: {
           models: mockModels,
-          modelValue: 'gpt-4',
+          modelValue: 'GPT-4',
         },
       });
 
@@ -140,8 +153,8 @@ describe('ModelSelector', () => {
       const options = wrapper.findAll('.ai-model-selector-panel-option');
       await options[2].trigger('click');
 
-      expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['deepseek']);
-      expect(wrapper.emitted('change')?.[0]).toEqual([{ id: 'deepseek', name: 'DeepSeek' }]);
+      expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['DeepSeek']);
+      expect(wrapper.emitted('change')?.[0]).toEqual([mockModels[2]]);
     });
 
     it('禁用项点击时不应触发 change', async () => {

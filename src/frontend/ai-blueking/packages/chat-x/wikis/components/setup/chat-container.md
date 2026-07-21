@@ -6,7 +6,7 @@ domain: setup
 description: 完整对话容器，组合消息列表、输入区、模型选择、快捷指令、执行摘要、分享选择和自定义 Tab。
 aiSummary: >
   完整对话容器，组合消息列表、输入区、模型选择、快捷指令、执行摘要、分享选择和自定义 Tab。
-  透传 models / selectedModelId；支持 welcomeTitle 与 #welcome。
+  透传 models / selectedModel；支持 welcomeTitle 与 #welcome。
   源码位置：src/components/chat-container/chat-container.vue。
 relatedComponents:
   - slug: message-container
@@ -14,7 +14,7 @@ relatedComponents:
   - slug: chat-input
     relation: 对话输入与快捷指令入口
   - slug: model-selector
-    relation: 透传 models / selectedModelId，在输入区展示模型选择器
+    relation: 透传 models / selectedModel，在输入区展示模型选择器
   - slug: shortcut-render
     relation: 快捷指令表单浮层
   - slug: execution-summary
@@ -31,11 +31,11 @@ sinceVersion: 1.0.0
 
   const inputBasic = ref('');
   const inputModel = ref('');
-  const selectedModelId = ref('gpt-4');
+  const selectedModelId = ref('GPT-4');
   const models = [
-    { id: 'gpt-4', name: 'GPT-4', capabilities: [{ text: '深度思考', theme: 'primary' }] },
-    { id: 'claude', name: 'Claude 3', capabilities: [{ text: '快速思考', theme: 'success' }] },
-    { id: 'deepseek', name: 'DeepSeek', capabilities: [{ text: '图生文', theme: 'warning' }] },
+    { id: 1, llm_name: 'GPT-4', property: { support_thinking: true } },
+    { id: 2, llm_name: 'Claude 3', property: { support_thinking_quick: true } },
+    { id: 3, llm_name: 'DeepSeek', property: { support_vision: true } },
   ];
   const messagesBasic = ref([
     {
@@ -242,7 +242,7 @@ sinceVersion: 1.0.0
 - **待审批发送阻塞**：存在 `AIDevToolApproval` 且为 `pending` / `draft` 时，输入区上方提示，并通过 `ChatInput.sendDisabledTip` 禁止发送
 - **用户问题中断**：待回答 `UserQuestion` 时挂载 `UserQuestionCard`；结构化作答走 `onInterruptResume`，输入框直接发送走 `onSendMessage`（第三参数带 skip `payload` 与 `interrupt`），且不自动清空输入框
 - **执行摘要 / 侧栏全屏 / 自定义 Tab**：侧栏展示工具调用与 FlowAgent 记录，支持搜索定位；Tab 栏可全屏；`useCustomTabProvider` 支持动态 Tab
-- **模型选择**：透传 `models`、`v-model:selectedModelId` 与 `@modelChange` 至 `ChatInput`，传入 `models` 后在发送按钮左侧展示 [ModelSelector](/components/input/model-selector)
+- **模型选择**：透传 `models`、`v-model:selectedModel` 与 `@modelChange` 至 `ChatInput`，传入 `models` 后在发送按钮左侧展示 [ModelSelector](/components/input/model-selector)
 - **分享模式 / 渲染模式**：内置多选分享；`renderMode` 经 Provider 下传。`Share` 态开放侧栏只读查看，隐藏底部输入与「重试 / 跳过」等交互
 - **字号主题**：`size` 为 `small`（默认 12px）/ `normal`（14px）；根节点 `data-ai-size`，浮层同步 `document.body.dataset.aiSize`
 - **空状态欢迎页**：无消息时展示 Banner、`welcomeTitle`（默认「你好，我是小鲸」）与 `openingRemark`
@@ -268,7 +268,7 @@ ai-chat-container（:data-ai-size="size"）
         │   └── #welcome（默认：Banner + welcomeTitle + openingRemark；自定义则整块替换）
         ├── SelectionFooter（分享模式）
         ├── ShortcutRender（有快捷指令时）
-        └── ChatInput（透传 models / selectedModelId；interrupt 槽展示 UserQuestionCard / InputInfoAlert）
+        └── ChatInput（透传 models / selectedModel；interrupt 槽展示 UserQuestionCard / InputInfoAlert）
 ```
 
 ## 基础用法
@@ -919,13 +919,13 @@ ai-chat-container（:data-ai-size="size"）
 
 ## 模型选择
 
-`ChatContainer` 将 `models`、`v-model:selected-model-id` 与 `@model-change` 透传至内部 [ChatInput](/components/input/chat-input)。传入 `models` 后，发送按钮左侧展示 [ModelSelector](/components/input/model-selector)；发送时可读取当前 `selectedModelId`。
+`ChatContainer` 将 `models`、`v-model:selected-model` 与 `@model-change` 透传至内部 [ChatInput](/components/input/chat-input)。传入 `models` 后，发送按钮左侧展示 [ModelSelector](/components/input/model-selector)；选中值为模型的 `llm_name`，发送时可读取当前 `selectedModel`。
 
 ```vue
 <template>
   <ChatContainer
     v-model="inputValue"
-    v-model:selected-model-id="selectedModelId"
+    v-model:selected-model="selectedModel"
     :messages="messages"
     message-status="complete"
     :models="models"
@@ -939,16 +939,17 @@ ai-chat-container（:data-ai-size="size"）
   import { ChatContainer, type IModelOption, type Message, type TagSchema } from '@blueking/chat-x';
 
   const inputValue = ref('');
-  const selectedModelId = ref('gpt-4');
+  // 选中值为 llm_name
+  const selectedModel = ref('GPT-4');
   const messages = ref<Message[]>([]);
   const models: IModelOption[] = [
-    { id: 'gpt-4', name: 'GPT-4', capabilities: [{ text: '深度思考', theme: 'primary' }] },
-    { id: 'claude', name: 'Claude 3', capabilities: [{ text: '快速思考', theme: 'success' }] },
-    { id: 'deepseek', name: 'DeepSeek', capabilities: [{ text: '图生文', theme: 'warning' }] },
+    { id: 1, llm_name: 'GPT-4', property: { support_thinking: true } },
+    { id: 2, llm_name: 'Claude 3', property: { support_thinking_quick: true } },
+    { id: 3, llm_name: 'DeepSeek', property: { support_vision: true } },
   ];
 
   const handleSendMessage = async (content: string, docSchema: TagSchema) => {
-    // 发送时可读取 selectedModelId.value
+    // 发送时可读取 selectedModel.value
   };
   const handleModelChange = (model: IModelOption) => {
     console.log('切换模型:', model);
@@ -962,7 +963,7 @@ ai-chat-container（:data-ai-size="size"）
   <div style="height: 480px; border: 1px solid #eaebf0; border-radius: 8px; overflow: hidden;">
     <ChatContainerComp
       v-model="inputModel"
-      v-model:selected-model-id="selectedModelId"
+      v-model:selected-model="selectedModelId"
       :messages="messagesBasic"
       message-status="complete"
       :models="models"
@@ -1042,7 +1043,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | selectedShortcut | `Shortcut \| null`    | 当前选中的快捷指令                                                                                                                                |
 | cite             | `string`              | 引用内容                                                                                                                                          |
 | renderMode       | `RenderMode`          | 渲染模式（默认 `Chat`）。`Share` 开放侧栏只读查看并隐藏底部输入与交互操作；`Test` 隐藏分享按钮                                                    |
-| selectedModelId  | `string`              | 当前选中的模型 id，透传至 ChatInput 的 ModelSelector                                                                                              |
+| selectedModel    | `string`              | 当前选中模型的 `llm_name`，透传至 ChatInput 的 ModelSelector                                                                                      |
 
 ### Events
 
@@ -1145,13 +1146,26 @@ interface CustomTab<T = Record<string, unknown>> {
   data?: T & { messageUid?: string; component?: Component; props?: Record<string, unknown> };
 }
 
-// 模型选项（透传至 ChatInput / ModelSelector）
+// 模型选项（透传至 ChatInput / ModelSelector，贴合后端接口结构；能力标签由 property 派生）
 interface IModelOption {
-  id: string;
-  name: string;
-  icon?: Component | string;
-  disabled?: boolean;
-  capabilities?: { text: string; theme?: 'default' | 'primary' | 'success' | 'warning' }[];
+  id: number;
+  llm_code: string;
+  llm_name: string; // 展示名，同时作为选中值
+  llm_type: string;
+  space_auth_mode: string;
+  user_auth_mode: string;
+  max_token_size: number;
+  property: {
+    support_thinking?: boolean; // → 深度思考
+    support_thinking_quick?: boolean; // → 快速思考
+    support_vision?: boolean; // → 图生文
+    [key: string]: unknown;
+  };
+  icon?: string;
+  description?: string;
+  base_model?: string;
+  tag_names?: string[];
+  disabled?: boolean; // 前端扩展字段
 }
 
 // 快捷指令
@@ -1166,7 +1180,7 @@ interface Shortcut {
 
 - [MessageContainer](/components/setup/message-container) — 消息列表区域
 - [ChatInput](/components/input/chat-input) — 输入与快捷指令
-- [ModelSelector](/components/input/model-selector) — 模型选择器（透传 `models` / `selectedModelId`）
+- [ModelSelector](/components/input/model-selector) — 模型选择器（透传 `models` / `selectedModel`）
 - [ShortcutRender](/components/input/shortcut-render) — 快捷指令表单
 - [ExecutionSummary](/components/agent/execution-summary) — 执行摘要侧栏
 - [SelectionFooter](/components/input/selection-footer) — 多选操作栏

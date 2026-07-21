@@ -8,7 +8,7 @@
     <ModelSelectorTrigger
       :disabled="disabled"
       :expanded="isExpanded"
-      :model="selectedModel"
+      :model="currentModel"
       :placeholder="placeholder"
     />
     <template #content>
@@ -17,7 +17,7 @@
         v-model:keyword="keyword"
         :models="filteredModels"
         :search-placeholder="searchPlaceholder"
-        :selected-id="selectedId"
+        :selected-name="selectedModel"
         @select="handleSelect"
       />
     </template>
@@ -61,16 +61,16 @@
   const emit = defineEmits<{
     (e: 'change', model: IModelOption): void;
   }>();
-  /** 当前选中的模型 id（v-model） */
-  const selectedId = defineModel<string>();
+  /** 当前选中的模型（值为 llm_name，v-model） */
+  const selectedModel = defineModel<string>();
 
   const tippyRef = useTemplateRef<InstanceType<typeof Tippy>>('tippyRef');
   const panelRef = useTemplateRef<InstanceType<typeof ModelSelectorPanel>>('panelRef');
   const isExpanded = shallowRef(false);
 
-  const { keyword, filteredModels, selectedModel, resetKeyword } = useModelSelector({
+  const { keyword, filteredModels, currentModel, resetKeyword } = useModelSelector({
     models: toRef(props, 'models'),
-    selectedId,
+    selectedModel,
   });
 
   const innerTippyProps = computed(
@@ -101,7 +101,7 @@
   };
 
   const handleSelect = (model: IModelOption) => {
-    selectedId.value = model.id;
+    selectedModel.value = model.llm_name;
     emit('change', model);
     tippyRef.value?.hide?.();
   };

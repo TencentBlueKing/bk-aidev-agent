@@ -24,6 +24,24 @@
  * IN THE SOFTWARE.
  */
 
-export { default as ModelSelector } from './model-selector.vue';
-export type { IModelCapability, IModelOption, IModelProperty, ModelCapabilityTheme } from './types';
-export { useModelSelector } from './use-model-selector';
+import { t } from '../../../lang/lang';
+
+import type { IModelCapability, IModelOption, IModelProperty, ModelCapabilityTheme } from './types';
+
+/** property 能力开关 → 展示标签的映射定义（数组顺序即标签展示顺序） */
+const CAPABILITY_DEFS: {
+  key: keyof IModelProperty;
+  label: () => string;
+  theme: ModelCapabilityTheme;
+}[] = [
+  { key: 'support_thinking', label: () => t('深度思考'), theme: 'primary' },
+  { key: 'support_thinking_quick', label: () => t('快速思考'), theme: 'success' },
+  { key: 'support_vision', label: () => t('图生文'), theme: 'warning' },
+];
+
+/** 根据模型 property 派生能力标签列表（仅保留已开启的能力，文案走 i18n） */
+export const resolveModelCapabilities = (model: IModelOption): IModelCapability[] =>
+  CAPABILITY_DEFS.filter(def => model.property?.[def.key]).map(def => ({
+    text: def.label(),
+    theme: def.theme,
+  }));

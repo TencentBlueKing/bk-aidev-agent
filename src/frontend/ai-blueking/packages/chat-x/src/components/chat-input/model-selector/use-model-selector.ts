@@ -35,10 +35,10 @@ import type { IModelOption } from './types';
 export const useModelSelector = (params: {
   /** 模型列表 */
   models: ComputedRef<IModelOption[]> | Ref<IModelOption[]>;
-  /** 当前选中模型 id */
-  selectedId: Ref<string | undefined>;
+  /** 当前选中模型（值为 llm_name） */
+  selectedModel: Ref<string | undefined>;
 }) => {
-  /** 搜索关键字（仅按模型名做包含匹配） */
+  /** 搜索关键字（仅按模型展示名 llm_name 做包含匹配） */
   const keyword = shallowRef('');
 
   /** 按关键字过滤后的模型列表 */
@@ -47,12 +47,12 @@ export const useModelSelector = (params: {
     if (!kw) {
       return params.models.value;
     }
-    return params.models.value.filter(model => model.name.toLowerCase().includes(kw));
+    return params.models.value.filter(model => model.llm_name.toLowerCase().includes(kw));
   });
 
   /** 当前选中的模型对象 */
-  const selectedModel = computed<IModelOption | undefined>(() =>
-    params.models.value.find(model => model.id === params.selectedId.value),
+  const currentModel = computed<IModelOption | undefined>(() =>
+    params.models.value.find(model => model.llm_name === params.selectedModel.value),
   );
 
   /** 重置搜索关键字 */
@@ -63,7 +63,7 @@ export const useModelSelector = (params: {
   return {
     keyword,
     filteredModels,
-    selectedModel,
+    currentModel,
     resetKeyword,
   };
 };

@@ -52,6 +52,8 @@ export const lang = {
   返回内容: 'Return Content',
   编辑: 'Edit',
   深度思考: 'Deep Thinking',
+  快速思考: 'Quick Thinking',
+  图生文: 'Image to Text',
   '图片加载中...': 'Loading image...',
   图片加载失败: 'Failed to load image',
   思考中: 'Thinking...',

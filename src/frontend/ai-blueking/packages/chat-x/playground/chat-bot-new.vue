@@ -11,7 +11,7 @@
     <ChatContainer
       v-model:cite="cite"
       v-model:render-mode="chatMode"
-      v-model:selected-model-id="selectedModelId"
+      v-model:selected-model="selectedModel"
       v-model:selected-shortcut="selectedShortcut"
       :enable-selection="false"
       :messages="messages"
@@ -196,8 +196,8 @@
   const cite = shallowRef('');
   const userInput = shallowRef<string | TagSchema>('');
   const selectedShortcut = deepRef<null | Shortcut>(null);
-  // 模型选择器：默认选中首个模型
-  const selectedModelId = shallowRef<string>(MOCK_MODELS[0].id);
+  // 模型选择器：默认选中首个模型（值为 llm_name）
+  const selectedModel = shallowRef<string>(MOCK_MODELS[0].llm_name);
   const handleModelChange = (model: IModelOption) => {
     console.log('model change:', model);
   };

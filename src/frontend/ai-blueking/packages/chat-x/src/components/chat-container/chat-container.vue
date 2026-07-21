@@ -231,7 +231,7 @@
           <template v-else>
             <ChatInput
               v-model:cite="cite"
-              v-model:selected-model-id="selectedModelId"
+              v-model:selected-model="selectedModel"
               :message-status="inputStatus"
               :model-value="modelValue"
               :models="models"
@@ -442,8 +442,8 @@
     required: false,
     default: '',
   });
-  // 当前选中的模型 id，透传给 ChatInput 的模型选择器（v-model:selectedModelId）
-  const selectedModelId = defineModel<string>('selectedModelId', {
+  // 当前选中的模型（值为 llm_name），透传给 ChatInput 的模型选择器（v-model:selectedModel）
+  const selectedModel = defineModel<string>('selectedModel', {
     required: false,
   });
 
