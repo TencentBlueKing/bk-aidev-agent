@@ -20,8 +20,7 @@ class Command(BaseCommand):
         try:
             configs = BkAiDevApi().retrieve_agent_channel_configs("rtx")
         except Exception as error:
-            self.stderr.write(self.style.WARNING(f"获取企微渠道配置失败，将使用默认值: {error}"))
-            return {}
+            raise CommandError(f"获取企微渠道配置失败，无法启动长连接服务: {error}") from error
 
         for item in configs or []:
             if item.get("channel_type") == "rtx":
@@ -37,7 +36,13 @@ class Command(BaseCommand):
             "secret": os.getenv("BKAPP_WXAIBOT_WS_SECRET"),
             "ws_url": os.getenv("BKAPP_WXAIBOT_WS_URL"),
         }
-        channel_config = self._retrieve_channel_config() if not all(env_config.values()) else {}
+        channel_config = self._retrieve_channel_config()
+        connection_type = channel_config.get("connection_type")
+        if connection_type != "websocket":
+            raise CommandError(
+                f"企微渠道未配置长连接接入，当前 connection_type={connection_type or '未配置'}，期望 websocket"
+            )
+
         options.update(
             {
                 "bot_id": env_config["bot_id"] or channel_config.get("bot_id") or "",
