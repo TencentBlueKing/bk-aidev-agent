@@ -111,6 +111,13 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
         messages_dict = [_convert_message_to_dict(m) for m in messages]
         return self.get_num_tokens(json.dumps(messages_dict))
 
+    def _get_request_payload(self, *args, **kwargs) -> dict:
+        payload = super()._get_request_payload(*args, **kwargs)
+        # 部分 langchain-openai 版本会将子类扩展字段合并到 OpenAI 请求参数中。
+        # fallback_model 仅用于 SDK 内部切换，不能透传给 OpenAI 客户端。
+        payload.pop("fallback_model", None)
+        return payload
+
     def _create_chat_result(
         self,
         response: Union[dict, openai.BaseModel],

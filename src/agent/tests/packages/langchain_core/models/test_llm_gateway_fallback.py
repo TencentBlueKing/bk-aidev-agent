@@ -5,6 +5,17 @@ from langchain_core.outputs import ChatGenerationChunk
 from langchain_openai import ChatOpenAI
 
 
+def test_fallback_model_is_not_forwarded_to_openai_request(monkeypatch):
+    def fake_get_request_payload(model, *args, **kwargs):
+        return {"model": model.model_name, "fallback_model": model.fallback_model}
+
+    monkeypatch.setattr(ChatOpenAI, "_get_request_payload", fake_get_request_payload)
+    model = ChatModel.get_setup_instance(model="primary-model", fallback_model="fallback-model")
+
+    assert model._get_request_payload([]) == {"model": "primary-model"}
+    assert model._get_fallback_model()._get_request_payload([]) == {"model": "fallback-model"}
+
+
 def test_generate_switches_to_fallback_model(monkeypatch):
     calls = []
     expected = object()
