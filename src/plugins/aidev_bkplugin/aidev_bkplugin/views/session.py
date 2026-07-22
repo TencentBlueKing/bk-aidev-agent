@@ -11,7 +11,6 @@ from aidev_agent.services.sandbox_pv_files import (
     SandboxFileNotFoundError,
     SandboxPvFileService,
 )
-from bkapi_client_core.exceptions import HTTPResponseError
 from blueapps.core.exceptions import ClientBlueException
 from django.conf import settings
 from django.http import HttpResponse
@@ -143,24 +142,6 @@ class ChatSessionViewSet(PluginViewSet):
             status_code = 500
         return Response(data={"message": str(exc)}, status=status_code)
 
-    @staticmethod
-    def _check_session_owner(request, session_code: str) -> None:
-        """校验 session 归属"""
-        username = request.user.username
-        try:
-            client.api.retrieve_chat_session(
-                path_params={"session_code": session_code},
-                headers={"X-BKAIDEV-USER": username},
-            )
-        except HTTPResponseError as exc:
-            status_code = getattr(getattr(exc, "response", None), "status_code", 500)
-            if status_code in (403, 404):
-                raise ClientBlueException(
-                    message=f"无权访问会话 {session_code} 或会话不存在",
-                    code=str(status_code),
-                )
-            raise
-
     def _make_pv_file_service(self, request) -> SandboxPvFileService:
         username = request.user.username
         rm = PluginResourceManager(username=username)
@@ -177,10 +158,19 @@ class ChatSessionViewSet(PluginViewSet):
         }
         return SandboxPvFileService(resource_manager=rm, executor_info=executor_info)
 
-    @action(["GET"], url_path="pv_files", detail=True)
+    @action(["GET", "DELETE"], url_path="pv_files", detail=True)
     def pv_files(self, request, pk, **kwargs):
-        self._check_session_owner(request, pk)
         svc = self._make_pv_file_service(request)
+        if request.method == "DELETE":
+            path = request.query_params.get("path", "")
+            if not path:
+                raise ClientBlueException(message="path is required")
+            try:
+                svc.delete_file(session_code=pk, path=path)
+            except SandboxFileError as exc:
+                return self._pv_exc_to_response(exc)
+            return Response(status=204)
+
         params = request.query_params
         try:
             data = svc.list_files(
@@ -195,7 +185,6 @@ class ChatSessionViewSet(PluginViewSet):
 
     @action(["GET"], url_path="pv_files/stat", detail=True)
     def pv_files_stat(self, request, pk, **kwargs):
-        self._check_session_owner(request, pk)
         path = request.query_params.get("path", "")
         if not path:
             raise ClientBlueException(message="path is required")
@@ -207,7 +196,6 @@ class ChatSessionViewSet(PluginViewSet):
 
     @action(["GET"], url_path="pv_files/preview", detail=True)
     def pv_files_preview(self, request, pk, **kwargs):
-        self._check_session_owner(request, pk)
         path = request.query_params.get("path", "")
         if not path:
             raise ClientBlueException(message="path is required")
@@ -224,7 +212,6 @@ class ChatSessionViewSet(PluginViewSet):
 
     @action(["GET"], url_path="pv_files/download_url", detail=True)
     def pv_files_download_url(self, request, pk, **kwargs):
-        self._check_session_owner(request, pk)
         path = request.query_params.get("path", "")
         if not path:
             raise ClientBlueException(message="path is required")
