@@ -49,11 +49,19 @@ clean:
 lint:
 	uv run pre-commit run -a --hook-stage commit
 
-# 一键启动：migrate + createcachetable 后启动本地服务（需已配置 .env 与 hosts）
+# 一键启动：加载 .env、初始化数据库，并在 local.${BKPAAS_BK_DOMAIN}:8000 启动本地服务
 .PHONY: dev
 dev:
-	set -e; \
+	@set -eu; \
+	if [ ! -f ./.env ]; then \
+		echo "Missing .env. Put it in $(CURDIR)/.env or run root make dev env_file=/path/to/.env" >&2; \
+		exit 1; \
+	fi; \
+	set -a; \
 	. ./.env; \
+	set +a; \
+	dev_host="local.$${BKPAAS_BK_DOMAIN:?Missing BKPAAS_BK_DOMAIN in .env}"; \
+	echo "Starting template service at http://$$dev_host:8000"; \
 	uv run --no-sync python bin/manage.py migrate; \
 	uv run --no-sync python bin/manage.py createcachetable; \
-	uv run --no-sync python bin/manage.py runserver 0.0.0.0:5000
+	uv run --no-sync python bin/manage.py runserver "$$dev_host:8000"

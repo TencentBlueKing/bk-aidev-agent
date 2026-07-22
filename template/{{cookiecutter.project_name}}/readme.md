@@ -38,6 +38,12 @@ cp ./support-files/env.template .env
 然后，执行以下脚本启动本地服务，即可开始测试：
 
 ```shell
+make dev
+```
+
+`make dev` 会加载 `.env`、初始化数据库和缓存表，并根据 `BKPAAS_BK_DOMAIN` 以 `local.<BKPAAS_BK_DOMAIN>:8000` 启动服务。也可以手动执行：
+
+```shell
 source .env
 source .venv/bin/activate
 python bin/manage.py migrate

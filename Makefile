@@ -1,5 +1,6 @@
 # 导入子目录中的 Makefile 文件
 ROOT_DIR?=$(shell git rev-parse --show-toplevel)
+TEMPLATE_PROJECT_DIR := template/{{cookiecutter.project_name}}
 
 .PHONY: ALL
 ALL: init-project
@@ -95,6 +96,11 @@ release_versions:
 sync_template_sdk_versions:
 	@echo "Syncing template SDK versions from repository packages..."
 	@uv run python scripts/update_versions.py --sync-template-sdk-versions
+
+.PHONY: dev
+dev:
+	uv run --no-sync python scripts/template_debug.py --env-file "$(env_file)"
+	$(MAKE) -C '$(TEMPLATE_PROJECT_DIR)' dev
 
 # Catch-all rule to prevent Make from complaining about unknown targets
 %:
