@@ -17,12 +17,6 @@ class Checkpoint(models.Model):
     updated_at = models.DateTimeField(auto_now=True, null=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["thread_id", "checkpoint_ns", "checkpoint_id"],
-                name="%(app_label)s_%(class)s_unique_checkpoint",
-            )
-        ]
         indexes = [
             models.Index(fields=["thread_id", "checkpoint_ns"]),
             models.Index(fields=["checkpoint_id"]),
@@ -45,12 +39,6 @@ class Write(models.Model):
     updated_at = models.DateTimeField(auto_now=True, null=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["thread_id", "checkpoint_ns", "checkpoint_id", "task_id", "idx"],
-                name="%(app_label)s_%(class)s_unique_write",
-            )
-        ]
         indexes = [
             models.Index(fields=["thread_id", "checkpoint_ns", "checkpoint_id"]),
             models.Index(fields=["task_id", "idx"]),
