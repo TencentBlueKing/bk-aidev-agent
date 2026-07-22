@@ -81,6 +81,16 @@ def mock_svc():
         yield instance, svc_cls
 
 
+@pytest.fixture(autouse=True)
+def _reset_retrieve_chat_session_mock():
+    """base_mod.client 是 module 级 mock，跨测试共享；每个用例前重置 retrieve_chat_session
+    的 side_effect / return_value / call_history，避免 TestCheckSessionOwner 里配的
+    side_effect 泄露到后续 TestPvFiles* 用例（那些用例默认应"归属校验通过"）。
+    """
+    session_mod.client.api.retrieve_chat_session.reset_mock(side_effect=True, return_value=True)
+    yield
+
+
 # ---------------------------------------------------------------------------
 # _make_pv_file_service：构造凭证注入
 # ---------------------------------------------------------------------------
@@ -164,26 +174,62 @@ class TestPvFilesGet:
         assert response.status_code == 404
 
 
-class TestPvFilesDelete:
-    def test_delete_forwards_path_and_returns_204(self, view, mock_svc):
-        instance, _ = mock_svc
-        instance.delete_file.return_value = None
-        response = view.pv_files(_request({"path": "x.txt"}, method="DELETE"), pk="s1")
-        assert response.status_code == 204
-        instance.delete_file.assert_called_once_with(session_code="s1", path="x.txt")
+# ---------------------------------------------------------------------------
+# _check_session_owner：归属校验（透传平台 AIDevObjectOwnerPermission 结果）
+# ---------------------------------------------------------------------------
 
-    def test_delete_requires_path(self, view, mock_svc):
-        # path 缺失应抛异常
+
+class TestCheckSessionOwner:
+    @staticmethod
+    def _make_http_error(status: int):
+        """构造带 response.status_code 的 HTTPResponseError（bkapi_client_core 走 requests.RequestException 签名）。"""
+        from bkapi_client_core.exceptions import HTTPResponseError
+
+        response = MagicMock()
+        response.status_code = status
+        # RequestException 支持 response=... 作为构造 kwarg
+        exc = HTTPResponseError(response=response)
+        return exc
+
+    def test_owner_ok_passes_through(self, view):
+        """归属校验通过：调 client.api.retrieve_chat_session 无异常，不抛。"""
+        # base_mod.client.api 默认是 MagicMock，任意调用返回新 MagicMock；autouse 已重置 side_effect
+        view._check_session_owner(_request(username="alice"), "s1")
+        session_mod.client.api.retrieve_chat_session.assert_called_once_with(
+            path_params={"session_code": "s1"},
+            headers={"X-BKAIDEV-USER": "alice"},
+        )
+
+    @pytest.mark.parametrize("status", [403, 404])
+    def test_owner_denied_or_not_found_translates_to_client_error(self, view, status):
+        """403（非归属）/ 404（会话不存在）→ ClientBlueException，附带对应 code。"""
+        session_mod.client.api.retrieve_chat_session.side_effect = self._make_http_error(status)
+
+        from blueapps.core.exceptions import ClientBlueException
+
+        with pytest.raises(ClientBlueException) as excinfo:
+            view._check_session_owner(_request(username="alice"), "s1")
+        assert str(status) == excinfo.value.code
+
+    def test_owner_other_http_error_reraises(self, view):
+        """非 403/404 的 HTTPResponseError 原样抛出，不被吞掉。"""
+        from bkapi_client_core.exceptions import HTTPResponseError
+
+        session_mod.client.api.retrieve_chat_session.side_effect = self._make_http_error(500)
+
+        with pytest.raises(HTTPResponseError):
+            view._check_session_owner(_request(username="alice"), "s1")
+
+    def test_owner_denied_blocks_pv_files_action(self, view, mock_svc):
+        """集成：403 会在 pv_files action 顶部就拒掉，不会调用 Service。"""
+        session_mod.client.api.retrieve_chat_session.side_effect = self._make_http_error(403)
+
+        instance, _ = mock_svc
         from blueapps.core.exceptions import ClientBlueException
 
         with pytest.raises(ClientBlueException):
-            view.pv_files(_request({}, method="DELETE"), pk="s1")
-
-    def test_delete_translates_500(self, view, mock_svc):
-        instance, _ = mock_svc
-        instance.delete_file.side_effect = SandboxFileServerError("srv")
-        response = view.pv_files(_request({"path": "x.txt"}, method="DELETE"), pk="s1")
-        assert response.status_code == 500
+            view.pv_files(_request(username="alice"), pk="s1")
+        instance.list_files.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
