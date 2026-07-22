@@ -1,8 +1,8 @@
 ag-ui-protocol==0.1.10
-aidev-agent==2.0.1
+aidev-agent==2.0.2rc215
 aidev-ai-blueking==2.1.4b6
-aidev-bkplugin==2.0.1
-aidev-wxbot==2.0.1
+aidev-bkplugin==2.0.2rc215
+aidev-wxbot==2.0.2rc215
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.3
 aiosignal==1.4.0
@@ -19,7 +19,7 @@ bk-plugin-runtime==2.1.9
 bkapi-bk-apigateway==1.0.12
 bkapi-client-core==1.2.0
 bkoauth==0.1.0
-blueapps[opentelemetry]==4.16rc5
+blueapps[opentelemetry]==4.16rc6
 bracex==2.6
 cachetools==5.5.2
 celery==5.4.0
