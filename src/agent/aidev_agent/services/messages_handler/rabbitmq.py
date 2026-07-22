@@ -334,14 +334,11 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         # 消息缓冲队列：用于批量推送
         self._message_buffer: dict[str, list[Any]] = {}
         self._buffer_lock = threading.Lock()
+        self._buffer_condition = threading.Condition(self._buffer_lock)
+        self._flushing_threads: set[str] = set()
         self._replay_wait_condition = threading.Condition()
         self._producer_lock_connections: dict[str, pika.BlockingConnection] = {}
         self._producer_lock_guard = threading.Lock()
-
-        # flush 与 peek+buffer 合并的互斥锁（per thread_id，进程内）
-        # 防止 flush 在 peek 和 buffer 合并之间清空 buffer 导致消息丢失/重复
-        self._flush_peek_locks: dict[str, threading.Lock] = {}
-        self._flush_peek_locks_guard = threading.Lock()
 
         # 后台守护线程
         self._daemon_thread: Optional[threading.Thread] = None
@@ -400,13 +397,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         """获取多消费者活跃状态队列名。"""
         return f"{self.ACTIVE_CONSUMER_PREFIX}{thread_id}"
 
-    def _get_flush_peek_lock(self, thread_id: str) -> threading.Lock:
-        """获取指定 thread_id 的 flush/peek 互斥锁（进程内，惰性创建）。"""
-        with self._flush_peek_locks_guard:
-            if thread_id not in self._flush_peek_locks:
-                self._flush_peek_locks[thread_id] = threading.Lock()
-            return self._flush_peek_locks[thread_id]
-
     def _create_dedicated_connection(self) -> pika.BlockingConnection:
         """创建不进入连接池的 RabbitMQ 连接，用于 exclusive queue 生命周期。"""
         params = pika.URLParameters(self._rabbitmq_url)
@@ -464,8 +454,8 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
     def _wait_for_replay_retry(self, deadline: float | None, interval: float) -> None:
         """等待下一次 replay 检查。
 
-        本进程内有 buffer 写入或 replay lock 释放时会提前唤醒；跨进程 RabbitMQ 写入
-        无法通过本地 Condition 感知，因此仍保留短超时作为兜底重试。
+        本进程内有 RabbitMQ 提交或 replay lock 释放时会提前唤醒；跨进程 RabbitMQ
+        写入无法通过本地 Condition 感知，因此仍保留短超时作为兜底重试。
         """
         wait_time = interval
         if deadline is not None:
@@ -831,52 +821,44 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             logger.error(f"Error flushing messages on daemon exit: {e}")
 
     def _flush_messages(self) -> None:
-        """批量推送缓冲区中的所有消息到 RabbitMQ
-
-        对每个 thread_id，在 _flush_peek_lock 内完成"取出 buffer + publish"的原子操作，
-        确保与 get_messages_since（peek + buffer 合并）互斥，避免消息丢失/重复。
-        """
-        # 快速检查是否有消息需要 flush
+        """批量推送缓冲区中的所有消息到 RabbitMQ"""
         with self._buffer_lock:
             if not self._message_buffer:
                 return
-            thread_ids_to_flush = list(self._message_buffer.keys())
+            thread_ids = [thread_id for thread_id, messages in self._message_buffer.items() if messages]
 
-        # 按 thread_id 逐个 flush，每个 thread_id 在 flush_peek_lock 内完成
-        # "取出 buffer + publish" 的原子操作
-        any_flushed = False
-        for thread_id in thread_ids_to_flush:
-            flush_peek_lock = self._get_flush_peek_lock(thread_id)
+        if not thread_ids:
+            return
+
+        flushed = False
+        for thread_id in thread_ids:
+            messages_to_flush = self._take_thread_buffer_for_flush(thread_id)
+            if not messages_to_flush:
+                continue
+
             try:
-                with flush_peek_lock:
-                    # 在 flush_peek_lock 内取出该 thread_id 的 buffer
-                    with self._buffer_lock:
-                        messages = self._message_buffer.pop(thread_id, [])
-                    if not messages:
-                        continue
+                with self._with_channel() as channel:
+                    queue_name = self._ensure_queue(channel, thread_id)
 
-                    # 在同一个 flush_peek_lock 内 publish 到 RabbitMQ
-                    with self._with_channel() as channel:
-                        queue_name = self._ensure_queue(channel, thread_id)
-                        for message in messages:
-                            body = pickle.dumps(message)
-                            channel.basic_publish(
-                                exchange="",
-                                routing_key=queue_name,
-                                body=body,
-                                properties=pika.BasicProperties(delivery_mode=2),
-                            )
-                    logger.debug(f"Flushed {len(messages)} messages to queue {queue_name}")
-                    any_flushed = True
+                    for message in messages_to_flush:
+                        body = pickle.dumps(message)
+                        channel.basic_publish(
+                            exchange="",
+                            routing_key=queue_name,
+                            body=body,
+                            properties=pika.BasicProperties(delivery_mode=2),
+                        )
+
+                    logger.debug(f"Flushed {len(messages_to_flush)} messages to queue {queue_name}")
             except Exception as e:
-                logger.error(f"Error flushing messages for thread_id={thread_id}: {e}")
-                # 推送失败，将消息放回缓冲区（放到前面保持顺序）
-                with self._buffer_lock:
-                    if thread_id not in self._message_buffer:
-                        self._message_buffer[thread_id] = []
-                    self._message_buffer[thread_id] = messages + self._message_buffer[thread_id]
+                logger.error(f"Error flushing messages to RabbitMQ: {e}")
+                self._finish_thread_flush(thread_id, messages_to_restore=messages_to_flush)
+                self._notify_replay_waiters()
+            else:
+                self._finish_thread_flush(thread_id)
+                flushed = True
 
-        if any_flushed:
+        if flushed:
             self._notify_replay_waiters()
 
     # ================== 死信队列操作 ==================
@@ -1002,7 +984,29 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             if thread_id not in self._message_buffer:
                 self._message_buffer[thread_id] = []
             self._message_buffer[thread_id].append(message)
-        self._notify_replay_waiters()
+
+    def _take_thread_buffer_for_flush(self, thread_id: str) -> list[Any]:
+        """取出一个 thread 的待发布 buffer，并标记本进程内该 thread 正在 flush。"""
+        with self._buffer_condition:
+            if thread_id in self._flushing_threads:
+                return []
+
+            messages_to_flush = self._message_buffer.get(thread_id, [])
+            if not messages_to_flush:
+                return []
+
+            self._message_buffer[thread_id] = []
+            self._flushing_threads.add(thread_id)
+            return messages_to_flush
+
+    def _finish_thread_flush(self, thread_id: str, messages_to_restore: Optional[list[Any]] = None) -> None:
+        """结束一个 thread 的本地 flush；失败时把本批消息放回 buffer 头部。"""
+        with self._buffer_condition:
+            if messages_to_restore:
+                current_messages = self._message_buffer.get(thread_id, [])
+                self._message_buffer[thread_id] = messages_to_restore + current_messages
+            self._flushing_threads.discard(thread_id)
+            self._buffer_condition.notify_all()
 
     def flush(self, thread_id: Optional[str] = None) -> None:
         """立即推送缓冲区中的消息到 RabbitMQ
@@ -1011,39 +1015,31 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             thread_id: 如果指定，只推送该 thread_id 的消息；否则推送所有消息
         """
         if thread_id:
-            # 只推送指定 thread_id 的消息，在 flush_peek_lock 内原子完成
-            flush_peek_lock = self._get_flush_peek_lock(thread_id)
-            with flush_peek_lock:
-                with self._buffer_lock:
-                    messages_to_flush = self._message_buffer.pop(thread_id, [])
+            messages_to_flush = self._take_thread_buffer_for_flush(thread_id)
+            if not messages_to_flush:
+                return
 
-                if not messages_to_flush:
-                    return
+            try:
+                with self._with_channel() as channel:
+                    logger.debug("[Streaming] rabbitmq flush thread_id=%s, count=%d", thread_id, len(messages_to_flush))
+                    queue_name = self._ensure_queue(channel, thread_id)
 
-                logger.debug("[Streaming] rabbitmq flush thread_id=%s, count=%d", thread_id, len(messages_to_flush))
-
-                try:
-                    with self._with_channel() as channel:
-                        queue_name = self._ensure_queue(channel, thread_id)
-
-                        for message in messages_to_flush:
-                            body = pickle.dumps(message)
-                            channel.basic_publish(
-                                exchange="",
-                                routing_key=queue_name,
-                                body=body,
-                                properties=pika.BasicProperties(delivery_mode=2),
-                            )
-                    self._notify_replay_waiters()
-                except Exception as e:
-                    logger.error(f"Error flushing messages for {thread_id}: {e}")
-                    # 推送失败，放回缓冲区
-                    with self._buffer_lock:
-                        if thread_id not in self._message_buffer:
-                            self._message_buffer[thread_id] = []
-                        self._message_buffer[thread_id] = messages_to_flush + self._message_buffer[thread_id]
-                    self._notify_replay_waiters()
-                    raise
+                    for message in messages_to_flush:
+                        body = pickle.dumps(message)
+                        channel.basic_publish(
+                            exchange="",
+                            routing_key=queue_name,
+                            body=body,
+                            properties=pika.BasicProperties(delivery_mode=2),
+                        )
+            except Exception as e:
+                logger.error(f"Error flushing messages for {thread_id}: {e}")
+                self._finish_thread_flush(thread_id, messages_to_restore=messages_to_flush)
+                self._notify_replay_waiters()
+                raise
+            else:
+                self._finish_thread_flush(thread_id)
+                self._notify_replay_waiters()
         else:
             # 推送所有消息
             self._flush_messages()
@@ -1117,30 +1113,22 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         start_time = time.time()
         deadline = start_time + timeout if timeout is not None else None
         offset = max(offset, 0)
-        flush_peek_lock = self._get_flush_peek_lock(thread_id)
 
         while True:
             try:
                 with self._with_replay_lock(thread_id) as channel:
                     main_queue_name = self._ensure_queue(channel=channel, thread_id=thread_id)
+                    all_messages = self._peek_queue_messages(channel, main_queue_name)
 
-                    # flush_peek_lock 保护 peek + buffer 合并这两步的原子性，
-                    # 防止 flush 在 peek 之后、buffer 合并之前清空 buffer 导致消息丢失。
-                    with flush_peek_lock:
+                    # 兼容升级前已经进入 DLQ 的旧缓存：仅在主队列为空时恢复一次。
+                    if not all_messages and self._get_dlq_count(thread_id) > 0:
+                        restored = self._restore_from_dlq(thread_id)
+                        logger.info(
+                            "[RabbitMQ] restored legacy DLQ messages before replay thread_id=%s restored=%d",
+                            thread_id,
+                            restored,
+                        )
                         all_messages = self._peek_queue_messages(channel, main_queue_name)
-
-                        # 兼容升级前已经进入 DLQ 的旧缓存：仅在主队列为空时恢复一次。
-                        if not all_messages and self._get_dlq_count(thread_id) > 0:
-                            restored = self._restore_from_dlq(thread_id)
-                            logger.info(
-                                "[RabbitMQ] restored legacy DLQ messages before replay thread_id=%s restored=%d",
-                                thread_id,
-                                restored,
-                            )
-                            all_messages = self._peek_queue_messages(channel, main_queue_name)
-
-                        with self._buffer_lock:
-                            all_messages.extend(self._message_buffer.get(thread_id, []))
 
                 next_offset = len(all_messages)
                 if next_offset > offset:
@@ -1219,6 +1207,8 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         # 检查本地缓冲区
         with self._buffer_lock:
             if thread_id in self._message_buffer and self._message_buffer[thread_id]:
+                return True
+            if thread_id in self._flushing_threads:
                 return True
 
         # 检查 RabbitMQ 主队列和死信队列
@@ -1371,10 +1361,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
 
         self._purge_all_queues(thread_id, include_cancel_queue=True)
         self._delete_all_resources(thread_id)
-
-        # 清理 flush_peek_lock（session 已结束，不再需要）
-        with self._flush_peek_locks_guard:
-            self._flush_peek_locks.pop(thread_id, None)
 
     def request_cancel(self, thread_id: str) -> None:
         """请求取消该 thread_id 的流。幂等：向取消队列投递一条消息，生产者轮询时消费到即退出。"""
