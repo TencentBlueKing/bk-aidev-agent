@@ -11,6 +11,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import Runnable, RunnableConfig
+from langchain_core.runnables.fallbacks import RunnableWithFallbacks
 from langchain_core.stores import ByteStore
 from langchain_core.tools import StructuredTool
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -201,7 +202,13 @@ class ChatCompletionAgent(BaseModel):
         if not self.messages:
             self.messages = self.convert_history_to_messages()
         messages = self.messages
-        self.chat_model.callbacks = self.callbacks
+        chat_models = (
+            (self.chat_model.runnable, *self.chat_model.fallbacks)
+            if isinstance(self.chat_model, RunnableWithFallbacks)
+            else (self.chat_model,)
+        )
+        for chat_model in chat_models:
+            chat_model.callbacks = self.callbacks
         return self._execute(messages, execute_kwargs)
 
     def stop(self):
