@@ -5,10 +5,23 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-from ag_ui.core import EventType, RunErrorEvent, RunFinishedEvent
+from ag_ui.core import (
+    EventType,
+    RunErrorEvent,
+    RunFinishedEvent,
+    RunStartedEvent,
+    TextMessageContentEvent,
+    TextMessageStartEvent,
+)
+from ag_ui.encoder import EventEncoder
 from aidev_agent.config import settings
 from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
-from aidev_agent.core.ag_ui.types import CustomMessageType
+from aidev_agent.core.ag_ui.types import (
+    CustomMessageType,
+    ExtendAssistantMessage,
+    ExtendUserMessage,
+    MessageSnapshotEventExtend,
+)
 from aidev_agent.core.nodes.tool.approval_wrapper import TOOL_APPROVAL_REASON
 from aidev_agent.enums import PromptRole
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
@@ -2281,3 +2294,134 @@ class TestTerminalResumeReplay:
         mock_replay.assert_not_called()
         mock_astream.assert_not_called()
         agui_entry.run.assert_not_called()
+
+
+def _snapshot_frame(messages) -> str:
+    return EventEncoder().encode(MessageSnapshotEventExtend(type=EventType.MESSAGES_SNAPSHOT, messages=messages))
+
+
+def _start_frame(message_id: str) -> str:
+    return EventEncoder().encode(
+        TextMessageStartEvent(type=EventType.TEXT_MESSAGE_START, message_id=message_id, role="assistant")
+    )
+
+
+def _content_frame(message_id: str, delta: str) -> str:
+    return EventEncoder().encode(
+        TextMessageContentEvent(type=EventType.TEXT_MESSAGE_CONTENT, message_id=message_id, delta=delta)
+    )
+
+
+def _snapshot_ids(frame: str) -> set[str]:
+    data = _parse_sse(frame)
+    return {(m.get("messageId") or m.get("id")) for m in data.get("messages", [])}
+
+
+class TestSnapshotReplayDedup:
+    """多端场景：阶段1现发的 MESSAGES_SNAPSHOT 含半截 mid，阶段2 replay 又从头 START(mid)，
+    前端会因“快照已有该 id + replay 又 START 同 id”产生重复消息。修复：阶段1快照剔除
+    replay 将重放的 message_id，让 replay 成为该消息唯一来源。"""
+
+    def test_reproduce_snapshot_replay_id_overlap(self):
+        """复现前提：现发快照里的 assistant id 与 replay 缓存里的 START id 相同（会重复）。"""
+        snapshot = _snapshot_frame(
+            [
+                ExtendUserMessage(id="u1", role="user", content="问题"),
+                ExtendAssistantMessage(id="mid", role="assistant", content="半截", status="streaming"),
+            ]
+        )
+        replay_ids = ChatCompletionAgent._collect_replay_message_ids(
+            _FakeReplayHandler([_start_frame("mid"), _content_frame("mid", "完整回答")]),
+            "t1",
+        )
+        # bug 前提成立：快照 id 与 replay id 有交集
+        assert _snapshot_ids(snapshot) & replay_ids == {"mid"}
+
+    def test_dedup_removes_replayed_id_from_snapshot(self):
+        """去重后：快照剔除 mid（由 replay 完整重建），保留历史/用户消息。"""
+        snapshot = _snapshot_frame(
+            [
+                ExtendUserMessage(id="u1", role="user", content="问题"),
+                ExtendAssistantMessage(id="mid", role="assistant", content="半截", status="streaming"),
+            ]
+        )
+        run_started = EventEncoder().encode(RunStartedEvent(type=EventType.RUN_STARTED, thread_id="t1", run_id="r1"))
+        head_frames = [snapshot, run_started]
+
+        deduped = ChatCompletionAgent._dedup_snapshot_head_frames(head_frames, {"mid"})
+
+        assert _snapshot_ids(deduped[0]) == {"u1"}
+        assert "mid" not in _snapshot_ids(deduped[0])
+        # 非快照帧不受影响
+        assert deduped[1] == run_started
+
+    def test_dedup_noop_without_replay_ids(self):
+        """没有 replay（例如首个消费者）时不改动快照。"""
+        snapshot = _snapshot_frame(
+            [ExtendAssistantMessage(id="mid", role="assistant", content="hi", status="complete")]
+        )
+        head_frames = [snapshot]
+        assert ChatCompletionAgent._dedup_snapshot_head_frames(head_frames, set()) == head_frames
+
+    def test_collect_replay_ids_returns_empty_when_no_pending(self):
+        handler = _FakeReplayHandler([_start_frame("mid")], has_pending=False)
+        assert ChatCompletionAgent._collect_replay_message_ids(handler, "t1") == set()
+
+    def test_collect_replay_ids_swallows_handler_errors(self):
+        """handler 不支持 peek / 抛异常时按“无重放”处理，回退原行为。"""
+        handler = MagicMock()
+        handler.has_pending_messages.side_effect = RuntimeError("boom")
+        assert ChatCompletionAgent._collect_replay_message_ids(handler, "t1") == set()
+
+    def test_stream_with_queue_emits_non_overlapping_stream(self):
+        """端到端复现 + 修复验证：第二端连接输出流中，快照 id 与 START id 零重叠。"""
+        agent = _seed_agent()
+        agui_entry = _mock_agui_entry()
+        agent_input = SimpleNamespace(thread_id="t1", run_id="r1")
+
+        snapshot = _snapshot_frame(
+            [
+                ExtendUserMessage(id="u1", role="user", content="问题"),
+                ExtendAssistantMessage(id="mid", role="assistant", content="半截", status="streaming"),
+            ]
+        )
+        run_started = EventEncoder().encode(RunStartedEvent(type=EventType.RUN_STARTED, thread_id="t1", run_id="r1"))
+        replay_frames = [_start_frame("mid"), _content_frame("mid", "完整回答")]
+
+        fake_handler = _FakeReplayHandler(replay_frames)
+        fake_helper = MagicMock()
+        fake_helper.message_handler = fake_handler
+        fake_helper.stream.return_value = iter(replay_frames)
+
+        with (
+            patch(f"{_CHAT_MODULE}.GeneratorStreamingHelper", return_value=fake_helper),
+            patch.object(agent, "_build_resume_aware_producer", return_value=iter([snapshot, run_started])),
+        ):
+            out = list(agent._stream_with_queue(agui_entry, agent_input))
+
+        snap_ids: set[str] = set()
+        start_ids: set[str] = set()
+        for frame in out:
+            data = _parse_sse(frame)
+            if data["type"] == EventType.MESSAGES_SNAPSHOT:
+                snap_ids |= {(m.get("messageId") or m.get("id")) for m in data.get("messages", [])}
+            if data["type"] == EventType.TEXT_MESSAGE_START:
+                start_ids.add(data.get("messageId"))
+
+        assert "mid" in start_ids  # replay 仍完整重建该消息
+        assert "mid" not in snap_ids  # 快照不再含 mid
+        assert snap_ids & start_ids == set()  # 零重叠，前端不会重复
+
+
+class _FakeReplayHandler:
+    """最小 replay handler 替身：模拟缓存里已有从头重放的 SSE 帧。"""
+
+    def __init__(self, cached_frames, has_pending: bool = True):
+        self._cached = list(cached_frames)
+        self._has_pending = has_pending
+
+    def has_pending_messages(self, thread_id):  # noqa: ARG002
+        return self._has_pending
+
+    def get_messages_since(self, thread_id, offset, timeout=None):  # noqa: ARG002
+        return self._cached[offset:], len(self._cached)
