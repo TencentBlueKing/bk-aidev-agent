@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 from logging import getLogger
 from typing import Any, Callable
@@ -127,7 +128,10 @@ def build_artifacts_generated_hook(
                 resource_manager=resource_manager,
                 executor_info=_executor_info,
             )
-            result = service.list_files(session_code=thread_id, since=started_at)
+            # list_files 是同步 HTTP + 分页 sleep，挪到线程池避免阻塞事件循环
+            result = await asyncio.to_thread(
+                service.list_files, session_code=thread_id, since=started_at
+            )
             artifacts = _files_to_artifacts(result.get("results") or [])
         except Exception:
             logger.warning(
