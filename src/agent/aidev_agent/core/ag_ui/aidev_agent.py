@@ -76,6 +76,7 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         approve_result: ApproveResultLiteral | None = None,
         approval_interrupts: list[dict] | None = None,
         ask_user_question_interrupts: list[dict] | None = None,
+        run_end_extras_hook: Callable[..., AsyncGenerator[Any, None]] | None = None,
     ):
         super().__init__(name=name, graph=graph, description=description, config=config, cancel_checker=cancel_checker)
         self._tool_mapping = tools or {}
@@ -85,6 +86,9 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         self._approve_result = approve_result
         self._approval_interrupts = approval_interrupts or []
         self._ask_user_question_interrupts = ask_user_question_interrupts or []
+        # RUN_FINISHED 前的通用扩展点：由业务层（services/agent/artifacts.py）注入
+        # 保持协议层无业务耦合。签名与父类 _emit_run_end_extras 兼容的 async generator。
+        self._run_end_extras_hook = run_end_extras_hook
 
     @staticmethod
     def _format_mcp_fetch_failure_message(failures: list[dict[str, Any]]) -> str:
@@ -95,6 +99,28 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
             message = failure.get("message") or "MCP tool fetch failed"
             lines.append(f"[{server_name}] {message}")
         return "\n".join(lines)
+
+    async def _emit_run_end_extras(
+        self, state_values: State, thread_id: str
+    ) -> AsyncGenerator[Any, None]:
+        """RUN_FINISHED 前的通用扩展点：若注入了 hook，转发其产出的事件序列。
+
+        本方法不感知任何业务语义（如 PV / PaaS / artifacts），业务实现由构造时注入的
+        ``run_end_extras_hook`` 承载（见 :func:`aidev_agent.services.agent.artifacts.build_artifacts_generated_hook`）。
+
+        hook 通过 ``dispatch_event`` 关键字参数拿到 :meth:`_dispatch_event`，从而让
+        CustomEvent 仍走"DB writer + SSE 双分发"通道；事件路由由协议层掌控。
+        """
+        if self._run_end_extras_hook is None:
+            return
+        async for ev in self._run_end_extras_hook(
+            state_values=state_values,
+            thread_id=thread_id,
+            active_run=self.active_run,
+            dispatch_event=self._dispatch_event,
+        ):
+            yield ev
+
 
     async def run(self, input: RunAgentInput) -> AsyncGenerator[str, None]:
         """运行 Agent 并生成编码后的事件流"""

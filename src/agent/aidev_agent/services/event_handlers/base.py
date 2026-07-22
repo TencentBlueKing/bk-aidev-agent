@@ -213,6 +213,8 @@ class BaseSessionWriter(ABC):
 
         if event_name == SessionPersistenceEventNames.ChatModelEnd.value:
             self.handle_model_end(event)
+        elif event_name == SessionPersistenceEventNames.ArtifactsGenerated.value:
+            self.handle_artifacts_generated(event)
         elif event_name == CustomMessageType.KNOWLEDGE_RAG_RESULT.value:
             self.handle_reference_document(event)
         elif event_name == CustomMessageType.FLOW_AGENT_START.value:
@@ -919,6 +921,31 @@ class BaseSessionWriter(ABC):
             },
         )
         self._written_message_ids.add(message_id)
+
+    def handle_artifacts_generated(self, event: CustomEvent) -> None:
+        """回写本轮产物识别事件为一条 role=activity 会话内容。
+
+        content 直接使用事件 value（{runId, status, artifacts}），content 字段是 TextField，需序列化为 JSON 字符串。
+        子类可覆写实现差异化落库；默认实现覆盖 API / DB 通用路径。
+        """
+        value = event.value if isinstance(event.value, dict) else {}
+        run_id = value.get("runId") or ""
+        message_id = f"artifacts_{run_id or uuid.uuid4().hex[:12]}"
+        if message_id in self._written_message_ids:
+            return
+        self._create_session_content(
+            message_id=message_id,
+            role=PromptRole.ACTIVITY.value,
+            content=json.dumps(value, ensure_ascii=False),
+            status="success",
+            builtin_property={
+                "message_id": message_id,
+                "type": ActivityType.ARTIFACTS_GENERATED.value,
+                "run_id": run_id,
+            },
+        )
+        self._written_message_ids.add(message_id)
+
 
     def handle_flow_agent_result(self, event) -> None:
         """处理 Flow Agent 结果事件，回写 activity 消息

@@ -2,6 +2,7 @@ import inspect
 import json
 import uuid
 from collections.abc import AsyncGenerator, Generator
+from datetime import datetime, timezone
 from logging import getLogger
 from typing import Any, Callable, Literal
 
@@ -154,6 +155,7 @@ class LangGraphAgent:
             "node_name": None,
             "has_function_streaming": False,
             "has_text_output": False,  # 是否有 AI 文本输出（根据流式是否有TEXT_MESSAGE_START）
+            "started_at": datetime.now(timezone.utc),  # 供子类做本轮增量识别（如 artifacts_generated）
         }
         self.active_run = INITIAL_ACTIVE_RUN
 
@@ -319,6 +321,10 @@ class LangGraphAgent:
         if not resume_input:
             yield self._dispatch_event(final_snapshot_events[1])
 
+        # 本轮产物识别 hook（子类实现，默认 no-op）；异常内部兜底，不阻断 RUN_FINISHED
+        async for ev in self._emit_run_end_extras(state_values, thread_id):
+            yield ev
+
         # 构造 outcome（使用官方类型）
         if interrupt_values:
             outcome = RunFinishedInterruptOutcome(interrupts=interrupt_values)
@@ -364,6 +370,17 @@ class LangGraphAgent:
             toolCallId=value.get("toolCallId"),  # 驼峰命名
             metadata=metadata or None,
         )
+
+    async def _emit_run_end_extras(
+        self, state_values: State, thread_id: str
+    ) -> AsyncGenerator[Any, None]:
+        """本轮 run 收尾扩展点：MESSAGES_SNAPSHOT 之后、RUN_FINISHED 之前每 run 触发一次。
+
+        父类默认 no-op；子类覆写以 yield 自定义事件，异常须自行兜底避免阻断 RUN_FINISHED。
+        典型用法见 :class:`AidevAGUIAgent` 的 ``run_end_extras_hook`` 注入模式。
+        """
+        return
+        yield  # pragma: no cover - 让本方法成为 async generator
 
     def _build_terminal_snapshot_events(
         self, state_values: State

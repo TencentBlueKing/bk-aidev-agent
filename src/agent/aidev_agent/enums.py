@@ -136,6 +136,7 @@ class ActivityType(enum.Enum):
 
     REFERENCE_DOCUMENT = "reference_document"
     FLOW_AGENT = "flow_agent"
+    ARTIFACTS_GENERATED = "artifacts_generated"
 
 
 class MessageHandlerType(str, enum.Enum):

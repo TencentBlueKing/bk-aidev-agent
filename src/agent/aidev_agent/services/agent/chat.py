@@ -48,6 +48,7 @@ from aidev_agent.pydantic_models import (
     ModelContextSettings,
 )
 from aidev_agent.services.agent.approval import ApprovalStateHandler
+from aidev_agent.services.agent.artifacts import build_artifacts_generated_hook
 from aidev_agent.services.agent.registry import AgentBuildContext, ChatBuildExtras
 from aidev_agent.services.common_agent import CommonAgentProtocol, CommonQAAgent
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
@@ -788,6 +789,9 @@ class ChatCompletionAgent(BaseModel):
             approve_result=approve_result,
             approval_interrupts=approval_interrupts,
             ask_user_question_interrupts=ask_user_question_interrupts,
+            run_end_extras_hook=build_artifacts_generated_hook(
+                self.resource_manager, self.executor_info
+            ),
         )
 
         return self._stream_with_queue(

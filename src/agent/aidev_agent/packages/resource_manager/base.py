@@ -111,17 +111,32 @@ class BaseResourceManager(abc.ABC):
         return access_token
 
     def get_paas_sbx_client(self, executor_info: dict, **kwargs) -> Any:
+        """构造 PaaS 沙箱 apigw client 并挂载鉴权头。
+
+        用户认证支持两种凭证（互不冲突，可共存）：
+        - ``access_token``：服务端 bkoauth 换取，适用于后台调用。
+        - ``bk_ticket_key`` + ``bk_ticket_value``：cookie 里的用户票据，适用于前端直调 View。
+          key 名（``bk_ticket`` / ``bk_token``）由调用方按环境决定并传入。
+        """
         app_code = executor_info.get("app_code", "")
         app_secret = executor_info.get("app_secret", "")
         bk_username = executor_info.get("executor", "")
         access_token = executor_info.get("access_token", "")
+        bk_ticket_key = executor_info.get("bk_ticket_key", "")
+        bk_ticket_value = executor_info.get("bk_ticket_value", "")
 
         if app_code and app_secret:
             client = BkPaaSSandboxApi.get_client(app_code=app_code, app_secret=app_secret)
         else:
             client = BkPaaSSandboxApi.get_client_by_username(bk_username)
 
-        client.update_bkapi_authorization(access_token=access_token or None, bk_username=bk_username or "")
+        auth_kwargs: dict = {
+            "access_token": access_token or None,
+            "bk_username": bk_username or "",
+        }
+        if bk_ticket_key and bk_ticket_value:
+            auth_kwargs[bk_ticket_key] = bk_ticket_value
+        client.update_bkapi_authorization(**auth_kwargs)
         return client
 
     # ---------- 资源方法 (7) ----------

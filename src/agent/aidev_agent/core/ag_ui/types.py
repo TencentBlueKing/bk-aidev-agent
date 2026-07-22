@@ -50,6 +50,28 @@ class SessionPersistenceEventNames(str, Enum):
     """会话回写用 CustomEvent.name；ChatModelEnd 默认不进入 SSE。"""
 
     ChatModelEnd = "aidev_session_chat_model_end"
+    ArtifactsGenerated = "artifacts_generated"
+
+
+class ArtifactPayload(TypedDict):
+    """轮次产物条目。
+
+    outputId 就是文件在会话 PV 里的 path，前端点击时原样作为
+    `pv_files/download_url?path=<outputId>` 的参数换取即时签名 URL。
+    """
+
+    outputId: str
+    type: str
+    name: str
+    size: int
+
+
+class ArtifactsGeneratedValue(TypedDict):
+    """`artifacts_generated` CustomEvent 的 value 结构。"""
+
+    runId: str
+    status: Literal["complete", "empty"]
+    artifacts: list[ArtifactPayload]
 
 
 State = dict[str, Any]

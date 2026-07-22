@@ -4,7 +4,16 @@ from aidev_agent.enums import ChannelType
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
 from aidev_agent.services.messages_handler.constants import TimeoutConfig
 from aidev_agent.services.messages_handler.factory import message_handler_factory
+from aidev_agent.services.sandbox_pv_files import (
+    SandboxFileError,
+    SandboxFileInvalidArgumentError,
+    SandboxFileInvalidRequestError,
+    SandboxFileNotFoundError,
+    SandboxPvFileService,
+)
 from blueapps.core.exceptions import ClientBlueException
+from django.conf import settings
+from django.http import HttpResponse
 from rest_framework.decorators import action
 from rest_framework.parsers import FileUploadParser
 from rest_framework.views import Response
@@ -117,6 +126,103 @@ class ChatSessionViewSet(PluginViewSet):
     def destroy(self, request, pk, **kwargs):
         result = client.api.destroy_chat_session(path_params={"session_code": pk})
         return Response(data=result["data"])
+
+    # ------------------------------------------------------------------
+    # 会话沙箱 PV 文件（SDK 前端直连 PaaS 沙箱文件接口）
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _pv_exc_to_response(exc: SandboxFileError) -> Response:
+        """沙箱文件异常 → HTTP 响应。"""
+        if isinstance(exc, SandboxFileNotFoundError):
+            status_code = 404
+        elif isinstance(exc, (SandboxFileInvalidArgumentError, SandboxFileInvalidRequestError)):
+            status_code = 400
+        else:
+            status_code = 500
+        return Response(data={"message": str(exc)}, status=status_code)
+
+    def _make_pv_file_service(self, request) -> SandboxPvFileService:
+        username = request.user.username
+        rm = PluginResourceManager(username=username)
+        # 从 cookie 读用户票据（key 由 BKAUTH_BACKEND_TYPE 决定，
+        # 内网 bk_ticket / 外部 bk_token），HTTP_AIDEV_TICKET header 作为兜底。
+        ticket_key = getattr(settings, "BKAUTH_BACKEND_TYPE", "bk_ticket")
+        bk_ticket = request.COOKIES.get(ticket_key, "") or request.META.get("HTTP_AIDEV_TICKET", "")
+        executor_info = {
+            "app_code": settings.BK_APP_CODE,
+            "app_secret": settings.BK_APP_SECRET,
+            "executor": username,
+            "bk_ticket_key": ticket_key,
+            "bk_ticket_value": bk_ticket,
+        }
+        return SandboxPvFileService(resource_manager=rm, executor_info=executor_info)
+
+    @action(["GET", "DELETE"], url_path="pv_files", detail=True)
+    def pv_files(self, request, pk, **kwargs):
+        svc = self._make_pv_file_service(request)
+        if request.method == "DELETE":
+            path = request.query_params.get("path", "")
+            if not path:
+                raise ClientBlueException(message="path is required")
+            try:
+                svc.delete_file(session_code=pk, path=path)
+            except SandboxFileError as exc:
+                return self._pv_exc_to_response(exc)
+            return Response(status=204)
+
+        params = request.query_params
+        try:
+            data = svc.list_files(
+                session_code=pk,
+                path=params.get("path", ""),
+                since=None,
+                until=None,
+            )
+        except SandboxFileError as exc:
+            return self._pv_exc_to_response(exc)
+        return Response(data=data)
+
+    @action(["GET"], url_path="pv_files/stat", detail=True)
+    def pv_files_stat(self, request, pk, **kwargs):
+        path = request.query_params.get("path", "")
+        if not path:
+            raise ClientBlueException(message="path is required")
+        try:
+            data = self._make_pv_file_service(request).stat_file(session_code=pk, path=path)
+        except SandboxFileError as exc:
+            return self._pv_exc_to_response(exc)
+        return Response(data=data)
+
+    @action(["GET"], url_path="pv_files/preview", detail=True)
+    def pv_files_preview(self, request, pk, **kwargs):
+        path = request.query_params.get("path", "")
+        if not path:
+            raise ClientBlueException(message="path is required")
+        max_bytes = _parse_positive_int(request.query_params.get("max_bytes"), 65536)
+        try:
+            content, truncated = self._make_pv_file_service(request).preview_file(
+                session_code=pk, path=path, max_bytes=max_bytes
+            )
+        except SandboxFileError as exc:
+            return self._pv_exc_to_response(exc)
+        response = HttpResponse(content, content_type="text/plain; charset=utf-8")
+        response["X-Truncated"] = "true" if truncated else "false"
+        return response
+
+    @action(["GET"], url_path="pv_files/download_url", detail=True)
+    def pv_files_download_url(self, request, pk, **kwargs):
+        path = request.query_params.get("path", "")
+        if not path:
+            raise ClientBlueException(message="path is required")
+        expires_in = _parse_positive_int(request.query_params.get("expires_in"), 600)
+        try:
+            data = self._make_pv_file_service(request).get_download_url(
+                session_code=pk, path=path, expires_in=expires_in
+            )
+        except SandboxFileError as exc:
+            return self._pv_exc_to_response(exc)
+        return Response(data=data)
 
 
 class ChatSessionContentViewSet(PluginViewSet):
