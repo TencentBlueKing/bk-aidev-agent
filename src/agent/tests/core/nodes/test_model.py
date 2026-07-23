@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
-from aidev_agent.core.nodes.model import ModelChainConfig, ModelNodeSettings, ModelState, build_model_node
+from aidev_agent.core.nodes.model import ModelNodeSettings, ModelState, build_model_node
 from aidev_agent.core.nodes.model.pydantic_models import ModelChainState, ProcessorContext
 from aidev_agent.core.nodes.model.quality_gate import QualityGate, ResponseRoute
 from aidev_agent.enums import Decision
@@ -604,7 +604,7 @@ class TestModelNodeRecoveryLoop:
     def test_all_empty_exhausted_returns_last(self, mock_store, mock_prompt_setup):
         """测试全部返回空内容 → 重试耗尽后返回最后一个空响应（不抛异常）
 
-        max_empty_retries=3 表示允许 3 次重试（共 4 次调用）：
+        max_model_retries=3 表示允许 3 次重试（共 4 次调用）：
         调用1→空(retry1)→调用2→空(retry2)→调用3→空(retry3)→调用4→空(exhausted→end)
         """
         mock_llm = _make_response_queue_llm(
@@ -629,7 +629,7 @@ class TestModelNodeRecoveryLoop:
             node = build_model_node(
                 llm=mock_llm,
                 tools=[],
-                node_options=ModelNodeSettings(model_chain_config=ModelChainConfig(max_empty_retries=3)),
+                node_options=ModelNodeSettings(max_model_retries=3),
             )
 
             state: ModelState = {"messages": [HumanMessage(content="test")]}
@@ -742,12 +742,7 @@ class TestModelNodeRecoveryLoop:
             node = build_model_node(
                 llm=mock_llm,
                 tools=[],
-                node_options=ModelNodeSettings(
-                    model_chain_config=ModelChainConfig(
-                        max_empty_retries=3,
-                        max_truncated_tool_call_retries=3,
-                    )
-                ),
+                node_options=ModelNodeSettings(max_model_retries=3),
             )
 
             state: ModelState = {"messages": [HumanMessage(content="test")]}
@@ -870,7 +865,7 @@ class TestAModelNodeRecoveryLoop:
     async def test_all_empty_exhausted_returns_last(self, mock_store, mock_prompt_setup):
         """测试全部返回空内容 → 重试耗尽后返回最后一个空响应（不抛异常）
 
-        max_empty_retries=3 表示允许 3 次重试（共 4 次调用）：
+        max_model_retries=3 表示允许 3 次重试（共 4 次调用）：
         调用1→空(retry1)→调用2→空(retry2)→调用3→空(retry3)→调用4→空(exhausted→end)
         """
         mock_llm = _make_response_queue_llm(
@@ -895,7 +890,7 @@ class TestAModelNodeRecoveryLoop:
             node = build_model_node(
                 llm=mock_llm,
                 tools=[],
-                node_options=ModelNodeSettings(model_chain_config=ModelChainConfig(max_empty_retries=3)),
+                node_options=ModelNodeSettings(max_model_retries=3),
             )
 
             state: ModelState = {"messages": [HumanMessage(content="test")]}
@@ -958,9 +953,9 @@ def _make_ctx(response, messages=None, model_chain_state=None):
 class TestValidateResponse:
     """测试 validate_response 函数"""
 
-    def _make_gate(self, *, enable_judgment_llm: bool = False) -> QualityGate:
-        """构造测试用 QualityGate。默认关闭 judgment LLM 避免 test 触发真实 LLM 构造。"""
-        return QualityGate(enable_judgment_llm=enable_judgment_llm)
+    def _make_gate(self, *, enable_judge_response: bool = False) -> QualityGate:
+        """构造测试用 QualityGate。默认关闭判断 LLM 避免 test 触发真实 LLM 构造。"""
+        return QualityGate(enable_judge_response=enable_judge_response)
 
     def test_tool_calls_returns_pv_node(self):
         msg = AIMessage(content="", tool_calls=[{"name": "x", "args": {}, "id": "1"}])
@@ -1002,7 +997,9 @@ class TestValidateResponse:
     def test_empty_after_tools_nudge(self):
         tool_msg = ToolMessage(content="result", tool_call_id="1")
         msg = AIMessage(content="")
-        ctx = _make_ctx(msg, [tool_msg, msg])
+        # ctx.response 是独立字段，不在 ctx.messages 中；工具执行后 messages
+        # 末尾正是 ToolMessage，符合实际运行时语义。
+        ctx = _make_ctx(msg, [tool_msg])
         result = self._make_gate().validate_response(ctx)
         assert result == ResponseRoute.RECOVERY_NUDGE
 
@@ -1031,6 +1028,7 @@ class TestValidateResponse:
             post_tool_empty_retried=True,
             thinking_prefill_retries=2,
             length_continue_retries=3,
+            max_retries=2,
         )
         ctx = _make_ctx(msg, model_chain_state=rs)
         result = self._make_gate().validate_response(ctx)
@@ -1105,7 +1103,7 @@ class TestModelNodeRateLimit:
     def test_rate_limit_error_exhausted(self, mock_store, mock_prompt_setup):
         """测试 RateLimitError 连续发生 → 重试耗尽后抛出异常
 
-        max_empty_retries=3 意味着允许 3 次重试（共 4 次调用），
+        max_model_retries=3 意味着允许 3 次重试（共 4 次调用），
         第 4 次 RateLimitError 时不再重试，直接抛出。
         """
         invoke_counter = [0]
@@ -1133,7 +1131,7 @@ class TestModelNodeRateLimit:
             node = build_model_node(
                 llm=mock_llm,
                 tools=[],
-                node_options=ModelNodeSettings(model_chain_config=ModelChainConfig(max_empty_retries=3)),
+                node_options=ModelNodeSettings(max_model_retries=3),
             )
 
             state: ModelState = {"messages": [HumanMessage(content="test")]}
@@ -1210,7 +1208,7 @@ class TestModelNodeRateLimit:
             node = build_model_node(
                 llm=mock_llm,
                 tools=[],
-                node_options=ModelNodeSettings(model_chain_config=ModelChainConfig(max_empty_retries=3)),
+                node_options=ModelNodeSettings(max_model_retries=3),
             )
 
             state: ModelState = {"messages": [HumanMessage(content="test")]}

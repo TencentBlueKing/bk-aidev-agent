@@ -693,6 +693,8 @@ class LangGraphAgent:
         )
 
     async def _handle_on_chat_model_end_event(self, event: Any) -> AsyncGenerator[BaseEvent, None]:
+        if not self.front_end_display:
+            return
         # ChatModelEnd CustomEvent：把"模型这一轮的完整输出快照"分发给 DB 侧。
         # SSE 侧 AidevAGUIAgent.run() 通过 skip_encode_custom 跳过编码（不进入 SSE 输出）。
         # 顺序：在消息收尾事件（ToolCallEnd/TextMessageEnd）之后发出，确保 DB 侧拿到的是收尾后的完整态。

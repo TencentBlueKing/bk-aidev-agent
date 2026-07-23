@@ -109,7 +109,8 @@ class QualityGate:
     # 判断系统提示词——类属性，子类可重写
     judgment_sys_prompt: str = """你是一个任务完成度判断器。我会给你以下信息：
 1. 用户的最后一条输入
-2. 智能助手的最后一条输出
+2. 智能助手回答过程中调用的工具及其参数（如有）
+3. 智能助手的最后一条输出
 
 你需要判断智能助手的输出是否实际完成了用户输入中要求的任务，以便于放行用户继续提问
 完成任务的情况如下：
@@ -132,19 +133,19 @@ class QualityGate:
         self,
         *,
         judge_llm: BaseChatModel | None = None,
-        enable_judgment_llm: bool = True,
+        enable_judge_response: bool = True,
     ) -> None:
         """初始化质量门禁。
 
         Args:
             judge_llm: 判断用 LLM 实例。构造一次并复用（避免每次响应重建）。
                 为 None 时 fail-open（跳过判断，视为已完成）。
-            enable_judgment_llm: 是否在内容响应上调用判断 LLM。关闭后
+            enable_judge_response: 是否启用任务完成度评估。关闭后
                 ``has_content`` 分支直接返回 ``NORMAL_COMPLETION``，省去
-                每次正常响应的额外 LLM 调用。
+                每次正常响应的额外判断 LLM 调用。
         """
         self.judge_llm = judge_llm
-        self.enable_judgment_llm = enable_judgment_llm
+        self.enable_judge_response = enable_judge_response
 
     # ------------------------------------------------------------------
     # 任务完成度判断（SRE3-6-35B-A3B-nothinking judge，fail-open 语义）
@@ -157,12 +158,40 @@ class QualityGate:
                 return extract_text_from_content(msg.content)
         return None
 
+    def _extract_tool_calls_since_last_human(self, messages: list[BaseMessage]) -> list[dict]:
+        """从消息列表中提取最后一次 HumanMessage 之后发生的工具调用信息。
+
+        只提取工具名称和参数，不包含工具返回结果。
+        从最后一条 HumanMessage 开始向后扫描，收集之后所有 AIMessage 中的 tool_calls。
+
+        Returns:
+            工具调用列表，每个元素为 ``{"name": str, "args": dict}``
+        """
+        # 找到最后一条 HumanMessage 的索引
+        last_human_idx = -1
+        for i in range(len(messages) - 1, -1, -1):
+            if isinstance(messages[i], HumanMessage):
+                last_human_idx = i
+                break
+
+        if last_human_idx == -1:
+            return []
+
+        # 从 HumanMessage 之后开始收集所有 AIMessage 中的 tool_calls
+        tool_calls: list[dict] = []
+        for msg in messages[last_human_idx + 1 :]:
+            if isinstance(msg, AIMessage) and msg.tool_calls:
+                for tc in msg.tool_calls:
+                    tool_calls.append({"name": tc.get("name", ""), "args": tc.get("args", {})})
+        return tool_calls
+
     def _judge_task_completion(
         self,
         judgment_llm,
         last_user_input: str,
         last_model_output: str,
         *,
+        tool_calls: list[dict] | None = None,
         enable_custom_event: bool = True,
     ) -> bool:
         """调用判断模型评估任务是否完成。fail-open：无法确定未完成则返回 True。
@@ -171,6 +200,8 @@ class QualityGate:
             judgment_llm: 用于判断的 LLM 实例
             last_user_input: 最后一条用户输入文本
             last_model_output: 最后一条模型输出文本（已剔除 think 块）
+            tool_calls: 最后一次用户提问到 AI 回答期间调用的工具及参数列表，
+                每个元素为 ``{"name": str, "args": dict}``，不包含工具结果
             enable_custom_event: 是否派发 custom_event（用于 SSE 流期间
                 切换 ``front_end_display``，避免判断 LLM 的流式输出写入 DB
                 或显示给前端）。
@@ -181,8 +212,17 @@ class QualityGate:
         if not judgment_llm or not last_user_input or not last_model_output:
             return True  # fail-open
 
+        # 构建工具调用信息文本
+        tool_calls_text = ""
+        if tool_calls:
+            tool_lines = []
+            for tc in tool_calls:
+                tool_lines.append(f"- {tc['name']}({tc['args']})")
+            tool_calls_text = "调用的工具及参数：\n" + "\n".join(tool_lines) + "\n\n"
+
         usr_prompt = (
             f"用户最后一条输入：\n```\n{last_user_input}\n```\n\n"
+            f"{tool_calls_text}"
             f"智能助手最后一条输出：\n```\n{last_model_output}\n```\n\n"
             f"请判断智能助手是否完成了用户的任务。"
         )
@@ -219,7 +259,7 @@ class QualityGate:
         *,
         enable_custom_event: bool = True,
     ) -> bool:
-        """提取最后用户输入和模型输出，调用判断 LLM。fail-open 语义。
+        """提取最后用户输入、工具调用信息和模型输出，调用判断 LLM。fail-open 语义。
 
         Args:
             enable_custom_event: 是否派发 custom_event（透传给 _judge_task_completion）。
@@ -233,10 +273,12 @@ class QualityGate:
         last_model_output = extract_text_from_content(response.content)
         if last_model_output:
             last_model_output = strip_think_blocks(last_model_output)
+        tool_calls = self._extract_tool_calls_since_last_human(working_messages)
         return self._judge_task_completion(
             self.judge_llm,
             last_user_input,
             last_model_output,
+            tool_calls=tool_calls,
             enable_custom_event=enable_custom_event,
         )
 
@@ -267,12 +309,12 @@ class QualityGate:
         if (
             response.tool_calls
             and is_truncated(response)
-            and recovery.truncated_tool_call_retries < recovery.max_truncated_tool_call_retries
+            and recovery.truncated_tool_call_retries < recovery.max_retries
         ):
             logger.info(
                 "Recovery: truncated tool call (retry %d/%d)",
                 recovery.truncated_tool_call_retries + 1,
-                recovery.max_truncated_tool_call_retries,
+                recovery.max_retries,
             )
             return ResponseRoute.RECOVERY_TRUNCATION
 
@@ -288,7 +330,7 @@ class QualityGate:
             isinstance(content, list) and len(content) > 0
         )
         if has_content:
-            if self.enable_judgment_llm and not self._judge_response_completion(
+            if self.enable_judge_response and not self._judge_response_completion(
                 response,
                 working_messages,
                 enable_custom_event=ctx.metadata.get("enable_custom_event", True),
@@ -314,29 +356,29 @@ class QualityGate:
             or (
                 isinstance(content, str) and has_inline_thinking(content) and not has_content_after_think_block(content)
             )
-        ) and recovery.thinking_prefill_retries < recovery.max_thinking_prefill_retries:
+        ) and recovery.thinking_prefill_retries < recovery.max_retries:
             logger.info(
                 "Recovery: thinking-only response (prefill retry %d/%d)",
                 recovery.thinking_prefill_retries + 1,
-                recovery.max_thinking_prefill_retries,
+                recovery.max_retries,
             )
             return ResponseRoute.RECOVERY_PREFILL
 
         # 6. 截断：finish_reason == "length"。
-        if is_truncated(response) and recovery.length_continue_retries < recovery.max_truncation_retries:
+        if is_truncated(response) and recovery.length_continue_retries < recovery.max_retries:
             logger.info(
                 "Recovery: truncated response (retry %d/%d)",
                 recovery.length_continue_retries + 1,
-                recovery.max_truncation_retries,
+                recovery.max_retries,
             )
             return ResponseRoute.RECOVERY_TRUNCATION
 
         # 7. 空内容重试。
-        if recovery.empty_content_retries < recovery.max_empty_retries:
+        if recovery.empty_content_retries < recovery.max_retries:
             logger.info(
                 "Recovery: empty content (retry %d/%d)",
                 recovery.empty_content_retries + 1,
-                recovery.max_empty_retries,
+                recovery.max_retries,
             )
             return ResponseRoute.RECOVERY_RETRY
 
@@ -404,7 +446,7 @@ class QualityGate:
                 logger.info(
                     "Recovery: truncated tool call (retry %d/%d), boosting max_tokens to %d",
                     ctx.model_chain_state.truncated_tool_call_retries,
-                    ctx.model_chain_state.max_truncated_tool_call_retries,
+                    ctx.model_chain_state.max_retries,
                     boosted_max_tokens,
                 )
                 ctx.model_chain_state.max_tokens_override = boosted_max_tokens
@@ -427,7 +469,7 @@ class QualityGate:
             logger.info(
                 "Recovery retry: empty_content_retries=%d/%d",
                 ctx.model_chain_state.empty_content_retries,
-                ctx.model_chain_state.max_empty_retries,
+                ctx.model_chain_state.max_retries,
             )
             raise RecoveryRetryError(response)
 

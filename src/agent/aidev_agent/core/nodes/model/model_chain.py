@@ -93,14 +93,13 @@ def _attach_images_to_last_human_message(messages: list[BaseMessage], image_cont
         return
 
 
-def _build_effective_chain(
+def build_llm_with_tools(
     *,
     llm: BaseChatModel,
     tools: list[BaseTool],
     use_structured_response: bool,
     enable_parallel_tool_calls: bool,
     use_tool_call_promotion: bool,
-    max_tokens_override: int | None = None,
 ) -> Runnable:
     """从原始 LLM 构建可执行的 chain。
 
@@ -108,24 +107,26 @@ def _build_effective_chain(
     可直接调用的 Runnable。
 
     构建顺序：
-    1. max_tokens 前置（消除两分支重复 bind）
-    2. 无工具时直接返回 llm——StructuredOutputToToolMessageParser 的唯一
+    1. 无工具时直接返回 llm——StructuredOutputToToolMessageParser 的唯一
        作用是将 JSON 输出解析为 tool_calls，无工具时无意义
-    3. structured / 非 structured 分支构建 chain
-    4. promotion 统一加在末尾（两个分支一致）
-    """
-    # 1. max_tokens 前置
-    if max_tokens_override:
-        llm = llm.bind(max_tokens=max_tokens_override)
+    2. structured / 非 structured 分支构建 chain
+    3. promotion 统一加在末尾（两个分支一致）
 
-    # 2. 无工具 → 直接返回 llm
+    注意：max_tokens 不在此处绑定。``llm.bind(max_tokens=...)`` 返回的
+    ``RunnableBinding`` 在后续 ``bind_tools`` 时会通过 ``__getattr__``
+    代理到底层 ChatModel，绕开 ``RunnableBinding.bind`` 的 kwargs 合并，
+    导致 max_tokens 丢失。max_tokens 改由调用方在 ``invoke`` / ``ainvoke``
+    时按 ``max_tokens_override`` 传入（利用 ``RunnableBinding.invoke`` 的
+    ``{**self.kwargs, **kwargs}`` 合并语义）。
+    """
+    # 1. 无工具 → 直接返回 llm
     #    StructuredOutputToToolMessageParser 的作用是把 JSON 输出解析为
     #    tool_calls；没有工具时 parser 无意义，无论 use_structured_response
     #    取值如何都应直接返回 llm。
     if not tools:
         return llm
 
-    # 3. 构建 chain（tools 非空）
+    # 2. 构建 chain（tools 非空）
     if use_structured_response:
         chain = llm | StructuredOutputToToolMessageParser(
             llm=llm,
@@ -134,7 +135,7 @@ def _build_effective_chain(
     else:
         chain = llm.bind_tools(tools)
 
-    # 4. promotion（两个分支统一加；无工具时已在上方提前返回）
+    # 3. promotion（两个分支统一加；无工具时已在上方提前返回）
     if use_tool_call_promotion:
         allowed_tool_names = {t.name for t in tools}
         chain = chain | RunnableLambda(lambda msg, _names=allowed_tool_names: _promote_message(msg, _names))
@@ -150,7 +151,7 @@ def _build_model_chain(
     *,
     llm,
     context_assembly,
-    model_chain_config,
+    max_retries: int,
     quality_gate: QualityGate,
     use_structured_response: bool,
     enable_parallel_tool_calls: bool,
@@ -164,7 +165,7 @@ def _build_model_chain(
     Args:
         llm: 语言模型
         context_assembly: 上下文装配器
-        model_chain_config: 模型链配置（max_empty_retries 等）
+        max_retries: 模型调用失败或返回无效消息时的最大重试次数
         quality_gate: 质量门禁实例（评估响应并决定恢复路由）
         use_structured_response: 是否使用结构化响应模式
         enable_parallel_tool_calls: 是否启用并行工具调用
@@ -175,7 +176,7 @@ def _build_model_chain(
     """
 
     # ------------------------------------------------------------------
-    # 内部函数：消息渲染（链头，D-07/D-08/D-09）
+    # 内部函数：消息渲染
     # ------------------------------------------------------------------
     def _render_messages(ctx: ProcessorContext) -> ProcessorContext:
         """渲染 prompt 模板为消息列表，填入 ctx.messages (D-07/D-08)。
@@ -201,16 +202,20 @@ def _build_model_chain(
     def _call_llm(ctx: ProcessorContext) -> ProcessorContext:
         """从原始 LLM 构建 chain 并调用，处理 RateLimitError。"""
         tools = context_assembly.get_choice_tools(ctx)
-        effective_llm = _build_effective_chain(
+        llm_with_tools = build_llm_with_tools(
             llm=llm,
             tools=tools,
             use_structured_response=use_structured_response,
             enable_parallel_tool_calls=enable_parallel_tool_calls,
             use_tool_call_promotion=use_tool_call_promotion,
-            max_tokens_override=ctx.model_chain_state.max_tokens_override,
         )
+        # max_tokens 在 invoke 时传入，避免 bind(max_tokens) 与 bind_tools
+        # 组合时 max_tokens 被 RunnableBinding.__getattr__ 代理丢弃。
+        invoke_kwargs: dict[str, Any] = {}
+        if ctx.model_chain_state.max_tokens_override:
+            invoke_kwargs["max_tokens"] = ctx.model_chain_state.max_tokens_override
         try:
-            response = effective_llm.invoke(ctx.messages, config=ctx.config)
+            response = llm_with_tools.invoke(ctx.messages, config=ctx.config, **invoke_kwargs)
         except RateLimitError:
             if settings.LLM_RETRY_STRATEGY != "sdk":
                 raise
@@ -218,9 +223,9 @@ def _build_model_chain(
             logger.warning(
                 "Rate limit error, waiting 60s before retry (%d/%d)",
                 ctx.model_chain_state.empty_content_retries,
-                ctx.model_chain_state.max_empty_retries,
+                ctx.model_chain_state.max_retries,
             )
-            if ctx.model_chain_state.empty_content_retries > ctx.model_chain_state.max_empty_retries:
+            if ctx.model_chain_state.empty_content_retries > ctx.model_chain_state.max_retries:
                 raise
             time.sleep(60)
             raise RetryableRateLimitError(ctx.response or AIMessage(content=""))
@@ -230,16 +235,20 @@ def _build_model_chain(
     async def _acall_llm(ctx: ProcessorContext) -> ProcessorContext:
         """从原始 LLM 异步构建 chain 并调用，处理 RateLimitError。"""
         tools = context_assembly.get_choice_tools(ctx)
-        effective_llm = _build_effective_chain(
+        llm_with_tools = build_llm_with_tools(
             llm=llm,
             tools=tools,
             use_structured_response=use_structured_response,
             enable_parallel_tool_calls=enable_parallel_tool_calls,
             use_tool_call_promotion=use_tool_call_promotion,
-            max_tokens_override=ctx.model_chain_state.max_tokens_override,
         )
+        # max_tokens 在 invoke 时传入，避免 bind(max_tokens) 与 bind_tools
+        # 组合时 max_tokens 被 RunnableBinding.__getattr__ 代理丢弃。
+        invoke_kwargs: dict[str, Any] = {}
+        if ctx.model_chain_state.max_tokens_override:
+            invoke_kwargs["max_tokens"] = ctx.model_chain_state.max_tokens_override
         try:
-            response = await effective_llm.ainvoke(ctx.messages, config=ctx.config)
+            response = await llm_with_tools.ainvoke(ctx.messages, config=ctx.config, **invoke_kwargs)
         except RateLimitError:
             if settings.LLM_RETRY_STRATEGY != "sdk":
                 raise
@@ -247,9 +256,9 @@ def _build_model_chain(
             logger.warning(
                 "Rate limit error, waiting 60s before retry (%d/%d)",
                 ctx.model_chain_state.empty_content_retries,
-                ctx.model_chain_state.max_empty_retries,
+                ctx.model_chain_state.max_retries,
             )
-            if ctx.model_chain_state.empty_content_retries > ctx.model_chain_state.max_empty_retries:
+            if ctx.model_chain_state.empty_content_retries > ctx.model_chain_state.max_retries:
                 raise
             await asyncio.sleep(60)
             raise RetryableRateLimitError(ctx.response or AIMessage(content=""))
@@ -266,7 +275,7 @@ def _build_model_chain(
     # 用重试包装 — 捕获所有 RETRYABLE_EXCEPTIONS
     retryable_model_chain = model_chain.with_retry(
         retry_if_exception_type=RETRYABLE_EXCEPTIONS,
-        stop_after_attempt=model_chain_config.max_empty_retries + 1,
+        stop_after_attempt=max_retries + 1,
         wait_exponential_jitter=True,
         exponential_jitter_params={"initial": 0.001},  # 最小化 — 实际等待在 Lambda 中
     )

@@ -107,10 +107,9 @@ def build_model_node(
 
     use_structured_response = node_options.use_structured_response
     enable_parallel_tool_calls = node_options.enable_parallel_tool_calls
-    model_chain_config = node_options.model_chain_config
     quality_gate = QualityGate(
         judge_llm=judge_llm,
-        enable_judgment_llm=model_chain_config.enable_judgment_llm,
+        enable_judge_response=node_options.enable_judge_response,
     )
 
     # 在内部构建 ContextAssembly，并手动加载所有必需的中间件
@@ -195,7 +194,7 @@ def build_model_node(
     model_chain = _build_model_chain(
         llm=llm,
         context_assembly=context_assembly,
-        model_chain_config=model_chain_config,
+        max_retries=node_options.max_model_retries,
         quality_gate=quality_gate,
         use_structured_response=use_structured_response,
         enable_parallel_tool_calls=enable_parallel_tool_calls,
@@ -215,10 +214,7 @@ def build_model_node(
             store=store,
             llm=llm,
             model_chain_state=ModelChainState(
-                max_empty_retries=model_chain_config.max_empty_retries,
-                max_thinking_prefill_retries=model_chain_config.max_thinking_prefill_retries,
-                max_truncation_retries=model_chain_config.max_truncation_retries,
-                max_truncated_tool_call_retries=model_chain_config.max_truncated_tool_call_retries,
+                max_retries=node_options.max_model_retries,
             ),
             messages=[],
             response=None,
@@ -241,10 +237,7 @@ def build_model_node(
             store=store,
             llm=llm,
             model_chain_state=ModelChainState(
-                max_empty_retries=model_chain_config.max_empty_retries,
-                max_thinking_prefill_retries=model_chain_config.max_thinking_prefill_retries,
-                max_truncation_retries=model_chain_config.max_truncation_retries,
-                max_truncated_tool_call_retries=model_chain_config.max_truncated_tool_call_retries,
+                max_retries=node_options.max_model_retries,
             ),
             messages=[],
             response=None,

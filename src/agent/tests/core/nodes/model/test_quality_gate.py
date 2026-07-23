@@ -11,10 +11,11 @@ from aidev_agent.core.nodes.model.quality_gate import (
 from aidev_agent.core.nodes.model.utils import (
     detect_thinking_exhaustion,
     has_content_after_think_block,
+    has_prior_tool_results,
     is_truncated,
     strip_think_blocks,
 )
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 
 # ---------------------------------------------------------------------------
@@ -63,6 +64,23 @@ class TestHelperFunctions:
         msg2 = AIMessage(content="x", response_metadata={"finish_reason": "stop"})
         assert is_truncated(msg2) is False
 
+    @pytest.mark.parametrize(
+        "messages, expected",
+        [
+            ([ToolMessage(content="r", tool_call_id="1")], True),
+            ([HumanMessage(content="hi"), ToolMessage(content="r", tool_call_id="1")], True),
+            ([HumanMessage(content="hi")], False),
+            ([], False),
+            (
+                [AIMessage(content="ai"), HumanMessage(content="hi"), ToolMessage(content="r", tool_call_id="1")],
+                True,
+            ),
+            ([ToolMessage(content="r", tool_call_id="1"), HumanMessage(content="hi")], False),
+        ],
+    )
+    def test_has_prior_tool_results(self, messages, expected):
+        assert has_prior_tool_results(messages) is expected
+
 
 # ---------------------------------------------------------------------------
 # 测试任务完成度判断（SRE3-6-35B-A3B-nothinking judge）
@@ -101,7 +119,7 @@ class TestTaskJudgment:
     def test_judge_routes_by_completion(self, judge_response, expect_route):
         mock_llm = Mock()
         mock_llm.invoke.return_value = AIMessage(content=judge_response)
-        gate = QualityGate(judge_llm=mock_llm, enable_judgment_llm=True)
+        gate = QualityGate(judge_llm=mock_llm, enable_judge_response=True)
         response = AIMessage(content="这是回答")
         messages = [HumanMessage(content="用户问题")]
         ctx = _make_ctx(response, messages)
@@ -111,7 +129,7 @@ class TestTaskJudgment:
     def test_judge_fail_open_on_exception(self):
         mock_llm = Mock()
         mock_llm.invoke.side_effect = RuntimeError("timeout")
-        gate = QualityGate(judge_llm=mock_llm, enable_judgment_llm=True)
+        gate = QualityGate(judge_llm=mock_llm, enable_judge_response=True)
         response = AIMessage(content="回答")
         ctx = _make_ctx(response)
         route = gate.validate_response(ctx)
@@ -119,7 +137,7 @@ class TestTaskJudgment:
 
     def test_judge_fail_open_when_no_judge_llm(self):
         """judge_llm=None → fail-open（跳过判断，视为已完成）。"""
-        gate = QualityGate(judge_llm=None, enable_judgment_llm=True)
+        gate = QualityGate(judge_llm=None, enable_judge_response=True)
         response = AIMessage(content="回答")
         ctx = _make_ctx(response)
         route = gate.validate_response(ctx)
@@ -137,7 +155,7 @@ class TestTaskJudgment:
     def test_judge_think_block_stripped(self):
         mock_llm = Mock()
         mock_llm.invoke.return_value = AIMessage(content="已完成")
-        gate = QualityGate(judge_llm=mock_llm, enable_judgment_llm=True)
+        gate = QualityGate(judge_llm=mock_llm, enable_judge_response=True)
         think_content = "<think>admiration</think>visible answer"
         response = AIMessage(content=think_content)
         ctx = _make_ctx(response)
@@ -149,13 +167,13 @@ class TestTaskJudgment:
         assert "visible answer" in human_msg.content
 
 
-class TestEnableJudgmentLlmSwitch:
-    """测试 enable_judgment_llm 开关。"""
+class TestEnableJudgeResponseSwitch:
+    """测试 enable_judge_response 开关。"""
 
     def test_disabled_skips_judgment(self):
-        """enable_judgment_llm=False → 有内容直接 NORMAL_COMPLETION，不调用 judgment LLM。"""
+        """enable_judge_response=False → 有内容直接 NORMAL_COMPLETION，不调用 judgment LLM。"""
         mock_llm = Mock()
-        gate = QualityGate(judge_llm=mock_llm, enable_judgment_llm=False)
+        gate = QualityGate(judge_llm=mock_llm, enable_judge_response=False)
         response = AIMessage(content="回答")
         ctx = _make_ctx(response)
         route = gate.validate_response(ctx)
@@ -163,10 +181,10 @@ class TestEnableJudgmentLlmSwitch:
         mock_llm.invoke.assert_not_called()
 
     def test_enabled_invokes_judgment(self):
-        """enable_judgment_llm=True + judge_llm 已配置 → 有内容时调用 judgment LLM。"""
+        """enable_judge_response=True + judge_llm 已配置 → 有内容时调用 judgment LLM。"""
         mock_llm = Mock()
         mock_llm.invoke.return_value = AIMessage(content="已完成")
-        gate = QualityGate(judge_llm=mock_llm, enable_judgment_llm=True)
+        gate = QualityGate(judge_llm=mock_llm, enable_judge_response=True)
         response = AIMessage(content="回答")
         ctx = _make_ctx(response)
         route = gate.validate_response(ctx)
@@ -182,7 +200,7 @@ class TestFrontEndDisplayEvents:
         """invoke 前派发 front_end_display=False，invoke 后派发 front_end_display=True。"""
         mock_llm = Mock()
         mock_llm.invoke.return_value = AIMessage(content="已完成")
-        gate = QualityGate(judge_llm=mock_llm, enable_judgment_llm=True)
+        gate = QualityGate(judge_llm=mock_llm, enable_judge_response=True)
         response = AIMessage(content="回答")
         ctx = _make_ctx(response)
         gate.validate_response(ctx)
@@ -199,7 +217,7 @@ class TestFrontEndDisplayEvents:
         """invoke 抛异常时，finally 仍恢复 front_end_display=True（fail-open）。"""
         mock_llm = Mock()
         mock_llm.invoke.side_effect = RuntimeError("timeout")
-        gate = QualityGate(judge_llm=mock_llm, enable_judgment_llm=True)
+        gate = QualityGate(judge_llm=mock_llm, enable_judge_response=True)
         response = AIMessage(content="回答")
         ctx = _make_ctx(response)
         route = gate.validate_response(ctx)

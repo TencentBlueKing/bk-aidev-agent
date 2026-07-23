@@ -10,7 +10,6 @@ from .context_assembly import ContextAssembly
 from .node import ModelState, build_model_node
 from .pydantic_models import (
     RETRYABLE_EXCEPTIONS,
-    ModelChainConfig,
     ModelNodeSettings,
     RecoveryException,
     RecoveryNudgeError,
@@ -39,7 +38,6 @@ __all__ = [
     "ContextAssembly",
     "KnowledgeCompressionMiddleware",
     "KnowledgeCompressor",
-    "ModelChainConfig",
     "ModelState",
     "ModelNodeSettings",
     "ParsedToolCall",

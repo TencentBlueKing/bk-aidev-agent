@@ -68,11 +68,11 @@ class ModelChainState:
     truncated_tool_call_retries: int = 0
     max_tokens_override: int | None = None  # D-10
 
-    # 从 ModelChainConfig 注入的恢复上限。
-    max_empty_retries: int = 3
-    max_thinking_prefill_retries: int = 2
-    max_truncation_retries: int = 3
-    max_truncated_tool_call_retries: int = 3
+    # 所有恢复类型的统一上限（从 ModelNodeSettings.max_model_retries 注入）。
+    # 4 个分类计数器（empty_content_retries / thinking_prefill_retries /
+    # length_continue_retries / truncated_tool_call_retries）仍保留用于
+    # 日志和路由判断，但上限统一为 max_retries。
+    max_retries: int = 10
 
 
 @dataclass
@@ -118,34 +118,6 @@ class Middleware(Protocol):
 DEFAULT_ENABLE_PARALLEL_TOOL_CALLS: bool = True
 
 
-class ModelChainConfig(BaseModel):
-    """模型链的不可变配置。
-
-    控制当模型返回异常响应（空内容、纯思考、截断等）时的重试行为。
-    """
-
-    max_empty_retries: int = Field(
-        default=3,
-        description="空内容响应的最大重试次数",
-    )
-    max_thinking_prefill_retries: int = Field(
-        default=2,
-        description="纯思考响应（无文本输出）的 prefill 重试次数",
-    )
-    max_truncation_retries: int = Field(
-        default=3,
-        description="文本截断的最大重试次数",
-    )
-    max_truncated_tool_call_retries: int = Field(
-        default=3,
-        description="工具调用截断的最大重试次数",
-    )
-    enable_judgment_llm: bool = Field(
-        default=True,
-        description="是否在内容响应上调用判断 LLM 评估任务完成度。关闭可省去每次正常响应的额外 LLM 调用",
-    )
-
-
 class ModelNodeSettings(BaseModel):
     """Settings for `build_model_node`.
 
@@ -177,10 +149,9 @@ class ModelNodeSettings(BaseModel):
         default=True,
         description="是否启用纯文本工具调用提升（将文本中的工具调用格式解析为原生 tool_calls）",
     )
-
-    model_chain_config: ModelChainConfig = Field(
-        default_factory=ModelChainConfig,
-        description="模型链配置（空内容、纯思考、截断等异常场景的重试行为）",
+    enable_judge_response: bool = Field(
+        default=True,
+        description="是否启用任务完成度评估。关闭后 has_content 分支直接返回 NORMAL_COMPLETION，省去每次正常响应的额外判断 LLM 调用",
     )
 
     # ---------------------------------------------------------------------

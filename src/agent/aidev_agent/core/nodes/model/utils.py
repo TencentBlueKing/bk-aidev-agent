@@ -82,8 +82,18 @@ def is_truncated(message: AIMessage) -> bool:
 
 
 def has_prior_tool_results(messages: list[BaseMessage]) -> bool:
-    """如果最近消息中有 ToolMessage 条目，返回 ``True``。"""
-    for msg in reversed(messages[:-1]):
+    """如果从消息列表末尾向前扫描时遇到 ToolMessage，返回 ``True``。
+
+    遍历完整的 ``messages`` 列表（不排除最后一条）——因为 ``ctx.response``
+    是独立字段（``ctx.response = response``），不会追加到 ``ctx.messages``。
+    在 ReAct 循环工具执行后，``ctx.messages`` 末尾正是 ToolMessage（工具结果），
+    必须将其纳入扫描，否则会误判为"无前置工具结果"。
+
+    扫描语义：从末尾向前逐条检查，遇到 ToolMessage 立即返回 True；
+    遇到 HumanMessage 则 break（认为已回到新一轮用户输入，不再向前追溯）；
+    遇到 AIMessage 继续向前扫描。
+    """
+    for msg in reversed(messages):
         if isinstance(msg, ToolMessage):
             return True
         if isinstance(msg, HumanMessage):
