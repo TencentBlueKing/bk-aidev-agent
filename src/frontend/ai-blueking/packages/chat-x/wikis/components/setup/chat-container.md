@@ -566,8 +566,9 @@ ai-chat-container（:data-ai-size="size"）
 - **触发**：点击 AI 回复中的文件卡片（[ArtifactFileCard](/components/message/assistant-message)）时，容器通过 `useArtifactPreviewProvider` 命中该文件并 `addCustomTab` 弹出侧栏
 - **排序 / 关闭**：`order: -1` 排在「执行情况」之前，`closable: false` 不可关闭
 - **显隐解耦**：该 Tab 存在时，侧栏展示不再受「`executionGroups` 为空」约束（即使当前会话没有执行类消息，也能独立展示文件产物侧栏）；会话切换或无文件产物时自动移除并重置命中态
-- **内容**：由 [FileArtifactPanel](/components/message/file-artifact-panel) 渲染文件列表与预览（HTML 走 `fetch` + `iframe srcdoc`，其余类型用 `previewUrl` 的 PDF）
-- **状态管理**：命中与切换由 [useArtifactPreview](/composables/use-artifact-preview) 提供（Provider 在容器内、Consumer 在文件卡片内）
+- **内容**：由 [FileArtifactPanel](/components/message/file-artifact-panel) 渲染文件列表与预览；`download_url` / `preview_url` 通过 `onArtifactClick` 异步获取（HTML 用 `download_url` fetch + `iframe srcdoc`，其余类型用 `preview_url` 的 PDF）
+- **状态管理**：命中、切换与 URL 缓存由 [useArtifactPreview](/composables/use-artifact-preview) 提供（Provider 在容器内、Consumer 在文件卡片 / 面板内）
+- **未传 `onArtifactClick`**：下载按钮隐藏，预览区展示无数据
 
 详见 [FileArtifactPanel 文件产物预览](/components/message/file-artifact-panel) 与 [useArtifactPreview 文件产物预览](/composables/use-artifact-preview)。
 
@@ -976,6 +977,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | size               | `'normal' \| 'small'`                                                        | `'small'` | 字号主题档位：`small` 为 12px 基准，`normal` 为 14px 基准；根节点设置 `data-ai-size` 并注入 `useGlobalConfig`                                |
 | resizeProps        | `{ disabled?: boolean; initialDivide?: number \| string; max?: number; min?: number }` | —        | 透传给内部 `ResizeLayout` 的可选配置，与默认 `collapsible: false`、`immediate: true`、`min: 400` 合并；`placement` 始终取自本组件 `placement`；`initialDivide` 可为像素数字或百分比等字符串（与 bkui ResizeLayout 一致） |
 | onCustomTabChange  | `(tab: CustomTab) => Promise<any>`                                           | —        | 自定义 Tab 切换回调，返回值作为 Tab 组件 props                                                                                                |
+| onArtifactClick    | `(file: AIFileInfo) => Promise<{ download_url?: string; preview_url?: string }>` | —        | 点击文件产物时异步获取下载 / 预览链接（按 `outputId` 缓存）；未传则隐藏下载、预览无数据 |
 
 > 完整 Props 列表请参考 [ChatInput](/components/input/chat-input) 和 [MessageContainer](/components/setup/message-container) 文档。
 

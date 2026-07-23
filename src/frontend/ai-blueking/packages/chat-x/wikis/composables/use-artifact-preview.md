@@ -7,6 +7,7 @@ description: >-
   Provider 在 ChatContainer 中创建，Consumer 在深层文件卡片中注入使用。
 aiSummary: >
   useArtifactPreviewProvider 维护 activeArtifactId，openPreview 命中文件并触发 onOpen 打开侧栏 Tab；
+  并通过 getOnArtifactClick 封装 resolveArtifactUrls（按 outputId 缓存 download_url / preview_url）；
   useArtifactPreviewConsumer 在后代注入同一套 API。buildArtifactId 用 messageUid#index#outputId 生成唯一 id。
   FILE_ARTIFACT_TAB_NAME 标识固定「文件产物」Tab。
 relatedComponents:
@@ -25,7 +26,7 @@ sinceVersion: 0.0.20
 
 Provider/Consumer 模式的文件产物预览状态管理。Provider 在 `ChatContainer` 中创建，负责维护当前命中的文件 id；Consumer 在深层 `ArtifactFileCard` 中注入，用于点击卡片触发预览。
 
-**职责边界**：composable 只维护「命中文件」这一份数据状态；打开侧栏 Tab（`addCustomTab`）、聚合会话文件列表、渲染预览面板等副作用由 `ChatContainer` 承担，通过 `onOpen` 回调注入，避免直接依赖 `useCustomTab`。
+**职责边界**：composable 维护「命中文件」与「URL 解析缓存」；打开侧栏 Tab（`addCustomTab`）、聚合会话文件列表、渲染预览面板等副作用由 `ChatContainer` 承担，通过 `onOpen` / `getOnArtifactClick` 回调注入，避免直接依赖 `useCustomTab`。
 
 ## 函数签名
 
@@ -33,11 +34,15 @@ Provider/Consumer 模式的文件产物预览状态管理。Provider 在 `ChatCo
 
 ```typescript
 function useArtifactPreviewProvider(options: {
+  /** 读取业务侧异步取链回调（getter 保持对 props 变更敏感） */
+  getOnArtifactClick?: () => OnArtifactClick | undefined;
   /** 命中文件后触发：由容器负责 addCustomTab + 展开侧栏 + 选中 Tab */
   onOpen: (artifactId: string) => void;
 }): {
   activeArtifactId: ShallowRef<string>;
+  canResolveArtifactUrl: ComputedRef<boolean>;
   openPreview: (payload: OpenArtifactPreviewPayload) => void;
+  resolveArtifactUrls: (file: AIFileInfo) => Promise<ArtifactUrlResult>;
   setActiveArtifactId: (id: string) => void;
 };
 ```
@@ -49,7 +54,9 @@ function useArtifactPreviewConsumer():
   | undefined
   | {
       activeArtifactId: Ref<string>;
+      canResolveArtifactUrl: ComputedRef<boolean>;
       openPreview: (payload: OpenArtifactPreviewPayload) => void;
+      resolveArtifactUrls: (file: AIFileInfo) => Promise<ArtifactUrlResult>;
       setActiveArtifactId: (id: string) => void;
     };
 ```
@@ -82,6 +89,7 @@ const { addCustomTab, removeCustomTab } = useCustomTabProvider({ /* ... */ });
 const { sessionArtifacts } = useMessageGroup({ keyword, messages, selectedUserMessages });
 
 const { activeArtifactId, setActiveArtifactId } = useArtifactPreviewProvider({
+  getOnArtifactClick: () => props.onArtifactClick,
   onOpen: () => {
     addCustomTab({
       closable: false,
@@ -147,13 +155,15 @@ const handleCardClick = () => {
 | 属性/方法名         | 类型                                      | 说明                                                                 |
 | ------------------- | ----------------------------------------- | -------------------------------------------------------------------- |
 | activeArtifactId    | `ShallowRef<string>`                      | 当前命中的文件 id（`messageUid#index#outputId`）                     |
+| canResolveArtifactUrl | `ComputedRef<boolean>`                  | 是否具备异步取链能力（有 `onArtifactClick` 时为 true，下载按钮据此显隐） |
 | openPreview         | `(payload: OpenArtifactPreviewPayload) => void` | 由文件卡片触发：计算 id、更新命中态、调用 `onOpen`             |
+| resolveArtifactUrls | `(file: AIFileInfo) => Promise<ArtifactUrlResult>` | 调用 `onArtifactClick` 并按 `outputId` 缓存结果；并发请求去重 |
 | setActiveArtifactId | `(id: string) => void`                    | 直接设置命中文件 id；侧栏列表内切换选中时使用                        |
 
 ## 类型定义
 
 ```typescript
-import type { AIFileInfo } from '@blueking/chat-x';
+import type { AIFileInfo, ArtifactUrlResult, OnArtifactClick } from '@blueking/chat-x';
 
 /** 打开预览时的入参：文件 + 消息内下标 + 所属消息 uid */
 type OpenArtifactPreviewPayload = {
@@ -169,6 +179,12 @@ type OpenArtifactPreviewPayload = {
 type SessionArtifact = AIFileInfo & {
   artifactId: string;
   messageUid: string;
+};
+
+/** onArtifactClick 返回值（snake_case） */
+type ArtifactUrlResult = {
+  download_url?: string;
+  preview_url?: string;
 };
 ```
 

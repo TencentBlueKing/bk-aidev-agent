@@ -23,23 +23,34 @@
         {{ file.name }}
       </span>
     </div>
-    <!-- 右侧：下载按钮（有下载地址时才展示） -->
+    <!-- 右侧：有异步取链能力或外部 onDownload 时展示下载按钮 -->
     <div
-      v-if="file.url"
+      v-if="showDownload"
       v-tippy="downloadTippy"
       class="ai-artifact-file-card-download"
+      :class="{ 'is-loading': downloadLoading }"
       @click.stop="handleDownload"
     >
-      <component :is="downloadIcon" />
+      <Loading
+        v-if="downloadLoading"
+        mode="spin"
+        size="mini"
+        theme="primary"
+      />
+      <component
+        :is="downloadIcon"
+        v-else
+      />
     </div>
   </div>
 </template>
 <script setup lang="ts">
-  import { cloneVNode, computed } from 'vue';
+  import { cloneVNode, computed, shallowRef } from 'vue';
 
+  import { Loading } from 'bkui-vue';
   import { directive as vTippy } from 'vue-tippy';
 
-  import { useArtifactPreviewConsumer } from '../../../../composables/use-artifact-preview';
+  import { triggerArtifactDownload, useArtifactPreviewConsumer } from '../../../../composables/use-artifact-preview';
   import { OverflowTips as vOverflowTips } from '../../../../directives/overflow-tips';
   import { DownloadFileIcon } from '../../../../icons/file';
   import { t } from '../../../../lang/lang';
@@ -71,9 +82,14 @@
   // 有外部 onPreview 或处于可预览的侧栏上下文时，卡片可点击
   const clickable = computed(() => !!props.onPreview || !!artifactPreview);
 
+  // 未传 onArtifactClick 时隐藏下载；有外部 onDownload 或可异步取链时展示
+  const showDownload = computed(() => !!props.onDownload || !!artifactPreview?.canResolveArtifactUrl.value);
+
   // 图标为共享 VNode，克隆后再渲染，避免同类型多卡复用同一实例
   const fileIcon = computed(() => getFileIcon(props.file.type));
   const downloadIcon = computed(() => cloneVNode(DownloadFileIcon));
+
+  const downloadLoading = shallowRef(false);
 
   const downloadTippy = computed(() => ({
     content: t('下载'),
@@ -93,20 +109,26 @@
     });
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
+    if (downloadLoading.value) {
+      return;
+    }
     if (props.onDownload) {
       props.onDownload(props.file);
       return;
     }
-    // 默认下载：使用 url 字段，通过临时 <a> 触发浏览器下载
-    const link = document.createElement('a');
-    link.href = props.file.url;
-    link.download = props.file.name;
-    link.target = '_blank';
-    link.rel = 'noopener';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    if (!artifactPreview?.canResolveArtifactUrl.value) {
+      return;
+    }
+    downloadLoading.value = true;
+    try {
+      const { download_url: downloadUrl } = await artifactPreview.resolveArtifactUrls(props.file);
+      if (downloadUrl) {
+        triggerArtifactDownload(downloadUrl, props.file.name);
+      }
+    } finally {
+      downloadLoading.value = false;
+    }
   };
 </script>
 <style lang="scss">
@@ -162,6 +184,8 @@
       flex-shrink: 0;
       align-items: center;
       justify-content: center;
+      width: 24px;
+      height: 24px;
       padding: 4px;
       margin-left: 4px;
       font-size: 16px;
@@ -172,6 +196,12 @@
       &:hover {
         color: #3a84ff;
         background-color: #f0f1f5;
+      }
+
+      &.is-loading {
+        display: inline-flex;
+        pointer-events: none;
+        cursor: default;
       }
 
       .ai-artifact-file-card:hover & {

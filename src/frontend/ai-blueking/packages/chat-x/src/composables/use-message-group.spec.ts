@@ -69,10 +69,8 @@ const createAssistantMessage = (
 const createFile = (overrides: Partial<AIFileInfo> = {}): AIFileInfo => ({
   name: 'file.pdf',
   outputId: 'output-1',
-  previewUrl: 'https://example.com/preview.pdf',
   size: 1024,
   type: AIFileType.Pdf,
-  url: 'https://example.com/download.pdf',
   ...overrides,
 });
 

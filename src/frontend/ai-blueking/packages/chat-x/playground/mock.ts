@@ -109,57 +109,78 @@ export const MOCK_SHORTCUTS = [
   },
 ] as Shortcut[];
 
-// AI 生成的文件产物（覆盖全部支持的 AIFileType 类型；最后一项无 url 用于验证「有 url 才显示下载」）
+// AI 生成的文件产物（流式阶段仅含元信息；download_url / preview_url 由 onArtifactClick 异步返回）
 export const MOCK_FILE_ARTIFACTS: AIFileInfo[] = [
   {
     name: '项目立项书.pdf',
     outputId: 'artifact-pdf',
-    previewUrl: 'https://example.com/preview/project.pdf',
     size: 245_760,
     type: AIFileType.Pdf,
-    url: 'https://example.com/download/project.pdf',
   },
   {
     name: '系统配置系统配置系统配置系统配置系统配置系统配置系统配置系统配置.md',
     outputId: 'artifact-markdown',
-    previewUrl: 'https://example.com/preview/config.md',
     size: 4_096,
     type: AIFileType.Markdown,
-    url: 'https://example.com/download/config.md',
   },
   {
     name: 'demo.json',
     outputId: 'artifact-json',
-    previewUrl: 'https://example.com/preview/demo.json',
     size: 1_280,
     type: AIFileType.Json,
-    url: 'https://example.com/download/demo.json',
   },
   {
     name: '自然风光.jpg',
     outputId: 'artifact-jpg',
-    previewUrl: 'https://example.com/preview/scenery.jpg',
     size: 1_048_576,
     type: AIFileType.Jpg,
-    url: 'https://example.com/download/scenery.jpg',
   },
   {
     name: 'dashboard_preview.html',
     outputId: 'artifact-html',
-    previewUrl: 'https://example.com/preview/dashboard.html',
     size: 8_192,
     type: AIFileType.Html,
-    url: 'https://example.com/download/dashboard.html',
   },
   {
     name: '会议纪要草稿.txt',
     outputId: 'artifact-txt',
-    previewUrl: 'https://example.com/preview/meeting.txt',
     size: 2_048,
     type: AIFileType.Txt,
-    url: '',
   },
 ];
+
+/** playground 模拟 onArtifactClick：按 outputId 异步返回 download_url / preview_url */
+export const MOCK_ARTIFACT_URL_MAP: Record<string, { download_url: string; preview_url: string }> = {
+  'artifact-pdf': {
+    download_url: 'https://example.com/download/project.pdf',
+    preview_url: 'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf',
+  },
+  'artifact-markdown': {
+    download_url: 'https://example.com/download/config.md',
+    preview_url: 'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf',
+  },
+  'artifact-json': {
+    download_url: 'https://example.com/download/demo.json',
+    preview_url: 'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf',
+  },
+  'artifact-jpg': {
+    download_url: 'https://example.com/download/scenery.jpg',
+    preview_url: 'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf',
+  },
+  'artifact-html': {
+    download_url: 'data:text/html,<h1>dashboard preview</h1><p>mock html artifact</p>',
+    preview_url: 'https://example.com/preview/dashboard.html',
+  },
+  'artifact-txt': {
+    download_url: 'https://example.com/download/meeting.txt',
+    preview_url: 'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf',
+  },
+};
+
+export const mockArtifactClick = async (file: AIFileInfo) => {
+  await new Promise(resolve => setTimeout(resolve, 1400));
+  return MOCK_ARTIFACT_URL_MAP[file.outputId] ?? {};
+};
 
 // 带文件产物的会话消息，用于 playground 调试 artifacts 展示
 export const MOCK_ARTIFACTS_MESSAGES = [

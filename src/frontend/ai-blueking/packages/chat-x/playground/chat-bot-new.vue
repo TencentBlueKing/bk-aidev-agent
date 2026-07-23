@@ -16,6 +16,7 @@
       :messages="messages"
       :model-value="userInput"
       :on-agent-action="handleAgentAction"
+      :on-artifact-click="mockArtifactClick"
       :on-custom-tab-change="handleCustomTabChange"
       :on-interrupt-resume="handleInterruptResume"
       :on-send-message="handleSendMessage"
@@ -177,7 +178,7 @@
   import CustomTabContent from './custom-tab-content.vue';
   import { MOCK_INTERRUPT_MESSAGES } from './interrupt';
   import { streamContent } from './markdown';
-  import { MOCK_ARTIFACTS_MESSAGES, MOCK_PROMPTS, MOCK_RESOURCES } from './mock';
+  import { MOCK_ARTIFACTS_MESSAGES, MOCK_PROMPTS, MOCK_RESOURCES, mockArtifactClick } from './mock';
   import { uploadFileToSession } from './upload-file';
 
   import type { CustomTab, IAiSlashMenuItem, Shortcut, TagSchema } from '../src/types';

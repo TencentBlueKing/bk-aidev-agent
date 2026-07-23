@@ -38,12 +38,17 @@ export type AIFileInfo = {
   name: string;
   /* 输出ID */
   outputId: string;
-  /* 预览URL */
-  previewUrl: string;
   /* 文件大小 */
   size: number;
   /* 文件类型 */
   type: AIFileType;
-  /* 文件URL */
-  url: string;
 };
+
+/** 点击文件产物后异步获取的下载 / 预览地址（snake_case） */
+export type ArtifactUrlResult = {
+  download_url?: string;
+  preview_url?: string;
+};
+
+/** 异步获取文件产物下载 / 预览链接 */
+export type OnArtifactClick = (file: AIFileInfo) => Promise<ArtifactUrlResult>;

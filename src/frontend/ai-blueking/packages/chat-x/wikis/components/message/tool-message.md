@@ -3,9 +3,9 @@ name: ToolMessage 工具消息
 slug: tool-message
 kind: component
 domain: message
-description: 渲染工具返回内容，JSON 场景交给 DescPanel 展示。
+description: 渲染工具返回内容，JSON 场景交给 DescPanel + HighlightKeyword 展示。
 aiSummary: >
-  渲染工具返回内容，JSON 场景交给 DescPanel 展示。
+  渲染工具返回内容；DescPanel 解析 JSON 为 key-value，嵌套值 JSON.stringify 后经 HighlightKeyword 展示。
   源码位置：src/components/chat-message/tool-message/tool-message.vue。
 relatedComponents:
   - slug: assistant-message
@@ -14,61 +14,70 @@ relatedComponents:
     relation: 独立 tool 角色消息由 MessageRender 渲染为 ToolMessage
   - slug: desc-panel
     relation: 内部使用 DescPanel 展示「返回内容」
-sinceVersion: 1.0.0
+sinceVersion: 0.0.20
 ---
 
 <script lang="ts" setup>
   import ToolMessageComp from '../../../src/components/chat-message/tool-message/tool-message.vue'
+
+  const nestedJson = JSON.stringify({
+    result: 'success',
+    data: { city: '北京', meta: { humidity: 45, tags: ['晴', '微风'] } },
+  });
 </script>
 
 # ToolMessage 工具消息
+
 ## 源码事实
 
 - **源码位置**：`src/components/chat-message/tool-message/tool-message.vue`
 - **能力域**：消息系统
-- **能力说明**：渲染工具返回内容，JSON 场景交给 DescPanel 展示。
+- **能力说明**：渲染工具返回内容，JSON 场景交给 DescPanel + HighlightKeyword 展示。
 
+> **导出说明**：`ToolMessage` **未**从包入口导出（入口同名是 TS interface）。消费方经 `MessageRender` / `ToolcallRender` 使用。下文 `ToolMessageComp` 为文档站内部示例。
 
+工具执行结果展示组件。内部通过 `DescPanel` 渲染，标题固定为「返回内容」，可解析 JSON 为 key-value 列表。
 
-> **能力域**：消息系统
-
-工具（Function Call）执行结果展示组件。内部通过 `DescPanel` 渲染，标题固定为"返回内容"，支持将 JSON 自动解析为 key-value 列表。
-
-> **通常不需要直接使用此组件**。`ToolcallRender` 在 `toolCall.toolMessage` 有值时会自动内联渲染；`MessageContainer` 处理 `role: 'tool'` 消息时也会通过 `MessageRender` 自动渲染。
+> **通常不需要直接使用**。`ToolcallRender` 在 `toolCall.toolMessage` 有值时内联渲染；`role: 'tool'` 也可由 `MessageRender` 渲染。
 
 ## 渲染架构
 
 ```
 ToolMessage
-└── DescPanel（desc="content || (typeof error === 'string' ? error : undefined)"，title="返回内容"）
-      ├── JSON.parse(desc) 成功且结果为 object/array
-      │     └── key-value 列表（v-for 遍历）
-      │           值超长时截断 + overflow-tips tooltip
-      └── 其他（parse 失败 / 结果为基本类型）
-            └── 纯文本展示
+└── DescPanel（desc = content || (typeof error === 'string' ? error : undefined)，title="返回内容"）
+      ├── JSON.parse 成功且结果为 object/array（排除 null）
+      │     └── key-value 列表
+      │           · key / value 均经 HighlightKeyword 展示
+      │           · 嵌套 object/array：JSON.stringify 后展示（无 overflow-tips）
+      └── 其他（parse 失败 / 标量）
+            └── HighlightKeyword 纯文本
 ```
 
 ## 基础用法
 
 ```vue
 <template>
-  <ToolMessage
-    :content="content"
-    tool-call-id="call_1"
-    :duration="850"
-  />
+  <MessageRender :message="message" />
 </template>
 
 <script setup lang="ts">
-  import { ToolMessage } from '@blueking/chat-x';
+  import { MessageRender, MessageRole, MessageStatus } from '@blueking/chat-x';
 
-  const content = JSON.stringify({
-    city: '北京',
-    temperature: 22,
-    weather: '晴',
-    humidity: '45%',
-    wind: '东北风 3 级',
-  });
+  const message = {
+    id: 't1',
+    messageId: 't1',
+    role: MessageRole.Tool,
+    status: MessageStatus.Complete,
+    toolCallId: 'call_1',
+    duration: 850,
+    content: JSON.stringify({
+      city: '北京',
+      temperature: 22,
+      weather: '晴',
+      humidity: '45%',
+      wind: '东北风 3 级',
+    }),
+  };
 </script>
 ```
 
@@ -98,18 +107,22 @@ ToolMessage
 
 ```vue
 <template>
-  <ToolMessage
-    content=""
-    :error="error"
-    tool-call-id="call_3"
-    :duration="5000"
-  />
+  <MessageRender :message="message" />
 </template>
 
 <script setup lang="ts">
-  import { ToolMessage } from '@blueking/chat-x';
+  import { MessageRender, MessageRole, MessageStatus } from '@blueking/chat-x';
 
-  const error = 'Connection timeout: database server is unreachable (timeout: 5000ms)';
+  const message = {
+    id: 't3',
+    messageId: 't3',
+    role: MessageRole.Tool,
+    status: MessageStatus.Error,
+    toolCallId: 'call_3',
+    duration: 5000,
+    content: '',
+    error: 'Connection timeout: database server is unreachable (timeout: 5000ms)',
+  };
 </script>
 ```
 
@@ -135,24 +148,34 @@ ToolMessage
 | 解析失败（非法 JSON）       | 捕获异常，返回原字符串          | 纯文本                              |
 | `content` 和 `error` 均为空 | `''` → 解析失败                 | 空内容区                            |
 
-> **注意**：JSON 数组在 JavaScript 中 `typeof [] === 'object'` 为 `true`，因此数组会以 `0:`、`1:`、`2:` 为键渲染为 key-value 列表，而**非**纯文本。
+> **注意**：JSON 数组 `typeof [] === 'object'`，会以 `0:`、`1:`、`2:` 为键渲染为列表，而非整段纯文本。
 
-**嵌套对象值的处理**：当 value 本身是对象时，`{{ value }}` 会渲染为 `[object Object]`，但 hover 展示的 overflow-tips 会显示 `JSON.stringify(value)` 的完整字符串。
+**嵌套对象 / 数组值**：`DescPanel` 用 `JSON.stringify(value)` 转成字符串后交给 `HighlightKeyword`，**不再**使用 overflow-tips。
 
 ```typescript
-// ✅ 渲染为 key-value 列表
+// key-value 列表
 const jsonObject = '{"city":"北京","temperature":22}';
 
-// ✅ 渲染为 index-keyed 列表（0: item1, 1: item2）
+// index-keyed 列表（0: item1, 1: item2）
 const jsonArray = '["item1","item2","item3"]';
 
-// ✅ 渲染为纯文本（基本类型）
-const jsonNumber = '42';
-const jsonBool = 'true';
+// 嵌套值 stringify 展示
+const nested = '{"result":"success","data":{"city":"北京","meta":{"humidity":45}}}';
 
-// ✅ 渲染为纯文本（解析失败）
+// 标量 / 非法 JSON → 纯文本
+const jsonNumber = '42';
 const plainText = '查询成功，共返回 10 条记录。';
 ```
+
+**嵌套 JSON 渲染效果**
+
+<div class="demo">
+  <ToolMessageComp
+    :content="nestedJson"
+    tool-call-id="call_nested"
+    :duration="420"
+  />
+</div>
 
 ## 与 ToolcallRender 的关系
 
@@ -223,8 +246,8 @@ const messages = [
 
 | 属性名     | 类型               | 说明                                                                            |
 | ---------- | ------------------ | ------------------------------------------------------------------------------- |
-| content    | `string`           | 工具执行返回内容；与 `error` 通过 `\|\|` 决定优先级，**truthy 时 error 被忽略** |
-| error      | `string`           | 工具执行错误信息；仅当 `content` 为 falsy 且 `error` 为 `string` 类型时展示     |
+| content    | `string`                 | 工具执行返回内容；与 `error` 通过 `\|\|` 决定优先级，**truthy 时 error 被忽略** |
+| error      | `boolean \| string`      | 类型上可为 boolean；**仅当为 `string` 且 content 为 falsy 时**才会展示           |
 | toolCallId | `string`           | 关联的工具调用 ID（透传，组件内不使用）                                         |
 | duration   | `number`           | 工具执行耗时（毫秒，透传，组件内不使用）                                        |
 | status     | `MessageStatus`    | 消息状态（透传，组件内不使用）                                                  |
@@ -247,10 +270,14 @@ interface ToolMessage {
   content: string;
   toolCallId: string; // 关联的 ToolCall.id
   duration: number; // 工具执行耗时（毫秒）
-  error?: string; // 执行错误信息
+  error?: boolean | string; // 仅 string 会展示在 DescPanel
   name?: string;
 }
 ```
+
+### Events / Slots / Expose
+
+无。
 
 ## 关联组件
 
