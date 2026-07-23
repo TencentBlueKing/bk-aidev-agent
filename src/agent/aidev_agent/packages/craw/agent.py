@@ -32,7 +32,7 @@ from ag_ui.encoder import EventEncoder
 from pydantic import BaseModel, Field
 
 from aidev_agent.enums import AgentType
-from aidev_agent.packages.craw.base import CrawIdentity, CrawUpstreamError
+from aidev_agent.packages.craw.base import CrawIdentity, CrawIdentityError, CrawUpstreamError
 from aidev_agent.packages.craw.registry import CrawBackendProtocol, get_backend
 from aidev_agent.services.agent.registry import AgentBuildContext
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
@@ -69,6 +69,10 @@ class CrawCompletionAgent(BaseModel):
 
     agent_type: ClassVar[AgentType] = AgentType.CHAT
 
+    # 是否显式允许匿名调用（无 username）。默认 False：无身份请求会落入
+    # craw 侧默认路由，破坏用户级内核 / MCP 隔离，宁可 fail-closed。
+    allow_anonymous: ClassVar[bool] = False
+
     thread_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     session_code: Optional[str] = None
     username: Optional[str] = None
@@ -91,18 +95,34 @@ class CrawCompletionAgent(BaseModel):
             self.event_handler = ctx.event_handler
         if self.backend is None:
             self.backend = get_backend()
+        # AG-UI thread_id 与流式队列 / 续流 / 取消键统一为 session_code：
+        # 同一次运行只存在一套会话标识，避免前端关联与取消语义分叉
+        self.thread_id = ctx.session_code or self.thread_id
         self.identity = self._resolve_identity(ctx)
         return self
 
     def _resolve_identity(self, ctx: AgentBuildContext) -> CrawIdentity:
-        """装配用户身份：access_token 经 resource_manager 尽力取回（失败不阻塞对话）。"""
-        access_token = ""
+        """装配用户身份（fail-closed）。
+
+        有 username 但 access_token 取不到 / 为空 → 抛 ``CrawIdentityError``，
+        绝不降级成无身份请求（无身份会落入 craw 侧默认路由，破坏用户级
+        内核 / MCP 隔离）。匿名调用仅在显式 ``allow_anonymous=True`` 时
+        放行，由下游做强校验。
+        """
+        username = ctx.username or ""
+        if not username:
+            if not self.allow_anonymous:
+                raise CrawIdentityError("缺少 username，且未显式允许匿名调用（allow_anonymous=False）")
+            return CrawIdentity()
         try:
-            if ctx.resource_manager is not None and ctx.username:
-                access_token = ctx.resource_manager.resolve_access_token(ctx.username) or ""
+            access_token = (
+                ctx.resource_manager.resolve_access_token(username) if ctx.resource_manager is not None else ""
+            ) or ""
         except Exception as exc:
-            logger.warning("[CRAW] resolve_access_token failed (degrade to no identity token): %s", exc)
-        return CrawIdentity(username=ctx.username or "", access_token=access_token)
+            raise CrawIdentityError(f"resolve_access_token({username}) 失败: {exc}") from exc
+        if not access_token:
+            raise CrawIdentityError(f"用户 {username} 的 access_token 为空，拒绝降级为无身份请求")
+        return CrawIdentity(username=username, access_token=access_token)
 
     # ---------------- 运行时 ----------------
 

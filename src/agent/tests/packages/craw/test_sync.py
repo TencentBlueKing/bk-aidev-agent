@@ -80,6 +80,57 @@ class TestCrawSyncer:
         assert (tmp_path / "skills" / "demo" / "SKILL.md").read_text(encoding="utf-8") == "hello"
 
 
+class TestPathEscapeRejected:
+    """同步路径不得逃逸 craw home：绝对路径 / .. 跳转 / symlink escape 全部拒绝。"""
+
+    @pytest.mark.parametrize("relpath", ["../evil.txt", "../../etc/passwd", "/abs/evil.txt"])
+    def test_write_rejects_escape_relpath(self, tmp_path, relpath):
+        syncer = CrawSyncer(backend=_HealthStubBackend(), home_dir=str(tmp_path))
+        with pytest.raises(ValueError):
+            syncer.write_artifact(relpath, "x")
+        assert not (tmp_path.parent / "evil.txt").exists()
+
+    @pytest.mark.parametrize("relpath", ["../evil.txt", "/abs/evil.txt"])
+    def test_read_rejects_escape_relpath(self, tmp_path, relpath):
+        syncer = CrawSyncer(backend=_HealthStubBackend(), home_dir=str(tmp_path))
+        with pytest.raises(ValueError):
+            syncer.read_file(relpath)
+
+    def test_symlink_escape_rejected(self, tmp_path):
+        outside = tmp_path.parent / f"{tmp_path.name}-outside"
+        outside.mkdir()
+        home = tmp_path / "home"
+        home.mkdir()
+        (home / "link").symlink_to(outside)
+        syncer = CrawSyncer(backend=_HealthStubBackend(), home_dir=str(home))
+        with pytest.raises(ValueError):
+            syncer.write_artifact("link/evil.txt", "x")
+        assert not (outside / "evil.txt").exists()
+
+    def test_cycle_with_escape_relpath_enters_error_state(self, tmp_path):
+        syncer = CrawSyncer(
+            backend=_HealthStubBackend(),
+            home_dir=str(tmp_path),
+            artifacts_provider=lambda: {"../evil.txt": "x"},
+        )
+        result = syncer.run_cycle()
+        assert not result.ok and result.error
+
+
+class TestVerifyFailureMarksNotOk:
+    """读回校验失败必须进入失败状态，不能把损坏配置当成功。"""
+
+    def test_verify_failure_marks_result(self, tmp_path):
+        syncer = CrawSyncer(backend=_HealthStubBackend(), home_dir=str(tmp_path), soul_provider=lambda: "# SOUL")
+        # 模拟读回内容被篡改（与写入不一致）
+        syncer.read_file = lambda relpath: "tampered"
+        result = syncer.run_cycle()
+        assert result.artifacts_verified is False
+        assert result.artifacts_failed == ["SOUL.md"]
+        assert result.ok is False
+        assert "SOUL.md" in result.error
+
+
 class TestAgentConfigToArtifacts:
     _CONFIG = {
         "agent_code": "demo-agent",
