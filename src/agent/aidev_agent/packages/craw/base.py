@@ -147,17 +147,19 @@ class BaseCrawBackend:
         identity: Optional[CrawIdentity] = None,
         session_code: Optional[str] = None,
     ) -> Iterator[dict]:
-        with httpx.Client(timeout=self.timeout) as client:
-            with client.stream(
+        with (
+            httpx.Client(timeout=self.timeout) as client,
+            client.stream(
                 "POST",
                 f"{self.api_url}{self.chat_path}",
                 headers=self.build_headers(identity=identity, session_code=session_code),
                 json=self.chat_payload(messages, stream=True),
-            ) as resp:
-                if resp.status_code >= 400:
-                    detail = resp.read().decode("utf-8", "ignore")[:500]
-                    raise CrawUpstreamError(self.name, resp.status_code, detail)
-                yield from self.iter_sse_chunks(resp.iter_lines())
+            ) as resp,
+        ):
+            if resp.status_code >= 400:
+                detail = resp.read().decode("utf-8", "ignore")[:500]
+                raise CrawUpstreamError(self.name, resp.status_code, detail)
+            yield from self.iter_sse_chunks(resp.iter_lines())
 
     @staticmethod
     def iter_sse_chunks(lines: Iterator[str]) -> Iterator[dict]:
@@ -215,6 +217,14 @@ class BaseCrawBackend:
                 "api_url": self.api_url,
                 "error": str(exc),
             }
+
+
+class CrawIdentityError(RuntimeError):
+    """用户身份装配失败（fail-closed）：拒绝降级为无身份请求。
+
+    有 username 但 access_token 获取失败 / 为空时抛出——无身份的请求会
+    落入 craw 侧默认路由，破坏用户级内核 / MCP 隔离，宁可本次调用失败。
+    """
 
 
 class CrawUpstreamError(RuntimeError):

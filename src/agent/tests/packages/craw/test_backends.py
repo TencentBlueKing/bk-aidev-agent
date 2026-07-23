@@ -26,7 +26,12 @@ class TestBackendEnvAssembly:
     @pytest.mark.parametrize(
         "backend_cls, unified, legacy, expected_when_both",
         [
-            (OpenClawBackend, {"BKAI_CRAW_API_URL": "http://u:1/"}, {"BKAI_OPENCLAW_GATEWAY_URL": "http://l:2"}, "http://u:1"),
+            (
+                OpenClawBackend,
+                {"BKAI_CRAW_API_URL": "http://u:1/"},
+                {"BKAI_OPENCLAW_GATEWAY_URL": "http://l:2"},
+                "http://u:1",
+            ),
             (HermesBackend, {}, {"BKAI_HERMES_API_URL": "http://l:3/"}, "http://l:3"),
         ],
     )
