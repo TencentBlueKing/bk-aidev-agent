@@ -71,7 +71,7 @@
 make dev
 ```
 
-> `make dev` 会把 `aidev_agent`、`aidev_bkplugin` 源码软链到模板目录，自动执行 `migrate`、`createcachetable`，并根据 `.env` 中的 `BKPAAS_BK_DOMAIN` 以 `local.<BKPAAS_BK_DOMAIN>:8000` 启动本地服务。
+> `make dev` 会把 `aidev_agent`、`aidev_bkplugin` 源码软链到模板目录，自动安装模板依赖，执行 `migrate`、`createcachetable`，并根据 `.env` 中的 `BKPAAS_BK_DOMAIN` 以 `local.<BKPAAS_BK_DOMAIN>:8000` 启动本地服务。
 > `.env` 请优先到 bkaidev 平台进入对应智能体，通过「下载源码」获取完整工程；源码包中已包含该智能体对应的 `.env` 文件。
 > 默认使用 `template/{{cookiecutter.project_name}}/.env`；也可以执行 `make dev env_file=/path/to/.env`，先复制指定环境文件再启动。
 > 首次运行前请按模板说明完成本地域名 hosts 映射。

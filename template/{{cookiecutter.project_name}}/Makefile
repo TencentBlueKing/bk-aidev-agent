@@ -51,7 +51,7 @@ lint:
 
 # 一键启动：加载 .env、初始化数据库，并在 local.${BKPAAS_BK_DOMAIN}:8000 启动本地服务
 .PHONY: dev
-dev:
+dev: uv-install
 	@set -eu; \
 	if [ ! -f ./.env ]; then \
 		echo "Missing .env. Put it in $(CURDIR)/.env or run root make dev env_file=/path/to/.env" >&2; \

@@ -41,7 +41,7 @@ cp ./support-files/env.template .env
 make dev
 ```
 
-`make dev` 会加载 `.env`、初始化数据库和缓存表，并根据 `BKPAAS_BK_DOMAIN` 以 `local.<BKPAAS_BK_DOMAIN>:8000` 启动服务。也可以手动执行：
+`make dev` 会安装模板依赖、加载 `.env`、初始化数据库和缓存表，并根据 `BKPAAS_BK_DOMAIN` 以 `local.<BKPAAS_BK_DOMAIN>:8000` 启动服务。也可以手动执行：
 
 ```shell
 source .env
