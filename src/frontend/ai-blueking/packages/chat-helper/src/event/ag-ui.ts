@@ -41,6 +41,7 @@ import {
   type IFlowAgentEndCustomValue,
   type IFlowAgentResultCustomValue,
   type IFlowAgentStartCustomValue,
+  type IInfoCustomValue,
   type IKnowledgeRagResultCustomValue,
   type IKnowledgeRagTextContentCustomValue,
   type IMessagesSnapshotEvent,
@@ -111,8 +112,16 @@ export class AGUIProtocol implements ISSEProtocol {
    * 记录活动的完整状态
    */
   handleActivitySnapshotEvent(event: IActivitySnapshotEvent) {
-    const message = this.messageModule.getCurrentLoadingMessage();
+    if (event.activityType === ActivityType.Info) {
+      const message = this.messageModule.getMessageByMessageId(event.messageId);
+      if (message?.role === MessageRole.Info) {
+        message.content = event.content as string;
+      }
+      return;
+    }
+
     if (event.activityType === ActivityType.Interrupt) {
+      const message = this.messageModule.getCurrentLoadingMessage();
       if (message?.role === MessageRole.Interrupt) {
         message.content = event.content as IApprovalResultCustomValue;
         message.status = MessageStatus.Complete;
@@ -160,6 +169,9 @@ export class AGUIProtocol implements ISSEProtocol {
         break;
       case CustomEventName.FlowAgentUpdate:
         this.handleFlowAgentUpdateCustomEvent(event);
+        break;
+      case CustomEventName.Info:
+        this.handleInfoCustomEvent(event);
         break;
       default:
         break;
@@ -242,6 +254,16 @@ export class AGUIProtocol implements ISSEProtocol {
           item.content = value;
         }
       }
+    });
+  }
+
+  handleInfoCustomEvent(event: ICustomEvent) {
+    const value = event.value as IInfoCustomValue;
+    this.messageModule.plusMessage({
+      role: MessageRole.Info,
+      messageId: value.messageId,
+      content: value.content,
+      status: MessageStatus.Complete,
     });
   }
 

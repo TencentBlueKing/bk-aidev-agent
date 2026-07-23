@@ -105,9 +105,10 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
   let reconnectWaitResolve: ((continued: boolean) => void) | null = null;
   let activeStreamContext: {
     sessionCode: string;
+    model?: string;
     url?: string;
     config?: IRequestConfig;
-  } | null = null;
+  } | null = null;;
 
   const getAgentInfo = () => {
     isInfoLoading.value = true;
@@ -144,13 +145,14 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     operation: UserOperation,
     payload: IUserOperationPayload,
     config?: IRequestConfig,
+    model?: string,
   ) => {
     return mediator.http?.message.userOperation(sessionCode, operation, payload, config).then(() => {
       if (operation !== UserOperation.ApprovalCancel) {
-        streamRequest({ sessionCode, config });
+        streamRequest({ sessionCode, config, model });
       } else {
         clearLongPollTimer();
-        pollResumeSession(sessionCode);
+        pollResumeSession(sessionCode, model);
       }
     });
   };
@@ -253,6 +255,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     const ctx = activeStreamContext;
     streamRequest({
       sessionCode,
+      model: ctx?.model,
       url: ctx?.url,
       config: ctx?.config,
       lastMessageId: lastMessageId !== undefined ? String(lastMessageId) : undefined,
@@ -263,6 +266,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
 
   const streamRequest = async ({
     sessionCode,
+    model,
     url,
     config,
     resume,
@@ -271,6 +275,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     isReconnect = false,
   }: {
     sessionCode: string;
+    model?: string;
     url?: string;
     config?: IRequestConfig;
     resume?: IResume;
@@ -283,7 +288,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       resetStreamReconnectState();
     }
 
-    activeStreamContext = { sessionCode, url, config };
+    activeStreamContext = { sessionCode, model: model, url, config };
 
     // ag-ui 协议需要注入消息模块
     if (usedProtocol instanceof AGUIProtocol) {
@@ -396,6 +401,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
         method: 'POST',
         data: {
           session_code: sessionCode,
+          model,
           input,
           execute_kwargs: {
             stream: true,
@@ -423,6 +429,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
    * @param url - 请求 URL（可选）
    * @param config - 请求配置（可选）
    * @param property - 消息属性，用于传递引用内容或快捷键相关信息（可选）
+   * @param model - 模型标识（可选）
    */
   const chat = async (
     userInput: IUserMessage['content'],
@@ -430,6 +437,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     url?: string,
     config?: IRequestConfig,
     property?: IMessageProperty,
+    model?: string,
   ) => {
     // 先新增一个 message
     await mediator.message?.createAndPlusMessage({
@@ -440,7 +448,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       ...(property && { property }),
     });
     // 发起聊天
-    streamRequest({ sessionCode, url, config });
+    streamRequest({ sessionCode, model, url, config });
   };
 
   /**
@@ -449,11 +457,18 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
    * @param sessionCode - 会话代码
    * @param url - 请求 URL（可选）
    * @param config - 请求配置（可选）
+   * @param model - 模型标识（可选）
    */
-  const resumeStreamingChat = (sessionCode: string, url?: string, config?: IRequestConfig) => {
+  const resumeStreamingChat = (sessionCode: string, url?: string, config?: IRequestConfig, model?: string) => {
     if (mediator.session?.current.value?.status === SessionStatus.Running) {
       const lastMessageId = mediator.message?.list.value.at(-1)?.id;
-      streamRequest({ sessionCode, url, config, lastMessageId });
+      streamRequest({
+        sessionCode,
+        model,
+        url,
+        config,
+        lastMessageId,
+      });
     }
   };
 
@@ -462,7 +477,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
    * @param sessionCode - 会话编码
    * @returns 是否可以继续聊天
    */
-  const pollResumeSession = (sessionCode: string) => {
+  const pollResumeSession = (sessionCode: string, model?: string) => {
     const lastMessage = mediator.message?.list.value.at(-1) as IInterruptMessage;
     const pendingApprovalInterrupt =
       lastMessage?.content?.outcome?.type === RunFinishedOutcomeType.Interrupt
@@ -486,6 +501,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
           // 可以继续聊天，重新发起聊天（携带 execute_kwargs.resume 通知后端恢复中断）
           streamRequest({
             sessionCode,
+            model,
             resume: {
               interruptId: pendingApprovalInterrupt.id,
               status: ResumeStatus.Resolved,
@@ -495,7 +511,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
           longPollTimer = setTimeout(() => {
               // 如果会话不匹配，则不继续轮询
             if (sessionCode !== mediator.session?.current?.value?.sessionCode) return;
-            pollResumeSession(sessionCode);
+            pollResumeSession(sessionCode, model);
           }, 10000);
         }
       });
@@ -536,6 +552,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
    * @param newContent - 新内容（可选，不传则使用原消息内容；支持多模态）
    * @param url - 请求 URL（可选）
    * @param config - 请求配置（可选）
+   * @param model - 模型标识（可选）
    */
   const resendMessage = async (
     messageId: string,
@@ -543,6 +560,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     newContent?: IUserMessage['content'],
     url?: string,
     config?: IRequestConfig,
+    model?: string,
   ) => {
     const messages = mediator.message?.list.value || [];
 
@@ -579,7 +597,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     });
 
     // 6. 立即发起流式请求（不等待删除和创建的 API 完成）
-    streamRequest({ sessionCode, url, config });
+    streamRequest({ sessionCode, model, url, config });
 
     // 7. 在后台等待 API 完成，处理可能的错误
     Promise.all([deletePromise, createPromise])['catch'](error => {
