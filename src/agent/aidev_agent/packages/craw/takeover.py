@@ -37,7 +37,12 @@ def enable_chat_takeover() -> bool:
     if not name:
         return False
     if name not in craw_backend_registry:
-        logger.warning("[CRAW] 未注册的 %s=%r（已注册: %s），保持原生 CHAT agent", BACKEND_ENV, name, list(craw_backend_registry.keys()))
+        logger.warning(
+            "[CRAW] 未注册的 %s=%r（已注册: %s），保持原生 CHAT agent",
+            BACKEND_ENV,
+            name,
+            list(craw_backend_registry.keys()),
+        )
         return False
     try:
         from aidev_agent.enums import AgentType
