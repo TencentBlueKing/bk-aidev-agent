@@ -60,11 +60,14 @@ class CrawSyncResult:
     artifacts_written: Dict[str, int] = field(default_factory=dict)
     # 所有已写产物读回是否一致（无产物时为 True）
     artifacts_verified: bool = True
+    # 读回校验失败的产物相对路径（供排查具体损坏项）
+    artifacts_failed: list = field(default_factory=list)
     error: str = ""
 
     @property
     def ok(self) -> bool:
-        return not self.error and bool(self.health.get("ok"))
+        # 读回校验失败同样视为本周期失败，不能把损坏配置当成功
+        return not self.error and bool(self.health.get("ok")) and self.artifacts_verified
 
     # ---- 向后兼容别名：老调用方按 SOUL 单文件读结果 ----
     @property
@@ -112,6 +115,26 @@ class CrawSyncer:
 
     # ---------- read ----------
 
+    def _resolve_in_home(self, relpath: str) -> Path:
+        """把相对路径解析为 craw home 内的绝对路径，越界即拒绝。
+
+        拒绝三类输入：绝对路径、``..`` 父目录跳转，以及经符号链接 resolve
+        后落在 home 之外的目标（共享卷场景下 symlink escape 可越界读写）。
+
+        :raises RuntimeError: 未配置 home_dir。
+        :raises ValueError: 路径非法或越出 craw home。
+        """
+        if not self.home_dir:
+            raise RuntimeError(f"craw home 未配置（参数 home_dir 或 env {HOME_ENV}）")
+        rel = Path(relpath)
+        if rel.is_absolute() or ".." in rel.parts:
+            raise ValueError(f"非法产物路径（须为 craw home 内相对路径）: {relpath!r}")
+        home = self.home_dir.resolve()
+        target = (home / rel).resolve()
+        if not target.is_relative_to(home):
+            raise ValueError(f"产物路径越出 craw home（symlink escape）: {relpath!r}")
+        return target
+
     def read_status(self) -> dict:
         """HTTP 面读：craw 健康状态。"""
         return self.backend.health()
@@ -120,7 +143,7 @@ class CrawSyncer:
         """文件面读：craw home 下相对路径的文本内容（不存在返回 None）。"""
         if not self.home_dir:
             return None
-        target = self.home_dir / relpath
+        target = self._resolve_in_home(relpath)
         if not target.is_file():
             return None
         return target.read_text(encoding="utf-8")
@@ -131,10 +154,9 @@ class CrawSyncer:
         """文件面写：内容写入 craw home 下的相对路径（父目录自动创建）。
 
         :raises RuntimeError: 未配置 home_dir。
+        :raises ValueError: 路径非法或越出 craw home。
         """
-        if not self.home_dir:
-            raise RuntimeError(f"craw home 未配置（参数 home_dir 或 env {HOME_ENV}）")
-        target = self.home_dir / relpath
+        target = self._resolve_in_home(relpath)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
         return target
@@ -167,13 +189,17 @@ class CrawSyncer:
         try:
             result.health = self.read_status()
             if self.home_dir:
-                verified_all = True
+                failed: "list[str]" = []
                 for relpath, content in self.collect_artifacts().items():
                     self.write_artifact(relpath, content)
                     result.artifacts_written[relpath] = len(content.encode("utf-8"))
                     if self.read_file(relpath) != content:
-                        verified_all = False
-                result.artifacts_verified = verified_all
+                        failed.append(relpath)
+                result.artifacts_failed = failed
+                result.artifacts_verified = not failed
+                if failed:
+                    # 读回校验失败必须进入失败状态，不能把损坏配置当成功
+                    result.error = f"产物读回校验失败: {', '.join(failed)}"
         except Exception as exc:
             _logger.exception("[CRAW-SYNC] cycle failed: %s", exc)
             result.error = str(exc)
