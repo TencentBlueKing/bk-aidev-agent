@@ -23,13 +23,13 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { defineComponent, h } from 'vue';
+import { computed, defineComponent, h, ref } from 'vue';
 
 import { type VueWrapper, flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AIFileType } from '../../../../ag-ui/types/file';
-import { buildArtifactId } from '../../../../composables/use-artifact-preview';
+import { ARTIFACT_PREVIEW_TOKEN, buildArtifactId } from '../../../../composables/use-artifact-preview';
 import FileArtifactPanel from './file-artifact-panel.vue';
 
 import type { SessionArtifact } from '../../../../composables/use-artifact-preview';
@@ -40,7 +40,6 @@ vi.mock('vue-tippy', () => ({
   directive: { mounted: vi.fn(), unmounted: vi.fn() },
 }));
 
-// 轻量 mock bkui-vue，避免引入完整组件库
 vi.mock('bkui-vue', () => ({
   Button: defineComponent({
     emits: ['click'],
@@ -61,6 +60,16 @@ vi.mock('bkui-vue', () => ({
           onInput: (e: Event) => emit('update:modelValue', (e.target as HTMLInputElement).value),
         }),
   }),
+  Loading: defineComponent({
+    setup: () => () => h('span', { class: 'mock-loading' }),
+  }),
+}));
+
+vi.mock('../../../message-loading/message-loading.vue', () => ({
+  default: defineComponent({
+    name: 'MessageLoading',
+    setup: () => () => h('div', { class: 'mock-message-loading' }),
+  }),
 }));
 
 const createArtifact = (overrides: Partial<SessionArtifact> = {}): SessionArtifact => {
@@ -71,13 +80,29 @@ const createArtifact = (overrides: Partial<SessionArtifact> = {}): SessionArtifa
     messageUid,
     name: '项目立项书.pdf',
     outputId,
-    previewUrl: 'https://example.com/preview.pdf',
     size: 1024,
     type: AIFileType.Pdf,
-    url: 'https://example.com/download.pdf',
     ...overrides,
   };
 };
+
+const createPreviewContext = (overrides: Record<string, unknown> = {}) => ({
+  activeArtifactId: ref(''),
+  canResolveArtifactUrl: computed(() => true),
+  openPreview: vi.fn(),
+  resolveArtifactUrls: vi.fn().mockResolvedValue({
+    download_url: 'https://example.com/download.pdf',
+    preview_url: 'https://example.com/preview.pdf',
+  }),
+  setActiveArtifactId: vi.fn(),
+  ...overrides,
+});
+
+const mountPanel = (props: { activeId: string; artifacts: SessionArtifact[] }, previewCtx?: unknown) =>
+  mount(FileArtifactPanel, {
+    global: previewCtx ? { provide: { [ARTIFACT_PREVIEW_TOKEN]: previewCtx } } : {},
+    props,
+  });
 
 describe('FileArtifactPanel', () => {
   let wrapper: VueWrapper;
@@ -95,7 +120,7 @@ describe('FileArtifactPanel', () => {
       createArtifact({ outputId: 'a', name: '文档.pdf' }),
       createArtifact({ outputId: 'b', name: '统计.xlsx' }),
     ];
-    wrapper = mount(FileArtifactPanel, { props: { activeId: '', artifacts } });
+    wrapper = mountPanel({ activeId: '', artifacts });
 
     expect(wrapper.findAll('.ai-artifact-file-card.is-list').length).toBe(2);
     expect(wrapper.find('.ai-file-artifact-panel-list-title').text()).toContain('2');
@@ -103,7 +128,7 @@ describe('FileArtifactPanel', () => {
 
   it('命中文件的列表项应带 is-active 态', () => {
     const artifacts = [createArtifact({ outputId: 'a' }), createArtifact({ outputId: 'b' })];
-    wrapper = mount(FileArtifactPanel, { props: { activeId: artifacts[1].artifactId, artifacts } });
+    wrapper = mountPanel({ activeId: artifacts[1].artifactId, artifacts });
 
     const items = wrapper.findAll('.ai-artifact-file-card.is-list');
     expect(items[0].classes()).not.toContain('is-active');
@@ -112,7 +137,7 @@ describe('FileArtifactPanel', () => {
 
   it('点击其它文件项应 emit select', async () => {
     const artifacts = [createArtifact({ outputId: 'a' }), createArtifact({ outputId: 'b' })];
-    wrapper = mount(FileArtifactPanel, { props: { activeId: artifacts[0].artifactId, artifacts } });
+    wrapper = mountPanel({ activeId: artifacts[0].artifactId, artifacts });
 
     await wrapper.findAll('.ai-artifact-file-card.is-list')[1].trigger('click');
 
@@ -124,7 +149,7 @@ describe('FileArtifactPanel', () => {
       createArtifact({ outputId: 'a', name: '运维文档.pdf' }),
       createArtifact({ outputId: 'b', name: '统计.xlsx' }),
     ];
-    wrapper = mount(FileArtifactPanel, { props: { activeId: '', artifacts } });
+    wrapper = mountPanel({ activeId: '', artifacts });
 
     await wrapper.find('.mock-input').setValue('统计');
 
@@ -133,28 +158,51 @@ describe('FileArtifactPanel', () => {
     expect(items[0].text()).toContain('统计');
   });
 
-  it('pdf 文件应使用 iframe src 展示 previewUrl，且不发起 fetch', async () => {
+  it('未传 onArtifactClick 时预览区应展示无数据', async () => {
+    const artifact = createArtifact();
+    wrapper = mountPanel({ activeId: artifact.artifactId, artifacts: [artifact] });
+    await flushPromises();
+
+    expect(wrapper.find('.ai-file-artifact-panel-preview-empty').exists()).toBe(true);
+    expect(wrapper.find('.ai-file-artifact-panel-preview-iframe').exists()).toBe(false);
+  });
+
+  it('pdf 文件应异步取链后用 iframe src 展示 preview_url', async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
-    const artifact = createArtifact({ previewUrl: 'https://example.com/x.pdf', type: AIFileType.Pdf });
-    wrapper = mount(FileArtifactPanel, { props: { activeId: artifact.artifactId, artifacts: [artifact] } });
+    const resolveArtifactUrls = vi.fn().mockResolvedValue({
+      download_url: 'https://example.com/download.pdf',
+      preview_url: 'https://example.com/x.pdf',
+    });
+    const artifact = createArtifact({ type: AIFileType.Pdf });
+    wrapper = mountPanel(
+      { activeId: artifact.artifactId, artifacts: [artifact] },
+      createPreviewContext({ resolveArtifactUrls }),
+    );
     await flushPromises();
 
     const iframe = wrapper.find('.ai-file-artifact-panel-preview-iframe');
     expect(iframe.attributes('src')).toBe('https://example.com/x.pdf');
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(resolveArtifactUrls).toHaveBeenCalledTimes(1);
     vi.unstubAllGlobals();
   });
 
-  it('html 文件应拉取 file.url 并用 iframe srcdoc 渲染', async () => {
+  it('html 文件应使用 download_url 拉取并用 iframe srcdoc 渲染', async () => {
     const fetchSpy = vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve('<h1>hi</h1>') });
     vi.stubGlobal('fetch', fetchSpy);
+    const resolveArtifactUrls = vi.fn().mockResolvedValue({
+      download_url: 'https://example.com/page.html',
+      preview_url: 'https://example.com/preview.pdf',
+    });
     const artifact = createArtifact({
       name: 'page.html',
       type: AIFileType.Html,
-      url: 'https://example.com/page.html',
     });
-    wrapper = mount(FileArtifactPanel, { props: { activeId: artifact.artifactId, artifacts: [artifact] } });
+    wrapper = mountPanel(
+      { activeId: artifact.artifactId, artifacts: [artifact] },
+      createPreviewContext({ resolveArtifactUrls }),
+    );
     await flushPromises();
 
     expect(fetchSpy).toHaveBeenCalledWith('https://example.com/page.html', expect.any(Object));
@@ -164,18 +212,47 @@ describe('FileArtifactPanel', () => {
   });
 
   it('html 拉取失败应展示错误态', async () => {
-    const fetchSpy = vi.fn().mockRejectedValue(new Error('network'));
+    const fetchSpy = vi.fn().mockRejectedValue(new Error('EOF'));
     vi.stubGlobal('fetch', fetchSpy);
+    const resolveArtifactUrls = vi.fn().mockResolvedValue({
+      download_url: 'https://example.com/page.html',
+    });
     const artifact = createArtifact({ name: 'page.html', type: AIFileType.Html });
-    wrapper = mount(FileArtifactPanel, { props: { activeId: artifact.artifactId, artifacts: [artifact] } });
+    wrapper = mountPanel(
+      { activeId: artifact.artifactId, artifacts: [artifact] },
+      createPreviewContext({ resolveArtifactUrls }),
+    );
     await flushPromises();
 
     expect(wrapper.find('.ai-file-artifact-panel-preview-error').exists()).toBe(true);
     vi.unstubAllGlobals();
   });
 
+  it('异步取链过程中应展示 MessageLoading', async () => {
+    let resolveUrls: (value: { preview_url: string }) => void = () => {};
+    const resolveArtifactUrls = vi.fn(
+      () =>
+        new Promise<{ preview_url: string }>(resolve => {
+          resolveUrls = resolve;
+        }),
+    );
+    const artifact = createArtifact();
+    wrapper = mountPanel(
+      { activeId: artifact.artifactId, artifacts: [artifact] },
+      createPreviewContext({ resolveArtifactUrls }),
+    );
+
+    expect(wrapper.find('.mock-message-loading').exists()).toBe(true);
+
+    resolveUrls({ preview_url: 'https://example.com/x.pdf' });
+    await flushPromises();
+
+    expect(wrapper.find('.mock-message-loading').exists()).toBe(false);
+    expect(wrapper.find('.ai-file-artifact-panel-preview-iframe').exists()).toBe(true);
+  });
+
   it('无命中文件时应展示空态', () => {
-    wrapper = mount(FileArtifactPanel, { props: { activeId: 'not-exist', artifacts: [createArtifact()] } });
+    wrapper = mountPanel({ activeId: 'not-exist', artifacts: [createArtifact()] });
 
     expect(wrapper.find('.ai-file-artifact-panel-preview-empty').exists()).toBe(true);
   });

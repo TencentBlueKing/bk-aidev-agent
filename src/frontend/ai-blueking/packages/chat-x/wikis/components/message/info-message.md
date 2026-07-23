@@ -12,7 +12,7 @@ relatedComponents:
     relation: 由 MessageRender 在 role 为 info 时创建
   - slug: message-container
     relation: 嵌入消息列表时由 MessageContainer 统一布局与滚动
-sinceVersion: 1.0.0
+sinceVersion: 0.0.20
 ---
 
 <script lang="ts" setup>
@@ -20,15 +20,14 @@ sinceVersion: 1.0.0
 </script>
 
 # InfoMessage 信息消息
+
 ## 源码事实
 
 - **源码位置**：`src/components/chat-message/info-message/info-message.vue`
 - **能力域**：消息系统
 - **能力说明**：渲染居中的系统信息提示。
 
-
-
-> **能力域**：消息系统
+> **导出说明**：`InfoMessage` **未**从包入口导出（入口同名是 TS interface）。消费方经 `MessageRender` / `MessageContainer` 使用。下文 `InfoMessageComp` 为文档站内部示例。
 
 系统信息分隔组件，在聊天消息列表中以**居中虚线分隔条**的形式展示非对话类信息（会话重置、时间节点、状态变更等）。
 
@@ -46,13 +45,19 @@ sinceVersion: 1.0.0
 
 ```vue
 <template>
-  <InfoMessage :content="content" />
+  <MessageRender :message="message" />
 </template>
 
 <script setup lang="ts">
-  import { InfoMessage } from '@blueking/chat-x';
+  import { MessageRender, MessageRole, MessageStatus } from '@blueking/chat-x';
 
-  const content = '以下是新的对话';
+  const message = {
+    id: '1',
+    messageId: '1',
+    role: MessageRole.Info,
+    content: '以下是新的对话',
+    status: MessageStatus.Complete,
+  };
 </script>
 ```
 
@@ -68,11 +73,20 @@ sinceVersion: 1.0.0
 
 ```vue
 <template>
-  <InfoMessage :content="['会话已重置', '以下是新的对话']" />
+  <MessageRender :message="message" />
 </template>
 
 <script setup lang="ts">
-  import { InfoMessage } from '@blueking/chat-x';
+  import { MessageRender, MessageRole, MessageStatus } from '@blueking/chat-x';
+
+  // 运行时 content 兼容 string[]（TS 类型声明多为 string）
+  const message = {
+    id: '1',
+    messageId: '1',
+    role: MessageRole.Info,
+    content: ['会话已重置', '以下是新的对话'],
+    status: MessageStatus.Complete,
+  };
 </script>
 ```
 

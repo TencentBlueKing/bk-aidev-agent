@@ -10,9 +10,15 @@ aiSummary: >
 relatedComponents:
   - slug: message-render
     relation: 由 MessageRender 在 role 为 activity 时创建
-  - slug: assistant-message
-    relation: 常与助手回复相邻，描述检索或执行背景
-sinceVersion: 1.0.0
+  - slug: flow-agent-content
+    relation: activityType 为 flow_agent 时渲染
+  - slug: knowledge-rag-content
+    relation: activityType 为 knowledge_rag 时渲染
+  - slug: reference-doc-content
+    relation: activityType 为 reference_document 时渲染
+  - slug: chat-container
+    relation: uid / onInterruptResume / 侧栏 Tab 与 ChatContainer 联动
+sinceVersion: 0.0.20
 ---
 
 <script lang="ts" setup>
@@ -49,17 +55,16 @@ sinceVersion: 1.0.0
 </script>
 
 # ActivityMessage 活动消息
+
 ## 源码事实
 
 - **源码位置**：`src/components/chat-message/activity-message/activity-message.vue`
 - **能力域**：消息系统
-- **能力说明**：按 activityType 分发 FlowAgent、知识召回、引用文档等活动内容。
+- **能力说明**：按 `activityType` 分发 FlowAgent、知识召回、引用文档等活动内容；未知类型不渲染。
 
+> **导出说明**：`ActivityMessage` **未**从 `@blueking/chat-x` 包入口导出（入口同名导出是 TS interface）。消费方请通过 `MessageRender` / `MessageContainer` 渲染 `role: 'activity'`。下文带 `*Comp` 的 demo 为文档站内部相对路径示例。
 
-
-> **能力域**：消息系统
-
-活动消息组件，用于展示 AI 的知识检索（Knowledge RAG）过程、参考文档引用列表和 FlowAgent 流程执行情况。通过 `activityType` 切换三种工作模式，点击标题栏可折叠/展开内容区域。
+活动消息组件，用于展示知识检索（Knowledge RAG）、参考文档引用与 FlowAgent 执行情况。通过 `activityType` 映射到对应子组件；点击标题栏可折叠/展开。
 
 组件会将父级传入消息上的 **`uid`** 以 **`message-uid`** 形式透传给各活动子组件（`FlowAgentContent` / `KnowledgeRagContent` / `ReferenceDocContent`），用于侧栏自定义 Tab、`addCustomTab` 的 `data.messageUid` 与主对话区「在对话中定位」联动（详见 [ChatContainer](/components/setup/chat-container)）。
 
@@ -69,45 +74,46 @@ sinceVersion: 1.0.0
 
 组件根据 `activityType` 的值决定渲染模式：
 
-| `activityType`    | 模式           | 标题文案                             | 图标             | 内容区                              |
-| ----------------- | -------------- | ------------------------------------ | ---------------- | ----------------------------------- |
-| `'knowledge_rag'` | 知识检索模式   | 检索中 / 检索完成（随 status 切换）  | Loading / 文档   | Markdown 检索摘要 + 引用列表        |
-| `'flow_agent'`    | FlowAgent 模式 | 执行情况: 成功 N / 失败 N / 执行中 N | Loading / 箭头   | 任务节点树 + 节点详情（自定义 Tab） |
-| 其他任意值        | 引用文档模式   | 引用 N 篇资料作为参考                | 文档图标（固定） | 引用文档列表                        |
+| `activityType`          | 模式           | 标题文案                             | 图标             | 内容区                              |
+| ----------------------- | -------------- | ------------------------------------ | ---------------- | ----------------------------------- |
+| `'knowledge_rag'`       | 知识检索模式   | 检索中 / 检索完成（随 status 切换）  | Loading / 文档   | Markdown 检索摘要 + 引用列表        |
+| `'flow_agent'`          | FlowAgent 模式 | 执行情况: 成功 N / 失败 N / 执行中 N | Loading / 箭头   | 任务节点树 + 节点详情（自定义 Tab） |
+| `'reference_document'`  | 引用文档模式   | 引用 N 篇资料作为参考                | 文档图标（固定） | 引用文档列表                        |
+| 其他未映射值            | —              | —                                    | —                | **不渲染**（`activityComponent` 为 falsy） |
 
-> **注意：** 只有值严格等于 `'knowledge_rag'` 才进入知识检索模式；严格等于 `'flow_agent'`（`MessageContentType.FlowAgent`）才进入 FlowAgent 模式；其他值均按引用文档模式处理。
+> **注意：** 源码仅映射上述三种 `MessageContentType`；`activityType` 缺失或未知时组件输出为空。
 
 ## 引用文档模式
 
-`activityType` 传入 `MessageContentType.ReferenceDocument`（`'reference_document'`）或任意非 `'knowledge_rag'` 的值，`content` 传入文档对象数组。
+`activityType` 必须为 `MessageContentType.ReferenceDocument`（`'reference_document'`），`content` 传入文档对象数组。
 
 标题自动显示文档数量，始终展示文档图标，`status` 不影响标题和图标。
 
 ```vue
+<!-- 消费方：经 MessageRender 渲染 -->
 <template>
-  <ActivityMessage
-    v-model:collapsed="collapsed"
-    :content="docs"
-    status="complete"
-    :activity-type="MessageContentType.ReferenceDocument"
-  />
+  <MessageRender :message="message" />
 </template>
 
 <script setup lang="ts">
-  import { ref } from 'vue';
-  import { ActivityMessage, MessageContentType, MessageStatus } from '@blueking/chat-x';
+  import { MessageRender, MessageContentType, MessageRole, MessageStatus } from '@blueking/chat-x';
 
-  const collapsed = ref(false);
-
-  const docs = [
-    {
-      name: 'Vue 3 组合式 API 指南',
-      url: 'https://cn.vuejs.org/guide/extras/composition-api-faq.html',
-      originFile: 'composition-api.md',
-    },
-    { name: 'TypeScript 高级类型手册', url: 'https://www.typescriptlang.org/docs/', originFile: 'ts-advanced.pdf' },
-    { name: '蓝鲸前端开发规范 v2.0', url: 'https://example.com/bk-standard', originFile: 'bk-standard.docx' },
-  ];
+  const message = {
+    id: '2',
+    messageId: '2',
+    role: MessageRole.Activity,
+    activityType: MessageContentType.ReferenceDocument,
+    status: MessageStatus.Complete,
+    uid: 'activity-ref-1',
+    content: [
+      {
+        name: 'Vue 3 组合式 API 指南',
+        url: 'https://cn.vuejs.org/guide/extras/composition-api-faq.html',
+        originFile: 'composition-api.md',
+      },
+      { name: 'TypeScript 高级类型手册', url: 'https://www.typescriptlang.org/docs/', originFile: 'ts-advanced.pdf' },
+    ],
+  };
 </script>
 ```
 
@@ -135,28 +141,25 @@ sinceVersion: 1.0.0
 
 ```vue
 <template>
-  <ActivityMessage
-    v-model:collapsed="collapsed"
-    :content="ragContent"
-    :status="status"
-    :activity-type="MessageContentType.KnowledgeRag"
-  />
+  <MessageRender :message="message" />
 </template>
 
 <script setup lang="ts">
-  import { ref } from 'vue';
-  import { ActivityMessage, MessageContentType, MessageStatus } from '@blueking/chat-x';
+  import { MessageRender, MessageContentType, MessageRole, MessageStatus } from '@blueking/chat-x';
 
-  const collapsed = ref(false);
-  const status = ref(MessageStatus.Complete);
-
-  const ragContent = {
-    // 检索摘要（支持 Markdown）
-    content: '根据知识库检索，Vue 3 引入了 Composition API...',
-    // 引用文档列表
-    referenceDocument: [
-      { name: '知识库文档：Composition API 详解', url: 'https://example.com/kb1', originFile: 'kb1.md' },
-    ],
+  const message = {
+    id: '1',
+    messageId: '1',
+    role: MessageRole.Activity,
+    activityType: MessageContentType.KnowledgeRag,
+    status: MessageStatus.Complete,
+    uid: 'activity-rag-1',
+    content: {
+      content: '根据知识库检索，Vue 3 引入了 Composition API...',
+      referenceDocument: [
+        { name: '知识库文档：Composition API 详解', url: 'https://example.com/kb1', originFile: 'kb1.md' },
+      ],
+    },
   };
 </script>
 ```
@@ -221,24 +224,20 @@ sinceVersion: 1.0.0
 
 通过 `v-model:collapsed` 控制内容区的折叠状态，点击整个标题栏均可切换。默认为 `false`（展开）。
 
+文档站内部示例（相对路径引入组件本体）可通过 `v-model:collapsed` 控制；消费方一般不直接绑定，折叠状态由活动子组件内部管理。
+
 ```vue
-<template>
-  <!-- 默认展开 -->
-  <ActivityMessage
-    v-model:collapsed="collapsed"
-    :content="docs"
-    status="complete"
-    activity-type="reference_document"
-  />
-</template>
+<!-- 文档站内部示例 -->
+<ActivityMessageComp
+  v-model:collapsed="collapsed"
+  :content="docs"
+  status="complete"
+  activity-type="reference_document"
+/>
+```
 
-<script setup lang="ts">
-  import { ref } from 'vue';
-  import { ActivityMessage } from '@blueking/chat-x';
-
-  const collapsed = ref(false); // false = 展开，true = 折叠
-  const docs = [{ name: '参考文档', url: 'https://example.com/doc', originFile: 'doc.pdf' }];
-</script>
+```ts
+const collapsed = ref(false); // false = 展开，true = 折叠
 ```
 
 **渲染效果（展开状态）**
@@ -309,21 +308,15 @@ FlowAgentContent（activityType = 'flow_agent'）
 
 ```vue
 <template>
-  <ActivityMessage
-    v-model:collapsed="collapsed"
-    :content="flowContent"
-    :status="status"
-    :activity-type="MessageContentType.FlowAgent"
+  <MessageRender
+    :message="message"
+    :on-interrupt-resume="handleInterruptResume"
   />
 </template>
 
 <script setup lang="ts">
-  import { ref } from 'vue';
-  import { ActivityMessage, MessageContentType, MessageStatus } from '@blueking/chat-x';
-  import type { BkFlowMessageContent } from '@blueking/chat-x';
-
-  const collapsed = ref(false);
-  const status = ref(MessageStatus.Complete);
+  import { MessageRender, MessageContentType, MessageRole, MessageStatus } from '@blueking/chat-x';
+  import type { BkFlowMessageContent, OnInterruptResume } from '@blueking/chat-x';
 
   const flowContent: BkFlowMessageContent = [
     {
@@ -348,18 +341,6 @@ FlowAgentContent（activityType = 'flow_agent'）
           skip: false,
           type: 'ServiceActivity',
         },
-        node2: {
-          id: 'node2',
-          name: '数据转换',
-          state: 'FINISHED',
-          elapsed_time: 45,
-          start_time: '2025-01-01 10:00:12',
-          finish_time: '2025-01-01 10:00:57',
-          loop: 1,
-          retry: 0,
-          skip: false,
-          type: 'ServiceActivity',
-        },
         node3: {
           id: 'node3',
           name: '结果写入',
@@ -370,11 +351,51 @@ FlowAgentContent（activityType = 'flow_agent'）
           loop: 1,
           retry: 0,
           skip: false,
+          retryable: true,
+          skippable: true,
           type: 'ServiceActivity',
         },
       },
     },
   ];
+
+  const message = {
+    id: '3',
+    messageId: '3',
+    role: MessageRole.Activity,
+    activityType: MessageContentType.FlowAgent,
+    status: MessageStatus.Complete,
+    uid: 'activity-flow-1',
+    content: flowContent,
+  };
+
+  const handleInterruptResume: OnInterruptResume = async payload => {
+    console.log('节点重试/跳过', payload);
+  };
+</script>
+```
+
+## 未知 activityType（不渲染）
+
+未映射的 `activityType` 不会回退到引用文档模式，组件直接不渲染：
+
+```vue
+<template>
+  <MessageRender :message="message" />
+  <!-- 页面上无任何活动内容输出 -->
+</template>
+
+<script setup lang="ts">
+  import { MessageRender, MessageRole, MessageStatus } from '@blueking/chat-x';
+
+  const message = {
+    id: 'x',
+    messageId: 'x',
+    role: MessageRole.Activity,
+    activityType: 'unknown_activity',
+    status: MessageStatus.Complete,
+    content: [{ name: '不会展示', url: '#', originFile: 'a.md' }],
+  };
 </script>
 ```
 
@@ -517,20 +538,25 @@ enum MessageContentType {
 
 ### Props
 
-| 属性名       | 类型                                                                        | 默认值 | 说明                                                      |
-| ------------ | --------------------------------------------------------------------------- | ------ | --------------------------------------------------------- |
-| content      | `ReferenceDocumentContent[] \| KnowledgeRagContent \| BkFlowMessageContent` | -      | 内容数据，格式随 `activityType` 不同                      |
-| activityType | `'knowledge_rag' \| 'flow_agent' \| 'reference_document' \| string`         | -      | 活动类型，决定渲染模式（知识检索 / FlowAgent / 引用文档） |
-| status       | `MessageStatus`                                                             | -      | 消息状态；在 `knowledge_rag` 模式下影响标题和图标，在 `flow_agent` 模式下影响标题 Loading 状态 |
-| id           | `string \| number`                                                          | -      | 消息 ID                                                   |
-| messageId    | `string \| number`                                                          | -      | 消息唯一标识                                              |
-| onInterruptResume | `OnInterruptResume`                                                    | -      | 仅 `flow_agent` 子组件消费；失败节点「重试 / 跳过」回调，由 `MessageRender` 透传 |
+| 属性名            | 类型                                                                        | 默认值 | 说明                                                                                         |
+| ----------------- | --------------------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------- |
+| content           | `ReferenceDocumentContent[] \| KnowledgeRagContent \| BkFlowMessageContent` | -      | 内容数据，格式随 `activityType` 不同                                                         |
+| activityType      | `'knowledge_rag' \| 'flow_agent' \| 'reference_document' \| string`         | -      | 活动类型；仅三种已知值会渲染，其余不渲染                                                     |
+| status            | `MessageStatus`                                                             | -      | `knowledge_rag` 影响标题/图标；`flow_agent` 影响标题 Loading                                 |
+| id                | `string \| number`                                                          | -      | 消息 ID                                                                                      |
+| messageId         | `string \| number`                                                          | -      | 消息唯一标识                                                                                 |
+| uid               | `string`                                                                    | -      | 透传为子组件 `message-uid`，用于侧栏 Tab / 「在对话中定位」                                  |
+| onInterruptResume | `OnInterruptResume`                                                         | -      | 仅 `flow_agent` 子组件消费；失败节点「重试 / 跳过」，由 `MessageRender` 透传                 |
 
 ### v-model
 
 | 属性名    | 类型      | 默认值  | 说明                        |
 | --------- | --------- | ------- | --------------------------- |
 | collapsed | `boolean` | `false` | 内容折叠状态，`true` 为折叠 |
+
+### Events / Slots / Expose
+
+无。
 
 ## 类型定义
 
