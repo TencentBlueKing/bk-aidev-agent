@@ -1,11 +1,20 @@
 import asyncio
 import contextlib
+import json
+import multiprocessing
 import os
 import pickle
 import threading
 import time
 
 import pytest
+from ag_ui.core import EventType, TextMessageContentEvent, TextMessageStartEvent
+from ag_ui.encoder import EventEncoder
+from aidev_agent.core.ag_ui.types import (
+    ExtendAssistantMessage,
+    ExtendUserMessage,
+    MessageSnapshotEventExtend,
+)
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
 from aidev_agent.pydantic_models import ChatPrompt, ExecuteKwargs
 from aidev_agent.services.agent import ChatCompletionAgent
@@ -58,6 +67,74 @@ class DelayedPublishChannel:
             self._publish_started.set()
             assert self._allow_publish.wait(timeout=3)
         return self._channel.basic_publish(*args, **kwargs)
+
+
+def _hold_producer_lock_and_publish(env_vars, thread_id, messages, publish_event, release_event, result_queue):
+    """模拟另一个 worker：持有 producer lock，收到信号后向真实 RabbitMQ 发布 replay。"""
+    for key, value in env_vars.items():
+        os.environ[key] = value
+    RabbitMQMessageHandler._instance = None
+    handler = RabbitMQMessageHandler()
+    acquired = handler.acquire_producer(thread_id)
+    result_queue.put(("acquired", acquired))
+    if not acquired:
+        return
+
+    try:
+        if not publish_event.wait(timeout=5):
+            result_queue.put(("error", "publish signal timeout"))
+            return
+        for message in messages:
+            handler.put(thread_id, message)
+        handler.flush(thread_id)
+        result_queue.put(("published", len(messages)))
+        release_event.wait(timeout=5)
+    finally:
+        handler.release_producer(thread_id)
+
+
+def _run_remote_producer_race(handler, thread_id, monkeypatch, head_frames, replay_frames):
+    env_keys = ["RABBITMQ_HOST", "RABBITMQ_PORT", "RABBITMQ_USER", "RABBITMQ_PASSWORD", "RABBITMQ_VHOST"]
+    env_vars = {key: os.environ[key] for key in env_keys if key in os.environ}
+    ctx = multiprocessing.get_context("spawn")
+    publish_event = ctx.Event()
+    release_event = ctx.Event()
+    result_queue = ctx.Queue()
+    process = ctx.Process(
+        target=_hold_producer_lock_and_publish,
+        args=(env_vars, thread_id, replay_frames, publish_event, release_event, result_queue),
+    )
+    original_acquire_producer = handler.acquire_producer
+
+    def acquire_producer_then_publish(current_thread_id):
+        acquired = original_acquire_producer(current_thread_id)
+        if not acquired:
+            publish_event.set()
+        return acquired
+
+    monkeypatch.setattr(handler, "acquire_producer", acquire_producer_then_publish)
+    process.start()
+    try:
+        assert result_queue.get(timeout=5) == ("acquired", True)
+        assert handler.has_pending_messages(thread_id) is False
+        output = list(
+            GeneratorStreamingHelper(handler, thread_id).stream(
+                iter(()),
+                head_frames=head_frames,
+                replay_head_transform=ChatCompletionAgent._dedup_snapshot_head_frames,
+            )
+        )
+        assert result_queue.get(timeout=5) == ("published", len(replay_frames))
+        return output
+    finally:
+        publish_event.set()
+        release_event.set()
+        process.join(timeout=5)
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=2)
+            raise AssertionError("remote producer process did not exit")
+        assert process.exitcode == 0
 
 
 class TestRabbitMQMessageHandler:
@@ -257,6 +334,39 @@ class TestRabbitMQMessageHandler:
         assert all(result == expected for result in results)
 
         self._wait_until_empty(handler, thread_id)
+
+    def test_pr672_empty_queue_remote_producer_replay_dedups_snapshot(self, handler, thread_id, monkeypatch):
+        """PR #672：远端 producer 持锁但队列尚空时，第二连接仍不能输出重复 messageId。"""
+        encoder = EventEncoder()
+        snapshot = encoder.encode(
+            MessageSnapshotEventExtend(
+                type=EventType.MESSAGES_SNAPSHOT,
+                messages=[
+                    ExtendUserMessage(id="u1", role="user", content="问题"),
+                    ExtendAssistantMessage(id="mid", role="assistant", content="半截", status="streaming"),
+                ],
+            )
+        )
+        replay_frames = [
+            encoder.encode(
+                TextMessageStartEvent(type=EventType.TEXT_MESSAGE_START, message_id="mid", role="assistant")
+            ),
+            encoder.encode(
+                TextMessageContentEvent(type=EventType.TEXT_MESSAGE_CONTENT, message_id="mid", delta="完整回答")
+            ),
+            EOD_CHUNK,
+        ]
+
+        output = _run_remote_producer_race(handler, thread_id, monkeypatch, [snapshot], replay_frames)
+        payloads = [json.loads(frame.removeprefix("data: ")) for frame in output]
+        snapshot_ids = {message.get("messageId") or message.get("id") for message in payloads[0]["messages"]}
+        replay_ids = {
+            payload.get("messageId") for payload in payloads if payload["type"] == EventType.TEXT_MESSAGE_START
+        }
+
+        assert snapshot_ids == {"u1"}
+        assert replay_ids == {"mid"}
+        assert snapshot_ids.isdisjoint(replay_ids)
 
     def test_single_consumer_waits_for_in_flight_flush_before_later_buffer(self, handler, thread_id, monkeypatch):
         """单个 consumer 不应在旧 flush 批次发布完成前先吐出后续未提交消息。"""

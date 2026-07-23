@@ -37,6 +37,7 @@ from aidev_agent.pydantic_models import (
 )
 from aidev_agent.services.agent import ChatCompletionAgent
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
+from aidev_agent.services.messages_handler.constants import EOD_CHUNK
 from aidev_agent.services.messages_handler.streaming_helper import GeneratorStreamingHelper
 from aidev_agent.utils.event import RunId
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -2322,21 +2323,6 @@ class TestSnapshotReplayDedup:
     前端会因“快照已有该 id + replay 又 START 同 id”产生重复消息。修复：阶段1快照剔除
     replay 将重放的 message_id，让 replay 成为该消息唯一来源。"""
 
-    def test_reproduce_snapshot_replay_id_overlap(self):
-        """复现前提：现发快照里的 assistant id 与 replay 缓存里的 START id 相同（会重复）。"""
-        snapshot = _snapshot_frame(
-            [
-                ExtendUserMessage(id="u1", role="user", content="问题"),
-                ExtendAssistantMessage(id="mid", role="assistant", content="半截", status="streaming"),
-            ]
-        )
-        replay_ids = ChatCompletionAgent._collect_replay_message_ids(
-            _FakeReplayHandler([_start_frame("mid"), _content_frame("mid", "完整回答")]),
-            "t1",
-        )
-        # bug 前提成立：快照 id 与 replay id 有交集
-        assert _snapshot_ids(snapshot) & replay_ids == {"mid"}
-
     def test_dedup_removes_replayed_id_from_snapshot(self):
         """去重后：快照剔除 mid（由 replay 完整重建），保留历史/用户消息。"""
         snapshot = _snapshot_frame(
@@ -2348,7 +2334,7 @@ class TestSnapshotReplayDedup:
         run_started = EventEncoder().encode(RunStartedEvent(type=EventType.RUN_STARTED, thread_id="t1", run_id="r1"))
         head_frames = [snapshot, run_started]
 
-        deduped = ChatCompletionAgent._dedup_snapshot_head_frames(head_frames, {"mid"})
+        deduped = ChatCompletionAgent._dedup_snapshot_head_frames(head_frames, [_start_frame("mid")])
 
         assert _snapshot_ids(deduped[0]) == {"u1"}
         assert "mid" not in _snapshot_ids(deduped[0])
@@ -2361,24 +2347,45 @@ class TestSnapshotReplayDedup:
             [ExtendAssistantMessage(id="mid", role="assistant", content="hi", status="complete")]
         )
         head_frames = [snapshot]
-        assert ChatCompletionAgent._dedup_snapshot_head_frames(head_frames, set()) == head_frames
+        assert ChatCompletionAgent._dedup_snapshot_head_frames(head_frames, []) == head_frames
 
-    def test_collect_replay_ids_returns_empty_when_no_pending(self):
-        handler = _FakeReplayHandler([_start_frame("mid")], has_pending=False)
-        assert ChatCompletionAgent._collect_replay_message_ids(handler, "t1") == set()
+    def test_replay_selected_after_empty_check_still_dedups_snapshot(self):
+        """队列初判为空但 producer 已存在时，实际 replay 仍必须参与快照去重。"""
+        handler = _RacingReplayHandler(has_pending=False)
+        out = self._run_with_real_helper(handler)
 
-    def test_collect_replay_ids_swallows_handler_errors(self):
-        """handler 不支持 peek / 抛异常时按“无重放”处理，回退原行为。"""
-        handler = MagicMock()
-        handler.has_pending_messages.side_effect = RuntimeError("boom")
-        assert ChatCompletionAgent._collect_replay_message_ids(handler, "t1") == set()
+        snapshot_ids = _snapshot_ids(out[0])
+        replay_start_ids = {
+            _parse_sse(frame).get("messageId")
+            for frame in out
+            if frame.startswith("data: ") and _parse_sse(frame).get("type") == EventType.TEXT_MESSAGE_START
+        }
+        assert snapshot_ids & replay_start_ids == set()
 
-    def test_stream_with_queue_emits_non_overlapping_stream(self):
-        """端到端复现 + 修复验证：第二端连接输出流中，快照 id 与 START id 零重叠。"""
+    def test_pending_replay_is_read_only_once(self):
+        """预读得到的 replay 首批数据应由 consumer 复用，不能再次全量扫描。"""
+        handler = _RacingReplayHandler(has_pending=True)
+
+        self._run_with_real_helper(handler)
+
+        assert handler.replay_reads == 1
+
+    def test_reserved_producer_is_released_when_client_disconnects_during_head_frames(self):
+        handler = _RacingReplayHandler(has_pending=False, producer_acquired=True)
+        stream = GeneratorStreamingHelper(message_handler=handler, thread_id="t1").stream(
+            iter([]),
+            head_frames=["head"],
+        )
+
+        assert next(stream) == "head"
+        stream.close()
+
+        assert "release_producer" in handler.calls
+        assert "clear" not in handler.calls
+
+    @staticmethod
+    def _run_with_real_helper(handler):
         agent = _seed_agent()
-        agui_entry = _mock_agui_entry()
-        agent_input = SimpleNamespace(thread_id="t1", run_id="r1")
-
         snapshot = _snapshot_frame(
             [
                 ExtendUserMessage(id="u1", role="user", content="问题"),
@@ -2386,42 +2393,72 @@ class TestSnapshotReplayDedup:
             ]
         )
         run_started = EventEncoder().encode(RunStartedEvent(type=EventType.RUN_STARTED, thread_id="t1", run_id="r1"))
-        replay_frames = [_start_frame("mid"), _content_frame("mid", "完整回答")]
 
-        fake_handler = _FakeReplayHandler(replay_frames)
-        fake_helper = MagicMock()
-        fake_helper.message_handler = fake_handler
-        fake_helper.stream.return_value = iter(replay_frames)
+        def build_helper(**kwargs):
+            return GeneratorStreamingHelper(message_handler=handler, **kwargs)
 
         with (
-            patch(f"{_CHAT_MODULE}.GeneratorStreamingHelper", return_value=fake_helper),
+            patch(f"{_CHAT_MODULE}.GeneratorStreamingHelper", side_effect=build_helper),
             patch.object(agent, "_build_resume_aware_producer", return_value=iter([snapshot, run_started])),
         ):
-            out = list(agent._stream_with_queue(agui_entry, agent_input))
-
-        snap_ids: set[str] = set()
-        start_ids: set[str] = set()
-        for frame in out:
-            data = _parse_sse(frame)
-            if data["type"] == EventType.MESSAGES_SNAPSHOT:
-                snap_ids |= {(m.get("messageId") or m.get("id")) for m in data.get("messages", [])}
-            if data["type"] == EventType.TEXT_MESSAGE_START:
-                start_ids.add(data.get("messageId"))
-
-        assert "mid" in start_ids  # replay 仍完整重建该消息
-        assert "mid" not in snap_ids  # 快照不再含 mid
-        assert snap_ids & start_ids == set()  # 零重叠，前端不会重复
+            return list(agent._stream_with_queue(_mock_agui_entry(), SimpleNamespace(thread_id="t1", run_id="r1")))
 
 
-class _FakeReplayHandler:
-    """最小 replay handler 替身：模拟缓存里已有从头重放的 SSE 帧。"""
+class _RacingReplayHandler:
+    """模拟队列初判与 producer lock 结果不一致的 replay handler。"""
 
-    def __init__(self, cached_frames, has_pending: bool = True):
-        self._cached = list(cached_frames)
+    def __init__(self, has_pending: bool, producer_acquired: bool = False):
         self._has_pending = has_pending
+        self._producer_acquired = producer_acquired
+        self._cached = [_start_frame("mid"), _content_frame("mid", "完整回答"), EOD_CHUNK]
+        self.calls: list[str] = []
+        self.replay_reads = 0
+        self._consumer_acquired = False
+
+    def supports_replay_from_start(self):
+        return True
 
     def has_pending_messages(self, thread_id):  # noqa: ARG002
+        self.calls.append("has_pending_messages")
         return self._has_pending
 
     def get_messages_since(self, thread_id, offset, timeout=None):  # noqa: ARG002
+        if not self._consumer_acquired:
+            raise RuntimeError("replay read requires an active consumer")
+        self.calls.append("get_messages_since")
+        self.replay_reads += 1
         return self._cached[offset:], len(self._cached)
+
+    def acquire_producer(self, thread_id):  # noqa: ARG002
+        self.calls.append("acquire_producer")
+        return self._producer_acquired
+
+    def release_producer(self, thread_id):  # noqa: ARG002
+        self.calls.append("release_producer")
+
+    def acquire_consumer(self, thread_id):  # noqa: ARG002
+        self.calls.append("acquire_consumer")
+        self._consumer_acquired = True
+        return "consumer-id"
+
+    def release_consumer(self, thread_id, consumer_id):  # noqa: ARG002
+        self.calls.append("release_consumer")
+        self._consumer_acquired = False
+
+    def wait_for_previous_consumer(self, thread_id, timeout=3.0):  # noqa: ARG002
+        return True
+
+    def is_stopped(self, thread_id):  # noqa: ARG002
+        return False
+
+    def clear_cancel_signal(self, thread_id):  # noqa: ARG002
+        return None
+
+    def check_cancel_signal(self, thread_id):  # noqa: ARG002
+        return False
+
+    def has_active_consumer(self, thread_id):  # noqa: ARG002
+        return False
+
+    def mark_completed(self, thread_id):  # noqa: ARG002
+        return None

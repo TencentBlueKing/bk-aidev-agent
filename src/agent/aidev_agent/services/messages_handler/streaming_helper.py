@@ -289,6 +289,7 @@ class GeneratorStreamingHelper:
     def _consume_stopped_session(
         self,
         consumer_id: str,
+        initial_replay: tuple[list[Any], int] | None = None,
     ) -> Generator[Any, None, None]:
         """消费已停止会话的消息（内部方法）
 
@@ -302,14 +303,18 @@ class GeneratorStreamingHelper:
         """
         max_empty_rounds = 3  # 最多空轮询3次就结束
         empty_rounds = 0
-        replay_offset = 0
+        buffered_replay, replay_offset = initial_replay if initial_replay is not None else (None, 0)
         supports_replay_from_start = self._supports_replay_from_start()
 
         while True:
             try:
                 if not supports_replay_from_start:
                     self.message_handler.check_consumer(self.thread_id, consumer_id)
-                messages, replay_offset = self._get_consumer_messages(timeout=0.3, replay_offset=replay_offset)
+                if buffered_replay is None:
+                    messages, replay_offset = self._get_consumer_messages(timeout=0.3, replay_offset=replay_offset)
+                else:
+                    messages = buffered_replay
+                    buffered_replay = None
 
                 if not messages:
                     empty_rounds += 1
@@ -427,29 +432,15 @@ class GeneratorStreamingHelper:
         self,
         generator: Generator[Any, None, None],
         cancel_event: threading.Event,
-        has_pending: bool,
+        producer_acquired: bool,
         on_complete: Callable[[], None] | None = None,
-    ) -> tuple[threading.Thread | None, bool, bool]:
+    ) -> tuple[threading.Thread | None, bool]:
         """根据队列状态决定启动生产者还是恢复旧消息。"""
-        producer_thread: threading.Thread | None = None
-        is_resuming = False
-        enable_heartbeat_check = False
         supports_replay_from_start = self._supports_replay_from_start()
 
-        if not has_pending:
-            if not self.message_handler.acquire_producer(self.thread_id):
-                logger.info(
-                    "Producer already active for thread_id=%s, consuming existing replay stream",
-                    self.thread_id,
-                )
-                return producer_thread, True, True
-
-            try:
-                self.message_handler.clear(self.thread_id)
-                self.message_handler.clear_stopped(self.thread_id)
-            except Exception:
-                self.message_handler.release_producer(self.thread_id)
-                raise
+        if producer_acquired:
+            self.message_handler.clear(self.thread_id)
+            self.message_handler.clear_stopped(self.thread_id)
 
             producer_thread = threading.Thread(
                 target=self._producer,
@@ -458,25 +449,22 @@ class GeneratorStreamingHelper:
             )
             producer_thread.start()
             logger.info(f"Started producer for thread_id={self.thread_id}")
-            enable_heartbeat_check = True
-            return producer_thread, is_resuming, enable_heartbeat_check
+            return producer_thread, False
 
         if supports_replay_from_start:
-            is_resuming = True
             logger.info(
-                "Pending messages exist for thread_id=%s, replaying cached stream from start",
+                "Existing producer or cached messages found for thread_id=%s, replaying stream from start",
                 self.thread_id,
             )
-            return producer_thread, is_resuming, enable_heartbeat_check
+            return None, True
 
         self.message_handler.wait_for_previous_consumer(self.thread_id, timeout=3.0)
         restored = self.message_handler.restore_messages(self.thread_id)
-        is_resuming = True
         logger.info(
             f"Pending messages exist for thread_id={self.thread_id}, "
             f"restored {restored} messages from DLQ, consuming from start"
         )
-        return producer_thread, is_resuming, enable_heartbeat_check
+        return None, True
 
     # ---- L1 观测：consumer 循环内联耗时 WARNING 阈值（秒），仅日志用途 ----
     _CHECK_CONSUMER_SLOW_SEC = 2.0
@@ -493,6 +481,7 @@ class GeneratorStreamingHelper:
         is_resuming: bool,
         enable_heartbeat_check: bool,
         on_complete: Callable[[], None] | None = None,
+        initial_replay: tuple[list[Any], int] | None = None,
     ) -> Generator[Any, None, str]:
         """消费者循环：读取队列、处理控制消息并向上游产出业务消息。
 
@@ -511,7 +500,7 @@ class GeneratorStreamingHelper:
         yielded_total = 0
         exit_reason = "unknown"
         last_progress_ts = time.time()
-        replay_offset = 0
+        buffered_replay, replay_offset = initial_replay if initial_replay is not None else (None, 0)
         supports_replay_from_start = self._supports_replay_from_start()
 
         logger.info(
@@ -576,7 +565,11 @@ class GeneratorStreamingHelper:
                             )
 
                     t_get = time.time()
-                    messages, replay_offset = self._get_consumer_messages(timeout=0.5, replay_offset=replay_offset)
+                    if buffered_replay is None:
+                        messages, replay_offset = self._get_consumer_messages(timeout=0.5, replay_offset=replay_offset)
+                    else:
+                        messages = buffered_replay
+                        buffered_replay = None
                     get_elapsed = time.time() - t_get
                     if get_elapsed > self._GET_SLOW_SEC:
                         logger.warning(
@@ -700,10 +693,35 @@ class GeneratorStreamingHelper:
         except Exception:
             logger.exception("Error cleaning completed replay session for thread_id=%s", self.thread_id)
 
+    def _prepare_head_frames_for_replay(
+        self,
+        head_frames: list[Any],
+        replay_head_transform: Callable[[list[Any], list[Any]], list[Any]] | None,
+        will_replay: bool,
+    ) -> tuple[list[Any], tuple[list[Any], int] | None]:
+        """用实际首批 replay 转换直传头部帧，并把读取结果交给 consumer 复用。"""
+        if (
+            not head_frames
+            or not will_replay
+            or replay_head_transform is None
+            or not self._supports_replay_from_start()
+        ):
+            return head_frames, None
+
+        try:
+            replay_messages, replay_offset = self._get_consumer_messages(timeout=0.5, replay_offset=0)
+        except TimeoutError:
+            logger.warning("Replay prefetch timed out; head-frame transform skipped, thread_id=%s", self.thread_id)
+            return head_frames, None
+
+        return replay_head_transform(head_frames, replay_messages), (replay_messages, replay_offset)
+
     def stream(
         self,
         generator: Generator[Any, None, None],
         on_complete: Callable[[], None] | None = None,
+        head_frames: list[Any] | None = None,
+        replay_head_transform: Callable[[list[Any], list[Any]], list[Any]] | None = None,
     ) -> Generator[Any, None, None]:
         """使用队列处理器缓存流式请求
 
@@ -714,6 +732,8 @@ class GeneratorStreamingHelper:
             generator: 数据生成器
             on_complete: 流完成时的回调函数，用于及时更新 session status 等外部状态。
                 replay-from-start handler 在 producer 完成时调用；旧 handler 在消费到 EOD 后调用。
+            head_frames: 需要在队列消息前直传的头部帧。
+            replay_head_transform: 使用实际首批 replay 调整头部帧的回调。
 
         Yields:
             生成器产生的数据
@@ -732,28 +752,49 @@ class GeneratorStreamingHelper:
         # 注册为当前活跃消费者
         consumer_id = self.message_handler.acquire_consumer(self.thread_id)
         producer_thread: threading.Thread | None = None
+        producer_acquired = False
         consumer_exit_reason: str | None = None
 
         should_consume_stopped, has_pending = self._resolve_stopped_or_pending_state()
 
         try:
             if should_consume_stopped:
-                yield from self._consume_stopped_session(consumer_id)
+                prepared_head_frames, initial_replay = self._prepare_head_frames_for_replay(
+                    head_frames or [],
+                    replay_head_transform,
+                    will_replay=True,
+                )
+                yield from prepared_head_frames
+                yield from self._consume_stopped_session(consumer_id, initial_replay=initial_replay)
                 return
 
             has_pending = self._recheck_pending_after_waiting_consumer(has_pending)
-            producer_thread, is_resuming, enable_heartbeat_check = self._start_or_resume_stream(
+            if not has_pending:
+                producer_acquired = self.message_handler.acquire_producer(self.thread_id)
+
+            will_replay = has_pending or not producer_acquired
+            prepared_head_frames, initial_replay = self._prepare_head_frames_for_replay(
+                head_frames or [],
+                replay_head_transform,
+                will_replay,
+            )
+            yield from prepared_head_frames
+
+            enable_heartbeat_check = not has_pending
+            producer_thread, is_resuming = self._start_or_resume_stream(
                 generator=generator,
                 cancel_event=cancel_event,
-                has_pending=has_pending,
+                producer_acquired=producer_acquired,
                 on_complete=on_complete,
             )
+            producer_acquired = False
             consumer_exit_reason = yield from self._consume_stream_messages(
                 consumer_id=consumer_id,
                 cancel_event=cancel_event,
                 is_resuming=is_resuming,
                 enable_heartbeat_check=enable_heartbeat_check,
                 on_complete=on_complete,
+                initial_replay=initial_replay,
             )
         except GeneratorExit:
             # 客户端断开连接，不清理队列，消息已在死信队列中保留
@@ -761,6 +802,8 @@ class GeneratorStreamingHelper:
             raise
         finally:
             self._unregister_cancel_event()
+            if producer_acquired:
+                self.message_handler.release_producer(self.thread_id)
             # 清理跨进程取消信号（避免残留影响下次请求）
             self._clear_cancel_signal_safely("Error clearing cancel signal")
             # 释放消费者（仅当自己仍是活跃消费者时）

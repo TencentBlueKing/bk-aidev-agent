@@ -819,39 +819,20 @@ class ChatCompletionAgent(BaseModel):
         # ---- 阶段 1：同步拉取头部帧并直接 yield ----
         head_frames = []
         remaining_producer = self._extract_head_frames(producer, head_frames)
-        # 多端 replay 去重：阶段 1 现发的 MESSAGES_SNAPSHOT 由本连接 input.messages（DB 状态）
-        # 构造，可能已含当前 run 那条半截 assistant 消息；而阶段 2 replay 会从头把同一条
-        # （同 message_id）完整重放。若不处理，前端会“快照已有该 id + replay 又 START(同 id)”
-        # 而产生重复消息。这里在直传快照前，剔除 replay 缓存中将被重放的 message_id，让 replay
-        # 成为该消息的唯一来源（内容完整，无需 offset 对齐），保证本连接输出流自洽、零重叠。
-        replay_message_ids = self._collect_replay_message_ids(
-            helper.message_handler, queue_thread_id or agent_input.thread_id
+        # helper 先注册 consumer 并确定实际消费 replay 后，再用同一批 replay 数据过滤快照；
+        # 过滤后的头部帧仍然直接 yield，不进入 RabbitMQ，保持原有两阶段输出顺序。
+        yield from helper.stream(
+            remaining_producer,
+            on_complete=self._on_complete,
+            head_frames=head_frames,
+            replay_head_transform=self._dedup_snapshot_head_frames,
         )
-        head_frames = self._dedup_snapshot_head_frames(head_frames, replay_message_ids)
-        for frame in head_frames:
-            yield frame
-
-        # ---- 阶段 2：剩余帧交给队列管理（支持断点续传）----
-        yield from helper.stream(remaining_producer, on_complete=self._on_complete)
 
     @staticmethod
-    def _collect_replay_message_ids(message_handler: Any, thread_id: str | None) -> set[str]:
-        """收集阶段 2 replay 将从头重放的 ``TEXT_MESSAGE_START`` 的 message_id。
-
-        仅当存在待重放消息时才非破坏性 peek 缓存日志；handler 不支持 peek、超时或任何异常
-        一律按“无重放”处理（返回空集），回退到原有行为，绝不影响正常流。
-        """
-        if not thread_id:
-            return set()
-        try:
-            if not message_handler.has_pending_messages(thread_id):
-                return set()
-            cached, _ = message_handler.get_messages_since(thread_id, 0, timeout=0.5)
-        except Exception:
-            return set()
-
+    def _collect_replay_message_ids(cached: list[Any]) -> set[str]:
+        """收集实际首批 replay 中 ``TEXT_MESSAGE_START`` 的 message_id。"""
         message_ids: set[str] = set()
-        for frame in cached or []:
+        for frame in cached:
             if not isinstance(frame, str) or '"type":"TEXT_MESSAGE_START"' not in frame:
                 continue
             try:
@@ -864,8 +845,9 @@ class ChatCompletionAgent(BaseModel):
         return message_ids
 
     @staticmethod
-    def _dedup_snapshot_head_frames(head_frames: list, replay_message_ids: set[str]) -> list:
+    def _dedup_snapshot_head_frames(head_frames: list[Any], replay_frames: list[Any]) -> list[Any]:
         """从阶段 1 头部帧的 ``MESSAGES_SNAPSHOT`` 中剔除将被 replay 重放的消息，避免重复。"""
+        replay_message_ids = ChatCompletionAgent._collect_replay_message_ids(replay_frames)
         if not replay_message_ids:
             return head_frames
         return [ChatCompletionAgent._strip_snapshot_messages(f, replay_message_ids) for f in head_frames]
