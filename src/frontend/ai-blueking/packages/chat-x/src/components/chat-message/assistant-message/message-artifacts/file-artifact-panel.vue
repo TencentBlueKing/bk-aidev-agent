@@ -45,45 +45,62 @@
             </span>
           </div>
           <span
-            v-if="activeArtifact.url"
+            v-if="canResolveArtifactUrl"
             class="ai-file-artifact-panel-preview-header-download"
+            :class="{ 'is-loading': downloadLoading }"
             @click="handleDownload(activeArtifact)"
           >
-            <component :is="getDownloadIcon()" />
+            <Loading
+              v-if="downloadLoading"
+              mode="spin"
+              size="mini"
+              theme="primary"
+            />
+            <component
+              :is="getDownloadIcon()"
+              v-else
+            />
           </span>
         </div>
         <div class="ai-file-artifact-panel-preview-body">
-          <!-- HTML：拉取 file.url 的 html 字符串后用 iframe srcdoc 渲染 -->
-          <template v-if="isHtml">
-            <div
-              v-if="htmlStatus === 'loading'"
-              class="ai-file-artifact-panel-preview-skeleton ai-skeleton-element"
-            />
-            <div
-              v-else-if="htmlStatus === 'error'"
-              class="ai-file-artifact-panel-preview-error"
+          <!-- 异步取链 / HTML 拉取中：统一 MessageLoading -->
+          <div
+            v-if="previewStatus === 'loading'"
+            class="ai-file-artifact-panel-preview-loading"
+          >
+            <MessageLoading />
+          </div>
+          <div
+            v-else-if="previewStatus === 'error'"
+            class="ai-file-artifact-panel-preview-error"
+          >
+            <span>{{ t('预览加载失败') }}</span>
+            <Button
+              size="small"
+              text
+              theme="primary"
+              @click="loadPreview"
             >
-              <span>{{ t('预览加载失败') }}</span>
-              <Button
-                size="small"
-                text
-                theme="primary"
-                @click="loadHtml"
-              >
-                {{ t('重试') }}
-              </Button>
-            </div>
-            <iframe
-              v-else
-              class="ai-file-artifact-panel-preview-iframe"
-              :srcdoc="htmlContent"
-            />
-          </template>
-          <!-- 其余类型：previewUrl 为后台转换好的 pdf，直接 iframe 展示 -->
+              {{ t('重试') }}
+            </Button>
+          </div>
+          <div
+            v-else-if="previewStatus === 'empty'"
+            class="ai-file-artifact-panel-preview-empty"
+          >
+            {{ t('暂无可预览的文件') }}
+          </div>
+          <!-- HTML：用 download_url 拉取 html 后 iframe srcdoc -->
+          <iframe
+            v-else-if="isHtml"
+            class="ai-file-artifact-panel-preview-iframe"
+            :srcdoc="htmlContent"
+          />
+          <!-- 其余类型：preview_url 为后台转换好的 pdf -->
           <iframe
             v-else
             class="ai-file-artifact-panel-preview-iframe"
-            :src="activeArtifact.previewUrl"
+            :src="previewUrl"
           />
         </div>
       </template>
@@ -99,12 +116,14 @@
 <script setup lang="ts">
   import { cloneVNode, computed, onBeforeUnmount, shallowRef, watch } from 'vue';
 
-  import { Button, Input } from 'bkui-vue';
+  import { Button, Input, Loading } from 'bkui-vue';
 
   import { AIFileType } from '../../../../ag-ui/types/file';
+  import { triggerArtifactDownload, useArtifactPreviewConsumer } from '../../../../composables/use-artifact-preview';
   import { OverflowTips as vOverflowTips } from '../../../../directives/overflow-tips';
   import { DownloadFileIcon } from '../../../../icons/file';
   import { t } from '../../../../lang/lang';
+  import MessageLoading from '../../../message-loading/message-loading.vue';
   import ArtifactFileCard from './artifact-file-card.vue';
   import { getFileIcon } from './file-icon';
 
@@ -121,10 +140,21 @@
     (e: 'select', id: string): void;
   }>();
 
+  const artifactPreview = useArtifactPreviewConsumer();
+  const canResolveArtifactUrl = computed(() => !!artifactPreview?.canResolveArtifactUrl.value);
+
   // 下载图标为共享 VNode，每处渲染克隆一份，避免多处复用同一实例
   const getDownloadIcon = () => cloneVNode(DownloadFileIcon);
 
   const keyword = shallowRef('');
+  const downloadLoading = shallowRef(false);
+  const previewStatus = shallowRef<'empty' | 'error' | 'idle' | 'loading' | 'ready'>('idle');
+  const previewUrl = shallowRef('');
+  const htmlContent = shallowRef('');
+  // 记录当前进行中的请求，切换文件时中断旧请求，避免竞态覆盖
+  let htmlAbortController: AbortController | undefined;
+  // 用于丢弃过期的 URL 解析结果
+  let loadSeq = 0;
 
   const filteredArtifacts = computed(() => {
     const kw = keyword.value.trim().toLowerCase();
@@ -138,38 +168,69 @@
 
   const isHtml = computed(() => activeArtifact.value?.type === AIFileType.Html);
 
-  const htmlStatus = shallowRef<'error' | 'idle' | 'loading' | 'ready'>('idle');
-  const htmlContent = shallowRef('');
-  // 记录当前进行中的请求，切换文件时中断旧请求，避免竞态覆盖
-  let htmlAbortController: AbortController | undefined;
-
-  const loadHtml = async () => {
+  const loadPreview = async () => {
     const file = activeArtifact.value;
     if (!file) {
+      previewStatus.value = 'empty';
       return;
     }
+
+    // 未传 onArtifactClick：预览区展示无数据
+    if (!artifactPreview?.canResolveArtifactUrl.value) {
+      previewStatus.value = 'empty';
+      previewUrl.value = '';
+      htmlContent.value = '';
+      return;
+    }
+
+    const seq = ++loadSeq;
     htmlAbortController?.abort();
-    const controller = new AbortController();
-    htmlAbortController = controller;
-    htmlStatus.value = 'loading';
+    previewStatus.value = 'loading';
+    previewUrl.value = '';
     htmlContent.value = '';
+
     try {
-      const res = await fetch(file.url, { signal: controller.signal });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const text = await res.text();
-      // 请求返回时若已切换到其它文件则丢弃结果
-      if (controller.signal.aborted) {
+      const urls = await artifactPreview.resolveArtifactUrls(file);
+      if (seq !== loadSeq) {
         return;
       }
-      htmlContent.value = text;
-      htmlStatus.value = 'ready';
+
+      if (file.type === AIFileType.Html) {
+        const downloadUrl = urls.download_url;
+        if (!downloadUrl) {
+          previewStatus.value = 'empty';
+          return;
+        }
+        const controller = new AbortController();
+        htmlAbortController = controller;
+        const res = await fetch(downloadUrl, { signal: controller.signal });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const text = await res.text();
+        if (controller.signal.aborted || seq !== loadSeq) {
+          return;
+        }
+        htmlContent.value = text;
+        previewStatus.value = 'ready';
+        return;
+      }
+
+      if (!urls.preview_url) {
+        previewStatus.value = 'empty';
+        return;
+      }
+      previewUrl.value = urls.preview_url;
+      previewStatus.value = 'ready';
     } catch {
-      if (controller.signal.aborted) {
+      if (seq !== loadSeq) {
         return;
       }
-      htmlStatus.value = 'error';
+      // abort 不算失败
+      if (htmlAbortController?.signal.aborted) {
+        return;
+      }
+      previewStatus.value = 'error';
     }
   };
 
@@ -180,33 +241,33 @@
     emits('select', item.artifactId);
   };
 
-  const handleDownload = (file: SessionArtifact) => {
-    const link = document.createElement('a');
-    link.href = file.url;
-    link.download = file.name;
-    link.target = '_blank';
-    link.rel = 'noopener';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownload = async (file: SessionArtifact) => {
+    if (downloadLoading.value || !artifactPreview?.canResolveArtifactUrl.value) {
+      return;
+    }
+    downloadLoading.value = true;
+    try {
+      const { download_url: downloadUrl } = await artifactPreview.resolveArtifactUrls(file);
+      if (downloadUrl) {
+        triggerArtifactDownload(downloadUrl, file.name);
+      }
+    } finally {
+      downloadLoading.value = false;
+    }
   };
 
-  // 命中文件变化时：html 触发拉取，其余类型清空 html 缓存交给 iframe.src 直接渲染
+  // 命中文件变化时重新异步取链并加载预览
   watch(
     () => activeArtifact.value?.artifactId,
     () => {
-      if (isHtml.value) {
-        loadHtml();
-      } else {
-        htmlAbortController?.abort();
-        htmlStatus.value = 'idle';
-        htmlContent.value = '';
-      }
+      downloadLoading.value = false;
+      loadPreview();
     },
     { immediate: true },
   );
 
   onBeforeUnmount(() => {
+    loadSeq += 1;
     htmlAbortController?.abort();
   });
 </script>
@@ -295,6 +356,8 @@
           flex-shrink: 0;
           align-items: center;
           justify-content: center;
+          width: 24px;
+          height: 24px;
           padding: 4px;
           font-size: 16px;
           color: #969799;
@@ -304,6 +367,11 @@
             color: variables.$color-primary;
             cursor: pointer;
             background-color: #f5f7fa;
+          }
+
+          &.is-loading {
+            pointer-events: none;
+            cursor: default;
           }
         }
       }
@@ -320,10 +388,11 @@
         border: none;
       }
 
-      &-skeleton {
-        width: 100%;
+      &-loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
         height: 100%;
-        border-radius: 4px;
       }
 
       &-error {
@@ -340,6 +409,7 @@
         flex: 1;
         align-items: center;
         justify-content: center;
+        height: 100%;
         color: variables.$color-text-secondary;
       }
     }

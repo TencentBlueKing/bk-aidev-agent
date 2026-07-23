@@ -14,7 +14,7 @@ relatedComponents:
     relation: 推理结束后通常紧跟 Assistant 的正式回复
   - slug: markdown-content
     relation: 内容区通过 Markdown 渲染推理文本
-sinceVersion: 1.0.0
+sinceVersion: 0.0.20
 ---
 
 <script lang="ts" setup>
@@ -26,15 +26,14 @@ sinceVersion: 1.0.0
 </script>
 
 # ReasoningMessage 推理消息
+
 ## 源码事实
 
 - **源码位置**：`src/components/chat-message/reasoning-message/reasoning-message.vue`
 - **能力域**：消息系统
 - **能力说明**：渲染推理过程，覆盖加载、错误与 Markdown 内容展示。
 
-
-
-> **能力域**：消息系统
+> **导出说明**：`ReasoningMessage` **未**从包入口导出（入口同名是 TS interface）。消费方经 `MessageRender` / `MessageContainer` 使用。下文 `ReasoningMessageComp` 为文档站内部示例。
 
 AI 思维链（Chain-of-Thought）推理过程展示组件。由**可点击标题栏**和**内容区域**组成，内容区支持 Markdown 渲染。`duration` 传入后自动折叠一次，用户可随时点击标题展开/收起。
 
@@ -60,17 +59,19 @@ AI 思维链（Chain-of-Thought）推理过程展示组件。由**可点击标�
 
 ```vue
 <template>
-  <ReasoningMessage
-    :content="content"
-    :status="status"
-  />
+  <MessageRender :message="message" />
 </template>
 
 <script setup lang="ts">
-  import { ReasoningMessage, MessageStatus } from '@blueking/chat-x';
+  import { MessageRender, MessageRole, MessageStatus } from '@blueking/chat-x';
 
-  const status = MessageStatus.Complete;
-  const content = ['让我分析一下这个问题...', '首先需要考虑以下几个方面...'];
+  const message = {
+    id: '1',
+    messageId: '1',
+    role: MessageRole.Reasoning,
+    status: MessageStatus.Complete,
+    content: ['让我分析一下这个问题...', '首先需要考虑以下几个方面...'],
+  };
 </script>
 ```
 
@@ -173,11 +174,12 @@ const { stop } = watch(
 通过 `v-model:collapsed` 从外部读取或设置折叠状态：
 
 ```vue
+<!-- 文档站内部示例：组件本体支持 v-model:collapsed；消费方一般经 MessageRender 渲染 -->
 <template>
   <button @click="collapsed = !collapsed">
     {{ collapsed ? '展开推理' : '收起推理' }}
   </button>
-  <ReasoningMessage
+  <ReasoningMessageComp
     v-model:collapsed="collapsed"
     :content="content"
     :status="status"
@@ -187,7 +189,7 @@ const { stop } = watch(
 
 <script setup lang="ts">
   import { ref } from 'vue';
-  import { ReasoningMessage, MessageStatus } from '@blueking/chat-x';
+  import { MessageStatus } from '@blueking/chat-x';
 
   const collapsed = ref(false);
   const status = MessageStatus.Complete;

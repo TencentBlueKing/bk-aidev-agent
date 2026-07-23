@@ -24,9 +24,9 @@
  * IN THE SOFTWARE.
  */
 
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
-import { type VueWrapper, mount } from '@vue/test-utils';
+import { type VueWrapper, flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AIFileType } from '../../../../ag-ui/types/file';
@@ -37,7 +37,6 @@ import type { AIFileInfo } from '../../../../ag-ui/types/file';
 
 vi.mock('tippy.js/dist/tippy.css', () => ({}));
 
-// Mock vue-tippy directive
 vi.mock('vue-tippy', () => ({
   directive: {
     mounted: vi.fn(),
@@ -45,13 +44,30 @@ vi.mock('vue-tippy', () => ({
   },
 }));
 
+vi.mock('bkui-vue', () => ({
+  Loading: {
+    name: 'Loading',
+    template: '<span class="mock-loading" />',
+  },
+}));
+
 const createFile = (overrides: Partial<AIFileInfo> = {}): AIFileInfo => ({
   name: '运维操作指引文档.doc',
   outputId: 'output-1',
-  previewUrl: 'https://example.com/preview',
   size: 1024,
   type: AIFileType.Pdf,
-  url: 'https://example.com/download',
+  ...overrides,
+});
+
+const createPreviewContext = (overrides: Record<string, unknown> = {}) => ({
+  activeArtifactId: ref(''),
+  canResolveArtifactUrl: computed(() => true),
+  openPreview: vi.fn(),
+  resolveArtifactUrls: vi.fn().mockResolvedValue({
+    download_url: 'https://example.com/download',
+    preview_url: 'https://example.com/preview',
+  }),
+  setActiveArtifactId: vi.fn(),
   ...overrides,
 });
 
@@ -75,16 +91,25 @@ describe('ArtifactFileCard', () => {
       expect(wrapper.find('.ai-artifact-file-card-icon svg').exists()).toBe(true);
     });
 
-    it('有 url 时应该展示下载按钮', () => {
-      wrapper = mount(ArtifactFileCard, { props: { file: createFile() } });
+    it('有 onArtifactClick 上下文时应展示下载按钮', () => {
+      wrapper = mount(ArtifactFileCard, {
+        global: { provide: { [ARTIFACT_PREVIEW_TOKEN]: createPreviewContext() } },
+        props: { file: createFile() },
+      });
 
       expect(wrapper.find('.ai-artifact-file-card-download').exists()).toBe(true);
     });
 
-    it('无 url 时应该隐藏下载按钮', () => {
-      wrapper = mount(ArtifactFileCard, { props: { file: createFile({ url: '' }) } });
+    it('未传 onArtifactClick 且无 onDownload 时应隐藏下载按钮', () => {
+      wrapper = mount(ArtifactFileCard, { props: { file: createFile() } });
 
       expect(wrapper.find('.ai-artifact-file-card-download').exists()).toBe(false);
+    });
+
+    it('传入 onDownload 时应展示下载按钮', () => {
+      wrapper = mount(ArtifactFileCard, { props: { file: createFile(), onDownload: vi.fn() } });
+
+      expect(wrapper.find('.ai-artifact-file-card-download').exists()).toBe(true);
     });
 
     it('传入 onPreview 时卡片应带可点击态', () => {
@@ -100,9 +125,8 @@ describe('ArtifactFileCard', () => {
     });
 
     it('存在侧栏预览上下文时卡片应带可点击态', () => {
-      const artifactPreview = { activeArtifactId: ref(''), openPreview: vi.fn(), setActiveArtifactId: vi.fn() };
       wrapper = mount(ArtifactFileCard, {
-        global: { provide: { [ARTIFACT_PREVIEW_TOKEN]: artifactPreview } },
+        global: { provide: { [ARTIFACT_PREVIEW_TOKEN]: createPreviewContext() } },
         props: { file: createFile() },
       });
 
@@ -133,7 +157,7 @@ describe('ArtifactFileCard', () => {
 
     it('无 onPreview 时点击卡片应调用侧栏预览 openPreview 并透传定位信息', async () => {
       const openPreview = vi.fn();
-      const artifactPreview = { activeArtifactId: ref(''), openPreview, setActiveArtifactId: vi.fn() };
+      const artifactPreview = createPreviewContext({ openPreview });
       const file = createFile();
       wrapper = mount(ArtifactFileCard, {
         global: { provide: { [ARTIFACT_PREVIEW_TOKEN]: artifactPreview } },
@@ -158,12 +182,20 @@ describe('ArtifactFileCard', () => {
       clickSpy.mockRestore();
     });
 
-    it('未传 onDownload 时点击下载应该触发默认下载', async () => {
+    it('有 onArtifactClick 时点击下载应异步取链并触发下载', async () => {
       const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-      wrapper = mount(ArtifactFileCard, { props: { file: createFile() } });
+      const resolveArtifactUrls = vi.fn().mockResolvedValue({
+        download_url: 'https://example.com/download',
+      });
+      wrapper = mount(ArtifactFileCard, {
+        global: { provide: { [ARTIFACT_PREVIEW_TOKEN]: createPreviewContext({ resolveArtifactUrls }) } },
+        props: { file: createFile() },
+      });
 
       await wrapper.find('.ai-artifact-file-card-download').trigger('click');
+      await flushPromises();
 
+      expect(resolveArtifactUrls).toHaveBeenCalledTimes(1);
       expect(clickSpy).toHaveBeenCalledTimes(1);
       clickSpy.mockRestore();
     });
@@ -171,9 +203,13 @@ describe('ArtifactFileCard', () => {
     it('点击下载不应该冒泡触发 onPreview', async () => {
       const onPreview = vi.fn();
       const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-      wrapper = mount(ArtifactFileCard, { props: { file: createFile(), onPreview } });
+      wrapper = mount(ArtifactFileCard, {
+        global: { provide: { [ARTIFACT_PREVIEW_TOKEN]: createPreviewContext() } },
+        props: { file: createFile(), onPreview },
+      });
 
       await wrapper.find('.ai-artifact-file-card-download').trigger('click');
+      await flushPromises();
 
       expect(onPreview).not.toHaveBeenCalled();
       clickSpy.mockRestore();

@@ -3,10 +3,10 @@ name: AssistantMessage AI 助手消息
 slug: assistant-message
 kind: component
 domain: message
-description: 渲染助手消息主体、工具调用与文件内容，默认插槽可覆盖正文渲染。
+description: 渲染助手消息主体、工具调用与文件产物，默认插槽可覆盖正文渲染。
 aiSummary: >
-  渲染助手消息主体、工具调用与文件内容，默认插槽可覆盖正文渲染。
-  源码位置：src/components/chat-message/assistant-message/assistant-message.vue。
+  渲染助手 Markdown 正文、ToolCallRender 工具调用列表，以及 property.artifacts 文件卡片；
+  默认插槽仅覆盖正文。源码位置：src/components/chat-message/assistant-message/assistant-message.vue。
 relatedComponents:
   - slug: message-render
     relation: 由 MessageRender 在 role 为 assistant 时创建
@@ -16,7 +16,7 @@ relatedComponents:
     relation: 多条工具调用由 ToolcallRender 统一渲染
   - slug: file-artifact-panel
     relation: property.artifacts 文件产物点击后在侧栏预览
-sinceVersion: 1.0.0
+sinceVersion: 0.0.20
 ---
 
 <script lang="ts" setup>
@@ -123,48 +123,70 @@ const doubled = computed(() => count.value * 2);
       },
     },
   ];
+
+  // 文件产物（AIFileInfo 元信息；下载/预览链路由 ChatContainer.onArtifactClick 异步获取）
+  const artifactsProperty = {
+    artifacts: [
+      {
+        name: 'report.html',
+        outputId: 'output-1',
+        size: 10240,
+        type: 'html',
+      },
+      {
+        name: 'summary.pdf',
+        outputId: 'output-2',
+        size: 204800,
+        type: 'pdf',
+      },
+    ],
+  };
 </script>
 
 # AssistantMessage AI 助手消息
+
 ## 源码事实
 
 - **源码位置**：`src/components/chat-message/assistant-message/assistant-message.vue`
 - **能力域**：消息系统
-- **能力说明**：渲染助手消息主体、工具调用与文件内容，默认插槽可覆盖正文渲染。
+- **能力说明**：渲染助手 Markdown 正文、工具调用列表与 `property.artifacts` 文件产物。
 
+> **导出说明**：`AssistantMessage` **未**从 `@blueking/chat-x` 包入口导出（入口同名是 TS interface）。消费方请用 `MessageRender` / `MessageContainer`。下文 `AssistantMessageComp` 为文档站内部相对路径示例。
 
-
-> **能力域**：消息系统
-
-AI 助手消息展示组件，负责渲染 AI 回复的文本内容和工具调用（Tool Calls）结果。
+AI 助手消息展示组件：正文（Markdown）、工具调用（Tool Calls）、文件产物卡片。
 
 ## 渲染管线
 
 ```
 AssistantMessage（根类名：ai-assistant-message）
-├── ai-assistant-message-content（内容区）
-│   └── [default slot] 或 ContentRender → MarkdownContent（Markdown 渲染）
-└── ToolCallRender × N（每个 toolCall 独立渲染，不受 slot 影响）
+├── ai-assistant-message-content（内容区，v-if content）
+│   └── [default slot { content }] 或 ContentRender → MarkdownContent
+├── ToolCallRender × N（toolCalls，不受 slot 影响）
+└── MessageArtifacts（v-if property.artifacts 非空）
+      └── ArtifactFileCard × N（点击 → useArtifactPreview → 侧栏 FileArtifactPanel）
 ```
 
-- **内容区**：`content` 字符串传入 `ContentRender`，内部固定使用 `MessageContentType.Text` 类型，最终由 `MarkdownContent` 渲染 Markdown
-- **工具调用区**：`toolCalls` 数组中每一项渲染一个 `ToolCallRender`，位于内容区**下方**，与 slot 无关
+- **内容区**：`content` 经 `ContentRender`（`MessageContentType.Text`）由 `MarkdownContent` 渲染；default slot 仅收到 `{ content }`
+- **工具调用区**：每个 `toolCall` 渲染一个 `ToolCallRender`，位于内容区下方
+- **文件产物区**：读取 `property.artifacts`，用 `uid ?? String(id)` 作为 `messageUid` 传给 `MessageArtifacts`
 
 ## 基础用法
 
 ```vue
 <template>
-  <AssistantMessage
-    :content="content"
-    :status="status"
-  />
+  <MessageRender :message="message" />
 </template>
 
 <script setup lang="ts">
-  import { AssistantMessage, MessageStatus } from '@blueking/chat-x';
+  import { MessageRender, MessageRole, MessageStatus } from '@blueking/chat-x';
 
-  const content = '你好！我是 AI 助手，有什么可以帮助你的吗？';
-  const status = MessageStatus.Complete;
+  const message = {
+    id: '1',
+    messageId: '1',
+    role: MessageRole.Assistant,
+    content: '你好！我是 AI 助手，有什么可以帮助你的吗？',
+    status: MessageStatus.Complete,
+  };
 </script>
 ```
 
@@ -183,16 +205,18 @@ AssistantMessage（根类名：ai-assistant-message）
 
 ```vue
 <template>
-  <AssistantMessage
-    :content="markdownContent"
-    status="complete"
-  />
+  <MessageRender :message="message" />
 </template>
 
 <script setup lang="ts">
-  import { AssistantMessage } from '@blueking/chat-x';
+  import { MessageRender, MessageRole, MessageStatus } from '@blueking/chat-x';
 
-  const markdownContent = `## Vue 3 核心特性
+  const message = {
+    id: '1',
+    messageId: '1',
+    role: MessageRole.Assistant,
+    status: MessageStatus.Complete,
+    content: `## Vue 3 核心特性
 
 Vue 3 引入了多项重要更新：
 
@@ -207,7 +231,8 @@ const count = ref(0);
 const doubled = computed(() => count.value * 2);
 \\\`\\\`\\\`
 
-> 更多详情请参考 [Vue 3 官方文档](https://vuejs.org)。`;
+> 更多详情请参考 [Vue 3 官方文档](https://vuejs.org)。`,
+  };
 </script>
 ```
 
@@ -293,27 +318,30 @@ const doubled = computed(() => count.value * 2);
 
 ```vue
 <template>
-  <AssistantMessage
-    content="让我帮你查询一下天气信息。"
-    :status="MessageStatus.Complete"
-    :tool-calls="toolCalls"
-  />
+  <MessageRender :message="message" />
 </template>
 
 <script setup lang="ts">
-  import { AssistantMessage, MessageStatus } from '@blueking/chat-x';
+  import { MessageRender, MessageRole, MessageStatus } from '@blueking/chat-x';
 
-  const toolCalls = [
-    {
-      id: 'call_1',
-      type: 'function',
-      function: {
-        name: 'get_weather',
-        arguments: '{"city": "北京", "unit": "celsius"}',
-        description: '获取指定城市的天气信息',
+  const message = {
+    id: '1',
+    messageId: '1',
+    role: MessageRole.Assistant,
+    content: '让我帮你查询一下天气信息。',
+    status: MessageStatus.Complete,
+    toolCalls: [
+      {
+        id: 'call_1',
+        type: 'function',
+        function: {
+          name: 'get_weather',
+          arguments: '{"city": "北京", "unit": "celsius"}',
+          description: '获取指定城市的天气信息',
+        },
       },
-    },
-  ];
+    ],
+  };
 </script>
 ```
 
@@ -510,20 +538,17 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
 
 ```vue
 <template>
-  <AssistantMessage
-    :content="content"
-    :tool-calls="toolCalls"
-  >
+  <MessageRender :message="message">
     <template #default="{ content }">
       <div style="padding: 12px; background: #f0f9ff; border-left: 3px solid #3a84ff; border-radius: 4px;">
-        🤖 {{ content }}
+        {{ content }}
       </div>
     </template>
-  </AssistantMessage>
+  </MessageRender>
 </template>
 ```
 
-> **注意**：使用默认插槽后，内置的 `MarkdownContent`（Markdown 渲染）被替换，需要自行处理内容格式化。
+> **注意**：使用默认插槽后，内置 Markdown 渲染被替换，需自行处理格式化。slot 运行时仅保证 `{ content }`（见 [MessageRender](/components/message/message-render)）。
 
 **渲染效果**
 
@@ -596,28 +621,76 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
 </script>
 ```
 
+## 文件产物
+
+当 `property.artifacts` 非空时，在工具调用区下方渲染 `MessageArtifacts` 文件卡片列表。点击卡片会通过 `useArtifactPreview` 打开 `ChatContainer` 侧栏「文件产物」Tab（见 [FileArtifactPanel](/components/message/file-artifact-panel)）。
+
+`AIFileInfo` 仅含元信息（`name` / `outputId` / `size` / `type`）；`download_url` / `preview_url` 由容器 `onArtifactClick` 异步获取。命中唯一文件依赖 `messageUid = uid ?? String(id)` + 卡片下标 + `outputId`。
+
+```vue
+<template>
+  <MessageRender :message="message" />
+</template>
+
+<script setup lang="ts">
+  import { MessageRender, MessageRole, MessageStatus } from '@blueking/chat-x';
+  import type { AIFileInfo } from '@blueking/chat-x';
+
+  const artifacts: AIFileInfo[] = [
+    { name: 'report.html', outputId: 'output-1', size: 10240, type: 'html' },
+    { name: 'summary.pdf', outputId: 'output-2', size: 204800, type: 'pdf' },
+  ];
+
+  const message = {
+    id: 'a1',
+    messageId: 'a1',
+    uid: 'assistant-uid-1',
+    role: MessageRole.Assistant,
+    status: MessageStatus.Complete,
+    content: '已为你生成分析报告：',
+    property: { artifacts },
+  };
+</script>
+```
+
+**渲染效果（文档站内部示例；无 Provider 时卡片不可点击预览）**
+
+<div class="demo">
+  <AssistantMessageComp
+    uid="assistant-uid-1"
+    content="已为你生成分析报告："
+    status="complete"
+    :property="artifactsProperty"
+  />
+</div>
+
 ## API
 
 ### Props
 
 组件 Props 来自 `Partial<AssistantMessage>`（所有字段均可选）：
 
-| 属性名    | 类型                    | 说明                                                           |
-| --------- | ----------------------- | -------------------------------------------------------------- |
-| content   | `string`                | AI 回复的文本内容，支持 Markdown，`undefined` 时渲染为空字符串 |
-| status    | `MessageStatus`         | 消息状态，影响 Markdown 渲染模式和 ToolCallRender 的状态标题   |
-| toolCalls | `ToolCall[]`            | 工具调用列表，每项渲染一个 `ToolCallRender`                    |
-| id        | `number \| string`      | 消息 ID                                                        |
-| messageId | `number \| string`      | 消息唯一标识                                                   |
-| name      | `string`                | 消息发送者名称（可选）                                         |
-| role      | `MessageRole.Assistant` | 消息角色，固定为 `'assistant'`                                 |
-| property  | `object`                | 消息附加属性，本组件不使用，由父组件（`MessageContainer`）消费 |
+| 属性名    | 类型                    | 说明                                                                                      |
+| --------- | ----------------------- | ----------------------------------------------------------------------------------------- |
+| content   | `string`                | AI 回复文本，支持 Markdown；空值时不渲染内容区                                            |
+| status    | `MessageStatus`         | 影响 ContentRender / ToolCallRender 状态表现                                              |
+| toolCalls | `ToolCall[]`            | 工具调用列表，每项渲染一个 `ToolCallRender`                                               |
+| id        | `number \| string`      | 消息 ID；无 `uid` 时回退为 `messageUid`                                                   |
+| messageId | `number \| string`      | 消息唯一标识                                                                              |
+| uid       | `string`                | 优先作为文件产物命中 / 「在对话中定位」的 `messageUid`                                    |
+| name      | `string`                | 消息发送者名称（可选）                                                                    |
+| role      | `MessageRole.Assistant` | 消息角色，固定为 `'assistant'`                                                            |
+| property  | `{ artifacts?: AIFileInfo[]; extra?: ... }` | **本组件消费** `property.artifacts` 渲染文件卡片；`extra` 等由上层按需使用 |
 
 ### Slots
 
-| 插槽名  | 参数                  | 说明                                                 |
-| ------- | --------------------- | ---------------------------------------------------- |
-| default | `{ content: string }` | 替换内容区渲染，toolCalls 在内容区外独立渲染不受影响 |
+| 插槽名  | 参数                  | 说明                                                              |
+| ------- | --------------------- | ----------------------------------------------------------------- |
+| default | `{ content: string }` | 替换内容区渲染；toolCalls / MessageArtifacts 在内容区外独立渲染 |
+
+### Events / Expose
+
+无。
 
 ## 类型定义
 
@@ -659,10 +732,6 @@ interface ToolMessage extends BaseMessage<MessageRole.Tool, string> {
 - **流式输出**：`streaming` 状态下 Markdown 自动补全未闭合语法，配合流式响应实时更新
 - **自动渲染**：通过 `MessageContainer` 对 `role: 'assistant'` 消息自动处理，无需手动引入
 - **自定义内容渲染**：通过默认插槽替换内置 Markdown 渲染器，保留工具调用渲染
-
-## 文件产物
-
-当 `property.artifacts` 非空时，消息底部渲染文件卡片列表；点击卡片会在 `ChatContainer` 侧栏「文件产物」Tab 内聚合预览当前会话所有文件。为在多消息、同名文件场景下命中唯一文件，`AssistantMessage` 会把自身 `uid`（回退 `id`）作为 `messageUid` 与卡片下标一并透传。预览状态由 [useArtifactPreview](/composables/use-artifact-preview) 管理，面板渲染见 [FileArtifactPanel 文件产物预览](/components/message/file-artifact-panel)。
 
 ## 关联组件
 

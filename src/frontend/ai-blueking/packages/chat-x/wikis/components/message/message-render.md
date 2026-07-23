@@ -16,7 +16,7 @@ relatedComponents:
     relation: role 为 user 时渲染用户消息
   - slug: interrupt-message
     relation: role 为 interrupt 时渲染 InterruptMessageRender
-sinceVersion: 1.0.0
+sinceVersion: 0.0.20
 ---
 
 <script lang="ts" setup>
@@ -148,17 +148,16 @@ export function useCounter(initialValue = 0) {
 </script>
 
 # MessageRender 消息渲染器
+
 ## 源码事实
 
 - **源码位置**：`src/components/chat-message/message-render/message-render.vue`
 - **能力域**：消息系统
-- **能力说明**：按 message.role 分发到用户、助手、工具、推理、活动、中断等消息组件。
+- **能力说明**：按 `message.role` 分发到用户、助手、工具、推理、活动、中断等消息组件。
 
+> **导出说明**：`MessageRender` **已**从 `@blueking/chat-x` 包入口导出，消费方可直接 import。下文 `MessageRenderComp` 为文档站相对路径 demo，与包入口行为一致。
 
-
-> **能力域**：消息系统
-
-统一的消息渲染入口，通过 `message.role` 字段自动派发到对应的子组件。整个渲染过程由一个 `computed` 属性完成，无额外状态。
+统一的消息渲染入口，通过 `message.role` 派发到对应子组件；由单个 `computed` 完成，无额外状态。
 
 ## 渲染架构
 
@@ -320,7 +319,7 @@ MessageRender
 
 ### 流式输出（streaming）
 
-`status: 'streaming'` 时，`AssistantMessage` 内部展示打字光标，内容可实时追加：
+`status: 'streaming'` 时，默认回退的 `ContentRender` / `MarkdownContent` 会按流式规则补全未闭合语法；内容由外部逐步追加：
 
 ```vue
 <script setup lang="ts">
@@ -379,65 +378,74 @@ MessageRender
 
 ## 自定义内容渲染（default slot）
 
-`default` slot **仅对 `role: 'assistant'` 生效**，用于替换默认的 `ContentRender`。未提供 slot 时回退渲染 `<ContentRender :content="message.content" :status="message.status" />`。
+`default` slot **仅对 `role: 'assistant'` 生效**，用于替换默认的 `ContentRender`。
+
+未提供 slot 时，内部回退为：
+
+```ts
+h(ContentRender, { content: message.content || '', status: message.status }, /* codeHeader */)
+```
+
+自定义 slot 时，运行时参数来自 `AssistantMessage` 的 `v-bind`，**仅保证 `{ content }`**。需要 `status` 时请从外层 `message.status` 读取（不要依赖 slot 内的 `status`）。
 
 ```vue
 <template>
-  <MessageRender
-    :message="message"
-    :on-action="handleAction"
-  >
-    <template #default="{ content, status }">
-      <!-- 完全接管内容区域渲染 -->
+  <MessageRender :message="message">
+    <template #default="{ content }">
       <MyMarkdownRenderer
         :content="content"
-        :streaming="status === 'streaming'"
+        :streaming="message.status === 'streaming'"
       />
     </template>
   </MessageRender>
 </template>
 ```
 
-slot 参数类型与 `AssistantMessage` 的 slot 保持一致（`Partial<AssistantMessage>`），主要使用：
+| 参数      | 类型     | 说明                         |
+| --------- | -------- | ---------------------------- |
+| `content` | `string` | 消息内容（运行时保证）       |
 
-| 参数      | 类型            | 说明         |
-| --------- | --------------- | ------------ |
-| `content` | `string`        | 消息内容     |
-| `status`  | `MessageStatus` | 当前消息状态 |
+## 与 MessageContainer / ChatContainer 配合
 
-## 与 MessageContainer 配合
-
-在 `MessageContainer` 的 `default` slot 中使用，可替换默认的 `MessageRender` 渲染逻辑：
+自定义 `ChatContainer` 的 `#message` 时，插槽参数只有 `message` / `messageToolsStatus` / `onInterruptResume`。用户消息工具相关回调需由外层自行绑定透传，否则删除/编辑/复制/引用会失效（AI 消息工具栏在 `MessageContainer` 内渲染，不受 `#message` 影响）：
 
 ```vue
 <template>
-  <MessageContainer
+  <ChatContainer
     :messages="messages"
     :message-status="messageStatus"
     :on-agent-action="handleAgentAction"
     :on-user-action="handleUserAction"
-    @stop-streaming="handleStopStreaming"
+    :common-tippy-options="commonTippyOptions"
   >
-    <template #default="{ message, messageToolsStatus }">
-      <!-- 自定义 MessageRender 的行为 -->
+    <template #message="{ message, messageToolsStatus, onInterruptResume }">
       <MessageRender
         :message="message"
         :message-tools-status="messageToolsStatus"
         :on-action="handleUserAction"
-        :on-input-confirm="handleInputConfirm"
+        :on-input-confirm="(content, docSchema) => handleUserInputConfirm(message, content, docSchema)"
+        :on-shortcut-confirm="formModel => handleUserShortcutConfirm(message, formModel)"
+        :tippy-options="commonTippyOptions"
+        :on-interrupt-resume="onInterruptResume"
       >
         <template
           v-if="message.role === 'assistant'"
-          #default="{ content, status }"
+          #default="{ content }"
         >
           <MyCustomContent
             :content="content"
-            :status="status"
+            :status="message.status"
+          />
+        </template>
+        <template #codeHeader="{ language, token }">
+          <MyCodeActions
+            :language="language"
+            :token="token"
           />
         </template>
       </MessageRender>
     </template>
-  </MessageContainer>
+  </ChatContainer>
 </template>
 ```
 
@@ -457,11 +465,11 @@ slot 参数类型与 `AssistantMessage` 的 slot 保持一致（`Partial<Assista
 
 ### Slots
 
-| 插槽名           | 参数                                         | 说明                                                                                                    |
-| ---------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| answeredQuestion | `{ item, index, status }`                    | 自定义 UserQuestion 已回答回显，透传给 InterruptMessageRender → UserQuestionAnsweredCard 的 `#answer`   |
-| codeHeader       | `{ language: string; token: Token[] }`       | 代码块头部自定义操作区域，透传给 ContentRender → MarkdownContent → CodeContent；**仅对 assistant 生效** |
-| default          | `{ content: string, status: MessageStatus }` | 替换 AssistantMessage 的内容区域渲染；**仅对 `role: 'assistant'` 生效**                                 |
+| 插槽名           | 参数                                   | 说明                                                                                                    |
+| ---------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| answeredQuestion | `{ item, index, status }`              | 自定义 UserQuestion 已回答回显，透传给 InterruptMessageRender → UserQuestionAnsweredCard 的 `#answer`   |
+| codeHeader       | `{ language: string; token: Token[] }` | 代码块头部自定义操作区域，透传给 ContentRender → MarkdownContent → CodeContent；**仅对 assistant 生效** |
+| default          | `{ content: string }`                  | 替换 AssistantMessage 内容区；**仅对 assistant 生效**；运行时仅保证 `content`（`status` 请读外层 message） |
 
 ## 消息类型映射
 
@@ -491,6 +499,7 @@ enum MessageRole {
   Tool = 'tool',
   Activity = 'activity',
   Loading = 'loading',
+  Interrupt = 'interrupt',
 }
 
 // 消息状态

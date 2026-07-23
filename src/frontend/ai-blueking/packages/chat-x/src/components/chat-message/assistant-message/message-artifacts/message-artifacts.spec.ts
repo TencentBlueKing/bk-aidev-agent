@@ -45,10 +45,8 @@ vi.mock('vue-tippy', () => ({
 const createFile = (overrides: Partial<AIFileInfo> = {}): AIFileInfo => ({
   name: 'file.pdf',
   outputId: 'output-1',
-  previewUrl: '',
   size: 1024,
   type: AIFileType.Pdf,
-  url: 'https://example.com/download',
   ...overrides,
 });
 

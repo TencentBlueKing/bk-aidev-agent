@@ -567,8 +567,9 @@ ai-chat-container（:data-ai-size="size"）
 - **触发**：点击 AI 回复中的文件卡片（[ArtifactFileCard](/components/message/assistant-message)）时，容器通过 `useArtifactPreviewProvider` 命中该文件并 `addCustomTab` 弹出侧栏
 - **排序 / 关闭**：`order: -1` 排在「执行情况」之前，`closable: false` 不可关闭
 - **显隐解耦**：该 Tab 存在时，侧栏展示不再受「`executionGroups` 为空」约束（即使当前会话没有执行类消息，也能独立展示文件产物侧栏）；会话切换或无文件产物时自动移除并重置命中态
-- **内容**：由 [FileArtifactPanel](/components/message/file-artifact-panel) 渲染文件列表与预览（HTML 走 `fetch` + `iframe srcdoc`，其余类型用 `previewUrl` 的 PDF）
-- **状态管理**：命中与切换由 [useArtifactPreview](/composables/use-artifact-preview) 提供（Provider 在容器内、Consumer 在文件卡片内）
+- **内容**：由 [FileArtifactPanel](/components/message/file-artifact-panel) 渲染文件列表与预览；`download_url` / `preview_url` 通过 `onArtifactClick` 异步获取（HTML 用 `download_url` fetch + `iframe srcdoc`，其余类型用 `preview_url` 的 PDF）
+- **状态管理**：命中、切换与 URL 缓存由 [useArtifactPreview](/composables/use-artifact-preview) 提供（Provider 在容器内、Consumer 在文件卡片 / 面板内）
+- **未传 `onArtifactClick`**：下载按钮隐藏，预览区展示无数据
 
 详见 [FileArtifactPanel 文件产物预览](/components/message/file-artifact-panel) 与 [useArtifactPreview 文件产物预览](/composables/use-artifact-preview)。
 
@@ -1069,20 +1070,21 @@ ai-chat-container（:data-ai-size="size"）
 
 ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`（排除 `enableSelection` 和 `messageGroups`），另外新增：
 
-| 属性名                    | 类型                                                                                  | 默认值    | 说明                                                                                                                                 |
-| ------------------------- | ------------------------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| chatLoading               | `boolean`                                                                             | —         | 整体加载状态，`true` 时显示 Loading 遮罩                                                                                             |
-| commonTippyOptions        | `AITippyProps`                                                                        | —         | 通用 Tippy 配置，注入到所有使用 `v-overflow-tips` 的子组件                                                                           |
-| executionTabVisible       | `boolean`                                                                             | `true`    | 「执行情况」Tab 是否展示；为 `false` 时从 Tab 栏隐藏，若正被选中则切到首个可见 Tab                                                   |
-| getSideRenderComponent    | `(h, props?) => VNode \| undefined`                                                   | —         | 自定义侧栏内容区渲染；未返回时使用 `selectedTab.data.component`                                                                      |
-| getSideTabRenderComponent | `(h, tab, { removeCustomTab }) => VNode \| undefined`                                 | —         | 自定义侧栏 Tab 标签渲染；未返回时使用默认图标 + 文案 + 关闭按钮                                                                      |
-| models                    | `IModelOption[]`                                                                      | —         | 可选模型列表（继承自 ChatInput）；传入后在发送按钮左侧展示 ModelSelector                                                             |
-| openingRemark             | `string`                                                                              | —         | 开场白，无消息时显示，支持 Markdown                                                                                                  |
-| placement                 | `'left' \| 'right'`                                                                   | `'left'`  | 侧边栏位置                                                                                                                           |
-| resizeProps               | `{ disabled?: boolean; initialDivide?: number \| string; max?: number; min?: number }` | —         | 透传给内部 `ResizeLayout`；与默认 `collapsible: false`、`immediate: true`、`min: 400` 合并；`placement` 始终取自本组件               |
-| size                      | `'normal' \| 'small'`                                                                 | `'small'` | 字号主题：`small` 12px / `normal` 14px；根节点设置 `data-ai-size` 并注入 `useGlobalConfig`                                           |
-| welcomeTitle              | `string`                                                                              | —         | 欢迎页标题；未传时默认展示「你好，我是小鲸」                                                                                         |
-| onCustomTabChange         | `(tab: CustomTab) => Promise<any>`                                                    | —         | 自定义 Tab 切换回调，返回值作为 Tab 组件 props                                                                                       |
+| 属性名                    | 类型                                                                                     | 默认值    | 说明                                                                                                                                 |
+| ------------------------- | ---------------------------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| chatLoading               | `boolean`                                                                                | —         | 整体加载状态，`true` 时显示 Loading 遮罩                                                                                             |
+| commonTippyOptions        | `AITippyProps`                                                                           | —         | 通用 Tippy 配置，注入到所有使用 `v-overflow-tips` 的子组件                                                                           |
+| executionTabVisible       | `boolean`                                                                                | `true`    | 「执行情况」Tab 是否展示；为 `false` 时从 Tab 栏隐藏，若正被选中则切到首个可见 Tab                                                   |
+| getSideRenderComponent    | `(h, props?) => VNode \| undefined`                                                      | —         | 自定义侧栏内容区渲染；未返回时使用 `selectedTab.data.component`                                                                      |
+| getSideTabRenderComponent | `(h, tab, { removeCustomTab }) => VNode \| undefined`                                    | —         | 自定义侧栏 Tab 标签渲染；未返回时使用默认图标 + 文案 + 关闭按钮                                                                      |
+| models                    | `IModelOption[]`                                                                         | —         | 可选模型列表（继承自 ChatInput）；传入后在发送按钮左侧展示 ModelSelector                                                             |
+| openingRemark             | `string`                                                                                 | —         | 开场白，无消息时显示，支持 Markdown                                                                                                  |
+| placement                 | `'left' \| 'right'`                                                                      | `'left'`  | 侧边栏位置                                                                                                                           |
+| resizeProps               | `{ disabled?: boolean; initialDivide?: number \| string; max?: number; min?: number }`    | —         | 透传给内部 `ResizeLayout`；与默认 `collapsible: false`、`immediate: true`、`min: 400` 合并；`placement` 始终取自本组件               |
+| size                      | `'normal' \| 'small'`                                                                    | `'small'` | 字号主题：`small` 12px / `normal` 14px；根节点设置 `data-ai-size` 并注入 `useGlobalConfig`                                           |
+| welcomeTitle              | `string`                                                                                 | —         | 欢迎页标题；未传时默认展示「你好，我是小鲸」                                                                                         |
+| onCustomTabChange         | `(tab: CustomTab) => Promise<any>`                                                       | —         | 自定义 Tab 切换回调，返回值作为 Tab 组件 props                                                                                       |
+| onArtifactClick           | `(file: AIFileInfo) => Promise<{ download_url?: string; preview_url?: string }>`          | —         | 点击文件产物时异步获取下载 / 预览链接（按 `outputId` 缓存）；未传则隐藏下载、预览无数据                                              |
 
 > 其余 Props（如 `messages`、`messageStatus`、`onSendMessage`、`shortcuts` 等）继承自 [ChatInput](/components/input/chat-input) 与 [MessageContainer](/components/setup/message-container)。
 

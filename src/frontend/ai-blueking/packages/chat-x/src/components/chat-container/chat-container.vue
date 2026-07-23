@@ -335,6 +335,7 @@
   import MessageLoading from '../message-loading/message-loading.vue';
   import SelectionFooter from '../selection-footer/selection-footer.vue';
 
+  import type { OnArtifactClick } from '../../ag-ui/types/file';
   import type {
     AITippyProps,
     CustomBkFlowTabData,
@@ -359,6 +360,8 @@
       tab: CustomTab<Record<string, unknown>>,
       events: { removeCustomTab: typeof removeCustomTab },
     ) => undefined | VNode;
+    /** 点击文件产物时异步获取 download_url / preview_url；未传则隐藏下载、预览无数据 */
+    onArtifactClick?: OnArtifactClick;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     onCustomTabChange?: (tab: CustomTab<CustomBkFlowTabData>) => Promise<any>;
     openingRemark?: string;
@@ -479,7 +482,7 @@
     useCustomTabProvider<CustomBkFlowTabData>({
       executionTabVisible: () => props.executionTabVisible,
       onTabChange: async tab => {
-        // 文件产物 Tab 数据自包含（previewUrl 已在 artifact 上），无需走异步拉取
+        // 文件产物 Tab 由 FileArtifactPanel 自行通过 onArtifactClick 异步取链，无需走自定义 Tab 拉取
         if (tab.name === FILE_ARTIFACT_TAB_NAME) {
           return;
         }
@@ -535,6 +538,7 @@
 
   // 文件卡片点击 → 命中文件并弹出/切换到固定的「文件产物」侧栏 Tab（排在执行情况之前，不可关闭）
   const { activeArtifactId, setActiveArtifactId } = useArtifactPreviewProvider({
+    getOnArtifactClick: () => props.onArtifactClick,
     onOpen: () => {
       addCustomTab({
         closable: false,
