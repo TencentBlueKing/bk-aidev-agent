@@ -36,7 +36,7 @@ clean:
 	find . -name ".cache" | xargs rm -rf
 	rm -rf ./dist
 	rm -rf .venv
-	uv clean
+	uv clean --force
 
 .git/hooks/pre-commit: ${ROOT_DIR}/.pre-commit-config.yaml
 	uv run pre-commit install -t pre-commit
