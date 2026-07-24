@@ -14,6 +14,7 @@
       v-model:selected-model="selectedModel"
       v-model:selected-shortcut="selectedShortcut"
       :enable-selection="false"
+      :message-tools="customMessageTools"
       :messages="messages"
       :model-value="userInput"
       :models="MOCK_MODELS"
@@ -35,6 +36,8 @@
       :shortcuts="shortcuts"
       :size="'small'"
       :support-upload="true"
+      :update-tools="customUpdateTools"
+      @confirm-share="handleConfirmShare"
       @delete-shortcut="handleDeleteShortcut"
       @model-change="handleModelChange"
       @select-shortcut="handleSelectShortcut"
@@ -170,6 +173,7 @@
     AgentIcon,
     ChatContainer,
     CopyIcon,
+    DownloadIcon,
     EditIcon,
     MessageContentType,
     MessageRender,
@@ -1270,9 +1274,32 @@
   //   return undefined;
   // };
 
+  // ── 自定义 AI 消息工具栏 mock ────────────────────────────────
+  // 合并语义：以内置工具为基底，按 id 覆盖同名项、追加新项，其余保留
+  // 主工具组：新增「保存」按钮（自定义图标），并覆盖内置 copy 的 tooltip 文案；cite/rebuild/share 保留
+  const customMessageTools: IToolBtn[] = [
+    // triggerSelection: 点击后复用 share 的多选态，确认走 confirmShare
+    { id: 'save', name: '保存', description: '保存该回答', icon: DownloadIcon, triggerSelection: true },
+    { id: 'copy', description: '复制全文（自定义文案）' },
+    // hidden 标记可移除内置按钮：这里隐藏「分享」
+    { id: 'share', hidden: true },
+  ];
+  // 反馈工具组：在内置 like/unlike/delete 基础上追加「收藏」按钮
+  const customUpdateTools: IToolBtn[] = [
+    { id: 'collect', name: '收藏', description: '收藏到我的空间', icon: EditIcon },
+  ];
+
   const handleAgentAction = async (tool: IToolBtn) => {
     console.log('agent action:', tool);
     await new Promise(resolve => setTimeout(resolve, 2000));
+    if (tool.id === 'save') {
+      console.log('保存该回答');
+      return;
+    }
+    if (tool.id === 'collect') {
+      console.log('收藏到我的空间');
+      return;
+    }
     if (tool.id === 'like' || tool.id === 'unlike') {
       return tool.id === 'like'
         ? ['MCP/工具调用准确', '文档召回准确', '知识匹配精准', '响应迅速及时']
@@ -1295,6 +1322,14 @@
 
   const handleStopSending = async () => {
     console.log('stop sending');
+  };
+
+  // 多选态确认：source 为来源按钮对象，据此区分 share / save 等场景
+  const handleConfirmShare = (selectedMessages: Message[], source?: IToolBtn) => {
+    console.log('confirm selection, source:', source, 'selected messages:', selectedMessages);
+    if (source?.id === 'save') {
+      console.log('保存选中的消息');
+    }
   };
 
   const handleUpload = async (file: File) => {

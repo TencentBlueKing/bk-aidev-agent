@@ -883,13 +883,52 @@ ai-chat-container（:data-ai-size="size"）
 </template>
 
 <script setup lang="ts">
-  import { type Message } from '@blueking/chat-x';
+  import { type IToolBtn, type Message } from '@blueking/chat-x';
 
-  const handleConfirmShare = (selectedMessages: Message[]) => {
+  // 第二参数 source 为触发多选态的按钮对象，可据此区分 share / save 等不同确认场景
+  const handleConfirmShare = (selectedMessages: Message[], source?: IToolBtn) => {
+    if (source?.id === 'save') {
+      console.log('保存选中的消息:', selectedMessages);
+      return;
+    }
     console.log('分享消息:', selectedMessages);
   };
 </script>
 ```
+
+### 自定义按钮触发多选（triggerSelection）
+
+除内置「分享」外，任意自定义工具按钮标记 `triggerSelection: true` 后，点击即可复用同一套多选流程（勾选消息 → `SelectionFooter` 确认），确认时同样触发 `confirmShare`。配合 `messageTools` / `updateTools`（合并规则见 [MessageContainer · 自定义消息工具栏](/components/setup/message-container)）即可扩展如「保存」「收藏到空间」等批量操作。
+
+```vue
+<template>
+  <ChatContainer
+    v-model="inputValue"
+    :messages="messages"
+    message-status="complete"
+    :message-tools="customMessageTools"
+    :on-agent-action="handleAgentAction"
+    @confirm-share="handleConfirmShare"
+  />
+</template>
+
+<script setup lang="ts">
+  import { DownloadIcon, type IToolBtn, type Message } from '@blueking/chat-x';
+
+  const customMessageTools: IToolBtn[] = [
+    // 追加「保存」按钮，点击进入多选态；确认走 confirmShare
+    { id: 'save', name: '保存', description: '保存该回答', icon: DownloadIcon, triggerSelection: true },
+  ];
+
+  const handleConfirmShare = (selectedMessages: Message[], source?: IToolBtn) => {
+    if (source?.id === 'save') {
+      // 处理「保存」批量确认
+    }
+  };
+</script>
+```
+
+> `triggerSelection` 的按钮不会调用 `onAgentAction`，而是直接进入多选态；未标记该字段（且非 `share`）的按钮仍走 `onAgentAction`。
 
 **渲染效果**（点击 AI 回复工具栏中的「分享」按钮进入多选模式）
 
@@ -912,10 +951,10 @@ ai-chat-container（:data-ai-size="size"）
 
 **分享流程**：
 
-1. 用户点击消息工具栏中的「分享」按钮
+1. 用户点击消息工具栏中的「分享」按钮（或任意 `triggerSelection: true` 的自定义按钮）
 2. 进入多选模式，用户勾选要分享的消息
 3. 底部 `SelectionFooter` 提供全选、取消、确认操作
-4. 确认后触发 `confirmShare` 事件，携带选中的消息列表
+4. 确认后触发 `confirmShare` 事件，携带选中的消息列表与触发按钮对象（`source`）
 
 ## 模型选择
 
@@ -1052,7 +1091,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | stopStreaming  | —                                      | 点击「停止生成」按钮                 |
 | shortcutClose  | —                                      | 关闭快捷指令表单                     |
 | shortcutSubmit | `(formModel: Record<string, unknown>)` | 提交快捷指令表单                     |
-| confirmShare   | `(messages: Message[])`                | 确认分享，携带选中的消息             |
+| confirmShare   | `(messages: Message[], source?: IToolBtn)` | 确认分享/多选，携带选中的消息与触发按钮对象（`source`，用于区分 share/save 等场景） |
 | collapseChange | `(isCollapse: boolean, width: number)` | 侧边栏折叠/展开状态变化              |
 | selectShortcut | `(shortcut: Shortcut)`                 | 选择快捷指令（继承自 ChatInput）     |
 | deleteShortcut | —                                      | 删除已选快捷指令（继承自 ChatInput） |

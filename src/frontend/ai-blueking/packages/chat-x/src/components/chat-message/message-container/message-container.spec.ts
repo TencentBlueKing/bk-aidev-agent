@@ -112,6 +112,7 @@ vi.mock('../../message-tools/message-tools.vue', () => ({
     props: {
       messageToolsStatus: { type: String, default: undefined },
       messageTools: { type: Array, default: undefined },
+      updateTools: { type: Array, default: undefined },
       onAction: { type: Function, default: null },
       tippyOptions: { type: Object, default: undefined },
     },
@@ -124,6 +125,10 @@ vi.mock('../../message-tools/message-tools.vue', () => ({
             'data-message-tools-status': props.messageToolsStatus,
             'data-has-tippy-options': props.tippyOptions !== undefined ? 'true' : undefined,
             'data-tools-count': props.messageTools?.length,
+            'data-update-tools-count': props.updateTools?.length,
+            // 序列化工具明细，便于单测断言合并/覆盖/隐藏结果
+            'data-tools-json': JSON.stringify(props.messageTools ?? []),
+            'data-update-tools-json': JSON.stringify(props.updateTools ?? []),
           },
           'Message Tools',
         );
@@ -1443,6 +1448,70 @@ describe('MessageContainer', () => {
       const messageTools = wrapper.find('.mock-message-tools');
       expect(messageTools.exists()).toBe(true);
       expect(Number(messageTools.attributes('data-tools-count'))).toBe(4);
+    });
+  });
+
+  describe('messageTools / updateTools 合并测试', () => {
+    // 读取 mock 序列化的工具明细
+    const readTools = (w: VueWrapper, attr: 'data-tools-json' | 'data-update-tools-json') =>
+      JSON.parse(w.find('.mock-message-tools').attributes(attr) ?? '[]') as Array<{
+        description?: string;
+        id?: string;
+      }>;
+
+    const mountAssistant = (extra: Record<string, unknown>) => {
+      const messages: Message[] = [createAssistantMessage('1', 'Hello', 1)];
+      return mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages), ...extra },
+      });
+    };
+
+    it('传入 messageTools 中的新 id 应追加到内置列表末尾', async () => {
+      wrapper = mountAssistant({ messageTools: [{ id: 'save', name: '保存', description: '保存' }] });
+      await nextTick();
+
+      const tools = readTools(wrapper, 'data-tools-json');
+      expect(tools.length).toBe(5);
+      expect(tools.at(-1)?.id).toBe('save');
+    });
+
+    it('传入 messageTools 中的同 id 应字段级覆盖内置项且不新增', async () => {
+      wrapper = mountAssistant({ messageTools: [{ id: 'copy', description: '复制全文' }] });
+      await nextTick();
+
+      const tools = readTools(wrapper, 'data-tools-json');
+      expect(tools.length).toBe(4);
+      expect(tools.find(tool => tool.id === 'copy')?.description).toBe('复制全文');
+    });
+
+    it('messageTools 中标记 hidden 的内置项应被过滤', async () => {
+      wrapper = mountAssistant({ messageTools: [{ id: 'share', hidden: true }] });
+      await nextTick();
+
+      const tools = readTools(wrapper, 'data-tools-json');
+      expect(tools.length).toBe(3);
+      expect(tools.some(tool => tool.id === 'share')).toBe(false);
+    });
+
+    it('不传 updateTools 时应使用内置反馈工具（like/unlike/delete）', async () => {
+      wrapper = mountAssistant({});
+      await nextTick();
+
+      const tools = readTools(wrapper, 'data-update-tools-json');
+      expect(tools.map(tool => tool.id)).toEqual(['like', 'unlike', 'delete']);
+    });
+
+    it('传入 updateTools 的新 id 应追加，hidden 项应被过滤', async () => {
+      wrapper = mountAssistant({
+        updateTools: [
+          { id: 'collect', name: '收藏', description: '收藏' },
+          { id: 'delete', hidden: true },
+        ],
+      });
+      await nextTick();
+
+      const tools = readTools(wrapper, 'data-update-tools-json');
+      expect(tools.map(tool => tool.id)).toEqual(['like', 'unlike', 'collect']);
     });
   });
 });

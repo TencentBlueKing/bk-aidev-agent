@@ -86,7 +86,7 @@ describe('useModelSelector', () => {
     const wrapper = mount(Host);
     await nextTick();
 
-    result?.keyword.value = 'claude';
+    if (result) result.keyword.value = 'claude';
     await nextTick();
     expect(result?.filteredModels.value).toEqual([models[1]]);
 
@@ -131,7 +131,7 @@ describe('useModelSelector', () => {
     const wrapper = mount(Host);
     await nextTick();
 
-    result?.keyword.value = 'gpt';
+    if (result) result.keyword.value = 'gpt';
     await nextTick();
     result?.resetKeyword();
     await nextTick();

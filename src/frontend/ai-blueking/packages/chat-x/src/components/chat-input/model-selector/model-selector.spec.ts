@@ -46,6 +46,12 @@ vi.mock('../../../icons', () => ({
       return () => h('span', { class: 'mock-arrow-icon' });
     },
   }),
+  ArrowLeftIcon: defineComponent({
+    name: 'ArrowLeftIcon',
+    setup() {
+      return () => h('span', { class: 'mock-arrow-left-icon' });
+    },
+  }),
   SearchIcon: defineComponent({
     name: 'SearchIcon',
     setup() {
@@ -177,7 +183,8 @@ describe('ModelSelector', () => {
         },
       });
 
-      const input = wrapper.find('.ai-model-selector-panel-search-input');
+      // .ai-model-selector-panel-search-input 是 BkInput 根节点（div），需定位内部真实 input
+      const input = wrapper.find('.ai-model-selector-panel-search-input input');
       await input.setValue('deep');
 
       const visibleNames = wrapper.findAll('.ai-model-selector-panel-option-name').map(node => node.text());

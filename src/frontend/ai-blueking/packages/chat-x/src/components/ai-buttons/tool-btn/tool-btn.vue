@@ -7,12 +7,15 @@
     @click="handleClick"
   >
     <slot>
-      <template v-if="id && id in ToolIconsMap">
-        <component :is="ToolIconsMap[id]" />
-      </template>
-      <template v-else>
-        <div>{{ name }}</div>
-      </template>
+      <component
+        :is="icon"
+        v-if="icon"
+      />
+      <component
+        :is="ToolIconsMap[id as ToolIcons]"
+        v-else-if="id && id in ToolIconsMap"
+      />
+      <div v-else>{{ name }}</div>
     </slot>
   </div>
 </template>
@@ -23,6 +26,7 @@
 
   import { ToolIconsMap } from '../../../icons/tools';
 
+  import type { ToolIcons } from '../../../icons/tools';
   import type { IToolBtn } from '../../../types';
 
   import 'tippy.js/dist/tippy.css';
