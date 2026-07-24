@@ -24,7 +24,9 @@
  * IN THE SOFTWARE.
  */
 
-import type { ToolIconsMap } from '../icons/tools';
+import type { Component, VNode } from 'vue';
+
+import type { ToolIcons } from '../icons/tools';
 import type { TippyOptions } from 'vue-tippy';
 
 export enum MessageToolsStatus {
@@ -36,6 +38,13 @@ export type AITippyProps = Partial<Pick<TippyOptions, 'appendTo' | 'placement' |
 
 export interface IToolBtn {
   description?: string;
-  id?: keyof typeof ToolIconsMap;
+  // 隐藏该按钮：配合按 id 合并使用，如 { id: 'share', hidden: true } 可移除内置项
+  hidden?: boolean;
+  // 自定义图标（组件或 VNode），优先级高于内置 ToolIconsMap；配合自定义 id 使用
+  icon?: Component | VNode;
+  // 内置 id 保留自动补全，同时允许业务自定义任意字符串（如 'save'）
+  id?: (string & {}) | ToolIcons;
   name?: string;
+  // 标记该按钮点击后进入多选态（复用 share 的选择流程），确认走 confirmShare
+  triggerSelection?: boolean;
 }

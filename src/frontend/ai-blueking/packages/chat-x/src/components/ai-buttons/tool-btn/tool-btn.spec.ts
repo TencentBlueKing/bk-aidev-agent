@@ -176,6 +176,57 @@ describe('ToolBtn', () => {
     });
   });
 
+  describe('自定义 icon 测试', () => {
+    const CustomIcon = defineComponent({
+      name: 'CustomIcon',
+      setup() {
+        return () => h('span', { class: 'custom-icon' });
+      },
+    });
+
+    it('传入 icon（组件）时应渲染自定义图标', () => {
+      wrapper = mount(ToolBtn, {
+        props: { id: 'save' as IToolBtn['id'], name: '保存', description: '保存', icon: CustomIcon },
+      });
+
+      expect(wrapper.find('.custom-icon').exists()).toBe(true);
+    });
+
+    it('传入 icon（VNode）时应渲染自定义图标', () => {
+      wrapper = mount(ToolBtn, {
+        props: {
+          id: 'save' as IToolBtn['id'],
+          name: '保存',
+          description: '保存',
+          icon: h('span', { class: 'vnode-icon' }),
+        },
+      });
+
+      expect(wrapper.find('.vnode-icon').exists()).toBe(true);
+    });
+
+    it('icon 优先级应高于内置图标（id 命中内置也用自定义 icon）', () => {
+      wrapper = mount(ToolBtn, {
+        props: { id: 'copy', name: '复制', description: '复制', icon: CustomIcon },
+      });
+
+      expect(wrapper.find('.custom-icon').exists()).toBe(true);
+      expect(wrapper.find('.mock-copy-icon').exists()).toBe(false);
+    });
+
+    it('默认 slot 优先级应高于 icon prop', () => {
+      wrapper = mount(ToolBtn, {
+        props: { id: 'save' as IToolBtn['id'], name: '保存', description: '保存', icon: CustomIcon },
+        slots: {
+          default: () => h('span', { class: 'slot-icon' }),
+        },
+      });
+
+      expect(wrapper.find('.slot-icon').exists()).toBe(true);
+      expect(wrapper.find('.custom-icon').exists()).toBe(false);
+    });
+  });
+
   describe('不同图标类型测试', () => {
     it('应该正确渲染 copy 图标', () => {
       const props = createToolBtnProps('copy', '复制', '复制内容');

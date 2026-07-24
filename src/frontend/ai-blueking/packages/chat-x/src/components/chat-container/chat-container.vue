@@ -166,6 +166,7 @@
             :enable-selection="isShareMode"
             :message-groups="messageGroups"
             :message-status="inputStatus"
+            :message-tools="messageTools"
             :message-tools-status="messageToolsStatus"
             :message-tools-tippy-options="commonTippyOptions"
             :messages="messages"
@@ -176,6 +177,7 @@
             :on-user-input-confirm="onUserInputConfirm"
             :on-user-shortcut-confirm="onUserShortcutConfirm"
             :render-mode="renderMode"
+            :update-tools="updateTools"
             @stop-streaming="emits('stopStreaming')"
           >
             <template #group="{ group }">
@@ -216,7 +218,7 @@
               :is-all-selected="isAllSelected"
               :loading="false"
               :selected-count="selectedUserMessages.length"
-              @cancel="onCancelShare"
+              @cancel="handleCancelShare"
               @confirm="handleConfirmShare"
               @toggle-all="onToggleShareAll"
             />
@@ -452,7 +454,7 @@
       MessageContainerEmits & {
         (e: 'shortcutClose'): void;
         (e: 'shortcutSubmit', formModel: Record<string, unknown>): void;
-        (e: 'confirmShare', messages: Message[]): void;
+        (e: 'confirmShare', messages: Message[], source?: IToolBtn): void;
         (e: 'collapseChange', isCollapse: boolean, resizeAsideWidth: number): void;
       }
   >();
@@ -485,6 +487,8 @@
 
   const keyword = shallowRef('');
   const selectedUserMessages = deepRef<Message[]>([]);
+  // 记录触发多选态的按钮（share 或标记 triggerSelection 的自定义按钮），确认时作为来源参数回传
+  const selectionSource = shallowRef<IToolBtn>();
   const resizeAsideWidth = shallowRef<number>(400);
   const resizeMainWidth = computed(() => {
     return `calc(100% - ${resizeAsideWidth.value}px)`;
@@ -605,8 +609,9 @@
    * @param messages - 消息
    */
   const handleAgentAction = async (tool: IToolBtn, messages: Message[]) => {
-    // 点击分享按钮，切换到分享模式
-    if (tool.id === 'share') {
+    // 点击分享，或业务标记了 triggerSelection 的自定义按钮（如保存），进入多选态；确认复用 confirmShare
+    if (tool.id === 'share' || tool.triggerSelection) {
+      selectionSource.value = tool;
       isShareMode.value = true;
       return;
     }
@@ -616,11 +621,18 @@
    * 点击确认分享
    */
   const handleConfirmShare = () => {
-    emits('confirmShare', onConfirmShare());
+    // 第二个参数为来源按钮对象，业务据此区分 share / save 等不同确认场景
+    emits('confirmShare', onConfirmShare(), selectionSource.value);
     nextTick(() => {
       isShareMode.value = false;
       selectedUserMessages.value = [];
+      selectionSource.value = undefined;
     });
+  };
+  // 取消多选态时同步清理来源标记
+  const handleCancelShare = () => {
+    onCancelShare();
+    selectionSource.value = undefined;
   };
 
   const handleResizing = (w: number) => {
@@ -643,7 +655,7 @@
       isShareMode.value = true;
     },
     exitShareMode: () => {
-      onCancelShare();
+      handleCancelShare();
     },
   });
 </script>

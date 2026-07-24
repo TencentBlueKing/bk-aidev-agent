@@ -689,6 +689,51 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
   </div>
 </div>
 
+## 自定义消息工具栏
+
+`messageTools`（左侧）与 `updateTools`（右侧反馈区）用于在**内置工具的基础上做增量定制**，无需重写整份列表。二者分别与内置 `CONST_MESSAGE_TOOLS`、`CONST_UPDATE_TOOLS` 按 `id` 合并，规则如下：
+
+- **覆盖**：`id` 命中内置项时，做字段级浅合并（仅覆盖传入的字段，其余保留），不新增条目
+- **追加**：`id` 为内置列表中不存在的新值时，追加到该组末尾（如自定义「保存」「收藏」按钮）
+- **隐藏**：传入 `{ id: 'xxx', hidden: true }` 可移除对应内置项（如隐藏「分享」）
+- **自定义图标**：通过 `icon`（组件/VNode）为自定义按钮提供图标，优先级高于内置 `ToolIconsMap`
+- 不传 `messageTools` / `updateTools` 时，各自使用内置默认列表
+
+```vue
+<template>
+  <MessageContainer
+    :messages="messages"
+    :message-groups="messageGroups"
+    message-status="complete"
+    :message-tools="customMessageTools"
+    :update-tools="customUpdateTools"
+    :on-agent-action="handleAgentAction"
+    @stop-streaming="handleStopStreaming"
+  />
+</template>
+
+<script setup lang="ts">
+  import { MessageContainer, DownloadIcon, type IToolBtn, type Message } from '@blueking/chat-x';
+
+  const customMessageTools: IToolBtn[] = [
+    { id: 'save', name: '保存', description: '保存该回答', icon: DownloadIcon }, // 追加新按钮
+    { id: 'copy', description: '复制全文' }, // 覆盖内置 copy 的 description
+    { id: 'share', hidden: true }, // 隐藏内置「分享」
+  ];
+  const customUpdateTools: IToolBtn[] = [
+    { id: 'collect', name: '收藏', description: '收藏到我的空间', icon: DownloadIcon },
+  ];
+
+  const handleAgentAction = async (tool: IToolBtn, messages: Message[]) => {
+    if (tool.id === 'save') {
+      // 处理保存
+    }
+  };
+</script>
+```
+
+> **合并优先级**：`RenderMode.Test` 下仍会额外过滤掉「分享」按钮（即便合并后存在）；即测试模式对 `share` 的过滤在自定义合并之后生效。
+
 ## 工具栏状态控制
 
 通过 `messageToolsStatus` 控制消息工具栏的显示状态。常见用法：流式输出期间禁用工具栏：
@@ -978,6 +1023,8 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
 | messages                 | `Message[]`                                                                                  | —       | **必填**，消息列表                                                                                                                       |
 | messageGroups            | `MessageGroup[]`                                                                             | —       | 预计算的消息分组；传入时跳过内部分组逻辑，由 `ChatContainer` 通过 `useMessageGroup` 提供                                                 |
 | messageStatus            | `MessageStatus`                                                                              | —       | 当前整体消息状态，控制底部「停止生成」按钮显示；`ChatContainer` 会结合末尾 Loading 占位推导 `fetching` 等再传入                                                                                                   |
+| messageTools             | `IToolBtn[]`                                                                                 | —       | AI 消息左侧工具（复制/引用等）的自定义配置；按 `id` 与内置 `CONST_MESSAGE_TOOLS` 合并（覆盖同 id、追加新 id、`hidden` 过滤），详见「自定义消息工具栏」 |
+| updateTools              | `IToolBtn[]`                                                                                 | —       | AI 消息右侧反馈工具（点赞/踩/删除等）的自定义配置；按 `id` 与内置 `CONST_UPDATE_TOOLS` 合并，规则同上                                     |
 | messageToolsStatus       | `MessageToolsStatus`                                                                         | —       | 工具栏状态，透传给 `MessageTools` 和 `MessageRender`                                                                                     |
 | messageToolsTippyOptions | `AITippyProps`                                                                               | —       | 透传给 `MessageTools` 和 `MessageRender`（进而透传给 `UserMessage` 的工具栏）的 Tippy 配置，用于自定义 tooltip 挂载点、位置等（如 `appendTo`、`placement`、`zIndex`） |
 | enableSelection          | `boolean`                                                                                    | `false` | 是否启用多选模式                                                                                                                         |

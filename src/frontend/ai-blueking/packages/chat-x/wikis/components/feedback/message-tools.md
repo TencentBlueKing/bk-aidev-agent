@@ -437,11 +437,15 @@ const CONST_UPDATE_TOOLS = [
 
 ```typescript
 import { MessageToolsStatus, type IToolBtn } from '@blueking/chat-x';
+import type { Component, VNode } from 'vue';
 
 interface IToolBtn {
-  id?: keyof typeof ToolIconsMap; // 工具唯一标识；与 ToolIconsMap 匹配时显示内置图标，否则显示 name 文本
+  id?: (string & {}) | ToolIcons; // 工具唯一标识；命中 ToolIconsMap 显示内置图标，否则显示 name 文本；支持业务自定义字符串
   name?: string; // 工具名称，无对应图标时显示；也用作 tooltip fallback
   description?: string; // tooltip 文本
+  icon?: Component | VNode; // 自定义图标（组件/VNode），优先级高于内置 ToolIconsMap[id]
+  hidden?: boolean; // 按 id 合并时隐藏该按钮（仅在 MessageContainer/ChatContainer 合并语义下生效）
+  triggerSelection?: boolean; // 标记点击后进入多选态（复用 share 选择流程），确认走 confirmShare
 }
 
 enum MessageToolsStatus {

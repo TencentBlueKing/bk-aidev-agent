@@ -55,8 +55,9 @@ div.ai-tool-btn（v-tippy，flex，min-width: 20px，height: 20px，border-radiu
   disabled=true → .is-disabled（color: #979ba5; cursor: not-allowed）
   :not(.is-disabled):hover → color: #4d4f56; background: #eaebf0
   │
-  └── <slot>（默认内容，可完全自定义）
-        ├── [id && id in ToolIconsMap] → <component :is="ToolIconsMap[id]" />（SVG 图标）
+  └── <slot>（默认内容，可完全自定义；优先级最高）
+        ├── [icon] → <component :is="icon" />（自定义图标组件/VNode，优先级高于内置图标）
+        ├── [id && id in ToolIconsMap] → <component :is="ToolIconsMap[id]" />（内置 SVG 图标）
         └── [其他] → <div>{{ name }}</div>（文本回退，XSS 安全）
 
 Tippy：content=description, theme='ai-chat-box', disabled=true 时 onShow 返回 false 不显示
@@ -273,6 +274,28 @@ click 事件：disabled=true 时被 JS 拦截，不触发 emit
   </div>
 </div>
 
+## 自定义图标（icon 属性）
+
+当内置 `ToolIconsMap` 未覆盖所需图标时，可通过 `icon` 传入自定义图标组件或 VNode（如业务新增的「保存」按钮）。`icon` 的渲染优先级高于内置图标，因此即便 `id` 命中内置图标，也会以 `icon` 为准。
+
+```vue
+<template>
+  <ToolBtn
+    id="save"
+    name="保存"
+    description="保存该回答"
+    :icon="DownloadIcon"
+    @click="handleClick"
+  />
+</template>
+
+<script setup lang="ts">
+  import { ToolBtn, DownloadIcon } from '@blueking/chat-x';
+</script>
+```
+
+> 优先级从高到低：默认插槽 `>` `icon` 属性 `>` 内置 `ToolIconsMap[id]` `>` `name` 文本回退。
+
 ## 自定义插槽内容
 
 通过默认插槽可完全替换内置图标/文本，适用于预置 `ToolIconsMap` 未覆盖的图标场景（如侧栏全屏按钮）：
@@ -309,9 +332,10 @@ click 事件：disabled=true 时被 JS 拦截，不触发 emit
 
 | 属性名       | 类型                                                                       | 必填 | 默认值 | 说明                                                                                                               |
 | ------------ | -------------------------------------------------------------------------- | ---- | ------ | ------------------------------------------------------------------------------------------------------------------ |
-| id           | `keyof typeof ToolIconsMap`                                                | 否   | —      | 按钮标识；在 `ToolIconsMap` 中时渲染对应 SVG 图标，否则渲染 `name` 文本；使用插槽自定义内容时可省略                  |
+| id           | `(string & {}) \| ToolIcons`                                               | 否   | —      | 按钮标识；命中 `ToolIconsMap` 时渲染对应 SVG 图标，否则渲染 `name` 文本；支持业务自定义任意字符串（如 `save`）      |
 | name         | `string`                                                                   | 否   | —      | 按钮名称；`id` 无对应图标时作为文本内容渲染                                                                        |
 | description  | `string`                                                                   | 否   | —      | Tippy tooltip 内容；`disabled=true` 时不显示 tooltip                                                               |
+| icon         | `Component \| VNode`                                                        | 否   | —      | 自定义图标组件或 VNode；优先级高于内置 `ToolIconsMap[id]`，低于默认插槽                                             |
 | active       | `boolean`                                                                  | 否   | —      | 激活态；`true` 时追加 `.is-active`（字色由 `id` 决定：`like`/`activeLike` 为蓝色 `#3a84ff`，其他为红色 `#E71818`） |
 | disabled     | `boolean`                                                                  | 否   | —      | 禁用态；`true` 时追加 `.is-disabled`，阻止 click 事件，隐藏 tooltip                                                |
 | tippyOptions | `Partial<Omit<TippyOptions, 'getReferenceClientRect' \| 'triggerTarget'>>` | 否   | —      | 自定义 Tippy 配置，与内部默认配置合并；可用于控制 `content`、`appendTo`、`placement` 等                            |
@@ -331,11 +355,16 @@ click 事件：disabled=true 时被 JS 拦截，不触发 emit
 ## 类型定义
 
 ```typescript
+import type { Component, VNode } from 'vue';
+
 // 来自 @blueking/chat-x 导出
 interface IToolBtn {
-  id?: keyof typeof ToolIconsMap; // 预置 ID；省略时走 name 文本或插槽
+  id?: (string & {}) | ToolIcons; // 内置 ID 保留自动补全，同时允许业务自定义任意字符串（如 'save'）
   name?: string;
   description?: string;
+  icon?: Component | VNode; // 自定义图标，优先级高于内置 ToolIconsMap
+  hidden?: boolean; // 按 id 合并时隐藏该按钮（如 { id: 'share', hidden: true } 移除内置项）
+  triggerSelection?: boolean; // 标记点击后进入多选态（复用 share 选择流程），确认走 confirmShare
 }
 
 // ToolBtn 完整 Props

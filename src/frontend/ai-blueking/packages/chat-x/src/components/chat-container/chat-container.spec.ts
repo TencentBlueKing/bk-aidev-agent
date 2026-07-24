@@ -1266,4 +1266,81 @@ describe('ChatContainer', () => {
       expect(wrapper.find('.custom-tab-label').exists()).toBe(true);
     });
   });
+
+  describe('多选态触发与来源参数测试', () => {
+    const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+
+    // MessageContainer 的 onAgentAction 即内部 handleAgentAction
+    const getAgentAction = () =>
+      wrapper.findComponent({ name: 'MessageContainer' }).props('onAgentAction') as (
+        tool: Record<string, unknown>,
+        msgs: Message[],
+      ) => Promise<unknown>;
+
+    it('点击标记 triggerSelection 的工具应进入多选态（渲染 SelectionFooter）', async () => {
+      wrapper = mount(ChatContainer, { props: { ...defaultProps, messages } });
+      await nextTick();
+      expect(wrapper.find('.mock-selection-footer').exists()).toBe(false);
+
+      await getAgentAction()({ id: 'save', triggerSelection: true }, []);
+      await nextTick();
+
+      expect(wrapper.find('.mock-selection-footer').exists()).toBe(true);
+    });
+
+    it('点击 share 按钮应进入多选态', async () => {
+      wrapper = mount(ChatContainer, { props: { ...defaultProps, messages } });
+      await nextTick();
+
+      await getAgentAction()({ id: 'share' }, []);
+      await nextTick();
+
+      expect(wrapper.find('.mock-selection-footer').exists()).toBe(true);
+    });
+
+    it('普通工具（无 triggerSelection）不应进入多选态且应调用 onAgentAction', async () => {
+      const onAgentAction = vi.fn();
+      wrapper = mount(ChatContainer, { props: { ...defaultProps, messages, onAgentAction } });
+      await nextTick();
+
+      const copyTool = { id: 'copy' };
+      await getAgentAction()(copyTool, []);
+      await nextTick();
+
+      expect(wrapper.find('.mock-selection-footer').exists()).toBe(false);
+      expect(onAgentAction).toHaveBeenCalledWith(copyTool, []);
+    });
+
+    it('确认多选应 emit confirmShare 并携带来源工具对象作为第二参数', async () => {
+      wrapper = mount(ChatContainer, { props: { ...defaultProps, messages } });
+      await nextTick();
+
+      const saveTool = { id: 'save', name: '保存', triggerSelection: true };
+      await getAgentAction()(saveTool, []);
+      await nextTick();
+
+      await wrapper.findComponent({ name: 'SelectionFooter' }).vm.$emit('confirm');
+      await nextTick();
+
+      const emitted = wrapper.emitted('confirmShare');
+      expect(emitted).toBeTruthy();
+      // onConfirmShare mock 返回 []，第二参数为来源工具对象
+      expect(emitted?.[0]?.[0]).toEqual([]);
+      expect(emitted?.[0]?.[1]).toEqual(saveTool);
+    });
+
+    it('share 确认时第二参数来源应为 share 工具对象', async () => {
+      wrapper = mount(ChatContainer, { props: { ...defaultProps, messages } });
+      await nextTick();
+
+      await getAgentAction()({ id: 'share' }, []);
+      await nextTick();
+
+      await wrapper.findComponent({ name: 'SelectionFooter' }).vm.$emit('confirm');
+      await nextTick();
+
+      const emitted = wrapper.emitted('confirmShare');
+      expect(emitted?.[0]?.[1]).toEqual({ id: 'share' });
+    });
+  });
 });
