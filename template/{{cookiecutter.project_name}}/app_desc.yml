@@ -106,4 +106,4 @@ modules:
           targetReplicas: 1
         - name: wxaibot
           procCommand: /bin/bash bin/start_wxaibot.sh
-          targetReplicas: 1
+          targetReplicas: 0
