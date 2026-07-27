@@ -57,6 +57,8 @@ services:
       - BKAI_CRAW_API_KEY=${HERMES_API_SERVER_KEY:?agent.env 需提供 HERMES_API_SERVER_KEY}
       - BKAI_CRAW_HOME=/craw-home
       - BKAI_CRAW_SYNC_INTERVAL=${BKAI_CRAW_SYNC_INTERVAL:-5}
+      # 跨 UID 共享卷时默认 0600 会挡住内核读自身配置，模拟环境放宽为 0644
+      - BKAI_CRAW_ARTIFACT_MODE=0644
       - APP_CODE=${APP_CODE:-}
       - APP_SECRET=${APP_SECRET:-}
       # 场景脚本经 EnvTokenResourceManager 取用户 token（fail-closed：缺失即 build 报错）
