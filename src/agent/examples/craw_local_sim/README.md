@@ -57,7 +57,8 @@ ENVF=./agent.env   # 按需替换
 # ① 裸 API：宿主机直连 craw（openclaw 变体已映射 18789；浏览器开 http://127.0.0.1:18789 是 dashboard，令牌=OPENCLAW_GATEWAY_TOKEN）
 curl -fsS http://127.0.0.1:18789/healthz
 curl -sS http://127.0.0.1:18789/v1/chat/completions \
-  -H "Authorization: Bearer craw-local-sim" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(grep ^OPENCLAW_GATEWAY_TOKEN $ENVF | cut -d= -f2)" \
+  -H "Content-Type: application/json" \
   -d '{"model":"openclaw","messages":[{"role":"user","content":"你是谁"}],"stream":false}'
 
 # ② SDK 对话：交互式多轮 REPL（流式吐字；单发在末尾直接带问题）

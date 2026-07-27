@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 from logging import getLogger
 from typing import ClassVar, Iterator, Optional
@@ -60,6 +61,64 @@ def _env_first(*names: str) -> str:
         if value:
             return value
     return ""
+
+
+class CrawChatStream:
+    """一次流式 chat 的可关闭句柄。
+
+    - 迭代产出已解析的 OpenAI 兼容 chunk dict（严格 SSE：畸形 ``data:`` 行、
+      未见 ``[DONE]`` 即 EOF 均抛 ``CrawStreamProtocolError``，不静默当成功）；
+    - ``close()`` 线程安全且幂等：``stop()`` 取消链路从其他线程调用它可立即
+      中断阻塞中的上游读取（HTTP 客户端等数据期间也能打断），关闭后迭代
+      静默结束，由调用方走取消收尾而非报错。
+    """
+
+    def __init__(self, backend_name: str, client: httpx.Client, response: httpx.Response) -> None:
+        self.backend_name = backend_name
+        self._client = client
+        self._response = response
+        self._lock = threading.Lock()
+        self._closed = False
+        self._finished = False
+
+    @property
+    def interrupted(self) -> bool:
+        """是否在自然结束（``[DONE]``）前被主动 ``close()``（取消语义）。"""
+        return self._closed and not self._finished
+
+    def close(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+        try:
+            self._response.close()
+        finally:
+            self._client.close()
+
+    def __enter__(self) -> "CrawChatStream":
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        self.close()
+
+    def __iter__(self) -> Iterator[dict]:
+        try:
+            for chunk in BaseCrawBackend.iter_sse_chunks(self._response.iter_lines(), backend=self.backend_name):
+                if self._closed:  # 已取消：残余缓冲数据不再下发
+                    return
+                yield chunk
+            self._finished = True
+        except CrawStreamProtocolError:
+            if self._closed:  # 被 stop() 主动关闭：EOF/读错误是预期结果，不算协议违例
+                return
+            raise
+        except Exception as exc:
+            if self._closed:
+                return
+            raise CrawStreamProtocolError(self.backend_name, f"读取上游流失败: {exc}") from exc
+        finally:
+            self.close()
 
 
 class BaseCrawBackend:
@@ -132,14 +191,51 @@ class BaseCrawBackend:
         identity: Optional[CrawIdentity] = None,
         session_code: Optional[str] = None,
     ) -> dict:
+        """非流式转发。仅 2xx 视为成功——3xx（如未预期的重定向）同样拒绝，
+        绝不把非正常响应解析成"成功回复"。
+
+        :raises CrawUpstreamError: 上游返回非 2xx。
+        """
         with httpx.Client(timeout=self.timeout) as client:
             resp = client.post(
                 f"{self.api_url}{self.chat_path}",
                 headers=self.build_headers(identity=identity, session_code=session_code),
                 json=self.chat_payload(messages, stream=False),
             )
-            resp.raise_for_status()
+            if not (200 <= resp.status_code < 300):
+                raise CrawUpstreamError(self.name, resp.status_code, resp.text[:500])
             return resp.json()
+
+    def open_chat_stream(
+        self,
+        messages: list[dict],
+        identity: Optional[CrawIdentity] = None,
+        session_code: Optional[str] = None,
+    ) -> CrawChatStream:
+        """打开流式 chat，返回可关闭句柄（供 ``stop()`` 跨线程中断阻塞读取）。
+
+        :raises CrawUpstreamError: 上游返回非 2xx（3xx 亦拒绝）。
+        """
+        client = httpx.Client(timeout=self.timeout)
+        try:
+            request = client.build_request(
+                "POST",
+                f"{self.api_url}{self.chat_path}",
+                headers=self.build_headers(identity=identity, session_code=session_code),
+                json=self.chat_payload(messages, stream=True),
+            )
+            response = client.send(request, stream=True)
+        except Exception:
+            client.close()
+            raise
+        if not (200 <= response.status_code < 300):
+            try:
+                detail = response.read().decode("utf-8", "ignore")[:500]
+            finally:
+                response.close()
+                client.close()
+            raise CrawUpstreamError(self.name, response.status_code, detail)
+        return CrawChatStream(self.name, client, response)
 
     def chat_completions_stream(
         self,
@@ -147,23 +243,21 @@ class BaseCrawBackend:
         identity: Optional[CrawIdentity] = None,
         session_code: Optional[str] = None,
     ) -> Iterator[dict]:
-        with (
-            httpx.Client(timeout=self.timeout) as client,
-            client.stream(
-                "POST",
-                f"{self.api_url}{self.chat_path}",
-                headers=self.build_headers(identity=identity, session_code=session_code),
-                json=self.chat_payload(messages, stream=True),
-            ) as resp,
-        ):
-            if resp.status_code >= 400:
-                detail = resp.read().decode("utf-8", "ignore")[:500]
-                raise CrawUpstreamError(self.name, resp.status_code, detail)
-            yield from self.iter_sse_chunks(resp.iter_lines())
+        """流式转发（``open_chat_stream`` 的迭代包装，句柄随迭代结束关闭）。"""
+        with self.open_chat_stream(messages, identity=identity, session_code=session_code) as stream:
+            yield from stream
 
     @staticmethod
-    def iter_sse_chunks(lines: Iterator[str]) -> Iterator[dict]:
-        """解析 OpenAI 兼容 SSE 行流：产出 ``data:`` JSON chunk，遇 ``[DONE]`` 结束。"""
+    def iter_sse_chunks(lines: Iterator[str], backend: str = "") -> Iterator[dict]:
+        """解析 OpenAI 兼容 SSE 行流（严格模式）。
+
+        产出 ``data:`` JSON chunk，遇 ``[DONE]`` 正常结束。两类违例即抛
+        ``CrawStreamProtocolError``，不静默吞掉当成功：
+
+        - ``data:`` 行不是合法 JSON（解析错误不再跳过）；
+        - EOF 时未见 ``[DONE]`` 终止标志（空流 / 截断流）。
+        """
+        done_seen = False
         for raw in lines:
             if not raw:
                 continue
@@ -172,11 +266,15 @@ class BaseCrawBackend:
                 continue
             data = line[len("data:") :].strip()
             if data == "[DONE]":
-                return
+                done_seen = True
+                break
             try:
-                yield json.loads(data)
-            except json.JSONDecodeError:
-                continue
+                chunk = json.loads(data)
+            except json.JSONDecodeError as exc:
+                raise CrawStreamProtocolError(backend, f"SSE data 行不是合法 JSON: {data[:120]!r}") from exc
+            yield chunk
+        if not done_seen:
+            raise CrawStreamProtocolError(backend, "上游流在 [DONE] 终止标志前结束（空流或截断）")
 
     @staticmethod
     def delta_text(chunk: dict) -> str:
@@ -228,10 +326,35 @@ class CrawIdentityError(RuntimeError):
 
 
 class CrawUpstreamError(RuntimeError):
-    """craw 上游返回 4xx/5xx（携带截断后的响应详情，不含凭证）。"""
+    """craw 上游返回非 2xx（携带截断后的响应详情，不含凭证）。
+
+    ``detail`` 是上游响应体片段，只应进服务端日志；发给客户端的错误消息
+    用 ``client_message``（仅 backend + 状态码），避免泄露内部错误页内容。
+    """
 
     def __init__(self, backend: str, status_code: int, detail: str) -> None:
         self.backend = backend
         self.status_code = status_code
         self.detail = detail
         super().__init__(f"craw backend {backend} upstream {status_code}: {detail}")
+
+    @property
+    def client_message(self) -> str:
+        return f"craw backend {self.backend} upstream {self.status_code}"
+
+
+class CrawStreamProtocolError(RuntimeError):
+    """craw 上游 SSE 流违反协议（畸形 data 行 / 未见 ``[DONE]`` 即 EOF）。
+
+    ``reason`` 可能含上游数据片段，只应进服务端日志；客户端错误消息用
+    ``client_message``。
+    """
+
+    def __init__(self, backend: str, reason: str) -> None:
+        self.backend = backend
+        self.reason = reason
+        super().__init__(f"craw backend {backend} stream protocol error: {reason}")
+
+    @property
+    def client_message(self) -> str:
+        return f"craw backend {self.backend} 流式响应违例（详情见服务端日志）"

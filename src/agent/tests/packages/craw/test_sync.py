@@ -169,3 +169,70 @@ class TestAgentConfigToArtifacts:
         assert result.ok and result.artifacts_verified
         assert (tmp_path / "SOUL.md").read_text(encoding="utf-8").startswith("# Demo")
         assert json.loads((tmp_path / "agent-config.json").read_text(encoding="utf-8"))["agent_code"] == "demo-agent"
+
+
+class TestTwoPhaseTransaction:
+    """产物集两阶段同步：任一产物 staging 失败 → 正式文件零改动。"""
+
+    def test_second_artifact_failure_leaves_first_untouched(self, tmp_path):
+        (tmp_path / "SOUL.md").write_text("# old-soul", encoding="utf-8")
+        syncer = CrawSyncer(
+            backend=_HealthStubBackend(),
+            home_dir=str(tmp_path),
+            # dict 有序：SOUL.md 先 staging 成功，第二个产物路径非法触发失败
+            artifacts_provider=lambda: {"SOUL.md": "# new-soul", "../evil.txt": "x"},
+        )
+        result = syncer.run_cycle()
+        assert not result.ok and result.error
+        assert result.artifacts_written == {}  # 没有任何产物完成切换
+        # 阶段一失败 → SOUL.md 正式文件保持旧版本，不出现"新 SOUL + 旧配置"混合态
+        assert (tmp_path / "SOUL.md").read_text(encoding="utf-8") == "# old-soul"
+        assert not (tmp_path.parent / "evil.txt").exists()
+
+    def test_failed_cycle_leaves_no_staging_residue(self, tmp_path):
+        syncer = CrawSyncer(
+            backend=_HealthStubBackend(),
+            home_dir=str(tmp_path),
+            artifacts_provider=lambda: {"SOUL.md": "# soul", "bad/../../evil.txt": "x"},
+        )
+        syncer.run_cycle()
+        residues = [p.name for p in tmp_path.rglob(".*craw-staging*")]
+        assert residues == []
+
+    def test_artifact_file_mode_0600(self, tmp_path):
+        syncer = CrawSyncer(backend=_HealthStubBackend(), home_dir=str(tmp_path), soul_provider=lambda: "# soul")
+        result = syncer.run_cycle()
+        assert result.ok
+        # 产物可能含 MCP 认证 header：不依赖 umask，显式 0600
+        assert ((tmp_path / "SOUL.md").stat().st_mode & 0o777) == 0o600
+
+    def test_symlink_final_target_replaced_not_followed(self, tmp_path):
+        """正式文件名是指向 home 外的 symlink 时：rename 替换链接本身，外部文件不被写。"""
+        outside = tmp_path.parent / f"{tmp_path.name}-outside-target"
+        outside.write_text("outside-original", encoding="utf-8")
+        home = tmp_path / "home"
+        home.mkdir()
+        (home / "SOUL.md").symlink_to(outside)
+        syncer = CrawSyncer(backend=_HealthStubBackend(), home_dir=str(home))
+        syncer.write_artifact("SOUL.md", "# new")
+        assert outside.read_text(encoding="utf-8") == "outside-original"
+        assert not (home / "SOUL.md").is_symlink()
+        assert (home / "SOUL.md").read_text(encoding="utf-8") == "# new"
+
+
+class TestCustomSoulFilename:
+    """自定义 soul_filename 时，结果别名属性按实际文件名取数（不再硬编码 SOUL.md）。"""
+
+    def test_result_aliases_follow_custom_filename(self, tmp_path):
+        syncer = CrawSyncer(
+            backend=_HealthStubBackend(),
+            home_dir=str(tmp_path),
+            soul_provider=lambda: "# persona",
+            soul_filename="PERSONA.md",
+        )
+        result = syncer.run_cycle()
+        assert result.ok
+        assert result.soul_verified is True
+        assert result.soul_written_bytes == len("# persona".encode("utf-8"))
+        assert (tmp_path / "PERSONA.md").read_text(encoding="utf-8") == "# persona"
+        assert not (tmp_path / "SOUL.md").exists()

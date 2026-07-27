@@ -31,6 +31,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import errno
 import json
 import os
 import time
@@ -47,6 +49,10 @@ HOME_ENV = "BKAI_CRAW_HOME"
 INTERVAL_ENV = "BKAI_CRAW_SYNC_INTERVAL"
 DEFAULT_SOUL_FILENAME = "SOUL.md"
 DEFAULT_CONFIG_FILENAME = "agent-config.json"
+# staging 文件命名：``.<产物名>.craw-staging``（与正式文件同目录，rename 才是原子的）
+_STAGING_SUFFIX = ".craw-staging"
+# 产物含 MCP 认证 header 等敏感配置：staging/正式文件统一 0600，不依赖 umask
+_ARTIFACT_MODE = 0o600
 
 
 @dataclass
@@ -62,6 +68,8 @@ class CrawSyncResult:
     artifacts_verified: bool = True
     # 读回校验失败的产物相对路径（供排查具体损坏项）
     artifacts_failed: list = field(default_factory=list)
+    # 本周期人设文件名（跟随 CrawSyncer.soul_filename，别名属性按它取数）
+    soul_filename: str = DEFAULT_SOUL_FILENAME
     error: str = ""
 
     @property
@@ -72,11 +80,11 @@ class CrawSyncResult:
     # ---- 向后兼容别名：老调用方按 SOUL 单文件读结果 ----
     @property
     def soul_written_bytes(self) -> int:
-        return self.artifacts_written.get(DEFAULT_SOUL_FILENAME, 0)
+        return self.artifacts_written.get(self.soul_filename, 0)
 
     @property
     def soul_verified(self) -> bool:
-        return DEFAULT_SOUL_FILENAME in self.artifacts_written and self.artifacts_verified
+        return self.soul_filename in self.artifacts_written and self.artifacts_verified
 
 
 class CrawSyncer:
@@ -115,20 +123,27 @@ class CrawSyncer:
 
     # ---------- read ----------
 
+    def _validate_rel(self, relpath: str) -> Path:
+        """校验产物相对路径：拒绝绝对路径、``..`` 父目录跳转与空路径。"""
+        rel = Path(relpath)
+        if rel.is_absolute() or ".." in rel.parts or not rel.parts:
+            raise ValueError(f"非法产物路径（须为 craw home 内相对路径）: {relpath!r}")
+        return rel
+
     def _resolve_in_home(self, relpath: str) -> Path:
-        """把相对路径解析为 craw home 内的绝对路径，越界即拒绝。
+        """（读路径）把相对路径解析为 craw home 内的绝对路径，越界即拒绝。
 
         拒绝三类输入：绝对路径、``..`` 父目录跳转，以及经符号链接 resolve
-        后落在 home 之外的目标（共享卷场景下 symlink escape 可越界读写）。
+        后落在 home 之外的目标。写路径不走本方法——resolve 校验与后续
+        写入分离存在 TOCTOU 窗口，写路径用 ``_open_dir_in_home``（openat +
+        O_NOFOLLOW，校验与打开同一系统调用）。
 
         :raises RuntimeError: 未配置 home_dir。
         :raises ValueError: 路径非法或越出 craw home。
         """
         if not self.home_dir:
             raise RuntimeError(f"craw home 未配置（参数 home_dir 或 env {HOME_ENV}）")
-        rel = Path(relpath)
-        if rel.is_absolute() or ".." in rel.parts:
-            raise ValueError(f"非法产物路径（须为 craw home 内相对路径）: {relpath!r}")
+        rel = self._validate_rel(relpath)
         home = self.home_dir.resolve()
         target = (home / rel).resolve()
         if not target.is_relative_to(home):
@@ -148,18 +163,84 @@ class CrawSyncer:
             return None
         return target.read_text(encoding="utf-8")
 
-    # ---------- write ----------
+    # ---------- write（openat + O_NOFOLLOW + staging 原子切换） ----------
 
-    def write_artifact(self, relpath: str, content: str) -> Path:
-        """文件面写：内容写入 craw home 下的相对路径（父目录自动创建）。
+    def _open_dir_in_home(self, dir_parts: "tuple[str, ...]") -> int:
+        """从 craw home 起逐段 ``openat(O_NOFOLLOW | O_DIRECTORY)`` 下钻，返回目标目录 fd。
+
+        「校验」与「打开」是同一个系统调用：路径上任何一段是符号链接都会
+        被 O_NOFOLLOW 当场拒绝（不存在 resolve 后再写的 TOCTOU 窗口）；拿到
+        fd 后的写入 / rename 全部经 ``dir_fd`` 进行，与路径字符串再无关系，
+        共享卷上并发把父目录替换成 symlink 也无法把写入引出 home。
+        缺失目录用 mkdirat 创建。调用方负责 ``os.close``。
 
         :raises RuntimeError: 未配置 home_dir。
-        :raises ValueError: 路径非法或越出 craw home。
+        :raises ValueError: 路径中含符号链接段。
         """
-        target = self._resolve_in_home(relpath)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
-        return target
+        if not self.home_dir:
+            raise RuntimeError(f"craw home 未配置（参数 home_dir 或 env {HOME_ENV}）")
+        fd = os.open(str(self.home_dir), os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            for part in dir_parts:
+                with contextlib.suppress(FileExistsError):
+                    os.mkdir(part, dir_fd=fd)
+                try:
+                    next_fd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+                except OSError as exc:
+                    if exc.errno in (errno.ELOOP, errno.EMLINK, errno.ENOTDIR):
+                        raise ValueError(f"产物路径含符号链接/非目录段，拒绝写入: {part!r}") from exc
+                    raise
+                os.close(fd)
+                fd = next_fd
+        except BaseException:
+            os.close(fd)
+            raise
+        return fd
+
+    @staticmethod
+    def _write_staging_at(dirfd: int, filename: str, content: str) -> str:
+        """在目录 fd 下写 staging 文件（0600，O_EXCL + O_NOFOLLOW），返回 staging 名。"""
+        staging_name = f".{filename}{_STAGING_SUFFIX}"
+        with contextlib.suppress(FileNotFoundError):  # 清掉上次异常退出的残留
+            os.unlink(staging_name, dir_fd=dirfd)
+        fd = os.open(staging_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, _ARTIFACT_MODE, dir_fd=dirfd)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        return staging_name
+
+    @staticmethod
+    def _read_text_at(dirfd: int, filename: str) -> str:
+        """经目录 fd 读文本（O_NOFOLLOW，staging 校验与切换后核验用）。"""
+        fd = os.open(filename, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dirfd)
+        with os.fdopen(fd, "r", encoding="utf-8") as fh:
+            return fh.read()
+
+    @staticmethod
+    def _commit_at(dirfd: int, staging_name: str, filename: str) -> None:
+        """staging → 正式文件原子切换（同目录 renameat，POSIX rename 覆盖语义）。"""
+        os.rename(staging_name, filename, src_dir_fd=dirfd, dst_dir_fd=dirfd)
+
+    def write_artifact(self, relpath: str, content: str) -> Path:
+        """文件面写：staging 写入（0600）+ 读回校验 + 原子切换（父目录自动创建）。
+
+        :raises RuntimeError: 未配置 home_dir。
+        :raises ValueError: 路径非法（绝对路径 / ``..`` / 符号链接段）。
+        """
+        rel = self._validate_rel(relpath)
+        dirfd = self._open_dir_in_home(rel.parts[:-1])
+        try:
+            staging_name = self._write_staging_at(dirfd, rel.name, content)
+            try:
+                if self._read_text_at(dirfd, staging_name) != content:
+                    raise RuntimeError(f"staging 读回校验失败: {relpath}")
+                self._commit_at(dirfd, staging_name, rel.name)
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    os.unlink(staging_name, dir_fd=dirfd)
+                raise
+        finally:
+            os.close(dirfd)
+        return Path(self.home_dir) / rel  # type: ignore[arg-type]  # home_dir 已在 _open_dir_in_home 校验非空
 
     def write_soul(self, content: str) -> Path:
         """文件面写：人设内容写入 ``soul_filename``（``write_artifact`` 的别名）。"""
@@ -183,23 +264,54 @@ class CrawSyncer:
 
     # ---------- 周期 ----------
 
+    def _sync_artifacts(self, result: CrawSyncResult) -> None:
+        """产物集两阶段同步：staging 全量写入并校验 → 逐个原子切换 → 终态核验。
+
+        阶段一任一产物失败（路径非法 / 写失败 / staging 校验不一致）时正式
+        文件**零改动**，不会出现「新 SOUL + 旧 agent-config」的混合版本。
+        """
+        artifacts = self.collect_artifacts()
+        if not artifacts:
+            return
+        # entry: [relpath, 文件名, dirfd, staging 名（未写成功前为 None）, content]
+        staged: "list[list]" = []
+        try:
+            # 阶段一：全部产物写 staging（0600）并读回校验
+            for relpath, content in artifacts.items():
+                rel = self._validate_rel(relpath)
+                dirfd = self._open_dir_in_home(rel.parts[:-1])
+                entry: list = [relpath, rel.name, dirfd, None, content]
+                staged.append(entry)
+                entry[3] = self._write_staging_at(dirfd, rel.name, content)
+                if self._read_text_at(dirfd, entry[3]) != content:
+                    raise RuntimeError(f"staging 读回校验失败: {relpath}")
+            # 阶段二：全部通过后逐个原子切换（同目录 rename）
+            for entry in staged:
+                relpath, filename, dirfd, staging_name, content = entry
+                self._commit_at(dirfd, staging_name, filename)
+                entry[3] = None  # 已切换，staging 名失效，清理阶段跳过
+                result.artifacts_written[relpath] = len(content.encode("utf-8"))
+        finally:
+            for _, _, dirfd, staging_name, _ in staged:
+                if staging_name:
+                    with contextlib.suppress(OSError):
+                        os.unlink(staging_name, dir_fd=dirfd)
+                os.close(dirfd)
+        # 切换后终态核验（捕获并发篡改；读回不一致进失败态）
+        failed = [relpath for relpath, content in artifacts.items() if self.read_file(relpath) != content]
+        result.artifacts_failed = failed
+        result.artifacts_verified = not failed
+        if failed:
+            # 读回校验失败必须进入失败状态，不能把损坏配置当成功
+            result.error = f"产物读回校验失败: {', '.join(failed)}"
+
     def run_cycle(self) -> CrawSyncResult:
-        """执行一个同步周期：read（health）→ write（产物集）→ 逐个读回校验。"""
-        result = CrawSyncResult(backend=self.backend.name, started_at=time.time())
+        """执行一个同步周期：read（health）→ write（产物集两阶段事务）→ 读回核验。"""
+        result = CrawSyncResult(backend=self.backend.name, started_at=time.time(), soul_filename=self.soul_filename)
         try:
             result.health = self.read_status()
             if self.home_dir:
-                failed: "list[str]" = []
-                for relpath, content in self.collect_artifacts().items():
-                    self.write_artifact(relpath, content)
-                    result.artifacts_written[relpath] = len(content.encode("utf-8"))
-                    if self.read_file(relpath) != content:
-                        failed.append(relpath)
-                result.artifacts_failed = failed
-                result.artifacts_verified = not failed
-                if failed:
-                    # 读回校验失败必须进入失败状态，不能把损坏配置当成功
-                    result.error = f"产物读回校验失败: {', '.join(failed)}"
+                self._sync_artifacts(result)
         except Exception as exc:
             _logger.exception("[CRAW-SYNC] cycle failed: %s", exc)
             result.error = str(exc)
