@@ -1,14 +1,44 @@
 # -*- coding: utf-8 -*-
-"""CrawCompletionAgent：消息装配 / 非流式 / 流式事件翻译 / 身份 fail-closed（后端打桩，无真实 HTTP）。"""
+"""CrawCompletionAgent：消息装配 / 非流式 / 流式事件翻译 / 身份 fail-closed / 取消中断（后端打桩，无真实 HTTP）。"""
 
 import json
 
 import pytest
 
 from aidev_agent.enums import AgentType
-from aidev_agent.packages.craw import CrawCompletionAgent, CrawIdentityError, OpenClawBackend
+from aidev_agent.packages.craw import (
+    CrawCompletionAgent,
+    CrawIdentityError,
+    CrawStreamProtocolError,
+    CrawUpstreamError,
+    OpenClawBackend,
+)
 from aidev_agent.packages.craw.agent import build_openai_messages
 from aidev_agent.services.agent.registry import AgentBuildContext
+from aidev_agent.utils.event import RunId
+
+
+class _FakeStream:
+    """打桩流句柄：与 ``CrawChatStream`` 同语义（close 后迭代静默结束）。"""
+
+    def __init__(self, chunks):
+        self.chunks = list(chunks)
+        self.closed = False
+        self._finished = False
+
+    @property
+    def interrupted(self):
+        return self.closed and not self._finished
+
+    def close(self):
+        self.closed = True
+
+    def __iter__(self):
+        for chunk in self.chunks:
+            if self.closed:
+                return
+            yield chunk
+        self._finished = True
 
 
 class _StubBackend(OpenClawBackend):
@@ -19,10 +49,13 @@ class _StubBackend(OpenClawBackend):
         self.chunks = chunks or []
         self.body = body or {}
         self.calls = []
+        self.streams = []
 
-    def chat_completions_stream(self, messages, identity=None, session_code=None):
+    def open_chat_stream(self, messages, identity=None, session_code=None):
         self.calls.append({"messages": messages, "identity": identity, "session_code": session_code})
-        yield from self.chunks
+        stream = _FakeStream(self.chunks)
+        self.streams.append(stream)
+        return stream
 
     def chat_completions(self, messages, identity=None, session_code=None):
         self.calls.append({"messages": messages, "identity": identity, "session_code": session_code})
@@ -45,12 +78,18 @@ class _StubResourceManager:
 _DEFAULT_RM = object()
 
 
-def _build_agent(backend, session_context=None, resource_manager=_DEFAULT_RM, agent_cls=CrawCompletionAgent):
+def _build_agent(
+    backend,
+    session_context=None,
+    resource_manager=_DEFAULT_RM,
+    agent_cls=CrawCompletionAgent,
+    session_code="sess-1",
+):
     ctx = AgentBuildContext(
         agent_code="demo-agent",
         agent_type=AgentType.CHAT,
         resource_manager=_StubResourceManager() if resource_manager is _DEFAULT_RM else resource_manager,
-        session_code="sess-1",
+        session_code=session_code,
         username="demo-user",
         session_context_data=session_context or [{"role": "user", "content": "hi"}],
     )
@@ -100,9 +139,8 @@ class TestCrawCompletionAgent:
 
     def test_stream_upstream_error_emits_run_error(self):
         class _BoomBackend(_StubBackend):
-            def chat_completions_stream(self, messages, identity=None, session_code=None):
+            def open_chat_stream(self, messages, identity=None, session_code=None):
                 raise RuntimeError("boom")
-                yield  # pragma: no cover
 
         events = []
         agent = _build_agent(_BoomBackend())
@@ -114,6 +152,89 @@ class TestCrawCompletionAgent:
     def test_iter_sse_chunks_stops_at_done(self):
         lines = ["data: " + json.dumps({"choices": []}), "data: [DONE]", 'data: {"x":1}']
         assert len(list(OpenClawBackend.iter_sse_chunks(iter(lines)))) == 1
+
+
+class TestRunErrorSanitized:
+    """RUN_ERROR 只给脱敏消息：上游响应详情 / 异常细节留服务端日志，不出客户端。"""
+
+    def _run_and_get_error(self, backend):
+        events = []
+        agent = _build_agent(backend)
+        agent.event_handler = events.append
+        list(agent._run_stream())
+        errors = [e for e in events if e.type.value == "RUN_ERROR"]
+        assert len(errors) == 1
+        return errors[0].message
+
+    def test_upstream_error_detail_not_in_client_message(self):
+        class _UpstreamBoom(_StubBackend):
+            def open_chat_stream(self, messages, identity=None, session_code=None):
+                raise CrawUpstreamError("openclaw", 502, "<html>internal error page secret-detail</html>")
+
+        message = self._run_and_get_error(_UpstreamBoom())
+        assert message == "craw backend openclaw upstream 502"
+        assert "secret-detail" not in message
+
+    def test_stream_protocol_error_detail_not_in_client_message(self):
+        class _ProtocolBoom(_StubBackend):
+            def open_chat_stream(self, messages, identity=None, session_code=None):
+                raise CrawStreamProtocolError("openclaw", "SSE data 行不是合法 JSON: 'secret-fragment'")
+
+        message = self._run_and_get_error(_ProtocolBoom())
+        assert "secret-fragment" not in message
+
+    def test_generic_error_only_exposes_type_name(self):
+        class _GenericBoom(_StubBackend):
+            def open_chat_stream(self, messages, identity=None, session_code=None):
+                raise RuntimeError("secret internal state dump")
+
+        message = self._run_and_get_error(_GenericBoom())
+        assert "secret" not in message
+        assert "RuntimeError" in message
+
+
+class TestStopInterruptsStream:
+    """stop() 主动关闭本进程活跃流：阻塞中的上游读立即中断，走取消收尾。"""
+
+    def test_mid_stream_close_ends_with_cancelled_finish(self):
+        chunks = [{"choices": [{"delta": {"content": piece}}]} for piece in ("a", "b", "c")]
+        events = []
+        agent = _build_agent(_StubBackend(chunks=chunks), session_code="sess-close-mid")
+        agent.event_handler = events.append
+        gen = agent._run_stream()
+        # 消费到首个文本增量后模拟 stop：关闭该会话的活跃流句柄
+        while not any(e.type.value == "TEXT_MESSAGE_CONTENT" for e in events):
+            next(gen)
+        CrawCompletionAgent._close_streams("sess-close-mid")
+        list(gen)
+        types = [e.type.value for e in events]
+        finished = [e for e in events if e.type.value == "RUN_FINISHED"]
+        assert types[-2:] == ["TEXT_MESSAGE_END", "RUN_FINISHED"]
+        assert finished[-1].run_id == RunId.CANCELLED
+        assert "RUN_ERROR" not in types  # 取消不是错误
+
+    def test_stop_closes_tracked_stream_and_sets_cancel(self, monkeypatch):
+        from aidev_agent.packages.craw import agent as agent_module
+
+        cancelled = []
+        monkeypatch.setattr(
+            agent_module.GeneratorStreamingHelper, "cancel", classmethod(lambda cls, key: cancelled.append(key))
+        )
+        stream = _FakeStream([])
+        CrawCompletionAgent._track_stream("sess-stop-1", stream)
+        try:
+            agent = _build_agent(_StubBackend(), session_code="sess-stop-1")
+            agent.stop()
+        finally:
+            CrawCompletionAgent._untrack_stream("sess-stop-1", stream)
+        assert cancelled == ["sess-stop-1"]
+        assert stream.closed is True
+
+    def test_stream_untracked_after_run(self):
+        chunks = [{"choices": [{"delta": {"content": "x"}}]}]
+        agent = _build_agent(_StubBackend(chunks=chunks), session_code="sess-untrack")
+        list(agent._run_stream())
+        assert "sess-untrack" not in CrawCompletionAgent._active_streams
 
 
 class TestIdentityFailClosed:

@@ -16,7 +16,7 @@ services:
       - BKAI_HERMES_MODE=ci # entrypoint 走 exec "$@"（staging 后直跑下方 command）
       - BKAI_AIDEV_API_KEY=${BKAI_ACCESS_TOKEN:?agent.env 需提供 BKAI_ACCESS_TOKEN}
       - API_SERVER_ENABLED=true
-      - API_SERVER_KEY=${HERMES_API_SERVER_KEY:-craw-local-sim}
+      - API_SERVER_KEY=${HERMES_API_SERVER_KEY:?agent.env 需提供 HERMES_API_SERVER_KEY（api_server 鉴权 key，自行生成随机值）}
       - API_SERVER_PORT=8642
       # 0.0.0.0 才能被宿主机经映射端口直连（hermes 强制要求配 KEY，上面已配）；
       # 容器内 loopback 调用不受影响
@@ -26,8 +26,9 @@ services:
       - FAKE_MCP_ACCESS_TOKEN=${FAKE_MCP_ACCESS_TOKEN:-}
     command: ["hermes", "gateway"]
     ports:
-      - "${HERMES_PORT_HOST:-8642}:8642" # 宿主机可直连 api_server 裸 API
-      - "${POOL_PORT_HOST:-8788}:8788" # bkai-cli 池模式反代（Token 隔离实测）
+      # 只绑宿主 loopback：本地模拟不对外网卡暴露带凭据服务
+      - "127.0.0.1:${HERMES_PORT_HOST:-8642}:8642" # 宿主机可直连 api_server 裸 API
+      - "127.0.0.1:${POOL_PORT_HOST:-8788}:8788" # bkai-cli 池模式反代（Token 隔离实测）
     volumes:
       - craw-home:/craw-home
       # 本机 bkai-cli 仓（池模式反代 + mcp egress）；仅 Token 隔离实测需真实路径，
@@ -53,12 +54,13 @@ services:
       - MESSAGE_HANDLER_TYPE=inmemory
       - BKAI_CRAW_BACKEND=hermes
       - BKAI_CRAW_API_URL=http://127.0.0.1:8642
-      - BKAI_CRAW_API_KEY=${HERMES_API_SERVER_KEY:-craw-local-sim}
+      - BKAI_CRAW_API_KEY=${HERMES_API_SERVER_KEY:?agent.env 需提供 HERMES_API_SERVER_KEY}
       - BKAI_CRAW_HOME=/craw-home
       - BKAI_CRAW_SYNC_INTERVAL=${BKAI_CRAW_SYNC_INTERVAL:-5}
       - APP_CODE=${APP_CODE:-}
       - APP_SECRET=${APP_SECRET:-}
-      - BKAI_ACCESS_TOKEN=${BKAI_ACCESS_TOKEN:-}
+      # 场景脚本经 EnvTokenResourceManager 取用户 token（fail-closed：缺失即 build 报错）
+      - BKAI_ACCESS_TOKEN=${BKAI_ACCESS_TOKEN:?agent.env 需提供 BKAI_ACCESS_TOKEN}
     volumes:
       - ../..:/sdk-src
       - craw-home:/craw-home
