@@ -146,7 +146,7 @@ class KnowledgeSettings(BaseModel):
     # --- 召回参数 ---
     knowledge_resource_fine_grained_score_type: FineGrainedScoreType = Field(
         default=FineGrainedScoreType(os.getenv("KNOWLEDGE_FINE_GRAINED_SCORE_TYPE", "LLM")),
-        description="相关性判断模型",
+        description="相关性判断方式；ORIGINAL 表示跳过细粒度评分、拒答阈值和二次排序",
     )
     knowledge_resource_reject_threshold: Tuple[float, float] = Field(
         default=(
@@ -265,6 +265,25 @@ class KnowledgeSettings(BaseModel):
         default=os.getenv("ENABLE_AGENTIC_RAG_TOOL", "false").lower() == "true",
         description="控制是否开启知识库召回工具",
     )
+
+    @model_validator(mode="after")
+    def validate_embedding_score_channels(self):
+        """EMBEDDING 分数仅适用于 dense 召回。"""
+        if self.knowledge_resource_fine_grained_score_type != FineGrainedScoreType.EMBEDDING:
+            return self
+
+        if self.recall_channels is None:
+            self.recall_channels = ["dense"]
+            return self
+
+        channels = list(dict.fromkeys(self.recall_channels))
+        if channels != ["dense"]:
+            raise ValueError(
+                "EMBEDDING 细粒度评分仅支持 recall_channels=['dense']；"
+                f"当前为 {channels!r}，混合或 sparse 召回请改用 LLM/EXCLUSIVE_SIMILARITY_MODEL/ORIGINAL"
+            )
+        self.recall_channels = channels
+        return self
 
 
 class IntentRecognition(BaseModel):

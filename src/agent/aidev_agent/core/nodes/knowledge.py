@@ -29,7 +29,7 @@ from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
 
 from aidev_agent.core.ag_ui.types import ActivityMessage, CustomMessageType
-from aidev_agent.enums import ActivityType
+from aidev_agent.enums import ActivityType, FineGrainedScoreType
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.packages.langchain_core.retrievers.kb_rag import KnowledgeRag, KnowledgeRagRetrieveResult
 from aidev_agent.packages.langchain_core.retrievers.utils import (
@@ -61,7 +61,7 @@ class AidevKnowledgeOutputState(KnowledgeRagRetrieveResult):
 
 
 def filter_and_select_topk(
-    docs: list, score_threshold: float | None = None, topk: int = 20, sort_key: str = "fine_grained_score"
+    docs: list, score_threshold: float | None = None, topk: int = 20, sort_key: str | None = "fine_grained_score"
 ) -> list:
     """
     根据分数阈值过滤并选择 topk 文档。
@@ -71,9 +71,7 @@ def filter_and_select_topk(
         docs: 召回的文档列表，每个文档包含 metadata.fine_grained_score
         score_threshold: 分数阈值，低于此阈值的文档将被过滤，None 表示不过滤
         topk: 返回的最大文档数量
-        sort_key: 展示排序使用的分数字段；EMBEDDING（保留原始顺序）传 ``rrf_score`` 以尊重
-            资源侧多路 RRF 融合顺序，缺失时回退 ``fine_grained_score``，无回归。
-            过滤阈值仍固定用 ``fine_grained_score``，不受此参数影响。
+        sort_key: 展示排序使用的分数字段；``None`` 表示保留召回顺序。
 
     Returns:
         过滤并排序后的 topk 文档列表
@@ -83,6 +81,9 @@ def filter_and_select_topk(
 
     if score_threshold is not None:
         docs = [doc for doc in docs if doc.get("metadata", {}).get("fine_grained_score", 0) >= score_threshold]
+
+    if sort_key is None:
+        return docs[:topk]
 
     def _score(doc):
         metadata = doc.get("metadata", {})
@@ -308,7 +309,12 @@ class AidevKnowledgeNode(BaseKnowledgeNode):
         ret = cast(AidevKnowledgeOutputState, ret)
         ret["retrieved_docs"] = filter_and_select_topk(
             knowledge_resources_emb_recalled,
-            self.score_threshold,
+            (
+                None
+                if self.knowledge_query_options.knowledge_resource_fine_grained_score_type
+                == FineGrainedScoreType.ORIGINAL
+                else self.score_threshold
+            ),
             self.topk,
             sort_key=resolve_display_sort_key(self.knowledge_query_options.knowledge_resource_fine_grained_score_type),
         )

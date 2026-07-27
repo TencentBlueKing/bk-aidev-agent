@@ -64,13 +64,13 @@ class KnowledgeRagRetrieveResult(TypedDict):
         - knowledge_resources_highly_relevant: 高相关性资源
         - knowledge_resources_moderately_relevant: 中等相关性资源
         - knowledge_resources_lowly_relevant: 低相关性资源
-        - knowledge_resources_emb_recalled: 所有 embedding 召回的资源（含细粒度分数），用于 AIDev 产品页面检索测试
+        - knowledge_resources_emb_recalled: 所有粗召回资源（非 ORIGINAL 时含细粒度分数），用于 AIDev 产品页面检索测试
 
     其中：knowledge_content 和 knowledge_qa_content 会被用于后续 Model 节点的 prompt_var 拼接
     其中：decision 和 with_qa_response 用于 后续 Model 选择模板
     其中：reference_doc 用于给 invoke 提供返回知识库召回了哪些文档
     其中：knowledge_resources_highly_relevant，knowledge_resources_moderately_relevant， knowledge_resources_lowly_relevant 用于审计返回知识相关性
-    其中：knowledge_resources_emb_recalled 用于 AIDev 产品页面检索测试，返回所有召回资源（带细粒度分数）
+    其中：knowledge_resources_emb_recalled 用于 AIDev 产品页面检索测试，返回所有粗召回资源
     """
 
     decision: Decision
@@ -512,8 +512,12 @@ class KnowledgeRag:
             )
             fine_grained_scores = [float(fine_grained_score) for fine_grained_score in fine_grained_scores]
         elif fine_grained_score_type == FineGrainedScoreType.EMBEDDING:
-            # 直接使用emb分数作为最终的细粒度相似度分数
-            fine_grained_scores = [float(emb_score) for _, emb_score in context_docs_with_scores]
+            # EMBEDDING 只复用 dense 召回分；RRF/BM25/scalar 分数不能作为 embedding 拒答依据。
+            fine_grained_scores = [
+                self._get_dense_embedding_score(doc, fallback_score) for doc, fallback_score in context_docs_with_scores
+            ]
+        elif fine_grained_score_type == FineGrainedScoreType.ORIGINAL:
+            raise ValueError("ORIGINAL 模式不计算细粒度分数，应直接保留粗召回结果")
         else:
             raise ValueError(
                 f"当前仅支持以下计算细粒度相关分数的方式：{[score_type for score_type in FineGrainedScoreType]}，"
@@ -521,6 +525,21 @@ class KnowledgeRag:
             )
 
         return fine_grained_scores
+
+    @staticmethod
+    def _get_dense_embedding_score(doc: Document, fallback_score: float) -> float:
+        """读取 dense 原始分，兼容尚未提供显式 ``dense_score`` 的纯 dense 旧数据。"""
+        metadata = doc.metadata
+        retrieval_source = metadata.get("retrieval_source") or metadata.get("retrieval_weight_key")
+        if retrieval_source not in (None, "dense", "vector", "fulltext"):
+            raise ValueError(f"EMBEDDING 细粒度评分仅支持 dense 召回文档，但收到 retrieval_source={retrieval_source!r}")
+
+        dense_score = metadata.get("dense_score")
+        if dense_score is None:
+            dense_score = metadata.get("retrieval_score", fallback_score)
+        dense_score = float(dense_score)
+        metadata["dense_score"] = dense_score
+        return dense_score
 
     def separate_docs_by_scores(self, context_docs_with_scores, fine_grained_scores, reject_threshold):
         """
@@ -935,26 +954,34 @@ class KnowledgeRag:
             (Document(**item), item.get("metadata", {}).get("__score__", 0.0)) for item in fusion_docs
         ]
 
-        fine_grained_scores = self.calculate_fine_grained_scores(
-            knowledge_query_options.knowledge_resource_fine_grained_score_type,
-            query_for_search,
-            llm,
-            context_docs_with_scores,
-            knowledge_query_options,
-            **kwargs,
-        )
+        if knowledge_query_options.knowledge_resource_fine_grained_score_type == FineGrainedScoreType.ORIGINAL:
+            knowledge_resources_emb_recalled = [
+                copy.deepcopy(context_doc.dict()) for context_doc, _ in context_docs_with_scores
+            ]
+            knowledge_resources_lowly_relevant = []
+            knowledge_resources_moderately_relevant = []
+            knowledge_resources_highly_relevant = knowledge_resources_emb_recalled
+        else:
+            fine_grained_scores = self.calculate_fine_grained_scores(
+                knowledge_query_options.knowledge_resource_fine_grained_score_type,
+                query_for_search,
+                llm,
+                context_docs_with_scores,
+                knowledge_query_options,
+                **kwargs,
+            )
 
-        # 根据分数分类文档
-        (
-            knowledge_resources_emb_recalled,
-            knowledge_resources_lowly_relevant,
-            knowledge_resources_moderately_relevant,
-            knowledge_resources_highly_relevant,
-        ) = self.separate_docs_by_scores(
-            context_docs_with_scores,
-            fine_grained_scores,
-            knowledge_query_options.knowledge_resource_reject_threshold,
-        )
+            # 根据分数分类文档
+            (
+                knowledge_resources_emb_recalled,
+                knowledge_resources_lowly_relevant,
+                knowledge_resources_moderately_relevant,
+                knowledge_resources_highly_relevant,
+            ) = self.separate_docs_by_scores(
+                context_docs_with_scores,
+                fine_grained_scores,
+                knowledge_query_options.knowledge_resource_reject_threshold,
+            )
 
         # 决策逻辑
         if (not knowledge_resources_emb_recalled) or (

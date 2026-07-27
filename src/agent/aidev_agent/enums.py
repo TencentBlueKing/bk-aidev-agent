@@ -29,7 +29,7 @@ class ChatContentStatus(enum.Enum):
     ERROR = "error"
     SUCCESS = "success"
     COMPLETE = "complete"
-    PENDING = "pending" #前端根据最后一条content状态为pending判断发起轮询
+    PENDING = "pending"  # 前端根据最后一条content状态为pending判断发起轮询
 
 
 class IntentStatus(enum.Enum):
@@ -49,6 +49,7 @@ class FineGrainedScoreType(enum.Enum):
     LLM = "LLM"
     EXCLUSIVE_SIMILARITY_MODEL = "EXCLUSIVE_SIMILARITY_MODEL"
     EMBEDDING = "EMBEDDING"
+    ORIGINAL = "ORIGINAL"
 
 
 class IndependentQueryMode(enum.Enum):

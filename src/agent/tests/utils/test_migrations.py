@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 import pytest
+from aidev_agent.enums import FineGrainedScoreType
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
 from aidev_agent.packages.langchain_core.models.mock import MockChatModel
 from aidev_agent.pydantic_models import AgentOptions, IntentRecognition, KnowledgebaseSettings, KnowledgeSettings
@@ -111,3 +112,15 @@ def test_legacy_knowledge_options_preserve_pure_scalar_retrieval_layers():
 
     assert migrated.recall_channels == []
     assert migrated.scalar_expression == 'eq("status","enabled")'
+
+
+def test_legacy_knowledge_options_preserve_original_score_type():
+    options = AgentOptions(
+        knowledge_query_options=KnowledgebaseSettings(
+            knowledge_resource_fine_grained_score_type=FineGrainedScoreType.ORIGINAL
+        )
+    )
+
+    migrated = migration_knowledge_query_options_from_agent_options_v1(options)
+
+    assert migrated.knowledge_resource_fine_grained_score_type == FineGrainedScoreType.ORIGINAL

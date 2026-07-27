@@ -5,6 +5,7 @@ from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from aidev_agent.core.ag_ui.types import CustomMessageType
+from aidev_agent.enums import FineGrainedScoreType
 from aidev_agent.packages.langchain_core.models.utils import is_deepseek_r1_series_models, remove_thinking_process
 from aidev_agent.packages.model_management.registry import RegistryPluginMixIn
 from aidev_agent.utils.decorator import timeit
@@ -56,19 +57,10 @@ def deduplicate_knowledge_chunks(knowledge_chunks):
     return list({item["metadata"]["uid"]: item for item in knowledge_chunks}.values())
 
 
-def resolve_display_sort_key(fine_grained_score_type) -> str:
-    """确定展示排序使用的分数字段。
-
-    - EMBEDDING（「保留原始顺序」）：按 ``rrf_score`` 排序，尊重资源侧多路 RRF 融合顺序
-      （已含 BM25 词法通道），不被各通道原始 ``fine_grained_score``（emb/bm25 量纲不一）打乱；
-    - LLM / EXCLUSIVE_SIMILARITY_MODEL：仍按 ``fine_grained_score`` 重排（这两种本就是重排语义）。
-
-    注意：拒答分级用的仍是 ``fine_grained_score``（见 ``separate_docs_by_scores``），此处只改
-    展示排序键，不影响拒答阈值判定。
-    """
-
-    if str(getattr(fine_grained_score_type, "value", fine_grained_score_type)) == "EMBEDDING":
-        return "rrf_score"
+def resolve_display_sort_key(fine_grained_score_type: FineGrainedScoreType | str) -> str | None:
+    """ORIGINAL 保留粗召回/RRF 顺序，其余策略按细粒度分排序。"""
+    if str(getattr(fine_grained_score_type, "value", fine_grained_score_type)) == FineGrainedScoreType.ORIGINAL.value:
+        return None
     return "fine_grained_score"
 
 
@@ -80,21 +72,25 @@ def _sort_score(item, sort_key: str) -> float:
     return metadata.get("fine_grained_score", 0) or 0
 
 
-def deduplicate_knowledge_file_paths(knowledge_chunks, sort_key: str = "fine_grained_score"):
+def deduplicate_knowledge_file_paths(knowledge_chunks, sort_key: str | None = "fine_grained_score"):
     """按照 file path 进行去重，且只保留 metadata，且按照指定分数（默认 fine_grained_score）降序排序"""
     unique_items = list(
         {item["metadata"]["file_path"]: {"metadata": item["metadata"]} for item in knowledge_chunks}.values()
     )
+    if sort_key is None:
+        return unique_items
     return sorted(unique_items, key=lambda x: _sort_score(x, sort_key), reverse=True)
 
 
-def filter_and_select_topk(items, score_threshold, topk, sort_key: str = "fine_grained_score"):
+def filter_and_select_topk(items, score_threshold, topk, sort_key: str | None = "fine_grained_score"):
     if score_threshold:
         filtered_items = [
             item for item in items if item.get("metadata", {}).get("fine_grained_score", 0) >= score_threshold
         ]
     else:
         filtered_items = items
+    if sort_key is None:
+        return filtered_items[:topk]
     sorted_items = sorted(filtered_items, key=lambda x: _sort_score(x, sort_key), reverse=True)
     return sorted_items[:topk]
 

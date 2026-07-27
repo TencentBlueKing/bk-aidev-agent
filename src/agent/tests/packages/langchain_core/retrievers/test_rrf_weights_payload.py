@@ -1,4 +1,5 @@
 import pytest
+from aidev_agent.enums import FineGrainedScoreType
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.pydantic_models import KnowledgeSettings
 
@@ -92,3 +93,22 @@ def test_index_specific_search_omits_channels_when_not_configured(monkeypatch):
 
     assert "recall_channels" not in captured_payload
     assert "scalar" not in captured_payload
+
+
+def test_index_specific_search_forces_dense_channel_for_embedding(monkeypatch):
+    captured_payload = {}
+    monkeypatch.setattr(
+        BkRetriever, "_search_knowledge_by_client", lambda _self, data: captured_payload.update(data) or []
+    )
+
+    BkRetriever().search_knowledge_index_specific(
+        knowledge_items=[],
+        knowledge_bases=[],
+        query="legacy",
+        topk=5,
+        knowledge_query_options=KnowledgeSettings(
+            knowledge_resource_fine_grained_score_type=FineGrainedScoreType.EMBEDDING
+        ),
+    )
+
+    assert captured_payload["recall_channels"] == ["dense"]

@@ -6,11 +6,6 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from langchain_core.messages import HumanMessage
-from langgraph.graph import END, START, StateGraph
-from langgraph.store.memory import InMemoryStore
-from typing_extensions import TypedDict
-
 from aidev_agent.core.nodes.knowledge import (
     AgentKnowledgeNode,
     AidevKnowledgeNode,
@@ -18,8 +13,12 @@ from aidev_agent.core.nodes.knowledge import (
     filter_and_select_topk,
     make_knowledge_node,
 )
-from aidev_agent.enums import Decision
+from aidev_agent.enums import Decision, FineGrainedScoreType
 from aidev_agent.pydantic_models import AgentOptions, KnowledgebaseSettings, KnowledgeSettings
+from langchain_core.messages import HumanMessage
+from langgraph.graph import END, START, StateGraph
+from langgraph.store.memory import InMemoryStore
+from typing_extensions import TypedDict
 
 # ============================================================================
 # 测试状态定义
@@ -391,6 +390,27 @@ class TestAidevKnowledgeNode:
 
         # 验证只返回 topk 个文档
         assert len(result["retrieved_docs"]) == 2
+
+    @patch("aidev_agent.core.nodes.knowledge.KnowledgeRag")
+    def test_call_original_skips_score_threshold_and_preserves_order(self, mock_rag_class, mock_llm):
+        recalled = [
+            {"metadata": {"uid": "first"}},
+            {"metadata": {"uid": "second", "fine_grained_score": 0.01}},
+        ]
+        mock_rag_instance = MagicMock()
+        mock_rag_instance.retrieve.return_value = create_mock_retrieve_result(knowledge_resources_emb_recalled=recalled)
+        mock_rag_class.return_value = mock_rag_instance
+        settings = KnowledgeSettings(knowledge_resource_fine_grained_score_type=FineGrainedScoreType.ORIGINAL)
+
+        node = AidevKnowledgeNode(
+            llm=mock_llm,
+            knowledge_query_options=settings,
+            score_threshold=0.99,
+            topk=10,
+        )
+        result = run_knowledge_node_in_graph(node, {"query": "test query"})
+
+        assert [doc["metadata"]["uid"] for doc in result["retrieved_docs"]] == ["first", "second"]
 
     @patch("aidev_agent.core.nodes.knowledge.KnowledgeRag")
     def test_get_query_priority(self, mock_rag_class, mock_llm, mock_knowledge_settings):

@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+from aidev_agent.enums import FineGrainedScoreType
 from aidev_agent.pydantic_models import (
     AgentExecutorKwargs,
     AgentOptions,
@@ -7,9 +9,11 @@ from aidev_agent.pydantic_models import (
     ExecuteKwargs,
     IntentRecognition,
     KnowledgebaseSettings,
+    KnowledgeSettings,
     SessionContentExtra,
 )
 from aidev_agent.services.common_agent import CommonQAAgent
+from pydantic import ValidationError
 
 
 def test_chat_prompt():
@@ -29,6 +33,32 @@ def test_legacy_agent_options_allow_extra_fields():
     assert options.intent_recognition_options.model_extra["agent_type"] == "deepseek_r1"
     assert options.knowledge_query_options.model_extra["document_fragment_count"] == 3
     assert KnowledgebaseSettings().rejection_message
+
+
+def test_embedding_score_defaults_to_dense_recall():
+    settings = KnowledgeSettings(knowledge_resource_fine_grained_score_type=FineGrainedScoreType.EMBEDDING)
+
+    assert settings.recall_channels == ["dense"]
+
+
+@pytest.mark.parametrize("recall_channels", [None, [], ["sparse"], ["dense", "sparse"]])
+def test_original_score_type_accepts_all_recall_channels(recall_channels):
+    settings = KnowledgeSettings(
+        knowledge_resource_fine_grained_score_type=FineGrainedScoreType.ORIGINAL,
+        recall_channels=recall_channels,
+    )
+
+    assert settings.knowledge_resource_fine_grained_score_type == FineGrainedScoreType.ORIGINAL
+    assert settings.recall_channels == recall_channels
+
+
+@pytest.mark.parametrize("recall_channels", [[], ["sparse"], ["dense", "sparse"]])
+def test_embedding_score_rejects_non_dense_recall(recall_channels):
+    with pytest.raises(ValidationError, match="仅支持 recall_channels"):
+        KnowledgeSettings(
+            knowledge_resource_fine_grained_score_type=FineGrainedScoreType.EMBEDDING,
+            recall_channels=recall_channels,
+        )
 
 
 class TestAgentExecutorKwargs:

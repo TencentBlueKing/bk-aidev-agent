@@ -19,11 +19,10 @@ to the current version of the project delivered to anyone in the future.
 from unittest.mock import MagicMock, patch
 
 import pytest
-from langchain_core.documents import Document
-
 from aidev_agent.enums import Decision, FineGrainedScoreType
 from aidev_agent.packages.langchain_core.retrievers.kb_rag import KnowledgeRag
 from aidev_agent.pydantic_models import KnowledgeSettings
+from langchain_core.documents import Document
 
 
 def create_mock_llm_response(content: str):
@@ -53,6 +52,18 @@ def create_multimodal_query(text: str = "蓝鲸是什么") -> list[dict]:
         {"type": "image_url", "image_url": {"url": "https://example.com/test.png"}},
         {"type": "text", "text": text},
     ]
+
+
+def create_retrieval_doc(uid: str, score: float) -> dict:
+    return {
+        "page_content": uid,
+        "metadata": {
+            "uid": uid,
+            "file_path": f"{uid}.md",
+            "knowledge_base_id": 1,
+            "__score__": score,
+        },
+    }
 
 
 class TestKnowledgeRag:
@@ -350,13 +361,15 @@ class TestKnowledgeRag:
 
     @patch("aidev_agent.packages.langchain_core.retrievers.kb_rag.calculate_similarity")
     def test_calculate_fine_grained_scores_embedding(self, mock_calculate_similarity):
-        """测试 calculate_fine_grained_scores 方法 - EMBEDDING 类型"""
+        """EMBEDDING 使用 dense 原始分，而不是 RRF 融合分。"""
         mock_llm = MagicMock()
         rag = KnowledgeRag(llm=mock_llm)
-        knowledge_settings = create_knowledge_settings()
+        knowledge_settings = KnowledgeSettings(
+            knowledge_resource_fine_grained_score_type=FineGrainedScoreType.EMBEDDING
+        )
 
-        doc = Document(page_content="test content", metadata={})
-        context_docs_with_scores = [(doc, 0.85)]
+        doc = Document(page_content="test content", metadata={"retrieval_source": "vector", "retrieval_score": 0.85})
+        context_docs_with_scores = [(doc, 0.2)]
 
         result = rag.calculate_fine_grained_scores(
             fine_grained_score_type=FineGrainedScoreType.EMBEDDING,
@@ -368,7 +381,35 @@ class TestKnowledgeRag:
         )
 
         assert result == [0.85]
+        assert doc.metadata["dense_score"] == 0.85
         mock_calculate_similarity.assert_not_called()
+
+    def test_calculate_fine_grained_scores_embedding_rejects_sparse_score(self):
+        rag = KnowledgeRag(llm=MagicMock())
+        doc = Document(page_content="test content", metadata={"retrieval_source": "sparse"})
+
+        with pytest.raises(ValueError, match="仅支持 dense 召回文档"):
+            rag.calculate_fine_grained_scores(
+                FineGrainedScoreType.EMBEDDING,
+                "query",
+                MagicMock(),
+                [(doc, 3.981)],
+                KnowledgeSettings(knowledge_resource_fine_grained_score_type=FineGrainedScoreType.EMBEDDING),
+                input="query",
+            )
+
+    def test_calculate_fine_grained_scores_original_is_not_a_scoring_strategy(self):
+        rag = KnowledgeRag(llm=MagicMock())
+
+        with pytest.raises(ValueError, match="ORIGINAL 模式不计算细粒度分数"):
+            rag.calculate_fine_grained_scores(
+                FineGrainedScoreType.ORIGINAL,
+                "query",
+                MagicMock(),
+                [],
+                KnowledgeSettings(knowledge_resource_fine_grained_score_type=FineGrainedScoreType.ORIGINAL),
+                input="query",
+            )
 
     def test_calculate_fine_grained_scores_invalid_type(self):
         """测试 calculate_fine_grained_scores 方法 - 无效的类型"""
@@ -485,6 +526,38 @@ class TestKnowledgeRag:
 
         assert result["decision"] == Decision.GENERAL_QA
         assert mock_retriever.search_knowledge_index_specific.call_args.kwargs["query"] == "蓝鲸是什么"
+
+    @patch("aidev_agent.packages.langchain_core.retrievers.kb_rag.dispatch_rag_event_chunk")
+    def test_retrieve_original_skips_scoring_rejection_and_secondary_sort(self, _mock_dispatch):
+        mock_retriever = MagicMock()
+        mock_retriever.search_knowledge_index_specific.return_value = [
+            create_retrieval_doc("first", 0.8),
+            create_retrieval_doc("second", 0.7),
+        ]
+        rag = KnowledgeRag(llm=MagicMock(), kb_retriever=mock_retriever)
+        settings = KnowledgeSettings(
+            knowledge_items=[{"id": 1}],
+            with_index_specific_search_init=False,
+            with_rrf=False,
+            knowledge_resource_fine_grained_score_type=FineGrainedScoreType.ORIGINAL,
+            knowledge_resource_reject_threshold=(0.99, 1.0),
+        )
+
+        with (
+            patch.object(rag, "calculate_fine_grained_scores") as mock_calculate,
+            patch.object(rag, "separate_docs_by_scores") as mock_separate,
+        ):
+            result = rag.retrieve("query", settings, input="query")
+
+        mock_calculate.assert_not_called()
+        mock_separate.assert_not_called()
+        assert result["decision"] == Decision.PRIVATE_QA
+        for relevance in ("lowly", "moderately"):
+            assert not result[f"knowledge_resources_{relevance}_relevant"]
+        expected_uids = ["first", "second"]
+        assert [doc["metadata"]["uid"] for doc in result["knowledge_resources_highly_relevant"]] == expected_uids
+        assert [doc["metadata"]["uid"] for doc in result["reference_doc"]] == expected_uids
+        assert all("fine_grained_score" not in doc["metadata"] for doc in result["knowledge_resources_emb_recalled"])
 
     @patch("aidev_agent.packages.langchain_core.retrievers.kb_rag.conditional_dispatch_custom_event")
     @patch("aidev_agent.packages.langchain_core.retrievers.kb_rag.invoke_decorator")
