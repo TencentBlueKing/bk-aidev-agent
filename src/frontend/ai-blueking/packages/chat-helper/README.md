@@ -1885,13 +1885,19 @@ A: 使用 `agent.chat` 的 `url` 和 `config` 参数：
 // 使用不同的端点
 agent.chat(userInput, sessionCode, 'custom_chat/');
 
-// 添加自定义参数
+// 添加自定义请求参数（如 temperature）
 agent.chat(userInput, sessionCode, undefined, {
   data: {
     temperature: 0.8,
-    model: 'gpt-4',
   },
 });
+
+// 模型热切换：传入第 6 个参数 model（值为 llm_code，需在 GET llms/ 列表内）
+agent.chat(userInput, sessionCode, undefined, undefined, property, 'hy3-preview');
+
+// 拉取可用模型列表
+const llmList = await agent.getLlms({ llm_type: 'chat.completion' });
+// agent.models 同步更新
 ```
 
 ### Q: 消息列表如何实现自动滚动到底部？

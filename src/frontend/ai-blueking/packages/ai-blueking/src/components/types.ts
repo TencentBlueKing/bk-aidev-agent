@@ -19,8 +19,8 @@ import type {
   IShortcut,
   OnCustomTabChange,
 } from '../types';
-import type { IAgentInfo, ISession } from '@blueking/chat-helper';
-import type { IAiSlashMenuItem, ISkillListItem, IToolBtn, Message } from '@blueking/chat-x';
+import type { IAgentInfo, ILlmItem, ISession } from '@blueking/chat-helper';
+import type { IAiSlashMenuItem, IModelOption, ISkillListItem, IToolBtn, Message } from '@blueking/chat-x';
 import type { TippyOptions } from 'vue-tippy';
 
 /**
@@ -127,6 +127,16 @@ export interface ChatBotProps {
   // === 功能开关 ===
   /** 是否启用消息选择 */
   enableSelection?: boolean;
+  /**
+   * 是否启用模型选择（默认 true）
+   * 为 true 时拉取 GET llms/；列表非空才展示 ModelSelector
+   */
+  enableModelSelect?: boolean;
+  /**
+   * 外部传入的模型列表（有值时跳过内部拉取，优先使用）
+   * 结构对齐 chat-x IModelOption / chat-helper ILlmItem
+   */
+  models?: ILlmItem[] | IModelOption[];
   /** 「执行情况」Tab 是否展示，缺省 true；为 false 时从 Tab 栏隐藏（该 Tab order 固定 0 且不可关闭） */
   executionTabVisible?: boolean;
 

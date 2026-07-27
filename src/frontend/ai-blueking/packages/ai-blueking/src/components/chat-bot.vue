@@ -7,6 +7,7 @@
       ref="chatContainerRef"
       v-model:cite="cite"
       v-model:selected-shortcut="selectedShortcut"
+      v-model:selected-model="selectedModelName"
       v-model:render-mode="internalRenderMode"
       :chat-loading="effectiveChatLoading"
       :common-tippy-options="messageToolsTippyOptions"
@@ -15,6 +16,7 @@
       :message-tools-status="messageToolsStatus"
       :messages="messages"
       :model-value="userInput"
+      :models="displayModels"
       :on-agent-action="handleAgentAction"
       :on-agent-feedback="handleAgentFeedback"
       :on-interrupt-resume="handleInterruptResume"
@@ -41,6 +43,7 @@
       @collapse-change="handleExecutionPanelChange"
       @confirm-share="handleConfirmShare"
       @delete-shortcut="handleCloseShortcut"
+      @model-change="handleModelChange"
       @select-shortcut="handleSelectShortcut"
       @shortcut-close="handleCloseShortcut"
       @shortcut-submit="handleShortcutSubmit"
@@ -83,7 +86,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, nextTick, ref, shallowRef, useSlots } from 'vue';
+  import { computed, nextTick, ref, shallowRef, useSlots, watch } from 'vue';
 
   import { ChatContainer, ChatInput, MessageRender } from '@blueking/chat-x';
   import { RenderMode } from '@blueking/chat-x';
@@ -101,10 +104,11 @@
   import type { IShortcut } from '../manager/business/types';
   import type { IChatHelper, IRequestOptions } from '../types';
   import type { ChatBotEmits, ChatBotExpose, ChatBotProps } from './types';
-  import type { ISupportUpload } from '@blueking/chat-helper';
+  import type { ILlmItem, ISupportUpload } from '@blueking/chat-helper';
   import type {
     CustomBkFlowTab,
     IAiSlashMenuItem,
+    IModelOption,
     Message,
     MessageToolsStatus,
     OnInterruptResume,
@@ -115,11 +119,13 @@
     chatHelper: undefined,
     url: '',
     enableSelection: false,
+    enableModelSelect: true,
     shareLoading: false,
     autoLoad: true,
     useAgentName: false,
     shortcuts: () => [],
     resources: () => [],
+    models: undefined,
     renderMode: RenderMode.Chat,
     placement: 'left',
   });
@@ -270,6 +276,39 @@
     if (!props.useAgentName) return undefined;
     return chatHelper.value?.agent.info.value?.agentName || undefined;
   });
+
+  // 模型选择：仅在启用且列表非空时传给 ChatContainer（空列表不展示 ModelSelector）
+  const displayModels = computed(() => {
+    if (props.enableModelSelect === false) {
+      return undefined;
+    }
+    const list = chatBusinessManager.value?.models.value ?? [];
+    return list.length > 0 ? (list as IModelOption[]) : undefined;
+  });
+
+  const selectedModelName = computed({
+    get: () => chatBusinessManager.value?.selectedModelName.value ?? '',
+    set: (name: string) => {
+      chatBusinessManager.value?.setSelectedModelByName(name);
+    },
+  });
+
+  const handleModelChange = (model: IModelOption) => {
+    chatBusinessManager.value?.setSelectedModel(model as ILlmItem);
+  };
+
+  // 外部 models 变更时同步到 manager（初始化后）
+  watch(
+    () => props.models,
+    models => {
+      if (props.enableModelSelect === false || !chatBusinessManager.value) {
+        return;
+      }
+      if (models?.length) {
+        chatBusinessManager.value.setModels(models as ILlmItem[]);
+      }
+    },
+  );
 
   // 6. 分享确认（选择模式 UI 由 ChatContainer 内部管理）
   const { handleConfirmShare } = useShareSelection({

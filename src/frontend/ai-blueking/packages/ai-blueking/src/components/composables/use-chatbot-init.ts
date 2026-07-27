@@ -222,10 +222,22 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
 
     try {
       if (isStandaloneMode.value) {
-        await runAgentBootstrap(newHelper);
+        await runAgentBootstrap(newHelper, {
+          enableModelSelect: props.enableModelSelect !== false && !props.models?.length,
+        });
         assertGeneration(currentGen);
 
         await sessionMgr.loadRecentSession({ skipLoadSessions: true });
+        assertGeneration(currentGen);
+      }
+
+      // 模型选择：外部 models 优先；否则从接口 / agent 缓存同步到 ChatBusinessManager
+      if (props.enableModelSelect !== false) {
+        if (props.models?.length) {
+          chatMgr.setModels(props.models);
+        } else {
+          await chatMgr.loadModels();
+        }
         assertGeneration(currentGen);
       }
 

@@ -41,7 +41,7 @@ import { MessageRole, MessageStatus, UserOperation } from '../message';
 import type { IRequestConfig, IRequestError, ISSEProtocol } from '../http';
 import type { IMediatorModule } from '../mediator';
 import type { IInterruptMessage, IMessageProperty, IUserMessage, IUserOperationPayload } from '../message/type';
-import type { IAgentInfo } from './type';
+import type { IAgentInfo, ILlmItem, ILlmListQuery } from './type';
 import { SessionStatus } from '../session/type';
 
 /** SSE 静默重连最大次数（退避总时长约 23s，落在后端 orphan grace ~30s 内） */
@@ -90,6 +90,8 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
   const info = ref<IAgentInfo | null>(null);
   const isInfoLoading = ref(false);
   const isChatting = ref(false);
+  const models = ref<ILlmItem[]>([]);
+  const isModelsLoading = ref(false);
   let usedProtocol: ISSEProtocol = protocol || new AGUIProtocol();
   let chatAbortController: AbortController | null = null;
   let resumeAbortController: AbortController | null = null;
@@ -109,6 +111,31 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     url?: string;
     config?: IRequestConfig;
   } | null = null;;
+
+  /**
+   * 获取可用模型列表，写入 models；失败时清空列表并抛出
+   */
+  const getLlms = (params?: ILlmListQuery, config?: IRequestConfig) => {
+    isModelsLoading.value = true;
+    const request = mediator.http?.agent.getLlms(params, config);
+    if (!request) {
+      isModelsLoading.value = false;
+      models.value = [];
+      return Promise.resolve([] as ILlmItem[]);
+    }
+    return request
+      .then((res: ILlmItem[]) => {
+        models.value = res;
+        return res;
+      })
+      ['catch']((error: unknown) => {
+        models.value = [];
+        throw error;
+      })
+      ['finally'](() => {
+        isModelsLoading.value = false;
+      });
+  };
 
   const getAgentInfo = () => {
     isInfoLoading.value = true;
@@ -612,6 +639,8 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     info.value = null;
     isInfoLoading.value = false;
     isChatting.value = false;
+    models.value = [];
+    isModelsLoading.value = false;
     activeStreamContext = null;
     reconnectAttempt = 0;
     runFinished = false;
@@ -621,6 +650,8 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     info,
     isInfoLoading,
     isChatting,
+    models,
+    isModelsLoading,
     chat,
     handleRole,
     resendMessage,
@@ -628,6 +659,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     abortChat,
     stopChat,
     getAgentInfo,
+    getLlms,
     reset,
     pollResumeSession,
     clearLongPollTimer,

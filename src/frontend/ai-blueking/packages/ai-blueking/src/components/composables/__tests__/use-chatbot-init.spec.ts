@@ -16,10 +16,13 @@ vi.mock('@blueking/chat-helper', async () => {
     useChatHelper: vi.fn().mockReturnValue({
       agent: {
         getAgentInfo: vi.fn().mockResolvedValue({}),
+        getLlms: vi.fn().mockResolvedValue([]),
         stopChat: vi.fn().mockResolvedValue(undefined),
         abortChat: vi.fn(),
         info: ref(null),
         isChatting: ref(false),
+        isModelsLoading: ref(false),
+        models: ref([]),
         chat: vi.fn().mockResolvedValue(undefined),
         resendMessage: vi.fn().mockResolvedValue(undefined),
         handleRole: vi.fn(),
@@ -68,10 +71,17 @@ vi.mock('../../../manager', async () => {
       this.isMessagesLoading = ref(false);
       this.isGenerating = ref(false);
       this.isStopLoading = ref(false);
+      this.models = ref([]);
+      this.selectedLlmCode = ref(undefined);
+      this.selectedModelName = ref('');
       this.sendMessage = vi.fn();
       this.stopGeneration = vi.fn();
       this.regenerateFromAIMessages = vi.fn();
       this.resendMessageWithProperty = vi.fn();
+      this.loadModels = vi.fn().mockResolvedValue(undefined);
+      this.setModels = vi.fn();
+      this.setSelectedModel = vi.fn();
+      this.setSelectedModelByName = vi.fn();
     }),
     SessionBusinessManager: vi.fn().mockImplementation(function (this: any) {
       this.currentSession = ref(null);

@@ -7,7 +7,7 @@
 `useChatBootstrap` 完成以下工作：
 
 1. 创建 `chatHelper` 实例（包含 agent、session、message 三大模块）
-2. 加载 Agent 配置信息
+2. 加载 Agent 配置信息（并行拉取会话列表；可选并行拉取 `GET llms/`）
 3. 初始化或恢复会话
 4. 提供响应式的初始化状态
 
@@ -116,6 +116,19 @@ useChatBootstrap({
       tenant: 'default',
     }),
   },
+});
+```
+
+### enableModelSelect
+
+- **类型**：`boolean`
+- **默认值**：`true`
+- **说明**：是否在 bootstrap 时并行拉取可用模型列表（`GET llms/`）。失败不阻断初始化；列表非空时由上层展示 ModelSelector。详见 [模型选择](/guide/core-features/model-selection)
+
+```typescript
+useChatBootstrap({
+  url: '/api/v1/agent/chat',
+  enableModelSelect: false, // 关闭模型列表拉取
 });
 ```
 

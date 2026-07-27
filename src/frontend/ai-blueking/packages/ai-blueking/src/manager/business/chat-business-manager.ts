@@ -7,14 +7,21 @@
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
  */
 
-import { type Ref, ref } from 'vue';
+import { type ComputedRef, type Ref, computed, ref, watch } from 'vue';
 
 import { MessageRole } from '@blueking/chat-helper';
 
 import { findLastUserMessageBefore } from '../../utils';
 
 import type { ChatBusinessConfig, IEventEmitter, SendMessageOptions } from './types';
-import type { IAgentModule, IMessage, IMessageModule, ISessionModule, IUserMessage } from '@blueking/chat-helper';
+import type {
+  IAgentModule,
+  ILlmItem,
+  IMessage,
+  IMessageModule,
+  ISessionModule,
+  IUserMessage,
+} from '@blueking/chat-helper';
 
 /**
  * 聊天业务管理器
@@ -22,13 +29,17 @@ import type { IAgentModule, IMessage, IMessageModule, ISessionModule, IUserMessa
  * 职责：
  * - 封装聊天流程
  * - 处理引用文本、欢迎语等小鲸特有逻辑
- * - 管理聊天状态
+ * - 管理聊天状态与模型选择
  * - 处理消息发送后的副作用（如自动重命名）
- * - 不管理数据，只编排业务流程
+ * - 不管理消息/会话列表数据，只编排业务流程
  */
 export class ChatBusinessManager {
   private _isGenerating: Ref<boolean>;
+  private _isModelsLoading: Ref<boolean>;
   private _isStopLoading: Ref<boolean>;
+  private _models: Ref<ILlmItem[]>;
+  private _selectedLlmCode: Ref<string | undefined>;
+  private _selectedModelName: ComputedRef<string>;
 
   private agentModule: IAgentModule;
   private config: ChatBusinessConfig;
@@ -36,6 +47,48 @@ export class ChatBusinessManager {
 
   private messageModule: IMessageModule;
   private sessionModule: ISessionModule | null;
+
+  /** 当前选中是否仍在可用模型列表中 */
+  private hasValidSelection(): boolean {
+    const code = this._selectedLlmCode.value;
+    return !!code && this._models.value.some(m => m.llm_code === code);
+  }
+
+  /** sessionModule 存在但 current 尚未就绪时，不落 default，避免挡住 session.model */
+  private isSessionPending(): boolean {
+    return this.sessionModule != null && this.sessionModule.current.value == null;
+  }
+
+  /**
+   * 解析选中模型（仅在无有效选中时）：
+   * 有效选中 → session.model → property.default / 首项
+   */
+  private resolveInitialSelection(): void {
+    const list = this._models.value;
+    if (list.length === 0) {
+      this._selectedLlmCode.value = undefined;
+      return;
+    }
+    if (this.hasValidSelection()) {
+      return;
+    }
+    if (this.isSessionPending()) {
+      return;
+    }
+    const sessionModel = this.sessionModule?.current.value?.model;
+    if (sessionModel && list.some(m => m.llm_code === sessionModel)) {
+      this._selectedLlmCode.value = sessionModel;
+      return;
+    }
+    const defaultModel = list.find(m => m.property?.default) ?? list[0];
+    this._selectedLlmCode.value = defaultModel?.llm_code;
+  }
+
+  /** 解析本轮 chat 使用的 llm_code；空字符串视为未选中 */
+  private resolveChatModel(override?: string): string | undefined {
+    const code = override ?? this._selectedLlmCode.value;
+    return code || undefined;
+  }
   /**
    * 自动重命名会话（当第一条消息发送成功后）
    * @param sessionCode 会话编码
@@ -86,6 +139,26 @@ export class ChatBusinessManager {
 
     this._isGenerating = ref(false);
     this._isStopLoading = ref(false);
+    this._isModelsLoading = ref(false);
+    this._models = ref<ILlmItem[]>([]);
+    this._selectedLlmCode = ref<string | undefined>(undefined);
+    this._selectedModelName = computed(() => {
+      const code = this._selectedLlmCode.value;
+      if (!code) {
+        return '';
+      }
+      return this._models.value.find(m => m.llm_code === code)?.llm_name ?? '';
+    });
+
+    // 仅在尚无有效选中时 bootstrap（session 晚于 models 就绪）；已有选中则跨 session 保持
+    if (this.sessionModule) {
+      watch(
+        () => this.sessionModule!.current.value,
+        () => {
+          this.resolveInitialSelection();
+        },
+      );
+    }
   }
   /**
    * 是否正在生成
@@ -105,11 +178,83 @@ export class ChatBusinessManager {
     return this.messageModule.isListLoading;
   }
 
+  /** 可用模型列表（供 ChatContainer ModelSelector） */
+  get models(): Ref<ILlmItem[]> {
+    return this._models;
+  }
+
+  /** 模型列表加载中 */
+  get isModelsLoading(): Ref<boolean> {
+    return this._isModelsLoading;
+  }
+
+  /** 当前选中模型的 llm_code（发送时透传） */
+  get selectedLlmCode(): Ref<string | undefined> {
+    return this._selectedLlmCode;
+  }
+
+  /** 当前选中模型的 llm_name（绑定 ChatContainer v-model:selected-model） */
+  get selectedModelName(): ComputedRef<string> {
+    return this._selectedModelName;
+  }
+
   /**
    * 暴露消息列表
    */
   get messages(): Ref<IMessage[]> {
     return this.messageModule.list;
+  }
+
+  /**
+   * 拉取可用模型列表；已有 agent.models 时复用，失败不抛出（空列表）
+   */
+  async loadModels(options: { force?: boolean } = {}): Promise<void> {
+    this._isModelsLoading.value = true;
+    try {
+      const cached = this.agentModule.models?.value;
+      if (!options.force && Array.isArray(cached) && cached.length > 0) {
+        this._models.value = [...cached];
+      } else if (typeof this.agentModule.getLlms === 'function') {
+        const list = await this.agentModule.getLlms();
+        this._models.value = Array.isArray(list) ? list : [];
+      } else {
+        this._models.value = [];
+      }
+      this.resolveInitialSelection();
+    } catch (error) {
+      console.error('[ChatBusinessManager] Failed to load models:', error);
+      this._models.value = [];
+      this._selectedLlmCode.value = undefined;
+    } finally {
+      this._isModelsLoading.value = false;
+    }
+  }
+
+  /**
+   * 使用外部传入的模型列表（跳过接口拉取）
+   */
+  setModels(models: ILlmItem[]): void {
+    this._models.value = models;
+    this.resolveInitialSelection();
+  }
+
+  /**
+   * 按展示名设置选中模型（ModelSelector v-model 为 llm_name）
+   */
+  setSelectedModelByName(llmName: string): void {
+    if (!llmName) {
+      this._selectedLlmCode.value = undefined;
+      return;
+    }
+    const found = this._models.value.find(m => m.llm_name === llmName);
+    this._selectedLlmCode.value = found?.llm_code;
+  }
+
+  /**
+   * 按模型选项设置选中（@model-change 回调）
+   */
+  setSelectedModel(model: ILlmItem | null | undefined): void {
+    this._selectedLlmCode.value = model?.llm_code;
   }
 
   /**
@@ -274,7 +419,7 @@ export class ChatBusinessManager {
 
       // chat 内部的 createAndPlusMessage 也是乐观更新，立即添加新消息
       // 同时发起流式请求
-      this.agentModule.chat(content, sessionCode, undefined, undefined, property);
+      this.agentModule.chat(content, sessionCode, undefined, undefined, property, this.resolveChatModel());
 
       // 6. 发射事件
       this.emit('chat-regenerate', { messageId });
@@ -333,7 +478,7 @@ export class ChatBusinessManager {
       const deletePromise = this.messageModule.deleteMessages(messagesToDelete);
 
       // 使用新内容和新属性发送
-      this.agentModule.chat(newContent, sessionCode, undefined, undefined, newProperty);
+      this.agentModule.chat(newContent, sessionCode, undefined, undefined, newProperty, this.resolveChatModel());
 
       // 5. 发射事件
       this.emit('chat-resend', { messageId });
@@ -400,7 +545,14 @@ export class ChatBusinessManager {
         content,
       });
 
-      await this.agentModule.chat(content, sessionCode, undefined, undefined, options.property);
+      await this.agentModule.chat(
+        content,
+        sessionCode,
+        undefined,
+        undefined,
+        options.property,
+        this.resolveChatModel(options.model),
+      );
 
       // 自动重命名：当第一条消息发送成功后
       this.autoRenameSessionIfNeeded(sessionCode);

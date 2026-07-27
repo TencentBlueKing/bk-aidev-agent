@@ -163,3 +163,76 @@ export interface IAgentResources {
   mcp?: IAgentResourceItem[];
   tool?: IAgentResourceItem[];
 }
+
+/** 模型能力属性（后端 property 字段） */
+export interface ILlmProperty {
+  agent_type?: string;
+  default?: boolean;
+  is_self_host?: boolean;
+  max_model_len?: number;
+  support_summary?: boolean;
+  support_thinking?: boolean;
+  support_thinking_quick?: boolean;
+  support_tools?: boolean;
+  support_vision?: boolean;
+  support_window?: boolean;
+}
+
+/** 可用模型列表查询参数 */
+export interface ILlmListQuery {
+  /** 模糊搜索关键词，按 llm_name / description / base_model 匹配 */
+  fuzzy?: string;
+  /** 模型类型，不传时默认 chat.completion */
+  llm_type?: string;
+  /** 按模型支持的功能过滤，逗号分隔，如 tool_call,vision */
+  supports?: string;
+}
+
+/**
+ * 可用模型项（对齐 plugin_api/llms/ 与 chat-x IModelOption）
+ * 字段以 snake_case 与后端保持一致，便于直接透传给 ModelSelector
+ */
+export interface ILlmItem {
+  /** 基础模型标识，如 hunyuan */
+  base_model?: string;
+  /** 模型描述 */
+  description?: string;
+  /** 是否禁用（前端扩展字段） */
+  disabled?: boolean;
+  /** 模型图标地址 */
+  icon?: string;
+  /** 模型主键 id */
+  id: number;
+  /** 模型编码（chat_completion 热切换传此值） */
+  llm_code: string;
+  /** 模型展示名（ModelSelector v-model 选中值） */
+  llm_name: string;
+  /** 模型类型，如 chat.completion */
+  llm_type: string;
+  /** 最大 token 数 */
+  max_token_size: number;
+  /** 模型能力属性 */
+  property: ILlmProperty;
+  /** 空间维度鉴权模式 */
+  space_auth_mode: string;
+  /** 标签名列表 */
+  tag_names?: string[];
+  /** 用户维度鉴权模式 */
+  user_auth_mode: string;
+}
+
+/** 后端 llms/ 原始响应项（字段可能缺省） */
+export interface ILlmItemApi {
+  base_model?: string;
+  description?: string;
+  icon?: string;
+  id?: number;
+  llm_code: string;
+  llm_name: string;
+  llm_type?: string;
+  max_token_size?: number;
+  property?: ILlmProperty | null;
+  space_auth_mode?: string;
+  tag_names?: string[];
+  user_auth_mode?: string;
+}

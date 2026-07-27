@@ -37,6 +37,11 @@ export enum BootstrapPhase {
 export interface ChatBootstrapOptions {
   /** 是否自动初始化（默认 true） */
   autoInit?: boolean;
+  /**
+   * 是否在 bootstrap 时拉取可用模型列表
+   * 默认 true；失败不阻断初始化
+   */
+  enableModelSelect?: boolean;
   /** 请求配置（支持 ref/computed，替换后后续请求自动生效） */
   requestOptions?: MaybeRefOrGetter<IRequestOptions | undefined>;
   /** API 服务地址（支持响应式） */
@@ -134,7 +139,7 @@ export interface ChatBootstrapReturn {
  */
 export function useChatBootstrap(options: ChatBootstrapOptions): ChatBootstrapReturn {
   // ==================== 配置处理 ====================
-  const { url: urlOption, requestOptions, autoInit = true, protocolCallbacks } = options;
+  const { url: urlOption, requestOptions, autoInit = true, protocolCallbacks, enableModelSelect = true } = options;
 
   // 获取初始 URL 值
   const initialUrl = toValue(urlOption);
@@ -205,8 +210,8 @@ export function useChatBootstrap(options: ChatBootstrapOptions): ChatBootstrapRe
     try {
       phase.value = BootstrapPhase.LOADING_AGENT;
 
-      // 并行获取 Agent 信息和会话列表，并执行通用 bootstrap 副作用（如 saasUrl ping）
-      await runAgentBootstrap(chatHelper);
+      // 并行获取 Agent 信息、会话列表（及可选模型列表），并执行通用 bootstrap 副作用（如 saasUrl ping）
+      await runAgentBootstrap(chatHelper, { enableModelSelect });
 
       if (generation !== initGeneration) {
         return;

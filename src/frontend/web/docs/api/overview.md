@@ -8,8 +8,8 @@
 | --- | --- | --- |
 | `@blueking/ai-blueking` | 业务组件层 | `AIBlueking`、`ChatBot`、Managers |
 | `@blueking/ai-blueking/standalone` | 非 Vue 宿主（v2.1.4-beta.8+） | `mountAIBlueking`、`mountChatBot`、内联 Vue 3 |
-| `@blueking/chat-x` | 纯 UI 组件 | `ChatInput`、`MessageContainer`、`MessageRender` |
-| `@blueking/chat-helper` | 业务 SDK | `useChatHelper`、`AGUIProtocol` |
+| `@blueking/chat-x` | 纯 UI 组件 | `ChatInput`、`MessageContainer`、`MessageRender`、`ModelSelector` |
+| `@blueking/chat-helper` | 业务 SDK | `useChatHelper`、`AGUIProtocol`、`agent.getLlms` / `ILlmItem` |
 
 ## 我该用哪个包？
 
@@ -67,6 +67,7 @@ import {
   MessageRender,
   ShortcutRender,
   AiSelection,
+  ModelSelector,
 } from '@blueking/chat-x';
 
 // ========================

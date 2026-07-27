@@ -160,6 +160,7 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     url: normalizedUrl,
     requestOptions: () => toValue(props.requestOptions),
     autoInit: true,
+    enableModelSelect: props.enableModelSelect !== false,
     protocolCallbacks: {
       onStart: () => {
         forwarders.receiveStart();

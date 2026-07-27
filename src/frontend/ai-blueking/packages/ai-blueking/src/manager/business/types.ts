@@ -54,6 +54,11 @@ export interface SendMessageOptions {
   context?: Record<string, unknown>;
   /** 是否包含历史记录 */
   includeHistory?: boolean;
+  /**
+   * 热切换模型 llm_code；传入时覆盖当前选中模型；
+   * 未传时使用 ChatBusinessManager.selectedLlmCode
+   */
+  model?: string;
   /** 消息属性，用于传递引用内容或快捷键相关信息 */
   property?: IMessageProperty;
 }

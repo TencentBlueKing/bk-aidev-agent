@@ -29,6 +29,7 @@ export const defaultProps = {
   enablePopup: true,
   draggable: true,
   enableChatSession: true,
+  enableModelSelect: true,
 
   // 渲染模式
   renderMode: RenderMode.Chat as RenderMode,

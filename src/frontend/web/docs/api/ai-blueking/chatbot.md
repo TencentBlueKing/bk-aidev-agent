@@ -77,6 +77,17 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | `enableSelection` | `boolean` | `false` | 是否启用多选模式（分享用） |
 | `shareLoading` | `boolean` | `false` | 分享加载状态 |
 
+### 功能开关 {#功能开关}
+
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `enableModelSelect` | `boolean` | `true` | 是否启用模型选择（**≥ v2.2.1**）；为 `true` 时拉取 `GET llms/`，列表非空才展示 ModelSelector |
+| `models` | `ILlmItem[] \| IModelOption[]` | — | 外部模型列表（**≥ v2.2.1**）；有值时跳过内部拉取，优先使用 |
+
+::: tip 模型选择
+默认开启。选中态由 `ChatBusinessManager` 持有并跨 session 保持。详见 [模型选择](/guide/core-features/model-selection)。
+:::
+
 ### 高级配置
 
 | 属性 | 类型 | 默认值 | 说明 |

@@ -70,15 +70,18 @@ Agent 模块负责与 AI Agent 交互，包括获取 Agent 信息和发起聊天
 | `info` | `Ref<IAgentInfo \| null>` | Agent 信息 |
 | `isInfoLoading` | `Ref<boolean>` | 是否正在加载 Agent 信息 |
 | `isChatting` | `Ref<boolean>` | 是否正在聊天（流式响应中） |
+| `models` | `Ref<ILlmItem[]>` | 可用模型列表（`getLlms` 成功后写入） |
+| `isModelsLoading` | `Ref<boolean>` | 是否正在加载模型列表 |
 
 ### 方法
 
 | 方法 | 类型 | 说明 |
 | --- | --- | --- |
 | `getAgentInfo` | `() => Promise<IAgentInfo>` | 获取 Agent 信息 |
-| `chat` | `(input, sessionCode, url?, config?) => Promise<void>` | 发起聊天 |
+| `getLlms` | `(params?: ILlmListQuery, config?) => Promise<ILlmItem[]>` | 获取可用模型列表（`GET llms/`，未传 `llm_type` 时默认 `chat.completion`） |
+| `chat` | `(input, sessionCode, url?, config?, property?, model?) => Promise<void>` | 发起聊天；`model` 为热切换 `llm_code` |
 | `stopChat` | `(sessionCode: string) => void` | 停止当前聊天 |
-| `resumeStreamingChat` | `(sessionCode: string) => Promise<void>` | 恢复流式聊天 |
+| `resumeStreamingChat` | `(sessionCode: string, url?, config?, model?) => Promise<void>` | 恢复流式聊天 |
 | `resendMessage` | `(id, sessionCode, content?, url?, config?) => Promise<void>` | 重发消息 |
 
 ### 用法示例
@@ -90,8 +93,20 @@ const { agent } = chatHelper;
 const info = await agent.getAgentInfo();
 console.log('Agent 名称:', info.agentName);
 
+// 拉取可用模型
+const llmList = await agent.getLlms({ llm_type: 'chat.completion' });
+// agent.models 同步更新
+
 // 发起聊天
 await agent.chat('帮我写一个快速排序', 'session-123');
+
+// 模型热切换：第 6 个参数为 llm_code（须在 GET llms/ 列表内）
+await agent.chat('换个模型再答', 'session-123', undefined, undefined, undefined, 'hy3-preview');
+
+// 自定义请求参数（如 temperature）走 config.data，不要把 model 塞进 data
+await agent.chat('创意回答', 'session-123', undefined, {
+  data: { temperature: 0.8 },
+});
 
 // 监听聊天状态
 watch(agent.isChatting, (chatting) => {

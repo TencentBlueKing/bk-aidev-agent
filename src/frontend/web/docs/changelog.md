@@ -1,5 +1,11 @@
 # 更新日志
 
+## v2.2.1
+
+### 新功能
+
+- **模型选择（Model Select）**（≥ v2.2.1）：`ChatBot` / `AIBlueking` 新增 `enableModelSelect`（默认 `true`）与 `models` prop；初始化并行拉取 `GET llms/`，列表非空时展示 ModelSelector。选中态跨 session 保持，仅首次无有效选中时用 `session.model` / default 兜底；发送时 `chat_completion` 携带 `llm_code`。详见 [模型选择](/guide/core-features/model-selection)
+
 ## v2.2.0
 
 ### 新功能

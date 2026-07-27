@@ -177,6 +177,22 @@ const onReady = (chatHelper: IChatHelper) => {
 
 ---
 
+## 8.1. 如何关闭或自定义模型选择？
+
+默认 `enableModelSelect` 为 `true`，初始化会拉取 `GET llms/`，列表非空时展示 ModelSelector。
+
+```vue
+<!-- 关闭 -->
+<AIBlueking url="/api/ai" :enable-model-select="false" />
+
+<!-- 外部传入列表（跳过内部拉取） -->
+<ChatBot url="/api/ai" :models="myModels" />
+```
+
+选中态跨 session 保持，切换 / 新建会话不会改变当前模型；发送时携带 `llm_code`。详见 [模型选择](/guide/core-features/model-selection)。
+
+---
+
 ## 9. 消息的 property.extra 有什么用？
 
 `property.extra` 用于传递额外上下文信息到后端，常见用途：

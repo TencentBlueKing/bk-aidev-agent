@@ -15,6 +15,7 @@
     />
     <AIBlueking
       :enable-popup="true"
+      :disabled-input="true"
       :request-options="requestOptions"
       :url="apiUrl"
       @close="handleClose"
@@ -33,16 +34,8 @@
 
   const apiUrl = ref(import.meta.env.VITE_API_URL || '');
 
-  const {
-    token,
-    appId,
-    tenantId,
-    requestOptions,
-    previewJson,
-    rotateToken,
-    rotateAppId,
-    rotateTenantId,
-  } = useDemoRequestOptions();
+  const { token, appId, tenantId, requestOptions, previewJson, rotateToken, rotateAppId, rotateTenantId } =
+    useDemoRequestOptions();
 
   const handleShow = () => {
     console.log('[Integrated] AIBlueking shown');

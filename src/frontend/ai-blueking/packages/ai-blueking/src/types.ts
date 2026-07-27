@@ -13,6 +13,7 @@ export type {
   IAgentCommandComponent,
   IAgentInfo,
   IAgentModule,
+  ILlmItem,
   IMessage,
   IMessageModule,
   ISession,
@@ -33,7 +34,7 @@ import { type h, type MaybeRefOrGetter, type VNode } from 'vue';
 import type { CreateSessionOptions } from './manager/business/types';
 // 从 Manager 导入类型
 import type { PositionAndSize } from './manager/types';
-import type { MaybeRequestValue, RequestData, RequestHeaders } from '@blueking/chat-helper';
+import type { ILlmItem, MaybeRequestValue, RequestData, RequestHeaders } from '@blueking/chat-helper';
 // 导入 chat-helper 类型用于扩展
 import type {
   IAgentCommand,
@@ -43,7 +44,7 @@ import type {
   IMessageModule,
   ISessionModule,
 } from '@blueking/chat-helper';
-import type { CustomBkFlowTab, CustomTab, RenderMode } from '@blueking/chat-x';
+import type { CustomBkFlowTab, CustomTab, IModelOption, RenderMode } from '@blueking/chat-x';
 import type { IAiSlashMenuItem } from '@blueking/chat-x';
 
 /** sdk-error 业务语义 apiName */
@@ -204,6 +205,15 @@ export interface AIBluekingProps {
   dropdownMenuConfig?: DropdownMenuConfig;
   /** 是否启用会话管理 */
   enableChatSession?: boolean;
+  /**
+   * 是否启用模型选择（默认 true）
+   * 为 true 时 bootstrap 拉取 GET llms/；列表非空才展示 ModelSelector
+   */
+  enableModelSelect?: boolean;
+  /**
+   * 外部传入的模型列表（有值时跳过内部拉取，优先使用）
+   */
+  models?: ILlmItem[] | IModelOption[];
   /** 是否启用选中文本弹窗 */
   enablePopup?: boolean;
   /** 接口错误时是否自动弹出 Message 提示，默认 true；设为 false 可自行通过 sdk-error 事件处理（统一错误出口控制） */

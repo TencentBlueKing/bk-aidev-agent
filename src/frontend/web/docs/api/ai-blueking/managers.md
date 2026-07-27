@@ -62,7 +62,7 @@ manager.emit(InternalEvent.SendMessage, '你好');
 
 ## ChatBusinessManager
 
-聊天业务管理器，封装消息发送、停止生成等核心聊天逻辑。
+聊天业务管理器，封装消息发送、停止生成、模型选择等核心聊天逻辑。
 
 ### 构造函数
 
@@ -76,28 +76,49 @@ new ChatBusinessManager(agentModule, sessionModule, chatbotInit)
 | `sessionModule` | `SessionModule` | chat-helper 的 Session 模块 |
 | `chatbotInit` | `ChatbotInit` | 聊天机器人初始化配置 |
 
+### 响应式状态
+
+| 属性 | 类型 | 说明 |
+| --- | --- | --- |
+| `models` | `Ref<ILlmItem[]>` | 可用模型列表（供 ChatContainer ModelSelector） |
+| `isModelsLoading` | `Ref<boolean>` | 模型列表加载中 |
+| `selectedLlmCode` | `Ref<string \| undefined>` | 当前选中模型的 `llm_code`（发送时透传） |
+| `selectedModelName` | `ComputedRef<string>` | 当前选中模型的 `llm_name`（绑定 `v-model:selected-model`） |
+
 ### 方法
 
 | 方法 | 类型 | 说明 |
 | --- | --- | --- |
-| `sendMessage` | `(content: string, sessionCode: string, options?: object) => void` | 发送消息 |
+| `sendMessage` | `(content: string, sessionCode: string, options?: SendMessageOptions) => void` | 发送消息；`options.model` 可覆盖本轮 `llm_code` |
 | `stopGeneration` | `(sessionCode: string) => void` | 停止当前会话的生成 |
+| `loadModels` | `(options?: { force?: boolean }) => Promise<void>` | 拉取可用模型；已有 `agent.models` 时复用；失败不抛出（空列表） |
+| `setModels` | `(models: ILlmItem[]) => void` | 使用外部模型列表（跳过接口拉取） |
+| `setSelectedModel` | `(model: ILlmItem \| null \| undefined) => void` | 按模型选项设置选中（`@model-change`） |
+| `setSelectedModelByName` | `(llmName: string) => void` | 按展示名设置选中（ModelSelector `v-model` 为 `llm_name`） |
 
 ### 用法示例
 
 ```typescript
-// 发送消息
+// 发送消息（自动携带当前选中模型）
 chatBizManager.sendMessage('帮我写一个排序算法', currentSession.sessionCode);
+
+// 覆盖本轮模型
+chatBizManager.sendMessage('解释这段代码', sessionCode, {
+  model: 'hy3-preview',
+  property: { extra: { command: 'explain-code' } },
+});
 
 // 停止生成
 chatBizManager.stopGeneration(currentSession.sessionCode);
 
-// 带选项发送
-chatBizManager.sendMessage('解释这段代码', sessionCode, {
-  shortcutId: 'explain-code',
-  formData: { language: 'python' },
-});
+// 模型列表与选中
+await chatBizManager.loadModels();
+chatBizManager.setSelectedModelByName('混元预览');
 ```
+
+::: tip 模型选择语义
+选中态跨 session 保持；仅在尚无有效选中时用 `session.model` / default 兜底。详见 [模型选择](/guide/core-features/model-selection)。
+:::
 
 ## SessionBusinessManager
 

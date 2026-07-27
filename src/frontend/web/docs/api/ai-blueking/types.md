@@ -35,6 +35,15 @@ interface AIBluekingProps {
   draggable?: boolean;
   /** 是否启用会话管理 */
   enableChatSession?: boolean;
+  /**
+   * 是否启用模型选择（默认 true，≥ v2.2.1）
+   * 为 true 时 bootstrap 拉取 GET llms/；列表非空才展示 ModelSelector
+   */
+  enableModelSelect?: boolean;
+  /**
+   * 外部传入的模型列表（≥ v2.2.1；有值时跳过内部拉取，优先使用）
+   */
+  models?: ILlmItem[] | IModelOption[];
   /** 是否隐藏头部 */
   hideHeader?: boolean;
   /** 是否隐藏悬浮球 */
@@ -318,6 +327,17 @@ interface ChatBotProps {
   enableSelection?: boolean;
   /** 分享操作是否加载中 */
   shareLoading?: boolean;
+
+  // 功能开关
+  /**
+   * 是否启用模型选择（默认 true，≥ v2.2.1）
+   * 为 true 时拉取 GET llms/；列表非空才展示 ModelSelector
+   */
+  enableModelSelect?: boolean;
+  /**
+   * 外部传入的模型列表（≥ v2.2.1；有值时跳过内部拉取，优先使用）
+   */
+  models?: ILlmItem[] | IModelOption[];
 
   // 高级配置
   /** MessageTools 的 tippy 弹窗配置 */

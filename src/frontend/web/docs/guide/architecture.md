@@ -41,7 +41,7 @@ AI 小鲸 v2.0 采用 Manager 模式将业务逻辑从组件中抽离，每个 M
 | Manager                    | 职责                                                                 |
 | -------------------------- | -------------------------------------------------------------------- |
 | **ComponentManager**       | UI 状态管理与事件协调，作为各 Manager 之间的中枢调度器               |
-| **ChatBusinessManager**    | 消息发送、停止生成、消息重建等核心聊天业务逻辑                       |
+| **ChatBusinessManager**    | 消息发送、停止生成、消息重建、模型选择等核心聊天业务逻辑（详见 [模型选择](/guide/core-features/model-selection)） |
 | **SessionBusinessManager** | 会话的增删改查（CRUD），包括会话列表加载、新建、切换、重命名、删除等 |
 | **ShortcutManager**        | 快捷指令的筛选、选择、回填以及参数构建                               |
 | **UIStateManager**         | 管理选择模式、编辑模式等 UI 交互状态                                 |

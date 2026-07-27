@@ -75,7 +75,7 @@ export type {
 } from './types';
 
 // 重导出 AG-UI SDK 类型（方便使用）
-export type { IAgentInfo, IMessage, ISession, MessageRole, MessageStatus } from '@blueking/chat-helper';
+export type { IAgentInfo, ILlmItem, IMessage, ISession, MessageRole, MessageStatus } from '@blueking/chat-helper';
 
 // 重导出 AG-UI SDK（高级用法）
 export { AGUIProtocol, useChatHelper } from '@blueking/chat-helper';

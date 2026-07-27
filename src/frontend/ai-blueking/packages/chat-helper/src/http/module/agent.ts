@@ -23,9 +23,9 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { transferAgentInfoApi2AgentInfo } from '../transform/agent';
+import { transferAgentInfoApi2AgentInfo, transferLlmListApi2LlmItems } from '../transform/agent';
 
-import type { IAgentInfoApi } from '../../agent/type';
+import type { IAgentInfoApi, ILlmItem, ILlmItemApi, ILlmListQuery } from '../../agent/type';
 import type { FetchClient, IRequestConfig } from '../fetch';
 
 /**
@@ -38,7 +38,25 @@ export const useAgent = (fetchClient: FetchClient) => {
   const getAgentInfo = (config?: IRequestConfig) =>
     fetchClient.get<IAgentInfoApi>('agent/info/', undefined, config).then(transferAgentInfoApi2AgentInfo);
 
+  /**
+   * 获取当前空间可用模型列表（公开 + 空间授权 + 用户权限交集）
+   * @param params 查询参数；未传 llm_type 时默认 chat.completion
+   */
+  const getLlms = (params?: ILlmListQuery, config?: IRequestConfig): Promise<ILlmItem[]> => {
+    const query: Record<string, unknown> = {
+      llm_type: params?.llm_type ?? 'chat.completion',
+    };
+    if (params?.fuzzy) {
+      query.fuzzy = params.fuzzy;
+    }
+    if (params?.supports) {
+      query.supports = params.supports;
+    }
+    return fetchClient.get<ILlmItemApi[]>('llms/', query, config).then(transferLlmListApi2LlmItems);
+  };
+
   return {
     getAgentInfo,
+    getLlms,
   };
 };

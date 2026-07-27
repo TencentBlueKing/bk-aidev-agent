@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ref, shallowRef } from 'vue';
+import { nextTick, ref, shallowRef } from 'vue';
 
 import { MessageRole } from '@blueking/chat-helper';
 
@@ -16,9 +16,12 @@ function createMocks() {
     chat: vi.fn().mockResolvedValue(undefined),
     stopChat: vi.fn().mockResolvedValue(undefined),
     getAgentInfo: vi.fn(),
+    getLlms: vi.fn().mockResolvedValue([]),
     handleRole: vi.fn(),
     info: ref(null),
     isChatting: ref(false),
+    isModelsLoading: ref(false),
+    models: ref([]),
     resendMessage: vi.fn(),
   };
   const mockMessageModule = {
@@ -65,19 +68,16 @@ describe('ChatBusinessManager', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
       );
     });
 
     it('should throw when sessionCode is empty', async () => {
-      await expect(manager.sendMessage('hello', '')).rejects.toThrow(
-        'No active session',
-      );
+      await expect(manager.sendMessage('hello', '')).rejects.toThrow('No active session');
     });
 
     it('should auto-rename session when first message', async () => {
-      mocks.mockMessageModule.list = shallowRef([
-        { id: '1', role: MessageRole.User, content: 'hello' },
-      ]);
+      mocks.mockMessageModule.list = shallowRef([{ id: '1', role: MessageRole.User, content: 'hello' }]);
       manager = new ChatBusinessManager(
         mocks.mockAgentModule as any,
         mocks.mockMessageModule as any,
@@ -117,6 +117,7 @@ describe('ChatBusinessManager', () => {
         undefined,
         undefined,
         property,
+        undefined,
       );
     });
   });
@@ -144,6 +145,7 @@ describe('ChatBusinessManager', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
       );
       expect(manager.isGenerating.value).toBe(true);
     });
@@ -157,9 +159,7 @@ describe('ChatBusinessManager', () => {
         mocks.mockEventEmitter,
       );
 
-      await expect(manager.regenerateMessage('999', 'session-1')).rejects.toThrow(
-        'Message not found: 999',
-      );
+      await expect(manager.regenerateMessage('999', 'session-1')).rejects.toThrow('Message not found: 999');
     });
   });
 
@@ -187,13 +187,12 @@ describe('ChatBusinessManager', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
       );
     });
 
     it('should throw when no AI messages provided', async () => {
-      await expect(manager.regenerateFromAIMessages([], 'session-1')).rejects.toThrow(
-        'No AI messages provided',
-      );
+      await expect(manager.regenerateFromAIMessages([], 'session-1')).rejects.toThrow('No AI messages provided');
     });
 
     it('should throw when no user message found before AI messages', async () => {
@@ -238,6 +237,7 @@ describe('ChatBusinessManager', () => {
         undefined,
         undefined,
         newProperty,
+        undefined,
       );
       expect(manager.isGenerating.value).toBe(true);
     });
@@ -311,6 +311,195 @@ describe('ChatBusinessManager', () => {
 
       expect(manager.openingRemark).toBe('Welcome!');
       expect(manager.predefinedQuestions).toEqual(['Q1', 'Q2']);
+    });
+  });
+
+  describe('model selection', () => {
+    const sampleModels = [
+      {
+        id: 1,
+        llm_code: 'hy3-preview',
+        llm_name: '混元3',
+        llm_type: 'chat.completion',
+        max_token_size: 32768,
+        property: { default: true },
+        space_auth_mode: '',
+        user_auth_mode: '',
+      },
+      {
+        id: 2,
+        llm_code: 'deepseek',
+        llm_name: 'DeepSeek',
+        llm_type: 'chat.completion',
+        max_token_size: 64000,
+        property: {},
+        space_auth_mode: '',
+        user_auth_mode: '',
+      },
+    ];
+
+    it('should load models via agent.getLlms and select default', async () => {
+      mocks.mockAgentModule.getLlms.mockResolvedValue(sampleModels);
+
+      await manager.loadModels({ force: true });
+
+      expect(mocks.mockAgentModule.getLlms).toHaveBeenCalled();
+      expect(manager.models.value).toEqual(sampleModels);
+      expect(manager.selectedLlmCode.value).toBe('hy3-preview');
+      expect(manager.selectedModelName.value).toBe('混元3');
+    });
+
+    it('should reuse cached agent.models without calling getLlms', async () => {
+      mocks.mockAgentModule.models.value = sampleModels;
+
+      await manager.loadModels();
+
+      expect(mocks.mockAgentModule.getLlms).not.toHaveBeenCalled();
+      expect(manager.selectedLlmCode.value).toBe('hy3-preview');
+    });
+
+    it('should pass selected llm_code on send/regenerate/resend', async () => {
+      manager.setModels(sampleModels as any);
+      manager.setSelectedModelByName('DeepSeek');
+
+      await manager.sendMessage('hello', 'session-1');
+      expect(mocks.mockAgentModule.chat).toHaveBeenCalledWith(
+        'hello',
+        'session-1',
+        undefined,
+        undefined,
+        undefined,
+        'deepseek',
+      );
+
+      mocks.mockAgentModule.chat.mockClear();
+      mocks.mockMessageModule.list = shallowRef([{ id: '1', role: MessageRole.User, content: 'hello' }]);
+      manager = new ChatBusinessManager(
+        mocks.mockAgentModule as any,
+        mocks.mockMessageModule as any,
+        mocks.mockSessionModule as any,
+        mocks.mockEventEmitter,
+      );
+      manager.setModels(sampleModels as any);
+      manager.setSelectedModelByName('DeepSeek');
+
+      await manager.regenerateMessage('1', 'session-1');
+      expect(mocks.mockAgentModule.chat).toHaveBeenCalledWith(
+        'hello',
+        'session-1',
+        undefined,
+        undefined,
+        undefined,
+        'deepseek',
+      );
+    });
+
+    it('should allow options.model to override selected model', async () => {
+      manager.setModels(sampleModels as any);
+
+      await manager.sendMessage('hello', 'session-1', { model: 'override-code' });
+
+      expect(mocks.mockAgentModule.chat).toHaveBeenCalledWith(
+        'hello',
+        'session-1',
+        undefined,
+        undefined,
+        undefined,
+        'override-code',
+      );
+    });
+
+    it('should clear selection when loadModels fails', async () => {
+      mocks.mockAgentModule.getLlms.mockRejectedValue(new Error('network'));
+
+      await manager.loadModels({ force: true });
+
+      expect(manager.models.value).toEqual([]);
+      expect(manager.selectedLlmCode.value).toBeUndefined();
+    });
+
+    it('should prefer session.model over default on first setModels/loadModels', async () => {
+      mocks.mockSessionModule.current.value = {
+        sessionCode: 'session-1',
+        sessionName: 'with-model',
+        model: 'deepseek',
+      };
+
+      manager.setModels(sampleModels as any);
+      expect(manager.selectedLlmCode.value).toBe('deepseek');
+
+      manager = new ChatBusinessManager(
+        mocks.mockAgentModule as any,
+        mocks.mockMessageModule as any,
+        mocks.mockSessionModule as any,
+        mocks.mockEventEmitter,
+      );
+      mocks.mockAgentModule.getLlms.mockResolvedValue(sampleModels);
+
+      await manager.loadModels({ force: true });
+
+      expect(manager.selectedLlmCode.value).toBe('deepseek');
+    });
+
+    it('should fall back to default when session has no model', () => {
+      mocks.mockSessionModule.current.value = {
+        sessionCode: 'session-1',
+        sessionName: 'no-model',
+      };
+
+      manager.setModels(sampleModels as any);
+
+      expect(manager.selectedLlmCode.value).toBe('hy3-preview');
+    });
+
+    it('should keep frontend selection when session changes after user selected a model', async () => {
+      manager.setModels(sampleModels as any);
+      manager.setSelectedModelByName('DeepSeek');
+      expect(manager.selectedLlmCode.value).toBe('deepseek');
+
+      mocks.mockSessionModule.current.value = {
+        sessionCode: 'session-2',
+        sessionName: 'history',
+        model: 'hy3-preview',
+      };
+      await nextTick();
+
+      expect(manager.selectedLlmCode.value).toBe('deepseek');
+    });
+
+    it('should wait for session before applying default, then bootstrap from session.model once', async () => {
+      mocks.mockSessionModule.current.value = null;
+
+      manager.setModels(sampleModels as any);
+      expect(manager.selectedLlmCode.value).toBeUndefined();
+
+      mocks.mockSessionModule.current.value = {
+        sessionCode: 'session-1',
+        sessionName: 'late-session',
+        model: 'deepseek',
+      };
+      await nextTick();
+      expect(manager.selectedLlmCode.value).toBe('deepseek');
+
+      mocks.mockSessionModule.current.value = {
+        sessionCode: 'session-2',
+        sessionName: 'another',
+        model: 'hy3-preview',
+      };
+      await nextTick();
+      expect(manager.selectedLlmCode.value).toBe('deepseek');
+    });
+
+    it('should keep default when session model is not in model list after load', () => {
+      mocks.mockSessionModule.current.value = {
+        sessionCode: 'session-1',
+        sessionName: 'unknown-model',
+        model: 'not-in-list',
+      };
+
+      manager.setModels(sampleModels as any);
+
+      expect(manager.selectedLlmCode.value).toBe('hy3-preview');
     });
   });
 });

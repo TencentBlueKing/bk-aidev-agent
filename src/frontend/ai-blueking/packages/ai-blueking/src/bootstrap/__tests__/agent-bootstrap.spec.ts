@@ -59,6 +59,23 @@ describe('agent-bootstrap', () => {
 
       expect(chatHelper.agent.getAgentInfo).toHaveBeenCalled();
       expect(chatHelper.session.getSessions).toHaveBeenCalled();
+      expect(chatHelper.agent.getLlms).toHaveBeenCalled();
+    });
+
+    it('should skip getLlms when enableModelSelect is false', async () => {
+      const chatHelper = createMockChatHelper();
+
+      await runAgentBootstrap(chatHelper, { enableModelSelect: false });
+
+      expect(chatHelper.agent.getLlms).not.toHaveBeenCalled();
+    });
+
+    it('should not fail bootstrap when getLlms rejects', async () => {
+      const chatHelper = createMockChatHelper();
+      vi.mocked(chatHelper.agent.getLlms).mockRejectedValueOnce(new Error('llms failed'));
+
+      await expect(runAgentBootstrap(chatHelper)).resolves.toBeUndefined();
+      expect(chatHelper.agent.getAgentInfo).toHaveBeenCalled();
     });
 
     it('should ping saasUrl when agent info contains saasUrl', async () => {

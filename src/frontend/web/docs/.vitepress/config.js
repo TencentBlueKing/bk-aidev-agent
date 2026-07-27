@@ -4,7 +4,7 @@ import express from "express"
 import container from "markdown-it-container"
 import { aiBluekingVersion as version } from "./utils/resolve-changelog-version.js"
 
-const base = process.env.VITEPRESS_BASE || '__DOCS_BASE__/'
+const base = process.env.VITEPRESS_BASE || "__DOCS_BASE__/"
 const require = createRequire(import.meta.url)
 const { createMockAguiRouter } = require("./mock-agui-routes.cjs")
 
@@ -60,6 +60,7 @@ export default defineConfig({
             { text: "快捷指令", link: "/guide/core-features/shortcuts" },
             { text: "提示词与资源", link: "/guide/core-features/prompts" },
             { text: "会话管理", link: "/guide/core-features/session-management" },
+            { text: "模型选择", link: "/guide/core-features/model-selection" },
             { text: "消息分享", link: "/guide/core-features/sharing" },
             { text: "消息自定义渲染", link: "/guide/core-features/custom-message-rendering" },
             { text: "侧栏 Tab 自定义渲染", link: "/guide/core-features/side-render-customization" },
@@ -174,12 +175,7 @@ export default defineConfig({
       },
     ],
     ssr: {
-      noExternal: [
-        "@blueking/ai-blueking",
-        "@blueking/chat-x",
-        "@blueking/chat-helper",
-        "bkui-vue",
-      ],
+      noExternal: ["@blueking/ai-blueking", "@blueking/chat-x", "@blueking/chat-helper", "bkui-vue"],
     },
     define: {
       __AI_BLUEKING_VERSION__: JSON.stringify(version),

@@ -48,8 +48,11 @@ vi.mock('@blueking/chat-helper', async () => {
               getAgentInfoResolvers.push(resolve);
             }),
         ),
+        getLlms: vi.fn().mockResolvedValue([]),
         info: vueRef(null),
         isChatting: vueRef(false),
+        isModelsLoading: vueRef(false),
+        models: vueRef([]),
       },
       session: {
         getSessions: vi.fn().mockImplementation(async () => {

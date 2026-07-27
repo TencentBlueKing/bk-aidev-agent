@@ -250,6 +250,48 @@ const CONST_USER_MESSAGE_TOOLS: IBuiltinToolBtn[] = [
 ];
 ```
 
+## 模型选择类型
+
+### IModelOption {#imodeloption}
+
+模型选项，贴合后端 `llms/` 接口结构；能力标签由组件依据 `property` 派生。
+
+```typescript
+type ModelCapabilityTheme = 'default' | 'primary' | 'success' | 'warning';
+
+interface IModelProperty {
+  agent_type?: string;
+  default?: boolean;
+  is_self_host?: boolean;
+  max_model_len?: number;
+  support_summary?: boolean;
+  support_thinking?: boolean;
+  support_thinking_quick?: boolean;
+  support_tools?: boolean;
+  support_vision?: boolean;
+  support_window?: boolean;
+}
+
+interface IModelOption {
+  base_model?: string;
+  description?: string;
+  disabled?: boolean;
+  icon?: string;
+  id: number;
+  llm_code: string;
+  /** 展示名，同时作为 ModelSelector v-model 选中值 */
+  llm_name: string;
+  llm_type: string;
+  max_token_size: number;
+  property: IModelProperty;
+  space_auth_mode: string;
+  tag_names?: string[];
+  user_auth_mode: string;
+}
+```
+
+与 chat-helper 的 [`ILlmItem`](/api/chat-helper/types#illmitem) 字段对齐，可直接透传。
+
 ## 快捷指令类型
 
 ### Shortcut

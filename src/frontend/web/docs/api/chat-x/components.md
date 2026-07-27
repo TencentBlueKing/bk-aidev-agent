@@ -19,9 +19,16 @@
 | `shortcuts` | `IShortcut[]` | `[]` | 快捷指令列表 |
 | `shortcutId` | `string` | - | 当前选中的快捷指令 ID |
 | `supportUpload` | `boolean` | `false` | 是否支持文件上传 |
+| `models` | `IModelOption[]` | — | 可选模型列表；传入后在发送按钮左侧展示 ModelSelector |
 | `onSendMessage` | `(message: string) => void` | - | 发送消息回调 |
 | `onStopSending` | `() => void` | - | 停止发送回调 |
 | `onUpload` | `(file: File) => void` | - | 文件上传回调 |
+
+### v-model
+
+| 属性 | 类型 | 说明 |
+| --- | --- | --- |
+| `selectedModel` | `string` | 当前选中模型的 `llm_name` |
 
 ### Events
 
@@ -29,6 +36,7 @@
 | --- | --- | --- |
 | `select-shortcut` | `(shortcut: IShortcut)` | 选择快捷指令 |
 | `delete-shortcut` | - | 删除当前快捷指令 |
+| `model-change` | `(model: IModelOption)` | 切换模型 |
 
 ### Slots
 
@@ -224,6 +232,70 @@
   <ShortcutBtns :shortcuts="shortcuts" @select-shortcut="onSelect" />
 </template>
 ```
+
+## ModelSelector {#modelselector}
+
+模型下拉选择器，支持搜索与能力标签。通常由 `ChatInput` / `ChatContainer` 在传入 `models` 后自动渲染于发送按钮左侧；也可独立使用。
+
+### Props
+
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `models` | `IModelOption[]` | `[]` | 可选模型列表 |
+| `disabled` | `boolean` | `false` | 是否禁用 |
+| `placeholder` | `string` | `'选择模型'` | 无选中时的占位文案 |
+| `searchPlaceholder` | `string` | `'搜索模型关键字'` | 搜索框占位文案 |
+
+### v-model
+
+| 属性 | 类型 | 说明 |
+| --- | --- | --- |
+| — | `string` | 当前选中模型的 `llm_name` |
+
+### Events
+
+| 事件名 | 参数 | 说明 |
+| --- | --- | --- |
+| `change` | `(model: IModelOption)` | 用户选中模型时触发 |
+
+### 用法示例
+
+```vue
+<template>
+  <ModelSelector
+    v-model="selectedModel"
+    :models="models"
+    @change="handleModelChange"
+  />
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue';
+import { ModelSelector, type IModelOption } from '@blueking/chat-x';
+
+const selectedModel = ref('混元预览');
+const models: IModelOption[] = [
+  {
+    id: 1,
+    llm_code: 'hy3-preview',
+    llm_name: '混元预览',
+    llm_type: 'chat.completion',
+    max_token_size: 128000,
+    property: { default: true, support_thinking: true },
+    space_auth_mode: '',
+    user_auth_mode: '',
+  },
+];
+
+const handleModelChange = (model: IModelOption) => {
+  console.log('选中:', model.llm_code);
+};
+</script>
+```
+
+::: tip 与小鲸业务层的关系
+`AIBlueking` / `ChatBot` 默认启用模型选择，由 `ChatBusinessManager` 编排拉取与选中。详见 [模型选择](/guide/core-features/model-selection)。
+:::
 
 ## AiSelection
 
