@@ -238,24 +238,39 @@ class SessionManager:
         if status in (SessionsStatus.PENDING.value, SessionsStatus.RUNNING.value):
             return PluginPollTaskState.RUNNING, ""
         if status in (SessionsStatus.FAILED.value, SessionsStatus.CANCELLED.value):
-            return PluginPollTaskState.FAILED, "Agent 执行失败"
-        if status == SessionsStatus.FINISHED.value:
-            return PluginPollTaskState.SUCCESS, self._last_assistant_output(
+            # 取回 save_stream_failure 写入的实际异常内容，避免 UI 只显示通用 "Agent 执行失败"
+            return PluginPollTaskState.FAILED, self._last_output(
                 self.list_session_contents(session_code),
                 turn_id=turn_id,
+                statuses=(ChatContentStatus.ERROR.value,),
+            ) or "Agent 执行失败"
+        if status == SessionsStatus.FINISHED.value:
+            return PluginPollTaskState.SUCCESS, self._last_output(
+                self.list_session_contents(session_code),
+                turn_id=turn_id,
+                statuses=(ChatContentStatus.COMPLETE.value, ChatContentStatus.SUCCESS.value),
             )
         return PluginPollTaskState.RUNNING, ""
 
     @staticmethod
-    def _last_assistant_output(items: list[dict], *, turn_id: str = "") -> str:
-        """取最后一条有内容的 assistant/ai；有 ``turn_id`` 时仅取同轮消息。"""
+    def _last_output(
+        items: list[dict],
+        *,
+        turn_id: str = "",
+        statuses: tuple[str, ...],
+    ) -> str:
+        """取最后一条指定 status 的 assistant/ai 内容；有 ``turn_id`` 时仅取同轮消息。
+
+        FINISHED 取 COMPLETE/SUCCESS 的正常回复；FAILED/CANCELLED 取 ERROR 的实际异常
+        （save_stream_failure 写入），避免上层只看到通用 "Agent 执行失败"。
+        """
         assistant_roles = (PromptRole.ASSISTANT.value, PromptRole.AI.value)
         for item in reversed(items):
             if item.get("role") not in assistant_roles:
                 continue
             if turn_id and (item.get("property") or {}).get("turn_id") != turn_id:
                 continue
-            if item.get("status") not in (ChatContentStatus.COMPLETE.value, ChatContentStatus.SUCCESS.value):
+            if item.get("status") not in statuses:
                 continue
             text = str(item.get("content") or "").strip()
             if text:
