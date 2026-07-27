@@ -15,13 +15,16 @@ services:
     environment:
       - BKAI_OPENCLAW_MODE=paas
       - BKAI_OPENCLAW_HTTP_API=1
+      # --bind lan 是容器内监听非 loopback 所需（宿主端口映射才可达）；
+      # 对外暴露面由下方 ports 的 127.0.0.1 绑定 + gateway token 双重收敛
       - OPENCLAW_GATEWAY_ARGS=--bind lan --allow-unconfigured
       - OPENCLAW_GATEWAY_PORT=18789
-      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-craw-local-sim}
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:?agent.env 需提供 OPENCLAW_GATEWAY_TOKEN（gateway 鉴权 token，自行生成随机值）}
       - BKAI_AGENT=${BKAI_AGENT:?agent.env 需提供 BKAI_AGENT（AIDEV agent code）}
       - BKAI_AIDEV_API_KEY=${BKAI_ACCESS_TOKEN:?agent.env 需提供 BKAI_ACCESS_TOKEN}
     ports:
-      - "${OPENCLAW_PORT_HOST:-18789}:18789" # 宿主机直连裸 API / 浏览器开 dashboard
+      # 只绑宿主 loopback：本地模拟不对外网卡暴露带凭据服务
+      - "127.0.0.1:${OPENCLAW_PORT_HOST:-18789}:18789" # 宿主机直连裸 API / 浏览器开 dashboard
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:18789/healthz"]
       interval: 10s
@@ -52,9 +55,10 @@ services:
       # —— craw 接管（extend/craw_registry_override 薄壳读取，SDK 装配连接参数）——
       - BKAI_CRAW_BACKEND=openclaw
       - BKAI_CRAW_API_URL=http://openclaw:18789
-      - BKAI_CRAW_API_KEY=${OPENCLAW_GATEWAY_TOKEN:-craw-local-sim}
+      - BKAI_CRAW_API_KEY=${OPENCLAW_GATEWAY_TOKEN:?agent.env 需提供 OPENCLAW_GATEWAY_TOKEN}
     ports:
-      - "${PLUGIN_PORT_HOST:-8000}:8000"
+      # 只绑宿主 loopback：本地模拟不对外网卡暴露带凭据服务
+      - "127.0.0.1:${PLUGIN_PORT_HOST:-8000}:8000"
     volumes:
       # dev SDK 覆盖 venv 内已装 aidev_agent（含 packages/craw）
       - ../../aidev_agent:/app/.venv/lib/python3.11/site-packages/aidev_agent:ro

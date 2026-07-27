@@ -21,19 +21,24 @@ from typing import TYPE_CHECKING, Iterator, Optional, Protocol, Type, runtime_ch
 from aidev_agent.utils.factory import SimpleFactory
 
 if TYPE_CHECKING:
-    from aidev_agent.packages.craw.base import CrawIdentity
+    from aidev_agent.packages.craw.base import CrawChatStream, CrawIdentity
 
 
 @runtime_checkable
 class CrawBackendProtocol(Protocol):
     """Craw 后端协议。
 
-    所有方法定义传输契约（连接参数装配 / 请求头 / chat 转发 / 健康探测），
-    由 ``BaseCrawBackend`` 提供通用实现，各内核子类只覆写差异点。
+    声明包内实际消费的**全部**成员（``agent.py`` / ``takeover.py`` /
+    ``sync.py`` 会访问的属性与方法）；由 ``BaseCrawBackend`` 提供通用实现，
+    各内核子类只覆写差异点。自定义后端缺任一成员即不满足协议，接管入口
+    在改动 registry 前完成校验。
     """
 
     name: str
     default_model: str
+    # 装配后连接参数（takeover 日志 / agent 非流式回包引用）
+    api_url: str
+    model: str
 
     def build_headers(
         self, identity: Optional["CrawIdentity"] = None, session_code: Optional[str] = None
@@ -57,6 +62,23 @@ class CrawBackendProtocol(Protocol):
         session_code: Optional[str] = None,
     ) -> Iterator[dict]:
         """流式转发，逐个产出 OpenAI 兼容 SSE chunk dict（已解析 ``data:`` 行）。"""
+        ...
+
+    def open_chat_stream(
+        self,
+        messages: list[dict],
+        identity: Optional["CrawIdentity"] = None,
+        session_code: Optional[str] = None,
+    ) -> "CrawChatStream":
+        """打开流式 chat，返回可关闭句柄（``stop()`` 跨线程中断阻塞读取用）。"""
+        ...
+
+    def delta_text(self, chunk: dict) -> str:
+        """从流式 chunk 提取文本增量（无则空串）。"""
+        ...
+
+    def message_text(self, body: dict) -> str:
+        """从非流式响应提取文本内容（无则空串）。"""
         ...
 
     def health(self) -> dict:
