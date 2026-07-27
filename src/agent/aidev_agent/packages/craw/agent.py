@@ -84,6 +84,9 @@ class CrawCompletionAgent(BaseModel):
     session_code: Optional[str] = None
     username: Optional[str] = None
     session_context_data: list[dict] = Field(default_factory=list)
+    # 宿主消费面契约（aidev_bkplugin chat 视图）：空输入时以 ``chat_history``
+    # 判断会话是否可续聊——与 ChatCompletionAgent 同名属性对齐，OpenAI messages 形态
+    chat_history: list[dict] = Field(default_factory=list)
     event_handler: Optional[Callable[[BaseEvent], None]] = None
 
     backend: Optional[Any] = None  # CrawBackendProtocol（runtime_checkable Protocol，不做 pydantic 校验）
@@ -110,6 +113,7 @@ class CrawCompletionAgent(BaseModel):
         # AG-UI thread_id 与流式队列 / 续流 / 取消键统一为 session_code：
         # 同一次运行只存在一套会话标识，避免前端关联与取消语义分叉
         self.thread_id = ctx.session_code or self.thread_id
+        self.chat_history = build_openai_messages(self.session_context_data)
         self.identity = self._resolve_identity(ctx)
         return self
 
