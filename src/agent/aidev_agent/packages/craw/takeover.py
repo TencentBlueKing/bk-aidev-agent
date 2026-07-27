@@ -50,16 +50,27 @@ def enable_chat_takeover() -> bool:
         from aidev_agent.packages.craw.registry import get_backend
         from aidev_agent.services.agent.registry import agent_registry
 
-        backend = get_backend(name)  # 提前装配一次，暴露连接参数问题
+        # 改动 registry 前完成全部校验：装配后端并取齐后续要用的属性。
+        # 缺少 api_url / model 等属性的自定义后端在这里即失败，此时 registry
+        # 还未被动过，不会出现「报告失败但 CHAT 已被接管」的中间态。
+        backend = get_backend(name)
+        backend_info = (backend.name, backend.api_url, backend.model)
+    except Exception as exc:  # 接管失败不应拖垮宿主启动，保持原生
+        logger.exception("[CRAW] 接管 CHAT 失败（后端装配 / 校验未通过），保持原生 ChatCompletionAgent: %s", exc)
+        return False
+
+    previous = agent_registry.values.get(AgentType.CHAT)
+    try:
         agent_registry.remove(AgentType.CHAT)
         agent_registry.register(AgentType.CHAT, CrawCompletionAgent, priority=100)
-        logger.warning(
-            "[CRAW] CrawCompletionAgent 已接管 AgentType.CHAT（backend=%s, api_url=%s, model=%s）",
-            backend.name,
-            backend.api_url,
-            backend.model,
-        )
-        return True
-    except Exception as exc:  # 接管失败不应拖垮宿主启动，降级回原生
-        logger.exception("[CRAW] 接管 CHAT 失败，保持原生 ChatCompletionAgent: %s", exc)
+    except Exception as exc:  # registry 变更半途失败必须回滚，绝不停留在半接管态
+        agent_registry.remove(AgentType.CHAT)
+        if previous is not None:
+            agent_registry.register(AgentType.CHAT, previous.value, priority=previous.priority)
+        logger.exception("[CRAW] 接管 CHAT 失败（registry 变更已回滚），保持原生 ChatCompletionAgent: %s", exc)
         return False
+    logger.warning(
+        "[CRAW] CrawCompletionAgent 已接管 AgentType.CHAT（backend=%s, api_url=%s, model=%s）",
+        *backend_info,
+    )
+    return True

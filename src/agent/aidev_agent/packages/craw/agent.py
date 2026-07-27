@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import threading
 import uuid
 from logging import getLogger
 from typing import Any, Callable, ClassVar, Generator, Optional
@@ -32,7 +33,13 @@ from ag_ui.encoder import EventEncoder
 from pydantic import BaseModel, Field
 
 from aidev_agent.enums import AgentType
-from aidev_agent.packages.craw.base import CrawIdentity, CrawIdentityError, CrawUpstreamError
+from aidev_agent.packages.craw.base import (
+    CrawChatStream,
+    CrawIdentity,
+    CrawIdentityError,
+    CrawStreamProtocolError,
+    CrawUpstreamError,
+)
 from aidev_agent.packages.craw.registry import CrawBackendProtocol, get_backend
 from aidev_agent.services.agent.registry import AgentBuildContext
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
@@ -81,6 +88,11 @@ class CrawCompletionAgent(BaseModel):
 
     backend: Optional[Any] = None  # CrawBackendProtocol（runtime_checkable Protocol，不做 pydantic 校验）
     identity: Optional[CrawIdentity] = None
+
+    # 本进程内活跃上游流句柄（会话键 → 句柄列表）：stop() 据此主动关闭，
+    # 立即打断阻塞中的 HTTP 读；跨进程实例仍由取消信号（is_cancelled）兜底
+    _active_streams: ClassVar[dict[str, list[CrawChatStream]]] = {}
+    _active_streams_lock: ClassVar[threading.Lock] = threading.Lock()
 
     class Config:
         arbitrary_types_allowed = True
@@ -134,7 +146,37 @@ class CrawCompletionAgent(BaseModel):
         return self._run_sync()
 
     def stop(self) -> None:
-        GeneratorStreamingHelper.cancel(self.session_code or self.thread_id)
+        key = self.session_code or self.thread_id
+        GeneratorStreamingHelper.cancel(key)
+        # 主动关闭本进程内该会话的上游流：阻塞等待数据中的 HTTP 读立即被
+        # 打断，不必等到上游产出下一个 chunk 才观察到取消
+        self._close_streams(key)
+
+    # ---------------- 活跃流句柄管理（stop 主动中断用） ----------------
+
+    @classmethod
+    def _track_stream(cls, key: str, stream: CrawChatStream) -> None:
+        with cls._active_streams_lock:
+            cls._active_streams.setdefault(key, []).append(stream)
+
+    @classmethod
+    def _untrack_stream(cls, key: str, stream: CrawChatStream) -> None:
+        with cls._active_streams_lock:
+            streams = cls._active_streams.get(key)
+            if streams and stream in streams:
+                streams.remove(stream)
+            if streams is not None and not streams:
+                cls._active_streams.pop(key, None)
+
+    @classmethod
+    def _close_streams(cls, key: str) -> None:
+        with cls._active_streams_lock:
+            streams = list(cls._active_streams.get(key, ()))
+        for stream in streams:
+            try:
+                stream.close()
+            except Exception as exc:  # 关闭失败不影响取消信号本身
+                logger.warning("[CRAW] close active stream failed (key=%s): %s", key, exc)
 
     # ---------------- 事件分发 ----------------
 
@@ -178,47 +220,70 @@ class CrawCompletionAgent(BaseModel):
 
         text_open = False
         try:
-            chunks = backend.chat_completions_stream(
+            stream = backend.open_chat_stream(
                 build_openai_messages(self.session_context_data),
                 identity=self.identity,
                 session_code=self.session_code,
             )
-            for chunk in chunks:
-                if GeneratorStreamingHelper.is_cancelled(thread):
-                    if text_open:
-                        yield from self._emit_text_end(encoder, message_id)
-                    yield emit_run_finished_event(
-                        thread_id=self.thread_id, run_id=RunId.CANCELLED, event_handler=self._dispatch
+            self._track_stream(thread, stream)
+            try:
+                for chunk in stream:
+                    if GeneratorStreamingHelper.is_cancelled(thread):
+                        stream.close()
+                        if text_open:
+                            yield from self._emit_text_end(encoder, message_id)
+                        yield emit_run_finished_event(
+                            thread_id=self.thread_id, run_id=RunId.CANCELLED, event_handler=self._dispatch
+                        )
+                        return
+                    piece = backend.delta_text(chunk)
+                    if not piece:
+                        continue
+                    if not text_open:
+                        start_event = TextMessageStartEvent(
+                            type=EventType.TEXT_MESSAGE_START, message_id=message_id, role="assistant"
+                        )
+                        self._dispatch(start_event)
+                        yield encoder.encode(start_event)
+                        text_open = True
+                    content_event = TextMessageContentEvent(
+                        type=EventType.TEXT_MESSAGE_CONTENT, message_id=message_id, delta=piece
                     )
-                    return
-                piece = backend.delta_text(chunk)
-                if not piece:
-                    continue
-                if not text_open:
-                    start_event = TextMessageStartEvent(
-                        type=EventType.TEXT_MESSAGE_START, message_id=message_id, role="assistant"
-                    )
-                    self._dispatch(start_event)
-                    yield encoder.encode(start_event)
-                    text_open = True
-                content_event = TextMessageContentEvent(
-                    type=EventType.TEXT_MESSAGE_CONTENT, message_id=message_id, delta=piece
+                    self._dispatch(content_event)
+                    yield encoder.encode(content_event)
+            finally:
+                self._untrack_stream(thread, stream)
+                stream.close()
+            if stream.interrupted:
+                # 流在自然结束前被 stop() 主动关闭 → 取消收尾，不算错误
+                if text_open:
+                    yield from self._emit_text_end(encoder, message_id)
+                yield emit_run_finished_event(
+                    thread_id=self.thread_id, run_id=RunId.CANCELLED, event_handler=self._dispatch
                 )
-                self._dispatch(content_event)
-                yield encoder.encode(content_event)
+                return
             if text_open:
                 yield from self._emit_text_end(encoder, message_id)
             yield from self._emit_finish(run_id)
         except CrawUpstreamError as exc:
+            # 上游响应详情只进服务端日志；客户端只给脱敏状态
             logger.warning("[CRAW] upstream error: %s", exc)
             if text_open:
                 yield from self._emit_text_end(encoder, message_id)
-            yield from self._emit_error_and_finish(encoder, run_id, str(exc))
+            yield from self._emit_error_and_finish(encoder, run_id, exc.client_message)
+        except CrawStreamProtocolError as exc:
+            logger.warning("[CRAW] stream protocol error: %s", exc)
+            if text_open:
+                yield from self._emit_text_end(encoder, message_id)
+            yield from self._emit_error_and_finish(encoder, run_id, exc.client_message)
         except Exception as exc:
+            # 异常详情（可能含内部信息）只进服务端日志；客户端只给异常类型
             logger.exception("[CRAW] stream forward error: %s", exc)
             if text_open:
                 yield from self._emit_text_end(encoder, message_id)
-            yield from self._emit_error_and_finish(encoder, run_id, f"转发 craw({backend.name}) 失败: {exc}")
+            yield from self._emit_error_and_finish(
+                encoder, run_id, f"转发 craw({backend.name}) 失败: {type(exc).__name__}"
+            )
 
     # ---------------- 非流式：转发 craw + 适配回 ChatCompletionAgent 形状 ----------------
 
