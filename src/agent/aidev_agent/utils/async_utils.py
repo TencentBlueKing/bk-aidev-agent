@@ -10,10 +10,13 @@ specific language governing permissions and limitations under the License.
 """
 
 import asyncio
+from logging import getLogger
 from typing import AsyncGenerator
 
 from aidev_agent.utils import Empty
 from aidev_agent.utils.loop import get_event_loop
+
+logger = getLogger(__name__)
 
 
 async def async_generator_with_timeout(
@@ -50,6 +53,7 @@ def async_to_sync_generator(async_gen):
             async for item in async_gen:
                 await data_queue.put(item)
         except Exception as e:
+            logger.warning(f"[ASYNC] consume_async error: {e}", exc_info=True)
             error = e
         finally:
             await data_queue.put(None)  # 结束信号

@@ -133,3 +133,24 @@ def test_run_coro_sync_preserves_worker_thread_loop():
 
     assert result == 10
     assert has_loop is True
+
+
+@pytest.mark.asyncio
+async def test_run_coro_sync_with_running_loop_delegates_to_new_thread():
+    """已有 running loop 时，run_coro_sync 应委托独立线程执行，不抛 already running。
+
+    复现 construct_mcp 在 async→sync 桥接上下文被调用导致
+    "This event loop is already running" 的场景。
+    """
+    result = run_coro_sync(sample_async_task(5))
+    assert result == 10
+
+
+@pytest.mark.asyncio
+async def test_run_coro_sync_with_running_loop_propagates_exception():
+    """已有 running loop 时，协程抛出的异常应原样冒泡到调用方。"""
+    async def _boom():
+        raise ValueError("boom")
+
+    with pytest.raises(ValueError, match="boom"):
+        run_coro_sync(_boom())
