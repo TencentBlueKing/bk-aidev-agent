@@ -293,3 +293,19 @@ class TestThreadIdConsistency:
         thread_ids = {e.thread_id for e in events if hasattr(e, "thread_id")}
         # RUN_STARTED / RUN_FINISHED 与队列键（session_code）同一套会话标识
         assert thread_ids == {"sess-1"}
+
+
+class TestHostConsumedContract:
+    """宿主（aidev_bkplugin chat 视图）消费面契约：chat_history 与 ChatCompletionAgent 对齐。"""
+
+    def test_chat_history_built_from_session_context(self):
+        context = [{"role": "user", "content": "hi"}, {"role": "ai", "content": "ok"}]
+        agent = _build_agent(_StubBackend(), session_context=context)
+        assert agent.chat_history == [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "ok"},
+        ]
+
+    def test_chat_history_empty_for_empty_context(self):
+        agent = _build_agent(_StubBackend(), session_context=[{"role": "activity", "content": "x"}])
+        assert agent.chat_history == []
