@@ -162,10 +162,16 @@ class ChatSessionViewSet(PluginViewSet):
             raise
 
     def _make_pv_file_service(self, request) -> SandboxPvFileService:
-        username = request.user.username
+        # username 优先级：request.user.username(apigw请求+前端请求) → X-BKAIDEV-USER header 兜底
+        username = request.user.username if hasattr(request, "user") else ""
+        if not username:
+            username = request.META.get("HTTP_X_BKAIDEV_USER", "")
         rm = PluginResourceManager(username=username)
-        # 从 cookie 读用户票据（key 由 BKAUTH_BACKEND_TYPE 决定，
-        # 内网 bk_ticket / 外部 bk_token），HTTP_AIDEV_TICKET header 作为兜底。
+
+        # 用户ticket获取优先级：
+        # 1) cookie[BKAUTH_BACKEND_TYPE]：前端浏览器同域直调场景
+        # 2) HTTP_AIDEV_TICKET header：cookie 缺失时的手动兜底
+        # 3) access_token：apigw 场景，用 username 通过 bkoauth 换取
         ticket_key = getattr(settings, "BKAUTH_BACKEND_TYPE", "bk_ticket")
         bk_ticket = request.COOKIES.get(ticket_key, "") or request.META.get("HTTP_AIDEV_TICKET", "")
         executor_info = {
@@ -175,6 +181,31 @@ class ChatSessionViewSet(PluginViewSet):
             "bk_ticket_key": ticket_key,
             "bk_ticket_value": bk_ticket,
         }
+        if not bk_ticket:
+            if username:
+                access_token = rm.resolve_access_token(username)
+                if access_token:
+                    executor_info["access_token"] = access_token
+                    logger.info(
+                        "[pv_files] cookie ticket empty, fallback to access_token: "
+                        "user=%s, path=%s",
+                        username,
+                        request.path,
+                    )
+                else:
+                    logger.warning(
+                        "[pv_files] no valid user credential (ticket/access_token): "
+                        "user=%s, path=%s; downstream PaaS will reject",
+                        username,
+                        request.path,
+                    )
+            else:
+                logger.warning(
+                    "[pv_files] no username (jwt user empty & no X-BKAIDEV-USER header): "
+                    "path=%s; downstream PaaS will reject",
+                    request.path,
+                )
+
         return SandboxPvFileService(resource_manager=rm, executor_info=executor_info)
 
     @action(["GET"], url_path="pv_files", detail=True)
