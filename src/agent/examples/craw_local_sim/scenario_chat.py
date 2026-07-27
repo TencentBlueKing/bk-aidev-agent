@@ -9,26 +9,35 @@ import os
 import sys
 
 from aidev_agent.enums import AgentType
-from aidev_agent.packages.craw import CrawCompletionAgent, CrawIdentity, get_backend
+from aidev_agent.packages.craw import CrawCompletionAgent, get_backend
 from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.agent.registry import AgentBuildContext
+
+
+class EnvTokenResourceManager:
+    """示例用 resource_manager stub：按 env 解析用户 access_token。
+
+    生产路径由平台 resource_manager 按 username 解析 token；本地仿真里
+    token 经 agent.env 注入 ``BKAI_ACCESS_TOKEN``，身份装配走与生产一致的
+    ``build()`` 链路（fail-closed：token 缺失在 build 期即报错，绝不降级
+    为无身份请求）。token 经 ``X-Bkai-Access-Token`` 头透传，craw 前置
+    反代据此做每用户隔离。
+    """
+
+    def resolve_access_token(self, username: str) -> str:
+        return os.getenv("BKAI_ACCESS_TOKEN", "")
 
 
 def build_agent(prompt: str) -> CrawCompletionAgent:
     ctx = AgentBuildContext(
         agent_code="craw-local-sim",
         agent_type=AgentType.CHAT,
-        resource_manager=None,
+        resource_manager=EnvTokenResourceManager(),
         session_code="craw-sim-session",
         username=os.getenv("SIM_USERNAME", "demo-user"),
         session_context_data=[{"role": "user", "content": prompt}],
     )
-    agent = CrawCompletionAgent().build(ctx)
-    # 用户身份 token 透传演示（X-Bkai-Access-Token；craw 前置反代据此做每用户隔离）
-    agent.identity = CrawIdentity(
-        username=agent.username or "", access_token=os.getenv("BKAI_ACCESS_TOKEN", "")
-    )
-    return agent
+    return CrawCompletionAgent().build(ctx)
 
 
 def main() -> None:

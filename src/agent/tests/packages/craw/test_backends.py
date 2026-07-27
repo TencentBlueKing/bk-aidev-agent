@@ -1,9 +1,17 @@
 # -*- coding: utf-8 -*-
 """craw 后端：env 装配链 / 请求头 / 身份隔离。"""
 
+import httpx
 import pytest
 
-from aidev_agent.packages.craw import CrawIdentity, HermesBackend, OpenClawBackend, get_backend
+from aidev_agent.packages.craw import (
+    CrawIdentity,
+    CrawStreamProtocolError,
+    CrawUpstreamError,
+    HermesBackend,
+    OpenClawBackend,
+    get_backend,
+)
 from aidev_agent.packages.craw.base import IDENTITY_HEADER
 
 
@@ -75,3 +83,104 @@ class TestBackendHeaders:
         headers = backend.build_headers(identity=identity, session_code="sess-1")
         assert headers["X-Hermes-Session-Id"] == "sess-1"
         assert ("X-Hermes-Session-Key" in headers) is expect_session_key
+
+
+class TestStrictSseParsing:
+    """SSE 严格校验：畸形 data 行 / 未见 [DONE] 即 EOF 都不能静默当成功。"""
+
+    def test_malformed_data_line_raises(self):
+        lines = ["data: {not-json", "data: [DONE]"]
+        with pytest.raises(CrawStreamProtocolError):
+            list(OpenClawBackend.iter_sse_chunks(iter(lines), backend="openclaw"))
+
+    @pytest.mark.parametrize("lines", [[], ['data: {"choices":[]}'], ["event: ping", ""]])
+    def test_eof_without_done_raises(self, lines):
+        with pytest.raises(CrawStreamProtocolError):
+            list(OpenClawBackend.iter_sse_chunks(iter(lines), backend="openclaw"))
+
+    def test_done_terminated_stream_ok(self):
+        lines = ['data: {"choices":[{"delta":{"content":"hi"}}]}', "data: [DONE]"]
+        chunks = list(OpenClawBackend.iter_sse_chunks(iter(lines), backend="openclaw"))
+        assert len(chunks) == 1
+
+
+def _mock_backend(monkeypatch, handler):
+    """把 httpx.Client 换成 MockTransport 工厂，返回打好桩的 OpenClawBackend。"""
+    real_client = httpx.Client
+
+    def fake_client(**kwargs):
+        return real_client(transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr(httpx, "Client", fake_client)
+    return OpenClawBackend(api_url="http://stub", api_key="stub-key")
+
+
+class TestStrictHttpStatus:
+    """仅 2xx 视为成功：3xx（未预期重定向）与 4xx/5xx 一律拒绝。"""
+
+    @pytest.mark.parametrize("status", [301, 302, 404, 502])
+    def test_open_chat_stream_rejects_non_2xx(self, monkeypatch, status):
+        backend = _mock_backend(monkeypatch, lambda request: httpx.Response(status, text="err-page"))
+        with pytest.raises(CrawUpstreamError) as excinfo:
+            backend.open_chat_stream([{"role": "user", "content": "hi"}])
+        assert excinfo.value.status_code == status
+
+    @pytest.mark.parametrize("status", [302, 500])
+    def test_chat_completions_rejects_non_2xx(self, monkeypatch, status):
+        backend = _mock_backend(monkeypatch, lambda request: httpx.Response(status, text="err-page"))
+        with pytest.raises(CrawUpstreamError):
+            backend.chat_completions([{"role": "user", "content": "hi"}])
+
+    def test_upstream_error_client_message_excludes_detail(self):
+        error = CrawUpstreamError("openclaw", 502, "<html>secret internals</html>")
+        assert "secret" not in error.client_message
+        assert "502" in error.client_message
+
+
+class TestCrawChatStream:
+    """流句柄：正常走完 / 截断报错 / close 后静默结束（取消语义）。"""
+
+    @staticmethod
+    def _sse_handler(body: str):
+        return lambda request: httpx.Response(200, text=body, headers={"content-type": "text/event-stream"})
+
+    def test_stream_yields_chunks_until_done(self, monkeypatch):
+        body = 'data: {"choices":[{"delta":{"content":"he"}}]}\n\ndata: {"choices":[{"delta":{"content":"llo"}}]}\n\ndata: [DONE]\n\n'
+        backend = _mock_backend(monkeypatch, self._sse_handler(body))
+        with backend.open_chat_stream([{"role": "user", "content": "hi"}]) as stream:
+            chunks = list(stream)
+        assert [backend.delta_text(c) for c in chunks] == ["he", "llo"]
+        assert stream.interrupted is False
+
+    def test_truncated_stream_raises(self, monkeypatch):
+        body = 'data: {"choices":[{"delta":{"content":"he"}}]}\n\n'  # 无 [DONE] 即 EOF
+        backend = _mock_backend(monkeypatch, self._sse_handler(body))
+        stream = backend.open_chat_stream([{"role": "user", "content": "hi"}])
+        with pytest.raises(CrawStreamProtocolError):
+            list(stream)
+
+    def test_empty_stream_raises(self, monkeypatch):
+        backend = _mock_backend(monkeypatch, self._sse_handler(""))
+        stream = backend.open_chat_stream([{"role": "user", "content": "hi"}])
+        with pytest.raises(CrawStreamProtocolError):
+            list(stream)
+
+    def test_closed_stream_iterates_silently(self, monkeypatch):
+        body = 'data: {"choices":[{"delta":{"content":"he"}}]}\n\n'
+        backend = _mock_backend(monkeypatch, self._sse_handler(body))
+        stream = backend.open_chat_stream([{"role": "user", "content": "hi"}])
+        stream.close()  # 模拟 stop()：关闭后迭代不得报截断错
+        assert list(stream) == []
+        assert stream.interrupted is True
+
+    def test_close_is_idempotent(self, monkeypatch):
+        backend = _mock_backend(monkeypatch, self._sse_handler("data: [DONE]\n\n"))
+        stream = backend.open_chat_stream([{"role": "user", "content": "hi"}])
+        stream.close()
+        stream.close()
+
+    def test_chat_completions_stream_wrapper_still_works(self, monkeypatch):
+        body = 'data: {"choices":[{"delta":{"content":"x"}}]}\n\ndata: [DONE]\n\n'
+        backend = _mock_backend(monkeypatch, self._sse_handler(body))
+        chunks = list(backend.chat_completions_stream([{"role": "user", "content": "hi"}]))
+        assert len(chunks) == 1

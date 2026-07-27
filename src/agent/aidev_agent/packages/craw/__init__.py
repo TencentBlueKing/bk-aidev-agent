@@ -23,7 +23,14 @@ Craw = 以本机 API 服务（localhost / 同容器 / 同 Pod）形态运行的 
 """
 
 from aidev_agent.packages.craw.agent import CrawCompletionAgent
-from aidev_agent.packages.craw.base import BaseCrawBackend, CrawIdentity, CrawIdentityError, CrawUpstreamError
+from aidev_agent.packages.craw.base import (
+    BaseCrawBackend,
+    CrawChatStream,
+    CrawIdentity,
+    CrawIdentityError,
+    CrawStreamProtocolError,
+    CrawUpstreamError,
+)
 from aidev_agent.packages.craw.hermes import HermesBackend
 from aidev_agent.packages.craw.openclaw import OpenClawBackend
 from aidev_agent.packages.craw.registry import CrawBackendProtocol, craw_backend_registry, get_backend
@@ -41,9 +48,11 @@ craw_backend_registry.register(HermesBackend.name, HermesBackend)
 __all__ = [
     "BaseCrawBackend",
     "CrawBackendProtocol",
+    "CrawChatStream",
     "CrawCompletionAgent",
     "CrawIdentity",
     "CrawIdentityError",
+    "CrawStreamProtocolError",
     "CrawSyncResult",
     "CrawSyncer",
     "CrawUpstreamError",
