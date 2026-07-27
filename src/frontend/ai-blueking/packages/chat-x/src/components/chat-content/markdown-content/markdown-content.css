@@ -321,11 +321,6 @@
   appearance: none;
 }
 
-.ai-markdown-body ::input-placeholder {
-  color: inherit;
-  opacity: 0.54;
-}
-
 .ai-markdown-body ::-webkit-file-upload-button {
   font: inherit;
   appearance: auto;

@@ -27,7 +27,7 @@
 <script setup lang="ts">
   import { computed, shallowRef, toRef, useTemplateRef } from 'vue';
 
-  import { type TippyOptions, Tippy } from 'vue-tippy';
+  import { type TippyOptions, Tippy, useTippy } from 'vue-tippy';
 
   import { t } from '../../../lang/lang';
   import ModelSelectorPanel from './model-selector-panel.vue';
@@ -64,7 +64,7 @@
   /** 当前选中的模型（值为 llm_name，v-model） */
   const selectedModel = defineModel<string>();
 
-  const tippyRef = useTemplateRef<InstanceType<typeof Tippy>>('tippyRef');
+  const tippyRef = useTemplateRef<InstanceType<typeof Tippy> & ReturnType<typeof useTippy>>('tippyRef');
   const panelRef = useTemplateRef<InstanceType<typeof ModelSelectorPanel>>('panelRef');
   const isExpanded = shallowRef(false);
 
