@@ -47,12 +47,15 @@ _logger = getLogger(__name__)
 
 HOME_ENV = "BKAI_CRAW_HOME"
 INTERVAL_ENV = "BKAI_CRAW_SYNC_INTERVAL"
+ARTIFACT_MODE_ENV = "BKAI_CRAW_ARTIFACT_MODE"
 DEFAULT_SOUL_FILENAME = "SOUL.md"
 DEFAULT_CONFIG_FILENAME = "agent-config.json"
 # staging 文件命名：``.<产物名>.craw-staging``（与正式文件同目录，rename 才是原子的）
 _STAGING_SUFFIX = ".craw-staging"
-# 产物含 MCP 认证 header 等敏感配置：staging/正式文件统一 0600，不依赖 umask
-_ARTIFACT_MODE = 0o600
+# 产物含 MCP 认证 header 等敏感配置：staging/正式文件默认 0600，不依赖 umask。
+# craw 内核与 agent 以不同 UID 跑在共享卷两侧时（同 Pod 双容器），0600 会挡住
+# 内核消费——此时经参数 artifact_mode / env BKAI_CRAW_ARTIFACT_MODE 显式放宽（如 0644）。
+_DEFAULT_ARTIFACT_MODE = 0o600
 
 
 @dataclass
@@ -98,6 +101,9 @@ class CrawSyncer:
         配置产物（Prompt / MCP / Skills）。与 ``soul_provider`` 可并存。
     :param interval: ``run_forever`` 周期秒；缺省读 env ``BKAI_CRAW_SYNC_INTERVAL``（默认 60）。
     :param soul_filename: 人设写入文件名（默认 ``SOUL.md``）。
+    :param artifact_mode: 产物文件权限位；缺省读 env ``BKAI_CRAW_ARTIFACT_MODE``
+        （八进制字符串，如 ``0644``），再缺省 0600。跨 UID 共享卷部署需放宽
+        以便 craw 内核可读。
     """
 
     def __init__(
@@ -108,6 +114,7 @@ class CrawSyncer:
         artifacts_provider: Optional[Callable[[], Dict[str, str]]] = None,
         interval: Optional[float] = None,
         soul_filename: str = DEFAULT_SOUL_FILENAME,
+        artifact_mode: Optional[int] = None,
     ) -> None:
         self.backend = backend or get_backend()
         self.home_dir = Path(home_dir or os.getenv(HOME_ENV) or "") if (home_dir or os.getenv(HOME_ENV)) else None
@@ -120,6 +127,14 @@ class CrawSyncer:
                 interval = 60.0
         self.interval = interval
         self.soul_filename = soul_filename
+        if artifact_mode is None:
+            raw_mode = (os.getenv(ARTIFACT_MODE_ENV) or "").strip()
+            try:
+                artifact_mode = int(raw_mode, 8) if raw_mode else _DEFAULT_ARTIFACT_MODE
+            except ValueError:
+                _logger.warning("[CRAW-SYNC] 非法 %s=%r，回落默认 0600", ARTIFACT_MODE_ENV, raw_mode)
+                artifact_mode = _DEFAULT_ARTIFACT_MODE
+        self.artifact_mode = artifact_mode
 
     # ---------- read ----------
 
@@ -197,13 +212,20 @@ class CrawSyncer:
             raise
         return fd
 
-    @staticmethod
-    def _write_staging_at(dirfd: int, filename: str, content: str) -> str:
-        """在目录 fd 下写 staging 文件（0600，O_EXCL + O_NOFOLLOW），返回 staging 名。"""
+    def _write_staging_at(self, dirfd: int, filename: str, content: str) -> str:
+        """在目录 fd 下写 staging 文件（``artifact_mode``，O_EXCL + O_NOFOLLOW），返回 staging 名。"""
         staging_name = f".{filename}{_STAGING_SUFFIX}"
         with contextlib.suppress(FileNotFoundError):  # 清掉上次异常退出的残留
             os.unlink(staging_name, dir_fd=dirfd)
-        fd = os.open(staging_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, _ARTIFACT_MODE, dir_fd=dirfd)
+        fd = os.open(
+            staging_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, self.artifact_mode, dir_fd=dirfd
+        )
+        try:
+            # O_CREAT 的 mode 受进程 umask 影响：显式 fchmod 落到目标权限，不依赖 umask
+            os.fchmod(fd, self.artifact_mode)
+        except OSError:
+            os.close(fd)
+            raise
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(content)
         return staging_name

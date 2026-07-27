@@ -236,3 +236,21 @@ class TestCustomSoulFilename:
         assert result.soul_written_bytes == len("# persona".encode("utf-8"))
         assert (tmp_path / "PERSONA.md").read_text(encoding="utf-8") == "# persona"
         assert not (tmp_path / "SOUL.md").exists()
+
+    def test_artifact_mode_overridable_via_param_and_env(self, tmp_path, monkeypatch):
+        """跨 UID 共享卷部署可放宽权限：参数 > env > 默认 0600。"""
+        by_param = CrawSyncer(
+            backend=_HealthStubBackend(), home_dir=str(tmp_path), soul_provider=lambda: "# a", artifact_mode=0o644
+        )
+        by_param.run_cycle()
+        assert ((tmp_path / "SOUL.md").stat().st_mode & 0o777) == 0o644
+
+        monkeypatch.setenv("BKAI_CRAW_ARTIFACT_MODE", "0640")
+        by_env = CrawSyncer(
+            backend=_HealthStubBackend(),
+            home_dir=str(tmp_path),
+            soul_provider=lambda: "# b",
+            soul_filename="ENV.md",
+        )
+        by_env.run_cycle()
+        assert ((tmp_path / "ENV.md").stat().st_mode & 0o777) == 0o640
