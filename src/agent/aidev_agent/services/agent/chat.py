@@ -6,7 +6,7 @@ from importlib.metadata import version as pkg_version
 from logging import getLogger
 from typing import Any, Callable, ClassVar, Generator, List, Optional
 
-from ag_ui.core import BaseEvent
+from ag_ui.core import BaseEvent, EventType
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage, SystemMessage, ToolMessage
@@ -142,6 +142,9 @@ class ChatCompletionAgent(BaseModel):
     TOOL_EXECUTION_INTERVAL: ClassVar[int] = 10
     UPLOAD_IMAGE_PROMPT_PREFIX: ClassVar[Any] = "我上传了个图片文件,文件名为{file_name}。"
     SKIP_PROMPT_ROLE: ClassVar[list[str]] = ["guide", "reasoning"]
+    # 与 ag_ui EventEncoder 的 SSE 编码保持一致
+    SSE_DATA_PREFIX: ClassVar[str] = "data: "
+    SSE_FRAME_SUFFIX: ClassVar[str] = "\n\n"
 
     class Config:
         arbitrary_types_allowed = True
@@ -828,49 +831,65 @@ class ChatCompletionAgent(BaseModel):
             replay_head_transform=self._dedup_snapshot_head_frames,
         )
 
-    @staticmethod
-    def _collect_replay_message_ids(cached: list[Any]) -> set[str]:
+    @classmethod
+    def _parse_sse_event(cls, frame: Any, event_type: str) -> Optional[dict]:
+        """把 SSE 帧解析为指定类型的 payload；类型不符或无法解析时返回 None。
+
+        先做子串预筛只为跳过大多数不相关帧，类型判定一律以解析后的 ``type`` 字段为准，
+        不依赖 encoder 的 JSON 分隔符风格。
+        """
+        if not isinstance(frame, str) or event_type not in frame:
+            return None
+        body = frame[len(cls.SSE_DATA_PREFIX) :] if frame.startswith(cls.SSE_DATA_PREFIX) else frame
+        try:
+            payload = json.loads(body)
+        except ValueError:
+            return None
+        if not isinstance(payload, dict) or payload.get("type") != event_type:
+            return None
+        return payload
+
+    @classmethod
+    def _collect_replay_message_ids(cls, cached: list[Any]) -> set[str]:
         """收集实际首批 replay 中 ``TEXT_MESSAGE_START`` 的 message_id。"""
         message_ids: set[str] = set()
         for frame in cached:
-            if not isinstance(frame, str) or '"type":"TEXT_MESSAGE_START"' not in frame:
-                continue
-            try:
-                payload = json.loads(frame[len("data: ") :] if frame.startswith("data: ") else frame)
-            except (json.JSONDecodeError, ValueError):
+            payload = cls._parse_sse_event(frame, EventType.TEXT_MESSAGE_START)
+            if payload is None:
                 continue
             message_id = payload.get("messageId") or payload.get("message_id")
             if message_id:
                 message_ids.add(message_id)
         return message_ids
 
-    @staticmethod
-    def _dedup_snapshot_head_frames(head_frames: list[Any], replay_frames: list[Any]) -> list[Any]:
-        """从阶段 1 头部帧的 ``MESSAGES_SNAPSHOT`` 中剔除将被 replay 重放的消息，避免重复。"""
-        replay_message_ids = ChatCompletionAgent._collect_replay_message_ids(replay_frames)
+    @classmethod
+    def _dedup_snapshot_head_frames(cls, head_frames: list[Any], replay_frames: list[Any]) -> list[Any]:
+        """从阶段 1 头部帧的 ``MESSAGES_SNAPSHOT`` 中剔除将被 replay 重放的消息，避免重复。
+
+        只处理 ``TEXT_MESSAGE_START`` 对应的文本消息；replay 中的工具调用类事件不参与
+        去重，快照里的同 id 工具消息仍可能与 replay 重叠。
+        """
+        replay_message_ids = cls._collect_replay_message_ids(replay_frames)
         if not replay_message_ids:
             return head_frames
-        return [ChatCompletionAgent._strip_snapshot_messages(f, replay_message_ids) for f in head_frames]
+        return [cls._strip_snapshot_messages(f, replay_message_ids) for f in head_frames]
 
-    @staticmethod
-    def _strip_snapshot_messages(frame: Any, exclude_ids: set[str]) -> Any:
+    @classmethod
+    def _strip_snapshot_messages(cls, frame: Any, exclude_ids: set[str]) -> Any:
         """若 ``frame`` 是 ``MESSAGES_SNAPSHOT``，剔除 id ∈ ``exclude_ids`` 的消息后重新编码。
 
         非快照帧、无法解析或无需改动时原样返回，保持其余帧字节不变。
         """
-        if not isinstance(frame, str) or '"type":"MESSAGES_SNAPSHOT"' not in frame:
-            return frame
-        body = frame[len("data: ") :] if frame.startswith("data: ") else frame
-        try:
-            data = json.loads(body)
-        except (json.JSONDecodeError, ValueError):
+        data = cls._parse_sse_event(frame, EventType.MESSAGES_SNAPSHOT)
+        if data is None:
             return frame
         messages = data.get("messages") or []
         kept = [m for m in messages if (m.get("messageId") or m.get("id")) not in exclude_ids]
         if len(kept) == len(messages):
             return frame
         data["messages"] = kept
-        return f"data: {json.dumps(data, ensure_ascii=False, separators=(',', ':'))}\n\n"
+        body = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+        return f"{cls.SSE_DATA_PREFIX}{body}{cls.SSE_FRAME_SUFFIX}"
 
     @staticmethod
     def _extract_head_frames(
