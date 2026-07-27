@@ -18,8 +18,20 @@ import sys
 import uuid
 
 from aidev_agent.enums import AgentType
-from aidev_agent.packages.craw import CrawCompletionAgent, CrawIdentity, get_backend
+from aidev_agent.packages.craw import CrawCompletionAgent, get_backend
+from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.agent.registry import AgentBuildContext
+
+
+class EnvTokenResourceManager:
+    """示例用 resource_manager stub：按 env 解析用户 access_token。
+
+    token 经 agent.env 注入 ``BKAI_ACCESS_TOKEN``，身份装配走与生产一致的
+    ``build()`` 链路（fail-closed：token 缺失在 build 期即报错）。
+    """
+
+    def resolve_access_token(self, username: str) -> str:
+        return os.getenv("BKAI_ACCESS_TOKEN", "")
 
 
 def ask(history: list[dict], session_code: str) -> str:
@@ -27,15 +39,12 @@ def ask(history: list[dict], session_code: str) -> str:
     ctx = AgentBuildContext(
         agent_code="craw-local-chat",
         agent_type=AgentType.CHAT,
-        resource_manager=None,
+        resource_manager=EnvTokenResourceManager(),
         session_code=session_code,
         username=os.getenv("SIM_USERNAME", "demo-user"),
         session_context_data=list(history),
     )
     agent = CrawCompletionAgent().build(ctx)
-    agent.identity = CrawIdentity(
-        username=agent.username or "", access_token=os.getenv("BKAI_ACCESS_TOKEN", "")
-    )
 
     reply: list[str] = []
 
@@ -48,8 +57,8 @@ def ask(history: list[dict], session_code: str) -> str:
             print(f"\n[RUN_ERROR] {event.message}", file=sys.stderr)
 
     agent.event_handler = on_event
-    # 演示用直接消费内部流（生产路径经 execute(stream=True)+GeneratorStreamingHelper）
-    for _ in agent._run_stream():
+    # 生产路径：execute(stream=True) 经 GeneratorStreamingHelper 队列消费
+    for _ in agent.execute(ExecuteKwargs(stream=True)):
         pass
     print()
     return "".join(reply)
