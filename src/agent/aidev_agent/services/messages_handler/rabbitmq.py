@@ -304,6 +304,8 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
     QUEUE_TTL_MS: ClassVar[int] = QueueTTLConfig.QUEUE_EXPIRE_MS
     REPLAY_LOCK_RETRY_INTERVAL: ClassVar[float] = 0.05
     REPLAY_MESSAGE_RETRY_INTERVAL: ClassVar[float] = 0.1
+    # 显式 flush 等待同一 thread 的 in-flight 批次发布完成的上限
+    FLUSH_IN_FLIGHT_WAIT_SEC: ClassVar[float] = 5.0
 
     _instance: Optional["RabbitMQMessageHandler"] = None
     _lock: ClassVar[threading.Lock] = threading.Lock()
@@ -853,7 +855,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             except Exception as e:
                 logger.error(f"Error flushing messages to RabbitMQ: {e}")
                 self._finish_thread_flush(thread_id, messages_to_restore=messages_to_flush)
-                self._notify_replay_waiters()
             else:
                 self._finish_thread_flush(thread_id)
                 flushed = True
@@ -985,11 +986,30 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                 self._message_buffer[thread_id] = []
             self._message_buffer[thread_id].append(message)
 
-    def _take_thread_buffer_for_flush(self, thread_id: str) -> list[Any]:
-        """取出一个 thread 的待发布 buffer，并标记本进程内该 thread 正在 flush。"""
+    def _take_thread_buffer_for_flush(self, thread_id: str, wait_for_in_flight: Optional[float] = None) -> list[Any]:
+        """取出一个 thread 的待发布 buffer，并标记本进程内该 thread 正在 flush。
+
+        Args:
+            thread_id: 目标会话
+            wait_for_in_flight: 该 thread 已有 in-flight 批次时的等待上限（秒）。
+                None 表示直接放弃本轮（daemon 会在下个周期重试）；显式 flush 必须传值，
+                否则调用方以为消息已发布，而 buffer 里的消息（例如 EOD_CHUNK）会滞留到
+                下一个 daemon 周期，daemon 退出后更会永久滞留。
+        """
         with self._buffer_condition:
             if thread_id in self._flushing_threads:
-                return []
+                if wait_for_in_flight is None:
+                    return []
+                if not self._buffer_condition.wait_for(
+                    lambda: thread_id not in self._flushing_threads,
+                    timeout=wait_for_in_flight,
+                ):
+                    logger.warning(
+                        "[RabbitMQ] give up waiting for in-flight flush thread_id=%s timeout=%.1fs",
+                        thread_id,
+                        wait_for_in_flight,
+                    )
+                    return []
 
             messages_to_flush = self._message_buffer.get(thread_id, [])
             if not messages_to_flush:
@@ -1015,7 +1035,9 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             thread_id: 如果指定，只推送该 thread_id 的消息；否则推送所有消息
         """
         if thread_id:
-            messages_to_flush = self._take_thread_buffer_for_flush(thread_id)
+            messages_to_flush = self._take_thread_buffer_for_flush(
+                thread_id, wait_for_in_flight=self.FLUSH_IN_FLIGHT_WAIT_SEC
+            )
             if not messages_to_flush:
                 return
 
@@ -1035,7 +1057,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             except Exception as e:
                 logger.error(f"Error flushing messages for {thread_id}: {e}")
                 self._finish_thread_flush(thread_id, messages_to_restore=messages_to_flush)
-                self._notify_replay_waiters()
                 raise
             else:
                 self._finish_thread_flush(thread_id)
