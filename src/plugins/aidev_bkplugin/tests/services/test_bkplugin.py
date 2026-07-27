@@ -266,3 +266,41 @@ class TestBkpluginExecution:
         assert runner.execute_kwargs["session_code"] == "thread-x"
         assert runner.plugin_context == [{"k": "v"}]
         mock_resolve.assert_called_once_with("alice")
+
+    def test_run_worker_skips_save_stream_failure_when_session_finished(self, monkeypatch):
+        """心跳超时误报：producer 实际已完成（session=FINISHED），不应覆盖为 FAILED。"""
+        from aidev_bkplugin.services.agent_bkplugin import BkpluginChat
+
+        agent = BkpluginChat(chat_history=[], execute_kwargs={}, username="alice")
+        monkeypatch.setattr(
+            agent, "invoke_agent", MagicMock(side_effect=RuntimeError("生产者心跳超时"))
+        )
+        mock_sm = MagicMock()
+        mock_sm.retrieve_session.return_value = {"status": SessionsStatus.FINISHED.value}
+        monkeypatch.setattr(
+            "aidev_bkplugin.services.agent_bkplugin.SessionManager", lambda username: mock_sm
+        )
+
+        agent.run_worker("sess-1", {"turn_id": "t1"})
+
+        mock_sm.retrieve_session.assert_called_once_with("sess-1")
+        mock_sm.save_stream_failure.assert_not_called()
+
+    def test_run_worker_calls_save_stream_failure_when_session_running(self, monkeypatch):
+        """producer 真崩溃：session 仍 RUNNING 时应写失败。"""
+        from aidev_bkplugin.services.agent_bkplugin import BkpluginChat
+
+        agent = BkpluginChat(chat_history=[], execute_kwargs={}, username="alice")
+        monkeypatch.setattr(
+            agent, "invoke_agent", MagicMock(side_effect=RuntimeError("生产者心跳超时"))
+        )
+        mock_sm = MagicMock()
+        mock_sm.retrieve_session.return_value = {"status": SessionsStatus.RUNNING.value}
+        monkeypatch.setattr(
+            "aidev_bkplugin.services.agent_bkplugin.SessionManager", lambda username: mock_sm
+        )
+
+        agent.run_worker("sess-1", {"turn_id": "t1"})
+
+        mock_sm.save_stream_failure.assert_called_once_with("sess-1", ANY, turn_id="t1")
+
