@@ -51,6 +51,9 @@ services:
       - BKAI_CRAW_API_KEY=${OPENCLAW_GATEWAY_TOKEN:?agent.env 需提供 OPENCLAW_GATEWAY_TOKEN}
       - BKAI_CRAW_HOME=/craw-home
       - BKAI_CRAW_SYNC_INTERVAL=${BKAI_CRAW_SYNC_INTERVAL:-5}
+      # agent(root) 与 openclaw(非 root) 跨 UID 共享卷：默认 0600 会挡住内核读
+      # 自身配置，模拟环境（专用卷）放宽为 0644
+      - BKAI_CRAW_ARTIFACT_MODE=0644
       - APP_CODE=${APP_CODE:-}
       - APP_SECRET=${APP_SECRET:-}
       # 场景脚本经 EnvTokenResourceManager 取用户 token（fail-closed：缺失即 build 报错）
