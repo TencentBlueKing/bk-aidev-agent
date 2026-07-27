@@ -2378,10 +2378,24 @@ class TestSnapshotReplayDedup:
         )
 
         assert next(stream) == "head"
+        # 队列重置必须先于头部帧送达：yield 期间其他连接不能再看到上一轮残留
+        assert "clear" in handler.calls
+
         stream.close()
 
         assert "release_producer" in handler.calls
-        assert "clear" not in handler.calls
+
+    def test_head_frames_survive_replay_prefetch_failure(self):
+        """预读 replay 失败时头部帧仍要原样送达，否则前端连历史消息都拿不到。"""
+        handler = _RacingReplayHandler(has_pending=True, replay_error=RuntimeError("broker unavailable"))
+        stream = GeneratorStreamingHelper(message_handler=handler, thread_id="t1").stream(
+            iter([]),
+            head_frames=["head"],
+            replay_head_transform=ChatCompletionAgent._dedup_snapshot_head_frames,
+        )
+
+        assert next(stream) == "head"
+        stream.close()
 
     @staticmethod
     def _run_with_real_helper(handler):
@@ -2407,9 +2421,10 @@ class TestSnapshotReplayDedup:
 class _RacingReplayHandler:
     """模拟队列初判与 producer lock 结果不一致的 replay handler。"""
 
-    def __init__(self, has_pending: bool, producer_acquired: bool = False):
+    def __init__(self, has_pending: bool, producer_acquired: bool = False, replay_error: Exception | None = None):
         self._has_pending = has_pending
         self._producer_acquired = producer_acquired
+        self._replay_error = replay_error
         self._cached = [_start_frame("mid"), _content_frame("mid", "完整回答"), EOD_CHUNK]
         self.calls: list[str] = []
         self.replay_reads = 0
@@ -2427,6 +2442,8 @@ class _RacingReplayHandler:
             raise RuntimeError("replay read requires an active consumer")
         self.calls.append("get_messages_since")
         self.replay_reads += 1
+        if self._replay_error is not None:
+            raise self._replay_error
         return self._cached[offset:], len(self._cached)
 
     def acquire_producer(self, thread_id):  # noqa: ARG002
@@ -2435,6 +2452,12 @@ class _RacingReplayHandler:
 
     def release_producer(self, thread_id):  # noqa: ARG002
         self.calls.append("release_producer")
+
+    def clear(self, thread_id):  # noqa: ARG002
+        self.calls.append("clear")
+
+    def clear_stopped(self, thread_id):  # noqa: ARG002
+        self.calls.append("clear_stopped")
 
     def acquire_consumer(self, thread_id):  # noqa: ARG002
         self.calls.append("acquire_consumer")

@@ -435,13 +435,13 @@ class GeneratorStreamingHelper:
         producer_acquired: bool,
         on_complete: Callable[[], None] | None = None,
     ) -> tuple[threading.Thread | None, bool]:
-        """根据队列状态决定启动生产者还是恢复旧消息。"""
+        """根据队列状态决定启动生产者还是恢复旧消息。
+
+        调用方必须已经对 ``producer_acquired`` 的连接执行过 ``_reset_queue_for_new_producer()``。
+        """
         supports_replay_from_start = self._supports_replay_from_start()
 
         if producer_acquired:
-            self.message_handler.clear(self.thread_id)
-            self.message_handler.clear_stopped(self.thread_id)
-
             producer_thread = threading.Thread(
                 target=self._producer,
                 args=(generator, cancel_event, on_complete, True),
@@ -713,8 +713,22 @@ class GeneratorStreamingHelper:
         except TimeoutError:
             logger.warning("Replay prefetch timed out; head-frame transform skipped, thread_id=%s", self.thread_id)
             return head_frames, None
+        except Exception:
+            # 头部帧（含 MESSAGES_SNAPSHOT）不依赖队列，队列故障时也要原样送达，
+            # 否则前端连历史消息都拿不到，只能看到连接错误。
+            logger.exception("Replay prefetch failed; head frames sent unchanged, thread_id=%s", self.thread_id)
+            return head_frames, None
 
         return replay_head_transform(head_frames, replay_messages), (replay_messages, replay_offset)
+
+    def _reset_queue_for_new_producer(self) -> None:
+        """本连接取得写入权后重置会话队列。
+
+        必须在向客户端 yield 头部帧之前完成：yield 会把控制权交回 SSE 迭代器，
+        期间其他连接若看到未清理的上一轮残留，会 replay 出上一轮的旧回答。
+        """
+        self.message_handler.clear(self.thread_id)
+        self.message_handler.clear_stopped(self.thread_id)
 
     def stream(
         self,
@@ -771,6 +785,8 @@ class GeneratorStreamingHelper:
             has_pending = self._recheck_pending_after_waiting_consumer(has_pending)
             if not has_pending:
                 producer_acquired = self.message_handler.acquire_producer(self.thread_id)
+            if producer_acquired:
+                self._reset_queue_for_new_producer()
 
             will_replay = has_pending or not producer_acquired
             prepared_head_frames, initial_replay = self._prepare_head_frames_for_replay(
