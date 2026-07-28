@@ -59,4 +59,11 @@ describe('preview-strategy', () => {
       renderer: 'urlIframe',
     });
   });
+
+  it('Md 应走 markdown 直渲染', () => {
+    expect(getArtifactPreviewStrategy(AIFileType.Md)).toEqual({
+      load: 'text_from_download',
+      renderer: 'markdown',
+    });
+  });
 });
