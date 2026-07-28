@@ -45,11 +45,22 @@ AIDEV 平台/插件                     SDK packages/craw                 craw�
 
 ## 接入方式
 
+推荐挂点：宿主 **ROOT_URLCONF 尾部**（bk_plugin 形态即 `bk_plugin/patch/urls.py` 末尾）——
+settings 已就绪、应用已加载，早于首个请求的 registry 查找；避免在 settings 导入期
+挂载（craw 包的传递依赖可能触发 Django 配置未就绪的循环导入）。已在真实二开插件
+页面级验证的完整薄壳：
+
 ```python
-# 宿主应用启动路径（如 Django AppConfig.ready / extend/agent.py 末尾）调用一次：
-from aidev_agent.packages.craw import enable_chat_takeover
-enable_chat_takeover()   # env 未设 BKAI_CRAW_BACKEND 时零影响
+# —— craw 内核接管（opt-in）：env BKAI_CRAW_BACKEND 未设时零影响，保持原生 ReAct
+try:
+    from aidev_agent.packages.craw import enable_chat_takeover
+except ImportError:  # SDK 版本尚无 craw 包，保持原生
+    pass
+else:
+    enable_chat_takeover()
 ```
+
+Django `AppConfig.ready` 亦可作为挂点（同样晚于 settings 就绪）。
 
 ## 环境变量矩阵
 
