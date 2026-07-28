@@ -23,21 +23,14 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { cloneVNode } from 'vue';
+import { describe, expect, it } from 'vitest';
 
 import { AIFileType } from '../../../../ag-ui/types/file';
-import { HtmlIcon, JpgIcon, JsonIcon, MarkdownIcon, PdfIcon, TxtIcon } from '../../../../icons/file';
+import { FILE_ICON_MAP, getFileIcon } from './file-icon';
 
-/** 文件类型 → 图标映射；未命中类型兜底用文本图标 */
-export const FILE_ICON_MAP = {
-  [AIFileType.Html]: HtmlIcon,
-  [AIFileType.Jpg]: JpgIcon,
-  [AIFileType.Json]: JsonIcon,
-  [AIFileType.Md]: MarkdownIcon,
-  [AIFileType.Markdown]: MarkdownIcon,
-  [AIFileType.Pdf]: PdfIcon,
-  [AIFileType.Txt]: TxtIcon,
-} as const;
-
-/** 图标为共享 VNode，克隆后再渲染，避免同类型多处复用同一实例 */
-export const getFileIcon = (type: AIFileType) => cloneVNode(FILE_ICON_MAP[type] ?? TxtIcon);
+describe('file-icon', () => {
+  it('Md 与 Markdown 应使用同一图标映射', () => {
+    expect(FILE_ICON_MAP[AIFileType.Md]).toBe(FILE_ICON_MAP[AIFileType.Markdown]);
+    expect(getFileIcon(AIFileType.Md).type).toBe(getFileIcon(AIFileType.Markdown).type);
+  });
+});

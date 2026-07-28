@@ -6,7 +6,7 @@ domain: message
 description: 汇总当前会话全部文件产物，支持搜索、选中与分类型预览，挂载在 ChatContainer 侧栏「文件产物」Tab。
 aiSummary: >
   汇总当前会话所有 AssistantMessage 的 artifacts，支持关键词搜索、列表选中与下载；
-  预览区委托 ArtifactPreviewHost：按类型走 text_from_download（html / markdown / txt / json）
+  预览区委托 ArtifactPreviewHost：按类型走 text_from_download（html / markdown / md / txt / json）
   或 preview_url_iframe（其余类型）；download_url / preview_url 经 onArtifactClick 异步获取。
   源码位置：src/components/chat-message/assistant-message/message-artifacts/file-artifact-panel.vue。
 relatedComponents:
@@ -98,7 +98,7 @@ sinceVersion: 0.0.20
 
   const files: AIFileInfo[] = [
     { name: '周报.html', outputId: 'a-html', size: 10240, type: 'html' },
-    { name: '说明.md', outputId: 'a-md', size: 8192, type: 'markdown' },
+    { name: '说明.md', outputId: 'a-md', size: 8192, type: 'md' },
     { name: '纪要.txt', outputId: 'a-txt', size: 4096, type: 'txt' },
     { name: '配置.json', outputId: 'a-json', size: 2048, type: 'json' },
     { name: '立项.pdf', outputId: 'a-pdf', size: 204800, type: 'pdf' },
@@ -181,7 +181,7 @@ sinceVersion: 0.0.20
       property: {
         artifacts: [
           { name: '周报.html', outputId: 'a-html', size: 10240, type: 'html' },
-          { name: '说明.md', outputId: 'a-md', size: 8192, type: 'markdown' },
+          { name: '说明.md', outputId: 'a-md', size: 8192, type: 'md' },
           { name: '配置.json', outputId: 'a-json', size: 2048, type: 'json' },
           { name: '立项.pdf', outputId: 'a-pdf', size: 204800, type: 'pdf' },
         ] satisfies AIFileInfo[],
@@ -243,9 +243,11 @@ Provider 侧聚合与文件卡片侧透传必须使用同一规则，保证命�
 | 文件类型 | load | 取链字段 | renderer |
 | -------- | ---- | -------- | -------- |
 | `html` | `text_from_download` | `download_url` → `fetch` 正文 | `HtmlPreview`（`<iframe srcdoc>`） |
-| `markdown` | `text_from_download` | 同上 | `MarkdownPreview`（`MarkdownContent`） |
+| `markdown` / `md` | `text_from_download` | 同上 | `MarkdownPreview`（`MarkdownContent`） |
 | `txt` / `json` | `text_from_download` | 同上 | `TxtPreview`（`<pre>`） |
 | 其余（如 `pdf` / `jpg`） | `preview_url_iframe` | `preview_url` | `UrlIframePreview`（`<iframe src>`，一般为后台转好的 PDF） |
+
+> `md`（`AIFileType.Md`）为后台扩展名别名，与 `markdown`（`AIFileType.Markdown`）等价，共用 Markdown 直渲染。
 
 ### 加载态
 

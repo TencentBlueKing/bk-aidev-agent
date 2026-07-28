@@ -37,6 +37,7 @@ export type ArtifactPreviewStrategy = {
 const TEXT_RENDERER_MAP: Partial<Record<AIFileType, ArtifactPreviewRendererKind>> = {
   [AIFileType.Html]: 'html',
   [AIFileType.Json]: 'txt',
+  [AIFileType.Md]: 'markdown',
   [AIFileType.Markdown]: 'markdown',
   [AIFileType.Txt]: 'txt',
 };

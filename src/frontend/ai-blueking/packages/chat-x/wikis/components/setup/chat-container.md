@@ -567,7 +567,7 @@ ai-chat-container（:data-ai-size="size"）
 - **触发**：点击 AI 回复中的文件卡片（[ArtifactFileCard](/components/message/assistant-message)）时，容器通过 `useArtifactPreviewProvider` 命中该文件并 `addCustomTab` 弹出侧栏
 - **排序 / 关闭**：`order: -1` 排在「执行情况」之前，`closable: false` 不可关闭
 - **显隐解耦**：该 Tab 存在时，侧栏展示不再受「`executionGroups` 为空」约束（即使当前会话没有执行类消息，也能独立展示文件产物侧栏）；会话切换或无文件产物时自动移除并重置命中态
-- **内容**：由 [FileArtifactPanel](/components/message/file-artifact-panel) 渲染列表与下载头，预览委托内部 `ArtifactPreviewHost`；`download_url` / `preview_url` 通过 `onArtifactClick` 异步获取。文本类（`html` / `markdown` / `txt` / `json`）拉 `download_url` 正文直渲染；其余类型用 `preview_url` iframe（一般为后台转好的 PDF）
+- **内容**：由 [FileArtifactPanel](/components/message/file-artifact-panel) 渲染列表与下载头，预览委托内部 `ArtifactPreviewHost`；`download_url` / `preview_url` 通过 `onArtifactClick` 异步获取。文本类（`html` / `markdown` / `md` / `txt` / `json`）拉 `download_url` 正文直渲染（`md` 与 `markdown` 等价）；其余类型用 `preview_url` iframe（一般为后台转好的 PDF）
 - **状态管理**：命中、切换与 URL 缓存由 [useArtifactPreview](/composables/use-artifact-preview) 提供（Provider 在容器内、Consumer 在文件卡片 / 面板内）；正文加载与分类型渲染由 Host 内部完成
 - **未传 `onArtifactClick`**：下载按钮隐藏，预览区展示无数据
 
@@ -614,7 +614,7 @@ ai-chat-container（:data-ai-size="size"）
       property: {
         artifacts: [
           { name: '周报.html', outputId: 'a-html', size: 10240, type: 'html' },
-          { name: '说明.md', outputId: 'a-md', size: 8192, type: 'markdown' },
+          { name: '说明.md', outputId: 'a-md', size: 8192, type: 'md' },
           { name: '配置.json', outputId: 'a-json', size: 2048, type: 'json' },
           { name: '立项.pdf', outputId: 'a-pdf', size: 204800, type: 'pdf' },
         ] satisfies AIFileInfo[],

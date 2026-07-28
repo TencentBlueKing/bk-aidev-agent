@@ -208,7 +208,7 @@ export const MOCK_ARTIFACT_MARKDOWN_CONTENT = `# 蓝鲸可观测 · 系统配置
 | --- | --- | --- |
 | \`html\` | \`download_url\` → fetch | iframe \`srcdoc\` |
 | \`txt\` | \`download_url\` → fetch | 浏览器纯文本（\`pre\`） |
-| \`markdown\` | \`download_url\` → fetch | 项目 \`MarkdownContent\` |
+| \`markdown\` / \`md\` | \`download_url\` → fetch | 项目 \`MarkdownContent\` |
 | \`json\` | \`download_url\` → fetch | 纯文本（同 txt） |
 | \`pdf\` / \`jpg\` | \`preview_url\` | iframe（后台转 PDF） |
 
