@@ -125,11 +125,11 @@ const doubled = computed(() => count.value * 2);
   ];
 
   // 文件产物（AIFileInfo 元信息；下载/预览链路由 ChatContainer.onArtifactClick 异步获取）
-  // 侧栏按类型分派：html / markdown / txt / json → download_url 正文；pdf / jpg → preview_url iframe
+  // 侧栏按类型分派：html / markdown|md / txt / json → download_url 正文；pdf / jpg → preview_url iframe
   const artifactsProperty = {
     artifacts: [
       { name: '监控大盘周报.html', outputId: 'output-html', size: 10240, type: 'html' },
-      { name: '系统配置说明.md', outputId: 'output-md', size: 8192, type: 'markdown' },
+      { name: '系统配置说明.md', outputId: 'output-md', size: 8192, type: 'md' },
       { name: '周例会纪要.txt', outputId: 'output-txt', size: 4096, type: 'txt' },
       { name: '告警策略配置.json', outputId: 'output-json', size: 2048, type: 'json' },
       { name: '立项说明书.pdf', outputId: 'output-pdf', size: 204800, type: 'pdf' },
@@ -626,8 +626,10 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
 
 | type | 预览依赖 | 渲染 |
 | ---- | -------- | ---- |
-| `html` / `markdown` / `txt` / `json` | `download_url` | 正文直渲染（srcdoc / MarkdownContent / `<pre>`） |
+| `html` / `markdown` / `md` / `txt` / `json` | `download_url` | 正文直渲染（srcdoc / MarkdownContent / `<pre>`） |
 | `pdf` / `jpg` 等 | `preview_url` | iframe（一般为后台转好的 PDF） |
+
+`md` 与 `markdown` 等价（见 `AIFileType.Md` / `AIFileType.Markdown`）。
 
 ```vue
 <template>
@@ -640,7 +642,7 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
 
   const artifacts: AIFileInfo[] = [
     { name: '监控大盘周报.html', outputId: 'output-html', size: 10240, type: 'html' },
-    { name: '系统配置说明.md', outputId: 'output-md', size: 8192, type: 'markdown' },
+    { name: '系统配置说明.md', outputId: 'output-md', size: 8192, type: 'md' },
     { name: '周例会纪要.txt', outputId: 'output-txt', size: 4096, type: 'txt' },
     { name: '告警策略配置.json', outputId: 'output-json', size: 2048, type: 'json' },
     { name: '立项说明书.pdf', outputId: 'output-pdf', size: 204800, type: 'pdf' },

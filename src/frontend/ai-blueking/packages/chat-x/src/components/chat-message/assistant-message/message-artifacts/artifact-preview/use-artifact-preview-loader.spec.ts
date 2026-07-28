@@ -132,6 +132,24 @@ describe('use-artifact-preview-loader', () => {
     wrapper.unmount();
   });
 
+  it('type 为 Md 时应按 markdown 直渲染', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve('# md alias') }),
+    );
+    const { api, wrapper } = mountLoader({
+      file: createFile(AIFileType.Md, '说明.md'),
+      resolveUrls: vi.fn().mockResolvedValue({ download_url: 'https://example.com/a.md' }),
+    });
+
+    await api.load();
+
+    expect(api.status.value).toBe('ready');
+    expect(api.content.value).toBe('# md alias');
+    expect(api.renderer.value).toBe('markdown');
+    wrapper.unmount();
+  });
+
   it('加载失败时应为 error', async () => {
     const { api, wrapper } = mountLoader({
       file: createFile(AIFileType.Pdf),

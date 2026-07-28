@@ -157,6 +157,17 @@ describe('ArtifactPreviewHost', () => {
     expect(wrapper.find('.mock-markdown-content').text()).toBe('# 标题');
   });
 
+  it('type 为 Md 时应将下载内容传给 MarkdownContent', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve('# Md 别名') }));
+    wrapper = mountHost(
+      createFile({ name: '说明.md', type: AIFileType.Md }),
+      createPreviewContext({ resolveArtifactUrls: vi.fn().mockResolvedValue({ download_url: 'https://example.com/file.md' }) }),
+    );
+    await flushPromises();
+
+    expect(wrapper.find('.mock-markdown-content').text()).toBe('# Md 别名');
+  });
+
   it('加载失败时应展示错误态，点击重试后再次加载', async () => {
     const resolveArtifactUrls = vi.fn()
       .mockRejectedValueOnce(new Error('请求失败'))
