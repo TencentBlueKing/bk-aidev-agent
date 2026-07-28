@@ -9,12 +9,13 @@ aiSummary: >
   useArtifactPreviewProvider 维护 activeArtifactId，openPreview 命中文件并触发 onOpen 打开侧栏 Tab；
   并通过 getOnArtifactClick 封装 resolveArtifactUrls（按 outputId 缓存 download_url / preview_url）；
   useArtifactPreviewConsumer 在后代注入同一套 API。buildArtifactId 用 messageUid#index#outputId 生成唯一 id。
+  正文加载与分类型渲染不在本 composable，由 FileArtifactPanel 内 ArtifactPreviewHost 完成。
   FILE_ARTIFACT_TAB_NAME 标识固定「文件产物」Tab。
 relatedComponents:
   - slug: chat-container
     relation: Provider 主场景，聚合 sessionArtifacts 并挂载 FileArtifactPanel
   - slug: file-artifact-panel
-    relation: 侧栏面板消费 activeArtifactId 与 setActiveArtifactId
+    relation: 侧栏面板消费 activeArtifactId 与 setActiveArtifactId；预览加载在面板内 Host
   - slug: assistant-message
     relation: 文件产物来源 property.artifacts
 sinceVersion: 0.0.20
@@ -26,7 +27,10 @@ sinceVersion: 0.0.20
 
 Provider/Consumer 模式的文件产物预览状态管理。Provider 在 `ChatContainer` 中创建，负责维护当前命中的文件 id；Consumer 在深层 `ArtifactFileCard` 中注入，用于点击卡片触发预览。
 
-**职责边界**：composable 维护「命中文件」与「URL 解析缓存」；打开侧栏 Tab（`addCustomTab`）、聚合会话文件列表、渲染预览面板等副作用由 `ChatContainer` 承担，通过 `onOpen` / `getOnArtifactClick` 回调注入，避免直接依赖 `useCustomTab`。
+**职责边界**：
+
+- **本 composable**：维护「命中文件」与「URL 解析缓存」；打开侧栏 Tab（`addCustomTab`）由容器通过 `onOpen` 注入
+- **不在本 composable**：聚合会话文件列表、渲染预览面板、按类型 fetch 正文 / iframe 展示 —— 分别由 `useMessageGroup.sessionArtifacts`、`FileArtifactPanel`、内部 `ArtifactPreviewHost` + `useArtifactPreviewLoader` 承担
 
 ## 函数签名
 
@@ -136,11 +140,26 @@ const handleCardClick = () => {
 
 ```typescript
 // FileArtifactPanel 列表点击 → emit select → 容器调用 setActiveArtifactId
+// 右侧预览由面板内 ArtifactPreviewHost 消费 activeArtifact，自行取链并按类型渲染
 <FileArtifactPanel
   :active-id="activeArtifactId"
   :artifacts="sessionArtifacts"
   @select="setActiveArtifactId"
 />
+```
+
+### 业务侧取链（ChatContainer `onArtifactClick`）
+
+文本类预览需要可 `fetch` 的 `download_url`；iframe 类需要 `preview_url`（一般为后台转好的 PDF）：
+
+```typescript
+const onArtifactClick = async (file: AIFileInfo) => {
+  const res = await api.getArtifactUrls(file.outputId);
+  return {
+    download_url: res.download_url,
+    preview_url: res.preview_url,
+  };
+};
 ```
 
 ## 内置常量
@@ -208,12 +227,15 @@ ArtifactFileCard（点击）
        └─ useArtifactPreviewProvider（ChatContainer）
             ├─ activeArtifactId = buildArtifactId(...)
             └─ onOpen(artifactId) → addCustomTab(FILE_ARTIFACT_TAB_NAME)
-                 └─ FileArtifactPanel（列表 + 预览，@select → setActiveArtifactId）
+                 └─ FileArtifactPanel（列表 + 下载头，@select → setActiveArtifactId）
+                      └─ ArtifactPreviewHost（loader + 分类型 renderer）
 ```
+
+分类型预览策略见 [FileArtifactPanel 预览机制](../components/message/file-artifact-panel#预览机制)。
 
 ## 设计特点
 
-- **职责单一**：composable 不直接调用 `useCustomTab`，侧栏 Tab 打开逻辑由 `onOpen` 注入
+- **职责单一**：composable 不直接调用 `useCustomTab`，侧栏 Tab 打开逻辑由 `onOpen` 注入；也不做正文 fetch / iframe 渲染
 - **ShallowRef 优先**：`activeArtifactId` 使用 `shallowRef`，避免不必要的深层响应式开销
 - **Consumer 兜底**：`useArtifactPreviewConsumer` 无 Provider 时返回 `undefined`，文件卡片在无容器上下文时自动不可点击
 - **与 useCustomTab 协作**：「文件产物」Tab 通过 `addCustomTab` 按需添加（`order: -1`、`closable: false`），会话无文件产物时由容器 `removeCustomTab` 清理
@@ -221,5 +243,5 @@ ArtifactFileCard（点击）
 ## 关联组件
 
 - [ChatContainer](../components/setup/chat-container) — Provider 主场景，内置「文件产物」Tab
-- [FileArtifactPanel](../components/message/file-artifact-panel) — 侧栏预览面板
+- [FileArtifactPanel](../components/message/file-artifact-panel) — 侧栏列表与预览 Host 挂载
 - [AssistantMessage](../components/message/assistant-message) — 文件产物来源（`property.artifacts`）
