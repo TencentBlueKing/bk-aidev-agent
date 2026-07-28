@@ -6,11 +6,6 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from langchain_core.messages import HumanMessage
-from langgraph.graph import END, START, StateGraph
-from langgraph.store.memory import InMemoryStore
-from typing_extensions import TypedDict
-
 from aidev_agent.core.nodes.knowledge import (
     AgentKnowledgeNode,
     AidevKnowledgeNode,
@@ -20,6 +15,10 @@ from aidev_agent.core.nodes.knowledge import (
 )
 from aidev_agent.enums import Decision
 from aidev_agent.pydantic_models import AgentOptions, KnowledgebaseSettings, KnowledgeSettings
+from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.graph import END, START, StateGraph
+from langgraph.store.memory import InMemoryStore
+from typing_extensions import TypedDict
 
 # ============================================================================
 # 测试状态定义
@@ -364,6 +363,27 @@ class TestAidevKnowledgeNode:
         assert len(result["retrieved_docs"]) == 2
         assert result["retrieved_docs"][0]["metadata"]["fine_grained_score"] == 0.9
         assert result["retrieved_docs"][1]["metadata"]["fine_grained_score"] == 0.7
+
+    @patch("aidev_agent.core.nodes.knowledge.KnowledgeRag")
+    def test_call_forwards_chat_history_to_retriever(self, mock_rag_class, mock_llm, mock_knowledge_settings):
+        """查询节点应把调用方提供的历史消息传给查询预处理链路。"""
+        mock_rag_instance = MagicMock()
+        mock_rag_instance.retrieve.return_value = create_mock_retrieve_result()
+        mock_rag_class.return_value = mock_rag_instance
+        chat_history = [
+            HumanMessage(content="Redis 为什么会超时？"),
+            AIMessage(content="先确认连接池和慢查询。"),
+        ]
+        node = AidevKnowledgeNode(
+            llm=mock_llm,
+            knowledge_query_options=mock_knowledge_settings,
+            chat_history=chat_history,
+        )
+
+        run_knowledge_node_in_graph(node, {"query": "那网络抖动呢？"})
+
+        call_args = mock_rag_instance.retrieve.call_args
+        assert call_args.args[2] == chat_history
 
     @patch("aidev_agent.core.nodes.knowledge.KnowledgeRag")
     def test_call_with_topk_limit(self, mock_rag_class, mock_llm, mock_knowledge_settings):

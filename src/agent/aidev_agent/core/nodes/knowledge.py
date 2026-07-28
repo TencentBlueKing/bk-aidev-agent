@@ -260,6 +260,7 @@ class AidevKnowledgeNode(BaseKnowledgeNode):
         kb_retriever: BkRetriever | None = None,
         score_threshold: float | None = None,
         topk: int = 20,
+        chat_history: list[BaseMessage] | None = None,
         **kwargs,
     ):
         """初始化 AIDev 产品页面检索测试节点。
@@ -270,6 +271,7 @@ class AidevKnowledgeNode(BaseKnowledgeNode):
             kb_retriever: 可选的知识库检索器
             score_threshold: 分数阈值，用于过滤 retrieved_docs
             topk: 返回的最大文档数量
+            chat_history: 查询预处理使用的会话历史
         其他：
             with_scalar_data 参数应该由 knowledge_query_options.with_scalar_data 进行调整
         """
@@ -279,7 +281,7 @@ class AidevKnowledgeNode(BaseKnowledgeNode):
                 raise ValueError("knowledge_query_options is required when agent_options is not provided")
             knowledge_query_options = migration_knowledge_query_options_from_agent_options_v1(agent_options)
 
-        super().__init__(llm, knowledge_query_options, [], kb_retriever)
+        super().__init__(llm, knowledge_query_options, chat_history or [], kb_retriever)
         self.score_threshold = score_threshold
         self.topk = topk
 
