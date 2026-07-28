@@ -8,6 +8,7 @@ from aidev_agent.packages.craw import (
     CrawIdentity,
     CrawStreamProtocolError,
     CrawUpstreamError,
+    CrawUpstreamRunError,
     HermesBackend,
     OpenClawBackend,
     get_backend,
@@ -184,3 +185,38 @@ class TestCrawChatStream:
         backend = _mock_backend(monkeypatch, self._sse_handler(body))
         chunks = list(backend.chat_completions_stream([{"role": "user", "content": "hi"}]))
         assert len(chunks) == 1
+
+
+class TestStreamErrorChunk:
+    """流内 {"error": ...} 事件：HTTP 200 + 正常 [DONE]，但语义是运行失败——不得静默当成功。"""
+
+    _ERROR_LINE = (
+        'data: {"error":{"message":"upstream model ended with an incomplete terminal response",'
+        '"type":"invalid_request_error","code":"incomplete_result"}}'
+    )
+
+    def test_iter_raises_on_error_chunk(self):
+        lines = [self._ERROR_LINE, "data: [DONE]"]
+        with pytest.raises(CrawUpstreamRunError) as excinfo:
+            list(OpenClawBackend.iter_sse_chunks(iter(lines), backend="openclaw"))
+        assert "incomplete_result" in excinfo.value.detail
+
+    def test_stream_yields_text_then_raises_on_error_chunk(self, monkeypatch):
+        body = 'data: {"choices":[{"delta":{"content":"前半段"}}]}\n\n' + self._ERROR_LINE + "\n\ndata: [DONE]\n\n"
+        backend = _mock_backend(monkeypatch, lambda request: httpx.Response(200, text=body))
+        iterator = iter(backend.open_chat_stream([{"role": "user", "content": "hi"}]))
+        assert backend.delta_text(next(iterator)) == "前半段"
+        with pytest.raises(CrawUpstreamRunError):
+            next(iterator)
+
+    def test_non_stream_body_error_raises(self, monkeypatch):
+        backend = _mock_backend(
+            monkeypatch, lambda request: httpx.Response(200, json={"error": {"code": "incomplete_result"}})
+        )
+        with pytest.raises(CrawUpstreamRunError):
+            backend.chat_completions([{"role": "user", "content": "hi"}])
+
+    def test_client_message_excludes_detail(self):
+        error = CrawUpstreamRunError("openclaw", '{"message":"secret internal detail"}')
+        assert "secret" not in error.client_message
+        assert "openclaw" in error.client_message

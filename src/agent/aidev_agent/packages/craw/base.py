@@ -109,8 +109,8 @@ class CrawChatStream:
                     return
                 yield chunk
             self._finished = True
-        except CrawStreamProtocolError:
-            if self._closed:  # 被 stop() 主动关闭：EOF/读错误是预期结果，不算协议违例
+        except (CrawStreamProtocolError, CrawUpstreamRunError):
+            if self._closed:  # 被 stop() 主动关闭：EOF/读错误是预期结果，不算违例
                 return
             raise
         except Exception as exc:
@@ -204,7 +204,11 @@ class BaseCrawBackend:
             )
             if not (200 <= resp.status_code < 300):
                 raise CrawUpstreamError(self.name, resp.status_code, resp.text[:500])
-            return resp.json()
+            body = resp.json()
+            if isinstance(body, dict) and body.get("error"):
+                # 与流式对称：HTTP 200 但 body 报告运行失败，不当成功回复
+                raise CrawUpstreamRunError(self.name, json.dumps(body["error"], ensure_ascii=False)[:500])
+            return body
 
     def open_chat_stream(
         self,
@@ -272,6 +276,11 @@ class BaseCrawBackend:
                 chunk = json.loads(data)
             except json.JSONDecodeError as exc:
                 raise CrawStreamProtocolError(backend, f"SSE data 行不是合法 JSON: {data[:120]!r}") from exc
+            if isinstance(chunk, dict) and chunk.get("error"):
+                # OpenAI 兼容流内错误事件（``data: {"error": ...}``）：HTTP 200 且随后
+                # 正常 [DONE]，但语义是本次运行失败（如内核背后 LLM 流异常收尾）。
+                # 不识别会被当空 delta 静默吞掉，表现为"安静的半截回复"。
+                raise CrawUpstreamRunError(backend, json.dumps(chunk["error"], ensure_ascii=False)[:500])
             yield chunk
         if not done_seen:
             raise CrawStreamProtocolError(backend, "上游流在 [DONE] 终止标志前结束（空流或截断）")
@@ -358,3 +367,21 @@ class CrawStreamProtocolError(RuntimeError):
     @property
     def client_message(self) -> str:
         return f"craw backend {self.backend} 流式响应违例（详情见服务端日志）"
+
+
+class CrawUpstreamRunError(RuntimeError):
+    """craw 上游在响应内报告本次运行失败（OpenAI 兼容 ``{"error": ...}`` 事件）。
+
+    与 ``CrawUpstreamError``（HTTP 非 2xx）不同：HTTP 层是 200、流以
+    ``[DONE]`` 正常终止，但内核明确报告 run 失败——典型如内核背后的
+    LLM 流异常收尾（``incomplete_result``）。``detail`` 只进服务端日志。
+    """
+
+    def __init__(self, backend: str, detail: str) -> None:
+        self.backend = backend
+        self.detail = detail
+        super().__init__(f"craw backend {backend} upstream run error: {detail}")
+
+    @property
+    def client_message(self) -> str:
+        return f"craw backend {self.backend} 上游运行失败，请重试（详情见服务端日志）"

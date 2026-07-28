@@ -30,6 +30,7 @@ from aidev_agent.packages.craw.base import (
     CrawIdentityError,
     CrawStreamProtocolError,
     CrawUpstreamError,
+    CrawUpstreamRunError,
 )
 from aidev_agent.packages.craw.hermes import HermesBackend
 from aidev_agent.packages.craw.openclaw import OpenClawBackend
@@ -56,6 +57,7 @@ __all__ = [
     "CrawSyncResult",
     "CrawSyncer",
     "CrawUpstreamError",
+    "CrawUpstreamRunError",
     "HermesBackend",
     "OpenClawBackend",
     "agent_config_to_artifacts",
