@@ -15,7 +15,7 @@ import type { PositionAndSize } from '../manager/types';
 import type { IShortcut } from '../types';
 import type { EventForwarders, ForwardToManagerFn } from './use-ai-blueking-init';
 
-const SIDE_PANEL_EXTRA_WIDTH = 420;
+const SIDE_PANEL_EXTRA_WIDTH = 560;
 
 export interface UsePanelContainerParams {
   beforeNimbusClick?: () => boolean | Promise<boolean | void> | void;
@@ -28,8 +28,7 @@ export interface UsePanelContainerParams {
 }
 
 export function usePanelContainer(params: UsePanelContainerParams) {
-  const { componentManager, chatBotRef, forwarders, forwardToManager, beforeNimbusClick, ensureSessionReady } =
-    params;
+  const { componentManager, chatBotRef, forwarders, forwardToManager, beforeNimbusClick, ensureSessionReady } = params;
 
   // ==================== 面板控制 ====================
   const show = async (sessionCode?: string) => {
@@ -96,9 +95,10 @@ export function usePanelContainer(params: UsePanelContainerParams) {
   };
 
   // ==================== 执行面板联动 ====================
-  const handleExecutionPanelChange = (isCollapse: boolean) => {
+  const handleExecutionPanelChange = (isCollapse: boolean, resizeAsideWidth?: number) => {
     if (!isCollapse) {
-      componentManager.expandForSidePanel(SIDE_PANEL_EXTRA_WIDTH);
+      const extraWidth = Math.max(SIDE_PANEL_EXTRA_WIDTH, resizeAsideWidth ?? 0);
+      componentManager.expandForSidePanel(extraWidth);
     } else {
       componentManager.collapseSidePanel();
     }

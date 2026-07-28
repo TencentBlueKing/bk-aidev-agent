@@ -15,7 +15,7 @@ import type { ChatBusinessManager } from '../../manager/business/chat-business-m
 import type { IChatHelper, IRequestOptions } from '../../types';
 import type { ChatBotEmitFn } from './use-chatbot-init';
 import type { IUserMessage } from '@blueking/chat-helper';
-import type { IAiSlashMenuItem, Interrupt, InterruptResume, TagSchema, UserMessage } from '@blueking/chat-x';
+import type { IAiSlashMenuItem, Interrupt, InterruptResume, OnArtifactClick, TagSchema, UserMessage } from '@blueking/chat-x';
 
 import type { UseInterruptResumeReturn } from './use-interrupt-resume';
 
@@ -39,6 +39,7 @@ export interface UseMessageSenderReturn {
     docSchema: TagSchema,
     options?: { interrupt?: Interrupt; payload?: InterruptResume },
   ) => Promise<void>;
+  handleArtifactClick: OnArtifactClick;
   handleStopSending: () => Promise<void>;
   handleUpdateModelValue: (value: string | TagSchema, resourceList: IAiSlashMenuItem[]) => void;
   handleUpload: (file: File) => Promise<{ download_url?: string }>;
@@ -116,6 +117,19 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
     return result;
   };
 
+  const handleArtifactClick: OnArtifactClick = async file => {
+    const sessionCode = chatHelper.value?.session.current?.value?.sessionCode;
+    if (!sessionCode) {
+      throw new Error('[ChatBot] Cannot resolve artifact URL: no active session');
+    }
+
+    const result = await chatHelper.value!.session.getPvFileDownloadUrl(sessionCode, file.outputId);
+    return {
+      download_url: result?.download_url,
+      preview_url: result?.preview_url,
+    };
+  };
+
   /**
    * 处理发送消息
    */
@@ -173,6 +187,7 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
     handleUpdateModelValue,
     doSendMessage,
     handleSendMessage,
+    handleArtifactClick,
     handleUpload,
     handleStopSending,
     stopGeneration,

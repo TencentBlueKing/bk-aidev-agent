@@ -31,11 +31,21 @@ import {
 } from '../transform/session';
 import { resolveRequestValue } from '../fetch';
 
-import type { ISession, ISessionApi, ISessionFeedback, ISessionFeedbackApi } from '../../session/type';
+import type {
+  GetPvFileDownloadUrlOptions,
+  IPvFileDownloadUrlResult,
+  ISession,
+  ISessionApi,
+  ISessionFeedback,
+  ISessionFeedbackApi,
+} from '../../session/type';
 import type { FetchClient, IRequestConfig } from '../fetch';
 
 /** 上传接口传输用文件名前缀，与原始展示名解耦 */
 const UPLOAD_FILE_NAME_PREFIX = 'upload_file';
+
+const DEFAULT_PV_FILE_DOWNLOAD_EXPIRES_IN = 600;
+const DEFAULT_PV_FILE_DOWNLOAD_TIMEOUT = 20000;
 
 /** 从原始文件名提取 ASCII 安全扩展名，用于保留文件类型 */
 const getSafeFileExtension = (fileName: string): string => {
@@ -44,7 +54,10 @@ const getSafeFileExtension = (fileName: string): string => {
     return '';
   }
 
-  const safeExtension = extension.replace(/[^A-Za-z0-9]/g, '').slice(0, 20).toLowerCase();
+  const safeExtension = extension
+    .replace(/[^A-Za-z0-9]/g, '')
+    .slice(0, 20)
+    .toLowerCase();
   return safeExtension ? `.${safeExtension}` : '';
 };
 
@@ -136,6 +149,32 @@ export const useSession = (fetchClient: FetchClient) => {
     );
   };
 
+  /**
+   * 签发会话 PV 文件的临时 download_url / preview_url。
+   * path 为文件相对路径（artifacts 的 outputId）；URLSearchParams 会自动编码，勿二次 encode。
+   */
+  const getPvFileDownloadUrl = (
+    sessionCode: string,
+    path: string,
+    options?: GetPvFileDownloadUrlOptions,
+    config?: IRequestConfig,
+  ) => {
+    const expiresIn = options?.expiresIn ?? DEFAULT_PV_FILE_DOWNLOAD_EXPIRES_IN;
+    const timeout = options?.timeout ?? DEFAULT_PV_FILE_DOWNLOAD_TIMEOUT;
+
+    return fetchClient.get<IPvFileDownloadUrlResult>(
+      `session/${sessionCode}/pv_files/download_url/`,
+      {
+        expires_in: expiresIn,
+        path,
+      },
+      {
+        ...config,
+        timeout: config?.timeout ?? timeout,
+      },
+    );
+  };
+
   // 轮询接口，判断是否可以继续聊天
   const isResumeSession = (sessionCode: string, config?: IRequestConfig) =>
     fetchClient.get<boolean>(`session/${sessionCode}/is_resume/`, undefined, config);
@@ -152,6 +191,7 @@ export const useSession = (fetchClient: FetchClient) => {
     getSessionFeedbackReasons,
     renameSession,
     uploadFile,
+    getPvFileDownloadUrl,
     isResumeSession,
   };
 };
