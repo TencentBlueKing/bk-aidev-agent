@@ -11,6 +11,7 @@ from aidev_agent.packages.craw import (
     CrawIdentityError,
     CrawStreamProtocolError,
     CrawUpstreamError,
+    CrawUpstreamRunError,
     OpenClawBackend,
 )
 from aidev_agent.packages.craw.agent import build_openai_messages
@@ -309,3 +310,27 @@ class TestHostConsumedContract:
     def test_chat_history_empty_for_empty_context(self):
         agent = _build_agent(_StubBackend(), session_context=[{"role": "activity", "content": "x"}])
         assert agent.chat_history == []
+
+
+class TestStreamErrorChunkEmitsRunError:
+    """流内 error 事件必须转成显式 RUN_ERROR（脱敏），不能表现为安静的半截回复。"""
+
+    def test_error_after_partial_text_emits_run_error(self):
+        class _ErrorAfterTextStream(_FakeStream):
+            def __iter__(self):
+                yield {"choices": [{"delta": {"content": "前半段"}}]}
+                raise CrawUpstreamRunError("openclaw", '{"code":"incomplete_result","message":"secret-detail"}')
+
+        class _ErrorStreamBackend(_StubBackend):
+            def open_chat_stream(self, messages, identity=None, session_code=None):
+                return _ErrorAfterTextStream([])
+
+        events = []
+        agent = _build_agent(_ErrorStreamBackend(), session_code="sess-err-chunk")
+        agent.event_handler = events.append
+        list(agent._run_stream())
+        types = [e.type.value for e in events]
+        # 已开的文本消息要补 END，随后 RUN_ERROR + RUN_FINISHED 收尾
+        assert types[-3:] == ["TEXT_MESSAGE_END", "RUN_ERROR", "RUN_FINISHED"]
+        error_message = next(e.message for e in events if e.type.value == "RUN_ERROR")
+        assert "secret-detail" not in error_message

@@ -39,6 +39,7 @@ from aidev_agent.packages.craw.base import (
     CrawIdentityError,
     CrawStreamProtocolError,
     CrawUpstreamError,
+    CrawUpstreamRunError,
 )
 from aidev_agent.packages.craw.registry import CrawBackendProtocol, get_backend
 from aidev_agent.services.agent.registry import AgentBuildContext
@@ -275,8 +276,10 @@ class CrawCompletionAgent(BaseModel):
             if text_open:
                 yield from self._emit_text_end(encoder, message_id)
             yield from self._emit_error_and_finish(encoder, run_id, exc.client_message)
-        except CrawStreamProtocolError as exc:
-            logger.warning("[CRAW] stream protocol error: %s", exc)
+        except (CrawStreamProtocolError, CrawUpstreamRunError) as exc:
+            # 协议违例 / 上游流内报错：详情只进服务端日志，客户端给脱敏消息。
+            # 不识别流内 {"error": ...} 事件会表现为"安静的半截回复"（无任何提示）
+            logger.warning("[CRAW] stream error: %s", exc)
             if text_open:
                 yield from self._emit_text_end(encoder, message_id)
             yield from self._emit_error_and_finish(encoder, run_id, exc.client_message)
