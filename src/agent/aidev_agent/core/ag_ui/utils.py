@@ -1,12 +1,11 @@
 import json
 import re
 import uuid
+from collections.abc import Iterator
 from dataclasses import asdict, is_dataclass
 from datetime import date, datetime
 from enum import Enum
 from typing import Any
-
-from collections.abc import Iterator
 
 from ag_ui.core import (
     BinaryInputContent,
@@ -35,6 +34,7 @@ from langchain_core.messages import (
 from .events import ExtendToolCallResultEvent, ExtendToolCallStartEvent
 from .types import (
     ActivityMessage,
+    InfoMessage,
     InterruptMessage,
     LangGraphReasoning,
     ReasoningMessage,
@@ -49,6 +49,9 @@ from .types import (
 )
 from .types import (
     ExtendFunctionCall as AGUIFunctionCall,
+)
+from .types import (
+    ExtendInfoMessage as AGUIInfoMessage,
 )
 from .types import (
     ExtendInterruptMessage as AGUIInterruptMessage,
@@ -93,9 +96,7 @@ def get_schema_keys(graph, config, constant_schema_keys: list[str]) -> SchemaKey
 
         if hasattr(graph, "context_schema") and graph.context_schema is not None:
             context_schema = graph.context_schema().schema()
-            context_schema_keys = (
-                list(context_schema["properties"].keys()) if "properties" in context_schema else []
-            )
+            context_schema_keys = list(context_schema["properties"].keys()) if "properties" in context_schema else []
 
         return {
             "input": [*input_schema_keys, *constant_schema_keys],
@@ -264,6 +265,13 @@ def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]
                     activity_type=message.type,
                 )
             )
+        elif isinstance(message, InfoMessage):
+            agui_messages.append(
+                AGUIInfoMessage(
+                    id=str(message.id),
+                    content=message.content,
+                )
+            )
         else:
             raise TypeError(f"Unsupported message type: {type(message)}")
     return agui_messages
@@ -366,6 +374,16 @@ def agui_messages_to_langchain(messages: list[AGUIMessage]) -> list[BaseMessage]
                     id=message.id,
                     content=message.content if isinstance(message.content, (dict, list)) else {},
                     name=message.name,
+                )
+            )
+        elif role == PromptRole.INFO.value:
+            # 前端历史回放中带入的 role=info 系统信息：还原为 InfoMessage，
+            # 进入 state["messages"] 供 MESSAGES_SNAPSHOT 重建与前端展示，
+            # 但会被 basic_middleware 过滤剔除，不会进入 LLM 输入。
+            langchain_messages.append(
+                InfoMessage(
+                    id=message.id,
+                    content=message.content if isinstance(message.content, str) else str(message.content),
                 )
             )
         elif role in PromptRole.skip_roles():
@@ -721,4 +739,3 @@ def get_interrupt_value(source: Any, *keys: str) -> Any:
             value = getattr(original_source, key, None)
             if value is not None:
                 return value
-

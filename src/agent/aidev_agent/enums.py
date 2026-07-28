@@ -18,6 +18,7 @@ class PromptRole(enum.Enum):
     REASONING = "reasoning"  # 演绎过程
     ACTIVITY = "activity"  # 活动,用于指定自定义消息的类
     INTERRUPT = "interrupt"  # 中断,用于工具审批等交互场景
+    INFO = "info"  # 系统信息,用于上下文压缩通知等系统级提示
 
     @classmethod
     def skip_roles(cls) -> list[str]:
@@ -29,7 +30,7 @@ class ChatContentStatus(enum.Enum):
     ERROR = "error"
     SUCCESS = "success"
     COMPLETE = "complete"
-    PENDING = "pending" #前端根据最后一条content状态为pending判断发起轮询
+    PENDING = "pending"  # 前端根据最后一条content状态为pending判断发起轮询
 
 
 class IntentStatus(enum.Enum):

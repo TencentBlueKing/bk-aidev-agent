@@ -31,6 +31,7 @@ import copy
 import hashlib
 import logging
 import os
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -38,7 +39,7 @@ from jinja2 import BaseLoader, Template
 from jinja2.sandbox import SandboxedEnvironment as Environment
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
 
-from aidev_agent.core.ag_ui.types import CustomMessageType
+from aidev_agent.core.ag_ui.types import CustomMessageType, InfoMessage
 from aidev_agent.packages.langchain_core.retrievers.utils import HUNYUAN_SPECIFIC_RESPONSE
 from aidev_agent.packages.langgraph.streaming.utils import conditional_dispatch_custom_event
 from aidev_agent.utils.decorator import retry
@@ -149,14 +150,6 @@ class BaseCompressionMiddleware:
         self.token_margin = token_margin
 
     @staticmethod
-    def _dispatch_log(ctx: ProcessorContext, *, text: str) -> None:
-        conditional_dispatch_custom_event(
-            CustomMessageType.COMPRESS_LOG.value,
-            {"compress_log": f"\n```text\n{text}\n```\n"},
-            enable_custom_event=ctx.metadata.get("enable_custom_event", True),
-        )
-
-    @staticmethod
     def _try_get_token_len(ctx: ProcessorContext) -> Optional[int]:
         if ctx.chat_prompt_template is None or ctx.llm is None:
             logger.warning("【BaseCompressionMiddleware】_try_get_token_len 如果想要启用压缩，必须提供模板和llm")
@@ -178,6 +171,60 @@ class BaseCompressionMiddleware:
             return False
 
         return token_len > self.token_limit - self.token_margin
+
+    # -------------------------------------------------------------------------
+    # 压缩活动消息辅助方法
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def _estimate_tokens(ctx: ProcessorContext, text: str) -> int:
+        """粗略估算文本的 token 数。"""
+        if ctx.llm and hasattr(ctx.llm, "get_num_tokens"):
+            try:
+                return ctx.llm.get_num_tokens(text)
+            except Exception:
+                pass
+        return len(text) // 4
+
+    @staticmethod
+    def _record_compression(ctx: ProcessorContext, item_name: str, saved_tokens: int) -> None:
+        """记录压缩项到 metadata，供后续聚合推送。"""
+        if saved_tokens <= 0:
+            return
+        items: dict = ctx.metadata.setdefault("_compressed_items", {})
+        items[item_name] = items.get(item_name, 0) + saved_tokens
+
+    @staticmethod
+    def _dispatch_compress_activity(ctx: ProcessorContext) -> None:
+        """聚合推送压缩信息消息（仅在确实发生了压缩时推送）。
+
+        双通道发送：
+        1) dispatch CustomEvent(name=info, value={messageId, content})
+           → 运行期间实时 SSE 推送给前端，前端据此创建 info 消息占位。
+           SSE 流中使用驼峰 messageId，content 为空字符串（前端后续通过 ACTIVITY_SNAPSHOT 更新内容）。
+        2) 写入 InfoMessage 到 state["messages"]（id=message_id, content=text）
+           → 持久化到会话记录，供下次 SSE 连接的 MESSAGES_SNAPSHOT 重建。
+           入库使用蛇形 id 字段，content 为完整压缩摘要文本。
+        """
+        items: dict = ctx.metadata.pop("_compressed_items", None)
+        if not items:
+            return
+        parts = "、".join(items.keys())
+        total = sum(items.values())
+        text = f"已压缩上下文（{parts} {total} tokens）"
+        msg_id = str(uuid.uuid4())
+
+        # 1) 实时推送 CustomEvent（运行期间前端可收到）
+        #    SSE 流中使用驼峰 messageId，content 为压缩摘要文本
+        conditional_dispatch_custom_event(
+            CustomMessageType.INFO.value,
+            {"messageId": msg_id, "content": text},
+            enable_custom_event=ctx.metadata.get("enable_custom_event", True),
+        )
+
+        # 2) 持久化 InfoMessage 到 state（下次连接快照可重建）
+        messages: list = ctx.state.get("messages") or []
+        messages.append(InfoMessage(message_id=msg_id, content=text))
+        ctx.state["messages"] = messages
 
 
 # ============================================================================
@@ -396,13 +443,15 @@ class KnowledgeCompressionMiddleware(BaseCompressionMiddleware):
             return
         # 执行压缩流程
         provided_chat_history = ctx.metadata.get("provided_chat_history", [])
-        self._dispatch_log(ctx, text="Token 超限，尝试压缩知识库知识内容以减少 token 使用。")
         logger.info("=====>Token 超限，尝试压缩知识库知识内容以减少 token 使用")
+        original_tokens = self._estimate_tokens(ctx, str(ctx.variables["context"]))
         compressed_context = self.knowledge_compressor_func(
             provided_chat_history,
             ctx.variables.get("query", ""),
             ctx.variables["context"],
         )
+        compressed_tokens = self._estimate_tokens(ctx, str(compressed_context))
+        self._record_compression(ctx, "知识库", original_tokens - compressed_tokens)
         state.knowledge_cache = compressed_context
         state.knowledge_compressed = True
         ctx.variables["context"] = compressed_context
@@ -691,8 +740,6 @@ class BaseToolOutputCompressionMiddleware(BaseCompressionMiddleware):
         tool_messages: List[BaseMessage],
         tool_msg_positions: List[Tuple[int, ToolMessage]],
         state: CompressionState,
-        *,
-        reason: str,
     ) -> bool:
         """带去重的工具输出压缩（避免重复压缩已处理过的工具输出）。
 
@@ -701,7 +748,6 @@ class BaseToolOutputCompressionMiddleware(BaseCompressionMiddleware):
             tool_messages: 工具消息列表
             tool_msg_positions: ToolMessage 的索引位置
             state: 压缩状态
-            reason: 压缩原因（用于日志）
 
         Returns:
             是否执行了压缩
@@ -726,7 +772,8 @@ class BaseToolOutputCompressionMiddleware(BaseCompressionMiddleware):
         provided_chat_history = ctx.metadata.get("provided_chat_history", [])
         query = self._get_query(ctx)
 
-        self._dispatch_log(ctx, text=reason)
+        # 估算压缩前的 token 数
+        original_tokens = sum(self._estimate_tokens(ctx, str(tm.content)) for _, tm in uncompressed_positions)
 
         # 调用压缩函数
         results = self.tool_output_compressor_func(
@@ -737,20 +784,24 @@ class BaseToolOutputCompressionMiddleware(BaseCompressionMiddleware):
 
         # 以新的 ToolMessage 列表回写，避免修改原始 state.messages
         new_tool_messages: List[BaseMessage] = list(tool_messages)
+        compressed_tokens = 0
         for i, (pos, tool_msg) in enumerate(uncompressed_positions):
             compressed = results[i]
             if compressed is None:
+                compressed_tokens += self._estimate_tokens(ctx, str(tool_msg.content))
                 continue
 
             # 使用 copy 保留原 ToolMessage 的其他属性（如 additional_kwargs、artifact 等）
             new_tool_msg = copy.copy(tool_msg)
             new_tool_msg.content = compressed
             new_tool_messages[pos] = new_tool_msg
+            compressed_tokens += self._estimate_tokens(ctx, compressed)
 
             # 记录已压缩的 tool_call_id
             if tool_msg.tool_call_id:
                 state.tool_output_compressed_ids.add(tool_msg.tool_call_id)
 
+        self._record_compression(ctx, "工具结果", original_tokens - compressed_tokens)
         ctx.metadata["tool_messages"] = new_tool_messages
         state.tool_output_compressed = True
 
@@ -796,7 +847,6 @@ class ToolOutputLengthCompressionMiddleware(BaseToolOutputCompressionMiddleware)
                     tool_messages,
                     tool_msg_positions,
                     state,
-                    reason="工具调用结果过长，尝试压缩工具调用结果以减少 token 使用。",
                 )
                 logger.info("=====>工具调用结果过长，尝试压缩工具调用结果以减少 token 使用。")
         next()
@@ -848,7 +898,6 @@ class ToolOutputTokenCompressionMiddleware(BaseToolOutputCompressionMiddleware):
             tool_messages,
             tool_msg_positions,
             state,
-            reason="Token 超限，尝试压缩工具调用结果以减少 token 使用。",
         )
 
         next()
@@ -866,37 +915,47 @@ class ChatHistoryCompressionMiddleware(BaseCompressionMiddleware):
     """
 
     def __call__(self, ctx: ProcessorContext, next: NextFunction) -> None:
-        chat_history = ctx.variables.get("chat_history")
-        if not isinstance(chat_history, list) or not chat_history:
-            logger.warning("ChatHistoryCompressionMiddleware 当前没有聊天历史")
-            next()
-            return
+        try:
+            chat_history = ctx.variables.get("chat_history")
+            if not isinstance(chat_history, list) or not chat_history:
+                logger.warning("ChatHistoryCompressionMiddleware 当前没有聊天历史")
+                next()
+                return
 
-        state = _ensure_compression_state(ctx)
-        # 先应用历史累计移除量（确保跨 ReAct 循环可复用）
-        removed = max(0, int(state.chat_history_removed or 0))
-        chat_history = list(chat_history)[removed:] if removed else list(chat_history)
-        ctx.variables["chat_history"] = chat_history
+            state = _ensure_compression_state(ctx)
+            # 先应用历史累计移除量（确保跨 ReAct 循环可复用）
+            removed = max(0, int(state.chat_history_removed or 0))
+            chat_history = list(chat_history)[removed:] if removed else list(chat_history)
+            ctx.variables["chat_history"] = chat_history
 
-        if not self._is_overflow(ctx):
-            next()
-            return
+            if not self._is_overflow(ctx):
+                next()
+                return
 
-        # Token 超限，发送日志并逐条移除最早消息
-        self._dispatch_log(ctx, text="Token 超限，尝试抛除会话历史以减少 token 使用。")
+            original_tokens = sum(self._estimate_tokens(ctx, str(getattr(msg, "content", ""))) for msg in chat_history)
 
-        while chat_history and self._is_overflow(ctx):
-            chat_history.pop(0)
-            state.chat_history_removed += 1
-        ctx.variables["chat_history"] = chat_history
-        if self._is_overflow(ctx):
-            logger.warning(
-                f"已尝试抛除会话历史，但仍然超过 token 限制。（限制: {self.token_limit}，余量: {self.token_margin}）"
+            while chat_history and self._is_overflow(ctx):
+                chat_history.pop(0)
+                state.chat_history_removed += 1
+            ctx.variables["chat_history"] = chat_history
+
+            compressed_tokens = sum(
+                self._estimate_tokens(ctx, str(getattr(msg, "content", ""))) for msg in chat_history
             )
-            err_msg = (
-                "已尝试按优先级压缩上下文，但仍然超过 token 限制，无法回答问题，请尝试其他 LLM。"
-                f"（当前 token 数为: {self._try_get_token_len(ctx)}，支持的 token 数为: {self.token_limit}，设置的 token limit margin 为: {self.token_margin},）"
-            )
-            raise RuntimeError(err_msg)
+            self._record_compression(ctx, "历史对话", original_tokens - compressed_tokens)
 
-        next()
+            if self._is_overflow(ctx):
+                logger.warning(
+                    f"已尝试抛除会话历史，但仍然超过 token 限制。（限制: {self.token_limit}，余量: {self.token_margin}）"
+                )
+                err_msg = (
+                    "已尝试按优先级压缩上下文，但仍然超过 token 限制，无法回答问题，请尝试其他 LLM。"
+                    f"（当前 token 数为: {self._try_get_token_len(ctx)}，支持的 token 数为: {self.token_limit}，设置的 token limit margin 为: {self.token_margin},）"
+                )
+                raise RuntimeError(err_msg)
+
+            next()
+        finally:
+            # ChatHistoryCompressionMiddleware 是压缩链最后一个中间件，
+            # 在所有出口点聚合推送压缩活动消息（含异常路径）。
+            self._dispatch_compress_activity(ctx)

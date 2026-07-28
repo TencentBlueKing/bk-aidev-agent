@@ -12,9 +12,6 @@ from ag_ui.core import (
     RunErrorEvent,
     RunFinishedEvent,
     RunStartedEvent,
-    TextMessageContentEvent,
-    TextMessageEndEvent,
-    TextMessageStartEvent,
     ToolCallArgsEvent,
     ToolCallEndEvent,
     ToolCallStartEvent,
@@ -149,28 +146,14 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
                     logger.debug(f"message snapshot: {event}")
                 elif event_type == EventType.CUSTOM and getattr(event, "name", "") in skip_encode_custom:
                     continue
-                elif (
-                    event_type == EventType.CUSTOM
-                    and getattr(event, "name", "") == CustomMessageType.COMPRESS_LOG.value
-                ):
-                    # compress_log 仅输出到 SSE，不写入 DB
-                    # CustomEvent 已经过 _dispatch_event（BaseSessionWriter 忽略了它），
-                    # 此处展开为 TextMessage 三元组直接编码输出，不经过 _dispatch_event，不接触 BaseSessionWriter
-                    compress_log_id = str(uuid.uuid4())
-                    delta = event.value.get("compress_log", "") if isinstance(event.value, dict) else ""
-                    yield event_encoder.encode(
-                        TextMessageStartEvent(
-                            type=EventType.TEXT_MESSAGE_START, role="assistant", message_id=compress_log_id
-                        )
-                    )
-                    yield event_encoder.encode(
-                        TextMessageContentEvent(
-                            type=EventType.TEXT_MESSAGE_CONTENT, message_id=compress_log_id, delta=delta
-                        )
-                    )
-                    yield event_encoder.encode(
-                        TextMessageEndEvent(type=EventType.TEXT_MESSAGE_END, message_id=compress_log_id)
-                    )
+                elif event_type == EventType.CUSTOM and getattr(event, "name", "") == CustomMessageType.INFO.value:
+                    # info（压缩通知等系统信息）仅输出到 SSE，不写入 DB
+                    # InfoMessage 已在 _dispatch_compress_activity 中写入 state["messages"]，
+                    # 此处直接透传 CustomEvent 供前端实时展示。
+                    # SSE 流 value 格式：{"messageId": "xxx", "content": ""}
+                    # 入库 InfoMessage 格式：{id: "xxx", role: "info", content: "已压缩上下文（...）"}
+                    # 后续如需更新该消息，前端可配合 ACTIVITY_SNAPSHOT(activityType=info) 更新。
+                    yield event_encoder.encode(event)
                 else:
                     # RUN_FINISHED 事件：approval 中断的 SSE 输出仅保留 metadata.ticket，减少冗余字段。
                     # 非 approval 中断（如 ask_user_question）保留完整 metadata，前端需 questions 数组渲染卡片。

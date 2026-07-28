@@ -19,8 +19,8 @@ from ag_ui.core import (
 from ag_ui.core.events import MessagesSnapshotEvent
 from ag_ui.core.types import ConfiguredBaseModel
 from langchain_core.messages import ChatMessage
-from pydantic import BaseModel, Field, computed_field, field_validator
-from typing_extensions import Literal, NotRequired
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
+from typing_extensions import NotRequired
 
 
 class LangGraphEventTypes(str, Enum):
@@ -176,8 +176,8 @@ class CustomMessageType(Enum):
     FLOW_AGENT_RESTART = "flow_agent_restart"
     FLOW_AGENT_UPDATE = "flow_agent_update"
 
-    # 压缩日志事件
-    COMPRESS_LOG = "compress_log"
+    # 压缩通知事件（实时 SSE 推送，name=info）
+    INFO = "info"
 
 
 class ExtendBaseMessage(BaseModel):
@@ -210,6 +210,18 @@ class ExtendToolMessage(ExtendBaseMessage, ToolMessage):
 
 class ExtendActivityMessage(ExtendBaseMessage, AGUIActivityMessage):
     content: dict[str, Any] | list[dict]
+
+
+class ExtendInfoMessage(ExtendBaseMessage):
+    """AG-UI 侧的系统信息消息（role=info）。
+
+    用于向前端推送系统级提示（如上下文压缩通知），进入 state["messages"]
+    供 MESSAGES_SNAPSHOT 重建与前端展示，但不会送入 LLM 输入。
+    """
+
+    id: str
+    role: Literal["info"] = "info"  # pyright: ignore[reportIncompatibleVariableOverride]
+    content: str
 
 
 class ReasoningMessage(ExtendBaseMessage):
@@ -248,6 +260,7 @@ ExtendMessage = Annotated[
         | ExtendToolMessage
         | ExtendActivityMessage
         | ExtendInterruptMessage
+        | ExtendInfoMessage
         | ReasoningMessage
     ),
     Field(discriminator="role"),
@@ -299,6 +312,37 @@ class InterruptMessage(ActivityMessage):
 
     role: str = "interrupt"
     content: dict | list[dict] = Field(default_factory=dict)
+
+
+class InfoMessage(ChatMessage):
+    """系统信息消息（role=info）的 LangChain 消息。
+
+    用于承载系统级提示（如上下文压缩通知），进入 ``state["messages"]`` 供
+    MESSAGES_SNAPSHOT 重建与前端展示，但会被 ``basic_middleware`` 按
+    ``isinstance(..., InfoMessage)`` 过滤剔除，不会送入 LLM 输入。
+    """
+
+    role: str = "info"
+    content: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_message_id(cls, data: Any) -> Any:
+        """允许构造时使用 message_id 作为 id 的别名。
+
+        始终 pop message_id（无论 id 是否已存在），避免从 checkpoint
+        恢复时 message_id 残留导致 computed_field 重复输出。
+        """
+        if isinstance(data, dict) and "message_id" in data:
+            if "id" not in data:
+                data["id"] = data["message_id"]
+            data.pop("message_id", None)
+        return data
+
+    @computed_field
+    def message_id(self) -> str:
+        """序列化时输出蛇形 message_id，与 SSE 流 CustomEvent 中的 messageId 对应。"""
+        return self.id
 
 
 class Interrupt(ConfiguredBaseModel):

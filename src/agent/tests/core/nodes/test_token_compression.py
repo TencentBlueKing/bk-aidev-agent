@@ -4,6 +4,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from aidev_agent.core.ag_ui.types import InfoMessage
 from aidev_agent.core.nodes.model.pydantic_models import ProcessorContext
 from aidev_agent.core.nodes.model.token_compression import (
     _KNOWLEDGE_COMMON_COMPRESSOR_USR_PROMPT,
@@ -168,6 +169,7 @@ class TestKnowledgeCompressionMiddleware:
     def test_compresses_when_overflow_and_func_provided(self, mock_dispatch):
         mock_llm = MagicMock()
         mock_llm.get_num_tokens_from_messages.return_value = 950
+        mock_llm.get_num_tokens.return_value = 100
 
         mock_template = MagicMock()
         mock_template._format_prompt_with_error_handling.return_value = MagicMock(messages=[])
@@ -262,6 +264,7 @@ class TestChatHistoryCompressionMiddleware:
 
         mock_llm = MagicMock()
         mock_llm.get_num_tokens_from_messages.side_effect = mock_get_tokens
+        mock_llm.get_num_tokens.return_value = 100
 
         mock_template = MagicMock()
         mock_template._format_prompt_with_error_handling.return_value = MagicMock(messages=[])
@@ -609,3 +612,79 @@ class TestKnowledgeCompressorPromptTemplates:
         assert "[history]" in result
         assert "knowledge content" in result
         assert "user question" in result
+
+
+# ============================================================================
+# _dispatch_compress_activity 测试
+# ============================================================================
+class TestDispatchCompressActivity:
+    """测试 _dispatch_compress_activity 双通道发送逻辑。"""
+
+    @patch("aidev_agent.core.nodes.model.token_compression.conditional_dispatch_custom_event")
+    def test_dispatches_custom_event_and_info_message(self, mock_dispatch):
+        """压缩发生时，CustomEvent 和 InfoMessage 都应正确发送。"""
+        ctx = ProcessorContext(
+            state={"messages": []},
+            config={},
+            llm=MagicMock(),
+            chat_prompt_template=MagicMock(),
+            variables={},
+            metadata={"_compressed_items": {"历史对话": 1200, "工具结果": 2300}},
+        )
+        BaseCompressionMiddleware._dispatch_compress_activity(ctx)
+
+        # 1) CustomEvent：name=info，value 包含 messageId（驼峰）和 content（压缩摘要文本）
+        mock_dispatch.assert_called_once()
+        call_args = mock_dispatch.call_args
+        assert call_args[0][0] == "info"
+        value = call_args[0][1]
+        assert "messageId" in value
+        assert value["content"] == "已压缩上下文（历史对话、工具结果 3500 tokens）"
+
+        # 2) InfoMessage 写入 state["messages"]（蛇形 message_id，完整 content）
+        messages = ctx.state["messages"]
+        assert len(messages) == 1
+        assert isinstance(messages[0], InfoMessage)
+        assert messages[0].id == value["messageId"]
+        assert messages[0].message_id == value["messageId"]
+        assert messages[0].content == "已压缩上下文（历史对话、工具结果 3500 tokens）"
+
+    @patch("aidev_agent.core.nodes.model.token_compression.conditional_dispatch_custom_event")
+    def test_skips_when_no_compressed_items(self, mock_dispatch):
+        """无压缩项时不应 dispatch CustomEvent 或写入 InfoMessage。"""
+        ctx = ProcessorContext(
+            state={"messages": []},
+            config={},
+            llm=MagicMock(),
+            chat_prompt_template=MagicMock(),
+            variables={},
+            metadata={},
+        )
+        BaseCompressionMiddleware._dispatch_compress_activity(ctx)
+
+        mock_dispatch.assert_not_called()
+        assert ctx.state["messages"] == []
+
+    @patch("aidev_agent.core.nodes.model.token_compression.conditional_dispatch_custom_event")
+    @pytest.mark.parametrize("enable_custom_event", [True, False])
+    def test_respects_enable_custom_event_flag(self, mock_dispatch, enable_custom_event):
+        """enable_custom_event 标志应正确传递给 conditional_dispatch_custom_event。"""
+        ctx = ProcessorContext(
+            state={"messages": []},
+            config={},
+            llm=MagicMock(),
+            chat_prompt_template=MagicMock(),
+            variables={},
+            metadata={
+                "_compressed_items": {"历史对话": 500},
+                "enable_custom_event": enable_custom_event,
+            },
+        )
+        BaseCompressionMiddleware._dispatch_compress_activity(ctx)
+
+        # conditional_dispatch_custom_event 始终被调用，但 enable_custom_event 参数不同
+        mock_dispatch.assert_called_once()
+        assert mock_dispatch.call_args.kwargs["enable_custom_event"] == enable_custom_event
+        # InfoMessage 始终写入，不受 enable_custom_event 影响
+        assert len(ctx.state["messages"]) == 1
+        assert isinstance(ctx.state["messages"][0], InfoMessage)
