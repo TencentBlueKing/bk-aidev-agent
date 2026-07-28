@@ -220,3 +220,16 @@ class TestStreamErrorChunk:
         error = CrawUpstreamRunError("openclaw", '{"message":"secret internal detail"}')
         assert "secret" not in error.client_message
         assert "openclaw" in error.client_message
+
+
+class TestOpenClawSessionSticky:
+    """OpenClaw 会话粘滞：session_code → x-openclaw-session-key（内核状态跨轮保留的前提）。"""
+
+    def test_session_key_header_present_with_session_code(self):
+        backend = OpenClawBackend(api_url="http://x", api_key="gw-token")
+        headers = backend.build_headers(session_code="sess-1")
+        assert headers["x-openclaw-session-key"] == "sess-1"
+
+    def test_no_session_key_header_without_session_code(self):
+        backend = OpenClawBackend(api_url="http://x", api_key="gw-token")
+        assert "x-openclaw-session-key" not in backend.build_headers()
