@@ -10,11 +10,17 @@
   接管 CHAT，连接参数由对应后端的 env 回落链装配；
 - 未注册的值 → 记 warning，保持原生（接管失败不拖垮宿主启动）。
 
-宿主接入：在插件 / 应用启动路径（如 Django ``AppConfig.ready`` 或
-``extend/agent.py`` 末尾）调用一次::
+宿主接入：推荐在 **ROOT_URLCONF 尾部**（bk_plugin 形态即 ``patch/urls.py``
+末尾）调用一次——settings 已就绪、早于首个请求的 registry 查找；避免在
+settings 导入期挂载（传递依赖可能触发 Django 配置未就绪的循环导入）。
+``AppConfig.ready`` 亦可::
 
-    from aidev_agent.packages.craw import enable_chat_takeover
-    enable_chat_takeover()
+    try:
+        from aidev_agent.packages.craw import enable_chat_takeover
+    except ImportError:  # SDK 版本尚无 craw 包，保持原生
+        pass
+    else:
+        enable_chat_takeover()
 """
 
 from __future__ import annotations
