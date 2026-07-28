@@ -94,6 +94,13 @@ export function createMockChatHelper(): IChatHelper {
       renameSession: vi.fn().mockResolvedValue(undefined),
       updateSession: vi.fn().mockResolvedValue(undefined),
       uploadFile: vi.fn().mockResolvedValue({ download_url: 'https://example.com/file.png' }),
+      getPvFileDownloadUrl: vi.fn().mockResolvedValue({
+        download_url: 'https://example.com/download',
+        preview_url: 'https://example.com/preview',
+        expires_at: '2026-07-27 15:00:00 +0800',
+        size: 1024,
+        sha256: 'abc',
+      }),
     } as any,
   };
 }

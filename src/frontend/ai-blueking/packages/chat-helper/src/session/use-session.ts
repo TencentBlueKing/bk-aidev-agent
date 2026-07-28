@@ -27,7 +27,7 @@
 import { ref } from 'vue';
 
 import type { IMediatorModule } from '../mediator';
-import type { ISession, ISessionFeedback } from './type';
+import type { GetPvFileDownloadUrlOptions, ISession, ISessionFeedback } from './type';
 
 /**
  * 使用会话模块，主要做业务的组合
@@ -226,6 +226,10 @@ export const useSession = (mediator: IMediatorModule) => {
     return mediator.http?.session.uploadFile(sessionCode, file);
   };
 
+  const getPvFileDownloadUrl = (sessionCode: string, path: string, options?: GetPvFileDownloadUrlOptions) => {
+    return mediator.http?.session.getPvFileDownloadUrl(sessionCode, path, options);
+  };
+
   /**
    * 重置 session 模块状态
    */
@@ -261,6 +265,7 @@ export const useSession = (mediator: IMediatorModule) => {
     getSessionFeedbackReasons,
     renameSession,
     uploadFile,
+    getPvFileDownloadUrl,
     reset,
   };
 };

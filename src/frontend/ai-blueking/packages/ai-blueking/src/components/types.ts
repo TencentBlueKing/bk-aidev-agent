@@ -36,7 +36,7 @@ export type ChatBotEmits = {
   'confirm-share': [messages: Message[]];
   error: [error: Error];
   /** 执行情况面板展开/折叠事件 */
-  'execution-panel-change': [isCollapse: boolean];
+  'execution-panel-change': [isCollapse: boolean, resizeAsideWidth?: number];
   /** 用户反馈事件 */
   feedback: [tool: IToolBtn, message: Message, reasonList: string[], otherReason: string];
   'receive-end': [];
@@ -185,7 +185,7 @@ export interface ChatBotProps {
   /** 执行情况侧面板位置 */
   placement?: 'left' | 'right';
 
-  /** ResizeLayout 配置（执行情况侧面板拖拽） */
+  /** ResizeLayout 配置（执行情况 / 文件产物侧面板拖拽）；ChatBot 默认 initialDivide 560px，可覆盖 */
   resizeProps?: {
     disabled?: boolean;
     initialDivide?: number | string;

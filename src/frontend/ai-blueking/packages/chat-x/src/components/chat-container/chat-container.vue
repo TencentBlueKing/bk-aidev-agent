@@ -499,7 +499,11 @@
 
   const keyword = shallowRef('');
   const selectedUserMessages = deepRef<Message[]>([]);
-  const resizeAsideWidth = shallowRef<number>(400);
+  const resolveInitialAsideWidth = () => {
+    const divide = props.resizeProps?.initialDivide;
+    return typeof divide === 'number' ? divide : 400;
+  };
+  const resizeAsideWidth = shallowRef<number>(resolveInitialAsideWidth());
   const resizeMainWidth = computed(() => {
     return `calc(100% - ${resizeAsideWidth.value}px)`;
   });

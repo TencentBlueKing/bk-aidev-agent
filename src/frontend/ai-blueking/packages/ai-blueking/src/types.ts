@@ -287,7 +287,7 @@ export interface AIBluekingProps {
   beforeNimbusClick?: () => boolean | Promise<boolean | void> | void;
   /** 快捷操作过滤函数 */
   shortcutFilter?: (shortcut: IShortcut, selectedText: string) => boolean;
-  /** ResizeLayout 配置（执行情况侧面板拖拽） */
+  /** ResizeLayout 配置（执行情况 / 文件产物侧面板拖拽）；ChatBot 默认 initialDivide 560px，可覆盖 */
   resizeProps?: {
     disabled?: boolean;
     initialDivide?: number | string;

@@ -23,6 +23,7 @@
       :on-custom-tab-change="effectiveOnCustomTabChange"
       :on-send-message="handleSendMessage"
       :on-stop-sending="handleStopSending"
+      :on-artifact-click="handleArtifactClick"
       :on-upload="handleUpload"
       :on-user-action="handleUserAction"
       :on-user-input-confirm="handleUserInputConfirm"
@@ -32,7 +33,7 @@
       :placement="props.placement"
       :welcome-title="welcomeTitle"
       :prompts="effectivePrompts"
-      :resize-props="props.resizeProps"
+      :resize-props="effectiveResizeProps"
       :resources="effectiveResources"
       :shortcut-id="selectedShortcut?.id"
       :shortcuts="filteredShortcuts"
@@ -124,6 +125,17 @@
     placement: 'left',
   });
 
+  /** 侧栏默认固定宽度（像素），由外层容器 expandForSidePanel 扩宽以保持主聊天区宽度不变 */
+  const DEFAULT_RESIZE_PROPS = {
+    initialDivide: 560 as number | string,
+    min: 400,
+  };
+
+  const effectiveResizeProps = computed(() => ({
+    ...DEFAULT_RESIZE_PROPS,
+    ...props.resizeProps,
+  }));
+
   const emit = defineEmits<ChatBotEmits>();
   const slots = useSlots();
   defineSlots<{
@@ -191,6 +203,7 @@
     doSendMessage,
     handleSendMessage,
     handleUpload,
+    handleArtifactClick,
     handleStopSending,
     stopGeneration,
   } = useMessageSender({
@@ -279,8 +292,8 @@
   });
 
   // ==================== 执行情况面板联动 ====================
-  const handleExecutionPanelChange = (isCollapse: boolean) => {
-    emit('execution-panel-change', isCollapse);
+  const handleExecutionPanelChange = (isCollapse: boolean, resizeAsideWidth?: number) => {
+    emit('execution-panel-change', isCollapse, resizeAsideWidth);
   };
 
   // ==================== 自定义 Tab 数据加载 ====================

@@ -154,6 +154,46 @@ describe('useMessageSender', () => {
     });
   });
 
+  describe('handleArtifactClick', () => {
+    it('should call session.getPvFileDownloadUrl and return download_url/preview_url', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      const { handleArtifactClick } = useMessageSender(params);
+
+      const file = {
+        name: 'report.pdf',
+        outputId: 'outputs/report.pdf',
+        size: 1024,
+        type: 'pdf',
+      };
+      const result = await handleArtifactClick(file as any);
+
+      expect(params.chatHelper.value!.session.getPvFileDownloadUrl).toHaveBeenCalledWith(
+        'session-1',
+        'outputs/report.pdf',
+      );
+      expect(result).toEqual({
+        download_url: 'https://example.com/download',
+        preview_url: 'https://example.com/preview',
+      });
+    });
+
+    it('should throw when no active session', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = null;
+      const { handleArtifactClick } = useMessageSender(params);
+
+      await expect(
+        handleArtifactClick({
+          name: 'report.pdf',
+          outputId: 'outputs/report.pdf',
+          size: 1024,
+          type: 'pdf',
+        } as any),
+      ).rejects.toThrow('no active session');
+    });
+  });
+
   describe('handleUpdateModelValue', () => {
     it('should update userInput and selectedResources', () => {
       const params = createParams();

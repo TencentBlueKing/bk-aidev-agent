@@ -108,3 +108,19 @@ export interface ISessionFeedbackApi {
   session_code: string;
   session_content_ids: number[];
 }
+
+/** pv_files/download_url 响应（保持后端 snake_case） */
+export interface IPvFileDownloadUrlResult {
+  download_url: string;
+  expires_at: string;
+  preview_url: string;
+  sha256: string;
+  size: number;
+}
+
+export interface GetPvFileDownloadUrlOptions {
+  /** 有效期秒数，默认 600，最大 3600 */
+  expiresIn?: number;
+  /** 请求超时毫秒，默认 20000 */
+  timeout?: number;
+}
