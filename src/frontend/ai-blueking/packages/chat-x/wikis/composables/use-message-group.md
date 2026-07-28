@@ -145,7 +145,7 @@ const sessionArtifacts = computed(() => {
 });
 ```
 
-预览命中与侧栏交互见 [useArtifactPreview](./use-artifact-preview) 与 [FileArtifactPanel](../components/message/file-artifact-panel)。
+预览命中与取链见 [useArtifactPreview](./use-artifact-preview)；侧栏列表与分类型预览（`ArtifactPreviewHost`）见 [FileArtifactPanel](../components/message/file-artifact-panel)。
 
 ## 待审批统计
 

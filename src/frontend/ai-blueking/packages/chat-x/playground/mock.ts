@@ -109,77 +109,237 @@ export const MOCK_SHORTCUTS = [
   },
 ] as Shortcut[];
 
-// AI 生成的文件产物（流式阶段仅含元信息；download_url / preview_url 由 onArtifactClick 异步返回）
+// ---------------------------------------------------------------------------
+// 文件产物 Mock（元信息 + 正文；download_url / preview_url 由 onArtifactClick 异步返回）
+// txt / markdown / html：Blob URL，供前端 fetch 后原生渲染
+// pdf / jpg：仍走 preview_url iframe（后台转 pdf 的模拟）
+// ---------------------------------------------------------------------------
+
+/** txt：纯文本预览正文 */
+export const MOCK_ARTIFACT_TXT_CONTENT = `蓝鲸可观测平台 · 周例会纪要（草稿）
+时间：2026-07-21 14:00–15:30
+地点：线上会议（腾讯会议）
+主持人：张明 | 记录人：李华
+
+一、上周回顾
+1. 告警收敛规则已上线，P1 告警量下降约 35%。
+2. 日志查询慢查询优化：冷热分层已完成灰度，平均查询耗时从 8.2s 降至 2.6s。
+3. Agent 侧文件产物预览联调阻塞项：markdown / txt 需前端直渲染，不再依赖 preview_url。
+
+二、本周计划
+1. 完成文件产物侧栏预览（html / txt / markdown）验收。
+2. 推进「监控大盘 HTML 报告」导出模板评审。
+3. 补齐 JSON 配置产物的 schema 校验与下载埋点。
+
+三、风险与依赖
+- PDF 转码服务高峰期偶发超时，需确认 SLA（负责人：王强，本周五前给结论）。
+- 设计稿标注与主题变量对齐仍有 3 处待确认。
+
+四、待办
+[ ] 前端：txt / markdown 预览联调 — 李华 / 07-28
+[ ] 后端：download_url 鉴权时效文档 — 赵磊 / 07-29
+[ ] 产品：导出报告字段清单 — 陈静 / 07-30
+
+备注：本稿仅供内部同步，正式纪要将在会后 24h 内发布到 iWiki。
+`;
+
+/** markdown：MarkdownContent 预览正文 */
+export const MOCK_ARTIFACT_MARKDOWN_CONTENT = `# 蓝鲸可观测 · 系统配置说明
+
+> 适用版本：chat-x ≥ 0.0.47｜更新：2026-07-28
+
+## 1. 概述
+
+本文档描述 Agent 产出**文件产物**时，前端侧栏预览与下载的配置约定。流式阶段消息仅携带文件元信息；真实链接通过 \`onArtifactClick\` 异步获取。
+
+## 2. 预览策略
+
+| 文件类型 | 加载方式 | 渲染 |
+| --- | --- | --- |
+| \`html\` | \`download_url\` → fetch | iframe \`srcdoc\` |
+| \`txt\` | \`download_url\` → fetch | 浏览器纯文本（\`pre\`） |
+| \`markdown\` | \`download_url\` → fetch | 项目 \`MarkdownContent\` |
+| \`json\` | \`download_url\` → fetch | 纯文本（同 txt） |
+| \`pdf\` / \`jpg\` | \`preview_url\` | iframe（后台转 PDF） |
+
+## 3. 接入示例
+
+\`\`\`ts
+const onArtifactClick = async (file: AIFileInfo) => {
+  const res = await api.getArtifactUrls(file.outputId);
+  return {
+    download_url: res.download_url,
+    preview_url: res.preview_url,
+  };
+};
+\`\`\`
+
+## 4. 注意事项
+
+1. **鉴权**：\`download_url\` / \`preview_url\` 建议带短时效签名，避免直链泄露。
+2. **竞态**：侧栏切换文件时需中断上一次 fetch，防止旧内容覆盖。
+3. **安全**：HTML 预览使用 \`srcdoc\`，勿将不可信脚本注入到宿主页面。
+
+## 5. 检查清单
+
+- [x] Pdf 预览可用
+- [x] Html 直渲染
+- [ ] Txt / Markdown 直渲染验收
+- [ ] 下载埋点与失败重试
+
+---
+
+如有疑问请联系 **可观测前端小组**。
+`;
+
+/** html：iframe srcdoc 预览正文 */
+export const MOCK_ARTIFACT_HTML_CONTENT = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>监控大盘周报</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; color: #1d2126; }
+    h1 { font-size: 20px; margin: 0 0 8px; }
+    .meta { color: #979ba5; font-size: 12px; margin-bottom: 20px; }
+    .cards { display: flex; gap: 12px; flex-wrap: wrap; }
+    .card { flex: 1; min-width: 140px; padding: 16px; background: #f5f7fa; border-radius: 8px; }
+    .card strong { display: block; font-size: 24px; color: #3a84ff; margin-top: 8px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+    th, td { border: 1px solid #dcdee5; padding: 8px 10px; text-align: left; }
+    th { background: #f0f1f5; }
+  </style>
+</head>
+<body>
+  <h1>业务监控大盘 · 周报预览</h1>
+  <p class="meta">统计周期：2026-07-14 ~ 2026-07-20｜生成时间：2026-07-21 09:12</p>
+  <div class="cards">
+    <div class="card">P1 告警<strong>42</strong></div>
+    <div class="card">平均恢复时长<strong>18 min</strong></div>
+    <div class="card">可用性<strong>99.95%</strong></div>
+  </div>
+  <table>
+    <thead><tr><th>服务</th><th>错误率</th><th>P99 延迟</th><th>状态</th></tr></thead>
+    <tbody>
+      <tr><td>aidev-agent</td><td>0.12%</td><td>320ms</td><td>正常</td></tr>
+      <tr><td>chat-gateway</td><td>0.08%</td><td>180ms</td><td>正常</td></tr>
+      <tr><td>artifact-preview</td><td>1.40%</td><td>1.2s</td><td>关注</td></tr>
+    </tbody>
+  </table>
+</body>
+</html>`;
+
+/** json：配置样例正文（与 txt 相同，fetch 后纯文本预览） */
+export const MOCK_ARTIFACT_JSON_CONTENT = `{
+  "service": "bk-observe-agent",
+  "env": "prod",
+  "alert": {
+    "p1_threshold": 5,
+    "mute_window_min": 30,
+    "channels": ["wecom", "email"]
+  },
+  "dashboard": {
+    "refresh_sec": 60,
+    "panels": ["error_rate", "latency_p99", "saturation"]
+  }
+}
+`;
+
 export const MOCK_FILE_ARTIFACTS: AIFileInfo[] = [
   {
-    name: '项目立项书.pdf',
+    name: '可观测平台立项说明书.pdf',
     outputId: 'artifact-pdf',
     size: 245_760,
     type: AIFileType.Pdf,
   },
   {
-    name: '系统配置系统配置系统配置系统配置系统配置系统配置系统配置系统配置.md',
+    name: '文件产物预览-系统配置说明.md',
     outputId: 'artifact-markdown',
-    size: 4_096,
+    size: MOCK_ARTIFACT_MARKDOWN_CONTENT.length,
     type: AIFileType.Markdown,
   },
   {
-    name: 'demo.json',
+    name: '告警策略配置.json',
     outputId: 'artifact-json',
-    size: 1_280,
+    size: MOCK_ARTIFACT_JSON_CONTENT.length,
     type: AIFileType.Json,
   },
   {
-    name: '自然风光.jpg',
+    name: '机房巡检现场照片.jpg',
     outputId: 'artifact-jpg',
     size: 1_048_576,
     type: AIFileType.Jpg,
   },
   {
-    name: 'dashboard_preview.html',
+    name: '监控大盘周报.html',
     outputId: 'artifact-html',
-    size: 8_192,
+    size: MOCK_ARTIFACT_HTML_CONTENT.length,
     type: AIFileType.Html,
   },
   {
-    name: '会议纪要草稿.txt',
+    name: '周例会纪要-0721.txt',
     outputId: 'artifact-txt',
-    size: 2_048,
+    size: MOCK_ARTIFACT_TXT_CONTENT.length,
     type: AIFileType.Txt,
   },
 ];
 
-/** playground 模拟 onArtifactClick：按 outputId 异步返回 download_url / preview_url */
-export const MOCK_ARTIFACT_URL_MAP: Record<string, { download_url: string; preview_url: string }> = {
-  'artifact-pdf': {
-    download_url: 'https://example.com/download/project.pdf',
-    preview_url: 'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf',
-  },
-  'artifact-markdown': {
-    download_url: 'https://example.com/download/config.md',
-    preview_url: 'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf',
-  },
-  'artifact-json': {
-    download_url: 'https://example.com/download/demo.json',
-    preview_url: 'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf',
-  },
-  'artifact-jpg': {
-    download_url: 'https://example.com/download/scenery.jpg',
-    preview_url: 'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf',
-  },
-  'artifact-html': {
-    download_url: 'data:text/html,<h1>dashboard preview</h1><p>mock html artifact</p>',
-    preview_url: 'https://example.com/preview/dashboard.html',
-  },
-  'artifact-txt': {
-    download_url: 'https://example.com/download/meeting.txt',
-    preview_url: 'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf',
-  },
+type MockArtifactUrl = {
+  download_url?: string;
+  preview_url?: string;
 };
 
-export const mockArtifactClick = async (file: AIFileInfo) => {
-  await new Promise(resolve => setTimeout(resolve, 1400));
-  return MOCK_ARTIFACT_URL_MAP[file.outputId] ?? {};
+/** 仅 iframe 类型需要的静态 preview_url；文本类 download_url 运行时用 Blob 生成 */
+const MOCK_ARTIFACT_STATIC_URL: Record<string, MockArtifactUrl> = {
+  'artifact-pdf': {
+    download_url: 'https://example.com/download/observe-project.pdf',
+    preview_url: 'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf',
+  },
+  'artifact-json': {},
+  'artifact-jpg': {
+    download_url: 'https://picsum.photos/seed/bk-observe/1200/800.jpg',
+    preview_url: 'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf',
+  },
+  'artifact-markdown': {},
+  'artifact-html': {},
+  'artifact-txt': {},
+};
+
+const MOCK_TEXT_ARTIFACT_BODY: Record<string, { body: string; mime: string }> = {
+  'artifact-html': { body: MOCK_ARTIFACT_HTML_CONTENT, mime: 'text/html' },
+  'artifact-json': { body: MOCK_ARTIFACT_JSON_CONTENT, mime: 'application/json' },
+  'artifact-markdown': { body: MOCK_ARTIFACT_MARKDOWN_CONTENT, mime: 'text/markdown' },
+  'artifact-txt': { body: MOCK_ARTIFACT_TXT_CONTENT, mime: 'text/plain' },
+};
+
+/** 缓存 Blob URL，避免重复 createObjectURL */
+const mockArtifactBlobUrlCache = new Map<string, string>();
+
+const getMockTextDownloadUrl = (outputId: string) => {
+  const cached = mockArtifactBlobUrlCache.get(outputId);
+  if (cached) {
+    return cached;
+  }
+  const item = MOCK_TEXT_ARTIFACT_BODY[outputId];
+  if (!item) {
+    return undefined;
+  }
+  const url = URL.createObjectURL(new Blob([item.body], { type: `${item.mime};charset=utf-8` }));
+  mockArtifactBlobUrlCache.set(outputId, url);
+  return url;
+};
+
+/** 兼容旧导出名：静态映射 + 文本类占位（真实 download_url 见 mockArtifactClick） */
+export const MOCK_ARTIFACT_URL_MAP: Record<string, MockArtifactUrl> = MOCK_ARTIFACT_STATIC_URL;
+
+export const mockArtifactClick = async (file: AIFileInfo): Promise<MockArtifactUrl> => {
+  await new Promise(resolve => setTimeout(resolve, 600));
+  const staticUrls = MOCK_ARTIFACT_STATIC_URL[file.outputId] ?? {};
+  const textDownloadUrl = getMockTextDownloadUrl(file.outputId);
+  return {
+    ...staticUrls,
+    ...(textDownloadUrl ? { download_url: textDownloadUrl } : {}),
+  };
 };
 
 // 带文件产物的会话消息，用于 playground 调试 artifacts 展示
@@ -187,7 +347,7 @@ export const MOCK_ARTIFACTS_MESSAGES = [
   {
     id: 'mock-artifacts-user',
     role: MessageRole.User,
-    content: '帮我把监控方案的相关文件生成出来',
+    content: '帮我把本周监控方案相关的产出文件都整理出来，方便评审。',
     name: 'user',
     status: MessageStatus.Complete,
     messageId: 'mock-artifacts-user',
@@ -195,7 +355,8 @@ export const MOCK_ARTIFACTS_MESSAGES = [
   {
     id: 'mock-artifacts-assistant',
     role: MessageRole.Assistant,
-    content: '收到，我已经为你设计好，请查阅',
+    content:
+      '已为你生成一组评审材料：立项 PDF、配置说明 Markdown、告警 JSON、巡检照片、大盘周报 HTML，以及周例会纪要 TXT。可点击卡片在侧栏预览或下载。',
     name: 'react_agent',
     status: MessageStatus.Complete,
     messageId: 'mock-artifacts-assistant',

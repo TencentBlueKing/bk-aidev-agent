@@ -7,6 +7,8 @@
 /* stylelint-disable no-duplicate-selectors */
 
 /* stylelint-disable custom-property-pattern */
+
+
 .ai-markdown-body {
   --base-size-16: 16px;
   --base-size-24: 24px;
@@ -916,8 +918,10 @@
   font-size: 85%;
   line-height: 1.45;
   color: var(--fgColor-default);
-  background-color: var(--bgColor-muted);
+  background-color: #282c34;
   border-radius: 6px;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 .ai-markdown-body pre code,

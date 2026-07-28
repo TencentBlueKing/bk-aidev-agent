@@ -163,8 +163,8 @@ describe('FileArtifactPanel', () => {
     wrapper = mountPanel({ activeId: artifact.artifactId, artifacts: [artifact] });
     await flushPromises();
 
-    expect(wrapper.find('.ai-file-artifact-panel-preview-empty').exists()).toBe(true);
-    expect(wrapper.find('.ai-file-artifact-panel-preview-iframe').exists()).toBe(false);
+    expect(wrapper.find('.ai-artifact-preview-host-empty').exists()).toBe(true);
+    expect(wrapper.find('.ai-artifact-url-iframe-preview').exists()).toBe(false);
   });
 
   it('pdf 文件应异步取链后用 iframe src 展示 preview_url', async () => {
@@ -181,7 +181,7 @@ describe('FileArtifactPanel', () => {
     );
     await flushPromises();
 
-    const iframe = wrapper.find('.ai-file-artifact-panel-preview-iframe');
+    const iframe = wrapper.find('.ai-artifact-url-iframe-preview');
     expect(iframe.attributes('src')).toBe('https://example.com/x.pdf');
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(resolveArtifactUrls).toHaveBeenCalledTimes(1);
@@ -206,7 +206,7 @@ describe('FileArtifactPanel', () => {
     await flushPromises();
 
     expect(fetchSpy).toHaveBeenCalledWith('https://example.com/page.html', expect.any(Object));
-    const iframe = wrapper.find('.ai-file-artifact-panel-preview-iframe');
+    const iframe = wrapper.find('.ai-artifact-html-preview');
     expect(iframe.attributes('srcdoc')).toBe('<h1>hi</h1>');
     vi.unstubAllGlobals();
   });
@@ -224,7 +224,7 @@ describe('FileArtifactPanel', () => {
     );
     await flushPromises();
 
-    expect(wrapper.find('.ai-file-artifact-panel-preview-error').exists()).toBe(true);
+    expect(wrapper.find('.ai-artifact-preview-host-error').exists()).toBe(true);
     vi.unstubAllGlobals();
   });
 
@@ -248,12 +248,12 @@ describe('FileArtifactPanel', () => {
     await flushPromises();
 
     expect(wrapper.find('.mock-message-loading').exists()).toBe(false);
-    expect(wrapper.find('.ai-file-artifact-panel-preview-iframe').exists()).toBe(true);
+    expect(wrapper.find('.ai-artifact-url-iframe-preview').exists()).toBe(true);
   });
 
   it('无命中文件时应展示空态', () => {
     wrapper = mountPanel({ activeId: 'not-exist', artifacts: [createArtifact()] });
 
-    expect(wrapper.find('.ai-file-artifact-panel-preview-empty').exists()).toBe(true);
+    expect(wrapper.find('.ai-artifact-preview-host-empty').exists()).toBe(true);
   });
 });
