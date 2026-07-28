@@ -125,20 +125,15 @@ const doubled = computed(() => count.value * 2);
   ];
 
   // 文件产物（AIFileInfo 元信息；下载/预览链路由 ChatContainer.onArtifactClick 异步获取）
+  // 侧栏按类型分派：html / markdown / txt / json → download_url 正文；pdf / jpg → preview_url iframe
   const artifactsProperty = {
     artifacts: [
-      {
-        name: 'report.html',
-        outputId: 'output-1',
-        size: 10240,
-        type: 'html',
-      },
-      {
-        name: 'summary.pdf',
-        outputId: 'output-2',
-        size: 204800,
-        type: 'pdf',
-      },
+      { name: '监控大盘周报.html', outputId: 'output-html', size: 10240, type: 'html' },
+      { name: '系统配置说明.md', outputId: 'output-md', size: 8192, type: 'markdown' },
+      { name: '周例会纪要.txt', outputId: 'output-txt', size: 4096, type: 'txt' },
+      { name: '告警策略配置.json', outputId: 'output-json', size: 2048, type: 'json' },
+      { name: '立项说明书.pdf', outputId: 'output-pdf', size: 204800, type: 'pdf' },
+      { name: '巡检现场照片.jpg', outputId: 'output-jpg', size: 1048576, type: 'jpg' },
     ],
   };
 </script>
@@ -163,7 +158,7 @@ AssistantMessage（根类名：ai-assistant-message）
 │   └── [default slot { content }] 或 ContentRender → MarkdownContent
 ├── ToolCallRender × N（toolCalls，不受 slot 影响）
 └── MessageArtifacts（v-if property.artifacts 非空）
-      └── ArtifactFileCard × N（点击 → useArtifactPreview → 侧栏 FileArtifactPanel）
+      └── ArtifactFileCard × N（点击 → useArtifactPreview → 侧栏 FileArtifactPanel → ArtifactPreviewHost）
 ```
 
 - **内容区**：`content` 经 `ContentRender`（`MessageContentType.Text`）由 `MarkdownContent` 渲染；default slot 仅收到 `{ content }`
@@ -627,6 +622,13 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
 
 `AIFileInfo` 仅含元信息（`name` / `outputId` / `size` / `type`）；`download_url` / `preview_url` 由容器 `onArtifactClick` 异步获取。命中唯一文件依赖 `messageUid = uid ?? String(id)` + 卡片下标 + `outputId`。
 
+侧栏预览由面板内 `ArtifactPreviewHost` 按类型分派（详见面板文档「预览机制」）：
+
+| type | 预览依赖 | 渲染 |
+| ---- | -------- | ---- |
+| `html` / `markdown` / `txt` / `json` | `download_url` | 正文直渲染（srcdoc / MarkdownContent / `<pre>`） |
+| `pdf` / `jpg` 等 | `preview_url` | iframe（一般为后台转好的 PDF） |
+
 ```vue
 <template>
   <MessageRender :message="message" />
@@ -637,8 +639,12 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
   import type { AIFileInfo } from '@blueking/chat-x';
 
   const artifacts: AIFileInfo[] = [
-    { name: 'report.html', outputId: 'output-1', size: 10240, type: 'html' },
-    { name: 'summary.pdf', outputId: 'output-2', size: 204800, type: 'pdf' },
+    { name: '监控大盘周报.html', outputId: 'output-html', size: 10240, type: 'html' },
+    { name: '系统配置说明.md', outputId: 'output-md', size: 8192, type: 'markdown' },
+    { name: '周例会纪要.txt', outputId: 'output-txt', size: 4096, type: 'txt' },
+    { name: '告警策略配置.json', outputId: 'output-json', size: 2048, type: 'json' },
+    { name: '立项说明书.pdf', outputId: 'output-pdf', size: 204800, type: 'pdf' },
+    { name: '巡检现场照片.jpg', outputId: 'output-jpg', size: 1048576, type: 'jpg' },
   ];
 
   const message = {
@@ -647,7 +653,7 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
     uid: 'assistant-uid-1',
     role: MessageRole.Assistant,
     status: MessageStatus.Complete,
-    content: '已为你生成分析报告：',
+    content: '已为你生成一组评审材料，可点击卡片在侧栏预览或下载：',
     property: { artifacts },
   };
 </script>
@@ -658,7 +664,7 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
 <div class="demo">
   <AssistantMessageComp
     uid="assistant-uid-1"
-    content="已为你生成分析报告："
+    content="已为你生成一组评审材料，可点击卡片在侧栏预览或下载："
     status="complete"
     :property="artifactsProperty"
   />
@@ -738,4 +744,4 @@ interface ToolMessage extends BaseMessage<MessageRole.Tool, string> {
 - [MessageRender](/components/message/message-render) — assistant 角色由其实例化
 - [ToolMessage](/components/message/tool-message) — 工具执行结果可通过 toolCall.toolMessage 内联
 - [ToolcallRender](/components/agent/toolcall-render) — 工具调用列表渲染
-- [FileArtifactPanel](/components/message/file-artifact-panel) — 文件产物侧栏预览
+- [FileArtifactPanel](/components/message/file-artifact-panel) — 文件产物侧栏列表与分类型预览 Host
