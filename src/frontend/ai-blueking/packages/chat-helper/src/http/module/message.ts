@@ -23,9 +23,19 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { transferMessage2MessageApi, transferMessageApi2Message } from '../transform/message';
+import {
+  transferMessage2MessageApi,
+  transferMessageApi2Message,
+  mergeArtifactsActivityIntoMessages,
+} from '../transform/message';
 
-import type { IFlowAgentTaskNodeInfo, IMessage, IMessageApi, IUserOperationPayload, UserOperation } from '../../message/type';
+import type {
+  IFlowAgentTaskNodeInfo,
+  IMessage,
+  IMessageApi,
+  IUserOperationPayload,
+  UserOperation,
+} from '../../message/type';
 import type { FetchClient, IRequestConfig } from '../fetch';
 
 /**
@@ -52,7 +62,7 @@ export const useMessage = (fetchClient: FetchClient) => {
   const getMessages = (sessionCode: string, limit?: number, config?: IRequestConfig) =>
     fetchClient
       .get<IMessageApi[]>(`session_content/content/`, { session_code: sessionCode, limit }, config)
-      .then(res => res.map(transferMessageApi2Message));
+      .then(res => mergeArtifactsActivityIntoMessages(res.map(transferMessageApi2Message)));
 
   // 新增会话内容
   const plusMessage = (data: IMessage, config?: IRequestConfig) =>
@@ -107,8 +117,12 @@ export const useMessage = (fetchClient: FetchClient) => {
     fetchClient.post<void>(`flow_agent/${sessionCode}/node/${nodeId}/skip/`, { task_id: taskId }, config);
 
   // 用户操作
-  const userOperation = (sessionCode: string, operation: UserOperation, payload: IUserOperationPayload, config?: IRequestConfig) =>
-    fetchClient.post<void>(`user_operation/`, { session_code: sessionCode,  operation, payload }, config);
+  const userOperation = (
+    sessionCode: string,
+    operation: UserOperation,
+    payload: IUserOperationPayload,
+    config?: IRequestConfig,
+  ) => fetchClient.post<void>(`user_operation/`, { session_code: sessionCode, operation, payload }, config);
 
   return {
     getMessages,

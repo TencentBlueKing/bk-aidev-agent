@@ -1114,6 +1114,52 @@ describe('ChatContainer', () => {
       const resize = wrapper.findComponent({ name: 'ResizeLayout' });
       expect(resize.props('initialDivide')).toBe('33.33%');
     });
+
+    it('数字型 initialDivide 应作为侧栏初始宽度（--resize-main-width）', () => {
+      wrapper = mount(ChatContainer, {
+        props: {
+          ...defaultProps,
+          resizeProps: { initialDivide: 560 },
+        },
+      });
+
+      expect(wrapper.find('.ai-chat-container').attributes('style')).toContain(
+        '--resize-main-width: calc(100% - 560px)',
+      );
+    });
+
+    it('未传或非数字 initialDivide 时侧栏初始宽度应为 400', () => {
+      wrapper = mount(ChatContainer, {
+        props: {
+          ...defaultProps,
+          resizeProps: { initialDivide: '33.33%' },
+        },
+      });
+
+      expect(wrapper.find('.ai-chat-container').attributes('style')).toContain(
+        '--resize-main-width: calc(100% - 400px)',
+      );
+    });
+
+    it('展开侧栏时 collapseChange 应携带数字型 initialDivide 作为宽度', async () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      mockExecutionGroupsRef.value = [{ id: 'group-1' }];
+
+      wrapper = mount(ChatContainer, {
+        props: {
+          ...defaultProps,
+          messages,
+          resizeProps: { initialDivide: 560 },
+        },
+      });
+      await nextTick();
+
+      await wrapper.find('.collapse-button').trigger('click');
+
+      const events = wrapper.emitted('collapseChange');
+      expect(events).toBeTruthy();
+      expect(events?.[0]).toEqual([false, 560]);
+    });
   });
 
   describe('renderMode 测试', () => {

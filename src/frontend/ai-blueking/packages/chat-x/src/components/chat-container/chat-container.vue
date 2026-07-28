@@ -510,7 +510,11 @@
   const selectedUserMessages = deepRef<Message[]>([]);
   // 记录触发多选态的按钮（share 或标记 triggerSelection 的自定义按钮），确认时作为来源参数回传
   const selectionSource = shallowRef<IToolBtn>();
-  const resizeAsideWidth = shallowRef<number>(400);
+  const resolveInitialAsideWidth = () => {
+    const divide = props.resizeProps?.initialDivide;
+    return typeof divide === 'number' ? divide : 400;
+  };
+  const resizeAsideWidth = shallowRef<number>(resolveInitialAsideWidth());
   const resizeMainWidth = computed(() => {
     return `calc(100% - ${resizeAsideWidth.value}px)`;
   });

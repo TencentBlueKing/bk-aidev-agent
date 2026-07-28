@@ -24,9 +24,10 @@
  * IN THE SOFTWARE.
  */
 
-import type { IFlowAgentResultCustomValue, IRunFinishedEvent } from '../event/type';
+import type { IArtifactsGeneratedCustomValue, IFlowAgentResultCustomValue, IRunFinishedEvent } from '../event/type';
 
 export enum ActivityType {
+  ArtifactsGenerated = 'artifacts_generated',
   FlowAgent = 'flow_agent',
   KnowledgeRag = 'knowledge_rag',
   ReferenceDocument = 'reference_document',
@@ -90,13 +91,15 @@ export type IUserOperationPayload =
 
 export interface IActivityMessage extends IBaseMessage {
   activityType: ActivityType;
-  content: IFlowAgentResultCustomValue | IKnowledgeRag | IReferenceDocument;
+  content: IArtifactsGeneratedCustomValue | IFlowAgentResultCustomValue | IKnowledgeRag | IReferenceDocument;
+  property?: IMessageProperty;
   role: MessageRole.Activity;
 }
 
 export interface IActivityMessageApi extends IBaseMessageApi {
   activity_type: ActivityType;
-  content: IFlowAgentResultCustomValue | IKnowledgeRagApi | IReferenceDocumentApi;
+  content: IArtifactsGeneratedCustomValue | IFlowAgentResultCustomValue | IKnowledgeRagApi | IReferenceDocumentApi;
+  property?: IMessageProperty;
   role: MessageRole.Activity;
 }
 
@@ -371,10 +374,12 @@ export type IMessageApi =
 export interface IMessageArtifact {
   name: string;
   outputId: string;
-  previewUrl?: string;
   size: number;
   type: string;
-  url: string;
+  /** 事件不再下发；仅兼容旧数据 */
+  previewUrl?: string;
+  /** 事件不再下发；仅兼容旧数据 */
+  url?: string;
 }
 
 /**

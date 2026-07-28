@@ -55,6 +55,7 @@ import type {
   IKnowledgeRagApi,
   IMessage,
   IMessageApi,
+  IMessageArtifact,
   IPauseMessage,
   IPauseMessageApi,
   IPlaceholderMessage,
@@ -123,6 +124,7 @@ export const transferMessageApi2Message = (data: IMessageApi): IMessage => {
           break;
         }
         case ActivityType.FlowAgent:
+        case ActivityType.ArtifactsGenerated:
         default:
           content = activityData.content as IActivityMessage['content'];
           break;
@@ -132,6 +134,7 @@ export const transferMessageApi2Message = (data: IMessageApi): IMessage => {
         ...baseMessage,
         activityType: activityData.activity_type,
         content,
+        property: activityData.property,
         role: activityData.role,
       };
       return result;
@@ -421,6 +424,7 @@ export const transferMessage2MessageApi = (data: IMessage): IMessageApi => {
           break;
         }
         case ActivityType.FlowAgent:
+        case ActivityType.ArtifactsGenerated:
         default:
           content = activityData.content as IActivityMessageApi['content'];
           break;
@@ -430,6 +434,7 @@ export const transferMessage2MessageApi = (data: IMessage): IMessageApi => {
         ...baseMessage,
         activity_type: activityData.activityType,
         content,
+        property: activityData.property,
         role: activityData.role,
       };
       return result;
@@ -677,4 +682,66 @@ export const transferMessage2MessageApi = (data: IMessage): IMessageApi => {
       return result;
     }
   }
+};
+
+/**
+ * 将历史/快照中的 artifacts_generated activity 合并到前一条 Assistant 的 property.artifacts，
+ * 并过滤掉该 activity（UI 只从 Assistant.property.artifacts 渲染）。
+ * 实时 SSE 已写过 property.artifacts；历史回填依赖此归一化。
+ */
+export const mergeArtifactsActivityIntoMessages = (messages: IMessage[]): IMessage[] => {
+  const result: IMessage[] = [];
+
+  for (const message of messages) {
+    if (message.role !== MessageRole.Activity) {
+      result.push(message);
+      continue;
+    }
+
+    const activity = message as IActivityMessage;
+    if (activity.activityType !== ActivityType.ArtifactsGenerated) {
+      result.push(message);
+      continue;
+    }
+
+    const artifacts = (activity.content as { artifacts?: IMessageArtifact[] } | undefined)?.artifacts;
+
+    // status=empty 或无产物：丢弃 activity，不渲染
+    if (!artifacts?.length) {
+      continue;
+    }
+
+    const activityTurnId = activity.property?.turn_id;
+    let matchedByTurn = -1;
+    let nearestAssistant = -1;
+
+    for (let i = result.length - 1; i >= 0; i -= 1) {
+      if (result[i].role !== MessageRole.Assistant) {
+        continue;
+      }
+      const candidate = result[i] as IAssistantMessage;
+      if (nearestAssistant < 0) {
+        nearestAssistant = i;
+      }
+      if (activityTurnId && candidate.property?.turn_id === activityTurnId) {
+        matchedByTurn = i;
+        break;
+      }
+    }
+
+    const targetIndex = matchedByTurn >= 0 ? matchedByTurn : nearestAssistant;
+    if (targetIndex >= 0) {
+      const assistant = result[targetIndex] as IAssistantMessage;
+      result[targetIndex] = {
+        ...assistant,
+        property: {
+          ...assistant.property,
+          artifacts,
+        },
+      };
+    }
+    // 始终丢弃 artifacts_generated activity
+  }
+
+  return result;
 };

@@ -155,7 +155,7 @@ export interface IActivitySnapshotEvent extends IBaseEvent {
 export interface IArtifactsGeneratedCustomValue {
   artifacts: IMessageArtifact[];
   runId: string;
-  status: MessageStatus;
+  status: 'complete' | 'empty';
 }
 
 export interface IBaseEvent {
@@ -239,7 +239,7 @@ export type IFlowAgentStartCustomValue = {
   task_id: string;
 }[];
 
-export type IFlowAgentRestartCustomValue = IFlowAgentStartCustomValue
+export type IFlowAgentRestartCustomValue = IFlowAgentStartCustomValue;
 
 export interface IInfoCustomValue {
   content: string;
