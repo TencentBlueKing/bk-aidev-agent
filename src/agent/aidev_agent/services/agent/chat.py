@@ -242,6 +242,39 @@ class ChatCompletionAgent(BaseModel):
             finally:
                 self.runtime_backend_resolver = None
 
+    def _managed_chat_models(self) -> list[BaseChatModel]:
+        """Return concrete chat models whose async clients belong to this agent."""
+        models: list[BaseChatModel] = []
+        for candidate in (self.chat_model, self.chat_model_non_thinking, self.chat_model_fast):
+            if candidate is None:
+                continue
+            if isinstance(candidate, RunnableWithFallbacks):
+                models.extend([candidate.runnable, *candidate.fallbacks])
+            else:
+                models.append(candidate)
+        return models
+
+    async def _aclose_chat_models(self) -> None:
+        """Close owned async HTTP clients on the model execution event loop."""
+        client_models: dict[int, tuple[Any, list[BaseChatModel]]] = {}
+        for model in self._managed_chat_models():
+            if not getattr(model, "_owns_http_async_client", False):
+                continue
+            client = getattr(model, "http_async_client", None)
+            if client is None:
+                continue
+            _, owners = client_models.setdefault(id(client), (client, []))
+            owners.append(model)
+
+        for client, owners in client_models.values():
+            try:
+                await client.aclose()
+            except Exception:
+                logger.warning("ChatCompletionAgent: 关闭模型异步 HTTP client 失败", exc_info=True)
+            else:
+                for model in owners:
+                    model._owns_http_async_client = False
+
     def _query_approval_status(self, session_code: str) -> dict | None:
         """查询 gongfeng 后端判断是否需要续流，并从 interrupt 记录获取审批结果及 interrupts。
 
@@ -642,8 +675,15 @@ class ChatCompletionAgent(BaseModel):
         """
         try:
             input_state: dict[str, Any] = {"messages": messages, "execute_kwargs": execute_kwargs, **state}
+
+            async def _ainvoke_with_cleanup():
+                try:
+                    return await agent_e.ainvoke(input_state, cfg)
+                finally:
+                    await self._aclose_chat_models()
+
             result = run_coro_sync(
-                agent_e.ainvoke(input_state, cfg),
+                _ainvoke_with_cleanup(),
                 timeout=execute_kwargs.invoke_timeout,
             )
             result_output = result.get("messages")[-1]
@@ -671,7 +711,7 @@ class ChatCompletionAgent(BaseModel):
         _input: dict[str, Any] = {"messages": messages, **state}
         agent_type = self.model_context_options.llm_code_agent_type if self.model_context_options else None
         adapter = AgentStreamAdapter(agent_type=agent_type)
-        return adapter.stream_standard_event(agent_e, cfg, _input)
+        return adapter.stream_standard_event(agent_e, cfg, _input, async_finalizer=self._aclose_chat_models)
 
     def _stream(
         self,
@@ -878,9 +918,15 @@ class ChatCompletionAgent(BaseModel):
                         "(scheme B fallback), thread_id=%s",
                         agent_input.thread_id,
                     )
-                    yield from replay
+                    try:
+                        yield from replay
+                    finally:
+                        run_coro_sync(self._aclose_chat_models())
                     return
-            yield from async_to_sync_generator(agui_entry.run(agent_input))
+            yield from async_to_sync_generator(
+                agui_entry.run(agent_input),
+                async_finalizer=self._aclose_chat_models,
+            )
 
         return _gen()
 

@@ -29,7 +29,7 @@ from langchain_core.runnables.fallbacks import RunnableWithFallbacks
 from langchain_openai.chat_models import ChatOpenAI as RawChatOpenAI
 from langchain_openai.chat_models.base import _convert_message_to_dict
 from langchain_openai.embeddings import OpenAIEmbeddings as RawOpenAIEmbeddings
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, PrivateAttr, model_validator
 
 from aidev_agent.api.domains import BKAIDEV_URL
 from aidev_agent.config import settings
@@ -39,11 +39,15 @@ from aidev_agent.utils.datetimes import get_current_timestamp_in_milliseconds
 
 class ApiGwMixin(BaseModel):
     @classmethod
-    def get_setup_instance(cls, **kwargs):
+    def _resolve_base_url(cls, kwargs: dict) -> str:
         base_url = kwargs.get("base_url", "") or settings.LLM_GW_ENDPOINT
         if not base_url:
             base_url = f"{BKAIDEV_URL}/openapi/aidev/gateway/llm/v1"
-        kwargs["base_url"] = base_url
+        return base_url
+
+    @classmethod
+    def get_setup_instance(cls, **kwargs):
+        kwargs["base_url"] = cls._resolve_base_url(kwargs)
         auth_headers = kwargs.pop("auth_headers", {})
         session_code = kwargs.pop("session_code", None)
         if not auth_headers:
@@ -65,11 +69,29 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
     remote_tokenizer: bool = True
     max_content_length: Optional[int] = None
     fallback_model: str | None = None
+    _owns_http_async_client: bool = PrivateAttr(default=False)
 
     @classmethod
     def get_setup_instance(cls, **kwargs) -> "ChatModel | RunnableWithFallbacks":
-        """创建网关模型；配置备用模型时返回 LangChain fallback Runnable。"""
+        """创建网关模型，并为每个调用链隔离异步 HTTP 连接池。"""
+        owns_http_async_client = False
+        if kwargs.get("http_async_client") is None and kwargs.get("async_client") is None:
+            base_url = cls._resolve_base_url(kwargs)
+            client_kwargs = {
+                "base_url": base_url,
+                "timeout": kwargs.get("timeout"),
+            }
+            openai_proxy = kwargs.get("openai_proxy") or os.getenv("OPENAI_PROXY")
+            if openai_proxy:
+                client_kwargs["proxy"] = openai_proxy
+                # LangChain rejects openai_proxy together with an explicit
+                # client. The client above already owns the proxy setting.
+                kwargs["openai_proxy"] = None
+            kwargs["http_async_client"] = openai.DefaultAsyncHttpxClient(**client_kwargs)
+            owns_http_async_client = True
+
         model = super().get_setup_instance(**kwargs)
+        model._owns_http_async_client = owns_http_async_client
         fallback = model._get_fallback_model()
         if fallback is None:
             return model

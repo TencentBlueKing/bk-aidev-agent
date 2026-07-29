@@ -20,6 +20,8 @@ import asyncio
 import atexit
 import contextlib
 import threading
+from concurrent.futures import Future
+from contextvars import copy_context
 
 # Thread-local storage for event loops
 _thread_local = threading.local()
@@ -92,18 +94,53 @@ def close_thread_loop() -> None:
     _thread_local.loop = None
 
 
+async def _await_with_timeout(coro, timeout=None):
+    if timeout is None:
+        return await coro
+    return await asyncio.wait_for(coro, timeout=timeout)
+
+
+def _run_coro_in_helper_thread(coro, timeout=None):
+    """Run a coroutine on a short-lived loop when the caller loop is running."""
+    result_future = Future()
+    context = copy_context()
+
+    def _runner():
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            result = context.run(loop.run_until_complete, _await_with_timeout(coro, timeout))
+        except BaseException as exc:
+            result_future.set_exception(exc)
+        else:
+            result_future.set_result(result)
+        finally:
+            _cleanup_thread_loop(loop)
+            with contextlib.suppress(Exception):
+                asyncio.set_event_loop(None)
+
+    thread = threading.Thread(target=_runner, name="aidev-run-coro-sync", daemon=True)
+    thread.start()
+    thread.join()
+    return result_future.result()
+
+
 def run_coro_sync(coro, timeout=None):
     """Run a coroutine synchronously in the current thread's event loop.
 
-    Note: The event loop is intentionally kept open after execution, so that
-    long-lived async clients (e.g. httpx.AsyncClient) can safely reuse their
-    connections across multiple calls on the same thread. Cleanup is handled by
-    atexit registration and by async_to_sync_generator's finally block.
+    A thread-local loop is reused for normal synchronous callers. If the caller
+    already owns a running loop, the coroutine is executed on a helper thread so
+    we never call ``run_until_complete`` on that running loop.
     """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        return _run_coro_in_helper_thread(coro, timeout)
+
     loop = get_event_loop()
-    if timeout is not None:
-        coro = asyncio.wait_for(coro, timeout=timeout)
-    return loop.run_until_complete(coro)
+    return loop.run_until_complete(_await_with_timeout(coro, timeout))
 
 
 def _cleanup_thread_loop(loop):

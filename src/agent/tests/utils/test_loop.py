@@ -1,5 +1,7 @@
 import asyncio
+import threading
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 
 import pytest
 
@@ -133,3 +135,28 @@ def test_run_coro_sync_preserves_worker_thread_loop():
 
     assert result == 10
     assert has_loop is True
+
+
+@pytest.mark.asyncio
+async def test_run_coro_sync_from_running_loop_uses_helper_thread():
+    marker = ContextVar("marker", default="")
+    token = marker.set("request-context")
+    caller_thread_id = threading.get_ident()
+
+    async def _probe():
+        await asyncio.sleep(0)
+        return threading.get_ident(), marker.get()
+
+    try:
+        worker_thread_id, context_value = run_coro_sync(_probe())
+    finally:
+        marker.reset(token)
+
+    assert worker_thread_id != caller_thread_id
+    assert context_value == "request-context"
+
+
+@pytest.mark.asyncio
+async def test_run_coro_sync_timeout_from_running_loop():
+    with pytest.raises(asyncio.TimeoutError):
+        run_coro_sync(asyncio.sleep(0.05), timeout=0.001)
