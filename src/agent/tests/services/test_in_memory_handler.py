@@ -609,6 +609,37 @@ class TestInMemoryQueueMessageHandler:
         with pytest.raises(RuntimeError, match="心跳超时"):
             list(helper.stream(slow_first_chunk()))
 
+    def test_stream_completes_when_producer_finished_without_eod(self, handler, monkeypatch):
+        """producer 已结束但消费者未收到 EOD 时，不应误报心跳超时。"""
+        thread_id = "test_stream_finished_without_eod"
+        helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
+        consumer_id = handler.acquire_consumer(thread_id)
+        completed_threads = []
+
+        def timeout_without_messages(*, timeout, replay_offset):
+            raise TimeoutError
+
+        producer_thread = threading.Thread(target=lambda: None)
+        producer_thread.start()
+        producer_thread.join()
+
+        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.0)
+        monkeypatch.setattr(helper, "_get_consumer_messages", timeout_without_messages)
+        monkeypatch.setattr(handler, "mark_completed", completed_threads.append)
+
+        result = list(
+            helper._consume_stream_messages(
+                consumer_id=consumer_id,
+                cancel_event=threading.Event(),
+                is_resuming=False,
+                enable_heartbeat_check=True,
+                producer_thread=producer_thread,
+            )
+        )
+
+        assert result == []
+        assert completed_threads == [thread_id]
+
 
 class TestMessageHandlerConfig:
     """测试 Config 解析 + 工厂 + RabbitMQ 降级"""
