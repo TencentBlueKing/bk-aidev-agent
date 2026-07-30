@@ -20,6 +20,7 @@ import asyncio
 import atexit
 import contextlib
 import threading
+from contextvars import copy_context
 from logging import getLogger
 
 logger = getLogger(__name__)
@@ -139,13 +140,14 @@ def _run_coro_in_new_thread(coro, timeout=None):
     协程对象本身不绑定 loop，可安全跨线程传递，由新线程的全新 loop 消费。
     """
     box: dict = {}
+    context = copy_context()
 
     def _runner():
         try:
             if timeout is not None:
-                box["value"] = asyncio.run(asyncio.wait_for(coro, timeout=timeout))
+                box["value"] = context.run(asyncio.run, asyncio.wait_for(coro, timeout=timeout))
             else:
-                box["value"] = asyncio.run(coro)
+                box["value"] = context.run(asyncio.run, coro)
         except BaseException as err:  # noqa: BLE001
             box["error"] = err
 

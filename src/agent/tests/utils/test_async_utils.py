@@ -47,6 +47,47 @@ def test_async_to_sync_generator():
     assert result == ["run_id-0", "run_id-1", "run_id-2"]
 
 
+@pytest.mark.asyncio
+async def test_async_to_sync_generator_in_running_loop():
+    request_local.run_id = "async"
+
+    result = list(async_to_sync_generator(async_generator_with_timeout(gen(), timeout=10)))
+
+    assert result == ["async-0", "async-1", "async-2"]
+
+
+def test_async_to_sync_generator_runs_finalizer_on_consumer_loop():
+    loop_ids: list[int] = []
+
+    async def _gen():
+        loop_ids.append(id(asyncio.get_running_loop()))
+        yield "value"
+
+    async def _finalize():
+        loop_ids.append(id(asyncio.get_running_loop()))
+
+    assert list(async_to_sync_generator(_gen(), async_finalizer=_finalize)) == ["value"]
+    assert len(set(loop_ids)) == 1
+
+
+def test_async_to_sync_generator_finalizes_when_consumer_closes():
+    finalized = False
+
+    async def _gen():
+        yield "value"
+        await asyncio.Event().wait()
+
+    async def _finalize():
+        nonlocal finalized
+        finalized = True
+
+    generator = async_to_sync_generator(_gen(), async_finalizer=_finalize)
+    assert next(generator) == "value"
+    generator.close()
+
+    assert finalized is True
+
+
 async def test_async_gen_with_timeout():
     request_local.run_id = "run_id"
     result = [each async for each in async_generator_with_timeout(gen(), timeout=0.18)]
@@ -63,7 +104,6 @@ def test_async_to_sync_generator_in_worker_thread():
     def _consume():
         request_local.run_id = "worker"
         result = list(async_to_sync_generator(async_generator_with_timeout(gen(), timeout=10)))
-        # get_event_loop() 会在 worker 线程缓存事件循环用于复用，has_loop 为 True 是预期行为
         has_loop = hasattr(_thread_local, "loop") and _thread_local.loop is not None
         return result, has_loop
 
@@ -71,4 +111,4 @@ def test_async_to_sync_generator_in_worker_thread():
         result, has_loop = pool.submit(_consume).result()
 
     assert result == ["worker-0", "worker-1", "worker-2"]
-    assert has_loop is True
+    assert has_loop is False

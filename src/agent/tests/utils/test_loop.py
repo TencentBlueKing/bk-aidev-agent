@@ -1,5 +1,6 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 
 import pytest
 
@@ -142,13 +143,23 @@ async def test_run_coro_sync_with_running_loop_delegates_to_new_thread():
     复现 construct_mcp 在 async→sync 桥接上下文被调用导致
     "This event loop is already running" 的场景。
     """
-    result = run_coro_sync(sample_async_task(5))
-    assert result == 10
+    marker = ContextVar("marker", default="")
+    token = marker.set("request-context")
+
+    async def _probe():
+        await asyncio.sleep(0)
+        return marker.get()
+
+    try:
+        assert run_coro_sync(_probe()) == "request-context"
+    finally:
+        marker.reset(token)
 
 
 @pytest.mark.asyncio
 async def test_run_coro_sync_with_running_loop_propagates_exception():
     """已有 running loop 时，协程抛出的异常应原样冒泡到调用方。"""
+
     async def _boom():
         raise ValueError("boom")
 

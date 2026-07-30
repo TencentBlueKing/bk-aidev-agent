@@ -10,11 +10,14 @@ specific language governing permissions and limitations under the License.
 """
 
 import asyncio
+import queue
+import threading
+from contextlib import suppress
+from contextvars import copy_context
 from logging import getLogger
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Awaitable, Callable
 
 from aidev_agent.utils import Empty
-from aidev_agent.utils.loop import get_event_loop
 
 logger = getLogger(__name__)
 
@@ -40,32 +43,68 @@ async def async_generator_with_timeout(
         return
 
 
-def async_to_sync_generator(async_gen):
-    data_queue = asyncio.Queue()
+def async_to_sync_generator(
+    async_gen: AsyncGenerator,
+    async_finalizer: Callable[[], Awaitable[None]] | None = None,
+):
+    """在独立 loop 中消费异步生成器，并在同一 loop 执行 finalizer。"""
+    data_queue = queue.Queue()
+    end = object()
     error = None
 
-    loop = get_event_loop()
+    loop = asyncio.new_event_loop()
+    context = copy_context()
+    task_ready = threading.Event()
+    consumer_task = None
 
-    # 定义异步消费任务
     async def consume_async():
         nonlocal error
         try:
             async for item in async_gen:
-                await data_queue.put(item)
+                data_queue.put(item)
         except Exception as e:
             logger.warning(f"[ASYNC] consume_async error: {e}", exc_info=True)
             error = e
         finally:
-            await data_queue.put(None)  # 结束信号
+            if async_finalizer is not None:
+                try:
+                    await async_finalizer()
+                except Exception as e:
+                    if error is None:
+                        error = e
+            data_queue.put(end)
 
-    # 线程运行函数（仅当需要新线程时启动）
-    # 提交异步任务到指定循环
-    asyncio.run_coroutine_threadsafe(consume_async(), loop)
+    def run_loop():
+        nonlocal consumer_task
+        asyncio.set_event_loop(loop)
+        consumer_task = context.run(loop.create_task, consume_async())
+        task_ready.set()
+        try:
+            loop.run_until_complete(consumer_task)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            pending_tasks = asyncio.all_tasks(loop)
+            for task in pending_tasks:
+                task.cancel()
+            if pending_tasks:
+                loop.run_until_complete(asyncio.gather(*pending_tasks, return_exceptions=True))
+            with suppress(RuntimeError):
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            loop.close()
 
-    while True:
-        item = loop.run_until_complete(data_queue.get())
-        if item is None:
-            if error is not None:
-                raise error
-            break
-        yield item
+    loop_thread = threading.Thread(target=run_loop, name="aidev-async-generator", daemon=True)
+    loop_thread.start()
+    task_ready.wait()
+    try:
+        while True:
+            item = data_queue.get()
+            if item is end:
+                if error is not None:
+                    raise error
+                break
+            yield item
+    finally:
+        if not consumer_task.done():
+            loop.call_soon_threadsafe(consumer_task.cancel)
+        loop_thread.join()

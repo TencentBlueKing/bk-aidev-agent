@@ -27,7 +27,7 @@ from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_openai.chat_models import ChatOpenAI as RawChatOpenAI
 from langchain_openai.chat_models.base import _convert_message_to_dict
 from langchain_openai.embeddings import OpenAIEmbeddings as RawOpenAIEmbeddings
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, PrivateAttr, model_validator
 
 from aidev_agent.api.domains import BKAIDEV_URL
 from aidev_agent.config import settings
@@ -62,6 +62,18 @@ class ApiGwMixin(BaseModel):
 class ChatModel(RawChatOpenAI, ApiGwMixin):
     remote_tokenizer: bool = True
     max_content_length: Optional[int] = None
+    _owns_http_async_client: bool = PrivateAttr(default=False)
+
+    @classmethod
+    def get_setup_instance(cls, **kwargs) -> "ChatModel":
+        owns_http_async_client = False
+        if kwargs.get("http_async_client") is None and kwargs.get("async_client") is None:
+            kwargs["http_async_client"] = openai.DefaultAsyncHttpxClient()
+            owns_http_async_client = True
+
+        model = super().get_setup_instance(**kwargs)
+        model._owns_http_async_client = owns_http_async_client
+        return model
 
     @model_validator(mode="before")
     @classmethod

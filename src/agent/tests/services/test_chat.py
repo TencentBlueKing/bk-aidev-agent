@@ -2,7 +2,7 @@ import json
 import threading
 import time
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from ag_ui.core import EventType, RunErrorEvent, RunFinishedEvent
@@ -461,14 +461,11 @@ class TestCommonAgentChatStreaming:
             # 验证错误消息被正确捕获
             # 当前实现：RUN_ERROR 后跟 RUN_FINISHED 作为结束信号
             error_events = [
-                c for c in result_content
-                if c.startswith("data: ") and json.loads(c[6:]).get("type") == "RUN_ERROR"
+                c for c in result_content if c.startswith("data: ") and json.loads(c[6:]).get("type") == "RUN_ERROR"
             ]
             assert len(error_events) >= 1
             error_payload = json.loads(error_events[0][6:])
-            assert error_payload["message"].startswith(
-                "模型调用异常: Authentication failed for model gptoss-999b"
-            )
+            assert error_payload["message"].startswith("模型调用异常: Authentication failed for model gptoss-999b")
             # 最后一条事件应为 RUN_FINISHED
             last_content = result_content[-1]
             assert last_content.startswith("data: ")
@@ -759,6 +756,48 @@ class TestOnComplete:
         )
         list(agent.execute(ExecuteKwargs(stream=True)))
         mock_handler.set_streaming_finished.assert_called_once()
+
+
+class TestChatModelClientCleanup:
+    @pytest.mark.asyncio
+    async def test_owned_client_is_closed_once(self):
+        model = ChatModel.get_setup_instance(
+            model="primary",
+            base_url="https://llm-gateway.example.com/v1",
+        )
+        client = model.http_async_client
+        close_spy = AsyncMock(wraps=client.aclose)
+        agent = ChatCompletionAgent(chat_model=model, chat_model_non_thinking=model)
+
+        with patch.object(client, "aclose", close_spy):
+            await agent._aclose_chat_models()
+
+        close_spy.assert_awaited_once()
+        assert client.is_closed
+        assert model._owns_http_async_client is False
+
+    def test_non_streaming_execute_closes_owned_client(self):
+        model = ChatModel.get_setup_instance(
+            model="primary",
+            base_url="https://llm-gateway.example.com/v1",
+        )
+        client = model.http_async_client
+        close_spy = AsyncMock(wraps=client.aclose)
+        agent = ChatCompletionAgent(chat_model=model)
+        agent_e = MagicMock()
+        agent_e.ainvoke = AsyncMock(return_value={"messages": [AIMessage(content="done", id="message-id")]})
+
+        with (
+            patch.object(agent, "_update_aidev_agent_header"),
+            patch.object(agent, "_get_agent", return_value=(agent_e, {})),
+            patch.object(agent, "_sync_checkpoint_messages"),
+            patch.object(client, "aclose", close_spy),
+        ):
+            result = agent._execute([HumanMessage(content="hello")], ExecuteKwargs(stream=False))
+
+        assert result["choices"][0]["delta"]["content"] == "done"
+        close_spy.assert_awaited_once()
+        assert client.is_closed
 
 
 @pytest.mark.skipif(
@@ -2174,9 +2213,7 @@ class TestTerminalResumeReplay:
             patch.object(agent, "_build_terminal_resume_replay") as mock_replay,
             patch(f"{_CHAT_MODULE}.async_to_sync_generator", return_value=iter(["X"])),
         ):
-            producer = agent._build_resume_aware_producer(
-                agui_entry, agent_input, agent_e=None, cfg=None, resume=False
-            )
+            producer = agent._build_resume_aware_producer(agui_entry, agent_input, agent_e=None, cfg=None, resume=False)
             out = list(producer)
 
         assert out == ["X"]
@@ -2193,9 +2230,7 @@ class TestTerminalResumeReplay:
             patch.object(agent, "_build_terminal_resume_replay") as mock_replay,
             patch(f"{_CHAT_MODULE}.async_to_sync_generator", return_value=iter(["X"])),
         ):
-            producer = agent._build_resume_aware_producer(
-                agui_entry, agent_input, agent_e=None, cfg=None, resume=True
-            )
+            producer = agent._build_resume_aware_producer(agui_entry, agent_input, agent_e=None, cfg=None, resume=True)
             out = list(producer)
 
         assert out == ["X"]
