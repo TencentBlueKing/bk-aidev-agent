@@ -1,5 +1,4 @@
 import contextlib
-import hashlib
 import json
 import pickle
 import queue
@@ -19,28 +18,12 @@ import pika
 from environs import Env
 
 from .base import BaseMessageQueueHandler, QueueTTLConfig
-from .constants import EOD_CHUNK, HEARTBEAT_CHUNK, QueueNamePrefixes
+from .constants import EOD_CHUNK, QueueNamePrefixes
 from .multi_process_mixin import MultiProcessMixin
 
 logger = getLogger(__name__)
 
 env = Env()
-
-
-def _msg_signature(msg: Any) -> str:
-    """为单条队列消息生成稳定指纹，用于 peek 跨轮对比定位丢失消息。
-
-    心跳/EOD 用固定标记；其余消息用 pickle 字节长度 + md5 前 8 位，避免打印完整内容。
-    """
-    if msg == HEARTBEAT_CHUNK:
-        return "HB"
-    if msg == EOD_CHUNK:
-        return "EOD"
-    try:
-        blob = pickle.dumps(msg)
-        return f"c{len(blob)}:{hashlib.md5(blob).hexdigest()[:8]}"
-    except Exception as e:
-        return f"c?:{repr(msg)[:40]}:{e}"
 
 
 class RabbitMQConnectionPool:
@@ -638,8 +621,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                 return False
 
     def release_producer(self, thread_id: str) -> None:
-        """释放会话级生产者写入权。
-        """
+        """释放会话级生产者写入权。"""
         lock_queue = self._get_producer_lock_queue_name(thread_id)
         with self._producer_lock_guard:
             connection = self._producer_lock_connections.pop(thread_id, None)
@@ -915,11 +897,12 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                                 properties=pika.BasicProperties(delivery_mode=2),
                             )
                     logger.debug(f"Flushed {len(messages)} messages to queue {queue_name}")
-                    flush_has_eod = any(m == EOD_CHUNK for m in messages)
-                    logger.info(
-                        "[EOD] flush thread_id=%s published=%d has_eod=%s (background)",
-                        thread_id, len(messages), flush_has_eod,
-                    )
+                    if EOD_CHUNK in messages:
+                        logger.info(
+                            "[EOD] flush thread_id=%s published=%d (background)",
+                            thread_id,
+                            len(messages),
+                        )
                     any_flushed = True
             except Exception as e:
                 logger.error(f"Error flushing messages for thread_id={thread_id}: {e}")
@@ -1087,12 +1070,12 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                                 body=body,
                                 properties=pika.BasicProperties(delivery_mode=2),
                             )
-                    # 诊断：记录 flush 数量与是否含 EOD，定位 EOD 是否真正入队
-                    flush_has_eod = any(m == EOD_CHUNK for m in messages_to_flush)
-                    logger.info(
-                        "[EOD] flush thread_id=%s published=%d has_eod=%s",
-                        thread_id, len(messages_to_flush), flush_has_eod,
-                    )
+                    if EOD_CHUNK in messages_to_flush:
+                        logger.info(
+                            "[EOD] flush thread_id=%s published=%d",
+                            thread_id,
+                            len(messages_to_flush),
+                        )
                     self._notify_replay_waiters()
                 except Exception as e:
                     logger.error(f"Error flushing messages for {thread_id}: {e}")
@@ -1152,16 +1135,10 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             return messages
 
     def _peek_queue_messages(self, channel: Any, queue_name: str) -> list[Any]:
-        """非破坏性读取队列中的全部消息。
-
-        诊断：basic_get + basic_nack(requeue=True) 在大队列上反复执行不可靠，
-        nack requeue 会破坏 FIFO 且可能丢消息。此处记录 message_count、实际 get 数、
-        是否含 EOD、nack 异常，用于定位 starved 时消息（含 EOD）丢失环节。
-        """
+        """非破坏性读取队列中的全部消息，仅在读取或 requeue 异常时记录诊断。"""
         messages = []
         delivery_tags = []
         message_count = 0
-        peek_eod = False
         nack_error = None
 
         try:
@@ -1174,28 +1151,21 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                 delivery_tags.append(method_frame.delivery_tag)
                 msg = pickle.loads(body)
                 messages.append(msg)
-                if not peek_eod and msg == EOD_CHUNK:
-                    peek_eod = True
         finally:
             for tag in delivery_tags:
                 try:
                     channel.basic_nack(delivery_tag=tag, requeue=True)
                 except Exception as e:
                     nack_error = e
-            # 诊断：message_count 与实际 get 数不一致 / nack 失败 / EOD 状态
-            if message_count != len(messages) or nack_error is not None or peek_eod:
+            if message_count != len(messages) or nack_error is not None:
                 logger.warning(
                     "[EOD] _peek_queue_messages queue=%s declared=%d got=%d nack_error=%s peek_eod=%s",
-                    queue_name, message_count, len(messages), nack_error, peek_eod,
+                    queue_name,
+                    message_count,
+                    len(messages),
+                    nack_error,
+                    EOD_CHUNK in messages,
                 )
-            # 诊断：每轮 peek 打印队列全部消息指纹，跨轮对比定位丢失消息（含 EOD）
-            sigs = [_msg_signature(m) for m in messages]
-            hb_count = sigs.count("HB")
-            logger.warning(
-                "[PEEK-TRACE] queue=%s declared=%d got=%d hb=%d eod=%s nack_error=%s",
-                queue_name, message_count, len(messages), hb_count, peek_eod, nack_error,
-            )
-            logger.warning("[PEEK-TRACE-SIGS] queue=%s sigs=%s", queue_name, " ".join(sigs))
 
         return messages
 

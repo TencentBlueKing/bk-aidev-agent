@@ -274,7 +274,7 @@ class ChatCompletionAgent(BaseModel):
         因为非流式路径（ainvoke）不经过 prepare_stream。
         """
         try:
-            agent_state = run_coro_sync(agent_e.aget_state(cfg))
+            agent_state = run_coro_sync(lambda: agent_e.aget_state(cfg))
             checkpoint_messages = agent_state.values.get("messages", [])
             non_system_checkpoint_msgs = [m for m in checkpoint_messages if not isinstance(m, SystemMessage)]
 
@@ -297,7 +297,7 @@ class ChatCompletionAgent(BaseModel):
 
                 if remove_ops:
                     run_coro_sync(
-                        agent_e.aupdate_state(
+                        lambda: agent_e.aupdate_state(
                             cfg,
                             {"messages": remove_ops},
                             as_node="__start__",
@@ -402,7 +402,7 @@ class ChatCompletionAgent(BaseModel):
                     finally:
                         await self._aclose_chat_models()
 
-                result = run_coro_sync(_ainvoke_with_cleanup(), timeout=execute_kwargs.invoke_timeout)
+                result = run_coro_sync(_ainvoke_with_cleanup, timeout=execute_kwargs.invoke_timeout)
                 result_output = result.get("messages")[-1]
                 return_data = {
                     "choices": [{"delta": {"role": "assistant", "content": result_output.content}}],
@@ -590,7 +590,7 @@ class ChatCompletionAgent(BaseModel):
                     try:
                         yield from replay
                     finally:
-                        run_coro_sync(self._aclose_chat_models())
+                        run_coro_sync(self._aclose_chat_models)
                     return
             yield from async_to_sync_generator(
                 agui_entry.run(agent_input),
@@ -620,7 +620,7 @@ class ChatCompletionAgent(BaseModel):
         try:
             replay_cfg = dict(cfg)
             replay_cfg["configurable"] = {**cfg.get("configurable", {}), "thread_id": thread_id}
-            state = run_coro_sync(agent_e.aget_state(replay_cfg))
+            state = run_coro_sync(lambda: agent_e.aget_state(replay_cfg))
         except Exception:
             logger.warning(
                 "[ResumeReplay] aget_state failed, fallback to astream, thread_id=%s",

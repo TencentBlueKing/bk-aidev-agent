@@ -1,3 +1,4 @@
+import asyncio
 import json
 import threading
 import time
@@ -2151,8 +2152,9 @@ class TestTerminalResumeReplay:
         agent_input = SimpleNamespace(thread_id="t1", run_id="r1")
         agent_e = MagicMock()
         state = _fake_graph_state(messages=[HumanMessage(content="hi", id="1")])
+        agent_e.aget_state = AsyncMock(return_value=state)
 
-        with patch(f"{_CHAT_MODULE}.run_coro_sync", return_value=state):
+        with patch(f"{_CHAT_MODULE}.run_coro_sync", side_effect=lambda factory: asyncio.run(factory())):
             agent._build_terminal_resume_replay(
                 agui_entry, agent_input, agent_e, {"configurable": {"thread_id": "session"}}
             )

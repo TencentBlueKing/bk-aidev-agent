@@ -609,8 +609,31 @@ class TestInMemoryQueueMessageHandler:
         with pytest.raises(RuntimeError, match="心跳超时"):
             list(helper.stream(slow_first_chunk()))
 
-    def test_stream_completes_when_producer_finished_without_eod(self, handler, monkeypatch):
-        """producer 已结束但消费者未收到 EOD 时，不应误报心跳超时。"""
+    def test_producer_marks_success_after_eod_flush(self, handler):
+        helper = GeneratorStreamingHelper(handler, thread_id="test_producer_success")
+        producer_succeeded_event = threading.Event()
+
+        helper._producer(iter(["chunk"]), producer_succeeded_event=producer_succeeded_event)
+
+        assert producer_succeeded_event.is_set()
+
+    def test_producer_does_not_mark_success_when_eod_flush_fails(self, handler, monkeypatch):
+        helper = GeneratorStreamingHelper(handler, thread_id="test_producer_flush_failure")
+        producer_succeeded_event = threading.Event()
+
+        def fail_flush(thread_id):
+            raise RuntimeError("flush failed")
+
+        monkeypatch.setattr(handler, "flush", fail_flush)
+
+        with pytest.raises(RuntimeError, match="flush failed"):
+            helper._producer(iter(["chunk"]), producer_succeeded_event=producer_succeeded_event)
+
+        assert not producer_succeeded_event.is_set()
+
+    @pytest.mark.parametrize("producer_succeeded", [True, False])
+    def test_stream_uses_producer_success_state_when_eod_missing(self, handler, monkeypatch, producer_succeeded):
+        """producer 结束后仅在 EOD flush 成功时按正常完成处理。"""
         thread_id = "test_stream_finished_without_eod"
         helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
         consumer_id = handler.acquire_consumer(thread_id)
@@ -622,23 +645,30 @@ class TestInMemoryQueueMessageHandler:
         producer_thread = threading.Thread(target=lambda: None)
         producer_thread.start()
         producer_thread.join()
+        producer_succeeded_event = threading.Event()
+        if producer_succeeded:
+            producer_succeeded_event.set()
 
         monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.0)
         monkeypatch.setattr(helper, "_get_consumer_messages", timeout_without_messages)
         monkeypatch.setattr(handler, "mark_completed", completed_threads.append)
 
-        result = list(
-            helper._consume_stream_messages(
-                consumer_id=consumer_id,
-                cancel_event=threading.Event(),
-                is_resuming=False,
-                enable_heartbeat_check=True,
-                producer_thread=producer_thread,
+        expectation = contextlib.nullcontext() if producer_succeeded else pytest.raises(RuntimeError, match="心跳超时")
+        with expectation:
+            result = list(
+                helper._consume_stream_messages(
+                    consumer_id=consumer_id,
+                    cancel_event=threading.Event(),
+                    is_resuming=False,
+                    enable_heartbeat_check=True,
+                    producer_thread=producer_thread,
+                    producer_succeeded_event=producer_succeeded_event,
+                )
             )
-        )
 
-        assert result == []
-        assert completed_threads == [thread_id]
+        assert completed_threads == ([thread_id] if producer_succeeded else [])
+        if producer_succeeded:
+            assert result == []
 
 
 class TestMessageHandlerConfig:

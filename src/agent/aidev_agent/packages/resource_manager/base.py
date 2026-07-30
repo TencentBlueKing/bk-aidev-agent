@@ -528,12 +528,13 @@ class BaseResourceManager(abc.ABC):
                         ),
                     )
 
-        coros = [_load_tool(server_name, selected_tools_map, i + 1) for i, server_name in enumerate(new_server_config)]
-
         async def _load_all_tools():
+            coros = [
+                _load_tool(server_name, selected_tools_map, i + 1) for i, server_name in enumerate(new_server_config)
+            ]
             return await asyncio.gather(*coros)
 
-        coro_results = run_coro_sync(_load_all_tools())
+        coro_results = run_coro_sync(_load_all_tools)
         tools_list: List[StructuredTool] = []
         failures: List[McpToolFetchFailure] = []
         for tlist, fail in coro_results:

@@ -151,7 +151,7 @@ async def test_run_coro_sync_with_running_loop_delegates_to_new_thread():
         return marker.get()
 
     try:
-        assert run_coro_sync(_probe()) == "request-context"
+        assert run_coro_sync(_probe) == "request-context"
     finally:
         marker.reset(token)
 
@@ -164,4 +164,15 @@ async def test_run_coro_sync_with_running_loop_propagates_exception():
         raise ValueError("boom")
 
     with pytest.raises(ValueError, match="boom"):
-        run_coro_sync(_boom())
+        run_coro_sync(_boom)
+
+
+@pytest.mark.asyncio
+async def test_run_coro_sync_with_running_loop_rejects_coroutine_object():
+    """running loop 下必须传工厂，避免搬运已关联当前 loop 的协程对象。"""
+
+    async def _probe():
+        return "ok"
+
+    with pytest.raises(RuntimeError, match="requires a coroutine factory"):
+        run_coro_sync(_probe())
