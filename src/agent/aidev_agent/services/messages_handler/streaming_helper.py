@@ -4,7 +4,7 @@ import uuid
 from logging import getLogger
 from typing import Any, Callable, Generator
 
-from ag_ui.core import EventType, RunErrorEvent
+from ag_ui.core import EventType, RawEvent, RunErrorEvent
 from ag_ui.encoder import EventEncoder
 
 from aidev_agent.utils.event import RunId, emit_run_finished_event
@@ -21,6 +21,10 @@ from .constants import (
 from .factory import message_handler_factory
 
 logger = getLogger(__name__)
+
+_SSE_HEARTBEAT_EVENT = EventEncoder().encode(
+    RawEvent(type=EventType.RAW, event={"type": "heartbeat"}),
+)
 
 # 断点续传时需要过滤的事件类型
 # flow_agent_start 事件在续聊时不应该重复发送，避免前端重新渲染
@@ -597,6 +601,8 @@ class GeneratorStreamingHelper:
                     for item in messages:
                         if item == HEARTBEAT_CHUNK:
                             logger.debug(f"Received heartbeat for thread_id={self.thread_id}")
+                            yield _SSE_HEARTBEAT_EVENT
+                            yielded_total += 1
                             continue
                         if item == EOD_CHUNK:
                             logger.info(f"[EOD] Consumer received EOD_CHUNK for thread_id={self.thread_id}")

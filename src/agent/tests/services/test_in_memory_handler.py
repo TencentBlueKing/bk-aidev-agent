@@ -1,6 +1,7 @@
 """测试 InMemoryQueueMessageHandler 的基本功能"""
 
 import contextlib
+import json
 import threading
 import time
 
@@ -570,7 +571,7 @@ class TestInMemoryQueueMessageHandler:
         assert handler.is_empty(thread_id)
 
     def test_stream_keeps_alive_when_generator_blocked(self, handler, monkeypatch):
-        """generator 长时间无产出时，独立心跳应维持连接且不超时。"""
+        """generator 长时间无产出时，独立心跳应通过 RAW 事件维持 SSE 连接。"""
         thread_id = "test_stream_heartbeat_keepalive"
         helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
         monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_INTERVAL", 0.05)
@@ -592,7 +593,15 @@ class TestInMemoryQueueMessageHandler:
             yield "late_chunk"
 
         result = list(helper.stream(slow_first_chunk()))
-        assert result == ["late_chunk"]
+        heartbeat_events = [
+            json.loads(chunk.removeprefix("data: "))
+            for chunk in result
+            if isinstance(chunk, str) and chunk.startswith("data: ") and '"type":"RAW"' in chunk
+        ]
+
+        assert result[-1] == "late_chunk"
+        assert heartbeat_events
+        assert all(event == {"type": "RAW", "event": {"type": "heartbeat"}} for event in heartbeat_events)
         assert heartbeat_count > 0
 
     def test_stream_raises_when_heartbeat_timeout(self, handler, monkeypatch):
