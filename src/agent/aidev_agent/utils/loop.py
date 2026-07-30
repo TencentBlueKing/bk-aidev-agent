@@ -20,7 +20,6 @@ import asyncio
 import atexit
 import contextlib
 import threading
-from concurrent.futures import Future
 from contextvars import copy_context
 
 # Thread-local storage for event loops
@@ -102,27 +101,21 @@ async def _await_with_timeout(coro, timeout=None):
 
 def _run_coro_in_helper_thread(coro, timeout=None):
     """Run a coroutine on a short-lived loop when the caller loop is running."""
-    result_future = Future()
+    result = {}
     context = copy_context()
 
     def _runner():
-        loop = asyncio.new_event_loop()
         try:
-            asyncio.set_event_loop(loop)
-            result = context.run(loop.run_until_complete, _await_with_timeout(coro, timeout))
+            result["value"] = context.run(asyncio.run, _await_with_timeout(coro, timeout))
         except BaseException as exc:
-            result_future.set_exception(exc)
-        else:
-            result_future.set_result(result)
-        finally:
-            _cleanup_thread_loop(loop)
-            with contextlib.suppress(Exception):
-                asyncio.set_event_loop(None)
+            result["error"] = exc
 
     thread = threading.Thread(target=_runner, name="aidev-run-coro-sync", daemon=True)
     thread.start()
     thread.join()
-    return result_future.result()
+    if "error" in result:
+        raise result["error"]
+    return result["value"]
 
 
 def run_coro_sync(coro, timeout=None):

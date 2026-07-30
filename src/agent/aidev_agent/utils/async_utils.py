@@ -10,14 +10,13 @@ specific language governing permissions and limitations under the License.
 """
 
 import asyncio
+import queue
 import threading
-from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import suppress
+from contextvars import copy_context
 from typing import AsyncGenerator, Awaitable, Callable
 
 from aidev_agent.utils import Empty
-
-_QUEUE_GET_TIMEOUT = 300
 
 
 async def async_generator_with_timeout(
@@ -25,22 +24,18 @@ async def async_generator_with_timeout(
 ) -> AsyncGenerator:
     try:
         while True:
-            next_item = asyncio.create_task(gen.__anext__())
-            try:
-                for _ in range(max_wait_rounds):
-                    try:
-                        result = await asyncio.wait_for(asyncio.shield(next_item), timeout=timeout)
-                    except TimeoutError:
-                        yield Empty
-                    else:
-                        yield result
-                        break
+            tasks = [asyncio.create_task(gen.__anext__()), asyncio.create_task(asyncio.sleep(timeout))]
+            for _ in range(max_wait_rounds):
+                done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                if tasks[0] in done:
+                    result = tasks[0].result()
+                    yield result
+                    break
                 else:
-                    raise TimeoutError("生成器超时")
-            finally:
-                if not next_item.done():
-                    next_item.cancel()
-                    await asyncio.gather(next_item, return_exceptions=True)
+                    tasks[1] = asyncio.create_task(asyncio.sleep(timeout))
+                    yield Empty
+            else:
+                raise TimeoutError("生成器超时")
     except StopAsyncIteration:
         return
 
@@ -55,18 +50,20 @@ def async_to_sync_generator(
     helper loop. This keeps loop-bound resources out of the caller thread and
     also works when the caller already has a running event loop.
     """
-    data_queue = asyncio.Queue()
+    data_queue = queue.Queue()
+    end = object()
     error = None
 
     loop = asyncio.new_event_loop()
-    loop_thread = threading.Thread(target=loop.run_forever, name="aidev-async-generator", daemon=True)
-    loop_thread.start()
+    context = copy_context()
+    task_ready = threading.Event()
+    consumer_task = None
 
     async def consume_async():
         nonlocal error
         try:
             async for item in async_gen:
-                await data_queue.put(item)
+                data_queue.put(item)
         except Exception as e:
             error = e
         finally:
@@ -76,40 +73,39 @@ def async_to_sync_generator(
                 except Exception as e:
                     if error is None:
                         error = e
-            await data_queue.put(None)
+            data_queue.put(end)
 
-    async def cancel_pending_tasks():
-        async def cancel_all():
-            current_task = asyncio.current_task()
-            pending_tasks = [task for task in asyncio.all_tasks() if task is not current_task]
+    def run_loop():
+        nonlocal consumer_task
+        asyncio.set_event_loop(loop)
+        consumer_task = context.run(loop.create_task, consume_async())
+        task_ready.set()
+        try:
+            loop.run_until_complete(consumer_task)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            pending_tasks = asyncio.all_tasks(loop)
             for task in pending_tasks:
                 task.cancel()
             if pending_tasks:
-                await asyncio.gather(*pending_tasks, return_exceptions=True)
+                loop.run_until_complete(asyncio.gather(*pending_tasks, return_exceptions=True))
+            with suppress(RuntimeError):
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            loop.close()
 
-        await cancel_all()
-        await loop.shutdown_asyncgens()
-        await cancel_all()
-
-    asyncio.run_coroutine_threadsafe(consume_async(), loop)
-
+    loop_thread = threading.Thread(target=run_loop, name="aidev-async-generator", daemon=True)
+    loop_thread.start()
+    task_ready.wait()
     try:
         while True:
-            get_future = asyncio.run_coroutine_threadsafe(data_queue.get(), loop)
-            try:
-                item = get_future.result(timeout=_QUEUE_GET_TIMEOUT)
-            except FutureTimeoutError:
-                get_future.cancel()
-                raise
-
-            if item is None:
+            item = data_queue.get()
+            if item is end:
                 if error is not None:
                     raise error
                 break
             yield item
     finally:
-        with suppress(FutureTimeoutError):
-            asyncio.run_coroutine_threadsafe(cancel_pending_tasks(), loop).result(timeout=1)
-        loop.call_soon_threadsafe(loop.stop)
+        if not consumer_task.done():
+            loop.call_soon_threadsafe(consumer_task.cancel)
         loop_thread.join()
-        loop.close()

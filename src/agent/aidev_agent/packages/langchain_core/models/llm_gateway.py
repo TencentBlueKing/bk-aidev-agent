@@ -39,15 +39,11 @@ from aidev_agent.utils.datetimes import get_current_timestamp_in_milliseconds
 
 class ApiGwMixin(BaseModel):
     @classmethod
-    def _resolve_base_url(cls, kwargs: dict) -> str:
+    def get_setup_instance(cls, **kwargs):
         base_url = kwargs.get("base_url", "") or settings.LLM_GW_ENDPOINT
         if not base_url:
             base_url = f"{BKAIDEV_URL}/openapi/aidev/gateway/llm/v1"
-        return base_url
-
-    @classmethod
-    def get_setup_instance(cls, **kwargs):
-        kwargs["base_url"] = cls._resolve_base_url(kwargs)
+        kwargs["base_url"] = base_url
         auth_headers = kwargs.pop("auth_headers", {})
         session_code = kwargs.pop("session_code", None)
         if not auth_headers:
@@ -76,18 +72,7 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
         """创建网关模型，并为每个调用链隔离异步 HTTP 连接池。"""
         owns_http_async_client = False
         if kwargs.get("http_async_client") is None and kwargs.get("async_client") is None:
-            base_url = cls._resolve_base_url(kwargs)
-            client_kwargs = {
-                "base_url": base_url,
-                "timeout": kwargs.get("timeout"),
-            }
-            openai_proxy = kwargs.get("openai_proxy") or os.getenv("OPENAI_PROXY")
-            if openai_proxy:
-                client_kwargs["proxy"] = openai_proxy
-                # LangChain rejects openai_proxy together with an explicit
-                # client. The client above already owns the proxy setting.
-                kwargs["openai_proxy"] = None
-            kwargs["http_async_client"] = openai.DefaultAsyncHttpxClient(**client_kwargs)
+            kwargs["http_async_client"] = openai.DefaultAsyncHttpxClient()
             owns_http_async_client = True
 
         model = super().get_setup_instance(**kwargs)
