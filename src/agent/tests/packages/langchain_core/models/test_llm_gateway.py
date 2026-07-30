@@ -16,9 +16,12 @@ We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
 
+import asyncio
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import openai
 import pytest
 from aidev_agent.config import settings
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
@@ -38,12 +41,46 @@ TEST_VISION_MODELS = ["qwen3-vl-32B"]
 
 # 测试图片路径
 TEST_IMAGE_PATH = Path(__file__).parent.parent.parent.parent / "mock_data" / "bkaidev.png"
+TEST_BASE_URL = "https://llm-gateway.example.com/v1"
 
 
 def get_test_image_base64() -> str:
     """读取测试图片并返回 base64 编码"""
     with open(TEST_IMAGE_PATH, "rb") as f:
         return base64.b64encode(f.read()).decode("utf-8")
+
+
+def test_chat_model_async_clients_are_isolated_across_worker_threads():
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        models = list(
+            pool.map(
+                lambda index: ChatModel.get_setup_instance(model=f"model-{index}", base_url=TEST_BASE_URL),
+                range(16),
+            )
+        )
+
+    try:
+        clients = [model.http_async_client for model in models]
+        assert len({id(client) for client in clients}) == len(clients)
+        assert all(model._owns_http_async_client for model in models)
+    finally:
+        for client in clients:
+            asyncio.run(client.aclose())
+
+
+def test_chat_model_preserves_caller_owned_async_http_client():
+    client = openai.DefaultAsyncHttpxClient()
+    model = ChatModel.get_setup_instance(
+        model="explicit-client",
+        base_url=TEST_BASE_URL,
+        http_async_client=client,
+    )
+
+    try:
+        assert model.http_async_client is client
+        assert model._owns_http_async_client is False
+    finally:
+        asyncio.run(client.aclose())
 
 
 @pytest.mark.skipif(

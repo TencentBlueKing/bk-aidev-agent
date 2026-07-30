@@ -18,7 +18,7 @@ import pika
 from environs import Env
 
 from .base import BaseMessageQueueHandler, QueueTTLConfig
-from .constants import QueueNamePrefixes
+from .constants import EOD_CHUNK, QueueNamePrefixes
 from .multi_process_mixin import MultiProcessMixin
 
 logger = getLogger(__name__)
@@ -627,14 +627,39 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             connection = self._producer_lock_connections.pop(thread_id, None)
 
         if not connection:
+            logger.info(
+                "[RabbitMQ] producer lock release skipped (no connection) thread_id=%s queue=%s",
+                thread_id,
+                lock_queue,
+            )
             return
 
+        logger.info(
+            "[RabbitMQ] release_producer enter thread_id=%s queue=%s connection_is_open=%s",
+            thread_id,
+            lock_queue,
+            getattr(connection, "is_open", None),
+        )
         channel = None
+        connection_already_closed = False
         try:
             if getattr(connection, "is_open", False):
-                channel = connection.channel()
-                with contextlib.suppress(Exception):
-                    channel.queue_delete(queue=lock_queue)
+                try:
+                    channel = connection.channel()
+                    with contextlib.suppress(Exception):
+                        channel.queue_delete(queue=lock_queue)
+                except Exception as e:
+                    # 连接已被对端重置/关闭：exclusive queue 随连接断开自动删除，
+                    # 无需再 queue_delete，降级走连接清理路径，不让异常冒泡
+                    connection_already_closed = True
+                    channel = None
+                    logger.warning(
+                        "[RabbitMQ] producer lock connection already closed, skip queue_delete "
+                        "thread_id=%s queue=%s error=%s",
+                        thread_id,
+                        lock_queue,
+                        e,
+                    )
         finally:
             if channel and getattr(channel, "is_open", False):
                 with contextlib.suppress(Exception):
@@ -642,7 +667,12 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             if getattr(connection, "is_open", False):
                 with contextlib.suppress(Exception):
                     connection.close()
-            logger.info("[RabbitMQ] producer lock released thread_id=%s queue=%s", thread_id, lock_queue)
+            logger.info(
+                "[RabbitMQ] producer lock released thread_id=%s queue=%s connection_already_closed=%s",
+                thread_id,
+                lock_queue,
+                connection_already_closed,
+            )
 
     def _ensure_active_consumer_queue(self, channel: Any, thread_id: str) -> str:
         queue_name = self._get_active_consumer_queue_name(thread_id)
@@ -867,6 +897,12 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                                 properties=pika.BasicProperties(delivery_mode=2),
                             )
                     logger.debug(f"Flushed {len(messages)} messages to queue {queue_name}")
+                    if EOD_CHUNK in messages:
+                        logger.info(
+                            "[EOD] flush thread_id=%s published=%d (background)",
+                            thread_id,
+                            len(messages),
+                        )
                     any_flushed = True
             except Exception as e:
                 logger.error(f"Error flushing messages for thread_id={thread_id}: {e}")
@@ -1034,6 +1070,12 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                                 body=body,
                                 properties=pika.BasicProperties(delivery_mode=2),
                             )
+                    if EOD_CHUNK in messages_to_flush:
+                        logger.info(
+                            "[EOD] flush thread_id=%s published=%d",
+                            thread_id,
+                            len(messages_to_flush),
+                        )
                     self._notify_replay_waiters()
                 except Exception as e:
                     logger.error(f"Error flushing messages for {thread_id}: {e}")
@@ -1093,9 +1135,11 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             return messages
 
     def _peek_queue_messages(self, channel: Any, queue_name: str) -> list[Any]:
-        """非破坏性读取队列中的全部消息。"""
+        """非破坏性读取队列中的全部消息，仅在读取或 requeue 异常时记录诊断。"""
         messages = []
         delivery_tags = []
+        message_count = 0
+        nack_error = None
 
         try:
             queue_info = channel.queue_declare(queue=queue_name, durable=True, passive=True)
@@ -1105,10 +1149,23 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                 if not method_frame:
                     break
                 delivery_tags.append(method_frame.delivery_tag)
-                messages.append(pickle.loads(body))
+                msg = pickle.loads(body)
+                messages.append(msg)
         finally:
             for tag in delivery_tags:
-                channel.basic_nack(delivery_tag=tag, requeue=True)
+                try:
+                    channel.basic_nack(delivery_tag=tag, requeue=True)
+                except Exception as e:
+                    nack_error = e
+            if message_count != len(messages) or nack_error is not None:
+                logger.warning(
+                    "[EOD] _peek_queue_messages queue=%s declared=%d got=%d nack_error=%s peek_eod=%s",
+                    queue_name,
+                    message_count,
+                    len(messages),
+                    nack_error,
+                    EOD_CHUNK in messages,
+                )
 
         return messages
 
@@ -1140,7 +1197,8 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                             all_messages = self._peek_queue_messages(channel, main_queue_name)
 
                         with self._buffer_lock:
-                            all_messages.extend(self._message_buffer.get(thread_id, []))
+                            buffer_msgs = self._message_buffer.get(thread_id, [])
+                            all_messages.extend(buffer_msgs)
 
                 next_offset = len(all_messages)
                 if next_offset > offset:

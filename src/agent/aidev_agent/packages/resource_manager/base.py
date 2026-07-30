@@ -549,7 +549,7 @@ class BaseResourceManager(abc.ABC):
         async def _load_all_tools():
             return await asyncio.gather(*coros)
 
-        coro_results = run_coro_sync(_load_all_tools())
+        coro_results = run_coro_sync(_load_all_tools)
         tools_list: List[StructuredTool] = []
         failures: List[McpToolFetchFailure] = []
         for tlist, fail in coro_results:

@@ -1,6 +1,7 @@
 """测试 InMemoryQueueMessageHandler 的基本功能"""
 
 import contextlib
+import json
 import threading
 import time
 
@@ -570,7 +571,7 @@ class TestInMemoryQueueMessageHandler:
         assert handler.is_empty(thread_id)
 
     def test_stream_keeps_alive_when_generator_blocked(self, handler, monkeypatch):
-        """generator 长时间无产出时，独立心跳应维持连接且不超时。"""
+        """generator 长时间无产出时，独立心跳应通过 RAW 事件维持 SSE 连接。"""
         thread_id = "test_stream_heartbeat_keepalive"
         helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
         monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_INTERVAL", 0.05)
@@ -592,7 +593,15 @@ class TestInMemoryQueueMessageHandler:
             yield "late_chunk"
 
         result = list(helper.stream(slow_first_chunk()))
-        assert result == ["late_chunk"]
+        heartbeat_events = [
+            json.loads(chunk.removeprefix("data: "))
+            for chunk in result
+            if isinstance(chunk, str) and chunk.startswith("data: ") and '"type":"RAW"' in chunk
+        ]
+
+        assert result[-1] == "late_chunk"
+        assert heartbeat_events
+        assert all(event == {"type": "RAW", "event": {"type": "heartbeat"}} for event in heartbeat_events)
         assert heartbeat_count > 0
 
     def test_stream_raises_when_heartbeat_timeout(self, handler, monkeypatch):
@@ -608,6 +617,67 @@ class TestInMemoryQueueMessageHandler:
 
         with pytest.raises(RuntimeError, match="心跳超时"):
             list(helper.stream(slow_first_chunk()))
+
+    def test_producer_marks_success_after_eod_flush(self, handler):
+        helper = GeneratorStreamingHelper(handler, thread_id="test_producer_success")
+        producer_succeeded_event = threading.Event()
+
+        helper._producer(iter(["chunk"]), producer_succeeded_event=producer_succeeded_event)
+
+        assert producer_succeeded_event.is_set()
+
+    def test_producer_does_not_mark_success_when_eod_flush_fails(self, handler, monkeypatch):
+        helper = GeneratorStreamingHelper(handler, thread_id="test_producer_flush_failure")
+        producer_succeeded_event = threading.Event()
+
+        def fail_flush(thread_id):
+            raise RuntimeError("flush failed")
+
+        monkeypatch.setattr(handler, "flush", fail_flush)
+
+        with pytest.raises(RuntimeError, match="flush failed"):
+            helper._producer(iter(["chunk"]), producer_succeeded_event=producer_succeeded_event)
+
+        assert not producer_succeeded_event.is_set()
+
+    @pytest.mark.parametrize("producer_succeeded", [True, False])
+    def test_stream_uses_producer_success_state_when_eod_missing(self, handler, monkeypatch, producer_succeeded):
+        """producer 结束后仅在 EOD flush 成功时按正常完成处理。"""
+        thread_id = "test_stream_finished_without_eod"
+        helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
+        consumer_id = handler.acquire_consumer(thread_id)
+        completed_threads = []
+
+        def timeout_without_messages(*, timeout, replay_offset):
+            raise TimeoutError
+
+        producer_thread = threading.Thread(target=lambda: None)
+        producer_thread.start()
+        producer_thread.join()
+        producer_succeeded_event = threading.Event()
+        if producer_succeeded:
+            producer_succeeded_event.set()
+
+        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.0)
+        monkeypatch.setattr(helper, "_get_consumer_messages", timeout_without_messages)
+        monkeypatch.setattr(handler, "mark_completed", completed_threads.append)
+
+        expectation = contextlib.nullcontext() if producer_succeeded else pytest.raises(RuntimeError, match="心跳超时")
+        with expectation:
+            result = list(
+                helper._consume_stream_messages(
+                    consumer_id=consumer_id,
+                    cancel_event=threading.Event(),
+                    is_resuming=False,
+                    enable_heartbeat_check=True,
+                    producer_thread=producer_thread,
+                    producer_succeeded_event=producer_succeeded_event,
+                )
+            )
+
+        assert completed_threads == ([thread_id] if producer_succeeded else [])
+        if producer_succeeded:
+            assert result == []
 
 
 class TestMessageHandlerConfig:
