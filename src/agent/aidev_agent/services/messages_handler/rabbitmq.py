@@ -302,8 +302,9 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
     REPLAY_LOCK_PREFIX: ClassVar[str] = "aidev_agent.replay_lock."
     ACTIVE_CONSUMER_PREFIX: ClassVar[str] = "aidev_agent.consumer_active."
     QUEUE_TTL_MS: ClassVar[int] = QueueTTLConfig.QUEUE_EXPIRE_MS
+    BUFFER_FLUSH_INTERVAL: ClassVar[float] = 0.5
     REPLAY_LOCK_RETRY_INTERVAL: ClassVar[float] = 0.05
-    REPLAY_MESSAGE_RETRY_INTERVAL: ClassVar[float] = 0.1
+    REPLAY_MESSAGE_RETRY_INTERVAL: ClassVar[float] = 0.5
 
     _instance: Optional["RabbitMQMessageHandler"] = None
     _lock: ClassVar[threading.Lock] = threading.Lock()
@@ -842,11 +843,11 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             logger.info("RabbitMQ daemon thread stopped")
 
     def _daemon_worker(self) -> None:
-        """后台守护线程工作函数：每隔 0.1 秒批量推送消息到 RabbitMQ"""
+        """后台守护线程工作函数：每隔 0.5 秒批量推送消息到 RabbitMQ"""
         while self._daemon_running:
             try:
-                # 等待 0.1 秒或直到停止事件触发
-                if self._daemon_stop_event.wait(timeout=0.1):
+                # 等待批量刷新周期或直到停止事件触发
+                if self._daemon_stop_event.wait(timeout=self.BUFFER_FLUSH_INTERVAL):
                     break
 
                 # 批量推送消息

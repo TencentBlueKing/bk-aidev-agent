@@ -3,6 +3,7 @@
 复现 celery 日志中 _producer 线程 release_producer → connection.channel()
 抛 StreamLostError 导致 "Exception in thread" 的问题。
 """
+
 import threading
 
 from aidev_agent.services.messages_handler.rabbitmq import RabbitMQMessageHandler
@@ -64,3 +65,8 @@ def test_release_producer_no_connection_is_safe():
     """没有待释放的连接时，release_producer 应安全返回。"""
     handler = _make_handler()
     handler.release_producer("nonexistent-thread")  # 不应抛异常
+
+
+def test_rabbitmq_read_write_intervals_are_half_second():
+    assert RabbitMQMessageHandler.BUFFER_FLUSH_INTERVAL == 0.5
+    assert RabbitMQMessageHandler.REPLAY_MESSAGE_RETRY_INTERVAL == 0.5
