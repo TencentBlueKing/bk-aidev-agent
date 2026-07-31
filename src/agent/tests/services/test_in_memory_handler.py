@@ -642,6 +642,31 @@ class TestInMemoryQueueMessageHandler:
         assert cleanup_called.wait(timeout=0.3), "done orphaned cleanup should happen promptly without active consumer"
         assert handler.is_empty(thread_id)
 
+    def test_orphaned_cleanup_waits_for_active_replay_consumer(self, monkeypatch):
+        """replay consumer 曾活跃时，应保留队列到完整 deadline。"""
+        thread_id = "test_stream_active_replay_cleanup"
+        handler = ReplayFromStartHandler()
+        helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
+        assert helper._PRODUCER_CLEANUP_DELAY == 90.0
+        handler.put(thread_id, "chunk_0")
+        consumer_id = handler.acquire_consumer(thread_id)
+        monkeypatch.setattr(helper, "_PRODUCER_CLEANUP_DELAY", 0.15)
+        monkeypatch.setattr(helper, "_DONE_ORPHAN_CLEANUP_GRACE", 0.02)
+        monkeypatch.setattr(helper, "_ORPHAN_CLEANUP_POLL_INTERVAL", 0.01)
+
+        helper._schedule_session_cleanup(done_event_seen=True)
+        time.sleep(0.05)
+        assert handler.has_pending_messages(thread_id)
+
+        handler.release_consumer(thread_id, consumer_id)
+        time.sleep(0.05)
+        assert handler.has_pending_messages(thread_id)
+
+        deadline = time.time() + 0.3
+        while handler.has_pending_messages(thread_id) and time.time() < deadline:
+            time.sleep(0.01)
+        assert not handler.has_pending_messages(thread_id)
+
     def test_stream_keeps_alive_when_generator_blocked(self, handler, monkeypatch):
         """generator 长时间无产出时，独立心跳应通过 RAW 事件维持 SSE 连接。"""
         thread_id = "test_stream_heartbeat_keepalive"
@@ -707,6 +732,32 @@ class TestInMemoryQueueMessageHandler:
         assert [event.type for event in dispatched] == [EventType.RAW]
         with pytest.raises(RetryableHeartbeatTimeoutError, match="生产者心跳超时"):
             next(stream)
+
+    def test_replay_stream_uses_extended_heartbeat_timeout(self, monkeypatch):
+        """RabbitMQ replay 使用独立的较长心跳窗口，不受通用 15 秒阈值影响。"""
+        handler = ReplayFromStartHandler()
+        helper = GeneratorStreamingHelper(handler, thread_id="test_replay_heartbeat_timeout")
+        assert helper._REPLAY_HEARTBEAT_TIMEOUT == 60.0
+        producer_thread = threading.Thread(target=lambda: None)
+        producer_thread.start()
+        producer_thread.join()
+        calls = 0
+
+        def delayed_eod(*, timeout, replay_offset):
+            nonlocal calls
+            calls += 1
+            if calls < 3:
+                raise TimeoutError
+            return [EOD_CHUNK], replay_offset + 1
+
+        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.0)
+        monkeypatch.setattr(helper, "_REPLAY_HEARTBEAT_TIMEOUT", 0.2)
+        monkeypatch.setattr(helper, "_get_consumer_messages", delayed_eod)
+        stream = helper._consume_stream_messages(
+            handler.acquire_consumer(helper.thread_id), threading.Event(), False, True, producer_thread=producer_thread
+        )
+
+        assert (list(stream), calls) == ([], 3)
 
     def test_background_stream_keeps_running_during_heartbeat_recovery(self, handler, monkeypatch):
         """后台 schedule 无前端可接管，producer 存活时心跳超时应继续消费。"""

@@ -67,15 +67,17 @@ class GeneratorStreamingHelper:
     # 取消后等待 generator 产出 RUN_FINISHED 的宽限时间（秒）
     CANCEL_DRAIN_TIMEOUT = TimeoutConfig.CANCEL_DRAIN_TIMEOUT
 
-    # 生产者结束后延迟清理会话资源的等待时间（秒）
-    # 需足够长以允许活跃消费者处理 EOD_CHUNK，又不至于长时间占用资源
-    _PRODUCER_CLEANUP_DELAY = 30.0
+    # 生产者结束后延迟清理会话资源的等待时间（秒）。
+    # 覆盖 60 秒 replay 心跳窗口，并为前端重连预留约 30 秒。
+    _PRODUCER_CLEANUP_DELAY = 90.0
     # 业务流已发出 [DONE] 且当前无活跃消费者时，保留队列等待前端接管续流的窗口（秒）。
     # 注意：后台 drain（background_only）完成后不会立即清理队列，需保留足够窗口让前端重连后
     # 通过 restore_messages 接管已生产的完整内容；窗口内若有消费者接管则跳过清理。
     _DONE_ORPHAN_CLEANUP_GRACE = 30.0
     _ORPHAN_CLEANUP_POLL_INTERVAL = 0.1
     _HEARTBEAT_TIMEOUT_GRACE = 5.0
+    # RabbitMQ replay 需要扫描已提交历史队列，消费耗时可能超过通用的 15 秒心跳窗口。
+    _REPLAY_HEARTBEAT_TIMEOUT = 60.0
     # 后台 schedule 没有前端可接管重连；心跳超时后保留最多 60 秒恢复窗口。
     # 窗口耗尽仅退出异常消费者，producer 后续仍可在 EOD 提交后收敛会话终态。
     _BACKGROUND_HEARTBEAT_RECOVERY_TIMEOUT = 60.0
@@ -589,6 +591,7 @@ class GeneratorStreamingHelper:
         last_progress_ts = time.time()
         replay_offset = 0
         supports_replay_from_start = self._supports_replay_from_start()
+        heartbeat_timeout = self._REPLAY_HEARTBEAT_TIMEOUT if supports_replay_from_start else HEARTBEAT_TIMEOUT
         heartbeat_grace_deadline: float | None = None
         background_recovery_deadline: float | None = None
 
@@ -748,7 +751,7 @@ class GeneratorStreamingHelper:
                     ):
                         raise self._producer_completion_error
                     time_since_last = time.monotonic() - last_message_monotonic
-                    if enable_heartbeat_check and time_since_last > HEARTBEAT_TIMEOUT:
+                    if enable_heartbeat_check and time_since_last > heartbeat_timeout:
                         producer_finished = producer_thread is not None and not producer_thread.is_alive()
 
                         # producer 仍可能存活时仅给予一次短暂宽限，不重新启动 Agent，
@@ -963,10 +966,12 @@ class GeneratorStreamingHelper:
                     fast_grace_hit = (
                         done_event_seen
                         and not has_active_consumer
+                        and not consumer_ever_seen
                         and fast_cleanup_at is not None
                         and now >= fast_cleanup_at
                     )
-                    deadline_hit = now >= deadline
+                    # 活跃消费者可能仍在回放较大的历史队列，不能在固定 deadline 到达后删除其队列。
+                    deadline_hit = now >= deadline and not has_active_consumer
                     if fast_grace_hit or deadline_hit:
                         should_cleanup_now = True
                         trigger_reason = "fast_grace" if fast_grace_hit and not deadline_hit else "deadline"
@@ -986,7 +991,8 @@ class GeneratorStreamingHelper:
                         logger.info(f"Cleaned up orphaned session data for thread_id={thread_id}")
                         return
 
-                    time.sleep(min(poll_interval, max(deadline - now, 0.0)))
+                    sleep_for = min(poll_interval, deadline - now) if now < deadline else poll_interval
+                    time.sleep(sleep_for)
             except Exception:
                 logger.exception(f"Error in delayed session cleanup for thread_id={thread_id}")
 
