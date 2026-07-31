@@ -1035,7 +1035,8 @@ class GeneratorStreamingHelper:
                 chunk_count += 1
                 if self._is_done_event_chunk(chunk):
                     done_event_seen = True
-                if self._is_run_finished_event_chunk(chunk):
+                is_run_finished = self._is_run_finished_event_chunk(chunk)
+                if is_run_finished:
                     run_finished_seen = True
 
                 if not draining:
@@ -1080,6 +1081,9 @@ class GeneratorStreamingHelper:
 
                 self.message_handler.put(self.thread_id, chunk)
                 logger.debug(f"Produced chunk for thread_id={self.thread_id}")
+                if is_run_finished:
+                    logger.info("[RUN_FINISHED] terminal event queued; stopping producer thread_id=%s", self.thread_id)
+                    break
         except GeneratorExit:
             logger.info(f"Generator closed for thread_id={self.thread_id}")
         except Exception as e:
@@ -1103,6 +1107,12 @@ class GeneratorStreamingHelper:
                 f"elapsed={time.monotonic() - _producer_start:.1f}s"
             )
             heartbeat_stop_event.set()
+            close_generator = getattr(generator, "close", None)
+            if callable(close_generator):
+                try:
+                    close_generator()
+                except Exception:
+                    logger.exception("Error closing producer generator thread_id=%s", self.thread_id)
             if heartbeat_thread is not None:
                 try:
                     heartbeat_thread.join(timeout=HEARTBEAT_INTERVAL + 0.2)

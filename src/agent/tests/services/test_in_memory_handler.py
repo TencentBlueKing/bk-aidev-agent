@@ -239,6 +239,30 @@ class TestReplayFromStartStreamingHelper:
 
         assert result == [finished]
 
+    def test_run_finished_stops_immediately_and_closes_generator_before_eod(self, monkeypatch):
+        handler = ReplayFromStartHandler()
+        helper = GeneratorStreamingHelper(handler, thread_id="thread-1")
+        finished = emit_run_finished_event(thread_id="thread-1", run_id="run-1")
+        lifecycle = []
+
+        def terminal_generator():
+            try:
+                yield finished
+                raise AssertionError("producer read after RUN_FINISHED")
+            finally:
+                lifecycle.append("close")
+
+        original_put = handler.put
+
+        def track_eod(thread_id, message):
+            if message == EOD_CHUNK:
+                lifecycle.append("eod")
+            original_put(thread_id, message)
+
+        monkeypatch.setattr(handler, "put", track_eod)
+        assert list(helper.stream(terminal_generator())) == [finished]
+        assert lifecycle == ["close", "eod"]
+
 
 class TestInMemoryQueueMessageHandler:
     """测试 InMemoryQueueMessageHandler"""
