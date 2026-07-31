@@ -1,3 +1,4 @@
+import json
 import threading
 import time
 import uuid
@@ -78,6 +79,7 @@ class GeneratorStreamingHelper:
     # 后台 schedule 没有前端可接管重连；心跳超时后保留最多 60 秒恢复窗口。
     # 窗口耗尽仅退出异常消费者，producer 后续仍可在 EOD 提交后收敛会话终态。
     _BACKGROUND_HEARTBEAT_RECOVERY_TIMEOUT = 60.0
+    _EOD_COMMIT_RECOVERY_TIMEOUT = 15.0
     _HEARTBEAT_TIMEOUT_MESSAGE = "Agent 执行中断：生产者心跳超时，请稍后重试"
 
     @staticmethod
@@ -115,6 +117,7 @@ class GeneratorStreamingHelper:
         # 后台 drain（无 SSE 下游）场景：读到 EOD 时不立即 mark_completed 清队列，
         # 保留 DLQ 历史供前端在清理窗口内接管续流；清理交由 producer 的延迟清理线程兜底。
         self.defer_cleanup_on_complete = defer_cleanup_on_complete
+        self._producer_completion_error: Exception | None = None
 
     @classmethod
     def _check_cancel_status(
@@ -254,6 +257,17 @@ class GeneratorStreamingHelper:
     def _is_done_event_chunk(chunk: Any) -> bool:
         """判断 chunk 是否为 SSE 的业务完成标记。"""
         return isinstance(chunk, str) and chunk.strip() == "data: [DONE]"
+
+    @staticmethod
+    def _is_run_finished_event_chunk(chunk: Any) -> bool:
+        """判断 chunk 是否为 AG-UI RUN_FINISHED 事件。"""
+        if not isinstance(chunk, str) or not chunk.startswith("data:"):
+            return False
+        try:
+            payload = json.loads(chunk.removeprefix("data:").strip())
+        except (TypeError, json.JSONDecodeError):
+            return False
+        return isinstance(payload, dict) and payload.get("type") == EventType.RUN_FINISHED.value
 
     def _is_cancelled(self, cancel_event: threading.Event) -> bool:
         """检查是否被取消（同时检查进程内事件和跨进程信号）
@@ -439,6 +453,7 @@ class GeneratorStreamingHelper:
         has_pending: bool,
         on_complete: Callable[[], None] | None = None,
         event_handler: Callable[[Any], None] | None = None,
+        expected_run_id: str | None = None,
     ) -> tuple[threading.Thread | None, bool, bool]:
         """根据队列状态决定启动生产者还是恢复旧消息。"""
         producer_thread: threading.Thread | None = None
@@ -462,12 +477,13 @@ class GeneratorStreamingHelper:
                 raise
 
             producer_thread = threading.Thread(
-                target=self._producer,
+                target=self._run_producer,
                 kwargs={
                     "generator": generator,
                     "cancel_event": cancel_event,
                     "on_complete": on_complete,
                     "event_handler": event_handler,
+                    "expected_run_id": expected_run_id,
                     "release_producer": True,
                 },
                 daemon=True,
@@ -664,11 +680,13 @@ class GeneratorStreamingHelper:
                         if item == EOD_CHUNK:
                             logger.info(f"[EOD] Consumer received EOD_CHUNK for thread_id={self.thread_id}")
                             should_notify_cancelled = self._should_notify_consumer_cancelled_on_complete(cancel_event)
+                            completion_error: Exception | None = None
                             if on_complete and not supports_replay_from_start:
                                 try:
                                     on_complete()
-                                except Exception as e:
-                                    logger.exception(f"on_complete callback error: {e}")
+                                except Exception as exc:
+                                    completion_error = exc
+                                    logger.exception("on_complete callback error for thread_id=%s", self.thread_id)
                             if not supports_replay_from_start and not self.defer_cleanup_on_complete:
                                 self.message_handler.mark_completed(self.thread_id)
                                 logger.info(f"Stream completed for thread_id={self.thread_id}")
@@ -686,6 +704,8 @@ class GeneratorStreamingHelper:
                             if should_notify_cancelled:
                                 # cancel 可能已发出但 Agent 恰好也完成了，此时仍需通知 stop 接口。
                                 self._notify_consumer_cancelled_safely()
+                            if completion_error is not None:
+                                raise completion_error
                             exit_reason = "completed"
                             return exit_reason
                         if item == CANCELLED_CHUNK:
@@ -721,6 +741,12 @@ class GeneratorStreamingHelper:
                     exit_reason = "preempted"
                     raise
                 except TimeoutError:
+                    if (
+                        producer_thread is not None
+                        and not producer_thread.is_alive()
+                        and self._producer_completion_error is not None
+                    ):
+                        raise self._producer_completion_error
                     time_since_last = time.monotonic() - last_message_monotonic
                     if enable_heartbeat_check and time_since_last > HEARTBEAT_TIMEOUT:
                         producer_finished = producer_thread is not None and not producer_thread.is_alive()
@@ -809,6 +835,7 @@ class GeneratorStreamingHelper:
         generator: Generator[Any, None, None],
         on_complete: Callable[[], None] | None = None,
         event_handler: Callable[[Any], None] | None = None,
+        expected_run_id: str | None = None,
     ) -> Generator[Any, None, None]:
         """使用队列处理器缓存流式请求
 
@@ -818,8 +845,9 @@ class GeneratorStreamingHelper:
         Args:
             generator: 数据生成器
             on_complete: 流完成时的回调函数，用于及时更新 session status 等外部状态。
-                replay-from-start handler 在 producer 完成时调用；旧 handler 在消费到 EOD 后调用。
+                producer 将 RUN_FINISHED 入队后立即调用；缺少 RUN_FINISHED 时在 EOD 路径兜底调用。
             event_handler: AG-UI 事件处理器，用于同步记录受控错误和结束状态。
+            expected_run_id: 正常 AG-UI 流的 run_id；提供时保证 EOD 前至少输出一次 RUN_FINISHED。
 
         Yields:
             生成器产生的数据
@@ -837,6 +865,21 @@ class GeneratorStreamingHelper:
         consumer_id = self.message_handler.acquire_consumer(self.thread_id)
         producer_thread: threading.Thread | None = None
         consumer_exit_reason: str | None = None
+        self._producer_completion_error = None
+
+        completion_lock = threading.Lock()
+        completion_called = False
+
+        def _on_complete_once() -> None:
+            nonlocal completion_called
+            with completion_lock:
+                if completion_called:
+                    return
+                completion_called = True
+            if on_complete is not None:
+                on_complete()
+
+        completion_callback = _on_complete_once if on_complete is not None else None
 
         should_consume_stopped, has_pending = self._resolve_stopped_or_pending_state()
 
@@ -850,15 +893,16 @@ class GeneratorStreamingHelper:
                 generator=generator,
                 cancel_event=cancel_event,
                 has_pending=has_pending,
-                on_complete=on_complete,
+                on_complete=completion_callback,
                 event_handler=event_handler,
+                expected_run_id=expected_run_id,
             )
             consumer_exit_reason = yield from self._consume_stream_messages(
                 consumer_id=consumer_id,
                 cancel_event=cancel_event,
                 is_resuming=is_resuming,
                 enable_heartbeat_check=enable_heartbeat_check,
-                on_complete=on_complete,
+                on_complete=completion_callback,
                 producer_thread=producer_thread,
                 event_handler=event_handler,
             )
@@ -880,6 +924,8 @@ class GeneratorStreamingHelper:
                     logger.exception(f"Error joining producer thread for thread_id={self.thread_id}: {e}")
             if consumer_exit_reason == "completed":
                 self._cleanup_replay_session_if_idle()
+                if self._producer_completion_error is not None:
+                    raise self._producer_completion_error
 
     def _schedule_session_cleanup(self, done_event_seen: bool = False) -> None:
         """生产者完成后延迟清理孤立的会话资源。
@@ -957,6 +1003,7 @@ class GeneratorStreamingHelper:
         on_complete: Callable[[], None] | None = None,
         event_handler: Callable[[Any], None] | None = None,
         release_producer: bool = False,
+        expected_run_id: str | None = None,
     ) -> None:
         """生产者线程：将生成器产生的消息推送到队列
 
@@ -979,6 +1026,7 @@ class GeneratorStreamingHelper:
         drain_start_time = 0.0
         done_event_seen = False
         producer_error = False
+        run_finished_seen = False
 
         def _heartbeat_worker() -> None:
             """独立心跳线程：即使 generator 阻塞也保持心跳。"""
@@ -988,6 +1036,15 @@ class GeneratorStreamingHelper:
                     logger.debug(f"Sent heartbeat for thread_id={self.thread_id}")
                 except Exception as e:
                     logger.exception(f"Error sending heartbeat for thread_id={self.thread_id}: {e}")
+
+        def _complete_session() -> None:
+            if on_complete is None:
+                return
+            try:
+                on_complete()
+            except Exception as completion_error:
+                self._producer_completion_error = completion_error
+                logger.exception("on_complete callback error in producer for thread_id=%s", self.thread_id)
 
         try:
             heartbeat_thread = threading.Thread(
@@ -1001,6 +1058,9 @@ class GeneratorStreamingHelper:
                 chunk_count += 1
                 if self._is_done_event_chunk(chunk):
                     done_event_seen = True
+                is_run_finished = self._is_run_finished_event_chunk(chunk)
+                if is_run_finished:
+                    run_finished_seen = True
 
                 if not draining:
                     # 检查是否被取消（进程内快速检查）
@@ -1044,6 +1104,13 @@ class GeneratorStreamingHelper:
 
                 self.message_handler.put(self.thread_id, chunk)
                 logger.debug(f"Produced chunk for thread_id={self.thread_id}")
+                if is_run_finished:
+                    _complete_session()
+                    logger.info(
+                        "[RUN_FINISHED] terminal event queued and session finalized; stopping producer thread_id=%s",
+                        self.thread_id,
+                    )
+                    break
         except GeneratorExit:
             logger.info(f"Generator closed for thread_id={self.thread_id}")
         except Exception as e:
@@ -1054,7 +1121,12 @@ class GeneratorStreamingHelper:
                     "Agent 执行异常，请稍后重试",
                     event_handler=event_handler,
                 ):
+                    is_run_finished = self._is_run_finished_event_chunk(event)
+                    if is_run_finished:
+                        run_finished_seen = True
                     self.message_handler.put(self.thread_id, event)
+                    if is_run_finished:
+                        _complete_session()
             except Exception as encode_err:
                 logger.exception(f"Failed to send terminal error events for thread_id={self.thread_id}: {encode_err}")
         finally:
@@ -1065,6 +1137,12 @@ class GeneratorStreamingHelper:
                 f"elapsed={time.monotonic() - _producer_start:.1f}s"
             )
             heartbeat_stop_event.set()
+            close_generator = getattr(generator, "close", None)
+            if callable(close_generator):
+                try:
+                    close_generator()
+                except Exception:
+                    logger.exception("Error closing producer generator thread_id=%s", self.thread_id)
             if heartbeat_thread is not None:
                 try:
                     heartbeat_thread.join(timeout=HEARTBEAT_INTERVAL + 0.2)
@@ -1072,23 +1150,67 @@ class GeneratorStreamingHelper:
                     logger.exception(f"Error joining heartbeat thread for thread_id={self.thread_id}: {e}")
 
             try:
+                if expected_run_id and not producer_error and not draining and not run_finished_seen:
+                    logger.warning(
+                        "[RUN_FINISHED] missing from normal producer stream; emitting fallback thread_id=%s run_id=%s",
+                        self.thread_id,
+                        expected_run_id,
+                    )
+                    self.message_handler.put(
+                        self.thread_id,
+                        emit_run_finished_event(
+                            thread_id=self.thread_id,
+                            run_id=expected_run_id,
+                            event_handler=event_handler,
+                        ),
+                    )
+                    _complete_session()
+
                 # 无论是正常结束还是取消，都推送 EOD_CHUNK 让消费者知道流已结束。
                 logger.info(
                     f"[EOD] Producer sending EOD_CHUNK for thread_id={self.thread_id} (producer_error={producer_error})"
                 )
-                self.message_handler.put(self.thread_id, EOD_CHUNK)
-                self.message_handler.flush(self.thread_id)
+                eod_commit_event = threading.Event()
+                register_eod_commit = getattr(self.message_handler, "register_eod_commit_event", None)
+                unregister_eod_commit = getattr(self.message_handler, "unregister_eod_commit_event", None)
+                eod_commit_registered = callable(register_eod_commit) and callable(unregister_eod_commit)
+                if eod_commit_registered:
+                    register_eod_commit(self.thread_id, eod_commit_event)
+
+                try:
+                    self.message_handler.put(self.thread_id, EOD_CHUNK)
+                    try:
+                        self.message_handler.flush(self.thread_id)
+                    except Exception as flush_error:
+                        if not eod_commit_registered:
+                            self._producer_completion_error = flush_error
+                            raise
+                        logger.warning(
+                            "[EOD] synchronous flush failed; waiting for background recovery "
+                            "thread_id=%s timeout=%.1fs",
+                            self.thread_id,
+                            self._EOD_COMMIT_RECOVERY_TIMEOUT,
+                            exc_info=True,
+                        )
+                        if not eod_commit_event.wait(timeout=self._EOD_COMMIT_RECOVERY_TIMEOUT):
+                            completion_error = RuntimeError(
+                                f"EOD commit did not recover within {self._EOD_COMMIT_RECOVERY_TIMEOUT:.1f}s"
+                            )
+                            self._producer_completion_error = completion_error
+                            raise completion_error from flush_error
+                        logger.info("[EOD] background flush recovered thread_id=%s", self.thread_id)
+                finally:
+                    if eod_commit_registered:
+                        unregister_eod_commit(self.thread_id, eod_commit_event)
                 logger.info(f"[EOD] Producer EOD_CHUNK sent successfully for thread_id={self.thread_id}")
 
-                if on_complete and self._supports_replay_from_start() and not producer_error:
-                    try:
-                        on_complete()
-                    except Exception as e:
-                        logger.exception(f"on_complete callback error in producer: {e}")
-
-                # 延迟清理：如果消费者已断开且未重连，主动释放队列资源。
-                # 不能立即清理，否则会与正在读取 EOD_CHUNK 的活跃消费者竞争。
+                # EOD 仅负责消费者结束与队列资源回收；会话终态已在 RUN_FINISHED 入队后回写。
                 self._schedule_session_cleanup(done_event_seen=done_event_seen)
+
+                if on_complete and self._supports_replay_from_start():
+                    _complete_session()
+                if self._producer_completion_error is not None:
+                    raise self._producer_completion_error
             finally:
                 if release_producer:
                     logger.info(
@@ -1099,3 +1221,12 @@ class GeneratorStreamingHelper:
                         self.message_handler.release_producer(self.thread_id)
                     except Exception as e:
                         logger.exception(f"Error releasing producer for thread_id={self.thread_id}: {e}")
+
+    def _run_producer(self, **kwargs: Any) -> None:
+        """线程入口：记录 producer 终结异常，由消费线程统一向调用方传播。"""
+        try:
+            self._producer(**kwargs)
+        except Exception as exc:
+            if self._producer_completion_error is None:
+                self._producer_completion_error = exc
+            logger.exception("Producer finalization failed for thread_id=%s", self.thread_id)

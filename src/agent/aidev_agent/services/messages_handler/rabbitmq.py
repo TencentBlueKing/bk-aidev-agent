@@ -344,6 +344,11 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         self._flush_peek_locks: dict[str, threading.Lock] = {}
         self._flush_peek_locks_guard = threading.Lock()
 
+        # producer 只有在 EOD 已提交到 RabbitMQ 后才能写外部会话终态。
+        # 同步 flush 失败时，后台 daemon 补发成功会唤醒同进程 producer。
+        self._eod_commit_events: dict[str, set[threading.Event]] = {}
+        self._eod_commit_events_lock = threading.Lock()
+
         # 后台守护线程
         self._daemon_thread: Optional[threading.Thread] = None
         self._daemon_running = False
@@ -461,6 +466,30 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         """唤醒等待 replay lock 或新消息的本进程消费者。"""
         with self._replay_wait_condition:
             self._replay_wait_condition.notify_all()
+
+    def register_eod_commit_event(self, thread_id: str, event: threading.Event) -> None:
+        """注册 EOD 提交确认事件，供 producer 等待同步/后台 flush 的最终结果。"""
+        with self._eod_commit_events_lock:
+            self._eod_commit_events.setdefault(thread_id, set()).add(event)
+
+    def unregister_eod_commit_event(self, thread_id: str, event: threading.Event) -> None:
+        """移除尚未被 EOD 成功提交消费的确认事件。"""
+        with self._eod_commit_events_lock:
+            events = self._eod_commit_events.get(thread_id)
+            if events is None:
+                return
+            events.discard(event)
+            if not events:
+                self._eod_commit_events.pop(thread_id, None)
+
+    def _notify_eod_committed(self, thread_id: str, messages: list[Any]) -> None:
+        """仅在包含 EOD 的完整批次成功发布后确认提交。"""
+        if EOD_CHUNK not in messages:
+            return
+        with self._eod_commit_events_lock:
+            events = self._eod_commit_events.pop(thread_id, set())
+        for event in events:
+            event.set()
 
     def _wait_for_replay_retry(self, deadline: float | None, interval: float) -> None:
         """等待下一次 replay 检查。
@@ -904,6 +933,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                             thread_id,
                             len(messages),
                         )
+                    self._notify_eod_committed(thread_id, messages)
                     any_flushed = True
             except Exception as e:
                 logger.error(f"Error flushing messages for thread_id={thread_id}: {e}")
@@ -1077,6 +1107,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                             thread_id,
                             len(messages_to_flush),
                         )
+                    self._notify_eod_committed(thread_id, messages_to_flush)
                     self._notify_replay_waiters()
                 except Exception as e:
                     logger.error(f"Error flushing messages for {thread_id}: {e}")

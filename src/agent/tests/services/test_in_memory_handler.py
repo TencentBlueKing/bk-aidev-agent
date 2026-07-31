@@ -198,6 +198,71 @@ class TestReplayFromStartStreamingHelper:
         assert lifecycle == ["flush", "complete"]
         assert thread_id not in handler.producer_locks
 
+    def test_replay_mode_propagates_on_complete_failure(self):
+        handler = ReplayFromStartHandler()
+        helper = GeneratorStreamingHelper(handler, thread_id="test_replay_complete_failure")
+
+        with pytest.raises(RuntimeError, match="status update failed"):
+            list(
+                helper.stream(
+                    iter(["chunk_0"]),
+                    on_complete=lambda: (_ for _ in ()).throw(RuntimeError("status update failed")),
+                )
+            )
+
+    def test_normal_agui_stream_emits_run_finished_fallback_before_eod(self):
+        handler = ReplayFromStartHandler()
+        dispatched = []
+
+        result = list(
+            GeneratorStreamingHelper(handler, thread_id="thread-1").stream(
+                iter(["chunk_0"]),
+                event_handler=dispatched.append,
+                expected_run_id="run-1",
+            )
+        )
+
+        assert result[0] == "chunk_0"
+        assert _event_types(result[1:]) == [EventType.RUN_FINISHED]
+        assert [event.type for event in dispatched] == [EventType.RUN_FINISHED]
+
+    def test_normal_agui_stream_does_not_duplicate_existing_run_finished(self):
+        handler = ReplayFromStartHandler()
+        finished = emit_run_finished_event(thread_id="thread-1", run_id="run-1")
+
+        result = list(
+            GeneratorStreamingHelper(handler, thread_id="thread-1").stream(
+                iter([finished]),
+                expected_run_id="run-1",
+            )
+        )
+
+        assert result == [finished]
+
+    def test_run_finished_finalizes_session_then_closes_generator_before_eod(self, monkeypatch):
+        handler = ReplayFromStartHandler()
+        helper = GeneratorStreamingHelper(handler, thread_id="thread-1")
+        finished = emit_run_finished_event(thread_id="thread-1", run_id="run-1")
+        lifecycle = []
+
+        def terminal_generator():
+            try:
+                yield finished
+                raise AssertionError("producer read after RUN_FINISHED")
+            finally:
+                lifecycle.append("close")
+
+        original_put = handler.put
+
+        def track_eod(thread_id, message):
+            if message == EOD_CHUNK:
+                lifecycle.append("eod")
+            original_put(thread_id, message)
+
+        monkeypatch.setattr(handler, "put", track_eod)
+        assert list(helper.stream(terminal_generator(), on_complete=lambda: lifecycle.append("complete"))) == [finished]
+        assert lifecycle == ["complete", "close", "eod"]
+
 
 class TestInMemoryQueueMessageHandler:
     """测试 InMemoryQueueMessageHandler"""
@@ -537,8 +602,8 @@ class TestInMemoryQueueMessageHandler:
         else:
             assert result == gen_items
 
-    def test_stream_on_complete_exception_is_swallowed(self, handler):
-        """on_complete 抛异常时不影响流返回和队列清理。"""
+    def test_stream_on_complete_exception_is_propagated(self, handler):
+        """终态回写失败必须向上传播，不能留下 running 会话。"""
         thread_id = "test_stream_on_complete_error"
         helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
         callback_called = []
@@ -547,9 +612,9 @@ class TestInMemoryQueueMessageHandler:
             callback_called.append(True)
             raise RuntimeError("boom")
 
-        result = list(helper.stream(iter(["chunk_0"]), on_complete=broken_on_complete))
+        with pytest.raises(RuntimeError, match="boom"):
+            list(helper.stream(iter(["chunk_0"]), on_complete=broken_on_complete))
 
-        assert result == ["chunk_0"]
         assert callback_called
         assert handler.is_empty(thread_id)
 
@@ -697,16 +762,24 @@ class TestInMemoryQueueMessageHandler:
         """producer 异常应形成完整终止事件对并同步分发。"""
         helper = GeneratorStreamingHelper(handler, thread_id="test_producer_error")
         dispatched = []
+        completed = []
 
         def broken_generator():
             yield "chunk"
             raise RuntimeError("producer failed")
 
-        result = list(helper.stream(broken_generator(), event_handler=dispatched.append))
+        result = list(
+            helper.stream(
+                broken_generator(),
+                event_handler=dispatched.append,
+                on_complete=lambda: completed.append(True),
+            )
+        )
 
         assert result[0] == "chunk"
         assert _event_types(result[1:]) == ["RUN_ERROR", "RUN_FINISHED"]
         assert [event.type for event in dispatched] == [EventType.RUN_ERROR, EventType.RUN_FINISHED]
+        assert completed == [True]
 
     def test_producer_releases_lock_when_eod_flush_fails(self, handler, monkeypatch):
         thread_id = "test_producer_flush_failure"
@@ -725,6 +798,28 @@ class TestInMemoryQueueMessageHandler:
             )
 
         assert handler.acquire_producer(thread_id)
+
+    def test_producer_waits_for_background_eod_commit_before_completion(self, monkeypatch):
+        handler = ReplayFromStartHandler()
+        helper = GeneratorStreamingHelper(handler, thread_id="test_eod_recovery")
+        committed_event = None
+        lifecycle = []
+
+        def register(_thread_id, event):
+            nonlocal committed_event
+            committed_event = event
+
+        monkeypatch.setattr(handler, "register_eod_commit_event", register, raising=False)
+        monkeypatch.setattr(handler, "unregister_eod_commit_event", lambda *_args: None, raising=False)
+
+        def fail_after_background_commit(_thread_id):
+            committed_event.set()
+            raise RuntimeError("sync flush failed")
+
+        monkeypatch.setattr(handler, "flush", fail_after_background_commit)
+        helper._producer(iter(["chunk"]), on_complete=lambda: lifecycle.append("complete"))
+
+        assert lifecycle == ["complete"]
 
     def test_stream_treats_missing_eod_as_error(self, handler, monkeypatch):
         """即使 producer 标记成功，未消费到 EOD 也不能静默判定完成。"""
