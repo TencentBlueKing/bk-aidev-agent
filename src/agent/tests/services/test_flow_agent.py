@@ -93,6 +93,24 @@ class MockResourceManager:
         return {}
 
 
+class TestFlowAgentCompletion:
+    @patch.object(GeneratorStreamingHelper, "is_cancelled", return_value=False)
+    def test_background_execute_updates_session_after_flow_completion(self, mock_cancelled):
+        event_handler = MagicMock()
+        agent = FlowAgentCompletionAgent(
+            resource_manager=MockResourceManager(),
+            flow_start_params={"session_code": "flow-session"},
+            poll_interval=0.01,
+            poll_timeout=10.0,
+            session_code="flow-session",
+            event_handler=event_handler,
+        )
+
+        list(agent.execute(MagicMock(background_only=True)))
+
+        event_handler.set_streaming_finished.assert_called_once_with()
+
+
 class TestFlowAgentMainFlow:
     """主流程：start → SSE 流式输出 → 轮询到终态"""
 

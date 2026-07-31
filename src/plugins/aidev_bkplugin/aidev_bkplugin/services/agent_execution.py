@@ -77,6 +77,9 @@ class AgentExecutor:
         result = agent_instance.execute(execute_kwargs)
         # 非流式 ainvoke 不经过 AG-UI 事件分发，必须显式写回 assistant
         self.session_manager.save_ai_response(session_code, result, turn_id=turn_id)
+        event_handler = getattr(agent_instance, "event_handler", None)
+        if isinstance(event_handler, BaseSessionWriter) and hasattr(event_handler, "set_streaming_finished"):
+            event_handler.set_streaming_finished()
         return result
 
     @classmethod

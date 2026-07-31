@@ -18,6 +18,23 @@ sys.modules.setdefault("bk_plugin_framework.kit.decorators", _bk_plugin_framewor
 
 
 class TestAgentExecutorCompletion:
+    def test_non_streaming_sets_finished_after_response_is_saved(self):
+        from aidev_agent.services.event_handlers.base import BaseSessionWriter
+        from aidev_bkplugin.services.agent_execution import AgentExecutor
+
+        result = {"choices": [{"delta": {"content": "done"}}]}
+        handler = MagicMock(spec=BaseSessionWriter)
+        agent = MagicMock(event_handler=handler)
+        agent.execute.return_value = result
+        execute_kwargs = MagicMock(stream=False)
+        manager = MagicMock()
+
+        assert (
+            AgentExecutor(manager).execute_with_save(agent, execute_kwargs, "session-abc", turn_id="turn-1") == result
+        )
+        manager.save_ai_response.assert_called_once_with("session-abc", result, turn_id="turn-1")
+        handler.set_streaming_finished.assert_called_once_with()
+
     def test_drain_does_not_write_terminal_state(self):
         from aidev_agent.services.event_handlers.base import BaseSessionWriter
         from aidev_bkplugin.services.agent_execution import AgentExecutor
