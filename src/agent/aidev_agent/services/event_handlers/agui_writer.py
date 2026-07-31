@@ -6,6 +6,7 @@
 """
 
 import json
+import time
 from logging import getLogger
 from typing import Any
 
@@ -42,6 +43,9 @@ class AGUISessionWriter(BaseSessionWriter):
         )
         ```
     """
+
+    _SESSION_STATUS_MAX_ATTEMPTS = 3
+    _SESSION_STATUS_RETRY_BASE_DELAY = 0.2
 
     def __init__(
         self,
@@ -126,9 +130,7 @@ class AGUISessionWriter(BaseSessionWriter):
         outcome = getattr(event, "outcome", None)
         # 兼容 outcome 为 dict 或对象的情况
         outcome_type = (
-            outcome.get("type")
-            if isinstance(outcome, dict)
-            else getattr(outcome, "type", None) if outcome else None
+            outcome.get("type") if isinstance(outcome, dict) else getattr(outcome, "type", None) if outcome else None
         )
         if outcome and outcome_type == RunFinishedOutcomeType.INTERRUPT.value:
             graph_thread_id = getattr(event, "thread_id", "")
@@ -147,9 +149,7 @@ class AGUISessionWriter(BaseSessionWriter):
 
                 start_approval_resume_worker(self.session_code, self.username, graph_thread_id, interrupts)
             except Exception:
-                logger.exception(
-                    "[AGUISessionWriter] 触发后台续流失败: session_code=%s", self.session_code
-                )
+                logger.exception("[AGUISessionWriter] 触发后台续流失败: session_code=%s", self.session_code)
             return
 
         self._clear_pending_interrupt_context()
@@ -233,38 +233,62 @@ class AGUISessionWriter(BaseSessionWriter):
         - 用户取消/暂停：会话状态设为 cancelled
         """
         if self._is_cancelled:
-            self._update_session_status(SessionsStatus.CANCELLED.value)
+            status = SessionsStatus.CANCELLED.value
         elif self._has_run_error:
-            self._update_session_status(SessionsStatus.FAILED.value)
+            status = SessionsStatus.FAILED.value
         else:
-            self._update_session_status(SessionsStatus.FINISHED.value)
+            status = SessionsStatus.FINISHED.value
+        self._update_session_status(status, raise_on_failure=True)
 
     def handle_run_error(self, event) -> None:
-        """处理运行错误，并确保会话状态进入 failed；同时清理 pending_interrupt。"""
+        """记录运行错误；会话终态由 EOD 提交后的唯一完成回调统一写入。"""
         super().handle_run_error(event)
         # 中断审批场景下清理 pending_interrupt
         self._clear_pending_interrupt_context()
         if not self._is_cancelled:
             self._has_run_error = True
-            self._update_session_status(SessionsStatus.FAILED.value)
 
-    def _update_session_status(self, status: str) -> None:
+    def _update_session_status(self, status: str, *, raise_on_failure: bool = False) -> None:
         """更新会话状态（内部方法）
 
         Args:
             status: 会话状态，如 "running", "finished"
         """
         headers = {"X-BKAIDEV-USER": self.username} if self.username else {}
-        try:
-            logger.info("开始更新会话状态: session_code=%s, status=%s", self.session_code, status)
-            result = self.client.api.update_chat_session(
-                path_params={"session_code": self.session_code},
-                json={"status": status},
-                headers=headers,
-            )
-            logger.info("会话状态更新成功: session_code=%s, status=%s, result=%s", self.session_code, status, result)
-        except Exception:
-            logger.exception("会话状态更新失败: session_code=%s, status=%s", self.session_code, status)
+        for attempt in range(self._SESSION_STATUS_MAX_ATTEMPTS):
+            try:
+                logger.info(
+                    "开始更新会话状态: session_code=%s, status=%s, attempt=%d",
+                    self.session_code,
+                    status,
+                    attempt + 1,
+                )
+                result = self.client.api.update_chat_session(
+                    path_params={"session_code": self.session_code},
+                    json={"status": status},
+                    headers=headers,
+                )
+                logger.info(
+                    "会话状态更新成功: session_code=%s, status=%s, result=%s", self.session_code, status, result
+                )
+                return
+            except Exception:
+                is_last_attempt = attempt == self._SESSION_STATUS_MAX_ATTEMPTS - 1
+                if is_last_attempt:
+                    logger.exception("会话状态更新失败: session_code=%s, status=%s", self.session_code, status)
+                    if raise_on_failure:
+                        raise
+                    return
+
+                delay = self._SESSION_STATUS_RETRY_BASE_DELAY * (2**attempt)
+                logger.warning(
+                    "会话状态更新失败，将重试: session_code=%s, status=%s, delay=%.1fs",
+                    self.session_code,
+                    status,
+                    delay,
+                    exc_info=True,
+                )
+                time.sleep(delay)
 
     def update_flow_agent_info(self, task_id: str) -> None:
         """更新 session 中的 Flow Agent task_id

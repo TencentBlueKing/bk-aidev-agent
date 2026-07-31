@@ -542,6 +542,7 @@ class ChatCompletionAgent(BaseModel):
             # 消费者中断不会影响最终状态收敛。
             on_complete=partial(self._on_complete, finalize_session=True),
             event_handler=self.event_handler,
+            expected_run_id=agent_input.run_id or self.thread_id,
         )
 
     @staticmethod

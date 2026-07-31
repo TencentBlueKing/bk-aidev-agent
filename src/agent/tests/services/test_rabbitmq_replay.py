@@ -3,6 +3,7 @@ import threading
 from unittest.mock import MagicMock
 
 import pytest
+from aidev_agent.services.messages_handler.constants import EOD_CHUNK
 from aidev_agent.services.messages_handler.rabbitmq import RabbitMQMessageHandler
 
 
@@ -56,3 +57,18 @@ def test_get_messages_since_preserves_legacy_dlq_restore():
     assert next_offset == 1
     handler._restore_from_dlq.assert_called_once_with("thread-id")
     handler._peek_queue_messages.assert_called_once_with(channel, "replay-queue")
+
+
+def test_eod_commit_event_is_notified_only_after_eod_publish():
+    handler = object.__new__(RabbitMQMessageHandler)
+    handler._eod_commit_events = {}
+    handler._eod_commit_events_lock = threading.Lock()
+    event = threading.Event()
+
+    handler.register_eod_commit_event("thread-id", event)
+    handler._notify_eod_committed("thread-id", ["chunk"])
+    assert not event.is_set()
+
+    handler._notify_eod_committed("thread-id", [EOD_CHUNK])
+    assert event.is_set()
+    assert "thread-id" not in handler._eod_commit_events

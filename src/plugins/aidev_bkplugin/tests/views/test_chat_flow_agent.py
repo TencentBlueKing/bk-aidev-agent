@@ -72,3 +72,15 @@ def test_no_marker_starts_new_task_without_touching_marker(flow_agent_env):
 
     assert build_agent.call_args.kwargs["task_id"] is None
     sm.set_flow_resume_pending.assert_not_called()
+
+
+def test_flow_http_does_not_install_second_terminal_status_writer(flow_agent_env):
+    view, _build_agent, sm, writer_cls = flow_agent_env
+    sm.get_flow_info.return_value = {}
+    view._wrap_streaming_with_status = MagicMock(side_effect=AssertionError("duplicate terminal writer"))
+
+    result = view._handle_flow_agent(_data(), "sc-1", "alice", turn_id="turn-1")
+
+    assert result == "STREAM"
+    writer_cls.return_value.set_streaming_started.assert_called_once_with()
+    view._wrap_streaming_with_status.assert_not_called()
