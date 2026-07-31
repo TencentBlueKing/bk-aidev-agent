@@ -300,6 +300,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
     CANCEL_QUEUE_PREFIX: ClassVar[str] = QueueNamePrefixes.CANCEL_REQUEST
     PRODUCER_LOCK_PREFIX: ClassVar[str] = "aidev_agent.producer_lock."
     REPLAY_LOCK_PREFIX: ClassVar[str] = "aidev_agent.replay_lock."
+    REPLAY_BASELINE_PREFIX: ClassVar[str] = "aidev_agent.replay_baseline."
     ACTIVE_CONSUMER_PREFIX: ClassVar[str] = "aidev_agent.consumer_active."
     QUEUE_TTL_MS: ClassVar[int] = QueueTTLConfig.QUEUE_EXPIRE_MS
     REPLAY_LOCK_RETRY_INTERVAL: ClassVar[float] = 0.05
@@ -395,6 +396,10 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
     def _get_replay_lock_queue_name(self, thread_id: str) -> str:
         """获取会话日志 replay 互斥队列名。"""
         return f"{self.REPLAY_LOCK_PREFIX}{thread_id}"
+
+    def _get_replay_baseline_queue_name(self, thread_id: str) -> str:
+        """获取生产 segment replay 基线队列名。"""
+        return f"{self.REPLAY_BASELINE_PREFIX}{thread_id}"
 
     def _get_active_consumer_queue_name(self, thread_id: str) -> str:
         """获取多消费者活跃状态队列名。"""
@@ -599,6 +604,90 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         旧的 in-memory/默认 handler 返回 False，继续使用竞争消费 + DLQ 恢复语义。
         """
         return True
+
+    def _ensure_replay_baseline_queue(self, channel: Any, thread_id: str) -> str:
+        """声明只保留最新一条持久化 replay 基线的队列。"""
+        queue_name = self._get_replay_baseline_queue_name(thread_id)
+        channel.queue_declare(
+            queue=queue_name,
+            durable=True,
+            arguments={
+                "x-expires": self.QUEUE_TTL_MS,
+                "x-max-length": 1,
+                "x-overflow": "drop-head",
+            },
+        )
+        return queue_name
+
+    def publish_replay_segment_start(
+        self,
+        thread_id: str,
+        segment_id: str,
+        head_frames: list[Any],
+        segment_marker: Any,
+    ) -> None:
+        """确认 baseline 已持久化后，再确认提交主日志 segment marker。"""
+        baseline_payload = pickle.dumps(
+            {
+                "segment_id": segment_id,
+                "head_frames": list(head_frames),
+            }
+        )
+        with self._with_replay_lock(thread_id) as channel:
+            baseline_queue = self._ensure_replay_baseline_queue(channel, thread_id)
+            main_queue = self._ensure_queue(channel, thread_id)
+            channel.confirm_delivery()
+            baseline_published = channel.basic_publish(
+                exchange="",
+                routing_key=baseline_queue,
+                body=baseline_payload,
+                properties=pika.BasicProperties(delivery_mode=2),
+            )
+            if baseline_published is False:
+                raise RuntimeError(
+                    f"RabbitMQ replay baseline was not confirmed for thread_id={thread_id}, segment_id={segment_id}"
+                )
+            marker_published = channel.basic_publish(
+                exchange="",
+                routing_key=main_queue,
+                body=pickle.dumps(segment_marker),
+                properties=pika.BasicProperties(delivery_mode=2),
+            )
+            if marker_published is False:
+                raise RuntimeError(
+                    f"RabbitMQ replay marker was not confirmed for thread_id={thread_id}, segment_id={segment_id}"
+                )
+
+    def get_replay_baseline(self, thread_id: str, segment_id: str) -> list[Any] | None:
+        """非破坏性读取并校验指定生产 segment 的 replay 基线。"""
+        queue_name = self._get_replay_baseline_queue_name(thread_id)
+        with self._with_replay_lock(thread_id) as channel:
+            try:
+                channel.queue_declare(queue=queue_name, durable=True, passive=True)
+            except pika.exceptions.ChannelClosedByBroker as e:
+                if e.reply_code == 404:
+                    return None
+                raise
+
+            method_frame, _, body = channel.basic_get(queue=queue_name, auto_ack=False)
+            if not method_frame:
+                return None
+
+            try:
+                payload = pickle.loads(body)
+                if not isinstance(payload, dict) or payload.get("segment_id") != segment_id:
+                    return None
+                head_frames = payload.get("head_frames")
+                if not isinstance(head_frames, list):
+                    logger.warning(
+                        "[RabbitMQ] invalid replay baseline thread_id=%s segment_id=%s",
+                        thread_id,
+                        segment_id,
+                    )
+                    return None
+                return list(head_frames)
+            finally:
+                channel.basic_nack(delivery_tag=method_frame.delivery_tag, requeue=True)
 
     def acquire_producer(self, thread_id: str) -> bool:
         """使用 RabbitMQ exclusive queue 获取会话级生产者写入权。"""
@@ -1307,6 +1396,11 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                 # 每个 purge 操作使用独立 channel，避免 404 channel error 影响后续操作
                 self._safe_purge_queue(connection, self._get_queue_name(thread_id))
                 self._safe_purge_queue(connection, self._get_dlq_name(thread_id))
+                self._safe_purge_queue(
+                    connection,
+                    self._get_replay_baseline_queue_name(thread_id),
+                    passive_check=True,
+                )
 
                 # 清空取消请求队列（如果需要，先检查是否存在）
                 if include_cancel_queue:
@@ -1326,6 +1420,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                     self._get_queue_name(thread_id),
                     self._get_dlq_name(thread_id),
                     self._get_cancel_queue_name(thread_id),
+                    self._get_replay_baseline_queue_name(thread_id),
                     self._get_active_consumer_queue_name(thread_id),
                 ]
                 # 追加 MultiProcessMixin 管理的信号队列

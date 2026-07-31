@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import json
 import os
 import threading
 import time
@@ -63,6 +64,84 @@ class TestRabbitMQMessageHandler:
             assert handler.get_cached_count(thread_id) == 1
 
         assert self._get_open_channel_count(handler) <= 1
+
+    def test_replay_baseline_is_non_destructive_and_segment_scoped(self, handler, thread_id):
+        """Replay 基线只能由匹配的 segment 读取，且读取不会消费它。"""
+        head_frames = [{"event": "snapshot", "content": "answer"}, ["nested", 1]]
+
+        handler.publish_replay_segment_start(thread_id, "segment-1", head_frames, "marker-1")
+
+        assert handler.get_replay_baseline(thread_id, "segment-other") is None
+        assert handler.get_replay_baseline(thread_id, "segment-1") == head_frames
+        assert handler.get_replay_baseline(thread_id, "segment-1") == head_frames
+        assert handler.get_messages_since(thread_id, 0, timeout=1) == (["marker-1"], 1)
+
+    def test_replay_baseline_keeps_latest_segment(self, handler, thread_id):
+        """连续保存基线时队列只保留最新 segment 的单条消息。"""
+        handler.publish_replay_segment_start(thread_id, "segment-old", ["old"], "marker-old")
+        handler.publish_replay_segment_start(thread_id, "segment-new", ["new"], "marker-new")
+
+        queue_name = handler._get_replay_baseline_queue_name(thread_id)
+        with handler._with_channel() as channel:
+            queue_info = channel.queue_declare(queue=queue_name, durable=True, passive=True)
+            assert queue_info.method.message_count == 1
+
+        assert handler.get_replay_baseline(thread_id, "segment-old") is None
+        assert handler.get_replay_baseline(thread_id, "segment-new") == ["new"]
+
+    def test_clear_purges_replay_baseline(self, handler, thread_id):
+        """clear 会清空 replay 基线，但保留可复用队列。"""
+        handler.publish_replay_segment_start(thread_id, "segment-1", ["head"], "marker-1")
+        queue_name = handler._get_replay_baseline_queue_name(thread_id)
+
+        handler.clear(thread_id)
+
+        assert handler.get_replay_baseline(thread_id, "segment-1") is None
+        with handler._with_channel() as channel:
+            queue_info = channel.queue_declare(queue=queue_name, durable=True, passive=True)
+            assert queue_info.method.message_count == 0
+
+    def test_reconnect_replays_same_baseline_and_long_mixed_tail(self, handler, thread_id):
+        """首连接断开后，真实 RabbitMQ 从同一 baseline 完整重放 1500 条混合事件。"""
+        head_frames = ["snapshot-head", "run-started-head"]
+        event_types = [
+            "TEXT_MESSAGE_CONTENT",
+            "THINKING_TEXT_MESSAGE_CONTENT",
+            "TOOL_CALL_ARGS",
+            "TOOL_CALL_RESULT",
+            "CUSTOM",
+        ]
+        runtime_frames = [
+            f"data: {json.dumps({'type': event_types[index % len(event_types)], 'index': index})}\n\n"
+            for index in range(1500)
+        ]
+        runtime_finished = threading.Event()
+
+        def runtime_generator():
+            try:
+                yield from runtime_frames
+            finally:
+                runtime_finished.set()
+
+        first_stream = GeneratorStreamingHelper(handler, thread_id=thread_id).stream(
+            runtime_generator(),
+            prelude_extractor=lambda generator: (head_frames, generator),
+        )
+        assert next(first_stream) == head_frames[0]
+        first_stream.close()
+        assert runtime_finished.wait(timeout=3.0)
+
+        def reject_local_extraction(_generator):
+            pytest.fail("segment replay must reuse the producer baseline")
+
+        replayed = list(
+            GeneratorStreamingHelper(handler, thread_id=thread_id).stream(
+                iter(()),
+                prelude_extractor=reject_local_extraction,
+            )
+        )
+
+        assert replayed == head_frames + runtime_frames
 
     def test_live_test(self, handler, thread_id):
         """实际连接 RabbitMQ 进行测试"""
@@ -400,6 +479,7 @@ class TestResourceCleanup:
         handler.put(thread_id, "msg_1")
         handler.put(thread_id, "msg_2")
         handler.flush(thread_id)
+        handler.publish_replay_segment_start(thread_id, "segment-1", ["head"], "marker-1")
 
         # 消费消息使其进入死信队列
         handler.get(thread_id, timeout=1)
@@ -407,10 +487,12 @@ class TestResourceCleanup:
         # 确认队列和交换机存在
         main_queue = handler._get_queue_name(thread_id)
         dlq_name = handler._get_dlq_name(thread_id)
+        replay_baseline_queue = handler._get_replay_baseline_queue_name(thread_id)
         dlx_exchange = handler._get_dlx_exchange_name(thread_id)
 
         assert self._queue_exists(handler, main_queue), "主队列应该存在"
         assert self._queue_exists(handler, dlq_name), "死信队列应该存在"
+        assert self._queue_exists(handler, replay_baseline_queue), "replay 基线队列应该存在"
         assert self._exchange_exists(handler, dlx_exchange), "死信交换机应该存在"
 
         # 执行 mark_completed
@@ -419,6 +501,7 @@ class TestResourceCleanup:
         # 验证队列和交换机已被删除
         assert not self._queue_exists(handler, main_queue), "主队列应该被删除"
         assert not self._queue_exists(handler, dlq_name), "死信队列应该被删除"
+        assert not self._queue_exists(handler, replay_baseline_queue), "replay 基线队列应该被删除"
         assert not self._exchange_exists(handler, dlx_exchange), "死信交换机应该被删除"
 
     @pytest.mark.skipif(not os.getenv("RABBITMQ_HOST"), reason="Live test requires RABBITMQ_HOST")

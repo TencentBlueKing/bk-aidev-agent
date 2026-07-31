@@ -288,6 +288,23 @@ class BaseMessageQueueHandler(ABC):
         """
         raise NotImplementedError("get_messages_since is only available for replay-from-start handlers")
 
+    def publish_replay_segment_start(
+        self,
+        thread_id: str,
+        segment_id: str,
+        head_frames: list[Any],
+        segment_marker: Any,
+    ) -> None:
+        """提交生产 segment 的不可变 replay 基线与日志边界。"""
+        raise NotImplementedError("publish_replay_segment_start requires replay-from-start support")
+
+    def get_replay_baseline(self, thread_id: str, segment_id: str) -> list[Any] | None:
+        """读取指定生产 segment 的 replay 基线。
+
+        默认返回 None；返回值必须是非破坏性读取的独立列表。
+        """
+        return None
+
     def acquire_producer(self, thread_id: str) -> bool:
         """尝试获取会话级生产者写入权。
 

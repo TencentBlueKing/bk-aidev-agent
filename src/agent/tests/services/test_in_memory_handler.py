@@ -1,11 +1,13 @@
 """测试 InMemoryQueueMessageHandler 的基本功能"""
 
 import contextlib
+import json
 import threading
 import time
 
-import aidev_agent.services.messages_handler.streaming_helper as streaming_helper_module
 import pytest
+
+import aidev_agent.services.messages_handler.streaming_helper as streaming_helper_module
 from aidev_agent.enums import MessageHandlerType
 from aidev_agent.services.messages_handler import (
     CANCELLED_CHUNK,
@@ -25,14 +27,55 @@ def _make_run_finished_chunk(thread_id: str, run_id: str) -> str:
     return emit_run_finished_event(thread_id=thread_id, run_id=run_id)
 
 
+def _make_replay_segment_marker(segment_id: str) -> str:
+    return f": aidev-replay-segment {segment_id}\n\n"
+
+
+def _make_mixed_runtime_frames(count: int) -> list[str]:
+    event_types = ("TEXT_MESSAGE_CONTENT", "TOOL_CALL_ARGS", "STATE_DELTA")
+    return [
+        f"data: {json.dumps({'type': event_types[index % len(event_types)], 'sequence': index})}\n\n"
+        for index in range(count)
+    ]
+
+
+def _consume_replay_concurrently(handler, thread_id, prelude_extractor):
+    results = []
+    errors = []
+
+    def consume():
+        try:
+            helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
+            results.append(list(helper.stream(iter(()), prelude_extractor=prelude_extractor)))
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=consume) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+    return results, errors, threads
+
+
 class ReplayFromStartHandler:
     """测试用 replay handler：模拟 RabbitMQ 的非破坏性会话日志读取。"""
 
     def __init__(self):
         self.messages: dict[str, list] = {}
+        self.baselines: dict[tuple[str, str], list] = {}
         self.active_consumers: set[tuple[str, str]] = set()
         self.producer_locks: set[str] = set()
         self.completed_threads: list[str] = []
+        self.saved_baselines: list[tuple[str, str, list]] = []
+        self.put_calls: list[tuple[str, object]] = []
+        self.operations: list[tuple[str, object]] = []
+        self.fail_publish_baseline = False
+        self.fail_publish_marker = False
+        self.fail_flush = False
+        self.on_producer_acquired = None
+        self.message_wait_started = threading.Event()
+        self.stopped_threads: set[str] = set()
         self._consumer_seq = 0
         self._lock = threading.Lock()
         self._condition = threading.Condition(self._lock)
@@ -43,10 +86,31 @@ class ReplayFromStartHandler:
     def put(self, thread_id, message):
         with self._condition:
             self.messages.setdefault(thread_id, []).append(message)
+            self.put_calls.append((thread_id, message))
+            self.operations.append(("put", message))
             self._condition.notify_all()
 
     def flush(self, thread_id):
-        pass
+        if self.fail_flush:
+            raise RuntimeError("marker flush failed")
+
+    def publish_replay_segment_start(self, thread_id, segment_id, head_frames, segment_marker):
+        self.operations.append(("publish_baseline", segment_id))
+        if self.fail_publish_baseline:
+            raise RuntimeError("baseline publish failed")
+        frames = list(head_frames)
+        with self._lock:
+            self.baselines[(thread_id, segment_id)] = frames
+            self.saved_baselines.append((thread_id, segment_id, frames))
+        if self.fail_publish_marker:
+            raise RuntimeError("marker publish failed")
+        self.put(thread_id, segment_marker)
+        self.operations.append(("publish_segment", segment_id))
+
+    def get_replay_baseline(self, thread_id, segment_id):
+        with self._lock:
+            frames = self.baselines.get((thread_id, segment_id))
+            return list(frames) if frames is not None else None
 
     def get_messages_since(self, thread_id, offset, timeout=None):
         start = time.time()
@@ -59,6 +123,7 @@ class ReplayFromStartHandler:
                     remaining = timeout - (time.time() - start)
                     if remaining <= 0:
                         raise TimeoutError("No message available within timeout")
+                    self.message_wait_started.set()
                     self._condition.wait(timeout=remaining)
                 else:
                     self._condition.wait()
@@ -72,7 +137,9 @@ class ReplayFromStartHandler:
             if thread_id in self.producer_locks:
                 return False
             self.producer_locks.add(thread_id)
-            return True
+        if self.on_producer_acquired:
+            self.on_producer_acquired()
+        return True
 
     def release_producer(self, thread_id):
         with self._lock:
@@ -100,20 +167,24 @@ class ReplayFromStartHandler:
             return any(tid == thread_id for tid, _ in self.active_consumers)
 
     def is_stopped(self, thread_id):
-        return False
+        with self._lock:
+            return thread_id in self.stopped_threads
 
     def clear_stopped(self, thread_id):
-        pass
+        with self._lock:
+            self.stopped_threads.discard(thread_id)
 
     def mark_completed(self, thread_id):
         with self._condition:
             self.completed_threads.append(thread_id)
             self.messages.pop(thread_id, None)
+            self.baselines = {key: frames for key, frames in self.baselines.items() if key[0] != thread_id}
             self._condition.notify_all()
 
     def clear(self, thread_id):
         with self._condition:
             self.messages.pop(thread_id, None)
+            self.baselines = {key: frames for key, frames in self.baselines.items() if key[0] != thread_id}
             self._condition.notify_all()
 
     def clear_cancel_signal(self, thread_id):
@@ -146,6 +217,249 @@ class BarrierReplayFromStartHandler(ReplayFromStartHandler):
 
 
 class TestReplayFromStartStreamingHelper:
+    def test_new_producer_persists_segment_baseline_before_starting_runtime(self):
+        thread_id = "test_new_segment_baseline"
+        handler = ReplayFromStartHandler()
+
+        def runtime():
+            handler.operations.append(("generator_started", thread_id))
+            yield "runtime"
+
+        result = list(
+            GeneratorStreamingHelper(handler, thread_id=thread_id).stream(
+                runtime(),
+                prelude_extractor=lambda generator: (["head"], generator),
+            )
+        )
+
+        saved_thread_id, segment_id, baseline = handler.saved_baselines[0]
+        marker = _make_replay_segment_marker(segment_id)
+        operation_names = [name for name, _ in handler.operations]
+        assert (saved_thread_id, baseline) == (thread_id, ["head"])
+        assert result == ["head", "runtime"]
+        assert (thread_id, marker) in handler.put_calls
+        marker_index = handler.operations.index(("put", marker))
+        assert operation_names.index("publish_baseline") < marker_index
+        assert marker_index < operation_names.index("publish_segment") < operation_names.index("generator_started")
+
+    def test_cached_segment_replays_saved_baseline_without_local_extraction(self):
+        thread_id = "test_cached_segment_baseline"
+        segment_id = "segment-cached"
+        handler = ReplayFromStartHandler()
+        handler.publish_replay_segment_start(
+            thread_id,
+            segment_id,
+            ["saved-head"],
+            _make_replay_segment_marker(segment_id),
+        )
+        handler.put(thread_id, "runtime")
+        handler.put(thread_id, EOD_CHUNK)
+
+        def reject_local_extraction(_generator):
+            pytest.fail("cached segment must not extract a connection-local baseline")
+
+        result = list(
+            GeneratorStreamingHelper(handler, thread_id=thread_id).stream(
+                iter(()),
+                prelude_extractor=reject_local_extraction,
+            )
+        )
+
+        assert result == ["saved-head", "runtime"]
+
+    def test_large_mixed_segment_replays_identically_to_two_concurrent_consumers(self):
+        thread_id = "test_large_mixed_segment"
+        segment_id = "segment-large"
+        handler = BarrierReplayFromStartHandler(parties=2)
+        baseline = ["snapshot-head-0", "snapshot-head-1"]
+        runtime_frames = _make_mixed_runtime_frames(1537)
+        handler.publish_replay_segment_start(
+            thread_id,
+            segment_id,
+            baseline,
+            _make_replay_segment_marker(segment_id),
+        )
+        for frame in runtime_frames:
+            handler.put(thread_id, frame)
+        handler.put(thread_id, EOD_CHUNK)
+
+        def reject_local_extraction(_generator):
+            pytest.fail("new-format replay must use the producer baseline")
+
+        results, errors, threads = _consume_replay_concurrently(handler, thread_id, reject_local_extraction)
+        expected = baseline + runtime_frames
+        assert errors == []
+        assert all(not thread.is_alive() for thread in threads)
+        assert results == [expected, expected]
+
+    def test_active_producer_without_marker_waits_for_saved_segment_baseline(self):
+        thread_id = "test_wait_for_active_producer_marker"
+        segment_id = "segment-delayed"
+        handler = ReplayFromStartHandler()
+        handler.producer_locks.add(thread_id)
+
+        def publish_segment():
+            handler.message_wait_started.wait(timeout=1)
+            handler.publish_replay_segment_start(
+                thread_id,
+                segment_id,
+                ["saved-head"],
+                _make_replay_segment_marker(segment_id),
+            )
+            handler.put(thread_id, "runtime")
+            handler.put(thread_id, EOD_CHUNK)
+            handler.release_producer(thread_id)
+
+        publisher = threading.Thread(target=publish_segment)
+        publisher.start()
+        result = list(
+            GeneratorStreamingHelper(handler, thread_id=thread_id).stream(
+                iter(()),
+                prelude_extractor=lambda _generator: pytest.fail("must wait for the producer marker"),
+            )
+        )
+        publisher.join(timeout=2)
+        assert handler.message_wait_started.is_set()
+        assert not publisher.is_alive()
+        assert result == ["saved-head", "runtime"]
+
+    def test_segment_marker_without_baseline_fails_instead_of_local_fallback(self):
+        thread_id = "test_missing_segment_baseline"
+        segment_id = "segment-missing"
+        handler = ReplayFromStartHandler()
+        handler.put(thread_id, _make_replay_segment_marker(segment_id))
+        handler.put(thread_id, EOD_CHUNK)
+
+        stream = GeneratorStreamingHelper(handler, thread_id=thread_id).stream(
+            iter(()),
+            prelude_extractor=lambda _generator: pytest.fail("missing baseline must not use local state"),
+        )
+
+        with pytest.raises(RuntimeError, match="replay baseline missing"):
+            list(stream)
+
+    def test_legacy_replay_without_segment_marker_uses_local_baseline(self):
+        thread_id = "test_legacy_replay_baseline"
+        handler = ReplayFromStartHandler()
+        handler.put(thread_id, "legacy-runtime")
+        handler.put(thread_id, EOD_CHUNK)
+        extracted = []
+
+        def extract_local_baseline(generator):
+            extracted.append(True)
+            return ["local-head"], generator
+
+        result = list(
+            GeneratorStreamingHelper(handler, thread_id=thread_id).stream(
+                iter(()),
+                prelude_extractor=extract_local_baseline,
+            )
+        )
+
+        assert extracted == [True]
+        assert result == ["local-head", "legacy-runtime"]
+
+    def test_pending_segment_after_producer_lock_is_replayed_without_clear(self):
+        thread_id = "test_pending_after_producer_lock"
+        segment_id = "segment-raced"
+        handler = ReplayFromStartHandler()
+
+        def publish_previous_segment():
+            handler.publish_replay_segment_start(
+                thread_id,
+                segment_id,
+                ["saved-head"],
+                _make_replay_segment_marker(segment_id),
+            )
+            handler.put(thread_id, "runtime")
+            handler.put(thread_id, EOD_CHUNK)
+
+        handler.on_producer_acquired = publish_previous_segment
+        result = list(
+            GeneratorStreamingHelper(handler, thread_id=thread_id).stream(
+                iter(()),
+                prelude_extractor=lambda _generator: pytest.fail("must replay the raced segment"),
+            )
+        )
+
+        assert result == ["saved-head", "runtime"]
+
+    def test_stopped_new_segment_replays_saved_baseline_then_one_stopped_terminal(self):
+        thread_id = "test_stopped_segment_baseline"
+        segment_id = "segment-stopped"
+        handler = ReplayFromStartHandler()
+        handler.stopped_threads.add(thread_id)
+        handler.publish_replay_segment_start(
+            thread_id,
+            segment_id,
+            ["saved-head"],
+            _make_replay_segment_marker(segment_id),
+        )
+        handler.put(thread_id, "runtime")
+        handler.put(thread_id, EOD_CHUNK)
+
+        result = list(
+            GeneratorStreamingHelper(handler, thread_id=thread_id).stream(
+                iter(()),
+                prelude_extractor=lambda _generator: pytest.fail("stopped segment must use saved baseline"),
+            )
+        )
+
+        stopped_terminal = _make_run_finished_chunk(thread_id, RunId.STOPPED)
+        assert result == ["saved-head", "runtime", stopped_terminal]
+        assert result.count(stopped_terminal) == 1
+        assert thread_id not in handler.stopped_threads
+
+    def test_new_segment_replay_preserves_flow_agent_start(self):
+        thread_id = "test_segment_flow_agent_start"
+        segment_id = "segment-flow-agent"
+        flow_agent_start = 'data: {"type":"CUSTOM","name":"flow_agent_start","value":{}}\n\n'
+        handler = ReplayFromStartHandler()
+        handler.publish_replay_segment_start(
+            thread_id,
+            segment_id,
+            ["saved-head"],
+            _make_replay_segment_marker(segment_id),
+        )
+        handler.put(thread_id, flow_agent_start)
+        handler.put(thread_id, EOD_CHUNK)
+
+        result = list(
+            GeneratorStreamingHelper(handler, thread_id=thread_id).stream(
+                iter(()),
+                prelude_extractor=lambda _generator: pytest.fail("new segment must use saved baseline"),
+            )
+        )
+
+        assert result == ["saved-head", flow_agent_start]
+
+    @pytest.mark.parametrize(
+        ("failure_attribute", "error_message"),
+        [
+            ("fail_publish_baseline", "baseline publish failed"),
+            ("fail_publish_marker", "marker publish failed"),
+        ],
+    )
+    def test_segment_initialization_failure_does_not_start_runtime(self, failure_attribute, error_message):
+        thread_id = f"test_segment_init_{failure_attribute}"
+        handler = ReplayFromStartHandler()
+        setattr(handler, failure_attribute, True)
+        runtime_started = threading.Event()
+
+        def runtime():
+            runtime_started.set()
+            yield "runtime"
+
+        stream = GeneratorStreamingHelper(handler, thread_id=thread_id).stream(
+            runtime(),
+            prelude_extractor=lambda generator: (["head"], generator),
+        )
+
+        with pytest.raises(RuntimeError, match=error_message):
+            list(stream)
+        assert not runtime_started.is_set()
+        assert thread_id not in handler.producer_locks
+
     def test_concurrent_consumers_replay_same_cached_stream_without_draining_each_other(self):
         thread_id = "test_replay_multi_consumer"
         handler = BarrierReplayFromStartHandler(parties=2)

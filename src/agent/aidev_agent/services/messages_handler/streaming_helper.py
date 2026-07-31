@@ -1,6 +1,7 @@
 import threading
 import time
 import uuid
+from dataclasses import dataclass
 from logging import getLogger
 from typing import Any, Callable, Generator
 
@@ -25,6 +26,25 @@ logger = getLogger(__name__)
 # 断点续传时需要过滤的事件类型
 # flow_agent_start 事件在续聊时不应该重复发送，避免前端重新渲染
 _RESUME_FILTER_EVENT_TYPES: frozenset[str] = frozenset({"flow_agent_start"})
+
+# 新版 RabbitMQ 日志的首帧标记。SSE comment 在滚动发布期间会被旧客户端按协议忽略。
+_REPLAY_SEGMENT_PREFIX = ": aidev-replay-segment "
+_SSE_FRAME_SUFFIX = "\n\n"
+
+_PreludeExtractor = Callable[
+    [Generator[Any, None, None]],
+    tuple[list[Any], Generator[Any, None, None]],
+]
+_ReplayPreludeSource = tuple[Generator[Any, None, None], _PreludeExtractor]
+
+
+@dataclass(frozen=True)
+class _ReplayStreamContext:
+    replay_source: _ReplayPreludeSource
+    cancel_event: threading.Event
+    consumer_id: str
+    has_pending: bool
+    on_complete: Callable[[], None] | None
 
 
 class GeneratorStreamingHelper:
@@ -246,6 +266,58 @@ class GeneratorStreamingHelper:
         """判断 chunk 是否为 SSE 的业务完成标记。"""
         return isinstance(chunk, str) and chunk.strip() == "data: [DONE]"
 
+    @staticmethod
+    def _build_replay_segment_marker(segment_id: str) -> str:
+        """构造连接 baseline 与 runtime 日志的 SSE comment 边界帧。"""
+        return f"{_REPLAY_SEGMENT_PREFIX}{segment_id}{_SSE_FRAME_SUFFIX}"
+
+    @staticmethod
+    def _parse_replay_segment_marker(message: Any) -> str | None:
+        """解析 segment marker，普通业务帧或非法帧返回 ``None``。"""
+        if not isinstance(message, str) or not message.startswith(_REPLAY_SEGMENT_PREFIX):
+            return None
+        segment_id = message[len(_REPLAY_SEGMENT_PREFIX) :].partition("\n")[0].strip()
+        return segment_id or None
+
+    def _resolve_replay_prelude(
+        self,
+        first_message: Any,
+        replay_source: _ReplayPreludeSource,
+    ) -> tuple[list[Any], bool]:
+        """按日志格式解析 producer baseline；返回 (帧, 是否为新 segment)。"""
+        replay_generator, prelude_extractor = replay_source
+        segment_id = self._parse_replay_segment_marker(first_message)
+        if not segment_id:
+            local_head_frames, _ = prelude_extractor(replay_generator)
+            return local_head_frames, False
+
+        baseline = self.message_handler.get_replay_baseline(self.thread_id, segment_id)
+        if baseline is None:
+            raise RuntimeError(
+                f"RabbitMQ replay baseline missing for thread_id={self.thread_id}, segment_id={segment_id}"
+            )
+        return baseline, True
+
+    def _strip_replay_segment_markers(
+        self,
+        messages: list[Any],
+        segment_replay_started: bool,
+    ) -> tuple[list[Any], bool]:
+        """移除内部 segment marker，并记录当前流已进入新格式 segment。"""
+        segment_ids = [self._parse_replay_segment_marker(message) for message in messages]
+        if not any(segment_ids):
+            return messages, segment_replay_started
+        return [message for message, segment_id in zip(messages, segment_ids) if not segment_id], True
+
+    def _should_filter_replayed_message(
+        self,
+        message: Any,
+        is_resuming: bool,
+        segment_replay_started: bool,
+    ) -> bool:
+        """新 segment 必须精确 replay；仅 legacy resume 沿用旧的事件过滤。"""
+        return is_resuming and not segment_replay_started and self._should_filter_on_resume(message)
+
     def _is_cancelled(self, cancel_event: threading.Event) -> bool:
         """检查是否被取消（同时检查进程内事件和跨进程信号）
 
@@ -289,6 +361,7 @@ class GeneratorStreamingHelper:
     def _consume_stopped_session(
         self,
         consumer_id: str,
+        replay_source: _ReplayPreludeSource | None = None,
     ) -> Generator[Any, None, None]:
         """消费已停止会话的消息（内部方法）
 
@@ -304,6 +377,7 @@ class GeneratorStreamingHelper:
         empty_rounds = 0
         replay_offset = 0
         supports_replay_from_start = self._supports_replay_from_start()
+        segment_baseline_replay = False
 
         while True:
             try:
@@ -325,11 +399,20 @@ class GeneratorStreamingHelper:
                     continue
 
                 empty_rounds = 0  # 重置空轮询计数
+                if messages and replay_source is not None:
+                    head_frames, segment_baseline_replay = self._resolve_replay_prelude(messages[0], replay_source)
+                    yield from head_frames
+                    replay_source = None
+
+                messages, segment_baseline_replay = self._strip_replay_segment_markers(
+                    messages,
+                    segment_baseline_replay,
+                )
                 for item in messages:
                     if item in (HEARTBEAT_CHUNK, EOD_CHUNK, CANCELLED_CHUNK):
                         continue  # 跳过控制消息
                     # 已停止会话也是恢复模式，过滤 thinking 事件避免重复显示
-                    if self._should_filter_on_resume(item):
+                    if self._should_filter_replayed_message(item, True, segment_baseline_replay):
                         logger.debug(f"Filtered thinking event in stopped session for thread_id={self.thread_id}")
                         continue
                     yield item
@@ -423,6 +506,22 @@ class GeneratorStreamingHelper:
             )
         return has_pending
 
+    def _start_producer_thread(
+        self,
+        generator: Generator[Any, None, None],
+        cancel_event: threading.Event,
+        on_complete: Callable[[], None] | None,
+    ) -> threading.Thread:
+        """启动已取得会话写入权的 producer，并把写入权交给 producer 释放。"""
+        producer_thread = threading.Thread(
+            target=self._producer,
+            args=(generator, cancel_event, on_complete, True),
+            daemon=True,
+        )
+        producer_thread.start()
+        logger.info(f"Started producer for thread_id={self.thread_id}")
+        return producer_thread
+
     def _start_or_resume_stream(
         self,
         generator: Generator[Any, None, None],
@@ -451,13 +550,7 @@ class GeneratorStreamingHelper:
                 self.message_handler.release_producer(self.thread_id)
                 raise
 
-            producer_thread = threading.Thread(
-                target=self._producer,
-                args=(generator, cancel_event, on_complete, True),
-                daemon=True,
-            )
-            producer_thread.start()
-            logger.info(f"Started producer for thread_id={self.thread_id}")
+            producer_thread = self._start_producer_thread(generator, cancel_event, on_complete)
             enable_heartbeat_check = True
             return producer_thread, is_resuming, enable_heartbeat_check
 
@@ -493,8 +586,13 @@ class GeneratorStreamingHelper:
         is_resuming: bool,
         enable_heartbeat_check: bool,
         on_complete: Callable[[], None] | None = None,
+        replay_source: _ReplayPreludeSource | None = None,
     ) -> Generator[Any, None, str]:
         """消费者循环：读取队列、处理控制消息并向上游产出业务消息。
+
+        新格式 replay 的主日志以 segment marker 开头。消费者先按 marker 读取
+        producer 保存的不可变 baseline，再消费 runtime tail；没有 marker 的旧日志
+        才从 ``replay_generator`` 提取本连接头部，保持滚动升级兼容。
 
         纯观测日志（零行为改动）：
         - 入口 / 出口 INFO，`finally` 带 reason / consumed / iter；
@@ -513,6 +611,7 @@ class GeneratorStreamingHelper:
         last_progress_ts = time.time()
         replay_offset = 0
         supports_replay_from_start = self._supports_replay_from_start()
+        segment_baseline_replay = False
 
         logger.info(
             "[RabbitMQ] consumer loop enter thread_id=%s consumer_id=%s is_resuming=%s heartbeat_check=%s",
@@ -590,6 +689,32 @@ class GeneratorStreamingHelper:
                     if messages:
                         last_message_time = time.time()
 
+                    if messages and replay_source is not None:
+                        head_frames, segment_baseline_replay = self._resolve_replay_prelude(
+                            messages[0],
+                            replay_source,
+                        )
+                        yield from head_frames
+                        segment_id = self._parse_replay_segment_marker(messages[0])
+                        if segment_baseline_replay:
+                            logger.info(
+                                "Replaying producer baseline thread_id=%s segment_id=%s frames=%d",
+                                self.thread_id,
+                                segment_id,
+                                len(head_frames),
+                            )
+                        else:
+                            logger.info(
+                                "Legacy replay log detected; using local head frames thread_id=%s frames=%d",
+                                self.thread_id,
+                                len(head_frames),
+                            )
+                        replay_source = None
+
+                    messages, segment_baseline_replay = self._strip_replay_segment_markers(
+                        messages,
+                        segment_baseline_replay,
+                    )
                     for item in messages:
                         if item == HEARTBEAT_CHUNK:
                             logger.debug(f"Received heartbeat for thread_id={self.thread_id}")
@@ -629,7 +754,7 @@ class GeneratorStreamingHelper:
                             yielded_total += 1
                             exit_reason = "cancelled"
                             return exit_reason
-                        if is_resuming and self._should_filter_on_resume(item):
+                        if self._should_filter_replayed_message(item, is_resuming, segment_baseline_replay):
                             logger.debug(f"Filtered thinking event in resume mode for thread_id={self.thread_id}")
                             continue
                         t_yield = time.time()
@@ -700,20 +825,111 @@ class GeneratorStreamingHelper:
         except Exception:
             logger.exception("Error cleaning completed replay session for thread_id=%s", self.thread_id)
 
+    def _stream_replay_segment(
+        self,
+        context: _ReplayStreamContext,
+    ) -> Generator[Any, None, str]:
+        """执行 RabbitMQ replay 的单一状态机：复用旧 segment，或提交并运行新 segment。"""
+        replay_generator, prelude_extractor = context.replay_source
+        has_pending = context.has_pending
+        producer_acquired = False
+        producer_thread: threading.Thread | None = None
+
+        try:
+            if not has_pending:
+                producer_acquired = self.message_handler.acquire_producer(self.thread_id)
+                if producer_acquired and self.message_handler.has_pending_messages(self.thread_id):
+                    self.message_handler.release_producer(self.thread_id)
+                    producer_acquired = False
+                    has_pending = True
+                    logger.info(
+                        "Messages appeared after producer lock acquisition, replaying instead of clearing thread_id=%s",
+                        self.thread_id,
+                    )
+
+            if not producer_acquired:
+                logger.info(
+                    "Existing producer or cached messages found for thread_id=%s, replaying segment",
+                    self.thread_id,
+                )
+                return (
+                    yield from self._consume_stream_messages(
+                        consumer_id=context.consumer_id,
+                        cancel_event=context.cancel_event,
+                        is_resuming=True,
+                        enable_heartbeat_check=not has_pending,
+                        on_complete=context.on_complete,
+                        replay_source=context.replay_source,
+                    )
+                )
+
+            try:
+                self.message_handler.clear(self.thread_id)
+                self.message_handler.clear_stopped(self.thread_id)
+                head_frames, remaining_generator = prelude_extractor(replay_generator)
+                segment_id = uuid.uuid4().hex
+                self.message_handler.publish_replay_segment_start(
+                    self.thread_id,
+                    segment_id,
+                    head_frames,
+                    self._build_replay_segment_marker(segment_id),
+                )
+                producer_thread = self._start_producer_thread(
+                    remaining_generator,
+                    context.cancel_event,
+                    context.on_complete,
+                )
+            except Exception:
+                try:
+                    self.message_handler.clear(self.thread_id)
+                except Exception:
+                    logger.exception(
+                        "Error cleaning failed replay segment initialization thread_id=%s",
+                        self.thread_id,
+                    )
+                raise
+
+            producer_acquired = False
+            yield from head_frames
+            return (
+                yield from self._consume_stream_messages(
+                    consumer_id=context.consumer_id,
+                    cancel_event=context.cancel_event,
+                    is_resuming=False,
+                    enable_heartbeat_check=True,
+                    on_complete=context.on_complete,
+                )
+            )
+        finally:
+            if producer_acquired:
+                self.message_handler.release_producer(self.thread_id)
+            if producer_thread is not None:
+                try:
+                    producer_thread.join(timeout=self.CANCEL_DRAIN_TIMEOUT + 2.0)
+                except Exception as e:
+                    logger.exception(f"Error joining producer thread for thread_id={self.thread_id}: {e}")
+
     def stream(
         self,
         generator: Generator[Any, None, None],
         on_complete: Callable[[], None] | None = None,
+        prelude_extractor: _PreludeExtractor | None = None,
     ) -> Generator[Any, None, None]:
         """使用队列处理器缓存流式请求
 
         replay-from-start handler 支持多个消费者各自从会话日志开头 replay；
         旧 handler 仍使用竞争消费语义，新消费者会抢占旧消费者。
 
+        ``prelude_extractor`` 用于两阶段 SSE：新 RabbitMQ producer 把提取出的
+        baseline 与 runtime 日志绑定；replay 连接读取 producer baseline，不再把
+        本连接的 DB snapshot 和旧 producer 的 RabbitMQ tail 混在一起。旧 handler
+        仍在进入队列流程前直传本地 prelude，行为不变。
+
         Args:
             generator: 数据生成器
             on_complete: 流完成时的回调函数，用于及时更新 session status 等外部状态。
                 replay-from-start handler 在 producer 完成时调用；旧 handler 在消费到 EOD 后调用。
+            prelude_extractor: 从惰性 generator 提取 ``(head_frames, remaining_generator)`` 的回调。
 
         Yields:
             生成器产生的数据
@@ -721,6 +937,14 @@ class GeneratorStreamingHelper:
         Raises:
             RuntimeError: 当心跳超时时抛出，表示生产者可能已异常结束
         """
+        supports_replay_from_start = self._supports_replay_from_start()
+
+        # InMemory/旧 handler 保持原来的两阶段时序：先直传 head，再注册队列 consumer。
+        if prelude_extractor is not None and not supports_replay_from_start:
+            head_frames, generator = prelude_extractor(generator)
+            yield from head_frames
+            prelude_extractor = None
+
         # 注册取消事件（让 cancel() 可以通知生产者和消费者停止）
         cancel_event = self._register_cancel_event()
 
@@ -738,10 +962,26 @@ class GeneratorStreamingHelper:
 
         try:
             if should_consume_stopped:
-                yield from self._consume_stopped_session(consumer_id)
+                yield from self._consume_stopped_session(
+                    consumer_id,
+                    replay_source=(generator, prelude_extractor) if prelude_extractor is not None else None,
+                )
                 return
 
             has_pending = self._recheck_pending_after_waiting_consumer(has_pending)
+
+            if supports_replay_from_start and prelude_extractor is not None:
+                consumer_exit_reason = yield from self._stream_replay_segment(
+                    _ReplayStreamContext(
+                        replay_source=(generator, prelude_extractor),
+                        cancel_event=cancel_event,
+                        consumer_id=consumer_id,
+                        has_pending=has_pending,
+                        on_complete=on_complete,
+                    )
+                )
+                return
+
             producer_thread, is_resuming, enable_heartbeat_check = self._start_or_resume_stream(
                 generator=generator,
                 cancel_event=cancel_event,
