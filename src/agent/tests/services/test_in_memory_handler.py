@@ -239,7 +239,7 @@ class TestReplayFromStartStreamingHelper:
 
         assert result == [finished]
 
-    def test_run_finished_stops_immediately_and_closes_generator_before_eod(self, monkeypatch):
+    def test_run_finished_finalizes_session_then_closes_generator_before_eod(self, monkeypatch):
         handler = ReplayFromStartHandler()
         helper = GeneratorStreamingHelper(handler, thread_id="thread-1")
         finished = emit_run_finished_event(thread_id="thread-1", run_id="run-1")
@@ -260,8 +260,8 @@ class TestReplayFromStartStreamingHelper:
             original_put(thread_id, message)
 
         monkeypatch.setattr(handler, "put", track_eod)
-        assert list(helper.stream(terminal_generator())) == [finished]
-        assert lifecycle == ["close", "eod"]
+        assert list(helper.stream(terminal_generator(), on_complete=lambda: lifecycle.append("complete"))) == [finished]
+        assert lifecycle == ["complete", "close", "eod"]
 
 
 class TestInMemoryQueueMessageHandler:

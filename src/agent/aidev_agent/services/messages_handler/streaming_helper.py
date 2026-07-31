@@ -845,7 +845,7 @@ class GeneratorStreamingHelper:
         Args:
             generator: 数据生成器
             on_complete: 流完成时的回调函数，用于及时更新 session status 等外部状态。
-                replay-from-start handler 在 producer 完成时调用；旧 handler 在消费到 EOD 后调用。
+                producer 将 RUN_FINISHED 入队后立即调用；缺少 RUN_FINISHED 时在 EOD 路径兜底调用。
             event_handler: AG-UI 事件处理器，用于同步记录受控错误和结束状态。
             expected_run_id: 正常 AG-UI 流的 run_id；提供时保证 EOD 前至少输出一次 RUN_FINISHED。
 
@@ -867,6 +867,20 @@ class GeneratorStreamingHelper:
         consumer_exit_reason: str | None = None
         self._producer_completion_error = None
 
+        completion_lock = threading.Lock()
+        completion_called = False
+
+        def _on_complete_once() -> None:
+            nonlocal completion_called
+            with completion_lock:
+                if completion_called:
+                    return
+                completion_called = True
+            if on_complete is not None:
+                on_complete()
+
+        completion_callback = _on_complete_once if on_complete is not None else None
+
         should_consume_stopped, has_pending = self._resolve_stopped_or_pending_state()
 
         try:
@@ -879,7 +893,7 @@ class GeneratorStreamingHelper:
                 generator=generator,
                 cancel_event=cancel_event,
                 has_pending=has_pending,
-                on_complete=on_complete,
+                on_complete=completion_callback,
                 event_handler=event_handler,
                 expected_run_id=expected_run_id,
             )
@@ -888,7 +902,7 @@ class GeneratorStreamingHelper:
                 cancel_event=cancel_event,
                 is_resuming=is_resuming,
                 enable_heartbeat_check=enable_heartbeat_check,
-                on_complete=on_complete,
+                on_complete=completion_callback,
                 producer_thread=producer_thread,
                 event_handler=event_handler,
             )
@@ -1023,6 +1037,15 @@ class GeneratorStreamingHelper:
                 except Exception as e:
                     logger.exception(f"Error sending heartbeat for thread_id={self.thread_id}: {e}")
 
+        def _complete_session() -> None:
+            if on_complete is None:
+                return
+            try:
+                on_complete()
+            except Exception as completion_error:
+                self._producer_completion_error = completion_error
+                logger.exception("on_complete callback error in producer for thread_id=%s", self.thread_id)
+
         try:
             heartbeat_thread = threading.Thread(
                 target=_heartbeat_worker,
@@ -1082,7 +1105,11 @@ class GeneratorStreamingHelper:
                 self.message_handler.put(self.thread_id, chunk)
                 logger.debug(f"Produced chunk for thread_id={self.thread_id}")
                 if is_run_finished:
-                    logger.info("[RUN_FINISHED] terminal event queued; stopping producer thread_id=%s", self.thread_id)
+                    _complete_session()
+                    logger.info(
+                        "[RUN_FINISHED] terminal event queued and session finalized; stopping producer thread_id=%s",
+                        self.thread_id,
+                    )
                     break
         except GeneratorExit:
             logger.info(f"Generator closed for thread_id={self.thread_id}")
@@ -1094,9 +1121,12 @@ class GeneratorStreamingHelper:
                     "Agent 执行异常，请稍后重试",
                     event_handler=event_handler,
                 ):
-                    if self._is_run_finished_event_chunk(event):
+                    is_run_finished = self._is_run_finished_event_chunk(event)
+                    if is_run_finished:
                         run_finished_seen = True
                     self.message_handler.put(self.thread_id, event)
+                    if is_run_finished:
+                        _complete_session()
             except Exception as encode_err:
                 logger.exception(f"Failed to send terminal error events for thread_id={self.thread_id}: {encode_err}")
         finally:
@@ -1134,6 +1164,7 @@ class GeneratorStreamingHelper:
                             event_handler=event_handler,
                         ),
                     )
+                    _complete_session()
 
                 # 无论是正常结束还是取消，都推送 EOD_CHUNK 让消费者知道流已结束。
                 logger.info(
@@ -1173,16 +1204,13 @@ class GeneratorStreamingHelper:
                         unregister_eod_commit(self.thread_id, eod_commit_event)
                 logger.info(f"[EOD] Producer EOD_CHUNK sent successfully for thread_id={self.thread_id}")
 
-                # EOD 已提交后即可安排队列资源清理，外部会话终态失败不应造成队列泄漏。
+                # EOD 仅负责消费者结束与队列资源回收；会话终态已在 RUN_FINISHED 入队后回写。
                 self._schedule_session_cleanup(done_event_seen=done_event_seen)
 
                 if on_complete and self._supports_replay_from_start():
-                    try:
-                        on_complete()
-                    except Exception as completion_error:
-                        self._producer_completion_error = completion_error
-                        logger.exception("on_complete callback error in producer for thread_id=%s", self.thread_id)
-                        raise
+                    _complete_session()
+                if self._producer_completion_error is not None:
+                    raise self._producer_completion_error
             finally:
                 if release_producer:
                     logger.info(
