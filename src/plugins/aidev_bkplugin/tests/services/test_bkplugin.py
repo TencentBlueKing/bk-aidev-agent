@@ -16,6 +16,7 @@ except ImportError:
 if "pkg_resources" not in sys.modules:
     sys.modules["pkg_resources"] = MagicMock()
 
+sys.modules.setdefault("aidev_bkplugin.models", MagicMock())
 _bk_plugin_framework = MagicMock()
 _bk_plugin_framework.kit.decorators.inject_user_token = lambda func: func
 sys.modules.setdefault("bk_plugin_framework", _bk_plugin_framework)
