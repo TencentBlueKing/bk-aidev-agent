@@ -136,14 +136,8 @@ class ChatCompletionViewSet(PluginViewSet):
                     turn_id=turn_id,
                 )
                 handler = getattr(agent_instance, "event_handler", None)
-                if handler and all(hasattr(handler, m) for m in ["set_streaming_started", "set_streaming_finished"]):
+                if handler and hasattr(handler, "set_streaming_started"):
                     handler.set_streaming_started()
-                    stream_out = self._wrap_streaming_with_status(
-                        stream_out,
-                        handler,
-                        session_code=session_code,
-                        username=username,
-                    )
                 return self.streaming_response(stream_out, session_code=session_code)
             else:
                 result = AgentExecutor(SessionManager(username=username)).execute_with_save(
@@ -374,16 +368,8 @@ class ChatCompletionViewSet(PluginViewSet):
             raise ClientBlueException(message=message)
 
         logger.info(f"[FLOW_AGENT] Streaming started: session_code={session_code}, task_id={task_id}")
-        if event_handler and all(
-            hasattr(event_handler, m) for m in ["set_streaming_started", "set_streaming_finished"]
-        ):
+        if event_handler and hasattr(event_handler, "set_streaming_started"):
             event_handler.set_streaming_started()
-            generator = self._wrap_streaming_with_status(
-                generator,
-                event_handler,
-                session_code=session_code,
-                username=username,
-            )
         return self.streaming_response(generator, session_code=session_code)
 
     def _wrap_streaming_with_status(self, generator, event_handler, session_code: str = "", username: str = ""):
@@ -397,9 +383,11 @@ class ChatCompletionViewSet(PluginViewSet):
         _preempted = False
         _client_disconnected = False
         _cancelled = False
+        _stream_completed = False
         try:
             for chunk in generator:
                 yield chunk
+            _stream_completed = True
         except GeneratorExit:
             _client_disconnected = True
             logger.info(f"[WRAP_STATUS] Client disconnected (GeneratorExit): session_code={session_code}")
@@ -421,7 +409,7 @@ class ChatCompletionViewSet(PluginViewSet):
                 if GeneratorStreamingHelper.is_cancelled(session_code):
                     _cancelled = True
                     logger.info(f"[WRAP_STATUS] Generator结束后检测到取消标志: session_code={session_code}")
-            if not _preempted and not _client_disconnected and not _cancelled:
+            if _stream_completed and not _preempted and not _client_disconnected and not _cancelled:
                 logger.info(f"[WRAP_STATUS] 流正常结束, 调用 set_streaming_finished: session_code={session_code}")
                 event_handler.set_streaming_finished()
 

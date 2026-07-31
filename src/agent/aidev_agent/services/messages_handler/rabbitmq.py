@@ -303,6 +303,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
     ACTIVE_CONSUMER_PREFIX: ClassVar[str] = "aidev_agent.consumer_active."
     QUEUE_TTL_MS: ClassVar[int] = QueueTTLConfig.QUEUE_EXPIRE_MS
     BUFFER_FLUSH_INTERVAL: ClassVar[float] = 0.5
+    SSE_PUBLISH_CHUNK_MAX_BYTES: ClassVar[int] = 256 * 1024
     REPLAY_LOCK_RETRY_INTERVAL: ClassVar[float] = 0.05
     REPLAY_MESSAGE_RETRY_INTERVAL: ClassVar[float] = 0.5
 
@@ -343,6 +344,11 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         # 避免 replay 读取到本进程尚未完整发布的 flush 批次
         self._flush_peek_locks: dict[str, threading.Lock] = {}
         self._flush_peek_locks_guard = threading.Lock()
+
+        # producer 只有在 EOD 已提交到 RabbitMQ 后才能写外部会话终态。
+        # 同步 flush 失败时，后台 daemon 补发成功会唤醒同进程 producer。
+        self._eod_commit_events: dict[str, set[threading.Event]] = {}
+        self._eod_commit_events_lock = threading.Lock()
 
         # 后台守护线程
         self._daemon_thread: Optional[threading.Thread] = None
@@ -461,6 +467,30 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         """唤醒等待 replay lock 或新消息的本进程消费者。"""
         with self._replay_wait_condition:
             self._replay_wait_condition.notify_all()
+
+    def register_eod_commit_event(self, thread_id: str, event: threading.Event) -> None:
+        """注册 EOD 提交确认事件，供 producer 等待同步/后台 flush 的最终结果。"""
+        with self._eod_commit_events_lock:
+            self._eod_commit_events.setdefault(thread_id, set()).add(event)
+
+    def unregister_eod_commit_event(self, thread_id: str, event: threading.Event) -> None:
+        """移除尚未被 EOD 成功提交消费的确认事件。"""
+        with self._eod_commit_events_lock:
+            events = self._eod_commit_events.get(thread_id)
+            if events is None:
+                return
+            events.discard(event)
+            if not events:
+                self._eod_commit_events.pop(thread_id, None)
+
+    def _notify_eod_committed(self, thread_id: str, messages: list[Any]) -> None:
+        """仅在包含 EOD 的完整批次成功发布后确认提交。"""
+        if EOD_CHUNK not in messages:
+            return
+        with self._eod_commit_events_lock:
+            events = self._eod_commit_events.pop(thread_id, set())
+        for event in events:
+            event.set()
 
     def _wait_for_replay_retry(self, deadline: float | None, interval: float) -> None:
         """等待下一次 replay 检查。
@@ -861,6 +891,55 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         except Exception as e:
             logger.error(f"Error flushing messages on daemon exit: {e}")
 
+    @classmethod
+    def _coalesce_sse_messages(cls, messages: list[Any]) -> list[Any]:
+        """合并相邻 SSE 帧，减少 RabbitMQ 物理消息数并保持原始协议字节流。"""
+        coalesced_messages: list[Any] = []
+        sse_parts: list[str] = []
+        sse_size = 0
+
+        def flush_sse_parts() -> None:
+            nonlocal sse_size
+            if not sse_parts:
+                return
+            coalesced_messages.append("".join(sse_parts))
+            sse_parts.clear()
+            sse_size = 0
+
+        for message in messages:
+            if not isinstance(message, str) or not message.startswith("data: "):
+                flush_sse_parts()
+                coalesced_messages.append(message)
+                continue
+
+            message_size = len(message.encode("utf-8"))
+            if sse_parts and sse_size + message_size > cls.SSE_PUBLISH_CHUNK_MAX_BYTES:
+                flush_sse_parts()
+            if message_size > cls.SSE_PUBLISH_CHUNK_MAX_BYTES:
+                coalesced_messages.append(message)
+                continue
+            sse_parts.append(message)
+            sse_size += message_size
+
+        flush_sse_parts()
+        return coalesced_messages
+
+    @staticmethod
+    def _expand_sse_messages(messages: list[Any]) -> list[Any]:
+        """将 RabbitMQ 中合并的 SSE 字节流还原为调用方原有的逐帧消息。"""
+        expanded_messages: list[Any] = []
+        for message in messages:
+            if not isinstance(message, str) or not message.startswith("data: ") or "\n\ndata: " not in message:
+                expanded_messages.append(message)
+                continue
+
+            parts = message.split("\n\n")
+            if parts[-1] or any(not part.startswith("data: ") for part in parts[:-1]):
+                expanded_messages.append(message)
+                continue
+            expanded_messages.extend(f"{part}\n\n" for part in parts[:-1])
+        return expanded_messages
+
     def _flush_messages(self) -> None:
         """批量推送缓冲区中的所有消息到 RabbitMQ
 
@@ -885,11 +964,12 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                         messages = self._message_buffer.pop(thread_id, [])
                     if not messages:
                         continue
+                    messages_to_publish = self._coalesce_sse_messages(messages)
 
                     # 在同一个 flush_peek_lock 内 publish 到 RabbitMQ
                     with self._with_channel() as channel:
                         queue_name = self._ensure_queue(channel, thread_id)
-                        for message in messages:
+                        for message in messages_to_publish:
                             body = pickle.dumps(message)
                             channel.basic_publish(
                                 exchange="",
@@ -897,13 +977,20 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                                 body=body,
                                 properties=pika.BasicProperties(delivery_mode=2),
                             )
-                    logger.debug(f"Flushed {len(messages)} messages to queue {queue_name}")
+                    logger.debug(
+                        "Flushed %d logical messages as %d RabbitMQ messages to queue %s",
+                        len(messages),
+                        len(messages_to_publish),
+                        queue_name,
+                    )
                     if EOD_CHUNK in messages:
                         logger.info(
-                            "[EOD] flush thread_id=%s published=%d (background)",
+                            "[EOD] flush thread_id=%s logical=%d published=%d (background)",
                             thread_id,
                             len(messages),
+                            len(messages_to_publish),
                         )
+                    self._notify_eod_committed(thread_id, messages)
                     any_flushed = True
             except Exception as e:
                 logger.error(f"Error flushing messages for thread_id={thread_id}: {e}")
@@ -1058,12 +1145,13 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                     return
 
                 logger.debug("[Streaming] rabbitmq flush thread_id=%s, count=%d", thread_id, len(messages_to_flush))
+                messages_to_publish = self._coalesce_sse_messages(messages_to_flush)
 
                 try:
                     with self._with_channel() as channel:
                         queue_name = self._ensure_queue(channel, thread_id)
 
-                        for message in messages_to_flush:
+                        for message in messages_to_publish:
                             body = pickle.dumps(message)
                             channel.basic_publish(
                                 exchange="",
@@ -1073,10 +1161,12 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                             )
                     if EOD_CHUNK in messages_to_flush:
                         logger.info(
-                            "[EOD] flush thread_id=%s published=%d",
+                            "[EOD] flush thread_id=%s logical=%d published=%d",
                             thread_id,
                             len(messages_to_flush),
+                            len(messages_to_publish),
                         )
+                    self._notify_eod_committed(thread_id, messages_to_flush)
                     self._notify_replay_waiters()
                 except Exception as e:
                     logger.error(f"Error flushing messages for {thread_id}: {e}")
@@ -1185,21 +1275,29 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                     # replay offset 只描述 RabbitMQ 已提交队列，不能包含本地未发布 buffer。
                     # flush_peek_lock 避免读取到本进程尚未完整发布的 flush 批次。
                     with flush_peek_lock:
-                        all_messages = self._peek_queue_messages(channel, main_queue_name)
+                        queue_info = channel.queue_declare(queue=main_queue_name, durable=True, passive=True)
+                        committed_count = queue_info.method.message_count
 
                         # 兼容升级前已经进入 DLQ 的旧缓存：仅在主队列为空时恢复一次。
-                        if not all_messages and self._get_dlq_count(thread_id) > 0:
+                        if committed_count == 0 and self._get_dlq_count(thread_id) > 0:
                             restored = self._restore_from_dlq(thread_id)
                             logger.info(
                                 "[RabbitMQ] restored legacy DLQ messages before replay thread_id=%s restored=%d",
                                 thread_id,
                                 restored,
                             )
-                            all_messages = self._peek_queue_messages(channel, main_queue_name)
+                            queue_info = channel.queue_declare(queue=main_queue_name, durable=True, passive=True)
+                            committed_count = queue_info.method.message_count
 
-                next_offset = len(all_messages)
-                if next_offset > offset:
-                    return all_messages[offset:], next_offset
+                        # 没有新消息时避免反复 basic_get/basic_nack 全量扫描历史队列。
+                        all_messages = (
+                            self._peek_queue_messages(channel, main_queue_name) if committed_count > offset else None
+                        )
+
+                if all_messages is not None:
+                    next_offset = len(all_messages)
+                    if next_offset > offset:
+                        return self._expand_sse_messages(all_messages[offset:]), next_offset
             except Exception:
                 logger.exception("Error in get_messages_since for thread_id=%s", thread_id)
 
