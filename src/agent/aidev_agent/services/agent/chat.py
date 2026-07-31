@@ -535,7 +535,11 @@ class ChatCompletionAgent(BaseModel):
             yield frame
 
         # ---- 阶段 2：剩余帧交给队列管理（支持断点续传）----
-        yield from helper.stream(remaining_producer, on_complete=self._on_complete)
+        yield from helper.stream(
+            remaining_producer,
+            on_complete=self._on_complete,
+            event_handler=self.event_handler,
+        )
 
     @staticmethod
     def _extract_head_frames(
