@@ -33,8 +33,8 @@ class LLMOverrideResourceManager(AgentResourceManager):
     ``model`` 为空时不覆盖，行为与 ``AgentResourceManager`` 完全一致。
     """
 
-    def __init__(self, username: str = "", model: str = ""):
-        super().__init__(username=username)
+    def __init__(self, app_code: str = "", app_secret: str = "", username: str = "", model: str = ""):
+        super().__init__(app_code=app_code, app_secret=app_secret, username=username)
         self.model = model or ""
 
     def get_agent_config(self, agent_code: str, version: str | None = None, **kwargs) -> AgentConfig:

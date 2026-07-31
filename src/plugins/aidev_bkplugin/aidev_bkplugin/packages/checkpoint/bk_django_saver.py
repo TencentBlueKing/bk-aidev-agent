@@ -25,6 +25,7 @@ import time
 from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import Any, Optional, Tuple, cast
 
+from asgiref.sync import sync_to_async
 from django.db import OperationalError, close_old_connections, connections, router, transaction
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
@@ -44,6 +45,25 @@ from langgraph.checkpoint.serde.types import ChannelProtocol
 RETRYABLE_DATABASE_ERROR_CODES = {1205, 1213}
 CHECKPOINT_WRITE_MAX_RETRIES = 3
 CHECKPOINT_WRITE_RETRY_DELAY_SECONDS = 0.05
+
+
+async def run_db_in_thread(func, *args, **kwargs):
+    """在独立线程中执行 Django ORM 调用并返回结果。
+
+    LangGraph 的异步执行路径（ainvoke / astream）会在事件循环里 await checkpointer 的
+    a* 方法，而 Django 的数据库游标带 async_unsafe 保护，在存在运行中事件循环的线程里
+    直接访问 ORM 会抛 SynchronousOnlyOperation，因此必须把 ORM 调用挪到工作线程执行。
+
+    工作线程持有的是独立的 thread-local 连接，调用结束后需要归还，否则连接会随线程池累积。
+    """
+
+    def _call():
+        try:
+            return func(*args, **kwargs)
+        finally:
+            close_old_connections()
+
+    return await sync_to_async(_call, thread_sensitive=False)()
 
 
 def bulk_upsert(model, objs, update_fields, unique_fields):
@@ -705,7 +725,7 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
         self.writes_model.objects.filter(thread_id=thread_id).delete()
 
     async def aget_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
-        return self.get_tuple(config)
+        return await run_db_in_thread(self.get_tuple, config)
 
     async def alist(
         self,
@@ -715,7 +735,9 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
         before: RunnableConfig | None = None,
         limit: int | None = None,
     ) -> AsyncIterator[CheckpointTuple]:
-        for item in self.list(config, filter=filter, before=before, limit=limit):
+        # list 是惰性生成器，必须在工作线程里物化，否则 QuerySet 会在事件循环所在线程求值
+        items = await run_db_in_thread(lambda: list(self.list(config, filter=filter, before=before, limit=limit)))
+        for item in items:
             yield item
 
     async def aput(
@@ -725,7 +747,7 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
         metadata: CheckpointMetadata,
         new_versions: ChannelVersions,
     ) -> RunnableConfig:
-        return self.put(config, checkpoint, metadata, new_versions)
+        return await run_db_in_thread(self.put, config, checkpoint, metadata, new_versions)
 
     async def aput_writes(
         self,
@@ -734,10 +756,10 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
         task_id: str,
         task_path: str = "",
     ) -> None:
-        return self.put_writes(config, writes, task_id, task_path)
+        return await run_db_in_thread(self.put_writes, config, writes, task_id, task_path)
 
     async def adelete_thread(self, thread_id: str) -> None:
-        return self.delete_thread(thread_id)
+        return await run_db_in_thread(self.delete_thread, thread_id)
 
     def get_next_version(self, current: Optional[str], channel: ChannelProtocol) -> str:
         """为通道生成下一个版本ID
