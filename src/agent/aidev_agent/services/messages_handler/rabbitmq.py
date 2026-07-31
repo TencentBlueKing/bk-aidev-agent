@@ -338,8 +338,8 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         self._producer_lock_connections: dict[str, pika.BlockingConnection] = {}
         self._producer_lock_guard = threading.Lock()
 
-        # flush 与 peek+buffer 合并的互斥锁（per thread_id，进程内）
-        # 防止 flush 在 peek 和 buffer 合并之间清空 buffer 导致消息丢失/重复
+        # flush 与 replay peek 的互斥锁（per thread_id，进程内）
+        # 避免 replay 读取到本进程尚未完整发布的 flush 批次
         self._flush_peek_locks: dict[str, threading.Lock] = {}
         self._flush_peek_locks_guard = threading.Lock()
 
@@ -864,7 +864,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         """批量推送缓冲区中的所有消息到 RabbitMQ
 
         对每个 thread_id，在 _flush_peek_lock 内完成"取出 buffer + publish"的原子操作，
-        确保与 get_messages_since（peek + buffer 合并）互斥，避免消息丢失/重复。
+        确保与 get_messages_since 的 queue peek 互斥，避免 replay 观察到未完整发布的 flush 批次。
         """
         # 快速检查是否有消息需要 flush
         with self._buffer_lock:
@@ -1181,8 +1181,8 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                 with self._with_replay_lock(thread_id) as channel:
                     main_queue_name = self._ensure_queue(channel=channel, thread_id=thread_id)
 
-                    # flush_peek_lock 保护 peek + buffer 合并这两步的原子性，
-                    # 防止 flush 在 peek 之后、buffer 合并之前清空 buffer 导致消息丢失。
+                    # replay offset 只描述 RabbitMQ 已提交队列，不能包含本地未发布 buffer。
+                    # flush_peek_lock 避免读取到本进程尚未完整发布的 flush 批次。
                     with flush_peek_lock:
                         all_messages = self._peek_queue_messages(channel, main_queue_name)
 
@@ -1195,10 +1195,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                                 restored,
                             )
                             all_messages = self._peek_queue_messages(channel, main_queue_name)
-
-                        with self._buffer_lock:
-                            buffer_msgs = self._message_buffer.get(thread_id, [])
-                            all_messages.extend(buffer_msgs)
 
                 next_offset = len(all_messages)
                 if next_offset > offset:
