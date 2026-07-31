@@ -5,6 +5,7 @@ import threading
 import time
 
 import pytest
+
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
 from aidev_agent.pydantic_models import ChatPrompt, ExecuteKwargs
 from aidev_agent.services.agent import ChatCompletionAgent
@@ -210,6 +211,34 @@ class TestRabbitMQMessageHandler:
         assert all(result == expected for result in results)
 
         self._wait_until_empty(handler, thread_id)
+
+    def test_replay_waits_until_a_long_buffer_is_committed(self, handler, thread_id, monkeypatch):
+        """Replay offset 只推进到 RabbitMQ 已提交日志，不包含本地未发布 buffer。"""
+        committed_messages = [f"committed-{index}" for index in range(1_000)]
+        buffered_messages = [f"buffered-{index}" for index in range(1_000)]
+
+        handler._stop_daemon()
+        monkeypatch.setattr(handler, "_ensure_daemon_alive", lambda: None)
+
+        for message in committed_messages:
+            handler.put(thread_id, message)
+        handler.flush(thread_id)
+
+        messages, offset = handler.get_messages_since(thread_id, offset=0, timeout=5)
+        assert messages == committed_messages
+        assert offset == 1_000
+
+        for message in buffered_messages:
+            handler.put(thread_id, message)
+
+        with pytest.raises(TimeoutError):
+            handler.get_messages_since(thread_id, offset=offset, timeout=0.1)
+
+        handler.flush(thread_id)
+        messages, next_offset = handler.get_messages_since(thread_id, offset=offset, timeout=5)
+
+        assert messages == buffered_messages
+        assert next_offset == 2_000
 
     def test_consumer_reconnect_with_dlq(self, handler, thread_id):
         """测试消费者断开后重连可以从死信队列恢复消息
