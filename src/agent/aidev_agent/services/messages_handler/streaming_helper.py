@@ -75,6 +75,7 @@ class GeneratorStreamingHelper:
     _DONE_ORPHAN_CLEANUP_GRACE = 30.0
     _ORPHAN_CLEANUP_POLL_INTERVAL = 0.1
     _HEARTBEAT_TIMEOUT_GRACE = 5.0
+    _HEARTBEAT_TIMEOUT_MESSAGE = "Agent 执行中断：生产者心跳超时，请稍后重试"
 
     @staticmethod
     def _should_filter_on_resume(item: Any) -> bool:
@@ -517,6 +518,28 @@ class GeneratorStreamingHelper:
             event_handler=event_handler,
         )
 
+    def _emit_retryable_heartbeat_timeout(
+        self,
+        event_handler: Callable[[Any], None] | None = None,
+    ) -> Generator[str, None, None]:
+        """先输出 RAW 提示，再中断 SSE 让前端按 network error 重连。"""
+        retry_event = RawEvent(
+            type=EventType.RAW,
+            event={
+                "type": "error",
+                "message": self._HEARTBEAT_TIMEOUT_MESSAGE,
+            },
+        )
+        if event_handler is not None:
+            try:
+                event_handler(retry_event)
+            except Exception:
+                logger.exception("Error dispatching retryable RAW event for thread_id=%s", self.thread_id)
+        yield EventEncoder().encode(retry_event)
+
+        # 后续增加独立重试事件后，前端无需再依赖 transport/network error。
+        raise RuntimeError(self._HEARTBEAT_TIMEOUT_MESSAGE)
+
     def _consume_stream_messages(
         self,
         consumer_id: str,
@@ -714,13 +737,9 @@ class GeneratorStreamingHelper:
                             f"(last_message_time={last_message_time:.1f}, now={time.time():.1f}) "
                             f"replay_offset={replay_offset} producer_finished={producer_finished}"
                         )
-                        yield from self._emit_terminal_error_events(
-                            "Agent 执行中断：生产者心跳超时，请稍后重试",
-                            event_handler=event_handler,
-                        )
-                        yielded_total += 2
+                        yielded_total += 1
                         exit_reason = "heartbeat_timeout"
-                        return exit_reason
+                        yield from self._emit_retryable_heartbeat_timeout(event_handler=event_handler)
                     continue
                 except Exception as exc:
                     # L-5：避免 unexpected 异常被上层 _wrap_streaming_with_status 吞成沉默

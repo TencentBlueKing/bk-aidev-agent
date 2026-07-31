@@ -610,8 +610,8 @@ class TestInMemoryQueueMessageHandler:
         assert all(event == {"type": "RAW", "event": {"type": "heartbeat"}} for event in heartbeat_events)
         assert heartbeat_count > 0
 
-    def test_stream_emits_terminal_events_when_heartbeat_timeout(self, handler, monkeypatch):
-        """心跳超时应输出完整终止事件，不能以异常中断 SSE。"""
+    def test_stream_emits_raw_then_raises_when_heartbeat_timeout(self, handler, monkeypatch):
+        """心跳超时先输出 RAW，再中断 SSE 触发前端重试。"""
         thread_id = "test_stream_heartbeat_timeout"
         helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
         monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_INTERVAL", 1.0)
@@ -630,10 +630,17 @@ class TestInMemoryQueueMessageHandler:
             time.sleep(1.2)
             yield "late_chunk"
 
-        result = list(helper.stream(slow_first_chunk(), event_handler=dispatched.append))
+        stream = helper.stream(slow_first_chunk(), event_handler=dispatched.append)
+        error_chunk = next(stream)
 
-        assert _event_types(result) == ["RUN_ERROR", "RUN_FINISHED"]
-        assert [event.type for event in dispatched] == [EventType.RUN_ERROR, EventType.RUN_FINISHED]
+        assert _event_types([error_chunk]) == ["RAW"]
+        assert json.loads(error_chunk.removeprefix("data: "))["event"] == {
+            "type": "error",
+            "message": helper._HEARTBEAT_TIMEOUT_MESSAGE,
+        }
+        assert [event.type for event in dispatched] == [EventType.RAW]
+        with pytest.raises(RuntimeError, match="生产者心跳超时"):
+            next(stream)
 
     def test_producer_error_emits_terminal_events(self, handler):
         """producer 异常应形成完整终止事件对并同步分发。"""
@@ -686,17 +693,18 @@ class TestInMemoryQueueMessageHandler:
         monkeypatch.setattr(helper, "_get_consumer_messages", timeout_without_messages)
         monkeypatch.setattr(handler, "mark_completed", completed_threads.append)
 
-        result = list(
-            helper._consume_stream_messages(
-                consumer_id=consumer_id,
-                cancel_event=threading.Event(),
-                is_resuming=False,
-                enable_heartbeat_check=True,
-                producer_thread=producer_thread,
-            )
+        stream = helper._consume_stream_messages(
+            consumer_id=consumer_id,
+            cancel_event=threading.Event(),
+            is_resuming=False,
+            enable_heartbeat_check=True,
+            producer_thread=producer_thread,
         )
 
-        assert _event_types(result) == ["RUN_ERROR", "RUN_FINISHED"]
+        error_chunk = next(stream)
+        assert _event_types([error_chunk]) == ["RAW"]
+        with pytest.raises(RuntimeError, match="生产者心跳超时"):
+            next(stream)
         assert completed_threads == []
 
 
