@@ -2,6 +2,7 @@ import json
 import re
 import uuid
 import warnings
+from functools import partial
 from importlib.metadata import version as pkg_version
 from logging import getLogger
 from typing import Any, Callable, ClassVar, Generator, List, Optional
@@ -868,7 +869,7 @@ class ChatCompletionAgent(BaseModel):
         # ---- 阶段 2：剩余帧交给队列管理（支持断点续传）----
         yield from helper.stream(
             remaining_producer,
-            on_complete=self._on_complete,
+            on_complete=partial(self._on_complete, finalize_session=not background_only),
             event_handler=self.event_handler,
         )
 
@@ -989,8 +990,8 @@ class ChatCompletionAgent(BaseModel):
 
         return agui_entry.build_terminal_replay_stream(agent_input, non_system)
 
-    def _on_complete(self):
-        if self.event_handler and hasattr(self.event_handler, "set_streaming_finished"):
+    def _on_complete(self, *, finalize_session: bool = True):
+        if finalize_session and self.event_handler and hasattr(self.event_handler, "set_streaming_finished"):
             self.event_handler.set_streaming_finished()
         # 流式执行结束后释放资源
         self.release_resources()
