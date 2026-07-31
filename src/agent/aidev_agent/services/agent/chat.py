@@ -538,7 +538,9 @@ class ChatCompletionAgent(BaseModel):
         # ---- 阶段 2：剩余帧交给队列管理（支持断点续传）----
         yield from helper.stream(
             remaining_producer,
-            on_complete=partial(self._on_complete, finalize_session=not background_only),
+            # replay 模式下由 producer 在 EOD 写入并 flush 成功后更新会话终态；
+            # 消费者中断不会影响最终状态收敛。
+            on_complete=partial(self._on_complete, finalize_session=True),
             event_handler=self.event_handler,
         )
 

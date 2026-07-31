@@ -75,8 +75,8 @@ class GeneratorStreamingHelper:
     _DONE_ORPHAN_CLEANUP_GRACE = 30.0
     _ORPHAN_CLEANUP_POLL_INTERVAL = 0.1
     _HEARTBEAT_TIMEOUT_GRACE = 5.0
-    # 后台 schedule 没有前端可接管重连；心跳超时后保留最多 60 秒恢复窗口，
-    # 期间继续等待业务消息/EOD 可见且不写会话终态。耗尽后再由 worker 收口 FAILED。
+    # 后台 schedule 没有前端可接管重连；心跳超时后保留最多 60 秒恢复窗口。
+    # 窗口耗尽仅退出异常消费者，producer 后续仍可在 EOD 提交后收敛会话终态。
     _BACKGROUND_HEARTBEAT_RECOVERY_TIMEOUT = 60.0
     _HEARTBEAT_TIMEOUT_MESSAGE = "Agent 执行中断：生产者心跳超时，请稍后重试"
 

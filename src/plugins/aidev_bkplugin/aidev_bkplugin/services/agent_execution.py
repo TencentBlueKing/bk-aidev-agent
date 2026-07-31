@@ -89,7 +89,7 @@ class AgentExecutor:
         *,
         turn_id: str = "",
     ):
-        """执行 agent 直至结束；后台消费者完整 drain 后统一收尾会话状态。"""
+        """执行 agent 直至结束；会话终态由 Agent 流完成回调统一写入。"""
         # 后台 drain（for _ in out: pass，无 SSE 下游）：标记为 background_only，
         # 使消费者读到 EOD 时不立即清理队列，保留 DLQ 历史供前端在清理窗口内接管续流。
         execute_kwargs.background_only = True
@@ -108,8 +108,6 @@ class AgentExecutor:
         if execute_kwargs.stream:
             for _ in out:
                 pass
-            if isinstance(handler, BaseSessionWriter) and hasattr(handler, "set_streaming_finished"):
-                handler.set_streaming_finished()
         return out
 
     def wrap_generator(self, generator, session_code: str, *, turn_id: str = ""):
