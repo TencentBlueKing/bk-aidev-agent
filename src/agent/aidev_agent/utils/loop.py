@@ -20,6 +20,12 @@ import asyncio
 import atexit
 import contextlib
 import threading
+from collections.abc import Awaitable, Callable
+from contextvars import copy_context
+from logging import getLogger
+from typing import Any
+
+logger = getLogger(__name__)
 
 # Thread-local storage for event loops
 _thread_local = threading.local()
@@ -92,18 +98,78 @@ def close_thread_loop() -> None:
     _thread_local.loop = None
 
 
-def run_coro_sync(coro, timeout=None):
+def run_coro_sync(
+    coro_or_factory: Awaitable[Any] | Callable[[], Awaitable[Any]],
+    timeout: float | None = None,
+):
     """Run a coroutine synchronously in the current thread's event loop.
 
-    Note: The event loop is intentionally kept open after execution, so that
-    long-lived async clients (e.g. httpx.AsyncClient) can safely reuse their
-    connections across multiple calls on the same thread. Cleanup is handled by
-    atexit registration and by async_to_sync_generator's finally block.
+    若当前线程没有 running loop，复用线程局部 loop 跑（保持 loop 开启以便
+    long-lived async client 复用连接）；若当前线程已有 running loop（嵌套调用
+    场景，如 async→sync 桥接、gevent monkey patch），仅接受协程工厂并在独立
+    线程创建、执行协程，避免把已关联当前 loop 的协程对象直接搬到新 loop。
+
+    Note: 正常分支下 event loop 故意保持开启，long-lived async client（如
+    httpx.AsyncClient）可跨多次调用复用连接；清理由 atexit 与
+    async_to_sync_generator 的 finally 块负责。
     """
     loop = get_event_loop()
+    if loop.is_running():
+        if not callable(coro_or_factory):
+            with contextlib.suppress(AttributeError):
+                coro_or_factory.close()
+            raise RuntimeError("run_coro_sync requires a coroutine factory when called from a running event loop")
+        logger.warning(
+            "[LOOP] run_coro_sync: running loop detected, delegate to new thread, thread=%s",
+            threading.current_thread().name,
+        )
+        return _run_coro_in_new_thread(coro_or_factory, timeout)
+
+    coro = coro_or_factory() if callable(coro_or_factory) else coro_or_factory
     if timeout is not None:
         coro = asyncio.wait_for(coro, timeout=timeout)
-    return loop.run_until_complete(coro)
+    try:
+        return loop.run_until_complete(coro)
+    except RuntimeError as e:
+        if "already running" in str(e):
+            logger.error(
+                "[LOOP] run_coro_sync failed: event loop already running. thread=%s, loop=%s",
+                threading.current_thread().name,
+                loop,
+            )
+        raise
+
+
+def _run_coro_in_new_thread(
+    coro_factory: Callable[[], Awaitable[Any]],
+    timeout: float | None = None,
+):
+    """在独立线程创建并执行协程，返回结果或重新抛出异常。
+
+    用于 run_coro_sync 检测到当前线程已有 running loop 的兜底场景：
+    工厂和协程都在新线程的 Context 与 event loop 内运行。
+    """
+    box: dict = {}
+    context = copy_context()
+
+    async def _execute():
+        coro = coro_factory()
+        if timeout is not None:
+            return await asyncio.wait_for(coro, timeout=timeout)
+        return await coro
+
+    def _runner():
+        try:
+            box["value"] = context.run(asyncio.run, _execute())
+        except BaseException as err:  # noqa: BLE001
+            box["error"] = err
+
+    worker = threading.Thread(target=_runner, name="run-coroutine-sync", daemon=True)
+    worker.start()
+    worker.join()
+    if "error" in box:
+        raise box["error"]
+    return box.get("value")
 
 
 def _cleanup_thread_loop(loop):

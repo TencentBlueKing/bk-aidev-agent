@@ -738,7 +738,15 @@ class AgentStreamAdapter:
         )
 
     # 流协议处理
-    def stream_standard_event(self, agent_e, cfg, input_state, skip_thought=False, timeout: int = 30):
+    def stream_standard_event(
+        self,
+        agent_e,
+        cfg,
+        input_state,
+        skip_thought=False,
+        timeout: int = 30,
+        async_finalizer=None,
+    ):
         try:
             protocol = BkAiStreamingProtocol(
                 skip_thought=skip_thought,
@@ -755,7 +763,7 @@ class AgentStreamAdapter:
                 durability="exit",
             )
             _aiter = async_generator_with_timeout(_aiter, timeout=timeout)
-            g = async_to_sync_generator(_aiter)
+            g = async_to_sync_generator(_aiter, async_finalizer=async_finalizer)
             yield from protocol.stream_standard_event(g)
         except Exception:
             logger.error(traceback.format_exc())

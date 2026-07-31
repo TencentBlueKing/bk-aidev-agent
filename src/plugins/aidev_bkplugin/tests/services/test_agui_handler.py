@@ -254,8 +254,8 @@ class TestCustomEventSessionPath:
 class TestHandleRunError:
     """测试 handle_run_error 的回写逻辑"""
 
-    def test_run_error_writes_fail_status(self, session_writer, mock_client):
-        """运行错误时回写 fail 状态"""
+    def test_run_error_defers_session_status(self, session_writer, mock_client):
+        """RUN_ERROR 只记录错误内容，不能抢先写会话终态。"""
         event = RunErrorEvent(type=EventType.RUN_ERROR, message="执行过程中发生错误")
 
         session_writer(event)
@@ -268,11 +268,7 @@ class TestHandleRunError:
         assert payload["role"] == PromptRole.ASSISTANT.value
         assert payload["content"] == "执行过程中发生错误"
         assert payload["property"]["builtin_property"]["error"] is True
-        mock_client.api.update_chat_session.assert_called_once_with(
-            path_params={"session_code": "test-session-123"},
-            json={"status": SessionsStatus.FAILED.value},
-            headers={"X-BKAIDEV-USER": "test-user"},
-        )
+        mock_client.api.update_chat_session.assert_not_called()
 
     def test_run_error_finished_keeps_session_failed(self, session_writer, mock_client):
         """运行错误后结束流，不应把会话覆盖为 finished"""
@@ -281,11 +277,30 @@ class TestHandleRunError:
         session_writer(event)
         session_writer.set_streaming_finished()
 
-        status_payloads = [call.kwargs["json"] for call in mock_client.api.update_chat_session.call_args_list]
-        assert status_payloads == [
-            {"status": SessionsStatus.FAILED.value},
-            {"status": SessionsStatus.FAILED.value},
-        ]
+        mock_client.api.update_chat_session.assert_called_once_with(
+            path_params={"session_code": "test-session-123"},
+            json={"status": SessionsStatus.FAILED.value},
+            headers={"X-BKAIDEV-USER": "test-user"},
+        )
+
+    def test_finished_status_retries_then_succeeds(self, session_writer, mock_client, monkeypatch):
+        sleep = MagicMock()
+        monkeypatch.setattr("aidev_agent.services.event_handlers.agui_writer.time.sleep", sleep)
+        mock_client.api.update_chat_session.side_effect = [RuntimeError("one"), RuntimeError("two"), {}]
+
+        session_writer.set_streaming_finished()
+
+        assert mock_client.api.update_chat_session.call_count == 3
+        assert [call.args[0] for call in sleep.call_args_list] == [0.2, 0.4]
+
+    def test_finished_status_raises_after_retries_exhausted(self, session_writer, mock_client, monkeypatch):
+        monkeypatch.setattr("aidev_agent.services.event_handlers.agui_writer.time.sleep", MagicMock())
+        mock_client.api.update_chat_session.side_effect = RuntimeError("platform unavailable")
+
+        with pytest.raises(RuntimeError, match="platform unavailable"):
+            session_writer.set_streaming_finished()
+
+        assert mock_client.api.update_chat_session.call_count == 3
 
 
 def make_flow_agent_result_event(task_id: str, task_state: str = "RUNNING"):

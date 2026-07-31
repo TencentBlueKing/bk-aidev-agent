@@ -16,17 +16,19 @@
 from __future__ import annotations
 
 import logging
+import threading
 import uuid
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar
 
 from aidev_agent.config import settings as agent_settings
-from aidev_agent.enums import AgentBuildType, AgentType, ChannelType, PromptRole
+from aidev_agent.enums import AgentBuildType, AgentType, ChannelType, PromptRole, SessionsStatus
 from aidev_agent.packages.resource_manager.agent import AgentResourceManager
 from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.agent import AgentInstanceFactory
 from aidev_agent.services.common_agent import common_agent_factory
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
+from aidev_agent.services.messages_handler import RetryableHeartbeatTimeoutError
 from aidev_agent.utils.local import request_local
 from django.contrib.auth import get_user_model
 
@@ -172,6 +174,13 @@ class BkpluginAgentRunner(ABC):
         """同步执行 Agent，返回最终 AI 回复字符串；异常时写回失败状态 (D-01)。"""
         try:
             return self._do_execute()
+        except RetryableHeartbeatTimeoutError:
+            logger.warning(
+                "[Bkplugin] skip session terminal update for retryable consumer heartbeat timeout session_code=%s",
+                self.session_code or "",
+                exc_info=True,
+            )
+            raise
         except Exception as e:
             logger.exception("[Bkplugin] execute error: %s", e)
             session_code = self.session_code or ""
@@ -211,12 +220,51 @@ class BkpluginAgentRunner(ABC):
         *,
         chat_context: list[dict] | None = None,
     ) -> None:
-        """Celery worker 入口：捕获异常并写 session 失败状态。"""
+        """Celery worker 入口：业务异常写失败；可重试消费异常保持 session 原状态。"""
+        logger.info(
+            "[Bkplugin] run_worker enter session_code=%s turn_id=%s thread=%s",
+            session_code,
+            execute_payload.get("turn_id") or "",
+            threading.current_thread().name,
+        )
         try:
             self.invoke_agent(session_code, execute_payload, chat_context=chat_context or [])
+        except RetryableHeartbeatTimeoutError:
+            logger.warning(
+                "[Bkplugin] skip session terminal update for retryable consumer heartbeat timeout "
+                "session_code=%s turn_id=%s",
+                session_code,
+                execute_payload.get("turn_id") or "",
+                exc_info=True,
+            )
         except Exception as e:
             logger.exception("[Bkplugin] worker error session_code=%s", session_code)
-            SessionManager(self.username or "").save_stream_failure(
+            manager = SessionManager(self.username or "")
+            # 幂等保护：心跳超时误报时 producer 实际已完成（session=FINISHED），
+            # 不应再覆盖为 FAILED。仅当 session 仍处于非终态时才写失败，
+            # 避免覆盖已确定的终态（FINISHED/CANCELLED/FAILED）。
+            try:
+                current_status = str(manager.retrieve_session(session_code).get("status") or "")
+            except Exception:
+                logger.exception(
+                    "[Bkplugin] retrieve_session failed before save_stream_failure session_code=%s",
+                    session_code,
+                )
+                current_status = ""
+            if current_status in (
+                SessionsStatus.FINISHED.value,
+                SessionsStatus.CANCELLED.value,
+                SessionsStatus.FAILED.value,
+            ):
+                logger.warning(
+                    "[Bkplugin] skip save_stream_failure: session already %s "
+                    "(likely heartbeat-timeout false positive) session_code=%s exc=%r",
+                    current_status,
+                    session_code,
+                    e,
+                )
+                return
+            manager.save_stream_failure(
                 session_code,
                 f"Agent 执行异常: {e}",
                 turn_id=execute_payload.get("turn_id") or "",
