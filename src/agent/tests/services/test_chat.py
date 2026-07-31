@@ -745,6 +745,20 @@ class TestOnComplete:
         agent._on_complete()
         mock_handler.set_streaming_finished.assert_called_once()
 
+    def test_background_stream_defers_set_streaming_finished(self):
+        """后台 drain 的 producer 完成回调不写会话终态。"""
+        mock_handler = MagicMock(spec=BaseSessionWriter)
+        agent = ChatCompletionAgent(
+            chat_model=MockChatModel(responses=["ok"], stream_chunk_size=2),
+            checkpointer=MemorySaver(),
+            chat_history=[ChatPrompt(role="user", content="hi")],
+            event_handler=mock_handler,
+        )
+
+        list(agent.execute(ExecuteKwargs(stream=True, background_only=True)))
+
+        mock_handler.set_streaming_finished.assert_not_called()
+
     def test_on_complete_invoked_during_stream(self):
         """端到端验证：流式执行结束后 on_complete 被触发"""
         mock_handler = MagicMock(spec=BaseSessionWriter)
