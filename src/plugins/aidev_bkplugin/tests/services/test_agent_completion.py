@@ -18,7 +18,7 @@ sys.modules.setdefault("bk_plugin_framework.kit.decorators", _bk_plugin_framewor
 
 
 class TestAgentExecutorCompletion:
-    def test_sets_finished_after_stream_is_drained(self):
+    def test_drain_does_not_write_terminal_state(self):
         from aidev_agent.services.event_handlers.base import BaseSessionWriter
         from aidev_bkplugin.services.agent_execution import AgentExecutor
 
@@ -29,14 +29,14 @@ class TestAgentExecutorCompletion:
             lifecycle.append("drained")
 
         handler = MagicMock(spec=BaseSessionWriter)
-        handler.set_streaming_finished.side_effect = lambda: lifecycle.append("finished")
         agent = MagicMock(event_handler=handler)
         execute_kwargs = MagicMock(stream=True)
         with patch.object(AgentExecutor, "execute_with_save", return_value=stream()):
             AgentExecutor.run_agent_to_completion(agent, execute_kwargs, "session-abc", MagicMock())
 
         assert execute_kwargs.background_only is True
-        assert lifecycle == ["drained", "finished"]
+        assert lifecycle == ["drained"]
+        handler.set_streaming_finished.assert_not_called()
 
     def test_does_not_set_finished_when_stream_drain_fails(self):
         from aidev_agent.services.event_handlers.base import BaseSessionWriter
