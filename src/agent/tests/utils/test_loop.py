@@ -1,5 +1,6 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 
 import pytest
 
@@ -133,3 +134,45 @@ def test_run_coro_sync_preserves_worker_thread_loop():
 
     assert result == 10
     assert has_loop is True
+
+
+@pytest.mark.asyncio
+async def test_run_coro_sync_with_running_loop_delegates_to_new_thread():
+    """已有 running loop 时，run_coro_sync 应委托独立线程执行，不抛 already running。
+
+    复现 construct_mcp 在 async→sync 桥接上下文被调用导致
+    "This event loop is already running" 的场景。
+    """
+    marker = ContextVar("marker", default="")
+    token = marker.set("request-context")
+
+    async def _probe():
+        await asyncio.sleep(0)
+        return marker.get()
+
+    try:
+        assert run_coro_sync(_probe) == "request-context"
+    finally:
+        marker.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_run_coro_sync_with_running_loop_propagates_exception():
+    """已有 running loop 时，协程抛出的异常应原样冒泡到调用方。"""
+
+    async def _boom():
+        raise ValueError("boom")
+
+    with pytest.raises(ValueError, match="boom"):
+        run_coro_sync(_boom)
+
+
+@pytest.mark.asyncio
+async def test_run_coro_sync_with_running_loop_rejects_coroutine_object():
+    """running loop 下必须传工厂，避免搬运已关联当前 loop 的协程对象。"""
+
+    async def _probe():
+        return "ok"
+
+    with pytest.raises(RuntimeError, match="requires a coroutine factory"):
+        run_coro_sync(_probe())

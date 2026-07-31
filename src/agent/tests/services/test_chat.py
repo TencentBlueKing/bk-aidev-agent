@@ -2,7 +2,7 @@ import json
 import threading
 import time
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from ag_ui.core import EventType, RunErrorEvent, RunFinishedEvent
@@ -11,6 +11,7 @@ from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
 from aidev_agent.core.ag_ui.types import CustomMessageType
 from aidev_agent.core.nodes.tool.approval_wrapper import TOOL_APPROVAL_REASON
 from aidev_agent.enums import PromptRole
+from aidev_agent.exceptions import AgentException
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
 from aidev_agent.packages.langchain_core.models.mock import MockChatModel, MockResponse
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
@@ -758,6 +759,77 @@ class TestOnComplete:
         )
         list(agent.execute(ExecuteKwargs(stream=True)))
         mock_handler.set_streaming_finished.assert_called_once()
+
+
+class TestChatModelClientCleanup:
+    @pytest.mark.asyncio
+    async def test_owned_fallback_client_is_closed_once(self):
+        runnable = ChatModel.get_setup_instance(
+            model="primary",
+            fallback_model="fallback",
+            base_url="https://llm-gateway.example.com/v1",
+        )
+        client = runnable.runnable.http_async_client
+        close_spy = AsyncMock(wraps=client.aclose)
+        agent = ChatCompletionAgent(chat_model=runnable)
+
+        with patch.object(client, "aclose", close_spy):
+            await agent._aclose_chat_models()
+
+        close_spy.assert_awaited_once()
+        assert client.is_closed
+        assert runnable.runnable._owns_http_async_client is False
+        assert runnable.fallbacks[0]._owns_http_async_client is False
+
+    def test_non_streaming_invoke_closes_owned_client(self):
+        model = ChatModel.get_setup_instance(
+            model="primary",
+            base_url="https://llm-gateway.example.com/v1",
+        )
+        client = model.http_async_client
+        close_spy = AsyncMock(wraps=client.aclose)
+        agent = ChatCompletionAgent(chat_model=model)
+        agent_e = MagicMock()
+        agent_e.ainvoke = AsyncMock(return_value={"messages": [AIMessage(content="done", id="message-id")]})
+
+        with patch.object(client, "aclose", close_spy):
+            result = agent._invoke(
+                agent_e,
+                {},
+                {},
+                [HumanMessage(content="hello")],
+                SimpleNamespace(invoke_timeout=1),
+            )
+
+        assert result["choices"][0]["delta"]["content"] == "done"
+        close_spy.assert_awaited_once()
+        assert client.is_closed
+
+    def test_non_streaming_invoke_error_closes_owned_client(self):
+        model = ChatModel.get_setup_instance(
+            model="primary",
+            base_url="https://llm-gateway.example.com/v1",
+        )
+        client = model.http_async_client
+        close_spy = AsyncMock(wraps=client.aclose)
+        agent = ChatCompletionAgent(chat_model=model)
+        agent_e = MagicMock()
+        agent_e.ainvoke = AsyncMock(side_effect=RuntimeError("model failed"))
+
+        with (
+            patch.object(client, "aclose", close_spy),
+            pytest.raises(AgentException, match="model failed"),
+        ):
+            agent._invoke(
+                agent_e,
+                {},
+                {},
+                [HumanMessage(content="hello")],
+                SimpleNamespace(invoke_timeout=1),
+            )
+
+        close_spy.assert_awaited_once()
+        assert client.is_closed
 
 
 @pytest.mark.skipif(

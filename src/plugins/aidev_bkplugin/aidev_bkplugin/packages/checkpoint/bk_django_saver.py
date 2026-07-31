@@ -21,10 +21,11 @@ from __future__ import annotations
 import json
 import random
 import threading
+import time
 from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import Any, Optional, Tuple, cast
 
-from django.db import connections, router, transaction
+from django.db import OperationalError, close_old_connections, connections, router, transaction
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
     WRITES_IDX_MAP,
@@ -39,6 +40,10 @@ from langgraph.checkpoint.base import (
 )
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.serde.types import ChannelProtocol
+
+RETRYABLE_DATABASE_ERROR_CODES = {1205, 1213}
+CHECKPOINT_WRITE_MAX_RETRIES = 3
+CHECKPOINT_WRITE_RETRY_DELAY_SECONDS = 0.05
 
 
 def bulk_upsert(model, objs, update_fields, unique_fields):
@@ -605,17 +610,26 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
         serialized_metadata = json.loads(json.dumps(raw_metadata, default=str).replace("\\u0000", ""))
         # 使用Django的update_or_create方法
         with self.lock:
-            self.checkpoint_model.objects.update_or_create(
-                thread_id=thread_id,
-                checkpoint_ns=checkpoint_ns,
-                checkpoint_id=checkpoint["id"],
-                defaults={
-                    "parent_checkpoint_id": config["configurable"].get("checkpoint_id"),
-                    "type": type_,
-                    "checkpoint": serialized_checkpoint,
-                    "metadata": serialized_metadata,
-                },
-            )
+            for attempt in range(CHECKPOINT_WRITE_MAX_RETRIES):
+                try:
+                    self.checkpoint_model.objects.update_or_create(
+                        thread_id=thread_id,
+                        checkpoint_ns=checkpoint_ns,
+                        checkpoint_id=checkpoint["id"],
+                        defaults={
+                            "parent_checkpoint_id": config["configurable"].get("checkpoint_id"),
+                            "type": type_,
+                            "checkpoint": serialized_checkpoint,
+                            "metadata": serialized_metadata,
+                        },
+                    )
+                    break
+                except OperationalError as exc:
+                    error_code = exc.args[0] if exc.args else None
+                    if error_code not in RETRYABLE_DATABASE_ERROR_CODES or attempt == CHECKPOINT_WRITE_MAX_RETRIES - 1:
+                        raise
+                    close_old_connections()
+                    time.sleep(CHECKPOINT_WRITE_RETRY_DELAY_SECONDS * (2**attempt))
 
         return {
             "configurable": {

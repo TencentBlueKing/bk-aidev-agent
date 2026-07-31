@@ -1,11 +1,13 @@
 """测试 InMemoryQueueMessageHandler 的基本功能"""
 
 import contextlib
+import json
 import threading
 import time
 
 import aidev_agent.services.messages_handler.streaming_helper as streaming_helper_module
 import pytest
+from ag_ui.core import EventType
 from aidev_agent.enums import MessageHandlerType
 from aidev_agent.services.messages_handler import (
     CANCELLED_CHUNK,
@@ -23,6 +25,10 @@ from aidev_agent.utils.event import RunId, emit_run_finished_event
 def _make_run_finished_chunk(thread_id: str, run_id: str) -> str:
     """生成 RUN_FINISHED SSE 字符串，用于测试期望值对比。"""
     return emit_run_finished_event(thread_id=thread_id, run_id=run_id)
+
+
+def _event_types(chunks: list[str]) -> list[str]:
+    return [json.loads(chunk.removeprefix("data: "))["type"] for chunk in chunks if chunk.startswith("data: ")]
 
 
 class ReplayFromStartHandler:
@@ -177,17 +183,18 @@ class TestReplayFromStartStreamingHelper:
     def test_replay_mode_runs_on_complete_in_producer_once(self):
         thread_id = "test_replay_on_complete_once"
         handler = ReplayFromStartHandler()
-        completed = []
+        lifecycle = []
+        handler.flush = lambda _thread_id: lifecycle.append("flush")
 
         result = list(
             GeneratorStreamingHelper(handler, thread_id=thread_id).stream(
                 iter(["chunk_0"]),
-                on_complete=lambda: completed.append(True),
+                on_complete=lambda: lifecycle.append("complete"),
             )
         )
 
         assert result == ["chunk_0"]
-        assert completed == [True]
+        assert lifecycle == ["flush", "complete"]
         assert thread_id not in handler.producer_locks
 
 
@@ -570,7 +577,7 @@ class TestInMemoryQueueMessageHandler:
         assert handler.is_empty(thread_id)
 
     def test_stream_keeps_alive_when_generator_blocked(self, handler, monkeypatch):
-        """generator 长时间无产出时，独立心跳应维持连接且不超时。"""
+        """generator 长时间无产出时，独立心跳应通过 RAW 事件维持 SSE 连接。"""
         thread_id = "test_stream_heartbeat_keepalive"
         helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
         monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_INTERVAL", 0.05)
@@ -592,22 +599,104 @@ class TestInMemoryQueueMessageHandler:
             yield "late_chunk"
 
         result = list(helper.stream(slow_first_chunk()))
-        assert result == ["late_chunk"]
+        heartbeat_events = [
+            json.loads(chunk.removeprefix("data: "))
+            for chunk in result
+            if isinstance(chunk, str) and chunk.startswith("data: ") and '"type":"RAW"' in chunk
+        ]
+
+        assert result[-1] == "late_chunk"
+        assert heartbeat_events
+        assert all(event == {"type": "RAW", "event": {"type": "heartbeat"}} for event in heartbeat_events)
         assert heartbeat_count > 0
 
-    def test_stream_raises_when_heartbeat_timeout(self, handler, monkeypatch):
-        """心跳发送慢于超时阈值时，消费者应抛出心跳超时异常。"""
+    def test_stream_emits_terminal_events_when_heartbeat_timeout(self, handler, monkeypatch):
+        """心跳超时应输出完整终止事件，不能以异常中断 SSE。"""
         thread_id = "test_stream_heartbeat_timeout"
         helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
         monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_INTERVAL", 1.0)
         monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.2)
+        monkeypatch.setattr(helper, "_HEARTBEAT_TIMEOUT_GRACE", 0.05)
+        dispatched = []
+        original_put = handler.put
+
+        def drop_heartbeat(tid, message):
+            if message != streaming_helper_module.HEARTBEAT_CHUNK:
+                original_put(tid, message)
+
+        monkeypatch.setattr(handler, "put", drop_heartbeat)
 
         def slow_first_chunk():
-            time.sleep(0.8)
+            time.sleep(1.2)
             yield "late_chunk"
 
-        with pytest.raises(RuntimeError, match="心跳超时"):
-            list(helper.stream(slow_first_chunk()))
+        result = list(helper.stream(slow_first_chunk(), event_handler=dispatched.append))
+
+        assert _event_types(result) == ["RUN_ERROR", "RUN_FINISHED"]
+        assert [event.type for event in dispatched] == [EventType.RUN_ERROR, EventType.RUN_FINISHED]
+
+    def test_producer_marks_success_after_eod_flush(self, handler):
+        helper = GeneratorStreamingHelper(handler, thread_id="test_producer_success")
+        producer_succeeded_event = threading.Event()
+
+        helper._producer(iter(["chunk"]), producer_succeeded_event=producer_succeeded_event)
+
+        assert producer_succeeded_event.is_set()
+
+    def test_producer_does_not_mark_success_when_eod_flush_fails(self, handler, monkeypatch):
+        thread_id = "test_producer_flush_failure"
+        helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
+        producer_succeeded_event = threading.Event()
+        assert handler.acquire_producer(thread_id)
+
+        def fail_flush(thread_id):
+            raise RuntimeError("flush failed")
+
+        monkeypatch.setattr(handler, "flush", fail_flush)
+
+        with pytest.raises(RuntimeError, match="flush failed"):
+            helper._producer(
+                iter(["chunk"]),
+                release_producer=True,
+                producer_succeeded_event=producer_succeeded_event,
+            )
+
+        assert not producer_succeeded_event.is_set()
+        assert handler.acquire_producer(thread_id)
+
+    def test_stream_treats_missing_eod_as_error(self, handler, monkeypatch):
+        """即使 producer 标记成功，未消费到 EOD 也不能静默判定完成。"""
+        thread_id = "test_stream_finished_without_eod"
+        helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
+        consumer_id = handler.acquire_consumer(thread_id)
+        completed_threads = []
+
+        def timeout_without_messages(*, timeout, replay_offset):
+            raise TimeoutError
+
+        producer_thread = threading.Thread(target=lambda: None)
+        producer_thread.start()
+        producer_thread.join()
+        producer_succeeded_event = threading.Event()
+        producer_succeeded_event.set()
+
+        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.0)
+        monkeypatch.setattr(helper, "_get_consumer_messages", timeout_without_messages)
+        monkeypatch.setattr(handler, "mark_completed", completed_threads.append)
+
+        result = list(
+            helper._consume_stream_messages(
+                consumer_id=consumer_id,
+                cancel_event=threading.Event(),
+                is_resuming=False,
+                enable_heartbeat_check=True,
+                producer_thread=producer_thread,
+                producer_succeeded_event=producer_succeeded_event,
+            )
+        )
+
+        assert _event_types(result) == ["RUN_ERROR", "RUN_FINISHED"]
+        assert completed_threads == []
 
 
 class TestMessageHandlerConfig:
