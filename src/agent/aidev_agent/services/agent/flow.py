@@ -134,8 +134,21 @@ class FlowAgentCompletionAgent(BaseModel):
             execute_kwargs: 兼容 ChatCompletionAgent 接口，FlowAgent 中不使用
         """
         stream_thread_id = self.session_code or self.thread_id
-        helper = GeneratorStreamingHelper(thread_id=stream_thread_id)
-        return helper.stream(self._run_flow(), event_handler=self.event_handler)
+        background_only = bool(getattr(execute_kwargs, "background_only", False))
+        helper = GeneratorStreamingHelper(
+            thread_id=stream_thread_id,
+            defer_cleanup_on_complete=background_only,
+        )
+        return helper.stream(
+            self._run_flow(),
+            on_complete=self._on_complete,
+            event_handler=self.event_handler,
+        )
+
+    def _on_complete(self) -> None:
+        """EOD 提交后由 producer 统一收敛 Flow 会话终态。"""
+        if self.event_handler and hasattr(self.event_handler, "set_streaming_finished"):
+            self.event_handler.set_streaming_finished()
 
     def stop(self):
         """停止 Flow Agent"""
