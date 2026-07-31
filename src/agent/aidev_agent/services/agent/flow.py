@@ -135,7 +135,7 @@ class FlowAgentCompletionAgent(BaseModel):
         """
         stream_thread_id = self.session_code or self.thread_id
         helper = GeneratorStreamingHelper(thread_id=stream_thread_id)
-        return helper.stream(self._run_flow())
+        return helper.stream(self._run_flow(), event_handler=self.event_handler)
 
     def stop(self):
         """停止 Flow Agent"""
