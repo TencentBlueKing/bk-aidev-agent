@@ -2,6 +2,7 @@ from .base import (
     BaseMessageQueueHandler,
     ConsumerManagementProtocol,
     ConsumerPreemptedError,
+    RetryableHeartbeatTimeoutError,
     StreamCancelledError,
 )
 from .constants import (
@@ -34,6 +35,7 @@ __all__ = [
     "MultiProcessMixin",
     # 异常类
     "ConsumerPreemptedError",
+    "RetryableHeartbeatTimeoutError",
     "StreamCancelledError",
     # 常量类
     "StreamMarkers",

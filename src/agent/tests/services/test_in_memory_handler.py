@@ -14,6 +14,7 @@ from aidev_agent.services.messages_handler import (
     EOD_CHUNK,
     GeneratorStreamingHelper,
     InMemoryQueueMessageHandler,
+    RetryableHeartbeatTimeoutError,
     message_handler_factory,
 )
 from aidev_agent.services.messages_handler.config import MessageHandlerConfig
@@ -639,8 +640,58 @@ class TestInMemoryQueueMessageHandler:
             "message": helper._HEARTBEAT_TIMEOUT_MESSAGE,
         }
         assert [event.type for event in dispatched] == [EventType.RAW]
-        with pytest.raises(RuntimeError, match="生产者心跳超时"):
+        with pytest.raises(RetryableHeartbeatTimeoutError, match="生产者心跳超时"):
             next(stream)
+
+    def test_background_stream_keeps_running_during_heartbeat_recovery(self, handler, monkeypatch):
+        """后台 schedule 无前端可接管，producer 存活时心跳超时应继续消费。"""
+        thread_id = "test_background_heartbeat_recovery"
+        helper = GeneratorStreamingHelper(handler, thread_id=thread_id, defer_cleanup_on_complete=True)
+        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_INTERVAL", 1.0)
+        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.1)
+        monkeypatch.setattr(helper, "_HEARTBEAT_TIMEOUT_GRACE", 0.02)
+        monkeypatch.setattr(helper, "_BACKGROUND_HEARTBEAT_RECOVERY_TIMEOUT", 2.0)
+        original_put = handler.put
+
+        def drop_heartbeat(tid, message):
+            if message != streaming_helper_module.HEARTBEAT_CHUNK:
+                original_put(tid, message)
+
+        monkeypatch.setattr(handler, "put", drop_heartbeat)
+
+        def delayed_chunk():
+            time.sleep(1.2)
+            yield "late_chunk"
+
+        result = list(helper.stream(delayed_chunk()))
+
+        assert result == ["late_chunk"]
+
+    def test_background_stream_waits_for_delayed_eod_after_producer_finished(self, handler, monkeypatch):
+        """producer 已结束但 EOD 暂不可见时，后台消费者不应立即误报失败。"""
+        helper = GeneratorStreamingHelper(handler, thread_id="test_delayed_eod", defer_cleanup_on_complete=True)
+        producer_thread = threading.Thread(target=lambda: None)
+        producer_thread.start()
+        producer_thread.join()
+        calls = 0
+
+        def delayed_eod(*, timeout, replay_offset):
+            nonlocal calls
+            calls += 1
+            if calls < 3:
+                raise TimeoutError
+            return [streaming_helper_module.EOD_CHUNK], replay_offset + 1
+
+        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.0)
+        monkeypatch.setattr(helper, "_HEARTBEAT_TIMEOUT_GRACE", 0.0)
+        monkeypatch.setattr(helper, "_BACKGROUND_HEARTBEAT_RECOVERY_TIMEOUT", 1.0)
+        monkeypatch.setattr(helper, "_get_consumer_messages", delayed_eod)
+
+        stream = helper._consume_stream_messages(
+            handler.acquire_consumer(helper.thread_id), threading.Event(), False, True, producer_thread=producer_thread
+        )
+
+        assert (list(stream), calls) == ([], 3)
 
     def test_producer_error_emits_terminal_events(self, handler):
         """producer 异常应形成完整终止事件对并同步分发。"""
