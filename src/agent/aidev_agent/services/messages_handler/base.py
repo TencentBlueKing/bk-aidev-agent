@@ -23,6 +23,7 @@ __all__ = [
     "QueueTTLConfig",
     "ConsumerPreemptedError",
     "StreamCancelledError",
+    "RetryableHeartbeatTimeoutError",
     "ConsumerManagementProtocol",
     "BaseMessageQueueHandler",
 ]
@@ -34,6 +35,10 @@ class ConsumerPreemptedError(Exception):
 
 class StreamCancelledError(Exception):
     """流被用户主动取消（停止会话）"""
+
+
+class RetryableHeartbeatTimeoutError(RuntimeError):
+    """消费者心跳超时，可通过重新消费恢复且不应更新会话终态。"""
 
 
 @runtime_checkable
@@ -297,7 +302,6 @@ class BaseMessageQueueHandler(ABC):
 
     def release_producer(self, thread_id: str) -> None:
         """释放会话级生产者写入权。默认无操作。"""
-        pass
 
     def size(self, thread_id: str) -> int:
         """获取主队列中的消息数量（get_cached_count 的别名）

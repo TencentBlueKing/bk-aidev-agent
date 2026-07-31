@@ -9,7 +9,7 @@ from ag_ui.encoder import EventEncoder
 
 from aidev_agent.utils.event import RunId, emit_run_finished_event
 
-from .base import BaseMessageQueueHandler, ConsumerPreemptedError
+from .base import BaseMessageQueueHandler, ConsumerPreemptedError, RetryableHeartbeatTimeoutError
 from .constants import (
     CANCELLED_CHUNK,
     EOD_CHUNK,
@@ -75,6 +75,9 @@ class GeneratorStreamingHelper:
     _DONE_ORPHAN_CLEANUP_GRACE = 30.0
     _ORPHAN_CLEANUP_POLL_INTERVAL = 0.1
     _HEARTBEAT_TIMEOUT_GRACE = 5.0
+    # 后台 schedule 没有前端可接管重连；心跳超时后保留最多 60 秒恢复窗口，
+    # 期间继续等待业务消息/EOD 可见且不写会话终态。耗尽后再由 worker 收口 FAILED。
+    _BACKGROUND_HEARTBEAT_RECOVERY_TIMEOUT = 60.0
     _HEARTBEAT_TIMEOUT_MESSAGE = "Agent 执行中断：生产者心跳超时，请稍后重试"
 
     @staticmethod
@@ -538,7 +541,7 @@ class GeneratorStreamingHelper:
         yield EventEncoder().encode(retry_event)
 
         # 后续增加独立重试事件后，前端无需再依赖 transport/network error。
-        raise RuntimeError(self._HEARTBEAT_TIMEOUT_MESSAGE)
+        raise RetryableHeartbeatTimeoutError(self._HEARTBEAT_TIMEOUT_MESSAGE)
 
     def _consume_stream_messages(
         self,
@@ -561,6 +564,7 @@ class GeneratorStreamingHelper:
         consumer_draining = False
         consumer_drain_start = 0.0
         last_message_time = time.time()
+        last_message_monotonic = time.monotonic()
 
         consumer_id_short = consumer_id[:8] if consumer_id else "?"
         loop_iter = 0
@@ -570,6 +574,7 @@ class GeneratorStreamingHelper:
         replay_offset = 0
         supports_replay_from_start = self._supports_replay_from_start()
         heartbeat_grace_deadline: float | None = None
+        background_recovery_deadline: float | None = None
 
         logger.info(
             "[RabbitMQ] consumer loop enter thread_id=%s consumer_id=%s is_resuming=%s heartbeat_check=%s",
@@ -646,7 +651,9 @@ class GeneratorStreamingHelper:
 
                     if messages:
                         last_message_time = time.time()
+                        last_message_monotonic = time.monotonic()
                         heartbeat_grace_deadline = None
+                        background_recovery_deadline = None
 
                     for item in messages:
                         if item == HEARTBEAT_CHUNK:
@@ -714,7 +721,7 @@ class GeneratorStreamingHelper:
                     exit_reason = "preempted"
                     raise
                 except TimeoutError:
-                    time_since_last = time.time() - last_message_time
+                    time_since_last = time.monotonic() - last_message_monotonic
                     if enable_heartbeat_check and time_since_last > HEARTBEAT_TIMEOUT:
                         producer_finished = producer_thread is not None and not producer_thread.is_alive()
 
@@ -731,6 +738,22 @@ class GeneratorStreamingHelper:
                             continue
                         if heartbeat_grace_deadline is not None and time.monotonic() < heartbeat_grace_deadline:
                             continue
+
+                        if self.defer_cleanup_on_complete:
+                            if background_recovery_deadline is None:
+                                background_recovery_deadline = (
+                                    time.monotonic() + self._BACKGROUND_HEARTBEAT_RECOVERY_TIMEOUT
+                                )
+                                logger.warning(
+                                    "[RabbitMQ] background consumer keeps waiting after heartbeat timeout "
+                                    "thread_id=%s recovery_timeout=%.1fs replay_offset=%d producer_finished=%s",
+                                    self.thread_id,
+                                    self._BACKGROUND_HEARTBEAT_RECOVERY_TIMEOUT,
+                                    replay_offset,
+                                    producer_finished,
+                                )
+                            if time.monotonic() < background_recovery_deadline:
+                                continue
 
                         logger.error(
                             f"心跳超时 thread_id={self.thread_id}，距上次消息 {time_since_last:.1f}s "

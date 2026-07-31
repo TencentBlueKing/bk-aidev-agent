@@ -397,9 +397,11 @@ class ChatCompletionViewSet(PluginViewSet):
         _preempted = False
         _client_disconnected = False
         _cancelled = False
+        _stream_completed = False
         try:
             for chunk in generator:
                 yield chunk
+            _stream_completed = True
         except GeneratorExit:
             _client_disconnected = True
             logger.info(f"[WRAP_STATUS] Client disconnected (GeneratorExit): session_code={session_code}")
@@ -421,7 +423,7 @@ class ChatCompletionViewSet(PluginViewSet):
                 if GeneratorStreamingHelper.is_cancelled(session_code):
                     _cancelled = True
                     logger.info(f"[WRAP_STATUS] Generator结束后检测到取消标志: session_code={session_code}")
-            if not _preempted and not _client_disconnected and not _cancelled:
+            if _stream_completed and not _preempted and not _client_disconnected and not _cancelled:
                 logger.info(f"[WRAP_STATUS] 流正常结束, 调用 set_streaming_finished: session_code={session_code}")
                 event_handler.set_streaming_finished()
 

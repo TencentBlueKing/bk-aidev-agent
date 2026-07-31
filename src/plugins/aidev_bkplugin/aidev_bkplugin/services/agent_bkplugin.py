@@ -28,6 +28,7 @@ from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.agent import AgentInstanceFactory
 from aidev_agent.services.common_agent import common_agent_factory
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
+from aidev_agent.services.messages_handler import RetryableHeartbeatTimeoutError
 from aidev_agent.utils.local import request_local
 from django.contrib.auth import get_user_model
 
@@ -173,6 +174,13 @@ class BkpluginAgentRunner(ABC):
         """同步执行 Agent，返回最终 AI 回复字符串；异常时写回失败状态 (D-01)。"""
         try:
             return self._do_execute()
+        except RetryableHeartbeatTimeoutError:
+            logger.warning(
+                "[Bkplugin] skip session terminal update for retryable consumer heartbeat timeout session_code=%s",
+                self.session_code or "",
+                exc_info=True,
+            )
+            raise
         except Exception as e:
             logger.exception("[Bkplugin] execute error: %s", e)
             session_code = self.session_code or ""
@@ -212,7 +220,7 @@ class BkpluginAgentRunner(ABC):
         *,
         chat_context: list[dict] | None = None,
     ) -> None:
-        """Celery worker 入口：捕获异常并写 session 失败状态。"""
+        """Celery worker 入口：业务异常写失败；可重试消费异常保持 session 原状态。"""
         logger.info(
             "[Bkplugin] run_worker enter session_code=%s turn_id=%s thread=%s",
             session_code,
@@ -221,6 +229,14 @@ class BkpluginAgentRunner(ABC):
         )
         try:
             self.invoke_agent(session_code, execute_payload, chat_context=chat_context or [])
+        except RetryableHeartbeatTimeoutError:
+            logger.warning(
+                "[Bkplugin] skip session terminal update for retryable consumer heartbeat timeout "
+                "session_code=%s turn_id=%s",
+                session_code,
+                execute_payload.get("turn_id") or "",
+                exc_info=True,
+            )
         except Exception as e:
             logger.exception("[Bkplugin] worker error session_code=%s", session_code)
             manager = SessionManager(self.username or "")

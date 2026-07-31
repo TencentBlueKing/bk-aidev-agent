@@ -23,6 +23,7 @@ sys.modules.setdefault("bk_plugin_framework.kit", _bk_plugin_framework.kit)
 sys.modules.setdefault("bk_plugin_framework.kit.decorators", _bk_plugin_framework.kit.decorators)
 
 from aidev_agent.enums import AgentType, ChatContentStatus, PromptRole, SessionsStatus  # noqa: E402
+from aidev_agent.services.messages_handler import RetryableHeartbeatTimeoutError  # noqa: E402
 from aidev_bkplugin.enums import PluginPollTaskState  # noqa: E402
 from aidev_bkplugin.services.agent_session import SessionManager  # noqa: E402
 
@@ -272,14 +273,10 @@ class TestBkpluginExecution:
         from aidev_bkplugin.services.agent_bkplugin import BkpluginChat
 
         agent = BkpluginChat(chat_history=[], execute_kwargs={}, username="alice")
-        monkeypatch.setattr(
-            agent, "invoke_agent", MagicMock(side_effect=RuntimeError("生产者心跳超时"))
-        )
+        monkeypatch.setattr(agent, "invoke_agent", MagicMock(side_effect=RuntimeError("生产者心跳超时")))
         mock_sm = MagicMock()
         mock_sm.retrieve_session.return_value = {"status": SessionsStatus.FINISHED.value}
-        monkeypatch.setattr(
-            "aidev_bkplugin.services.agent_bkplugin.SessionManager", lambda username: mock_sm
-        )
+        monkeypatch.setattr("aidev_bkplugin.services.agent_bkplugin.SessionManager", lambda username: mock_sm)
 
         agent.run_worker("sess-1", {"turn_id": "t1"})
 
@@ -291,16 +288,46 @@ class TestBkpluginExecution:
         from aidev_bkplugin.services.agent_bkplugin import BkpluginChat
 
         agent = BkpluginChat(chat_history=[], execute_kwargs={}, username="alice")
-        monkeypatch.setattr(
-            agent, "invoke_agent", MagicMock(side_effect=RuntimeError("生产者心跳超时"))
-        )
+        monkeypatch.setattr(agent, "invoke_agent", MagicMock(side_effect=RuntimeError("producer crashed")))
         mock_sm = MagicMock()
         mock_sm.retrieve_session.return_value = {"status": SessionsStatus.RUNNING.value}
-        monkeypatch.setattr(
-            "aidev_bkplugin.services.agent_bkplugin.SessionManager", lambda username: mock_sm
-        )
+        monkeypatch.setattr("aidev_bkplugin.services.agent_bkplugin.SessionManager", lambda username: mock_sm)
 
         agent.run_worker("sess-1", {"turn_id": "t1"})
 
         mock_sm.save_stream_failure.assert_called_once_with("sess-1", ANY, turn_id="t1")
 
+    def test_run_worker_skips_session_update_for_retryable_heartbeat_timeout(self, monkeypatch):
+        """消费者心跳超时可重试，不应更新 session 终态。"""
+        from aidev_bkplugin.services.agent_bkplugin import BkpluginChat
+
+        agent = BkpluginChat(chat_history=[], execute_kwargs={}, username="alice")
+        monkeypatch.setattr(
+            agent,
+            "invoke_agent",
+            MagicMock(side_effect=RetryableHeartbeatTimeoutError("生产者心跳超时")),
+        )
+        manager_factory = MagicMock()
+        monkeypatch.setattr("aidev_bkplugin.services.agent_bkplugin.SessionManager", manager_factory)
+
+        agent.run_worker("sess-1", {"turn_id": "t1"})
+
+        manager_factory.assert_not_called()
+
+    def test_execute_skips_session_update_for_retryable_heartbeat_timeout(self, monkeypatch):
+        """同步消费遇到可重试心跳超时，也不应覆盖 session 状态。"""
+        from aidev_bkplugin.services.agent_bkplugin import BkpluginChat
+
+        agent = BkpluginChat(chat_history=[], execute_kwargs={"session_code": "sess-1"}, username="alice")
+        monkeypatch.setattr(
+            agent,
+            "_do_execute",
+            MagicMock(side_effect=RetryableHeartbeatTimeoutError("生产者心跳超时")),
+        )
+        manager_factory = MagicMock()
+        monkeypatch.setattr("aidev_bkplugin.services.agent_bkplugin.SessionManager", manager_factory)
+
+        with pytest.raises(RetryableHeartbeatTimeoutError):
+            agent.execute()
+
+        manager_factory.assert_not_called()
