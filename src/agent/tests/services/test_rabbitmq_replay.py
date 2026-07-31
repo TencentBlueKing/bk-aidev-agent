@@ -1,4 +1,5 @@
 import contextlib
+import pickle
 import threading
 from unittest.mock import MagicMock
 
@@ -72,3 +73,64 @@ def test_eod_commit_event_is_notified_only_after_eod_publish():
     handler._notify_eod_committed("thread-id", [EOD_CHUNK])
     assert event.is_set()
     assert "thread-id" not in handler._eod_commit_events
+
+
+def test_coalesce_sse_messages_preserves_mixed_order_and_eod():
+    first = 'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"a"}\n\n'
+    second = 'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"b"}\n\n'
+    third = 'data: {"type":"RUN_FINISHED"}\n\n'
+
+    messages = RabbitMQMessageHandler._coalesce_sse_messages([first, second, "legacy-message", third, EOD_CHUNK])
+
+    assert messages == [first + second, "legacy-message", third, EOD_CHUNK]
+
+
+def test_expand_sse_messages_restores_original_frames():
+    first = 'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"a"}\n\n'
+    second = 'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"b"}\n\n'
+
+    messages = RabbitMQMessageHandler._expand_sse_messages([first + second, "legacy-message", EOD_CHUNK])
+
+    assert messages == [first, second, "legacy-message", EOD_CHUNK]
+
+
+def test_coalesce_sse_messages_splits_by_utf8_bytes(monkeypatch):
+    first = "data: 一\n\n"
+    second = "data: 二\n\n"
+    monkeypatch.setattr(RabbitMQMessageHandler, "SSE_PUBLISH_CHUNK_MAX_BYTES", len(first.encode("utf-8")))
+
+    messages = RabbitMQMessageHandler._coalesce_sse_messages([first, second])
+
+    assert messages == [first, second]
+
+
+def test_flush_publishes_coalesced_sse_and_eod():
+    handler = object.__new__(RabbitMQMessageHandler)
+    first = 'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"a"}\n\n'
+    second = 'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"b"}\n\n'
+    channel = MagicMock()
+    handler._buffer_lock = threading.Lock()
+    handler._message_buffer = {"thread-id": [first, second, EOD_CHUNK]}
+    handler._get_flush_peek_lock = MagicMock(return_value=threading.Lock())
+    handler._with_channel = MagicMock(return_value=contextlib.nullcontext(channel))
+    handler._ensure_queue = MagicMock(return_value="replay-queue")
+    handler._notify_eod_committed = MagicMock()
+    handler._notify_replay_waiters = MagicMock()
+
+    handler.flush("thread-id")
+
+    published = [pickle.loads(call.kwargs["body"]) for call in channel.basic_publish.call_args_list]
+    assert published == [first + second, EOD_CHUNK]
+    handler._notify_eod_committed.assert_called_once_with("thread-id", [first, second, EOD_CHUNK])
+
+
+def test_get_messages_since_replays_mixed_physical_messages():
+    first = 'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"a"}\n\n'
+    second = 'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"b"}\n\n'
+    stored_messages = ["legacy-message", first + second, EOD_CHUNK]
+    handler, _ = _make_handler(message_count=3, messages=stored_messages)
+
+    messages, next_offset = handler.get_messages_since("thread-id", offset=1, timeout=0)
+
+    assert messages == [first, second, EOD_CHUNK]
+    assert next_offset == 3
