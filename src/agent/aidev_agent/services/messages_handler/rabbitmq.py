@@ -1185,21 +1185,29 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                     # replay offset 只描述 RabbitMQ 已提交队列，不能包含本地未发布 buffer。
                     # flush_peek_lock 避免读取到本进程尚未完整发布的 flush 批次。
                     with flush_peek_lock:
-                        all_messages = self._peek_queue_messages(channel, main_queue_name)
+                        queue_info = channel.queue_declare(queue=main_queue_name, durable=True, passive=True)
+                        committed_count = queue_info.method.message_count
 
                         # 兼容升级前已经进入 DLQ 的旧缓存：仅在主队列为空时恢复一次。
-                        if not all_messages and self._get_dlq_count(thread_id) > 0:
+                        if committed_count == 0 and self._get_dlq_count(thread_id) > 0:
                             restored = self._restore_from_dlq(thread_id)
                             logger.info(
                                 "[RabbitMQ] restored legacy DLQ messages before replay thread_id=%s restored=%d",
                                 thread_id,
                                 restored,
                             )
-                            all_messages = self._peek_queue_messages(channel, main_queue_name)
+                            queue_info = channel.queue_declare(queue=main_queue_name, durable=True, passive=True)
+                            committed_count = queue_info.method.message_count
 
-                next_offset = len(all_messages)
-                if next_offset > offset:
-                    return all_messages[offset:], next_offset
+                        # 没有新消息时避免反复 basic_get/basic_nack 全量扫描历史队列。
+                        all_messages = (
+                            self._peek_queue_messages(channel, main_queue_name) if committed_count > offset else None
+                        )
+
+                if all_messages is not None:
+                    next_offset = len(all_messages)
+                    if next_offset > offset:
+                        return all_messages[offset:], next_offset
             except Exception:
                 logger.exception("Error in get_messages_since for thread_id=%s", thread_id)
 
