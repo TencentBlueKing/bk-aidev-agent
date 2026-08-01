@@ -69,4 +69,5 @@ def test_release_producer_no_connection_is_safe():
 
 def test_rabbitmq_read_write_intervals_are_half_second():
     assert RabbitMQMessageHandler.BUFFER_FLUSH_INTERVAL == 0.5
+    assert RabbitMQMessageHandler.SSE_BUFFER_MAX_EVENTS == 100
     assert RabbitMQMessageHandler.REPLAY_MESSAGE_RETRY_INTERVAL == 0.5

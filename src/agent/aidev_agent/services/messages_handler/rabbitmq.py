@@ -303,6 +303,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
     ACTIVE_CONSUMER_PREFIX: ClassVar[str] = "aidev_agent.consumer_active."
     QUEUE_TTL_MS: ClassVar[int] = QueueTTLConfig.QUEUE_EXPIRE_MS
     BUFFER_FLUSH_INTERVAL: ClassVar[float] = 0.5
+    SSE_BUFFER_MAX_EVENTS: ClassVar[int] = 100
     SSE_PUBLISH_CHUNK_MAX_BYTES: ClassVar[int] = 256 * 1024
     REPLAY_LOCK_RETRY_INTERVAL: ClassVar[float] = 0.05
     REPLAY_MESSAGE_RETRY_INTERVAL: ClassVar[float] = 0.5
@@ -335,7 +336,9 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
 
         # 消息缓冲队列：用于批量推送
         self._message_buffer: dict[str, list[Any]] = {}
+        self._buffer_flush_requests: set[str] = set()
         self._buffer_lock = threading.Lock()
+        self._buffer_flush_event = threading.Event()
         self._replay_wait_condition = threading.Condition()
         self._producer_lock_connections: dict[str, pika.BlockingConnection] = {}
         self._producer_lock_guard = threading.Lock()
@@ -856,6 +859,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
 
         self._daemon_running = True
         self._daemon_stop_event.clear()
+        self._buffer_flush_event.clear()
         self._daemon_thread = threading.Thread(target=self._daemon_worker, daemon=True, name="RabbitMQ-Daemon")
         self._daemon_thread.start()
         logger.info("RabbitMQ daemon thread started")
@@ -867,21 +871,37 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
 
         self._daemon_running = False
         self._daemon_stop_event.set()
+        self._buffer_flush_event.set()
 
         if self._daemon_thread and self._daemon_thread.is_alive():
             self._daemon_thread.join(timeout=2.0)
             logger.info("RabbitMQ daemon thread stopped")
 
     def _daemon_worker(self) -> None:
-        """后台守护线程工作函数：每隔 0.5 秒批量推送消息到 RabbitMQ"""
+        """后台守护线程工作函数：每 0.5 秒或单会话累计 100 个事件时刷新。"""
+        next_full_flush_at = time.monotonic() + self.BUFFER_FLUSH_INTERVAL
         while self._daemon_running:
             try:
-                # 等待批量刷新周期或直到停止事件触发
-                if self._daemon_stop_event.wait(timeout=self.BUFFER_FLUSH_INTERVAL):
+                wait_timeout = max(0.0, next_full_flush_at - time.monotonic())
+                threshold_reached = self._buffer_flush_event.wait(timeout=wait_timeout)
+                self._buffer_flush_event.clear()
+                if self._daemon_stop_event.is_set():
                     break
 
-                # 批量推送消息
-                self._flush_messages()
+                now = time.monotonic()
+                if now >= next_full_flush_at:
+                    with self._buffer_lock:
+                        self._buffer_flush_requests.clear()
+                    thread_ids = None
+                    next_full_flush_at = now + self.BUFFER_FLUSH_INTERVAL
+                elif threshold_reached:
+                    with self._buffer_lock:
+                        thread_ids = set(self._buffer_flush_requests)
+                        self._buffer_flush_requests.clear()
+                else:
+                    continue
+
+                self._flush_messages(thread_ids)
             except Exception as e:
                 logger.error(f"Error in daemon worker: {e}")
 
@@ -940,17 +960,20 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             expanded_messages.extend(f"{part}\n\n" for part in parts[:-1])
         return expanded_messages
 
-    def _flush_messages(self) -> None:
+    def _flush_messages(self, thread_ids: set[str] | None = None) -> None:
         """批量推送缓冲区中的所有消息到 RabbitMQ
 
         对每个 thread_id，在 _flush_peek_lock 内完成"取出 buffer + publish"的原子操作，
         确保与 get_messages_since 的 queue peek 互斥，避免 replay 观察到未完整发布的 flush 批次。
+
+        Args:
+            thread_ids: 仅刷新指定会话；为空时刷新全部会话。
         """
         # 快速检查是否有消息需要 flush
         with self._buffer_lock:
             if not self._message_buffer:
                 return
-            thread_ids_to_flush = list(self._message_buffer.keys())
+            thread_ids_to_flush = list(self._message_buffer.keys() if thread_ids is None else thread_ids)
 
         # 按 thread_id 逐个 flush，每个 thread_id 在 flush_peek_lock 内完成
         # "取出 buffer + publish" 的原子操作
@@ -962,6 +985,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                     # 在 flush_peek_lock 内取出该 thread_id 的 buffer
                     with self._buffer_lock:
                         messages = self._message_buffer.pop(thread_id, [])
+                        self._buffer_flush_requests.discard(thread_id)
                     if not messages:
                         continue
                     messages_to_publish = self._coalesce_sse_messages(messages)
@@ -1116,16 +1140,26 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
     def put(self, thread_id: str, message: Any) -> None:
         """向指定 thread_id 的队列中添加消息
 
-        消息会先添加到本地缓冲区，由后台守护线程每隔 0.5 秒批量推送到 RabbitMQ。
+        消息会先添加到本地缓冲区，由后台守护线程每隔 0.5 秒，或单会话累计
+        100 个逻辑事件时批量推送到 RabbitMQ。
         """
         # 确保守护线程存活（处理 Gunicorn fork 场景）
         self._ensure_daemon_alive()
 
         # 添加到缓冲区
+        should_flush = False
         with self._buffer_lock:
             if thread_id not in self._message_buffer:
                 self._message_buffer[thread_id] = []
             self._message_buffer[thread_id].append(message)
+            if (
+                len(self._message_buffer[thread_id]) >= self.SSE_BUFFER_MAX_EVENTS
+                and thread_id not in self._buffer_flush_requests
+            ):
+                self._buffer_flush_requests.add(thread_id)
+                should_flush = True
+        if should_flush:
+            self._buffer_flush_event.set()
         self._notify_replay_waiters()
 
     def flush(self, thread_id: Optional[str] = None) -> None:
@@ -1140,6 +1174,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             with flush_peek_lock:
                 with self._buffer_lock:
                     messages_to_flush = self._message_buffer.pop(thread_id, [])
+                    self._buffer_flush_requests.discard(thread_id)
 
                 if not messages_to_flush:
                     return
@@ -1521,6 +1556,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         with self._buffer_lock:
             if thread_id in self._message_buffer:
                 self._message_buffer.pop(thread_id, None)
+            self._buffer_flush_requests.discard(thread_id)
 
         self._purge_all_queues(thread_id, include_cancel_queue=True)
         self._delete_all_resources(thread_id)
@@ -1573,6 +1609,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         with self._buffer_lock:
             if thread_id in self._message_buffer:
                 self._message_buffer[thread_id] = []
+            self._buffer_flush_requests.discard(thread_id)
 
         # 检查并迁移不兼容的旧队列
         self._migrate_queue_if_needed(thread_id)

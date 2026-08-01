@@ -104,6 +104,71 @@ def test_coalesce_sse_messages_splits_by_utf8_bytes(monkeypatch):
     assert messages == [first, second]
 
 
+def test_put_requests_flush_after_one_thread_reaches_event_limit():
+    handler = object.__new__(RabbitMQMessageHandler)
+    handler._message_buffer = {}
+    handler._buffer_flush_requests = set()
+    handler._buffer_lock = threading.Lock()
+    handler._buffer_flush_event = threading.Event()
+    handler._ensure_daemon_alive = MagicMock()
+    handler._notify_replay_waiters = MagicMock()
+
+    for index in range(handler.SSE_BUFFER_MAX_EVENTS - 1):
+        handler.put("busy-thread", f"data: {index}\n\n")
+    handler.put("idle-thread", "data: idle\n\n")
+    assert not handler._buffer_flush_event.is_set()
+
+    handler.put("busy-thread", "data: threshold\n\n")
+    assert handler._buffer_flush_event.is_set()
+    assert handler._buffer_flush_requests == {"busy-thread"}
+
+
+def test_threshold_flush_does_not_flush_other_threads():
+    handler = object.__new__(RabbitMQMessageHandler)
+    channel = MagicMock()
+    handler._message_buffer = {"busy-thread": ["data: busy\n\n"], "idle-thread": ["data: idle\n\n"]}
+    handler._buffer_flush_requests = {"busy-thread", "idle-thread"}
+    handler._buffer_lock = threading.Lock()
+    handler._get_flush_peek_lock = MagicMock(return_value=threading.Lock())
+    handler._with_channel = MagicMock(return_value=contextlib.nullcontext(channel))
+    handler._ensure_queue = MagicMock(return_value="replay-queue")
+    handler._notify_eod_committed = MagicMock()
+    handler._notify_replay_waiters = MagicMock()
+
+    handler._flush_messages({"busy-thread"})
+
+    published = [pickle.loads(call.kwargs["body"]) for call in channel.basic_publish.call_args_list]
+    assert published == ["data: busy\n\n"]
+    assert handler._message_buffer == {"idle-thread": ["data: idle\n\n"]}
+    assert handler._buffer_flush_requests == {"idle-thread"}
+
+
+def test_threshold_wakeup_does_not_postpone_periodic_flush(monkeypatch):
+    handler = object.__new__(RabbitMQMessageHandler)
+    handler._daemon_running = True
+    handler._daemon_stop_event = threading.Event()
+    handler._buffer_flush_event = MagicMock()
+    handler._buffer_flush_event.wait.side_effect = [True, False]
+    handler._buffer_flush_requests = {"busy-thread"}
+    handler._buffer_lock = threading.Lock()
+    flush_calls = []
+
+    def flush(thread_ids=None):
+        flush_calls.append(thread_ids)
+        if len(flush_calls) == 2:
+            handler._daemon_running = False
+
+    handler._flush_messages = flush
+    monotonic = MagicMock(side_effect=[0.0, 0.1, 0.1, 0.4, 0.5])
+    monkeypatch.setattr("aidev_agent.services.messages_handler.rabbitmq.time.monotonic", monotonic)
+
+    handler._daemon_worker()
+
+    wait_timeouts = [call.kwargs["timeout"] for call in handler._buffer_flush_event.wait.call_args_list]
+    assert wait_timeouts == pytest.approx([0.4, 0.1])
+    assert flush_calls == [{"busy-thread"}, None, None]
+
+
 def test_flush_publishes_coalesced_sse_and_eod():
     handler = object.__new__(RabbitMQMessageHandler)
     first = 'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"a"}\n\n'
@@ -111,6 +176,7 @@ def test_flush_publishes_coalesced_sse_and_eod():
     channel = MagicMock()
     handler._buffer_lock = threading.Lock()
     handler._message_buffer = {"thread-id": [first, second, EOD_CHUNK]}
+    handler._buffer_flush_requests = set()
     handler._get_flush_peek_lock = MagicMock(return_value=threading.Lock())
     handler._with_channel = MagicMock(return_value=contextlib.nullcontext(channel))
     handler._ensure_queue = MagicMock(return_value="replay-queue")
