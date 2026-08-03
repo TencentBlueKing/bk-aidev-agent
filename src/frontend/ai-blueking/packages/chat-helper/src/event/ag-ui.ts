@@ -23,7 +23,6 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { mergeArtifactsActivityIntoMessages, transferMessageApi2Message } from '../http/transform';
 import {
   type IKnowledgeRag,
   type IMessageModule,
@@ -334,9 +333,7 @@ export class AGUIProtocol implements ISSEProtocol {
    */
   handleMessagesSnapshotEvent(event: IMessagesSnapshotEvent) {
     if (event.messages && event.messages.length > 0) {
-      this.messageModule.list.value = mergeArtifactsActivityIntoMessages(
-        event.messages.map(transferMessageApi2Message),
-      );
+      this.messageModule.list.value = event.messages;
     }
   }
 
