@@ -231,7 +231,7 @@ class TestHookExceptionSwallowed:
 
 
 class TestBaseSessionWriterArtifactsGenerated:
-    """白名单分发 + handle_artifacts_generated 走 _create_session_content。"""
+    """白名单分发 + handle_artifacts_generated 默认钩子返回 False 时兜底走 _create_session_content。"""
 
     def _make_writer(self) -> BaseSessionWriter:
         class _W(BaseSessionWriter):
@@ -291,3 +291,118 @@ class TestBaseSessionWriterArtifactsGenerated:
             writer.handle_artifacts_generated(event)
             writer.handle_artifacts_generated(event)
             assert mocked.call_count == 1
+
+# ---------------------------------------------------------------------------
+# 新行为: 合并进最近一条 assistant 消息的 property.artifacts + 无 assistant 兜底
+# ---------------------------------------------------------------------------
+
+
+class TestPickLastAssistant:
+    """_pick_last_assistant 纯函数: 内存选出 id 最大的 assistant 记录。"""
+
+    def test_picks_max_id_assistant(self):
+        contents = [
+            {"id": 1, "role": "user"},
+            {"id": 2, "role": "assistant"},
+            {"id": 5, "role": "assistant"},
+            {"id": 6, "role": "tool"},
+        ]
+        assert BaseSessionWriter._pick_last_assistant(contents)["id"] == 5
+
+    def test_returns_none_without_assistant(self):
+        contents = [{"id": 1, "role": "user"}, {"id": 2, "role": "tool"}]
+        assert BaseSessionWriter._pick_last_assistant(contents) is None
+
+    def test_supports_object_items(self):
+        class _Row:
+            def __init__(self, rid, role):
+                self.id = rid
+                self.role = role
+        rows = [_Row(3, "assistant"), _Row(7, "assistant"), _Row(9, "user")]
+        assert BaseSessionWriter._pick_last_assistant(rows).id == 7
+
+
+class TestMergeArtifactsIntoProperty:
+    """_merge_artifacts_into_property 纯函数: 顶层数组合并 + outputId 去重。"""
+
+    def test_appends_to_empty(self):
+        prop = {}
+        out = BaseSessionWriter._merge_artifacts_into_property(prop, [{"outputId": "a"}])
+        assert out["artifacts"] == [{"outputId": "a"}]
+
+    def test_dedup_by_output_id(self):
+        prop = {"artifacts": [{"outputId": "a", "name": "old"}]}
+        out = BaseSessionWriter._merge_artifacts_into_property(
+            prop, [{"outputId": "a", "name": "new"}, {"outputId": "b"}]
+        )
+        ids = [x["outputId"] for x in out["artifacts"]]
+        assert ids == ["a", "b"]
+
+
+class TestHandleArtifactsMergeBehavior:
+    """handle_artifacts_generated 新落库行为: 优先合并, 失败兜底 activity。"""
+
+    def _make_writer(self):
+        class _W(BaseSessionWriter):
+            def _do_create_content(self, message_id, action, payload, headers):
+                return 123
+
+            def _do_update_content(self, content_id, payload, headers):
+                pass
+
+        writer = _W.__new__(_W)
+        writer.session_code = "sess-1"
+        writer.username = "u"
+        writer.turn_id = ""
+        writer._written_message_ids = set()
+        writer._streaming_messages = {}
+        writer._content_ids_by_message_id = {}
+        writer._is_cancelled = False
+        writer._has_run_error = False
+        return writer
+
+    def _event(self):
+        return CustomEvent(
+            type=EventType.CUSTOM,
+            name="artifacts_generated",
+            value={"runId": "run-1", "status": "complete", "artifacts": [{"outputId": "a.txt"}]},
+        )
+
+    def test_merge_success_skips_activity(self):
+        """合并成功(钩子返回 True)时不再建 activity。"""
+        writer = self._make_writer()
+        with patch.object(writer, "_merge_artifacts_into_last_assistant", return_value=True) as merge:
+            with patch.object(writer, "_create_session_content") as create:
+                writer.handle_artifacts_generated(self._event())
+        merge.assert_called_once()
+        create.assert_not_called()
+        assert "artifacts_run-1" in writer._written_message_ids
+
+    def test_merge_failure_falls_back_to_activity(self):
+        """合并失败(钩子返回 False)时兜底建 activity。"""
+        writer = self._make_writer()
+        with patch.object(writer, "_merge_artifacts_into_last_assistant", return_value=False):
+            with patch.object(writer, "_create_session_content") as create:
+                writer.handle_artifacts_generated(self._event())
+        create.assert_called_once()
+        assert create.call_args.kwargs["role"] == PromptRole.ACTIVITY.value
+
+    def test_no_artifacts_skips_merge_and_creates_activity(self):
+        """无 artifacts 数组时不调用合并钩子, 直接走兜底 activity。"""
+        writer = self._make_writer()
+        event = CustomEvent(
+            type=EventType.CUSTOM,
+            name="artifacts_generated",
+            value={"runId": "run-2", "status": "empty", "artifacts": []},
+        )
+        with patch.object(writer, "_merge_artifacts_into_last_assistant") as merge:
+            with patch.object(writer, "_create_session_content") as create:
+                writer.handle_artifacts_generated(event)
+        merge.assert_not_called()
+        create.assert_called_once()
+
+    def test_default_hook_returns_false(self):
+        """基类默认 _merge_artifacts_into_last_assistant 返回 False(保持旧行为)。"""
+        writer = self._make_writer()
+        assert writer._merge_artifacts_into_last_assistant([{"outputId": "a"}], {}) is False
+

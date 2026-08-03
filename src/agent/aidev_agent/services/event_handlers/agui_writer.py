@@ -82,6 +82,36 @@ class AGUISessionWriter(BaseSessionWriter):
             self._bind_flow_result_for_resume()
         super().handle_flow_agent_result(event)
 
+    def _merge_artifacts_into_last_assistant(self, artifacts: list, value: dict) -> bool:
+        """API 链路: 把 artifacts 合并进本会话最近一条 assistant 消息的 property.artifacts。
+        通过 get_chat_session_contents 拉整会话列表(天然全量, 无 SQL), 内存取最近 assistant,
+        合并去重后经 _do_update_content 回写; 找不到 assistant 或异常时返回 False, 交由基类兜底建 activity。"""
+        headers = {"X-BKAIDEV-USER": self.username} if self.username else {}
+        try:
+            contents = (
+                self.client.api.get_chat_session_contents(
+                    params={"session_code": self.session_code},
+                    headers=headers,
+                ).get("data")
+                or []
+            )
+            assistant = self._pick_last_assistant(contents)
+            if assistant is None:
+                return False
+            prop = assistant.get("property") or {}
+            if not isinstance(prop, dict):
+                prop = {}
+            self._merge_artifacts_into_property(prop, artifacts)
+            self._do_update_content(
+                content_id=assistant.get("id"),
+                payload={"property": prop},
+                headers=headers,
+            )
+            return True
+        except Exception:
+            logger.exception("API 合并 artifacts 到 assistant 失败: session_code=%s", self.session_code)
+            return False
+
     def _bind_flow_result_for_resume(self) -> None:
         """retry/skip：按 content.task_id 定位本轮已有 flow_agent activity"""
         headers = {"X-BKAIDEV-USER": self.username} if self.username else {}

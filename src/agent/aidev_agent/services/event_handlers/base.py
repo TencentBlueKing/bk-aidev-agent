@@ -932,15 +932,17 @@ class BaseSessionWriter(ABC):
         self._written_message_ids.add(message_id)
 
     def handle_artifacts_generated(self, event: CustomEvent) -> None:
-        """回写本轮产物识别事件为一条 role=activity 会话内容。
-
-        content 直接使用事件 value（{runId, status, artifacts}），content 字段是 TextField，需序列化为 JSON 字符串。
-        子类可覆写实现差异化落库；默认实现覆盖 API / DB 通用路径。
-        """
+        """回写本轮产物识别事件: 优先合并进最近一条 assistant 消息的 property.artifacts(顶层数组);
+        合并成功则不再单独落库 activity 消息; 合并失败(无 assistant/异常)时回退单独建 role=activity 消息, 保证产物不丢失。
+        SSE 分发与 DB 落库为两条独立路径, 本方法只改落库, 不影响流式 custom event。子类覆写 _merge_artifacts_into_last_assistant 实现合并。"""
         value = event.value if isinstance(event.value, dict) else {}
+        artifacts = value.get("artifacts") or []
         run_id = value.get("runId") or ""
         message_id = f"artifacts_{run_id or uuid.uuid4().hex[:12]}"
         if message_id in self._written_message_ids:
+            return
+        if artifacts and self._merge_artifacts_into_last_assistant(artifacts, value):
+            self._written_message_ids.add(message_id)
             return
         self._create_session_content(
             message_id=message_id,
@@ -954,6 +956,45 @@ class BaseSessionWriter(ABC):
             },
         )
         self._written_message_ids.add(message_id)
+
+    def _merge_artifacts_into_last_assistant(self, artifacts: list, value: dict) -> bool:
+        """把 artifacts 合并进本会话最近一条 assistant 消息的 property.artifacts。默认返回 False(走兜底建 activity);
+        能查询/更新已落库消息的子类应覆写此方法, 返回是否合并成功。"""
+        return False
+
+    @staticmethod
+    def _pick_last_assistant(contents: list):
+        """内存选出 id 最大的 assistant 记录; 元素可为 dict 或 ORM 对象; 无则 None。"""
+        last = None
+        last_id = None
+        for item in contents or []:
+            role = item.get("role") if isinstance(item, dict) else getattr(item, "role", None)
+            if role != PromptRole.ASSISTANT.value:
+                continue
+            item_id = item.get("id") if isinstance(item, dict) else getattr(item, "id", None)
+            if item_id is None:
+                continue
+            if last_id is None or item_id > last_id:
+                last_id = item_id
+                last = item
+        return last
+
+    @staticmethod
+    def _merge_artifacts_into_property(prop: dict, artifacts: list) -> dict:
+        """把 artifacts 合并进 prop['artifacts'](顶层数组), 按 outputId 去重后追加。"""
+        existing = list(prop.get("artifacts") or [])
+        existing_ids = set(x.get("outputId") for x in existing if isinstance(x, dict) and x.get("outputId"))
+        for art in artifacts or []:
+            if not isinstance(art, dict):
+                continue
+            output_id = art.get("outputId")
+            if output_id and output_id in existing_ids:
+                continue
+            existing.append(art)
+            if output_id:
+                existing_ids.add(output_id)
+        prop["artifacts"] = existing
+        return prop
 
     def handle_flow_agent_result(self, event) -> None:
         """处理 Flow Agent 结果事件，回写 activity 消息
