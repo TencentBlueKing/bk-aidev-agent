@@ -746,9 +746,9 @@ class BaseSessionWriter(ABC):
         if tool_call_id in self._written_message_ids:
             return
 
-        # 映射状态：success -> complete, error -> fail
+        # 映射状态：success -> complete, error -> error（v2 协议）
         is_error = output_message.status == "error"
-        platform_status = "fail" if is_error else "complete"
+        platform_status = "error" if is_error else "complete"
 
         # 补充写入延迟的 tool_calls 到对应的 assistant 消息
         # 仅在工具实际执行成功时补充（审批拒绝的不补充）
@@ -789,7 +789,7 @@ class BaseSessionWriter(ABC):
 
         # 直接使用事件字段，不再从 event.value 解包 ToolMessage
         is_error = bool(event.is_error) if event.is_error is not None else False
-        platform_status = "fail" if is_error else "complete"
+        platform_status = "error" if is_error else "complete"
 
         # 补充写入延迟的 tool_calls 到对应的 assistant 消息
         if not is_error:

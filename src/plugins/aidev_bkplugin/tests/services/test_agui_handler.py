@@ -9,8 +9,8 @@ from unittest.mock import MagicMock
 import pytest
 from ag_ui.core import CustomEvent, EventType, RunErrorEvent
 from ag_ui.core.events import RawEvent
+from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
 from aidev_agent.core.ag_ui.types import (
-    CustomEventNames,
     CustomMessageType,
     LangGraphEventTypes,
     SessionPersistenceEventNames,
@@ -58,65 +58,57 @@ def make_model_end_event(message_id: str, content: str, tool_calls: list = None,
     )
 
 
-def make_tool_finish_event(tool_call_id: str, message_id: str, content: str, status: str = "success"):
-    """构造 on_tool_node_finish 事件"""
-    tool_message = MagicMock()
-    tool_message.id = message_id
-    tool_message.tool_call_id = tool_call_id
-    tool_message.content = content
-    tool_message.status = status
-    tool_message.additional_kwargs = {}
-
-    return RawEvent(
-        type=EventType.RAW,
-        event={
-            "event": LangGraphEventTypes.OnCustomEvent.value,
-            "name": CustomEventNames.OnToolNodeFinish.value,
-            "data": tool_message,
-        },
+def make_tool_result_event(
+    tool_call_id: str, message_id: str, content: str, *, is_error: bool = False
+) -> ExtendToolCallResultEvent:
+    """构造 TOOL_CALL_RESULT 事件（DB 回写实际入口）"""
+    return ExtendToolCallResultEvent(
+        type=EventType.TOOL_CALL_RESULT,
+        tool_call_id=tool_call_id,
+        message_id=message_id,
+        content=content,
+        role="tool",
+        is_error=is_error,
+        additional_metadata={},
     )
 
 
-class TestHandleToolFinishStatusMapping:
-    """测试 handle_tool_finish 的状态映射逻辑"""
+class TestHandleToolCallResultStatusMapping:
+    """测试 handle_tool_call_result 的状态映射逻辑"""
 
-    def test_tool_success_maps_to_success(self, session_writer, mock_client):
-        """工具成功时，status='success' 映射为平台的 'success'"""
-        event = make_tool_finish_event(
+    def test_tool_success_maps_to_complete(self, session_writer, mock_client):
+        """工具成功时回写 status='complete'"""
+        event = make_tool_result_event(
             tool_call_id="call_123",
             message_id="msg_tool_123",
             content="计算结果: 42",
-            status="complete",
+            is_error=False,
         )
 
         session_writer(event)
 
-        # 验证 API 调用
         mock_client.api.create_chat_session_content.assert_called_once()
-        call_args = mock_client.api.create_chat_session_content.call_args
-        payload = call_args.kwargs["json"]
+        payload = mock_client.api.create_chat_session_content.call_args.kwargs["json"]
 
         assert payload["status"] == "complete"
         assert payload["role"] == PromptRole.TOOL.value
         assert payload["content"] == "计算结果: 42"
 
-    def test_tool_error_maps_to_fail(self, session_writer, mock_client):
-        """工具错误时，status='error' 映射为平台的 'fail'"""
-        event = make_tool_finish_event(
+    def test_tool_error_maps_to_error(self, session_writer, mock_client):
+        """工具错误时按 v2 协议回写 status='error'"""
+        event = make_tool_result_event(
             tool_call_id="call_456",
             message_id="msg_tool_456",
             content="Tool failed: HTTP 500 Internal Server Error",
-            status="error",
+            is_error=True,
         )
 
         session_writer(event)
 
-        # 验证 API 调用
         mock_client.api.create_chat_session_content.assert_called_once()
-        call_args = mock_client.api.create_chat_session_content.call_args
-        payload = call_args.kwargs["json"]
+        payload = mock_client.api.create_chat_session_content.call_args.kwargs["json"]
 
-        assert payload["status"] == "fail"
+        assert payload["status"] == "error"
         assert payload["role"] == PromptRole.TOOL.value
         assert "HTTP 500" in payload["content"]
 
@@ -200,11 +192,10 @@ class TestDeduplication:
 
     def test_duplicate_tool_call_id_not_written(self, session_writer, mock_client):
         """重复的 tool_call_id 不会重复调用 API"""
-        event = make_tool_finish_event(
+        event = make_tool_result_event(
             tool_call_id="call_dup",
             message_id="msg_tool_dup",
             content="结果",
-            status="success",
         )
 
         # 调用两次
@@ -216,7 +207,7 @@ class TestDeduplication:
 
 
 class TestCustomEventSessionPath:
-    """零 RAW 后：会话回写走 CustomEvent 入口"""
+    """零 RAW 后：会话回写走 CustomEvent / TOOL_CALL_RESULT 入口"""
 
     def test_model_end_via_session_persistence_custom(self, session_writer, mock_client):
         msg = AIMessage(content="自定义通路", id="ce_msg_1")
@@ -231,24 +222,19 @@ class TestCustomEventSessionPath:
         assert payload["role"] == PromptRole.ASSISTANT.value
         assert payload["content"] == "自定义通路"
 
-    def test_tool_finish_via_custom_event(self, session_writer, mock_client):
-        tool_message = MagicMock()
-        tool_message.id = "tid1"
-        tool_message.tool_call_id = "call_ce"
-        tool_message.content = "tool out"
-        tool_message.status = "complete"
-        tool_message.additional_kwargs = {}
-
-        event = CustomEvent(
-            type=EventType.CUSTOM,
-            name=CustomEventNames.OnToolNodeFinish.value,
-            value=tool_message,
+    def test_tool_result_via_tool_call_result_event(self, session_writer, mock_client):
+        """工具结果走 TOOL_CALL_RESULT（ExtendToolCallResultEvent）回写"""
+        event = make_tool_result_event(
+            tool_call_id="call_ce",
+            message_id="tid1",
+            content="tool out",
         )
         session_writer(event)
         mock_client.api.create_chat_session_content.assert_called_once()
         payload = mock_client.api.create_chat_session_content.call_args.kwargs["json"]
         assert payload["role"] == PromptRole.TOOL.value
         assert payload["content"] == "tool out"
+        assert payload["status"] == "complete"
 
 
 class TestHandleRunError:
