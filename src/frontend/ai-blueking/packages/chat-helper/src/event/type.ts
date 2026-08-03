@@ -23,7 +23,7 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { type IMessageApi, type IMessageArtifact, type MessageRole, type MessageStatus } from '../message/type';
+import { type IMessage, type IMessageArtifact, type MessageRole, type MessageStatus } from '../message/type';
 import type { JSONSchema4 } from 'json-schema';
 
 export enum CustomEventName {
@@ -261,7 +261,7 @@ export interface IKnowledgeRagTextContentCustomValue {
  * 同步多端消息状态
  */
 export interface IMessagesSnapshotEvent extends IBaseEvent {
-  messages: IMessageApi[];
+  messages: IMessage[];
   type: EventType.MessagesSnapshot;
 }
 

@@ -26,7 +26,6 @@
 import {
   transferMessage2MessageApi,
   transferMessageApi2Message,
-  mergeArtifactsActivityIntoMessages,
 } from '../transform/message';
 
 import type {
@@ -62,7 +61,7 @@ export const useMessage = (fetchClient: FetchClient) => {
   const getMessages = (sessionCode: string, limit?: number, config?: IRequestConfig) =>
     fetchClient
       .get<IMessageApi[]>(`session_content/content/`, { session_code: sessionCode, limit }, config)
-      .then(res => mergeArtifactsActivityIntoMessages(res.map(transferMessageApi2Message)));
+      .then(res => res.map(transferMessageApi2Message));
 
   // 新增会话内容
   const plusMessage = (data: IMessage, config?: IRequestConfig) =>
