@@ -129,6 +129,17 @@ describe('useToolActions', () => {
       expect(params.chatHelper.value!.session.getSessionFeedbackReasons).toHaveBeenCalledWith(0);
       expect(result).toEqual(['bad']);
     });
+
+    it('should emit agent-action for custom tool ids', async () => {
+      const params = createParams();
+      const { handleAgentAction } = useToolActions(params);
+
+      const messages = [createMockAIMessage()] as any;
+      const tool = { id: 'collect', name: '收藏' };
+      await handleAgentAction(tool as any, messages);
+
+      expect(params.emit).toHaveBeenCalledWith('agent-action', tool, messages);
+    });
   });
 
   describe('handleAgentFeedback', () => {

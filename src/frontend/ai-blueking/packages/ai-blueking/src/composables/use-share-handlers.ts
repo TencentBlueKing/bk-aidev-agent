@@ -12,6 +12,7 @@ import type { Ref } from 'vue';
 
 import { Message as BkMessage } from 'bkui-vue';
 
+import { isBuiltinShareSource } from '../components/composables/use-share-selection';
 import { t } from '../lang';
 import { copyToClipboard } from '../utils';
 
@@ -19,17 +20,18 @@ import type ChatBot from '../components/chat-bot.vue';
 import type { ShareBusinessManager } from '../manager/business/share-business-manager';
 import type { IMessage, ReportSdkErrorOptions } from '../types';
 import type { EventForwarders } from './use-ai-blueking-init';
-import type { Message } from '@blueking/chat-x';
+import type { IToolBtn, Message } from '@blueking/chat-x';
 
 export interface UseShareHandlersParams {
   chatBotRef: Ref<InstanceType<typeof ChatBot> | undefined>;
+  emit: (event: 'confirm-share', messages: Message[], source?: IToolBtn) => void;
   forwarders: EventForwarders;
   shareBusinessManager: ShareBusinessManager;
   reportSdkError: (options: ReportSdkErrorOptions) => void;
 }
 
 export function useShareHandlers(params: UseShareHandlersParams) {
-  const { shareBusinessManager, chatBotRef, forwarders, reportSdkError } = params;
+  const { shareBusinessManager, chatBotRef, emit, forwarders, reportSdkError } = params;
 
   const isShareLoading = ref(false);
 
@@ -50,9 +52,17 @@ export function useShareHandlers(params: UseShareHandlersParams) {
   };
 
   /**
-   * 确认分享：调用后端接口 → 复制链接 → 退出选择模式
+   * 确认分享/多选。
+   * 仅内置分享（`!source || source.id === 'share'`）走 ShareBusinessManager；
+   * 自定义 triggerSelection 按钮只向外 emit，不触发真实分享。
    */
-  const handleConfirmShare = async (messages: Message[]) => {
+  const handleConfirmShare = async (messages: Message[], source?: IToolBtn) => {
+    if (!isBuiltinShareSource(source)) {
+      chatBotRef.value?.exitShareMode();
+      emit('confirm-share', messages, source);
+      return;
+    }
+
     isShareLoading.value = true;
 
     try {
@@ -68,6 +78,7 @@ export function useShareHandlers(params: UseShareHandlersParams) {
       chatBotRef.value?.exitShareMode();
 
       forwarders.shareMessages(userMessageIds);
+      emit('confirm-share', messages, source);
     } catch (error) {
       console.error('[AIBlueking] Failed to share messages:', error);
       reportSdkError({ apiName: 'share', action: 'confirmShare', error, source: 'business' });

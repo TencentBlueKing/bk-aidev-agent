@@ -13,6 +13,7 @@
       :common-tippy-options="messageToolsTippyOptions"
       :execution-tab-visible="props.executionTabVisible"
       :message-status="messageStatus"
+      :message-tools="props.messageTools"
       :message-tools-status="messageToolsStatus"
       :messages="messages"
       :model-value="userInput"
@@ -41,6 +42,7 @@
       :shortcuts="filteredShortcuts"
       :skills="effectiveSkills"
       :support-upload="effectiveSupportUpload"
+      :update-tools="props.updateTools"
       @collapse-change="handleExecutionPanelChange"
       @confirm-share="handleConfirmShare"
       @delete-shortcut="handleCloseShortcut"
@@ -51,6 +53,15 @@
       @stop-streaming="handleStopStreaming"
       @update:model-value="handleUpdateModelValue"
     >
+      <template
+        v-if="$slots.welcome"
+        #welcome="slotProps"
+      >
+        <slot
+          name="welcome"
+          v-bind="slotProps"
+        />
+      </template>
       <template #message="{ message, messageToolsStatus, onInterruptResume }">
         <!-- 消费方提供了 #message slot 时，优先使用消费方的渲染 -->
         <slot
@@ -151,6 +162,7 @@
       messageToolsStatus?: MessageToolsStatus;
       onInterruptResume?: OnInterruptResume;
     }) => unknown;
+    welcome?: (props: { openingRemark?: string; welcomeTitle?: string }) => unknown;
   }>();
 
   // ==================== Template Refs ====================

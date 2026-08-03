@@ -67,6 +67,8 @@ const aiBluekingEmitNames = [
   'resizing',
   'transfer-messages',
   'share-messages',
+  'confirm-share',
+  'agent-action',
   'sdk-error',
   'new-chat',
   'new-chat-created',
@@ -260,6 +262,14 @@ export default createVue2Wrapper(AIBlueking, {
       type: Array,
       default: undefined,
     },
+    messageTools: {
+      type: Array,
+      default: undefined,
+    },
+    updateTools: {
+      type: Array,
+      default: undefined,
+    },
     hideDefaultTrigger: {
       type: Boolean,
       default: false,
@@ -287,7 +297,7 @@ export default createVue2Wrapper(AIBlueking, {
   },
   emitNames: [...aiBluekingEmitNames],
   exposeKeys: [...aiBluekingExposeKeys],
-  slots: ['codeHeader', 'headerLeft'],
+  slots: ['codeHeader', 'headerLeft', 'message', 'welcome'],
   deepWatchProps: ['requestOptions', 'shortcuts', 'beforeNimbusClick'],
   methods: {
     show(): Promise<void> {
@@ -367,6 +377,7 @@ const chatBotEmitNames = [
   'cancel-share',
   'execution-panel-change',
   'feedback',
+  'agent-action',
 ] as const;
 
 const chatBotExposeKeys = [
@@ -450,6 +461,14 @@ export const ChatBotV2 = createVue2Wrapper(ChatBot, {
       type: Object,
       default: undefined,
     },
+    messageTools: {
+      type: Array,
+      default: undefined,
+    },
+    updateTools: {
+      type: Array,
+      default: undefined,
+    },
     enableSelection: {
       type: Boolean,
       default: false,
@@ -493,6 +512,6 @@ export const ChatBotV2 = createVue2Wrapper(ChatBot, {
   },
   emitNames: [...chatBotEmitNames],
   exposeKeys: [...chatBotExposeKeys],
-  slots: ['codeHeader'],
+  slots: ['codeHeader', 'message', 'welcome'],
   deepWatchProps: ['requestOptions', 'shortcuts', 'beforeNimbusClick'],
 });
