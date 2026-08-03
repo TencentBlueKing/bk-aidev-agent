@@ -34,7 +34,13 @@ function createSessionModule(overrides: Record<string, unknown> = {}) {
     }),
     deleteSession: vi.fn(),
     getSession: vi.fn(),
-    updateSession: vi.fn(),
+    updateSession: vi.fn().mockImplementation(async (session: ISession) => {
+      current.value = { ...(current.value ?? { sessionCode: session.sessionCode, sessionName: '' }), ...session };
+      const idx = list.value.findIndex(item => item.sessionCode === session.sessionCode);
+      if (idx >= 0) {
+        list.value[idx] = { ...list.value[idx], ...session };
+      }
+    }),
     isCreateLoading: ref(false),
     isCurrentLoading: ref(false),
     isDeleteLoading: ref(false),
@@ -282,6 +288,67 @@ describe('SessionBusinessManager.createNewSession', () => {
 
     expect(result).toBeNull();
     expect(sessionModule.createSession).not.toHaveBeenCalled();
+  });
+
+  it('should pass model to createSession when creating with model option', async () => {
+    sessionModule.current.value = null;
+    sessionModule.list.value = [{ sessionCode: 'has-content', sessionName: '有内容', sessionContentCount: 3 }];
+
+    await manager.createNewSession({ model: 'deepseek' });
+
+    expect(sessionModule.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'deepseek',
+        sessionName: '新会话',
+      }),
+    );
+  });
+
+  it('should updateSession before switch when reusing empty session with a different model', async () => {
+    sessionModule.current.value = null;
+    sessionModule.list.value = [
+      { sessionCode: 'latest-empty', sessionName: '空会话', sessionContentCount: 0, model: 'hy3-preview' },
+    ];
+
+    const callOrder: string[] = [];
+    sessionModule.updateSession.mockImplementation(async (session: ISession) => {
+      callOrder.push('updateSession');
+      const current = sessionModule.current;
+      current.value = { ...(current.value ?? { sessionCode: session.sessionCode, sessionName: '' }), ...session };
+      const idx = sessionModule.list.value.findIndex(item => item.sessionCode === session.sessionCode);
+      if (idx >= 0) {
+        sessionModule.list.value[idx] = { ...sessionModule.list.value[idx], ...session };
+      }
+    });
+    sessionModule.chooseSession.mockImplementation(async (sessionCode: string) => {
+      callOrder.push('chooseSession');
+      const target = sessionModule.list.value.find(item => item.sessionCode === sessionCode) ?? null;
+      sessionModule.current.value = target;
+    });
+
+    const result = await manager.createNewSession({ model: 'deepseek' });
+
+    expect(result).toBeNull();
+    expect(sessionModule.createSession).not.toHaveBeenCalled();
+    expect(sessionModule.updateSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionCode: 'latest-empty',
+        model: 'deepseek',
+      }),
+    );
+    expect(sessionModule.chooseSession).toHaveBeenCalledWith('latest-empty', { loadMessages: false });
+    expect(callOrder).toEqual(['updateSession', 'chooseSession']);
+  });
+
+  it('should not updateSession when reusing empty session with same model', async () => {
+    sessionModule.current.value = null;
+    sessionModule.list.value = [
+      { sessionCode: 'latest-empty', sessionName: '空会话', sessionContentCount: 0, model: 'deepseek' },
+    ];
+
+    await manager.createNewSession({ model: 'deepseek' });
+
+    expect(sessionModule.updateSession).not.toHaveBeenCalled();
   });
 });
 

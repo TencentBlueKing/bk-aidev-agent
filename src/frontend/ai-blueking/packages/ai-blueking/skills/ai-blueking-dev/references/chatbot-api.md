@@ -176,7 +176,7 @@ ChatBot.onMounted()
 └── emit('agent-info-loaded', chatHelper)
 ```
 
-模型选中语义见主 SKILL「模型选择」小节：跨 session 保持，仅首次无有效选中时用 `session.model` / default 兜底。
+模型选中语义见主 SKILL「模型选择」小节：跟随 session；切换写回 `updateSession`；新建可带 `model`；附件按钮跟随模型 `support_vision`。
 
 ### 嵌入页等待就绪（whenReady）
 

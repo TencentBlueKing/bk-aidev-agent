@@ -171,11 +171,20 @@ export function useSessionHandlers(params: UseSessionHandlersParams) {
 
   // ==================== Expose 方法 ====================
 
+  const resolveSelectedLlmCode = (): string | undefined => {
+    return chatBotRef.value?.selectedLlmCode;
+  };
+
   const addNewSession = async (options?: CreateSessionOptions) => {
     if (options) {
-      await sessionBusinessManager.createSession(options);
+      await sessionBusinessManager.createSession({
+        ...options,
+        model: options.model ?? resolveSelectedLlmCode(),
+      });
     } else {
-      await sessionBusinessManager.createNewSession();
+      await sessionBusinessManager.createNewSession({
+        model: resolveSelectedLlmCode(),
+      });
     }
   };
 

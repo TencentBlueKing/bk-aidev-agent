@@ -264,7 +264,7 @@ await chatBotRef.value.sendShortcut(command, selectedText);
 <ChatBot url="/api/" :models="myModels" />
 ```
 
-选中态跨 session 保持；发送时 `agent.chat` 第 6 参传 `llm_code`。SDK 也可直接：
+选中态跟随 session（切换写回 `updateSession`）；发送时 `agent.chat` 第 6 参传 `llm_code`。SDK 也可直接：
 
 ```typescript
 await agent.getLlms();

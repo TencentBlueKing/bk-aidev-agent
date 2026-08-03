@@ -217,6 +217,7 @@
       showShare: false,
     }),
     sessionBusinessManager: undefined,
+    selectedLlmCode: undefined,
     renderMode: RenderMode.Chat,
   });
 
@@ -301,7 +302,9 @@
       // V2: 如果有 sessionBusinessManager，调用它创建新会话
       if (props.sessionBusinessManager) {
         try {
-          const session = await props.sessionBusinessManager.createNewSession();
+          const session = await props.sessionBusinessManager.createNewSession({
+            model: props.selectedLlmCode,
+          });
           if (session) {
             emit('new-chat-created', {
               sessionCode: session.sessionCode,

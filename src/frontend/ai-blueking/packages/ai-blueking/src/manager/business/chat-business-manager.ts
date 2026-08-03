@@ -40,6 +40,7 @@ export class ChatBusinessManager {
   private _models: Ref<ILlmItem[]>;
   private _selectedLlmCode: Ref<string | undefined>;
   private _selectedModelName: ComputedRef<string>;
+  private _selectedModelSupportsVision: ComputedRef<boolean>;
 
   private agentModule: IAgentModule;
   private config: ChatBusinessConfig;
@@ -60,28 +61,48 @@ export class ChatBusinessManager {
   }
 
   /**
-   * 解析选中模型（仅在无有效选中时）：
-   * 有效选中 → session.model → property.default / 首项
+   * 按 session.model 同步选中：
+   * - 命中列表 → 选中
+   * - 空 / 未知 → 保留有效选中；否则 default / 首项
    */
-  private resolveInitialSelection(): void {
+  private applySessionModel(modelCode?: string): void {
     const list = this._models.value;
     if (list.length === 0) {
       this._selectedLlmCode.value = undefined;
       return;
     }
-    if (this.hasValidSelection()) {
-      return;
-    }
     if (this.isSessionPending()) {
       return;
     }
-    const sessionModel = this.sessionModule?.current.value?.model;
-    if (sessionModel && list.some(m => m.llm_code === sessionModel)) {
-      this._selectedLlmCode.value = sessionModel;
+    if (modelCode && list.some(m => m.llm_code === modelCode)) {
+      this._selectedLlmCode.value = modelCode;
+      return;
+    }
+    if (this.hasValidSelection()) {
       return;
     }
     const defaultModel = list.find(m => m.property?.default) ?? list[0];
     this._selectedLlmCode.value = defaultModel?.llm_code;
+  }
+
+  /** 将当前选中模型写回 session（model 与 sessionCode 同级） */
+  private async persistSessionModel(llmCode?: string): Promise<void> {
+    const current = this.sessionModule?.current.value;
+    if (!current?.sessionCode || !llmCode) {
+      return;
+    }
+    if (current.model === llmCode) {
+      return;
+    }
+    try {
+      await this.sessionModule!.updateSession({
+        ...current,
+        model: llmCode,
+      });
+    } catch (error) {
+      console.error('[ChatBusinessManager] Failed to persist session model:', error);
+      this.emit('chat-error', { action: 'persistSessionModel', error });
+    }
   }
 
   /** 解析本轮 chat 使用的 llm_code；空字符串视为未选中 */
@@ -149,13 +170,21 @@ export class ChatBusinessManager {
       }
       return this._models.value.find(m => m.llm_code === code)?.llm_name ?? '';
     });
+    this._selectedModelSupportsVision = computed(() => {
+      const code = this._selectedLlmCode.value;
+      if (!code) {
+        return false;
+      }
+      const model = this._models.value.find(m => m.llm_code === code);
+      return Boolean(model?.property?.support_vision);
+    });
 
-    // 仅在尚无有效选中时 bootstrap（session 晚于 models 就绪）；已有选中则跨 session 保持
+    // 仅在 sessionCode 变化时同步模型（同一会话的 updateSession 改写 current 引用时不覆盖用户选中）
     if (this.sessionModule) {
       watch(
-        () => this.sessionModule!.current.value,
+        () => this.sessionModule!.current.value?.sessionCode,
         () => {
-          this.resolveInitialSelection();
+          this.applySessionModel(this.sessionModule!.current.value?.model);
         },
       );
     }
@@ -198,6 +227,11 @@ export class ChatBusinessManager {
     return this._selectedModelName;
   }
 
+  /** 当前选中模型是否支持 vision（附件按钮） */
+  get selectedModelSupportsVision(): ComputedRef<boolean> {
+    return this._selectedModelSupportsVision;
+  }
+
   /**
    * 暴露消息列表
    */
@@ -220,7 +254,7 @@ export class ChatBusinessManager {
       } else {
         this._models.value = [];
       }
-      this.resolveInitialSelection();
+      this.applySessionModel(this.sessionModule?.current.value?.model);
     } catch (error) {
       console.error('[ChatBusinessManager] Failed to load models:', error);
       this._models.value = [];
@@ -235,7 +269,7 @@ export class ChatBusinessManager {
    */
   setModels(models: ILlmItem[]): void {
     this._models.value = models;
-    this.resolveInitialSelection();
+    this.applySessionModel(this.sessionModule?.current.value?.model);
   }
 
   /**
@@ -248,6 +282,7 @@ export class ChatBusinessManager {
     }
     const found = this._models.value.find(m => m.llm_name === llmName);
     this._selectedLlmCode.value = found?.llm_code;
+    void this.persistSessionModel(found?.llm_code);
   }
 
   /**
@@ -255,6 +290,7 @@ export class ChatBusinessManager {
    */
   setSelectedModel(model: ILlmItem | null | undefined): void {
     this._selectedLlmCode.value = model?.llm_code;
+    void this.persistSessionModel(model?.llm_code);
   }
 
   /**

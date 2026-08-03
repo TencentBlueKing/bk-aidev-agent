@@ -84,7 +84,7 @@ await chatBusinessManager.sendMessage(content, sessionCode, {
   model: 'hy3-preview',
 });
 
-// 模型列表与选中（≥ v2.2.1；选中态跨 session 保持）
+// 模型列表与选中（≥ v2.2.1；选中态跟随 session，切换写回）
 await chatBusinessManager.loadModels();
 chatBusinessManager.setSelectedModelByName('混元预览');
 

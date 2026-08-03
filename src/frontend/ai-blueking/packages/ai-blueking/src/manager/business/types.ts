@@ -32,6 +32,8 @@ export interface CreateSessionOptions {
   isTemporary?: boolean;
   /** 会话标签 */
   labels?: string[];
+  /** 会话绑定的模型 llm_code（与 sessionCode 同级写入后台） */
+  model?: string;
   /** 会话名称 */
   name?: string;
   /** 会话编码 */

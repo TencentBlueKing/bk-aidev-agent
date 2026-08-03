@@ -128,13 +128,13 @@ export function useChatbotState(params: UseChatbotStateParams): UseChatbotStateR
 
   /**
    * 是否支持上传文件（vision 模式）
-   * 选中 command 时使用 command 级别的 supportUpload，否则使用 agent 级别的
+   * 选中 command 时使用 command 级别的 supportUpload，否则跟随当前选中模型的 support_vision
    */
   const effectiveSupportUpload = computed(() => {
     if (selectedShortcut.value?.supportUpload) {
       return selectedShortcut.value.supportUpload.vision === true;
     }
-    return chatHelper.value?.agent.info.value?.promptSetting?.supportUpload?.vision === true;
+    return chatBusinessManager.value?.selectedModelSupportsVision.value ?? false;
   });
 
   const chatbotStyle = computed(() => ({
