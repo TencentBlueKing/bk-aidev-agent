@@ -265,6 +265,14 @@ describe('ChatBusinessManager', () => {
       expect(capturedIsStopLoading).toBe(true);
       expect(manager.isStopLoading.value).toBe(false);
     });
+
+    it('should rethrow when stopChat fails so callers can surface the error', async () => {
+      const failure = new Error('stop failed');
+      mocks.mockAgentModule.stopChat.mockRejectedValue(failure);
+
+      await expect(manager.stopGeneration()).rejects.toThrow(failure);
+      expect(manager.isStopLoading.value).toBe(false);
+    });
   });
 
   describe('deleteMessage', () => {

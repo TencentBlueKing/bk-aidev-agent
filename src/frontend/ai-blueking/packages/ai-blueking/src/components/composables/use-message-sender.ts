@@ -14,8 +14,16 @@ import { applyRequestOptionsContext } from '../../utils';
 import type { ChatBusinessManager } from '../../manager/business/chat-business-manager';
 import type { IChatHelper, IRequestOptions } from '../../types';
 import type { ChatBotEmitFn } from './use-chatbot-init';
+import type { ReportChatBotError } from './use-error-reporter';
 import type { IUserMessage } from '@blueking/chat-helper';
-import type { IAiSlashMenuItem, Interrupt, InterruptResume, OnArtifactClick, TagSchema, UserMessage } from '@blueking/chat-x';
+import type {
+  IAiSlashMenuItem,
+  Interrupt,
+  InterruptResume,
+  OnArtifactClick,
+  TagSchema,
+  UserMessage,
+} from '@blueking/chat-x';
 
 import type { UseInterruptResumeReturn } from './use-interrupt-resume';
 
@@ -25,6 +33,7 @@ export interface UseMessageSenderParams {
   emit: ChatBotEmitFn;
   /** 返回最新 requestOptions 的 getter（每次调用时读取，确保响应式） */
   getRequestOptions?: () => IRequestOptions | undefined;
+  reportError: ReportChatBotError;
   resumeUserQuestionWithInput?: UseInterruptResumeReturn['resumeUserQuestionWithInput'];
   selectedResources: ShallowRef<IAiSlashMenuItem[]>;
   selectedShortcut: Ref<null | { id?: string }>;
@@ -52,6 +61,7 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
     chatHelper,
     chatBusinessManager,
     getRequestOptions,
+    reportError,
     resumeUserQuestionWithInput,
     selectedShortcut,
     selectedResources,
@@ -160,8 +170,7 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
       const sendOptions = Object.keys(extra).length ? { property: { extra } } : {};
       await doSendMessage(content as IUserMessage['content'], sendOptions);
     } catch (error) {
-      console.error('Failed to send message:', error);
-      emit('error', error as Error);
+      reportError(error, 'Failed to send message');
     }
   };
 
@@ -177,8 +186,12 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
       console.error('[ChatBot] Cannot stop generation: chatBusinessManager not initialized');
       return;
     }
-    await chatBusinessManager.value.stopGeneration();
-    emit('stop');
+    try {
+      await chatBusinessManager.value.stopGeneration();
+      emit('stop');
+    } catch (error) {
+      reportError(error, 'Failed to stop generation');
+    }
   };
 
   return {

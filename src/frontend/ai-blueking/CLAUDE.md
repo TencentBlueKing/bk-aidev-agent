@@ -83,5 +83,16 @@ pnpm lint:ai             # Lint ai-blueking
 - **Composition API**: Heavy use of Vue 3 composables
 - **Type Safety**: Full TypeScript with strict configuration
 - **chat-x is peerDep**: Must remain as peerDependency to control bundle size (mermaid, katex, etc.)
-- **workspace:***: chat-helper uses `workspace:*` protocol for local development
+- **workspace:\***: chat-helper uses `workspace:*` protocol for local development
 - **I18n**: Built-in internationalization with Chinese as primary language
+
+## Skill 同步（必读）
+
+对外语义变更后，必须更新仓库内两个 Skill 工作副本，再按需同步到 `skills-manager-backup`：
+
+| Skill                     | 路径（相对本 monorepo）                                |
+| ------------------------- | ------------------------------------------------------ |
+| `ai-blueking-dev`         | `packages/ai-blueking/skills/ai-blueking-dev/`         |
+| `ai-blueking-docs-update` | `packages/ai-blueking/skills/ai-blueking-docs-update/` |
+
+详见仓库根 `.cursor/rules/ai-blueking-skill-sync.mdc` 与 `.cursor/skills/ai-blueking-skill-sync/`。

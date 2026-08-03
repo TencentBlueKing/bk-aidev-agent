@@ -14,17 +14,22 @@ import { AGUIProtocol, useChatHelper } from '@blueking/chat-helper';
 
 import { runAgentBootstrap } from '../../bootstrap/agent-bootstrap';
 import { ChatBusinessManager, SessionBusinessManager, ShortcutManager } from '../../manager';
-import { buildRequestDataFromOptions, normalizeUrl } from '../../utils';
+import { buildRequestDataFromOptions, normalizeUrl, toError } from '../../utils';
 
+import type { IEventEmitter } from '../../manager/business/types';
 import type { IChatHelper } from '../../types';
 import type { ChatBotProps } from '../types';
+import type { ReportChatBotError } from './use-error-reporter';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ChatBotEmitFn = (...args: any[]) => void;
 
 export interface UseChatbotInitParams {
   emit: ChatBotEmitFn;
+  /** 注入业务管理器的错误事件桥接器 */
+  managerErrorBridge: IEventEmitter;
   props: ChatBotProps;
+  reportError: ReportChatBotError;
   scrollToBottom: () => Promise<void>;
 }
 
@@ -49,7 +54,7 @@ export class ChatBotInitStaleError extends Error {
 }
 
 export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitReturn {
-  const { props, emit, scrollToBottom } = params;
+  const { props, emit, scrollToBottom, reportError, managerErrorBridge } = params;
 
   const chatHelper = shallowRef<IChatHelper | null>(null);
   const sessionBusinessManager = shallowRef<null | SessionBusinessManager>(null);
@@ -111,7 +116,7 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
         scrollToBottom();
       },
       onError: (error: unknown) => {
-        emit('error', error as Error);
+        reportError(error, 'Stream error');
       },
     });
 
@@ -196,7 +201,7 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
     const sessionMgr = new SessionBusinessManager(
       newHelper.session,
       newHelper.agent,
-      null,
+      managerErrorBridge,
       {
         enableChatSession: true,
         autoSwitchToInitialSession: !!props.sessionCode,
@@ -207,7 +212,7 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
       newHelper.message,
     );
 
-    const chatMgr = new ChatBusinessManager(newHelper.agent, newHelper.message, newHelper.session, null, {
+    const chatMgr = new ChatBusinessManager(newHelper.agent, newHelper.message, newHelper.session, managerErrorBridge, {
       openingRemark: props.helloText,
       predefinedQuestions: props.prompts,
       placeholder: props.placeholder,
@@ -246,9 +251,7 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
       emit('agent-info-loaded', newHelper);
     } catch (error) {
       assertGeneration(currentGen);
-      console.error('Failed to initialize ChatBot:', error);
-      initError.value = error as Error;
-      emit('error', error as Error);
+      initError.value = reportError(error, 'Failed to initialize ChatBot');
       throw error;
     }
   };
@@ -271,8 +274,7 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
         })
         .catch((error: unknown) => {
           if (settleInFlight) {
-            const err = error instanceof Error ? error : new Error(String(error));
-            settleInFlight.reject(err);
+            settleInFlight.reject(toError(error));
             settleInFlight = null;
           }
         })

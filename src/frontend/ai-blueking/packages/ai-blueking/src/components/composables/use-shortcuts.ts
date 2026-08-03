@@ -15,6 +15,7 @@ import type { IShortcut } from '../../manager/business/types';
 import type { IChatHelper } from '../../types';
 import type { ChatBotProps } from '../types';
 import type { ChatBotEmitFn } from './use-chatbot-init';
+import type { ReportChatBotError } from './use-error-reporter';
 import type { ISupportUpload, IUserMessage } from '@blueking/chat-helper';
 import type { Shortcut, ShortcutComponent } from '@blueking/chat-x';
 
@@ -28,6 +29,7 @@ export interface UseShortcutsParams {
   doSendMessage: DoSendMessageFn;
   emit: ChatBotEmitFn;
   props: ChatBotProps;
+  reportError: ReportChatBotError;
   selectedShortcut: Ref<null | (Shortcut & { supportUpload?: ISupportUpload })>;
   shortcutManager: Ref<null | ShortcutManager>;
 }
@@ -50,7 +52,7 @@ export interface UseShortcutsReturn {
 }
 
 export function useShortcuts(params: UseShortcutsParams): UseShortcutsReturn {
-  const { props, emit, shortcutManager, doSendMessage, selectedShortcut } = params;
+  const { props, emit, shortcutManager, doSendMessage, reportError, selectedShortcut } = params;
 
   const effectiveShortcuts = computed((): IShortcut[] => shortcutManager.value?.effectiveShortcuts.value ?? []);
 
@@ -173,8 +175,7 @@ export function useShortcuts(params: UseShortcutsParams): UseShortcutsReturn {
     } catch (error) {
       // 发送失败：恢复快捷指令面板状态
       selectedShortcut.value = previousShortcut;
-      console.error('[ChatBot] Failed to submit shortcut:', error);
-      emit('error', error as Error);
+      reportError(error, 'Failed to submit shortcut');
     }
   };
 
@@ -215,8 +216,7 @@ export function useShortcuts(params: UseShortcutsParams): UseShortcutsReturn {
     try {
       await doSendMessage(message, { property });
     } catch (error) {
-      console.error('[ChatBot] Failed to send shortcut directly:', error);
-      emit('error', error as Error);
+      reportError(error, 'Failed to send shortcut directly');
     }
   };
 
