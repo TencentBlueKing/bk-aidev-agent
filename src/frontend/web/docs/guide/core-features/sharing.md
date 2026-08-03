@@ -28,7 +28,7 @@ AI 小鲸 v2.0 提供了完整的消息分享能力，支持用户选择对话�
 <script lang="ts" setup>
 import { ref } from 'vue';
 import { ChatBot } from '@blueking/ai-blueking';
-import type { Message } from '@blueking/chat-x';
+import type { IToolBtn, Message } from '@blueking/chat-x';
 
 const chatBotRef = ref<InstanceType<typeof ChatBot> | null>(null);
 const isSelecting = ref(false);
@@ -40,7 +40,14 @@ const onRequestShare = () => {
 };
 
 // 用户确认分享
-const onConfirmShare = async (messages: Message[]) => {
+const onConfirmShare = async (messages: Message[], source?: IToolBtn) => {
+  // 自定义 triggerSelection 按钮（如保存）不会走内置分享，需按 source 自行处理
+  if (source && source.id !== 'share') {
+    console.log('custom selection confirm:', source.id, messages);
+    isSelecting.value = false;
+    return;
+  }
+
   isShareLoading.value = true;
   try {
     // 获取 chatHelper 实例调用分享 API
@@ -215,11 +222,12 @@ const cancelShare = () => {
 | 事件 | 参数 | 说明 |
 |------|------|------|
 | `request-share` | — | 用户从消息工具栏点击分享按钮，请求进入选择模式 |
-| `confirm-share` | `messages: Message[]` | 用户确认分享，携带选中的消息列表 |
+| `confirm-share` | `messages: Message[], source?: IToolBtn` | 用户确认分享/多选；`source` 为触发按钮（内置分享为 `share` 或空，自定义 `triggerSelection` 为对应工具）。仅内置分享会走 ShareBusinessManager |
 | `cancel-share` | — | 用户取消分享，退出选择模式 |
 | `share-messages` | `messageIds: string[]` | （AIBlueking）分享完成，携带分享的消息 ID 列表 |
 | `transfer-messages` | `messageIds: string[]` | （AIBlueking）转发消息，携带消息 ID 列表 |
 | `share` | — | （AIBlueking）Header 分享按钮点击 |
+| `agent-action` | `tool: IToolBtn, messages: Message[]` | 自定义消息工具点击（非内置 cite/rebuild/delete/like/unlike） |
 
 ## ShareBusinessManager
 

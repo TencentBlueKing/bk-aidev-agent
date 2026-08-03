@@ -44,8 +44,15 @@ import type {
   IMessageModule,
   ISessionModule,
 } from '@blueking/chat-helper';
-import type { CustomBkFlowTab, CustomTab, IModelOption, RenderMode } from '@blueking/chat-x';
-import type { IAiSlashMenuItem } from '@blueking/chat-x';
+import type {
+  CustomBkFlowTab,
+  CustomTab,
+  IAiSlashMenuItem,
+  IModelOption,
+  IToolBtn,
+  Message,
+  RenderMode,
+} from '@blueking/chat-x';
 
 /** sdk-error 业务语义 apiName */
 export type SdkErrorApiName = 'chat' | 'getAgentInfo' | 'init' | 'session' | 'share';
@@ -105,6 +112,13 @@ export interface AIBluekingEmits {
   // 消息选择事件（与 useEventBridge transformEventDataToEmitArgs 单参 payload 一致）
   (e: 'transfer-messages', data: { messageIds: string[] }): void;
   (e: 'share-messages', data: { messageIds: string[] }): void;
+  /**
+   * 确认分享/多选；`source` 用于区分内置分享与自定义 triggerSelection 按钮
+   * 仅内置分享（`!source || source.id === 'share'`）会走 ShareBusinessManager
+   */
+  (e: 'confirm-share', messages: Message[], source?: IToolBtn): void;
+  /** 自定义 AI 消息工具点击（非内置 cite/rebuild/delete/like/unlike） */
+  (e: 'agent-action', tool: IToolBtn, messages: Message[]): void;
 
   // Header 相关事件
   (e: 'new-chat'): void;
@@ -229,6 +243,16 @@ export interface AIBluekingProps {
 
   /** 欢迎语 */
   helloText?: string;
+  /**
+   * 自定义 AI 消息主工具组（copy/cite/rebuild/share 一排），透传至 ChatBot / ChatContainer
+   * 以内置列表为基底，按 id 覆盖同名项、追加新项；`{ id, hidden: true }` 可隐藏内置项
+   */
+  messageTools?: IToolBtn[];
+  /**
+   * 自定义 AI 消息反馈工具组（like/unlike/delete 一排），透传至 ChatBot / ChatContainer
+   * 合并规则同 messageTools
+   */
+  updateTools?: IToolBtn[];
   /** 是否隐藏默认触发器 */
   hideDefaultTrigger?: boolean;
 

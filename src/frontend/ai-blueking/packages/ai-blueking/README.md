@@ -245,10 +245,12 @@ const handleError = (error: Error) => {
 | `enableSelection` | `boolean` | `false` | 是否启用消息选择（仅集成模式，独立模式自动管理） |
 | `shareLoading` | `boolean` | `false` | 分享操作加载中（仅集成模式，独立模式自动管理） |
 | `helloText` | `string` | - | 欢迎语 |
+| `messageTools` | `IToolBtn[]` | - | 自定义 AI 消息主工具组（与内置按 id 合并） |
+| `updateTools` | `IToolBtn[]` | - | 自定义 AI 消息反馈工具组（与内置按 id 合并） |
 | `prompts` | `string[]` | - | 预设提示词列表 |
 | `resources` | `IAiSlashMenuItem[]` | - | 资源列表（@ 触发） |
 
-> **分享功能说明**：ChatBot 在独立模式下内置了完整的消息分享能力（进入选择模式 → 调用 API → 复制分享链接 → Toast 提示），无需外部额外处理。集成模式下，`enableSelection` 和 `shareLoading` 由父组件（如 AIBlueking）通过 props 控制。
+> **分享功能说明**：ChatBot 在独立模式下内置了完整的消息分享能力（进入选择模式 → 调用 API → 复制分享链接 → Toast 提示），无需外部额外处理。集成模式下，`enableSelection` 和 `shareLoading` 由父组件（如 AIBlueking）通过 props 控制。自定义 `triggerSelection` 按钮确认时不会走内置分享，仅 `emit('confirm-share', messages, source)`。
 
 ## Events
 
@@ -264,6 +266,8 @@ const handleError = (error: Error) => {
 | `error` | `error: Error` | 发生错误时触发 |
 | `share` | - | 分享按钮被点击 |
 | `share-messages` | `userMessageIds: string[]` | 分享完成 |
+| `confirm-share` | `messages: Message[], source?: IToolBtn` | 确认分享/多选（自定义 source 不走内置分享） |
+| `agent-action` | `tool: IToolBtn, messages: Message[]` | 自定义消息工具点击 |
 
 ### ChatBot Events
 
@@ -276,8 +280,18 @@ const handleError = (error: Error) => {
 | `feedback` | `tool, message, reasonList, otherReason` | 用户反馈 |
 | `request-share` | - | 请求进入分享选择模式 |
 | `cancel-share` | - | 取消分享（退出选择模式） |
-| `confirm-share` | `messages: Message[]` | 确认分享选中的消息 |
+| `confirm-share` | `messages: Message[], source?: IToolBtn` | 确认分享选中的消息（第二参为触发按钮） |
+| `agent-action` | `tool: IToolBtn, messages: Message[]` | 自定义消息工具点击 |
 | `error` | `error: Error` | 发生错误时触发 |
+
+### ChatBot / AIBlueking Slots
+
+| 插槽 | Scope | 说明 |
+|------|-------|------|
+| `welcome` | `{ openingRemark, welcomeTitle }` | 自定义空会话欢迎区 |
+| `message` | `{ message, messageToolsStatus, onInterruptResume }` | 自定义消息渲染 |
+| `codeHeader` | `{ language, token }` | 自定义代码块头部 |
+| `headerLeft` | — | （仅 AIBlueking）Header 左侧区域 |
 
 ### ChatBot Expose
 

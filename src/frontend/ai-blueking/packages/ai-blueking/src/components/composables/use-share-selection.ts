@@ -17,7 +17,7 @@ import { copyToClipboard } from '../../utils';
 import type { IChatHelper } from '../../types';
 import type { ChatBotEmitFn } from './use-chatbot-init';
 import type { IMessage } from '@blueking/chat-helper';
-import type { Message } from '@blueking/chat-x';
+import type { IToolBtn, Message } from '@blueking/chat-x';
 
 export interface UseShareSelectionParams {
   chatHelper: Ref<IChatHelper | null>;
@@ -26,13 +26,17 @@ export interface UseShareSelectionParams {
 }
 
 export interface UseShareSelectionReturn {
-  handleConfirmShare: (messages: Message[]) => Promise<void>;
+  handleConfirmShare: (messages: Message[], source?: IToolBtn) => Promise<void>;
 }
+
+/** 内置分享：source 为空（兼容旧分享）或 id 为 share */
+export const isBuiltinShareSource = (source?: IToolBtn): boolean => !source || source.id === 'share';
 
 /**
  * 分享确认的业务逻辑。
  * 选择模式的 UI 交互（全选、取消、SelectionFooter 等）已内聚在 ChatContainer 中，
  * 此 composable 仅处理「确认分享」时的业务操作（独立模式下调用 ShareBusinessManager）。
+ * 自定义 triggerSelection 按钮确认时不走内置分享，仅向外 emit。
  */
 export function useShareSelection(params: UseShareSelectionParams): UseShareSelectionReturn {
   const { emit, chatHelper, isStandaloneMode } = params;
@@ -51,12 +55,12 @@ export function useShareSelection(params: UseShareSelectionParams): UseShareSele
     }
   };
 
-  const handleConfirmShare = async (messages: Message[]) => {
-    if (isStandaloneMode.value) {
+  const handleConfirmShare = async (messages: Message[], source?: IToolBtn) => {
+    if (isStandaloneMode.value && isBuiltinShareSource(source)) {
       await doShareMessages(messages);
     }
 
-    emit('confirm-share', messages);
+    emit('confirm-share', messages, source);
   };
 
   return {

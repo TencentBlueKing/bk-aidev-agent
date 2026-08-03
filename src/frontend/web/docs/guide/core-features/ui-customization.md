@@ -129,6 +129,68 @@ aiBluekingRef.value.updatePositionAndSize(100, 200, 600, 800);
 
 > **说明**：后端 Agent 配置中的 `openingRemark`（欢迎语）会覆盖 `helloText`。当 `getAgentInfo()` 返回了 `conversationSettings.openingRemark`，以后端配置为准。
 
+### `#welcome` 插槽自定义欢迎区
+
+`ChatBot` / `AIBlueking` 透传 `ChatContainer` 的 `#welcome` 插槽，可完全替换默认欢迎 UI（图标、标题、开场白）。Scope：`{ openingRemark, welcomeTitle }`。
+
+```vue
+<template>
+  <ChatBot url="/api/ai">
+    <template #welcome="{ welcomeTitle, openingRemark }">
+      <img src="/brand.svg" alt="" />
+      <h2>{{ welcomeTitle }}</h2>
+      <p>{{ openingRemark }}</p>
+    </template>
+  </ChatBot>
+</template>
+```
+
+未提供 `#welcome` 时行为不变，仍使用内置欢迎内容。
+
+### 消息工具栏扩展（`messageTools` / `updateTools`）
+
+在内置工具基础上增量定制 AI 消息工具栏，合并规则与 chat-x 一致：同 `id` 覆盖、新 `id` 追加、`{ id, hidden: true }` 隐藏。
+
+```vue
+<template>
+  <ChatBot
+    url="/api/ai"
+    :message-tools="customMessageTools"
+    :update-tools="customUpdateTools"
+    @agent-action="onAgentAction"
+    @confirm-share="onConfirmShare"
+  />
+</template>
+
+<script setup lang="ts">
+import { DownloadIcon, type IToolBtn, type Message } from '@blueking/chat-x';
+
+const customMessageTools: IToolBtn[] = [
+  { id: 'save', name: '保存', description: '保存该回答', icon: DownloadIcon, triggerSelection: true },
+  { id: 'share', hidden: true },
+];
+const customUpdateTools: IToolBtn[] = [
+  { id: 'collect', name: '收藏', description: '收藏到我的空间' },
+];
+
+const onAgentAction = (tool: IToolBtn, messages: Message[]) => {
+  if (tool.id === 'collect') {
+    // 处理收藏
+  }
+};
+
+const onConfirmShare = (messages: Message[], source?: IToolBtn) => {
+  if (source?.id === 'save') {
+    // 批量保存选中消息；不会触发内置分享
+  }
+};
+</script>
+```
+
+- `triggerSelection: true`：点击后进入多选，确认走 `confirm-share`（带 `source`）
+- 其它自定义按钮：走 `agent-action`
+- 仅 `!source || source.id === 'share'` 时执行内置分享业务
+
 ### placeholder 输入框占位符
 
 自定义输入框的占位提示文本：

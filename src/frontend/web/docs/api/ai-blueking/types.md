@@ -27,6 +27,10 @@ interface AIBluekingProps {
   prompts?: string[];
   /** 资源列表（输入 @ 触发） */
   resources?: IAiSlashMenuItem[];
+  /** 自定义 AI 消息主工具组（透传 ChatBot） */
+  messageTools?: IToolBtn[];
+  /** 自定义 AI 消息反馈工具组（透传 ChatBot） */
+  updateTools?: IToolBtn[];
 
   // 功能开关
   /** 是否启用选中文本弹窗（AiSelection） */
@@ -217,6 +221,10 @@ interface AIBluekingEmits {
   // 消息选择事件
   (e: 'transfer-messages', data: { messageIds: string[] }): void;
   (e: 'share-messages', data: { messageIds: string[] }): void;
+  /** 确认分享/多选；自定义 source 不走内置分享 */
+  (e: 'confirm-share', messages: Message[], source?: IToolBtn): void;
+  /** 自定义消息工具点击 */
+  (e: 'agent-action', tool: IToolBtn, messages: Message[]): void;
 
   // 错误事件（apiName 为业务语义，非 HTTP 层接口名）
   (e: 'sdk-error', data: SdkErrorPayload): void;
@@ -342,6 +350,10 @@ interface ChatBotProps {
   // 高级配置
   /** MessageTools 的 tippy 弹窗配置 */
   messageToolsTippyOptions?: MessageToolsTippyOptions;
+  /** 自定义 AI 消息主工具组（与内置按 id 合并） */
+  messageTools?: IToolBtn[];
+  /** 自定义 AI 消息反馈工具组（与内置按 id 合并） */
+  updateTools?: IToolBtn[];
   /** ResizeLayout 配置（执行情况侧面板拖拽） */
   resizeProps?: {
     disabled?: boolean;
@@ -470,7 +482,8 @@ interface ChatBotEmits {
   /** 独立模式初始化完成（与 whenReady 成功时机一致） */
   'agent-info-loaded': [chatHelper: IChatHelper];
   'feedback': [tool: IToolBtn, message: Message, reasonList: string[], otherReason: string];
-  'confirm-share': [messages: Message[]];
+  'confirm-share': [messages: Message[], source?: IToolBtn];
+  'agent-action': [tool: IToolBtn, messages: Message[]];
   'cancel-share': [];
   'request-share': [];
   'execution-panel-change': [isCollapse: boolean];

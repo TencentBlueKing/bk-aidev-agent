@@ -120,6 +120,8 @@ function openAI() {
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `beforeNimbusClick` | `() => boolean \| Promise<boolean \| void> \| void` | — | Nimbus 点击前钩子函数，返回 `false` 阻止默认 showPanel 行为 |
+| `messageTools` | `IToolBtn[]` | — | 自定义 AI 消息主工具组，透传至 ChatBot |
+| `updateTools` | `IToolBtn[]` | — | 自定义 AI 消息反馈工具组，透传至 ChatBot |
 | `resizeProps` | `{ disabled?, initialDivide?, max?, min? }` | — | ResizeLayout 配置（执行情况侧面板拖拽） |
 
 ### 侧栏自定义渲染 {#side-render-customization}
@@ -185,6 +187,8 @@ function openAI() {
 | --- | --- | --- |
 | `transfer-messages` | `({ messageIds: string[] })` | 转移消息（用于跨面板传递） |
 | `share-messages` | `({ messageIds: string[] })` | 分享消息 |
+| `confirm-share` | `(messages: Message[], source?: IToolBtn)` | 确认分享/多选；自定义 `source` 不走内置分享 |
+| `agent-action` | `(tool: IToolBtn, messages: Message[])` | 自定义消息工具点击 |
 
 ### 错误事件
 
@@ -252,6 +256,15 @@ function openAI() {
 | 方法 | 类型 | 说明 |
 | --- | --- | --- |
 | `getChatHelper` | `() => IChatHelper \| null` | 获取内部 chatHelper 实例 |
+
+## Slots
+
+| 插槽 | Scope | 说明 |
+| --- | --- | --- |
+| `welcome` | `{ openingRemark?, welcomeTitle? }` | 自定义空会话欢迎区（透传 ChatBot） |
+| `message` | `{ message, messageToolsStatus?, onInterruptResume? }` | 自定义消息渲染 |
+| `codeHeader` | `{ language, token }` | 自定义代码块头部 |
+| `headerLeft` | — | Header 左侧区域 |
 
 ## 弹窗模式
 

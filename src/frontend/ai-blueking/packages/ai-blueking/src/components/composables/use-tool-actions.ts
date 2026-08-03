@@ -179,7 +179,8 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
       }
     }
 
-    console.log('handleAgentAction', tool, messages);
+    // 内置 cite/rebuild/delete/like/unlike 已处理；其余交给业务方
+    emit('agent-action', tool, messages);
   };
 
   /**
