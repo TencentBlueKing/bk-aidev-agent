@@ -71,6 +71,7 @@
             :enable-model-select="props.enableModelSelect"
             :execution-tab-visible="props.executionTabVisible"
             :hello-text="props.helloText"
+            :message-tools="props.messageTools"
             :message-tools-tippy-options="messageToolsTippyOptions"
             :models="props.models"
             :placeholder="props.placeholder"
@@ -88,9 +89,11 @@
             :shortcuts="props.shortcuts"
             :skills="agentSkills"
             :style="{ height: props.hideHeader ? '100%' : 'calc(100% - 48px)' }"
+            :update-tools="props.updateTools"
             :url="normalizedUrl"
+            @agent-action="(tool, messages) => emit('agent-action', tool, messages)"
             @cancel-share="handleCancelShare"
-            @confirm-share="(messages: Message[]) => handleConfirmShare(messages)"
+            @confirm-share="(messages: Message[], source) => handleConfirmShare(messages, source)"
             @error="(err: Error) => handleError(err)"
             @execution-panel-change="handleExecutionPanelChange"
             @receive-end="handleReceiveEnd"
@@ -102,6 +105,15 @@
             @shortcut-click="handleShortcutClick"
             @stop="handleStop"
           >
+            <template
+              v-if="$slots.welcome"
+              #welcome="slotProps"
+            >
+              <slot
+                name="welcome"
+                v-bind="slotProps"
+              />
+            </template>
             <template
               v-if="$slots.codeHeader"
               #codeHeader="slotProps"
@@ -185,6 +197,7 @@
       messageToolsStatus?: MessageToolsStatus;
       onInterruptResume?: OnInterruptResume;
     }) => unknown;
+    welcome?: (props: { openingRemark?: string; welcomeTitle?: string }) => unknown;
   }>();
 
   // ==================== 1. 核心初始化 ====================
@@ -288,6 +301,7 @@
   const { isShareLoading, handleShare, handleCancelShare, handleConfirmShare } = useShareHandlers({
     shareBusinessManager,
     chatBotRef,
+    emit: (event, messages, source) => emit(event, messages, source),
     forwarders,
     reportSdkError,
   });

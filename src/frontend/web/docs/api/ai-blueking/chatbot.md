@@ -93,6 +93,8 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `messageToolsTippyOptions` | `MessageToolsTippyOptions` | — | 消息工具栏 Tippy 配置（如 `appendTo`，用于控制弹窗挂载位置和层级） |
+| `messageTools` | `IToolBtn[]` | — | 自定义 AI 消息主工具组（copy/cite/rebuild/share）；按 id 与内置合并（覆盖/追加/`hidden`） |
+| `updateTools` | `IToolBtn[]` | — | 自定义 AI 消息反馈工具组（like/unlike/delete）；合并规则同上 |
 | `resizeProps` | `{ disabled?, initialDivide?, max?, min? }` | — | ResizeLayout 配置（执行情况侧面板拖拽） |
 
 ### 侧栏自定义渲染 {#side-render-customization}
@@ -137,15 +139,24 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 
 | 事件名 | 参数 | 说明 |
 | --- | --- | --- |
-| `confirm-share` | `(messages: Message[])` | 确认分享 |
+| `confirm-share` | `(messages: Message[], source?: IToolBtn)` | 确认分享/多选；`source` 为触发按钮。仅 `!source \|\| source.id === 'share'` 走内置分享 |
 | `cancel-share` | — | 取消分享 |
 | `request-share` | — | 请求进入分享模式 |
+| `agent-action` | `(tool: IToolBtn, messages: Message[])` | 自定义消息工具点击（非内置 cite/rebuild/delete/like/unlike） |
 
 ### 执行情况事件
 
 | 事件名 | 参数 | 说明 |
 | --- | --- | --- |
 | `execution-panel-change` | `(isCollapse: boolean)` | 执行情况面板展开/折叠 |
+
+## Slots
+
+| 插槽 | Scope | 说明 |
+| --- | --- | --- |
+| `welcome` | `{ openingRemark?, welcomeTitle? }` | 自定义空会话欢迎区（透传 ChatContainer） |
+| `message` | `{ message, messageToolsStatus?, onInterruptResume? }` | 自定义消息渲染 |
+| `codeHeader` | `{ language, token }` | 自定义代码块头部 |
 
 ## Expose 方法
 

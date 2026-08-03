@@ -28,12 +28,17 @@ import type { TippyOptions } from 'vue-tippy';
  * 使用对象语法定义，避免 Vue 模板类型推断问题
  */
 export type ChatBotEmits = {
+  /** 自定义 AI 消息工具点击（非内置 cite/rebuild/delete/like/unlike） */
+  'agent-action': [tool: IToolBtn, messages: Message[]];
   /** Agent 信息加载完成事件 */
   'agent-info-loaded': [chatHelper: IChatHelper];
   /** 取消分享事件 */
   'cancel-share': [];
-  /** 确认分享事件 */
-  'confirm-share': [messages: Message[]];
+  /**
+   * 确认分享/多选事件
+   * @param source 触发多选态的按钮；内置分享为 `share` 或 undefined，自定义 triggerSelection 按钮则为对应工具对象
+   */
+  'confirm-share': [messages: Message[], source?: IToolBtn];
   error: [error: Error];
   /** 执行情况面板展开/折叠事件 */
   'execution-panel-change': [isCollapse: boolean, resizeAsideWidth?: number];
@@ -160,6 +165,18 @@ export interface ChatBotProps {
 
   /** MessageTools 的 tippy 弹窗配置（如 appendTo，用于控制弹窗挂载位置和层级） */
   messageToolsTippyOptions?: MessageToolsTippyOptions;
+
+  /**
+   * 自定义 AI 消息主工具组（copy/cite/rebuild/share 一排）
+   * 以内置列表为基底，按 id 覆盖同名项、追加新项；`{ id, hidden: true }` 可隐藏内置项
+   */
+  messageTools?: IToolBtn[];
+
+  /**
+   * 自定义 AI 消息反馈工具组（like/unlike/delete 一排）
+   * 合并规则同 messageTools
+   */
+  updateTools?: IToolBtn[];
 
   /** 输入框占位文本 */
   placeholder?: string;
