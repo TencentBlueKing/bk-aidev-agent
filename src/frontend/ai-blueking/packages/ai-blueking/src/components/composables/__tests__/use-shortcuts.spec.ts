@@ -2,7 +2,12 @@ import { describe, it, expect, vi } from 'vitest';
 import { ref, computed, defineComponent, shallowRef } from 'vue';
 import { mount } from '@vue/test-utils';
 
-import { createMockChatHelper, createMockEmit, createMockShortcut } from '../../../__tests__/helpers';
+import {
+  createErrorReporterParams,
+  createMockChatHelper,
+  createMockEmit,
+  createMockShortcut,
+} from '../../../__tests__/helpers';
 
 import { useShortcuts } from '../use-shortcuts';
 import type { UseShortcutsParams } from '../use-shortcuts';
@@ -21,9 +26,11 @@ function withSetup(composableFn: () => any) {
 }
 
 function createParams(overrides: Partial<UseShortcutsParams> = {}): UseShortcutsParams {
+  const emit = overrides.emit ?? createMockEmit();
   return {
     props: {} as ChatBotProps,
-    emit: createMockEmit(),
+    emit,
+    reportError: createErrorReporterParams(emit).reportError,
     chatHelper: shallowRef(createMockChatHelper()),
     shortcutManager: shallowRef({
       effectiveShortcuts: computed(() => []),

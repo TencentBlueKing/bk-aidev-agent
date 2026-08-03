@@ -17,6 +17,7 @@ import type { ChatBusinessManager } from '../../manager/business/chat-business-m
 import type { IShortcut } from '../../manager/business/types';
 import type { IChatHelper, IRequestOptions } from '../../types';
 import type { ChatBotEmitFn } from './use-chatbot-init';
+import type { ReportChatBotError } from './use-error-reporter';
 import type { IMessage, IUserMessage } from '@blueking/chat-helper';
 import type { IToolBtn, Message, Shortcut, TagSchema, UserMessage } from '@blueking/chat-x';
 
@@ -30,7 +31,10 @@ export interface UseToolActionsParams {
   getShortcutFromMessage: (message: Message) => IShortcut | null;
   /** 返回最新 requestOptions 的 getter（每次调用时读取，确保响应式） */
   getRequestOptions?: () => IRequestOptions | undefined;
+  reportError: ReportChatBotError;
   scrollToBottom: () => Promise<void>;
+  /** 停止生成的统一入口（由 useMessageSender 提供，含 stop / error 事件上报） */
+  stopGeneration: () => Promise<void>;
 }
 
 export interface UseToolActionsReturn {
@@ -58,6 +62,8 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
     getShortcutFromMessage,
     buildShortcutProperty,
     getRequestOptions,
+    reportError,
+    stopGeneration,
   } = params;
 
   /**
@@ -81,8 +87,7 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
       const messagesToDelete = [lastUserMessage, ...aiMessages];
       await chatHelper.value.message.deleteMessages(messagesToDelete as any);
     } catch (error) {
-      console.error('[ChatBot] Failed to delete messages:', error);
-      emit('error', error as Error);
+      reportError(error, 'Failed to delete messages');
     }
   };
 
@@ -105,8 +110,7 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
       await chatBusinessManager.value.regenerateFromAIMessages(aiMessages as any, sessionCode);
       scrollToBottom();
     } catch (error) {
-      console.error('[ChatBot] Failed to regenerate:', error);
-      emit('error', error as Error);
+      reportError(error, 'Failed to regenerate');
     }
   };
 
@@ -139,8 +143,7 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
       const messagesToDelete = [userMessage, ...aiMessages];
       await chatHelper.value.message.deleteMessages(messagesToDelete as IMessage[]);
     } catch (error) {
-      console.error('[ChatBot] Failed to delete user message:', error);
-      emit('error', error as Error);
+      reportError(error, 'Failed to delete user message');
     }
   };
 
@@ -223,8 +226,7 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
       });
       emit('feedback', tool, messages[0], reasonList, otherReason);
     } catch (error) {
-      console.error('[ChatBot] Failed to submit feedback:', error);
-      emit('error', error as Error);
+      reportError(error, 'Failed to submit feedback');
     }
   };
 
@@ -279,8 +281,7 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
       );
       scrollToBottom();
     } catch (error) {
-      console.error('[ChatBot] Failed to edit and resend message:', error);
-      emit('error', error as Error);
+      reportError(error, 'Failed to edit and resend message');
     }
   };
 
@@ -324,19 +325,11 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
       );
       scrollToBottom();
     } catch (error) {
-      console.error('[ChatBot] Failed to edit shortcut message:', error);
-      emit('error', error as Error);
+      reportError(error, 'Failed to edit shortcut message');
     }
   };
 
-  const handleStopStreaming = async () => {
-    if (!chatBusinessManager.value) {
-      console.error('[ChatBot] Cannot stop generation: chatBusinessManager not initialized');
-      return;
-    }
-    await chatBusinessManager.value.stopGeneration();
-    emit('stop');
-  };
+  const handleStopStreaming = stopGeneration;
 
   return {
     handleAgentAction,

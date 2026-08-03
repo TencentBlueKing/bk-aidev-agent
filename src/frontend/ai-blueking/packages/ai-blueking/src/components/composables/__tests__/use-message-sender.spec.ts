@@ -1,15 +1,22 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ref, shallowRef, computed } from 'vue';
 
-import { createMockChatHelper, createMockChatBusinessManager, createMockEmit } from '../../../__tests__/helpers';
+import {
+  createErrorReporterParams,
+  createMockChatBusinessManager,
+  createMockChatHelper,
+  createMockEmit,
+} from '../../../__tests__/helpers';
 
 import { useMessageSender } from '../use-message-sender';
 import type { UseMessageSenderParams } from '../use-message-sender';
 import type { IRequestOptions } from '../../../types';
 
 function createParams(overrides: Partial<UseMessageSenderParams> = {}): UseMessageSenderParams {
+  const emit = overrides.emit ?? createMockEmit();
   return {
-    emit: createMockEmit(),
+    emit,
+    reportError: createErrorReporterParams(emit).reportError,
     chatHelper: shallowRef(createMockChatHelper()),
     chatBusinessManager: shallowRef(createMockChatBusinessManager()),
     selectedShortcut: ref(null),
@@ -223,6 +230,28 @@ describe('useMessageSender', () => {
       const { stopGeneration } = useMessageSender(params);
 
       await expect(stopGeneration()).resolves.toBeUndefined();
+    });
+
+    it('should emit error instead of stop when the stop request fails', async () => {
+      const params = createParams();
+      const failure = new Error('stop failed');
+      (params.chatBusinessManager.value!.stopGeneration as any).mockRejectedValue(failure);
+      const { stopGeneration } = useMessageSender(params);
+
+      await stopGeneration();
+
+      expect(params.emit).toHaveBeenCalledWith('error', failure);
+      expect(params.emit).not.toHaveBeenCalledWith('stop');
+    });
+
+    it('should wrap non-Error rejections into an Error', async () => {
+      const params = createParams();
+      (params.chatBusinessManager.value!.stopGeneration as any).mockRejectedValue('boom');
+      const { stopGeneration } = useMessageSender(params);
+
+      await stopGeneration();
+
+      expect(params.emit).toHaveBeenCalledWith('error', expect.any(Error));
     });
   });
 

@@ -298,9 +298,14 @@ export class FetchClient {
   async request<T = unknown>(config: IRequestConfig): Promise<T> {
     const { url, fetchConfig, requestConfig, controller } = this.prepareRequest(config);
 
+    // 超时与用户主动取消共用同一个 AbortController，需靠此标记区分
+    let timedOut = false;
     const timeoutId =
       requestConfig.timeout && requestConfig.timeout > 0
-        ? setTimeout(() => controller.abort(), requestConfig.timeout)
+        ? setTimeout(() => {
+            timedOut = true;
+            controller.abort();
+          }, requestConfig.timeout)
         : undefined;
 
     try {
@@ -351,10 +356,11 @@ export class FetchClient {
 
       const validateStatus = requestConfig.validateStatus || this.defaults.validateStatus!;
       if (!validateStatus(fetchResponse.status)) {
-        const message =
-          (response.data as { error?: { message: string } })?.error?.message ||
-          `Request failed with status code ${fetchResponse.status}`;
-        throw createError(message, requestConfig, `ERR_BAD_RESPONSE`, response);
+        const { code, message } = resolveErrorPayload(
+          response.data,
+          `Request failed with status code ${fetchResponse.status}`,
+        );
+        throw createError(message, requestConfig, code, response);
       }
 
       let finalResponse: IResponse<ApiResponse<T>> = response;
@@ -376,9 +382,14 @@ export class FetchClient {
       }
 
       // 检查业务状态码（区别于 HTTP 状态码）
-      const apiResponse = finalResponse.data as ApiResponse<T>;
+      const apiResponse = finalResponse.data as ApiResponse<T> | null;
+      // 无响应体（如 204 或空 body）时没有业务码可校验，直接放行
+      if (!apiResponse) {
+        return undefined as T;
+      }
       if (![0, 'success'].includes(apiResponse.code)) {
-        throw createError(apiResponse.message, requestConfig, apiResponse.code, finalResponse);
+        const { code, message } = resolveErrorPayload(apiResponse, `Request failed with code ${apiResponse.code}`);
+        throw createError(message, requestConfig, code, finalResponse);
       }
 
       return apiResponse.data;
@@ -387,14 +398,15 @@ export class FetchClient {
         clearTimeout(timeoutId);
       }
 
-      // 用户手动取消请求
-      if (error instanceof Error && error.name === 'AbortError') {
+      // 用户手动取消请求；超时同样表现为 AbortError，需作为异常上报
+      if (error instanceof Error && error.name === 'AbortError' && !timedOut) {
         console.warn('User canceled request', error.message);
         return;
       }
 
-      const requestError =
-        (error as IRequestError).isAxiosError === true
+      const requestError = timedOut
+        ? createError(`timeout of ${requestConfig.timeout}ms exceeded`, requestConfig, 'ECONNABORTED', undefined)
+        : (error as IRequestError).isAxiosError === true
           ? (error as IRequestError)
           : createError((error as Error).message, requestConfig, (error as IRequestError).code, undefined);
 
@@ -434,16 +446,17 @@ export class FetchClient {
 
       const validateStatus = requestConfig.validateStatus || this.defaults.validateStatus!;
       if (!validateStatus(fetchResponse.status)) {
-        let message = `Request failed with status code ${fetchResponse.status}`;
+        let errorData: unknown = null;
         try {
-          const errorData = await fetchResponse.json();
-          if (errorData?.error?.message) {
-            message = errorData.error.message;
-          }
+          errorData = await fetchResponse.json();
         } catch (_error) {
-          message = `Request failed with status code ${fetchResponse.status}`;
+          errorData = null;
         }
-        const error = createError(message, requestConfig, `ERR_BAD_RESPONSE`, undefined);
+        const { code, message } = resolveErrorPayload(
+          errorData,
+          `Request failed with status code ${fetchResponse.status}`,
+        );
+        const error = createError(message, requestConfig, code, undefined);
         wrappedOnError(error);
         return;
       }
@@ -525,6 +538,69 @@ function buildURL(url: string, params?: Record<string, unknown>): string {
   }
 
   return url;
+}
+
+/**
+ * 从错误响应体中解析业务错误信息
+ *
+ * 后端错误体存在多种形态，需逐一兼容：
+ * - 新版网关 / aidev 插件：`{ error: { code, message, data } }`
+ * - 旧版蓝鲸标准（如 blueapps 登录态失效）：`{ result, code, message, data }`
+ * - DRF 原生异常：`{ detail }`
+ */
+function resolveErrorPayload(
+  body: unknown,
+  fallbackMessage: string,
+): { code: number | string; data?: unknown; message: string } {
+  const fallbackCode = 'ERR_BAD_RESPONSE';
+
+  if (!body || typeof body !== 'object') {
+    return { code: fallbackCode, message: fallbackMessage };
+  }
+
+  const record = body as {
+    code?: number | string;
+    data?: unknown;
+    detail?: unknown;
+    error?: { code?: number | string; data?: unknown; message?: unknown };
+    message?: unknown;
+  };
+
+  if (record.error?.message) {
+    return {
+      code: record.error.code ?? fallbackCode,
+      data: record.error.data,
+      message: stringifyErrorMessage(record.error.message, fallbackMessage),
+    };
+  }
+  if (record.message) {
+    return {
+      code: record.code ?? fallbackCode,
+      data: record.data,
+      message: stringifyErrorMessage(record.message, fallbackMessage),
+    };
+  }
+  if (record.detail) {
+    return {
+      code: record.code ?? fallbackCode,
+      data: record.data,
+      message: stringifyErrorMessage(record.detail, fallbackMessage),
+    };
+  }
+
+  return { code: record.code ?? fallbackCode, data: record.data, message: fallbackMessage };
+}
+
+/** 错误 message 可能是字符串以外的结构（如字段校验字典），统一转成可读文案 */
+function stringifyErrorMessage(message: unknown, fallbackMessage: string): string {
+  if (typeof message === 'string') {
+    return message || fallbackMessage;
+  }
+  try {
+    return JSON.stringify(message) || fallbackMessage;
+  } catch (_error) {
+    return fallbackMessage;
+  }
 }
 
 function createError(

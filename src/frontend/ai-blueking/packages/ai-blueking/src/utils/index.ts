@@ -12,6 +12,33 @@ export * from './message-utils';
 export * from './parse-custom-blocks';
 
 /**
+ * 归一化未知异常为 Error 实例
+ *
+ * Promise 可以 reject 任意值（字符串、裸对象），直接 `as Error` 断言会让消费方拿到没有
+ * `.message` 的对象。所有对外抛出/上报错误的位置都应先经过此函数。
+ */
+export const toError = (value: unknown): Error => {
+  if (value instanceof Error) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    return new Error(value);
+  }
+  if (value && typeof value === 'object') {
+    const { message } = value as { message?: unknown };
+    if (typeof message === 'string' && message) {
+      return new Error(message);
+    }
+    try {
+      return new Error(JSON.stringify(value) ?? String(value));
+    } catch (_error) {
+      return new Error(String(value));
+    }
+  }
+  return new Error(String(value));
+};
+
+/**
  * 获取 cookie
  * @param {*} name cookie 的名称
  */

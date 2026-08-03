@@ -106,6 +106,7 @@
 
   import { useChatbotInit } from './composables/use-chatbot-init';
   import { useChatbotState } from './composables/use-chatbot-state';
+  import { useErrorReporter } from './composables/use-error-reporter';
   import { useInterruptResume } from './composables/use-interrupt-resume';
   import { useMessageSender } from './composables/use-message-sender';
   import { useShareSelection } from './composables/use-share-selection';
@@ -195,6 +196,9 @@
 
   // ==================== Composable 组装 ====================
 
+  // 0. 统一错误出口（所有 catch 与业务管理器失败事件都汇入此处）
+  const { reportError, managerErrorBridge } = useErrorReporter(emit);
+
   // 1. 初始化 + 生命周期
   const {
     chatHelper,
@@ -206,11 +210,11 @@
     chatBusinessManager,
     sessionBusinessManager,
     shortcutManager,
-  } = useChatbotInit({ props, emit, scrollToBottom });
+  } = useChatbotInit({ props, emit, scrollToBottom, reportError, managerErrorBridge });
 
   const { handleInterruptResume, resumeUserQuestionWithInput } = useInterruptResume({
     chatHelper,
-    emit,
+    reportError,
   });
 
   // 2. 消息发送（先于 shortcuts，解决循环依赖）
@@ -229,6 +233,7 @@
     chatHelper,
     chatBusinessManager,
     getRequestOptions: () => props.requestOptions as IRequestOptions | undefined,
+    reportError,
     resumeUserQuestionWithInput,
     selectedShortcut,
     selectedResources,
@@ -243,7 +248,7 @@
     getShortcutFromMessage,
     buildShortcutProperty,
     sendShortcutDirectly,
-  } = useShortcuts({ props, emit, chatHelper, shortcutManager, doSendMessage, selectedShortcut });
+  } = useShortcuts({ props, emit, chatHelper, shortcutManager, doSendMessage, reportError, selectedShortcut });
 
   // 4. 派生状态
   const {
@@ -290,6 +295,8 @@
     getShortcutFromMessage,
     buildShortcutProperty,
     getRequestOptions: () => props.requestOptions as IRequestOptions | undefined,
+    reportError,
+    stopGeneration,
   });
 
   // 初始化期间（含 URL 变化重新初始化），委托 ChatContainer 内置 loading
@@ -373,8 +380,7 @@
       }
       return info;
     } catch (err) {
-      console.error('[ChatBot] Failed to update agentInfo:', err);
-      emit('error', err instanceof Error ? err : new Error(String(err)));
+      reportError(err, 'Failed to update agentInfo');
       return null;
     }
   };
@@ -389,8 +395,7 @@
       await sessionBusinessManager.value.switchSession(sessionCode);
       emit('session-switched', sessionBusinessManager.value.currentSession.value);
     } catch (error) {
-      console.error('Failed to switch session:', error);
-      emit('error', error as Error);
+      reportError(error, 'Failed to switch session');
     }
   };
 

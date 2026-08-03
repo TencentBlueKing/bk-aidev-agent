@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { ref, shallowRef } from 'vue';
 
 import {
+  createErrorReporterParams,
   createMockChatHelper,
   createMockChatBusinessManager,
   createMockEmit,
@@ -42,8 +43,10 @@ import { useToolActions } from '../use-tool-actions';
 import type { UseToolActionsParams } from '../use-tool-actions';
 
 function createParams(overrides: Partial<UseToolActionsParams> = {}): UseToolActionsParams {
+  const emit = overrides.emit ?? createMockEmit();
   return {
-    emit: createMockEmit(),
+    emit,
+    reportError: createErrorReporterParams(emit).reportError,
     chatHelper: shallowRef(createMockChatHelper()),
     chatBusinessManager: shallowRef(createMockChatBusinessManager()),
     cite: ref(''),
@@ -51,6 +54,7 @@ function createParams(overrides: Partial<UseToolActionsParams> = {}): UseToolAct
     scrollToBottom: vi.fn().mockResolvedValue(undefined),
     getShortcutFromMessage: vi.fn().mockReturnValue(null),
     buildShortcutProperty: vi.fn().mockReturnValue({ extra: {} }),
+    stopGeneration: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -318,14 +322,13 @@ describe('useToolActions', () => {
   });
 
   describe('handleStopStreaming', () => {
-    it('should call stopGeneration and emit stop', async () => {
+    it('should delegate to the shared stopGeneration entry', async () => {
       const params = createParams();
       const { handleStopStreaming } = useToolActions(params);
 
       await handleStopStreaming();
 
-      expect(params.chatBusinessManager.value!.stopGeneration).toHaveBeenCalled();
-      expect(params.emit).toHaveBeenCalledWith('stop');
+      expect(params.stopGeneration).toHaveBeenCalled();
     });
   });
 });

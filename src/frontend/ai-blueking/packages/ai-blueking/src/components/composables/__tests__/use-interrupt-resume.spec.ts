@@ -4,7 +4,7 @@ import { shallowRef } from 'vue';
 import { UserOperation } from '@blueking/chat-helper';
 import { InterruptReason, InterruptResumeOperation } from '@blueking/chat-x';
 
-import { createMockChatHelper, createMockEmit } from '../../../__tests__/helpers';
+import { createErrorReporterParams, createMockChatHelper, createMockEmit } from '../../../__tests__/helpers';
 import { useInterruptResume } from '../use-interrupt-resume';
 
 function createParams() {
@@ -12,9 +12,11 @@ function createParams() {
   (chatHelper.value!.session.current as { value: { sessionCode: string } | null }).value = {
     sessionCode: 'session-1',
   };
+  const emit = createMockEmit();
   return {
     chatHelper,
-    emit: createMockEmit(),
+    emit,
+    reportError: createErrorReporterParams(emit).reportError,
   };
 }
 
