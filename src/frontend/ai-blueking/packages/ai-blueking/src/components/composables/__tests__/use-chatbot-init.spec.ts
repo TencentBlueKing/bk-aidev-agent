@@ -74,6 +74,7 @@ vi.mock('../../../manager', async () => {
       this.models = ref([]);
       this.selectedLlmCode = ref(undefined);
       this.selectedModelName = ref('');
+      this.selectedModelSupportsVision = ref(false);
       this.sendMessage = vi.fn();
       this.stopGeneration = vi.fn();
       this.regenerateFromAIMessages = vi.fn();

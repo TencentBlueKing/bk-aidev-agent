@@ -181,6 +181,9 @@
     set: () => {}, // ChatContainer 可能 set，但由父组件 props 控制，忽略
   });
 
+  /** 暴露给父组件：当前选中模型 llm_code（稳定 ComputedRef，便于 unref） */
+  const selectedLlmCode = computed(() => chatBusinessManager.value?.selectedLlmCode.value);
+
   // ==================== 滚动辅助 ====================
   const scrollToBottom = async () => {
     await nextTick();
@@ -431,6 +434,7 @@
       return sendShortcutDirectly(shortcut as unknown as Shortcut, selectedText);
     },
     updateAgentInfo,
+    selectedLlmCode,
   });
 </script>
 

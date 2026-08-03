@@ -41,6 +41,7 @@ export function createMockChatBusinessManager(): ChatBusinessManager {
     models: ref([]),
     selectedLlmCode: ref(undefined),
     selectedModelName: ref(''),
+    selectedModelSupportsVision: ref(false),
     openingRemark: '',
     predefinedQuestions: [],
     sendMessage: vi.fn().mockResolvedValue(undefined),

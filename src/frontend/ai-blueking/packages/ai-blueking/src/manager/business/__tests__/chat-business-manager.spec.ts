@@ -33,6 +33,7 @@ function createMocks() {
   const mockSessionModule = {
     current: ref({ sessionCode: 'session-1' }),
     renameSession: vi.fn().mockResolvedValue(undefined),
+    updateSession: vi.fn().mockResolvedValue(undefined),
     list: ref([]),
   };
   const mockEventEmitter = {
@@ -460,7 +461,7 @@ describe('ChatBusinessManager', () => {
       expect(manager.selectedLlmCode.value).toBe('hy3-preview');
     });
 
-    it('should keep frontend selection when session changes after user selected a model', async () => {
+    it('should follow session.model when current session changes', async () => {
       manager.setModels(sampleModels as any);
       manager.setSelectedModelByName('DeepSeek');
       expect(manager.selectedLlmCode.value).toBe('deepseek');
@@ -472,11 +473,34 @@ describe('ChatBusinessManager', () => {
       };
       await nextTick();
 
+      expect(manager.selectedLlmCode.value).toBe('hy3-preview');
+    });
+
+    it('should not re-apply session.model when same session is patched', async () => {
+      mocks.mockSessionModule.current.value = {
+        sessionCode: 'session-1',
+        sessionName: 'chat',
+        model: 'hy3-preview',
+      };
+      await nextTick();
+      manager.setModels(sampleModels as any);
+      manager.setSelectedModelByName('DeepSeek');
+      expect(manager.selectedLlmCode.value).toBe('deepseek');
+
+      // 模拟 updateSessionInList 用旧 model 重写 current（同 sessionCode）
+      mocks.mockSessionModule.current.value = {
+        sessionCode: 'session-1',
+        sessionName: 'chat',
+        model: 'hy3-preview',
+      };
+      await nextTick();
+
       expect(manager.selectedLlmCode.value).toBe('deepseek');
     });
 
-    it('should wait for session before applying default, then bootstrap from session.model once', async () => {
+    it('should wait for session before applying default, then follow session.model on each change', async () => {
       mocks.mockSessionModule.current.value = null;
+      await nextTick();
 
       manager.setModels(sampleModels as any);
       expect(manager.selectedLlmCode.value).toBeUndefined();
@@ -495,7 +519,7 @@ describe('ChatBusinessManager', () => {
         model: 'hy3-preview',
       };
       await nextTick();
-      expect(manager.selectedLlmCode.value).toBe('deepseek');
+      expect(manager.selectedLlmCode.value).toBe('hy3-preview');
     });
 
     it('should keep default when session model is not in model list after load', () => {
@@ -508,6 +532,75 @@ describe('ChatBusinessManager', () => {
       manager.setModels(sampleModels as any);
 
       expect(manager.selectedLlmCode.value).toBe('hy3-preview');
+    });
+
+    it('should persist selected model via updateSession', async () => {
+      mocks.mockSessionModule.current.value = {
+        sessionCode: 'session-1',
+        sessionName: 'chat',
+        model: 'hy3-preview',
+      };
+      await nextTick();
+      manager.setModels(sampleModels as any);
+      mocks.mockSessionModule.updateSession.mockClear();
+
+      manager.setSelectedModelByName('DeepSeek');
+      await nextTick();
+
+      expect(manager.selectedLlmCode.value).toBe('deepseek');
+      expect(mocks.mockSessionModule.updateSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionCode: 'session-1',
+          model: 'deepseek',
+        }),
+      );
+    });
+
+    it('should skip updateSession when selected model equals current.session.model', async () => {
+      mocks.mockSessionModule.current.value = {
+        sessionCode: 'session-1',
+        sessionName: 'chat',
+        model: 'deepseek',
+      };
+      await nextTick();
+      manager.setModels(sampleModels as any);
+      mocks.mockSessionModule.updateSession.mockClear();
+
+      manager.setSelectedModelByName('DeepSeek');
+      await nextTick();
+
+      expect(mocks.mockSessionModule.updateSession).not.toHaveBeenCalled();
+    });
+
+    it('should expose selectedModelSupportsVision from property.support_vision', () => {
+      const visionModels = [
+        {
+          id: 1,
+          llm_code: 'vision-model',
+          llm_name: 'Vision',
+          llm_type: 'chat.completion',
+          max_token_size: 32768,
+          property: { support_vision: true },
+          space_auth_mode: '',
+          user_auth_mode: '',
+        },
+        {
+          id: 2,
+          llm_code: 'text-model',
+          llm_name: 'Text',
+          llm_type: 'chat.completion',
+          max_token_size: 32768,
+          property: { support_vision: false },
+          space_auth_mode: '',
+          user_auth_mode: '',
+        },
+      ];
+      manager.setModels(visionModels as any);
+      manager.setSelectedModelByName('Vision');
+      expect(manager.selectedModelSupportsVision.value).toBe(true);
+
+      manager.setSelectedModelByName('Text');
+      expect(manager.selectedModelSupportsVision.value).toBe(false);
     });
   });
 });

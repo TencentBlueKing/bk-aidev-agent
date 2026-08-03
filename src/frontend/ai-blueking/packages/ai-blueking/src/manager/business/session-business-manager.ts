@@ -107,12 +107,13 @@ export class SessionBusinessManager {
    *
    * 智能复用逻辑：
    * - 当前会话已是空会话 → 不创建，返回 null
-   * - sessionList 最新会话是空会话 → 切换到它，返回 null（非新建）
-   * - 否则 → 创建新会话，返回新会话
+   * - sessionList 最新会话是空会话 → 切换到它，返回 null（非新建）；若传入 model 且不同则 updateSession
+   * - 否则 → 创建新会话（可带 model），返回新会话
    *
+   * @param options.model 当前选中的 llm_code；有值时写入 create / 复用写回
    * @returns 新创建的会话；如果复用了已有空会话则返回 null
    */
-  async createNewSession(): Promise<ISession | null> {
+  async createNewSession(options?: { model?: string }): Promise<ISession | null> {
     // 如果当前会话已经是空会话，无需创建（以实时消息列表为准，而非后端快照）
     const current = this.currentSession.value;
     if (current?.sessionCode && this.isCurrentSessionEmpty(current)) {
@@ -132,6 +133,8 @@ export class SessionBusinessManager {
           ? this.isCurrentSessionEmpty(latestSession)
           : this.isSessionEmpty(latestSession);
       if (latestIsEmpty) {
+        // 先写回 model，再 switch：避免 applySessionModel 先用旧 model 覆盖当前选中
+        await this.syncSessionModelIfNeeded(options?.model, latestSession);
         await this.switchSession(latestSession.sessionCode, { loadMessages: false });
         return null;
       }
@@ -140,6 +143,7 @@ export class SessionBusinessManager {
     await this.createSession({
       name: '新会话',
       sessionCode: this.generateSessionCode(),
+      model: options?.model,
     });
     return this.sessionModule.current.value;
   }
@@ -149,6 +153,24 @@ export class SessionBusinessManager {
    */
   private generateSessionCode(): string {
     return `new_session_${Date.now()}`;
+  }
+
+  /**
+   * 将指定会话的 model 写回后台（默认写 current）
+   * 复用空会话时应在 switch 之前调用，保证切过去后 UI 同步到目标 model
+   */
+  private async syncSessionModelIfNeeded(model?: string, session?: ISession | null): Promise<void> {
+    if (!model) {
+      return;
+    }
+    const target = session ?? this.sessionModule.current.value;
+    if (!target?.sessionCode || target.model === model) {
+      return;
+    }
+    await this.sessionModule.updateSession({
+      ...target,
+      model,
+    });
   }
 
   /**
@@ -162,11 +184,12 @@ export class SessionBusinessManager {
     }
 
     try {
-      // 构建会话数据
+      // 构建会话数据（model 与 sessionCode 同级）
       const sessionData = {
         sessionName: options.name || '新会话',
         sessionCode: options.sessionCode || `session_${Date.now()}`,
         isTemporary: options.isTemporary || false,
+        ...(options.model ? { model: options.model } : {}),
         sessionProperty: {
           labels: options.labels,
         },

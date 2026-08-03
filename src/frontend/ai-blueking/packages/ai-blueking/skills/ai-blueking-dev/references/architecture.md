@@ -80,7 +80,7 @@ AI 小鲸组件采用严格的分层架构，开发时必须遵循各层职责�
 1. bootstrap：getLlms() 并行拉取（失败不阻断）
 2. ChatBusinessManager.loadModels / setModels → resolveInitialSelection
 3. ChatBot 绑定 models + v-model:selected-model → ChatContainer ModelSelector
-4. 用户切换 → setSelectedModel；跨 session 保持，不写回 session
+4. 用户切换 → setSelectedModel → updateSession 写回 model；切 session → applySessionModel
 ```
 
 ## 职责分离原则
