@@ -35,6 +35,7 @@
             :is-compression-height="isCompressed"
             :render-mode="props.renderMode"
             :session-business-manager="sessionBusinessManager"
+            :selected-llm-code="selectedLlmCode"
             :session-name="sessionName"
             :show-compression-icon="props.showCompressionIcon"
             :show-history-icon="props.showHistoryIcon"
@@ -163,7 +164,7 @@
 </template>
 
 <script setup lang="ts">
-  import { useAttrs } from 'vue';
+  import { computed, useAttrs } from 'vue';
 
   import { AiSelection } from '@blueking/chat-x';
 
@@ -230,6 +231,9 @@
     props,
     emit: emit as (event: string, ...args: unknown[]) => void,
   });
+
+  /** Header 新建会话时透传当前选中模型（expose 已拆包为裸值） */
+  const selectedLlmCode = computed(() => chatBotRef.value?.selectedLlmCode);
 
   // ==================== 2. 面板/容器控制 ====================
   const {

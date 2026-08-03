@@ -40,6 +40,8 @@ export interface AIHeaderProps {
   };
   // V2 新增：会话业务管理器
   sessionBusinessManager?: SessionBusinessManager;
+  /** 当前选中模型 llm_code（新建会话时写入 session.model） */
+  selectedLlmCode?: string;
   /** 渲染模式：chat(默认)、share(分享)、test(测试) */
   renderMode?: RenderMode;
 }

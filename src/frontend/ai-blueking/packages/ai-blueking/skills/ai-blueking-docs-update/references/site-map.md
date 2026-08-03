@@ -36,8 +36,8 @@
 | `/guide/core-features/content-referencing` | `content-referencing.md` | 划词、引用 |
 | `/guide/core-features/shortcuts` | `shortcuts.md` | 快捷指令 |
 | `/guide/core-features/prompts` | `prompts.md` | 用户 `/` 提示词、`@` 资源 |
-| `/guide/core-features/session-management` | `session-management.md` | 会话 CRUD；`session.model` 仅作首次兜底 |
-| `/guide/core-features/model-selection` | `model-selection.md` | 模型选择（≥ v2.2.1）：`enableModelSelect`、`models`、跨 session 选中、`GET llms/` |
+| `/guide/core-features/session-management` | `session-management.md` | 会话 CRUD；`session.model` 跟随会话，切换/新建可写回 |
+| `/guide/core-features/model-selection` | `model-selection.md` | 模型选择（≥ v2.2.1）：`enableModelSelect`、`models`、跟随 session、`GET llms/`、upload=`support_vision` |
 | `/guide/core-features/sharing` | `sharing.md` | 分享；`confirm-share` 的 `source`、自定义 `triggerSelection` |
 | `/guide/core-features/custom-message-rendering` | `custom-message-rendering.md` | `custom-component` 块 |
 | `/guide/core-features/side-render-customization` | `side-render-customization.md` | 侧栏 Tab `getSideRenderComponent` 等（≥ v2.1.4-beta.7） |

@@ -108,6 +108,11 @@ export interface ChatBotExpose {
   whenReady: () => Promise<void>;
   /** 是否已完成初始化（独立模式：含 sessionList；集成模式：manager 已挂载） */
   isReady: boolean;
+  /**
+   * 当前选中模型 llm_code
+   * （expose 经 proxyRefs 拆包，运行时为裸值而非 ComputedRef）
+   */
+  selectedLlmCode: string | undefined;
 }
 
 /**

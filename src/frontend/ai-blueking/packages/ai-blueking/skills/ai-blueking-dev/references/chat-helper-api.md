@@ -124,10 +124,10 @@ const commands = agent.info.value?.conversationSettings?.commands;
 const openingRemark = agent.info.value?.conversationSettings?.openingRemark;
 const predefinedQuestions = agent.info.value?.conversationSettings?.predefinedQuestions;
 const resources = agent.info.value?.resources;
-// 上传支持（vision 模式）
-const supportUpload = agent.info.value?.promptSetting?.supportUpload?.vision;
-// 单个 command 的上传支持
+// 上传支持：组件侧跟随选中模型 property.support_vision；快捷指令仍可用 command.supportUpload
 const commandUpload = commands?.[0]?.supportUpload?.vision;
+// agent.promptSetting.supportUpload 仍可由后端返回，但 ChatBot 附件按钮不再以此为准
+const agentSupportUpload = agent.info.value?.promptSetting?.supportUpload?.vision;
 ```
 
 #### getLlms

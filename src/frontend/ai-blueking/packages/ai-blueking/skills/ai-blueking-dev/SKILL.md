@@ -3,7 +3,7 @@ name: ai-blueking-dev
 description: 蓝鲸 AI 小鲸组件开发指南。基于 @blueking/chat-x（UI 组件）和 @blueking/chat-helper（业务 SDK）开发 AI 聊天应用、智能体、对话界面。涵盖 ChatBot 独立使用、AIBlueking 完整集成、流式响应、快捷指令、划词选择、模型选择（Model Select）、自定义消息渲染（图表/表单/iframe）、HITL 人机协同（工具审批/用户提问/中断恢复）、流程化智能体节点重试跳过、渲染模式（chat/share/test 分享态）、字号主题、侧栏自定义与自定义 Tab、欢迎区 `#welcome` 插槽、消息工具栏扩展（messageTools/updateTools）、非 Vue 宿主挂载等。触发场景：开发 AI 小鲸、集成 AI Agent、使用 chat-x/chat-helper、构建 AI 对话 UI、实现流式聊天、模型热切换、自定义消息组件渲染、human-in-the-loop、interrupt/resume、flow agent、自定义欢迎页、自定义消息工具按钮。
 metadata:
   author: blueking
-  version: '5.4'
+  version: '5.5'
   packages:
     ai-blueking: 2.2.2-beta.1
     chat-x: 0.0.49-beta.1
@@ -380,11 +380,13 @@ Agent 可在流式执行中**中断**，把控制权交回用户，处理后再*
 | --- | --- |
 | 展示 | `enableModelSelect !== false` 且列表非空 |
 | 选中值 | UI 绑定 `llm_name`；发送传 `llm_code`（`agent.chat` 第 6 参） |
-| 跨 session | 选中态在组件实例内跨会话保持；切历史 / 新建 / 复用空会话不改模型 |
-| 首次兜底 | 仅无有效选中时：`session.model` → `property.default` → 列表首项 |
-| 不写回 | 用户切换不写 session；创建会话不带 `model` |
+| 跟随 session | 切换历史会话时，用 `session.model` 同步 ModelSelector（命中列表时） |
+| 写回 | 用户切换模型 → `session.updateSession({ ...current, model })`（与 `sessionCode` 同级） |
+| 新建 | 有当前选中时 `createSession` / `createNewSession` 带 `model`；首次无选中不传，用后台返回 |
+| 首次 / 兜底 | `session.model` 命中列表 → 选中；空/未知且无有效选中 → `property.default` / 首项 |
+| 附件按钮 | 跟随选中模型 `property.support_vision`；快捷指令 `supportUpload.vision` 优先 |
 
-编排入口：`ChatBusinessManager`（`loadModels` / `setModels` / `setSelectedModel*`）。  
+编排入口：`ChatBusinessManager`（`loadModels` / `setModels` / `setSelectedModel*` / `applySessionModel`）。  
 SDK：`agent.getLlms()` → `agent.models`；热切换 `agent.chat(..., property, llm_code)`。自定义请求参数（如 `temperature`）走 `config.data`，**不要**把 `model` 塞进 `config.data`。
 
 ## 参考资源
