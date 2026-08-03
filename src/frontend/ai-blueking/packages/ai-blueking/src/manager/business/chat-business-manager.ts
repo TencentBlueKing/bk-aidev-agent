@@ -587,6 +587,7 @@ export class ChatBusinessManager {
         action: 'stop',
         error,
       });
+      throw error;
     } finally {
       this._isStopLoading.value = false;
     }

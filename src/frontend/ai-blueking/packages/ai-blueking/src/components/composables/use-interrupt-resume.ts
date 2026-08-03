@@ -23,6 +23,7 @@ import {
 
 import type { IChatHelper } from '../../types';
 import type { ChatBotEmitFn } from './use-chatbot-init';
+import type { ReportChatBotError } from './use-error-reporter';
 
 const OTHERS_OPTION_LABEL = 'others';
 
@@ -35,7 +36,7 @@ const USER_OPERATION_MAP: Partial<Record<InterruptResumeOperation, UserOperation
 
 export interface UseInterruptResumeParams {
   chatHelper: Ref<IChatHelper | null>;
-  emit: ChatBotEmitFn;
+  reportError: ReportChatBotError;
 }
 
 export interface UseInterruptResumeReturn {
@@ -106,7 +107,7 @@ function buildFreeTextUserQuestionResume(
 }
 
 export function useInterruptResume(params: UseInterruptResumeParams): UseInterruptResumeReturn {
-  const { chatHelper, emit } = params;
+  const { chatHelper, reportError } = params;
 
   const handleUserOperationResume = async (payload: InterruptResume) => {
     const helper = chatHelper.value;
@@ -189,8 +190,7 @@ export function useInterruptResume(params: UseInterruptResumeParams): UseInterru
 
       throw new Error('[ChatBot] Unsupported interrupt resume payload');
     } catch (error) {
-      console.error('[ChatBot] Failed to handle interrupt resume:', error);
-      emit('error', error instanceof Error ? error : new Error(String(error)));
+      reportError(error, 'Failed to handle interrupt resume');
     }
   };
 
@@ -216,8 +216,7 @@ export function useInterruptResume(params: UseInterruptResumeParams): UseInterru
 
       await handleUserQuestionResume(resume, input);
     } catch (error) {
-      console.error('[ChatBot] Failed to resume user question with input:', error);
-      emit('error', error instanceof Error ? error : new Error(String(error)));
+      reportError(error, 'Failed to resume user question with input');
     }
   };
 

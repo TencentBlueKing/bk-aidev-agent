@@ -10,6 +10,8 @@ import { ref, shallowRef } from 'vue';
 
 import { vi } from 'vitest';
 
+import { useErrorReporter } from '../components/composables/use-error-reporter';
+
 import type { ChatBusinessManager } from '../manager/business/chat-business-manager';
 import type { SessionBusinessManager } from '../manager/business/session-business-manager';
 import type { IChatHelper } from '../types';
@@ -127,6 +129,15 @@ export function createMockChatHelper(): IChatHelper {
  */
 export function createMockEmit() {
   return vi.fn() as any;
+}
+
+/**
+ * 创建错误上报相关的 composable 参数（reportError + managerErrorBridge）
+ * 使用真实的 useErrorReporter 而非 vi.fn()，让 `emit('error', ...)` 的断言仍能
+ * 覆盖归一化与去重行为
+ */
+export function createErrorReporterParams(emit: (...args: any[]) => void) {
+  return useErrorReporter(emit);
 }
 
 /**

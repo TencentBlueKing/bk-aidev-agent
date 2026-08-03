@@ -35,6 +35,20 @@
 ## 示例（节选）
 
 ```markdown
+## v2.2.1
+
+### 新功能
+
+- **模型选择（Model Select）**（≥ v2.2.1）：`ChatBot` / `AIBlueking` 新增 `enableModelSelect`（默认 `true`）与 `models` prop；初始化并行拉取 `GET llms/`，列表非空时展示 ModelSelector。详见 [模型选择](/guide/core-features/model-selection)
+
+### 文档
+
+- 新增 [模型选择](/guide/core-features/model-selection) 指南
+
+---
+```
+
+```markdown
 ## v2.1.4-beta.6
 
 ### 新功能

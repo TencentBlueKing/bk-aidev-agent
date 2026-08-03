@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { defineComponent, nextTick, reactive } from 'vue';
 import { mount, flushPromises } from '@vue/test-utils';
 
-import { createMockChatHelper, createMockEmit } from '../../../__tests__/helpers';
+import { createErrorReporterParams, createMockChatHelper, createMockEmit } from '../../../__tests__/helpers';
 import type { ChatBotProps } from '../../types';
 
 // Inline mocks using vi.fn() directly in the factory - no hoisting issues
@@ -134,6 +134,7 @@ function withSetupReactive(propsInit: Partial<ChatBotProps>) {
         props: reactiveProps,
         emit,
         scrollToBottom: vi.fn().mockResolvedValue(undefined),
+        ...createErrorReporterParams(emit),
       });
       return () => null;
     },
@@ -167,6 +168,7 @@ describe('useChatbotInit', () => {
           props: {} as ChatBotProps,
           emit,
           scrollToBottom: vi.fn().mockResolvedValue(undefined),
+          ...createErrorReporterParams(emit),
         }),
       );
 
@@ -186,6 +188,7 @@ describe('useChatbotInit', () => {
           props: { url: 'https://api.example.com' } as ChatBotProps,
           emit,
           scrollToBottom: vi.fn().mockResolvedValue(undefined),
+          ...createErrorReporterParams(emit),
         }),
       );
 
@@ -207,6 +210,7 @@ describe('useChatbotInit', () => {
           props: { url: 'https://api.example.com' } as ChatBotProps,
           emit,
           scrollToBottom: vi.fn().mockResolvedValue(undefined),
+          ...createErrorReporterParams(emit),
         }),
       );
 
@@ -225,6 +229,7 @@ describe('useChatbotInit', () => {
           props: { url: 'https://api.example.com', sessionCode: 'my-session' } as ChatBotProps,
           emit,
           scrollToBottom: vi.fn().mockResolvedValue(undefined),
+          ...createErrorReporterParams(emit),
         }),
       );
 
@@ -243,6 +248,7 @@ describe('useChatbotInit', () => {
           props: { url: 'https://api.example.com' } as ChatBotProps,
           emit,
           scrollToBottom: vi.fn().mockResolvedValue(undefined),
+          ...createErrorReporterParams(emit),
         }),
       );
 
@@ -263,6 +269,7 @@ describe('useChatbotInit', () => {
           props: { chatHelper: propsChatHelper } as ChatBotProps,
           emit,
           scrollToBottom: vi.fn().mockResolvedValue(undefined),
+          ...createErrorReporterParams(emit),
         }),
       );
 
@@ -284,6 +291,7 @@ describe('useChatbotInit', () => {
           props: { chatHelper: propsChatHelper } as ChatBotProps,
           emit,
           scrollToBottom: vi.fn().mockResolvedValue(undefined),
+          ...createErrorReporterParams(emit),
         }),
       );
 
@@ -306,12 +314,58 @@ describe('useChatbotInit', () => {
           props: { url: 'https://api.example.com' } as ChatBotProps,
           emit,
           scrollToBottom: vi.fn().mockResolvedValue(undefined),
+          ...createErrorReporterParams(emit),
         }),
       );
 
       await flushPromises();
 
       expect(result.initError.value).toEqual(error);
+      expect(emit).toHaveBeenCalledWith('error', error);
+      wrapper.unmount();
+    });
+  });
+
+  describe('error bridge wiring', () => {
+    it('should pass the manager error bridge to both business managers', async () => {
+      const emit = createMockEmit();
+      const errorReporterParams = createErrorReporterParams(emit);
+
+      const { wrapper } = withSetup(() =>
+        useChatbotInit({
+          props: { url: 'https://api.example.com' } as ChatBotProps,
+          emit,
+          scrollToBottom: vi.fn().mockResolvedValue(undefined),
+          ...errorReporterParams,
+        }),
+      );
+
+      await flushPromises();
+
+      // 业务管理器的失败事件必须能汇入 error 出口，否则 chat-error / session-error 是死通道
+      expect(vi.mocked(ChatBusinessManager).mock.calls[0][3]).toBe(errorReporterParams.managerErrorBridge);
+      expect(vi.mocked(SessionBusinessManager).mock.calls[0][2]).toBe(errorReporterParams.managerErrorBridge);
+      wrapper.unmount();
+    });
+
+    it('should emit error when a business manager reports a failure event', async () => {
+      const emit = createMockEmit();
+      const errorReporterParams = createErrorReporterParams(emit);
+
+      const { wrapper } = withSetup(() =>
+        useChatbotInit({
+          props: { url: 'https://api.example.com' } as ChatBotProps,
+          emit,
+          scrollToBottom: vi.fn().mockResolvedValue(undefined),
+          ...errorReporterParams,
+        }),
+      );
+
+      await flushPromises();
+
+      const error = new Error('delete failed');
+      vi.mocked(ChatBusinessManager).mock.calls[0][3]!.emit('chat-error', { action: 'delete-message', error });
+
       expect(emit).toHaveBeenCalledWith('error', error);
       wrapper.unmount();
     });
@@ -325,6 +379,7 @@ describe('useChatbotInit', () => {
           props: { url: 'https://api.example.com' } as ChatBotProps,
           emit,
           scrollToBottom: vi.fn().mockResolvedValue(undefined),
+          ...createErrorReporterParams(emit),
         }),
       );
 
@@ -421,6 +476,7 @@ describe('useChatbotInit', () => {
           props: { url: 'https://api.example.com' } as ChatBotProps,
           emit,
           scrollToBottom: vi.fn().mockResolvedValue(undefined),
+          ...createErrorReporterParams(emit),
         }),
       );
 
@@ -442,6 +498,7 @@ describe('useChatbotInit', () => {
           props: { url: 'https://api.example.com' } as ChatBotProps,
           emit,
           scrollToBottom: vi.fn().mockResolvedValue(undefined),
+          ...createErrorReporterParams(emit),
         }),
       );
 
@@ -464,6 +521,7 @@ describe('useChatbotInit', () => {
           props: { url: 'https://api.example.com' } as ChatBotProps,
           emit,
           scrollToBottom: vi.fn().mockResolvedValue(undefined),
+          ...createErrorReporterParams(emit),
         }),
       );
 
@@ -485,6 +543,7 @@ describe('useChatbotInit', () => {
           props: { chatHelper: propsChatHelper } as ChatBotProps,
           emit,
           scrollToBottom: vi.fn().mockResolvedValue(undefined),
+          ...createErrorReporterParams(emit),
         }),
       );
 
@@ -530,6 +589,7 @@ describe('useChatbotInit', () => {
           props: {} as ChatBotProps,
           emit,
           scrollToBottom: vi.fn().mockResolvedValue(undefined),
+          ...createErrorReporterParams(emit),
         }),
       );
 

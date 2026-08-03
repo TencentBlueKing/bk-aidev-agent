@@ -243,6 +243,10 @@ export type InternalEventData = UIEventData &
  * 事件桥接映射配置
  * key: 内部事件名
  * value: Vue emit 事件名（null 表示不对外暴露）
+ *
+ * 注意：业务管理器（ChatBusinessManager / SessionBusinessManager）的失败事件
+ * （`chat-error` / `receive-error` / `session-error`）不走此映射，而是由 ChatBot 的
+ * `useErrorReporter` 桥接到 `error` 事件；AIBlueking 再把 `error` 转成 `sdk-error`。
  */
 export const EVENT_BRIDGE_MAP: Record<InternalEvent, string | null> = {
   // UI 事件
@@ -267,7 +271,7 @@ export const EVENT_BRIDGE_MAP: Record<InternalEvent, string | null> = {
   'receive-start': 'receive-start',
   'receive-text': 'receive-text',
   'receive-end': 'receive-end',
-  'receive-error': null, // 通过 sdk-error 统一暴露
+  'receive-error': null, // 由 useErrorReporter 转 error，再由 AIBlueking 转 sdk-error
   stop: 'stop',
   'chat-regenerate': null, // 内部事件
   'chat-retry': null, // 内部事件
@@ -279,9 +283,9 @@ export const EVENT_BRIDGE_MAP: Record<InternalEvent, string | null> = {
   'session-updated': null, // 内部事件
   'sessions-loaded': null, // 内部事件
   'session-initialized': 'session-initialized',
-  'session-error': null, // 通过 sdk-error 统一暴露
+  'session-error': null, // 由 useErrorReporter 转 error，再由 AIBlueking 转 sdk-error
   'shortcut-click': 'shortcut-click',
-  'chat-error': null, // 通过 sdk-error 统一暴露
+  'chat-error': null, // 由 useErrorReporter 转 error，再由 AIBlueking 转 sdk-error
   'sdk-error': 'sdk-error',
 
   // Header 事件
