@@ -5,7 +5,6 @@ import threading
 import time
 
 import pytest
-
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
 from aidev_agent.pydantic_models import ChatPrompt, ExecuteKwargs
 from aidev_agent.services.agent import ChatCompletionAgent
@@ -80,28 +79,19 @@ class TestRabbitMQMessageHandler:
         # 验证有未消费的消息
         assert handler.has_pending_messages(thread_id) is True
 
-        # 获取消息（消息会被移动到死信队列）
-        messages = handler.get(thread_id, timeout=1)
+        # offset replay 不移动主队列消息
+        messages, offset = handler.get_messages_since(thread_id, offset=0, timeout=1)
         assert messages == ["test_msg_1", "test_msg_2", "test_msg_3"]
+        assert offset == 3
 
-        # 主队列应该为空，消息已移动到死信队列
-        assert handler.get_cached_count(thread_id) == 0
-        assert handler._get_dlq_count(thread_id) == 3
-
-        # 仍然有未消费的消息（在死信队列中）
+        # 主队列保留完整 replay 日志
+        assert handler.get_cached_count(thread_id) == 3
         assert handler.has_pending_messages(thread_id) is True
 
-        # 恢复消息到主队列（模拟断点续传）
-        restored = handler.restore_messages(thread_id)
-        assert restored == 3
-
-        # 消息已恢复到主队列
-        assert handler.get_cached_count(thread_id) == 3
-        assert handler._get_dlq_count(thread_id) == 0
-
-        # 再次获取消息
-        messages = handler.get(thread_id, timeout=1)
+        # 新消费者从 offset=0 独立 replay 同一批消息
+        messages, replay_offset = handler.get_messages_since(thread_id, offset=0, timeout=1)
         assert messages == ["test_msg_1", "test_msg_2", "test_msg_3"]
+        assert replay_offset == 3
 
         # 标记完成并清理
         handler.mark_completed(thread_id)
@@ -109,7 +99,6 @@ class TestRabbitMQMessageHandler:
         # 验证所有队列已清空
         assert handler.is_empty(thread_id) is True
         assert handler.get_cached_count(thread_id) == 0
-        assert handler._get_dlq_count(thread_id) == 0
 
     def test_live_chat(self, handler):
         """实际连接 LLM + RabbitMQ 的端到端流式测试"""
@@ -240,91 +229,55 @@ class TestRabbitMQMessageHandler:
         assert messages == buffered_messages
         assert next_offset == 2_000
 
-    def test_consumer_reconnect_with_dlq(self, handler, thread_id):
-        """测试消费者断开后重连可以从死信队列恢复消息
-
-        验证：
-        1. 生产者产生消息后，消费者读取消息
-        2. 消息被移动到死信队列
-        3. 消费者断开后，消息仍在死信队列中
-        4. 新的消费者调用 restore_messages 恢复消息
-        5. 从主队列重新消费所有消息
-        """
+    def test_consumer_reconnect_replays_main_queue(self, handler, thread_id):
+        """消费者断开后，新消费者从主队列开头独立 replay。"""
         # 模拟生产者产生消息
         for i in range(5):
             handler.put(thread_id, f"msg_{i}")
         handler.put(thread_id, EOD_CHUNK)
         handler.flush(thread_id)
 
-        # 第一个消费者读取部分消息
-        messages1 = handler.get(thread_id, timeout=1)
+        messages1, offset1 = handler.get_messages_since(thread_id, offset=0, timeout=1)
         assert len(messages1) == 6  # 包括 EOD_CHUNK
+        assert offset1 == 6
 
-        # 主队列为空，消息在死信队列
-        assert handler.get_cached_count(thread_id) == 0
-        assert handler._get_dlq_count(thread_id) == 6
-
-        # 模拟消费者断开（不调用 mark_completed）
-
-        # 新的消费者重连，恢复消息
-        restored = handler.restore_messages(thread_id)
-        assert restored == 6
-
-        # 消息已恢复到主队列
+        # 消费不会删除主队列数据
         assert handler.get_cached_count(thread_id) == 6
-        assert handler._get_dlq_count(thread_id) == 0
 
-        # 重新消费所有消息
-        messages2 = handler.get(thread_id, timeout=1)
+        # 新消费者使用独立 offset，从头 replay 全部消息
+        messages2, offset2 = handler.get_messages_since(thread_id, offset=0, timeout=1)
         expected = [f"msg_{i}" for i in range(5)] + [EOD_CHUNK]
         assert messages2 == expected
+        assert offset2 == 6
 
         # 清理
         handler.mark_completed(thread_id)
         assert handler.is_empty(thread_id) is True
 
-    def test_dlq_mechanism(self, handler, thread_id):
-        """测试死信队列机制
-
-        验证：
-        1. 消息被消费后进入死信队列
-        2. restore_messages 能正确恢复消息
-        3. mark_completed 能清空所有队列
-        """
+    def test_replay_does_not_remove_main_queue_messages(self, handler, thread_id):
+        """多次 replay 都读取同一份主队列日志。"""
         # 发送消息
         handler.put(thread_id, "msg_1")
         handler.put(thread_id, "msg_2")
         handler.flush(thread_id)
 
-        # 初始状态：主队列有消息，死信队列为空
         assert handler.get_cached_count(thread_id) == 2
-        assert handler._get_dlq_count(thread_id) == 0
 
-        # 消费消息
-        messages = handler.get(thread_id, timeout=1)
+        messages, offset = handler.get_messages_since(thread_id, offset=0, timeout=1)
         assert messages == ["msg_1", "msg_2"]
+        assert offset == 2
 
-        # 消费后：主队列为空，死信队列有消息
-        assert handler.get_cached_count(thread_id) == 0
-        assert handler._get_dlq_count(thread_id) == 2
-
-        # 恢复消息
-        handler.restore_messages(thread_id)
-
-        # 恢复后：主队列有消息，死信队列为空
+        # replay 后主队列仍保留消息，第二个消费者可再次读取
         assert handler.get_cached_count(thread_id) == 2
-        assert handler._get_dlq_count(thread_id) == 0
-
-        # 再次消费
-        messages = handler.get(thread_id, timeout=1)
-        assert messages == ["msg_1", "msg_2"]
+        replayed, replay_offset = handler.get_messages_since(thread_id, offset=0, timeout=1)
+        assert replayed == ["msg_1", "msg_2"]
+        assert replay_offset == 2
 
         # 标记完成
         handler.mark_completed(thread_id)
 
         # 所有队列都应该为空
         assert handler.get_cached_count(thread_id) == 0
-        assert handler._get_dlq_count(thread_id) == 0
         assert handler.is_empty(thread_id) is True
 
     def test_producer_stop_request_cancel_live(self, handler, thread_id):
@@ -362,7 +315,7 @@ class TestRabbitMQMessageHandler:
 class TestResourceCleanup:
     """测试 mark_completed 后的资源清理逻辑
     验证：
-    1. mark_completed 后队列和交换机被真正删除（而非仅清空）
+    1. mark_completed 后队列被真正删除（而非仅清空）
     2. _delete_all_resources 对不存在的资源不报错
     3. 信号队列（consumer/exit/cancelled/stopped）也会被清理
     4. clear() 不会删除队列（只清空消息，因为后续还要重建）
@@ -378,48 +331,25 @@ class TestResourceCleanup:
         except Exception:
             return False
 
-    def _exchange_exists(self, handler, exchange_name: str) -> bool:
-        """辅助方法：通过 passive declare 检查交换机是否存在"""
-        try:
-            with handler._with_connection() as connection:
-                channel = connection.channel()
-                channel.exchange_declare(exchange=exchange_name, passive=True)
-                return True
-        except Exception:
-            return False
-
     @pytest.mark.skipif(not os.getenv("RABBITMQ_HOST"), reason="Live test requires RABBITMQ_HOST")
-    def test_mark_completed_deletes_queues_and_exchange(self):
-        """mark_completed 后主队列、死信队列、死信交换机被真正删除"""
+    def test_mark_completed_deletes_main_queue(self):
+        """mark_completed 后主队列被真正删除。"""
         handler = RabbitMQMessageHandler()
         thread_id = "thread-cleanup-delete-test"
 
         handler.clear(thread_id)
 
-        # 发送消息以确保队列和交换机被创建
+        # 发送消息以确保主队列被创建
         handler.put(thread_id, "msg_1")
         handler.put(thread_id, "msg_2")
         handler.flush(thread_id)
 
-        # 消费消息使其进入死信队列
-        handler.get(thread_id, timeout=1)
-
-        # 确认队列和交换机存在
         main_queue = handler._get_queue_name(thread_id)
-        dlq_name = handler._get_dlq_name(thread_id)
-        dlx_exchange = handler._get_dlx_exchange_name(thread_id)
-
         assert self._queue_exists(handler, main_queue), "主队列应该存在"
-        assert self._queue_exists(handler, dlq_name), "死信队列应该存在"
-        assert self._exchange_exists(handler, dlx_exchange), "死信交换机应该存在"
 
-        # 执行 mark_completed
         handler.mark_completed(thread_id)
 
-        # 验证队列和交换机已被删除
         assert not self._queue_exists(handler, main_queue), "主队列应该被删除"
-        assert not self._queue_exists(handler, dlq_name), "死信队列应该被删除"
-        assert not self._exchange_exists(handler, dlx_exchange), "死信交换机应该被删除"
 
     @pytest.mark.skipif(not os.getenv("RABBITMQ_HOST"), reason="Live test requires RABBITMQ_HOST")
     def test_mark_completed_deletes_signal_queues(self):
@@ -449,9 +379,6 @@ class TestResourceCleanup:
         assert self._queue_exists(handler, exit_queue), "退出通知队列应该存在"
         assert self._queue_exists(handler, cancelled_queue), "取消完成通知队列应该存在"
         assert self._queue_exists(handler, stopped_queue), "停止状态队列应该存在"
-
-        # 消费消息
-        handler.get(thread_id, timeout=1)
 
         # 先释放消费者，再 mark_completed（避免 release_consumer 内部
         # _ensure_consumer_queues 重新创建已删除的 consumer/exit 队列）
@@ -490,7 +417,7 @@ class TestResourceCleanup:
 
     @pytest.mark.skipif(not os.getenv("RABBITMQ_HOST"), reason="Live test requires RABBITMQ_HOST")
     def test_delete_nonexistent_resources_no_error(self):
-        """对不存在的队列/交换机执行删除不会报错"""
+        """对不存在的队列执行删除不会报错"""
         handler = RabbitMQMessageHandler()
         thread_id = "thread-cleanup-nonexist-test"
 
@@ -512,18 +439,15 @@ class TestResourceCleanup:
         handler.flush(thread_id)
 
         main_queue = handler._get_queue_name(thread_id)
-        dlq_name = handler._get_dlq_name(thread_id)
 
         # 确认队列存在
         assert self._queue_exists(handler, main_queue), "主队列应该存在"
-        assert self._queue_exists(handler, dlq_name), "死信队列应该存在"
 
         # 执行 clear
         handler.clear(thread_id)
 
         # 验证队列仍然存在（只是消息被清空了）
         assert self._queue_exists(handler, main_queue), "clear 后主队列应该仍然存在"
-        assert self._queue_exists(handler, dlq_name), "clear 后死信队列应该仍然存在"
         assert handler.get_cached_count(thread_id) == 0, "主队列消息应该被清空"
 
         # 最终清理
@@ -545,8 +469,6 @@ class TestResourceCleanup:
         cancel_queue = handler._get_cancel_queue_name(thread_id)
         assert self._queue_exists(handler, cancel_queue), "取消请求队列应该存在"
 
-        # 消费并完成
-        handler.get(thread_id, timeout=1)
         handler.mark_completed(thread_id)
 
         # 验证取消请求队列已被删除
@@ -578,23 +500,18 @@ class TestResourceCleanup:
 
         # 验证 RabbitMQ 中也没有残留消息（守护线程不应该 flush 已清理的消息）
         assert handler.get_cached_count(thread_id) == 0, "主队列不应该有残留消息"
-        assert handler._get_dlq_count(thread_id) == 0, "死信队列不应该有残留消息"
 
     @pytest.mark.skipif(not os.getenv("RABBITMQ_HOST"), reason="Live test requires RABBITMQ_HOST")
     def test_has_pending_messages_independent_channel(self):
-        """主队列不存在时，has_pending_messages 仍能正确检查死信队列（独立 channel 隔离性）"""
+        """主队列不存在时，has_pending_messages 返回 False。"""
         handler = RabbitMQMessageHandler()
         thread_id = "thread-cleanup-pending-check-test"
 
         handler.clear(thread_id)
 
-        # 发送消息并消费，让消息进入死信队列
+        # 发送消息后手动删除主队列
         handler.put(thread_id, "msg_1")
         handler.flush(thread_id)
-        handler.get(thread_id, timeout=1)
-
-        # 确认消息在死信队列中
-        assert handler._get_dlq_count(thread_id) == 1, "死信队列应该有 1 条消息"
 
         # 手动删除主队列，模拟主队列不存在的场景
         with handler._with_connection() as connection:
@@ -604,11 +521,7 @@ class TestResourceCleanup:
         # 确认主队列已被删除
         assert not self._queue_exists(handler, handler._get_queue_name(thread_id)), "主队列应该已被删除"
 
-        # 核心验证：即使主队列不存在（passive declare 触发 404），
-        # has_pending_messages 仍能正确检查死信队列并返回 True
-        assert handler.has_pending_messages(thread_id) is True, (
-            "主队列不存在时，has_pending_messages 应该仍能检查到死信队列中的消息"
-        )
+        assert handler.has_pending_messages(thread_id) is False
 
         # 清理
         handler.mark_completed(thread_id)

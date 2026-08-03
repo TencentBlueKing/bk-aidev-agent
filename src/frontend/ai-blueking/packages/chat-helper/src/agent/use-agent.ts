@@ -184,7 +184,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     clearReconnectTimer(false);
   };
 
-  /** 裁掉尾部尚未完成的非用户消息，避免 DLQ 重放时重复气泡 */
+  /** 裁掉尾部尚未完成的非用户消息，避免断线重放时重复气泡 */
   const pruneTrailingIncompleteMessages = () => {
     const list = mediator.message?.list.value;
     if (!list?.length) {

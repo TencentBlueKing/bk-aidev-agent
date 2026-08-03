@@ -35,7 +35,7 @@ class ExecuteKwargs(BaseModel):
         default=False,
         description=(
             "后台 drain 执行标志（无 SSE 下游，如 celery/flow 的 run_agent_to_completion）。"
-            "为 True 时，消费者读到 EOD 不立即清理队列，保留 DLQ 历史供前端在清理窗口内接管续流，"
+            "为 True 时，消费者读到 EOD 不立即清理队列，保留缓存历史供前端在清理窗口内接管续流，"
             "清理交由 producer 的延迟清理线程兜底。"
         ),
     )

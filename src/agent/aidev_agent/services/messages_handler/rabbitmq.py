@@ -275,28 +275,22 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
     """基于RabbitMQ的消息处理器（多进程版本）
 
     使用 RabbitMQ 作为远端存储，支持分布式场景下的流式消息处理。
-    每个 thread_id 对应一个主队列和一个死信队列。
-
-    消息流转机制（使用死信队列优化性能）：
-    - 主队列：存放待消费的消息
-    - 死信队列：存放已消费但未确认完成的消息
+    每个 thread_id 对应一个持久化主队列，消费者按 offset 非破坏性 replay。
 
     工作流程：
     1. 生产者将消息放入主队列
-    2. 消费者从主队列获取消息，ack 后消息自动进入死信队列
-    3. 消费者断开重连时，将死信队列的消息移回主队列，从头消费
-    4. 流完成时（mark_completed），清空主队列和死信队列
+    2. 消费者从自己的 offset 读取主队列，消息始终保留在主队列
+    3. 消费者断开重连时从主队列开头独立 replay
+    4. 流完成时（mark_completed）清理主队列及控制资源
 
     特点：
-    - 避免每次都全量读取消息（只读取主队列中的新消息）
-    - 支持断点续传（从死信队列恢复消息）
+    - 多端消费者互不抢占消息，各自完整回放
+    - offset 未变化时只读取队列深度，避免反复全量扫描
     - 后台守护线程每隔 0.5 秒批量推送消息，减少连接开销
     """
 
     # 使用统一的队列名称前缀和 TTL 配置
     QUEUE_PREFIX: ClassVar[str] = QueueNamePrefixes.MESSAGE_QUEUE
-    DLX_EXCHANGE_PREFIX: ClassVar[str] = "aidev_agent.dlx."  # 死信交换机前缀（无需抽取）
-    DLQ_PREFIX: ClassVar[str] = QueueNamePrefixes.DEAD_LETTER_QUEUE
     CANCEL_QUEUE_PREFIX: ClassVar[str] = QueueNamePrefixes.CANCEL_REQUEST
     PRODUCER_LOCK_PREFIX: ClassVar[str] = "aidev_agent.producer_lock."
     REPLAY_LOCK_PREFIX: ClassVar[str] = "aidev_agent.replay_lock."
@@ -382,14 +376,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
     def _get_queue_name(self, thread_id: str) -> str:
         """获取 thread_id 对应的主队列名"""
         return f"{self.QUEUE_PREFIX}{thread_id}"
-
-    def _get_dlx_exchange_name(self, thread_id: str) -> str:
-        """获取 thread_id 对应的死信交换机名"""
-        return f"{self.DLX_EXCHANGE_PREFIX}{thread_id}"
-
-    def _get_dlq_name(self, thread_id: str) -> str:
-        """获取 thread_id 对应的死信队列名"""
-        return f"{self.DLQ_PREFIX}{thread_id}"
 
     def _get_cancel_queue_name(self, thread_id: str) -> str:
         """获取 thread_id 对应的取消请求队列名"""
@@ -508,57 +494,52 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         with self._replay_wait_condition:
             self._replay_wait_condition.wait(timeout=wait_time)
 
-    def _ensure_queue_with_dlx(self, channel: Any, thread_id: str) -> tuple[str, str]:
-        """确保主队列和死信队列都存在，返回 (主队列名, 死信队列名)
-
-        死信队列机制：
-        - 当消息被 ack 时，不会进入死信队列（这是正常消费）
-        - 当消息被 reject/nack 且 requeue=False 时，进入死信队列
-        - 我们使用 reject(requeue=False) 将已读取的消息移到死信队列
-        """
+    def _ensure_queue(self, channel: Any, thread_id: str) -> str:
+        """确保持久化主队列存在，不创建 DLX/DLQ。"""
         main_queue_name = self._get_queue_name(thread_id)
-        dlx_exchange_name = self._get_dlx_exchange_name(thread_id)
-        dlq_name = self._get_dlq_name(thread_id)
-
-        # 1. 声明死信交换机（direct 类型）
-        channel.exchange_declare(
-            exchange=dlx_exchange_name,
-            exchange_type="direct",
-            durable=True,
-        )
-
-        # 2. 声明死信队列
-        channel.queue_declare(
-            queue=dlq_name,
-            durable=True,
-            arguments={"x-expires": self.QUEUE_TTL_MS},
-        )
-
-        # 3. 绑定死信队列到死信交换机
-        channel.queue_bind(
-            queue=dlq_name,
-            exchange=dlx_exchange_name,
-            routing_key=dlq_name,  # 使用队列名作为 routing key
-        )
-
-        # 4. 声明主队列，配置死信交换机
-        main_queue_args = {
-            "x-expires": self.QUEUE_TTL_MS,
-            "x-dead-letter-exchange": dlx_exchange_name,
-            "x-dead-letter-routing-key": dlq_name,
-        }
         channel.queue_declare(
             queue=main_queue_name,
             durable=True,
-            arguments=main_queue_args,
+            arguments={"x-expires": self.QUEUE_TTL_MS},
         )
+        return main_queue_name
 
-        return main_queue_name, dlq_name
+    def _delete_legacy_dead_letter_resources(self, thread_id: str) -> None:
+        """删除旧实现遗留的 DLQ/DLX，不读取或恢复其中的历史消息。"""
+        dlq_name = f"{QueueNamePrefixes.DEAD_LETTER_QUEUE}{thread_id}"
+        dlx_exchange_name = f"aidev_agent.dlx.{thread_id}"
+        connection = None
+        channel = None
+        try:
+            connection = self._connection_pool.get_connection()
+            for resource_type, resource_name in (("queue", dlq_name), ("exchange", dlx_exchange_name)):
+                channel = connection.channel()
+                try:
+                    if resource_type == "queue":
+                        channel.queue_delete(queue=resource_name)
+                    else:
+                        channel.exchange_delete(exchange=resource_name)
+                except pika.exceptions.ChannelClosedByBroker as e:
+                    if e.reply_code != 404:
+                        raise
+                finally:
+                    if getattr(channel, "is_open", False):
+                        channel.close()
+                channel = None
+        except Exception as e:
+            logger.warning(f"Failed to delete legacy dead-letter resources for thread_id={thread_id}: {e}")
+        finally:
+            if channel is not None and getattr(channel, "is_open", False):
+                with contextlib.suppress(Exception):
+                    channel.close()
+            if connection is not None:
+                self._connection_pool.release_connection(connection)
 
     def _migrate_queue_if_needed(self, thread_id: str) -> bool:
         """检查并迁移不兼容的旧队列
 
-        如果队列存在但参数不兼容（例如没有死信配置），则删除旧队列。
+        旧主队列携带 DLX 参数，RabbitMQ 不允许原地修改队列参数。
+        发现不兼容声明时删除旧主队列，并清理遗留 DLQ/DLX；后续写入会按新参数重建。
         这个方法应该在首次使用队列时调用一次。
 
         Args:
@@ -568,58 +549,43 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             True 表示进行了迁移，False 表示无需迁移
         """
         main_queue_name = self._get_queue_name(thread_id)
+        migrated = False
+        connection = None
+        channel = None
 
         try:
-            with self._with_channel() as channel:
-                # 尝试被动声明来检查队列是否存在
-                try:
-                    channel.queue_declare(queue=main_queue_name, durable=True, passive=True)
-                except Exception:
-                    # 队列不存在，无需迁移
-                    return False
-
-                # 队列存在，尝试用新参数声明
-                dlx_exchange_name = self._get_dlx_exchange_name(thread_id)
-                dlq_name = self._get_dlq_name(thread_id)
-
-                # 先声明死信交换机和队列
-                channel.exchange_declare(exchange=dlx_exchange_name, exchange_type="direct", durable=True)
-                channel.queue_declare(queue=dlq_name, durable=True, arguments={"x-expires": self.QUEUE_TTL_MS})
-                channel.queue_bind(queue=dlq_name, exchange=dlx_exchange_name, routing_key=dlq_name)
-
-                # 尝试声明主队列（会检查参数是否匹配）
-                try:
-                    channel.queue_declare(
-                        queue=main_queue_name,
-                        durable=True,
-                        arguments={
-                            "x-expires": self.QUEUE_TTL_MS,
-                            "x-dead-letter-exchange": dlx_exchange_name,
-                            "x-dead-letter-routing-key": dlq_name,
-                        },
-                    )
-                    # 声明成功，参数匹配，无需迁移
-                    return False
-                except Exception as e:
-                    if "PRECONDITION_FAILED" not in str(e):
-                        raise
-                    # 参数不匹配，需要删除旧队列
-                    logger.warning(f"Queue {main_queue_name} has incompatible arguments, will be deleted")
-
-            # 使用新连接删除旧队列（因为上面的 channel 可能已关闭）
-            with self._with_channel() as channel:
+            # Queue 参数冲突会由 broker 主动关闭 channel。这里显式管理连接，避免
+            # RabbitMQConnectionPool.connection() 把业务 channel 异常当成连接重试，
+            # 继而在同一个 contextmanager 中二次 yield。
+            connection = self._connection_pool.get_connection()
+            channel = connection.channel()
+            try:
+                channel.queue_declare(
+                    queue=main_queue_name,
+                    durable=True,
+                    arguments={"x-expires": self.QUEUE_TTL_MS},
+                )
+            except pika.exceptions.ChannelClosedByBroker as e:
+                if e.reply_code != 406:
+                    raise
+                logger.warning(f"Queue {main_queue_name} has incompatible arguments, will be deleted")
+                channel = connection.channel()
                 channel.queue_delete(queue=main_queue_name)
                 logger.info(f"Deleted incompatible queue {main_queue_name}")
-                return True
+                migrated = True
 
         except Exception as e:
             logger.error(f"Error during queue migration check: {e}")
-            return False
+        finally:
+            if channel is not None and getattr(channel, "is_open", False):
+                with contextlib.suppress(Exception):
+                    channel.close()
+            if connection is not None:
+                self._connection_pool.release_connection(connection)
+            if migrated:
+                self._delete_legacy_dead_letter_resources(thread_id)
 
-    def _ensure_queue(self, channel: Any, thread_id: str) -> str:
-        """确保队列存在，返回主队列名（兼容旧接口）"""
-        main_queue_name, _ = self._ensure_queue_with_dlx(channel, thread_id)
-        return main_queue_name
+        return migrated
 
     # ================== replay-from-start / 并发控制 ==================
 
@@ -627,7 +593,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         """声明 RabbitMQ backend 支持从会话日志开头独立 replay。
 
         这个能力位供 GeneratorStreamingHelper 选择消费策略：RabbitMQ 返回 True，
-        旧的 in-memory/默认 handler 返回 False，继续使用竞争消费 + DLQ 恢复语义。
+        旧的 in-memory/默认 handler 返回 False，继续使用竞争消费与兼容恢复语义。
         """
         return True
 
@@ -1003,103 +969,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         if any_flushed:
             self._notify_replay_waiters()
 
-    # ================== 死信队列操作 ==================
-
-    def _restore_from_dlq(self, thread_id: str) -> int:
-        """将死信队列中的消息恢复到主队列（用于断点续传）
-
-        断点续传时，DLQ 中的消息（已被旧消费者读取过）需要与主队列中的消息（未被读取）
-        合并，且 DLQ 消息应该排在前面，保证消息的正确顺序：
-        [DLQ历史消息] + [主队列新消息] = 完整的消息序列
-
-        Args:
-            thread_id: 线程ID
-
-        Returns:
-            恢复的消息数量
-        """
-        with self._with_channel() as channel:
-            main_queue_name, dlq_name = self._ensure_queue_with_dlx(channel, thread_id)
-
-            # 检查死信队列中的消息数量
-            try:
-                dlq_info = channel.queue_declare(queue=dlq_name, durable=True, passive=True)
-                dlq_count = dlq_info.method.message_count
-            except Exception:
-                # 死信队列不存在
-                return 0
-
-            if dlq_count == 0:
-                return 0
-
-            # 检查主队列中的消息数量
-            try:
-                main_queue_info = channel.queue_declare(queue=main_queue_name, durable=True, passive=True)
-                main_queue_count = main_queue_info.method.message_count
-            except Exception:
-                main_queue_count = 0
-
-            logger.info(f"Restoring messages for thread_id={thread_id}: DLQ={dlq_count}, main_queue={main_queue_count}")
-
-            # 1. 先把主队列中的消息暂存（如果有的话）
-            main_queue_messages = []
-            if main_queue_count > 0:
-                for _ in range(main_queue_count):
-                    method_frame, properties, body = channel.basic_get(queue=main_queue_name, auto_ack=True)
-                    if not method_frame:
-                        break
-                    main_queue_messages.append(body)
-
-            # 2. 从 DLQ 获取所有消息
-            dlq_messages = []
-            for _ in range(dlq_count):
-                method_frame, properties, body = channel.basic_get(queue=dlq_name, auto_ack=False)
-                if not method_frame:
-                    break
-                dlq_messages.append((method_frame.delivery_tag, body))
-
-            # 3. 按正确顺序重新发布到主队列：先 DLQ（历史），后主队列（新消息）
-            for _, body in dlq_messages:
-                channel.basic_publish(
-                    exchange="",
-                    routing_key=main_queue_name,
-                    body=body,
-                    properties=pika.BasicProperties(delivery_mode=2),
-                )
-
-            for body in main_queue_messages:
-                channel.basic_publish(
-                    exchange="",
-                    routing_key=main_queue_name,
-                    body=body,
-                    properties=pika.BasicProperties(delivery_mode=2),
-                )
-
-            # 4. 确认 DLQ 中的消息（删除）
-            for delivery_tag, _ in dlq_messages:
-                channel.basic_ack(delivery_tag=delivery_tag)
-
-            restored_count = len(dlq_messages)
-            logger.info(
-                f"Restored {restored_count} messages from DLQ for thread_id={thread_id}, "
-                f"merged with {len(main_queue_messages)} main queue messages"
-            )
-            return restored_count
-
-    def _get_dlq_count(self, thread_id: str) -> int:
-        """获取死信队列中的消息数量"""
-        try:
-            with self._with_channel() as channel:
-                dlq_name = self._get_dlq_name(thread_id)
-                try:
-                    dlq_info = channel.queue_declare(queue=dlq_name, durable=True, passive=True)
-                    return dlq_info.method.message_count
-                except Exception:
-                    return 0
-        except Exception as e:
-            logger.error(f"Error getting DLQ count: {e}")
-            return 0
-
     # ================== BaseMessageQueueHandler 接口实现 ==================
 
     def _ensure_daemon_alive(self) -> None:
@@ -1181,50 +1050,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             # 推送所有消息
             self._flush_messages()
 
-    def _get_available_messages(self, thread_id: str, max_messages: int = 0) -> list[Any]:
-        """从主队列获取可用消息
-
-        消息被读取后，通过 reject(requeue=False) 移动到死信队列。
-        这样实现增量读取，而不是每次全量读取。
-
-        Args:
-            thread_id: 线程ID
-            max_messages: 最大获取消息数量，0 表示获取所有可用消息
-
-        Returns:
-            消息列表
-        """
-        with self._with_channel() as channel:
-            main_queue_name = self._ensure_queue(channel, thread_id)
-
-            # 查询主队列中有多少消息
-            queue_info = channel.queue_declare(queue=main_queue_name, durable=True, passive=True)
-            available_count = queue_info.method.message_count
-
-            if available_count == 0:
-                return []
-
-            # 确定要获取的消息数量
-            fetch_count = available_count if max_messages == 0 else min(available_count, max_messages)
-
-            # 获取消息
-            messages = []
-            for _ in range(fetch_count):
-                method_frame, properties, body = channel.basic_get(queue=main_queue_name, auto_ack=False)
-                if not method_frame:
-                    break
-
-                message = pickle.loads(body)
-                messages.append(message)
-
-                # 拒绝消息（不重新入队），消息会进入死信队列
-                channel.basic_reject(delivery_tag=method_frame.delivery_tag, requeue=False)
-
-            if messages:
-                logger.debug(f"Fetched {len(messages)} messages from queue {main_queue_name}, moved to DLQ")
-
-            return messages
-
     def _peek_queue_messages(self, channel: Any, queue_name: str) -> list[Any]:
         """非破坏性读取队列中的全部消息，仅在读取或 requeue 异常时记录诊断。"""
         messages = []
@@ -1278,17 +1103,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                         queue_info = channel.queue_declare(queue=main_queue_name, durable=True, passive=True)
                         committed_count = queue_info.method.message_count
 
-                        # 兼容升级前已经进入 DLQ 的旧缓存：仅在主队列为空时恢复一次。
-                        if committed_count == 0 and self._get_dlq_count(thread_id) > 0:
-                            restored = self._restore_from_dlq(thread_id)
-                            logger.info(
-                                "[RabbitMQ] restored legacy DLQ messages before replay thread_id=%s restored=%d",
-                                thread_id,
-                                restored,
-                            )
-                            queue_info = channel.queue_declare(queue=main_queue_name, durable=True, passive=True)
-                            committed_count = queue_info.method.message_count
-
                         # 没有新消息时避免反复 basic_get/basic_nack 全量扫描历史队列。
                         all_messages = (
                             self._peek_queue_messages(channel, main_queue_name) if committed_count > offset else None
@@ -1306,60 +1120,14 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
 
             self._wait_for_replay_retry(deadline, self.REPLAY_MESSAGE_RETRY_INTERVAL)
 
-    def _get_block(self, thread_id: str, timeout: Optional[float] = None) -> list[Any]:
-        """阻塞方式获取消息
-
-        Args:
-            thread_id: 线程ID
-            timeout: 超时时间（秒）
-
-        Returns:
-            消息列表
-
-        Raises:
-            TimeoutError: 超时时抛出
-        """
-        start_time = time.time()
-        deadline = start_time + timeout if timeout is not None else None
-
-        while True:
-            try:
-                messages = self._get_available_messages(thread_id)
-                if messages:
-                    return messages
-            except Exception as e:
-                logger.exception(f"Error in _get_block: {e}")
-
-            # 检查超时
-            if deadline is not None:
-                elapsed = time.time() - start_time
-                if time.time() >= deadline:
-                    logger.debug("[Streaming] rabbitmq get timeout thread_id=%s, elapsed=%.3fs", thread_id, elapsed)
-                    raise TimeoutError("No message available within timeout")
-
-            self._wait_for_replay_retry(deadline, self.REPLAY_MESSAGE_RETRY_INTERVAL)
-
     def get(self, thread_id: str, timeout: Optional[float] = None) -> list[Any]:
-        """从指定 thread_id 的队列中获取消息
-
-        增量获取：只获取主队列中的新消息，已读取的消息会移动到死信队列。
-
-        Args:
-            thread_id: 线程ID
-            timeout: 超时时间（秒）
-
-        Returns:
-            消息列表
-
-        Raises:
-            TimeoutError: 队列为空且超时时抛出
-        """
-        return self._get_block(thread_id, timeout=timeout)
+        """RabbitMQ replay 必须携带 offset，禁止使用破坏性旧消费接口。"""
+        raise NotImplementedError("RabbitMQMessageHandler requires get_messages_since(thread_id, offset, timeout)")
 
     def has_pending_messages(self, thread_id: str) -> bool:
         """检查是否有未消费的消息（用于判断是否需要创建生产者）
 
-        检查主队列、死信队列以及本地缓冲区是否有消息。
+        检查主队列以及本地缓冲区是否有消息。
         如果有消息，说明已有生产者在工作或已完成但消息未消费完，不需要创建新的生产者。
 
         Args:
@@ -1374,48 +1142,22 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             if thread_id in self._message_buffer and self._message_buffer[thread_id]:
                 return True
 
-        # 检查 RabbitMQ 主队列和死信队列
-        # 每次 passive declare 使用独立 channel，避免主队列不存在时
-        # channel 被 404 error 关闭导致 DLQ 检查静默失败
+        # 检查 RabbitMQ 主队列。
         try:
             main_queue_name = self._get_queue_name(thread_id)
-            dlq_name = self._get_dlq_name(thread_id)
-
-            # 检查主队列（独立 channel）
             with self._with_channel() as channel:
                 try:
                     queue_info = channel.queue_declare(queue=main_queue_name, durable=True, passive=True)
-                    if queue_info.method.message_count > 0:
-                        return True
+                    return queue_info.method.message_count > 0
                 except Exception:
-                    pass
-
-            # 检查死信队列（独立 channel）
-            with self._with_channel() as channel:
-                try:
-                    dlq_info = channel.queue_declare(queue=dlq_name, durable=True, passive=True)
-                    if dlq_info.method.message_count > 0:
-                        return True
-                except Exception:
-                    pass
-
-                return False
+                    return False
         except Exception as e:
             logger.error(f"Error checking pending messages for thread_id={thread_id}: {e}")
             return False
 
     def restore_messages(self, thread_id: str) -> int:
-        """将死信队列中的消息恢复到主队列（断点续传）
-
-        消费者重连时调用此方法，将之前消费过的消息恢复到主队列，从头开始消费。
-
-        Args:
-            thread_id: 线程ID
-
-        Returns:
-            恢复的消息数量
-        """
-        return self._restore_from_dlq(thread_id)
+        """Replay 模式不移动消息，无需恢复。"""
+        return 0
 
     def _safe_purge_queue(self, connection: Any, queue_name: str, passive_check: bool = False) -> bool:
         """安全清空队列（内部方法）
@@ -1462,8 +1204,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             with self._with_connection() as connection:
                 # 每个 purge 操作使用独立 channel，避免 404 channel error 影响后续操作
                 self._safe_purge_queue(connection, self._get_queue_name(thread_id))
-                self._safe_purge_queue(connection, self._get_dlq_name(thread_id))
-
                 # 清空取消请求队列（如果需要，先检查是否存在）
                 if include_cancel_queue:
                     self._safe_purge_queue(connection, self._get_cancel_queue_name(thread_id), passive_check=True)
@@ -1472,15 +1212,14 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
 
     def _delete_all_resources(self, thread_id: str) -> None:
         """
-        删除指定 thread_id 的所有 RabbitMQ 资源（队列 + 交换机）
-        在消费完成后调用，主动释放资源，避免空队列空占 1 小时以及死信交换机永久残留。
+        删除指定 thread_id 的所有 RabbitMQ 队列资源。
+        在消费完成后调用，主动释放资源，避免空队列空占 1 小时。
         """
         try:
             with self._with_channel() as channel:
                 # 收集所有需要删除的队列名
                 queue_names = [
                     self._get_queue_name(thread_id),
-                    self._get_dlq_name(thread_id),
                     self._get_cancel_queue_name(thread_id),
                     self._get_active_consumer_queue_name(thread_id),
                 ]
@@ -1495,13 +1234,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                     except Exception as e:
                         logger.exception(f"Queue {queue_name} delete failed: {e}")
 
-                # 删除死信交换机（exchange_delete 对不存在的交换机也是幂等的）
-                try:
-                    channel.exchange_delete(exchange=self._get_dlx_exchange_name(thread_id))
-                    logger.debug(f"Deleted exchange {self._get_dlx_exchange_name(thread_id)}")
-                except Exception as e:
-                    logger.debug(f"Exchange {self._get_dlx_exchange_name(thread_id)} delete failed: {e}")
-
                 logger.info(f"Deleted all RabbitMQ resources for thread_id={thread_id}")
         except Exception as e:
             logger.error(f"Error deleting resources for thread_id={thread_id}: {e}")
@@ -1512,7 +1244,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         消费者在读取到结束标记时调用此方法：
         1. 先清理本地缓冲区（防止守护线程 flush 时重建已删除的队列）
         2. 清空所有队列中的消息（purge）
-        3. 主动删除所有队列和交换机（delete）
+        3. 主动删除所有队列（delete）
 
         Args:
             thread_id: 线程ID
@@ -1568,7 +1300,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             return False
 
     def clear(self, thread_id: str) -> None:
-        """清空指定 thread_id 的所有队列（主队列和死信队列）"""
+        """清空指定 thread_id 的主队列和控制队列。"""
         # 清空缓冲区中的消息
         with self._buffer_lock:
             if thread_id in self._message_buffer:
@@ -1595,10 +1327,8 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             return 0
 
     def get_total_count(self, thread_id: str) -> int:
-        """获取主队列和死信队列的总消息数量"""
-        main_count = self.get_cached_count(thread_id)
-        dlq_count = self._get_dlq_count(thread_id)
-        return main_count + dlq_count
+        """获取主队列消息数量。"""
+        return self.get_cached_count(thread_id)
 
     # is_empty() 和 size() 使用基类的通用实现
 
@@ -1628,51 +1358,5 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             return list(self._message_buffer.keys())
 
     def get_dlq_messages(self, thread_id: str) -> list[Any]:
-        """获取死信队列中的所有消息（不移除）
-
-        用于在流被取消时，获取已发送给前端但未回写数据库的完整消息内容。
-        使用 basic_get + basic_nack(requeue=True) 实现"偷看"效果。
-
-        Args:
-            thread_id: 线程ID
-
-        Returns:
-            死信队列中的消息列表（已发送给前端的消息）
-        """
-        messages = []
-        delivery_tags = []
-
-        try:
-            with self._with_channel() as channel:
-                dlq_name = self._get_dlq_name(thread_id)
-
-                # 先获取 DLQ 中的消息数量
-                try:
-                    dlq_info = channel.queue_declare(queue=dlq_name, durable=True, passive=True)
-                    dlq_count = dlq_info.method.message_count
-                except Exception:
-                    return []
-
-                if dlq_count == 0:
-                    return []
-
-                # 获取所有消息（不自动确认）
-                for _ in range(dlq_count):
-                    method_frame, properties, body = channel.basic_get(queue=dlq_name, auto_ack=False)
-                    if not method_frame:
-                        break
-
-                    message = pickle.loads(body)
-                    messages.append(message)
-                    delivery_tags.append(method_frame.delivery_tag)
-
-                # 将消息放回队列（不消费，只是"偷看"）
-                for tag in delivery_tags:
-                    channel.basic_nack(delivery_tag=tag, requeue=True)
-
-                logger.debug(f"Peeked {len(messages)} messages from DLQ for thread_id={thread_id}")
-
-        except Exception as e:
-            logger.error(f"Error getting DLQ messages for thread_id={thread_id}: {e}")
-
-        return messages
+        """RabbitMQ replay 不使用死信队列。"""
+        return []

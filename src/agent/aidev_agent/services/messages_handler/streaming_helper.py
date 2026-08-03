@@ -35,10 +35,10 @@ _RESUME_FILTER_EVENT_TYPES: frozenset[str] = frozenset({"flow_agent_start"})
 class GeneratorStreamingHelper:
     """生成器流式处理辅助类
 
-    使用死信队列机制支持断点续传的流式处理：
+    根据 handler 能力选择断点续传策略：
+    - replay-from-start handler 按 offset 非破坏性读取同一份持久化日志
+    - 旧 handler 保留竞争消费与 restore_messages() 兼容语义
     - 通过 has_pending_messages() 判断是否需要创建新的生产者
-    - 消费者读取消息后，消息从主队列移动到死信队列
-    - 消费者断开后重连时，先调用 restore_messages() 恢复消息，再继续消费
     - 读到 EOD_CHUNK 时调用 mark_completed() 清理所有队列
 
     心跳机制：
@@ -51,10 +51,11 @@ class GeneratorStreamingHelper:
 
     工作流程：
     1. 客户端首次请求时，队列为空，启动生产者线程生产数据
-    2. 消费者从主队列获取消息，消息被移动到死信队列
+    2. 消费者读取缓存消息；replay 模式下消息始终保留在主队列
     3. 如果客户端断开连接，生产者继续运行直到完成
     4. 客户端重连时，检查队列中是否有数据：
-       - 如果有数据，先调用 restore_messages() 恢复消息，再消费
+       - replay 模式从当前连接的 offset 继续读取
+       - 旧模式先调用 restore_messages() 恢复消息再消费
        - 如果没有数据，启动新的生产者
     5. 读到 EOD_CHUNK 时，调用 mark_completed() 清理队列
     """
@@ -72,7 +73,7 @@ class GeneratorStreamingHelper:
     _PRODUCER_CLEANUP_DELAY = 90.0
     # 业务流已发出 [DONE] 且当前无活跃消费者时，保留队列等待前端接管续流的窗口（秒）。
     # 注意：后台 drain（background_only）完成后不会立即清理队列，需保留足够窗口让前端重连后
-    # 通过 restore_messages 接管已生产的完整内容；窗口内若有消费者接管则跳过清理。
+    # replay 已生产的完整内容；窗口内若有消费者接管则跳过清理。
     _DONE_ORPHAN_CLEANUP_GRACE = 30.0
     _ORPHAN_CLEANUP_POLL_INTERVAL = 0.1
     _HEARTBEAT_TIMEOUT_GRACE = 5.0
@@ -117,7 +118,7 @@ class GeneratorStreamingHelper:
         self.message_handler = message_handler if message_handler else message_handler_factory.get()
         self.thread_id = thread_id or uuid.uuid4().hex
         # 后台 drain（无 SSE 下游）场景：读到 EOD 时不立即 mark_completed 清队列，
-        # 保留 DLQ 历史供前端在清理窗口内接管续流；清理交由 producer 的延迟清理线程兜底。
+        # 保留缓存历史供前端在清理窗口内接管续流；清理交由 producer 的延迟清理线程兜底。
         self.defer_cleanup_on_complete = defer_cleanup_on_complete
         self._producer_completion_error: Exception | None = None
 
@@ -222,9 +223,7 @@ class GeneratorStreamingHelper:
     def has_output(cls, thread_id: str, message_handler: BaseMessageQueueHandler | None = None) -> bool:
         """检查指定 thread_id 的流是否已有输出
 
-        通过检查消息队列中是否有消息来判断：
-        - 主队列有消息：说明生产者已产生输出
-        - 死信队列有消息：说明消费者已读取过输出
+        通过 handler 的缓存状态判断生产者是否已经产生输出。
 
         Args:
             thread_id: 线程 ID / session_code
@@ -508,7 +507,7 @@ class GeneratorStreamingHelper:
         is_resuming = True
         logger.info(
             f"Pending messages exist for thread_id={self.thread_id}, "
-            f"restored {restored} messages from DLQ, consuming from start"
+            f"restored {restored} cached messages, consuming from start"
         )
         return producer_thread, is_resuming, enable_heartbeat_check
 
@@ -694,7 +693,7 @@ class GeneratorStreamingHelper:
                                 self.message_handler.mark_completed(self.thread_id)
                                 logger.info(f"Stream completed for thread_id={self.thread_id}")
                             elif self.defer_cleanup_on_complete:
-                                # 后台 drain（无 SSE 下游）：不立即清理队列，保留 DLQ 历史供前端接管续流。
+                                # 后台 drain（无 SSE 下游）：不立即清理队列，保留缓存历史供前端接管续流。
                                 # 实际清理由 producer 的 _schedule_session_cleanup 在窗口内兜底，
                                 # 若窗口内有前端接管消费则跳过清理。
                                 logger.info(
@@ -714,7 +713,7 @@ class GeneratorStreamingHelper:
                         if item == CANCELLED_CHUNK:
                             if hasattr(self.message_handler, "mark_stopped"):
                                 self.message_handler.mark_stopped(self.thread_id)
-                            logger.info(f"Stream cancelled for thread_id={self.thread_id}, DLQ content preserved")
+                            logger.info(f"Stream cancelled for thread_id={self.thread_id}, cached content preserved")
                             self._notify_consumer_cancelled_safely()
                             yield emit_run_finished_event(thread_id=self.thread_id, run_id=RunId.CANCELLED)
                             yielded_total += 1
@@ -910,8 +909,8 @@ class GeneratorStreamingHelper:
                 event_handler=event_handler,
             )
         except GeneratorExit:
-            # 客户端断开连接，不清理队列，消息已在死信队列中保留
-            logger.info(f"Consumer disconnected for thread_id={self.thread_id}, messages preserved in DLQ")
+            # 客户端断开连接时仅释放消费者，缓存消息继续保留供重连 replay。
+            logger.info(f"Consumer disconnected for thread_id={self.thread_id}, cached messages preserved")
             raise
         finally:
             self._unregister_cancel_event()

@@ -94,7 +94,7 @@ class AgentExecutor:
     ):
         """执行 agent 直至结束；会话终态由 Agent 流完成回调统一写入。"""
         # 后台 drain（for _ in out: pass，无 SSE 下游）：标记为 background_only，
-        # 使消费者读到 EOD 时不立即清理队列，保留 DLQ 历史供前端在清理窗口内接管续流。
+        # 使消费者读到 EOD 时不立即清理队列，保留缓存历史供前端在清理窗口内接管续流。
         execute_kwargs.background_only = True
         handler = getattr(agent_instance, "event_handler", None)
         if execute_kwargs.stream and isinstance(handler, BaseSessionWriter):

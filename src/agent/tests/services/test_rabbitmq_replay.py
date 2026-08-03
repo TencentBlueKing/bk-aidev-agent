@@ -17,8 +17,6 @@ def _make_handler(message_count: int, messages: list[str]) -> tuple[RabbitMQMess
     handler._with_replay_lock = MagicMock(return_value=contextlib.nullcontext(channel))
     handler._ensure_queue = MagicMock(return_value="replay-queue")
     handler._peek_queue_messages = MagicMock(return_value=messages)
-    handler._get_dlq_count = MagicMock(return_value=0)
-    handler._restore_from_dlq = MagicMock(return_value=0)
     return handler, channel
 
 
@@ -43,21 +41,27 @@ def test_get_messages_since_peeks_when_queue_has_new_messages():
     handler._peek_queue_messages.assert_called_once_with(channel, "replay-queue")
 
 
-def test_get_messages_since_preserves_legacy_dlq_restore():
-    handler, channel = _make_handler(message_count=0, messages=["restored-message"])
-    channel.queue_declare.side_effect = [
-        MagicMock(method=MagicMock(message_count=0)),
-        MagicMock(method=MagicMock(message_count=1)),
-    ]
-    handler._get_dlq_count.return_value = 1
-    handler._restore_from_dlq.return_value = 1
+def test_ensure_queue_does_not_declare_dead_letter_resources():
+    handler = object.__new__(RabbitMQMessageHandler)
+    channel = MagicMock()
 
-    messages, next_offset = handler.get_messages_since("thread-id", offset=0, timeout=0)
+    queue_name = handler._ensure_queue(channel, "thread-id")
 
-    assert messages == ["restored-message"]
-    assert next_offset == 1
-    handler._restore_from_dlq.assert_called_once_with("thread-id")
-    handler._peek_queue_messages.assert_called_once_with(channel, "replay-queue")
+    assert queue_name == "aidev_agent.thread.thread-id"
+    channel.queue_declare.assert_called_once_with(
+        queue=queue_name,
+        durable=True,
+        arguments={"x-expires": handler.QUEUE_TTL_MS},
+    )
+    channel.exchange_declare.assert_not_called()
+    channel.queue_bind.assert_not_called()
+
+
+def test_legacy_get_is_not_supported():
+    handler = object.__new__(RabbitMQMessageHandler)
+
+    with pytest.raises(NotImplementedError, match="get_messages_since"):
+        handler.get("thread-id", timeout=1)
 
 
 def test_eod_commit_event_is_notified_only_after_eod_publish():

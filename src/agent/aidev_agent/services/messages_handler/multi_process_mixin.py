@@ -27,7 +27,6 @@ class MultiProcessMixin:
 
     前提条件：
     - 宿主类必须提供 _with_connection() 上下文管理器来获取 RabbitMQ 连接
-    - 宿主类必须提供 restore_messages(thread_id) 方法
 
     使用方式：
         class MyHandler(MultiProcessMixin, BaseMessageQueueHandler):
@@ -172,7 +171,7 @@ class MultiProcessMixin:
         return consumer_id
 
     def wait_for_previous_consumer(self, thread_id: str, timeout: float = 3.0) -> bool:
-        """等待旧消费者完全退出（包括 DLQ restore）
+        """等待旧消费者完全退出（包括兼容模式的消息恢复）
 
         通过轮询退出通知队列来等待旧消费者发送退出信号。
 
@@ -261,7 +260,7 @@ class MultiProcessMixin:
         """释放消费者
 
         如果自己仍是当前活跃消费者（正常结束），清空控制队列。
-        如果自己已被抢占，恢复 DLQ 消息并向退出通知队列发送信号。
+        如果自己已被抢占，保留 replay 缓存并向退出通知队列发送信号。
 
         Args:
             thread_id: 线程ID
@@ -307,17 +306,12 @@ class MultiProcessMixin:
                     release_outcome = "preempted"
 
         if is_preempted:
-            # 被抢占：将 DLQ 中自己消费过的消息恢复到主队列，然后发送退出信号
-            try:
-                restored = self.restore_messages(thread_id)
-                logger.info(
-                    f"Preempted consumer {consumer_id[:8]} restored {restored} DLQ messages for thread_id={thread_id}"
-                )
-            except Exception as e:
-                logger.error(f"Failed to restore DLQ messages for consumer {consumer_id[:8]}: {e}")
-            finally:
-                # 无论恢复消息是否成功，都要向退出通知队列发送信号，避免新消费者无限等待
-                self._send_exit_signal(thread_id, consumer_id)
+            logger.info(
+                "Preempted replay consumer %s preserved cached messages for thread_id=%s",
+                consumer_id[:8],
+                thread_id,
+            )
+            self._send_exit_signal(thread_id, consumer_id)
 
         logger.info(
             "[RabbitMQ] consumer released thread_id=%s consumer_id=%s reason=%s",
@@ -522,10 +516,10 @@ class MultiProcessMixin:
         return f"{self.CANCELLED_QUEUE_PREFIX}{thread_id}"
 
     def notify_consumer_cancelled(self, thread_id: str) -> bool:
-        """通知 stop_session 消费者已因取消信号退出（DLQ 可以读取了）
+        """通知 stop_session 消费者已因取消信号退出（缓存内容可以读取了）
 
         消费者在检测到取消信号并退出时调用此方法。
-        stop_session 通过 wait_for_consumer_cancelled() 等待这个信号后再读取 DLQ。
+        stop_session 通过 wait_for_consumer_cancelled() 等待这个信号后再读取缓存内容。
 
         Args:
             thread_id: 线程ID / session_code
@@ -555,7 +549,7 @@ class MultiProcessMixin:
     def wait_for_consumer_cancelled(self, thread_id: str, timeout: float = 3.0) -> bool:
         """等待消费者因取消信号退出
 
-        stop_session 调用此方法等待消费者退出后，再从 DLQ 读取消息。
+        stop_session 调用此方法等待消费者退出后，再读取缓存消息。
 
         Args:
             thread_id: 线程ID / session_code
@@ -595,7 +589,7 @@ class MultiProcessMixin:
             time.sleep(self.WAIT_POLL_INTERVAL)
 
     def clear_cancelled_signal(self, thread_id: str) -> None:
-        """清除消费者取消完成通知（在获取 DLQ 后调用）
+        """清除消费者取消完成通知（在获取缓存内容后调用）
 
         Args:
             thread_id: 线程ID / session_code

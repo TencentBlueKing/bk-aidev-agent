@@ -335,7 +335,7 @@ class BaseMessageQueueHandler(ABC):
         """标记 session 已被用户主动停止
 
         用户点击 Stop 时调用。标记后，下次进入该 session 时：
-        - 只展示 DLQ 中已有的内容
+        - 只展示缓存中已有的内容
         - 不启动新的生产者
 
         默认实现为空，子类可覆盖。
