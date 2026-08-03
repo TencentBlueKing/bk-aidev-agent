@@ -110,9 +110,9 @@ export interface ChatBotExpose {
   isReady: boolean;
   /**
    * 当前选中模型 llm_code
-   * （expose 经 proxyRefs 拆包，运行时为裸值而非 ComputedRef）
+   * （通过组件实例访问时经 proxyRefs 拆包，得到裸值）
    */
-  selectedLlmCode: string | undefined;
+  selectedLlmCode: ComputedRef<string | undefined>;
 }
 
 /**
