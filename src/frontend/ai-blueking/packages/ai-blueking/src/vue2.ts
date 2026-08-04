@@ -294,6 +294,14 @@ export default createVue2Wrapper(AIBlueking, {
       type: Boolean,
       default: undefined,
     },
+    resizeProps: {
+      type: Object,
+      default: undefined,
+    },
+    size: {
+      type: String,
+      default: undefined,
+    },
   },
   emitNames: [...aiBluekingEmitNames],
   exposeKeys: [...aiBluekingExposeKeys],
@@ -491,6 +499,10 @@ export const ChatBotV2 = createVue2Wrapper(ChatBot, {
     },
     resizeProps: {
       type: Object,
+      default: undefined,
+    },
+    size: {
+      type: String,
       default: undefined,
     },
     getSideRenderComponent: {

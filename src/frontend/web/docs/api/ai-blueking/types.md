@@ -123,6 +123,8 @@ interface AIBluekingProps {
     max?: number;
     min?: number;
   };
+  /** 字号主题档位，透传至 ChatBot → ChatContainer（`small` 默认 12px / `normal` 14px） */
+  size?: 'normal' | 'small';
 
   /** 「执行情况」Tab 是否展示，缺省 true（≥ v2.2.0-beta.11，透传内层 ChatBot）；该 Tab order 固定 0 且不可关闭 */
   executionTabVisible?: boolean;
@@ -361,6 +363,8 @@ interface ChatBotProps {
     max?: number;
     min?: number;
   };
+  /** 字号主题档位，透传至 ChatContainer（`small` 默认 12px / `normal` 14px） */
+  size?: 'normal' | 'small';
 
   /** 「执行情况」Tab 是否展示，缺省 true（≥ v2.2.0-beta.11，透传 ChatContainer）；该 Tab order 固定 0 且不可关闭 */
   executionTabVisible?: boolean;

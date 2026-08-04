@@ -45,6 +45,7 @@ import type {
   ISessionModule,
 } from '@blueking/chat-helper';
 import type {
+  AiSizeMode,
   CustomBkFlowTab,
   CustomTab,
   IAiSlashMenuItem,
@@ -328,6 +329,13 @@ export interface AIBluekingProps {
     max?: number;
     min?: number;
   };
+
+  /**
+   * 字号主题档位，透传至 ChatBot → ChatContainer
+   * - `small`（默认）：12px 基准
+   * - `normal`：14px 基准
+   */
+  size?: AiSizeMode;
 }
 
 /**

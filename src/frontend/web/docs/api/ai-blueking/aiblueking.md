@@ -123,6 +123,7 @@ function openAI() {
 | `messageTools` | `IToolBtn[]` | — | 自定义 AI 消息主工具组，透传至 ChatBot |
 | `updateTools` | `IToolBtn[]` | — | 自定义 AI 消息反馈工具组，透传至 ChatBot |
 | `resizeProps` | `{ disabled?, initialDivide?, max?, min? }` | — | ResizeLayout 配置（执行情况侧面板拖拽） |
+| `size` | `'normal' \| 'small'` | `'small'` | 字号主题档位，透传至 ChatBot → ChatContainer（`small` 12px / `normal` 14px） |
 
 ### 侧栏自定义渲染 {#side-render-customization}
 
