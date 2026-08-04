@@ -168,6 +168,25 @@ class GeneratorStreamingHelper:
         return False
 
     @classmethod
+    def clear_cancel(cls, thread_id: str, message_handler: BaseMessageQueueHandler | None = None) -> None:
+        """清除指定 thread_id 的取消信号（进程内 Event + 跨进程信号）。
+
+        用于「主动开启新一轮生成」时清理上一轮 stop 残留，避免误取消新流。
+        工作台应在 prepare_session_execution 写入 RUNNING 时调用。
+        """
+        with cls._cancel_lock:
+            event = cls._cancel_events.get(thread_id)
+            if event is not None:
+                event.clear()
+
+        if message_handler is None:
+            message_handler = message_handler_factory.get()
+        try:
+            message_handler.clear_cancel_signal(thread_id)
+        except Exception:
+            logger.exception("Error clearing cancel signal for thread_id=%s", thread_id)
+
+    @classmethod
     def cancel(cls, thread_id: str, message_handler: BaseMessageQueueHandler | None = None) -> bool:
         """取消指定 thread_id 的流式生产（支持多进程）
 
@@ -858,10 +877,19 @@ class GeneratorStreamingHelper:
         # 注册取消事件（让 cancel() 可以通知生产者和消费者停止）
         cancel_event = self._register_cancel_event()
 
-        # 清理上一次可能残留的跨进程取消信号
-        # 场景：前端先调用 stop（设置取消信号），然后立刻发起重新生成
-        # 如果不清理，新的流会立刻检测到旧的取消信号而被误取消
-        self._clear_cancel_signal_safely("Error clearing old cancel signal")
+        # 清理上一次可能残留的跨进程取消信号。
+        # 场景：前端先 stop 再立刻重新生成——新流不应被旧信号误杀。
+        # 例外：本轮在 prepare/head 阶段已被取消（is_cancelled 仍为 true），
+        # 此时必须保留信号，否则同一次 chat_completion 流收不到 RUN_ERROR。
+        # 新一轮生成应在 prepare→RUNNING 时调用 clear_cancel() 清掉旧信号。
+        if self.is_cancelled(self.thread_id, self.message_handler):
+            cancel_event.set()
+            logger.info(
+                "Preserving cancel signal at stream start for thread_id=%s",
+                self.thread_id,
+            )
+        else:
+            self._clear_cancel_signal_safely("Error clearing old cancel signal")
 
         # 注册为当前活跃消费者
         consumer_id = self.message_handler.acquire_consumer(self.thread_id)

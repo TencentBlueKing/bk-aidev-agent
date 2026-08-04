@@ -1332,6 +1332,73 @@ class TestCancelScenarios:
         # writer 应有回写内容或取消标记
         assert writer.is_cancelled or len(writer.created_contents) > 0
 
+    def test_cancel_before_any_stream_event(self):
+        """零事件取消：进入 graph stream 前 cancel_checker 已为 True → 必须产出 RUN_ERROR。
+
+        说明：streaming_helper 启动 producer 时会清理「上一次残留」的 cancel 信号
+        （支持 stop 后立刻重新生成）。因此本用例直接 patch is_cancelled，
+        覆盖「流已启动但尚无 graph 事件」时的前置取消检测。
+        """
+        writer = _ConcreteWriter()
+        llm = MockChatModel(
+            mock_responses=[MockResponse(content="不应到达")],
+            stream_chunk_size=2,
+            loop=False,
+        )
+        thread_id = "test_cancel_before_any_event"
+        agent = ChatCompletionAgent(
+            thread_id=thread_id,
+            chat_model=llm,
+            checkpointer=MemorySaver(),
+            chat_history=[ChatPrompt(role="user", content="慢任务")],
+            event_handler=writer,
+        )
+
+        with patch.object(GeneratorStreamingHelper, "is_cancelled", return_value=True):
+            results = [json.loads(each[6:]) for each in agent.execute(ExecuteKwargs(stream=True))]
+
+        error_events = [r for r in results if r.get("type") == EventType.RUN_ERROR]
+        assert len(error_events) >= 1, "零事件取消应产出 RUN_ERROR"
+        assert error_events[0].get("message") == RunId.CANCELLED_MESSAGE
+        assert writer.is_cancelled or any(
+            c.get("content") == RunId.CANCELLED_MESSAGE for c in writer.created_contents
+        )
+
+    def test_clear_cancel_clears_inproc_event(self):
+        """clear_cancel 清掉进程内 Event，供新一轮 prepare→RUNNING 使用。"""
+        import threading
+
+        thread_id = "test_clear_cancel_inproc"
+        event = threading.Event()
+        event.set()
+        with GeneratorStreamingHelper._cancel_lock:
+            GeneratorStreamingHelper._cancel_events[thread_id] = event
+
+        assert GeneratorStreamingHelper.is_cancelled(thread_id) is True
+        GeneratorStreamingHelper.clear_cancel(thread_id)
+        assert event.is_set() is False
+        assert GeneratorStreamingHelper.is_cancelled(thread_id) is False
+
+        with GeneratorStreamingHelper._cancel_lock:
+            GeneratorStreamingHelper._cancel_events.pop(thread_id, None)
+
+    def test_stream_start_preserves_existing_cancel_signal(self, mocker):
+        """stream 启动时若已取消：保留信号，不得走「清旧 cancel」分支。"""
+        thread_id = "test_preserve_cancel_at_stream_start"
+        helper = GeneratorStreamingHelper(thread_id=thread_id)
+        mocker.patch.object(GeneratorStreamingHelper, "is_cancelled", return_value=True)
+        clear_spy = mocker.patch.object(helper, "_clear_cancel_signal_safely")
+
+        def _empty_gen():
+            if False:
+                yield None
+            return
+
+        list(helper.stream(_empty_gen()))
+        # start 分支用 "old cancel"；finally 清理用另一文案，二者需区分
+        old_clear_calls = [c for c in clear_spy.call_args_list if "old cancel" in str(c)]
+        assert old_clear_calls == []
+
     def test_cancel_with_ai_output(self):
         """取消 + 有 AI 输出 → 流正常结束，writer 回写已有内容"""
         writer = _ConcreteWriter()

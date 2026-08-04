@@ -7,7 +7,8 @@ from importlib.metadata import version as pkg_version
 from logging import getLogger
 from typing import Any, Callable, ClassVar, Generator, List, Optional
 
-from ag_ui.core import BaseEvent
+from ag_ui.core import BaseEvent, EventType, RunErrorEvent
+from ag_ui.encoder import EventEncoder
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage, SystemMessage, ToolMessage
@@ -56,6 +57,7 @@ from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
 from aidev_agent.utils.async_utils import async_to_sync_generator
+from aidev_agent.utils.event import RunId
 from aidev_agent.utils.loop import run_coro_sync
 from aidev_agent.utils.migrations import (
     migration_chat_model_non_thinking_from_non_thinking_llm_v1,
@@ -860,6 +862,30 @@ class ChatCompletionAgent(BaseModel):
         remaining_producer = self._extract_head_frames(producer, head_frames)
         for frame in head_frames:
             yield frame
+
+        # head 阶段（prepare_stream / RUN_STARTED）可能已被 stop：
+        # 直接 RUN_ERROR 收口，避免后续 helper.stream 清掉 cancel 信号。
+        queue_id = queue_thread_id or agent_input.thread_id
+        if GeneratorStreamingHelper.is_cancelled(queue_id):
+            logger.info(
+                "Cancelled after head frames before queue stream: thread_id=%s",
+                queue_id,
+            )
+            error_event = RunErrorEvent(type=EventType.RUN_ERROR, message=RunId.CANCELLED_MESSAGE)
+            if self.event_handler is not None:
+                try:
+                    self.event_handler(error_event)
+                except Exception:
+                    logger.exception(
+                        "Error dispatching cancel RUN_ERROR for thread_id=%s",
+                        queue_id,
+                    )
+            yield EventEncoder().encode(error_event)
+            try:
+                remaining_producer.close()
+            except Exception:
+                logger.exception("Error closing cancelled producer for thread_id=%s", queue_id)
+            return
 
         # ---- 阶段 2：剩余帧交给队列管理（支持断点续传）----
         yield from helper.stream(

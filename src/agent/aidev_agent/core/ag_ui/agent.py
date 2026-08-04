@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import json
 import uuid
@@ -207,12 +208,58 @@ class LangGraphAgent:
         current_graph_state = state
         # 标记是否被取消（用于后续发送正确的 RunFinishedEvent）
         _cancelled = False
+        # 取消检测间隔：首包/下一块阻塞等待时也能响应 stop
+        _cancel_poll_timeout = 0.2
 
-        async for event in stream:
-            # 检测取消信号（在每次循环迭代时检查）
-            if self._cancel_checker and self._cancel_checker():
+        def _should_cancel() -> bool:
+            return bool(self._cancel_checker and self._cancel_checker())
+
+        async def _emit_cancelled_end_events() -> AsyncGenerator[Any, None]:
+            """取消收口：无 AI 文本输出发 RUN_ERROR，有则发 RUN_FINISHED(cancelled)。"""
+            for ev in self.handle_node_change(None):
+                yield ev
+            has_text_output = self.active_run.get("has_text_output", False)
+            logger.info(
+                "Agent cancelled: thread_id=%s, has_text_output=%s",
+                thread_id,
+                has_text_output,
+            )
+            if not has_text_output:
+                yield self._dispatch_event(
+                    RunErrorEvent(
+                        type=EventType.RUN_ERROR,
+                        message=RunId.CANCELLED_MESSAGE,
+                    )
+                )
+            else:
+                yield self._dispatch_event(
+                    RunFinishedEvent(
+                        type=EventType.RUN_FINISHED,
+                        thread_id=thread_id,
+                        run_id=RunId.CANCELLED,
+                        outcome=serialize_run_finished_outcome(RunFinishedSuccessOutcome()),
+                    )
+                )
+            self.active_run = INITIAL_ACTIVE_RUN
+
+        # 进入 graph stream 前检查：覆盖「零事件就点停止」
+        if _should_cancel():
+            logger.info("Agent cancelled before stream events, thread_id=%s", thread_id)
+            async for ev in _emit_cancelled_end_events():
+                yield ev
+            return
+
+        stream_iter = stream.__aiter__()
+        while True:
+            if _should_cancel():
                 logger.info(f"Agent cancelled by cancel_checker, thread_id={thread_id}")
                 _cancelled = True
+                break
+            try:
+                event = await asyncio.wait_for(stream_iter.__anext__(), timeout=_cancel_poll_timeout)
+            except asyncio.TimeoutError:
+                continue
+            except StopAsyncIteration:
                 break
 
             if event["event"] == "error":
@@ -258,36 +305,8 @@ class LangGraphAgent:
 
         # 如果被取消，跳过正常的状态获取，直接发送结束事件
         if _cancelled:
-            # 结束当前步骤（如果有）
-            for ev in self.handle_node_change(None):
+            async for ev in _emit_cancelled_end_events():
                 yield ev
-
-            # 根据是否有 AI 文本输出决定事件类型：
-            # - 无 AI 输出（仅有 thinking/tool/知识库等）：发 RUN_ERROR，触发暂停补写逻辑
-            # - 有 AI 输出：发 RUN_FINISHED(cancelled)，正常回写
-            has_text_output = self.active_run.get("has_text_output", False)
-            logger.info(
-                "Agent cancelled: thread_id=%s, has_text_output=%s",
-                thread_id,
-                has_text_output,
-            )
-            if not has_text_output:
-                yield self._dispatch_event(
-                    RunErrorEvent(
-                        type=EventType.RUN_ERROR,
-                        message=RunId.CANCELLED_MESSAGE,
-                    )
-                )
-            else:
-                yield self._dispatch_event(
-                    RunFinishedEvent(
-                        type=EventType.RUN_FINISHED,
-                        thread_id=thread_id,
-                        run_id=RunId.CANCELLED,
-                        outcome=serialize_run_finished_outcome(RunFinishedSuccessOutcome()),
-                    )
-                )
-            self.active_run = INITIAL_ACTIVE_RUN
             return
 
         # Agent 已经退出，检查状态和退出原因
