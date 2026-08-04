@@ -9,10 +9,15 @@
 """
 
 import os
+import subprocess
 from unittest.mock import MagicMock
 
 import pytest
+from aidev_agent.core.ag_ui.agent import LangGraphAgent
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, SystemMessage
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph, add_messages
+from typing_extensions import Annotated, TypedDict
 
 # 读取 chat.py 源码（避免 import 触发 ag_ui 等不可用依赖）
 _CHAT_PY_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "aidev_agent", "services", "agent", "chat.py")
@@ -209,11 +214,6 @@ class TestPVStatePersistence:
     @pytest.mark.asyncio
     async def test_pv_state_survives_across_invocations(self):
         """使用稳定的 thread_id，runtime_paas_sbx_pv 应在检查点状态中持久化。"""
-        from typing import Annotated
-
-        from langgraph.checkpoint.memory import MemorySaver
-        from langgraph.graph import END, START, StateGraph, add_messages
-        from typing_extensions import TypedDict
 
         class TestState(TypedDict):
             messages: Annotated[list, add_messages]
@@ -254,16 +254,12 @@ class TestPVStatePersistence:
         assert pv_list2[0]["volume_id"] == "test-vol"
 
     def test_fork_time_travel_not_latest_checkpoint(self):
-        """D-05: fork 后又有新 checkpoint，时间旅行应从 fork checkpoint C 开始而非最新 D。
+        """fork 后又有新 checkpoint，时间旅行应从 fork checkpoint C 开始而非最新 D。
 
         Phase 11.5 CR2 修复的 bug：kwargs.update(fork) 不正确，应 merge fork 的
         configurable 到 config.configurable。本测试验证改 sync 后 update_state
         返回的 RunnableConfig 仍被 _stream 正确 merge 到 merged_cfg。
         """
-        from langgraph.checkpoint.memory import MemorySaver
-        from langgraph.graph import END, START, StateGraph
-        from langgraph.graph.message import add_messages
-        from typing_extensions import Annotated, TypedDict
 
         class TestState(TypedDict):
             messages: Annotated[list, add_messages]
@@ -322,7 +318,7 @@ class TestPVStatePersistence:
         graph.invoke({"messages": [HumanMessage(content="regen-msg", id="regen-1")]}, merged_cfg)
 
         # Step 7: 断言从 fork checkpoint C 开始（agent 看到的是 C 的消息 + regen-msg，
-        #         而非 D 的 msg-3）
+        #        而非 D 的 msg-3）
         # C 的状态是 user-msg-1（checkpoint A 之后），所以 agent 收到的消息序列应含 msg-1 + regen-msg
         # 而非 msg-3
         assert "regen-msg" in call_log[-1], f"agent 应收到 regen-msg，实际收到: {call_log[-1]}"
@@ -440,7 +436,7 @@ class TestMessagesProcessingLocation:
         """11.8 回归测试：get_stream_kwargs 不再接受 fork 参数（fork merge 移到 chat.py _stream）。
 
         11.5 CR2: fork merge 从 kwargs.update(fork) 改为 merge fork 的 configurable 到 config.configurable
-        11.8 D-04: fork merge 逻辑从 agent.py get_stream_kwargs 移到 chat.py _stream（merged_cfg）
+        11.8 fork merge 逻辑从 agent.py get_stream_kwargs 移到 chat.py _stream（merged_cfg）
         此测试验证 get_stream_kwargs 不接受 fork 参数（传 fork 应 TypeError）。
         """
         source = _read_agent_py()
@@ -455,8 +451,6 @@ class TestMessagesProcessingLocation:
         assert "if fork:" not in kwargs_source, "get_stream_kwargs 不应有 if fork: 分支（11.8）"
 
         # 验证 get_stream_kwargs 不接受 fork 参数
-        from aidev_agent.core.ag_ui.agent import LangGraphAgent
-
         mock_graph = MagicMock()
         agent = LangGraphAgent.__new__(LangGraphAgent)
         agent.graph = mock_graph
@@ -473,8 +467,6 @@ class TestMessagesProcessingLocation:
 
     def test_fork_merge_preserves_existing_configurable_fields(self):
         """11.8 回归测试：get_stream_kwargs 不接受 fork 参数，config 直接透传（fork merge 在 chat.py）。"""
-        from aidev_agent.core.ag_ui.agent import LangGraphAgent
-
         mock_graph = MagicMock()
         agent = LangGraphAgent.__new__(LangGraphAgent)
         agent.graph = mock_graph
@@ -796,8 +788,6 @@ class TestMessagesProcessingLocation:
 
         排除 __pycache__ 和本测试文件（断言字符串字面量自身包含标识符）。
         """
-        import subprocess
-
         result = subprocess.run(
             [
                 "grep",

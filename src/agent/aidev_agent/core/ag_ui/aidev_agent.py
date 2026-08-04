@@ -29,7 +29,6 @@ from .agent import LangGraphAGUIAgent
 from .approval import ApprovalOutcomeBuilder, ApproveResultLiteral
 from .ask_user_question import AskUserQuestionOutcomeBuilder
 from .event_builders import (
-    TOOL_CALLING_PLACEHOLDER,
     build_tool_result_event,
     enhance_tool_call,
     is_tool_approval_required,
@@ -47,6 +46,9 @@ from .types import (
     serialize_run_finished_outcome,
 )
 from .utils import langchain_messages_to_streaming_events
+
+ASK_USER_QUESTION_TOOL_NAME = "ask_user_question"
+
 
 logger = getLogger(__name__)
 
@@ -217,15 +219,6 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
             except Exception:
                 logger.exception("[Resume] Failed to emit resume event")
 
-            # ask_user_question 续流：推送 MESSAGES_SNAPSHOT 让前端渲染 interrupt 卡片终态
-            if self._ask_user_question_interrupts:
-                try:
-                    snapshot = self._build_updated_messages_snapshot(input, resume_event)
-                    if snapshot is not None:
-                        yield event_encoder.encode(snapshot)
-                except Exception:
-                    logger.exception("[Resume] Failed to emit MESSAGES_SNAPSHOT for ask_user_question")
-
     def _build_resume_finished_event(self, input: RunAgentInput) -> RunFinishedEvent | None:
         """构造续流首条"终态形态"事件（支持 approval 和 ask_user_question）。
 
@@ -243,76 +236,6 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
             return self._build_resume_ask_user_question_finished_event(input)
 
         return None
-
-    def _build_updated_messages_snapshot(
-        self, input: RunAgentInput, resume_event: RunFinishedEvent
-    ) -> MessageSnapshotEventExtend | None:
-        """构造续流后的 MESSAGES_SNAPSHOT，将 interrupt 消息更新为终态形态。
-
-        前端 handleRunFinishedEvent 只标记 loading 完成，不更新消息列表中 interrupt 卡片的 content。
-        前端依赖 MESSAGES_SNAPSHOT 的覆盖式语义（list.value = messages.map(...)）来触发 Vue 响应式更新，
-        渲染 interrupt 卡片的 resolved 终态（outcome.type=success + result.payload.answers）。
-
-        从 input.messages 中找到 role=interrupt 的消息，替换其 content 为 RunFinishedEvent 的终态 content（outcome + result），其余消息不变。
-
-        仅 ask_user_question 路径调用；approval 路径的 DB 已在后台 worker 写好，
-        input.messages 中的 interrupt 记录已是 resolved 终态，无需额外处理。
-        """
-        messages = list(getattr(input, "messages", []) or [])
-        if not messages:
-            return None
-
-        # 从 RunFinishedEvent 提取终态 outcome / result
-        outcome = getattr(resume_event, "outcome", None)
-        result = getattr(resume_event, "result", None)
-        if outcome is None:
-            return None
-
-        # 序列化为 dict（与 MESSAGES_SNAPSHOT 的 API 格式一致）
-        if hasattr(outcome, "model_dump"):
-            outcome_dict = outcome.model_dump(mode="json", by_alias=True, exclude_none=True)
-        else:
-            outcome_dict = outcome if isinstance(outcome, dict) else {}
-        if hasattr(result, "model_dump"):
-            result_dict = result.model_dump(mode="json", by_alias=True, exclude_none=True)
-        else:
-            result_dict = result if isinstance(result, dict) else {}
-
-        # 构造与 DB 中 upgrade_content_to_success 输出一致的终态 content：
-        # {"outcome": {type, interrupts}, "result": {id, interruptId, status, payload, ...}}
-        # 注意：result 是单个 dict（不是 list），与 DB 落库格式一致。
-        terminal_content = {
-            "outcome": outcome_dict,
-            "result": result_dict,
-        }
-
-        # 替换 interrupt 消息的 content
-        updated_messages = []
-        found_interrupt = False
-        for msg in messages:
-            msg_dict = msg if isinstance(msg, dict) else (msg.model_dump() if hasattr(msg, "model_dump") else dict(msg))
-            if msg_dict.get("content") == TOOL_CALLING_PLACEHOLDER:
-                msg_dict["content"] = ""
-            if not found_interrupt and msg_dict.get("role") == "interrupt":
-                msg_dict = dict(msg_dict)
-                msg_dict["content"] = terminal_content
-                msg_dict["status"] = "complete"
-                # 补充 DB 中断消息的顶层字段（前端可能依赖这些字段渲染卡片）
-                interrupts = outcome_dict.get("interrupts", [])
-                if interrupts:
-                    first = interrupts[0]
-                    msg_dict["reason"] = first.get("reason", "")
-                    msg_dict["interrupt_id"] = first.get("id", "")
-                found_interrupt = True
-            updated_messages.append(msg_dict)
-
-        if not found_interrupt:
-            return None
-
-        return MessageSnapshotEventExtend(
-            type=EventType.MESSAGES_SNAPSHOT,
-            messages=updated_messages,
-        )
 
     def _resolve_resume_context(self, input: RunAgentInput) -> tuple[str, list]:
         """从 input.resume / forwarded_props 解析 (interruptId, answers)。
@@ -442,7 +365,7 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         run_id = agent_input.run_id or uuid.uuid4().hex
 
         # 1) 审批中断恢复：先回放终态 RUN_FINISHED，让前端把原中断卡片更新为最终状态
-        #    （approved / rejected / cancelled），与 AidevAGUIAgent.run 续流首条事件同源。
+        #   （approved / rejected / cancelled），与 AidevAGUIAgent.run 续流首条事件同源。
         try:
             if self._should_emit_resume_approval_finished():
                 yield encoder.encode(self._build_resume_approval_finished_event(agent_input))
@@ -455,7 +378,7 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         )
 
         # 3) 把 checkpoint 「片段」消息逐条转为流式增量事件下发，补齐前端缺失的本轮 worker 续流内容。
-        #    转换器内部会跳过 Human/System/Interrupt/Activity 消息，只下发 AI/Tool 的可重放事件。
+        #   转换器内部会跳过 Human/System/Interrupt/Activity 消息，只下发 AI/Tool 的可重放事件。
         if replayable_messages:
             try:
                 event_count = 0
@@ -484,7 +407,7 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         )
 
     async def _handle_single_event(self, event: Any, state: State) -> AsyncGenerator[BaseEvent, None]:
-        """覆写：super + 拦截 TOOL_CALL_* yield，审批抑制 + 工具增强在构造侧完成（D-01）。
+        """覆写：super + 拦截 TOOL_CALL_* yield，审批抑制 + 工具增强在构造侧完成。
 
         MRO: AidevAGUIAgent → LangGraphAGUIAgent（PredictState 注入）→ LangGraphAgent（4 子方法分发）。
         super()._handle_single_event 执行完整链路后，拦截 yield 的 TOOL_CALL_* 事件：
@@ -494,11 +417,20 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
 
         覆盖所有 TOOL_CALL 来源（_handle_*_stream_event 子方法 + _handle_on_chat_model_end_event + ManuallyEmitToolCall），
         不需覆写 3 个子方法。ManuallyEmitToolCall 的 tool_call_id 不在 _suppressed_tool_call_ids（手动发射不审批），透传。
+
+        ask_user_question 工具的 TOOL_CALL_START/ARGS/END 在续流场景下会被 ``_handle_on_tool_end_event``
+        重复补发（中断前的首次 run 已通过 OnChatModelStream 流式发到前端），此处直接按工具名抑制：
+        ask_user_question 工具只可能由 interrupt 路径触发，OnToolNodeFinish 路径会独立发出 TOOL_CALL_RESULT，
+        因此其 START/ARGS/END 三元组在续流场景下是冗余的。
         """
         async for ev in super()._handle_single_event(event, state):
             if isinstance(ev, ToolCallStartEvent):
                 if is_tool_approval_required(ev.tool_call_name, self._tool_mapping):
                     logger.info(f"[AidevAGUIAgent] 抑制需要审批的工具流式事件: {ev.tool_call_name} ({ev.tool_call_id})")
+                    self._suppressed_tool_call_ids.add(ev.tool_call_id)
+                    continue  # suppress
+                if ev.tool_call_name == ASK_USER_QUESTION_TOOL_NAME:
+                    logger.info(f"[AidevAGUIAgent] 抑制 ask_user_question 工具的 TOOL_CALL_START: {ev.tool_call_id}")
                     self._suppressed_tool_call_ids.add(ev.tool_call_id)
                     continue  # suppress
                 enhanced = enhance_tool_call(ev.tool_call_name, self._tool_mapping)
@@ -513,13 +445,13 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
             yield ev
 
     async def _handle_on_custom_event(self, event: Any) -> AsyncGenerator[BaseEvent, None]:
-        """覆写：处理 OnToolNodeFinish/OnToolNodeImmediate/KnowledgeRag CUSTOM 转换（D-04）。
+        """覆写：处理 OnToolNodeFinish/OnToolNodeImmediate/KnowledgeRag CUSTOM 转换。
 
-        D-01 后子方法 yield Event（不 dispatch），_dispatch_event 由 _handle_stream_events 消费侧执行。
+         后子方法 yield Event（不 dispatch），_dispatch_event 由 _handle_stream_events 消费侧执行。
         原先在 _convert_event CUSTOM 分支中做的 CUSTOM→ToolCallResultEvent/透传转换，
         现在在构造侧（本覆写）完成，yield 转换后的 Event。
 
-        分支顺序与原 _convert_custom_event 保持一致：KNOWLEDGE_RAG_RESULT 优先（D-14 透传），
+        分支顺序与原 _convert_custom_event 保持一致：KNOWLEDGE_RAG_RESULT 优先（透传），
         OnToolNodeFinish/OnToolNodeImmediate 随后（→ ToolCallResultEvent），其余委托 super()。
         """
         name = event.get("name", "")

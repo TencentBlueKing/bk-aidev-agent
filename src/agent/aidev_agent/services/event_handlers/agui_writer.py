@@ -11,12 +11,6 @@ from logging import getLogger
 from typing import Any
 
 from aidev_agent.api.bk_aidev import Client
-from aidev_agent.core.ag_ui.ask_user_question import (
-    ASK_USER_QUESTION_REASON,
-    AskUserQuestionOutcomeBuilder,
-    build_updated_builtin_property,
-    find_pending_interrupt,
-)
 from aidev_agent.core.ag_ui.types import RunFinishedOutcomeType
 from aidev_agent.enums import ActivityType, PromptRole, SessionsStatus
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
@@ -159,8 +153,8 @@ class AGUISessionWriter(BaseSessionWriter):
     def handle_run_finished(self, event) -> None:
         """处理 RUN_FINISHED 事件，额外检测中断并触发后台续流。
 
-        ask_user_question 续流首帧 RunFinishedEvent（outcome.type=success）在非
-        interrupt 分支通过 _handle_ask_user_question_resume_finished 完成 DB 终态写入。
+        SSE 层不写 DB，ask_user_question 的 DB 终态由 agent 侧 ChatCompletionAgent.execute()
+        前置派发的会话回写事件负责，与 approval 路径一致。
         """
         super().handle_run_finished(event)
 
@@ -203,109 +197,6 @@ class AGUISessionWriter(BaseSessionWriter):
             return
 
         self._clear_pending_interrupt_context()
-
-        # ask_user_question 续流首帧 RunFinishedEvent（outcome.type=success）：
-        # 从 event.outcome.interrupts[0] 提取 interrupt_id，
-        # 从 event.result 提取 resume_answers，查 DB pending 记录并更新为 resolved 终态。
-        if outcome and outcome_type != "interrupt":
-            self._handle_ask_user_question_resume_finished(event)
-
-    def _handle_ask_user_question_resume_finished(self, event) -> None:
-        """ask_user_question 续流首帧 RunFinishedEvent 的 DB 终态写入。
-
-        从 event.outcome.interrupts[0].id 提取 interrupt_id，
-        从 event.result.payload.answers 提取 resume_answers，
-        查 DB pending 记录并更新为 resolved 终态。
-        """
-        # 1. 从 RunFinishedEvent 提取 interrupt_id + resume_answers
-        outcome = getattr(event, "outcome", None)
-        if isinstance(outcome, dict):
-            interrupts = outcome.get("interrupts") or []
-        else:
-            interrupts = getattr(outcome, "interrupts", []) if outcome else []
-        if not interrupts:
-            return
-        first_interrupt = interrupts[0] if isinstance(interrupts[0], dict) else {}
-        if first_interrupt.get("reason") != ASK_USER_QUESTION_REASON:
-            return  # 非 ask_user_question，跳过
-        interrupt_id = first_interrupt.get("id")
-        if not interrupt_id:
-            return
-        # resume_answers 从 event.result 提取（result 是 _build_result_from_first_interrupt 的 dict）
-        result = getattr(event, "result", None)
-        resume_answers = []
-        if isinstance(result, dict):
-            resume_answers = result.get("payload", {}).get("answers") or []
-
-        # 2. DB I/O：查询 session contents
-        headers = {"X-BKAIDEV-USER": self.username} if self.username else {}
-        try:
-            contents = (
-                self.client.api.get_chat_session_contents(
-                    params={"session_code": self.session_code},
-                    headers=headers,
-                ).get("data")
-                or []
-            )
-        except Exception:
-            logger.exception(
-                "[AskUserQuestion] _handle_ask_user_question_resume_finished: 查询 session contents 失败: session_code=%s",
-                self.session_code,
-            )
-            return
-
-        # 3. 协议匹配：找 pending interrupt 记录（纯函数）
-        found = find_pending_interrupt(contents, interrupt_id)
-        if found is None:
-            logger.warning(
-                "[AskUserQuestion] _handle_ask_user_question_resume_finished: 未找到 pending interrupt 记录, "
-                "message_id=%s, session_code=%s",
-                interrupt_id,
-                self.session_code,
-            )
-            return
-        content_id, raw_db_content, db_item = found
-
-        # 4. 调用已有 OutcomeBuilder（已在 core/ag_ui）
-        upgraded = AskUserQuestionOutcomeBuilder.upgrade_content_to_success(
-            raw_db_content, "resolved", resume_answers=resume_answers
-        )
-        if upgraded is None:
-            logger.warning(
-                "[AskUserQuestion] _handle_ask_user_question_resume_finished: upgrade_content_to_success 返回 None, content_id=%s",
-                content_id,
-            )
-            return
-
-        # 5. 构造 updated_builtin（纯函数）
-        updated_builtin = build_updated_builtin_property(db_item, interrupt_id, "resolved")
-
-        # 6. DB I/O：更新 content
-        try:
-            self._do_update_content(
-                content_id=content_id,
-                payload={
-                    "content": upgraded,
-                    "status": "complete",
-                    "property": {
-                        "builtin_property": updated_builtin,
-                        "turn_id": self.turn_id,
-                    },
-                },
-                headers=headers,
-            )
-            logger.info(
-                "[AskUserQuestion] interrupt 记录更新为 resolved: content_id=%s, message_id=%s, session_code=%s",
-                content_id,
-                interrupt_id,
-                self.session_code,
-            )
-        except Exception:
-            logger.exception(
-                "[AskUserQuestion] _handle_ask_user_question_resume_finished: 更新 interrupt 记录失败, content_id=%s, session_code=%s",
-                content_id,
-                self.session_code,
-            )
 
     def _ensure_session_property_cache(self) -> None:
         if self._cached_session_property is not None:

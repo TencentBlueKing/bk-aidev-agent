@@ -4,18 +4,21 @@
 """
 
 from pathlib import Path
-from typing import List
+from typing import List, TypedDict, get_type_hints
 from unittest.mock import MagicMock, patch
 
 import pytest
 from aidev_agent.config import settings
-from aidev_agent.core.graphs.react.graph import ReActAgentBuilder
+from aidev_agent.core.graphs.react.graph import DefaultState, ReActAgentBuilder
 from aidev_agent.core.graphs.react.skill_middleware import SkillsPromptMiddleware, _extract_paas_params
+from aidev_agent.core.graphs.react.team_middleware import TeamPromptMiddleware
 from aidev_agent.core.nodes.interrupt import ItsmApprovalStrategy, make_interrupt_node
+from aidev_agent.core.nodes.model.pydantic_models import ModelNodeSettings
 from aidev_agent.core.nodes.tool import ToolNodeSettings
+from aidev_agent.core.tools.a2a_tools.types import AgentSpec
 from aidev_agent.packages.langchain_core.models import ChatModel
 from aidev_agent.packages.langgraph.streaming.streaming_protocol import AgentStreamAdapter
-from aidev_agent.pydantic_models import AgentExecutorKwargs, KnowledgeSettings
+from aidev_agent.pydantic_models import AgentExecutorKwargs, KnowledgeSettings, ModelContextSettings
 from langchain.agents.middleware.types import AgentMiddleware
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
@@ -376,18 +379,13 @@ class TestReActAgentBuilder:
             builder.build()
 
     def test_build_raises_when_knowledge_without_knowledge_llm(self):
-        """配置了知识库但未设置 knowledge_llm 时应抛出 ValueError"""
-        llm = MagicMock()
-        llm.model_name = "gpt-4o"
-        builder = ReActAgentBuilder().set_llm(llm).set_knowledge_bases([{"id": "kb1"}])
-        with (
-            patch("aidev_agent.core.graphs.react.graph.std_make_model_node", return_value=MagicMock()),
-            patch(
-                "aidev_agent.core.graphs.react.graph.ReActAgentBuilder._build_graph",
-                return_value=(MagicMock(), {}),
-            ),
-            pytest.raises(ValueError, match="knowledge_llm"),
-        ):
+        """配置了知识库但 llm/knowledge_llm 均为空时应抛出 ValueError。
+
+        新逻辑下 knowledge_llm 会回退到 non_thinking_llm / llm，
+        只有 llm 也为空时才会触发校验失败（由 build() 入口的 llm 校验兜底）。
+        """
+        builder = ReActAgentBuilder().set_knowledge_bases([{"id": "kb1"}])
+        with pytest.raises(ValueError, match="缺少 llm"):
             builder.build()
 
     def test_build_raises_when_knowledge_query_options_not_knowledgebase_settings(self):
@@ -844,7 +842,7 @@ class TestReActAgentBuilder:
             approval_state = updated_ai_message.additional_kwargs["tool_approval"]
             assert approval_state["call_1"]["status"] == "approved"
             assert approval_state["call_2"]["status"] == "rejected"
-            # 两个 target 各调一次 request_approval_decision（D-05 复刻 11.1 _check for 循环）
+            # 两个 target 各调一次 request_approval_decision（ 复刻 11.1 _check for 循环）
             assert mock_request.call_count == 2
         finally:
             calculator.metadata = original_metadata
@@ -1013,6 +1011,514 @@ class TestReActAgentBuilder:
         store = MagicMock()
         result = builder._prepare_store(store=store, file_store=None)
         assert result is store
+
+    # ----------------------------------------------------------------
+    # B (continued). _prepare_agent_options 校验测试
+    # ----------------------------------------------------------------
+
+    def test_prepare_agent_options_raises_when_runtime_tool_without_resolver(self):
+        """enable_runtime_tool=True 但未提供 runtime_backend_resolver 时应抛出 ValueError"""
+        builder = ReActAgentBuilder().set_llm(MagicMock(model_name="gpt-4o")).set_enable_runtime_tool(True)
+        # runtime_backend_resolver 默认为 None
+        with pytest.raises(ValueError, match="runtime_tool 但未提供 runtime_backend_resolver"):
+            builder._prepare_agent_options()
+
+    def test_prepare_agent_options_runtime_tool_passes_with_resolver(self):
+        """enable_runtime_tool=True 且提供了 runtime_backend_resolver 时应通过校验"""
+        resolver = MagicMock()
+        builder = ReActAgentBuilder().set_llm(MagicMock(model_name="gpt-4o")).set_enable_runtime_tool(True)
+        builder._runtime_backend_resolver = resolver
+        # 不应抛出异常
+        builder._prepare_agent_options()
+        assert builder._runtime_backend_resolver is resolver
+
+    def test_prepare_agent_options_raises_when_knowledge_configured_but_all_llm_none(self):
+        """配置了知识库但 knowledge_llm/non_thinking_llm/llm 全为 None 时应触发 has_knowledge 校验。
+
+        build() 入口会对 self._knowledge_llm 做 (knowledge_llm or non_thinking_llm or llm) 回退；
+        正常 build 流程下 llm 必非 None，故此校验在 build 中永不触发。
+        但回退逻辑若变动（例如改为不回退到 llm），此校验应能兜底拦截。
+        因此直接调用 _prepare_agent_options 并保持三者全 None 来覆盖该分支。
+        """
+        builder = ReActAgentBuilder().set_knowledge_bases([{"id": "kb1"}])
+        # 显式保持三者全 None（模拟回退逻辑变动后可能出现的场景）
+        assert builder._knowledge_llm is None
+        assert builder._non_thinking_llm is None
+        assert builder._llm is None
+        with pytest.raises(ValueError, match="knowledge_llm 为空"):
+            builder._prepare_agent_options()
+
+    # ----------------------------------------------------------------
+    # B (continued). _prepare_agent_pv_node 测试
+    # ----------------------------------------------------------------
+
+    def test_prepare_agent_pv_node_returns_callable_without_runtime(self):
+        """未启用 runtime_tool 时应返回 pv_node callable（无 PV 支持）"""
+        builder = ReActAgentBuilder()
+        pv_node = builder._prepare_agent_pv_node()
+        assert callable(pv_node)
+
+    def test_prepare_agent_pv_node_paas_sandbox_without_app_code(self):
+        """启用 paas_sandbox runtime 但 executor_info 无 app_code 时不应注入 client"""
+        builder = ReActAgentBuilder().set_enable_runtime_tool(True).enable_runtime_paas(True)
+        builder._executor_info = {}  # 无 app_code
+        pv_node = builder._prepare_agent_pv_node()
+        assert callable(pv_node)
+
+    def test_prepare_agent_pv_node_paas_sandbox_with_app_code_and_resource_manager(self):
+        """启用 paas_sandbox runtime 且有 app_code + resource_manager 时应注入 client"""
+        builder = ReActAgentBuilder().set_enable_runtime_tool(True).enable_runtime_paas(True)
+        builder._executor_info = {"app_code": "test-app"}
+        resource_manager = MagicMock()
+        expected_client = MagicMock()
+        resource_manager.get_paas_sbx_client.return_value = expected_client
+        builder._resource_manager = resource_manager
+
+        with patch("aidev_agent.core.graphs.react.graph.make_pv_node") as mock_make_pv_node:
+            mock_make_pv_node.return_value = MagicMock()
+            builder._prepare_agent_pv_node()
+            mock_make_pv_node.assert_called_once()
+            call_kwargs = mock_make_pv_node.call_args.kwargs
+            assert call_kwargs["client"] is expected_client
+            assert call_kwargs["app_code"] == "test-app"
+            assert call_kwargs["resource_manager"] is resource_manager
+
+    def test_prepare_agent_pv_node_paas_sandbox_with_app_code_but_no_resource_manager(self):
+        """启用 paas_sandbox runtime 有 app_code 但无 resource_manager 时 client 应为 None"""
+        builder = ReActAgentBuilder().set_enable_runtime_tool(True).enable_runtime_paas(True)
+        builder._executor_info = {"app_code": "test-app"}
+        # _resource_manager 默认为 None
+        with patch("aidev_agent.core.graphs.react.graph.make_pv_node") as mock_make_pv_node:
+            mock_make_pv_node.return_value = MagicMock()
+            builder._prepare_agent_pv_node()
+            call_kwargs = mock_make_pv_node.call_args.kwargs
+            assert call_kwargs["client"] is None
+
+    # ----------------------------------------------------------------
+    # B (continued). _prepare_a2a 测试
+    # ----------------------------------------------------------------
+
+    def test_prepare_a2a_skips_when_no_backend_types(self):
+        """_a2a_backend_types 为空时应直接返回，不创建 resolver"""
+        builder = ReActAgentBuilder()
+        builder._prepare_a2a()
+        assert builder._a2a_resolver is None
+
+    def test_prepare_a2a_creates_resolver_with_local_backend(self):
+        """启用 local backend 时应创建 resolver 并注册 local 类型"""
+        builder = ReActAgentBuilder().enable_a2a_backend_local(True)
+        builder._prepare_a2a()
+        assert builder._a2a_resolver is not None
+        # 验证 local backend 已注册
+        assert "local" in builder._a2a_backend_types
+
+    def test_prepare_a2a_creates_resolver_with_bkai_backend(self):
+        """启用 bkai backend 时应创建 resolver 并注册 bkai 类型"""
+        builder = ReActAgentBuilder().enable_a2a_backend_bkai(True)
+        builder._prepare_a2a()
+        assert builder._a2a_resolver is not None
+        assert "bkai" in builder._a2a_backend_types
+
+    def test_prepare_a2a_creates_resolver_with_multiple_backends(self):
+        """同时启用 local + bkai 时应注册两种后端类型"""
+        builder = ReActAgentBuilder().enable_a2a_backend_local(True).enable_a2a_backend_bkai(True)
+        builder._prepare_a2a()
+        assert builder._a2a_resolver is not None
+        assert {"local", "bkai"}.issubset(set(builder._a2a_backend_types))
+
+    def test_build_calls_prepare_a2a_when_enable_a2a_tool(self):
+        """build() 在 enable_a2a_tool=True 时应调用 _prepare_a2a"""
+        llm = MagicMock()
+        llm.model_name = "gpt-4o"
+        builder = ReActAgentBuilder().set_llm(llm).enable_a2a_tool(True).enable_a2a_backend_local(True)
+        with (
+            patch("aidev_agent.core.graphs.react.graph.std_make_model_node", return_value=MagicMock()),
+            patch(
+                "aidev_agent.core.graphs.react.graph.ReActAgentBuilder._build_graph",
+                return_value=(MagicMock(), {}),
+            ),
+            patch.object(ReActAgentBuilder, "_prepare_a2a", wraps=builder._prepare_a2a) as mock_prepare_a2a,
+        ):
+            builder.build()
+        mock_prepare_a2a.assert_called_once()
+        assert builder._a2a_resolver is not None
+
+    # ----------------------------------------------------------------
+    # B (continued). _compute_use_structured_response 测试 (P0)
+    # ----------------------------------------------------------------
+
+    def test_compute_use_structured_response_deepseek_agent_type(self):
+        """model_context_options.llm_code_agent_type 含 'deepseek' 时应返回 True"""
+        builder = ReActAgentBuilder()
+        builder._model_context_options = ModelContextSettings(llm_code_agent_type="deepseek_r1")
+        assert builder._compute_use_structured_response() is True
+
+    def test_compute_use_structured_response_non_deepseek_agent_type(self):
+        """llm_code_agent_type 不含 'deepseek' 时应返回 False"""
+        builder = ReActAgentBuilder()
+        builder._model_context_options = ModelContextSettings(llm_code_agent_type="openai")
+        assert builder._compute_use_structured_response() is False
+
+    def test_compute_use_structured_response_no_model_context_options(self):
+        """无 model_context_options 时回退到 is_model_without_function_calling 检查"""
+        builder = ReActAgentBuilder()
+        # 无 llm_code_agent_type，回退分支：llm 为 None 时回退为 False
+        # （is_model_without_function_calling(None) 会 AttributeError，但 build() 入口会校验 llm 非空）
+        # 此处用一个普通模型 + 无 extra_tools 触发 and 短路返回 False
+        builder._llm = MagicMock(model_name="gpt-4o")
+        assert builder._compute_use_structured_response() is False
+
+    # ----------------------------------------------------------------
+    # B (continued). _prepare_agent_model_node 测试 (P0)
+    # ----------------------------------------------------------------
+
+    def test_prepare_agent_model_node_extracts_model_context_options(self):
+        """_prepare_agent_model_node 应从 model_context_options 提取 token_limit/token_margin/compress_thrd"""
+        builder = ReActAgentBuilder()
+        builder._llm = MagicMock(model_name="gpt-4o")
+        builder._model_context_options = ModelContextSettings(
+            llm_token_limit=8000,
+            token_limit_margin=200,
+            tool_output_compress_thrd=3000,
+        )
+        captured = {}
+
+        def _fake_make_model_node(*, llm, non_thinking_llm, judge_llm, tools, node_options):
+            captured["node_options"] = node_options
+            return MagicMock()
+
+        llm = MagicMock(model_name="gpt-4o")
+        with patch("aidev_agent.core.graphs.react.graph.std_make_model_node", new=_fake_make_model_node):
+            builder._prepare_agent_model_node(llm=llm, non_thinking_llm=llm, judge_llm=llm, tools=[])
+        node_options: ModelNodeSettings = captured["node_options"]
+        assert node_options.token_limit == 8000
+        assert node_options.token_margin == 200
+        assert node_options.tool_output_compress_thrd == 3000
+
+    def test_prepare_agent_model_node_no_model_context_options_uses_defaults(self):
+        """无 model_context_options 时 ModelNodeSettings 应使用默认值"""
+        builder = ReActAgentBuilder()
+        builder._llm = MagicMock(model_name="gpt-4o")
+        captured = {}
+
+        def _fake_make_model_node(*, llm, non_thinking_llm, judge_llm, tools, node_options):
+            captured["node_options"] = node_options
+            return MagicMock()
+
+        llm = MagicMock(model_name="gpt-4o")
+        with patch("aidev_agent.core.graphs.react.graph.std_make_model_node", new=_fake_make_model_node):
+            builder._prepare_agent_model_node(llm=llm, non_thinking_llm=llm, judge_llm=llm, tools=[])
+        node_options: ModelNodeSettings = captured["node_options"]
+        assert node_options.token_limit is None
+        # token_margin / tool_output_compress_thrd 有默认值
+        assert node_options.token_margin == 100
+        assert node_options.tool_output_compress_thrd == 5000
+
+    def test_prepare_agent_model_node_injects_team_prompt_middleware(self):
+        """配置了 a2a_specs 和 a2a_resolver 时应注入 TeamPromptMiddleware"""
+        builder = ReActAgentBuilder()
+        builder._llm = MagicMock(model_name="gpt-4o")
+        builder._a2a_specs = [AgentSpec(name="helper", description="d", backend_type="bkai")]
+        builder._a2a_resolver = MagicMock()
+        captured = {}
+
+        def _fake_make_model_node(*, llm, non_thinking_llm, judge_llm, tools, node_options):
+            captured["node_options"] = node_options
+            return MagicMock()
+
+        llm = MagicMock(model_name="gpt-4o")
+        with patch("aidev_agent.core.graphs.react.graph.std_make_model_node", new=_fake_make_model_node):
+            builder._prepare_agent_model_node(llm=llm, non_thinking_llm=llm, judge_llm=llm, tools=[])
+        middlewares = captured["node_options"].extra_template_middlewares
+        assert any(isinstance(m, TeamPromptMiddleware) for m in middlewares)
+
+    def test_prepare_agent_model_node_no_team_middleware_without_a2a(self):
+        """未配置 a2a_specs/a2a_resolver 时不应注入 TeamPromptMiddleware"""
+        builder = ReActAgentBuilder()
+        builder._llm = MagicMock(model_name="gpt-4o")
+        captured = {}
+
+        def _fake_make_model_node(*, llm, non_thinking_llm, judge_llm, tools, node_options):
+            captured["node_options"] = node_options
+            return MagicMock()
+
+        llm = MagicMock(model_name="gpt-4o")
+        with patch("aidev_agent.core.graphs.react.graph.std_make_model_node", new=_fake_make_model_node):
+            builder._prepare_agent_model_node(llm=llm, non_thinking_llm=llm, judge_llm=llm, tools=[])
+        middlewares = captured["node_options"].extra_template_middlewares
+        assert not any(isinstance(m, TeamPromptMiddleware) for m in middlewares)
+
+    # ----------------------------------------------------------------
+    # B (continued). _prepare_agent_tools 测试 (P0)
+    # ----------------------------------------------------------------
+
+    def test_prepare_agent_tools_injects_task_tools_when_enabled(self):
+        """enable_task=True 时应注入 Task 工具"""
+        builder = ReActAgentBuilder().enable_task(True)
+        with patch(
+            "aidev_agent.core.graphs.react.graph.get_task_tools", return_value=[MagicMock(spec=BaseTool)]
+        ) as mock:
+            tools = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
+        assert mock.called
+        assert len(tools) >= 1
+
+    def test_prepare_agent_tools_no_task_tools_when_disabled(self):
+        """enable_task=False 时不应注入 Task 工具"""
+        builder = ReActAgentBuilder()
+        builder._enable_task = False
+        builder._enable_ask_user_question_tool = False
+        with patch("aidev_agent.core.graphs.react.graph.get_task_tools") as mock:
+            tools = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
+        mock.assert_not_called()
+        assert tools == []
+
+    def test_prepare_agent_tools_injects_a2a_tools_when_specs_and_resolver(self):
+        """配置了 a2a_specs 和 a2a_resolver 时应注入 A2A 工具"""
+        sentinel_tool = MagicMock(spec=BaseTool)
+        builder = ReActAgentBuilder()
+        builder._enable_ask_user_question_tool = False
+        builder._a2a_specs = [AgentSpec(name="helper", description="d", backend_type="bkai")]
+        builder._a2a_resolver = MagicMock()
+        with patch(
+            "aidev_agent.core.graphs.react.graph.get_agent_tools",
+            return_value=[sentinel_tool],
+        ) as mock:
+            tools = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
+        mock.assert_called_once_with(builder._a2a_specs, builder._a2a_resolver)
+        assert sentinel_tool in tools
+
+    def test_prepare_agent_tools_no_a2a_tools_without_resolver(self):
+        """有 a2a_specs 但无 a2a_resolver 时不应注入 A2A 工具"""
+        builder = ReActAgentBuilder()
+        builder._enable_ask_user_question_tool = False
+        builder._a2a_specs = [AgentSpec(name="helper", description="d", backend_type="bkai")]
+        # a2a_resolver 默认为 None
+        with patch("aidev_agent.core.graphs.react.graph.get_agent_tools") as mock:
+            tools = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
+        mock.assert_not_called()
+        assert tools == []
+
+    def test_prepare_agent_tools_sets_handle_error_when_ignore_errors(self):
+        """ignore_errors=True 时应为所有工具设置 handle_validation_error/handle_tool_error"""
+        t1 = MagicMock(spec=BaseTool)
+        t2 = MagicMock(spec=BaseTool)
+        builder = ReActAgentBuilder()
+        # 直接通过 extra_tools 传入，绕过其他注入路径
+        tools = builder._prepare_agent_tools(extra_tools=[t1, t2], ignore_errors=True, langchain_middleware=[])
+        for t in tools:
+            assert t.handle_validation_error is True
+            assert t.handle_tool_error is True
+
+    def test_prepare_agent_tools_no_handle_error_when_ignore_errors_false(self):
+        """ignore_errors=False 时不应修改工具的 handle_error 属性"""
+        t1 = MagicMock(spec=BaseTool)
+        t1.handle_validation_error = "original"
+        t1.handle_tool_error = "original"
+        builder = ReActAgentBuilder()
+        tools = builder._prepare_agent_tools(extra_tools=[t1], ignore_errors=False, langchain_middleware=[])
+        assert tools[0].handle_validation_error == "original"
+        assert tools[0].handle_tool_error == "original"
+
+    # ----------------------------------------------------------------
+    # P1. _prepare_agent_knowledge_node early return 测试
+    # ----------------------------------------------------------------
+
+    def test_prepare_agent_knowledge_node_returns_none_when_disabled(self):
+        """enable_knowledge_node=False 时应返回 None"""
+        builder = ReActAgentBuilder()
+        options = KnowledgeSettings(enable_knowledge_node=False, knowledge_bases=[{"id": "kb1"}])
+        result = builder._prepare_agent_knowledge_node(
+            knowledge_llm=MagicMock(), knowledge_query_options=options, chat_history=[]
+        )
+        assert result is None
+
+    def test_prepare_agent_knowledge_node_returns_none_when_no_knowledge(self):
+        """enable_knowledge_node=True 但无 knowledge_bases/items 时应返回 None"""
+        builder = ReActAgentBuilder()
+        options = KnowledgeSettings(enable_knowledge_node=True)
+        result = builder._prepare_agent_knowledge_node(
+            knowledge_llm=MagicMock(), knowledge_query_options=options, chat_history=[]
+        )
+        assert result is None
+
+    # ----------------------------------------------------------------
+    # P1. set_bkai_options 配置链路测试 (skills / subagent_specs)
+    # ----------------------------------------------------------------
+
+    def test_set_bkai_options_skills_chain_enables_skills_and_runtime(self):
+        """set_bkai_options 收到 skills 时应启用 skills + runtime_tool + paas_sandbox"""
+        rm = MagicMock()
+        opts = AgentExecutorKwargs(
+            resource_manager=rm,
+            skills=[{"skill_name": "demo", "id": 1}],
+        )
+        builder = ReActAgentBuilder().set_bkai_options(opts)
+        assert builder._enable_skills is True
+        assert builder._enable_runtime_tool is True
+        assert "paas_sandbox" in builder._runtime_types
+        # skill_sources 应包含一个 BkAiBackend 实例
+        assert len(builder._skill_sources) == 1
+
+    def test_set_bkai_options_subagent_specs_chain_enables_a2a_team_task(self):
+        """set_bkai_options 收到 subagent_specs 时应启用 a2a_tool/team/task 并注册后端"""
+        specs = [AgentSpec(name="helper", description="d", backend_type="bkai")]
+        opts = AgentExecutorKwargs(subagent_specs=specs)
+        builder = ReActAgentBuilder().set_bkai_options(opts)
+        assert builder._enable_a2a_tool is True
+        assert builder._enable_team is True
+        assert builder._enable_task is True
+        assert {"local", "bkai"}.issubset(set(builder._a2a_backend_types))
+        assert builder._a2a_specs == specs
+
+    # ----------------------------------------------------------------
+    # P2. setter enable=False 分支合并测试
+    # ----------------------------------------------------------------
+
+    def test_setters_disable_branches(self):
+        """合并覆盖各 setter 的 enable=False 分支"""
+        builder = (
+            ReActAgentBuilder()
+            .enable_team(True)
+            .enable_team(False)
+            .set_team_config({"k": "v"})
+            .enable_task(True)
+            .enable_task(False)
+            .enable_a2a_backend_local(True)
+            .enable_a2a_backend_local(False)
+            .enable_a2a_backend_bkai(True)
+            .enable_a2a_backend_bkai(False)
+        )
+        assert builder._enable_team is False
+        assert builder._enable_task is False
+        # enable_team(False) 不会清掉 _enable_task（仅 enable_team(True) 隐式启用）
+        assert builder._team_config == {"k": "v"}
+        assert "local" not in builder._a2a_backend_types
+        assert "bkai" not in builder._a2a_backend_types
+
+    # ----------------------------------------------------------------
+    # P2. set_bkai_options 各字段赋值合并测试
+    # ----------------------------------------------------------------
+
+    def test_set_bkai_options_maps_all_fields(self):
+        """合并覆盖 set_bkai_options 中未单独测试的字段赋值"""
+        non_thinking_llm = MagicMock()
+        fast_llm = MagicMock()
+        chat_history = [HumanMessage(content="hi")]
+        file_store = MagicMock()
+        checkpointer = MemorySaver()
+        executor_info = {"user": "admin"}
+        model_ctx = ModelContextSettings(llm_token_limit=12345)
+        opts = AgentExecutorKwargs(
+            non_thinking_llm=non_thinking_llm,
+            fast_llm=fast_llm,
+            chat_history=chat_history,
+            support_vision=True,
+            file_store=file_store,
+            checkpointer=checkpointer,
+            executor_info=executor_info,
+            model_context_options=model_ctx,
+        )
+        builder = ReActAgentBuilder().set_bkai_options(opts)
+        assert builder._non_thinking_llm is non_thinking_llm
+        assert builder._fast_llm is fast_llm
+        assert builder._chat_history == chat_history
+        assert builder._support_vision is True
+        assert builder._file_store is file_store
+        assert builder._checkpointer is checkpointer
+        assert builder._executor_info == executor_info
+        assert builder._model_context_options is model_ctx
+
+    # ----------------------------------------------------------------
+    # P2. _prepare_skills 的 paas_sandbox + resource_manager 分支
+    # ----------------------------------------------------------------
+
+    def test_prepare_skills_paas_sandbox_with_resource_manager(self, tmp_path, monkeypatch):
+        """paas_sandbox runtime skill + resource_manager 时应注入 client 到 params"""
+        monkeypatch.chdir(tmp_path)
+        skills_root = tmp_path / ".agent" / "skills"
+        _write_skill(skills_root, name="paas-skill", description="d", body="b", runtime="paas_sandbox")
+
+        rm = MagicMock()
+        expected_client = MagicMock()
+        rm.get_paas_sbx_client.return_value = expected_client
+
+        builder = (
+            ReActAgentBuilder()
+            .set_llm(MagicMock(model_name="gpt-4o"))
+            .set_enable_skills(True)
+            .set_skill_sources([str(skills_root)])
+            .set_enable_runtime_tool(True)
+            .enable_runtime_paas(True)
+        )
+        builder._resource_manager = rm
+        builder._runtime_backend_resolver = MagicMock()
+
+        # 捕获 register_runtime 收到的 params
+        captured_params = {}
+        builder._runtime_backend_resolver.register_runtime = lambda key, backend: captured_params.__setitem__(
+            key, backend
+        )
+
+        builder._prepare_skills()
+        # paas_sandbox_{skill_name} 应被注册，且 backend 持有 client
+        registered_key = next((k for k in captured_params if k.startswith("paas_sandbox_")), None)
+        assert registered_key is not None
+        rm.get_paas_sbx_client.assert_called_once()
+
+    # ----------------------------------------------------------------
+    # P2. _prepare_state_schema 用户自定义 schema 分支
+    # ----------------------------------------------------------------
+
+    def test_prepare_state_schema_appends_user_schema(self):
+        """用户设置 _state_schema 时应被追加到 schemas 列表"""
+        builder = ReActAgentBuilder()
+
+        class CustomState(TypedDict):
+            foo: str
+
+        builder.set_state_schema(CustomState)
+        # 默认不启用 task/team/a2a,只应有 DefaultState + 用户 schema
+        schema = builder._prepare_state_schema(None)
+        assert schema is not None
+        # 验证 _state_schema 被加入(通过 _resolve_task_state_schema 合并后返回)
+        # 简单断言:返回值有 foo 字段(说明 CustomState 被合并)
+        hints = get_type_hints(schema)
+        assert "foo" in hints
+
+    # ----------------------------------------------------------------
+    # P2. _build_graph 真实构造图(覆盖 knowledge_node 路径)
+    # ----------------------------------------------------------------
+
+    def test_build_graph_constructs_knowledge_node_path(self):
+        """_build_graph 在传入 knowledge_node 时应真实构造 knowledge 节点和边。
+
+        不 mock _build_graph,验证 1034/1042-1043 行被覆盖。
+        """
+        builder = ReActAgentBuilder()
+
+        # 构造一个最小的真实 graph:无工具,有 knowledge_node
+        knowledge_node = MagicMock()
+        model_node = MagicMock()
+        result_graph, cfg = builder._build_graph(
+            state_schema=DefaultState,
+            callbacks=[],
+            debug=False,
+            checkpointer=MemorySaver(),
+            store=None,
+            interrupt_before=None,
+            interrupt_after=None,
+            name="test-graph",
+            cache=None,
+            knowledge_node=knowledge_node,
+            model_node=model_node,
+            tool_node=None,
+            pv_node=MagicMock(),
+            interrupt_node=MagicMock(),
+            tools=None,
+        )
+        assert result_graph is not None
+        assert cfg["configurable"]["debug"] is False
+        assert cfg["recursion_limit"] == 1000
 
     # ----------------------------------------------------------------
     # B (continued). set_bkai_options 测试 (M1)

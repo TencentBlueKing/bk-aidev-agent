@@ -1,149 +1,26 @@
 # -*- coding: utf-8 -*-
 """ask_user_question 协议层纯函数单元测试。
 
-覆盖 Phase 14.1 D-01/D-03/D-04 抽出的 4 个纯函数的边界值：
-find_pending_interrupt / build_updated_builtin_property /
-filter_ask_user_question_interrupts / parse_resume_answers。
+覆盖 抽出的纯函数的边界值：
+build_updated_builtin_property / build_skipped_answers /
+filter_ask_user_question_interrupts / parse_resume_answers / extract_message_id。
 """
 
 import json
 from types import SimpleNamespace
 
+import pytest
 from aidev_agent.core.ag_ui.ask_user_question import (
     ASK_USER_QUESTION_REASON,
+    ASK_USER_QUESTION_SKIPPED_CONTENT,
+    AskUserQuestionMetadata,
+    InterruptStatus,
+    build_skipped_answers,
     build_updated_builtin_property,
+    extract_message_id,
     filter_ask_user_question_interrupts,
-    find_pending_interrupt,
     parse_resume_answers,
 )
-from aidev_agent.enums import PromptRole
-
-# ------------------------------------------------------------------ #
-# find_pending_interrupt
-# ------------------------------------------------------------------ #
-
-
-def test_find_pending_interrupt_empty():
-    assert find_pending_interrupt([], "int-1") is None
-
-
-def test_find_pending_interrupt_match():
-    raw_content = {
-        "outcome": {
-            "interrupts": [{"id": "int-1", "reason": ASK_USER_QUESTION_REASON}],
-        },
-    }
-    item = {
-        "id": 42,
-        "role": PromptRole.INTERRUPT.value,
-        "status": "pending",
-        "content": json.dumps(raw_content),
-    }
-    result = find_pending_interrupt([item], "int-1")
-    assert result is not None
-    content_id, raw_db_content, db_item = result
-    assert content_id == 42
-    assert raw_db_content["outcome"]["interrupts"][0]["id"] == "int-1"
-    assert db_item is item
-
-
-def test_find_pending_interrupt_wrong_role():
-    item = {
-        "id": 42,
-        "role": "activity",
-        "status": "pending",
-        "content": "{}",
-    }
-    assert find_pending_interrupt([item], "int-1") is None
-
-
-def test_find_pending_interrupt_wrong_status():
-    item = {
-        "id": 42,
-        "role": PromptRole.INTERRUPT.value,
-        "status": "complete",
-        "content": "{}",
-    }
-    assert find_pending_interrupt([item], "int-1") is None
-
-
-def test_find_pending_interrupt_wrong_id():
-    raw_content = {
-        "outcome": {
-            "interrupts": [{"id": "int-other", "reason": ASK_USER_QUESTION_REASON}],
-        },
-    }
-    item = {
-        "id": 42,
-        "role": PromptRole.INTERRUPT.value,
-        "status": "pending",
-        "content": json.dumps(raw_content),
-    }
-    assert find_pending_interrupt([item], "int-1") is None
-
-
-def test_find_pending_interrupt_reversed_order():
-    """逆序遍历，最新记录优先。"""
-    raw_old = {
-        "outcome": {"interrupts": [{"id": "int-1", "reason": ASK_USER_QUESTION_REASON}]},
-    }
-    raw_new = {
-        "outcome": {"interrupts": [{"id": "int-1", "reason": ASK_USER_QUESTION_REASON}]},
-    }
-    old_item = {
-        "id": 1,
-        "role": PromptRole.INTERRUPT.value,
-        "status": "pending",
-        "content": json.dumps(raw_old),
-    }
-    new_item = {
-        "id": 2,
-        "role": PromptRole.INTERRUPT.value,
-        "status": "pending",
-        "content": json.dumps(raw_new),
-    }
-    result = find_pending_interrupt([old_item, new_item], "int-1")
-    assert result is not None
-    content_id, _, _ = result
-    assert content_id == 2  # 逆序，new_item 先匹配
-
-
-def test_find_pending_interrupt_reason_not_ask_user_question():
-    """匹配 id 但 reason 非 ASK_USER_QUESTION_REASON 时不返回。"""
-    raw_content = {
-        "outcome": {"interrupts": [{"id": "int-1", "reason": "aidev:tool_approval"}]},
-    }
-    item = {
-        "id": 42,
-        "role": PromptRole.INTERRUPT.value,
-        "status": "pending",
-        "content": json.dumps(raw_content),
-    }
-    assert find_pending_interrupt([item], "int-1") is None
-
-
-def test_find_pending_interrupt_content_not_json():
-    """content 非 JSON 字符串时跳过该记录。"""
-    item = {
-        "id": 1,
-        "role": PromptRole.INTERRUPT.value,
-        "status": "pending",
-        "content": "not json",
-    }
-    assert find_pending_interrupt([item], "int-1") is None
-
-
-def test_find_pending_interrupt_missing_interrupts_field():
-    """outcome 缺少 interrupts 字段时跳过该记录。"""
-    raw_content = {"outcome": {}}
-    item = {
-        "id": 1,
-        "role": PromptRole.INTERRUPT.value,
-        "status": "pending",
-        "content": json.dumps(raw_content),
-    }
-    assert find_pending_interrupt([item], "int-1") is None
-
 
 # ------------------------------------------------------------------ #
 # build_updated_builtin_property
@@ -329,3 +206,83 @@ def test_parse_resume_answers_scalar():
 def test_parse_resume_answers_empty_list():
     """空列表返回空列表（非 None）。"""
     assert parse_resume_answers([]) == []
+
+
+# ------------------------------------------------------------------ #
+# InterruptStatus
+# ------------------------------------------------------------------ #
+
+
+@pytest.mark.parametrize(
+    "member, expected",
+    [
+        (InterruptStatus.PENDING, "pending"),
+        (InterruptStatus.RESOLVED, "resolved"),
+        (InterruptStatus.CANCELLED, "cancelled"),
+    ],
+)
+def test_interrupt_status_str_value(member, expected):
+    """(str, Enum) 成员的 str 值等于字面量。"""
+    assert member.value == expected
+    assert member == expected  # str 继承
+
+
+def test_interrupt_status_pydantic_serialization():
+    """Pydantic v2 序列化输出字符串值（非枚举名）— Pitfall 3 验证。"""
+    m = AskUserQuestionMetadata(questions=[])
+    assert m.status == InterruptStatus.PENDING
+    # model_dump_json 输出 "pending" 而非 "InterruptStatus.PENDING"
+    dumped = m.model_dump_json()
+    assert '"status":"pending"' in dumped
+
+
+# ------------------------------------------------------------------ #
+# extract_message_id ( ②)
+# ------------------------------------------------------------------ #
+
+
+@pytest.mark.parametrize(
+    "upgraded, expected",
+    [
+        ({"result": {"interruptId": "id-1"}, "outcome": {"interrupts": [{"id": "id-2"}]}}, "id-1"),
+        ({"result": {}, "outcome": {"interrupts": [{"id": "id-2"}]}}, "id-2"),
+        ({"result": {}, "outcome": {"interrupts": []}}, ""),
+        ({}, ""),
+    ],
+)
+def test_extract_message_id(upgraded, expected):
+    """result.interruptId 优先 → outcome.interrupts[0].id 次之 → 空串兜底。"""
+    assert extract_message_id(upgraded) == expected
+
+
+# ------------------------------------------------------------------ #
+# build_skipped_answers ( ③)
+# ------------------------------------------------------------------ #
+
+
+def test_build_skipped_answers_basic():
+    """正常构造：每个 question 生成 label="skipped" 的 answer。"""
+    questions = [{"question": "Q1", "multiSelect": False}]
+    result = build_skipped_answers(questions)
+    assert len(result) == 1
+    assert result[0]["question"] == "Q1"
+    assert result[0]["multiSelect"] is False
+    assert result[0]["answer"][0]["label"] == "skipped"
+    assert result[0]["answer"][0]["description"] == ASK_USER_QUESTION_SKIPPED_CONTENT
+
+
+def test_build_skipped_answers_empty():
+    assert build_skipped_answers([]) == []
+
+
+def test_build_skipped_answers_filters_non_dict():
+    """过滤非 dict 元素。"""
+    result = build_skipped_answers([{"question": "Q"}, "not-a-dict", None])
+    assert len(result) == 1
+    assert result[0]["question"] == "Q"
+
+
+def test_build_skipped_answers_question_missing():
+    """question 缺失默认空串。"""
+    result = build_skipped_answers([{"multiSelect": True}])
+    assert result[0]["question"] == ""

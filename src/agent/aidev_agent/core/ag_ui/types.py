@@ -51,6 +51,8 @@ class SessionPersistenceEventNames(str, Enum):
 
     ChatModelEnd = "aidev_session_chat_model_end"
     ArtifactsGenerated = "artifacts_generated"
+    AskUserQuestionFinalized = "ask_user_question_finalized"
+    UserInputSaved = "user_input_saved"
 
 
 class ArtifactPayload(TypedDict):

@@ -131,7 +131,7 @@ class AgentBuilder:
                 channel_type=channel_type,
             )
         except Exception:
-            # D-03: Agent 构建失败，尝试标记 session 为 FAILED
+            # Agent 构建失败，尝试标记 session 为 FAILED
             try:
                 self.session_manager.update_session_status(session_code, SessionsStatus.FAILED.value)
             except Exception:

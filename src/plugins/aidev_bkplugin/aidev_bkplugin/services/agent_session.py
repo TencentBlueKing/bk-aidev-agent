@@ -67,7 +67,7 @@ class SessionManager:
     def get_or_create_by_thread_id(self, thread_id: str) -> str:
         """根据 ``thread_id`` 取回或创建 session_code（幂等）。
 
-        D-10: 使用平台 get_or_create 幂等接口，替代 retrieve+create 两步操作。
+        使用平台 get_or_create 幂等接口，替代 retrieve+create 两步操作。
         解决 falsy data 边界问题（原 retrieve 返回 data 为 null/空时跳过创建）。
         """
         session_code = self.generate_session_code(self.username, self.agent_code, thread_id)

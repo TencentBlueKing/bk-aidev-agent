@@ -200,3 +200,13 @@ class TestCommonQAAgentGetAgentExecutor:
         called_options = mock_builder.set_bkai_options.call_args.args[0]
         dumped = called_options.model_dump(exclude_none=True)
         assert dumped["custom_param"] == "custom_value"
+
+
+def test_execute_kwargs_input_default_empty():
+    assert ExecuteKwargs().input == ""
+
+
+def test_execute_kwargs_input_assignment_and_serialization():
+    kwargs = ExecuteKwargs(input="hi")
+    assert kwargs.input == "hi"
+    assert kwargs.model_dump()["input"] == "hi"

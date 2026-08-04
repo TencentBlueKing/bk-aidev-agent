@@ -177,7 +177,7 @@ def test_ctx_is_agent_build_context():
 
 
 def test_child_related_agents_cleared():
-    """即使子 config 原本含 related_agents（嵌套），子 ctx.agent_config.related_agents 必须被清空（递归断开 D-06）。"""
+    """即使子 config 原本含 related_agents（嵌套），子 ctx.agent_config.related_agents 必须被清空（递归断开 ）。"""
     # mock 子 config 故意带 nested related_agents
     nested_child_config = _make_agent_config(
         agent_code="child_code",

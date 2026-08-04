@@ -7,7 +7,7 @@ from importlib.metadata import version as pkg_version
 from logging import getLogger
 from typing import Any, Callable, ClassVar, Generator, List, Optional
 
-from ag_ui.core import BaseEvent
+from ag_ui.core import BaseEvent, CustomEvent, EventType
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage, SystemMessage, ToolMessage
@@ -22,11 +22,21 @@ from pydantic import BaseModel, Field
 from aidev_agent.api.bk_agent import BkAgentApi
 from aidev_agent.config import settings
 from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
-from aidev_agent.core.ag_ui.ask_user_question import filter_ask_user_question_interrupts
+from aidev_agent.core.ag_ui.ask_user_question import (
+    ASK_USER_QUESTION_SKIPPED_CONTENT,
+    AskUserQuestionHandler,
+    AskUserQuestionOutcomeBuilder,
+    InterruptStatus,
+    build_skipped_answers,
+    filter_ask_user_question_interrupts,
+    parse_resume_answers,
+)
+from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
 from aidev_agent.core.ag_ui.types import (
     AgentInput,
     InterruptMessage,
     SchemaKeys,
+    SessionPersistenceEventNames,
 )
 from aidev_agent.core.ag_ui.utils import (
     agui_messages_to_langchain,
@@ -204,8 +214,190 @@ class ChatCompletionAgent(BaseModel):
             self.event_handler = ctx.event_handler
         return self
 
+    def _prepare_pre_run_history(self, execute_kwargs: ExecuteKwargs) -> None:
+        """agent 运行前的对话预处理：resume / input 三态分流 + chat_history 镜像 patch。
+
+        在 ``convert_history_to_messages`` 之前调用。build 期 DB 读已先发生，
+        这里把本轮 user / tool 记录手工 patch 进 ``self.chat_history``，
+        让 ``convert_history_to_messages`` 消费到最新记录，并派发对应 DB 回写事件
+        （由 ``AGUISessionWriter`` 的 handler 落库）。
+
+        - resume + (input 或空 answers)（跳过）：补 tool + user 两条，派发 skipped + user 事件，清空 resume。
+        - resume + 非空 answers（答题）：改写 interrupt 记录为 resolved，派发 resolved 事件。
+        - 无 resume + input（普通新对话）：补 user 一条，派发 user 事件。
+        - 无 resume + 无 input：无事可做。
+
+        input 是独立维度，不绑 resume：跳过判别条件是 ``input 或 answers 为空``，
+        因此 ``resume + 无 input + 空 answers`` 也走跳过（仅取消 interrupt，不补 user）。
+        """
+        if not isinstance(self.event_handler, BaseSessionWriter):
+            return
+        resume = execute_kwargs.resume
+        input_text = execute_kwargs.input
+        turn_id = execute_kwargs.turn_id
+
+        # 仅 ask_user_question 中断的 resume 走 ask_user 回写逻辑；审批中断由审批路径处理。
+        # 判别依据是 resume.payload.answers 是否存在（approval 的 payload 是 {approved: bool}）。
+        # 注意：不在此处 return —— input 是独立维度，非 ask_user 的 resume 仍需走步骤 7 派发 user 事件。
+        is_ask_user_resume = not resume or AskUserQuestionHandler.is_ask_user_resume(resume)
+
+        if resume and is_ask_user_resume:
+            # 严格取 chat_history 末尾：必须是 INTERRUPT（避免已回答的 interrupt 被二次回答）。
+            interrupt = self.chat_history[-1] if self.chat_history else None
+            AskUserQuestionHandler.validate_resume_consistency(resume, interrupt)
+            answers = parse_resume_answers(resume) or []
+            # 跳过判别：input 或空 answers 视为跳过（input 独立于 resume）。
+            if input_text or not answers:
+                self._handle_skip_path(interrupt, turn_id)
+                execute_kwargs.resume = None
+            else:
+                self._handle_answer_path(interrupt, answers, turn_id)
+
+        # 步骤 7：独立的 user 事件分发（跳过路径 resume 已清空 / 普通新对话 / 审批 resume 都走这里）。
+        if input_text:
+            self.chat_history.append(ChatPrompt(role=PromptRole.USER.value, content=input_text))
+            self._dispatch_custom(
+                CustomEvent(
+                    type=EventType.CUSTOM,
+                    name=SessionPersistenceEventNames.UserInputSaved.value,
+                    value={"content": input_text, "turn_id": turn_id},
+                )
+            )
+
+    def _handle_skip_path(self, interrupt: ChatPrompt, turn_id: str) -> None:
+        """跳过路径：补 tool → 改写 interrupt 为 CANCELLED → 派发 finalize 事件。
+
+        tool_call_id 已由 ``validate_resume_consistency`` 校验必存在，这里无条件补 tool 记录。
+        user 事件分发由调用方 ``_prepare_pre_run_history`` 的独立收尾步骤处理
+        （仅当 input_text 存在时派发，允许 ``resume + 空 answers + 无 input`` 纯取消 case）。
+
+        upgrade 失败时不派发 finalize 事件（与 handler 原本"upgrade 返回 None 不写 DB"等价）。
+        """
+        builtin = interrupt.builtin_property or {}
+        tool_call_id = builtin.get("tool_call_id", "")
+        questions = builtin.get("questions") or []
+        skipped_answers = build_skipped_answers(questions)
+
+        self.chat_history.append(
+            ChatPrompt(
+                role=PromptRole.TOOL.value,
+                content=ASK_USER_QUESTION_SKIPPED_CONTENT,
+                builtin_property={"tool_call_id": tool_call_id},
+            )
+        )
+        self._dispatch_custom(
+            ExtendToolCallResultEvent(
+                type=EventType.TOOL_CALL_RESULT,
+                tool_call_id=tool_call_id,
+                message_id=tool_call_id,
+                content=ASK_USER_QUESTION_SKIPPED_CONTENT,
+                role="tool",
+                duration=None,
+                is_error=False,
+                additional_metadata={},
+                skip_db=False,
+            )
+        )
+
+        # 先 upgrade，拿到终态 content；失败则不派发 finalize（与 handler upgrade None 行为等价）。
+        upgraded = self._resolve_chat_history_interrupt(
+            interrupt,
+            answers=skipped_answers,
+            status=InterruptStatus.CANCELLED.value,
+        )
+        if upgraded is None:
+            logger.warning(
+                "[AskUserQuestion] skip path upgrade 失败, content_id=%s, 不派发 finalize",
+                interrupt.id,
+            )
+            return
+        self._dispatch_custom(
+            CustomEvent(
+                type=EventType.CUSTOM,
+                name=SessionPersistenceEventNames.AskUserQuestionFinalized.value,
+                value={
+                    "turn_id": turn_id,
+                    "status": InterruptStatus.CANCELLED.value,
+                    "answers": skipped_answers,
+                    "content_id": interrupt.id,
+                    "content": upgraded,
+                    "builtin_property": builtin,
+                },
+            )
+        )
+
+    def _handle_answer_path(self, interrupt: ChatPrompt, answers: list, turn_id: str) -> None:
+        """答题路径：改写 interrupt 为 RESOLVED → 派发 finalize 事件（携带终态 content）。
+
+        upgrade 失败时不派发 finalize 事件（与 skip 路径对称）。
+        """
+        upgraded = self._resolve_chat_history_interrupt(interrupt, answers=answers)
+        if upgraded is None:
+            logger.warning(
+                "[AskUserQuestion] answer path upgrade 失败, content_id=%s, 不派发 finalize",
+                interrupt.id,
+            )
+            return
+        self._dispatch_custom(
+            CustomEvent(
+                type=EventType.CUSTOM,
+                name=SessionPersistenceEventNames.AskUserQuestionFinalized.value,
+                value={
+                    "turn_id": turn_id,
+                    "answers": answers,
+                    "status": InterruptStatus.RESOLVED.value,
+                    "content_id": interrupt.id,
+                    "content": upgraded,
+                    "builtin_property": interrupt.builtin_property or {},
+                },
+            )
+        )
+
+    def _resolve_chat_history_interrupt(
+        self,
+        interrupt: ChatPrompt,
+        *,
+        answers: list,
+        status: str = InterruptStatus.RESOLVED.value,
+    ) -> dict | None:
+        """把传入的 chat_history 末尾 interrupt 记录改写为终态，返回 upgraded content。
+
+        build 期 DB 读（chat_history）已先于本轮的 resolved/skipped 事件发生，若不改写，
+        ``convert_history_to_messages`` 产出的首帧 MESSAGES_SNAPSHOT 里 interrupt
+        卡片仍是 pending，前端无法关闭弹窗。这里把传入的 interrupt 记录 content 升级为
+        ``{"outcome": {type: success, ...}, "result": {...}}``（与 DB 的
+        upgrade_content_to_success 输出一致）。
+
+        调用方必须保证 ``interrupt`` 是 ``chat_history[-1]`` 且 role == INTERRUPT
+        （由 ``AskUserQuestionHandler.validate_resume_consistency`` 校验），
+        避免反向遍历改写到更早的、已终态的 interrupt 记录。
+
+        返回 upgraded content dict 供调用方透传给 finalize 事件（避免 handler 重复
+        调用 ``upgrade_content_to_success``）；结构不识别时返回 None，调用方应跳过
+        finalize 事件派发。
+
+        答题续流用 RESOLVED 状态；跳过路径用 CANCELLED 状态，与 DB 侧 finalize 状态保持一致。
+        """
+        upgraded = AskUserQuestionOutcomeBuilder.upgrade_content_to_success(
+            interrupt.content,
+            status,
+            resume_answers=answers,
+        )
+        if upgraded is not None:
+            interrupt.content = upgraded
+        return upgraded
+
+    def _dispatch_custom(self, event: BaseEvent) -> None:
+        """直调 event_handler 派发已构造好的事件（绕开 SSE 编码循环）。
+
+        事件构造由调用方负责，本方法仅做类型守卫与转发。
+        """
+        if isinstance(self.event_handler, BaseSessionWriter):
+            self.event_handler(event)
+
     def execute(self, execute_kwargs: ExecuteKwargs) -> Generator[str, None, None] | str:
         self.migration_v1()
+        self._prepare_pre_run_history(execute_kwargs)
         if not self.messages:
             self.messages = self.convert_history_to_messages()
         messages = self.messages
@@ -758,7 +950,7 @@ class ChatCompletionAgent(BaseModel):
         # 1. agent_state
         agent_state = agent_e.get_state(cfg)
 
-        # 2. schema_keys — 直接调 utils.py 函数（不依赖 agui_entry）（D-01）
+        # 2. schema_keys — 直接调 utils.py 函数（不依赖 agui_entry）
         schema_keys = get_schema_keys(agent_e, cfg, ["messages", "tools", "copilotkit"])
 
         # 3. forwarded_props 构造（在预处理前）
@@ -766,7 +958,7 @@ class ChatCompletionAgent(BaseModel):
         if execute_kwargs.resume:
             forwarded_props = {"command": {"resume": execute_kwargs.resume}}
 
-        # 4. 预处理（在 agent_input 构造前）（D-02, D-03）
+        # 4. 预处理（在 agent_input 构造前）
         # 11.8: tools/context 不在 _stream 作用域内，原 AgentInput.tools/context 默认为 []（body 不含）
         # tools 通过 AidevAGUIAgent 构造函数传入（graph 挂载），不通过 state 传递
         agui_messages = langchain_messages_to_agui(messages)
@@ -781,7 +973,7 @@ class ChatCompletionAgent(BaseModel):
             schema_keys,
         )
 
-        # 5. body 构造（合并后的 state 直接放进 body["state"]）（D-03）
+        # 5. body 构造（合并后的 state 直接放进 body["state"]）
         body = {
             "thread_id": self.thread_id,
             "run_id": messages[-1].id or uuid.uuid4().hex,
@@ -795,7 +987,7 @@ class ChatCompletionAgent(BaseModel):
         # 6. agent_input 构造（不需要 model_copy）
         agent_input = AgentInput(**body)
 
-        # 7. config 构造：fork merge 到 cfg（D-04）
+        # 7. config 构造：fork merge 到 cfg
         fork = preprocessed["fork"]
         if fork:
             merged_cfg = {
@@ -1541,11 +1733,11 @@ class ChatAgentBuilder:
         # 理由：
         # - member 模式依赖 LangGraph checkpointer + thread_id 续接多轮对话
         # - 若子 Agent 每次新建 MemorySaver，每次 chat_completion 构建的 child 只能看到
-        #   自己这一个 MemorySaver 的历史；而真正的期望是「同一 thread_id 跨父子/成员的
-        #   state 在同一 checkpointer 存取」
+        #  自己这一个 MemorySaver 的历史；而真正的期望是「同一 thread_id 跨父子/成员的
+        #  state 在同一 checkpointer 存取」
         # - 父 ctx.chat.checkpointer 在 factory.py:170 处一定非空（fallback 到 MemorySaver），
-        #   此处直接复用；仅在极端情况下（ctx.chat 为 None 或 checkpointer 缺失）
-        #   fallback，新建实例也仅对当前这一批 subagents 生效
+        #  此处直接复用；仅在极端情况下（ctx.chat 为 None 或 checkpointer 缺失）
+        #  fallback，新建实例也仅对当前这一批 subagents 生效
         parent_chat = self.ctx.chat
         shared_checkpointer = parent_chat.checkpointer
         specs: list[Any] = []
@@ -1597,7 +1789,7 @@ class ChatAgentBuilder:
                 child_config = child_config.model_copy(update={"related_agents": []})
 
                 # 3. 构造子 ChatBuildExtras：与父共享 agent_cls/auth_headers/checkpointer；
-                #    仅 callbacks 隔离避免事件双发
+                #   仅 callbacks 隔离避免事件双发
                 child_chat = ChatBuildExtras(
                     agent_cls=parent_chat.agent_cls if parent_chat is not None else None,
                     callbacks=[],  # 子 Agent 不继承父 callbacks，避免事件双发
@@ -1607,7 +1799,7 @@ class ChatAgentBuilder:
                     checkpointer=shared_checkpointer,  # 共享父 checkpointer，使 member 模式可跨调用续接
                 )
 
-                # 4. 构造子 AgentBuildContext（D-05）
+                # 4. 构造子 AgentBuildContext
                 child_ctx = AgentBuildContext(
                     agent_code=child_agent_code,
                     agent_type=AgentType.CHAT,

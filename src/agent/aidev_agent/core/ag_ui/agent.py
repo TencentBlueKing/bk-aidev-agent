@@ -488,7 +488,7 @@ class LangGraphAgent:
                 yield ev
 
     async def _handle_on_chat_model_stream_event(self, event: Any) -> AsyncGenerator[BaseEvent, None]:
-        """协调器：解析 chunk → ctx + thinking/PredictState + 按 event 类型分发到子方法（D-02）。"""
+        """协调器：解析 chunk → ctx + thinking/PredictState + 按 event 类型分发到子方法。"""
         # 当 front_end_display 为 False 时，跳过OnChatModelStream事件
         if not self.front_end_display:
             return
@@ -546,7 +546,7 @@ class LangGraphAgent:
             and not is_tool_call_start_event
         )
 
-        # thinking 逻辑保留在协调器（D-02：不拆分）
+        # thinking 逻辑保留在协调器（不拆分）
         if reasoning_data:
             for each in self.handle_thinking_event(reasoning_data):
                 yield each
@@ -561,7 +561,7 @@ class LangGraphAgent:
             )
             self.active_run["thinking_process"] = None
 
-        # PredictState 逻辑保留在协调器（D-02：不拆分）
+        # PredictState 逻辑保留在协调器（不拆分）
         if tool_call_used_to_predict_state:
             yield CustomEvent(
                 type=EventType.CUSTOM,
@@ -602,7 +602,7 @@ class LangGraphAgent:
                 yield ev
 
     async def _handle_tool_call_end_stream_event(self, event: Any, ctx: dict) -> AsyncGenerator[BaseEvent, None]:
-        """tool_call_end 分支（D-02 拆分自 _handle_on_chat_model_stream_event）。"""
+        """tool_call_end 分支（ 拆分自 _handle_on_chat_model_stream_event）。"""
         current_stream = ctx["current_stream"]
         yield ToolCallEndEvent(
             type=EventType.TOOL_CALL_END,
@@ -612,7 +612,7 @@ class LangGraphAgent:
         self.messages_in_process[self.active_run["id"]] = None
 
     async def _handle_message_end_stream_event(self, event: Any, ctx: dict) -> AsyncGenerator[BaseEvent, None]:
-        """message_end 分支（D-02 拆分自 _handle_on_chat_model_stream_event）。"""
+        """message_end 分支（ 拆分自 _handle_on_chat_model_stream_event）。"""
         current_stream = ctx["current_stream"]
         yield TextMessageEndEvent(
             type=EventType.TEXT_MESSAGE_END,
@@ -622,7 +622,7 @@ class LangGraphAgent:
         self.messages_in_process[self.active_run["id"]] = None
 
     async def _handle_tool_call_start_stream_event(self, event: Any, ctx: dict) -> AsyncGenerator[BaseEvent, None]:
-        """tool_call_start 分支（D-02 拆分自 _handle_on_chat_model_stream_event）。"""
+        """tool_call_start 分支（ 拆分自 _handle_on_chat_model_stream_event）。"""
         current_stream = ctx["current_stream"]
         has_current_stream = ctx["has_current_stream"]
         is_parallel_tool_switch = ctx["is_parallel_tool_switch"]
@@ -666,7 +666,7 @@ class LangGraphAgent:
             )
 
     async def _handle_tool_call_args_stream_event(self, event: Any, ctx: dict) -> AsyncGenerator[BaseEvent, None]:
-        """tool_call_args 分支（D-02 拆分自 _handle_on_chat_model_stream_event）。"""
+        """tool_call_args 分支（ 拆分自 _handle_on_chat_model_stream_event）。"""
         current_stream = ctx["current_stream"]
         tool_call_data = ctx["tool_call_data"]
         yield ToolCallArgsEvent(
@@ -677,7 +677,7 @@ class LangGraphAgent:
         )
 
     async def _handle_message_content_stream_event(self, event: Any, ctx: dict) -> AsyncGenerator[BaseEvent, None]:
-        """message_content 分支（D-02 拆分自 _handle_on_chat_model_stream_event）。"""
+        """message_content 分支（ 拆分自 _handle_on_chat_model_stream_event）。"""
         current_stream = ctx["current_stream"]
         message_content = ctx["message_content"]
 

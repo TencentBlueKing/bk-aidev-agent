@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""KNOWLEDGE_RAG_RESULT 事件透传 + DB 写入回归测试（D-14/D-15/D-06）。
+"""KNOWLEDGE_RAG_RESULT 事件透传 + DB 写入回归测试。
 
 覆盖三个层次：
 a. SSE 侧：_dispatch_event 纯分发，CUSTOM 透传不转换（转换在 _handle_on_custom_event 覆写中）
@@ -65,30 +65,30 @@ class _ConcreteSessionWriter(BaseSessionWriter):
 # ---------- a. SSE 侧透传测试 ----------
 
 
-# ---------- a2. D-06 透传验证测试 ----------
+# ---------- a2. 透传验证测试 ----------
 
 
 class TestConvertEventD06Passthrough:
-    """D-06/D-02/13.6：验证已删除的转换方法确实不存在（回归防护）。
+    """验证已删除的转换方法确实不存在（回归防护）。
 
     _convert_event / _convert_raw_event / _convert_custom_event / _convert_tool_call_start
-    均已删除（Phase 13.6 D-01 + 前序阶段），_dispatch_event 简化为纯分发。
+    均已删除（前序阶段），_dispatch_event 简化为纯分发。
     """
 
     def test_convert_custom_event_method_deleted(self):
-        """D-06 后 CUSTOM 转换方法已删除（不存在于实例或类上）。"""
+        """CUSTOM 转换方法已删除（不存在于实例或类上）。"""
         assert not hasattr(AidevAGUIAgent, "_convert_custom_event")
         agent = AidevAGUIAgent.__new__(AidevAGUIAgent)
         assert not hasattr(agent, "_convert_custom_event")
 
     def test_convert_tool_call_start_method_deleted(self):
-        """D-02 后 _convert_tool_call_start 方法已删除。"""
+        """_convert_tool_call_start 方法已删除。"""
         assert not hasattr(AidevAGUIAgent, "_convert_tool_call_start")
         agent = AidevAGUIAgent.__new__(AidevAGUIAgent)
         assert not hasattr(agent, "_convert_tool_call_start")
 
     def test_convert_event_and_convert_raw_event_deleted(self):
-        """Phase 13.6 D-01：_convert_event + _convert_raw_event 方法已删除。"""
+        """_convert_event + _convert_raw_event 方法已删除。"""
         assert not hasattr(AidevAGUIAgent, "_convert_event")
         assert not hasattr(AidevAGUIAgent, "_convert_raw_event")
         agent = AidevAGUIAgent.__new__(AidevAGUIAgent)

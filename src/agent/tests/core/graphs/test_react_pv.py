@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from aidev_agent.core.nodes.pv import add_pv_info
@@ -69,8 +70,6 @@ def test_should_continue_empty_messages():
 
 def _read_graph_source() -> str:
     """读取 graph.py 源码，避免直接导入带来环境兼容问题。"""
-    from pathlib import Path
-
     graph_path = Path(__file__).resolve().parents[3] / "aidev_agent" / "core" / "graphs" / "react" / "graph.py"
     return graph_path.read_text(encoding="utf-8")
 

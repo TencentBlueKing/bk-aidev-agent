@@ -152,20 +152,6 @@ class TestTaskJudgment:
         ]
         assert gate._extract_last_human_input(messages) == "第二个问题"
 
-    def test_judge_think_block_stripped(self):
-        mock_llm = Mock()
-        mock_llm.invoke.return_value = AIMessage(content="已完成")
-        gate = QualityGate(judge_llm=mock_llm, enable_judge_response=True)
-        think_content = "<think>admiration</think>visible answer"
-        response = AIMessage(content=think_content)
-        ctx = _make_ctx(response)
-        gate.validate_response(ctx)
-        # 验证传给判断 LLM 的 HumanMessage 不含 think 块
-        call_args = mock_llm.invoke.call_args[0][0]
-        human_msg = next(m for m in call_args if isinstance(m, HumanMessage))
-        assert "admiration" not in human_msg.content
-        assert "visible answer" in human_msg.content
-
 
 class TestEnableJudgeResponseSwitch:
     """测试 enable_judge_response 开关。"""

@@ -22,7 +22,13 @@ from typing import Any, Callable
 from ag_ui.core import BaseEvent, CustomEvent, EventType, RunErrorEvent
 from ag_ui.core.events import RawEvent, TextMessageContentEvent, TextMessageEndEvent, TextMessageStartEvent
 
-from aidev_agent.core.ag_ui.ask_user_question import ASK_USER_QUESTION_REASON, AskUserQuestionHandler
+from aidev_agent.core.ag_ui.ask_user_question import (
+    ASK_USER_QUESTION_REASON,
+    AskUserQuestionHandler,
+    InterruptStatus,
+    build_updated_builtin_property,
+    extract_message_id,
+)
 from aidev_agent.core.ag_ui.event_builders import build_model_end_payload, should_switch_thinking_step
 from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
 from aidev_agent.core.ag_ui.types import (
@@ -214,6 +220,10 @@ class BaseSessionWriter(ABC):
             self.handle_model_end(event)
         elif event_name == SessionPersistenceEventNames.ArtifactsGenerated.value:
             self.handle_artifacts_generated(event)
+        elif event_name == SessionPersistenceEventNames.AskUserQuestionFinalized.value:
+            self.handle_ask_user_question_finalize(event)
+        elif event_name == SessionPersistenceEventNames.UserInputSaved.value:
+            self.handle_user_input_saved(event)
         elif event_name == CustomMessageType.KNOWLEDGE_RAG_RESULT.value:
             self.handle_reference_document(event)
         elif event_name == CustomMessageType.FLOW_AGENT_START.value:
@@ -222,6 +232,76 @@ class BaseSessionWriter(ABC):
             self.handle_flow_agent_result(event)
         elif event_name == CustomMessageType.FLOW_AGENT_END.value:
             self.handle_flow_agent_end(event)
+
+    def handle_ask_user_question_finalize(self, event) -> None:
+        """处理 ask_user_question 跳过/答题事件（终态由 chat.py 预构造后透传）。
+
+        所有决策与协议计算在 chat.py 完成：status（cancelled/resolved）、answers
+        （skipped answers 或用户答案）、终态 content（已由 chat.py 调
+        ``upgrade_content_to_success`` 升级）均经事件 value 传入。跳过路径的 tool
+        记录由 chat.py 显式派发 TOOL_CALL_RESULT 事件（handle_tool_call_result）写入，
+        本 handler 仅负责把 interrupt 记录 UPDATE 为指定终态（extract message_id →
+        build builtin_property → UPDATE），不再重复调用 upgrade_content_to_success。
+        """
+        value = event.value if isinstance(event.value, dict) else {}
+        bp = value.get("builtin_property") if isinstance(value.get("builtin_property"), dict) else {}
+        try:
+            content_id = value.get("content_id")
+            if content_id is None:
+                logger.warning(
+                    "[AskUserQuestion] finalize: 事件缺 content_id, 无法定位 interrupt, session=%s",
+                    self.session_code,
+                )
+                return
+            upgraded = value.get("content")
+            if not isinstance(upgraded, dict):
+                logger.warning(
+                    "[AskUserQuestion] finalize: 事件缺终态 content, content_id=%s",
+                    content_id,
+                )
+                return
+            status = value.get("status") or InterruptStatus.RESOLVED.value
+            message_id = extract_message_id(upgraded)
+            db_item_adapter = {"property": {"builtin_property": bp}}
+            updated_builtin = build_updated_builtin_property(db_item_adapter, message_id, status)
+            self._do_update_content(
+                content_id=content_id,
+                payload={
+                    "content": upgraded,
+                    "status": "complete",
+                    "property": {
+                        "builtin_property": updated_builtin,
+                        "turn_id": value.get("turn_id") or "",
+                    },
+                },
+                headers=self._get_headers(),
+            )
+            logger.info(
+                "[AskUserQuestion] finalize: content_id=%s, status=%s, message_id=%s, answers=%d",
+                content_id,
+                status,
+                message_id,
+                len(value.get("answers") or []),
+            )
+        except Exception:
+            logger.exception("[AskUserQuestion] finalize 失败: session=%s", self.session_code)
+
+    def handle_user_input_saved(self, event) -> None:
+        """处理 user 输入落库事件（所有带 input 路径）：直调 _do_create_content 写 user 记录。"""
+        value = event.value if isinstance(event.value, dict) else {}
+        try:
+            self._do_create_content(
+                payload={
+                    "session_code": self.session_code,
+                    "role": PromptRole.USER.value,
+                    "content": value.get("content") or "",
+                    "status": "success",
+                    "property": {"turn_id": value.get("turn_id") or ""},
+                },
+                headers=self._get_headers(),
+            )
+        except Exception:
+            logger.exception("[AskUserQuestion] user 落库失败: session=%s", self.session_code)
 
     # ---------- 事件处理方法 ----------
 
@@ -544,7 +624,7 @@ class BaseSessionWriter(ABC):
                 serialized_reason = serialized.get("reason")
 
                 if serialized_reason == ASK_USER_QUESTION_REASON:
-                    # ask_user_question 路径：启用 extract_builtin_property（D-02）
+                    # ask_user_question 路径：启用 extract_builtin_property
                     # 字段集：questions/options/answers/multiSelect（无 callback_token/ticket_sn/tool_name）
                     builtin_property = AskUserQuestionHandler().extract_builtin_property(
                         interrupt_id, interrupt, graph_thread_id=getattr(event, "thread_id", "")
@@ -597,8 +677,9 @@ class BaseSessionWriter(ABC):
                     builtin_property=builtin_property,
                 )
         elif outcome and outcome_type != "interrupt":
-            # ask_user_question 续流的 DB 写入由 AGUISessionWriter.handle_run_finished
-            # 的 _handle_ask_user_question_resume_finished 完成（消费 RunFinishedEvent）。
+            # ask_user_question 续流的 DB 终态写入由 agent 侧 ChatCompletionAgent.execute()
+            # 前置派发的会话回写事件负责（handle_ask_user_question_finalize），
+            # SSE 层不再承担 DB 写入职责（对齐"谁产生谁写入"原则）。
             # approval 的 interrupt 状态由审批回调 API 更新。
             logger.info(
                 "[handle_run_finished] outcome != interrupt, session_code=%s, outcome_type=%s",

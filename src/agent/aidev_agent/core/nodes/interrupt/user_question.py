@@ -23,11 +23,11 @@ ASK_USER_QUESTION_TOOL_NAME = "ask_user_question"
 class UserQuestionStrategy:
     """ask_user_question 中断策略 —— 封装「向用户提问」的中断全流程。
 
-    中断从 tools 节点 wrapper 移到 ``approval_check`` 节点统一处理（D-02）。
+    中断从 tools 节点 wrapper 移到 ``approval_check`` 节点统一处理。
     续流后写 state 返回 ``Command(goto="pv_node")``，让 ToolNode 执行
-    ask_user_question 工具函数产生工具返回值（D-06 + D-08）。
+    ask_user_question 工具函数产生工具返回值（ + ）。
 
-    策略实例无 ``__init__``，所有中间变量为 ``interrupt`` 方法内局部变量（D-09）。
+    策略实例无 ``__init__``，所有中间变量为 ``interrupt`` 方法内局部变量。
     """
 
     reason = ASK_USER_QUESTION_REASON  # "aidev:user_question"
@@ -35,7 +35,7 @@ class UserQuestionStrategy:
     def interrupt(self, state: dict, config: RunnableConfig) -> Command | None:
         """ask_user_question 中断策略主入口。
 
-        ``make_interrupt_node`` 已做 D-04 前置检查（messages 非空且末尾
+        ``make_interrupt_node`` 已做  前置检查（messages 非空且末尾
         为含 tool_calls 的 AIMessage）。
 
         Returns:
@@ -87,10 +87,10 @@ class UserQuestionStrategy:
             str(resolved_answer)[:200] if resolved_answer else "None",
         )
 
-        # D-07：写入 state 供 ask_user_question 工具函数读取（不再直接返回工具消息，D-06）
+        # 写入 state 供 ask_user_question 工具函数读取（不再直接返回工具消息，）
         return Command(
             update={"ask_user_question_answers": {tool_call_id: resolved_answer}},
-            goto="pv_node",  # D-06：走 pv_node → tools 让 ToolNode 执行工具函数入库
+            goto="pv_node",  # 走 pv_node → tools 让 ToolNode 执行工具函数入库
         )
 
 

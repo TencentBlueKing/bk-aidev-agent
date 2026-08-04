@@ -4,7 +4,7 @@
 公开用法::
 
     runner = build_bkplugin_runner(...)
-    output  = runner.execute()         # 同步：返回 Chat / Flow 输出
+    output  = runner.execute()  # 同步：返回 Chat / Flow 输出
     storage = runner.dispatch_async()  # 流式：投递 Celery 后返回 POLL storage
 
 文件结构：
@@ -171,7 +171,7 @@ class BkpluginAgentRunner(ABC):
         """子类实现：实际投递 Celery 任务。"""
 
     def execute(self) -> str:
-        """同步执行 Agent，返回最终 AI 回复字符串；异常时写回失败状态 (D-01)。"""
+        """同步执行 Agent，返回最终 AI 回复字符串；异常时写回失败状态 。"""
         try:
             return self._do_execute()
         except RetryableHeartbeatTimeoutError:
@@ -196,7 +196,7 @@ class BkpluginAgentRunner(ABC):
             raise
 
     def dispatch_async(self) -> dict:
-        """投递 Celery 后台任务并返回 POLL storage；投递失败时写回失败状态 (D-01)。"""
+        """投递 Celery 后台任务并返回 POLL storage；投递失败时写回失败状态 。"""
         try:
             return self._do_dispatch_async()
         except Exception as e:

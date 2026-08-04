@@ -4,7 +4,7 @@
 本文件证明：
 
 1. ask_user_question interrupt 端到端可用（outcome builder 构造正确、
-   hydrate 不动 payload D-06、完整往返 answer 一致）；
+   hydrate 不动 payload 、完整往返 answer 一致）；
 2. approval 行为零回归（ApprovalOutcomeBuilder 续流终态形态构造正确，
    approval 首帧回放仍触发）。
 
@@ -48,7 +48,7 @@ def _ask_user_question_interrupt_dict() -> dict:
         "reason": ASK_USER_QUESTION_REASON,  # "aidev:user_question"
         "message": "需要用户回答：What?",
         "toolCallId": "call1",
-        "expiresAt": "2026-06-01T23:59:59+08:00",  # D-05
+        "expiresAt": "2026-06-01T23:59:59+08:00",  #
         "metadata": {
             "type": "ask_user_question",
             "status": "pending",
@@ -117,7 +117,7 @@ def test_ask_user_question_outcome_builder_resolved():
     assert outcome["interrupts"][0]["metadata"]["status"] == "resolved"
     assert result["id"] == "int-question-call1-abc"
     assert result["interruptId"] == "int-question-call1-abc"
-    # D-06/D-07: payload.answers 结构（协议 success 格式，非 metadata 透传）
+    # /payload.answers 结构（协议 success 格式，非 metadata 透传）
     assert result["payload"]["answers"] == [{"question": "What?", "answer": [{"label": "A", "description": "选项A"}]}]
     # 顶层 status（协议新增）
     assert result["status"] == "resolved"
@@ -143,7 +143,7 @@ def test_ask_user_question_outcome_builder_cancelled():
 
 @pytest.mark.asyncio
 async def test_approval_resume_still_emits_first_frame_finished(monkeypatch):
-    """回归（D-14）：approval interrupt 续流仍发出首帧 RUN_FINISHED。"""
+    """回归：approval interrupt 续流仍发出首帧 RUN_FINISHED。"""
     monkeypatch.setattr(LangGraphAGUIAgent, "run", _fake_parent_run_normal)
 
     agent = AidevAGUIAgent(
@@ -198,12 +198,12 @@ async def test_unknown_reason_resume_does_not_emit_first_frame_finished(monkeypa
 
 
 # --------------------------------------------------------------------------- #
-# 测试 6：AskUserQuestionHandler.hydrate_resume 不动 payload（D-06）
+# 测试 6：AskUserQuestionHandler.hydrate_resume 不动 payload
 # --------------------------------------------------------------------------- #
 
 
 def test_ask_user_question_hydrate_preserves_payload():
-    """D-06：hydrate_resume 设置 status 但不触碰 payload，payload.answers 被保留。"""
+    """hydrate_resume 设置 status 但不触碰 payload，payload.answers 被保留。"""
     handler = AskUserQuestionHandler()
     items = [
         {
@@ -214,7 +214,7 @@ def test_ask_user_question_hydrate_preserves_payload():
     ]
     handler.hydrate_resume(items, "resolved")
 
-    # payload 未被触碰（D-06）
+    # payload 未被触碰
     assert items[0]["payload"]["answers"] == [
         {"question": "Pick one", "answer": [{"label": "A", "description": "选项A"}]}
     ]
@@ -227,7 +227,7 @@ def test_ask_user_question_hydrate_preserves_payload():
 
 
 def test_ask_user_question_extract_builtin_property():
-    """extract_builtin_property 返回 questions、options、answers、multiSelect 字段（D-02 字段名对齐）。"""
+    """extract_builtin_property 返回 questions、options、answers、multiSelect 字段（ 字段名对齐）。"""
     handler = AskUserQuestionHandler()
     interrupt = {
         "id": "int-question-c1-abc",
@@ -277,12 +277,12 @@ def test_ask_user_question_extract_builtin_property():
 
 
 def test_ask_user_question_full_roundtrip_preserves_answer():
-    """完整往返：answers 在整个管道中被保留（D-06 + D-07 + D-02）。
+    """完整往返：answers 在整个管道中被保留（ +  + ）。
 
     流程：
     1. handler.build_payload 构造 pending 态 interrupt（questions 数组）
     2. 前端提交 ResumeItem（payload.answers = [...]）
-    3. handler.hydrate_resume 仅补 status，不动 payload（D-06）
+    3. handler.hydrate_resume 仅补 status，不动 payload
     4. handler.outcome_builder.build_run_finished_payload 构造终态形态
     → answers 在 result.payload.answers 中被保留（协议 success 格式）
     """
@@ -308,7 +308,7 @@ def test_ask_user_question_full_roundtrip_preserves_answer():
     db_interrupt = copy.deepcopy(payload)
     db_interrupt["metadata"]["answers"] = submitted_answers
 
-    # 3. hydrate_resume 仅补 status，不动 payload（D-06）
+    # 3. hydrate_resume 仅补 status，不动 payload
     original_payload = copy.deepcopy(resume_items[0]["payload"])
     handler.hydrate_resume(resume_items, "resolved")
     assert resume_items[0]["payload"] == original_payload  # payload 未变
@@ -509,7 +509,7 @@ async def test_resume_first_frame_result_answers_from_resume_payload(monkeypatch
         f"({expected_answers})，实际: {result_dict.get('payload', {}).get('answers')}"
     )
 
-    # Phase 14.2: MESSAGES_SNAPSHOT 已取消（D-03），仅保留首帧 MESSAGES_SNAPSHOT
+    # Phase 14.2: MESSAGES_SNAPSHOT 已取消，仅保留首帧 MESSAGES_SNAPSHOT
     messages_snapshots = [p for p in payloads if p["type"] == EventType.MESSAGES_SNAPSHOT.value]
     assert len(messages_snapshots) >= 1, (
         f"应至少有 1 个 MESSAGES_SNAPSHOT（首帧），实际: {len(messages_snapshots)}"

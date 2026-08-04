@@ -8,6 +8,7 @@ from aidev_agent.pydantic_models import ChatPrompt, ExecuteKwargs
 from aidev_agent.services.agent import AgentInstanceFactory
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.services.messages_handler import ConsumerPreemptedError, StreamCancelledError
+from aidev_agent.services.messages_handler.streaming_helper import GeneratorStreamingHelper
 from blueapps.core.exceptions import ClientBlueException
 from django.http.response import StreamingHttpResponse
 from rest_framework.views import Response
@@ -123,9 +124,15 @@ class ChatCompletionViewSet(PluginViewSet):
             # session_code 必为真。保留显式校验仅作为不变式被破坏时的防御性兜底。
             if not session_code:
                 raise ClientBlueException(message="session_code or thread_id is required")
-            turn_id = self._save_user_input(session_code, username, _input, turn_id)
+            # ask_user_question interrupt resume 三态处理的 DB 写入已下沉到 agent 侧
+            # ChatCompletionAgent.execute()（提交 1），入口层只产出 turn_id 并透传 _input。
+            # 1. resume + input → 用户跳过提问（agent 侧补 tool + cancel interrupt，清空 resume）
+            # 2. resume + 无 input → 用户答了题（agent 侧 UPDATE interrupt 为 resolved）
+            # 3. 无 resume → 普通新对话（agent 侧补 user 记录）
+            turn_id = self._resolve_chat_turn_id(session_code, username, _input, turn_id)
             if hasattr(execute_kwargs, "turn_id"):
                 execute_kwargs.turn_id = turn_id
+            execute_kwargs.input = _input
             # 模型热更新持久化：model 非空时写回 session.resources.model，使 get session 反映当前模型
             # 写回失败不阻塞 chat 主流程（平台 5xx/网络抖动时仅记录日志）
             model = data.get("model", "")
@@ -266,6 +273,24 @@ class ChatCompletionViewSet(PluginViewSet):
             if resolved:
                 return resolved
         return ""
+
+    @staticmethod
+    def _resolve_chat_turn_id(session_code: str, username: str, _input: str, turn_id: str = "") -> str:
+        """产出本轮 user-ai 回复的 turn_id（三分支，必须保序）。
+
+        1. 已有 turn_id → 直接复用
+        2. 无输入（答题续流）→ 从最近一条 user 记录继承同轮 turn_id
+        3. 否则 → 新生成 uuid4
+
+        注意：本方法只产出 turn_id，不持久化 user 内容（与 ``_save_user_input``
+        不同）。user 落库由 agent 侧 ``ChatCompletionAgent.execute()`` 的
+        ``UserInputSaved`` 事件负责。
+        """
+        if turn_id:
+            return turn_id
+        if not _input:
+            return ChatCompletionViewSet._resolve_turn_id(session_code, username, turn_id)
+        return uuid.uuid4().hex
 
     def _handle_flow_agent(
         self,
@@ -441,12 +466,9 @@ class ChatCompletionViewSet(PluginViewSet):
             raise
         finally:
             # 注意：cancel 信号可能在 finally 之前就被清理了，因此需要先检查
-            if not _cancelled and session_code:
-                from aidev_agent.services.messages_handler.streaming_helper import GeneratorStreamingHelper
-
-                if GeneratorStreamingHelper.is_cancelled(session_code):
-                    _cancelled = True
-                    logger.info(f"[WRAP_STATUS] Generator结束后检测到取消标志: session_code={session_code}")
+            if not _cancelled and session_code and GeneratorStreamingHelper.is_cancelled(session_code):
+                _cancelled = True
+                logger.info(f"[WRAP_STATUS] Generator结束后检测到取消标志: session_code={session_code}")
             if _stream_completed and not _preempted and not _client_disconnected and not _cancelled:
                 logger.info(f"[WRAP_STATUS] 流正常结束, 调用 set_streaming_finished: session_code={session_code}")
                 event_handler.set_streaming_finished()

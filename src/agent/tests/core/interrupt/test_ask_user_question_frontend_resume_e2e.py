@@ -351,11 +351,21 @@ async def test_resume_with_frontend_dict_format_updates_interrupt():
         config=merged_cfg2,
         tools={},
         # 与 chat.py 主流程对称：从 graph state 查 ask_user_question interrupts，
-        # 使 _build_resume_ask_user_question_finished_event 能触发 ACTIVITY_SNAPSHOT 事件，
-        # 经 _dispatch_event 派发给 writer 的 handle_activity_snapshot
+        # 使 _build_resume_ask_user_question_finished_event 能触发 ACTIVITY_SNAPSHOT 事件推前端。
         ask_user_question_interrupts=_extract_ask_user_question_interrupts(graph, config),
     )
     chunks2 = [chunk async for chunk in agui2.run(agent_input2)]  # noqa: F841
+
+    # 验证续流事件流：不应出现重复的 TOOL_CALL_START/ARGS/END（中断前已发到前端），
+    # 只应出现 TOOL_CALL_RESULT（由 OnToolNodeFinish 路径独立产出）。
+    tool_call_starts = [c for c in chunks2 if '"type":"TOOL_CALL_START"' in c]
+    tool_call_args = [c for c in chunks2 if '"type":"TOOL_CALL_ARGS"' in c]
+    tool_call_ends = [c for c in chunks2 if '"type":"TOOL_CALL_END"' in c]
+    tool_call_results = [c for c in chunks2 if '"type":"TOOL_CALL_RESULT"' in c]
+    assert not tool_call_starts, f"续流不应有 TOOL_CALL_START，实际: {tool_call_starts}"
+    assert not tool_call_args, f"续流不应有 TOOL_CALL_ARGS，实际: {tool_call_args}"
+    assert not tool_call_ends, f"续流不应有 TOOL_CALL_END，实际: {tool_call_ends}"
+    assert len(tool_call_results) == 1, f"续流应有 1 条 TOOL_CALL_RESULT，实际: {len(tool_call_results)}"
 
     # 检查 DB 中 interrupt 记录是否被更新
     db_after_resume = list(mock_client.api._contents)
@@ -376,8 +386,11 @@ async def test_resume_with_frontend_dict_format_updates_interrupt():
     elif isinstance(content, str):
         print(f"  content (str): {content[:100]}")
 
-    assert interrupt_after[0]["status"] != "pending", (
-        f"interrupt 记录仍为 pending（未更新为 resolved），status={interrupt_after[0]['status']}"
+    # SSE 层不再承担 DB 写入职责，interrupt 终态由 agent 侧 ChatCompletionAgent.execute()
+    # 前置派发的会话回写事件（handle_ask_user_question_finalize）负责。
+    # 本 e2e 测试仅模拟 SSE 层（不经 execute()），因此 interrupt 记录应仍为 pending（SSE 层不写 DB）。
+    assert interrupt_after[0]["status"] == "pending", (
+        f"SSE 层不应更新 interrupt 终态，status 应仍为 pending，实际: {interrupt_after[0]['status']}"
     )
 
 

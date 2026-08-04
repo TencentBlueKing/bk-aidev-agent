@@ -60,6 +60,7 @@ from aidev_agent.core.nodes.tool import ToolNodeSettings, build_tool_node
 from aidev_agent.core.tools.a2a_tools.bkai_backend import BkaiBackend
 from aidev_agent.core.tools.a2a_tools.local_backend import LocalBackend
 from aidev_agent.core.tools.a2a_tools.provider import AgentBackendResolver, get_agent_tools
+from aidev_agent.core.tools.ask_user_question import ask_user_question as _ask_user_question_tool
 from aidev_agent.core.tools.knowledge import make_knowledge_retrieval_tool
 from aidev_agent.core.tools.runtime_tools import get_client_tools_with_runtime
 from aidev_agent.core.tools.runtime_tools.e2b_backend import E2BSandboxBackend
@@ -120,7 +121,7 @@ class DefaultState(TypedDict):
     knowledge_qa_content: list
     with_qa_response: list
     runtime_paas_sbx_pv: Annotated[list[dict], add_pv_info]
-    # ask_user_question 中断策略写入的用户答案（D-07），无 reducer 直接覆盖。
+    # ask_user_question 中断策略写入的用户答案，无 reducer 直接覆盖。
     # UserQuestionStrategy.interrupt 续流时写入 {tool_call_id: resolved_answer}，
     # ask_user_question 工具函数通过 InjectedState 读取。
     ask_user_question_answers: dict[str, Any]
@@ -404,11 +405,11 @@ class ReActAgentBuilder:
         return self
 
     def set_enable_ask_user_question_tool(self, enable: bool = True) -> "ReActAgentBuilder":
-        """启用/禁用 ask_user_question 工具（D-02, D-03）。
+        """启用/禁用 ask_user_question 工具。
 
         默认开启。业务侧可通过 ``builder.set_enable_ask_user_question_tool(False)``
         关闭。工具注册到 tool_node，LLM 调用时内部通过 ``interrupt()`` 暂停图执行，
-        等待用户回答（D-01）。
+        等待用户回答。
         """
         self._enable_ask_user_question_tool = bool(enable)
         return self
@@ -517,7 +518,6 @@ class ReActAgentBuilder:
             self._llm = options.llm
         if options.non_thinking_llm is not None:
             self._non_thinking_llm = options.non_thinking_llm
-            self._knowledge_llm = options.non_thinking_llm
         if options.fast_llm is not None:
             self._fast_llm = options.fast_llm
         if options.knowledge_llm is not None:
@@ -625,13 +625,33 @@ class ReActAgentBuilder:
                 knowledge_settings.enable_query_clarification = self._enable_query_clarification
         self._knowledge_query_options = knowledge_settings
 
+        # 若配置了知识库/知识项，则需要 knowledge_llm
+        # build() 入口已对 self._knowledge_llm 做回退（knowledge_llm or non_thinking_llm or llm），
+        # 此处校验回退后的值是否仍为空（即三者都未配置）
+        has_knowledge = bool(self._knowledge_query_options and self._knowledge_query_options.knowledge_bases) or bool(
+            self._knowledge_query_options and self._knowledge_query_options.knowledge_items
+        )
+        if has_knowledge and self._knowledge_llm is None:
+            raise ValueError("ReActAgentBuilder 构建失败：检测到知识库配置，但 knowledge_llm 为空")
+
+        # runtime_tool 合法性校验
+        if self._enable_runtime_tool and self._runtime_backend_resolver is None:
+            raise ValueError(
+                "ReActAgentBuilder 构建失败：启用了 runtime_tool 但未提供 runtime_backend_resolver，"
+                "请通过 AgentExecutorKwargs.runtime_backend_resolver 传入"
+            )
+
     def _prepare_agent_knowledge_node(
         self, *, knowledge_llm, knowledge_query_options: KnowledgeSettings | None, chat_history
     ):
         if knowledge_query_options is None:
             return None
+        # 判断使用哪种 RAG 模式：未启用 enable_knowledge_node 时不构造独立节点
+        if not knowledge_query_options.enable_knowledge_node:
+            return None
         has_knowledge = knowledge_query_options.knowledge_bases or knowledge_query_options.knowledge_items
         if has_knowledge:
+            logger.info("[ReActAgentBuilder] 两步RAG 模式已启用，使用独立的knowledge节点")
             return make_knowledge_node(
                 llm=knowledge_llm,
                 knowledge_query_options=knowledge_query_options,
@@ -724,6 +744,10 @@ class ReActAgentBuilder:
         middleware_tools = [t for m in langchain_middleware for t in getattr(m, "tools", [])]
         tools.extend(middleware_tools)
 
+        # ask_user_question 工具注入
+        if self._enable_ask_user_question_tool:
+            tools.append(_ask_user_question_tool)
+
         # 加载 SKILL 工具
         if self._enable_skills and self._skill_registry is not None:
             tools.append(self._skill_registry.get_activate_skill_tool())
@@ -772,7 +796,6 @@ class ReActAgentBuilder:
         - 将 activate_skill 工具与 prompt middleware 所需的 registry 写入 self._skill_registry
         - 为每个 skill 根据其 runtime 创建并注册独立 backend 到 self._runtime_backend_resolver
         """
-
         registry = SkillRegistry(self._skill_sources or [])
         self._skill_registry = registry
         resolver = self._runtime_backend_resolver
@@ -818,6 +841,42 @@ class ReActAgentBuilder:
         for backend_type_name, backend_cls in self._a2a_backend_types.items():
             resolver.register(backend_type_name, backend_cls)
         self._a2a_resolver = resolver
+
+    def _prepare_agent_pv_node(self):
+        """构造 PV Node，用于惰性创建/获取持久卷。
+
+        仅在启用 paas_sandbox runtime 时注入真实的 BkPaaSSandboxApi client；
+        否则仍返回 pv_node callable（无 PV 支持），保持图结构一致。
+
+        Returns:
+            pv_node callable
+        """
+        paas_client = None
+        paas_app_code = ""
+        if self._enable_runtime_tool and "paas_sandbox" in self._runtime_types:
+            executor_info = self._executor_info or {}
+            paas_app_code = executor_info.get("app_code", "")
+            if paas_app_code and self._resource_manager is not None:
+                paas_client = self._resource_manager.get_paas_sbx_client(executor_info)
+        return make_pv_node(
+            client=paas_client,
+            app_code=paas_app_code,
+            resource_manager=self._resource_manager,
+        )
+
+    def _prepare_agent_interrupt_node(self, *, tools: List[BaseTool]):
+        """构造中断检查节点 (approval_check)。
+
+        默认实现组合 ItsmApprovalStrategy + UserQuestionStrategy；
+        子类可重写以定制审批/中断策略，无需重写 _build_graph。
+
+        Args:
+            tools: 当前图绑定的工具列表，用于 ItsmApprovalStrategy 匹配 tool_call。
+
+        Returns:
+            由 make_interrupt_node 构造的可调用节点。
+        """
+        return make_interrupt_node([ItsmApprovalStrategy(tools), UserQuestionStrategy()])
 
     def _prepare_agent_tool_node(
         self,
@@ -898,28 +957,6 @@ class ReActAgentBuilder:
             return schemas[0]
         return _resolve_task_state_schema(schemas)
 
-    def _prepare_agent_pv_node(self):
-        """构造 PV Node，用于惰性创建/获取持久卷。
-
-        仅在启用 paas_sandbox runtime 时注入真实的 BkPaaSSandboxApi client；
-        否则仍返回 pv_node callable（无 PV 支持），保持图结构一致。
-
-        Returns:
-            pv_node callable
-        """
-        paas_client = None
-        paas_app_code = ""
-        if self._enable_runtime_tool and "paas_sandbox" in self._runtime_types:
-            executor_info = self._executor_info or {}
-            paas_app_code = executor_info.get("app_code", "")
-            if paas_app_code and self._resource_manager is not None:
-                paas_client = self._resource_manager.get_paas_sbx_client(executor_info)
-        return make_pv_node(
-            client=paas_client,
-            app_code=paas_app_code,
-            resource_manager=self._resource_manager,
-        )
-
     @staticmethod
     def _should_continue(state: dict) -> Literal["approval_check", "end"]:
         """条件路由函数：决定 model 节点后的下一步。
@@ -948,7 +985,6 @@ class ReActAgentBuilder:
     def _build_graph(
         self,
         *,
-        knowledge_settings: KnowledgeSettings,
         state_schema,
         callbacks: List,
         debug: bool,
@@ -962,6 +998,7 @@ class ReActAgentBuilder:
         model_node,
         tool_node,
         pv_node=None,
+        interrupt_node=None,
         tools: "List[BaseTool] | None" = None,
     ) -> Tuple["Runnable", RunnableConfig]:
         """构建 LangGraph 图。
@@ -972,7 +1009,6 @@ class ReActAgentBuilder:
         - 如果有工具: model → (条件) → pv_node / END, pv_node → tools → model
 
         Args:
-            knowledge_settings: 知识库检索配置
             state_schema: 状态模式
             callbacks: 回调列表
             debug: 是否开启调试模式
@@ -986,6 +1022,7 @@ class ReActAgentBuilder:
             model_node: 模型节点
             tool_node: 工具节点
             pv_node: PV 节点 callable，由 _prepare_agent_pv_node 构造
+            interrupt_node: 中断检查节点 callable，由 _prepare_agent_interrupt_node 构造
 
         Returns:
             (CompiledGraph, RunnableConfig) 元组
@@ -1012,8 +1049,7 @@ class ReActAgentBuilder:
         if tool_node:
             graph.add_node("pv_node", pv_node)
             graph.add_node("tools", tool_node)
-            approval_check_func = make_interrupt_node([ItsmApprovalStrategy(tools), UserQuestionStrategy()])
-            graph.add_node("approval_check", approval_check_func)
+            graph.add_node("approval_check", interrupt_node)
             # model → (should_continue) → approval_check / end
             graph.add_conditional_edges(
                 "model",
@@ -1058,52 +1094,21 @@ class ReActAgentBuilder:
             raise ValueError("ReActAgentBuilder 构建失败：缺少 llm，请先调用 set_llm(...) 或 set_bkai_options(...)")
         callbacks = list(self._callbacks or [])
         non_thinking_llm = self._non_thinking_llm or self._llm
-        # 判断 LLM：仅使用显式配置的 fast_llm；未配置时为 None（fail-open）。
-        # 不回退到 non_thinking_llm/llm——判断模型是独立的轻量模型，
-        # 回退到主模型会导致每次正常响应多一次主模型调用。
-        judge_llm = self._fast_llm
+        # judge_llm 回退到 non_thinking_llm / 主 llm，未配置 non_thinking_llm 时使用主 llm
+        judge_llm = self._fast_llm or self._non_thinking_llm or self._llm
+        # knowledge_llm 回退链：显式配置 -> non_thinking_llm -> llm
+        # 模型配置集中在 build 入口，便于排查问题
+        self._knowledge_llm = self._knowledge_llm or self._non_thinking_llm or self._llm
 
         self._prepare_agent_options()
 
-        # 若配置了知识库/知识项，则需要 knowledge_llm
-        has_knowledge = bool(self._knowledge_query_options and self._knowledge_query_options.knowledge_bases) or bool(
-            self._knowledge_query_options and self._knowledge_query_options.knowledge_items
-        )
-        if has_knowledge and self._knowledge_llm is None:
-            raise ValueError("ReActAgentBuilder 构建失败：检测到知识库配置，但 knowledge_llm 为空")
-
         # Skills / runtime tools setup (must run before preparing tools)
-        self._skill_registry = None
-
-        if self._enable_runtime_tool and self._runtime_backend_resolver is None:
-            raise ValueError(
-                "ReActAgentBuilder 构建失败：启用了 runtime_tool 但未提供 runtime_backend_resolver，"
-                "请通过 AgentExecutorKwargs.runtime_backend_resolver 传入"
-            )
-
         if self._enable_skills:
             self._prepare_skills()
 
         # A2A 后端注册（必须在工具注入之前执行）
         if self._enable_a2a_tool:
             self._prepare_a2a()
-
-        # 判断使用哪种RAG模式
-        knowledge_query_options = self._knowledge_query_options
-        enable_knowledge_node = (
-            knowledge_query_options.enable_knowledge_node if knowledge_query_options is not None else False
-        )
-
-        # ask_user_question 工具注入（D-01/D-02）。局部 import 避免模块加载时
-        # 的循环 import（graph.py 在模块依赖图中较早被导入）。
-        if self._enable_ask_user_question_tool:
-            from aidev_agent.core.tools.ask_user_question import (
-                ask_user_question as _ask_user_question_tool,
-            )
-
-            if self._extra_tools is None:
-                self._extra_tools = []
-            self._extra_tools.append(_ask_user_question_tool)
 
         # 统一处理 tools
         tool_ignore_errors = self._compute_use_structured_response()
@@ -1113,16 +1118,12 @@ class ReActAgentBuilder:
             langchain_middleware=self._langchain_middleware,
         )
 
-        # 两步RAG模式：创建独立的knowledge_node
-        if enable_knowledge_node:
-            knowledge_node = self._prepare_agent_knowledge_node(
-                knowledge_llm=self._knowledge_llm,
-                knowledge_query_options=self._knowledge_query_options,
-                chat_history=self._chat_history,
-            )
-            logger.info("[ReActAgentBuilder] 两步RAG 模式已启用，使用独立的knowledge节点")
-        else:
-            knowledge_node = None
+        # 两步RAG模式：根据 enable_knowledge_node 决定是否创建独立的 knowledge_node
+        knowledge_node = self._prepare_agent_knowledge_node(
+            knowledge_llm=self._knowledge_llm,
+            knowledge_query_options=self._knowledge_query_options,
+            chat_history=self._chat_history,
+        )
 
         # 统一处理 model_node
         model_node = self._prepare_agent_model_node(
@@ -1131,6 +1132,12 @@ class ReActAgentBuilder:
             judge_llm=judge_llm,
             tools=tools,
         )
+
+        # 中断检查节点 (approval_check)
+        interrupt_node = self._prepare_agent_interrupt_node(tools=tools)
+
+        # 构造 PV Node
+        pv_node = self._prepare_agent_pv_node()
 
         # 统一处理 tool_node
         tool_node = self._prepare_agent_tool_node(
@@ -1141,9 +1148,6 @@ class ReActAgentBuilder:
 
         # 初始化 Store
         store = self._prepare_store(store=self._store, file_store=self._file_store)
-
-        # 构造 PV Node
-        pv_node = self._prepare_agent_pv_node()
 
         # 定义 _TaskState（如需）——仅在 task/team/a2a 分支中使用
         if self._enable_task or self._a2a_specs or self._enable_team:
@@ -1156,7 +1160,6 @@ class ReActAgentBuilder:
 
         # 构建图
         compile_graph, cfg = self._build_graph(
-            knowledge_settings=self._knowledge_query_options,
             state_schema=state_schema,
             callbacks=callbacks,
             debug=self._debug,
@@ -1170,6 +1173,7 @@ class ReActAgentBuilder:
             model_node=model_node,
             tool_node=tool_node,
             pv_node=pv_node,
+            interrupt_node=interrupt_node,
             tools=tools if tools else None,
         )
 

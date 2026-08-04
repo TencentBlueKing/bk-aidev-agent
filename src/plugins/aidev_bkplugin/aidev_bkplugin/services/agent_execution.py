@@ -199,7 +199,7 @@ class AgentExecutor:
                     turn_id=turn_id,
                 )
             elif generator_failed:
-                # D-03: 生成器异常且无任何内容时，写入错误状态
+                # 生成器异常且无任何内容时，写入错误状态
                 self.session_manager.save_stream_failure(session_code, "Agent 执行异常，未能生成回复", turn_id=turn_id)
 
     @classmethod

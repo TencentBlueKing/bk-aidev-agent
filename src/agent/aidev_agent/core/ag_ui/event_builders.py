@@ -59,7 +59,7 @@ def build_tool_result_event(tool_msg: Any, is_immediate: bool = False) -> Extend
 
     Returns:
         ExtendToolCallResultEvent 事件对象，携带 additional_metadata（完整 additional_kwargs dict 副本）
-        与 skip_db（is_immediate=True 时为 True，供 DB 侧跳过写入，per D-06/D-07）
+        与 skip_db（is_immediate=True 时为 True，供 DB 侧跳过写入，per /）
     """
     content = tool_msg.content
     if not isinstance(content, str):
@@ -183,7 +183,7 @@ def build_model_end_payload(output_message: Any, tools_mapping: dict[str, Any]) 
     """构造 ChatModelEnd CustomEvent.value 的扁平 dict payload。
 
     整合 build_tool_calls_with_approval_filter + resolve_content 的全部逻辑，SSE 侧调用此函数
-    构造 CustomEvent.value，DB 侧直接读 payload 不再二次推导（D-03/D-04）。
+    构造 CustomEvent.value，DB 侧直接读 payload 不再二次推导。
 
     Args:
         output_message: AIMessage（模型输出，OnChatModelEnd 事件的 data.output）

@@ -2,13 +2,12 @@
 """``SessionManager`` 行为契约：哈希稳定性、幂等取建、save_content kwargs 透传。"""
 
 import pytest
+from aidev_bkplugin.services.agent_session import SessionManager
 from aidev_bkplugin.constants import AGUI_PROTOCOL_VERSION
 
 
 @pytest.fixture
 def session_manager():
-    from aidev_bkplugin.services.agent_session import SessionManager
-
     return SessionManager(username="alice", agent_code="bk-aidev")
 
 
@@ -20,8 +19,6 @@ def session_manager():
     ],
 )
 def test_generate_session_code_is_stable_md5(username, agent_code, thread_id, expected_len):
-    from aidev_bkplugin.services.agent_session import SessionManager
-
     code = SessionManager.generate_session_code(username, agent_code, thread_id)
     assert len(code) == expected_len
     assert SessionManager.generate_session_code(username, agent_code, thread_id) == code

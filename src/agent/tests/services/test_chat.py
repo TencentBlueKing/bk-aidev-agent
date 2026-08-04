@@ -5,10 +5,12 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from ag_ui.core import EventType, RunErrorEvent, RunFinishedEvent
+from ag_ui.core import CustomEvent, EventType, RunErrorEvent, RunFinishedEvent
 from aidev_agent.config import settings
 from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
-from aidev_agent.core.ag_ui.types import CustomMessageType
+from aidev_agent.core.ag_ui.ask_user_question import ASK_USER_QUESTION_REASON, ASK_USER_QUESTION_SKIPPED_CONTENT
+from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
+from aidev_agent.core.ag_ui.types import CustomMessageType, SessionPersistenceEventNames
 from aidev_agent.core.nodes.tool.approval_wrapper import TOOL_APPROVAL_REASON
 from aidev_agent.enums import PromptRole
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
@@ -51,6 +53,23 @@ class _ConcreteWriter(BaseSessionWriter):
     def _do_create_content(self, payload: dict, headers: dict) -> int | None:
         self._created_contents.append(payload)
         return len(self._created_contents)
+
+    def _do_update_content(self, content_id: int, payload: dict, headers: dict) -> None:
+        pass
+
+
+class _RecordingEventWriter(BaseSessionWriter):
+    """记录收到的所有事件的测试 writer。"""
+
+    def __init__(self, session_code: str = "test_session", **kwargs):
+        super().__init__(session_code=session_code, **kwargs)
+        self.events: list[CustomEvent] = []
+
+    def __call__(self, event, **kwargs):
+        self.events.append(event)
+
+    def _do_create_content(self, payload: dict, headers: dict) -> int | None:
+        return 1
 
     def _do_update_content(self, content_id: int, payload: dict, headers: dict) -> None:
         pass
@@ -2337,3 +2356,272 @@ class TestTerminalResumeReplay:
         mock_replay.assert_not_called()
         mock_astream.assert_not_called()
         agui_entry.run.assert_not_called()
+
+
+class TestDispatchSessionPersistenceEvents:
+    """测试 execute() 前置的 ask_user_question 三态分发与 chat_history patch。"""
+
+    DEFAULT_INTERRUPT_ID = "int-q"
+
+    def _make_agent(self, interrupt_tool_call_id="call_auq_001", interrupt_id=None):
+        writer = _RecordingEventWriter()
+        interrupt_id = interrupt_id or self.DEFAULT_INTERRUPT_ID
+        chat_history = [
+            ChatPrompt(id="1", role="system", content="sys"),
+            ChatPrompt(role="assistant", content="提问", builtin_property={"tool_calls": [{"id": "c1"}]}),
+        ]
+        if interrupt_tool_call_id:
+            chat_history.append(
+                ChatPrompt(
+                    id="content-1",
+                    role=PromptRole.INTERRUPT.value,
+                    content={
+                        "outcome": {
+                            "type": "interrupt",
+                            "interrupts": [
+                                {
+                                    "id": interrupt_id,
+                                    "reason": ASK_USER_QUESTION_REASON,
+                                    "toolCallId": interrupt_tool_call_id,
+                                    "metadata": {"type": "ask_user_question", "status": "pending", "questions": []},
+                                }
+                            ],
+                        }
+                    },
+                    builtin_property={
+                        "tool_call_id": interrupt_tool_call_id,
+                        "reason": ASK_USER_QUESTION_REASON,
+                        "questions": [{"question": "Q", "multiSelect": False}],
+                    },
+                )
+            )
+        agent = ChatCompletionAgent(
+            chat_model=MockChatModel(responses=["ok"]),
+            checkpointer=MemorySaver(),
+            event_handler=writer,
+            chat_history=chat_history,
+        )
+        return agent, writer
+
+    def _make_agent_without_tail_interrupt(self):
+        """构造末尾非 INTERRUPT 的 agent（末尾是 user 记录，模拟已回答场景）。"""
+        writer = _RecordingEventWriter()
+        chat_history = [
+            ChatPrompt(id="1", role="system", content="sys"),
+            ChatPrompt(role="assistant", content="提问", builtin_property={"tool_calls": [{"id": "c1"}]}),
+            ChatPrompt(
+                id="content-1",
+                role=PromptRole.INTERRUPT.value,
+                content={
+                    "outcome": {
+                        "type": "interrupt",
+                        "interrupts": [
+                            {
+                                "id": self.DEFAULT_INTERRUPT_ID,
+                                "reason": ASK_USER_QUESTION_REASON,
+                                "toolCallId": "call_auq_001",
+                                "metadata": {"type": "ask_user_question", "status": "pending", "questions": []},
+                            }
+                        ],
+                    }
+                },
+                builtin_property={
+                    "tool_call_id": "call_auq_001",
+                    "reason": ASK_USER_QUESTION_REASON,
+                    "questions": [{"question": "Q", "multiSelect": False}],
+                },
+            ),
+            # 末尾是 user 记录（interrupt 已被回答过一次）
+            ChatPrompt(role=PromptRole.USER.value, content="之前的回答"),
+        ]
+        agent = ChatCompletionAgent(
+            chat_model=MockChatModel(responses=["ok"]),
+            checkpointer=MemorySaver(),
+            event_handler=writer,
+            chat_history=chat_history,
+        )
+        return agent, writer
+
+    def _ask_user_resume(self, interrupt_id=None, answers=None):
+        """构造 ask_user_question resume（payload.answers 存在即被识别为 ask_user）。"""
+        payload_answers = answers if answers is not None else []
+        return {
+            "interruptId": interrupt_id or self.DEFAULT_INTERRUPT_ID,
+            "status": "resolved",
+            "payload": {"answers": payload_answers},
+        }
+
+    def test_skip_path_patches_tool_and_user_and_clears_resume(self):
+        agent, writer = self._make_agent()
+        kwargs = ExecuteKwargs(resume=self._ask_user_resume(), input="hi", turn_id="t1")
+        agent._prepare_pre_run_history(kwargs)
+        roles = [p.role for p in agent.chat_history]
+        assert roles[-2:] == [PromptRole.TOOL.value, PromptRole.USER.value]
+        assert agent.chat_history[-2].builtin_property.get("tool_call_id") == "call_auq_001"
+        assert agent.chat_history[-1].content == "hi"
+        assert kwargs.resume is None
+        interrupt_after = next(p for p in agent.chat_history if p.role == PromptRole.INTERRUPT.value)
+        outcome = interrupt_after.content.get("outcome") or {}
+        assert outcome.get("type") == "success"
+        assert (outcome.get("interrupts") or [{}])[0].get("metadata", {}).get("status") == "cancelled"
+        assert isinstance(writer.events[0], ExtendToolCallResultEvent)
+        assert writer.events[0].content == ASK_USER_QUESTION_SKIPPED_CONTENT
+        custom_names = [e.name for e in writer.events if isinstance(e, CustomEvent)]
+        assert custom_names == [
+            SessionPersistenceEventNames.AskUserQuestionFinalized.value,
+            SessionPersistenceEventNames.UserInputSaved.value,
+        ]
+
+    def test_answer_path_resolves_interrupt_and_resolved_event(self):
+        agent, writer = self._make_agent()
+        before = len(agent.chat_history)
+        answers = [{"question": "Q", "answer": [{"label": "A"}]}]
+        kwargs = ExecuteKwargs(resume=self._ask_user_resume(answers=answers), input="", turn_id="t1")
+        agent._prepare_pre_run_history(kwargs)
+        assert len(agent.chat_history) == before
+        interrupt_after = next(p for p in agent.chat_history if p.role == PromptRole.INTERRUPT.value)
+        outcome = interrupt_after.content.get("outcome") or {}
+        assert outcome.get("type") == "success"
+        assert (outcome.get("interrupts") or [{}])[0].get("metadata", {}).get("status") == "resolved"
+        assert interrupt_after.content.get("result", {}).get("payload", {}).get("answers") == answers
+        assert len(writer.events) == 1
+        event = writer.events[0]
+        assert event.name == SessionPersistenceEventNames.AskUserQuestionFinalized.value
+        assert event.value["answers"] == answers
+        assert event.value["status"] == "resolved"
+        assert event.value["content_id"] == "content-1"
+        assert event.value["builtin_property"]["tool_call_id"] == "call_auq_001"
+
+    def test_normal_input_patches_user_only(self):
+        agent, writer = self._make_agent()
+        before = len(agent.chat_history)
+        kwargs = ExecuteKwargs(input="hi")
+        agent._prepare_pre_run_history(kwargs)
+        assert len(agent.chat_history) == before + 1
+        assert agent.chat_history[-1].role == PromptRole.USER.value
+        assert agent.chat_history[-1].content == "hi"
+        names = [e.name for e in writer.events]
+        assert names == [SessionPersistenceEventNames.UserInputSaved.value]
+
+    def test_no_resume_no_input_no_event(self):
+        agent, writer = self._make_agent()
+        before = len(agent.chat_history)
+        agent._prepare_pre_run_history(ExecuteKwargs())
+        assert len(agent.chat_history) == before
+        assert writer.events == []
+
+    def test_approval_resume_with_input_blocked_by_guard(self):
+        """审批中断 resume（payload 不含 answers）：守卫拦截，不落 ask_user 记录。"""
+        agent, writer = self._make_agent()
+        before = len(agent.chat_history)
+        # approval resume payload 是 {approved: bool}，不含 answers → 不被识别为 ask_user
+        approval_resume = {"interruptId": "x", "status": "resolved", "payload": {"approved": True}}
+        kwargs = ExecuteKwargs(resume=approval_resume, input="hi", turn_id="t1")
+        agent._prepare_pre_run_history(kwargs)
+        # 审批 resume 被守卫拦截，但 input 仍走独立的 user 事件分发步骤
+        assert len(agent.chat_history) == before + 1
+        assert agent.chat_history[-1].content == "hi"
+        assert kwargs.resume is not None
+        names = [e.name for e in writer.events]
+        assert names == [SessionPersistenceEventNames.UserInputSaved.value]
+
+    def test_approval_resume_without_input_blocked_by_guard(self):
+        """审批中断 + 仅 resume（无 input）：守卫拦截，不派发任何事件。"""
+        agent, writer = self._make_agent()
+        before = len(agent.chat_history)
+        approval_resume = {"interruptId": "x", "status": "resolved", "payload": {"approved": False}}
+        agent._prepare_pre_run_history(ExecuteKwargs(resume=approval_resume, input=""))
+        assert len(agent.chat_history) == before
+        assert writer.events == []
+        interrupt_after = next(p for p in agent.chat_history if p.role == PromptRole.INTERRUPT.value)
+        assert (interrupt_after.content.get("outcome") or {}).get("type") != "success"
+
+    def test_no_interrupt_resume_raises_on_validation(self):
+        """末尾非 INTERRUPT（已回答场景）+ ask_user resume：一致性校验抛 AgentException。"""
+        from aidev_agent.exceptions import AgentException
+
+        agent, writer = self._make_agent_without_tail_interrupt()
+        kwargs = ExecuteKwargs(resume=self._ask_user_resume(), input="hi", turn_id="t1")
+        with pytest.raises(AgentException, match="期望末尾为 INTERRUPT"):
+            agent._prepare_pre_run_history(kwargs)
+
+    def test_empty_chat_history_resume_raises_on_validation(self):
+        """chat_history 为空 + ask_user resume：一致性校验抛 AgentException。"""
+        from aidev_agent.exceptions import AgentException
+
+        writer = _RecordingEventWriter()
+        agent = ChatCompletionAgent(
+            chat_model=MockChatModel(responses=["ok"]),
+            checkpointer=MemorySaver(),
+            event_handler=writer,
+            chat_history=[],
+        )
+        kwargs = ExecuteKwargs(resume=self._ask_user_resume(), input="hi", turn_id="t1")
+        with pytest.raises(AgentException, match="缺少对应的 interrupt 记录"):
+            agent._prepare_pre_run_history(kwargs)
+
+    def test_validate_resume_consistency_raises_on_missing_tool_call_id(self):
+        """interrupt.builtin_property 缺 tool_call_id（脏数据）→ 抛异常。"""
+        from aidev_agent.exceptions import AgentException
+
+        agent, writer = self._make_agent()
+        interrupt_prompt = next(p for p in agent.chat_history if p.role == PromptRole.INTERRUPT.value)
+        interrupt_prompt.builtin_property = {"reason": ASK_USER_QUESTION_REASON, "questions": []}
+        kwargs = ExecuteKwargs(resume=self._ask_user_resume(), input="hi", turn_id="t1")
+        with pytest.raises(AgentException, match="缺少 tool_call_id"):
+            agent._prepare_pre_run_history(kwargs)
+
+    def test_skip_path_when_answers_empty_and_no_input(self):
+        """resume + 空 answers + 无 input → 跳过路径，仅取消 interrupt，不派发 user 事件。"""
+        agent, writer = self._make_agent()
+        before = len(agent.chat_history)
+        kwargs = ExecuteKwargs(resume=self._ask_user_resume(answers=[]), input="", turn_id="t1")
+        agent._prepare_pre_run_history(kwargs)
+        assert kwargs.resume is None
+        # 不补 user 记录（无 input），但补 tool 记录（有 tool_call_id）
+        assert len(agent.chat_history) == before + 1
+        assert agent.chat_history[-1].role == PromptRole.TOOL.value
+        interrupt_after = next(p for p in agent.chat_history if p.role == PromptRole.INTERRUPT.value)
+        outcome = interrupt_after.content.get("outcome") or {}
+        assert (outcome.get("interrupts") or [{}])[0].get("metadata", {}).get("status") == "cancelled"
+        # 不派发 UserInputSaved 事件（仅派发 tool + finalize）
+        custom_names = [e.name for e in writer.events if isinstance(e, CustomEvent)]
+        assert SessionPersistenceEventNames.UserInputSaved.value not in custom_names
+        assert SessionPersistenceEventNames.AskUserQuestionFinalized.value in custom_names
+
+    def test_validate_resume_consistency_raises_on_id_mismatch(self):
+        """resume.interruptId 与 chat_history interrupt id 不一致 → 抛异常。"""
+        from aidev_agent.exceptions import AgentException
+
+        agent, writer = self._make_agent()
+        kwargs = ExecuteKwargs(resume=self._ask_user_resume(interrupt_id="wrong-id"), input="hi", turn_id="t1")
+        with pytest.raises(AgentException, match="不一致"):
+            agent._prepare_pre_run_history(kwargs)
+
+    def test_validate_resume_consistency_raises_on_status_not_pending(self):
+        """interrupt status 非 pending → 抛异常。"""
+        from aidev_agent.exceptions import AgentException
+
+        agent, writer = self._make_agent()
+        interrupt_prompt = next(p for p in agent.chat_history if p.role == PromptRole.INTERRUPT.value)
+        # 改写 interrupt content 的 status 为 resolved
+        interrupt_prompt.content["outcome"]["interrupts"][0]["metadata"]["status"] = "resolved"
+        kwargs = ExecuteKwargs(resume=self._ask_user_resume(), input="hi", turn_id="t1")
+        with pytest.raises(AgentException, match="status=pending"):
+            agent._prepare_pre_run_history(kwargs)
+
+    def test_non_ask_user_resume_returns_early(self):
+        """resume payload 不含 answers（模拟 approval）→ 不走 ask_user 回写逻辑。"""
+        agent, writer = self._make_agent()
+        before = len(agent.chat_history)
+        approval_resume = {
+            "interruptId": self.DEFAULT_INTERRUPT_ID,
+            "status": "resolved",
+            "payload": {"approved": True},
+        }
+        agent._prepare_pre_run_history(ExecuteKwargs(resume=approval_resume, input=""))
+        assert len(agent.chat_history) == before
+        assert writer.events == []
+        # resume 未被清空（未走 ask_user 路径）
+        interrupt_after = next(p for p in agent.chat_history if p.role == PromptRole.INTERRUPT.value)
+        assert (interrupt_after.content.get("outcome") or {}).get("type") != "success"

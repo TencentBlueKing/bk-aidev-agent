@@ -9,7 +9,7 @@ import json
 
 import pytest
 from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
-from aidev_agent.core.ag_ui.ask_user_question import ASK_USER_QUESTION_REASON, AskUserQuestionOutcomeBuilder
+from aidev_agent.core.ag_ui.ask_user_question import ASK_USER_QUESTION_REASON
 from aidev_agent.core.ag_ui.types import (
     AgentInput,
 )
@@ -91,86 +91,6 @@ class _RecordingSessionWriter(BaseSessionWriter):
 
     def set_streaming_finished(self):
         pass
-
-    def handle_run_finished(self, event) -> None:
-        """Phase 14.2: 重写以支持 ask_user_question 续流终态写入。
-
-        super().handle_run_finished(event) 处理流式消息回写 + interrupt 首次落库，
-        非 interrupt 分支调用 _handle_ask_user_question_resume_finished 完成 DB 更新。
-        """
-        super().handle_run_finished(event)
-
-        outcome = getattr(event, "outcome", None)
-        outcome_type = (
-            outcome.get("type") if isinstance(outcome, dict) else getattr(outcome, "type", None) if outcome else None
-        )
-        if outcome and outcome_type != "interrupt":
-            self._handle_ask_user_question_resume_finished(event)
-
-    def _handle_ask_user_question_resume_finished(self, event) -> None:
-        """Phase 14.2: 从 RunFinishedEvent outcome/result 提取数据更新 DB interrupt 记录。
-
-        替代原 handle_activity_snapshot（已删除），逻辑从 event.outcome.interrupts[0] +
-        event.result.payload.answers 提取数据，查 in-memory _db_records 更新。
-        """
-        outcome = getattr(event, "outcome", None)
-        if isinstance(outcome, dict):
-            interrupts = outcome.get("interrupts") or []
-        else:
-            interrupts = getattr(outcome, "interrupts", []) if outcome else []
-        if not interrupts:
-            return
-        first_interrupt = interrupts[0] if isinstance(interrupts[0], dict) else {}
-        if first_interrupt.get("reason") != ASK_USER_QUESTION_REASON:
-            return
-        interrupt_id = first_interrupt.get("id")
-        if not interrupt_id:
-            return
-        result = getattr(event, "result", None)
-        resume_answers = []
-        if isinstance(result, dict):
-            resume_answers = result.get("payload", {}).get("answers") or []
-
-        for content_id, rec in self._db_records.items():
-            if rec.get("role") != PromptRole.INTERRUPT.value:
-                continue
-            if rec.get("status") != "pending":
-                continue
-            raw_content = rec.get("content")
-            if isinstance(raw_content, str):
-                try:
-                    parsed = json.loads(raw_content)
-                except (TypeError, ValueError):
-                    continue
-            else:
-                parsed = raw_content
-            if not isinstance(parsed, dict):
-                continue
-            parsed_intrs = (parsed.get("outcome") or {}).get("interrupts") or []
-            if not parsed_intrs:
-                continue
-            parsed_first = parsed_intrs[0] if isinstance(parsed_intrs[0], dict) else {}
-            if parsed_first.get("id") != interrupt_id:
-                continue
-            upgraded = AskUserQuestionOutcomeBuilder.upgrade_content_to_success(
-                parsed, "resolved", resume_answers=resume_answers
-            )
-            if upgraded is None:
-                continue
-            updated_builtin = dict((rec.get("property") or {}).get("builtin_property") or {})
-            updated_builtin["status"] = "resolved"
-            self._do_update_content(
-                content_id=content_id,
-                payload={
-                    "content": upgraded,
-                    "status": "complete",
-                    "property": {
-                        "builtin_property": updated_builtin,
-                        "turn_id": self.turn_id,
-                    },
-                },
-                headers={},
-            )
 
 
 def _extract_ask_user_question_interrupts(graph, config) -> list[dict]:
@@ -476,27 +396,13 @@ async def test_resume_preserves_prior_messages_and_writes_final_reply():
         f"续流后未写入最终回复的 assistant 记录，roles={roles_after_resume}"
     )
 
-    # 关键断言：续流后 interrupt 记录应被更新为 resolved（status 从 pending → resolved）
-    # 检查 writer.updated 中是否有 interrupt 记录的更新
+    # SSE 层不再 UPDATE interrupt 记录（DB 终态由入口层 chat.py:138 负责）
     interrupt_updates = [
         u
         for u in writer.updated
         if isinstance(u.get("payload", {}).get("content"), dict)
         and u["payload"]["content"].get("outcome", {}).get("type") == "success"
     ]
-    assert interrupt_updates, (
-        f"续流后未更新 interrupt 记录为 resolved，updates={len(writer.updated)}\n"
-        f"  updated details: {[(u.get('content_id'), str(u.get('payload', {}).get('content', ''))[:80]) for u in writer.updated]}"
-    )
-    # 验证更新后的 content 是终态形态（outcome.type=success, result.payload.answers 非空且匹配 resume 提交的答案）
-    upgraded_content = interrupt_updates[0]["payload"]["content"]
-    assert upgraded_content["outcome"]["type"] == "success"
-    assert "result" in upgraded_content
-    db_answers = upgraded_content["result"].get("payload", {}).get("answers")
-    assert isinstance(db_answers, list), (
-        f"result.payload.answers 应为 list，实际 {type(db_answers).__name__}，content={upgraded_content}"
-    )
-    expected_answers = [{"question": "请选择部署环境", "answer": [{"label": "生产环境", "description": "prod"}]}]
-    assert db_answers == expected_answers, (
-        f"result.payload.answers 应等于 resume 提交的答案 {expected_answers}，实际 {db_answers}"
+    assert not interrupt_updates, (
+        f" 后 SSE 层不应再 UPDATE interrupt 记录为 resolved，updates={len(writer.updated)}"
     )

@@ -22,7 +22,7 @@ import enum
 import logging
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, AnyMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, AnyMessage, BaseMessage, HumanMessage
 
 from aidev_agent.packages.langgraph.streaming.utils import conditional_dispatch_custom_event
 
@@ -107,27 +107,55 @@ class QualityGate:
     """
 
     # 判断系统提示词——类属性，子类可重写
-    judgment_sys_prompt: str = """你是一个任务完成度判断器。我会给你以下信息：
+    judgment_sys_prompt: str = """
+## 角色
+你是一个任务完成度判断器。你需要判断智能助手在本轮交互中，是否已经完成用户最后一条输入所提出的任务。
+你会获得以下信息：
 1. 用户的最后一条输入
-2. 智能助手回答过程中调用的工具及其参数（如有）
+2. 智能助手回答过程中调用的工具及其参数
 3. 智能助手的最后一条输出
-
-你需要判断智能助手的输出是否实际完成了用户输入中要求的任务，以便于放行用户继续提问
-完成任务的情况如下：
-1. 输出详细的报告，回答了用户的问题，或者完成了用户的任务
-2. 要求用户补充相关信息，澄清问题等回复
-3. 明确指出不能完成用户任务，例如：根据已有知识不能回答问题
-4. 其他你认为完成任务了的情况
-
-判断规则：
-- 如果助手的输出明确回答了用户的问题或完成了用户要求的任务，判断为"已完成"
-- 如果助手的输出明显未完成用户任务（如答非所问、拒绝回答、输出不完整、仅重复用户输入等），判断为"未完成"
-- 如果无法确定助手是否完成了任务，判断为"不确定"
+## 任务要求
+以下情况判断为“已完成”：
+1. 智能助手已经明确回答用户的问题
+2. 智能助手已经执行用户要求的动作，并且最终回复了用户的要求
+3. 智能助手要求用户补充完成任务所必需的信息，或提出合理的澄清问题
+4. 智能助手明确说明由于能力、权限或信息限制而无法完成
+5. 核心任务已经完成，但助手又附加了说明、建议、追问或其他内容
+以下情况判断为“未完成”：
+1. 智能助手没有回答或执行用户要求的核心任务
+2. 输出答非所问，且工具调用也没有完成任务
+3. 仅复述用户输入，没有产生实际回答或动作
+4. 声称将要执行任务，但实际上没有回答，也没有调用工具执行
+5. 输出明显中断，核心结果缺失
+以下情况判断为“不确定”：
+1. 无法从工具参数或输出中判断工具是否实际实现了用户要求
+2. 用户需求本身存在关键歧义，无法判断当前行为是否满足要求
+3. 提供的信息不足以确定任务是否完成
+特别规则:
+1. 判断“是否完成”时，应关注用户原始要求中的最小核心目标
+2. 不要把助手自行扩展出来的后续任务，当成用户原始任务的一部分
+3. 不要要求用户必须回答助手提出的问题，才认为“提出问题”这一任务完成
+4. 如果工具调用与最后文本输出冲突，应优先判断用户要求的核心动作是否已在工具调用中完成
+5. 输出质量一般、存在冗余或包含无关内容，不等于任务未完成；只有核心任务没有实现时，才判断为“未完成”
 
 请只返回以下三个词中的一个，不要返回任何其他内容：
 - 已完成
 - 未完成
-- 不确定"""
+- 不确定
+
+## 输入
+用户最后一条输入： 
+```
+{last_user_input}
+```
+
+{tool_calls_text}
+
+智能助手最后一条输出：
+```
+{last_model_output}
+```
+"""
 
     def __init__(
         self,
@@ -220,16 +248,9 @@ class QualityGate:
                 tool_lines.append(f"- {tc['name']}({tc['args']})")
             tool_calls_text = "调用的工具及参数：\n" + "\n".join(tool_lines) + "\n\n"
 
-        usr_prompt = (
-            f"用户最后一条输入：\n```\n{last_user_input}\n```\n\n"
-            f"{tool_calls_text}"
-            f"智能助手最后一条输出：\n```\n{last_model_output}\n```\n\n"
-            f"请判断智能助手是否完成了用户的任务。"
+        prompt = self.judgment_sys_prompt.format(
+            last_user_input=last_user_input, tool_calls_text=tool_calls_text, last_model_output=last_model_output
         )
-        messages = [
-            SystemMessage(content=self.judgment_sys_prompt),
-            HumanMessage(content=usr_prompt),
-        ]
         # 判断 LLM 调用期间关闭前端显示/DB 写入，避免判断输出污染会话流。
         # 使用 try/finally 确保异常路径下也恢复 front_end_display=True。
         conditional_dispatch_custom_event(
@@ -238,7 +259,7 @@ class QualityGate:
             enable_custom_event=enable_custom_event,
         )
         try:
-            resp = judgment_llm.invoke(messages)
+            resp = judgment_llm.invoke(prompt)
             result = (resp.content or "").strip()
             # fail-open：只有明确"未完成"才返回 False
             return "未完成" not in result

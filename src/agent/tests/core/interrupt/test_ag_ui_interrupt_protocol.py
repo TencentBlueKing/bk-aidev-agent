@@ -51,7 +51,7 @@ async def test_aidev_agent_run_exposes_messages_snapshot(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_handle_single_event_suppresses_approval_tool_call(monkeypatch):
-    """D-01: _handle_single_event 覆写抑制需要审批的 ToolCallStartEvent。"""
+    """_handle_single_event 覆写抑制需要审批的 ToolCallStartEvent。"""
 
     async def _fake_super(self, event, state):  # noqa: ARG001
         yield ToolCallStartEvent(
@@ -87,7 +87,7 @@ async def test_handle_single_event_suppresses_approval_tool_call(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_handle_single_event_enhances_non_approval_tool_call(monkeypatch):
-    """D-01: 非审批工具的 ToolCallStartEvent 被 enhance 后 yield ExtendToolCallStartEvent。"""
+    """非审批工具的 ToolCallStartEvent 被 enhance 后 yield ExtendToolCallStartEvent。"""
 
     async def _fake_super(self, event, state):  # noqa: ARG001
         yield ToolCallStartEvent(
@@ -116,7 +116,7 @@ async def test_handle_single_event_enhances_non_approval_tool_call(monkeypatch):
 
 # ---------------------------------------------------------------------------
 # 审批续流终态形态：ApprovalOutcomeBuilder.upgrade_content_to_success
-#                  / ApprovalOutcomeBuilder.build_run_finished_payload
+#                 / ApprovalOutcomeBuilder.build_run_finished_payload
 # ---------------------------------------------------------------------------
 
 
@@ -485,12 +485,15 @@ async def test_resume_ask_user_question_emits_first_frame_run_finished(monkeypat
     ]
     payloads = [json.loads(chunk[6:]) for chunk in chunks]
 
-    # Phase 14.2: 首条 MESSAGES_SNAPSHOT 之后紧跟 RUN_FINISHED（续流首帧回放），
-    # 然后是额外的 MESSAGES_SNAPSHOT（更新 interrupt 卡片终态），
-    # 最后是 SDK 的 RUN_STARTED / RUN_FINISHED
+    # 续流首帧回放：首条 MESSAGES_SNAPSHOT 之后紧跟 RUN_FINISHED（关闭前端弹窗），
+    # 随后是 SDK 的 RUN_STARTED / RUN_FINISHED。不再下发第二次 MESSAGES_SNAPSHOT，
+    # interrupt 卡片终态由 RUN_FINISHED 的 outcome/result 承载。
     types = [p["type"] for p in payloads]
     assert types[0] == EventType.MESSAGES_SNAPSHOT.value
     assert types[1] == EventType.RUN_FINISHED.value, f"首帧回放 RUN_FINISHED 未发出，types={types}"
+    assert types[2:] == [EventType.RUN_STARTED.value, EventType.RUN_FINISHED.value], (
+        f"RUN_FINISHED 之后应直接是 SDK 的 RUN_STARTED / RUN_FINISHED，types={types}"
+    )
 
     # RUN_FINISHED 事件：顶层 outcome / result / runId
     run_finished = payloads[1]
@@ -514,23 +517,6 @@ async def test_resume_ask_user_question_emits_first_frame_run_finished(monkeypat
     assert result["payload"]["answers"] == [{"question": "q", "answer": [{"label": "a", "description": "d"}]}], (
         "result.payload.answers 应来自 resume payload（用户刚提交的答案），而非空的 metadata.answers"
     )
-
-    # RUN_FINISHED 之后应推送额外的 MESSAGES_SNAPSHOT，将 interrupt 消息更新为终态
-    assert types[2] == EventType.MESSAGES_SNAPSHOT.value, f"RUN_FINISHED 后应推送 MESSAGES_SNAPSHOT，types={types}"
-    updated_snapshot = payloads[2]
-    updated_messages = updated_snapshot.get("messages", [])
-    interrupt_msgs = [m for m in updated_messages if m.get("role") == "interrupt"]
-    assert interrupt_msgs, "更新后的 MESSAGES_SNAPSHOT 应包含 interrupt 消息"
-    updated_interrupt = interrupt_msgs[0]
-    assert updated_interrupt["status"] == "complete", "interrupt 消息 status 应为 complete"
-    assert updated_interrupt["content"]["outcome"]["type"] == "success", (
-        "interrupt 消息 content.outcome.type 应为 success"
-    )
-    # MESSAGES_SNAPSHOT 的 content.outcome 也应含 interrupts
-    assert "interrupts" in updated_interrupt["content"]["outcome"], (
-        "MESSAGES_SNAPSHOT 的 outcome 也应含 interrupts 字段"
-    )
-    assert len(updated_interrupt["content"]["outcome"]["interrupts"]) > 0
 
 
 @pytest.mark.asyncio
