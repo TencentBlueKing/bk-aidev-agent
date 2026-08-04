@@ -403,6 +403,7 @@ Use Shift + Enter to enter a new line`
       max-width: variables.$chat-input-max-width;
       min-height: 110px;
       max-height: 200px;
+      padding-bottom: var(--ai-spacing-comfortable, 8px);
       background: #fff;
       border-radius: 8px;
 
