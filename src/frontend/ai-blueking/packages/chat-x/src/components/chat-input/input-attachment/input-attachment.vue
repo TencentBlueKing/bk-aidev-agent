@@ -77,12 +77,12 @@
 <style lang="scss">
   .ai-input-attachment {
     display: flex;
-    flex: 0 0 40px;
+    flex: 0 0 32px;
     gap: 6px;
     align-items: center;
     width: 100%;
-    height: 40px;
-    padding: 0 12px;
+    height: 32px;
+    padding: 0 8px;
 
     &-default {
       display: flex;
