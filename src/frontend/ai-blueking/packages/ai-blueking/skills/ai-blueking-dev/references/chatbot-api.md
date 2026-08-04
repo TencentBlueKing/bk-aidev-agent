@@ -33,6 +33,7 @@
 | updateTools | `IToolBtn[]` | - | 自定义 AI 消息反馈工具组（like/unlike/delete）；合并规则同上 |
 | placement       | `'left' \| 'right'`  | `'left'`| 执行情况侧面板位置                             |
 | resizeProps     | `ResizeProps`        | -       | ResizeLayout 配置（执行情况侧面板拖拽）        |
+| size            | `AiSizeMode`（`'normal' \| 'small'`） | `'small'` | 字号主题档位，透传至 ChatContainer（`small` 12px / `normal` 14px） |
 | getSideRenderComponent | `GetSideRenderComponent` | - | 自定义侧栏内容区渲染（详见 [side render / custom tabs](integration-patterns.md#侧栏自定义渲染与自定义-tab-side-render--custom-tabs)） |
 | getSideTabRenderComponent | `GetSideTabRenderComponent` | - | 自定义侧栏 Tab 标签渲染 |
 | onCustomTabChange | `OnCustomTabChange` | -       | 覆盖默认 Flow 节点详情拉取；未传则回退到 `chatHelper.message.getFlowAgentTaskNodeInfo` |
@@ -254,6 +255,7 @@ AIBlueking 是完整面板组件（Nimbus 悬浮球 + 浮窗 + 拖拽 + Header +
 | getSideTabRenderComponent | `GetSideTabRenderComponent` | - | 自定义侧栏 Tab 标签渲染（透传 ChatBot） |
 | onCustomTabChange | `OnCustomTabChange` | - | 覆盖默认 Flow 节点详情拉取（透传 ChatBot） |
 | resizeProps | `ResizeProps` | - | 执行情况侧面板拖拽配置 |
+| size | `AiSizeMode`（`'normal' \| 'small'`） | `'small'` | 字号主题档位，透传至 ChatBot → ChatContainer（`small` 12px / `normal` 14px） |
 | beforeNimbusClick | `() => boolean \| Promise<boolean \| void> \| void` | - | Nimbus 点击前钩子，返回 `false` 阻止默认 showPanel（见 [beforeNimbusClick](integration-patterns.md#nimbus-点击自定义beforenimbusclick)） |
 | **会话** |||
 | enableChatSession | `boolean` | `true` | 是否启用会话管理 |

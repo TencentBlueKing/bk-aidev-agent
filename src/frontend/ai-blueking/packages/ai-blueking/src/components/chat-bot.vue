@@ -37,6 +37,7 @@
       :welcome-title="welcomeTitle"
       :prompts="effectivePrompts"
       :resize-props="effectiveResizeProps"
+      :size="props.size"
       :resources="effectiveResources"
       :shortcut-id="selectedShortcut?.id"
       :shortcuts="filteredShortcuts"

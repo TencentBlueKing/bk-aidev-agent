@@ -295,6 +295,24 @@ await agent.chat(input, sessionCode, undefined, undefined, property, 'hy3-previe
 | `max` | `number` | 最大宽度（px） |
 | `min` | `number` | 最小宽度（px） |
 
+### Q: 如何调整对话区域字号？
+
+**A**: 通过 `size` 配置，该属性从 `AIBlueking` → `ChatBot` → `ChatContainer` 全链路透传：
+
+```vue
+<!-- 默认 small（12px）；normal 为 14px -->
+<AIBlueking url="/api/" size="normal" />
+
+<ChatBot url="/api/" size="normal" />
+```
+
+| 值 | 说明 |
+|------|------|
+| `small`（默认） | 12px 基准字号 |
+| `normal` | 14px 基准字号 |
+
+容器根节点设置 `data-ai-size`，并通过 `useGlobalConfig` 注入；浮层会同步到 `document.body.dataset.aiSize`。详见 [chat-x 字号主题](chat-x-api.md#字号主题size-theme)。
+
 ---
 
 ## ChatBot Composable 问题

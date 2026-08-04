@@ -84,6 +84,7 @@
             :get-side-tab-render-component="props.getSideTabRenderComponent"
             :on-custom-tab-change="props.onCustomTabChange"
             :resize-props="props.resizeProps"
+            :size="props.size"
             :resources="agentResources"
             :session-code="props.initialSessionCode"
             :share-loading="isShareLoading"
