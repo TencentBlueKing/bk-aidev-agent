@@ -20,7 +20,7 @@ import type {
   OnCustomTabChange,
 } from '../types';
 import type { IAgentInfo, ILlmItem, ISession } from '@blueking/chat-helper';
-import type { IAiSlashMenuItem, IModelOption, ISkillListItem, IToolBtn, Message } from '@blueking/chat-x';
+import type { AiSizeMode, IAiSlashMenuItem, IModelOption, ISkillListItem, IToolBtn, Message } from '@blueking/chat-x';
 import type { TippyOptions } from 'vue-tippy';
 
 /**
@@ -224,6 +224,13 @@ export interface ChatBotProps {
     max?: number;
     min?: number;
   };
+
+  /**
+   * 字号主题档位，透传至 ChatContainer
+   * - `small`（默认）：12px 基准
+   * - `normal`：14px 基准
+   */
+  size?: AiSizeMode;
 
   /** 自定义侧栏内容区渲染 */
   getSideRenderComponent?: GetSideRenderComponent;

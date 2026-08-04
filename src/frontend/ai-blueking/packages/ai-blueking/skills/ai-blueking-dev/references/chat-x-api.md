@@ -486,7 +486,7 @@ const renderMode = useRenderModeInject(); // ComputedRef<RenderMode>
 
 ## 字号主题（size theme）
 
-`ChatContainer` 通过 `size?: AiSizeMode` 控制全局字号档位：
+`AIBlueking` / `ChatBot` / `ChatContainer` 均支持 `size?: AiSizeMode`（上层透传至 `ChatContainer`），控制全局字号档位：
 
 | 值 | 字号 |
 |----|------|
