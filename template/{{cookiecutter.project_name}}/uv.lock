@@ -51,7 +51,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aidev-agent", extras = ["opentelemetry"], specifier = "==2.2.0" },
-    { name = "aidev-ai-blueking", specifier = "==2.2.2b1" },
+    { name = "aidev-ai-blueking", specifier = "==2.2.2b3" },
     { name = "aidev-bkplugin", specifier = "==2.2.0" },
     { name = "aidev-wxbot", specifier = "==2.2.0" },
     { name = "bk-plugin-framework", specifier = "==2.3.15" },
@@ -134,15 +134,15 @@ opentelemetry = [
 
 [[package]]
 name = "aidev-ai-blueking"
-version = "2.2.2b1"
+version = "2.2.2b3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aidev-agent" },
     { name = "django" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a3/5b/481abe97a24d70a3f8a5a7bf7c7234f601f3c207ff67c126b7fe35cd8391/aidev_ai_blueking-2.2.2b1.tar.gz", hash = "sha256:40210efbe6ea5c0dc0380da3340d3f4814719bb500efa9c4ebbee7b7fd9f1924", size = 3576903, upload-time = "2026-07-29T07:34:57.353Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a7/87/65a6e9bddfcc3ef2dffc38d0a8f724e8613e7c03478d6dbf2b945ff0d6b5/aidev_ai_blueking-2.2.2b3.tar.gz", hash = "sha256:fef032626359571cb1963e1ec384da2aa7c3c4280efc31fdc5e5c7b1675ad95b", size = 3577925, upload-time = "2026-08-04T14:25:43.068462Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/52/dd/21803f6c951a69ef1a4a5ec6b6c22971f2a11552fa13b3210ff16a00245e/aidev_ai_blueking-2.2.2b1-py3-none-any.whl", hash = "sha256:2ea5f9de9d715aef0e66d90e0d9258b7410ed30d2d714f6114a7b240411d7510", size = 3628491, upload-time = "2026-07-29T07:34:55.818Z" },
+    { url = "https://files.pythonhosted.org/packages/43/13/5b716553db1bde5a1e2c5daa26ed21efd745cbd5ba0fc3b71388c6866d29/aidev_ai_blueking-2.2.2b3-py3-none-any.whl", hash = "sha256:1d12cf1de4914067075347d4c7788a9cd87bc91191622b97c8d2320fd7c64ab4", size = 3629414, upload-time = "2026-08-04T14:25:41.585096Z" },
 ]
 
 [[package]]
