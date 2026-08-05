@@ -62,7 +62,7 @@ sinceVersion: 0.0.20
 - **会话级聚合**：拍平当前会话所有 `AssistantMessage.property.artifacts`，以 `outputId` 去重后统一在一个列表内展示
 - **唯一命中**：以 `outputId` 作为会话内唯一键（同 `outputId` 视为同一文件）；文件名可能重复，不可作唯一键
 - **关键词搜索**：按文件名实时过滤列表
-- **异步取链**：`AIFileInfo` 本身不含 `url` / `previewUrl`，通过 `ChatContainer` 的 `onArtifactClick` 按 `outputId` 缓存获取 `download_url` / `preview_url`
+- **异步取链**：`AIFileInfo` 本身不含 `url` / `previewUrl`，通过 `ChatContainer` 的 `onArtifactClick` 按 `outputId` 获取 `download_url` / `preview_url`（TTL 8 分钟缓存；预览重试会 `force` 刷新）
 - **职责拆分**：
   - **面板本身**：列表、搜索、预览头（文件名 / 图标 / 下载）
   - **`ArtifactPreviewHost`**：按策略加载正文或预览 URL，分派到对应 renderer；展示 loading / empty / error（含重试）

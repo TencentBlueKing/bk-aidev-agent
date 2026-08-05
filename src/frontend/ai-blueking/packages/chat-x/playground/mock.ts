@@ -383,6 +383,7 @@ const getMockTextDownloadUrl = (outputId: string) => {
 export const MOCK_ARTIFACT_URL_MAP: Record<string, MockArtifactUrl> = MOCK_ARTIFACT_STATIC_URL;
 
 export const mockArtifactClick = async (file: AIFileInfo): Promise<MockArtifactUrl> => {
+  console.info('mockArtifactClick', file);
   await new Promise(resolve => setTimeout(resolve, 600));
   const staticUrls = MOCK_ARTIFACT_STATIC_URL[file.outputId] ?? {};
   const textDownloadUrl = getMockTextDownloadUrl(file.outputId);

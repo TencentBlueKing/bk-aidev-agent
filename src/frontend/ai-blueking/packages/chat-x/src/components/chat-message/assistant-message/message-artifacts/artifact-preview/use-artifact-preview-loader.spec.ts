@@ -162,6 +162,20 @@ describe('use-artifact-preview-loader', () => {
     wrapper.unmount();
   });
 
+  it('load({ force: true }) 应向 resolveUrls 传 force', async () => {
+    const resolveUrls = vi.fn().mockResolvedValue({ preview_url: 'https://example.com/a.pdf' });
+    const { api, wrapper } = mountLoader({
+      file: createFile(AIFileType.Pdf),
+      resolveUrls,
+    });
+
+    await api.load({ force: true });
+
+    expect(resolveUrls).toHaveBeenCalledWith(expect.objectContaining({ type: AIFileType.Pdf }), { force: true });
+    expect(api.status.value).toBe('ready');
+    wrapper.unmount();
+  });
+
   it('dispose 后 abort 不应置为 error', async () => {
     const fetchMock = vi.fn(
       (_url: string, options: { signal: AbortSignal }) => new Promise((_resolve, reject) => {

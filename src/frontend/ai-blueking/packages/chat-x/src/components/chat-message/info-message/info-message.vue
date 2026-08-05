@@ -48,7 +48,7 @@
 
     &-content {
       max-width: 100%;
-      word-break: break-word;
+      word-break: break-all;
     }
   }
 </style>
