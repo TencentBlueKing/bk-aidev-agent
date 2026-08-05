@@ -416,6 +416,8 @@ class BaseResourceManager(abc.ABC):
         )
 
     def construct_tool(self, tool_code: str, **kwargs) -> StructuredTool:
+        username = kwargs.pop("username", None) or self.username or None
+        executor_info = kwargs.pop("executor_info", None) or {}
         operation_name = "retrieve_tool" if kwargs.pop("appspace", True) else "appspace_retrieve_tool"
         client = self.get_client()
         operation = getattr(client.api, operation_name)
@@ -423,12 +425,32 @@ class BaseResourceManager(abc.ABC):
         result["data"]["tool_cn_name"] = result["data"]["tool_name"]
         if result["data"].get("credential_type", "") != CredentialType.NULL.value:
             tool = Tool.model_validate(result["data"])
-            tool.extra = ToolExtra(
-                header={
-                    "X-Bkapi-Authorization": json.dumps(
-                        {"bk_app_code": self.app_code, "bk_app_secret": self.app_secret}
-                    )
+
+            app_code = executor_info.get("app_code") or self.app_code
+            app_secret = executor_info.get("app_secret") or self.app_secret
+            access_token = executor_info.get("access_token") or self.resolve_access_token(username)
+
+            if access_token:
+                auth_info: dict = {"access_token": access_token}
+                if username:
+                    auth_info["bk_username"] = username
+            elif username:
+                auth_info = {
+                    "bk_app_code": app_code,
+                    "bk_app_secret": app_secret,
+                    "bk_username": username,
                 }
+            else:
+                auth_info = {"bk_app_code": app_code, "bk_app_secret": app_secret}
+
+            tool.extra = ToolExtra(header={"X-Bkapi-Authorization": json.dumps(auth_info)})
+
+            _logger.info(
+                f"[credential] construct_tool: tool_code={tool_code}, "
+                f"app_code={self.app_code}, rm_type={type(self).__name__}, "
+                f"has_executor_info={bool(executor_info)}, "
+                f"has_access_token={bool(access_token)}, "
+                f"username={username or ''}"
             )
             return make_structured_tool(tool)
         return make_structured_tool(Tool.model_validate(result["data"]))

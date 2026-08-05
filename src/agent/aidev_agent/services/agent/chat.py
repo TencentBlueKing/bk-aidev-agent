@@ -1344,7 +1344,14 @@ class ChatAgentBuilder:
         else:
             tool_codes = config.tool_codes
         logger.info(f"ChatAgentBuilder: tool_codes->[{tool_codes}]")
-        tools = [self.ctx.resource_manager.construct_tool(tool_code) for tool_code in tool_codes] + mcp_result.tools
+        tools = [
+            self.ctx.resource_manager.construct_tool(
+                tool_code,
+                username=self.ctx.username,
+                executor_info=self._executor_info,
+            )
+            for tool_code in tool_codes
+        ] + mcp_result.tools
         self._apply_tool_approval_settings(tools)
         return tools
 
