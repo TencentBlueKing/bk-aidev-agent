@@ -129,6 +129,61 @@ describe('useCustomTab', () => {
       wrapper.unmount();
     });
 
+    it('ensureCustomTab 应挂上 Tab 但不展开、不切换选中', async () => {
+      const Provider = createProviderComponent();
+      const wrapper = mount(Provider);
+
+      const vm = wrapper.vm as unknown as {
+        providerResult: {
+          ensureCustomTab: (tab: { label: string; name: string }) => void;
+          isCollapse: { value: boolean };
+          selectedTab: { value: { name: string } };
+          tabs: { value: { name: string }[] };
+        };
+      };
+
+      vm.providerResult.ensureCustomTab({ label: '文件产物', name: 'file-artifact' });
+      await nextTick();
+
+      expect(vm.providerResult.tabs.value.some(tab => tab.name === 'file-artifact')).toBe(true);
+      expect(vm.providerResult.isCollapse.value).toBe(true);
+      expect(vm.providerResult.selectedTab.value.name).toBe(EXECUTION_TAB_NAME);
+
+      wrapper.unmount();
+    });
+
+    it('ensureCustomTab 同名应合并更新且仍不展开、不切换选中', async () => {
+      const Provider = createProviderComponent();
+      const wrapper = mount(Provider);
+
+      const vm = wrapper.vm as unknown as {
+        providerResult: {
+          ensureCustomTab: (tab: {
+            label: string;
+            name: string;
+            order?: number;
+            visible?: boolean;
+          }) => void;
+          isCollapse: { value: boolean };
+          selectedTab: { value: { name: string } };
+          tabs: { value: { label: string; name: string; order?: number }[] };
+        };
+      };
+
+      vm.providerResult.ensureCustomTab({ label: '文件产物', name: 'file-artifact', order: -1 });
+      await nextTick();
+      vm.providerResult.ensureCustomTab({ label: '文件产物-更新', name: 'file-artifact', order: -2 });
+      await nextTick();
+
+      const fileTabs = vm.providerResult.tabs.value.filter(tab => tab.name === 'file-artifact');
+      expect(fileTabs).toHaveLength(1);
+      expect(fileTabs[0]).toMatchObject({ label: '文件产物-更新', order: -2 });
+      expect(vm.providerResult.isCollapse.value).toBe(true);
+      expect(vm.providerResult.selectedTab.value.name).toBe(EXECUTION_TAB_NAME);
+
+      wrapper.unmount();
+    });
+
     it('同名 Tab 不应该重复添加', async () => {
       const Provider = createProviderComponent();
       const wrapper = mount(Provider);

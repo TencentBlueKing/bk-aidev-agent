@@ -30,6 +30,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { APPROVAL_STATUS, InterruptReason, MessageRole, MessageStatus } from '../../ag-ui/types';
 import { LOADING_MESSAGE_ID, RenderMode } from '../../common';
+import { useCustomTabProvider } from '../../composables/use-custom-tab';
 import ChatContainer, { type ChatContainerProps } from './chat-container.vue';
 
 import type { AssistantMessage, Message, UserMessage, UserQuestionInterrupt } from '../../ag-ui/types';
@@ -72,6 +73,12 @@ const mockExecutionGroupsRef = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ref: vueRef } = require('vue');
   return vueRef([]) as Ref<unknown[]>;
+});
+/** 供 useMessageGroup mock 注入会话级文件产物，验证 ensureCustomTab 静默挂载 */
+const mockSessionArtifactsRef = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { ref: vueRef } = require('vue');
+  return vueRef([]) as Ref<Array<{ name: string; outputId: string; size: number; type: string }>>;
 });
 const mockUseMessageGroup = vi.hoisted(() => vi.fn());
 const mockUseRenderModeProvider = vi.hoisted(() => vi.fn());
@@ -194,6 +201,7 @@ vi.mock('../../composables', () => ({
       return {
         messageGroups,
         executionGroups,
+        sessionArtifacts: computed(() => mockSessionArtifactsRef.value),
         activeUserQuestionInterrupt,
         pendingApprovalCount,
         pendingApprovalTipText,
@@ -257,10 +265,13 @@ vi.mock('../../composables/use-custom-tab', () => {
             ),
         );
 
-        const addCustomTab = vi.fn((tab: { label: string; name: string }) => {
+        const ensureCustomTab = vi.fn((tab: { label: string; name: string }) => {
           if (!tabs.value.find((t: { name: string }) => t.name === tab.name)) {
             tabs.value = [...tabs.value, tab];
           }
+        });
+        const addCustomTab = vi.fn((tab: { label: string; name: string }) => {
+          ensureCustomTab(tab);
           isCollapse.value = false;
         });
         const removeCustomTab = vi.fn((name: string) => {
@@ -281,6 +292,7 @@ vi.mock('../../composables/use-custom-tab', () => {
           displayTabs,
           selectedTab,
           addCustomTab,
+          ensureCustomTab,
           removeCustomTab,
           selectCustomTab,
           resetCustomTab,
@@ -292,6 +304,7 @@ vi.mock('../../composables/use-custom-tab', () => {
           selectedTab,
           isCollapse,
           addCustomTab,
+          ensureCustomTab,
           removeCustomTab,
           selectCustomTab,
           resetCustomTab,
@@ -620,6 +633,7 @@ describe('ChatContainer', () => {
     vi.clearAllMocks();
     mockMessageGroupsRef.value = [];
     mockExecutionGroupsRef.value = [];
+    mockSessionArtifactsRef.value = [];
   });
 
   afterEach(() => {
@@ -1310,6 +1324,35 @@ describe('ChatContainer', () => {
 
       expect(getSideTabRenderComponent).toHaveBeenCalled();
       expect(wrapper.find('.custom-tab-label').exists()).toBe(true);
+    });
+
+    it('有 sessionArtifacts 时应 ensureCustomTab 挂上文件产物且不展开、不抢选中', async () => {
+      mockSessionArtifactsRef.value = [
+        { name: '报告.pdf', outputId: 'out-1', size: 1024, type: 'pdf' },
+      ];
+      // 侧栏因执行情况可展开时，文件产物只应静默挂上
+      mockExecutionGroupsRef.value = [{ messages: [{ id: 't1' }], type: MessageRole.Tool, uid: 'exec-1' }];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages: [createUserMessage('1', 'Hello')] },
+      });
+      await nextTick();
+
+      const providerApi = vi.mocked(useCustomTabProvider).mock.results.at(-1)?.value as {
+        addCustomTab: ReturnType<typeof vi.fn>;
+        ensureCustomTab: ReturnType<typeof vi.fn>;
+        isCollapse: { value: boolean };
+        selectedTab: { value: { name: string } };
+        tabs: { value: { name: string }[] };
+      };
+
+      expect(providerApi.ensureCustomTab).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'file-artifact', closable: false, order: -1 }),
+      );
+      expect(providerApi.addCustomTab).not.toHaveBeenCalled();
+      expect(providerApi.tabs.value.some(tab => tab.name === 'file-artifact')).toBe(true);
+      expect(providerApi.isCollapse.value).toBe(true);
+      expect(providerApi.selectedTab.value.name).toBe('execution');
     });
   });
 

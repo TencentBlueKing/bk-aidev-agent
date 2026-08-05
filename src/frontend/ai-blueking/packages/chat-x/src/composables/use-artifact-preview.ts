@@ -37,24 +37,16 @@ export const FILE_ARTIFACT_TAB_NAME = 'file-artifact';
 export type OpenArtifactPreviewPayload = {
   /** 被点击的文件 */
   file: AIFileInfo;
-  /** 文件在所属消息 artifacts 中的下标 */
-  index: number;
-  /** 所属 AssistantMessage 的 uid */
-  messageUid: string;
 };
 
 /**
- * 会话级文件产物：在 AIFileInfo 基础上补充命中所需的唯一 id 与所属消息。
- * 由于同一会话可能出现「多个 AssistantMessage + 同名文件」，文件名不可作为唯一键，
- * 统一用 messageUid + 消息内下标 + outputId 组合出全局唯一 id。
+ * 会话级文件产物：以 outputId 为会话内唯一键（同 outputId 视为同一文件）。
+ * 拍平去重后即为 AIFileInfo，此处用别名标明语义。
  */
-export type SessionArtifact = AIFileInfo & {
-  artifactId: string;
-  messageUid: string;
-};
+export type SessionArtifact = AIFileInfo;
 
 type ArtifactPreviewContext = {
-  /** 当前命中的文件 id */
+  /** 当前命中的文件 outputId */
   activeArtifactId: Ref<string>;
   /** 是否具备异步取链能力（有 onArtifactClick 时下载按钮可见） */
   canResolveArtifactUrl: ComputedRef<boolean>;
@@ -62,13 +54,9 @@ type ArtifactPreviewContext = {
   openPreview: (payload: OpenArtifactPreviewPayload) => void;
   /** 按 outputId 缓存并解析 download_url / preview_url */
   resolveArtifactUrls: (file: AIFileInfo) => Promise<ArtifactUrlResult>;
-  /** 直接设置命中文件 id（侧栏列表内切换用） */
+  /** 直接设置命中文件 outputId（侧栏列表内切换用） */
   setActiveArtifactId: (id: string) => void;
 };
-
-/** 统一的文件产物唯一 id 生成规则，Provider 与文件卡片两侧必须一致 */
-export const buildArtifactId = (messageUid: string, index: number, outputId: string) =>
-  `${messageUid}#${index}#${outputId}`;
 
 /** 通过临时 <a> 触发浏览器下载 */
 export const triggerArtifactDownload = (url: string, fileName: string) => {
@@ -91,7 +79,7 @@ export const useArtifactPreviewProvider = (options: {
   /** 读取业务侧异步取链回调（用 getter 保持对 props 变更敏感） */
   getOnArtifactClick?: () => OnArtifactClick | undefined;
   /** 命中文件后触发：由容器负责 addCustomTab + 展开侧栏 + 选中 Tab */
-  onOpen: (artifactId: string) => void;
+  onOpen: (outputId: string) => void;
 }) => {
   const activeArtifactId = shallowRef('');
   // 已成功解析的 URL 缓存（key = outputId）
@@ -106,7 +94,7 @@ export const useArtifactPreviewProvider = (options: {
   };
 
   const openPreview = (payload: OpenArtifactPreviewPayload) => {
-    const id = buildArtifactId(payload.messageUid, payload.index, payload.file.outputId);
+    const id = payload.file.outputId;
     activeArtifactId.value = id;
     options.onOpen(id);
   };

@@ -392,7 +392,34 @@ export const mockArtifactClick = async (file: AIFileInfo): Promise<MockArtifactU
   };
 };
 
-// 带文件产物的会话消息，用于 playground 调试 artifacts 展示
+/** 第一轮产物：含 pdf / markdown / txt，后续轮次会复用部分 outputId 验证去重 */
+const MOCK_ARTIFACTS_ROUND1: AIFileInfo[] = [
+  MOCK_FILE_ARTIFACTS[0], // artifact-pdf
+  MOCK_FILE_ARTIFACTS[1], // artifact-markdown
+  MOCK_FILE_ARTIFACTS[5], // artifact-txt
+];
+
+/**
+ * 第二轮产物：复用 artifact-pdf / artifact-txt（同 outputId 应去重并保留本轮），
+ * 并新增 artifact-html；侧栏预期顺序按「最后一次出现」：markdown → pdf(新) → html → txt
+ */
+const MOCK_ARTIFACTS_ROUND2: AIFileInfo[] = [
+  {
+    name: '可观测平台立项说明书-v2.pdf',
+    outputId: 'artifact-pdf',
+    size: 312_320,
+    type: AIFileType.Pdf,
+  },
+  MOCK_FILE_ARTIFACTS[4], // artifact-html
+  {
+    name: '周例会纪要-0721-修订.txt',
+    outputId: 'artifact-txt',
+    size: MOCK_ARTIFACT_TXT_CONTENT.length + 32,
+    type: AIFileType.Txt,
+  },
+];
+
+// 带文件产物的会话消息，用于 playground 调试 artifacts 展示与 outputId 去重
 export const MOCK_ARTIFACTS_MESSAGES = [
   {
     id: 'mock-artifacts-user',
@@ -401,17 +428,40 @@ export const MOCK_ARTIFACTS_MESSAGES = [
     name: 'user',
     status: MessageStatus.Complete,
     messageId: 'mock-artifacts-user',
+    uid: 'mock-artifacts-user',
   },
   {
     id: 'mock-artifacts-assistant',
     role: MessageRole.Assistant,
-    content:
-      '已为你生成一组评审材料：立项 PDF、配置说明 Markdown、告警 JSON、巡检照片、大盘周报 HTML，以及周例会纪要 TXT。可点击卡片在侧栏预览或下载。',
+    content: '已整理第一版材料：立项 PDF、配置说明 Markdown、周例会纪要 TXT。可点击卡片在侧栏预览或下载。',
     name: 'react_agent',
     status: MessageStatus.Complete,
     messageId: 'mock-artifacts-assistant',
+    uid: 'mock-artifacts-assistant',
     property: {
-      artifacts: MOCK_FILE_ARTIFACTS,
+      artifacts: MOCK_ARTIFACTS_ROUND1,
+    },
+  },
+  {
+    id: 'mock-artifacts-user-2',
+    role: MessageRole.User,
+    content: '再补一版 PDF，并加上大盘周报 HTML；纪要也更新一下。',
+    name: 'user',
+    status: MessageStatus.Complete,
+    messageId: 'mock-artifacts-user-2',
+    uid: 'mock-artifacts-user-2',
+  },
+  {
+    id: 'mock-artifacts-assistant-2',
+    role: MessageRole.Assistant,
+    content:
+      '已更新：PDF / TXT 与上一轮同 outputId（侧栏应去重并保留本轮最新文件名），同时新增 HTML 周报。打开「文件产物」侧栏可验证去重与顺序。',
+    name: 'react_agent',
+    status: MessageStatus.Complete,
+    messageId: 'mock-artifacts-assistant-2',
+    uid: 'mock-artifacts-assistant-2',
+    property: {
+      artifacts: MOCK_ARTIFACTS_ROUND2,
     },
   },
 ] as Message[];
@@ -724,6 +774,8 @@ It converts "HTML", but keep intact partial entries like "xxxHTMLyyy" and so on.
               `;
 
 export const MOCK_MESSAGES = [
+  // 文件产物 + outputId 去重调试会话（侧栏「文件产物」）
+  ...MOCK_ARTIFACTS_MESSAGES,
   {
     id: 'cbba21f14f7847d98ff3240e69ef5c07',
     role: 'user',

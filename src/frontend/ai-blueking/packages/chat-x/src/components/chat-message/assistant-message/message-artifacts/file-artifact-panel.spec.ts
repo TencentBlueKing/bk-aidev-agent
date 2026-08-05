@@ -29,7 +29,7 @@ import { type VueWrapper, flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AIFileType } from '../../../../ag-ui/types/file';
-import { ARTIFACT_PREVIEW_TOKEN, buildArtifactId } from '../../../../composables/use-artifact-preview';
+import { ARTIFACT_PREVIEW_TOKEN } from '../../../../composables/use-artifact-preview';
 import FileArtifactPanel from './file-artifact-panel.vue';
 
 import type { SessionArtifact } from '../../../../composables/use-artifact-preview';
@@ -72,19 +72,13 @@ vi.mock('../../../message-loading/message-loading.vue', () => ({
   }),
 }));
 
-const createArtifact = (overrides: Partial<SessionArtifact> = {}): SessionArtifact => {
-  const messageUid = overrides.messageUid ?? 'm1';
-  const outputId = overrides.outputId ?? 'o1';
-  return {
-    artifactId: buildArtifactId(messageUid, 0, outputId),
-    messageUid,
-    name: '项目立项书.pdf',
-    outputId,
-    size: 1024,
-    type: AIFileType.Pdf,
-    ...overrides,
-  };
-};
+const createArtifact = (overrides: Partial<SessionArtifact> = {}): SessionArtifact => ({
+  name: '项目立项书.pdf',
+  outputId: 'o1',
+  size: 1024,
+  type: AIFileType.Pdf,
+  ...overrides,
+});
 
 const createPreviewContext = (overrides: Record<string, unknown> = {}) => ({
   activeArtifactId: ref(''),
@@ -128,7 +122,7 @@ describe('FileArtifactPanel', () => {
 
   it('命中文件的列表项应带 is-active 态', () => {
     const artifacts = [createArtifact({ outputId: 'a' }), createArtifact({ outputId: 'b' })];
-    wrapper = mountPanel({ activeId: artifacts[1].artifactId, artifacts });
+    wrapper = mountPanel({ activeId: artifacts[1].outputId, artifacts });
 
     const items = wrapper.findAll('.ai-artifact-file-card.is-list');
     expect(items[0].classes()).not.toContain('is-active');
@@ -137,11 +131,11 @@ describe('FileArtifactPanel', () => {
 
   it('点击其它文件项应 emit select', async () => {
     const artifacts = [createArtifact({ outputId: 'a' }), createArtifact({ outputId: 'b' })];
-    wrapper = mountPanel({ activeId: artifacts[0].artifactId, artifacts });
+    wrapper = mountPanel({ activeId: artifacts[0].outputId, artifacts });
 
     await wrapper.findAll('.ai-artifact-file-card.is-list')[1].trigger('click');
 
-    expect(wrapper.emitted('select')?.[0]).toEqual([artifacts[1].artifactId]);
+    expect(wrapper.emitted('select')?.[0]).toEqual([artifacts[1].outputId]);
   });
 
   it('搜索应过滤文件列表', async () => {
@@ -160,7 +154,7 @@ describe('FileArtifactPanel', () => {
 
   it('未传 onArtifactClick 时预览区应展示无数据', async () => {
     const artifact = createArtifact();
-    wrapper = mountPanel({ activeId: artifact.artifactId, artifacts: [artifact] });
+    wrapper = mountPanel({ activeId: artifact.outputId, artifacts: [artifact] });
     await flushPromises();
 
     expect(wrapper.find('.ai-artifact-preview-host-empty').exists()).toBe(true);
@@ -176,7 +170,7 @@ describe('FileArtifactPanel', () => {
     });
     const artifact = createArtifact({ type: AIFileType.Pdf });
     wrapper = mountPanel(
-      { activeId: artifact.artifactId, artifacts: [artifact] },
+      { activeId: artifact.outputId, artifacts: [artifact] },
       createPreviewContext({ resolveArtifactUrls }),
     );
     await flushPromises();
@@ -200,7 +194,7 @@ describe('FileArtifactPanel', () => {
       type: AIFileType.Html,
     });
     wrapper = mountPanel(
-      { activeId: artifact.artifactId, artifacts: [artifact] },
+      { activeId: artifact.outputId, artifacts: [artifact] },
       createPreviewContext({ resolveArtifactUrls }),
     );
     await flushPromises();
@@ -219,7 +213,7 @@ describe('FileArtifactPanel', () => {
     });
     const artifact = createArtifact({ name: 'page.html', type: AIFileType.Html });
     wrapper = mountPanel(
-      { activeId: artifact.artifactId, artifacts: [artifact] },
+      { activeId: artifact.outputId, artifacts: [artifact] },
       createPreviewContext({ resolveArtifactUrls }),
     );
     await flushPromises();
@@ -238,7 +232,7 @@ describe('FileArtifactPanel', () => {
     );
     const artifact = createArtifact();
     wrapper = mountPanel(
-      { activeId: artifact.artifactId, artifacts: [artifact] },
+      { activeId: artifact.outputId, artifacts: [artifact] },
       createPreviewContext({ resolveArtifactUrls }),
     );
 
