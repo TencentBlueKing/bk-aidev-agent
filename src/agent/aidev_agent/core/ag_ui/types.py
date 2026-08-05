@@ -197,7 +197,10 @@ class ExtendSystemMessage(ExtendBaseMessage, SystemMessage):
 
 
 class ExtendAssistantMessage(ExtendBaseMessage, AssistantMessage):
-    pass
+    # 首帧 MESSAGES_SNAPSHOT（历史还原）携带的本轮文件产物列表，元素结构与实时
+    # `artifacts_generated` 事件同构（形如 {"outputId","type","name","size"}）；
+    # 默认 None，无产物的历史消息不受影响。
+    artifacts: list | None = Field(default=None, description="本轮文件产物列表（历史还原用）")
 
 
 class ExtendUserMessage(ExtendBaseMessage, UserMessage):

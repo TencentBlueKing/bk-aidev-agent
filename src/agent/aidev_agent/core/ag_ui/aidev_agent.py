@@ -28,7 +28,12 @@ from aidev_agent.exceptions import extract_model_error_message
 from .agent import LangGraphAGUIAgent
 from .approval import ApprovalOutcomeBuilder, ApproveResultLiteral
 from .ask_user_question import AskUserQuestionOutcomeBuilder
-from .event_builders import build_tool_result_event, enhance_tool_call, is_tool_approval_required
+from .event_builders import (
+    TOOL_CALLING_PLACEHOLDER,
+    build_tool_result_event,
+    enhance_tool_call,
+    is_tool_approval_required,
+)
 from .events import ExtendToolCallStartEvent
 from .types import (
     AgentInput,
@@ -286,7 +291,7 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         found_interrupt = False
         for msg in messages:
             msg_dict = msg if isinstance(msg, dict) else (msg.model_dump() if hasattr(msg, "model_dump") else dict(msg))
-            if msg_dict.get("content") == "正在调用工具...":
+            if msg_dict.get("content") == TOOL_CALLING_PLACEHOLDER:
                 msg_dict["content"] = ""
             if not found_interrupt and msg_dict.get("role") == "interrupt":
                 msg_dict = dict(msg_dict)

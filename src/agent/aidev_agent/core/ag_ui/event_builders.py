@@ -15,6 +15,11 @@ from aidev_agent.core.nodes.tool.approval_wrapper import is_approval_configured
 from .events import ExtendToolCallResultEvent
 from .types import ExtendFunctionCall, ExtendToolCall
 
+# 仅有tool_calls、无文本输出的 assistant 消息使用的占位符 content。
+# 首帧 MESSAGES_SNAPSHOT（历史还原）与 interrupt 终态回放需将其归一化为 ""，
+# 与前端读接口（session_content / session）的展示语义保持一致。
+TOOL_CALLING_PLACEHOLDER = "正在调用工具..."
+
 
 def is_tool_approval_required(tool_call_name: str, tools: dict[str, Any]) -> bool:
     """检查工具调用是否需要审批。
@@ -167,7 +172,7 @@ def resolve_content(
         return reasoning_content
     elif not content_stripped and tool_calls:
         # 有立即写入的 tool_calls 但 content 为空/只有空白字符，使用一个有意义的占位符
-        return "正在调用工具..."
+        return TOOL_CALLING_PLACEHOLDER
     elif not content_stripped:
         # 没有 tool_calls 也没有内容，使用空字符串（可能会失败）
         return ""

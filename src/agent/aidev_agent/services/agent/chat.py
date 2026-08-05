@@ -1062,7 +1062,22 @@ class ChatCompletionAgent(BaseModel):
                         messages.append(HumanMessage(id=each.id, content=str(each.content)))
                 case PromptRole.ASSISTANT.value | PromptRole.AI.value:
                     tool_calls = _extract_tool_calls(bp)
-                    messages.append(AIMessage(id=each.id, content=each.content, tool_calls=tool_calls))
+                    # 首帧 MESSAGES_SNAPSHOT（历史还原）：artifacts 经 builtin_property 透传，
+                    # 放入 AIMessage.additional_kwargs（LangChain 标准扩展位），供
+                    # langchain_messages_to_agui 还原到 AGUIAssistantMessage.artifacts。
+                    # 无 artifacts 时不写 additional_kwargs，避免污染其它 AIMessage。
+                    additional_kwargs = {}
+                    artifacts = bp.get("artifacts")
+                    if artifacts:
+                        additional_kwargs["artifacts"] = artifacts
+                    messages.append(
+                        AIMessage(
+                            id=each.id,
+                            content=each.content,
+                            tool_calls=tool_calls,
+                            additional_kwargs=additional_kwargs,
+                        )
+                    )
                 case PromptRole.SYSTEM.value:
                     messages.append(SystemMessage(id=each.id, content=each.content))
                 case PromptRole.TOOL.value:

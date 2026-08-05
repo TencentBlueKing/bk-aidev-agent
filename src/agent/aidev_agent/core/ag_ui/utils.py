@@ -32,6 +32,7 @@ from langchain_core.messages import (
 )
 
 from .events import ExtendToolCallResultEvent, ExtendToolCallStartEvent
+from .event_builders import TOOL_CALLING_PLACEHOLDER
 from .types import (
     ActivityMessage,
     InfoMessage,
@@ -216,13 +217,22 @@ def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]
                     )
                 )
 
+            # 占位符归一化：仅有 tool_calls、无文本输出的 assistant 消息 content 为
+            # "正在调用工具..."，首帧 MESSAGES_SNAPSHOT 展示时归一化为 ""（与前端读接口一致）；
+            # 消息本身及 tool_calls 保留。此归一化置于过滤之后、快照构建之前的最后一环。
+            content = stringify_if_needed(resolve_message_content(message.content))
+            if content == TOOL_CALLING_PLACEHOLDER:
+                content = ""
+
             agui_messages.append(
                 AGUIAssistantMessage(
                     id=str(message.id),
                     role="assistant",
-                    content=stringify_if_needed(resolve_message_content(message.content)),
+                    content=content,
                     tool_calls=tool_calls,
                     name=message.name,
+                    # 历史还原：本轮文件产物（经 AIMessage.additional_kwargs 透传）
+                    artifacts=message.additional_kwargs.get("artifacts"),
                 )
             )
         elif isinstance(message, SystemMessage):
