@@ -197,10 +197,10 @@ class ExtendSystemMessage(ExtendBaseMessage, SystemMessage):
 
 
 class ExtendAssistantMessage(ExtendBaseMessage, AssistantMessage):
-    # 首帧 MESSAGES_SNAPSHOT（历史还原）携带的本轮文件产物列表，元素结构与实时
-    # `artifacts_generated` 事件同构（形如 {"outputId","type","name","size"}）；
-    # 默认 None，无产物的历史消息不受影响。
-    artifacts: list | None = Field(default=None, description="本轮文件产物列表（历史还原用）")
+    # 首帧 MESSAGES_SNAPSHOT（历史还原）携带的开放属性字典，与前端 IMessageProperty 契约对齐。
+    # 本轮文件产物放在 property["artifacts"]，元素结构与实时 `artifacts_generated` 事件同构
+    # （形如 {"outputId","type","name","size"}）；默认 None，无产物的历史消息不受影响。
+    property: dict | None = Field(default=None, description="开放属性字典（历史还原用，如 artifacts）")
 
 
 class ExtendUserMessage(ExtendBaseMessage, UserMessage):

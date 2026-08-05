@@ -224,6 +224,11 @@ def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]
             if content == TOOL_CALLING_PLACEHOLDER:
                 content = ""
 
+            # 历史还原：本轮文件产物（经 AIMessage.additional_kwargs 透传），
+            # 放到 property["artifacts"]，与 DB 落库结构、前端 IMessageProperty 契约对齐；
+            # 仅在存在产物时才写 property，避免污染无产物的历史 assistant 消息。
+            artifacts = message.additional_kwargs.get("artifacts")
+            message_property = {"artifacts": artifacts} if artifacts else None
             agui_messages.append(
                 AGUIAssistantMessage(
                     id=str(message.id),
@@ -231,8 +236,7 @@ def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]
                     content=content,
                     tool_calls=tool_calls,
                     name=message.name,
-                    # 历史还原：本轮文件产物（经 AIMessage.additional_kwargs 透传）
-                    artifacts=message.additional_kwargs.get("artifacts"),
+                    property=message_property,
                 )
             )
         elif isinstance(message, SystemMessage):
