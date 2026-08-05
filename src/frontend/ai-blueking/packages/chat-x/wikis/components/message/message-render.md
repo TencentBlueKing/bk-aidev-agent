@@ -490,34 +490,11 @@ h(ContentRender, { content: message.content || '', status: message.status }, /* 
 ```typescript
 import { MessageRole, MessageStatus, MessageToolsStatus, type Message, type IToolBtn } from '@blueking/chat-x';
 
-// 消息角色
-enum MessageRole {
-  User = 'user',
-  Assistant = 'assistant',
-  Info = 'info',
-  Reasoning = 'reasoning',
-  Tool = 'tool',
-  Activity = 'activity',
-  Loading = 'loading',
-  Interrupt = 'interrupt',
-}
-
-// 消息状态
-enum MessageStatus {
-  Pending = 'pending',
-  Streaming = 'streaming',
-  Complete = 'complete',
-  Error = 'error',
-  Stop = 'stop',
-  Disabled = 'disabled',
-}
-
-// 工具按钮状态（仅转发给 UserMessage）
-enum MessageToolsStatus {
-  Disabled = 'disabled',
-  Hidden = 'hidden',
-}
+// MessageRole / MessageStatus 完整枚举见 ../../types/constants
+// MessageToolsStatus：Disabled | Hidden（仅转发给 UserMessage）
 ```
+
+> `MessageRole` / `MessageStatus` 完整取值见 [常量枚举](../../types/constants)。
 
 ## 关联组件
 

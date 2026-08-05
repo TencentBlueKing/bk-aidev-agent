@@ -867,18 +867,10 @@ const handleSendMessage = async (
 
 ## 类型定义
 
+> `MessageStatus` 完整取值见 [常量枚举](../../types/constants)。与输入区相关：`pending` / `streaming` / `fetching` → 停止按钮；`complete` / `completed` / `error` / `stop` → 发送；`disabled` → 置灰。
+
 ```typescript
 import type { UserMessage } from '@blueking/chat-x';
-
-// 消息状态
-enum MessageStatus {
-  Pending = 'pending', // 等待中（显示停止按钮）
-  Streaming = 'streaming', // 流式输出中（显示停止按钮）
-  Complete = 'complete', // 完成（显示发送按钮）
-  Error = 'error', // 错误（显示发送按钮）
-  Stop = 'stop', // 已停止（显示发送按钮）
-  Disabled = 'disabled', // 禁用（发送按钮置灰）
-}
 
 // 上传状态
 enum UploadStatus {

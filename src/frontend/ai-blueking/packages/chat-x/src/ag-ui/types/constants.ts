@@ -80,6 +80,7 @@ export enum MessageRole {
 }
 export enum MessageStatus {
   Complete = 'complete',
+  Completed = 'completed',
   Disabled = 'disabled',
   Error = 'error',
   Fetching = 'fetching', // 请求中

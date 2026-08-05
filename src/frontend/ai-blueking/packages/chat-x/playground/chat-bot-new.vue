@@ -186,7 +186,7 @@
   import CustomTabContent from './custom-tab-content.vue';
   import { MOCK_INTERRUPT_MESSAGES } from './interrupt';
   import { streamContent } from './markdown';
-  import { MOCK_ARTIFACTS_MESSAGES, MOCK_MODELS, MOCK_PROMPTS, MOCK_RESOURCES, mockArtifactClick } from './mock';
+  import { MOCK_MESSAGES, MOCK_MODELS, MOCK_PROMPTS, MOCK_RESOURCES, mockArtifactClick } from './mock';
   import { uploadFileToSession } from './upload-file';
 
   import type { CustomTab, IAiSlashMenuItem, Shortcut, TagSchema } from '../src/types';
@@ -206,7 +206,8 @@
   const handleModelChange = (model: IModelOption) => {
     console.log('model change:', model);
   };
-  const messages = deepRef<Message[]>([...MOCK_ARTIFACTS_MESSAGES]);
+  // 使用含 toolCalls 的 mock，用于验证「执行情况」侧栏
+  const messages = deepRef<Message[]>([...(MOCK_MESSAGES as Message[])]);
 
   const handleInterruptResume: OnInterruptResume = (payload, interrupt) => {
     // 取消审批与流程节点重试 / 跳过复用同一回调，业务侧按 payload.operation 分流处理
