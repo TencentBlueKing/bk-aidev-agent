@@ -168,6 +168,24 @@ class GeneratorStreamingHelper:
         return False
 
     @classmethod
+    def is_registered(cls, thread_id: str, message_handler: BaseMessageQueueHandler | None = None) -> bool:
+        """判断流式侧是否已注册，此时调用 cancel 可投递到活跃流。
+
+        - 进程内：``stream()`` 开头已写入 ``_cancel_events``
+        - 跨进程：存在活跃消费者（``stream()`` 在注册 cancel 后 ``acquire_consumer``）
+        """
+        with cls._cancel_lock:
+            if thread_id in cls._cancel_events:
+                return True
+        if message_handler is None:
+            message_handler = message_handler_factory.get()
+        try:
+            return bool(message_handler.has_active_consumer(thread_id))
+        except Exception:
+            logger.exception("Error checking stream registration for thread_id=%s", thread_id)
+            return False
+
+    @classmethod
     def cancel(cls, thread_id: str, message_handler: BaseMessageQueueHandler | None = None) -> bool:
         """取消指定 thread_id 的流式生产（支持多进程）
 
