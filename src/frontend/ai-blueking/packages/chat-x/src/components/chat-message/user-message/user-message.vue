@@ -99,7 +99,7 @@
 
   import { Button } from 'bkui-vue';
 
-  import { type TextInputContent, MessageContentType } from '../../../ag-ui/types';
+  import { type InputContent, type TextInputContent, MessageContentType } from '../../../ag-ui/types';
   import { CONST_USER_MESSAGE_TOOLS } from '../../../common/constants';
   import { useClipboard } from '../../../composables';
   import { injectGlobalConfig } from '../../../composables/use-global-config';
@@ -128,9 +128,20 @@
     onInputConfirm?: (content: UserMessage['content'], docSchema: TagSchema) => Promise<void>;
     onShortcutConfirm?: (formModel: Record<string, unknown>) => Promise<void>;
   };
-  const props = defineProps<
-    Partial<UserMessage> & Pick<MessageToolsProps, 'onAction' | 'tippyOptions'> & UserMessageActionsProps
-  >();
+  // 本地 interface：content 用字面量联合，避免 Vue 将泛型 BaseMessage.content 推断为 Object
+  interface UserMessageProps extends UserMessageActionsProps {
+    content?: InputContent[] | string;
+    id?: UserMessage['id'];
+    messageId?: UserMessage['messageId'];
+    name?: UserMessage['name'];
+    onAction?: MessageToolsProps['onAction'];
+    property?: UserMessage['property'];
+    role?: UserMessage['role'];
+    status?: UserMessage['status'];
+    tippyOptions?: MessageToolsProps['tippyOptions'];
+    uid?: UserMessage['uid'];
+  }
+  const props = defineProps<UserMessageProps>();
   const globalConfig = injectGlobalConfig();
   const { copy } = useClipboard();
   const isEdit = shallowRef(false);

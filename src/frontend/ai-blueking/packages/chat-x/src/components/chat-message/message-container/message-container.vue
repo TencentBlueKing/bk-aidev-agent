@@ -335,7 +335,7 @@
       display: flex;
       gap: 8px;
       width: 100%;
-      padding: 8px;
+      padding: 8px 0;
 
       &-enabled-selection {
         .ai-user-message-tools {

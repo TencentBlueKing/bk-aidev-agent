@@ -16,12 +16,16 @@ enum MessageStatus {
   Streaming = 'streaming',
   /** 已完成 */
   Complete = 'complete',
+  /** 已完成（与 Complete 同义，兼容协议/后端返回的 completed） */
+  Completed = 'completed',
   /** 出错 */
   Error = 'error',
   /** 已停止 */
   Stop = 'stop',
 }
 ```
+
+> 库内常用 `complete`；`completed` 与之语义相同。`ToolcallRender` 将 `complete` / `completed` / `success` 一并视为「调用成功」。完整枚举（含 `Fetching`、`Success` 等）以 `@blueking/chat-x` 导出为准。
 
 ### MessageToolsStatus
 

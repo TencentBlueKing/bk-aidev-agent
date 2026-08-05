@@ -222,6 +222,18 @@ describe('ToolcallRender', () => {
       expect(wrapper.find('.toolcall-status-title').text()).toContain('调用成功');
     });
 
+    // Completed 与 Complete 同为完成态，兼容协议/后端返回的 completed
+    it('Completed 状态应该显示调用成功', () => {
+      wrapper = mount(ToolcallRender, {
+        props: {
+          toolCall: mockToolCall,
+          status: MessageStatus.Completed,
+        },
+      });
+
+      expect(wrapper.find('.toolcall-status-title').text()).toContain('调用成功');
+    });
+
     it('Success 状态应该显示调用成功', () => {
       wrapper = mount(ToolcallRender, {
         props: {
@@ -249,6 +261,17 @@ describe('ToolcallRender', () => {
         props: {
           toolCall: mockToolCall,
           status: MessageStatus.Complete,
+        },
+      });
+
+      expect(wrapper.find('.mock-loading').exists()).toBe(false);
+    });
+
+    it('Completed 状态不应该显示 Loading', () => {
+      wrapper = mount(ToolcallRender, {
+        props: {
+          toolCall: mockToolCall,
+          status: MessageStatus.Completed,
         },
       });
 
@@ -425,6 +448,17 @@ describe('ToolcallRender', () => {
       });
 
       expect(wrapper.find('.ai-toolcall-render-header').classes()).toContain('toolcall-status-complete');
+    });
+
+    it('Completed 状态 class 应该正确应用', () => {
+      wrapper = mount(ToolcallRender, {
+        props: {
+          toolCall: mockToolCall,
+          status: MessageStatus.Completed,
+        },
+      });
+
+      expect(wrapper.find('.ai-toolcall-render-header').classes()).toContain('toolcall-status-completed');
     });
   });
 });

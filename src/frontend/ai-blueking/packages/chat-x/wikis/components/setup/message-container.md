@@ -1090,28 +1090,11 @@ enum MessageToolsStatus {
   Hidden = 'hidden',
 }
 
-// 消息角色
-enum MessageRole {
-  User = 'user',
-  Assistant = 'assistant',
-  Tool = 'tool',
-  Reasoning = 'reasoning',
-  Activity = 'activity',
-  Info = 'info',
-  Interrupt = 'interrupt',
-  Loading = 'loading',
-}
-
-// 消息状态
-enum MessageStatus {
-  Pending = 'pending',
-  Streaming = 'streaming',
-  Complete = 'complete',
-  Error = 'error',
-  Stop = 'stop',
-  Disabled = 'disabled',
-}
+// 消息角色 / 消息状态完整枚举见常量文档，勿在此维护副本
+// MessageRole、MessageStatus → ../../types/constants
 ```
+
+> `MessageRole` / `MessageStatus` 完整取值见 [常量枚举](../../types/constants)。
 
 ## 关联组件
 

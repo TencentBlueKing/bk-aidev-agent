@@ -108,6 +108,7 @@
       default:
       case MessageStatus.Pending:
         return t('调用中');
+      case MessageStatus.Completed:
       case MessageStatus.Complete:
       case MessageStatus.Success:
         return t('调用成功');
