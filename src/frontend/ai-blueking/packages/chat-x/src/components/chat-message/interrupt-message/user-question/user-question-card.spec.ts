@@ -69,6 +69,10 @@ const buildInterrupt = (): UserQuestionInterrupt => ({
   },
 });
 
+/** 解析「已完成 N 题」进度文案中的数字 */
+const progressCount = (wrapper: VueWrapper) =>
+  wrapper.find('.ai-user-question-card__progress-num').text();
+
 describe('UserQuestionCard', () => {
   let wrapper: VueWrapper;
 
@@ -76,23 +80,85 @@ describe('UserQuestionCard', () => {
     wrapper?.unmount();
   });
 
-  it('初始渲染标题、计数与全部题目（每题末尾追加 Others 输入项）', () => {
+  it('初始渲染标题、页码与已完成进度；全部题目挂载但只展示当前题', () => {
     wrapper = mount(UserQuestionCard, { props: { interrupt: buildInterrupt() } });
 
     expect(wrapper.find('.ai-user-question-card__title').text()).toBe('请回答问题');
-    expect(wrapper.find('.ai-user-question-card__counter').text()).toBe('0 / 2');
-    // Q1: A、B、Others = 3；Q2: C、Others = 2，共 5
+    expect(wrapper.find('.ai-user-question-card__pager-text').text()).toBe('1 / 2');
+    expect(progressCount(wrapper)).toBe('0');
+    // Q1: A、B、Others = 3；Q2: C、Others = 2，共 5（v-show 保留全部挂载）
     expect(wrapper.findAll('.ai-user-question-option')).toHaveLength(5);
+    const questions = wrapper.findAll('.ai-user-question-card__question');
+    expect((questions[0].element as HTMLElement).style.display).not.toBe('none');
+    expect((questions[1].element as HTMLElement).style.display).toBe('none');
   });
 
-  it('选择选项后已答计数递增', async () => {
+  it('选择单选选项后已答计数递增，并自动跳到下一题', async () => {
     wrapper = mount(UserQuestionCard, { props: { interrupt: buildInterrupt() } });
 
     const options = wrapper.findAll('.ai-user-question-option');
     await options[0].trigger('click'); // Q1.A
-    expect(wrapper.find('.ai-user-question-card__counter').text()).toBe('1 / 2');
+    expect(progressCount(wrapper)).toBe('1');
+    expect(wrapper.find('.ai-user-question-card__pager-text').text()).toBe('2 / 2');
+
+    await options[3].trigger('click'); // Q2.C（多选不自动跳）
+    expect(progressCount(wrapper)).toBe('2');
+    expect(wrapper.find('.ai-user-question-card__pager-text').text()).toBe('2 / 2');
+  });
+
+  it('标题栏左右箭头可切换题目，边界禁用', async () => {
+    wrapper = mount(UserQuestionCard, { props: { interrupt: buildInterrupt() } });
+
+    const navButtons = wrapper.findAll('.ai-user-question-card__nav-btn');
+    const prevBtn = navButtons[0];
+    const nextBtn = navButtons[1];
+
+    expect(prevBtn.attributes('disabled')).toBeDefined();
+    expect(nextBtn.attributes('disabled')).toBeUndefined();
+
+    await nextBtn.trigger('click');
+    expect(wrapper.find('.ai-user-question-card__pager-text').text()).toBe('2 / 2');
+    expect(nextBtn.attributes('disabled')).toBeDefined();
+
+    await prevBtn.trigger('click');
+    expect(wrapper.find('.ai-user-question-card__pager-text').text()).toBe('1 / 2');
+    expect(prevBtn.attributes('disabled')).toBeDefined();
+  });
+
+  it('单题时页码为 1 / 1，左右箭头均禁用', () => {
+    const interrupt = buildInterrupt();
+    interrupt.metadata!.questions = [interrupt.metadata!.questions[0]];
+    wrapper = mount(UserQuestionCard, { props: { interrupt } });
+
+    expect(wrapper.find('.ai-user-question-card__pager-text').text()).toBe('1 / 1');
+    const navButtons = wrapper.findAll('.ai-user-question-card__nav-btn');
+    expect(navButtons[0].attributes('disabled')).toBeDefined();
+    expect(navButtons[1].attributes('disabled')).toBeDefined();
+  });
+
+  it('Footer 按钮顺序为跳过在前、完成在后，并展示已完成文案', () => {
+    wrapper = mount(UserQuestionCard, { props: { interrupt: buildInterrupt() } });
+
+    const actions = wrapper.find('.ai-user-question-card__actions');
+    const buttons = actions.findAllComponents(Button);
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0].classes()).toContain('ai-user-question-card__skip');
+    expect(buttons[1].classes()).toContain('ai-user-question-card__complete');
+    expect(wrapper.find('.ai-user-question-card__progress').text()).toContain('已完成');
+    expect(progressCount(wrapper)).toBe('0');
+  });
+
+  it('多选作答后不自动跳转', async () => {
+    wrapper = mount(UserQuestionCard, { props: { interrupt: buildInterrupt() } });
+
+    // 先手动切到多选题
+    await wrapper.findAll('.ai-user-question-card__nav-btn')[1].trigger('click');
+    expect(wrapper.find('.ai-user-question-card__pager-text').text()).toBe('2 / 2');
+
+    const options = wrapper.findAll('.ai-user-question-option');
     await options[3].trigger('click'); // Q2.C
-    expect(wrapper.find('.ai-user-question-card__counter').text()).toBe('2 / 2');
+    expect(progressCount(wrapper)).toBe('1');
+    expect(wrapper.find('.ai-user-question-card__pager-text').text()).toBe('2 / 2');
   });
 
   it('未答完时点击完成不触发 resume', async () => {
@@ -109,7 +175,7 @@ describe('UserQuestionCard', () => {
     wrapper = mount(UserQuestionCard, { props: { interrupt, onResume } });
 
     const options = wrapper.findAll('.ai-user-question-option');
-    await options[0].trigger('click'); // Q1.A
+    await options[0].trigger('click'); // Q1.A → 自动跳到 Q2
     await options[3].trigger('click'); // Q2.C
     await wrapper.find('.ai-user-question-card__complete').trigger('click');
 
@@ -174,10 +240,10 @@ describe('UserQuestionCard', () => {
     expect(wrapper.find('.ai-user-question-card__skip-icon').exists()).toBe(false);
   });
 
-  it('点击箭头可折叠，body 与 footer 通过 v-show 隐藏而非卸载', async () => {
+  it('点击收起按钮可折叠，body 与 footer 通过 v-show 隐藏而非卸载', async () => {
     wrapper = mount(UserQuestionCard, { props: { interrupt: buildInterrupt() } });
 
-    await wrapper.find('.ai-user-question-card__arrow').trigger('click');
+    await wrapper.find('.ai-user-question-card__collapse-btn').trigger('click');
     expect(wrapper.classes()).toContain('ai-user-question-card--collapsed');
     // v-show 保留 DOM，避免折叠时丢失勾选态
     const body = wrapper.find('.ai-user-question-card__body');
@@ -193,26 +259,30 @@ describe('UserQuestionCard', () => {
 
     const options = wrapper.findAll('.ai-user-question-option');
     await options[0].trigger('click');
-    expect(wrapper.find('.ai-user-question-card__counter').text()).toBe('1 / 2');
+    expect(progressCount(wrapper)).toBe('1');
+    // 单选自动跳到第 2 题，先回到第 1 题再折叠，便于断言选中态
+    await wrapper.findAll('.ai-user-question-card__nav-btn')[0].trigger('click');
 
-    await wrapper.find('.ai-user-question-card__arrow').trigger('click');
-    expect(wrapper.find('.ai-user-question-card__counter').text()).toBe('1 / 2');
+    await wrapper.find('.ai-user-question-card__collapse-btn').trigger('click');
+    expect(progressCount(wrapper)).toBe('1');
 
-    await wrapper.find('.ai-user-question-card__arrow').trigger('click');
+    await wrapper.find('.ai-user-question-card__collapse-btn').trigger('click');
     expect(wrapper.findAll('.ai-user-question-option')[0].classes()).toContain('ai-user-question-option--selected');
-    expect(wrapper.find('.ai-user-question-card__counter').text()).toBe('1 / 2');
+    expect(progressCount(wrapper)).toBe('1');
   });
 
-  it('选中 Others 但未输入文本不计为已答', async () => {
+  it('选中 Others 但未输入文本不计为已答，输入后也不自动跳转', async () => {
     wrapper = mount(UserQuestionCard, { props: { interrupt: buildInterrupt() } });
 
     const options = wrapper.findAll('.ai-user-question-option');
     // Q1 的 Others 为第 3 个（索引 2）
     await options[2].trigger('click');
-    expect(wrapper.find('.ai-user-question-card__counter').text()).toBe('0 / 2');
+    expect(progressCount(wrapper)).toBe('0');
+    expect(wrapper.find('.ai-user-question-card__pager-text').text()).toBe('1 / 2');
 
     await options[2].find('.ai-user-question-option__input').setValue('自定义');
-    expect(wrapper.find('.ai-user-question-card__counter').text()).toBe('1 / 2');
+    expect(progressCount(wrapper)).toBe('1');
+    expect(wrapper.find('.ai-user-question-card__pager-text').text()).toBe('1 / 2');
   });
 
   it('自定义 #question 表单 slot：通过 setAnswer 回传任意答案并驱动完成态', async () => {
@@ -234,12 +304,14 @@ describe('UserQuestionCard', () => {
     });
 
     const fillButtons = wrapper.findAll('.form-fill');
-    // 两题，需各自填写后才能完成
+    // 两题均挂载，需各自填写后才能完成
     expect(fillButtons).toHaveLength(2);
     await fillButtons[0].trigger('click');
-    expect(wrapper.find('.ai-user-question-card__counter').text()).toBe('1 / 2');
+    expect(progressCount(wrapper)).toBe('1');
+    // Q1 为单选语义（multiSelect=false），自定义答案也会自动跳到 Q2
+    expect(wrapper.find('.ai-user-question-card__pager-text').text()).toBe('2 / 2');
     await fillButtons[1].trigger('click');
-    expect(wrapper.find('.ai-user-question-card__counter').text()).toBe('2 / 2');
+    expect(progressCount(wrapper)).toBe('2');
 
     await wrapper.find('.ai-user-question-card__complete').trigger('click');
     expect(onResume).toHaveBeenCalledTimes(1);

@@ -226,22 +226,36 @@ const unsupportedScenario = createInterruptScenario({
 });
 
 // —— 场景 8：用户回答问题（待回答，outcome.interrupt，渲染在 chat-input 上方）——
+// 对齐设计稿：3 题分页、单选长文案 A–D、多选语言题；不在 mock 中放 others（前端自动追加）
 const userQuestionInterrupt: UserQuestionInterrupt = {
   id: 'interrupt_user_question',
   reason: InterruptReason.UserQuestion,
   toolCallId: 'tool_call_user_question',
   message: '选择冒泡排序方案',
   metadata: {
-    // 注意：不在 mock 中放 others 选项，由前端为每题自动追加 Others 输入项
     questions: [
       {
         header: '选择冒泡排序方案',
         multiSelect: false,
         question: '请选择你想要的冒泡排序算法方案',
         options: [
-          { label: 'A', description: '方案1：基础冒泡排序 - 最经典实现，易于理解，适合教学演示' },
-          { label: 'B', description: '方案2：优化版冒泡排序 - 加入标志位提前终止，适合部分有序数据' },
-          { label: 'C', description: '方案3：双向冒泡排序（鸡尾酒排序）- 正向反向交替，适合数据分布在两端' },
+          {
+            label: 'A',
+            description: '方案1：基础冒泡排序- 最经典实现，易于理解，适合教学演示',
+          },
+          {
+            label: 'B',
+            description: '方案2：优化版冒泡排序-加入标志位提前终止，适合部分有序数据',
+          },
+          {
+            label: 'C',
+            description:
+              '方案3：双向冒泡排序（鸡尾酒排序）一正向反向交替，适合数据分布在两端鸡尾酒排序一正向反向交替，适合数据分布在两端',
+          },
+          {
+            label: 'D',
+            description: '方案4：递归冒泡排序 -用递归替代循环，适合函数式编程风格',
+          },
         ],
       },
       {
@@ -249,16 +263,21 @@ const userQuestionInterrupt: UserQuestionInterrupt = {
         multiSelect: true,
         question: '请选择语言（可多选）',
         options: [
-          { label: 'Java', description: 'Java' },
-          { label: 'Python', description: 'Python' },
-          { label: 'Go', description: 'Go' },
+          { label: 'Java', description: 'Java - 企业级后端与 Android 场景常用' },
+          { label: 'Python', description: 'Python - 适合教学演示与快速原型' },
+          { label: 'Go', description: 'Go - 高并发与云原生场景友好' },
+          { label: 'TypeScript', description: 'TypeScript - 前端与 Node 全栈场景' },
         ],
       },
       {
         header: '选择冒泡排序方案',
         multiSelect: false,
         question: '请选择实现方式',
-        options: [{ label: 'best', description: '最佳方案' }],
+        options: [
+          { label: 'A', description: '最佳方案 - 综合性能与可读性最优' },
+          { label: 'B', description: '教学方案 - 代码最短，便于讲解' },
+          { label: 'C', description: '工程方案 - 含单元测试与边界校验' },
+        ],
       },
     ],
   },
@@ -283,15 +302,21 @@ const userQuestionAnsweredResult: UserQuestionResume = {
       {
         question: '请选择你想要的冒泡排序算法方案',
         multiSelect: false,
-        answer: [{ label: 'B', description: '方案2：优化版冒泡排序 - 加入标志位提前终止，适合部分有序数据' }],
+        answer: [
+          {
+            label: 'C',
+            description:
+              '方案3：双向冒泡排序（鸡尾酒排序）一正向反向交替，适合数据分布在两端鸡尾酒排序一正向反向交替，适合数据分布在两端',
+          },
+        ],
       },
       // 多选：命中多个预设选项
       {
         question: '请选择语言（可多选）',
         multiSelect: true,
         answer: [
-          { label: 'Java', description: 'Java' },
-          { label: 'Python', description: 'Python' },
+          { label: 'Java', description: 'Java - 企业级后端与 Android 场景常用' },
+          { label: 'Python', description: 'Python - 适合教学演示与快速原型' },
         ],
       },
       // Others：用户自定义输入，label 为 others，description 为输入文本
@@ -316,6 +341,9 @@ const userQuestionAnsweredScenario = createInterruptScenario({
   outcome: { type: 'success' },
   result: userQuestionAnsweredResult,
 });
+
+/** 仅待回答 UserQuestion：便于 playground 预览分页 / Footer「已完成 N 题」等新交互 */
+export const MOCK_USER_QUESTION_PENDING_MESSAGES: Message[] = [...userQuestionScenario];
 
 /** playground 全量中断 mock：覆盖审批态 + resume 态 + 兜底态 + 用户回答问题 */
 export const MOCK_INTERRUPT_MESSAGES: Message[] = [

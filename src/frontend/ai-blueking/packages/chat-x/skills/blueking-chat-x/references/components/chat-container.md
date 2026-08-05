@@ -25,7 +25,7 @@
 - **消息分组**：内置 `useMessageGroup` 自动处理消息分组、Tool 合并、Loading 注入
 - **输入区状态推导**：传给 `MessageContainer` 与 `ChatInput` 的 `messageStatus` 为内部计算值 `inputStatus`：当分组中存在 id 为 `LOADING_MESSAGE_ID`（`'__loading__'`，由 `useMessageGroup` 注入的占位 Loading 消息）时，对内使用 `MessageStatus.Fetching`；否则使用外部传入的 `messageStatus`。用于在「已发用户消息、尚未流式」阶段与流式中一致地展示停止能力，并避免输入区重复发送
 - **待审批发送阻塞**：当消息中存在 `AIDevToolApproval` 且状态为 `pending` / `draft` 的中断项时，`useMessageGroup` 会返回待审批提示，容器在输入区上方展示提示并通过 `ChatInput.sendDisabledTip` 禁止继续发送
-- **用户问题中断**：当消息中存在待回答 `UserQuestion` 中断时，容器会在输入区上方挂载 `UserQuestionCard`；结构化作答走 `onInterruptResume`，用户在输入框直接发送时走 `onSendMessage` 并在第三参数附带 skip 用的 `payload`（`status: 'cancelled'`）与 `interrupt`，且不会自动清空输入框
+- **用户问题中断**：当消息中存在待回答 `UserQuestion` 中断时，容器会在输入区上方挂载 `UserQuestionCard`（一次一题、标题栏可切换）；结构化作答走 `onInterruptResume`，用户在输入框直接发送时走 `onSendMessage` 并在第三参数附带 skip 用的 `payload`（`status: 'cancelled'`）与 `interrupt`，且不会自动清空输入框
 - **执行摘要**：侧边栏展示工具调用 / FlowAgent 执行记录，支持关键词搜索和对话定位
 - **侧栏全屏**：Tab 栏右侧提供全屏/退出全屏按钮，基于 `useFullScreen` 将侧栏区域（`.ai-full-screen-wrapper`）以浏览器原生全屏展示；全屏时 Tippy 的 `appendTo` 自动切换为全屏容器，避免 tooltip 被遮挡
 - **自定义 Tab**：通过 `useCustomTabProvider` 支持动态添加自定义 Tab（如节点详情）
@@ -363,9 +363,9 @@ ai-chat-container（:data-ai-size="size"）
 
 ## 用户问题中断
 
-当会话中最近一条待处理 interrupt 包含 `InterruptReason.UserQuestion` 时，`ChatContainer` 会在 `ChatInput` 上方显示 [UserQuestionCard](/components/agent/user-question-card)。
+当会话中最近一条待处理 interrupt 包含 `InterruptReason.UserQuestion` 时，`ChatContainer` 会在 `ChatInput` 上方显示 [UserQuestionCard](/components/agent/user-question-card)（一次一题，标题栏可切换题目）。
 
-- **结构化作答**：用户在卡片内完成选择或点击「跳过」后，通过 `onInterruptResume(payload, interrupt)` 回传 `UserQuestionResume`。
+- **结构化作答**：用户在卡片内逐题选择（单选可自动跳下一题），点击「完成」或「跳过」后通过 `onInterruptResume(payload, interrupt)` 回传 `UserQuestionResume`。
 - **输入框发送**：用户也可在输入框直接点击发送；容器会调用 `onSendMessage(content, docSchema, options)`，其中 `options.interrupt` 为当前激活的 UserQuestion，`options.payload` 为 `buildSkipResumePayload` 生成的 skip resume（`status: 'cancelled'`，`answers: []`）。此时**不会自动清空**输入框，由业务侧在 `onSendMessage` 内决定如何处理 `content` 与中断恢复。
 
 ```vue

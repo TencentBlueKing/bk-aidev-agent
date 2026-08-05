@@ -105,7 +105,7 @@ aiSummary: >
 | [ToolcallRender](./agent/toolcall-render.md) | 工具调用渲染器。 |
 | [ToolApprovalCard](./agent/tool-approval-card.md) | 工具审批卡片。 |
 | [InterruptMessage](./agent/interrupt-message.md) | 中断消息渲染器。 |
-| [UserQuestionCard](./agent/user-question-card.md) | 用户问题中断交互面板。 |
+| [UserQuestionCard](./agent/user-question-card.md) | 用户问题中断交互面板（一次一题分页）。 |
 | [UserQuestionChoice](./agent/user-question-choice.md) | 用户问题默认选择题渲染。 |
 | [UserQuestionAnsweredCard](./agent/user-question-answered-card.md) | 用户问题回答回显。 |
 | [UserQuestionOption](./agent/user-question-option.md) | 用户问题选项行。 |
