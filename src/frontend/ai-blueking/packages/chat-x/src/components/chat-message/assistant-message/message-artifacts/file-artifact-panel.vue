@@ -13,8 +13,8 @@
         <template v-if="filteredArtifacts.length">
           <ArtifactFileCard
             v-for="item in filteredArtifacts"
-            :key="item.artifactId"
-            :active="item.artifactId === activeId"
+            :key="item.outputId"
+            :active="item.outputId === activeId"
             :file="item"
             :on-preview="() => handleSelect(item)"
             variant="list"
@@ -85,9 +85,9 @@
   import type { SessionArtifact } from '../../../../composables/use-artifact-preview';
 
   const props = defineProps<{
-    // 命中的文件 id（messageUid#index#outputId）
+    // 命中的文件 outputId
     activeId: string;
-    // 当前会话全部文件产物
+    // 当前会话全部文件产物（已按 outputId 去重）
     artifacts: SessionArtifact[];
   }>();
 
@@ -112,13 +112,13 @@
     return props.artifacts.filter(item => item.name.toLowerCase().includes(kw));
   });
 
-  const activeArtifact = computed(() => props.artifacts.find(item => item.artifactId === props.activeId));
+  const activeArtifact = computed(() => props.artifacts.find(item => item.outputId === props.activeId));
 
   const handleSelect = (item: SessionArtifact) => {
-    if (item.artifactId === props.activeId) {
+    if (item.outputId === props.activeId) {
       return;
     }
-    emits('select', item.artifactId);
+    emits('select', item.outputId);
   };
 
   const handleDownload = async (file: SessionArtifact) => {
@@ -137,7 +137,7 @@
   };
 
   watch(
-    () => activeArtifact.value?.artifactId,
+    () => activeArtifact.value?.outputId,
     () => {
       downloadLoading.value = false;
     },

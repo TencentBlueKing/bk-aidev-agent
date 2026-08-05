@@ -8,7 +8,6 @@ import { ARTIFACT_PREVIEW_TOKEN } from '../../../../../composables/use-artifact-
 import ArtifactPreviewHost from './artifact-preview-host.vue';
 
 import type { AIFileInfo } from '../../../../../ag-ui/types/file';
-import type { SessionArtifact } from '../../../../../composables/use-artifact-preview';
 
 vi.mock('bkui-vue', () => ({
   Button: defineComponent({
@@ -38,13 +37,6 @@ const createFile = (overrides: Partial<AIFileInfo> = {}): AIFileInfo => ({
   outputId: 'output-1',
   size: 1024,
   type: AIFileType.Pdf,
-  ...overrides,
-});
-
-const createSessionArtifact = (overrides: Partial<SessionArtifact> = {}): SessionArtifact => ({
-  ...createFile(),
-  artifactId: 'message-1#0#output-1',
-  messageUid: 'message-1',
   ...overrides,
 });
 
@@ -95,15 +87,12 @@ describe('ArtifactPreviewHost', () => {
     expect(wrapper.find('.ai-artifact-url-iframe-preview').attributes('src')).toBe('https://example.com/file.pdf');
   });
 
-  it('切换相同 outputId 和类型但 artifactId 不同的文件时应重新加载预览', async () => {
+  it('切换不同 outputId 的文件时应重新加载预览', async () => {
     const resolveArtifactUrls = vi.fn().mockResolvedValue({
       preview_url: 'https://example.com/file.pdf',
     });
-    const firstFile = createSessionArtifact();
-    const secondFile = createSessionArtifact({
-      artifactId: 'message-2#0#output-1',
-      messageUid: 'message-2',
-    });
+    const firstFile = createFile({ outputId: 'output-1' });
+    const secondFile = createFile({ outputId: 'output-2' });
     wrapper = mountHost(firstFile, createPreviewContext({ resolveArtifactUrls }));
     await flushPromises();
 
@@ -112,6 +101,21 @@ describe('ArtifactPreviewHost', () => {
 
     expect(resolveArtifactUrls).toHaveBeenCalledTimes(2);
     expect(resolveArtifactUrls).toHaveBeenLastCalledWith(secondFile);
+  });
+
+  it('切换相同 outputId 且类型不变时不应重新加载预览', async () => {
+    const resolveArtifactUrls = vi.fn().mockResolvedValue({
+      preview_url: 'https://example.com/file.pdf',
+    });
+    const firstFile = createFile({ name: 'a.pdf', outputId: 'same' });
+    const secondFile = createFile({ name: 'b.pdf', outputId: 'same' });
+    wrapper = mountHost(firstFile, createPreviewContext({ resolveArtifactUrls }));
+    await flushPromises();
+
+    await wrapper.setProps({ file: secondFile });
+    await flushPromises();
+
+    expect(resolveArtifactUrls).toHaveBeenCalledTimes(1);
   });
 
   it('html 文件应使用 iframe srcdoc 展示下载内容', async () => {

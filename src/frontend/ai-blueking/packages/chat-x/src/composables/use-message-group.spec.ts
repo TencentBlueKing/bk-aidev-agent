@@ -31,7 +31,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { APPROVAL_STATUS, InterruptReason, MessageContentType, MessageRole, MessageStatus } from '../ag-ui/types';
 import { AIFileType } from '../ag-ui/types/file';
 import { LOADING_MESSAGE_ID, RenderMode } from '../common/constants';
-import { buildArtifactId } from './use-artifact-preview';
 import { useMessageGroup } from './use-message-group';
 
 import type { AssistantMessage, Message, ToolMessage, UserMessage } from '../ag-ui/types';
@@ -326,7 +325,7 @@ describe('useMessageGroup', () => {
       expect(sessionArtifacts.value).toEqual([]);
     });
 
-    it('应拍平所有 AssistantMessage 的 artifacts 并生成唯一 id', async () => {
+    it('应拍平所有 AssistantMessage 的 artifacts，并以 outputId 为唯一键', async () => {
       const messages: Message[] = [
         createAssistantMessage('a1', 'with files', {
           uid: 'msg-a',
@@ -341,12 +340,26 @@ describe('useMessageGroup', () => {
       const { sessionArtifacts } = setupMessageGroup(messages);
       await nextTick();
 
-      expect(sessionArtifacts.value.map(item => item.artifactId)).toEqual([
-        buildArtifactId('msg-a', 0, 'o1'),
-        buildArtifactId('msg-a', 1, 'o2'),
-        buildArtifactId('msg-b', 0, 'o3'),
-      ]);
-      expect(sessionArtifacts.value[0]?.messageUid).toBe('msg-a');
+      expect(sessionArtifacts.value.map(item => item.outputId)).toEqual(['o1', 'o2', 'o3']);
+    });
+
+    it('相同 outputId 应去重并保留最后一次出现（含相对顺序）', async () => {
+      const first = createFile({ name: '旧名.pdf', outputId: 'dup', size: 1 });
+      const middle = createFile({ outputId: 'keep' });
+      const last = createFile({ name: '新名.pdf', outputId: 'dup', size: 99 });
+      const messages: Message[] = [
+        createAssistantMessage('a1', 'first', {
+          property: { artifacts: [first, middle] },
+        }),
+        createAssistantMessage('a2', 'later', {
+          property: { artifacts: [last] },
+        }),
+      ];
+      const { sessionArtifacts } = setupMessageGroup(messages);
+      await nextTick();
+
+      expect(sessionArtifacts.value.map(item => item.outputId)).toEqual(['keep', 'dup']);
+      expect(sessionArtifacts.value[1]).toMatchObject({ name: '新名.pdf', outputId: 'dup', size: 99 });
     });
 
     it('仅统计 AssistantMessage 的 artifacts，忽略其它角色', async () => {

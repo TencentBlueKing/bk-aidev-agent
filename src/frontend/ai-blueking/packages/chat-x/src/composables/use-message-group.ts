@@ -39,7 +39,7 @@ import {
 import { LOADING_MESSAGE_ID, RenderMode } from '../common/constants';
 import { t } from '../lang/lang';
 import { generateUUID } from '../utils';
-import { type SessionArtifact, buildArtifactId } from './use-artifact-preview';
+import { type SessionArtifact } from './use-artifact-preview';
 
 import type { BkFlowMessageContent } from '../ag-ui/types/contents';
 import type { InterruptMessage, UserQuestionInterrupt } from '../ag-ui/types/interrupt';
@@ -263,10 +263,11 @@ export const useMessageGroup = (options: {
   });
   /**
    * 会话级文件产物：拍平所有 AssistantMessage 的 property.artifacts，
-   * 用 messageUid + 消息内下标 + outputId 生成全局唯一 id（文件名可能重复，不可作唯一键）。
+   * 以 outputId 为唯一键去重，保留最后一次出现（列表顺序同最后一次出现的相对顺序）。
    */
   const sessionArtifacts = computed<SessionArtifact[]>(() => {
-    const list: SessionArtifact[] = [];
+    // delete + set：同 key 覆盖内容，并把该项挪到 Map 末尾，保证「最后出现」顺序
+    const byOutputId = new Map<string, SessionArtifact>();
     for (const message of options.messages.value) {
       if (message.role !== MessageRole.Assistant) {
         continue;
@@ -275,16 +276,14 @@ export const useMessageGroup = (options: {
       if (!artifacts?.length) {
         continue;
       }
-      const messageUid = message.uid ?? String(message.id);
-      artifacts.forEach((file, index) => {
-        list.push({
-          ...file,
-          artifactId: buildArtifactId(messageUid, index, file.outputId),
-          messageUid,
-        });
-      });
+      for (const file of artifacts) {
+        if (byOutputId.has(file.outputId)) {
+          byOutputId.delete(file.outputId);
+        }
+        byOutputId.set(file.outputId, file);
+      }
     }
-    return list;
+    return Array.from(byOutputId.values());
   });
 
   const activeUserQuestionInterrupt = computed(() => findActiveUserQuestion(options.messages.value));

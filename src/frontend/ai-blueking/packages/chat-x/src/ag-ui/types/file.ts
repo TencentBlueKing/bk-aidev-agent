@@ -28,9 +28,9 @@ export enum AIFileType {
   Html = 'html',
   Jpg = 'jpg',
   Json = 'json',
+  Markdown = 'markdown',
   /** 后台扩展名别名，与 Markdown 等价 */
   Md = 'md',
-  Markdown = 'markdown',
   Pdf = 'pdf',
   Txt = 'txt',
 }

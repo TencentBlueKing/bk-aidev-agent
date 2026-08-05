@@ -76,16 +76,29 @@ export function useCustomTabProvider<T extends Record<string, unknown>>(options:
       .sort((a, b) => (a.order ?? DEFAULT_TAB_ORDER) - (b.order ?? DEFAULT_TAB_ORDER)),
   );
 
-  const addCustomTab = (tab: CustomTab<T>) => {
+  /** 写入 / 合并 Tab 元信息，不改变展开态与当前选中 */
+  const upsertCustomTab = (tab: CustomTab<T>) => {
     const index = tabs.value.findIndex(item => item.name === tab.name);
     if (index === -1) {
       tabs.value = [...tabs.value, tab];
-    } else {
-      // 同名 Tab 合并更新，支持运行时调整 order / visible / label 等元信息
-      const next = tabs.value.slice();
-      next[index] = { ...next[index], ...tab };
-      tabs.value = next;
+      return;
     }
+    // 同名 Tab 合并更新，支持运行时调整 order / visible / label 等元信息
+    const next = tabs.value.slice();
+    next[index] = { ...next[index], ...tab };
+    tabs.value = next;
+  };
+
+  /**
+   * 确保 Tab 存在（可合并更新），不展开侧栏、不切换选中。
+   * 用于「侧栏已因执行情况打开时同步挂上文件产物」等场景。
+   */
+  const ensureCustomTab = (tab: CustomTab<T>) => {
+    upsertCustomTab(tab);
+  };
+
+  const addCustomTab = (tab: CustomTab<T>) => {
+    upsertCustomTab(tab);
     isCollapse.value = false;
     nextTick(() => {
       selectCustomTab(tabs.value.find(item => item.name === tab.name)!);
@@ -126,6 +139,7 @@ export function useCustomTabProvider<T extends Record<string, unknown>>(options:
     displayTabs,
     selectedTab,
     addCustomTab,
+    ensureCustomTab,
     removeCustomTab,
     selectCustomTab,
     resetCustomTab,
@@ -137,6 +151,7 @@ export function useCustomTabProvider<T extends Record<string, unknown>>(options:
     selectedTab,
     isCollapse,
     addCustomTab,
+    ensureCustomTab,
     removeCustomTab,
     selectCustomTab,
     resetCustomTab,
@@ -149,6 +164,7 @@ export const useCustomTabConsumer = <T extends Record<string, unknown>>() => {
     | {
         addCustomTab: (tab: CustomTab<T>) => void;
         displayTabs: ComputedRef<CustomTab<T>[]>;
+        ensureCustomTab: (tab: CustomTab<T>) => void;
         removeCustomTab: (tabName: CustomTab<T>['name']) => void;
         selectCustomTab: (tab: CustomTab<T>) => void;
         selectedTab: ShallowRef<CustomTab<T> | null>;

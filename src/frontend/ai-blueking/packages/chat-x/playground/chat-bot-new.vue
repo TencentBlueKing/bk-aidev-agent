@@ -14,6 +14,7 @@
       v-model:selected-model="selectedModel"
       v-model:selected-shortcut="selectedShortcut"
       :enable-selection="false"
+      :execution-tab-visible="true"
       :message-tools="customMessageTools"
       :messages="messages"
       :model-value="userInput"

@@ -155,18 +155,18 @@ describe('ArtifactFileCard', () => {
       expect(onPreview).toHaveBeenCalledWith(file);
     });
 
-    it('无 onPreview 时点击卡片应调用侧栏预览 openPreview 并透传定位信息', async () => {
+    it('无 onPreview 时点击卡片应调用侧栏预览 openPreview', async () => {
       const openPreview = vi.fn();
       const artifactPreview = createPreviewContext({ openPreview });
       const file = createFile();
       wrapper = mount(ArtifactFileCard, {
         global: { provide: { [ARTIFACT_PREVIEW_TOKEN]: artifactPreview } },
-        props: { file, index: 2, messageUid: 'msg-a' },
+        props: { file },
       });
 
       await wrapper.find('.ai-artifact-file-card').trigger('click');
 
-      expect(openPreview).toHaveBeenCalledWith({ file, index: 2, messageUid: 'msg-a' });
+      expect(openPreview).toHaveBeenCalledWith({ file });
     });
 
     it('传入 onDownload 时点击下载应该调用回调而非默认下载', async () => {

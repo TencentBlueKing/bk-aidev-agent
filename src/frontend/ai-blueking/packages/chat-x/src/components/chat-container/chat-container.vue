@@ -478,33 +478,52 @@
 
   useCommonTippyProvider({ tippyOptions: computed(() => props.commonTippyOptions ?? {}) });
 
-  const { displayTabs, tabs, selectedTab, isCollapse, addCustomTab, removeCustomTab, selectCustomTab, resetCustomTab } =
-    useCustomTabProvider<CustomBkFlowTabData>({
-      executionTabVisible: () => props.executionTabVisible,
-      onTabChange: async tab => {
-        // 文件产物 Tab 由 FileArtifactPanel 自行通过 onArtifactClick 异步取链，无需走自定义 Tab 拉取
-        if (tab.name === FILE_ARTIFACT_TAB_NAME) {
-          return;
-        }
-        const tabProps = selectedTab.value.data?.props || {
-          loading: true,
-          data: {},
-        };
-        selectedTab.value.data = {
-          ...selectedTab.value.data,
-          props: tabProps,
-        };
-        const data = await props.onCustomTabChange?.(tab);
-        selectedTab.value.data = {
-          ...selectedTab.value.data,
-          props: {
-            ...tabProps,
-            loading: false,
-            data,
-          },
-        };
-      },
+  const {
+    displayTabs,
+    tabs,
+    selectedTab,
+    isCollapse,
+    addCustomTab,
+    ensureCustomTab,
+    removeCustomTab,
+    selectCustomTab,
+    resetCustomTab,
+  } = useCustomTabProvider<CustomBkFlowTabData>({
+    executionTabVisible: () => props.executionTabVisible,
+    onTabChange: async tab => {
+      // 文件产物 Tab 由 FileArtifactPanel 自行通过 onArtifactClick 异步取链，无需走自定义 Tab 拉取
+      if (tab.name === FILE_ARTIFACT_TAB_NAME) {
+        return;
+      }
+      const tabProps = selectedTab.value.data?.props || {
+        loading: true,
+        data: {},
+      };
+      selectedTab.value.data = {
+        ...selectedTab.value.data,
+        props: tabProps,
+      };
+      const data = await props.onCustomTabChange?.(tab);
+      selectedTab.value.data = {
+        ...selectedTab.value.data,
+        props: {
+          ...tabProps,
+          loading: false,
+          data,
+        },
+      };
+    },
+  });
+
+  /** 挂上「文件产物」Tab，不抢占当前选中（如执行情况） */
+  const ensureFileArtifactTab = () => {
+    ensureCustomTab({
+      closable: false,
+      label: t('文件产物'),
+      name: FILE_ARTIFACT_TAB_NAME,
+      order: -1,
     });
+  };
 
   const keyword = shallowRef('');
   const selectedUserMessages = deepRef<Message[]>([]);
@@ -553,13 +572,26 @@
     },
   });
 
-  // 会话切换 / 无文件产物时清理：移除 Tab 并重置命中态，避免残留
-  watch(sessionArtifacts, list => {
-    if (!list.length) {
-      removeCustomTab(FILE_ARTIFACT_TAB_NAME);
-      setActiveArtifactId('');
-    }
-  });
+  /**
+   * 有文件产物时挂上 Tab 并保证命中态有效；无产物时清理。
+   * ensure 不切换选中，避免从「执行情况」展开侧栏时被抢走焦点。
+   */
+  watch(
+    sessionArtifacts,
+    list => {
+      if (!list.length) {
+        removeCustomTab(FILE_ARTIFACT_TAB_NAME);
+        setActiveArtifactId('');
+        return;
+      }
+      ensureFileArtifactTab();
+      // 未命中或命中项已不在列表时，默认选中第一个
+      if (!list.some(item => item.outputId === activeArtifactId.value)) {
+        setActiveArtifactId(list[0].outputId);
+      }
+    },
+    { immediate: true },
+  );
 
   watch(isCollapse, newVal => {
     if (newVal) {
