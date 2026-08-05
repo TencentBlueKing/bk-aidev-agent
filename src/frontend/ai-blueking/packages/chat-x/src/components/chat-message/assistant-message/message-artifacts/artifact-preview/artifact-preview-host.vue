@@ -59,9 +59,8 @@
   import { useArtifactPreviewLoader } from './use-artifact-preview-loader';
 
   import type { AIFileInfo } from '../../../../../ag-ui/types/file';
-  import type { SessionArtifact } from '../../../../../composables/use-artifact-preview';
 
-  const props = defineProps<{ file?: AIFileInfo | SessionArtifact }>();
+  const props = defineProps<{ file?: AIFileInfo }>();
   const artifactPreview = useArtifactPreviewConsumer();
 
   const { content, load, previewUrl, renderer, status } = useArtifactPreviewLoader({
@@ -70,13 +69,9 @@
     resolveUrls: file => artifactPreview?.resolveArtifactUrls(file) ?? Promise.resolve({}),
   });
 
+  // 以 outputId 为唯一键；同文件类型变更时也需重新加载预览策略
   watch(
-    () => {
-      if (!props.file) {
-        return '';
-      }
-      return 'artifactId' in props.file ? props.file.artifactId : `${props.file.outputId}:${props.file.type}`;
-    },
+    () => (props.file ? `${props.file.outputId}:${props.file.type}` : ''),
     () => {
       load();
     },

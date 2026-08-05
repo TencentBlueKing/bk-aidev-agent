@@ -562,9 +562,10 @@ ai-chat-container（:data-ai-size="size"）
 
 ### 内置「文件产物」Tab
 
-除「执行情况」外，容器内置一个按需出现的固定 Tab —— **「文件产物」**（`name: 'file-artifact'`），用于聚合预览当前会话所有 `AssistantMessage.property.artifacts`：
+除「执行情况」外，容器内置一个按需出现的固定 Tab —— **「文件产物」**（`name: 'file-artifact'`），用于聚合预览当前会话所有 `AssistantMessage.property.artifacts`（按 `outputId` 去重）：
 
-- **触发**：点击 AI 回复中的文件卡片（[ArtifactFileCard](/components/message/assistant-message)）时，容器通过 `useArtifactPreviewProvider` 命中该文件并 `addCustomTab` 弹出侧栏
+- **静默挂载**：会话已有文件产物时，容器通过 `ensureCustomTab` 挂上该 Tab，**不展开侧栏、不切换当前选中**（避免从「执行情况」展开时被抢走焦点），并保证命中态有效（默认第一个 `outputId`）
+- **主动打开**：点击 AI 回复中的文件卡片（[ArtifactFileCard](/components/message/assistant-message)）时，容器通过 `useArtifactPreviewProvider` 以 `outputId` 命中该文件，再 `addCustomTab` 展开侧栏并选中「文件产物」
 - **排序 / 关闭**：`order: -1` 排在「执行情况」之前，`closable: false` 不可关闭
 - **显隐解耦**：该 Tab 存在时，侧栏展示不再受「`executionGroups` 为空」约束（即使当前会话没有执行类消息，也能独立展示文件产物侧栏）；会话切换或无文件产物时自动移除并重置命中态
 - **内容**：由 [FileArtifactPanel](/components/message/file-artifact-panel) 渲染列表与下载头，预览委托内部 `ArtifactPreviewHost`；`download_url` / `preview_url` 通过 `onArtifactClick` 异步获取。文本类（`html` / `markdown` / `md` / `txt` / `json`）拉 `download_url` 正文直渲染（`md` 与 `markdown` 等价）；其余类型用 `preview_url` iframe（一般为后台转好的 PDF）

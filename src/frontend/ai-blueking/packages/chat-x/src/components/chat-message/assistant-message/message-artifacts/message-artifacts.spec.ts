@@ -79,14 +79,13 @@ describe('MessageArtifacts', () => {
     expect(wrapper.find('.ai-artifact-file-card').exists()).toBe(false);
   });
 
-  it('应该向卡片透传 messageUid 与消息内下标 index，用于命中唯一文件', () => {
+  it('应该以 outputId 作为卡片 key 并透传 file', () => {
     const artifacts = [createFile({ outputId: 'a' }), createFile({ outputId: 'b' })];
 
-    wrapper = mount(MessageArtifacts, { props: { artifacts, messageUid: 'msg-1' } });
+    wrapper = mount(MessageArtifacts, { props: { artifacts } });
 
     const cards = wrapper.findAllComponents(ArtifactFileCard);
-    expect(cards[0].props('messageUid')).toBe('msg-1');
-    expect(cards[0].props('index')).toBe(0);
-    expect(cards[1].props('index')).toBe(1);
+    expect(cards[0].props('file')).toEqual(artifacts[0]);
+    expect(cards[1].props('file')).toEqual(artifacts[1]);
   });
 });

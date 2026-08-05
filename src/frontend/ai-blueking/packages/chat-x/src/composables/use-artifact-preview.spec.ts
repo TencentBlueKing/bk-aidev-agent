@@ -30,11 +30,7 @@ import { mount } from '@vue/test-utils';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AIFileType } from '../ag-ui/types/file';
-import {
-  buildArtifactId,
-  useArtifactPreviewConsumer,
-  useArtifactPreviewProvider,
-} from './use-artifact-preview';
+import { useArtifactPreviewConsumer, useArtifactPreviewProvider } from './use-artifact-preview';
 
 import type { AIFileInfo, OnArtifactClick } from '../ag-ui/types/file';
 
@@ -47,17 +43,13 @@ const createFile = (overrides: Partial<AIFileInfo> = {}): AIFileInfo => ({
 });
 
 describe('use-artifact-preview', () => {
-  describe('buildArtifactId', () => {
-    it('应该按 messageUid#index#outputId 组合唯一 id', () => {
-      expect(buildArtifactId('m1', 2, 'o3')).toBe('m1#2#o3');
-    });
-  });
-
   describe('Provider / Consumer', () => {
-    const setup = (options: {
-      getOnArtifactClick?: () => OnArtifactClick | undefined;
-      onOpen?: ReturnType<typeof vi.fn>;
-    } = {}) => {
+    const setup = (
+      options: {
+        getOnArtifactClick?: () => OnArtifactClick | undefined;
+        onOpen?: ReturnType<typeof vi.fn>;
+      } = {},
+    ) => {
       const onOpen = options.onOpen ?? vi.fn();
       let providerApi: ReturnType<typeof useArtifactPreviewProvider> | undefined;
       let consumerCtx: ReturnType<typeof useArtifactPreviewConsumer>;
@@ -81,15 +73,14 @@ describe('use-artifact-preview', () => {
       return { consumerCtx, onOpen, providerApi, wrapper };
     };
 
-    it('openPreview 应命中文件并触发 onOpen', () => {
+    it('openPreview 应以 outputId 命中文件并触发 onOpen', () => {
       const { consumerCtx, onOpen, providerApi } = setup();
       const file = createFile({ outputId: 'o9' });
 
-      consumerCtx?.openPreview({ file, index: 1, messageUid: 'msg-a' });
+      consumerCtx?.openPreview({ file });
 
-      const expectedId = buildArtifactId('msg-a', 1, 'o9');
-      expect(providerApi?.activeArtifactId.value).toBe(expectedId);
-      expect(onOpen).toHaveBeenCalledWith(expectedId);
+      expect(providerApi?.activeArtifactId.value).toBe('o9');
+      expect(onOpen).toHaveBeenCalledWith('o9');
     });
 
     it('setActiveArtifactId 应直接更新命中态', () => {
