@@ -149,6 +149,9 @@ enum MessageStatus {
   // 已完成
   Complete = 'complete',
 
+  // 已完成（与 Complete 同义，兼容协议/后端返回的 completed）
+  Completed = 'completed',
+
   // 已禁用
   Disabled = 'disabled',
 
@@ -174,6 +177,8 @@ enum MessageStatus {
   Success = 'success',
 }
 ```
+
+完整取值与说明见 [常量枚举 · MessageStatus](./constants#messagestatus)。
 
 ## 具体消息类型
 

@@ -46,7 +46,20 @@
   import MessageArtifacts from './message-artifacts/message-artifacts.vue';
 
   import type { AssistantMessage } from '../../../ag-ui/types/messages';
-  const props = defineProps<Partial<AssistantMessage>>();
+
+  // 本地 interface：content 用字面量 string，避免 Vue 将泛型 BaseMessage.content 推断为 Object
+  interface AssistantMessageProps {
+    content?: string;
+    id?: AssistantMessage['id'];
+    messageId?: AssistantMessage['messageId'];
+    name?: AssistantMessage['name'];
+    property?: AssistantMessage['property'];
+    role?: AssistantMessage['role'];
+    status?: AssistantMessage['status'];
+    toolCalls?: AssistantMessage['toolCalls'];
+    uid?: AssistantMessage['uid'];
+  }
+  const props = defineProps<AssistantMessageProps>();
   const artifacts = computed(() => props.property?.artifacts);
   // 唯一消息标识：优先 uid，回退 id，供文件产物命中唯一文件与「在对话中定位」
   const messageUid = computed(() => props.uid ?? (props.id != null ? String(props.id) : ''));

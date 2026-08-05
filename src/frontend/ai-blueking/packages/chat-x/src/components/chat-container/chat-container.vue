@@ -896,7 +896,7 @@
       > main {
         position: relative;
         width: var(--resize-main-width);
-        padding: 8px;
+        padding: 8px 16px;
 
         // overflow: visible;
 
