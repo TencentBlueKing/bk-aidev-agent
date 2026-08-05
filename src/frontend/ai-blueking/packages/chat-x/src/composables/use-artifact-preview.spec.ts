@@ -27,10 +27,14 @@
 import { defineComponent, h } from 'vue';
 
 import { mount } from '@vue/test-utils';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AIFileType } from '../ag-ui/types/file';
-import { useArtifactPreviewConsumer, useArtifactPreviewProvider } from './use-artifact-preview';
+import {
+  ARTIFACT_URL_CACHE_TTL_MS,
+  useArtifactPreviewConsumer,
+  useArtifactPreviewProvider,
+} from './use-artifact-preview';
 
 import type { AIFileInfo, OnArtifactClick } from '../ag-ui/types/file';
 
@@ -44,6 +48,14 @@ const createFile = (overrides: Partial<AIFileInfo> = {}): AIFileInfo => ({
 
 describe('use-artifact-preview', () => {
   describe('Provider / Consumer', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     const setup = (
       options: {
         getOnArtifactClick?: () => OnArtifactClick | undefined;
@@ -97,7 +109,7 @@ describe('use-artifact-preview', () => {
       expect(consumerCtx?.canResolveArtifactUrl.value).toBe(false);
     });
 
-    it('resolveArtifactUrls 应按 outputId 缓存结果且不重复请求', async () => {
+    it('resolveArtifactUrls 在 TTL 内应复用缓存', async () => {
       const onArtifactClick = vi.fn().mockResolvedValue({
         download_url: 'https://example.com/d',
         preview_url: 'https://example.com/p',
@@ -114,6 +126,50 @@ describe('use-artifact-preview', () => {
       });
       expect(second).toEqual(first);
       expect(onArtifactClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('resolveArtifactUrls 过期后应重新取链', async () => {
+      const onArtifactClick = vi
+        .fn()
+        .mockResolvedValueOnce({
+          download_url: 'https://example.com/d1',
+          preview_url: 'https://example.com/p1',
+        })
+        .mockResolvedValueOnce({
+          download_url: 'https://example.com/d2',
+          preview_url: 'https://example.com/p2',
+        });
+      const { consumerCtx } = setup({ getOnArtifactClick: () => onArtifactClick });
+      const file = createFile({ outputId: 'cache-ttl' });
+
+      const first = await consumerCtx!.resolveArtifactUrls(file);
+      vi.advanceTimersByTime(ARTIFACT_URL_CACHE_TTL_MS + 1);
+      const second = await consumerCtx!.resolveArtifactUrls(file);
+
+      expect(first).toEqual({
+        download_url: 'https://example.com/d1',
+        preview_url: 'https://example.com/p1',
+      });
+      expect(second).toEqual({
+        download_url: 'https://example.com/d2',
+        preview_url: 'https://example.com/p2',
+      });
+      expect(onArtifactClick).toHaveBeenCalledTimes(2);
+    });
+
+    it('resolveArtifactUrls 传 force 时应绕过缓存重新取链', async () => {
+      const onArtifactClick = vi
+        .fn()
+        .mockResolvedValueOnce({ download_url: 'https://example.com/d1' })
+        .mockResolvedValueOnce({ download_url: 'https://example.com/d2' });
+      const { consumerCtx } = setup({ getOnArtifactClick: () => onArtifactClick });
+      const file = createFile({ outputId: 'cache-force' });
+
+      await consumerCtx!.resolveArtifactUrls(file);
+      const forced = await consumerCtx!.resolveArtifactUrls(file, { force: true });
+
+      expect(forced).toEqual({ download_url: 'https://example.com/d2' });
+      expect(onArtifactClick).toHaveBeenCalledTimes(2);
     });
 
     it('并发 resolveArtifactUrls 应复用同一进行中请求', async () => {

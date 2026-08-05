@@ -28,6 +28,7 @@ import { onBeforeUnmount, shallowRef } from 'vue';
 import { getArtifactPreviewStrategy } from './preview-strategy';
 
 import type { AIFileInfo, ArtifactUrlResult } from '../../../../../ag-ui/types/file';
+import type { ResolveArtifactUrlsOptions } from '../../../../../composables/use-artifact-preview';
 import type { ArtifactPreviewRendererKind } from './preview-strategy';
 
 export type ArtifactPreviewPayload = {
@@ -39,10 +40,12 @@ export type ArtifactPreviewPayload = {
 
 export type ArtifactPreviewStatus = 'empty' | 'error' | 'idle' | 'loading' | 'ready';
 
+export type ArtifactPreviewLoadOptions = ResolveArtifactUrlsOptions;
+
 export const useArtifactPreviewLoader = (options: {
   canResolve: () => boolean;
   getFile: () => AIFileInfo | undefined;
-  resolveUrls: (file: AIFileInfo) => Promise<ArtifactUrlResult>;
+  resolveUrls: (file: AIFileInfo, options?: ResolveArtifactUrlsOptions) => Promise<ArtifactUrlResult>;
 }) => {
   const status = shallowRef<ArtifactPreviewStatus>('idle');
   const content = shallowRef('');
@@ -57,7 +60,7 @@ export const useArtifactPreviewLoader = (options: {
     previewUrl.value = '';
   };
 
-  const load = async () => {
+  const load = async (loadOptions?: ArtifactPreviewLoadOptions) => {
     const seq = ++loadSeq;
     abortController?.abort();
     abortController = undefined;
@@ -76,7 +79,10 @@ export const useArtifactPreviewLoader = (options: {
     renderer.value = strategy.renderer;
 
     try {
-      const urls = await options.resolveUrls(file);
+      // 重试传 force，绕过 TTL 缓存重新取链
+      const urls = loadOptions?.force
+        ? await options.resolveUrls(file, { force: true })
+        : await options.resolveUrls(file);
       if (seq !== loadSeq) {
         return;
       }
