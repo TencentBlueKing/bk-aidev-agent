@@ -18,6 +18,11 @@ export type { IShortcut } from '../../types';
 export interface ChatBusinessConfig {
   /** 欢迎语 */
   openingRemark?: string;
+  /**
+   * 会话自动重命名成功回调（首条消息后 AI 生成名称）
+   * 用于向上抛出与手动改名一致的 rename 事件；Manager 自身的 eventEmitter 仅接错误桥，不会转发此事件
+   */
+  onSessionRenamed?: (newName: string) => void;
   /** 占位文本 */
   placeholder?: string;
   /** 预定义问题 */

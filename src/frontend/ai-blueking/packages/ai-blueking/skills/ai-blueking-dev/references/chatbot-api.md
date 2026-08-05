@@ -59,6 +59,7 @@
 | request-share     | -                                          | 请求进入分享模式               |
 | agent-action      | `(tool: IToolBtn, messages: Message[])`    | 自定义消息工具点击（非内置 cite/rebuild/delete/like/unlike） |
 | execution-panel-change | `(isCollapse: boolean)`               | 执行情况侧面板展开/折叠         |
+| rename            | `(newName: string)`                        | 首条消息后 AI 自动重命名成功（独立使用 ChatBot 时可直接监听；AIBlueking 会转发为自身 `@rename`） |
 
 ## Slots
 
@@ -216,7 +217,7 @@ AIHeader 是 AIBlueking 的 Header 区域组件，其事件会透传至 AIBlueki
 | `history-session-delete` | `(sessionCode: string)` | 历史面板中删除会话（V2 模式） |
 | `history-session-rename` | `(sessionCode: string, newName: string)` | 历史面板中重命名会话（V2 模式） |
 | `auto-generate-name` | 无 | 自动生成会话名称 |
-| `rename` | `(newName: string)` | 手动重命名会话 |
+| `rename` | `(newName: string)` | 会话重命名（手动改名，或首条消息后 AI 自动重命名成功） |
 | `help-click` | 无 | 点击转人工按钮 |
 | `share` | 无 | 点击分享按钮 |
 | `toggle-compression` | 无 | 切换面板压缩/展开 |
@@ -342,7 +343,7 @@ AIBlueking 是完整面板组件（Nimbus 悬浮球 + 浮窗 + 拖拽 + Header +
 | new-chat-created | `(session: { sessionCode, sessionName?, createdAt? })` | 新会话创建成功 |
 | history-click | `(event: Event)` | 点击历史会话按钮 |
 | auto-generate-name | 无 | 自动生成会话名 |
-| rename | `(newName: string)` | 手动重命名会话 |
+| rename | `(newName: string)` | 会话重命名（手动改名，或首条消息后 AI 自动重命名成功） |
 | help-click | 无 | 点击转人工按钮 |
 | share | 无 | 点击分享按钮 |
 

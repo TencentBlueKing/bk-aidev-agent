@@ -112,6 +112,7 @@ export class ChatBusinessManager {
   }
   /**
    * 自动重命名会话（当第一条消息发送成功后）
+   * 成功后通过 config.onSessionRenamed 通知上层，对外抛出与手动改名一致的 rename 事件
    * @param sessionCode 会话编码
    */
   private autoRenameSessionIfNeeded(sessionCode: string): void {
@@ -133,9 +134,19 @@ export class ChatBusinessManager {
       return;
     }
 
-    renameTask.catch((error: unknown) => {
-      console.error('[ChatBusinessManager] Auto rename session failed:', error);
-    });
+    renameTask
+      .then(() => {
+        const updated =
+          sessionModule.list.value.find(s => s.sessionCode === sessionCode) ??
+          (sessionModule.current?.value?.sessionCode === sessionCode ? sessionModule.current.value : null);
+        const newName = updated?.sessionName;
+        if (newName) {
+          this.config.onSessionRenamed?.(newName);
+        }
+      })
+      .catch((error: unknown) => {
+        console.error('[ChatBusinessManager] Auto rename session failed:', error);
+      });
   }
 
   /**
