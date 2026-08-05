@@ -15,7 +15,7 @@
         size="small"
         text
         theme="primary"
-        @click="load"
+        @click="() => load({ force: true })"
       >
         {{ t('重试') }}
       </Button>
@@ -66,7 +66,7 @@
   const { content, load, previewUrl, renderer, status } = useArtifactPreviewLoader({
     canResolve: () => !!artifactPreview?.canResolveArtifactUrl.value,
     getFile: () => props.file,
-    resolveUrls: file => artifactPreview?.resolveArtifactUrls(file) ?? Promise.resolve({}),
+    resolveUrls: (file, options) => artifactPreview?.resolveArtifactUrls(file, options) ?? Promise.resolve({}),
   });
 
   // 以 outputId 为唯一键；同文件类型变更时也需重新加载预览策略
