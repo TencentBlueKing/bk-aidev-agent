@@ -77,7 +77,6 @@
       flex-direction: column;
       gap: 16px;
       width: 100%;
-      margin-bottom: 12px;
     }
 
     &-tools {

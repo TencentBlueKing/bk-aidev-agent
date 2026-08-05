@@ -356,7 +356,8 @@
         gap: 12px;
         width: 100%;
         margin-left: auto;
-        contain: content;
+
+        // contain: content;
       }
     }
 
