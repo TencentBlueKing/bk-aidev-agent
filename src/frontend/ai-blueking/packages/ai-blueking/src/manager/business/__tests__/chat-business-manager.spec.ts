@@ -79,16 +79,41 @@ describe('ChatBusinessManager', () => {
 
     it('should auto-rename session when first message', async () => {
       mocks.mockMessageModule.list = shallowRef([{ id: '1', role: MessageRole.User, content: 'hello' }]);
+      const onSessionRenamed = vi.fn();
+      mocks.mockSessionModule.renameSession = vi.fn().mockImplementation(async () => {
+        mocks.mockSessionModule.list.value = [{ sessionCode: 'session-1', sessionName: 'AI Generated Name' }];
+      });
       manager = new ChatBusinessManager(
         mocks.mockAgentModule as any,
         mocks.mockMessageModule as any,
         mocks.mockSessionModule as any,
         mocks.mockEventEmitter,
+        { onSessionRenamed },
       );
 
       await manager.sendMessage('hello', 'session-1');
+      await Promise.resolve();
 
       expect(mocks.mockSessionModule.renameSession).toHaveBeenCalledWith('session-1');
+      expect(onSessionRenamed).toHaveBeenCalledWith('AI Generated Name');
+    });
+
+    it('should not emit rename when auto-rename fails', async () => {
+      mocks.mockMessageModule.list = shallowRef([{ id: '1', role: MessageRole.User, content: 'hello' }]);
+      const onSessionRenamed = vi.fn();
+      mocks.mockSessionModule.renameSession = vi.fn().mockRejectedValue(new Error('rename failed'));
+      manager = new ChatBusinessManager(
+        mocks.mockAgentModule as any,
+        mocks.mockMessageModule as any,
+        mocks.mockSessionModule as any,
+        mocks.mockEventEmitter,
+        { onSessionRenamed },
+      );
+
+      await manager.sendMessage('hello', 'session-1');
+      await Promise.resolve();
+
+      expect(onSessionRenamed).not.toHaveBeenCalled();
     });
 
     it('should not auto-rename when more than one message exists', async () => {
