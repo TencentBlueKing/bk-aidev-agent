@@ -187,7 +187,7 @@
   import CustomTabContent from './custom-tab-content.vue';
   import { MOCK_USER_QUESTION_PENDING_MESSAGES } from './interrupt';
   import { streamContent } from './markdown';
-  import { MOCK_MESSAGES, MOCK_MODELS, MOCK_PROMPTS, MOCK_RESOURCES, mockArtifactClick } from './mock';
+  import { MOCK_INFO_MESSAGES, MOCK_MESSAGES, MOCK_MODELS, MOCK_PROMPTS, MOCK_RESOURCES, mockArtifactClick } from './mock';
   import { uploadFileToSession } from './upload-file';
 
   import type { CustomTab, IAiSlashMenuItem, Shortcut, TagSchema } from '../src/types';
@@ -207,8 +207,9 @@
   const handleModelChange = (model: IModelOption) => {
     console.log('model change:', model);
   };
-  // 含 toolCalls 的会话 mock + 待回答 UserQuestion，便于预览一次一题 / 分页切换
+  // Info 分隔提示 + 含 toolCalls 的会话 mock + 待回答 UserQuestion
   const messages = deepRef<Message[]>([
+    ...MOCK_INFO_MESSAGES,
     ...(MOCK_MESSAGES as Message[]),
     ...MOCK_USER_QUESTION_PENDING_MESSAGES,
   ]);

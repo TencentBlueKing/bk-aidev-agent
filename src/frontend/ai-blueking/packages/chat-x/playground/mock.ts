@@ -475,6 +475,25 @@ export const MOCK_USER_MESSAGE = {
   status: MessageStatus.Complete,
 } as UserMessage;
 
+/** InfoMessage：会话分隔 / 上下文提示；多行 content 运行时兼容 string[] */
+export const MOCK_INFO_MESSAGES = [
+  {
+    id: 'mock-info-session-divider',
+    messageId: 'mock-info-session-divider',
+    role: MessageRole.Info,
+    content: '以下是新的对话',
+    status: MessageStatus.Completed,
+  },
+  {
+    id: 'mock-info-context-cleared',
+    messageId: 'mock-info-context-cleared',
+    role: MessageRole.Info,
+    // InfoMessage 类型声明为 string，组件运行时支持 string[]
+    content: ['上下文已清除', '新对话从这里开始'],
+    status: MessageStatus.Completed,
+  },
+] as Message[];
+
 // @ 资源列表
 export const MOCK_RESOURCES = [
   {
