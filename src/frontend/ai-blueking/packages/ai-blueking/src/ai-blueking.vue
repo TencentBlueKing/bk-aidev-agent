@@ -101,6 +101,7 @@
             @receive-end="handleReceiveEnd"
             @receive-start="handleReceiveStart"
             @receive-text="handleReceiveText"
+            @rename="handleSessionRenamed"
             @request-share="handleShare"
             @send-message="(msg: string) => handleSendMessage(msg)"
             @session-switched="(session: ISession | null) => handleSessionSwitched(session)"
@@ -289,6 +290,7 @@
     handleAutoGenerateName,
     handleHelpClick,
     handleRename,
+    handleSessionRenamed,
     handleSessionSwitched,
     addNewSession,
     switchToSession,

@@ -346,6 +346,12 @@ describe('useChatbotInit', () => {
       // 业务管理器的失败事件必须能汇入 error 出口，否则 chat-error / session-error 是死通道
       expect(vi.mocked(ChatBusinessManager).mock.calls[0][3]).toBe(errorReporterParams.managerErrorBridge);
       expect(vi.mocked(SessionBusinessManager).mock.calls[0][2]).toBe(errorReporterParams.managerErrorBridge);
+
+      // 自动重命名成功应经 onSessionRenamed → ChatBot emit('rename')
+      const chatConfig = vi.mocked(ChatBusinessManager).mock.calls[0][4] as { onSessionRenamed?: (name: string) => void };
+      expect(typeof chatConfig?.onSessionRenamed).toBe('function');
+      chatConfig.onSessionRenamed!('Auto Name');
+      expect(emit).toHaveBeenCalledWith('rename', 'Auto Name');
       wrapper.unmount();
     });
 

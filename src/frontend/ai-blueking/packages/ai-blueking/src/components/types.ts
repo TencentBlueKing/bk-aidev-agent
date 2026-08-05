@@ -47,6 +47,11 @@ export type ChatBotEmits = {
   'receive-end': [];
   'receive-start': [];
   'receive-text': [];
+  /**
+   * 会话名称变更（目前：首条消息后 AI 自动重命名成功）
+   * 与 AIBlueking / Header 的 rename 事件 payload 一致
+   */
+  rename: [newName: string];
   /** 请求进入分享模式事件（来自 message-tools 的 share 按钮） */
   'request-share': [];
   'send-message': [message: string];

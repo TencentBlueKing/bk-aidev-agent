@@ -161,6 +161,14 @@ export function useSessionHandlers(params: UseSessionHandlersParams) {
     forwarders.rename(newName);
   };
 
+  /**
+   * ChatBot 侧会话名已变更（如首条消息自动重命名），仅同步 UI 并对外抛 rename，不再调 updateSession
+   */
+  const handleSessionRenamed = (newName: string) => {
+    sessionName.value = newName;
+    forwarders.rename(newName);
+  };
+
   const handleSessionSwitched = (session: ISession | null) => {
     if (session) {
       sessionName.value = session.sessionName || '';
@@ -218,6 +226,7 @@ export function useSessionHandlers(params: UseSessionHandlersParams) {
     handleAutoGenerateName,
     handleHelpClick,
     handleRename,
+    handleSessionRenamed,
     handleSessionSwitched,
     addNewSession,
     switchToSession,

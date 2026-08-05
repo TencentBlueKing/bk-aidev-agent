@@ -386,6 +386,7 @@ const chatBotEmitNames = [
   'execution-panel-change',
   'feedback',
   'agent-action',
+  'rename',
 ] as const;
 
 const chatBotExposeKeys = [

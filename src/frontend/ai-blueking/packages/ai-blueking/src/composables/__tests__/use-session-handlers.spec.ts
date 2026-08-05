@@ -45,6 +45,17 @@ describe('useSessionHandlers error reporting', () => {
     expect(payload.source).toBe('business');
   });
 
+  it('forwards session renamed from ChatBot without calling updateSession', () => {
+    const params = createParams();
+    const { handleSessionRenamed, sessionName } = useSessionHandlers(params);
+
+    handleSessionRenamed('AI Generated Name');
+
+    expect(sessionName.value).toBe('AI Generated Name');
+    expect(params.forwarders.rename).toHaveBeenCalledWith('AI Generated Name');
+    expect(params.chatHelper.session.updateSession).not.toHaveBeenCalled();
+  });
+
   it('reports auto generate name failure with semantic apiName', async () => {
     const reportSdkError = vi.fn();
     const { handleAutoGenerateName } = useSessionHandlers(createParams(reportSdkError));
