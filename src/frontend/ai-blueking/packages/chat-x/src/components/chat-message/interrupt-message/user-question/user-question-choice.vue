@@ -108,5 +108,6 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    margin-bottom: 8px;
   }
 </style>

@@ -2,7 +2,7 @@
 
 > 能力域：Agent 能力 ｜ 导入：`import { UserQuestionCard } from '@blueking/chat-x'` ｜ since 1.0.0
 
-渲染 UserQuestion 中断的待回答面板，支持单选、多选、Others 与跳过。 源码位置：src/components/chat-message/interrupt-message/user-question/user-question-card.vue。
+渲染 UserQuestion 中断的待回答面板；一次一题分页切换，支持单选/多选、Others、跳过与已完成进度。源码位置：src/components/chat-message/interrupt-message/user-question/user-question-card.vue。
 
 **关联**：interrupt-message（outcome.success 时挂载 UserQuestionAnsweredCard 回显回答）、chat-container（检测最近待回答 UserQuestion 并把 UserQuestionCard 放在输入区上方）、interrupt（定义 UserQuestionInterrupt 与 UserQuestionResume 协议）
 
@@ -13,7 +13,7 @@
 
 - **源码位置**：`src/components/chat-message/interrupt-message/user-question/user-question-card.vue`
 - **能力域**：Agent 能力
-- **能力说明**：渲染 UserQuestion 中断的待回答面板，支持单选、多选、Others 与跳过。
+- **能力说明**：渲染 UserQuestion 中断的待回答面板；一次一题分页切换，支持单选/多选、Others、跳过与已完成进度。
 
 > **能力域**：Agent 能力
 
@@ -21,6 +21,9 @@
 
 ## 交互能力
 
+- **一次一题**：正文只展示当前题；标题栏右侧提供 `< 当前题 / 总题数 >` 切换定位（单题为 `1 / 1`），首末题对应箭头禁用。
+- **自动跳转**：单选预设选项从未答变为有效答时，自动跳到下一题（最后一题停留）；多选与 Others 不自动跳，靠箭头切换。
+- **已完成进度**：Footer 左侧展示「已完成 N 题」；右侧为「跳过」+「完成」。
 - **单选 / 多选**：每道题通过 `multiSelect` 控制选择行为；未传时不展示单选/多选标签，默认仍按单选处理。
 - **Others 自由输入**：默认 [UserQuestionChoice](/components/agent/user-question-choice) 为每道题追加 `label: 'others'` 输入项，输入文本写入 `answer[].description`。
 - **自定义作答形态**：通过 `#question` slot 可替换默认选择题，渲染任意表单；作答有效时调用 `setAnswer` 回传 `UserQuestionAnswerItem`，无效时传 `undefined`。

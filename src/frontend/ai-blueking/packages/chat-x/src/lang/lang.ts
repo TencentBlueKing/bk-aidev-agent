@@ -176,6 +176,8 @@ export const lang = {
   单选: 'Single',
   多选: 'Multiple',
   其他: 'Others',
+  已完成: 'Completed',
+  题: 'question(s)',
   回答内容: 'Answers',
   已回复: 'Replied',
   '请输入...': 'Please enter...',

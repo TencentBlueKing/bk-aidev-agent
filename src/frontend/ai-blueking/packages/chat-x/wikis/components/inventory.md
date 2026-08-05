@@ -24,7 +24,7 @@ aiSummary: >
 | [ToolApprovalCard 工具审批卡片](/components/agent/tool-approval-card) | Agent 能力 | `src/components/chat-message/interrupt-message/tool-approval-card.vue` | 已覆盖 |
 | [ToolcallRender 工具调用渲染器](/components/agent/toolcall-render) | Agent 能力 | `src/components/tool-call/toolcall-render/toolcall-render.vue` | 已覆盖 |
 | [UserQuestionAnsweredCard 用户问题回答回显](/components/agent/user-question-answered-card) | Agent 能力 | `src/components/chat-message/interrupt-message/user-question/user-question-answered-card.vue` | 已覆盖 |
-| [UserQuestionCard 用户问题中断](/components/agent/user-question-card) | Agent 能力 | `src/components/chat-message/interrupt-message/user-question/user-question-card.vue` | 已覆盖 |
+| [UserQuestionCard 用户问题中断](/components/agent/user-question-card) | Agent 能力 | `src/components/chat-message/interrupt-message/user-question/user-question-card.vue`（一次一题分页） | 已覆盖 |
 | [UserQuestionChoice 用户问题选择题](/components/agent/user-question-choice) | Agent 能力 | `src/components/chat-message/interrupt-message/user-question/user-question-choice.vue` | 已覆盖 |
 | [UserQuestionOption 用户问题选项](/components/agent/user-question-option) | Agent 能力 | `src/components/chat-message/interrupt-message/user-question/user-question-option.vue` | 已覆盖 |
 | [DeleteTool 删除确认按钮](/components/feedback/delete-tool) | 工具与反馈 | `src/components/message-tools/delete-tool/delete-tool.vue` | 已覆盖 |
