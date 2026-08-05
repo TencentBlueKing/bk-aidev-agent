@@ -258,7 +258,7 @@ sequenceDiagram
 
 **路径 A：结构化作答（问题卡片）**
 
-用户在 `UserQuestionCard` 中逐题选择，点击「完成」必须全部题目均已作答；点击「跳过」回传 `status=cancelled` + 空答案。请求 **不带 `input`**，只带 `resume`。
+用户在 `UserQuestionCard` 中一次只看到一题，可通过标题栏 `< 当前题 / 总题数 >` 切换；单选预设选项作答后会自动跳到下一题，多选 / Others 需手动切换。点击「完成」必须全部题目均已作答；点击「跳过」回传 `status=cancelled` + 空答案。请求 **不带 `input`**，只带 `resume`。
 
 **路径 B：chat-input 自由文本作答**
 
@@ -318,6 +318,8 @@ sequenceDiagram
 | --- | --- |
 | Others 自定义输入 | 前端自动为每题追加 Others 项（`label="others"`），后端无需下发；用户输入文本写入 `description`。 |
 | 单选 / 多选 | 由题目 `multiSelect` 决定：单选 `answer` 长度恒为 0/1，多选可多项。`multiSelect` 不传则不渲染单选/多选标签。 |
+| 一次一题（UI） | 卡片正文只展示当前题；标题栏 `< 当前题 / 总题数 >` 切换。单选预设选项从未答→有效答时自动跳下一题；多选 / Others 不自动跳。 |
+| 已完成进度（UI） | Footer 左侧「已完成 N 题」，右侧「跳过」+「完成」。协议字段不变。 |
 | 完成条件 | 「完成」按钮需**所有题目均已作答**才可点击；选中 Others 时要求输入非空。 |
 | 跳过 / 取消 | 回传 `status="cancelled"`，`payload.answers=[]`；回显显示「已取消」。 |
 | 过期 `expiresAt` | 字段已在协议中预留（ISO8601）；当前前端未做强制拦截，后端可据此判断是否拒绝过期 resume。 |
@@ -352,4 +354,4 @@ sequenceDiagram
 | 中断原因枚举 | `InterruptReason.UserQuestion` | `src/ag-ui/types/constants.ts` |
 | SSE 事件 / Resume | `IUserQuestionInterrupt` / `IResume` | `chat-helper/src/event/type.ts` |
 | resume 回传逻辑 | `useInterruptResume` | `ai-blueking/src/components/composables/use-interrupt-resume.ts` |
-| 答案聚合 / payload 组装 | `useUserQuestion` | `chat-x/src/components/chat-message/interrupt-message/user-question/use-user-question.ts` |
+| 答案聚合 / 分页定位 / payload 组装 | `useUserQuestion` | `chat-x/src/components/chat-message/interrupt-message/user-question/use-user-question.ts` |

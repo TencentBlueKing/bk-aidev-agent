@@ -3,9 +3,10 @@ name: UserQuestionCard 用户问题中断
 slug: user-question-card
 kind: component
 domain: agent
-description: 渲染 UserQuestion 中断的待回答面板，支持单选、多选、Others 与跳过。
+description: 渲染 UserQuestion 中断的待回答面板；一次一题分页切换，支持单选/多选、Others、跳过与已完成进度。
 aiSummary: >
-  渲染 UserQuestion 中断的待回答面板，支持单选、多选、Others 与跳过。
+  渲染 UserQuestion 中断的待回答面板：一次只展示一题，标题栏提供题号切换，
+  Footer 展示已完成进度；支持单选自动跳下一题、多选/Others、完成与跳过。
   源码位置：src/components/chat-message/interrupt-message/user-question/user-question-card.vue。
 relatedComponents:
   - slug: interrupt-message
@@ -79,7 +80,7 @@ sinceVersion: 1.0.0
 
 - **源码位置**：`src/components/chat-message/interrupt-message/user-question/user-question-card.vue`
 - **能力域**：Agent 能力
-- **能力说明**：渲染 UserQuestion 中断的待回答面板，支持单选、多选、Others 与跳过。
+- **能力说明**：渲染 UserQuestion 中断的待回答面板；一次一题分页切换，支持单选/多选、Others、跳过与已完成进度。
 
 
 
@@ -89,6 +90,9 @@ sinceVersion: 1.0.0
 
 ## 交互能力
 
+- **一次一题**：正文只展示当前题；标题栏右侧提供 `< 当前题 / 总题数 >` 切换定位（单题为 `1 / 1`），首末题对应箭头禁用。
+- **自动跳转**：单选预设选项从未答变为有效答时，自动跳到下一题（最后一题停留）；多选与 Others 不自动跳，靠箭头切换。
+- **已完成进度**：Footer 左侧展示「已完成 N 题」；右侧为「跳过」+「完成」。
 - **单选 / 多选**：每道题通过 `multiSelect` 控制选择行为；未传时不展示单选/多选标签，默认仍按单选处理。
 - **Others 自由输入**：默认 [UserQuestionChoice](/components/agent/user-question-choice) 为每道题追加 `label: 'others'` 输入项，输入文本写入 `answer[].description`。
 - **自定义作答形态**：通过 `#question` slot 可替换默认选择题，渲染任意表单；作答有效时调用 `setAnswer` 回传 `UserQuestionAnswerItem`，无效时传 `undefined`。
@@ -221,7 +225,7 @@ const payload = {
 />
 ```
 
-- 卡片内「完成 / 跳过」→ `onInterruptResume(payload, interrupt)`
+- 卡片内「跳过 / 完成」→ `onInterruptResume(payload, interrupt)`（Footer 右置，跳过在前、完成在后）
 - 输入框直接发送 → `onSendMessage(content, docSchema, { interrupt, payload })`，其中 `payload` 由 `buildSkipResumePayload(interrupt)` 生成（`status: 'cancelled'`）
 
 ## 工具函数 buildSkipResumePayload

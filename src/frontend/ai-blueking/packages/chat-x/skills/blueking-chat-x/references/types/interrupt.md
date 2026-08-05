@@ -132,6 +132,7 @@ type UserQuestionOptionItem = {
 - 前端会为每道**选择题**追加 `label: 'others'` 的自由输入项；后端无需重复下发该选项。
 - 当用户选择 Others 时，`answer[].description` 为用户输入文本。
 - 业务可通过 `UserQuestionCard` 的 `#question` slot 渲染自定义表单；作答有效时调用 `setAnswer` 回传 `UserQuestionAnswerItem`，无效时传 `undefined`。
+- UI 一次只展示一题：标题栏 `< 当前题 / 总题数 >` 切换；单选预设选项作答后自动跳下一题，多选 / Others 需手动切换（协议字段不变）。
 
 ## Interrupt
 

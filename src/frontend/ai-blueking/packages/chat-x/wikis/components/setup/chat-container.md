@@ -857,9 +857,9 @@ ai-chat-container（:data-ai-size="size"）
 
 ## 用户问题中断
 
-当会话中最近一条待处理 interrupt 包含 `InterruptReason.UserQuestion` 时，`ChatContainer` 会在 `ChatInput` 上方显示 [UserQuestionCard](/components/agent/user-question-card)。
+当会话中最近一条待处理 interrupt 包含 `InterruptReason.UserQuestion` 时，`ChatContainer` 会在 `ChatInput` 上方显示 [UserQuestionCard](/components/agent/user-question-card)（一次一题，标题栏可切换题目）。
 
-- **结构化作答**：用户在卡片内完成选择或点击「跳过」后，通过 `onInterruptResume(payload, interrupt)` 回传 `UserQuestionResume`。
+- **结构化作答**：用户在卡片内逐题选择（单选可自动跳下一题），点击「完成」或「跳过」后通过 `onInterruptResume(payload, interrupt)` 回传 `UserQuestionResume`。
 - **输入框发送**：用户也可在输入框直接点击发送；容器会调用 `onSendMessage(content, docSchema, options)`，其中 `options.interrupt` 为当前激活的 UserQuestion，`options.payload` 为 `buildSkipResumePayload` 生成的 skip resume（`status: 'cancelled'`，`answers: []`）。此时**不会自动清空**输入框，由业务侧在 `onSendMessage` 内决定如何处理 `content` 与中断恢复。
 
 ```vue
