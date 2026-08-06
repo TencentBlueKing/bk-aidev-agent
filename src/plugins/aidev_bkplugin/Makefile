@@ -1,6 +1,6 @@
 # 导入子目录中的 Makefile 文件
 ROOT_DIR?=$(shell git rev-parse --show-toplevel)/src/plugins/aidev_bkplugin
-pytest = uv run --no-sync pytest -c ${ROOT_DIR}/pyproject.toml
+pytest = uv run --no-sync pytest --ds=tests.settings -c ${ROOT_DIR}/pyproject.toml
 
 
 .PHONY: ALL
