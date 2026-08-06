@@ -140,6 +140,23 @@ def stringify_if_needed(item: Any) -> str:
     return json.dumps(item)
 
 
+def parse_multimodal_content(content: Any) -> list[dict[str, Any]] | None:
+    """将多模态 content 归一化为 dict 列表；无法识别时返回 None。"""
+    if isinstance(content, list):
+        if content and all(isinstance(item, dict) for item in content):
+            return content
+        return None
+
+    if isinstance(content, str) and content.lstrip().startswith("["):
+        try:
+            parsed = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if isinstance(parsed, list) and parsed and all(isinstance(item, dict) for item in parsed):
+            return parsed
+    return None
+
+
 def convert_langchain_multimodal_to_agui(
     content: list[dict[str, Any]],
 ) -> list[TextInputContent | BinaryInputContent]:
@@ -149,6 +166,17 @@ def convert_langchain_multimodal_to_agui(
         if isinstance(item, dict):
             if item.get("type") == "text":
                 agui_content.append(TextInputContent(type="text", text=item.get("text", "")))
+            elif item.get("type") == "binary":
+                agui_content.append(
+                    BinaryInputContent(
+                        type="binary",
+                        mime_type=item.get("mime_type") or "application/octet-stream",
+                        url=item.get("url"),
+                        data=item.get("data"),
+                        filename=item.get("filename"),
+                        id=item.get("id"),
+                    )
+                )
             elif item.get("type") == "image_url":
                 image_url_data = item.get("image_url", {})
                 url = image_url_data.get("url", "") if isinstance(image_url_data, dict) else image_url_data
@@ -179,8 +207,9 @@ def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]
     for message in messages:
         if isinstance(message, HumanMessage):
             # Handle multimodal content
-            if isinstance(message.content, list):
-                content = convert_langchain_multimodal_to_agui(message.content)
+            multimodal = parse_multimodal_content(message.content)
+            if multimodal is not None:
+                content = convert_langchain_multimodal_to_agui(multimodal)
             else:
                 content = stringify_if_needed(resolve_message_content(message.content))
 

@@ -33,6 +33,7 @@ from aidev_agent.core.ag_ui.utils import (
     get_schema_keys,
     get_stream_payload_input,
     langchain_messages_to_agui,
+    parse_multimodal_content,
 )
 from aidev_agent.core.tools.a2a_tools.types import AgentBackendType, AgentSpec
 from aidev_agent.core.tools.runtime_tools import RuntimeBackendResolver
@@ -1049,10 +1050,15 @@ class ChatCompletionAgent(BaseModel):
             bp = each.builtin_property or {}
             match each.role:
                 case PromptRole.USER.value:
+                    multimodal = parse_multimodal_content(each.content)
+                    if multimodal is not None:
+                        each.content = multimodal
                     if isinstance(each.content, list):
                         new_content = []
                         for each_content in each.content:
-                            if each_content.get("url"):
+                            if each_content.get("type") == "binary":
+                                new_content.append(each_content)
+                            elif each_content.get("url"):
                                 new_content.append({"type": "image_url", "image_url": {"url": each_content.get("url")}})
                             else:
                                 new_content.append(each_content)
