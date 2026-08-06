@@ -39,10 +39,10 @@ import {
 import { LOADING_MESSAGE_ID, RenderMode } from '../common/constants';
 import { t } from '../lang/lang';
 import { generateUUID } from '../utils';
-import { type SessionArtifact } from './use-artifact-preview';
 
 import type { BkFlowMessageContent } from '../ag-ui/types/contents';
 import type { InterruptMessage, UserQuestionInterrupt } from '../ag-ui/types/interrupt';
+import type { SessionArtifact } from './use-artifact-preview';
 
 export type MessageGroup = {
   checked: boolean;
@@ -177,16 +177,19 @@ export const useMessageGroup = (options: {
         });
         continue;
       }
+
       if (message.role === MessageRole.Tool) {
-        const toolMessage = options.messages.value.find(
+        const assistantToolMessage = options.messages.value.find(
           m => m.role === MessageRole.Assistant && m.toolCalls?.some(t => t.id === message.toolCallId),
         ) as AssistantMessage | undefined;
-        if (toolMessage) {
-          const toolCall = toolMessage.toolCalls?.find(t => t.id === message.toolCallId);
+        if (assistantToolMessage) {
+          const toolCall = assistantToolMessage.toolCalls?.find(t => t.id === message.toolCallId);
           if (toolCall) {
             toolCall.toolMessage = message;
           }
-          toolMessage.status = message.error ? MessageStatus.Error : toolMessage.status || MessageStatus.Complete;
+          assistantToolMessage.status = message.error
+            ? MessageStatus.Error
+            : assistantToolMessage.status || MessageStatus.Complete;
           continue;
         }
       }

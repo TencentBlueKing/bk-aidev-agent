@@ -247,6 +247,48 @@ describe('useMessageGroup', () => {
 
       expect(messageGroups.value.length).toBe(1);
       expect(messageGroups.value[0]?.type).toBe(MessageRole.Assistant);
+      const assistant = messageGroups.value[0]?.messages[0] as AssistantMessage;
+      expect(assistant.toolCalls?.[0]?.toolMessage?.id).toBe('2');
+      expect(assistant.status).toBe(MessageStatus.Complete);
+    });
+
+    it('Tool 消息 error 为真时应将关联的 AssistantMessage status 设为 Error', async () => {
+      const toolCallId = 'tc-err';
+      const toolMessage = createToolMessage('2', toolCallId);
+      toolMessage.error = 'tool failed';
+      const messages: Message[] = [
+        createAssistantMessage('1', 'calling tool', {
+          status: MessageStatus.Streaming,
+          toolCalls: [
+            { id: toolCallId, type: MessageContentType.Function, function: { name: 'search', arguments: '{}' } },
+          ],
+        }),
+        toolMessage,
+      ];
+      const { messageGroups } = setupMessageGroup(messages);
+      await nextTick();
+
+      const assistant = messageGroups.value[0]?.messages[0] as AssistantMessage;
+      expect(assistant.toolCalls?.[0]?.toolMessage?.error).toBe('tool failed');
+      expect(assistant.status).toBe(MessageStatus.Error);
+    });
+
+    it('Tool 成功且 Assistant status 为空时应兜底为 Complete', async () => {
+      const toolCallId = 'tc-empty-status';
+      const messages: Message[] = [
+        createAssistantMessage('1', 'calling tool', {
+          status: '' as MessageStatus,
+          toolCalls: [
+            { id: toolCallId, type: MessageContentType.Function, function: { name: 'search', arguments: '{}' } },
+          ],
+        }),
+        createToolMessage('2', toolCallId),
+      ];
+      const { messageGroups } = setupMessageGroup(messages);
+      await nextTick();
+
+      const assistant = messageGroups.value[0]?.messages[0] as AssistantMessage;
+      expect(assistant.status).toBe(MessageStatus.Complete);
     });
   });
 
