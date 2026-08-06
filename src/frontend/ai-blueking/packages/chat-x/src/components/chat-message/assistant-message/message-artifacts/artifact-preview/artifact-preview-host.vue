@@ -66,7 +66,10 @@
   const { content, load, previewUrl, renderer, status } = useArtifactPreviewLoader({
     canResolve: () => !!artifactPreview?.canResolveArtifactUrl.value,
     getFile: () => props.file,
-    resolveUrls: (file, options) => artifactPreview?.resolveArtifactUrls(file, options) ?? Promise.resolve({}),
+    // 无 options 时不传第二参，避免 mock 断言收到 (file, undefined)
+    resolveUrls: (file, options) =>
+      (options ? artifactPreview?.resolveArtifactUrls(file, options) : artifactPreview?.resolveArtifactUrls(file)) ??
+      Promise.resolve({}),
   });
 
   // 以 outputId 为唯一键；同文件类型变更时也需重新加载预览策略

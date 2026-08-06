@@ -7,7 +7,8 @@ description: 汇总当前会话全部文件产物，支持搜索、选中与分�
 aiSummary: >
   汇总当前会话所有 AssistantMessage 的 artifacts（按 outputId 去重），支持关键词搜索、列表选中与下载；
   预览区委托 ArtifactPreviewHost：按类型走 text_from_download（html / markdown / md / txt / json）
-  或 preview_url_iframe（其余类型）；download_url / preview_url 经 onArtifactClick 异步获取。
+  或 preview_url_iframe（其余类型）；download_url / preview_url 经 onArtifactClick 异步获取（TTL 缓存，重试 force）；
+  预览重载键为 outputId:type；常规 resolveArtifactUrls 只传 file。
   源码位置：src/components/chat-message/assistant-message/message-artifacts/file-artifact-panel.vue。
 relatedComponents:
   - slug: assistant-message
@@ -244,7 +245,14 @@ sessionArtifacts 有产物时
 | `empty` | 「暂无可预览的文件」（无文件 / 未传 `onArtifactClick` / 缺所需 URL） |
 | `error` | 「预览加载失败」+ 重试按钮 |
 
-切换文件时 `useArtifactPreviewLoader` 用 `loadSeq` + `AbortController` 中断上一次 `fetch`，避免竞态覆盖。下载图标仍由面板用 bkui `Loading` spin 单独表达。
+### 重载与取链约定
+
+- **重载键**：`ArtifactPreviewHost` 以 `` `${outputId}:${type}` `` 监听文件变化；`outputId` 或 `type` 任一变化会重新 `load()`，仅改文件名等其它字段不会
+- **常规取链**：`resolveArtifactUrls(file)`，只传文件，不传第二参
+- **重试 / 强刷**：错误态点击重试走 `load({ force: true })` → `resolveArtifactUrls(file, { force: true })`，绕过 TTL 缓存重新取链
+- **竞态**：切换文件时 `useArtifactPreviewLoader` 用 `loadSeq` + `AbortController` 中断上一次 `fetch`，避免过期结果覆盖最新内容
+
+下载图标仍由面板用 bkui `Loading` spin 单独表达。
 
 ## 内部结构（不导出）
 
