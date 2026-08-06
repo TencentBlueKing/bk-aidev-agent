@@ -7,8 +7,8 @@ description: 汇总当前会话全部文件产物，支持搜索、选中与分�
 aiSummary: >
   汇总当前会话所有 AssistantMessage 的 artifacts（按 outputId 去重），支持关键词搜索、列表选中与下载；
   预览区委托 ArtifactPreviewHost：按类型走 text_from_download（html / markdown / md / txt / json）
-  或 preview_url_iframe（其余类型）；download_url / preview_url 经 onArtifactClick 异步获取（TTL 缓存，重试 force）；
-  预览重载键为 outputId:type；常规 resolveArtifactUrls 只传 file。
+  或 preview_url_iframe（其余类型）；download_url / preview_url 经 onArtifactClick 每次异步获取（无 URL 缓存，并发去重）；
+  预览重载键为 outputId:type；重试再次调用 load() 重新取链。
   源码位置：src/components/chat-message/assistant-message/message-artifacts/file-artifact-panel.vue。
 relatedComponents:
   - slug: assistant-message
@@ -63,7 +63,7 @@ sinceVersion: 0.0.20
 - **会话级聚合**：拍平当前会话所有 `AssistantMessage.property.artifacts`，以 `outputId` 去重后统一在一个列表内展示
 - **唯一命中**：以 `outputId` 作为会话内唯一键（同 `outputId` 视为同一文件）；文件名可能重复，不可作唯一键
 - **关键词搜索**：按文件名实时过滤列表
-- **异步取链**：`AIFileInfo` 本身不含 `url` / `previewUrl`，通过 `ChatContainer` 的 `onArtifactClick` 按 `outputId` 获取 `download_url` / `preview_url`（TTL 8 分钟缓存；预览重试会 `force` 刷新）
+- **异步取链**：`AIFileInfo` 本身不含 `url` / `previewUrl`，通过 `ChatContainer` 的 `onArtifactClick` 按 `outputId` 获取 `download_url` / `preview_url`（每次重新取链，无 URL 缓存；同文件并发去重）
 - **职责拆分**：
   - **面板本身**：列表、搜索、预览头（文件名 / 图标 / 下载）
   - **`ArtifactPreviewHost`**：按策略加载正文或预览 URL，分派到对应 renderer；展示 loading / empty / error（含重试）
@@ -248,8 +248,8 @@ sessionArtifacts 有产物时
 ### 重载与取链约定
 
 - **重载键**：`ArtifactPreviewHost` 以 `` `${outputId}:${type}` `` 监听文件变化；`outputId` 或 `type` 任一变化会重新 `load()`，仅改文件名等其它字段不会
-- **常规取链**：`resolveArtifactUrls(file)`，只传文件，不传第二参
-- **重试 / 强刷**：错误态点击重试走 `load({ force: true })` → `resolveArtifactUrls(file, { force: true })`，绕过 TTL 缓存重新取链
+- **取链**：`resolveArtifactUrls(file)` 每次重新调用 `onArtifactClick`；同文件进行中的请求会复用（并发去重）
+- **重试**：错误态点击重试再次走 `load()`，重新取链并加载
 - **竞态**：切换文件时 `useArtifactPreviewLoader` 用 `loadSeq` + `AbortController` 中断上一次 `fetch`，避免过期结果覆盖最新内容
 
 下载图标仍由面板用 bkui `Loading` spin 单独表达。
