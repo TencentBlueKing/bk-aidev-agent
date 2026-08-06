@@ -153,7 +153,7 @@ sequenceDiagram
 | --- | --- | --- | --- |
 | `interruptId` | string | 是 | 对应下发中断的 `id`。 |
 | `status` | string | 是 | `"resolved"`=已回答；`"cancelled"`=已跳过/取消。 |
-| `payload.answers` | `UserQuestionAnswerItem[]` | 是 | 各题答案，与 `questions` 一一对应（跳过时为空数组项）。 |
+| `payload.answers` | `UserQuestionAnswerItem[]` | 是 | 各题答案，与 `questions` 一一对应；仅结构化作答时有内容，跳过与自由文本作答均为 `[]`。 |
 
 #### UserQuestionAnswerItem（单题答案）
 
@@ -252,7 +252,7 @@ sequenceDiagram
 | 普通聊天 / 首次触发问题 | 用户输入 | 不传 |
 | 结构化作答（点击「完成」） | 不传 | `status=resolved`，`answers` 为各题答案 |
 | 结构化跳过（点击「跳过」） | 不传 | `status=cancelled`，`answers=[]` |
-| chat-input 自由文本作答 | 用户文本 | `status=resolved`，`answers` 为单条 Others 答案（见 3.2） |
+| chat-input 自由文本作答 | 用户文本 | `status=cancelled`，`answers=[]`（见 3.2） |
 
 ### 3.2 两种作答路径
 
@@ -262,29 +262,23 @@ sequenceDiagram
 
 **路径 B：chat-input 自由文本作答**
 
-用户不操作卡片，直接在主输入框输入文本发送。前端将其转为：
+用户不操作卡片，直接在主输入框输入文本发送。用户并未做任何结构化选择，等同于放弃本次提问并转而自由表达，因此**不构造任何答案项**：
 
-- `status = "resolved"`
-- `input = 用户文本`（同时透传，便于持久化与上下文）
-- `payload.answers` 收敛为**单条** Others 答案，`question` 取首题 `question`：
+- `status = "cancelled"`（与「跳过」一致）
+- `input = 用户文本`（自由文本仅通过此字段传递）
+- `payload.answers = []`
 
 ```json
 {
   "interruptId": "interrupt_user_question_001",
-  "status": "resolved",
-  "payload": {
-    "answers": [
-      {
-        "question": "请选择你想要的冒泡排序算法方案",
-        "multiSelect": false,
-        "answer": [{ "label": "others", "description": "<用户自由文本>" }]
-      }
-    ]
-  }
+  "status": "cancelled",
+  "payload": { "answers": [] }
 }
 ```
 
-> ⚠️ 路径 B 在多题场景下信息有损：所有题目被合并为一条自由文本答案。后端需兼容「`answers` 数量与 `questions` 数量不一致」的情况。
+> ⚠️ 路径 B 与「跳过」的 resume 完全相同，区别仅在于是否携带 `input`：带 `input` 表示用户以自由文本作答，不带 `input` 表示纯跳过。
+>
+> 只有用户在卡片中选择了选项（含 Others 自定义输入）时，`answers` 才有内容；自由文本**不会**被包装成 `label="others"` 的答案项。
 
 ### 3.3 SSE 事件序列（AG-UI）
 
@@ -323,7 +317,7 @@ sequenceDiagram
 | 完成条件 | 「完成」按钮需**所有题目均已作答**才可点击；选中 Others 时要求输入非空。 |
 | 跳过 / 取消 | 回传 `status="cancelled"`，`payload.answers=[]`；回显显示「已取消」。 |
 | 过期 `expiresAt` | 字段已在协议中预留（ISO8601）；当前前端未做强制拦截，后端可据此判断是否拒绝过期 resume。 |
-| 多题自由文本作答 | 路径 B 会把多题合并为单条 Others 答案，`answers` 数量与 `questions` 不一致，后端需兼容。 |
+| 自由文本作答 | 路径 B 回传 `status="cancelled"` + `answers=[]`，文本只在 `input` 中，后端据是否有 `input` 区分「自由文本作答」与「纯跳过」。 |
 | 答案与问题对应 | 结构化作答时 `answers` 与 `questions` 一一对应且顺序一致；未作答题以 `{ question, answer: [] }` 兜底。 |
 | 回显数据来源 | 回显只依赖 `result.payload.answers`，与下发的 `questions` 解耦，因此回显态的中断 `metadata.questions` 可为空。 |
 | `responseSchema` | AG-UI 协议层 `IInterrupt` 预留了 `responseSchema`（JSON Schema），用于约束回答结构；当前 Ask User Question 走固定 `answers` 结构，未强依赖该字段。 |
@@ -336,7 +330,7 @@ sequenceDiagram
 2. **`id` 必须稳定**：`interrupts[].id` 是 resume 回传的唯一关联键，需保证同一中断在下发与回显中保持一致。
 3. **不要下发 `others` 选项**：保留 `label="others"` 作为前端自定义输入项语义，后端下发会被过滤。
 4. **接收 resume 的接口是 `chat_completion/`**：Ask User Question 的回答**不走** `user_operation/`（那是审批取消 / 流程节点重试跳过用的）。
-5. **兼容自由文本作答**：`answers` 可能只有 1 条 Others 答案（与题数不符），需要在后端做合并/兜底解析。
+5. **兼容自由文本作答**：`status="cancelled"` + `answers=[]` 且带 `input` 时，代表用户放弃选项、用自由文本回答，回答内容在 `input` 字段中，需要后端据此兜底解析。
 6. **回显两种触发方式都要支持**：`RUN_FINISHED(success)` 与 `TOOL_CALL_RESULT(content=resume JSON 字符串)` 二选一即可，前端均能处理。
 7. **`status` 仅两个枚举值**：`resolved` / `cancelled`，请勿扩展其它值。
 

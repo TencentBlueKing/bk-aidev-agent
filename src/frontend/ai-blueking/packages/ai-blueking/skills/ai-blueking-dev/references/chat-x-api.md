@@ -547,7 +547,7 @@ const {
 } = useUserQuestion(() => interrupt);
 ```
 
-- **`buildSkipResumePayload(interrupt?)`**：用户不走结构化选择、直接在 chat-input 打字回答时构造的 resume（`status:'cancelled'`，多题信息有损，统一作一条自由文本）。
+- **`buildSkipResumePayload(interrupt?)`**：用户不走结构化选择、直接在 chat-input 打字回答时构造的 resume（`status:'cancelled'` + `answers: []`）。业务层（ChatBot）原样透传，自由文本不进 `answers`，只经 `input` 传递。
 
 ### 中断协议类型（`ag-ui/types/interrupt.ts`）
 

@@ -137,7 +137,7 @@ describe('useInterruptResume', () => {
     });
   });
 
-  it('ask-user-question 直接输入应调用 streamRequest 并传入 input', async () => {
+  it('ask-user-question 直接输入应调用 streamRequest 并传入 input，resume 保持 cancelled + 空 answers', async () => {
     const params = createParams();
     const { resumeUserQuestionWithInput } = useInterruptResume(params);
 
@@ -163,16 +163,8 @@ describe('useInterruptResume', () => {
       input: '自由文本回答',
       resume: {
         interruptId: 'interrupt-1',
-        status: 'resolved',
-        payload: {
-          answers: [
-            {
-              question: '请补充说明',
-              multiSelect: false,
-              answer: [{ label: 'others', description: '自由文本回答' }],
-            },
-          ],
-        },
+        status: 'cancelled',
+        payload: { answers: [] },
       },
     });
   });

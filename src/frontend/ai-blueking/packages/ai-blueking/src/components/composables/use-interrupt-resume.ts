@@ -17,15 +17,12 @@ import {
   type InterruptResume,
   type ToolApprovalResume,
   type UserMessage,
-  type UserQuestionInterrupt,
   type UserQuestionResume,
 } from '@blueking/chat-x';
 
 import type { IChatHelper } from '../../types';
 import type { ChatBotEmitFn } from './use-chatbot-init';
 import type { ReportChatBotError } from './use-error-reporter';
-
-const OTHERS_OPTION_LABEL = 'others';
 
 // ApprovalRefresh 无对应后端 userOperation，仅触发一次轮询拉取单据最新状态，故不在此映射内
 const USER_OPERATION_MAP: Partial<Record<InterruptResumeOperation, UserOperation>> = {
@@ -77,32 +74,6 @@ function toIResume(resume: UserQuestionResume): IResume {
     interruptId: resume.interruptId,
     status: toResumeStatus(resume.status),
     payload: resume.payload,
-  };
-}
-
-/**
- * 用户在 chat-input 直接输入时的自由文本 resume。
- * chat-x 第三参会携带 cancelled + 空答案的 skip payload，业务层需转为 resolved + Others 答案。
- */
-function buildFreeTextUserQuestionResume(
-  interrupt: UserQuestionInterrupt | undefined,
-  text: string,
-  baseResume: UserQuestionResume,
-): UserQuestionResume {
-  const firstQuestion = interrupt?.metadata?.questions?.[0]?.question ?? '';
-  return {
-    interruptId: baseResume.interruptId,
-    reason: InterruptReason.UserQuestion,
-    status: 'resolved',
-    payload: {
-      answers: [
-        {
-          question: firstQuestion,
-          multiSelect: false,
-          answer: [{ label: OTHERS_OPTION_LABEL, description: text }],
-        },
-      ],
-    },
   };
 }
 
@@ -208,13 +179,9 @@ export function useInterruptResume(params: UseInterruptResumeParams): UseInterru
         throw new Error('[ChatBot] User question free text input is empty');
       }
 
-      const resume = buildFreeTextUserQuestionResume(
-        options.interrupt as UserQuestionInterrupt | undefined,
-        input,
-        options.payload,
-      );
-
-      await handleUserQuestionResume(resume, input);
+      // 用户未做结构化选择：直接沿用 chat-x 的 skip payload（cancelled + 空 answers），
+      // 自由文本不塞进 answers，只通过 input 传给后端
+      await handleUserQuestionResume(options.payload, input);
     } catch (error) {
       reportError(error, 'Failed to resume user question with input');
     }
