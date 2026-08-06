@@ -66,15 +66,18 @@ role=user  role=tool     其他 role
 `role: 'tool'` 消息不会独立渲染，而是通过 `toolCallId` 注入到对应 AssistantMessage 的 `toolCall.toolMessage` 字段：
 
 ```typescript
-const toolMessage = messages.find(
+const assistantToolMessage = messages.find(
   m => m.role === 'assistant' && m.toolCalls?.some(t => t.id === message.toolCallId),
-);
-if (toolMessage) {
-  const toolCall = toolMessage.toolCalls?.find(t => t.id === message.toolCallId);
+) as AssistantMessage | undefined;
+if (assistantToolMessage) {
+  const toolCall = assistantToolMessage.toolCalls?.find(t => t.id === message.toolCallId);
   if (toolCall) {
     toolCall.toolMessage = message;
   }
-  // 同步 assistant 状态（错误等）
+  // error 时强制 assistant 为 Error；否则保留原 status，空值兜底 Complete
+  assistantToolMessage.status = message.error
+    ? MessageStatus.Error
+    : assistantToolMessage.status || MessageStatus.Complete;
 }
 ```
 
