@@ -32,7 +32,6 @@ export interface UseToolActionsParams {
   /** 返回最新 requestOptions 的 getter（每次调用时读取，确保响应式） */
   getRequestOptions?: () => IRequestOptions | undefined;
   reportError: ReportChatBotError;
-  scrollToBottom: () => Promise<void>;
   /** 停止生成的统一入口（由 useMessageSender 提供，含 stop / error 事件上报） */
   stopGeneration: () => Promise<void>;
 }
@@ -58,7 +57,6 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
     chatBusinessManager,
     cite,
     focusInput,
-    scrollToBottom,
     getShortcutFromMessage,
     buildShortcutProperty,
     getRequestOptions,
@@ -108,7 +106,6 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
 
     try {
       await chatBusinessManager.value.regenerateFromAIMessages(aiMessages as any, sessionCode);
-      scrollToBottom();
     } catch (error) {
       reportError(error, 'Failed to regenerate');
     }
@@ -279,7 +276,6 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
         typeof content === 'string' ? content : '',
         mergedProperty,
       );
-      scrollToBottom();
     } catch (error) {
       reportError(error, 'Failed to edit and resend message');
     }
@@ -323,7 +319,6 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
         newContent,
         mergedProperty,
       );
-      scrollToBottom();
     } catch (error) {
       reportError(error, 'Failed to edit shortcut message');
     }

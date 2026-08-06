@@ -39,11 +39,17 @@ import {
 
 export const CONTAINER_SCROLL_TOKEN = Symbol('CONTAINER_SCROLL_TOKEN');
 export const SHOW_SCROLL_BOTTOM_BTN_DISTANCE = 100;
+/**
+ * 距底部超过该距离时视为大跨度定位（首屏渲染、切换会话、异步内容撑高），
+ * 此时直接瞬时贴底；平滑滚动只用于流式输出过程中的小幅跟随。
+ */
+export const INSTANT_SCROLL_DISTANCE = 600;
 export type ContainerScrollData = {
   autoScrollEnabled: boolean;
   isScrollBottom: boolean;
+  jumpToBottom: () => void;
   scrollBottomHeight: number;
-  toScrollBottom: () => void;
+  toScrollBottom: (behavior?: ScrollBehavior) => void;
   toScrollTop: () => void;
 };
 
@@ -90,17 +96,44 @@ export const useContainerScrollProvider = (
     isScrollBottom,
     scrollBottomHeight,
     debouncedShowScrollBottomBtn,
+    jumpToBottom,
     toScrollBottom,
     toScrollTop,
   }));
 
   provide(CONTAINER_SCROLL_TOKEN, provideData);
+
+  /**
+   * 当前距离底部的像素距离
+   */
+  const getDistanceToBottom = () => {
+    const container = toValue(containerRef);
+    if (!container) return 0;
+    return Math.max(0, container.scrollHeight - container.scrollTop - container.clientHeight);
+  };
+
+  /**
+   * 瞬时贴底，不产生滚动动画
+   */
+  const jumpToBottom = () => {
+    const container = toValue(containerRef);
+    if (!container) return;
+    autoScrollEnabled.value = true;
+    container.scrollTop = container.scrollHeight;
+  };
+
   /**
    * 滚动到底部
+   * @param behavior 缺省时按距底部距离自动选择，距离过大则瞬时贴底，避免长距离平滑滚动动画
    */
-  const toScrollBottom = () => {
+  const toScrollBottom = (behavior?: ScrollBehavior) => {
     autoScrollEnabled.value = true;
-    toValue(bottomRef)?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    const resolved = behavior ?? (getDistanceToBottom() > INSTANT_SCROLL_DISTANCE ? 'auto' : 'smooth');
+    if (resolved === 'auto') {
+      jumpToBottom();
+      return;
+    }
+    toValue(bottomRef)?.scrollIntoView({ behavior: resolved, block: 'end' });
   };
 
   /**
@@ -181,6 +214,7 @@ export const useContainerScrollProvider = (
     autoScrollEnabled,
     isScrollBottom,
     scrollBottomHeight,
+    jumpToBottom,
     toScrollBottom,
     toScrollTop,
     debouncedShowScrollBottomBtn,
