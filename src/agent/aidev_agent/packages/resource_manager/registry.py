@@ -81,7 +81,13 @@ class ResourceManagerProtocol(Protocol):
         """被调方校验主调方智能体调用权限，返回平台 ``data``（含 ``allowed`` 等字段）。"""
         ...
 
-    def construct_tool(self, tool_code: str, **kwargs) -> StructuredTool:
+    def construct_tool(
+        self,
+        tool_code: str,
+        username: str | None = None,
+        executor_info: dict | None = None,
+        **kwargs,
+    ) -> StructuredTool:
         """按 ``tool_code`` 装配 LangChain ``StructuredTool``（含凭证拼装）。"""
         ...
 

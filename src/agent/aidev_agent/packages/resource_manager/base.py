@@ -415,9 +415,13 @@ class BaseResourceManager(abc.ABC):
             "data", {}
         )
 
-    def construct_tool(self, tool_code: str, **kwargs) -> StructuredTool:
-        username = kwargs.pop("username", None) or self.username or None
-        executor_info = kwargs.pop("executor_info", None) or {}
+    def construct_tool(
+        self,
+        tool_code: str,
+        username: str | None = None,
+        executor_info: dict | None = None,
+        **kwargs,
+    ) -> StructuredTool:
         operation_name = "retrieve_tool" if kwargs.pop("appspace", True) else "appspace_retrieve_tool"
         client = self.get_client()
         operation = getattr(client.api, operation_name)
@@ -426,14 +430,12 @@ class BaseResourceManager(abc.ABC):
         if result["data"].get("credential_type", "") != CredentialType.NULL.value:
             tool = Tool.model_validate(result["data"])
 
-            app_code = executor_info.get("app_code") or self.app_code
-            app_secret = executor_info.get("app_secret") or self.app_secret
-            access_token = executor_info.get("access_token") or self.resolve_access_token(username)
+            app_code = (executor_info or {}).get("app_code") or self.app_code
+            app_secret = (executor_info or {}).get("app_secret") or self.app_secret
+            access_token = (executor_info or {}).get("access_token") or self.resolve_access_token(username)
 
             if access_token:
                 auth_info: dict = {"access_token": access_token}
-                if username:
-                    auth_info["bk_username"] = username
             elif username:
                 auth_info = {
                     "bk_app_code": app_code,
