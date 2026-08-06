@@ -54,20 +54,20 @@ def _sse(data: dict) -> str:
 
 class TestResolveStrategy:
     @pytest.mark.parametrize("agent_type, expected", [("chat", ChatAgentStrategy), ("flow", FlowAgentStrategy)])
-    @patch("aidev_wxbot.wxaibot.strategies.get_agent_config_info")
+    @patch("aidev_wxbot.wxaibot.strategies.AgentConfigFetcher.get_info")
     def test_dispatches_correct_strategy(self, mock_config, agent_type, expected):
         """正常分发：chat → ChatAgentStrategy，flow → FlowAgentStrategy"""
         mock_config.return_value = {"agent_type": agent_type}
         assert isinstance(resolve_strategy("user"), expected)
 
     @pytest.mark.parametrize("config", [{}, {"agent_type": ""}, {"agent_type": "unknown"}])
-    @patch("aidev_wxbot.wxaibot.strategies.get_agent_config_info")
+    @patch("aidev_wxbot.wxaibot.strategies.AgentConfigFetcher.get_info")
     def test_fallback_to_chat(self, mock_config, config):
         """缺失/空/未知 agent_type 均降级为 Chat"""
         mock_config.return_value = config
         assert isinstance(resolve_strategy("user"), ChatAgentStrategy)
 
-    @patch("aidev_wxbot.wxaibot.strategies.get_agent_config_info", side_effect=Exception("API down"))
+    @patch("aidev_wxbot.wxaibot.strategies.AgentConfigFetcher.get_info", side_effect=Exception("API down"))
     def test_api_exception_fallback(self, _):
         """API 异常降级为 Chat"""
         assert isinstance(resolve_strategy("user"), ChatAgentStrategy)
@@ -79,14 +79,25 @@ class TestResolveStrategy:
 
 
 class TestFlowAgentStrategyExecute:
+    @patch("aidev_wxbot.wxaibot.formatters.AgentHelper.build_session_detail_url", return_value="")
+    @patch("aidev_wxbot.wxaibot.strategies.AgentHelper.get_client")
+    @patch("aidev_wxbot.wxaibot.strategies.WxFlowAgentClient")
+    @patch("aidev_wxbot.wxaibot.strategies.SessionManager")
     @patch("aidev_wxbot.wxaibot.strategies.AgentInstanceFactory")
     @patch("aidev_wxbot.wxaibot.strategies.AGUISessionWriter")
-    @patch("aidev_wxbot.wxaibot.strategies.save_session_content")
-    @patch("aidev_wxbot.wxaibot.strategies.get_or_create_session_by_thread_id")
-    @patch("aidev_wxbot.wxaibot.strategies.resolve_channel_admin_rtx", return_value="admin_rtx")
-    def test_full_execute_pipeline(self, mock_rtx, mock_session, mock_save, mock_writer, mock_factory, mock_rabbitmq):
+    def test_full_execute_pipeline(
+        self,
+        mock_writer,
+        mock_factory,
+        mock_session_cls,
+        mock_flow_client,
+        mock_get_client,
+        mock_build_detail_url,
+        mock_rabbitmq,
+    ):
         """主流程：RTX解析 → session创建 → 用户输入保存 → agent构建执行 → SSE消费写入RabbitMQ"""
-        mock_session.return_value = "sc_abc"
+        session_manager = mock_session_cls.return_value
+        session_manager.get_or_create_by_thread_id.return_value = "sc_abc"
 
         # 模拟 agent 返回完整 SSE 流
         mock_inst = MagicMock()
@@ -98,21 +109,25 @@ class TestFlowAgentStrategyExecute:
                     {
                         "type": "CUSTOM",
                         "name": "flow_agent_result",
-            "value": [{
-                "task_state": "RUNNING",
-                "nodes": {"n1": {"name": "步骤1", "state": "RUNNING", "elapsed_time": 5}},
-                "statistics": {"total": 1, "state_counts": {"RUNNING": 1}},
-            }],
+                        "value": [
+                            {
+                                "task_state": "RUNNING",
+                                "nodes": {"n1": {"name": "步骤1", "state": "RUNNING", "elapsed_time": 5}},
+                                "statistics": {"total": 1, "state_counts": {"RUNNING": 1}},
+                            }
+                        ],
                     }
                 ),
                 _sse(
                     {
                         "type": "CUSTOM",
                         "name": "flow_agent_end",
-            "value": [{
-                "task_id": "999",
-                "task_outputs": [{"key": "out", "value": "done"}],
-            }],
+                        "value": [
+                            {
+                                "task_id": "999",
+                                "task_outputs": [{"key": "out", "value": "done"}],
+                            }
+                        ],
                     }
                 ),
                 _sse({"type": "RUN_FINISHED", "run_id": "r1", "thread_id": "t1"}),
@@ -130,18 +145,25 @@ class TestFlowAgentStrategyExecute:
         )
 
         # 验证完整调用链
-        mock_rtx.assert_called_once_with("wxid_123")  # RTX 解析被调用
-        mock_session.assert_called_once_with("admin_rtx", "t1")  # 使用 RTX 创建 session
-        mock_save.assert_called_once_with("sc_abc", "user", "运行流程", "admin_rtx")  # 用户输入保存
+        mock_session_cls.assert_called_once_with(username="wxid_123")
+        session_manager.get_or_create_by_thread_id.assert_called_once_with("t1")
+        session_manager.save_content.assert_called_once()
+        save_kwargs = session_manager.save_content.call_args.kwargs
+        assert save_kwargs["session_code"] == "sc_abc"
+        assert save_kwargs["role"] == "user"
+        assert save_kwargs["content"] == "运行流程"
         mock_factory.build_agent.assert_called_once()  # agent 通过工厂构建
 
         # 验证传给工厂的关键参数（agent_type=FLOW、session_code、flow_start_params 透传）
         factory_kwargs = mock_factory.build_agent.call_args[1]
         assert factory_kwargs["session_code"] == "sc_abc"
-        assert factory_kwargs["flow_start_params"] == {"session_code": "sc_abc"}
+        assert factory_kwargs["flow_start_params"]["session_code"] == "sc_abc"
+        assert factory_kwargs["flow_resource_manager"] is mock_flow_client.return_value
+        mock_get_client.assert_called_once_with()
+        mock_build_detail_url.assert_called_once_with("sc_abc")
 
-        # 验证 RabbitMQ 写入：start(1) + result(1) + end(1) = 至少 3 次
-        assert mock_rabbitmq.publish_message.call_count >= 3
+        # start 仅缓存 task_id；result 和 end 各写入一次。
+        assert mock_rabbitmq.publish_message.call_count == 2
 
 
 # ---------------------------------------------------------------------------
@@ -150,7 +172,7 @@ class TestFlowAgentStrategyExecute:
 
 
 class TestChatAgentStrategyExecute:
-    @patch("aidev_wxbot.wxaibot.strategies.run_chat_completion_with_thread_id")
+    @patch("aidev_wxbot.wxaibot.strategies.AgentExecutor.run_chat_completion_with_thread_id")
     @patch("aidev_wxbot.wxaibot.strategies.build_execute_kwargs")
     def test_stream_mode_writes_to_rabbitmq(self, mock_build, mock_run, mock_rabbitmq):
         """Chat 流式模式：调用 chat completion → 内容写入 RabbitMQ"""
@@ -195,36 +217,42 @@ class TestConsumeFlowStream:
             {
                 "type": "CUSTOM",
                 "name": "flow_agent_result",
-                "value": [{
-                    "task_state": "RUNNING",
-                    "nodes": {"n1": {"name": "A", "state": "FINISHED", "elapsed_time": 10}},
-                    "statistics": {"total": 1, "state_counts": {"FINISHED": 1}},
-                }],
+                "value": [
+                    {
+                        "task_state": "RUNNING",
+                        "nodes": {"n1": {"name": "A", "state": "FINISHED", "elapsed_time": 10}},
+                        "statistics": {"total": 1, "state_counts": {"FINISHED": 1}},
+                    }
+                ],
             },
             {
                 "type": "CUSTOM",
                 "name": "flow_agent_result",
-                "value": [{
-                    "task_state": "RUNNING",
-                    "nodes": {},
-                    "statistics": {},
-                }],
+                "value": [
+                    {
+                        "task_state": "RUNNING",
+                        "nodes": {},
+                        "statistics": {},
+                    }
+                ],
             },
             {
                 "type": "CUSTOM",
                 "name": "flow_agent_end",
-                "value": [{
-                    "task_id": "123",
-                    "task_outputs": [{"key": "out", "value": "ok"}],
-                }],
+                "value": [
+                    {
+                        "task_id": "123",
+                        "task_outputs": [{"key": "out", "value": "ok"}],
+                    }
+                ],
             },
             {"type": "RUN_FINISHED", "run_id": "r1", "thread_id": "t1"},
         ]
 
         consume_flow_stream(iter([_sse(e) for e in events]), "s_1_1000", 1000.0, mock_rabbitmq)
 
-        # 至少 4 次写入：start + result×2 + end
-        assert mock_rabbitmq.publish_message.call_count >= 4
+        # start 仅缓存 task_id；result×2 和 end 共写入三次。
+        assert mock_rabbitmq.publish_message.call_count == 3
 
         # 检查最后一次写入的消息是 is_finish=True 且 content 包含结果
         last_call_data = mock_rabbitmq.publish_message.call_args_list[-1][0][2]
@@ -261,8 +289,8 @@ class TestConsumeFlowStream:
 
         consume_flow_stream(gen(), "s_1_1000", 1000.0, mock_rabbitmq)
 
-        # 非法行被跳过，后续 start + end 仍然写入
-        assert mock_rabbitmq.publish_message.call_count >= 2
+        # 非法行被跳过；start 仅缓存 task_id，end 写入一次。
+        assert mock_rabbitmq.publish_message.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +304,7 @@ class TestHandleFlowCustomEvent:
     def test_start_saves_task_id(self, mock_rabbitmq):
         """flow_agent_start: 缓存 task_id，不写 think_content，content 为空"""
         chunk = LlmChunkMsg(stream_id="s_1_1000")
-    handle_flow_custom_event("flow_agent_start", {"value": [{"task_id": "42"}]}, chunk, mock_rabbitmq)
+        handle_flow_custom_event("flow_agent_start", {"value": [{"task_id": "42"}]}, chunk, mock_rabbitmq)
 
         assert chunk._flow_task_id == "42"
         assert chunk._flow_nodes_initialized is False
@@ -290,15 +318,17 @@ class TestHandleFlowCustomEvent:
         handle_flow_custom_event(
             "flow_agent_result",
             {
-                "value": [{
-                    "task_state": "RUNNING",
-                    "nodes": {
-                        "n1": {"name": "数据清洗", "state": "FINISHED", "elapsed_time": 90},
-                        "n2": {"name": "模型训练", "state": "RUNNING", "elapsed_time": 30},
-                        "n3": {"name": "汇总", "state": "PENDING", "elapsed_time": 0},
-                    },
-                    "statistics": {"total": 3, "state_counts": {"FINISHED": 1, "RUNNING": 1, "PENDING": 1}},
-                }]
+                "value": [
+                    {
+                        "task_state": "RUNNING",
+                        "nodes": {
+                            "n1": {"name": "数据清洗", "state": "FINISHED", "elapsed_time": 90},
+                            "n2": {"name": "模型训练", "state": "RUNNING", "elapsed_time": 30},
+                            "n3": {"name": "汇总", "state": "PENDING", "elapsed_time": 0},
+                        },
+                        "statistics": {"total": 3, "state_counts": {"FINISHED": 1, "RUNNING": 1, "PENDING": 1}},
+                    }
+                ]
             },
             chunk,
             mock_rabbitmq,
@@ -335,10 +365,12 @@ class TestHandleFlowCustomEvent:
         handle_flow_custom_event(
             "flow_agent_end",
             {
-                "value": [{
-                    "task_id": "1",
-                    "task_outputs": [{"key": "result", "value": "done"}],
-                }]
+                "value": [
+                    {
+                        "task_id": "1",
+                        "task_outputs": [{"key": "result", "value": "done"}],
+                    }
+                ]
             },
             chunk,
             mock_rabbitmq,
@@ -359,11 +391,13 @@ class TestHandleFlowCustomEvent:
         handle_flow_custom_event(
             "flow_agent_end",
             {
-                "value": [{
-                    "task_id": "2",
-                    "error": True,
-                    "state": "FAILED",
-                }]
+                "value": [
+                    {
+                        "task_id": "2",
+                        "error": True,
+                        "state": "FAILED",
+                    }
+                ]
             },
             chunk,
             mock_rabbitmq,
@@ -389,7 +423,9 @@ class TestResolveChannelAdminRtx:
     @patch("aidev_wxbot.wxaibot.auth.BkAiDevApi")
     def test_returns_contact_from_config(self, mock_api_cls):
         """正常路径：从渠道配置获取管理员 RTX"""
-        mock_api_cls.return_value.retrieve_agent_channel_configs.return_value = [{"config": {"contact": "channel_admin_rtx"}}]
+        mock_api_cls.return_value.retrieve_agent_channel_configs.return_value = [
+            {"config": {"contact": "channel_admin_rtx"}}
+        ]
         assert resolve_channel_admin_rtx("A000000A") == "channel_admin_rtx"
 
     @pytest.mark.parametrize(

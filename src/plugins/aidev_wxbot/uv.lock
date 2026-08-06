@@ -83,6 +83,14 @@ dependencies = [
     { name = "stackprinter" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-django" },
+    { name = "pytest-dotenv" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "aidev-bkplugin", specifier = ">=2.2.0" },
@@ -93,6 +101,14 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "requests", specifier = ">=2.32.5" },
     { name = "stackprinter", specifier = ">=0.2.12" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=7.4.4,<9" },
+    { name = "pytest-asyncio", specifier = ">=0.23.3,<1" },
+    { name = "pytest-django", specifier = ">=4.7.0,<5" },
+    { name = "pytest-dotenv", specifier = ">=0.5.2,<1" },
 ]
 
 [[package]]
@@ -574,6 +590,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f1/70/7703c29685631f5a7590aa73f1f1d3fa9a380e654b86af429e0934a32f7d/idna-3.10.tar.gz", hash = "sha256:12f65c9b470abda6dc35cf8e63cc574b1c52b11df2c86030af0ac09b01b13ea9", size = 190490, upload-time = "2024-09-15T18:07:39.745Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/76/c6/c88e154df9c4e1a2a66ccf0005a88dfb2650c1dffb6f5ce603dfbd452ce3/idna-3.10-py3-none-any.whl", hash = "sha256:946d195a0d259cbba61165e88e65941f16e9b36ea6ddb97f00452bae8b1287d3", size = 70442, upload-time = "2024-09-15T18:07:37.964Z" },
+]
+
+[[package]]
+name = "iniconfig"
+version = "2.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/72/34/14ca021ce8e5dfedc35312d08ba8bf51fdd999c576889fc2c24cb97f4f10/iniconfig-2.3.0.tar.gz", hash = "sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730", size = 20503, upload-time = "2025-10-18T21:55:43.219Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl", hash = "sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12", size = 7484, upload-time = "2025-10-18T21:55:41.639Z" },
 ]
 
 [[package]]
@@ -1146,6 +1171,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pluggy"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412, upload-time = "2025-05-15T12:30:07.975Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538, upload-time = "2025-05-15T12:30:06.134Z" },
+]
+
+[[package]]
 name = "protobuf"
 version = "7.34.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1326,6 +1360,59 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/2e/0b/e1066a2ba154a1fd6ade41b35d38482fc399feb90fe4768ce8d6d3eb368c/Pyro4-4.82.tar.gz", hash = "sha256:511f5b0804e92dd77dc33adf9c947787e3f9e9c5a96b12162f0557a7c4ce21fb", size = 516110, upload-time = "2021-12-25T01:45:34.312Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/70/e3/8c4e0d24b46fbf02e6b2dc2da5d18f0c73cfd343a1fb01ae64c788c20e56/Pyro4-4.82-py2.py3-none-any.whl", hash = "sha256:bbf5d7413e616d3e1978a05d7caca62eec59692d2dab75dd22a4426ef9b8a691", size = 89999, upload-time = "2021-12-25T01:45:31.066Z" },
+]
+
+[[package]]
+name = "pytest"
+version = "8.4.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "iniconfig" },
+    { name = "packaging" },
+    { name = "pluggy" },
+    { name = "pygments" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a3/5c/00a0e072241553e1a7496d638deababa67c5058571567b92a7eaa258397c/pytest-8.4.2.tar.gz", hash = "sha256:86c0d0b93306b961d58d62a4db4879f27fe25513d4b969df351abdddb3c30e01", size = 1519618, upload-time = "2025-09-04T14:34:22.711Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a8/a4/20da314d277121d6534b3a980b29035dcd51e6744bd79075a6ce8fa4eb8d/pytest-8.4.2-py3-none-any.whl", hash = "sha256:872f880de3fc3a5bdc88a11b39c9710c3497a547cfa9320bc3c5e62fbf272e79", size = 365750, upload-time = "2025-09-04T14:34:20.226Z" },
+]
+
+[[package]]
+name = "pytest-asyncio"
+version = "0.26.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8e/c4/453c52c659521066969523e87d85d54139bbd17b78f09532fb8eb8cdb58e/pytest_asyncio-0.26.0.tar.gz", hash = "sha256:c4df2a697648241ff39e7f0e4a73050b03f123f760673956cf0d72a4990e312f", size = 54156, upload-time = "2025-03-25T06:22:28.883Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/20/7f/338843f449ace853647ace35870874f69a764d251872ed1b4de9f234822c/pytest_asyncio-0.26.0-py3-none-any.whl", hash = "sha256:7b51ed894f4fbea1340262bdae5135797ebbe21d8638978e35d31c6d19f72fb0", size = 19694, upload-time = "2025-03-25T06:22:27.807Z" },
+]
+
+[[package]]
+name = "pytest-django"
+version = "4.13.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1c/ae/5ed1ab2d12090bd794392d798c14d092f0470f6446eaa6d2af4183f4aa2b/pytest_django-4.13.0.tar.gz", hash = "sha256:2316e3f63e3bc799deb4212830e39b2ef1dcc3b2d8688060f1d0217db6a56ebe", size = 94200, upload-time = "2026-08-05T21:36:23.035Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/27/88/52db7a840fdbd74934f8df11b7450c9919ac00f61c02e88827f3d58180f7/pytest_django-4.13.0-py3-none-any.whl", hash = "sha256:09374c12d947ca0f99e33726bcb720a6d0124f67058e1130586372bd109493e3", size = 27066, upload-time = "2026-08-05T21:36:21.763Z" },
+]
+
+[[package]]
+name = "pytest-dotenv"
+version = "0.5.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+    { name = "python-dotenv" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cd/b0/cafee9c627c1bae228eb07c9977f679b3a7cb111b488307ab9594ba9e4da/pytest-dotenv-0.5.2.tar.gz", hash = "sha256:2dc6c3ac6d8764c71c6d2804e902d0ff810fa19692e95fe138aefc9b1aa73732", size = 3782, upload-time = "2020-06-16T12:38:03.4Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d0/da/9da67c67b3d0963160e3d2cbc7c38b6fae342670cc8e6d5936644b2cf944/pytest_dotenv-0.5.2-py3-none-any.whl", hash = "sha256:40a2cece120a213898afaa5407673f6bd924b1fa7eafce6bda0e8abffe2f710f", size = 3993, upload-time = "2020-06-16T12:38:01.139Z" },
 ]
 
 [[package]]

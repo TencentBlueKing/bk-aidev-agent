@@ -1,6 +1,7 @@
 # 导入子目录中的 Makefile 文件
-ROOT_DIR?=$(shell git rev-parse --show-toplevel)/src/agent
-pytest = uv run --no-sync pytest -c ${ROOT_DIR}/pyproject.toml
+REPO_ROOT?=$(shell git rev-parse --show-toplevel)
+ROOT_DIR?=${REPO_ROOT}/src/plugins/aidev_wxbot
+pytest = PYTHONPATH=${REPO_ROOT}/src/agent:${REPO_ROOT}/src/plugins/aidev_bkplugin:${ROOT_DIR}:$${PYTHONPATH} uv run --no-sync pytest -c ${ROOT_DIR}/pyproject.toml
 
 
 .PHONY: ALL
@@ -25,6 +26,19 @@ init: uv-install
 uv-install:
 	uv --version
 	uv sync --inexact
+
+.PHONY: test
+test:
+	$(eval path ?= ${ROOT_DIR}/tests)
+	$(eval maxfail ?= --maxfail=2)
+	$(eval warnings ?= --disable-pytest-warnings)
+	$(eval markers ?= not slow)
+	${pytest} ${path} \
+		-m "${markers}" \
+		${maxfail} \
+		${warnings} \
+		--durations=20 \
+		${args}
 
 
 build:

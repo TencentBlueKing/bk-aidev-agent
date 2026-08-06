@@ -5,8 +5,8 @@ import pytest
 
 try:
     import django  # noqa: F401
-    from aidev_wxbot.wxaibot.context import CHUNK_FLUSH_THRESHOLD, LlmChunkMsg, stream_msg
     from aidev_wxbot.wxaibot.constants import QUEUE_EXPIRES_MS
+    from aidev_wxbot.wxaibot.context import CHUNK_FLUSH_THRESHOLD, LlmChunkMsg, stream_msg
     from django.conf import settings
 
     _wxbot_available = True
@@ -162,7 +162,8 @@ class TestLlmChunkMsg:
                 self._get_message_error = get_message_error
 
             def get_queue_info(self, queue_name):
-                return {"message_count": len(self.messages)}
+                message_count = 1 if self._get_message_error else len(self.messages)
+                return {"message_count": message_count}
 
             def get_message(self, queue_name, auto_ack=True):
                 if self._get_message_error:

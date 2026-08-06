@@ -27,6 +27,14 @@ dependencies = [
     "aidev-bkplugin>=2.2.0",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=7.4.4,<9",
+    "pytest-asyncio>=0.23.3,<1",
+    "pytest-django>=4.7.0,<5",
+    "pytest-dotenv>=0.5.2,<1",
+]
+
 [project.scripts]
 "aidev_wxbot.manage" = "aidev_wxbot.manage:main"
 
@@ -66,8 +74,10 @@ section-order = [
 relative-imports-order = "closest-to-furthest"
 
 [tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "aidev_wxbot.settings"
 env_override_existing_values = 1
 env_files = [".env"]
 asyncio_default_fixture_loop_scope = "session"
 addopts = "-vvv --maxfail=2 -s"
 asyncio_mode = "auto"
+testpaths = ["tests"]

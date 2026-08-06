@@ -68,6 +68,7 @@ dev = [
     "faker>=37.0.0,<38.0.0",
     "pytest-mock<4.0.0,>=3.14.0",
     "pytest-dotenv<1.0.0,>=0.5.2",
+    "pytest-xdist<4.0.0,>=3.5.0",
     "responses<1.0.0,>=0.25.0",
     "loguru>=0.7.3",
 ]
