@@ -1118,7 +1118,7 @@ def test_make_mcp_tools_does_not_mutate_original_config(mock_mcp_client_class):
 
 def _rm_with_mocked_client(tool_data: dict, credential_type: str = "blueapps") -> AgentResourceManager:
     """构造一个 client 已被 mock 的 AgentResourceManager，避免真实网络调用。"""
-    rm = AgentResourceManager(app_code="rm_app", app_secret="rm_secret")
+    rm = AgentResourceManager(app_code="dummy_app", app_secret="dummy_credential")
     data = {**tool_data, "credential_type": credential_type}
     mock_client = MagicMock()
     mock_client.api.retrieve_tool = MagicMock(return_value={"data": data})
@@ -1164,19 +1164,19 @@ def test_construct_tool_skips_header_when_credential_type_is_null(sample_weather
         # 无 username / executor_info → 应用凭据
         pytest.param(
             {},
-            {"bk_app_code": "rm_app", "bk_app_secret": "rm_secret", "bk_username": None},
+            {"bk_app_code": "dummy_app", "bk_app_secret": "dummy_credential", "bk_username": None},
             id="without_user_context",
         ),
         # 仅 username → 应用凭据 + bk_username
         pytest.param(
             {"username": "alice"},
-            {"bk_app_code": "rm_app", "bk_app_secret": "rm_secret", "bk_username": "alice"},
+            {"bk_app_code": "dummy_app", "bk_app_secret": "dummy_credential", "bk_username": "alice"},
             id="with_username",
         ),
         # executor_info 提供 access_token → 仅 access_token，忽略其他字段
         pytest.param(
-            {"username": "alice", "executor_info": {"access_token": "exec_token"}},
-            {"access_token": "exec_token"},
+            {"username": "alice", "executor_info": {"access_token": "dummy_exec_value"}},
+            {"access_token": "dummy_exec_value"},
             id="with_access_token",
         ),
     ],
