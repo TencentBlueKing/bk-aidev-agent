@@ -43,6 +43,7 @@ vi.mock('../../../composables', () => ({
   }),
   useContainerScrollProvider: () => ({
     isScrollBottom: { value: true },
+    jumpToBottom: vi.fn(),
     toScrollBottom: vi.fn(),
     scrollBottomHeight: { value: 0 },
     toScrollTop: vi.fn(),

@@ -287,7 +287,7 @@ sinceVersion: 1.0.0
 - **消息分组**：将连续的非用户消息合并为一组，每组共享一个工具栏
 - **Tool 消息关联**：自动将 `role: 'tool'` 消息注入到对应 Assistant 消息的 toolCall 中
 - **Loading 自动注入**：末尾为用户消息时，自动追加 Loading 动画组
-- **滚动管理**：`messageStatus` 为流式、等待响应或请求中（`streaming` / `pending` / `fetching`）时显示「停止生成」，离开底部时显示「返回底部」；`renderMode` 为 `Share` 时不显示「停止生成」
+- **滚动管理**：`messageStatus` 为流式、等待响应或请求中（`streaming` / `pending` / `fetching`）时显示「停止生成」，离开底部时显示「返回底部」；`renderMode` 为 `Share` 时不显示「停止生成」。挂载时通过 `jumpToBottom()` 瞬时贴底，避免切换会话时从顶部平滑滚到底部的动画
 - **多选模式**：支持按消息组勾选，用户消息与 AI 回复联动选中
 
 ## 基础用法
@@ -1010,10 +1010,11 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
 | 按钮         | 显示条件                                                                                       | 点击行为               |
 | ------------ | ---------------------------------------------------------------------------------------------- | ---------------------- |
 | 「停止生成」 | `messageStatus` 为 `streaming`、`pending`、`fetching` 或 `stop-loading`（停止中 loading 态），且 `renderMode` 不为 `Share` | 触发 `@stop-streaming` |
-| 「返回底部」 | `debouncedShowScrollBottomBtn`（距底部 > 100px，且防抖 300ms 后才显示/隐藏）                     | 滚动到消息列表底部     |
+| 「返回底部」 | `debouncedShowScrollBottomBtn`（距底部 > 100px，且防抖 300ms 后才显示/隐藏）                     | 平滑滚动到消息列表底部（显式 `toScrollBottom('smooth')`） |
 
 > **防抖说明**：「返回底部」按钮的显隐使用 300ms 防抖，避免快速滚动时按钮频繁闪烁。隐藏时立即生效（无防抖），显示时延迟 300ms。
 
+> **首屏 / 切换会话贴底**：`MessageContainer` 挂载时若已有消息组，会立即调用 `jumpToBottom()`，并在下一帧再补一次，避免历史消息渲染过程中出现「从顶部滚到底部」的动画。流式输出场景下的小幅跟随仍由 markdown 挂载触发的 `toScrollBottom()`（距底较近时走 smooth）完成。
 ## API
 
 ### Props

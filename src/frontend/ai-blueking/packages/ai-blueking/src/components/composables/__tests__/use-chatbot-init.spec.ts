@@ -134,7 +134,6 @@ function withSetupReactive(propsInit: Partial<ChatBotProps>) {
       result = useChatbotInit({
         props: reactiveProps,
         emit,
-        scrollToBottom: vi.fn().mockResolvedValue(undefined),
         ...createErrorReporterParams(emit),
       });
       return () => null;
@@ -168,7 +167,6 @@ describe('useChatbotInit', () => {
         useChatbotInit({
           props: {} as ChatBotProps,
           emit,
-          scrollToBottom: vi.fn().mockResolvedValue(undefined),
           ...createErrorReporterParams(emit),
         }),
       );
@@ -188,7 +186,6 @@ describe('useChatbotInit', () => {
         useChatbotInit({
           props: { url: 'https://api.example.com' } as ChatBotProps,
           emit,
-          scrollToBottom: vi.fn().mockResolvedValue(undefined),
           ...createErrorReporterParams(emit),
         }),
       );
@@ -210,7 +207,6 @@ describe('useChatbotInit', () => {
         useChatbotInit({
           props: { url: 'https://api.example.com' } as ChatBotProps,
           emit,
-          scrollToBottom: vi.fn().mockResolvedValue(undefined),
           ...createErrorReporterParams(emit),
         }),
       );
@@ -229,7 +225,6 @@ describe('useChatbotInit', () => {
         useChatbotInit({
           props: { url: 'https://api.example.com', sessionCode: 'my-session' } as ChatBotProps,
           emit,
-          scrollToBottom: vi.fn().mockResolvedValue(undefined),
           ...createErrorReporterParams(emit),
         }),
       );
@@ -248,7 +243,6 @@ describe('useChatbotInit', () => {
         useChatbotInit({
           props: { url: 'https://api.example.com' } as ChatBotProps,
           emit,
-          scrollToBottom: vi.fn().mockResolvedValue(undefined),
           ...createErrorReporterParams(emit),
         }),
       );
@@ -269,7 +263,6 @@ describe('useChatbotInit', () => {
         useChatbotInit({
           props: { chatHelper: propsChatHelper } as ChatBotProps,
           emit,
-          scrollToBottom: vi.fn().mockResolvedValue(undefined),
           ...createErrorReporterParams(emit),
         }),
       );
@@ -291,7 +284,6 @@ describe('useChatbotInit', () => {
         useChatbotInit({
           props: { chatHelper: propsChatHelper } as ChatBotProps,
           emit,
-          scrollToBottom: vi.fn().mockResolvedValue(undefined),
           ...createErrorReporterParams(emit),
         }),
       );
@@ -314,7 +306,6 @@ describe('useChatbotInit', () => {
         useChatbotInit({
           props: { url: 'https://api.example.com' } as ChatBotProps,
           emit,
-          scrollToBottom: vi.fn().mockResolvedValue(undefined),
           ...createErrorReporterParams(emit),
         }),
       );
@@ -336,7 +327,6 @@ describe('useChatbotInit', () => {
         useChatbotInit({
           props: { url: 'https://api.example.com' } as ChatBotProps,
           emit,
-          scrollToBottom: vi.fn().mockResolvedValue(undefined),
           ...errorReporterParams,
         }),
       );
@@ -363,7 +353,6 @@ describe('useChatbotInit', () => {
         useChatbotInit({
           props: { url: 'https://api.example.com' } as ChatBotProps,
           emit,
-          scrollToBottom: vi.fn().mockResolvedValue(undefined),
           ...errorReporterParams,
         }),
       );
@@ -385,7 +374,6 @@ describe('useChatbotInit', () => {
         useChatbotInit({
           props: { url: 'https://api.example.com' } as ChatBotProps,
           emit,
-          scrollToBottom: vi.fn().mockResolvedValue(undefined),
           ...createErrorReporterParams(emit),
         }),
       );
@@ -482,7 +470,6 @@ describe('useChatbotInit', () => {
         useChatbotInit({
           props: { url: 'https://api.example.com' } as ChatBotProps,
           emit,
-          scrollToBottom: vi.fn().mockResolvedValue(undefined),
           ...createErrorReporterParams(emit),
         }),
       );
@@ -504,7 +491,6 @@ describe('useChatbotInit', () => {
         useChatbotInit({
           props: { url: 'https://api.example.com' } as ChatBotProps,
           emit,
-          scrollToBottom: vi.fn().mockResolvedValue(undefined),
           ...createErrorReporterParams(emit),
         }),
       );
@@ -527,7 +513,6 @@ describe('useChatbotInit', () => {
         useChatbotInit({
           props: { url: 'https://api.example.com' } as ChatBotProps,
           emit,
-          scrollToBottom: vi.fn().mockResolvedValue(undefined),
           ...createErrorReporterParams(emit),
         }),
       );
@@ -549,7 +534,6 @@ describe('useChatbotInit', () => {
         useChatbotInit({
           props: { chatHelper: propsChatHelper } as ChatBotProps,
           emit,
-          scrollToBottom: vi.fn().mockResolvedValue(undefined),
           ...createErrorReporterParams(emit),
         }),
       );
@@ -595,7 +579,6 @@ describe('useChatbotInit', () => {
         useChatbotInit({
           props: {} as ChatBotProps,
           emit,
-          scrollToBottom: vi.fn().mockResolvedValue(undefined),
           ...createErrorReporterParams(emit),
         }),
       );
