@@ -21,7 +21,6 @@ import {
 } from '@blueking/chat-x';
 
 import type { IChatHelper } from '../../types';
-import type { ChatBotEmitFn } from './use-chatbot-init';
 import type { ReportChatBotError } from './use-error-reporter';
 
 // ApprovalRefresh 无对应后端 userOperation，仅触发一次轮询拉取单据最新状态，故不在此映射内
