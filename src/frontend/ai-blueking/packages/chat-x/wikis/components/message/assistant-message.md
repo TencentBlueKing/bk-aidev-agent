@@ -629,7 +629,7 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
 | `html` / `markdown` / `md` / `txt` / `json` | `download_url` | 正文直渲染（srcdoc / MarkdownContent / `<pre>`） |
 | `pdf` / `jpg` 等 | `preview_url` | iframe（一般为后台转好的 PDF） |
 
-`md` 与 `markdown` 等价（见 `AIFileType.Md` / `AIFileType.Markdown`）。预览重载、`force` 重试与取链约定见 [FileArtifactPanel 预览机制](/components/message/file-artifact-panel#预览机制)。
+`md` 与 `markdown` 等价（见 `AIFileType.Md` / `AIFileType.Markdown`）。预览重载、重试与取链约定见 [FileArtifactPanel 预览机制](/components/message/file-artifact-panel#预览机制)。
 
 ```vue
 <template>
