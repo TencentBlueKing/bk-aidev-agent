@@ -346,6 +346,7 @@
     max-width: 1000px;
     height: 100%;
     max-height: 100%;
+    padding: 0 16px;
     margin: 0 auto;
 
     // 使用 CSS contain 限制重排范围

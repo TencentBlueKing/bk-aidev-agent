@@ -2,7 +2,11 @@
   <div
     class="ai-chat-container"
     :data-ai-size="size"
-    :style="{ '--resize-main-width': resizeMainWidth, borderTopColor: isCollapse ? 'transparent' : '#eaebf0' }"
+    :style="{
+      '--resize-main-width': resizeMainWidth,
+      '--resize-aside-width': resizeAsideWidthVar,
+      borderTopColor: isCollapse ? 'transparent' : '#eaebf0',
+    }"
   >
     <div
       v-if="chatLoading"
@@ -13,143 +17,132 @@
     <ResizeLayout
       v-else
       class="ai-chat-container-resize-layout"
-      :class="{
-        'ai-is-collapse':
-          isCollapse ||
-          (displayTabs.length > 0 && !keyword?.length && executionGroups?.length < 1 && !hasFileArtifactTab),
-      }"
+      :class="{ 'ai-is-collapse': isCollapse || displayTabs.length === 0, 'is-resizing': isResizing }"
       v-bind="resizeProps"
+      @after-resize="handleAfterResize"
       @resizing="handleResizing"
     >
       <template #aside>
-        <div
-          v-if="
-            !isCollapse && displayTabs.length > 0 && (executionGroups?.length || keyword?.length || hasFileArtifactTab)
-          "
-          ref="fullScreenRef"
-          class="ai-full-screen-wrapper"
-        >
-          <Tab
-            :active="selectedTab.name"
-            class="ai-chat-container-tab"
-            :label-height="40"
-            type="unborder-card"
-            @change="handleUpdateTabActive"
+        <Transition name="ai-aside-content">
+          <div
+            v-if="!isCollapse && displayTabs.length > 0"
+            ref="fullScreenRef"
+            class="ai-full-screen-wrapper"
           >
-            <TabPanel
-              v-for="tab in displayTabs"
-              :key="tab.name"
-              class="ai-chat-container-tab-panel"
-              :label="
-                () =>
-                  h(
-                    'div',
-                    {
-                      class: 'ai-execution-summary-label',
-                      onVnodeMounted: (node: VNode) => {
-                        if (selectedTab.name === tab.name) {
-                          node.el?.scrollIntoView({ behavior: 'smooth' });
-                        }
+            <Tab
+              :active="selectedTab.name"
+              class="ai-chat-container-tab"
+              :label-height="40"
+              type="unborder-card"
+              @change="handleUpdateTabActive"
+            >
+              <TabPanel
+                v-for="tab in displayTabs"
+                :key="tab.name"
+                class="ai-chat-container-tab-panel"
+                :label="
+                  () =>
+                    h(
+                      'div',
+                      {
+                        class: 'ai-execution-summary-label',
+                        onVnodeMounted: (node: VNode) => {
+                          if (selectedTab.name === tab.name) {
+                            node.el?.scrollIntoView({ behavior: 'smooth' });
+                          }
+                        },
                       },
-                    },
-                    getSideTabRenderComponent?.(h, tab, { removeCustomTab }) ?? [
-                      h(getSideTabIcon(tab.name), {
-                        class: 'ai-execution-summary-icon',
-                      }),
-                      withDirectives(
-                        h(
-                          'span',
-                          {
-                            class: 'ai-execution-summary-label-text',
-                          },
-                          tab.label ?? '',
-                        ),
-                        [[vOverflowTips, { ...commonTippyOptions, text: tab.label ?? '' }]],
-                      ),
-                      tab.closable !== false && tab.name !== EXECUTION_TAB_NAME
-                        ? h(CloseIcon, {
-                            class: 'ai-execution-close-icon',
-                            onClick: () => {
-                              removeCustomTab(tab.name);
+                      getSideTabRenderComponent?.(h, tab, { removeCustomTab }) ?? [
+                        h(getSideTabIcon(tab.name), {
+                          class: 'ai-execution-summary-icon',
+                        }),
+                        withDirectives(
+                          h(
+                            'span',
+                            {
+                              class: 'ai-execution-summary-label-text',
                             },
-                          })
-                        : null,
-                    ],
-                  )
-              "
-              :name="tab.name"
-            />
-            <template #setting>
-              <div class="screen-wrapper">
-                <ToolBtn
-                  class="screen-btn"
-                  :tippy-options="{
-                    ...commonTippyOptions,
-                    content: isFullScreen ? t('退出全屏') : t('全屏'),
-                  }"
+                            tab.label ?? '',
+                          ),
+                          [[vOverflowTips, { ...commonTippyOptions, text: tab.label ?? '' }]],
+                        ),
+                        tab.closable !== false && tab.name !== EXECUTION_TAB_NAME
+                          ? h(CloseIcon, {
+                              class: 'ai-execution-close-icon',
+                              onClick: () => {
+                                removeCustomTab(tab.name);
+                              },
+                            })
+                          : null,
+                      ],
+                    )
+                "
+                :name="tab.name"
+              />
+              <template #setting>
+                <div class="screen-wrapper">
+                  <ToolBtn
+                    class="screen-btn"
+                    :tippy-options="{
+                      ...commonTippyOptions,
+                      content: isFullScreen ? t('退出全屏') : t('全屏'),
+                    }"
+                  >
+                    <FullScreenIcon
+                      v-if="!isFullScreen"
+                      @click="enter"
+                    />
+                    <UnFullScreenIcon
+                      v-else
+                      @click="exit"
+                    />
+                  </ToolBtn>
+                </div>
+              </template>
+            </Tab>
+            <template v-if="selectedTab?.name === EXECUTION_TAB_NAME && executionTabVisible !== false">
+              <ExecutionSummary
+                v-if="!isCollapse"
+                :message-groups="executionGroups"
+                style="height: calc(100% - 40px)"
+                @locate-message-group="handleLocateMessageGroup"
+                @update-keyword="handleUpdateKeyword"
+              />
+            </template>
+            <template v-else-if="selectedTab?.name === FILE_ARTIFACT_TAB_NAME">
+              <FileArtifactPanel
+                :active-id="activeArtifactId"
+                :artifacts="sessionArtifacts"
+                style="height: calc(100% - 40px)"
+                @select="setActiveArtifactId"
+              />
+            </template>
+            <template v-if="selectedTab && selectedTab.name !== FILE_ARTIFACT_TAB_NAME">
+              <div
+                :key="selectedTab.name"
+                class="ai-chat-container-message-slot"
+              >
+                <component
+                  :is="sideRenderComponent"
+                  :key="selectedTab.name"
+                  v-bind="selectedTab?.data?.props"
                 >
-                  <FullScreenIcon
-                    v-if="!isFullScreen"
-                    @click="enter"
-                  />
-                  <UnFullScreenIcon
-                    v-else
-                    @click="exit"
-                  />
-                </ToolBtn>
+                  <template #locateButton>
+                    <Button
+                      class="ai-locate-button"
+                      size="small"
+                      text
+                      theme="primary"
+                      @click="handleLocateMessageGroup(selectedTab?.data?.messageUid)"
+                    >
+                      {{ t('在对话中定位') }}
+                    </Button>
+                  </template>
+                </component>
               </div>
             </template>
-          </Tab>
-          <template v-if="selectedTab?.name === EXECUTION_TAB_NAME && executionTabVisible !== false">
-            <ExecutionSummary
-              v-if="!isCollapse"
-              :message-groups="executionGroups"
-              style="height: calc(100% - 40px)"
-              @locate-message-group="handleLocateMessageGroup"
-              @update-keyword="handleUpdateKeyword"
-            />
-          </template>
-          <template v-else-if="selectedTab?.name === FILE_ARTIFACT_TAB_NAME">
-            <FileArtifactPanel
-              :active-id="activeArtifactId"
-              :artifacts="sessionArtifacts"
-              style="height: calc(100% - 40px)"
-              @select="setActiveArtifactId"
-            />
-          </template>
-          <template v-if="selectedTab && selectedTab.name !== FILE_ARTIFACT_TAB_NAME">
-            <div
-              :key="selectedTab.name"
-              class="ai-chat-container-message-slot"
-            >
-              <component
-                :is="sideRenderComponent"
-                :key="selectedTab.name"
-                v-bind="selectedTab?.data?.props"
-              >
-                <template #locateButton>
-                  <Button
-                    class="ai-locate-button"
-                    size="small"
-                    text
-                    theme="primary"
-                    @click="handleLocateMessageGroup(selectedTab?.data?.messageUid)"
-                  >
-                    {{ t('在对话中定位') }}
-                  </Button>
-                </template>
-              </component>
-            </div>
-          </template>
-        </div>
-        <div
-          v-if="displayTabs.length > 0 && (executionGroups?.length || hasFileArtifactTab)"
-          class="collapse-button"
-          :class="{ 'is-right': placement === 'right', 'is-collapsed': isCollapse }"
-          @click="handleCollapse"
-        >
-          <CollapsedIcon />
-        </div>
+          </div>
+        </Transition>
       </template>
       <template #main>
         <slot
@@ -316,7 +309,7 @@
   import { type AiSizeMode, useGlobalConfig } from '../../composables/use-global-config';
   import { OverflowTips as vOverflowTips } from '../../directives';
   import { FullScreenIcon, UnFullScreenIcon } from '../../icons';
-  import { CloseIcon, CollapsedIcon, ExecutionIcon, NodeTabIcon } from '../../icons';
+  import { CloseIcon, ExecutionIcon, NodeTabIcon } from '../../icons';
   import { AIBluekingBannerIcon, ArtifactTabIcon } from '../../icons';
   import { t } from '../../lang/lang';
   import ToolBtn from '../ai-buttons/tool-btn/tool-btn.vue';
@@ -347,6 +340,11 @@
   import type { UserQuestionCardSlots } from '../chat-message/interrupt-message/user-question/user-question-card.vue';
   import type { Token } from 'markdown-it/index.js';
   export type ChatContainerProps = {
+    /**
+     * 侧栏折叠态，受控：传入后一律以外部值为准，
+     * 内部展开动作只发 `update:asideCollapsed`，外部不改则不展开；不传时由组件内部自持。
+     */
+    asideCollapsed?: boolean;
     chatLoading?: boolean;
     commonTippyOptions?: AITippyProps;
     // 执行情况 Tab 是否展示，缺省 true；为 false 时从 Tab 栏隐藏，选中态自动切到首个可见 Tab
@@ -364,7 +362,6 @@
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     onCustomTabChange?: (tab: CustomTab<CustomBkFlowTabData>) => Promise<any>;
     openingRemark?: string;
-    placement?: 'left' | 'right';
     resizeProps?: {
       disabled?: boolean;
       initialDivide?: number | string;
@@ -412,7 +409,8 @@
         Omit<MessageContainerProps, 'enableSelection' | 'messageGroups' | 'messageToolsTippyOptions'>
     >(),
     {
-      placement: 'left',
+      // 显式给 undefined，避免 Boolean 类型 prop 在未传时被 Vue 转成 false，从而无法区分「外部受控」与「内部自持」
+      asideCollapsed: undefined,
       executionTabVisible: true,
       size: 'small',
     },
@@ -421,7 +419,6 @@
     required: false,
     default: RenderMode.Chat,
   });
-
   const fullScreenRef = useTemplateRef<HTMLElement>('fullScreenRef');
   const { isFullScreen, enter, exit } = useFullScreen(fullScreenRef);
 
@@ -432,7 +429,8 @@
     immediate: true,
     min: 400,
     ...props.resizeProps,
-    placement: props.placement,
+    // 侧栏固定从右侧展开，不再支持左侧
+    placement: 'right' as const,
   }));
 
   const sideRenderComponent = computed(() => {
@@ -472,8 +470,25 @@
         (e: 'shortcutSubmit', formModel: Record<string, unknown>): void;
         (e: 'confirmShare', messages: Message[], source?: IToolBtn): void;
         (e: 'collapseChange', isCollapse: boolean, resizeAsideWidth: number): void;
+        (e: 'update:asideCollapsed', collapsed: boolean): void;
       }
   >();
+
+  /** 外部未绑定 asideCollapsed 时的兜底状态 */
+  const localAsideCollapsed = shallowRef(true);
+  /**
+   * 侧栏折叠态：严格受控。外部传入时读写都以外部为准，
+   * 内部展开动作（文件卡片预览、addCustomTab）只发出 update 事件，外部不改则不展开。
+   */
+  const asideCollapsed = computed<boolean>({
+    get: () => props.asideCollapsed ?? localAsideCollapsed.value,
+    set: (collapsed: boolean) => {
+      if (props.asideCollapsed === undefined) {
+        localAsideCollapsed.value = collapsed;
+      }
+      emits('update:asideCollapsed', collapsed);
+    },
+  });
 
   // 全屏时 tippy 默认挂 body 会跑出全屏层，统一把 appendTo 切到全屏容器再注入给子组件
   const commonTippyOptions = computed<AITippyProps>(() => ({
@@ -493,6 +508,7 @@
     selectCustomTab,
     resetCustomTab,
   } = useCustomTabProvider<CustomBkFlowTabData>({
+    collapsed: asideCollapsed,
     executionTabVisible: () => props.executionTabVisible,
     onTabChange: async tab => {
       // 文件产物 Tab 由 FileArtifactPanel 自行通过 onArtifactClick 异步取链，无需走自定义 Tab 拉取
@@ -519,15 +535,15 @@
     },
   });
 
-  /** 挂上「文件产物」Tab，不抢占当前选中（如执行情况） */
-  const ensureFileArtifactTab = () => {
-    ensureCustomTab({
-      closable: false,
-      label: t('文件产物'),
-      name: FILE_ARTIFACT_TAB_NAME,
-      order: -1,
-    });
+  /** 文件产物 Tab 元信息：排在执行情况之前，不可关闭 */
+  const FILE_ARTIFACT_TAB = {
+    closable: false,
+    label: t('文件产物'),
+    name: FILE_ARTIFACT_TAB_NAME,
+    order: -1,
   };
+  // 常驻挂载：不随产物有无增删，无产物时由面板展示空态
+  ensureCustomTab(FILE_ARTIFACT_TAB);
 
   const keyword = shallowRef('');
   const selectedUserMessages = deepRef<Message[]>([]);
@@ -538,9 +554,13 @@
     return typeof divide === 'number' ? divide : 400;
   };
   const resizeAsideWidth = shallowRef<number>(resolveInitialAsideWidth());
+  /** 展开态宽度：折叠时 resizeAsideWidth 归零，动画与再次展开都要用它还原 */
+  const lastExpandedAsideWidth = shallowRef<number>(resolveInitialAsideWidth());
+  const isResizing = shallowRef(false);
   const resizeMainWidth = computed(() => {
     return `calc(100% - ${resizeAsideWidth.value}px)`;
   });
+  const resizeAsideWidthVar = computed(() => `${lastExpandedAsideWidth.value}px`);
 
   const {
     messageGroups,
@@ -560,36 +580,22 @@
     selectedUserMessages,
   });
 
-  /** 侧栏是否存在「文件产物」Tab，用于放开侧栏对 executionGroups 的显隐强耦合 */
-  const hasFileArtifactTab = computed(() => tabs.value.some(tab => tab.name === FILE_ARTIFACT_TAB_NAME));
-
-  // 文件卡片点击 → 命中文件并弹出/切换到固定的「文件产物」侧栏 Tab（排在执行情况之前，不可关闭）
+  // 文件卡片点击 → 命中文件并展开侧栏、切到「文件产物」Tab
   const { activeArtifactId, setActiveArtifactId } = useArtifactPreviewProvider({
     getOnArtifactClick: () => props.onArtifactClick,
     onOpen: () => {
-      addCustomTab({
-        closable: false,
-        label: t('文件产物'),
-        name: FILE_ARTIFACT_TAB_NAME,
-        order: -1,
-      });
+      addCustomTab(FILE_ARTIFACT_TAB);
     },
   });
 
-  /**
-   * 有文件产物时挂上 Tab 并保证命中态有效；无产物时清理。
-   * ensure 不切换选中，避免从「执行情况」展开侧栏时被抢走焦点。
-   */
+  /** 产物列表变化时维护命中态：无产物清空命中，命中项失效时回落到第一个 */
   watch(
     sessionArtifacts,
     list => {
       if (!list.length) {
-        removeCustomTab(FILE_ARTIFACT_TAB_NAME);
         setActiveArtifactId('');
         return;
       }
-      ensureFileArtifactTab();
-      // 未命中或命中项已不在列表时，默认选中第一个
       if (!list.some(item => item.outputId === activeArtifactId.value)) {
         setActiveArtifactId(list[0].outputId);
       }
@@ -601,22 +607,12 @@
     if (newVal) {
       keyword.value = '';
       resizeAsideWidth.value = 0;
+    } else {
+      // 展开时还原宽度，避免折叠时置 0 后主区宽度停留在 100%
+      resizeAsideWidth.value = lastExpandedAsideWidth.value;
     }
     emits('collapseChange', newVal, resizeAsideWidth.value);
   });
-  watch(
-    () => executionGroups.value,
-    newVal => {
-      // 文件产物 Tab 存在时不因执行组为空而重置，避免误清文件预览侧栏
-      if (!newVal.length && !keyword.value && !hasFileArtifactTab.value) {
-        resetCustomTab();
-      }
-    },
-    {
-      immediate: true,
-      deep: false,
-    },
-  );
   const inputStatus = computed(() => {
     // StopLoading 优先级最高，确保停止接口调用期间 UI 立即响应
     if (props.messageStatus === MessageStatus.StopLoading) {
@@ -663,9 +659,6 @@
     );
   };
 
-  const handleCollapse = () => {
-    isCollapse.value = !isCollapse.value;
-  };
   /**
    * 定位消息组
    */
@@ -732,8 +725,14 @@
     selectionSource.value = undefined;
   };
 
+  // 拖拽期间关闭侧栏宽度过渡，避免动画与鼠标不跟手
   const handleResizing = (w: number) => {
+    isResizing.value = true;
     resizeAsideWidth.value = w;
+    lastExpandedAsideWidth.value = w;
+  };
+  const handleAfterResize = () => {
+    isResizing.value = false;
   };
   onUnmounted(() => {
     resetCustomTab();
@@ -772,64 +771,6 @@
       justify-content: center;
       width: 100%;
       height: 100%;
-    }
-
-    .collapse-button {
-      position: absolute;
-      top: 50%;
-      left: -16px;
-      z-index: 2;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      width: 16px;
-      min-height: 64px;
-      padding: 8px 2px;
-      font-size: 14px;
-      color: #fff;
-      background: #dcdee5;
-      border-radius: 4px 0 0 4px;
-
-      // box-shadow: 2px 0 4px 0 #0000001a;
-      transform: translateY(-50%);
-
-      .ai-common-icon {
-        width: 14px;
-        height: 14px;
-        margin-bottom: 2px;
-        font-size: 14px;
-        transition: transform 0.2s ease-in-out;
-      }
-
-      &.is-collapsed {
-        .ai-common-icon {
-          transform: rotate(180deg);
-        }
-      }
-
-      &.is-right {
-        right: -17px;
-        left: auto;
-        border-radius: 0 4px 4px 0;
-
-        .ai-common-icon {
-          transform: rotate(180deg) !important;
-        }
-
-        &.is-collapsed {
-          .ai-common-icon {
-            transform: rotate(0deg) !important;
-          }
-        }
-      }
-
-      &:hover {
-        color: #fff;
-        cursor: pointer;
-        background: #3a84ff;
-        box-shadow: 2px 0 4px 0 #0000001a;
-      }
     }
 
     &-tab {
@@ -923,6 +864,17 @@
         height: 100%;
       }
 
+      > aside {
+        // min-width: auto 会以内容最小宽度兜底，收起动画期间内容尚未卸载，需显式放开才能收到 0
+        min-width: 0;
+        transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      // 拖拽调宽时关闭过渡，保证跟手
+      &.is-resizing > aside {
+        transition: none;
+      }
+
       > aside > div:first-child {
         display: flex !important;
         flex-direction: column !important;
@@ -932,7 +884,6 @@
       > main {
         position: relative;
         width: var(--resize-main-width);
-        padding: 8px 16px;
 
         // overflow: visible;
 
@@ -957,8 +908,8 @@
 
       &.ai-is-collapse {
         > aside {
-          flex: 0 0 0 !important;
-          width: 0;
+          // bkui 把侧栏宽度写在行内，需 !important 覆盖，宽度才能从实际值过渡到 0
+          width: 0 !important;
           padding: 0;
           border: none;
 
@@ -976,6 +927,19 @@
         width: 100%;
         height: 100%;
         background-color: white;
+      }
+
+      // 侧栏内容随宽度动画淡入淡出；动画期间锁定展开态宽度，
+      // 由 bkui 的 aside-content（overflow: hidden）裁切，避免内容被压缩重排
+      .ai-aside-content-enter-active,
+      .ai-aside-content-leave-active {
+        width: var(--resize-aside-width);
+        transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      .ai-aside-content-enter-from,
+      .ai-aside-content-leave-to {
+        opacity: 0;
       }
     }
 

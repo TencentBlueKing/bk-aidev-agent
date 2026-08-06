@@ -195,6 +195,22 @@ export const ActiveUnLikeIcon = h(
     }),
   ],
 );
+
+export const CollapsedAsideIcon = h(
+  'svg',
+  {
+    ...commonSVGProps,
+    class: {
+      [commonSVGProps.class]: true,
+      'ai-collapsed-icon': true,
+    },
+  },
+  [
+    h('path', {
+      d: 'M902.528 160.384A64 64 0 0 1 960 224v576a64 64 0 0 1-57.472 63.68L896 864H128a64 64 0 0 1-63.616-57.472L64 800v-576a64 64 0 0 1 64-64h768l6.528 0.384zM128 800h544v-576H128v576z m608 0H896v-576h-160v576z',
+    }),
+  ],
+);
 export const ToolIconsMap = {
   copy: CopyIcon,
   cite: CiteIcon,

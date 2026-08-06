@@ -393,6 +393,7 @@ Use Shift + Enter to enter a new line`
     flex-direction: column;
     align-items: center;
     width: 100%;
+    padding: 0 16px 8px;
 
     .chat-input {
       position: relative;

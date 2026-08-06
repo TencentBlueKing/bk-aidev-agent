@@ -1,14 +1,22 @@
 <template>
   <div class="button-container">
-    <button
+    <!-- <button
       class="delete-message-button"
       @click="handleDeleteMessage"
     >
       delete message
-    </button>
+    </button> -->
+    <!-- 侧栏展开/收起已交由外部控制，playground 用按钮模拟业务方入口 -->
+    <ToolBtn
+      :description="asideCollapsed ? '展开侧栏' : '收起侧栏'"
+      @click="asideCollapsed = !asideCollapsed"
+    >
+      <CollapsedAsideIcon />
+    </ToolBtn>
   </div>
   <div class="chat-bot-new">
     <ChatContainer
+      v-model:aside-collapsed="asideCollapsed"
       v-model:cite="cite"
       v-model:render-mode="chatMode"
       v-model:selected-model="selectedModel"
@@ -29,10 +37,9 @@
       :on-user-input-confirm="handleUserInputConfirm"
       :on-user-shortcut-confirm="handleUserShortcutConfirm"
       :opening-remark="''"
-      placement="left"
       :prompts="MOCK_PROMPTS"
       :resize-props="{
-        initialDivide: 800,
+        initialDivide: 600,
       }"
       :resources="MOCK_RESOURCES"
       :shortcuts="shortcuts"
@@ -174,6 +181,7 @@
     type UserMessage,
     AgentIcon,
     ChatContainer,
+    CollapsedAsideIcon,
     CopyIcon,
     DownloadIcon,
     EditIcon,
@@ -184,6 +192,7 @@
     RenderMode,
     UserQuestionChoice,
   } from '../src';
+  import ToolBtn from '../src/components/ai-buttons/tool-btn/tool-btn.vue';
   import CustomTabContent from './custom-tab-content.vue';
   import { MOCK_USER_QUESTION_PENDING_MESSAGES } from './interrupt';
   import { streamContent } from './markdown';
@@ -193,7 +202,6 @@
     MOCK_MODELS,
     MOCK_PROMPTS,
     MOCK_RESOURCES,
-    MOCK_TOOLCALL_STATUS_MESSAGES,
     mockArtifactClick,
   } from './mock';
   import { uploadFileToSession } from './upload-file';
@@ -203,11 +211,12 @@
 
   import '../src/styles/global.scss';
 
-  const chatMode = shallowRef<RenderMode>(RenderMode.Chat);
+  const chatMode = shallowRef<RenderMode>(RenderMode.Share);
   const openingRemark = shallowRef(`你好，我是小鲸
 我是由蓝鲸智云开发的智能助手
 我可以帮助你完成各种任务`);
   const cite = shallowRef('');
+  const asideCollapsed = shallowRef(true);
   const userInput = shallowRef<string | TagSchema>('');
   const selectedShortcut = deepRef<null | Shortcut>(null);
   // 模型选择器：默认选中首个模型（值为 llm_name）
@@ -220,7 +229,7 @@
     ...MOCK_INFO_MESSAGES,
     ...MOCK_TOOLCALL_STATUS_MESSAGES,
     ...(MOCK_MESSAGES as Message[]),
-    ...MOCK_USER_QUESTION_PENDING_MESSAGES,
+    // ...MOCK_USER_QUESTION_PENDING_MESSAGES,
   ]);
 
   const handleInterruptResume: OnInterruptResume = (payload, interrupt) => {

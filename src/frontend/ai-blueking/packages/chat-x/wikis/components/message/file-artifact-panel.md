@@ -64,7 +64,8 @@ sinceVersion: 0.0.20
 - **会话级聚合**：拍平当前会话所有 `AssistantMessage.property.artifacts`，以 `outputId` 去重后统一在一个列表内展示
 - **唯一命中**：以 `outputId` 作为会话内唯一键（同 `outputId` 视为同一文件）；文件名可能重复，不可作唯一键
 - **关键词搜索**：按文件名实时过滤列表
-- **异步取链**：`AIFileInfo` 本身不含 `url` / `previewUrl`，通过 `ChatContainer` 的 `onArtifactClick` 按 `outputId` 获取 `download_url` / `preview_url`（每次重新取链，无 URL 缓存；同文件并发去重）
+- **整块空态**：`artifacts` 为空时不渲染列表与预览区，整块展示 bkui `Exception`「暂无数据」（Tab 常驻，无数据也可正常打开侧栏）
+- **异步取链**：`AIFileInfo` 本身不含 `url` / `previewUrl`，通过 `ChatContainer` 的 `onArtifactClick` 按 `outputId` 获取 `download_url` / `preview_url`（TTL 8 分钟缓存；预览重试会 `force` 刷新）
 - **职责拆分**：
   - **面板本身**：列表、搜索、预览头（文件名 / 图标 / 下载）
   - **`ArtifactPreviewHost`**：按策略加载正文或预览 URL，分派到对应 renderer；展示 loading / empty / error（含重试）
@@ -208,13 +209,14 @@ ArtifactFileCard（点击文件卡片）
                            ├─ useArtifactPreviewLoader（策略 + fetch / 取链，防竞态）
                            └─ HtmlPreview | MarkdownPreview | TxtPreview | UrlIframePreview
 
-sessionArtifacts 有产物时
-  └─ ensureCustomTab('file-artifact') 静默挂上，不抢当前选中（如执行情况）
+容器初始化
+  └─ ensureCustomTab('file-artifact') 常驻挂上（不展开侧栏）；因 order:-1 排在首位，
+     未主动切换过 Tab 时会成为默认选中面板；无产物时由面板展示整块空态
 ```
 
 - 文件卡片通过 `useArtifactPreviewConsumer` 注入预览上下文，无 Provider 时卡片不可点击（兜底 `undefined`）
 - `ChatContainer` 通过 `useArtifactPreviewProvider` 提供上下文，并把「打开侧栏 Tab」这一副作用以 `onOpen` 注入，保持 composable 职责单一
-- 侧栏「文件产物」Tab 固定不可关闭，`order: -1` 排在「执行情况」之前；会话切换或无文件产物时自动移除
+- 侧栏「文件产物」Tab 固定不可关闭，`order: -1` 排在「执行情况」之前；**常驻不随产物有无增删**，无产物时由面板展示整块空态
 
 ## 唯一键规则
 
