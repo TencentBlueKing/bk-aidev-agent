@@ -63,6 +63,10 @@ vi.mock('bkui-vue', () => ({
   Loading: defineComponent({
     setup: () => () => h('span', { class: 'mock-loading' }),
   }),
+  Exception: defineComponent({
+    props: { type: { default: 'empty', type: String } },
+    setup: () => () => h('div', { class: 'mock-exception' }),
+  }),
 }));
 
 vi.mock('../../../message-loading/message-loading.vue', () => ({
@@ -249,5 +253,14 @@ describe('FileArtifactPanel', () => {
     wrapper = mountPanel({ activeId: 'not-exist', artifacts: [createArtifact()] });
 
     expect(wrapper.find('.ai-artifact-preview-host-empty').exists()).toBe(true);
+  });
+
+  it('无产物时应展示整块空态，不渲染文件列表与预览区', () => {
+    wrapper = mountPanel({ activeId: '', artifacts: [] });
+
+    expect(wrapper.find('.ai-file-artifact-panel.is-empty').exists()).toBe(true);
+    expect(wrapper.find('.mock-exception').exists()).toBe(true);
+    expect(wrapper.find('.ai-file-artifact-panel-list').exists()).toBe(false);
+    expect(wrapper.find('.ai-file-artifact-panel-preview').exists()).toBe(false);
   });
 });

@@ -45,6 +45,18 @@ const createProviderComponent = (onTabChange?: (tab: unknown) => void) =>
     },
   });
 
+/** 支持注入外部折叠态的 Provider，便于测试受控展开/收起 */
+const createCollapsedProvider = (collapsed: Ref<boolean>) =>
+  defineComponent({
+    setup() {
+      const result = useCustomTabProvider({ collapsed });
+      return { providerResult: result };
+    },
+    render() {
+      return h('div', { class: 'provider' });
+    },
+  });
+
 /** 支持注入 executionTabVisible（响应式）的 Provider，便于测试显隐与排序 */
 const createConfigurableProvider = (executionVisible: Ref<boolean>) =>
   defineComponent({
@@ -129,6 +141,34 @@ describe('useCustomTab', () => {
       wrapper.unmount();
     });
 
+    it('传入外部折叠态时应直接复用该 ref（受控展开/收起）', async () => {
+      const collapsed = ref(false);
+      const Provider = createCollapsedProvider(collapsed);
+      const wrapper = mount(Provider);
+
+      const vm = wrapper.vm as unknown as {
+        providerResult: {
+          addCustomTab: (tab: { label: string; name: string }) => void;
+          isCollapse: { value: boolean };
+        };
+      };
+
+      // 外部初值透传
+      expect(vm.providerResult.isCollapse.value).toBe(false);
+
+      // 外部收起
+      collapsed.value = true;
+      await nextTick();
+      expect(vm.providerResult.isCollapse.value).toBe(true);
+
+      // 内部展开动作回写到外部 ref
+      vm.providerResult.addCustomTab({ label: '节点详情', name: 'node-1' });
+      await nextTick();
+      expect(collapsed.value).toBe(false);
+
+      wrapper.unmount();
+    });
+
     it('ensureCustomTab 应挂上 Tab 但不展开、不切换选中', async () => {
       const Provider = createProviderComponent();
       const wrapper = mount(Provider);
@@ -152,7 +192,7 @@ describe('useCustomTab', () => {
       wrapper.unmount();
     });
 
-    it('ensureCustomTab 同名应合并更新且仍不展开、不切换选中', async () => {
+    it('ensureCustomTab 同名应合并更新且仍不展开；未主动切换时选中跟随 Tab 栏首位', async () => {
       const Provider = createProviderComponent();
       const wrapper = mount(Provider);
 
@@ -179,7 +219,7 @@ describe('useCustomTab', () => {
       expect(fileTabs).toHaveLength(1);
       expect(fileTabs[0]).toMatchObject({ label: '文件产物-更新', order: -2 });
       expect(vm.providerResult.isCollapse.value).toBe(true);
-      expect(vm.providerResult.selectedTab.value.name).toBe(EXECUTION_TAB_NAME);
+      expect(vm.providerResult.selectedTab.value.name).toBe('file-artifact');
 
       wrapper.unmount();
     });
@@ -350,6 +390,69 @@ describe('useCustomTab', () => {
       const target = vm.providerResult.tabs.value.find(tab => tab.name === 'x') as { label: string; order?: number };
       expect(target.label).toBe('L2');
       expect(target.order).toBe(5);
+
+      wrapper.unmount();
+    });
+  });
+
+  describe('默认选中跟随 Tab 栏首位', () => {
+    it('未主动切换时，挂上更靠前的 Tab 应成为选中项', async () => {
+      const Provider = createProviderComponent();
+      const wrapper = mount(Provider);
+      const vm = wrapper.vm as unknown as ProviderVm & {
+        providerResult: { ensureCustomTab: (tab: { label: string; name: string; order?: number }) => void };
+      };
+
+      expect(vm.providerResult.selectedTab.value.name).toBe(EXECUTION_TAB_NAME);
+
+      vm.providerResult.ensureCustomTab({ label: '文件产物', name: 'file-artifact', order: -1 });
+      await nextTick();
+
+      expect(vm.providerResult.selectedTab.value.name).toBe('file-artifact');
+
+      wrapper.unmount();
+    });
+
+    it('主动切换过之后不再跟随首位', async () => {
+      const Provider = createProviderComponent();
+      const wrapper = mount(Provider);
+      const vm = wrapper.vm as unknown as ProviderVm & {
+        providerResult: { ensureCustomTab: (tab: { label: string; name: string; order?: number }) => void };
+      };
+
+      vm.providerResult.selectCustomTab({ name: EXECUTION_TAB_NAME });
+      vm.providerResult.ensureCustomTab({ label: '文件产物', name: 'file-artifact', order: -1 });
+      await nextTick();
+
+      expect(vm.providerResult.selectedTab.value.name).toBe(EXECUTION_TAB_NAME);
+
+      wrapper.unmount();
+    });
+
+    it('resetCustomTab 后应恢复选中跟随首位', async () => {
+      const Provider = createProviderComponent();
+      const wrapper = mount(Provider);
+      const vm = wrapper.vm as unknown as ProviderVm & {
+        providerResult: {
+          ensureCustomTab: (tab: { label: string; name: string; order?: number }) => void;
+          resetCustomTab: () => void;
+        };
+      };
+
+      // 主动切换后挂上更靠前的 Tab，选中不再跟随
+      vm.providerResult.selectCustomTab({ name: EXECUTION_TAB_NAME });
+      vm.providerResult.ensureCustomTab({ label: '文件产物', name: 'file-artifact', order: -1 });
+      await nextTick();
+      expect(vm.providerResult.selectedTab.value.name).toBe(EXECUTION_TAB_NAME);
+
+      // reset 清空自定义 Tab 并重置「是否主动切换过」标记
+      vm.providerResult.resetCustomTab();
+      expect(vm.providerResult.selectedTab.value.name).toBe(EXECUTION_TAB_NAME);
+
+      // 再次常驻挂载更靠前的 Tab，应恢复跟随首位
+      vm.providerResult.ensureCustomTab({ label: '文件产物', name: 'file-artifact', order: -1 });
+      await nextTick();
+      expect(vm.providerResult.selectedTab.value.name).toBe('file-artifact');
 
       wrapper.unmount();
     });

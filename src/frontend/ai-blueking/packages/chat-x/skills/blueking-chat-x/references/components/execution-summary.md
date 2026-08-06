@@ -59,7 +59,7 @@
 
 ```
 execution-summary
-├── execution-summary-header
+├── execution-summary-header（仅 messageGroups 非空时渲染）
 │   └── Input（关键词搜索框，clearable）
 └── execution-summary-content
     ├── 有数据时：
@@ -70,12 +70,12 @@ execution-summary
     │       ├── content-item-messages（MessageRender × N）
     │       └── timeline-line（连接线，最后一项不显示）
     └── 无数据时：
-        └── Exception（空状态）+ 清空搜索按钮
+        └── Exception（scene="part"）+「暂无数据」/「搜索结果为空」文案（有关键词时附带「清空搜索」）
 ```
 
 ## 空状态
 
-当 `messageGroups` 为空数组时，显示空状态提示：
+当 `messageGroups` 为空数组时，**不渲染搜索 header**，内容区整块展示空态（bkui `Exception` +「暂无数据」；若仍有搜索关键词则为「搜索结果为空」并提供「清空搜索」）：
 
 ## 与 ChatContainer 配合
 

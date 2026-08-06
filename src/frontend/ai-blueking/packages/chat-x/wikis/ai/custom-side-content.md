@@ -285,7 +285,7 @@ const getSideRenderComponent = (createElement: typeof h, props?: Record<string, 
 | `EXECUTION_TAB_NAME`（`execution`） | 内置 `ExecutionSummary`，不走 `component` / `getSideRenderComponent` |
 | 自定义 Tab | `getSideRenderComponent` ?? `data.component` + `onCustomTabChange` 数据 |
 
-当 **`executionGroups` 为空且搜索关键词为空** 时，容器会 **`resetCustomTab`**，清空自定义 Tab 并折叠侧栏，避免无执行数据时仍显示节点详情 Tab。
+自定义 Tab 的生命周期由调用方掌控：容器**不会**因 `executionGroups` 变空而自动 `resetCustomTab`；仅在组件卸载时重置，避免残留节点详情等 Tab。侧栏展开 / 折叠由外部通过 `v-model:asideCollapsed` 判断。
 
 ## 设计建议
 

@@ -74,7 +74,7 @@ const mockExecutionGroupsRef = vi.hoisted(() => {
   const { ref: vueRef } = require('vue');
   return vueRef([]) as Ref<unknown[]>;
 });
-/** 供 useMessageGroup mock 注入会话级文件产物，验证 ensureCustomTab 静默挂载 */
+/** 供 useMessageGroup mock 注入会话级文件产物，验证 ensureCustomTab 常驻挂载 */
 const mockSessionArtifactsRef = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ref: vueRef } = require('vue');
@@ -141,7 +141,7 @@ vi.mock('bkui-vue', () => {
         min: Number,
         placement: String,
       },
-      emits: ['resizing'],
+      emits: ['resizing', 'after-resize'],
       setup(_, { slots }) {
         return () =>
           h('div', { class: 'mock-resize-layout' }, [
@@ -246,11 +246,16 @@ vi.mock('../../composables/use-custom-tab', () => {
     DEFAULT_TAB_ORDER,
     EXECUTION_TAB_NAME,
     useCustomTabProvider: vi.fn(
-      (_options: { executionTabVisible?: () => boolean | undefined; onTabChange?: (tab: unknown) => void }) => {
+      (_options: {
+        collapsed?: { value: boolean };
+        executionTabVisible?: () => boolean | undefined;
+        onTabChange?: (tab: unknown) => void;
+      }) => {
         const EXECUTION_TAB = { closable: false, label: '执行情况', name: EXECUTION_TAB_NAME, order: 0 };
         const tabs = shallowRef([EXECUTION_TAB]);
         const selectedTab = deepRef(EXECUTION_TAB);
-        const isCollapse = shallowRef(true);
+        // 折叠态由容器以受控 ref 注入，缺省退化为内部状态
+        const isCollapse = _options.collapsed ?? shallowRef(true);
 
         const isExecutionVisible = () => _options.executionTabVisible?.() ?? true;
         const displayTabs = computed(() =>
@@ -322,12 +327,6 @@ vi.mock('../../icons', () => ({
       return () => h('span', { class: 'mock-close-icon' });
     },
   }),
-  CollapsedIcon: defineComponent({
-    name: 'CollapsedIcon',
-    setup() {
-      return () => h('span', { class: 'mock-collapsed-icon' });
-    },
-  }),
   ExecutionIcon: defineComponent({
     name: 'ExecutionIcon',
     setup() {
@@ -356,6 +355,12 @@ vi.mock('../../icons', () => ({
     name: 'AIBluekingBannerIcon',
     setup() {
       return () => h('span', { class: 'mock-banner-icon' });
+    },
+  }),
+  ArtifactTabIcon: defineComponent({
+    name: 'ArtifactTabIcon',
+    setup() {
+      return () => h('span', { class: 'mock-artifact-tab-icon' });
     },
   }),
 }));
@@ -925,7 +930,7 @@ describe('ChatContainer', () => {
   });
 
   describe('折叠测试', () => {
-    it('有 executionGroups 时应渲染折叠按钮且仅展示 CollapsedIcon', async () => {
+    it('不应再渲染内置折叠按钮（展开/收起交由外部）', async () => {
       const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
       mockExecutionGroupsRef.value = [{ id: 'group-1' }];
 
@@ -934,35 +939,63 @@ describe('ChatContainer', () => {
       });
       await nextTick();
 
-      expect(wrapper.find('.collapse-button').exists()).toBe(true);
-      expect(wrapper.find('.mock-collapsed-icon').exists()).toBe(true);
-      expect(wrapper.text()).not.toContain('执行情况');
+      expect(wrapper.find('.collapse-button').exists()).toBe(false);
+      expect(wrapper.find('.mock-collapsed-icon').exists()).toBe(false);
     });
 
-    it('侧栏折叠时折叠按钮应带 is-collapsed 类', async () => {
-      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
-      mockExecutionGroupsRef.value = [{ id: 'group-1' }];
-
+    it('默认应为折叠态', async () => {
       wrapper = mount(ChatContainer, {
-        props: { ...defaultProps, messages },
+        props: defaultProps,
       });
       await nextTick();
 
-      expect(wrapper.find('.collapse-button').classes()).toContain('is-collapsed');
+      expect(wrapper.find('.ai-chat-container-resize-layout').classes()).toContain('ai-is-collapse');
     });
 
-    it('点击折叠按钮应该触发 collapseChange 事件', async () => {
-      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
-      mockExecutionGroupsRef.value = [{ id: 'group-1' }];
-
+    it('asideCollapsed 为 false 时侧栏应展开并渲染 Tab 栏', async () => {
       wrapper = mount(ChatContainer, {
-        props: { ...defaultProps, messages },
+        props: { ...defaultProps, asideCollapsed: false },
       });
       await nextTick();
 
-      await wrapper.find('.collapse-button').trigger('click');
+      expect(wrapper.find('.ai-chat-container-tab').exists()).toBe(true);
+      expect(wrapper.find('.ai-chat-container-resize-layout').classes()).not.toContain('ai-is-collapse');
+    });
 
-      expect(wrapper.emitted('collapseChange')).toBeTruthy();
+    it('外部切换 asideCollapsed 应触发 collapseChange', async () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, asideCollapsed: true },
+      });
+      await nextTick();
+
+      await wrapper.setProps({ asideCollapsed: false });
+
+      expect(wrapper.emitted('collapseChange')?.[0]?.[0]).toBe(false);
+    });
+
+    it('受控时内部展开动作只发 update:asideCollapsed，外部不改则保持折叠', async () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, asideCollapsed: true },
+      });
+      await nextTick();
+
+      getChatContainerExposed(wrapper).addCustomTab({ label: '自定义 Tab', name: 'custom-tab' });
+      await nextTick();
+
+      expect(wrapper.emitted('update:asideCollapsed')?.[0]).toEqual([false]);
+      expect(wrapper.find('.ai-chat-container-resize-layout').classes()).toContain('ai-is-collapse');
+    });
+
+    it('未传 asideCollapsed 时内部展开动作应直接展开（非受控兜底）', async () => {
+      wrapper = mount(ChatContainer, {
+        props: defaultProps,
+      });
+      await nextTick();
+
+      getChatContainerExposed(wrapper).addCustomTab({ label: '自定义 Tab', name: 'custom-tab' });
+      await nextTick();
+
+      expect(wrapper.find('.ai-chat-container-resize-layout').classes()).not.toContain('ai-is-collapse');
     });
   });
 
@@ -1009,20 +1042,12 @@ describe('ChatContainer', () => {
   });
 
   describe('placement 测试', () => {
-    it('placement 默认应为 left', () => {
+    it('侧栏应固定从右侧展开', () => {
       wrapper = mount(ChatContainer, {
         props: defaultProps,
       });
 
-      expect(getMountProps(wrapper).placement).toBe('left');
-    });
-
-    it('应该接收 placement 属性', () => {
-      wrapper = mount(ChatContainer, {
-        props: { ...defaultProps, placement: 'right' },
-      });
-
-      expect(getMountProps(wrapper).placement).toBe('right');
+      expect(wrapper.findComponent({ name: 'ResizeLayout' }).props('placement')).toBe('right');
     });
   });
 
@@ -1083,7 +1108,7 @@ describe('ChatContainer', () => {
       expect(resize.props('collapsible')).toBe(false);
       expect(resize.props('immediate')).toBe(true);
       expect(resize.props('min')).toBe(400);
-      expect(resize.props('placement')).toBe('left');
+      expect(resize.props('placement')).toBe('right');
     });
 
     it('传入 resizeProps 应覆盖默认 min 并合并 initialDivide、max、disabled', () => {
@@ -1100,14 +1125,13 @@ describe('ChatContainer', () => {
       expect(resize.props('max')).toBe(1000);
       expect(resize.props('disabled')).toBe(true);
       expect(resize.props('collapsible')).toBe(false);
-      expect(resize.props('placement')).toBe('left');
+      expect(resize.props('placement')).toBe('right');
     });
 
-    it('placement 与 resizeProps 同时存在时 placement 以组件 placement 为准', () => {
+    it('resizeProps 不能覆盖固定的右侧 placement', () => {
       wrapper = mount(ChatContainer, {
         props: {
           ...defaultProps,
-          placement: 'right',
           resizeProps: { min: 200 },
         },
       });
@@ -1168,11 +1192,30 @@ describe('ChatContainer', () => {
       });
       await nextTick();
 
-      await wrapper.find('.collapse-button').trigger('click');
+      await wrapper.setProps({ asideCollapsed: false });
 
       const events = wrapper.emitted('collapseChange');
       expect(events).toBeTruthy();
       expect(events?.[0]).toEqual([false, 560]);
+    });
+
+    it('折叠后再展开应恢复侧栏宽度', async () => {
+      wrapper = mount(ChatContainer, {
+        props: {
+          ...defaultProps,
+          asideCollapsed: false,
+          resizeProps: { initialDivide: 560 },
+        },
+      });
+      await nextTick();
+
+      await wrapper.setProps({ asideCollapsed: true });
+      expect(wrapper.find('.ai-chat-container').attributes('style')).toContain('--resize-main-width: calc(100% - 0px)');
+
+      await wrapper.setProps({ asideCollapsed: false });
+      expect(wrapper.find('.ai-chat-container').attributes('style')).toContain(
+        '--resize-main-width: calc(100% - 560px)',
+      );
     });
   });
 
@@ -1210,7 +1253,7 @@ describe('ChatContainer', () => {
       expect(providerOptions.renderMode.value).toBe(RenderMode.Share);
     });
 
-    it('renderMode 为 Share 且有 executionGroups 时应开放折叠按钮与侧栏 Tab（只读查看）', async () => {
+    it('renderMode 为 Share 时应开放侧栏 Tab（只读查看）', async () => {
       const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
       mockExecutionGroupsRef.value = [{ id: 'group-1' }];
 
@@ -1218,9 +1261,6 @@ describe('ChatContainer', () => {
         props: { ...defaultProps, messages, renderMode: RenderMode.Share },
       });
       await nextTick();
-
-      // 折叠按钮开放
-      expect(wrapper.find('.collapse-button').exists()).toBe(true);
 
       // 展开侧栏后，Tab（节点详情/证据/执行情况面板）在分享态可见
       getChatContainerExposed(wrapper).addCustomTab({ label: '自定义 Tab', name: 'custom-tab' });
@@ -1283,15 +1323,52 @@ describe('ChatContainer', () => {
       expect(getMountProps(wrapper).getSideTabRenderComponent).toBe(getSideTabRenderComponent);
     });
 
-    it('有搜索关键词且 executionGroups 为空时展开侧栏仍应展示 Tab', async () => {
+    it('无 executionGroups、无产物时 asideCollapsed 为 false 仍应展开并渲染 Tab', async () => {
+      mockExecutionGroupsRef.value = [];
+      mockSessionArtifactsRef.value = [];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, asideCollapsed: false },
+      });
+      await nextTick();
+
+      expect(wrapper.find('.ai-chat-container-tab').exists()).toBe(true);
+      expect(wrapper.find('.ai-chat-container-resize-layout').classes()).not.toContain('ai-is-collapse');
+    });
+
+    it('executionGroups 变空时不应调用 resetCustomTab', async () => {
+      mockExecutionGroupsRef.value = [{ id: 'group-1' }];
+
+      wrapper = mount(ChatContainer, {
+        props: {
+          ...defaultProps,
+          asideCollapsed: false,
+          messages: [createUserMessage('1', 'Hello')],
+        },
+      });
+      await nextTick();
+
+      getChatContainerExposed(wrapper).addCustomTab({ label: '自定义 Tab', name: 'custom-tab' });
+      await nextTick();
+
+      const providerApi = vi.mocked(useCustomTabProvider).mock.results.at(-1)?.value as {
+        resetCustomTab: ReturnType<typeof vi.fn>;
+      };
+      providerApi.resetCustomTab.mockClear();
+
+      mockExecutionGroupsRef.value = [];
+      await nextTick();
+
+      expect(providerApi.resetCustomTab).not.toHaveBeenCalled();
+      expect(wrapper.find('.ai-chat-container-tab').exists()).toBe(true);
+    });
+
+    it('asideCollapsed 为 false 时即使无搜索关键词也应展示 Tab', async () => {
       const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
 
       wrapper = mount(ChatContainer, {
-        props: { ...defaultProps, messages },
+        props: { ...defaultProps, messages, asideCollapsed: false },
       });
-
-      const keywordRef = mockUseMessageGroup.mock.calls.at(-1)?.[0]?.keyword as { value: string };
-      keywordRef.value = 'search';
       await nextTick();
 
       getChatContainerExposed(wrapper).addCustomTab({ label: '自定义 Tab', name: 'custom-tab' });
@@ -1311,12 +1388,10 @@ describe('ChatContainer', () => {
         props: {
           ...defaultProps,
           messages,
+          asideCollapsed: false,
           getSideTabRenderComponent,
         },
       });
-
-      const keywordRef = mockUseMessageGroup.mock.calls.at(-1)?.[0]?.keyword as { value: string };
-      keywordRef.value = 'search';
       await nextTick();
 
       getChatContainerExposed(wrapper).addCustomTab({ label: '自定义 Tab', name: 'custom-tab' });
@@ -1326,11 +1401,26 @@ describe('ChatContainer', () => {
       expect(wrapper.find('.custom-tab-label').exists()).toBe(true);
     });
 
-    it('有 sessionArtifacts 时应 ensureCustomTab 挂上文件产物且不展开、不抢选中', async () => {
-      mockSessionArtifactsRef.value = [
-        { name: '报告.pdf', outputId: 'out-1', size: 1024, type: 'pdf' },
-      ];
-      // 侧栏因执行情况可展开时，文件产物只应静默挂上
+    it('无文件产物时也应常驻挂上文件产物 Tab', async () => {
+      wrapper = mount(ChatContainer, {
+        props: defaultProps,
+      });
+      await nextTick();
+
+      const providerApi = vi.mocked(useCustomTabProvider).mock.results.at(-1)?.value as {
+        ensureCustomTab: ReturnType<typeof vi.fn>;
+        tabs: { value: { name: string }[] };
+      };
+
+      expect(providerApi.ensureCustomTab).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'file-artifact', closable: false, order: -1 }),
+      );
+      expect(providerApi.tabs.value.some(tab => tab.name === 'file-artifact')).toBe(true);
+    });
+
+    it('有 sessionArtifacts 时应 ensureCustomTab 挂上文件产物且不展开', async () => {
+      mockSessionArtifactsRef.value = [{ name: '报告.pdf', outputId: 'out-1', size: 1024, type: 'pdf' }];
+      // 文件产物 Tab 常驻挂上；展开/选中由 useCustomTab 自身规则负责（本用例 mock 只验挂载与不展开）
       mockExecutionGroupsRef.value = [{ messages: [{ id: 't1' }], type: MessageRole.Tool, uid: 'exec-1' }];
 
       wrapper = mount(ChatContainer, {
@@ -1342,7 +1432,6 @@ describe('ChatContainer', () => {
         addCustomTab: ReturnType<typeof vi.fn>;
         ensureCustomTab: ReturnType<typeof vi.fn>;
         isCollapse: { value: boolean };
-        selectedTab: { value: { name: string } };
         tabs: { value: { name: string }[] };
       };
 
@@ -1352,7 +1441,6 @@ describe('ChatContainer', () => {
       expect(providerApi.addCustomTab).not.toHaveBeenCalled();
       expect(providerApi.tabs.value.some(tab => tab.name === 'file-artifact')).toBe(true);
       expect(providerApi.isCollapse.value).toBe(true);
-      expect(providerApi.selectedTab.value.name).toBe('execution');
     });
   });
 

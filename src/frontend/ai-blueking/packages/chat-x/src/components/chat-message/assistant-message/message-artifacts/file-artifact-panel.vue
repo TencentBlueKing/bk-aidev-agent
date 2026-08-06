@@ -1,5 +1,20 @@
 <template>
-  <div class="ai-file-artifact-panel">
+  <!-- 无产物：整块空态，不展示文件列表与预览区 -->
+  <div
+    v-if="!artifacts.length"
+    class="ai-file-artifact-panel is-empty"
+  >
+    <Exception
+      class="ai-file-artifact-panel-empty-exception"
+      scene="part"
+      type="empty"
+    />
+    <div class="ai-file-artifact-panel-empty-text">{{ t('暂无数据') }}</div>
+  </div>
+  <div
+    v-else
+    class="ai-file-artifact-panel"
+  >
     <!-- 左侧：文件列表 + 搜索 -->
     <div class="ai-file-artifact-panel-list">
       <p class="ai-file-artifact-panel-list-title">{{ t('文件列表') }}（{{ artifacts.length }}）</p>
@@ -72,7 +87,7 @@
 <script setup lang="ts">
   import { cloneVNode, computed, shallowRef, watch } from 'vue';
 
-  import { Input, Loading } from 'bkui-vue';
+  import { Exception, Input, Loading } from 'bkui-vue';
 
   import { triggerArtifactDownload, useArtifactPreviewConsumer } from '../../../../composables/use-artifact-preview';
   import { OverflowTips as vOverflowTips } from '../../../../directives/overflow-tips';
@@ -152,6 +167,28 @@
     height: 100%;
     overflow: hidden;
     font-size: var(--ai-font-size, 12px);
+
+    &.is-empty {
+      flex-direction: column;
+      align-items: center;
+      margin-top: 100px;
+    }
+
+    &-empty {
+      &-exception {
+        .exception-image,
+        img {
+          height: 200px;
+        }
+      }
+
+      &-text {
+        margin-top: 16px;
+        font-size: var(--ai-font-size, 12px);
+        line-height: 28px;
+        color: variables.$color-title;
+      }
+    }
 
     &-list {
       display: flex;

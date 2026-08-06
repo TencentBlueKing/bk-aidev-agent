@@ -26,6 +26,7 @@
 
 import {
   type ComputedRef,
+  type Ref,
   type ShallowRef,
   computed,
   ref as deepRef,
@@ -46,6 +47,8 @@ export const EXECUTION_TAB_NAME = 'execution';
 export const DEFAULT_TAB_ORDER = 100;
 
 export function useCustomTabProvider<T extends Record<string, unknown>>(options: {
+  /** 侧栏折叠态；由容器传入受控 ref（如 ChatContainer 的 v-model:asideCollapsed），缺省内部自持 */
+  collapsed?: Ref<boolean>;
   /** 执行情况 Tab 是否展示，缺省 true；传 getter 以保持响应式 */
   executionTabVisible?: () => boolean | undefined;
   onTabChange?: (tab: CustomTab<T>) => void;
@@ -58,7 +61,9 @@ export function useCustomTabProvider<T extends Record<string, unknown>>(options:
   };
   const tabs = shallowRef<CustomTab<T>[]>([EXECUTION_TAB]);
   const selectedTab = deepRef<CustomTab<T>>(EXECUTION_TAB);
-  const isCollapse = shallowRef(true);
+  const isCollapse = options.collapsed ?? shallowRef(true);
+  /** 是否已被主动切换过；未切换前选中态跟随 Tab 栏首位 */
+  const hasManualSelection = shallowRef(false);
 
   /** 执行情况显隐由外部配置控制，缺省可见 */
   const isExecutionVisible = computed(() => options.executionTabVisible?.() ?? true);
@@ -110,27 +115,38 @@ export function useCustomTabProvider<T extends Record<string, unknown>>(options:
       isCollapse.value = true;
     }
   };
-  const selectCustomTab = (tab: CustomTab<T>) => {
+  /** 写入选中态并派发回调，不影响「是否被主动切换过」的标记 */
+  const applySelectedTab = (tab: CustomTab<T>) => {
     selectedTab.value = tab ?? EXECUTION_TAB;
     options.onTabChange?.(tab);
+  };
+
+  const selectCustomTab = (tab: CustomTab<T>) => {
+    hasManualSelection.value = true;
+    applySelectedTab(tab);
   };
 
   const resetCustomTab = () => {
     tabs.value = [EXECUTION_TAB];
     selectedTab.value = EXECUTION_TAB;
+    hasManualSelection.value = false;
     isCollapse.value = true;
   };
 
-  /**
-   * 选中 Tab 被隐藏时（如执行情况被配置隐藏），不渲染其内容，自动切到首个可见 Tab；
-   * 无可见 Tab 时保持原选中，由模板内容守卫兜底为空。
-   */
   watch(displayTabs, list => {
-    if (isTabVisible(selectedTab.value)) {
+    if (!list.length) {
       return;
     }
-    if (list.length) {
-      selectCustomTab(list[0]);
+    // 未被主动切换前，默认选中 Tab 栏首位（order 最小），如常驻的「文件产物」
+    if (!hasManualSelection.value) {
+      if (selectedTab.value.name !== list[0].name) {
+        applySelectedTab(list[0]);
+      }
+      return;
+    }
+    // 选中 Tab 被隐藏时（如执行情况被配置隐藏），其内容不再渲染，自动切到首个可见 Tab
+    if (!isTabVisible(selectedTab.value)) {
+      applySelectedTab(list[0]);
     }
   });
 

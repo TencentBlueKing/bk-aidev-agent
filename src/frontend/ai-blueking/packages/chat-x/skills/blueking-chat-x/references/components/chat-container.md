@@ -21,7 +21,7 @@
 
 ## 核心能力
 
-- **分栏布局**：基于 `ResizeLayout` 的可拖拽分栏；**侧栏是否展示 Tab / 执行摘要、以及分栏是否进入折叠样式（`ai-is-collapse`）以 `executionGroups` 与执行情况搜索关键词 `keyword` 共同决定**（`executionGroups` 由 `useMessageGroup` 从消息中过滤工具调用与 FlowAgent 记录；`keyword` 来自 `ExecutionSummary` 的 `@update-keyword`）。当 `executionGroups` 为空且未输入搜索词时，侧栏 Tab 与执行摘要不展示；**用户正在搜索执行情况时（`keyword` 非空），即使暂无执行类消息也会保留侧栏**，避免搜索态被折叠
+- **分栏布局**：基于 `ResizeLayout` 的可拖拽分栏，侧栏固定从右侧展开且无内置折叠按钮；**侧栏展开 / 折叠由外部通过 `v-model:asideCollapsed` 判断**，容器只负责渲染与回写。侧栏是否渲染只取决于折叠态与是否存在可见 Tab，与 `executionGroups`、`keyword`、文件产物有无均无关；无数据时侧栏照常展开，由 `ExecutionSummary` / `FileArtifactPanel` 各自展示空态
 - **消息分组**：内置 `useMessageGroup` 自动处理消息分组、Tool 合并、Loading 注入
 - **输入区状态推导**：传给 `MessageContainer` 与 `ChatInput` 的 `messageStatus` 为内部计算值 `inputStatus`：当分组中存在 id 为 `LOADING_MESSAGE_ID`（`'__loading__'`，由 `useMessageGroup` 注入的占位 Loading 消息）时，对内使用 `MessageStatus.Fetching`；否则使用外部传入的 `messageStatus`。用于在「已发用户消息、尚未流式」阶段与流式中一致地展示停止能力，并避免输入区重复发送
 - **待审批发送阻塞**：当消息中存在 `AIDevToolApproval` 且状态为 `pending` / `draft` 的中断项时，`useMessageGroup` 会返回待审批提示，容器在输入区上方展示提示并通过 `ChatInput.sendDisabledTip` 禁止继续发送
@@ -40,15 +40,14 @@
 ai-chat-container（:data-ai-size="size"）
 ├── Loading（chatLoading 时）
 └── ResizeLayout
-    ├── aside（侧边栏）
-    │   ├── .ai-full-screen-wrapper（全屏目标容器，ref=fullScreenRef）
+    ├── aside（侧边栏，固定右侧）
+    │   └── .ai-full-screen-wrapper（全屏目标容器，ref=fullScreenRef）
     │   │   ├── Tab 标签页
     │   │   │   ├── 执行情况（默认 Tab）
     │   │   │   ├── 自定义 Tab × N（可关闭；标签可由 `getSideTabRenderComponent` 自定义）
     │   │   │   └── #setting 插槽 → 全屏/退出全屏 ToolBtn（FullScreenIcon / UnFullScreenIcon）
     │   │   ├── ExecutionSummary（执行情况 Tab 内容）
     │   │   └── 自定义 Tab 组件（`getSideRenderComponent` 优先，否则 `data.component`；可向子组件注入 #locateButton）
-    │   └── collapse-button（折叠按钮，CollapsedIcon；折叠时图标旋转，hover 高亮 #3a84ff）
     └── main（主内容区）
         ├── MessageContainer（有消息时）
         │   ├── #group 插槽（可选，自定义消息组内容）
@@ -137,17 +136,21 @@ ai-chat-container（:data-ai-size="size"）
 
 侧边栏默认包含「执行情况」Tab，展示所有工具调用和 FlowAgent 类型的 Activity 消息。支持关键词搜索过滤和点击定位到对话中的消息位置。
 
-**展示条件**：当 `executionGroups` 为空且 `keyword` 为空时，不渲染侧栏 Tab 与 `ExecutionSummary`（折叠按钮亦隐藏）；主区域仍可正常展示 `messages` 中的对话内容。用户在执行情况中输入搜索词后，侧栏会保持展示以显示「搜索结果为空」等状态。`renderMode === Share` 时侧栏隐藏，且分栏会应用与折叠一致的样式。
+**展示条件**：`asideCollapsed === false` 且存在可见 Tab 即展开侧栏，无执行数据时 `ExecutionSummary` 展示自身空态。`renderMode === Share` 同样按折叠态展示侧栏（只读查看），仅底部输入区隐藏。
 
-**自定义 Tab 联动**：当 `executionGroups` 变为空且搜索词已清空时，容器会**自动重置自定义 Tab**（`resetCustomTab`），避免残留节点详情等 Tab；若用户仍在搜索（`keyword` 非空），不会触发重置。
+**展开 / 折叠由外部判断（严格受控）**：传入 `asideCollapsed` 后折叠态一律以外部值为准，内部展开动作（文件卡片预览、`addCustomTab` 打开节点详情）只发 `update:asideCollapsed` 请求，外部不改就不展开 —— 必须用 `v-model:asideCollapsed`，只写 `:aside-collapsed` 会让内部入口失效。不传该 prop 时退化为内部状态（默认折叠）。不会因数据变空而自动收起或重置自定义 Tab。
 
 ```vue
 <template>
+  <!-- 业务方自行提供展开/收起入口；可复用包内 CollapsedAsideIcon -->
+  <button @click="asideCollapsed = !asideCollapsed">
+    {{ asideCollapsed ? '展开侧栏' : '收起侧栏' }}
+  </button>
   <ChatContainer
     v-model="inputValue"
+    v-model:aside-collapsed="asideCollapsed"
     :messages="messages"
     :message-status="messageStatus"
-    placement="left"
     :on-send-message="handleSendMessage"
     :on-agent-action="handleAgentAction"
     @stop-streaming="handleStopStreaming"
@@ -156,24 +159,20 @@ ai-chat-container（:data-ai-size="size"）
 </template>
 
 <script setup lang="ts">
+  import { shallowRef } from 'vue';
+  // import { CollapsedAsideIcon } from '@blueking/chat-x';
+
+  const asideCollapsed = shallowRef(true);
+
   const handleCollapseChange = (isCollapse: boolean, resizeAsideWidth: number) => {
     console.log('侧边栏折叠:', isCollapse, '宽度:', resizeAsideWidth);
   };
 </script>
 ```
 
-**渲染效果**（包含工具调用消息时，侧边栏自动展示「执行情况」）
+**布局与入口**：侧边栏固定从**右侧**展开（内部 `ResizeLayout` 的 `placement` 恒为 `right`），无 `placement` prop，也不再内置折叠按钮；展开 / 收起入口由业务方自行提供。
 
-侧边栏放置方向通过 `placement` 控制：
-
-| `placement` | 侧边栏位置   | 折叠按钮位置 | 折叠图标旋转 |
-| ----------- | ------------ | ------------ | ------------ |
-| `left`      | 左侧（默认） | 主区域左边缘 | 折叠时旋转 180° |
-| `right`     | 右侧         | 主区域右边缘 | 默认旋转 180°，折叠时恢复 0° |
-
-> 折叠按钮仅展示 `CollapsedIcon`（不再显示「执行情况」文案），通过图标旋转方向指示展开/折叠状态。
-
-**placement 对比**（左右两种布局）
+**动画**：宽度过渡 `0.3s cubic-bezier(0.4, 0, 0.2, 1)` + 内容淡入淡出；动画期间内容锁定展开态宽度（`--resize-aside-width`），拖拽调宽时过渡自动关闭。
 
 ## 侧栏全屏
 
@@ -187,7 +186,7 @@ ai-chat-container（:data-ai-size="size"）
 
 ## 自定义 Tab
 
-通过 `ref` 获取组件实例后，使用 `addCustomTab` / `removeCustomTab` 动态管理侧边栏 Tab。若 **`executionGroups` 变为空且搜索词已清空**，容器会清空自定义 Tab 状态（与侧栏执行数据联动，见上文「侧边栏与执行摘要」）。
+通过 `ref` 获取组件实例后，使用 `addCustomTab` / `removeCustomTab` 动态管理侧边栏 Tab。「文件产物」Tab 为**常驻** Tab（无产物时由 `FileArtifactPanel` 展示空态），其余自定义 Tab 由业务自行增删，容器不会因数据变空而重置。
 
 ### 侧栏渲染扩展
 
@@ -531,9 +530,8 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | getSideRenderComponent      | `(h, props?) => VNode \| undefined`                                          | —        | 自定义侧栏内容区渲染；未返回时使用 `selectedTab.data.component`                                                                               |
 | getSideTabRenderComponent   | `(h, tab, { removeCustomTab }) => VNode \| undefined`                        | —        | 自定义侧栏 Tab 标签渲染；未返回时使用默认图标 + 文案 + 关闭按钮                                                                               |
 | openingRemark               | `string`                                                                     | —        | 开场白，无消息时显示，支持 Markdown                                                                                                           |
-| placement          | `'left' \| 'right'`                                                          | `'left'` | 侧边栏位置                                                                                                                                    |
 | size               | `'normal' \| 'small'`                                                        | `'small'` | 字号主题档位：`small` 为 12px 基准，`normal` 为 14px 基准；根节点设置 `data-ai-size` 并注入 `useGlobalConfig`                                |
-| resizeProps        | `{ disabled?: boolean; initialDivide?: number \| string; max?: number; min?: number }` | —        | 透传给内部 `ResizeLayout` 的可选配置，与默认 `collapsible: false`、`immediate: true`、`min: 400` 合并；`placement` 始终取自本组件 `placement`；`initialDivide` 可为像素数字或百分比等字符串（与 bkui ResizeLayout 一致）。**数字型** `initialDivide` 还会作为内部侧栏宽度初值（驱动 `--resize-main-width`，并在展开时作为 `collapseChange` 的 `width`）；百分比等字符串则回退为 `400` |
+| resizeProps        | `{ disabled?: boolean; initialDivide?: number \| string; max?: number; min?: number }` | —        | 透传给内部 `ResizeLayout` 的可选配置，与默认 `collapsible: false`、`immediate: true`、`min: 400` 合并；`placement` 固定为 `right`，不可覆盖；`initialDivide` 可为像素数字或百分比等字符串（与 bkui ResizeLayout 一致）。**数字型** `initialDivide` 还会作为内部侧栏宽度初值（驱动 `--resize-main-width`，并在展开时作为 `collapseChange` 的 `width`）；百分比等字符串则回退为 `400` |
 | onCustomTabChange  | `(tab: CustomTab) => Promise<any>`                                           | —        | 自定义 Tab 切换回调，返回值作为 Tab 组件 props                                                                                                |
 
 > 完整 Props 列表请参考 [ChatInput](/components/input/chat-input) 和 [MessageContainer](/components/setup/message-container) 文档。
@@ -545,7 +543,8 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | modelValue       | `string \| TagSchema` | 输入框内容，支持纯文本或标签结构                             |
 | selectedShortcut | `Shortcut \| null`    | 当前选中的快捷指令                                           |
 | cite             | `string`              | 引用内容                                                     |
-| renderMode       | `RenderMode`          | 渲染模式（默认 `Chat`）。`Share` 模式隐藏侧边栏和折叠按钮；`Test` 模式隐藏分享按钮 |
+| renderMode       | `RenderMode`          | 渲染模式（默认 `Chat`）。`Share` 模式隐藏底部输入区；`Test` 模式隐藏分享按钮 |
+| asideCollapsed   | `boolean`             | 侧栏折叠态，**严格受控**：传入后一律以外部值为准，内部展开动作（文件预览、`addCustomTab`）只发 `update:asideCollapsed`，外部不改则不展开；不传时组件内部自持（默认折叠） |
 
 ### Events
 
@@ -556,6 +555,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | shortcutSubmit | `(formModel: Record<string, unknown>)` | 提交快捷指令表单                     |
 | confirmShare   | `(messages: Message[])`                | 确认分享，携带选中的消息             |
 | collapseChange | `(isCollapse: boolean, width: number)` | 侧边栏折叠/展开状态变化              |
+| update:asideCollapsed | `(collapsed: boolean)`          | 折叠态变更请求（`v-model:asideCollapsed`）；受控时是否展开取决于外部是否更新该值 |
 | selectShortcut | `(shortcut: Shortcut)`                 | 选择快捷指令（继承自 ChatInput）     |
 | deleteShortcut | —                                      | 删除已选快捷指令（继承自 ChatInput） |
 
@@ -585,10 +585,10 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 
 通过 `v-model:render-mode` 控制容器的渲染行为。`ChatContainer` 会把当前 `renderMode` 注入给后代组件，供内容渲染根据场景收敛交互能力。
 
-| `renderMode` | 侧边栏 Tab / 折叠按钮 | 底部输入区域                      | MessageTools 工具栏   | 说明                             |
+| `renderMode` | 侧边栏 Tab             | 底部输入区域                      | MessageTools 工具栏   | 说明                             |
 | ------------ | ---------------------- | --------------------------------- | --------------------- | -------------------------------- |
 | `Chat`       | 正常显示               | 正常显示（ChatInput / ShortcutRender / SelectionFooter） | 全部工具按钮          | 默认对话模式                     |
-| `Share`      | **隐藏**               | **隐藏**                          | **隐藏**（多选模式）  | 分享预览模式，仅展示消息；FlowAgent 节点会隐藏耗时和「详情」入口 |
+| `Share`      | 正常显示（开放只读查看） | **隐藏**                          | **隐藏**（多选模式）  | 分享预览模式；开放流程智能体侧栏详情/证据/执行情况与耗时，仅隐藏「重试/跳过」等交互 |
 | `Test`       | 正常显示               | 正常显示                          | 过滤掉「分享」按钮    | 测试/嵌入模式，隐藏分享入口     |
 
 ```vue
