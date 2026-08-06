@@ -2,7 +2,7 @@
 
 > 导入：`import { useCustomTab } from '@blueking/chat-x'` ｜ since 1.0.0
 
-useCustomTabProvider 返回 tabs、selectedTab、isCollapse 及 add/remove/selectCustomTab，并通过 provide 共享；可选 onTabChange 在切换时拉取数据。 useCustomTabConsumer 在后代注入同一套 API，常用于侧栏动态节点详情等。EXECUTION_TAB_NAME 标识默认「执行情况」Tab。 ChatContainer 侧栏集成 Provider 与 Tab UI。
+useCustomTabProvider 返回 tabs、selectedTab、isCollapse 及 add/remove/selectCustomTab，并通过 provide 共享；可选 onTabChange 在切换时拉取数据、可选 collapsed 注入受控折叠态 ref。 useCustomTabConsumer 在后代注入同一套 API，常用于侧栏动态节点详情等。EXECUTION_TAB_NAME 标识默认「执行情况」Tab。 ChatContainer 侧栏集成 Provider 与 Tab UI。
 
 **关联**：chat-container（Provider 与侧栏 Tab 主场景）
 
@@ -20,11 +20,13 @@ Provider/Consumer 模式的自定义 Tab 管理，用于 `ChatContainer` 侧边�
 
 ```typescript
 function useCustomTabProvider<T extends Record<string, unknown>>(options: {
+  // 侧栏折叠态；由容器传入受控 ref（如 ChatContainer 的 v-model:asideCollapsed），缺省内部自持
+  collapsed?: Ref<boolean>;
   onTabChange?: (tab: CustomTab<T>) => void;
 }): {
   tabs: ShallowRef<CustomTab<T>[]>;
   selectedTab: Ref<CustomTab<T>>;
-  isCollapse: ShallowRef<boolean>;
+  isCollapse: Ref<boolean>;
   addCustomTab: (tab: CustomTab<T>) => void;
   removeCustomTab: (tabName: string) => void;
   selectCustomTab: (tab: CustomTab<T>) => void;
@@ -98,7 +100,8 @@ tabManager?.removeCustomTab('node-detail-123');
 | --------------- | --------------------------- | ------------------------------------------------- |
 | tabs            | `ShallowRef<CustomTab[]>`   | 所有 Tab 列表（含默认的执行情况 Tab）             |
 | selectedTab     | `Ref<CustomTab>`            | 当前选中的 Tab                                    |
-| isCollapse      | `ShallowRef<boolean>`       | 侧边栏折叠状态；`addCustomTab` 时自动设为 `false` |
+| isCollapse      | `Ref<boolean>`              | 侧边栏折叠状态；传入 `collapsed` 时即该受控 ref（读写都作用于外部），否则为内部状态；`addCustomTab` 时自动设为 `false` |
+| selectedTab（默认选中） | `Ref<CustomTab>`    | 未调用过 `selectCustomTab` / `addCustomTab` 前跟随 Tab 栏首位（`order` 最小），因此常驻的「文件产物」（`order: -1`）为侧栏默认面板 |
 | addCustomTab    | `(tab: CustomTab) => void`  | 添加 Tab（同名 Tab 不重复添加）                   |
 | removeCustomTab | `(tabName: string) => void` | 移除指定 Tab                                      |
 | selectCustomTab | `(tab: CustomTab) => void`  | 切换到指定 Tab，触发 `onTabChange` 回调           |

@@ -85,32 +85,30 @@ const { addCustomTab, ensureCustomTab, removeCustomTab } = useCustomTabProvider(
 // 会话级文件产物聚合已内聚在 useMessageGroup，直接消费
 const { sessionArtifacts } = useMessageGroup({ keyword, messages, selectedUserMessages });
 
+const FILE_ARTIFACT_TAB = {
+  closable: false,
+  label: t('文件产物'),
+  name: FILE_ARTIFACT_TAB_NAME,
+  order: -1,
+};
+
+// 常驻挂载：不随产物有无增删，无产物时由面板展示空态
+ensureCustomTab(FILE_ARTIFACT_TAB);
+
 const { activeArtifactId, setActiveArtifactId } = useArtifactPreviewProvider({
   getOnArtifactClick: () => props.onArtifactClick,
   // 点击文件卡片：展开侧栏并选中「文件产物」Tab
   onOpen: () => {
-    addCustomTab({
-      closable: false,
-      label: t('文件产物'),
-      name: FILE_ARTIFACT_TAB_NAME,
-      order: -1,
-    });
+    addCustomTab(FILE_ARTIFACT_TAB);
   },
 });
 
-// 有产物时静默挂上 Tab（不抢焦点）；无产物时清理
+// 仅维护命中态：无产物清空，命中项失效时回落到第一个
 watch(sessionArtifacts, list => {
   if (!list.length) {
-    removeCustomTab(FILE_ARTIFACT_TAB_NAME);
     setActiveArtifactId('');
     return;
   }
-  ensureCustomTab({
-    closable: false,
-    label: t('文件产物'),
-    name: FILE_ARTIFACT_TAB_NAME,
-    order: -1,
-  });
   if (!list.some(item => item.outputId === activeArtifactId.value)) {
     setActiveArtifactId(list[0].outputId);
   }
@@ -221,8 +219,12 @@ ArtifactFileCard（点击）
                  └─ FileArtifactPanel（列表 + 下载头，@select → setActiveArtifactId）
                       └─ ArtifactPreviewHost（loader + 分类型 renderer）
 
-sessionArtifacts 变化（有产物）
-  └─ ensureCustomTab(FILE_ARTIFACT_TAB_NAME) 静默挂上，不抢当前选中（如执行情况）
+容器初始化
+  └─ ensureCustomTab(FILE_ARTIFACT_TAB_NAME) 常驻挂上（不展开侧栏）；因 order:-1 排在首位，
+     未主动切换过 Tab 时会成为默认选中面板；无产物时由面板展示整块空态
+
+sessionArtifacts 变化
+  └─ 仅维护命中态（无产物清空，命中项失效回落第一个）；不增删 Tab
 ```
 
 分类型预览策略见 [FileArtifactPanel 预览机制](../components/message/file-artifact-panel#预览机制)。
@@ -232,7 +234,7 @@ sessionArtifacts 变化（有产物）
 - **职责单一**：composable 不直接调用 `useCustomTab`，侧栏 Tab 打开逻辑由 `onOpen` 注入；也不做正文 fetch / iframe 渲染
 - **ShallowRef 优先**：`activeArtifactId` 使用 `shallowRef`，避免不必要的深层响应式开销
 - **Consumer 兜底**：`useArtifactPreviewConsumer` 无 Provider 时返回 `undefined`，文件卡片在无容器上下文时自动不可点击
-- **与 useCustomTab 协作**：点击卡片走 `addCustomTab`（展开 + 选中）；会话已有产物时走 `ensureCustomTab`（只挂载，不抢焦点）；无文件产物时由容器 `removeCustomTab` 清理
+- **与 useCustomTab 协作**：点击卡片走 `addCustomTab`（展开 + 选中）；容器初始化时走 `ensureCustomTab` 常驻挂载（不展开；因 `order: -1` 在未主动切换前会成为默认选中），无产物也不移除，由面板展示空态
 
 ## 关联组件
 

@@ -125,14 +125,6 @@ describe('ExecutionSummary', () => {
       expect(wrapper.find('.ai-execution-summary').exists()).toBe(true);
     });
 
-    it('应该渲染搜索输入框', () => {
-      wrapper = mount(ExecutionSummary, {
-        props: { messageGroups: [] },
-      });
-
-      expect(wrapper.find('.mock-input').exists()).toBe(true);
-    });
-
     it('有数据时应该渲染消息组列表', () => {
       const groups = [
         createMessageGroup({ userMessageTitle: '第一条消息' }),
@@ -216,6 +208,24 @@ describe('ExecutionSummary', () => {
       });
 
       expect(wrapper.find('.ai-execution-summary-content-empty-text').text()).toContain('暂无数据');
+    });
+
+    it('无数据时不应渲染搜索 header', () => {
+      wrapper = mount(ExecutionSummary, {
+        props: { messageGroups: [] },
+      });
+
+      expect(wrapper.find('.ai-execution-summary-header').exists()).toBe(false);
+    });
+
+    it('有数据时应渲染搜索 header', () => {
+      const group = createMessageGroup({ userMessageTitle: '测试消息' });
+
+      wrapper = mount(ExecutionSummary, {
+        props: { messageGroups: [group] },
+      });
+
+      expect(wrapper.find('.ai-execution-summary-header').exists()).toBe(true);
     });
   });
 

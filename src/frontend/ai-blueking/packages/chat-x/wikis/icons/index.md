@@ -1,12 +1,12 @@
 # 图标
 
-`@blueking/chat-x` 内置了 51 个 SVG 图标，通过 Vue `h()` 函数预创建为 VNode 对象，可直接用于模板渲染。
+`@blueking/chat-x` 内置了 52 个 SVG 图标，通过 Vue `h()` 函数预创建为 VNode 对象，可直接用于模板渲染。
 
 <script setup lang="ts">
 import { ref, defineComponent, cloneVNode } from 'vue';
 import {
   CopyIcon, CiteIcon, RebuildIcon, ShareIcon, LikeIcon, UnLikeIcon,
-  DeleteIcon, EditIcon, ActiveLikeIcon, ActiveUnLikeIcon,
+  DeleteIcon, EditIcon, ActiveLikeIcon, ActiveUnLikeIcon, CollapsedAsideIcon,
   SendMessageIcon, LoadingMessageIcon, ThinkingIcon, CollapsedIcon,
   ErrorIcon, ContentLoadingIcon, ArrowDownIcon,
   DocumentIcon, PreviewIcon, TargetIcon, RemoveIcon,
@@ -56,6 +56,7 @@ const groups = [
       { name: 'EditIcon', icon: w(EditIcon) },
       { name: 'ActiveLikeIcon', icon: w(ActiveLikeIcon) },
       { name: 'ActiveUnLikeIcon', icon: w(ActiveUnLikeIcon) },
+      { name: 'CollapsedAsideIcon', icon: w(CollapsedAsideIcon) },
     ],
   },
   {
@@ -235,6 +236,7 @@ import { CopyIcon, LikeIcon, ToolIconsMap } from '@blueking/chat-x';
 | `EditIcon`         | `edit`           | `ai-edit-icon`           | 编辑             |
 | `ActiveLikeIcon`   | `activeLike`     | `ai-active-like-icon`    | 点赞（激活态）   |
 | `ActiveUnLikeIcon` | `activeUnLike`   | `ai-active-un-like-icon` | 不满意（激活态） |
+| `CollapsedAsideIcon` | —              | `ai-collapsed-icon`      | 侧栏展开/收起入口（不在 `ToolIconsMap`；业务方自建折叠按钮时可用） |
 
 ```typescript
 import { ToolIconsMap, type ToolIcons } from '@blueking/chat-x';

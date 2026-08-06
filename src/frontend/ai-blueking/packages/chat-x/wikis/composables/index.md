@@ -128,7 +128,7 @@ const { tabs, selectedTab, isCollapse, addCustomTab, ensureCustomTab, removeCust
 const tabManager = useCustomTabConsumer();
 // 展开并选中
 tabManager?.addCustomTab({ name: 'detail', label: '详情', data: { component: DetailComp } });
-// 仅挂载，不抢焦点
+// 仅挂载不展开；未主动切换过时选中会跟随 Tab 栏首位（order 更小者）
 tabManager?.ensureCustomTab({ name: 'file-artifact', label: '文件产物', closable: false, order: -1 });
 ```
 

@@ -1,6 +1,9 @@
 <template>
   <div class="ai-execution-summary">
-    <div class="ai-execution-summary-header">
+    <div
+      v-if="messageGroups.length"
+      class="ai-execution-summary-header"
+    >
       <Input
         v-model="keyword"
         class="ai-execution-summary-header-input"
@@ -55,6 +58,7 @@
         <div class="ai-execution-summary-content-empty">
           <Exception
             class="empty-exception"
+            scene="part"
             type="empty"
           />
           <div class="ai-execution-summary-content-empty-text">
@@ -116,6 +120,8 @@
   };
 </script>
 <style lang="scss">
+  @use '../../styles/variables.scss' as variables;
+
   .ai-execution-summary {
     display: flex;
     flex: 1;
@@ -201,13 +207,20 @@
         display: flex;
         flex-direction: column;
         align-items: center;
-        justify-content: center;
         width: 100%;
+        margin-top: 100px;
 
         .empty-exception {
           img {
             height: 200px;
           }
+        }
+
+        &-text {
+          margin-top: 16px;
+          font-size: var(--ai-font-size, 12px);
+          line-height: 28px;
+          color: variables.$color-title;
         }
       }
     }

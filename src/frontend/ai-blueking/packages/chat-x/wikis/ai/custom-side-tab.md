@@ -21,7 +21,7 @@ sinceVersion: '2.1.0'
 
 ## 概述
 
-`ChatContainer` 右侧（或 `placement` 指定侧）侧栏顶部为 **Tab 标签栏**：默认包含固定的「执行情况」Tab，以及由 `addCustomTab` 动态追加的自定义 Tab。
+`ChatContainer` 右侧侧栏顶部为 **Tab 标签栏**：默认包含固定的「执行情况」Tab、「文件产物」常驻 Tab，以及由 `addCustomTab` 动态追加的自定义 Tab。
 
 应用层可通过 **`getSideTabRenderComponent`** 按 Tab 粒度自定义**标签区域**的展示（图标、文案、关闭按钮、徽章等），而不改动 Tab 的 `name` / `label` 数据模型与 `addCustomTab` 流程。
 
@@ -146,7 +146,7 @@ const getSideTabRenderComponent = (createElement, tab, { removeCustomTab }) => {
 };
 ```
 
-> 自定义标签时若未提供关闭入口，用户只能依赖其它逻辑调用 `removeCustomTab`，或等待 `executionGroups` 清空后容器 `resetCustomTab`。
+> 自定义标签时若未提供关闭入口，用户只能依赖其它逻辑调用 `removeCustomTab`；容器不会因执行数据变空而自动 `resetCustomTab`（仅组件卸载时重置）。
 
 ## Playground 参考
 
