@@ -179,6 +179,7 @@ describe('FileArtifactPanel', () => {
     expect(iframe.attributes('src')).toBe('https://example.com/x.pdf');
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(resolveArtifactUrls).toHaveBeenCalledTimes(1);
+    expect(resolveArtifactUrls).toHaveBeenCalledWith(artifact);
     vi.unstubAllGlobals();
   });
 

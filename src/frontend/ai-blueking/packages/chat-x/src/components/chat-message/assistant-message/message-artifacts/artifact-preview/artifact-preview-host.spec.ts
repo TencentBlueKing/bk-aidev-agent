@@ -81,10 +81,24 @@ describe('ArtifactPreviewHost', () => {
     const resolveArtifactUrls = vi.fn().mockResolvedValue({
       preview_url: 'https://example.com/file.pdf',
     });
-    wrapper = mountHost(createFile(), createPreviewContext({ resolveArtifactUrls }));
+    const file = createFile();
+    wrapper = mountHost(file, createPreviewContext({ resolveArtifactUrls }));
     await flushPromises();
 
+    // 常规加载只传 file，不传第二参（避免 (file, undefined)）
+    expect(resolveArtifactUrls).toHaveBeenCalledTimes(1);
+    expect(resolveArtifactUrls).toHaveBeenCalledWith(file);
     expect(wrapper.find('.ai-artifact-url-iframe-preview').attributes('src')).toBe('https://example.com/file.pdf');
+  });
+
+  it('无取链能力时应展示空态', async () => {
+    wrapper = mountHost(
+      createFile(),
+      createPreviewContext({ canResolveArtifactUrl: computed(() => false) }),
+    );
+    await flushPromises();
+
+    expect(wrapper.find('.ai-artifact-preview-host-empty').exists()).toBe(true);
   });
 
   it('切换不同 outputId 的文件时应重新加载预览', async () => {
@@ -100,6 +114,7 @@ describe('ArtifactPreviewHost', () => {
     await flushPromises();
 
     expect(resolveArtifactUrls).toHaveBeenCalledTimes(2);
+    expect(resolveArtifactUrls).toHaveBeenNthCalledWith(1, firstFile);
     expect(resolveArtifactUrls).toHaveBeenLastCalledWith(secondFile);
   });
 
@@ -116,6 +131,25 @@ describe('ArtifactPreviewHost', () => {
     await flushPromises();
 
     expect(resolveArtifactUrls).toHaveBeenCalledTimes(1);
+  });
+
+  it('相同 outputId 但 type 变更时应重新加载预览', async () => {
+    const resolveArtifactUrls = vi.fn()
+      .mockResolvedValueOnce({ preview_url: 'https://example.com/a.pdf' })
+      .mockResolvedValueOnce({ download_url: 'https://example.com/a.txt' });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve('txt') }));
+    const firstFile = createFile({ name: 'a.pdf', outputId: 'same', type: AIFileType.Pdf });
+    const secondFile = createFile({ name: 'a.txt', outputId: 'same', type: AIFileType.Txt });
+    wrapper = mountHost(firstFile, createPreviewContext({ resolveArtifactUrls }));
+    await flushPromises();
+
+    await wrapper.setProps({ file: secondFile });
+    await flushPromises();
+
+    expect(resolveArtifactUrls).toHaveBeenCalledTimes(2);
+    expect(resolveArtifactUrls).toHaveBeenNthCalledWith(1, firstFile);
+    expect(resolveArtifactUrls).toHaveBeenLastCalledWith(secondFile);
+    expect(wrapper.find('.ai-artifact-txt-preview').text()).toBe('txt');
   });
 
   it('html 文件应使用 iframe srcdoc 展示下载内容', async () => {
@@ -148,6 +182,22 @@ describe('ArtifactPreviewHost', () => {
 
     expect(fetchSpy).toHaveBeenCalledWith('https://example.com/file.txt', expect.any(Object));
     expect(wrapper.find('.ai-artifact-txt-preview').text()).toBe('文本预览内容');
+  });
+
+  it('json 文件应按 txt 直渲染下载内容', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve('{"a":1}') });
+    vi.stubGlobal('fetch', fetchSpy);
+    const resolveArtifactUrls = vi.fn().mockResolvedValue({
+      download_url: 'https://example.com/file.json',
+    });
+    wrapper = mountHost(
+      createFile({ name: 'file.json', type: AIFileType.Json }),
+      createPreviewContext({ resolveArtifactUrls }),
+    );
+    await flushPromises();
+
+    expect(fetchSpy).toHaveBeenCalledWith('https://example.com/file.json', expect.any(Object));
+    expect(wrapper.find('.ai-artifact-txt-preview').text()).toBe('{"a":1}');
   });
 
   it('markdown 文件应将下载内容传给 MarkdownContent', async () => {

@@ -187,15 +187,17 @@ describe('ArtifactFileCard', () => {
       const resolveArtifactUrls = vi.fn().mockResolvedValue({
         download_url: 'https://example.com/download',
       });
+      const file = createFile();
       wrapper = mount(ArtifactFileCard, {
         global: { provide: { [ARTIFACT_PREVIEW_TOKEN]: createPreviewContext({ resolveArtifactUrls }) } },
-        props: { file: createFile() },
+        props: { file },
       });
 
       await wrapper.find('.ai-artifact-file-card-download').trigger('click');
       await flushPromises();
 
       expect(resolveArtifactUrls).toHaveBeenCalledTimes(1);
+      expect(resolveArtifactUrls).toHaveBeenCalledWith(file);
       expect(clickSpy).toHaveBeenCalledTimes(1);
       clickSpy.mockRestore();
     });
