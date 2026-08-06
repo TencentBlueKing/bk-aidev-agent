@@ -241,7 +241,13 @@ const assistantMessage = {
     v-for="toolCall in assistantMessage.toolCalls"
     :key="toolCall.id"
     :tool-call="toolCall"
-    :status="toolCall.toolMessage?.status ?? MessageStatus.Pending"
+    :status="
+      !toolCall.toolMessage
+        ? MessageStatus.Pending
+        : toolCall.toolMessage.error
+          ? MessageStatus.Error
+          : (toolCall.toolMessage.status ?? assistantMessage.status)
+    "
   />
 </template>
 ```

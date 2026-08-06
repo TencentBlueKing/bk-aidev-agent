@@ -24,7 +24,13 @@
         :key="toolCall.id"
       >
         <ToolCallRender
-          :status="toolCall.toolMessage?.status ?? status"
+          :status="
+            !toolCall.toolMessage
+              ? MessageStatus.Pending
+              : toolCall.toolMessage.error
+                ? MessageStatus.Error
+                : (toolCall.toolMessage.status ?? status)
+          "
           :tool-call="toolCall"
         />
       </template>
@@ -39,7 +45,7 @@
 <script setup lang="ts">
   import { computed } from 'vue';
 
-  import { MessageContentType } from '../../../ag-ui/types/constants';
+  import { MessageContentType, MessageStatus } from '../../../ag-ui/types/constants';
   import ContentRender from '../../chat-content/content-render/content-render.vue';
   import ToolCallRender from '../../tool-call/toolcall-render/toolcall-render.vue';
   import MessageArtifacts from './message-artifacts/message-artifacts.vue';
