@@ -436,14 +436,12 @@ class BaseResourceManager(abc.ABC):
 
             if access_token:
                 auth_info: dict = {"access_token": access_token}
-            elif username:
+            else:
                 auth_info = {
                     "bk_app_code": app_code,
                     "bk_app_secret": app_secret,
                     "bk_username": username,
                 }
-            else:
-                auth_info = {"bk_app_code": app_code, "bk_app_secret": app_secret}
 
             tool.extra = ToolExtra(header={"X-Bkapi-Authorization": json.dumps(auth_info)})
 
