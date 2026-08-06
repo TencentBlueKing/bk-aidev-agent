@@ -7,7 +7,7 @@ description: >-
   Provider 在 ChatContainer 中创建，Consumer 在深层文件卡片中注入使用。
 aiSummary: >
   useArtifactPreviewProvider 维护 activeArtifactId（值为 outputId），openPreview 命中文件并触发 onOpen 打开侧栏 Tab；
-  并通过 getOnArtifactClick 封装 resolveArtifactUrls（TTL 8 分钟缓存；常规只传 file，force 可强制刷新，并发去重）；
+  并通过 getOnArtifactClick 封装 resolveArtifactUrls（每次重新取链，并发去重）；
   useArtifactPreviewConsumer 在后代注入同一套 API。SessionArtifact 即 AIFileInfo，会话内以 outputId 为唯一键。
   正文加载与分类型渲染不在本 composable，由 FileArtifactPanel 内 ArtifactPreviewHost 完成（重载键 outputId:type）。
   FILE_ARTIFACT_TAB_NAME 标识固定「文件产物」Tab。
@@ -29,7 +29,7 @@ Provider/Consumer 模式的文件产物预览状态管理。Provider 在 `ChatCo
 
 **职责边界**：
 
-- **本 composable**：维护「命中文件」与「URL 解析」（TTL 缓存 + 并发去重；常规 `resolveArtifactUrls(file)`，重试可 `force` 刷新）；打开侧栏 Tab（`addCustomTab`）由容器通过 `onOpen` 注入
+- **本 composable**：维护「命中文件」与「URL 解析」（每次重新取链 + 并发去重）；打开侧栏 Tab（`addCustomTab`）由容器通过 `onOpen` 注入
 - **不在本 composable**：聚合会话文件列表、渲染预览面板、按类型 fetch 正文 / iframe 展示 —— 分别由 `useMessageGroup.sessionArtifacts`、`FileArtifactPanel`、内部 `ArtifactPreviewHost` + `useArtifactPreviewLoader` 承担（预览重载键为 `outputId:type`）
 
 ## 函数签名
@@ -46,7 +46,7 @@ function useArtifactPreviewProvider(options: {
   activeArtifactId: ShallowRef<string>;
   canResolveArtifactUrl: ComputedRef<boolean>;
   openPreview: (payload: OpenArtifactPreviewPayload) => void;
-  resolveArtifactUrls: (file: AIFileInfo, options?: { force?: boolean }) => Promise<ArtifactUrlResult>;
+  resolveArtifactUrls: (file: AIFileInfo) => Promise<ArtifactUrlResult>;
   setActiveArtifactId: (id: string) => void;
 };
 ```
@@ -60,7 +60,7 @@ function useArtifactPreviewConsumer():
       activeArtifactId: Ref<string>;
       canResolveArtifactUrl: ComputedRef<boolean>;
       openPreview: (payload: OpenArtifactPreviewPayload) => void;
-      resolveArtifactUrls: (file: AIFileInfo, options?: { force?: boolean }) => Promise<ArtifactUrlResult>;
+      resolveArtifactUrls: (file: AIFileInfo) => Promise<ArtifactUrlResult>;
       setActiveArtifactId: (id: string) => void;
     };
 ```
@@ -176,7 +176,7 @@ const onArtifactClick = async (file: AIFileInfo) => {
 | activeArtifactId    | `ShallowRef<string>`                      | 当前命中的文件 `outputId`                                            |
 | canResolveArtifactUrl | `ComputedRef<boolean>`                  | 是否具备异步取链能力（有 `onArtifactClick` 时为 true，下载按钮据此显隐） |
 | openPreview         | `(payload: OpenArtifactPreviewPayload) => void` | 由文件卡片触发：以 `file.outputId` 更新命中态、调用 `onOpen`   |
-| resolveArtifactUrls | `(file: AIFileInfo, options?: { force?: boolean }) => Promise<ArtifactUrlResult>` | 调用 `onArtifactClick` 取链；成功结果按 `outputId` 缓存 8 分钟；**常规调用只传 `file`**，仅预览重试 / 强刷传 `{ force: true }`（不要传 `undefined` 作为第二参）；并发去重 |
+| resolveArtifactUrls | `(file: AIFileInfo) => Promise<ArtifactUrlResult>` | 调用 `onArtifactClick` 取链；每次重新获取，不缓存；同文件并发去重 |
 | setActiveArtifactId | `(id: string) => void`                    | 直接设置命中文件 `outputId`；侧栏列表内切换选中时使用                |
 
 ## 类型定义

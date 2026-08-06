@@ -7,7 +7,6 @@ import { AIFileType } from '../../../../../ag-ui/types/file';
 import { useArtifactPreviewLoader } from './use-artifact-preview-loader';
 
 import type { AIFileInfo, ArtifactUrlResult } from '../../../../../ag-ui/types/file';
-import type { ResolveArtifactUrlsOptions } from '../../../../../composables/use-artifact-preview';
 
 const createFile = (type: AIFileType, name = `a.${type}`): AIFileInfo => ({
   name,
@@ -36,7 +35,7 @@ describe('use-artifact-preview-loader', () => {
   const mountLoader = (opts: {
     canResolve?: boolean;
     file: AIFileInfo | undefined;
-    resolveUrls: (file: AIFileInfo, options?: ResolveArtifactUrlsOptions) => Promise<ArtifactUrlResult>;
+    resolveUrls: (file: AIFileInfo) => Promise<ArtifactUrlResult>;
   }) => {
     let api: ReturnType<typeof useArtifactPreviewLoader> | undefined;
     const fileRef = shallowRef(opts.file);
@@ -215,20 +214,6 @@ describe('use-artifact-preview-loader', () => {
     expect(resolveUrls).toHaveBeenCalledTimes(1);
     expect(resolveUrls).toHaveBeenCalledWith(file);
     expect(resolveUrls.mock.calls[0]).toHaveLength(1);
-    wrapper.unmount();
-  });
-
-  it('load({ force: true }) 应向 resolveUrls 传 force', async () => {
-    const resolveUrls = vi.fn().mockResolvedValue({ preview_url: 'https://example.com/a.pdf' });
-    const { api, wrapper } = mountLoader({
-      file: createFile(AIFileType.Pdf),
-      resolveUrls,
-    });
-
-    await api.load({ force: true });
-
-    expect(resolveUrls).toHaveBeenCalledWith(expect.objectContaining({ type: AIFileType.Pdf }), { force: true });
-    expect(api.status.value).toBe('ready');
     wrapper.unmount();
   });
 

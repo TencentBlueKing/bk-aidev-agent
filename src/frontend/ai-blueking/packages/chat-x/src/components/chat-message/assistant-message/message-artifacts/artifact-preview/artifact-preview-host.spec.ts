@@ -235,9 +235,7 @@ describe('ArtifactPreviewHost', () => {
     await flushPromises();
 
     expect(resolveArtifactUrls).toHaveBeenCalledTimes(2);
-    expect(resolveArtifactUrls).toHaveBeenLastCalledWith(expect.objectContaining({ outputId: 'output-1' }), {
-      force: true,
-    });
+    expect(resolveArtifactUrls).toHaveBeenLastCalledWith(expect.objectContaining({ outputId: 'output-1' }));
     expect(wrapper.find('.ai-artifact-url-iframe-preview').attributes('src')).toBe('https://example.com/retry.pdf');
   });
 });
