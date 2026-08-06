@@ -16,11 +16,13 @@ We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
 
+import json
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from aidev_agent.config import settings
 from aidev_agent.packages.langchain_core.tools.base import Tool, make_mcp_tools, make_structured_tool
+from aidev_agent.packages.resource_manager.agent import AgentResourceManager
 from aidev_agent.packages.resource_manager.registry import resource_manager
 from aidev_agent.pydantic_models import ExecuteKwargs
 from langchain_core.tools import StructuredTool
@@ -1109,3 +1111,82 @@ def test_make_mcp_tools_does_not_mutate_original_config(mock_mcp_client_class):
 
     # 原始配置不应被修改
     assert config == original_config
+
+
+# ================== construct_tool 的 X-Bkapi-Authorization 头部拼装 ==================
+
+
+def _rm_with_mocked_client(tool_data: dict, credential_type: str = "blueapps") -> AgentResourceManager:
+    """构造一个 client 已被 mock 的 AgentResourceManager，避免真实网络调用。"""
+    rm = AgentResourceManager(app_code="rm_app", app_secret="rm_secret")
+    data = {**tool_data, "credential_type": credential_type}
+    mock_client = MagicMock()
+    mock_client.api.retrieve_tool = MagicMock(return_value={"data": data})
+    mock_client.api.appspace_retrieve_tool = MagicMock(return_value={"data": data})
+    rm.get_client = MagicMock(return_value=mock_client)  # type: ignore[method-assign]
+    # 默认令 resolve_access_token 返回空串，避免依赖 bkoauth；具体用例可再单独 patch
+    rm.resolve_access_token = MagicMock(return_value="")  # type: ignore[method-assign]
+    return rm
+
+
+def _extract_auth_header(tool) -> str | None:
+    """从 StructuredTool 里取出 X-Bkapi-Authorization 头（未注入时返回 None）。
+
+    ``make_structured_tool`` 在 ``inject_context=True``（默认）时会把 ``ApiWrapper``
+    包在闭包 ``tool_func`` 里；关闭时 ``func`` 直接就是 ``ApiWrapper`` 实例。
+    这里兼容两种情况，先直接取 ``_extra``，取不到再从闭包里翻出来。
+    """
+    func = tool.func
+    api_wrapper = func if hasattr(func, "_extra") else None
+    if api_wrapper is None and getattr(func, "__closure__", None):
+        for cell in func.__closure__:
+            if hasattr(cell.cell_contents, "_extra"):
+                api_wrapper = cell.cell_contents
+                break
+    if api_wrapper is None:
+        return None
+    header = api_wrapper._extra.header or {}
+    return header.get("X-Bkapi-Authorization")
+
+
+def test_construct_tool_skips_header_when_credential_type_is_null(sample_weather_tool_data):
+    """credential_type=null 的工具不注入 X-Bkapi-Authorization。"""
+    rm = _rm_with_mocked_client(sample_weather_tool_data, credential_type="null")
+
+    tool = rm.construct_tool("weather-query")
+
+    assert _extract_auth_header(tool) is None
+
+
+@pytest.mark.parametrize(
+    "kwargs, expected_auth",
+    [
+        # 无 username / executor_info → 应用凭据
+        pytest.param(
+            {},
+            {"bk_app_code": "rm_app", "bk_app_secret": "rm_secret", "bk_username": None},
+            id="without_user_context",
+        ),
+        # 仅 username → 应用凭据 + bk_username
+        pytest.param(
+            {"username": "alice"},
+            {"bk_app_code": "rm_app", "bk_app_secret": "rm_secret", "bk_username": "alice"},
+            id="with_username",
+        ),
+        # executor_info 提供 access_token → 仅 access_token，忽略其他字段
+        pytest.param(
+            {"username": "alice", "executor_info": {"access_token": "exec_token"}},
+            {"access_token": "exec_token"},
+            id="with_access_token",
+        ),
+    ],
+)
+def test_construct_tool_injects_expected_authorization_header(sample_weather_tool_data, kwargs, expected_auth):
+    """按输入拼装 X-Bkapi-Authorization：应用凭据 / 用户凭据 / access_token 优先。"""
+    rm = _rm_with_mocked_client(sample_weather_tool_data)
+
+    tool = rm.construct_tool("weather-query", **kwargs)
+
+    auth_header = _extract_auth_header(tool)
+    assert auth_header is not None
+    assert json.loads(auth_header) == expected_auth
