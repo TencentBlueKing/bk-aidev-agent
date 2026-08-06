@@ -11,13 +11,13 @@ from ag_ui.core import CustomEvent, EventType, RunErrorEvent
 from ag_ui.core.events import RawEvent
 from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
 from aidev_agent.core.ag_ui.types import (
+    CustomEventNames,
     CustomMessageType,
     LangGraphEventTypes,
     SessionPersistenceEventNames,
 )
 from aidev_agent.enums import ActivityType, PromptRole, SessionsStatus
 from aidev_agent.services.event_handlers import AGUISessionWriter
-from langchain_core.messages import AIMessage, message_to_dict
 
 
 @pytest.fixture
@@ -210,11 +210,15 @@ class TestCustomEventSessionPath:
     """零 RAW 后：会话回写走 CustomEvent / TOOL_CALL_RESULT 入口"""
 
     def test_model_end_via_session_persistence_custom(self, session_writer, mock_client):
-        msg = AIMessage(content="自定义通路", id="ce_msg_1")
         event = CustomEvent(
             type=EventType.CUSTOM,
             name=SessionPersistenceEventNames.ChatModelEnd.value,
-            value={"output": message_to_dict(msg)},
+            value={
+                "message_id": "ce_msg_1",
+                "content": "自定义通路",
+                "tool_calls": [],
+                "deferred_tool_calls": [],
+            },
         )
         session_writer(event)
         mock_client.api.create_chat_session_content.assert_called_once()
@@ -235,6 +239,22 @@ class TestCustomEventSessionPath:
         assert payload["role"] == PromptRole.TOOL.value
         assert payload["content"] == "tool out"
         assert payload["status"] == "complete"
+
+    def test_legacy_tool_finish_custom_event_is_ignored(self, session_writer, mock_client):
+        tool_message = MagicMock()
+        tool_message.id = "tid1"
+        tool_message.tool_call_id = "call_ce"
+        tool_message.content = "tool out"
+        tool_message.status = "complete"
+        tool_message.additional_kwargs = {}
+
+        event = CustomEvent(
+            type=EventType.CUSTOM,
+            name=CustomEventNames.OnToolNodeFinish.value,
+            value=tool_message,
+        )
+        session_writer(event)
+        mock_client.api.create_chat_session_content.assert_not_called()
 
 
 class TestHandleRunError:

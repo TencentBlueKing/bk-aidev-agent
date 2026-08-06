@@ -17,6 +17,7 @@ if not settings.configured:
     )
 
 base_mod = types.ModuleType("aidev_bkplugin.views.base")
+base_mod.IgnoreClientContentNegotiation = object
 base_mod.PluginResourceManager = MagicMock()
 base_mod.PluginViewSet = object
 base_mod.client = SimpleNamespace(api=MagicMock())

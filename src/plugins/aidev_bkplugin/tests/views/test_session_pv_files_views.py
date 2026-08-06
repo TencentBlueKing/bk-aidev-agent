@@ -37,7 +37,9 @@ else:
 
 
 base_mod = types.ModuleType("aidev_bkplugin.views.base")
+base_mod.IgnoreClientContentNegotiation = object
 base_mod.PluginResourceManager = MagicMock()
+base_mod.PluginResourceManager.return_value.resolve_access_token.return_value = None
 base_mod.PluginViewSet = object
 base_mod.client = SimpleNamespace(api=MagicMock())
 base_mod.logger = MagicMock()
@@ -57,13 +59,14 @@ from aidev_agent.services.sandbox_pv_files import (  # noqa: E402
 from aidev_bkplugin.views import session as session_mod  # noqa: E402
 
 
-def _request(query_params=None, username="alice", method="GET", cookies=None, meta=None):
+def _request(query_params=None, username="alice", method="GET", cookies=None, meta=None, path="/pv-files"):
     return SimpleNamespace(
         query_params=query_params or {},
         user=SimpleNamespace(username=username),
         method=method,
         COOKIES=cookies or {},
         META=meta or {},
+        path=path,
     )
 
 
@@ -163,9 +166,7 @@ class TestPvFilesGet:
         instance.list_files.return_value = {"count": 1, "results": [{"path": "a.txt"}]}
         response = view.pv_files(_request({"path": "sub/"}), pk="s1")
         assert response.data == {"count": 1, "results": [{"path": "a.txt"}]}
-        instance.list_files.assert_called_once_with(
-            session_code="s1", path="sub/", since=None, until=None
-        )
+        instance.list_files.assert_called_once_with(session_code="s1", path="sub/", since=None, until=None)
 
     def test_list_translates_not_found(self, view, mock_svc):
         instance, _ = mock_svc
@@ -272,9 +273,7 @@ class TestPvFilesPreview:
         assert response["Content-Type"].startswith("text/plain")
         assert response["X-Truncated"] == "true"
         assert response.content == b"hello"
-        instance.preview_file.assert_called_once_with(
-            session_code="s1", path="x.txt", max_bytes=65536
-        )
+        instance.preview_file.assert_called_once_with(session_code="s1", path="x.txt", max_bytes=65536)
 
     def test_preview_x_truncated_false_default(self, view, mock_svc):
         instance, _ = mock_svc
@@ -316,13 +315,9 @@ class TestPvFilesDownloadUrl:
     def test_download_url_forwards_expires(self, view, mock_svc):
         instance, _ = mock_svc
         instance.get_download_url.return_value = {"download_url": "https://cdn/x"}
-        response = view.pv_files_download_url(
-            _request({"path": "x.txt", "expires_in": "300"}), pk="s1"
-        )
+        response = view.pv_files_download_url(_request({"path": "x.txt", "expires_in": "300"}), pk="s1")
         assert response.data == {"download_url": "https://cdn/x"}
-        instance.get_download_url.assert_called_once_with(
-            session_code="s1", path="x.txt", expires_in=300
-        )
+        instance.get_download_url.assert_called_once_with(session_code="s1", path="x.txt", expires_in=300)
 
     def test_download_url_expires_default(self, view, mock_svc):
         instance, _ = mock_svc

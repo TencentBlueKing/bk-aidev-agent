@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-"""``SessionManager`` 行为契约：哈希稳定性、404 → create 分支、save_content kwargs 透传。"""
-
-from types import SimpleNamespace
+"""``SessionManager`` 行为契约：哈希稳定性、幂等取建、save_content kwargs 透传。"""
 
 import pytest
-from bkapi_client_core.exceptions import HTTPResponseError
+from aidev_bkplugin.constants import AGUI_PROTOCOL_VERSION
 
 
 @pytest.fixture
@@ -29,34 +27,27 @@ def test_generate_session_code_is_stable_md5(username, agent_code, thread_id, ex
     assert SessionManager.generate_session_code(username, agent_code, thread_id) == code
 
 
-def _make_response_error(status_code: int) -> HTTPResponseError:
-    """构造带 ``response.status_code`` 属性的 HTTPResponseError；``response_status_code`` 由父类 property 推导。"""
-    return HTTPResponseError("err", response=SimpleNamespace(status_code=status_code, headers={}))
-
-
-def test_get_or_create_returns_existing_session(session_manager, mock_plugin_rm_client):
-    mock_plugin_rm_client.api.retrieve_chat_session.return_value = {"data": {"session_code": "abc"}}
-
+def test_get_or_create_by_thread_id_delegates_to_resource_manager(session_manager, mock_plugin_rm_client):
     result = session_manager.get_or_create_by_thread_id("t-1")
 
-    assert result == session_manager.generate_session_code("alice", "bk-aidev", "t-1")
-    mock_plugin_rm_client.api.create_chat_session.assert_not_called()
+    expected = session_manager.generate_session_code("alice", "bk-aidev", "t-1")
+    assert result == expected
+    mock_plugin_rm_client.resource_manager_mock.get_or_create_session.assert_called_once_with(
+        session_code=expected,
+        session_name="新会话",
+        protocol_version=AGUI_PROTOCOL_VERSION,
+        is_temporary=None,
+        headers={"X-BKAIDEV-USER": "alice"},
+    )
 
 
-def test_get_or_create_falls_back_to_create_on_404(session_manager, mock_plugin_rm_client):
-    mock_plugin_rm_client.api.retrieve_chat_session.side_effect = _make_response_error(404)
-    mock_plugin_rm_client.api.create_chat_session.return_value = {"data": {}}
+def test_get_or_create_by_session_code_passes_options(session_manager, mock_plugin_rm_client):
+    result = session_manager.get_or_create_by_session_code("sc-1", session_name="demo", is_temporary=True)
 
-    session_manager.get_or_create_by_thread_id("thread-12345678abc")
-
-    create_call = mock_plugin_rm_client.api.create_chat_session.call_args
-    assert create_call.kwargs["json"]["session_name"] == "Thread-thread-1"
-
-
-def test_get_or_create_propagates_non_404(session_manager, mock_plugin_rm_client):
-    mock_plugin_rm_client.api.retrieve_chat_session.side_effect = _make_response_error(500)
-    with pytest.raises(HTTPResponseError):
-        session_manager.get_or_create_by_thread_id("t-1")
+    assert result == "sc-1"
+    call = mock_plugin_rm_client.resource_manager_mock.get_or_create_session.call_args
+    assert call.kwargs["session_name"] == "demo"
+    assert call.kwargs["is_temporary"] is True
 
 
 @pytest.mark.parametrize(
@@ -120,13 +111,16 @@ def test_set_flow_resume_pending_creates_flow_info_when_absent(session_manager, 
     session_manager.set_flow_resume_pending("sc-1", False)
 
     session_property = mock_plugin_rm_client.api.update_chat_session.call_args.kwargs["json"]["session_property"]
-    assert session_property["flow_info"] == {"resume_pending": False}
+    assert session_property["flow_info"] == {"resume_pending": False, "resume_action": ""}
 
 
 @pytest.mark.parametrize(
     "data, expected",
     [
-        ({"session_property": {"flow_info": {"task_id": "t1", "resume_pending": True}}}, {"task_id": "t1", "resume_pending": True}),
+        (
+            {"session_property": {"flow_info": {"task_id": "t1", "resume_pending": True}}},
+            {"task_id": "t1", "resume_pending": True},
+        ),
         ({"session_property": {}}, {}),
         ({}, {}),
     ],

@@ -16,6 +16,7 @@ except ImportError:
 # 避免 agent 模块加载时依赖 pkg_resources（get_agent_version 用）
 if "pkg_resources" not in sys.modules:
     sys.modules["pkg_resources"] = MagicMock()
+sys.modules.setdefault("aidev_bkplugin.models", MagicMock())
 
 
 @pytest.mark.skipif(not _has_django, reason="Django and plugin env required")
@@ -75,5 +76,6 @@ class TestRunChatCompletionWithThreadId:
                 input_text="hello",
                 save_content=True,
                 version=None,
+                channel_type=None,
             )
             mock_execute_with_save.assert_called_once_with(mock_agent, ek, "session-abc", turn_id="turn-1")

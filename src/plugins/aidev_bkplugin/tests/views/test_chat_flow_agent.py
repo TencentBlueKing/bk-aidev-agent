@@ -9,9 +9,16 @@
 通过捕获 ``AgentInstanceFactory.build_agent`` 收到的 ``task_id`` kwarg 断言分支结果。
 """
 
+import sys
 from unittest.mock import MagicMock
 
 import pytest
+
+_bk_plugin_framework = MagicMock()
+_bk_plugin_framework.kit.decorators.inject_user_token = lambda func: func
+sys.modules.setdefault("bk_plugin_framework", _bk_plugin_framework)
+sys.modules.setdefault("bk_plugin_framework.kit", _bk_plugin_framework.kit)
+sys.modules.setdefault("bk_plugin_framework.kit.decorators", _bk_plugin_framework.kit.decorators)
 
 
 @pytest.fixture
