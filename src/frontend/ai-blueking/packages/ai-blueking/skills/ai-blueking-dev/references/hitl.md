@@ -430,7 +430,7 @@ const handleInterruptResume: OnInterruptResume = async (payload, interrupt) => {
 
 **方式 A：在提问浮层卡片作答** —— 逐题选择/填写后点「完成」（`buildResolvePayload` → `status: resolved`）或「跳过」（`buildSkipPayload` → `status: cancelled`）。
 
-**方式 B：直接在输入框输入** —— 用户不点卡片、直接在 `ChatInput` 打字发送。此时利用 `onSendMessage` 的**第三个参数**把普通发送转成一次「跳过原提问 + 用自由文本作答」的恢复：
+**方式 B：直接在输入框输入** —— 用户不点卡片、直接在 `ChatInput` 打字发送。此时利用 `onSendMessage` 的**第三个参数**把普通发送转成一次「用自由文本作答」的恢复：
 
 ```typescript
 // ChatInput 的 onSendMessage 现在支持第三参数
@@ -443,6 +443,16 @@ onSendMessage?: (
 // buildSkipResumePayload(interrupt) 生成 status:'cancelled' 的空答案负载，
 // ChatBot 内部据此在发送用户输入的同时恢复被中断的提问。
 ```
+
+⚠️ **自由文本不进 `answers`**：用户没有选择任何选项，`payload.answers` 必须保持 `[]`、`status` 保持 `'cancelled'`（等同跳过），文本只通过 `input` 传给后端。ChatBot 原样透传 chat-x 给的 skip payload，不做改写：
+
+```typescript
+// use-interrupt-resume.ts —— 自由文本恢复的最终负载
+{ interruptId, reason: InterruptReason.UserQuestion, status: 'cancelled', payload: { answers: [] } }
+// 同时 streamRequest({ sessionCode, resume, input: '用户输入的文本' })
+```
+
+后端据是否携带 `input` 区分「自由文本作答」与「纯跳过」。**不要**把自由文本包装成 `label:'others'` 的答案项——`others` 仅用于用户在卡片里主动选择「其他」并填写的场景。
 
 ChatBot / AIBlueking 已内置该旁路逻辑，业务无需处理；原子模式下如需支持「输入框作答」，在 `handleSend` 中检测当前是否有活跃 UserQuestion 中断（`useMessageGroup().activeUserQuestionInterrupt`），有则携带 `buildSkipResumePayload` 结果调用恢复。
 
