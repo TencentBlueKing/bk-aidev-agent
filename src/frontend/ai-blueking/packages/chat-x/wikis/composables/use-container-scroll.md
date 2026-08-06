@@ -4,7 +4,8 @@ slug: use-container-scroll
 category: composable
 description: 为消息容器提供滚动控制的组合式函数对，通过 **Provider/Consumer** 模式在父子组件间共享滚动状态。
 aiSummary: >
-  useContainerScrollProvider 在滚动容器与底部锚点上绑定 IntersectionObserver、scroll、wheel，提供 isScrollBottom、scrollBottomHeight、autoScrollEnabled、toScrollBottom/toScrollTop 及防抖「返回底部」按钮状态。
+  useContainerScrollProvider 在滚动容器与底部锚点上绑定 IntersectionObserver、scroll、wheel，提供 isScrollBottom、scrollBottomHeight、autoScrollEnabled、jumpToBottom、toScrollBottom/toScrollTop 及防抖「返回底部」按钮状态。
+  toScrollBottom 缺省按距底部距离自动选择行为：超过 INSTANT_SCROLL_DISTANCE（600px）时瞬时贴底，否则平滑滚动，避免切换会话时出现长距离平滑滚动动画。
   useContainerScrollConsumer 通过 inject 在子组件中获取同一套控制，无需 props 透传。
   典型用于流式输出时仅在用户位于底部时自动滚底。MessageContainer 与 ScrollBtn 配合使用。
 relatedComponents:
@@ -24,7 +25,7 @@ sinceVersion: 1.0.0
   const containerRef = useTemplateRef<HTMLElement>('containerRef');
   const bottomRef = useTemplateRef<HTMLElement>('bottomRef');
 
-  const { isScrollBottom, scrollBottomHeight, autoScrollEnabled, toScrollBottom, toScrollTop } =
+  const { isScrollBottom, scrollBottomHeight, autoScrollEnabled, jumpToBottom, toScrollBottom, toScrollTop } =
     useContainerScrollProvider(containerRef, bottomRef);
 
   const items = ref(Array.from({ length: 30 }, (_, i) => `消息 ${i + 1}：这是一条示例消息内容，用于撑开容器高度。`));
@@ -61,7 +62,10 @@ useContainerScrollProvider(containerRef, bottomRef)
   ├── wheel 事件（passive）→ deltaY < 0 时 autoScrollEnabled=false
   │     （用户向上滚动时暂停自动滚动）
   │
-  ├── toScrollBottom() → autoScrollEnabled=true + bottomRef.scrollIntoView('smooth')
+  ├── jumpToBottom()   → autoScrollEnabled=true + container.scrollTop = scrollHeight（瞬时）
+  ├── toScrollBottom(behavior?) → autoScrollEnabled=true；
+  │     behavior 缺省时：距底部 > INSTANT_SCROLL_DISTANCE(600) → jumpToBottom()
+  │     否则 / 显式 'smooth' → bottomRef.scrollIntoView({ behavior:'smooth', block:'end' })
   ├── toScrollTop()    → containerRef.scrollTo({ top:0, behavior:'smooth' })
   │
   └── provide(CONTAINER_SCROLL_TOKEN, computed(() => ({
@@ -69,6 +73,7 @@ useContainerScrollProvider(containerRef, bottomRef)
             isScrollBottom,             // ShallowRef<boolean>（保持响应式）
             scrollBottomHeight,         // ShallowRef<number>（保持响应式）
             debouncedShowScrollBottomBtn, // customRef，防抖显示返回底部按钮
+            jumpToBottom,
             toScrollBottom,
             toScrollTop,
         })))
@@ -112,7 +117,7 @@ useContainerScrollConsumer()
         追加消息
       </button>
       <button
-        @click="toScrollBottom"
+        @click="() => toScrollBottom('smooth')"
         style="padding: 4px 12px; font-size: 12px; border: 1px solid #dcdee5; border-radius: 4px; cursor: pointer; background: #fff;"
       >
         滚动到底部
@@ -146,10 +151,10 @@ useContainerScrollConsumer()
     <div ref="bottomRef" />
   </div>
 
-  <!-- 距离底部 > 100px 且防抖 300ms 后显示"返回底部"按钮 -->
+  <!-- 距离底部 > 100px 且防抖 300ms 后显示"返回底部"按钮；显式传 'smooth' 避免 MouseEvent 被当成 behavior -->
   <ScrollBtn
     v-show="debouncedShowScrollBottomBtn"
-    @click="toScrollBottom"
+    @click="() => toScrollBottom('smooth')"
   >
     返回底部
   </ScrollBtn>
@@ -167,6 +172,7 @@ useContainerScrollConsumer()
     scrollBottomHeight,
     debouncedShowScrollBottomBtn,
     autoScrollEnabled,
+    jumpToBottom,
     toScrollBottom,
     toScrollTop,
   } = useContainerScrollProvider(containerRef, bottomRef);
@@ -238,7 +244,8 @@ function useContainerScrollProvider(
   isScrollBottom: ShallowRef<boolean>;
   scrollBottomHeight: ShallowRef<number>;
   debouncedShowScrollBottomBtn: Ref<boolean>;
-  toScrollBottom: () => void;
+  jumpToBottom: () => void;
+  toScrollBottom: (behavior?: ScrollBehavior) => void;
   toScrollTop: () => void;
 };
 ```
@@ -252,14 +259,15 @@ function useContainerScrollProvider(
 
 **返回值：**
 
-| 属性名                         | 类型                  | 初始值  | 说明                                                                                                                  |
-| ------------------------------ | --------------------- | ------- | --------------------------------------------------------------------------------------------------------------------- |
-| `isScrollBottom`               | `ShallowRef<boolean>` | `false` | 底部锚点是否可见（`IntersectionObserver` 驱动）                                                                       |
-| `scrollBottomHeight`           | `ShallowRef<number>`  | `0`     | 距底部像素距离（`scrollHeight - scrollTop - clientHeight`，≥ 0）                                                      |
-| `autoScrollEnabled`            | `ShallowRef<boolean>` | `true`  | 是否允许自动滚底；向上滚时置 `false`，到达底部或调用 `toScrollBottom` 时恢复 `true`                                   |
-| `debouncedShowScrollBottomBtn` | `Ref<boolean>`        | `false` | 防抖版"返回底部"按钮显隐标志：距底部 > `SHOW_SCROLL_BOTTOM_BTN_DISTANCE`（100px）时触发，显示延迟 300ms，隐藏立即生效 |
-| `toScrollBottom`               | `() => void`          | —       | 滚动到底部（`scrollIntoView({ behavior: 'smooth', block: 'end' })`），同时恢复 `autoScrollEnabled`                    |
-| `toScrollTop`                  | `() => void`          | —       | 滚动到顶部（`scrollTo({ top: 0, behavior: 'smooth' })`）                                                              |
+| 属性名                         | 类型                                    | 初始值  | 说明                                                                                                                  |
+| ------------------------------ | --------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------- |
+| `isScrollBottom`               | `ShallowRef<boolean>`                   | `false` | 底部锚点是否可见（`IntersectionObserver` 驱动）                                                                       |
+| `scrollBottomHeight`           | `ShallowRef<number>`                    | `0`     | 距底部像素距离（`scrollHeight - scrollTop - clientHeight`，≥ 0）                                                      |
+| `autoScrollEnabled`            | `ShallowRef<boolean>`                   | `true`  | 是否允许自动滚底；向上滚时置 `false`，到达底部或调用 `toScrollBottom` / `jumpToBottom` 时恢复 `true`                  |
+| `debouncedShowScrollBottomBtn` | `Ref<boolean>`                          | `false` | 防抖版"返回底部"按钮显隐标志：距底部 > `SHOW_SCROLL_BOTTOM_BTN_DISTANCE`（100px）时触发，显示延迟 300ms，隐藏立即生效 |
+| `jumpToBottom`                 | `() => void`                            | —       | 瞬时贴底（直接写 `scrollTop`），不产生滚动动画                                                                        |
+| `toScrollBottom`               | `(behavior?: ScrollBehavior) => void`   | —       | 滚动到底部。**缺省按距底部距离自动选择**：超过 `INSTANT_SCROLL_DISTANCE`（600px）时瞬时贴底，否则平滑滚动；可显式传 `'smooth'` / `'auto'` |
+| `toScrollTop`                  | `() => void`                            | —       | 滚动到顶部（`scrollTo({ top: 0, behavior: 'smooth' })`）                                                              |
 
 ### useContainerScrollConsumer
 
@@ -269,7 +277,8 @@ function useContainerScrollConsumer():
       autoScrollEnabled: boolean; // 已解包为 boolean
       isScrollBottom: ShallowRef<boolean>; // ShallowRef，未解包
       scrollBottomHeight: ShallowRef<number>; // ShallowRef，未解包
-      toScrollBottom: () => void;
+      jumpToBottom: () => void;
+      toScrollBottom: (behavior?: ScrollBehavior) => void;
       toScrollTop: () => void;
     }>
   | undefined;
@@ -287,12 +296,16 @@ export const CONTAINER_SCROLL_TOKEN: unique symbol;
 // 触发"返回底部"按钮显示的距底部阈值（px）
 export const SHOW_SCROLL_BOTTOM_BTN_DISTANCE = 100;
 
+// 距底部超过该阈值时，toScrollBottom 缺省走瞬时贴底（避免长距离 smooth 动画）
+export const INSTANT_SCROLL_DISTANCE = 600;
+
 export type ContainerScrollData = {
   autoScrollEnabled: boolean;
   isScrollBottom: boolean;
   scrollBottomHeight: number;
   debouncedShowScrollBottomBtn: Ref<boolean>;
-  toScrollBottom: () => void;
+  jumpToBottom: () => void;
+  toScrollBottom: (behavior?: ScrollBehavior) => void;
   toScrollTop: () => void;
 };
 ```
@@ -303,7 +316,8 @@ export type ContainerScrollData = {
 2. **`watchEffect` 在 `onMounted` 内**：`containerRef` / `bottomRef` 变化时自动清理旧监听、重新绑定，无需手动管理
 3. **`onScopeDispose` 自动清理**：组件卸载时自动 `disconnect` observer、移除 `scroll`/`wheel` 监听
 4. **Consumer 需两层 `.value`**：Consumer 获得 `ComputedRef`，其中 `isScrollBottom` 和 `scrollBottomHeight` 仍为 `ShallowRef`，访问时需 `containerScroll.value.isScrollBottom.value`
-5. **`MessageContainer` 中的使用**：「返回底部」`ScrollBtn` 的显示使用 `debouncedShowScrollBottomBtn`（距底 > 100px 且防抖 300ms），避免快速滚动时按钮频繁闪烁
+5. **`MessageContainer` 中的使用**：「返回底部」`ScrollBtn` 使用 `@click="() => toScrollBottom('smooth')"`（显式 smooth）；挂载时另调 `jumpToBottom()` 消除切换会话时的顶部闪烁
+6. **不要把 `toScrollBottom` 直接绑到事件**：`@click="toScrollBottom"` 会把 `MouseEvent` 当成 `behavior` 传入，应写成 `@click="() => toScrollBottom('smooth')"`
 
 ## 关联组件
 

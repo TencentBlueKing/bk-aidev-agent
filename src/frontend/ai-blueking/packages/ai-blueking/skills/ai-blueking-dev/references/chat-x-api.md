@@ -789,6 +789,18 @@ import {
 
 内部使用滚动：`useContainerScrollProvider(containerRef, bottomRef)` 与 `useContainerScrollConsumer`。
 
+Provider 返回 / provide 的滚动能力：
+
+| 方法 | 说明 |
+| --- | --- |
+| `toScrollBottom(behavior?: ScrollBehavior)` | 滚动到底部。**缺省按距底部距离自动选择行为**：距离超过 `INSTANT_SCROLL_DISTANCE`（600px）时瞬时贴底，否则平滑滚动。需要强制平滑（如「返回底部」按钮）时显式传 `'smooth'` |
+| `jumpToBottom()` | 瞬时贴底，不产生任何滚动动画 |
+| `toScrollTop()` | 平滑滚动到顶部 |
+
+> **注意**：`toScrollBottom` 不能直接作为事件处理器绑定（`@click="toScrollBottom"`），否则 `MouseEvent` 会被当成 `behavior` 传入。应写成 `@click="() => toScrollBottom('smooth')"`。
+>
+> 自动选择行为是为了避免首屏渲染、切换会话等场景下容器从 `scrollTop = 0` 开始做长距离平滑滚动，产生「从头滚到尾」的动画。`MessageContainer` 另在 `onMounted` 时调用 `jumpToBottom()` 直接定位，消除历史消息渲染期间的顶部闪烁。
+
 > **未从 `composables/index.ts` 再导出**（需深路径引用，一般不写入应用侧）：`composables/use-common.ts` 里的 `useRenderModeProvider` / `useRenderModeInject` / `useKeywordProvider` / `useCommonTippyProvider` 等 RenderMode / 关键词 / tippy provide-inject 能力。
 
 ---

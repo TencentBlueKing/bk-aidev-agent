@@ -51,7 +51,6 @@ function createParams(overrides: Partial<UseToolActionsParams> = {}): UseToolAct
     chatBusinessManager: shallowRef(createMockChatBusinessManager()),
     cite: ref(''),
     focusInput: vi.fn(),
-    scrollToBottom: vi.fn().mockResolvedValue(undefined),
     getShortcutFromMessage: vi.fn().mockReturnValue(null),
     buildShortcutProperty: vi.fn().mockReturnValue({ extra: {} }),
     stopGeneration: vi.fn().mockResolvedValue(undefined),
@@ -228,7 +227,6 @@ describe('useToolActions', () => {
         'new content',
         undefined,
       );
-      expect(params.scrollToBottom).toHaveBeenCalled();
     });
 
     it('should not call resendMessage when no chatHelper', async () => {
@@ -265,7 +263,6 @@ describe('useToolActions', () => {
         'new value',
         property,
       );
-      expect(params.scrollToBottom).toHaveBeenCalled();
     });
 
     it('should not proceed when shortcut is not found', async () => {
