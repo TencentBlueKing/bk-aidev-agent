@@ -495,6 +495,122 @@ export const MOCK_INFO_MESSAGES = [
   },
 ] as Message[];
 
+/**
+ * ToolCallRender 状态 mock：一条 assistant 内多个 toolCall，覆盖
+ * Pending / Streaming（Loading）与 Success / Complete / Completed（成功）以及 Error（失败）
+ */
+export const MOCK_TOOLCALL_STATUS_MESSAGES = [
+  {
+    id: 'mock-toolcall-status-user',
+    role: MessageRole.User,
+    content: '帮我演示一下工具调用的各种状态',
+    name: 'user',
+    status: MessageStatus.Complete,
+    messageId: 'mock-toolcall-status-user',
+  },
+  {
+    id: 'mock-toolcall-status-assistant',
+    role: MessageRole.Assistant,
+    content: '以下为 ToolCallRender 各状态示例：',
+    name: 'react_agent',
+    status: MessageStatus.Complete,
+    messageId: 'mock-toolcall-status-assistant',
+    toolCalls: [
+      // Pending：无 toolMessage → Loading「调用中」
+      {
+        id: 'mock-tc-pending',
+        type: 'function',
+        function: {
+          name: 'query_service_status',
+          description: '查询服务运行状态（Pending）',
+          arguments: '{"service": "chat-x"}',
+        },
+      },
+      // Streaming：Loading「调用中」
+      {
+        id: 'mock-tc-streaming',
+        type: 'function',
+        function: {
+          name: 'stream_logs',
+          description: '流式拉取日志（Streaming）',
+          arguments: '{"lines": 100}',
+        },
+        toolMessage: {
+          toolCallId: 'mock-tc-streaming',
+          status: MessageStatus.Streaming,
+          content: '',
+          duration: 0,
+        },
+      },
+      // Success
+      {
+        id: 'mock-tc-success',
+        type: 'function',
+        function: {
+          name: 'get_cluster_info',
+          description: '获取集群信息（Success）',
+          arguments: '{"cluster_id": "bk-prod"}',
+        },
+        toolMessage: {
+          toolCallId: 'mock-tc-success',
+          status: MessageStatus.Success,
+          content: '{"cluster": "bk-prod", "nodes": 12}',
+          duration: 1234,
+        },
+      },
+      // Complete
+      {
+        id: 'mock-tc-complete',
+        type: 'function',
+        function: {
+          name: 'list_pods',
+          description: '列出 Pod（Complete）',
+          arguments: '{"namespace": "default"}',
+        },
+        toolMessage: {
+          toolCallId: 'mock-tc-complete',
+          status: MessageStatus.Complete,
+          content: '{"pods": ["api-0", "api-1"]}',
+          duration: 856,
+        },
+      },
+      // Completed
+      {
+        id: 'mock-tc-completed',
+        type: 'function',
+        function: {
+          name: 'check_itsm_ticket',
+          description: '检查 ITSM 工单（Completed）',
+          arguments: '{"ticket_num": "1234"}',
+        },
+        toolMessage: {
+          toolCallId: 'mock-tc-completed',
+          status: MessageStatus.Completed,
+          content: '{"id": "1234", "status": "open"}',
+          duration: 2100,
+        },
+      },
+      // Error：失败图标
+      {
+        id: 'mock-tc-error',
+        type: 'function',
+        function: {
+          name: 'deploy_service',
+          description: '部署服务（Error）',
+          arguments: '{"service": "chat-x", "env": "prod"}',
+        },
+        toolMessage: {
+          toolCallId: 'mock-tc-error',
+          status: MessageStatus.Error,
+          error: '部署失败：权限不足',
+          content: '',
+          duration: 430,
+        },
+      },
+    ],
+  },
+] as Message[];
+
 // @ 资源列表
 export const MOCK_RESOURCES = [
   {

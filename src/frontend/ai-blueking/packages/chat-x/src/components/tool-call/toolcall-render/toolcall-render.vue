@@ -20,6 +20,13 @@
           size="mini"
           theme="primary"
         />
+        <BkFlowSuccessIcon
+          v-else-if="
+            [MessageStatus.Success, MessageStatus.Complete, MessageStatus.Completed].includes(status as MessageStatus)
+          "
+        />
+        <BkFlowFailedIcon v-else-if="status === MessageStatus.Error" />
+
         <HighlightKeyword :text="statusTitle" />
         <span
           v-if="durationDisplay"
@@ -56,6 +63,7 @@
   import { MessageStatus } from '../../../ag-ui/types/constants';
   import { useCommonTippyInject, useKeywordMatch } from '../../../composables/use-common';
   import { OverflowTips as vOverflowTips } from '../../../directives';
+  import { BkFlowFailedIcon, BkFlowSuccessIcon } from '../../../icons';
   import { ArrowRightIcon } from '../../../icons/content';
   import { t } from '../../../lang/lang';
   import { formatDuration } from '../../../utils/utils';
@@ -155,6 +163,9 @@
       .ai-common-icon {
         width: 14px;
         height: 14px;
+      }
+
+      .ai-arrow-right-icon {
         margin-right: 6px;
         cursor: pointer;
         transform: rotate(90deg);

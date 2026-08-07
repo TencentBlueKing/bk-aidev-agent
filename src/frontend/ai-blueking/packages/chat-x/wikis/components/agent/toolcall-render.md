@@ -127,7 +127,9 @@ sinceVersion: 1.0.0
 │   ├── "调用工具：" / "调用 MCP："（有 mcpName 时）
 │   ├── .toolcall-header-title（工具名，overflow-tips 溢出截断）
 │   └── .toolcall-status-title
-│         ├── Loading（仅 pending / streaming 时显示）
+│         ├── Loading（pending / streaming）
+│         ├── BkFlowSuccessIcon（success / complete / completed）
+│         ├── BkFlowFailedIcon（error）
 │         ├── 状态文案（调用中 / 调用成功 / 调用失败）
 │         └── .toolcall-duration（耗时，如 "(1.2s)"）
 │
@@ -176,16 +178,16 @@ sinceVersion: 1.0.0
 
 ## 调用状态
 
-`status` prop 同时控制头部的 CSS class（`toolcall-status-{status}`）、背景/边框颜色、状态文案和 Loading 动画：
+`status` prop 同时控制头部的 CSS class（`toolcall-status-{status}`）、背景/边框颜色、状态文案和状态图标：
 
-| `status`                              | 状态文案 | 背景色            | 边框色    | Loading |
-| ------------------------------------- | -------- | ----------------- | --------- | ------- |
-| `pending` / `streaming`               | 调用中   | `#fafbfd`         | `#dcdee5` | ✓       |
-| `complete` / `completed` / `success`  | 调用成功 | `#ebfaf0`         | `#a1e3ba` | -       |
-| `error`                               | 调用失败 | `#fff0f0`         | `#f8b4b4` | -       |
-| 其他 / `undefined`                    | 调用中   | —（无匹配 class） | —         | -       |
+| `status`                              | 状态文案 | 背景色            | 边框色    | 状态图标            |
+| ------------------------------------- | -------- | ----------------- | --------- | ------------------- |
+| `pending` / `streaming`               | 调用中   | `#fafbfd`         | `#dcdee5` | `Loading`           |
+| `complete` / `completed` / `success`  | 调用成功 | `#ebfaf0`         | `#a1e3ba` | `BkFlowSuccessIcon` |
+| `error`                               | 调用失败 | `#fff0f0`         | `#f8b4b4` | `BkFlowFailedIcon`  |
+| 其他 / `undefined`                    | 调用中   | —（无匹配 class） | —         | —                   |
 
-> **说明**：`statusTitle` 将 `Completed`（`completed`）与 `Complete` / `Success` 一并视为成功；主题 `$toolcallStatusMap` 同步提供 `completed` 色值。`default` 与 `case Pending` 共享「调用中」文案，`streaming` 与未知 status 命中 `default`。Loading 由 `v-if="status === 'pending' || status === 'streaming'"` 控制。
+> **说明**：`statusTitle` 将 `Completed`（`completed`）与 `Complete` / `Success` 一并视为成功；主题 `$toolcallStatusMap` 同步提供 `completed` 色值。`default` 与 `case Pending` 共享「调用中」文案，`streaming` 与未知 status 命中 `default`。状态图标互斥：`pending` / `streaming` 显示 `Loading`；`success` / `complete` / `completed` 显示 `BkFlowSuccessIcon`；`error` 显示 `BkFlowFailedIcon`。
 
 **三种状态对比**
 
