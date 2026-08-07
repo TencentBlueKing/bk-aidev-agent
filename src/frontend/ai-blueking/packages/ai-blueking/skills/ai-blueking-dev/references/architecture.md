@@ -299,7 +299,7 @@ chat-bot.vue（组装层 — 创建共享 ref，按拓扑顺序组装）
 | 错误上报 | `useErrorReporter` | 新的错误来源接入、归一化规则 |
 | 跨 composable | `chat-bot.vue` 组装层 | 新的共享 ref、辅助函数 |
 
-> **错误处理约定**：composable 里的 `catch` 一律调用注入的 `reportError(error, '上下文描述')`，不要写 `console.error` + `emit('error', error as Error)`。`reportError` 已包含日志、`toError` 归一化和去重。
+> **错误处理约定**：composable 里的 `catch` 一律调用注入的 `reportError(error, '上下文描述')`，不要写 `console.error` + `emit('error', error as Error)`。`reportError` 已包含日志、`toError` 归一化、去重，以及（`errorToast !== false` 时）Message toast。
 
 ### 关键设计决策
 

@@ -148,6 +148,11 @@ export interface ChatBotProps {
    */
   enableModelSelect?: boolean;
   /**
+   * 接口/业务错误时是否自动弹出 Message 提示（默认 true）
+   * 设为 false 可自行通过 @error 事件处理；AIBlueking 内嵌时会关闭以免双弹
+   */
+  errorToast?: boolean;
+  /**
    * 外部传入的模型列表（有值时跳过内部拉取，优先使用）
    * 结构对齐 chat-x IModelOption / chat-helper ILlmItem
    */
