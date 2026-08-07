@@ -43,11 +43,11 @@
     display: flex;
     gap: 4px;
     align-items: center;
-    height: 24px;
+    height: 32px;
     padding: 0 8px;
     color: variables.$color-text;
     cursor: pointer;
-    border-radius: 2px;
+    border-radius: 8px;
     transition: background-color 0.2s;
 
     &:hover,

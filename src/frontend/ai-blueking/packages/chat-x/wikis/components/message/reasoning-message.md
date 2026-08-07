@@ -282,16 +282,9 @@ interface ReasoningMessage {
   duration?: number; // 推理耗时（毫秒）
   name?: string;
 }
-
-enum MessageStatus {
-  Pending = 'pending',
-  Streaming = 'streaming',
-  Complete = 'complete',
-  Success = 'success',
-  Error = 'error',
-  Stop = 'stop',
-}
 ```
+
+> `MessageStatus` 完整取值见 [常量枚举](../../types/constants)。本组件完成态识别 `complete` / `success`（与标题文案表一致）。
 
 ## 关联组件
 

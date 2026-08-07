@@ -33,6 +33,7 @@
 | updateTools | `IToolBtn[]` | - | 自定义 AI 消息反馈工具组（like/unlike/delete）；合并规则同上 |
 | placement       | `'left' \| 'right'`  | `'left'`| 执行情况侧面板位置                             |
 | resizeProps     | `ResizeProps`        | -       | ResizeLayout 配置（执行情况侧面板拖拽）        |
+| size            | `AiSizeMode`（`'normal' \| 'small'`） | `'small'` | 字号主题档位，透传至 ChatContainer（`small` 12px / `normal` 14px） |
 | getSideRenderComponent | `GetSideRenderComponent` | - | 自定义侧栏内容区渲染（详见 [side render / custom tabs](integration-patterns.md#侧栏自定义渲染与自定义-tab-side-render--custom-tabs)） |
 | getSideTabRenderComponent | `GetSideTabRenderComponent` | - | 自定义侧栏 Tab 标签渲染 |
 | onCustomTabChange | `OnCustomTabChange` | -       | 覆盖默认 Flow 节点详情拉取；未传则回退到 `chatHelper.message.getFlowAgentTaskNodeInfo` |
@@ -58,6 +59,7 @@
 | request-share     | -                                          | 请求进入分享模式               |
 | agent-action      | `(tool: IToolBtn, messages: Message[])`    | 自定义消息工具点击（非内置 cite/rebuild/delete/like/unlike） |
 | execution-panel-change | `(isCollapse: boolean)`               | 执行情况侧面板展开/折叠         |
+| rename            | `(newName: string)`                        | 首条消息后 AI 自动重命名成功（独立使用 ChatBot 时可直接监听；AIBlueking 会转发为自身 `@rename`） |
 
 ## Slots
 
@@ -215,7 +217,7 @@ AIHeader 是 AIBlueking 的 Header 区域组件，其事件会透传至 AIBlueki
 | `history-session-delete` | `(sessionCode: string)` | 历史面板中删除会话（V2 模式） |
 | `history-session-rename` | `(sessionCode: string, newName: string)` | 历史面板中重命名会话（V2 模式） |
 | `auto-generate-name` | 无 | 自动生成会话名称 |
-| `rename` | `(newName: string)` | 手动重命名会话 |
+| `rename` | `(newName: string)` | 会话重命名（手动改名，或首条消息后 AI 自动重命名成功） |
 | `help-click` | 无 | 点击转人工按钮 |
 | `share` | 无 | 点击分享按钮 |
 | `toggle-compression` | 无 | 切换面板压缩/展开 |
@@ -254,6 +256,7 @@ AIBlueking 是完整面板组件（Nimbus 悬浮球 + 浮窗 + 拖拽 + Header +
 | getSideTabRenderComponent | `GetSideTabRenderComponent` | - | 自定义侧栏 Tab 标签渲染（透传 ChatBot） |
 | onCustomTabChange | `OnCustomTabChange` | - | 覆盖默认 Flow 节点详情拉取（透传 ChatBot） |
 | resizeProps | `ResizeProps` | - | 执行情况侧面板拖拽配置 |
+| size | `AiSizeMode`（`'normal' \| 'small'`） | `'small'` | 字号主题档位，透传至 ChatBot → ChatContainer（`small` 12px / `normal` 14px） |
 | beforeNimbusClick | `() => boolean \| Promise<boolean \| void> \| void` | - | Nimbus 点击前钩子，返回 `false` 阻止默认 showPanel（见 [beforeNimbusClick](integration-patterns.md#nimbus-点击自定义beforenimbusclick)） |
 | **会话** |||
 | enableChatSession | `boolean` | `true` | 是否启用会话管理 |
@@ -340,7 +343,7 @@ AIBlueking 是完整面板组件（Nimbus 悬浮球 + 浮窗 + 拖拽 + Header +
 | new-chat-created | `(session: { sessionCode, sessionName?, createdAt? })` | 新会话创建成功 |
 | history-click | `(event: Event)` | 点击历史会话按钮 |
 | auto-generate-name | 无 | 自动生成会话名 |
-| rename | `(newName: string)` | 手动重命名会话 |
+| rename | `(newName: string)` | 会话重命名（手动改名，或首条消息后 AI 自动重命名成功） |
 | help-click | 无 | 点击转人工按钮 |
 | share | 无 | 点击分享按钮 |
 

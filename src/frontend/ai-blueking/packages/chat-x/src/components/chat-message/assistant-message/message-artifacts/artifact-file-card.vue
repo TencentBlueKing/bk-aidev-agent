@@ -64,10 +64,6 @@
     // 侧栏列表选中态（variant=list 时使用）
     active?: boolean;
     file: AIFileInfo;
-    // 文件在所属消息 artifacts 中的下标，用于命中唯一文件（文件名不可靠）
-    index?: number;
-    // 所属 AssistantMessage 的 uid，用于命中唯一文件与「在对话中定位」
-    messageUid?: string;
     // 下载回调，传入时覆盖组件内置的默认下载行为
     onDownload?: (file: AIFileInfo) => void;
     // 点击卡片主体的回调（可选，优先于内置侧栏预览，便于外部自定义 / 测试）
@@ -102,11 +98,7 @@
       props.onPreview(props.file);
       return;
     }
-    artifactPreview?.openPreview({
-      file: props.file,
-      index: props.index ?? 0,
-      messageUid: props.messageUid ?? '',
-    });
+    artifactPreview?.openPreview({ file: props.file });
   };
 
   const handleDownload = async () => {

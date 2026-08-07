@@ -96,6 +96,7 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | `messageTools` | `IToolBtn[]` | — | 自定义 AI 消息主工具组（copy/cite/rebuild/share）；按 id 与内置合并（覆盖/追加/`hidden`） |
 | `updateTools` | `IToolBtn[]` | — | 自定义 AI 消息反馈工具组（like/unlike/delete）；合并规则同上 |
 | `resizeProps` | `{ disabled?, initialDivide?, max?, min? }` | — | ResizeLayout 配置（执行情况侧面板拖拽） |
+| `size` | `'normal' \| 'small'` | `'small'` | 字号主题档位，透传至 ChatContainer（`small` 12px / `normal` 14px） |
 
 ### 侧栏自定义渲染 {#side-render-customization}
 
@@ -128,6 +129,7 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | --- | --- | --- |
 | `session-switched` | `(session: ISession \| null)` | 会话切换完成 |
 | `agent-info-loaded` | `(chatHelper: IChatHelper)` | 独立模式初始化完成（与 `whenReady` 成功时机一致，仅独立模式） |
+| `rename` | `(newName: string)` | 首条消息后 AI 自动重命名成功；AIBlueking 集成时会转发为自身 `@rename` |
 
 ### 快捷方式事件
 

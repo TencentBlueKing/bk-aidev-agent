@@ -74,6 +74,18 @@ describe('InfoMessage', () => {
       expect(items[1].text()).toBe('消息2');
       expect(items[2].text()).toBe('消息3');
     });
+
+    it('content 节点应位于 body 容器内', () => {
+      wrapper = mount(InfoMessage, {
+        props: {
+          content: ['消息1', '消息2'],
+        },
+      });
+
+      const body = wrapper.find('.ai-info-message-body');
+      expect(body.exists()).toBe(true);
+      expect(body.findAll('.ai-info-message-content').length).toBe(2);
+    });
   });
 
   describe('Props 测试', () => {
@@ -150,6 +162,7 @@ describe('InfoMessage', () => {
       });
 
       expect(wrapper.find('.ai-info-message').exists()).toBe(true);
+      expect(wrapper.find('.ai-info-message-body').exists()).toBe(true);
       expect(wrapper.find('.ai-info-message-content').exists()).toBe(true);
     });
   });

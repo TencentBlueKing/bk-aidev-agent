@@ -116,7 +116,7 @@
       <ScrollBtn
         v-show="debouncedShowScrollBottomBtn"
         :title="t('返回底部')"
-        @click="toScrollBottom"
+        @click="() => toScrollBottom('smooth')"
       >
         <template #icon>
           <ArrowDownIcon />
@@ -126,7 +126,7 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { computed, useTemplateRef } from 'vue';
+  import { computed, onMounted, useTemplateRef } from 'vue';
 
   import { Checkbox } from 'bkui-vue';
 
@@ -217,10 +217,19 @@
   const messageContainerRef = useTemplateRef<HTMLElement>('messageContainerRef');
   const messageContainerBottomRef = useTemplateRef<HTMLElement>('messageContainerBottomRef');
 
-  const { toScrollBottom, debouncedShowScrollBottomBtn } = useContainerScrollProvider(
+  const { jumpToBottom, toScrollBottom, debouncedShowScrollBottomBtn } = useContainerScrollProvider(
     messageContainerRef,
     messageContainerBottomRef,
   );
+
+  // 首屏与切换会话时容器都是全新挂载（scrollTop 为 0），先瞬时定位到底部，
+  // 再在首帧布局后补一次，避免历史消息渲染过程中出现从顶部滚到底部的动画
+  onMounted(() => {
+    if (!props.messageGroups?.length) return;
+    jumpToBottom();
+    requestAnimationFrame(() => jumpToBottom());
+  });
+
   const { copy } = useClipboard();
   /**
    * 按 id 合并工具列表：以内置列表为基底，同 id 覆盖（字段级合并）、新 id 追加，其余保留；
@@ -335,7 +344,7 @@
       display: flex;
       gap: 8px;
       width: 100%;
-      padding: 8px;
+      padding: 8px 0;
 
       &-enabled-selection {
         .ai-user-message-tools {
@@ -356,7 +365,8 @@
         gap: 12px;
         width: 100%;
         margin-left: auto;
-        contain: content;
+
+        // contain: content;
       }
     }
 

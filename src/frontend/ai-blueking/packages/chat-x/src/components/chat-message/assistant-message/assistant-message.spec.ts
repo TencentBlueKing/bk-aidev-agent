@@ -60,6 +60,7 @@ vi.mock('../../tool-call/toolcall-render/toolcall-render.vue', () => ({
         h('div', {
           class: 'mock-toolcall-render',
           'data-tool-id': props.toolCall?.id,
+          'data-status': props.status,
         });
     },
   }),
@@ -148,6 +149,92 @@ describe('AssistantMessage', () => {
       });
 
       expect(wrapper.findAll('.mock-toolcall-render').length).toBe(2);
+    });
+
+    it('无 toolMessage 时应向 ToolCallRender 传递 Pending，即使助手 status 为 Complete', () => {
+      const toolCalls = [
+        { id: 'tool-1', type: MessageContentType.Function, function: { name: 'search', arguments: '{}' } },
+      ];
+
+      wrapper = mount(AssistantMessage, {
+        props: {
+          content: '内容',
+          status: MessageStatus.Complete,
+          toolCalls,
+        },
+      });
+
+      expect(wrapper.find('.mock-toolcall-render').attributes('data-status')).toBe(MessageStatus.Pending);
+    });
+
+    it('toolMessage.error 为真时应向 ToolCallRender 传递 Error', () => {
+      const toolCalls = [
+        {
+          id: 'tool-1',
+          type: MessageContentType.Function,
+          function: { name: 'search', arguments: '{}' },
+          toolMessage: {
+            error: 'rate limit',
+            status: MessageStatus.Complete,
+          },
+        },
+      ];
+
+      wrapper = mount(AssistantMessage, {
+        props: {
+          content: '内容',
+          status: MessageStatus.Complete,
+          toolCalls,
+        },
+      });
+
+      expect(wrapper.find('.mock-toolcall-render').attributes('data-status')).toBe(MessageStatus.Error);
+    });
+
+    it('有 toolMessage.status 时应优先使用该 status', () => {
+      const toolCalls = [
+        {
+          id: 'tool-1',
+          type: MessageContentType.Function,
+          function: { name: 'search', arguments: '{}' },
+          toolMessage: {
+            status: MessageStatus.Success,
+          },
+        },
+      ];
+
+      wrapper = mount(AssistantMessage, {
+        props: {
+          content: '内容',
+          status: MessageStatus.Streaming,
+          toolCalls,
+        },
+      });
+
+      expect(wrapper.find('.mock-toolcall-render').attributes('data-status')).toBe(MessageStatus.Success);
+    });
+
+    it('有 toolMessage 但无 status/error 时应回退到助手 status', () => {
+      const toolCalls = [
+        {
+          id: 'tool-1',
+          type: MessageContentType.Function,
+          function: { name: 'search', arguments: '{}' },
+          toolMessage: {
+            content: 'ok',
+          },
+        },
+      ];
+
+      wrapper = mount(AssistantMessage, {
+        props: {
+          content: '内容',
+          status: MessageStatus.Streaming,
+          toolCalls,
+        },
+      });
+
+      expect(wrapper.find('.mock-toolcall-render').attributes('data-status')).toBe(MessageStatus.Streaming);
     });
   });
 

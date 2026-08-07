@@ -171,9 +171,17 @@ class ChatBusinessManager {
     if (!this.sessionModule) return;
     if (this.messageModule.list.value.length !== 1) return;
     
-    this.sessionModule.renameSession(sessionCode).catch(error => {
-      console.error('[ChatBusinessManager] Auto rename failed:', error);
-    });
+    this.sessionModule.renameSession(sessionCode)
+      .then(() => {
+        const updated = this.sessionModule!.list.value.find(s => s.sessionCode === sessionCode);
+        if (updated?.sessionName) {
+          // 经 ChatBot emit('rename') → AIBlueking forwarders.rename，业务方可 @rename 监听
+          this.config.onSessionRenamed?.(updated.sessionName);
+        }
+      })
+      .catch(error => {
+        console.error('[ChatBusinessManager] Auto rename failed:', error);
+      });
   }
 }
 ```

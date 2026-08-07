@@ -30,7 +30,6 @@ export interface UseChatbotInitParams {
   managerErrorBridge: IEventEmitter;
   props: ChatBotProps;
   reportError: ReportChatBotError;
-  scrollToBottom: () => Promise<void>;
 }
 
 export interface UseChatbotInitReturn {
@@ -54,7 +53,7 @@ export class ChatBotInitStaleError extends Error {
 }
 
 export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitReturn {
-  const { props, emit, scrollToBottom, reportError, managerErrorBridge } = params;
+  const { props, emit, reportError, managerErrorBridge } = params;
 
   const chatHelper = shallowRef<IChatHelper | null>(null);
   const sessionBusinessManager = shallowRef<null | SessionBusinessManager>(null);
@@ -113,7 +112,6 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
       },
       onDone: () => {
         emit('receive-end');
-        scrollToBottom();
       },
       onError: (error: unknown) => {
         reportError(error, 'Stream error');
@@ -216,6 +214,8 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
       openingRemark: props.helloText,
       predefinedQuestions: props.prompts,
       placeholder: props.placeholder,
+      // 首条消息自动重命名成功 → ChatBot rename → AIBlueking forwarders.rename
+      onSessionRenamed: (newName: string) => emit('rename', newName),
     });
 
     const shortcutMgr = new ShortcutManager(null, props.shortcuts || []);

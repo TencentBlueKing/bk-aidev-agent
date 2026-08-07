@@ -45,6 +45,7 @@ import type {
   ISessionModule,
 } from '@blueking/chat-helper';
 import type {
+  AiSizeMode,
   CustomBkFlowTab,
   CustomTab,
   IAiSlashMenuItem,
@@ -126,6 +127,7 @@ export interface AIBluekingEmits {
   (e: 'history-click', event: Event): void;
   (e: 'auto-generate-name'): void;
   (e: 'help-click'): void;
+  /** 会话重命名（手动改名或首条消息后 AI 自动重命名成功） */
   (e: 'rename', newName: string): void;
   (e: 'share'): void;
 }
@@ -328,6 +330,13 @@ export interface AIBluekingProps {
     max?: number;
     min?: number;
   };
+
+  /**
+   * 字号主题档位，透传至 ChatBot → ChatContainer
+   * - `small`（默认）：12px 基准
+   * - `normal`：14px 基准
+   */
+  size?: AiSizeMode;
 }
 
 /**

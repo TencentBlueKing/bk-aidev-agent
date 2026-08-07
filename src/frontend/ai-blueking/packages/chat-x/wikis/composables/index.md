@@ -15,9 +15,8 @@
 | `useMessageGroup`            | 消息分组逻辑；将 `Message[]` 转为 `MessageGroup[]`，处理 Tool 合并、Loading 注入、执行摘要过滤和分享模式                          | [查看](./use-message-group.md)    |
 | `useCustomTabProvider`       | 自定义 Tab 管理 Provider；用于 `ChatContainer` 侧边栏的 Tab 动态增删和切换                                                        | [查看](./use-custom-tab.md)       |
 | `useCustomTabConsumer`       | 自定义 Tab 管理 Consumer；在后代组件中注入并操作 Tab（添加/移除/选中）                                                            | [查看](./use-custom-tab.md)       |
-| `useArtifactPreviewProvider` | 文件产物预览 Provider；维护命中文件 id，通过 `onOpen` 触发侧栏「文件产物」Tab                                                     | [查看](./use-artifact-preview.md) |
+| `useArtifactPreviewProvider` | 文件产物预览 Provider；维护命中文件 `outputId`，通过 `onOpen` 触发侧栏「文件产物」Tab                                               | [查看](./use-artifact-preview.md) |
 | `useArtifactPreviewConsumer` | 文件产物预览 Consumer；在深层文件卡片中注入，点击触发 `openPreview`                                                               | [查看](./use-artifact-preview.md) |
-| `buildArtifactId`            | 生成文件产物全局唯一 id（`messageUid#index#outputId`）                                                                            | [查看](./use-artifact-preview.md) |
 | `useFullScreen`              | 浏览器原生全屏控制；嗅探标准/WebKit API，`isFullScreen` 与 ESC 退出同步；`ChatContainer` 侧栏全屏使用                               | [查看](./use-full-screen.md)      |
 | `useParentScrolling`         | 查找最近可滚动祖先并监听 `scroll`/`scrollend`；提供 `isScrolling` 状态，常用于滚动时隐藏浮层                                      | [查看](./use-parent-scrolling.md) |
 | `getScrollParent`            | 独立辅助函数；递归向上查找第一个 `overflowY` 可滚动的祖先元素                                                                     | [查看](./use-parent-scrolling.md) |
@@ -56,7 +55,6 @@ import {
   // 文件产物预览（Provider/Consumer）
   useArtifactPreviewProvider,
   useArtifactPreviewConsumer,
-  buildArtifactId,
   FILE_ARTIFACT_TAB_NAME,
 
   // 全屏控制
@@ -121,13 +119,17 @@ const { messageGroups, executionGroups, isShareMode, isAllSelected, onToggleShar
 
 ```typescript
 // Provider（容器组件）
-const { tabs, selectedTab, isCollapse, addCustomTab, removeCustomTab, selectCustomTab } = useCustomTabProvider({
-  onTabChange: async tab => fetchData(tab.name),
-});
+const { tabs, selectedTab, isCollapse, addCustomTab, ensureCustomTab, removeCustomTab, selectCustomTab } =
+  useCustomTabProvider({
+    onTabChange: async tab => fetchData(tab.name),
+  });
 
 // Consumer（后代组件）
 const tabManager = useCustomTabConsumer();
+// 展开并选中
 tabManager?.addCustomTab({ name: 'detail', label: '详情', data: { component: DetailComp } });
+// 仅挂载，不抢焦点
+tabManager?.ensureCustomTab({ name: 'file-artifact', label: '文件产物', closable: false, order: -1 });
 ```
 
 ### useArtifactPreviewProvider / Consumer
@@ -140,7 +142,7 @@ const { activeArtifactId, setActiveArtifactId } = useArtifactPreviewProvider({
 
 // Consumer（文件卡片）
 const artifactPreview = useArtifactPreviewConsumer();
-artifactPreview?.openPreview({ file, index, messageUid });
+artifactPreview?.openPreview({ file });
 ```
 
 ### useParentScrolling

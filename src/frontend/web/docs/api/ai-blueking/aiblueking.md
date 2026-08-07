@@ -123,6 +123,7 @@ function openAI() {
 | `messageTools` | `IToolBtn[]` | — | 自定义 AI 消息主工具组，透传至 ChatBot |
 | `updateTools` | `IToolBtn[]` | — | 自定义 AI 消息反馈工具组，透传至 ChatBot |
 | `resizeProps` | `{ disabled?, initialDivide?, max?, min? }` | — | ResizeLayout 配置（执行情况侧面板拖拽） |
+| `size` | `'normal' \| 'small'` | `'small'` | 字号主题档位，透传至 ChatBot → ChatContainer（`small` 12px / `normal` 14px） |
 
 ### 侧栏自定义渲染 {#side-render-customization}
 
@@ -166,7 +167,7 @@ function openAI() {
 | `new-chat-created` | `({ sessionCode, sessionName?, createdAt? })` | 新会话创建完成 |
 | `history-click` | `(event: Event)` | 历史记录点击 |
 | `auto-generate-name` | — | 自动生成名称 |
-| `rename` | `(newName: string)` | 重命名 |
+| `rename` | `(newName: string)` | 会话重命名（手动改名，或首条消息后 AI 自动重命名成功） |
 | `share` | — | 分享 |
 | `help-click` | — | 帮助点击 |
 

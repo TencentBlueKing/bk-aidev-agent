@@ -82,7 +82,7 @@
     align-items: center;
     width: 100%;
     height: 32px;
-    padding: 0 8px;
+    padding: 0 var(--ai-spacing-comfortable, 8px);
 
     &-default {
       display: flex;

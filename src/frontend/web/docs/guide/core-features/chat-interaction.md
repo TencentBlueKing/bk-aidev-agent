@@ -107,10 +107,13 @@ enum MessageStatus {
   Pending = 'pending',       // 等待中
   Streaming = 'streaming',   // 流式输出中
   Complete = 'complete',     // 已完成
+  Completed = 'completed',   // 已完成（与 Complete 同义，兼容协议返回）
   Error = 'error',           // 出错
   Stop = 'stop',             // 被用户停止
 }
 ```
+
+完整取值与说明见 [类型定义 · MessageStatus](/api/chat-x/types#messagestatus)。
 
 ## 内容渲染
 

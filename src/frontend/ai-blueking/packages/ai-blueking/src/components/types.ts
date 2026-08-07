@@ -20,7 +20,7 @@ import type {
   OnCustomTabChange,
 } from '../types';
 import type { IAgentInfo, ILlmItem, ISession } from '@blueking/chat-helper';
-import type { IAiSlashMenuItem, IModelOption, ISkillListItem, IToolBtn, Message } from '@blueking/chat-x';
+import type { AiSizeMode, IAiSlashMenuItem, IModelOption, ISkillListItem, IToolBtn, Message } from '@blueking/chat-x';
 import type { TippyOptions } from 'vue-tippy';
 
 /**
@@ -47,6 +47,11 @@ export type ChatBotEmits = {
   'receive-end': [];
   'receive-start': [];
   'receive-text': [];
+  /**
+   * 会话名称变更（目前：首条消息后 AI 自动重命名成功）
+   * 与 AIBlueking / Header 的 rename 事件 payload 一致
+   */
+  rename: [newName: string];
   /** 请求进入分享模式事件（来自 message-tools 的 share 按钮） */
   'request-share': [];
   'send-message': [message: string];
@@ -224,6 +229,13 @@ export interface ChatBotProps {
     max?: number;
     min?: number;
   };
+
+  /**
+   * 字号主题档位，透传至 ChatContainer
+   * - `small`（默认）：12px 基准
+   * - `normal`：14px 基准
+   */
+  size?: AiSizeMode;
 
   /** 自定义侧栏内容区渲染 */
   getSideRenderComponent?: GetSideRenderComponent;

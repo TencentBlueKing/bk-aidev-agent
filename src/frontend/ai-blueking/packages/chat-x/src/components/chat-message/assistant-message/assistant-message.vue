@@ -24,7 +24,13 @@
         :key="toolCall.id"
       >
         <ToolCallRender
-          :status="toolCall.toolMessage?.status ?? status"
+          :status="
+            !toolCall.toolMessage
+              ? MessageStatus.Pending
+              : toolCall.toolMessage.error
+                ? MessageStatus.Error
+                : (toolCall.toolMessage.status ?? status)
+          "
           :tool-call="toolCall"
         />
       </template>
@@ -33,23 +39,33 @@
     <MessageArtifacts
       v-if="artifacts && artifacts.length > 0"
       :artifacts="artifacts"
-      :message-uid="messageUid"
     />
   </div>
 </template>
 <script setup lang="ts">
   import { computed } from 'vue';
 
-  import { MessageContentType } from '../../../ag-ui/types/constants';
+  import { MessageContentType, MessageStatus } from '../../../ag-ui/types/constants';
   import ContentRender from '../../chat-content/content-render/content-render.vue';
   import ToolCallRender from '../../tool-call/toolcall-render/toolcall-render.vue';
   import MessageArtifacts from './message-artifacts/message-artifacts.vue';
 
   import type { AssistantMessage } from '../../../ag-ui/types/messages';
-  const props = defineProps<Partial<AssistantMessage>>();
+
+  // 本地 interface：content 用字面量 string，避免 Vue 将泛型 BaseMessage.content 推断为 Object
+  interface AssistantMessageProps {
+    content?: string;
+    id?: AssistantMessage['id'];
+    messageId?: AssistantMessage['messageId'];
+    name?: AssistantMessage['name'];
+    property?: AssistantMessage['property'];
+    role?: AssistantMessage['role'];
+    status?: AssistantMessage['status'];
+    toolCalls?: AssistantMessage['toolCalls'];
+    uid?: AssistantMessage['uid'];
+  }
+  const props = defineProps<AssistantMessageProps>();
   const artifacts = computed(() => props.property?.artifacts);
-  // 唯一消息标识：优先 uid，回退 id，供文件产物命中唯一文件与「在对话中定位」
-  const messageUid = computed(() => props.uid ?? (props.id != null ? String(props.id) : ''));
 </script>
 
 <style lang="scss">
@@ -67,7 +83,6 @@
       flex-direction: column;
       gap: 16px;
       width: 100%;
-      margin-bottom: 12px;
     }
 
     &-tools {

@@ -84,6 +84,7 @@
             :get-side-tab-render-component="props.getSideTabRenderComponent"
             :on-custom-tab-change="props.onCustomTabChange"
             :resize-props="props.resizeProps"
+            :size="props.size"
             :resources="agentResources"
             :session-code="props.initialSessionCode"
             :share-loading="isShareLoading"
@@ -100,6 +101,7 @@
             @receive-end="handleReceiveEnd"
             @receive-start="handleReceiveStart"
             @receive-text="handleReceiveText"
+            @rename="handleSessionRenamed"
             @request-share="handleShare"
             @send-message="(msg: string) => handleSendMessage(msg)"
             @session-switched="(session: ISession | null) => handleSessionSwitched(session)"
@@ -288,6 +290,7 @@
     handleAutoGenerateName,
     handleHelpClick,
     handleRename,
+    handleSessionRenamed,
     handleSessionSwitched,
     addNewSession,
     switchToSession,

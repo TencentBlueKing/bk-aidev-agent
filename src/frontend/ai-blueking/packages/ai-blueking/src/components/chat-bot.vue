@@ -37,6 +37,7 @@
       :welcome-title="welcomeTitle"
       :prompts="effectivePrompts"
       :resize-props="effectiveResizeProps"
+      :size="props.size"
       :resources="effectiveResources"
       :shortcut-id="selectedShortcut?.id"
       :shortcuts="filteredShortcuts"
@@ -98,7 +99,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, nextTick, ref, shallowRef, useSlots, watch } from 'vue';
+  import { computed, ref, shallowRef, useSlots, watch } from 'vue';
 
   import { ChatContainer, ChatInput, MessageRender } from '@blueking/chat-x';
   import { RenderMode } from '@blueking/chat-x';
@@ -167,7 +168,6 @@
   }>();
 
   // ==================== Template Refs ====================
-  const messagesContainerRef = ref<HTMLElement>();
   const chatContainerRef = ref<InstanceType<typeof ChatContainer>>();
   const chatInputRef = ref<InstanceType<typeof ChatInput>>();
 
@@ -183,14 +183,6 @@
 
   /** 暴露给父组件：当前选中模型 llm_code（稳定 ComputedRef，便于 unref） */
   const selectedLlmCode = computed(() => chatBusinessManager.value?.selectedLlmCode.value);
-
-  // ==================== 滚动辅助 ====================
-  const scrollToBottom = async () => {
-    await nextTick();
-    if (messagesContainerRef.value) {
-      messagesContainerRef.value.scrollTop = messagesContainerRef.value.scrollHeight;
-    }
-  };
 
   // 聚焦输入框
   const focusInput = () => {
@@ -213,7 +205,7 @@
     chatBusinessManager,
     sessionBusinessManager,
     shortcutManager,
-  } = useChatbotInit({ props, emit, scrollToBottom, reportError, managerErrorBridge });
+  } = useChatbotInit({ props, emit, reportError, managerErrorBridge });
 
   const { handleInterruptResume, resumeUserQuestionWithInput } = useInterruptResume({
     chatHelper,
@@ -294,7 +286,6 @@
     chatBusinessManager,
     cite,
     focusInput,
-    scrollToBottom,
     getShortcutFromMessage,
     buildShortcutProperty,
     getRequestOptions: () => props.requestOptions as IRequestOptions | undefined,

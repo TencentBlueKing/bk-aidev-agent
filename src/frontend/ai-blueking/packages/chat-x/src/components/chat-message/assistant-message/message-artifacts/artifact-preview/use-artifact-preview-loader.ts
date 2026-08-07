@@ -76,6 +76,7 @@ export const useArtifactPreviewLoader = (options: {
     renderer.value = strategy.renderer;
 
     try {
+      // 每次 load 都重新取链（无 URL 缓存）
       const urls = await options.resolveUrls(file);
       if (seq !== loadSeq) {
         return;

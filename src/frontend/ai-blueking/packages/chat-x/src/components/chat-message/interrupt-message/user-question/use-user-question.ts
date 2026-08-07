@@ -48,9 +48,9 @@ export type NormalizedUserQuestionOption = UserQuestionOptionItem & {
 };
 
 /**
- * 用户回答问题（human-in-the-loop）的答案聚合与 resume payload 构建。
+ * 用户回答问题（human-in-the-loop）的答案聚合、题目分页与 resume payload 构建。
  *
- * 设计目标：composable 只负责「收集每题答案 + 完成态计算 + payload 组装」，
+ * 设计目标：composable 只负责「收集每题答案 + 完成态计算 + 分页定位 + payload 组装」，
  * 对「回答形态」（单选/多选/表单/任意自定义）零感知；
  * 各题如何作答与如何校验，全部下沉到对应的渲染组件（默认为选择题），
  * 渲染组件作答有效时回传已组装的 {@link UserQuestionAnswerItem}，无效时回传 undefined。
@@ -62,13 +62,8 @@ export const useUserQuestion = (getInterrupt: () => undefined | UserQuestionInte
 
   // 每题答案：questionIndex -> 已组装答案；undefined 代表该题未作答
   const answerMap = shallowRef<Record<number, undefined | UserQuestionAnswerItem>>({});
-
-  const getAnswer = (questionIndex: number): undefined | UserQuestionAnswerItem => answerMap.value[questionIndex];
-
-  /** 写入/清空某题答案：传 undefined 表示该题回到未作答态 */
-  const setAnswer = (questionIndex: number, answer: undefined | UserQuestionAnswerItem) => {
-    answerMap.value = { ...answerMap.value, [questionIndex]: answer };
-  };
+  // 当前展示题索引（一次只展示一题）
+  const currentIndex = shallowRef(0);
 
   const totalCount = computed(() => questions.value.length);
   const answeredCount = computed(() =>
@@ -76,6 +71,43 @@ export const useUserQuestion = (getInterrupt: () => undefined | UserQuestionInte
   );
   /** 全部问题均已作答方可「完成」 */
   const completed = computed(() => totalCount.value > 0 && answeredCount.value === totalCount.value);
+
+  const canGoPrev = computed(() => currentIndex.value > 0);
+  const canGoNext = computed(() => currentIndex.value < totalCount.value - 1);
+
+  const getAnswer = (questionIndex: number): undefined | UserQuestionAnswerItem => answerMap.value[questionIndex];
+
+  const goPrev = () => {
+    if (!canGoPrev.value) return;
+    currentIndex.value -= 1;
+  };
+
+  const goNext = () => {
+    if (!canGoNext.value) return;
+    currentIndex.value += 1;
+  };
+
+  /**
+   * 单选预设选项：从未答 → 有效答时自动跳下一题。
+   * 多选 / Others / 改选已答题：不自动跳，由标题栏箭头切换。
+   */
+  const tryAutoAdvance = (questionIndex: number, prev: undefined | UserQuestionAnswerItem, answer: UserQuestionAnswerItem) => {
+    if (prev) return;
+    if (questionIndex !== currentIndex.value) return;
+    if (questions.value[questionIndex]?.multiSelect === true) return;
+    if (answer.answer.some(item => item.label === OTHERS_OPTION_LABEL)) return;
+    if (!canGoNext.value) return;
+    currentIndex.value += 1;
+  };
+
+  /** 写入/清空某题答案：传 undefined 表示该题回到未作答态 */
+  const setAnswer = (questionIndex: number, answer: undefined | UserQuestionAnswerItem) => {
+    const prev = answerMap.value[questionIndex];
+    answerMap.value = { ...answerMap.value, [questionIndex]: answer };
+    if (answer) {
+      tryAutoAdvance(questionIndex, prev, answer);
+    }
+  };
 
   /** 组装各题答案；未作答题以空答案兜底，保证与问题一一对应 */
   const buildAnswers = (): UserQuestionAnswerItem[] =>
@@ -97,6 +129,11 @@ export const useUserQuestion = (getInterrupt: () => undefined | UserQuestionInte
     answeredCount,
     totalCount,
     completed,
+    currentIndex,
+    canGoPrev,
+    canGoNext,
+    goPrev,
+    goNext,
     getAnswer,
     setAnswer,
     buildResolvePayload,

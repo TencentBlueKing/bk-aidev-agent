@@ -242,15 +242,15 @@ const doubled = computed(() => count.value * 2);
 
 ## 消息状态
 
-`status` 影响两处渲染：**内容区**和**工具调用状态标题**。
+`status` 直接影响 **内容区**（`ContentRender`）。`ToolCallRender` 的状态**按工具维度推导**（见下方「工具调用状态推导」），不直接等于本组件的 `status`。
 
-| `status`    | 内容区效果                          | ToolCallRender 标题 |
-| ----------- | ----------------------------------- | ------------------- |
-| `pending`   | 正常渲染（通常 content 为空）       | Loading + "调用中"  |
-| `streaming` | Markdown 自动补全未闭合语法         | Loading + "调用中"  |
-| `complete`  | 正常渲染完整 Markdown               | "调用成功" + 耗时   |
-| `error`     | 红色错误图标 + content 作为错误提示 | "调用失败"          |
-| `stop`      | 正常渲染（内容停留在中止时的状态）  | "调用成功"          |
+| `status`    | 内容区效果                          |
+| ----------- | ----------------------------------- |
+| `pending`   | 正常渲染（通常 content 为空）       |
+| `streaming` | Markdown 自动补全未闭合语法         |
+| `complete`  | 正常渲染完整 Markdown               |
+| `error`     | 红色错误图标 + content 作为错误提示 |
+| `stop`      | 正常渲染（内容停留在中止时的状态）  |
 
 ### Pending
 
@@ -307,7 +307,7 @@ const doubled = computed(() => count.value * 2);
 
 ## 工具调用
 
-当 AI 回复中包含工具调用时，传入 `toolCalls` 数组，每项自动渲染为 `ToolCallRender`，位于内容区下方。`status` 会同步传递给每个 `ToolCallRender` 以反映调用状态。
+当 AI 回复中包含工具调用时，传入 `toolCalls` 数组，每项自动渲染为 `ToolCallRender`，位于内容区下方。传给每个 `ToolCallRender` 的 `status` 按下方优先级从 `toolCall.toolMessage` 推导，而非直接同步本组件的 `status`。
 
 ### 单个工具调用
 
@@ -495,25 +495,29 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
   />
 </div>
 
-### 工具调用状态随消息状态变化
+### 工具调用状态推导
 
-`ToolCallRender` 的状态标题直接来自 `AssistantMessage` 的 `status` prop：
+传给每个 `ToolCallRender` 的 `status` 按以下优先级计算：
 
-**调用中**（`status = "streaming"`）：
+1. 无 `toolMessage` → `MessageStatus.Pending`（调用中）
+2. `toolMessage.error` 为真 → `MessageStatus.Error`（调用失败）
+3. 否则 → `toolMessage.status ??` 本组件 `status`
+
+**调用中**（有 `toolCalls`、尚无 `toolMessage`；即便助手 `status` 已是 `complete` 也显示调用中）：
 
 <div class="demo">
-  <p style="margin: 0 0 4px; font-size: 12px; color: #979ba5;">status = "streaming" + toolCalls</p>
+  <p style="margin: 0 0 4px; font-size: 12px; color: #979ba5;">无 toolMessage → Pending</p>
   <AssistantMessageComp
     content="正在调用工具获取信息..."
-    status="streaming"
+    status="complete"
     :tool-calls="singleToolCall"
   />
 </div>
 
-**调用成功**（`status = "complete"` + `toolMessage`）：
+**调用成功**（`toolMessage.status = "complete"`）：
 
 <div class="demo">
-  <p style="margin: 0 0 4px; font-size: 12px; color: #979ba5;">status = "complete" + toolMessage</p>
+  <p style="margin: 0 0 4px; font-size: 12px; color: #979ba5;">toolMessage.status = "complete"</p>
   <AssistantMessageComp
     content="已查询到天气信息。"
     status="complete"
@@ -629,7 +633,7 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
 | `html` / `markdown` / `md` / `txt` / `json` | `download_url` | 正文直渲染（srcdoc / MarkdownContent / `<pre>`） |
 | `pdf` / `jpg` 等 | `preview_url` | iframe（一般为后台转好的 PDF） |
 
-`md` 与 `markdown` 等价（见 `AIFileType.Md` / `AIFileType.Markdown`）。
+`md` 与 `markdown` 等价（见 `AIFileType.Md` / `AIFileType.Markdown`）。预览重载、重试与取链约定见 [FileArtifactPanel 预览机制](/components/message/file-artifact-panel#预览机制)。
 
 ```vue
 <template>
@@ -681,7 +685,7 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
 | 属性名    | 类型                    | 说明                                                                                      |
 | --------- | ----------------------- | ----------------------------------------------------------------------------------------- |
 | content   | `string`                | AI 回复文本，支持 Markdown；空值时不渲染内容区                                            |
-| status    | `MessageStatus`         | 影响 ContentRender / ToolCallRender 状态表现                                              |
+| status    | `MessageStatus`         | 影响 ContentRender；ToolCallRender 在无 toolMessage.status 时回退使用此值                 |
 | toolCalls | `ToolCall[]`            | 工具调用列表，每项渲染一个 `ToolCallRender`                                               |
 | id        | `number \| string`      | 消息 ID；无 `uid` 时回退为 `messageUid`                                                   |
 | messageId | `number \| string`      | 消息唯一标识                                                                              |

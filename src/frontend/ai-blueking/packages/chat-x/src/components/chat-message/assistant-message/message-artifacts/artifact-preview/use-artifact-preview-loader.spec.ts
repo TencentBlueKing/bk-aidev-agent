@@ -162,6 +162,61 @@ describe('use-artifact-preview-loader', () => {
     wrapper.unmount();
   });
 
+  it('缺 preview_url 时应为 empty', async () => {
+    const { api, wrapper } = mountLoader({
+      file: createFile(AIFileType.Pdf),
+      resolveUrls: vi.fn().mockResolvedValue({}),
+    });
+
+    await api.load();
+
+    expect(api.status.value).toBe('empty');
+    wrapper.unmount();
+  });
+
+  it('缺 download_url 的文本类文件时应为 empty', async () => {
+    const { api, wrapper } = mountLoader({
+      file: createFile(AIFileType.Txt),
+      resolveUrls: vi.fn().mockResolvedValue({ preview_url: 'https://example.com/a.pdf' }),
+    });
+
+    await api.load();
+
+    expect(api.status.value).toBe('empty');
+    wrapper.unmount();
+  });
+
+  it('json 应按 txt 直渲染', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve('{"ok":true}') }),
+    );
+    const { api, wrapper } = mountLoader({
+      file: createFile(AIFileType.Json, 'a.json'),
+      resolveUrls: vi.fn().mockResolvedValue({ download_url: 'https://example.com/a.json' }),
+    });
+
+    await api.load();
+
+    expect(api.status.value).toBe('ready');
+    expect(api.content.value).toBe('{"ok":true}');
+    expect(api.renderer.value).toBe('txt');
+    wrapper.unmount();
+  });
+
+  it('load() 默认只向 resolveUrls 传 file', async () => {
+    const file = createFile(AIFileType.Pdf);
+    const resolveUrls = vi.fn().mockResolvedValue({ preview_url: 'https://example.com/a.pdf' });
+    const { api, wrapper } = mountLoader({ file, resolveUrls });
+
+    await api.load();
+
+    expect(resolveUrls).toHaveBeenCalledTimes(1);
+    expect(resolveUrls).toHaveBeenCalledWith(file);
+    expect(resolveUrls.mock.calls[0]).toHaveLength(1);
+    wrapper.unmount();
+  });
+
   it('dispose 后 abort 不应置为 error', async () => {
     const fetchMock = vi.fn(
       (_url: string, options: { signal: AbortSignal }) => new Promise((_resolve, reject) => {

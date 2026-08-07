@@ -178,14 +178,14 @@ sinceVersion: 1.0.0
 
 `status` prop 同时控制头部的 CSS class（`toolcall-status-{status}`）、背景/边框颜色、状态文案和 Loading 动画：
 
-| `status`                | 状态文案 | 背景色            | 边框色    | Loading |
-| ----------------------- | -------- | ----------------- | --------- | ------- |
-| `pending` / `streaming` | 调用中   | `#fafbfd`         | `#dcdee5` | ✓       |
-| `complete` / `success`  | 调用成功 | `#ebfaf0`         | `#a1e3ba` | -       |
-| `error`                 | 调用失败 | `#fff0f0`         | `#f8b4b4` | -       |
-| 其他 / `undefined`      | 调用中   | —（无匹配 class） | —         | -       |
+| `status`                              | 状态文案 | 背景色            | 边框色    | Loading |
+| ------------------------------------- | -------- | ----------------- | --------- | ------- |
+| `pending` / `streaming`               | 调用中   | `#fafbfd`         | `#dcdee5` | ✓       |
+| `complete` / `completed` / `success`  | 调用成功 | `#ebfaf0`         | `#a1e3ba` | -       |
+| `error`                               | 调用失败 | `#fff0f0`         | `#f8b4b4` | -       |
+| 其他 / `undefined`                    | 调用中   | —（无匹配 class） | —         | -       |
 
-> **说明**：`statusTitle` 的 `switch` 语句中 `default` 与 `case Pending` 共享同一返回值，`streaming` 和未知 status 均命中 `default` 分支，显示"调用中"。Loading 动画由 `v-if="status === 'pending' || status === 'streaming'"` 单独控制。
+> **说明**：`statusTitle` 将 `Completed`（`completed`）与 `Complete` / `Success` 一并视为成功；主题 `$toolcallStatusMap` 同步提供 `completed` 色值。`default` 与 `case Pending` 共享「调用中」文案，`streaming` 与未知 status 命中 `default`。Loading 由 `v-if="status === 'pending' || status === 'streaming'"` 控制。
 
 **三种状态对比**
 
@@ -364,7 +364,13 @@ const assistantMessage = {
     v-for="toolCall in assistantMessage.toolCalls"
     :key="toolCall.id"
     :tool-call="toolCall"
-    :status="toolCall.toolMessage?.status ?? MessageStatus.Pending"
+    :status="
+      !toolCall.toolMessage
+        ? MessageStatus.Pending
+        : toolCall.toolMessage.error
+          ? MessageStatus.Error
+          : (toolCall.toolMessage.status ?? assistantMessage.status)
+    "
   />
 </template>
 ```
