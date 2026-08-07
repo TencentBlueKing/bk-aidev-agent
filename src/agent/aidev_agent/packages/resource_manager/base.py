@@ -429,10 +429,11 @@ class BaseResourceManager(abc.ABC):
         result["data"]["tool_cn_name"] = result["data"]["tool_name"]
         if result["data"].get("credential_type", "") != CredentialType.NULL.value:
             tool = Tool.model_validate(result["data"])
-
+            # 归一化用户名来源：显式 username > self.username；
+            resolved_username = username or self.username or None
             app_code = (executor_info or {}).get("app_code") or self.app_code
             app_secret = (executor_info or {}).get("app_secret") or self.app_secret
-            access_token = (executor_info or {}).get("access_token") or self.resolve_access_token(username)
+            access_token = (executor_info or {}).get("access_token") or self.resolve_access_token(resolved_username)
 
             if access_token:
                 auth_info: dict = {"access_token": access_token}
@@ -440,8 +441,10 @@ class BaseResourceManager(abc.ABC):
                 auth_info = {
                     "bk_app_code": app_code,
                     "bk_app_secret": app_secret,
-                    "bk_username": username,
                 }
+                # 仅在用户名非空时携带 bk_username，与 construct_mcp 分支保持一致。
+                if resolved_username:
+                    auth_info["bk_username"] = resolved_username
 
             tool.extra = ToolExtra(header={"X-Bkapi-Authorization": json.dumps(auth_info)})
 
@@ -450,7 +453,7 @@ class BaseResourceManager(abc.ABC):
                 f"app_code={self.app_code}, rm_type={type(self).__name__}, "
                 f"has_executor_info={bool(executor_info)}, "
                 f"has_access_token={bool(access_token)}, "
-                f"username={username or ''}"
+                f"username={resolved_username or ''}"
             )
             return make_structured_tool(tool)
         return make_structured_tool(Tool.model_validate(result["data"]))

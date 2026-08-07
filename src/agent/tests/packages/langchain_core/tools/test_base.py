@@ -1159,31 +1159,57 @@ def test_construct_tool_skips_header_when_credential_type_is_null(sample_weather
 
 
 @pytest.mark.parametrize(
-    "kwargs, expected_auth",
+    "self_username, kwargs, expected_auth",
     [
-        # 无 username / executor_info → 应用凭据
+        # 无 username / self.username / executor_info → 纯应用凭据，不含 bk_username
         pytest.param(
+            "",
             {},
-            {"bk_app_code": "dummy_app", "bk_app_secret": "dummy_credential", "bk_username": None},
+            {"bk_app_code": "dummy_app", "bk_app_secret": "dummy_credential"},
             id="without_user_context",
         ),
-        # 仅 username → 应用凭据 + bk_username
+        # 仅显式 username → 应用凭据 + bk_username
         pytest.param(
+            "",
             {"username": "alice"},
             {"bk_app_code": "dummy_app", "bk_app_secret": "dummy_credential", "bk_username": "alice"},
             id="with_username",
         ),
+        # 仅 self.username（未显式传参）→ 回退到 self.username 拼装 bk_username
+        pytest.param(
+            "bob",
+            {},
+            {"bk_app_code": "dummy_app", "bk_app_secret": "dummy_credential", "bk_username": "bob"},
+            id="fallback_to_self_username",
+        ),
+        # 显式 username 覆盖 self.username → 使用显式值
+        pytest.param(
+            "bob",
+            {"username": "alice"},
+            {"bk_app_code": "dummy_app", "bk_app_secret": "dummy_credential", "bk_username": "alice"},
+            id="explicit_username_overrides_self_username",
+        ),
         # executor_info 提供 access_token → 仅 access_token，忽略其他字段
         pytest.param(
+            "",
             {"username": "alice", "executor_info": {"access_token": "dummy_exec_value"}},
             {"access_token": "dummy_exec_value"},
             id="with_access_token",
         ),
     ],
 )
-def test_construct_tool_injects_expected_authorization_header(sample_weather_tool_data, kwargs, expected_auth):
-    """按输入拼装 X-Bkapi-Authorization：应用凭据 / 用户凭据 / access_token 优先。"""
+def test_construct_tool_injects_expected_authorization_header(
+    sample_weather_tool_data, self_username, kwargs, expected_auth
+):
+    """按输入拼装 X-Bkapi-Authorization：应用凭据 / 用户凭据 / access_token 优先。
+
+    覆盖场景：
+    - 纯应用态（无任何 username 来源）不含 bk_username 字段；
+    - 仅显式 username / 仅 self.username 回退 / 显式 username 覆盖 self.username；
+    - executor_info.access_token 优先，其他字段被忽略。
+    """
     rm = _rm_with_mocked_client(sample_weather_tool_data)
+    rm.username = self_username
 
     tool = rm.construct_tool("weather-query", **kwargs)
 
