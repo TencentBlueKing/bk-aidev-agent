@@ -57,6 +57,7 @@ from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
 from aidev_agent.utils.async_utils import async_to_sync_generator
+from aidev_agent.utils.event import RunId
 from aidev_agent.utils.loop import run_coro_sync
 from aidev_agent.utils.migrations import (
     migration_chat_model_non_thinking_from_non_thinking_llm_v1,
@@ -311,7 +312,11 @@ class ChatCompletionAgent(BaseModel):
     def convert_history_to_messages(self) -> list[BaseMessage]:
         if not self.chat_history:
             return []
-        return self._chat_history_to_langchain_messages(self._convert_contents(self.chat_history))
+        return self._chat_history_to_langchain_messages(self._convert_contents(self.chat_history, for_llm=True))
+
+    @staticmethod
+    def _is_user_cancelled_prompt(prompt: ChatPrompt) -> bool:
+        return prompt.role in (PromptRole.ASSISTANT.value, PromptRole.AI.value) and prompt.content == RunId.CANCELLED_MESSAGE
 
     @property
     def model_name(self) -> str:
@@ -769,6 +774,10 @@ class ChatCompletionAgent(BaseModel):
         # 4. 预处理（在 agent_input 构造前）（D-02, D-03）
         # 11.8: tools/context 不在 _stream 作用域内，原 AgentInput.tools/context 默认为 []（body 不含）
         # tools 通过 AidevAGUIAgent 构造函数传入（graph 挂载），不通过 state 传递
+        # MESSAGES_SNAPSHOT 入口：完整 chat_history → langchain → AG-UI（含「用户已取消」）
+        snapshot_messages = langchain_messages_to_agui(
+            self._chat_history_to_langchain_messages(self._convert_contents(self.chat_history))
+        )
         agui_messages = langchain_messages_to_agui(messages)
         preprocessed = self._prepare_stream_input(
             agent_e,
@@ -786,7 +795,7 @@ class ChatCompletionAgent(BaseModel):
             "thread_id": self.thread_id,
             "run_id": messages[-1].id or uuid.uuid4().hex,
             "state": preprocessed["state"],
-            "messages": agui_messages,
+            "messages": snapshot_messages,
             "stream_input": preprocessed["stream_input"],  # 11.9: stream_input 通过 input 传递
         }
         if forwarded_props:
@@ -1107,11 +1116,13 @@ class ChatCompletionAgent(BaseModel):
                     messages.append(InterruptMessage(id=each.id, content=interrupt_content))
         return messages
 
-    def _convert_contents(self, contents: list[ChatPrompt]) -> list[ChatPrompt]:
+    def _convert_contents(self, contents: list[ChatPrompt], *, for_llm: bool = False) -> list[ChatPrompt]:
         """将无需送到大模型处理的 content 去掉"""
         new_contents = []
         for each in contents:
             each.role = each.role.replace("hidden-", "")
+            if for_llm and self._is_user_cancelled_prompt(each):
+                continue
             if each.role in self.SKIP_PROMPT_ROLE:
                 continue
             if each.role == PromptRole.HIDDEN.value:
