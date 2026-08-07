@@ -3,9 +3,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockEmit } from '../../../__tests__/helpers';
 import { useErrorReporter } from '../use-error-reporter';
 
+const { mockMessage } = vi.hoisted(() => ({
+  mockMessage: vi.fn(),
+}));
+
+vi.mock('bkui-vue', () => ({
+  Message: mockMessage,
+}));
+
+vi.mock('../../../lang', () => ({
+  t: (key: string) => key,
+}));
+
 describe('useErrorReporter', () => {
   beforeEach(() => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockMessage.mockClear();
   });
 
   describe('reportError 归一化', () => {
@@ -71,6 +84,66 @@ describe('useErrorReporter', () => {
     });
   });
 
+  describe('errorToast', () => {
+    it('should toast error.message by default', () => {
+      const emit = createMockEmit();
+      const { reportError } = useErrorReporter(emit);
+
+      reportError(new Error('Bad Request'));
+
+      expect(mockMessage).toHaveBeenCalledWith({
+        message: 'Bad Request',
+        theme: 'error',
+      });
+    });
+
+    it('should use fallback message when error.message is empty', () => {
+      const emit = createMockEmit();
+      const { reportError } = useErrorReporter(emit);
+
+      reportError(new Error(''));
+
+      expect(mockMessage).toHaveBeenCalledWith({
+        message: '请求失败',
+        theme: 'error',
+      });
+    });
+
+    it('should not toast when errorToast is false', () => {
+      const emit = createMockEmit();
+      const { reportError } = useErrorReporter(emit, { errorToast: false });
+
+      reportError(new Error('Bad Request'));
+
+      expect(emit).toHaveBeenCalledTimes(1);
+      expect(mockMessage).not.toHaveBeenCalled();
+    });
+
+    it('should toast only once for the same Error instance', () => {
+      const emit = createMockEmit();
+      const { reportError } = useErrorReporter(emit);
+      const error = new Error('Bad Request');
+
+      reportError(error, 'first');
+      reportError(error, 'second');
+
+      expect(mockMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('should follow getter errorToast value', () => {
+      const emit = createMockEmit();
+      let enabled = true;
+      const { reportError } = useErrorReporter(emit, { errorToast: () => enabled });
+
+      reportError(new Error('first'));
+      expect(mockMessage).toHaveBeenCalledTimes(1);
+
+      enabled = false;
+      reportError(new Error('second'));
+      expect(mockMessage).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('managerErrorBridge', () => {
     it.each(['chat-error', 'receive-error', 'session-error'])('should forward %s to the error emit', event => {
       const emit = createMockEmit();
@@ -103,6 +176,7 @@ describe('useErrorReporter', () => {
       reportError(error, 'Failed to stop generation');
 
       expect(emit).toHaveBeenCalledTimes(1);
+      expect(mockMessage).toHaveBeenCalledTimes(1);
     });
   });
 });

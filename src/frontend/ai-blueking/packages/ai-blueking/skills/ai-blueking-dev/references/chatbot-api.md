@@ -24,6 +24,7 @@
 | shareLoading    | `boolean`            | `false` | 分享加载状态                                   |
 | enableModelSelect | `boolean`          | `true`  | 是否启用模型选择（≥ v2.2.1）；拉取 `GET llms/`，列表非空才展示 |
 | models          | `ILlmItem[] \| IModelOption[]` | - | 外部模型列表（≥ v2.2.1）；有值时跳过内部拉取 |
+| errorToast      | `boolean`            | `true`  | 接口/业务错误时是否自动弹 Message（展示 `error.message`）；设为 `false` 可自行通过 `@error` 处理。AIBlueking 内嵌时会传 `false` 以免与父层双弹 |
 | height          | `string \| number`   | -       | 容器高度                                       |
 | maxWidth        | `string \| number`   | -       | 最大宽度                                       |
 | extCls          | `string`             | -       | 额外 CSS 类名                                  |
@@ -47,7 +48,7 @@
 | receive-text      | -                                          | 流式接收文本（仅独立模式）     |
 | receive-end       | -                                          | 流式响应结束（仅独立模式）     |
 | stop              | -                                          | 用户停止生成                   |
-| error             | `(error: Error)`                           | 发生错误（仅独立模式）；参数保证是 `Error` 实例，同一个错误实例只触发一次 |
+| error             | `(error: Error)`                           | 发生错误（仅独立模式）；参数保证是 `Error` 实例，同一个错误实例只触发一次；默认同时弹 Message（`errorToast`，文案为 `error.message`） |
 
 > **注意**：AIBlueking 集成模式下，ChatBot 的 `@error` 不会被透传给业务方，所有错误统一通过 AIBlueking 的 `@sdk-error` 事件暴露。详见 [集成模式 - 错误处理](integration-patterns.md#错误处理模式)。
 | session-switched  | `(session: ISession \| null)`              | 会话切换完成                   |
