@@ -296,6 +296,7 @@ class ChatSessionContentViewSet(PluginViewSet):
     def stop(self, request):
         username = request.user.username
         session_code = request.data.get("session_code", "")
+        run_id = request.data.get("run_id") or None
 
         # 获取 message_handler 用于清理
         message_handler = message_handler_factory.get()
@@ -305,12 +306,12 @@ class ChatSessionContentViewSet(PluginViewSet):
             # 1. 先清理上一轮完成通知，避免误消费旧通知
             if hasattr(message_handler, "clear_cancelled_signal"):
                 try:
-                    message_handler.clear_cancelled_signal(session_code)
+                    message_handler.clear_cancelled_signal(session_code, run_id=run_id)
                 except Exception as e:
                     logger.exception(f"Error clearing stale cancelled signal: {e}")
 
             # 2. 发送取消信号（进程内 + 跨进程）
-            GeneratorStreamingHelper.cancel(session_code)
+            GeneratorStreamingHelper.cancel(session_code, message_handler=message_handler, run_id=run_id)
 
             # 3. 等待 SSE 消费者真正退出（收到取消终态与 EOD）
             #    正常情况下几百毫秒内完成，超时则降级为当前行为
@@ -320,6 +321,7 @@ class ChatSessionContentViewSet(PluginViewSet):
                     stream_finished = message_handler.wait_for_consumer_cancelled(
                         session_code,
                         timeout=TimeoutConfig.STOP_WAIT_STREAM_FINISH_TIMEOUT,
+                        run_id=run_id,
                     )
                     if stream_finished:
                         logger.info(f"Stream finished confirmed for session_code={session_code}")
@@ -360,7 +362,9 @@ class ChatSessionContentViewSet(PluginViewSet):
             except Exception as e:
                 logger.exception(f"Error revoking flow agent task: session_code={session_code}, error={e}")
 
-        result = client.api.stop_chat_session_content(json=request.data, headers={"X-BKAIDEV-USER": username})
+        platform_payload = request.data.copy()
+        platform_payload.pop("run_id", None)
+        result = client.api.stop_chat_session_content(json=platform_payload, headers={"X-BKAIDEV-USER": username})
 
         return Response(data=result["data"])
 

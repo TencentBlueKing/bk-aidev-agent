@@ -510,9 +510,7 @@ class ChatCompletionAgent(BaseModel):
     def _filter_cancelled_for_llm(messages: list[BaseMessage]) -> list[BaseMessage]:
         """LLM 入口过滤「用户已取消」占位，不影响 MESSAGES_SNAPSHOT。"""
         return [
-            each
-            for each in messages
-            if not (isinstance(each, AIMessage) and each.content == RunId.CANCELLED_MESSAGE)
+            each for each in messages if not (isinstance(each, AIMessage) and each.content == RunId.CANCELLED_MESSAGE)
         ]
 
     @property
@@ -938,9 +936,9 @@ class ChatCompletionAgent(BaseModel):
 
         # 取消信号传递：cancel_checker 在用户点停止时由 Agent 内部轮询，
         # 触发后由 Agent 优雅发送 RunFinishedEvent
-        def make_cancel_checker(thread_id: str):
+        def make_cancel_checker(thread_id: str, run_id: str):
             def cancel_checker() -> bool:
-                return GeneratorStreamingHelper.is_cancelled(thread_id)
+                return GeneratorStreamingHelper.is_cancelled(thread_id, run_id=run_id)
 
             return cancel_checker
 
@@ -1021,7 +1019,7 @@ class ChatCompletionAgent(BaseModel):
             event_handler=self.event_handler,
             config=merged_cfg,
             tools={each.name: each for each in self.tools} if self.tools else {},
-            cancel_checker=make_cancel_checker(self.thread_id),
+            cancel_checker=make_cancel_checker(self.thread_id, agent_input.run_id),
             mcp_fetch_failures=getattr(self, "mcp_fetch_failures", []) or [],
             approve_result=approve_result,
             approval_interrupts=approval_interrupts,
@@ -1060,23 +1058,34 @@ class ChatCompletionAgent(BaseModel):
             thread_id=queue_thread_id or agent_input.thread_id,
             defer_cleanup_on_complete=background_only,
         )
+        run_id = agent_input.run_id or self.thread_id
+        cancel_event = helper.prepare_run(run_id)
         producer = self._build_resume_aware_producer(agui_entry, agent_input, agent_e=agent_e, cfg=cfg, resume=resume)
+        queue_stream_started = False
+        try:
+            # ---- 阶段 1：同步拉取头部帧并直接 yield ----
+            head_frames = []
+            remaining_producer = self._extract_head_frames(producer, head_frames)
+            for frame in head_frames:
+                yield frame
 
-        # ---- 阶段 1：同步拉取头部帧并直接 yield ----
-        head_frames = []
-        remaining_producer = self._extract_head_frames(producer, head_frames)
-        for frame in head_frames:
-            yield frame
-
-        # ---- 阶段 2：剩余帧交给队列管理（支持断点续传）----
-        yield from helper.stream(
-            remaining_producer,
-            # replay 模式下由 producer 在 EOD 写入并 flush 成功后更新会话终态；
-            # 消费者中断不会影响最终状态收敛。
-            on_complete=partial(self._on_complete, finalize_session=True),
-            event_handler=self.event_handler,
-            expected_run_id=agent_input.run_id or self.thread_id,
-        )
+            # ---- 阶段 2：剩余帧交给队列管理（支持断点续传）----
+            queue_stream_started = True
+            yield from helper.stream(
+                remaining_producer,
+                # replay 模式下由 producer 在 EOD 写入并 flush 成功后更新会话终态；
+                # 消费者中断不会影响最终状态收敛。
+                on_complete=partial(self._on_complete, finalize_session=True),
+                event_handler=self.event_handler,
+                expected_run_id=run_id,
+                cancel_event=cancel_event,
+            )
+        finally:
+            if not queue_stream_started:
+                helper.discard_prepared_run(cancel_event)
+                close_producer = getattr(producer, "close", None)
+                if callable(close_producer):
+                    close_producer()
 
     @staticmethod
     def _extract_head_frames(

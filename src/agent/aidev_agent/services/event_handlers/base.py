@@ -139,6 +139,11 @@ class BaseSessionWriter(ABC):
         # 只允许同一 writer 补写一次“用户已取消”。
         self._cancelled_messages_written: bool = False
         self._cancelled_messages_lock = threading.Lock()
+        self._cancelled_reasoning_message_id: str = ""
+        self._cancelled_paused_message_id: str = ""
+        # _safe_call 保持“不打断 Agent”的既有语义，同时用计数让复合终态写入
+        # 能判断本轮是否完整成功，失败时由后续 RUN_FINISHED 重试缺失项。
+        self._write_error_count: int = 0
         # 用于追踪 handle_model_end 是否已成功回写 assistant 消息
         # 当 on_chat_model_end 触发时，assistant 消息已完整输出，取消时不应再补写暂停消息
         self._model_end_written: bool = False
@@ -718,57 +723,83 @@ class BaseSessionWriter(ABC):
         Args:
             thinking_content: 已累积的 thinking 内容
         """
+        # 持锁到整组远端写入完成：失败时保持可重试，同时避免 RUN_ERROR 与
+        # RUN_FINISHED 在两个线程并发写出重复的“用户已取消”。
         with self._cancelled_messages_lock:
             if self._cancelled_messages_written:
                 logger.debug("Cancelled messages already written for session_code=%s", self.session_code)
                 return
-            # 事件处理可能来自 generator 与 producer 两个线程。先占位再执行远端写入，
-            # 避免首个请求尚未返回时，RUN_FINISHED 再次进入并产生重复记录。
-            self._cancelled_messages_written = True
-
-        logger.info(
-            "Writing cancelled messages: session_code=%s, has_thinking=%s, streaming_messages=%d, _is_cancelled=%s",
-            self.session_code,
-            bool(thinking_content),
-            len(self._streaming_messages),
-            self._is_cancelled,
-        )
-
-        # 1. 回写未写入的 thinking/reasoning 内容
-        if thinking_content:
-            reasoning_message_id = f"rsn_{uuid.uuid4().hex[:12]}"
-            self._write_reasoning_message_simple(
-                message_id=reasoning_message_id,
-                reasoning_content=thinking_content,
+            group_errors_before = self._write_error_count
+            logger.info(
+                "Writing cancelled messages: session_code=%s, has_thinking=%s, streaming_messages=%d, _is_cancelled=%s",
+                self.session_code,
+                bool(thinking_content),
+                len(self._streaming_messages),
+                self._is_cancelled,
             )
-            self._written_message_ids.add(reasoning_message_id)
 
-        # 2. 回写未写入的流式 assistant 消息（如有部分内容）
-        for message_id, message_data in list(self._streaming_messages.items()):
-            if message_id in self._written_message_ids:
-                continue
-            content = message_data.get("content", "")
+            # 1. 回写未写入的 thinking/reasoning 内容
+            if thinking_content:
+                if not self._cancelled_reasoning_message_id:
+                    self._cancelled_reasoning_message_id = f"rsn_{uuid.uuid4().hex[:12]}"
+                reasoning_message_id = self._cancelled_reasoning_message_id
+                if reasoning_message_id not in self._written_message_ids:
+                    errors_before = self._write_error_count
+                    self._write_reasoning_message_simple(
+                        message_id=reasoning_message_id,
+                        reasoning_content=thinking_content,
+                    )
+                    if self._write_error_count == errors_before:
+                        self._written_message_ids.add(reasoning_message_id)
+                    else:
+                        self._written_message_ids.discard(reasoning_message_id)
+
+            # 2. 回写未写入的流式 assistant 消息（如有部分内容）
+            for message_id, message_data in list(self._streaming_messages.items()):
+                if message_id in self._written_message_ids:
+                    continue
+                content = message_data.get("content", "")
+                errors_before = self._write_error_count
+                self._write_assistant_message(
+                    message_id=message_id,
+                    content=content if content else "",
+                    tool_calls=[],
+                )
+                if self._write_error_count == errors_before:
+                    self._written_message_ids.add(message_id)
+
+            # 前置内容未完整持久化时先不写暂停消息，避免后续重试产生重复暂停记录。
+            if self._write_error_count > group_errors_before:
+                logger.warning(
+                    "Cancelled message persistence incomplete, will retry: session_code=%s errors=%d",
+                    self.session_code,
+                    self._write_error_count,
+                )
+                return
+
+            # 3. 补写 "用户已取消" + status=fail 的 assistant 消息
+            if not self._cancelled_paused_message_id:
+                self._cancelled_paused_message_id = f"paused_{uuid.uuid4().hex[:12]}"
+            paused_message_id = self._cancelled_paused_message_id
+            errors_before = self._write_error_count
             self._write_assistant_message(
-                message_id=message_id,
-                content=content if content else "",
+                message_id=paused_message_id,
+                content=self.PAUSED_CONTENT_MESSAGE,
                 tool_calls=[],
+                status="fail",
             )
-            self._written_message_ids.add(message_id)
+            if self._write_error_count != errors_before:
+                logger.warning(
+                    "Cancelled terminal message persistence failed, will retry: session_code=%s",
+                    self.session_code,
+                )
+                return
+            self._written_message_ids.add(paused_message_id)
 
-        # 3. 补写 "用户已取消" + status=fail 的 assistant 消息
-        paused_message_id = f"paused_{uuid.uuid4().hex[:12]}"
-        self._write_assistant_message(
-            message_id=paused_message_id,
-            content=self.PAUSED_CONTENT_MESSAGE,
-            tool_calls=[],
-            status="fail",
-        )
-        self._written_message_ids.add(paused_message_id)
-
-        # 清理
-        self._streaming_messages.clear()
-        self._thinking_content = ""
-        self._thinking_active = False
+            self._cancelled_messages_written = True
+            self._streaming_messages.clear()
+            self._thinking_content = ""
+            self._thinking_active = False
 
     def handle_model_end(self, event: RawEvent | CustomEvent) -> None:
         """处理模型输出结束事件，回写 assistant 消息
@@ -1421,6 +1452,7 @@ class BaseSessionWriter(ABC):
         try:
             return fn(**kwargs)
         except Exception as e:
+            self._write_error_count += 1
             logger.exception(f"Failed to {action} session content: message_id={message_id}, error={e}", exc_info=True)
             return None
 

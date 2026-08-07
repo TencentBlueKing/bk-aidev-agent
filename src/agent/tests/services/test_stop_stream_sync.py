@@ -51,9 +51,9 @@ class TestConsumerNotifyOnCancel:
             completion_order.append("cleanup")
             return original_mark_completed(thread_id)
 
-        def notify_consumer_cancelled(thread_id):
+        def notify_consumer_cancelled(thread_id, run_id=None):
             completion_order.append("notify")
-            return original_notify(thread_id)
+            return original_notify(thread_id, run_id=run_id)
 
         handler.mark_completed = mark_completed
         handler.notify_consumer_cancelled = notify_consumer_cancelled
@@ -201,36 +201,23 @@ class TestStopWaitStreamFinish:
             handler.mark_stopped(tid)
         assert handler.is_stopped(tid)
 
-    def test_cancel_before_stream_registration_is_preserved(self, handler, monkeypatch):
-        """stop 早于 producer 注册时，启动流程不能清掉刚写入的取消意图。"""
+    def test_current_run_can_be_cancelled_before_head_frames(self, handler):
+        """当前 run 在 head frames 前注册后，stop 不会错过取消窗口。"""
         tid = "test_stop_before_stream_registration"
-        cancel_signals = set()
+        run_id = "run-current"
         handled_events = []
         completed = []
-        original_clear = handler.clear
-
-        def set_cancel_signal(thread_id):
-            cancel_signals.add(thread_id)
-            return True
-
-        def clear_stream_and_signals(thread_id):
-            cancel_signals.discard(thread_id)
-            original_clear(thread_id)
-
-        monkeypatch.setattr(handler, "set_cancel_signal", set_cancel_signal)
-        monkeypatch.setattr(handler, "check_cancel_signal", lambda thread_id: thread_id in cancel_signals)
-        monkeypatch.setattr(handler, "clear_cancel_signal", cancel_signals.discard)
-        monkeypatch.setattr(handler, "clear", clear_stream_and_signals)
-
-        assert GeneratorStreamingHelper.cancel(tid, handler)
 
         helper = GeneratorStreamingHelper(handler, thread_id=tid)
+        cancel_event = helper.prepare_run(run_id)
+        assert GeneratorStreamingHelper.cancel(tid, handler, run_id=run_id)
         result = list(
             helper.stream(
                 iter(["must_not_be_emitted"]),
                 on_complete=lambda: completed.append(True),
                 event_handler=handled_events.append,
-                expected_run_id=tid,
+                expected_run_id=run_id,
+                cancel_event=cancel_event,
             )
         )
 
@@ -239,7 +226,26 @@ class TestStopWaitStreamFinish:
         assert any('"type":"RUN_FINISHED"' in event for event in result)
         assert handled_events[0].message == RunId.CANCELLED_MESSAGE
         assert completed == [True]
-        assert tid not in cancel_signals
+
+    def test_cancel_for_previous_run_does_not_cancel_current_run(self, handler):
+        """旧 run 的 Stop 不得误伤同一 session 的新 run。"""
+        tid = "test_stale_run_cancel"
+        helper = GeneratorStreamingHelper(handler, thread_id=tid)
+        cancel_event = helper.prepare_run("run-current")
+
+        assert not GeneratorStreamingHelper.cancel(tid, handler, run_id="run-previous")
+
+        result = list(
+            helper.stream(
+                iter(["current-run-output"]),
+                expected_run_id="run-current",
+                cancel_event=cancel_event,
+            )
+        )
+
+        assert result[0] == "current-run-output"
+        assert all('"type":"RUN_ERROR"' not in event for event in result)
+        assert any('"type":"RUN_FINISHED"' in event for event in result)
 
     def test_stop_clears_cancelled_signal(self, handler):
         """stop 完成后应清理 cancelled 信号"""

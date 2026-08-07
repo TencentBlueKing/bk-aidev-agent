@@ -5,9 +5,10 @@ import uuid
 from logging import getLogger
 from typing import Any, Callable, Generator
 
-from ag_ui.core import EventType, RawEvent, RunErrorEvent
+from ag_ui.core import EventType, RawEvent, RunErrorEvent, RunFinishedEvent
 from ag_ui.encoder import EventEncoder
 
+from aidev_agent.core.ag_ui.types import RunFinishedSuccessOutcome, serialize_run_finished_outcome
 from aidev_agent.utils.event import RunId, emit_run_finished_event
 
 from .base import BaseMessageQueueHandler, ConsumerPreemptedError, RetryableHeartbeatTimeoutError
@@ -60,9 +61,9 @@ class GeneratorStreamingHelper:
     5. 读到 EOD_CHUNK 时，调用 mark_completed() 清理队列
     """
 
-    # 进程内取消标志：thread_id -> threading.Event
-    # 用于同进程内的快速通知（如生产者线程和消费者循环在同一进程）
-    _cancel_events: dict[str, "threading.Event"] = {}
+    # 进程内取消标志：(thread_id, run_id) -> threading.Event 集合。
+    # 同一 Run 允许多个 SSE Consumer，各自退出不会移除其他 Consumer/Producer 的事件。
+    _cancel_events: dict[tuple[str, str], set["threading.Event"]] = {}
     _cancel_lock = threading.Lock()
 
     # 取消后等待 generator 产出 RUN_FINISHED 的宽限时间（秒）
@@ -121,12 +122,15 @@ class GeneratorStreamingHelper:
         # 保留缓存历史供前端在清理窗口内接管续流；清理交由 producer 的延迟清理线程兜底。
         self.defer_cleanup_on_complete = defer_cleanup_on_complete
         self._producer_completion_error: Exception | None = None
+        self.run_id: str = ""
+        self._cancel_event: threading.Event | None = None
 
     @classmethod
     def _check_cancel_status(
         cls,
         thread_id: str,
         message_handler: BaseMessageQueueHandler | None = None,
+        run_id: str | None = None,
         set_event_on_cross_process: bool = False,
         cancel_event: "threading.Event | None" = None,
     ) -> bool:
@@ -146,9 +150,15 @@ class GeneratorStreamingHelper:
             True 表示已被取消，应该停止
         """
         # 1. 快速路径：检查进程内取消事件
+        run_key = run_id or ""
         with cls._cancel_lock:
-            event = cls._cancel_events.get(thread_id)
-            if event and event.is_set():
+            events = [
+                event
+                for (registered_thread_id, registered_run_id), registered_events in cls._cancel_events.items()
+                if registered_thread_id == thread_id and (not run_id or registered_run_id == run_key)
+                for event in registered_events
+            ]
+            if any(event.is_set() for event in events):
                 return True
 
         # 2. 慢速路径：检查跨进程取消信号
@@ -156,7 +166,11 @@ class GeneratorStreamingHelper:
             message_handler = message_handler_factory.get()
 
         try:
-            cross_cancelled = message_handler.check_cancel_signal(thread_id)
+            cross_cancelled = (
+                message_handler.check_cancel_signal(thread_id, run_id=run_id)
+                if run_id
+                else message_handler.check_cancel_signal(thread_id)
+            )
             if cross_cancelled:
                 # 跨进程取消信号存在，同时设置进程内事件（让后续检查更快）
                 if set_event_on_cross_process and cancel_event:
@@ -168,14 +182,22 @@ class GeneratorStreamingHelper:
         return False
 
     @classmethod
-    def is_registered(cls, thread_id: str, message_handler: BaseMessageQueueHandler | None = None) -> bool:
+    def is_registered(
+        cls,
+        thread_id: str,
+        message_handler: BaseMessageQueueHandler | None = None,
+        run_id: str | None = None,
+    ) -> bool:
         """判断流式侧是否已注册，此时调用 cancel 可投递到活跃流。
 
         - 进程内：``stream()`` 开头已写入 ``_cancel_events``
         - 跨进程：存在活跃消费者（``stream()`` 在注册 cancel 后 ``acquire_consumer``）
         """
         with cls._cancel_lock:
-            if thread_id in cls._cancel_events:
+            if any(
+                registered_thread_id == thread_id and (not run_id or registered_run_id == run_id)
+                for registered_thread_id, registered_run_id in cls._cancel_events
+            ):
                 return True
         if message_handler is None:
             message_handler = message_handler_factory.get()
@@ -186,7 +208,12 @@ class GeneratorStreamingHelper:
             return False
 
     @classmethod
-    def cancel(cls, thread_id: str, message_handler: BaseMessageQueueHandler | None = None) -> bool:
+    def cancel(
+        cls,
+        thread_id: str,
+        message_handler: BaseMessageQueueHandler | None = None,
+        run_id: str | None = None,
+    ) -> bool:
         """取消指定 thread_id 的流式生产（支持多进程）
 
         同时设置：
@@ -205,9 +232,15 @@ class GeneratorStreamingHelper:
 
         # 1. 设置进程内取消事件（快速路径，同进程内立即生效）
         with cls._cancel_lock:
-            event = cls._cancel_events.get(thread_id)
-            if event:
+            events = [
+                event
+                for (registered_thread_id, registered_run_id), registered_events in cls._cancel_events.items()
+                if registered_thread_id == thread_id and (not run_id or registered_run_id == run_id)
+                for event in registered_events
+            ]
+            for event in events:
                 event.set()
+            if events:
                 result = True
 
         # 2. 设置跨进程取消信号（通过 RabbitMQ，支持多进程部署）
@@ -215,7 +248,11 @@ class GeneratorStreamingHelper:
             message_handler = message_handler_factory.get()
 
         try:
-            cross_process_result = message_handler.set_cancel_signal(thread_id)
+            cross_process_result = (
+                message_handler.set_cancel_signal(thread_id, run_id=run_id)
+                if run_id
+                else message_handler.set_cancel_signal(thread_id)
+            )
             if cross_process_result:
                 result = True
         except Exception as e:
@@ -224,7 +261,12 @@ class GeneratorStreamingHelper:
         return result
 
     @classmethod
-    def is_cancelled(cls, thread_id: str, message_handler: BaseMessageQueueHandler | None = None) -> bool:
+    def is_cancelled(
+        cls,
+        thread_id: str,
+        message_handler: BaseMessageQueueHandler | None = None,
+        run_id: str | None = None,
+    ) -> bool:
         """检查指定 thread_id 是否已被取消（供 Agent 内部使用）
 
         Args:
@@ -235,7 +277,7 @@ class GeneratorStreamingHelper:
         Returns:
             True 表示已被取消，应该停止
         """
-        return cls._check_cancel_status(thread_id, message_handler)
+        return cls._check_cancel_status(thread_id, message_handler, run_id=run_id)
 
     @classmethod
     def has_output(cls, thread_id: str, message_handler: BaseMessageQueueHandler | None = None) -> bool:
@@ -260,17 +302,40 @@ class GeneratorStreamingHelper:
             # 出错时保守返回 True，避免误补消息
             return True
 
-    def _register_cancel_event(self) -> "threading.Event":
+    def prepare_run(self, run_id: str) -> "threading.Event":
+        """在输出 RUN_STARTED 前建立本轮取消作用域。"""
+        self.run_id = run_id
+        return self._register_cancel_event(run_id)
+
+    def _register_cancel_event(self, run_id: str | None = None) -> "threading.Event":
         """注册取消事件"""
+        if self._cancel_event is not None:
+            return self._cancel_event
+
+        if run_id:
+            self.run_id = run_id
         event = threading.Event()
+        key = (self.thread_id, self.run_id)
         with self._cancel_lock:
-            self._cancel_events[self.thread_id] = event
+            self._cancel_events.setdefault(key, set()).add(event)
+        self._cancel_event = event
         return event
 
-    def _unregister_cancel_event(self) -> None:
+    def _unregister_cancel_event(self, event: threading.Event) -> None:
         """取消注册取消事件"""
+        key = (self.thread_id, self.run_id)
         with self._cancel_lock:
-            self._cancel_events.pop(self.thread_id, None)
+            registered_events = self._cancel_events.get(key)
+            if registered_events is not None:
+                registered_events.discard(event)
+                if not registered_events:
+                    self._cancel_events.pop(key, None)
+        if self._cancel_event is event:
+            self._cancel_event = None
+
+    def discard_prepared_run(self, event: threading.Event) -> None:
+        """在队列消费尚未接管前回收预注册的取消事件。"""
+        self._unregister_cancel_event(event)
 
     @staticmethod
     def _is_done_event_chunk(chunk: Any) -> bool:
@@ -301,6 +366,7 @@ class GeneratorStreamingHelper:
         return self._check_cancel_status(
             self.thread_id,
             self.message_handler,
+            run_id=self.run_id or None,
             set_event_on_cross_process=True,
             cancel_event=cancel_event,
         )
@@ -389,10 +455,13 @@ class GeneratorStreamingHelper:
                     return
                 continue
 
-    def _clear_cancel_signal_safely(self, error_prefix: str) -> None:
+    def _clear_cancel_signal_safely(self, error_prefix: str, run_id: str | None = None) -> None:
         """安全清理跨进程取消信号，避免异常打断主流程。"""
         try:
-            self.message_handler.clear_cancel_signal(self.thread_id)
+            if run_id:
+                self.message_handler.clear_cancel_signal(self.thread_id, run_id=run_id)
+            else:
+                self.message_handler.clear_cancel_signal(self.thread_id)
         except Exception as e:
             logger.exception(f"{error_prefix}: {e}")
 
@@ -403,7 +472,10 @@ class GeneratorStreamingHelper:
         """
         try:
             if hasattr(self.message_handler, "notify_consumer_cancelled"):
-                self.message_handler.notify_consumer_cancelled(self.thread_id)
+                if self.run_id:
+                    self.message_handler.notify_consumer_cancelled(self.thread_id, run_id=self.run_id)
+                else:
+                    self.message_handler.notify_consumer_cancelled(self.thread_id)
         except Exception as e:
             logger.exception(f"Error sending consumer cancelled notification for thread_id={self.thread_id}: {e}")
 
@@ -413,7 +485,11 @@ class GeneratorStreamingHelper:
             return True
 
         try:
-            if self.message_handler.check_cancel_signal(self.thread_id):
+            if (
+                self.message_handler.check_cancel_signal(self.thread_id, run_id=self.run_id)
+                if self.run_id
+                else self.message_handler.check_cancel_signal(self.thread_id)
+            ):
                 return True
         except Exception as e:
             logger.exception(f"Error checking cancel signal before completion for thread_id={self.thread_id}: {e}")
@@ -559,23 +635,17 @@ class GeneratorStreamingHelper:
             event_handler=event_handler,
         )
 
-    def _emit_terminal_cancel_events(
-        self,
-        event_handler: Callable[[Any], None] | None = None,
-    ) -> Generator[str, None, None]:
-        """输出标准取消事件，并让会话写入器将终态收敛为 cancelled。"""
+    def _build_terminal_cancel_events(self) -> tuple[tuple[Any, str], tuple[Any, str]]:
+        """构造标准取消事件；写入队列成功后再派发给会话写入器。"""
+        encoder = EventEncoder()
         error_event = RunErrorEvent(type=EventType.RUN_ERROR, message=RunId.CANCELLED_MESSAGE)
-        if event_handler is not None:
-            try:
-                event_handler(error_event)
-            except Exception:
-                logger.exception("Error dispatching cancel RUN_ERROR for thread_id=%s", self.thread_id)
-        yield EventEncoder().encode(error_event)
-        yield emit_run_finished_event(
+        finished_event = RunFinishedEvent(
+            type=EventType.RUN_FINISHED,
             thread_id=self.thread_id,
             run_id=RunId.CANCELLED,
-            event_handler=event_handler,
+            outcome=serialize_run_finished_outcome(RunFinishedSuccessOutcome()),
         )
+        return (error_event, encoder.encode(error_event)), (finished_event, encoder.encode(finished_event))
 
     def _emit_retryable_heartbeat_timeout(
         self,
@@ -618,7 +688,6 @@ class GeneratorStreamingHelper:
         - 最外层 unexpected 异常打 ERROR 后 `raise`。
         """
         consumer_draining = False
-        consumer_drain_start = 0.0
         last_message_time = time.time()
         last_message_monotonic = time.monotonic()
 
@@ -667,24 +736,6 @@ class GeneratorStreamingHelper:
                             f"entering drain mode to wait for RUN_FINISHED"
                         )
                         consumer_draining = True
-                        consumer_drain_start = time.time()
-
-                    if (
-                        consumer_draining
-                        and time.time() - consumer_drain_start > self.CANCEL_DRAIN_TIMEOUT
-                        and producer_thread is None
-                    ):
-                        logger.exception(
-                            f"Consumer drain timeout ({self.CANCEL_DRAIN_TIMEOUT}s) "
-                            f"for resumed thread_id={self.thread_id} without local producer, force exit"
-                        )
-                        if hasattr(self.message_handler, "mark_stopped"):
-                            self.message_handler.mark_stopped(self.thread_id)
-                        self._notify_consumer_cancelled_safely()
-                        yield emit_run_finished_event(thread_id=self.thread_id, run_id=RunId.CANCELLED)
-                        yielded_total += 1
-                        exit_reason = "drain_timeout"
-                        return exit_reason
 
                     if not supports_replay_from_start:
                         t_check = time.time()
@@ -877,6 +928,7 @@ class GeneratorStreamingHelper:
         on_complete: Callable[[], None] | None = None,
         event_handler: Callable[[Any], None] | None = None,
         expected_run_id: str | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> Generator[Any, None, None]:
         """使用队列处理器缓存流式请求
 
@@ -895,10 +947,10 @@ class GeneratorStreamingHelper:
 
         """
         # 注册取消事件（让 cancel() 可以通知生产者和消费者停止）
-        cancel_event = self._register_cancel_event()
+        cancel_event = cancel_event or self._register_cancel_event(expected_run_id)
 
         # 注册为当前活跃消费者
-        consumer_id = self.message_handler.acquire_consumer(self.thread_id)
+        consumer_id: str | None = None
         producer_thread: threading.Thread | None = None
         consumer_exit_reason: str | None = None
         self._producer_completion_error = None
@@ -917,9 +969,9 @@ class GeneratorStreamingHelper:
 
         completion_callback = _on_complete_once if on_complete is not None else None
 
-        should_consume_stopped, has_pending = self._resolve_stopped_or_pending_state()
-
         try:
+            consumer_id = self.message_handler.acquire_consumer(self.thread_id)
+            should_consume_stopped, has_pending = self._resolve_stopped_or_pending_state()
             if should_consume_stopped:
                 yield from self._consume_stopped_session(consumer_id)
                 return
@@ -947,11 +999,10 @@ class GeneratorStreamingHelper:
             logger.info(f"Consumer disconnected for thread_id={self.thread_id}, cached messages preserved")
             raise
         finally:
-            self._unregister_cancel_event()
-            # 清理跨进程取消信号（避免残留影响下次请求）
-            self._clear_cancel_signal_safely("Error clearing cancel signal")
+            self._unregister_cancel_event(cancel_event)
             # 释放消费者（仅当自己仍是活跃消费者时）
-            self.message_handler.release_consumer(self.thread_id, consumer_id)
+            if consumer_id is not None:
+                self.message_handler.release_consumer(self.thread_id, consumer_id)
             # 等待生产者线程结束（如果是本次启动的）
             if producer_thread is not None:
                 try:
@@ -1068,7 +1119,8 @@ class GeneratorStreamingHelper:
         done_event_seen = False
         producer_error = False
         run_finished_seen = False
-        cancel_events_emitted = False
+        cancel_error_emitted = False
+        cancel_finished_emitted = False
 
         def _heartbeat_worker() -> None:
             """独立心跳线程：即使 generator 阻塞也保持心跳。"""
@@ -1094,7 +1146,12 @@ class GeneratorStreamingHelper:
             if not check_cross_process:
                 return False
             try:
-                if self.message_handler.check_cancel_signal(self.thread_id):
+                active_run_id = expected_run_id or self.run_id
+                if (
+                    self.message_handler.check_cancel_signal(self.thread_id, run_id=active_run_id)
+                    if active_run_id
+                    else self.message_handler.check_cancel_signal(self.thread_id)
+                ):
                     if cancel_event:
                         cancel_event.set()
                     return True
@@ -1103,19 +1160,32 @@ class GeneratorStreamingHelper:
             return False
 
         def _emit_cancel_and_complete() -> None:
-            nonlocal cancel_events_emitted, draining, run_finished_seen
-            if cancel_events_emitted:
+            nonlocal cancel_error_emitted, cancel_finished_emitted, draining, run_finished_seen
+            if cancel_error_emitted and cancel_finished_emitted:
                 return
-            cancel_events_emitted = True
             draining = True
             heartbeat_stop_event.set()
             logger.info("Producer finalizing cancelled stream for thread_id=%s", self.thread_id)
-            for event in self._emit_terminal_cancel_events(event_handler=event_handler):
-                is_run_finished = self._is_run_finished_event_chunk(event)
-                self.message_handler.put(self.thread_id, event)
+            for event, encoded_event in self._build_terminal_cancel_events():
+                is_run_finished = event.type == EventType.RUN_FINISHED
+                if (is_run_finished and cancel_finished_emitted) or (not is_run_finished and cancel_error_emitted):
+                    continue
+                self.message_handler.put(self.thread_id, encoded_event)
+                if event_handler is not None:
+                    try:
+                        event_handler(event)
+                    except Exception:
+                        logger.exception(
+                            "Error dispatching cancel terminal event type=%s thread_id=%s",
+                            event.type,
+                            self.thread_id,
+                        )
                 if is_run_finished:
+                    cancel_finished_emitted = True
                     run_finished_seen = True
                     _complete_session()
+                else:
+                    cancel_error_emitted = True
 
         try:
             heartbeat_thread = threading.Thread(
@@ -1262,6 +1332,12 @@ class GeneratorStreamingHelper:
                     if eod_commit_registered:
                         unregister_eod_commit(self.thread_id, eod_commit_event)
                 logger.info(f"[EOD] Producer EOD_CHUNK sent successfully for thread_id={self.thread_id}")
+
+                # 只有 Producer 确认 EOD 已提交后，才清理自己所属 Run 的取消信号。
+                self._clear_cancel_signal_safely(
+                    "Error clearing committed cancel signal",
+                    run_id=expected_run_id or self.run_id or None,
+                )
 
                 # EOD 仅负责消费者结束与队列资源回收；会话终态已在 RUN_FINISHED 入队后回写。
                 self._schedule_session_cleanup(done_event_seen=done_event_seen)

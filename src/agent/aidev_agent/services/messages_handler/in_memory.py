@@ -63,7 +63,7 @@ class InMemoryQueueMessageHandler(SingleProcessMixin, BaseMessageQueueHandler):
         self._stopped_sessions: dict[str, bool] = {}
         self._stopped_lock = threading.Lock()
         # 消费者取消完成通知：thread_id -> threading.Event
-        self._consumer_cancelled_events: dict[str, threading.Event] = {}
+        self._consumer_cancelled_events: dict[tuple[str, str], threading.Event] = {}
         self._consumer_cancelled_lock = threading.Lock()
 
     def _get_or_create_queues(self, thread_id: str) -> tuple[queue.Queue, list[Any], threading.Lock]:
@@ -393,7 +393,7 @@ class InMemoryQueueMessageHandler(SingleProcessMixin, BaseMessageQueueHandler):
 
     # ================== 消费者取消完成通知 ==================
 
-    def notify_consumer_cancelled(self, thread_id: str) -> bool:
+    def notify_consumer_cancelled(self, thread_id: str, run_id: str | None = None) -> bool:
         """通知 stop_session 消费者已因取消信号退出（单进程内存实现）
 
         使用 threading.Event 实现进程内通知。
@@ -404,8 +404,9 @@ class InMemoryQueueMessageHandler(SingleProcessMixin, BaseMessageQueueHandler):
         Returns:
             True 表示成功发送通知
         """
+        event_key = (thread_id, run_id or "")
         with self._consumer_cancelled_lock:
-            event = self._consumer_cancelled_events.get(thread_id)
+            event = self._consumer_cancelled_events.get(event_key)
             if event:
                 event.set()
                 logger.info(f"Consumer cancelled notification sent (in-memory) for thread_id={thread_id}")
@@ -413,11 +414,16 @@ class InMemoryQueueMessageHandler(SingleProcessMixin, BaseMessageQueueHandler):
             # 如果没有等待者，也创建一个已设置的 event，以防后来的等待者
             event = threading.Event()
             event.set()
-            self._consumer_cancelled_events[thread_id] = event
+            self._consumer_cancelled_events[event_key] = event
             logger.info(f"Consumer cancelled notification set (no waiter) for thread_id={thread_id}")
             return True
 
-    def wait_for_consumer_cancelled(self, thread_id: str, timeout: float = 3.0) -> bool:
+    def wait_for_consumer_cancelled(
+        self,
+        thread_id: str,
+        timeout: float = 3.0,
+        run_id: str | None = None,
+    ) -> bool:
         """等待消费者因取消信号退出（单进程内存实现）
 
         使用 threading.Event.wait() 等待通知。
@@ -429,11 +435,12 @@ class InMemoryQueueMessageHandler(SingleProcessMixin, BaseMessageQueueHandler):
         Returns:
             True 表示消费者已退出，False 表示超时
         """
+        event_key = (thread_id, run_id or "")
         with self._consumer_cancelled_lock:
-            event = self._consumer_cancelled_events.get(thread_id)
+            event = self._consumer_cancelled_events.get(event_key)
             if event is None:
                 event = threading.Event()
-                self._consumer_cancelled_events[thread_id] = event
+                self._consumer_cancelled_events[event_key] = event
 
         result = event.wait(timeout=timeout)
         if result:
@@ -442,12 +449,17 @@ class InMemoryQueueMessageHandler(SingleProcessMixin, BaseMessageQueueHandler):
             logger.warning(f"Timeout waiting for consumer cancelled (in-memory), thread_id={thread_id}")
         return result
 
-    def clear_cancelled_signal(self, thread_id: str) -> None:
+    def clear_cancelled_signal(self, thread_id: str, run_id: str | None = None) -> None:
         """清除消费者取消完成通知（单进程内存实现）
 
         Args:
             thread_id: 线程ID / session_code
         """
         with self._consumer_cancelled_lock:
-            self._consumer_cancelled_events.pop(thread_id, None)
+            if run_id is not None:
+                self._consumer_cancelled_events.pop((thread_id, run_id), None)
+            else:
+                stale_keys = [key for key in self._consumer_cancelled_events if key[0] == thread_id]
+                for key in stale_keys:
+                    self._consumer_cancelled_events.pop(key, None)
         logger.debug(f"Cleared cancelled signal (in-memory) for thread_id={thread_id}")

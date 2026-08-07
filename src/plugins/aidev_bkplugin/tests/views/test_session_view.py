@@ -120,10 +120,13 @@ def test_list_pagination_params_invalid_fallback_to_default(monkeypatch):
 def test_stop_clears_stale_notification_before_sending_cancel(monkeypatch):
     """每轮 stop 先清旧通知；本轮完成通知不能在 wait 之后被误删。"""
     session_code = "session-stop-order"
+    run_id = "run-current"
     call_order = []
     handler = MagicMock()
-    handler.clear_cancelled_signal.side_effect = lambda code: call_order.append(("clear", code))
-    handler.wait_for_consumer_cancelled.side_effect = lambda code, timeout: call_order.append(("wait", code)) or True
+    handler.clear_cancelled_signal.side_effect = lambda code, run_id=None: call_order.append(("clear", code, run_id))
+    handler.wait_for_consumer_cancelled.side_effect = lambda code, timeout, run_id=None: (
+        call_order.append(("wait", code, run_id)) or True
+    )
     api = MagicMock()
     api.stop_chat_session_content.return_value = {"data": {"stopped": True}}
 
@@ -131,17 +134,25 @@ def test_stop_clears_stale_notification_before_sending_cancel(monkeypatch):
     monkeypatch.setattr(
         session_mod.GeneratorStreamingHelper,
         "cancel",
-        lambda code: call_order.append(("cancel", code)) or True,
+        lambda code, message_handler=None, run_id=None: (
+            call_order.append(("cancel", code, message_handler, run_id)) or True
+        ),
     )
     monkeypatch.setattr(session_mod.AgentConfigFetcher, "get_info", lambda **kwargs: {"agent_type": "chat"})
     monkeypatch.setattr(session_mod, "client", SimpleNamespace(api=api))
 
-    response = session_mod.ChatSessionContentViewSet().stop(_request(data={"session_code": session_code}))
+    response = session_mod.ChatSessionContentViewSet().stop(
+        _request(data={"session_code": session_code, "run_id": run_id})
+    )
 
     assert response.data == {"stopped": True}
     assert call_order == [
-        ("clear", session_code),
-        ("cancel", session_code),
-        ("wait", session_code),
+        ("clear", session_code, run_id),
+        ("cancel", session_code, handler, run_id),
+        ("wait", session_code, run_id),
     ]
+    api.stop_chat_session_content.assert_called_once_with(
+        json={"session_code": session_code},
+        headers={"X-BKAIDEV-USER": "alice"},
+    )
     handler.mark_stopped.assert_not_called()

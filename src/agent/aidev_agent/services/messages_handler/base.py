@@ -371,7 +371,7 @@ class BaseMessageQueueHandler(ABC):
     # 以下方法用于支持多进程环境下的取消信号传递（如 RabbitMQ）
     # 默认实现返回 False/空操作，MultiProcessMixin 会覆盖这些方法
 
-    def set_cancel_signal(self, thread_id: str) -> bool:
+    def set_cancel_signal(self, thread_id: str, run_id: str | None = None) -> bool:
         """设置跨进程取消信号
 
         可以从任意进程调用，生产者/消费者会通过 check_cancel_signal() 检测到取消。
@@ -380,13 +380,14 @@ class BaseMessageQueueHandler(ABC):
 
         Args:
             thread_id: 线程ID / session_code
+            run_id: 本轮运行 ID；为空时保留旧版 session 级取消语义
 
         Returns:
             True 表示成功设置取消信号，False 表示不支持或设置失败
         """
         return False
 
-    def check_cancel_signal(self, thread_id: str) -> bool:
+    def check_cancel_signal(self, thread_id: str, run_id: str | None = None) -> bool:
         """检查是否存在取消信号
 
         用于生产者/消费者定期检查是否需要停止。
@@ -395,17 +396,19 @@ class BaseMessageQueueHandler(ABC):
 
         Args:
             thread_id: 线程ID / session_code
+            run_id: 本轮运行 ID；非空时只匹配同一轮取消信号
 
         Returns:
             True 表示存在取消信号，应该停止
         """
         return False
 
-    def clear_cancel_signal(self, thread_id: str) -> None:
+    def clear_cancel_signal(self, thread_id: str, run_id: str | None = None) -> None:
         """清除取消信号（在流结束后调用）
 
         默认实现为空操作，MultiProcessMixin 会覆盖此方法。
 
         Args:
             thread_id: 线程ID / session_code
+            run_id: 本轮运行 ID；非空时只清理同一轮取消信号
         """

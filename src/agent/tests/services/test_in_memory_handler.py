@@ -809,6 +809,40 @@ class TestInMemoryQueueMessageHandler:
 
         assert (list(stream), calls) == ([], 3)
 
+    def test_resumed_consumer_waits_for_remote_producer_eod_after_cancel(self, handler, monkeypatch):
+        """跨 Worker 时本地无 producer_thread，消费者也不能自行伪造取消终态。"""
+        helper = GeneratorStreamingHelper(handler, thread_id="test_remote_producer_cancel")
+        cancel_event = threading.Event()
+        cancel_event.set()
+        calls = 0
+        notified = []
+
+        def delayed_remote_eod(*, timeout, replay_offset):
+            nonlocal calls
+            calls += 1
+            if calls < 4:
+                time.sleep(0.03)
+                raise TimeoutError
+            return [streaming_helper_module.EOD_CHUNK], replay_offset + 1
+
+        monkeypatch.setattr(helper, "CANCEL_DRAIN_TIMEOUT", 0.05)
+        monkeypatch.setattr(helper, "_get_consumer_messages", delayed_remote_eod)
+        monkeypatch.setattr(helper, "_notify_consumer_cancelled_safely", lambda: notified.append(True))
+        consumer_id = handler.acquire_consumer(helper.thread_id)
+
+        stream = helper._consume_stream_messages(
+            consumer_id,
+            cancel_event,
+            False,
+            False,
+            producer_thread=None,
+        )
+
+        assert list(stream) == []
+        assert calls == 4
+        assert notified == []
+        handler.release_consumer(helper.thread_id, consumer_id)
+
     def test_producer_error_emits_terminal_events(self, handler):
         """producer 异常应形成完整终止事件对并同步分发。"""
         helper = GeneratorStreamingHelper(handler, thread_id="test_producer_error")
@@ -831,6 +865,59 @@ class TestInMemoryQueueMessageHandler:
         assert _event_types(result[1:]) == ["RUN_ERROR", "RUN_FINISHED"]
         assert [event.type for event in dispatched] == [EventType.RUN_ERROR, EventType.RUN_FINISHED]
         assert completed == [True]
+
+    def test_cancel_terminal_events_retry_after_partial_queue_failure(self, handler, monkeypatch):
+        """取消终态第二帧首次入队失败时，只重试缺失帧且完成回调仅执行一次。"""
+        thread_id = "test_cancel_partial_queue_failure"
+        run_id = "run-cancel-partial"
+        helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
+        cancel_event = helper.prepare_run(run_id)
+        original_put = handler.put
+        failed_once = False
+        dispatched = []
+        completed = []
+
+        def fail_first_run_finished(tid, message):
+            nonlocal failed_once
+            if not failed_once and isinstance(message, str) and '"type":"RUN_FINISHED"' in message:
+                failed_once = True
+                raise RuntimeError("transient queue failure")
+            original_put(tid, message)
+
+        monkeypatch.setattr(handler, "put", fail_first_run_finished)
+        assert GeneratorStreamingHelper.cancel(thread_id, handler, run_id=run_id)
+
+        result = list(
+            helper.stream(
+                iter(["must_not_be_emitted"]),
+                event_handler=dispatched.append,
+                on_complete=lambda: completed.append(True),
+                expected_run_id=run_id,
+                cancel_event=cancel_event,
+            )
+        )
+
+        assert failed_once
+        assert _event_types(result) == ["RUN_ERROR", "RUN_FINISHED"]
+        assert [event.type for event in dispatched] == [EventType.RUN_ERROR, EventType.RUN_FINISHED]
+        assert completed == [True]
+
+    def test_consumer_registration_failure_releases_prepared_cancel_event(self, handler, monkeypatch):
+        """消费者注册失败时不得残留 Run 级取消事件。"""
+        thread_id = "test_consumer_registration_failure"
+        run_id = "run-registration-failure"
+        helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
+        cancel_event = helper.prepare_run(run_id)
+
+        def fail_acquire(_thread_id):
+            raise RuntimeError("consumer registration failed")
+
+        monkeypatch.setattr(handler, "acquire_consumer", fail_acquire)
+
+        with pytest.raises(RuntimeError, match="consumer registration failed"):
+            list(helper.stream(iter([]), expected_run_id=run_id, cancel_event=cancel_event))
+
+        assert not GeneratorStreamingHelper.is_registered(thread_id, handler, run_id=run_id)
 
     def test_producer_releases_lock_when_eod_flush_fails(self, handler, monkeypatch):
         thread_id = "test_producer_flush_failure"

@@ -75,6 +75,32 @@ class _RecordingEventWriter(BaseSessionWriter):
         pass
 
 
+class _FailOnceCancelledWriter(_ConcreteWriter):
+    """首次取消消息写入失败，用于验证终态写入可重试。"""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._failed_once = False
+
+    def _do_create_content(self, payload: dict, headers: dict) -> int | None:
+        if not self._failed_once:
+            self._failed_once = True
+            raise RuntimeError("transient persistence failure")
+        return super()._do_create_content(payload, headers)
+
+
+def test_cancelled_message_write_retries_after_transient_failure():
+    writer = _FailOnceCancelledWriter()
+
+    writer._write_cancelled_messages("")
+
+    assert writer._cancelled_messages_written is False
+    writer._write_cancelled_messages("")
+
+    assert writer._cancelled_messages_written is True
+    assert [content["content"] for content in writer.created_contents] == [writer.PAUSED_CONTENT_MESSAGE]
+
+
 def assert_content_type_equal(results: list[dict], event_type: EventType, content: str):
     contents = []
     for each in results:
@@ -1535,11 +1561,17 @@ class TestSessionWriterCancelUnit:
         error_thread.start()
         assert write_entered.wait(timeout=1.0)
 
-        writer.handle_run_finished(
-            RunFinishedEvent(type=EventType.RUN_FINISHED, thread_id="t1", run_id=RunId.CANCELLED)
+        finished_thread = threading.Thread(
+            target=writer.handle_run_finished,
+            args=(RunFinishedEvent(type=EventType.RUN_FINISHED, thread_id="t1", run_id=RunId.CANCELLED),),
         )
+        finished_thread.start()
         allow_write.set()
         error_thread.join(timeout=1.0)
+        finished_thread.join(timeout=1.0)
+
+        assert not error_thread.is_alive()
+        assert not finished_thread.is_alive()
 
         paused = [
             content

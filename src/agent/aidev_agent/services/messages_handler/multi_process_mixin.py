@@ -421,13 +421,14 @@ class MultiProcessMixin:
             properties=pika.BasicProperties(delivery_mode=2),
         )
 
-    def set_cancel_signal(self, thread_id: str) -> bool:
+    def set_cancel_signal(self, thread_id: str, run_id: str | None = None) -> bool:
         """设置跨进程取消信号（通过 RabbitMQ 队列）
 
         可以从任意进程调用，生产者/消费者会通过 check_cancel_signal() 检测到取消。
 
         Args:
             thread_id: 线程ID / session_code
+            run_id: 本轮运行 ID；为空时兼容旧版 session 级取消
 
         Returns:
             True 表示成功设置取消信号
@@ -440,20 +441,25 @@ class MultiProcessMixin:
                 self._declare_signal_queue(channel, cancel_queue, self.CANCEL_SIGNAL_TTL_MS)
 
                 # 发送取消信号
-                self._publish_signal(channel, cancel_queue, {"cancelled": True, "ts": time.time()})
-                logger.info(f"Cancel signal set for thread_id={thread_id}")
+                self._publish_signal(
+                    channel,
+                    cancel_queue,
+                    {"cancelled": True, "run_id": run_id, "ts": time.time()},
+                )
+                logger.info("Cancel signal set for thread_id=%s run_id=%s", thread_id, run_id)
                 return True
         except Exception as e:
             logger.error(f"Failed to set cancel signal for thread_id={thread_id}: {e}")
             return False
 
-    def check_cancel_signal(self, thread_id: str) -> bool:
+    def check_cancel_signal(self, thread_id: str, run_id: str | None = None) -> bool:
         """检查是否存在取消信号（peek 模式，不消费消息）
 
         用于生产者/消费者定期检查是否需要停止。
 
         Args:
             thread_id: 线程ID / session_code
+            run_id: 本轮运行 ID；非空时只匹配同一轮或旧版无作用域信号
 
         Returns:
             True 表示存在取消信号，应该停止
@@ -479,19 +485,22 @@ class MultiProcessMixin:
 
                 try:
                     data = json.loads(body)
-                    cancelled = data.get("cancelled", False)
-                    return cancelled
+                    signal_run_id = data.get("run_id")
+                    if run_id and signal_run_id and signal_run_id != run_id:
+                        return False
+                    return bool(data.get("cancelled", False))
                 except (json.JSONDecodeError, KeyError):
                     return False
         except Exception as e:
             logger.warning(f"Error checking cancel signal for thread_id={thread_id}: {e}")
             return False
 
-    def clear_cancel_signal(self, thread_id: str) -> None:
+    def clear_cancel_signal(self, thread_id: str, run_id: str | None = None) -> None:
         """清除取消信号（在流结束后调用）
 
         Args:
             thread_id: 线程ID / session_code
+            run_id: 本轮运行 ID；非空时只清理同一轮或旧版无作用域信号
         """
         try:
             with self._with_channel() as channel:
@@ -500,7 +509,21 @@ class MultiProcessMixin:
                 # 尝试清空取消信号队列
                 try:
                     channel.queue_declare(queue=cancel_queue, passive=True)
-                    channel.queue_purge(queue=cancel_queue)
+                    if run_id is None:
+                        channel.queue_purge(queue=cancel_queue)
+                        return
+
+                    method_frame, _, body = channel.basic_get(queue=cancel_queue, auto_ack=False)
+                    if not method_frame:
+                        return
+                    try:
+                        signal_run_id = json.loads(body).get("run_id")
+                    except (json.JSONDecodeError, AttributeError):
+                        signal_run_id = None
+                    if signal_run_id in (None, run_id):
+                        channel.basic_ack(delivery_tag=method_frame.delivery_tag)
+                    else:
+                        channel.basic_reject(delivery_tag=method_frame.delivery_tag, requeue=True)
                 except Exception:
                     # 队列不存在，忽略
                     pass
@@ -515,7 +538,7 @@ class MultiProcessMixin:
         """获取"消费者已因取消退出"通知队列名"""
         return f"{self.CANCELLED_QUEUE_PREFIX}{thread_id}"
 
-    def notify_consumer_cancelled(self, thread_id: str) -> bool:
+    def notify_consumer_cancelled(self, thread_id: str, run_id: str | None = None) -> bool:
         """通知 stop_session 消费者已因取消信号退出（缓存内容可以读取了）
 
         消费者在检测到取消信号并退出时调用此方法。
@@ -523,6 +546,7 @@ class MultiProcessMixin:
 
         Args:
             thread_id: 线程ID / session_code
+            run_id: 已完成取消的运行 ID
 
         Returns:
             True 表示成功发送通知
@@ -538,15 +562,20 @@ class MultiProcessMixin:
                 self._publish_signal(
                     channel,
                     cancelled_queue,
-                    {"cancelled": True, "ts": time.time(), "pid": os.getpid()},
+                    {"cancelled": True, "run_id": run_id, "ts": time.time(), "pid": os.getpid()},
                 )
-                logger.info(f"Consumer cancelled notification sent for thread_id={thread_id}")
+                logger.info("Consumer cancelled notification sent for thread_id=%s run_id=%s", thread_id, run_id)
                 return True
         except Exception as e:
             logger.error(f"Failed to send cancelled notification for thread_id={thread_id}: {e}")
             return False
 
-    def wait_for_consumer_cancelled(self, thread_id: str, timeout: float = 3.0) -> bool:
+    def wait_for_consumer_cancelled(
+        self,
+        thread_id: str,
+        timeout: float = 3.0,
+        run_id: str | None = None,
+    ) -> bool:
         """等待消费者因取消信号退出
 
         stop_session 调用此方法等待消费者退出后，再读取缓存消息。
@@ -554,6 +583,7 @@ class MultiProcessMixin:
         Args:
             thread_id: 线程ID / session_code
             timeout: 最大等待时间（秒）
+            run_id: 本轮运行 ID；非空时忽略其他轮次的完成通知
 
         Returns:
             True 表示消费者已退出，False 表示超时
@@ -578,21 +608,40 @@ class MultiProcessMixin:
                         time.sleep(self.WAIT_POLL_INTERVAL)
                         continue
 
-                    # 尝试获取通知（消费掉，因为只需要等待一次）
-                    method_frame, _, body = channel.basic_get(queue=cancelled_queue, auto_ack=True)
+                    # 匹配本轮通知后确认；其他 Run 的通知放回，避免并发 Stop 互相吞消息。
+                    method_frame, _, body = channel.basic_get(queue=cancelled_queue, auto_ack=False)
                     if method_frame:
-                        logger.info(f"Consumer cancelled confirmed for thread_id={thread_id}")
-                        return True
+                        try:
+                            signal_run_id = json.loads(body).get("run_id")
+                        except (json.JSONDecodeError, AttributeError):
+                            signal_run_id = None
+                        if not run_id or signal_run_id in (None, run_id):
+                            channel.basic_ack(delivery_tag=method_frame.delivery_tag)
+                            logger.info(
+                                "Consumer cancelled confirmed for thread_id=%s run_id=%s",
+                                thread_id,
+                                run_id,
+                            )
+                            return True
+                        channel.basic_reject(delivery_tag=method_frame.delivery_tag, requeue=True)
+                        logger.info(
+                            "Ignored stale consumer cancelled notification thread_id=%s expected_run_id=%s "
+                            "actual_run_id=%s",
+                            thread_id,
+                            run_id,
+                            signal_run_id,
+                        )
             except Exception as e:
                 logger.warning(f"Error polling cancelled queue for thread_id={thread_id}: {e}")
 
             time.sleep(self.WAIT_POLL_INTERVAL)
 
-    def clear_cancelled_signal(self, thread_id: str) -> None:
+    def clear_cancelled_signal(self, thread_id: str, run_id: str | None = None) -> None:
         """清除消费者取消完成通知（在获取缓存内容后调用）
 
         Args:
             thread_id: 线程ID / session_code
+            run_id: 本轮运行 ID；非空时只清理同一轮或旧版无作用域通知
         """
         try:
             with self._with_channel() as channel:
@@ -600,7 +649,21 @@ class MultiProcessMixin:
 
                 try:
                     channel.queue_declare(queue=cancelled_queue, passive=True)
-                    channel.queue_purge(queue=cancelled_queue)
+                    if run_id is None:
+                        channel.queue_purge(queue=cancelled_queue)
+                        return
+
+                    method_frame, _, body = channel.basic_get(queue=cancelled_queue, auto_ack=False)
+                    if not method_frame:
+                        return
+                    try:
+                        signal_run_id = json.loads(body).get("run_id")
+                    except (json.JSONDecodeError, AttributeError):
+                        signal_run_id = None
+                    if signal_run_id in (None, run_id):
+                        channel.basic_ack(delivery_tag=method_frame.delivery_tag)
+                    else:
+                        channel.basic_reject(delivery_tag=method_frame.delivery_tag, requeue=True)
                 except Exception:
                     pass
         except Exception as e:

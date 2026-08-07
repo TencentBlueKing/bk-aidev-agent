@@ -101,6 +101,8 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
   let reconnectAttempt = 0;
   /** 本轮流是否已收到 RUN_FINISHED */
   let runFinished = false;
+  /** 服务端 RUN_STARTED 返回的当前运行 ID，用于精确停止本轮而非整个 session */
+  let activeRunId = '';
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectWaitResolve: ((continued: boolean) => void) | null = null;
   let activeStreamContext: {
@@ -181,6 +183,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     manualAbort = false;
     reconnectAttempt = 0;
     runFinished = false;
+    activeRunId = '';
     clearReconnectTimer(false);
   };
 
@@ -301,6 +304,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
 
     const finishSuccessfully = () => {
       isChatting.value = false;
+      activeRunId = '';
       usedProtocol.onDone?.call(usedProtocol);
       if (input) {
         // 刷新列表，获取前端 mock message 的 id，并更新到列表中
@@ -376,6 +380,9 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
 
     const onMessage = (event: unknown) => {
       const typedEvent = event as IEvent;
+      if (typedEvent?.type === EventType.RunStarted) {
+        activeRunId = String(typedEvent.runId);
+      }
       if (typedEvent?.type === EventType.RunFinished) {
         runFinished = true;
       }
@@ -524,7 +531,9 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
    * @param sessionCode - 会话代码
    */
   const stopChat = async (sessionCode: string) => {
-    return mediator.http.message?.stopChat(sessionCode);
+    return activeRunId
+      ? mediator.http.message?.stopChat(sessionCode, activeRunId)
+      : mediator.http.message?.stopChat(sessionCode);
   };
 
   /**
