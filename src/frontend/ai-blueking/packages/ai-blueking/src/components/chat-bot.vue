@@ -134,6 +134,7 @@
     url: '',
     enableSelection: false,
     enableModelSelect: true,
+    errorToast: true,
     shareLoading: false,
     autoLoad: true,
     useAgentName: false,
@@ -192,7 +193,9 @@
   // ==================== Composable 组装 ====================
 
   // 0. 统一错误出口（所有 catch 与业务管理器失败事件都汇入此处）
-  const { reportError, managerErrorBridge } = useErrorReporter(emit);
+  const { reportError, managerErrorBridge } = useErrorReporter(emit, {
+    errorToast: () => props.errorToast,
+  });
 
   // 1. 初始化 + 生命周期
   const {

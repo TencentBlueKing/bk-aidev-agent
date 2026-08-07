@@ -79,6 +79,12 @@ const router = createRouter({
       component: () => import('./views/SideRenderView.vue'),
       meta: { title: '侧栏渲染 side-render', group: 'example' },
     },
+    {
+      path: '/examples/rename-event',
+      name: 'RenameEvent',
+      component: () => import('./views/RenameEventView.vue'),
+      meta: { title: 'rename 事件', group: 'example' },
+    },
   ],
 });
 

@@ -70,6 +70,7 @@
             :auto-load="props.loadRecentSessionOnMount"
             :chat-helper="chatHelper"
             :enable-model-select="props.enableModelSelect"
+            :error-toast="false"
             :execution-tab-visible="props.executionTabVisible"
             :hello-text="props.helloText"
             :message-tools="props.messageTools"
