@@ -67,9 +67,11 @@ export const useSession = (mediator: IMediatorModule) => {
   const updateSessionInList = (session: Partial<ISession> & { sessionCode: string }) => {
     // 先更新 list 中对应的 session
     list.value = list.value.map(item => (item.sessionCode === session.sessionCode ? { ...item, ...session } : item));
-    // 如果 current 是被更新的 session，则让 current 重新指向 list 中更新后的对象
+    // 同步 current：优先指向 list 中更新后的对象；若不在 list（分页外 / getSession 单独写入），直接合并字段
     if (current.value?.sessionCode === session.sessionCode) {
-      current.value = list.value.find(item => item.sessionCode === session.sessionCode) ?? current.value;
+      current.value =
+        list.value.find(item => item.sessionCode === session.sessionCode) ??
+        ({ ...current.value, ...session } as ISession);
     }
   };
 
@@ -258,7 +260,7 @@ export const useSession = (mediator: IMediatorModule) => {
     return mediator.http?.session.getSessionFeedbackReasons(rate);
   };
 
-  // 会话重命名
+  // 会话重命名（返回接口最新 session，供上层事件直接使用新名称）
   const renameSession = (sessionCode: string) => {
     isRenameLoading.value = true;
     return mediator.http?.session
@@ -268,6 +270,7 @@ export const useSession = (mediator: IMediatorModule) => {
           sessionCode: res.sessionCode,
           sessionName: res.sessionName,
         });
+        return res;
       })
       .finally(() => {
         isRenameLoading.value = false;

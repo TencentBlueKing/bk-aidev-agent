@@ -469,10 +469,12 @@ await session.batchDeleteSessions(['session_1', 'session_2']);
 
 #### renameSession
 
-AI 自动重命名会话。
+AI 自动重命名会话。成功后返回接口最新 `ISession`（含新 `sessionName`），并同步更新 `list` / `current`。  
+`current` 若不在分页 `list` 中，也会直接合并新字段，避免 UI / `@rename` 仍读到旧名。
 
 ```typescript
-await session.renameSession(sessionCode: string);
+const renamed = await session.renameSession(sessionCode: string);
+// renamed.sessionName === ai_rename 返回的新名称
 ```
 
 #### getSessionFeedbackReasons

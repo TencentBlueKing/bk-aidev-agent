@@ -171,12 +171,15 @@ class ChatBusinessManager {
     if (!this.sessionModule) return;
     if (this.messageModule.list.value.length !== 1) return;
     
+    // 必须用 renameSession 的返回值（ai_rename 接口新名），不能只读 list/current：
+    // current 常由 getSession 单独写入且不在分页 list 中，旧逻辑会 emit 改名前的名字
     this.sessionModule.renameSession(sessionCode)
-      .then(() => {
-        const updated = this.sessionModule!.list.value.find(s => s.sessionCode === sessionCode);
-        if (updated?.sessionName) {
-          // 经 ChatBot emit('rename') → AIBlueking forwarders.rename，业务方可 @rename 监听
-          this.config.onSessionRenamed?.(updated.sessionName);
+      .then(renamed => {
+        const newName = renamed?.sessionName;
+        if (newName) {
+          // 始终抛出含 sessionCode：切会话后业务仍可按 id 更新自己的列表；
+          // AIBlueking Header 仅在 current 匹配时刷新标题
+          this.config.onSessionRenamed?.(newName, sessionCode);
         }
       })
       .catch(error => {

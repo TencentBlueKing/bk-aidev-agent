@@ -82,6 +82,7 @@ describe('ChatBusinessManager', () => {
       const onSessionRenamed = vi.fn();
       mocks.mockSessionModule.renameSession = vi.fn().mockImplementation(async () => {
         mocks.mockSessionModule.list.value = [{ sessionCode: 'session-1', sessionName: 'AI Generated Name' }];
+        return { sessionCode: 'session-1', sessionName: 'AI Generated Name' };
       });
       manager = new ChatBusinessManager(
         mocks.mockAgentModule as any,
@@ -95,7 +96,59 @@ describe('ChatBusinessManager', () => {
       await Promise.resolve();
 
       expect(mocks.mockSessionModule.renameSession).toHaveBeenCalledWith('session-1');
-      expect(onSessionRenamed).toHaveBeenCalledWith('AI Generated Name');
+      expect(onSessionRenamed).toHaveBeenCalledWith('AI Generated Name', 'session-1');
+    });
+
+    it('should emit rename with API new name even when local session still has old name', async () => {
+      // 业务常见：current 由 getSession 单独设置，不在分页 list 中；updateSessionInList 无法写回新名
+      mocks.mockMessageModule.list = shallowRef([{ id: '1', role: MessageRole.User, content: 'hello' }]);
+      const onSessionRenamed = vi.fn();
+      mocks.mockSessionModule.list.value = [];
+      mocks.mockSessionModule.current.value = { sessionCode: 'session-1', sessionName: '新会话' };
+      mocks.mockSessionModule.renameSession = vi.fn().mockResolvedValue({
+        sessionCode: 'session-1',
+        sessionName: '重命名失败',
+      });
+      manager = new ChatBusinessManager(
+        mocks.mockAgentModule as any,
+        mocks.mockMessageModule as any,
+        mocks.mockSessionModule as any,
+        mocks.mockEventEmitter,
+        { onSessionRenamed },
+      );
+
+      await manager.sendMessage('hello', 'session-1');
+      await Promise.resolve();
+
+      expect(onSessionRenamed).toHaveBeenCalledWith('重命名失败', 'session-1');
+      expect(onSessionRenamed).not.toHaveBeenCalledWith('新会话', expect.anything());
+    });
+
+    it('should still emit rename with sessionCode when user switched session before rename resolves', async () => {
+      mocks.mockMessageModule.list = shallowRef([{ id: '1', role: MessageRole.User, content: 'hello' }]);
+      const onSessionRenamed = vi.fn();
+      let resolveRename: (value: { sessionCode: string; sessionName: string }) => void = () => {};
+      mocks.mockSessionModule.renameSession = vi.fn().mockImplementation(
+        () =>
+          new Promise(resolve => {
+            resolveRename = resolve;
+          }),
+      );
+      manager = new ChatBusinessManager(
+        mocks.mockAgentModule as any,
+        mocks.mockMessageModule as any,
+        mocks.mockSessionModule as any,
+        mocks.mockEventEmitter,
+        { onSessionRenamed },
+      );
+
+      await manager.sendMessage('hello', 'session-1');
+      // rename 尚未返回时用户已切到其他会话 — 仍应抛出，并由业务按 sessionCode 维护列表
+      mocks.mockSessionModule.current.value = { sessionCode: 'session-2', sessionName: '另一个会话' };
+      resolveRename({ sessionCode: 'session-1', sessionName: 'AI Generated Name' });
+      await Promise.resolve();
+
+      expect(onSessionRenamed).toHaveBeenCalledWith('AI Generated Name', 'session-1');
     });
 
     it('should not emit rename when auto-rename fails', async () => {

@@ -128,7 +128,7 @@ export interface AIBluekingEmits {
   (e: 'auto-generate-name'): void;
   (e: 'help-click'): void;
   /** 会话重命名（手动改名或首条消息后 AI 自动重命名成功） */
-  (e: 'rename', newName: string): void;
+  (e: 'rename', newName: string, sessionCode: string): void;
   (e: 'share'): void;
 }
 
