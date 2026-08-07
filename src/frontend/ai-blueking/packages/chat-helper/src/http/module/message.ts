@@ -87,19 +87,8 @@ export const useMessage = (fetchClient: FetchClient) => {
     );
 
   // 停止会话
-  const stopChat = (
-    sessionCode: string,
-    runIdOrConfig?: string | IRequestConfig,
-    config?: IRequestConfig,
-  ) => {
-    const runId = typeof runIdOrConfig === 'string' ? runIdOrConfig : undefined;
-    const requestConfig = typeof runIdOrConfig === 'string' ? config : runIdOrConfig;
-    return fetchClient.post<void>(
-      `session_content/stop/`,
-      { session_code: sessionCode, ...(runId ? { run_id: runId } : {}) },
-      requestConfig,
-    );
-  };
+  const stopChat = (sessionCode: string, config?: IRequestConfig) =>
+    fetchClient.post<void>(`session_content/stop/`, { session_code: sessionCode }, config);
 
   // 获取流程引擎任务信息
   const getFlowAgentTaskInfo = (taskId: number, config?: IRequestConfig) =>

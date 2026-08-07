@@ -5,6 +5,7 @@ import types
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
 from django.conf import settings
 
 if not settings.configured:
@@ -117,10 +118,10 @@ def test_list_pagination_params_invalid_fallback_to_default(monkeypatch):
     )
 
 
-def test_stop_clears_stale_notification_before_sending_cancel(monkeypatch):
-    """每轮 stop 先清旧通知；本轮完成通知不能在 wait 之后被误删。"""
+@pytest.mark.parametrize("run_id", ["run-current", None])
+def test_stop_clears_stale_notification_before_sending_cancel(monkeypatch, run_id):
+    """每轮 stop 先清旧通知，并兼容不传 run_id 的旧前端。"""
     session_code = "session-stop-order"
-    run_id = "run-current"
     call_order = []
     handler = MagicMock()
     handler.clear_cancelled_signal.side_effect = lambda code, run_id=None: call_order.append(("clear", code, run_id))
@@ -141,9 +142,8 @@ def test_stop_clears_stale_notification_before_sending_cancel(monkeypatch):
     monkeypatch.setattr(session_mod.AgentConfigFetcher, "get_info", lambda **kwargs: {"agent_type": "chat"})
     monkeypatch.setattr(session_mod, "client", SimpleNamespace(api=api))
 
-    response = session_mod.ChatSessionContentViewSet().stop(
-        _request(data={"session_code": session_code, "run_id": run_id})
-    )
+    request_data = {"session_code": session_code, **({"run_id": run_id} if run_id else {})}
+    response = session_mod.ChatSessionContentViewSet().stop(_request(data=request_data))
 
     assert response.data == {"stopped": True}
     assert call_order == [
