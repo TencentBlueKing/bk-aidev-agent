@@ -72,6 +72,7 @@
   .ai-assistant-message {
     display: flex;
     flex-direction: column;
+    gap: 12px;
     align-items: flex-start;
     width: 100%;
     font-size: var(--ai-font-size, 12px);
