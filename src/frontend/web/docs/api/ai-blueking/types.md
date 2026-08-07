@@ -217,7 +217,7 @@ interface AIBluekingEmits {
   (e: 'history-click', event: Event): void;
   (e: 'auto-generate-name'): void;
   (e: 'help-click'): void;
-  (e: 'rename', newName: string): void;
+  (e: 'rename', newName: string, sessionCode: string): void;
   (e: 'share'): void;
 
   // 消息选择事件

@@ -158,15 +158,18 @@ export function useSessionHandlers(params: UseSessionHandlersParams) {
       reportSdkError({ apiName: 'session', action: 'rename', error, source: 'business' });
     }
 
-    forwarders.rename(newName);
+    forwarders.rename(newName, current.sessionCode);
   };
 
   /**
-   * ChatBot 侧会话名已变更（如首条消息自动重命名），仅同步 UI 并对外抛 rename，不再调 updateSession
+   * ChatBot 侧会话名已变更（如首条消息自动重命名），仅同步 UI 并对外抛 rename，不再调 updateSession。
+   * 若 rename 返回时用户已切走会话，仍转发事件（带 sessionCode），但不再改当前 Header 标题。
    */
-  const handleSessionRenamed = (newName: string) => {
-    sessionName.value = newName;
-    forwarders.rename(newName);
+  const handleSessionRenamed = (newName: string, sessionCode: string) => {
+    if (currentSession.value?.sessionCode === sessionCode) {
+      sessionName.value = newName;
+    }
+    forwarders.rename(newName, sessionCode);
   };
 
   const handleSessionSwitched = (session: ISession | null) => {

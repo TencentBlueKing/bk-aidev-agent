@@ -64,7 +64,7 @@
       <ol>
         <li>确保下方是「新会话」（本页开启了 <code>alwaysCreateNewSession</code>）</li>
         <li>发送第一条消息，等待 AI 自动重命名成功</li>
-        <li>右侧应出现 <code>rename</code> 日志，payload 为新会话名</li>
+        <li>右侧应出现 <code>rename</code> 日志，payload 含 <code>newName</code> 与 <code>sessionCode</code></li>
         <li>也可在 Header 手动改名，应同样触发 <code>rename</code>（仅 AIBlueking 模式）</li>
       </ol>
     </div>
@@ -198,10 +198,10 @@
     });
   };
 
-  const handleRename = (newName: string) => {
-    console.log('[RenameEvent] @rename:', newName);
+  const handleRename = (newName: string, sessionCode?: string) => {
+    console.log('[RenameEvent] @rename:', { newName, sessionCode });
     latestName.value = newName;
-    pushLog('rename', JSON.stringify(newName));
+    pushLog('rename', JSON.stringify({ newName, sessionCode }));
   };
 
   const handleSendMessage = (message: string) => {

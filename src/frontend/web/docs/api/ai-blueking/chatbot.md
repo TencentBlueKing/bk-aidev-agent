@@ -129,7 +129,7 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | --- | --- | --- |
 | `session-switched` | `(session: ISession \| null)` | 会话切换完成 |
 | `agent-info-loaded` | `(chatHelper: IChatHelper)` | 独立模式初始化完成（与 `whenReady` 成功时机一致，仅独立模式） |
-| `rename` | `(newName: string)` | 首条消息后 AI 自动重命名成功；AIBlueking 集成时会转发为自身 `@rename` |
+| `rename` | `(newName: string, sessionCode: string)` | 首条消息后 AI 自动重命名成功；AIBlueking 集成时会转发为自身 `@rename`；第二参为被改名会话编码 |
 
 ### 快捷方式事件
 
