@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""MESSAGES_SNAPSHOT 入口应包含用户已取消，LLM 上下文应排除。"""
+"""MESSAGES_SNAPSHOT 与 LLM 入口对用户已取消消息的分流。"""
 
 import json
 
@@ -21,10 +21,8 @@ def _cancelled_history() -> list[ChatPrompt]:
 
 
 def _build_messages_snapshot(agent: ChatCompletionAgent):
-    """与 chat._stream 中 MESSAGES_SNAPSHOT 入口一致。"""
-    return langchain_messages_to_agui(
-        agent._chat_history_to_langchain_messages(agent._convert_contents(agent.chat_history))
-    )
+    """与 chat._stream 中 body['messages'] 组装一致。"""
+    return langchain_messages_to_agui(agent.convert_history_to_messages())
 
 
 def test_messages_snapshot_entry_includes_user_cancelled():
@@ -34,9 +32,9 @@ def test_messages_snapshot_entry_includes_user_cancelled():
     assert snapshot[-1].content == RunId.CANCELLED_MESSAGE
 
 
-def test_convert_history_excludes_user_cancelled_for_llm():
+def test_llm_entry_excludes_user_cancelled():
     agent = ChatCompletionAgent(chat_history=_cancelled_history())
-    llm_messages = agent.convert_history_to_messages()
+    llm_messages = agent._filter_cancelled_for_llm(agent.convert_history_to_messages())
     assert len(llm_messages) == 1
     assert llm_messages[0].content == "分析图片"
 

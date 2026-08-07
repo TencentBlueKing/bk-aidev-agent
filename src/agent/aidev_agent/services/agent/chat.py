@@ -312,11 +312,16 @@ class ChatCompletionAgent(BaseModel):
     def convert_history_to_messages(self) -> list[BaseMessage]:
         if not self.chat_history:
             return []
-        return self._chat_history_to_langchain_messages(self._convert_contents(self.chat_history, for_llm=True))
+        return self._chat_history_to_langchain_messages(self._convert_contents(self.chat_history))
 
     @staticmethod
-    def _is_user_cancelled_prompt(prompt: ChatPrompt) -> bool:
-        return prompt.role in (PromptRole.ASSISTANT.value, PromptRole.AI.value) and prompt.content == RunId.CANCELLED_MESSAGE
+    def _filter_cancelled_for_llm(messages: list[BaseMessage]) -> list[BaseMessage]:
+        """LLM 入口过滤「用户已取消」占位，不影响 MESSAGES_SNAPSHOT。"""
+        return [
+            each
+            for each in messages
+            if not (isinstance(each, AIMessage) and each.content == RunId.CANCELLED_MESSAGE)
+        ]
 
     @property
     def model_name(self) -> str:
@@ -535,7 +540,7 @@ class ChatCompletionAgent(BaseModel):
         else:
             # 不再依赖 checkpoint 中的 messages，直接使用后端数据库传来的完整历史
             state_input["messages"] = []
-            langchain_messages = agui_messages_to_langchain(messages)
+            langchain_messages = self._filter_cancelled_for_llm(agui_messages_to_langchain(messages))
             state = self._merge_state(state_input, langchain_messages)
 
         # 2. regenerate 检测 + checkpoint 时间旅行
@@ -674,7 +679,11 @@ class ChatCompletionAgent(BaseModel):
         此处仅补充 messages / execute_kwargs 后调用 agent_e.ainvoke。
         """
         try:
-            input_state: dict[str, Any] = {"messages": messages, "execute_kwargs": execute_kwargs, **state}
+            input_state: dict[str, Any] = {
+                "messages": self._filter_cancelled_for_llm(messages),
+                "execute_kwargs": execute_kwargs,
+                **state,
+            }
 
             async def _ainvoke_with_cleanup():
                 try:
@@ -705,7 +714,7 @@ class ChatCompletionAgent(BaseModel):
         state: dict[str, Any],
         messages: list[BaseMessage],
     ) -> Generator[Any, None, None]:
-        _input: dict[str, Any] = {"messages": messages, **state}
+        _input: dict[str, Any] = {"messages": self._filter_cancelled_for_llm(messages), **state}
         agent_type = self.model_context_options.llm_code_agent_type if self.model_context_options else None
         adapter = AgentStreamAdapter(agent_type=agent_type)
         return adapter.stream_standard_event(
@@ -774,10 +783,6 @@ class ChatCompletionAgent(BaseModel):
         # 4. 预处理（在 agent_input 构造前）（D-02, D-03）
         # 11.8: tools/context 不在 _stream 作用域内，原 AgentInput.tools/context 默认为 []（body 不含）
         # tools 通过 AidevAGUIAgent 构造函数传入（graph 挂载），不通过 state 传递
-        # MESSAGES_SNAPSHOT 入口：完整 chat_history → langchain → AG-UI（含「用户已取消」）
-        snapshot_messages = langchain_messages_to_agui(
-            self._chat_history_to_langchain_messages(self._convert_contents(self.chat_history))
-        )
         agui_messages = langchain_messages_to_agui(messages)
         preprocessed = self._prepare_stream_input(
             agent_e,
@@ -795,7 +800,7 @@ class ChatCompletionAgent(BaseModel):
             "thread_id": self.thread_id,
             "run_id": messages[-1].id or uuid.uuid4().hex,
             "state": preprocessed["state"],
-            "messages": snapshot_messages,
+            "messages": agui_messages,
             "stream_input": preprocessed["stream_input"],  # 11.9: stream_input 通过 input 传递
         }
         if forwarded_props:
@@ -1116,13 +1121,11 @@ class ChatCompletionAgent(BaseModel):
                     messages.append(InterruptMessage(id=each.id, content=interrupt_content))
         return messages
 
-    def _convert_contents(self, contents: list[ChatPrompt], *, for_llm: bool = False) -> list[ChatPrompt]:
+    def _convert_contents(self, contents: list[ChatPrompt]) -> list[ChatPrompt]:
         """将无需送到大模型处理的 content 去掉"""
         new_contents = []
         for each in contents:
             each.role = each.role.replace("hidden-", "")
-            if for_llm and self._is_user_cancelled_prompt(each):
-                continue
             if each.role in self.SKIP_PROMPT_ROLE:
                 continue
             if each.role == PromptRole.HIDDEN.value:
