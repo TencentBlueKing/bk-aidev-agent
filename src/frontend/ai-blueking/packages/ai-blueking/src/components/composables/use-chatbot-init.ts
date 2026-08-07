@@ -215,7 +215,7 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
       predefinedQuestions: props.prompts,
       placeholder: props.placeholder,
       // 首条消息自动重命名成功 → ChatBot rename → AIBlueking forwarders.rename
-      onSessionRenamed: (newName: string) => emit('rename', newName),
+      onSessionRenamed: (newName: string, sessionCode: string) => emit('rename', newName, sessionCode),
     });
 
     const shortcutMgr = new ShortcutManager(null, props.shortcuts || []);

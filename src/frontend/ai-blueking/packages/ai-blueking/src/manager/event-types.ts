@@ -165,7 +165,7 @@ export interface HeaderEventData {
   'history-click': { event: Event };
   'auto-generate-name': Record<string, never>;
   'help-click': Record<string, never>;
-  rename: { newName: string };
+  rename: { newName: string; sessionCode: string };
   share: Record<string, never>;
   close: Record<string, never>;
   'toggle-compression': Record<string, never>;
@@ -352,7 +352,7 @@ export function transformEventDataToEmitArgs(event: InternalEvent, data: Interna
     case 'send-message':
       return [(data as BusinessEventData['send-message']).content];
     case 'rename':
-      return [(data as HeaderEventData['rename']).newName];
+      return [(data as HeaderEventData['rename']).newName, (data as HeaderEventData['rename']).sessionCode];
     case 'history-click':
       return [(data as HeaderEventData['history-click']).event];
 

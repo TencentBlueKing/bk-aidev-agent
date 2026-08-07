@@ -167,7 +167,7 @@ function openAI() {
 | `new-chat-created` | `({ sessionCode, sessionName?, createdAt? })` | 新会话创建完成 |
 | `history-click` | `(event: Event)` | 历史记录点击 |
 | `auto-generate-name` | — | 自动生成名称 |
-| `rename` | `(newName: string)` | 会话重命名（手动改名，或首条消息后 AI 自动重命名成功） |
+| `rename` | `(newName: string, sessionCode: string)` | 会话重命名（手动改名，或首条消息后 AI 自动重命名成功）；`sessionCode` 标识被改名会话 |
 | `share` | — | 分享 |
 | `help-click` | — | 帮助点击 |
 

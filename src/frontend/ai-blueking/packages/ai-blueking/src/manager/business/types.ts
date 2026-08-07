@@ -21,8 +21,10 @@ export interface ChatBusinessConfig {
   /**
    * 会话自动重命名成功回调（首条消息后 AI 生成名称）
    * 用于向上抛出与手动改名一致的 rename 事件；Manager 自身的 eventEmitter 仅接错误桥，不会转发此事件
+   * @param newName ai_rename 返回的新名称
+   * @param sessionCode 被重命名的会话编码（异步返回时可能已非当前会话）
    */
-  onSessionRenamed?: (newName: string) => void;
+  onSessionRenamed?: (newName: string, sessionCode: string) => void;
   /** 占位文本 */
   placeholder?: string;
   /** 预定义问题 */

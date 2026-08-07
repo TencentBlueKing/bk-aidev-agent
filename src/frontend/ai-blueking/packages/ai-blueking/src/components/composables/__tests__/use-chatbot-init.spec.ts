@@ -338,10 +338,12 @@ describe('useChatbotInit', () => {
       expect(vi.mocked(SessionBusinessManager).mock.calls[0][2]).toBe(errorReporterParams.managerErrorBridge);
 
       // 自动重命名成功应经 onSessionRenamed → ChatBot emit('rename')
-      const chatConfig = vi.mocked(ChatBusinessManager).mock.calls[0][4] as { onSessionRenamed?: (name: string) => void };
+      const chatConfig = vi.mocked(ChatBusinessManager).mock.calls[0][4] as {
+        onSessionRenamed?: (name: string, sessionCode: string) => void;
+      };
       expect(typeof chatConfig?.onSessionRenamed).toBe('function');
-      chatConfig.onSessionRenamed!('Auto Name');
-      expect(emit).toHaveBeenCalledWith('rename', 'Auto Name');
+      chatConfig.onSessionRenamed!('Auto Name', 'session-1');
+      expect(emit).toHaveBeenCalledWith('rename', 'Auto Name', 'session-1');
       wrapper.unmount();
     });
 
