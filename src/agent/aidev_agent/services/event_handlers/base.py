@@ -14,6 +14,7 @@
 """
 
 import json
+import threading
 import uuid
 from abc import ABC, abstractmethod
 from logging import getLogger
@@ -134,6 +135,10 @@ class BaseSessionWriter(ABC):
         self._content_ids_by_message_id: dict[str, int] = {}
         # 用于追踪本次运行是否因用户取消/暂停而结束
         self._is_cancelled: bool = False
+        # RUN_ERROR(cancelled) 与 RUN_FINISHED(cancelled) 可能连续到达，
+        # 只允许同一 writer 补写一次“用户已取消”。
+        self._cancelled_messages_written: bool = False
+        self._cancelled_messages_lock = threading.Lock()
         # 用于追踪 handle_model_end 是否已成功回写 assistant 消息
         # 当 on_chat_model_end 触发时，assistant 消息已完整输出，取消时不应再补写暂停消息
         self._model_end_written: bool = False
@@ -713,6 +718,14 @@ class BaseSessionWriter(ABC):
         Args:
             thinking_content: 已累积的 thinking 内容
         """
+        with self._cancelled_messages_lock:
+            if self._cancelled_messages_written:
+                logger.debug("Cancelled messages already written for session_code=%s", self.session_code)
+                return
+            # 事件处理可能来自 generator 与 producer 两个线程。先占位再执行远端写入，
+            # 避免首个请求尚未返回时，RUN_FINISHED 再次进入并产生重复记录。
+            self._cancelled_messages_written = True
+
         logger.info(
             "Writing cancelled messages: session_code=%s, has_thinking=%s, streaming_messages=%d, _is_cancelled=%s",
             self.session_code,

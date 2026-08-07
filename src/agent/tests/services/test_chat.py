@@ -1500,6 +1500,54 @@ class TestSessionWriterCancelUnit:
         assert writer.is_cancelled is True
         assert any(c.get("content") == "用户已取消" and c.get("status") == "fail" for c in writer.created_contents)
 
+    def test_cancel_error_then_run_finished_writes_paused_once(self):
+        """RUN_ERROR 与 RUN_FINISHED 连续到达时，不重复补写取消消息。"""
+        writer = _ConcreteWriter()
+        writer.handle_run_error(RunErrorEvent(type=EventType.RUN_ERROR, message=RunId.CANCELLED_MESSAGE))
+        writer.handle_run_finished(
+            RunFinishedEvent(type=EventType.RUN_FINISHED, thread_id="t1", run_id=RunId.CANCELLED)
+        )
+
+        paused = [
+            content
+            for content in writer.created_contents
+            if content.get("content") == "用户已取消" and content.get("status") == "fail"
+        ]
+        assert len(paused) == 1
+
+    def test_concurrent_cancel_events_write_paused_once(self):
+        """generator 与 producer 并发分发取消事件时，也只回写一次。"""
+        writer = _ConcreteWriter()
+        write_entered = threading.Event()
+        allow_write = threading.Event()
+        original_write = writer._write_assistant_message
+
+        def slow_write(*args, **kwargs):
+            write_entered.set()
+            assert allow_write.wait(timeout=1.0)
+            return original_write(*args, **kwargs)
+
+        writer._write_assistant_message = slow_write
+        error_thread = threading.Thread(
+            target=writer.handle_run_error,
+            args=(RunErrorEvent(type=EventType.RUN_ERROR, message=RunId.CANCELLED_MESSAGE),),
+        )
+        error_thread.start()
+        assert write_entered.wait(timeout=1.0)
+
+        writer.handle_run_finished(
+            RunFinishedEvent(type=EventType.RUN_FINISHED, thread_id="t1", run_id=RunId.CANCELLED)
+        )
+        allow_write.set()
+        error_thread.join(timeout=1.0)
+
+        paused = [
+            content
+            for content in writer.created_contents
+            if content.get("content") == "用户已取消" and content.get("status") == "fail"
+        ]
+        assert len(paused) == 1
+
     def test_cancel_with_model_end_written_no_paused(self):
         """取消 + model_end 已回写 → 不补写暂停消息（AI 已输出文本场景）"""
         writer = _ConcreteWriter()

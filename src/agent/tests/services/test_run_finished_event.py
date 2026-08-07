@@ -356,20 +356,20 @@ class TestCrossProcessCancelSignal:
         assert len(run_finished_events) > 0, f"应包含 RUN_FINISHED 事件，实际收到: {collected}"
         assert run_finished_events[-1]["runId"] == RunId.CANCELLED
 
-    def test_cross_process_cancel_clears_on_stream_start(self, mq_handler):
-        """流开始时清理残留的跨进程取消信号
+    def test_cross_process_cancel_before_stream_start_is_preserved(self, mq_handler):
+        """流注册前到达的跨进程取消信号不能被启动清理吞掉
 
         场景：
-        1. 上一次流的取消信号残留在队列中
-        2. 新流启动时，应该清理残留的取消信号
+        1. 用户先点击停止，取消信号已进入队列
+        2. producer/consumer 随后才完成注册
 
         验证：
-        - 残留的取消信号被清理
-        - 新流不会被误取消
+        - 本轮 generator 不再继续执行
+        - 输出 RUN_FINISHED(cancelled)
         """
         tid = "test_cancel_clear_on_start"
 
-        # 设置残留的取消信号
+        # 模拟 stop 早于流注册
         mq_handler.set_cancel_signal(tid)
         assert mq_handler.check_cancel_signal(tid) is True
 
@@ -391,9 +391,12 @@ class TestCrossProcessCancelSignal:
         t.start()
         t.join(timeout=5.0)
 
-        # 验证流正常完成
-        assert stream_completed.is_set(), "流应正常完成，不应被残留的取消信号打断"
-        assert len(collected) == 5, f"应收到 5 个 chunk，实际收到 {len(collected)}"
+        assert not stream_completed.is_set(), "注册前的 stop 应中断本轮 generator"
+        run_finished_events = [
+            parse_sse_event(event) for event in collected if isinstance(event, str) and "RUN_FINISHED" in event
+        ]
+        assert run_finished_events
+        assert run_finished_events[-1]["runId"] == RunId.CANCELLED
 
     def test_stopped_session_sends_run_finished_event(self, mq_handler):
         """停止会话时应发送 RUN_FINISHED 事件

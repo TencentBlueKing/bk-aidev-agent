@@ -32,8 +32,12 @@ from aidev_bkplugin.constants import AGUI_PROTOCOL_VERSION  # noqa: E402
 from aidev_bkplugin.views import session as session_mod  # noqa: E402
 
 
-def _request(query_params=None, username="alice"):
-    return SimpleNamespace(query_params=query_params or {}, user=SimpleNamespace(username=username))
+def _request(query_params=None, username="alice", data=None):
+    return SimpleNamespace(
+        query_params=query_params or {},
+        user=SimpleNamespace(username=username),
+        data=data or {},
+    )
 
 
 def _session(session_code, protocol_version=AGUI_PROTOCOL_VERSION):
@@ -111,3 +115,33 @@ def test_list_pagination_params_invalid_fallback_to_default(monkeypatch):
             "page_size": session_mod.DEFAULT_SESSION_PAGE_SIZE,
         },
     )
+
+
+def test_stop_clears_stale_notification_before_sending_cancel(monkeypatch):
+    """每轮 stop 先清旧通知；本轮完成通知不能在 wait 之后被误删。"""
+    session_code = "session-stop-order"
+    call_order = []
+    handler = MagicMock()
+    handler.clear_cancelled_signal.side_effect = lambda code: call_order.append(("clear", code))
+    handler.wait_for_consumer_cancelled.side_effect = lambda code, timeout: call_order.append(("wait", code)) or True
+    api = MagicMock()
+    api.stop_chat_session_content.return_value = {"data": {"stopped": True}}
+
+    monkeypatch.setattr(session_mod.message_handler_factory, "get", lambda: handler)
+    monkeypatch.setattr(
+        session_mod.GeneratorStreamingHelper,
+        "cancel",
+        lambda code: call_order.append(("cancel", code)) or True,
+    )
+    monkeypatch.setattr(session_mod.AgentConfigFetcher, "get_info", lambda **kwargs: {"agent_type": "chat"})
+    monkeypatch.setattr(session_mod, "client", SimpleNamespace(api=api))
+
+    response = session_mod.ChatSessionContentViewSet().stop(_request(data={"session_code": session_code}))
+
+    assert response.data == {"stopped": True}
+    assert call_order == [
+        ("clear", session_code),
+        ("cancel", session_code),
+        ("wait", session_code),
+    ]
+    handler.mark_stopped.assert_not_called()

@@ -1,7 +1,7 @@
 """测试 stop 接口与 SSE 流的同步机制
 
 核心验证：
-1. Consumer 在 cancel/stop 相关退出路径（CANCELLED / cancel 后 EOD / drain 超时）发送取消通知
+1. Consumer 仅在收到取消终态/EOD 或 producer 已退出后发送取消通知
 2. 普通正常结束不会发送取消通知
 3. stop 接口 cancel → wait → 超时降级 的完整流程
 4. 端到端：cancel 后流正确终止并通知
@@ -43,6 +43,20 @@ class TestConsumerNotifyOnCancel:
         tid = "test_sync_cancel_notify"
         collected = []
         stream_started = threading.Event()
+        completion_order = []
+        original_mark_completed = handler.mark_completed
+        original_notify = handler.notify_consumer_cancelled
+
+        def mark_completed(thread_id):
+            completion_order.append("cleanup")
+            return original_mark_completed(thread_id)
+
+        def notify_consumer_cancelled(thread_id):
+            completion_order.append("notify")
+            return original_notify(thread_id)
+
+        handler.mark_completed = mark_completed
+        handler.notify_consumer_cancelled = notify_consumer_cancelled
 
         def slow_gen():
             for i in range(20):
@@ -71,6 +85,7 @@ class TestConsumerNotifyOnCancel:
         assert notified, "Consumer 退出后应发送 notify"
         assert len(collected) < 20, "应只收到部分 chunk"
         assert not t.is_alive()
+        assert completion_order[-2:] == ["cleanup", "notify"]
 
     def test_normal_finish_does_not_trigger_notify(self, handler):
         """普通正常结束（无 cancel/stop）时不应触发 notify"""
@@ -87,15 +102,8 @@ class TestConsumerNotifyOnCancel:
         # 普通完成不属于 stop/cancel 流程，不应发取消通知
         assert not handler.wait_for_consumer_cancelled(tid, timeout=0.2)
 
-    def test_drain_timeout_triggers_notify(self, handler, monkeypatch):
-        """Consumer drain 超时时也应触发 notify
-
-        场景：generator 不检查 cancel，cancel 后 Producer 进入 drain 模式并超时退出，
-        然后发 EOD_CHUNK。Consumer 检测到 cancel 后进入 drain 等待 EOD_CHUNK/RUN_FINISHED，
-        如果 Consumer 自己也 drain 超时则触发 STOPPED_CHUNK。
-
-        本测试验证：无论哪条路径退出，notify 都会被触发。
-        """
+    def test_non_cooperative_generator_triggers_notify(self, handler, monkeypatch):
+        """generator 不主动检查 cancel 时，producer 仍输出标准取消终态并通知。"""
         tid = "test_sync_drain_timeout_notify"
         collected = []
 
@@ -125,11 +133,11 @@ class TestConsumerNotifyOnCancel:
 
         GeneratorStreamingHelper.cancel(tid, handler)
 
-        # 核心断言：不管哪条路径退出，notify 都应被触发
+        # 核心断言：producer 输出取消终态和 EOD 后，notify 被触发
         notified = handler.wait_for_consumer_cancelled(tid, timeout=10.0)
         t.join(timeout=10.0)
 
-        assert notified, "drain 超时后应发送 notify"
+        assert notified, "producer 取消完成后应发送 notify"
         assert not t.is_alive()
 
 
@@ -192,6 +200,46 @@ class TestStopWaitStreamFinish:
         if not stream_finished:
             handler.mark_stopped(tid)
         assert handler.is_stopped(tid)
+
+    def test_cancel_before_stream_registration_is_preserved(self, handler, monkeypatch):
+        """stop 早于 producer 注册时，启动流程不能清掉刚写入的取消意图。"""
+        tid = "test_stop_before_stream_registration"
+        cancel_signals = set()
+        handled_events = []
+        completed = []
+        original_clear = handler.clear
+
+        def set_cancel_signal(thread_id):
+            cancel_signals.add(thread_id)
+            return True
+
+        def clear_stream_and_signals(thread_id):
+            cancel_signals.discard(thread_id)
+            original_clear(thread_id)
+
+        monkeypatch.setattr(handler, "set_cancel_signal", set_cancel_signal)
+        monkeypatch.setattr(handler, "check_cancel_signal", lambda thread_id: thread_id in cancel_signals)
+        monkeypatch.setattr(handler, "clear_cancel_signal", cancel_signals.discard)
+        monkeypatch.setattr(handler, "clear", clear_stream_and_signals)
+
+        assert GeneratorStreamingHelper.cancel(tid, handler)
+
+        helper = GeneratorStreamingHelper(handler, thread_id=tid)
+        result = list(
+            helper.stream(
+                iter(["must_not_be_emitted"]),
+                on_complete=lambda: completed.append(True),
+                event_handler=handled_events.append,
+                expected_run_id=tid,
+            )
+        )
+
+        assert "must_not_be_emitted" not in result
+        assert any('"type":"RUN_ERROR"' in event for event in result)
+        assert any('"type":"RUN_FINISHED"' in event for event in result)
+        assert handled_events[0].message == RunId.CANCELLED_MESSAGE
+        assert completed == [True]
+        assert tid not in cancel_signals
 
     def test_stop_clears_cancelled_signal(self, handler):
         """stop 完成后应清理 cancelled 信号"""
@@ -297,8 +345,9 @@ class TestFullStopSequence:
         stream_started.wait(timeout=2.0)
         time.sleep(0.15)
 
-        # 复刻 stop() 4 步
+        # 复刻 stop()：先清上一轮通知，再 cancel → wait → 超时标记 stopped
         timeline["cancel_sent"] = time.time()
+        handler.clear_cancelled_signal(tid)
         GeneratorStreamingHelper.cancel(tid, handler)  # 步骤1
         stream_finished = handler.wait_for_consumer_cancelled(  # 步骤2
             tid,
@@ -306,7 +355,6 @@ class TestFullStopSequence:
         )
         if not stream_finished:  # 步骤3
             handler.mark_stopped(tid)
-        handler.clear_cancelled_signal(tid)  # 步骤4
         timeline["api_called"] = time.time()
 
         t.join(timeout=10.0)
@@ -314,9 +362,9 @@ class TestFullStopSequence:
         return collected, stream_finished, timeline
 
     def test_cooperative_agent_full_sequence(self, handler, monkeypatch):
-        """正常链路：Agent 配合取消 → RUN_FINISHED → stop 等到通知 → 调 API
+        """正常链路：producer 收敛取消终态 → Consumer 通知 → stop 调平台 API
 
-        验证时序严格递增：cancel → Agent 检测 → RUN_FINISHED → Consumer 退出 → API 调用
+        验证时序严格递增：cancel → Consumer 退出 → API 调用。
         """
         tid = "full_stop_cooperative"
 
@@ -336,16 +384,17 @@ class TestFullStopSequence:
         collected, finished, tl = self._run_stop_flow(handler, tid, gen_factory)
 
         assert finished, "stop 应成功等到流结束"
-        assert "RUN_FINISHED_EVENT" in collected
+        expected_run_finished = emit_run_finished_event(thread_id=tid, run_id=RunId.CANCELLED)
+        assert expected_run_finished in collected
         assert 0 < sum(1 for c in collected if c.startswith("chunk_")) < 50
         # 时序验证
-        assert tl["agent_detected"] >= tl["cancel_sent"]
-        assert tl["consumer_exited"] >= tl["agent_detected"]
-        assert tl["api_called"] >= tl["consumer_exited"]
+        assert tl["consumer_exited"] >= tl["cancel_sent"]
+        assert tl["api_called"] >= tl["cancel_sent"]
+        assert abs(tl["api_called"] - tl["consumer_exited"]) < 0.1
         assert handler.is_empty(tid)
 
-    def test_producer_drain_timeout_force_exit(self, handler, monkeypatch):
-        """Agent 不配合：generator 不退出 → Producer drain 超时 → EOD → Consumer 退出"""
+    def test_non_cooperative_producer_is_closed_after_cancel(self, handler):
+        """Agent 不主动检查 cancel 时，producer 仍主动关闭 generator 并发送 EOD。"""
         tid = "full_stop_drain_timeout"
 
         def gen_factory(started, tl):
@@ -357,43 +406,42 @@ class TestFullStopSequence:
 
             return gen()
 
-        collected, finished, tl = self._run_stop_flow(
-            handler,
-            tid,
-            gen_factory,
-            monkeypatch,
-            drain_timeout=0.3,
-        )
+        collected, finished, tl = self._run_stop_flow(handler, tid, gen_factory)
 
-        assert finished, "drain 超时后 Consumer 也应退出并通知"
+        assert finished, "producer 主动收敛取消终态后 Consumer 应退出并通知"
+        assert emit_run_finished_event(thread_id=tid, run_id=RunId.CANCELLED) in collected
 
-    def test_consumer_drain_timeout_yields_stopped(self, handler, monkeypatch):
-        """Producer 卡住 → Consumer drain 先超时 → yield STOPPED_CHUNK
-
-        generator yield 间隔远大于 drain 超时，Producer 卡在 next() 上，
-        Consumer drain 先超时走 STOPPED 路径。
-        """
+    def test_consumer_waits_for_live_producer_before_notify(self, handler, monkeypatch):
+        """工具仍执行时不能提前通知 stop 已完成，producer 结束后再确认。"""
         tid = "full_stop_consumer_drain"
+        monkeypatch.setattr(GeneratorStreamingHelper, "CANCEL_DRAIN_TIMEOUT", 0.2)
+        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_INTERVAL", 0.05)
+        collected = []
+        first_chunk_sent = threading.Event()
 
-        def gen_factory(started, tl):
-            def gen():
-                started.set()
-                yield "first_chunk"
-                time.sleep(5.0)  # 远超 drain 超时，Producer 卡在 next()
-                yield "never_reached"
+        def blocked_tool_gen():
+            yield "first_chunk"
+            first_chunk_sent.set()
+            time.sleep(0.8)
+            yield "tool_result_after_stop"
 
-            return gen()
+        def consume():
+            helper = GeneratorStreamingHelper(handler, thread_id=tid)
+            collected.extend(helper.stream(blocked_tool_gen()))
 
-        collected, finished, tl = self._run_stop_flow(
-            handler,
-            tid,
-            gen_factory,
-            monkeypatch,
-            drain_timeout=0.5,
-        )
+        thread = threading.Thread(target=consume)
+        thread.start()
+        first_chunk_sent.wait(timeout=1.0)
+        handler.clear_cancelled_signal(tid)
+        GeneratorStreamingHelper.cancel(tid, handler)
 
-        assert finished
-        # Consumer drain 超时后 yield RUN_FINISHED SSE（runId=cancelled），而非 STOPPED_CHUNK
+        assert not handler.wait_for_consumer_cancelled(tid, timeout=0.35)
+        assert thread.is_alive(), "producer 仍执行工具时，consumer 不应提前宣告停止完成"
+
+        thread.join(timeout=3.0)
+        assert not thread.is_alive()
+        assert handler.wait_for_consumer_cancelled(tid, timeout=0.5)
+        assert "tool_result_after_stop" not in collected
         expected_run_finished = emit_run_finished_event(thread_id=tid, run_id=RunId.CANCELLED)
         assert expected_run_finished in collected
 
