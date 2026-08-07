@@ -1,0 +1,661 @@
+"""基于 Redis Streams 的可回放消息处理器。"""
+
+import contextlib
+import hashlib
+import json
+import logging
+import threading
+import time
+import uuid
+from typing import Any, ClassVar, Optional
+
+import redis
+from environs import Env
+from redis import Redis
+from redis.exceptions import RedisError
+
+from .base import BaseMessageQueueHandler
+from .constants import EOD_CHUNK, QueueTTLConfig
+
+logger = logging.getLogger(__name__)
+env = Env()
+
+
+class RedisMessageHandler(BaseMessageQueueHandler):
+    """使用 Redis Streams 保存会话事件并按游标增量回放。
+
+    该实现仅依赖 Redis 6.2 的普通数据命令，不调用 ``INFO``、``CONFIG``、
+    ``COMMAND``、``SCAN`` 等管理或全局遍历命令。每个会话使用独立 hash tag，
+    便于后续接入 Redis Cluster 时将同一会话的 Stream 和控制键放在同一 slot。
+    """
+
+    MIN_SERVER_VERSION: ClassVar[tuple[int, int, int]] = (6, 2, 0)
+    WAITAOF_MIN_SERVER_VERSION: ClassVar[tuple[int, int, int]] = (7, 2, 0)
+    BUFFER_FLUSH_INTERVAL: ClassVar[float] = 0.5
+    BUFFER_MAX_MESSAGES: ClassVar[int] = 100
+    SSE_PUBLISH_CHUNK_MAX_BYTES: ClassVar[int] = 256 * 1024
+    STREAM_READ_COUNT: ClassVar[int] = 256
+    CURSOR_SEQUENCE_FACTOR: ClassVar[int] = 1_000_000
+
+    _RELEASE_LOCK_SCRIPT: ClassVar[str] = """
+        if redis.call('get', KEYS[1]) == ARGV[1] then
+            return redis.call('del', KEYS[1])
+        end
+        return 0
+    """
+    _RENEW_LOCK_SCRIPT: ClassVar[str] = """
+        if redis.call('get', KEYS[1]) == ARGV[1] then
+            return redis.call('pexpire', KEYS[1], ARGV[2])
+        end
+        return 0
+    """
+
+    _instance: Optional["RedisMessageHandler"] = None
+    _lock: ClassVar[threading.Lock] = threading.Lock()
+
+    def __new__(cls) -> "RedisMessageHandler":
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    instance = super().__new__(cls)
+                    instance._init_redis()
+                    cls._instance = instance
+        return cls._instance
+
+    def _init_redis(self) -> None:
+        redis_url = env.str("MESSAGE_HANDLER_REDIS_URL", "")
+        if not redis_url:
+            raise RuntimeError("Redis handler requires MESSAGE_HANDLER_REDIS_URL")
+
+        socket_timeout = env.float("REDIS_MESSAGE_HANDLER_SOCKET_TIMEOUT", 10.0)
+        connect_timeout = env.float("REDIS_MESSAGE_HANDLER_CONNECT_TIMEOUT", 5.0)
+        self._client: Redis = redis.Redis.from_url(
+            redis_url,
+            decode_responses=False,
+            socket_timeout=socket_timeout,
+            socket_connect_timeout=connect_timeout,
+            health_check_interval=30,
+        )
+        try:
+            self._server_version = self._validate_server()
+        except Exception:
+            self._client.close()
+            raise
+        self._supports_waitaof = self._server_version >= self.WAITAOF_MIN_SERVER_VERSION
+        self._waitaof_enabled = env.bool("REDIS_WAITAOF_ENABLED", True)
+        self._waitaof_local = env.int("REDIS_WAITAOF_LOCAL", 1)
+        self._waitaof_replicas = env.int("REDIS_WAITAOF_REPLICAS", 0)
+        self._waitaof_timeout_ms = env.int("REDIS_WAITAOF_TIMEOUT_MS", 2000)
+
+        self._queue_ttl_seconds = max(1, QueueTTLConfig.QUEUE_EXPIRE_MS // 1000)
+        self._producer_lock_ttl_ms = env.int("REDIS_PRODUCER_LOCK_TTL_SECONDS", 60) * 1000
+        self._producer_lock_renew_interval = max(
+            1.0,
+            min(
+                env.float("REDIS_PRODUCER_LOCK_RENEW_INTERVAL", 20.0),
+                self._producer_lock_ttl_ms / 3000,
+            ),
+        )
+        self._consumer_stale_seconds = env.float("REDIS_CONSUMER_STALE_SECONDS", 90.0)
+        self._completed_stream_ttl_seconds = env.int("REDIS_COMPLETED_STREAM_TTL_SECONDS", 90)
+
+        self._message_buffer: dict[str, list[Any]] = {}
+        self._buffer_lock = threading.Lock()
+        self._flush_locks: dict[str, threading.Lock] = {}
+        self._flush_locks_guard = threading.Lock()
+        self._producer_tokens: dict[str, bytes] = {}
+        self._producer_last_renewed: dict[str, float] = {}
+        self._lost_producer_locks: set[str] = set()
+        self._producer_lock_guard = threading.Lock()
+        self._eod_commit_events: dict[str, set[threading.Event]] = {}
+        self._eod_commit_events_lock = threading.Lock()
+
+        self._daemon_thread: Optional[threading.Thread] = None
+        self._daemon_running = False
+        self._daemon_stop_event = threading.Event()
+        self._start_daemon()
+
+        logger.info(
+            "Redis message handler initialized: server=%s waitaof_supported=%s waitaof_enabled=%s",
+            ".".join(map(str, self._server_version)),
+            self._supports_waitaof,
+            self._waitaof_enabled,
+        )
+
+    @property
+    def server_version(self) -> tuple[int, int, int]:
+        return self._server_version
+
+    @property
+    def supports_waitaof(self) -> bool:
+        return self._supports_waitaof
+
+    @staticmethod
+    def _parse_hello_response(response: Any) -> tuple[int, int, int]:
+        if isinstance(response, dict):
+            raw_version = response.get(b"version", response.get("version"))
+        elif isinstance(response, (list, tuple)):
+            values = dict(zip(response[::2], response[1::2]))
+            raw_version = values.get(b"version", values.get("version"))
+        else:
+            raw_version = None
+
+        if isinstance(raw_version, bytes):
+            raw_version = raw_version.decode("ascii", errors="strict")
+        if not isinstance(raw_version, str):
+            raise RuntimeError("Redis HELLO response does not contain a valid server version")
+
+        try:
+            version_parts = raw_version.split(".")[:3]
+            version = tuple(int(part.split("-")[0]) for part in version_parts)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(f"Invalid Redis server version: {raw_version!r}") from exc
+        if len(version) != 3:
+            raise RuntimeError(f"Invalid Redis server version: {raw_version!r}")
+        return version
+
+    def _validate_server(self) -> tuple[int, int, int]:
+        """校验版本和所需数据命令，不使用管理类命令。"""
+        try:
+            version = self._parse_hello_response(self._client.execute_command("HELLO", 2))
+        except RedisError as exc:
+            raise RuntimeError("Redis handler requires HELLO permission to validate Redis 6.2+") from exc
+
+        if version < self.MIN_SERVER_VERSION:
+            actual = ".".join(map(str, version))
+            raise RuntimeError(f"Redis handler requires Redis >= 6.2.0, got {actual}")
+
+        probe_tag = uuid.uuid4().hex
+        probe_stream = f"aidev_agent:probe:{{{probe_tag}}}:stream"
+        probe_lock = f"aidev_agent:probe:{{{probe_tag}}}:lock"
+        probe_consumers = f"aidev_agent:probe:{{{probe_tag}}}:consumers"
+        try:
+            self._client.set(probe_lock, b"probe", ex=5)
+            if self._client.getdel(probe_lock) != b"probe":
+                raise RuntimeError("GETDEL capability probe returned an unexpected value")
+
+            pipeline = self._client.pipeline(transaction=True)
+            pipeline.xadd(probe_stream, {b"data": b"probe"})
+            pipeline.expire(probe_stream, 5)
+            pipeline.zadd(probe_consumers, {b"probe": time.time()})
+            pipeline.expire(probe_consumers, 5)
+            pipeline.execute()
+
+            records = self._client.xread({probe_stream: "0-0"}, count=1, block=1)
+            if not records:
+                raise RuntimeError("XREAD capability probe returned no data")
+
+            self._client.set(probe_lock, b"probe", px=5000)
+            released = self._client.eval(self._RELEASE_LOCK_SCRIPT, 1, probe_lock, b"probe")
+            if released != 1:
+                raise RuntimeError("EVAL capability probe failed to release its lock")
+        except (RedisError, RuntimeError) as exc:
+            raise RuntimeError("Redis 6.2 data-command capability probe failed") from exc
+        finally:
+            with contextlib.suppress(RedisError):
+                self._client.delete(probe_stream, probe_lock, probe_consumers)
+
+        return version
+
+    @staticmethod
+    def _thread_tag(thread_id: str) -> str:
+        return hashlib.sha256(thread_id.encode("utf-8")).hexdigest()
+
+    def _key(self, thread_id: str, suffix: str) -> str:
+        return f"aidev_agent:{{{self._thread_tag(thread_id)}}}:{suffix}"
+
+    def _stream_key(self, thread_id: str) -> str:
+        return self._key(thread_id, "stream")
+
+    def _producer_lock_key(self, thread_id: str) -> str:
+        return self._key(thread_id, "producer_lock")
+
+    def _active_consumers_key(self, thread_id: str) -> str:
+        return self._key(thread_id, "active_consumers")
+
+    def _cancel_request_key(self, thread_id: str) -> str:
+        return self._key(thread_id, "cancel_request")
+
+    def _cancel_signal_key(self, thread_id: str) -> str:
+        return self._key(thread_id, "cancel_signal")
+
+    def _cancelled_signal_key(self, thread_id: str) -> str:
+        return self._key(thread_id, "cancelled_signal")
+
+    def _stopped_key(self, thread_id: str) -> str:
+        return self._key(thread_id, "stopped")
+
+    def _completed_key(self, thread_id: str) -> str:
+        return self._key(thread_id, "completed")
+
+    def _session_data_keys(self, thread_id: str) -> list[str]:
+        return [
+            self._stream_key(thread_id),
+            self._active_consumers_key(thread_id),
+            self._cancel_request_key(thread_id),
+            self._cancel_signal_key(thread_id),
+            self._cancelled_signal_key(thread_id),
+            self._stopped_key(thread_id),
+            self._completed_key(thread_id),
+        ]
+
+    def _get_flush_lock(self, thread_id: str) -> threading.Lock:
+        with self._flush_locks_guard:
+            return self._flush_locks.setdefault(thread_id, threading.Lock())
+
+    @classmethod
+    def _coalesce_sse_messages(cls, messages: list[Any]) -> list[Any]:
+        coalesced_messages: list[Any] = []
+        sse_parts: list[str] = []
+        sse_size = 0
+
+        def flush_sse_parts() -> None:
+            nonlocal sse_size
+            if sse_parts:
+                coalesced_messages.append("".join(sse_parts))
+                sse_parts.clear()
+                sse_size = 0
+
+        for message in messages:
+            if not isinstance(message, str) or not message.startswith("data: "):
+                flush_sse_parts()
+                coalesced_messages.append(message)
+                continue
+            message_size = len(message.encode("utf-8"))
+            if sse_parts and sse_size + message_size > cls.SSE_PUBLISH_CHUNK_MAX_BYTES:
+                flush_sse_parts()
+            if message_size > cls.SSE_PUBLISH_CHUNK_MAX_BYTES:
+                coalesced_messages.append(message)
+                continue
+            sse_parts.append(message)
+            sse_size += message_size
+        flush_sse_parts()
+        return coalesced_messages
+
+    @staticmethod
+    def _expand_sse_messages(messages: list[Any]) -> list[Any]:
+        expanded_messages: list[Any] = []
+        for message in messages:
+            if not isinstance(message, str) or not message.startswith("data: ") or "\n\ndata: " not in message:
+                expanded_messages.append(message)
+                continue
+            parts = message.split("\n\n")
+            if parts[-1] or any(not part.startswith("data: ") for part in parts[:-1]):
+                expanded_messages.append(message)
+                continue
+            expanded_messages.extend(f"{part}\n\n" for part in parts[:-1])
+        return expanded_messages
+
+    @classmethod
+    def _encode_cursor(cls, stream_id: bytes | str) -> int:
+        if isinstance(stream_id, bytes):
+            stream_id = stream_id.decode("ascii")
+        milliseconds, sequence = (int(part) for part in stream_id.split("-", 1))
+        if sequence >= cls.CURSOR_SEQUENCE_FACTOR:
+            raise RuntimeError(f"Redis Stream sequence is too large to encode: {stream_id}")
+        return milliseconds * cls.CURSOR_SEQUENCE_FACTOR + sequence
+
+    @classmethod
+    def _decode_cursor(cls, cursor: int) -> str:
+        milliseconds, sequence = divmod(max(cursor, 0), cls.CURSOR_SEQUENCE_FACTOR)
+        return f"{milliseconds}-{sequence}"
+
+    def _start_daemon(self) -> None:
+        if self._daemon_thread and self._daemon_thread.is_alive():
+            return
+        self._daemon_running = True
+        self._daemon_stop_event.clear()
+        self._daemon_thread = threading.Thread(target=self._daemon_worker, name="redis-message-flusher", daemon=True)
+        self._daemon_thread.start()
+
+    def _ensure_daemon_alive(self) -> None:
+        if not self._daemon_thread or not self._daemon_thread.is_alive():
+            logger.warning("Redis message daemon is not alive; restarting after process fork")
+            self._start_daemon()
+
+    def _daemon_worker(self) -> None:
+        while self._daemon_running:
+            if self._daemon_stop_event.wait(self.BUFFER_FLUSH_INTERVAL):
+                break
+            self._flush_messages()
+            self._renew_producer_locks()
+        with contextlib.suppress(Exception):
+            self._flush_messages()
+
+    def _stop_daemon(self) -> None:
+        self._daemon_running = False
+        self._daemon_stop_event.set()
+        if self._daemon_thread and self._daemon_thread.is_alive():
+            self._daemon_thread.join(timeout=2.0)
+
+    def _renew_producer_locks(self) -> None:
+        now = time.monotonic()
+        with self._producer_lock_guard:
+            tokens = list(self._producer_tokens.items())
+        for thread_id, token in tokens:
+            with self._producer_lock_guard:
+                last_renewed = self._producer_last_renewed.get(thread_id, 0.0)
+            if now - last_renewed < self._producer_lock_renew_interval:
+                continue
+            try:
+                renewed = self._client.eval(
+                    self._RENEW_LOCK_SCRIPT,
+                    1,
+                    self._producer_lock_key(thread_id),
+                    token,
+                    self._producer_lock_ttl_ms,
+                )
+                with self._producer_lock_guard:
+                    if renewed == 1:
+                        self._producer_last_renewed[thread_id] = now
+                    else:
+                        self._lost_producer_locks.add(thread_id)
+                        logger.error("Redis producer lock lost for thread_id=%s", thread_id)
+            except RedisError:
+                logger.exception("Failed to renew Redis producer lock for thread_id=%s", thread_id)
+
+    def register_eod_commit_event(self, thread_id: str, event: threading.Event) -> None:
+        with self._eod_commit_events_lock:
+            self._eod_commit_events.setdefault(thread_id, set()).add(event)
+
+    def unregister_eod_commit_event(self, thread_id: str, event: threading.Event) -> None:
+        with self._eod_commit_events_lock:
+            events = self._eod_commit_events.get(thread_id)
+            if events is None:
+                return
+            events.discard(event)
+            if not events:
+                self._eod_commit_events.pop(thread_id, None)
+
+    def _notify_eod_committed(self, thread_id: str, messages: list[Any]) -> None:
+        if EOD_CHUNK not in messages:
+            return
+        with self._eod_commit_events_lock:
+            events = self._eod_commit_events.pop(thread_id, set())
+        for event in events:
+            event.set()
+
+    def _confirm_terminal_durability(self, thread_id: str) -> None:
+        if not self._waitaof_enabled or not self._supports_waitaof:
+            return
+        try:
+            persisted = self._client.execute_command(
+                "WAITAOF",
+                self._waitaof_local,
+                self._waitaof_replicas,
+                self._waitaof_timeout_ms,
+            )
+            local, replicas = (int(value) for value in persisted)
+            if local < self._waitaof_local or replicas < self._waitaof_replicas:
+                logger.warning(
+                    f"WAITAOF durability target not reached for thread_id={thread_id}: "
+                    "actual=(%d, %d) expected=(%d, %d)",
+                    local,
+                    replicas,
+                    self._waitaof_local,
+                    self._waitaof_replicas,
+                )
+        except (RedisError, TypeError, ValueError) as exc:
+            logger.warning("Optional WAITAOF failed for thread_id=%s: %s", thread_id, exc)
+
+    def _flush_thread(self, thread_id: str) -> bool:
+        flush_lock = self._get_flush_lock(thread_id)
+        with flush_lock:
+            with self._buffer_lock:
+                messages = self._message_buffer.pop(thread_id, [])
+            if not messages:
+                return False
+
+            published_messages = self._coalesce_sse_messages(messages)
+            stream_key = self._stream_key(thread_id)
+            try:
+                pipeline = self._client.pipeline(transaction=True)
+                for message in published_messages:
+                    payload = json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+                    pipeline.xadd(stream_key, {b"data": payload})
+                pipeline.expire(stream_key, self._queue_ttl_seconds)
+                pipeline.execute()
+            except Exception:
+                with self._buffer_lock:
+                    self._message_buffer[thread_id] = messages + self._message_buffer.get(thread_id, [])
+                logger.exception("Failed to flush Redis messages for thread_id=%s", thread_id)
+                raise
+
+            if EOD_CHUNK in messages:
+                self._confirm_terminal_durability(thread_id)
+                logger.info(
+                    "[EOD] Redis flush thread_id=%s logical=%d published=%d",
+                    thread_id,
+                    len(messages),
+                    len(published_messages),
+                )
+            self._notify_eod_committed(thread_id, messages)
+            return True
+
+    def _flush_messages(self) -> None:
+        with self._buffer_lock:
+            thread_ids = list(self._message_buffer)
+        for thread_id in thread_ids:
+            try:
+                self._flush_thread(thread_id)
+            except Exception:
+                continue
+
+    def put(self, thread_id: str, message: Any) -> None:
+        self._ensure_daemon_alive()
+        with self._producer_lock_guard:
+            if thread_id in self._lost_producer_locks:
+                raise RuntimeError(f"Redis producer lock lost for thread_id={thread_id}")
+        should_flush = False
+        with self._buffer_lock:
+            messages = self._message_buffer.setdefault(thread_id, [])
+            messages.append(message)
+            should_flush = len(messages) >= self.BUFFER_MAX_MESSAGES
+        if should_flush:
+            self.flush(thread_id)
+
+    def flush(self, thread_id: Optional[str] = None) -> None:
+        if thread_id is None:
+            self._flush_messages()
+        else:
+            self._flush_thread(thread_id)
+
+    def supports_replay_from_start(self) -> bool:
+        return True
+
+    def get_messages_since(
+        self,
+        thread_id: str,
+        offset: int,
+        timeout: Optional[float] = None,
+    ) -> tuple[list[Any], int]:
+        stream_key = self._stream_key(thread_id)
+        cursor = self._decode_cursor(offset)
+        deadline = time.monotonic() + timeout if timeout is not None else None
+
+        while True:
+            if deadline is None:
+                block_ms = 1000
+            else:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("No message available within timeout")
+                block_ms = max(1, int(remaining * 1000))
+
+            records = self._client.xread({stream_key: cursor}, count=self.STREAM_READ_COUNT, block=block_ms)
+            if records:
+                entries = records[0][1]
+                messages = []
+                for _, fields in entries:
+                    payload = fields.get(b"data", fields.get("data"))
+                    if payload is None:
+                        raise RuntimeError(f"Redis Stream entry is missing data for thread_id={thread_id}")
+                    messages.append(json.loads(payload))
+                next_offset = self._encode_cursor(entries[-1][0])
+                return self._expand_sse_messages(messages), next_offset
+
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("No message available within timeout")
+
+    def get(self, thread_id: str, timeout: Optional[float] = None) -> list[Any]:
+        raise NotImplementedError("RedisMessageHandler requires get_messages_since(thread_id, offset, timeout)")
+
+    def has_pending_messages(self, thread_id: str) -> bool:
+        with self._buffer_lock:
+            if self._message_buffer.get(thread_id):
+                return True
+        return self._client.xlen(self._stream_key(thread_id)) > 0
+
+    def restore_messages(self, thread_id: str) -> int:
+        return 0
+
+    def mark_completed(self, thread_id: str) -> None:
+        """标记完成并保留短暂 replay 窗口，避免首个消费者删除其他消费者的历史。"""
+        with self._buffer_lock:
+            self._message_buffer.pop(thread_id, None)
+        pipeline = self._client.pipeline(transaction=True)
+        pipeline.set(self._completed_key(thread_id), b"1", ex=self._completed_stream_ttl_seconds)
+        pipeline.expire(self._stream_key(thread_id), self._completed_stream_ttl_seconds)
+        pipeline.expire(self._active_consumers_key(thread_id), self._completed_stream_ttl_seconds)
+        pipeline.delete(
+            self._cancel_request_key(thread_id),
+            self._cancel_signal_key(thread_id),
+            self._cancelled_signal_key(thread_id),
+            self._stopped_key(thread_id),
+        )
+        pipeline.execute()
+
+    def clear(self, thread_id: str) -> None:
+        with self._buffer_lock:
+            self._message_buffer.pop(thread_id, None)
+        self._client.delete(*self._session_data_keys(thread_id))
+
+    def request_cancel(self, thread_id: str) -> None:
+        self._client.set(self._cancel_request_key(thread_id), b"1", nx=True, ex=30)
+
+    def is_cancel_requested(self, thread_id: str) -> bool:
+        return self._client.getdel(self._cancel_request_key(thread_id)) is not None
+
+    def acquire_producer(self, thread_id: str) -> bool:
+        token = uuid.uuid4().hex.encode()
+        with self._producer_lock_guard:
+            if thread_id in self._producer_tokens:
+                return False
+        acquired = self._client.set(
+            self._producer_lock_key(thread_id),
+            token,
+            nx=True,
+            px=self._producer_lock_ttl_ms,
+        )
+        if not acquired:
+            return False
+        with self._producer_lock_guard:
+            self._producer_tokens[thread_id] = token
+            self._producer_last_renewed[thread_id] = time.monotonic()
+            self._lost_producer_locks.discard(thread_id)
+        return True
+
+    def release_producer(self, thread_id: str) -> None:
+        with self._producer_lock_guard:
+            token = self._producer_tokens.pop(thread_id, None)
+            self._producer_last_renewed.pop(thread_id, None)
+            self._lost_producer_locks.discard(thread_id)
+        if token is not None:
+            try:
+                self._client.eval(self._RELEASE_LOCK_SCRIPT, 1, self._producer_lock_key(thread_id), token)
+            except RedisError:
+                logger.exception("Failed to release Redis producer lock for thread_id=%s", thread_id)
+
+    def acquire_consumer(self, thread_id: str) -> str:
+        consumer_id = uuid.uuid4().hex
+        key = self._active_consumers_key(thread_id)
+        pipeline = self._client.pipeline(transaction=True)
+        pipeline.zadd(key, {consumer_id: time.time()})
+        pipeline.expire(key, self._queue_ttl_seconds)
+        pipeline.execute()
+        return consumer_id
+
+    def wait_for_previous_consumer(self, thread_id: str, timeout: float = 3.0) -> bool:
+        return True
+
+    def check_consumer(self, thread_id: str, consumer_id: str) -> None:
+        key = self._active_consumers_key(thread_id)
+        pipeline = self._client.pipeline(transaction=True)
+        pipeline.zadd(key, {consumer_id: time.time()})
+        pipeline.expire(key, self._queue_ttl_seconds)
+        pipeline.execute()
+
+    def release_consumer(self, thread_id: str, consumer_id: str) -> None:
+        self._client.zrem(self._active_consumers_key(thread_id), consumer_id)
+
+    def has_active_consumer(self, thread_id: str) -> bool:
+        key = self._active_consumers_key(thread_id)
+        stale_before = time.time() - self._consumer_stale_seconds
+        pipeline = self._client.pipeline(transaction=True)
+        pipeline.zremrangebyscore(key, "-inf", stale_before)
+        pipeline.zcard(key)
+        _, count = pipeline.execute()
+        return count > 0
+
+    def get_dlq_messages(self, thread_id: str) -> list[Any]:
+        return []
+
+    def get_cached_count(self, thread_id: str) -> int:
+        return self._client.xlen(self._stream_key(thread_id))
+
+    def get_total_count(self, thread_id: str) -> int:
+        return self.get_cached_count(thread_id)
+
+    def set_cancel_signal(self, thread_id: str) -> bool:
+        return bool(self._client.set(self._cancel_signal_key(thread_id), b"1", ex=30))
+
+    def check_cancel_signal(self, thread_id: str) -> bool:
+        return bool(self._client.exists(self._cancel_signal_key(thread_id)))
+
+    def clear_cancel_signal(self, thread_id: str) -> None:
+        self._client.delete(self._cancel_signal_key(thread_id))
+
+    def notify_consumer_cancelled(self, thread_id: str) -> bool:
+        return bool(self._client.set(self._cancelled_signal_key(thread_id), b"1", ex=30))
+
+    def wait_for_consumer_cancelled(self, thread_id: str, timeout: float = 3.0) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self._client.getdel(self._cancelled_signal_key(thread_id)) is not None:
+                return True
+            time.sleep(0.1)
+        return False
+
+    def clear_cancelled_signal(self, thread_id: str) -> None:
+        self._client.delete(self._cancelled_signal_key(thread_id))
+
+    def mark_stopped(self, thread_id: str) -> None:
+        self._client.set(self._stopped_key(thread_id), b"1", ex=600)
+
+    def is_stopped(self, thread_id: str) -> bool:
+        return bool(self._client.exists(self._stopped_key(thread_id)))
+
+    def clear_stopped(self, thread_id: str) -> None:
+        self._client.delete(self._stopped_key(thread_id))
+
+    def list_thread_ids(self) -> list[str]:
+        """仅返回本进程缓冲区中的会话；不使用 SCAN 遍历 Redis。"""
+        with self._buffer_lock:
+            return list(self._message_buffer)
+
+    def close(self) -> None:
+        self._stop_daemon()
+        with self._producer_lock_guard:
+            thread_ids = list(self._producer_tokens)
+        for thread_id in thread_ids:
+            with contextlib.suppress(Exception):
+                self.release_producer(thread_id)
+        with contextlib.suppress(Exception):
+            self._client.close()
+
+    def __del__(self) -> None:
+        with contextlib.suppress(Exception):
+            self.close()
+
+
+__all__ = ["RedisMessageHandler"]

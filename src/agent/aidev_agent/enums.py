@@ -145,4 +145,5 @@ class MessageHandlerType(str, enum.Enum):
 
     INMEMORY = "inmemory"  # 内存队列，适用于单进程模式
     RABBITMQ = "rabbitmq"  # RabbitMQ 队列，适用于多进程模式，支持断点续传
+    REDIS = "redis"  # Redis Streams，适用于多进程模式，支持游标回放
     AUTO = "auto"  # 自动检测运行环境选择

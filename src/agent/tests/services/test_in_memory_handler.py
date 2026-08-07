@@ -996,19 +996,22 @@ class TestMessageHandlerConfig:
     """测试 Config 解析 + 工厂 + RabbitMQ 降级"""
 
     @pytest.mark.parametrize(
-        ("env_handler_type", "env_rabbitmq_host", "expected_type"),
+        ("env_handler_type", "env_rabbitmq_host", "env_redis_url", "expected_type"),
         [
-            ("", "", MessageHandlerType.INMEMORY),  # 无配置 → InMemory
-            ("inmemory", "", MessageHandlerType.INMEMORY),  # 显式 inmemory
-            ("rabbitmq", "", MessageHandlerType.RABBITMQ),  # 显式 rabbitmq
-            ("", "localhost", MessageHandlerType.RABBITMQ),  # 有 MQ 配置 → 自动 RabbitMQ
-            ("inmemory", "localhost", MessageHandlerType.INMEMORY),  # 显式覆盖 MQ 配置
+            ("", "", "", MessageHandlerType.INMEMORY),  # 无配置 → InMemory
+            ("inmemory", "", "", MessageHandlerType.INMEMORY),  # 显式 inmemory
+            ("rabbitmq", "", "", MessageHandlerType.RABBITMQ),  # 显式 rabbitmq
+            ("redis", "", "", MessageHandlerType.REDIS),  # 显式 redis
+            ("", "localhost", "", MessageHandlerType.RABBITMQ),  # 有 MQ 配置 → 自动 RabbitMQ
+            ("", "localhost", "redis://localhost", MessageHandlerType.REDIS),  # Redis 专用配置优先
+            ("inmemory", "localhost", "redis://localhost", MessageHandlerType.INMEMORY),  # 显式覆盖配置
         ],
     )
-    def test_resolve_handler_type(self, monkeypatch, env_handler_type, env_rabbitmq_host, expected_type):
+    def test_resolve_handler_type(self, monkeypatch, env_handler_type, env_rabbitmq_host, env_redis_url, expected_type):
         """Config.resolve_handler_type 在不同环境变量组合下的行为"""
         monkeypatch.setenv(EnvVarNames.HANDLER_TYPE, env_handler_type)
         monkeypatch.setenv(EnvVarNames.RABBITMQ_HOST, env_rabbitmq_host)
+        monkeypatch.setenv(EnvVarNames.REDIS_URL, env_redis_url)
         assert MessageHandlerConfig.resolve_handler_type() == expected_type
 
     def test_create_handler_rabbitmq_fallback(self, monkeypatch):
@@ -1016,6 +1019,11 @@ class TestMessageHandlerConfig:
         monkeypatch.setenv(EnvVarNames.RABBITMQ_HOST, "")
         handler = _create_handler(MessageHandlerType.RABBITMQ)
         assert isinstance(handler, InMemoryQueueMessageHandler)
+
+    def test_create_handler_redis_without_url_fails(self, monkeypatch):
+        monkeypatch.setenv(EnvVarNames.REDIS_URL, "")
+        with pytest.raises(RuntimeError, match="MESSAGE_HANDLER_REDIS_URL"):
+            _create_handler(MessageHandlerType.REDIS)
 
     def test_factory_returns_singleton_by_type(self):
         """工厂按类型 get() 返回单例"""

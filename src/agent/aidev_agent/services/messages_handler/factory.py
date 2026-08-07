@@ -17,6 +17,7 @@ from .in_memory import InMemoryQueueMessageHandler
 
 if TYPE_CHECKING:
     from .rabbitmq import RabbitMQMessageHandler
+    from .redis import RedisMessageHandler
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,13 @@ def _get_rabbitmq_handler() -> "RabbitMQMessageHandler":
     return RabbitMQMessageHandler()
 
 
+def _get_redis_handler() -> "RedisMessageHandler":
+    """延迟导入并创建 Redis handler。"""
+    from .redis import RedisMessageHandler
+
+    return RedisMessageHandler()
+
+
 def _create_handler(handler_type: MessageHandlerType) -> BaseMessageQueueHandler:
     """根据类型创建消息处理器"""
     if handler_type == MessageHandlerType.RABBITMQ:
@@ -35,6 +43,11 @@ def _create_handler(handler_type: MessageHandlerType) -> BaseMessageQueueHandler
             logger.warning("RabbitMQ handler requested but RABBITMQ_HOST not configured, falling back to InMemory")
             return InMemoryQueueMessageHandler()
         return _get_rabbitmq_handler()
+
+    if handler_type == MessageHandlerType.REDIS:
+        if not MessageHandlerConfig.has_redis_config():
+            raise RuntimeError("Redis handler requires MESSAGE_HANDLER_REDIS_URL")
+        return _get_redis_handler()
 
     return InMemoryQueueMessageHandler()
 
@@ -46,9 +59,10 @@ def _init_factory() -> SingletonFactory[str, BaseMessageQueueHandler]:
     default_handler = _create_handler(handler_type)
 
     logger.info(
-        "Message handler initialized: type=%s, rabbitmq_configured=%s",
+        "Message handler initialized: type=%s, rabbitmq_configured=%s, redis_configured=%s",
         handler_type.value,
         MessageHandlerConfig.has_rabbitmq_config(),
+        MessageHandlerConfig.has_redis_config(),
     )
 
     # 创建工厂
@@ -60,6 +74,8 @@ def _init_factory() -> SingletonFactory[str, BaseMessageQueueHandler]:
     factory.register(MessageHandlerType.INMEMORY.value, InMemoryQueueMessageHandler())
     if MessageHandlerConfig.has_rabbitmq_config():
         factory.register(MessageHandlerType.RABBITMQ.value, _get_rabbitmq_handler())
+    if MessageHandlerConfig.has_redis_config():
+        factory.register(MessageHandlerType.REDIS.value, _get_redis_handler())
 
     return factory
 

@@ -18,6 +18,8 @@ class MessageHandlerConfig:
         type_str = env.str(EnvVarNames.HANDLER_TYPE, "").lower()
         if type_str == MessageHandlerType.RABBITMQ.value:
             return MessageHandlerType.RABBITMQ
+        if type_str == MessageHandlerType.REDIS.value:
+            return MessageHandlerType.REDIS
         if type_str == MessageHandlerType.INMEMORY.value:
             return MessageHandlerType.INMEMORY
         return None
@@ -28,22 +30,32 @@ class MessageHandlerConfig:
         return bool(env.str(EnvVarNames.RABBITMQ_HOST, ""))
 
     @classmethod
+    def has_redis_config(cls) -> bool:
+        """检查是否配置了 Redis MessageHandler 专用连接地址。"""
+        return bool(env.str(EnvVarNames.REDIS_URL, ""))
+
+    @classmethod
     def resolve_handler_type(cls) -> MessageHandlerType:
         """解析最终使用的处理器类型
 
         优先级：
         1. 显式配置 MESSAGE_HANDLER_TYPE
-        2. 有 RabbitMQ 配置（RABBITMQ_HOST 非空）→ RabbitMQ
-        3. 默认 → InMemory
+        2. 有 Redis 专用配置 → Redis
+        3. 有 RabbitMQ 配置（RABBITMQ_HOST 非空）→ RabbitMQ
+        4. 默认 → InMemory
         """
         # 1. 显式配置优先
         explicit = cls.get_explicit_type()
         if explicit:
             return explicit
 
-        # 2. 只要有 RabbitMQ 配置就使用 RabbitMQ
+        # 2. Redis 使用专用配置，可安全自动选择
+        if cls.has_redis_config():
+            return MessageHandlerType.REDIS
+
+        # 3. 只要有 RabbitMQ 配置就使用 RabbitMQ
         if cls.has_rabbitmq_config():
             return MessageHandlerType.RABBITMQ
 
-        # 3. 默认使用内存队列
+        # 4. 默认使用内存队列
         return MessageHandlerType.INMEMORY

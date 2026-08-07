@@ -50,6 +50,22 @@
     BK_APIGW_STAGE=stag
    ```
 
+### Redis Streams MessageHandler
+
+多进程部署可显式切换到 Redis Streams：
+
+```bash
+MESSAGE_HANDLER_TYPE=redis
+MESSAGE_HANDLER_REDIS_URL=redis://user:password@redis.example.com:6379/0
+```
+
+- 服务端最低版本为 Redis 6.2；版本、权限或必需数据命令校验失败时直接终止启动，不降级。
+- 启动检查只使用 `HELLO` 和临时随机键上的普通数据命令，不调用管理类命令。
+- Redis 7.2 及以上默认在 EOD 后尝试 `WAITAOF 1 0 2000`；该能力是增强项，失败只记录告警。
+- 可通过 `REDIS_WAITAOF_ENABLED=false` 关闭增强，或用 `REDIS_WAITAOF_REPLICAS` 调整副本要求。
+- 完成后的 Stream 默认保留 90 秒供其他活跃端回放，可用
+  `REDIS_COMPLETED_STREAM_TTL_SECONDS` 调整；异常兜底 TTL 继续使用 `QUEUE_EXPIRE_SECONDS`。
+
 ## 构建
 1. 生成`pip`包
     ```bash

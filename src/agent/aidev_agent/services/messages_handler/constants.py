@@ -131,9 +131,11 @@ class EnvVarNames:
     便于文档化和避免拼写错误。
     """
 
-    # 消息处理器类型（inmemory / rabbitmq）
+    # 消息处理器类型（inmemory / rabbitmq / redis）
     HANDLER_TYPE = "MESSAGE_HANDLER_TYPE"
     # RabbitMQ 主机地址
     RABBITMQ_HOST = "RABBITMQ_HOST"
+    # Redis MessageHandler 专用连接地址，避免误用业务缓存 REDIS_URL
+    REDIS_URL = "MESSAGE_HANDLER_REDIS_URL"
     # 队列过期时间（秒），默认 3600（1 小时）
     QUEUE_EXPIRE_SECONDS = "QUEUE_EXPIRE_SECONDS"
