@@ -23,7 +23,6 @@ from .factory import message_handler_factory
 from .in_memory import InMemoryQueueMessageHandler
 from .multi_process_mixin import MultiProcessMixin
 from .rabbitmq import RabbitMQMessageHandler
-from .redis import RedisMessageHandler
 from .single_process_mixin import SingleProcessMixin
 from .streaming_helper import GeneratorStreamingHelper
 
@@ -56,6 +55,5 @@ __all__ = [
     "GeneratorStreamingHelper",
     "InMemoryQueueMessageHandler",
     "RabbitMQMessageHandler",
-    "RedisMessageHandler",
     "message_handler_factory",
 ]
