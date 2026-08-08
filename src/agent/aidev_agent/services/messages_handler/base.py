@@ -243,6 +243,14 @@ class BaseMessageQueueHandler(ABC):
         """判断当前回放日志是否属于指定 run；默认保持旧 handler 的 session 级语义。"""
         return True
 
+    def arm_completed_replay_expiry(self, thread_id: str) -> bool:
+        """为已完成的回放日志启用 backend 托管过期。
+
+        返回 ``True`` 表示 backend 已负责后续回收，调用方无需启动轮询清理线程。
+        默认返回 ``False``，保留不具备原生 TTL 能力的 handler 现有行为。
+        """
+        return False
+
     def get_messages_since(self, thread_id: str, offset: int, timeout: Optional[float] = None) -> tuple[list[Any], int]:
         """从指定 offset 开始读取消息，且不破坏底层缓存。
 

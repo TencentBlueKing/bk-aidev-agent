@@ -63,6 +63,9 @@ MSG_REDIS_URL=redis://user:password@redis.example.com:6379/0
 - 启动检查只使用 `HELLO` 和临时随机键上的普通数据命令，不调用管理类命令。
 - 完成后的 Stream 默认保留 90 秒供其他活跃端回放，可用
   `MSG_REDIS_COMPLETED_STREAM_TTL_SECONDS` 调整；异常兜底 TTL 继续使用 `QUEUE_EXPIRE_SECONDS`。
+- Producer 提交 EOD 后直接启用完成态 TTL，不再启动 100ms 轮询清理；活跃 Consumer 心跳会在回放期间
+  原子续期 Stream，释放后由 Redis TTL 自动回收。
+- 跨进程取消信号的空结果最多缓存 200ms，限制高频 chunk 产生的 Redis `GET`，同进程 Stop 会立即失效缓存。
 
 ## 构建
 1. 生成`pip`包

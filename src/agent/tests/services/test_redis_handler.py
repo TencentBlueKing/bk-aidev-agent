@@ -1,5 +1,6 @@
 import os
 import threading
+import time
 
 import pytest
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
@@ -67,12 +68,14 @@ class _CapabilityClient:
 class _SignalClient:
     def __init__(self):
         self.values = {}
+        self.get_calls = 0
 
     def set(self, key, value, **kwargs):
         self.values[key] = value
         return True
 
     def get(self, key):
+        self.get_calls += 1
         return self.values.get(key)
 
     def getdel(self, key):
@@ -139,6 +142,8 @@ class TestRedisMessageHandlerRunSignals:
         handler = object.__new__(RedisMessageHandler)
         handler._client = _SignalClient()
         handler._queue_ttl_seconds = 3600
+        handler._cancel_check_cache = {}
+        handler._cancel_check_cache_lock = threading.Lock()
         return handler
 
     def test_cancel_signal_is_scoped_to_current_run(self, handler):
@@ -153,6 +158,21 @@ class TestRedisMessageHandlerRunSignals:
 
         handler.clear_cancel_signal(thread_id, run_id="run-old")
         assert not handler.check_cancel_signal(thread_id, run_id="run-old")
+
+    def test_negative_cancel_checks_are_rate_limited(self, handler, monkeypatch):
+        now = [100.0]
+        monkeypatch.setattr("aidev_agent.services.messages_handler.redis.time.monotonic", lambda: now[0])
+        thread_id = "rate-limited-cancel"
+
+        assert not handler.check_cancel_signal(thread_id, run_id="run-current")
+        assert not handler.check_cancel_signal(thread_id, run_id="run-current")
+        assert handler._client.get_calls == 1
+
+        handler._client.set(handler._cancel_signal_key(thread_id), b"run-current", ex=30)
+        assert not handler.check_cancel_signal(thread_id, run_id="run-current")
+        now[0] += handler.CANCEL_CHECK_MIN_INTERVAL
+        assert handler.check_cancel_signal(thread_id, run_id="run-current")
+        assert handler._client.get_calls == 2
 
     def test_legacy_cancel_signal_matches_scoped_run(self, handler):
         thread_id = "legacy-cancel"
@@ -218,6 +238,14 @@ class TestRedisMessageHandlerIntegration:
             )
         )
 
+    @staticmethod
+    def _cleanup_completed_replay(handler, thread_id, consumer_id):
+        if consumer_id is not None:
+            handler.release_consumer(thread_id, consumer_id)
+        handler.mark_completed(thread_id)
+        handler.clear(thread_id)
+        handler.release_producer(thread_id)
+
     def test_redis_62_multi_reader_replay(self, redis_62_handler):
         thread_id = "redis-handler-integration"
         handler = redis_62_handler
@@ -255,6 +283,36 @@ class TestRedisMessageHandlerIntegration:
             handler.release_consumer(thread_id, consumer_b)
             handler.clear(thread_id)
             handler.release_producer(thread_id)
+
+    def test_completed_replay_expiry_is_refreshed_by_consumer_heartbeat(self, redis_62_handler, monkeypatch):
+        thread_id = "redis-handler-completed-replay-ttl"
+        handler = redis_62_handler
+        consumer_id = None
+        monkeypatch.setattr(handler, "_completed_stream_ttl_seconds", 2)
+        try:
+            handler.clear(thread_id)
+            assert handler.acquire_producer(thread_id)
+            handler.bind_replay_run(thread_id, "run-current")
+            handler.put(thread_id, "replay-event")
+            handler.flush(thread_id)
+            consumer_id = handler.acquire_consumer(thread_id)
+            handler.notify_consumer_cancelled(thread_id, run_id="run-current")
+
+            assert handler.arm_completed_replay_expiry(thread_id)
+            assert handler._client.exists(handler._cancelled_signal_key(thread_id))
+            handler.release_producer(thread_id)
+
+            time.sleep(1.2)
+            handler.check_consumer(thread_id, consumer_id)
+            time.sleep(1.2)
+            assert handler._client.exists(handler._stream_key(thread_id))
+
+            handler.release_consumer(thread_id, consumer_id)
+            consumer_id = None
+            time.sleep(2.2)
+            assert not handler._client.exists(handler._stream_key(thread_id))
+        finally:
+            self._cleanup_completed_replay(handler, thread_id, consumer_id)
 
     @pytest.mark.parametrize("message_count", [100])
     def test_flushes_when_buffer_reaches_limit(self, redis_62_handler, message_count):

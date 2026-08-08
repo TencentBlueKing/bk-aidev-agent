@@ -1077,6 +1077,23 @@ class GeneratorStreamingHelper:
         """
         thread_id = self.thread_id
         handler = self.message_handler
+        arm_completed_replay_expiry = getattr(handler, "arm_completed_replay_expiry", None)
+        if callable(arm_completed_replay_expiry):
+            try:
+                if arm_completed_replay_expiry(thread_id):
+                    logger.info(
+                        "[MessageHandler] backend-managed replay expiry armed thread_id=%s done_event_seen=%s",
+                        thread_id,
+                        done_event_seen,
+                    )
+                    return
+            except Exception:
+                logger.exception(
+                    "[MessageHandler] failed to arm backend-managed replay expiry; falling back to polling "
+                    "thread_id=%s",
+                    thread_id,
+                )
+
         delay = self._PRODUCER_CLEANUP_DELAY
         grace = self._DONE_ORPHAN_CLEANUP_GRACE
         poll_interval = self._ORPHAN_CLEANUP_POLL_INTERVAL

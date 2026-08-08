@@ -952,18 +952,11 @@ class RabbitMQConnectionPool:
         Raises:
             pika.exceptions.AMQPConnectionError: 连接失败时抛出
         """
-        conn = None
         max_retries = 2  # 最多重试 2 次（共 3 次尝试）
-        last_error = None
-
+        conn = None
         for attempt in range(max_retries + 1):
             try:
                 conn = self.get_connection()
-                yield conn
-                # 成功完成，正常归还连接
-                self.release_connection(conn)
-                conn = None
-                return
             except (
                 pika.exceptions.StreamLostError,
                 pika.exceptions.AMQPConnectionError,
@@ -972,38 +965,26 @@ class RabbitMQConnectionPool:
                 BrokenPipeError,
                 OSError,
             ) as e:
-                # 连接相关的异常，标记连接失效并重试
-                last_error = e
-                if conn:
-                    self._close_connection(conn)
-                    with self._created_lock:
-                        self._created_count = max(0, self._created_count - 1)
-                    conn = None
-
-                if attempt < max_retries:
-                    logger.warning(
-                        f"RabbitMQ connection error (attempt {attempt + 1}/{max_retries + 1}): {e}, retrying..."
-                    )
-                    continue
-                else:
+                if attempt >= max_retries:
                     logger.error(f"RabbitMQ connection error after {max_retries + 1} attempts: {e}")
                     raise
-            except Exception:
-                # 其他非连接相关异常，不重试，标记连接失效
-                if conn:
-                    self._close_connection(conn)
-                    with self._created_lock:
-                        self._created_count = max(0, self._created_count - 1)
-                    conn = None
-                raise
-            finally:
-                # 如果 conn 还在，说明是正常退出或者需要归还
-                if conn:
-                    self.release_connection(conn)
+                logger.warning(f"RabbitMQ connection error (attempt {attempt + 1}/{max_retries + 1}): {e}, retrying...")
+                continue
+            break
 
-        # 如果执行到这里，说明所有重试都失败了
-        if last_error:
-            raise last_error
+        try:
+            yield conn
+        except Exception:
+            # contextmanager 在 yield 后不能重新进入重试循环，否则会二次 yield 并触发
+            # RuntimeError("generator didn't stop after throw()")。连接内操作由调用方整体重试。
+            self._close_connection(conn)
+            with self._created_lock:
+                self._created_count = max(0, self._created_count - 1)
+            conn = None
+            raise
+        finally:
+            if conn is not None:
+                self.release_connection(conn)
 
     def close(self) -> None:
         """关闭连接池，释放所有连接"""

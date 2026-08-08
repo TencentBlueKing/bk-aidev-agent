@@ -63,6 +63,13 @@ class TestRabbitMQMessageHandler:
 
         assert self._get_open_channel_count(handler) <= 1
 
+    def test_set_cancel_signal_falls_back_when_signal_queue_is_missing(self, handler, thread_id):
+        """首次 stop 应在 passive declare 返回 404 后创建 cancel queue。"""
+        run_id = "run-before-first-sse"
+
+        assert handler.set_cancel_signal(thread_id, run_id=run_id) is True
+        assert handler.check_cancel_signal(thread_id, run_id=run_id) is True
+
     def test_live_test(self, handler, thread_id):
         """实际连接 RabbitMQ 进行测试"""
         # 发送 3 条消息

@@ -650,6 +650,22 @@ class TestInMemoryQueueMessageHandler:
         assert cleanup_called.wait(timeout=0.3), "done orphaned cleanup should happen promptly without active consumer"
         assert handler.is_empty(thread_id)
 
+    def test_backend_managed_replay_expiry_skips_polling_cleanup(self, handler, monkeypatch):
+        thread_id = "test_backend_managed_replay_expiry"
+        helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
+        armed = []
+
+        monkeypatch.setattr(handler, "arm_completed_replay_expiry", lambda tid: armed.append(tid) or True)
+        monkeypatch.setattr(
+            handler,
+            "has_pending_messages",
+            lambda tid: pytest.fail("backend-managed expiry must not start a polling cleanup thread"),
+        )
+
+        helper._schedule_session_cleanup(done_event_seen=True)
+
+        assert armed == [thread_id]
+
     def test_orphaned_cleanup_waits_for_active_replay_consumer(self, monkeypatch):
         """replay consumer 曾活跃时，应保留队列到完整 deadline。"""
         thread_id = "test_stream_active_replay_cleanup"

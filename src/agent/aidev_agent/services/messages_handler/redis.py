@@ -37,6 +37,7 @@ class RedisMessageHandler(ReplayBufferMixin, BaseMessageQueueHandler):
     SSE_PUBLISH_CHUNK_MAX_BYTES: ClassVar[int] = 256 * 1024
     STREAM_READ_COUNT: ClassVar[int] = 256
     CURSOR_SEQUENCE_FACTOR: ClassVar[int] = 1_000_000
+    CANCEL_CHECK_MIN_INTERVAL: ClassVar[float] = 0.2
 
     _RELEASE_LOCK_SCRIPT: ClassVar[str] = """
         if redis.call('get', KEYS[1]) == ARGV[1] then
@@ -67,6 +68,19 @@ class RedisMessageHandler(ReplayBufferMixin, BaseMessageQueueHandler):
             redis.call('set', KEYS[1], ARGV[2])
         end
         return 1
+    """
+    _TOUCH_CONSUMER_SCRIPT: ClassVar[str] = """
+        redis.call('zadd', KEYS[1], ARGV[2], ARGV[1])
+        redis.call('expire', KEYS[1], ARGV[3])
+        if redis.call('exists', KEYS[2]) == 0 then
+            redis.call('expire', KEYS[3], ARGV[4])
+            redis.call('expire', KEYS[4], ARGV[4])
+        end
+        return 1
+    """
+    _COUNT_ACTIVE_CONSUMERS_SCRIPT: ClassVar[str] = """
+        redis.call('zremrangebyscore', KEYS[1], '-inf', ARGV[1])
+        return redis.call('zcard', KEYS[1])
     """
     _LEGACY_SIGNAL_VALUES: ClassVar[frozenset[bytes]] = frozenset({b"", b"1"})
 
@@ -124,6 +138,8 @@ class RedisMessageHandler(ReplayBufferMixin, BaseMessageQueueHandler):
         self._producer_lock_guard = threading.Lock()
         self._eod_commit_events: dict[str, set[threading.Event]] = {}
         self._eod_commit_events_lock = threading.Lock()
+        self._cancel_check_cache: dict[tuple[str, str], float] = {}
+        self._cancel_check_cache_lock = threading.Lock()
 
         self._daemon_thread: Optional[threading.Thread] = None
         self._daemon_running = False
@@ -251,6 +267,12 @@ class RedisMessageHandler(ReplayBufferMixin, BaseMessageQueueHandler):
         value = self._client.get(key)
         if self._signal_matches(value, run_id):
             self._client.eval(self._DELETE_IF_VALUE_SCRIPT, 1, key, value)
+
+    def _invalidate_cancel_check_cache(self, thread_id: str) -> None:
+        with self._cancel_check_cache_lock:
+            stale_keys = [cache_key for cache_key in self._cancel_check_cache if cache_key[0] == thread_id]
+            for cache_key in stale_keys:
+                self._cancel_check_cache.pop(cache_key, None)
 
     def _session_data_keys(self, thread_id: str) -> list[str]:
         """返回新 Run 启动时应清理的数据键。
@@ -455,6 +477,25 @@ class RedisMessageHandler(ReplayBufferMixin, BaseMessageQueueHandler):
             self._stopped_key(thread_id),
         )
         pipeline.execute()
+        self._invalidate_cancel_check_cache(thread_id)
+
+    def arm_completed_replay_expiry(self, thread_id: str) -> bool:
+        """立即设置完成态 TTL；活跃消费者心跳会在回放期间持续续期。
+
+        Producer 可能先于 stop waiter 完成，因此这里保留 ``cancelled_signal``；
+        最终 Consumer cleanup 仍会先清理旧信号、再发送本轮完成通知。
+        """
+        pipeline = self._client.pipeline(transaction=True)
+        pipeline.expire(self._stream_key(thread_id), self._completed_stream_ttl_seconds)
+        pipeline.expire(self._active_consumers_key(thread_id), self._completed_stream_ttl_seconds)
+        pipeline.expire(self._replay_run_key(thread_id), self._completed_stream_ttl_seconds)
+        pipeline.delete(
+            self._cancel_signal_key(thread_id),
+            self._stopped_key(thread_id),
+        )
+        pipeline.execute()
+        self._invalidate_cancel_check_cache(thread_id)
+        return True
 
     def bind_replay_run(self, thread_id: str, run_id: str) -> None:
         self._client.set(
@@ -472,6 +513,7 @@ class RedisMessageHandler(ReplayBufferMixin, BaseMessageQueueHandler):
         with self._buffer_lock:
             self._message_buffer.pop(thread_id, None)
         self._client.delete(*self._session_data_keys(thread_id))
+        self._invalidate_cancel_check_cache(thread_id)
 
     def acquire_producer(self, thread_id: str) -> bool:
         token = uuid.uuid4().hex.encode()
@@ -505,22 +547,28 @@ class RedisMessageHandler(ReplayBufferMixin, BaseMessageQueueHandler):
 
     def acquire_consumer(self, thread_id: str) -> str:
         consumer_id = uuid.uuid4().hex
-        key = self._active_consumers_key(thread_id)
-        pipeline = self._client.pipeline(transaction=True)
-        pipeline.zadd(key, {consumer_id: time.time()})
-        pipeline.expire(key, self._queue_ttl_seconds)
-        pipeline.execute()
+        self._touch_consumer(thread_id, consumer_id)
         return consumer_id
 
     def wait_for_previous_consumer(self, thread_id: str, timeout: float = 3.0) -> bool:
         return True
 
     def check_consumer(self, thread_id: str, consumer_id: str) -> None:
-        key = self._active_consumers_key(thread_id)
-        pipeline = self._client.pipeline(transaction=True)
-        pipeline.zadd(key, {consumer_id: time.time()})
-        pipeline.expire(key, self._queue_ttl_seconds)
-        pipeline.execute()
+        self._touch_consumer(thread_id, consumer_id)
+
+    def _touch_consumer(self, thread_id: str, consumer_id: str) -> None:
+        self._client.eval(
+            self._TOUCH_CONSUMER_SCRIPT,
+            4,
+            self._active_consumers_key(thread_id),
+            self._producer_lock_key(thread_id),
+            self._stream_key(thread_id),
+            self._replay_run_key(thread_id),
+            consumer_id,
+            time.time(),
+            self._queue_ttl_seconds,
+            self._completed_stream_ttl_seconds,
+        )
 
     def release_consumer(self, thread_id: str, consumer_id: str) -> None:
         self._client.zrem(self._active_consumers_key(thread_id), consumer_id)
@@ -528,11 +576,8 @@ class RedisMessageHandler(ReplayBufferMixin, BaseMessageQueueHandler):
     def has_active_consumer(self, thread_id: str) -> bool:
         key = self._active_consumers_key(thread_id)
         stale_before = time.time() - self._consumer_stale_seconds
-        pipeline = self._client.pipeline(transaction=True)
-        pipeline.zremrangebyscore(key, "-inf", stale_before)
-        pipeline.zcard(key)
-        _, count = pipeline.execute()
-        return count > 0
+        count = self._client.eval(self._COUNT_ACTIVE_CONSUMERS_SCRIPT, 1, key, stale_before)
+        return bool(count)
 
     def get_cached_count(self, thread_id: str) -> int:
         return self._client.xlen(self._stream_key(thread_id))
@@ -541,9 +586,19 @@ class RedisMessageHandler(ReplayBufferMixin, BaseMessageQueueHandler):
         return self.get_cached_count(thread_id)
 
     def set_cancel_signal(self, thread_id: str, run_id: str | None = None) -> bool:
-        return bool(self._client.set(self._cancel_signal_key(thread_id), self._signal_value(run_id), ex=30))
+        result = bool(self._client.set(self._cancel_signal_key(thread_id), self._signal_value(run_id), ex=30))
+        if result:
+            self._invalidate_cancel_check_cache(thread_id)
+        return result
 
     def check_cancel_signal(self, thread_id: str, run_id: str | None = None) -> bool:
+        cache_key = (thread_id, run_id or "")
+        now = time.monotonic()
+        with self._cancel_check_cache_lock:
+            last_negative_check = self._cancel_check_cache.get(cache_key)
+        if last_negative_check is not None and now - last_negative_check < self.CANCEL_CHECK_MIN_INTERVAL:
+            return False
+
         key = self._cancel_signal_key(thread_id)
         value = self._client.get(key)
         if run_id and value in self._LEGACY_SIGNAL_VALUES:
@@ -554,10 +609,17 @@ class RedisMessageHandler(ReplayBufferMixin, BaseMessageQueueHandler):
                 value = replacement
             else:
                 value = self._client.get(key)
-        return self._signal_matches(value, run_id)
+        matched = self._signal_matches(value, run_id)
+        with self._cancel_check_cache_lock:
+            if matched:
+                self._cancel_check_cache.pop(cache_key, None)
+            else:
+                self._cancel_check_cache[cache_key] = time.monotonic()
+        return matched
 
     def clear_cancel_signal(self, thread_id: str, run_id: str | None = None) -> None:
         self._clear_signal(self._cancel_signal_key(thread_id), run_id)
+        self._invalidate_cancel_check_cache(thread_id)
 
     def notify_consumer_cancelled(self, thread_id: str, run_id: str | None = None) -> bool:
         return bool(self._client.set(self._cancelled_signal_key(thread_id), self._signal_value(run_id), ex=30))
