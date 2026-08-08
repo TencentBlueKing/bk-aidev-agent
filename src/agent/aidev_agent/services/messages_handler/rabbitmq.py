@@ -134,8 +134,6 @@ class _RabbitMQConsumerMixin:
         """
         consumer_id = uuid.uuid4().hex
 
-        import pika
-
         with self._with_channel() as channel:
             consumer_queue, exit_queue = self._ensure_consumer_queues(channel, thread_id)
 
@@ -358,8 +356,6 @@ class _RabbitMQConsumerMixin:
 
     def _send_exit_signal(self, thread_id: str, consumer_id: str) -> None:
         """向退出通知队列发送信号"""
-        import pika
-
         try:
             with self._with_channel() as channel:
                 exit_queue = self._get_consumer_exit_queue_name(thread_id)
@@ -421,8 +417,6 @@ class _RabbitMQConsumerMixin:
             queue_name: 队列名
             payload: 消息内容（会被 JSON 序列化）
         """
-        import pika
-
         channel.basic_publish(
             exchange="",
             routing_key=queue_name,
@@ -442,8 +436,6 @@ class _RabbitMQConsumerMixin:
         Returns:
             True 表示成功设置取消信号
         """
-        import pika
-
         cancel_queue = self._get_cancel_queue_name(thread_id)
         payload = {"cancelled": True, "run_id": run_id, "ts": time.time()}
         try:
