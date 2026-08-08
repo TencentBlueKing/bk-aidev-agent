@@ -1,16 +1,22 @@
 # -*- coding: utf-8 -*-
 """``AgentBuilder`` OO 入口：装配 event_handler / checkpointer，确保 thread 路径顺序正确。"""
+
 import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-# tests.settings 不注册 aidev_bkplugin，注入 mock models 避免 agent_builder 顶部
-# `from .agent_helpers import AgentHelper` → `from aidev_bkplugin.models import Checkpoint, Write`
-# 触发 Django model 加载报错；同时 mock 缺失的 bk_plugin_framework（测试环境未装）。
+import pytest
+
+# models 已由 tests.settings 的测试专用 AppConfig 真实注册，setdefault 在此仅作兜底；
+# bk_plugin_framework 测试环境未安装，必须 mock 才能导入 views/services。
 sys.modules.setdefault("aidev_bkplugin.models", MagicMock())
 sys.modules.setdefault("bk_plugin_framework", MagicMock())
 sys.modules.setdefault("bk_plugin_framework.kit", MagicMock())
 sys.modules.setdefault("bk_plugin_framework.kit.decorators", MagicMock(inject_user_token=lambda func: func))
+
+# 必须在模块级导入：tests/views 下的用例会用假模块永久替换 sys.modules["aidev_bkplugin.views.base"]，
+# 到测试执行期再 import 只能拿到 MagicMock。
+from aidev_bkplugin.views.base import PluginResourceManager  # noqa: E402
 
 
 def _patch_factories():
@@ -115,3 +121,28 @@ def test_llm_override_resource_manager_overrides_chat_model_only():
         result = LLMOverrideResourceManager(username="alice", model="hy3-preview").get_agent_config("x")
     assert result.chat_model == "hy3-preview"
     assert result.non_thinking_llm == "orig-nt"
+
+
+def test_llm_override_resource_manager_positional_args_are_username_and_model():
+    """位置参数契约：前两位必须是 username、model。
+
+    凭证参数曾被插到最前面，导致 ``LLMOverrideResourceManager("alice", "gpt")``
+    被静默解读为 app_code/app_secret，用户名与模型双双丢失。
+    """
+    from aidev_bkplugin.services.agent_builder import LLMOverrideResourceManager
+
+    rm = LLMOverrideResourceManager("alice", "hy3-preview")
+
+    assert rm.username == "alice"
+    assert rm.model == "hy3-preview"
+    # 凭证是 keyword-only，不会被位置参数误占
+    with pytest.raises(TypeError):
+        LLMOverrideResourceManager("alice", "hy3-preview", "app-code")
+
+
+def test_plugin_resource_manager_forwards_credentials_to_base():
+    """PluginResourceManager 同样保持 (username, model) 位置顺序，并透传 keyword-only 凭证。"""
+    rm = PluginResourceManager("alice", "hy3-preview", app_code="ac", app_secret="as")
+
+    assert (rm.username, rm.model) == ("alice", "hy3-preview")
+    assert (rm.app_code, rm.app_secret) == ("ac", "as")

@@ -33,7 +33,9 @@ class LLMOverrideResourceManager(AgentResourceManager):
     ``model`` 为空时不覆盖，行为与 ``AgentResourceManager`` 完全一致。
     """
 
-    def __init__(self, app_code: str = "", app_secret: str = "", username: str = "", model: str = ""):
+    def __init__(self, username: str = "", model: str = "", *, app_code: str = "", app_secret: str = ""):
+        # username/model 保持在前两位以兼容位置参数调用；凭证为 keyword-only，
+        # 避免 LLMOverrideResourceManager("alice", "gpt") 被静默解读成应用凭证。
         super().__init__(app_code=app_code, app_secret=app_secret, username=username)
         self.model = model or ""
 

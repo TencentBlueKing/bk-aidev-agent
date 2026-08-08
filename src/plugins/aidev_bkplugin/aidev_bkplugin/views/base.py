@@ -36,8 +36,8 @@ class PluginResourceManager(LLMOverrideResourceManager):
     由 ``AgentBuilder`` 在装配 agent 时按请求补上，使模型热更新与用户态认证共存于同一个 rm。
     """
 
-    def __init__(self, username: str, model: str = ""):
-        super().__init__(username=username, model=model)
+    def __init__(self, username: str, model: str = "", *, app_code: str = "", app_secret: str = ""):
+        super().__init__(username=username, model=model, app_code=app_code, app_secret=app_secret)
         self._cached_client = None
 
     def get_client(self, **kwargs: Any):

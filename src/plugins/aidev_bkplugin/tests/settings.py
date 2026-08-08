@@ -6,6 +6,7 @@
 """
 
 import os
+import tempfile
 
 SECRET_KEY = "aidev-bkplugin-test-secret"
 DEBUG = False
@@ -15,6 +16,12 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": ":memory:",
+        "TEST": {
+            # checkpointer 的 a* 方法会把 ORM 调用放到工作线程执行，测试库必须跨连接稳定共享。
+            # Django 对 :memory: 测试库走 shared-cache，虽可见但多线程写入易出现
+            # "database table is locked"，故改用文件型测试库。
+            "NAME": os.path.join(tempfile.gettempdir(), "aidev_bkplugin_test.sqlite3"),
+        },
     }
 }
 
@@ -27,7 +34,9 @@ CACHES = {
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.auth",
-    # 不注册 aidev_bkplugin，避免 apps.py 在测试启动时加载 OTel/grpc 等运行时副作用模块
+    # 用测试专用 AppConfig 注册，只发现 models（Checkpoint / Write 需要建表），
+    # 绕开 aidev_bkplugin.apps.AgentConfig.ready() 的 OTel/grpc/bkoauth 等运行时副作用
+    "tests.apps.AidevBkpluginTestConfig",
 ]
 
 MIDDLEWARE: list = []
