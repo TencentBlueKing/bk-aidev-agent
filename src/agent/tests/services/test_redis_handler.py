@@ -2,6 +2,7 @@ import os
 import threading
 
 import pytest
+from aidev_agent.services.messages_handler import GeneratorStreamingHelper
 from aidev_agent.services.messages_handler.constants import EOD_CHUNK
 from aidev_agent.services.messages_handler.redis import RedisMessageHandler
 
@@ -65,6 +66,34 @@ class _CapabilityClient:
         return len(args)
 
 
+class _SignalClient:
+    def __init__(self):
+        self.values = {}
+
+    def set(self, key, value, **kwargs):
+        self.values[key] = value
+        return True
+
+    def get(self, key):
+        return self.values.get(key)
+
+    def getdel(self, key):
+        return self.values.pop(key, None)
+
+    def delete(self, *keys):
+        deleted = 0
+        for key in keys:
+            deleted += key in self.values
+            self.values.pop(key, None)
+        return deleted
+
+    def eval(self, script, numkeys, key, expected):
+        if self.values.get(key) != expected:
+            return 0
+        del self.values[key]
+        return 1
+
+
 class TestRedisMessageHandlerCapabilities:
     @pytest.mark.parametrize(
         ("response", "expected"),
@@ -117,6 +146,45 @@ class TestRedisMessageHandlerCapabilities:
         handler._supports_waitaof = True
         handler._confirm_terminal_durability("redis-72")
         assert handler._client.commands[-1] == "WAITAOF"
+
+
+class TestRedisMessageHandlerRunSignals:
+    @pytest.fixture
+    def handler(self):
+        handler = object.__new__(RedisMessageHandler)
+        handler._client = _SignalClient()
+        return handler
+
+    def test_cancel_signal_is_scoped_to_current_run(self, handler):
+        thread_id = "run-scoped-cancel"
+        handler.set_cancel_signal(thread_id, run_id="run-old")
+
+        assert handler.check_cancel_signal(thread_id, run_id="run-old")
+        assert not handler.check_cancel_signal(thread_id, run_id="run-current")
+
+        handler.clear_cancel_signal(thread_id, run_id="run-current")
+        assert handler.check_cancel_signal(thread_id, run_id="run-old")
+
+        handler.clear_cancel_signal(thread_id, run_id="run-old")
+        assert not handler.check_cancel_signal(thread_id, run_id="run-old")
+
+    def test_legacy_cancel_signal_matches_scoped_run(self, handler):
+        thread_id = "legacy-cancel"
+        handler._client.set(handler._cancel_signal_key(thread_id), b"1", ex=30)
+
+        assert handler.check_cancel_signal(thread_id, run_id="run-current")
+        handler.clear_cancel_signal(thread_id, run_id="run-current")
+        assert not handler.check_cancel_signal(thread_id, run_id="run-current")
+
+    def test_cancelled_notification_does_not_consume_other_run(self, handler):
+        thread_id = "run-scoped-notification"
+        handler.notify_consumer_cancelled(thread_id, run_id="run-old")
+
+        assert not handler.wait_for_consumer_cancelled(thread_id, timeout=0.01, run_id="run-current")
+        assert handler.wait_for_consumer_cancelled(thread_id, timeout=0.2, run_id="run-old")
+
+        handler.notify_consumer_cancelled(thread_id, run_id="run-current")
+        assert handler.wait_for_consumer_cancelled(thread_id, timeout=0.2, run_id="run-current")
 
 
 @pytest.fixture
@@ -198,4 +266,28 @@ class TestRedisMessageHandlerIntegration:
             assert replayed == ["event-from-daemon"]
         finally:
             handler.clear(thread_id)
+            handler.release_producer(thread_id)
+
+    def test_cross_process_cancel_before_stream_reset_is_preserved(self, redis_62_handler):
+        thread_id = "redis-handler-early-cancel"
+        run_id = "run-current"
+        handler = redis_62_handler
+        helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
+        cancel_event = helper.prepare_run(run_id)
+
+        try:
+            # 模拟 stop 请求落到另一个 worker：只写 Redis，不设置本进程 Event。
+            assert handler.set_cancel_signal(thread_id, run_id=run_id)
+            chunks = list(
+                helper.stream(
+                    iter(["must-not-be-emitted"]),
+                    expected_run_id=run_id,
+                    cancel_event=cancel_event,
+                )
+            )
+
+            assert "must-not-be-emitted" not in chunks
+            assert handler.wait_for_consumer_cancelled(thread_id, timeout=1.0, run_id=run_id)
+        finally:
+            handler.mark_completed(thread_id)
             handler.release_producer(thread_id)

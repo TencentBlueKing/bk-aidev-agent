@@ -49,6 +49,13 @@ class RedisMessageHandler(BaseMessageQueueHandler):
         end
         return 0
     """
+    _DELETE_IF_VALUE_SCRIPT: ClassVar[str] = """
+        if redis.call('get', KEYS[1]) == ARGV[1] then
+            return redis.call('del', KEYS[1])
+        end
+        return 0
+    """
+    _LEGACY_SIGNAL_VALUES: ClassVar[frozenset[bytes]] = frozenset({b"", b"1"})
 
     _instance: Optional["RedisMessageHandler"] = None
     _lock: ClassVar[threading.Lock] = threading.Lock()
@@ -228,13 +235,38 @@ class RedisMessageHandler(BaseMessageQueueHandler):
     def _completed_key(self, thread_id: str) -> str:
         return self._key(thread_id, "completed")
 
+    @staticmethod
+    def _signal_value(run_id: str | None) -> bytes:
+        return run_id.encode("utf-8") if run_id else b""
+
+    @classmethod
+    def _signal_matches(cls, value: bytes | None, run_id: str | None) -> bool:
+        if value is None:
+            return False
+        if run_id is None:
+            return True
+        return value in cls._LEGACY_SIGNAL_VALUES or value == cls._signal_value(run_id)
+
+    def _clear_signal(self, key: str, run_id: str | None) -> None:
+        if run_id is None:
+            self._client.delete(key)
+            return
+
+        value = self._client.get(key)
+        if self._signal_matches(value, run_id):
+            self._client.eval(self._DELETE_IF_VALUE_SCRIPT, 1, key, value)
+
     def _session_data_keys(self, thread_id: str) -> list[str]:
+        """返回新 Run 启动时应清理的数据键。
+
+        取消请求和取消完成通知必须保留：stop 请求可能由另一个进程在
+        ``stream()`` 清理旧回放数据之前写入。它们有独立短 TTL，并通过
+        run_id 隔离，不会误取消后续 Run。
+        """
         return [
             self._stream_key(thread_id),
             self._active_consumers_key(thread_id),
             self._cancel_request_key(thread_id),
-            self._cancel_signal_key(thread_id),
-            self._cancelled_signal_key(thread_id),
             self._stopped_key(thread_id),
             self._completed_key(thread_id),
         ]
@@ -606,28 +638,46 @@ class RedisMessageHandler(BaseMessageQueueHandler):
     def get_total_count(self, thread_id: str) -> int:
         return self.get_cached_count(thread_id)
 
-    def set_cancel_signal(self, thread_id: str) -> bool:
-        return bool(self._client.set(self._cancel_signal_key(thread_id), b"1", ex=30))
+    def set_cancel_signal(self, thread_id: str, run_id: str | None = None) -> bool:
+        return bool(self._client.set(self._cancel_signal_key(thread_id), self._signal_value(run_id), ex=30))
 
-    def check_cancel_signal(self, thread_id: str) -> bool:
-        return bool(self._client.exists(self._cancel_signal_key(thread_id)))
+    def check_cancel_signal(self, thread_id: str, run_id: str | None = None) -> bool:
+        value = self._client.get(self._cancel_signal_key(thread_id))
+        return self._signal_matches(value, run_id)
 
-    def clear_cancel_signal(self, thread_id: str) -> None:
-        self._client.delete(self._cancel_signal_key(thread_id))
+    def clear_cancel_signal(self, thread_id: str, run_id: str | None = None) -> None:
+        self._clear_signal(self._cancel_signal_key(thread_id), run_id)
 
-    def notify_consumer_cancelled(self, thread_id: str) -> bool:
-        return bool(self._client.set(self._cancelled_signal_key(thread_id), b"1", ex=30))
+    def notify_consumer_cancelled(self, thread_id: str, run_id: str | None = None) -> bool:
+        return bool(self._client.set(self._cancelled_signal_key(thread_id), self._signal_value(run_id), ex=30))
 
-    def wait_for_consumer_cancelled(self, thread_id: str, timeout: float = 3.0) -> bool:
+    def wait_for_consumer_cancelled(
+        self,
+        thread_id: str,
+        timeout: float = 3.0,
+        run_id: str | None = None,
+    ) -> bool:
+        key = self._cancelled_signal_key(thread_id)
+        if run_id is None:
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if self._client.getdel(key) is not None:
+                    return True
+                time.sleep(0.1)
+            return False
+
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            if self._client.getdel(self._cancelled_signal_key(thread_id)) is not None:
-                return True
+            value = self._client.get(key)
+            if self._signal_matches(value, run_id):
+                deleted = self._client.eval(self._DELETE_IF_VALUE_SCRIPT, 1, key, value)
+                if deleted:
+                    return True
             time.sleep(0.1)
         return False
 
-    def clear_cancelled_signal(self, thread_id: str) -> None:
-        self._client.delete(self._cancelled_signal_key(thread_id))
+    def clear_cancelled_signal(self, thread_id: str, run_id: str | None = None) -> None:
+        self._clear_signal(self._cancelled_signal_key(thread_id), run_id)
 
     def mark_stopped(self, thread_id: str) -> None:
         self._client.set(self._stopped_key(thread_id), b"1", ex=600)
