@@ -268,6 +268,10 @@ class BaseMessageQueueHandler(ABC):
     def release_producer(self, thread_id: str) -> None:
         """释放会话级生产者写入权。默认无操作。"""
 
+    def has_active_producer(self, thread_id: str) -> bool:
+        """是否存在仍持有写入权的生产者。默认不提供跨进程判断。"""
+        return False
+
     def size(self, thread_id: str) -> int:
         """获取主队列中的消息数量（get_cached_count 的别名）
 

@@ -384,3 +384,29 @@ class TestRedisMessageHandlerIntegration:
         finally:
             handler.clear(thread_id)
             handler.release_producer(thread_id)
+
+    def test_refresh_with_new_run_id_replays_active_producer(self, redis_62_handler):
+        thread_id = "redis-handler-refresh-active-producer"
+        handler = redis_62_handler
+        handler.clear(thread_id)
+
+        try:
+            assert handler.acquire_producer(thread_id)
+            handler.bind_replay_run(thread_id, "run-original")
+            handler.put(thread_id, "original-run-output")
+            handler.put(thread_id, EOD_CHUNK)
+            handler.flush(thread_id)
+
+            helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
+            replayed = list(
+                helper.stream(
+                    iter(["must-not-start-second-producer"]),
+                    expected_run_id="run-created-by-refresh",
+                )
+            )
+
+            assert "original-run-output" in replayed
+            assert "must-not-start-second-producer" not in replayed
+        finally:
+            handler.clear(thread_id)
+            handler.release_producer(thread_id)

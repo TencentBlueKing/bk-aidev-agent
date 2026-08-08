@@ -544,6 +544,7 @@ class GeneratorStreamingHelper:
             has_pending
             and self._supports_replay_from_start()
             and self.run_id
+            and not self.message_handler.has_active_producer(self.thread_id)
             and not self.message_handler.replay_belongs_to_run(self.thread_id, self.run_id)
         )
 
@@ -1290,6 +1291,10 @@ class GeneratorStreamingHelper:
                     run_finished_seen = True
 
                 self.message_handler.put(self.thread_id, chunk)
+                if isinstance(chunk, str) and '"type":"RUN_STARTED"' in chunk:
+                    # 初始化帧也由后台 producer 写入。RUN_STARTED 到达后立即提交，
+                    # 避免等待批量写入周期，同时保持 MESSAGES_SNAPSHOT 在其之前。
+                    self.message_handler.flush(self.thread_id)
                 logger.debug(f"Produced chunk for thread_id={self.thread_id}")
                 if is_run_finished:
                     _complete_session()

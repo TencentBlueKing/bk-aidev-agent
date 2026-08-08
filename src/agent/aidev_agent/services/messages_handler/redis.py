@@ -509,6 +509,9 @@ class RedisMessageHandler(ReplayBufferMixin, BaseMessageQueueHandler):
         # 滚动发布期间旧 worker 没有写 replay_run，保留原 session 级 replay 行为。
         return replay_run is None or replay_run == run_id.encode("utf-8")
 
+    def has_active_producer(self, thread_id: str) -> bool:
+        return bool(self._client.exists(self._producer_lock_key(thread_id)))
+
     def clear(self, thread_id: str) -> None:
         with self._buffer_lock:
             self._message_buffer.pop(thread_id, None)
