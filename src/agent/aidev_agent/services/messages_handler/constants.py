@@ -63,7 +63,7 @@ class QueueTTLConfig:
     # 消费者取消完成通知的 TTL（毫秒）：30 秒后自动过期
     CANCELLED_SIGNAL_TTL_MS = 30000
 
-    # 兼容 MultiProcessMixin 公共抢占协议：消费者退出通知 5 秒后自动过期
+    # RabbitMQ 消费者退出通知 5 秒后自动过期
     CONSUMER_EXIT_MSG_TTL_MS = 5000
 
     # 停止状态信号的 TTL（毫秒）：10 分钟后自动过期
