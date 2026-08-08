@@ -55,6 +55,18 @@ class RedisMessageHandler(BaseMessageQueueHandler):
         end
         return 0
     """
+    _REPLACE_IF_VALUE_SCRIPT: ClassVar[str] = """
+        if redis.call('get', KEYS[1]) ~= ARGV[1] then
+            return 0
+        end
+        local ttl = redis.call('pttl', KEYS[1])
+        if ttl > 0 then
+            redis.call('set', KEYS[1], ARGV[2], 'PX', ttl)
+        else
+            redis.call('set', KEYS[1], ARGV[2])
+        end
+        return 1
+    """
     _LEGACY_SIGNAL_VALUES: ClassVar[frozenset[bytes]] = frozenset({b"", b"1"})
 
     _instance: Optional["RedisMessageHandler"] = None
@@ -235,6 +247,9 @@ class RedisMessageHandler(BaseMessageQueueHandler):
     def _completed_key(self, thread_id: str) -> str:
         return self._key(thread_id, "completed")
 
+    def _replay_run_key(self, thread_id: str) -> str:
+        return self._key(thread_id, "replay_run")
+
     @staticmethod
     def _signal_value(run_id: str | None) -> bytes:
         return run_id.encode("utf-8") if run_id else b""
@@ -269,6 +284,7 @@ class RedisMessageHandler(BaseMessageQueueHandler):
             self._cancel_request_key(thread_id),
             self._stopped_key(thread_id),
             self._completed_key(thread_id),
+            self._replay_run_key(thread_id),
         ]
 
     def _get_flush_lock(self, thread_id: str) -> threading.Lock:
@@ -549,6 +565,7 @@ class RedisMessageHandler(BaseMessageQueueHandler):
         pipeline.set(self._completed_key(thread_id), b"1", ex=self._completed_stream_ttl_seconds)
         pipeline.expire(self._stream_key(thread_id), self._completed_stream_ttl_seconds)
         pipeline.expire(self._active_consumers_key(thread_id), self._completed_stream_ttl_seconds)
+        pipeline.expire(self._replay_run_key(thread_id), self._completed_stream_ttl_seconds)
         pipeline.delete(
             self._cancel_request_key(thread_id),
             self._cancel_signal_key(thread_id),
@@ -556,6 +573,18 @@ class RedisMessageHandler(BaseMessageQueueHandler):
             self._stopped_key(thread_id),
         )
         pipeline.execute()
+
+    def bind_replay_run(self, thread_id: str, run_id: str) -> None:
+        self._client.set(
+            self._replay_run_key(thread_id),
+            run_id.encode("utf-8"),
+            ex=self._queue_ttl_seconds,
+        )
+
+    def replay_belongs_to_run(self, thread_id: str, run_id: str) -> bool:
+        replay_run = self._client.get(self._replay_run_key(thread_id))
+        # 滚动发布期间旧 worker 没有写 replay_run，保留原 session 级 replay 行为。
+        return replay_run is None or replay_run == run_id.encode("utf-8")
 
     def clear(self, thread_id: str) -> None:
         with self._buffer_lock:
@@ -642,7 +671,16 @@ class RedisMessageHandler(BaseMessageQueueHandler):
         return bool(self._client.set(self._cancel_signal_key(thread_id), self._signal_value(run_id), ex=30))
 
     def check_cancel_signal(self, thread_id: str, run_id: str | None = None) -> bool:
-        value = self._client.get(self._cancel_signal_key(thread_id))
+        key = self._cancel_signal_key(thread_id)
+        value = self._client.get(key)
+        if run_id and value in self._LEGACY_SIGNAL_VALUES:
+            # 旧前端只按 session 发送 stop。当前 run 首次命中后立即将信号绑定到
+            # 实际 run_id，避免 producer 清理前同 session 的下一轮误继承。
+            replacement = self._signal_value(run_id)
+            if self._client.eval(self._REPLACE_IF_VALUE_SCRIPT, 1, key, value, replacement):
+                value = replacement
+            else:
+                value = self._client.get(key)
         return self._signal_matches(value, run_id)
 
     def clear_cancel_signal(self, thread_id: str, run_id: str | None = None) -> None:

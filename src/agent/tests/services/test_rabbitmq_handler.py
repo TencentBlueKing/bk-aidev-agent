@@ -311,6 +311,32 @@ class TestRabbitMQMessageHandler:
         assert len(collected) <= 15, f"message count should be <= 15, got {len(collected)}"
         assert handler.is_empty(thread_id)
 
+    def test_new_run_after_cancel_starts_new_producer(self, handler, thread_id):
+        """RabbitMQ 完成取消清理后，同 session 的新 run 不应重放取消结果。"""
+        cancelled_helper = GeneratorStreamingHelper(handler, thread_id)
+        cancelled_event = cancelled_helper.prepare_run("run-cancelled")
+        assert handler.set_cancel_signal(thread_id)
+        cancelled = list(
+            cancelled_helper.stream(
+                iter(["must-not-be-emitted"]),
+                expected_run_id="run-cancelled",
+                cancel_event=cancelled_event,
+            )
+        )
+        assert "must-not-be-emitted" not in cancelled
+        assert handler.is_empty(thread_id)
+
+        next_helper = GeneratorStreamingHelper(handler, thread_id)
+        next_event = next_helper.prepare_run("run-next")
+        next_chunks = list(
+            next_helper.stream(
+                iter(["next-run-output"]),
+                expected_run_id="run-next",
+                cancel_event=next_event,
+            )
+        )
+        assert "next-run-output" in next_chunks
+
 
 class TestResourceCleanup:
     """测试 mark_completed 后的资源清理逻辑

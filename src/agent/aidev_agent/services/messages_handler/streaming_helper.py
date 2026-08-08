@@ -124,6 +124,7 @@ class GeneratorStreamingHelper:
         self._producer_completion_error: Exception | None = None
         self.run_id: str = ""
         self._cancel_event: threading.Event | None = None
+        self._replace_replay_run = False
 
     @classmethod
     def _check_cancel_status(
@@ -505,6 +506,12 @@ class GeneratorStreamingHelper:
         is_stopped = self.message_handler.is_stopped(self.thread_id)
         has_pending = self.message_handler.has_pending_messages(self.thread_id)
 
+        if self._is_pending_replay_from_other_run(has_pending):
+            # 新输入使用新的 run_id，不应回放上一轮缓存。旧数据要等本轮取得
+            # producer 锁后再清理，避免与仍在 flush EOD 的上一轮生产者并发写。
+            self._replace_replay_run = True
+            return False, False
+
         if not is_stopped:
             return False, has_pending
 
@@ -526,6 +533,14 @@ class GeneratorStreamingHelper:
 
         return True, True
 
+    def _is_pending_replay_from_other_run(self, has_pending: bool) -> bool:
+        return bool(
+            has_pending
+            and self._supports_replay_from_start()
+            and self.run_id
+            and not self.message_handler.replay_belongs_to_run(self.thread_id, self.run_id)
+        )
+
     def _recheck_pending_after_waiting_consumer(self, has_pending: bool) -> bool:
         """队列初判为空时，等待旧消费者退出后再次确认是否有消息。"""
         if has_pending:
@@ -533,6 +548,11 @@ class GeneratorStreamingHelper:
 
         prev_exited = self.message_handler.wait_for_previous_consumer(self.thread_id, timeout=3.0)
         has_pending = self.message_handler.has_pending_messages(self.thread_id)
+        if self._is_pending_replay_from_other_run(has_pending):
+            # 等待旧 consumer 期间，上一 run 的 EOD 可能刚写入并留下 replay
+            # 日志；新 run 必须创建 producer，不能把这批旧日志当成待恢复数据。
+            self._replace_replay_run = True
+            return False
         if has_pending:
             logger.info(
                 f"Messages appeared after waiting for previous consumer "
@@ -557,7 +577,18 @@ class GeneratorStreamingHelper:
         supports_replay_from_start = self._supports_replay_from_start()
 
         if not has_pending:
-            if not self.message_handler.acquire_producer(self.thread_id):
+            producer_acquired = self.message_handler.acquire_producer(self.thread_id)
+            if not producer_acquired and self._replace_replay_run:
+                deadline = time.monotonic() + self.CANCEL_DRAIN_TIMEOUT + 2.0
+                while time.monotonic() < deadline and not producer_acquired:
+                    time.sleep(0.05)
+                    producer_acquired = self.message_handler.acquire_producer(self.thread_id)
+
+            if not producer_acquired:
+                if self._replace_replay_run:
+                    raise RuntimeError(
+                        f"Previous replay run did not release producer lock for thread_id={self.thread_id}"
+                    )
                 logger.info(
                     "Producer already active for thread_id=%s, consuming existing replay stream",
                     self.thread_id,
@@ -570,6 +601,8 @@ class GeneratorStreamingHelper:
                 self._is_cancelled(cancel_event)
                 self.message_handler.clear(self.thread_id)
                 self.message_handler.clear_stopped(self.thread_id)
+                if expected_run_id:
+                    self.message_handler.bind_replay_run(self.thread_id, expected_run_id)
             except Exception:
                 self.message_handler.release_producer(self.thread_id)
                 raise
@@ -946,6 +979,9 @@ class GeneratorStreamingHelper:
             生成器产生的数据
 
         """
+        if expected_run_id:
+            self.run_id = expected_run_id
+        self._replace_replay_run = False
         # 注册取消事件（让 cancel() 可以通知生产者和消费者停止）
         cancel_event = cancel_event or self._register_cancel_event(expected_run_id)
 

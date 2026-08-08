@@ -87,10 +87,13 @@ class _SignalClient:
             self.values.pop(key, None)
         return deleted
 
-    def eval(self, script, numkeys, key, expected):
+    def eval(self, script, numkeys, key, expected, replacement=None):
         if self.values.get(key) != expected:
             return 0
-        del self.values[key]
+        if replacement is None:
+            del self.values[key]
+        else:
+            self.values[key] = replacement
         return 1
 
 
@@ -153,6 +156,7 @@ class TestRedisMessageHandlerRunSignals:
     def handler(self):
         handler = object.__new__(RedisMessageHandler)
         handler._client = _SignalClient()
+        handler._queue_ttl_seconds = 3600
         return handler
 
     def test_cancel_signal_is_scoped_to_current_run(self, handler):
@@ -173,8 +177,18 @@ class TestRedisMessageHandlerRunSignals:
         handler._client.set(handler._cancel_signal_key(thread_id), b"1", ex=30)
 
         assert handler.check_cancel_signal(thread_id, run_id="run-current")
+        assert handler._client.get(handler._cancel_signal_key(thread_id)) == b"run-current"
+        assert not handler.check_cancel_signal(thread_id, run_id="run-next")
         handler.clear_cancel_signal(thread_id, run_id="run-current")
         assert not handler.check_cancel_signal(thread_id, run_id="run-current")
+
+    def test_replay_log_is_scoped_to_current_run(self, handler):
+        thread_id = "run-scoped-replay"
+        assert handler.replay_belongs_to_run(thread_id, "rolling-upgrade-run")
+        handler.bind_replay_run(thread_id, "run-old")
+
+        assert handler.replay_belongs_to_run(thread_id, "run-old")
+        assert not handler.replay_belongs_to_run(thread_id, "run-current")
 
     def test_cancelled_notification_does_not_consume_other_run(self, handler):
         thread_id = "run-scoped-notification"
@@ -202,6 +216,18 @@ def redis_62_handler(monkeypatch):
 
 @pytest.mark.e2e
 class TestRedisMessageHandlerIntegration:
+    @staticmethod
+    def _stream_run(handler, thread_id, run_id, chunks):
+        helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
+        cancel_event = helper.prepare_run(run_id)
+        return list(
+            helper.stream(
+                iter(chunks),
+                expected_run_id=run_id,
+                cancel_event=cancel_event,
+            )
+        )
+
     def test_redis_62_multi_reader_replay(self, redis_62_handler):
         thread_id = "redis-handler-integration"
         handler = redis_62_handler
@@ -272,6 +298,7 @@ class TestRedisMessageHandlerIntegration:
         thread_id = "redis-handler-early-cancel"
         run_id = "run-current"
         handler = redis_62_handler
+        handler.clear(thread_id)
         helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
         cancel_event = helper.prepare_run(run_id)
 
@@ -289,5 +316,24 @@ class TestRedisMessageHandlerIntegration:
             assert "must-not-be-emitted" not in chunks
             assert handler.wait_for_consumer_cancelled(thread_id, timeout=1.0, run_id=run_id)
         finally:
-            handler.mark_completed(thread_id)
+            handler.clear(thread_id)
+            handler.release_producer(thread_id)
+
+    def test_new_run_after_cancel_does_not_replay_stopped_run(self, redis_62_handler):
+        thread_id = "redis-handler-new-run-after-cancel"
+        handler = redis_62_handler
+        handler.clear(thread_id)
+
+        try:
+            assert handler.set_cancel_signal(thread_id)
+            cancelled_chunks = self._stream_run(handler, thread_id, "run-cancelled", ["must-not-be-emitted"])
+            assert "must-not-be-emitted" not in cancelled_chunks
+            assert not handler._client.exists(handler._cancel_signal_key(thread_id))
+            assert handler._client.exists(handler._stream_key(thread_id))
+            assert not handler.replay_belongs_to_run(thread_id, "run-next")
+
+            next_chunks = self._stream_run(handler, thread_id, "run-next", ["next-run-output"])
+            assert "next-run-output" in next_chunks
+        finally:
+            handler.clear(thread_id)
             handler.release_producer(thread_id)

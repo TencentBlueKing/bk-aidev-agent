@@ -286,6 +286,13 @@ class BaseMessageQueueHandler(ABC):
         """
         return False
 
+    def bind_replay_run(self, thread_id: str, run_id: str) -> None:
+        """将当前回放日志绑定到 run；非 replay handler 默认无需处理。"""
+
+    def replay_belongs_to_run(self, thread_id: str, run_id: str) -> bool:
+        """判断当前回放日志是否属于指定 run；默认保持旧 handler 的 session 级语义。"""
+        return True
+
     def get_messages_since(self, thread_id: str, offset: int, timeout: Optional[float] = None) -> tuple[list[Any], int]:
         """从指定 offset 开始读取消息，且不破坏底层缓存。
 
