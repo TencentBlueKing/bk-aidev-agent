@@ -206,7 +206,7 @@ def redis_62_handler(monkeypatch):
     redis_url = os.getenv("AIDEV_TEST_REDIS_URL")
     if not redis_url:
         pytest.skip("AIDEV_TEST_REDIS_URL is not configured")
-    monkeypatch.setenv("MESSAGE_HANDLER_REDIS_URL", redis_url)
+    monkeypatch.setenv("MSG_REDIS_URL", redis_url)
     RedisMessageHandler._instance = None
     handler = RedisMessageHandler()
     yield handler

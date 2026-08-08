@@ -47,6 +47,9 @@ class ReplayFromStartHandler:
     def supports_replay_from_start(self) -> bool:
         return True
 
+    def bind_replay_run(self, thread_id, run_id):
+        pass
+
     def put(self, thread_id, message):
         with self._condition:
             self.messages.setdefault(thread_id, []).append(message)
@@ -123,16 +126,16 @@ class ReplayFromStartHandler:
             self.messages.pop(thread_id, None)
             self._condition.notify_all()
 
-    def clear_cancel_signal(self, thread_id):
+    def clear_cancel_signal(self, thread_id, run_id=None):
         pass
 
-    def check_cancel_signal(self, thread_id):
+    def check_cancel_signal(self, thread_id, run_id=None):
         return False
 
-    def set_cancel_signal(self, thread_id):
+    def set_cancel_signal(self, thread_id, run_id=None):
         return False
 
-    def notify_consumer_cancelled(self, thread_id):
+    def notify_consumer_cancelled(self, thread_id, run_id=None):
         return True
 
 
@@ -1022,7 +1025,7 @@ class TestMessageHandlerConfig:
 
     def test_create_handler_redis_without_url_fails(self, monkeypatch):
         monkeypatch.setenv(EnvVarNames.REDIS_URL, "")
-        with pytest.raises(RuntimeError, match="MESSAGE_HANDLER_REDIS_URL"):
+        with pytest.raises(RuntimeError, match="MSG_REDIS_URL"):
             _create_handler(MessageHandlerType.REDIS)
 
     def test_factory_returns_singleton_by_type(self):

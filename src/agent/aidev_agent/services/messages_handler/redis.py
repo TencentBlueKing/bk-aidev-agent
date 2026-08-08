@@ -15,7 +15,7 @@ from redis import Redis
 from redis.exceptions import RedisError
 
 from .base import BaseMessageQueueHandler
-from .constants import EOD_CHUNK, QueueTTLConfig
+from .constants import EOD_CHUNK, EnvVarNames, QueueTTLConfig
 
 logger = logging.getLogger(__name__)
 env = Env()
@@ -82,12 +82,12 @@ class RedisMessageHandler(BaseMessageQueueHandler):
         return cls._instance
 
     def _init_redis(self) -> None:
-        redis_url = env.str("MESSAGE_HANDLER_REDIS_URL", "")
+        redis_url = env.str(EnvVarNames.REDIS_URL, "")
         if not redis_url:
-            raise RuntimeError("Redis handler requires MESSAGE_HANDLER_REDIS_URL")
+            raise RuntimeError(f"Redis handler requires {EnvVarNames.REDIS_URL}")
 
-        socket_timeout = env.float("REDIS_MESSAGE_HANDLER_SOCKET_TIMEOUT", 10.0)
-        connect_timeout = env.float("REDIS_MESSAGE_HANDLER_CONNECT_TIMEOUT", 5.0)
+        socket_timeout = env.float(EnvVarNames.REDIS_SOCKET_TIMEOUT, 10.0)
+        connect_timeout = env.float(EnvVarNames.REDIS_CONNECT_TIMEOUT, 5.0)
         self._client: Redis = redis.Redis.from_url(
             redis_url,
             decode_responses=False,
@@ -101,22 +101,22 @@ class RedisMessageHandler(BaseMessageQueueHandler):
             self._client.close()
             raise
         self._supports_waitaof = self._server_version >= self.WAITAOF_MIN_SERVER_VERSION
-        self._waitaof_enabled = env.bool("REDIS_WAITAOF_ENABLED", True)
-        self._waitaof_local = env.int("REDIS_WAITAOF_LOCAL", 1)
-        self._waitaof_replicas = env.int("REDIS_WAITAOF_REPLICAS", 0)
-        self._waitaof_timeout_ms = env.int("REDIS_WAITAOF_TIMEOUT_MS", 2000)
+        self._waitaof_enabled = env.bool(EnvVarNames.REDIS_WAITAOF_ENABLED, True)
+        self._waitaof_local = env.int(EnvVarNames.REDIS_WAITAOF_LOCAL, 1)
+        self._waitaof_replicas = env.int(EnvVarNames.REDIS_WAITAOF_REPLICAS, 0)
+        self._waitaof_timeout_ms = env.int(EnvVarNames.REDIS_WAITAOF_TIMEOUT_MS, 2000)
 
         self._queue_ttl_seconds = max(1, QueueTTLConfig.QUEUE_EXPIRE_MS // 1000)
-        self._producer_lock_ttl_ms = env.int("REDIS_PRODUCER_LOCK_TTL_SECONDS", 60) * 1000
+        self._producer_lock_ttl_ms = env.int(EnvVarNames.REDIS_PRODUCER_LOCK_TTL_SECONDS, 60) * 1000
         self._producer_lock_renew_interval = max(
             1.0,
             min(
-                env.float("REDIS_PRODUCER_LOCK_RENEW_INTERVAL", 20.0),
+                env.float(EnvVarNames.REDIS_PRODUCER_LOCK_RENEW_INTERVAL, 20.0),
                 self._producer_lock_ttl_ms / 3000,
             ),
         )
-        self._consumer_stale_seconds = env.float("REDIS_CONSUMER_STALE_SECONDS", 90.0)
-        self._completed_stream_ttl_seconds = env.int("REDIS_COMPLETED_STREAM_TTL_SECONDS", 90)
+        self._consumer_stale_seconds = env.float(EnvVarNames.REDIS_CONSUMER_STALE_SECONDS, 90.0)
+        self._completed_stream_ttl_seconds = env.int(EnvVarNames.REDIS_COMPLETED_STREAM_TTL_SECONDS, 90)
 
         self._message_buffer: dict[str, list[Any]] = {}
         self._buffer_lock = threading.Lock()

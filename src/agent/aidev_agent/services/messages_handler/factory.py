@@ -13,6 +13,7 @@ from aidev_agent.utils.factory import SingletonFactory
 
 from .base import BaseMessageQueueHandler
 from .config import MessageHandlerConfig
+from .constants import EnvVarNames
 from .in_memory import InMemoryQueueMessageHandler
 
 if TYPE_CHECKING:
@@ -46,7 +47,7 @@ def _create_handler(handler_type: MessageHandlerType) -> BaseMessageQueueHandler
 
     if handler_type == MessageHandlerType.REDIS:
         if not MessageHandlerConfig.has_redis_config():
-            raise RuntimeError("Redis handler requires MESSAGE_HANDLER_REDIS_URL")
+            raise RuntimeError(f"Redis handler requires {EnvVarNames.REDIS_URL}")
         return _get_redis_handler()
 
     return InMemoryQueueMessageHandler()
