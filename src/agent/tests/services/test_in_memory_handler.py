@@ -19,7 +19,7 @@ from aidev_agent.services.messages_handler import (
 )
 from aidev_agent.services.messages_handler.config import MessageHandlerConfig
 from aidev_agent.services.messages_handler.constants import EnvVarNames
-from aidev_agent.services.messages_handler.factory import _create_handler
+from aidev_agent.services.messages_handler.factory import _create_handler, _init_factory
 from aidev_agent.utils.event import RunId, emit_run_finished_event
 
 
@@ -40,6 +40,7 @@ class ReplayFromStartHandler:
         self.active_consumers: set[tuple[str, str]] = set()
         self.producer_locks: set[str] = set()
         self.completed_threads: list[str] = []
+        self.consumer_checks: list[tuple[str, str]] = []
         self._consumer_seq = 0
         self._lock = threading.Lock()
         self._condition = threading.Condition(self._lock)
@@ -99,7 +100,7 @@ class ReplayFromStartHandler:
         return True
 
     def check_consumer(self, thread_id, consumer_id):
-        pass
+        self.consumer_checks.append((thread_id, consumer_id))
 
     def release_consumer(self, thread_id, consumer_id):
         with self._lock:
@@ -181,6 +182,7 @@ class TestReplayFromStartStreamingHelper:
         assert errors == []
         assert all(not thread.is_alive() for thread in threads)
         assert results == [["chunk_0", "chunk_1"], ["chunk_0", "chunk_1"]]
+        assert len(handler.consumer_checks) == 2
         assert thread_id not in handler.messages
         assert handler.completed_threads == [thread_id]
 
@@ -535,10 +537,13 @@ class TestInMemoryQueueMessageHandler:
     def test_request_cancel_idempotent(self, handler):
         """重复 cancel 幂等：多次调用不报错，producer 仍能正常停止"""
         thread_id = "test_stream_cancel_idempotent"
-        # 使用 GeneratorStreamingHelper.cancel() 而不是 handler.request_cancel()
-        GeneratorStreamingHelper.cancel(thread_id, handler)
-        GeneratorStreamingHelper.cancel(thread_id, handler)
-        GeneratorStreamingHelper.cancel(thread_id, handler)
+        handler.request_cancel(thread_id)
+        handler.request_cancel(thread_id)
+        handler.request_cancel(thread_id)
+
+        # 兼容接口与统一取消信号使用同一份状态，并且检查不消费信号。
+        assert handler.is_cancel_requested(thread_id)
+        assert handler.is_cancel_requested(thread_id)
 
         def gen():
             yield "a"
@@ -1002,6 +1007,7 @@ class TestMessageHandlerConfig:
         ("env_handler_type", "env_rabbitmq_host", "env_redis_url", "expected_type"),
         [
             ("", "", "", MessageHandlerType.INMEMORY),  # 无配置 → InMemory
+            ("auto", "", "", MessageHandlerType.INMEMORY),  # 显式 auto → 自动检测
             ("inmemory", "", "", MessageHandlerType.INMEMORY),  # 显式 inmemory
             ("rabbitmq", "", "", MessageHandlerType.RABBITMQ),  # 显式 rabbitmq
             ("redis", "", "", MessageHandlerType.REDIS),  # 显式 redis
@@ -1016,6 +1022,12 @@ class TestMessageHandlerConfig:
         monkeypatch.setenv(EnvVarNames.RABBITMQ_HOST, env_rabbitmq_host)
         monkeypatch.setenv(EnvVarNames.REDIS_URL, env_redis_url)
         assert MessageHandlerConfig.resolve_handler_type() == expected_type
+
+    def test_invalid_explicit_handler_type_fails_fast(self, monkeypatch):
+        monkeypatch.setenv(EnvVarNames.HANDLER_TYPE, "redsi")
+
+        with pytest.raises(RuntimeError, match="Invalid MESSAGE_HANDLER_TYPE"):
+            MessageHandlerConfig.resolve_handler_type()
 
     def test_create_handler_rabbitmq_fallback(self, monkeypatch):
         """_create_handler 传入 RABBITMQ 但无 MQ 配置时应降级为 InMemory"""
@@ -1034,3 +1046,23 @@ class TestMessageHandlerConfig:
         h2 = message_handler_factory.get(MessageHandlerType.INMEMORY.value)
         assert h1 is h2
         assert isinstance(h1, InMemoryQueueMessageHandler)
+
+    def test_factory_only_creates_selected_external_backend(self, monkeypatch):
+        """未选中的外部 backend 不应在模块初始化时建立连接。"""
+        selected_handler = InMemoryQueueMessageHandler()
+        created_types = []
+
+        monkeypatch.setattr(MessageHandlerConfig, "resolve_handler_type", lambda: MessageHandlerType.REDIS)
+
+        def create_handler(handler_type):
+            created_types.append(handler_type)
+            return selected_handler
+
+        monkeypatch.setattr("aidev_agent.services.messages_handler.factory._create_handler", create_handler)
+
+        factory = _init_factory()
+
+        assert created_types == [MessageHandlerType.REDIS]
+        assert factory.get() is selected_handler
+        assert factory.get(MessageHandlerType.REDIS.value) is selected_handler
+        assert isinstance(factory.get(MessageHandlerType.INMEMORY.value), InMemoryQueueMessageHandler)

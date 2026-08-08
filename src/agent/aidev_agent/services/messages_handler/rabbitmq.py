@@ -20,6 +20,7 @@ from environs import Env
 from .base import BaseMessageQueueHandler, QueueTTLConfig
 from .constants import EOD_CHUNK, QueueNamePrefixes
 from .multi_process_mixin import MultiProcessMixin
+from .replay_buffer_mixin import ReplayBufferMixin
 
 logger = getLogger(__name__)
 
@@ -271,7 +272,7 @@ class RabbitMQConnectionPool:
             return self._created_count
 
 
-class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
+class RabbitMQMessageHandler(MultiProcessMixin, ReplayBufferMixin, BaseMessageQueueHandler):
     """基于RabbitMQ的消息处理器（多进程版本）
 
     使用 RabbitMQ 作为远端存储，支持分布式场景下的流式消息处理。
@@ -453,30 +454,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         """唤醒等待 replay lock 或新消息的本进程消费者。"""
         with self._replay_wait_condition:
             self._replay_wait_condition.notify_all()
-
-    def register_eod_commit_event(self, thread_id: str, event: threading.Event) -> None:
-        """注册 EOD 提交确认事件，供 producer 等待同步/后台 flush 的最终结果。"""
-        with self._eod_commit_events_lock:
-            self._eod_commit_events.setdefault(thread_id, set()).add(event)
-
-    def unregister_eod_commit_event(self, thread_id: str, event: threading.Event) -> None:
-        """移除尚未被 EOD 成功提交消费的确认事件。"""
-        with self._eod_commit_events_lock:
-            events = self._eod_commit_events.get(thread_id)
-            if events is None:
-                return
-            events.discard(event)
-            if not events:
-                self._eod_commit_events.pop(thread_id, None)
-
-    def _notify_eod_committed(self, thread_id: str, messages: list[Any]) -> None:
-        """仅在包含 EOD 的完整批次成功发布后确认提交。"""
-        if EOD_CHUNK not in messages:
-            return
-        with self._eod_commit_events_lock:
-            events = self._eod_commit_events.pop(thread_id, set())
-        for event in events:
-            event.set()
 
     def _wait_for_replay_retry(self, deadline: float | None, interval: float) -> None:
         """等待下一次 replay 检查。
@@ -857,55 +834,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         except Exception as e:
             logger.error(f"Error flushing messages on daemon exit: {e}")
 
-    @classmethod
-    def _coalesce_sse_messages(cls, messages: list[Any]) -> list[Any]:
-        """合并相邻 SSE 帧，减少 RabbitMQ 物理消息数并保持原始协议字节流。"""
-        coalesced_messages: list[Any] = []
-        sse_parts: list[str] = []
-        sse_size = 0
-
-        def flush_sse_parts() -> None:
-            nonlocal sse_size
-            if not sse_parts:
-                return
-            coalesced_messages.append("".join(sse_parts))
-            sse_parts.clear()
-            sse_size = 0
-
-        for message in messages:
-            if not isinstance(message, str) or not message.startswith("data: "):
-                flush_sse_parts()
-                coalesced_messages.append(message)
-                continue
-
-            message_size = len(message.encode("utf-8"))
-            if sse_parts and sse_size + message_size > cls.SSE_PUBLISH_CHUNK_MAX_BYTES:
-                flush_sse_parts()
-            if message_size > cls.SSE_PUBLISH_CHUNK_MAX_BYTES:
-                coalesced_messages.append(message)
-                continue
-            sse_parts.append(message)
-            sse_size += message_size
-
-        flush_sse_parts()
-        return coalesced_messages
-
-    @staticmethod
-    def _expand_sse_messages(messages: list[Any]) -> list[Any]:
-        """将 RabbitMQ 中合并的 SSE 字节流还原为调用方原有的逐帧消息。"""
-        expanded_messages: list[Any] = []
-        for message in messages:
-            if not isinstance(message, str) or not message.startswith("data: ") or "\n\ndata: " not in message:
-                expanded_messages.append(message)
-                continue
-
-            parts = message.split("\n\n")
-            if parts[-1] or any(not part.startswith("data: ") for part in parts[:-1]):
-                expanded_messages.append(message)
-                continue
-            expanded_messages.extend(f"{part}\n\n" for part in parts[:-1])
-        return expanded_messages
-
     def _flush_messages(self) -> None:
         """批量推送缓冲区中的所有消息到 RabbitMQ
 
@@ -1120,10 +1048,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
 
             self._wait_for_replay_retry(deadline, self.REPLAY_MESSAGE_RETRY_INTERVAL)
 
-    def get(self, thread_id: str, timeout: Optional[float] = None) -> list[Any]:
-        """RabbitMQ replay 必须携带 offset，禁止使用破坏性旧消费接口。"""
-        raise NotImplementedError("RabbitMQMessageHandler requires get_messages_since(thread_id, offset, timeout)")
-
     def has_pending_messages(self, thread_id: str) -> bool:
         """检查是否有未消费的消息（用于判断是否需要创建生产者）
 
@@ -1154,10 +1078,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         except Exception as e:
             logger.error(f"Error checking pending messages for thread_id={thread_id}: {e}")
             return False
-
-    def restore_messages(self, thread_id: str) -> int:
-        """Replay 模式不移动消息，无需恢复。"""
-        return 0
 
     def _safe_purge_queue(self, connection: Any, queue_name: str, passive_check: bool = False) -> bool:
         """安全清空队列（内部方法）
@@ -1261,44 +1181,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         with self._flush_peek_locks_guard:
             self._flush_peek_locks.pop(thread_id, None)
 
-    def request_cancel(self, thread_id: str) -> None:
-        """请求取消该 thread_id 的流。幂等：向取消队列投递一条消息，生产者轮询时消费到即退出。"""
-        try:
-            with self._with_channel() as channel:
-                cancel_queue_name = self._get_cancel_queue_name(thread_id)
-                channel.queue_declare(
-                    queue=cancel_queue_name,
-                    durable=True,
-                    arguments={"x-expires": self.QUEUE_TTL_MS},
-                )
-                channel.basic_publish(
-                    exchange="",
-                    routing_key=cancel_queue_name,
-                    body=b"1",
-                    properties=pika.BasicProperties(delivery_mode=1),
-                )
-                logger.debug(f"Requested cancel for thread_id={thread_id}")
-        except Exception as e:
-            logger.warning(f"Failed to request cancel for thread_id={thread_id}: {e}")
-
-    def is_cancel_requested(self, thread_id: str) -> bool:
-        """检查是否已请求取消该 thread_id 的流；若存在取消消息则消费一条并返回 True。"""
-        try:
-            with self._with_channel() as channel:
-                cancel_queue_name = self._get_cancel_queue_name(thread_id)
-                try:
-                    channel.queue_declare(queue=cancel_queue_name, durable=True, passive=True)
-                except Exception:
-                    return False
-                method_frame, _, _ = channel.basic_get(queue=cancel_queue_name, auto_ack=False)
-                if method_frame:
-                    channel.basic_ack(delivery_tag=method_frame.delivery_tag)
-                    return True
-                return False
-        except Exception as e:
-            logger.debug(f"Error checking cancel for thread_id={thread_id}: {e}")
-            return False
-
     def clear(self, thread_id: str) -> None:
         """清空指定 thread_id 的主队列和控制队列。"""
         # 清空缓冲区中的消息
@@ -1356,7 +1238,3 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         """
         with self._buffer_lock:
             return list(self._message_buffer.keys())
-
-    def get_dlq_messages(self, thread_id: str) -> list[Any]:
-        """RabbitMQ replay 不使用死信队列。"""
-        return []

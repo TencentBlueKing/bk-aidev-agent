@@ -37,8 +37,6 @@ class _CapabilityClient:
         self.commands.append(command)
         if command == "HELLO":
             return [b"server", b"redis", b"version", self.version.encode()]
-        if command == "WAITAOF":
-            return [1, 0]
         raise AssertionError(command)
 
     def set(self, *args, **kwargs):
@@ -134,22 +132,6 @@ class TestRedisMessageHandlerCapabilities:
             stream_id.decode() if isinstance(stream_id, bytes) else stream_id
         )
 
-    def test_waitaof_is_used_only_when_supported(self):
-        handler = object.__new__(RedisMessageHandler)
-        handler._client = _CapabilityClient()
-        handler._waitaof_enabled = True
-        handler._waitaof_local = 1
-        handler._waitaof_replicas = 0
-        handler._waitaof_timeout_ms = 2000
-
-        handler._supports_waitaof = False
-        handler._confirm_terminal_durability("redis-62")
-        assert "WAITAOF" not in handler._client.commands
-
-        handler._supports_waitaof = True
-        handler._confirm_terminal_durability("redis-72")
-        assert handler._client.commands[-1] == "WAITAOF"
-
 
 class TestRedisMessageHandlerRunSignals:
     @pytest.fixture
@@ -200,6 +182,14 @@ class TestRedisMessageHandlerRunSignals:
         handler.notify_consumer_cancelled(thread_id, run_id="run-current")
         assert handler.wait_for_consumer_cancelled(thread_id, timeout=0.2, run_id="run-current")
 
+    def test_new_run_cleanup_preserves_registered_consumer_and_stop_signals(self, handler):
+        thread_id = "preserve-active-run-state"
+        cleanup_keys = handler._session_data_keys(thread_id)
+
+        assert handler._active_consumers_key(thread_id) not in cleanup_keys
+        assert handler._cancel_signal_key(thread_id) not in cleanup_keys
+        assert handler._cancelled_signal_key(thread_id) not in cleanup_keys
+
 
 @pytest.fixture
 def redis_62_handler(monkeypatch):
@@ -234,7 +224,6 @@ class TestRedisMessageHandlerIntegration:
 
         try:
             assert handler.server_version[:2] == (6, 2)
-            assert handler.supports_waitaof is False
             assert handler.acquire_producer(thread_id) is True
             assert handler.acquire_producer(thread_id) is False
 

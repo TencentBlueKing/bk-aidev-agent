@@ -15,14 +15,16 @@ class MessageHandlerConfig:
     @classmethod
     def get_explicit_type(cls) -> Optional[MessageHandlerType]:
         """获取显式指定的处理器类型"""
-        type_str = env.str(EnvVarNames.HANDLER_TYPE, "").lower()
-        if type_str == MessageHandlerType.RABBITMQ.value:
-            return MessageHandlerType.RABBITMQ
-        if type_str == MessageHandlerType.REDIS.value:
-            return MessageHandlerType.REDIS
-        if type_str == MessageHandlerType.INMEMORY.value:
-            return MessageHandlerType.INMEMORY
-        return None
+        type_str = env.str(EnvVarNames.HANDLER_TYPE, "").strip().lower()
+        if not type_str or type_str == MessageHandlerType.AUTO.value:
+            return None
+        try:
+            return MessageHandlerType(type_str)
+        except ValueError as exc:
+            supported = ", ".join(handler_type.value for handler_type in MessageHandlerType)
+            raise RuntimeError(
+                f"Invalid {EnvVarNames.HANDLER_TYPE}={type_str!r}; expected one of: {supported}"
+            ) from exc
 
     @classmethod
     def has_rabbitmq_config(cls) -> bool:

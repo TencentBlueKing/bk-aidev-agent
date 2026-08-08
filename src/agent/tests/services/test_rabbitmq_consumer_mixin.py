@@ -62,7 +62,7 @@ class TestReplayConsumers:
 
         assert handler.restore_messages(thread_id) == 0
         assert handler.get_dlq_messages(thread_id) == []
-        with pytest.raises(NotImplementedError, match="get_messages_since"):
+        with pytest.raises(NotImplementedError, match="competing-consumer"):
             handler.get(thread_id, timeout=1)
 
 

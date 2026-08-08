@@ -415,11 +415,9 @@ class ChatCompletionAgent(BaseModel):
         helper = GeneratorStreamingHelper(
             thread_id=self.thread_id,
         )
-        if not helper.message_handler.is_cancel_requested(self.thread_id):
-            logger.info(f"[STOP_DEBUG] Calling message_handler.request_cancel() for thread_id={self.thread_id}")
-            helper.message_handler.request_cancel(self.thread_id)
-        else:
-            logger.info(f"[STOP_DEBUG] Cancel already requested for thread_id={self.thread_id}")
+        # 所有 handler 的 request_cancel 都是幂等的，无需先读后写；避免两次远端请求和 TOCTOU 竞态。
+        logger.info("[STOP_DEBUG] Requesting cancel for thread_id=%s", self.thread_id)
+        helper.message_handler.request_cancel(self.thread_id)
         # 用户主动停止时也释放资源
         self.release_resources()
 

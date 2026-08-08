@@ -413,11 +413,17 @@ class GeneratorStreamingHelper:
         empty_rounds = 0
         replay_offset = 0
         supports_replay_from_start = self._supports_replay_from_start()
+        last_consumer_check = 0.0
 
         while True:
             try:
-                if not supports_replay_from_start:
+                now = time.monotonic()
+                if (
+                    not supports_replay_from_start
+                    or now - last_consumer_check >= self._REPLAY_CONSUMER_HEARTBEAT_INTERVAL
+                ):
                     self.message_handler.check_consumer(self.thread_id, consumer_id)
+                    last_consumer_check = now
                 messages, replay_offset = self._get_consumer_messages(timeout=0.3, replay_offset=replay_offset)
 
                 if not messages:
@@ -648,6 +654,8 @@ class GeneratorStreamingHelper:
     # consumer progress 心跳：每 N 条 yield 或每 M 秒（取先到者）
     _CONSUMER_PROGRESS_EVERY_N = 50
     _CONSUMER_PROGRESS_EVERY_SECONDS = 10.0
+    # replay handler 不使用抢占式消费，但仍需低频刷新活跃消费者，避免长会话被清理线程误判为空闲。
+    _REPLAY_CONSUMER_HEARTBEAT_INTERVAL = 10.0
 
     def _emit_terminal_error_events(
         self,
@@ -734,9 +742,10 @@ class GeneratorStreamingHelper:
         heartbeat_timeout = self._REPLAY_HEARTBEAT_TIMEOUT if supports_replay_from_start else HEARTBEAT_TIMEOUT
         heartbeat_grace_deadline: float | None = None
         background_recovery_deadline: float | None = None
+        last_consumer_check = 0.0
 
         logger.info(
-            "[RabbitMQ] consumer loop enter thread_id=%s consumer_id=%s is_resuming=%s heartbeat_check=%s",
+            "[MessageHandler] consumer loop enter thread_id=%s consumer_id=%s is_resuming=%s heartbeat_check=%s",
             self.thread_id,
             consumer_id_short,
             is_resuming,
@@ -751,7 +760,7 @@ class GeneratorStreamingHelper:
                 or now - last_progress_ts >= self._CONSUMER_PROGRESS_EVERY_SECONDS
             ):
                 logger.info(
-                    "[RabbitMQ] consumer progress thread_id=%s consumer_id=%s consumed_total=%d iter=%d",
+                    "[MessageHandler] consumer progress thread_id=%s consumer_id=%s consumed_total=%d iter=%d",
                     self.thread_id,
                     consumer_id_short,
                     yielded_total,
@@ -770,13 +779,18 @@ class GeneratorStreamingHelper:
                         )
                         consumer_draining = True
 
-                    if not supports_replay_from_start:
+                    now = time.monotonic()
+                    if (
+                        not supports_replay_from_start
+                        or now - last_consumer_check >= self._REPLAY_CONSUMER_HEARTBEAT_INTERVAL
+                    ):
                         t_check = time.time()
                         self.message_handler.check_consumer(self.thread_id, consumer_id)
+                        last_consumer_check = now
                         check_elapsed = time.time() - t_check
                         if check_elapsed > self._CHECK_CONSUMER_SLOW_SEC:
                             logger.warning(
-                                "[RabbitMQ] check_consumer slow thread_id=%s consumer_id=%s elapsed=%.2fs",
+                                "[MessageHandler] check_consumer slow thread_id=%s consumer_id=%s elapsed=%.2fs",
                                 self.thread_id,
                                 consumer_id_short,
                                 check_elapsed,
@@ -787,7 +801,7 @@ class GeneratorStreamingHelper:
                     get_elapsed = time.time() - t_get
                     if get_elapsed > self._GET_SLOW_SEC:
                         logger.warning(
-                            "[RabbitMQ] get slow thread_id=%s consumer_id=%s elapsed=%.2fs got=%d",
+                            "[MessageHandler] get slow thread_id=%s consumer_id=%s elapsed=%.2fs got=%d",
                             self.thread_id,
                             consumer_id_short,
                             get_elapsed,
@@ -852,7 +866,7 @@ class GeneratorStreamingHelper:
                         if yield_elapsed > self._YIELD_SLOW_SEC:
                             # H1 直接证据：下游消费慢 / SSE 发送缓冲满 / 网关 buffering
                             logger.warning(
-                                "[RabbitMQ] yield slow thread_id=%s consumer_id=%s elapsed=%.2fs yielded_total=%d",
+                                "[MessageHandler] yield slow thread_id=%s consumer_id=%s elapsed=%.2fs yielded_total=%d",
                                 self.thread_id,
                                 consumer_id_short,
                                 yield_elapsed,
@@ -881,7 +895,7 @@ class GeneratorStreamingHelper:
                         if not producer_finished and heartbeat_grace_deadline is None:
                             heartbeat_grace_deadline = time.monotonic() + self._HEARTBEAT_TIMEOUT_GRACE
                             logger.warning(
-                                "[RabbitMQ] producer heartbeat grace started thread_id=%s grace=%.1fs replay_offset=%d",
+                                "[MessageHandler] producer heartbeat grace started thread_id=%s grace=%.1fs replay_offset=%d",
                                 self.thread_id,
                                 self._HEARTBEAT_TIMEOUT_GRACE,
                                 replay_offset,
@@ -896,7 +910,7 @@ class GeneratorStreamingHelper:
                                     time.monotonic() + self._BACKGROUND_HEARTBEAT_RECOVERY_TIMEOUT
                                 )
                                 logger.warning(
-                                    "[RabbitMQ] background consumer keeps waiting after heartbeat timeout "
+                                    "[MessageHandler] background consumer keeps waiting after heartbeat timeout "
                                     "thread_id=%s recovery_timeout=%.1fs replay_offset=%d producer_finished=%s",
                                     self.thread_id,
                                     self._BACKGROUND_HEARTBEAT_RECOVERY_TIMEOUT,
@@ -918,7 +932,7 @@ class GeneratorStreamingHelper:
                 except Exception as exc:
                     # L-5：避免 unexpected 异常被上层 _wrap_streaming_with_status 吞成沉默
                     logger.error(
-                        "[RabbitMQ] consumer loop unexpected exception thread_id=%s consumer_id=%s "
+                        "[MessageHandler] consumer loop unexpected exception thread_id=%s consumer_id=%s "
                         "loop_iter=%d yielded_total=%d exc=%r",
                         self.thread_id,
                         consumer_id_short,
@@ -933,7 +947,7 @@ class GeneratorStreamingHelper:
             raise
         finally:
             logger.info(
-                "[RabbitMQ] consumer loop exit thread_id=%s consumer_id=%s reason=%s consumed=%d iter=%d",
+                "[MessageHandler] consumer loop exit thread_id=%s consumer_id=%s reason=%s consumed=%d iter=%d",
                 self.thread_id,
                 consumer_id_short,
                 exit_reason,
@@ -951,7 +965,7 @@ class GeneratorStreamingHelper:
             has_active_consumer = self.message_handler.has_active_consumer(self.thread_id)
             if has_pending and not has_active_consumer:
                 self.message_handler.mark_completed(self.thread_id)
-                logger.info("[RabbitMQ] replay session completed and cleaned thread_id=%s", self.thread_id)
+                logger.info("[MessageHandler] replay session completed and cleaned thread_id=%s", self.thread_id)
         except Exception:
             logger.exception("Error cleaning completed replay session for thread_id=%s", self.thread_id)
 
@@ -1102,7 +1116,7 @@ class GeneratorStreamingHelper:
 
                     if should_cleanup_now:
                         logger.info(
-                            "[RabbitMQ] orphan cleanup triggered thread_id=%s elapsed=%.1fs "
+                            "[MessageHandler] orphan cleanup triggered thread_id=%s elapsed=%.1fs "
                             "reason=%s done_event_seen=%s had_active_consumer=%s consumer_ever_seen=%s",
                             thread_id,
                             now - start_time,

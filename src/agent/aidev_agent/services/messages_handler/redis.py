@@ -7,6 +7,7 @@ import logging
 import threading
 import time
 import uuid
+import weakref
 from typing import Any, ClassVar, Optional
 
 import redis
@@ -16,12 +17,13 @@ from redis.exceptions import RedisError
 
 from .base import BaseMessageQueueHandler
 from .constants import EOD_CHUNK, EnvVarNames, QueueTTLConfig
+from .replay_buffer_mixin import ReplayBufferMixin
 
 logger = logging.getLogger(__name__)
 env = Env()
 
 
-class RedisMessageHandler(BaseMessageQueueHandler):
+class RedisMessageHandler(ReplayBufferMixin, BaseMessageQueueHandler):
     """使用 Redis Streams 保存会话事件并按游标增量回放。
 
     该实现仅依赖 Redis 6.2 的普通数据命令，不调用 ``INFO``、``CONFIG``、
@@ -30,7 +32,6 @@ class RedisMessageHandler(BaseMessageQueueHandler):
     """
 
     MIN_SERVER_VERSION: ClassVar[tuple[int, int, int]] = (6, 2, 0)
-    WAITAOF_MIN_SERVER_VERSION: ClassVar[tuple[int, int, int]] = (7, 2, 0)
     BUFFER_FLUSH_INTERVAL: ClassVar[float] = 0.5
     BUFFER_MAX_MESSAGES: ClassVar[int] = 100
     SSE_PUBLISH_CHUNK_MAX_BYTES: ClassVar[int] = 256 * 1024
@@ -100,12 +101,6 @@ class RedisMessageHandler(BaseMessageQueueHandler):
         except Exception:
             self._client.close()
             raise
-        self._supports_waitaof = self._server_version >= self.WAITAOF_MIN_SERVER_VERSION
-        self._waitaof_enabled = env.bool(EnvVarNames.REDIS_WAITAOF_ENABLED, True)
-        self._waitaof_local = env.int(EnvVarNames.REDIS_WAITAOF_LOCAL, 1)
-        self._waitaof_replicas = env.int(EnvVarNames.REDIS_WAITAOF_REPLICAS, 0)
-        self._waitaof_timeout_ms = env.int(EnvVarNames.REDIS_WAITAOF_TIMEOUT_MS, 2000)
-
         self._queue_ttl_seconds = max(1, QueueTTLConfig.QUEUE_EXPIRE_MS // 1000)
         self._producer_lock_ttl_ms = env.int(EnvVarNames.REDIS_PRODUCER_LOCK_TTL_SECONDS, 60) * 1000
         self._producer_lock_renew_interval = max(
@@ -120,7 +115,8 @@ class RedisMessageHandler(BaseMessageQueueHandler):
 
         self._message_buffer: dict[str, list[Any]] = {}
         self._buffer_lock = threading.Lock()
-        self._flush_locks: dict[str, threading.Lock] = {}
+        # flush 完成后不再永久持有每个历史 session 的锁，避免长生命周期 worker 随会话数持续增长。
+        self._flush_locks: weakref.WeakValueDictionary[str, threading.Lock] = weakref.WeakValueDictionary()
         self._flush_locks_guard = threading.Lock()
         self._producer_tokens: dict[str, bytes] = {}
         self._producer_last_renewed: dict[str, float] = {}
@@ -134,20 +130,11 @@ class RedisMessageHandler(BaseMessageQueueHandler):
         self._daemon_stop_event = threading.Event()
         self._start_daemon()
 
-        logger.info(
-            "Redis message handler initialized: server=%s waitaof_supported=%s waitaof_enabled=%s",
-            ".".join(map(str, self._server_version)),
-            self._supports_waitaof,
-            self._waitaof_enabled,
-        )
+        logger.info("Redis message handler initialized: server=%s", ".".join(map(str, self._server_version)))
 
     @property
     def server_version(self) -> tuple[int, int, int]:
         return self._server_version
-
-    @property
-    def supports_waitaof(self) -> bool:
-        return self._supports_waitaof
 
     @staticmethod
     def _parse_hello_response(response: Any) -> tuple[int, int, int]:
@@ -232,9 +219,6 @@ class RedisMessageHandler(BaseMessageQueueHandler):
     def _active_consumers_key(self, thread_id: str) -> str:
         return self._key(thread_id, "active_consumers")
 
-    def _cancel_request_key(self, thread_id: str) -> str:
-        return self._key(thread_id, "cancel_request")
-
     def _cancel_signal_key(self, thread_id: str) -> str:
         return self._key(thread_id, "cancel_signal")
 
@@ -243,9 +227,6 @@ class RedisMessageHandler(BaseMessageQueueHandler):
 
     def _stopped_key(self, thread_id: str) -> str:
         return self._key(thread_id, "stopped")
-
-    def _completed_key(self, thread_id: str) -> str:
-        return self._key(thread_id, "completed")
 
     def _replay_run_key(self, thread_id: str) -> str:
         return self._key(thread_id, "replay_run")
@@ -274,65 +255,19 @@ class RedisMessageHandler(BaseMessageQueueHandler):
     def _session_data_keys(self, thread_id: str) -> list[str]:
         """返回新 Run 启动时应清理的数据键。
 
-        取消请求和取消完成通知必须保留：stop 请求可能由另一个进程在
-        ``stream()`` 清理旧回放数据之前写入。它们有独立短 TTL，并通过
-        run_id 隔离，不会误取消后续 Run。
+        当前消费者和跨进程取消信号必须保留：consumer 在 ``clear()`` 之前
+        已完成注册，stop 请求也可能由另一个进程同时写入。它们由独立 TTL
+        和 run_id 负责回收、隔离。
         """
         return [
             self._stream_key(thread_id),
-            self._active_consumers_key(thread_id),
-            self._cancel_request_key(thread_id),
             self._stopped_key(thread_id),
-            self._completed_key(thread_id),
             self._replay_run_key(thread_id),
         ]
 
     def _get_flush_lock(self, thread_id: str) -> threading.Lock:
         with self._flush_locks_guard:
             return self._flush_locks.setdefault(thread_id, threading.Lock())
-
-    @classmethod
-    def _coalesce_sse_messages(cls, messages: list[Any]) -> list[Any]:
-        coalesced_messages: list[Any] = []
-        sse_parts: list[str] = []
-        sse_size = 0
-
-        def flush_sse_parts() -> None:
-            nonlocal sse_size
-            if sse_parts:
-                coalesced_messages.append("".join(sse_parts))
-                sse_parts.clear()
-                sse_size = 0
-
-        for message in messages:
-            if not isinstance(message, str) or not message.startswith("data: "):
-                flush_sse_parts()
-                coalesced_messages.append(message)
-                continue
-            message_size = len(message.encode("utf-8"))
-            if sse_parts and sse_size + message_size > cls.SSE_PUBLISH_CHUNK_MAX_BYTES:
-                flush_sse_parts()
-            if message_size > cls.SSE_PUBLISH_CHUNK_MAX_BYTES:
-                coalesced_messages.append(message)
-                continue
-            sse_parts.append(message)
-            sse_size += message_size
-        flush_sse_parts()
-        return coalesced_messages
-
-    @staticmethod
-    def _expand_sse_messages(messages: list[Any]) -> list[Any]:
-        expanded_messages: list[Any] = []
-        for message in messages:
-            if not isinstance(message, str) or not message.startswith("data: ") or "\n\ndata: " not in message:
-                expanded_messages.append(message)
-                continue
-            parts = message.split("\n\n")
-            if parts[-1] or any(not part.startswith("data: ") for part in parts[:-1]):
-                expanded_messages.append(message)
-                continue
-            expanded_messages.extend(f"{part}\n\n" for part in parts[:-1])
-        return expanded_messages
 
     @classmethod
     def _encode_cursor(cls, stream_id: bytes | str) -> int:
@@ -402,50 +337,6 @@ class RedisMessageHandler(BaseMessageQueueHandler):
             except RedisError:
                 logger.exception("Failed to renew Redis producer lock for thread_id=%s", thread_id)
 
-    def register_eod_commit_event(self, thread_id: str, event: threading.Event) -> None:
-        with self._eod_commit_events_lock:
-            self._eod_commit_events.setdefault(thread_id, set()).add(event)
-
-    def unregister_eod_commit_event(self, thread_id: str, event: threading.Event) -> None:
-        with self._eod_commit_events_lock:
-            events = self._eod_commit_events.get(thread_id)
-            if events is None:
-                return
-            events.discard(event)
-            if not events:
-                self._eod_commit_events.pop(thread_id, None)
-
-    def _notify_eod_committed(self, thread_id: str, messages: list[Any]) -> None:
-        if EOD_CHUNK not in messages:
-            return
-        with self._eod_commit_events_lock:
-            events = self._eod_commit_events.pop(thread_id, set())
-        for event in events:
-            event.set()
-
-    def _confirm_terminal_durability(self, thread_id: str) -> None:
-        if not self._waitaof_enabled or not self._supports_waitaof:
-            return
-        try:
-            persisted = self._client.execute_command(
-                "WAITAOF",
-                self._waitaof_local,
-                self._waitaof_replicas,
-                self._waitaof_timeout_ms,
-            )
-            local, replicas = (int(value) for value in persisted)
-            if local < self._waitaof_local or replicas < self._waitaof_replicas:
-                logger.warning(
-                    f"WAITAOF durability target not reached for thread_id={thread_id}: "
-                    "actual=(%d, %d) expected=(%d, %d)",
-                    local,
-                    replicas,
-                    self._waitaof_local,
-                    self._waitaof_replicas,
-                )
-        except (RedisError, TypeError, ValueError) as exc:
-            logger.warning("Optional WAITAOF failed for thread_id=%s: %s", thread_id, exc)
-
     def _flush_thread(self, thread_id: str) -> bool:
         flush_lock = self._get_flush_lock(thread_id)
         with flush_lock:
@@ -470,7 +361,6 @@ class RedisMessageHandler(BaseMessageQueueHandler):
                 raise
 
             if EOD_CHUNK in messages:
-                self._confirm_terminal_durability(thread_id)
                 logger.info(
                     "[EOD] Redis flush thread_id=%s logical=%d published=%d",
                     thread_id,
@@ -545,29 +435,21 @@ class RedisMessageHandler(BaseMessageQueueHandler):
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError("No message available within timeout")
 
-    def get(self, thread_id: str, timeout: Optional[float] = None) -> list[Any]:
-        raise NotImplementedError("RedisMessageHandler requires get_messages_since(thread_id, offset, timeout)")
-
     def has_pending_messages(self, thread_id: str) -> bool:
         with self._buffer_lock:
             if self._message_buffer.get(thread_id):
                 return True
         return self._client.xlen(self._stream_key(thread_id)) > 0
 
-    def restore_messages(self, thread_id: str) -> int:
-        return 0
-
     def mark_completed(self, thread_id: str) -> None:
         """标记完成并保留短暂 replay 窗口，避免首个消费者删除其他消费者的历史。"""
         with self._buffer_lock:
             self._message_buffer.pop(thread_id, None)
         pipeline = self._client.pipeline(transaction=True)
-        pipeline.set(self._completed_key(thread_id), b"1", ex=self._completed_stream_ttl_seconds)
         pipeline.expire(self._stream_key(thread_id), self._completed_stream_ttl_seconds)
         pipeline.expire(self._active_consumers_key(thread_id), self._completed_stream_ttl_seconds)
         pipeline.expire(self._replay_run_key(thread_id), self._completed_stream_ttl_seconds)
         pipeline.delete(
-            self._cancel_request_key(thread_id),
             self._cancel_signal_key(thread_id),
             self._cancelled_signal_key(thread_id),
             self._stopped_key(thread_id),
@@ -590,12 +472,6 @@ class RedisMessageHandler(BaseMessageQueueHandler):
         with self._buffer_lock:
             self._message_buffer.pop(thread_id, None)
         self._client.delete(*self._session_data_keys(thread_id))
-
-    def request_cancel(self, thread_id: str) -> None:
-        self._client.set(self._cancel_request_key(thread_id), b"1", nx=True, ex=30)
-
-    def is_cancel_requested(self, thread_id: str) -> bool:
-        return self._client.getdel(self._cancel_request_key(thread_id)) is not None
 
     def acquire_producer(self, thread_id: str) -> bool:
         token = uuid.uuid4().hex.encode()
@@ -657,9 +533,6 @@ class RedisMessageHandler(BaseMessageQueueHandler):
         pipeline.zcard(key)
         _, count = pipeline.execute()
         return count > 0
-
-    def get_dlq_messages(self, thread_id: str) -> list[Any]:
-        return []
 
     def get_cached_count(self, thread_id: str) -> int:
         return self._client.xlen(self._stream_key(thread_id))

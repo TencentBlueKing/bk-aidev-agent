@@ -2,7 +2,7 @@
 
 根据运行环境自动选择合适的消息处理器：
 - 单进程模式：使用 InMemoryQueueMessageHandler（内存队列，简单高效）
-- 多进程模式：使用 RabbitMQMessageHandler（支持跨进程通信、断点续传）
+- 多进程模式：使用 RabbitMQ 或 Redis Streams（支持跨进程通信、独立回放）
 """
 
 import logging
@@ -71,12 +71,13 @@ def _init_factory() -> SingletonFactory[str, BaseMessageQueueHandler]:
         "message_handler", defaults=default_handler
     )
 
-    # 注册所有可用的实现
-    factory.register(MessageHandlerType.INMEMORY.value, InMemoryQueueMessageHandler())
-    if MessageHandlerConfig.has_rabbitmq_config():
-        factory.register(MessageHandlerType.RABBITMQ.value, _get_rabbitmq_handler())
-    if MessageHandlerConfig.has_redis_config():
-        factory.register(MessageHandlerType.REDIS.value, _get_redis_handler())
+    # 只初始化选中的外部 backend，避免未使用的连接配置把进程启动与另一套中间件耦合。
+    in_memory_handler = (
+        default_handler if handler_type == MessageHandlerType.INMEMORY else InMemoryQueueMessageHandler()
+    )
+    factory.register(MessageHandlerType.INMEMORY.value, in_memory_handler)
+    if handler_type != MessageHandlerType.INMEMORY:
+        factory.register(handler_type.value, default_handler)
 
     return factory
 

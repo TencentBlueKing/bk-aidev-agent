@@ -60,7 +60,7 @@ def test_ensure_queue_does_not_declare_dead_letter_resources():
 def test_legacy_get_is_not_supported():
     handler = object.__new__(RabbitMQMessageHandler)
 
-    with pytest.raises(NotImplementedError, match="get_messages_since"):
+    with pytest.raises(NotImplementedError, match="competing-consumer"):
         handler.get("thread-id", timeout=1)
 
 
@@ -77,6 +77,28 @@ def test_eod_commit_event_is_notified_only_after_eod_publish():
     handler._notify_eod_committed("thread-id", [EOD_CHUNK])
     assert event.is_set()
     assert "thread-id" not in handler._eod_commit_events
+
+
+def test_cancel_signal_reuses_rolling_release_queue_without_redeclare():
+    handler = object.__new__(RabbitMQMessageHandler)
+    channel = MagicMock()
+    handler._with_channel = MagicMock(return_value=contextlib.nullcontext(channel))
+
+    assert handler.set_cancel_signal("thread-id", run_id="run-current")
+
+    channel.queue_declare.assert_called_once_with(queue="aidev_agent.cancel.thread-id", passive=True)
+    channel.basic_publish.assert_called_once()
+
+
+def test_cancel_signal_reads_legacy_unscoped_payload():
+    handler = object.__new__(RabbitMQMessageHandler)
+    channel = MagicMock()
+    method_frame = MagicMock(delivery_tag=1)
+    channel.basic_get.return_value = (method_frame, None, b"1")
+    handler._with_channel = MagicMock(return_value=contextlib.nullcontext(channel))
+
+    assert handler.check_cancel_signal("thread-id", run_id="run-current")
+    channel.basic_reject.assert_called_once_with(delivery_tag=1, requeue=True)
 
 
 def test_coalesce_sse_messages_preserves_mixed_order_and_eod():

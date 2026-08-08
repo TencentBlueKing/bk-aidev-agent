@@ -433,21 +433,24 @@ class MultiProcessMixin:
         Returns:
             True 表示成功设置取消信号
         """
+        import pika
+
+        cancel_queue = self._get_cancel_queue_name(thread_id)
+        payload = {"cancelled": True, "run_id": run_id, "ts": time.time()}
         try:
-            with self._with_channel() as channel:
-                cancel_queue = self._get_cancel_queue_name(thread_id)
-
-                # 声明取消信号队列
-                self._declare_signal_queue(channel, cancel_queue, self.CANCEL_SIGNAL_TTL_MS)
-
-                # 发送取消信号
-                self._publish_signal(
-                    channel,
-                    cancel_queue,
-                    {"cancelled": True, "run_id": run_id, "ts": time.time()},
-                )
-                logger.info("Cancel signal set for thread_id=%s run_id=%s", thread_id, run_id)
-                return True
+            try:
+                # 滚动发布期间可能仍有旧 worker 创建的同名队列；先复用，避免参数不一致关闭 channel。
+                with self._with_channel() as channel:
+                    channel.queue_declare(queue=cancel_queue, passive=True)
+                    self._publish_signal(channel, cancel_queue, payload)
+            except pika.exceptions.ChannelClosedByBroker as exc:
+                if exc.reply_code != 404:
+                    raise
+                with self._with_channel() as channel:
+                    self._declare_signal_queue(channel, cancel_queue, self.CANCEL_SIGNAL_TTL_MS)
+                    self._publish_signal(channel, cancel_queue, payload)
+            logger.info("Cancel signal set for thread_id=%s run_id=%s", thread_id, run_id)
+            return True
         except Exception as e:
             logger.error(f"Failed to set cancel signal for thread_id={thread_id}: {e}")
             return False
@@ -484,7 +487,12 @@ class MultiProcessMixin:
                 channel.basic_reject(delivery_tag=method_frame.delivery_tag, requeue=True)
 
                 try:
+                    # 兼容滚动发布中旧 request_cancel() 写入的 session 级信号。
+                    if body == b"1":
+                        return True
                     data = json.loads(body)
+                    if not isinstance(data, dict):
+                        return False
                     signal_run_id = data.get("run_id")
                     if run_id and signal_run_id and signal_run_id != run_id:
                         return False

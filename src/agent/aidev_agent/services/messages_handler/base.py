@@ -45,8 +45,8 @@ class RetryableHeartbeatTimeoutError(RuntimeError):
 class ConsumerManagementProtocol(Protocol):
     """消费者管理协议
 
-    定义消费者抢占管理的统一接口，SingleProcessMixin 和 MultiProcessMixin 都实现此协议。
-    使用 Protocol 而非 ABC 是因为 Mixin 类不应强制继承关系。
+    定义消费者登记的最小结构接口；竞争消费可以实现抢占语义，replay backend
+    可以实现多消费者并存。使用 Protocol 避免强制具体 Mixin 继承关系。
     """
 
     def acquire_consumer(self, thread_id: str) -> str:
@@ -69,29 +69,13 @@ class ConsumerManagementProtocol(Protocol):
 class BaseMessageQueueHandler(ABC):
     """消息队列处理器抽象基类
 
-    纯接口定义，不包含任何具体实现。
-    使用 thread_id 作为 key 来管理不同的消息队列。
+    核心契约只约束生产、生命周期和消费者登记；读取按能力分为两种模式：
 
-    消息队列接口：
-    - put(): 向主队列添加消息
-    - get(): 从主队列获取消息（消费后消息进入死信队列）
-    - has_pending_messages(): 检查主队列+死信队列是否有消息
-    - restore_messages(): 将死信队列的消息恢复到主队列（断点续传）
-    - mark_completed(): 标记流完成并清理所有队列
-    - clear(): 清空所有队列
-    - flush(): 立即推送缓冲区消息
+    - 旧竞争消费：``get()`` + ``restore_messages()``，目前仅 InMemory 使用；
+    - 非破坏性回放：``get_messages_since()`` + offset，RabbitMQ / Redis 使用。
 
-    消费者管理接口（由 ConsumerManagementMixin 提供默认实现）：
-    - acquire_consumer(): 注册新消费者，返回消费者 ID
-    - wait_for_previous_consumer(): 等待旧消费者退出
-    - check_consumer(): 检查当前消费者是否仍是活跃消费者
-    - release_consumer(): 释放消费者
-
-    消息流转：
-    1. 生产者 put() -> 主队列
-    2. 消费者 get() -> 消息从主队列移动到死信队列
-    3. 断点续传 restore_messages() -> 死信队列消息恢复到主队列
-    4. 流完成 mark_completed() -> 清空主队列和死信队列
+    后端通过 ``supports_replay_from_start()`` 声明读取能力。旧模式方法保留默认
+    实现用于兼容，但不再强迫 replay backend 提供无意义的占位实现。
     """
 
     @abstractmethod
@@ -103,28 +87,14 @@ class BaseMessageQueueHandler(ABC):
             message: 要添加的消息
         """
 
-    @abstractmethod
     def get(self, thread_id: str, timeout: Optional[float] = None) -> list[Any]:
-        """从指定 thread_id 的队列中获取消息
+        """竞争消费模式下读取消息；replay backend 应使用 get_messages_since。"""
 
-        消息被读取后会移动到死信队列，支持增量读取。
-
-        Args:
-            thread_id: 线程ID
-            timeout: 超时时间（秒）
-
-        Returns:
-            消息列表
-
-        Raises:
-            TimeoutError: 超时时抛出
-        """
+        raise NotImplementedError("get is only available for competing-consumer handlers")
 
     @abstractmethod
     def has_pending_messages(self, thread_id: str) -> bool:
-        """检查是否有未消费的消息（用于判断是否需要创建生产者）
-
-        检查主队列和死信队列是否有消息。
+        """检查是否已有可消费或可回放的消息（用于判断是否需要创建生产者）
 
         Args:
             thread_id: 线程ID
@@ -134,24 +104,13 @@ class BaseMessageQueueHandler(ABC):
             False 表示没有消息，需要创建生产者
         """
 
-    @abstractmethod
     def restore_messages(self, thread_id: str) -> int:
-        """将死信队列中的消息恢复到主队列（断点续传）
-
-        消费者重连时调用此方法，将之前消费过的消息恢复到主队列。
-
-        Args:
-            thread_id: 线程ID
-
-        Returns:
-            恢复的消息数量
-        """
+        """恢复竞争消费模式已读取的消息；replay backend 默认无需处理。"""
+        return 0
 
     @abstractmethod
     def mark_completed(self, thread_id: str) -> None:
-        """标记流已完成并清理所有队列
-
-        消费者在读取到结束标记时调用此方法，清空主队列和死信队列。
+        """标记流已完成，并按 backend 的 replay 窗口策略清理或设置过期时间。
 
         Args:
             thread_id: 线程ID
@@ -165,16 +124,16 @@ class BaseMessageQueueHandler(ABC):
             thread_id: 线程ID
         """
 
-    @abstractmethod
     def request_cancel(self, thread_id: str) -> None:
-        """请求取消指定 thread_id 的流（生产者会在下次轮询时退出并发送结束标记）。
+        """兼容旧调用：设置 session 级取消信号。
 
         幂等：多次调用等价于一次。
         """
+        self.set_cancel_signal(thread_id)
 
     def is_cancel_requested(self, thread_id: str) -> bool:
-        """检查是否已请求取消该 thread_id 的流。"""
-        return False
+        """兼容旧调用：非破坏性检查 session 级取消信号。"""
+        return self.check_cancel_signal(thread_id)
 
     @abstractmethod
     def flush(self, thread_id: str) -> None:
@@ -190,7 +149,7 @@ class BaseMessageQueueHandler(ABC):
     def acquire_consumer(self, thread_id: str) -> str:
         """注册新消费者，返回消费者 ID
 
-        同一 thread_id 同一时间只允许一个活跃消费者。
+        竞争消费 backend 可抢占旧消费者；replay backend 允许多个消费者并存。
 
         Args:
             thread_id: 线程ID
@@ -239,24 +198,15 @@ class BaseMessageQueueHandler(ABC):
         """
         return False
 
-    @abstractmethod
     def get_dlq_messages(self, thread_id: str) -> list[Any]:
-        """获取死信队列中的所有消息（不移除）
-
-        用于在流被取消时，获取已发送给前端但未回写数据库的完整消息内容。
-
-        Args:
-            thread_id: 线程ID
-
-        Returns:
-            死信队列中的消息列表（已发送给前端的消息）
-        """
+        """返回竞争消费模式的已读缓存；replay backend 不使用 DLQ。"""
+        return []
 
     # ================== 可选功能接口 ==================
     # 以下方法提供默认实现，子类可以选择性地覆盖以支持额外功能
 
     def get_total_count(self, thread_id: str) -> int:
-        """获取主队列和死信队列的总消息数量
+        """获取该会话当前缓存的逻辑消息总数。
 
         默认实现：子类应覆盖此方法。
 
@@ -269,7 +219,7 @@ class BaseMessageQueueHandler(ABC):
         return 0
 
     def is_empty(self, thread_id: str) -> bool:
-        """检查指定 thread_id 的队列是否为空（包括主队列和死信队列）
+        """检查指定 thread_id 是否没有缓存消息。
 
         Args:
             thread_id: 线程ID
@@ -282,7 +232,7 @@ class BaseMessageQueueHandler(ABC):
     def supports_replay_from_start(self) -> bool:
         """是否支持多个消费者从同一会话日志独立 replay。
 
-        默认沿用旧的主队列 + DLQ 竞争消费模型。
+        默认沿用旧竞争消费模型。
         """
         return False
 
@@ -375,15 +325,15 @@ class BaseMessageQueueHandler(ABC):
         """
 
     # ================== 跨进程取消信号接口 ==================
-    # 以下方法用于支持多进程环境下的取消信号传递（如 RabbitMQ）
-    # 默认实现返回 False/空操作，MultiProcessMixin 会覆盖这些方法
+    # 以下方法用于支持跨线程或跨进程取消信号传递。
+    # 默认实现返回 False/空操作，具体 backend 按需覆盖。
 
     def set_cancel_signal(self, thread_id: str, run_id: str | None = None) -> bool:
         """设置跨进程取消信号
 
         可以从任意进程调用，生产者/消费者会通过 check_cancel_signal() 检测到取消。
 
-        默认实现返回 False（不支持跨进程取消），MultiProcessMixin 会覆盖此方法。
+        默认实现返回 False（不支持共享取消信号）。
 
         Args:
             thread_id: 线程ID / session_code
@@ -399,7 +349,7 @@ class BaseMessageQueueHandler(ABC):
 
         用于生产者/消费者定期检查是否需要停止。
 
-        默认实现返回 False（不支持跨进程取消），MultiProcessMixin 会覆盖此方法。
+        默认实现返回 False（不支持共享取消信号）。
 
         Args:
             thread_id: 线程ID / session_code
@@ -413,7 +363,7 @@ class BaseMessageQueueHandler(ABC):
     def clear_cancel_signal(self, thread_id: str, run_id: str | None = None) -> None:
         """清除取消信号（在流结束后调用）
 
-        默认实现为空操作，MultiProcessMixin 会覆盖此方法。
+        默认实现为空操作。
 
         Args:
             thread_id: 线程ID / session_code
