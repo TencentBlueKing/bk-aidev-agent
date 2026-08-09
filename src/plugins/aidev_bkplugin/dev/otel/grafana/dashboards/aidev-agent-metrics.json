@@ -1,5 +1,6 @@
 {
   "annotations": {"list": []},
+  "description": "Agent 耗时构成、并发与 Token、SSE/Broker 压力及版本归因。Handler 过滤仅作用于消息链路面板。",
   "editable": false,
   "graphTooltip": 1,
   "id": null,
@@ -8,119 +9,188 @@
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"decimals": 0, "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 7, "w": 4, "x": 0, "y": 0},
-      "id": 11,
+      "gridPos": {"h": 6, "w": 4, "x": 0, "y": 0},
+      "id": 1,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "sum(aidev_session_active)", "legendFormat": "执行中", "range": true, "refId": "A"}],
+      "targets": [{"editorMode": "code", "expr": "sum(aidev_session_active{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"})", "legendFormat": "Agent 执行中", "range": true, "refId": "A"}],
       "title": "当前活跃 Agent 执行数",
       "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
-      "gridPos": {"h": 7, "w": 5, "x": 4, "y": 0},
-      "id": 1,
+      "fieldConfig": {"defaults": {"decimals": 0, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 4, "x": 4, "y": 0},
+      "id": 2,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "sum(rate({__name__=~\"gen_ai_invoke_agent_duration.*_count\"}[5m]))", "legendFormat": "Agent/s", "range": true, "refId": "A"}],
-      "title": "Agent 调用速率",
+      "targets": [{"editorMode": "code", "expr": "sum(gen_ai_client_operation_active{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\"})", "legendFormat": "LLM 执行中", "range": true, "refId": "A"}],
+      "title": "当前活跃 LLM 调用数",
       "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
-      "gridPos": {"h": 7, "w": 5, "x": 9, "y": 0},
-      "id": 2,
+      "gridPos": {"h": 6, "w": 4, "x": 8, "y": 0},
+      "id": 3,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"gen_ai_invoke_agent_duration.*_bucket\"}[5m])))", "legendFormat": "P95", "range": true, "refId": "A"}],
-      "title": "Agent 耗时 P95",
+      "targets": [{"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"gen_ai_invoke_agent_duration.*_bucket\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[5m])))", "legendFormat": "P95", "range": true, "refId": "A"}],
+      "title": "Agent 总耗时 P95",
       "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"decimals": 2, "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 7, "w": 5, "x": 14, "y": 0},
-      "id": 3,
+      "gridPos": {"h": 6, "w": 4, "x": 12, "y": 0},
+      "id": 4,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "sum(increase(gen_ai_invoke_agent_inference_calls_total[$__range])) / sum(increase(gen_ai_invoke_agent_duration_seconds_count[$__range]))", "legendFormat": "轮/调用", "range": true, "refId": "A"}],
+      "targets": [{"editorMode": "code", "expr": "sum(increase(gen_ai_invoke_agent_inference_calls_total{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[$__range])) / sum(increase(gen_ai_invoke_agent_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[$__range]))", "legendFormat": "轮/调用", "range": true, "refId": "A"}],
       "title": "平均智能体轮数",
       "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"decimals": 2, "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 7, "w": 5, "x": 19, "y": 0},
-      "id": 4,
+      "gridPos": {"h": 6, "w": 4, "x": 16, "y": 0},
+      "id": 5,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "sum(increase(gen_ai_invoke_agent_tool_calls_total[$__range])) / sum(increase(gen_ai_invoke_agent_duration_seconds_count[$__range]))", "legendFormat": "次/调用", "range": true, "refId": "A"}],
+      "targets": [{"editorMode": "code", "expr": "sum(increase(gen_ai_invoke_agent_tool_calls_total{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[$__range])) / sum(increase(gen_ai_invoke_agent_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[$__range]))", "legendFormat": "次/调用", "range": true, "refId": "A"}],
       "title": "平均工具调用次数",
       "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 4, "x": 20, "y": 0},
+      "id": 6,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "sum(rate({__name__=~\"gen_ai_invoke_agent_duration.*_count\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[5m]))", "legendFormat": "Agent/s", "range": true, "refId": "A"}],
+      "title": "Agent 调用速率",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "LLM、Tool、Agent 自身处理为每次 Agent 调用的累计平均耗时；子调用并行时不代表严格互斥的墙钟时间。",
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 7},
-      "id": 5,
-      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 6},
+      "id": 7,
+      "options": {"legend": {"calcs": ["mean", "lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
       "targets": [
-        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"gen_ai_client_operation_duration.*_bucket\"}[5m])))", "legendFormat": "LLM duration P95", "range": true, "refId": "A"},
-        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"gen_ai_client_operation_time_to_first_chunk.*_bucket\"}[5m])))", "legendFormat": "TTFT P95", "range": true, "refId": "B"}
+        {"editorMode": "code", "expr": "sum(rate(gen_ai_invoke_agent_duration_seconds_sum{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[5m])) / sum(rate(gen_ai_invoke_agent_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[5m]))", "legendFormat": "Agent 总耗时", "range": true, "refId": "A"},
+        {"editorMode": "code", "expr": "sum(rate(gen_ai_client_operation_duration_seconds_sum{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\"}[5m])) / sum(rate(gen_ai_invoke_agent_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[5m]))", "legendFormat": "LLM/Agent", "range": true, "refId": "B"},
+        {"editorMode": "code", "expr": "sum(rate(gen_ai_execute_tool_duration_seconds_sum{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[5m])) / sum(rate(gen_ai_invoke_agent_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[5m]))", "legendFormat": "Tool/Agent", "range": true, "refId": "C"},
+        {"editorMode": "code", "expr": "sum(rate(aidev_agent_processing_duration_seconds_sum{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[5m])) / sum(rate(aidev_agent_processing_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[5m]))", "legendFormat": "Agent 自身处理", "range": true, "refId": "D"}
       ],
-      "title": "模型耗时与首 Token",
+      "title": "Agent 总耗时与阶段分配",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 6},
+      "id": 8,
+      "options": {"legend": {"calcs": ["mean", "lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"gen_ai_client_operation_duration.*_bucket\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\"}[5m])))", "legendFormat": "LLM duration P95", "range": true, "refId": "A"},
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"gen_ai_client_operation_time_to_first_chunk.*_bucket\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\"}[5m])))", "legendFormat": "TTFT P95", "range": true, "refId": "B"},
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"gen_ai_execute_tool_duration.*_bucket\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[5m])))", "legendFormat": "Tool P95", "range": true, "refId": "C"}
+      ],
+      "title": "LLM、首 Token 与 Tool 耗时",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "在同一时间轴上对齐 Agent 并发、LLM 并发和 Token 速率，不把动态并发数写成高波动标签。",
+      "fieldConfig": {"defaults": {"decimals": 0, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 15},
+      "id": 9,
+      "options": {"legend": {"calcs": ["max", "lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"editorMode": "code", "expr": "sum(aidev_session_active{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"})", "legendFormat": "Agent 并发", "range": true, "refId": "A"},
+        {"editorMode": "code", "expr": "sum(gen_ai_client_operation_active{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\"})", "legendFormat": "LLM 并发", "range": true, "refId": "B"}
+      ],
+      "title": "Agent 与 LLM 并发",
       "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"unit": "tps"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 7},
-      "id": 6,
-      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
-      "targets": [{"editorMode": "code", "expr": "sum by (gen_ai_token_type) (rate({__name__=~\"gen_ai_client_token_usage.*_sum\"}[5m]))", "legendFormat": "{{gen_ai_token_type}}", "range": true, "refId": "A"}],
-      "title": "Token 使用速率",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 15},
+      "id": 10,
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "sum by (gen_ai_token_type) (rate({__name__=~\"gen_ai_client_token_usage.*_sum\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\",gen_ai_token_type=~\"${token_type:regex}\"}[5m]))", "legendFormat": "{{gen_ai_token_type}}", "range": true, "refId": "A"}],
+      "title": "LLM Token 使用速率",
       "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"unit": "eps"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 7},
-      "id": 7,
-      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
-      "targets": [{"editorMode": "code", "expr": "sum by (aidev_sse_event_type) (rate({__name__=~\"aidev_sse_event_count.*\"}[5m]))", "legendFormat": "{{aidev_sse_event_type}}", "range": true, "refId": "A"}],
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 15},
+      "id": 11,
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "sum by (aidev_sse_event_type) (rate({__name__=~\"aidev_sse_event_count.*_total\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",aidev_message_handler_type=~\"${handler_type:regex}\",aidev_sse_event_type=~\"${sse_event_type:regex}\"}[5m]))", "legendFormat": "{{aidev_sse_event_type}}", "range": true, "refId": "A"}],
       "title": "SSE 事件速率",
       "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 15},
-      "id": 8,
-      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 23},
+      "id": 12,
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
       "targets": [
-        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"aidev_sse_response_size.*_bucket\"}[5m])))", "legendFormat": "response P95", "range": true, "refId": "A"},
-        {"editorMode": "code", "expr": "sum(rate({__name__=~\"aidev_sse_event_bytes.*\"}[5m]))", "legendFormat": "bytes/s", "range": true, "refId": "B"}
+        {"editorMode": "code", "expr": "histogram_quantile(0.50, sum by (le) (rate({__name__=~\"aidev_sse_event_size.*_bucket\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",aidev_message_handler_type=~\"${handler_type:regex}\",aidev_sse_event_type=~\"${sse_event_type:regex}\"}[5m])))", "legendFormat": "SSE event P50", "range": true, "refId": "A"},
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"aidev_sse_event_size.*_bucket\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",aidev_message_handler_type=~\"${handler_type:regex}\",aidev_sse_event_type=~\"${sse_event_type:regex}\"}[5m])))", "legendFormat": "SSE event P95", "range": true, "refId": "B"},
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"aidev_sse_response_size.*_bucket\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",aidev_message_handler_type=~\"${handler_type:regex}\"}[5m])))", "legendFormat": "SSE response P95", "range": true, "refId": "C"}
       ],
-      "title": "SSE 响应大小",
+      "title": "SSE 事件与响应大小",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "逻辑事件/批次来自合并前事件数；物理写入/秒是合并后实际提交到 handler/broker 的消息数。",
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 23},
+      "id": 13,
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"editorMode": "code", "expr": "sum(rate({__name__=~\"aidev_message_publish_count.*_total\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",aidev_message_handler_type=~\"${handler_type:regex}\"}[5m]))", "legendFormat": "物理写入/秒", "range": true, "refId": "A"},
+        {"editorMode": "code", "expr": "sum(rate({__name__=~\"aidev_message_publish_event_count.*_sum\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",aidev_message_handler_type=~\"${handler_type:regex}\"}[5m])) / sum(rate({__name__=~\"aidev_message_publish_event_count.*_count\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",aidev_message_handler_type=~\"${handler_type:regex}\"}[5m]))", "legendFormat": "逻辑事件/批次", "range": true, "refId": "B"}
+      ],
+      "title": "Broker 写入压力与合并效果",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 23},
+      "id": 14,
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"editorMode": "code", "expr": "histogram_quantile(0.50, sum by (le) (rate({__name__=~\"aidev_message_publish_size.*_bucket\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",aidev_message_handler_type=~\"${handler_type:regex}\"}[5m])))", "legendFormat": "Broker message P50", "range": true, "refId": "A"},
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"aidev_message_publish_size.*_bucket\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",aidev_message_handler_type=~\"${handler_type:regex}\"}[5m])))", "legendFormat": "Broker message P95", "range": true, "refId": "B"}
+      ],
+      "title": "Broker 消息大小",
       "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 15},
-      "id": 9,
-      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 31},
+      "id": 15,
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
       "targets": [
-        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"gen_ai_execute_tool_duration.*_bucket\"}[5m])))", "legendFormat": "Tool P95", "range": true, "refId": "A"},
-        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"aidev_sse_time_to_first_event.*_bucket\"}[5m])))", "legendFormat": "SSE first event P95", "range": true, "refId": "B"}
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le, aidev_message_handler_type) (rate({__name__=~\"aidev_message_publish_duration.*_bucket\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",aidev_message_handler_type=~\"${handler_type:regex}\"}[5m])))", "legendFormat": "{{aidev_message_handler_type}} P95", "range": true, "refId": "A"},
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"aidev_sse_time_to_first_event.*_bucket\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",aidev_message_handler_type=~\"${handler_type:regex}\"}[5m])))", "legendFormat": "SSE first event P95", "range": true, "refId": "B"}
       ],
-      "title": "Tool 与 SSE 首事件耗时",
+      "title": "Handler 写入与 SSE 首事件耗时",
       "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 15},
-      "id": 10,
-      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
-      "targets": [{"editorMode": "code", "expr": "sum by (error_type) (rate({__name__=~\"gen_ai_.*duration.*_count\", error_type!~\"\"}[5m]))", "legendFormat": "{{error_type}}", "range": true, "refId": "A"}],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 31},
+      "id": 16,
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "sum by (error_type) (rate({__name__=~\"(gen_ai|aidev)_.*duration.*_count\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",error_type!~\"\"}[5m]))", "legendFormat": "{{error_type}}", "range": true, "refId": "A"}],
       "title": "错误速率（error.type）",
       "type": "timeseries"
     }
@@ -128,11 +198,20 @@
   "refresh": "5s",
   "schemaVersion": 41,
   "tags": ["aidev", "agent", "opentelemetry"],
-  "templating": {"list": []},
+  "templating": {
+    "list": [
+      {"allValue": ".*", "current": {"selected": true, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "definition": "label_values({__name__=~\"gen_ai_invoke_agent_duration.*_count\"}, agent_info_code)", "includeAll": true, "label": "Agent Code", "multi": true, "name": "agent_code", "options": [], "query": {"query": "label_values({__name__=~\"gen_ai_invoke_agent_duration.*_count\"}, agent_info_code)", "refId": "Variable-AgentCode"}, "refresh": 1, "regex": "", "sort": 1, "type": "query"},
+      {"allValue": ".*", "current": {"selected": true, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "definition": "label_values({__name__=~\"gen_ai_invoke_agent_duration.*_count\",agent_info_code=~\"${agent_code:regex}\"}, agent_info_sdk_version)", "includeAll": true, "label": "Agent Version", "multi": true, "name": "agent_version", "options": [], "query": {"query": "label_values({__name__=~\"gen_ai_invoke_agent_duration.*_count\",agent_info_code=~\"${agent_code:regex}\"}, agent_info_sdk_version)", "refId": "Variable-AgentVersion"}, "refresh": 1, "regex": "", "sort": 1, "type": "query"},
+      {"allValue": ".*", "current": {"selected": true, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "definition": "label_values({__name__=~\"gen_ai_client_operation_duration.*_count\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}, gen_ai_request_model)", "includeAll": true, "label": "Request Model", "multi": true, "name": "request_model", "options": [], "query": {"query": "label_values({__name__=~\"gen_ai_client_operation_duration.*_count\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}, gen_ai_request_model)", "refId": "Variable-RequestModel"}, "refresh": 1, "regex": "", "sort": 1, "type": "query"},
+      {"allValue": ".*", "current": {"selected": true, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "definition": "label_values({__name__=~\"aidev_message_publish_count.*_total\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}, aidev_message_handler_type)", "includeAll": true, "label": "Message Handler", "multi": true, "name": "handler_type", "options": [], "query": {"query": "label_values({__name__=~\"aidev_message_publish_count.*_total\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}, aidev_message_handler_type)", "refId": "Variable-HandlerType"}, "refresh": 1, "regex": "", "sort": 1, "type": "query"},
+      {"allValue": ".*", "current": {"selected": true, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "definition": "label_values({__name__=~\"gen_ai_client_token_usage.*_count\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\"}, gen_ai_token_type)", "includeAll": true, "label": "Token Type", "multi": true, "name": "token_type", "options": [], "query": {"query": "label_values({__name__=~\"gen_ai_client_token_usage.*_count\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\"}, gen_ai_token_type)", "refId": "Variable-TokenType"}, "refresh": 1, "regex": "", "sort": 1, "type": "query"},
+      {"allValue": ".*", "current": {"selected": true, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "definition": "label_values({__name__=~\"aidev_sse_event_count.*_total\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",aidev_message_handler_type=~\"${handler_type:regex}\"}, aidev_sse_event_type)", "includeAll": true, "label": "SSE Event Type", "multi": true, "name": "sse_event_type", "options": [], "query": {"query": "label_values({__name__=~\"aidev_sse_event_count.*_total\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",aidev_message_handler_type=~\"${handler_type:regex}\"}, aidev_sse_event_type)", "refId": "Variable-SSEEventType"}, "refresh": 1, "regex": "", "sort": 1, "type": "query"}
+    ]
+  },
   "time": {"from": "now-15m", "to": "now"},
   "timepicker": {},
   "timezone": "browser",
   "title": "AIDev Agent Metrics",
   "uid": "aidev-agent-metrics",
-  "version": 1
+  "version": 2
 }

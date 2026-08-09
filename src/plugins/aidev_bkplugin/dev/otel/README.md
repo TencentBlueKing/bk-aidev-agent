@@ -33,6 +33,19 @@ PYTHONPATH=../../agent uv run --no-sync python dev/otel/mock_agent_metrics.py
 历史 session。平均智能体轮数和平均工具调用次数按 Grafana 当前选择的时间范围，
 使用该范围内的累计增量计算；范围内没有已完成调用时显示 `No data`，不显示伪造的 0。
 
+仪表盘提供以下多选过滤器，`All` 使用正则 `.*`：
+
+- `Agent Code`、`Agent Version`：作用于全部面板；
+- `Request Model`：作用于 LLM 耗时、并发和 Token 面板；
+- `Message Handler`：作用于 SSE 与消息发布面板，值为实际生效的 handler；
+- `Token Type`：区分 `input`、`output`、`cache_creation`、`cache_read`；
+- `SSE Event Type`：按 SSE 协议事件类型过滤。
+
+“Agent 总耗时与阶段分配”展示 Agent 总耗时以及每次调用累计的 LLM、Tool、Agent
+自身处理耗时。子调用并行时这些阶段不是严格互斥的墙钟时间，单次调用的精确分配应查看
+Trace。“Broker 写入压力与合并效果”区分合并前逻辑事件数和合并后物理写入数，并按
+`aidev.message.handler.type` 展示实际使用的 `inmemory`、`rabbitmq` 或后续 handler。
+
 指标身份维度包含 `agent.info.code`、`agent.info.name` 和
 `agent.info.sdk_version`；不包含固定值 `agent.info.type`。Agent 版本由 bkplugin
 从平台下发并解码后的 `agent_info.agent_sdk_version` 获取，缺失时使用 `unknown`。
@@ -51,6 +64,8 @@ Prometheus exporter 的原始 exposition 文本可通过以下命令查看：
 ```bash
 curl http://localhost:8889/metrics
 curl 'http://localhost:9090/api/v1/query?query=aidev_session_active'
+curl 'http://localhost:9090/api/v1/query?query=gen_ai_client_operation_active'
+curl 'http://localhost:9090/api/v1/query?query=aidev_message_publish_count_total'
 ```
 
 本地 Collector 已开启 `resource_to_telemetry_conversion`，因此 OTLP resource

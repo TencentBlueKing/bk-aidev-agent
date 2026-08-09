@@ -219,6 +219,21 @@ class TestBkAidevAgentCallbackHandler:
         recorder.record_active_session.assert_called_with(-1, handler._metric_agent_attributes)
         recorder.record_agent.assert_called_once()
 
+    def test_active_llm_is_decremented_with_the_same_dimensions(self, tracer_and_exporter):
+        tracer, _ = tracer_and_exporter
+        recorder = MagicMock()
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, metric_recorder=recorder)
+        run_id = uuid4()
+
+        asyncio.run(handler.on_llm_start(serialized={"name": "model-a"}, prompts=["hello"], run_id=run_id))
+        asyncio.run(handler.on_llm_error(RuntimeError("boom"), run_id=run_id))
+
+        assert recorder.record_active_llm.call_count == 2
+        start_call, end_call = recorder.record_active_llm.call_args_list
+        assert start_call.args[0] == 1
+        assert end_call.args[0] == -1
+        assert start_call.args[1] == end_call.args[1]
+
     def test_llm_generate_span_attributes(self, tracer_and_exporter):
         """测试 llm.generate span 包含 llm.input 和 llm.output 属性"""
         tracer, exporter = tracer_and_exporter

@@ -59,7 +59,7 @@ def test_extract_token_usage_preserves_cache_breakdown_and_normalizes_prompt_tok
     }
 
 
-def test_token_metric_uses_only_input_output_type_and_sums_cached_input():
+def test_token_metric_preserves_input_output_and_cache_types():
     meter = FakeMeter()
     recorder = AgentMetrics(meter)
     attrs = {
@@ -81,10 +81,12 @@ def test_token_metric_uses_only_input_output_type_and_sums_cached_input():
     )
 
     calls = meter.instruments["gen_ai.client.token.usage"].calls
-    assert calls[0][0] == 120
-    assert calls[0][1]["gen_ai.token.type"] == "input"
-    assert calls[1][0] == 48
-    assert calls[1][1]["gen_ai.token.type"] == "output"
+    assert [(value, call_attrs["gen_ai.token.type"]) for value, call_attrs in calls] == [
+        (96, "input"),
+        (48, "output"),
+        (8, "cache_creation"),
+        (16, "cache_read"),
+    ]
     assert all("aidev.token.cache.type" not in call_attrs for _, call_attrs in calls)
 
 
@@ -111,12 +113,13 @@ def test_error_type_is_added_only_to_duration_metric():
     recorder = AgentMetrics(meter)
     attrs = recorder.agent_attributes("ai-demo", "演示智能体")
 
-    recorder.record_agent(1.2, 2, 1, attrs, error=RuntimeError("boom"))
+    recorder.record_agent(1.2, 2, 1, attrs, child_duration=0.7, error=RuntimeError("boom"))
 
     duration_attrs = meter.instruments["gen_ai.invoke_agent.duration"].calls[0][1]
     assert duration_attrs["error.type"] == "RuntimeError"
     assert "error.type" not in meter.instruments["gen_ai.invoke_agent.inference_calls"].calls[0][1]
     assert "agent.session.session_code" not in duration_attrs
+    assert meter.instruments["aidev.agent.processing.duration"].calls[0][0] == 0.5
 
 
 def test_active_session_metric_is_symmetric_and_low_cardinality():
@@ -130,6 +133,17 @@ def test_active_session_metric_is_symmetric_and_low_cardinality():
     assert meter.instruments["aidev.session.active"].calls == [(1, attrs), (-1, attrs)]
     assert "agent.session.session_code" not in attrs
     assert "agent.info.type" not in attrs
+
+
+def test_active_llm_metric_is_symmetric():
+    meter = FakeMeter()
+    recorder = AgentMetrics(meter)
+    attrs = {**recorder.agent_attributes("ai-demo", "演示智能体"), "gen_ai.request.model": "model-a"}
+
+    recorder.record_active_llm(1, attrs)
+    recorder.record_active_llm(-1, attrs)
+
+    assert meter.instruments["gen_ai.client.operation.active"].calls == [(1, attrs), (-1, attrs)]
 
 
 def test_process_metric_gate_disables_sse_instrumentation():
@@ -152,3 +166,26 @@ def test_sse_metrics_include_configured_agent_code_dimension():
     response_attrs = meter.instruments["aidev.sse.response.size"].calls[0][1]
     assert event_attrs["agent.info.code"] == "ai-demo"
     assert response_attrs["agent.info.code"] == "ai-demo"
+    assert meter.instruments["aidev.sse.event.size"].calls[0][0] == 128
+
+
+def test_message_publish_metrics_include_actual_handler_without_session_labels():
+    meter = FakeMeter()
+    recorder = AgentMetrics(meter)
+    configure_metric_identity("ai-demo", "演示智能体")
+
+    recorder.record_message_publish(
+        handler_type="rabbitmq",
+        messaging_system="rabbitmq",
+        event_count=6,
+        message_sizes=[128, 256],
+        duration=0.02,
+    )
+
+    count_value, attrs = meter.instruments["aidev.message.publish.count"].calls[0]
+    assert count_value == 2
+    assert attrs["aidev.message.handler.type"] == "rabbitmq"
+    assert attrs["messaging.system"] == "rabbitmq"
+    assert "agent.session.session_code" not in attrs
+    assert meter.instruments["aidev.message.publish.event_count"].calls[0][0] == 6
+    assert [value for value, _ in meter.instruments["aidev.message.publish.size"].calls] == [128, 256]

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 pytest.importorskip("opentelemetry.sdk.metrics")
@@ -68,3 +71,28 @@ def test_metric_resource_uses_agent_sdk_version_without_agent_type():
 
     assert attributes["agent.info.sdk_version"] == "2.2.3"
     assert "agent.info.type" not in attributes
+
+
+def test_local_dashboard_covers_required_filters_and_metric_groups():
+    dashboard_path = Path(__file__).resolve().parents[2] / "dev/otel/grafana/dashboards/aidev-agent-metrics.json"
+    dashboard = json.loads(dashboard_path.read_text())
+    variables = {item["name"] for item in dashboard["templating"]["list"]}
+    panel_queries = "\n".join(target["expr"] for panel in dashboard["panels"] for target in panel.get("targets", []))
+
+    assert variables == {
+        "agent_code",
+        "agent_version",
+        "request_model",
+        "handler_type",
+        "token_type",
+        "sse_event_type",
+    }
+    for metric in (
+        "aidev_agent_processing_duration",
+        "gen_ai_client_operation_active",
+        "gen_ai_client_token_usage",
+        "aidev_sse_event_size",
+        "aidev_message_publish_count",
+        "aidev_message_publish_size",
+    ):
+        assert metric in panel_queries

@@ -319,9 +319,12 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         self._metric_agent_attributes = AgentMetrics.agent_attributes(agent_code, agent_name)
         self._agent_started_at: float | None = None
         self._llm_started_at: Dict[UUID, float] = {}
+        self._llm_active_attributes: Dict[UUID, Dict[str, str]] = {}
         self._llm_first_chunk_seen: set[UUID] = set()
         self._tool_started_at: Dict[UUID, float] = {}
         self._tool_metric_attributes: Dict[UUID, Dict[str, str]] = {}
+        self._llm_duration_total = 0.0
+        self._tool_duration_total = 0.0
 
         # Trace Context 传播
         self.parent_trace_context = parent_trace_context
@@ -366,6 +369,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
                             inference_calls=self.inference_call_counter,
                             tool_calls=self.tool_call_counter,
                             attributes=self._metric_agent_attributes,
+                            child_duration=self._llm_duration_total + self._tool_duration_total,
                             error=error,
                         )
                     finally:
@@ -828,6 +832,9 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         if self._metrics is not None:
             self.inference_call_counter += 1
             self._llm_started_at[run_id] = time.monotonic()
+            active_attributes = self._llm_metric_attributes(run_id)
+            self._llm_active_attributes[run_id] = active_attributes
+            self._metrics.record_active_llm(1, active_attributes)
 
     @dont_throw
     async def on_llm_start(
@@ -862,6 +869,9 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         if self._metrics is not None:
             self.inference_call_counter += 1
             self._llm_started_at[run_id] = time.monotonic()
+            active_attributes = self._llm_metric_attributes(run_id)
+            self._llm_active_attributes[run_id] = active_attributes
+            self._metrics.record_active_llm(1, active_attributes)
 
     @dont_throw
     async def on_llm_new_token(
@@ -919,11 +929,18 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             _set_span_attribute(span, "gen_ai.usage.total_tokens", usage["total_tokens"])
         started_at = self._llm_started_at.pop(run_id, None)
         if self._metrics is not None and started_at is not None:
-            self._metrics.record_llm(
-                duration=time.monotonic() - started_at,
-                attributes=self._llm_metric_attributes(run_id, model_name),
-                usage=usage,
-            )
+            duration = time.monotonic() - started_at
+            self._llm_duration_total += duration
+            try:
+                self._metrics.record_llm(
+                    duration=duration,
+                    attributes=self._llm_metric_attributes(run_id, model_name),
+                    usage=usage,
+                )
+            finally:
+                active_attributes = self._llm_active_attributes.pop(run_id, None)
+                if active_attributes is not None:
+                    self._metrics.record_active_llm(-1, active_attributes)
         self._llm_first_chunk_seen.discard(run_id)
         # 设置状态为成功
         span.set_status(Status(StatusCode.OK))
@@ -941,11 +958,18 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         """LLM 调用出错 - 标记 LLM Span 为错误"""
         started_at = self._llm_started_at.pop(run_id, None)
         if self._metrics is not None and started_at is not None:
-            self._metrics.record_llm(
-                duration=time.monotonic() - started_at,
-                attributes=self._llm_metric_attributes(run_id),
-                error=error,
-            )
+            duration = time.monotonic() - started_at
+            self._llm_duration_total += duration
+            try:
+                self._metrics.record_llm(
+                    duration=duration,
+                    attributes=self._llm_metric_attributes(run_id),
+                    error=error,
+                )
+            finally:
+                active_attributes = self._llm_active_attributes.pop(run_id, None)
+                if active_attributes is not None:
+                    self._metrics.record_active_llm(-1, active_attributes)
         self._llm_first_chunk_seen.discard(run_id)
         self._handle_error(error, run_id, parent_run_id, **kwargs)
 
@@ -1004,7 +1028,9 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         started_at = self._tool_started_at.pop(run_id, None)
         metric_attributes = self._tool_metric_attributes.pop(run_id, None)
         if self._metrics is not None and started_at is not None and metric_attributes is not None:
-            self._metrics.record_tool(time.monotonic() - started_at, metric_attributes)
+            duration = time.monotonic() - started_at
+            self._tool_duration_total += duration
+            self._metrics.record_tool(duration, metric_attributes)
         span.set_status(Status(StatusCode.OK))
         self._end_span(span, run_id)
 
@@ -1026,7 +1052,9 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         started_at = self._tool_started_at.pop(run_id, None)
         metric_attributes = self._tool_metric_attributes.pop(run_id, None)
         if self._metrics is not None and started_at is not None and metric_attributes is not None:
-            self._metrics.record_tool(time.monotonic() - started_at, metric_attributes, error=error)
+            duration = time.monotonic() - started_at
+            self._tool_duration_total += duration
+            self._metrics.record_tool(duration, metric_attributes, error=error)
         # 使用统一的错误处理
         self._handle_error(error, run_id, parent_run_id, **kwargs)
 

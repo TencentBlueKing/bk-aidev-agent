@@ -55,6 +55,25 @@ def _get_sse_event_type(chunk: Any) -> str:
     return str(data.get("type") or data.get("event") or "unknown")
 
 
+def _get_message_handler_metric_attributes(handler: BaseMessageQueueHandler) -> dict[str, str]:
+    """Return the actual handler implementation without queue/session identifiers."""
+    class_name = type(handler).__name__.lower()
+    if "rabbitmqstream" in class_name or "rabbitmq_stream" in class_name:
+        handler_type, messaging_system = "rabbitmq_stream", "rabbitmq"
+    elif "rabbitmq" in class_name:
+        handler_type, messaging_system = "rabbitmq", "rabbitmq"
+    elif "redis" in class_name:
+        handler_type, messaging_system = "redis", "redis"
+    elif "inmemory" in class_name or "in_memory" in class_name:
+        handler_type, messaging_system = "inmemory", "in_memory"
+    else:
+        handler_type, messaging_system = "unknown", "unknown"
+    return {
+        "aidev.message.handler.type": handler_type,
+        "messaging.system": messaging_system,
+    }
+
+
 class GeneratorStreamingHelper:
     """生成器流式处理辅助类
 
@@ -1209,6 +1228,7 @@ class GeneratorStreamingHelper:
         """
         _producer_start = time.monotonic()
         metric_recorder = get_enabled_agent_metrics() if get_enabled_agent_metrics is not None else None
+        metric_message_attributes = _get_message_handler_metric_attributes(self.message_handler)
         metric_response_size = 0
         metric_first_event_seen = False
         logger.info(f"[PRODUCER] start thread_id={self.thread_id} thread={threading.current_thread().name}")
@@ -1312,9 +1332,11 @@ class GeneratorStreamingHelper:
                         len(chunk.encode("utf-8")) if isinstance(chunk, str) else len(str(chunk).encode("utf-8"))
                     )
                     metric_response_size += chunk_size
-                    metric_recorder.record_sse_event(chunk_size, _get_sse_event_type(chunk))
+                    metric_recorder.record_sse_event(chunk_size, _get_sse_event_type(chunk), metric_message_attributes)
                     if not metric_first_event_seen:
-                        metric_recorder.record_sse_first_event(time.monotonic() - _producer_start)
+                        metric_recorder.record_sse_first_event(
+                            time.monotonic() - _producer_start, metric_message_attributes
+                        )
                         metric_first_event_seen = True
 
                 current_time = time.time()
@@ -1375,7 +1397,7 @@ class GeneratorStreamingHelper:
                     )
         finally:
             if metric_recorder is not None:
-                metric_recorder.record_sse_response(metric_response_size)
+                metric_recorder.record_sse_response(metric_response_size, metric_message_attributes)
             logger.info(
                 f"[PRODUCER] finally enter thread_id={self.thread_id} "
                 f"producer_error={producer_error} done_event_seen={done_event_seen} "

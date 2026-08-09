@@ -4,7 +4,9 @@ import contextlib
 import json
 import threading
 import time
+from unittest.mock import MagicMock
 
+import aidev_agent.services.messages_handler.in_memory as in_memory_module
 import aidev_agent.services.messages_handler.streaming_helper as streaming_helper_module
 import pytest
 from ag_ui.core import EventType
@@ -357,6 +359,19 @@ class TestInMemoryQueueMessageHandler:
         messages = handler.get(thread_id, timeout=1.0)
         assert len(messages) == 3
         assert messages == ["message1", "message2", "message3"]
+
+    def test_put_records_actual_handler_metrics(self, handler, monkeypatch):
+        metric_recorder = MagicMock()
+        monkeypatch.setattr(in_memory_module, "get_enabled_agent_metrics", lambda: metric_recorder)
+
+        handler.put("metric-thread", "message")
+
+        metric_recorder.record_message_publish.assert_called_once()
+        call = metric_recorder.record_message_publish.call_args.kwargs
+        assert call["handler_type"] == "inmemory"
+        assert call["messaging_system"] == "in_memory"
+        assert call["event_count"] == 1
+        assert call["message_sizes"][0] > 0
 
     def test_get_timeout(self, handler):
         """测试 get 超时"""

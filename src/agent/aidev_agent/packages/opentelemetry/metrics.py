@@ -101,6 +101,11 @@ class AgentMetrics:
         self.agent_duration = meter.create_histogram(
             "gen_ai.invoke_agent.duration", unit="s", description="Agent invocation duration"
         )
+        self.agent_processing_duration = meter.create_histogram(
+            "aidev.agent.processing.duration",
+            unit="s",
+            description="Agent invocation duration excluding recorded LLM and tool child operations",
+        )
         self.agent_inference_calls = meter.create_counter(
             "gen_ai.invoke_agent.inference_calls", unit="{call}", description="LLM calls per agent invocation"
         )
@@ -114,6 +119,11 @@ class AgentMetrics:
         )
         self.llm_duration = meter.create_histogram(
             "gen_ai.client.operation.duration", unit="s", description="LLM operation duration"
+        )
+        self.active_llm_operations = meter.create_up_down_counter(
+            "gen_ai.client.operation.active",
+            unit="{operation}",
+            description="LLM operations currently executing",
         )
         self.llm_time_to_first_chunk = meter.create_histogram(
             "gen_ai.client.operation.time_to_first_chunk", unit="s", description="LLM time to first stream chunk"
@@ -130,11 +140,31 @@ class AgentMetrics:
         self.sse_event_bytes = meter.create_counter(
             "aidev.sse.event.bytes", unit="By", description="Produced SSE event bytes"
         )
+        self.sse_event_size = meter.create_histogram(
+            "aidev.sse.event.size", unit="By", description="Produced SSE event size"
+        )
         self.sse_response_size = meter.create_histogram(
             "aidev.sse.response.size", unit="By", description="Total SSE response bytes"
         )
         self.sse_time_to_first_event = meter.create_histogram(
             "aidev.sse.time_to_first_event", unit="s", description="Time to first produced SSE event"
+        )
+        self.message_publish_count = meter.create_counter(
+            "aidev.message.publish.count", unit="{message}", description="Messages submitted to the configured handler"
+        )
+        self.message_publish_event_count = meter.create_histogram(
+            "aidev.message.publish.event_count",
+            unit="{event}",
+            description="Logical events included in one handler publish batch",
+        )
+        self.message_publish_size = meter.create_histogram(
+            "aidev.message.publish.size", unit="By", description="Serialized handler message size"
+        )
+        self.message_publish_duration = meter.create_histogram(
+            "aidev.message.publish.duration", unit="s", description="Handler publish batch duration"
+        )
+        self.message_publish_errors = meter.create_counter(
+            "aidev.message.publish.errors", unit="{error}", description="Handler publish batch errors"
         )
 
     @staticmethod
@@ -150,18 +180,24 @@ class AgentMetrics:
         inference_calls: int,
         tool_calls: int,
         attributes: dict[str, str],
+        child_duration: float = 0,
         error: BaseException | None = None,
     ) -> None:
         attrs = dict(attributes)
         if error is not None:
             attrs["error.type"] = type(error).__name__
         self.agent_duration.record(duration, attrs)
+        self.agent_processing_duration.record(max(0, duration - child_duration), attrs)
         self.agent_inference_calls.add(inference_calls, attributes)
         self.agent_tool_calls.add(tool_calls, attributes)
 
     def record_active_session(self, delta: int, attributes: dict[str, str]) -> None:
         """Adjust the number of Agent runs that are currently executing."""
         self.active_sessions.add(delta, attributes)
+
+    def record_active_llm(self, delta: int, attributes: dict[str, str]) -> None:
+        """Adjust the number of LLM operations currently executing."""
+        self.active_llm_operations.add(delta, attributes)
 
     def record_llm(
         self,
@@ -175,11 +211,14 @@ class AgentMetrics:
             attrs["error.type"] = type(error).__name__
         self.llm_duration.record(duration, attrs)
         if usage:
-            input_tokens = (
-                usage["input_tokens"] + usage["cache_creation_input_tokens"] + usage["cache_read_input_tokens"]
-            )
-            self.token_usage.record(input_tokens, {**attributes, "gen_ai.token.type": "input"})
-            self.token_usage.record(usage["output_tokens"], {**attributes, "gen_ai.token.type": "output"})
+            token_types = {
+                "input": usage["input_tokens"],
+                "output": usage["output_tokens"],
+                "cache_creation": usage["cache_creation_input_tokens"],
+                "cache_read": usage["cache_read_input_tokens"],
+            }
+            for token_type, value in token_types.items():
+                self.token_usage.record(value, {**attributes, "gen_ai.token.type": token_type})
 
     def record_first_llm_chunk(self, duration: float, attributes: dict[str, str]) -> None:
         self.llm_time_to_first_chunk.record(duration, attributes)
@@ -195,16 +234,49 @@ class AgentMetrics:
             attrs["error.type"] = type(error).__name__
         self.tool_duration.record(duration, attrs)
 
-    def record_sse_event(self, size: int, event_type: str) -> None:
-        attrs = {**_metric_identity, "aidev.sse.event.type": event_type or "unknown"}
+    def record_sse_event(self, size: int, event_type: str, message_attributes: dict[str, str] | None = None) -> None:
+        attrs = {
+            **_metric_identity,
+            **(message_attributes or {}),
+            "aidev.sse.event.type": event_type or "unknown",
+        }
         self.sse_event_count.add(1, attrs)
         self.sse_event_bytes.add(size, attrs)
+        self.sse_event_size.record(size, attrs)
 
-    def record_sse_first_event(self, duration: float) -> None:
-        self.sse_time_to_first_event.record(duration, _metric_identity)
+    def record_sse_first_event(self, duration: float, message_attributes: dict[str, str] | None = None) -> None:
+        self.sse_time_to_first_event.record(duration, {**_metric_identity, **(message_attributes or {})})
 
-    def record_sse_response(self, size: int) -> None:
-        self.sse_response_size.record(size, _metric_identity)
+    def record_sse_response(self, size: int, message_attributes: dict[str, str] | None = None) -> None:
+        self.sse_response_size.record(size, {**_metric_identity, **(message_attributes or {})})
+
+    def record_message_publish(
+        self,
+        *,
+        handler_type: str,
+        messaging_system: str,
+        event_count: int,
+        message_sizes: list[int],
+        duration: float,
+        error: BaseException | None = None,
+    ) -> None:
+        """Record one handler flush without using queue or session identifiers as labels."""
+        attributes = {
+            **_metric_identity,
+            "aidev.message.handler.type": handler_type,
+            "messaging.system": messaging_system,
+        }
+        duration_attributes = dict(attributes)
+        if message_sizes:
+            self.message_publish_count.add(len(message_sizes), attributes)
+            for size in message_sizes:
+                self.message_publish_size.record(size, attributes)
+        if error is not None:
+            duration_attributes["error.type"] = type(error).__name__
+            self.message_publish_errors.add(1, duration_attributes)
+        else:
+            self.message_publish_event_count.record(event_count, attributes)
+        self.message_publish_duration.record(duration, duration_attributes)
 
 
 _agent_metrics: AgentMetrics | None = None

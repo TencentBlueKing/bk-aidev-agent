@@ -15,6 +15,11 @@ from urllib.parse import quote
 import pika
 from environs import Env
 
+try:
+    from aidev_agent.packages.opentelemetry.metrics import get_enabled_agent_metrics
+except ImportError:  # pragma: no cover - metrics are optional at runtime
+    get_enabled_agent_metrics = None
+
 from .base import BaseMessageQueueHandler, ConsumerPreemptedError, QueueTTLConfig
 from .constants import EOD_CHUNK, QueueNamePrefixes
 from .replay_buffer_mixin import ReplayBufferMixin
@@ -1603,6 +1608,29 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
         except Exception as e:
             logger.error(f"Error flushing messages on daemon exit: {e}")
 
+    @staticmethod
+    def _record_publish_metrics(
+        event_count: int,
+        message_sizes: list[int],
+        started_at: float,
+        error: BaseException | None = None,
+    ) -> None:
+        if get_enabled_agent_metrics is None:
+            return
+        metric_recorder = get_enabled_agent_metrics()
+        if metric_recorder is None:
+            return
+        try:
+            metric_recorder.record_message_publish(
+                handler_type="rabbitmq",
+                messaging_system="rabbitmq",
+                event_count=event_count,
+                message_sizes=message_sizes,
+                duration=time.monotonic() - started_at,
+                error=error,
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug("Failed to record RabbitMQ publish metrics", exc_info=True)
     def _flush_messages(self) -> None:
         """批量推送缓冲区中的所有消息到 RabbitMQ
 
@@ -1620,6 +1648,9 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
         any_flushed = False
         for thread_id in thread_ids_to_flush:
             flush_peek_lock = self._get_flush_peek_lock(thread_id)
+            messages: list[Any] = []
+            message_sizes: list[int] = []
+            publish_started_at: float | None = None
             try:
                 with flush_peek_lock:
                     # 在 flush_peek_lock 内取出该 thread_id 的 buffer
@@ -1628,6 +1659,7 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
                     if not messages:
                         continue
                     messages_to_publish = self._coalesce_sse_messages(messages)
+                    publish_started_at = time.monotonic()
 
                     # 在同一个 flush_peek_lock 内 publish 到 RabbitMQ
                     with self._with_channel() as channel:
@@ -1640,6 +1672,8 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
                                 body=body,
                                 properties=pika.BasicProperties(delivery_mode=2),
                             )
+                            message_sizes.append(len(body))
+                    self._record_publish_metrics(len(messages), message_sizes, publish_started_at)
                     logger.debug(
                         "Flushed %d logical messages as %d RabbitMQ messages to queue %s",
                         len(messages),
@@ -1656,6 +1690,8 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
                     self._notify_eod_committed(thread_id, messages)
                     any_flushed = True
             except Exception as e:
+                if publish_started_at is not None:
+                    self._record_publish_metrics(len(messages), message_sizes, publish_started_at, error=e)
                 logger.error(f"Error flushing messages for thread_id={thread_id}: {e}")
                 # 推送失败，将消息放回缓冲区（放到前面保持顺序）
                 with self._buffer_lock:
@@ -1712,6 +1748,8 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
 
                 logger.debug("[Streaming] rabbitmq flush thread_id=%s, count=%d", thread_id, len(messages_to_flush))
                 messages_to_publish = self._coalesce_sse_messages(messages_to_flush)
+                publish_started_at = time.monotonic()
+                message_sizes: list[int] = []
 
                 try:
                     with self._with_channel() as channel:
@@ -1725,6 +1763,8 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
                                 body=body,
                                 properties=pika.BasicProperties(delivery_mode=2),
                             )
+                            message_sizes.append(len(body))
+                    self._record_publish_metrics(len(messages_to_flush), message_sizes, publish_started_at)
                     if EOD_CHUNK in messages_to_flush:
                         logger.info(
                             "[EOD] flush thread_id=%s logical=%d published=%d",
@@ -1735,6 +1775,7 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
                     self._notify_eod_committed(thread_id, messages_to_flush)
                     self._notify_replay_waiters()
                 except Exception as e:
+                    self._record_publish_metrics(len(messages_to_flush), message_sizes, publish_started_at, error=e)
                     logger.error(f"Error flushing messages for {thread_id}: {e}")
                     # 推送失败，放回缓冲区
                     with self._buffer_lock:
