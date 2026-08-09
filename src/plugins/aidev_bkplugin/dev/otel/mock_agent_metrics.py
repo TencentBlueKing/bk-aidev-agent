@@ -123,6 +123,15 @@ class MockSseEvent:
     size: int
 
 
+@dataclass(frozen=True)
+class ScenarioTimings:
+    agent_duration: float
+    llm_durations: tuple[float, ...]
+    llm_first_chunk_durations: tuple[float, ...]
+    tool_durations: tuple[float, ...]
+    processing_duration: float
+
+
 def _usage(input_tokens: int, output_tokens: int, cache_creation: int = 0, cache_read: int = 0) -> dict[str, int]:
     return {
         "cache_creation_input_tokens": cache_creation,
@@ -267,6 +276,31 @@ def assigned_models(models: tuple[str, ...], run_count: int) -> tuple[str, ...]:
     return tuple(models[index % len(models)] for index in range(run_count))
 
 
+def _scaled_durations(base_durations: tuple[float, ...], total: float, rng: random.Random) -> tuple[float, ...]:
+    weights = tuple(base_duration * rng.uniform(0.5, 1.5) for base_duration in base_durations)
+    weight_sum = sum(weights)
+    return tuple(total * weight / weight_sum for weight in weights)
+
+
+def build_scenario_timings(rng: random.Random) -> ScenarioTimings:
+    agent_duration = rng.uniform(30.0, 120.0)
+    llm_total = agent_duration * rng.uniform(0.5, 0.7)
+    tool_total = agent_duration * rng.uniform(0.08, 0.18)
+    llm_durations = _scaled_durations(tuple(step.duration for step in MODEL_STEPS), llm_total, rng)
+    tool_durations = _scaled_durations(tuple(step.duration for step in TOOL_STEPS), tool_total, rng)
+    first_chunk_durations = tuple(
+        min(duration * 0.8, step.time_to_first_chunk * rng.uniform(0.5, 1.5))
+        for step, duration in zip(MODEL_STEPS, llm_durations, strict=True)
+    )
+    return ScenarioTimings(
+        agent_duration=agent_duration,
+        llm_durations=llm_durations,
+        llm_first_chunk_durations=first_chunk_durations,
+        tool_durations=tool_durations,
+        processing_duration=agent_duration - llm_total - tool_total,
+    )
+
+
 def _llm_attributes(agent_attrs: dict[str, str], model_name: str) -> dict[str, str]:
     return {
         **agent_attrs,
@@ -280,34 +314,36 @@ def _record_scenario(
     agent_attrs: dict[str, str],
     handler_type: str,
     model_name: str,
-    index: int,
+    rng: random.Random,
 ) -> None:
     messaging_system = HANDLER_SYSTEMS[handler_type]
     llm_attrs = _llm_attributes(agent_attrs, model_name)
-    duration_offset = index * 0.05
-    for step in MODEL_STEPS:
-        recorder.record_llm(step.duration + duration_offset, llm_attrs, step.usage)
-        recorder.record_first_llm_chunk(step.time_to_first_chunk + duration_offset, llm_attrs)
-    for step in TOOL_STEPS:
+    timings = build_scenario_timings(rng)
+    for step, duration, first_chunk_duration in zip(
+        MODEL_STEPS,
+        timings.llm_durations,
+        timings.llm_first_chunk_durations,
+        strict=True,
+    ):
+        recorder.record_llm(duration, llm_attrs, step.usage)
+        recorder.record_first_llm_chunk(first_chunk_duration, llm_attrs)
+    for step, duration in zip(TOOL_STEPS, timings.tool_durations, strict=True):
         recorder.record_tool(
-            step.duration + duration_offset,
+            duration,
             {**agent_attrs, "gen_ai.tool.name": step.name, "gen_ai.tool.type": "function"},
         )
 
-    llm_duration = sum(step.duration + duration_offset for step in MODEL_STEPS)
-    tool_duration = sum(step.duration + duration_offset for step in TOOL_STEPS)
-    processing_duration = 4.5 + index * 0.2
     recorder.record_agent(
-        llm_duration + tool_duration + processing_duration,
+        timings.agent_duration,
         len(MODEL_STEPS),
         len(TOOL_STEPS),
         agent_attrs,
-        child_duration=llm_duration + tool_duration,
+        child_duration=sum(timings.llm_durations) + sum(timings.tool_durations),
     )
 
     message_attrs = {"aidev.message.handler.type": handler_type, "messaging.system": messaging_system}
     events = build_sanitized_sse_events()
-    recorder.record_sse_first_event(MODEL_STEPS[0].time_to_first_chunk + duration_offset, message_attrs)
+    recorder.record_sse_first_event(timings.llm_first_chunk_durations[0], message_attrs)
     for event in events:
         recorder.record_sse_event(event.size, event.event_type, message_attrs)
     recorder.record_sse_response(sum(event.size for event in events), message_attrs)
@@ -317,7 +353,7 @@ def _record_scenario(
         messaging_system=messaging_system,
         event_count=len(events),
         message_sizes=physical_sizes,
-        duration=0.01 + len(physical_sizes) * 0.0002 + index * 0.002,
+        duration=rng.uniform(0.008, 0.03) + len(physical_sizes) * 0.0002,
     )
 
 
@@ -375,7 +411,8 @@ def main() -> None:
     args = _parse_args()
     endpoint = os.getenv("AIDEV_LOCAL_OTLP_ENDPOINT", "http://localhost:4318")
     handlers = selected_handlers(args.handler)
-    rng = random.Random(args.seed)
+    concurrency_rng = random.Random(args.seed)
+    duration_rng = random.Random(args.seed + 1)
     service = BkPluginMetricService(
         service_name="aidev-agent-local",
         endpoints=[{"url": endpoint, "token": "", "exporter_type": ExporterType.HTTP}],
@@ -402,7 +439,7 @@ def main() -> None:
     print("Mock models: " + ", ".join(args.models))
     try:
         for iteration in range(args.iterations):
-            handler_runs = sample_handler_runs(handlers, args.concurrency, rng)
+            handler_runs = sample_handler_runs(handlers, args.concurrency, concurrency_rng)
             run_count = sum(handler_runs.values())
             run_models = assigned_models(args.models, run_count)
             next_model_runs = Counter(run_models)
@@ -417,13 +454,13 @@ def main() -> None:
 
             run_index = 0
             for handler_type, handler_run_count in handler_runs.items():
-                for worker in range(handler_run_count):
+                for _ in range(handler_run_count):
                     _record_scenario(
                         recorder,
                         agent_attrs,
                         handler_type,
                         run_models[run_index],
-                        (iteration + worker) % 3,
+                        duration_rng,
                     )
                     run_index += 1
             if service.provider is not None:

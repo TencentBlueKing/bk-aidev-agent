@@ -17,6 +17,7 @@ from dev.otel.mock_agent_metrics import (
     TOOL_STEPS,
     assigned_models,
     build_sanitized_sse_events,
+    build_scenario_timings,
     coalesce_content_events,
     sample_handler_runs,
     selected_handlers,
@@ -167,3 +168,26 @@ def test_log_query_mock_distributes_active_runs_across_three_default_models():
 
 def test_log_query_mock_accepts_custom_models_and_removes_duplicates():
     assert selected_models("mock-a, mock-b,mock-a") == ("mock-a", "mock-b")
+
+
+def test_log_query_mock_randomizes_stage_durations_within_agent_total():
+    rng = random.Random(20260810)
+    samples = [build_scenario_timings(rng) for _ in range(50)]
+
+    assert all(30 <= sample.agent_duration <= 120 for sample in samples)
+    assert all(len(sample.llm_durations) == 6 and len(sample.tool_durations) == 4 for sample in samples)
+    assert all(
+        sum(sample.llm_durations) + sum(sample.tool_durations) + sample.processing_duration
+        == pytest.approx(sample.agent_duration)
+        for sample in samples
+    )
+    assert all(
+        0 < first_chunk_duration <= llm_duration
+        for sample in samples
+        for first_chunk_duration, llm_duration in zip(
+            sample.llm_first_chunk_durations,
+            sample.llm_durations,
+            strict=True,
+        )
+    )
+    assert len({round(sample.agent_duration, 3) for sample in samples}) == len(samples)

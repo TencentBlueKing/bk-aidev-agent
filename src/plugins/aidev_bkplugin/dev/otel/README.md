@@ -41,6 +41,10 @@ PYTHONPATH=../../agent uv run --no-sync python dev/otel/mock_agent_metrics.py \
 
 也可以使用 `AIDEV_MOCK_MODELS=mock-a,mock-b`；模型名仅作为本地指标的低基数过滤维度。
 
+每个 Run 的 Agent 总耗时随机控制在 `30～120s`，再随机分配给 6 次 LLM、4 次 Tool
+和 Agent 自身处理，三类阶段累计值严格等于 Agent 总耗时；LLM TTFT 不超过对应的
+LLM 调用耗时。同一 `--seed` 会得到可重复的并发和耗时序列。
+
 可通过命令参数调整批次数和间隔：
 
 ```bash
