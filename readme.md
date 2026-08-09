@@ -113,29 +113,29 @@ pnpm prettier
 - Chrome 开发者工具
 
 ### 版本更新
-发布前需先使用 Makefile 的 `generate_versions` 指令更新仓库内各组件版本：
+发布前使用 Makefile 的 `release_versions` 指令更新仓库内各组件版本。默认只生成版本文件，不同步刷新各组件发布依赖：
 
 **方式一：所有组件使用同一版本**
 ```bash
-make generate_versions VERSION=2.0.0b1
+make release_versions VERSION=2.0.0b1
 ```
 > 该方式会同时更新 `template/{{cookiecutter.project_name}}/VERSION` 文件，但**不会**更新 `aidev-ai-blueking`（其版本节奏与其他组件解耦）。如需同时发布 `aidev-ai-blueking`，请走方式二或使用 `make release_ai_blueking VERSION=...`。
 
 **方式二：按组件分别指定版本**
 ```bash
-make generate_versions aidev_agent_version=2.0.0b1 aidev_bkplugin_version=2.0.0b2 aidev_wxbot_version=2.0.0b3 aidev_template_version=2.0.0rc4
+make release_versions aidev_agent_version=2.0.0b1 aidev_bkplugin_version=2.0.0b2 aidev_wxbot_version=2.0.0b3 aidev_template_version=2.0.0rc4
 ```
 也支持只指定部分组件，例如：
 ```bash
-make generate_versions aidev_ai_blueking_version=2.0.0rc1
+make release_versions aidev_ai_blueking_version=2.0.0rc1
 ```
 未指定的组件会保持当前版本不变。
 
-版本文件确认无误后，再单独执行正式发布准备命令：
+需要同时刷新 Agent SDK、bkplugin、wxbot 和智能体模板的发布依赖时，指定 `sync=1`：
 ```bash
-make release_versions
+make release_versions VERSION=2.0.0b1 sync=1
 ```
-该命令会分别刷新 Agent SDK、bkplugin、wxbot 和智能体模板的发布依赖，不再修改版本号。
+`sync` 也支持 `true`、`yes` 和 `y`；未指定或传入其他值时只生成版本文件。
 
 ## 📂 项目结构
 ```
