@@ -98,7 +98,7 @@ make start HANDLER=redis N=3
 - `Agent Code`、`Agent Version`：作用于全部面板；
 - `Request Model`：作用于全部 LLM 面板；`Response Model` 只有调用结束后可用，因此只作用于
   LLM 已结束调用耗时和完成速率；
-- `Tool Name`：作用于 Tool 活跃数、完成速率和耗时面板；
+- `Tool Name`：作用于 Tool 活跃数和耗时面板；
 - `Message Handler`：作用于 SSE 与消息发布面板，值为实际生效的 handler；
 - `SSE Event Type`：按 SSE 协议事件类型过滤。
 
@@ -107,8 +107,8 @@ make start HANDLER=redis N=3
 只计为 1。两者都不是累计会话次数。“Agent 阶段并发”展示当前值与时间走势；耗时类折线图统一展示 P95，
 其中“Agent 阶段耗时 P95”只统计已经结束的阶段，
 因为运行中的阶段尚未产生 Histogram 样本。阶段累计时间占比来自阶段切换时的直接计时，互斥阶段
-在同一窗口内合计约 100%，不再用子调用累计值除以已完成 Run 数估算耗时分配。LLM 和 Tool
-也分别展示按模型/工具名称拆分的并发、完成速率和已结束调用耗时分布。Broker 区分合并前逻辑
+在同一窗口内合计约 100%，不再用子调用累计值除以已完成 Run 数估算耗时分配。LLM 展示按模型
+拆分的并发、完成速率和已结束调用耗时；Tool 展示按工具名称拆分的并发和已结束调用耗时。Broker 区分合并前逻辑
 事件速率、合并后物理消息速率、合并比和应用序列化 Payload IO，并按实际 Handler 展示。
 Payload IO 不等于 RabbitMQ/Redis 的网络、磁盘 IO；队列积压、消费 lag 和真实 IO 仍需
 对应 Broker 的原生 exporter。

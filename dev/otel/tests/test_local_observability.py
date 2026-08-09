@@ -78,6 +78,8 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
     for panel_id in (13, 15):
         assert any("gen_ai_response_model" in target["expr"] for target in panels_by_id[panel_id]["targets"])
     assert panels_by_id[29]["title"].startswith("工具并发")
+    assert panels_by_id[29]["gridPos"]["w"] == 24
+    assert 19 not in panels_by_id
     assert 17 not in panels_by_id
     assert len(panels_by_id[18]["targets"]) == 1
     for panel in dashboard["panels"]:
