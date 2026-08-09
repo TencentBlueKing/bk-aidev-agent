@@ -31,6 +31,12 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
     panels_by_id = {panel["id"]: panel for panel in dashboard["panels"]}
     panel_queries = "\n".join(target["expr"] for panel in dashboard["panels"] for target in panel.get("targets", []))
 
+    for panel in dashboard["panels"]:
+        if panel.get("type") == "row":
+            continue
+        assert panel.get("description", "").startswith("含义：")
+        assert "计算：" in panel["description"]
+
     assert variables == {
         "agent_code",
         "agent_version",
@@ -62,9 +68,10 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
     assert "or vector(0)" in panels_by_id[30]["targets"][0]["expr"]
     assert panels_by_id[7]["type"] == "timeseries"
     assert panels_by_id[7]["title"] == "Agent 阶段并发（当前与趋势）"
-    assert panels_by_id[11]["title"] == "Agent 阶段耗时分布（已结束阶段）"
+    assert panels_by_id[11]["title"] == "Agent 阶段耗时 P95（已结束阶段）"
     assert len(panels_by_id[11]["targets"]) == 1
-    assert "histogram_quantile(0.99" in panels_by_id[11]["targets"][0]["expr"]
+    assert panels_by_id[10]["title"] == "Agent 墙钟耗时 P95"
+    assert len(panels_by_id[10]["targets"]) == 1
     assert panels_by_id[16]["title"].startswith("LLM 并发")
     for panel_id in (2, 14, 16):
         assert all("gen_ai_response_model" not in target["expr"] for target in panels_by_id[panel_id]["targets"])
@@ -73,7 +80,15 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
     assert panels_by_id[29]["title"].startswith("工具并发")
     assert 17 not in panels_by_id
     assert len(panels_by_id[18]["targets"]) == 1
-    assert "histogram_quantile(0.99" in panels_by_id[18]["targets"][0]["expr"]
+    for panel in dashboard["panels"]:
+        if panel.get("type") != "timeseries":
+            continue
+        for target in panel.get("targets", []):
+            if "histogram_quantile" not in target["expr"]:
+                continue
+            assert "P95" in panel["title"]
+            assert "histogram_quantile(0.95" in target["expr"]
+            assert "P95" in target["legendFormat"]
     assert panels_by_id[21]["title"] == "事件合并比（所选时段）"
     assert panels_by_id[21]["targets"][0]["instant"] is True
 

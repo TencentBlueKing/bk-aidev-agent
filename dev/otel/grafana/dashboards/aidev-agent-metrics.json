@@ -9,7 +9,7 @@
     {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}, "id": 100, "panels": [], "title": "运行态与关键指标", "type": "row"},
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "当前仍在执行的 Agent Run 总数；不是累计会话次数。该值应与各 Agent 阶段并发之和一致。",
+      "description": "含义：当前仍在执行的 Agent Run 总数，不是累计会话次数；应与各 Agent 阶段并发之和一致。计算：对筛选范围内 aidev_agent_active Gauge 求和。",
       "fieldConfig": {"defaults": {"decimals": 0, "unit": "short"}, "overrides": []},
       "gridPos": {"h": 5, "w": 4, "x": 4, "y": 1},
       "id": 1,
@@ -19,7 +19,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "至少有一个 Agent Run 正在执行的智能体数量，按 agent.info.code 去重；同一 Agent Code 的多个并发 Run 只计为 1。",
+      "description": "含义：至少有一个 Run 正在执行的智能体数量，同一 Agent Code 的多个并发 Run 只计为 1。计算：先按 agent.info.code 汇总 aidev_agent_active，保留大于 0 的分组后计数；无活跃项时返回 0。",
       "fieldConfig": {"defaults": {"decimals": 0, "unit": "short"}, "overrides": []},
       "gridPos": {"h": 5, "w": 4, "x": 0, "y": 1},
       "id": 30,
@@ -29,6 +29,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "含义：当前正在执行的 LLM Operation 数量。计算：对筛选范围内 gen_ai_client_operation_active Gauge 求和；按请求模型过滤，不使用调用结束后才确定的响应模型。",
       "fieldConfig": {"defaults": {"decimals": 0, "unit": "short"}, "overrides": []},
       "gridPos": {"h": 5, "w": 3, "x": 8, "y": 1},
       "id": 2,
@@ -38,6 +39,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "含义：当前正在执行的工具 Operation 数量。计算：对筛选范围内 gen_ai_execute_tool_active Gauge 求和，可按工具名称过滤。",
       "fieldConfig": {"defaults": {"decimals": 0, "unit": "short"}, "overrides": []},
       "gridPos": {"h": 5, "w": 3, "x": 11, "y": 1},
       "id": 3,
@@ -47,7 +49,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "仅统计已经结束并记录 duration 的 LLM 调用。",
+      "description": "含义：已结束 Agent Run 的墙钟运行耗时 P95。计算：对 gen_ai_invoke_agent_duration_seconds Histogram bucket 的窗口速率按 le 汇总，再使用 histogram_quantile(0.95, …) 估算。",
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
       "gridPos": {"h": 5, "w": 3, "x": 14, "y": 1},
       "id": 4,
@@ -57,7 +59,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "Agent Run 开始到首个流式 LLM token；非流式模型不会产生该样本。",
+      "description": "含义：Agent Run 开始到收到首个流式 LLM Token 的耗时 P95；非流式调用不产生样本。计算：对 gen_ai_invoke_agent_time_to_first_token_seconds Histogram bucket 的窗口速率按 le 汇总，再计算 histogram_quantile(0.95, …)。",
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
       "gridPos": {"h": 5, "w": 3, "x": 17, "y": 1},
       "id": 5,
@@ -67,7 +69,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "一次 LLM 推理调用定义为一个 Agent 迭代。",
+      "description": "含义：所选时段内每个已完成 Agent Run 的平均迭代次数，一次 LLM 推理调用计为一次迭代。计算：inference_calls_total 的 increase 总和除以 Agent duration count 的 increase 总和，分母最小取 1。",
       "fieldConfig": {"defaults": {"decimals": 2, "unit": "short"}, "overrides": []},
       "gridPos": {"h": 5, "w": 4, "x": 20, "y": 1},
       "id": 6,
@@ -77,7 +79,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "每个 Run 只处于一个阶段；并行 LLM 与 Tool 归入 mixed。具体 Run 身份通过 Trace/日志查看。",
+      "description": "含义：当前 Agent Run 在 processing、llm、tool、mixed、finalizing 阶段的并发数及趋势；每个 Run 同时只归属一个阶段，并行 LLM 与 Tool 归入 mixed。计算：按 aidev_agent_phase 对 aidev_agent_phase_active Gauge 求和。",
       "fieldConfig": {"defaults": {"decimals": 0, "unit": "short"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
       "id": 7,
@@ -87,19 +89,19 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "阶段切换结束时记录的互斥墙钟耗时；运行中的阶段尚未形成 Histogram 样本。",
+      "description": "含义：各 Agent 阶段已结束片段的互斥墙钟耗时 P95；正在运行的阶段尚未形成 Histogram 样本。计算：按 le 和 aidev_agent_phase 汇总阶段 duration bucket 的窗口速率，再计算 histogram_quantile(0.95, …)。",
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
       "id": 11,
       "options": {"legend": {"calcs": ["mean", "lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
       "targets": [
-        {"editorMode": "code", "expr": "histogram_quantile(0.99, sum by (le, aidev_agent_phase) (rate(aidev_agent_phase_duration_seconds_bucket{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[$__rate_interval])))", "legendFormat": "{{aidev_agent_phase}} P99", "range": true, "refId": "A"}
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le, aidev_agent_phase) (rate(aidev_agent_phase_duration_seconds_bucket{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[$__rate_interval])))", "legendFormat": "{{aidev_agent_phase}} P95", "range": true, "refId": "A"}
       ],
-      "title": "Agent 阶段耗时分布（已结束阶段）", "type": "timeseries"
+      "title": "Agent 阶段耗时 P95（已结束阶段）", "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "进入速率来自 started counter；完成速率来自 Agent duration histogram count。",
+      "description": "含义：Agent Run 每秒进入数与完成数，用于判断流入、流出是否平衡。计算：分别对 gen_ai_invoke_agent_started_total 和 gen_ai_invoke_agent_duration_seconds_count 计算 rate 后求和。",
       "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
       "gridPos": {"h": 8, "w": 24, "x": 0, "y": 14},
       "id": 9,
@@ -114,20 +116,19 @@
     {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 22}, "id": 101, "panels": [], "title": "Agent 耗时", "type": "row"},
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "含义：已结束 Agent Run 墙钟运行耗时 P95 的时间走势。计算：对 gen_ai_invoke_agent_duration_seconds Histogram bucket 的窗口速率按 le 汇总，再使用 histogram_quantile(0.95, …) 估算。",
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 23},
       "id": 10,
       "options": {"legend": {"calcs": ["mean", "lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
       "targets": [
-        {"editorMode": "code", "expr": "histogram_quantile(0.50, sum by (le) (rate(gen_ai_invoke_agent_duration_seconds_bucket{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[$__rate_interval])))", "legendFormat": "P50", "range": true, "refId": "A"},
-        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate(gen_ai_invoke_agent_duration_seconds_bucket{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[$__rate_interval])))", "legendFormat": "P95", "range": true, "refId": "B"},
-        {"editorMode": "code", "expr": "histogram_quantile(0.99, sum by (le) (rate(gen_ai_invoke_agent_duration_seconds_bucket{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[$__rate_interval])))", "legendFormat": "P99", "range": true, "refId": "C"}
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate(gen_ai_invoke_agent_duration_seconds_bucket{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[$__rate_interval])))", "legendFormat": "P95", "range": true, "refId": "A"}
       ],
-      "title": "Agent 墙钟耗时分位", "type": "timeseries"
+      "title": "Agent 墙钟耗时 P95", "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "按所选时间范围内直接测量的互斥阶段累计时间计算；processing、llm、tool、mixed、finalizing 合计 100%。",
+      "description": "含义：所选时段内 processing、llm、tool、mixed、finalizing 各阶段累计耗时占比，互斥阶段合计约 100%。计算：各阶段 duration sum 的 increase 除以所有阶段 increase 总和。",
       "fieldConfig": {"defaults": {"min": 0, "max": 1, "unit": "percentunit"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 23},
       "id": 12,
@@ -139,32 +140,31 @@
     {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 31}, "id": 102, "panels": [], "title": "LLM", "type": "row"},
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "含义：按请求模型拆分的已结束 LLM 调用耗时 P95。计算：按 le 和 gen_ai.request.model 汇总 LLM duration bucket 的窗口速率，再计算 histogram_quantile(0.95, …)；响应模型过滤只作用于已结束调用。",
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
       "id": 13,
       "options": {"legend": {"calcs": ["mean", "lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
       "targets": [
-        {"editorMode": "code", "expr": "histogram_quantile(0.50, sum by (le, gen_ai_request_model) (rate(gen_ai_client_operation_duration_seconds_bucket{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\",gen_ai_response_model=~\"${response_model:regex}\"}[$__rate_interval])))", "legendFormat": "{{gen_ai_request_model}} P50", "range": true, "refId": "A"},
-        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(gen_ai_client_operation_duration_seconds_bucket{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\",gen_ai_response_model=~\"${response_model:regex}\"}[$__rate_interval])))", "legendFormat": "{{gen_ai_request_model}} P95", "range": true, "refId": "B"}
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(gen_ai_client_operation_duration_seconds_bucket{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\",gen_ai_response_model=~\"${response_model:regex}\"}[$__rate_interval])))", "legendFormat": "{{gen_ai_request_model}} P95", "range": true, "refId": "A"}
       ],
-      "title": "LLM 耗时分布（已结束调用，按请求模型）", "type": "timeseries"
+      "title": "LLM 耗时 P95（已结束调用，按请求模型）", "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "仅统计产生流式 token callback 的 LLM 调用。",
+      "description": "含义：按请求模型拆分的 LLM 首 Token/首 Chunk 耗时 P95，仅统计产生流式回调的调用。计算：按 le 和 gen_ai.request.model 汇总 time_to_first_chunk bucket 的窗口速率，再计算 histogram_quantile(0.95, …)。",
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
       "id": 14,
       "options": {"legend": {"calcs": ["mean", "lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
       "targets": [
-        {"editorMode": "code", "expr": "histogram_quantile(0.50, sum by (le, gen_ai_request_model) (rate(gen_ai_client_operation_time_to_first_chunk_seconds_bucket{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\"}[$__rate_interval])))", "legendFormat": "{{gen_ai_request_model}} P50", "range": true, "refId": "A"},
-        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(gen_ai_client_operation_time_to_first_chunk_seconds_bucket{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\"}[$__rate_interval])))", "legendFormat": "{{gen_ai_request_model}} P95", "range": true, "refId": "B"}
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(gen_ai_client_operation_time_to_first_chunk_seconds_bucket{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\"}[$__rate_interval])))", "legendFormat": "{{gen_ai_request_model}} P95", "range": true, "refId": "A"}
       ],
-      "title": "LLM 首 Token 分布（流式调用，按请求模型）", "type": "timeseries"
+      "title": "LLM 首 Token P95（流式调用，按请求模型）", "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "当前值和所选时段走势均按请求模型拆分；响应模型只有调用结束后才能确定，因此不用于活跃调用过滤。",
+      "description": "含义：按请求模型拆分的当前 LLM 并发数及趋势；响应模型只有调用结束后才能确定，因此不用于活跃调用过滤。计算：按 gen_ai.request.model 对 gen_ai_client_operation_active Gauge 求和。",
       "fieldConfig": {"defaults": {"decimals": 0, "unit": "short"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
       "id": 16,
@@ -174,6 +174,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "含义：按请求模型拆分的 LLM 每秒完成调用数。计算：对 gen_ai_client_operation_duration_seconds_count 计算 rate，再按 gen_ai.request.model 求和；可按请求模型和已确定的响应模型过滤。",
       "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40},
       "id": 15,
@@ -185,7 +186,7 @@
     {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 48}, "id": 103, "panels": [], "title": "Tool", "type": "row"},
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "当前值和所选时段走势均按工具名称拆分。",
+      "description": "含义：按工具名称拆分的当前工具调用并发数及趋势。计算：按 gen_ai.tool.name 对 gen_ai_execute_tool_active Gauge 求和。",
       "fieldConfig": {"defaults": {"decimals": 0, "unit": "short"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 49},
       "id": 29,
@@ -195,6 +196,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "含义：按工具名称拆分的每秒完成调用数。计算：对 gen_ai_execute_tool_duration_seconds_count 计算 rate，再按 gen_ai.tool.name 求和。",
       "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 49},
       "id": 19,
@@ -204,21 +206,21 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "仅统计已经结束并记录 duration 的工具调用。",
+      "description": "含义：按工具名称拆分的已结束工具调用耗时 P95。计算：按 le 和 gen_ai.tool.name 汇总工具 duration bucket 的窗口速率，再计算 histogram_quantile(0.95, …)。",
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
       "gridPos": {"h": 8, "w": 24, "x": 0, "y": 57},
       "id": 18,
       "options": {"legend": {"calcs": ["mean", "lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
       "targets": [
-        {"editorMode": "code", "expr": "histogram_quantile(0.99, sum by (le, gen_ai_tool_name) (rate(gen_ai_execute_tool_duration_seconds_bucket{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_tool_name=~\"${tool_name:regex}\"}[$__rate_interval])))", "legendFormat": "{{gen_ai_tool_name}} P99", "range": true, "refId": "A"}
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le, gen_ai_tool_name) (rate(gen_ai_execute_tool_duration_seconds_bucket{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_tool_name=~\"${tool_name:regex}\"}[$__rate_interval])))", "legendFormat": "{{gen_ai_tool_name}} P95", "range": true, "refId": "A"}
       ],
-      "title": "工具耗时分布（已结束调用，按工具名称）", "type": "timeseries"
+      "title": "工具耗时 P95（已结束调用，按工具名称）", "type": "timeseries"
     },
 
     {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 65}, "id": 104, "panels": [], "title": "SSE 与 Broker 应用侧压力", "type": "row"},
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "逻辑事件是合并前进入 flush 的事件；物理消息是合并后实际提交给 Handler/Broker 的消息。",
+      "description": "含义：逻辑事件表示合并前进入 flush 的事件速率，物理消息表示合并后实际提交给 Handler/Broker 的写入速率。计算：分别对 publish_event_count sum 和 publish_count total 计算 rate，再按 Handler 和 messaging.system 求和。",
       "fieldConfig": {"defaults": {"unit": "eps"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 66},
       "id": 20,
@@ -231,7 +233,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "所选时段合并比 = 逻辑事件累计数 / 物理消息累计数；使用累计值避免稀疏事件在 scrape 边界产生短窗口偏差。",
+      "description": "含义：每条物理 Broker 消息平均承载的逻辑事件数，数值越大表示合并程度越高。计算：所选时段逻辑事件 increase 除以物理消息 increase，按 Handler 分组；分母最小取 0.000001。",
       "fieldConfig": {"defaults": {"decimals": 2, "unit": "short"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 66},
       "id": 21,
@@ -241,7 +243,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "应用序列化后提交给 Handler 的 payload bytes/s，不等同于 Broker 实际网络或磁盘 IO。",
+      "description": "含义：应用序列化后提交给 Handler 的 Payload 吞吐量（bytes/s），不等同于 Broker 实际网络或磁盘 IO。计算：对 publish_size Histogram sum 计算 rate，再按 Handler 求和。",
       "fieldConfig": {"defaults": {"unit": "Bps"}, "overrides": []},
       "gridPos": {"h": 8, "w": 8, "x": 0, "y": 74},
       "id": 22,
@@ -251,6 +253,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "含义：按 Handler 拆分的单条物理消息 Payload 大小 P95。计算：按 le 和 Handler 汇总 publish_size bucket 的窗口速率，再计算 histogram_quantile(0.95, …)。",
       "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
       "gridPos": {"h": 8, "w": 8, "x": 8, "y": 74},
       "id": 23,
@@ -260,6 +263,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "含义：按 Handler 拆分的单次应用侧消息写入耗时 P95，不包含 Broker 消费耗时。计算：按 le 和 Handler 汇总 publish_duration bucket 的窗口速率，再计算 histogram_quantile(0.95, …)。",
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
       "gridPos": {"h": 8, "w": 8, "x": 16, "y": 74},
       "id": 24,
@@ -269,6 +273,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "含义：按 Handler 和 SSE 事件类型拆分的每秒逻辑 SSE 事件数。计算：对 aidev_sse_event_count total 计算 rate，再按 Handler 与 aidev.sse.event.type 求和。",
       "fieldConfig": {"defaults": {"unit": "eps"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 82},
       "id": 25,
@@ -278,6 +283,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "含义：按 Handler 拆分的单个 SSE 事件大小 P95，以及单次完整 SSE 响应累计大小 P95。计算：分别汇总 event_size 与 response_size Histogram bucket 的窗口速率，再计算 histogram_quantile(0.95, …)。",
       "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 82},
       "id": 26,
@@ -286,10 +292,11 @@
         {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le, aidev_message_handler_type) (rate({__name__=~\"aidev_sse_event_size.*_bucket\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",aidev_message_handler_type=~\"${handler_type:regex}\",aidev_sse_event_type=~\"${sse_event_type:regex}\"}[$__rate_interval])))", "legendFormat": "{{aidev_message_handler_type}} event P95", "range": true, "refId": "A"},
         {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le, aidev_message_handler_type) (rate({__name__=~\"aidev_sse_response_size.*_bucket\",agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",aidev_message_handler_type=~\"${handler_type:regex}\"}[$__rate_interval])))", "legendFormat": "{{aidev_message_handler_type}} response P95", "range": true, "refId": "B"}
       ],
-      "title": "SSE 事件与响应大小", "type": "timeseries"
+      "title": "SSE 事件与响应大小 P95", "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "含义：说明本仪表盘 Broker 指标只覆盖应用侧发布路径。计算：本说明面板不执行 PromQL；队列积压、消费 lag、连接、内存、磁盘和网络 IO 需要 Broker 原生 exporter。",
       "fieldConfig": {"defaults": {}, "overrides": []},
       "gridPos": {"h": 4, "w": 24, "x": 0, "y": 90},
       "id": 27,
@@ -300,6 +307,7 @@
     {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 94}, "id": 105, "panels": [], "title": "错误", "type": "row"},
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "含义：按指标来源和 error.type 拆分的每秒错误完成数，仅覆盖带非空 error_type 标签且已形成 duration count 的操作。计算：过滤错误样本后对 duration count 计算 rate，再按指标名和 error_type 求和。",
       "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
       "gridPos": {"h": 8, "w": 24, "x": 0, "y": 95},
       "id": 28,
