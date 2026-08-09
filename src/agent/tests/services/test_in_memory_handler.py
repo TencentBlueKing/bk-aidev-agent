@@ -1112,7 +1112,7 @@ class TestMessageHandlerConfig:
 
     def test_create_handler_redis_without_url_fails(self, monkeypatch):
         monkeypatch.setenv(EnvVarNames.REDIS_URL, "")
-        with pytest.raises(RuntimeError, match="MSG_REDIS_URL"):
+        with pytest.raises(RuntimeError, match="MESSAGE_REDIS_URL"):
             _create_handler(MessageHandlerType.REDIS)
 
     def test_create_handler_selects_rabbitmq_stream_when_port_is_configured(self, monkeypatch):
