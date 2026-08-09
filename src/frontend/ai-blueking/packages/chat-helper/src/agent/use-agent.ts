@@ -48,6 +48,7 @@ import { SessionStatus } from '../session/type';
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 8000;
+type StreamMode = 'start' | 'attach';
 
 const getReconnectDelayMs = (attempt: number): number =>
   Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS);
@@ -257,6 +258,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       config: ctx?.config,
       lastMessageId: lastMessageId !== undefined ? String(lastMessageId) : undefined,
       isReconnect: true,
+      streamMode: 'attach',
     });
     return 'reconnected';
   };
@@ -269,6 +271,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     input,
     lastMessageId,
     isReconnect = false,
+    streamMode = 'start',
   }: {
     sessionCode: string;
     url?: string;
@@ -278,6 +281,8 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     lastMessageId?: string;
     /** 内部静默重连，不重置重连计数 */
     isReconnect?: boolean;
+    /** start 可启动新一轮执行；attach 仅接管/回放已有流 */
+    streamMode?: StreamMode;
   }) => {
     if (!isReconnect) {
       resetStreamReconnectState();
@@ -399,6 +404,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
           input,
           execute_kwargs: {
             stream: true,
+            stream_mode: streamMode,
             persist_input: !!input,
             last_message_id: lastMessageId,
             resume,
@@ -453,7 +459,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
   const resumeStreamingChat = (sessionCode: string, url?: string, config?: IRequestConfig) => {
     if (mediator.session?.current.value?.status === SessionStatus.Running) {
       const lastMessageId = mediator.message?.list.value.at(-1)?.id;
-      streamRequest({ sessionCode, url, config, lastMessageId });
+      streamRequest({ sessionCode, url, config, lastMessageId, streamMode: 'attach' });
     }
   };
 
