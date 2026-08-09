@@ -5,38 +5,45 @@ OpenTelemetry Collector → Prometheus → Grafana 预置仪表盘。
 
 ## 启动
 
+在仓库根目录执行，一条命令会使用 Podman 启动 Collector、Prometheus、Grafana，
+并在当前终端运行默认 mock：
+
 ```bash
-docker compose up -d
+cd dev/otel
+make start
 ```
 
-macOS 上使用 Podman 时可执行 `podman compose up -d`。
+默认 mock 持续约 10 分钟；执行期间可直接观察终端输出，`Ctrl+C` 只停止 mock。
+在另一个终端查看 Podman 服务状态：
+
+```bash
+make status
+```
 
 Collector 接收端口为 `4317`（gRPC）和 `4318`（HTTP），Prometheus 为
 <http://localhost:9090>，Grafana 为 <http://localhost:3000/d/aidev-agent-metrics>。
 
 ## 发送 mock 指标
 
-在仓库根目录执行。默认同时模拟 4 个 Handler，每个 Handler 每轮随机启动 1～3 个
-Agent Run，因此“当前活跃 Agent 执行数”会在 `4～12` 之间变化：
+`make start` 默认同时模拟 4 个 Handler，每个 Handler 每轮随机启动 1～3 个 Agent Run，
+因此“当前活跃 Agent 执行数”会在 `4～12` 之间变化。可以在启动时覆盖参数：
 
 ```bash
-cd src/plugins/aidev_bkplugin
-PYTHONPATH=../../agent uv run --no-sync python dev/otel/mock_agent_metrics.py
+make start N=3 MODELS=mock-a,mock-b,mock-c ITERATIONS=400 INTERVAL=1.5
 ```
 
 使用 `-n/--concurrency` 指定每个 Handler 的并发上限。例如 `-n 5` 时，每个 Handler
 每轮随机启动 1～5 个 Run，总活跃 Agent 数在 `4～20` 之间变化；`-n 1` 时固定为 4：
 
 ```bash
-PYTHONPATH=../../agent uv run --no-sync python dev/otel/mock_agent_metrics.py -n 5
+make start N=5
 ```
 
 默认启用 `mock-log-analysis-a`、`mock-log-analysis-b`、`mock-log-analysis-c` 三个
 mock 模型，实际 Run 会按模型列表轮询分配。启动时可指定任意 1～n 个逗号分隔的模型名：
 
 ```bash
-PYTHONPATH=../../agent uv run --no-sync python dev/otel/mock_agent_metrics.py \
-  -n 3 --models mock-a,mock-b,mock-c
+make start N=3 MODELS=mock-a,mock-b,mock-c
 ```
 
 也可以使用 `AIDEV_MOCK_MODELS=mock-a,mock-b`；模型名仅作为本地指标的低基数过滤维度。
@@ -45,11 +52,10 @@ PYTHONPATH=../../agent uv run --no-sync python dev/otel/mock_agent_metrics.py \
 和 Agent 自身处理，三类阶段累计值严格等于 Agent 总耗时；LLM TTFT 不超过对应的
 LLM 调用耗时。同一 `--seed` 会得到可重复的并发和耗时序列。
 
-可通过命令参数调整批次数和间隔：
+如果只需要前台运行 mock，不重启 Podman 服务：
 
 ```bash
-PYTHONPATH=../../agent uv run --no-sync python dev/otel/mock_agent_metrics.py \
-  -n 3 --iterations 40 --interval 1.5
+make mock N=3 ITERATIONS=40 INTERVAL=1.5
 ```
 
 原有的 `AIDEV_MOCK_CONCURRENCY`、`AIDEV_MOCK_ITERATIONS`、
@@ -65,8 +71,7 @@ mock 使用“日志查询与聚合总结”场景，模拟 6 次 LLM 调用和 
 如只需验证单个 Message Handler，可显式指定：
 
 ```bash
-PYTHONPATH=../../agent uv run --no-sync python dev/otel/mock_agent_metrics.py \
-  --handler redis -n 3
+make start HANDLER=redis N=3
 ```
 
 可选值为 `all`、`inmemory`、`rabbitmq`、`rabbitmq_stream`、`redis`；
@@ -110,7 +115,7 @@ Collector 的 `debug` exporter 会把每批 OTLP `MetricData`（resource、scope
 point 和聚合值）输出到容器日志：
 
 ```bash
-docker compose logs -f otel-collector
+podman compose logs -f otel-collector
 ```
 
 Prometheus exporter 的原始 exposition 文本可通过以下命令查看：
@@ -128,6 +133,13 @@ curl 'http://localhost:9090/api/v1/query?query=aidev_message_publish_count_total
 
 Prometheus 保存的是按 scrape 时间采集的聚合时间序列，不是逐次 Agent 事件；如果要
 定位单次执行，请结合对应 Trace，而不是尝试从 Counter 或 Histogram 反推事件明细。
+
+本地观测配置和 mock 测试均位于 `dev/otel`。执行以下命令同时验证 bkplugin exporter
+和本地观测场景：
+
+```bash
+make test
+```
 
 ## 使用真实 bkplugin 请求
 
@@ -158,4 +170,8 @@ export BKAI_AGENT_OTEL_EXPORTER_TYPE=http
 export BKAI_AGENT_OTEL_ENDPOINTS='[{"url":"http://localhost:4318","token":"","exporter_type":"http"}]'
 ```
 
-完成后执行 `docker compose down`（Podman 使用 `podman compose down`）停止环境。
+完成后停止全部 Podman 服务：
+
+```bash
+make stop
+```

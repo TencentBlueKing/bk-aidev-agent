@@ -1,0 +1,127 @@
+from __future__ import annotations
+
+import json
+import random
+from pathlib import Path
+
+import pytest
+
+from dev.otel.mock_agent_metrics import (
+    DEFAULT_MODELS,
+    HANDLER_SYSTEMS,
+    SANITIZED_LOGS,
+    SANITIZED_PROMPT,
+    TOOL_STEPS,
+    assigned_models,
+    build_sanitized_sse_events,
+    build_scenario_timings,
+    coalesce_content_events,
+    sample_handler_runs,
+    selected_handlers,
+    selected_models,
+)
+
+OTEL_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_local_dashboard_covers_required_filters_and_metric_groups():
+    dashboard = json.loads((OTEL_ROOT / "grafana/dashboards/aidev-agent-metrics.json").read_text())
+    variables = {item["name"] for item in dashboard["templating"]["list"]}
+    panel_queries = "\n".join(target["expr"] for panel in dashboard["panels"] for target in panel.get("targets", []))
+
+    assert variables == {
+        "agent_code",
+        "agent_version",
+        "request_model",
+        "handler_type",
+        "token_type",
+        "sse_event_type",
+    }
+    for metric in (
+        "aidev_agent_processing_duration",
+        "gen_ai_client_operation_active",
+        "gen_ai_client_token_usage",
+        "aidev_sse_event_size",
+        "aidev_message_publish_count",
+        "aidev_message_publish_size",
+    ):
+        assert metric in panel_queries
+
+
+def test_log_query_mock_is_sanitized_and_models_broker_coalescing():
+    assert SANITIZED_PROMPT.count("<BK_BIZ_ID>") == 1
+    assert SANITIZED_PROMPT.count("<INDEX_SET_ID>") == 1
+    assert len(SANITIZED_LOGS) == 10
+    assert [step.name for step in TOOL_STEPS] == [
+        "activate_skill",
+        "inspect_log_fields",
+        "search_logs",
+        "aggregate_logs",
+    ]
+
+    events = build_sanitized_sse_events()
+    physical_sizes = coalesce_content_events(events)
+
+    assert any(event.event_type == "TOOL_CALL_RESULT" for event in events)
+    assert len(physical_sizes) < len(events)
+    assert sum(physical_sizes) == sum(event.size for event in events)
+
+
+@pytest.mark.parametrize(
+    ("handler_type", "expected"),
+    [
+        ("all", tuple(HANDLER_SYSTEMS)),
+        ("redis", ("redis",)),
+    ],
+)
+def test_log_query_mock_selects_handlers(handler_type, expected):
+    assert selected_handlers(handler_type) == expected
+
+
+def test_log_query_mock_varies_active_runs_between_one_and_maximum_per_handler():
+    handlers = selected_handlers("all")
+    rng = random.Random(20260809)
+    samples = [sample_handler_runs(handlers, 3, rng) for _ in range(20)]
+
+    assert all(set(sample) == set(handlers) for sample in samples)
+    assert all(1 <= count <= 3 for sample in samples for count in sample.values())
+    assert all(4 <= sum(sample.values()) <= 12 for sample in samples)
+    assert len({sum(sample.values()) for sample in samples}) > 1
+
+
+def test_log_query_mock_distributes_active_runs_across_three_default_models():
+    assignments = assigned_models(DEFAULT_MODELS, 12)
+
+    assert len(assignments) == 12
+    assert {model: assignments.count(model) for model in DEFAULT_MODELS} == {
+        "mock-log-analysis-a": 4,
+        "mock-log-analysis-b": 4,
+        "mock-log-analysis-c": 4,
+    }
+
+
+def test_log_query_mock_accepts_custom_models_and_removes_duplicates():
+    assert selected_models("mock-a, mock-b,mock-a") == ("mock-a", "mock-b")
+
+
+def test_log_query_mock_randomizes_stage_durations_within_agent_total():
+    rng = random.Random(20260810)
+    samples = [build_scenario_timings(rng) for _ in range(50)]
+
+    assert all(30 <= sample.agent_duration <= 120 for sample in samples)
+    assert all(len(sample.llm_durations) == 6 and len(sample.tool_durations) == 4 for sample in samples)
+    assert all(
+        sum(sample.llm_durations) + sum(sample.tool_durations) + sample.processing_duration
+        == pytest.approx(sample.agent_duration)
+        for sample in samples
+    )
+    assert all(
+        0 < first_chunk_duration <= llm_duration
+        for sample in samples
+        for first_chunk_duration, llm_duration in zip(
+            sample.llm_first_chunk_durations,
+            sample.llm_durations,
+            strict=True,
+        )
+    )
+    assert len({round(sample.agent_duration, 3) for sample in samples}) == len(samples)
