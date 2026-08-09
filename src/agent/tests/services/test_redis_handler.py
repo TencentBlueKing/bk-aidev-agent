@@ -1,7 +1,9 @@
 import os
 import threading
 import time
+from unittest.mock import MagicMock
 
+import aidev_agent.services.messages_handler.redis as redis_module
 import pytest
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
 from aidev_agent.services.messages_handler.constants import EOD_CHUNK
@@ -96,6 +98,30 @@ class _SignalClient:
         else:
             self.values[key] = replacement
         return 1
+
+
+def test_flush_records_redis_publish_metrics(monkeypatch):
+    handler = object.__new__(RedisMessageHandler)
+    first = 'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"a"}\n\n'
+    second = 'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"b"}\n\n'
+    messages = [first, second, EOD_CHUNK]
+    handler._buffer_lock = threading.Lock()
+    handler._message_buffer = {"thread-id": messages}
+    handler._client = _CapabilityClient()
+    handler._queue_ttl_seconds = 3600
+    handler._get_flush_lock = MagicMock(return_value=threading.Lock())
+    handler._stream_key = MagicMock(return_value="stream-key")
+    handler._notify_eod_committed = MagicMock()
+    publish_metric = MagicMock()
+    monkeypatch.setattr(redis_module, "record_message_publish_metrics", publish_metric)
+
+    assert handler._flush_thread("thread-id") is True
+
+    metric_call = publish_metric.call_args.kwargs
+    assert metric_call["handler_type"] == "redis"
+    assert metric_call["messaging_system"] == "redis"
+    assert metric_call["event_count"] == 3
+    assert len(metric_call["message_sizes"]) == 2
 
 
 class TestRedisMessageHandlerCapabilities:

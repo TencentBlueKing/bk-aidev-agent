@@ -12,6 +12,9 @@ from aidev_bkplugin.services.otel_metrics import BkPluginMetricService, MetricEx
 
 def main() -> None:
     endpoint = os.getenv("AIDEV_LOCAL_OTLP_ENDPOINT", "http://localhost:4318")
+    concurrency = max(1, int(os.getenv("AIDEV_MOCK_CONCURRENCY", "3")))
+    iterations = max(1, int(os.getenv("AIDEV_MOCK_ITERATIONS", "10")))
+    interval = max(0.1, float(os.getenv("AIDEV_MOCK_INTERVAL_SECONDS", "1.5")))
     service = BkPluginMetricService(
         service_name="aidev-agent-local",
         endpoints=[{"url": endpoint, "token": "", "exporter_type": ExporterType.HTTP}],
@@ -33,49 +36,64 @@ def main() -> None:
         "gen_ai.response.model": "mock-model-routed",
     }
     message_attrs = {"aidev.message.handler.type": "rabbitmq", "messaging.system": "rabbitmq"}
-    for index in range(3):
-        recorder.record_active_session(1, agent_attrs)
-        recorder.record_active_llm(1, llm_attrs)
+    recorder.record_active_session(concurrency, agent_attrs)
+    recorder.record_active_llm(concurrency, llm_attrs)
+    try:
+        for iteration in range(iterations):
+            for worker in range(concurrency):
+                index = (iteration + worker) % 3
+                llm_duration = 0.8 + index * 0.1
+                tool_duration = 0.15 + index * 0.02
+                processing_duration = 0.25 + index * 0.1
+                recorder.record_agent(
+                    llm_duration + tool_duration + processing_duration,
+                    2,
+                    1,
+                    agent_attrs,
+                    child_duration=llm_duration + tool_duration,
+                )
+                recorder.record_llm(
+                    llm_duration,
+                    llm_attrs,
+                    {
+                        "cache_creation_input_tokens": 8,
+                        "cache_read_input_tokens": 16,
+                        "input_tokens": 96,
+                        "output_tokens": 48,
+                        "total_tokens": 168,
+                    },
+                )
+                recorder.record_first_llm_chunk(0.18 + index * 0.02, llm_attrs)
+                recorder.record_tool(
+                    tool_duration,
+                    {**agent_attrs, "gen_ai.tool.name": "mock_search", "gen_ai.tool.type": "function"},
+                )
+                recorder.record_sse_first_event(0.2 + index * 0.02, message_attrs)
+                for event_type, size in (
+                    ("TEXT_MESSAGE_START", 96),
+                    ("TEXT_MESSAGE_CONTENT", 512),
+                    ("RUN_FINISHED", 128),
+                ):
+                    recorder.record_sse_event(size, event_type, message_attrs)
+                recorder.record_sse_response(736, message_attrs)
+                recorder.record_message_publish(
+                    handler_type="rabbitmq",
+                    messaging_system="rabbitmq",
+                    event_count=3,
+                    message_sizes=[608, 128],
+                    duration=0.012 + index * 0.002,
+                )
+            if service.provider is not None:
+                service.provider.force_flush(timeout_millis=5000)
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        recorder.record_active_session(-concurrency, agent_attrs)
+        recorder.record_active_llm(-concurrency, llm_attrs)
         if service.provider is not None:
             service.provider.force_flush(timeout_millis=5000)
-        time.sleep(1.5)
-        recorder.record_agent(1.2 + index * 0.2, 2, 1, agent_attrs, child_duration=0.95 + index * 0.1)
-        recorder.record_active_session(-1, agent_attrs)
-        recorder.record_active_llm(-1, llm_attrs)
-        recorder.record_llm(
-            0.8 + index * 0.1,
-            llm_attrs,
-            {
-                "cache_creation_input_tokens": 8,
-                "cache_read_input_tokens": 16,
-                "input_tokens": 96,
-                "output_tokens": 48,
-                "total_tokens": 168,
-            },
-        )
-        recorder.record_first_llm_chunk(0.18 + index * 0.02, llm_attrs)
-        recorder.record_tool(
-            0.15 + index * 0.02,
-            {**agent_attrs, "gen_ai.tool.name": "mock_search", "gen_ai.tool.type": "function"},
-        )
-        recorder.record_sse_first_event(0.2 + index * 0.02, message_attrs)
-        for event_type, size in (("TEXT_MESSAGE_START", 96), ("TEXT_MESSAGE_CONTENT", 512), ("RUN_FINISHED", 128)):
-            recorder.record_sse_event(size, event_type, message_attrs)
-        recorder.record_sse_response(736, message_attrs)
-        recorder.record_message_publish(
-            handler_type="rabbitmq",
-            messaging_system="rabbitmq",
-            event_count=3,
-            message_sizes=[608, 128],
-            duration=0.012 + index * 0.002,
-        )
-        if service.provider is not None:
-            service.provider.force_flush(timeout_millis=5000)
-        # Keep the process alive across Prometheus scrapes so rate() panels
-        # have multiple cumulative samples to calculate from.
-        time.sleep(2.5)
-
-    service.stop()
+        service.stop()
     print("Mock metrics exported. Open http://localhost:3000/d/aidev-agent-metrics")
 
 

@@ -189,3 +189,22 @@ def test_message_publish_metrics_include_actual_handler_without_session_labels()
     assert "agent.session.session_code" not in attrs
     assert meter.instruments["aidev.message.publish.event_count"].calls[0][0] == 6
     assert [value for value, _ in meter.instruments["aidev.message.publish.size"].calls] == [128, 256]
+
+
+def test_failed_message_publish_is_not_counted_as_successful_broker_writes():
+    meter = FakeMeter()
+    recorder = AgentMetrics(meter)
+
+    recorder.record_message_publish(
+        handler_type="redis",
+        messaging_system="redis",
+        event_count=3,
+        message_sizes=[128, 256],
+        duration=0.02,
+        error=TimeoutError(),
+    )
+
+    assert meter.instruments["aidev.message.publish.count"].calls == []
+    assert meter.instruments["aidev.message.publish.event_count"].calls == []
+    assert meter.instruments["aidev.message.publish.size"].calls == []
+    assert meter.instruments["aidev.message.publish.errors"].calls[0][1]["error.type"] == "TimeoutError"

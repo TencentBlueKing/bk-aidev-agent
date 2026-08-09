@@ -5,6 +5,7 @@ import threading
 import time
 from unittest.mock import MagicMock
 
+import aidev_agent.services.messages_handler.rabbitmq_stream as rabbitmq_stream_module
 import pytest
 from aidev_agent.services.messages_handler.constants import EOD_CHUNK
 from aidev_agent.services.messages_handler.rabbitmq import RabbitMQMessageHandler
@@ -50,8 +51,10 @@ def test_stream_subscription_times_out_without_message():
         subscription.read(offset=0, timeout=0)
 
 
-def test_flush_publishes_coalesced_messages_with_confirm():
+def test_flush_publishes_coalesced_messages_with_confirm(monkeypatch):
     handler = _make_handler()
+    publish_metric = MagicMock()
+    monkeypatch.setattr(rabbitmq_stream_module, "record_message_publish_metrics", publish_metric)
     first = 'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"a"}\n\n'
     second = 'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"b"}\n\n'
     handler._message_buffer = {"thread-id": [first, second, EOD_CHUNK]}
@@ -64,6 +67,11 @@ def test_flush_publishes_coalesced_messages_with_confirm():
     assert len(published["payloads"]) == 2
     assert handler.get_cached_count("thread-id") == 2
     handler._notify_eod_committed.assert_called_once_with("thread-id", [first, second, EOD_CHUNK])
+    metric_call = publish_metric.call_args.kwargs
+    assert metric_call["handler_type"] == "rabbitmq_stream"
+    assert metric_call["messaging_system"] == "rabbitmq"
+    assert metric_call["event_count"] == 3
+    assert len(metric_call["message_sizes"]) == 2
 
 
 def test_get_messages_since_uses_native_stream_offset_and_expands_sse():

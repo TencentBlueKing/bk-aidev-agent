@@ -5,13 +5,9 @@ import time
 from logging import getLogger
 from typing import Any, ClassVar, Optional
 
-try:
-    from aidev_agent.packages.opentelemetry.metrics import get_enabled_agent_metrics
-except ImportError:  # pragma: no cover - metrics are optional at runtime
-    get_enabled_agent_metrics = None
-
 from .base import BaseMessageQueueHandler
 from .single_process_mixin import SingleProcessMixin
+from .telemetry import record_message_publish_metrics
 
 logger = getLogger(__name__)
 
@@ -103,19 +99,17 @@ class InMemoryQueueMessageHandler(SingleProcessMixin, BaseMessageQueueHandler):
         started_at = time.monotonic()
         main_queue, _, _ = self._get_or_create_queues(thread_id)
         main_queue.put(message)
-        if get_enabled_agent_metrics is not None:
-            metric_recorder = get_enabled_agent_metrics()
-            if metric_recorder is not None:
-                try:
-                    metric_recorder.record_message_publish(
-                        handler_type="inmemory",
-                        messaging_system="in_memory",
-                        event_count=1,
-                        message_sizes=[len(pickle.dumps(message))],
-                        duration=time.monotonic() - started_at,
-                    )
-                except Exception:  # noqa: BLE001
-                    logger.debug("Failed to record in-memory publish metrics", exc_info=True)
+        try:
+            message_sizes = [len(pickle.dumps(message))]
+        except Exception:  # noqa: BLE001
+            message_sizes = []
+        record_message_publish_metrics(
+            handler_type="inmemory",
+            messaging_system="in_memory",
+            event_count=1,
+            message_sizes=message_sizes,
+            started_at=started_at,
+        )
         logger.debug(f"Put message to queue for thread_id={thread_id}")
 
     def flush(self, thread_id: str) -> None:

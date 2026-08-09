@@ -70,6 +70,7 @@ def test_metric_resource_uses_agent_sdk_version_without_agent_type():
     attributes = service._create_resource().attributes
 
     assert attributes["agent.info.sdk_version"] == "2.2.3"
+    assert attributes["service.instance.id"]
     assert "agent.info.type" not in attributes
 
 

@@ -1044,7 +1044,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         **kwargs: Any,
     ) -> None:
         """工具调用出错 - 标记 Tool Span 为错误"""
-        if not self.enabled or not self.enable_traces:
+        if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
         span = self._get_span(run_id)
         _set_span_attribute(span, "tool.execution_status", "failed")

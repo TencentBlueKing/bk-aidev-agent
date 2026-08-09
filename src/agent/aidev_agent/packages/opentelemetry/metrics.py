@@ -267,14 +267,14 @@ class AgentMetrics:
             "messaging.system": messaging_system,
         }
         duration_attributes = dict(attributes)
-        if message_sizes:
-            self.message_publish_count.add(len(message_sizes), attributes)
-            for size in message_sizes:
-                self.message_publish_size.record(size, attributes)
         if error is not None:
             duration_attributes["error.type"] = type(error).__name__
             self.message_publish_errors.add(1, duration_attributes)
         else:
+            if message_sizes:
+                self.message_publish_count.add(len(message_sizes), attributes)
+                for size in message_sizes:
+                    self.message_publish_size.record(size, attributes)
             self.message_publish_event_count.record(event_count, attributes)
         self.message_publish_duration.record(duration, duration_attributes)
 

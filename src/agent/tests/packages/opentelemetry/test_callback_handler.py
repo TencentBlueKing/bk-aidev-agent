@@ -234,6 +234,23 @@ class TestBkAidevAgentCallbackHandler:
         assert end_call.args[0] == -1
         assert start_call.args[1] == end_call.args[1]
 
+    def test_tool_error_metric_is_recorded_when_traces_are_disabled(self, tracer_and_exporter):
+        tracer, _ = tracer_and_exporter
+        recorder = MagicMock()
+        handler = BkAidevAgentCallbackHandler(
+            tracer=tracer,
+            enable_traces=False,
+            metric_recorder=recorder,
+        )
+        run_id = uuid4()
+        error = RuntimeError("boom")
+
+        asyncio.run(handler.on_tool_start(serialized={"name": "demo-tool"}, input_str="input", run_id=run_id))
+        asyncio.run(handler.on_tool_error(error, run_id=run_id))
+
+        recorder.record_tool.assert_called_once()
+        assert recorder.record_tool.call_args.kwargs["error"] is error
+
     def test_llm_generate_span_attributes(self, tracer_and_exporter):
         """测试 llm.generate span 包含 llm.input 和 llm.output 属性"""
         tracer, exporter = tracer_and_exporter

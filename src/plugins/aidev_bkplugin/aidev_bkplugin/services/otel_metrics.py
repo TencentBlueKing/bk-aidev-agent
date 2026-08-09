@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import socket
 from dataclasses import dataclass
 from typing import Any
 
@@ -98,6 +100,7 @@ class BkPluginMetricService:
         return Resource.create(
             {
                 ResourceAttributes.SERVICE_NAME: self.service_name,
+                "service.instance.id": f"{socket.gethostname()}:{os.getpid()}",
                 "agent.info.code": self.agent_info.get("agent_code")
                 or self.agent_info.get("code")
                 or self.service_name,

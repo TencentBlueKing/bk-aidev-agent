@@ -143,15 +143,15 @@ def test_flush_publishes_coalesced_sse_and_eod(monkeypatch):
     handler._ensure_queue = MagicMock(return_value="replay-queue")
     handler._notify_eod_committed = MagicMock()
     handler._notify_replay_waiters = MagicMock()
-    metric_recorder = MagicMock()
-    monkeypatch.setattr(rabbitmq_module, "get_enabled_agent_metrics", lambda: metric_recorder)
+    publish_metric = MagicMock()
+    monkeypatch.setattr(rabbitmq_module, "record_message_publish_metrics", publish_metric)
 
     handler.flush("thread-id")
 
     published = [pickle.loads(call.kwargs["body"]) for call in channel.basic_publish.call_args_list]
     assert published == [first + second, EOD_CHUNK]
     handler._notify_eod_committed.assert_called_once_with("thread-id", [first, second, EOD_CHUNK])
-    metric_call = metric_recorder.record_message_publish.call_args.kwargs
+    metric_call = publish_metric.call_args.kwargs
     assert metric_call["handler_type"] == "rabbitmq"
     assert metric_call["event_count"] == 3
     assert len(metric_call["message_sizes"]) == 2

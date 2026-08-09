@@ -68,7 +68,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "LLM、Tool、Agent 自身处理为每次 Agent 调用的累计平均耗时；子调用并行时不代表严格互斥的墙钟时间。",
+      "description": "四条曲线均按每次 Agent 调用归一化。LLM、Tool 是子调用累计耗时，Agent 自身处理是总耗时扣除已记录子调用后的剩余值；子调用并行时不是严格互斥的墙钟阶段。",
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
       "gridPos": {"h": 9, "w": 12, "x": 0, "y": 6},
       "id": 7,
@@ -77,9 +77,9 @@
         {"editorMode": "code", "expr": "sum(rate(gen_ai_invoke_agent_duration_seconds_sum{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[5m])) / sum(rate(gen_ai_invoke_agent_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[5m]))", "legendFormat": "Agent 总耗时", "range": true, "refId": "A"},
         {"editorMode": "code", "expr": "sum(rate(gen_ai_client_operation_duration_seconds_sum{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\"}[5m])) / sum(rate(gen_ai_invoke_agent_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[5m]))", "legendFormat": "LLM/Agent", "range": true, "refId": "B"},
         {"editorMode": "code", "expr": "sum(rate(gen_ai_execute_tool_duration_seconds_sum{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[5m])) / sum(rate(gen_ai_invoke_agent_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[5m]))", "legendFormat": "Tool/Agent", "range": true, "refId": "C"},
-        {"editorMode": "code", "expr": "sum(rate(aidev_agent_processing_duration_seconds_sum{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[5m])) / sum(rate(aidev_agent_processing_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[5m]))", "legendFormat": "Agent 自身处理", "range": true, "refId": "D"}
+        {"editorMode": "code", "expr": "sum(rate(aidev_agent_processing_duration_seconds_sum{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[5m])) / sum(rate(gen_ai_invoke_agent_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[5m]))", "legendFormat": "Agent 自身处理", "range": true, "refId": "D"}
       ],
-      "title": "Agent 总耗时与阶段分配",
+      "title": "Agent 总耗时与子阶段累计耗时",
       "type": "timeseries"
     },
     {

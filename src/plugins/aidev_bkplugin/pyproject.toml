@@ -12,7 +12,7 @@ dependencies = [
 
 [project.optional-dependencies]
 opentelemetry = [
-    "aidev-agent[opentelemetry]>=2.2.0",
+    "aidev-agent[opentelemetry]>=2.2.1rc291",
 ]
 
 [dependency-groups]

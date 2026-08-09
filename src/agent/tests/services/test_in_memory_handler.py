@@ -361,13 +361,13 @@ class TestInMemoryQueueMessageHandler:
         assert messages == ["message1", "message2", "message3"]
 
     def test_put_records_actual_handler_metrics(self, handler, monkeypatch):
-        metric_recorder = MagicMock()
-        monkeypatch.setattr(in_memory_module, "get_enabled_agent_metrics", lambda: metric_recorder)
+        publish_metric = MagicMock()
+        monkeypatch.setattr(in_memory_module, "record_message_publish_metrics", publish_metric)
 
         handler.put("metric-thread", "message")
 
-        metric_recorder.record_message_publish.assert_called_once()
-        call = metric_recorder.record_message_publish.call_args.kwargs
+        publish_metric.assert_called_once()
+        call = publish_metric.call_args.kwargs
         assert call["handler_type"] == "inmemory"
         assert call["messaging_system"] == "in_memory"
         assert call["event_count"] == 1

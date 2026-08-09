@@ -23,6 +23,13 @@ cd src/plugins/aidev_bkplugin
 PYTHONPATH=../../agent uv run --no-sync python dev/otel/mock_agent_metrics.py
 ```
 
+mock 默认维持 3 路并发约 15 秒；可通过环境变量调整并发、批次数和间隔：
+
+```bash
+AIDEV_MOCK_CONCURRENCY=3 AIDEV_MOCK_ITERATIONS=40 AIDEV_MOCK_INTERVAL_SECONDS=1.5 \
+  PYTHONPATH=../../agent uv run --no-sync python dev/otel/mock_agent_metrics.py
+```
+
 等待 2～5 秒后刷新 Grafana。也可以直接在 Prometheus 查询：
 
 ```promql
@@ -41,14 +48,17 @@ PYTHONPATH=../../agent uv run --no-sync python dev/otel/mock_agent_metrics.py
 - `Token Type`：区分 `input`、`output`、`cache_creation`、`cache_read`；
 - `SSE Event Type`：按 SSE 协议事件类型过滤。
 
-“Agent 总耗时与阶段分配”展示 Agent 总耗时以及每次调用累计的 LLM、Tool、Agent
+“Agent 总耗时与子阶段累计耗时”展示 Agent 总耗时以及每次调用累计的 LLM、Tool、Agent
 自身处理耗时。子调用并行时这些阶段不是严格互斥的墙钟时间，单次调用的精确分配应查看
 Trace。“Broker 写入压力与合并效果”区分合并前逻辑事件数和合并后物理写入数，并按
-`aidev.message.handler.type` 展示实际使用的 `inmemory`、`rabbitmq` 或后续 handler。
+`aidev.message.handler.type` 展示实际使用的 `inmemory`、`rabbitmq`、`rabbitmq_stream`
+或 `redis`。
 
 指标身份维度包含 `agent.info.code`、`agent.info.name` 和
 `agent.info.sdk_version`；不包含固定值 `agent.info.type`。Agent 版本由 bkplugin
 从平台下发并解码后的 `agent_info.agent_sdk_version` 获取，缺失时使用 `unknown`。
+bkplugin 同时设置标准 Resource 属性 `service.instance.id`，用于区分同一服务的不同进程；
+仪表盘按 Agent 聚合该属性，因此多进程活跃数能够正确求和，但不把实例 ID 暴露为业务过滤器。
 
 ## 查看原始指标数据
 

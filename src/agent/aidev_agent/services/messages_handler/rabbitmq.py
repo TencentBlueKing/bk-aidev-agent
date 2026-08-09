@@ -15,14 +15,10 @@ from urllib.parse import quote
 import pika
 from environs import Env
 
-try:
-    from aidev_agent.packages.opentelemetry.metrics import get_enabled_agent_metrics
-except ImportError:  # pragma: no cover - metrics are optional at runtime
-    get_enabled_agent_metrics = None
-
 from .base import BaseMessageQueueHandler, ConsumerPreemptedError, QueueTTLConfig
 from .constants import EOD_CHUNK, QueueNamePrefixes
 from .replay_buffer_mixin import ReplayBufferMixin
+from .telemetry import record_message_publish_metrics
 
 logger = getLogger(__name__)
 
@@ -1615,22 +1611,15 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
         started_at: float,
         error: BaseException | None = None,
     ) -> None:
-        if get_enabled_agent_metrics is None:
-            return
-        metric_recorder = get_enabled_agent_metrics()
-        if metric_recorder is None:
-            return
-        try:
-            metric_recorder.record_message_publish(
-                handler_type="rabbitmq",
-                messaging_system="rabbitmq",
-                event_count=event_count,
-                message_sizes=message_sizes,
-                duration=time.monotonic() - started_at,
-                error=error,
-            )
-        except Exception:  # noqa: BLE001
-            logger.debug("Failed to record RabbitMQ publish metrics", exc_info=True)
+        record_message_publish_metrics(
+            handler_type="rabbitmq",
+            messaging_system="rabbitmq",
+            event_count=event_count,
+            message_sizes=message_sizes,
+            started_at=started_at,
+            error=error,
+        )
+
     def _flush_messages(self) -> None:
         """批量推送缓冲区中的所有消息到 RabbitMQ
 
