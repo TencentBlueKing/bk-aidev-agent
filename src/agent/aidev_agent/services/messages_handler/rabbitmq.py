@@ -9,10 +9,7 @@ import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from logging import getLogger
-from typing import TYPE_CHECKING, Any, ClassVar, Optional
-
-if TYPE_CHECKING:
-    import pika.channel
+from typing import Any, ClassVar, Optional
 from urllib.parse import quote
 
 import pika
@@ -1979,10 +1976,6 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
         except Exception as e:
             logger.error(f"Error getting cached count: {e}")
             return 0
-
-    def get_total_count(self, thread_id: str) -> int:
-        """获取主队列消息数量。"""
-        return self.get_cached_count(thread_id)
 
     # is_empty() 和 size() 使用基类的通用实现
 

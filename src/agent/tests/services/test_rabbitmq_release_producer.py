@@ -8,6 +8,7 @@ import contextlib
 import threading
 
 from aidev_agent.services.messages_handler.rabbitmq import RabbitMQMessageHandler
+from pika.exceptions import ChannelClosedByBroker, StreamLostError
 
 
 def _make_handler():
@@ -36,8 +37,6 @@ class _FakeConnection:
 
 def test_release_producer_tolerates_stream_lost_error():
     """connection.channel() 抛 StreamLostError 时，release_producer 不应抛异常。"""
-    from pika.exceptions import StreamLostError
-
     handler = _make_handler()
     thread_id = "test-stream-lost"
     conn = _FakeConnection(StreamLostError("Stream connection lost"))
@@ -93,8 +92,6 @@ def test_has_active_producer_checks_remote_lock_queue():
 
 
 def test_has_active_producer_treats_remote_exclusive_queue_as_active():
-    from pika.exceptions import ChannelClosedByBroker
-
     handler = _make_handler()
 
     class _Channel:
@@ -111,8 +108,6 @@ def test_has_active_producer_treats_remote_exclusive_queue_as_active():
 
 
 def test_has_active_producer_returns_false_when_lock_queue_is_missing():
-    from pika.exceptions import ChannelClosedByBroker
-
     handler = _make_handler()
 
     class _Channel:

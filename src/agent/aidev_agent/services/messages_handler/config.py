@@ -28,8 +28,8 @@ class MessageHandlerConfig:
 
     @classmethod
     def has_rabbitmq_config(cls) -> bool:
-        """检查是否配置了 RabbitMQ"""
-        return bool(env.str(EnvVarNames.RABBITMQ_HOST, "") or env.str(EnvVarNames.RABBITMQ_STREAM_PORT, ""))
+        """检查是否配置了 RabbitMQ 主机。"""
+        return bool(env.str(EnvVarNames.RABBITMQ_HOST, "").strip())
 
     @classmethod
     def has_rabbitmq_stream_config(cls) -> bool:
@@ -39,7 +39,7 @@ class MessageHandlerConfig:
     @classmethod
     def has_redis_config(cls) -> bool:
         """检查是否配置了 Redis MessageHandler 专用连接地址。"""
-        return bool(env.str(EnvVarNames.REDIS_URL, ""))
+        return bool(env.str(EnvVarNames.REDIS_URL, "").strip())
 
     @classmethod
     def resolve_handler_type(cls) -> MessageHandlerType:
@@ -48,7 +48,7 @@ class MessageHandlerConfig:
         优先级：
         1. 显式配置 MESSAGE_HANDLER_TYPE
         2. 有 Redis 专用配置 → Redis
-        3. 有 RabbitMQ 配置（RABBITMQ_HOST 非空）→ RabbitMQ
+        3. 有 RabbitMQ 主机或 Stream 端口配置 → RabbitMQ
         4. 默认 → InMemory
         """
         # 1. 显式配置优先
@@ -61,7 +61,7 @@ class MessageHandlerConfig:
             return MessageHandlerType.REDIS
 
         # 3. 只要有 RabbitMQ 配置就使用 RabbitMQ
-        if cls.has_rabbitmq_config():
+        if cls.has_rabbitmq_config() or cls.has_rabbitmq_stream_config():
             return MessageHandlerType.RABBITMQ
 
         # 4. 默认使用内存队列

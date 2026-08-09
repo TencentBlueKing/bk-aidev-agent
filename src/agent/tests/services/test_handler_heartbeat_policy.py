@@ -20,4 +20,4 @@ from aidev_agent.services.messages_handler.redis import RedisMessageHandler
 def test_consumer_heartbeat_timeout_is_handler_specific(handler_class, expected_timeout):
     handler = object.__new__(handler_class)
 
-    assert handler.get_consumer_heartbeat_timeout() == expected_timeout
+    assert expected_timeout == handler.CONSUMER_HEARTBEAT_TIMEOUT

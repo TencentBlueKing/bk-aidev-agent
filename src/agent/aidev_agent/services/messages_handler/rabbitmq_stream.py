@@ -504,9 +504,6 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
             return known_count
         return int(self.has_pending_messages(thread_id))
 
-    def get_total_count(self, thread_id: str) -> int:
-        return self.get_cached_count(thread_id)
-
     def __del__(self) -> None:
         with contextlib.suppress(Exception):
             if hasattr(self, "_stream_runtime"):

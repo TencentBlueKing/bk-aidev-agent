@@ -585,9 +585,6 @@ class RedisMessageHandler(ReplayBufferMixin, BaseMessageQueueHandler):
     def get_cached_count(self, thread_id: str) -> int:
         return self._client.xlen(self._stream_key(thread_id))
 
-    def get_total_count(self, thread_id: str) -> int:
-        return self.get_cached_count(thread_id)
-
     def set_cancel_signal(self, thread_id: str, run_id: str | None = None) -> bool:
         result = bool(self._client.set(self._cancel_signal_key(thread_id), self._signal_value(run_id), ex=30))
         if result:

@@ -480,11 +480,10 @@ class GeneratorStreamingHelper:
         在消费者因取消信号退出时调用，通知 stop 接口流已结束。
         """
         try:
-            if hasattr(self.message_handler, "notify_consumer_cancelled"):
-                if self.run_id:
-                    self.message_handler.notify_consumer_cancelled(self.thread_id, run_id=self.run_id)
-                else:
-                    self.message_handler.notify_consumer_cancelled(self.thread_id)
+            if self.run_id:
+                self.message_handler.notify_consumer_cancelled(self.thread_id, run_id=self.run_id)
+            else:
+                self.message_handler.notify_consumer_cancelled(self.thread_id)
         except Exception as e:
             logger.exception(f"Error sending consumer cancelled notification for thread_id={self.thread_id}: {e}")
 
@@ -757,7 +756,7 @@ class GeneratorStreamingHelper:
         last_progress_ts = time.time()
         replay_offset = 0
         supports_replay_from_start = self._supports_replay_from_start()
-        heartbeat_timeout = self.message_handler.get_consumer_heartbeat_timeout()
+        heartbeat_timeout = self.message_handler.CONSUMER_HEARTBEAT_TIMEOUT
         heartbeat_grace_deadline: float | None = None
         background_recovery_deadline: float | None = None
         last_consumer_check = 0.0
@@ -866,8 +865,7 @@ class GeneratorStreamingHelper:
                             exit_reason = "completed"
                             return exit_reason
                         if item == CANCELLED_CHUNK:
-                            if hasattr(self.message_handler, "mark_stopped"):
-                                self.message_handler.mark_stopped(self.thread_id)
+                            self.message_handler.mark_stopped(self.thread_id)
                             logger.info(f"Stream cancelled for thread_id={self.thread_id}, cached content preserved")
                             self._notify_consumer_cancelled_safely()
                             yield emit_run_finished_event(thread_id=self.thread_id, run_id=RunId.CANCELLED)
@@ -1098,22 +1096,19 @@ class GeneratorStreamingHelper:
         """
         thread_id = self.thread_id
         handler = self.message_handler
-        arm_completed_replay_expiry = getattr(handler, "arm_completed_replay_expiry", None)
-        if callable(arm_completed_replay_expiry):
-            try:
-                if arm_completed_replay_expiry(thread_id):
-                    logger.info(
-                        "[MessageHandler] backend-managed replay expiry armed thread_id=%s done_event_seen=%s",
-                        thread_id,
-                        done_event_seen,
-                    )
-                    return
-            except Exception:
-                logger.exception(
-                    "[MessageHandler] failed to arm backend-managed replay expiry; falling back to polling "
-                    "thread_id=%s",
+        try:
+            if handler.arm_completed_replay_expiry(thread_id):
+                logger.info(
+                    "[MessageHandler] backend-managed replay expiry armed thread_id=%s done_event_seen=%s",
                     thread_id,
+                    done_event_seen,
                 )
+                return
+        except Exception:
+            logger.exception(
+                "[MessageHandler] failed to arm backend-managed replay expiry; falling back to polling thread_id=%s",
+                thread_id,
+            )
 
         delay = self._PRODUCER_CLEANUP_DELAY
         grace = self._DONE_ORPHAN_CLEANUP_GRACE

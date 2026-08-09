@@ -119,11 +119,6 @@ class LangGraphAgent:
 
         return event
 
-    @staticmethod
-    def _should_emit_event(event: BaseEvent) -> bool:
-        """过滤仅供服务端状态处理、无需下发到 SSE 的事件。"""
-        return event.type != EventType.STATE_SNAPSHOT
-
     async def run(self, input: RunAgentInput) -> AsyncGenerator[str, None]:
         # 获取 forwarded_props, 并且进行命名格式转换
         # aidev_agent sdk使用 和 bkai平台的数据保存 都是 snake 格式
@@ -148,7 +143,7 @@ class LangGraphAgent:
         }
         # 启动流，并且把事件推送出去
         async for event in self._handle_stream_events(input, config):
-            if self._should_emit_event(event):
+            if event.type != EventType.STATE_SNAPSHOT:
                 yield event
 
     async def _handle_stream_events(self, input: RunAgentInput, config: RunnableConfig) -> AsyncGenerator[str, None]:

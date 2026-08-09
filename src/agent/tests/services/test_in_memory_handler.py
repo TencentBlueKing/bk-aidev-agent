@@ -36,6 +36,8 @@ def _event_types(chunks: list[str]) -> list[str]:
 class ReplayFromStartHandler:
     """测试用 replay handler：模拟 RabbitMQ 的非破坏性会话日志读取。"""
 
+    CONSUMER_HEARTBEAT_TIMEOUT = 60.0
+
     def __init__(self):
         self.messages: dict[str, list] = {}
         self.active_consumers: set[tuple[str, str]] = set()
@@ -49,11 +51,11 @@ class ReplayFromStartHandler:
     def supports_replay_from_start(self) -> bool:
         return True
 
-    def get_consumer_heartbeat_timeout(self) -> float:
-        return 60.0
-
     def bind_replay_run(self, thread_id, run_id):
         pass
+
+    def arm_completed_replay_expiry(self, thread_id):
+        return False
 
     def put(self, thread_id, message):
         with self._condition:
@@ -751,7 +753,7 @@ class TestInMemoryQueueMessageHandler:
         thread_id = "test_stream_heartbeat_keepalive"
         helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
         monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_INTERVAL", 0.05)
-        monkeypatch.setattr(handler, "get_consumer_heartbeat_timeout", lambda: 0.2)
+        monkeypatch.setattr(handler, "CONSUMER_HEARTBEAT_TIMEOUT", 0.2)
         heartbeat_count = 0
 
         original_put = handler.put
@@ -785,7 +787,7 @@ class TestInMemoryQueueMessageHandler:
         thread_id = "test_stream_heartbeat_timeout"
         helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
         monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_INTERVAL", 1.0)
-        monkeypatch.setattr(handler, "get_consumer_heartbeat_timeout", lambda: 0.2)
+        monkeypatch.setattr(handler, "CONSUMER_HEARTBEAT_TIMEOUT", 0.2)
         monkeypatch.setattr(helper, "_HEARTBEAT_TIMEOUT_GRACE", 0.05)
         dispatched = []
         original_put = handler.put
@@ -816,7 +818,7 @@ class TestInMemoryQueueMessageHandler:
         """RabbitMQ replay 使用独立的较长心跳窗口，不受通用 15 秒阈值影响。"""
         handler = ReplayFromStartHandler()
         helper = GeneratorStreamingHelper(handler, thread_id="test_replay_heartbeat_timeout")
-        assert handler.get_consumer_heartbeat_timeout() == 60.0
+        assert handler.CONSUMER_HEARTBEAT_TIMEOUT == 60.0
         producer_thread = threading.Thread(target=lambda: None)
         producer_thread.start()
         producer_thread.join()
@@ -829,7 +831,7 @@ class TestInMemoryQueueMessageHandler:
                 raise TimeoutError
             return [EOD_CHUNK], replay_offset + 1
 
-        monkeypatch.setattr(handler, "get_consumer_heartbeat_timeout", lambda: 0.2)
+        monkeypatch.setattr(handler, "CONSUMER_HEARTBEAT_TIMEOUT", 0.2)
         monkeypatch.setattr(helper, "_get_consumer_messages", delayed_eod)
         stream = helper._consume_stream_messages(
             handler.acquire_consumer(helper.thread_id), threading.Event(), False, True, producer_thread=producer_thread
@@ -842,7 +844,7 @@ class TestInMemoryQueueMessageHandler:
         thread_id = "test_background_heartbeat_recovery"
         helper = GeneratorStreamingHelper(handler, thread_id=thread_id, defer_cleanup_on_complete=True)
         monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_INTERVAL", 1.0)
-        monkeypatch.setattr(handler, "get_consumer_heartbeat_timeout", lambda: 0.1)
+        monkeypatch.setattr(handler, "CONSUMER_HEARTBEAT_TIMEOUT", 0.1)
         monkeypatch.setattr(helper, "_HEARTBEAT_TIMEOUT_GRACE", 0.02)
         monkeypatch.setattr(helper, "_BACKGROUND_HEARTBEAT_RECOVERY_TIMEOUT", 2.0)
         original_put = handler.put
@@ -876,7 +878,7 @@ class TestInMemoryQueueMessageHandler:
                 raise TimeoutError
             return [streaming_helper_module.EOD_CHUNK], replay_offset + 1
 
-        monkeypatch.setattr(handler, "get_consumer_heartbeat_timeout", lambda: 0.0)
+        monkeypatch.setattr(handler, "CONSUMER_HEARTBEAT_TIMEOUT", 0.0)
         monkeypatch.setattr(helper, "_HEARTBEAT_TIMEOUT_GRACE", 0.0)
         monkeypatch.setattr(helper, "_BACKGROUND_HEARTBEAT_RECOVERY_TIMEOUT", 1.0)
         monkeypatch.setattr(helper, "_get_consumer_messages", delayed_eod)
@@ -1051,7 +1053,7 @@ class TestInMemoryQueueMessageHandler:
         producer_thread.start()
         producer_thread.join()
 
-        monkeypatch.setattr(handler, "get_consumer_heartbeat_timeout", lambda: 0.0)
+        monkeypatch.setattr(handler, "CONSUMER_HEARTBEAT_TIMEOUT", 0.0)
         monkeypatch.setattr(helper, "_get_consumer_messages", timeout_without_messages)
         monkeypatch.setattr(handler, "mark_completed", completed_threads.append)
 
@@ -1084,6 +1086,7 @@ class TestMessageHandlerConfig:
             ("", "localhost", "", MessageHandlerType.RABBITMQ),  # 有 MQ 配置 → 自动 RabbitMQ
             ("", "localhost", "redis://localhost", MessageHandlerType.REDIS),  # Redis 专用配置优先
             ("inmemory", "localhost", "redis://localhost", MessageHandlerType.INMEMORY),  # 显式覆盖配置
+            ("", " ", " ", MessageHandlerType.INMEMORY),  # 纯空白不视为有效配置
         ],
     )
     def test_resolve_handler_type(self, monkeypatch, env_handler_type, env_rabbitmq_host, env_redis_url, expected_type):
@@ -1103,6 +1106,7 @@ class TestMessageHandlerConfig:
     def test_create_handler_rabbitmq_fallback(self, monkeypatch):
         """_create_handler 传入 RABBITMQ 但无 MQ 配置时应降级为 InMemory"""
         monkeypatch.setenv(EnvVarNames.RABBITMQ_HOST, "")
+        monkeypatch.setenv(EnvVarNames.RABBITMQ_STREAM_PORT, "")
         handler = _create_handler(MessageHandlerType.RABBITMQ)
         assert isinstance(handler, InMemoryQueueMessageHandler)
 
@@ -1116,7 +1120,7 @@ class TestMessageHandlerConfig:
         monkeypatch.setenv(EnvVarNames.RABBITMQ_HOST, "rabbitmq.local")
         monkeypatch.setenv(EnvVarNames.RABBITMQ_STREAM_PORT, "5552")
         monkeypatch.setattr(
-            "aidev_agent.services.messages_handler.factory._get_rabbitmq_stream_handler",
+            "aidev_agent.services.messages_handler.factory.RabbitMQStreamMessageHandler",
             lambda: selected_handler,
         )
 

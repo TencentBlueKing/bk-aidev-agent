@@ -85,10 +85,6 @@ class BaseMessageQueueHandler(ABC):
 
     CONSUMER_HEARTBEAT_TIMEOUT: ClassVar[float] = HEARTBEAT_TIMEOUT
 
-    def get_consumer_heartbeat_timeout(self) -> float:
-        """返回该后端允许消费者连续无消息的时间。"""
-        return self.CONSUMER_HEARTBEAT_TIMEOUT
-
     @abstractmethod
     def put(self, thread_id: str, message: Any) -> None:
         """向指定 thread_id 的队列中添加消息
@@ -219,7 +215,7 @@ class BaseMessageQueueHandler(ABC):
     def get_total_count(self, thread_id: str) -> int:
         """获取该会话当前缓存的逻辑消息总数。
 
-        默认实现：子类应覆盖此方法。
+        默认与 ``get_cached_count()`` 一致；包含额外已读缓存的竞争消费实现可覆盖。
 
         Args:
             thread_id: 线程ID
@@ -227,7 +223,7 @@ class BaseMessageQueueHandler(ABC):
         Returns:
             总消息数量
         """
-        return 0
+        return self.get_cached_count(thread_id)
 
     def is_empty(self, thread_id: str) -> bool:
         """检查指定 thread_id 是否没有缓存消息。
@@ -392,3 +388,19 @@ class BaseMessageQueueHandler(ABC):
             thread_id: 线程ID / session_code
             run_id: 本轮运行 ID；非空时只清理同一轮取消信号
         """
+
+    def notify_consumer_cancelled(self, thread_id: str, run_id: str | None = None) -> bool:
+        """通知 stop 调用方消费者已经退出；不支持共享通知的实现返回 False。"""
+        return False
+
+    def wait_for_consumer_cancelled(
+        self,
+        thread_id: str,
+        timeout: float = 3.0,
+        run_id: str | None = None,
+    ) -> bool:
+        """等待消费者退出通知；不支持共享通知的实现返回 False。"""
+        return False
+
+    def clear_cancelled_signal(self, thread_id: str, run_id: str | None = None) -> None:
+        """清除消费者退出通知；默认无操作。"""
