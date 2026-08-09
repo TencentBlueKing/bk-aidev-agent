@@ -31,6 +31,7 @@ except ImportError:
     ThreadingInstrumentor = None
 
 logger = logging.getLogger(__name__)
+_metric_service = None
 
 
 def init_bk_aidev_agent_otel() -> None:
@@ -59,6 +60,8 @@ def init_bk_aidev_agent_otel() -> None:
 
     from aidev_bkplugin.services.agent_config import AgentConfigFetcher
 
+    global _metric_service
+
     endpoints = []
     # 1. 从 BKAI_AGENT_OTEL_ENDPOINTS 解析多地址
     try:
@@ -75,6 +78,34 @@ def init_bk_aidev_agent_otel() -> None:
     endpoints.extend(get_otel_endpoint_by_env())
 
     otel_config = OTelConfig(otel_endpoints=endpoints)
+    try:
+        from aidev_agent.packages.opentelemetry.metrics import configure_metric_identity
+
+        from aidev_bkplugin.services.otel_metrics import BkPluginMetricService, MetricExportSettings
+
+        metric_settings = MetricExportSettings.from_agent_info(
+            agent_info,
+            default_enabled=otel_config.enable_metrics,
+        )
+        otel_config.enable_metrics = metric_settings.enabled
+        configure_metric_identity(
+            agent_info.get("agent_code") or agent_info.get("code") or otel_config.service_name,
+            agent_info.get("agent_name") or agent_info.get("name"),
+        )
+        _metric_service = BkPluginMetricService(
+            service_name=otel_config.service_name,
+            endpoints=endpoints,
+            agent_info=agent_info,
+            settings=metric_settings,
+        )
+        _metric_service.start()
+    except ImportError:
+        logger.info("[aidev_bkplugin] metric OpenTelemetry extras unavailable; metric export skipped")
+        otel_config.enable_metrics = False
+    except Exception:  # noqa: BLE001
+        logger.exception("[aidev_bkplugin] metric export initialization failed; continuing without metrics")
+        _metric_service = None
+        otel_config.enable_metrics = False
     BkAidevAgentInstrumentor(config=otel_config).instrument()
 
 

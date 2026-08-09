@@ -11,6 +11,11 @@ from ag_ui.encoder import EventEncoder
 from aidev_agent.core.ag_ui.types import RunFinishedSuccessOutcome, serialize_run_finished_outcome
 from aidev_agent.utils.event import RunId, emit_run_finished_event
 
+try:
+    from aidev_agent.packages.opentelemetry.metrics import get_enabled_agent_metrics
+except ImportError:  # OpenTelemetry is an optional SDK extra.
+    get_enabled_agent_metrics = None
+
 from .base import (
     BaseMessageQueueHandler,
     ConsumerPreemptedError,
@@ -35,6 +40,19 @@ _SSE_HEARTBEAT_EVENT = EventEncoder().encode(
 # 断点续传时需要过滤的事件类型
 # flow_agent_start 事件在续聊时不应该重复发送，避免前端重新渲染
 _RESUME_FILTER_EVENT_TYPES: frozenset[str] = frozenset({"flow_agent_start"})
+
+
+def _get_sse_event_type(chunk: Any) -> str:
+    if not isinstance(chunk, str) or not chunk.startswith("data: "):
+        return "unknown"
+    payload = chunk[6:].strip()
+    if payload == "[DONE]":
+        return "done"
+    try:
+        data = json.loads(payload)
+    except (TypeError, json.JSONDecodeError):
+        return "unknown"
+    return str(data.get("type") or data.get("event") or "unknown")
 
 
 class GeneratorStreamingHelper:
@@ -1190,6 +1208,9 @@ class GeneratorStreamingHelper:
         无法中断的工具调用会先执行到下一次 yield，再由生产者统一结束。
         """
         _producer_start = time.monotonic()
+        metric_recorder = get_enabled_agent_metrics() if get_enabled_agent_metrics is not None else None
+        metric_response_size = 0
+        metric_first_event_seen = False
         logger.info(f"[PRODUCER] start thread_id={self.thread_id} thread={threading.current_thread().name}")
         heartbeat_stop_event = threading.Event()
         heartbeat_thread: threading.Thread | None = None
@@ -1286,6 +1307,16 @@ class GeneratorStreamingHelper:
             for chunk in generator:
                 chunk_count += 1
 
+                if metric_recorder is not None:
+                    chunk_size = (
+                        len(chunk.encode("utf-8")) if isinstance(chunk, str) else len(str(chunk).encode("utf-8"))
+                    )
+                    metric_response_size += chunk_size
+                    metric_recorder.record_sse_event(chunk_size, _get_sse_event_type(chunk))
+                    if not metric_first_event_seen:
+                        metric_recorder.record_sse_first_event(time.monotonic() - _producer_start)
+                        metric_first_event_seen = True
+
                 current_time = time.time()
                 should_check_cross_process = (
                     chunk_count % CROSS_PROCESS_CHECK_INTERVAL == 0
@@ -1343,6 +1374,8 @@ class GeneratorStreamingHelper:
                         f"Failed to send terminal error events for thread_id={self.thread_id}: {encode_err}"
                     )
         finally:
+            if metric_recorder is not None:
+                metric_recorder.record_sse_response(metric_response_size)
             logger.info(
                 f"[PRODUCER] finally enter thread_id={self.thread_id} "
                 f"producer_error={producer_error} done_event_seen={done_event_seen} "

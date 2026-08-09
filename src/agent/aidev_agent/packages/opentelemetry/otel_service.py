@@ -21,18 +21,11 @@ import platform
 import socket
 from typing import Optional, Type
 
-from opentelemetry import metrics, trace
-from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter as GRPCLogExporter
-from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter as GRPCMetricExporter
+from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter as GRPCSpanExporter
-from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter as HTTPLogExporter
-from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter as HTTPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter as HTTPSpanExporter
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
-from opentelemetry.sdk.metrics import Histogram, MeterProvider
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation, View
 from opentelemetry.sdk.resources import ProcessResourceDetector, Resource, ResourceDetector, get_aggregated_resources
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -67,7 +60,6 @@ class BkAgentOTelService:
         """
         self.config = config
         self.tracer_provider: Optional[TracerProvider] = None
-        self.meter_provider: Optional[MeterProvider] = None
         self.logger_provider: Optional[LoggerProvider] = None
 
     def start(self):
@@ -81,8 +73,6 @@ class BkAgentOTelService:
         # 设置 Traces
         if self.config.enable_traces:
             self._setup_traces(resource)
-        if self.config.enable_metrics:
-            self._setup_metrics(resource)
         if self.config.enable_logs:
             self._setup_logs(resource)
         logger.info("OTel service started successfully")
@@ -94,8 +84,6 @@ class BkAgentOTelService:
         logger.info("Stopping OTel service...")
         if self.tracer_provider:
             self.tracer_provider.shutdown()
-        if self.meter_provider:
-            self.meter_provider.shutdown()
         if self.logger_provider:
             self.logger_provider.shutdown()
         logger.info("OTel service stopped successfully")
@@ -181,71 +169,6 @@ class BkAgentOTelService:
         else:
             assert_never(exporter_type)
 
-    def _setup_metrics(self, resource: Resource):
-        """
-        设置 Metrics - 支持多个上报地址
-
-        Args:
-            resource: Resource 实例
-        """
-        # 为每个端点创建独立的 Reader
-        readers = []
-        for idx, endpoint_config in enumerate(self.config.otel_endpoints):
-            try:
-                # 创建该端点的 Metric Exporter
-                exporter = self._create_metric_exporter(endpoint_config)
-
-                # 创建 PeriodicExportingMetricReader
-                reader = PeriodicExportingMetricReader(exporter)
-                readers.append(reader)
-
-                logger.info(
-                    f"Metric reader {idx + 1}/{len(self.config.otel_endpoints)} added: "
-                    f"url={endpoint_config['url']}, type={endpoint_config['exporter_type'].value}"
-                )
-
-            except Exception as e:
-                logger.error(f"Failed to setup metric reader for endpoint {endpoint_config['url']}: {e}", exc_info=True)
-                # 某个端点失败不影响其他端点,继续处理
-
-        # 配置 Histogram 视图
-        histogram_view = View(
-            instrument_type=Histogram,
-            instrument_unit="s",
-            aggregation=ExplicitBucketHistogramAggregation(
-                boundaries=[0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0]
-            ),
-        )
-
-        # 创建 MeterProvider
-        self.meter_provider = MeterProvider(resource=resource, metric_readers=readers, views=[histogram_view])
-        metrics.set_meter_provider(self.meter_provider)
-
-    def _create_metric_exporter(self, endpoint_config: dict):
-        """
-        创建 Metric Exporter (支持独立配置)
-
-        Args:
-            endpoint_config: 端点配置字典
-
-        Returns:
-            OTLPMetricExporter 实例
-        """
-        url = endpoint_config["url"]
-        token = endpoint_config["token"]
-        exporter_type = endpoint_config["exporter_type"]
-
-        headers = {"x-bk-token": token} if token else {}
-
-        if exporter_type == ExporterType.GRPC:
-            return GRPCMetricExporter(endpoint=url, insecure=True, headers=headers)
-        elif exporter_type == ExporterType.HTTP:
-            if not url.endswith("/v1/metrics"):
-                url = f"{url.rstrip('/')}/v1/metrics"
-            return HTTPMetricExporter(endpoint=url, headers=headers)
-        else:
-            assert_never(exporter_type)
-
     def _setup_logs(self, resource: Resource):
         """
         设置 Logs - 支持多个上报地址
@@ -298,8 +221,12 @@ class BkAgentOTelService:
         headers = {"x-bk-token": token} if token else {}
 
         if exporter_type == ExporterType.GRPC:
+            from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter as GRPCLogExporter
+
             return GRPCLogExporter(endpoint=url, insecure=True, headers=headers)
         elif exporter_type == ExporterType.HTTP:
+            from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter as HTTPLogExporter
+
             if not url.endswith("/v1/logs"):
                 url = f"{url.rstrip('/')}/v1/logs"
             return HTTPLogExporter(endpoint=url, headers=headers)

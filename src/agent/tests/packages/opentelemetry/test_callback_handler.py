@@ -114,7 +114,7 @@ class TestBkAidevAgentInjector:
         assert span.attributes["agent.info.id"] == "agent-123"
         assert span.attributes["agent.info.code"] == "test_agent"
         assert span.attributes["agent.info.name"] == "测试智能体"
-        assert span.attributes["agent.info.type"] == "qa"
+        assert span.attributes["agent.info.type"] == "LLMGW"
         assert span.attributes["agent.info.service_catalogue"] == "test_service"
         assert span.attributes["agent.info.updated_by"] == "admin"
         assert "agent.info.sdk_version" in span.attributes
@@ -123,11 +123,11 @@ class TestBkAidevAgentInjector:
         # 验证 agent.session.* 属性
         assert span.attributes["agent.session.executor"] == "test-executor"
         assert span.attributes["agent.session.session_code"] == "test-session-123"
-        assert span.attributes["agent.session.caller_bk_app_code"] == "test-app"
-        assert span.attributes["agent.session.caller_bk_biz_env"] == "domestic_biz"
-        assert span.attributes["agent.session.caller_bk_biz_id"] == 123
         assert span.attributes["agent.session.caller_executor"] == "test-user"
-        assert span.attributes["agent.session.caller_order_type"] == "ai_chat"
+        assert "agent.session.caller_bk_app_code" not in span.attributes
+        assert "agent.session.caller_bk_biz_env" not in span.attributes
+        assert "agent.session.caller_bk_biz_id" not in span.attributes
+        assert "agent.session.caller_order_type" not in span.attributes
         assert "agent.session.input" in span.attributes
         assert "agent.session.start_time" in span.attributes
         assert "agent.session.start_time_unix_nano" in span.attributes

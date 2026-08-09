@@ -1,0 +1,128 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 6, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "sum(rate({__name__=~\"gen_ai_invoke_agent_duration.*_count\"}[5m]))", "legendFormat": "Agent/s", "range": true, "refId": "A"}],
+      "title": "Agent 调用速率",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 6, "x": 6, "y": 0},
+      "id": 2,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"gen_ai_invoke_agent_duration.*_bucket\"}[5m])))", "legendFormat": "P95", "range": true, "refId": "A"}],
+      "title": "Agent 耗时 P95",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 6, "x": 12, "y": 0},
+      "id": 3,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "sum(rate({__name__=~\"gen_ai_invoke_agent_inference_calls.*\"}[5m])) / clamp_min(sum(rate({__name__=~\"gen_ai_invoke_agent_duration.*_count\"}[5m])), 0.000001)", "legendFormat": "轮/调用", "range": true, "refId": "A"}],
+      "title": "平均智能体轮数",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 6, "x": 18, "y": 0},
+      "id": 4,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "sum(rate({__name__=~\"gen_ai_invoke_agent_tool_calls.*\"}[5m])) / clamp_min(sum(rate({__name__=~\"gen_ai_invoke_agent_duration.*_count\"}[5m])), 0.000001)", "legendFormat": "次/调用", "range": true, "refId": "A"}],
+      "title": "平均工具调用次数",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 7},
+      "id": 5,
+      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"gen_ai_client_operation_duration.*_bucket\"}[5m])))", "legendFormat": "LLM duration P95", "range": true, "refId": "A"},
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"gen_ai_client_operation_time_to_first_chunk.*_bucket\"}[5m])))", "legendFormat": "TTFT P95", "range": true, "refId": "B"}
+      ],
+      "title": "模型耗时与首 Token",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "tps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 7},
+      "id": 6,
+      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [{"editorMode": "code", "expr": "sum by (gen_ai_token_type) (rate({__name__=~\"gen_ai_client_token_usage.*_sum\"}[5m]))", "legendFormat": "{{gen_ai_token_type}}", "range": true, "refId": "A"}],
+      "title": "Token 使用速率",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "eps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 7},
+      "id": 7,
+      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [{"editorMode": "code", "expr": "sum by (aidev_sse_event_type) (rate({__name__=~\"aidev_sse_event_count.*\"}[5m]))", "legendFormat": "{{aidev_sse_event_type}}", "range": true, "refId": "A"}],
+      "title": "SSE 事件速率",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 15},
+      "id": 8,
+      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"aidev_sse_response_size.*_bucket\"}[5m])))", "legendFormat": "response P95", "range": true, "refId": "A"},
+        {"editorMode": "code", "expr": "sum(rate({__name__=~\"aidev_sse_event_bytes.*\"}[5m]))", "legendFormat": "bytes/s", "range": true, "refId": "B"}
+      ],
+      "title": "SSE 响应大小",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 15},
+      "id": 9,
+      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"gen_ai_execute_tool_duration.*_bucket\"}[5m])))", "legendFormat": "Tool P95", "range": true, "refId": "A"},
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"aidev_sse_time_to_first_event.*_bucket\"}[5m])))", "legendFormat": "SSE first event P95", "range": true, "refId": "B"}
+      ],
+      "title": "Tool 与 SSE 首事件耗时",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 15},
+      "id": 10,
+      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [{"editorMode": "code", "expr": "sum by (error_type) (rate({__name__=~\"gen_ai_.*duration.*_count\", error_type!~\"\"}[5m]))", "legendFormat": "{{error_type}}", "range": true, "refId": "A"}],
+      "title": "错误速率（error.type）",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 41,
+  "tags": ["aidev", "agent", "opentelemetry"],
+  "templating": {"list": []},
+  "time": {"from": "now-15m", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "AIDev Agent Metrics",
+  "uid": "aidev-agent-metrics",
+  "version": 1
+}

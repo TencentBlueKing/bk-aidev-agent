@@ -39,6 +39,7 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 
 from aidev_agent.pydantic_models import ExecuteKwargs
 
+from .metrics import AgentMetrics, extract_token_usage, get_agent_metrics
 from .span_utils import (
     SpanHolder,
     set_chat_request,
@@ -135,9 +136,8 @@ class BkAidevAgentInjector:
         # Agent 配置信息
         agent_info = agent_info or {}
         agent_id = agent_info.get("agent_id", "unknown")
-        agent_code = agent_info.get("agent_code", "unknown")
-        agent_name = agent_info.get("agent_name", "unknown")
-        agent_type = agent_info.get("agent_type", "unknown")
+        agent_code = agent_info.get("agent_code") or agent_info.get("code") or "unknown"
+        agent_name = agent_info.get("agent_name") or agent_info.get("name") or "unknown"
         agent_service_catalogue = agent_info.get("service_catalogue", "unknown")
         agent_updated_by = agent_info.get("updated_by", "unknown")
         # 服务入口级别的属性
@@ -146,7 +146,7 @@ class BkAidevAgentInjector:
             "agent.info.code": agent_code,
             "agent.info.name": agent_name,
             "agent.info.sdk_version": AGENT_SDK_VERSION,
-            "agent.info.type": agent_type,
+            "agent.info.type": "LLMGW",
             "agent.info.service_catalogue": agent_service_catalogue,
             "agent.info.updated_by": agent_updated_by,
             "agent.info.agent_info": orjson.dumps(agent_info),
@@ -155,11 +155,7 @@ class BkAidevAgentInjector:
             "agent.session.input": str(inputs),
             "agent.session.start_time": start_time_str,
             "agent.session.start_time_unix_nano": start_time_unix_nano,
-            "agent.session.caller_bk_app_code": execute_kwargs.caller_bk_app_code,
-            "agent.session.caller_bk_biz_env": execute_kwargs.caller_bk_biz_env,
-            "agent.session.caller_bk_biz_id": execute_kwargs.caller_bk_biz_id,
             "agent.session.caller_executor": execute_kwargs.caller_executor,
-            "agent.session.caller_order_type": execute_kwargs.caller_order_type,
         }
         # 如果存在上游传播的 Trace Context，则使用它，否则使用当前 context
         ctx = self.parent_context if self.parent_context is not None else None
@@ -235,6 +231,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         *,
         enabled: bool = True,
         enable_traces: bool = True,
+        enable_metrics: bool = False,
         debug: bool = False,
         max_attribute_length: int = 4096,
         agent_id: Optional[str] = None,
@@ -246,6 +243,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         start_inputs: Any = None,
         start_execute_kwargs: Optional[ExecuteKwargs] = None,
         start_agent_info: Optional[Dict[str, Any]] = None,
+        metric_recorder: Optional[AgentMetrics] = None,
     ):
         """
         初始化 Trace 收集器
@@ -255,6 +253,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             parent_trace_context: 父级 Trace Context (用于跨服务传播)
             enabled: 是否启用追踪，默认 True
             enable_traces: 是否启用 traces，默认 True
+            enable_metrics: 是否启用 metrics，默认 False
             debug: 是否为调试状态
             max_attribute_length: 属性值最大长度，默认 4096
             agent_id: agent.info.id
@@ -280,6 +279,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         # 配置项
         self.enabled = enabled
         self.enable_traces = enable_traces
+        self.enable_metrics = enable_metrics
         self.debug = debug
         self.max_attribute_length = max_attribute_length
 
@@ -312,6 +312,16 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         # 工具调用计数器
         self.tool_call_counter = 0
         self.rag_call_counter = 0
+        self.inference_call_counter = 0
+
+        # Metric state uses monotonic clocks and contains no session/user data.
+        self._metrics = metric_recorder or (get_agent_metrics() if enable_metrics else None)
+        self._metric_agent_attributes = AgentMetrics.agent_attributes(agent_code, agent_name)
+        self._agent_started_at: float | None = None
+        self._llm_started_at: Dict[UUID, float] = {}
+        self._llm_first_chunk_seen: set[UUID] = set()
+        self._tool_started_at: Dict[UUID, float] = {}
+        self._tool_metric_attributes: Dict[UUID, Dict[str, str]] = {}
 
         # Trace Context 传播
         self.parent_trace_context = parent_trace_context
@@ -345,7 +355,24 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         try:
             self._injector.on_bk_agent_end(error=error)
         finally:
+            if self._metrics is not None and self._agent_started_at is not None:
+                self._metrics.record_agent(
+                    duration=time.monotonic() - self._agent_started_at,
+                    inference_calls=self.inference_call_counter,
+                    tool_calls=self.tool_call_counter,
+                    attributes=self._metric_agent_attributes,
+                    error=error,
+                )
+                self._agent_started_at = None
             self._injector_ended = True
+
+    def _llm_metric_attributes(self, run_id: UUID, response_model: str | None = None) -> Dict[str, str]:
+        attrs = dict(self._metric_agent_attributes)
+        holder = self.spans.get(run_id)
+        request_model = getattr(holder, "request_model", None) if holder is not None else None
+        attrs["gen_ai.request.model"] = str(request_model or "unknown")
+        attrs["gen_ai.response.model"] = str(response_model or request_model or "unknown")
+        return attrs
 
     def _detach_root_attach_token(self) -> None:
         """detach 顶层 chain start 时为对外可见的 active context attach 的 root span token。
@@ -639,6 +666,8 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         # 顶层 chain 首次触发：先在执行线程上启动 injector 得到 root span。
         # 之后 _create_span 才能通过 self._injector.root_span 把 chain span 挂在 root 下。
         if is_top_level and self._injector is not None and not self._injector_started:
+            if self._metrics is not None:
+                self._agent_started_at = time.monotonic()
             try:
                 self._injector.on_bk_agent_start(
                     inputs=self._start_inputs,
@@ -779,7 +808,17 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             metadata=metadata,
             serialized=serialized,
         )
-        set_chat_request(span, serialized, messages, kwargs, self.spans[run_id])
+        set_chat_request(
+            span,
+            serialized,
+            messages,
+            kwargs,
+            self.spans[run_id],
+            max_attribute_length=self.max_attribute_length,
+        )
+        if self._metrics is not None:
+            self.inference_call_counter += 1
+            self._llm_started_at[run_id] = time.monotonic()
 
     @dont_throw
     async def on_llm_start(
@@ -803,7 +842,35 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             name="llm.generate",
             serialized=serialized,
         )
-        set_llm_request(span, serialized, prompts, kwargs, self.spans[run_id])
+        set_llm_request(
+            span,
+            serialized,
+            prompts,
+            kwargs,
+            self.spans[run_id],
+            max_attribute_length=self.max_attribute_length,
+        )
+        if self._metrics is not None:
+            self.inference_call_counter += 1
+            self._llm_started_at[run_id] = time.monotonic()
+
+    @dont_throw
+    async def on_llm_new_token(
+        self,
+        token: str,
+        *,
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Record TTFT once; token contents are intentionally not metric labels."""
+        if self._metrics is None or run_id in self._llm_first_chunk_seen:
+            return
+        started_at = self._llm_started_at.get(run_id)
+        if started_at is None:
+            return
+        self._llm_first_chunk_seen.add(run_id)
+        self._metrics.record_first_llm_chunk(time.monotonic() - started_at, self._llm_metric_attributes(run_id))
 
     @dont_throw
     async def on_llm_end(
@@ -819,6 +886,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             return
 
         span = self._get_span(run_id)
+        model_name = None
         if response.llm_output is not None:
             model_name = response.llm_output.get("model_name") or response.llm_output.get("model_id")
             if model_name is not None:
@@ -828,7 +896,26 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
                 _set_span_attribute(span, "gen_ai.response.id", id)
 
         # 提取响应内容
-        set_chat_response(span, response)
+        set_chat_response(span, response, max_attribute_length=self.max_attribute_length)
+        usage = extract_token_usage(response)
+        if usage:
+            _set_span_attribute(
+                span,
+                "gen_ai.usage.cache_creation.input_tokens",
+                usage["cache_creation_input_tokens"],
+            )
+            _set_span_attribute(span, "gen_ai.usage.cache_read.input_tokens", usage["cache_read_input_tokens"])
+            _set_span_attribute(span, "gen_ai.usage.input_tokens", usage["input_tokens"])
+            _set_span_attribute(span, "gen_ai.usage.output_tokens", usage["output_tokens"])
+            _set_span_attribute(span, "gen_ai.usage.total_tokens", usage["total_tokens"])
+        started_at = self._llm_started_at.pop(run_id, None)
+        if self._metrics is not None and started_at is not None:
+            self._metrics.record_llm(
+                duration=time.monotonic() - started_at,
+                attributes=self._llm_metric_attributes(run_id, model_name),
+                usage=usage,
+            )
+        self._llm_first_chunk_seen.discard(run_id)
         # 设置状态为成功
         span.set_status(Status(StatusCode.OK))
         self._end_span(span, run_id)
@@ -843,6 +930,14 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         **kwargs: Any,
     ) -> None:
         """LLM 调用出错 - 标记 LLM Span 为错误"""
+        started_at = self._llm_started_at.pop(run_id, None)
+        if self._metrics is not None and started_at is not None:
+            self._metrics.record_llm(
+                duration=time.monotonic() - started_at,
+                attributes=self._llm_metric_attributes(run_id),
+                error=error,
+            )
+        self._llm_first_chunk_seen.discard(run_id)
         self._handle_error(error, run_id, parent_run_id, **kwargs)
 
     @dont_throw
@@ -874,6 +969,13 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             kind=SpanKind.INTERNAL,
             attributes=attributes,
         )
+        if self._metrics is not None:
+            self._tool_started_at[run_id] = time.monotonic()
+            self._tool_metric_attributes[run_id] = {
+                **self._metric_agent_attributes,
+                "gen_ai.tool.name": tool_name,
+                "gen_ai.tool.type": "function",
+            }
 
     @dont_throw
     async def on_tool_end(
@@ -890,6 +992,10 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         span = self._get_span(run_id)
         _set_span_attribute(span, "tool.output", output)
         _set_span_attribute(span, "tool.execution_status", "success")
+        started_at = self._tool_started_at.pop(run_id, None)
+        metric_attributes = self._tool_metric_attributes.pop(run_id, None)
+        if self._metrics is not None and started_at is not None and metric_attributes is not None:
+            self._metrics.record_tool(time.monotonic() - started_at, metric_attributes)
         span.set_status(Status(StatusCode.OK))
         self._end_span(span, run_id)
 
@@ -908,6 +1014,10 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         span = self._get_span(run_id)
         _set_span_attribute(span, "tool.execution_status", "failed")
         _set_span_attribute(span, "tool.error_message", traceback.format_exc())
+        started_at = self._tool_started_at.pop(run_id, None)
+        metric_attributes = self._tool_metric_attributes.pop(run_id, None)
+        if self._metrics is not None and started_at is not None and metric_attributes is not None:
+            self._metrics.record_tool(time.monotonic() - started_at, metric_attributes, error=error)
         # 使用统一的错误处理
         self._handle_error(error, run_id, parent_run_id, **kwargs)
 

@@ -200,7 +200,7 @@ def get_otel_endpoint_by_agent_info(*, agent_info: dict | None = None) -> List[D
     返回值可直接用于 endpoints.extend()。
 
     Args:
-        agent_info: agent 配置信息字典，从中获取 otel_url 和 otel_token
+        agent_info: agent 配置信息字典，从中获取 otel_url 和可选的 otel_token
 
     Returns:
         List[Dict[str, Any]]: 端点配置列表（0 或 1 个元素）
@@ -214,7 +214,7 @@ def get_otel_endpoint_by_agent_info(*, agent_info: dict | None = None) -> List[D
 
     url = otel_info.get("otel_url")
     token = otel_info.get("otel_token")
-    if not url or not token:
+    if not url:
         return []
 
     config: Dict[str, Any] = {
