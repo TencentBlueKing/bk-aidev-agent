@@ -113,23 +113,29 @@ pnpm prettier
 - Chrome 开发者工具
 
 ### 版本更新
-发布前需统一更新仓库内各组件版本，可使用 Makefile 的 `release_versions` 指令：
+发布前需先使用 Makefile 的 `generate_versions` 指令更新仓库内各组件版本：
 
 **方式一：所有组件使用同一版本**
 ```bash
-make release_versions VERSION=2.0.0b1
+make generate_versions VERSION=2.0.0b1
 ```
 > 该方式会同时更新 `template/{{cookiecutter.project_name}}/VERSION` 文件，但**不会**更新 `aidev-ai-blueking`（其版本节奏与其他组件解耦）。如需同时发布 `aidev-ai-blueking`，请走方式二或使用 `make release_ai_blueking VERSION=...`。
 
 **方式二：按组件分别指定版本**
 ```bash
-make release_versions aidev_agent_version=2.0.0b1 aidev_bkplugin_version=2.0.0b2 aidev_wxbot_version=2.0.0b3 aidev_template_version=2.0.0rc4
+make generate_versions aidev_agent_version=2.0.0b1 aidev_bkplugin_version=2.0.0b2 aidev_wxbot_version=2.0.0b3 aidev_template_version=2.0.0rc4
 ```
 也支持只指定部分组件，例如：
 ```bash
-make release_versions aidev_ai_blueking_version=2.0.0rc1
+make generate_versions aidev_ai_blueking_version=2.0.0rc1
 ```
 未指定的组件会保持当前版本不变。
+
+版本文件确认无误后，再单独执行正式发布准备命令：
+```bash
+make release_versions
+```
+该命令会分别刷新 Agent SDK、bkplugin、wxbot 和智能体模板的发布依赖，不再修改版本号。
 
 ## 📂 项目结构
 ```

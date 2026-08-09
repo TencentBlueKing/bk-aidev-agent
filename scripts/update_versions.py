@@ -87,7 +87,7 @@ TEMPLATE_VERSION_TARGETS = {
     Path("template/{{cookiecutter.project_name}}/requirements.txt"),
 }
 
-# `make release_versions VERSION=...` 统一版本时不会触达的组件；
+# `make generate_versions VERSION=...` 统一版本时不会触达的组件；
 # 这些组件需通过 per-component 参数（如 `aidev_ai_blueking_version=...`）单独发布。
 EXCLUDED_FROM_BULK_UPDATE: set[str] = {"ai_blueking"}
 
@@ -251,8 +251,8 @@ def main() -> int:
         if not versions:
             print("Error: set VERSION=2.0.0b1 or pass at least one per-component version")
             print(
-                "Example: make release_versions aidev_ai_blueking_version=2.0.0rc1 "
-                "or make release_versions aidev_agent_version=2.0.0b1 aidev_bkplugin_version=2.0.0b2"
+                "Example: make generate_versions aidev_ai_blueking_version=2.0.0rc1 "
+                "or make generate_versions aidev_agent_version=2.0.0b1 aidev_bkplugin_version=2.0.0b2"
             )
             return 1
 

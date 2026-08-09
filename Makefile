@@ -73,8 +73,8 @@ release_ai_blueking:
 	echo "  - template/{{cookiecutter.project_name}}/requirements.txt"; \
 	echo "  - template/{{cookiecutter.project_name}}/pyproject.toml"
 
-.PHONY: release_versions
-release_versions:
+.PHONY: generate_versions
+generate_versions:
 	@if [ -n "$(VERSION)" ]; then \
 		echo "Updating all package versions to $(VERSION)..."; \
 		uv run python scripts/update_versions.py "$(VERSION)"; \
@@ -88,9 +88,12 @@ release_versions:
 			$(if $(aidev_ai_blueking_version),--aidev-ai-blueking-version "$(aidev_ai_blueking_version)"); \
 	else \
 		echo "Error: set VERSION=2.0.0b1 or pass at least one per-component version"; \
-		echo "Example: make release_versions aidev_ai_blueking_version=2.0.0rc1"; \
+		echo "Example: make generate_versions aidev_ai_blueking_version=2.0.0rc1"; \
 		exit 1; \
 	fi
+
+.PHONY: release_versions
+release_versions:
 	UV_PYTHON="$(ROOT_DIR)/.venv/bin/python" $(MAKE) -C "$(ROOT_DIR)/src/agent"
 	UV_PYTHON="$(ROOT_DIR)/.venv/bin/python" $(MAKE) -C "$(ROOT_DIR)/src/plugins/aidev_bkplugin"
 	UV_PYTHON="$(ROOT_DIR)/.venv/bin/python" $(MAKE) -C "$(ROOT_DIR)/src/plugins/aidev_wxbot"
