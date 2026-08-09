@@ -3,6 +3,7 @@ from .base import (
     ConsumerManagementProtocol,
     ConsumerPreemptedError,
     RetryableHeartbeatTimeoutError,
+    StreamAttachUnavailableError,
     StreamCancelledError,
 )
 from .constants import (
@@ -35,6 +36,7 @@ __all__ = [
     # 异常类
     "ConsumerPreemptedError",
     "RetryableHeartbeatTimeoutError",
+    "StreamAttachUnavailableError",
     "StreamCancelledError",
     # 常量类
     "StreamMarkers",

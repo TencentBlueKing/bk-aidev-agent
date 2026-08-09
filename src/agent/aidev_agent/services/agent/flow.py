@@ -143,6 +143,7 @@ class FlowAgentCompletionAgent(BaseModel):
             self._run_flow(),
             on_complete=self._on_complete,
             event_handler=self.event_handler,
+            attach_only=getattr(execute_kwargs, "stream_mode", "start") == "attach",
         )
 
     def _on_complete(self) -> None:

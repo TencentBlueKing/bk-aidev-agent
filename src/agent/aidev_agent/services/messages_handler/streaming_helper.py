@@ -11,7 +11,12 @@ from ag_ui.encoder import EventEncoder
 from aidev_agent.core.ag_ui.types import RunFinishedSuccessOutcome, serialize_run_finished_outcome
 from aidev_agent.utils.event import RunId, emit_run_finished_event
 
-from .base import BaseMessageQueueHandler, ConsumerPreemptedError, RetryableHeartbeatTimeoutError
+from .base import (
+    BaseMessageQueueHandler,
+    ConsumerPreemptedError,
+    RetryableHeartbeatTimeoutError,
+    StreamAttachUnavailableError,
+)
 from .constants import (
     CANCELLED_CHUNK,
     EOD_CHUNK,
@@ -548,14 +553,14 @@ class GeneratorStreamingHelper:
             and not self.message_handler.replay_belongs_to_run(self.thread_id, self.run_id)
         )
 
-    def _recheck_pending_after_waiting_consumer(self, has_pending: bool) -> bool:
+    def _recheck_pending_after_waiting_consumer(self, has_pending: bool, attach_only: bool = False) -> bool:
         """队列初判为空时，等待旧消费者退出后再次确认是否有消息。"""
         if has_pending:
             return True
 
         prev_exited = self.message_handler.wait_for_previous_consumer(self.thread_id, timeout=3.0)
         has_pending = self.message_handler.has_pending_messages(self.thread_id)
-        if self._is_pending_replay_from_other_run(has_pending):
+        if not attach_only and self._is_pending_replay_from_other_run(has_pending):
             # 等待旧 consumer 期间，上一 run 的 EOD 可能刚写入并留下 replay
             # 日志；新 run 必须创建 producer，不能把这批旧日志当成待恢复数据。
             self._replace_replay_run = True
@@ -576,12 +581,27 @@ class GeneratorStreamingHelper:
         on_complete: Callable[[], None] | None = None,
         event_handler: Callable[[Any], None] | None = None,
         expected_run_id: str | None = None,
+        attach_only: bool = False,
     ) -> tuple[threading.Thread | None, bool, bool]:
         """根据队列状态决定启动生产者还是恢复旧消息。"""
         producer_thread: threading.Thread | None = None
         is_resuming = False
         enable_heartbeat_check = False
         supports_replay_from_start = self._supports_replay_from_start()
+
+        if attach_only:
+            active_producer = self.message_handler.has_active_producer(self.thread_id)
+            if not has_pending and not active_producer:
+                raise StreamAttachUnavailableError(f"No active or replayable stream for thread_id={self.thread_id}")
+            logger.info(
+                "Attach existing stream for thread_id=%s has_pending=%s active_producer=%s",
+                self.thread_id,
+                has_pending,
+                active_producer,
+            )
+            # attach 永远不获取 producer lock、不迭代业务 generator。即使生产者已退出但
+            # 尚有缓存，也开启心跳检查，避免缺少 EOD 的孤儿回放无限等待。
+            return producer_thread, True, True
 
         if not has_pending:
             producer_acquired = self.message_handler.acquire_producer(self.thread_id)
@@ -977,6 +997,7 @@ class GeneratorStreamingHelper:
         event_handler: Callable[[Any], None] | None = None,
         expected_run_id: str | None = None,
         cancel_event: threading.Event | None = None,
+        attach_only: bool = False,
     ) -> Generator[Any, None, None]:
         """使用队列处理器缓存流式请求
 
@@ -989,6 +1010,7 @@ class GeneratorStreamingHelper:
                 producer 将 RUN_FINISHED 入队后立即调用；缺少 RUN_FINISHED 时在 EOD 路径兜底调用。
             event_handler: AG-UI 事件处理器，用于同步记录受控错误和结束状态。
             expected_run_id: 正常 AG-UI 流的 run_id；提供时保证 EOD 前至少输出一次 RUN_FINISHED。
+            attach_only: 仅接管/回放已有流，不允许创建新的生产者。
 
         Yields:
             生成器产生的数据
@@ -1027,7 +1049,7 @@ class GeneratorStreamingHelper:
                 yield from self._consume_stopped_session(consumer_id)
                 return
 
-            has_pending = self._recheck_pending_after_waiting_consumer(has_pending)
+            has_pending = self._recheck_pending_after_waiting_consumer(has_pending, attach_only=attach_only)
             producer_thread, is_resuming, enable_heartbeat_check = self._start_or_resume_stream(
                 generator=generator,
                 cancel_event=cancel_event,
@@ -1035,6 +1057,7 @@ class GeneratorStreamingHelper:
                 on_complete=completion_callback,
                 event_handler=event_handler,
                 expected_run_id=expected_run_id,
+                attach_only=attach_only,
             )
             consumer_exit_reason = yield from self._consume_stream_messages(
                 consumer_id=consumer_id,

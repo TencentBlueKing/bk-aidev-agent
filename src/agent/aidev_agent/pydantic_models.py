@@ -10,6 +10,10 @@ from aidev_agent.enums import FineGrainedScoreType, IndependentQueryMode
 
 class ExecuteKwargs(BaseModel):
     stream: bool = False
+    stream_mode: Literal["start", "attach"] = Field(
+        default="start",
+        description="流式请求模式：start 可创建生产者，attach 仅回放/接管已有流",
+    )
     stream_timeout: int = 30
     invoke_timeout: Optional[int] = None
     passthrough_input: bool = False

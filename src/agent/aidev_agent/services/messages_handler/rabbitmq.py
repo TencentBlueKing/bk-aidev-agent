@@ -1328,7 +1328,6 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
         with self._producer_lock_guard:
             if thread_id in self._producer_lock_connections:
                 return False
-
             connection = None
             try:
                 connection = self._acquire_dedicated_exclusive_queue_connection(lock_queue)
@@ -1341,6 +1340,27 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
                     with contextlib.suppress(Exception):
                         connection.close()
                 return False
+
+    def has_active_producer(self, thread_id: str) -> bool:
+        """通过被动声明 producer lock queue 判断跨进程生产者是否仍存活。"""
+        lock_queue = self._get_producer_lock_queue_name(thread_id)
+        with self._producer_lock_guard:
+            local_connection = self._producer_lock_connections.get(thread_id)
+            if local_connection is not None and getattr(local_connection, "is_open", False):
+                return True
+
+        try:
+            with self._with_channel() as channel:
+                channel.queue_declare(queue=lock_queue, passive=True)
+            return True
+        except pika.exceptions.ChannelClosedByBroker as e:
+            if e.reply_code == 404:
+                return False
+            # producer lock queue 为 exclusive；其他连接 passive declare 时 broker
+            # 以 RESOURCE_LOCKED 响应，这恰好说明生产者仍持有该队列。
+            if e.reply_code == 405:
+                return True
+            raise
 
     def release_producer(self, thread_id: str) -> None:
         """释放会话级生产者写入权。"""

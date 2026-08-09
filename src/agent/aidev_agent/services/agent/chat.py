@@ -1033,6 +1033,7 @@ class ChatCompletionAgent(BaseModel):
             agent_e=agent_e,
             cfg=merged_cfg,
             resume=bool(execute_kwargs.resume),
+            attach_only=execute_kwargs.stream_mode == "attach",
         )
 
     def _stream_with_queue(
@@ -1044,6 +1045,7 @@ class ChatCompletionAgent(BaseModel):
         agent_e: Runnable | None = None,
         cfg: RunnableConfig | None = None,
         resume: bool = False,
+        attach_only: bool = False,
     ) -> Generator[Any, None, None]:
         """使用队列处理器缓存流式请求，支持断点续传。
 
@@ -1066,6 +1068,7 @@ class ChatCompletionAgent(BaseModel):
             event_handler=self.event_handler,
             expected_run_id=run_id,
             cancel_event=cancel_event,
+            attach_only=attach_only,
         )
 
     def _build_resume_aware_producer(

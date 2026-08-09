@@ -24,6 +24,7 @@ __all__ = [
     "ConsumerPreemptedError",
     "StreamCancelledError",
     "RetryableHeartbeatTimeoutError",
+    "StreamAttachUnavailableError",
     "ConsumerManagementProtocol",
     "BaseMessageQueueHandler",
 ]
@@ -39,6 +40,10 @@ class StreamCancelledError(Exception):
 
 class RetryableHeartbeatTimeoutError(RuntimeError):
     """消费者心跳超时，可通过重新消费恢复且不应更新会话终态。"""
+
+
+class StreamAttachUnavailableError(RuntimeError):
+    """attach 请求找不到可回放消息或活跃生产者，不允许隐式创建新生产者。"""
 
 
 @runtime_checkable

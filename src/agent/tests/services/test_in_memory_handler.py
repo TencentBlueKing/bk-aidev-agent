@@ -15,6 +15,7 @@ from aidev_agent.services.messages_handler import (
     GeneratorStreamingHelper,
     InMemoryQueueMessageHandler,
     RetryableHeartbeatTimeoutError,
+    StreamAttachUnavailableError,
     message_handler_factory,
 )
 from aidev_agent.services.messages_handler.config import MessageHandlerConfig
@@ -89,6 +90,10 @@ class ReplayFromStartHandler:
         with self._lock:
             self.producer_locks.discard(thread_id)
 
+    def has_active_producer(self, thread_id):
+        with self._lock:
+            return thread_id in self.producer_locks
+
     def acquire_consumer(self, thread_id):
         with self._lock:
             consumer_id = f"consumer-{self._consumer_seq}"
@@ -157,6 +162,53 @@ class BarrierReplayFromStartHandler(ReplayFromStartHandler):
 
 
 class TestReplayFromStartStreamingHelper:
+    def test_attach_active_stream_never_starts_or_iterates_producer(self):
+        thread_id = "test_attach_active_stream"
+        handler = ReplayFromStartHandler()
+        handler.producer_locks.add(thread_id)
+        producer_iterated = []
+
+        def producer():
+            producer_iterated.append(True)
+            yield "must-not-run"
+
+        helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
+        producer_thread, is_resuming, enable_heartbeat_check = helper._start_or_resume_stream(
+            generator=producer(),
+            cancel_event=threading.Event(),
+            has_pending=False,
+            attach_only=True,
+        )
+
+        assert producer_thread is None
+        assert is_resuming is True
+        assert enable_heartbeat_check is True
+        assert producer_iterated == []
+
+    def test_attach_cached_stream_ignores_new_request_run_id(self):
+        thread_id = "test_attach_cached_stream"
+        handler = ReplayFromStartHandler()
+        handler.put(thread_id, "cached")
+        helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
+        helper.run_id = "new-request-run"
+        handler.replay_belongs_to_run = lambda *_args: False
+
+        assert helper._recheck_pending_after_waiting_consumer(True, attach_only=True) is True
+
+    def test_attach_without_active_or_cached_stream_fails_without_producer(self):
+        handler = ReplayFromStartHandler()
+        helper = GeneratorStreamingHelper(handler, thread_id="test_attach_missing")
+
+        with pytest.raises(StreamAttachUnavailableError, match="No active or replayable stream"):
+            helper._start_or_resume_stream(
+                generator=iter(["must-not-run"]),
+                cancel_event=threading.Event(),
+                has_pending=False,
+                attach_only=True,
+            )
+
+        assert handler.producer_locks == set()
+
     def test_concurrent_consumers_replay_same_cached_stream_without_draining_each_other(self):
         thread_id = "test_replay_multi_consumer"
         handler = BarrierReplayFromStartHandler(parties=2)

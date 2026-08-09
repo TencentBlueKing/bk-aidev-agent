@@ -102,6 +102,18 @@ class TestChatCompletionRequestSerializerExecuteKwargs:
         s.is_valid(raise_exception=True)
         assert s.validated_data["execute_kwargs"].version == "v2"
 
+    def test_stream_mode_defaults_to_start_and_attach_passes_through(self):
+        default = ChatCompletionRequestSerializer(data={"input": "hi"}, context={"username": "u"})
+        default.is_valid(raise_exception=True)
+        assert default.validated_data["execute_kwargs"].stream_mode == "start"
+
+        attach = ChatCompletionRequestSerializer(
+            data={"session_code": "s-1", "execute_kwargs": {"stream": True, "stream_mode": "attach"}},
+            context={"username": "u"},
+        )
+        attach.is_valid(raise_exception=True)
+        assert attach.validated_data["execute_kwargs"].stream_mode == "attach"
+
 
 class TestChatCompletionRequestSerializerCompatFields:
     """flow / poll / 兼容字段透传校验。"""
