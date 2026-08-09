@@ -53,8 +53,11 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
         assert metric in panel_queries
 
     assert 8 not in panels_by_id
-    assert panels_by_id[1]["title"] == "活跃智能体数量"
+    assert panels_by_id[1]["title"] == "活跃 Agent Run"
     assert "sum(aidev_agent_active" in panels_by_id[1]["targets"][0]["expr"]
+    assert panels_by_id[30]["title"] == "活跃智能体数量"
+    assert "sum by (agent_info_code)" in panels_by_id[30]["targets"][0]["expr"]
+    assert "or vector(0)" in panels_by_id[30]["targets"][0]["expr"]
     assert panels_by_id[7]["type"] == "timeseries"
     assert panels_by_id[7]["title"] == "Agent 阶段并发（当前与趋势）"
     assert panels_by_id[11]["title"] == "Agent 阶段耗时分布（已结束阶段）"
