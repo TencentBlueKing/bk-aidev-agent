@@ -96,7 +96,7 @@ ifneq ($(filter 1 true yes y,$(sync)),)
 	UV_PYTHON="$(ROOT_DIR)/.venv/bin/python" $(MAKE) -C "$(ROOT_DIR)/src/agent"
 	UV_PYTHON="$(ROOT_DIR)/.venv/bin/python" $(MAKE) -C "$(ROOT_DIR)/src/plugins/aidev_bkplugin"
 	UV_PYTHON="$(ROOT_DIR)/.venv/bin/python" $(MAKE) -C "$(ROOT_DIR)/src/plugins/aidev_wxbot"
-	UV_PYTHON="$(ROOT_DIR)/.venv/bin/python" $(MAKE) -C "$(ROOT_DIR)/$(TEMPLATE_PROJECT_DIR)"
+	UV_PYTHON="$(ROOT_DIR)/.venv/bin/python" $(MAKE) -C "$(ROOT_DIR)/$(TEMPLATE_PROJECT_DIR)" requirements
 endif
 
 .PHONY: sync_template_sdk_versions

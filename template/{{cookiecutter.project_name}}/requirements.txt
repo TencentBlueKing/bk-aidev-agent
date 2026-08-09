@@ -1,8 +1,8 @@
 ag-ui-protocol==0.1.10
-aidev-agent==2.2.1rc290
+aidev-agent==2.2.1rc291
 aidev-ai-blueking==2.2.2b3
-aidev-bkplugin==2.2.1rc290
-aidev-wxbot==2.2.1rc290
+aidev-bkplugin==2.2.1rc291
+aidev-wxbot==2.2.1rc291
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.3
 aiosignal==1.4.0
@@ -91,6 +91,7 @@ markupsafe==2.1.5
 marshmallow==3.26.1
 mcp==1.25.0
 mdurl==0.1.2
+mmh3==5.2.1
 msgpack-python==0.5.6
 multidict==6.7.1
 mypy-extensions==1.1.0
@@ -153,6 +154,7 @@ requests==2.32.5
 requests-toolbelt==1.0.0
 rich==15.0.0
 rpds-py==0.28.0
+rstream==0.40.1
 serpent==1.42
 setuptools==80.9.0
 six==1.17.0
