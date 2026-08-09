@@ -4,7 +4,7 @@ import pytest
 
 pytest.importorskip("opentelemetry.sdk.metrics")
 
-from aidev_bkplugin.services.otel_metrics import MetricExportSettings
+from aidev_bkplugin.services.otel_metrics import BkPluginMetricService, MetricExportSettings
 
 
 def test_metric_settings_parse_nested_otel_info():
@@ -54,3 +54,17 @@ def test_metric_settings_parse_false_string_safely():
         default_enabled=True,
     )
     assert settings.enabled is False
+
+
+def test_metric_resource_uses_agent_sdk_version_without_agent_type():
+    service = BkPluginMetricService(
+        service_name="ai-demo",
+        endpoints=[],
+        agent_info={"agent_code": "ai-demo", "agent_name": "演示智能体", "agent_sdk_version": "2.2.3"},
+        settings=MetricExportSettings(enabled=True),
+    )
+
+    attributes = service._create_resource().attributes
+
+    assert attributes["agent.info.sdk_version"] == "2.2.3"
+    assert "agent.info.type" not in attributes

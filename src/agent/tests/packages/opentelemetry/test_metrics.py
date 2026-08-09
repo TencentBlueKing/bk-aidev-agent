@@ -129,6 +129,7 @@ def test_active_session_metric_is_symmetric_and_low_cardinality():
 
     assert meter.instruments["aidev.session.active"].calls == [(1, attrs), (-1, attrs)]
     assert "agent.session.session_code" not in attrs
+    assert "agent.info.type" not in attrs
 
 
 def test_process_metric_gate_disables_sse_instrumentation():

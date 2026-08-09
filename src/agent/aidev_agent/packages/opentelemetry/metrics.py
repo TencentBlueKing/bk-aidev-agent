@@ -14,7 +14,6 @@ from langchain_core.outputs import LLMResult
 from opentelemetry import metrics
 
 METER_NAME = "aidev_agent"
-AGENT_TYPE = "LLMGW"
 
 
 def _as_int(value: Any) -> int:
@@ -143,7 +142,6 @@ class AgentMetrics:
         return {
             "agent.info.code": agent_code or "unknown",
             "agent.info.name": agent_name or "unknown",
-            "agent.info.type": AGENT_TYPE,
         }
 
     def record_agent(

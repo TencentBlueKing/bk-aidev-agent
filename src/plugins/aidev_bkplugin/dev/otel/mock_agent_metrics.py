@@ -15,7 +15,11 @@ def main() -> None:
     service = BkPluginMetricService(
         service_name="aidev-agent-local",
         endpoints=[{"url": endpoint, "token": "", "exporter_type": ExporterType.HTTP}],
-        agent_info={"agent_code": "ai-agent-local-demo", "agent_name": "本地指标验证智能体"},
+        agent_info={
+            "agent_code": "ai-agent-local-demo",
+            "agent_name": "本地指标验证智能体",
+            "agent_sdk_version": "2.2.3",
+        },
         settings=MetricExportSettings(enabled=True, export_interval_millis=1000, export_timeout_millis=5000),
     )
     service.start()

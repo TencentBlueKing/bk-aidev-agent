@@ -90,19 +90,21 @@ class BkPluginMetricService:
                 )
             )
 
-        resource = Resource.create(
+        self.provider = MeterProvider(resource=self._create_resource(), metric_readers=readers, views=self._views())
+        metrics.set_meter_provider(self.provider)
+        logger.info("[aidev_bkplugin] metric export started with %d OTLP endpoint(s)", len(readers))
+
+    def _create_resource(self) -> Resource:
+        return Resource.create(
             {
                 ResourceAttributes.SERVICE_NAME: self.service_name,
                 "agent.info.code": self.agent_info.get("agent_code")
                 or self.agent_info.get("code")
                 or self.service_name,
                 "agent.info.name": self.agent_info.get("agent_name") or self.agent_info.get("name") or "unknown",
-                "agent.info.type": "LLMGW",
+                "agent.info.sdk_version": self.agent_info.get("agent_sdk_version") or "unknown",
             }
         )
-        self.provider = MeterProvider(resource=resource, metric_readers=readers, views=self._views())
-        metrics.set_meter_provider(self.provider)
-        logger.info("[aidev_bkplugin] metric export started with %d OTLP endpoint(s)", len(readers))
 
     def stop(self) -> None:
         if self.provider is not None:
