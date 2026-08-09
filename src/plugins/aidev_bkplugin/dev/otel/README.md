@@ -16,33 +16,57 @@ Collector 接收端口为 `4317`（gRPC）和 `4318`（HTTP），Prometheus 为
 
 ## 发送 mock 指标
 
-在仓库根目录执行：
+在仓库根目录执行。默认同时模拟 4 个 Handler，每个 Handler 每轮随机启动 1～3 个
+Agent Run，因此“当前活跃 Agent 执行数”会在 `4～12` 之间变化：
 
 ```bash
 cd src/plugins/aidev_bkplugin
 PYTHONPATH=../../agent uv run --no-sync python dev/otel/mock_agent_metrics.py
 ```
 
-mock 默认维持 3 路并发约 15 秒；可通过环境变量调整并发、批次数和间隔：
+使用 `-n/--concurrency` 指定每个 Handler 的并发上限。例如 `-n 5` 时，每个 Handler
+每轮随机启动 1～5 个 Run，总活跃 Agent 数在 `4～20` 之间变化；`-n 1` 时固定为 4：
 
 ```bash
-AIDEV_MOCK_CONCURRENCY=3 AIDEV_MOCK_ITERATIONS=40 AIDEV_MOCK_INTERVAL_SECONDS=1.5 \
-  PYTHONPATH=../../agent uv run --no-sync python dev/otel/mock_agent_metrics.py
+PYTHONPATH=../../agent uv run --no-sync python dev/otel/mock_agent_metrics.py -n 5
 ```
+
+默认启用 `mock-log-analysis-a`、`mock-log-analysis-b`、`mock-log-analysis-c` 三个
+mock 模型，实际 Run 会按模型列表轮询分配。启动时可指定任意 1～n 个逗号分隔的模型名：
+
+```bash
+PYTHONPATH=../../agent uv run --no-sync python dev/otel/mock_agent_metrics.py \
+  -n 3 --models mock-a,mock-b,mock-c
+```
+
+也可以使用 `AIDEV_MOCK_MODELS=mock-a,mock-b`；模型名仅作为本地指标的低基数过滤维度。
+
+可通过命令参数调整批次数和间隔：
+
+```bash
+PYTHONPATH=../../agent uv run --no-sync python dev/otel/mock_agent_metrics.py \
+  -n 3 --iterations 40 --interval 1.5
+```
+
+原有的 `AIDEV_MOCK_CONCURRENCY`、`AIDEV_MOCK_ITERATIONS`、
+`AIDEV_MOCK_INTERVAL_SECONDS` 环境变量仍可使用，命令参数优先。可以通过 `--seed`
+让每轮并发变化可重复验证。
 
 mock 使用“日志查询与聚合总结”场景，模拟 6 次 LLM 调用和 4 次工具调用。
 `activate_skill` 来自实际验证链路；其余日志工具统一使用
 `inspect_log_fields`、`search_logs`、`aggregate_logs` 脱敏别名。业务 ID、索引集 ID、
 时间、节点、日志正文和总结均为不可回推的合成数据，不保留原会话的真实内容。
 
-可切换 mock 的 Message Handler 维度：
+默认同步生成 `inmemory`、`rabbitmq`、`rabbitmq_stream`、`redis` 四组指标。
+如只需验证单个 Message Handler，可显式指定：
 
 ```bash
-AIDEV_MOCK_MESSAGE_HANDLER=redis PYTHONPATH=../../agent \
-  uv run --no-sync python dev/otel/mock_agent_metrics.py
+PYTHONPATH=../../agent uv run --no-sync python dev/otel/mock_agent_metrics.py \
+  --handler redis -n 3
 ```
 
-可选值为 `inmemory`、`rabbitmq`、`rabbitmq_stream`、`redis`。mock 会按模型与工具输出的
+可选值为 `all`、`inmemory`、`rabbitmq`、`rabbitmq_stream`、`redis`；
+`AIDEV_MOCK_MESSAGE_HANDLER` 环境变量也继续兼容。mock 会按模型与工具输出的
 编码大小生成 SSE 事件大小、响应大小、合并前逻辑事件数和合并后物理写入数；
 模型/工具正文不会进入指标标签或 OTLP resource。
 

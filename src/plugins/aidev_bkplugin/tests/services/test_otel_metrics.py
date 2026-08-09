@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 from pathlib import Path
 
 import pytest
@@ -9,11 +10,17 @@ pytest.importorskip("opentelemetry.sdk.metrics")
 
 from aidev_bkplugin.services.otel_metrics import BkPluginMetricService, MetricExportSettings
 from dev.otel.mock_agent_metrics import (
+    DEFAULT_MODELS,
+    HANDLER_SYSTEMS,
     SANITIZED_LOGS,
     SANITIZED_PROMPT,
     TOOL_STEPS,
+    assigned_models,
     build_sanitized_sse_events,
     coalesce_content_events,
+    sample_handler_runs,
+    selected_handlers,
+    selected_models,
 )
 
 
@@ -123,3 +130,40 @@ def test_log_query_mock_is_sanitized_and_models_broker_coalescing():
     assert any(event.event_type == "TOOL_CALL_RESULT" for event in events)
     assert len(physical_sizes) < len(events)
     assert sum(physical_sizes) == sum(event.size for event in events)
+
+
+@pytest.mark.parametrize(
+    ("handler_type", "expected"),
+    [
+        ("all", tuple(HANDLER_SYSTEMS)),
+        ("redis", ("redis",)),
+    ],
+)
+def test_log_query_mock_selects_handlers(handler_type, expected):
+    assert selected_handlers(handler_type) == expected
+
+
+def test_log_query_mock_varies_active_runs_between_one_and_maximum_per_handler():
+    handlers = selected_handlers("all")
+    rng = random.Random(20260809)
+    samples = [sample_handler_runs(handlers, 3, rng) for _ in range(20)]
+
+    assert all(set(sample) == set(handlers) for sample in samples)
+    assert all(1 <= count <= 3 for sample in samples for count in sample.values())
+    assert all(4 <= sum(sample.values()) <= 12 for sample in samples)
+    assert len({sum(sample.values()) for sample in samples}) > 1
+
+
+def test_log_query_mock_distributes_active_runs_across_three_default_models():
+    assignments = assigned_models(DEFAULT_MODELS, 12)
+
+    assert len(assignments) == 12
+    assert {model: assignments.count(model) for model in DEFAULT_MODELS} == {
+        "mock-log-analysis-a": 4,
+        "mock-log-analysis-b": 4,
+        "mock-log-analysis-c": 4,
+    }
+
+
+def test_log_query_mock_accepts_custom_models_and_removes_duplicates():
+    assert selected_models("mock-a, mock-b,mock-a") == ("mock-a", "mock-b")

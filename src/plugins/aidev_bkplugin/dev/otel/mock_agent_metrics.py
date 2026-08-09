@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
+import random
 import time
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
@@ -12,6 +15,17 @@ from aidev_agent.packages.opentelemetry.metrics import AgentMetrics, configure_m
 from aidev_agent.packages.opentelemetry.utils import ExporterType
 from aidev_bkplugin.services.otel_metrics import BkPluginMetricService, MetricExportSettings
 
+HANDLER_SYSTEMS = {
+    "inmemory": "in_memory",
+    "rabbitmq": "rabbitmq",
+    "rabbitmq_stream": "rabbitmq",
+    "redis": "redis",
+}
+DEFAULT_MODELS = (
+    "mock-log-analysis-a",
+    "mock-log-analysis-b",
+    "mock-log-analysis-c",
+)
 SANITIZED_PROMPT = "查一下业务 <BK_BIZ_ID> 的索引集 <INDEX_SET_ID> 近 1 天前 10 条日志，按合适维度输出总结"
 SANITIZED_LOGS = (
     {
@@ -226,21 +240,50 @@ def coalesce_content_events(events: list[MockSseEvent]) -> list[int]:
     return physical_sizes
 
 
-def _handler_config() -> tuple[str, str]:
-    handler_type = os.getenv("AIDEV_MOCK_MESSAGE_HANDLER", "rabbitmq")
-    systems = {"inmemory": "in_memory", "rabbitmq": "rabbitmq", "rabbitmq_stream": "rabbitmq", "redis": "redis"}
-    if handler_type not in systems:
-        raise ValueError(f"Unsupported AIDEV_MOCK_MESSAGE_HANDLER: {handler_type}")
-    return handler_type, systems[handler_type]
+def selected_handlers(handler_type: str) -> tuple[str, ...]:
+    if handler_type == "all":
+        return tuple(HANDLER_SYSTEMS)
+    if handler_type not in HANDLER_SYSTEMS:
+        raise ValueError(f"Unsupported message handler: {handler_type}")
+    return (handler_type,)
 
 
-def _record_scenario(recorder: AgentMetrics, agent_attrs: dict[str, str], index: int) -> None:
-    handler_type, messaging_system = _handler_config()
-    llm_attrs = {
+def selected_models(value: str) -> tuple[str, ...]:
+    models = tuple(dict.fromkeys(model.strip() for model in value.split(",") if model.strip()))
+    if not models:
+        raise ValueError("At least one mock model is required")
+    return models
+
+
+def sample_handler_runs(
+    handlers: tuple[str, ...],
+    max_concurrency: int,
+    rng: random.Random,
+) -> dict[str, int]:
+    return {handler_type: rng.randint(1, max_concurrency) for handler_type in handlers}
+
+
+def assigned_models(models: tuple[str, ...], run_count: int) -> tuple[str, ...]:
+    return tuple(models[index % len(models)] for index in range(run_count))
+
+
+def _llm_attributes(agent_attrs: dict[str, str], model_name: str) -> dict[str, str]:
+    return {
         **agent_attrs,
-        "gen_ai.request.model": "mock-log-analysis-model",
-        "gen_ai.response.model": "mock-log-analysis-model-routed",
+        "gen_ai.request.model": model_name,
+        "gen_ai.response.model": f"{model_name}-routed",
     }
+
+
+def _record_scenario(
+    recorder: AgentMetrics,
+    agent_attrs: dict[str, str],
+    handler_type: str,
+    model_name: str,
+    index: int,
+) -> None:
+    messaging_system = HANDLER_SYSTEMS[handler_type]
+    llm_attrs = _llm_attributes(agent_attrs, model_name)
     duration_offset = index * 0.05
     for step in MODEL_STEPS:
         recorder.record_llm(step.duration + duration_offset, llm_attrs, step.usage)
@@ -278,11 +321,61 @@ def _record_scenario(recorder: AgentMetrics, agent_attrs: dict[str, str], index:
     )
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Emit concurrent mock metrics for all Agent message handlers.")
+    parser.add_argument(
+        "-n",
+        "--concurrency",
+        type=int,
+        default=int(os.getenv("AIDEV_MOCK_CONCURRENCY", "3")),
+        help="Maximum concurrent Agent runs per handler (default: 3; minimum is always 1).",
+    )
+    parser.add_argument(
+        "--handler",
+        choices=("all", *HANDLER_SYSTEMS),
+        default=os.getenv("AIDEV_MOCK_MESSAGE_HANDLER", "all"),
+        help="Message handler to simulate (default: all).",
+    )
+    parser.add_argument(
+        "--models",
+        type=selected_models,
+        default=selected_models(os.getenv("AIDEV_MOCK_MODELS", ",".join(DEFAULT_MODELS))),
+        metavar="MODEL_A,MODEL_B,...",
+        help="Comma-separated mock model names (default: three models).",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=int(os.getenv("AIDEV_MOCK_RANDOM_SEED", "20260809")),
+        help="Seed used to vary active runs reproducibly.",
+    )
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=int(os.getenv("AIDEV_MOCK_ITERATIONS", "10")),
+        help="Number of metric batches (default: 10).",
+    )
+    parser.add_argument(
+        "--interval",
+        type=float,
+        default=float(os.getenv("AIDEV_MOCK_INTERVAL_SECONDS", "1.5")),
+        help="Seconds between metric batches (default: 1.5).",
+    )
+    args = parser.parse_args()
+    if args.concurrency < 1:
+        parser.error("--concurrency must be at least 1")
+    if args.iterations < 1:
+        parser.error("--iterations must be at least 1")
+    if args.interval < 0.1:
+        parser.error("--interval must be at least 0.1")
+    return args
+
+
 def main() -> None:
+    args = _parse_args()
     endpoint = os.getenv("AIDEV_LOCAL_OTLP_ENDPOINT", "http://localhost:4318")
-    concurrency = max(1, int(os.getenv("AIDEV_MOCK_CONCURRENCY", "3")))
-    iterations = max(1, int(os.getenv("AIDEV_MOCK_ITERATIONS", "10")))
-    interval = max(0.1, float(os.getenv("AIDEV_MOCK_INTERVAL_SECONDS", "1.5")))
+    handlers = selected_handlers(args.handler)
+    rng = random.Random(args.seed)
     service = BkPluginMetricService(
         service_name="aidev-agent-local",
         endpoints=[{"url": endpoint, "token": "", "exporter_type": ExporterType.HTTP}],
@@ -298,27 +391,50 @@ def main() -> None:
     configure_metric_identity("ai-agent-local-demo", "本地指标验证智能体")
     recorder = AgentMetrics()
     agent_attrs = recorder.agent_attributes("ai-agent-local-demo", "本地指标验证智能体")
-    llm_attrs = {
-        **agent_attrs,
-        "gen_ai.request.model": "mock-log-analysis-model",
-        "gen_ai.response.model": "mock-log-analysis-model-routed",
-    }
-    recorder.record_active_session(concurrency, agent_attrs)
-    recorder.record_active_llm(concurrency, llm_attrs)
+    current_active_runs = 0
+    current_model_runs: Counter[str] = Counter()
     print(f"Sanitized scenario: {SANITIZED_PROMPT}")
     print("Mock tools: " + ", ".join(step.name for step in TOOL_STEPS))
+    print(
+        f"Mock handlers: {', '.join(handlers)}; active runs per handler: 1-{args.concurrency}; "
+        f"total active range: {len(handlers)}-{len(handlers) * args.concurrency}"
+    )
+    print("Mock models: " + ", ".join(args.models))
     try:
-        for iteration in range(iterations):
-            for worker in range(concurrency):
-                _record_scenario(recorder, agent_attrs, (iteration + worker) % 3)
+        for iteration in range(args.iterations):
+            handler_runs = sample_handler_runs(handlers, args.concurrency, rng)
+            run_count = sum(handler_runs.values())
+            run_models = assigned_models(args.models, run_count)
+            next_model_runs = Counter(run_models)
+
+            recorder.record_active_session(run_count - current_active_runs, agent_attrs)
+            for model_name in current_model_runs.keys() | next_model_runs.keys():
+                delta = next_model_runs[model_name] - current_model_runs[model_name]
+                if delta:
+                    recorder.record_active_llm(delta, _llm_attributes(agent_attrs, model_name))
+            current_active_runs = run_count
+            current_model_runs = next_model_runs
+
+            run_index = 0
+            for handler_type, handler_run_count in handler_runs.items():
+                for worker in range(handler_run_count):
+                    _record_scenario(
+                        recorder,
+                        agent_attrs,
+                        handler_type,
+                        run_models[run_index],
+                        (iteration + worker) % 3,
+                    )
+                    run_index += 1
             if service.provider is not None:
                 service.provider.force_flush(timeout_millis=5000)
-            time.sleep(interval)
+            time.sleep(args.interval)
     except KeyboardInterrupt:
         pass
     finally:
-        recorder.record_active_session(-concurrency, agent_attrs)
-        recorder.record_active_llm(-concurrency, llm_attrs)
+        recorder.record_active_session(-current_active_runs, agent_attrs)
+        for model_name, model_active_runs in current_model_runs.items():
+            recorder.record_active_llm(-model_active_runs, _llm_attributes(agent_attrs, model_name))
         if service.provider is not None:
             service.provider.force_flush(timeout_millis=5000)
         service.stop()
