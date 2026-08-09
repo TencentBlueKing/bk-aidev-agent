@@ -30,6 +30,22 @@ AIDEV_MOCK_CONCURRENCY=3 AIDEV_MOCK_ITERATIONS=40 AIDEV_MOCK_INTERVAL_SECONDS=1.
   PYTHONPATH=../../agent uv run --no-sync python dev/otel/mock_agent_metrics.py
 ```
 
+mock 使用“日志查询与聚合总结”场景，模拟 6 次 LLM 调用和 4 次工具调用。
+`activate_skill` 来自实际验证链路；其余日志工具统一使用
+`inspect_log_fields`、`search_logs`、`aggregate_logs` 脱敏别名。业务 ID、索引集 ID、
+时间、节点、日志正文和总结均为不可回推的合成数据，不保留原会话的真实内容。
+
+可切换 mock 的 Message Handler 维度：
+
+```bash
+AIDEV_MOCK_MESSAGE_HANDLER=redis PYTHONPATH=../../agent \
+  uv run --no-sync python dev/otel/mock_agent_metrics.py
+```
+
+可选值为 `inmemory`、`rabbitmq`、`rabbitmq_stream`、`redis`。mock 会按模型与工具输出的
+编码大小生成 SSE 事件大小、响应大小、合并前逻辑事件数和合并后物理写入数；
+模型/工具正文不会进入指标标签或 OTLP resource。
+
 等待 2～5 秒后刷新 Grafana。也可以直接在 Prometheus 查询：
 
 ```promql

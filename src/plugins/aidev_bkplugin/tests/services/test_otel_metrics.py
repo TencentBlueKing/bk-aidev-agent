@@ -8,6 +8,13 @@ import pytest
 pytest.importorskip("opentelemetry.sdk.metrics")
 
 from aidev_bkplugin.services.otel_metrics import BkPluginMetricService, MetricExportSettings
+from dev.otel.mock_agent_metrics import (
+    SANITIZED_LOGS,
+    SANITIZED_PROMPT,
+    TOOL_STEPS,
+    build_sanitized_sse_events,
+    coalesce_content_events,
+)
 
 
 def test_metric_settings_parse_nested_otel_info():
@@ -97,3 +104,22 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
         "aidev_message_publish_size",
     ):
         assert metric in panel_queries
+
+
+def test_log_query_mock_is_sanitized_and_models_broker_coalescing():
+    assert SANITIZED_PROMPT.count("<BK_BIZ_ID>") == 1
+    assert SANITIZED_PROMPT.count("<INDEX_SET_ID>") == 1
+    assert len(SANITIZED_LOGS) == 10
+    assert [step.name for step in TOOL_STEPS] == [
+        "activate_skill",
+        "inspect_log_fields",
+        "search_logs",
+        "aggregate_logs",
+    ]
+
+    events = build_sanitized_sse_events()
+    physical_sizes = coalesce_content_events(events)
+
+    assert any(event.event_type == "TOOL_CALL_RESULT" for event in events)
+    assert len(physical_sizes) < len(events)
+    assert sum(physical_sizes) == sum(event.size for event in events)
