@@ -28,6 +28,7 @@ OTEL_ROOT = Path(__file__).resolve().parents[1]
 def test_local_dashboard_covers_required_filters_and_metric_groups():
     dashboard = json.loads((OTEL_ROOT / "grafana/dashboards/aidev-agent-metrics.json").read_text())
     variables = {item["name"] for item in dashboard["templating"]["list"]}
+    panels_by_id = {panel["id"]: panel for panel in dashboard["panels"]}
     panel_queries = "\n".join(target["expr"] for panel in dashboard["panels"] for target in panel.get("targets", []))
 
     assert variables == {
@@ -50,6 +51,26 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
         "aidev_message_publish_size",
     ):
         assert metric in panel_queries
+
+    assert 8 not in panels_by_id
+    assert panels_by_id[1]["title"] == "活跃智能体数量"
+    assert "sum(aidev_agent_active" in panels_by_id[1]["targets"][0]["expr"]
+    assert panels_by_id[7]["type"] == "timeseries"
+    assert panels_by_id[7]["title"] == "Agent 阶段并发（当前与趋势）"
+    assert panels_by_id[11]["title"] == "Agent 阶段耗时分布（已结束阶段）"
+    assert len(panels_by_id[11]["targets"]) == 1
+    assert "histogram_quantile(0.99" in panels_by_id[11]["targets"][0]["expr"]
+    assert panels_by_id[16]["title"].startswith("LLM 并发")
+    for panel_id in (2, 14, 16):
+        assert all("gen_ai_response_model" not in target["expr"] for target in panels_by_id[panel_id]["targets"])
+    for panel_id in (13, 15):
+        assert any("gen_ai_response_model" in target["expr"] for target in panels_by_id[panel_id]["targets"])
+    assert panels_by_id[29]["title"].startswith("工具并发")
+    assert 17 not in panels_by_id
+    assert len(panels_by_id[18]["targets"]) == 1
+    assert "histogram_quantile(0.99" in panels_by_id[18]["targets"][0]["expr"]
+    assert panels_by_id[21]["title"] == "事件合并比（所选时段）"
+    assert panels_by_id[21]["targets"][0]["instant"] is True
 
 
 def test_log_query_mock_is_sanitized_and_models_broker_coalescing():
