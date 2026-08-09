@@ -67,6 +67,23 @@ MSG_REDIS_URL=redis://user:password@redis.example.com:6379/0
   原子续期 Stream，释放后由 Redis TTL 自动回收。
 - 跨进程取消信号的空结果最多缓存 200ms，限制高频 chunk 产生的 Redis `GET`，同进程 Stop 会立即失效缓存。
 
+### RabbitMQ Stream MessageHandler
+
+RabbitMQ handler 默认继续使用 Classic Queue。配置原生 Stream 协议端口后，控制面仍使用 AMQP 0.9.1，
+SSE 事件日志自动切换到 RabbitMQ Stream：
+
+```bash
+MESSAGE_HANDLER_TYPE=rabbitmq
+RABBITMQ_HOST=rabbitmq.example.com
+RABBITMQ_PORT=5672
+RABBITMQ_STREAM_PORT=5552
+```
+
+- RabbitMQ 服务端需启用内置 `rabbitmq_stream` 插件，并向客户端正确发布 advertised host/port。
+- `RABBITMQ_STREAM_PORT` 一旦配置即严格启用 Stream；协议端口、插件或认证不可用时启动失败，不降级到 Classic Queue。
+- SSE 事件使用原生 offset 独立回放，多端消费不会 `get/nack` 历史消息；生产使用命名 publisher、批量发送和 broker confirm。
+- Stream 数据按 `QUEUE_EXPIRE_SECONDS` 设置 `max-age`，正常结束仍由最后一个消费者或孤儿清理任务删除 Stream 与控制资源。
+
 ## 构建
 1. 生成`pip`包
     ```bash

@@ -6,6 +6,7 @@
 """
 
 import logging
+import os
 from typing import TYPE_CHECKING
 
 from aidev_agent.enums import MessageHandlerType
@@ -18,6 +19,7 @@ from .in_memory import InMemoryQueueMessageHandler
 
 if TYPE_CHECKING:
     from .rabbitmq import RabbitMQMessageHandler
+    from .rabbitmq_stream import RabbitMQStreamMessageHandler
     from .redis import RedisMessageHandler
 
 logger = logging.getLogger(__name__)
@@ -28,6 +30,13 @@ def _get_rabbitmq_handler() -> "RabbitMQMessageHandler":
     from .rabbitmq import RabbitMQMessageHandler
 
     return RabbitMQMessageHandler()
+
+
+def _get_rabbitmq_stream_handler() -> "RabbitMQStreamMessageHandler":
+    """延迟导入并创建 RabbitMQ Stream handler。"""
+    from .rabbitmq_stream import RabbitMQStreamMessageHandler
+
+    return RabbitMQStreamMessageHandler()
 
 
 def _get_redis_handler() -> "RedisMessageHandler":
@@ -43,6 +52,13 @@ def _create_handler(handler_type: MessageHandlerType) -> BaseMessageQueueHandler
         if not MessageHandlerConfig.has_rabbitmq_config():
             logger.warning("RabbitMQ handler requested but RABBITMQ_HOST not configured, falling back to InMemory")
             return InMemoryQueueMessageHandler()
+        if MessageHandlerConfig.has_rabbitmq_stream_config():
+            if not os.environ.get(EnvVarNames.RABBITMQ_HOST, "").strip():
+                raise RuntimeError(
+                    f"RabbitMQ Stream handler requires {EnvVarNames.RABBITMQ_HOST} and "
+                    f"{EnvVarNames.RABBITMQ_STREAM_PORT}"
+                )
+            return _get_rabbitmq_stream_handler()
         return _get_rabbitmq_handler()
 
     if handler_type == MessageHandlerType.REDIS:

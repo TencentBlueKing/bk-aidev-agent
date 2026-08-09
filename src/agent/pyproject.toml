@@ -32,6 +32,7 @@ dependencies = [
     "e2b-code-interpreter>=2.6.0",
     "requests>=2.28.0",
     "redis>=5.3.1,<6.0.0",
+    "rstream>=0.40.1,<1.0.0",
 ]
 name = "aidev-agent"
 version = "2.2.0"

@@ -1036,6 +1036,7 @@ class TestMessageHandlerConfig:
         """Config.resolve_handler_type 在不同环境变量组合下的行为"""
         monkeypatch.setenv(EnvVarNames.HANDLER_TYPE, env_handler_type)
         monkeypatch.setenv(EnvVarNames.RABBITMQ_HOST, env_rabbitmq_host)
+        monkeypatch.setenv(EnvVarNames.RABBITMQ_STREAM_PORT, "")
         monkeypatch.setenv(EnvVarNames.REDIS_URL, env_redis_url)
         assert MessageHandlerConfig.resolve_handler_type() == expected_type
 
@@ -1055,6 +1056,24 @@ class TestMessageHandlerConfig:
         monkeypatch.setenv(EnvVarNames.REDIS_URL, "")
         with pytest.raises(RuntimeError, match="MSG_REDIS_URL"):
             _create_handler(MessageHandlerType.REDIS)
+
+    def test_create_handler_selects_rabbitmq_stream_when_port_is_configured(self, monkeypatch):
+        selected_handler = InMemoryQueueMessageHandler()
+        monkeypatch.setenv(EnvVarNames.RABBITMQ_HOST, "rabbitmq.local")
+        monkeypatch.setenv(EnvVarNames.RABBITMQ_STREAM_PORT, "5552")
+        monkeypatch.setattr(
+            "aidev_agent.services.messages_handler.factory._get_rabbitmq_stream_handler",
+            lambda: selected_handler,
+        )
+
+        assert _create_handler(MessageHandlerType.RABBITMQ) is selected_handler
+
+    def test_create_handler_stream_port_without_host_fails_fast(self, monkeypatch):
+        monkeypatch.setenv(EnvVarNames.RABBITMQ_HOST, "")
+        monkeypatch.setenv(EnvVarNames.RABBITMQ_STREAM_PORT, "5552")
+
+        with pytest.raises(RuntimeError, match="RABBITMQ_HOST and RABBITMQ_STREAM_PORT"):
+            _create_handler(MessageHandlerType.RABBITMQ)
 
     def test_factory_returns_singleton_by_type(self):
         """工厂按类型 get() 返回单例"""

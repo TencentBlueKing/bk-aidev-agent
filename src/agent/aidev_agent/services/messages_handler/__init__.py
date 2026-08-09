@@ -22,6 +22,7 @@ from .constants import (
 from .factory import message_handler_factory
 from .in_memory import InMemoryQueueMessageHandler
 from .rabbitmq import RabbitMQMessageHandler
+from .rabbitmq_stream import RabbitMQStreamMessageHandler
 from .single_process_mixin import SingleProcessMixin
 from .streaming_helper import GeneratorStreamingHelper
 
@@ -53,5 +54,6 @@ __all__ = [
     "GeneratorStreamingHelper",
     "InMemoryQueueMessageHandler",
     "RabbitMQMessageHandler",
+    "RabbitMQStreamMessageHandler",
     "message_handler_factory",
 ]

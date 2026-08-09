@@ -132,6 +132,8 @@ class EnvVarNames:
     HANDLER_TYPE = "MESSAGE_HANDLER_TYPE"
     # RabbitMQ 主机地址
     RABBITMQ_HOST = "RABBITMQ_HOST"
+    # RabbitMQ Stream 协议端口；配置后 RabbitMQ handler 切换到 Stream 数据面
+    RABBITMQ_STREAM_PORT = "RABBITMQ_STREAM_PORT"
     # Redis MessageHandler 专用配置，避免误用业务缓存 REDIS_* 环境变量
     REDIS_URL = "MSG_REDIS_URL"
     REDIS_SOCKET_TIMEOUT = "MSG_REDIS_SOCKET_TIMEOUT"

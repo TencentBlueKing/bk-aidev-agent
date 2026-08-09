@@ -29,7 +29,12 @@ class MessageHandlerConfig:
     @classmethod
     def has_rabbitmq_config(cls) -> bool:
         """检查是否配置了 RabbitMQ"""
-        return bool(env.str(EnvVarNames.RABBITMQ_HOST, ""))
+        return bool(env.str(EnvVarNames.RABBITMQ_HOST, "") or env.str(EnvVarNames.RABBITMQ_STREAM_PORT, ""))
+
+    @classmethod
+    def has_rabbitmq_stream_config(cls) -> bool:
+        """检查是否启用 RabbitMQ Stream 数据面。"""
+        return bool(env.str(EnvVarNames.RABBITMQ_STREAM_PORT, "").strip())
 
     @classmethod
     def has_redis_config(cls) -> bool:
