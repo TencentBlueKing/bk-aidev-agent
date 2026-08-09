@@ -19,7 +19,7 @@ from typing import Any, ClassVar, Optional
 from environs import Env
 from rstream import Consumer, ConsumerOffsetSpecification, OffsetType, Producer
 
-from .constants import EOD_CHUNK, EnvVarNames
+from .constants import EOD_CHUNK, HEARTBEAT_TIMEOUT, EnvVarNames
 from .rabbitmq import RabbitMQMessageHandler
 
 logger = getLogger(__name__)
@@ -324,6 +324,8 @@ class _RabbitMQStreamRuntime:
 class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
     """RabbitMQ 控制面 + RabbitMQ Stream SSE 日志数据面。"""
 
+    # Stream 按原生 offset 增量读取，不继承 Classic Queue 的 60 秒全量 replay 容忍。
+    CONSUMER_HEARTBEAT_TIMEOUT: ClassVar[float] = HEARTBEAT_TIMEOUT
     STREAM_PREFIX: ClassVar[str] = "aidev_agent.stream."
     STREAM_PUBLISH_CONFIRM_TIMEOUT: ClassVar[float] = 10.0
     _instance: Optional["RabbitMQStreamMessageHandler"] = None

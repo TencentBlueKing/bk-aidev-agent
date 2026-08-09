@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Optional, Protocol, runtime_checkable
+from typing import Any, ClassVar, Optional, Protocol, runtime_checkable
 
 # 从 constants 模块导入所有常量（统一管理）
 from .constants import (
@@ -82,6 +82,12 @@ class BaseMessageQueueHandler(ABC):
     后端通过 ``supports_replay_from_start()`` 声明读取能力。旧模式方法保留默认
     实现用于兼容，但不再强迫 replay backend 提供无意义的占位实现。
     """
+
+    CONSUMER_HEARTBEAT_TIMEOUT: ClassVar[float] = HEARTBEAT_TIMEOUT
+
+    def get_consumer_heartbeat_timeout(self) -> float:
+        """返回该后端允许消费者连续无消息的时间。"""
+        return self.CONSUMER_HEARTBEAT_TIMEOUT
 
     @abstractmethod
     def put(self, thread_id: str, message: Any) -> None:

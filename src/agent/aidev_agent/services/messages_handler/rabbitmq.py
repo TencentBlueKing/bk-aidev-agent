@@ -1038,6 +1038,10 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
     - 后台守护线程每隔 0.5 秒批量推送消息，减少连接开销
     """
 
+    # Classic Queue 有新增消息时需要扫描并 requeue 已提交历史，长队列单次 replay
+    # 可能超过通用 15 秒窗口，因此仅该 handler 放宽到 60 秒。
+    CONSUMER_HEARTBEAT_TIMEOUT: ClassVar[float] = 60.0
+
     # 使用统一的队列名称前缀和 TTL 配置
     QUEUE_PREFIX: ClassVar[str] = QueueNamePrefixes.MESSAGE_QUEUE
     CANCEL_QUEUE_PREFIX: ClassVar[str] = QueueNamePrefixes.CANCEL_REQUEST

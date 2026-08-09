@@ -22,7 +22,6 @@ from .constants import (
     EOD_CHUNK,
     HEARTBEAT_CHUNK,
     HEARTBEAT_INTERVAL,
-    HEARTBEAT_TIMEOUT,
     TimeoutConfig,
 )
 from .factory import message_handler_factory
@@ -49,7 +48,7 @@ class GeneratorStreamingHelper:
 
     心跳机制：
     - 生产者在数据产生间隔较长时，定期发送心跳消息
-    - 消费者检测心跳超时，如果超过 HEARTBEAT_TIMEOUT 未收到任何消息，则认为生产者异常
+    - 消费者按 message handler 的策略检测心跳超时，连续无消息则认为生产者异常
 
     取消机制（支持多进程）：
     - 进程内取消：使用 threading.Event，同进程内的生产者/消费者可立即感知
@@ -75,7 +74,7 @@ class GeneratorStreamingHelper:
     CANCEL_DRAIN_TIMEOUT = TimeoutConfig.CANCEL_DRAIN_TIMEOUT
 
     # 生产者结束后延迟清理会话资源的等待时间（秒）。
-    # 覆盖 60 秒 replay 心跳窗口，并为前端重连预留约 30 秒。
+    # 覆盖最长 60 秒消费者心跳窗口，并为前端重连预留约 30 秒。
     _PRODUCER_CLEANUP_DELAY = 90.0
     # 业务流已发出 [DONE] 且当前无活跃消费者时，保留队列等待前端接管续流的窗口（秒）。
     # 注意：后台 drain（background_only）完成后不会立即清理队列，需保留足够窗口让前端重连后
@@ -83,8 +82,6 @@ class GeneratorStreamingHelper:
     _DONE_ORPHAN_CLEANUP_GRACE = 30.0
     _ORPHAN_CLEANUP_POLL_INTERVAL = 0.1
     _HEARTBEAT_TIMEOUT_GRACE = 5.0
-    # RabbitMQ replay 需要扫描已提交历史队列，消费耗时可能超过通用的 15 秒心跳窗口。
-    _REPLAY_HEARTBEAT_TIMEOUT = 60.0
     # 后台 schedule 没有前端可接管重连；心跳超时后保留最多 60 秒恢复窗口。
     # 窗口耗尽仅退出异常消费者，producer 后续仍可在 EOD 提交后收敛会话终态。
     _BACKGROUND_HEARTBEAT_RECOVERY_TIMEOUT = 60.0
@@ -760,7 +757,7 @@ class GeneratorStreamingHelper:
         last_progress_ts = time.time()
         replay_offset = 0
         supports_replay_from_start = self._supports_replay_from_start()
-        heartbeat_timeout = self._REPLAY_HEARTBEAT_TIMEOUT if supports_replay_from_start else HEARTBEAT_TIMEOUT
+        heartbeat_timeout = self.message_handler.get_consumer_heartbeat_timeout()
         heartbeat_grace_deadline: float | None = None
         background_recovery_deadline: float | None = None
         last_consumer_check = 0.0

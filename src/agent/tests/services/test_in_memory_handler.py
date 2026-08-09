@@ -49,6 +49,9 @@ class ReplayFromStartHandler:
     def supports_replay_from_start(self) -> bool:
         return True
 
+    def get_consumer_heartbeat_timeout(self) -> float:
+        return 60.0
+
     def bind_replay_run(self, thread_id, run_id):
         pass
 
@@ -748,7 +751,7 @@ class TestInMemoryQueueMessageHandler:
         thread_id = "test_stream_heartbeat_keepalive"
         helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
         monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_INTERVAL", 0.05)
-        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.2)
+        monkeypatch.setattr(handler, "get_consumer_heartbeat_timeout", lambda: 0.2)
         heartbeat_count = 0
 
         original_put = handler.put
@@ -782,7 +785,7 @@ class TestInMemoryQueueMessageHandler:
         thread_id = "test_stream_heartbeat_timeout"
         helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
         monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_INTERVAL", 1.0)
-        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.2)
+        monkeypatch.setattr(handler, "get_consumer_heartbeat_timeout", lambda: 0.2)
         monkeypatch.setattr(helper, "_HEARTBEAT_TIMEOUT_GRACE", 0.05)
         dispatched = []
         original_put = handler.put
@@ -809,11 +812,11 @@ class TestInMemoryQueueMessageHandler:
         with pytest.raises(RetryableHeartbeatTimeoutError, match="生产者心跳超时"):
             next(stream)
 
-    def test_replay_stream_uses_extended_heartbeat_timeout(self, monkeypatch):
+    def test_replay_stream_uses_handler_heartbeat_timeout(self, monkeypatch):
         """RabbitMQ replay 使用独立的较长心跳窗口，不受通用 15 秒阈值影响。"""
         handler = ReplayFromStartHandler()
         helper = GeneratorStreamingHelper(handler, thread_id="test_replay_heartbeat_timeout")
-        assert helper._REPLAY_HEARTBEAT_TIMEOUT == 60.0
+        assert handler.get_consumer_heartbeat_timeout() == 60.0
         producer_thread = threading.Thread(target=lambda: None)
         producer_thread.start()
         producer_thread.join()
@@ -826,8 +829,7 @@ class TestInMemoryQueueMessageHandler:
                 raise TimeoutError
             return [EOD_CHUNK], replay_offset + 1
 
-        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.0)
-        monkeypatch.setattr(helper, "_REPLAY_HEARTBEAT_TIMEOUT", 0.2)
+        monkeypatch.setattr(handler, "get_consumer_heartbeat_timeout", lambda: 0.2)
         monkeypatch.setattr(helper, "_get_consumer_messages", delayed_eod)
         stream = helper._consume_stream_messages(
             handler.acquire_consumer(helper.thread_id), threading.Event(), False, True, producer_thread=producer_thread
@@ -840,7 +842,7 @@ class TestInMemoryQueueMessageHandler:
         thread_id = "test_background_heartbeat_recovery"
         helper = GeneratorStreamingHelper(handler, thread_id=thread_id, defer_cleanup_on_complete=True)
         monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_INTERVAL", 1.0)
-        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.1)
+        monkeypatch.setattr(handler, "get_consumer_heartbeat_timeout", lambda: 0.1)
         monkeypatch.setattr(helper, "_HEARTBEAT_TIMEOUT_GRACE", 0.02)
         monkeypatch.setattr(helper, "_BACKGROUND_HEARTBEAT_RECOVERY_TIMEOUT", 2.0)
         original_put = handler.put
@@ -874,7 +876,7 @@ class TestInMemoryQueueMessageHandler:
                 raise TimeoutError
             return [streaming_helper_module.EOD_CHUNK], replay_offset + 1
 
-        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.0)
+        monkeypatch.setattr(handler, "get_consumer_heartbeat_timeout", lambda: 0.0)
         monkeypatch.setattr(helper, "_HEARTBEAT_TIMEOUT_GRACE", 0.0)
         monkeypatch.setattr(helper, "_BACKGROUND_HEARTBEAT_RECOVERY_TIMEOUT", 1.0)
         monkeypatch.setattr(helper, "_get_consumer_messages", delayed_eod)
@@ -1049,7 +1051,7 @@ class TestInMemoryQueueMessageHandler:
         producer_thread.start()
         producer_thread.join()
 
-        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.0)
+        monkeypatch.setattr(handler, "get_consumer_heartbeat_timeout", lambda: 0.0)
         monkeypatch.setattr(helper, "_get_consumer_messages", timeout_without_messages)
         monkeypatch.setattr(handler, "mark_completed", completed_threads.append)
 
