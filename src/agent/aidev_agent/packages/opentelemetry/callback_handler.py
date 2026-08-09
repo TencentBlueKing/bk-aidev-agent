@@ -350,21 +350,28 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         - 顶层 chain 异常结束（``on_chain_error``）
         - 顶层 chain 因流式上游关闭而抛 GeneratorExit（视为正常结束）
         """
-        if self._injector is None or self._injector_ended:
+        if self._injector_ended:
             return
         try:
-            self._injector.on_bk_agent_end(error=error)
+            if self._injector is not None:
+                self._injector.on_bk_agent_end(error=error)
         finally:
-            if self._metrics is not None and self._agent_started_at is not None:
-                self._metrics.record_agent(
-                    duration=time.monotonic() - self._agent_started_at,
-                    inference_calls=self.inference_call_counter,
-                    tool_calls=self.tool_call_counter,
-                    attributes=self._metric_agent_attributes,
-                    error=error,
-                )
-                self._agent_started_at = None
-            self._injector_ended = True
+            try:
+                if self._metrics is not None and self._agent_started_at is not None:
+                    started_at = self._agent_started_at
+                    self._agent_started_at = None
+                    try:
+                        self._metrics.record_agent(
+                            duration=time.monotonic() - started_at,
+                            inference_calls=self.inference_call_counter,
+                            tool_calls=self.tool_call_counter,
+                            attributes=self._metric_agent_attributes,
+                            error=error,
+                        )
+                    finally:
+                        self._metrics.record_active_session(-1, self._metric_agent_attributes)
+            finally:
+                self._injector_ended = True
 
     def _llm_metric_attributes(self, run_id: UUID, response_model: str | None = None) -> Dict[str, str]:
         attrs = dict(self._metric_agent_attributes)
@@ -665,15 +672,17 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
 
         # 顶层 chain 首次触发：先在执行线程上启动 injector 得到 root span。
         # 之后 _create_span 才能通过 self._injector.root_span 把 chain span 挂在 root 下。
-        if is_top_level and self._injector is not None and not self._injector_started:
+        if is_top_level and not self._injector_started:
             if self._metrics is not None:
                 self._agent_started_at = time.monotonic()
+                self._metrics.record_active_session(1, self._metric_agent_attributes)
             try:
-                self._injector.on_bk_agent_start(
-                    inputs=self._start_inputs,
-                    execute_kwargs=self._start_execute_kwargs,
-                    agent_info=self._start_agent_info,
-                )
+                if self._injector is not None:
+                    self._injector.on_bk_agent_start(
+                        inputs=self._start_inputs,
+                        execute_kwargs=self._start_execute_kwargs,
+                        agent_info=self._start_agent_info,
+                    )
             except Exception:  # noqa: BLE001
                 logger.debug("Failed to call injector.on_bk_agent_start", exc_info=True)
             finally:

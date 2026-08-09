@@ -176,6 +176,49 @@ class TestBkAidevAgentInjector:
 class TestBkAidevAgentCallbackHandler:
     """测试 BkAidevAgentCallbackHandler 类"""
 
+    def test_agent_metrics_follow_top_level_chain_without_injector(self, tracer_and_exporter):
+        tracer, _ = tracer_and_exporter
+        recorder = MagicMock()
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, metric_recorder=recorder)
+        run_id = uuid4()
+
+        asyncio.run(handler.on_chain_start(serialized={"name": "agent"}, inputs={}, run_id=run_id))
+        asyncio.run(handler.on_chain_end(outputs={}, run_id=run_id))
+
+        recorder.record_active_session.assert_any_call(1, handler._metric_agent_attributes)
+        recorder.record_active_session.assert_any_call(-1, handler._metric_agent_attributes)
+        recorder.record_agent.assert_called_once()
+
+    def test_agent_metrics_are_finalized_once_on_top_level_error(self, tracer_and_exporter):
+        tracer, _ = tracer_and_exporter
+        recorder = MagicMock()
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, metric_recorder=recorder)
+        run_id = uuid4()
+        error = RuntimeError("boom")
+
+        asyncio.run(handler.on_chain_start(serialized={"name": "agent"}, inputs={}, run_id=run_id))
+        asyncio.run(handler.on_chain_error(error, run_id=run_id))
+        handler._finalize_injector(error=error)
+
+        assert recorder.record_active_session.call_count == 2
+        recorder.record_active_session.assert_called_with(-1, handler._metric_agent_attributes)
+        recorder.record_agent.assert_called_once()
+
+    def test_active_session_is_decremented_when_summary_recording_fails(self, tracer_and_exporter):
+        tracer, _ = tracer_and_exporter
+        recorder = MagicMock()
+        recorder.record_agent.side_effect = RuntimeError("metric backend failed")
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, metric_recorder=recorder)
+        run_id = uuid4()
+
+        asyncio.run(handler.on_chain_start(serialized={"name": "agent"}, inputs={}, run_id=run_id))
+        asyncio.run(handler.on_chain_end(outputs={}, run_id=run_id))
+        handler._finalize_injector()
+
+        assert recorder.record_active_session.call_count == 2
+        recorder.record_active_session.assert_called_with(-1, handler._metric_agent_attributes)
+        recorder.record_agent.assert_called_once()
+
     def test_llm_generate_span_attributes(self, tracer_and_exporter):
         """测试 llm.generate span 包含 llm.input 和 llm.output 属性"""
         tracer, exporter = tracer_and_exporter

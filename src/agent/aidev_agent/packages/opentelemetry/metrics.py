@@ -108,6 +108,11 @@ class AgentMetrics:
         self.agent_tool_calls = meter.create_counter(
             "gen_ai.invoke_agent.tool_calls", unit="{call}", description="Tool calls per agent invocation"
         )
+        self.active_sessions = meter.create_up_down_counter(
+            "aidev.session.active",
+            unit="{session}",
+            description="Agent sessions currently executing",
+        )
         self.llm_duration = meter.create_histogram(
             "gen_ai.client.operation.duration", unit="s", description="LLM operation duration"
         )
@@ -155,6 +160,10 @@ class AgentMetrics:
         self.agent_duration.record(duration, attrs)
         self.agent_inference_calls.add(inference_calls, attributes)
         self.agent_tool_calls.add(tool_calls, attributes)
+
+    def record_active_session(self, delta: int, attributes: dict[str, str]) -> None:
+        """Adjust the number of Agent runs that are currently executing."""
+        self.active_sessions.add(delta, attributes)
 
     def record_llm(
         self,

@@ -20,7 +20,7 @@ Collector 接收端口为 `4317`（gRPC）和 `4318`（HTTP），Prometheus 为
 
 ```bash
 cd src/plugins/aidev_bkplugin
-uv run --no-sync python dev/otel/mock_agent_metrics.py
+PYTHONPATH=../../agent uv run --no-sync python dev/otel/mock_agent_metrics.py
 ```
 
 等待 2～5 秒后刷新 Grafana。也可以直接在 Prometheus 查询：
@@ -28,6 +28,29 @@ uv run --no-sync python dev/otel/mock_agent_metrics.py
 ```promql
 {__name__=~"gen_ai_invoke_agent_duration.*"}
 ```
+
+“当前活跃 Agent 执行数”统计正在执行的 Agent run，不代表已持久化但空闲的
+历史 session。平均智能体轮数和平均工具调用次数按 Grafana 当前选择的时间范围，
+使用该范围内的累计增量计算；范围内没有已完成调用时显示 `No data`，不显示伪造的 0。
+
+## 查看原始指标数据
+
+Collector 的 `debug` exporter 会把每批 OTLP `MetricData`（resource、scope、data
+point 和聚合值）输出到容器日志：
+
+```bash
+docker compose logs -f otel-collector
+```
+
+Prometheus exporter 的原始 exposition 文本可通过以下命令查看：
+
+```bash
+curl http://localhost:8889/metrics
+curl 'http://localhost:9090/api/v1/query?query=aidev_session_active'
+```
+
+Prometheus 保存的是按 scrape 时间采集的聚合时间序列，不是逐次 Agent 事件；如果要
+定位单次执行，请结合对应 Trace，而不是尝试从 Counter 或 Histogram 反推事件明细。
 
 ## 使用真实 bkplugin 请求
 

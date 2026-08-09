@@ -7,8 +7,18 @@
   "panels": [
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 0, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 4, "x": 0, "y": 0},
+      "id": 11,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "sum(aidev_session_active)", "legendFormat": "执行中", "range": true, "refId": "A"}],
+      "title": "当前活跃 Agent 执行数",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
-      "gridPos": {"h": 7, "w": 6, "x": 0, "y": 0},
+      "gridPos": {"h": 7, "w": 5, "x": 4, "y": 0},
       "id": 1,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
       "targets": [{"editorMode": "code", "expr": "sum(rate({__name__=~\"gen_ai_invoke_agent_duration.*_count\"}[5m]))", "legendFormat": "Agent/s", "range": true, "refId": "A"}],
@@ -18,7 +28,7 @@
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
-      "gridPos": {"h": 7, "w": 6, "x": 6, "y": 0},
+      "gridPos": {"h": 7, "w": 5, "x": 9, "y": 0},
       "id": 2,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
       "targets": [{"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"gen_ai_invoke_agent_duration.*_bucket\"}[5m])))", "legendFormat": "P95", "range": true, "refId": "A"}],
@@ -28,20 +38,20 @@
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"decimals": 2, "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 7, "w": 6, "x": 12, "y": 0},
+      "gridPos": {"h": 7, "w": 5, "x": 14, "y": 0},
       "id": 3,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "sum(rate({__name__=~\"gen_ai_invoke_agent_inference_calls.*\"}[5m])) / clamp_min(sum(rate({__name__=~\"gen_ai_invoke_agent_duration.*_count\"}[5m])), 0.000001)", "legendFormat": "轮/调用", "range": true, "refId": "A"}],
+      "targets": [{"editorMode": "code", "expr": "sum(increase(gen_ai_invoke_agent_inference_calls_total[$__range])) / sum(increase(gen_ai_invoke_agent_duration_seconds_count[$__range]))", "legendFormat": "轮/调用", "range": true, "refId": "A"}],
       "title": "平均智能体轮数",
       "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"decimals": 2, "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 7, "w": 6, "x": 18, "y": 0},
+      "gridPos": {"h": 7, "w": 5, "x": 19, "y": 0},
       "id": 4,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "sum(rate({__name__=~\"gen_ai_invoke_agent_tool_calls.*\"}[5m])) / clamp_min(sum(rate({__name__=~\"gen_ai_invoke_agent_duration.*_count\"}[5m])), 0.000001)", "legendFormat": "次/调用", "range": true, "refId": "A"}],
+      "targets": [{"editorMode": "code", "expr": "sum(increase(gen_ai_invoke_agent_tool_calls_total[$__range])) / sum(increase(gen_ai_invoke_agent_duration_seconds_count[$__range]))", "legendFormat": "次/调用", "range": true, "refId": "A"}],
       "title": "平均工具调用次数",
       "type": "stat"
     },

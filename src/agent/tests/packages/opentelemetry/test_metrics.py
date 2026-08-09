@@ -33,6 +33,9 @@ class FakeMeter:
     def create_counter(self, name, **kwargs):
         return self.instruments.setdefault(name, FakeInstrument())
 
+    def create_up_down_counter(self, name, **kwargs):
+        return self.instruments.setdefault(name, FakeInstrument())
+
 
 def test_extract_token_usage_preserves_cache_breakdown_and_normalizes_prompt_tokens():
     response = LLMResult(
@@ -114,6 +117,18 @@ def test_error_type_is_added_only_to_duration_metric():
     assert duration_attrs["error.type"] == "RuntimeError"
     assert "error.type" not in meter.instruments["gen_ai.invoke_agent.inference_calls"].calls[0][1]
     assert "agent.session.session_code" not in duration_attrs
+
+
+def test_active_session_metric_is_symmetric_and_low_cardinality():
+    meter = FakeMeter()
+    recorder = AgentMetrics(meter)
+    attrs = recorder.agent_attributes("ai-demo", "演示智能体")
+
+    recorder.record_active_session(1, attrs)
+    recorder.record_active_session(-1, attrs)
+
+    assert meter.instruments["aidev.session.active"].calls == [(1, attrs), (-1, attrs)]
+    assert "agent.session.session_code" not in attrs
 
 
 def test_process_metric_gate_disables_sse_instrumentation():

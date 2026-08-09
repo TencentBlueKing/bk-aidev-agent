@@ -29,7 +29,12 @@ def main() -> None:
         "gen_ai.response.model": "mock-model-routed",
     }
     for index in range(3):
+        recorder.record_active_session(1, agent_attrs)
+        if service.provider is not None:
+            service.provider.force_flush(timeout_millis=5000)
+        time.sleep(1.5)
         recorder.record_agent(1.2 + index * 0.2, 2, 1, agent_attrs)
+        recorder.record_active_session(-1, agent_attrs)
         recorder.record_llm(
             0.8 + index * 0.1,
             llm_attrs,
