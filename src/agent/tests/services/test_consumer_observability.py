@@ -35,7 +35,7 @@ def handler():
 @pytest.fixture
 def caplog_info(caplog):
     caplog.set_level(logging.INFO, logger="aidev_agent.services.messages_handler.streaming_helper")
-    caplog.set_level(logging.INFO, logger="aidev_agent.services.messages_handler.multi_process_mixin")
+    caplog.set_level(logging.INFO, logger="aidev_agent.services.messages_handler.rabbitmq")
     return caplog
 
 

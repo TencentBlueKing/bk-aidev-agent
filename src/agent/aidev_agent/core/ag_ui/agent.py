@@ -142,8 +142,9 @@ class LangGraphAgent:
             "thread_id": input.thread_id,
         }
         # 启动流，并且把事件推送出去
-        async for event_str in self._handle_stream_events(input, config):
-            yield event_str
+        async for event in self._handle_stream_events(input, config):
+            if event.type != EventType.STATE_SNAPSHOT:
+                yield event
 
     async def _handle_stream_events(self, input: RunAgentInput, config: RunnableConfig) -> AsyncGenerator[str, None]:
         thread_id = input.thread_id

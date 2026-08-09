@@ -63,7 +63,7 @@ class QueueTTLConfig:
     # 消费者取消完成通知的 TTL（毫秒）：30 秒后自动过期
     CANCELLED_SIGNAL_TTL_MS = 30000
 
-    # 消费者退出通知消息的 TTL（毫秒）：5 秒后自动过期
+    # RabbitMQ 消费者退出通知 5 秒后自动过期
     CONSUMER_EXIT_MSG_TTL_MS = 5000
 
     # 停止状态信号的 TTL（毫秒）：10 分钟后自动过期
@@ -101,9 +101,6 @@ class TimeoutConfig:
     # 取消后等待 generator 产出 RUN_FINISHED 的宽限时间（秒）
     CANCEL_DRAIN_TIMEOUT = 3.0
 
-    # 等待旧消费者退出的默认超时时间（秒）
-    WAIT_CONSUMER_EXIT_TIMEOUT = 3.0
-
     # 获取 RabbitMQ 连接的超时时间（秒）
     CONNECTION_TIMEOUT = 10.0
 
@@ -131,9 +128,19 @@ class EnvVarNames:
     便于文档化和避免拼写错误。
     """
 
-    # 消息处理器类型（inmemory / rabbitmq）
+    # 消息处理器类型（inmemory / rabbitmq / redis）
     HANDLER_TYPE = "MESSAGE_HANDLER_TYPE"
     # RabbitMQ 主机地址
     RABBITMQ_HOST = "RABBITMQ_HOST"
+    # RabbitMQ Stream 协议端口；配置后 RabbitMQ handler 切换到 Stream 数据面
+    RABBITMQ_STREAM_PORT = "RABBITMQ_STREAM_PORT"
+    # Redis MessageHandler 专用配置，避免误用业务缓存 REDIS_* 环境变量
+    REDIS_URL = "MSG_REDIS_URL"
+    REDIS_SOCKET_TIMEOUT = "MSG_REDIS_SOCKET_TIMEOUT"
+    REDIS_CONNECT_TIMEOUT = "MSG_REDIS_CONNECT_TIMEOUT"
+    REDIS_PRODUCER_LOCK_TTL_SECONDS = "MSG_REDIS_PRODUCER_LOCK_TTL_SECONDS"
+    REDIS_PRODUCER_LOCK_RENEW_INTERVAL = "MSG_REDIS_PRODUCER_LOCK_RENEW_INTERVAL"
+    REDIS_CONSUMER_STALE_SECONDS = "MSG_REDIS_CONSUMER_STALE_SECONDS"
+    REDIS_COMPLETED_STREAM_TTL_SECONDS = "MSG_REDIS_COMPLETED_STREAM_TTL_SECONDS"
     # 队列过期时间（秒），默认 3600（1 小时）
     QUEUE_EXPIRE_SECONDS = "QUEUE_EXPIRE_SECONDS"

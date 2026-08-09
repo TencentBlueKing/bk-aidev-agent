@@ -415,11 +415,9 @@ class ChatCompletionAgent(BaseModel):
         helper = GeneratorStreamingHelper(
             thread_id=self.thread_id,
         )
-        if not helper.message_handler.is_cancel_requested(self.thread_id):
-            logger.info(f"[STOP_DEBUG] Calling message_handler.request_cancel() for thread_id={self.thread_id}")
-            helper.message_handler.request_cancel(self.thread_id)
-        else:
-            logger.info(f"[STOP_DEBUG] Cancel already requested for thread_id={self.thread_id}")
+        # 所有 handler 的 request_cancel 都是幂等的，无需先读后写；避免两次远端请求和 TOCTOU 竞态。
+        logger.info("[STOP_DEBUG] Requesting cancel for thread_id=%s", self.thread_id)
+        helper.message_handler.request_cancel(self.thread_id)
         # 用户主动停止时也释放资源
         self.release_resources()
 
@@ -1035,6 +1033,7 @@ class ChatCompletionAgent(BaseModel):
             agent_e=agent_e,
             cfg=merged_cfg,
             resume=bool(execute_kwargs.resume),
+            attach_only=execute_kwargs.stream_mode == "attach",
         )
 
     def _stream_with_queue(
@@ -1046,13 +1045,13 @@ class ChatCompletionAgent(BaseModel):
         agent_e: Runnable | None = None,
         cfg: RunnableConfig | None = None,
         resume: bool = False,
+        attach_only: bool = False,
     ) -> Generator[Any, None, None]:
         """使用队列处理器缓存流式请求，支持断点续传。
 
-        两阶段输出：
-        1. 同步直传头部帧到RUN_STARTED，
-           绕过 RabbitMQ buffer 避免 gevent 环境下的顺序竞态。
-        2. 后续运行时事件交给队列管理，支持断点续传。
+        所有事件都由后台 producer 写入消息处理器。producer 会在 RUN_STARTED
+        入队后立即 flush，既保持初始化事件顺序，也确保客户端在首帧前断开时
+        producer 仍能继续执行并供后续请求 replay。
         """
         helper = GeneratorStreamingHelper(
             thread_id=queue_thread_id or agent_input.thread_id,
@@ -1061,53 +1060,16 @@ class ChatCompletionAgent(BaseModel):
         run_id = agent_input.run_id or self.thread_id
         cancel_event = helper.prepare_run(run_id)
         producer = self._build_resume_aware_producer(agui_entry, agent_input, agent_e=agent_e, cfg=cfg, resume=resume)
-        queue_stream_started = False
-        try:
-            # ---- 阶段 1：同步拉取头部帧并直接 yield ----
-            head_frames = []
-            remaining_producer = self._extract_head_frames(producer, head_frames)
-            for frame in head_frames:
-                yield frame
-
-            # ---- 阶段 2：剩余帧交给队列管理（支持断点续传）----
-            queue_stream_started = True
-            yield from helper.stream(
-                remaining_producer,
-                # replay 模式下由 producer 在 EOD 写入并 flush 成功后更新会话终态；
-                # 消费者中断不会影响最终状态收敛。
-                on_complete=partial(self._on_complete, finalize_session=True),
-                event_handler=self.event_handler,
-                expected_run_id=run_id,
-                cancel_event=cancel_event,
-            )
-        finally:
-            if not queue_stream_started:
-                helper.discard_prepared_run(cancel_event)
-                close_producer = getattr(producer, "close", None)
-                if callable(close_producer):
-                    close_producer()
-
-    @staticmethod
-    def _extract_head_frames(
-        producer: Generator[Any, None, None],
-        head_frames: list,
-    ) -> Generator[Any, None, None]:
-        """从 producer 中同步提取头部帧（到 RUN_STARTED 为止），返回剩余帧 generator。
-
-        事件流结构：MESSAGES_SNAPSHOT → [RUN_FINISHED] → RUN_STARTED → STEP_* ...
-        RUN_STARTED 是 Agent 图执行的起点，之前的帧为初始化/回放事件。
-        """
-        RUN_STARTED_MARKER = '"type":"RUN_STARTED"'
-
-        def _remaining() -> Generator[Any, None, None]:
-            yield from producer
-
-        for frame in producer:
-            head_frames.append(frame)
-            if isinstance(frame, str) and RUN_STARTED_MARKER in frame:
-                break
-
-        return _remaining()
+        yield from helper.stream(
+            producer,
+            # replay 模式下由 producer 在 EOD 写入并 flush 成功后更新会话终态；
+            # 消费者中断不会影响最终状态收敛。
+            on_complete=partial(self._on_complete, finalize_session=True),
+            event_handler=self.event_handler,
+            expected_run_id=run_id,
+            cancel_event=cancel_event,
+            attach_only=attach_only,
+        )
 
     def _build_resume_aware_producer(
         self,

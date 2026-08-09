@@ -56,8 +56,8 @@ class InMemoryQueueMessageHandler(SingleProcessMixin, BaseMessageQueueHandler):
         self._queue_locks: dict[str, threading.Lock] = {}
         # 全局锁：用于创建新队列时的同步
         self._global_lock = threading.Lock()
-        # 取消请求：thread_id -> bool（request_cancel 协议）
-        self._cancel_requested: dict[str, bool] = {}
+        # 兼容旧 stop() 的 session 级取消；run-scoped 取消由 Helper 的 Event 管理。
+        self._cancel_requested: set[str] = set()
         self._cancel_lock = threading.Lock()
         # 停止状态：thread_id -> bool
         self._stopped_sessions: dict[str, bool] = {}
@@ -274,7 +274,7 @@ class InMemoryQueueMessageHandler(SingleProcessMixin, BaseMessageQueueHandler):
 
         # 清除取消请求状态
         with self._cancel_lock:
-            self._cancel_requested.pop(thread_id, None)
+            self._cancel_requested.discard(thread_id)
 
     def mark_completed(self, thread_id: str) -> None:
         """标记流已完成并清理队列
@@ -296,15 +296,22 @@ class InMemoryQueueMessageHandler(SingleProcessMixin, BaseMessageQueueHandler):
         self._clear_all_queues(thread_id)
         logger.debug(f"Cleared all queues for thread_id={thread_id}")
 
-    def request_cancel(self, thread_id: str) -> None:
-        """请求取消该 thread_id 的流。幂等。"""
+    def set_cancel_signal(self, thread_id: str, run_id: str | None = None) -> bool:
+        # run-scoped 取消由 GeneratorStreamingHelper 的进程内 Event 精确处理；
+        # handler 只保存旧 stop() 使用的 session 级信号，避免旧 run 误伤新 run。
+        if run_id is not None:
+            return False
         with self._cancel_lock:
-            self._cancel_requested[thread_id] = True
+            self._cancel_requested.add(thread_id)
+        return True
 
-    def is_cancel_requested(self, thread_id: str) -> bool:
-        """检查是否已请求取消该 thread_id 的流。"""
+    def check_cancel_signal(self, thread_id: str, run_id: str | None = None) -> bool:
         with self._cancel_lock:
-            return self._cancel_requested.get(thread_id, False)
+            return thread_id in self._cancel_requested
+
+    def clear_cancel_signal(self, thread_id: str, run_id: str | None = None) -> None:
+        with self._cancel_lock:
+            self._cancel_requested.discard(thread_id)
 
     def get_cached_count(self, thread_id: str) -> int:
         """获取主队列中的消息数量

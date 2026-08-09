@@ -1,5 +1,6 @@
 import contextlib
 import json
+import os
 import pickle
 import queue
 import threading
@@ -8,22 +9,786 @@ import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from logging import getLogger
-from typing import TYPE_CHECKING, Any, ClassVar, Optional
-
-if TYPE_CHECKING:
-    import pika.channel
+from typing import Any, ClassVar, Optional
 from urllib.parse import quote
 
 import pika
 from environs import Env
 
-from .base import BaseMessageQueueHandler, QueueTTLConfig
+from .base import BaseMessageQueueHandler, ConsumerPreemptedError, QueueTTLConfig
 from .constants import EOD_CHUNK, QueueNamePrefixes
-from .multi_process_mixin import MultiProcessMixin
+from .replay_buffer_mixin import ReplayBufferMixin
 
 logger = getLogger(__name__)
 
 env = Env()
+
+
+class _RabbitMQConsumerMixin:
+    """RabbitMQ 多进程消费者控制实现。
+
+    利用 RabbitMQ 自身的队列来存储消费者状态，替代内存中的 threading.Lock + dict，
+    使消费者管理在多进程（gunicorn -w N）部署下也能正确工作。
+
+    核心设计：
+    - 控制队列（x-max-length: 1）：存储当前活跃消费者的注册信息
+    - 退出通知队列（x-message-ttl）：旧消费者退出后发送通知
+    - 取消信号队列（x-max-length: 1）：存储取消信号，支持跨进程取消
+
+    前提条件：
+    - 宿主类必须提供 _with_connection() 上下文管理器来获取 RabbitMQ 连接
+
+    队列命名约定：
+    - 控制队列：aidev_agent.consumer.{thread_id}
+    - 退出通知队列：aidev_agent.consumer_exit.{thread_id}
+    - 取消信号队列：aidev_agent.cancel.{thread_id}
+    """
+
+    # 使用统一的队列前缀和 TTL 配置
+    CONSUMER_QUEUE_PREFIX = QueueNamePrefixes.CONSUMER_CONTROL
+    CONSUMER_EXIT_QUEUE_PREFIX = QueueNamePrefixes.CONSUMER_EXIT
+    CANCEL_QUEUE_PREFIX = QueueNamePrefixes.CANCEL_SIGNAL
+    STOPPED_QUEUE_PREFIX = QueueNamePrefixes.STOPPED_SIGNAL
+    CONSUMER_QUEUE_TTL_MS = QueueTTLConfig.QUEUE_EXPIRE_MS
+    CONSUMER_EXIT_MSG_TTL_MS = QueueTTLConfig.CONSUMER_EXIT_MSG_TTL_MS
+    CANCEL_SIGNAL_TTL_MS = QueueTTLConfig.CANCEL_SIGNAL_TTL_MS
+    STOPPED_SIGNAL_TTL_MS = QueueTTLConfig.STOPPED_SIGNAL_TTL_MS
+    WAIT_POLL_INTERVAL = QueueTTLConfig.WAIT_POLL_INTERVAL
+
+    @contextlib.contextmanager
+    def _with_channel(self):
+        """获取临时 RabbitMQ channel，并确保用完后关闭。"""
+        with self._with_connection() as connection:
+            channel = connection.channel()
+            try:
+                yield channel
+            finally:
+                if getattr(channel, "is_open", False):
+                    with contextlib.suppress(Exception):
+                        channel.close()
+
+    def _get_consumer_queue_name(self, thread_id: str) -> str:
+        """获取控制队列名"""
+        return f"{self.CONSUMER_QUEUE_PREFIX}{thread_id}"
+
+    def _get_consumer_exit_queue_name(self, thread_id: str) -> str:
+        """获取退出通知队列名"""
+        return f"{self.CONSUMER_EXIT_QUEUE_PREFIX}{thread_id}"
+
+    def _get_cancel_queue_name(self, thread_id: str) -> str:
+        """获取取消信号队列名"""
+        return f"{self.CANCEL_QUEUE_PREFIX}{thread_id}"
+
+    def _ensure_consumer_queues(self, channel: Any, thread_id: str) -> tuple[str, str]:
+        """确保控制队列和退出通知队列存在
+
+        Args:
+            channel: RabbitMQ channel
+            thread_id: 线程ID
+
+        Returns:
+            (控制队列名, 退出通知队列名)
+        """
+        consumer_queue = self._get_consumer_queue_name(thread_id)
+        exit_queue = self._get_consumer_exit_queue_name(thread_id)
+
+        # 控制队列：x-max-length=1 确保只保留最新的消费者注册信息
+        # x-overflow=drop-head：当队列满时丢弃最旧的消息，保留最新的
+        channel.queue_declare(
+            queue=consumer_queue,
+            durable=True,
+            arguments={
+                "x-max-length": 1,
+                "x-overflow": "drop-head",
+                "x-expires": self.CONSUMER_QUEUE_TTL_MS,
+            },
+        )
+
+        # 退出通知队列：消息 5 秒后自动过期，最多保留 1 条
+        channel.queue_declare(
+            queue=exit_queue,
+            durable=True,
+            arguments={
+                "x-message-ttl": self.CONSUMER_EXIT_MSG_TTL_MS,
+                "x-max-length": 1,
+                "x-expires": self.CONSUMER_QUEUE_TTL_MS,
+            },
+        )
+
+        return consumer_queue, exit_queue
+
+    def acquire_consumer(self, thread_id: str) -> str:
+        """注册新消费者，返回消费者 ID
+
+        通过 purge + publish 到控制队列来实现"最后写入者胜出"的语义。
+        无论哪个进程执行，最后写入的 consumer_id 就是最新的活跃消费者。
+
+        Args:
+            thread_id: 线程ID
+
+        Returns:
+            新消费者的唯一 ID
+        """
+        consumer_id = uuid.uuid4().hex
+
+        with self._with_channel() as channel:
+            consumer_queue, exit_queue = self._ensure_consumer_queues(channel, thread_id)
+
+            # 先读取旧消费者信息（用于日志）
+            old_consumer_id = None
+            method_frame, _, body = channel.basic_get(queue=consumer_queue, auto_ack=True)
+            if method_frame:
+                try:
+                    old_data = json.loads(body)
+                    old_consumer_id = old_data.get("consumer_id")
+                except (json.JSONDecodeError, KeyError):
+                    pass
+
+            # 清空退出通知队列（为新的等待周期做准备）
+            channel.queue_purge(queue=exit_queue)
+
+            # 写入新消费者注册信息
+            payload = json.dumps(
+                {
+                    "consumer_id": consumer_id,
+                    "ts": time.time(),
+                }
+            )
+            channel.basic_publish(
+                exchange="",
+                routing_key=consumer_queue,
+                body=payload.encode(),
+                properties=pika.BasicProperties(delivery_mode=2),
+            )
+
+            if old_consumer_id:
+                logger.info(
+                    f"Consumer preempted for thread_id={thread_id}: old={old_consumer_id[:8]}, new={consumer_id[:8]}"
+                )
+
+        logger.info(
+            "[RabbitMQ] consumer acquired thread_id=%s consumer_id=%s preempted_old=%s",
+            thread_id,
+            consumer_id[:8],
+            old_consumer_id[:8] if old_consumer_id else None,
+        )
+        return consumer_id
+
+    def wait_for_previous_consumer(self, thread_id: str, timeout: float = 3.0) -> bool:
+        """等待旧消费者完全退出（包括兼容模式的消息恢复）
+
+        通过轮询退出通知队列来等待旧消费者发送退出信号。
+
+        Args:
+            thread_id: 线程ID
+            timeout: 最大等待时间（秒）
+
+        Returns:
+            True 表示旧消费者已退出，False 表示超时
+        """
+        start_time = time.time()
+
+        while True:
+            elapsed = time.time() - start_time
+            if elapsed >= timeout:
+                logger.warning(f"Timeout waiting for previous consumer to exit, thread_id={thread_id}")
+                return False
+
+            try:
+                with self._with_channel() as channel:
+                    exit_queue = self._get_consumer_exit_queue_name(thread_id)
+
+                    # 尝试先被动声明检查队列是否存在
+                    try:
+                        channel.queue_declare(queue=exit_queue, passive=True)
+                    except Exception:
+                        # 队列不存在，说明没有旧消费者需要等待
+                        return True
+
+                    method_frame, _, body = channel.basic_get(queue=exit_queue, auto_ack=True)
+                    if method_frame:
+                        # 收到退出信号
+                        logger.info(f"Previous consumer exited for thread_id={thread_id}")
+                        return True
+            except Exception as e:
+                logger.warning(f"Error polling exit queue for thread_id={thread_id}: {e}")
+
+            # 短暂等待后重试
+            time.sleep(self.WAIT_POLL_INTERVAL)
+
+    def check_consumer(self, thread_id: str, consumer_id: str) -> None:
+        """检查当前消费者是否仍是活跃消费者
+
+        通过 peek 控制队列（basic_get + reject requeue）来检查。
+
+        Args:
+            thread_id: 线程ID
+            consumer_id: 消费者 ID
+
+        Raises:
+            ConsumerPreemptedError: 当前消费者已被新消费者抢占
+        """
+        with self._with_channel() as channel:
+            consumer_queue = self._get_consumer_queue_name(thread_id)
+
+            # 尝试先被动声明检查队列是否存在
+            try:
+                channel.queue_declare(queue=consumer_queue, passive=True)
+            except Exception:
+                # 队列不存在，无法判断，认为通过
+                return
+
+            # peek：取出后放回
+            method_frame, _, body = channel.basic_get(queue=consumer_queue, auto_ack=False)
+            if not method_frame:
+                # 控制队列为空，无法判断，认为通过
+                return
+
+            try:
+                data = json.loads(body)
+                active_consumer_id = data.get("consumer_id")
+            except (json.JSONDecodeError, KeyError):
+                # 数据损坏，放回并通过
+                channel.basic_reject(delivery_tag=method_frame.delivery_tag, requeue=True)
+                return
+
+            # 放回消息
+            channel.basic_reject(delivery_tag=method_frame.delivery_tag, requeue=True)
+
+            if active_consumer_id and active_consumer_id != consumer_id:
+                raise ConsumerPreemptedError(
+                    f"Consumer {consumer_id[:8]} preempted by {active_consumer_id[:8]} for thread_id={thread_id}"
+                )
+
+    def release_consumer(self, thread_id: str, consumer_id: str) -> None:
+        """释放消费者
+
+        如果自己仍是当前活跃消费者（正常结束），清空控制队列。
+        如果自己已被抢占，保留 replay 缓存并向退出通知队列发送信号。
+
+        Args:
+            thread_id: 线程ID
+            consumer_id: 消费者 ID
+        """
+
+        is_preempted = False
+        active_consumer_id = None
+        release_outcome = "empty_control_queue"
+
+        with self._with_channel() as channel:
+            consumer_queue = self._get_consumer_queue_name(thread_id)
+
+            try:
+                channel.queue_declare(queue=consumer_queue, passive=True)
+            except Exception:
+                logger.info(
+                    "[RabbitMQ] consumer released thread_id=%s consumer_id=%s reason=missing_queue",
+                    thread_id,
+                    consumer_id[:8],
+                )
+                return
+
+            consumer_queue, exit_queue = self._ensure_consumer_queues(channel, thread_id)
+
+            # peek 控制队列
+            method_frame, _, body = channel.basic_get(queue=consumer_queue, auto_ack=False)
+            if method_frame:
+                try:
+                    data = json.loads(body)
+                    active_consumer_id = data.get("consumer_id")
+                except (json.JSONDecodeError, KeyError):
+                    active_consumer_id = None
+
+                if active_consumer_id == consumer_id:
+                    # 正常结束：消费掉控制队列中的注册信息（ack 删除）
+                    channel.basic_ack(delivery_tag=method_frame.delivery_tag)
+                    release_outcome = "normal"
+                else:
+                    # 被抢占：放回控制队列中的消息
+                    channel.basic_reject(delivery_tag=method_frame.delivery_tag, requeue=True)
+                    is_preempted = True
+                    release_outcome = "preempted"
+
+        if is_preempted:
+            logger.info(
+                "Preempted replay consumer %s preserved cached messages for thread_id=%s",
+                consumer_id[:8],
+                thread_id,
+            )
+            self._send_exit_signal(thread_id, consumer_id)
+
+        logger.info(
+            "[RabbitMQ] consumer released thread_id=%s consumer_id=%s reason=%s",
+            thread_id,
+            consumer_id[:8],
+            release_outcome,
+        )
+
+    def has_active_consumer(self, thread_id: str) -> bool:
+        """检查指定 thread_id 是否仍有活跃消费者。"""
+        try:
+            with self._with_channel() as channel:
+                consumer_queue = self._get_consumer_queue_name(thread_id)
+
+                try:
+                    channel.queue_declare(queue=consumer_queue, passive=True)
+                except Exception:
+                    return False
+
+                method_frame, _, body = channel.basic_get(queue=consumer_queue, auto_ack=False)
+                if not method_frame:
+                    return False
+
+                channel.basic_reject(delivery_tag=method_frame.delivery_tag, requeue=True)
+
+                try:
+                    data = json.loads(body)
+                except (json.JSONDecodeError, KeyError):
+                    return False
+
+                return bool(data.get("consumer_id"))
+        except Exception as e:
+            logger.warning(f"Error checking active consumer for thread_id={thread_id}: {e}")
+            return False
+
+    def _send_exit_signal(self, thread_id: str, consumer_id: str) -> None:
+        """向退出通知队列发送信号"""
+        try:
+            with self._with_channel() as channel:
+                exit_queue = self._get_consumer_exit_queue_name(thread_id)
+
+                payload = json.dumps(
+                    {
+                        "old_consumer_id": consumer_id,
+                        "ts": time.time(),
+                    }
+                )
+                channel.basic_publish(
+                    exchange="",
+                    routing_key=exit_queue,
+                    body=payload.encode(),
+                    properties=pika.BasicProperties(delivery_mode=2),
+                )
+                logger.info(f"Sent exit signal for preempted consumer {consumer_id[:8]}, thread_id={thread_id}")
+        except Exception as e:
+            logger.error(f"Failed to send exit signal for consumer {consumer_id[:8]}: {e}")
+
+    # ==================== 跨进程取消信号管理 ====================
+
+    def _declare_signal_queue(
+        self,
+        channel: Any,
+        queue_name: str,
+        message_ttl_ms: int,
+    ) -> None:
+        """声明信号队列（内部方法）
+
+        用于取消信号、消费者退出通知等场景，统一队列声明逻辑。
+
+        Args:
+            channel: RabbitMQ channel
+            queue_name: 队列名
+            message_ttl_ms: 消息 TTL（毫秒）
+        """
+        channel.queue_declare(
+            queue=queue_name,
+            durable=True,
+            arguments={
+                "x-max-length": 1,
+                "x-overflow": "drop-head",
+                "x-message-ttl": message_ttl_ms,
+                "x-expires": self.CONSUMER_QUEUE_TTL_MS,
+            },
+        )
+
+    def _publish_signal(
+        self,
+        channel: Any,
+        queue_name: str,
+        payload: dict,
+    ) -> None:
+        """发布信号消息（内部方法）
+
+        Args:
+            channel: RabbitMQ channel
+            queue_name: 队列名
+            payload: 消息内容（会被 JSON 序列化）
+        """
+        channel.basic_publish(
+            exchange="",
+            routing_key=queue_name,
+            body=json.dumps(payload).encode(),
+            properties=pika.BasicProperties(delivery_mode=2),
+        )
+
+    def set_cancel_signal(self, thread_id: str, run_id: str | None = None) -> bool:
+        """设置跨进程取消信号（通过 RabbitMQ 队列）
+
+        可以从任意进程调用，生产者/消费者会通过 check_cancel_signal() 检测到取消。
+
+        Args:
+            thread_id: 线程ID / session_code
+            run_id: 本轮运行 ID；为空时兼容旧版 session 级取消
+
+        Returns:
+            True 表示成功设置取消信号
+        """
+        cancel_queue = self._get_cancel_queue_name(thread_id)
+        payload = {"cancelled": True, "run_id": run_id, "ts": time.time()}
+        try:
+            try:
+                # 滚动发布期间可能仍有旧 worker 创建的同名队列；先复用，避免参数不一致关闭 channel。
+                with self._with_channel() as channel:
+                    channel.queue_declare(queue=cancel_queue, passive=True)
+                    self._publish_signal(channel, cancel_queue, payload)
+            except pika.exceptions.ChannelClosedByBroker as exc:
+                if exc.reply_code != 404:
+                    raise
+                with self._with_channel() as channel:
+                    self._declare_signal_queue(channel, cancel_queue, self.CANCEL_SIGNAL_TTL_MS)
+                    self._publish_signal(channel, cancel_queue, payload)
+            logger.info("Cancel signal set for thread_id=%s run_id=%s", thread_id, run_id)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to set cancel signal for thread_id={thread_id}: {e}")
+            return False
+
+    def check_cancel_signal(self, thread_id: str, run_id: str | None = None) -> bool:
+        """检查是否存在取消信号（peek 模式，不消费消息）
+
+        用于生产者/消费者定期检查是否需要停止。
+
+        Args:
+            thread_id: 线程ID / session_code
+            run_id: 本轮运行 ID；非空时只匹配同一轮或旧版无作用域信号
+
+        Returns:
+            True 表示存在取消信号，应该停止
+        """
+        try:
+            with self._with_channel() as channel:
+                cancel_queue = self._get_cancel_queue_name(thread_id)
+
+                # 先被动声明检查队列是否存在
+                try:
+                    channel.queue_declare(queue=cancel_queue, passive=True)
+                except Exception:
+                    # 队列不存在，没有取消信号
+                    return False
+
+                # peek：取出后放回
+                method_frame, _, body = channel.basic_get(queue=cancel_queue, auto_ack=False)
+                if not method_frame:
+                    return False
+
+                # 放回消息（让后续检查也能看到）
+                channel.basic_reject(delivery_tag=method_frame.delivery_tag, requeue=True)
+
+                try:
+                    # 兼容滚动发布中旧 request_cancel() 写入的 session 级信号。
+                    if body == b"1":
+                        return True
+                    data = json.loads(body)
+                    if not isinstance(data, dict):
+                        return False
+                    signal_run_id = data.get("run_id")
+                    if run_id and signal_run_id and signal_run_id != run_id:
+                        return False
+                    return bool(data.get("cancelled", False))
+                except (json.JSONDecodeError, KeyError):
+                    return False
+        except Exception as e:
+            logger.warning(f"Error checking cancel signal for thread_id={thread_id}: {e}")
+            return False
+
+    def clear_cancel_signal(self, thread_id: str, run_id: str | None = None) -> None:
+        """清除取消信号（在流结束后调用）
+
+        Args:
+            thread_id: 线程ID / session_code
+            run_id: 本轮运行 ID；非空时只清理同一轮或旧版无作用域信号
+        """
+        try:
+            with self._with_channel() as channel:
+                cancel_queue = self._get_cancel_queue_name(thread_id)
+
+                # 尝试清空取消信号队列
+                try:
+                    channel.queue_declare(queue=cancel_queue, passive=True)
+                    if run_id is None:
+                        channel.queue_purge(queue=cancel_queue)
+                        return
+
+                    method_frame, _, body = channel.basic_get(queue=cancel_queue, auto_ack=False)
+                    if not method_frame:
+                        return
+                    try:
+                        signal_run_id = json.loads(body).get("run_id")
+                    except (json.JSONDecodeError, AttributeError):
+                        signal_run_id = None
+                    if signal_run_id in (None, run_id):
+                        channel.basic_ack(delivery_tag=method_frame.delivery_tag)
+                    else:
+                        channel.basic_reject(delivery_tag=method_frame.delivery_tag, requeue=True)
+                except Exception:
+                    # 队列不存在，忽略
+                    pass
+        except Exception as e:
+            logger.warning(f"Error clearing cancel signal for thread_id={thread_id}: {e}")
+
+    # 消费者取消完成通知队列前缀（与上面的类常量保持一致的风格）
+    CANCELLED_QUEUE_PREFIX = "aidev_agent.cancelled."
+    CANCELLED_SIGNAL_TTL_MS = QueueTTLConfig.CANCELLED_SIGNAL_TTL_MS
+
+    def _get_cancelled_queue_name(self, thread_id: str) -> str:
+        """获取"消费者已因取消退出"通知队列名"""
+        return f"{self.CANCELLED_QUEUE_PREFIX}{thread_id}"
+
+    def notify_consumer_cancelled(self, thread_id: str, run_id: str | None = None) -> bool:
+        """通知 stop_session 消费者已因取消信号退出（缓存内容可以读取了）
+
+        消费者在检测到取消信号并退出时调用此方法。
+        stop_session 通过 wait_for_consumer_cancelled() 等待这个信号后再读取缓存内容。
+
+        Args:
+            thread_id: 线程ID / session_code
+            run_id: 已完成取消的运行 ID
+
+        Returns:
+            True 表示成功发送通知
+        """
+        try:
+            with self._with_channel() as channel:
+                cancelled_queue = self._get_cancelled_queue_name(thread_id)
+
+                # 声明通知队列
+                self._declare_signal_queue(channel, cancelled_queue, self.CANCELLED_SIGNAL_TTL_MS)
+
+                # 发送通知
+                self._publish_signal(
+                    channel,
+                    cancelled_queue,
+                    {"cancelled": True, "run_id": run_id, "ts": time.time(), "pid": os.getpid()},
+                )
+                logger.info("Consumer cancelled notification sent for thread_id=%s run_id=%s", thread_id, run_id)
+                return True
+        except Exception as e:
+            logger.error(f"Failed to send cancelled notification for thread_id={thread_id}: {e}")
+            return False
+
+    def wait_for_consumer_cancelled(
+        self,
+        thread_id: str,
+        timeout: float = 3.0,
+        run_id: str | None = None,
+    ) -> bool:
+        """等待消费者因取消信号退出
+
+        stop_session 调用此方法等待消费者退出后，再读取缓存消息。
+
+        Args:
+            thread_id: 线程ID / session_code
+            timeout: 最大等待时间（秒）
+            run_id: 本轮运行 ID；非空时忽略其他轮次的完成通知
+
+        Returns:
+            True 表示消费者已退出，False 表示超时
+        """
+        start_time = time.time()
+
+        while True:
+            elapsed = time.time() - start_time
+            if elapsed >= timeout:
+                logger.warning(f"Timeout waiting for consumer to exit after cancel, thread_id={thread_id}")
+                return False
+
+            try:
+                with self._with_channel() as channel:
+                    cancelled_queue = self._get_cancelled_queue_name(thread_id)
+
+                    # 先被动声明检查队列是否存在
+                    try:
+                        channel.queue_declare(queue=cancelled_queue, passive=True)
+                    except Exception:
+                        # 队列不存在，等待
+                        time.sleep(self.WAIT_POLL_INTERVAL)
+                        continue
+
+                    # 匹配本轮通知后确认；其他 Run 的通知放回，避免并发 Stop 互相吞消息。
+                    method_frame, _, body = channel.basic_get(queue=cancelled_queue, auto_ack=False)
+                    if method_frame:
+                        try:
+                            signal_run_id = json.loads(body).get("run_id")
+                        except (json.JSONDecodeError, AttributeError):
+                            signal_run_id = None
+                        if not run_id or signal_run_id in (None, run_id):
+                            channel.basic_ack(delivery_tag=method_frame.delivery_tag)
+                            logger.info(
+                                "Consumer cancelled confirmed for thread_id=%s run_id=%s",
+                                thread_id,
+                                run_id,
+                            )
+                            return True
+                        channel.basic_reject(delivery_tag=method_frame.delivery_tag, requeue=True)
+                        logger.info(
+                            "Ignored stale consumer cancelled notification thread_id=%s expected_run_id=%s "
+                            "actual_run_id=%s",
+                            thread_id,
+                            run_id,
+                            signal_run_id,
+                        )
+            except Exception as e:
+                logger.warning(f"Error polling cancelled queue for thread_id={thread_id}: {e}")
+
+            time.sleep(self.WAIT_POLL_INTERVAL)
+
+    def clear_cancelled_signal(self, thread_id: str, run_id: str | None = None) -> None:
+        """清除消费者取消完成通知（在获取缓存内容后调用）
+
+        Args:
+            thread_id: 线程ID / session_code
+            run_id: 本轮运行 ID；非空时只清理同一轮或旧版无作用域通知
+        """
+        try:
+            with self._with_channel() as channel:
+                cancelled_queue = self._get_cancelled_queue_name(thread_id)
+
+                try:
+                    channel.queue_declare(queue=cancelled_queue, passive=True)
+                    if run_id is None:
+                        channel.queue_purge(queue=cancelled_queue)
+                        return
+
+                    method_frame, _, body = channel.basic_get(queue=cancelled_queue, auto_ack=False)
+                    if not method_frame:
+                        return
+                    try:
+                        signal_run_id = json.loads(body).get("run_id")
+                    except (json.JSONDecodeError, AttributeError):
+                        signal_run_id = None
+                    if signal_run_id in (None, run_id):
+                        channel.basic_ack(delivery_tag=method_frame.delivery_tag)
+                    else:
+                        channel.basic_reject(delivery_tag=method_frame.delivery_tag, requeue=True)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"Error clearing cancelled signal for thread_id={thread_id}: {e}")
+
+    # ==================== 跨进程停止状态管理 ====================
+
+    def _get_stopped_queue_name(self, thread_id: str) -> str:
+        """获取停止状态队列名"""
+        return f"{self.STOPPED_QUEUE_PREFIX}{thread_id}"
+
+    def mark_stopped(self, thread_id: str) -> None:
+        """标记 session 已被用户主动停止（跨进程实现）
+
+        通过 RabbitMQ 队列存储停止状态，任意进程都能读取。
+
+        Args:
+            thread_id: 线程ID / session_code
+        """
+        try:
+            with self._with_channel() as channel:
+                stopped_queue = self._get_stopped_queue_name(thread_id)
+
+                # 声明停止状态队列
+                self._declare_signal_queue(channel, stopped_queue, self.STOPPED_SIGNAL_TTL_MS)
+
+                # 发送停止信号
+                self._publish_signal(channel, stopped_queue, {"stopped": True, "ts": time.time()})
+                logger.info(f"Stopped signal set for thread_id={thread_id}")
+        except Exception as e:
+            logger.error(f"Failed to set stopped signal for thread_id={thread_id}: {e}")
+
+    def is_stopped(self, thread_id: str) -> bool:
+        """检查 session 是否已被用户主动停止（跨进程实现）
+
+        通过 peek RabbitMQ 队列检查停止状态（不消费消息）。
+
+        Args:
+            thread_id: 线程ID / session_code
+
+        Returns:
+            True 表示已停止
+        """
+        try:
+            with self._with_channel() as channel:
+                stopped_queue = self._get_stopped_queue_name(thread_id)
+
+                # 先被动声明检查队列是否存在
+                try:
+                    channel.queue_declare(queue=stopped_queue, passive=True)
+                except Exception as e:
+                    logger.warning(f"Error declaring stopped queue for thread_id={thread_id}: {e}")
+                    return False
+
+                # peek：取出后放回
+                method_frame, _, body = channel.basic_get(queue=stopped_queue, auto_ack=False)
+                if not method_frame:
+                    return False
+
+                # 放回消息
+                channel.basic_reject(delivery_tag=method_frame.delivery_tag, requeue=True)
+
+                try:
+                    data = json.loads(body)
+                    return data.get("stopped", False)
+                except (json.JSONDecodeError, KeyError):
+                    return False
+        except Exception as e:
+            logger.warning(f"Error checking stopped signal for thread_id={thread_id}: {e}")
+            return False
+
+    def clear_stopped(self, thread_id: str) -> None:
+        """清除停止标记（跨进程实现）
+
+        Args:
+            thread_id: 线程ID / session_code
+        """
+        try:
+            with self._with_channel() as channel:
+                stopped_queue = self._get_stopped_queue_name(thread_id)
+
+                try:
+                    channel.queue_declare(queue=stopped_queue, passive=True)
+                    channel.queue_purge(queue=stopped_queue)
+                    logger.debug(f"Cleared stopped signal for thread_id={thread_id}")
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"Error clearing stopped signal for thread_id={thread_id}: {e}")
+
+    def _get_signal_queue_names(self, thread_id: str) -> list[str]:
+        """获取 _RabbitMQConsumerMixin 管理的所有信号队列名列表"""
+        return [
+            self._get_consumer_queue_name(thread_id),
+            self._get_consumer_exit_queue_name(thread_id),
+            self._get_cancelled_queue_name(thread_id),
+            self._get_stopped_queue_name(thread_id),
+        ]
+
+    def _delete_signal_queues(self, connection: Any, thread_id: str) -> None:
+        """
+        删除 _RabbitMQConsumerMixin 管理的所有信号队列
+        使用单个 channel 批量删除所有信号队列。
+        AMQP 0-9-1 规范中 queue.delete 对不存在的队列不会抛出 channel error，
+        因此无需为每个队列创建独立的 channel，也无需先 passive declare 检查。
+        """
+        channel = connection.channel()
+        try:
+            for queue_name in self._get_signal_queue_names(thread_id):
+                try:
+                    channel.queue_delete(queue=queue_name)
+                    logger.debug(f"Deleted signal queue {queue_name}")
+                except Exception as e:
+                    # 队列不存在或删除失败，忽略
+                    logger.exception(f"Failed to delete signal queue {queue_name}: {e}")
+        finally:
+            if channel and channel.is_open:
+                with contextlib.suppress(Exception):
+                    channel.close()
 
 
 class RabbitMQConnectionPool:
@@ -184,18 +949,11 @@ class RabbitMQConnectionPool:
         Raises:
             pika.exceptions.AMQPConnectionError: 连接失败时抛出
         """
-        conn = None
         max_retries = 2  # 最多重试 2 次（共 3 次尝试）
-        last_error = None
-
+        conn = None
         for attempt in range(max_retries + 1):
             try:
                 conn = self.get_connection()
-                yield conn
-                # 成功完成，正常归还连接
-                self.release_connection(conn)
-                conn = None
-                return
             except (
                 pika.exceptions.StreamLostError,
                 pika.exceptions.AMQPConnectionError,
@@ -204,38 +962,26 @@ class RabbitMQConnectionPool:
                 BrokenPipeError,
                 OSError,
             ) as e:
-                # 连接相关的异常，标记连接失效并重试
-                last_error = e
-                if conn:
-                    self._close_connection(conn)
-                    with self._created_lock:
-                        self._created_count = max(0, self._created_count - 1)
-                    conn = None
-
-                if attempt < max_retries:
-                    logger.warning(
-                        f"RabbitMQ connection error (attempt {attempt + 1}/{max_retries + 1}): {e}, retrying..."
-                    )
-                    continue
-                else:
+                if attempt >= max_retries:
                     logger.error(f"RabbitMQ connection error after {max_retries + 1} attempts: {e}")
                     raise
-            except Exception:
-                # 其他非连接相关异常，不重试，标记连接失效
-                if conn:
-                    self._close_connection(conn)
-                    with self._created_lock:
-                        self._created_count = max(0, self._created_count - 1)
-                    conn = None
-                raise
-            finally:
-                # 如果 conn 还在，说明是正常退出或者需要归还
-                if conn:
-                    self.release_connection(conn)
+                logger.warning(f"RabbitMQ connection error (attempt {attempt + 1}/{max_retries + 1}): {e}, retrying...")
+                continue
+            break
 
-        # 如果执行到这里，说明所有重试都失败了
-        if last_error:
-            raise last_error
+        try:
+            yield conn
+        except Exception:
+            # contextmanager 在 yield 后不能重新进入重试循环，否则会二次 yield 并触发
+            # RuntimeError("generator didn't stop after throw()")。连接内操作由调用方整体重试。
+            self._close_connection(conn)
+            with self._created_lock:
+                self._created_count = max(0, self._created_count - 1)
+            conn = None
+            raise
+        finally:
+            if conn is not None:
+                self.release_connection(conn)
 
     def close(self) -> None:
         """关闭连接池，释放所有连接"""
@@ -271,7 +1017,7 @@ class RabbitMQConnectionPool:
             return self._created_count
 
 
-class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
+class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMessageQueueHandler):
     """基于RabbitMQ的消息处理器（多进程版本）
 
     使用 RabbitMQ 作为远端存储，支持分布式场景下的流式消息处理。
@@ -288,6 +1034,10 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
     - offset 未变化时只读取队列深度，避免反复全量扫描
     - 后台守护线程每隔 0.5 秒批量推送消息，减少连接开销
     """
+
+    # Classic Queue 有新增消息时需要扫描并 requeue 已提交历史，长队列单次 replay
+    # 可能超过通用 15 秒窗口，因此仅该 handler 放宽到 60 秒。
+    CONSUMER_HEARTBEAT_TIMEOUT: ClassVar[float] = 60.0
 
     # 使用统一的队列名称前缀和 TTL 配置
     QUEUE_PREFIX: ClassVar[str] = QueueNamePrefixes.MESSAGE_QUEUE
@@ -454,30 +1204,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         with self._replay_wait_condition:
             self._replay_wait_condition.notify_all()
 
-    def register_eod_commit_event(self, thread_id: str, event: threading.Event) -> None:
-        """注册 EOD 提交确认事件，供 producer 等待同步/后台 flush 的最终结果。"""
-        with self._eod_commit_events_lock:
-            self._eod_commit_events.setdefault(thread_id, set()).add(event)
-
-    def unregister_eod_commit_event(self, thread_id: str, event: threading.Event) -> None:
-        """移除尚未被 EOD 成功提交消费的确认事件。"""
-        with self._eod_commit_events_lock:
-            events = self._eod_commit_events.get(thread_id)
-            if events is None:
-                return
-            events.discard(event)
-            if not events:
-                self._eod_commit_events.pop(thread_id, None)
-
-    def _notify_eod_committed(self, thread_id: str, messages: list[Any]) -> None:
-        """仅在包含 EOD 的完整批次成功发布后确认提交。"""
-        if EOD_CHUNK not in messages:
-            return
-        with self._eod_commit_events_lock:
-            events = self._eod_commit_events.pop(thread_id, set())
-        for event in events:
-            event.set()
-
     def _wait_for_replay_retry(self, deadline: float | None, interval: float) -> None:
         """等待下一次 replay 检查。
 
@@ -603,7 +1329,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         with self._producer_lock_guard:
             if thread_id in self._producer_lock_connections:
                 return False
-
             connection = None
             try:
                 connection = self._acquire_dedicated_exclusive_queue_connection(lock_queue)
@@ -616,6 +1341,27 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                     with contextlib.suppress(Exception):
                         connection.close()
                 return False
+
+    def has_active_producer(self, thread_id: str) -> bool:
+        """通过被动声明 producer lock queue 判断跨进程生产者是否仍存活。"""
+        lock_queue = self._get_producer_lock_queue_name(thread_id)
+        with self._producer_lock_guard:
+            local_connection = self._producer_lock_connections.get(thread_id)
+            if local_connection is not None and getattr(local_connection, "is_open", False):
+                return True
+
+        try:
+            with self._with_channel() as channel:
+                channel.queue_declare(queue=lock_queue, passive=True)
+            return True
+        except pika.exceptions.ChannelClosedByBroker as e:
+            if e.reply_code == 404:
+                return False
+            # producer lock queue 为 exclusive；其他连接 passive declare 时 broker
+            # 以 RESOURCE_LOCKED 响应，这恰好说明生产者仍持有该队列。
+            if e.reply_code == 405:
+                return True
+            raise
 
     def release_producer(self, thread_id: str) -> None:
         """释放会话级生产者写入权。"""
@@ -857,55 +1603,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         except Exception as e:
             logger.error(f"Error flushing messages on daemon exit: {e}")
 
-    @classmethod
-    def _coalesce_sse_messages(cls, messages: list[Any]) -> list[Any]:
-        """合并相邻 SSE 帧，减少 RabbitMQ 物理消息数并保持原始协议字节流。"""
-        coalesced_messages: list[Any] = []
-        sse_parts: list[str] = []
-        sse_size = 0
-
-        def flush_sse_parts() -> None:
-            nonlocal sse_size
-            if not sse_parts:
-                return
-            coalesced_messages.append("".join(sse_parts))
-            sse_parts.clear()
-            sse_size = 0
-
-        for message in messages:
-            if not isinstance(message, str) or not message.startswith("data: "):
-                flush_sse_parts()
-                coalesced_messages.append(message)
-                continue
-
-            message_size = len(message.encode("utf-8"))
-            if sse_parts and sse_size + message_size > cls.SSE_PUBLISH_CHUNK_MAX_BYTES:
-                flush_sse_parts()
-            if message_size > cls.SSE_PUBLISH_CHUNK_MAX_BYTES:
-                coalesced_messages.append(message)
-                continue
-            sse_parts.append(message)
-            sse_size += message_size
-
-        flush_sse_parts()
-        return coalesced_messages
-
-    @staticmethod
-    def _expand_sse_messages(messages: list[Any]) -> list[Any]:
-        """将 RabbitMQ 中合并的 SSE 字节流还原为调用方原有的逐帧消息。"""
-        expanded_messages: list[Any] = []
-        for message in messages:
-            if not isinstance(message, str) or not message.startswith("data: ") or "\n\ndata: " not in message:
-                expanded_messages.append(message)
-                continue
-
-            parts = message.split("\n\n")
-            if parts[-1] or any(not part.startswith("data: ") for part in parts[:-1]):
-                expanded_messages.append(message)
-                continue
-            expanded_messages.extend(f"{part}\n\n" for part in parts[:-1])
-        return expanded_messages
-
     def _flush_messages(self) -> None:
         """批量推送缓冲区中的所有消息到 RabbitMQ
 
@@ -1120,10 +1817,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
 
             self._wait_for_replay_retry(deadline, self.REPLAY_MESSAGE_RETRY_INTERVAL)
 
-    def get(self, thread_id: str, timeout: Optional[float] = None) -> list[Any]:
-        """RabbitMQ replay 必须携带 offset，禁止使用破坏性旧消费接口。"""
-        raise NotImplementedError("RabbitMQMessageHandler requires get_messages_since(thread_id, offset, timeout)")
-
     def has_pending_messages(self, thread_id: str) -> bool:
         """检查是否有未消费的消息（用于判断是否需要创建生产者）
 
@@ -1154,10 +1847,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         except Exception as e:
             logger.error(f"Error checking pending messages for thread_id={thread_id}: {e}")
             return False
-
-    def restore_messages(self, thread_id: str) -> int:
-        """Replay 模式不移动消息，无需恢复。"""
-        return 0
 
     def _safe_purge_queue(self, connection: Any, queue_name: str, passive_check: bool = False) -> bool:
         """安全清空队列（内部方法）
@@ -1223,7 +1912,7 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
                     self._get_cancel_queue_name(thread_id),
                     self._get_active_consumer_queue_name(thread_id),
                 ]
-                # 追加 MultiProcessMixin 管理的信号队列
+                # 追加 RabbitMQ 消费者控制使用的信号队列
                 queue_names.extend(self._get_signal_queue_names(thread_id))
 
                 logger.info(f"Deleting all RabbitMQ resources for thread_id={thread_id}: {queue_names}")
@@ -1261,44 +1950,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         with self._flush_peek_locks_guard:
             self._flush_peek_locks.pop(thread_id, None)
 
-    def request_cancel(self, thread_id: str) -> None:
-        """请求取消该 thread_id 的流。幂等：向取消队列投递一条消息，生产者轮询时消费到即退出。"""
-        try:
-            with self._with_channel() as channel:
-                cancel_queue_name = self._get_cancel_queue_name(thread_id)
-                channel.queue_declare(
-                    queue=cancel_queue_name,
-                    durable=True,
-                    arguments={"x-expires": self.QUEUE_TTL_MS},
-                )
-                channel.basic_publish(
-                    exchange="",
-                    routing_key=cancel_queue_name,
-                    body=b"1",
-                    properties=pika.BasicProperties(delivery_mode=1),
-                )
-                logger.debug(f"Requested cancel for thread_id={thread_id}")
-        except Exception as e:
-            logger.warning(f"Failed to request cancel for thread_id={thread_id}: {e}")
-
-    def is_cancel_requested(self, thread_id: str) -> bool:
-        """检查是否已请求取消该 thread_id 的流；若存在取消消息则消费一条并返回 True。"""
-        try:
-            with self._with_channel() as channel:
-                cancel_queue_name = self._get_cancel_queue_name(thread_id)
-                try:
-                    channel.queue_declare(queue=cancel_queue_name, durable=True, passive=True)
-                except Exception:
-                    return False
-                method_frame, _, _ = channel.basic_get(queue=cancel_queue_name, auto_ack=False)
-                if method_frame:
-                    channel.basic_ack(delivery_tag=method_frame.delivery_tag)
-                    return True
-                return False
-        except Exception as e:
-            logger.debug(f"Error checking cancel for thread_id={thread_id}: {e}")
-            return False
-
     def clear(self, thread_id: str) -> None:
         """清空指定 thread_id 的主队列和控制队列。"""
         # 清空缓冲区中的消息
@@ -1326,10 +1977,6 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
             logger.error(f"Error getting cached count: {e}")
             return 0
 
-    def get_total_count(self, thread_id: str) -> int:
-        """获取主队列消息数量。"""
-        return self.get_cached_count(thread_id)
-
     # is_empty() 和 size() 使用基类的通用实现
 
     def __del__(self):
@@ -1356,7 +2003,3 @@ class RabbitMQMessageHandler(MultiProcessMixin, BaseMessageQueueHandler):
         """
         with self._buffer_lock:
             return list(self._message_buffer.keys())
-
-    def get_dlq_messages(self, thread_id: str) -> list[Any]:
-        """RabbitMQ replay 不使用死信队列。"""
-        return []

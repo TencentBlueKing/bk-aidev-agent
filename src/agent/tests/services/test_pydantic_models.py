@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
 from aidev_agent.pydantic_models import (
     AgentExecutorKwargs,
     AgentOptions,
@@ -96,6 +97,14 @@ class TestAgentExecutorKwargs:
         assert "knowledge_llm" not in dumped
         assert "extra_tools" not in dumped
         assert "file_store" not in dumped
+
+    def test_execute_kwargs_stream_mode_defaults_to_start_and_accepts_attach(self):
+        assert ExecuteKwargs().stream_mode == "start"
+        assert ExecuteKwargs(stream_mode="attach").stream_mode == "attach"
+
+    def test_execute_kwargs_rejects_unknown_stream_mode(self):
+        with pytest.raises(ValueError):
+            ExecuteKwargs(stream_mode="resume")
 
     def test_model_dump_for_builder_kwargs(self):
         """Test that model_dump produces valid kwargs for ReActAgentBuilder."""

@@ -3,6 +3,7 @@ from .base import (
     ConsumerManagementProtocol,
     ConsumerPreemptedError,
     RetryableHeartbeatTimeoutError,
+    StreamAttachUnavailableError,
     StreamCancelledError,
 )
 from .constants import (
@@ -21,8 +22,9 @@ from .constants import (
 )
 from .factory import message_handler_factory
 from .in_memory import InMemoryQueueMessageHandler
-from .multi_process_mixin import MultiProcessMixin
 from .rabbitmq import RabbitMQMessageHandler
+from .rabbitmq_stream import RabbitMQStreamMessageHandler
+from .redis import RedisMessageHandler
 from .single_process_mixin import SingleProcessMixin
 from .streaming_helper import GeneratorStreamingHelper
 
@@ -32,10 +34,10 @@ __all__ = [
     "ConsumerManagementProtocol",
     # Mixin 类
     "SingleProcessMixin",
-    "MultiProcessMixin",
     # 异常类
     "ConsumerPreemptedError",
     "RetryableHeartbeatTimeoutError",
+    "StreamAttachUnavailableError",
     "StreamCancelledError",
     # 常量类
     "StreamMarkers",
@@ -55,5 +57,7 @@ __all__ = [
     "GeneratorStreamingHelper",
     "InMemoryQueueMessageHandler",
     "RabbitMQMessageHandler",
+    "RabbitMQStreamMessageHandler",
+    "RedisMessageHandler",
     "message_handler_factory",
 ]

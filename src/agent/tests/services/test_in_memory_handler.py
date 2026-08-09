@@ -15,11 +15,12 @@ from aidev_agent.services.messages_handler import (
     GeneratorStreamingHelper,
     InMemoryQueueMessageHandler,
     RetryableHeartbeatTimeoutError,
+    StreamAttachUnavailableError,
     message_handler_factory,
 )
 from aidev_agent.services.messages_handler.config import MessageHandlerConfig
 from aidev_agent.services.messages_handler.constants import EnvVarNames
-from aidev_agent.services.messages_handler.factory import _create_handler
+from aidev_agent.services.messages_handler.factory import _create_handler, _init_factory
 from aidev_agent.utils.event import RunId, emit_run_finished_event
 
 
@@ -35,17 +36,26 @@ def _event_types(chunks: list[str]) -> list[str]:
 class ReplayFromStartHandler:
     """测试用 replay handler：模拟 RabbitMQ 的非破坏性会话日志读取。"""
 
+    CONSUMER_HEARTBEAT_TIMEOUT = 60.0
+
     def __init__(self):
         self.messages: dict[str, list] = {}
         self.active_consumers: set[tuple[str, str]] = set()
         self.producer_locks: set[str] = set()
         self.completed_threads: list[str] = []
+        self.consumer_checks: list[tuple[str, str]] = []
         self._consumer_seq = 0
         self._lock = threading.Lock()
         self._condition = threading.Condition(self._lock)
 
     def supports_replay_from_start(self) -> bool:
         return True
+
+    def bind_replay_run(self, thread_id, run_id):
+        pass
+
+    def arm_completed_replay_expiry(self, thread_id):
+        return False
 
     def put(self, thread_id, message):
         with self._condition:
@@ -85,6 +95,10 @@ class ReplayFromStartHandler:
         with self._lock:
             self.producer_locks.discard(thread_id)
 
+    def has_active_producer(self, thread_id):
+        with self._lock:
+            return thread_id in self.producer_locks
+
     def acquire_consumer(self, thread_id):
         with self._lock:
             consumer_id = f"consumer-{self._consumer_seq}"
@@ -96,7 +110,7 @@ class ReplayFromStartHandler:
         return True
 
     def check_consumer(self, thread_id, consumer_id):
-        pass
+        self.consumer_checks.append((thread_id, consumer_id))
 
     def release_consumer(self, thread_id, consumer_id):
         with self._lock:
@@ -123,16 +137,16 @@ class ReplayFromStartHandler:
             self.messages.pop(thread_id, None)
             self._condition.notify_all()
 
-    def clear_cancel_signal(self, thread_id):
+    def clear_cancel_signal(self, thread_id, run_id=None):
         pass
 
-    def check_cancel_signal(self, thread_id):
+    def check_cancel_signal(self, thread_id, run_id=None):
         return False
 
-    def set_cancel_signal(self, thread_id):
+    def set_cancel_signal(self, thread_id, run_id=None):
         return False
 
-    def notify_consumer_cancelled(self, thread_id):
+    def notify_consumer_cancelled(self, thread_id, run_id=None):
         return True
 
 
@@ -153,6 +167,53 @@ class BarrierReplayFromStartHandler(ReplayFromStartHandler):
 
 
 class TestReplayFromStartStreamingHelper:
+    def test_attach_active_stream_never_starts_or_iterates_producer(self):
+        thread_id = "test_attach_active_stream"
+        handler = ReplayFromStartHandler()
+        handler.producer_locks.add(thread_id)
+        producer_iterated = []
+
+        def producer():
+            producer_iterated.append(True)
+            yield "must-not-run"
+
+        helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
+        producer_thread, is_resuming, enable_heartbeat_check = helper._start_or_resume_stream(
+            generator=producer(),
+            cancel_event=threading.Event(),
+            has_pending=False,
+            attach_only=True,
+        )
+
+        assert producer_thread is None
+        assert is_resuming is True
+        assert enable_heartbeat_check is True
+        assert producer_iterated == []
+
+    def test_attach_cached_stream_ignores_new_request_run_id(self):
+        thread_id = "test_attach_cached_stream"
+        handler = ReplayFromStartHandler()
+        handler.put(thread_id, "cached")
+        helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
+        helper.run_id = "new-request-run"
+        handler.replay_belongs_to_run = lambda *_args: False
+
+        assert helper._recheck_pending_after_waiting_consumer(True, attach_only=True) is True
+
+    def test_attach_without_active_or_cached_stream_fails_without_producer(self):
+        handler = ReplayFromStartHandler()
+        helper = GeneratorStreamingHelper(handler, thread_id="test_attach_missing")
+
+        with pytest.raises(StreamAttachUnavailableError, match="No active or replayable stream"):
+            helper._start_or_resume_stream(
+                generator=iter(["must-not-run"]),
+                cancel_event=threading.Event(),
+                has_pending=False,
+                attach_only=True,
+            )
+
+        assert handler.producer_locks == set()
+
     def test_concurrent_consumers_replay_same_cached_stream_without_draining_each_other(self):
         thread_id = "test_replay_multi_consumer"
         handler = BarrierReplayFromStartHandler(parties=2)
@@ -178,6 +239,7 @@ class TestReplayFromStartStreamingHelper:
         assert errors == []
         assert all(not thread.is_alive() for thread in threads)
         assert results == [["chunk_0", "chunk_1"], ["chunk_0", "chunk_1"]]
+        assert len(handler.consumer_checks) == 2
         assert thread_id not in handler.messages
         assert handler.completed_threads == [thread_id]
 
@@ -532,10 +594,13 @@ class TestInMemoryQueueMessageHandler:
     def test_request_cancel_idempotent(self, handler):
         """重复 cancel 幂等：多次调用不报错，producer 仍能正常停止"""
         thread_id = "test_stream_cancel_idempotent"
-        # 使用 GeneratorStreamingHelper.cancel() 而不是 handler.request_cancel()
-        GeneratorStreamingHelper.cancel(thread_id, handler)
-        GeneratorStreamingHelper.cancel(thread_id, handler)
-        GeneratorStreamingHelper.cancel(thread_id, handler)
+        handler.request_cancel(thread_id)
+        handler.request_cancel(thread_id)
+        handler.request_cancel(thread_id)
+
+        # 兼容接口与统一取消信号使用同一份状态，并且检查不消费信号。
+        assert handler.is_cancel_requested(thread_id)
+        assert handler.is_cancel_requested(thread_id)
 
         def gen():
             yield "a"
@@ -642,6 +707,22 @@ class TestInMemoryQueueMessageHandler:
         assert cleanup_called.wait(timeout=0.3), "done orphaned cleanup should happen promptly without active consumer"
         assert handler.is_empty(thread_id)
 
+    def test_backend_managed_replay_expiry_skips_polling_cleanup(self, handler, monkeypatch):
+        thread_id = "test_backend_managed_replay_expiry"
+        helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
+        armed = []
+
+        monkeypatch.setattr(handler, "arm_completed_replay_expiry", lambda tid: armed.append(tid) or True)
+        monkeypatch.setattr(
+            handler,
+            "has_pending_messages",
+            lambda tid: pytest.fail("backend-managed expiry must not start a polling cleanup thread"),
+        )
+
+        helper._schedule_session_cleanup(done_event_seen=True)
+
+        assert armed == [thread_id]
+
     def test_orphaned_cleanup_waits_for_active_replay_consumer(self, monkeypatch):
         """replay consumer 曾活跃时，应保留队列到完整 deadline。"""
         thread_id = "test_stream_active_replay_cleanup"
@@ -672,7 +753,7 @@ class TestInMemoryQueueMessageHandler:
         thread_id = "test_stream_heartbeat_keepalive"
         helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
         monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_INTERVAL", 0.05)
-        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.2)
+        monkeypatch.setattr(handler, "CONSUMER_HEARTBEAT_TIMEOUT", 0.2)
         heartbeat_count = 0
 
         original_put = handler.put
@@ -706,7 +787,7 @@ class TestInMemoryQueueMessageHandler:
         thread_id = "test_stream_heartbeat_timeout"
         helper = GeneratorStreamingHelper(handler, thread_id=thread_id)
         monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_INTERVAL", 1.0)
-        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.2)
+        monkeypatch.setattr(handler, "CONSUMER_HEARTBEAT_TIMEOUT", 0.2)
         monkeypatch.setattr(helper, "_HEARTBEAT_TIMEOUT_GRACE", 0.05)
         dispatched = []
         original_put = handler.put
@@ -733,11 +814,11 @@ class TestInMemoryQueueMessageHandler:
         with pytest.raises(RetryableHeartbeatTimeoutError, match="生产者心跳超时"):
             next(stream)
 
-    def test_replay_stream_uses_extended_heartbeat_timeout(self, monkeypatch):
+    def test_replay_stream_uses_handler_heartbeat_timeout(self, monkeypatch):
         """RabbitMQ replay 使用独立的较长心跳窗口，不受通用 15 秒阈值影响。"""
         handler = ReplayFromStartHandler()
         helper = GeneratorStreamingHelper(handler, thread_id="test_replay_heartbeat_timeout")
-        assert helper._REPLAY_HEARTBEAT_TIMEOUT == 60.0
+        assert handler.CONSUMER_HEARTBEAT_TIMEOUT == 60.0
         producer_thread = threading.Thread(target=lambda: None)
         producer_thread.start()
         producer_thread.join()
@@ -750,8 +831,7 @@ class TestInMemoryQueueMessageHandler:
                 raise TimeoutError
             return [EOD_CHUNK], replay_offset + 1
 
-        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.0)
-        monkeypatch.setattr(helper, "_REPLAY_HEARTBEAT_TIMEOUT", 0.2)
+        monkeypatch.setattr(handler, "CONSUMER_HEARTBEAT_TIMEOUT", 0.2)
         monkeypatch.setattr(helper, "_get_consumer_messages", delayed_eod)
         stream = helper._consume_stream_messages(
             handler.acquire_consumer(helper.thread_id), threading.Event(), False, True, producer_thread=producer_thread
@@ -764,7 +844,7 @@ class TestInMemoryQueueMessageHandler:
         thread_id = "test_background_heartbeat_recovery"
         helper = GeneratorStreamingHelper(handler, thread_id=thread_id, defer_cleanup_on_complete=True)
         monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_INTERVAL", 1.0)
-        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.1)
+        monkeypatch.setattr(handler, "CONSUMER_HEARTBEAT_TIMEOUT", 0.1)
         monkeypatch.setattr(helper, "_HEARTBEAT_TIMEOUT_GRACE", 0.02)
         monkeypatch.setattr(helper, "_BACKGROUND_HEARTBEAT_RECOVERY_TIMEOUT", 2.0)
         original_put = handler.put
@@ -798,7 +878,7 @@ class TestInMemoryQueueMessageHandler:
                 raise TimeoutError
             return [streaming_helper_module.EOD_CHUNK], replay_offset + 1
 
-        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.0)
+        monkeypatch.setattr(handler, "CONSUMER_HEARTBEAT_TIMEOUT", 0.0)
         monkeypatch.setattr(helper, "_HEARTBEAT_TIMEOUT_GRACE", 0.0)
         monkeypatch.setattr(helper, "_BACKGROUND_HEARTBEAT_RECOVERY_TIMEOUT", 1.0)
         monkeypatch.setattr(helper, "_get_consumer_messages", delayed_eod)
@@ -973,7 +1053,7 @@ class TestInMemoryQueueMessageHandler:
         producer_thread.start()
         producer_thread.join()
 
-        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 0.0)
+        monkeypatch.setattr(handler, "CONSUMER_HEARTBEAT_TIMEOUT", 0.0)
         monkeypatch.setattr(helper, "_get_consumer_messages", timeout_without_messages)
         monkeypatch.setattr(handler, "mark_completed", completed_threads.append)
 
@@ -996,26 +1076,62 @@ class TestMessageHandlerConfig:
     """测试 Config 解析 + 工厂 + RabbitMQ 降级"""
 
     @pytest.mark.parametrize(
-        ("env_handler_type", "env_rabbitmq_host", "expected_type"),
+        ("env_handler_type", "env_rabbitmq_host", "env_redis_url", "expected_type"),
         [
-            ("", "", MessageHandlerType.INMEMORY),  # 无配置 → InMemory
-            ("inmemory", "", MessageHandlerType.INMEMORY),  # 显式 inmemory
-            ("rabbitmq", "", MessageHandlerType.RABBITMQ),  # 显式 rabbitmq
-            ("", "localhost", MessageHandlerType.RABBITMQ),  # 有 MQ 配置 → 自动 RabbitMQ
-            ("inmemory", "localhost", MessageHandlerType.INMEMORY),  # 显式覆盖 MQ 配置
+            ("", "", "", MessageHandlerType.INMEMORY),  # 无配置 → InMemory
+            ("auto", "", "", MessageHandlerType.INMEMORY),  # 显式 auto → 自动检测
+            ("inmemory", "", "", MessageHandlerType.INMEMORY),  # 显式 inmemory
+            ("rabbitmq", "", "", MessageHandlerType.RABBITMQ),  # 显式 rabbitmq
+            ("redis", "", "", MessageHandlerType.REDIS),  # 显式 redis
+            ("", "localhost", "", MessageHandlerType.RABBITMQ),  # 有 MQ 配置 → 自动 RabbitMQ
+            ("", "localhost", "redis://localhost", MessageHandlerType.REDIS),  # Redis 专用配置优先
+            ("inmemory", "localhost", "redis://localhost", MessageHandlerType.INMEMORY),  # 显式覆盖配置
+            ("", " ", " ", MessageHandlerType.INMEMORY),  # 纯空白不视为有效配置
         ],
     )
-    def test_resolve_handler_type(self, monkeypatch, env_handler_type, env_rabbitmq_host, expected_type):
+    def test_resolve_handler_type(self, monkeypatch, env_handler_type, env_rabbitmq_host, env_redis_url, expected_type):
         """Config.resolve_handler_type 在不同环境变量组合下的行为"""
         monkeypatch.setenv(EnvVarNames.HANDLER_TYPE, env_handler_type)
         monkeypatch.setenv(EnvVarNames.RABBITMQ_HOST, env_rabbitmq_host)
+        monkeypatch.setenv(EnvVarNames.RABBITMQ_STREAM_PORT, "")
+        monkeypatch.setenv(EnvVarNames.REDIS_URL, env_redis_url)
         assert MessageHandlerConfig.resolve_handler_type() == expected_type
+
+    def test_invalid_explicit_handler_type_fails_fast(self, monkeypatch):
+        monkeypatch.setenv(EnvVarNames.HANDLER_TYPE, "redsi")
+
+        with pytest.raises(RuntimeError, match="Invalid MESSAGE_HANDLER_TYPE"):
+            MessageHandlerConfig.resolve_handler_type()
 
     def test_create_handler_rabbitmq_fallback(self, monkeypatch):
         """_create_handler 传入 RABBITMQ 但无 MQ 配置时应降级为 InMemory"""
         monkeypatch.setenv(EnvVarNames.RABBITMQ_HOST, "")
+        monkeypatch.setenv(EnvVarNames.RABBITMQ_STREAM_PORT, "")
         handler = _create_handler(MessageHandlerType.RABBITMQ)
         assert isinstance(handler, InMemoryQueueMessageHandler)
+
+    def test_create_handler_redis_without_url_fails(self, monkeypatch):
+        monkeypatch.setenv(EnvVarNames.REDIS_URL, "")
+        with pytest.raises(RuntimeError, match="MSG_REDIS_URL"):
+            _create_handler(MessageHandlerType.REDIS)
+
+    def test_create_handler_selects_rabbitmq_stream_when_port_is_configured(self, monkeypatch):
+        selected_handler = InMemoryQueueMessageHandler()
+        monkeypatch.setenv(EnvVarNames.RABBITMQ_HOST, "rabbitmq.local")
+        monkeypatch.setenv(EnvVarNames.RABBITMQ_STREAM_PORT, "5552")
+        monkeypatch.setattr(
+            "aidev_agent.services.messages_handler.factory.RabbitMQStreamMessageHandler",
+            lambda: selected_handler,
+        )
+
+        assert _create_handler(MessageHandlerType.RABBITMQ) is selected_handler
+
+    def test_create_handler_stream_port_without_host_fails_fast(self, monkeypatch):
+        monkeypatch.setenv(EnvVarNames.RABBITMQ_HOST, "")
+        monkeypatch.setenv(EnvVarNames.RABBITMQ_STREAM_PORT, "5552")
+
+        with pytest.raises(RuntimeError, match="RABBITMQ_HOST and RABBITMQ_STREAM_PORT"):
+            _create_handler(MessageHandlerType.RABBITMQ)
 
     def test_factory_returns_singleton_by_type(self):
         """工厂按类型 get() 返回单例"""
@@ -1023,3 +1139,23 @@ class TestMessageHandlerConfig:
         h2 = message_handler_factory.get(MessageHandlerType.INMEMORY.value)
         assert h1 is h2
         assert isinstance(h1, InMemoryQueueMessageHandler)
+
+    def test_factory_only_creates_selected_external_backend(self, monkeypatch):
+        """未选中的外部 backend 不应在模块初始化时建立连接。"""
+        selected_handler = InMemoryQueueMessageHandler()
+        created_types = []
+
+        monkeypatch.setattr(MessageHandlerConfig, "resolve_handler_type", lambda: MessageHandlerType.REDIS)
+
+        def create_handler(handler_type):
+            created_types.append(handler_type)
+            return selected_handler
+
+        monkeypatch.setattr("aidev_agent.services.messages_handler.factory._create_handler", create_handler)
+
+        factory = _init_factory()
+
+        assert created_types == [MessageHandlerType.REDIS]
+        assert factory.get() is selected_handler
+        assert factory.get(MessageHandlerType.REDIS.value) is selected_handler
+        assert isinstance(factory.get(MessageHandlerType.INMEMORY.value), InMemoryQueueMessageHandler)

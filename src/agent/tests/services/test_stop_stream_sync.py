@@ -111,7 +111,7 @@ class TestConsumerNotifyOnCancel:
         monkeypatch.setattr(GeneratorStreamingHelper, "CANCEL_DRAIN_TIMEOUT", 0.5)
         # 缩短心跳
         monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_INTERVAL", 0.05)
-        monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 10.0)
+        monkeypatch.setattr(handler, "CONSUMER_HEARTBEAT_TIMEOUT", 10.0)
 
         gen_started = threading.Event()
 
@@ -335,7 +335,7 @@ class TestFullStopSequence:
         if drain_timeout and monkeypatch:
             monkeypatch.setattr(GeneratorStreamingHelper, "CANCEL_DRAIN_TIMEOUT", drain_timeout)
             monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_INTERVAL", 0.05)
-            monkeypatch.setattr(streaming_helper_module, "HEARTBEAT_TIMEOUT", 10.0)
+            monkeypatch.setattr(handler, "CONSUMER_HEARTBEAT_TIMEOUT", 10.0)
 
         collected = []
         timeline = {}
