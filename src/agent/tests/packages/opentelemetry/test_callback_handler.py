@@ -185,8 +185,8 @@ class TestBkAidevAgentCallbackHandler:
         asyncio.run(handler.on_chain_start(serialized={"name": "agent"}, inputs={}, run_id=run_id))
         asyncio.run(handler.on_chain_end(outputs={}, run_id=run_id))
 
-        recorder.record_active_session.assert_any_call(1, handler._metric_agent_attributes)
-        recorder.record_active_session.assert_any_call(-1, handler._metric_agent_attributes)
+        recorder.record_active_agent.assert_any_call(1, handler._metric_agent_attributes)
+        recorder.record_active_agent.assert_any_call(-1, handler._metric_agent_attributes)
         recorder.record_agent.assert_called_once()
 
     def test_agent_metrics_are_finalized_once_on_top_level_error(self, tracer_and_exporter):
@@ -200,11 +200,11 @@ class TestBkAidevAgentCallbackHandler:
         asyncio.run(handler.on_chain_error(error, run_id=run_id))
         handler._finalize_injector(error=error)
 
-        assert recorder.record_active_session.call_count == 2
-        recorder.record_active_session.assert_called_with(-1, handler._metric_agent_attributes)
+        assert recorder.record_active_agent.call_count == 2
+        recorder.record_active_agent.assert_called_with(-1, handler._metric_agent_attributes)
         recorder.record_agent.assert_called_once()
 
-    def test_active_session_is_decremented_when_summary_recording_fails(self, tracer_and_exporter):
+    def test_active_agent_is_decremented_when_summary_recording_fails(self, tracer_and_exporter):
         tracer, _ = tracer_and_exporter
         recorder = MagicMock()
         recorder.record_agent.side_effect = RuntimeError("metric backend failed")
@@ -215,8 +215,8 @@ class TestBkAidevAgentCallbackHandler:
         asyncio.run(handler.on_chain_end(outputs={}, run_id=run_id))
         handler._finalize_injector()
 
-        assert recorder.record_active_session.call_count == 2
-        recorder.record_active_session.assert_called_with(-1, handler._metric_agent_attributes)
+        assert recorder.record_active_agent.call_count == 2
+        recorder.record_active_agent.assert_called_with(-1, handler._metric_agent_attributes)
         recorder.record_agent.assert_called_once()
 
     def test_active_llm_is_decremented_with_the_same_dimensions(self, tracer_and_exporter):
@@ -233,6 +233,81 @@ class TestBkAidevAgentCallbackHandler:
         assert start_call.args[0] == 1
         assert end_call.args[0] == -1
         assert start_call.args[1] == end_call.args[1]
+
+    def test_agent_phase_and_first_token_metrics_follow_runtime_callbacks(self, tracer_and_exporter):
+        tracer, _ = tracer_and_exporter
+        recorder = MagicMock()
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, metric_recorder=recorder)
+        chain_run_id = uuid4()
+        llm_run_id = uuid4()
+
+        asyncio.run(handler.on_chain_start(serialized={"name": "agent"}, inputs={}, run_id=chain_run_id))
+        asyncio.run(
+            handler.on_llm_start(
+                serialized={"name": "model-a"},
+                prompts=["hello"],
+                run_id=llm_run_id,
+                parent_run_id=chain_run_id,
+            )
+        )
+        asyncio.run(handler.on_llm_new_token("a", run_id=llm_run_id, parent_run_id=chain_run_id))
+        asyncio.run(handler.on_llm_new_token("b", run_id=llm_run_id, parent_run_id=chain_run_id))
+        asyncio.run(handler.on_llm_error(RuntimeError("boom"), run_id=llm_run_id, parent_run_id=chain_run_id))
+        asyncio.run(handler.on_chain_end(outputs={}, run_id=chain_run_id))
+
+        recorder.record_agent_started.assert_called_once_with(handler._metric_agent_attributes)
+        recorder.record_agent_first_token.assert_called_once()
+        phase_deltas: dict[str, int] = {}
+        for call in recorder.record_agent_phase_active.call_args_list:
+            phase_deltas[call.args[1]] = phase_deltas.get(call.args[1], 0) + call.args[0]
+        assert phase_deltas == {"processing": 0, "llm": 0, "finalizing": 0}
+
+    def test_active_tool_is_decremented_with_the_same_dimensions(self, tracer_and_exporter):
+        tracer, _ = tracer_and_exporter
+        recorder = MagicMock()
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, metric_recorder=recorder)
+        run_id = uuid4()
+
+        asyncio.run(handler.on_tool_start(serialized={"name": "demo-tool"}, input_str="input", run_id=run_id))
+        asyncio.run(handler.on_tool_error(RuntimeError("boom"), run_id=run_id))
+
+        assert recorder.record_active_tool.call_count == 2
+        start_call, end_call = recorder.record_active_tool.call_args_list
+        assert start_call.args[0] == 1
+        assert end_call.args[0] == -1
+        assert start_call.args[1] == end_call.args[1]
+
+    def test_finalize_balances_unfinished_llm_and_tool_operations(self, tracer_and_exporter):
+        tracer, _ = tracer_and_exporter
+        recorder = MagicMock()
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, metric_recorder=recorder)
+        chain_run_id = uuid4()
+        llm_run_id = uuid4()
+        tool_run_id = uuid4()
+
+        asyncio.run(handler.on_chain_start(serialized={"name": "agent"}, inputs={}, run_id=chain_run_id))
+        asyncio.run(
+            handler.on_llm_start(
+                serialized={"name": "model-a"},
+                prompts=["hello"],
+                run_id=llm_run_id,
+                parent_run_id=chain_run_id,
+            )
+        )
+        asyncio.run(
+            handler.on_tool_start(
+                serialized={"name": "demo-tool"},
+                input_str="input",
+                run_id=tool_run_id,
+                parent_run_id=chain_run_id,
+            )
+        )
+        asyncio.run(handler.on_chain_error(RuntimeError("cancelled"), run_id=chain_run_id))
+
+        assert [call.args[0] for call in recorder.record_active_llm.call_args_list] == [1, -1]
+        assert [call.args[0] for call in recorder.record_active_tool.call_args_list] == [1, -1]
+        assert handler._active_llm_operation_count == 0
+        assert handler._active_tool_operation_count == 0
 
     def test_tool_error_metric_is_recorded_when_traces_are_disabled(self, tracer_and_exporter):
         tracer, _ = tracer_and_exporter

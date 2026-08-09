@@ -14,6 +14,7 @@ from dev.otel.mock_agent_metrics import (
     TOOL_STEPS,
     assigned_models,
     build_sanitized_sse_events,
+    build_scenario_stages,
     build_scenario_timings,
     coalesce_content_events,
     sample_handler_runs,
@@ -33,14 +34,17 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
         "agent_code",
         "agent_version",
         "request_model",
+        "response_model",
+        "tool_name",
         "handler_type",
-        "token_type",
         "sse_event_type",
     }
     for metric in (
-        "aidev_agent_processing_duration",
+        "aidev_agent_phase_active",
+        "aidev_agent_phase_duration",
+        "gen_ai_invoke_agent_time_to_first_token",
         "gen_ai_client_operation_active",
-        "gen_ai_client_token_usage",
+        "gen_ai_execute_tool_active",
         "aidev_sse_event_size",
         "aidev_message_publish_count",
         "aidev_message_publish_size",
@@ -125,3 +129,12 @@ def test_log_query_mock_randomizes_stage_durations_within_agent_total():
         )
     )
     assert len({round(sample.agent_duration, 3) for sample in samples}) == len(samples)
+
+
+def test_log_query_mock_builds_exclusive_real_time_agent_phases():
+    timings = build_scenario_timings(random.Random(20260810))
+    stages = build_scenario_stages(timings)
+
+    assert sum(stage.duration for stage in stages) == pytest.approx(timings.agent_duration)
+    assert stages[-1].phase == "finalizing"
+    assert {stage.phase for stage in stages} == {"processing", "llm", "tool", "finalizing"}

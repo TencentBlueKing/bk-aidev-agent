@@ -122,15 +122,15 @@ def test_error_type_is_added_only_to_duration_metric():
     assert meter.instruments["aidev.agent.processing.duration"].calls[0][0] == 0.5
 
 
-def test_active_session_metric_is_symmetric_and_low_cardinality():
+def test_active_agent_metric_is_symmetric_and_low_cardinality():
     meter = FakeMeter()
     recorder = AgentMetrics(meter)
     attrs = recorder.agent_attributes("ai-demo", "演示智能体")
 
-    recorder.record_active_session(1, attrs)
-    recorder.record_active_session(-1, attrs)
+    recorder.record_active_agent(1, attrs)
+    recorder.record_active_agent(-1, attrs)
 
-    assert meter.instruments["aidev.session.active"].calls == [(1, attrs), (-1, attrs)]
+    assert meter.instruments["aidev.agent.active"].calls == [(1, attrs), (-1, attrs)]
     assert "agent.session.session_code" not in attrs
     assert "agent.info.type" not in attrs
 
@@ -144,6 +144,36 @@ def test_active_llm_metric_is_symmetric():
     recorder.record_active_llm(-1, attrs)
 
     assert meter.instruments["gen_ai.client.operation.active"].calls == [(1, attrs), (-1, attrs)]
+
+
+def test_agent_lifecycle_metrics_use_only_low_cardinality_phase_attributes():
+    meter = FakeMeter()
+    recorder = AgentMetrics(meter)
+    attrs = recorder.agent_attributes("ai-demo", "演示智能体")
+
+    recorder.record_agent_started(attrs)
+    recorder.record_agent_first_token(0.8, attrs)
+    recorder.record_agent_phase_active(1, "llm", attrs)
+    recorder.record_agent_phase_duration(0.6, "llm", attrs)
+    recorder.record_agent_phase_active(-1, "llm", attrs)
+
+    assert meter.instruments["gen_ai.invoke_agent.started"].calls == [(1, attrs)]
+    assert meter.instruments["gen_ai.invoke_agent.time_to_first_token"].calls == [(0.8, attrs)]
+    phase_calls = meter.instruments["aidev.agent.phase.active"].calls
+    assert [value for value, _ in phase_calls] == [1, -1]
+    assert {call_attrs["aidev.agent.phase"] for _, call_attrs in phase_calls} == {"llm"}
+    assert "agent.session.session_code" not in phase_calls[0][1]
+
+
+def test_active_tool_metric_preserves_tool_name():
+    meter = FakeMeter()
+    recorder = AgentMetrics(meter)
+    attrs = {**recorder.agent_attributes("ai-demo", "演示智能体"), "gen_ai.tool.name": "search_logs"}
+
+    recorder.record_active_tool(1, attrs)
+    recorder.record_active_tool(-1, attrs)
+
+    assert meter.instruments["gen_ai.execute_tool.active"].calls == [(1, attrs), (-1, attrs)]
 
 
 def test_process_metric_gate_disables_sse_instrumentation():

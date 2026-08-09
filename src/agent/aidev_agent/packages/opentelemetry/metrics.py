@@ -101,10 +101,18 @@ class AgentMetrics:
         self.agent_duration = meter.create_histogram(
             "gen_ai.invoke_agent.duration", unit="s", description="Agent invocation duration"
         )
+        self.agent_started = meter.create_counter(
+            "gen_ai.invoke_agent.started", unit="{call}", description="Agent invocations started"
+        )
+        self.agent_time_to_first_token = meter.create_histogram(
+            "gen_ai.invoke_agent.time_to_first_token",
+            unit="s",
+            description="Agent invocation time to the first streamed LLM token",
+        )
         self.agent_processing_duration = meter.create_histogram(
             "aidev.agent.processing.duration",
             unit="s",
-            description="Agent invocation duration excluding recorded LLM and tool child operations",
+            description="Residual Agent duration after subtracting recorded LLM and tool child operation work",
         )
         self.agent_inference_calls = meter.create_counter(
             "gen_ai.invoke_agent.inference_calls", unit="{call}", description="LLM calls per agent invocation"
@@ -112,10 +120,20 @@ class AgentMetrics:
         self.agent_tool_calls = meter.create_counter(
             "gen_ai.invoke_agent.tool_calls", unit="{call}", description="Tool calls per agent invocation"
         )
-        self.active_sessions = meter.create_up_down_counter(
-            "aidev.session.active",
-            unit="{session}",
-            description="Agent sessions currently executing",
+        self.active_agents = meter.create_up_down_counter(
+            "aidev.agent.active",
+            unit="{run}",
+            description="Agent runs currently executing",
+        )
+        self.active_agent_phases = meter.create_up_down_counter(
+            "aidev.agent.phase.active",
+            unit="{run}",
+            description="Agent runs currently in an exclusive runtime phase",
+        )
+        self.agent_phase_duration = meter.create_histogram(
+            "aidev.agent.phase.duration",
+            unit="s",
+            description="Measured wall-clock duration of an Agent runtime phase",
         )
         self.llm_duration = meter.create_histogram(
             "gen_ai.client.operation.duration", unit="s", description="LLM operation duration"
@@ -133,6 +151,11 @@ class AgentMetrics:
         )
         self.tool_duration = meter.create_histogram(
             "gen_ai.execute_tool.duration", unit="s", description="Tool execution duration"
+        )
+        self.active_tool_operations = meter.create_up_down_counter(
+            "gen_ai.execute_tool.active",
+            unit="{operation}",
+            description="Tool operations currently executing",
         )
         self.sse_event_count = meter.create_counter(
             "aidev.sse.event.count", unit="{event}", description="Produced SSE event count"
@@ -191,13 +214,29 @@ class AgentMetrics:
         self.agent_inference_calls.add(inference_calls, attributes)
         self.agent_tool_calls.add(tool_calls, attributes)
 
-    def record_active_session(self, delta: int, attributes: dict[str, str]) -> None:
+    def record_active_agent(self, delta: int, attributes: dict[str, str]) -> None:
         """Adjust the number of Agent runs that are currently executing."""
-        self.active_sessions.add(delta, attributes)
+        self.active_agents.add(delta, attributes)
+
+    def record_agent_started(self, attributes: dict[str, str]) -> None:
+        self.agent_started.add(1, attributes)
+
+    def record_agent_first_token(self, duration: float, attributes: dict[str, str]) -> None:
+        self.agent_time_to_first_token.record(duration, attributes)
+
+    def record_agent_phase_active(self, delta: int, phase: str, attributes: dict[str, str]) -> None:
+        self.active_agent_phases.add(delta, {**attributes, "aidev.agent.phase": phase})
+
+    def record_agent_phase_duration(self, duration: float, phase: str, attributes: dict[str, str]) -> None:
+        self.agent_phase_duration.record(duration, {**attributes, "aidev.agent.phase": phase})
 
     def record_active_llm(self, delta: int, attributes: dict[str, str]) -> None:
         """Adjust the number of LLM operations currently executing."""
         self.active_llm_operations.add(delta, attributes)
+
+    def record_active_tool(self, delta: int, attributes: dict[str, str]) -> None:
+        """Adjust the number of tool operations currently executing."""
+        self.active_tool_operations.add(delta, attributes)
 
     def record_llm(
         self,

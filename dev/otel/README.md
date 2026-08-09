@@ -25,15 +25,16 @@ Collector 接收端口为 `4317`（gRPC）和 `4318`（HTTP），Prometheus 为
 
 ## 发送 mock 指标
 
-`make start` 默认同时模拟 4 个 Handler，每个 Handler 每轮随机启动 1～3 个 Agent Run，
-因此“当前活跃 Agent 执行数”会在 `4～12` 之间变化。可以在启动时覆盖参数：
+`make start` 默认同时模拟 4 个 Handler。每个 Handler 有一个持续运行的基础槽位，
+另外两个槽位按随机间隔启停新的 Agent Run，因此活跃 Run 会在 `4～12` 之间变化。
+可以在启动时覆盖参数：
 
 ```bash
 make start N=3 MODELS=mock-a,mock-b,mock-c ITERATIONS=400 INTERVAL=1.5
 ```
 
 使用 `-n/--concurrency` 指定每个 Handler 的并发上限。例如 `-n 5` 时，每个 Handler
-每轮随机启动 1～5 个 Run，总活跃 Agent 数在 `4～20` 之间变化；`-n 1` 时固定为 4：
+同时运行 1～5 个 Run，总活跃 Agent 数在 `4～20` 之间变化；`-n 1` 时固定为 4：
 
 ```bash
 make start N=5
@@ -48,9 +49,10 @@ make start N=3 MODELS=mock-a,mock-b,mock-c
 
 也可以使用 `AIDEV_MOCK_MODELS=mock-a,mock-b`；模型名仅作为本地指标的低基数过滤维度。
 
-每个 Run 的 Agent 总耗时随机控制在 `30～120s`，再随机分配给 6 次 LLM、4 次 Tool
-和 Agent 自身处理，三类阶段累计值严格等于 Agent 总耗时；LLM TTFT 不超过对应的
-LLM 调用耗时。同一 `--seed` 会得到可重复的并发和耗时序列。
+每个 Run 会真实执行 `30～120s`，耗时随机分配给 6 次 LLM、4 次 Tool、Agent processing
+和 finalizing 阶段；LLM TTFT 不超过对应的 LLM 调用耗时。Mock 不再每 1.5 秒瞬时上报
+一个伪造的长耗时完成样本，因此 Agent 并发、进入/完成速率和耗时满足真实生命周期关系。
+同一 `--seed` 会得到可重复的耗时与模型分配序列。
 
 如果只需要前台运行 mock，不重启 Podman 服务：
 
@@ -60,7 +62,7 @@ make mock N=3 ITERATIONS=40 INTERVAL=1.5
 
 原有的 `AIDEV_MOCK_CONCURRENCY`、`AIDEV_MOCK_ITERATIONS`、
 `AIDEV_MOCK_INTERVAL_SECONDS` 环境变量仍可使用，命令参数优先。可以通过 `--seed`
-让每轮并发变化可重复验证。
+让耗时和运行槽位行为可重复验证。
 
 mock 使用“日志查询与聚合总结”场景，模拟 6 次 LLM 调用和 4 次工具调用。
 `activate_skill` 来自实际验证链路；其余日志工具统一使用
@@ -79,29 +81,31 @@ make start HANDLER=redis N=3
 编码大小生成 SSE 事件大小、响应大小、合并前逻辑事件数和合并后物理写入数；
 模型/工具正文不会进入指标标签或 OTLP resource。
 
-等待 2～5 秒后刷新 Grafana。也可以直接在 Prometheus 查询：
+等待 2～5 秒后可以观察活跃 Run 和阶段；首批完成耗时、迭代、SSE 和 Broker 指标需要等待
+至少 30 秒。也可以直接在 Prometheus 查询：
 
 ```promql
 {__name__=~"gen_ai_invoke_agent_duration.*"}
 ```
 
-“当前活跃 Agent 执行数”统计正在执行的 Agent run，不代表已持久化但空闲的
-历史 session。平均智能体轮数和平均工具调用次数按 Grafana 当前选择的时间范围，
-使用该范围内的累计增量计算；范围内没有已完成调用时显示 `No data`，不显示伪造的 0。
+“活跃 Agent Run”统计正在执行的 Run，不代表已持久化但空闲的历史 session。
+当前阶段按 `processing`、`llm`、`tool`、`finalizing`、`mixed` 互斥统计；具体 Run 身份
+需要查看 Trace 或日志。平均 Agent 迭代次数把一次 LLM 推理定义为一次迭代；范围内没有
+已完成 Run 时显示 `No data`，不显示伪造的 0。
 
 仪表盘提供以下多选过滤器，`All` 使用正则 `.*`：
 
 - `Agent Code`、`Agent Version`：作用于全部面板；
-- `Request Model`：作用于 LLM 耗时、并发和 Token 面板；
+- `Request Model`、`Response Model`：作用于 LLM 耗时、并发和 Token 面板；
+- `Tool Name`：作用于 Tool 活跃数、调用次数、速率和耗时面板；
 - `Message Handler`：作用于 SSE 与消息发布面板，值为实际生效的 handler；
-- `Token Type`：区分 `input`、`output`、`cache_creation`、`cache_read`；
 - `SSE Event Type`：按 SSE 协议事件类型过滤。
 
-“Agent 总耗时与子阶段累计耗时”展示 Agent 总耗时以及每次调用累计的 LLM、Tool、Agent
-自身处理耗时。子调用并行时这些阶段不是严格互斥的墙钟时间，单次调用的精确分配应查看
-Trace。“Broker 写入压力与合并效果”区分合并前逻辑事件数和合并后物理写入数，并按
-`aidev.message.handler.type` 展示实际使用的 `inmemory`、`rabbitmq`、`rabbitmq_stream`
-或 `redis`。
+“Agent 实测阶段耗时”和“Agent 阶段累计时间占比”都来自阶段切换时的直接计时；互斥阶段
+在同一窗口内合计约 100%，不再用子调用累计值除以已完成 Run 数估算耗时分配。Broker 区分合并前逻辑
+事件速率、合并后物理消息速率、合并比和应用序列化 Payload IO，并按实际 Handler 展示。
+Payload IO 不等于 RabbitMQ/Redis 的网络、磁盘 IO；队列积压、消费 lag 和真实 IO 仍需
+对应 Broker 的原生 exporter。
 
 指标身份维度包含 `agent.info.code`、`agent.info.name` 和
 `agent.info.sdk_version`；不包含固定值 `agent.info.type`。Agent 版本由 bkplugin
@@ -122,8 +126,10 @@ Prometheus exporter 的原始 exposition 文本可通过以下命令查看：
 
 ```bash
 curl http://localhost:8889/metrics
-curl 'http://localhost:9090/api/v1/query?query=aidev_session_active'
+curl 'http://localhost:9090/api/v1/query?query=aidev_agent_active'
+curl 'http://localhost:9090/api/v1/query?query=aidev_agent_phase_active'
 curl 'http://localhost:9090/api/v1/query?query=gen_ai_client_operation_active'
+curl 'http://localhost:9090/api/v1/query?query=gen_ai_execute_tool_active'
 curl 'http://localhost:9090/api/v1/query?query=aidev_message_publish_count_total'
 ```
 

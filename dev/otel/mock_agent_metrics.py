@@ -6,8 +6,9 @@ import argparse
 import json
 import os
 import random
+import threading
 import time
-from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
@@ -130,6 +131,13 @@ class ScenarioTimings:
     llm_first_chunk_durations: tuple[float, ...]
     tool_durations: tuple[float, ...]
     processing_duration: float
+
+
+@dataclass(frozen=True)
+class ScenarioStage:
+    phase: str
+    duration: float
+    operation_index: int | None = None
 
 
 def _usage(input_tokens: int, output_tokens: int, cache_creation: int = 0, cache_read: int = 0) -> dict[str, int]:
@@ -301,6 +309,31 @@ def build_scenario_timings(rng: random.Random) -> ScenarioTimings:
     )
 
 
+def build_scenario_stages(timings: ScenarioTimings) -> tuple[ScenarioStage, ...]:
+    """Build an exclusive wall-clock phase sequence for one realistic Agent Run."""
+    operation_order = (
+        ("llm", 0),
+        ("tool", 0),
+        ("llm", 1),
+        ("tool", 1),
+        ("llm", 2),
+        ("tool", 2),
+        ("llm", 3),
+        ("tool", 3),
+        ("llm", 4),
+        ("llm", 5),
+    )
+    finalizing_duration = timings.processing_duration * 0.1
+    processing_slice = (timings.processing_duration - finalizing_duration) / len(operation_order)
+    stages: list[ScenarioStage] = []
+    for phase, operation_index in operation_order:
+        stages.append(ScenarioStage("processing", processing_slice))
+        duration = timings.llm_durations[operation_index] if phase == "llm" else timings.tool_durations[operation_index]
+        stages.append(ScenarioStage(phase, duration, operation_index))
+    stages.append(ScenarioStage("finalizing", finalizing_duration))
+    return tuple(stages)
+
+
 def _llm_attributes(agent_attrs: dict[str, str], model_name: str) -> dict[str, str]:
     return {
         **agent_attrs,
@@ -309,41 +342,14 @@ def _llm_attributes(agent_attrs: dict[str, str], model_name: str) -> dict[str, s
     }
 
 
-def _record_scenario(
+def _record_scenario_output(
     recorder: AgentMetrics,
-    agent_attrs: dict[str, str],
     handler_type: str,
-    model_name: str,
     rng: random.Random,
 ) -> None:
     messaging_system = HANDLER_SYSTEMS[handler_type]
-    llm_attrs = _llm_attributes(agent_attrs, model_name)
-    timings = build_scenario_timings(rng)
-    for step, duration, first_chunk_duration in zip(
-        MODEL_STEPS,
-        timings.llm_durations,
-        timings.llm_first_chunk_durations,
-        strict=True,
-    ):
-        recorder.record_llm(duration, llm_attrs, step.usage)
-        recorder.record_first_llm_chunk(first_chunk_duration, llm_attrs)
-    for step, duration in zip(TOOL_STEPS, timings.tool_durations, strict=True):
-        recorder.record_tool(
-            duration,
-            {**agent_attrs, "gen_ai.tool.name": step.name, "gen_ai.tool.type": "function"},
-        )
-
-    recorder.record_agent(
-        timings.agent_duration,
-        len(MODEL_STEPS),
-        len(TOOL_STEPS),
-        agent_attrs,
-        child_duration=sum(timings.llm_durations) + sum(timings.tool_durations),
-    )
-
     message_attrs = {"aidev.message.handler.type": handler_type, "messaging.system": messaging_system}
     events = build_sanitized_sse_events()
-    recorder.record_sse_first_event(timings.llm_first_chunk_durations[0], message_attrs)
     for event in events:
         recorder.record_sse_event(event.size, event.event_type, message_attrs)
     recorder.record_sse_response(sum(event.size for event in events), message_attrs)
@@ -355,6 +361,153 @@ def _record_scenario(
         message_sizes=physical_sizes,
         duration=rng.uniform(0.008, 0.03) + len(physical_sizes) * 0.0002,
     )
+
+
+def _run_scenario(
+    recorder: AgentMetrics,
+    agent_attrs: dict[str, str],
+    handler_type: str,
+    model_name: str,
+    rng: random.Random,
+    stop_event: threading.Event,
+) -> None:
+    """Run one scenario in real wall-clock time so concurrency, rate and latency stay coherent."""
+    timings = build_scenario_timings(rng)
+    stages = build_scenario_stages(timings)
+    llm_attrs = _llm_attributes(agent_attrs, model_name)
+    agent_started_at = time.monotonic()
+    current_phase: str | None = None
+    phase_started_at: float | None = None
+    active_llm_attrs: dict[str, str] | None = None
+    active_tool_attrs: dict[str, str] | None = None
+    llm_duration_total = 0.0
+    tool_duration_total = 0.0
+    first_agent_token_seen = False
+    completed = False
+
+    def transition_phase(phase: str) -> None:
+        nonlocal current_phase, phase_started_at
+        if current_phase == phase:
+            return
+        transitioned_at = time.monotonic()
+        if current_phase is not None and phase_started_at is not None:
+            recorder.record_agent_phase_duration(transitioned_at - phase_started_at, current_phase, agent_attrs)
+            recorder.record_agent_phase_active(-1, current_phase, agent_attrs)
+        current_phase = phase
+        phase_started_at = transitioned_at
+        recorder.record_agent_phase_active(1, phase, agent_attrs)
+
+    def finish_phase() -> None:
+        nonlocal current_phase, phase_started_at
+        if current_phase is None:
+            return
+        finished_at = time.monotonic()
+        if phase_started_at is not None:
+            recorder.record_agent_phase_duration(finished_at - phase_started_at, current_phase, agent_attrs)
+        recorder.record_agent_phase_active(-1, current_phase, agent_attrs)
+        current_phase = None
+        phase_started_at = None
+
+    recorder.record_agent_started(agent_attrs)
+    recorder.record_active_agent(1, agent_attrs)
+    try:
+        for stage in stages:
+            transition_phase(stage.phase)
+            stage_started_at = time.monotonic()
+            if stage.phase in {"processing", "finalizing"}:
+                if stop_event.wait(stage.duration):
+                    return
+                continue
+
+            if stage.phase == "llm":
+                step = MODEL_STEPS[stage.operation_index or 0]
+                active_llm_attrs = llm_attrs
+                recorder.record_active_llm(1, active_llm_attrs)
+                first_chunk_duration = timings.llm_first_chunk_durations[stage.operation_index or 0]
+                if stop_event.wait(first_chunk_duration):
+                    return
+                recorder.record_first_llm_chunk(time.monotonic() - stage_started_at, llm_attrs)
+                if not first_agent_token_seen:
+                    first_agent_token_seen = True
+                    recorder.record_agent_first_token(time.monotonic() - agent_started_at, agent_attrs)
+                if stop_event.wait(max(0, stage.duration - first_chunk_duration)):
+                    return
+                llm_duration = time.monotonic() - stage_started_at
+                llm_duration_total += llm_duration
+                recorder.record_llm(llm_duration, llm_attrs, step.usage)
+                recorder.record_active_llm(-1, active_llm_attrs)
+                active_llm_attrs = None
+                continue
+
+            step = TOOL_STEPS[stage.operation_index or 0]
+            active_tool_attrs = {
+                **agent_attrs,
+                "gen_ai.tool.name": step.name,
+                "gen_ai.tool.type": "function",
+            }
+            recorder.record_active_tool(1, active_tool_attrs)
+            if stop_event.wait(stage.duration):
+                return
+            tool_duration = time.monotonic() - stage_started_at
+            tool_duration_total += tool_duration
+            recorder.record_tool(tool_duration, active_tool_attrs)
+            recorder.record_active_tool(-1, active_tool_attrs)
+            active_tool_attrs = None
+        completed = True
+    finally:
+        if active_llm_attrs is not None:
+            recorder.record_active_llm(-1, active_llm_attrs)
+        if active_tool_attrs is not None:
+            recorder.record_active_tool(-1, active_tool_attrs)
+        finish_phase()
+        if completed:
+            agent_duration = time.monotonic() - agent_started_at
+            recorder.record_agent(
+                agent_duration,
+                len(MODEL_STEPS),
+                len(TOOL_STEPS),
+                agent_attrs,
+                child_duration=llm_duration_total + tool_duration_total,
+            )
+            recorder.record_sse_first_event(
+                timings.llm_first_chunk_durations[0],
+                {
+                    "aidev.message.handler.type": handler_type,
+                    "messaging.system": HANDLER_SYSTEMS[handler_type],
+                },
+            )
+            _record_scenario_output(recorder, handler_type, rng)
+        recorder.record_active_agent(-1, agent_attrs)
+
+
+def _worker_loop(
+    *,
+    recorder: AgentMetrics,
+    agent_attrs: dict[str, str],
+    handler_type: str,
+    handler_index: int,
+    slot_index: int,
+    concurrency: int,
+    models: tuple[str, ...],
+    seed: int,
+    interval: float,
+    stop_event: threading.Event,
+) -> None:
+    rng = random.Random(seed + handler_index * 1000 + slot_index * 100)
+    run_index = 0
+    while not stop_event.is_set():
+        if slot_index > 0 and stop_event.wait(rng.uniform(interval, max(interval * 8, 4.0))):
+            return
+        model_index = handler_index * concurrency + slot_index + run_index
+        _run_scenario(
+            recorder,
+            agent_attrs,
+            handler_type,
+            models[model_index % len(models)],
+            rng,
+            stop_event,
+        )
+        run_index += 1
 
 
 def _parse_args() -> argparse.Namespace:
@@ -411,8 +564,6 @@ def main() -> None:
     args = _parse_args()
     endpoint = os.getenv("AIDEV_LOCAL_OTLP_ENDPOINT", "http://localhost:4318")
     handlers = selected_handlers(args.handler)
-    concurrency_rng = random.Random(args.seed)
-    duration_rng = random.Random(args.seed + 1)
     service = BkPluginMetricService(
         service_name="aidev-agent-local",
         endpoints=[{"url": endpoint, "token": "", "exporter_type": ExporterType.HTTP}],
@@ -428,8 +579,6 @@ def main() -> None:
     configure_metric_identity("ai-agent-local-demo", "本地指标验证智能体")
     recorder = AgentMetrics()
     agent_attrs = recorder.agent_attributes("ai-agent-local-demo", "本地指标验证智能体")
-    current_active_runs = 0
-    current_model_runs: Counter[str] = Counter()
     print(f"Sanitized scenario: {SANITIZED_PROMPT}")
     print("Mock tools: " + ", ".join(step.name for step in TOOL_STEPS))
     print(
@@ -437,41 +586,42 @@ def main() -> None:
         f"total active range: {len(handlers)}-{len(handlers) * args.concurrency}"
     )
     print("Mock models: " + ", ".join(args.models))
+    print(
+        f"Real wall-clock lifecycle: {args.iterations} ticks x {args.interval:.1f}s; "
+        "each completed Agent Run lasts 30-120s"
+    )
+    stop_event = threading.Event()
     try:
-        for iteration in range(args.iterations):
-            handler_runs = sample_handler_runs(handlers, args.concurrency, concurrency_rng)
-            run_count = sum(handler_runs.values())
-            run_models = assigned_models(args.models, run_count)
-            next_model_runs = Counter(run_models)
-
-            recorder.record_active_session(run_count - current_active_runs, agent_attrs)
-            for model_name in current_model_runs.keys() | next_model_runs.keys():
-                delta = next_model_runs[model_name] - current_model_runs[model_name]
-                if delta:
-                    recorder.record_active_llm(delta, _llm_attributes(agent_attrs, model_name))
-            current_active_runs = run_count
-            current_model_runs = next_model_runs
-
-            run_index = 0
-            for handler_type, handler_run_count in handler_runs.items():
-                for _ in range(handler_run_count):
-                    _record_scenario(
-                        recorder,
-                        agent_attrs,
-                        handler_type,
-                        run_models[run_index],
-                        duration_rng,
-                    )
-                    run_index += 1
-            if service.provider is not None:
-                service.provider.force_flush(timeout_millis=5000)
-            time.sleep(args.interval)
-    except KeyboardInterrupt:
-        pass
+        with ThreadPoolExecutor(max_workers=len(handlers) * args.concurrency) as executor:
+            futures = [
+                executor.submit(
+                    _worker_loop,
+                    recorder=recorder,
+                    agent_attrs=agent_attrs,
+                    handler_type=handler_type,
+                    handler_index=handler_index,
+                    slot_index=slot_index,
+                    concurrency=args.concurrency,
+                    models=args.models,
+                    seed=args.seed,
+                    interval=args.interval,
+                    stop_event=stop_event,
+                )
+                for handler_index, handler_type in enumerate(handlers)
+                for slot_index in range(args.concurrency)
+            ]
+            try:
+                for _ in range(args.iterations):
+                    if stop_event.wait(args.interval):
+                        break
+            except KeyboardInterrupt:
+                pass
+            finally:
+                stop_event.set()
+            for future in futures:
+                future.result()
     finally:
-        recorder.record_active_session(-current_active_runs, agent_attrs)
-        for model_name, model_active_runs in current_model_runs.items():
-            recorder.record_active_llm(-model_active_runs, _llm_attributes(agent_attrs, model_name))
+        stop_event.set()
         if service.provider is not None:
             service.provider.force_flush(timeout_millis=5000)
         service.stop()
