@@ -385,3 +385,86 @@ def test_document_fragment_count_overrides_rough_recall_topk():
 
     assert cfg.knowledge_query_options_data["knowledge_resource_rough_recall_topk"] == 3
     assert "document_fragment_count" not in cfg.knowledge_query_options_data
+
+
+@pytest.mark.parametrize(
+    "prompt_fast_llm, expected",
+    [
+        ("fast-model", "fast-model"),
+    ],
+)
+def test_fast_llm_from_prompt_setting(prompt_fast_llm, expected):
+    """``get_agent_config`` 返回的 ``fast_llm`` 直接取 ``prompt_setting.fast_llm``，无回退。"""
+    raw = _build_raw(
+        prompt_setting={
+            "llm_code": "llm-code",
+            "non_thinking_llm": "non-thinking",
+            "fast_llm": prompt_fast_llm,
+        }
+    )
+    rm = _StubResourceManager(raw_factory=lambda *_: raw)
+    cfg = rm.get_agent_config("a")
+    assert cfg.fast_llm == expected
+
+
+def test_fast_llm_none_raises_validation_error():
+    """``prompt_setting.fast_llm`` 为 None 时，AgentConfig 必填字段校验失败。"""
+    raw = _build_raw(
+        prompt_setting={
+            "llm_code": "llm-code",
+            "non_thinking_llm": "non-thinking",
+            "fast_llm": None,
+        }
+    )
+    rm = _StubResourceManager(raw_factory=lambda *_: raw)
+    with pytest.raises(ValueError):
+        rm.get_agent_config("a")
+
+
+@pytest.mark.parametrize(
+    "bkai_fast_llm, prompt_fast_llm, expected",
+    [
+        ("env-fast", "platform-fast", "env-fast"),
+        ("env-fast", None, "env-fast"),
+        (None, "platform-fast", "platform-fast"),
+        ("", "platform-fast", "platform-fast"),
+    ],
+)
+def test_fast_llm_env_override(monkeypatch, bkai_fast_llm, prompt_fast_llm, expected):
+    """``BKAI_FAST_LLM`` 环境变量有值时覆盖平台 ``prompt_setting.fast_llm``。"""
+    monkeypatch.setattr("aidev_agent.config.settings.BKAI_FAST_LLM", bkai_fast_llm)
+    raw = _build_raw(
+        prompt_setting={
+            "llm_code": "llm-code",
+            "non_thinking_llm": "non-thinking",
+            "fast_llm": prompt_fast_llm,
+        }
+    )
+    rm = _StubResourceManager(raw_factory=lambda *_: raw)
+    cfg = rm.get_agent_config("a")
+    assert cfg.fast_llm == expected
+
+
+@pytest.mark.parametrize(
+    "bkai_enable, prompt_enable, expected",
+    [
+        (True, False, True),
+        (False, True, False),
+        (None, True, True),
+        (None, False, False),
+    ],
+)
+def test_enable_judge_response_env_override(monkeypatch, bkai_enable, prompt_enable, expected):
+    """``BKAI_ENABLE_JUDGE_RESPONSE`` 非 None 时覆盖 ``model_context_options_data``。"""
+    monkeypatch.setattr("aidev_agent.config.settings.BKAI_ENABLE_JUDGE_RESPONSE", bkai_enable)
+    raw = _build_raw(
+        prompt_setting={
+            "llm_code": "llm-code",
+            "non_thinking_llm": "non-thinking",
+            "fast_llm": "fast-model",
+            "enable_judge_response": prompt_enable,
+        }
+    )
+    rm = _StubResourceManager(raw_factory=lambda *_: raw)
+    cfg = rm.get_agent_config("a")
+    assert cfg.model_context_options_data["enable_judge_response"] == expected

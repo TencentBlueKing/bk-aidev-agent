@@ -43,6 +43,7 @@ def _make_agent_config(
         agent_name=agent_name,
         chat_model="test-model",
         non_thinking_llm="test-non-thinking",
+        fast_llm="test-non-thinking",
         agent_options=AgentOptions(),
         related_agents=related_agents if related_agents is not None else [],
     )

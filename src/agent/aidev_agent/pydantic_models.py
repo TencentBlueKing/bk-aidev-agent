@@ -131,6 +131,7 @@ class ModelContextSettings(BaseModel):
     llm_code_agent_type: str | None = Field(
         default=None, description="模型类型（如 openai / deepseek_r1），从 intent_recognition 获取"
     )
+    enable_judge_response: bool = Field(default=False, description="是否启用任务完成度评估")
 
 
 class KnowledgeSettings(BaseModel):
@@ -414,6 +415,7 @@ class AgentConfig(BaseModel):
     chat_model: str = Field(..., description="LLM模型名称")
     fallback_model: str | None = Field(default=None, description="主模型请求失败时使用的备用模型")
     non_thinking_llm: str = Field(..., description="非深度思考模型")
+    fast_llm: str | None = Field(default=None, description="快速模型")
     role_prompts: list[dict[Literal["role", "content"], str]] | None = Field(None, description="角色提示词(平台)")
     model_context_options_data: dict = Field(
         default_factory=dict, description="模型上下文配置原始数据，待 ChatAgentBuilder 构建 ModelContextSettings"

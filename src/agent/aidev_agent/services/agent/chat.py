@@ -1414,12 +1414,12 @@ class ChatAgentBuilder:
     def build_chat_model_fast(self) -> BaseChatModel | None:
         """构建快速/轻量模型（用于 quality_gate 判断 LLM 等辅助任务）。
 
-        当前从环境变量 ``settings.JUDGMENT_LLM_MODEL`` 读取模型名（默认
-        ``SRE3-6-35B-A3B-nothinking``）。待配置平台改造完成后，改为从
-        ``agent_config.fast_llm`` 读取（与 ``build_chat_model_non_thinking``
-        读 ``agent_config.non_thinking_llm`` 对称）。
+        当前从 ``agent_config.fast_llm`` 读取模型名（与
+        ``build_chat_model_non_thinking`` 读 ``agent_config.non_thinking_llm`` 对称），
+        ``agent_config.fast_llm`` 由 resource_manager 填充，未配置时回退到
+        ``non_thinking_llm`` / ``llm_code``。
         """
-        model_name = settings.JUDGMENT_LLM_MODEL
+        model_name = self.ctx.agent_config.fast_llm
         base_url = settings.LLM_GW_ENDPOINT
         if not model_name or not base_url:
             return None

@@ -322,6 +322,10 @@ class BaseResourceManager(abc.ABC):
         if intent_recognition_data.get("agent_type"):
             model_context_options_data["llm_code_agent_type"] = intent_recognition_data["agent_type"]
 
+        # 环境变量覆盖：BKAI_ENABLE_JUDGE_RESPONSE 不为 None 时覆盖平台配置, 环境变量优先
+        if settings.BKAI_ENABLE_JUDGE_RESPONSE is not None:
+            model_context_options_data["enable_judge_response"] = settings.BKAI_ENABLE_JUDGE_RESPONSE
+
         conversation_settings = res.get("conversation_settings", {}) or {}
         raw_commands = conversation_settings.get("commands", []) or []
         related_agents_raw = res.get("related_agents") or []
@@ -362,6 +366,7 @@ class BaseResourceManager(abc.ABC):
             chat_model=prompt_setting.get("llm_code", ""),
             fallback_model=prompt_setting.get("fallback_model"),
             non_thinking_llm=prompt_setting.get("non_thinking_llm") or prompt_setting.get("llm_code", ""),
+            fast_llm=settings.BKAI_FAST_LLM if settings.BKAI_FAST_LLM else prompt_setting.get("fast_llm", ""),
             role_prompts=role_prompts or None,
             knowledgebase_ids=res["knowledgebase_settings"]["knowledgebases"],
             tool_codes=tool_codes,

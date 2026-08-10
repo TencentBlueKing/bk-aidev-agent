@@ -693,6 +693,8 @@ class ReActAgentBuilder:
                 node_options_kwargs["token_margin"] = model_context_options.token_limit_margin
             if model_context_options.tool_output_compress_thrd is not None:
                 node_options_kwargs["tool_output_compress_thrd"] = model_context_options.tool_output_compress_thrd
+            if model_context_options.enable_judge_response is not None:
+                node_options_kwargs["enable_judge_response"] = model_context_options.enable_judge_response
 
         # 从 knowledge_query_options 提取参数
         knowledge_query_options = self._knowledge_query_options

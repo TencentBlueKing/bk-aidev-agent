@@ -80,6 +80,7 @@ def _make_agent_config(agent_code: str = "agent-x") -> AgentConfig:
         agent_name=agent_code,
         chat_model="mock-llm",
         non_thinking_llm="mock-llm",
+        fast_llm="mock-llm",
         agent_options=AgentOptions(),
     )
 

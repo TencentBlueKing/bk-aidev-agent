@@ -150,7 +150,7 @@ class ModelNodeSettings(BaseModel):
         description="是否启用纯文本工具调用提升（将文本中的工具调用格式解析为原生 tool_calls）",
     )
     enable_judge_response: bool = Field(
-        default=True,
+        default=False,
         description="是否启用任务完成度评估。关闭后 has_content 分支直接返回 NORMAL_COMPLETION，省去每次正常响应的额外判断 LLM 调用",
     )
 

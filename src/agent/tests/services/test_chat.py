@@ -25,9 +25,12 @@ from aidev_agent.pydantic_models import (
     ModelContextSettings,
 )
 from aidev_agent.services.agent import ChatCompletionAgent
+from aidev_agent.services.agent.chat import ChatAgentBuilder
+from aidev_agent.services.agent.registry import AgentBuildContext, ChatBuildExtras
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
 from aidev_agent.services.messages_handler.streaming_helper import GeneratorStreamingHelper
 from aidev_agent.utils.event import RunId
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import ToolException, tool
 from langgraph.checkpoint.memory import MemorySaver
@@ -1067,6 +1070,39 @@ def test_build_chat_history_prepends_config_role_prompts_once():
     ]
 
 
+class TestBuildChatModelFast:
+    """``ChatAgentBuilder.build_chat_model_fast`` 从 ``agent_config.fast_llm`` 读取模型名。"""
+
+    @staticmethod
+    def _make_ctx(fast_llm: str | None = None):
+        ctx = MagicMock(spec=AgentBuildContext)
+        ctx.session_context_data = []
+        ctx.agent_config.fast_llm = fast_llm
+        ctx.chat = ChatBuildExtras()
+        return ctx
+
+    @patch("aidev_agent.services.agent.chat.ChatModel.get_setup_instance")
+    @patch("aidev_agent.services.agent.chat.settings.LLM_GW_ENDPOINT", "http://gw.test")
+    def test_returns_chat_model_when_fast_llm_set(self, mock_setup):
+        """``agent_config.fast_llm`` 非空时返回 ChatModel 实例并以其为模型名。"""
+        mock_setup.return_value = MagicMock(spec=BaseChatModel)
+        builder = ChatAgentBuilder(self._make_ctx(fast_llm="fast-model-v1"))
+        result = builder.build_chat_model_fast()
+        assert result is not None
+        assert mock_setup.call_args[1]["model"] == "fast-model-v1"
+
+    def test_returns_none_when_fast_llm_empty(self):
+        """``agent_config.fast_llm`` 为空时返回 None。"""
+        builder = ChatAgentBuilder(self._make_ctx(fast_llm=None))
+        assert builder.build_chat_model_fast() is None
+
+    def test_returns_none_when_base_url_empty(self):
+        """``LLM_GW_ENDPOINT`` 为空时返回 None。"""
+        with patch("aidev_agent.services.agent.chat.settings.LLM_GW_ENDPOINT", ""):
+            builder = ChatAgentBuilder(self._make_ctx(fast_llm="fast-model-v1"))
+            assert builder.build_chat_model_fast() is None
+
+
 class TestFilterUnmatchedToolCalls:
     """测试过滤没有匹配工具结果的 assistant 消息"""
 
@@ -1707,6 +1743,7 @@ def _build_legacy_agent_config() -> AgentConfig:
             "agent_name": "Legacy Agent",
             "chat_model": "test-llm-v1",
             "non_thinking_llm": "test-llm-lite",
+            "fast_llm": "test-llm-lite",
             "role_prompts": [{"role": "system", "content": "legacy role"}],
             "knowledgebase_ids": [10],
             "knowledge_ids": [100],
