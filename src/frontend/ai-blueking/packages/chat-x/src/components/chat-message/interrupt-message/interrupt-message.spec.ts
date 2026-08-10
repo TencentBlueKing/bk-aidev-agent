@@ -145,6 +145,49 @@ describe('InterruptMessage', () => {
     expect(wrapper.text()).toContain('REV-2026-04-24-001');
     expect(wrapper.text()).toContain('2026-04-24 14:30:15');
     expect(wrapper.text()).toContain('张三、李四、王五');
+    // 默认 fixture 无 toolArgs，不渲染参数区
+    expect(wrapper.find('.ai-tool-approval-args').exists()).toBe(false);
+  });
+
+  it('存在 metadata.toolArgs 时应渲染工具参数，空对象不渲染', () => {
+    wrapper = mount(InterruptMessage, {
+      props: buildInterruptProps({
+        type: 'interrupt',
+        interrupts: [
+          {
+            ...approvalInterrupt,
+            metadata: {
+              ...approvalInterrupt.metadata!,
+              toolArgs: { path: '/tmp/demo.py', force: true },
+            },
+          },
+        ],
+      }),
+    });
+
+    const args = wrapper.find('.ai-tool-approval-args');
+    expect(args.exists()).toBe(true);
+    expect(args.text()).toContain('参数');
+    expect(args.text()).toContain('"path": "/tmp/demo.py"');
+    expect(args.text()).toContain('"force": true');
+
+    wrapper.unmount();
+    wrapper = mount(InterruptMessage, {
+      props: buildInterruptProps({
+        type: 'interrupt',
+        interrupts: [
+          {
+            ...approvalInterrupt,
+            metadata: {
+              ...approvalInterrupt.metadata!,
+              toolArgs: {},
+            },
+          },
+        ],
+      }),
+    });
+
+    expect(wrapper.find('.ai-tool-approval-args').exists()).toBe(false);
   });
 
   it('revoked 状态应该显示已撤销并使用独立状态样式', () => {

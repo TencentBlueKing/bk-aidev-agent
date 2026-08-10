@@ -171,3 +171,20 @@ export const SkipIcon = h(
     }),
   ],
 );
+
+export const ToolApprovalArgsIcon = h(
+  'svg',
+  {
+    ...commonSVGProps,
+    class: {
+      [commonSVGProps.class]: true,
+      'ai-tool-approval-args-icon': true,
+    },
+  },
+  [
+    h('path', {
+      d: 'M672 64L896 288.384V928a32 32 0 0 1-32 32h-704a30.72 30.72 0 0 1-32-30.4V94.464A32 32 0 0 1 160 64h512zM576 128.128H192v767.744h640v-511.36H608a32 32 0 0 1-32-32V128.128z m160 512.896v64.128H272v-64.128h464z m-80-128.256v64.128h-384V512.768h384zM432 384.64V448.64h-160V384.576h160zM640 128.128v190.72l192 1.6-192-192.32z',
+      fill: '#3A84FF',
+    }),
+  ],
+);
