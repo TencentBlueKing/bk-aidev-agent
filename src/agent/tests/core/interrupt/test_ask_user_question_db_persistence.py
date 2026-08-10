@@ -58,6 +58,7 @@ class _RecordingSessionWriter(BaseSessionWriter):
         self.created: list[dict] = []
         self.updated: list[dict] = []
         self._next_id = 1
+        self.streaming_finished_count = 0
         # 模拟 DB 中存储的记录（content_id -> {role, status, content, builtin_property}）
         self._db_records: dict[int, dict] = {}
 
@@ -90,7 +91,7 @@ class _RecordingSessionWriter(BaseSessionWriter):
         pass
 
     def set_streaming_finished(self):
-        pass
+        self.streaming_finished_count += 1
 
 
 def _extract_ask_user_question_interrupts(graph, config) -> list[dict]:
@@ -403,6 +404,5 @@ async def test_resume_preserves_prior_messages_and_writes_final_reply():
         if isinstance(u.get("payload", {}).get("content"), dict)
         and u["payload"]["content"].get("outcome", {}).get("type") == "success"
     ]
-    assert not interrupt_updates, (
-        f" 后 SSE 层不应再 UPDATE interrupt 记录为 resolved，updates={len(writer.updated)}"
-    )
+    assert not interrupt_updates, f" 后 SSE 层不应再 UPDATE interrupt 记录为 resolved，updates={len(writer.updated)}"
+    assert writer.streaming_finished_count == 0, "旧 interrupt 的回放事件不应结束当前恢复 run"

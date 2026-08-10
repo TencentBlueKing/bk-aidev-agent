@@ -347,14 +347,18 @@ class GeneratorStreamingHelper:
 
     @staticmethod
     def _is_run_finished_event_chunk(chunk: Any) -> bool:
-        """判断 chunk 是否为 AG-UI RUN_FINISHED 事件。"""
+        """判断 chunk 是否为当前 run 的 AG-UI RUN_FINISHED 事件。"""
         if not isinstance(chunk, str) or not chunk.startswith("data:"):
             return False
         try:
             payload = json.loads(chunk.removeprefix("data:").strip())
         except (TypeError, json.JSONDecodeError):
             return False
-        return isinstance(payload, dict) and payload.get("type") == EventType.RUN_FINISHED.value
+        return (
+            isinstance(payload, dict)
+            and payload.get("type") == EventType.RUN_FINISHED.value
+            and not payload.get("resume_replay", False)
+        )
 
     def _is_cancelled(self, cancel_event: threading.Event) -> bool:
         """检查是否被取消（同时检查进程内事件和跨进程信号）

@@ -202,9 +202,9 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         让前端能立即据此把原中断卡片更新为最终状态（关闭弹窗）。
         支持 approval 和 ask_user_question 两种中断类型，统一构造 RunFinishedEvent。
 
-        注意：ask_user_question 路径的 RunFinishedEvent 走 _dispatch_event（DB writer
-        通过 handle_run_finished 消费事件写 DB），approval 路径的 RunFinishedEvent
-        保持直发（DB 已在审批回调时落库）。
+        该 RunFinishedEvent 仅用于更新前端的旧中断卡片，所属 run_id 是 interruptId，
+        不是当前恢复请求的 run_id。中断终态已由入口层落库，因此这里只直发 SSE，
+        不能走 _dispatch_event 提前结束当前 session。
 
         ask_user_question 路径额外推送 MESSAGES_SNAPSHOT：前端 handleRunFinishedEvent
         只标记 loading 完成，不更新消息列表中的 interrupt 卡片内容。前端依赖
@@ -214,7 +214,6 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         resume_event = self._build_resume_finished_event(input)
         if resume_event is not None:
             try:
-                self._dispatch_event(resume_event)
                 yield event_encoder.encode(resume_event)
             except Exception:
                 logger.exception("[Resume] Failed to emit resume event")
@@ -306,6 +305,7 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
             run_id=interrupt_id,
             outcome=outcome_dict,
             result=result_dict,
+            resume_replay=True,
         )
 
     def _build_resume_approval_finished_event(self, input: RunAgentInput) -> RunFinishedEvent:
@@ -337,6 +337,7 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
             run_id=interrupt_id,
             outcome=outcome_dict,
             result=result_dict,
+            resume_replay=True,
         )
 
     def build_terminal_replay_stream(

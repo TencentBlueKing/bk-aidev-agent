@@ -7,7 +7,8 @@ import time
 
 import aidev_agent.services.messages_handler.streaming_helper as streaming_helper_module
 import pytest
-from ag_ui.core import EventType
+from ag_ui.core import EventType, RunFinishedEvent
+from ag_ui.encoder import EventEncoder
 from aidev_agent.enums import MessageHandlerType
 from aidev_agent.services.messages_handler import (
     CANCELLED_CHUNK,
@@ -300,6 +301,37 @@ class TestReplayFromStartStreamingHelper:
         )
 
         assert result == [finished]
+
+    def test_resume_card_run_finished_does_not_stop_current_run(self):
+        handler = ReplayFromStartHandler()
+        helper = GeneratorStreamingHelper(handler, thread_id="thread-1")
+        resume_card_finished = EventEncoder().encode(
+            RunFinishedEvent(
+                type=EventType.RUN_FINISHED,
+                thread_id="thread-1",
+                run_id="interrupt-1",
+                resume_replay=True,
+            )
+        )
+        current_run_finished = emit_run_finished_event(thread_id="thread-1", run_id="run-1")
+        lifecycle = []
+
+        def resumed_generator():
+            yield resume_card_finished
+            yield "current_run_chunk"
+            yield current_run_finished
+            raise AssertionError("producer read after current RUN_FINISHED")
+
+        result = list(
+            helper.stream(
+                resumed_generator(),
+                expected_run_id="run-1",
+                on_complete=lambda: lifecycle.append("complete"),
+            )
+        )
+
+        assert result == [resume_card_finished, "current_run_chunk", current_run_finished]
+        assert lifecycle == ["complete"]
 
     def test_run_finished_finalizes_session_then_closes_generator_before_eod(self, monkeypatch):
         handler = ReplayFromStartHandler()

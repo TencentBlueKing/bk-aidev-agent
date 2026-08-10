@@ -50,7 +50,7 @@ def bulk_upsert(model, objs, update_fields, unique_fields):
     """
     通用 bulk upsert 函数：
     - MySQL: 使用 ON DUPLICATE KEY UPDATE
-    - 其他数据库: 使用默认的 bulk_create
+    - 其他数据库: 缺少唯一约束时按逻辑键更新最新记录
     """
 
     if not objs:
@@ -59,37 +59,37 @@ def bulk_upsert(model, objs, update_fields, unique_fields):
     # 自动选择数据库
     db = router.db_for_write(model)
     connection = connections[db]
-    vendor = connection.vendor  # e.g. 'mysql', 'postgresql', 'sqlite'
+    vendor = connection.vendor
 
     # MySQL: 使用原生 SQL 实现 ON DUPLICATE KEY UPDATE
     if vendor == "mysql":
         table = model._meta.db_table
         fields = [f.name for f in model._meta.local_fields]
-        # 构造字段和值
         insert_fields = [f for f in fields if f in update_fields or f in unique_fields]
         placeholders = ", ".join(["%s"] * len(insert_fields))
         columns = ", ".join(f"`{f}`" for f in insert_fields)
-        # ON DUPLICATE KEY UPDATE 子句
         update_clause = ", ".join(f"`{f}` = VALUES(`{f}`)" for f in update_fields)
         sql = f"""
         INSERT INTO `{table}` ({columns})
         VALUES ({placeholders})
         ON DUPLICATE KEY UPDATE {update_clause};
         """
-        params = []
-        for obj in objs:
-            row = [getattr(obj, f) for f in insert_fields]
-            params.append(row)
+        params = [[getattr(obj, field) for field in insert_fields] for obj in objs]
         with connection.cursor() as cursor, transaction.atomic(using=db):
             cursor.executemany(sql, params)
         return
 
-    model.objects.bulk_create(
-        objs,
-        update_conflicts=True,
-        update_fields=update_fields,
-        unique_fields=unique_fields,
-    )
+    manager = model.objects.using(db)
+    ordering = ("-created_at", "-pk") if any(f.name == "created_at" for f in model._meta.get_fields()) else ("-pk",)
+    with transaction.atomic(using=db):
+        for obj in objs:
+            lookup = {field: getattr(obj, field) for field in unique_fields}
+            defaults = {field: getattr(obj, field) for field in update_fields}
+            latest = manager.select_for_update().filter(**lookup).order_by(*ordering).first()
+            if latest is None:
+                manager.create(**lookup, **defaults)
+                continue
+            manager.filter(pk=latest.pk).update(**defaults)
 
 
 class BKDjangoSaver(BaseCheckpointSaver[str]):
