@@ -39,6 +39,7 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 
 from aidev_agent.pydantic_models import ExecuteKwargs
 
+from .metrics import AgentMetrics, extract_token_usage, get_agent_metrics
 from .span_utils import (
     SpanHolder,
     set_chat_request,
@@ -236,17 +237,20 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         *,
         enabled: bool = True,
         enable_traces: bool = True,
+        enable_metrics: bool = False,
         debug: bool = False,
         max_attribute_length: int = 4096,
         agent_id: Optional[str] = None,
         agent_code: Optional[str] = None,
         agent_name: Optional[str] = None,
+        agent_sdk_version: Optional[str] = None,
         session_code: Optional[str] = None,
         caller_executor: Optional[str] = None,
         injector: Optional["BkAidevAgentInjector"] = None,
         start_inputs: Any = None,
         start_execute_kwargs: Optional[ExecuteKwargs] = None,
         start_agent_info: Optional[Dict[str, Any]] = None,
+        metric_recorder: Optional[AgentMetrics] = None,
     ):
         """
         初始化 Trace 收集器
@@ -256,11 +260,13 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             parent_trace_context: 父级 Trace Context (用于跨服务传播)
             enabled: 是否启用追踪，默认 True
             enable_traces: 是否启用 traces，默认 True
+            enable_metrics: 是否启用 metrics，默认 False
             debug: 是否为调试状态
             max_attribute_length: 属性值最大长度，默认 4096
             agent_id: agent.info.id
             agent_code: agent.info.code
             agent_name: agent.info.name
+            agent_sdk_version: agent.info.sdk_version
             session_code: agent.session.session_code
             caller_executor: agent.session.caller_executor
             injector: 可选的 BkAidevAgentInjector 实例。本 handler 会在顶层 chain
@@ -281,6 +287,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         # 配置项
         self.enabled = enabled
         self.enable_traces = enable_traces
+        self.enable_metrics = enable_metrics
         self.debug = debug
         self.max_attribute_length = max_attribute_length
 
@@ -313,6 +320,22 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         # 工具调用计数器
         self.tool_call_counter = 0
         self.rag_call_counter = 0
+        self.inference_call_counter = 0
+
+        # Metric state uses monotonic clocks and contains no session/user data.
+        self._metrics = metric_recorder or (get_agent_metrics() if enable_metrics else None)
+        self._metric_agent_attributes = AgentMetrics.agent_attributes(agent_code, agent_name, agent_sdk_version)
+        self._agent_started_at: float | None = None
+        self._llm_started_at: Dict[UUID, float] = {}
+        self._llm_active_attributes: Dict[UUID, Dict[str, str]] = {}
+        self._llm_first_chunk_seen: set[UUID] = set()
+        self._tool_started_at: Dict[UUID, float] = {}
+        self._tool_metric_attributes: Dict[UUID, Dict[str, str]] = {}
+        self._active_llm_operation_count = 0
+        self._active_tool_operation_count = 0
+        self._agent_phase: str | None = None
+        self._agent_phase_started_at: float | None = None
+        self._agent_first_token_seen = False
 
         # Token 用量累加计数器（一个 handler 生命周期 = 一轮 Agent 执行，与 root span 对齐）
         self._total_input_tokens = 0
@@ -346,12 +369,98 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         - 顶层 chain 异常结束（``on_chain_error``）
         - 顶层 chain 因流式上游关闭而抛 GeneratorExit（视为正常结束）
         """
-        if self._injector is None or self._injector_ended:
+        if self._injector_ended:
             return
+        self._transition_agent_phase("finalizing")
+        self._finish_active_metric_operations()
         try:
-            self._injector.on_bk_agent_end(error=error)
+            if self._injector is not None:
+                self._injector.on_bk_agent_end(error=error)
         finally:
-            self._injector_ended = True
+            try:
+                if self._metrics is not None and self._agent_started_at is not None:
+                    started_at = self._agent_started_at
+                    self._agent_started_at = None
+                    try:
+                        self._metrics.record_agent(
+                            duration=time.monotonic() - started_at,
+                            inference_calls=self.inference_call_counter,
+                            attributes=self._metric_agent_attributes,
+                            error=error,
+                        )
+                    finally:
+                        try:
+                            self._finish_agent_phase()
+                        finally:
+                            self._metrics.record_active_agent(-1, self._metric_agent_attributes)
+            finally:
+                self._injector_ended = True
+
+    def _operation_phase(self) -> str:
+        if self._active_llm_operation_count and self._active_tool_operation_count:
+            return "mixed"
+        if self._active_tool_operation_count:
+            return "tool"
+        if self._active_llm_operation_count:
+            return "llm"
+        return "processing"
+
+    def _transition_agent_phase(self, phase: str, *, now: float | None = None) -> None:
+        if self._metrics is None or self._agent_started_at is None or self._agent_phase == phase:
+            return
+        transitioned_at = now if now is not None else time.monotonic()
+        previous_phase = self._agent_phase
+        previous_started_at = self._agent_phase_started_at
+        self._agent_phase = phase
+        self._agent_phase_started_at = transitioned_at
+        if previous_phase is not None and previous_started_at is not None:
+            self._metrics.record_agent_phase_duration(
+                max(0, transitioned_at - previous_started_at),
+                previous_phase,
+                self._metric_agent_attributes,
+            )
+            self._metrics.record_agent_phase_active(-1, previous_phase, self._metric_agent_attributes)
+        self._metrics.record_agent_phase_active(1, phase, self._metric_agent_attributes)
+
+    def _finish_agent_phase(self) -> None:
+        if self._metrics is None or self._agent_phase is None:
+            return
+        finished_at = time.monotonic()
+        phase = self._agent_phase
+        phase_started_at = self._agent_phase_started_at
+        self._agent_phase = None
+        self._agent_phase_started_at = None
+        if phase_started_at is not None:
+            self._metrics.record_agent_phase_duration(
+                max(0, finished_at - phase_started_at),
+                phase,
+                self._metric_agent_attributes,
+            )
+        self._metrics.record_agent_phase_active(-1, phase, self._metric_agent_attributes)
+
+    def _finish_active_metric_operations(self) -> None:
+        """Balance active operation gauges when a child callback never reaches its terminal hook."""
+        if self._metrics is None:
+            return
+        for attributes in self._llm_active_attributes.values():
+            self._metrics.record_active_llm(-1, attributes)
+        for attributes in self._tool_metric_attributes.values():
+            self._metrics.record_active_tool(-1, attributes)
+        self._llm_active_attributes.clear()
+        self._tool_metric_attributes.clear()
+        self._llm_started_at.clear()
+        self._tool_started_at.clear()
+        self._llm_first_chunk_seen.clear()
+        self._active_llm_operation_count = 0
+        self._active_tool_operation_count = 0
+
+    def _llm_metric_attributes(self, run_id: UUID, response_model: str | None = None) -> Dict[str, str]:
+        attrs = dict(self._metric_agent_attributes)
+        holder = self.spans.get(run_id)
+        request_model = getattr(holder, "request_model", None) if holder is not None else None
+        attrs["gen_ai.request.model"] = str(request_model or "unknown")
+        attrs["gen_ai.response.model"] = str(response_model or request_model or "unknown")
+        return attrs
 
     def _detach_root_attach_token(self) -> None:
         """detach 顶层 chain start 时为对外可见的 active context attach 的 root span token。
@@ -644,13 +753,19 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
 
         # 顶层 chain 首次触发：先在执行线程上启动 injector 得到 root span。
         # 之后 _create_span 才能通过 self._injector.root_span 把 chain span 挂在 root 下。
-        if is_top_level and self._injector is not None and not self._injector_started:
+        if is_top_level and not self._injector_started:
+            if self._metrics is not None:
+                self._agent_started_at = time.monotonic()
+                self._metrics.record_agent_started(self._metric_agent_attributes)
+                self._metrics.record_active_agent(1, self._metric_agent_attributes)
+                self._transition_agent_phase("processing", now=self._agent_started_at)
             try:
-                self._injector.on_bk_agent_start(
-                    inputs=self._start_inputs,
-                    execute_kwargs=self._start_execute_kwargs,
-                    agent_info=self._start_agent_info,
-                )
+                if self._injector is not None:
+                    self._injector.on_bk_agent_start(
+                        inputs=self._start_inputs,
+                        execute_kwargs=self._start_execute_kwargs,
+                        agent_info=self._start_agent_info,
+                    )
             except Exception:  # noqa: BLE001
                 logger.debug("Failed to call injector.on_bk_agent_start", exc_info=True)
             finally:
@@ -788,7 +903,22 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             metadata=metadata,
             serialized=serialized,
         )
-        set_chat_request(span, serialized, messages, kwargs, self.spans[run_id])
+        set_chat_request(
+            span,
+            serialized,
+            messages,
+            kwargs,
+            self.spans[run_id],
+            max_attribute_length=self.max_attribute_length,
+        )
+        if self._metrics is not None:
+            self.inference_call_counter += 1
+            self._llm_started_at[run_id] = time.monotonic()
+            active_attributes = self._llm_metric_attributes(run_id)
+            self._llm_active_attributes[run_id] = active_attributes
+            self._metrics.record_active_llm(1, active_attributes)
+            self._active_llm_operation_count += 1
+            self._transition_agent_phase(self._operation_phase())
 
     @dont_throw
     async def on_llm_start(
@@ -812,7 +942,47 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             name="llm.generate",
             serialized=serialized,
         )
-        set_llm_request(span, serialized, prompts, kwargs, self.spans[run_id])
+        set_llm_request(
+            span,
+            serialized,
+            prompts,
+            kwargs,
+            self.spans[run_id],
+            max_attribute_length=self.max_attribute_length,
+        )
+        if self._metrics is not None:
+            self.inference_call_counter += 1
+            self._llm_started_at[run_id] = time.monotonic()
+            active_attributes = self._llm_metric_attributes(run_id)
+            self._llm_active_attributes[run_id] = active_attributes
+            self._metrics.record_active_llm(1, active_attributes)
+            self._active_llm_operation_count += 1
+            self._transition_agent_phase(self._operation_phase())
+
+    @dont_throw
+    async def on_llm_new_token(
+        self,
+        token: str,
+        *,
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Record TTFT once; token contents are intentionally not metric labels."""
+        if self._metrics is None or run_id in self._llm_first_chunk_seen:
+            return
+        started_at = self._llm_started_at.get(run_id)
+        if started_at is None:
+            return
+        self._llm_first_chunk_seen.add(run_id)
+        first_token_at = time.monotonic()
+        self._metrics.record_first_llm_chunk(first_token_at - started_at, self._llm_metric_attributes(run_id))
+        if not self._agent_first_token_seen and self._agent_started_at is not None:
+            self._agent_first_token_seen = True
+            self._metrics.record_agent_first_token(
+                first_token_at - self._agent_started_at,
+                self._metric_agent_attributes,
+            )
 
     @dont_throw
     async def on_llm_end(
@@ -828,6 +998,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             return
 
         span = self._get_span(run_id)
+        model_name = None
         if response.llm_output is not None:
             model_name = response.llm_output.get("model_name") or response.llm_output.get("model_id")
             if model_name is not None:
@@ -853,7 +1024,33 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             self._total_total_tokens += usage["total_tokens"]
 
         # 提取响应内容
-        set_chat_response(span, response)
+        set_chat_response(span, response, max_attribute_length=self.max_attribute_length)
+        usage = extract_token_usage(response)
+        if usage:
+            _set_span_attribute(
+                span,
+                "gen_ai.usage.cache_creation.input_tokens",
+                usage["cache_creation_input_tokens"],
+            )
+            _set_span_attribute(span, "gen_ai.usage.cache_read.input_tokens", usage["cache_read_input_tokens"])
+            _set_span_attribute(span, "gen_ai.usage.input_tokens", usage["input_tokens"])
+            _set_span_attribute(span, "gen_ai.usage.output_tokens", usage["output_tokens"])
+            _set_span_attribute(span, "gen_ai.usage.total_tokens", usage["total_tokens"])
+        started_at = self._llm_started_at.pop(run_id, None)
+        if self._metrics is not None and started_at is not None:
+            duration = time.monotonic() - started_at
+            try:
+                self._metrics.record_llm(
+                    duration=duration,
+                    attributes=self._llm_metric_attributes(run_id, model_name),
+                )
+            finally:
+                active_attributes = self._llm_active_attributes.pop(run_id, None)
+                if active_attributes is not None:
+                    self._metrics.record_active_llm(-1, active_attributes)
+                    self._active_llm_operation_count = max(0, self._active_llm_operation_count - 1)
+                    self._transition_agent_phase(self._operation_phase())
+        self._llm_first_chunk_seen.discard(run_id)
         # 设置状态为成功
         span.set_status(Status(StatusCode.OK))
         self._end_span(span, run_id)
@@ -877,6 +1074,22 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         **kwargs: Any,
     ) -> None:
         """LLM 调用出错 - 标记 LLM Span 为错误"""
+        started_at = self._llm_started_at.pop(run_id, None)
+        if self._metrics is not None and started_at is not None:
+            duration = time.monotonic() - started_at
+            try:
+                self._metrics.record_llm(
+                    duration=duration,
+                    attributes=self._llm_metric_attributes(run_id),
+                    error=error,
+                )
+            finally:
+                active_attributes = self._llm_active_attributes.pop(run_id, None)
+                if active_attributes is not None:
+                    self._metrics.record_active_llm(-1, active_attributes)
+                    self._active_llm_operation_count = max(0, self._active_llm_operation_count - 1)
+                    self._transition_agent_phase(self._operation_phase())
+        self._llm_first_chunk_seen.discard(run_id)
         self._handle_error(error, run_id, parent_run_id, **kwargs)
 
     @dont_throw
@@ -908,6 +1121,17 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             kind=SpanKind.INTERNAL,
             attributes=attributes,
         )
+        if self._metrics is not None:
+            self._tool_started_at[run_id] = time.monotonic()
+            metric_attributes = {
+                **self._metric_agent_attributes,
+                "gen_ai.tool.name": tool_name,
+                "gen_ai.tool.type": "function",
+            }
+            self._tool_metric_attributes[run_id] = metric_attributes
+            self._metrics.record_active_tool(1, metric_attributes)
+            self._active_tool_operation_count += 1
+            self._transition_agent_phase(self._operation_phase())
 
     @dont_throw
     async def on_tool_end(
@@ -924,6 +1148,17 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         span = self._get_span(run_id)
         _set_span_attribute(span, "tool.output", output)
         _set_span_attribute(span, "tool.execution_status", "success")
+        started_at = self._tool_started_at.pop(run_id, None)
+        metric_attributes = self._tool_metric_attributes.pop(run_id, None)
+        if self._metrics is not None and metric_attributes is not None:
+            try:
+                if started_at is not None:
+                    duration = time.monotonic() - started_at
+                    self._metrics.record_tool(duration, metric_attributes)
+            finally:
+                self._metrics.record_active_tool(-1, metric_attributes)
+                self._active_tool_operation_count = max(0, self._active_tool_operation_count - 1)
+                self._transition_agent_phase(self._operation_phase())
         span.set_status(Status(StatusCode.OK))
         self._end_span(span, run_id)
 
@@ -937,11 +1172,22 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         **kwargs: Any,
     ) -> None:
         """工具调用出错 - 标记 Tool Span 为错误"""
-        if not self.enabled or not self.enable_traces:
+        if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
         span = self._get_span(run_id)
         _set_span_attribute(span, "tool.execution_status", "failed")
         _set_span_attribute(span, "tool.error_message", traceback.format_exc())
+        started_at = self._tool_started_at.pop(run_id, None)
+        metric_attributes = self._tool_metric_attributes.pop(run_id, None)
+        if self._metrics is not None and metric_attributes is not None:
+            try:
+                if started_at is not None:
+                    duration = time.monotonic() - started_at
+                    self._metrics.record_tool(duration, metric_attributes, error=error)
+            finally:
+                self._metrics.record_active_tool(-1, metric_attributes)
+                self._active_tool_operation_count = max(0, self._active_tool_operation_count - 1)
+                self._transition_agent_phase(self._operation_phase())
         # 使用统一的错误处理
         self._handle_error(error, run_id, parent_run_id, **kwargs)
 

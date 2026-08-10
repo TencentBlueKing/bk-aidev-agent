@@ -81,7 +81,7 @@ class BkAgentOTelService:
         # 设置 Traces
         if self.config.enable_traces:
             self._setup_traces(resource)
-        if self.config.enable_metrics:
+        if self.config.enable_metrics and not self.config.metric_provider_managed_externally:
             self._setup_metrics(resource)
         if self.config.enable_logs:
             self._setup_logs(resource)

@@ -12,6 +12,11 @@ from ag_ui.encoder import EventEncoder
 from aidev_agent.core.ag_ui.types import RunFinishedSuccessOutcome, serialize_run_finished_outcome
 from aidev_agent.utils.event import RunId, emit_run_finished_event, stamp_round_end_event
 
+try:
+    from aidev_agent.packages.opentelemetry.metrics import get_enabled_agent_metrics
+except ImportError:  # OpenTelemetry is an optional SDK extra.
+    get_enabled_agent_metrics = None
+
 from .base import (
     BaseMessageQueueHandler,
     ConsumerPreemptedError,
@@ -36,6 +41,25 @@ _SSE_HEARTBEAT_EVENT = EventEncoder().encode(
 # 断点续传时需要过滤的事件类型
 # flow_agent_start 事件在续聊时不应该重复发送，避免前端重新渲染
 _RESUME_FILTER_EVENT_TYPES: frozenset[str] = frozenset({"flow_agent_start"})
+
+
+def _get_message_handler_metric_attributes(handler: BaseMessageQueueHandler) -> dict[str, str]:
+    """Return the actual handler implementation without queue/session identifiers."""
+    class_name = type(handler).__name__.lower()
+    if "rabbitmqstream" in class_name or "rabbitmq_stream" in class_name:
+        handler_type, messaging_system = "rabbitmq_stream", "rabbitmq"
+    elif "rabbitmq" in class_name:
+        handler_type, messaging_system = "rabbitmq", "rabbitmq"
+    elif "redis" in class_name:
+        handler_type, messaging_system = "redis", "redis"
+    elif "inmemory" in class_name or "in_memory" in class_name:
+        handler_type, messaging_system = "inmemory", "in_memory"
+    else:
+        handler_type, messaging_system = "unknown", "unknown"
+    return {
+        "aidev.message.handler.type": handler_type,
+        "messaging.system": messaging_system,
+    }
 
 
 class GeneratorStreamingHelper:
@@ -1201,6 +1225,8 @@ class GeneratorStreamingHelper:
         无法中断的工具调用会先执行到下一次 yield，再由生产者统一结束。
         """
         _producer_start = time.monotonic()
+        metric_recorder = get_enabled_agent_metrics() if get_enabled_agent_metrics is not None else None
+        metric_message_attributes = _get_message_handler_metric_attributes(self.message_handler)
         logger.info(f"[PRODUCER] start thread_id={self.thread_id} thread={threading.current_thread().name}")
         heartbeat_stop_event = threading.Event()
         heartbeat_thread: threading.Thread | None = None
@@ -1215,6 +1241,14 @@ class GeneratorStreamingHelper:
         run_finished_seen = False
         cancel_error_emitted = False
         cancel_finished_emitted = False
+
+        def _record_published_sse_event() -> None:
+            if metric_recorder is None:
+                return
+            try:
+                metric_recorder.record_sse_event(metric_message_attributes)
+            except Exception:  # noqa: BLE001
+                logger.debug("Failed to record SSE event metrics", exc_info=True)
 
         def _heartbeat_worker() -> None:
             """独立心跳线程：即使 generator 阻塞也保持心跳。"""
@@ -1265,6 +1299,7 @@ class GeneratorStreamingHelper:
                 if (is_run_finished and cancel_finished_emitted) or (not is_run_finished and cancel_error_emitted):
                     continue
                 self.message_handler.put(self.thread_id, encoded_event)
+                _record_published_sse_event()
                 if event_handler is not None:
                     try:
                         event_handler(event)
@@ -1317,6 +1352,7 @@ class GeneratorStreamingHelper:
                     run_finished_seen = True
 
                 self.message_handler.put(self.thread_id, chunk)
+                _record_published_sse_event()
                 if isinstance(chunk, str) and '"type":"RUN_STARTED"' in chunk:
                     # 初始化帧也由后台 producer 写入。RUN_STARTED 到达后立即提交，
                     # 避免等待批量写入周期，同时保持 MESSAGES_SNAPSHOT 在其之前。
@@ -1347,6 +1383,7 @@ class GeneratorStreamingHelper:
                         if is_run_finished:
                             run_finished_seen = True
                         self.message_handler.put(self.thread_id, event)
+                        _record_published_sse_event()
                         if is_run_finished:
                             _complete_session()
                 except Exception as encode_err:
@@ -1391,6 +1428,7 @@ class GeneratorStreamingHelper:
                             event_handler=event_handler,
                         ),
                     )
+                    _record_published_sse_event()
                     _complete_session()
 
                 # 无论是正常结束还是取消，都推送 EOD_CHUNK 让消费者知道流已结束。

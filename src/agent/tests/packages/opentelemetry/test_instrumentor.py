@@ -192,6 +192,37 @@ class TestChatCompletionAgentGetAgentWrapper:
         callback_handlers = [cb for cb in cfg["callbacks"] if isinstance(cb, BkAidevAgentCallbackHandler)]
         assert len(callback_handlers) == 1
 
+    def test_wrapper_does_not_use_noncanonical_agent_identity(self, tracer_and_config):
+        tracer, config, _ = tracer_and_config
+        mock_instance = _build_mock_instance({"code": "fallback-code", "name": "fallback-name"})
+        wrapper = ChatCompletionAgentGetAgentWrapper(tracer, config)
+
+        _, cfg = wrapper(
+            wrapped=lambda *_args, **_kwargs: (MagicMock(), {}),
+            instance=mock_instance,
+            args=([HumanMessage(content="hi")],),
+            kwargs={"execute_kwargs": ExecuteKwargs()},
+        )
+
+        handler = cfg["callbacks"][0]
+        assert handler._agent_code is None
+        assert handler._agent_name is None
+
+    def test_wrapper_adds_agent_sdk_version_to_metric_attributes(self, tracer_and_config):
+        tracer, config, _ = tracer_and_config
+        config.enable_metrics = True
+        wrapper = ChatCompletionAgentGetAgentWrapper(tracer, config)
+        instance = _build_mock_instance({"agent_code": "ai-demo", "agent_name": "Demo", "agent_sdk_version": "2.2.3"})
+
+        _, cfg = wrapper(
+            wrapped=lambda *_args, **_kwargs: (MagicMock(), {}),
+            instance=instance,
+            args=([HumanMessage(content="hi")],),
+            kwargs={"execute_kwargs": ExecuteKwargs()},
+        )
+
+        assert cfg["callbacks"][0]._metric_agent_attributes["agent.info.sdk_version"] == "2.2.3"
+
     def test_wrapper_propagates_get_agent_failure_without_orphan_span(self, tracer_and_config):
         """``_get_agent`` 自身失败时直接抛出，不应留下任何孤儿 ``agent.execution`` span。
 

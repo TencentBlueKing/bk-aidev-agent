@@ -3,6 +3,7 @@ import pickle
 import threading
 from unittest.mock import MagicMock
 
+import aidev_agent.services.messages_handler.rabbitmq as rabbitmq_module
 import pytest
 from aidev_agent.services.messages_handler.constants import EOD_CHUNK
 from aidev_agent.services.messages_handler.rabbitmq import RabbitMQMessageHandler
@@ -130,7 +131,7 @@ def test_coalesce_sse_messages_splits_by_utf8_bytes(monkeypatch):
     assert messages == [first, second]
 
 
-def test_flush_publishes_coalesced_sse_and_eod():
+def test_flush_publishes_coalesced_sse_and_eod(monkeypatch):
     handler = object.__new__(RabbitMQMessageHandler)
     first = 'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"a"}\n\n'
     second = 'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"b"}\n\n'
@@ -142,12 +143,18 @@ def test_flush_publishes_coalesced_sse_and_eod():
     handler._ensure_queue = MagicMock(return_value="replay-queue")
     handler._notify_eod_committed = MagicMock()
     handler._notify_replay_waiters = MagicMock()
+    publish_metric = MagicMock()
+    monkeypatch.setattr(rabbitmq_module, "record_message_publish_metrics", publish_metric)
 
     handler.flush("thread-id")
 
     published = [pickle.loads(call.kwargs["body"]) for call in channel.basic_publish.call_args_list]
     assert published == [first + second, EOD_CHUNK]
     handler._notify_eod_committed.assert_called_once_with("thread-id", [first, second, EOD_CHUNK])
+    metric_call = publish_metric.call_args.kwargs
+    assert metric_call["handler_type"] == "rabbitmq"
+    assert metric_call["event_count"] == 3
+    assert len(metric_call["message_sizes"]) == 2
 
 
 def test_get_messages_since_replays_mixed_physical_messages():

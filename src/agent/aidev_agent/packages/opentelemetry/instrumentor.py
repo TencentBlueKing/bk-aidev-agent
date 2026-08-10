@@ -29,6 +29,7 @@ from aidev_agent.pydantic_models import ExecuteKwargs
 
 from .callback_handler import BkAidevAgentCallbackHandler, BkAidevAgentInjector
 from .config import OTelConfig
+from .metrics import configure_metrics
 from .otel_service import BkAgentOTelService
 from .utils import dont_throw
 
@@ -70,6 +71,7 @@ class BkAidevAgentInstrumentor(BaseInstrumentor):
         if config is None:
             raise TypeError("BkAidevAgentInstrumentor requires a non-None OTelConfig")
         self._otel_service_config = config
+        configure_metrics(config.enabled and config.enable_metrics)
         self._otel_service: Optional[BkAgentOTelService] = None
 
     def start_otel_service(self):
@@ -308,11 +310,13 @@ class ChatCompletionAgentGetAgentWrapper:
             parent_trace_context=execute_kwargs.caller_trace_context,
             enabled=self.config.enabled,
             enable_traces=self.config.enable_traces,
+            enable_metrics=self.config.enable_metrics,
             debug=self.config.debug,
             max_attribute_length=self.config.max_attribute_length,
             agent_id=agent_info.get("agent_id"),
             agent_code=agent_info.get("agent_code"),
             agent_name=agent_info.get("agent_name"),
+            agent_sdk_version=agent_info.get("agent_sdk_version"),
             session_code=execute_kwargs.session_code,
             caller_executor=execute_kwargs.caller_executor,
             injector=injector,

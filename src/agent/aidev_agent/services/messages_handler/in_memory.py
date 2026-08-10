@@ -1,3 +1,4 @@
+import pickle
 import queue
 import threading
 import time
@@ -6,6 +7,7 @@ from typing import Any, ClassVar, Optional
 
 from .base import BaseMessageQueueHandler
 from .single_process_mixin import SingleProcessMixin
+from .telemetry import record_message_publish_metrics
 
 logger = getLogger(__name__)
 
@@ -94,8 +96,20 @@ class InMemoryQueueMessageHandler(SingleProcessMixin, BaseMessageQueueHandler):
             thread_id: 线程ID
             message: 要添加的消息
         """
+        started_at = time.monotonic()
         main_queue, _, _ = self._get_or_create_queues(thread_id)
         main_queue.put(message)
+        try:
+            message_sizes = [len(pickle.dumps(message))]
+        except Exception:  # noqa: BLE001
+            message_sizes = []
+        record_message_publish_metrics(
+            handler_type="inmemory",
+            messaging_system="in_memory",
+            event_count=1,
+            message_sizes=message_sizes,
+            started_at=started_at,
+        )
         logger.debug(f"Put message to queue for thread_id={thread_id}")
 
     def flush(self, thread_id: str) -> None:

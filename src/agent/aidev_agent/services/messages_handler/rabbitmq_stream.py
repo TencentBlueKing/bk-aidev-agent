@@ -12,6 +12,7 @@ import os
 import pickle
 import queue
 import threading
+import time
 from dataclasses import dataclass, field
 from logging import getLogger
 from typing import Any, ClassVar, Optional
@@ -21,6 +22,7 @@ from rstream import Consumer, ConsumerOffsetSpecification, OffsetType, Producer
 
 from .constants import EOD_CHUNK, HEARTBEAT_TIMEOUT, EnvVarNames
 from .rabbitmq import RabbitMQMessageHandler
+from .telemetry import record_message_publish_metrics
 
 logger = getLogger(__name__)
 env = Env()
@@ -364,13 +366,33 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
     def _get_stream_name(self, thread_id: str) -> str:
         return f"{self.STREAM_PREFIX}{thread_id}"
 
-    def _publish_stream_messages(self, thread_id: str, messages: list[Any]) -> None:
+    def _publish_stream_messages(self, thread_id: str, messages: list[Any], *, event_count: int) -> None:
         stream_name = self._get_stream_name(thread_id)
-        publishing_ids = self._stream_runtime.publish(
-            stream=stream_name,
-            payloads=[pickle.dumps(message) for message in messages],
-            publisher_name=stream_name,
-            max_age_seconds=max(1, self.QUEUE_TTL_MS // 1000),
+        payloads = [pickle.dumps(message) for message in messages]
+        publish_started_at = time.monotonic()
+        try:
+            publishing_ids = self._stream_runtime.publish(
+                stream=stream_name,
+                payloads=payloads,
+                publisher_name=stream_name,
+                max_age_seconds=max(1, self.QUEUE_TTL_MS // 1000),
+            )
+        except Exception as error:
+            record_message_publish_metrics(
+                handler_type="rabbitmq_stream",
+                messaging_system="rabbitmq",
+                event_count=event_count,
+                message_sizes=[len(payload) for payload in payloads],
+                started_at=publish_started_at,
+                error=error,
+            )
+            raise
+        record_message_publish_metrics(
+            handler_type="rabbitmq_stream",
+            messaging_system="rabbitmq",
+            event_count=event_count,
+            message_sizes=[len(payload) for payload in payloads],
+            started_at=publish_started_at,
         )
         if publishing_ids:
             with self._stream_count_lock:
@@ -381,7 +403,7 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
 
     def _flush_one_stream(self, thread_id: str, messages: list[Any], background: bool) -> None:
         messages_to_publish = self._coalesce_sse_messages(messages)
-        self._publish_stream_messages(thread_id, messages_to_publish)
+        self._publish_stream_messages(thread_id, messages_to_publish, event_count=len(messages))
         if EOD_CHUNK in messages:
             logger.info(
                 "[EOD] RabbitMQ Stream flush thread_id=%s logical=%d published=%d background=%s",
