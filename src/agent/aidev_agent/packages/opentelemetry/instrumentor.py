@@ -316,6 +316,7 @@ class ChatCompletionAgentGetAgentWrapper:
             agent_id=agent_info.get("agent_id"),
             agent_code=agent_info.get("agent_code"),
             agent_name=agent_info.get("agent_name"),
+            agent_sdk_version=agent_info.get("agent_sdk_version"),
             session_code=execute_kwargs.session_code,
             caller_executor=execute_kwargs.caller_executor,
             injector=injector,

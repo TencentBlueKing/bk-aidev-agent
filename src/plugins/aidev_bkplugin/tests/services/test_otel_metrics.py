@@ -6,9 +6,11 @@ import sys
 from types import ModuleType
 
 import pytest
+import requests
 
 pytest.importorskip("opentelemetry.sdk.metrics")
 
+from aidev_bkplugin.services.metric_runtime import RetryableMetricPushError
 from aidev_bkplugin.services.otel_metrics import (
     BkPluginMetricService,
     CeleryMetricExporter,
@@ -36,7 +38,15 @@ from opentelemetry.sdk.util.instrumentation import InstrumentationScope
 def _import_tasks_with_celery_stub(mocker):
     """Load task functions without requiring the template-only Celery dependency."""
     celery = ModuleType("celery")
-    celery.shared_task = lambda **_kwargs: lambda function: function
+
+    def shared_task(**options):
+        def decorate(function):
+            function.shared_task_options = options
+            return function
+
+        return decorate
+
+    celery.shared_task = shared_task
     mocker.patch.dict(sys.modules, {"celery": celery})
     sys.modules.pop("aidev_bkplugin.tasks", None)
     return importlib.import_module("aidev_bkplugin.tasks")
@@ -301,6 +311,7 @@ def test_metric_service_does_not_enable_incomplete_bkm_export():
 
 def test_worker_posts_bkm_report_with_process_local_credentials(mocker):
     post = mocker.patch("aidev_bkplugin.services.otel_metrics.requests.post")
+    post.return_value.status_code = 200
     settings = _bkm_settings(export_timeout_millis=7000)
     service = BkPluginMetricService(service_name="ai-demo", endpoints=[], agent_info={}, settings=settings)
     records = [{"metrics": {"aidev_agent_active": 3}, "target": "127.0.0.1", "dimension": {}, "timestamp": 1}]
@@ -313,6 +324,34 @@ def test_worker_posts_bkm_report_with_process_local_credentials(mocker):
         timeout=7.0,
     )
     post.return_value.raise_for_status.assert_called_once_with()
+
+
+@pytest.mark.parametrize("status_code", [408, 425, 429, 500, 503])
+def test_worker_marks_transient_bkm_status_as_retryable(mocker, status_code):
+    post = mocker.patch("aidev_bkplugin.services.otel_metrics.requests.post")
+    post.return_value.status_code = status_code
+    service = BkPluginMetricService(service_name="ai-demo", endpoints=[], agent_info={}, settings=_bkm_settings())
+
+    with pytest.raises(RetryableMetricPushError, match=str(status_code)):
+        service.push_bkm(_bkm_endpoint_key(service.settings), "[]")
+
+
+def test_worker_marks_bkm_network_failure_as_retryable(mocker):
+    mocker.patch("aidev_bkplugin.services.otel_metrics.requests.post", side_effect=requests.Timeout)
+    service = BkPluginMetricService(service_name="ai-demo", endpoints=[], agent_info={}, settings=_bkm_settings())
+
+    with pytest.raises(RetryableMetricPushError, match="transient network error"):
+        service.push_bkm(_bkm_endpoint_key(service.settings), "[]")
+
+
+def test_worker_keeps_non_retryable_bkm_client_error(mocker):
+    post = mocker.patch("aidev_bkplugin.services.otel_metrics.requests.post")
+    post.return_value.status_code = 400
+    post.return_value.raise_for_status.side_effect = requests.HTTPError("bad request")
+    service = BkPluginMetricService(service_name="ai-demo", endpoints=[], agent_info={}, settings=_bkm_settings())
+
+    with pytest.raises(requests.HTTPError, match="bad request"):
+        service.push_bkm(_bkm_endpoint_key(service.settings), "[]")
 
 
 def test_metric_service_rejects_unknown_worker_endpoint():
@@ -330,3 +369,5 @@ def test_celery_task_exports_through_process_local_metric_service(mocker):
     tasks.push_bkm_metrics_task("endpoint-fingerprint", "payload")
 
     service.push_bkm.assert_called_once_with("endpoint-fingerprint", "payload")
+    assert tasks.push_bkm_metrics_task.shared_task_options["autoretry_for"] == (RetryableMetricPushError,)
+    assert tasks.push_bkm_metrics_task.shared_task_options["max_retries"] == 3

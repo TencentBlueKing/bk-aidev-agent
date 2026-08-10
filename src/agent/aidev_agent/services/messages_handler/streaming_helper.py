@@ -1231,6 +1231,14 @@ class GeneratorStreamingHelper:
         cancel_error_emitted = False
         cancel_finished_emitted = False
 
+        def _record_published_sse_event() -> None:
+            if metric_recorder is None:
+                return
+            try:
+                metric_recorder.record_sse_event(metric_message_attributes)
+            except Exception:  # noqa: BLE001
+                logger.debug("Failed to record SSE event metrics", exc_info=True)
+
         def _heartbeat_worker() -> None:
             """独立心跳线程：即使 generator 阻塞也保持心跳。"""
             while not heartbeat_stop_event.wait(HEARTBEAT_INTERVAL):
@@ -1280,6 +1288,7 @@ class GeneratorStreamingHelper:
                 if (is_run_finished and cancel_finished_emitted) or (not is_run_finished and cancel_error_emitted):
                     continue
                 self.message_handler.put(self.thread_id, encoded_event)
+                _record_published_sse_event()
                 if event_handler is not None:
                     try:
                         event_handler(event)
@@ -1312,9 +1321,6 @@ class GeneratorStreamingHelper:
             for chunk in generator:
                 chunk_count += 1
 
-                if metric_recorder is not None:
-                    metric_recorder.record_sse_event(metric_message_attributes)
-
                 current_time = time.time()
                 should_check_cross_process = (
                     chunk_count % CROSS_PROCESS_CHECK_INTERVAL == 0
@@ -1335,6 +1341,7 @@ class GeneratorStreamingHelper:
                     run_finished_seen = True
 
                 self.message_handler.put(self.thread_id, chunk)
+                _record_published_sse_event()
                 if isinstance(chunk, str) and '"type":"RUN_STARTED"' in chunk:
                     # 初始化帧也由后台 producer 写入。RUN_STARTED 到达后立即提交，
                     # 避免等待批量写入周期，同时保持 MESSAGES_SNAPSHOT 在其之前。
@@ -1365,6 +1372,7 @@ class GeneratorStreamingHelper:
                         if is_run_finished:
                             run_finished_seen = True
                         self.message_handler.put(self.thread_id, event)
+                        _record_published_sse_event()
                         if is_run_finished:
                             _complete_session()
                 except Exception as encode_err:
@@ -1409,6 +1417,7 @@ class GeneratorStreamingHelper:
                             event_handler=event_handler,
                         ),
                     )
+                    _record_published_sse_event()
                     _complete_session()
 
                 # 无论是正常结束还是取消，都推送 EOD_CHUNK 让消费者知道流已结束。

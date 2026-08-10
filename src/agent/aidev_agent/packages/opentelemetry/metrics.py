@@ -165,10 +165,15 @@ class AgentMetrics:
         )
 
     @staticmethod
-    def agent_attributes(agent_code: str | None, agent_name: str | None) -> dict[str, str]:
+    def agent_attributes(
+        agent_code: str | None,
+        agent_name: str | None,
+        agent_sdk_version: str | None = None,
+    ) -> dict[str, str]:
         return {
             "agent.info.code": agent_code or "unknown",
             "agent.info.name": agent_name or "unknown",
+            "agent.info.sdk_version": agent_sdk_version or "unknown",
         }
 
     def record_agent(
@@ -282,10 +287,14 @@ def configure_metrics(enabled: bool) -> None:
     _metrics_enabled = enabled
 
 
-def configure_metric_identity(agent_code: str | None, agent_name: str | None) -> None:
+def configure_metric_identity(
+    agent_code: str | None,
+    agent_name: str | None,
+    agent_sdk_version: str | None = None,
+) -> None:
     """Configure the low-cardinality identity used by process-level SSE hooks."""
     global _metric_identity
-    _metric_identity = AgentMetrics.agent_attributes(agent_code, agent_name)
+    _metric_identity = AgentMetrics.agent_attributes(agent_code, agent_name, agent_sdk_version)
 
 
 def get_enabled_agent_metrics() -> AgentMetrics | None:

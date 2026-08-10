@@ -6,6 +6,10 @@ from __future__ import annotations
 from typing import Protocol
 
 
+class RetryableMetricPushError(RuntimeError):
+    """A transient BKM delivery failure that Celery may safely retry."""
+
+
 class BkmMetricPusher(Protocol):
     """Minimal worker-side interface required by the BKM Celery task."""
 

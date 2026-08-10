@@ -34,6 +34,8 @@ from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation, V
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.semconv.resource import ResourceAttributes
 
+from .metric_runtime import RetryableMetricPushError
+
 logger = logging.getLogger(__name__)
 
 
@@ -350,11 +352,16 @@ class BkPluginMetricService:
             "access_token": self.settings.bkm_access_token,
             "data": records,
         }
-        response = requests.post(
-            self.settings.bkm_push_url,
-            json=report_data,
-            timeout=max(1.0, self.settings.export_timeout_millis / 1000),
-        )
+        try:
+            response = requests.post(
+                self.settings.bkm_push_url,
+                json=report_data,
+                timeout=max(1.0, self.settings.export_timeout_millis / 1000),
+            )
+        except (requests.ConnectionError, requests.Timeout) as error:
+            raise RetryableMetricPushError("BKM metric push failed due to a transient network error") from error
+        if response.status_code in {408, 425, 429} or response.status_code >= 500:
+            raise RetryableMetricPushError(f"BKM metric push returned retryable HTTP {response.status_code}")
         response.raise_for_status()
 
     def _create_resource(self) -> Resource:

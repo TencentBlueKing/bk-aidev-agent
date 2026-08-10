@@ -641,9 +641,9 @@ def main() -> None:
     )
     service.start()
 
-    configure_metric_identity("ai-agent-local-demo", "本地指标验证智能体")
+    configure_metric_identity("ai-agent-local-demo", "本地指标验证智能体", "2.2.3")
     recorder = AgentMetrics()
-    agent_attrs = recorder.agent_attributes("ai-agent-local-demo", "本地指标验证智能体")
+    agent_attrs = recorder.agent_attributes("ai-agent-local-demo", "本地指标验证智能体", "2.2.3")
     _record_initial_error_samples(recorder, agent_attrs, handlers, args.models)
     print(f"Sanitized scenario: {SANITIZED_PROMPT}")
     print("Mock tools: " + ", ".join(step.name for step in TOOL_STEPS))

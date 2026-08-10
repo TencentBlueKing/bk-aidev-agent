@@ -208,6 +208,21 @@ class TestChatCompletionAgentGetAgentWrapper:
         assert handler._agent_code is None
         assert handler._agent_name is None
 
+    def test_wrapper_adds_agent_sdk_version_to_metric_attributes(self, tracer_and_config):
+        tracer, config, _ = tracer_and_config
+        config.enable_metrics = True
+        wrapper = ChatCompletionAgentGetAgentWrapper(tracer, config)
+        instance = _build_mock_instance({"agent_code": "ai-demo", "agent_name": "Demo", "agent_sdk_version": "2.2.3"})
+
+        _, cfg = wrapper(
+            wrapped=lambda *_args, **_kwargs: (MagicMock(), {}),
+            instance=instance,
+            args=([HumanMessage(content="hi")],),
+            kwargs={"execute_kwargs": ExecuteKwargs()},
+        )
+
+        assert cfg["callbacks"][0]._metric_agent_attributes["agent.info.sdk_version"] == "2.2.3"
+
     def test_wrapper_propagates_get_agent_failure_without_orphan_span(self, tracer_and_config):
         """``_get_agent`` 自身失败时直接抛出，不应留下任何孤儿 ``agent.execution`` span。
 

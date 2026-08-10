@@ -181,12 +181,13 @@ def test_process_metric_gate_disables_sse_instrumentation():
 def test_sse_metrics_include_configured_agent_code_dimension():
     meter = FakeMeter()
     recorder = AgentMetrics(meter)
-    configure_metric_identity("ai-demo", "演示智能体")
+    configure_metric_identity("ai-demo", "演示智能体", "2.2.3")
 
     recorder.record_sse_event()
 
     event_attrs = meter.instruments["aidev.sse.event.count"].calls[0][1]
     assert event_attrs["agent.info.code"] == "ai-demo"
+    assert event_attrs["agent.info.sdk_version"] == "2.2.3"
 
 
 def test_message_publish_metrics_include_actual_handler_without_session_labels():

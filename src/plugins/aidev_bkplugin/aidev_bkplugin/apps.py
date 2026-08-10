@@ -105,6 +105,7 @@ def init_bk_aidev_agent_otel() -> None:
         configure_metric_identity(
             agent_info.get("agent_code") or otel_config.service_name,
             agent_info.get("agent_name"),
+            agent_info.get("agent_sdk_version"),
         )
         if metric_settings.export_via_celery:
             metric_service = BkPluginMetricService(

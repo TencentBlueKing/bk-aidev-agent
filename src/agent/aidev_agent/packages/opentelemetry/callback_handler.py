@@ -242,6 +242,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         agent_id: Optional[str] = None,
         agent_code: Optional[str] = None,
         agent_name: Optional[str] = None,
+        agent_sdk_version: Optional[str] = None,
         session_code: Optional[str] = None,
         caller_executor: Optional[str] = None,
         injector: Optional["BkAidevAgentInjector"] = None,
@@ -264,6 +265,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             agent_id: agent.info.id
             agent_code: agent.info.code
             agent_name: agent.info.name
+            agent_sdk_version: agent.info.sdk_version
             session_code: agent.session.session_code
             caller_executor: agent.session.caller_executor
             injector: 可选的 BkAidevAgentInjector 实例。本 handler 会在顶层 chain
@@ -321,7 +323,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
 
         # Metric state uses monotonic clocks and contains no session/user data.
         self._metrics = metric_recorder or (get_agent_metrics() if enable_metrics else None)
-        self._metric_agent_attributes = AgentMetrics.agent_attributes(agent_code, agent_name)
+        self._metric_agent_attributes = AgentMetrics.agent_attributes(agent_code, agent_name, agent_sdk_version)
         self._agent_started_at: float | None = None
         self._llm_started_at: Dict[UUID, float] = {}
         self._llm_active_attributes: Dict[UUID, Dict[str, str]] = {}
