@@ -16,6 +16,7 @@ from aidev_bkplugin.services.otel_metrics import (
     CeleryMetricExporter,
     MetricExportSettings,
     _bkm_endpoint_key,
+    _bkm_metric_name,
     _bkm_records,
     _normalize_bkm_push_url,
 )
@@ -258,10 +259,27 @@ def test_bkm_records_preserve_counter_and_histogram_semantics():
     assert counter["dimension"]["agent_info_code"] == "ai-demo"
     assert counter["timestamp"] == 1_786_300_118_338
     assert counter["target"] == "127.0.0.1"
-    assert [record["metrics"]["gen_ai_invoke_agent_duration_bucket"] for record in buckets] == [1, 3, 4]
+    assert [record["metrics"]["gen_ai_invoke_agent_duration_seconds_bucket"] for record in buckets] == [1, 3, 4]
     assert [record["dimension"]["le"] for record in buckets] == ["0.1", "1.0", "+Inf"]
-    assert by_metric["gen_ai_invoke_agent_duration_sum"]["metrics"] == {"gen_ai_invoke_agent_duration_sum": 2.5}
-    assert by_metric["gen_ai_invoke_agent_duration_count"]["metrics"] == {"gen_ai_invoke_agent_duration_count": 4}
+    assert by_metric["gen_ai_invoke_agent_duration_seconds_sum"]["metrics"] == {
+        "gen_ai_invoke_agent_duration_seconds_sum": 2.5
+    }
+    assert by_metric["gen_ai_invoke_agent_duration_seconds_count"]["metrics"] == {
+        "gen_ai_invoke_agent_duration_seconds_count": 4
+    }
+
+
+@pytest.mark.parametrize(
+    ("name", "unit", "expected"),
+    [
+        ("aidev.message.publish.duration", "s", "aidev_message_publish_duration_seconds"),
+        ("aidev.message.publish.size", "By", "aidev_message_publish_size_bytes"),
+        ("aidev.sse.event.count", "{event}", "aidev_sse_event_count"),
+        ("custom.duration_seconds", "s", "custom_duration_seconds"),
+    ],
+)
+def test_bkm_metric_name_matches_prometheus_unit_suffixes(name, unit, expected):
+    assert _bkm_metric_name(name, unit) == expected
 
 
 def test_celery_exporter_enqueues_bkm_records_without_credentials(mocker):

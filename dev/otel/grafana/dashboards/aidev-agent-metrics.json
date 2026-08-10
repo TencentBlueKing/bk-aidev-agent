@@ -9,12 +9,12 @@
     {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}, "id": 100, "panels": [], "title": "运行态与关键指标", "type": "row"},
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "含义：当前仍在执行的 Agent Run 总数，不是累计会话次数；应与各 Agent 阶段并发之和一致。计算：对筛选范围内 aidev_agent_active Gauge 求和。",
+      "description": "含义：当前仍在执行的 Agent Run 总数，不是累计会话次数；应与各 Agent 阶段并发之和一致。计算：对筛选范围内 aidev_agent_active Gauge 求和；当前无序列时显式回退为 0，避免 Stat 沿用上一个非空值。",
       "fieldConfig": {"defaults": {"decimals": 0, "unit": "short"}, "overrides": []},
       "gridPos": {"h": 5, "w": 4, "x": 4, "y": 1},
       "id": 1,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "sum(aidev_agent_active{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"})", "legendFormat": "活跃 Run", "range": true, "refId": "A"}],
+      "targets": [{"editorMode": "code", "expr": "sum(aidev_agent_active{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}) or vector(0)", "legendFormat": "活跃 Run", "range": true, "refId": "A"}],
       "title": "活跃 Agent Run", "type": "stat"
     },
     {
@@ -34,7 +34,7 @@
       "gridPos": {"h": 5, "w": 3, "x": 8, "y": 1},
       "id": 2,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "sum(gen_ai_client_operation_active{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\"})", "legendFormat": "活跃 LLM", "range": true, "refId": "A"}],
+      "targets": [{"editorMode": "code", "expr": "sum(gen_ai_client_operation_active{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\"}) or vector(0)", "legendFormat": "活跃 LLM", "range": true, "refId": "A"}],
       "title": "活跃 LLM Operation", "type": "stat"
     },
     {
@@ -44,7 +44,7 @@
       "gridPos": {"h": 5, "w": 3, "x": 11, "y": 1},
       "id": 3,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "sum(gen_ai_execute_tool_active{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_tool_name=~\"${tool_name:regex}\"})", "legendFormat": "活跃 Tool", "range": true, "refId": "A"}],
+      "targets": [{"editorMode": "code", "expr": "sum(gen_ai_execute_tool_active{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_tool_name=~\"${tool_name:regex}\"}) or vector(0)", "legendFormat": "活跃 Tool", "range": true, "refId": "A"}],
       "title": "活跃 Tool Operation", "type": "stat"
     },
     {

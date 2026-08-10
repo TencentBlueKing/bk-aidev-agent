@@ -122,6 +122,15 @@ def _bkm_name(value: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_]", "_", value)
 
 
+def _bkm_metric_name(name: str, unit: str) -> str:
+    """Match the Prometheus exporter's stable unit suffixes for BKM metrics."""
+    metric_name = _bkm_name(name)
+    unit_suffix = {"s": "seconds", "By": "bytes"}.get(unit)
+    if unit_suffix and not metric_name.endswith(f"_{unit_suffix}"):
+        return f"{metric_name}_{unit_suffix}"
+    return metric_name
+
+
 def _bkm_dimension_value(value: Any) -> str:
     if isinstance(value, (list, tuple)):
         return ",".join(str(item) for item in value)
@@ -162,7 +171,7 @@ def _bkm_records(metrics_data: MetricsData, target: str) -> list[dict[str, Any]]
         }
         for scope_metrics in resource_metrics.scope_metrics:
             for metric in scope_metrics.metrics:
-                metric_name = _bkm_name(metric.name)
+                metric_name = _bkm_metric_name(metric.name, metric.unit)
                 for point in metric.data.data_points:
                     dimensions = dict(resource_dimensions)
                     dimensions.update(
