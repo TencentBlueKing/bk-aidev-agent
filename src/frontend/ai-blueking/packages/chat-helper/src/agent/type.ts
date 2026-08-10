@@ -240,3 +240,10 @@ export interface ILlmItemApi {
   tag_names?: string[];
   user_auth_mode?: string;
 }
+
+/**
+ * chat_completion execute_kwargs.stream_mode
+ * - start: 可创建生产者，开新一轮执行（默认）
+ * - attach: 仅接管/回放已有流，不允许新建生产者
+ */
+export type StreamMode = 'start' | 'attach';

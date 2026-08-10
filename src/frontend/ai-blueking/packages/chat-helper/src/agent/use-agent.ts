@@ -41,7 +41,7 @@ import { MessageRole, MessageStatus, UserOperation } from '../message';
 import type { IRequestConfig, IRequestError, ISSEProtocol } from '../http';
 import type { IMediatorModule } from '../mediator';
 import type { IInterruptMessage, IMessageProperty, IUserMessage, IUserOperationPayload } from '../message/type';
-import type { IAgentInfo, ILlmItem, ILlmListQuery } from './type';
+import type { IAgentInfo, ILlmItem, ILlmListQuery, StreamMode } from './type';
 import { SessionStatus } from '../session/type';
 
 /** SSE 静默重连最大次数（退避总时长约 23s，落在后端 orphan grace ~30s 内） */
@@ -52,12 +52,19 @@ const RECONNECT_MAX_DELAY_MS = 8000;
 const getReconnectDelayMs = (attempt: number): number =>
   Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS);
 
+/** 后端 attach_only 且无可接管流时抛出（见 StreamAttachUnavailableError） */
+const isStreamAttachUnavailableError = (error: Error): boolean => /No active or replayable stream/i.test(error.message);
+
 /**
  * 判断流式错误是否可静默重连。
- * 不重试：Abort、401/403 等业务 4xx（408/429 除外）；可重试：网络错误、5xx、无状态码的中断。
+ * 不重试：Abort、attach 无流、401/403 等业务 4xx（408/429 除外）；可重试：网络错误、5xx、无状态码的中断。
  */
 const isRecoverableStreamError = (error: Error): boolean => {
   if (error.name === 'AbortError') {
+    return false;
+  }
+
+  if (isStreamAttachUnavailableError(error)) {
     return false;
   }
 
@@ -112,6 +119,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     model?: string;
     url?: string;
     config?: IRequestConfig;
+    streamMode: StreamMode;
   } | null = null;
 
   /**
@@ -298,6 +306,8 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       config: ctx?.config,
       lastMessageId: lastMessageId !== undefined ? String(lastMessageId) : undefined,
       isReconnect: true,
+      /** 静默重连：仅接管已有流，禁止后端新建 producer */
+      streamMode: 'attach',
     });
     return 'reconnected';
   };
@@ -311,6 +321,8 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     input,
     lastMessageId,
     isReconnect = false,
+    /** start 可启动新一轮执行；attach 仅接管/回放已有流 */
+    streamMode = 'start',
   }: {
     sessionCode: string;
     model?: string;
@@ -321,12 +333,13 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     lastMessageId?: string;
     /** 内部静默重连，不重置重连计数 */
     isReconnect?: boolean;
+    streamMode?: StreamMode;
   }) => {
     if (!isReconnect) {
       resetStreamReconnectState();
     }
 
-    activeStreamContext = { sessionCode, model: model, url, config };
+    activeStreamContext = { sessionCode, model, url, config, streamMode };
 
     // 先递增世代再 abort 旧连接，避免旧流 onDone 误触发二次重连
     const streamId = ++activeStreamId;
@@ -419,6 +432,30 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
         return;
       }
 
+      // attach 时后端无可接管流：视为本轮已结束，勿静默重连空转
+      if (streamMode === 'attach' && isStreamAttachUnavailableError(error)) {
+        const settleAttachUnavailable = (): void => {
+          if (!isActiveStream() || manualAbort || !isSameActiveSession(sessionCode)) {
+            if (isActiveStream()) {
+              isChatting.value = false;
+            }
+            return;
+          }
+          if (mediator.session?.current.value?.status !== SessionStatus.Running) {
+            finishSuccessfully();
+            return;
+          }
+          isChatting.value = false;
+        };
+        const refresh = mediator.session?.getSession(sessionCode);
+        if (refresh) {
+          void refresh.catch((): undefined => undefined).then(settleAttachUnavailable);
+        } else {
+          settleAttachUnavailable();
+        }
+        return;
+      }
+
       if (!isRecoverableStreamError(error)) {
         failWithError(error);
         return;
@@ -475,6 +512,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
           input,
           execute_kwargs: {
             stream: true,
+            stream_mode: streamMode,
             persist_input: !!input,
             last_message_id: lastMessageId,
             resume,
@@ -538,6 +576,8 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
         url,
         config,
         lastMessageId,
+        /** 切会话/刷新恢复：仅接管已有流 */
+        streamMode: 'attach',
       });
     }
   };

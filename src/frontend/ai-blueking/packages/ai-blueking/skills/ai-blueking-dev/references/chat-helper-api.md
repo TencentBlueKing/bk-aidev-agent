@@ -216,10 +216,20 @@ agent.streamRequest({
   resume?: IResume,        // HITL：恢复中断，写入 execute_kwargs.resume
   input?: string,          // 直接传入用户输入（不经 createAndPlusMessage）
   lastMessageId?: string,  // 恢复流式时定位最后一条消息
+  streamMode?: 'start' | 'attach', // 默认 start；attach 仅接管/回放已有流
 });
 // 实际请求：POST chat_completion/
-//   { session_code, input, execute_kwargs: { stream: true, persist_input, last_message_id, resume } }
+//   { session_code, input, execute_kwargs: { stream: true, stream_mode, persist_input, last_message_id, resume } }
 ```
+
+`stream_mode` 语义（对齐后端 `ExecuteKwargs.stream_mode`）：
+
+| 值 | 含义 | 谁传 |
+|----|------|------|
+| `start`（默认） | 可创建生产者，开新一轮执行 | `chat` / `resendMessage` / HITL `resume` / `userOperationStreamRequest` |
+| `attach` | 仅接管/回放已有流，禁止新建生产者 | `resumeStreamingChat`、静默重连 |
+
+> attach 且后端无可接管流时，不会进入静默重连空转。
 
 #### pollResumeSession
 
@@ -255,7 +265,7 @@ await agent.userOperationStreamRequest(
 
 #### resumeStreamingChat
 
-恢复流式聊天（页面刷新后恢复）。
+恢复流式聊天（页面刷新 / `chooseSession` 时，会话仍为 `Running`）。内部以 `streamMode: 'attach'` 发起请求，仅接管已有流。
 
 ```typescript
 await agent.resumeStreamingChat(sessionCode: string);
@@ -376,7 +386,7 @@ enum SessionStatus {
 }
 ```
 
-> `resumeStreamingChat` 仅在 `session.current.value?.status === SessionStatus.Running` 时才重连流式（页面刷新恢复）。
+> `resumeStreamingChat` 仅在 `session.current.value?.status === SessionStatus.Running` 时才以 `stream_mode=attach` 重连流式（页面刷新 / 切会话恢复）。
 
 ### ISession 接口
 
