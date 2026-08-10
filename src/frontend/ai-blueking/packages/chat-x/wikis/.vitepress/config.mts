@@ -398,6 +398,7 @@ function sidebarComponents() {
         { text: 'AiLoading 三点加载', link: 'helper/ai-loading' },
         { text: 'MessageLoading 品牌加载', link: 'helper/message-loading' },
         { text: 'HighlightKeyword 关键词高亮', link: 'helper/highlight-keyword' },
+        { text: 'FileIcon 文件类型图标', link: 'helper/file-icon' },
         { text: 'VNodeRenderer VNode 渲染器', link: 'helper/vnode-renderer' },
         { text: 'QuestionsContainer 空占位', link: 'helper/questions-container' },
         { text: 'SelectionQuestion 空占位', link: 'helper/selection-question' },

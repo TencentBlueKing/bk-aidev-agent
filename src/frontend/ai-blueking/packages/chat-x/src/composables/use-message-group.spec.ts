@@ -29,7 +29,6 @@ import { computed, ref as deepRef, nextTick, shallowRef } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { APPROVAL_STATUS, InterruptReason, MessageContentType, MessageRole, MessageStatus } from '../ag-ui/types';
-import { AIFileType } from '../ag-ui/types/file';
 import { LOADING_MESSAGE_ID, RenderMode } from '../common/constants';
 import { useMessageGroup } from './use-message-group';
 
@@ -69,7 +68,7 @@ const createFile = (overrides: Partial<AIFileInfo> = {}): AIFileInfo => ({
   name: 'file.pdf',
   outputId: 'output-1',
   size: 1024,
-  type: AIFileType.Pdf,
+  type: 'pdf',
   ...overrides,
 });
 

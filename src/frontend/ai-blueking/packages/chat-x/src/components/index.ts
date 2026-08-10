@@ -40,6 +40,7 @@ export type { IModelCapability, IModelOption, IModelProperty, ModelCapabilityThe
 import MessageContainer from './chat-message/message-container/message-container.vue';
 import MessageRender from './chat-message/message-render/message-render.vue';
 import ExecutionSummary from './execution-summary/execution-summary.vue';
+import FileIcon from './file-icon/file-icon.vue';
 import HighlightKeyword from './highlight-keyword/highlight-keyword';
 import ImagePreviewGroup from './image-preview/image-preview-group.vue';
 import ImagePreview from './image-preview/image-preview.vue';
@@ -67,6 +68,7 @@ export {
   commonErrorContent,
   ContentRender,
   ExecutionSummary,
+  FileIcon,
   HighlightKeyword,
   ImagePreview,
   ImagePreviewGroup,

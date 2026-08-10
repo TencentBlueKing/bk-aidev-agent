@@ -135,6 +135,7 @@ aiSummary: >
 | [AiLoading](./helper/ai-loading.md) | 三点加载动画。 |
 | [MessageLoading](./helper/message-loading.md) | 品牌加载动画。 |
 | [HighlightKeyword](./helper/highlight-keyword.md) | 关键词高亮。 |
+| [FileIcon](./helper/file-icon.md) | 按扩展名渲染文件类型图标。 |
 | [VNodeRenderer](./helper/vnode-renderer.md) | Markdown token 到 VNode 的内部渲染桥。 |
 | [QuestionsContainer](./helper/questions-container.md) | 空源码占位，无可用功能。 |
 | [SelectionQuestion](./helper/selection-question.md) | 空源码占位，无可用功能。 |

@@ -10,9 +10,11 @@
   >
     <!-- 左侧：文件类型图标 + 文件名 -->
     <div class="ai-artifact-file-card-info">
-      <span class="ai-artifact-file-card-icon">
-        <component :is="fileIcon" />
-      </span>
+      <FileIcon
+        class="ai-artifact-file-card-icon"
+        :file-name="file.name"
+        :file-type="file.type"
+      />
       <span
         v-overflow-tips="{
           text: file.name,
@@ -54,7 +56,7 @@
   import { OverflowTips as vOverflowTips } from '../../../../directives/overflow-tips';
   import { DownloadFileIcon } from '../../../../icons/file';
   import { t } from '../../../../lang/lang';
-  import { getFileIcon } from './file-icon';
+  import FileIcon from '../../../file-icon/file-icon.vue';
 
   import type { AIFileInfo } from '../../../../ag-ui/types/file';
 
@@ -81,8 +83,7 @@
   // 未传 onArtifactClick 时隐藏下载；有外部 onDownload 或可异步取链时展示
   const showDownload = computed(() => !!props.onDownload || !!artifactPreview?.canResolveArtifactUrl.value);
 
-  // 图标为共享 VNode，克隆后再渲染，避免同类型多卡复用同一实例
-  const fileIcon = computed(() => getFileIcon(props.file.type));
+  // 图标为共享 VNode，克隆后再渲染，避免多卡复用同一实例
   const downloadIcon = computed(() => cloneVNode(DownloadFileIcon));
 
   const downloadLoading = shallowRef(false);

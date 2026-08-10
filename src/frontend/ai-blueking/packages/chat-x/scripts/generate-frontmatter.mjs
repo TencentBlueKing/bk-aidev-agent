@@ -1,49 +1,81 @@
 #!/usr/bin/env node
 
+import matter from 'gray-matter';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import matter from 'gray-matter';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WIKIS_ROOT = path.resolve(__dirname, '../wikis');
 
 const DOMAIN_MAP = {
-  'chat-container': 'setup', 'message-container': 'setup',
+  'chat-container': 'setup',
+  'message-container': 'setup',
   'message-render': 'message',
-  'assistant-message': 'message', 'user-message': 'message',
-  'reasoning-message': 'message', 'tool-message': 'message',
-  'activity-message': 'message', 'info-message': 'message',
-  'loading-message': 'message', 'flow-message': 'message',
-  'interrupt-message': 'agent', 'tool-approval-card': 'agent',
-  'user-question-card': 'agent', 'user-question-answered-card': 'agent',
-  'user-question-option': 'agent', 'toolcall-render': 'agent',
-  'execution-summary': 'agent', 'flow-agent-content': 'agent',
-  'flow-agent-node-detail': 'agent', 'detail-section': 'agent',
-  'simple-table': 'agent', 'knowledge-rag-content': 'agent',
+  'assistant-message': 'message',
+  'user-message': 'message',
+  'reasoning-message': 'message',
+  'tool-message': 'message',
+  'activity-message': 'message',
+  'info-message': 'message',
+  'loading-message': 'message',
+  'flow-message': 'message',
+  'interrupt-message': 'agent',
+  'tool-approval-card': 'agent',
+  'user-question-card': 'agent',
+  'user-question-answered-card': 'agent',
+  'user-question-option': 'agent',
+  'toolcall-render': 'agent',
+  'execution-summary': 'agent',
+  'flow-agent-content': 'agent',
+  'flow-agent-node-detail': 'agent',
+  'detail-section': 'agent',
+  'simple-table': 'agent',
+  'knowledge-rag-content': 'agent',
   'reference-doc-content': 'agent',
-  'chat-input': 'input', 'ai-selection': 'input',
-  'shortcut-render': 'input', 'shortcut-btn': 'input',
-  'shortcut-btns': 'input', 'file-upload-btn': 'input',
-  'selection-footer': 'input', 'ai-slash-input': 'input',
-  'ai-slash-editor': 'input', 'ai-slash-menu': 'input',
-  'ai-prompt-list': 'input', 'input-attachment': 'input',
+  'chat-input': 'input',
+  'ai-selection': 'input',
+  'shortcut-render': 'input',
+  'shortcut-btn': 'input',
+  'shortcut-btns': 'input',
+  'file-upload-btn': 'input',
+  'selection-footer': 'input',
+  'ai-slash-input': 'input',
+  'ai-slash-editor': 'input',
+  'ai-slash-menu': 'input',
+  'ai-prompt-list': 'input',
+  'input-attachment': 'input',
   'input-info-alert': 'input',
-  'content-render': 'rendering', 'markdown-content': 'rendering',
-  'code-content': 'rendering', 'latex-content': 'rendering',
-  'mermaid-content': 'rendering', 'animation-text': 'rendering',
-  'text-content': 'rendering', 'cite-content': 'rendering',
-  'reference-content': 'rendering', 'key-value-content': 'rendering',
-  'common-error-content': 'rendering', 'desc-panel': 'rendering',
-  'ai-image': 'media', 'image-preview': 'media',
-  'image-preview-group': 'media', 'file-content': 'media',
-  'image-content': 'media', 'preview-toolbar': 'media',
-  'message-tools': 'feedback', 'tool-btn': 'feedback',
-  'user-feedback': 'feedback', 'delete-tool': 'feedback',
+  'content-render': 'rendering',
+  'markdown-content': 'rendering',
+  'code-content': 'rendering',
+  'latex-content': 'rendering',
+  'mermaid-content': 'rendering',
+  'animation-text': 'rendering',
+  'text-content': 'rendering',
+  'cite-content': 'rendering',
+  'reference-content': 'rendering',
+  'key-value-content': 'rendering',
+  'common-error-content': 'rendering',
+  'desc-panel': 'rendering',
+  'ai-image': 'media',
+  'image-preview': 'media',
+  'image-preview-group': 'media',
+  'file-content': 'media',
+  'image-content': 'media',
+  'preview-toolbar': 'media',
+  'message-tools': 'feedback',
+  'tool-btn': 'feedback',
+  'user-feedback': 'feedback',
+  'delete-tool': 'feedback',
   'scroll-btn': 'feedback',
-  'activity-layout': 'helper', 'ai-loading': 'helper',
-  'message-loading': 'helper', 'highlight-keyword': 'helper',
-  'vnode-renderer': 'helper', 'questions-container': 'helper',
+  'activity-layout': 'helper',
+  'ai-loading': 'helper',
+  'message-loading': 'helper',
+  'highlight-keyword': 'helper',
+  'file-icon': 'helper',
+  'vnode-renderer': 'helper',
+  'questions-container': 'helper',
   'selection-question': 'helper',
 };
 
@@ -86,7 +118,10 @@ function extractHeadingAndDescription(content) {
     let inScript = false;
     for (let i = headingIndex + 1; i < lines.length; i++) {
       const line = lines[i].trim();
-      if (line.match(/^<script[\s>]/i)) { inScript = true; continue; }
+      if (line.match(/^<script[\s>]/i)) {
+        inScript = true;
+        continue;
+      }
       if (inScript) {
         if (line.match(/^<\/script>/i)) inScript = false;
         continue;
@@ -137,7 +172,9 @@ function processFile(filePath, kind, hasDomain) {
 
   const output = matter.stringify(raw, frontmatter);
   fs.writeFileSync(filePath, output, 'utf-8');
-  console.log(`  DONE: ${filePath} → name="${name}", kind="${kind}"${hasDomain ? `, domain="${frontmatter.domain}"` : ''}`);
+  console.log(
+    `  DONE: ${filePath} → name="${name}", kind="${kind}"${hasDomain ? `, domain="${frontmatter.domain}"` : ''}`,
+  );
   return true;
 }
 
@@ -151,7 +188,8 @@ for (const { dir, kind, hasDomain } of SCAN_DIRS) {
     continue;
   }
 
-  const files = fs.readdirSync(fullDir)
+  const files = fs
+    .readdirSync(fullDir)
     .filter(f => f.endsWith('.md') && f !== 'index.md')
     .sort();
 
@@ -170,7 +208,7 @@ for (const { dir, kind, hasDomain } of SCAN_DIRS) {
   }
 }
 
-console.log(`\n=== Summary ===`);
+console.log('\n=== Summary ===');
 console.log(`Processed: ${totalProcessed}`);
 console.log(`Skipped:   ${totalSkipped}`);
 console.log(`Total:     ${totalProcessed + totalSkipped}`);

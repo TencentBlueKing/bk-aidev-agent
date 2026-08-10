@@ -3,12 +3,11 @@ import { defineComponent, h, shallowRef } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { AIFileType } from '../../../../../ag-ui/types/file';
 import { useArtifactPreviewLoader } from './use-artifact-preview-loader';
 
 import type { AIFileInfo, ArtifactUrlResult } from '../../../../../ag-ui/types/file';
 
-const createFile = (type: AIFileType, name = `a.${type}`): AIFileInfo => ({
+const createFile = (type: string, name = `a.${type}`): AIFileInfo => ({
   name,
   outputId: '1',
   size: 1,
@@ -65,7 +64,7 @@ describe('use-artifact-preview-loader', () => {
   it('无取链能力时应为 empty', async () => {
     const { api, wrapper } = mountLoader({
       canResolve: false,
-      file: createFile(AIFileType.Pdf),
+      file: createFile('pdf'),
       resolveUrls: vi.fn(),
     });
 
@@ -79,7 +78,7 @@ describe('use-artifact-preview-loader', () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
     const { api, wrapper } = mountLoader({
-      file: createFile(AIFileType.Pdf),
+      file: createFile('pdf'),
       resolveUrls: vi.fn().mockResolvedValue({ preview_url: 'https://example.com/a.pdf' }),
     });
 
@@ -98,7 +97,7 @@ describe('use-artifact-preview-loader', () => {
       vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve('hello txt') }),
     );
     const { api, wrapper } = mountLoader({
-      file: createFile(AIFileType.Txt),
+      file: createFile('txt'),
       resolveUrls: vi.fn().mockResolvedValue({
         download_url: 'https://example.com/a.txt',
         preview_url: 'https://example.com/a.pdf',
@@ -120,7 +119,7 @@ describe('use-artifact-preview-loader', () => {
       vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve('# 标题') }),
     );
     const { api, wrapper } = mountLoader({
-      file: createFile(AIFileType.Markdown),
+      file: createFile('markdown'),
       resolveUrls: vi.fn().mockResolvedValue({ download_url: 'https://example.com/a.md' }),
     });
 
@@ -138,7 +137,7 @@ describe('use-artifact-preview-loader', () => {
       vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve('# md alias') }),
     );
     const { api, wrapper } = mountLoader({
-      file: createFile(AIFileType.Md, '说明.md'),
+      file: createFile('md', '说明.md'),
       resolveUrls: vi.fn().mockResolvedValue({ download_url: 'https://example.com/a.md' }),
     });
 
@@ -152,7 +151,7 @@ describe('use-artifact-preview-loader', () => {
 
   it('加载失败时应为 error', async () => {
     const { api, wrapper } = mountLoader({
-      file: createFile(AIFileType.Pdf),
+      file: createFile('pdf'),
       resolveUrls: vi.fn().mockRejectedValue(new Error('resolve failed')),
     });
 
@@ -164,7 +163,7 @@ describe('use-artifact-preview-loader', () => {
 
   it('缺 preview_url 时应为 empty', async () => {
     const { api, wrapper } = mountLoader({
-      file: createFile(AIFileType.Pdf),
+      file: createFile('pdf'),
       resolveUrls: vi.fn().mockResolvedValue({}),
     });
 
@@ -176,7 +175,7 @@ describe('use-artifact-preview-loader', () => {
 
   it('缺 download_url 的文本类文件时应为 empty', async () => {
     const { api, wrapper } = mountLoader({
-      file: createFile(AIFileType.Txt),
+      file: createFile('txt'),
       resolveUrls: vi.fn().mockResolvedValue({ preview_url: 'https://example.com/a.pdf' }),
     });
 
@@ -186,13 +185,13 @@ describe('use-artifact-preview-loader', () => {
     wrapper.unmount();
   });
 
-  it('json 应按 txt 直渲染', async () => {
+  it('json 应按 code 高亮渲染', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve('{"ok":true}') }),
     );
     const { api, wrapper } = mountLoader({
-      file: createFile(AIFileType.Json, 'a.json'),
+      file: createFile('json', 'a.json'),
       resolveUrls: vi.fn().mockResolvedValue({ download_url: 'https://example.com/a.json' }),
     });
 
@@ -200,12 +199,12 @@ describe('use-artifact-preview-loader', () => {
 
     expect(api.status.value).toBe('ready');
     expect(api.content.value).toBe('{"ok":true}');
-    expect(api.renderer.value).toBe('txt');
+    expect(api.renderer.value).toBe('code');
     wrapper.unmount();
   });
 
   it('load() 默认只向 resolveUrls 传 file', async () => {
-    const file = createFile(AIFileType.Pdf);
+    const file = createFile('pdf');
     const resolveUrls = vi.fn().mockResolvedValue({ preview_url: 'https://example.com/a.pdf' });
     const { api, wrapper } = mountLoader({ file, resolveUrls });
 
@@ -225,7 +224,7 @@ describe('use-artifact-preview-loader', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
     const { api, wrapper } = mountLoader({
-      file: createFile(AIFileType.Txt),
+      file: createFile('txt'),
       resolveUrls: vi.fn().mockResolvedValue({ download_url: 'https://example.com/a.txt' }),
     });
 
@@ -249,12 +248,12 @@ describe('use-artifact-preview-loader', () => {
       vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve('new content') }),
     );
     const { api, setFile, wrapper } = mountLoader({
-      file: createFile(AIFileType.Txt, 'a.txt'),
+      file: createFile('txt', 'a.txt'),
       resolveUrls,
     });
 
     const firstLoad = api.load();
-    setFile(createFile(AIFileType.Txt, 'b.txt'));
+    setFile(createFile('txt', 'b.txt'));
     await api.load();
     first.resolve({ download_url: 'https://example.com/a.txt' });
     await firstLoad;
@@ -267,7 +266,7 @@ describe('use-artifact-preview-loader', () => {
   it('清空文件后过期结果不应覆盖 empty 状态', async () => {
     const first = createDeferred<ArtifactUrlResult>();
     const { api, setFile, wrapper } = mountLoader({
-      file: createFile(AIFileType.Pdf),
+      file: createFile('pdf'),
       resolveUrls: vi.fn().mockReturnValue(first.promise),
     });
 

@@ -28,6 +28,7 @@ export * from './ai';
 export * from './content';
 export * from './execution';
 export * from './file';
+export * from './file-icons';
 export * from './image-preview';
 export * from './input';
 export * from './interrupt';

@@ -3,7 +3,6 @@ import { computed, defineComponent, h, ref } from 'vue';
 import { type VueWrapper, flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AIFileType } from '../../../../../ag-ui/types/file';
 import { ARTIFACT_PREVIEW_TOKEN } from '../../../../../composables/use-artifact-preview';
 import ArtifactPreviewHost from './artifact-preview-host.vue';
 
@@ -36,7 +35,7 @@ const createFile = (overrides: Partial<AIFileInfo> = {}): AIFileInfo => ({
   name: '项目立项书.pdf',
   outputId: 'output-1',
   size: 1024,
-  type: AIFileType.Pdf,
+  type: 'pdf',
   ...overrides,
 });
 
@@ -138,8 +137,8 @@ describe('ArtifactPreviewHost', () => {
       .mockResolvedValueOnce({ preview_url: 'https://example.com/a.pdf' })
       .mockResolvedValueOnce({ download_url: 'https://example.com/a.txt' });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve('txt') }));
-    const firstFile = createFile({ name: 'a.pdf', outputId: 'same', type: AIFileType.Pdf });
-    const secondFile = createFile({ name: 'a.txt', outputId: 'same', type: AIFileType.Txt });
+    const firstFile = createFile({ name: 'a.pdf', outputId: 'same', type: 'pdf' });
+    const secondFile = createFile({ name: 'a.txt', outputId: 'same', type: 'txt' });
     wrapper = mountHost(firstFile, createPreviewContext({ resolveArtifactUrls }));
     await flushPromises();
 
@@ -159,7 +158,7 @@ describe('ArtifactPreviewHost', () => {
       download_url: 'https://example.com/file.html',
     });
     wrapper = mountHost(
-      createFile({ name: 'file.html', type: AIFileType.Html }),
+      createFile({ name: 'file.html', type: 'html' }),
       createPreviewContext({ resolveArtifactUrls }),
     );
     await flushPromises();
@@ -175,7 +174,7 @@ describe('ArtifactPreviewHost', () => {
       download_url: 'https://example.com/file.txt',
     });
     wrapper = mountHost(
-      createFile({ name: 'file.txt', type: AIFileType.Txt }),
+      createFile({ name: 'file.txt', type: 'txt' }),
       createPreviewContext({ resolveArtifactUrls }),
     );
     await flushPromises();
@@ -184,26 +183,42 @@ describe('ArtifactPreviewHost', () => {
     expect(wrapper.find('.ai-artifact-txt-preview').text()).toBe('文本预览内容');
   });
 
-  it('json 文件应按 txt 直渲染下载内容', async () => {
+  it('代码类文件应按 highlight.js 高亮渲染下载内容', async () => {
     const fetchSpy = vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve('{"a":1}') });
     vi.stubGlobal('fetch', fetchSpy);
     const resolveArtifactUrls = vi.fn().mockResolvedValue({
       download_url: 'https://example.com/file.json',
     });
     wrapper = mountHost(
-      createFile({ name: 'file.json', type: AIFileType.Json }),
+      createFile({ name: 'file.json', type: 'json' }),
       createPreviewContext({ resolveArtifactUrls }),
     );
     await flushPromises();
 
     expect(fetchSpy).toHaveBeenCalledWith('https://example.com/file.json', expect.any(Object));
-    expect(wrapper.find('.ai-artifact-txt-preview').text()).toBe('{"a":1}');
+    const codePreview = wrapper.find('.ai-artifact-code-preview');
+    expect(codePreview.text()).toBe('{"a":1}');
+    // 命中 json 语法高亮，产出 hljs 语义标签
+    expect(codePreview.html()).toContain('hljs-attr');
+  });
+
+  it('图片文件应使用 preview_url 直出 img', async () => {
+    const resolveArtifactUrls = vi.fn().mockResolvedValue({
+      preview_url: 'https://example.com/shot.png',
+    });
+    wrapper = mountHost(
+      createFile({ name: 'shot.png', type: 'png' }),
+      createPreviewContext({ resolveArtifactUrls }),
+    );
+    await flushPromises();
+
+    expect(wrapper.find('.ai-artifact-image-preview img').attributes('src')).toBe('https://example.com/shot.png');
   });
 
   it('markdown 文件应将下载内容传给 MarkdownContent', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve('# 标题') }));
     wrapper = mountHost(
-      createFile({ name: 'file.md', type: AIFileType.Markdown }),
+      createFile({ name: 'file.md', type: 'markdown' }),
       createPreviewContext({ resolveArtifactUrls: vi.fn().mockResolvedValue({ download_url: 'https://example.com/file.md' }) }),
     );
     await flushPromises();
@@ -214,7 +229,7 @@ describe('ArtifactPreviewHost', () => {
   it('type 为 Md 时应将下载内容传给 MarkdownContent', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve('# Md 别名') }));
     wrapper = mountHost(
-      createFile({ name: '说明.md', type: AIFileType.Md }),
+      createFile({ name: '说明.md', type: 'md' }),
       createPreviewContext({ resolveArtifactUrls: vi.fn().mockResolvedValue({ download_url: 'https://example.com/file.md' }) }),
     );
     await flushPromises();

@@ -30,6 +30,11 @@
       v-else-if="renderer === 'html'"
       :content="content"
     />
+    <CodePreview
+      v-else-if="renderer === 'code'"
+      :content="content"
+      :extension="extension"
+    />
     <TxtPreview
       v-else-if="renderer === 'txt'"
       :content="content"
@@ -38,6 +43,11 @@
       v-else-if="renderer === 'markdown'"
       :content="content"
     />
+    <ImagePreview
+      v-else-if="renderer === 'image'"
+      :name="file?.name"
+      :url="previewUrl"
+    />
     <UrlIframePreview
       v-else
       :url="previewUrl"
@@ -45,14 +55,17 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { watch } from 'vue';
+  import { computed, watch } from 'vue';
 
   import { Button } from 'bkui-vue';
 
   import { useArtifactPreviewConsumer } from '../../../../../composables/use-artifact-preview';
   import { t } from '../../../../../lang/lang';
+  import { normalizeFileExtension } from '../../../../../utils/file-type';
   import MessageLoading from '../../../../message-loading/message-loading.vue';
+  import CodePreview from './renderers/code-preview.vue';
   import HtmlPreview from './renderers/html-preview.vue';
+  import ImagePreview from './renderers/image-preview.vue';
   import MarkdownPreview from './renderers/markdown-preview.vue';
   import TxtPreview from './renderers/txt-preview.vue';
   import UrlIframePreview from './renderers/url-iframe-preview.vue';
@@ -69,6 +82,8 @@
     resolveUrls: file => artifactPreview?.resolveArtifactUrls(file) ?? Promise.resolve({}),
   });
 
+  const extension = computed(() => normalizeFileExtension(props.file?.type, props.file?.name));
+
   // 以 outputId 为唯一键；同文件类型变更时也需重新加载预览策略
   watch(
     () => (props.file ? `${props.file.outputId}:${props.file.type}` : ''),
@@ -77,6 +92,9 @@
     },
     { immediate: true },
   );
+
+  // 供侧栏 header 复制按钮读取预览正文与状态
+  defineExpose({ content, renderer, status });
 </script>
 <style lang="scss">
   @use '../../../../../styles/variables.scss' as variables;

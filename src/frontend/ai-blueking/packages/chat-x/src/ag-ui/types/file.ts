@@ -24,17 +24,6 @@
  * IN THE SOFTWARE.
  */
 
-export enum AIFileType {
-  Html = 'html',
-  Jpg = 'jpg',
-  Json = 'json',
-  Markdown = 'markdown',
-  /** 后台扩展名别名，与 Markdown 等价 */
-  Md = 'md',
-  Pdf = 'pdf',
-  Txt = 'txt',
-}
-
 export type AIFileInfo = {
   /* 文件名称 */
   name: string;
@@ -42,8 +31,8 @@ export type AIFileInfo = {
   outputId: string;
   /* 文件大小 */
   size: number;
-  /* 文件类型 */
-  type: AIFileType;
+  /* 文件类型：扩展名（如 'pdf' / 'py'）或无扩展名文件名（如 'Dockerfile'），大小写不敏感 */
+  type: string;
 };
 
 /** 点击文件产物后异步获取的下载 / 预览地址（snake_case） */

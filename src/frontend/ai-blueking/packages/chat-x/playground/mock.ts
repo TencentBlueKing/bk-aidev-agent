@@ -35,7 +35,6 @@ import {
   type Shortcut,
   type UserMessage,
   AIBluekingIcon,
-  AIFileType,
   APPROVAL_STATUS,
   // CopyIcon,
   DeleteIcon,
@@ -295,43 +294,384 @@ export const MOCK_ARTIFACT_JSON_CONTENT = `{
 }
 `;
 
+/** py：代码高亮预览正文（hljs 直接识别 py 别名） */
+export const MOCK_ARTIFACT_PY_CONTENT = `"""告警收敛分析脚本：拉取近 7 天 P1 告警并按服务聚合输出 TOP 噪声源。"""
+
+from __future__ import annotations
+
+import logging
+from collections import Counter
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+
+from bkmonitor.client import MonitorClient
+
+logger = logging.getLogger(__name__)
+
+P1_LEVEL = 1
+NOISE_THRESHOLD = 20
+
+
+@dataclass(frozen=True)
+class AlertDigest:
+    service: str
+    total: int
+    recovered: int
+
+    @property
+    def recover_rate(self) -> float:
+        return self.recovered / self.total if self.total else 0.0
+
+
+def fetch_alerts(biz_id: int, days: int = 7) -> list[dict]:
+    """按业务拉取指定天数内的 P1 告警。"""
+    client = MonitorClient(biz_id=biz_id)
+    end = datetime.now()
+    start = end - timedelta(days=days)
+    return client.search_alert(
+        start_time=int(start.timestamp()),
+        end_time=int(end.timestamp()),
+        conditions=[{"key": "severity", "value": [P1_LEVEL]}],
+    )
+
+
+def summarize(alerts: list[dict]) -> list[AlertDigest]:
+    total = Counter(a["service"] for a in alerts)
+    recovered = Counter(a["service"] for a in alerts if a.get("status") == "RECOVERED")
+    digests = [AlertDigest(svc, cnt, recovered[svc]) for svc, cnt in total.items()]
+    return sorted(digests, key=lambda d: d.total, reverse=True)
+
+
+def main(biz_id: int = 2) -> None:
+    digests = summarize(fetch_alerts(biz_id))
+    for item in digests:
+        if item.total < NOISE_THRESHOLD:
+            continue
+        logger.warning(
+            "噪声服务 %s：共 %d 条，恢复率 %.1f%%",
+            item.service,
+            item.total,
+            item.recover_rate * 100,
+        )
+
+
+if __name__ == "__main__":
+    main()
+`;
+
+/** vue：SFC 源码，验证 vue → xml 的 hljs 语言映射 */
+export const MOCK_ARTIFACT_VUE_CONTENT = `<template>
+  <div class="alert-summary">
+    <h3 class="alert-summary-title">{{ title }}</h3>
+    <ul class="alert-summary-list">
+      <li
+        v-for="item in topServices"
+        :key="item.service"
+        class="alert-summary-item"
+        :class="{ 'is-noisy': item.total >= threshold }"
+      >
+        <span>{{ item.service }}</span>
+        <em>{{ item.total }}</em>
+      </li>
+    </ul>
+  </div>
+</template>
+
+<script setup lang="ts">
+  import { computed } from 'vue';
+
+  const props = withDefaults(
+    defineProps<{
+      digests: { service: string; total: number }[];
+      threshold?: number;
+      title?: string;
+    }>(),
+    { threshold: 20, title: 'P1 告警 TOP 服务' },
+  );
+
+  const topServices = computed(() => [...props.digests].sort((a, b) => b.total - a.total).slice(0, 5));
+</script>
+
+<style lang="scss">
+  .alert-summary {
+    padding: 12px 16px;
+    background: #fafbfd;
+    border-radius: 4px;
+
+    &-item.is-noisy em {
+      color: #ea3636;
+    }
+  }
+</style>
+`;
+
+/** yaml：部署与告警配置 */
+export const MOCK_ARTIFACT_YAML_CONTENT = `# 可观测 Agent 采集配置
+apiVersion: monitor.bk.tencent.com/v1
+kind: CollectConfig
+metadata:
+  name: aidev-agent-metrics
+  namespace: bk-monitor
+  labels:
+    app: aidev-agent
+    tier: backend
+spec:
+  interval: 60s
+  timeout: 10s
+  targets:
+    - job: aidev-agent
+      scheme: http
+      path: /metrics
+      ports: [8080, 8081]
+  relabel:
+    - source: __meta_kubernetes_pod_label_app
+      target: service
+  alerts:
+    - name: HighErrorRate
+      expr: rate(http_requests_total{code=~"5.."}[5m]) > 0.05
+      for: 3m
+      severity: 1
+      annotations:
+        summary: "错误率超过 5%，持续 3 分钟"
+        runbook: https://iwiki.woa.com/runbook/high-error-rate
+    - name: SlowP99
+      expr: histogram_quantile(0.99, rate(http_duration_bucket[5m])) > 1
+      for: 5m
+      severity: 2
+`;
+
+/** sql：慢查询分析 */
+export const MOCK_ARTIFACT_SQL_CONTENT = `-- 近 7 天各服务慢请求分布（P99 > 1s）
+-- 生成时间：2026-07-21，数据源：bk_observe.request_log
+
+WITH recent AS (
+  SELECT
+    service_name,
+    request_path,
+    duration_ms,
+    status_code,
+    created_at
+  FROM bk_observe.request_log
+  WHERE created_at >= NOW() - INTERVAL '7 days'
+    AND duration_ms IS NOT NULL
+)
+SELECT
+  service_name,
+  request_path,
+  COUNT(*)                                                   AS total,
+  ROUND(AVG(duration_ms), 2)                                 AS avg_ms,
+  PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY duration_ms)  AS p99_ms,
+  SUM(CASE WHEN status_code >= 500 THEN 1 ELSE 0 END)        AS error_count
+FROM recent
+GROUP BY service_name, request_path
+HAVING PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY duration_ms) > 1000
+ORDER BY p99_ms DESC
+LIMIT 50;
+`;
+
+/** Dockerfile：无扩展名文件，验证按文件名解析类型 */
+export const MOCK_ARTIFACT_DOCKERFILE_CONTENT = `# 可观测 Agent 运行镜像
+FROM python:3.11-slim AS builder
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+FROM python:3.11-slim
+
+LABEL maintainer="bk-observe@tencent.com"
+
+ENV PYTHONUNBUFFERED=1 \\
+    TZ=Asia/Shanghai \\
+    APP_ENV=prod
+
+WORKDIR /app
+
+COPY --from=builder /install /usr/local
+COPY . .
+
+RUN groupadd -r bkuser && useradd -r -g bkuser bkuser
+USER bkuser
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \\
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')"
+
+CMD ["python", "-m", "agent.server", "--port", "8080"]
+`;
+
+/** .gitignore：hljs 无对应语言，验证 plaintext 兜底 */
+export const MOCK_ARTIFACT_GITIGNORE_CONTENT = `# 依赖
+node_modules/
+__pycache__/
+*.egg-info/
+
+# 构建产物
+dist/
+build/
+.vitepress/cache/
+.vitepress/dist/
+
+# 环境与密钥
+.env
+.env.local
+*.pem
+*.key
+
+# 日志与临时文件
+*.log
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+`;
+
+/** rst：纯文本渲染，hljs 不支持该格式 */
+export const MOCK_ARTIFACT_RST_CONTENT = `文件产物预览接入说明
+====================
+
+:作者: 可观测前端小组
+:更新: 2026-07-28
+
+概述
+----
+
+Agent 产出文件时，流式消息仅携带元信息（\`\`name\`\` / \`\`outputId\`\` / \`\`size\`\` / \`\`type\`\`），
+真实的下载与预览链接由前端在用户点击时通过 \`\`onArtifactClick\`\` 异步获取。
+
+接入步骤
+--------
+
+1. 给 \`\`ChatContainer\`\` 传入 \`\`onArtifactClick\`\`；
+2. 回调内按 \`\`outputId\`\` 换取 \`\`download_url\`\` / \`\`preview_url\`\`；
+3. 链接建议带短时效签名，避免直链泄露。
+
+注意事项
+--------
+
+* 切换文件时前端会中断上一次请求，回调需支持被丢弃的结果；
+* 未识别的扩展名统一走 \`\`preview_url\`\`，后台需保证可转换为 PDF。
+`;
+
+/** 覆盖各文件分类与图标的扩展样例：code / text / image / binary / 未登记类型 */
+const MOCK_EXTENDED_ARTIFACTS: AIFileInfo[] = [
+  {
+    name: '告警收敛分析.py',
+    outputId: 'artifact-py',
+    size: MOCK_ARTIFACT_PY_CONTENT.length,
+    type: 'py',
+  },
+  {
+    name: 'alert-summary.vue',
+    outputId: 'artifact-vue',
+    size: MOCK_ARTIFACT_VUE_CONTENT.length,
+    type: 'vue',
+  },
+  {
+    name: 'collect-config.yaml',
+    outputId: 'artifact-yaml',
+    size: MOCK_ARTIFACT_YAML_CONTENT.length,
+    type: 'yaml',
+  },
+  {
+    name: '慢请求分布查询.sql',
+    outputId: 'artifact-sql',
+    size: MOCK_ARTIFACT_SQL_CONTENT.length,
+    type: 'sql',
+  },
+  // 无扩展名文件：type 直接给文件名，解析时大小写不敏感
+  {
+    name: 'Dockerfile',
+    outputId: 'artifact-dockerfile',
+    size: MOCK_ARTIFACT_DOCKERFILE_CONTENT.length,
+    type: 'Dockerfile',
+  },
+  // 点号开头的隐藏文件：hljs 无对应语言，预期按 plaintext 转义输出
+  {
+    name: '.gitignore',
+    outputId: 'artifact-gitignore',
+    size: MOCK_ARTIFACT_GITIGNORE_CONTENT.length,
+    type: 'gitignore',
+  },
+  {
+    name: '文件产物接入说明.rst',
+    outputId: 'artifact-rst',
+    size: MOCK_ARTIFACT_RST_CONTENT.length,
+    type: 'rst',
+  },
+  {
+    name: '告警趋势截图.png',
+    outputId: 'artifact-png',
+    size: 524_288,
+    type: 'png',
+  },
+  {
+    name: '监控方案评审材料.docx',
+    outputId: 'artifact-docx',
+    size: 163_840,
+    type: 'docx',
+  },
+  {
+    name: '容量规划测算表.xlsx',
+    outputId: 'artifact-xlsx',
+    size: 98_304,
+    type: 'xlsx',
+  },
+  {
+    name: '季度汇报.pptx',
+    outputId: 'artifact-pptx',
+    size: 2_097_152,
+    type: 'pptx',
+  },
+  // 未登记扩展名：预期落 unknown 图标 + preview_url iframe 兜底
+  {
+    name: '巡检原始数据包.zip',
+    outputId: 'artifact-zip',
+    size: 5_242_880,
+    type: 'zip',
+  },
+];
+
 export const MOCK_FILE_ARTIFACTS: AIFileInfo[] = [
   {
     name: '可观测平台立项说明书.pdf',
     outputId: 'artifact-pdf',
     size: 245_760,
-    type: AIFileType.Pdf,
+    type: 'pdf',
   },
   {
     name: '文件产物预览-系统配置说明.md',
     outputId: 'artifact-markdown',
     size: MOCK_ARTIFACT_MARKDOWN_CONTENT.length,
-    type: AIFileType.Markdown,
+    type: 'markdown',
   },
   {
     name: '告警策略配置.json',
     outputId: 'artifact-json',
     size: MOCK_ARTIFACT_JSON_CONTENT.length,
-    type: AIFileType.Json,
+    type: 'json',
   },
   {
     name: '机房巡检现场照片.jpg',
     outputId: 'artifact-jpg',
     size: 1_048_576,
-    type: AIFileType.Jpg,
+    type: 'jpg',
   },
   {
     name: '监控大盘周报.html',
     outputId: 'artifact-html',
     size: MOCK_ARTIFACT_HTML_CONTENT.length,
-    type: AIFileType.Html,
+    type: 'html',
   },
   {
     name: '周例会纪要-0721.txt',
     outputId: 'artifact-txt',
     size: MOCK_ARTIFACT_TXT_CONTENT.length,
-    type: AIFileType.Txt,
+    type: 'txt',
   },
+  ...MOCK_EXTENDED_ARTIFACTS,
 ];
 
 type MockArtifactUrl = {
@@ -339,20 +679,44 @@ type MockArtifactUrl = {
   preview_url?: string;
 };
 
-/** 仅 iframe 类型需要的静态 preview_url；文本类 download_url 运行时用 Blob 生成 */
+/** 后台转码后的统一 PDF 预览地址，binary 类文件共用 */
+const MOCK_PDF_PREVIEW_URL = 'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf';
+
+/** 图片与 binary 类型需要的静态 URL；文本类 download_url 运行时用 Blob 生成 */
 const MOCK_ARTIFACT_STATIC_URL: Record<string, MockArtifactUrl> = {
   'artifact-pdf': {
     download_url: 'https://example.com/download/observe-project.pdf',
-    preview_url: 'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf',
+    preview_url: MOCK_PDF_PREVIEW_URL,
   },
   'artifact-json': {},
+  // 图片类走 <img src=preview_url>，preview_url 必须是真实图片而非转码 PDF
   'artifact-jpg': {
     download_url: 'https://picsum.photos/seed/bk-observe/1200/800.jpg',
-    preview_url: 'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf',
+    preview_url: 'https://picsum.photos/seed/bk-observe/1200/800.jpg',
+  },
+  'artifact-png': {
+    download_url: 'https://picsum.photos/seed/bk-alert-trend/1440/900',
+    preview_url: 'https://picsum.photos/seed/bk-alert-trend/1440/900',
   },
   'artifact-markdown': {},
   'artifact-html': {},
   'artifact-txt': {},
+  'artifact-docx': {
+    download_url: 'https://example.com/download/monitor-review.docx',
+    preview_url: MOCK_PDF_PREVIEW_URL,
+  },
+  'artifact-xlsx': {
+    download_url: 'https://example.com/download/capacity-plan.xlsx',
+    preview_url: MOCK_PDF_PREVIEW_URL,
+  },
+  'artifact-pptx': {
+    download_url: 'https://example.com/download/quarterly-report.pptx',
+    preview_url: MOCK_PDF_PREVIEW_URL,
+  },
+  'artifact-zip': {
+    download_url: 'https://example.com/download/inspection-raw.zip',
+    preview_url: MOCK_PDF_PREVIEW_URL,
+  },
 };
 
 const MOCK_TEXT_ARTIFACT_BODY: Record<string, { body: string; mime: string }> = {
@@ -360,6 +724,13 @@ const MOCK_TEXT_ARTIFACT_BODY: Record<string, { body: string; mime: string }> = 
   'artifact-json': { body: MOCK_ARTIFACT_JSON_CONTENT, mime: 'application/json' },
   'artifact-markdown': { body: MOCK_ARTIFACT_MARKDOWN_CONTENT, mime: 'text/markdown' },
   'artifact-txt': { body: MOCK_ARTIFACT_TXT_CONTENT, mime: 'text/plain' },
+  'artifact-py': { body: MOCK_ARTIFACT_PY_CONTENT, mime: 'text/x-python' },
+  'artifact-vue': { body: MOCK_ARTIFACT_VUE_CONTENT, mime: 'text/plain' },
+  'artifact-yaml': { body: MOCK_ARTIFACT_YAML_CONTENT, mime: 'text/yaml' },
+  'artifact-sql': { body: MOCK_ARTIFACT_SQL_CONTENT, mime: 'application/sql' },
+  'artifact-dockerfile': { body: MOCK_ARTIFACT_DOCKERFILE_CONTENT, mime: 'text/plain' },
+  'artifact-gitignore': { body: MOCK_ARTIFACT_GITIGNORE_CONTENT, mime: 'text/plain' },
+  'artifact-rst': { body: MOCK_ARTIFACT_RST_CONTENT, mime: 'text/plain' },
 };
 
 /** 缓存 Blob URL，避免重复 createObjectURL */
@@ -409,16 +780,19 @@ const MOCK_ARTIFACTS_ROUND2: AIFileInfo[] = [
     name: '可观测平台立项说明书-v2.pdf',
     outputId: 'artifact-pdf',
     size: 312_320,
-    type: AIFileType.Pdf,
+    type: 'pdf',
   },
   MOCK_FILE_ARTIFACTS[4], // artifact-html
   {
     name: '周例会纪要-0721-修订.txt',
     outputId: 'artifact-txt',
     size: MOCK_ARTIFACT_TXT_CONTENT.length + 32,
-    type: AIFileType.Txt,
+    type: 'txt',
   },
 ];
+
+/** 第三轮产物：全类型样例，用于验证图标映射与各分类的预览渲染 */
+const MOCK_ARTIFACTS_ROUND3: AIFileInfo[] = MOCK_EXTENDED_ARTIFACTS;
 
 // 带文件产物的会话消息，用于 playground 调试 artifacts 展示与 outputId 去重
 export const MOCK_ARTIFACTS_MESSAGES = [
@@ -463,6 +837,28 @@ export const MOCK_ARTIFACTS_MESSAGES = [
     uid: 'mock-artifacts-assistant-2',
     property: {
       artifacts: MOCK_ARTIFACTS_ROUND2,
+    },
+  },
+  {
+    id: 'mock-artifacts-user-3',
+    role: MessageRole.User,
+    content: '把配套的脚本、配置和汇报材料也一起产出来，各种格式都要。',
+    name: 'user',
+    status: MessageStatus.Complete,
+    messageId: 'mock-artifacts-user-3',
+    uid: 'mock-artifacts-user-3',
+  },
+  {
+    id: 'mock-artifacts-assistant-3',
+    role: MessageRole.Assistant,
+    content:
+      '已产出全套材料：代码类（py / vue / yaml / sql / Dockerfile / .gitignore）走高亮预览，rst 走纯文本，png 直出图片，docx / xlsx / pptx 与未知格式 zip 走后台转码预览。',
+    name: 'react_agent',
+    status: MessageStatus.Complete,
+    messageId: 'mock-artifacts-assistant-3',
+    uid: 'mock-artifacts-assistant-3',
+    property: {
+      artifacts: MOCK_ARTIFACTS_ROUND3,
     },
   },
 ] as Message[];

@@ -25,45 +25,77 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { AIFileType } from '../../../../../ag-ui/types/file';
 import { getArtifactPreviewStrategy } from './preview-strategy';
 
 describe('preview-strategy', () => {
-  it('Html/Txt/Markdown/Json 应走 text_from_download 且 renderer 对应类型', () => {
-    expect(getArtifactPreviewStrategy(AIFileType.Html)).toEqual({
+  it('html 应走 text_from_download 并用 iframe srcdoc 直渲染', () => {
+    expect(getArtifactPreviewStrategy('html')).toEqual({
       load: 'text_from_download',
       renderer: 'html',
     });
-    expect(getArtifactPreviewStrategy(AIFileType.Txt)).toEqual({
+    expect(getArtifactPreviewStrategy('htm')).toEqual({
       load: 'text_from_download',
-      renderer: 'txt',
+      renderer: 'html',
     });
-    expect(getArtifactPreviewStrategy(AIFileType.Markdown)).toEqual({
+  });
+
+  it('md / markdown 等价，均走 markdown 直渲染', () => {
+    expect(getArtifactPreviewStrategy('md')).toEqual({
       load: 'text_from_download',
       renderer: 'markdown',
     });
-    // Json 与 Txt 相同：纯文本预览
-    expect(getArtifactPreviewStrategy(AIFileType.Json)).toEqual({
+    expect(getArtifactPreviewStrategy('markdown')).toEqual({
+      load: 'text_from_download',
+      renderer: 'markdown',
+    });
+  });
+
+  it('纯文本类型走 txt 渲染器', () => {
+    expect(getArtifactPreviewStrategy('txt')).toEqual({
+      load: 'text_from_download',
+      renderer: 'txt',
+    });
+    expect(getArtifactPreviewStrategy('rst')).toEqual({
       load: 'text_from_download',
       renderer: 'txt',
     });
   });
 
-  it('Pdf/Jpg 应走 preview_url_iframe', () => {
-    expect(getArtifactPreviewStrategy(AIFileType.Pdf)).toEqual({
-      load: 'preview_url_iframe',
-      renderer: 'urlIframe',
-    });
-    expect(getArtifactPreviewStrategy(AIFileType.Jpg)).toEqual({
-      load: 'preview_url_iframe',
-      renderer: 'urlIframe',
-    });
+  it('源码与配置类型统一走 code 高亮渲染', () => {
+    for (const type of ['py', 'ts', 'tsx', 'go', 'json', 'yaml', 'sql', 'Dockerfile', 'Makefile', '.gitignore']) {
+      expect(getArtifactPreviewStrategy(type)).toEqual({
+        load: 'text_from_download',
+        renderer: 'code',
+      });
+    }
   });
 
-  it('Md 应走 markdown 直渲染', () => {
-    expect(getArtifactPreviewStrategy(AIFileType.Md)).toEqual({
+  it('图片类型走 preview_url 直出 img', () => {
+    for (const type of ['png', 'jpg', 'jpeg', 'svg']) {
+      expect(getArtifactPreviewStrategy(type)).toEqual({
+        load: 'preview_url',
+        renderer: 'image',
+      });
+    }
+  });
+
+  it('二进制文档与未知类型统一走 preview_url iframe', () => {
+    for (const type of ['pdf', 'docx', 'xlsx', 'pptx', 'csv', 'unknown-ext']) {
+      expect(getArtifactPreviewStrategy(type)).toEqual({
+        load: 'preview_url',
+        renderer: 'urlIframe',
+      });
+    }
+  });
+
+  it('type 缺省时回退文件名推断', () => {
+    expect(getArtifactPreviewStrategy(undefined, 'main.py')).toEqual({
       load: 'text_from_download',
-      renderer: 'markdown',
+      renderer: 'code',
+    });
+    expect(getArtifactPreviewStrategy('', '报告.PDF')).toEqual({
+      load: 'preview_url',
+      renderer: 'urlIframe',
     });
   });
 });

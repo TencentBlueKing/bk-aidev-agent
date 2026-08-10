@@ -72,7 +72,7 @@ export const useArtifactPreviewLoader = (options: {
     status.value = 'loading';
     resetPayload();
 
-    const strategy = getArtifactPreviewStrategy(file.type);
+    const strategy = getArtifactPreviewStrategy(file.type, file.name);
     renderer.value = strategy.renderer;
 
     try {

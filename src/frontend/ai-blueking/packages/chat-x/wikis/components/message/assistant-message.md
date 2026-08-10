@@ -626,14 +626,18 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
 
 `AIFileInfo` 仅含元信息（`name` / `outputId` / `size` / `type`）；`download_url` / `preview_url` 由容器 `onArtifactClick` 异步获取。命中唯一文件依赖 `messageUid = uid ?? String(id)` + 卡片下标 + `outputId`。
 
-侧栏预览由面板内 `ArtifactPreviewHost` 按类型分派（详见面板文档「预览机制」）：
+侧栏预览由面板内 `ArtifactPreviewHost` 按**文件分类**分派（详见面板文档「预览机制」）：
 
-| type | 预览依赖 | 渲染 |
-| ---- | -------- | ---- |
-| `html` / `markdown` / `md` / `txt` / `json` | `download_url` | 正文直渲染（srcdoc / MarkdownContent / `<pre>`） |
-| `pdf` / `jpg` 等 | `preview_url` | iframe（一般为后台转好的 PDF） |
+| 分类 | 典型 type | 预览依赖 | 渲染 |
+| ---- | --------- | -------- | ---- |
+| 源码 / 配置 | `py` / `ts` / `json` / `yaml` / `Dockerfile` | `download_url` | highlight.js 高亮 |
+| Markdown | `md` / `markdown` | `download_url` | MarkdownContent 富文本 |
+| HTML | `html` / `htm` | `download_url` | `<iframe srcdoc>` 真实渲染 |
+| 纯文本 | `txt` / `rst` | `download_url` | `<pre>` |
+| 图片 | `png` / `jpg` / `svg` | `preview_url` | `<img>` |
+| 其余（含未知类型） | `pdf` / `docx` / `xlsx` | `preview_url` | iframe（一般为后台转好的 PDF） |
 
-`md` 与 `markdown` 等价（见 `AIFileType.Md` / `AIFileType.Markdown`）。预览重载、重试与取链约定见 [FileArtifactPanel 预览机制](/components/message/file-artifact-panel#预览机制)。
+`type` 为扩展名字符串（大小写不敏感），缺省时回退文件名推断；`md` 与 `markdown` 等价。预览重载、重试与取链约定见 [FileArtifactPanel 预览机制](/components/message/file-artifact-panel#预览机制)。
 
 ```vue
 <template>

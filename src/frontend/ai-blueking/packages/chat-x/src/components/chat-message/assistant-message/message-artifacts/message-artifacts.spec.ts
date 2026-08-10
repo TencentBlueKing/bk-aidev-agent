@@ -27,7 +27,6 @@
 import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AIFileType } from '../../../../ag-ui/types/file';
 import ArtifactFileCard from './artifact-file-card.vue';
 import MessageArtifacts from './message-artifacts.vue';
 
@@ -46,7 +45,7 @@ const createFile = (overrides: Partial<AIFileInfo> = {}): AIFileInfo => ({
   name: 'file.pdf',
   outputId: 'output-1',
   size: 1024,
-  type: AIFileType.Pdf,
+  type: 'pdf',
   ...overrides,
 });
 
@@ -64,8 +63,8 @@ describe('MessageArtifacts', () => {
   it('应该按 artifacts 数量渲染文件卡片', () => {
     const artifacts = [
       createFile({ outputId: 'a', name: '文档.pdf' }),
-      createFile({ outputId: 'b', name: '图片.jpg', type: AIFileType.Jpg }),
-      createFile({ outputId: 'c', name: '网页.html', type: AIFileType.Html }),
+      createFile({ outputId: 'b', name: '图片.jpg', type: 'jpg' }),
+      createFile({ outputId: 'c', name: '网页.html', type: 'html' }),
     ];
 
     wrapper = mount(MessageArtifacts, { props: { artifacts } });

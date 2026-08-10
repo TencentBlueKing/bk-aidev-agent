@@ -6,8 +6,9 @@ domain: message
 description: 汇总当前会话全部文件产物，支持搜索、选中与分类型预览，挂载在 ChatContainer 侧栏「文件产物」Tab。
 aiSummary: >
   汇总当前会话所有 AssistantMessage 的 artifacts（按 outputId 去重），支持关键词搜索、列表选中与下载；
-  预览区委托 ArtifactPreviewHost：按类型走 text_from_download（html / markdown / md / txt / json）
-  或 preview_url_iframe（其余类型）；download_url / preview_url 经 onArtifactClick 每次异步获取（无 URL 缓存，并发去重）；
+  预览区委托 ArtifactPreviewHost：由 resolveFileKind 把扩展名归入 code / markdown / html / text / image / binary 六类，
+  前四类走 text_from_download 拉正文（code 交给 highlight.js 高亮），image / binary 走 preview_url；
+  download_url / preview_url 经 onArtifactClick 每次异步获取（无 URL 缓存，并发去重）；
   预览重载键为 outputId:type；重试再次调用 load() 重新取链。
   源码位置：src/components/chat-message/assistant-message/message-artifacts/file-artifact-panel.vue。
 relatedComponents:
@@ -225,16 +226,25 @@ sessionArtifacts 有产物时
 
 ## 预览机制
 
-预览由内部 `getArtifactPreviewStrategy(type)` 决定 **加载方式** 与 **渲染器**；面板不直接写死类型分支。
+预览分两步：先由 `resolveFileKind(type, name)`（`src/utils/file-type.ts`）把扩展名归入六个**分类**，再由 `getArtifactPreviewStrategy` 查表得到 **加载方式** 与 **渲染器**。面板与 Host 都不写死具体扩展名分支，后台新增文件类型时只需在分类表里补一行。
 
-| 文件类型 | load | 取链字段 | renderer |
-| -------- | ---- | -------- | -------- |
-| `html` | `text_from_download` | `download_url` → `fetch` 正文 | `HtmlPreview`（`<iframe srcdoc>`） |
-| `markdown` / `md` | `text_from_download` | 同上 | `MarkdownPreview`（`MarkdownContent`） |
-| `txt` / `json` | `text_from_download` | 同上 | `TxtPreview`（`<pre>`） |
-| 其余（如 `pdf` / `jpg`） | `preview_url_iframe` | `preview_url` | `UrlIframePreview`（`<iframe src>`，一般为后台转好的 PDF） |
+| 分类 | 覆盖扩展名 | load | 取链字段 | renderer |
+| ---- | ---------- | ---- | -------- | -------- |
+| `code` | `py` `js` `mjs` `cjs` `ts` `tsx` `jsx` `vue` `go` `rs` `rb` `java` `kt` `swift` `c` `h` `cpp` `hpp` `cs` `php` `lua` `r` `scala` `dart` `sh` `bash` `zsh` `ps1` `sql` `css` `scss` `less` `json` `jsonc` `yaml` `yml` `toml` `ini` `cfg` `conf` `env` `xml` `tex` `Dockerfile` `Makefile` `gitignore` `dockerignore` `editorconfig` | `text_from_download` | `download_url` → `fetch` 正文 | `CodePreview`（highlight.js 高亮） |
+| `markdown` | `md` `markdown` | `text_from_download` | 同上 | `MarkdownPreview`（`MarkdownContent`） |
+| `html` | `html` `htm` | `text_from_download` | 同上 | `HtmlPreview`（`<iframe srcdoc>`） |
+| `text` | `txt` `rst` | `text_from_download` | 同上 | `TxtPreview`（`<pre>`） |
+| `image` | `png` `jpg` `jpeg` `svg` | `preview_url` | `preview_url` | `ImagePreview`（`<img>`，`object-fit: contain`） |
+| `binary` | `pdf` `docx` `xlsx` `xlsm` `xls` `pptx` `csv` `tsv`，以及**所有未登记的扩展名** | `preview_url` | `preview_url` | `UrlIframePreview`（`<iframe src>`，一般为后台转好的 PDF） |
 
-> `md`（`AIFileType.Md`）为后台扩展名别名，与 `markdown`（`AIFileType.Markdown`）等价，共用 Markdown 直渲染。
+关于类型解析：
+
+- `AIFileInfo.type` 为**扩展名字符串**（如 `'pdf'` / `'py'`）或无扩展名的文件名（如 `'Dockerfile'`），大小写不敏感
+- `type` 缺省时回退 `name` 推断；`报告.final.xlsx` 取 `xlsx`，`.gitignore` 取 `gitignore`
+- `md` 为后台扩展名别名，与 `markdown` 等价，共用 Markdown 直渲染
+- 未登记的扩展名一律落入 `binary` 走后台预览，前端不会因为新类型报错
+
+`CodePreview` 的语言由扩展名映射到 highlight.js（`vue → xml`、`tsx → typescript`、`env / cfg / conf → ini` 等，其余交给 hljs 自身别名表，识别不了则按 `plaintext` 转义输出）。单文件超过 300KB 时跳过高亮直接转义，避免同步解析阻塞主线程。
 
 ### 加载态
 
@@ -261,14 +271,18 @@ message-artifacts/
 ├── file-artifact-panel.vue          # 列表 + 下载头 + 挂载 Host
 └── artifact-preview/
     ├── artifact-preview-host.vue    # 状态机 UI + 分派 renderer
-    ├── preview-strategy.ts          # getArtifactPreviewStrategy
+    ├── preview-strategy.ts          # getArtifactPreviewStrategy（分类 → 策略查表）
     ├── use-artifact-preview-loader.ts
     └── renderers/
+        ├── code-preview.vue
         ├── html-preview.vue
+        ├── image-preview.vue
         ├── markdown-preview.vue
         ├── txt-preview.vue
         └── url-iframe-preview.vue
 ```
+
+分类表与扩展名归一化在 `src/utils/file-type.ts`（导出 `AIFileKind` / `resolveFileKind` / `normalizeFileExtension`），与[文件图标](/components/helper/file-icon)共用同一份解析入口。
 
 ## API
 
@@ -301,9 +315,12 @@ type AIFileInfo = {
   name: string;
   outputId: string;
   size: number;
-  type: AIFileType;
+  /** 扩展名（如 'pdf' / 'py'）或无扩展名文件名（如 'Dockerfile'），大小写不敏感 */
+  type: string;
 };
 ```
+
+> **破坏性变更**：原 `AIFileType` 枚举已移除，`AIFileInfo.type` 改为 `string`。此前写 `type: AIFileType.Pdf` 的代码改为 `type: 'pdf'` 即可；枚举成员的值与新字符串一一对应，运行时数据无需迁移。
 
 ## 关联 Composable
 

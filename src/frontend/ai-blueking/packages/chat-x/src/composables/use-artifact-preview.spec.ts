@@ -29,7 +29,6 @@ import { defineComponent, h } from 'vue';
 import { mount } from '@vue/test-utils';
 import { describe, expect, it, vi } from 'vitest';
 
-import { AIFileType } from '../ag-ui/types/file';
 import { useArtifactPreviewConsumer, useArtifactPreviewProvider } from './use-artifact-preview';
 
 import type { AIFileInfo, OnArtifactClick } from '../ag-ui/types/file';
@@ -38,7 +37,7 @@ const createFile = (overrides: Partial<AIFileInfo> = {}): AIFileInfo => ({
   name: 'file.pdf',
   outputId: 'output-1',
   size: 1024,
-  type: AIFileType.Pdf,
+  type: 'pdf',
   ...overrides,
 });
 

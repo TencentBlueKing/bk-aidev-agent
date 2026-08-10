@@ -29,7 +29,6 @@ import { computed, ref } from 'vue';
 import { type VueWrapper, flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AIFileType } from '../../../../ag-ui/types/file';
 import { ARTIFACT_PREVIEW_TOKEN } from '../../../../composables/use-artifact-preview';
 import ArtifactFileCard from './artifact-file-card.vue';
 
@@ -55,7 +54,7 @@ const createFile = (overrides: Partial<AIFileInfo> = {}): AIFileInfo => ({
   name: '运维操作指引文档.doc',
   outputId: 'output-1',
   size: 1024,
-  type: AIFileType.Pdf,
+  type: 'pdf',
   ...overrides,
 });
 

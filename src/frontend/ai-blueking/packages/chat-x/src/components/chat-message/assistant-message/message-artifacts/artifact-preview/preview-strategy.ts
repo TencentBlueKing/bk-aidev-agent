@@ -23,30 +23,27 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { AIFileType } from '../../../../../ag-ui/types/file';
+import { type AIFileKind, resolveFileKind } from '../../../../../utils/file-type';
 
-export type ArtifactPreviewLoadStrategy = 'preview_url_iframe' | 'text_from_download';
+export type ArtifactPreviewLoadStrategy = 'preview_url' | 'text_from_download';
 
-export type ArtifactPreviewRendererKind = 'html' | 'markdown' | 'txt' | 'urlIframe';
+export type ArtifactPreviewRendererKind = 'code' | 'html' | 'image' | 'markdown' | 'txt' | 'urlIframe';
 
 export type ArtifactPreviewStrategy = {
   load: ArtifactPreviewLoadStrategy;
   renderer: ArtifactPreviewRendererKind;
 };
 
-const TEXT_RENDERER_MAP: Partial<Record<AIFileType, ArtifactPreviewRendererKind>> = {
-  [AIFileType.Html]: 'html',
-  [AIFileType.Json]: 'txt',
-  [AIFileType.Md]: 'markdown',
-  [AIFileType.Markdown]: 'markdown',
-  [AIFileType.Txt]: 'txt',
+/** 文件分类 → 预览策略；前端可解析的走下载取文本，其余交给后端 preview_url */
+const KIND_STRATEGY_MAP: Record<AIFileKind, ArtifactPreviewStrategy> = {
+  binary: { load: 'preview_url', renderer: 'urlIframe' },
+  code: { load: 'text_from_download', renderer: 'code' },
+  html: { load: 'text_from_download', renderer: 'html' },
+  image: { load: 'preview_url', renderer: 'image' },
+  markdown: { load: 'text_from_download', renderer: 'markdown' },
+  text: { load: 'text_from_download', renderer: 'txt' },
 };
 
-/** 按文件类型解析预览加载策略与渲染器；未单独注册的类型默认 preview_url iframe */
-export const getArtifactPreviewStrategy = (type: AIFileType): ArtifactPreviewStrategy => {
-  const textRenderer = TEXT_RENDERER_MAP[type];
-  if (textRenderer) {
-    return { load: 'text_from_download', renderer: textRenderer };
-  }
-  return { load: 'preview_url_iframe', renderer: 'urlIframe' };
-};
+/** 按文件类型解析预览加载策略与渲染器；未登记的类型默认 preview_url iframe */
+export const getArtifactPreviewStrategy = (type?: string, name?: string): ArtifactPreviewStrategy =>
+  KIND_STRATEGY_MAP[resolveFileKind(type, name)];

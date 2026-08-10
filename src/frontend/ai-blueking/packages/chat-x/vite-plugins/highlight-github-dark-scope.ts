@@ -29,10 +29,10 @@ import postcss from 'postcss';
 import type { AtRule, Container, Document, Rule } from 'postcss';
 import type { Plugin } from 'vite';
 
-/** 与 Markdown 消息体容器 class 对齐，hljs 主题仅在此树下生效 */
-export const HIGHLIGHT_GITHUB_DARK_SCOPE_CLASS = 'ai-message-container';
+/** hljs 主题仅在这些容器树下生效：消息体、文件产物预览区 */
+export const HIGHLIGHT_GITHUB_DARK_SCOPE_CLASSES = ['ai-message-container', 'ai-artifact-preview-host'];
 
-const DEFAULT_SCOPE = `.${HIGHLIGHT_GITHUB_DARK_SCOPE_CLASS}`;
+const DEFAULT_SCOPES = HIGHLIGHT_GITHUB_DARK_SCOPE_CLASSES.map(name => `.${name}`);
 
 /** 跳过 @keyframes 内的 from/to/百分比选择器，避免生成非法 CSS */
 const isInsideKeyframes = (rule: Rule): boolean => {
@@ -49,14 +49,14 @@ const isInsideKeyframes = (rule: Rule): boolean => {
 
 /**
  * 在构建时处理 `highlight.js/styles/github-dark.css`：
- * 为每条规则的选择器增加前置 scope（默认 `.ai-assistant-message`），
- * 将主题限制在助手消息区域内，减少对宿主页面全局样式的污染。
+ * 为每条规则的选择器增加前置 scope，
+ * 将主题限制在指定容器内，减少对宿主页面全局样式的污染。
  */
 export const vitePluginHighlightGithubDarkScope = (options?: {
-  /** 默认 `.ai-assistant-message` */
-  scopeSelector?: string;
+  /** 默认 `.ai-message-container` 与 `.ai-artifact-preview-host` */
+  scopeSelectors?: string[];
 }): Plugin => {
-  const scope = options?.scopeSelector ?? DEFAULT_SCOPE;
+  const scopes = options?.scopeSelectors?.length ? options.scopeSelectors : DEFAULT_SCOPES;
 
   return {
     name: 'vite-plugin-highlight-github-dark-scope',
@@ -79,7 +79,7 @@ export const vitePluginHighlightGithubDarkScope = (options?: {
         if (!parts.length) {
           return;
         }
-        rule.selector = parts.map(part => `${scope} ${part.trim()}`).join(', ');
+        rule.selector = parts.flatMap(part => scopes.map(scope => `${scope} ${part.trim()}`)).join(', ');
       });
 
       return {

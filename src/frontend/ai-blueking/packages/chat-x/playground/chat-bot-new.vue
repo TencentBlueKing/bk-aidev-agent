@@ -32,7 +32,7 @@
       placement="left"
       :prompts="MOCK_PROMPTS"
       :resize-props="{
-        initialDivide: '33.33%',
+        initialDivide: 800,
       }"
       :resources="MOCK_RESOURCES"
       :shortcuts="shortcuts"

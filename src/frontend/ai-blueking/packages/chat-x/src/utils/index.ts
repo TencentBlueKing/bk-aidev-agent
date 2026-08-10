@@ -25,6 +25,7 @@
  */
 
 export * from './file';
+export * from './file-type';
 export * from './markdown-completer';
 export { completeMarkdownSyntax } from './stream-markdown-completer';
 export * from './utils';

@@ -34,9 +34,11 @@
       <template v-if="activeArtifact">
         <div class="ai-file-artifact-panel-preview-header">
           <div class="ai-file-artifact-panel-preview-header-info">
-            <span class="ai-file-artifact-panel-preview-header-icon">
-              <component :is="getFileIcon(activeArtifact.type)" />
-            </span>
+            <FileIcon
+              class="ai-file-artifact-panel-preview-header-icon"
+              :file-name="activeArtifact.name"
+              :file-type="activeArtifact.type"
+            />
             <span
               v-overflow-tips="{ text: activeArtifact.name, placement: 'top' as const }"
               class="ai-file-artifact-panel-preview-header-name"
@@ -44,45 +46,70 @@
               {{ activeArtifact.name }}
             </span>
           </div>
-          <span
-            v-if="canResolveArtifactUrl"
-            class="ai-file-artifact-panel-preview-header-download"
-            :class="{ 'is-loading': downloadLoading }"
-            @click="handleDownload(activeArtifact)"
-          >
-            <Loading
-              v-if="downloadLoading"
-              mode="spin"
-              size="mini"
-              theme="primary"
-            />
-            <component
-              :is="getDownloadIcon()"
-              v-else
-            />
-          </span>
+          <div class="ai-file-artifact-panel-preview-header-actions">
+            <span
+              v-if="showCopy"
+              v-tippy="copyTippy"
+              class="ai-file-artifact-panel-preview-header-action"
+              :class="{ 'is-disabled': !canCopy }"
+              @click="handleCopy"
+            >
+              <component :is="getCopyIcon()" />
+            </span>
+            <span
+              v-if="canResolveArtifactUrl"
+              v-tippy="downloadTippy"
+              class="ai-file-artifact-panel-preview-header-action"
+              :class="{ 'is-loading': downloadLoading }"
+              @click="handleDownload(activeArtifact)"
+            >
+              <Loading
+                v-if="downloadLoading"
+                mode="spin"
+                size="mini"
+                theme="primary"
+              />
+              <component
+                :is="getDownloadIcon()"
+                v-else
+              />
+            </span>
+          </div>
         </div>
       </template>
       <div class="ai-file-artifact-panel-preview-body">
-        <ArtifactPreviewHost :file="activeArtifact" />
+        <ArtifactPreviewHost
+          ref="previewHostRef"
+          :file="activeArtifact"
+        />
       </div>
     </div>
   </div>
 </template>
 <script setup lang="ts">
-  import { cloneVNode, computed, shallowRef, watch } from 'vue';
+  import { cloneVNode, computed, shallowRef, useTemplateRef, watch } from 'vue';
 
   import { Input, Loading } from 'bkui-vue';
+  import { directive as vTippy } from 'vue-tippy';
 
   import { triggerArtifactDownload, useArtifactPreviewConsumer } from '../../../../composables/use-artifact-preview';
+  import { useClipboard } from '../../../../composables/use-clipboard';
   import { OverflowTips as vOverflowTips } from '../../../../directives/overflow-tips';
   import { DownloadFileIcon } from '../../../../icons/file';
+  import { CopyIcon } from '../../../../icons/tools';
   import { t } from '../../../../lang/lang';
+  import { resolveFileKind } from '../../../../utils/file-type';
+  import FileIcon from '../../../file-icon/file-icon.vue';
   import ArtifactFileCard from './artifact-file-card.vue';
   import ArtifactPreviewHost from './artifact-preview/artifact-preview-host.vue';
-  import { getFileIcon } from './file-icon';
 
   import type { SessionArtifact } from '../../../../composables/use-artifact-preview';
+  import type { AIFileKind } from '../../../../utils/file-type';
+
+  import 'tippy.js/dist/tippy.css';
+
+  /** 可复制文本内容的文件分类 */
+  const COPYABLE_KINDS = new Set<AIFileKind>(['code', 'html', 'markdown', 'text']);
 
   const props = defineProps<{
     // 命中的文件 outputId
@@ -97,12 +124,27 @@
 
   const artifactPreview = useArtifactPreviewConsumer();
   const canResolveArtifactUrl = computed(() => !!artifactPreview?.canResolveArtifactUrl.value);
+  const { copy } = useClipboard();
+  const previewHostRef = useTemplateRef<InstanceType<typeof ArtifactPreviewHost>>('previewHostRef');
 
-  // 下载图标为共享 VNode，每处渲染克隆一份，避免多处复用同一实例
+  // 图标为共享 VNode，每处渲染克隆一份，避免多处复用同一实例
   const getDownloadIcon = () => cloneVNode(DownloadFileIcon);
+  const getCopyIcon = () => cloneVNode(CopyIcon);
 
   const keyword = shallowRef('');
   const downloadLoading = shallowRef(false);
+
+  const copyTippy = computed(() => ({
+    content: t('复制'),
+    placement: 'top' as const,
+    theme: 'ai-chat-box',
+  }));
+
+  const downloadTippy = computed(() => ({
+    content: t('下载'),
+    placement: 'top' as const,
+    theme: 'ai-chat-box',
+  }));
 
   const filteredArtifacts = computed(() => {
     const kw = keyword.value.trim().toLowerCase();
@@ -114,11 +156,36 @@
 
   const activeArtifact = computed(() => props.artifacts.find(item => item.outputId === props.activeId));
 
+  // code / html / markdown / txt 展示复制入口
+  const showCopy = computed(() => {
+    const file = activeArtifact.value;
+    if (!file) {
+      return false;
+    }
+    return COPYABLE_KINDS.has(resolveFileKind(file.type, file.name));
+  });
+
+  // 预览正文就绪后才可复制
+  const canCopy = computed(() => {
+    const host = previewHostRef.value;
+    return !!host && host.status === 'ready' && !!host.content;
+  });
+
   const handleSelect = (item: SessionArtifact) => {
     if (item.outputId === props.activeId) {
       return;
     }
     emits('select', item.outputId);
+  };
+
+  const handleCopy = () => {
+    if (!canCopy.value) {
+      return;
+    }
+    const text = previewHostRef.value?.content;
+    if (text) {
+      copy(text);
+    }
   };
 
   const handleDownload = async (file: SessionArtifact) => {
@@ -223,7 +290,14 @@
           white-space: nowrap;
         }
 
-        &-download {
+        &-actions {
+          display: inline-flex;
+          flex-shrink: 0;
+          gap: 4px;
+          align-items: center;
+        }
+
+        &-action {
           display: inline-flex;
           flex-shrink: 0;
           align-items: center;
@@ -241,9 +315,14 @@
             background-color: #f5f7fa;
           }
 
-          &.is-loading {
+          &.is-loading,
+          &.is-disabled {
             pointer-events: none;
             cursor: default;
+          }
+
+          &.is-disabled {
+            opacity: 0.4;
           }
         }
       }

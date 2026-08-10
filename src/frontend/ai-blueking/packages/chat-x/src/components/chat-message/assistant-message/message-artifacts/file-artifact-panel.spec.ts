@@ -28,7 +28,6 @@ import { computed, defineComponent, h, ref } from 'vue';
 import { type VueWrapper, flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AIFileType } from '../../../../ag-ui/types/file';
 import { ARTIFACT_PREVIEW_TOKEN } from '../../../../composables/use-artifact-preview';
 import FileArtifactPanel from './file-artifact-panel.vue';
 
@@ -63,6 +62,12 @@ vi.mock('bkui-vue', () => ({
   Loading: defineComponent({
     setup: () => () => h('span', { class: 'mock-loading' }),
   }),
+  Message: vi.fn(),
+}));
+
+const copyMock = vi.fn();
+vi.mock('../../../../composables/use-clipboard', () => ({
+  useClipboard: () => ({ copy: copyMock }),
 }));
 
 vi.mock('../../../message-loading/message-loading.vue', () => ({
@@ -76,7 +81,7 @@ const createArtifact = (overrides: Partial<SessionArtifact> = {}): SessionArtifa
   name: '项目立项书.pdf',
   outputId: 'o1',
   size: 1024,
-  type: AIFileType.Pdf,
+  type: 'pdf',
   ...overrides,
 });
 
@@ -168,7 +173,7 @@ describe('FileArtifactPanel', () => {
       download_url: 'https://example.com/download.pdf',
       preview_url: 'https://example.com/x.pdf',
     });
-    const artifact = createArtifact({ type: AIFileType.Pdf });
+    const artifact = createArtifact({ type: 'pdf' });
     wrapper = mountPanel(
       { activeId: artifact.outputId, artifacts: [artifact] },
       createPreviewContext({ resolveArtifactUrls }),
@@ -192,7 +197,7 @@ describe('FileArtifactPanel', () => {
     });
     const artifact = createArtifact({
       name: 'page.html',
-      type: AIFileType.Html,
+      type: 'html',
     });
     wrapper = mountPanel(
       { activeId: artifact.outputId, artifacts: [artifact] },
@@ -212,7 +217,7 @@ describe('FileArtifactPanel', () => {
     const resolveArtifactUrls = vi.fn().mockResolvedValue({
       download_url: 'https://example.com/page.html',
     });
-    const artifact = createArtifact({ name: 'page.html', type: AIFileType.Html });
+    const artifact = createArtifact({ name: 'page.html', type: 'html' });
     wrapper = mountPanel(
       { activeId: artifact.outputId, artifacts: [artifact] },
       createPreviewContext({ resolveArtifactUrls }),
@@ -250,5 +255,71 @@ describe('FileArtifactPanel', () => {
     wrapper = mountPanel({ activeId: 'not-exist', artifacts: [createArtifact()] });
 
     expect(wrapper.find('.ai-artifact-preview-host-empty').exists()).toBe(true);
+  });
+
+  it('pdf 等非文本文件不应展示复制按钮', async () => {
+    const artifact = createArtifact({ type: 'pdf' });
+    wrapper = mountPanel(
+      { activeId: artifact.outputId, artifacts: [artifact] },
+      createPreviewContext(),
+    );
+    await flushPromises();
+
+    expect(wrapper.find('.ai-file-artifact-panel-preview-header-action .ai-copy-icon').exists()).toBe(false);
+  });
+
+  it('代码文件预览就绪后点击复制应写入剪贴板', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve('console.log(1)'),
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const resolveArtifactUrls = vi.fn().mockResolvedValue({
+      download_url: 'https://example.com/app.js',
+    });
+    const artifact = createArtifact({ name: 'app.js', type: 'js' });
+    wrapper = mountPanel(
+      { activeId: artifact.outputId, artifacts: [artifact] },
+      createPreviewContext({ resolveArtifactUrls }),
+    );
+    await flushPromises();
+
+    const copyBtn = wrapper.find('.ai-file-artifact-panel-preview-header-action');
+    expect(copyBtn.exists()).toBe(true);
+    expect(copyBtn.classes()).not.toContain('is-disabled');
+
+    await copyBtn.trigger('click');
+
+    expect(copyMock).toHaveBeenCalledWith('console.log(1)');
+    vi.unstubAllGlobals();
+  });
+
+  it('文本预览加载中复制按钮应禁用', async () => {
+    let resolveFetch: (value: { ok: boolean; text: () => Promise<string> }) => void = () => {};
+    const fetchSpy = vi.fn(
+      () =>
+        new Promise<{ ok: boolean; text: () => Promise<string> }>(resolve => {
+          resolveFetch = resolve;
+        }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+    const resolveArtifactUrls = vi.fn().mockResolvedValue({
+      download_url: 'https://example.com/app.js',
+    });
+    const artifact = createArtifact({ name: 'app.js', type: 'js' });
+    wrapper = mountPanel(
+      { activeId: artifact.outputId, artifacts: [artifact] },
+      createPreviewContext({ resolveArtifactUrls }),
+    );
+    await flushPromises();
+
+    const copyBtn = wrapper.find('.ai-file-artifact-panel-preview-header-action');
+    expect(copyBtn.classes()).toContain('is-disabled');
+
+    resolveFetch({ ok: true, text: () => Promise.resolve('ok') });
+    await flushPromises();
+
+    expect(copyBtn.classes()).not.toContain('is-disabled');
+    vi.unstubAllGlobals();
   });
 });
