@@ -33,11 +33,13 @@ from langchain_core.messages import (
 
 from .events import ExtendToolCallResultEvent, ExtendToolCallStartEvent
 from .event_builders import TOOL_CALLING_PLACEHOLDER
+from aidev_agent.utils.event import RunId
 from .types import (
     ActivityMessage,
     InfoMessage,
     InterruptMessage,
     LangGraphReasoning,
+    ReasoningLangChainMessage,
     ReasoningMessage,
     SchemaKeys,
     State,
@@ -202,6 +204,18 @@ def convert_langchain_multimodal_to_agui(
     return agui_content
 
 
+def parse_reasoning_content_value(content: Any) -> list[str]:
+    """将 reasoning content 归一为 list[str]。
+
+    JSON 字符串解析由平台 session_context / 读库接口完成；此处只做类型归一。
+    """
+    if isinstance(content, list):
+        return [str(each) for each in content]
+    if content is None:
+        return []
+    return [str(content)]
+
+
 def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]:
     agui_messages: list[AGUIMessage] = []
     for message in messages:
@@ -258,6 +272,11 @@ def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]
             # 仅在存在产物时才写 property，避免污染无产物的历史 assistant 消息。
             artifacts = message.additional_kwargs.get("artifacts")
             message_property = {"artifacts": artifacts} if artifacts else None
+            content_status = (message.additional_kwargs or {}).get("status") or ""
+            if content == RunId.CANCELLED_MESSAGE or content_status in {"fail", "error"}:
+                assistant_status = "error"
+            else:
+                assistant_status = "complete"
             agui_messages.append(
                 AGUIAssistantMessage(
                     id=str(message.id),
@@ -266,6 +285,7 @@ def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]
                     tool_calls=tool_calls,
                     name=message.name,
                     property=message_property,
+                    status=assistant_status,
                 )
             )
         elif isinstance(message, SystemMessage):
@@ -313,6 +333,14 @@ def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]
                 AGUIInfoMessage(
                     id=str(message.id),
                     content=message.content,
+                )
+            )
+        elif isinstance(message, ReasoningLangChainMessage):
+            agui_messages.append(
+                ReasoningMessage(
+                    id=str(message.id),
+                    content=parse_reasoning_content_value(message.content),
+                    duration=message.additional_kwargs.get("duration"),
                 )
             )
         else:

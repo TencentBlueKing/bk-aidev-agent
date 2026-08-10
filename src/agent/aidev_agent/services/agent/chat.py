@@ -35,15 +35,16 @@ from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
 from aidev_agent.core.ag_ui.types import (
     AgentInput,
     InterruptMessage,
+    ReasoningLangChainMessage,
     SchemaKeys,
     SessionPersistenceEventNames,
 )
 from aidev_agent.core.ag_ui.utils import (
-    agui_messages_to_langchain,
     get_schema_keys,
     get_stream_payload_input,
     langchain_messages_to_agui,
     parse_multimodal_content,
+    parse_reasoning_content_value,
 )
 from aidev_agent.core.tools.a2a_tools.types import AgentBackendType, AgentSpec
 from aidev_agent.core.tools.runtime_tools import RuntimeBackendResolver
@@ -159,7 +160,7 @@ class ChatCompletionAgent(BaseModel):
     IMAGE_FILE_PATTERN: ClassVar[re.Pattern] = re.compile(r"^!\[.*\]\((http[^)]+/([^/]+?))\)")
     TOOL_EXECUTION_INTERVAL: ClassVar[int] = 10
     UPLOAD_IMAGE_PROMPT_PREFIX: ClassVar[Any] = "我上传了个图片文件,文件名为{file_name}。"
-    SKIP_PROMPT_ROLE: ClassVar[list[str]] = ["guide", "reasoning"]
+    SKIP_PROMPT_ROLE: ClassVar[list[str]] = ["guide"]
 
     class Config:
         arbitrary_types_allowed = True
@@ -505,11 +506,9 @@ class ChatCompletionAgent(BaseModel):
         return self._chat_history_to_langchain_messages(self._convert_contents(self.chat_history))
 
     @staticmethod
-    def _filter_cancelled_for_llm(messages: list[BaseMessage]) -> list[BaseMessage]:
-        """LLM 入口过滤「用户已取消」占位，不影响 MESSAGES_SNAPSHOT。"""
-        return [
-            each for each in messages if not (isinstance(each, AIMessage) and each.content == RunId.CANCELLED_MESSAGE)
-        ]
+    def _filter_messages_for_llm(messages: list[BaseMessage]) -> list[BaseMessage]:
+        """LLM 入口过滤 reasoning，不影响 MESSAGES_SNAPSHOT。"""
+        return [each for each in messages if not isinstance(each, ReasoningLangChainMessage)]
 
     @property
     def model_name(self) -> str:
@@ -721,14 +720,14 @@ class ChatCompletionAgent(BaseModel):
         resume_input = forwarded_props.get("command", {}).get("resume", None)
         thread_id = thread_id
 
-        # 1. ag-ui → langchain 转换 + state 合并
+        # 1. LLM 入口过滤 reasoning + state 合并（messages 已是 langchain）
         if resume_input:
             state = agent_state.values.copy() if agent_state.values else state_input
             langchain_messages: list[BaseMessage] = []
         else:
             # 不再依赖 checkpoint 中的 messages，直接使用后端数据库传来的完整历史
             state_input["messages"] = []
-            langchain_messages = self._filter_cancelled_for_llm(agui_messages_to_langchain(messages))
+            langchain_messages = self._filter_messages_for_llm(messages)
             state = self._merge_state(state_input, langchain_messages)
 
         # 2. regenerate 检测 + checkpoint 时间旅行
@@ -868,7 +867,7 @@ class ChatCompletionAgent(BaseModel):
         """
         try:
             input_state: dict[str, Any] = {
-                "messages": self._filter_cancelled_for_llm(messages),
+                "messages": self._filter_messages_for_llm(messages),
                 "execute_kwargs": execute_kwargs,
                 **state,
             }
@@ -902,7 +901,7 @@ class ChatCompletionAgent(BaseModel):
         state: dict[str, Any],
         messages: list[BaseMessage],
     ) -> Generator[Any, None, None]:
-        _input: dict[str, Any] = {"messages": self._filter_cancelled_for_llm(messages), **state}
+        _input: dict[str, Any] = {"messages": self._filter_messages_for_llm(messages), **state}
         agent_type = self.model_context_options.llm_code_agent_type if self.model_context_options else None
         adapter = AgentStreamAdapter(agent_type=agent_type)
         return adapter.stream_standard_event(
@@ -978,7 +977,7 @@ class ChatCompletionAgent(BaseModel):
             state,
             forwarded_props,
             self.thread_id,
-            agui_messages,
+            messages,
             agent_state,
             schema_keys,
         )
@@ -1225,6 +1224,11 @@ class ChatCompletionAgent(BaseModel):
         messages: list[BaseMessage] = []
         for each in chat_history:
             bp = each.builtin_property or {}
+            turn_kwargs = {}
+            if bp.get("turn_id"):
+                turn_kwargs["turn_id"] = bp["turn_id"]
+            if bp.get("status"):
+                turn_kwargs["status"] = bp["status"]
             match each.role:
                 case PromptRole.USER.value:
                     multimodal = parse_multimodal_content(each.content)
@@ -1240,16 +1244,20 @@ class ChatCompletionAgent(BaseModel):
                             else:
                                 new_content.append(each_content)
                         each.content = new_content
-                        messages.append(HumanMessage(id=each.id, content=each.content))
+                        messages.append(
+                            HumanMessage(id=each.id, content=each.content, additional_kwargs=turn_kwargs)
+                        )
                     else:
-                        messages.append(HumanMessage(id=each.id, content=str(each.content)))
+                        messages.append(
+                            HumanMessage(id=each.id, content=str(each.content), additional_kwargs=turn_kwargs)
+                        )
                 case PromptRole.ASSISTANT.value | PromptRole.AI.value:
                     tool_calls = _extract_tool_calls(bp)
                     # 首帧 MESSAGES_SNAPSHOT（历史还原）：artifacts 经 builtin_property 透传，
                     # 放入 AIMessage.additional_kwargs（LangChain 标准扩展位），供
                     # langchain_messages_to_agui 还原到 AGUIAssistantMessage.artifacts。
                     # 无 artifacts 时不写 additional_kwargs，避免污染其它 AIMessage。
-                    additional_kwargs = {}
+                    additional_kwargs = dict(turn_kwargs)
                     artifacts = bp.get("artifacts")
                     if artifacts:
                         additional_kwargs["artifacts"] = artifacts
@@ -1265,7 +1273,23 @@ class ChatCompletionAgent(BaseModel):
                     messages.append(SystemMessage(id=each.id, content=each.content))
                 case PromptRole.TOOL.value:
                     content = each.content if isinstance(each.content, str) else str(each.content)
-                    messages.append(ToolMessage(id=each.id, content=content, tool_call_id=bp.get("tool_call_id", "")))
+                    messages.append(
+                        ToolMessage(
+                            id=each.id,
+                            content=content,
+                            tool_call_id=bp.get("tool_call_id", ""),
+                            additional_kwargs=turn_kwargs,
+                        )
+                    )
+                case PromptRole.REASONING.value:
+                    duration = bp.get("duration", 0)
+                    messages.append(
+                        ReasoningLangChainMessage(
+                            id=each.id,
+                            content=parse_reasoning_content_value(each.content),
+                            additional_kwargs={"duration": duration, **turn_kwargs},
+                        )
+                    )
                 case PromptRole.INTERRUPT.value:
                     # 中断/审批卡片：content 落库为 JSON 字符串（形如
                     # ``{"outcome": {"type": "interrupt"/"success", "interrupts": [...]}}``），

@@ -29,7 +29,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_core.tools import BaseTool
 from langchain_openai.chat_models.base import _convert_dict_to_message, _convert_message_to_dict
 
-from aidev_agent.core.ag_ui.types import ActivityMessage, InfoMessage
+from aidev_agent.core.ag_ui.types import ActivityMessage, InfoMessage, ReasoningLangChainMessage
 from aidev_agent.enums import ContextType
 from aidev_agent.packages.langchain_core.models.utils import is_deepseek_r1_series_models
 from aidev_agent.packages.langchain_core.tools.render import render_text_description_and_args
@@ -221,7 +221,11 @@ class BaseVariablesMiddleware:
                 auto_vars[var] = ctx.state[var]
 
         messages: List[BaseMessage] = ctx.state.get("messages") or []
-        messages = [each for each in messages if not isinstance(each, (ActivityMessage, InfoMessage))]
+        messages = [
+            each
+            for each in messages
+            if not isinstance(each, (ActivityMessage, InfoMessage, ReasoningLangChainMessage))
+        ]
         cache = ctx.assembly_cache
 
         # 尝试使用缓存的 last_human_idx

@@ -65,7 +65,7 @@ class BaseSessionWriter(ABC):
     取消/暂停回写机制：
     - 当用户在非 assistant 阶段（thinking/tool/activity）暂停时，handle_run_finished()
       会转为 RUN_ERROR 语义，回写已有内容并补一条 role=assistant, content="用户已取消",
-      status="fail" 的消息
+      status="error" 的消息
     - 当用户在 assistant 阶段暂停时，已有的 assistant 消息以 status="complete" 正常回写
 
     使用方式：
@@ -482,7 +482,7 @@ class BaseSessionWriter(ABC):
         取消/暂停场景处理：
         - 取消 + 有 assistant 输出：以 status="complete" 正常回写，发 RUN_FINISHED
         - 取消 + 无 assistant 输出（仅有 thinking/tool/知识库/MCP 等）：
-          回写已有内容 + 补一条 role=assistant, content="用户已取消", status="fail" 的消息，
+          回写已有内容 + 补一条 role=assistant, content="用户已取消", status="error" 的消息，
           并转为 RUN_ERROR 语义（确保前端正确展示暂停状态）
 
         Args:
@@ -506,7 +506,7 @@ class BaseSessionWriter(ABC):
             any(mid not in self._written_message_ids for mid in self._streaming_messages) or self._model_end_written
         )
 
-        # 取消 + 无 AI 输出：回写已有内容 + 补写"用户已取消" + status=fail
+        # 取消 + 无 AI 输出：回写已有内容 + 补写"用户已取消" + status=error
         if self._is_cancelled and not has_assistant_output:
             self._write_cancelled_messages(thinking_content)
             return
@@ -561,13 +561,13 @@ class BaseSessionWriter(ABC):
                 reasoning_content=thinking_content,
             )
 
-            # 取消场景：补写"用户已取消" + status=fail
+            # 取消场景：补写"用户已取消" + status=error
             if self._is_cancelled:
                 self._write_assistant_message(
                     message_id=fallback_message_id,
                     content=self.PAUSED_CONTENT_MESSAGE,
                     tool_calls=[],
-                    status="fail",
+                    status="error",
                 )
             else:
                 self._write_assistant_message(
@@ -715,7 +715,7 @@ class BaseSessionWriter(ABC):
         当用户在非 assistant 阶段（thinking/tool/知识库/MCP）取消时：
         1. 回写已有的 thinking/reasoning 内容
         2. 回写未写入的流式 assistant 消息（如有部分内容）
-        3. 补写一条 role=assistant, content="用户已取消", status="fail" 的消息
+        3. 补写一条 role=assistant, content="用户已取消", status="error" 的消息
 
         此方法由 handle_run_finished（取消+无AI输出）和 handle_run_error（取消场景）
         共同调用，避免逻辑重复。
@@ -786,7 +786,7 @@ class BaseSessionWriter(ABC):
                 message_id=paused_message_id,
                 content=self.PAUSED_CONTENT_MESSAGE,
                 tool_calls=[],
-                status="fail",
+                status="error",
             )
             if self._write_error_count != errors_before:
                 logger.warning(
@@ -952,7 +952,7 @@ class BaseSessionWriter(ABC):
 
         对于取消/暂停场景（message 为 RunId.CANCELLED_MESSAGE），
         会先回写已有的非 assistant 内容（thinking/tool/知识库/MCP 等），
-        再补写 content="用户已取消", status="fail" 的 assistant 消息。
+        再补写 content="用户已取消", status="error" 的 assistant 消息。
         对于真正的运行错误，直接写入错误消息。
 
         Args:
@@ -1327,7 +1327,7 @@ class BaseSessionWriter(ABC):
             message_id: assistant 消息 ID
             content: 消息内容
             tool_calls: 工具调用列表
-            status: 消息状态，默认 "complete"；取消/暂停场景使用 "fail"
+            status: 消息状态，默认 "complete"；取消/暂停场景使用 "error"
         """
         assistant_property = {
             "message_id": message_id,

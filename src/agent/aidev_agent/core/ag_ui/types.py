@@ -350,6 +350,17 @@ class InfoMessage(ChatMessage):
         return self.id
 
 
+class ReasoningLangChainMessage(ChatMessage):
+    """思考过程消息（role=reasoning）的 LangChain 消息。
+
+    用于 DB 历史中的 reasoning 行进入 MESSAGES_SNAPSHOT；在 LLM 入口被过滤，
+    不会送入 graph 输入。
+    """
+
+    role: Literal["reasoning"] = "reasoning"  # pyright: ignore[reportIncompatibleVariableOverride]
+    content: list[str] = Field(default_factory=list)
+
+
 class Interrupt(ConfiguredBaseModel):
     """中断信息，用于 RunFinishedInterruptOutcome"""
 

@@ -113,6 +113,15 @@ class LangGraphAgent:
         # 取消检测回调，返回 True 表示应该取消
         self._cancel_checker = cancel_checker
 
+    def _mark_cancel_run_error_emitted(self) -> bool:
+        """标记本轮 cancel RUN_ERROR 已下发；若已下发则返回 False（调用方应跳过重复 emit）。"""
+        if not self.active_run:
+            return True
+        if self.active_run.get("cancel_run_error_emitted"):
+            return False
+        self.active_run["cancel_run_error_emitted"] = True
+        return True
+
     def _dispatch_event(self, event: ProcessedEvents) -> str:
         if getattr(event, "raw_event", None):
             event.raw_event = make_json_safe(event.raw_event)
@@ -157,6 +166,8 @@ class LangGraphAgent:
             "has_function_streaming": False,
             "has_text_output": False,  # 是否有 AI 文本输出（根据流式是否有TEXT_MESSAGE_START）
             "started_at": datetime.now(timezone.utc),  # 供子类做本轮增量识别（如 artifacts_generated）
+            # 取消占位 RUN_ERROR 是否已下发（防止 stream error + cancel 双发同一 message）
+            "cancel_run_error_emitted": False,
         }
         self.active_run = INITIAL_ACTIVE_RUN
 
@@ -217,10 +228,13 @@ class LangGraphAgent:
                 break
 
             if event["event"] == "error":
+                error_message = event["data"]["message"]
+                if error_message == RunId.CANCELLED_MESSAGE and not self._mark_cancel_run_error_emitted():
+                    break
                 yield self._dispatch_event(
                     RunErrorEvent(
                         type=EventType.RUN_ERROR,
-                        message=event["data"]["message"],
+                        message=error_message,
                         raw_event=event,
                     )
                 )
@@ -273,12 +287,13 @@ class LangGraphAgent:
                 has_text_output,
             )
             if not has_text_output:
-                yield self._dispatch_event(
-                    RunErrorEvent(
-                        type=EventType.RUN_ERROR,
-                        message=RunId.CANCELLED_MESSAGE,
+                if self._mark_cancel_run_error_emitted():
+                    yield self._dispatch_event(
+                        RunErrorEvent(
+                            type=EventType.RUN_ERROR,
+                            message=RunId.CANCELLED_MESSAGE,
+                        )
                     )
-                )
             else:
                 yield self._dispatch_event(
                     RunFinishedEvent(

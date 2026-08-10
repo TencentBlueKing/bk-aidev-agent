@@ -1529,7 +1529,7 @@ class TestSessionWriterCancelUnit:
     """
 
     def test_cancel_error_with_thinking_writes_reasoning_and_paused(self):
-        """取消 + thinking 内容 → 回写 reasoning + 补写"用户已取消" + status=fail"""
+        """取消 + thinking 内容 → 回写 reasoning + 补写"用户已取消" + status=error"""
         writer = _ConcreteWriter()
         writer._thinking_content = "正在深度思考中..."
         writer.handle_run_error(RunErrorEvent(type=EventType.RUN_ERROR, message=RunId.CANCELLED_MESSAGE))
@@ -1538,19 +1538,19 @@ class TestSessionWriterCancelUnit:
         assert any(c.get("role") == PromptRole.REASONING.value for c in writer.created_contents)
         assert any(
             c.get("role") == PromptRole.ASSISTANT.value
-            and c.get("status") == "fail"
+            and c.get("status") == "error"
             and c.get("content") == "用户已取消"
             for c in writer.created_contents
         )
 
     def test_cancel_error_no_content_writes_only_paused(self):
-        """取消 + 完全无内容 → 仅补写"用户已取消" + status=fail"""
+        """取消 + 完全无内容 → 仅补写"用户已取消" + status=error"""
         writer = _ConcreteWriter()
         writer.handle_run_error(RunErrorEvent(type=EventType.RUN_ERROR, message=RunId.CANCELLED_MESSAGE))
 
         assert len(writer.created_contents) == 1
         assert writer.created_contents[0]["content"] == "用户已取消"
-        assert writer.created_contents[0]["status"] == "fail"
+        assert writer.created_contents[0]["status"] == "error"
 
     def test_cancel_run_finished_no_output_writes_paused(self):
         """RUN_FINISHED(cancelled) + 无 AI 输出 → 补写"用户已取消"（Flow Agent 任务已启动场景）"""
@@ -1560,7 +1560,7 @@ class TestSessionWriterCancelUnit:
         )
 
         assert writer.is_cancelled is True
-        assert any(c.get("content") == "用户已取消" and c.get("status") == "fail" for c in writer.created_contents)
+        assert any(c.get("content") == "用户已取消" and c.get("status") == "error" for c in writer.created_contents)
 
     def test_cancel_error_then_run_finished_writes_paused_once(self):
         """RUN_ERROR 与 RUN_FINISHED 连续到达时，不重复补写取消消息。"""
@@ -1573,7 +1573,7 @@ class TestSessionWriterCancelUnit:
         paused = [
             content
             for content in writer.created_contents
-            if content.get("content") == "用户已取消" and content.get("status") == "fail"
+            if content.get("content") == "用户已取消" and content.get("status") == "error"
         ]
         assert len(paused) == 1
 
@@ -1612,7 +1612,7 @@ class TestSessionWriterCancelUnit:
         paused = [
             content
             for content in writer.created_contents
-            if content.get("content") == "用户已取消" and content.get("status") == "fail"
+            if content.get("content") == "用户已取消" and content.get("status") == "error"
         ]
         assert len(paused) == 1
 
@@ -1624,7 +1624,7 @@ class TestSessionWriterCancelUnit:
             RunFinishedEvent(type=EventType.RUN_FINISHED, thread_id="t1", run_id=RunId.CANCELLED)
         )
 
-        assert not any(c.get("content") == "用户已取消" and c.get("status") == "fail" for c in writer.created_contents)
+        assert not any(c.get("content") == "用户已取消" and c.get("status") == "error" for c in writer.created_contents)
 
     def test_real_error_writes_error_with_builtin_flag(self):
         """真正运行错误 → 回写错误消息 + builtin_property.error=True"""
@@ -1650,6 +1650,20 @@ class TestSessionWriterCancelUnit:
     def test_constants_consistency(self):
         """PAUSED_CONTENT_MESSAGE 和 RunId.CANCELLED_MESSAGE 应一致为"用户已取消" """
         assert BaseSessionWriter.PAUSED_CONTENT_MESSAGE == RunId.CANCELLED_MESSAGE == "用户已取消"
+
+
+class TestCancelRunErrorDedupe:
+    """取消 RUN_ERROR SSE 幂等：同一 run 只应下发一条 message=用户已取消 的 RUN_ERROR。"""
+
+    def test_mark_cancel_run_error_emitted_is_idempotent(self):
+        from aidev_agent.core.ag_ui.agent import LangGraphAgent
+
+        agent = LangGraphAgent.__new__(LangGraphAgent)
+        agent.active_run = {"cancel_run_error_emitted": False}
+
+        assert agent._mark_cancel_run_error_emitted() is True
+        assert agent.active_run["cancel_run_error_emitted"] is True
+        assert agent._mark_cancel_run_error_emitted() is False
 
 
 # ---------------------------------------------------------------------------
