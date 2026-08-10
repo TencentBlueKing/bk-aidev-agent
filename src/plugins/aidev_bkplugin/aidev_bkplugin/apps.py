@@ -18,9 +18,17 @@ except ImportError:
 try:
     from aidev_agent.packages.opentelemetry import BkAidevAgentInstrumentor
     from aidev_agent.packages.opentelemetry.config import OTelConfig
+    from aidev_agent.packages.opentelemetry.utils import (
+        get_otel_endpoint_by_agent_info,
+        get_otel_endpoint_by_env,
+        get_otel_endpoint_by_json_str,
+    )
 except ImportError:
     BkAidevAgentInstrumentor = None
     OTelConfig = None
+    get_otel_endpoint_by_agent_info = None
+    get_otel_endpoint_by_env = None
+    get_otel_endpoint_by_json_str = None
 
 try:
     from aidev_agent.packages.opentelemetry.metrics import configure_metric_identity
@@ -66,12 +74,6 @@ def init_bk_aidev_agent_otel() -> None:
             "如需启用请安装 aidev-bkplugin[opentelemetry]。"
         )
         return
-
-    from aidev_agent.packages.opentelemetry.utils import (
-        get_otel_endpoint_by_agent_info,
-        get_otel_endpoint_by_env,
-        get_otel_endpoint_by_json_str,
-    )
 
     from aidev_bkplugin.services.agent_config import AgentConfigFetcher
 

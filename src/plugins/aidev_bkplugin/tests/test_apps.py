@@ -1,21 +1,13 @@
 from types import SimpleNamespace
 
+import aidev_agent.packages as aidev_agent_packages
 from aidev_bkplugin import apps
 
 
 def _mock_otel_inputs(mocker, agent_info, metric_settings):
-    mocker.patch(
-        "aidev_agent.packages.opentelemetry.utils.get_otel_endpoint_by_json_str",
-        return_value=[],
-    )
-    mocker.patch(
-        "aidev_agent.packages.opentelemetry.utils.get_otel_endpoint_by_agent_info",
-        return_value=[],
-    )
-    mocker.patch(
-        "aidev_agent.packages.opentelemetry.utils.get_otel_endpoint_by_env",
-        return_value=[],
-    )
+    mocker.patch.object(apps, "get_otel_endpoint_by_json_str", return_value=[])
+    mocker.patch.object(apps, "get_otel_endpoint_by_agent_info", return_value=[])
+    mocker.patch.object(apps, "get_otel_endpoint_by_env", return_value=[])
     mocker.patch(
         "aidev_bkplugin.services.agent_config.AgentConfigFetcher.get_info",
         return_value=agent_info,
@@ -31,7 +23,10 @@ def _mock_otel_inputs(mocker, agent_info, metric_settings):
     return otel_config, instrumentor
 
 
-def test_init_otel_keeps_direct_metric_export_in_agent_sdk(mocker):
+def test_init_otel_keeps_direct_metric_export_in_agent_sdk(mocker, monkeypatch):
+    # Some installations expose the optional OTel modules only through their
+    # fully qualified imports, not as an attribute on ``aidev_agent.packages``.
+    monkeypatch.delattr(aidev_agent_packages, "opentelemetry", raising=False)
     settings = SimpleNamespace(enabled=True, export_via_celery=False)
     otel_config, instrumentor = _mock_otel_inputs(
         mocker,
