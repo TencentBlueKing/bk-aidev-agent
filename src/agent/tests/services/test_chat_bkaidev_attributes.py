@@ -4,6 +4,7 @@ import json
 import warnings
 from unittest.mock import MagicMock, patch
 
+import pytest
 from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.agent import ChatCompletionAgent
 from aidev_agent.services.agent.chat import ChatAgentBuilder
@@ -69,6 +70,29 @@ class TestBuildChatModelNonThinking:
         builder = ChatAgentBuilder(ctx)
         result = builder.build_chat_model_non_thinking()
         assert result is None
+
+
+@pytest.mark.parametrize(
+    ("method_name", "model_name"),
+    [
+        ("build_chat_model_non_thinking", "nt-model-v1"),
+        ("build_chat_model_fast", "fast-model-v1"),
+    ],
+)
+def test_auxiliary_chat_models_forward_default_headers(method_name, model_name):
+    headers = {"traceparent": "00-992eea94222b572e883ab78b23e73d64-99e019654b49749a-01"}
+    ctx = _make_builder_ctx(agent_info={}, non_thinking_llm=model_name)
+    ctx.chat = ChatBuildExtras(default_headers=headers)
+    builder = ChatAgentBuilder(ctx)
+
+    with (
+        patch("aidev_agent.services.agent.chat.settings.JUDGMENT_LLM_MODEL", model_name),
+        patch("aidev_agent.services.agent.chat.settings.LLM_GW_ENDPOINT", "https://llm-gateway.example.com"),
+        patch("aidev_agent.services.agent.chat.ChatModel.get_setup_instance") as mock_setup,
+    ):
+        getattr(builder, method_name)()
+
+    assert mock_setup.call_args.kwargs["default_headers"] == headers
 
 
 class TestBuildNonThinkingLlmDeprecation:
