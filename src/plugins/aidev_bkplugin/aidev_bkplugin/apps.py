@@ -103,21 +103,27 @@ def init_bk_aidev_agent_otel() -> None:
         )
         otel_config.enable_metrics = metric_settings.enabled
         configure_metric_identity(
-            agent_info.get("agent_code") or agent_info.get("code") or otel_config.service_name,
-            agent_info.get("agent_name") or agent_info.get("name"),
+            agent_info.get("agent_code") or otel_config.service_name,
+            agent_info.get("agent_name"),
         )
-        metric_service = BkPluginMetricService(
-            service_name=otel_config.service_name,
-            endpoints=endpoints,
-            agent_info=agent_info,
-            settings=metric_settings,
-            enqueue_bkm_metrics=push_bkm_metrics_task.delay if push_bkm_metrics_task is not None else None,
-        )
-        set_metric_service(metric_service)
-        otel_config.enable_metrics = metric_service.start()
-        otel_config.metric_provider_managed_externally = otel_config.enable_metrics
-        if not otel_config.enable_metrics:
+        if metric_settings.export_via_celery:
+            metric_service = BkPluginMetricService(
+                service_name=otel_config.service_name,
+                endpoints=endpoints,
+                agent_info=agent_info,
+                settings=metric_settings,
+                enqueue_bkm_metrics=push_bkm_metrics_task.delay if push_bkm_metrics_task is not None else None,
+            )
+            set_metric_service(metric_service)
+            otel_config.enable_metrics = metric_service.start()
+            otel_config.metric_provider_managed_externally = otel_config.enable_metrics
+            if not otel_config.enable_metrics:
+                set_metric_service(None)
+        else:
+            # 直连 OTLP 继续复用 Agent SDK 原有的 MetricProvider / MetricExporter；
+            # bkplugin 只负责根据 agent_info 选择该路径并传入配置。
             set_metric_service(None)
+            otel_config.metric_provider_managed_externally = False
     except Exception:  # noqa: BLE001
         logger.exception("[aidev_bkplugin] metric export initialization failed; continuing without metrics")
         set_metric_service(None)

@@ -1,0 +1,73 @@
+from types import SimpleNamespace
+
+from aidev_bkplugin import apps
+
+
+def _mock_otel_inputs(mocker, agent_info, metric_settings):
+    mocker.patch(
+        "aidev_agent.packages.opentelemetry.utils.get_otel_endpoint_by_json_str",
+        return_value=[],
+    )
+    mocker.patch(
+        "aidev_agent.packages.opentelemetry.utils.get_otel_endpoint_by_agent_info",
+        return_value=[],
+    )
+    mocker.patch(
+        "aidev_agent.packages.opentelemetry.utils.get_otel_endpoint_by_env",
+        return_value=[],
+    )
+    mocker.patch(
+        "aidev_bkplugin.services.agent_config.AgentConfigFetcher.get_info",
+        return_value=agent_info,
+    )
+    otel_config = SimpleNamespace(
+        enable_metrics=True,
+        service_name="agent-service",
+        metric_provider_managed_externally=False,
+    )
+    mocker.patch.object(apps, "OTelConfig", return_value=otel_config)
+    mocker.patch.object(apps.MetricExportSettings, "from_agent_info", return_value=metric_settings)
+    instrumentor = mocker.patch.object(apps, "BkAidevAgentInstrumentor").return_value
+    return otel_config, instrumentor
+
+
+def test_init_otel_keeps_direct_metric_export_in_agent_sdk(mocker):
+    settings = SimpleNamespace(enabled=True, export_via_celery=False)
+    otel_config, instrumentor = _mock_otel_inputs(
+        mocker,
+        {"code": "legacy-code", "name": "legacy-name"},
+        settings,
+    )
+    metric_service = mocker.patch.object(apps, "BkPluginMetricService")
+    set_metric_service = mocker.patch.object(apps, "set_metric_service")
+    configure_identity = mocker.patch.object(apps, "configure_metric_identity")
+
+    apps.init_bk_aidev_agent_otel()
+
+    metric_service.assert_not_called()
+    set_metric_service.assert_called_once_with(None)
+    configure_identity.assert_called_once_with("agent-service", None)
+    assert otel_config.enable_metrics is True
+    assert otel_config.metric_provider_managed_externally is False
+    instrumentor.instrument.assert_called_once_with()
+
+
+def test_init_otel_uses_bkplugin_metric_provider_for_celery_export(mocker):
+    settings = SimpleNamespace(enabled=True, export_via_celery=True)
+    otel_config, instrumentor = _mock_otel_inputs(
+        mocker,
+        {"agent_code": "ai-demo", "agent_name": "Demo Agent"},
+        settings,
+    )
+    metric_service = mocker.patch.object(apps, "BkPluginMetricService").return_value
+    metric_service.start.return_value = True
+    set_metric_service = mocker.patch.object(apps, "set_metric_service")
+    configure_identity = mocker.patch.object(apps, "configure_metric_identity")
+
+    apps.init_bk_aidev_agent_otel()
+
+    set_metric_service.assert_called_once_with(metric_service)
+    configure_identity.assert_called_once_with("ai-demo", "Demo Agent")
+    assert otel_config.enable_metrics is True
+    assert otel_config.metric_provider_managed_externally is True
+    instrumentor.instrument.assert_called_once_with()

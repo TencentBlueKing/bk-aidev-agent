@@ -141,6 +141,17 @@ def test_metric_settings_use_local_environment_fallback(monkeypatch):
     assert settings.bkm_access_token == "local-secret"
     assert settings.bkm_push_url == "http://local-proxy:10205/v2/push/"
     assert settings.bkm_target == "local-target"
+    assert settings.export_via_celery is True
+
+
+def test_metric_settings_keep_direct_otlp_transport_without_bkm_config(monkeypatch):
+    for name in ("BKAI_AGENT_METRICS_DATA_ID", "BKAI_AGENT_METRICS_TOKEN", "BKAI_AGENT_METRICS_HOST", "PROXY_IP"):
+        monkeypatch.delenv(name, raising=False)
+
+    settings = MetricExportSettings.from_agent_info({}, default_enabled=True)
+
+    assert settings.enabled is True
+    assert settings.export_via_celery is False
 
 
 def test_metric_settings_do_not_reuse_trace_credentials(monkeypatch):
@@ -210,6 +221,20 @@ def test_metric_resource_uses_agent_sdk_version_without_agent_type():
     assert attributes["agent.info.sdk_version"] == "2.2.3"
     assert attributes["service.instance.id"]
     assert "agent.info.type" not in attributes
+
+
+def test_metric_resource_does_not_use_noncanonical_agent_identity():
+    service = BkPluginMetricService(
+        service_name="agent-service",
+        endpoints=[],
+        agent_info={"code": "fallback-code", "name": "fallback-name"},
+        settings=_bkm_settings(),
+    )
+
+    attributes = service._create_resource().attributes
+
+    assert attributes["agent.info.code"] == "agent-service"
+    assert attributes["agent.info.name"] == "unknown"
 
 
 def test_bkm_records_preserve_counter_and_histogram_semantics():

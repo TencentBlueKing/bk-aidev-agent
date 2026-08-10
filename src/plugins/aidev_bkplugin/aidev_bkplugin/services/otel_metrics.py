@@ -85,7 +85,7 @@ class MetricExportSettings:
         )
         export_via_celery = metrics_info.get(
             "export_via_celery",
-            otel_info.get("metric_export_via_celery", True),
+            otel_info.get("metric_export_via_celery"),
         )
         data_id = metrics_info.get("agent_data_id", os.getenv("BKAI_AGENT_METRICS_DATA_ID"))
         access_token = metrics_info.get("agent_access_token", os.getenv("BKAI_AGENT_METRICS_TOKEN", ""))
@@ -95,6 +95,8 @@ class MetricExportSettings:
         push_url = _normalize_bkm_push_url(push_url)
         target = metrics_info.get("agent_target", os.getenv("BKAI_AGENT_METRICS_TARGET", ""))
         has_bkm_config = data_id not in (None, "") and bool(access_token and push_url)
+        if export_via_celery is None:
+            export_via_celery = has_bkm_config
         enabled = metrics_info.get("enabled", otel_info.get("enable_metrics", default_enabled or has_bkm_config))
         return cls(
             enabled=_as_bool(enabled),
@@ -360,10 +362,8 @@ class BkPluginMetricService:
             {
                 ResourceAttributes.SERVICE_NAME: self.service_name,
                 "service.instance.id": f"{socket.gethostname()}:{os.getpid()}",
-                "agent.info.code": self.agent_info.get("agent_code")
-                or self.agent_info.get("code")
-                or self.service_name,
-                "agent.info.name": self.agent_info.get("agent_name") or self.agent_info.get("name") or "unknown",
+                "agent.info.code": self.agent_info.get("agent_code") or self.service_name,
+                "agent.info.name": self.agent_info.get("agent_name") or "unknown",
                 "agent.info.sdk_version": self.agent_info.get("agent_sdk_version") or "unknown",
             }
         )
