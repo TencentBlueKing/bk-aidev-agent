@@ -103,6 +103,8 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
   let reconnectAttempt = 0;
   /** 本轮流是否已收到 RUN_FINISHED */
   let runFinished = false;
+  /** 流世代号：新开流时递增，用于忽略已被替换的旧 SSE 回调 */
+  let activeStreamId = 0;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectWaitResolve: ((continued: boolean) => void) | null = null;
   let activeStreamContext: {
@@ -110,7 +112,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     model?: string;
     url?: string;
     config?: IRequestConfig;
-  } | null = null;;
+  } | null = null;
 
   /**
    * 获取可用模型列表，写入 models；失败时清空列表并抛出
@@ -237,12 +239,16 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
 
   /**
    * 尝试静默重连。
+   * @param streamId - 发起重连的流世代；任一 await 后若已被新流/abort 取代则立即退出，避免 abort 掉更新流
    * @returns reconnected | finished（服务端已结束）| failed（需对外报错或中止）
    */
   const attemptSilentReconnect = async (
     sessionCode: string,
+    streamId: number,
   ): Promise<'reconnected' | 'finished' | 'failed'> => {
-    if (manualAbort || !isSameActiveSession(sessionCode)) {
+    const isOwnerStream = () => streamId === activeStreamId && !manualAbort;
+
+    if (!isOwnerStream() || !isSameActiveSession(sessionCode)) {
       return 'failed';
     }
 
@@ -252,7 +258,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       // 状态刷新失败时沿用本地 session.status
     }
 
-    if (manualAbort || !isSameActiveSession(sessionCode)) {
+    if (!isOwnerStream() || !isSameActiveSession(sessionCode)) {
       return 'failed';
     }
 
@@ -269,12 +275,17 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     isChatting.value = true;
     const delayMs = getReconnectDelayMs(reconnectAttempt);
     const waited = await waitForReconnectDelay(delayMs);
-    if (!waited || manualAbort || !isSameActiveSession(sessionCode)) {
+    if (!waited || !isOwnerStream() || !isSameActiveSession(sessionCode)) {
       return 'failed';
     }
 
     if (mediator.session?.current.value?.status !== SessionStatus.Running) {
       return 'finished';
+    }
+
+    // 发起新流前再校验一次：防止 await 后窗口期被新用户请求抢走 activeStreamId
+    if (!isOwnerStream()) {
+      return 'failed';
     }
 
     pruneTrailingIncompleteMessages();
@@ -317,6 +328,14 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
 
     activeStreamContext = { sessionCode, model: model, url, config };
 
+    // 先递增世代再 abort 旧连接，避免旧流 onDone 误触发二次重连
+    const streamId = ++activeStreamId;
+    const previousController = chatAbortController;
+    chatAbortController = new AbortController();
+    previousController?.abort?.();
+
+    const isActiveStream = () => streamId === activeStreamId;
+
     // ag-ui 协议需要注入消息模块
     if (usedProtocol instanceof AGUIProtocol) {
       usedProtocol.injectMessageModule(mediator.message);
@@ -332,6 +351,9 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     }
 
     const finishSuccessfully = () => {
+      if (!isActiveStream()) {
+        return;
+      }
       isChatting.value = false;
       usedProtocol.onDone?.call(usedProtocol);
       if (input) {
@@ -349,20 +371,32 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     };
 
     const failWithError = (error: Error) => {
+      if (!isActiveStream()) {
+        return;
+      }
       isChatting.value = false;
       usedProtocol.onError?.call(usedProtocol, error);
     };
 
     // 事件代理
     const onDone = () => {
-      // 用户 abort：FetchClient 将 AbortError 转为 onDone，不重连
-      if (manualAbort || runFinished) {
+      if (!isActiveStream()) {
+        return;
+      }
+      // 用户 abort：本地状态已在 abortChat 结算，勿走 completion/poll
+      if (manualAbort) {
+        return;
+      }
+      if (runFinished) {
         finishSuccessfully();
         return;
       }
 
       // 连接被干净掐断且未收到 RUN_FINISHED：尝试静默重连
-      void attemptSilentReconnect(sessionCode).then(result => {
+      void attemptSilentReconnect(sessionCode, streamId).then(result => {
+        if (!isActiveStream()) {
+          return;
+        }
         if (result === 'reconnected') {
           // 保持 isChatting=true，不展示错误
           return;
@@ -381,7 +415,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     };
 
     const onError = (error: Error) => {
-      if (manualAbort) {
+      if (!isActiveStream() || manualAbort) {
         return;
       }
 
@@ -390,7 +424,10 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
         return;
       }
 
-      void attemptSilentReconnect(sessionCode).then(result => {
+      void attemptSilentReconnect(sessionCode, streamId).then(result => {
+        if (!isActiveStream()) {
+          return;
+        }
         if (result === 'reconnected') {
           return;
         }
@@ -407,6 +444,9 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     };
 
     const onMessage = (event: unknown) => {
+      if (!isActiveStream()) {
+        return;
+      }
       const typedEvent = event as IEvent;
       if (typedEvent?.type === EventType.RunFinished) {
         runFinished = true;
@@ -415,13 +455,14 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     };
 
     const onStart = () => {
+      if (!isActiveStream()) {
+        return;
+      }
       isChatting.value = true;
       usedProtocol.onStart?.call(usedProtocol);
     };
 
-    // 创建 AbortController
-    chatAbortController = new AbortController();
-    // 发起聊天
+    // 发起聊天（controller / 回调必须在 ...config 之后，防止被覆盖）
     void mediator.http?.fetchClient
       .streamRequest({
         url: url || 'chat_completion/',
@@ -437,12 +478,12 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
             resume,
           },
         },
+        ...config,
         controller: chatAbortController,
         onDone,
         onError,
         onMessage,
         onStart,
-        ...config,
       })
       .catch(() => {
         // 非 abort 错误已通过 onError 回调处理；abort 为正常结束
@@ -536,7 +577,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
           });
         } else {
           longPollTimer = setTimeout(() => {
-              // 如果会话不匹配，则不继续轮询
+            // 如果会话不匹配，则不继续轮询
             if (sessionCode !== mediator.session?.current?.value?.sessionCode) return;
             pollResumeSession(sessionCode, model);
           }, 10000);
@@ -554,10 +595,15 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
 
   /**
    * 中止聊天（纯前端中止，后端继续处理）
+   * 会使当前流世代失效，避免 abort 后的 onDone 误触发 finishSuccessfully / pollResumeSession
    */
   const abortChat = () => {
     manualAbort = true;
+    // 先失效世代，再 abort：FetchClient 同步触发的 onDone 会因 isActiveStream=false 直接返回
+    activeStreamId += 1;
     clearReconnectTimer(false);
+    clearLongPollTimer();
+    isChatting.value = false;
     chatAbortController?.abort?.();
     chatAbortController = null;
   };

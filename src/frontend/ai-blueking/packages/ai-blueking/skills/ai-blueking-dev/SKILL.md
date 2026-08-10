@@ -3,7 +3,7 @@ name: ai-blueking-dev
 description: 蓝鲸 AI 小鲸组件开发指南。基于 @blueking/chat-x（UI 组件）和 @blueking/chat-helper（业务 SDK）开发 AI 聊天应用、智能体、对话界面。涵盖 ChatBot 独立使用、AIBlueking 完整集成、流式响应、快捷指令、划词选择、模型选择（Model Select）、自定义消息渲染（图表/表单/iframe）、HITL 人机协同（工具审批/用户提问/中断恢复）、流程化智能体节点重试跳过、渲染模式（chat/share/test 分享态）、字号主题、侧栏自定义与自定义 Tab、欢迎区 `#welcome` 插槽、消息工具栏扩展（messageTools/updateTools）、非 Vue 宿主挂载等。触发场景：开发 AI 小鲸、集成 AI Agent、使用 chat-x/chat-helper、构建 AI 对话 UI、实现流式聊天、模型热切换、自定义消息组件渲染、human-in-the-loop、interrupt/resume、flow agent、自定义欢迎页、自定义消息工具按钮。
 metadata:
   author: blueking
-  version: '5.12'
+  version: '5.13'
   packages:
     ai-blueking: 2.2.2-beta.4
     chat-x: 0.0.49-beta.1
@@ -265,6 +265,15 @@ ChatBot 内部所有错误都汇聚到单一出口 `useErrorReporter`（`src/com
 仍有边界：纯 HTTP 层失败（既不在上述调用点，业务管理器也没包）不会触发 `@error`。要覆盖全部 HTTP 错误，用 AIBlueking 的 `@sdk-error`（内部注册了 `chatHelper.onError` 全局兜底），或自行对 `getChatHelper()?.onError(...)` 注册处理器。
 
 **停止生成（`stopChat`）的行为**：接口成功才 emit `stop`，失败改为 emit `error`。此前失败会被静默吞掉并照常 emit `stop`，业务方无法感知；如果代码里依赖「`stop` 一定会触发」做收尾，需改为同时监听 `error`。
+
+**`abortChat` vs `stopChat`（重要）**：
+
+| API | 作用 | 何时调用 |
+| --- | --- | --- |
+| `abortChat()` | 仅断开前端 `chat_completion` SSE，**后端 agent 继续跑** | URL 变化 / 组件卸载 / 切会话 / 静默重连替换旧连接 |
+| `stopChat(sessionCode)` | 通知后端真正停止生成 | **仅用户主动点击停止**（`stopGeneration`） |
+
+ChatBot 在 `url` / `chatHelper` 变化或卸载时只会 `abortChat()`，不会自动调 `stopChat`。`stopGeneration` 会先 `abortChat` 再 `stopChat`。
 
 ### `#headerLeft` 插槽自定义 Header 左侧
 
