@@ -14,6 +14,7 @@ import { findLastUserMessageBefore } from '../../../utils';
 function createMocks() {
   const mockAgentModule = {
     chat: vi.fn().mockResolvedValue(undefined),
+    abortChat: vi.fn(),
     stopChat: vi.fn().mockResolvedValue(undefined),
     getAgentInfo: vi.fn(),
     getLlms: vi.fn().mockResolvedValue([]),
@@ -323,12 +324,21 @@ describe('ChatBusinessManager', () => {
   });
 
   describe('stopGeneration', () => {
-    it('should call stopChat with current sessionCode and update states', async () => {
+    it('should abort frontend SSE then call stopChat with current sessionCode', async () => {
       manager.isGenerating.value = true;
+      const callOrder: string[] = [];
+      mocks.mockAgentModule.abortChat.mockImplementation(() => {
+        callOrder.push('abortChat');
+      });
+      mocks.mockAgentModule.stopChat.mockImplementation(async () => {
+        callOrder.push('stopChat');
+      });
 
       await manager.stopGeneration();
 
+      expect(mocks.mockAgentModule.abortChat).toHaveBeenCalled();
       expect(mocks.mockAgentModule.stopChat).toHaveBeenCalledWith('session-1');
+      expect(callOrder).toEqual(['abortChat', 'stopChat']);
       expect(manager.isGenerating.value).toBe(false);
       expect(manager.isStopLoading.value).toBe(false);
     });

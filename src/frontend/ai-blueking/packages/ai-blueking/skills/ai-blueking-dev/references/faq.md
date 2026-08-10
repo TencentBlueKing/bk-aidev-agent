@@ -419,13 +419,16 @@ onMessage: async (event) => {
 
 ### Q: 组件卸载时需要做什么清理？
 
-**A**: 必须停止当前聊天，避免内存泄漏：
+**A**: 断开前端 SSE 即可，**不要**自动调 `stopChat`（会杀掉后台 agent）：
 
 ```typescript
 onUnmounted(() => {
-  agent.stopChat();
+  agent.abortChat();
+  agent.clearLongPollTimer?.();
 });
 ```
+
+用户主动点「停止」才走 `stopChat` / `stopGeneration`。
 
 ---
 
@@ -475,7 +478,7 @@ interceptors: {
 
 ### 清理
 
-- [ ] 在 `onUnmounted` 中调用 `agent.stopChat()`
+- [ ] 在 `onUnmounted` 中调用 `agent.abortChat()`（勿自动 `stopChat`）
 - [ ] 清理定时器和事件监听
 
 ### 状态管理

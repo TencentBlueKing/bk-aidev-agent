@@ -439,7 +439,13 @@ export class FetchClient {
     };
 
     const wrappedConfig = { ...config, onError: wrappedOnError };
-    const { url, fetchConfig, requestConfig } = this.prepareRequest(wrappedConfig, true);
+    const { url, fetchConfig, requestConfig, controller } = this.prepareRequest(wrappedConfig, true);
+
+    let reader: ReadableStreamDefaultReader<string> | undefined;
+    const cancelReaderOnAbort = () => {
+      // pipeThrough(TextDecoderStream) 后，仅 abort fetch signal 在部分环境下不会立刻打断 reader.read()
+      void reader?.cancel().catch(() => {});
+    };
 
     try {
       const fetchResponse = await fetch(url, fetchConfig);
@@ -463,10 +469,17 @@ export class FetchClient {
 
       wrappedConfig.onStart?.();
 
-      const reader = fetchResponse.body?.pipeThrough(new window.TextDecoderStream()).getReader();
+      reader = fetchResponse.body?.pipeThrough(new window.TextDecoderStream()).getReader();
       if (!reader) {
         const error = new Error('IResponse body is not readable');
         wrappedOnError(error);
+        return;
+      }
+
+      controller.signal.addEventListener('abort', cancelReaderOnAbort, { once: true });
+      if (controller.signal.aborted) {
+        cancelReaderOnAbort();
+        wrappedConfig.onDone?.();
         return;
       }
 
@@ -512,6 +525,8 @@ export class FetchClient {
         wrappedOnError(error);
       }
       throw error;
+    } finally {
+      controller.signal.removeEventListener('abort', cancelReaderOnAbort);
     }
   }
 }
