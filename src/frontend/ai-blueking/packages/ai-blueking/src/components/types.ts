@@ -48,10 +48,10 @@ export type ChatBotEmits = {
   'receive-start': [];
   'receive-text': [];
   /**
-   * 会话名称变更（目前：首条消息后 AI 自动重命名成功）
-   * 与 AIBlueking / Header 的 rename 事件 payload 一致
+   * 会话名称变更（手动改名，或首条消息后 AI 自动重命名成功）
+   * 第二参 sessionCode 便于业务在切会话后仍能按 id 维护自己的会话列表；旧监听只取第一参仍兼容
    */
-  rename: [newName: string];
+  rename: [newName: string, sessionCode: string];
   /** 请求进入分享模式事件（来自 message-tools 的 share 按钮） */
   'request-share': [];
   'send-message': [message: string];
@@ -147,6 +147,11 @@ export interface ChatBotProps {
    * 为 true 时拉取 GET llms/；列表非空才展示 ModelSelector
    */
   enableModelSelect?: boolean;
+  /**
+   * 接口/业务错误时是否自动弹出 Message 提示（默认 true）
+   * 设为 false 可自行通过 @error 事件处理；AIBlueking 内嵌时会关闭以免双弹
+   */
+  errorToast?: boolean;
   /**
    * 外部传入的模型列表（有值时跳过内部拉取，优先使用）
    * 结构对齐 chat-x IModelOption / chat-helper ILlmItem

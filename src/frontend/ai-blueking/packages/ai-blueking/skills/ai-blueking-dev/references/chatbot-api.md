@@ -24,6 +24,7 @@
 | shareLoading    | `boolean`            | `false` | 分享加载状态                                   |
 | enableModelSelect | `boolean`          | `true`  | 是否启用模型选择（≥ v2.2.1）；拉取 `GET llms/`，列表非空才展示 |
 | models          | `ILlmItem[] \| IModelOption[]` | - | 外部模型列表（≥ v2.2.1）；有值时跳过内部拉取 |
+| errorToast      | `boolean`            | `true`  | 接口/业务错误时是否自动弹 Message（展示 `error.message`）；设为 `false` 可自行通过 `@error` 处理。AIBlueking 内嵌时会传 `false` 以免与父层双弹 |
 | height          | `string \| number`   | -       | 容器高度                                       |
 | maxWidth        | `string \| number`   | -       | 最大宽度                                       |
 | extCls          | `string`             | -       | 额外 CSS 类名                                  |
@@ -47,7 +48,7 @@
 | receive-text      | -                                          | 流式接收文本（仅独立模式）     |
 | receive-end       | -                                          | 流式响应结束（仅独立模式）     |
 | stop              | -                                          | 用户停止生成                   |
-| error             | `(error: Error)`                           | 发生错误（仅独立模式）；参数保证是 `Error` 实例，同一个错误实例只触发一次 |
+| error             | `(error: Error)`                           | 发生错误（仅独立模式）；参数保证是 `Error` 实例，同一个错误实例只触发一次；默认同时弹 Message（`errorToast`，文案为 `error.message`） |
 
 > **注意**：AIBlueking 集成模式下，ChatBot 的 `@error` 不会被透传给业务方，所有错误统一通过 AIBlueking 的 `@sdk-error` 事件暴露。详见 [集成模式 - 错误处理](integration-patterns.md#错误处理模式)。
 | session-switched  | `(session: ISession \| null)`              | 会话切换完成                   |
@@ -59,7 +60,7 @@
 | request-share     | -                                          | 请求进入分享模式               |
 | agent-action      | `(tool: IToolBtn, messages: Message[])`    | 自定义消息工具点击（非内置 cite/rebuild/delete/like/unlike） |
 | execution-panel-change | `(isCollapse: boolean)`               | 执行情况侧面板展开/折叠         |
-| rename            | `(newName: string)`                        | 首条消息后 AI 自动重命名成功（独立使用 ChatBot 时可直接监听；AIBlueking 会转发为自身 `@rename`） |
+| rename            | `(newName: string, sessionCode: string)`   | 首条消息后 AI 自动重命名成功；第二参为被改名会话编码（切会话后仍会抛，便于业务维护列表） |
 
 ## Slots
 
@@ -217,7 +218,7 @@ AIHeader 是 AIBlueking 的 Header 区域组件，其事件会透传至 AIBlueki
 | `history-session-delete` | `(sessionCode: string)` | 历史面板中删除会话（V2 模式） |
 | `history-session-rename` | `(sessionCode: string, newName: string)` | 历史面板中重命名会话（V2 模式） |
 | `auto-generate-name` | 无 | 自动生成会话名称 |
-| `rename` | `(newName: string)` | 会话重命名（手动改名，或首条消息后 AI 自动重命名成功） |
+| `rename` | `(newName: string, sessionCode: string)` | 会话重命名（手动改名，或首条消息后 AI 自动重命名成功）；`sessionCode` 标识被改名会话，切会话后仍会抛出；旧监听只取第一参兼容 |
 | `help-click` | 无 | 点击转人工按钮 |
 | `share` | 无 | 点击分享按钮 |
 | `toggle-compression` | 无 | 切换面板压缩/展开 |
@@ -343,7 +344,7 @@ AIBlueking 是完整面板组件（Nimbus 悬浮球 + 浮窗 + 拖拽 + Header +
 | new-chat-created | `(session: { sessionCode, sessionName?, createdAt? })` | 新会话创建成功 |
 | history-click | `(event: Event)` | 点击历史会话按钮 |
 | auto-generate-name | 无 | 自动生成会话名 |
-| rename | `(newName: string)` | 会话重命名（手动改名，或首条消息后 AI 自动重命名成功） |
+| rename | `(newName: string, sessionCode: string)` | 会话重命名（手动改名，或首条消息后 AI 自动重命名成功） |
 | help-click | 无 | 点击转人工按钮 |
 | share | 无 | 点击分享按钮 |
 

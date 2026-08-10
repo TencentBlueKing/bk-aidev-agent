@@ -652,10 +652,14 @@ const handleHistoryClick = (event: Event) => {
 
 ### ChatBot 独立模式 — `@error` 事件
 
-ChatBot 独立模式通过 `@error` 事件暴露 `Error` 对象：
+ChatBot 独立模式通过 `@error` 事件暴露 `Error` 对象；默认还会自动弹出 Message toast（文案为 `error.message`，例如 `chat_completion` HTTP 400 body 中的 `message`）。
 
 ```vue
+<!-- 默认：@error + toast -->
 <ChatBot url="/api/" @error="handleError" />
+
+<!-- 关闭内置 toast，自行处理 -->
+<ChatBot url="/api/" :error-toast="false" @error="handleError" />
 
 <script setup>
 const handleError = (error: Error) => {
@@ -670,6 +674,7 @@ const handleError = (error: Error) => {
 
 - **参数一定是 `Error` 实例**：非 Error 的 reject 会经 `toError()` 归一化，带 `message` 字段的对象取该字段作为 `error.message`。
 - **同一个 Error 实例只触发一次**：业务管理器「emit 失败事件后 rethrow」会让同一个错误经两条路径抵达，出口按实例去重。去重按实例而非 message，两次独立请求失败仍触发两次。
+- **`errorToast`（默认 true）**：为 true 时在出口处弹 `bkui-vue` Message；AIBlueking 内嵌 ChatBot 时会传 `error-toast={false}`，由父层 `reportSdkError` 统一 toast，避免双弹。
 
 纯 HTTP 层失败（不在上述路径内）不会触发 `@error`，需要全量覆盖时改用 AIBlueking 的 `@sdk-error`，或自行注册 `getChatHelper()?.onError(...)`。
 

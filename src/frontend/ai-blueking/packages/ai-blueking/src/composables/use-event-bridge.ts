@@ -91,7 +91,7 @@ export function createEventForwarders(forwardToManager: UseEventBridgeReturn['fo
     historyClick: (event: Event) => forwardToManager('history-click', { event }),
     autoGenerateName: () => forwardToManager('auto-generate-name', {}),
     helpClick: () => forwardToManager('help-click', {}),
-    rename: (newName: string) => forwardToManager('rename', { newName }),
+    rename: (newName: string, sessionCode: string) => forwardToManager('rename', { newName, sessionCode }),
     share: () => forwardToManager('share', {}),
 
     // 消息选择事件

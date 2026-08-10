@@ -135,13 +135,15 @@ export class ChatBusinessManager {
     }
 
     renameTask
-      .then(() => {
-        const updated =
+      .then(renamed => {
+        // 优先用 ai_rename 接口返回值，避免 current 不在分页 list 时读到旧名
+        const fallback =
           sessionModule.list.value.find(s => s.sessionCode === sessionCode) ??
           (sessionModule.current?.value?.sessionCode === sessionCode ? sessionModule.current.value : null);
-        const newName = updated?.sessionName;
+        const newName = renamed?.sessionName ?? fallback?.sessionName;
         if (newName) {
-          this.config.onSessionRenamed?.(newName);
+          // 始终抛出（含已切走会话）：业务可按 sessionCode 维护自己的列表；壳层 UI 自行判断是否当前会话
+          this.config.onSessionRenamed?.(newName, sessionCode);
         }
       })
       .catch((error: unknown) => {

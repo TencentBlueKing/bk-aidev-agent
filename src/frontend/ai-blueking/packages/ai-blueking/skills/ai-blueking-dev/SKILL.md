@@ -3,9 +3,9 @@ name: ai-blueking-dev
 description: 蓝鲸 AI 小鲸组件开发指南。基于 @blueking/chat-x（UI 组件）和 @blueking/chat-helper（业务 SDK）开发 AI 聊天应用、智能体、对话界面。涵盖 ChatBot 独立使用、AIBlueking 完整集成、流式响应、快捷指令、划词选择、模型选择（Model Select）、自定义消息渲染（图表/表单/iframe）、HITL 人机协同（工具审批/用户提问/中断恢复）、流程化智能体节点重试跳过、渲染模式（chat/share/test 分享态）、字号主题、侧栏自定义与自定义 Tab、欢迎区 `#welcome` 插槽、消息工具栏扩展（messageTools/updateTools）、非 Vue 宿主挂载等。触发场景：开发 AI 小鲸、集成 AI Agent、使用 chat-x/chat-helper、构建 AI 对话 UI、实现流式聊天、模型热切换、自定义消息组件渲染、human-in-the-loop、interrupt/resume、flow agent、自定义欢迎页、自定义消息工具按钮。
 metadata:
   author: blueking
-  version: '5.9'
+  version: '5.12'
   packages:
-    ai-blueking: 2.2.2-beta.1
+    ai-blueking: 2.2.2-beta.4
     chat-x: 0.0.49-beta.1
     chat-helper: 0.0.12-beta.12
 ---
@@ -224,8 +224,8 @@ const handleNewChatCreated = (session) => {
 
 | 模式 | 事件 | 参数 | 说明 |
 |------|------|------|------|
-| ChatBot 独立模式 | `@error` | `(error: Error)` | 原始 Error 对象 |
-| AIBlueking 集成模式 | `@sdk-error` | `{ apiName, code, message, data }` | 结构化错误数据 |
+| ChatBot 独立模式 | `@error` | `(error: Error)` | 原始 Error 对象；默认同时弹 Message（`errorToast`，文案 `error.message`） |
+| AIBlueking 集成模式 | `@sdk-error` | `{ apiName, code, message, data }` | 结构化错误数据；父层统一 toast，内嵌 ChatBot 关闭 toast 防双弹 |
 
 **AIBlueking 不对外暴露 `@error` 事件**，所有错误（初始化失败、流式对话错误）统一通过 `@sdk-error` 输出，业务方可根据 `apiName` 区分错误类型：
 

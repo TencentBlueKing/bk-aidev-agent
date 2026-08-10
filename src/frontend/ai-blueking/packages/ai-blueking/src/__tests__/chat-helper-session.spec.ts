@@ -66,4 +66,26 @@ describe('chat-helper useSession', () => {
     expect(sessionHttp.getSession).toHaveBeenCalledWith(createdSession.sessionCode);
     expect(messageModule.getMessages).toHaveBeenCalledWith(createdSession.sessionCode);
   });
+
+  it('should update current and return API name when renamed session is not in list', async () => {
+    const { mediator, sessionHttp } = createMediator();
+    sessionHttp.renameSession = vi.fn().mockResolvedValue({
+      sessionCode: 'wb_session_300edd5b93',
+      sessionName: '重命名失败',
+    });
+    const session = useSession(mediator);
+    session.list.value = [];
+    session.current.value = {
+      sessionCode: 'wb_session_300edd5b93',
+      sessionName: '新会话',
+    };
+
+    const renamed = await session.renameSession('wb_session_300edd5b93');
+
+    expect(renamed).toEqual({
+      sessionCode: 'wb_session_300edd5b93',
+      sessionName: '重命名失败',
+    });
+    expect(session.current.value?.sessionName).toBe('重命名失败');
+  });
 });

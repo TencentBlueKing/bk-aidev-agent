@@ -171,12 +171,15 @@ class ChatBusinessManager {
     if (!this.sessionModule) return;
     if (this.messageModule.list.value.length !== 1) return;
     
+    // 必须用 renameSession 的返回值（ai_rename 接口新名），不能只读 list/current：
+    // current 常由 getSession 单独写入且不在分页 list 中，旧逻辑会 emit 改名前的名字
     this.sessionModule.renameSession(sessionCode)
-      .then(() => {
-        const updated = this.sessionModule!.list.value.find(s => s.sessionCode === sessionCode);
-        if (updated?.sessionName) {
-          // 经 ChatBot emit('rename') → AIBlueking forwarders.rename，业务方可 @rename 监听
-          this.config.onSessionRenamed?.(updated.sessionName);
+      .then(renamed => {
+        const newName = renamed?.sessionName;
+        if (newName) {
+          // 始终抛出含 sessionCode：切会话后业务仍可按 id 更新自己的列表；
+          // AIBlueking Header 仅在 current 匹配时刷新标题
+          this.config.onSessionRenamed?.(newName, sessionCode);
         }
       })
       .catch(error => {
@@ -299,7 +302,7 @@ chat-bot.vue（组装层 — 创建共享 ref，按拓扑顺序组装）
 | 错误上报 | `useErrorReporter` | 新的错误来源接入、归一化规则 |
 | 跨 composable | `chat-bot.vue` 组装层 | 新的共享 ref、辅助函数 |
 
-> **错误处理约定**：composable 里的 `catch` 一律调用注入的 `reportError(error, '上下文描述')`，不要写 `console.error` + `emit('error', error as Error)`。`reportError` 已包含日志、`toError` 归一化和去重。
+> **错误处理约定**：composable 里的 `catch` 一律调用注入的 `reportError(error, '上下文描述')`，不要写 `console.error` + `emit('error', error as Error)`。`reportError` 已包含日志、`toError` 归一化、去重，以及（`errorToast !== false` 时）Message toast。
 
 ### 关键设计决策
 

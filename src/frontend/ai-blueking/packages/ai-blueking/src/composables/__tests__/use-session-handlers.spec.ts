@@ -49,11 +49,22 @@ describe('useSessionHandlers error reporting', () => {
     const params = createParams();
     const { handleSessionRenamed, sessionName } = useSessionHandlers(params);
 
-    handleSessionRenamed('AI Generated Name');
+    handleSessionRenamed('AI Generated Name', 's-1');
 
     expect(sessionName.value).toBe('AI Generated Name');
-    expect(params.forwarders.rename).toHaveBeenCalledWith('AI Generated Name');
+    expect(params.forwarders.rename).toHaveBeenCalledWith('AI Generated Name', 's-1');
     expect(params.chatHelper.session.updateSession).not.toHaveBeenCalled();
+  });
+
+  it('still forwards rename after session switch but does not update header title', () => {
+    const params = createParams();
+    const { handleSessionRenamed, sessionName } = useSessionHandlers(params);
+    sessionName.value = '当前会话标题';
+
+    handleSessionRenamed('AI Generated Name', 'other-session');
+
+    expect(sessionName.value).toBe('当前会话标题');
+    expect(params.forwarders.rename).toHaveBeenCalledWith('AI Generated Name', 'other-session');
   });
 
   it('reports auto generate name failure with semantic apiName', async () => {

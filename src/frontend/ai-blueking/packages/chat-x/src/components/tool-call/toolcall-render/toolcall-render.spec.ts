@@ -70,6 +70,22 @@ vi.mock('../../../icons/content', () => ({
   }),
 }));
 
+// Mock 流程状态图标（成功 / 失败）
+vi.mock('../../../icons', () => ({
+  BkFlowSuccessIcon: defineComponent({
+    name: 'BkFlowSuccessIcon',
+    setup() {
+      return () => h('span', { class: 'mock-bkflow-success' });
+    },
+  }),
+  BkFlowFailedIcon: defineComponent({
+    name: 'BkFlowFailedIcon',
+    setup() {
+      return () => h('span', { class: 'mock-bkflow-failed' });
+    },
+  }),
+}));
+
 // Mock ToolMessage
 vi.mock('../../chat-message/tool-message/tool-message.vue', () => ({
   default: defineComponent({
@@ -189,7 +205,7 @@ describe('ToolcallRender', () => {
       expect(wrapper.find('.toolcall-status-title').text()).toContain('调用中');
     });
 
-    it('Pending 状态应该显示 Loading', () => {
+    it('Pending 状态应该显示 Loading，且不显示成功/失败图标', () => {
       wrapper = mount(ToolcallRender, {
         props: {
           toolCall: mockToolCall,
@@ -198,9 +214,11 @@ describe('ToolcallRender', () => {
       });
 
       expect(wrapper.find('.mock-loading').exists()).toBe(true);
+      expect(wrapper.find('.mock-bkflow-success').exists()).toBe(false);
+      expect(wrapper.find('.mock-bkflow-failed').exists()).toBe(false);
     });
 
-    it('Streaming 状态应该显示 Loading', () => {
+    it('Streaming 状态应该显示 Loading，且不显示成功/失败图标', () => {
       wrapper = mount(ToolcallRender, {
         props: {
           toolCall: mockToolCall,
@@ -209,6 +227,8 @@ describe('ToolcallRender', () => {
       });
 
       expect(wrapper.find('.mock-loading').exists()).toBe(true);
+      expect(wrapper.find('.mock-bkflow-success').exists()).toBe(false);
+      expect(wrapper.find('.mock-bkflow-failed').exists()).toBe(false);
     });
 
     it('Complete 状态应该显示调用成功', () => {
@@ -245,7 +265,7 @@ describe('ToolcallRender', () => {
       expect(wrapper.find('.toolcall-status-title').text()).toContain('调用成功');
     });
 
-    it('Success 状态不应该显示 Loading', () => {
+    it('Success 状态应该显示成功图标，且不显示 Loading / 失败图标', () => {
       wrapper = mount(ToolcallRender, {
         props: {
           toolCall: mockToolCall,
@@ -253,10 +273,12 @@ describe('ToolcallRender', () => {
         },
       });
 
+      expect(wrapper.find('.mock-bkflow-success').exists()).toBe(true);
       expect(wrapper.find('.mock-loading').exists()).toBe(false);
+      expect(wrapper.find('.mock-bkflow-failed').exists()).toBe(false);
     });
 
-    it('Complete 状态不应该显示 Loading', () => {
+    it('Complete 状态应该显示成功图标，且不显示 Loading / 失败图标', () => {
       wrapper = mount(ToolcallRender, {
         props: {
           toolCall: mockToolCall,
@@ -264,10 +286,12 @@ describe('ToolcallRender', () => {
         },
       });
 
+      expect(wrapper.find('.mock-bkflow-success').exists()).toBe(true);
       expect(wrapper.find('.mock-loading').exists()).toBe(false);
+      expect(wrapper.find('.mock-bkflow-failed').exists()).toBe(false);
     });
 
-    it('Completed 状态不应该显示 Loading', () => {
+    it('Completed 状态应该显示成功图标，且不显示 Loading / 失败图标', () => {
       wrapper = mount(ToolcallRender, {
         props: {
           toolCall: mockToolCall,
@@ -275,7 +299,9 @@ describe('ToolcallRender', () => {
         },
       });
 
+      expect(wrapper.find('.mock-bkflow-success').exists()).toBe(true);
       expect(wrapper.find('.mock-loading').exists()).toBe(false);
+      expect(wrapper.find('.mock-bkflow-failed').exists()).toBe(false);
     });
 
     it('Error 状态应该显示调用失败', () => {
@@ -287,6 +313,19 @@ describe('ToolcallRender', () => {
       });
 
       expect(wrapper.find('.toolcall-status-title').text()).toContain('调用失败');
+    });
+
+    it('Error 状态应该显示失败图标，且不显示 Loading / 成功图标', () => {
+      wrapper = mount(ToolcallRender, {
+        props: {
+          toolCall: mockToolCall,
+          status: MessageStatus.Error,
+        },
+      });
+
+      expect(wrapper.find('.mock-bkflow-failed').exists()).toBe(true);
+      expect(wrapper.find('.mock-loading').exists()).toBe(false);
+      expect(wrapper.find('.mock-bkflow-success').exists()).toBe(false);
     });
   });
 
