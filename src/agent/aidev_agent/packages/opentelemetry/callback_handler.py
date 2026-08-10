@@ -136,8 +136,9 @@ class BkAidevAgentInjector:
         # Agent 配置信息
         agent_info = agent_info or {}
         agent_id = agent_info.get("agent_id", "unknown")
-        agent_code = agent_info.get("agent_code") or agent_info.get("code") or "unknown"
-        agent_name = agent_info.get("agent_name") or agent_info.get("name") or "unknown"
+        agent_code = agent_info.get("agent_code", "unknown")
+        agent_name = agent_info.get("agent_name", "unknown")
+        agent_type = agent_info.get("agent_type", "unknown")
         agent_service_catalogue = agent_info.get("service_catalogue", "unknown")
         agent_updated_by = agent_info.get("updated_by", "unknown")
         # 服务入口级别的属性
@@ -146,7 +147,7 @@ class BkAidevAgentInjector:
             "agent.info.code": agent_code,
             "agent.info.name": agent_name,
             "agent.info.sdk_version": AGENT_SDK_VERSION,
-            "agent.info.type": "LLMGW",
+            "agent.info.type": agent_type,
             "agent.info.service_catalogue": agent_service_catalogue,
             "agent.info.updated_by": agent_updated_by,
             "agent.info.agent_info": orjson.dumps(agent_info),
@@ -155,7 +156,11 @@ class BkAidevAgentInjector:
             "agent.session.input": str(inputs),
             "agent.session.start_time": start_time_str,
             "agent.session.start_time_unix_nano": start_time_unix_nano,
+            "agent.session.caller_bk_app_code": execute_kwargs.caller_bk_app_code,
+            "agent.session.caller_bk_biz_env": execute_kwargs.caller_bk_biz_env,
+            "agent.session.caller_bk_biz_id": execute_kwargs.caller_bk_biz_id,
             "agent.session.caller_executor": execute_kwargs.caller_executor,
+            "agent.session.caller_order_type": execute_kwargs.caller_order_type,
         }
         # 如果存在上游传播的 Trace Context，则使用它，否则使用当前 context
         ctx = self.parent_context if self.parent_context is not None else None

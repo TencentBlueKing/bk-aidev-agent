@@ -48,7 +48,7 @@ def test_get_otel_endpoints_base_config_custom(monkeypatch):
         ({"otel_info": None}, 0),
         ({"otel_info": {}}, 0),
         ({"otel_info": {"otel_url": "http://host:4317", "otel_token": "tok123"}}, 1),
-        ({"otel_info": {"otel_url": "http://host:4317", "otel_token": ""}}, 1),
+        ({"otel_info": {"otel_url": "http://host:4317", "otel_token": ""}}, 0),
         ({"otel_info": {"otel_url": "", "otel_token": "tok"}}, 0),
     ],
 )

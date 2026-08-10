@@ -230,12 +230,13 @@ def test_bkm_records_preserve_counter_and_histogram_semantics():
 
 
 def test_celery_exporter_enqueues_bkm_records_without_credentials(mocker):
-    tasks = _import_tasks_with_celery_stub(mocker)
-    delay = mocker.patch.object(tasks.push_bkm_metrics_task, "delay", create=True)
+    delay = mocker.Mock()
 
-    result = CeleryMetricExporter(endpoint_key="endpoint-fingerprint", target="127.0.0.1").export(
-        _sample_metrics_data()
-    )
+    result = CeleryMetricExporter(
+        endpoint_key="endpoint-fingerprint",
+        target="127.0.0.1",
+        enqueue=delay,
+    ).export(_sample_metrics_data())
 
     assert result is MetricExportResult.SUCCESS
     endpoint_key, payload = delay.call_args.args
@@ -246,7 +247,13 @@ def test_celery_exporter_enqueues_bkm_records_without_credentials(mocker):
 
 def test_metric_service_uses_credential_free_bkm_endpoint_key():
     settings = _bkm_settings()
-    service = BkPluginMetricService(service_name="ai-demo", endpoints=[], agent_info={}, settings=settings)
+    service = BkPluginMetricService(
+        service_name="ai-demo",
+        endpoints=[],
+        agent_info={},
+        settings=settings,
+        enqueue_bkm_metrics=lambda *_args: None,
+    )
 
     exporter = service._create_celery_exporter()
 
@@ -293,7 +300,7 @@ def test_metric_service_rejects_unknown_worker_endpoint():
 def test_celery_task_exports_through_process_local_metric_service(mocker):
     tasks = _import_tasks_with_celery_stub(mocker)
     service = mocker.Mock()
-    mocker.patch("aidev_bkplugin.apps.get_metric_service", return_value=service)
+    mocker.patch.object(tasks, "get_metric_service", return_value=service)
 
     tasks.push_bkm_metrics_task("endpoint-fingerprint", "payload")
 

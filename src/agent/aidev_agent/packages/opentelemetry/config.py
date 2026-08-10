@@ -37,6 +37,8 @@ class OTelConfig:
         # ===== 功能开关 =====
         self.enable_traces: bool = get_env_bool("BKAI_AGENT_ENABLE_TRACES", True)
         self.enable_metrics: bool = get_env_bool("BKAI_AGENT_ENABLE_METRICS", False)
+        # bkplugin may install a BKM-specific MeterProvider while the Agent SDK keeps metric instrumentation enabled.
+        self.metric_provider_managed_externally: bool = False
         self.enable_logs: bool = get_env_bool("BKAI_AGENT_ENABLE_LOGS", False)
 
         # ===== 性能优化配置 =====

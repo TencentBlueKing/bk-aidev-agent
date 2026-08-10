@@ -10,7 +10,7 @@ import os
 import re
 import socket
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlparse, urlunparse
 
 import requests
@@ -232,10 +232,16 @@ def _bkm_records(metrics_data: MetricsData, target: str) -> list[dict[str, Any]]
 class CeleryMetricExporter(MetricExporter):
     """Convert one periodic OTel snapshot and delegate its BKM push to Celery."""
 
-    def __init__(self, endpoint_key: str, target: str) -> None:
+    def __init__(
+        self,
+        endpoint_key: str,
+        target: str,
+        enqueue: Callable[[str, str], Any],
+    ) -> None:
         super().__init__()
         self.endpoint_key = endpoint_key
         self.target = target
+        self.enqueue = enqueue
 
     def export(
         self,
@@ -248,9 +254,7 @@ class CeleryMetricExporter(MetricExporter):
             if not records:
                 return MetricExportResult.SUCCESS
             payload = json.dumps(records, ensure_ascii=False, separators=(",", ":"))
-            from aidev_bkplugin.tasks import push_bkm_metrics_task
-
-            push_bkm_metrics_task.delay(self.endpoint_key, payload)
+            self.enqueue(self.endpoint_key, payload)
         except Exception:  # noqa: BLE001
             logger.exception(
                 "[aidev_bkplugin] failed to enqueue metric snapshot for endpoint %s",
@@ -276,11 +280,13 @@ class BkPluginMetricService:
         endpoints: list[dict[str, Any]],
         agent_info: dict[str, Any] | None,
         settings: MetricExportSettings,
+        enqueue_bkm_metrics: Callable[[str, str], Any] | None = None,
     ) -> None:
         self.service_name = service_name
         self.endpoints = endpoints
         self.agent_info = agent_info or {}
         self.settings = settings
+        self.enqueue_bkm_metrics = enqueue_bkm_metrics
         self.provider: MeterProvider | None = None
 
     def start(self) -> bool:
@@ -289,6 +295,9 @@ class BkPluginMetricService:
             return False
         readers = []
         if self.settings.export_via_celery:
+            if self.enqueue_bkm_metrics is None:
+                logger.warning("[aidev_bkplugin] BKM metric export enabled but Celery enqueue is unavailable")
+                return False
             if not self.settings.bkm_data_id or not self.settings.bkm_access_token or not self.settings.bkm_push_url:
                 logger.warning("[aidev_bkplugin] BKM metric export enabled but push configuration is incomplete")
                 return False
@@ -323,8 +332,10 @@ class BkPluginMetricService:
         return True
 
     def _create_celery_exporter(self) -> CeleryMetricExporter:
+        if self.enqueue_bkm_metrics is None:
+            raise RuntimeError("Celery metric enqueue is unavailable")
         target = self.settings.bkm_target or socket.gethostname()
-        return CeleryMetricExporter(_bkm_endpoint_key(self.settings), target)
+        return CeleryMetricExporter(_bkm_endpoint_key(self.settings), target, self.enqueue_bkm_metrics)
 
     def push_bkm(self, endpoint_key: str, payload: str) -> None:
         if endpoint_key != _bkm_endpoint_key(self.settings):
