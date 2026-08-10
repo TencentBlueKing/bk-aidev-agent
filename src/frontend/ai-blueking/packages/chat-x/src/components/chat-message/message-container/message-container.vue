@@ -8,6 +8,7 @@
       :id="group.uid"
       :key="groupIndex"
       class="message-group"
+      :data-message-group-id="group.uid"
       :style="{
         backgroundColor: group.checked ? '#f5f7fa' : 'transparent',
       }"
@@ -34,9 +35,11 @@
             width: enableSelection && group.type !== MessageRole.Loading ? 'calc(100% - 16px)' : '100%',
           }"
         >
-          <template
+          <div
             v-for="(message, index) in group.messages"
             :key="index"
+            class="ai-message-item"
+            :data-message-id="resolveMessageDomId(message)"
           >
             <slot
               name="default"
@@ -68,7 +71,7 @@
                 </template>
               </MessageRender>
             </slot>
-          </template>
+          </div>
           <MessageTools
             v-if="
               renderMode !== RenderMode.Share &&
@@ -213,6 +216,15 @@
     }) => unknown;
     group: (props: { group: MessageGroup }) => unknown;
   }>();
+
+  /**
+   * 单条消息的 DOM 标识：优先服务端消息 ID，流式渲染中尚未拿到 ID 时回退到前端 uid
+   * @returns 两者都缺失时返回 undefined，此时不输出 data-message-id 属性
+   */
+  const resolveMessageDomId = (message: Message): string | undefined => {
+    const domId = message.id || message.uid;
+    return domId === undefined ? undefined : String(domId);
+  };
 
   const messageContainerRef = useTemplateRef<HTMLElement>('messageContainerRef');
   const messageContainerBottomRef = useTemplateRef<HTMLElement>('messageContainerBottomRef');
@@ -368,6 +380,13 @@
 
         // contain: content;
       }
+    }
+
+    // 仅作为单条消息的 DOM 定位锚点，沿用父级的列向弹性布局，不改变原有排版
+    .ai-message-item {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
     }
 
     .message-container-bottom {
