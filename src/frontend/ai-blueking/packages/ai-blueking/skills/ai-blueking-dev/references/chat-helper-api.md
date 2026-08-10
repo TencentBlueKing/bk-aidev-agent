@@ -181,13 +181,23 @@ await agent.stopChat(sessionCode: string);  // POST session_content/stop/
 
 #### abortChat
 
-中止当前聊天（**纯前端中止**）。仅在前端 `abort` 当前 SSE 连接，后端仍继续处理。切换会话时内部会自动调用。
+中止当前聊天（**纯前端中止**）。仅在前端 `abort` 当前 SSE 连接，后端仍继续处理。
+
+会同时：失效当前流世代（忽略旧 `onDone`/`onError`）、取消静默重连定时器、清理 HITL 长轮询，并置 `isChatting=false`。不会调用 `finishSuccessfully` / `pollResumeSession`。
+
+内部会在以下场景自动调用：
+
+- 切换会话（`chooseSession`）
+- ChatBot `url` / `chatHelper` 变化或组件卸载（`destroyChatHelper`）
+- 用户点击停止时（`stopGeneration` 会先 abort 再 `stopChat`）
 
 ```typescript
 agent.abortChat();  // 无参数，abort 当前 AbortController
 ```
 
-> 区分：`abortChat()` 只断开前端连接（后端不停）；`stopChat(sessionCode)` 通知后端真正停止生成。
+> 区分：`abortChat()` 只断开前端连接（后端不停）；`stopChat(sessionCode)` 通知后端真正停止生成。  
+> **不要**在 URL 变化、卸载、切会话时调用 `stopChat`，否则后台 agent 会被杀掉。  
+> 静默重连会携带发起时的 `streamId`，任一 `await` 后若已被新流取代则退出，避免误 abort 更新请求。
 
 #### streamRequest
 

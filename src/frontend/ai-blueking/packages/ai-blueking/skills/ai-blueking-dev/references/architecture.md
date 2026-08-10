@@ -356,8 +356,8 @@ chat-bot.vue（组装层 — 创建共享 ref，按拓扑顺序组装）
 
 #### 清理
 
-- [ ] `onBeforeUnmount` 中调用 `agent.stopChat(sessionCode)`
-- [ ] `stopChat` 需要传入 `sessionCode` 参数
+- [ ] `onBeforeUnmount` / URL 变化时调用 `agent.abortChat()`（只断前端 SSE）
+- [ ] **不要**在自动清理路径调用 `stopChat`；`stopChat` 仅用户主动停止时使用
 
 #### 状态管理
 

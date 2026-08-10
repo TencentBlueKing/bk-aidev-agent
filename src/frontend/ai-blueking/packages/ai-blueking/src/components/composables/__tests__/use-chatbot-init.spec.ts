@@ -19,6 +19,7 @@ vi.mock('@blueking/chat-helper', async () => {
         getLlms: vi.fn().mockResolvedValue([]),
         stopChat: vi.fn().mockResolvedValue(undefined),
         abortChat: vi.fn(),
+        clearLongPollTimer: vi.fn(),
         info: ref(null),
         isChatting: ref(false),
         isModelsLoading: ref(false),
@@ -411,17 +412,21 @@ describe('useChatbotInit', () => {
 
     it('should reset isInitialized to false during re-init', async () => {
       let capturedInitializedDuringReinit = true;
-      mockHelper.agent.getAgentInfo.mockImplementation(() => {
-        capturedInitializedDuringReinit = result.isInitialized.value;
-        return Promise.resolve({});
-      });
+      let initResult: ReturnType<typeof useChatbotInit> | null = null;
 
       const { result, wrapper, reactiveProps } = withSetupReactive({
         url: 'https://api-v1.example.com',
       });
+      initResult = result;
 
       await flushPromises();
       expect(result.isInitialized.value).toBe(true);
+
+      // 仅在第二次 init（url 变化）时捕获 isInitialized，避免首轮 init 的 TDZ/时序干扰
+      mockHelper.agent.getAgentInfo.mockImplementation(() => {
+        capturedInitializedDuringReinit = initResult!.isInitialized.value;
+        return Promise.resolve({});
+      });
 
       reactiveProps.url = 'https://api-v2.example.com';
       await nextTick();
@@ -432,19 +437,21 @@ describe('useChatbotInit', () => {
       wrapper.unmount();
     });
 
-    it('should call stopChat on old helper during destroy', async () => {
+    it('should abortChat on old helper during destroy without stopChat', async () => {
       const { wrapper, reactiveProps } = withSetupReactive({
         url: 'https://api-v1.example.com',
       });
 
       await flushPromises();
       mockHelper.agent.stopChat.mockClear();
+      mockHelper.agent.abortChat.mockClear();
 
       reactiveProps.url = 'https://api-v2.example.com';
       await nextTick();
       await flushPromises();
 
-      expect(mockHelper.agent.stopChat).toHaveBeenCalled();
+      expect(mockHelper.agent.abortChat).toHaveBeenCalled();
+      expect(mockHelper.agent.stopChat).not.toHaveBeenCalled();
       wrapper.unmount();
     });
 

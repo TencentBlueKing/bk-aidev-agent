@@ -129,16 +129,14 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
   };
 
   /**
-   * 清理 ChatHelper 资源
+   * 清理 ChatHelper 资源（仅断开前端 SSE，不调用后端 stop）
+   * stopChat 仅应由用户主动点击停止触发，避免 URL 变化/卸载时把后台 agent 杀掉
    */
-  const destroyChatHelper = async (helper: IChatHelper | null, wasStandalone: boolean) => {
+  const destroyChatHelper = (helper: IChatHelper | null) => {
     if (!helper) return;
     try {
-      const sessionCode = helper.session.current?.value?.sessionCode ?? '';
-      await helper.agent.stopChat(sessionCode);
-      if (wasStandalone) {
-        helper.agent.abortChat();
-      }
+      helper.agent.abortChat();
+      helper.agent.clearLongPollTimer?.();
     } catch {
       // destroy 不应抛出异常阻塞重新初始化
     }
@@ -176,13 +174,12 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
 
   const runInitialize = async (currentGen: number): Promise<void> => {
     const oldHelper = chatHelper.value;
-    const wasStandalone = isStandaloneMode.value;
 
     isInitialized.value = false;
     initError.value = null;
     isStandaloneMode.value = !props.chatHelper;
 
-    await destroyChatHelper(oldHelper, wasStandalone);
+    destroyChatHelper(oldHelper);
     assertGeneration(currentGen);
 
     chatHelper.value = null;
@@ -309,7 +306,7 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
 
   onBeforeUnmount(() => {
     abortInFlightInit();
-    destroyChatHelper(chatHelper.value, isStandaloneMode.value);
+    destroyChatHelper(chatHelper.value);
   });
 
   return {

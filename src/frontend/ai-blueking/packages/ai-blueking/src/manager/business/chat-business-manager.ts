@@ -627,6 +627,8 @@ export class ChatBusinessManager {
     const sessionCode = this.sessionModule?.current?.value?.sessionCode ?? '';
     this._isStopLoading.value = true;
     try {
+      // 先断开前端 SSE，再通知后端停止（仅用户主动停止走此路径）
+      this.agentModule.abortChat();
       await this.agentModule.stopChat(sessionCode);
       this._isGenerating.value = false;
       this.emit('stop', {});
