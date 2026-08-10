@@ -37,6 +37,32 @@ class FakeMeter:
         return self.instruments.setdefault(name, FakeInstrument())
 
 
+def test_agent_metrics_only_create_instruments_used_by_the_dashboard():
+    meter = FakeMeter()
+
+    AgentMetrics(meter)
+
+    assert set(meter.instruments) == {
+        "aidev.agent.active",
+        "aidev.agent.phase.active",
+        "aidev.agent.phase.duration",
+        "aidev.message.publish.count",
+        "aidev.message.publish.duration",
+        "aidev.message.publish.event_count",
+        "aidev.message.publish.size",
+        "aidev.sse.event.count",
+        "gen_ai.client.operation.active",
+        "gen_ai.client.operation.duration",
+        "gen_ai.client.operation.time_to_first_chunk",
+        "gen_ai.execute_tool.active",
+        "gen_ai.execute_tool.duration",
+        "gen_ai.invoke_agent.duration",
+        "gen_ai.invoke_agent.inference_calls",
+        "gen_ai.invoke_agent.started",
+        "gen_ai.invoke_agent.time_to_first_token",
+    }
+
+
 def test_extract_token_usage_preserves_cache_breakdown_and_normalizes_prompt_tokens():
     response = LLMResult(
         generations=[],
@@ -57,37 +83,6 @@ def test_extract_token_usage_preserves_cache_breakdown_and_normalizes_prompt_tok
         "output_tokens": 48,
         "total_tokens": 168,
     }
-
-
-def test_token_metric_preserves_input_output_and_cache_types():
-    meter = FakeMeter()
-    recorder = AgentMetrics(meter)
-    attrs = {
-        **recorder.agent_attributes("ai-demo", "演示智能体"),
-        "gen_ai.request.model": "model-a",
-        "gen_ai.response.model": "model-b",
-    }
-
-    recorder.record_llm(
-        0.8,
-        attrs,
-        {
-            "cache_creation_input_tokens": 8,
-            "cache_read_input_tokens": 16,
-            "input_tokens": 96,
-            "output_tokens": 48,
-            "total_tokens": 168,
-        },
-    )
-
-    calls = meter.instruments["gen_ai.client.token.usage"].calls
-    assert [(value, call_attrs["gen_ai.token.type"]) for value, call_attrs in calls] == [
-        (96, "input"),
-        (48, "output"),
-        (8, "cache_creation"),
-        (16, "cache_read"),
-    ]
-    assert all("aidev.token.cache.type" not in call_attrs for _, call_attrs in calls)
 
 
 def test_extract_standard_usage_metadata_subtracts_nested_cache_from_input():
@@ -113,13 +108,12 @@ def test_error_type_is_added_only_to_duration_metric():
     recorder = AgentMetrics(meter)
     attrs = recorder.agent_attributes("ai-demo", "演示智能体")
 
-    recorder.record_agent(1.2, 2, 1, attrs, child_duration=0.7, error=RuntimeError("boom"))
+    recorder.record_agent(1.2, 2, attrs, error=RuntimeError("boom"))
 
     duration_attrs = meter.instruments["gen_ai.invoke_agent.duration"].calls[0][1]
     assert duration_attrs["error.type"] == "RuntimeError"
     assert "error.type" not in meter.instruments["gen_ai.invoke_agent.inference_calls"].calls[0][1]
     assert "agent.session.session_code" not in duration_attrs
-    assert meter.instruments["aidev.agent.processing.duration"].calls[0][0] == 0.5
 
 
 def test_active_agent_metric_is_symmetric_and_low_cardinality():
@@ -189,14 +183,10 @@ def test_sse_metrics_include_configured_agent_code_dimension():
     recorder = AgentMetrics(meter)
     configure_metric_identity("ai-demo", "演示智能体")
 
-    recorder.record_sse_event(128, "TEXT_MESSAGE_CONTENT")
-    recorder.record_sse_response(128)
+    recorder.record_sse_event()
 
     event_attrs = meter.instruments["aidev.sse.event.count"].calls[0][1]
-    response_attrs = meter.instruments["aidev.sse.response.size"].calls[0][1]
     assert event_attrs["agent.info.code"] == "ai-demo"
-    assert response_attrs["agent.info.code"] == "ai-demo"
-    assert meter.instruments["aidev.sse.event.size"].calls[0][0] == 128
 
 
 def test_message_publish_metrics_include_actual_handler_without_session_labels():
@@ -237,4 +227,4 @@ def test_failed_message_publish_is_not_counted_as_successful_broker_writes():
     assert meter.instruments["aidev.message.publish.count"].calls == []
     assert meter.instruments["aidev.message.publish.event_count"].calls == []
     assert meter.instruments["aidev.message.publish.size"].calls == []
-    assert meter.instruments["aidev.message.publish.errors"].calls[0][1]["error.type"] == "TimeoutError"
+    assert meter.instruments["aidev.message.publish.duration"].calls[0][1]["error.type"] == "TimeoutError"

@@ -42,19 +42,6 @@ _SSE_HEARTBEAT_EVENT = EventEncoder().encode(
 _RESUME_FILTER_EVENT_TYPES: frozenset[str] = frozenset({"flow_agent_start"})
 
 
-def _get_sse_event_type(chunk: Any) -> str:
-    if not isinstance(chunk, str) or not chunk.startswith("data: "):
-        return "unknown"
-    payload = chunk[6:].strip()
-    if payload == "[DONE]":
-        return "done"
-    try:
-        data = json.loads(payload)
-    except (TypeError, json.JSONDecodeError):
-        return "unknown"
-    return str(data.get("type") or data.get("event") or "unknown")
-
-
 def _get_message_handler_metric_attributes(handler: BaseMessageQueueHandler) -> dict[str, str]:
     """Return the actual handler implementation without queue/session identifiers."""
     class_name = type(handler).__name__.lower()
@@ -1229,8 +1216,6 @@ class GeneratorStreamingHelper:
         _producer_start = time.monotonic()
         metric_recorder = get_enabled_agent_metrics() if get_enabled_agent_metrics is not None else None
         metric_message_attributes = _get_message_handler_metric_attributes(self.message_handler)
-        metric_response_size = 0
-        metric_first_event_seen = False
         logger.info(f"[PRODUCER] start thread_id={self.thread_id} thread={threading.current_thread().name}")
         heartbeat_stop_event = threading.Event()
         heartbeat_thread: threading.Thread | None = None
@@ -1328,16 +1313,7 @@ class GeneratorStreamingHelper:
                 chunk_count += 1
 
                 if metric_recorder is not None:
-                    chunk_size = (
-                        len(chunk.encode("utf-8")) if isinstance(chunk, str) else len(str(chunk).encode("utf-8"))
-                    )
-                    metric_response_size += chunk_size
-                    metric_recorder.record_sse_event(chunk_size, _get_sse_event_type(chunk), metric_message_attributes)
-                    if not metric_first_event_seen:
-                        metric_recorder.record_sse_first_event(
-                            time.monotonic() - _producer_start, metric_message_attributes
-                        )
-                        metric_first_event_seen = True
+                    metric_recorder.record_sse_event(metric_message_attributes)
 
                 current_time = time.time()
                 should_check_cross_process = (
@@ -1396,8 +1372,6 @@ class GeneratorStreamingHelper:
                         f"Failed to send terminal error events for thread_id={self.thread_id}: {encode_err}"
                     )
         finally:
-            if metric_recorder is not None:
-                metric_recorder.record_sse_response(metric_response_size, metric_message_attributes)
             logger.info(
                 f"[PRODUCER] finally enter thread_id={self.thread_id} "
                 f"producer_error={producer_error} done_event_seen={done_event_seen} "

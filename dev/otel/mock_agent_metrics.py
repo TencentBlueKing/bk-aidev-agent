@@ -27,6 +27,7 @@ DEFAULT_MODELS = (
     "mock-log-analysis-b",
     "mock-log-analysis-c",
 )
+MOCK_ERROR_CASES = ("success", "agent", "llm", "tool", "handler")
 SANITIZED_PROMPT = "查一下业务 <BK_BIZ_ID> 的索引集 <INDEX_SET_ID> 近 1 天前 10 条日志，按合适维度输出总结"
 SANITIZED_LOGS = (
     {
@@ -138,6 +139,22 @@ class ScenarioStage:
     phase: str
     duration: float
     operation_index: int | None = None
+
+
+class MockAgentExecutionError(RuntimeError):
+    """Agent run failure used only by the local observability scenario."""
+
+
+class MockLlmTimeoutError(TimeoutError):
+    """LLM timeout used only by the local observability scenario."""
+
+
+class MockToolInvocationError(RuntimeError):
+    """Tool invocation failure used only by the local observability scenario."""
+
+
+class MockHandlerPublishError(ConnectionError):
+    """Handler publish failure used only by the local observability scenario."""
 
 
 def _usage(input_tokens: int, output_tokens: int, cache_creation: int = 0, cache_read: int = 0) -> dict[str, int]:
@@ -284,6 +301,11 @@ def assigned_models(models: tuple[str, ...], run_count: int) -> tuple[str, ...]:
     return tuple(models[index % len(models)] for index in range(run_count))
 
 
+def mock_error_case(handler_index: int, slot_index: int, run_index: int) -> str:
+    """Select reproducible success and error cases across handlers, slots and runs."""
+    return MOCK_ERROR_CASES[(handler_index * 3 + slot_index + run_index) % len(MOCK_ERROR_CASES)]
+
+
 def _scaled_durations(base_durations: tuple[float, ...], total: float, rng: random.Random) -> tuple[float, ...]:
     weights = tuple(base_duration * rng.uniform(0.5, 1.5) for base_duration in base_durations)
     weight_sum = sum(weights)
@@ -346,13 +368,13 @@ def _record_scenario_output(
     recorder: AgentMetrics,
     handler_type: str,
     rng: random.Random,
+    error: BaseException | None = None,
 ) -> None:
     messaging_system = HANDLER_SYSTEMS[handler_type]
     message_attrs = {"aidev.message.handler.type": handler_type, "messaging.system": messaging_system}
     events = build_sanitized_sse_events()
-    for event in events:
-        recorder.record_sse_event(event.size, event.event_type, message_attrs)
-    recorder.record_sse_response(sum(event.size for event in events), message_attrs)
+    for _event in events:
+        recorder.record_sse_event(message_attrs)
     physical_sizes = coalesce_content_events(events)
     recorder.record_message_publish(
         handler_type=handler_type,
@@ -360,7 +382,41 @@ def _record_scenario_output(
         event_count=len(events),
         message_sizes=physical_sizes,
         duration=rng.uniform(0.008, 0.03) + len(physical_sizes) * 0.0002,
+        error=error,
     )
+
+
+def _record_initial_error_samples(
+    recorder: AgentMetrics,
+    agent_attrs: dict[str, str],
+    handlers: tuple[str, ...],
+    models: tuple[str, ...],
+) -> None:
+    """Make every error source visible before the first 30-120s Agent run completes."""
+    recorder.record_agent(0.05, 0, agent_attrs, error=MockAgentExecutionError("mock Agent execution failed"))
+    recorder.record_llm(
+        0.04,
+        _llm_attributes(agent_attrs, models[0]),
+        error=MockLlmTimeoutError("mock LLM request timed out"),
+    )
+    recorder.record_tool(
+        0.03,
+        {
+            **agent_attrs,
+            "gen_ai.tool.name": TOOL_STEPS[0].name,
+            "gen_ai.tool.type": "function",
+        },
+        error=MockToolInvocationError("mock tool invocation failed"),
+    )
+    for handler_type in handlers:
+        recorder.record_message_publish(
+            handler_type=handler_type,
+            messaging_system=HANDLER_SYSTEMS[handler_type],
+            event_count=0,
+            message_sizes=[],
+            duration=0.02,
+            error=MockHandlerPublishError("mock Handler publish failed"),
+        )
 
 
 def _run_scenario(
@@ -370,6 +426,7 @@ def _run_scenario(
     model_name: str,
     rng: random.Random,
     stop_event: threading.Event,
+    error_case: str = "success",
 ) -> None:
     """Run one scenario in real wall-clock time so concurrency, rate and latency stay coherent."""
     timings = build_scenario_timings(rng)
@@ -380,8 +437,6 @@ def _run_scenario(
     phase_started_at: float | None = None
     active_llm_attrs: dict[str, str] | None = None
     active_tool_attrs: dict[str, str] | None = None
-    llm_duration_total = 0.0
-    tool_duration_total = 0.0
     first_agent_token_seen = False
     completed = False
 
@@ -420,7 +475,6 @@ def _run_scenario(
                 continue
 
             if stage.phase == "llm":
-                step = MODEL_STEPS[stage.operation_index or 0]
                 active_llm_attrs = llm_attrs
                 recorder.record_active_llm(1, active_llm_attrs)
                 first_chunk_duration = timings.llm_first_chunk_durations[stage.operation_index or 0]
@@ -433,8 +487,12 @@ def _run_scenario(
                 if stop_event.wait(max(0, stage.duration - first_chunk_duration)):
                     return
                 llm_duration = time.monotonic() - stage_started_at
-                llm_duration_total += llm_duration
-                recorder.record_llm(llm_duration, llm_attrs, step.usage)
+                llm_error = (
+                    MockLlmTimeoutError("mock LLM request timed out")
+                    if error_case == "llm" and stage.operation_index == 0
+                    else None
+                )
+                recorder.record_llm(llm_duration, llm_attrs, error=llm_error)
                 recorder.record_active_llm(-1, active_llm_attrs)
                 active_llm_attrs = None
                 continue
@@ -449,8 +507,12 @@ def _run_scenario(
             if stop_event.wait(stage.duration):
                 return
             tool_duration = time.monotonic() - stage_started_at
-            tool_duration_total += tool_duration
-            recorder.record_tool(tool_duration, active_tool_attrs)
+            tool_error = (
+                MockToolInvocationError("mock tool invocation failed")
+                if error_case == "tool" and stage.operation_index == 0
+                else None
+            )
+            recorder.record_tool(tool_duration, active_tool_attrs, error=tool_error)
             recorder.record_active_tool(-1, active_tool_attrs)
             active_tool_attrs = None
         completed = True
@@ -465,18 +527,15 @@ def _run_scenario(
             recorder.record_agent(
                 agent_duration,
                 len(MODEL_STEPS),
-                len(TOOL_STEPS),
                 agent_attrs,
-                child_duration=llm_duration_total + tool_duration_total,
+                error=(MockAgentExecutionError("mock Agent execution failed") if error_case == "agent" else None),
             )
-            recorder.record_sse_first_event(
-                timings.llm_first_chunk_durations[0],
-                {
-                    "aidev.message.handler.type": handler_type,
-                    "messaging.system": HANDLER_SYSTEMS[handler_type],
-                },
+            _record_scenario_output(
+                recorder,
+                handler_type,
+                rng,
+                error=(MockHandlerPublishError("mock Handler publish failed") if error_case == "handler" else None),
             )
-            _record_scenario_output(recorder, handler_type, rng)
         recorder.record_active_agent(-1, agent_attrs)
 
 
@@ -506,6 +565,7 @@ def _worker_loop(
             models[model_index % len(models)],
             rng,
             stop_event,
+            error_case=mock_error_case(handler_index, slot_index, run_index),
         )
         run_index += 1
 
@@ -572,13 +632,19 @@ def main() -> None:
             "agent_name": "本地指标验证智能体",
             "agent_sdk_version": "2.2.3",
         },
-        settings=MetricExportSettings(enabled=True, export_interval_millis=1000, export_timeout_millis=5000),
+        settings=MetricExportSettings(
+            enabled=True,
+            export_interval_millis=1000,
+            export_timeout_millis=5000,
+            export_via_celery=False,
+        ),
     )
     service.start()
 
     configure_metric_identity("ai-agent-local-demo", "本地指标验证智能体")
     recorder = AgentMetrics()
     agent_attrs = recorder.agent_attributes("ai-agent-local-demo", "本地指标验证智能体")
+    _record_initial_error_samples(recorder, agent_attrs, handlers, args.models)
     print(f"Sanitized scenario: {SANITIZED_PROMPT}")
     print("Mock tools: " + ", ".join(step.name for step in TOOL_STEPS))
     print(
@@ -586,6 +652,7 @@ def main() -> None:
         f"total active range: {len(handlers)}-{len(handlers) * args.concurrency}"
     )
     print("Mock models: " + ", ".join(args.models))
+    print("Mock outcomes: " + ", ".join(MOCK_ERROR_CASES) + "; error.type is the mock exception class name")
     print(
         f"Real wall-clock lifecycle: {args.iterations} ticks x {args.interval:.1f}s; "
         "each completed Agent Run lasts 30-120s"

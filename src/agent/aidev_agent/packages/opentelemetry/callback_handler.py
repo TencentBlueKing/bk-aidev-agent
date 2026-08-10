@@ -323,8 +323,6 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         self._llm_first_chunk_seen: set[UUID] = set()
         self._tool_started_at: Dict[UUID, float] = {}
         self._tool_metric_attributes: Dict[UUID, Dict[str, str]] = {}
-        self._llm_duration_total = 0.0
-        self._tool_duration_total = 0.0
         self._active_llm_operation_count = 0
         self._active_tool_operation_count = 0
         self._agent_phase: str | None = None
@@ -374,9 +372,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
                         self._metrics.record_agent(
                             duration=time.monotonic() - started_at,
                             inference_calls=self.inference_call_counter,
-                            tool_calls=self.tool_call_counter,
                             attributes=self._metric_agent_attributes,
-                            child_duration=self._llm_duration_total + self._tool_duration_total,
                             error=error,
                         )
                     finally:
@@ -1011,12 +1007,10 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         started_at = self._llm_started_at.pop(run_id, None)
         if self._metrics is not None and started_at is not None:
             duration = time.monotonic() - started_at
-            self._llm_duration_total += duration
             try:
                 self._metrics.record_llm(
                     duration=duration,
                     attributes=self._llm_metric_attributes(run_id, model_name),
-                    usage=usage,
                 )
             finally:
                 active_attributes = self._llm_active_attributes.pop(run_id, None)
@@ -1042,7 +1036,6 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         started_at = self._llm_started_at.pop(run_id, None)
         if self._metrics is not None and started_at is not None:
             duration = time.monotonic() - started_at
-            self._llm_duration_total += duration
             try:
                 self._metrics.record_llm(
                     duration=duration,
@@ -1120,7 +1113,6 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             try:
                 if started_at is not None:
                     duration = time.monotonic() - started_at
-                    self._tool_duration_total += duration
                     self._metrics.record_tool(duration, metric_attributes)
             finally:
                 self._metrics.record_active_tool(-1, metric_attributes)
@@ -1150,7 +1142,6 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             try:
                 if started_at is not None:
                     duration = time.monotonic() - started_at
-                    self._tool_duration_total += duration
                     self._metrics.record_tool(duration, metric_attributes, error=error)
             finally:
                 self._metrics.record_active_tool(-1, metric_attributes)

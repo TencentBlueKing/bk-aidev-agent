@@ -34,6 +34,11 @@ logger = logging.getLogger(__name__)
 _metric_service = None
 
 
+def get_metric_service():
+    """Return the process-local metric service initialized by Django AppConfig."""
+    return _metric_service
+
+
 def init_bk_aidev_agent_otel() -> None:
     """
     初始化 BK AIDEV Agent OpenTelemetry。
@@ -98,7 +103,9 @@ def init_bk_aidev_agent_otel() -> None:
             agent_info=agent_info,
             settings=metric_settings,
         )
-        _metric_service.start()
+        otel_config.enable_metrics = _metric_service.start()
+        if not otel_config.enable_metrics:
+            _metric_service = None
     except ImportError:
         logger.info("[aidev_bkplugin] metric OpenTelemetry extras unavailable; metric export skipped")
         otel_config.enable_metrics = False

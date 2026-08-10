@@ -9,6 +9,7 @@ import pytest
 from dev.otel.mock_agent_metrics import (
     DEFAULT_MODELS,
     HANDLER_SYSTEMS,
+    MOCK_ERROR_CASES,
     SANITIZED_LOGS,
     SANITIZED_PROMPT,
     TOOL_STEPS,
@@ -17,6 +18,7 @@ from dev.otel.mock_agent_metrics import (
     build_scenario_stages,
     build_scenario_timings,
     coalesce_content_events,
+    mock_error_case,
     sample_handler_runs,
     selected_handlers,
     selected_models,
@@ -44,7 +46,6 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
         "response_model",
         "tool_name",
         "handler_type",
-        "sse_event_type",
     }
     for metric in (
         "aidev_agent_phase_active",
@@ -52,7 +53,7 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
         "gen_ai_invoke_agent_time_to_first_token",
         "gen_ai_client_operation_active",
         "gen_ai_execute_tool_active",
-        "aidev_sse_event_size",
+        "aidev_sse_event_count",
         "aidev_message_publish_count",
         "aidev_message_publish_size",
     ):
@@ -72,6 +73,12 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
     assert len(panels_by_id[11]["targets"]) == 1
     assert panels_by_id[10]["title"] == "Agent 墙钟耗时 P95"
     assert len(panels_by_id[10]["targets"]) == 1
+    assert panels_by_id[32]["title"] == "Agent 首 Token P95（流式调用，按 Agent Code）"
+    assert panels_by_id[32]["type"] == "timeseries"
+    assert "sum by (le, agent_info_code)" in panels_by_id[32]["targets"][0]["expr"]
+    assert "gen_ai_invoke_agent_time_to_first_token_seconds_bucket" in panels_by_id[32]["targets"][0]["expr"]
+    assert panels_by_id[32]["gridPos"] == {"h": 8, "w": 12, "x": 12, "y": 23}
+    assert panels_by_id[12]["gridPos"] == {"h": 8, "w": 24, "x": 0, "y": 31}
     assert panels_by_id[16]["title"].startswith("LLM 并发")
     for panel_id in (2, 14, 16):
         assert all("gen_ai_response_model" not in target["expr"] for target in panels_by_id[panel_id]["targets"])
@@ -91,8 +98,64 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
             assert "P95" in panel["title"]
             assert "histogram_quantile(0.95" in target["expr"]
             assert "P95" in target["legendFormat"]
-    assert panels_by_id[21]["title"] == "事件合并比（所选时段）"
-    assert panels_by_id[21]["targets"][0]["instant"] is True
+    assert panels_by_id[20]["options"]["legend"]["sortBy"] == "Name"
+    assert panels_by_id[20]["options"]["tooltip"]["sort"] == "none"
+    assert all("aidev_message_publish_event_count.*_total" in target["expr"] for target in panels_by_id[20]["targets"])
+    assert all(
+        "aidev_message_publish_event_count.*_sum" not in target["expr"] for target in panels_by_id[20]["targets"]
+    )
+    assert [target["refId"] for target in panels_by_id[20]["targets"]] == ["A", "B", "C", "D", "E"]
+    assert panels_by_id[21]["title"] == "Handler 分布（所选时段）"
+    assert panels_by_id[21]["type"] == "bargauge"
+    assert panels_by_id[21]["fieldConfig"]["defaults"]["unit"] == "percentunit"
+    assert [target["refId"] for target in panels_by_id[21]["targets"]] == ["A", "B", "C", "D", "E"]
+    assert all(target["instant"] is True for target in panels_by_id[21]["targets"])
+    assert all("aidev_message_publish_count" in target["expr"] for target in panels_by_id[21]["targets"])
+    assert all(
+        "sum by (aidev_message_handler_type, agent_info_code)" in target["expr"]
+        for target in panels_by_id[21]["targets"]
+    )
+    assert all("count by (aidev_message_handler_type)" in target["expr"] for target in panels_by_id[21]["targets"])
+    assert all("aidev_message_publish_event_count" not in target["expr"] for target in panels_by_id[21]["targets"])
+    assert panels_by_id[104]["title"] == "SSE 输出与物理消息"
+    assert panels_by_id[106]["title"] == "Broker 发布侧"
+    assert 27 not in panels_by_id
+    assert panels_by_id[105]["gridPos"]["y"] == 99
+    assert panels_by_id[28]["gridPos"]["y"] == 100
+    assert [target["legendFormat"] for target in panels_by_id[28]["targets"]] == [
+        "Agent · {{error_type}}",
+        "LLM · {{error_type}}",
+        "Tool · {{error_type}}",
+        "Handler · {{error_type}}",
+    ]
+    assert all('error_type!=""' in target["expr"] for target in panels_by_id[28]["targets"])
+    assert 26 not in panels_by_id
+    assert panels_by_id[25]["title"] == "SSE 事件与物理消息数量"
+    assert panels_by_id[25]["gridPos"]["y"] == panels_by_id[31]["gridPos"]["y"] == 74
+    assert [target["refId"] for target in panels_by_id[25]["targets"]] == ["A", "B", "C", "D", "E"]
+    assert panels_by_id[25]["type"] == "timeseries"
+    assert all(target["range"] is True for target in panels_by_id[25]["targets"])
+    assert all("aidev_sse_event_type" not in target["expr"] for target in panels_by_id[25]["targets"])
+    assert [
+        next(
+            handler
+            for handler in ("inmemory", "rabbitmq", "rabbitmq_stream", "redis")
+            if f'="{handler}"' in target["expr"]
+        )
+        for target in panels_by_id[25]["targets"][:4]
+    ] == ["inmemory", "rabbitmq", "rabbitmq_stream", "redis"]
+    assert panels_by_id[25]["options"]["legend"]["sortBy"] == "Name"
+    assert panels_by_id[25]["options"]["legend"]["sortDesc"] is False
+    assert panels_by_id[31]["title"] == "SSE/物理消息压缩比"
+    assert panels_by_id[31]["type"] == "timeseries"
+    assert [target["refId"] for target in panels_by_id[31]["targets"]] == ["A", "B", "C", "D", "E"]
+    assert all(target["range"] is True for target in panels_by_id[31]["targets"])
+    assert panels_by_id[31]["options"]["legend"]["sortBy"] == "Name"
+    assert "aidev_sse_event_count" in panels_by_id[31]["targets"][0]["expr"]
+    assert "aidev_message_publish_count" in panels_by_id[31]["targets"][0]["expr"]
+    assert panels_by_id[20]["gridPos"]["y"] == panels_by_id[21]["gridPos"]["y"] == 83
+    panel_order = [panel["id"] for panel in dashboard["panels"]]
+    assert panel_order.index(104) < panel_order.index(25) < panel_order.index(106) < panel_order.index(20)
 
 
 def test_log_query_mock_is_sanitized_and_models_broker_coalescing():
@@ -149,6 +212,18 @@ def test_log_query_mock_distributes_active_runs_across_three_default_models():
 
 def test_log_query_mock_accepts_custom_models_and_removes_duplicates():
     assert selected_models("mock-a, mock-b,mock-a") == ("mock-a", "mock-b")
+
+
+def test_log_query_mock_cycles_success_and_distinct_error_sources():
+    cases = {
+        mock_error_case(handler_index, slot_index, run_index)
+        for handler_index in range(4)
+        for slot_index in range(3)
+        for run_index in range(5)
+    }
+
+    assert cases == set(MOCK_ERROR_CASES)
+    assert MOCK_ERROR_CASES == ("success", "agent", "llm", "tool", "handler")
 
 
 def test_log_query_mock_randomizes_stage_durations_within_agent_total():

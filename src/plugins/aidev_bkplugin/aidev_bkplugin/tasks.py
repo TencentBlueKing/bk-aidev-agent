@@ -11,6 +11,21 @@ BKPLUGIN_CELERY_QUEUE = "plugin_schedule"
 
 
 @shared_task(
+    name="aidev_bkplugin.push_bkm_metrics",
+    ignore_result=True,
+    queue=BKPLUGIN_CELERY_QUEUE,
+)
+def push_bkm_metrics_task(endpoint_key: str, payload: str) -> None:
+    """Push one periodic BKM metric snapshot from the Celery worker."""
+    from .apps import get_metric_service
+
+    metric_service = get_metric_service()
+    if metric_service is None:
+        raise RuntimeError("Metric service is unavailable in the Celery worker")
+    metric_service.push_bkm(endpoint_key, payload)
+
+
+@shared_task(
     name="aidev_bkplugin.run_background_agent",
     ignore_result=True,
     queue=BKPLUGIN_CELERY_QUEUE,
