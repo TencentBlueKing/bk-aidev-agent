@@ -50,6 +50,7 @@
             :message-status="MessageStatus.Complete"
             message-tools-status="hidden"
             render-mode="share"
+            :on-artifact-click="handleArtifactClick"
           />
         </div>
       </div>
@@ -66,7 +67,12 @@
     Exception as BkException,
     Button as BkButton,
   } from "bkui-vue";
-  import { ChatContainer, MessageStatus } from "@blueking/chat-x";
+  import {
+    ChatContainer,
+    MessageStatus,
+    type AIFileInfo,
+    type OnArtifactClick,
+  } from "@blueking/chat-x";
   import "@blueking/chat-x/dist/index.css";
   import {
     transferMessageApi2Message,
@@ -79,6 +85,8 @@
     session_contents: IMessageApi[];
     session_name: string;
     agent_name: string;
+    /** 原会话编码；缺省时从消息 session_code 兜底 */
+    session_code?: string;
   }
 
   interface ApiResponse {
@@ -87,6 +95,11 @@
     message?: string;
     trace_id?: string;
     data: ShareData;
+  }
+
+  interface ArtifactUrlApiData {
+    download_url?: string;
+    preview_url?: string;
   }
 
   interface ErrorMessage {
@@ -133,6 +146,8 @@
   const messages = ref<IMessage[]>([]);
   const error = ref<string | null>(null);
   const currentShareCode = ref<string>("");
+  /** 产物取链用的原会话编码 */
+  const sessionCode = ref<string>("");
 
   const route = useRoute();
 
@@ -145,6 +160,45 @@
     const status = getErrorStatus(error.value);
     return ERROR_MESSAGES[status]?.canRetry ?? DEFAULT_ERROR.canRetry;
   });
+
+  /**
+   * 点击文件产物：签发临时 download_url / preview_url，供侧栏 FileArtifactPanel 渲染。
+   * 未传此回调时侧栏可打开，但预览区会一直为空。
+   */
+  const handleArtifactClick: OnArtifactClick = async (file: AIFileInfo) => {
+    const code =
+      sessionCode.value ||
+      messages.value.find((item) => item.sessionCode)?.sessionCode ||
+      "";
+    if (!code) {
+      throw new Error("[Share] Cannot resolve artifact URL: no session code");
+    }
+
+    const params = new URLSearchParams({ path: file.outputId });
+    const response = await fetch(
+      `${url.value}/session/${encodeURIComponent(code)}/pv_files/download_url/?${params}`,
+      {
+        method: "GET",
+        credentials: "include",
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = (await response.json()) as {
+      data?: ArtifactUrlApiData;
+      download_url?: string;
+      preview_url?: string;
+    };
+    const data = result.data ?? result;
+
+    return {
+      download_url: data.download_url,
+      preview_url: data.preview_url,
+    };
+  };
 
   // 获取错误状态码
   const getErrorStatus = (errorMessage: string | null): number => {
@@ -203,6 +257,10 @@
       ).map(transferMessageApi2Message);
       title.value = result.data.session_name || "AI 对话分享";
       agentName.value = result.data.agent_name || "";
+      sessionCode.value =
+        result.data.session_code ||
+        messages.value.find((item) => item.sessionCode)?.sessionCode ||
+        "";
     } catch (err) {
       console.error("获取分享数据失败:", err);
 
