@@ -392,7 +392,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
         return;
       }
 
-      // 连接被干净掐断且未收到 RUN_FINISHED：尝试静默重连
+      // 连接被干净掐断且未收到终端事件（RUN_FINISHED / RUN_ERROR）：尝试静默重连
       void attemptSilentReconnect(sessionCode, streamId).then(result => {
         if (!isActiveStream()) {
           return;
@@ -448,7 +448,9 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
         return;
       }
       const typedEvent = event as IEvent;
-      if (typedEvent?.type === EventType.RunFinished) {
+      // RUN_FINISHED / RUN_ERROR 均为终端事件：关流后走正常收尾，勿静默重连
+      // （用户 stop 后后端推 RUN_ERROR「用户已取消」，而非 RUN_FINISHED）
+      if (typedEvent?.type === EventType.RunFinished || typedEvent?.type === EventType.RunError) {
         runFinished = true;
       }
       usedProtocol.onMessage?.call(usedProtocol, event);

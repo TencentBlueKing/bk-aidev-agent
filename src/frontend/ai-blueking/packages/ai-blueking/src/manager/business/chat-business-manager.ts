@@ -622,13 +622,14 @@ export class ChatBusinessManager {
 
   /**
    * 停止生成
+   *
+   * 仅通知后端 stop，不断开 chat_completion SSE。
+   * 后端会通过 RUN_ERROR（用户已取消）结束流；前端 abort 会打乱后台时序。
    */
   async stopGeneration(): Promise<void> {
     const sessionCode = this.sessionModule?.current?.value?.sessionCode ?? '';
     this._isStopLoading.value = true;
     try {
-      // 先断开前端 SSE，再通知后端停止（仅用户主动停止走此路径）
-      this.agentModule.abortChat();
       await this.agentModule.stopChat(sessionCode);
       this._isGenerating.value = false;
       this.emit('stop', {});

@@ -23,10 +23,7 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import {
-  transferMessage2MessageApi,
-  transferMessageApi2Message,
-} from '../transform/message';
+import { transferMessage2MessageApi, transferMessageApi2Message } from '../transform/message';
 
 import type {
   IFlowAgentTaskNodeInfo,
@@ -57,10 +54,10 @@ export interface IShareMessagesResponse {
  * @returns message 相关 http 接口
  */
 export const useMessage = (fetchClient: FetchClient) => {
-  // 获取会话内容列表
-  const getMessages = (sessionCode: string, limit?: number, config?: IRequestConfig) =>
+  // 获取会话内容列表（fuzzy 置于末尾，避免影响既有 limit/config 调用）
+  const getMessages = (sessionCode: string, limit?: number, config?: IRequestConfig, fuzzy?: string) =>
     fetchClient
-      .get<IMessageApi[]>(`session_content/content/`, { session_code: sessionCode, limit }, config)
+      .get<IMessageApi[]>(`session_content/content/`, { session_code: sessionCode, limit, fuzzy }, config)
       .then(res => res.map(transferMessageApi2Message));
 
   // 新增会话内容

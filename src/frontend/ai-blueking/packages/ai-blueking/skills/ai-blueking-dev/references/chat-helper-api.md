@@ -173,11 +173,16 @@ await agent.chat(userInput, sessionCode, undefined, {
 
 停止当前聊天（**后端中止**）。请求后端停止本次会话生成。
 
+后端会经当前 `chat_completion` SSE 推送 `RUN_ERROR`（如「用户已取消」）后关流。  
+**不要**在调用前 `abortChat`，否则会打断该时序。
+
 ```typescript
 await agent.stopChat(sessionCode: string);  // POST session_content/stop/
 ```
 
 失败时会 reject（`ChatBusinessManager.stopGeneration` 也会向上抛，由 ChatBot 转成 `@error` 事件），调用方需自行 catch。
+
+`ChatBusinessManager.stopGeneration()` 仅调用本方法（不 abort SSE）。
 
 #### abortChat
 
@@ -189,13 +194,13 @@ await agent.stopChat(sessionCode: string);  // POST session_content/stop/
 
 - 切换会话（`chooseSession`）
 - ChatBot `url` / `chatHelper` 变化或组件卸载（`destroyChatHelper`）
-- 用户点击停止时（`stopGeneration` 会先 abort 再 `stopChat`）
 
 ```typescript
 agent.abortChat();  // 无参数，abort 当前 AbortController
 ```
 
 > 区分：`abortChat()` 只断开前端连接（后端不停）；`stopChat(sessionCode)` 通知后端真正停止生成。  
+> **用户主动停止**走 `stopGeneration` → 仅 `stopChat`，**不要**再 `abortChat`（abort 会打乱后端 stop 时序）。后端推 `RUN_ERROR`（用户已取消）后关流；`RUN_ERROR` / `RUN_FINISHED` 均为终端事件，不会静默重连。  
 > **不要**在 URL 变化、卸载、切会话时调用 `stopChat`，否则后台 agent 会被杀掉。  
 > 静默重连会携带发起时的 `streamId`，任一 `await` 后若已被新流取代则退出，避免误 abort 更新请求。
 
@@ -640,15 +645,23 @@ await message.getFlowAgentTaskNodeInfo(taskId: number, nodeId: string);
 
 ### message HTTP 层补充方法
 
-以下方法定义在 `http.message`（`chatHelper.http.message`）层，供上层封装调用：
+以下方法定义在 `http.message`（`chatHelper.http.message`）层，供上层封装或业务侧单独调用：
 
 | 方法 | 请求 | 说明 |
 |------|------|------|
+| `getMessages(sessionCode, limit?, config?, fuzzy?)` | GET `session_content/content/` `{ session_code, limit, fuzzy }` | 拉取会话消息；`fuzzy` 为可选模糊检索关键词 |
 | `batchDeleteMessages(ids)` | POST `session_content/batch_delete/` `{ ids }` | 按 user message id 批量删除 |
 | `retryFlowAgentTaskNode(sessionCode, nodeId, taskId)` | POST `flow_agent/{sessionCode}/node/{nodeId}/retry/` | 重试流程节点 |
 | `skipFlowAgentTaskNode(sessionCode, nodeId, taskId)` | POST `flow_agent/{sessionCode}/node/{nodeId}/skip/` | 跳过流程节点 |
 | `userOperation(sessionCode, operation, payload)` | POST `user_operation/` `{ session_code, operation, payload }` | HITL / flow 用户操作 |
 
+```typescript
+// 业务层 message.getMessages(sessionCode) 未透传 fuzzy；需要模糊检索时直接调 HTTP 层：
+const list = await chatHelper.http.message.getMessages(sessionCode, undefined, undefined, '关键词');
+```
+
+> `fuzzy` 放在参数末尾，避免影响既有 `getMessages(sessionCode, limit, config)` 调用。未传时不会带入 query。
+>
 > `message.deleteMessages` 底层即调用 `http.message.batchDeleteMessages`。flow 节点重试/跳过与审批取消建议通过 `agent.userOperationStreamRequest` 调用（会自动续聊/轮询）。
 
 ---

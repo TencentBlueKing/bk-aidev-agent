@@ -324,6 +324,17 @@ http.message; // Message API
 
 一般情况下，您不需要直接使用 `http` 模块，因为 `agent`、`session` 和 `message` 模块已经封装了常用的业务逻辑。
 
+**`http.message.getMessages`（可单独使用）**：
+
+```typescript
+// (sessionCode: string, limit?: number, config?: IRequestConfig, fuzzy?: string) => Promise<IMessage[]>
+// GET session_content/content/ — 支持可选 fuzzy 模糊检索
+const messages = await http.message.getMessages(sessionCode);
+const filtered = await http.message.getMessages(sessionCode, undefined, undefined, '关键词');
+```
+
+> 业务层 `message.getMessages(sessionCode)` 未透传 `fuzzy`。需要模糊检索时请直接调用 `http.message.getMessages`。`fuzzy` 位于参数末尾，不影响既有 `limit` / `config` 调用。
+
 ## 配置选项
 
 ### requestData（必需）
@@ -416,7 +427,6 @@ useChatHelper({
 **拦截器使用场景**：
 
 1. **请求拦截器**：
-
    - 添加认证 token
    - 添加请求时间戳
    - 添加请求 ID
@@ -994,8 +1004,8 @@ class SafeProtocol extends AGUIProtocol {
       mode.value === 'creative'
         ? 'chat_completion_creative/'
         : mode.value === 'precise'
-        ? 'chat_completion_precise/'
-        : undefined;
+          ? 'chat_completion_precise/'
+          : undefined;
 
     // 自定义请求参数
     agent.chat(userInput.value, session.current.sessionCode, endpoint, {
@@ -1555,13 +1565,11 @@ interface IToolMessage {
 **参数：**
 
 - `options.requestData` (必需)
-
   - `urlPrefix: string` - API 基础路径
   - `data?: Record<string, unknown> | (() => Record<string, unknown>)` - 额外的请求数据
   - `headers?: Record<string, string> | (() => Record<string, string>)` - 额外的请求头
 
 - `options.interceptors` (可选)
-
   - `request?: (config: IRequestConfig) => IRequestConfig` - 请求拦截器
   - `response?: (response: IResponse) => IResponse` - 响应拦截器
 

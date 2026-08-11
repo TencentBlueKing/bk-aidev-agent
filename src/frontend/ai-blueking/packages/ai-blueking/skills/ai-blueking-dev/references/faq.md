@@ -428,7 +428,7 @@ onUnmounted(() => {
 });
 ```
 
-用户主动点「停止」才走 `stopChat` / `stopGeneration`。
+用户主动点「停止」才走 `stopChat` / `stopGeneration`（只通知后端，不断开 SSE）。
 
 ---
 

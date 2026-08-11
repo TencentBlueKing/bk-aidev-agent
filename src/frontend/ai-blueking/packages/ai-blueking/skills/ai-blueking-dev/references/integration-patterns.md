@@ -471,8 +471,7 @@ const handleHistoryClick = (event: Event) => {
   };
 
   const handleStop = () => {
-    // 用户主动停止：先断前端 SSE，再通知后端
-    agent.abortChat();
+    // 用户主动停止：只调 stopChat，勿 abort（后端推 RUN_ERROR 后关流）
     agent.stopChat(session.current.value?.sessionCode ?? '');
   };
 
