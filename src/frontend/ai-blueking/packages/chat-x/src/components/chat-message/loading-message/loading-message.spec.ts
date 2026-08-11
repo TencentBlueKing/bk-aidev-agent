@@ -47,11 +47,20 @@ vi.mock('../../../lang/lang', () => ({
   t: (key: string) => key,
 }));
 
+/** 滚动上下文的贴底方法；mockScrollConsumer 置空可模拟无 Provider 的独立使用场景 */
+const mockJumpToBottom = vi.hoisted(() => vi.fn());
+const mockScrollConsumer = vi.hoisted(() => ({ value: undefined as undefined | { jumpToBottom: () => void } }));
+
+vi.mock('../../../composables', () => ({
+  useContainerScrollConsumer: () => mockScrollConsumer,
+}));
+
 describe('LoadingMessage', () => {
   let wrapper: VueWrapper;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockScrollConsumer.value = { jumpToBottom: mockJumpToBottom };
   });
 
   afterEach(() => {
@@ -110,6 +119,23 @@ describe('LoadingMessage', () => {
       expect(wrapper.find('.complex-slot').exists()).toBe(true);
       expect(wrapper.text()).toContain('正在');
       expect(wrapper.text()).toContain('思考中...');
+    });
+  });
+
+  describe('自动贴底测试', () => {
+    it('挂载时应触发滚动容器贴底', () => {
+      wrapper = mount(LoadingMessage);
+
+      expect(mockJumpToBottom).toHaveBeenCalledTimes(1);
+    });
+
+    it('无滚动 Provider 时挂载不应报错', () => {
+      mockScrollConsumer.value = undefined;
+
+      wrapper = mount(LoadingMessage);
+
+      expect(wrapper.find('.ai-loading-message').exists()).toBe(true);
+      expect(mockJumpToBottom).not.toHaveBeenCalled();
     });
   });
 
