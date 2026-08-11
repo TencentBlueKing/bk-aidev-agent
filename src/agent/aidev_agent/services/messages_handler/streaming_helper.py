@@ -2,6 +2,7 @@ import json
 import threading
 import time
 import uuid
+from contextvars import copy_context
 from logging import getLogger
 from typing import Any, Callable, Generator
 
@@ -634,8 +635,11 @@ class GeneratorStreamingHelper:
                 self.message_handler.release_producer(self.thread_id)
                 raise
 
+            # OTel 的当前 Span 存在 contextvars 中，而新线程不会自动继承它。
+            producer_context = copy_context()
             producer_thread = threading.Thread(
-                target=self._run_producer,
+                target=producer_context.run,
+                args=(self._run_producer,),
                 kwargs={
                     "generator": generator,
                     "cancel_event": cancel_event,

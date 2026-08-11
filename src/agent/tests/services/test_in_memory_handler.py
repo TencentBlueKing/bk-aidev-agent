@@ -4,6 +4,7 @@ import contextlib
 import json
 import threading
 import time
+from contextvars import ContextVar
 
 import aidev_agent.services.messages_handler.streaming_helper as streaming_helper_module
 import pytest
@@ -524,6 +525,24 @@ class TestInMemoryQueueMessageHandler:
         assert len(result) == 5
         assert result == ["chunk_0", "chunk_1", "chunk_2", "chunk_3", "chunk_4"]
 
+    def test_streaming_helper_producer_inherits_context(self, handler):
+        """测试生产者线程继承请求上下文。"""
+        trace_context = ContextVar("trace_context", default=None)
+        observed_context = []
+
+        def data_generator():
+            observed_context.append(trace_context.get())
+            yield "chunk"
+
+        token = trace_context.set("request-trace")
+        try:
+            result = list(GeneratorStreamingHelper(handler, thread_id="test_stream_context").stream(data_generator()))
+        finally:
+            trace_context.reset(token)
+
+        assert result == ["chunk"]
+        assert observed_context == ["request-trace"]
+
     def test_streaming_helper_resume(self, handler):
         """测试 GeneratorStreamingHelper 断点续传"""
 
@@ -809,7 +828,8 @@ class TestInMemoryQueueMessageHandler:
             if isinstance(chunk, str) and chunk.startswith("data: ") and '"type":"RAW"' in chunk
         ]
 
-        assert result[-1] == "late_chunk"
+        # 心跳线程与 producer 并发入队，业务 chunk 后仍可能有一个已生成的心跳。
+        assert "late_chunk" in result
         assert heartbeat_events
         assert all(event == {"type": "RAW", "event": {"type": "heartbeat"}} for event in heartbeat_events)
         assert heartbeat_count > 0
