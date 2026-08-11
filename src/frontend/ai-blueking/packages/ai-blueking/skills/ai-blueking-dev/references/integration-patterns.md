@@ -453,7 +453,9 @@ const handleHistoryClick = (event: Event) => {
   });
 
   onBeforeUnmount(() => {
-    agent.stopChat(session.current.value?.sessionCode ?? '');
+    // 仅断开前端 SSE；stopChat 会杀后台 agent，勿在卸载时自动调用
+    agent.abortChat();
+    agent.clearLongPollTimer?.();
   });
 
   // ==================== 消息处理 ====================
@@ -469,6 +471,8 @@ const handleHistoryClick = (event: Event) => {
   };
 
   const handleStop = () => {
+    // 用户主动停止：先断前端 SSE，再通知后端
+    agent.abortChat();
     agent.stopChat(session.current.value?.sessionCode ?? '');
   };
 

@@ -79,6 +79,7 @@ export function createMockChatHelper(): IChatHelper {
       resendMessage: vi.fn().mockResolvedValue(undefined),
       stopChat: vi.fn().mockResolvedValue(undefined),
       abortChat: vi.fn(),
+      clearLongPollTimer: vi.fn(),
       streamRequest: vi.fn().mockResolvedValue(undefined),
       userOperationStreamRequest: vi.fn().mockResolvedValue(undefined),
       pollResumeSession: vi.fn(),

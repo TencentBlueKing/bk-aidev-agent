@@ -349,6 +349,74 @@ describe('MessageContainer', () => {
     });
   });
 
+  describe('DOM 标识测试', () => {
+    it('消息组根节点应该输出 data-message-group-id', async () => {
+      const messages = [createAssistantMessage('1', 'Hi there!')];
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages) },
+      });
+
+      await nextTick();
+
+      expect(wrapper.find('.message-group').attributes('data-message-group-id')).toBe('group-1');
+    });
+
+    it('每条消息都应该被带 data-message-id 的容器包裹', async () => {
+      const messages: Message[] = [
+        createAssistantMessage('1', 'Message 1', 1),
+        createAssistantMessage('2', 'Message 2', 2),
+      ];
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages) },
+      });
+
+      await nextTick();
+
+      const messageItems = wrapper.findAll('.ai-message-item');
+      expect(messageItems.length).toBe(2);
+      expect(messageItems.map(item => item.attributes('data-message-id'))).toEqual(['1', '2']);
+      expect(messageItems[0].find('.mock-message-render').exists()).toBe(true);
+    });
+
+    it('消息缺少 id 时应该回退到 uid', async () => {
+      const message = { ...createAssistantMessage('', 'Streaming...'), uid: 'temp-uid-1' } as Message;
+
+      wrapper = mount(MessageContainer, {
+        props: {
+          ...defaultProps,
+          messages: [message],
+          messageGroups: [
+            { uid: 'group-temp', messages: [message], type: MessageRole.Assistant, isHover: false, checked: false },
+          ],
+        },
+      });
+
+      await nextTick();
+
+      expect(wrapper.find('.ai-message-item').attributes('data-message-id')).toBe('temp-uid-1');
+    });
+
+    it('自定义 default slot 渲染的消息同样带 data-message-id', async () => {
+      const messages = [createAssistantMessage('1', 'Hi there!')];
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages) },
+        slots: {
+          default: '<div class="custom-message">custom</div>',
+        },
+      });
+
+      await nextTick();
+
+      const messageItem = wrapper.find('.ai-message-item');
+      expect(messageItem.attributes('data-message-id')).toBe('1');
+      expect(messageItem.find('.custom-message').exists()).toBe(true);
+      expect(wrapper.find('.mock-message-render').exists()).toBe(false);
+    });
+  });
+
   describe('消息分组测试', () => {
     it('应该将连续的助手消息分组在一起', async () => {
       const messages: Message[] = [

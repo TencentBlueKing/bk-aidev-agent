@@ -403,6 +403,24 @@ sinceVersion: 1.0.0
 - `renderMode === RenderMode.Share` 时，`message-group-messages` 自动添加 `message-group-enabled-selection` 类名（与 `enableSelection: true` 一致的多选视觉效果）
 - Loading 消息组的 `type` 是 `MessageRole.Loading`，不显示工具栏和多选 Checkbox
 
+## DOM 定位标识
+
+为方便业务方通过 `document.querySelector` 定位消息（埋点、自动化测试、外部滚动锚定等），渲染结构上固定输出两层标识：
+
+| 层级     | 选择器                                | 值                                                  |
+| -------- | ------------------------------------- | --------------------------------------------------- |
+| 消息组   | `.message-group[data-message-group-id]` | `MessageGroup.uid`（与外层 `id` 同值）              |
+| 单条消息 | `.ai-message-item[data-message-id]`   | `message.id`，缺失时回退 `message.uid`；两者都无则不输出该属性 |
+
+```js
+// 定位某条消息
+document.querySelector('[data-message-id="123"]');
+// 定位某个消息组下的全部消息
+document.querySelectorAll('[data-message-group-id="xxx"] [data-message-id]');
+```
+
+`.ai-message-item` 是 `MessageContainer` 统一包裹的容器，`#default` 插槽自定义渲染的消息同样被它包裹，因此无论用默认 `MessageRender` 还是自定义渲染，标识都一致存在。
+
 ## 等待响应（Loading 自动注入）
 
 当 `messages` 末尾为 `role: 'user'` 时，自动追加 Loading 消息组，展示 AI 正在处理的加载动画（`renderMode` 为 `Share` 时不追加，且 `MessageContainer` 会过滤 Loading 组）：
