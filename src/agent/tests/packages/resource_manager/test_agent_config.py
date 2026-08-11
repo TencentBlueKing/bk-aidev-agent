@@ -407,8 +407,8 @@ def test_fast_llm_from_prompt_setting(prompt_fast_llm, expected):
     assert cfg.fast_llm == expected
 
 
-def test_fast_llm_none_raises_validation_error():
-    """``prompt_setting.fast_llm`` 为 None 时，AgentConfig 必填字段校验失败。"""
+def test_fast_llm_none_is_preserved():
+    """``prompt_setting.fast_llm`` 为 None 时保持未配置语义。"""
     raw = _build_raw(
         prompt_setting={
             "llm_code": "llm-code",
@@ -417,8 +417,7 @@ def test_fast_llm_none_raises_validation_error():
         }
     )
     rm = _StubResourceManager(raw_factory=lambda *_: raw)
-    with pytest.raises(ValueError):
-        rm.get_agent_config("a")
+    assert rm.get_agent_config("a").fast_llm is None
 
 
 @pytest.mark.parametrize(
