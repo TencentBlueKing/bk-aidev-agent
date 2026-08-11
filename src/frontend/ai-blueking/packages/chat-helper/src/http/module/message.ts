@@ -58,9 +58,9 @@ export interface IShareMessagesResponse {
  */
 export const useMessage = (fetchClient: FetchClient) => {
   // 获取会话内容列表
-  const getMessages = (sessionCode: string, limit?: number, config?: IRequestConfig) =>
+  const getMessages = (sessionCode: string, limit?: number, fuzzy?: string, config?: IRequestConfig) =>
     fetchClient
-      .get<IMessageApi[]>(`session_content/content/`, { session_code: sessionCode, limit }, config)
+      .get<IMessageApi[]>(`session_content/content/`, { session_code: sessionCode, limit, fuzzy }, config)
       .then(res => res.map(transferMessageApi2Message));
 
   // 新增会话内容
