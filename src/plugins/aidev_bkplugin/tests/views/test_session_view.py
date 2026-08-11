@@ -124,6 +124,7 @@ def test_stop_clears_stale_notification_before_sending_cancel(monkeypatch, run_i
     session_code = "session-stop-order"
     call_order = []
     handler = MagicMock()
+    handler.has_active_producer.return_value = False
     handler.clear_cancelled_signal.side_effect = lambda code, run_id=None: call_order.append(("clear", code, run_id))
     handler.wait_for_consumer_cancelled.side_effect = lambda code, timeout, run_id=None: (
         call_order.append(("wait", code, run_id)) or True
@@ -152,7 +153,29 @@ def test_stop_clears_stale_notification_before_sending_cancel(monkeypatch, run_i
         ("wait", session_code, run_id),
     ]
     api.stop_chat_session_content.assert_called_once_with(
-        json={"session_code": session_code},
+        json={"session_code": session_code, "producer_active": False},
         headers={"X-BKAIDEV-USER": "alice"},
     )
     handler.mark_stopped.assert_not_called()
+
+
+def test_stop_omits_producer_state_when_detection_fails(monkeypatch):
+    """broker 查询异常时保持旧协议，避免平台误判为无 producer。"""
+    handler = MagicMock()
+    handler.has_active_producer.side_effect = RuntimeError("broker unavailable")
+    handler.wait_for_consumer_cancelled.return_value = True
+    api = MagicMock()
+    api.stop_chat_session_content.return_value = {"data": {"stopped": True}}
+
+    monkeypatch.setattr(session_mod.message_handler_factory, "get", lambda: handler)
+    monkeypatch.setattr(session_mod.GeneratorStreamingHelper, "cancel", lambda *args, **kwargs: True)
+    monkeypatch.setattr(session_mod.AgentConfigFetcher, "get_info", lambda **kwargs: {"agent_type": "chat"})
+    monkeypatch.setattr(session_mod, "client", SimpleNamespace(api=api))
+
+    response = session_mod.ChatSessionContentViewSet().stop(_request(data={"session_code": "session-stop"}))
+
+    assert response.data == {"stopped": True}
+    api.stop_chat_session_content.assert_called_once_with(
+        json={"session_code": "session-stop"},
+        headers={"X-BKAIDEV-USER": "alice"},
+    )

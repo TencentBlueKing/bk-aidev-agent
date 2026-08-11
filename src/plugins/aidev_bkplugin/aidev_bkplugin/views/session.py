@@ -300,9 +300,17 @@ class ChatSessionContentViewSet(PluginViewSet):
 
         # 获取 message_handler 用于清理
         message_handler = message_handler_factory.get()
+        producer_active = None
 
         # 停止 agent 侧的流式生产者
         if session_code:
+            # 在发送 cancel 前记录 producer 状态；发送后 producer 可能立即退出，无法区分
+            # “本次被停止”与“请求到达前已无 producer”两种场景。
+            try:
+                producer_active = bool(message_handler.has_active_producer(session_code))
+            except Exception:
+                logger.exception(f"Error checking active producer for session_code={session_code}")
+
             # 1. 先清理上一轮完成通知，避免误消费旧通知
             if hasattr(message_handler, "clear_cancelled_signal"):
                 try:
@@ -364,6 +372,8 @@ class ChatSessionContentViewSet(PluginViewSet):
 
         platform_payload = request.data.copy()
         platform_payload.pop("run_id", None)
+        if producer_active is not None:
+            platform_payload["producer_active"] = producer_active
         result = client.api.stop_chat_session_content(json=platform_payload, headers={"X-BKAIDEV-USER": username})
 
         return Response(data=result["data"])
