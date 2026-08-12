@@ -131,6 +131,24 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
         # 部分 langchain-openai 版本会将子类扩展字段合并到 OpenAI 请求参数中。
         # fallback_model 仅用于 SDK 内部切换，不能透传给 OpenAI 客户端。
         payload.pop("fallback_model", None)
+        for message in payload.get("messages", []):
+            if message.get("role") != "user" or not isinstance(message.get("content"), list):
+                continue
+            content = []
+            for item in message["content"]:
+                if (
+                    isinstance(item, dict)
+                    and item.get("type") == "binary"
+                    and str(item.get("mime_type") or "").startswith("image/")
+                ):
+                    image_url = item.get("url")
+                    if not image_url and item.get("data"):
+                        image_url = f"data:{item['mime_type']};base64,{item['data']}"
+                    if image_url:
+                        content.append({"type": "image_url", "image_url": {"url": image_url}})
+                        continue
+                content.append(item)
+            message["content"] = content
         return payload
 
     def _create_chat_result(

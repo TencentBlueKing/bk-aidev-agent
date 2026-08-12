@@ -83,6 +83,30 @@ def test_chat_model_preserves_caller_owned_async_http_client():
         asyncio.run(client.aclose())
 
 
+def test_chat_model_payload_converts_binary_images_to_image_url():
+    model = ChatModel.get_setup_instance(model="test", base_url=TEST_BASE_URL)
+    messages = [
+        HumanMessage(
+            content=[
+                {"type": "binary", "mime_type": "image/jpeg", "url": "https://example.com/image.jpeg"},
+                {"type": "binary", "mime_type": "image/png", "data": "aW1hZ2U="},
+                {"type": "text", "text": "描述图片"},
+            ]
+        )
+    ]
+
+    try:
+        payload = model._get_request_payload(messages)
+    finally:
+        asyncio.run(model.http_async_client.aclose())
+
+    assert payload["messages"][0]["content"] == [
+        {"type": "image_url", "image_url": {"url": "https://example.com/image.jpeg"}},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,aW1hZ2U="}},
+        {"type": "text", "text": "描述图片"},
+    ]
+
+
 @pytest.mark.skipif(
     not all([settings.LLM_GW_ENDPOINT, settings.APP_CODE, settings.SECRET_KEY]),
     reason="没有配置足够的环境变量,跳过该测试",

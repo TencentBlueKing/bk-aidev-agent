@@ -52,7 +52,12 @@ def _promote_message(message: AnyMessage, allowed_tool_names: set[str]) -> AnyMe
 
 
 def _extract_query_text_and_images(query: Any) -> tuple[Any, list[dict[str, Any]]]:
-    """从 query 中提取文本和图片（OpenAI 风格内容列表）。"""
+    """从 query 中提取文本和图片（OpenAI 风格内容列表）。
+
+    支持 ``image_url`` 与前端 ``binary``（image/*）。binary 原样挂载，
+    由 ``ChatModel._get_request_payload`` 统一转 ``image_url``（与 history 一致），
+    此处只负责在进 prompt 前剥离，避免被 ``str()`` 进文本。
+    """
 
     if not isinstance(query, list):
         return query, []
@@ -68,6 +73,8 @@ def _extract_query_text_and_images(query: Any) -> tuple[Any, list[dict[str, Any]
             if isinstance(text, str):
                 text_parts.append(text)
         elif item_type == "image_url":
+            image_contents.append(item)
+        elif item_type == "binary" and str(item.get("mime_type") or "").startswith("image/"):
             image_contents.append(item)
 
     return "\n".join(text_parts), image_contents

@@ -21,7 +21,11 @@ from unittest.mock import Mock, patch
 
 import httpx
 import pytest
-from aidev_agent.core.nodes.model.model_chain import _build_model_chain, build_llm_with_tools
+from aidev_agent.core.nodes.model.model_chain import (
+    _build_model_chain,
+    _extract_query_text_and_images,
+    build_llm_with_tools,
+)
 from aidev_agent.core.nodes.model.pydantic_models import (
     ModelChainState,
     ProcessorContext,
@@ -750,3 +754,89 @@ class TestCallLlmInvokeTimePayload:
             f"max_tokens_override=None 时不应传 max_tokens，实际 payload keys: {sorted(payload.keys())}"
         )
         assert "tools" in payload, "tools 应始终被绑定"
+
+
+class TestExtractQueryTextAndImages:
+    """当前轮 query 的 multimodal 提取：只剥离挂载，转换复用 llm_gateway。"""
+
+    def test_extracts_binary_image_as_is_with_text(self):
+        binary = {
+            "filename": "a.jpeg",
+            "mime_type": "image/jpeg",
+            "type": "binary",
+            "url": "https://example.com/a.jpeg",
+        }
+        text, images = _extract_query_text_and_images(
+            [binary, {"type": "text", "text": "图片内容是啥呀"}]
+        )
+        assert text == "图片内容是啥呀"
+        assert images == [binary]
+
+    def test_keeps_image_url_and_ignores_non_image_binary(self):
+        query = [
+            {"type": "image_url", "image_url": {"url": "https://example.com/old.png"}},
+            {"type": "binary", "mime_type": "application/pdf", "url": "https://example.com/a.pdf"},
+            {"type": "text", "text": "看这张"},
+        ]
+        text, images = _extract_query_text_and_images(query)
+        assert text == "看这张"
+        assert images == [{"type": "image_url", "image_url": {"url": "https://example.com/old.png"}}]
+
+    def test_render_attaches_binary_image_to_last_human_message(self):
+        """_render_messages：binary 图片从 query 剥离后原样挂到最后一条 HumanMessage。"""
+        binary = {
+            "type": "binary",
+            "mime_type": "image/jpeg",
+            "url": "https://example.com/curr.jpeg",
+        }
+        ca = Mock()
+        ca.get_choice_tools = Mock(return_value=[])
+        ca.get_chat_prompt_variables = Mock(
+            return_value={"query": [binary, {"type": "text", "text": "图片内容是啥呀"}]}
+        )
+        template = Mock()
+        template.invoke = Mock(
+            return_value=Mock(
+                to_messages=Mock(
+                    return_value=[
+                        HumanMessage(content="history"),
+                        HumanMessage(content="以下是用户最新提问内容：图片内容是啥呀"),
+                    ]
+                )
+            )
+        )
+        ca.get_chat_prompt_template = Mock(return_value=template)
+
+        captured: list[Any] = []
+
+        def invoke_fn(messages, config=None, **kwargs):
+            captured.extend(messages)
+            return AIMessage(content="ok")
+
+        llm = RunnableLambda(invoke_fn)
+        llm.bind_tools = Mock(return_value=llm)
+        chain = _build_model_chain(
+            llm=llm,
+            context_assembly=ca,
+            max_retries=0,
+            quality_gate=QualityGate(enable_judge_response=False),
+            use_structured_response=False,
+            enable_parallel_tool_calls=False,
+            use_tool_call_promotion=False,
+        )
+        chain.invoke(
+            ProcessorContext(
+                state={"messages": []},
+                config=RunnableConfig(),
+                store=Mock(),
+                messages=[],
+                model_chain_state=ModelChainState(max_retries=0),
+                response=None,
+            )
+        )
+
+        assert template.invoke.call_args.args[0]["query"] == "图片内容是啥呀"
+        last = captured[-1]
+        assert isinstance(last.content, list)
+        assert {"type": "text", "text": "以下是用户最新提问内容：图片内容是啥呀"} in last.content
+        assert binary in last.content
