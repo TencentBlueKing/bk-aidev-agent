@@ -60,6 +60,7 @@ class SessionManager:
             session_name=session_name,
             protocol_version=AGUI_PROTOCOL_VERSION,
             is_temporary=is_temporary,
+            channel_type="popup",
             headers=self._user_headers(),
         )
         return session_code

@@ -165,6 +165,7 @@ class BaseResourceManager(abc.ABC):
         protocol_version: str = "",
         is_temporary: bool = False,
         session_type: str = "",
+        channel_type: str = "",
         **kwargs,
     ) -> dict:
         """调用平台 get_or_create 幂等接口，替代 retrieve+create 两步操作。
@@ -185,6 +186,8 @@ class BaseResourceManager(abc.ABC):
             payload["is_temporary"] = is_temporary
         if session_type:
             payload["session_type"] = session_type
+        if channel_type:
+            payload["channel_type"] = channel_type
         try:
             return client.api.get_or_create_chat_session(json=payload, **kwargs).get("data", {})
         except Exception as e:

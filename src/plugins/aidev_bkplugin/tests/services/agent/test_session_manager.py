@@ -34,6 +34,7 @@ def test_get_or_create_by_thread_id_delegates_to_resource_manager(session_manage
         session_name="新会话",
         protocol_version=AGUI_PROTOCOL_VERSION,
         is_temporary=None,
+        channel_type="popup",
         headers={"X-BKAIDEV-USER": "alice"},
     )
 
