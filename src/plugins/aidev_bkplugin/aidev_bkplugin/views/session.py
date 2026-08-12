@@ -144,8 +144,12 @@ class ChatSessionViewSet(PluginViewSet):
         return Response(data={"message": str(exc)}, status=status_code)
 
     @staticmethod
-    def _check_session_owner(request, session_code: str) -> None:
-        """校验 session 归属"""
+    def _check_session_owner(request, session_code: str, require_access: bool = False) -> None:
+        """校验 session 归属
+        :param require_access: 是否校验会话归属。默认 False
+        """
+        if not require_access:
+            return
         username = request.user.username
         try:
             client.api.retrieve_chat_session(
@@ -209,7 +213,7 @@ class ChatSessionViewSet(PluginViewSet):
 
     @action(["GET"], url_path="pv_files", detail=True)
     def pv_files(self, request, pk, **kwargs):
-        self._check_session_owner(request, pk)
+        self._check_session_owner(request, pk, require_access=False)
         svc = self._make_pv_file_service(request)
         params = request.query_params
         try:
@@ -225,7 +229,7 @@ class ChatSessionViewSet(PluginViewSet):
 
     @action(["GET"], url_path="pv_files/stat", detail=True)
     def pv_files_stat(self, request, pk, **kwargs):
-        self._check_session_owner(request, pk)
+        self._check_session_owner(request, pk, require_access=False)
         path = request.query_params.get("path", "")
         if not path:
             raise ClientBlueException(message="path is required")
@@ -237,7 +241,7 @@ class ChatSessionViewSet(PluginViewSet):
 
     @action(["GET"], url_path="pv_files/preview", detail=True)
     def pv_files_preview(self, request, pk, **kwargs):
-        self._check_session_owner(request, pk)
+        self._check_session_owner(request, pk, require_access=False)
         path = request.query_params.get("path", "")
         if not path:
             raise ClientBlueException(message="path is required")
@@ -254,7 +258,7 @@ class ChatSessionViewSet(PluginViewSet):
 
     @action(["GET"], url_path="pv_files/download_url", detail=True)
     def pv_files_download_url(self, request, pk, **kwargs):
-        self._check_session_owner(request, pk)
+        self._check_session_owner(request, pk, require_access=False)
         path = request.query_params.get("path", "")
         if not path:
             raise ClientBlueException(message="path is required")
