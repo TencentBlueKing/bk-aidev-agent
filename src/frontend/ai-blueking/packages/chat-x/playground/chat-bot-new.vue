@@ -227,7 +227,6 @@
   // Info 分隔提示 + ToolCall 各状态 + 含 toolCalls 的会话 mock + 待回答 UserQuestion
   const messages = deepRef<Message[]>([
     ...MOCK_INFO_MESSAGES,
-    ...MOCK_TOOLCALL_STATUS_MESSAGES,
     ...(MOCK_MESSAGES as Message[]),
     // ...MOCK_USER_QUESTION_PENDING_MESSAGES,
   ]);
