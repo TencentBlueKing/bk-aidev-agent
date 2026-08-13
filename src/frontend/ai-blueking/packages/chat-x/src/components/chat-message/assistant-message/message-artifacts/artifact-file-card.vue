@@ -17,6 +17,7 @@
       />
       <span
         v-overflow-tips="{
+          ...commonTippyOptions,
           text: file.name,
           placement: 'top' as const,
         }"
@@ -53,6 +54,7 @@
   import { directive as vTippy } from 'vue-tippy';
 
   import { triggerArtifactDownload, useArtifactPreviewConsumer } from '../../../../composables/use-artifact-preview';
+  import { useCommonTippyInject } from '../../../../composables/use-common';
   import { OverflowTips as vOverflowTips } from '../../../../directives/overflow-tips';
   import { DownloadFileIcon } from '../../../../icons/file';
   import { t } from '../../../../lang/lang';
@@ -76,6 +78,7 @@
 
   // 文件产物侧栏预览上下文（由 ChatContainer 提供），无 Provider 时为 undefined
   const artifactPreview = useArtifactPreviewConsumer();
+  const commonTippyOptions = useCommonTippyInject();
 
   // 有外部 onPreview 或处于可预览的侧栏上下文时，卡片可点击
   const clickable = computed(() => !!props.onPreview || !!artifactPreview);
@@ -89,6 +92,7 @@
   const downloadLoading = shallowRef(false);
 
   const downloadTippy = computed(() => ({
+    ...commonTippyOptions?.value,
     content: t('下载'),
     theme: 'ai-chat-box',
     placement: 'top' as const,

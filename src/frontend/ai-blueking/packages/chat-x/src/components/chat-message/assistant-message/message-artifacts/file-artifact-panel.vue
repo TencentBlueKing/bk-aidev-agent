@@ -40,7 +40,7 @@
               :file-type="activeArtifact.type"
             />
             <span
-              v-overflow-tips="{ text: activeArtifact.name, placement: 'top' as const }"
+              v-overflow-tips="{ ...commonTippyOptions, text: activeArtifact.name, placement: 'top' as const }"
               class="ai-file-artifact-panel-preview-header-name"
             >
               {{ activeArtifact.name }}
@@ -94,6 +94,7 @@
 
   import { triggerArtifactDownload, useArtifactPreviewConsumer } from '../../../../composables/use-artifact-preview';
   import { useClipboard } from '../../../../composables/use-clipboard';
+  import { useCommonTippyInject } from '../../../../composables/use-common';
   import { OverflowTips as vOverflowTips } from '../../../../directives/overflow-tips';
   import { DownloadFileIcon } from '../../../../icons/file';
   import { CopyIcon } from '../../../../icons/tools';
@@ -125,6 +126,7 @@
   const artifactPreview = useArtifactPreviewConsumer();
   const canResolveArtifactUrl = computed(() => !!artifactPreview?.canResolveArtifactUrl.value);
   const { copy } = useClipboard();
+  const commonTippyOptions = useCommonTippyInject();
   const previewHostRef = useTemplateRef<InstanceType<typeof ArtifactPreviewHost>>('previewHostRef');
 
   // 图标为共享 VNode，每处渲染克隆一份，避免多处复用同一实例
@@ -135,12 +137,14 @@
   const downloadLoading = shallowRef(false);
 
   const copyTippy = computed(() => ({
+    ...commonTippyOptions?.value,
     content: t('复制'),
     placement: 'top' as const,
     theme: 'ai-chat-box',
   }));
 
   const downloadTippy = computed(() => ({
+    ...commonTippyOptions?.value,
     content: t('下载'),
     placement: 'top' as const,
     theme: 'ai-chat-box',

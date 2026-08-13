@@ -47,6 +47,7 @@ export const useArtifactPreviewLoader = (options: {
   const status = shallowRef<ArtifactPreviewStatus>('idle');
   const content = shallowRef('');
   const previewUrl = shallowRef('');
+  const downloadUrl = shallowRef('');
   const renderer = shallowRef<ArtifactPreviewRendererKind>('urlIframe');
 
   let abortController: AbortController | undefined;
@@ -55,6 +56,7 @@ export const useArtifactPreviewLoader = (options: {
   const resetPayload = () => {
     content.value = '';
     previewUrl.value = '';
+    downloadUrl.value = '';
   };
 
   const load = async () => {
@@ -103,11 +105,12 @@ export const useArtifactPreviewLoader = (options: {
         return;
       }
 
-      if (!urls.preview_url) {
+      if (!urls.preview_url || !urls.download_url) {
         status.value = 'empty';
         return;
       }
       previewUrl.value = urls.preview_url;
+      downloadUrl.value = urls.download_url;
       status.value = 'ready';
     } catch {
       if (seq !== loadSeq || abortController?.signal.aborted) {
@@ -124,5 +127,5 @@ export const useArtifactPreviewLoader = (options: {
 
   onBeforeUnmount(dispose);
 
-  return { content, dispose, load, previewUrl, renderer, status };
+  return { content, dispose, downloadUrl, load, previewUrl, renderer, status };
 };

@@ -85,7 +85,6 @@
                   class="screen-btn"
                   :tippy-options="{
                     ...commonTippyOptions,
-                    appendTo: isFullScreen ? fullScreenRef! : commonTippyOptions?.appendTo,
                     content: isFullScreen ? t('退出全屏') : t('全屏'),
                   }"
                 >
@@ -476,7 +475,12 @@
       }
   >();
 
-  useCommonTippyProvider({ tippyOptions: computed(() => props.commonTippyOptions ?? {}) });
+  // 全屏时 tippy 默认挂 body 会跑出全屏层，统一把 appendTo 切到全屏容器再注入给子组件
+  const commonTippyOptions = computed<AITippyProps>(() => ({
+    ...props.commonTippyOptions,
+    appendTo: isFullScreen.value && fullScreenRef.value ? fullScreenRef.value : props.commonTippyOptions?.appendTo,
+  }));
+  useCommonTippyProvider({ tippyOptions: commonTippyOptions });
 
   const {
     displayTabs,

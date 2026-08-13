@@ -46,7 +46,7 @@
     <ImagePreview
       v-else-if="renderer === 'image'"
       :name="file?.name"
-      :url="previewUrl"
+      :url="downloadUrl"
     />
     <UrlIframePreview
       v-else
@@ -76,7 +76,7 @@
   const props = defineProps<{ file?: AIFileInfo }>();
   const artifactPreview = useArtifactPreviewConsumer();
 
-  const { content, load, previewUrl, renderer, status } = useArtifactPreviewLoader({
+  const { content, downloadUrl, load, previewUrl, renderer, status } = useArtifactPreviewLoader({
     canResolve: () => !!artifactPreview?.canResolveArtifactUrl.value,
     getFile: () => props.file,
     resolveUrls: file => artifactPreview?.resolveArtifactUrls(file) ?? Promise.resolve({}),
