@@ -19,9 +19,13 @@ vi.mock('../../../manager/business/share-business-manager', () => ({
   })),
 }));
 
-vi.mock('../../../utils', () => ({
-  copyToClipboard: vi.fn().mockResolvedValue(true),
-}));
+vi.mock('../../../utils', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../../utils')>();
+  return {
+    ...actual,
+    copyToClipboard: vi.fn().mockResolvedValue(true),
+  };
+});
 
 import { ShareBusinessManager } from '../../../manager/business/share-business-manager';
 import { useShareSelection } from '../use-share-selection';

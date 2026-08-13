@@ -75,6 +75,7 @@
             :hello-text="props.helloText"
             :message-tools="props.messageTools"
             :message-tools-tippy-options="messageToolsTippyOptions"
+            :model-selection-manager="modelSelection"
             :models="props.models"
             :placeholder="props.placeholder"
             :prompts="agentPrompts"
@@ -208,6 +209,7 @@
   const {
     chatHelper,
     componentManager,
+    modelSelection,
     sessionBusinessManager,
     shareBusinessManager,
     shortcutManager,
@@ -235,8 +237,8 @@
     emit: emit as (event: string, ...args: unknown[]) => void,
   });
 
-  /** Header 新建会话时透传当前选中模型（expose 已拆包为裸值） */
-  const selectedLlmCode = computed(() => chatBotRef.value?.selectedLlmCode);
+  /** Header 展示/新建会话用的当前选中模型（与 ChatBot 共享同一管理器） */
+  const selectedLlmCode = computed(() => modelSelection.selectedLlmCode.value);
 
   // ==================== 2. 面板/容器控制 ====================
   const {

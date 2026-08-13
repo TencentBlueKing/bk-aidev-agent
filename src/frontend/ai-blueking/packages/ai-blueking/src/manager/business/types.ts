@@ -56,6 +56,17 @@ export interface IEventEmitter {
 }
 
 /**
+ * 模型选择管理器配置
+ */
+export interface ModelSelectionConfig {
+  /**
+   * 是否启用模型选择（默认 true）
+   * 为 false 时不解析、不校验 model，建会话也不写入 model（由后端取默认）
+   */
+  enabled?: boolean;
+}
+
+/**
  * 发送消息选项
  */
 export interface SendMessageOptions {

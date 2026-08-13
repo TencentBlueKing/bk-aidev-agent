@@ -141,6 +141,7 @@
     shortcuts: () => [],
     resources: () => [],
     models: undefined,
+    modelSelectionManager: undefined,
     renderMode: RenderMode.Chat,
     placement: 'left',
   });

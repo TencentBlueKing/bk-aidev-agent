@@ -11,6 +11,7 @@ import type { ComputedRef, MaybeRefOrGetter, Ref } from 'vue';
 
 import type { RenderMode } from '@blueking/chat-x';
 
+import type { ModelSelectionManager } from '../manager/business/model-selection-manager';
 import type {
   GetSideRenderComponent,
   GetSideTabRenderComponent,
@@ -157,6 +158,12 @@ export interface ChatBotProps {
    * 结构对齐 chat-x IModelOption / chat-helper ILlmItem
    */
   models?: ILlmItem[] | IModelOption[];
+  /**
+   * 外部注入的模型选择管理器（集成模式）
+   * AIBlueking 传入自身实例，使外壳层的会话创建与聊天区共享同一份模型选中状态；
+   * 未传时组件内部自建
+   */
+  modelSelectionManager?: ModelSelectionManager;
   /** 「执行情况」Tab 是否展示，缺省 true；为 false 时从 Tab 栏隐藏（该 Tab order 固定 0 且不可关闭） */
   executionTabVisible?: boolean;
 

@@ -7,11 +7,12 @@
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
  */
 
-import { type ComputedRef, type Ref, computed, ref, watch } from 'vue';
+import { type ComputedRef, type Ref, ref } from 'vue';
 
 import { MessageRole } from '@blueking/chat-helper';
 
 import { findLastUserMessageBefore } from '../../utils';
+import { ModelSelectionManager } from './model-selection-manager';
 
 import type { ChatBusinessConfig, IEventEmitter, SendMessageOptions } from './types';
 import type {
@@ -35,79 +36,28 @@ import type {
  */
 export class ChatBusinessManager {
   private _isGenerating: Ref<boolean>;
-  private _isModelsLoading: Ref<boolean>;
   private _isStopLoading: Ref<boolean>;
-  private _models: Ref<ILlmItem[]>;
-  private _selectedLlmCode: Ref<string | undefined>;
-  private _selectedModelName: ComputedRef<string>;
-  private _selectedModelSupportsVision: ComputedRef<boolean>;
 
   private agentModule: IAgentModule;
   private config: ChatBusinessConfig;
   private eventEmitter: IEventEmitter | null;
 
   private messageModule: IMessageModule;
+  /** 模型状态与规则统一由 ModelSelectionManager 持有，可与外壳层共享同一实例 */
+  private modelSelection: ModelSelectionManager;
   private sessionModule: ISessionModule | null;
 
-  /** 当前选中是否仍在可用模型列表中 */
-  private hasValidSelection(): boolean {
-    const code = this._selectedLlmCode.value;
-    return !!code && this._models.value.some(m => m.llm_code === code);
-  }
-
-  /** sessionModule 存在但 current 尚未就绪时，不落 default，避免挡住 session.model */
-  private isSessionPending(): boolean {
-    return this.sessionModule != null && this.sessionModule.current.value == null;
-  }
-
-  /**
-   * 按 session.model 同步选中：
-   * - 命中列表 → 选中
-   * - 空 / 未知 → 保留有效选中；否则 default / 首项
-   */
-  private applySessionModel(modelCode?: string): void {
-    const list = this._models.value;
-    if (list.length === 0) {
-      this._selectedLlmCode.value = undefined;
-      return;
-    }
-    if (this.isSessionPending()) {
-      return;
-    }
-    if (modelCode && list.some(m => m.llm_code === modelCode)) {
-      this._selectedLlmCode.value = modelCode;
-      return;
-    }
-    if (this.hasValidSelection()) {
-      return;
-    }
-    const defaultModel = list.find(m => m.property?.default) ?? list[0];
-    this._selectedLlmCode.value = defaultModel?.llm_code;
-  }
-
-  /** 将当前选中模型写回 session（model 与 sessionCode 同级） */
-  private async persistSessionModel(llmCode?: string): Promise<void> {
-    const current = this.sessionModule?.current.value;
-    if (!current?.sessionCode || !llmCode) {
-      return;
-    }
-    if (current.model === llmCode) {
-      return;
-    }
-    try {
-      await this.sessionModule!.updateSession({
-        ...current,
-        model: llmCode,
-      });
-    } catch (error) {
+  /** 写回选中模型到 session；失败不阻断 UI，仅上报 */
+  private persistSelection(llmCode?: string): void {
+    this.modelSelection.persistSessionModel(llmCode).catch((error: unknown) => {
       console.error('[ChatBusinessManager] Failed to persist session model:', error);
       this.emit('chat-error', { action: 'persistSessionModel', error });
-    }
+    });
   }
 
   /** 解析本轮 chat 使用的 llm_code；空字符串视为未选中 */
   private resolveChatModel(override?: string): string | undefined {
-    const code = override ?? this._selectedLlmCode.value;
+    const code = override ?? this.modelSelection.selectedLlmCode.value;
     return code || undefined;
   }
   /**
@@ -158,49 +108,26 @@ export class ChatBusinessManager {
     this.eventEmitter?.emit(event, data);
   }
 
+  /**
+   * @param modelSelection 模型选择管理器；未传时自建，供独立使用与单测
+   */
   constructor(
     agentModule: IAgentModule,
     messageModule: IMessageModule,
     sessionModule: ISessionModule | null = null,
     eventEmitter: IEventEmitter | null = null,
     config: ChatBusinessConfig = {},
+    modelSelection?: ModelSelectionManager,
   ) {
     this.agentModule = agentModule;
     this.messageModule = messageModule;
     this.sessionModule = sessionModule;
     this.eventEmitter = eventEmitter;
     this.config = config;
+    this.modelSelection = modelSelection ?? new ModelSelectionManager(agentModule, sessionModule);
 
     this._isGenerating = ref(false);
     this._isStopLoading = ref(false);
-    this._isModelsLoading = ref(false);
-    this._models = ref<ILlmItem[]>([]);
-    this._selectedLlmCode = ref<string | undefined>(undefined);
-    this._selectedModelName = computed(() => {
-      const code = this._selectedLlmCode.value;
-      if (!code) {
-        return '';
-      }
-      return this._models.value.find(m => m.llm_code === code)?.llm_name ?? '';
-    });
-    this._selectedModelSupportsVision = computed(() => {
-      const code = this._selectedLlmCode.value;
-      if (!code) {
-        return false;
-      }
-      const model = this._models.value.find(m => m.llm_code === code);
-      return Boolean(model?.property?.support_vision);
-    });
-
-    // 仅在 sessionCode 变化时同步模型（同一会话的 updateSession 改写 current 引用时不覆盖用户选中）
-    if (this.sessionModule) {
-      watch(
-        () => this.sessionModule!.current.value?.sessionCode,
-        () => {
-          this.applySessionModel(this.sessionModule!.current.value?.model);
-        },
-      );
-    }
   }
   /**
    * 是否正在生成
@@ -222,27 +149,27 @@ export class ChatBusinessManager {
 
   /** 可用模型列表（供 ChatContainer ModelSelector） */
   get models(): Ref<ILlmItem[]> {
-    return this._models;
+    return this.modelSelection.models;
   }
 
   /** 模型列表加载中 */
   get isModelsLoading(): Ref<boolean> {
-    return this._isModelsLoading;
+    return this.modelSelection.isLoading;
   }
 
   /** 当前选中模型的 llm_code（发送时透传） */
   get selectedLlmCode(): Ref<string | undefined> {
-    return this._selectedLlmCode;
+    return this.modelSelection.selectedLlmCode;
   }
 
   /** 当前选中模型的 llm_name（绑定 ChatContainer v-model:selected-model） */
   get selectedModelName(): ComputedRef<string> {
-    return this._selectedModelName;
+    return this.modelSelection.selectedModelName;
   }
 
   /** 当前选中模型是否支持 vision（附件按钮） */
   get selectedModelSupportsVision(): ComputedRef<boolean> {
-    return this._selectedModelSupportsVision;
+    return this.modelSelection.selectedModelSupportsVision;
   }
 
   /**
@@ -253,57 +180,40 @@ export class ChatBusinessManager {
   }
 
   /**
+   * 确保模型列表已就绪（幂等，共享实例下不会重复拉取）
+   */
+  async ensureModelsLoaded(): Promise<void> {
+    return this.modelSelection.ensureLoaded();
+  }
+
+  /**
    * 拉取可用模型列表；已有 agent.models 时复用，失败不抛出（空列表）
    */
   async loadModels(options: { force?: boolean } = {}): Promise<void> {
-    this._isModelsLoading.value = true;
-    try {
-      const cached = this.agentModule.models?.value;
-      if (!options.force && Array.isArray(cached) && cached.length > 0) {
-        this._models.value = [...cached];
-      } else if (typeof this.agentModule.getLlms === 'function') {
-        const list = await this.agentModule.getLlms();
-        this._models.value = Array.isArray(list) ? list : [];
-      } else {
-        this._models.value = [];
-      }
-      this.applySessionModel(this.sessionModule?.current.value?.model);
-    } catch (error) {
-      console.error('[ChatBusinessManager] Failed to load models:', error);
-      this._models.value = [];
-      this._selectedLlmCode.value = undefined;
-    } finally {
-      this._isModelsLoading.value = false;
-    }
+    return this.modelSelection.loadModels(options);
   }
 
   /**
    * 使用外部传入的模型列表（跳过接口拉取）
    */
   setModels(models: ILlmItem[]): void {
-    this._models.value = models;
-    this.applySessionModel(this.sessionModule?.current.value?.model);
+    this.modelSelection.setModels(models);
   }
 
   /**
    * 按展示名设置选中模型（ModelSelector v-model 为 llm_name）
    */
   setSelectedModelByName(llmName: string): void {
-    if (!llmName) {
-      this._selectedLlmCode.value = undefined;
-      return;
-    }
-    const found = this._models.value.find(m => m.llm_name === llmName);
-    this._selectedLlmCode.value = found?.llm_code;
-    void this.persistSessionModel(found?.llm_code);
+    this.modelSelection.setSelectedModelByName(llmName);
+    this.persistSelection(this.modelSelection.selectedLlmCode.value);
   }
 
   /**
    * 按模型选项设置选中（@model-change 回调）
    */
   setSelectedModel(model: ILlmItem | null | undefined): void {
-    this._selectedLlmCode.value = model?.llm_code;
-    void this.persistSessionModel(model?.llm_code);
+    this.modelSelection.setSelectedModel(model);
+    this.persistSelection(this.modelSelection.selectedLlmCode.value);
   }
 
   /**

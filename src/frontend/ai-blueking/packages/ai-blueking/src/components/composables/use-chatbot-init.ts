@@ -13,12 +13,13 @@ import type { ComputedRef, Ref } from 'vue';
 import { AGUIProtocol, useChatHelper } from '@blueking/chat-helper';
 
 import { runAgentBootstrap } from '../../bootstrap/agent-bootstrap';
-import { ChatBusinessManager, SessionBusinessManager, ShortcutManager } from '../../manager';
+import { ChatBusinessManager, ModelSelectionManager, SessionBusinessManager, ShortcutManager } from '../../manager';
 import { buildRequestDataFromOptions, normalizeUrl, toError } from '../../utils';
 
 import type { IEventEmitter } from '../../manager/business/types';
 import type { IChatHelper } from '../../types';
 import type { ChatBotProps } from '../types';
+import type { ILlmItem } from '@blueking/chat-helper';
 import type { ReportChatBotError } from './use-error-reporter';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -172,6 +173,21 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
     }
   };
 
+  /**
+   * 确保模型列表就绪：外部 models 优先，否则复用接口 / agent 缓存
+   * 建会话前必须完成，否则首个会话拿不到可选中的 model
+   */
+  const ensureModelsReady = async (modelSelection: ModelSelectionManager): Promise<void> => {
+    if (props.enableModelSelect === false) {
+      return;
+    }
+    if (props.models?.length) {
+      modelSelection.setModels(props.models as ILlmItem[]);
+      return;
+    }
+    await modelSelection.ensureLoaded();
+  };
+
   const runInitialize = async (currentGen: number): Promise<void> => {
     const oldHelper = chatHelper.value;
 
@@ -193,6 +209,13 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
       throw err;
     }
 
+    // 集成模式复用 AIBlueking 的实例，保证外壳层与聊天层读同一份模型选中状态
+    const modelSelection =
+      props.modelSelectionManager ??
+      new ModelSelectionManager(newHelper.agent, newHelper.session, {
+        enabled: props.enableModelSelect !== false,
+      });
+
     const sessionMgr = new SessionBusinessManager(
       newHelper.session,
       newHelper.agent,
@@ -205,15 +228,23 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
         alwaysCreateNewSession: props.alwaysCreateNewSession,
       },
       newHelper.message,
+      modelSelection,
     );
 
-    const chatMgr = new ChatBusinessManager(newHelper.agent, newHelper.message, newHelper.session, managerErrorBridge, {
-      openingRemark: props.helloText,
-      predefinedQuestions: props.prompts,
-      placeholder: props.placeholder,
-      // 首条消息自动重命名成功 → ChatBot rename → AIBlueking forwarders.rename
-      onSessionRenamed: (newName: string, sessionCode: string) => emit('rename', newName, sessionCode),
-    });
+    const chatMgr = new ChatBusinessManager(
+      newHelper.agent,
+      newHelper.message,
+      newHelper.session,
+      managerErrorBridge,
+      {
+        openingRemark: props.helloText,
+        predefinedQuestions: props.prompts,
+        placeholder: props.placeholder,
+        // 首条消息自动重命名成功 → ChatBot rename → AIBlueking forwarders.rename
+        onSessionRenamed: (newName: string, sessionCode: string) => emit('rename', newName, sessionCode),
+      },
+      modelSelection,
+    );
 
     const shortcutMgr = new ShortcutManager(null, props.shortcuts || []);
 
@@ -229,18 +260,15 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
         });
         assertGeneration(currentGen);
 
+        // 模型先于会话就绪：createSession 需要解析出可选中的 model
+        await ensureModelsReady(modelSelection);
+        assertGeneration(currentGen);
+
         await sessionMgr.loadRecentSession({ skipLoadSessions: true });
         assertGeneration(currentGen);
-      }
-
-      // 模型选择：外部 models 优先；否则从接口 / agent 缓存同步到 ChatBusinessManager
-      if (props.enableModelSelect !== false) {
-        if (props.models?.length) {
-          chatMgr.setModels(props.models);
-        } else {
-          await chatMgr.loadModels();
-        }
-        assertGeneration(currentGen);
+      } else {
+        // 集成模式下 AIBlueking 已就绪模型，此处为幂等兜底（共享实例不会重复拉取）
+        await ensureModelsReady(modelSelection);
       }
 
       assertGeneration(currentGen);

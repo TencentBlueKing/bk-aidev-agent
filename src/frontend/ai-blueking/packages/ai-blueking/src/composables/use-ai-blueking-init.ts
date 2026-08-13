@@ -13,6 +13,7 @@ import { Message } from 'bkui-vue';
 
 import { t } from '../lang';
 import { createComponentManager } from '../manager';
+import { ModelSelectionManager } from '../manager/business/model-selection-manager';
 import { SessionBusinessManager } from '../manager/business/session-business-manager';
 import { ShareBusinessManager } from '../manager/business/share-business-manager';
 import { ShortcutManager } from '../manager/business/shortcut-manager';
@@ -24,6 +25,7 @@ import type ChatBot from '../components/chat-bot.vue';
 import type { DraggableContainerExpose } from '../containers';
 import type { AIBluekingProps, IShortcut, ReportSdkErrorOptions, SdkErrorApiName } from '../types';
 import type { UseEventBridgeReturn } from './use-event-bridge';
+import type { ILlmItem } from '@blueking/chat-helper';
 import type { IAiSlashMenuItem, ISkillListItem } from '@blueking/chat-x';
 
 export type EventForwarders = ReturnType<typeof createEventForwarders>;
@@ -190,6 +192,24 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     },
   );
 
+  // ==================== 模型选择（与内嵌 ChatBot 共享同一实例） ====================
+  // 建会话与模型切换读同一份选中状态，避免外壳层反向读取子组件
+  const modelSelection = new ModelSelectionManager(chatHelper.agent, chatHelper.session, {
+    enabled: props.enableModelSelect !== false,
+  });
+
+  /** 建会话前确保模型列表就绪：外部 models 优先，否则复用 bootstrap 已拉取的结果 */
+  const ensureModelsReady = async (): Promise<void> => {
+    if (props.enableModelSelect === false) {
+      return;
+    }
+    if (props.models?.length) {
+      modelSelection.setModels(props.models as ILlmItem[]);
+      return;
+    }
+    await modelSelection.ensureLoaded();
+  };
+
   // ==================== Business Managers ====================
   const sessionBusinessManager = new SessionBusinessManager(
     chatHelper.session,
@@ -201,6 +221,7 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
       alwaysCreateNewSession: props.alwaysCreateNewSession,
     },
     chatHelper.message,
+    modelSelection,
   );
 
   const shareBusinessManager = new ShareBusinessManager(chatHelper.message, chatHelper.session);
@@ -215,9 +236,12 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     }
 
     if (!recentSessionPromise) {
-      recentSessionPromise = sessionBusinessManager.loadRecentSession({ skipLoadSessions: true }).finally(() => {
-        recentSessionPromise = null;
-      });
+      // 先确保模型列表就绪，创建首个会话时才能落到「前端可选中」的 model
+      recentSessionPromise = ensureModelsReady()
+        .then(() => sessionBusinessManager.loadRecentSession({ skipLoadSessions: true }))
+        .finally(() => {
+          recentSessionPromise = null;
+        });
     }
 
     return recentSessionPromise;
@@ -325,7 +349,8 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
           try {
             await ensureRecentSessionLoaded();
           } catch (err) {
-            console.error('[AIBlueking] Failed to load recent session:', err);
+            // 含「无可用模型」阻断：需上报，避免静默停在无会话状态
+            reportSdkError({ apiName: 'session', action: 'loadRecentSession', error: err, source: 'business' });
           }
         }
       }
@@ -370,6 +395,7 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
   return {
     chatHelper,
     componentManager,
+    modelSelection,
     sessionBusinessManager,
     shareBusinessManager,
     shortcutManager,

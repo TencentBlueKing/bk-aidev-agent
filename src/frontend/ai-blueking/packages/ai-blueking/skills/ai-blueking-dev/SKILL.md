@@ -391,12 +391,15 @@ Agent 可在流式执行中**中断**，把控制权交回用户，处理后再*
 | 展示 | `enableModelSelect !== false` 且列表非空 |
 | 选中值 | UI 绑定 `llm_name`；发送传 `llm_code`（`agent.chat` 第 6 参） |
 | 跟随 session | 切换历史会话时，用 `session.model` 同步 ModelSelector（命中列表时） |
-| 写回 | 用户切换模型 → `session.updateSession({ ...current, model })`（与 `sessionCode` 同级） |
-| 新建 | 有当前选中时 `createSession` / `createNewSession` 带 `model`；首次无选中不传，用后台返回 |
+| 写回 | 用户切换模型 → `ModelSelectionManager.persistSessionModel`（`session.model` 唯一写回出口） |
+| 新建 | **所有建会话路径**（含初始化 `loadRecentSession`）统一经 `resolveModelForSession`：优先当前选中 / preferred，校验落在可用列表内；`enableModelSelect=false` 时不强制写 model |
+| 空列表 | 启用模型选择但无可用模型 → 抛 `ModelUnavailableError`，阻断建会话并上报 `sdk-error`（`apiName: session`） |
 | 首次 / 兜底 | `session.model` 命中列表 → 选中；空/未知且无有效选中 → `property.default` / 首项 |
 | 附件按钮 | 跟随选中模型 `property.support_vision`；快捷指令 `supportUpload.vision` 优先 |
 
-编排入口：`ChatBusinessManager`（`loadModels` / `setModels` / `setSelectedModel*` / `applySessionModel`）。  
+编排入口：`ModelSelectionManager`（`models` / `selectedLlmCode` / `resolveModelForSession` / `persistSessionModel`）。  
+AIBlueking 创建实例并注入内嵌 ChatBot（`modelSelectionManager` prop），外壳层与聊天层共享同一份选中状态。  
+`ChatBusinessManager` / `SessionBusinessManager` 均委托该管理器，不再各自持有模型状态。  
 SDK：`agent.getLlms()` → `agent.models`；热切换 `agent.chat(..., property, llm_code)`。自定义请求参数（如 `temperature`）走 `config.data`，**不要**把 `model` 塞进 `config.data`。
 
 ## 参考资源

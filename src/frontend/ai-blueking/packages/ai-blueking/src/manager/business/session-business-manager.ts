@@ -8,6 +8,7 @@
  */
 
 import { hasRealMessageContent } from '../../utils/message-utils';
+import { ModelSelectionManager } from './model-selection-manager';
 
 import type { CreateSessionOptions, IEventEmitter, SessionBusinessConfig } from './types';
 import type { IAgentModule, IMessageModule, ISession, ISessionModule } from '@blueking/chat-helper';
@@ -27,6 +28,7 @@ export class SessionBusinessManager {
   private config: SessionBusinessConfig;
   private eventEmitter: IEventEmitter | null;
   private messageModule: IMessageModule | null;
+  private modelSelection: ModelSelectionManager;
   private sessionModule: ISessionModule;
 
   /**
@@ -36,18 +38,38 @@ export class SessionBusinessManager {
     this.eventEmitter?.emit(event, data);
   }
 
+  /**
+   * 解析写入后台的 model，保证落在当前可用模型列表内
+   *
+   * 自行确保模型列表就绪（幂等），不依赖调用方的加载时序
+   *
+   * @param preferred 期望值（如 UI 显式指定）；不在列表内时由管理器回退
+   * @throws ModelUnavailableError 启用模型选择但无可用模型（阻断建会话）
+   */
+  private async resolveSessionModel(preferred?: string): Promise<string | undefined> {
+    await this.modelSelection.ensureLoaded();
+    return this.modelSelection.resolveModelForSession(preferred);
+  }
+
+  /**
+   * @param modelSelection 模型选择管理器；未传时降级为「不解析 model」，
+   *   保持仅由调用方显式指定 model 的旧行为
+   */
   constructor(
     sessionModule: ISessionModule,
     agentModule: IAgentModule | null = null,
     eventEmitter: IEventEmitter | null = null,
     config: SessionBusinessConfig = {},
     messageModule: IMessageModule | null = null,
+    modelSelection?: ModelSelectionManager,
   ) {
     this.sessionModule = sessionModule;
     this.agentModule = agentModule;
     this.eventEmitter = eventEmitter;
     this.config = config;
     this.messageModule = messageModule;
+    this.modelSelection =
+      modelSelection ?? new ModelSelectionManager(agentModule, sessionModule, { enabled: false });
   }
 
   get currentSession(): Ref<ISession | null> {
@@ -107,10 +129,10 @@ export class SessionBusinessManager {
    *
    * 智能复用逻辑：
    * - 当前会话已是空会话 → 不创建，返回 null
-   * - sessionList 最新会话是空会话 → 切换到它，返回 null（非新建）；若传入 model 且不同则 updateSession
-   * - 否则 → 创建新会话（可带 model），返回新会话
+   * - sessionList 最新会话是空会话 → 切换到它，返回 null（非新建）；model 不同则 updateSession
+   * - 否则 → 创建新会话（带 model），返回新会话
    *
-   * @param options.model 当前选中的 llm_code；有值时写入 create / 复用写回
+   * @param options.model 期望的 llm_code；缺省时使用当前选中模型，不在可用列表内时回退
    * @returns 新创建的会话；如果复用了已有空会话则返回 null
    */
   async createNewSession(options?: { model?: string }): Promise<ISession | null> {
@@ -134,7 +156,7 @@ export class SessionBusinessManager {
           : this.isSessionEmpty(latestSession);
       if (latestIsEmpty) {
         // 先写回 model，再 switch：避免 applySessionModel 先用旧 model 覆盖当前选中
-        await this.syncSessionModelIfNeeded(options?.model, latestSession);
+        await this.modelSelection.persistSessionModel(await this.resolveSessionModel(options?.model), latestSession);
         await this.switchSession(latestSession.sessionCode, { loadMessages: false });
         return null;
       }
@@ -156,24 +178,6 @@ export class SessionBusinessManager {
   }
 
   /**
-   * 将指定会话的 model 写回后台（默认写 current）
-   * 复用空会话时应在 switch 之前调用，保证切过去后 UI 同步到目标 model
-   */
-  private async syncSessionModelIfNeeded(model?: string, session?: ISession | null): Promise<void> {
-    if (!model) {
-      return;
-    }
-    const target = session ?? this.sessionModule.current.value;
-    if (!target?.sessionCode || target.model === model) {
-      return;
-    }
-    await this.sessionModule.updateSession({
-      ...target,
-      model,
-    });
-  }
-
-  /**
    * 创建新会话
    * @param options 创建选项
    */
@@ -184,12 +188,15 @@ export class SessionBusinessManager {
     }
 
     try {
+      // model 统一由 ModelSelectionManager 解析，保证是前端可选中的模型
+      const model = await this.resolveSessionModel(options.model);
+
       // 构建会话数据（model 与 sessionCode 同级）
       const sessionData = {
         sessionName: options.name || '新会话',
         sessionCode: options.sessionCode || `session_${Date.now()}`,
         isTemporary: options.isTemporary || false,
-        ...(options.model ? { model: options.model } : {}),
+        ...(model ? { model } : {}),
         sessionProperty: {
           labels: options.labels,
         },
@@ -199,7 +206,7 @@ export class SessionBusinessManager {
       await this.sessionModule.createSession(sessionData);
 
       // 新会话创建后处理角色消息（如开场提示）
-      const agentInfo = this.agentModule?.info.value;
+      const agentInfo = this.agentModule?.info?.value;
       if (agentInfo) {
         this.agentModule?.handleRole(agentInfo, sessionData.sessionCode);
       }
@@ -305,6 +312,9 @@ export class SessionBusinessManager {
    *    - 有内容 → 直接创建新会话（不切换，避免加载消息）
    *    - 无内容 → 切换到该会话（跳过消息加载）
    * 3. 如果会话列表为空，创建新会话
+   *
+   * 新建分支的 model 由 createSession 统一解析，调用方需先确保模型列表就绪
+   * （AIBlueking / ChatBot 初始化时会 await ModelSelectionManager.ensureLoaded）
    *
    * @param options.skipLoadSessions 是否跳过加载会话列表（当 useChatBootstrap 已预加载时设为 true）
    * @param options.alwaysCreateNewSession 是否始终创建新会话（优先级高于 config 中的配置）

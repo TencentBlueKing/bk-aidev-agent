@@ -15,29 +15,33 @@ vi.mock('@blueking/chat-x', () => ({
   MessageRole: { User: 'user', Reasoning: 'reasoning' },
 }));
 
-vi.mock('../../../utils', () => ({
-  findLastUserMessageBefore: vi.fn((messages: any[], aiMessage: any) => {
-    const idx = messages.indexOf(aiMessage);
-    for (let i = idx - 1; i >= 0; i--) {
-      if (messages[i].role === 'user') return messages[i];
-    }
-    return null;
-  }),
-  findLastUserMessageIdBefore: vi.fn((messages: any[], aiMessage: any) => {
-    const idx = messages.indexOf(aiMessage);
-    for (let i = idx - 1; i >= 0; i--) {
-      if (messages[i].role === 'user') return messages[i].id;
-    }
-    return undefined;
-  }),
-  applyRequestOptionsContext: vi.fn((property: any, getRequestOptions?: () => any) => {
-    if (!getRequestOptions) return property;
-    const opts = getRequestOptions();
-    if (!opts?.context) return property;
-    return { ...(property ?? {}), extra: { ...((property ?? {}).extra ?? {}), context: opts.context } };
-  }),
-  resolveContextEntries: vi.fn(() => []),
-}));
+vi.mock('../../../utils', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../../utils')>();
+  return {
+    ...actual,
+    findLastUserMessageBefore: vi.fn((messages: any[], aiMessage: any) => {
+      const idx = messages.indexOf(aiMessage);
+      for (let i = idx - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') return messages[i];
+      }
+      return null;
+    }),
+    findLastUserMessageIdBefore: vi.fn((messages: any[], aiMessage: any) => {
+      const idx = messages.indexOf(aiMessage);
+      for (let i = idx - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') return messages[i].id;
+      }
+      return undefined;
+    }),
+    applyRequestOptionsContext: vi.fn((property: any, getRequestOptions?: () => any) => {
+      if (!getRequestOptions) return property;
+      const opts = getRequestOptions();
+      if (!opts?.context) return property;
+      return { ...(property ?? {}), extra: { ...((property ?? {}).extra ?? {}), context: opts.context } };
+    }),
+    resolveContextEntries: vi.fn(() => []),
+  };
+});
 
 import { useToolActions } from '../use-tool-actions';
 import type { UseToolActionsParams } from '../use-tool-actions';

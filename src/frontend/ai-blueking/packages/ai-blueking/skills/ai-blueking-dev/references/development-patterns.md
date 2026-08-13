@@ -34,7 +34,7 @@ const {
 
 ## 会话管理模式
 
-使用 `SessionBusinessManager` 统一管理会话业务逻辑：
+使用 `SessionBusinessManager` 统一管理会话业务逻辑（建议注入共享的 `ModelSelectionManager`，使建会话与模型切换读同一份选中状态）：
 
 ```typescript
 import { SessionBusinessManager } from '@blueking/ai-blueking';
@@ -84,7 +84,7 @@ await chatBusinessManager.sendMessage(content, sessionCode, {
   model: 'hy3-preview',
 });
 
-// 模型列表与选中（≥ v2.2.1；选中态跟随 session，切换写回）
+// 模型列表与选中（委托 ModelSelectionManager；选中态跟随 session，切换写回）
 await chatBusinessManager.loadModels();
 chatBusinessManager.setSelectedModelByName('混元预览');
 

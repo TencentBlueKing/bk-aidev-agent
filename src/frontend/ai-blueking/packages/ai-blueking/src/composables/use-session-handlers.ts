@@ -182,20 +182,12 @@ export function useSessionHandlers(params: UseSessionHandlersParams) {
 
   // ==================== Expose 方法 ====================
 
-  const resolveSelectedLlmCode = (): string | undefined => {
-    return chatBotRef.value?.selectedLlmCode;
-  };
-
   const addNewSession = async (options?: CreateSessionOptions) => {
+    // model 由 SessionBusinessManager 统一解析：options.model 优先，且保证落在可用模型列表内
     if (options) {
-      await sessionBusinessManager.createSession({
-        ...options,
-        model: options.model ?? resolveSelectedLlmCode(),
-      });
+      await sessionBusinessManager.createSession(options);
     } else {
-      await sessionBusinessManager.createNewSession({
-        model: resolveSelectedLlmCode(),
-      });
+      await sessionBusinessManager.createNewSession();
     }
   };
 

@@ -34,6 +34,26 @@ vi.mock('../../manager', () => ({
   })),
 }));
 
+vi.mock('../../manager/business/model-selection-manager', () => ({
+  ModelSelectionManager: vi.fn().mockImplementation(function MockModelSelectionManager() {
+    return {
+      selectedLlmCode: ref(undefined),
+      models: ref([]),
+      isLoading: ref(false),
+      ensureLoaded: vi.fn().mockResolvedValue(undefined),
+      setModels: vi.fn(),
+      resolveModelForSession: vi.fn(),
+      persistSessionModel: vi.fn().mockResolvedValue(undefined),
+    };
+  }),
+  ModelUnavailableError: class ModelUnavailableError extends Error {
+    constructor(message = '当前没有可用模型，无法创建会话') {
+      super(message);
+      this.name = 'ModelUnavailableError';
+    }
+  },
+}));
+
 vi.mock('../../manager/business/session-business-manager', () => ({
   SessionBusinessManager: vi.fn().mockImplementation(function MockSessionBusinessManager() {
     return {

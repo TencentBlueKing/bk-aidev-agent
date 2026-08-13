@@ -81,6 +81,7 @@ vi.mock('../../../manager', async () => {
       this.regenerateFromAIMessages = vi.fn();
       this.resendMessageWithProperty = vi.fn();
       this.loadModels = vi.fn().mockResolvedValue(undefined);
+      this.ensureModelsLoaded = vi.fn().mockResolvedValue(undefined);
       this.setModels = vi.fn();
       this.setSelectedModel = vi.fn();
       this.setSelectedModelByName = vi.fn();
@@ -98,6 +99,27 @@ vi.mock('../../../manager', async () => {
       this.setShortcuts = vi.fn();
       this.setAgentShortcuts = vi.fn();
     }),
+    ModelSelectionManager: vi.fn().mockImplementation(function (this: any) {
+      this.selectedLlmCode = ref(undefined);
+      this.models = ref([]);
+      this.isLoading = ref(false);
+      this.selectedModelName = ref('');
+      this.selectedModelSupportsVision = ref(false);
+      this.ensureLoaded = vi.fn().mockResolvedValue(undefined);
+      this.loadModels = vi.fn().mockResolvedValue(undefined);
+      this.setModels = vi.fn();
+      this.setSelectedModel = vi.fn();
+      this.setSelectedModelByName = vi.fn();
+      this.resolveModelForSession = vi.fn();
+      this.persistSessionModel = vi.fn().mockResolvedValue(undefined);
+      this.applySessionModel = vi.fn();
+    }),
+    ModelUnavailableError: class ModelUnavailableError extends Error {
+      constructor(message = '当前没有可用模型，无法创建会话') {
+        super(message);
+        this.name = 'ModelUnavailableError';
+      }
+    },
   };
 });
 

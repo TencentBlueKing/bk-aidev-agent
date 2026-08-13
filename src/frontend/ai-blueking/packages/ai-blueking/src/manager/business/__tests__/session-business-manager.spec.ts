@@ -352,6 +352,87 @@ describe('SessionBusinessManager.createNewSession', () => {
   });
 });
 
+describe('SessionBusinessManager model resolution', () => {
+  let sessionModule: ReturnType<typeof createSessionModule>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionModule = createSessionModule();
+  });
+
+  it('should use ModelSelectionManager to resolve model into available list', async () => {
+    const { ModelSelectionManager } = await import('../model-selection-manager');
+    const agentModule = {
+      getLlms: vi.fn(),
+      models: ref([
+        {
+          id: 1,
+          llm_code: 'hy3-preview',
+          llm_name: '混元3',
+          llm_type: 'chat.completion',
+          max_token_size: 1,
+          property: { default: true },
+          space_auth_mode: '',
+          user_auth_mode: '',
+        },
+        {
+          id: 2,
+          llm_code: 'deepseek',
+          llm_name: 'DeepSeek',
+          llm_type: 'chat.completion',
+          max_token_size: 1,
+          property: {},
+          space_auth_mode: '',
+          user_auth_mode: '',
+        },
+      ]),
+    };
+    const modelSelection = new ModelSelectionManager(agentModule as never, sessionModule as never);
+    await modelSelection.ensureLoaded();
+
+    const manager = new SessionBusinessManager(
+      sessionModule as never,
+      agentModule as never,
+      null,
+      {},
+      null,
+      modelSelection,
+    );
+    sessionModule.current.value = null;
+    sessionModule.list.value = [{ sessionCode: 'has-content', sessionName: '有内容', sessionContentCount: 3 }];
+
+    await manager.createNewSession({ model: 'not-in-list' });
+
+    expect(sessionModule.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'hy3-preview',
+      }),
+    );
+  });
+
+  it('should throw ModelUnavailableError when enabled but models are empty', async () => {
+    const { ModelSelectionManager, ModelUnavailableError } = await import('../model-selection-manager');
+    const agentModule = {
+      getLlms: vi.fn().mockResolvedValue([]),
+      models: ref([]),
+    };
+    const modelSelection = new ModelSelectionManager(agentModule as never, sessionModule as never);
+    const manager = new SessionBusinessManager(
+      sessionModule as never,
+      agentModule as never,
+      null,
+      {},
+      null,
+      modelSelection,
+    );
+    sessionModule.current.value = null;
+    sessionModule.list.value = [];
+
+    await expect(manager.createSession({ name: '新会话' })).rejects.toThrow(ModelUnavailableError);
+    expect(sessionModule.createSession).not.toHaveBeenCalled();
+  });
+});
+
 describe('SessionBusinessManager pagination', () => {
   let sessionModule: ReturnType<typeof createSessionModule>;
   let manager: SessionBusinessManager;

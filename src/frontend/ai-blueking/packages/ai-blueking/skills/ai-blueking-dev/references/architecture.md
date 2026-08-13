@@ -17,7 +17,7 @@ AI 小鲸组件采用严格的分层架构，开发时必须遵循各层职责�
 │  useMessageSender / useShortcuts / useToolActions / useShareSelection │
 ├─────────────────────────────────────────────────────────────────┤
 │                     业务管理层 (Business Managers)                 │
-│  SessionBusinessManager、ChatBusinessManager、ShareBusinessManager│
+│  SessionBusinessManager、ChatBusinessManager、ModelSelectionManager、ShareBusinessManager│
 ├─────────────────────────────────────────────────────────────────┤
 │                      Composables (可复用逻辑)                      │
 │  useChatBootstrap、useEventBridge - 组合式函数                     │
@@ -78,9 +78,13 @@ AI 小鲸组件采用严格的分层架构，开发时必须遵循各层职责�
 
 ```
 1. bootstrap：getLlms() 并行拉取（失败不阻断）
-2. ChatBusinessManager.loadModels / setModels → resolveInitialSelection
-3. ChatBot 绑定 models + v-model:selected-model → ChatContainer ModelSelector
-4. 用户切换 → setSelectedModel → updateSession 写回 model；切 session → applySessionModel
+1. AIBlueking / ChatBot 初始化：ModelSelectionManager.ensureLoaded（复用 bootstrap 的 getLlms）
+2. loadRecentSession / createNewSession → SessionBusinessManager.createSession
+   → resolveModelForSession（保证落在可用列表；空列表抛 ModelUnavailableError）
+3. ChatBusinessManager 委托同一 ModelSelectionManager；切换模型写回 persistSessionModel
+4. ChatBot 绑定 models + v-model:selected-model → ChatContainer ModelSelector
+5. 切 session → applySessionModel（仅 sessionCode 变化时）
+6. chat(..., property, selectedLlmCode) 热切换
 ```
 
 ## 职责分离原则

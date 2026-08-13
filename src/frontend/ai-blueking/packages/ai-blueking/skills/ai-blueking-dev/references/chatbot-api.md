@@ -24,6 +24,7 @@
 | shareLoading    | `boolean`            | `false` | 分享加载状态                                   |
 | enableModelSelect | `boolean`          | `true`  | 是否启用模型选择（≥ v2.2.1）；拉取 `GET llms/`，列表非空才展示 |
 | models          | `ILlmItem[] \| IModelOption[]` | - | 外部模型列表（≥ v2.2.1）；有值时跳过内部拉取 |
+| modelSelectionManager | `ModelSelectionManager` | - | 集成模式注入共享实例（AIBlueking → ChatBot）；独立模式内部自建 |
 | errorToast      | `boolean`            | `true`  | 接口/业务错误时是否自动弹 Message（展示 `error.message`）；设为 `false` 可自行通过 `@error` 处理。AIBlueking 内嵌时会传 `false` 以免与父层双弹 |
 | height          | `string \| number`   | -       | 容器高度                                       |
 | maxWidth        | `string \| number`   | -       | 最大宽度                                       |
@@ -172,14 +173,12 @@ ChatBot.onMounted()
 ├── runAgentBootstrap(chatHelper, { enableModelSelect })
 │   ├── getAgentInfo() + getSessions()
 │   └── getLlms()（enableModelSelect 且无外部 models 时；失败不阻断）
-├── loadRecentSession / chooseSession
-├── enableModelSelect?
-│   ├── 有 props.models → chatMgr.setModels(models)
-│   └── 否则 → chatMgr.loadModels()
+├── ModelSelectionManager.ensureLoaded（外部 models 优先；集成模式复用 AIBlueking 共享实例）
+├── loadRecentSession / chooseSession（createSession 经 resolveModelForSession 写入合法 model）
 └── emit('agent-info-loaded', chatHelper)
 ```
 
-模型选中语义见主 SKILL「模型选择」小节：跟随 session；切换写回 `updateSession`；新建可带 `model`；附件按钮跟随模型 `support_vision`。
+模型选中语义见主 SKILL「模型选择」小节：跟随 session；切换写回 `persistSessionModel`；所有新建会话路径统一解析 model；空列表阻断并上报；附件按钮跟随模型 `support_vision`。
 
 ### 嵌入页等待就绪（whenReady）
 
