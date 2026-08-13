@@ -1229,6 +1229,9 @@ class ChatCompletionAgent(BaseModel):
                 turn_kwargs["turn_id"] = bp["turn_id"]
             if bp.get("status"):
                 turn_kwargs["status"] = bp["status"]
+            if bp.get("created_at"):
+                # 仅供 MESSAGES_SNAPSHOT 展示；LangChain 转 OpenAI 不会把该键写入模型 payload
+                turn_kwargs["created_at"] = bp["created_at"]
             match each.role:
                 case PromptRole.USER.value:
                     multimodal = parse_multimodal_content(each.content)
@@ -1270,7 +1273,7 @@ class ChatCompletionAgent(BaseModel):
                         )
                     )
                 case PromptRole.SYSTEM.value:
-                    messages.append(SystemMessage(id=each.id, content=each.content))
+                    messages.append(SystemMessage(id=each.id, content=each.content, additional_kwargs=turn_kwargs))
                 case PromptRole.TOOL.value:
                     content = each.content if isinstance(each.content, str) else str(each.content)
                     messages.append(
@@ -1305,7 +1308,9 @@ class ChatCompletionAgent(BaseModel):
                             interrupt_content = {}
                     if not isinstance(interrupt_content, (dict, list)):
                         interrupt_content = {}
-                    messages.append(InterruptMessage(id=each.id, content=interrupt_content))
+                    messages.append(
+                        InterruptMessage(id=each.id, content=interrupt_content, additional_kwargs=turn_kwargs)
+                    )
         return messages
 
     def _convert_contents(self, contents: list[ChatPrompt]) -> list[ChatPrompt]:

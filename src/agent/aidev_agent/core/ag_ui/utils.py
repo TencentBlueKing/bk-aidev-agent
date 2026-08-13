@@ -219,6 +219,7 @@ def parse_reasoning_content_value(content: Any) -> list[str]:
 def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]:
     agui_messages: list[AGUIMessage] = []
     for message in messages:
+        created_at = (message.additional_kwargs or {}).get("created_at")
         if isinstance(message, HumanMessage):
             # Handle multimodal content
             multimodal = parse_multimodal_content(message.content)
@@ -233,6 +234,7 @@ def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]
                     role="user",
                     content=content,
                     name=message.name,
+                    created_at=created_at,
                 )
             )
         elif isinstance(message, AIMessage):
@@ -257,6 +259,7 @@ def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]
                         id=str(message.id),
                         content=[message.additional_kwargs.get("reasoning_content")],
                         duration=message.additional_kwargs.get("reasoning_time", None),
+                        created_at=created_at,
                     )
                 )
 
@@ -286,6 +289,7 @@ def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]
                     name=message.name,
                     property=message_property,
                     status=assistant_status,
+                    created_at=created_at,
                 )
             )
         elif isinstance(message, SystemMessage):
@@ -295,6 +299,7 @@ def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]
                     role="system",
                     content=stringify_if_needed(resolve_message_content(message.content)),
                     name=message.name,
+                    created_at=created_at,
                 )
             )
         elif isinstance(message, ToolMessage):
@@ -307,6 +312,7 @@ def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]
                     tool_call_id=message.tool_call_id,
                     error=content if message.status == "error" else None,
                     duration=message.additional_kwargs.get("duration", None),
+                    created_at=created_at,
                 )
             )
         elif isinstance(message, InterruptMessage):
@@ -318,6 +324,7 @@ def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]
                     id=str(message.id),
                     content=message.content,
                     name=message.name,
+                    created_at=created_at,
                 )
             )
         elif isinstance(message, ActivityMessage):
@@ -326,6 +333,7 @@ def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]
                     id=str(message.id),
                     content=message.content,
                     activity_type=message.type,
+                    created_at=created_at,
                 )
             )
         elif isinstance(message, InfoMessage):
@@ -333,6 +341,7 @@ def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]
                 AGUIInfoMessage(
                     id=str(message.id),
                     content=message.content,
+                    created_at=created_at,
                 )
             )
         elif isinstance(message, ReasoningLangChainMessage):
@@ -341,6 +350,7 @@ def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]
                     id=str(message.id),
                     content=parse_reasoning_content_value(message.content),
                     duration=message.additional_kwargs.get("duration"),
+                    created_at=created_at,
                 )
             )
         else:

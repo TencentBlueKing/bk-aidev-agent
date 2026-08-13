@@ -184,6 +184,7 @@ class CustomMessageType(Enum):
 
 class ExtendBaseMessage(BaseModel):
     status: Literal["complete", "streaming", "pending", "error", "stop"] = "complete"
+    created_at: str | None = Field(default=None, description="该条消息的创建时间，仅供 MESSAGES_SNAPSHOT 展示")
 
     @computed_field
     def message_id(self) -> str:

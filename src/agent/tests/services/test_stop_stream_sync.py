@@ -9,6 +9,7 @@
    EOD → Consumer notify → stop wait → 调用平台 API
 """
 
+import json
 import threading
 import time
 
@@ -19,7 +20,25 @@ from aidev_agent.services.messages_handler import (
     InMemoryQueueMessageHandler,
 )
 from aidev_agent.services.messages_handler.constants import TimeoutConfig
-from aidev_agent.utils.event import RunId, emit_run_finished_event
+from aidev_agent.utils.event import RunId
+
+
+def _has_run_finished(chunks: list, thread_id: str, run_id: str) -> bool:
+    """判断流中是否包含指定 RUN_FINISHED，忽略墙钟 timestamp。"""
+    for chunk in chunks:
+        if not isinstance(chunk, str) or not chunk.startswith("data:"):
+            continue
+        try:
+            payload = json.loads(chunk.removeprefix("data:").strip())
+        except json.JSONDecodeError:
+            continue
+        if (
+            payload.get("type") == "RUN_FINISHED"
+            and payload.get("threadId") == thread_id
+            and payload.get("runId") == run_id
+        ):
+            return True
+    return False
 
 
 class TestConsumerNotifyOnCancel:
@@ -293,8 +312,7 @@ class TestEndToEndStopAndResume:
         assert "chunk_0" in collected
         assert "chunk_1" in collected
         # _consume_stopped_session 耗尽消息后 yield RUN_FINISHED SSE，而非 STOPPED_CHUNK
-        expected_run_finished = emit_run_finished_event(thread_id=tid, run_id=RunId.STOPPED)
-        assert expected_run_finished in collected
+        assert _has_run_finished(collected, tid, RunId.STOPPED)
         assert not handler.is_stopped(tid), "恢复后 stopped 标记应清除"
 
     def test_stop_no_cache_restarts_generator(self, handler):
@@ -390,8 +408,7 @@ class TestFullStopSequence:
         collected, finished, tl = self._run_stop_flow(handler, tid, gen_factory)
 
         assert finished, "stop 应成功等到流结束"
-        expected_run_finished = emit_run_finished_event(thread_id=tid, run_id=RunId.CANCELLED)
-        assert expected_run_finished in collected
+        assert _has_run_finished(collected, tid, RunId.CANCELLED)
         assert 0 < sum(1 for c in collected if c.startswith("chunk_")) < 50
         # 时序验证
         assert tl["consumer_exited"] >= tl["cancel_sent"]
@@ -415,7 +432,7 @@ class TestFullStopSequence:
         collected, finished, tl = self._run_stop_flow(handler, tid, gen_factory)
 
         assert finished, "producer 主动收敛取消终态后 Consumer 应退出并通知"
-        assert emit_run_finished_event(thread_id=tid, run_id=RunId.CANCELLED) in collected
+        assert _has_run_finished(collected, tid, RunId.CANCELLED)
 
     def test_consumer_waits_for_live_producer_before_notify(self, handler, monkeypatch):
         """工具仍执行时不能提前通知 stop 已完成，producer 结束后再确认。"""
@@ -448,8 +465,7 @@ class TestFullStopSequence:
         assert not thread.is_alive()
         assert handler.wait_for_consumer_cancelled(tid, timeout=0.5)
         assert "tool_result_after_stop" not in collected
-        expected_run_finished = emit_run_finished_event(thread_id=tid, run_id=RunId.CANCELLED)
-        assert expected_run_finished in collected
+        assert _has_run_finished(collected, tid, RunId.CANCELLED)
 
     def test_stop_timeout_degradation_no_consumer(self, handler):
         """无 Consumer 场景：stop wait 超时 → 降级 mark_stopped → 调 API"""

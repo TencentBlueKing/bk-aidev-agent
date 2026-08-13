@@ -24,6 +24,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from aidev_agent.core.nodes.tool.approval_wrapper import TOOL_APPROVAL_REASON
 from aidev_agent.exceptions import extract_model_error_message
+from aidev_agent.utils.event import stamp_round_end_event
 
 from .agent import LangGraphAGUIAgent
 from .approval import ApprovalOutcomeBuilder, ApproveResultLiteral
@@ -398,14 +399,14 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
                 )
 
         # 4) RUN_FINISHED（续流场景不下发 MESSAGES_SNAPSHOT，前端复用已有消息状态 + 上面补发的增量事件）
-        yield encoder.encode(
-            RunFinishedEvent(
-                type=EventType.RUN_FINISHED,
-                thread_id=agent_input.thread_id,
-                run_id=run_id,
-                outcome=serialize_run_finished_outcome(RunFinishedSuccessOutcome()),
-            )
+        # 这是 checkpoint 重放，不是本轮真实结束，不打墙钟，避免前端把重连时刻当成轮次结束时间。
+        finished_event = RunFinishedEvent(
+            type=EventType.RUN_FINISHED,
+            thread_id=agent_input.thread_id,
+            run_id=run_id,
+            outcome=serialize_run_finished_outcome(RunFinishedSuccessOutcome()),
         )
+        yield encoder.encode(finished_event)
 
     async def _handle_single_event(self, event: Any, state: State) -> AsyncGenerator[BaseEvent, None]:
         """覆写：super + 拦截 TOOL_CALL_* yield，审批抑制 + 工具增强在构造侧完成。
@@ -477,6 +478,8 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
 
     def _dispatch_event(self, event: BaseEvent) -> str:
         """DB + SSE 纯分发（转换已在构造侧 _handle_single_event 覆写完成）。"""
+        if isinstance(event, (RunFinishedEvent, RunErrorEvent)):
+            stamp_round_end_event(event)
         if self._event_handler:
             try:
                 self._event_handler(event)

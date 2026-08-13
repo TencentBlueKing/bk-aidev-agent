@@ -4,9 +4,10 @@ AG-UI 事件工具模块
 提供统一的事件发送方法和常量定义
 """
 
+import time
 from typing import Callable, Literal
 
-from ag_ui.core import EventType, RunFinishedEvent
+from ag_ui.core import EventType, RunErrorEvent, RunFinishedEvent
 from ag_ui.encoder import EventEncoder
 
 from aidev_agent.core.ag_ui.types import RunFinishedSuccessOutcome, serialize_run_finished_outcome
@@ -31,6 +32,22 @@ class RunId:
     CANCELLED: RunIdType = "cancelled"
     STOPPED: RunIdType = "stopped"
     CANCELLED_MESSAGE: str = "用户已取消"
+
+
+def wall_clock_ms() -> int:
+    """当前墙钟，毫秒。"""
+    return int(time.time() * 1000)
+
+
+def stamp_round_end_event(event: RunFinishedEvent | RunErrorEvent) -> None:
+    """为本轮对话收尾事件写入墙钟毫秒。
+
+    续流回放（resume_replay=True）不打戳。终态 checkpoint 重放不要调用本函数。
+    """
+    if getattr(event, "resume_replay", False):
+        return
+    if event.timestamp is None:
+        event.timestamp = wall_clock_ms()
 
 
 def emit_run_finished_event(
@@ -76,6 +93,7 @@ def emit_run_finished_event(
         run_id=run_id,
         outcome=serialize_run_finished_outcome(RunFinishedSuccessOutcome()),
     )
+    stamp_round_end_event(finished_event)
 
     # 如果提供了事件处理器，调用它分发事件
     if event_handler:

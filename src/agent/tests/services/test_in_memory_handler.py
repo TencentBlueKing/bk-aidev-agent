@@ -26,11 +26,6 @@ from aidev_agent.services.messages_handler.factory import _create_handler, _init
 from aidev_agent.utils.event import RunId, emit_run_finished_event
 
 
-def _make_run_finished_chunk(thread_id: str, run_id: str) -> str:
-    """生成 RUN_FINISHED SSE 字符串，用于测试期望值对比。"""
-    return emit_run_finished_event(thread_id=thread_id, run_id=run_id)
-
-
 def _event_types(chunks: list[str]) -> list[str]:
     return [json.loads(chunk.removeprefix("data: "))["type"] for chunk in chunks if chunk.startswith("data: ")]
 
@@ -676,8 +671,12 @@ class TestInMemoryQueueMessageHandler:
 
         result = list(helper.stream(iter(())))
 
-        expected_run_finished = emit_run_finished_event(thread_id=thread_id, run_id=RunId.STOPPED)
-        assert result == ["chunk_0", "chunk_1", expected_run_finished]
+        assert result[:2] == ["chunk_0", "chunk_1"]
+        last_payload = json.loads(result[2].removeprefix("data: ").strip())
+        assert last_payload["type"] == EventType.RUN_FINISHED
+        assert last_payload["threadId"] == thread_id
+        assert last_payload["runId"] == RunId.STOPPED
+        assert isinstance(last_payload["timestamp"], int)
         assert clear_stopped_called
         assert handler.is_empty(thread_id)
 
@@ -713,8 +712,12 @@ class TestInMemoryQueueMessageHandler:
 
         if gen_items == [CANCELLED_CHUNK]:
             # CANCELLED_CHUNK 被消费后，消费者 yield RUN_FINISHED SSE 字符串
-            expected = [_make_run_finished_chunk(thread_id=thread_id, run_id=RunId.CANCELLED)]
-            assert result == expected
+            assert len(result) == 1
+            payload = json.loads(result[0].removeprefix("data: ").strip())
+            assert payload["type"] == EventType.RUN_FINISHED
+            assert payload["threadId"] == thread_id
+            assert payload["runId"] == RunId.CANCELLED
+            assert isinstance(payload["timestamp"], int)
         else:
             assert result == gen_items
 

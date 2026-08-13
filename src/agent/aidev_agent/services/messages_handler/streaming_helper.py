@@ -10,7 +10,7 @@ from ag_ui.core import EventType, RawEvent, RunErrorEvent, RunFinishedEvent
 from ag_ui.encoder import EventEncoder
 
 from aidev_agent.core.ag_ui.types import RunFinishedSuccessOutcome, serialize_run_finished_outcome
-from aidev_agent.utils.event import RunId, emit_run_finished_event
+from aidev_agent.utils.event import RunId, emit_run_finished_event, stamp_round_end_event
 
 from .base import (
     BaseMessageQueueHandler,
@@ -689,6 +689,7 @@ class GeneratorStreamingHelper:
     ) -> Generator[str, None, None]:
         """输出 AG-UI 错误与结束事件，并同步通知会话事件处理器。"""
         error_event = RunErrorEvent(type=EventType.RUN_ERROR, message=message)
+        stamp_round_end_event(error_event)
         if event_handler is not None:
             try:
                 event_handler(error_event)
@@ -711,6 +712,8 @@ class GeneratorStreamingHelper:
             run_id=RunId.CANCELLED,
             outcome=serialize_run_finished_outcome(RunFinishedSuccessOutcome()),
         )
+        stamp_round_end_event(error_event)
+        stamp_round_end_event(finished_event)
         return (error_event, encoder.encode(error_event)), (finished_event, encoder.encode(finished_event))
 
     def _emit_retryable_heartbeat_timeout(

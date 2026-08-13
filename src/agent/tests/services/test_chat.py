@@ -2130,6 +2130,7 @@ class TestTerminalResumeReplay:
         run_finished = events[-1]
         assert run_finished["runId"] == "r1"
         assert run_finished["threadId"] == "t1"
+        assert "timestamp" not in run_finished
 
     def test_replay_event_stream_run_id_fallback_when_missing(self):
         """agent_input.run_id 缺失时应回退到自动生成的 run_id（RUN_STARTED 与 RUN_FINISHED 一致）"""
