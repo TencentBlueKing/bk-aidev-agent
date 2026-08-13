@@ -202,9 +202,9 @@ describe('ArtifactPreviewHost', () => {
     expect(codePreview.html()).toContain('hljs-attr');
   });
 
-  it('图片文件应使用 preview_url 直出 img', async () => {
+  it('图片文件应使用 download_url 直出 img', async () => {
     const resolveArtifactUrls = vi.fn().mockResolvedValue({
-      preview_url: 'https://example.com/shot.png',
+      download_url: 'https://example.com/shot.png',
     });
     wrapper = mountHost(
       createFile({ name: 'shot.png', type: 'png' }),

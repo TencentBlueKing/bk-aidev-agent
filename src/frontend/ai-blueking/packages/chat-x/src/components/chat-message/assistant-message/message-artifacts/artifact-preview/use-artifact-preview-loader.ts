@@ -105,12 +105,22 @@ export const useArtifactPreviewLoader = (options: {
         return;
       }
 
-      if (!urls.preview_url || !urls.download_url) {
+      // 图片由前端 img 直出，需原始文件地址；其余交给后端预览页 iframe
+      if (strategy.renderer === 'image') {
+        if (!urls.download_url) {
+          status.value = 'empty';
+          return;
+        }
+        downloadUrl.value = urls.download_url;
+        status.value = 'ready';
+        return;
+      }
+
+      if (!urls.preview_url) {
         status.value = 'empty';
         return;
       }
       previewUrl.value = urls.preview_url;
-      downloadUrl.value = urls.download_url;
       status.value = 'ready';
     } catch {
       if (seq !== loadSeq || abortController?.signal.aborted) {

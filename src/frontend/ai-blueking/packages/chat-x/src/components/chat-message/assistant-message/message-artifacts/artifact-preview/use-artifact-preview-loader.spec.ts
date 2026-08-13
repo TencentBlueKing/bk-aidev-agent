@@ -91,6 +91,35 @@ describe('use-artifact-preview-loader', () => {
     wrapper.unmount();
   });
 
+  it('图片应使用 download_url 且不 fetch', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const { api, wrapper } = mountLoader({
+      file: createFile('png', 'shot.png'),
+      resolveUrls: vi.fn().mockResolvedValue({ download_url: 'https://example.com/shot.png' }),
+    });
+
+    await api.load();
+
+    expect(api.status.value).toBe('ready');
+    expect(api.downloadUrl.value).toBe('https://example.com/shot.png');
+    expect(api.renderer.value).toBe('image');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('图片缺 download_url 时应为 empty', async () => {
+    const { api, wrapper } = mountLoader({
+      file: createFile('png', 'shot.png'),
+      resolveUrls: vi.fn().mockResolvedValue({ preview_url: 'https://example.com/shot.png' }),
+    });
+
+    await api.load();
+
+    expect(api.status.value).toBe('empty');
+    wrapper.unmount();
+  });
+
   it('txt 应 fetch download_url 得到 content', async () => {
     vi.stubGlobal(
       'fetch',
