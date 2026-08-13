@@ -401,10 +401,10 @@ importers:
         version: link:../ai-blueking/packages/chat-x
       '@blueking/cli-service':
         specifier: 0.1.1
-        version: 0.1.1(@babel/core@7.29.0)(@vue/compiler-sfc@3.5.32)(eslint@9.39.4(jiti@2.6.1))(less@4.6.4)(lightningcss@1.32.0)(lodash@4.18.1)(prettier@3.8.1)(sass-embedded@1.99.0)(sass@1.99.0)(stylus@0.64.0)(vue@3.5.27(typescript@5.9.3))
+        version: 0.1.1(@babel/core@7.29.0)(@vue/compiler-sfc@3.5.32)(eslint@9.39.4(jiti@2.6.1))(less@4.6.4)(lightningcss@1.32.0)(lodash@4.18.1)(prettier@3.8.1)(sass-embedded@1.99.0)(sass@1.99.0)(stylus@0.64.0)(vue@3.5.32(typescript@5.9.3))
       bkui-vue:
         specifier: ^2.0.2-beta.112
-        version: 2.0.2-beta.112(highlight.js@11.11.1)(vue@3.5.27(typescript@5.9.3))
+        version: 2.0.2-beta.112(highlight.js@11.11.1)(vue@3.5.32(typescript@5.9.3))
       dayjs:
         specifier: ^1.11.12
         version: 1.11.20
@@ -436,11 +436,11 @@ importers:
         specifier: ^1.3.7
         version: 1.3.7
       vue:
-        specifier: 3.5.27
-        version: 3.5.27(typescript@5.9.3)
+        specifier: 3.5.32
+        version: 3.5.32(typescript@5.9.3)
       vue-router:
         specifier: ^4.5.1
-        version: 4.6.4(vue@3.5.27(typescript@5.9.3))
+        version: 4.6.4(vue@3.5.32(typescript@5.9.3))
       x-mavon-editor:
         specifier: ^0.0.15
         version: 0.0.15
@@ -3009,6 +3009,11 @@ packages:
     resolution: {integrity: sha512-qOz/5thjeP1vAFc4+BY3Nr6wxyLhpeQgAE/8dDtKo6a6xdk+L4W46HDZgNmLOBUDEkFXV3G7pRiUqxjX0/2zWA==}
     peerDependencies:
       vue: 3.5.27
+
+  '@vue/server-renderer@3.5.32':
+    resolution: {integrity: sha512-IOjm2+JQwRFS7W28HNuJeXQle9KdZbODFY7hFGVtnnghF51ta20EWAZJHX+zLGtsHhaU6uC9BGPV52KVpYryMQ==}
+    peerDependencies:
+      vue: 3.5.32
 
   '@vue/shared@3.5.27':
     resolution: {integrity: sha512-dXr/3CgqXsJkZ0n9F3I4elY8wM9jMJpP3pvRG52r6m0tu/MsAFIe6JpXVGeNMd/D9F4hQynWT8Rfuj0bdm9kFQ==}
@@ -8258,6 +8263,14 @@ packages:
       typescript:
         optional: true
 
+  vue@3.5.32:
+    resolution: {integrity: sha512-vM4z4Q9tTafVfMAK7IVzmxg34rSzTFMyIe0UUEijUCkn9+23lj0WRfA83dg7eQZIUlgOSGrkViIaCfqSAUXsMw==}
+    peerDependencies:
+      typescript: '*'
+    peerDependenciesMeta:
+      typescript:
+        optional: true
+
   watchpack@2.5.1:
     resolution: {integrity: sha512-Zn5uXdcFNIA1+1Ei5McRd+iRzfhENPCe7LeABkJtNulSxjma+l7ltNx55BWZkRlwRnpOgHqxnjyaDgJnNXnqzg==}
     engines: {node: '>=10.13.0'}
@@ -8724,7 +8737,7 @@ snapshots:
 
   '@blueking/chat-x@0.0.3-beta.4(typescript@5.9.3)':
     dependencies:
-      bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.27(typescript@5.9.3))
+      bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.32(typescript@5.9.3))
       dompurify: 3.3.3
       highlight.js: 11.11.1
       katex: 0.16.45
@@ -8736,14 +8749,14 @@ snapshots:
       markdown-it-sup: 2.0.0
       markdown-it-task-checkbox: 1.0.6
       mermaid: 11.14.0
-      vue: 3.5.27(typescript@5.9.3)
+      vue: 3.5.32(typescript@5.9.3)
     transitivePeerDependencies:
       - typescript
 
   '@blueking/chat-x@0.0.47-beta.2(typescript@5.9.3)':
     dependencies:
       '@modelcontextprotocol/sdk': 1.29.0(zod@4.3.6)
-      bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.27(typescript@5.9.3))
+      bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.32(typescript@5.9.3))
       dompurify: 3.3.3
       highlight.js: 11.11.1
       katex: 0.16.45
@@ -8756,8 +8769,8 @@ snapshots:
       markdown-it-task-checkbox: 1.0.6
       mermaid: 11.14.0
       tippy.js: 6.3.7
-      vue: 3.5.27(typescript@5.9.3)
-      vue-tippy: 6.7.1(vue@3.5.27(typescript@5.9.3))
+      vue: 3.5.32(typescript@5.9.3)
+      vue-tippy: 6.7.1(vue@3.5.32(typescript@5.9.3))
       zod: 4.3.6
     transitivePeerDependencies:
       - '@cfworker/json-schema'
@@ -8887,7 +8900,7 @@ snapshots:
       - webpack-cli
       - whiskers
 
-  '@blueking/cli-service@0.1.1(@babel/core@7.29.0)(@vue/compiler-sfc@3.5.32)(eslint@9.39.4(jiti@2.6.1))(less@4.6.4)(lightningcss@1.32.0)(lodash@4.18.1)(prettier@3.8.1)(sass-embedded@1.99.0)(sass@1.99.0)(stylus@0.64.0)(vue@3.5.27(typescript@5.9.3))':
+  '@blueking/cli-service@0.1.1(@babel/core@7.29.0)(@vue/compiler-sfc@3.5.32)(eslint@9.39.4(jiti@2.6.1))(less@4.6.4)(lightningcss@1.32.0)(lodash@4.18.1)(prettier@3.8.1)(sass-embedded@1.99.0)(sass@1.99.0)(stylus@0.64.0)(vue@3.5.32(typescript@5.9.3))':
     dependencies:
       '@blueking/cli-utils': 2.0.1
       '@swc/core': 1.5.7
@@ -8921,7 +8934,7 @@ snapshots:
       tsconfig-paths-webpack-plugin: 4.2.0
       tslib: 2.8.1
       typescript: 5.9.3
-      vue-loader: 17.4.2(@vue/compiler-sfc@3.5.32)(vue@3.5.27(typescript@5.9.3))(webpack@5.106.0(@swc/core@1.5.7))
+      vue-loader: 17.4.2(@vue/compiler-sfc@3.5.32)(vue@3.5.32(typescript@5.9.3))(webpack@5.106.0(@swc/core@1.5.7))
       vue-loader-bk: 15.10.0(@vue/compiler-sfc@3.5.32)(css-loader@7.1.4(webpack@5.106.0(@swc/core@1.5.7)))(lodash@4.18.1)(prettier@3.8.1)(webpack@5.106.0(@swc/core@1.5.7))
       vue-style-loader: 4.1.3
       webpack: 5.106.0(@swc/core@1.5.7)
@@ -10752,10 +10765,10 @@ snapshots:
       vite: 5.4.21(@types/node@20.19.39)(less@4.6.4)(lightningcss@1.32.0)(sass-embedded@1.99.0)(sass@1.99.0)(stylus@0.64.0)(sugarss@4.0.1(postcss@8.5.9))(terser@5.46.1)
       vue: 3.5.27(typescript@5.9.3)
 
-  '@vitejs/plugin-vue@5.2.4(vite@5.4.21(@types/node@25.5.2)(less@4.6.4)(lightningcss@1.32.0)(sass-embedded@1.99.0)(sass@1.99.0)(stylus@0.64.0)(sugarss@4.0.1(postcss@8.5.9))(terser@5.46.1))(vue@3.5.27(typescript@5.9.3))':
+  '@vitejs/plugin-vue@5.2.4(vite@5.4.21(@types/node@25.5.2)(less@4.6.4)(lightningcss@1.32.0)(sass-embedded@1.99.0)(sass@1.99.0)(stylus@0.64.0)(sugarss@4.0.1(postcss@8.5.9))(terser@5.46.1))(vue@3.5.32(typescript@5.9.3))':
     dependencies:
       vite: 5.4.21(@types/node@25.5.2)(less@4.6.4)(lightningcss@1.32.0)(sass-embedded@1.99.0)(sass@1.99.0)(stylus@0.64.0)(sugarss@4.0.1(postcss@8.5.9))(terser@5.46.1)
-      vue: 3.5.27(typescript@5.9.3)
+      vue: 3.5.32(typescript@5.9.3)
 
   '@vitejs/plugin-vue@6.0.5(rolldown-vite@7.2.5(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)(@types/node@25.5.2)(esbuild@0.25.12)(jiti@2.6.1)(less@4.6.4)(sass-embedded@1.99.0)(sass@1.99.0)(stylus@0.64.0)(sugarss@4.0.1(postcss@8.5.9))(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.3))(vue@3.5.27(typescript@5.9.3))':
     dependencies:
@@ -11146,6 +11159,12 @@ snapshots:
       '@vue/shared': 3.5.27
       vue: 3.5.27(typescript@5.9.3)
 
+  '@vue/server-renderer@3.5.32(vue@3.5.32(typescript@5.9.3))':
+    dependencies:
+      '@vue/compiler-ssr': 3.5.32
+      '@vue/shared': 3.5.32
+      vue: 3.5.32(typescript@5.9.3)
+
   '@vue/shared@3.5.27': {}
 
   '@vue/shared@3.5.32': {}
@@ -11170,7 +11189,7 @@ snapshots:
       '@types/web-bluetooth': 0.0.21
       '@vueuse/metadata': 12.8.2
       '@vueuse/shared': 12.8.2(typescript@5.9.3)
-      vue: 3.5.27(typescript@5.9.3)
+      vue: 3.5.32(typescript@5.9.3)
     transitivePeerDependencies:
       - typescript
 
@@ -11185,7 +11204,7 @@ snapshots:
     dependencies:
       '@vueuse/core': 12.8.2(typescript@5.9.3)
       '@vueuse/shared': 12.8.2(typescript@5.9.3)
-      vue: 3.5.27(typescript@5.9.3)
+      vue: 3.5.32(typescript@5.9.3)
     optionalDependencies:
       axios: 1.15.0
       focus-trap: 7.8.0
@@ -11207,7 +11226,7 @@ snapshots:
 
   '@vueuse/shared@12.8.2(typescript@5.9.3)':
     dependencies:
-      vue: 3.5.27(typescript@5.9.3)
+      vue: 3.5.32(typescript@5.9.3)
     transitivePeerDependencies:
       - typescript
 
@@ -11574,7 +11593,7 @@ snapshots:
       vue: 3.5.27(typescript@5.9.3)
       vue-types: 4.1.1(vue@3.5.27(typescript@5.9.3))
 
-  bkui-vue@2.0.2-beta.112(highlight.js@11.11.1)(vue@3.5.27(typescript@5.9.3)):
+  bkui-vue@2.0.2-beta.112(highlight.js@11.11.1)(vue@3.5.32(typescript@5.9.3)):
     dependencies:
       '@popperjs/core': 2.11.8
       date-fns: 2.30.0
@@ -11584,8 +11603,8 @@ snapshots:
       json-formatter-js: 2.3.4
       lodash: 4.17.23
       tinycolor2: 1.6.0
-      vue: 3.5.27(typescript@5.9.3)
-      vue-types: 4.1.1(vue@3.5.27(typescript@5.9.3))
+      vue: 3.5.32(typescript@5.9.3)
+      vue-types: 4.1.1(vue@3.5.32(typescript@5.9.3))
 
   bkui-vue@2.0.2-beta.29(highlight.js@11.11.1)(vue@3.5.27(typescript@5.9.3)):
     dependencies:
@@ -11613,6 +11632,20 @@ snapshots:
       tinycolor2: 1.6.0
       vue: 3.5.27(typescript@5.9.3)
       vue-types: 4.1.1(vue@3.5.27(typescript@5.9.3))
+
+  bkui-vue@2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.32(typescript@5.9.3)):
+    dependencies:
+      '@floating-ui/dom': 1.5.4
+      '@popperjs/core': 2.11.8
+      date-fns: 2.30.0
+      dompurify: 3.3.3
+      highlight.js: 11.11.1
+      js-calendar: 1.2.3
+      json-formatter-js: 2.3.4
+      lodash: 4.17.23
+      tinycolor2: 1.6.0
+      vue: 3.5.32(typescript@5.9.3)
+      vue-types: 4.1.1(vue@3.5.32(typescript@5.9.3))
 
   bl@4.1.0:
     dependencies:
@@ -14145,7 +14178,7 @@ snapshots:
     dependencies:
       monaco-editor: 0.33.0
       vite-plugin-monaco-editor: 1.1.0(monaco-editor@0.33.0)
-      vue: 3.5.27(typescript@5.9.3)
+      vue: 3.5.32(typescript@5.9.3)
     transitivePeerDependencies:
       - typescript
 
@@ -16321,7 +16354,7 @@ snapshots:
       '@shikijs/transformers': 2.5.0
       '@shikijs/types': 2.5.0
       '@types/markdown-it': 14.1.2
-      '@vitejs/plugin-vue': 5.2.4(vite@5.4.21(@types/node@25.5.2)(less@4.6.4)(lightningcss@1.32.0)(sass-embedded@1.99.0)(sass@1.99.0)(stylus@0.64.0)(sugarss@4.0.1(postcss@8.5.9))(terser@5.46.1))(vue@3.5.27(typescript@5.9.3))
+      '@vitejs/plugin-vue': 5.2.4(vite@5.4.21(@types/node@25.5.2)(less@4.6.4)(lightningcss@1.32.0)(sass-embedded@1.99.0)(sass@1.99.0)(stylus@0.64.0)(sugarss@4.0.1(postcss@8.5.9))(terser@5.46.1))(vue@3.5.32(typescript@5.9.3))
       '@vue/devtools-api': 7.7.9
       '@vue/shared': 3.5.32
       '@vueuse/core': 12.8.2(typescript@5.9.3)
@@ -16331,7 +16364,7 @@ snapshots:
       minisearch: 7.2.0
       shiki: 2.5.0
       vite: 5.4.21(@types/node@25.5.2)(less@4.6.4)(lightningcss@1.32.0)(sass-embedded@1.99.0)(sass@1.99.0)(stylus@0.64.0)(sugarss@4.0.1(postcss@8.5.9))(terser@5.46.1)
-      vue: 3.5.27(typescript@5.9.3)
+      vue: 3.5.32(typescript@5.9.3)
     optionalDependencies:
       postcss: 8.5.9
     transitivePeerDependencies:
@@ -16672,14 +16705,24 @@ snapshots:
       '@vue/compiler-sfc': 3.5.32
       vue: 3.5.27(typescript@5.9.3)
 
+  vue-loader@17.4.2(@vue/compiler-sfc@3.5.32)(vue@3.5.32(typescript@5.9.3))(webpack@5.106.0(@swc/core@1.5.7)):
+    dependencies:
+      chalk: 4.1.2
+      hash-sum: 2.0.0
+      watchpack: 2.5.1
+      webpack: 5.106.0(@swc/core@1.5.7)
+    optionalDependencies:
+      '@vue/compiler-sfc': 3.5.32
+      vue: 3.5.32(typescript@5.9.3)
+
   vue-router@3.6.5(vue@2.7.16):
     dependencies:
       vue: 2.7.16
 
-  vue-router@4.6.4(vue@3.5.27(typescript@5.9.3)):
+  vue-router@4.6.4(vue@3.5.32(typescript@5.9.3)):
     dependencies:
       '@vue/devtools-api': 6.6.4
-      vue: 3.5.27(typescript@5.9.3)
+      vue: 3.5.32(typescript@5.9.3)
 
   vue-router@5.0.4(@vue/compiler-sfc@3.5.32)(vue@3.5.27(typescript@5.9.3)):
     dependencies:
@@ -16716,6 +16759,11 @@ snapshots:
       tippy.js: 6.3.7
       vue: 3.5.27(typescript@5.9.3)
 
+  vue-tippy@6.7.1(vue@3.5.32(typescript@5.9.3)):
+    dependencies:
+      tippy.js: 6.3.7
+      vue: 3.5.32(typescript@5.9.3)
+
   vue-tsc@2.2.12(typescript@5.9.3):
     dependencies:
       '@volar/typescript': 2.4.15
@@ -16733,6 +16781,11 @@ snapshots:
       is-plain-object: 5.0.0
       vue: 3.5.27(typescript@5.9.3)
 
+  vue-types@4.1.1(vue@3.5.32(typescript@5.9.3)):
+    dependencies:
+      is-plain-object: 5.0.0
+      vue: 3.5.32(typescript@5.9.3)
+
   vue@2.7.16:
     dependencies:
       '@vue/compiler-sfc': 2.7.16
@@ -16745,6 +16798,16 @@ snapshots:
       '@vue/runtime-dom': 3.5.27
       '@vue/server-renderer': 3.5.27(vue@3.5.27(typescript@5.9.3))
       '@vue/shared': 3.5.27
+    optionalDependencies:
+      typescript: 5.9.3
+
+  vue@3.5.32(typescript@5.9.3):
+    dependencies:
+      '@vue/compiler-dom': 3.5.32
+      '@vue/compiler-sfc': 3.5.32
+      '@vue/runtime-dom': 3.5.32
+      '@vue/server-renderer': 3.5.32(vue@3.5.32(typescript@5.9.3))
+      '@vue/shared': 3.5.32
     optionalDependencies:
       typescript: 5.9.3
 
