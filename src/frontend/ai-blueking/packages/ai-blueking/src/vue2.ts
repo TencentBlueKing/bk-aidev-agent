@@ -292,7 +292,7 @@ export default createVue2Wrapper(AIBlueking, {
     },
     executionTabVisible: {
       type: Boolean,
-      default: undefined,
+      default: true,
     },
     resizeProps: {
       type: Object,
@@ -520,7 +520,7 @@ export const ChatBotV2 = createVue2Wrapper(ChatBot, {
     },
     executionTabVisible: {
       type: Boolean,
-      default: undefined,
+      default: true,
     },
   },
   emitNames: [...chatBotEmitNames],

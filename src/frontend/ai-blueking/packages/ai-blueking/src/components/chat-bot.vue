@@ -134,6 +134,7 @@
     url: '',
     enableSelection: false,
     enableModelSelect: true,
+    executionTabVisible: true,
     errorToast: true,
     shareLoading: false,
     autoLoad: true,
