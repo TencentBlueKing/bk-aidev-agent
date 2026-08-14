@@ -59,6 +59,24 @@ class ResourceManagerProtocol(Protocol):
         """更新会话 ``session_property.sandbox_pv_id`` 并返回后端 ``data`` 字段。"""
         ...
 
+    def get_or_create_session(
+        self,
+        session_code: str,
+        session_name: str,
+        *,
+        protocol_version: str = "",
+        is_temporary: bool = False,
+        session_type: str = "",
+        channel_type: str = "",
+        **kwargs,
+    ) -> dict:
+        """幂等地取回或创建会话（业务返回结构 = 后端 ``data`` 字段）。
+
+        命中已有 session 时直接返回、不更新任何字段；未命中则创建。
+        ``SessionManager`` 按本协议直接调用，自定义 RM 必须实现。
+        """
+        ...
+
     def retrieve_agent_config(self, agent_code: str, version: Optional[str] = None, **kwargs) -> dict:
         """取回 agent 配置原始字典。
 

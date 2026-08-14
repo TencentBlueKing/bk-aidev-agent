@@ -173,11 +173,22 @@ class TestChatCompletionRequestSerializerAgentTypeFromAgentInfo:
             {"input": "hi", "execute_kwargs": {"version": "v2"}},
             context={"username": "alice"},
         )
-        _stub_agent_config_fetcher.get_info.assert_called_once_with(username="alice", version="v2")
+        # context 未带 agent_code → app_code=None，由 get_info 回落全局 rm，与改造前行为一致
+        _stub_agent_config_fetcher.get_info.assert_called_once_with(app_code=None, username="alice", version="v2")
 
     def test_get_info_called_with_none_version_by_default(self, _stub_agent_config_fetcher):
         self._validated({"input": "hi"}, context={"username": "alice"})
-        _stub_agent_config_fetcher.get_info.assert_called_once_with(username="alice", version=None)
+        _stub_agent_config_fetcher.get_info.assert_called_once_with(app_code=None, username="alice", version=None)
+
+    def test_get_info_uses_request_scoped_agent_code(self, _stub_agent_config_fetcher):
+        """agent_type 必须按请求级 agent_code 判定。
+
+        否则 rm 指向 flow 型子智能体、主智能体为 chat 时，会读到主智能体的 agent_type 而走错构建分支。
+        """
+        self._validated({"input": "hi"}, context={"username": "alice", "agent_code": "sub-agent"})
+        _stub_agent_config_fetcher.get_info.assert_called_once_with(
+            app_code="sub-agent", username="alice", version=None
+        )
 
 
 class TestChatCompletionRequestSerializerThreadIdFallback:

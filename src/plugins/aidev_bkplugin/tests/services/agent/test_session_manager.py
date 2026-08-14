@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """``SessionManager`` 行为契约：哈希稳定性、幂等取建、save_content kwargs 透传。"""
 
+from unittest.mock import MagicMock
+
 import pytest
-from aidev_bkplugin.services.agent_session import SessionManager
 from aidev_bkplugin.constants import AGUI_PROTOCOL_VERSION
+from aidev_bkplugin.services.agent_session import SessionManager
 
 
 @pytest.fixture
@@ -146,3 +148,55 @@ def test_prepare_session_turn_inherits_user_turn_id_without_input(session_manage
     assert session_code
     assert turn_id == "turn-existing"
     mock_plugin_rm_client.api.create_chat_session_content.assert_not_called()
+
+
+class _ProtocolOnlyResourceManager:
+    """只按 ``ResourceManagerProtocol`` 实现的最小自定义 RM。
+
+    刻意不继承 ``AgentResourceManager``：普通类访问未定义的属性会直接 AttributeError，
+    因此本类同时充当"SessionManager 不得依赖协议之外方法"的探针。
+    """
+
+    def __init__(self):
+        self.client = MagicMock()
+        self.created: list[tuple] = []
+
+    def get_client(self, **kwargs):
+        return self.client
+
+    def get_or_create_session(
+        self,
+        session_code: str,
+        session_name: str,
+        *,
+        protocol_version: str = "",
+        is_temporary: bool = False,
+        session_type: str = "",
+        channel_type: str = "",
+        **kwargs,
+    ) -> dict:
+        self.created.append((session_code, session_name, protocol_version, channel_type))
+        return {"session_code": session_code}
+
+
+def test_session_manager_runs_through_protocol_only_resource_manager():
+    """按公开协议实现的自定义 RM 必须能贯穿建会话流程。
+
+    ``get_or_create_session`` 曾缺失于 ``ResourceManagerProtocol`` 声明，
+    照协议实现的 RM 会在这里 AttributeError。
+    """
+    rm = _ProtocolOnlyResourceManager()
+    manager = SessionManager(username="alice", agent_code="bk-aidev", resource_manager=rm)
+
+    session_code = manager.get_or_create_by_thread_id("t-1")
+
+    assert session_code == SessionManager.generate_session_code("alice", "bk-aidev", "t-1")
+    assert rm.created == [(session_code, "新会话", AGUI_PROTOCOL_VERSION, "popup")]
+
+
+@pytest.mark.parametrize("method_name", ["get_client", "get_or_create_session"])
+def test_protocol_declares_every_method_session_manager_calls(method_name):
+    """SessionManager 调用的 rm 方法都必须在协议里声明，否则自定义 RM 无从实现。"""
+    from aidev_agent.packages.resource_manager.registry import ResourceManagerProtocol
+
+    assert hasattr(ResourceManagerProtocol, method_name)

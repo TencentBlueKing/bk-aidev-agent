@@ -37,7 +37,7 @@ def flow_agent_env(monkeypatch):
 
     writer_cls = MagicMock()
     monkeypatch.setattr(mod, "AGUISessionWriter", writer_cls)
-    monkeypatch.setattr(mod, "PluginResourceManager", lambda username: MagicMock())
+    # 不再 patch PluginResourceManager：flow 路径已复用注入的 rm，不会自行构造
     monkeypatch.setattr(mod.AgentHelper, "get_client", staticmethod(lambda *args, **kwargs: MagicMock()))
 
     view = mod.ChatCompletionViewSet()
@@ -79,6 +79,21 @@ def test_no_marker_starts_new_task_without_touching_marker(flow_agent_env):
 
     assert build_agent.call_args.kwargs["task_id"] is None
     sm.set_flow_resume_pending.assert_not_called()
+
+
+def test_flow_agent_reuses_injected_resource_manager(flow_agent_env):
+    """Flow 路径必须把注入的 rm 交给 FlowAgentCompletionAgent。
+
+    此处曾另建 PluginResourceManager(username=...)，会丢掉子类自定义的凭证与 agent_code，
+    使 start/poll 退回主应用配置，pre-request RM 在 Flow 路径失效。
+    """
+    view, build_agent, sm, _writer_cls = flow_agent_env
+    sm.get_flow_info.return_value = {}
+    rm = MagicMock()
+
+    view._handle_flow_agent(_data(), "sc-1", "alice", turn_id="turn-1", resource_manager=rm)
+
+    assert build_agent.call_args.kwargs["flow_resource_manager"] is rm
 
 
 def test_flow_http_does_not_install_second_terminal_status_writer(flow_agent_env):

@@ -20,7 +20,7 @@ from aidev_bkplugin.services.agent_builder import AgentBuilder
 from aidev_bkplugin.services.agent_execution import AgentExecutor
 from aidev_bkplugin.services.agent_helpers import AgentHelper
 from aidev_bkplugin.services.agent_session import SessionManager
-from aidev_bkplugin.views.base import IgnoreClientContentNegotiation, PluginResourceManager, PluginViewSet, logger
+from aidev_bkplugin.views.base import IgnoreClientContentNegotiation, PluginViewSet, logger
 
 
 class ChatCompletionViewSet(PluginViewSet):
@@ -58,7 +58,7 @@ class ChatCompletionViewSet(PluginViewSet):
         try:
             serializer = ChatCompletionRequestSerializer(
                 data=request.data,
-                context={"username": username},
+                context={"username": username, "agent_code": agent_code},
             )
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
@@ -442,10 +442,10 @@ class ChatCompletionViewSet(PluginViewSet):
             session_context_data=[],
             event_handler=event_handler,
             username=username,
-            # 通过 **extra 透传给 FlowAgentCompletionAgent.build(ctx)；
-            # flow_resource_manager 是 flow start 接口专用 client（带特殊认证），与
-            # 工厂的 resource_manager（用于会话上下文等通用 API）解耦。
-            flow_resource_manager=PluginResourceManager(username=username),
+            # 通过 **extra 透传给 FlowAgentCompletionAgent.build(ctx)，供 flow start / poll 调用。
+            # 必须复用注入的 rm：另建 PluginResourceManager 会丢掉子类自定义的凭证与 agent_code，
+            # 使 Flow 路径退回主智能体配置。Flow 用到的接口均已在 ResourceManagerProtocol 声明。
+            flow_resource_manager=resource_manager,
             task_id=task_id,
             flow_start_params=flow_start_params,
             poll_interval=poll_interval,

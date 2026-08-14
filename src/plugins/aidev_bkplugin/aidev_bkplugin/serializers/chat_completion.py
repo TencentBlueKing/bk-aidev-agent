@@ -8,8 +8,8 @@
 - 兼容字段（``session_code``/``thread_id``/``task_id``/``flow_*``/``poll_*``）保留为可选项。
 - ``thread_id``/``agent_type`` 的兜底/解析规则也下沉到本 serializer：
 
-  - ``agent_type``：**不接受用户输入**，由 :func:`get_agent_config_info` 按
-    ``execute_kwargs.version`` 拉取的 agent 配置唯一决定，写入 ``validated_data["agent_type"]``。
+  - ``agent_type``：**不接受用户输入**，由 :func:`get_agent_config_info` 按 ``context["agent_code"]``
+    与 ``execute_kwargs.version`` 拉取的 agent 配置唯一决定，写入 ``validated_data["agent_type"]``。
   - ``thread_id``：未传时回落到 ``execute_kwargs.thread_id``；仍为空且 ``session_code`` 也为空时，
     本 serializer 自动生成 uuid 兜底（与 view 旧行为一致，覆盖所有 agent_type 路径）。
 """
@@ -19,8 +19,8 @@ import uuid
 from aidev_agent.pydantic_models import ExecuteKwargs
 from rest_framework import serializers
 
-from aidev_bkplugin.services.agent_execution import build_execute_kwargs
 from aidev_bkplugin.services.agent_config import AgentConfigFetcher
+from aidev_bkplugin.services.agent_execution import build_execute_kwargs
 from aidev_bkplugin.services.llm import LLMService
 
 
@@ -101,7 +101,9 @@ class ChatCompletionRequestSerializer(serializers.Serializer):
         username = (self.context or {}).get("username")
 
         # agent_type：完全由 agent_info 决定，按 execute_kwargs.version 路由（version 为空 → 最新版）。
-        agent_info = AgentConfigFetcher.get_info(username=username, version=execute_kwargs.version)
+        # agent_code 来自 view 的请求级 resource manager；为空时 get_info 回落全局 rm
+        agent_code = (self.context or {}).get("agent_code") or None
+        agent_info = AgentConfigFetcher.get_info(app_code=agent_code, username=username, version=execute_kwargs.version)
         attrs["agent_type"] = agent_info.get("agent_type", "") or ""
 
         # thread_id：合并 execute_kwargs.thread_id；与 session_code 同时为空时自动生成 uuid 兜底。
