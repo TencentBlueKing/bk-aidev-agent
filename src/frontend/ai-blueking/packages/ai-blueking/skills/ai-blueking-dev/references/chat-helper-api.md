@@ -557,6 +557,7 @@ const canResume: boolean = await session.isResumeSession(sessionCode: string);
 
 ```typescript
 await message.getMessages(sessionCode: string);
+// session_contents 的 created_at 会映射为 IMessage.createdAt，供展示消息时间
 ```
 
 #### plusMessage
@@ -760,6 +761,7 @@ type IRunFinishedOutcome =
   | { type: RunFinishedOutcomeType.Interrupt; interrupts: Array<IApprovalInterrupt | IUserQuestionInterrupt> };
 
 // RUN_FINISHED 事件（承载 outcome 与二次恢复 result）
+// IBaseEvent.timestamp 为毫秒时间戳，协议层转成 ISO 后写入本轮消息 createdAt
 interface IRunFinishedEvent extends IBaseEvent {
   result?: IResume;
   runId: number;

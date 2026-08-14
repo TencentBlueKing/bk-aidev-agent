@@ -118,6 +118,8 @@ export interface IAssistantMessageApi extends IBaseMessageApi {
 }
 
 export interface IBaseMessage {
+  /** 消息创建时间（ISO 字符串），用于前端展示 */
+  createdAt?: string;
   id?: string;
   messageId?: string;
   name?: string;
@@ -127,6 +129,7 @@ export interface IBaseMessage {
 }
 
 export interface IBaseMessageApi {
+  created_at?: string;
   id?: string;
   message_id?: string;
   name?: string;
@@ -134,6 +137,22 @@ export interface IBaseMessageApi {
   session_code?: string;
   status: MessageStatus;
 }
+
+/** 同时兼容 REST `created_at` 与前端 / AG-UI `createdAt` */
+export const resolveMessageCreatedAt = (data: { createdAt?: string; created_at?: string }): string | undefined =>
+  data.createdAt ?? data.created_at;
+
+/** RUN_FINISHED.timestamp 为毫秒时间戳，转成与 REST created_at 一致的 ISO 字符串 */
+export const formatEventTimestampToCreatedAt = (timestamp?: number): string | undefined => {
+  if (typeof timestamp !== 'number' || !Number.isFinite(timestamp)) {
+    return undefined;
+  }
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+  return date.toISOString();
+};
 
 export interface IBinaryInputContent {
   data?: string;

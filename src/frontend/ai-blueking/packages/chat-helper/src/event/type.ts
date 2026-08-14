@@ -159,6 +159,7 @@ export interface IArtifactsGeneratedCustomValue {
 }
 
 export interface IBaseEvent {
+  /** 事件时间，毫秒时间戳；RUN_FINISHED 会转成 ISO 字符串写入消息 createdAt */
   timestamp?: number;
   type: EventType;
 }

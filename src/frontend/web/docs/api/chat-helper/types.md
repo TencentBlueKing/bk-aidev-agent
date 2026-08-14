@@ -156,7 +156,7 @@ interface IMessage {
   content: string | InputContent[];
   /** 消息状态 */
   status?: string;
-  /** 创建时间 */
+  /** 创建时间（session_contents.created_at / MESSAGES_SNAPSHOT / RUN_FINISHED.timestamp 转 ISO） */
   createdAt?: string;
   /** 更新时间 */
   updatedAt?: string;

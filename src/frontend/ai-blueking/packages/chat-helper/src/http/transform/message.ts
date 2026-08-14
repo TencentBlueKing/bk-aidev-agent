@@ -24,7 +24,7 @@
  * IN THE SOFTWARE.
  */
 
-import { ActivityType, MessageRole, MessageType } from '../../message/type';
+import { ActivityType, MessageRole, MessageType, resolveMessageCreatedAt } from '../../message/type';
 
 import type {
   IActivityMessage,
@@ -90,7 +90,9 @@ import type {
  * @returns 前端使用的消息数据
  */
 export const transferMessageApi2Message = (data: IMessageApi): IMessage => {
+  const createdAt = resolveMessageCreatedAt(data);
   const baseMessage = {
+    ...(createdAt ? { createdAt } : {}),
     id: data.id,
     messageId: data.message_id,
     name: data.name,
@@ -390,7 +392,9 @@ export const transferMessageApi2Message = (data: IMessageApi): IMessage => {
  * @returns API 使用的消息数据
  */
 export const transferMessage2MessageApi = (data: IMessage): IMessageApi => {
+  const createdAt = resolveMessageCreatedAt(data);
   const baseMessage = {
+    ...(createdAt ? { created_at: createdAt } : {}),
     id: data.id,
     message_id: data.messageId,
     name: data.name,

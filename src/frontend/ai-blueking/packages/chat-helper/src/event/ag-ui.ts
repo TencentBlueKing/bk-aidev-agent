@@ -25,12 +25,15 @@
  */
 import {
   type IKnowledgeRag,
+  type IMessage,
   type IMessageModule,
   type IReferenceDocument,
   ActivityType,
   MessageRole,
   MessageStatus,
   MessageType,
+  formatEventTimestampToCreatedAt,
+  resolveMessageCreatedAt,
 } from '../message';
 import {
   type IActivityDeltaEvent,
@@ -329,11 +332,11 @@ export class AGUIProtocol implements ISSEProtocol {
 
   /**
    * 处理消息快照事件
-   * 用于同步多端消息状态
+   * 用于同步多端消息状态；chat_completion 首帧会全量返回历史消息（含 created_at）
    */
   handleMessagesSnapshotEvent(event: IMessagesSnapshotEvent) {
     if (event.messages && event.messages.length > 0) {
-      this.messageModule.list.value = event.messages;
+      this.messageModule.list.value = event.messages.map(normalizeSnapshotMessage);
     }
   }
 
@@ -379,9 +382,14 @@ export class AGUIProtocol implements ISSEProtocol {
    * 处理运行完成事件
    */
   handleRunFinishedEvent(event: IRunFinishedEvent) {
+    const createdAt = formatEventTimestampToCreatedAt(event.timestamp);
     const message = this.messageModule.getCurrentLoadingMessage();
     if (message) {
       message.status = MessageStatus.Complete;
+    }
+    // 本轮流式消息在落库前没有 createdAt，用 RUN_FINISHED.timestamp 转成 ISO 后补上；已有时间的历史消息不覆盖
+    if (createdAt) {
+      applyCreatedAtToCurrentRun(this.messageModule.list.value, createdAt);
     }
     // 如果是中断消息，则创建一个中断消息
     if (event.outcome?.type === RunFinishedOutcomeType.Interrupt) {
@@ -389,6 +397,7 @@ export class AGUIProtocol implements ISSEProtocol {
         role: MessageRole.Interrupt,
         content: event,
         status: MessageStatus.Pending,
+        ...(createdAt ? { createdAt } : {}),
       });
     }
     // 二次返回，直接更新消息内容
@@ -743,5 +752,22 @@ export class AGUIProtocol implements ISSEProtocol {
 
   onStart() {
     this.onStartCallback?.();
+  }
+}
+
+/** chat_completion 快照可能是 camelCase 或 REST snake_case，统一落到 createdAt */
+function normalizeSnapshotMessage(message: IMessage): IMessage {
+  const createdAt = resolveMessageCreatedAt(message as IMessage & { created_at?: string });
+  return createdAt ? { ...message, createdAt } : message;
+}
+
+/** 从列表尾部向前，给本轮尚未带时间的消息补 createdAt，遇到已有时间的历史消息即停 */
+function applyCreatedAtToCurrentRun(messages: IMessage[], createdAt: string): void {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const item = messages[index];
+    if (item.createdAt) {
+      break;
+    }
+    item.createdAt = createdAt;
   }
 }
