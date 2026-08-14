@@ -68,7 +68,6 @@ from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
 from aidev_agent.utils.async_utils import async_to_sync_generator
-from aidev_agent.utils.event import RunId
 from aidev_agent.utils.loop import run_coro_sync
 from aidev_agent.utils.migrations import (
     migration_chat_model_non_thinking_from_non_thinking_llm_v1,
@@ -535,8 +534,19 @@ class ChatCompletionAgent(BaseModel):
         }
 
         header_value = json.dumps(attrs, ensure_ascii=True)
+        # RunnableWithFallbacks 自身无 default_headers，需展开为底层 runnable + fallbacks
+        # 后逐个注入，与 _aclose_chat_models 的展开方式保持一致。
+        targets: list[Any] = []
         for model in (self.chat_model, self.chat_model_non_thinking, self.chat_model_fast):
-            if model is None or not hasattr(model, "default_headers"):
+            if model is None:
+                continue
+            if isinstance(model, RunnableWithFallbacks):
+                targets.append(model.runnable)
+                targets.extend(model.fallbacks)
+            else:
+                targets.append(model)
+        for model in targets:
+            if not hasattr(model, "default_headers"):
                 continue
             if model.default_headers is None:
                 model.default_headers = {}
@@ -1247,9 +1257,7 @@ class ChatCompletionAgent(BaseModel):
                             else:
                                 new_content.append(each_content)
                         each.content = new_content
-                        messages.append(
-                            HumanMessage(id=each.id, content=each.content, additional_kwargs=turn_kwargs)
-                        )
+                        messages.append(HumanMessage(id=each.id, content=each.content, additional_kwargs=turn_kwargs))
                     else:
                         messages.append(
                             HumanMessage(id=each.id, content=str(each.content), additional_kwargs=turn_kwargs)
