@@ -23,7 +23,7 @@ dev = [
 includes = ["aidev_bkplugin"]
 
 [build-system]
-requires = ["pdm-backend"]
+requires = ["pdm-backend==2.4.9"]
 build-backend = "pdm.backend"
 
 [tool.pytest.ini_options]

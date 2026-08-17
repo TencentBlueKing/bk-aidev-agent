@@ -22,7 +22,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["pdm-backend"]
+requires = ["pdm-backend==2.4.9"]
 build-backend = "pdm.backend"
 
 [tool.ruff]
