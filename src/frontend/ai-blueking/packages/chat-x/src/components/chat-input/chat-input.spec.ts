@@ -294,6 +294,7 @@ vi.mock('../ai-buttons/file-upload-btn/file-upload-btn.vue', () => ({
   }),
 }));
 
+// style-note: chat-x PR4 — inputMaxHeight 默认 280 / 未激活灰边框
 describe('ChatInput', () => {
   let wrapper: VueWrapper;
 

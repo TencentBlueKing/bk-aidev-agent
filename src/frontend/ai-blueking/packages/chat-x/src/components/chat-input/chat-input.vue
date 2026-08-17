@@ -146,7 +146,7 @@
   const selectedModel = defineModel<string>('selectedModel', {
     required: false,
   });
-  const maxHeight = shallowRef(200);
+  const maxHeight = shallowRef(280);
   export type ChatInputEmits = {
     (e: 'selectShortcut', shortcut: Shortcut): void;
     (e: 'deleteShortcut'): void;
@@ -191,7 +191,7 @@ Use Shift + Enter to enter a new line`
     prompts: () => [],
     resources: () => [],
     skills: () => [],
-    inputMaxHeight: 200,
+    inputMaxHeight: 280,
     supportUpload: true,
   });
   const emit = defineEmits<ChatInputEmits>();
@@ -216,7 +216,7 @@ Use Shift + Enter to enter a new line`
   });
 
   watchPostEffect(() => {
-    const defaultHeight = props.inputMaxHeight || 200;
+    const defaultHeight = props.inputMaxHeight || 280;
     if (uploadFiles.value.length < 1 || !filesRef.value) {
       maxHeight.value = defaultHeight;
       return;
@@ -402,15 +402,28 @@ Use Shift + Enter to enter a new line`
       min-width: variables.$chat-input-min-width;
       max-width: variables.$chat-input-max-width;
       min-height: 110px;
-      max-height: 200px;
+      max-height: 280px; // 与 inputMaxHeight 默认一致；有文件时由 inline style 叠加预览区高度
+      overflow: hidden; // 触顶后由内部 ai-slash-input 滚动
       padding-bottom: var(--ai-spacing-comfortable, 8px);
       background: #fff;
+      border: 1px solid #dcdee5; // 未激活：灰色描边
       border-radius: 8px;
 
       &::before {
         z-index: var(--chat-z-index);
+        opacity: 0;
+        transition: opacity 0.15s ease;
 
         @include border.linear-gradient-border(180deg, #6cbaff, #3a84ff);
+      }
+
+      // 激活（编辑区 / 内部控件聚焦）时切换为蓝色渐变描边
+      &:focus-within {
+        border-color: transparent;
+
+        &::before {
+          opacity: 1;
+        }
       }
 
       .chat-input-cite {

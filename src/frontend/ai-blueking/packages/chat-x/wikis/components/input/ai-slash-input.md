@@ -34,6 +34,9 @@ sinceVersion: 1.0.0
 | `\`  | prompt   | `AiPromptList` | `prompts` |
 | `@`  | slash    | `AiSlashMenu` | `resources` |
 
+
+> 输入框触达最大高度后，`.ai-slash-input-wrapper` 以 `min-height:0` 收缩并内部滚动。
+
 ## API 摘要
 
 ### Props

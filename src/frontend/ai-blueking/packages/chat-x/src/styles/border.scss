@@ -1,14 +1,20 @@
-@mixin linear-gradient-border($angle: 145deg, $color1: #b8c6ec, $color2: #e3d2e3) {
+@mixin linear-gradient-border($angle: 145deg, $color1: #b8c6ec, $color2: #e3d2e3, $width: 1px) {
   position: absolute;
   inset: 0;
   z-index: 2;
-  padding: 1px;
+  box-sizing: border-box; // padding 计入尺寸，保证描边稳定为 $width（默认 1px）
+  padding: $width;
   pointer-events: none;
   content: '';
-  background: linear-gradient(145deg, $color1 0%, $color2 100%);
-  border-radius: 8px;
+  background: linear-gradient($angle, $color1 0%, $color2 100%);
+  border-radius: inherit;
   mask:
     linear-gradient(#fff 0 0) content-box,
     linear-gradient(#fff 0 0);
   mask-composite: exclude;
+  // Safari / 旧 Chromium
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
 }
