@@ -129,7 +129,7 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { computed, onMounted, useTemplateRef } from 'vue';
+  import { computed, nextTick, onMounted, useTemplateRef, watch } from 'vue';
 
   import { Checkbox } from 'bkui-vue';
 
@@ -234,12 +234,36 @@
     messageContainerBottomRef,
   );
 
+  /** 最新一条用户消息的稳定标识，用于检测「发送消息」后回滚到底部 */
+  const latestUserMessageKey = computed(() => {
+    const groups = props.messageGroups;
+    if (!groups?.length) return '';
+    for (let i = groups.length - 1; i >= 0; i--) {
+      const group = groups[i];
+      if (group?.type !== MessageRole.User) continue;
+      const msg = group.messages?.at(-1);
+      return String(msg?.id ?? msg?.uid ?? group.uid ?? '');
+    }
+    return '';
+  });
+
+  const scrollToLatest = () => {
+    jumpToBottom();
+    // 等消息 DOM 撑开后再贴底，避免高度未结算导致停在中间
+    requestAnimationFrame(() => jumpToBottom());
+  };
+
   // 首屏与切换会话时容器都是全新挂载（scrollTop 为 0），先瞬时定位到底部，
   // 再在首帧布局后补一次，避免历史消息渲染过程中出现从顶部滚到底部的动画
   onMounted(() => {
     if (!props.messageGroups?.length) return;
-    jumpToBottom();
-    requestAnimationFrame(() => jumpToBottom());
+    scrollToLatest();
+  });
+
+  // 发送消息后（出现新的用户消息）强制回到最新位置，并恢复自动跟随
+  watch(latestUserMessageKey, (key, prevKey) => {
+    if (!key || key === prevKey) return;
+    nextTick(() => scrollToLatest());
   });
 
   const { copy } = useClipboard();
