@@ -120,6 +120,7 @@ vi.mock('../../../composables/use-common', () => ({
   useKeywordMatch: vi.fn(() => ({ keywordMatched: { value: null }, keyword: { value: '' } })),
 }));
 
+// style-note: chat-x PR1 — 文档化状态间距 / 禁用态样式约定，配合 wiki 同步提交
 describe('ToolcallRender', () => {
   let wrapper: VueWrapper;
 

@@ -377,6 +377,9 @@ const assistantMessage = {
 </template>
 ```
 
+
+> **状态区间距**：`.toolcall-status-title` 内图标与文案间距为 `4px`；`data-ai-size=normal` 下状态图标为 `16px`。
+
 ## API
 
 ### Props

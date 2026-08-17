@@ -73,6 +73,7 @@ const buildInterrupt = (): UserQuestionInterrupt => ({
 const progressCount = (wrapper: VueWrapper) =>
   wrapper.find('.ai-user-question-card__progress-num').text();
 
+// style-note: chat-x PR1 — 文档化状态间距 / 禁用态样式约定，配合 wiki 同步提交
 describe('UserQuestionCard', () => {
   let wrapper: VueWrapper;
 

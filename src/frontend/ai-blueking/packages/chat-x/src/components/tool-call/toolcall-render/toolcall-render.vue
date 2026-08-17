@@ -192,7 +192,7 @@
 
       .toolcall-status-title {
         display: flex;
-        gap: 6px;
+        gap: 4px;
         align-items: center;
         margin-left: 4px;
         font-weight: normal;
@@ -211,5 +211,12 @@
       background-color: #f5f7fa;
       border-radius: 2px;
     }
+  }
+
+  // 14px 主题：状态图标 16px
+  [data-ai-size='normal'] .ai-toolcall-render-header .toolcall-status-title .ai-common-icon {
+    width: 16px;
+    height: 16px;
+    font-size: 16px;
   }
 </style>
