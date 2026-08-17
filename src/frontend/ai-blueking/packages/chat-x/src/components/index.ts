@@ -46,6 +46,7 @@ import ImagePreviewGroup from './image-preview/image-preview-group.vue';
 import ImagePreview from './image-preview/image-preview.vue';
 import AiImage from './image-preview/image.vue';
 import MessageLoading from './message-loading/message-loading.vue';
+import MessageTime from './message-tools/message-time/message-time.vue';
 import MessageTools from './message-tools/message-tools.vue';
 import MessageUserFeedback from './message-tools/user-feedback/user-feedback.vue';
 import SelectionFooter from './selection-footer/selection-footer.vue';
@@ -75,6 +76,7 @@ export {
   MessageContainer,
   MessageLoading,
   MessageRender,
+  MessageTime,
   MessageTools,
   MessageUserFeedback,
   ModelSelector,

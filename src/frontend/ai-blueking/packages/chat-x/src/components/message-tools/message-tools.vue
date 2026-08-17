@@ -4,9 +4,12 @@
     class="ai-message-tools-container"
   >
     <div
-      class="message-tools"
-      style="margin-right: 8px"
+      v-if="$slots.prepend"
+      class="ai-message-tools-prepend"
     >
+      <slot name="prepend" />
+    </div>
+    <div class="message-tools">
       <template
         v-for="tool in messageTools"
         :key="tool.id"
@@ -30,9 +33,12 @@
     <div
       v-if="updateTools.length > 0"
       class="ai-divider"
-      style="margin-right: 8px"
+      style="margin-right: 4px; margin-left: 4px"
     />
-    <div class="message-tools">
+    <div
+      v-if="updateTools.length > 0"
+      class="message-tools"
+    >
       <template
         v-for="tool in updateTools"
         :key="tool.id"
@@ -80,6 +86,12 @@
         />
       </template>
     </div>
+    <div
+      v-if="$slots.append"
+      class="ai-message-tools-append"
+    >
+      <slot name="append" />
+    </div>
   </div>
 </template>
 <script setup lang="ts">
@@ -112,6 +124,13 @@
   });
   const emit = defineEmits<{
     (e: 'feedback', tool: IToolBtn, reasonList: string[], otherReason: string): void;
+  }>();
+
+  defineSlots<{
+    // 工具图标右侧的附加内容，如 AI 消息的时间
+    append?: () => unknown;
+    // 工具图标左侧的附加内容，如用户消息的时间
+    prepend?: () => unknown;
   }>();
 
   const feedbackTippyRef = useTemplateRef<InstanceType<typeof Tippy> & ReturnType<typeof useTippy>[]>(
@@ -189,6 +208,7 @@
 <style lang="scss">
   .ai-message-tools-container {
     display: flex;
+    gap: 4px;
     align-items: center;
     width: 100%;
 
@@ -197,6 +217,26 @@
       gap: 4px;
       align-items: center;
       width: fit-content;
+    }
+
+    .ai-message-tools-prepend,
+    .ai-message-tools-append {
+      display: flex;
+      align-items: center;
+    }
+
+    .ai-message-tools-prepend {
+      margin-right: 4px;
+    }
+
+    .ai-message-tools-append {
+      margin-left: 4px;
+    }
+
+    // 消息无时间时 MessageTime 不渲染内容，此时收掉包裹容器避免留下多余间距
+    .ai-message-tools-prepend:empty,
+    .ai-message-tools-append:empty {
+      display: none;
     }
   }
 </style>

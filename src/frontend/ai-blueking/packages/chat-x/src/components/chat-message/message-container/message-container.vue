@@ -90,7 +90,12 @@
               (tool: IToolBtn, reasonList: string[], otherReason: string) =>
                 props.onAgentFeedback?.(tool, group.messages, reasonList, otherReason)
             "
-          />
+          >
+            <!-- 设计稿：AI 消息的时间在工具图标右侧 -->
+            <template #append>
+              <MessageTime :created-at="resolveGroupCreatedAt(group.messages)" />
+            </template>
+          </MessageTools>
         </div>
       </slot>
     </div>
@@ -140,6 +145,7 @@
   import { t } from '../../../lang/lang';
   import { MessageToolsStatus } from '../../../types/tool';
   import ScrollBtn from '../../ai-buttons/scroll-btn/scroll-btn.vue';
+  import MessageTime from '../../message-tools/message-time/message-time.vue';
   import MessageTools, { type MessageToolsProps } from '../../message-tools/message-tools.vue';
   import MessageRender from '../message-render/message-render.vue';
 
@@ -224,6 +230,20 @@
   const resolveMessageDomId = (message: Message): string | undefined => {
     const domId = message.id || message.uid;
     return domId === undefined ? undefined : String(domId);
+  };
+
+  /**
+   * AI 回答组的时间取组内最后一条带时间的消息，对应本轮回答完成时间
+   * 组内 reasoning / activity 等子消息不单独展示时间，只在组级工具栏显示一次
+   */
+  const resolveGroupCreatedAt = (messages: Message[]): number | string | undefined => {
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const createdAt = messages[index]?.createdAt;
+      if (createdAt) {
+        return createdAt;
+      }
+    }
+    return undefined;
   };
 
   const messageContainerRef = useTemplateRef<HTMLElement>('messageContainerRef');

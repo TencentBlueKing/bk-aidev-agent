@@ -38,6 +38,7 @@
       :shortcuts="shortcuts"
       :size="'small'"
       :support-upload="true"
+      :timezone="timezone"
       :update-tools="customUpdateTools"
       @confirm-share="handleConfirmShare"
       @delete-shortcut="handleDeleteShortcut"
@@ -227,6 +228,7 @@
     // 取消审批与流程节点重试 / 跳过复用同一回调，业务侧按 payload.operation 分流处理
     console.log('[playground] interrupt resume', payload, interrupt);
   };
+  const timezone = shallowRef('America/New_York');
 
   const shortcuts = shallowRef<Shortcut[]>([
     {

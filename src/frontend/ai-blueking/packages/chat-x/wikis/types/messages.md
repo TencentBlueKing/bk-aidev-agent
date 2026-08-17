@@ -59,6 +59,10 @@ interface BaseMessage<T extends MessageType, C = string> {
   // 消息名称（可选）
   name?: string;
 
+  // 可选：消息创建时间，ISO 字符串或毫秒时间戳，由消息层（chat-helper）写入
+  // 用于 MessageTime 展示；缺省时不展示时间
+  createdAt?: number | string;
+
   // 消息属性（可选）
   property?: {
     extra?: {

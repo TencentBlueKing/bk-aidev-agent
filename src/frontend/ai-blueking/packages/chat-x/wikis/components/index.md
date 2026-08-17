@@ -122,6 +122,7 @@ aiSummary: >
 | 组件 | 说明 |
 | ---- | ---- |
 | [MessageTools](./feedback/message-tools.md) | 消息工具栏。 |
+| [MessageTime](./feedback/message-time.md) | 消息时间，四档格式展示。 |
 | [ToolBtn](./feedback/tool-btn.md) | 工具栏图标按钮。 |
 | [DeleteTool](./feedback/delete-tool.md) | 删除确认按钮。 |
 | [UserFeedback](./feedback/user-feedback.md) | 用户反馈弹层。 |

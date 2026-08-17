@@ -433,7 +433,7 @@ spec:
       severity: 1
       annotations:
         summary: "错误率超过 5%，持续 3 分钟"
-        runbook: https://iwiki.woa.com/runbook/high-error-rate
+        runbook: https://iwiki.xxx.com/runbook/high-error-rate
     - name: SlowP99
       expr: histogram_quantile(0.99, rate(http_duration_bucket[5m])) > 1
       for: 5m
@@ -480,7 +480,7 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 FROM python:3.11-slim
 
-LABEL maintainer="bk-observe@tencent.com"
+LABEL maintainer="bk-observe@example.com"
 
 ENV PYTHONUNBUFFERED=1 \\
     TZ=Asia/Shanghai \\
@@ -794,6 +794,20 @@ const MOCK_ARTIFACTS_ROUND2: AIFileInfo[] = [
 /** 第三轮产物：全类型样例，用于验证图标映射与各分类的预览渲染 */
 const MOCK_ARTIFACTS_ROUND3: AIFileInfo[] = MOCK_EXTENDED_ARTIFACTS;
 
+/**
+ * 生成相对当前时间的 createdAt，用于调试消息时间的四档展示
+ * 各轮会话按「从早到晚」分配，覆盖 非今年 / 今年内更早 / 昨天 / 今天 四种格式
+ * @param dayOffset 距今天数，0 为今天、1 为昨天
+ * @param yearOffset 距今年数，传 1 可稳定落在非今年，不受年初边界影响
+ */
+const mockCreatedAt = (dayOffset: number, hours: number, minutes: number, yearOffset = 0) => {
+  const date = new Date();
+  date.setFullYear(date.getFullYear() - yearOffset);
+  date.setDate(date.getDate() - dayOffset);
+  date.setHours(hours, minutes, 0, 0);
+  return date.toISOString();
+};
+
 // 带文件产物的会话消息，用于 playground 调试 artifacts 展示与 outputId 去重
 export const MOCK_ARTIFACTS_MESSAGES = [
   {
@@ -804,6 +818,7 @@ export const MOCK_ARTIFACTS_MESSAGES = [
     status: MessageStatus.Complete,
     messageId: 'mock-artifacts-user',
     uid: 'mock-artifacts-user',
+    createdAt: mockCreatedAt(5, 11, 20),
   },
   {
     id: 'mock-artifacts-assistant',
@@ -813,6 +828,7 @@ export const MOCK_ARTIFACTS_MESSAGES = [
     status: MessageStatus.Complete,
     messageId: 'mock-artifacts-assistant',
     uid: 'mock-artifacts-assistant',
+    createdAt: mockCreatedAt(5, 11, 22),
     property: {
       artifacts: MOCK_ARTIFACTS_ROUND1,
     },
@@ -825,6 +841,7 @@ export const MOCK_ARTIFACTS_MESSAGES = [
     status: MessageStatus.Complete,
     messageId: 'mock-artifacts-user-2',
     uid: 'mock-artifacts-user-2',
+    createdAt: mockCreatedAt(4, 14, 8),
   },
   {
     id: 'mock-artifacts-assistant-2',
@@ -835,6 +852,7 @@ export const MOCK_ARTIFACTS_MESSAGES = [
     status: MessageStatus.Complete,
     messageId: 'mock-artifacts-assistant-2',
     uid: 'mock-artifacts-assistant-2',
+    createdAt: mockCreatedAt(4, 14, 10),
     property: {
       artifacts: MOCK_ARTIFACTS_ROUND2,
     },
@@ -847,6 +865,7 @@ export const MOCK_ARTIFACTS_MESSAGES = [
     status: MessageStatus.Complete,
     messageId: 'mock-artifacts-user-3',
     uid: 'mock-artifacts-user-3',
+    createdAt: mockCreatedAt(1, 9, 5),
   },
   {
     id: 'mock-artifacts-assistant-3',
@@ -857,6 +876,7 @@ export const MOCK_ARTIFACTS_MESSAGES = [
     status: MessageStatus.Complete,
     messageId: 'mock-artifacts-assistant-3',
     uid: 'mock-artifacts-assistant-3',
+    createdAt: mockCreatedAt(1, 9, 8),
     property: {
       artifacts: MOCK_ARTIFACTS_ROUND3,
     },
@@ -903,6 +923,7 @@ export const MOCK_TOOLCALL_STATUS_MESSAGES = [
     name: 'user',
     status: MessageStatus.Complete,
     messageId: 'mock-toolcall-status-user',
+    createdAt: mockCreatedAt(0, 10, 0, 1),
   },
   {
     id: 'mock-toolcall-status-assistant',
@@ -911,6 +932,7 @@ export const MOCK_TOOLCALL_STATUS_MESSAGES = [
     name: 'react_agent',
     status: MessageStatus.Complete,
     messageId: 'mock-toolcall-status-assistant',
+    createdAt: mockCreatedAt(0, 10, 3, 1),
     toolCalls: [
       // Pending：无 toolMessage → Loading「调用中」
       {
@@ -1315,6 +1337,7 @@ export const MOCK_MESSAGES = [
     name: 'user',
     status: 'completed',
     messageId: 'cbba21f14f7847d98ff3240e69ef5c07',
+    createdAt: mockCreatedAt(0, 15, 30),
   },
   // {
   //   id: 'cbba21f14f7847d98ff3240e69ef5c07',
@@ -1389,6 +1412,7 @@ export const MOCK_MESSAGES = [
     name: 'react_agent',
     status: 'completed',
     messageId: 'lc_run--019b7205-6bb3-79a0-81ec-48e5fcb8fea0',
+    createdAt: mockCreatedAt(0, 15, 31),
   },
   {
     id: 'mock-revoked-approval-user',
@@ -1397,6 +1421,7 @@ export const MOCK_MESSAGES = [
     name: 'user',
     status: MessageStatus.Complete,
     messageId: 'mock-revoked-approval-user',
+    createdAt: mockCreatedAt(0, 15, 45),
   },
   {
     id: 'mock-revoked-approval-assistant',

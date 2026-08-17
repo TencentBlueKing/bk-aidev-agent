@@ -219,6 +219,49 @@ describe('MessageTools', () => {
 
       expect(wrapper.find('.ai-divider').exists()).toBe(false);
     });
+
+    it('没有 updateTools 时不应该渲染右侧工具区', () => {
+      wrapper = mount(MessageTools, {
+        props: {
+          updateTools: [],
+        },
+      });
+
+      expect(wrapper.findAll('.message-tools').length).toBe(1);
+    });
+  });
+
+  describe('两端插槽测试', () => {
+    it('传入 prepend 插槽时应渲染在工具图标左侧的包裹容器内', () => {
+      wrapper = mount(MessageTools, {
+        slots: {
+          prepend: '<span class="slot-time">12:00</span>',
+        },
+      });
+
+      const prepend = wrapper.find('.ai-message-tools-prepend');
+      expect(prepend.exists()).toBe(true);
+      expect(prepend.find('.slot-time').exists()).toBe(true);
+    });
+
+    it('传入 append 插槽时应渲染在工具图标右侧的包裹容器内', () => {
+      wrapper = mount(MessageTools, {
+        slots: {
+          append: '<span class="slot-time">12:00</span>',
+        },
+      });
+
+      const append = wrapper.find('.ai-message-tools-append');
+      expect(append.exists()).toBe(true);
+      expect(append.find('.slot-time').exists()).toBe(true);
+    });
+
+    it('未传插槽时不应渲染两端包裹容器', () => {
+      wrapper = mount(MessageTools);
+
+      expect(wrapper.find('.ai-message-tools-prepend').exists()).toBe(false);
+      expect(wrapper.find('.ai-message-tools-append').exists()).toBe(false);
+    });
   });
 
   describe('Props 测试', () => {

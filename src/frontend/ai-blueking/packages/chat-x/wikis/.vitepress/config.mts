@@ -384,6 +384,7 @@ function sidebarComponents() {
       collapsed: false,
       items: [
         { text: 'MessageTools 消息工具栏', link: 'feedback/message-tools' },
+        { text: 'MessageTime 消息时间', link: 'feedback/message-time' },
         { text: 'ToolBtn 工具按钮', link: 'feedback/tool-btn' },
         { text: 'DeleteTool 删除确认', link: 'feedback/delete-tool' },
         { text: 'UserFeedback 用户反馈', link: 'feedback/user-feedback' },

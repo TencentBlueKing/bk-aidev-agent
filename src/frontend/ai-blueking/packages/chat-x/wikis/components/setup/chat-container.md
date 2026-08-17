@@ -245,6 +245,7 @@ sinceVersion: 1.0.0
 - **模型选择**：透传 `models`、`v-model:selectedModel` 与 `@modelChange` 至 `ChatInput`，传入 `models` 后在发送按钮左侧展示 [ModelSelector](/components/input/model-selector)
 - **分享模式 / 渲染模式**：内置多选分享；`renderMode` 经 Provider 下传。`Share` 态开放侧栏只读查看，隐藏底部输入与「重试 / 跳过」等交互
 - **字号主题**：`size` 为 `small`（默认 12px）/ `normal`（14px）；根节点 `data-ai-size`，浮层同步 `document.body.dataset.aiSize`
+- **消息时间时区**：`timezone` 经 `useGlobalConfig` 下传给 `MessageTime`，统一整个会话的时间展示时区；未配置时按浏览器时区
 - **空状态欢迎页**：无消息时展示 Banner、`welcomeTitle`（默认「你好，我是小鲸」）与 `openingRemark`
 
 ## 组件结构
@@ -1147,6 +1148,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | placement                 | `'left' \| 'right'`                                                                      | `'left'`  | 侧边栏位置                                                                                                                           |
 | resizeProps               | `{ disabled?: boolean; initialDivide?: number \| string; max?: number; min?: number }`    | —         | 透传给内部 `ResizeLayout`；与默认 `collapsible: false`、`immediate: true`、`min: 400` 合并；`placement` 始终取自本组件。**数字型** `initialDivide` 还会作为内部侧栏宽度初值（驱动 `--resize-main-width`，并在展开时作为 `collapseChange` 的 `width`）；百分比等字符串则回退为 `400` |
 | size                      | `'normal' \| 'small'`                                                                    | `'small'` | 字号主题：`small` 12px / `normal` 14px；根节点设置 `data-ai-size` 并注入 `useGlobalConfig`                                           |
+| timezone                  | `string`                                                                                 | —         | 消息时间展示所用的 IANA 时区名（如 `Asia/Shanghai`）；经 `useGlobalConfig` 注入，未配置时按浏览器时区展示，详见 [MessageTime](/components/feedback/message-time) |
 | welcomeTitle              | `string`                                                                                 | —         | 欢迎页标题；未传时默认展示「你好，我是小鲸」                                                                                         |
 | onCustomTabChange         | `(tab: CustomTab) => Promise<any>`                                                       | —         | 自定义 Tab 切换回调，返回值作为 Tab 组件 props                                                                                       |
 | onArtifactClick           | `(file: AIFileInfo) => Promise<{ download_url?: string; preview_url?: string }>`          | —         | 异步获取下载 / 预览链接（每次调用重新获取，无缓存；同文件并发去重）。文本类预览依赖 `download_url`，iframe 类依赖 `preview_url`；未传则隐藏下载、预览无数据 |
@@ -1304,5 +1306,5 @@ interface Shortcut {
 - [SelectionFooter](/components/input/selection-footer) — 多选操作栏
 - [ToolBtn](/components/feedback/tool-btn) — 侧栏全屏按钮
 - [useFullScreen](/composables/use-full-screen) — 侧栏全屏控制
-- [useGlobalConfig](/composables/use-global-config) — 注入 `size` 与 `supportUpload`
+- [useGlobalConfig](/composables/use-global-config) — 注入 `size`、`supportUpload` 与 `timezone`
 - [主题配置](/theme/theme) — 字号主题 CSS 变量

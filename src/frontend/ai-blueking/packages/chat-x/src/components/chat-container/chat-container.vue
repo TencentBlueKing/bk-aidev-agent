@@ -373,6 +373,8 @@
     };
     /** 字号主题档位：small(默认 12px) / normal(14px) */
     size?: AiSizeMode;
+    /** 消息时间展示所用的 IANA 时区名（如 Asia/Shanghai）；未配置时按浏览器时区展示 */
+    timezone?: string;
     welcomeTitle?: string;
   };
   const TabPanel = Tab.TabPanel;
@@ -441,6 +443,7 @@
   useGlobalConfig({
     size: computed(() => props.size ?? 'small'),
     supportUpload: computed(() => props.supportUpload ?? false),
+    timezone: computed(() => props.timezone),
   });
   // 浮层（tippy / Teleport 内容）会挂载到 body，脱离 .ai-chat-container 的 data-ai-size 作用域。
   // 将当前 size 同步到 body，使这些浮层也能继承字号主题变量；容器内内容仍由更近的容器属性控制。
