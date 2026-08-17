@@ -36,7 +36,8 @@
       }"
       :resources="MOCK_RESOURCES"
       :shortcuts="shortcuts"
-      :size="'small'"
+      :size="aiSize"
+      :skills="MOCK_SKILLS"
       :support-upload="true"
       :update-tools="customUpdateTools"
       @confirm-share="handleConfirmShare"
@@ -193,6 +194,7 @@
     MOCK_MODELS,
     MOCK_PROMPTS,
     MOCK_RESOURCES,
+    MOCK_SKILLS,
     MOCK_TOOLCALL_STATUS_MESSAGES,
     mockArtifactClick,
   } from './mock';
@@ -203,6 +205,10 @@
 
   import '../src/styles/global.scss';
 
+  // 预览字号：?size=normal → 14px；默认 / ?size=small → 12px
+  const aiSize = (new URLSearchParams(location.search).get('size') === 'normal' ? 'normal' : 'small') as
+    | 'normal'
+    | 'small';
   const chatMode = shallowRef<RenderMode>(RenderMode.Chat);
   const openingRemark = shallowRef(`你好，我是小鲸
 我是由蓝鲸智云开发的智能助手
@@ -215,12 +221,14 @@
   const handleModelChange = (model: IModelOption) => {
     console.log('model change:', model);
   };
+  // TODO(style-verify): 样式调试期间暂时隐藏输入框上方 UserQuestion 折叠条；调试完成后改回 true
+  const SHOW_USER_QUESTION_MOCK = false;
   // Info 分隔提示 + ToolCall 各状态 + 含 toolCalls 的会话 mock + 待回答 UserQuestion
   const messages = deepRef<Message[]>([
     ...MOCK_INFO_MESSAGES,
     ...MOCK_TOOLCALL_STATUS_MESSAGES,
     ...(MOCK_MESSAGES as Message[]),
-    ...MOCK_USER_QUESTION_PENDING_MESSAGES,
+    ...(SHOW_USER_QUESTION_MOCK ? MOCK_USER_QUESTION_PENDING_MESSAGES : []),
   ]);
 
   const handleInterruptResume: OnInterruptResume = (payload, interrupt) => {

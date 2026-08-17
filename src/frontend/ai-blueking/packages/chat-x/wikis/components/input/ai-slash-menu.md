@@ -20,6 +20,9 @@ sinceVersion: 1.0.0
 - **源码位置**：`src/components/chat-input/ai-slash-input/ai-slash-menu/ai-slash-menu.vue`
 - **能力说明**：@ 资源选择菜单，展示资源项供 AiSlashInput 插入标签。
 
+
+> 菜单面板满宽、圆角与细滚动条样式与输入框对齐。
+
 ## API 摘要
 
 ### Props

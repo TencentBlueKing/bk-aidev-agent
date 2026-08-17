@@ -1,53 +1,20 @@
 // background, color, icon-color, hover-background, hover-color, hover-icon-color
+// 各类型 mention tag 统一灰底样式，不再按类型区分配色
+$mention-tag-colors: (
+  #f0f1f5,
+  #4d4f56,
+  #979ba5,
+  #dcdee5,
+  #4d4f56,
+  #4d4f56,
+);
 $resourceTypeMap: (
-  tool: (
-    #f0f1f5,
-    #4d4f56,
-    #979ba5,
-    #dcdee5,
-    #4d4f56,
-    #4d4f56,
-  ),
-  skill: (
-    #f0f1f5,
-    #4d4f56,
-    #979ba5,
-    #dcdee5,
-    #4d4f56,
-    #4d4f56,
-  ),
-  shortcut: (
-    #e1ecff,
-    #3a84ff,
-    #3a84ff,
-    #cddffe,
-    #1768ef,
-    #3a84ff,
-  ),
-  doc: (
-    #daf6e5,
-    #2caf5e,
-    #2caf5e,
-    #cbf0da,
-    #14a568,
-    #1cab88,
-  ),
-  knowledgebase: (
-    #daf6e5,
-    #2caf5e,
-    #2caf5e,
-    #cbf0da,
-    #14a568,
-    #1cab88,
-  ),
-  mcp: (
-    #fdeed8,
-    #f59500,
-    #f59500,
-    #fce5c0,
-    #e38b02,
-    #f59500,
-  ),
+  tool: $mention-tag-colors,
+  skill: $mention-tag-colors,
+  shortcut: $mention-tag-colors,
+  doc: $mention-tag-colors,
+  knowledgebase: $mention-tag-colors,
+  mcp: $mention-tag-colors,
 );
 
 // toolcall status color map

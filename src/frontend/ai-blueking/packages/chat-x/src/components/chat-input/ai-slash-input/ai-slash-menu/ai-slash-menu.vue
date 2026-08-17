@@ -21,7 +21,6 @@
           >
             <path d="M800 512L288 928V96z"></path>
           </svg>
-          <span :class="`mark-${groupItems.type}`"></span>
           {{ groupItems.name }}
           ({{ groupItems.items.length }})
         </div>
@@ -33,6 +32,19 @@
             :class="{ 'is-active': sortedResourceList?.[activeIndex]?.id === item.id }"
             @click="onSelect(item)"
           >
+            <img
+              v-if="item.icon && !failedIcons.has(String(item.id))"
+              :src="item.icon"
+              alt=""
+              class="ai-slash-group-item-icon"
+              @error="failedIcons.add(String(item.id))"
+            />
+            <div
+              v-else
+              class="ai-slash-group-item-icon ai-slash-group-item-icon--fallback"
+            >
+              {{ item.name?.[0]?.toUpperCase() }}
+            </div>
             <span
               v-overflow-tips="{
                 text: item.name,
@@ -52,7 +64,7 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { ref as deepRef, shallowRef, useTemplateRef, watchEffect } from 'vue';
+  import { reactive, ref as deepRef, shallowRef, useTemplateRef, watchEffect } from 'vue';
 
   import { useMenuKeydown } from '../../../../composables/use-menu-keydown';
   import { OverflowTips as vOverflowTips } from '../../../../directives';
@@ -63,6 +75,7 @@
   }>();
 
   const menuRef = useTemplateRef<HTMLElement>('menuRef');
+  const failedIcons = reactive(new Set<string>());
 
   const expandList = deepRef<ResourceType[]>(['tool', 'shortcut', 'doc', 'knowledgebase', 'mcp'] as ResourceType[]);
   const sortedResourceList = shallowRef<IAiSlashMenuItem[]>([]);
@@ -105,18 +118,37 @@
   };
 </script>
 <style lang="scss">
-  @use 'sass:list';
-  @use '../../../../styles/variables.scss' as variables;
-
   .ai-slash-menu {
-    width: 260px;
-    max-height: 200px;
-    overflow-y: auto;
+    box-sizing: border-box;
+    width: 100%;
+    // 最多展示 10 个选项（每项 32px），超出再滚动
+    max-height: 320px;
+    overflow: hidden auto;
     font-size: var(--ai-font-size, 12px);
     background: #fff;
-    border: 1px solid #dcdee5;
-    border-radius: 2px;
-    box-shadow: 0 2px 6px 0 #0000001a;
+    border: 0;
+    border-radius: 8px; // 与聊天输入框一致
+    outline: none;
+    box-shadow: none; // 外阴影由 tippy-box 承担，避免被裁切
+    scrollbar-color: #dcdee5 transparent;
+    scrollbar-width: thin;
+
+    &::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: #dcdee5;
+      border-radius: 2px;
+
+      &:hover {
+        background: #c4c6cc;
+      }
+    }
 
     .ai-slash-item {
       display: flex;
@@ -142,18 +174,6 @@
       display: flex;
       flex-direction: column;
       color: #979ba5;
-
-      @each $type, $color in variables.$resourceTypeMap {
-        .mark-#{$type} {
-          display: flex;
-          flex: 0 0 10px;
-          width: 10px;
-          height: 10px;
-          margin-right: 6px;
-          background-color: list.nth($color, 3);
-          border-radius: 2px;
-        }
-      }
 
       .ai-slash-group-title {
         .title-icon {
@@ -182,13 +202,34 @@
 
       .ai-slash-group-item {
         width: 100%;
-        padding: 0 16px 0 32px;
+        padding: 0 16px 0 24px;
         color: #4d4f56;
         cursor: pointer;
 
         &.is-active,
         &:hover {
           background-color: #f5f7fa;
+        }
+
+        &-icon {
+          flex-shrink: 0;
+          width: 20px;
+          height: 20px;
+          margin-right: 8px;
+          object-fit: contain;
+          border-radius: 2px;
+
+          &--fallback {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: var(--ai-font-size, 12px);
+            font-weight: 700;
+            line-height: var(--ai-line-height-compact, 20px);
+            color: #fff;
+            background: #3a84ff;
+            border-radius: 2px;
+          }
         }
       }
     }

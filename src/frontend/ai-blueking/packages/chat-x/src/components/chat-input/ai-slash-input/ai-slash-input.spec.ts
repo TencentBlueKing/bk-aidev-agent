@@ -149,8 +149,12 @@ vi.mock('./ai-slash-menu/ai-slash-menu.vue', () => ({
       onSelect: { type: Function, default: null },
       resourceList: { type: Array, default: () => [] },
     },
-    setup() {
-      return () => h('div', { class: 'mock-ai-slash-menu' });
+    setup(props) {
+      return () =>
+        h('div', {
+          class: 'mock-ai-slash-menu',
+          'data-resources-count': String(props.resourceList?.length ?? 0),
+        });
     },
   }),
 }));
@@ -185,6 +189,7 @@ vi.mock('./command', () => ({
   InsertSkillTag: 'InsertSkillTag',
   InsertTag: 'InsertTag',
   InsertText: 'InsertText',
+  SetCaret: 'SetCaret',
 }));
 
 vi.mock('./constants', () => ({
@@ -388,6 +393,167 @@ describe('AiSlashInput', () => {
       expect(tag.exists()).toBe(true);
       expect(tag.attributes('data-tag-value')).toBe('test_skill');
     });
+
+    it('skill 标签应显示图标与文案', () => {
+      wrapper = mount(AiSlashInput, {
+        props: {
+          modelValue: [
+            [
+              {
+                type: 'tag',
+                data: {
+                  label: '发布检查清单',
+                  value: 'release_checklist',
+                  type: 'skill',
+                  icon: '',
+                },
+              },
+            ],
+          ],
+        },
+      });
+
+      const tag = wrapper.find('.mention-tag-skill');
+      expect(tag.exists()).toBe(true);
+      expect(tag.find('.mention-tag-icon--fallback').exists()).toBe(true);
+      expect(tag.find('.mention-tag-icon--fallback').text()).toBe('发');
+      expect(tag.find('.mention-tag-label').text()).toBe('发布检查清单');
+      expect(tag.attributes('data-tag-label')).toBe('发布检查清单');
+    });
+
+    it('skill 标签有 icon 时应渲染 img', () => {
+      wrapper = mount(AiSlashInput, {
+        props: {
+          modelValue: [
+            [
+              {
+                type: 'tag',
+                data: {
+                  label: 'Code Review',
+                  value: 'code_review',
+                  type: 'skill',
+                  icon: 'https://example.com/skill.png',
+                },
+              },
+            ],
+          ],
+        },
+      });
+
+      const img = wrapper.find('.mention-tag-skill img.mention-tag-icon');
+      expect(img.exists()).toBe(true);
+      expect(img.attributes('src')).toBe('https://example.com/skill.png');
+    });
+
+    it('@ 资源标签也应显示图标与文案', () => {
+      wrapper = mount(AiSlashInput, {
+        props: {
+          modelValue: [
+            [
+              {
+                type: 'tag',
+                data: {
+                  label: '日志查询',
+                  value: 'tool-log-query',
+                  type: 'tool',
+                  icon: '',
+                },
+              },
+            ],
+          ],
+        },
+      });
+
+      const tag = wrapper.find('.mention-tag-tool');
+      expect(tag.exists()).toBe(true);
+      expect(tag.find('.mention-tag-icon--fallback').exists()).toBe(true);
+      expect(tag.find('.mention-tag-icon--fallback').text()).toBe('日');
+      expect(tag.find('.mention-tag-label').text()).toBe('日志查询');
+    });
+  });
+
+  describe('输入过程实时检索过滤', () => {
+    const setEditorQuery = async (text: string) => {
+      const editor = wrapper.find('.ai-slash-input').element as HTMLElement;
+      editor.textContent = text;
+      const textNode = editor.firstChild as Text;
+      const range = document.createRange();
+      range.setStart(textNode, text.length);
+      range.collapse(true);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      editor.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+      await nextTick();
+      await vi.advanceTimersByTimeAsync(20);
+      await nextTick();
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('输入 @ 后继续输入应实时过滤工具列表', async () => {
+      wrapper = mount(AiSlashInput, {
+        props: {
+          modelValue: '',
+          resources: [
+            { id: '1', name: '日志查询', type: 'tool', icon: null },
+            { id: '2', name: '数据可视化', type: 'tool', icon: null },
+            { id: '3', name: 'TAPD MCP', type: 'mcp', icon: null },
+          ],
+        },
+        attachTo: document.body,
+      });
+      await nextTick();
+      await setEditorQuery('@日志');
+
+      const menu = wrapper.findComponent({ name: 'AiSlashMenu' });
+      expect(menu.exists()).toBe(true);
+      expect(menu.props('resourceList')).toHaveLength(1);
+      expect(menu.props('resourceList')[0].name).toBe('日志查询');
+    });
+
+    it('输入 / 后继续输入应实时过滤 Skill 列表', async () => {
+      wrapper = mount(AiSlashInput, {
+        props: {
+          modelValue: '',
+          skills: [
+            { skill_code: 'code_review', skill_name: 'Code Review', description: '', icon: '' },
+            { skill_code: 'log_diag', skill_name: '日志诊断', description: '', icon: '' },
+          ],
+        },
+        attachTo: document.body,
+      });
+      await nextTick();
+      await setEditorQuery('/Code');
+
+      const skillList = wrapper.findComponent({ name: 'AiSkillList' });
+      expect(skillList.exists()).toBe(true);
+      expect(skillList.props('skills')).toHaveLength(1);
+      expect(skillList.props('skills')[0].skill_code).toBe('code_review');
+    });
+
+    it('输入 \\ 后继续输入应实时过滤 Prompt 列表', async () => {
+      wrapper = mount(AiSlashInput, {
+        props: {
+          modelValue: '',
+          prompts: ['帮我总结一下当前会话', '生成周报', '翻译成英文'],
+        },
+        attachTo: document.body,
+      });
+      await nextTick();
+      await setEditorQuery('\\总结');
+
+      const promptList = wrapper.findComponent({ name: 'AiPromptList' });
+      expect(promptList.exists()).toBe(true);
+      expect(promptList.props('prompts')).toHaveLength(1);
+      expect(promptList.props('prompts')[0]).toContain('总结');
+    });
   });
 
   describe('Skill 过滤与插入', () => {
@@ -442,6 +608,8 @@ describe('AiSlashInput', () => {
         call => (call[0] as unknown) === 'InsertSkillTag',
       );
       expect(insertSkillCalls.length).toBeGreaterThan(0);
+      const setCaretCalls = editorCommand.mock.calls.filter(call => (call[0] as unknown) === 'SetCaret');
+      expect(setCaretCalls.length).toBeGreaterThan(0);
     });
   });
 

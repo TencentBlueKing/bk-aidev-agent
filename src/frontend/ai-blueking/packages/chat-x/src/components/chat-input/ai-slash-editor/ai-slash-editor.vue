@@ -14,13 +14,16 @@
       :arrow="false"
       :hide-on-click="true"
       :interactive="true"
-      :offset="[0, 0]"
-      placement="right-start"
+      :max-width="'none'"
+      :offset="[0, 8]"
+      :popper-options="menuPopperOptions"
+      placement="top-start"
       theme="light ai-slash-editor-theme"
       trigger="manual"
       :trigger-target="editorRef!"
       :z-index="EDITOR_MENU_Z_INDEX"
       @hidden="handleTippyHidden"
+      @show="handleTippyShow"
     >
       <template #content>
         <AiSlashMenu
@@ -86,6 +89,42 @@
   const editorRef = useTemplateRef<HTMLDivElement>('editorRef');
   const tippyRef = useTemplateRef<InstanceType<typeof Tippy> & ReturnType<typeof useTippy>>('tippyRef');
   const getBody = () => document.body;
+
+  /** 禁止 flip，避免面板翻转到输入框上挡住文字 */
+  const menuPopperOptions = {
+    modifiers: [
+      { name: 'flip', enabled: false },
+      { name: 'preventOverflow', options: { altAxis: false, padding: 8 } },
+    ],
+  };
+
+  const getInputMenuRect = (): DOMRect => {
+    const el =
+      editorRef.value?.closest('.chat-input') ||
+      editorRef.value?.closest('.ai-slash-editor-wrapper') ||
+      editorRef.value;
+    return el?.getBoundingClientRect() ?? new DOMRect();
+  };
+
+  const syncMenuWidthToInput = (instance?: { popper?: HTMLElement }) => {
+    const width = getInputMenuRect().width;
+    if (!width) return;
+    const box =
+      (instance?.popper?.querySelector?.('.tippy-box') as HTMLElement | null | undefined) ||
+      (document.querySelector('.tippy-box[data-theme~="ai-slash-editor-theme"]') as HTMLElement | null);
+    if (box) {
+      box.style.width = `${width}px`;
+      box.style.maxWidth = `${width}px`;
+    }
+  };
+
+  const handleTippyShow = (instance?: { popper?: HTMLElement }): false | void => {
+    if (menuType.value === 'slash' && filteredResourceList.value.length < 1) return false;
+    if (menuType.value === 'prompt' && filteredPrompts.value.length < 1) return false;
+    syncMenuWidthToInput(instance);
+    requestAnimationFrame(() => syncMenuWidthToInput(instance));
+    return undefined;
+  };
 
   let mentionDecorations: monacoEditor.IEditorDecorationsCollection | null = null;
 
@@ -539,22 +578,12 @@
       return;
     }
 
-    // 设置 tippy 位置（仅在 keyword 为空时，即刚输入 '/' 或 '@' 时）
-    if (!keyword.value) {
-      const offset = editor.getOffsetForColumn(position.lineNumber, position.column);
-      const rect = editor.getDomNode()!.getBoundingClientRect();
-      tippyRef.value?.setProps({
-        getReferenceClientRect: () => {
-          const scrollTop = editor.getScrollTop();
-          return {
-            left: rect.left + offset + 10 - editor.getScrollLeft(),
-            top: rect.top + position.lineNumber * aiSlashEditorOptions.lineHeight! - scrollTop + 6,
-            width: 0,
-            height: 0,
-          };
-        },
-      });
-    }
+    // 锚定输入框上方，宽度与输入框一致
+    tippyRef.value?.setProps({
+      placement: 'top-start',
+      maxWidth: 'none',
+      getReferenceClientRect: getInputMenuRect,
+    });
     tippyRef.value?.show();
   };
   const handleTippyHidden = () => {
@@ -585,27 +614,29 @@
       border-radius: 8px;
 
       @each $type, $color in variables.$resourceTypeMap {
-        $iconColor: list.nth($color, 3);
         .mention-tag-#{$type} {
           position: relative;
           display: inline-flex;
           align-items: center;
           height: 18px;
-          padding: 0 2px 0 6px;
+          padding: 0 6px;
           font-size: var(--ai-font-size, 12px);
           color: list.nth($color, 2);
           background: list.nth($color, 1);
           border-radius: 2px;
 
           &::after {
-            display: inline-flex;
+            position: absolute;
+            top: -7px;
+            right: -7px;
+            display: none;
             align-items: center;
             justify-content: center;
-            width: 18px;
-            height: 18px;
+            width: 14px;
+            height: 14px;
             cursor: pointer;
             content: ' ';
-            background-color: $iconColor;
+            background-color: #4d4f56;
             mask-image: url('data:image/svg+xml;charset=utf-8,%3Csvg%20viewBox%3D%220%200%201024%201024%22%20version%3D%221.1%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20xmlns%3Axlink%3D%22http%3A%2F%2Fwww.w3.org%2F1999%2Fxlink%22%20width%3D%22200%22%20height%3D%22200%22%3E%3Cpath%20d%3D%22M678.4%20297.6L512%20467.2l-166.4-169.6-48%2048%20169.6%20166.4-169.6%20166.4%2048%2048%20166.4-169.6%20166.4%20169.6%2048-48-169.6-166.4%20169.6-166.4z%22%3E%3C%2Fpath%3E%3C%2Fsvg%3E');
             mask-repeat: no-repeat;
             mask-position: center;
@@ -614,11 +645,11 @@
 
           .mention-tag-x {
             position: absolute;
-            top: 0;
-            right: 0;
+            top: -7px;
+            right: -7px;
             z-index: 1;
-            width: 18px;
-            height: 18px;
+            width: 14px;
+            height: 14px;
             cursor: pointer;
           }
 
@@ -627,7 +658,8 @@
             background: list.nth($color, 4);
 
             &::after {
-              background-color: list.nth($color, 6);
+              display: flex;
+              background-color: #4d4f56;
             }
           }
         }
@@ -667,10 +699,24 @@
   }
 
   .tippy-box[data-theme~='ai-slash-editor-theme'] {
-    box-shadow: none !important;
+    width: 100%;
+    max-width: none !important;
+    overflow: hidden !important;
+    background-color: #fff !important;
+    border: 1px solid #dcdee5 !important;
+    border-radius: 8px !important; // 与聊天输入框一致
+    outline: none !important;
+    box-shadow: 0 2px 16px 0 #00000029 !important;
 
     .tippy-content {
+      width: 100%;
       padding: 0 !important;
+      box-sizing: border-box;
+
+      > span {
+        display: block;
+        width: 100%;
+      }
     }
   }
 </style>

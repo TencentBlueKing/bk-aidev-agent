@@ -40,6 +40,8 @@ export enum UploadStatus {
   Success = 'success',
 }
 
+export type MentionMenuType = 'prompt' | 'skill' | 'slash';
+
 export type MentionState = {
   coordinates: null | {
     height: number;
@@ -47,6 +49,8 @@ export type MentionState = {
     top: number;
   };
   isActive?: boolean;
+  /** 由光标前触发符解析出的菜单类型 */
+  menuType?: MentionMenuType;
   query?: string;
   rect: DOMRect | null;
 };

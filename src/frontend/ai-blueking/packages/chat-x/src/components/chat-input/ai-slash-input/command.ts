@@ -45,8 +45,9 @@ export const InsertTag: EditorCommand<[Position, IAiSlashMenuItem]> = (
       {
         data: {
           label: tag.name,
-          value: tag.name,
+          value: tag.id ?? tag.name,
           type: tag.type,
+          icon: tag.icon || '',
         },
       },
     ],
@@ -76,8 +77,14 @@ export const InsertSkillTag: EditorCommand<[Position, ISkillListItem]> = (
           label: skill.skill_name,
           value: skill.skill_code,
           type: 'skill',
+          icon: skill.icon || '',
         },
       },
     ],
   ]);
+};
+
+/** 将光标移动到指定文档位置（不修改内容） */
+export const SetCaret: EditorCommand<[Position]> = (_doc, _selection, pos: Position) => {
+  return new Transaction().select(pos, pos);
 };

@@ -122,7 +122,7 @@ describe('AiSlashMenu', () => {
     it('应该显示分组标题', () => {
       wrapper = mount(AiSlashMenu, {
         props: {
-          resourceList: [{ id: '1', name: 'Tool 1', type: 'tool' }],
+          resourceList: [{ id: '1', name: 'Tool 1', type: 'tool', icon: null }],
           onSelect: vi.fn(),
         },
         global: {
@@ -135,12 +135,29 @@ describe('AiSlashMenu', () => {
       expect(wrapper.find('.ai-slash-group-title').exists()).toBe(true);
     });
 
+    it('分组标题不应显示类型色块', () => {
+      wrapper = mount(AiSlashMenu, {
+        props: {
+          resourceList: [{ id: '1', name: 'Tool 1', type: 'tool', icon: null }],
+          onSelect: vi.fn(),
+        },
+        global: {
+          directives: {
+            overflowTips: {},
+          },
+        },
+      });
+
+      expect(wrapper.find('.mark-tool').exists()).toBe(false);
+      expect(wrapper.find('[class^="mark-"]').exists()).toBe(false);
+    });
+
     it('应该显示分组内项目数量', () => {
       wrapper = mount(AiSlashMenu, {
         props: {
           resourceList: [
-            { id: '1', name: 'Tool 1', type: 'tool' },
-            { id: '2', name: 'Tool 2', type: 'tool' },
+            { id: '1', name: 'Tool 1', type: 'tool', icon: null },
+            { id: '2', name: 'Tool 2', type: 'tool', icon: null },
           ],
           onSelect: vi.fn(),
         },
@@ -152,6 +169,45 @@ describe('AiSlashMenu', () => {
       });
 
       expect(wrapper.find('.ai-slash-group-title').text()).toContain('(2)');
+    });
+  });
+
+  describe('选项图标测试', () => {
+    it('无 icon 时应渲染首字母 fallback 图标', () => {
+      wrapper = mount(AiSlashMenu, {
+        props: {
+          resourceList: [{ id: '1', name: 'Tool 1', type: 'tool', icon: null }],
+          onSelect: vi.fn(),
+        },
+        global: {
+          directives: {
+            overflowTips: {},
+          },
+        },
+      });
+
+      expect(wrapper.find('.ai-slash-group-item-icon--fallback').exists()).toBe(true);
+      expect(wrapper.find('.ai-slash-group-item-icon--fallback').text()).toBe('T');
+    });
+
+    it('有 icon 时应渲染 img 元素', () => {
+      wrapper = mount(AiSlashMenu, {
+        props: {
+          resourceList: [
+            { id: '1', name: 'Tool 1', type: 'tool', icon: 'https://example.com/icon.png' },
+          ],
+          onSelect: vi.fn(),
+        },
+        global: {
+          directives: {
+            overflowTips: {},
+          },
+        },
+      });
+
+      const img = wrapper.find('img.ai-slash-group-item-icon');
+      expect(img.exists()).toBe(true);
+      expect(img.attributes('src')).toBe('https://example.com/icon.png');
     });
   });
 

@@ -93,18 +93,18 @@ export const resourceTypeMap = {
     iconColor: '#979BA5',
   },
   shortcut: {
-    background: '#E1ECFF',
-    color: '#3A84FF',
-    iconColor: '#3A84FF',
+    background: '#F0F1F5',
+    color: '#4D4F56',
+    iconColor: '#979BA5',
   },
   doc: {
-    background: '#DAF6E5',
-    color: '#2CAF5E',
-    iconColor: '#2CAF5E',
+    background: '#F0F1F5',
+    color: '#4D4F56',
+    iconColor: '#979BA5',
   },
   mcp: {
-    background: '#FDEED8',
-    color: '#F59500',
-    iconColor: '#F59500',
+    background: '#F0F1F5',
+    color: '#4D4F56',
+    iconColor: '#979BA5',
   },
 } as const;

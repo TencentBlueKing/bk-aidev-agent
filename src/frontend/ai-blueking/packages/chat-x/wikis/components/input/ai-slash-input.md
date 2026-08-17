@@ -34,6 +34,9 @@ sinceVersion: 1.0.0
 | `\`  | prompt   | `AiPromptList` | `prompts` |
 | `@`  | slash    | `AiSlashMenu` | `resources` |
 
+
+> Slash/Mention 菜单锚定整框输入、禁止 flip；支持实时过滤、tag 图标/首字母 fallback、灰底 tag 与左右 4px 间距；行高跟随 `--ai-line-height`（small=20 / normal=24）。
+
 ## API 摘要
 
 ### Props

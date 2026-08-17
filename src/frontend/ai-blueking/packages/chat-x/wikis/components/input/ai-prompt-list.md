@@ -22,6 +22,9 @@ sinceVersion: 1.0.0
 - **源码位置**：`src/components/chat-input/ai-slash-input/ai-prompt-list/ai-prompt-list.vue`
 - **能力说明**：`\` Prompt 选择列表，供 AiSlashInput 插入模板文本。
 
+
+> Prompt 列表面板样式与 Slash/Skill 面板统一。
+
 ## API 摘要
 
 ### Props

@@ -3,6 +3,7 @@
     ref="skillListRef"
     class="ai-skill-list"
   >
+    <div class="ai-skill-list-title">Skill（{{ skills.length }}）</div>
     <div
       v-for="(skill, index) in skills"
       :key="skill.skill_code"
@@ -62,16 +63,46 @@
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
-    width: 365px;
-    max-height: 258px;
+    width: 100%;
+    max-height: 320px; // 与 @ 菜单一致：10 * 32px
     padding: 4px 0;
-    overflow-y: auto;
+    overflow: hidden auto;
     font-size: var(--ai-font-size, 12px);
     color: #4d4f56;
     background: #fff;
-    border: 1px solid #dcdee5;
-    border-radius: 4px;
-    box-shadow: 0 2px 6px 0 #0000001a;
+    border: 0;
+    border-radius: 8px;
+    outline: none;
+    box-shadow: none; // 外阴影由 tippy-box 承担，避免被裁切
+    scrollbar-color: #dcdee5 transparent;
+    scrollbar-width: thin;
+
+    &::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: #dcdee5;
+      border-radius: 2px;
+
+      &:hover {
+        background: #c4c6cc;
+      }
+    }
+
+    .ai-skill-list-title {
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      height: 32px;
+      padding: 0 10px;
+      color: #979ba5; // 与 @ 菜单分组标题一致
+      white-space: nowrap;
+    }
 
     .ai-skill-list-item {
       display: flex;
@@ -99,7 +130,7 @@
         height: 20px;
         margin-right: 8px;
         object-fit: contain;
-        border-radius: 2px;
+        border-radius: 2px; // 与 @ 菜单 / MCP 等资源图标一致，用方形
 
         &--fallback {
           display: flex;

@@ -36,6 +36,7 @@ vi.mock('../../../../composables/use-menu-keydown', () => ({
   }),
 }));
 
+// style-note: chat-x PR2
 describe('AiPromptList', () => {
   let wrapper: VueWrapper;
 

@@ -34,6 +34,9 @@ sinceVersion: 1.0.0
   - 有 `icon` 且未加载失败：渲染 `<img>`
   - 无 `icon`，或 `<img>` 触发 `@error`：渲染首字母 fallback（`skill_name[0]` 大写，蓝底白字）
 
+
+> Skill 列表图标为方形（与 MCP 等一致），无 icon 时显示首字母 fallback。
+
 ## API 摘要
 
 ### Props

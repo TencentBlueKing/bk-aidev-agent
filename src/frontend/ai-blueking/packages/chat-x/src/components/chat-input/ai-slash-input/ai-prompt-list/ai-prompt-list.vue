@@ -34,16 +34,37 @@
   .ai-prompt-list {
     display: flex;
     flex-direction: column;
-    width: 330px;
-    max-height: 258px;
+    box-sizing: border-box;
+    width: 100%;
+    max-height: 320px; // 与 @ 菜单一致：10 * 32px
     padding: 8px;
-    overflow-y: auto;
+    overflow: hidden auto;
     font-size: var(--ai-font-size, 12px);
     color: #4d4f56;
     background: #fff;
-    border: 1px solid #dcdee5;
-    border-radius: 4px;
-    box-shadow: 0 2px 6px 0 #0000001a;
+    border: 0;
+    border-radius: 8px;
+    outline: none;
+    box-shadow: none; // 外阴影由 tippy-box 承担，避免被裁切
+    scrollbar-color: #dcdee5 transparent;
+    scrollbar-width: thin;
+
+    &::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: #dcdee5;
+      border-radius: 2px;
+
+      &:hover {
+        background: #c4c6cc;
+      }
+    }
 
     .ai-prompt-list-item {
       display: flex;

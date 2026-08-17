@@ -29,6 +29,7 @@ import type { VoidNode } from '../../../edix/doc/types';
 import type { TagSchema } from '../../../types/input';
 
 type TagNodeData = {
+  icon?: string;
   label: string;
   type: string;
   value: string;
@@ -51,7 +52,13 @@ export const tagSchema = schema({
       is: node => {
         return node.contentEditable === 'false' && node.dataset.tagType !== undefined;
       },
-      data: e => ({ label: e.textContent!, value: e.dataset.tagValue!, type: e.dataset.tagType! }),
+      data: e => ({
+        // 优先读 data-tag-label，避免 icon 首字母 fallback 混入 textContent
+        label: e.dataset.tagLabel || e.querySelector('.mention-tag-label')?.textContent || e.textContent || '',
+        value: e.dataset.tagValue || '',
+        type: e.dataset.tagType || '',
+        icon: e.dataset.tagIcon || '',
+      }),
       plain: d => (d.type === 'skill' ? `/${d.value}` : d.label),
     }),
   },

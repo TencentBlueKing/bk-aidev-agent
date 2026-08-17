@@ -68,6 +68,17 @@ describe('AiSkillList', () => {
       expect(wrapper.find('.ai-skill-list').exists()).toBe(true);
     });
 
+    it('应该显示 Skill 标题与数量', () => {
+      wrapper = mount(AiSkillList, {
+        props: {
+          skills: defaultSkills,
+          onSelect: vi.fn(),
+        },
+      });
+
+      expect(wrapper.find('.ai-skill-list-title').text()).toBe('Skill（2）');
+    });
+
     it('应该渲染所有 skills', () => {
       wrapper = mount(AiSkillList, {
         props: {

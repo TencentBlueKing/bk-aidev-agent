@@ -20,6 +20,9 @@ sinceVersion: 1.0.0
 - **源码位置**：`src/components/chat-input/ai-slash-editor/ai-slash-editor.vue`
 - **能力说明**：旧版富文本编辑器实现，封装 command selection 与提示菜单。
 
+
+> 编辑器主题与 mention tag 行高跟随 `--ai-line-height`；tag 支持图标与左右间距。
+
 ## API 摘要
 
 ### Props

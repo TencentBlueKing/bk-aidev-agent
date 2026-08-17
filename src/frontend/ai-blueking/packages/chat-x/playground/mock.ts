@@ -30,6 +30,7 @@ import {
   type AIFileInfo,
   type IAiSlashMenuItem,
   type IModelOption,
+  type ISkillListItem,
   // type InfoMessage,
   type Message,
   type Shortcut,
@@ -611,55 +612,130 @@ export const MOCK_TOOLCALL_STATUS_MESSAGES = [
   },
 ] as Message[];
 
-// @ 资源列表
+// @ 资源列表（工具 / MCP / 知识库 / 快捷指令，条数足够验证菜单滚动）
 export const MOCK_RESOURCES = [
-  {
-    type: 'tool',
-    name: '工具1撒旦法收到了客服',
-    id: 'tool1',
-    icon: 'icon-tool1',
-  },
-  {
-    type: 'shortcut',
-    name: '快捷1撒旦法收到',
-    id: 'shortcut1',
-    icon: 'icon-shortcut1',
-  },
-  {
-    type: 'doc',
-    name: '文档1',
-    id: 'doc1',
-    icon: 'icon-doc1',
-  },
-  {
-    type: 'mcp',
-    name: 'MCP1',
-    id: 'mcp1',
-    icon: 'icon-mcp1',
-  },
-  {
-    type: 'tool',
-    name: '工具2',
-    id: 'tool2',
-    icon: 'icon-tool2',
-  },
-
-  {
-    type: 'shortcut',
-    name: '快捷2',
-    id: 'shortcut2',
-    icon: 'icon-shortcut2',
-  },
-
-  {
-    type: 'doc',
-    name: '文档2',
-    id: 'doc2',
-    icon: 'icon-doc2',
-  },
+  // 工具
+  { type: 'tool', name: '日志查询', id: 'tool-log-query', icon: null },
+  { type: 'tool', name: '告警策略配置', id: 'tool-alert-policy', icon: null },
+  { type: 'tool', name: '容器编排', id: 'tool-container-orchestrate', icon: null },
+  { type: 'tool', name: '数据可视化', id: 'tool-data-viz', icon: null },
+  { type: 'tool', name: '接口压测', id: 'tool-api-pressure', icon: null },
+  { type: 'tool', name: '链路追踪分析', id: 'tool-trace-analysis', icon: null },
+  { type: 'tool', name: '配置中心检索', id: 'tool-config-search', icon: null },
+  { type: 'tool', name: '工单状态查询', id: 'tool-itsm-status', icon: null },
+  // MCP
+  { type: 'mcp', name: 'TAPD MCP', id: 'mcp-tapd', icon: null },
+  { type: 'mcp', name: '蓝鲸监控 MCP', id: 'mcp-bk-monitor', icon: null },
+  { type: 'mcp', name: '工蜂 Git MCP', id: 'mcp-git', icon: null },
+  { type: 'mcp', name: 'BKBASE 查询 MCP', id: 'mcp-bkbase', icon: null },
+  { type: 'mcp', name: '文档中心 MCP', id: 'mcp-docs', icon: null },
+  // 知识库
+  { type: 'doc', name: 'AI 小鲸产品文档', id: 'doc-ai-blueking', icon: null },
+  { type: 'doc', name: 'Chat X 组件指南', id: 'doc-chat-x', icon: null },
+  { type: 'doc', name: '蓝鲸可观测最佳实践', id: 'doc-observability', icon: null },
+  { type: 'doc', name: '故障排查手册', id: 'doc-troubleshooting', icon: null },
+  { type: 'doc', name: 'API 开放平台说明', id: 'doc-api-open', icon: null },
+  { type: 'knowledgebase', name: '内部知识库 · 运维', id: 'kb-ops', icon: null },
+  { type: 'knowledgebase', name: '内部知识库 · 研发', id: 'kb-dev', icon: null },
+  // 快捷指令
+  { type: 'shortcut', name: 'Trace 分析', id: 'shortcut-trace', icon: null },
+  { type: 'shortcut', name: '深度思考', id: 'shortcut-deep-think', icon: null },
+  { type: 'shortcut', name: '重新生成', id: 'shortcut-regenerate', icon: null },
+  { type: 'shortcut', name: '翻译成英文', id: 'shortcut-translate-en', icon: null },
+  { type: 'shortcut', name: '生成周报', id: 'shortcut-weekly-report', icon: null },
 ] as IAiSlashMenuItem[];
-// @ 提示词列表
-export const MOCK_PROMPTS = ['你好', '你好啊', '你好啊', '你好啊', '你好啊', '你好啊', '你好啊', '你好啊', '你好啊'];
+
+// \ 提示词列表
+export const MOCK_PROMPTS = [
+  '帮我总结一下当前会话的关键结论',
+  '把上面的方案改写成实施步骤',
+  '解释这段代码的作用与风险点',
+  '生成一份可直接发给业务方的更新说明',
+  '按表格对比两种实现方案的优劣',
+  '帮我写一个单元测试用例清单',
+  '把报错信息翻译成更易懂的排查建议',
+  '基于当前上下文给出下一步行动建议',
+  '润色这段文案，语气更专业简洁',
+  '列出需要确认的前置条件与依赖',
+  '把需求拆成可执行的开发任务',
+  '生成一份 Review Checklist',
+];
+
+// / Skill 列表（图标为空时走首字母 fallback，方便验样式）
+export const MOCK_SKILLS: ISkillListItem[] = [
+  {
+    skill_code: 'code_review',
+    skill_name: 'Code Review',
+    description: '审查代码变更并给出风险与改进建议',
+    icon: '',
+  },
+  {
+    skill_code: 'log_diagnosis',
+    skill_name: '日志诊断',
+    description: '根据日志片段定位异常根因',
+    icon: '',
+  },
+  {
+    skill_code: 'api_design',
+    skill_name: 'API 设计助手',
+    description: '辅助设计 REST / RPC 接口草案',
+    icon: '',
+  },
+  {
+    skill_code: 'release_checklist',
+    skill_name: '发布检查清单',
+    description: '生成上线前检查项并核对风险',
+    icon: '',
+  },
+  {
+    skill_code: 'sql_optimize',
+    skill_name: 'SQL 优化',
+    description: '分析慢查询并给出索引与改写建议',
+    icon: '',
+  },
+  {
+    skill_code: 'ui_polish',
+    skill_name: 'UI 样式打磨',
+    description: '根据截图与规范给出样式优化建议',
+    icon: '',
+  },
+  {
+    skill_code: 'incident_summary',
+    skill_name: '故障复盘',
+    description: '整理故障时间线与改进动作',
+    icon: '',
+  },
+  {
+    skill_code: 'doc_writer',
+    skill_name: '文档撰写',
+    description: '把零散信息整理成结构化文档',
+    icon: '',
+  },
+  {
+    skill_code: 'test_case_gen',
+    skill_name: '用例生成',
+    description: '根据需求/接口生成测试用例',
+    icon: '',
+  },
+  {
+    skill_code: 'prompt_refine',
+    skill_name: 'Prompt 精炼',
+    description: '优化提示词结构与约束条件',
+    icon: '',
+  },
+  {
+    skill_code: 'mcp_debug',
+    skill_name: 'MCP 调试助手',
+    description: '排查 MCP 工具调用与鉴权问题',
+    icon: '',
+  },
+  {
+    skill_code: 'i18n_check',
+    skill_name: '多语言检查',
+    description: '检查文案遗漏与中英对照一致性',
+    icon: '',
+  },
+];
 
 export const MOCK_MARKDOWN_CONTENT = `
 ---
