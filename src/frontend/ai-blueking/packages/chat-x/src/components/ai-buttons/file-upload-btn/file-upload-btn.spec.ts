@@ -107,6 +107,7 @@ function triggerFileChange(wrapper: VueWrapper, files: File[]) {
 
 // ============= 测试主体 =============
 
+// style-note: chat-x PR3 — 上传按钮热区 32×32 / --ai-icon-size-sm
 describe('FileUploadBtn', () => {
   let wrapper: VueWrapper;
 

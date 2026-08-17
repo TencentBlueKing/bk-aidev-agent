@@ -100,14 +100,18 @@
     .file-upload-btn-icon {
       display: flex;
       align-items: center;
-      justify-content: flex-start;
-      width: 24px;
-      height: 24px;
-      font-size: var(--ai-icon-size, 16px);
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      font-size: var(--ai-icon-size-sm, 16px); // small=16px / normal=18px
       color: #979ba5;
+      border-radius: 8px;
+      transition: background-color 0.2s;
 
       &:hover {
         cursor: pointer;
+        background: #f0f1f5;
       }
     }
   }

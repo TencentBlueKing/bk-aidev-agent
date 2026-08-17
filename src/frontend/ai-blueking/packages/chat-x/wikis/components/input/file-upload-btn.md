@@ -42,7 +42,7 @@ sinceVersion: 1.0.0
 .ai-file-upload-btn（display: flex，align-items: center）
 ├── input[type="file"]（.file-upload-btn-input，display: none，multiple，:accept）
 │     触发后走 handleFileInputChange → 校验 → emit upload → target.value = ''
-└── span.ai-shortcut-btn.file-upload-btn-icon（24×24px，color: #979ba5，hover: cursor: pointer）
+└── span.ai-shortcut-btn.file-upload-btn-icon（热区 32×32px / 圆角 8px；图标字号跟随 --ai-icon-size-sm：small=16px、normal=18px；color: #979ba5；hover: #f0f1f5）
       v-tippy: "上传图片, 最多支持上传 3 个, 最大支持 2.4MB"（theme: ai-chat-box，offset: [0, 16]，可通过 tippyOptions 扩展）
       @click → fileInputRef.click()
       └── <slot> 默认：FileUploadIcon
