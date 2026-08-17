@@ -10,7 +10,6 @@ from aidev_agent.core.nodes.knowledge import (
     AgentKnowledgeNode,
     AidevKnowledgeNode,
     KnowledgeInputState,
-    filter_and_select_topk,
     make_knowledge_node,
 )
 from aidev_agent.enums import Decision
@@ -89,85 +88,6 @@ def create_mock_retrieve_result(
         "reference_doc": reference_doc or [],
         "knowledge_resources_emb_recalled": knowledge_resources_emb_recalled or [],
     }
-
-
-# ============================================================================
-# 测试 filter_and_select_topk 函数
-# ============================================================================
-
-
-class TestFilterAndSelectTopk:
-    """测试 filter_and_select_topk 函数"""
-
-    def test_empty_docs(self):
-        """测试空文档列表"""
-        result = filter_and_select_topk([])
-        assert result == []
-
-    def test_no_filter_no_limit(self):
-        """测试不过滤不限制数量"""
-        docs = [
-            {"metadata": {"fine_grained_score": 0.8}},
-            {"metadata": {"fine_grained_score": 0.5}},
-            {"metadata": {"fine_grained_score": 0.9}},
-        ]
-        result = filter_and_select_topk(docs, score_threshold=None, topk=20)
-        # 应该按分数降序排序
-        assert len(result) == 3
-        assert result[0]["metadata"]["fine_grained_score"] == 0.9
-        assert result[1]["metadata"]["fine_grained_score"] == 0.8
-        assert result[2]["metadata"]["fine_grained_score"] == 0.5
-
-    def test_filter_by_threshold(self):
-        """测试按分数阈值过滤"""
-        docs = [
-            {"metadata": {"fine_grained_score": 0.8}},
-            {"metadata": {"fine_grained_score": 0.3}},
-            {"metadata": {"fine_grained_score": 0.9}},
-            {"metadata": {"fine_grained_score": 0.4}},
-        ]
-        result = filter_and_select_topk(docs, score_threshold=0.5, topk=20)
-        assert len(result) == 2
-        assert result[0]["metadata"]["fine_grained_score"] == 0.9
-        assert result[1]["metadata"]["fine_grained_score"] == 0.8
-
-    def test_topk_limit(self):
-        """测试 topk 限制"""
-        docs = [
-            {"metadata": {"fine_grained_score": 0.8}},
-            {"metadata": {"fine_grained_score": 0.5}},
-            {"metadata": {"fine_grained_score": 0.9}},
-            {"metadata": {"fine_grained_score": 0.7}},
-        ]
-        result = filter_and_select_topk(docs, score_threshold=None, topk=2)
-        assert len(result) == 2
-        assert result[0]["metadata"]["fine_grained_score"] == 0.9
-        assert result[1]["metadata"]["fine_grained_score"] == 0.8
-
-    def test_filter_and_topk_combined(self):
-        """测试过滤和 topk 组合使用"""
-        docs = [
-            {"metadata": {"fine_grained_score": 0.9}},
-            {"metadata": {"fine_grained_score": 0.8}},
-            {"metadata": {"fine_grained_score": 0.7}},
-            {"metadata": {"fine_grained_score": 0.3}},
-        ]
-        result = filter_and_select_topk(docs, score_threshold=0.5, topk=2)
-        assert len(result) == 2
-        assert result[0]["metadata"]["fine_grained_score"] == 0.9
-        assert result[1]["metadata"]["fine_grained_score"] == 0.8
-
-    def test_missing_metadata(self):
-        """测试缺少 metadata 的文档"""
-        docs = [
-            {"metadata": {"fine_grained_score": 0.8}},
-            {"other_field": "value"},  # 没有 metadata
-            {"metadata": {}},  # metadata 中没有 fine_grained_score
-        ]
-        result = filter_and_select_topk(docs, score_threshold=None, topk=20)
-        assert len(result) == 3
-        # 没有分数的文档应该默认为 0，排在最后
-        assert result[0]["metadata"]["fine_grained_score"] == 0.8
 
 
 # ============================================================================
@@ -357,10 +277,9 @@ class TestAidevKnowledgeNode:
         )
         result = run_knowledge_node_in_graph(node, {"query": "test query"})
 
-        # 验证 retrieved_docs 被正确过滤和排序
+        # WEB API 已完成过滤和排序，SDK 节点应原样透传。
         assert "retrieved_docs" in result
-        # score_threshold=0.6 应该过滤掉 0.5 的文档
-        assert len(result["retrieved_docs"]) == 2
+        assert len(result["retrieved_docs"]) == 3
         assert result["retrieved_docs"][0]["metadata"]["fine_grained_score"] == 0.9
         assert result["retrieved_docs"][1]["metadata"]["fine_grained_score"] == 0.7
 
@@ -386,8 +305,8 @@ class TestAidevKnowledgeNode:
         assert call_args.args[2] == chat_history
 
     @patch("aidev_agent.core.nodes.knowledge.KnowledgeRag")
-    def test_call_with_topk_limit(self, mock_rag_class, mock_llm, mock_knowledge_settings):
-        """测试 __call__ 的 topk 限制"""
+    def test_call_does_not_apply_topk_again(self, mock_rag_class, mock_llm, mock_knowledge_settings):
+        """SDK 不应对 WEB API 的最终候选再次应用 topk。"""
         mock_rag_instance = MagicMock()
         mock_rag_instance.retrieve.return_value = create_mock_retrieve_result(
             knowledge_resources_emb_recalled=[
@@ -409,8 +328,7 @@ class TestAidevKnowledgeNode:
 
         result = run_knowledge_node_in_graph(node, state)
 
-        # 验证只返回 topk 个文档
-        assert len(result["retrieved_docs"]) == 2
+        assert len(result["retrieved_docs"]) == 4
 
     @patch("aidev_agent.core.nodes.knowledge.KnowledgeRag")
     def test_get_query_priority(self, mock_rag_class, mock_llm, mock_knowledge_settings):
