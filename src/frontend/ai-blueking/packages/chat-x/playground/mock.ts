@@ -433,7 +433,7 @@ spec:
       severity: 1
       annotations:
         summary: "错误率超过 5%，持续 3 分钟"
-        runbook: https://iwiki.woa.com/runbook/high-error-rate
+        runbook: https://iwiki.xxxx.com/runbook/high-error-rate
     - name: SlowP99
       expr: histogram_quantile(0.99, rate(http_duration_bucket[5m])) > 1
       for: 5m
