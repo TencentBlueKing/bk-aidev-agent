@@ -3,14 +3,16 @@
 
 该包合并了原有的 runtime_base/runtime_local/runtime_e2b/runtime_paas 四个子包，
 集中存放运行时子系统的所有组件：
-- 共享类型定义（types）
+- 共享类型定义（types），含延迟销毁 store 抽象契约
 - 共享工具函数（utils），含 skill 打包工具
 - 运行时工具提供者与路由（provider）
+- 沙箱延迟销毁：内存版 store 与 DeferManager（defer_manager）
 - 本地文件系统后端（local_backend）
 - E2B 远程沙箱后端（e2b_backend）
 - PaaS 远程沙箱后端（paas_backend）
 """
 
+from .defer_manager import RuntimeBackendDeferInMemoryStore, RuntimeBackendDeferManager
 from .e2b_backend import E2BSandboxBackend
 from .local_backend import FilesystemBackend
 from .paas_backend import PaasSandboxBackend
@@ -33,6 +35,7 @@ from .types import (
     FileUploadResponse,
     GrepMatch,
     RuntimeBackend,
+    RuntimeBackendDeferStore,
     WriteResult,
 )
 from .utils import (
@@ -62,6 +65,9 @@ __all__ = [
     "get_grep_tool",
     "get_execute_tool",
     "get_client_tools_with_runtime",
+    # defer_manager
+    "RuntimeBackendDeferInMemoryStore",
+    "RuntimeBackendDeferManager",
     # types
     "FileInfo",
     "GrepMatch",
@@ -71,6 +77,7 @@ __all__ = [
     "FileUploadResponse",
     "FileDownloadResponse",
     "RuntimeBackend",
+    "RuntimeBackendDeferStore",
     # utils
     "EMPTY_CONTENT_WARNING",
     "LINE_NUMBER_WIDTH",

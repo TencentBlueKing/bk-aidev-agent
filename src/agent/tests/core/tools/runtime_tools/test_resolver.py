@@ -16,8 +16,9 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
+import pytest
 from aidev_agent.core.tools.runtime_tools.provider import RuntimeBackendResolver
 from aidev_agent.core.tools.runtime_tools.types import RuntimeBackend
 
@@ -75,8 +76,9 @@ class TestPaasBackendCloseCallsKill(unittest.TestCase):
     """测试 2：PaasSandboxBackend.close() 委托给 kill()。"""
 
     def test_close_calls_kill(self):
-        from aidev_agent.core.tools.runtime_tools.paas_backend import PaasSandboxBackend
         from unittest.mock import MagicMock
+
+        from aidev_agent.core.tools.runtime_tools.paas_backend import PaasSandboxBackend
 
         backend = PaasSandboxBackend(
             client=MagicMock(),
@@ -166,19 +168,25 @@ class TestResolverCloseContinuesOnError(unittest.TestCase):
 
 
 class TestRegisterRuntime(unittest.TestCase):
-    """测试 8：register_runtime 使重新注册的运行时生效。"""
+    """测试 8：register_runtime 同名同实例幂等，同名异实例抛错（CR）。"""
 
-    def test_register_invalidates_previous(self):
+    def test_register_same_instance_idempotent(self):
+        resolver = RuntimeBackendResolver()
+        backend_a = RuntimeBackend()
+        resolver.register_runtime("test", backend_a)
+        resolver.register_runtime("test", backend_a)  # 幂等返回
+        assert resolver._resolve_backend("test") is backend_a
+
+    def test_register_different_instance_raises(self):
         resolver = RuntimeBackendResolver()
         backend_a = RuntimeBackend()
         backend_b = RuntimeBackend()
         resolver.register_runtime("test", backend_a)
-        result1 = resolver._resolve_backend("test")
-        assert result1 is backend_a
-        # 重新注册
-        resolver.register_runtime("test", backend_b)
-        result2 = resolver._resolve_backend("test")
-        assert result2 is backend_b
+        # 同名异实例：抛 ValueError，原注册不被覆盖
+        with pytest.raises(ValueError) as ctx:
+            resolver.register_runtime("test", backend_b)
+        assert "test" in str(ctx.value)
+        assert resolver._resolve_backend("test") is backend_a
 
 
 class TestResolveBackendUnknownRuntime(unittest.TestCase):

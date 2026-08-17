@@ -1013,3 +1013,56 @@ class TestConfigStatePassThrough:
         assert "state" in params, "ls_info 缺少 state 参数"
         assert params["config"].kind == inspect.Parameter.KEYWORD_ONLY, "config 应为 keyword-only"
         assert params["state"].kind == inspect.Parameter.KEYWORD_ONLY, "state 应为 keyword-only"
+
+
+# ----------------------------------------------------------------
+# CR-A 自愈 / CR-B TTL 钳制
+# ----------------------------------------------------------------
+
+
+class TestRunSelfHeal:
+    """_run 挂载沙箱失效（404）时丢弃重建并重试一次（CR-A）。"""
+
+    @pytest.fixture(autouse=True)
+    def _no_sleep(self, monkeypatch):
+        """重建后的 not-ready 等待跳过。"""
+        monkeypatch.setattr("aidev_agent.core.tools.runtime_tools.paas_backend.sleep", lambda _: None)
+
+    def test_run_self_heals_on_sandbox_gone(self, backend, mock_ops, monkeypatch):
+        backend.load({"sandbox_id": "sbx-dead"})
+        exec_calls: list[str] = []
+
+        def exec_handler(sandbox_id, cmd, **kw):
+            exec_calls.append(sandbox_id)
+            if sandbox_id == "sbx-dead":
+                exc = HTTPError("404 Sandbox not found")
+                exc.response = MagicMock(status_code=404)
+                raise exc
+            return ExecResult(stdout="ok", stderr="", exit_code=0)
+
+        monkeypatch.setattr(backend, "exec_command", exec_handler)
+        created: list[dict] = []
+        monkeypatch.setattr(backend, "create_sandbox", lambda **kw: (created.append(kw), "sbx-new")[1])
+
+        res = backend._run(["bash", "-c", "echo hi"])
+
+        assert res.stdout == "ok"
+        assert backend._sandbox_id == "sbx-new"  # 已重建
+        assert exec_calls == ["sbx-dead", "sbx-new"]  # 死沙箱一次 + 新沙箱一次
+        assert created  # 重建发生
+
+    def test_run_reraises_non_gone_errors(self, backend, mock_ops, monkeypatch):
+        """非 404 异常不触发自愈，直接抛出。"""
+        backend.load({"sandbox_id": "sbx-1"})
+
+        def exec_handler(sandbox_id, cmd, **kw):
+            exc = HTTPError("500")
+            exc.response = MagicMock(status_code=500)
+            raise exc
+
+        monkeypatch.setattr(backend, "exec_command", exec_handler)
+        created: list[dict] = []
+        monkeypatch.setattr(backend, "create_sandbox", lambda **kw: (created.append(kw), "sbx-new")[1])
+
+        with pytest.raises(HTTPError):
+            backend._run(["bash", "-c", "echo hi"])

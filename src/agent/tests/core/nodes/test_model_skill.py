@@ -213,18 +213,21 @@ class TestReActBuilderSkillsIntegration:
                 return_value=(MagicMock(), {}),
             ),
         ):
+            # P0 调序：resolver 注入（set_bkai_options）须先于 skills 链式 enable_runtime_local
+            # （新方案 enable_runtime_* 要求 resolver 已存在）；真实 resolver 会让
+            # enable_runtime_local 经 register_runtime_cls("local", FilesystemBackend) 注册
             builder = (
                 ReActAgentBuilder()
                 .set_llm(llm)
+                .set_bkai_options(
+                    AgentExecutorKwargs(
+                        runtime_backend_resolver=RuntimeBackendResolver(),
+                    )
+                )
                 .set_enable_skills(True)
                 .set_enable_runtime_tool(True)
                 .set_skill_sources([str(skills_root)])
                 .enable_runtime_local(True)
-            )
-            builder.set_bkai_options(
-                AgentExecutorKwargs(
-                    runtime_backend_resolver=RuntimeBackendResolver(),
-                )
             )
             builder.build()
 

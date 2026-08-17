@@ -23,6 +23,7 @@ https://github.com/langchain-ai/deepagents/blob/master/libs/deepagents/deepagent
 
 from __future__ import annotations
 
+import asyncio
 import fnmatch
 import json
 import os
@@ -844,8 +845,6 @@ class FilesystemBackend(RuntimeBackend):
         Returns:
             ExecuteResult，包含输出、退出码和截断标志
         """
-        import asyncio
-
         try:
             proc = await asyncio.create_subprocess_shell(
                 command,
@@ -897,3 +896,34 @@ class FilesystemBackend(RuntimeBackend):
                 exit_code=None,
                 truncated=False,
             )
+
+    # --- 沙箱复用序列化契约（save/load） ---
+
+    def save(self) -> dict:
+        """导出挂载 FilesystemBackend 所需的 payload。
+
+        本地后端的实际状态就是文件系统本身（随 pod 持久化），只需保存构造参数：
+        ``cwd`` 已包含 ``envs`` 中 SKILL_DIR 触发的目录切换结果，envs 无需单独序列化。
+
+        Returns:
+            JSON 可序列化的挂载 payload 字典。
+        """
+        return {
+            "root_dir": str(self.cwd),
+            "virtual_mode": self.virtual_mode,
+            "max_file_size_mb": int(self.max_file_size_bytes // (1024 * 1024)),
+        }
+
+    def load(self, payload: dict) -> None:
+        """挂载到既有本地目录（实例方法，就地覆盖 cwd/virtual_mode/max_file_size）。
+
+        Args:
+            payload: ``save()`` 产出的 dict。
+        """
+        root_dir = payload.get("root_dir")
+        if root_dir:
+            self.cwd = Path(root_dir).resolve()
+        if "virtual_mode" in payload:
+            self.virtual_mode = payload["virtual_mode"]
+        if "max_file_size_mb" in payload:
+            self.max_file_size_bytes = int(payload["max_file_size_mb"]) * 1024 * 1024

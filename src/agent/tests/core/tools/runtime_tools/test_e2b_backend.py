@@ -104,7 +104,7 @@ class DummySandbox:
 
 @pytest.fixture(autouse=True)
 def _patch_e2b_sdk(monkeypatch):
-    """通过 sys.modules 注入假模块，使方法内部延迟导入拿到 Dummy 对象。"""
+    """注入假 SDK：sys.modules 兜底 + 替换 e2b_backend 模块命名空间的顶层绑定。"""
 
     DummySandbox.create_calls = []
     DummySandbox.handler = lambda _cmd, _timeout=None: DummyCmdResult(stdout="", stderr="", exit_code=0)
@@ -114,6 +114,12 @@ def _patch_e2b_sdk(monkeypatch):
     fake_e2b_ci = types.ModuleType("e2b_code_interpreter")
     fake_e2b_ci.Sandbox = DummySandbox
     monkeypatch.setitem(sys.modules, "e2b_code_interpreter", fake_e2b_ci)
+    # e2b_backend 的 Sandbox 为顶层导入（import 绑定在模块命名空间），
+    # 需直接替换该绑定才能让 _ensure_sandbox 拿到 Dummy
+    monkeypatch.setattr(
+        "aidev_agent.core.tools.runtime_tools.e2b_backend.Sandbox",
+        DummySandbox,
+    )
 
 
 class TestE2BSandboxBackendInitialization:
