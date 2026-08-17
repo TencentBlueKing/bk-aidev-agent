@@ -92,7 +92,7 @@ AI Chat 界面的复杂度在于**组合爆炸**：消息类型 × 内容格式 
 | **内容渲染** | 「我要渲染富文本」 | ContentRender、MarkdownContent、CodeContent、LatexContent、MermaidContent、AnimationText |
 | **输入交互** | 「我要让用户输入和选择」 | ChatInput、AiSlashInput、ShortcutRender、AiSelection、SelectionFooter |
 | **Agent 能力** | 「我要处理工具调用和中断」 | ToolcallRender、InterruptMessage、ToolApprovalCard、UserQuestionCard、FlowAgentContent |
-| **工具与反馈** | 「我要加消息操作」 | MessageTools、ToolBtn、DeleteTool、UserFeedback、ScrollBtn |
+| **工具与反馈** | 「我要加消息操作」 | MessageTools、MessageTime、ToolBtn、DeleteTool、UserFeedback、ScrollBtn |
 | **媒体文件** | 「我要处理图片/文件」 | AiImage、ImagePreview、ImagePreviewGroup、FileContent、ImageContent |
 | **辅助能力** | 「我要理解内部辅助组件」 | ActivityLayout、AiLoading、MessageLoading、HighlightKeyword、VNodeRenderer |
 

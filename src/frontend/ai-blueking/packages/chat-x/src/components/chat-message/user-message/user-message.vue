@@ -55,7 +55,12 @@
         :on-action="handleAction"
         :tippy-options="tippyOptions"
         :update-tools="[]"
-      />
+      >
+        <!-- 设计稿：用户消息的时间在工具图标左侧 -->
+        <template #prepend>
+          <MessageTime :created-at="createdAt" />
+        </template>
+      </MessageTools>
     </template>
     <!-- 编辑状态 -->
     <template v-else>
@@ -119,6 +124,7 @@
   import KeyValueContent from '../../chat-content/key-value-content/key-value-content.vue';
   import TextContent from '../../chat-content/text-content/text-content.vue';
   import ChatInput from '../../chat-input/chat-input.vue';
+  import MessageTime from '../../message-tools/message-time/message-time.vue';
   import MessageTools, { type MessageToolsProps } from '../../message-tools/message-tools.vue';
 
   import type { UserMessage } from '../../../ag-ui/types/messages';
@@ -131,6 +137,7 @@
   // 本地 interface：content 用字面量联合，避免 Vue 将泛型 BaseMessage.content 推断为 Object
   interface UserMessageProps extends UserMessageActionsProps {
     content?: InputContent[] | string;
+    createdAt?: UserMessage['createdAt'];
     id?: UserMessage['id'];
     messageId?: UserMessage['messageId'];
     name?: UserMessage['name'];

@@ -28,6 +28,7 @@ aiSummary: >
 | [UserQuestionChoice 用户问题选择题](/components/agent/user-question-choice) | Agent 能力 | `src/components/chat-message/interrupt-message/user-question/user-question-choice.vue` | 已覆盖 |
 | [UserQuestionOption 用户问题选项](/components/agent/user-question-option) | Agent 能力 | `src/components/chat-message/interrupt-message/user-question/user-question-option.vue` | 已覆盖 |
 | [DeleteTool 删除确认按钮](/components/feedback/delete-tool) | 工具与反馈 | `src/components/message-tools/delete-tool/delete-tool.vue` | 已覆盖 |
+| [MessageTime 消息时间](/components/feedback/message-time) | 工具与反馈 | `src/components/message-tools/message-time/message-time.vue` | 已覆盖 |
 | [MessageTools 消息工具栏](/components/feedback/message-tools) | 工具与反馈 | `src/components/message-tools/message-tools.vue` | 已覆盖 |
 | [ScrollBtn 滚动按钮](/components/feedback/scroll-btn) | 工具与反馈 | `src/components/ai-buttons/scroll-btn/scroll-btn.vue` | 已覆盖 |
 | [ToolBtn 工具按钮](/components/feedback/tool-btn) | 工具与反馈 | `src/components/ai-buttons/tool-btn/tool-btn.vue` | 已覆盖 |

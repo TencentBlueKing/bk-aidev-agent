@@ -117,7 +117,8 @@ vi.mock('../../message-tools/message-tools.vue', () => ({
       onAction: { type: Function, default: null },
       tippyOptions: { type: Object, default: undefined },
     },
-    setup(props) {
+    // 保留 append 插槽渲染，便于断言消息组时间
+    setup(props, { slots }) {
       return () =>
         h(
           'div',
@@ -131,7 +132,7 @@ vi.mock('../../message-tools/message-tools.vue', () => ({
             'data-tools-json': JSON.stringify(props.messageTools ?? []),
             'data-update-tools-json': JSON.stringify(props.updateTools ?? []),
           },
-          'Message Tools',
+          ['Message Tools', slots.append?.()],
         );
     },
   }),
@@ -1279,6 +1280,57 @@ describe('MessageContainer', () => {
 
       const messageRender = wrapper.find('.mock-message-render');
       expect(messageRender.attributes('data-has-tippy-options')).toBeUndefined();
+    });
+  });
+
+  describe('消息组时间测试', () => {
+    /** 构造当天指定时分的 ISO 时间，使断言不依赖运行日期与时区 */
+    const buildTodayIso = (hours: number, minutes: number) => {
+      const date = new Date();
+      date.setHours(hours, minutes, 0, 0);
+      return date.toISOString();
+    };
+
+    const createAssistantMessageAt = (id: string, createdAt?: string): Message =>
+      ({ ...createAssistantMessage(id, 'Hello', Number(id)), createdAt }) as Message;
+
+    it('AI 消息组应展示组内最后一条消息的时间', async () => {
+      const messages: Message[] = [
+        createAssistantMessageAt('1', buildTodayIso(9, 0)),
+        createAssistantMessageAt('2', buildTodayIso(12, 30)),
+      ];
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages) },
+      });
+
+      await nextTick();
+
+      expect(wrapper.find('.mock-message-tools .ai-message-time').text()).toBe('12:30');
+    });
+
+    it('末尾消息无时间时应回退到组内最后一条带时间的消息', async () => {
+      const messages: Message[] = [createAssistantMessageAt('1', buildTodayIso(9, 0)), createAssistantMessageAt('2')];
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages) },
+      });
+
+      await nextTick();
+
+      expect(wrapper.find('.mock-message-tools .ai-message-time').text()).toBe('09:00');
+    });
+
+    it('组内消息均无时间时不应展示时间', async () => {
+      const messages: Message[] = [createAssistantMessageAt('1'), createAssistantMessageAt('2')];
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages) },
+      });
+
+      await nextTick();
+
+      expect(wrapper.find('.ai-message-time').exists()).toBe(false);
     });
   });
 

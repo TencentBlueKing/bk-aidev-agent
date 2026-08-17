@@ -2,14 +2,16 @@
 name: useGlobalConfig
 slug: use-global-config
 category: composable
-description: 在聊天根容器与子组件之间通过 provide/inject 共享全局展示配置（字号主题档位、是否支持上传等）。
+description: 在聊天根容器与子组件之间通过 provide/inject 共享全局展示配置（字号主题档位、是否支持上传、消息时间时区等）。
 aiSummary: >
-  useGlobalConfig 接收 GlobalConfig（含 size?: ComputedRef<AiSizeMode>、supportUpload: ComputedRef<boolean>），以 GLOBAL_CONFIG_TOKEN provide 给后代；
-  injectGlobalConfig 在子组件中取出配置，无 Provider 时返回 undefined。ChatContainer 在 setup 中调用 useGlobalConfig 注入 size 与 supportUpload；
+  useGlobalConfig 接收 GlobalConfig（含 size?: ComputedRef<AiSizeMode>、supportUpload: ComputedRef<boolean>、timezone?: ComputedRef<string | undefined>），以 GLOBAL_CONFIG_TOKEN provide 给后代；
+  injectGlobalConfig 在子组件中取出配置，无 Provider 时返回 undefined。ChatContainer 在 setup 中调用 useGlobalConfig 注入 size、supportUpload 与 timezone；
   后代组件可通过 injectGlobalConfig 读取配置；字号主题主要通过根节点 data-ai-size 与 CSS 变量生效。
 relatedComponents:
   - slug: chat-container
     relation: 根容器调用 useGlobalConfig 注入 supportUpload
+  - slug: message-time
+    relation: 消息时间组件读取 timezone
 sinceVersion: 1.0.0
 ---
 
@@ -29,7 +31,7 @@ sinceVersion: 1.0.0
 
 > **分类**：composable
 
-在聊天容器根组件与子组件之间通过 Vue `provide` / `inject` 共享**全局展示相关配置**（当前包括字号主题档位 `size`、是否支持上传 `supportUpload`）。与 Teleport 插槽 ID 无关。
+在聊天容器根组件与子组件之间通过 Vue `provide` / `inject` 共享**全局展示相关配置**（当前包括字号主题档位 `size`、是否支持上传 `supportUpload`、消息时间时区 `timezone`）。与 Teleport 插槽 ID 无关。
 
 > 字号主题主要通过 `ChatContainer` 根节点的 `data-ai-size` 与 CSS 变量（`--ai-font-size` 等）生效；`GlobalConfig.size` 供后代在逻辑层读取当前档位，样式层无需逐组件传参。
 
@@ -41,10 +43,11 @@ ChatContainer（根）
   ├── useGlobalConfig({
   │     size: computed(() => props.size ?? 'small'),
   │     supportUpload: computed(() => props.supportUpload ?? false),
+  │     timezone: computed(() => props.timezone),
   │   })
-  │     └── provide(GLOBAL_CONFIG_TOKEN, { size, supportUpload })
+  │     └── provide(GLOBAL_CONFIG_TOKEN, { size, supportUpload, timezone })
   │
-  └── MessageContainer → … → UserMessage 等
+  └── MessageContainer → … → UserMessage / MessageTime 等
 
 UserMessage（后代）
   ├── injectGlobalConfig()
@@ -91,11 +94,14 @@ UserMessage（后代）
   const props = defineProps<{
     size?: 'normal' | 'small';
     supportUpload?: boolean;
+    timezone?: string;
   }>();
 
   useGlobalConfig({
     size: computed(() => props.size ?? 'small'),
     supportUpload: computed(() => props.supportUpload ?? false),
+    // 无默认值：未配置时由 MessageTime 回退到浏览器时区
+    timezone: computed(() => props.timezone),
   });
 </script>
 ```
@@ -128,11 +134,13 @@ export type AiSizeMode = 'normal' | 'small';
 export type GlobalConfig = {
   size?: ComputedRef<AiSizeMode>;
   supportUpload: ComputedRef<boolean>;
+  timezone?: ComputedRef<string | undefined>;
 };
 
 export function useGlobalConfig(options: GlobalConfig): {
   size?: ComputedRef<AiSizeMode>;
   supportUpload: ComputedRef<boolean>;
+  timezone?: ComputedRef<string | undefined>;
 };
 
 export function injectGlobalConfig(): GlobalConfig | undefined;
@@ -150,6 +158,7 @@ export function injectGlobalConfig(): GlobalConfig | undefined;
 | --------------- | ------------------------------------------------------------------------ |
 | `size`          | 可选。字号主题档位 `normal`（14px）/ `small`（12px），与 `ChatContainer.size` 对齐 |
 | `supportUpload` | 是否支持上传，与根容器 `ChatContainer` 的 `supportUpload` 等展示策略对齐 |
+| `timezone`      | 可选。消息时间展示所用的 IANA 时区名，与 `ChatContainer.timezone` 对齐；未配置时 `MessageTime` 按浏览器时区展示 |
 
 ### `useGlobalConfig(options)`
 
@@ -157,6 +166,7 @@ export function injectGlobalConfig(): GlobalConfig | undefined;
 | ----------------------- | ------------------------------------------------------------------------------------- |
 | `options.size`          | 可选。字号主题档位，建议使用 `computed(() => props.size ?? 'small')` 与根 props 同步 |
 | `options.supportUpload` | 是否支持上传，建议使用 `computed(() => props.supportUpload ?? false)` 与根 props 同步 |
+| `options.timezone`      | 可选。消息时间时区，建议使用 `computed(() => props.timezone)` 与根 props 同步；不设默认值，交由 `MessageTime` 回退浏览器时区 |
 
 - 调用后立即 `provide(GLOBAL_CONFIG_TOKEN, options)`。
 - 必须在具有组件实例上下文的 `setup` 中调用（与 Vue `provide` 要求一致）。
@@ -176,5 +186,6 @@ export function injectGlobalConfig(): GlobalConfig | undefined;
 
 ## 关联组件
 
-- [ChatContainer](../components/setup/chat-container) — 调用 `useGlobalConfig` 注入 `size` 与 `supportUpload`
+- [ChatContainer](../components/setup/chat-container) — 调用 `useGlobalConfig` 注入 `size`、`supportUpload` 与 `timezone`
+- [MessageTime](../components/feedback/message-time) — 读取 `timezone` 展示消息时间
 - [主题配置](../theme/theme) — `data-ai-size` 与 CSS 变量说明

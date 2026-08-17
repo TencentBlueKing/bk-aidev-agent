@@ -171,7 +171,8 @@ vi.mock('../../message-tools/message-tools.vue', () => ({
       tippyOptions: { type: Object, default: undefined },
       updateTools: { type: Array, default: () => [] },
     },
-    setup(props) {
+    // 保留 prepend / append 插槽渲染，便于断言工具栏两端的附加内容（如消息时间）
+    setup(props, { slots }) {
       return () =>
         h(
           'div',
@@ -180,7 +181,7 @@ vi.mock('../../message-tools/message-tools.vue', () => ({
             'data-message-tools-status': props.messageToolsStatus,
             'data-has-tippy-options': props.tippyOptions !== undefined ? 'true' : undefined,
           },
-          'Message Tools',
+          [slots.prepend?.(), 'Message Tools', slots.append?.()],
         );
     },
   }),
@@ -544,6 +545,36 @@ describe('UserMessage', () => {
       });
 
       expect(wrapper.find('.mock-message-tools').exists()).toBe(true);
+    });
+  });
+
+  describe('消息时间测试', () => {
+    /** 构造当天指定时分的 ISO 时间，使断言不依赖运行日期与时区 */
+    const buildTodayIso = (hours: number, minutes: number) => {
+      const date = new Date();
+      date.setHours(hours, minutes, 0, 0);
+      return date.toISOString();
+    };
+
+    it('传入 createdAt 时应通过工具栏 prepend 插槽展示时间', () => {
+      wrapper = mount(UserMessage, {
+        props: {
+          content: '消息',
+          createdAt: buildTodayIso(12, 0),
+        },
+      });
+
+      expect(wrapper.find('.mock-message-tools .ai-message-time').text()).toBe('12:00');
+    });
+
+    it('未传 createdAt 时不应展示时间', () => {
+      wrapper = mount(UserMessage, {
+        props: {
+          content: '消息',
+        },
+      });
+
+      expect(wrapper.find('.ai-message-time').exists()).toBe(false);
     });
   });
 

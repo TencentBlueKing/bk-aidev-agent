@@ -12,6 +12,8 @@ relatedComponents:
     relation: 由 MessageRender 在 role 为 user 时创建
   - slug: message-tools
     relation: 消息工具栏交互与状态由 MessageTools 体系承载
+  - slug: message-time
+    relation: createdAt 经工具栏 prepend 插槽展示
   - slug: message-container
     relation: 嵌入列表时由 MessageContainer 管理分组与多选
   - slug: chat-input
@@ -142,7 +144,10 @@ sinceVersion: 0.0.20
       v-if: messageToolsStatus !== 'hidden'
       visibility: hidden（默认）→ visible（:hover 时）
       tools: [copy, cite, edit, delete]，updateTools: []
+      #prepend slot → MessageTime（createdAt，工具图标左侧）
 ```
+
+> **时间随工具栏显隐**：时间位于工具栏内，与工具按钮共用 `visibility` 控制，因此同样在悬停消息时才可见。
 
 **编辑模式**（点击 `edit` 按钮后 `isEdit=true`）
 
@@ -484,6 +489,7 @@ binaryFiles 有值 → 进入编辑模式（editContent 可为空）
 | 属性名             | 类型                                                                                       | 说明                                                                      |
 | ------------------ | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
 | content            | `string \| InputContent[]`                                                                 | 消息内容，字符串或含 text/binary 的数组                                   |
+| createdAt          | `number \| string`                                                                         | 消息创建时间，经 `MessageTools` 的 `#prepend` 插槽交给 `MessageTime` 渲染在工具图标左侧；无值时不展示 |
 | property           | `{ extra?: MessageExtra; artifacts?: AIFileInfo[] }`                                       | 附加属性；本组件消费 `extra.cite` / `shortcut` / `context`                |
 | messageToolsStatus | `MessageToolsStatus`                                                                       | 工具按钮状态，`disabled` 禁用、`hidden` 从 DOM 移除                       |
 | onAction           | `MessageToolsProps['onAction']`                                                            | 工具回调；`copy`/`edit` 有内置行为，`cite`/`delete` 需外部处理            |
@@ -545,4 +551,5 @@ type MessageExtra = {
 
 - [MessageRender](/components/message/message-render) — user 角色由其实例化
 - [MessageTools](/components/feedback/message-tools) — 工具栏交互
+- [MessageTime](/components/feedback/message-time) — 工具栏左侧的消息时间
 - [MessageContainer](/components/setup/message-container) — 列表与多选容器

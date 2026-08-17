@@ -31,6 +31,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { APPROVAL_STATUS, InterruptReason, MessageRole, MessageStatus } from '../../ag-ui/types';
 import { LOADING_MESSAGE_ID, RenderMode } from '../../common';
 import { useCustomTabProvider } from '../../composables/use-custom-tab';
+import { useGlobalConfig } from '../../composables/use-global-config';
 import ChatContainer, { type ChatContainerProps } from './chat-container.vue';
 
 import type { AssistantMessage, Message, UserMessage, UserQuestionInterrupt } from '../../ag-ui/types';
@@ -1095,6 +1096,27 @@ describe('ChatContainer', () => {
       wrapper.unmount();
       wrapper = undefined as unknown as VueWrapper;
       expect(document.body.dataset.aiSize).toBeUndefined();
+    });
+  });
+
+  describe('timezone 消息时间时区测试', () => {
+    /** 取本次挂载传给 useGlobalConfig 的配置对象 */
+    const getInjectedConfig = () => vi.mocked(useGlobalConfig).mock.calls[0][0];
+
+    it('传入 timezone 时应注入全局配置，供 MessageTime 读取', () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, timezone: 'Asia/Shanghai' },
+      });
+
+      expect(getInjectedConfig().timezone?.value).toBe('Asia/Shanghai');
+    });
+
+    it('未传 timezone 时注入值应为 undefined（由 MessageTime 回退浏览器时区）', () => {
+      wrapper = mount(ChatContainer, {
+        props: defaultProps,
+      });
+
+      expect(getInjectedConfig().timezone?.value).toBeUndefined();
     });
   });
 
