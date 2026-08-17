@@ -186,6 +186,38 @@ describe('FileContent', () => {
       expect(wrapper.emitted('deleteFile')?.[0]).toEqual([file]);
     });
 
+    it('点击加载失败的图片也应打开预览', async () => {
+      const files: Partial<UploadFile>[] = [
+        { url: 'https://example.com/broken.png', filename: 'broken.png', mimeType: 'image/png' },
+      ];
+
+      wrapper = mount(FileContent, {
+        props: { files },
+      });
+
+      await wrapper.find('img.file-content-image').trigger('error');
+      await wrapper.find('.file-content-image.image-error').trigger('click');
+
+      const preview = wrapper.findComponent({ name: 'ImagePreview' });
+      expect(preview.props('visible')).toBe(true);
+    });
+
+    it('远程 url 加载失败且有本地 File 时应回退到本地预览', async () => {
+      const file = new File(['img'], 'photo.png', { type: 'image/png' });
+      const files: Partial<UploadFile>[] = [
+        { url: 'https://example.com/broken.png', filename: 'photo.png', mimeType: 'image/png', file },
+      ];
+
+      wrapper = mount(FileContent, {
+        props: { files },
+      });
+
+      await wrapper.find('img.file-content-image').trigger('error');
+
+      expect(wrapper.find('.file-content-image.image-error').exists()).toBe(false);
+      expect(wrapper.find('img.file-content-image').attributes('src')).toBe('blob:preview-photo.png');
+    });
+
     it('点击图片应该打开预览', async () => {
       const files: Partial<UploadFile>[] = [{ file: new File(['img'], 'photo.png', { type: 'image/png' }) }];
 
@@ -198,6 +230,38 @@ describe('FileContent', () => {
       const preview = wrapper.findComponent({ name: 'ImagePreview' });
       expect(preview.props('visible')).toBe(true);
       expect(preview.props('current')).toBe(0);
+    });
+
+    it('点击非图片文件应在新窗口打开', async () => {
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+      const file = new File(['# hello'], 'readme.md', { type: 'text/markdown' });
+
+      wrapper = mount(FileContent, {
+        props: {
+          files: [{ file }],
+        },
+      });
+
+      await wrapper.find('.file-content-object').trigger('click');
+
+      expect(openSpy).toHaveBeenCalled();
+      expect(openSpy.mock.calls[0]?.[1]).toBe('_blank');
+      openSpy.mockRestore();
+    });
+
+    it('点击带 url 的非图片文件应打开该地址', async () => {
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+
+      wrapper = mount(FileContent, {
+        props: {
+          files: [{ url: 'https://example.com/readme.md', filename: 'readme.md' }],
+        },
+      });
+
+      await wrapper.find('.file-content-object').trigger('click');
+
+      expect(openSpy).toHaveBeenCalledWith('https://example.com/readme.md', '_blank', 'noopener,noreferrer');
+      openSpy.mockRestore();
     });
 
     it('点击第二张图片应该预览对应索引', async () => {

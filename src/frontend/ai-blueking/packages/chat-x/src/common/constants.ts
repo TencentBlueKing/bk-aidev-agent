@@ -128,6 +128,25 @@ export const MAX_UPLOAD_FILES = 3; // 最大上传文件数量
 export const MAX_UPLOAD_FILE_SIZE = 2.4 * 1024 * 1024; // 最大上传文件大小 2.5MB
 
 /**
+ * 默认上传文件类型：图片 + Markdown / Word 等常见文档
+ * 遵循 `<input accept>` 规范，仅影响系统文件选择框过滤
+ */
+export const DEFAULT_UPLOAD_ACCEPT = [
+  'image/*',
+  '.md',
+  '.markdown',
+  '.doc',
+  '.docx',
+  '.txt',
+  '.pdf',
+  '.ppt',
+  '.pptx',
+  '.xls',
+  '.xlsx',
+  '.csv',
+].join(',');
+
+/**
  * 关键词高亮类名
  */
 export const HIGHLIGHT_KEYWORD_CLASS_NAME = 'ai-is-keyword';

@@ -92,18 +92,15 @@ sinceVersion: 1.0.0
 
 ## 渲染决策逻辑
 
-每个文件按以下优先级决定渲染方式：
+每个文件按 MIME / 扩展名决定渲染方式（`url` 不再单独强制图片模式）：
 
 ```
-file.url 存在？
-├── 是 → 图片模式（用 file.url 作为 <img src>，点击可全屏预览）
-│        图片加载失败 → 错误占位（粉色背景 + 红色边框 + 灰色图标）
-└── 否 → 检查 mimeType 或 file.file?.type
-         ├── 以 'image/' 开头 → 图片模式（用 getFilePreviewUrl(file.file) 作为 src，点击可全屏预览）
-         └── 其他            → 文档卡片模式（图标 + 文件名 + 扩展名 + 大小）
+mimeType / file.type 以 image/ 开头，或 filename / url 带图片扩展名？
+├── 是 → 图片模式
+│        src 优先 file.url，失败且有本地 File 时回退 blob URL
+│        仍失败 → 错误占位（粉色背景 + 红色边框），点击仍可打开预览
+└── 否 → 文档卡片模式（图标 + 文件名 + 扩展名 + 大小，有 url / File 时可点击打开）
 ```
-
-> **注意**：`file.url` 存在时**无论文件 MIME 类型是什么**都会走图片模式。若要将 PDF 等非图片文件显示为文档卡片，确保不设置 `url` 字段（或设为 `undefined`）。
 
 ## 基础用法（文档文件）
 
@@ -141,7 +138,7 @@ file.url 存在？
 
 ## 图片文件预览
 
-设置了 `url` 字段时，渲染为 48×48 的图片缩略图（`cursor: zoom-in`）。点击图片可打开全屏预览（内部集成 `ImagePreview` 组件），支持缩放、旋转、下载等操作：
+设置了 `url` 字段时，渲染为固定行高（60px）、宽度按原图比例自适应且不超过 `max-width: 240px` 的缩略图（`object-fit: contain`，`cursor: zoom-in`）。点击图片可打开全屏预览（内部集成 `ImagePreview` 组件），支持缩放、旋转、下载等操作：
 
 ```vue
 <script setup lang="ts">
@@ -173,7 +170,7 @@ file.url 存在？
 
 ## 图片点击预览
 
-图片模式下点击缩略图会打开全屏预览弹窗。多张图片时支持左右切换。加载失败的图片不会出现在预览列表中：
+图片模式下点击缩略图（含加载失败占位）会打开全屏预览弹窗。多张图片时支持左右切换。预览源优先使用本地 `File`，否则使用 `url`：
 
 ```vue
 <template>
@@ -195,11 +192,11 @@ file.url 存在？
   <FileContentComp :files="imageFiles" />
 </div>
 
-> **预览行为**：组件内部自动维护 `ImagePreview` 实例，无需外部管理预览状态。只有加载成功的图片才会进入预览列表，加载失败的图片被自动过滤。
+> **预览行为**：组件内部自动维护 `ImagePreview` 实例，无需外部管理预览状态。缩略图加载失败时，若仍有 `url` 或本地 `File`，点击占位仍会打开预览。
 
 ## 图片加载失败
 
-`<img>` 触发 `onerror` 时，切换为粉色背景 + 红色边框的错误占位：
+`<img>` 触发 `onerror` 时：若有本地 `File`，先改用 blob URL 重试；仍失败则切换为粉色背景 + 红色边框的错误占位（可点击预览）：
 
 <div class="demo">
   <FileContentComp :files="errorImageFiles" @delete-file="handleDeleteFile" />
@@ -311,11 +308,12 @@ file.url 存在？
 
 ### 图片模式
 
-| 条件                               | 图片 src                         | 点击行为       |
-| ---------------------------------- | -------------------------------- | -------------- |
-| `file.url` 有值（优先）            | `file.url`                       | 打开全屏预览   |
-| MIME 以 `image/` 开头（无 url 时） | `URL.createObjectURL(file.file)` | 打开全屏预览   |
-| 图片加载失败                       | 错误占位                         | 不进入预览列表 |
+| 条件                                         | 图片 src                         | 点击行为     |
+| -------------------------------------------- | -------------------------------- | ------------ |
+| MIME 为 `image/*` 或扩展名为图片，且有 url   | `file.url`                       | 打开全屏预览 |
+| 同上且无 url、有 `File`                      | `URL.createObjectURL(file.file)` | 打开全屏预览 |
+| 远程 url 加载失败且有本地 `File`             | 回退为 blob URL                  | 打开全屏预览 |
+| 图片仍加载失败                               | 错误占位                         | 仍可打开预览 |
 
 ### 文档卡片模式
 
@@ -346,7 +344,7 @@ type UploadFile = BinaryInputContent & {
 // 二进制内容基础类型
 interface BinaryInputContent {
   type: 'binary';
-  url?: string; // 文件访问地址，存在时强制走图片模式
+  url?: string; // 文件访问地址，图片模式下作为缩略图 src
   filename?: string; // 文件名（用于文档卡片）
   mimeType?: string; // MIME 类型（用于图片判断和扩展名推断）
 }
@@ -355,11 +353,12 @@ interface BinaryInputContent {
 ## 工具函数（内部使用）
 
 ```typescript
-// 判断是否走图片模式
-// ⚠️ file.url 存在时直接返回 true，不判断 MIME 类型
+// 判断是否走图片模式：MIME 或文件名 / url 扩展名，不再仅因存在 url 就当图片
+const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|svg)(\?|$)/i;
 const isImage = (file: Partial<UploadFile>): boolean => {
-  if (file.url) return true;
-  return isImageFile(file.mimeType || file.file?.type);
+  if (isImageFile(file.mimeType || file.file?.type)) return true;
+  const name = file.filename || file.file?.name || file.url || '';
+  return IMAGE_EXT_RE.test(name);
 };
 
 // 判断 MIME 类型是否为图片

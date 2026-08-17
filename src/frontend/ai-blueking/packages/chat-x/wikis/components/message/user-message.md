@@ -202,8 +202,8 @@ sinceVersion: 0.0.20
 
 `content` 为数组时，同时支持文本（`type: 'text'`）和二进制文件（`type: 'binary'`）。组件将 `binary` 项按图片和非图片分为两组：
 
-- **图片文件**（`binaryImageFiles`）：判断 `url` 存在或 `mimeType` / `file.type` 以 `image/` 开头的文件，统一放入一个 `FileContent`（`readonly=true`）中渲染，支持点击缩略图全屏预览
-- **非图片文件**（`binaryNonImageFiles`）：每个文件单独渲染在 `FileContent`（`readonly=true`）中
+- **图片文件**（`binaryImageFiles`）：`mimeType` / `file.type` 以 `image/` 开头，或文件名 / url 带图片扩展名（png/jpg/gif/webp 等）。统一放入一个 `FileContent`（`readonly=true`）中渲染，支持点击缩略图（含加载失败占位）全屏预览
+- **非图片文件**（`binaryNonImageFiles`）：每个文件单独渲染在 `FileContent`（`readonly=true`）中；仅有 `url` 的文档不会被当成图片
 
 `text` 项经 `textParts` 计算属性统一为 `string[]`，按顺序各渲染一个 `TextContent`。
 

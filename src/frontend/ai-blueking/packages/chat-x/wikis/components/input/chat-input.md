@@ -496,12 +496,14 @@ const handleSendMessage = async (
 ```typescript
 // onSendMessage 的 content 参数变为数组：
 [
-  { type: 'binary', url: '...', mimeType: 'image/png', filename: 'a.png' },
-  { type: 'binary', url: '...', mimeType: 'application/pdf', filename: 'b.pdf' },
+  { type: 'binary', url: '...', mimeType: 'image/png', filename: 'a.png', file: File },
+  { type: 'binary', url: '...', mimeType: 'application/pdf', filename: 'b.pdf', file: File },
   // 若输入框也有文字，则最后追加：
   { type: 'text', text: '请帮我分析这两个文件' },
 ];
 ```
+
+> 发送时会保留本地 `File`，用户消息里的图片即使远程 `url` 加载失败，也能回退到本地预览并支持点击查看。
 
 ```vue
 <template>
@@ -902,7 +904,7 @@ type SendContent =
   | string // 无文件时：纯文本
   | Array<
       // 有文件时：数组
-      { type: 'binary'; url?: string; mimeType: string; filename: string } | { type: 'text'; text: string }
+      { type: 'binary'; url?: string; mimeType: string; filename: string; file?: File } | { type: 'text'; text: string }
     >;
 
 // onSendMessage 完整签名（第三参数由 ChatContainer 在 UserQuestion 场景注入）

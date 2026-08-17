@@ -424,15 +424,18 @@ describe('UserMessage', () => {
       expect(fileContents.length).toBe(2);
     });
 
-    it('有 url 的文件应被识别为图片文件', () => {
+    it('有 url 的图片应按图片归类，文档即使有 url 也不应按图片归类', () => {
       wrapper = mount(UserMessage, {
         props: {
-          content: [{ type: 'binary', url: 'http://example.com/file', filename: 'file' }],
+          content: [
+            { type: 'binary', url: 'http://example.com/photo.png', filename: 'photo.png', mimeType: 'image/png' },
+            { type: 'binary', url: 'http://example.com/readme.md', filename: 'readme.md', mimeType: 'text/markdown' },
+          ],
         } as any,
       });
 
       const fileContents = wrapper.findAll('.mock-file-content');
-      expect(fileContents.length).toBe(1);
+      expect(fileContents.length).toBe(2);
     });
   });
 

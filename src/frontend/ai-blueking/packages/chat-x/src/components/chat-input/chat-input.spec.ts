@@ -696,6 +696,27 @@ describe('ChatInput', () => {
       expect(onSendMessage).toHaveBeenCalled();
     });
 
+        it('发送附件时应保留 File 以便消息内预览', async () => {
+      const onSendMessage = vi.fn();
+      const imageFile = new File(['img'], 'photo.png', { type: 'image/png' });
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '看这张图',
+          defaultUploadFiles: [{ file: imageFile, url: 'http://example.com/photo.png' }],
+          onSendMessage,
+        },
+      });
+
+      await wrapper.find('.send-btn').trigger('click');
+
+      expect(onSendMessage).toHaveBeenCalled();
+      const content = onSendMessage.mock.calls[0]?.[0] as Array<{ file?: File; url?: string }>;
+      expect(content[0]?.file).toBeInstanceOf(File);
+      expect(content[0]?.file?.name).toBe('photo.png');
+      expect(content[0]?.url).toBe('http://example.com/photo.png');
+    });
+
     it('存在发送阻断提示时应阻止点击发送', async () => {
       const onSendMessage = vi.fn();
 

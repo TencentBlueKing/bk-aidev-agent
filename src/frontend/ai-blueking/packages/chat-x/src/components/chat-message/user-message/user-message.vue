@@ -194,7 +194,12 @@
     return null;
   }) as Partial<Shortcut>;
 
-  const isBinaryImage = (file: UploadFile) => !!file.url || isImageFile(file.mimeType || file.file?.type);
+  const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|svg)(\?|$)/i;
+  const isBinaryImage = (file: UploadFile) => {
+    if (isImageFile(file.mimeType || file.file?.type)) return true;
+    const name = file.filename || file.file?.name || file.url || '';
+    return IMAGE_EXT_RE.test(name);
+  };
 
   // 二进制文件
   const binaryFiles = computed(() => {

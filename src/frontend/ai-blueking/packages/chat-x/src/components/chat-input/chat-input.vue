@@ -240,9 +240,10 @@ Use Shift + Enter to enter a new line`
         content = uploadFiles.value?.slice().map(file => ({
           type: MessageContentType.Binary,
           url: file.url,
-          mimeType: file.file?.type || '',
-          filename: file.file?.name || '',
-        }));
+          mimeType: file.file?.type || file.mimeType || '',
+          filename: file.file?.name || file.filename || '',
+          file: file.file,
+        })) as UserMessage['content'];
         // 如果输入框有值，则将输入框的值作为内容
         if (props.modelValue) {
           content.push({

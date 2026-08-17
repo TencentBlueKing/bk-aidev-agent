@@ -163,11 +163,15 @@ describe('FileUploadBtn', () => {
 
   // ---------- Props 测试 ----------
   describe('Props 测试', () => {
-    it('accept 默认值应该为 image/*（含 SVG）', () => {
+    it('accept 默认值应包含图片与 Markdown / Word 等文档类型', async () => {
+      const { DEFAULT_UPLOAD_ACCEPT } = await import('../../../common');
       wrapper = mount(FileUploadBtn);
 
       const input = wrapper.find('input[type="file"]');
-      expect(input.attributes('accept')).toBe('image/*');
+      expect(input.attributes('accept')).toBe(DEFAULT_UPLOAD_ACCEPT);
+      expect(input.attributes('accept')).toContain('image/*');
+      expect(input.attributes('accept')).toContain('.md');
+      expect(input.attributes('accept')).toContain('.docx');
     });
 
     it('应该支持自定义 accept', () => {

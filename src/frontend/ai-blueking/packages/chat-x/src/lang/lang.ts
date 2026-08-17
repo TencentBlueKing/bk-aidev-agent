@@ -159,6 +159,8 @@ export const lang = {
   全选: 'Select All',
   确定: 'Confirm',
   '上传图片, 最多支持上传 3 个, 最大支持 2.4MB': 'Upload Image, up to 3 images supported, max 2.4MB each',
+  '上传文件（图片 / Markdown / Word 等）, 最多支持上传 3 个, 最大支持 2.4MB':
+    'Upload files (images / Markdown / Word, etc.), up to 3 files, max 2.4MB each',
   '你好，我是小鲸': 'Hello, I am BlueKing AI Bot',
   清空搜索: 'Clear Search',
   搜索结果为空: 'Search Result is Empty',

@@ -26,7 +26,7 @@
 ├── input[type="file"]（.file-upload-btn-input，display: none，multiple，:accept）
 │     触发后走 handleFileInputChange → 校验 → emit upload → target.value = ''
 └── span.ai-shortcut-btn.file-upload-btn-icon（24×24px，color: #979ba5，hover: cursor: pointer）
-      v-tippy: "上传图片, 最多支持上传 3 个, 最大支持 2.4MB"（theme: ai-chat-box，offset: [0, 16]，可通过 tippyOptions 扩展）
+      v-tippy: "上传文件（图片 / Markdown / Word 等）, 最多支持上传 3 个, 最大支持 2.4MB"（theme: ai-chat-box，offset: [0, 16]，可通过 tippyOptions 扩展）
       @click → fileInputRef.click()
       └── <slot> 默认：FileUploadIcon
 ```
@@ -126,7 +126,7 @@
 
 | 属性名       | 类型           | 默认值      | 说明                                                                 |
 | ------------ | -------------- | ----------- | -------------------------------------------------------------------- |
-| accept       | `string`       | `'image/*'` | 文件选择框过滤类型，遵循 `<input accept>` 规范                       |
+| accept       | `string`       | `DEFAULT_UPLOAD_ACCEPT`（图片 + `.md/.markdown/.doc/.docx` 等） | 文件选择框过滤类型，遵循 `<input accept>` 规范                       |
 | maxFiles     | `number`       | `3`         | 预留字段，**当前不在按钮内生效**；个数上限见 `ChatInput` 与全局常量 |
 | multiple     | `boolean`      | `true`      | 声明属性（当前版本未实际绑定到 input，始终多选）                     |
 | tippyOptions | `AITippyProps` | —           | 扩展 tooltip 配置，会与内置配置合并                                |

@@ -11,7 +11,7 @@
     <span
       v-tippy="{
         ...tippyOptions,
-        content: t('上传图片, 最多支持上传 3 个, 最大支持 2.4MB'),
+        content: t('上传文件（图片 / Markdown / Word 等）, 最多支持上传 3 个, 最大支持 2.4MB'),
         theme: 'ai-chat-box',
         offset: [0, 16],
       }"
@@ -30,7 +30,7 @@
   import { Message } from 'bkui-vue';
   import { directive as vTippy } from 'vue-tippy';
 
-  import { isEn, MAX_UPLOAD_FILE_SIZE } from '../../../common';
+  import { DEFAULT_UPLOAD_ACCEPT, isEn, MAX_UPLOAD_FILE_SIZE } from '../../../common';
   import { FileUploadIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
   import { formatUploadNotAddedMessage } from '../../../utils';
@@ -46,7 +46,7 @@
     tippyOptions?: AITippyProps;
   };
   withDefaults(defineProps<FileUploadBtnProps>(), {
-    accept: 'image/*', // 默认允许常见图片类型（含 SVG）
+    accept: DEFAULT_UPLOAD_ACCEPT, // 图片 + Markdown / Word 等常见文档
     maxFiles: 3, // 预留/文档用；实际上传个数由上层（如 ChatInput）校验
     multiple: true,
   });

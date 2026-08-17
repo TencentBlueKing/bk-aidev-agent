@@ -66,7 +66,7 @@ file.url 存在？
 
 ## 图片文件预览
 
-设置了 `url` 字段时，渲染为 48×48 的图片缩略图（`cursor: zoom-in`）。点击图片可打开全屏预览（内部集成 `ImagePreview` 组件），支持缩放、旋转、下载等操作：
+设置了 `url` 字段时，渲染为固定行高（60px）、宽度按原图比例自适应且不超过 `max-width: 240px` 的缩略图（`object-fit: contain`，`cursor: zoom-in`）。点击图片可打开全屏预览（内部集成 `ImagePreview` 组件），支持缩放、旋转、下载等操作：
 
 ```vue
 <script setup lang="ts">
