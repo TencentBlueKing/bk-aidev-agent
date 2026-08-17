@@ -55,6 +55,8 @@ declare global {
 
 export interface BaseMessage<T extends MessageType, C = string> {
   content: C;
+  /** 消息创建时间，ISO 字符串或毫秒时间戳，由消息层（chat-helper）写入 */
+  createdAt?: number | string;
   id: number | string;
   messageId: number | string;
   name?: string;

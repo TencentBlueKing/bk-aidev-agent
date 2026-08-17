@@ -65,6 +65,7 @@ export const lang = {
   停止生成: 'Stop generating',
   正在停止: 'Stopping',
   耗时: 'Duration',
+  昨天: 'Yesterday',
   参数: 'Parameters',
   描述: 'Description',
   // Flow Agent

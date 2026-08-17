@@ -33,6 +33,8 @@ export type AiSizeMode = 'normal' | 'small';
 export type GlobalConfig = {
   size?: ComputedRef<AiSizeMode>;
   supportUpload: ComputedRef<boolean>;
+  /** IANA 时区名，用于消息时间展示；未配置时按浏览器时区展示 */
+  timezone?: ComputedRef<string | undefined>;
 };
 
 export const useGlobalConfig = (options: GlobalConfig) => {
@@ -40,6 +42,7 @@ export const useGlobalConfig = (options: GlobalConfig) => {
   return {
     size: options.size,
     supportUpload: options.supportUpload,
+    timezone: options.timezone,
   };
 };
 

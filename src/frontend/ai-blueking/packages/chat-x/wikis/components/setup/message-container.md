@@ -399,6 +399,7 @@ sinceVersion: 1.0.0
   - `renderMode === RenderMode.Share`（分享预览模式）
   - 消息组的 `pause` 为 `true`（来源于 `message.property?.extra?.pause`）
   - 多选模式（`enableSelection`）开启且消息组不是 Loading 类型
+- AI 消息组的时间通过 `MessageTools` 的 `#append` 插槽渲染在工具图标右侧，取值为组内**最后一条**带 `createdAt` 的消息（即本轮回答完成时间）；组内 `reasoning` / `activity` 等子消息不单独展示时间，全组都没有 `createdAt` 时不展示
 - `renderMode === RenderMode.Test` 时，工具栏会过滤掉「分享」按钮，其余正常
 - `renderMode === RenderMode.Share` 时，`message-group-messages` 自动添加 `message-group-enabled-selection` 类名（与 `enableSelection: true` 一致的多选视觉效果）
 - Loading 消息组的 `type` 是 `MessageRole.Loading`，不显示工具栏和多选 Checkbox
@@ -1118,6 +1119,7 @@ enum MessageToolsStatus {
 ## 关联组件
 
 - [MessageRender](/components/message/message-render) — 按组渲染每条消息时委托使用
+- [MessageTime](/components/feedback/message-time) — AI 消息组工具栏右侧的时间
 - [InterruptMessage 中断消息](/components/agent/interrupt-message) — `role: 'interrupt'` 的渲染与 `onInterruptResume` 透传
 - [ChatInput](/components/input/chat-input) — 常与输入区组合构成完整对话界面
 - [LoadingMessage](/components/message/loading-message) — 末尾为用户消息时自动追加加载组

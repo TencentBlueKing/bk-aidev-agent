@@ -117,6 +117,36 @@ describe('use-global-config', () => {
       expect(injected?.size?.value).toBe('normal');
       wrapper.unmount();
     });
+
+    it('应透传 timezone 配置给后代', async () => {
+      const timezone = computed<string | undefined>(() => 'Asia/Shanghai');
+      const supportUpload = computed(() => false);
+      let injected: ReturnType<typeof injectGlobalConfig> | undefined;
+
+      const Child = defineComponent({
+        setup() {
+          injected = injectGlobalConfig();
+          return {};
+        },
+        render() {
+          return h('div');
+        },
+      });
+      const Parent = defineComponent({
+        setup() {
+          useGlobalConfig({ supportUpload, timezone });
+          return {};
+        },
+        render() {
+          return h(Child);
+        },
+      });
+
+      const wrapper = mount(Parent);
+      await nextTick();
+      expect(injected?.timezone?.value).toBe('Asia/Shanghai');
+      wrapper.unmount();
+    });
   });
 
   describe('injectGlobalConfig', () => {
