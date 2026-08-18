@@ -1,6 +1,6 @@
 ag-ui-protocol==0.1.10
 aidev-agent==2.2.1.post1
-aidev-ai-blueking==2.2.3-dev.2
+aidev-ai-blueking==2.2.3b3
 aidev-bkplugin==2.2.1.post1
 aidev-wxbot==2.2.1.post1
 aiohappyeyeballs==2.6.1
