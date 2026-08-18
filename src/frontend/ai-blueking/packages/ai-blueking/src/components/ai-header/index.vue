@@ -47,10 +47,10 @@
       <Tippy
         v-if="props.showMoreIcon && hasPermission"
         ref="moreMenuTippyRef"
-        :arrow="false"
         :append-to="tippyAppendTo"
-        :offset="[0, 4]"
+        :arrow="false"
         interactive
+        :offset="[0, 4]"
         placement="bottom-start"
         theme="ai-blueking-light more-menu-light light"
         trigger="manual"
@@ -162,6 +162,17 @@
         class="bkai-icon bkai-zhushou"
         @click="handleHelpClick"
       ></i>
+      <span
+        v-if="props.showAsideToggle"
+        v-bk-tooltips="{
+          content: props.asideCollapsed ? t('展开侧栏') : t('收起侧栏'),
+          boundary: 'parent',
+        }"
+        class="bkai-icon aside-toggle"
+        @click.stop="emit('toggle-aside')"
+      >
+        <AsideToggleIcon />
+      </span>
       <i
         v-if="props.showCompressionIcon"
         v-bk-tooltips="{ content: compressionTooltip, boundary: 'parent' }"
@@ -180,19 +191,18 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue';
+  import { cloneVNode, computed, defineComponent, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue';
 
-  import { Input as BkInput, Loading, bkTooltips, Message } from 'bkui-vue';
+  import { CollapsedAsideIcon, RenderMode } from '@blueking/chat-x';
+  import { Input as BkInput, bkTooltips, Loading, Message } from 'bkui-vue';
   import { Tippy, directive as vTippy } from 'vue-tippy';
-  import type { useTippy } from 'vue-tippy';
-
-  import { RenderMode } from '@blueking/chat-x';
 
   import logo from '../../assets/images/avatar.png';
   import { t } from '../../lang';
   import { useHistoryDropdown } from './history-dropdown/use-history-dropdown';
 
   import type { AIHeaderEmits, AIHeaderProps } from './types';
+  import type { useTippy } from 'vue-tippy';
 
   const props = withDefaults(defineProps<AIHeaderProps>(), {
     title: '',
@@ -219,9 +229,18 @@
     sessionBusinessManager: undefined,
     selectedLlmCode: undefined,
     renderMode: RenderMode.Chat,
+    asideCollapsed: true,
+    showAsideToggle: true,
   });
 
   const emit = defineEmits<AIHeaderEmits>();
+
+  const AsideToggleIcon = defineComponent({
+    name: 'AsideToggleIcon',
+    setup() {
+      return () => cloneVNode(CollapsedAsideIcon);
+    },
+  });
 
   defineSlots<{
     headerLeft?: () => unknown;
@@ -561,6 +580,11 @@
           color: #c4c6cc;
           background: transparent;
         }
+      }
+
+      &.aside-toggle :deep(svg) {
+        width: 14px;
+        height: 14px;
       }
     }
 

@@ -932,15 +932,17 @@
         background-color: white;
       }
 
-      // 侧栏内容随宽度动画淡入淡出；动画期间锁定展开态宽度，
-      // 由 bkui 的 aside-content（overflow: hidden）裁切，避免内容被压缩重排
+      // 展开时不淡入：内容一开始就可见，由 aside width + overflow 裁切显现，
+      // 避免浮窗先加宽、内容再弹出两段动画。收起仍淡出。
       .ai-aside-content-enter-active,
       .ai-aside-content-leave-active {
         width: var(--resize-aside-width);
+      }
+
+      .ai-aside-content-leave-active {
         transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       }
 
-      .ai-aside-content-enter-from,
       .ai-aside-content-leave-to {
         opacity: 0;
       }

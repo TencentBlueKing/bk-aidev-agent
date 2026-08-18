@@ -42,11 +42,14 @@ export interface DraggableContainerExpose {
   /** 当前位置和大小 */
   positionAndSize: ComputedRef<PositionAndSize>;
 
-  /** 折叠侧面板并恢复容器原始宽度 */
-  collapseSidePanel: () => void;
+  /** 中止进行中的侧面板展开/收起并恢复收起布局 */
+  abortSidePanelSequence: () => void;
+
+  /** 折叠侧面板：左边缘不动，从右侧收窄到原始宽度 */
+  collapseSidePanel: (hooks?: SidePanelGeometryHooks) => Promise<void>;
 
   /** 为侧面板展开扩展容器宽度 */
-  expandForSidePanel: (extraWidth: number) => void;
+  expandForSidePanel: (extraWidth: number, hooks?: SidePanelGeometryHooks) => Promise<void>;
 
   /** 切换压缩状态 */
   toggleCompression: () => void;
@@ -125,6 +128,14 @@ export interface PositionAndSize {
 }
 
 /**
+ * 侧栏展开/收起时与窗口几何同步的钩子。
+ * 在改 width 的同一帧调用，使侧栏与窗口一起向右展开/从右侧收回。
+ */
+export interface SidePanelGeometryHooks {
+  onBeforeSizeChange?: () => void;
+}
+
+/**
  * useDraggable 配置选项
  */
 export interface UseDraggableOptions {
@@ -171,8 +182,9 @@ export interface UseDraggableReturn {
   top: Ref<number>;
   width: Ref<number>;
 
-  collapseSidePanel: () => void;
-  expandForSidePanel: (extraWidth: number) => void;
+  abortSidePanelSequence: () => void;
+  collapseSidePanel: (hooks?: SidePanelGeometryHooks) => Promise<void>;
+  expandForSidePanel: (extraWidth: number, hooks?: SidePanelGeometryHooks) => Promise<void>;
   // 事件处理方法
   handleDragging: (x: number, y: number) => void;
   handleDragStop: (x: number, y: number) => void;

@@ -5,13 +5,16 @@
   >
     <ChatContainer
       ref="chatContainerRef"
+      v-model:aside-collapsed="asideCollapsed"
       v-model:cite="cite"
-      v-model:selected-shortcut="selectedShortcut"
-      v-model:selected-model="selectedModelName"
       v-model:render-mode="internalRenderMode"
+      v-model:selected-model="selectedModelName"
+      v-model:selected-shortcut="selectedShortcut"
       :chat-loading="effectiveChatLoading"
       :common-tippy-options="messageToolsTippyOptions"
       :execution-tab-visible="props.executionTabVisible"
+      :get-side-render-component="props.getSideRenderComponent"
+      :get-side-tab-render-component="props.getSideTabRenderComponent"
       :message-status="messageStatus"
       :message-tools="props.messageTools"
       :message-tools-status="messageToolsStatus"
@@ -20,30 +23,27 @@
       :models="displayModels"
       :on-agent-action="handleAgentAction"
       :on-agent-feedback="handleAgentFeedback"
-      :on-interrupt-resume="handleInterruptResume"
-      :get-side-render-component="props.getSideRenderComponent"
-      :get-side-tab-render-component="props.getSideTabRenderComponent"
+      :on-artifact-click="handleArtifactClick"
       :on-custom-tab-change="effectiveOnCustomTabChange"
+      :on-interrupt-resume="handleInterruptResume"
       :on-send-message="handleSendMessage"
       :on-stop-sending="handleStopSending"
-      :on-artifact-click="handleArtifactClick"
       :on-upload="handleUpload"
       :on-user-action="handleUserAction"
       :on-user-input-confirm="handleUserInputConfirm"
       :on-user-shortcut-confirm="handleUserShortcutConfirm"
       :opening-remark="openingRemark"
       :placeholder="props.placeholder"
-      :placement="props.placement"
-      :welcome-title="welcomeTitle"
       :prompts="effectivePrompts"
       :resize-props="effectiveResizeProps"
-      :size="props.size"
       :resources="effectiveResources"
       :shortcut-id="selectedShortcut?.id"
       :shortcuts="filteredShortcuts"
+      :size="props.size"
       :skills="effectiveSkills"
       :support-upload="effectiveSupportUpload"
       :update-tools="props.updateTools"
+      :welcome-title="welcomeTitle"
       @collapse-change="handleExecutionPanelChange"
       @confirm-share="handleConfirmShare"
       @delete-shortcut="handleCloseShortcut"
@@ -67,9 +67,9 @@
         <!-- 消费方提供了 #message slot 时，优先使用消费方的渲染 -->
         <slot
           v-if="slots.message"
-          name="message"
           :message="message"
           :message-tools-status="messageToolsStatus"
+          name="message"
           :on-interrupt-resume="onInterruptResume"
         />
         <!-- 否则使用默认的 MessageRender -->
@@ -144,7 +144,7 @@
     models: undefined,
     modelSelectionManager: undefined,
     renderMode: RenderMode.Chat,
-    placement: 'left',
+    asideCollapsed: undefined,
   });
 
   /** 侧栏默认固定宽度（像素），由外层容器 expandForSidePanel 扩宽以保持主聊天区宽度不变 */
@@ -160,6 +160,17 @@
 
   const emit = defineEmits<ChatBotEmits>();
   const slots = useSlots();
+
+  const localAsideCollapsed = ref(true);
+  const asideCollapsed = computed({
+    get: () => props.asideCollapsed ?? localAsideCollapsed.value,
+    set: (collapsed: boolean) => {
+      if (props.asideCollapsed === undefined) {
+        localAsideCollapsed.value = collapsed;
+      }
+      emit('update:asideCollapsed', collapsed);
+    },
+  });
   defineSlots<{
     codeHeader?: (props: { language: string; token: unknown[] }) => unknown;
     message?: (props: {

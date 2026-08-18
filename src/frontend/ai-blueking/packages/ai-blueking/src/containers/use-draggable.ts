@@ -9,7 +9,7 @@
 
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
-import type { PositionAndSize, UseDraggableOptions, UseDraggableReturn } from './types';
+import type { PositionAndSize, SidePanelGeometryHooks, UseDraggableOptions, UseDraggableReturn } from './types';
 
 /**
  * 可拖拽容器的逻辑 Hook
@@ -60,6 +60,8 @@ export function useDraggable(
   // 侧面板展开状态：记忆收起/展开两种布局
   let collapsedPosition: null | PositionAndSize = null;
   let expandedPosition: null | PositionAndSize = null;
+  let lastExtraWidth = 0;
+  let sequenceId = 0;
   const isSidePanelExpanded = ref(false);
 
   /**
@@ -118,6 +120,9 @@ export function useDraggable(
     leftDiff.value = x - (window.innerWidth - width.value);
     if (isSidePanelExpanded.value) {
       expandedPosition = getPositionAndSize();
+      collapsedPosition = null;
+    } else {
+      expandedPosition = null;
     }
     callbacks?.onDragStop?.(getPositionAndSize());
   };
@@ -133,6 +138,9 @@ export function useDraggable(
     height.value = h;
     if (isSidePanelExpanded.value) {
       expandedPosition = getPositionAndSize();
+      collapsedPosition = null;
+    } else {
+      expandedPosition = null;
     }
     callbacks?.onResizeStop?.(getPositionAndSize());
   };
@@ -215,59 +223,121 @@ export function useDraggable(
   };
 
   /**
-   * 为侧面板展开扩展容器宽度（视觉上向左展开，右边缘保持不动）
-   *
-   * 策略：固定右边缘、宽度记忆、clampToViewport、两阶段 nextTick 编排
-   *
-   * @param extraWidth 首次展开时需要增加的宽度（像素）
+   * vue-draggable-resizable 的 changeWidth 用当前 left 计算宽度。
+   * 同帧改 x+w 时宽度会被钳在贴边旧位置上（窗口加不宽，侧栏叠在主栏上）。
+   * 展开必须先 x 后 width；收起必须先 width 后 x。CSS 同时过渡 transform/width 做成推开。
    */
-  const expandForSidePanel = (extraWidth: number): void => {
+  const commitLayout = async (
+    current: PositionAndSize,
+    target: PositionAndSize,
+    id: number,
+    hooks?: SidePanelGeometryHooks,
+    order: 'collapse' | 'expand' = 'expand',
+  ): Promise<void> => {
+    const xChanged = target.x !== current.x;
+    const sizeChanged = target.width !== current.width;
+
+    const applyX = async (): Promise<void> => {
+      if (!xChanged) return;
+      updatePosition(target.x, target.y);
+      await nextTick();
+    };
+    const applyWidth = async (): Promise<void> => {
+      hooks?.onBeforeSizeChange?.();
+      if (!sizeChanged) return;
+      updateSize(target.width, target.height);
+      await nextTick();
+    };
+
+    if (order === 'expand') {
+      await applyX();
+      if (id !== sequenceId) return;
+      await applyWidth();
+      return;
+    }
+
+    await applyWidth();
+    if (id !== sequenceId) return;
+    await applyX();
+  };
+
+  /**
+   * 为侧面板展开扩展容器宽度。
+   * 已能放下主栏+侧栏时不改几何；贴边则先写入 x，再与侧栏同帧加宽。
+   */
+  const expandForSidePanel = async (extraWidth: number, hooks?: SidePanelGeometryHooks): Promise<void> => {
     if (isSidePanelExpanded.value) return;
     const current = getPositionAndSize();
     collapsedPosition = { ...current };
     isSidePanelExpanded.value = true;
+    const id = ++sequenceId;
 
-    const currentRightEdge = current.x + current.width;
-    const targetWidth = expandedPosition?.width ?? current.width + extraWidth;
-    const targetX = currentRightEdge - targetWidth;
+    const viewportWidth = window.innerWidth;
+    const minExpandedWidth = minWidth + extraWidth;
+
+    if (current.width >= minExpandedWidth) {
+      lastExtraWidth = 0;
+      expandedPosition = { ...current };
+      hooks?.onBeforeSizeChange?.();
+      return;
+    }
+
+    let targetWidth = expandedPosition?.width ?? current.width + extraWidth;
+    targetWidth = Math.min(targetWidth, maxWidth.value, viewportWidth);
+    targetWidth = Math.max(targetWidth, minExpandedWidth, minWidth);
+
+    const needed = Math.max(0, targetWidth - current.width);
+    const rightSpace = viewportWidth - (current.x + current.width);
+    const shift = Math.max(0, needed - rightSpace);
+    const nextX = Math.max(0, current.x - shift);
+    targetWidth = Math.min(targetWidth, viewportWidth - nextX);
+    lastExtraWidth = Math.max(0, targetWidth - current.width);
 
     const target = clampToViewport({
-      x: targetX,
+      x: nextX,
       y: current.y,
       width: targetWidth,
       height: current.height,
     });
 
-    updatePosition(target.x, target.y);
-    nextTick(() => {
-      updateSize(target.width, target.height);
-    });
+    await commitLayout(current, target, id, hooks, 'expand');
+    if (id !== sequenceId) return;
+    expandedPosition = getPositionAndSize();
   };
 
   /**
-   * 折叠侧面板并恢复容器到收起布局（视觉上向右收缩，右边缘保持不动）
+   * 折叠侧面板：左边缘不动，只从右侧收窄。不弹回贴边位置。
+   * 中止展开仍用 abortSidePanelSequence 恢复序列开始时的布局。
    */
-  const collapseSidePanel = (): void => {
+  const collapseSidePanel = async (hooks?: SidePanelGeometryHooks): Promise<void> => {
     if (!isSidePanelExpanded.value) return;
     const current = getPositionAndSize();
     expandedPosition = { ...current };
     isSidePanelExpanded.value = false;
+    const id = ++sequenceId;
 
-    const currentRightEdge = current.x + current.width;
-    const targetWidth = collapsedPosition?.width ?? current.width;
-    const targetX = currentRightEdge - targetWidth;
-
+    const targetWidth = collapsedPosition?.width ?? Math.max(minWidth, current.width - lastExtraWidth);
     const target = clampToViewport({
-      x: targetX,
+      x: current.x,
       y: current.y,
       width: targetWidth,
       height: current.height,
     });
 
-    updateSize(target.width, target.height);
-    nextTick(() => {
-      updatePosition(target.x, target.y);
-    });
+    await commitLayout(current, target, id, hooks, 'collapse');
+    if (id !== sequenceId) return;
+  };
+
+  /**
+   * 中止进行中的展开/收起，恢复本次序列开始时的收起布局
+   */
+  const abortSidePanelSequence = (): void => {
+    sequenceId += 1;
+    isSidePanelExpanded.value = false;
+    if (collapsedPosition) {
+      updatePosition(collapsedPosition.x, collapsedPosition.y);
+      updateSize(collapsedPosition.width, collapsedPosition.height);
+    }
   };
 
   // 生命周期
@@ -304,5 +374,6 @@ export function useDraggable(
     updatePositionAndSize,
     expandForSidePanel,
     collapseSidePanel,
+    abortSidePanelSequence,
   };
 }

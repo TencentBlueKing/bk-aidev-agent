@@ -50,8 +50,9 @@ export class ComponentManager {
 
   // 容器引用（用于执行实际的压缩/尺寸/侧面板操作）
   private containerRef: null | {
-    collapseSidePanel?: () => void;
-    expandForSidePanel?: (extraWidth: number) => void;
+    abortSidePanelSequence?: () => void;
+    collapseSidePanel?: (hooks?: { onBeforeSizeChange?: () => void }) => Promise<void>;
+    expandForSidePanel?: (extraWidth: number, hooks?: { onBeforeSizeChange?: () => void }) => Promise<void>;
     isCompressed?: { value: boolean };
     isSidePanelExpanded?: Ref<boolean>;
     positionAndSize?: { value: PositionAndSize };
@@ -102,6 +103,7 @@ export class ComponentManager {
       toggleCompression: this.toggleCompression.bind(this),
       expandForSidePanel: this.expandForSidePanel.bind(this),
       collapseSidePanel: this.collapseSidePanel.bind(this),
+      abortSidePanelSequence: this.abortSidePanelSequence.bind(this),
       positionAndSize: computed(() => this.containerRef?.positionAndSize?.value ?? this._positionAndSize.value),
       isCompressed: computed(() => this._isCompressed.value),
       isSidePanelExpanded: computed(() => this.containerRef?.isSidePanelExpanded?.value ?? false),
@@ -174,15 +176,21 @@ export class ComponentManager {
     };
   }
 
+  abortSidePanelSequence(): void {
+    this.containerRef?.abortSidePanelSequence?.();
+  }
+
   /**
-   * 折叠侧面板并恢复容器到收起布局
+   * 折叠侧面板：左边缘不动，从右侧收窄
    *
    * 代理调用容器的 collapseSidePanel，与 toggleCompression 模式一致。
    */
-  collapseSidePanel(): void {
+  collapseSidePanel(hooks?: { onBeforeSizeChange?: () => void }): Promise<void> {
     if (this.containerRef?.collapseSidePanel) {
-      this.containerRef.collapseSidePanel();
+      return this.containerRef.collapseSidePanel(hooks);
     }
+    hooks?.onBeforeSizeChange?.();
+    return Promise.resolve();
   }
 
   // ==================== Nimbus 控制 ====================
@@ -257,10 +265,12 @@ export class ComponentManager {
    *
    * @param extraWidth 首次展开时需要增加的宽度（像素）
    */
-  expandForSidePanel(extraWidth: number): void {
+  expandForSidePanel(extraWidth: number, hooks?: { onBeforeSizeChange?: () => void }): Promise<void> {
     if (this.containerRef?.expandForSidePanel) {
-      this.containerRef.expandForSidePanel(extraWidth);
+      return this.containerRef.expandForSidePanel(extraWidth, hooks);
     }
+    hooks?.onBeforeSizeChange?.();
+    return Promise.resolve();
   }
 
   /**
@@ -480,8 +490,9 @@ export class ComponentManager {
    */
   setContainerRef(
     ref: null | {
-      collapseSidePanel?: () => void;
-      expandForSidePanel?: (extraWidth: number) => void;
+      abortSidePanelSequence?: () => void;
+      collapseSidePanel?: (hooks?: { onBeforeSizeChange?: () => void }) => Promise<void>;
+      expandForSidePanel?: (extraWidth: number, hooks?: { onBeforeSizeChange?: () => void }) => Promise<void>;
       isCompressed?: { value: boolean };
       isSidePanelExpanded?: Ref<boolean>;
       positionAndSize?: { value: PositionAndSize };

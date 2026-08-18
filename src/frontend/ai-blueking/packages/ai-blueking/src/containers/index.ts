@@ -8,12 +8,13 @@
  */
 
 export { default as DraggableContainer } from './draggable-container.vue';
-export { useDraggable } from './use-draggable';
 export type {
-  PositionAndSize,
-  DraggableContainerProps,
   DraggableContainerEmits,
   DraggableContainerExpose,
+  DraggableContainerProps,
+  PositionAndSize,
+  SidePanelGeometryHooks,
   UseDraggableOptions,
   UseDraggableReturn,
 } from './types';
+export { useDraggable } from './use-draggable';

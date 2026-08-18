@@ -8,6 +8,7 @@
  */
 
 import type { Ref } from 'vue';
+import { ref } from 'vue';
 
 import type ChatBot from '../components/chat-bot.vue';
 import type { ComponentManager } from '../manager/component-manager';
@@ -18,17 +19,20 @@ import type { EventForwarders, ForwardToManagerFn } from './use-ai-blueking-init
 const SIDE_PANEL_EXTRA_WIDTH = 560;
 
 export interface UsePanelContainerParams {
-  beforeNimbusClick?: () => boolean | Promise<boolean | void> | void;
   chatBotRef: Ref<InstanceType<typeof ChatBot> | undefined>;
   componentManager: ComponentManager;
-  /** 等待 sessionList 与最近会话初始化完成（供 show() Promise 语义使用） */
-  ensureSessionReady?: () => Promise<void>;
   forwarders: EventForwarders;
   forwardToManager: ForwardToManagerFn;
+  beforeNimbusClick?: () => boolean | Promise<boolean | void> | void;
+  /** 等待 sessionList 与最近会话初始化完成（供 show() Promise 语义使用） */
+  ensureSessionReady?: () => Promise<void>;
 }
 
 export function usePanelContainer(params: UsePanelContainerParams) {
   const { componentManager, chatBotRef, forwarders, forwardToManager, beforeNimbusClick, ensureSessionReady } = params;
+
+  const asideCollapsed = ref(true);
+  let extraWidth = SIDE_PANEL_EXTRA_WIDTH;
 
   // ==================== 面板控制 ====================
   const show = async (sessionCode?: string) => {
@@ -48,6 +52,8 @@ export function usePanelContainer(params: UsePanelContainerParams) {
   };
 
   const hide = () => {
+    asideCollapsed.value = true;
+    componentManager.abortSidePanelSequence();
     componentManager.hidePanel();
   };
 
@@ -95,12 +101,44 @@ export function usePanelContainer(params: UsePanelContainerParams) {
   };
 
   // ==================== 执行面板联动 ====================
-  const handleExecutionPanelChange = (isCollapse: boolean, resizeAsideWidth?: number) => {
-    if (!isCollapse) {
-      const extraWidth = Math.max(SIDE_PANEL_EXTRA_WIDTH, resizeAsideWidth ?? 0);
-      componentManager.expandForSidePanel(extraWidth);
+  const handleExecutionPanelChange = (_isCollapse: boolean, resizeAsideWidth?: number) => {
+    extraWidth = Math.max(SIDE_PANEL_EXTRA_WIDTH, resizeAsideWidth ?? extraWidth);
+  };
+
+  const expandAside = async () => {
+    if (!asideCollapsed.value) return;
+    await componentManager.expandForSidePanel(extraWidth, {
+      onBeforeSizeChange: () => {
+        asideCollapsed.value = false;
+      },
+    });
+    asideCollapsed.value = false;
+  };
+
+  const collapseAside = async () => {
+    if (asideCollapsed.value) return;
+    await componentManager.collapseSidePanel({
+      onBeforeSizeChange: () => {
+        asideCollapsed.value = true;
+      },
+    });
+    asideCollapsed.value = true;
+  };
+
+  const handleToggleAside = async () => {
+    if (asideCollapsed.value) {
+      await expandAside();
     } else {
-      componentManager.collapseSidePanel();
+      await collapseAside();
+    }
+  };
+
+  const handleAsideCollapsedUpdate = async (collapsed: boolean) => {
+    if (collapsed === asideCollapsed.value) return;
+    if (collapsed) {
+      await collapseAside();
+    } else {
+      await expandAside();
     }
   };
 
@@ -208,6 +246,9 @@ export function usePanelContainer(params: UsePanelContainerParams) {
     handleToggleCompression,
     handleCompressionChange,
     handleExecutionPanelChange,
+    handleToggleAside,
+    handleAsideCollapsedUpdate,
+    asideCollapsed,
     sendMessage,
     handleReceiveStart,
     handleReceiveText,

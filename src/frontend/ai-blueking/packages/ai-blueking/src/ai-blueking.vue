@@ -25,17 +25,18 @@
           <AIHeader
             v-if="!props.hideHeader"
             :agent-name="agentName"
+            :aside-collapsed="asideCollapsed"
+            :auto-generate-loading="autoGenerateLoading"
             :chat-helper="chatHelper"
             :draggable="props.draggable"
             :dropdown-menu-config="props.dropdownMenuConfig"
             :enable-chat-session="props.enableChatSession"
             :has-permission="hasPermission"
             :has-session-contents="hasSessionContents"
-            :auto-generate-loading="autoGenerateLoading"
             :is-compression-height="isCompressed"
             :render-mode="props.renderMode"
-            :session-business-manager="sessionBusinessManager"
             :selected-llm-code="selectedLlmCode"
+            :session-business-manager="sessionBusinessManager"
             :session-name="sessionName"
             :show-compression-icon="props.showCompressionIcon"
             :show-history-icon="props.showHistoryIcon"
@@ -53,6 +54,7 @@
             @new-chat-created="handleNewChatCreated"
             @rename="handleRename"
             @share="handleShare"
+            @toggle-aside="handleToggleAside"
             @toggle-compression="handleToggleCompression"
           >
             <template
@@ -67,34 +69,35 @@
           <ChatBot
             ref="chatBotRef"
             :always-create-new-session="props.alwaysCreateNewSession"
+            :aside-collapsed="asideCollapsed"
             :auto-load="props.loadRecentSessionOnMount"
             :chat-helper="chatHelper"
             :enable-model-select="props.enableModelSelect"
             :error-toast="false"
             :execution-tab-visible="props.executionTabVisible"
+            :get-side-render-component="props.getSideRenderComponent"
+            :get-side-tab-render-component="props.getSideTabRenderComponent"
             :hello-text="props.helloText"
             :message-tools="props.messageTools"
             :message-tools-tippy-options="messageToolsTippyOptions"
             :model-selection-manager="modelSelection"
             :models="props.models"
+            :on-custom-tab-change="props.onCustomTabChange"
             :placeholder="props.placeholder"
             :prompts="agentPrompts"
             :render-mode="props.renderMode"
             :request-options="props.requestOptions"
-            :use-agent-name="props.useAgentName"
-            :get-side-render-component="props.getSideRenderComponent"
-            :get-side-tab-render-component="props.getSideTabRenderComponent"
-            :on-custom-tab-change="props.onCustomTabChange"
             :resize-props="props.resizeProps"
-            :size="props.size"
             :resources="agentResources"
             :session-code="props.initialSessionCode"
             :share-loading="isShareLoading"
             :shortcuts="props.shortcuts"
+            :size="props.size"
             :skills="agentSkills"
             :style="{ height: props.hideHeader ? '100%' : 'calc(100% - 48px)' }"
             :update-tools="props.updateTools"
             :url="normalizedUrl"
+            :use-agent-name="props.useAgentName"
             @agent-action="(tool, messages) => emit('agent-action', tool, messages)"
             @cancel-share="handleCancelShare"
             @confirm-share="(messages: Message[], source) => handleConfirmShare(messages, source)"
@@ -109,6 +112,7 @@
             @session-switched="(session: ISession | null) => handleSessionSwitched(session)"
             @shortcut-click="handleShortcutClick"
             @stop="handleStop"
+            @update:aside-collapsed="handleAsideCollapsedUpdate"
           >
             <template
               v-if="$slots.welcome"
@@ -133,9 +137,9 @@
               #message="{ message, messageToolsStatus, onInterruptResume }"
             >
               <slot
-                name="message"
                 :message="message"
                 :message-tools-status="messageToolsStatus"
+                name="message"
                 :on-interrupt-resume="onInterruptResume"
               />
             </template>
@@ -254,6 +258,9 @@
     handleToggleCompression,
     handleCompressionChange,
     handleExecutionPanelChange,
+    handleToggleAside,
+    handleAsideCollapsedUpdate,
+    asideCollapsed,
     sendMessage,
     handleReceiveStart,
     handleReceiveText,

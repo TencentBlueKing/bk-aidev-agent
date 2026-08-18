@@ -42,6 +42,8 @@ export const langData = {
   '加载中...': 'Loading...',
   转人工: 'Transfer to human',
   缩小高度: 'Shrink height',
+  展开侧栏: 'Expand side panel',
+  收起侧栏: 'Collapse side panel',
   全选: 'Select all',
   取消: 'Cancel',
   确定: 'Confirm',

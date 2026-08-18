@@ -156,7 +156,6 @@ const pageScenario1 = `<!-- YourPage.vue — 场景 1：仅自定义侧栏 UI --
     :url="flowAgentApiUrl"
     :get-side-render-component="getSideRenderComponent"
     :get-side-tab-render-component="getSideTabRenderComponent"
-    placement="left"
   />
 </template>
 
@@ -177,7 +176,6 @@ const pageScenario2 = `<!-- YourPage.vue — 场景 2：UI + 详情拉取均自�
     :get-side-render-component="getSideRenderComponent"
     :get-side-tab-render-component="getSideTabRenderComponent"
     :on-custom-tab-change="onCustomTabChange"
-    placement="left"
   />
 </template>
 

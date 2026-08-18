@@ -3,7 +3,7 @@
     v-show="props.visible"
     ref="draggableRef"
     :active="props.visible"
-    :class="['draggable-container-wrapper', props.className]"
+    :class="['draggable-container-wrapper', props.className, { 'is-dragging-or-resizing': isDraggingOrResizing }]"
     class-name="draggable-container-inner"
     :drag-handle="props.dragHandle"
     :draggable="props.draggable"
@@ -87,6 +87,7 @@
     updatePositionAndSize,
     expandForSidePanel,
     collapseSidePanel,
+    abortSidePanelSequence,
   } = useDraggable(
     {
       initWidth: props.defaultWidth,
@@ -201,6 +202,7 @@
     toggleCompression,
     expandForSidePanel,
     collapseSidePanel,
+    abortSidePanelSequence,
     positionAndSize,
     isCompressed,
     isSidePanelExpanded,
@@ -210,6 +212,16 @@
 <style lang="scss" scoped>
   .draggable-container-wrapper {
     pointer-events: auto;
+
+    // 贴边推开：width 与 transform 同曲线，右边缘贴视口、向左展开
+    transition:
+      width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+      transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+    &.is-dragging-or-resizing,
+    &.is-dragging-or-resizing :deep(.draggable-container-inner) {
+      transition: none;
+    }
   }
 
   .draggable-container-inner {
@@ -221,6 +233,9 @@
     background: transparent;
     border-radius: 12px;
     box-shadow: 0 2px 12px 0 rgb(0 0 0 / 20%);
+    transition:
+      width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+      transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
     :deep(.handle) {
       background: transparent;

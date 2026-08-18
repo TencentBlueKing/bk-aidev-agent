@@ -54,20 +54,19 @@
       <div class="flow-side-render-demo__chat">
         <ChatBot
           :key="chatBotKey"
-          height="100%"
-          :url="flowAgentUrl"
           :execution-tab-visible="executionTabVisible"
           :get-side-render-component="getSideRenderComponent"
           :get-side-tab-render-component="getSideTabRenderComponent"
-          :on-custom-tab-change="onCustomTabChange"
+          height="100%"
           :hello-text="helloText"
+          :on-custom-tab-change="onCustomTabChange"
           :placeholder="'输入消息，触发流程智能体（FlowAgent）…'"
-          placement="left"
           :resize-props="{
             initialDivide: '55%',
             min: 320,
             max: 720,
           }"
+          :url="flowAgentUrl"
           @error="handleError"
         />
       </div>
@@ -78,10 +77,11 @@
 <script setup lang="ts">
   import { computed, ref } from 'vue';
 
-  import { ChatBot, type GetSideRenderComponent } from '@blueking/ai-blueking';
+  import { type GetSideRenderComponent, ChatBot } from '@blueking/ai-blueking';
 
   import { useSideRenderCustomTabChange } from './use-side-render-custom-tab-change';
   import { useSideRenderHandlers } from './use-side-render-handlers';
+
   import type { FlowSideRenderDemoMode } from './side-render-scenarios';
 
   export type { FlowSideRenderDemoMode } from './side-render-scenarios';

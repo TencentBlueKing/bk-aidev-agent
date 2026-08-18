@@ -892,7 +892,8 @@ ChatBot 与 AIBlueking 均支持 `renderMode` prop（默认 `chat`），由 chat
 - ChatContainer 暴露 `addCustomTab` / `removeCustomTab` / `selectCustomTab` 用于程序化管理自定义 Tab。
 
 > 📂 **可运行范例**：`packages/ai-blueking/playground/components/side-render/`——`use-side-render-handlers.ts`（两个 render 函数完整实现，含 `tab.name` 解析）、`use-side-render-custom-tab-change.ts`（`onCustomTabChange` 完整实现，含默认端点 `flow_agent/{taskId}/task_node_info/{nodeId}/`、builtin/custom 两种 `detailSource`）。详见 [Playground 实例索引](playground-examples.md)。
-- 侧面板折叠/展开时触发 `@execution-panel-change (isCollapse)`（对应 ChatContainer 内部的 `collapse-change`）；`placement`（`'left' | 'right'`）与 `resizeProps` 控制侧面板位置与拖拽。
+- 侧栏固定从右侧展开（无 `placement`）。折叠/展开由 `v-model:asideCollapsed` 驱动；浮窗场景入口在 `AIHeader`，嵌入式 ChatBot 需业务方自行提供按钮。侧栏宽度变化仍会触发 `@execution-panel-change (isCollapse, width)`（对应 ChatContainer `collapse-change`），但浮窗几何只认 `asideCollapsed`。
+- `resizeProps` 控制侧面板拖拽范围。
 
 ```vue
 <template>
@@ -901,14 +902,17 @@ ChatBot 与 AIBlueking 均支持 `renderMode` prop（默认 `chat`），由 chat
     :get-side-render-component="getSideRender"
     :get-side-tab-render-component="getSideTab"
     :on-custom-tab-change="loadCustomTabDetail"
-    placement="right"
+    v-model:aside-collapsed="asideCollapsed"
     @execution-panel-change="onPanelCollapse"
   />
 </template>
 
 <script setup lang="ts">
+  import { ref } from 'vue';
   import { ChatBot } from '@blueking/ai-blueking';
   import type { GetSideRenderComponent, GetSideTabRenderComponent, OnCustomTabChange } from '@blueking/ai-blueking';
+
+  const asideCollapsed = ref(true);
 
   // 侧栏内容区：props 携带 { task_id, node_id, node_name, task_name, loading, data }
   const getSideRender: GetSideRenderComponent = (createElement, props) =>

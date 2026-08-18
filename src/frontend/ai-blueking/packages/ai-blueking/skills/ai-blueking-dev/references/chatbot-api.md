@@ -33,7 +33,7 @@
 | messageToolsTippyOptions | `MessageToolsTippyOptions` | - | MessageTools tippy 弹窗配置（如 `appendTo`，控制弹窗挂载位置和层级） |
 | messageTools | `IToolBtn[]` | - | 自定义 AI 消息主工具组（copy/cite/rebuild/share）；按 id 与内置合并（覆盖/追加/`hidden: true` 隐藏） |
 | updateTools | `IToolBtn[]` | - | 自定义 AI 消息反馈工具组（like/unlike/delete）；合并规则同上 |
-| placement       | `'left' \| 'right'`  | `'left'`| 执行情况侧面板位置                             |
+| asideCollapsed | `boolean` | 内部默认折叠 | 侧栏折叠态。传入后**严格受控**（内部展开只发 `update:asideCollapsed`）；不传时由 ChatBot 内部自持。侧栏固定从右侧展开，已移除 `placement` |
 | resizeProps     | `ResizeProps`        | -       | ResizeLayout 配置（执行情况侧面板拖拽）        |
 | size            | `AiSizeMode`（`'normal' \| 'small'`） | `'small'` | 字号主题档位，透传至 ChatContainer（`small` 12px / `normal` 14px） |
 | executionTabVisible | `boolean` | `true` | 「执行情况」Tab 是否展示（与 ChatContainer 一致）；置 `false` 时从 Tab 栏隐藏 |
@@ -61,7 +61,8 @@
 | cancel-share      | -                                          | 取消分享                       |
 | request-share     | -                                          | 请求进入分享模式               |
 | agent-action      | `(tool: IToolBtn, messages: Message[])`    | 自定义消息工具点击（非内置 cite/rebuild/delete/like/unlike） |
-| execution-panel-change | `(isCollapse: boolean)`               | 执行情况侧面板展开/折叠         |
+| execution-panel-change | `(isCollapse: boolean, resizeAsideWidth?: number)` | 侧栏展开/折叠与宽度变化（浮窗几何不由此事件驱动） |
+| update:asideCollapsed | `(collapsed: boolean)` | `v-model:asideCollapsed`；受控时内部展开只发此事件 |
 | rename            | `(newName: string, sessionCode: string)`   | 首条消息后 AI 自动重命名成功；第二参为被改名会话编码（切会话后仍会抛，便于业务维护列表） |
 
 ## Slots

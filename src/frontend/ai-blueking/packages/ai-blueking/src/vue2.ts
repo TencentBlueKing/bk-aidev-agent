@@ -26,8 +26,6 @@
 // Vue2 走 vue3-core 以避开 chat-x 预构建 CSS，但须单独引入 icon 字体（与 vue3.ts 一致，不含 chat-x/dist/index.css）
 // @ts-ignore - icon 资源文件不需要类型检查
 import './assets/icon/iconcool.js';
-import './assets/icon/style.css';
-
 import { ChatBot } from './components';
 import { t } from './lang';
 import { createVue2Wrapper } from './vue2-wrapper';
@@ -35,6 +33,8 @@ import AIBlueking from './vue3-core';
 
 import type { ChatBotExpose } from './components/types';
 import type { AIBluekingExpose } from './types';
+
+import './assets/icon/style.css';
 
 export type * from './types';
 
@@ -384,6 +384,7 @@ const chatBotEmitNames = [
   'confirm-share',
   'cancel-share',
   'execution-panel-change',
+  'update:asideCollapsed',
   'feedback',
   'agent-action',
   'rename',
