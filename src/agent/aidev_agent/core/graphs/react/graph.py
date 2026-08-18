@@ -180,7 +180,7 @@ class ReActAgentBuilder:
         # Graph 运行时参数设置
         self._model_context_options: ModelContextSettings | None = None
         self._knowledge_query_options: KnowledgeSettings | None = None
-        self._enable_agentic_rag_tool: bool = False
+        self._enable_agentic_rag_tool: bool = True
         self._executor_info: dict | None = None
         self._callbacks: list | None = None
         self._file_store: ByteStore | None = None

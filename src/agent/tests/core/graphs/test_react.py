@@ -429,10 +429,11 @@ class TestReActAgentBuilder:
         )
         assert calculator in tools
 
-    def test_init_enable_agentic_rag_tool_default_false(self):
-        """__init__ 应将 _enable_agentic_rag_tool 默认设为 False"""
+    def test_init_enable_agentic_rag_tool_default_true(self, monkeypatch):
+        """__init__ 应将 _enable_agentic_rag_tool 默认设为 True"""
+        monkeypatch.delenv("ENABLE_AGENTIC_RAG_TOOL", raising=False)
         builder = ReActAgentBuilder()
-        assert builder._enable_agentic_rag_tool is False
+        assert builder._enable_agentic_rag_tool is True
 
     def test_set_bkai_options_maps_enable_agentic_rag_tool(self):
         """set_bkai_options 应从 knowledge_query_options 提取 enable_agentic_rag_tool"""
@@ -443,11 +444,11 @@ class TestReActAgentBuilder:
         builder.set_bkai_options(opts)
         assert builder._enable_agentic_rag_tool is True
 
-        # 不传 knowledge_query_options 时保持 False
+        # 不传 knowledge_query_options 时保持 __init__ 默认（True）
         opts2 = AgentExecutorKwargs()
         builder2 = ReActAgentBuilder()
         builder2.set_bkai_options(opts2)
-        assert builder2._enable_agentic_rag_tool is False
+        assert builder2._enable_agentic_rag_tool is True
 
     def test_prepare_agent_tools_uses_self_enable_agentic_rag_tool(self):
         """_prepare_agent_tools 应根据 self._enable_agentic_rag_tool 决定是否添加知识工具"""
@@ -611,7 +612,7 @@ class TestReActAgentBuilder:
         assert any(isinstance(m, SkillsPromptMiddleware) for m in middlewares)
 
     def test_build_knowledge_node_created_when_knowledge_configured(self):
-        """配置知识库时应创建 knowledge_node"""
+        """配置知识库且显式开启 enable_knowledge_node 时应创建 knowledge_node"""
         llm = MagicMock()
         llm.model_name = "gpt-4o"
         knowledge_llm = MagicMock()
@@ -628,7 +629,15 @@ class TestReActAgentBuilder:
             ),
         ):
             builder = (
-                ReActAgentBuilder().set_llm(llm).set_knowledge_llm(knowledge_llm).set_knowledge_bases([{"id": "kb1"}])
+                ReActAgentBuilder()
+                .set_llm(llm)
+                .set_knowledge_llm(knowledge_llm)
+                .set_knowledge_bases([{"id": "kb1"}])
+                .set_bkai_options(
+                    AgentExecutorKwargs(
+                        knowledge_query_options=KnowledgeSettings(enable_knowledge_node=True),
+                    )
+                )
             )
             builder.build()
             mock_make_kn.assert_called_once()

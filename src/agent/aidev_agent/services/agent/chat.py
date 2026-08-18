@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import uuid
 import warnings
@@ -1869,12 +1870,36 @@ class ChatAgentBuilder:
             logger.info("build_subagents: ping %s → available, is_remote %s", child_agent_code, str(specs))
         return specs
 
-    def build_knowledge_query_options(self):
-        """从 AgentConfig 构建 KnowledgeSettings；新协议为空时兼容旧 agent_options。"""
+    def build_knowledge_query_options(self) -> KnowledgeSettings:
+        """从 AgentConfig 构建 KnowledgeSettings；新协议为空时兼容旧 agent_options。
+        经过评估，现在模型通过 Agentic RAG 进行知识查询能力已经可以媲美两步 RAG
+        以下是现在的开启方式：
+        对于 enable_knowledge_node:
+        1. 有环境变量 ENABLE_KNOWLEDGE_NODE 的时候， 以环境变量为准，仅当 ENABLE_KNOWLEDGE_NODE=true(小写)的时候为 True
+        2. 如果有 self._specific_resources 有 knowledgebase, 开启两步 RAG (这表明用户有意图需要使用两步 RAG)
+        3. 其他情况为默认值(当前为 False)
+
+        对于 ENABLE_AGENTIC_RAG_TOOL:
+        1. 有环境变量 ENABLE_AGENTIC_RAG_TOOL 的时候， 以环境变量为准，仅当 ENABLE_AGENTIC_RAG_TOOL=true(小写)的时候为 True
+        2. 其他情况为默认值(当前为 True)
+        """
         data = self.ctx.agent_config.knowledge_query_options_data
         if data:
-            return KnowledgeSettings.model_validate(data)
-        return migration_knowledge_query_options_from_agent_options_v1(self.ctx.agent_config.agent_options)
+            options = KnowledgeSettings.model_validate(data)
+        else:
+            options = migration_knowledge_query_options_from_agent_options_v1(self.ctx.agent_config.agent_options)
+
+        ekn_env = os.getenv("ENABLE_KNOWLEDGE_NODE")
+        if ekn_env:
+            options.enable_knowledge_node = ekn_env.lower() == "true"
+        elif any(r.get("type") == "knowledgebase" for r in self._specific_resources):
+            options.enable_knowledge_node = True
+
+        eart_env = os.getenv("ENABLE_AGENTIC_RAG_TOOL")
+        if eart_env:
+            options.enable_agentic_rag_tool = eart_env.lower() == "true"
+
+        return options
 
     def build_model_context_options(self) -> ModelContextSettings | None:
         """从 AgentConfig 构建 ModelContextSettings；新协议为空时兼容旧 agent_options。"""

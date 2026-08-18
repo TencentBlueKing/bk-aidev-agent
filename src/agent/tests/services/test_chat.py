@@ -674,7 +674,10 @@ class TestCommonAgentChatStreaming:
                 chat_history=[
                     ChatPrompt(role="user", content="云桌面黑屏怎么处理?"),
                 ],
-                knowledge_query_options=KnowledgeSettings(knowledge_bases=[knowledgebase]),
+                knowledge_query_options=KnowledgeSettings(
+                    enable_knowledge_node=True,
+                    knowledge_bases=[knowledgebase],
+                ),
             )
             results = []
             for each in agent.execute(ExecuteKwargs(stream=True)):
@@ -2757,3 +2760,58 @@ class TestDispatchSessionPersistenceEvents:
         # resume 未被清空（未走 ask_user 路径）
         interrupt_after = next(p for p in agent.chat_history if p.role == PromptRole.INTERRUPT.value)
         assert (interrupt_after.content.get("outcome") or {}).get("type") != "success"
+
+
+class TestBuildKnowledgeQueryOptions:
+    """build_knowledge_query_options 的 env / resources 覆盖逻辑。"""
+
+    @pytest.mark.parametrize(
+        "env_val, resources, expected_ekn",
+        [
+            (None, [{"type": "knowledgebase", "id": 58}], True),   # env 未设 + 含 kb → resources 覆盖为 True
+            (None, [{"type": "mcp", "code": "x"}], False),         # env 未设 + 不含 kb → 保持默认 False
+            (None, [], False),                                     # env 未设 + 无 resources → 默认 False
+            ("false", [{"type": "knowledgebase", "id": 58}], False),  # env 已设 false → 取 env，忽略 resources
+            ("true", [], True),                                    # env 已设 true → 取 env True
+        ],
+    )
+    def test_enable_knowledge_node_env_and_resources_priority(self, monkeypatch, env_val, resources, expected_ekn):
+        """enable_knowledge_node 运行时决策：env 已设取 env，否则按 resources 覆盖，否则保持默认。"""
+        if env_val is None:
+            monkeypatch.delenv("ENABLE_KNOWLEDGE_NODE", raising=False)
+        else:
+            monkeypatch.setenv("ENABLE_KNOWLEDGE_NODE", env_val)
+
+        ctx = _make_dummy_chat_ctx()
+        ctx.agent_config.knowledge_query_options_data = {}
+        ctx.session_context_data = (
+            [{"role": PromptRole.USER.value, "content": "hi", "extra": {"resources": resources}}]
+            if resources
+            else [{"role": PromptRole.USER.value, "content": "hi"}]
+        )
+        builder = ChatAgentBuilder(ctx)
+        options = builder.build_knowledge_query_options()
+        assert options.enable_knowledge_node is expected_ekn
+
+    @pytest.mark.parametrize(
+        "env_val, expected",
+        [
+            (None, True),    # env 未设 → 保持字段默认 True
+            ("true", True),  # env=true → True
+            ("false", False),  # env=false → False
+            ("abc", False),  # 非法值 → False（严格 .lower()=="true" 匹配）
+        ],
+    )
+    def test_enable_agentic_rag_tool_field_default_from_env(self, monkeypatch, env_val, expected):
+        """enable_agentic_rag_tool 运行时决策：env 已设取 env，否则保持字段默认 True。"""
+        if env_val is None:
+            monkeypatch.delenv("ENABLE_AGENTIC_RAG_TOOL", raising=False)
+        else:
+            monkeypatch.setenv("ENABLE_AGENTIC_RAG_TOOL", env_val)
+
+        ctx = _make_dummy_chat_ctx()
+        ctx.agent_config.knowledge_query_options_data = {}
+        ctx.session_context_data = [{"role": PromptRole.USER.value, "content": "hi"}]
+        builder = ChatAgentBuilder(ctx)
+        options = builder.build_knowledge_query_options()
+        assert options.enable_agentic_rag_tool is expected

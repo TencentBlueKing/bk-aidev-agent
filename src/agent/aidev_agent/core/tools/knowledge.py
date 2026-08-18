@@ -63,7 +63,9 @@ def make_knowledge_retrieval_tool(
         >>> if tool:
         ...     result = tool.invoke({"query": "如何部署蓝鲸平台？"})
     """
-    # 如果没有配置知识库，返回 None
+    # 未提供知识配置或未配置知识库时返回 None
+    if not knowledge_query_options:
+        return None
     if not knowledge_query_options.knowledge_bases and not knowledge_query_options.knowledge_items:
         return None
 
