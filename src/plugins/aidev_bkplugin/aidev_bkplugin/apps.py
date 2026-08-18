@@ -104,6 +104,8 @@ def init_bk_aidev_agent_otel() -> None:
             default_enabled=otel_config.enable_metrics,
         )
         otel_config.enable_metrics = metric_settings.enabled
+        otel_config.metric_export_interval_millis = metric_settings.export_interval_millis
+        otel_config.metric_export_timeout_millis = metric_settings.export_timeout_millis
         configure_metric_identity(
             agent_info.get("agent_code") or otel_config.service_name,
             agent_info.get("agent_name"),

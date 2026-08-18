@@ -46,6 +46,7 @@ except ImportError:
 
 
 from .config import OTelConfig
+from .metrics import DURATION_HISTOGRAM_BOUNDARIES, MESSAGE_SIZE_HISTOGRAM_BOUNDARIES
 from .utils import ExporterType
 
 logger = logging.getLogger(__name__)
@@ -196,7 +197,11 @@ class BkAgentOTelService:
                 exporter = self._create_metric_exporter(endpoint_config)
 
                 # 创建 PeriodicExportingMetricReader
-                reader = PeriodicExportingMetricReader(exporter)
+                reader = PeriodicExportingMetricReader(
+                    exporter,
+                    export_interval_millis=self.config.metric_export_interval_millis,
+                    export_timeout_millis=self.config.metric_export_timeout_millis,
+                )
                 readers.append(reader)
 
                 logger.info(
@@ -209,16 +214,20 @@ class BkAgentOTelService:
                 # 某个端点失败不影响其他端点,继续处理
 
         # 配置 Histogram 视图
-        histogram_view = View(
-            instrument_type=Histogram,
-            instrument_unit="s",
-            aggregation=ExplicitBucketHistogramAggregation(
-                boundaries=[0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0]
+        histogram_views = [
+            View(
+                instrument_type=Histogram,
+                instrument_unit="s",
+                aggregation=ExplicitBucketHistogramAggregation(boundaries=DURATION_HISTOGRAM_BOUNDARIES),
             ),
-        )
+            View(
+                instrument_name="aidev.message.publish.size",
+                aggregation=ExplicitBucketHistogramAggregation(boundaries=MESSAGE_SIZE_HISTOGRAM_BOUNDARIES),
+            ),
+        ]
 
         # 创建 MeterProvider
-        self.meter_provider = MeterProvider(resource=resource, metric_readers=readers, views=[histogram_view])
+        self.meter_provider = MeterProvider(resource=resource, metric_readers=readers, views=histogram_views)
         metrics.set_meter_provider(self.meter_provider)
 
     def _create_metric_exporter(self, endpoint_config: dict):

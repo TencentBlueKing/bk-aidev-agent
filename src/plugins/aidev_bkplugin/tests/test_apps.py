@@ -27,7 +27,12 @@ def test_init_otel_keeps_direct_metric_export_in_agent_sdk(mocker, monkeypatch):
     # Some installations expose the optional OTel modules only through their
     # fully qualified imports, not as an attribute on ``aidev_agent.packages``.
     monkeypatch.delattr(aidev_agent_packages, "opentelemetry", raising=False)
-    settings = SimpleNamespace(enabled=True, export_via_celery=False)
+    settings = SimpleNamespace(
+        enabled=True,
+        export_via_celery=False,
+        export_interval_millis=1500,
+        export_timeout_millis=7000,
+    )
     otel_config, instrumentor = _mock_otel_inputs(
         mocker,
         {"code": "legacy-code", "name": "legacy-name"},
@@ -44,11 +49,18 @@ def test_init_otel_keeps_direct_metric_export_in_agent_sdk(mocker, monkeypatch):
     configure_identity.assert_called_once_with("agent-service", None, None)
     assert otel_config.enable_metrics is True
     assert otel_config.metric_provider_managed_externally is False
+    assert otel_config.metric_export_interval_millis == 1500
+    assert otel_config.metric_export_timeout_millis == 7000
     instrumentor.instrument.assert_called_once_with()
 
 
 def test_init_otel_uses_bkplugin_metric_provider_for_celery_export(mocker):
-    settings = SimpleNamespace(enabled=True, export_via_celery=True)
+    settings = SimpleNamespace(
+        enabled=True,
+        export_via_celery=True,
+        export_interval_millis=1500,
+        export_timeout_millis=7000,
+    )
     otel_config, instrumentor = _mock_otel_inputs(
         mocker,
         {"agent_code": "ai-demo", "agent_name": "Demo Agent", "agent_sdk_version": "2.2.3"},

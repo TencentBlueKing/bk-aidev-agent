@@ -7,6 +7,10 @@ from types import ModuleType
 
 import pytest
 import requests
+from aidev_agent.packages.opentelemetry.metrics import (
+    DURATION_HISTOGRAM_BOUNDARIES,
+    MESSAGE_SIZE_HISTOGRAM_BOUNDARIES,
+)
 
 pytest.importorskip("opentelemetry.sdk.metrics")
 
@@ -246,6 +250,13 @@ def test_metric_resource_does_not_use_noncanonical_agent_identity():
 
     assert attributes["agent.info.code"] == "agent-service"
     assert attributes["agent.info.name"] == "unknown"
+
+
+def test_metric_service_uses_agent_sdk_histogram_boundaries():
+    views = BkPluginMetricService._views()
+
+    assert tuple(views[0]._aggregation._boundaries) == DURATION_HISTOGRAM_BOUNDARIES
+    assert tuple(views[1]._aggregation._boundaries) == MESSAGE_SIZE_HISTOGRAM_BOUNDARIES
 
 
 def test_bkm_records_preserve_counter_and_histogram_semantics():

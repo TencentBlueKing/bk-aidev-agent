@@ -51,9 +51,8 @@ def _set_content_attributes(
 
 
 def set_request_params(span, kwargs, span_holder: SpanHolder):
-    if not span.is_recording():
-        return
-    # 设置请求的名称模型
+    # Metrics still need the request model when tracing is disabled and the
+    # callback receives a non-recording span.
     for model_tag in ("model", "model_id", "model_name"):
         if (model := kwargs.get(model_tag)) is not None or (
             model := (kwargs.get("invocation_params") or {}).get(model_tag)
@@ -62,6 +61,9 @@ def set_request_params(span, kwargs, span_holder: SpanHolder):
             break
     else:
         model = "unknown"
+    if not span.is_recording():
+        return
+    # 设置请求的名称模型
     _set_span_attribute(span, "gen_ai.request.model", model)
     _set_span_attribute(span, "gen_ai.response.model", model)
     # 设置请求的相关参数

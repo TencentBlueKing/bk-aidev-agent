@@ -39,6 +39,8 @@ class OTelConfig:
         self.enable_metrics: bool = get_env_bool("BKAI_AGENT_ENABLE_METRICS", False)
         # bkplugin may install a BKM-specific MeterProvider while the Agent SDK keeps metric instrumentation enabled.
         self.metric_provider_managed_externally: bool = False
+        self.metric_export_interval_millis: int = max(1000, int(os.getenv("OTEL_METRIC_EXPORT_INTERVAL", "60000")))
+        self.metric_export_timeout_millis: int = max(1000, int(os.getenv("OTEL_METRIC_EXPORT_TIMEOUT", "30000")))
         self.enable_logs: bool = get_env_bool("BKAI_AGENT_ENABLE_LOGS", False)
 
         # ===== 性能优化配置 =====

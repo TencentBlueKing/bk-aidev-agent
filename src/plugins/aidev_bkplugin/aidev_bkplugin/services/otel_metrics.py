@@ -14,6 +14,10 @@ from typing import Any, Callable
 from urllib.parse import urlparse, urlunparse
 
 import requests
+from aidev_agent.packages.opentelemetry.metrics import (
+    DURATION_HISTOGRAM_BOUNDARIES,
+    MESSAGE_SIZE_HISTOGRAM_BOUNDARIES,
+)
 from aidev_agent.packages.opentelemetry.utils import ExporterType
 from opentelemetry import metrics
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter as GRPCMetricExporter
@@ -401,15 +405,11 @@ class BkPluginMetricService:
             View(
                 instrument_type=Histogram,
                 instrument_unit="s",
-                aggregation=ExplicitBucketHistogramAggregation(
-                    boundaries=[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300]
-                ),
+                aggregation=ExplicitBucketHistogramAggregation(boundaries=DURATION_HISTOGRAM_BOUNDARIES),
             ),
             View(
                 instrument_name="aidev.message.publish.size",
-                aggregation=ExplicitBucketHistogramAggregation(
-                    boundaries=[64, 256, 1024, 4096, 16384, 65536, 262144, 1048576]
-                ),
+                aggregation=ExplicitBucketHistogramAggregation(boundaries=MESSAGE_SIZE_HISTOGRAM_BOUNDARIES),
             ),
         ]
 

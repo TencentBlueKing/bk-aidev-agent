@@ -26,6 +26,7 @@ from langchain_core.outputs import ChatGeneration, LLMResult
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import NoOpTracerProvider
 
 from aidev_agent.packages.opentelemetry.callback_handler import (
     BkAidevAgentCallbackHandler,
@@ -326,6 +327,27 @@ class TestBkAidevAgentCallbackHandler:
 
         recorder.record_tool.assert_called_once()
         assert recorder.record_tool.call_args.kwargs["error"] is error
+
+    def test_llm_metric_keeps_request_model_when_traces_are_disabled(self):
+        recorder = MagicMock()
+        handler = BkAidevAgentCallbackHandler(
+            tracer=NoOpTracerProvider().get_tracer(__name__),
+            enable_traces=False,
+            metric_recorder=recorder,
+        )
+        run_id = uuid4()
+
+        asyncio.run(
+            handler.on_llm_start(
+                serialized={"name": "demo-model"},
+                prompts=["hello"],
+                run_id=run_id,
+                invocation_params={"model": "qwen3"},
+            )
+        )
+
+        attributes = recorder.record_active_llm.call_args_list[0].args[1]
+        assert attributes["gen_ai.request.model"] == "qwen3"
 
     def test_llm_generate_span_attributes(self, tracer_and_exporter):
         """测试 llm.generate span 包含 llm.input 和 llm.output 属性"""
