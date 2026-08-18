@@ -44,6 +44,7 @@ vi.mock('@blueking/chat-x', async importOriginal => {
       props: {
         asideCollapsed: { type: Boolean, default: undefined },
         placement: { type: String, default: undefined },
+        timezone: { type: String, default: undefined },
         getSideRenderComponent: { type: Function, default: undefined },
         getSideTabRenderComponent: { type: Function, default: undefined },
         onCustomTabChange: { type: Function, default: undefined },
@@ -172,5 +173,37 @@ describe('ChatBot asideCollapsed', () => {
 
     await wrapper.setProps({ asideCollapsed: false });
     expect(chatContainerPropsRef.current.asideCollapsed).toBe(false);
+  });
+});
+
+describe('ChatBot timezone', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chatHelperRef.value = createMockChatHelper();
+    chatContainerPropsRef.current = {};
+  });
+
+  it('未传 timezone 时应保持 undefined（与 ChatContainer 一致，按浏览器时区展示）', () => {
+    mount(ChatBot, {
+      props: {
+        url: 'https://api.example.com/',
+      },
+    });
+
+    expect(chatContainerPropsRef.current.timezone).toBeUndefined();
+  });
+
+  it('应将 timezone 透传给 ChatContainer', async () => {
+    const wrapper = mount(ChatBot, {
+      props: {
+        url: 'https://api.example.com/',
+        timezone: 'Asia/Shanghai',
+      },
+    });
+
+    expect(chatContainerPropsRef.current.timezone).toBe('Asia/Shanghai');
+
+    await wrapper.setProps({ timezone: 'UTC' });
+    expect(chatContainerPropsRef.current.timezone).toBe('UTC');
   });
 });

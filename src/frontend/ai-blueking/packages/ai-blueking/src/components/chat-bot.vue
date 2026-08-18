@@ -41,6 +41,7 @@
       :shortcuts="filteredShortcuts"
       :size="props.size"
       :skills="effectiveSkills"
+      :timezone="props.timezone"
       :support-upload="effectiveSupportUpload"
       :update-tools="props.updateTools"
       :welcome-title="welcomeTitle"

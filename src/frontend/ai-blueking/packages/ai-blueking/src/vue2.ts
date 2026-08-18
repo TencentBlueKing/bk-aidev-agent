@@ -302,6 +302,10 @@ export default createVue2Wrapper(AIBlueking, {
       type: String,
       default: undefined,
     },
+    timezone: {
+      type: String,
+      default: undefined,
+    },
   },
   emitNames: [...aiBluekingEmitNames],
   exposeKeys: [...aiBluekingExposeKeys],
@@ -504,6 +508,10 @@ export const ChatBotV2 = createVue2Wrapper(ChatBot, {
       default: undefined,
     },
     size: {
+      type: String,
+      default: undefined,
+    },
+    timezone: {
       type: String,
       default: undefined,
     },

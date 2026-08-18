@@ -493,15 +493,17 @@ const renderMode = useRenderModeInject(); // ComputedRef<RenderMode>
 | `'small'`（默认） | 12px |
 | `'normal'` | 14px |
 
-- **下发**：容器内 `useGlobalConfig({ size, supportUpload })`（provide `GLOBAL_CONFIG_TOKEN`）。
-- **读取**：子组件 `injectGlobalConfig()` 取 `{ size, supportUpload }`。
+- **下发**：容器内 `useGlobalConfig({ size, supportUpload, timezone })`（provide `GLOBAL_CONFIG_TOKEN`）。
+- **读取**：子组件 `injectGlobalConfig()` 取 `{ size, supportUpload, timezone }`。
 - **DOM 生效**：容器根节点带 `:data-ai-size="size"`；同时把当前值镜像到 `document.body.dataset.aiSize`，让挂到 body 的浮层（tippy / Teleport）也继承 `--ai-font-size` 等 CSS 变量（卸载时清理）。样式普遍使用 `var(--ai-font-size, 12px)`。
+- **时区**：`timezone` 为 IANA 名（如 `Asia/Shanghai`）；`MessageTime` 优先用自身 props，否则读全局配置，都未配置时按浏览器时区展示。
 
 ```typescript
 export type AiSizeMode = 'normal' | 'small';
 export type GlobalConfig = {
   size?: ComputedRef<AiSizeMode>;
   supportUpload: ComputedRef<boolean>;
+  timezone?: ComputedRef<string | undefined>;
 };
 ```
 

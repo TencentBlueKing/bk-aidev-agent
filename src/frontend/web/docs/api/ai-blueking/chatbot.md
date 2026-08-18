@@ -97,6 +97,7 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | `updateTools` | `IToolBtn[]` | — | 自定义 AI 消息反馈工具组（like/unlike/delete）；合并规则同上 |
 | `resizeProps` | `{ disabled?, initialDivide?, max?, min? }` | — | ResizeLayout 配置（执行情况侧面板拖拽） |
 | `size` | `'normal' \| 'small'` | `'small'` | 字号主题档位，透传至 ChatContainer（`small` 12px / `normal` 14px） |
+| `timezone` | `string` | — | 消息时间展示所用的 IANA 时区名（如 `Asia/Shanghai`），透传至 ChatContainer；未配置时按浏览器时区展示 |
 
 ### 侧栏自定义渲染 {#side-render-customization}
 

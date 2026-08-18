@@ -94,6 +94,7 @@
             :shortcuts="props.shortcuts"
             :size="props.size"
             :skills="agentSkills"
+            :timezone="props.timezone"
             :style="{ height: props.hideHeader ? '100%' : 'calc(100% - 48px)' }"
             :update-tools="props.updateTools"
             :url="normalizedUrl"

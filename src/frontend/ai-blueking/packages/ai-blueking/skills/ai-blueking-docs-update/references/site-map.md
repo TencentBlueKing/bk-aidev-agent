@@ -68,6 +68,8 @@
 
 欢迎区 / 消息工具栏扩展落点：指南 `ui-customization.md`（`#welcome`、`messageTools`/`updateTools`）、`sharing.md`（`confirm-share` + `source`、`agent-action`）；API 同步 `api/ai-blueking/chatbot.md`、`aiblueking.md`、`types.md`。
 
+消息时间时区 `timezone` 落点：API `api/ai-blueking/chatbot.md`、`aiblueking.md`、`types.md`（透传 ChatContainer；未配置时按浏览器时区）。
+
 模型选择相关落点（≥ v2.2.2）：指南 `model-selection.md`；API 同步 `aiblueking` / `chatbot` / `managers`（含 `ModelSelectionManager`） / `types`、`chat-helper/sdk`、`chat-x/components`；FAQ「如何关闭或自定义模型选择」。
 
 ## 示例 `/demos/`

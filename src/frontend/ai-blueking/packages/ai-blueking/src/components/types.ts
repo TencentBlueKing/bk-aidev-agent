@@ -232,6 +232,12 @@ export interface ChatBotProps {
    */
   size?: AiSizeMode;
 
+  /**
+   * 消息时间展示所用的 IANA 时区名（如 Asia/Shanghai），透传至 ChatContainer
+   * 未配置时按浏览器时区展示
+   */
+  timezone?: string;
+
   /** 技能列表（输入 / 触发） */
   skills?: ISkillListItem[];
 

@@ -337,6 +337,12 @@ export interface AIBluekingProps {
    * - `normal`：14px 基准
    */
   size?: AiSizeMode;
+
+  /**
+   * 消息时间展示所用的 IANA 时区名（如 Asia/Shanghai），透传至 ChatBot → ChatContainer
+   * 未配置时按浏览器时区展示
+   */
+  timezone?: string;
 }
 
 /**
