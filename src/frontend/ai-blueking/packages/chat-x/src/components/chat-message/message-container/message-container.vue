@@ -22,6 +22,7 @@
         <Checkbox
           v-if="enableSelection && group.type !== MessageRole.Loading"
           class="message-group-checkbox"
+          :class="{ 'is-user-group': group.type === MessageRole.User }"
           :model-value="group.checked"
           @update:model-value="(checked: boolean) => handleCheckboxChange(group, checked)"
         />
@@ -366,9 +367,18 @@
 
       &-checkbox {
         flex: 0 0 16px;
-        align-self: baseline;
+
+        // 兄弟节点 .message-group-messages 未参与基线对齐组，baseline 会退化为贴组顶部，
+        // 错位程度随首个内容结构变化。改为顶部对齐 + 定量补偿，使勾选框在首行行高内垂直居中
+        align-self: flex-start;
         height: 16px;
+        margin-top: calc((var(--ai-line-height, 20px) - 16px) / 2);
         margin-right: auto;
+
+        // 用户消息是带 8px 纵向内边距的气泡，需再下移一个内边距才能对齐气泡内首行文字
+        &.is-user-group {
+          margin-top: calc((var(--ai-line-height, 20px) - 16px) / 2 + 8px);
+        }
       }
 
       &-messages {
