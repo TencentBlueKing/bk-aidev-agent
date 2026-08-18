@@ -1375,6 +1375,6 @@ render(h2) {
 **布局位置**：
 
 ```
-[logo] [title] [more] | ← #headerLeft → | [new-chat] [history] [help] [compress] [close]
-     .left-section                              .right-section
+[logo] [title] [more] | ← #headerLeft → | [new-chat] [history] [help] [compress] [close] | [aside]
+     .left-section                              .right-section（关闭与侧栏展开之间有竖线分隔）
 ```

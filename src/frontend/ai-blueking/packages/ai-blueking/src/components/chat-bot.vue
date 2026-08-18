@@ -457,12 +457,6 @@
     background: transparent;
     border-radius: 12px;
 
-    // 欢迎状态：视觉上靠上的布局
-    &.welcome-state {
-      justify-content: flex-start;
-      padding-top: 15vh;
-    }
-
     .chatbot-welcome {
       display: flex;
       flex-direction: column;

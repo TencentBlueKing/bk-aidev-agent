@@ -162,6 +162,24 @@
         class="bkai-icon bkai-zhushou"
         @click="handleHelpClick"
       ></i>
+      <i
+        v-if="props.showCompressionIcon"
+        v-bk-tooltips="{ content: compressionTooltip, boundary: 'parent' }"
+        class="bkai-icon"
+        :class="compressionIcon"
+        @click="emit('toggle-compression')"
+      ></i>
+      <i
+        v-bk-tooltips="{ content: t('关闭'), boundary: 'parent' }"
+        class="bkai-icon bkai-close-line-2"
+        @click="emit('close')"
+      ></i>
+      <!-- 设计稿：关闭与侧栏展开之间有竖线分隔 -->
+      <span
+        v-if="props.showAsideToggle"
+        aria-hidden="true"
+        class="header-toolbar-divider"
+      ></span>
       <span
         v-if="props.showAsideToggle"
         v-bk-tooltips="{
@@ -173,19 +191,6 @@
       >
         <AsideToggleIcon />
       </span>
-      <i
-        v-if="props.showCompressionIcon"
-        v-bk-tooltips="{ content: compressionTooltip, boundary: 'parent' }"
-        class="bkai-icon"
-        :class="compressionIcon"
-        @click="emit('toggle-compression')"
-      ></i>
-
-      <i
-        v-bk-tooltips="{ content: t('关闭'), boundary: 'parent' }"
-        class="bkai-icon bkai-close-line-2"
-        @click="emit('close')"
-      ></i>
     </div>
   </div>
 </template>
@@ -553,6 +558,15 @@
     .right-section {
       display: flex;
       gap: 12px;
+      align-items: center;
+      justify-content: flex-end;
+    }
+
+    .header-toolbar-divider {
+      flex-shrink: 0;
+      width: 1px;
+      height: 8px;
+      background: #dcdee5;
     }
 
     .bkai-icon {

@@ -681,6 +681,24 @@ describe('ChatContainer', () => {
       expect(wrapper.find('.mock-banner-icon').exists()).toBe(true);
     });
 
+    it('欢迎态应将 ai-is-welcome 加在 resize-layout 上，便于主栏单独承担 padding-top', () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages: [] },
+      });
+
+      expect(wrapper.find('.ai-chat-container-resize-layout').classes()).toContain('ai-is-welcome');
+    });
+
+    it('有消息时不应带 ai-is-welcome', () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages },
+      });
+
+      expect(wrapper.find('.ai-chat-container-resize-layout').classes()).not.toContain('ai-is-welcome');
+    });
+
     it('有消息时应该显示 MessageContainer', () => {
       const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
 

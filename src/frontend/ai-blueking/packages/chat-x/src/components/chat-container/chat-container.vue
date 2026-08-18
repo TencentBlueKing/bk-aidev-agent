@@ -17,7 +17,11 @@
     <ResizeLayout
       v-else
       class="ai-chat-container-resize-layout"
-      :class="{ 'ai-is-collapse': isCollapse || displayTabs.length === 0, 'is-resizing': isResizing }"
+      :class="{
+        'ai-is-collapse': isCollapse || displayTabs.length === 0,
+        'ai-is-welcome': !messages?.length,
+        'is-resizing': isResizing,
+      }"
       v-bind="resizeProps"
       @after-resize="handleAfterResize"
       @resizing="handleResizing"
@@ -887,6 +891,7 @@
       > main {
         position: relative;
         width: var(--resize-main-width);
+        box-sizing: border-box;
 
         // overflow: visible;
 
@@ -907,6 +912,11 @@
             max-height: none;
           }
         }
+      }
+
+      // 欢迎态顶距只加在主栏，避免整层 chatbot padding 把侧栏一起顶下去导致错位
+      &.ai-is-welcome > main {
+        padding-top: 15vh;
       }
 
       &.ai-is-collapse {

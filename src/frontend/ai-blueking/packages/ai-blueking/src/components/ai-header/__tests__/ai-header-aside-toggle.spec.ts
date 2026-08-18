@@ -74,23 +74,36 @@ vi.mock('@blueking/chat-x', async importOriginal => {
 import AIHeader from '../index.vue';
 
 describe('AIHeader aside toggle', () => {
-  it('should render the aside toggle immediately left of the compression icon', () => {
+  it('should render icons as new-chat, history, compress, close, divider, aside-toggle', () => {
     const wrapper = mount(AIHeader, {
       props: {
         asideCollapsed: true,
         showAsideToggle: true,
         showCompressionIcon: true,
+        showHistoryIcon: true,
+        showNewChatIcon: true,
+        hasSessionContents: true,
       },
     });
 
     const icons = wrapper.findAll('.right-section > *');
-    const toggleIndex = icons.findIndex(node => node.classes().includes('aside-toggle'));
-    const compressionIndex = icons.findIndex(
-      node => node.classes().includes('bkai-yasuo') || node.classes().includes('bkai-morenchicun'),
-    );
+    const classLists = icons.map(node => node.classes());
 
-    expect(toggleIndex).toBeGreaterThanOrEqual(0);
-    expect(compressionIndex).toBe(toggleIndex + 1);
+    const newChatIndex = classLists.findIndex(classes => classes.includes('bkai-xinzengliaotian'));
+    const historyIndex = classLists.findIndex(classes => classes.includes('bkai-history'));
+    const compressionIndex = classLists.findIndex(
+      classes => classes.includes('bkai-yasuo') || classes.includes('bkai-morenchicun'),
+    );
+    const closeIndex = classLists.findIndex(classes => classes.includes('bkai-close-line-2'));
+    const dividerIndex = classLists.findIndex(classes => classes.includes('header-toolbar-divider'));
+    const toggleIndex = classLists.findIndex(classes => classes.includes('aside-toggle'));
+
+    expect(newChatIndex).toBeGreaterThanOrEqual(0);
+    expect(historyIndex).toBe(newChatIndex + 1);
+    expect(compressionIndex).toBe(historyIndex + 1);
+    expect(closeIndex).toBe(compressionIndex + 1);
+    expect(dividerIndex).toBe(closeIndex + 1);
+    expect(toggleIndex).toBe(dividerIndex + 1);
   });
 
   it('should emit toggle-aside on click', async () => {
@@ -105,7 +118,7 @@ describe('AIHeader aside toggle', () => {
     expect(wrapper.emitted('toggle-aside')).toHaveLength(1);
   });
 
-  it('should hide the toggle when showAsideToggle is false', () => {
+  it('should hide the toggle and divider when showAsideToggle is false', () => {
     const wrapper = mount(AIHeader, {
       props: {
         showAsideToggle: false,
@@ -114,5 +127,6 @@ describe('AIHeader aside toggle', () => {
     });
 
     expect(wrapper.find('.aside-toggle').exists()).toBe(false);
+    expect(wrapper.find('.header-toolbar-divider').exists()).toBe(false);
   });
 });
