@@ -33,7 +33,7 @@
 | messageToolsTippyOptions | `MessageToolsTippyOptions` | - | MessageTools tippy 弹窗配置（如 `appendTo`，控制弹窗挂载位置和层级） |
 | messageTools | `IToolBtn[]` | - | 自定义 AI 消息主工具组（copy/cite/rebuild/share）；按 id 与内置合并（覆盖/追加/`hidden: true` 隐藏） |
 | updateTools | `IToolBtn[]` | - | 自定义 AI 消息反馈工具组（like/unlike/delete）；合并规则同上 |
-| asideCollapsed | `boolean` | 内部默认折叠 | 侧栏折叠态。传入后**严格受控**（内部展开只发 `update:asideCollapsed`）；不传时由 ChatBot 内部自持。侧栏固定从右侧展开，已移除 `placement` |
+| asideCollapsed | `boolean` | 内部默认折叠 | 侧栏折叠态。传入后**严格受控**（内部展开只发 `update:asideCollapsed`）；不传时由 ChatBot 内部自持。侧栏固定从右侧展开，已移除 `placement`。**嵌入模式须业务 Header 提供开关**，见下节 |
 | resizeProps     | `ResizeProps`        | -       | ResizeLayout 配置（执行情况侧面板拖拽）        |
 | size            | `AiSizeMode`（`'normal' \| 'small'`） | `'small'` | 字号主题档位，透传至 ChatContainer（`small` 12px / `normal` 14px） |
 | executionTabVisible | `boolean` | `true` | 「执行情况」Tab 是否展示（与 ChatContainer 一致）；置 `false` 时从 Tab 栏隐藏 |
@@ -64,6 +64,37 @@
 | execution-panel-change | `(isCollapse: boolean, resizeAsideWidth?: number)` | 侧栏展开/折叠与宽度变化（浮窗几何不由此事件驱动） |
 | update:asideCollapsed | `(collapsed: boolean)` | `v-model:asideCollapsed`；受控时内部展开只发此事件 |
 | rename            | `(newName: string, sessionCode: string)`   | 首条消息后 AI 自动重命名成功；第二参为被改名会话编码（切会话后仍会抛，便于业务维护列表） |
+
+## 嵌入模式业务 Header（会话名 + 侧栏开关）
+
+`ChatBot` 只有聊天区，**不带** `AIHeader`。浮窗场景的展开/收起在 `AIBlueking` → `AIHeader`；嵌入到页面时必须业务方自建 Header。
+
+| 职责 | 谁做 | 说明 |
+| --- | --- | --- |
+| 会话名称 | 业务 Header 左侧 | 从 `@agent-info-loaded` 拿到 `chatHelper` 后读 `session.current.sessionName` |
+| 展开 / 收起侧栏 | 业务 Header 右侧 | `v-model:asideCollapsed`；图标用 `CollapsedAsideIcon`（chat-x 导出的 VNode，模板里 `cloneVNode`） |
+| 侧栏内容 | ChatBot / ChatContainer | 固定从右侧展开；文件卡片、`addCustomTab` 只会 emit `update:asideCollapsed` |
+
+```vue
+<template>
+  <div class="chat-main">
+    <header class="chat-main-header">
+      <h1>{{ currentSessionName }}</h1>
+      <span :title="asideCollapsed ? '展开侧栏' : '收起侧栏'" @click="asideCollapsed = !asideCollapsed">
+        <AsideToggleIcon />
+      </span>
+    </header>
+    <ChatBot
+      v-model:aside-collapsed="asideCollapsed"
+      :url="apiUrl"
+      height="100%"
+      @agent-info-loaded="handleAgentInfoLoaded"
+    />
+  </div>
+</template>
+```
+
+> 可运行样例：`packages/ai-blueking/playground/views/EmbeddedHeaderView.vue`。生产级（会话列表 + 搜索/批量删除）：`publish-template/src/views/ChatWindow.vue`。完整接线见 [集成模式](integration-patterns.md#嵌入式-chatbot业务-header--侧栏开关)。
 
 ## Slots
 

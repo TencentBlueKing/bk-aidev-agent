@@ -892,8 +892,68 @@ ChatBot 与 AIBlueking 均支持 `renderMode` prop（默认 `chat`），由 chat
 - ChatContainer 暴露 `addCustomTab` / `removeCustomTab` / `selectCustomTab` 用于程序化管理自定义 Tab。
 
 > 📂 **可运行范例**：`packages/ai-blueking/playground/components/side-render/`——`use-side-render-handlers.ts`（两个 render 函数完整实现，含 `tab.name` 解析）、`use-side-render-custom-tab-change.ts`（`onCustomTabChange` 完整实现，含默认端点 `flow_agent/{taskId}/task_node_info/{nodeId}/`、builtin/custom 两种 `detailSource`）。详见 [Playground 实例索引](playground-examples.md)。
-- 侧栏固定从右侧展开（无 `placement`）。折叠/展开由 `v-model:asideCollapsed` 驱动；浮窗场景入口在 `AIHeader`，嵌入式 ChatBot 需业务方自行提供按钮。侧栏宽度变化仍会触发 `@execution-panel-change (isCollapse, width)`（对应 ChatContainer `collapse-change`），但浮窗几何只认 `asideCollapsed`。
+- 侧栏固定从右侧展开（无 `placement`）。折叠/展开由 `v-model:asideCollapsed` 驱动；浮窗场景入口在 `AIHeader`，嵌入式 ChatBot 需业务方自行提供 Header（见下一节）。侧栏宽度变化仍会触发 `@execution-panel-change (isCollapse, width)`（对应 ChatContainer `collapse-change`），但浮窗几何只认 `asideCollapsed`。
 - `resizeProps` 控制侧面板拖拽范围。
+
+### 嵌入式 ChatBot：业务 Header + 侧栏开关
+
+`AIBlueking` 浮窗把开关放在 `AIHeader`；**嵌入式 `ChatBot` 不渲染 Header**，工作台类页面必须自己做一层：
+
+- 左侧：当前会话名称（`chatHelper.session.current.sessionName`）
+- 右侧：展开 / 收起按钮，绑定 `v-model:asideCollapsed`
+- 图标：`CollapsedAsideIcon`（`@blueking/chat-x` 导出的 VNode，不能当 SFC 直接用，需 `cloneVNode`）
+
+只写 `:aside-collapsed` 不写 `v-model` 时，文件卡片预览、`addCustomTab` 等内部展开请求会被丢掉。
+
+```vue
+<template>
+  <div class="chat-main">
+    <header class="chat-main-header">
+      <h1 class="chat-main-title">{{ currentSessionName }}</h1>
+      <span
+        class="aside-toggle"
+        :title="asideCollapsed ? '展开侧栏' : '收起侧栏'"
+        @click="asideCollapsed = !asideCollapsed"
+      >
+        <AsideToggleIcon />
+      </span>
+    </header>
+    <ChatBot
+      v-model:aside-collapsed="asideCollapsed"
+      :url="apiUrl"
+      height="100%"
+      @agent-info-loaded="handleAgentInfoLoaded"
+    />
+  </div>
+</template>
+
+<script setup lang="ts">
+  import { cloneVNode, computed, defineComponent, ref, shallowRef, watch } from 'vue';
+  import { ChatBot, type ChatBotExpose } from '@blueking/ai-blueking';
+  import { CollapsedAsideIcon } from '@blueking/chat-x';
+
+  const AsideToggleIcon = defineComponent({
+    name: 'AsideToggleIcon',
+    setup() {
+      return () => cloneVNode(CollapsedAsideIcon);
+    },
+  });
+
+  type ChatHelper = NonNullable<ReturnType<ChatBotExpose['getChatHelper']>>;
+
+  const chatHelperInstance = shallowRef<ChatHelper | null>(null);
+  const asideCollapsed = ref(true);
+  const currentSessionName = computed(
+    () => chatHelperInstance.value?.session.current.value?.sessionName?.trim() ?? '',
+  );
+
+  const handleAgentInfoLoaded = (helper: ChatHelper) => {
+    chatHelperInstance.value = helper;
+  };
+</script>
+```
+
+> 可运行：`packages/ai-blueking/playground/views/EmbeddedHeaderView.vue`（含左侧会话列表）。生产级：`publish-template/src/views/ChatWindow.vue`。
 
 ```vue
 <template>

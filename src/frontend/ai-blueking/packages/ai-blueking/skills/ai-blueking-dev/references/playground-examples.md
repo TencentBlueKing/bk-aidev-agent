@@ -12,19 +12,20 @@
 
 | Playground | 路径 | 层级 | 适合参考 |
 |------------|------|------|----------|
-| **ai-blueking** | `packages/ai-blueking/playground/` | 集成层（`AIBlueking` / `ChatBot`） | 面板集成、独立模式、requestOptions、错误处理、standalone-mount、侧栏自定义、`#message` 自定义渲染 |
+| **ai-blueking** | `packages/ai-blueking/playground/` | 集成层（`AIBlueking` / `ChatBot`） | 面板集成、独立模式、**嵌入模式业务 Header**、requestOptions、错误处理、standalone-mount、侧栏自定义、`#message` 自定义渲染 |
 | **chat-x** | `packages/chat-x/playground/` | 组件层（`ChatContainer` 等原子组件） | HITL 中断/恢复、`#group`/`#interruptQuestion` 插槽、RenderMode/size、自定义内容渲染、自定义 Tab（原子组件自行组装的完整范式） |
 
 ---
 
 ## 一、ai-blueking playground（集成层）
 
-12 个路由视图（`packages/ai-blueking/playground/views/`），路由表见 `router.ts`：
+路由视图（`packages/ai-blueking/playground/views/`），路由表见 `router.ts`：
 
 | 视图文件 | 演示主题 | 对应文档 |
 |----------|----------|----------|
 | `IntegratedView.vue` | 集成模式（`AIBlueking` 完整面板 + 悬浮球） | [集成模式](integration-patterns.md) |
 | `StandaloneView.vue` | 独立模式 / `mountAIBlueking`·`mountChatBot` | [集成模式#非 Vue 宿主挂载](integration-patterns.md) |
+| `EmbeddedHeaderView.vue` | **嵌入式 ChatBot 业务 Header**（会话名 + `v-model:asideCollapsed` + `CollapsedAsideIcon`）。标题栏「查看源码」弹窗可复制最小接入代码 | [集成模式#嵌入式业务 Header](integration-patterns.md#嵌入式-chatbot业务-header--侧栏开关)、[ChatBot API](chatbot-api.md#嵌入模式业务-header会话名--侧栏开关) |
 | `ExampleBasicView.vue` / `ExampleAdvancedView.vue` | 基础 / 高级用法 | [ChatBot API](chatbot-api.md) |
 | `CodeHeaderSlotView.vue` | `#codeHeader` 插槽（代码块「插入/应用」） | [ChatBot API#Slots](chatbot-api.md) |
 | `HeaderLeftSlotView.vue` | `#headerLeft` 插槽（Header 左侧自定义） | [SKILL.md](../SKILL.md) |

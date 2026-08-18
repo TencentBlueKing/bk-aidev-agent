@@ -131,14 +131,31 @@
 
       <template #main>
         <div class="chat-main">
-          <ChatBot
-            ref="chatBotRef"
-            :url="url"
-            placement="right"
-            height="100%"
-            @agent-info-loaded="handleAgentInfoLoaded"
-            @error="handleChatBotError"
-          />
+          <header class="chat-main-header">
+            <h1 class="chat-main-title">{{ currentSessionName }}</h1>
+            <div class="chat-main-actions">
+              <span
+                v-bk-tooltips="{
+                  content: asideCollapsed ? '展开侧栏' : '收起侧栏',
+                  delay: [300, 0],
+                }"
+                class="aside-toggle"
+                @click="asideCollapsed = !asideCollapsed"
+              >
+                <AsideToggleIcon />
+              </span>
+            </div>
+          </header>
+          <div class="chat-main-body">
+            <ChatBot
+              ref="chatBotRef"
+              v-model:aside-collapsed="asideCollapsed"
+              :url="url"
+              height="100%"
+              @agent-info-loaded="handleAgentInfoLoaded"
+              @error="handleChatBotError"
+            />
+          </div>
         </div>
       </template>
     </bk-resize-layout>
@@ -146,7 +163,15 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, shallowRef, computed, watch, nextTick } from "vue";
+  import {
+    cloneVNode,
+    computed,
+    defineComponent,
+    nextTick,
+    ref,
+    shallowRef,
+    watch,
+  } from "vue";
   import {
     Input as BkInput,
     Button as BkButton,
@@ -156,12 +181,20 @@
     bkTooltips as vBkTooltips,
   } from "bkui-vue";
   import { Plus } from "bkui-vue/lib/icon";
+  import { CollapsedAsideIcon } from "@blueking/chat-x";
 
   import { ChatBot } from "@blueking/ai-blueking";
   import "@blueking/ai-blueking/dist/vue3/style.css";
   import router from "../router";
 
   import type { ChatBotExpose } from "@blueking/ai-blueking";
+
+  const AsideToggleIcon = defineComponent({
+    name: "AsideToggleIcon",
+    setup() {
+      return () => cloneVNode(CollapsedAsideIcon);
+    },
+  });
 
   type ChatHelper = NonNullable<ReturnType<ChatBotExpose["getChatHelper"]>>;
 
@@ -178,6 +211,8 @@
   const chatBotRef = ref<ChatBotExpose | null>(null);
   // shallowRef 避免 reactive 自动解包内部 ref，保留 session.list / session.current 原始 Ref 语义
   const chatHelperInstance = shallowRef<ChatHelper | null>(null);
+  /** 嵌入式 ChatBot 不自带侧栏开关，由业务 Header 受控 */
+  const asideCollapsed = ref(true);
   const searchQuery = ref("");
   const selectedCodes = ref<Set<string>>(new Set());
   const sessionList = ref<SessionItem[]>([]);
@@ -188,6 +223,10 @@
   const hasHandledSessionQuery = ref(false);
 
   const isSessionListLoading = computed(() => !chatHelperInstance.value);
+
+  const currentSessionName = computed(
+    () => currentSession.value?.sessionName?.trim() ?? ""
+  );
 
   /** 创建会话中：复用 chat-helper session.isCreateLoading，避免重复点击 */
   const isCreatingSession = computed(
@@ -622,6 +661,8 @@
 
   /* 右侧聊天区域 */
   .chat-main {
+    display: flex;
+    flex-direction: column;
     flex: 1;
     height: 100%;
     min-width: 0;
@@ -634,6 +675,64 @@
       right: 0;
       border-radius: 4px 0 0 4px;
     }
+  }
+
+  .chat-main-header {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: space-between;
+    height: 52px;
+    padding: 0 16px 0 24px;
+    background: #fff;
+    border-bottom: 1px solid #dcdee5;
+    box-sizing: border-box;
+  }
+
+  .chat-main-title {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 24px;
+    color: #313238;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .chat-main-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .aside-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    color: #63656e;
+    cursor: pointer;
+    border-radius: 2px;
+
+    &:hover {
+      color: #4d4f56;
+      background: #eaebf0;
+    }
+
+    :deep(svg) {
+      width: 14px;
+      height: 14px;
+    }
+  }
+
+  .chat-main-body {
+    flex: 1;
+    min-height: 0;
   }
 </style>
 

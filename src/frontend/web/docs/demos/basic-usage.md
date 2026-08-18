@@ -31,7 +31,7 @@ const onAgentLoaded = (helper) => {
 </ClientOnly>
 
 ::: tip 构建完整聊天页面
-需要构建带会话列表的完整聊天页面？参考 [自定义会话列表](/guide/advanced-usage/external-session-list)
+需要构建带会话列表的完整聊天页面？参考 [自定义会话列表](/guide/advanced-usage/external-session-list)。嵌入式 ChatBot **不带 Header**，会话名称与侧栏开关须业务自建，见 [业务 Header](/guide/integration-modes/chatbot-embedded#业务-header会话名称--侧栏开关)。
 :::
 
 ## 完整示例

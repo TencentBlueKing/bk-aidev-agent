@@ -2,7 +2,9 @@
   <div class="standalone-view">
     <div class="view-header">
       <h2>独立模式</h2>
-      <p class="view-desc">ChatBot 组件独立使用，可嵌入到任意页面区域（无 Nimbus、无浮窗、无拖拽）</p>
+      <p class="view-desc">
+        ChatBot 组件独立使用，可嵌入到任意页面区域（无 Nimbus、无浮窗、无拖拽）。侧栏展开/收起与会话标题需业务方自行实现，见「嵌入模式业务 Header」。
+      </p>
     </div>
 
     <DemoRequestOptionsBar

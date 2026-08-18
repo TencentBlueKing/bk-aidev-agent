@@ -13,6 +13,10 @@
 - **自定义会话列表**：结合外部会话列表组件，构建完整的聊天页面（参见 [自定义会话列表](/guide/advanced-usage/external-session-list)）。
 - **弹窗/卡片内**：在弹窗、卡片等容器中集成对话能力。
 
+::: warning 嵌入模式不是开箱即用的完整工作台
+`ChatBot` 只有聊天区，**不带** Header。会话名称、右侧「执行情况 / 文件产物」侧栏的展开/收起，必须由业务方自己实现。浮窗（`AIBlueking`）则由内置 `AIHeader` 提供开关。见下方 [业务 Header](#业务-header会话名称--侧栏开关)。
+:::
+
 ## 快速开始
 
 ::: code-group
@@ -119,6 +123,7 @@ export default {
 | `maxWidth` | `string \| number` | — | 组件最大宽度 |
 | `extCls` | `string` | — | 自定义外层 CSS 类名 |
 | `requestOptions` | `RequestOptions` | — | 请求配置，支持自定义 headers、超时等 |
+| `asideCollapsed` | `boolean` | 内部默认折叠 | 侧栏折叠态。传入后严格受控，须配合 `v-model:asideCollapsed`。侧栏固定从右侧展开，**已移除 `placement`** |
 
 ## Events 事件
 
@@ -137,6 +142,7 @@ export default {
 | `confirm-share` | `(messages: Message[])` | 用户确认分享时触发 |
 | `cancel-share` | — | 用户取消分享时触发 |
 | `request-share` | — | 用户请求进入分享模式时触发 |
+| `update:asideCollapsed` | `(collapsed: boolean)` | 侧栏折叠态变更（`v-model:asideCollapsed`） |
 
 ## Expose 方法
 
@@ -172,3 +178,72 @@ export default {
 | **使用方式** | 直接使用 `<ChatBot url="..." />` | 通常不需要直接使用，由 AIBlueking 内部组装 |
 
 > **提示**：大多数场景下推荐使用独立模式。仅在需要多个组件共享同一对话状态时，才考虑集成模式。
+
+## 业务 Header：会话名称 + 侧栏开关 {#业务-header会话名称--侧栏开关}
+
+工作台浮窗的新 UI 由 `AIBlueking` + `AIHeader` 开箱提供。把 `ChatBot` 嵌进页面时，需要业务方补一层 Header：
+
+| 位置 | 内容 | 数据来源 |
+| --- | --- | --- |
+| 左侧 | 当前会话名称 | `@agent-info-loaded` 拿到 `chatHelper` 后读 `session.current.sessionName` |
+| 右侧 | 展开 / 收起侧栏 | `v-model:asideCollapsed`；图标用 `@blueking/chat-x` 的 `CollapsedAsideIcon` |
+
+`CollapsedAsideIcon` 是预创建的 VNode，不能当 SFC 直接写在模板里，需 `cloneVNode` 包一层组件。只写 `:aside-collapsed` 不写 `v-model` 时，点击文件卡片或打开自定义 Tab 的内部展开请求会被丢掉。
+
+```vue
+<template>
+  <div class="chat-main">
+    <header class="chat-main-header">
+      <h1 class="chat-main-title">{{ currentSessionName }}</h1>
+      <span
+        class="aside-toggle"
+        :title="asideCollapsed ? '展开侧栏' : '收起侧栏'"
+        @click="asideCollapsed = !asideCollapsed"
+      >
+        <AsideToggleIcon />
+      </span>
+    </header>
+    <ChatBot
+      v-model:aside-collapsed="asideCollapsed"
+      :url="url"
+      height="100%"
+      @agent-info-loaded="handleAgentInfoLoaded"
+    />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { cloneVNode, computed, defineComponent, ref, shallowRef } from 'vue';
+import { ChatBot } from '@blueking/ai-blueking';
+import type { ChatBotExpose } from '@blueking/ai-blueking';
+import { CollapsedAsideIcon } from '@blueking/chat-x';
+
+const AsideToggleIcon = defineComponent({
+  name: 'AsideToggleIcon',
+  setup() {
+    return () => cloneVNode(CollapsedAsideIcon);
+  },
+});
+
+type ChatHelper = NonNullable<ReturnType<ChatBotExpose['getChatHelper']>>;
+
+const url = ref('https://your-aidev-url.com/api/');
+const chatHelperInstance = shallowRef<ChatHelper | null>(null);
+const asideCollapsed = ref(true);
+const currentSessionName = computed(
+  () => chatHelperInstance.value?.session.current.value?.sessionName?.trim() ?? '',
+);
+
+const handleAgentInfoLoaded = (helper: ChatHelper) => {
+  chatHelperInstance.value = helper;
+};
+</script>
+```
+
+Header 建议高度 **52px**、左侧标题 16px / 行高 24px / `#313238`，与蓝鲸内容区标题栏一致。
+
+::: tip 完整样例
+- Playground：`packages/ai-blueking/playground/views/EmbeddedHeaderView.vue`（含左侧会话列表；标题栏「查看源码」可复制最小接入代码）
+- 生产级工作台：`publish-template/src/views/ChatWindow.vue`（搜索、批量删除、内联改名）
+- 左侧会话列表接线见 [自定义会话列表](/guide/advanced-usage/external-session-list)
+:::

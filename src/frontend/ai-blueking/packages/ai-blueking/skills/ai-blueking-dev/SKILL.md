@@ -1,6 +1,6 @@
 ---
 name: ai-blueking-dev
-description: 蓝鲸 AI 小鲸组件开发指南。基于 @blueking/chat-x（UI 组件）和 @blueking/chat-helper（业务 SDK）开发 AI 聊天应用、智能体、对话界面。涵盖 ChatBot 独立使用、AIBlueking 完整集成、流式响应、快捷指令、划词选择、模型选择（Model Select）、自定义消息渲染（图表/表单/iframe）、HITL 人机协同（工具审批/用户提问/中断恢复）、流程化智能体节点重试跳过、渲染模式（chat/share/test 分享态）、字号主题、侧栏自定义与自定义 Tab、欢迎区 `#welcome` 插槽、消息工具栏扩展（messageTools/updateTools）、非 Vue 宿主挂载等。触发场景：开发 AI 小鲸、集成 AI Agent、使用 chat-x/chat-helper、构建 AI 对话 UI、实现流式聊天、模型热切换、自定义消息组件渲染、human-in-the-loop、interrupt/resume、flow agent、自定义欢迎页、自定义消息工具按钮。
+description: 蓝鲸 AI 小鲸组件开发指南。基于 @blueking/chat-x（UI 组件）和 @blueking/chat-helper（业务 SDK）开发 AI 聊天应用、智能体、对话界面。涵盖 ChatBot 独立使用、嵌入模式业务 Header（会话名称 + asideCollapsed 侧栏开关）、AIBlueking 完整集成、流式响应、快捷指令、划词选择、模型选择（Model Select）、自定义消息渲染（图表/表单/iframe）、HITL 人机协同（工具审批/用户提问/中断恢复）、流程化智能体节点重试跳过、渲染模式（chat/share/test 分享态）、字号主题、侧栏自定义与自定义 Tab、欢迎区 `#welcome` 插槽、消息工具栏扩展（messageTools/updateTools）、非 Vue 宿主挂载等。触发场景：开发 AI 小鲸、集成 AI Agent、使用 chat-x/chat-helper、构建 AI 对话 UI、实现流式聊天、模型热切换、自定义消息组件渲染、human-in-the-loop、interrupt/resume、flow agent、自定义欢迎页、自定义消息工具按钮、嵌入式 ChatBot Header、侧栏展开收起。
 metadata:
   author: blueking
   version: '5.20'
@@ -24,6 +24,7 @@ metadata:
 - 渲染模式（`renderMode`：chat/share/test）、字号主题、侧栏自定义渲染与自定义 Tab
 - 欢迎区 `#welcome` 插槽；消息工具栏 `messageTools` / `updateTools` 扩展与 `agent-action` / `confirm-share(source)`
 - 非 Vue 宿主挂载（`mountAIBlueking` / `mountChatBot`）
+- 嵌入式 ChatBot 业务 Header（会话名称 + `v-model:asideCollapsed` 侧栏开关）
 
 ## 架构概览
 
@@ -53,7 +54,7 @@ metadata:
 | 场景                                           | 推荐模式               | 说明                     |
 | ---------------------------------------------- | ---------------------- | ------------------------ |
 | 需要完整面板（Header、拖拽、悬浮球、划词选择） | AIBlueking             | 开箱即用的完整体验       |
-| 只需聊天区域，嵌入到自定义布局中               | ChatBot 独立模式       | 轻量、灵活，自己控制布局 |
+| 只需聊天区域，嵌入到自定义布局中               | ChatBot 独立模式       | 轻量、灵活；Header / 侧栏开关需业务自建 |
 | 需要精细控制每个 UI 组件                       | 原子组件 + chat-helper | 最大灵活度，自行组装     |
 
 ## 快速开始
@@ -91,6 +92,8 @@ metadata:
 </script>
 ```
 
+> **嵌入模式不是开箱即用的完整工作台**：`ChatBot` 只有聊天区。会话标题、侧栏展开/收起必须由业务 Header 提供（`v-model:asideCollapsed` + `CollapsedAsideIcon`）。可运行样例：`packages/ai-blueking/playground/views/EmbeddedHeaderView.vue`（标题栏「查看源码」可复制最小接入代码）；生产级实现：`publish-template/src/views/ChatWindow.vue`。详见 [集成模式 · 嵌入式业务 Header](references/integration-patterns.md#嵌入式-chatbot业务-header--侧栏开关)。
+
 ### AIBlueking 完整面板
 
 ```vue
@@ -119,6 +122,16 @@ metadata:
 > 原子组件自行组装的完整示例见 [集成模式与示例](references/integration-patterns.md)。
 
 ## 关键陷阱
+
+### 嵌入式 ChatBot 没有 Header / 侧栏开关
+
+浮窗（`AIBlueking`）的展开/收起在 `AIHeader`。嵌入式 `ChatBot` **不提供**该按钮；不传 `asideCollapsed` 时内部自持（默认折叠），业务无法从外部切换。必须：
+
+1. 自己画 Header（左侧会话名，右侧开关）
+2. `v-model:asideCollapsed` 绑定（只写 `:aside-collapsed` 会让文件卡片 / `addCustomTab` 的内部展开失效）
+3. 图标复用 `@blueking/chat-x` 的 `CollapsedAsideIcon`（它是 VNode，模板里用 `cloneVNode` 包一层组件）
+
+侧栏固定从右侧展开，**已移除 `placement`**。
 
 ### `#welcome` 与消息工具栏扩展
 
@@ -273,7 +286,7 @@ ChatBot 内部所有错误都汇聚到单一出口 `useErrorReporter`（`src/com
 | `abortChat()` | 仅断开前端 `chat_completion` SSE，**后端 agent 继续跑** | URL 变化 / 组件卸载 / 切会话 / 静默重连替换旧连接 |
 | `stopChat(sessionCode)` | 通知后端真正停止生成；后端经 SSE 推 `RUN_ERROR`（用户已取消）后关流 | **仅用户主动点击停止**（`stopGeneration`） |
 
-ChatBot 在 `url` / `chatHelper` 变化或卸载时只会 `abortChat()`，不会自动调 `stopChat`。  
+ChatBot 在 `url` / `chatHelper` 变化或卸载时只会 `abortChat()`，不会自动调 `stopChat`。
 **`stopGeneration` 只调 `stopChat`，不断开 SSE**：前端 abort 会打乱后端 stop 时序。流由后端 `RUN_ERROR` 收尾；`RUN_ERROR` / `RUN_FINISHED` 均为终端事件，关流后不静默重连。
 
 ### `#headerLeft` 插槽自定义 Header 左侧
@@ -397,9 +410,9 @@ Agent 可在流式执行中**中断**，把控制权交回用户，处理后再*
 | 首次 / 兜底 | `session.model` 命中列表 → 选中；空/未知且无有效选中 → `property.default` / 首项 |
 | 附件按钮 | 跟随选中模型 `property.support_vision`；快捷指令 `supportUpload.vision` 优先 |
 
-编排入口：`ModelSelectionManager`（`models` / `selectedLlmCode` / `resolveModelForSession` / `persistSessionModel`）。  
-AIBlueking 创建实例并注入内嵌 ChatBot（`modelSelectionManager` prop），外壳层与聊天层共享同一份选中状态。  
-`ChatBusinessManager` / `SessionBusinessManager` 均委托该管理器，不再各自持有模型状态。  
+编排入口：`ModelSelectionManager`（`models` / `selectedLlmCode` / `resolveModelForSession` / `persistSessionModel`）。
+AIBlueking 创建实例并注入内嵌 ChatBot（`modelSelectionManager` prop），外壳层与聊天层共享同一份选中状态。
+`ChatBusinessManager` / `SessionBusinessManager` 均委托该管理器，不再各自持有模型状态。
 SDK：`agent.getLlms()` → `agent.models`；热切换 `agent.chat(..., property, llm_code)`。自定义请求参数（如 `temperature`）走 `config.data`，**不要**把 `model` 塞进 `config.data`。
 
 ## 参考资源
@@ -408,7 +421,7 @@ SDK：`agent.getLlms()` → `agent.models`；热切换 `agent.chat(..., property
 - [架构设计原则](references/architecture.md) — 分层架构、数据流、职责边界、Composable 依赖图、开发检查清单
 - [chat-x 组件 API](references/chat-x-api.md) — ChatContainer / ChatInput / MessageContainer、`useMessageGroup`、枚举与 `IToolBtn`
 - [chat-helper SDK API](references/chat-helper-api.md) — agent / session / message 模块方法、AGUIProtocol、类型定义
-- [集成模式与示例](references/integration-patterns.md) — 各场景完整代码示例、包导出、常见任务速查
+- [集成模式与示例](references/integration-patterns.md) — 各场景完整代码示例、包导出、常见任务速查；含 [嵌入式业务 Header](references/integration-patterns.md#嵌入式-chatbot业务-header--侧栏开关)
 - [内部开发模式](references/development-patterns.md) — Manager 使用、工具操作处理、文件上传、chatHelper 进阶用法
 - [测试指南](references/testing.md) — 测试配置、Mock 工厂、withSetup 模式、编写示例
 - [自定义消息渲染](references/custom-message-rendering.md) — 图表/表单/iframe 自定义组件、parseCustomBlocks、扩展指南

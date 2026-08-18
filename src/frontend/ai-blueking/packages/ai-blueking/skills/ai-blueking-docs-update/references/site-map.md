@@ -7,7 +7,7 @@
 | 文件 | 用途 |
 | --- | --- |
 | `changelog.md` | 版本更新记录，新版本插在文首 |
-| `faq.md` | 常见问题，适合短问答与链到指南 |
+| `faq.md` | 常见问题，适合短问答与链到指南；含嵌入式 ChatBot 无侧栏开关 / `placement` 已移除 |
 
 ## 指南 `/guide/`
 
@@ -23,7 +23,7 @@
 | 链接 | 文件 |
 | --- | --- |
 | `/guide/integration-modes/aiblueking-floating` | `aiblueking-floating.md` |
-| `/guide/integration-modes/chatbot-embedded` | `chatbot-embedded.md` |
+| `/guide/integration-modes/chatbot-embedded` | `chatbot-embedded.md` | 嵌入式 ChatBot；**业务 Header**（会话名 + `v-model:asideCollapsed`，侧栏固定右侧） |
 | `/guide/integration-modes/atomic-composition` | `atomic-composition.md` |
 | `/guide/integration-modes/standalone-bundle` | `standalone-bundle.md` | 非 Vue 宿主、`/standalone`（≥ v2.1.4-beta.8） |
 
@@ -40,13 +40,13 @@
 | `/guide/core-features/model-selection` | `model-selection.md` | 模型选择（≥ v2.2.2）：`enableModelSelect`、`models`、`ModelSelectionManager`、跟随 session、写回、`GET llms/`、upload=`support_vision` |
 | `/guide/core-features/sharing` | `sharing.md` | 分享；`confirm-share` 的 `source`、自定义 `triggerSelection` |
 | `/guide/core-features/custom-message-rendering` | `custom-message-rendering.md` | `custom-component` 块 |
-| `/guide/core-features/side-render-customization` | `side-render-customization.md` | 侧栏 Tab `getSideRenderComponent` 等（≥ v2.1.4-beta.7）；`executionTabVisible`（≥ v2.2.0）；文件产物 Tab（≥ v2.2.2） |
+| `/guide/core-features/side-render-customization` | `side-render-customization.md` | 侧栏 Tab `getSideRenderComponent` 等（≥ v2.1.4-beta.7）；`executionTabVisible`（≥ v2.2.0）；文件产物 Tab（≥ v2.2.2）；侧栏固定右侧 + 嵌入模式须业务 Header |
 | `/guide/core-features/ui-customization` | `ui-customization.md` | 主题、布局；`#welcome` 插槽、`messageTools`/`updateTools` |
 | `/guide/core-features/skill-guide` | `skill-guide.md` | AIDev Skill 市场指引 |
 
 ### 高级用法
 
-`guide/advanced-usage/` — 外部会话列表、自定义请求、编程式控制、多 Agent。
+`guide/advanced-usage/` — 外部会话列表（须带业务 Header / 侧栏开关）、自定义请求、编程式控制、多 Agent。
 
 ### 架构与内部
 

@@ -110,6 +110,8 @@ interface AIBluekingProps {
   showCompressionIcon?: boolean;
   /** 是否显示更多图标 */
   showMoreIcon?: boolean;
+  /** 是否展示侧栏展开/收起按钮，默认 true（仅 AIHeader；hideHeader 时一并消失） */
+  showAsideToggle?: boolean;
   /** 下拉菜单配置 */
   dropdownMenuConfig?: DropdownMenuConfig;
 
@@ -329,8 +331,11 @@ interface ChatBotProps {
   maxWidth?: number | string;
   /** 自定义 CSS 类名 */
   extCls?: string;
-  /** 执行情况侧面板位置 */
-  placement?: 'left' | 'right';
+  /**
+   * 侧栏折叠态。传入后严格受控；不传时由组件内部自持（默认折叠）。
+   * 侧栏固定从右侧展开，已移除 placement。嵌入模式须业务 Header 提供开关。
+   */
+  asideCollapsed?: boolean;
 
   // 分享与选择
   /** 是否启用消息选择 */
@@ -490,7 +495,8 @@ interface ChatBotEmits {
   'agent-action': [tool: IToolBtn, messages: Message[]];
   'cancel-share': [];
   'request-share': [];
-  'execution-panel-change': [isCollapse: boolean];
+  'execution-panel-change': [isCollapse: boolean, resizeAsideWidth?: number];
+  'update:asideCollapsed': [collapsed: boolean];
 }
 ```
 

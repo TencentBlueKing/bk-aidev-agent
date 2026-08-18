@@ -20,6 +20,12 @@ const router = createRouter({
       meta: { title: '独立模式', group: 'demo' },
     },
     {
+      path: '/embedded-header',
+      name: 'EmbeddedHeader',
+      component: () => import('./views/EmbeddedHeaderView.vue'),
+      meta: { title: '嵌入模式业务 Header', group: 'demo' },
+    },
+    {
       path: '/examples/basic',
       name: 'ExampleBasic',
       component: () => import('./views/ExampleBasicView.vue'),

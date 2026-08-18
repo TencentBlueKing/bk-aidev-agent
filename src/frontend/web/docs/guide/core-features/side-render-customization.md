@@ -15,7 +15,7 @@
 与 [消息自定义渲染](/guide/core-features/custom-message-rendering) 的区别：
 
 - **消息自定义渲染**：主对话区消息体内的 `custom-component` 块
-- **侧栏自定义渲染**：右侧（或 `placement` 指定侧）执行情况面板中的 Tab 内容与标签
+- **侧栏自定义渲染**：右侧执行情况面板中的 Tab 内容与标签（侧栏固定右侧，已移除 `placement`）
 
 底层机制与 `@blueking/chat-x` 的 `ChatContainer` 一致，详见 chat-x Wiki「自定义侧栏内容 / Tab 标签」。
 
@@ -46,6 +46,8 @@
 ## 内置「文件产物」Tab
 
 自 **v2.2.2** 起，`AIBlueking` / `ChatBot` 会把 `ChatContainer.onArtifactClick` 接到 `pv_files/download_url`。AI 回复中的文件卡片可打开侧栏固定的「文件产物」Tab（`name: 'file-artifact'`），聚合当前会话 `property.artifacts` 并预览 / 下载。集成方无需额外配置；原子组装时需自行传入 `onArtifactClick`。
+
+侧栏折叠由 `v-model:asideCollapsed` 驱动。浮窗入口在 `AIHeader`；**嵌入式 ChatBot 须业务 Header 提供开关**，否则用户无法手动展开/收起。详见 [ChatBot 页面嵌入 · 业务 Header](/guide/integration-modes/chatbot-embedded#业务-header会话名称--侧栏开关)。
 
 ## 数据流
 

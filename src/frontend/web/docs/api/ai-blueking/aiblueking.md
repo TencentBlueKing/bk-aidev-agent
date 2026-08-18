@@ -113,6 +113,7 @@ function openAI() {
 | `showNewChatIcon` | `boolean` | `true` | 是否显示新建会话图标 |
 | `showCompressionIcon` | `boolean` | `true` | 是否显示压缩图标 |
 | `showMoreIcon` | `boolean` | `true` | 是否显示更多图标 |
+| `showAsideToggle` | `boolean` | `true` | 是否显示侧栏展开/收起按钮（在压缩图标左侧）。`hideHeader` 时 Header 整栏不渲染，开关一并消失。嵌入式 `ChatBot` 无此按钮，须业务自建，见 [业务 Header](/guide/integration-modes/chatbot-embedded#业务-header会话名称--侧栏开关) |
 | `dropdownMenuConfig` | `DropdownMenuConfig` | `{ showRename: true, showAutoGenerate: true, showShare: true }` | 下拉菜单配置 |
 
 ### 高级配置
@@ -324,8 +325,9 @@ function openAI() {
 | 弹窗模式 | ❌ | ✅ |
 | 拖拽 / 缩放 | ❌ | ✅ |
 | 悬浮球入口 | ❌ | ✅ |
-| 会话管理侧边栏 | ❌ | ✅ |
+| 会话管理侧边栏 | ❌（业务自建列表） | ✅（Header 历史下拉） |
+| Header / 侧栏开关 | ❌（须业务 Header + `v-model:asideCollapsed`） | ✅（`AIHeader`，`showAsideToggle`） |
 | Teleport 渲染 | ❌ | ✅ |
 | 文本选中弹窗 | ❌ | ✅ |
 
-如果你只需要嵌入一个聊天区域，推荐使用更轻量的 [ChatBot](./chatbot.md) 组件。
+如果你只需要嵌入一个聊天区域，推荐使用更轻量的 [ChatBot](./chatbot.md) 组件，并按 [业务 Header](/guide/integration-modes/chatbot-embedded#业务-header会话名称--侧栏开关) 自行补会话名与侧栏开关。

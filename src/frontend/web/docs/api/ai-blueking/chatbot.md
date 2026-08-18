@@ -68,7 +68,7 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | `height` | `string \| number` | — | 容器高度 |
 | `maxWidth` | `string \| number` | — | 最大宽度 |
 | `extCls` | `string` | — | 额外 CSS 类名 |
-| `placement` | `'left' \| 'right'` | `'left'` | 执行情况侧面板位置 |
+| `asideCollapsed` | `boolean` | 内部默认折叠 | 侧栏折叠态。传入后**严格受控**，须 `v-model:asideCollapsed`。侧栏固定从右侧展开，**已移除 `placement`**。嵌入模式须业务 Header 提供开关，见 [业务 Header](/guide/integration-modes/chatbot-embedded#业务-header会话名称--侧栏开关) |
 
 ### 分享与选择
 
@@ -150,7 +150,8 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 
 | 事件名 | 参数 | 说明 |
 | --- | --- | --- |
-| `execution-panel-change` | `(isCollapse: boolean)` | 执行情况面板展开/折叠 |
+| `execution-panel-change` | `(isCollapse: boolean, resizeAsideWidth?: number)` | 侧栏展开/折叠与宽度变化（浮窗几何不由此事件驱动） |
+| `update:asideCollapsed` | `(collapsed: boolean)` | `v-model:asideCollapsed`；受控时内部展开只发此事件 |
 
 ## Slots
 

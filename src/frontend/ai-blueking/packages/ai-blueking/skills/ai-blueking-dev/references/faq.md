@@ -82,6 +82,24 @@ const messageStatus = computed(() =>
 
 ---
 
+## 嵌入模式 / 侧栏
+
+### Q: 为什么嵌入式 ChatBot 没有展开/收起侧栏的按钮？
+
+**A**: 这是刻意的。浮窗（`AIBlueking`）的开关在 `AIHeader`；`ChatBot` 只负责聊天区，避免和业务布局抢 Header。嵌入页面时：
+
+1. 自己画 Header：左侧会话名，右侧开关
+2. `v-model:asideCollapsed`（不要只写 `:aside-collapsed`，否则文件卡片 / 自定义 Tab 的内部展开会失效）
+3. 图标用 `@blueking/chat-x` 的 `CollapsedAsideIcon`（VNode，需 `cloneVNode`）
+
+可运行样例：`playground/views/EmbeddedHeaderView.vue`。生产级：`publish-template/src/views/ChatWindow.vue`。详见 [集成模式](integration-patterns.md#嵌入式-chatbot业务-header--侧栏开关)。
+
+### Q: `placement="left"` 为什么不生效？
+
+**A**: 侧栏已固定从右侧展开，`ChatBot` / `AIBlueking` **已移除 `placement`**。请改用 `v-model:asideCollapsed`。
+
+---
+
 ## 会话管理问题
 
 ### Q: 切换会话时消息没有清空？

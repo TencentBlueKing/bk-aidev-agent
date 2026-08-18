@@ -198,10 +198,11 @@ Header 提供以下会话操作入口：
       </ul>
     </aside>
 
-    <!-- ChatBot 聊天区域 -->
+    <!-- ChatBot 聊天区域：嵌入模式须自建 Header + 侧栏开关 -->
     <main class="chat-area">
       <ChatBot
         ref="chatBotRef"
+        v-model:aside-collapsed="asideCollapsed"
         url="/api/ai/assistant/"
         @agent-info-loaded="onChatHelperReady"
       />
@@ -216,6 +217,7 @@ import type { IChatHelper, ISession } from '@blueking/ai-blueking';
 
 const chatBotRef = ref<InstanceType<typeof ChatBot> | null>(null);
 const chatHelper = ref<IChatHelper | null>(null);
+const asideCollapsed = ref(true);
 
 const sessions = computed(() => chatHelper.value?.session.list.value ?? []);
 const currentSessionCode = computed(() =>

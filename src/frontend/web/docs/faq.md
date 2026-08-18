@@ -2,9 +2,9 @@
 
 ## 1. ChatBot 和 AIBlueking 有什么区别？
 
-**ChatBot** 是纯聊天组件，只包含消息列表和输入框，适合嵌入到已有页面中。
+**ChatBot** 是纯聊天组件，只包含消息列表和输入框，适合嵌入到已有页面中。**不带 Header**：会话名称和侧栏展开/收起须业务方自建，见 [业务 Header](/guide/integration-modes/chatbot-embedded#业务-header会话名称--侧栏开关)。
 
-**AIBlueking** 是包含悬浮球（Nimbus）、拖拽、划词选择等功能的完整面板，适合作为独立的 AI 助手窗口使用。
+**AIBlueking** 是包含悬浮球（Nimbus）、拖拽、划词选择、`AIHeader`（含侧栏开关）的完整面板，适合作为独立的 AI 助手窗口使用。
 
 简单来说：ChatBot 是"聊天框"，AIBlueking 是"聊天面板 + 交互增强"。
 
@@ -283,3 +283,15 @@ v2.1.4-beta.6 起，消息区**不解析任意 HTML**。请在 AIDev Agent **系
 ```
 
 完整语法、属性表与「撤离通知」类 LLM 提示词模板见 [蓝鲸行内富文本](/guide/core-features/markdown-inline-style)。用户侧的 `/` 提示词 prop 可放提问模板，格式约束建议写在系统提示词中。
+
+---
+
+## 为什么嵌入的 ChatBot 没有展开/收起侧栏按钮？`placement` 也不生效？
+
+这是刻意的分工：
+
+- **浮窗 `AIBlueking`**：开关在内置 `AIHeader`（可用 `showAsideToggle` 隐藏）
+- **嵌入式 `ChatBot`**：只有聊天区，Header 由业务自建，绑定 `v-model:asideCollapsed`
+- **`placement` 已移除**，侧栏固定从右侧展开
+
+完整接线见 [业务 Header](/guide/integration-modes/chatbot-embedded#业务-header会话名称--侧栏开关)。Playground 样例：`packages/ai-blueking/playground/views/EmbeddedHeaderView.vue`。

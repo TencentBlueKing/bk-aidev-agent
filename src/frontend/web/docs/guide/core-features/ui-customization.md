@@ -231,6 +231,8 @@ const onConfirmShare = (messages: Message[], source?: IToolBtn) => {
 </template>
 ```
 
+`hideHeader` 后内置侧栏开关一并消失。若仍要展开/收起右侧侧栏，按 [嵌入模式业务 Header](/guide/integration-modes/chatbot-embedded#业务-header会话名称--侧栏开关) 自行提供按钮并绑定 `v-model:asideCollapsed`。
+
 ### hideNimbus
 
 隐藏悬浮球（Nimbus）触发器：

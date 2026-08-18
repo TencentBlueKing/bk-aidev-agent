@@ -25,9 +25,18 @@ v2.2.2 正式版整合了未对外发布的 2.2.1-beta 与 2.2.2-beta.1 至 beta
 - 修复 `chat_completion` 报错未弹出提示的问题
 - 兼容 `MessageStatus.completed`，并校准输入区控件尺寸样式
 
+### 变更
+
+- **侧栏固定右侧**：`ChatBot` / `AIBlueking` 已移除 `placement`；折叠态由 `v-model:asideCollapsed` 驱动。浮窗由 `AIHeader` 提供开关；嵌入式 ChatBot 须业务方自行实现 Header（会话名称 + 展开/收起）
+
+### 文档
+
+- 补充嵌入模式业务 Header 说明：[ChatBot 页面嵌入](/guide/integration-modes/chatbot-embedded#业务-header会话名称--侧栏开关)、[自定义会话列表](/guide/advanced-usage/external-session-list)、[侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization)
+
 ### 升级建议
 
 - 从 **v2.2.0** 升级时注意新增模型选择：默认开启，选中态跟随 `session.model` 并写回当前会话
+- 嵌入式 `ChatBot` 不要再传 `placement`；工作台类页面请自建 Header 并绑定 `v-model:asideCollapsed`
 - 详细 API 见 [模型选择](/guide/core-features/model-selection)、[AIBlueking Props](/api/ai-blueking/aiblueking)、[ChatBot Props](/api/ai-blueking/chatbot)
 
 ---

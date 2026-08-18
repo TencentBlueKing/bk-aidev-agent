@@ -39,10 +39,21 @@
       </div>
     </aside>
 
-    <!-- 右侧聊天区域 -->
+    <!-- 右侧：业务 Header + ChatBot（嵌入模式须自建开关） -->
     <main class="chat-main">
+      <header class="chat-main-header">
+        <h1 class="chat-main-title">{{ currentSession?.sessionName }}</h1>
+        <span
+          class="aside-toggle"
+          :title="asideCollapsed ? '展开侧栏' : '收起侧栏'"
+          @click="asideCollapsed = !asideCollapsed"
+        >
+          <AsideToggleIcon />
+        </span>
+      </header>
       <ChatBot
         ref="chatBotRef"
+        v-model:aside-collapsed="asideCollapsed"
         :url="url"
         height="100%"
         @agent-info-loaded="handleAgentInfoLoaded"
@@ -52,15 +63,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref, shallowRef, computed, watch } from 'vue';
+import { cloneVNode, computed, defineComponent, ref, shallowRef, watch } from 'vue';
 import { ChatBot } from '@blueking/ai-blueking';
 import type { ChatBotExpose } from '@blueking/ai-blueking';
+import { CollapsedAsideIcon } from '@blueking/chat-x';
+
+const AsideToggleIcon = defineComponent({
+  name: 'AsideToggleIcon',
+  setup() {
+    return () => cloneVNode(CollapsedAsideIcon);
+  },
+});
 
 type ChatHelper = NonNullable<ReturnType<ChatBotExpose['getChatHelper']>>;
 
 const chatBotRef = ref<ChatBotExpose | null>(null);
 // 重点：使用 shallowRef 存储 chatHelper，避免 reactive 自动解包内部 ref
 const chatHelperInstance = shallowRef<ChatHelper | null>(null);
+const asideCollapsed = ref(true);
 const searchQuery = ref('');
 const sessionList = ref<any[]>([]);
 const currentSession = ref<any | null>(null);
@@ -151,7 +171,27 @@ const renameByAI = async (sessionCode: string) => {
 .session-item:hover { background-color: #f0f5ff; }
 .session-item.active { background-color: #e1ecff; color: #3a84ff; }
 .session-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-main { flex: 1; min-width: 0; }
+.chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.chat-main-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  height: 52px;
+  padding: 0 16px 0 24px;
+  border-bottom: 1px solid #dcdee5;
+}
+.chat-main-title {
+  margin: 0;
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 24px;
+  color: #313238;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aside-toggle { display: inline-flex; width: 20px; height: 20px; color: #63656e; cursor: pointer; }
 </style>
 ```
 
@@ -200,6 +240,7 @@ watch(() => helper.session.list.value, (list) => {
 
 完整的生产级实现可参考 `publish-template/src/views/ChatWindow.vue`，该文件包含：
 
+- **业务 Header**（会话名称 + `v-model:asideCollapsed` 侧栏开关）
 - 搜索过滤会话
 - 内联编辑会话标题
 - AI 自动生成标题
@@ -207,5 +248,7 @@ watch(() => helper.session.list.value, (list) => {
 - 删除确认弹窗
 - Loading 状态管理
 - 错误处理与 403 跳转
+
+Playground 精简样例：`packages/ai-blueking/playground/views/EmbeddedHeaderView.vue`。Header 约定详见 [ChatBot 页面嵌入 · 业务 Header](/guide/integration-modes/chatbot-embedded#业务-header会话名称--侧栏开关)。
 
 > 实际项目中建议基于 `ChatWindow.vue` 进行修改，而非从零开始编写。
