@@ -170,8 +170,8 @@ make test
   "otel_token": "",
   "metrics": {
     "enabled": true,
-    "export_interval_millis": 1000,
-    "export_timeout_millis": 5000,
+    "export_interval_millis": 10000,
+    "export_timeout_millis": 30000,
     "export_via_celery": true,
     "agent_data_id": 1001,
     "agent_access_token": "<由平台下发>",
@@ -207,6 +207,8 @@ OTel Counter 转成 BKM 的 `*_total`；Histogram 转成累计 `*_bucket`（`le`
 `*_sum` 和 `*_count`，因此现有速率与 P95 查询语义保持不变。这里不依赖 Celery Beat：
 各产生指标的进程负责按 `export_interval_millis` 截取自己的累计快照，Celery Worker 只负责
 可靠隔离实际网络请求，避免 Worker 无法读取其他进程内存中的 OTel 聚合器。
+生产默认周期为 10 秒；显式下发 `export_interval_millis` 时仍以配置值为准。本地 mock 为了缩短
+仪表盘验证等待时间，继续使用 1 秒周期。
 
 本地生成项目的 `.env` 可只配置以下三项；未显式配置 `metrics.enabled` 时，三项齐全会自动启用
 BKM 指标。平台下发的 `otel_info.metrics.agent_*` 优先级高于环境变量：

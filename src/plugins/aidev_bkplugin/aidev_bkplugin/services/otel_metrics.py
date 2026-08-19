@@ -42,6 +42,8 @@ from .metric_runtime import RetryableMetricPushError
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_METRIC_EXPORT_INTERVAL_MILLIS = 10_000
+
 
 def _as_bool(value: Any) -> bool:
     if isinstance(value, str):
@@ -69,7 +71,7 @@ class MetricExportSettings:
     """Metric-specific settings parsed from decoded ``agent_info.otel_info``."""
 
     enabled: bool
-    export_interval_millis: int = 5000
+    export_interval_millis: int = DEFAULT_METRIC_EXPORT_INTERVAL_MILLIS
     export_timeout_millis: int = 30000
     export_via_celery: bool = True
     bkm_data_id: int | None = None
@@ -83,7 +85,7 @@ class MetricExportSettings:
         metrics_info = otel_info.get("metrics") or {}
         interval = metrics_info.get(
             "export_interval_millis",
-            otel_info.get("metric_export_interval_millis", 5000),
+            otel_info.get("metric_export_interval_millis", DEFAULT_METRIC_EXPORT_INTERVAL_MILLIS),
         )
         timeout = metrics_info.get(
             "export_timeout_millis",

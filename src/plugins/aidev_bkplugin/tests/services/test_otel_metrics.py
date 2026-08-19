@@ -157,6 +157,7 @@ def test_metric_settings_use_local_environment_fallback(monkeypatch):
     assert settings.bkm_push_url == "http://local-proxy:10205/v2/push/"
     assert settings.bkm_target == "local-target"
     assert settings.export_via_celery is True
+    assert settings.export_interval_millis == 10_000
 
 
 def test_metric_settings_keep_direct_otlp_transport_without_bkm_config(monkeypatch):
