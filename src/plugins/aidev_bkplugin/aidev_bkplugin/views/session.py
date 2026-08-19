@@ -1,28 +1,43 @@
 # -*- coding: utf-8 -*-
 
+import threading
+import time
+from pathlib import PurePosixPath
+
 from aidev_agent.enums import ChannelType
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
 from aidev_agent.services.messages_handler.constants import TimeoutConfig
 from aidev_agent.services.messages_handler.factory import message_handler_factory
 from aidev_agent.services.sandbox_pv_files import (
+    IMAGE_DOWNLOAD_URL_EXPIRES_IN,
+    MAX_SESSION_UPLOAD_FILE_SIZE,
+    MAX_SESSION_UPLOAD_FILES,
+    SESSION_UPLOAD_FILE_EXTENSIONS,
     SandboxFileError,
     SandboxFileInvalidArgumentError,
     SandboxFileInvalidRequestError,
     SandboxFileNotFoundError,
     SandboxPvFileService,
+    fill_user_image_urls,
+    iter_user_images_missing_url,
 )
 from bkapi_client_core.exceptions import HTTPResponseError
 from blueapps.core.exceptions import ClientBlueException
 from django.conf import settings
 from django.http import HttpResponse
 from rest_framework.decorators import action
-from rest_framework.parsers import FileUploadParser
+from rest_framework.parsers import FileUploadParser, MultiPartParser
 from rest_framework.views import Response
 
 from aidev_bkplugin.constants import AGUI_PROTOCOL_VERSION, DEFAULT_SESSION_PAGE, DEFAULT_SESSION_PAGE_SIZE
 from aidev_bkplugin.services.agent_config import AgentConfigFetcher
 from aidev_bkplugin.utils import is_local_dev
 from aidev_bkplugin.views.base import PluginResourceManager, PluginViewSet, logger
+
+# file-kit 最新镜像进程内缓存：镜像发布不频繁，避免每次上传都打平台
+_UPLOAD_SNAPSHOT_TTL_SECONDS = 300
+_upload_snapshot_lock = threading.Lock()
+_upload_snapshot_cache: tuple[str, float] | None = None
 
 
 def _parse_positive_int(value, default):
@@ -215,6 +230,45 @@ class ChatSessionViewSet(PluginViewSet):
 
         return SandboxPvFileService(resource_manager=rm, executor_info=executor_info)
 
+    @staticmethod
+    def _resolve_upload_snapshot(rm) -> str:
+        """走平台 image 表查询：取 file-kit 已构建成功的最新镜像。"""
+        global _upload_snapshot_cache
+        now = time.monotonic()
+        with _upload_snapshot_lock:
+            cached = _upload_snapshot_cache
+            if cached and cached[0] and now < cached[1]:
+                return cached[0]
+        try:
+            result = rm.get_client().api.retrieve_latest_skill_version_image()
+        except Exception:
+            logger.exception("[pv_files] resolve_upload_snapshot 调平台失败")
+            raise
+        data = result.get("data") if isinstance(result, dict) else None
+        image = data.get("image") if isinstance(data, dict) else ""
+        image = image.strip() if isinstance(image, str) else ""
+        if image:
+            with _upload_snapshot_lock:
+                _upload_snapshot_cache = (image, time.monotonic() + _UPLOAD_SNAPSHOT_TTL_SECONDS)
+        else:
+            logger.warning("[pv_files] resolve_upload_snapshot empty")
+        return image
+
+    @staticmethod
+    def _validate_pv_upload_files(files) -> None:
+        if not files:
+            raise ClientBlueException(message="files is required")
+        if len(files) > MAX_SESSION_UPLOAD_FILES:
+            raise ClientBlueException(message=f"单次上传文件不能超过 {MAX_SESSION_UPLOAD_FILES} 个")
+        for upload_file in files:
+            extension = PurePosixPath(upload_file.name.replace("\\", "/")).suffix.lower()
+            if extension not in SESSION_UPLOAD_FILE_EXTENSIONS:
+                raise ClientBlueException(message=f"文件类型 {extension or '无扩展名'} 不支持")
+            if upload_file.size > MAX_SESSION_UPLOAD_FILE_SIZE:
+                raise ClientBlueException(
+                    message=f"文件 {upload_file.name} 超过单文件大小限制 {MAX_SESSION_UPLOAD_FILE_SIZE} 字节"
+                )
+
     @action(["GET"], url_path="pv_files", detail=True)
     def pv_files(self, request, pk, **kwargs):
         self._check_session_owner(request, pk, require_access=False)
@@ -275,11 +329,54 @@ class ChatSessionViewSet(PluginViewSet):
             return self._pv_exc_to_response(exc)
         return Response(data=data)
 
+    @action(
+        ["POST"],
+        url_path="pv_files/upload",
+        detail=True,
+        parser_classes=[MultiPartParser],
+    )
+    def pv_files_upload(self, request, pk, **kwargs):
+        """批量上传文件到会话 PV。"""
+        self._check_session_owner(request, pk, require_access=True)
+        uploaded_files = request.FILES.getlist("files")
+        self._validate_pv_upload_files(uploaded_files)
+        files = [
+            {
+                "name": upload_file.name,
+                "content": upload_file.read(),
+                "mime_type": upload_file.content_type or "application/octet-stream",
+            }
+            for upload_file in uploaded_files
+        ]
+        svc = self._make_pv_file_service(request)
+        snapshot = self._resolve_upload_snapshot(PluginResourceManager(username=request.user.username))
+        if snapshot:
+            svc._executor_info["snapshot"] = snapshot
+        try:
+            data = svc.upload_files(session_code=pk, files=files)
+        except SandboxFileError as exc:
+            return self._pv_exc_to_response(exc)
+        return Response(data=data)
+
+
+def _copy_session_content_payload(data):
+    """复制写消息 payload，避免改写原始 request.data。"""
+    if not isinstance(data, dict):
+        return data
+    payload = dict(data)
+    content = payload.get("content")
+    if isinstance(content, list):
+        payload["content"] = [dict(item) if isinstance(item, dict) else item for item in content]
+    return payload
+
 
 class ChatSessionContentViewSet(PluginViewSet):
     def create(self, request):
         username = request.user.username
-        result = self.client.api.create_chat_session_content(json=request.data, headers={"X-BKAIDEV-USER": username})
+        payload = _copy_session_content_payload(request.data)
+        if isinstance(payload, dict) and any(iter_user_images_missing_url(payload)):
+            fill_user_image_urls(ChatSessionViewSet._make_pv_file_service(self, request), payload)
+        result = self.client.api.create_chat_session_content(json=payload, headers={"X-BKAIDEV-USER": username})
         return Response(data=result["data"])
 
     @action(["GET"], url_path="content", detail=False)

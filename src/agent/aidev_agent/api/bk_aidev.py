@@ -267,6 +267,13 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/agents/skill/{skill_id}/",
     )
 
+    retrieve_latest_skill_version_image = bind_property(
+        Operation,
+        name="retrieve_latest_skill_version_image",
+        method="GET",
+        path="/openapi/aidev/resource/v1/skill_version_images/latest/",
+    )
+
     create_feedback = bind_property(
         Operation,
         name="create_feedback",

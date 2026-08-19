@@ -1055,6 +1055,69 @@ def test_chat_agent_builder_ignores_none_extra_in_last_user_message():
     assert builder._specific_resources == []
 
 
+def _make_file_resource_chat_ctx(resources: list[dict]):
+    ctx = _make_dummy_chat_ctx()
+    ctx.session_context_data = [
+        {
+            "role": PromptRole.USER.value,
+            "content": "请分析这些文件",
+            "extra": {"resources": resources},
+        }
+    ]
+    return ctx
+
+
+def test_chat_agent_builder_separates_file_resources_from_config_resources():
+    ctx = _make_file_resource_chat_ctx(
+        [
+            {"type": "file", "path": "files/report.pdf", "name": "report.pdf"},
+            {"type": "tool", "code": "search"},
+        ]
+    )
+
+    builder = ChatAgentBuilder(ctx)
+
+    assert builder.file_resources == [{"type": "file", "path": "files/report.pdf", "name": "report.pdf"}]
+    assert builder._specific_resources == [{"type": "tool", "code": "search"}]
+
+
+@patch(
+    "aidev_agent.services.agent.chat.SandboxPvFileService.get_download_url",
+    return_value={"download_url": "https://example.test/download/image.png"},
+)
+def test_agent_builds_llm_history_with_refreshed_pv_image_url(mock_get_download_url):
+    agent = ChatCompletionAgent(
+        thread_id="session-1",
+        chat_history=[
+            ChatPrompt(
+                role=PromptRole.USER.value,
+                content=[
+                    {
+                        "type": "binary",
+                        "id": "files/image.png",
+                        "url": "https://example.test/expired-image.png",
+                        "mime_type": "image/png",
+                    },
+                    {"type": "text", "text": "描述这张图片"},
+                ],
+            )
+        ],
+        file_resources=[{"type": "file", "path": "files/image.png", "mime_type": "image/png"}],
+        resource_manager=MagicMock(),
+        executor_info={"app_code": "app", "executor": "luka"},
+    )
+
+    history = agent._build_llm_history()
+
+    assert history[0].content[0]["url"] == "https://example.test/download/image.png"
+    assert agent.chat_history[0].content[0]["url"] == "https://example.test/expired-image.png"
+    mock_get_download_url.assert_called_once_with(
+        session_code="session-1",
+        path="files/image.png",
+        expires_in=3600,
+    )
+
+
 def test_build_chat_history_does_not_prepend_config_role_prompts():
     """角色提示词不在 build_chat_history 前置，role/system 交由注入挂点延迟拼接。"""
     from aidev_agent.services.agent.chat import ChatAgentBuilder

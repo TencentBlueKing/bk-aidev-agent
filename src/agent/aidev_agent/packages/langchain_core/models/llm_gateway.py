@@ -311,17 +311,16 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
                 continue
             content = []
             for item in message["content"]:
-                if (
-                    isinstance(item, dict)
-                    and item.get("type") == "binary"
-                    and str(item.get("mime_type") or "").startswith("image/")
-                ):
+                if isinstance(item, dict) and item.get("type") == "binary":
+                    # 展示用 binary 不能送给模型；图片转成 image_url，其它类型直接丢弃。
+                    if not str(item.get("mime_type") or "").startswith("image/"):
+                        continue
                     image_url = item.get("url")
                     if not image_url and item.get("data"):
                         image_url = f"data:{item['mime_type']};base64,{item['data']}"
                     if image_url:
                         content.append({"type": "image_url", "image_url": {"url": image_url}})
-                        continue
+                    continue
                 content.append(item)
             message["content"] = content
         return payload

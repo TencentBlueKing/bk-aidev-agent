@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import posixpath
 import uuid
 import warnings
 from functools import partial
@@ -67,6 +68,14 @@ from aidev_agent.services.common_agent import CommonAgentProtocol, CommonQAAgent
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
+from aidev_agent.services.sandbox_pv_files import (
+    IMAGE_DOWNLOAD_URL_EXPIRES_IN,
+    SESSION_UPLOAD_IMAGE_EXTENSIONS,
+    SESSION_VOLUME_PATH,
+    SandboxFileInvalidArgumentError,
+    SandboxFileServerError,
+    SandboxPvFileService,
+)
 from aidev_agent.utils.async_utils import async_to_sync_generator
 from aidev_agent.utils.loop import run_coro_sync
 from aidev_agent.utils.migrations import (
@@ -114,6 +123,7 @@ class ChatCompletionAgent(BaseModel):
     用于 quality_gate 判断 LLM 等辅助任务。"""
     non_thinking_llm: str | None = Field(default=None, deprecated="使用 chat_model_non_thinking 替代")
     chat_history: list[ChatPrompt] | None = None
+    file_resources: list[dict] = Field(default_factory=list, exclude=True)
     files: list[dict] = Field(default_factory=list)
     tools: Optional[list[StructuredTool]] = None
     skills: Optional[list] = None
@@ -195,6 +205,7 @@ class ChatCompletionAgent(BaseModel):
         # chat_history 由 ChatAgentBuilder 无损承接 ctx.session_context_data（A 源适配层输出），
         # 是 agent 唯一历史事实源：LLM 装配（convert 链）与首帧快照均从它派生。
         self.chat_history = builder.build_chat_history(ctx.session_context_data)
+        self.file_resources = builder.file_resources
         # 构建Agent参数配置
         if ctx.agent_config and ctx.agent_config.agent_options is not None:
             self.agent_options = ctx.agent_config.agent_options
@@ -409,7 +420,7 @@ class ChatCompletionAgent(BaseModel):
         self._prepare_pre_run_history(execute_kwargs)
         if not self.messages:
             self.messages = convert_chat_history_to_messages(
-                self.chat_history,
+                self._build_llm_history(),
                 model_context_options=self.model_context_options,
                 support_vision=self.support_vision,
                 model_name=self.model_name,
@@ -1385,6 +1396,94 @@ class ChatCompletionAgent(BaseModel):
             runtime_backend_resolver=self.runtime_backend_resolver,
         )
 
+    @staticmethod
+    def _normalize_file_resource_path(resource: dict) -> str:
+        raw_path = resource.get("path") or resource.get("outputId") or resource.get("id")
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            raise SandboxFileInvalidArgumentError("文件资源缺少 path")
+
+        path = raw_path.strip().replace("\\", "/")
+        mount_prefix = f"{SESSION_VOLUME_PATH}/"
+        if path.startswith(mount_prefix):
+            path = path[len(mount_prefix) :]
+        elif path.startswith(("/", "$")):
+            raise SandboxFileInvalidArgumentError(f"文件资源 path 不属于会话 PV: {raw_path}")
+        if any(ord(char) < 32 for char in path):
+            raise SandboxFileInvalidArgumentError(f"文件资源 path 含控制字符: {raw_path}")
+        if ".." in path.split("/"):
+            raise SandboxFileInvalidArgumentError(f"文件资源 path 非法: {raw_path}")
+
+        normalized = posixpath.normpath(path)
+        if normalized in {"", "."}:
+            raise SandboxFileInvalidArgumentError("文件资源 path 不能为空")
+        return normalized
+
+    @staticmethod
+    def _is_image_resource(resource: dict, path: str) -> bool:
+        mime_type = str(resource.get("mime_type") or resource.get("mime") or resource.get("content_type") or "").lower()
+        if mime_type:
+            return mime_type.startswith("image/")
+        return posixpath.splitext(path)[1].lower() in SESSION_UPLOAD_IMAGE_EXTENSIONS
+
+    @staticmethod
+    def _find_binary_by_path(content: list[dict], path: str) -> dict | None:
+        """按 PV 相对路径找到对应的展示用 binary。"""
+        for item in content:
+            if not isinstance(item, dict) or item.get("type") != "binary":
+                continue
+            if str(item.get("id") or item.get("path") or "") == path:
+                return item
+        return None
+
+    def _build_llm_history(self) -> list[ChatPrompt]:
+        """构造仅供本轮模型调用使用的历史副本。"""
+        chat_history = [prompt.model_copy(deep=True) for prompt in self.chat_history or []]
+        if not self.file_resources:
+            return chat_history
+
+        last_user_prompt = next(
+            (prompt for prompt in reversed(chat_history) if prompt.role == PromptRole.USER.value),
+            None,
+        )
+        if last_user_prompt is None:
+            return chat_history
+
+        image_paths = []
+        for resource in self.file_resources:
+            path = self._normalize_file_resource_path(resource)
+            if self._is_image_resource(resource, path):
+                image_paths.append(path)
+        if not image_paths:
+            return chat_history
+
+        if isinstance(last_user_prompt.content, str):
+            content: list[dict] = [{"type": "text", "text": last_user_prompt.content}]
+        elif isinstance(last_user_prompt.content, list):
+            content = list(last_user_prompt.content)
+        else:
+            return chat_history
+
+        file_service = SandboxPvFileService(
+            resource_manager=self.resource_manager,
+            executor_info=self.executor_info or {},
+        )
+        for path in dict.fromkeys(image_paths):
+            url_data = file_service.get_download_url(
+                session_code=self.thread_id,
+                path=path,
+                expires_in=IMAGE_DOWNLOAD_URL_EXPIRES_IN,
+            )
+            image_url = url_data.get("download_url")
+            if not image_url:
+                raise SandboxFileServerError(f"文件 {path} 未返回 download_url")
+            existing = self._find_binary_by_path(content, path)
+            if existing is not None:
+                existing["url"] = image_url
+            else:
+                content.append({"type": "image_url", "image_url": {"url": image_url}})
+        last_user_prompt.content = content
+        return chat_history
+
 
 class ChatAgentBuilder:
     """``ChatCompletionAgent`` 装配器
@@ -1407,6 +1506,7 @@ class ChatAgentBuilder:
     def __init__(self, ctx: AgentBuildContext):
         self.ctx = ctx
         self._specific_resources: list[dict] = []
+        self._file_resources: list[dict] = []
         self._mcp_fetch_failures: list[dict] = []
         self._executor_info: dict | None = None
         self._runtime_backend_resolver: Any | None = None
@@ -1417,6 +1517,11 @@ class ChatAgentBuilder:
     def mcp_fetch_failures(self) -> list[dict]:
         """MCP 工具拉取失败记录，由 ``build_tools`` 写入"""
         return self._mcp_fetch_failures
+
+    @property
+    def file_resources(self) -> list[dict]:
+        """返回当前用户消息中声明的文件资源。"""
+        return list(self._file_resources)
 
     def build_runtime_backend_resolver(self) -> RuntimeBackendResolver:
         """构造 RuntimeBackendResolver。
@@ -1989,6 +2094,7 @@ class ChatAgentBuilder:
             if item.get("role") == PromptRole.USER.value:
                 # item.get("extra") 有可能为 None, 和 item.get("extra", {}) 不等价
                 extra = item.get("extra") or {}
-                if extra.get("resources"):
-                    self._specific_resources = extra.get("resources")
+                resources = extra.get("resources") or []
+                self._file_resources = [resource for resource in resources if resource.get("type") == "file"]
+                self._specific_resources = [resource for resource in resources if resource.get("type") != "file"]
                 break

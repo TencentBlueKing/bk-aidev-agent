@@ -204,6 +204,38 @@ def test_pv_node_skip_no_paas_sandbox():
     client.create_agent_sandbox_volume.request.assert_not_called()
 
 
+def test_pv_node_reuses_platform_volume_without_create():
+    """创建前读到会话已绑定的卷时，直接复用，不新建。"""
+    client = _make_mock_client()
+    resource_manager = _make_mock_resource_manager()
+    resource_manager.retrieve_chat_session.return_value = {
+        "session_property": {"sandbox_pv_id": "vol-uploaded"}
+    }
+    pv_node = make_pv_node(client=client, app_code="test-app", resource_manager=resource_manager)
+
+    state = {
+        "runtime_paas_sbx_pv": [],
+        "messages": [_make_ai_message_with_paas_sandbox()],
+    }
+    config = _make_config(session_code="test-session")
+
+    result = pv_node(state, config)
+
+    client.create_agent_sandbox_volume.request.assert_not_called()
+    resource_manager.update_chat_session_sandbox_pv_id.assert_not_called()
+    assert result == {
+        "runtime_paas_sbx_pv": [
+            {
+                "type": "paas-sbx-pv",
+                "volume_id": "vol-uploaded",
+                "volume_name": "",
+                "mount_path": "session",
+                "source": "platform",
+            }
+        ]
+    }
+
+
 def test_pv_node_creates_pv_and_writes_back():
     """有 paas_sandbox tool_call 且无现有 PV 时，创建 PV 并写回平台。"""
     client = _make_mock_client()

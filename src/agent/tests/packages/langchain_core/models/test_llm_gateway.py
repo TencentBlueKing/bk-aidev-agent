@@ -107,6 +107,30 @@ def test_chat_model_payload_converts_binary_images_to_image_url():
     ]
 
 
+def test_chat_model_payload_drops_non_image_binary():
+    model = ChatModel.get_setup_instance(model="test", base_url=TEST_BASE_URL)
+    messages = [
+        HumanMessage(
+            content=[
+                {
+                    "type": "binary",
+                    "id": "files/requirements.txt",
+                    "filename": "requirements.txt",
+                    "mime_type": "text/plain",
+                },
+                {"type": "text", "text": "这个文件内容是啥"},
+            ]
+        )
+    ]
+
+    try:
+        payload = model._get_request_payload(messages)
+    finally:
+        asyncio.run(model.http_async_client.aclose())
+
+    assert payload["messages"][0]["content"] == [{"type": "text", "text": "这个文件内容是啥"}]
+
+
 @pytest.mark.skipif(
     not all([settings.LLM_GW_ENDPOINT, settings.APP_CODE, settings.SECRET_KEY]),
     reason="没有配置足够的环境变量,跳过该测试",

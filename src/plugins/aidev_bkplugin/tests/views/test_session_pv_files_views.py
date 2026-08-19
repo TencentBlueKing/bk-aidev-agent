@@ -3,7 +3,8 @@
 
 覆盖点：
 - 构造沙箱文件 Service 时正确注入 PluginResourceManager + executor_info
-- 5 个 action 参数透传（GET list / DELETE / stat / preview / download_url）
+- 5 个 action 参数透传（GET list / stat / preview / download_url / upload）
+- 上传文件类型、数量、大小和会话归属校验
 - 沙箱文件异常 → HTTP 状态码映射（404 / 400 / 500）
 - preview 返回 HttpResponse(text/plain) + X-Truncated 头透传
 - path/max_bytes/expires_in 缺失或默认值回退
@@ -16,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from django.conf import settings
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import HttpResponse
 
 if not settings.configured:
@@ -62,7 +64,15 @@ from aidev_agent.services.sandbox_pv_files import (  # noqa: E402
 from aidev_bkplugin.views import session as session_mod  # noqa: E402
 
 
-def _request(query_params=None, username="alice", method="GET", cookies=None, meta=None, path="/pv-files"):
+def _request(
+    query_params=None,
+    username="alice",
+    method="GET",
+    cookies=None,
+    meta=None,
+    path="/pv-files",
+    files=None,
+):
     return SimpleNamespace(
         query_params=query_params or {},
         user=SimpleNamespace(username=username),
@@ -70,6 +80,7 @@ def _request(query_params=None, username="alice", method="GET", cookies=None, me
         COOKIES=cookies or {},
         META=meta or {},
         path=path,
+        FILES=SimpleNamespace(getlist=lambda field_name: files or [] if field_name == "files" else []),
     )
 
 
@@ -86,6 +97,7 @@ def mock_svc():
     """打桩沙箱文件 Service 实例；测试点：view 层是否正确构造 + 参数透传。"""
     with patch.object(session_mod, "SandboxPvFileService") as svc_cls:
         instance = MagicMock()
+        instance._executor_info = {}
         svc_cls.return_value = instance
         yield instance, svc_cls
 
@@ -97,6 +109,10 @@ def _reset_retrieve_chat_session_mock():
     side_effect 泄露到后续 TestPvFiles* 用例（那些用例默认应"归属校验通过"）。
     """
     fake_client.api.retrieve_chat_session.reset_mock(side_effect=True, return_value=True)
+    session_mod.PluginResourceManager.return_value.resolve_access_token.return_value = None
+    session_mod._upload_snapshot_cache = None
+    latest_image = session_mod.PluginResourceManager.return_value.get_client.return_value.api.retrieve_latest_skill_version_image
+    latest_image.reset_mock()
     yield
 
 
@@ -159,6 +175,41 @@ class TestMakePvFileService:
         call_kwargs = svc_cls.call_args.kwargs
         assert call_kwargs["executor_info"]["bk_ticket_key"] == "bk_token"
         assert call_kwargs["executor_info"]["bk_ticket_value"] == "open-token-123"
+
+    def test_upload_injects_file_kit_snapshot(self, view, mock_svc):
+        """上传时走平台 latest image 接口，把 file-kit 镜像写入 snapshot。"""
+        instance, svc_cls = mock_svc
+        rm = session_mod.PluginResourceManager.return_value
+        rm.get_client.return_value.api.retrieve_latest_skill_version_image.return_value = {
+            "data": {"image": "mirrors.tencent.com/bkpaas-sandbox/bkaidev/file-kit:0.0.9"}
+        }
+        uploaded_file = SimpleUploadedFile("report.txt", b"report", content_type="text/plain")
+
+        view.pv_files_upload(_request(method="POST", files=[uploaded_file]), pk="s1")
+
+        assert "snapshot" not in svc_cls.call_args.kwargs["executor_info"]
+        assert instance._executor_info["snapshot"] == (
+            "mirrors.tencent.com/bkpaas-sandbox/bkaidev/file-kit:0.0.9"
+        )
+        rm.get_client.return_value.api.retrieve_latest_skill_version_image.assert_called_once_with()
+
+    def test_upload_snapshot_uses_process_cache(self, view, mock_svc):
+        """TTL 内第二次上传不再打平台 latest image 接口。"""
+        instance, svc_cls = mock_svc
+        rm = session_mod.PluginResourceManager.return_value
+        rm.get_client.return_value.api.retrieve_latest_skill_version_image.return_value = {
+            "data": {"image": "mirrors.tencent.com/bkpaas-sandbox/bkaidev/file-kit:0.0.9"}
+        }
+        first = SimpleUploadedFile("report.txt", b"report", content_type="text/plain")
+        second = SimpleUploadedFile("report.txt", b"report", content_type="text/plain")
+
+        view.pv_files_upload(_request(method="POST", files=[first]), pk="s1")
+        view.pv_files_upload(_request(method="POST", files=[second]), pk="s1")
+
+        assert instance._executor_info["snapshot"] == (
+            "mirrors.tencent.com/bkpaas-sandbox/bkaidev/file-kit:0.0.9"
+        )
+        rm.get_client.return_value.api.retrieve_latest_skill_version_image.assert_called_once_with()
 
 
 # ---------------------------------------------------------------------------
@@ -351,6 +402,42 @@ class TestPvFilesDownloadUrl:
 
         with pytest.raises(ClientBlueException):
             view.pv_files_download_url(_request({}), pk="s1")
+
+
+class TestPvFilesUpload:
+    def test_upload_forwards_files_to_local_service(self, view, mock_svc):
+        instance, _ = mock_svc
+        upload_result = {
+            "count": 1,
+            "succeeded": 1,
+            "failed": 0,
+            "results": [{"path": "files/report.txt", "status": "success"}],
+        }
+        instance.upload_files.return_value = upload_result
+        uploaded_file = SimpleUploadedFile("report.txt", b"report", content_type="text/plain")
+
+        response = view.pv_files_upload(_request(method="POST", files=[uploaded_file]), pk="s1")
+
+        assert response.data == upload_result
+        instance.upload_files.assert_called_once_with(
+            session_code="s1",
+            files=[{"name": "report.txt", "content": b"report", "mime_type": "text/plain"}],
+        )
+
+    @pytest.mark.parametrize(
+        ("files", "message"),
+        [
+            ([], "files is required"),
+            ([SimpleUploadedFile("payload.exe", b"binary")], "文件类型 .exe 不支持"),
+        ],
+    )
+    def test_upload_rejects_invalid_files(self, view, mock_svc, files, message):
+        from blueapps.core.exceptions import ClientBlueException
+
+        instance, _ = mock_svc
+        with pytest.raises(ClientBlueException, match=message):
+            view.pv_files_upload(_request(method="POST", files=files), pk="s1")
+        instance.upload_files.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

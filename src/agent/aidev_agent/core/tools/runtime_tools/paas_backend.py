@@ -530,11 +530,17 @@ class PaasSandboxBackend(RuntimeBackend):
         return self.exec_command(sandbox_id, command, timeout=timeout)
 
     def _resolve_path(self, path: str, *, state: dict | None = None) -> str:
-        """将 ``~`` 展开为绝对路径。
+        """将 ``$STORAGE_PATH`` 或 ``~`` 展开为沙箱内绝对路径。
 
         在每个公开方法入口处调用，确保后续所有操作（shell 命令和 HTTP API）
         都只看到绝对路径。
         """
+        storage_path = str(self._env_vars.get("STORAGE_PATH") or "/app/storage").rstrip("/")
+        for prefix in ("$STORAGE_PATH", "${STORAGE_PATH}"):
+            if path == prefix:
+                return storage_path
+            if path.startswith(f"{prefix}/"):
+                return f"{storage_path}{path[len(prefix) :]}"
         if not path.startswith("~"):
             return path
         if self._home_dir is None:

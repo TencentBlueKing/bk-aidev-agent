@@ -153,6 +153,26 @@ def make_pv_node(
         if not should_create_pv:
             return {}
 
+        # 步骤 2.5：创建前读会话已绑定的卷，避免覆盖上传路径先写入的 PV
+        if session_code and resource_manager is not None:
+            session = resource_manager.retrieve_chat_session(session_code)
+            if isinstance(session, dict):
+                existing_volume_id = str(
+                    ((session.get("session_property") or {}).get("sandbox_pv_id") or "")
+                ).strip()
+                if existing_volume_id:
+                    return {
+                        "runtime_paas_sbx_pv": [
+                            {
+                                "type": "paas-sbx-pv",
+                                "volume_id": existing_volume_id,
+                                "volume_name": "",
+                                "mount_path": "session",
+                                "source": "platform",
+                            }
+                        ]
+                    }
+
         # 步骤 3：使用 thread_id 构造 volume_name（thread_id 始终存在，session_code 可选）
         volume_name = f"agent-pv-{thread_id}-{str(uuid.uuid4())[:8]}"
 

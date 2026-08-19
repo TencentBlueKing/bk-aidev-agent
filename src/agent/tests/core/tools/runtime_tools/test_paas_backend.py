@@ -471,11 +471,30 @@ def _is_echo_home(cmd) -> bool:
 
 
 class TestResolvePath:
-    """验证 _resolve_path 将 ~ 展开为绝对路径，供 HTTP API 使用。"""
+    """验证 _resolve_path 将路径变量展开为绝对路径，供 HTTP API 使用。"""
 
     def test_absolute_path_unchanged(self, backend, mock_ops):
         """绝对路径原样返回，不触发 shell 调用。"""
         assert backend._resolve_path("/app/test.txt") == "/app/test.txt"
+
+    def test_storage_path_expanded_from_runtime_env(self, backend, mock_ops):
+        """会话文件路径按当前 runtime 的 STORAGE_PATH 展开。"""
+        backend._env_vars["STORAGE_PATH"] = "/app/.storage/"
+
+        assert backend._resolve_path("$STORAGE_PATH/session/files/report.txt") == (
+            "/app/.storage/session/files/report.txt"
+        )
+        assert backend._resolve_path("${STORAGE_PATH}/session/files/report.txt") == (
+            "/app/.storage/session/files/report.txt"
+        )
+
+    def test_storage_path_uses_default_when_runtime_env_missing(self, backend, mock_ops):
+        """runtime 未配置 STORAGE_PATH 时使用后端默认路径。"""
+        backend._env_vars.pop("STORAGE_PATH", None)
+
+        assert backend._resolve_path("$STORAGE_PATH/session/files/report.txt") == (
+            "/app/storage/session/files/report.txt"
+        )
 
     def test_tilde_only(self, backend, mock_ops):
         """单独 ~ 展开为 $HOME。"""
