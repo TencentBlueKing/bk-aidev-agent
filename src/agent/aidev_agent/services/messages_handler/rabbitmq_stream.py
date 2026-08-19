@@ -357,7 +357,8 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
             "password": env.str("RABBITMQ_PASSWORD", "guest"),
             "vhost": env.str("RABBITMQ_VHOST", "/"),
             "heartbeat": env.int("RABBITMQ_STREAM_HEARTBEAT", 60),
-            "max_retries": env.int("RABBITMQ_STREAM_MAX_RETRIES", 3),
+            "max_retries": env.int("RABBITMQ_STREAM_MAX_RETRIES", 20),
+            "load_balancer_mode": True
         }
 
     def _get_stream_name(self, thread_id: str) -> str:
