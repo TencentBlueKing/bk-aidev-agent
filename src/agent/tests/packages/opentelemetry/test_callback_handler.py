@@ -21,17 +21,16 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
+from aidev_agent.packages.opentelemetry.callback_handler import (
+    BkAidevAgentCallbackHandler,
+    BkAidevAgentInjector,
+)
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import NoOpTracerProvider
-
-from aidev_agent.packages.opentelemetry.callback_handler import (
-    BkAidevAgentCallbackHandler,
-    BkAidevAgentInjector,
-)
 
 
 @pytest.fixture

@@ -39,7 +39,8 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 
 from aidev_agent.pydantic_models import ExecuteKwargs
 
-from .metrics import AgentMetrics, extract_token_usage, get_agent_metrics
+from .metrics import AgentMetrics, get_agent_metrics
+from .metrics import extract_token_usage as extract_metric_token_usage
 from .span_utils import (
     SpanHolder,
     set_chat_request,
@@ -1025,17 +1026,18 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
 
         # 提取响应内容
         set_chat_response(span, response, max_attribute_length=self.max_attribute_length)
-        usage = extract_token_usage(response)
-        if usage:
+        metric_usage = extract_metric_token_usage(response)
+        if metric_usage:
             _set_span_attribute(
                 span,
                 "gen_ai.usage.cache_creation.input_tokens",
-                usage["cache_creation_input_tokens"],
+                metric_usage["cache_creation_input_tokens"],
             )
-            _set_span_attribute(span, "gen_ai.usage.cache_read.input_tokens", usage["cache_read_input_tokens"])
-            _set_span_attribute(span, "gen_ai.usage.input_tokens", usage["input_tokens"])
-            _set_span_attribute(span, "gen_ai.usage.output_tokens", usage["output_tokens"])
-            _set_span_attribute(span, "gen_ai.usage.total_tokens", usage["total_tokens"])
+            _set_span_attribute(
+                span,
+                "gen_ai.usage.cache_read.input_tokens",
+                metric_usage["cache_read_input_tokens"],
+            )
         started_at = self._llm_started_at.pop(run_id, None)
         if self._metrics is not None and started_at is not None:
             duration = time.monotonic() - started_at
