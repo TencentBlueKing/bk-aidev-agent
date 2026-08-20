@@ -29,9 +29,17 @@ OTEL_ROOT = Path(__file__).resolve().parents[1]
 
 def test_local_dashboard_covers_required_filters_and_metric_groups():
     dashboard = json.loads((OTEL_ROOT / "grafana/dashboards/aidev-agent-metrics.json").read_text())
+    compose = (OTEL_ROOT / "docker-compose.yml").read_text()
     variables = {item["name"] for item in dashboard["templating"]["list"]}
     panels_by_id = {panel["id"]: panel for panel in dashboard["panels"]}
-    panel_queries = "\n".join(target["expr"] for panel in dashboard["panels"] for target in panel.get("targets", []))
+    panel_queries = "\n".join(
+        target["expr"] for panel in dashboard["panels"] for target in panel.get("targets", []) if target.get("expr")
+    )
+
+    assert "grafana/grafana:10.4.19" in compose
+    assert dashboard["schemaVersion"] == 39
+    assert dashboard["graphTooltip"] == 1
+    assert len(dashboard["panels"]) == 34
 
     for panel in dashboard["panels"]:
         if panel.get("type") == "row":

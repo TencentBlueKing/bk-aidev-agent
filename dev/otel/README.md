@@ -24,6 +24,8 @@ make status
 
 Collector 接收端口为 `4317`（gRPC）和 `4318`（HTTP），Prometheus 为
 <http://localhost:9090>，Grafana 为 <http://localhost:3000/d/aidev-agent-metrics>。
+本地镜像固定为 Grafana `10.4.19`，仪表盘使用该版本生成的 schema 39，保持与线上
+Grafana 10.x 的兼容性；后续编辑和导出也应继续使用 10.x 环境。
 
 ## 发送 mock 指标
 

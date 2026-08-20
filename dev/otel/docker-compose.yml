@@ -20,7 +20,7 @@ services:
       - otel-collector
 
   grafana:
-    image: grafana/grafana:12.1.1
+    image: grafana/grafana:10.4.19
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
