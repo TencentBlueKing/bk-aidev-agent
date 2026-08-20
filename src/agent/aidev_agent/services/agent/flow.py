@@ -141,14 +141,6 @@ class FlowAgentCompletionAgent(BaseModel):
         )
         attach_only = getattr(execute_kwargs, "stream_mode", "start") == "attach"
         run_id = None if attach_only else str(uuid.uuid4())
-        logger.info(
-            "[FLOW_AGENT] Execute stream: session_code=%s, task_id=%s, action=%s, run_id=%s, attach_only=%s",
-            self.session_code,
-            self.task_id,
-            self.resume_from_node,
-            run_id,
-            attach_only,
-        )
         return helper.stream(
             self._run_flow(run_id),
             on_complete=self._on_complete,
@@ -177,12 +169,10 @@ class FlowAgentCompletionAgent(BaseModel):
         self._task_started = False
 
         logger.info(
-            "[FLOW_AGENT] _run_flow started: run_id=%s, session_code=%s, task_id=%s, skip_start=%s, action=%s",
-            run_id,
+            "[FLOW_AGENT] _run_flow started: session_code=%s, task_id=%s, skip_start=%s",
             self.session_code,
             self.task_id,
             bool(self.task_id),
-            self.resume_from_node,
         )
 
         run_started_event = RunStartedEvent(type=EventType.RUN_STARTED, run_id=run_id, thread_id=self.thread_id)
@@ -242,8 +232,7 @@ class FlowAgentCompletionAgent(BaseModel):
                 yield encoder.encode(resumed_event)
                 self._task_started = True
                 logger.info(
-                    "[FLOW_AGENT] Node resumed: run_id=%s, task_id=%s, action=%s",
-                    run_id,
+                    "[FLOW_AGENT] Node resumed: task_id=%s, action=%s",
                     task_id,
                     self.resume_from_node,
                 )
@@ -282,12 +271,9 @@ class FlowAgentCompletionAgent(BaseModel):
         # 保存最后一次成功轮询的 task_info，用于取消时构造 revoke 事件
         last_task_info: dict | None = None
         logger.info(
-            "[FLOW_AGENT] Polling started: run_id=%s, task_id=%s, session_code=%s, action=%s, "
-            "poll_interval=%ss, poll_timeout=%ss",
-            run_id,
+            "[FLOW_AGENT] Polling started: task_id=%s, session_code=%s, poll_interval=%ss, poll_timeout=%ss",
             task_id,
             self.session_code,
-            self.resume_from_node,
             self.poll_interval,
             self.poll_timeout,
         )
@@ -367,17 +353,6 @@ class FlowAgentCompletionAgent(BaseModel):
 
             # 兼容 task_state 和 state 两种字段名
             task_state = task_info.get("task_state", task_info.get("state", ""))
-
-            if self.resume_from_node and _poll_count == 1:
-                logger.info(
-                    "[FLOW_AGENT] First poll after node resume: run_id=%s, task_id=%s, action=%s, "
-                    "task_state=%s, elapsed=%.3fs",
-                    run_id,
-                    task_id,
-                    self.resume_from_node,
-                    task_state,
-                    time.time() - start_time,
-                )
 
             if _poll_count <= 3 or task_state in FLOW_TASK_END_STATES:
                 logger.debug(
