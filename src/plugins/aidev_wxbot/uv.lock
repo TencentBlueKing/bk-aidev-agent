@@ -19,7 +19,7 @@ wheels = [
 
 [[package]]
 name = "aidev-agent"
-version = "2.2.1.post1"
+version = "2.2.2rc17"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
@@ -51,28 +51,28 @@ dependencies = [
     { name = "werkzeug" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2e/af/e518b53ba9067fdadcb74dae7f1651a67413f3355c5a1c2ff253ea18815d/aidev_agent-2.2.1.post1.tar.gz", hash = "sha256:c9d7a1e22c26f38e075520d24757a3b0c5b341b377f7168e40f7caf6cb579112", size = 778659, upload-time = "2026-08-13T08:56:34.347Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8f/2f/9c9c27b65b2dc2adb9e8f6f6bb4b0fde70bbc70700e8f875b5a36989354b/aidev_agent-2.2.2rc17.tar.gz", hash = "sha256:d3dd4f1d58d55e2e250f7dd1bf48da713875eef154f60a5301468c12da3a179b", size = 812455, upload-time = "2026-08-20T13:31:46.994Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/20/1f/d7f4efe8d98bd1e3ef33b3327d17072fcdfe02cc56a60da24153856db1ad/aidev_agent-2.2.1.post1-py3-none-any.whl", hash = "sha256:5ae3d96fc2c15737a07f9bbffc198442b522795c4396a8c1e8ed46f5fe2f5454", size = 564336, upload-time = "2026-08-13T08:56:37.348Z" },
+    { url = "https://files.pythonhosted.org/packages/88/bf/2c97e26150ff4e5047ef32d8f96f3f4815edff8c17943ce65dd4fcea942e/aidev_agent-2.2.2rc17-py3-none-any.whl", hash = "sha256:7f8076c923e4d26c1a2772355059cc26742d57b68caf0b12a9cebe3b0ac851d8", size = 581236, upload-time = "2026-08-20T13:31:42.171Z" },
 ]
 
 [[package]]
 name = "aidev-bkplugin"
-version = "2.2.1.post1"
+version = "2.2.2rc17"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aidev-agent" },
     { name = "blueapps" },
     { name = "django" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f9/69/e4a7e3ae9087c2379245619495c421af727150cc5775de2fef7e4970f12f/aidev_bkplugin-2.2.1.post1.tar.gz", hash = "sha256:09decf235d5a5346a019824b752c96487d9b3b2307aa10ac920de23157d31f47", size = 82600, upload-time = "2026-08-13T08:56:43.207Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2b/f7/725ab0018f874d9fad43cb705340a6d35cc8985271c977c35639fb87e74c/aidev_bkplugin-2.2.2rc17.tar.gz", hash = "sha256:beb3d84651682f6462b457a5b6a6d62b01a44525b06e1469fa98d3ba026e09fe", size = 105255, upload-time = "2026-08-20T13:31:52.259Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/97/25/4d8759bab4ee27789226f56833aaef783d3429db902382e81d7e24910604/aidev_bkplugin-2.2.1.post1-py3-none-any.whl", hash = "sha256:89d03908753a22388f76c7cacee8607a28a00215a44595158e739915dab268cc", size = 84645, upload-time = "2026-08-13T08:56:45.011Z" },
+    { url = "https://files.pythonhosted.org/packages/e0/4c/f3b1175c6c9de834d33e3cf14289a320c469cdc59fef1006b34eec1c75bb/aidev_bkplugin-2.2.2rc17-py3-none-any.whl", hash = "sha256:d686a11b49a935839813e5e9a6d07162947a690925c834ab65bd22d1fce9bb9f", size = 96464, upload-time = "2026-08-20T13:31:55.915Z" },
 ]
 
 [[package]]
 name = "aidev-wxbot"
-version = "2.2.1.post1"
+version = "2.2.2rc17"
 source = { editable = "." }
 dependencies = [
     { name = "aidev-bkplugin" },
@@ -95,7 +95,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aidev-bkplugin", specifier = ">=2.2.1.post1" },
+    { name = "aidev-bkplugin", specifier = ">=2.2.2rc17" },
     { name = "django", specifier = ">=4.2.28,<5.0" },
     { name = "djangorestframework", specifier = ">=3.14.0" },
     { name = "pika", specifier = ">=1.3.0,<2.0" },
