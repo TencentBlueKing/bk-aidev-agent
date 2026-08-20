@@ -195,10 +195,36 @@ class BaseResourceManager(abc.ABC):
     def get_chat_session_contents(self, session_code: str, **kwargs) -> list[dict]:
         """取回会话全部落库内容记录（与前端历史消息接口同源，property 不含 builtin_property）。
 
-        返回结构 = 后端 ``data`` 字段。快照 messages 数据源以此为准。
+        封装 GET /openapi/aidev/resource/v1/chat/session_content/content/ 接口，
+        使用 query 参数传 ``session_code``（该端点无路径占位符，必须用 ``params=``）。
+        返回结构 = 后端 ``data`` 记录列表；失败时回退空列表。快照 messages 数据源以此为准。
         """
         client = self.get_client()
         return client.api.get_chat_session_contents(params={"session_code": session_code}, **kwargs).get("data", [])
+
+    def is_resume_session(self, session_code: str, **kwargs) -> bool:
+        """查询会话是否为续流（resume）会话。
+
+        封装 GET /openapi/aidev/resource/v1/agent/session/{session_code}/is_resume/ 接口，
+        返回平台 ``data`` 布尔值；失败时回退 ``False``。
+        """
+        client = self.get_client()
+        return client.api.is_resume_session(path_params={"session_code": session_code}, **kwargs).get("data", False)
+
+    def create_tool_approval(self, payload: dict, *, username: str | None = None, **kwargs) -> dict:
+        """创建工具调用审批单。
+
+        封装 POST /openapi/aidev/resource/v1/agent/tool_approval/ 接口，
+        将 ``payload`` 作为 json body 提交；当传入 ``username`` 时注入 ``X-BKAIDEV-USER`` 请求头。
+        返回平台 ``data`` 字段；失败时回退空 dict。
+        """
+        headers = dict(kwargs.pop("headers", None) or {})
+        if username:
+            headers["X-BKAIDEV-USER"] = username
+        if headers:
+            kwargs["headers"] = headers
+        client = self.get_client()
+        return client.api.create_tool_approval(json=payload, **kwargs).get("data", {})
 
     def retrieve_chat_session(self, session_code: str, **kwargs) -> dict:
         client = self.get_client()

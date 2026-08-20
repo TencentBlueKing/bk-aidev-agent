@@ -24,15 +24,6 @@ from pydantic import BaseModel, Field
 from aidev_agent.api.bk_agent import BkAgentApi
 from aidev_agent.config import settings
 from aidev_agent.core.ag_ui.aidev_agent import ASK_USER_QUESTION_TOOL_NAME, AidevAGUIAgent
-from aidev_agent.core.ag_ui.ask_user_question import (
-    ASK_USER_QUESTION_SKIPPED_CONTENT,
-    AskUserQuestionHandler,
-    AskUserQuestionOutcomeBuilder,
-    InterruptStatus,
-    build_skipped_answers,
-    filter_ask_user_question_interrupts,
-    parse_resume_answers,
-)
 from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
 from aidev_agent.core.ag_ui.types import (
     AgentInput,
@@ -51,6 +42,16 @@ from aidev_agent.core.tools.a2a_tools.types import AgentBackendType, AgentSpec
 from aidev_agent.core.tools.runtime_tools import RuntimeBackendResolver
 from aidev_agent.enums import AgentType, PromptRole
 from aidev_agent.exceptions import AgentDeadlineExceededError, AgentException
+from aidev_agent.packages.interrupt_manager import (
+    ASK_USER_QUESTION_SKIPPED_CONTENT,
+    ApprovalHandler,
+    AskUserQuestionHandler,
+    InterruptReason,
+    InterruptStatus,
+    ItsmTicketCreator,
+)
+from aidev_agent.packages.interrupt_manager.processor import InterruptProcessor
+from aidev_agent.packages.interrupt_manager.types import ProcessorContext
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel, ChatModelRunnable
 from aidev_agent.packages.langgraph.streaming.streaming_protocol import AgentStreamAdapter
 from aidev_agent.packages.resource_manager.registry import resource_manager
@@ -61,7 +62,6 @@ from aidev_agent.pydantic_models import (
     KnowledgeSettings,
     ModelContextSettings,
 )
-from aidev_agent.services.agent.approval import ApprovalStateHandler
 from aidev_agent.services.agent.artifacts import build_artifacts_generated_hook
 from aidev_agent.services.agent.registry import AgentBuildContext, ChatBuildExtras
 from aidev_agent.services.common_agent import CommonAgentProtocol, CommonQAAgent
@@ -159,6 +159,14 @@ class ChatCompletionAgent(BaseModel):
         exclude=True,
         description="RuntimeBackendResolver 引用，由 ChatAgentBuilder 构造，用于执行结束后关闭沙箱资源",
     )
+    interrupt_processor: Any = Field(
+        default=None,
+        exclude=True,
+        description=(
+            "InterruptProcessor 统一中断编排器，execute() 入口惰性构造（ItsmTicketCreator "
+            "需 execute_kwargs.executor/session_code，build 期拿不到，D-11）。"
+        ),
+    )
     agent_info: dict | None = Field(default=None, description="原始配置信息，来自 AgentConfig.agent_info")
     max_spawn_depth: int = Field(default=1, description="最大 Agent 嵌套深度，来自 AgentConfig.max_spawn_depth")
     generating_keyword: str | None = Field(
@@ -168,6 +176,7 @@ class ChatCompletionAgent(BaseModel):
 
     TOOL_EXECUTION_INTERVAL: ClassVar[int] = 10
     UPLOAD_IMAGE_PROMPT_PREFIX: ClassVar[Any] = "我上传了个图片文件,文件名为{file_name}。"
+    SKIP_PROMPT_ROLE: ClassVar[list[str]] = ["guide"]
 
     class Config:
         arbitrary_types_allowed = True
@@ -229,7 +238,7 @@ class ChatCompletionAgent(BaseModel):
         return self
 
     def _prepare_pre_run_history(self, execute_kwargs: ExecuteKwargs) -> None:
-        """agent 运行前的对话预处理：resume / input 三态分流 + 本轮记录 patch 进 chat_history 账本。
+        """agent 运行前的对话预处理：resume 收编单入口（装配）+ 本轮记录 patch 进 chat_history 账本。
 
         在 ``convert_chat_history_to_messages`` 之前调用。build 期 DB 读已先发生，
         这里把本轮 user / tool 记录手工 patch 进 ``self.chat_history``，并把 resume
@@ -237,10 +246,20 @@ class ChatCompletionAgent(BaseModel):
         （唯一历史事实源，快照与 convert 链共用），让 ``convert_chat_history_to_messages``
         消费到最新记录，并派发对应 DB 回写事件（由 ``AGUISessionWriter`` 的 handler 落库）。
 
-        - resume + (input 或空 answers)（跳过）：补 tool + user 两条，派发 skipped + user 事件，清空 resume。
-        - resume + 非空 answers（答题）：改写 interrupt 记录为 resolved，派发 resolved 事件。
+        - resume + (input 或空 answers)（跳过）：经 ``InterruptProcessor.resolve_resumes``
+          → ``AskUserQuestionHandler.on_resume`` 三态分流（skip 补 tool + user 两条、
+          派发 skipped + user 事件）。
+        - resume + 非空 answers（答题）：经 resolve_resumes → on_resume 改写 interrupt
+          记录为终态、派发 resolved 事件。
         - 无 resume + input（普通新对话）：补 user 一条，派发 user 事件。
         - 无 resume + 无 input：无事可做。
+
+        U-05/D-16（48）：``resolve_resumes`` **无返回值**（on_resume 语义）——事件派发
+        内聚到 handler（ask_user 经注入 bound method，D-14）。本方法只调
+        ``resolve_resumes`` 收编前端 resume 的落库（不消费返回值），删除 action 派发块
+        （backfill 派发 / skip 清 resume / interrupt 分支，D-15 skip 统一串行语义不再
+        清 resume 当新对话轮）与实例暂存机制（U-08 消亡，回放字段改由 get_resume_input 产出）。
+        resolve_resumes 数据源为 chat_history（U-02），不再依赖提前取的 graph tasks。
 
         input 是独立维度，不绑 resume：跳过判别条件是 ``input 或 answers 为空``，
         因此 ``resume + 无 input + 空 answers`` 也走跳过（仅取消 interrupt，不补 user）。
@@ -251,22 +270,22 @@ class ChatCompletionAgent(BaseModel):
         input_text = execute_kwargs.input
         turn_id = execute_kwargs.turn_id
 
-        # 仅 ask_user_question 中断的 resume 走 ask_user 回写逻辑；审批中断由审批路径处理。
-        # 判别依据是 resume.payload.answers 是否存在（approval 的 payload 是 {approved: bool}）。
-        # 注意：不在此处 return —— input 是独立维度，非 ask_user 的 resume 仍需走步骤 7 派发 user 事件。
-        is_ask_user_resume = not resume or AskUserQuestionHandler.is_ask_user_resume(resume)
-
-        if resume and is_ask_user_resume:
-            # 严格取 chat_history 末尾：必须是 INTERRUPT（避免已回答的 interrupt 被二次回答）。
-            interrupt = self.chat_history[-1] if self.chat_history else None
-            AskUserQuestionHandler.validate_resume_consistency(resume, interrupt)
-            answers = parse_resume_answers(resume) or []
-            # 跳过判别：input 或空 answers 视为跳过（input 独立于 resume）。
-            if input_text or not answers:
-                self._handle_skip_path(interrupt, turn_id)
-                execute_kwargs.resume = None
-            else:
-                self._handle_answer_path(interrupt, answers, turn_id)
+        # D-13 装配：ask_user resume 的三态分流统一经 InterruptProcessor.resolve_resumes
+        # 收编（D-03），事件派发内聚到 on_resume（D-16）。resolve_resumes 无返回值，
+        # 不在此消费；审批中断的 resume 由审批路径（DB 权威 read-only 门禁）处理。
+        # 时序锚点（F.4 硬约束 #2）：本方法在 convert_history_to_messages 之前。
+        if resume:
+            processor = self.interrupt_processor or InterruptProcessor(handlers={})
+            processor.resolve_resumes(
+                resume,
+                ProcessorContext(
+                    session_code=self.thread_id,
+                    thread_id=self.thread_id,
+                    chat_history=self.chat_history,
+                    turn_id=turn_id,
+                    input_text=input_text,
+                ),
+            )
 
         # 步骤 7：独立的 user 事件分发（跳过路径 resume 已清空 / 普通新对话 / 审批 resume 都走这里）。
         if input_text:
@@ -281,19 +300,20 @@ class ChatCompletionAgent(BaseModel):
                 )
             )
 
-    def _handle_skip_path(self, interrupt: ChatPrompt, turn_id: str) -> None:
-        """跳过路径：补 tool → 改写 interrupt 为 CANCELLED → 派发 finalize 事件。
+    def _dispatch_ask_user_skip(self, result: dict) -> None:
+        """装配层：按 on_resume 的 skip 结果补 tool 记录 + 派发 skipped/finalize 事件。
 
-        tool_call_id 已由 ``validate_resume_consistency`` 校验必存在，这里无条件补 tool 记录。
-        user 事件分发由调用方 ``_prepare_pre_run_history`` 的独立收尾步骤处理
-        （仅当 input_text 存在时派发，允许 ``resume + 空 answers + 无 input`` 纯取消 case）。
-
-        upgrade 失败时不派发 finalize 事件（与 handler 原本"upgrade 返回 None 不写 DB"等价）。
+        skip 的 DB content 改写（interrupt → CANCELLED）已由 on_resume 完成，这里只做
+        装配层工作：补 ``ChatPrompt`` TOOL 记录（ChatPrompt 属 services 层类型）+
+        派发 ``ExtendToolCallResultEvent`` 与 ``AskUserQuestionFinalized``。upgrade 失败
+        （``upgraded_content`` 为 None）时不派发 finalize 事件。
         """
-        builtin = interrupt.builtin_property or {}
-        tool_call_id = builtin.get("tool_call_id", "")
-        questions = builtin.get("questions") or []
-        skipped_answers = build_skipped_answers(questions)
+        interrupt = result.get("interrupt")
+        tool_call_id = result.get("tool_call_id", "")
+        builtin = result.get("builtin_property") or {}
+        skipped_answers = result.get("skipped_answers") or []
+        upgraded = result.get("upgraded_content")
+        turn_id = result.get("turn_id", "")
 
         self.chat_history.append(
             ChatPrompt(
@@ -317,17 +337,10 @@ class ChatCompletionAgent(BaseModel):
                 skip_db=False,
             )
         )
-
-        # 先 upgrade，拿到终态 content；失败则不派发 finalize（与 handler upgrade None 行为等价）。
-        upgraded = self._resolve_chat_history_interrupt(
-            interrupt,
-            answers=skipped_answers,
-            status=InterruptStatus.CANCELLED.value,
-        )
         if upgraded is None:
             logger.warning(
                 "[AskUserQuestion] skip path upgrade 失败, content_id=%s, 不派发 finalize",
-                interrupt.id,
+                getattr(interrupt, "id", None),
             )
             return
         # 改写已就地落账（原记录 id 不变），终态内容经 finalize 事件下发前端。
@@ -339,23 +352,28 @@ class ChatCompletionAgent(BaseModel):
                     "turn_id": turn_id,
                     "status": InterruptStatus.CANCELLED.value,
                     "answers": skipped_answers,
-                    "content_id": interrupt.id,
+                    "content_id": getattr(interrupt, "id", None),
                     "content": upgraded,
                     "builtin_property": builtin,
                 },
             )
         )
 
-    def _handle_answer_path(self, interrupt: ChatPrompt, answers: list, turn_id: str) -> None:
-        """答题路径：改写 interrupt 为 RESOLVED → 派发 finalize 事件（携带终态 content）。
+    def _dispatch_ask_user_answer(self, result: dict) -> None:
+        """装配层：按 on_resume 的 answer 结果派发 finalize 事件（携带终态 content）。
 
-        upgrade 失败时不派发 finalize 事件（与 skip 路径对称）。
+        answer 的 DB content 改写（interrupt → RESOLVED）已由 on_resume 完成，这里只做
+        装配层事件派发。upgrade 失败时不派发 finalize 事件（与 skip 路径对称）。
         """
-        upgraded = self._resolve_chat_history_interrupt(interrupt, answers=answers)
+        interrupt = result.get("interrupt")
+        answers = result.get("answers") or []
+        builtin = result.get("builtin_property") or {}
+        upgraded = result.get("upgraded_content")
+        turn_id = result.get("turn_id", "")
         if upgraded is None:
             logger.warning(
                 "[AskUserQuestion] answer path upgrade 失败, content_id=%s, 不派发 finalize",
-                interrupt.id,
+                getattr(interrupt, "id", None),
             )
             return
         self._dispatch_custom(
@@ -366,46 +384,12 @@ class ChatCompletionAgent(BaseModel):
                     "turn_id": turn_id,
                     "answers": answers,
                     "status": InterruptStatus.RESOLVED.value,
-                    "content_id": interrupt.id,
+                    "content_id": getattr(interrupt, "id", None),
                     "content": upgraded,
-                    "builtin_property": interrupt.builtin_property or {},
+                    "builtin_property": builtin,
                 },
             )
         )
-
-    def _resolve_chat_history_interrupt(
-        self,
-        interrupt: ChatPrompt,
-        *,
-        answers: list,
-        status: str = InterruptStatus.RESOLVED.value,
-    ) -> dict | None:
-        """把传入的 chat_history 末尾 interrupt 记录改写为终态，返回 upgraded content。
-
-        build 期 DB 读（chat_history）已先于本轮的 resolved/skipped 事件发生，若不改写，
-        ``convert_chat_history_to_messages`` 产出的首帧 MESSAGES_SNAPSHOT 里 interrupt
-        卡片仍是 pending，前端无法关闭弹窗。这里把传入的 interrupt 记录 content 升级为
-        ``{"outcome": {type: success, ...}, "result": {...}}``（与 DB 的
-        upgrade_content_to_success 输出一致）。
-
-        调用方必须保证 ``interrupt`` 是 ``chat_history[-1]`` 且 role == INTERRUPT
-        （由 ``AskUserQuestionHandler.validate_resume_consistency`` 校验），
-        避免反向遍历改写到更早的、已终态的 interrupt 记录。
-
-        返回 upgraded content dict 供调用方透传给 finalize 事件（避免 handler 重复
-        调用 ``upgrade_content_to_success``）；结构不识别时返回 None，调用方应跳过
-        finalize 事件派发。
-
-        答题续流用 RESOLVED 状态；跳过路径用 CANCELLED 状态，与 DB 侧 finalize 状态保持一致。
-        """
-        upgraded = AskUserQuestionOutcomeBuilder.upgrade_content_to_success(
-            interrupt.content,
-            status,
-            resume_answers=answers,
-        )
-        if upgraded is not None:
-            interrupt.content = upgraded
-        return upgraded
 
     def _dispatch_custom(self, event: BaseEvent) -> None:
         """直调 event_handler 派发已构造好的事件（绕开 SSE 编码循环）。
@@ -417,6 +401,39 @@ class ChatCompletionAgent(BaseModel):
 
     def execute(self, execute_kwargs: ExecuteKwargs) -> Generator[str, None, None] | str:
         self.migration_v1()
+        # D-13：resume dict→list 归一化前移到 execute() 最前（消除 R1/R2 双重兼容逻辑）
+        if isinstance(execute_kwargs.resume, dict):
+            execute_kwargs.resume = [execute_kwargs.resume]
+        # D-11：processor 惰性构造（execute 入口，非 build 期——ItsmTicketCreator 需
+        # execute_kwargs.executor/session_code，build 期拿不到）。
+        # D-03（48）：构造参数改为 handlers dict 显式注入（U-01，移除 resource_manager /
+        # ticket_creator 构造参数）。审批 handler 自持 resource_manager + ItsmTicketCreator
+        # （建单依赖移入 handler，U-01）；ask_user handler 注入 bound method（D-14）。
+        if self.interrupt_processor is None:
+            approval_handler = ApprovalHandler(
+                resource_manager=self.resource_manager,
+                ticket_creator=ItsmTicketCreator(
+                    self.resource_manager,
+                    username=getattr(execute_kwargs, "executor", None) or None,
+                    session_code=getattr(execute_kwargs, "session_code", None) or self.thread_id,
+                ),
+            )
+            ask_user_handler = AskUserQuestionHandler(
+                dispatch_skip=self._dispatch_ask_user_skip,  # D-14 bound method
+                dispatch_answer=self._dispatch_ask_user_answer,
+                resource_manager=self.resource_manager,  # Gap 1：ask_user 门禁查 DB 权威 answers 需 RM
+            )
+            self.interrupt_processor = InterruptProcessor(
+                handlers={
+                    # 键用 reason 的**值**字符串（str-enum 的 str() 会返回枚举名
+                    # 而非值，processor._reason_of 读 pending value 的 reason 字段是
+                    # 值字符串 —— 键必须与之 hash 等价，否则聚合门禁 miss handler）。
+                    InterruptReason.TOOL_APPROVAL.value: approval_handler,
+                    InterruptReason.USER_QUESTION.value: ask_user_handler,
+                }
+            )
+        # U-06（48）：恢复到 294ff5d55 装配顺序——_prepare_pre_run_history 先于 convert；
+        # resolve_resumes 只依赖 chat_history（U-02 数据源），不再需要提前取 graph tasks。
         self._prepare_pre_run_history(execute_kwargs)
         if not self.messages:
             self.messages = convert_chat_history_to_messages(
@@ -436,6 +453,7 @@ class ChatCompletionAgent(BaseModel):
         )
         for chat_model in chat_models:
             chat_model.callbacks = self.callbacks
+        # U-06（48）：_get_agent 移回 _execute 内部，_execute 恢复双参签名（无 agent_e/cfg）。
         return self._execute(messages, execute_kwargs)
 
     def stop(self):
@@ -487,44 +505,6 @@ class ChatCompletionAgent(BaseModel):
             else:
                 for model in owners:
                     model._owns_http_async_client = False
-
-    def _query_approval_status(self, session_code: str) -> dict | None:
-        """查询 gongfeng 后端判断是否需要续流，并从 interrupt 记录获取审批结果及 interrupts。
-
-        Returns:
-            ``{"approve_result": ApproveResult, "interrupts": list, "id": int|None}``
-            或 None（尚未回调），其中 ``approve_result`` ∈ {approved, rejected, cancelled}。
-        """
-        return ApprovalStateHandler().query_approval_info(session_code)
-
-    def _query_ask_user_question_interrupts(self, agent_e: Runnable, cfg: RunnableConfig) -> list[dict]:
-        """从 graph state 获取 ask_user_question 中断信息（续流首帧回放需要）。
-
-        续流时 graph checkpoint 保留了中断记录，从中提取 reason == aidev:user_question
-        的 interrupts，供 AidevAGUIAgent 发送续流首帧 ACTIVITY_SNAPSHOT（关闭前端弹窗）。
-        """
-        try:
-            agent_state = agent_e.get_state(cfg)
-
-            tasks = agent_state.tasks if agent_state.tasks else []
-            logger.info(
-                "[AskUserQuestion] _query_ask_user_question_interrupts: tasks=%d, thread_id=%s",
-                len(tasks),
-                self.thread_id,
-            )
-            interrupts = filter_ask_user_question_interrupts(tasks)
-            logger.info(
-                "[AskUserQuestion] _query_ask_user_question_interrupts: found %d ask_user_question interrupts",
-                len(interrupts),
-            )
-            return interrupts
-        except Exception:
-            logger.warning(
-                "[AskUserQuestion] query_ask_user_question_interrupts failed: thread_id=%s",
-                self.thread_id,
-                exc_info=True,
-            )
-            return []
 
     @staticmethod
     def _filter_messages_for_llm(messages: list[BaseMessage]) -> list[BaseMessage]:
@@ -808,11 +788,37 @@ class ChatCompletionAgent(BaseModel):
                     last_user_message=last_user_message,
                     langchain_messages=langchain_messages,
                     schema_keys=schema_keys,
+                    agent_state=agent_state,
                 )
 
         # 3. 正常路径：构造 stream_input（从 agent.py prepare_stream 移来，统一用 preprocessed["stream_input"]）
         if resume_input:
-            stream_input: Any = Command(resume=resume_input)
+            # U-08/D-06（48）：唯一 resume_input 获取点——经 InterruptProcessor.get_resume_input
+            # 串行产出 Command（U-03）。不消费实例暂存（U-08 消亡）；stream_input 仅当
+            # resume_result.ready 时才非 None（拒绝占位死值，T-48-05 mitigate）。回放三字段 /
+            # ready 判定随 resume_input_result 返回，供 _stream 消费。
+            resume_result = self.interrupt_processor.get_resume_input(
+                tasks=getattr(agent_state, "tasks", None) or [],
+                session_code=self.thread_id,
+                thread_id=self.thread_id,
+                chat_history=self.chat_history,
+            )
+            self._resume_input_result = resume_result  # _stream 消费回放三字段 + D-09 ready 判定
+            stream_input = resume_result.command if resume_result.ready else None
+            if stream_input is None and resume_result.ready:
+                logger.warning("[ChatCompletionAgent] resume 就绪但未产出 Command，拒绝以占位死值启动")
+            # CD-04（48）：skip+input 场景——用户新输入经 Command.update 注入 messages channel
+            # （反「当新对话轮」，D-15 统一串行语义），resume 仍从工具处继续。react 图
+            # messages channel 用 add_messages reducer 消费 Command.update（已 grep 验证）。
+            if resume_result.ready and resume_result.command is not None:
+                _exec_kwargs = getattr(self, "_execute_kwargs", None)
+                _input_text = getattr(_exec_kwargs, "input", "") if _exec_kwargs is not None else ""
+                if _input_text:
+                    resume_result.command = Command(
+                        resume=resume_result.command.resume,
+                        update={"messages": [HumanMessage(content=_input_text)]},
+                    )
+                    stream_input = resume_result.command
         else:
             payload_input = get_stream_payload_input(
                 mode="start",
@@ -827,6 +833,7 @@ class ChatCompletionAgent(BaseModel):
             "state": state,
             "stream_input": stream_input,
             "fork": None,
+            "resume_input_result": self._resume_input_result if resume_input else None,
         }
 
     def _prepare_regenerate_input(
@@ -839,17 +846,22 @@ class ChatCompletionAgent(BaseModel):
         last_user_message: HumanMessage,
         langchain_messages: list[BaseMessage],
         schema_keys: SchemaKeys,
+        agent_state: Any = None,
     ) -> dict[str, Any]:
         """regenerate 路径：checkpoint 时间旅行 + stream input 构造"""
         forwarded_props = forwarded_props or {}
         resume_input = forwarded_props.get("command", {}).get("resume", None)
+        # CD-02（48）：与 _prepare_stream_input 同源——resume 分支统一消费
+        # _prepare_stream_input 顶部 get_resume_input 存下的 self._resume_input_result，
+        # 不再散点直调 processor（U-08 消亡）。
 
         time_travel_checkpoint = self._get_checkpoint_before_message(agent_e, last_user_message.id, thread_id)
         if time_travel_checkpoint is None:
             # 兜底：找不到 checkpoint 时回退到正常路径（11.6：也构造 stream_input）
             state = self._merge_state(state or {}, langchain_messages)
             if resume_input:
-                stream_input: Any = Command(resume=resume_input)
+                resume_result = getattr(self, "_resume_input_result", None)
+                stream_input: Any = resume_result.command if resume_result is not None and resume_result.ready else None
             else:
                 payload_input = get_stream_payload_input(
                     mode="start",
@@ -872,8 +884,10 @@ class ChatCompletionAgent(BaseModel):
         )
 
         stream_input: Any = self._merge_state(time_travel_checkpoint.values, [last_user_message])
-        if resume := forwarded_props.get("command", {}).get("resume"):
-            stream_input = Command(resume=resume)
+        if forwarded_props.get("command", {}).get("resume"):
+            # CD-02（48）：消费 _prepare_stream_input 顶部 get_resume_input 存下的结果
+            resume_result = getattr(self, "_resume_input_result", None)
+            stream_input = resume_result.command if resume_result is not None and resume_result.ready else None
 
         return {
             "state": time_travel_checkpoint.values,
@@ -885,6 +899,7 @@ class ChatCompletionAgent(BaseModel):
         if not messages:
             raise ValueError("The messages list cannot be empty.")
         self._update_aidev_agent_header(execute_kwargs)
+        # U-06（48）：恢复到 294ff5d55——_get_agent 在 _execute 内构建，双参签名（无 agent_e/cfg）。
         agent_e, cfg = self._get_agent(messages, execute_kwargs=execute_kwargs)
         cfg.setdefault("configurable", {})
         cfg["configurable"]["thread_id"] = self.thread_id
@@ -968,7 +983,14 @@ class ChatCompletionAgent(BaseModel):
 
         state（含 platform_pv）由 _execute 统一构造下传，
         此处仅补充 messages / execute_kwargs 后调用 agent_e.ainvoke。
+
+        D-03：非流式 ``_invoke`` **显式不支持 resume**——消除静默忽略歧义
+        （45-D-14 已知边界升级为显式契约）。resume 续流请走流式接口（_stream）。
         """
+        # D-03：非流式显式拒绝 resume（消除静默忽略歧义，杜绝非门禁路径绕过）
+        if execute_kwargs.resume:
+            logger.warning("[ChatCompletionAgent] 非流式 _invoke 不支持 resume，拒绝执行")
+            raise AgentException(message="非流式调用不支持 resume 续流，请使用流式接口")
         try:
             input_state: dict[str, Any] = {
                 "messages": self._filter_messages_for_llm(messages),
@@ -1061,12 +1083,6 @@ class ChatCompletionAgent(BaseModel):
         messages: list[BaseMessage],
         execute_kwargs: ExecuteKwargs,
     ) -> Generator[Any, None, None]:
-        # 兼容前端：``execute_kwargs.resume`` 历史协议为 ``list[ResumeItem]``，部分前端会直接
-        # 传单条 dict（如 ``{"interruptId": "...", "status": "resolved"}``），此处统一归一化为
-        # 列表，确保后续 ``hydrate_resume_payload`` / LangGraph 续流逻辑接收到一致形态。
-        if isinstance(execute_kwargs.resume, dict):
-            execute_kwargs.resume = [execute_kwargs.resume]
-
         logger.info(
             "[ToolApproval] _stream: resume=%s, thread_id=%s",
             bool(execute_kwargs.resume),
@@ -1084,21 +1100,21 @@ class ChatCompletionAgent(BaseModel):
         if isinstance(self.event_handler, BaseSessionWriter):
             self.event_handler.set_tools(self.tools)
 
-        # 续流时，查询审批结果供 AidevAGUIAgent 发送 custom 事件及填充 resume payload
+        # 续流时，AidevAGUIAgent 装配字段（approve_result / approval_interrupts /
+        # ask_user_question_interrupts）由 get_resume_input 结果携带（D-06），在
+        # preprocessed 返回后消费注入 Agent 构造（回放三字段必须 Agent 构造前就绪，
+        # F.4 硬约束 #1）。消除 _stream 现场二次 resolve（U-07，避免二次 DB 改写）。
         approve_result = None
         approval_interrupts = []
         ask_user_question_interrupts = []
-        if execute_kwargs.resume:
-            approval_info = self._query_approval_status(self.thread_id)
-            if approval_info is not None:
-                approve_result = approval_info["approve_result"]
-                approval_interrupts = approval_info.get("interrupts") or []
-            ApprovalStateHandler.hydrate_resume_payload(execute_kwargs.resume, approve_result)
-            # ask_user_question 中断：从 graph state 获取（续流首帧回放需要）
-            ask_user_question_interrupts = self._query_ask_user_question_interrupts(agent_e, cfg)
 
-        # Phase 11.8: 预处理前移到 agent_input 构造之前（消除 model_copy + 消除 agui_entry 依赖）
-        # 1. agent_state
+        # 预处理前移到 agent_input 构造之前（消除 model_copy + 消除 agui_entry 依赖）
+        # agent_state：resume 与非 resume 均无条件现取——resume 路径
+        # _prepare_stream_input 的 state 复制与 get_resume_input 的 tasks 数据源
+        # （state.tasks 携带 pending interrupt）都依赖它（294ff5d55 基线同形）。
+        # 不得恢复条件守卫：U-07 删除 Phase 47 resume 分支现取块后，若仅在
+        # 非 resume 分支赋值，resume 路径 agent_state 未绑定 → UnboundLocalError
+        # （ask_user 续流 0000400，回归测试见 test_stream_resume_fetches_agent_state）。
         agent_state = agent_e.get_state(cfg)
 
         # 2. schema_keys — 直接调 utils.py 函数（不依赖 agui_entry）
@@ -1126,6 +1142,27 @@ class ChatCompletionAgent(BaseModel):
             schema_keys,
         )
 
+        # D-06（48）：从 preprocessed.resume_input_result 消费回放三字段注入 Agent 构造
+        # （回放字段由 get_resume_input 产出，时序满足 F.4 硬约束 #1）。
+        resume_result = preprocessed.get("resume_input_result") if preprocessed else None
+        approve_result = getattr(resume_result, "approve_result", None) if resume_result is not None else None
+        approval_interrupts = (
+            getattr(resume_result, "approval_interrupts", None) or [] if resume_result is not None else []
+        )
+        ask_user_question_interrupts = (
+            getattr(resume_result, "ask_user_question_interrupts", None) or [] if resume_result is not None else []
+        )
+
+        # 未就绪（lw4）：不再 hand-roll SSE 早退——并入 Agent 快照-结束路径。
+        # resume_result.ready=False → stream_input=None（_prepare_stream_input L801），
+        # LangGraphAgent.prepare_stream 检测 stream_input is None 走快照-结束分支
+        # （首帧快照后 RUN_STARTED → RUN_FINISHED(下一张卡) 即结束，不拉图，经
+        # events_to_dispatch 通道）。与 ready 路径（Agent 正常拉图）互斥，杜绝双
+        # RUN_FINISHED（Pitfall 4/A5）。下一张 pending 卡（next_interrupt）经
+        # AgentInput.next_interrupt 注入供结束分支构造 RUN_FINISHED outcome；
+        # ready 路径不消费该字段。
+        next_interrupt = getattr(resume_result, "next_interrupt", None) if resume_result is not None else None
+
         # 5. body 构造（合并后的 state 直接放进 body["state"]）
         body = {
             "thread_id": self.thread_id,
@@ -1133,6 +1170,7 @@ class ChatCompletionAgent(BaseModel):
             "state": preprocessed["state"],
             "messages": agui_messages,
             "stream_input": preprocessed["stream_input"],  # 11.9: stream_input 通过 input 传递
+            "next_interrupt": next_interrupt,  # lw4：未就绪下一张 pending 卡（ready 路径为 None）
         }
         if forwarded_props:
             body["forwarded_props"] = forwarded_props
@@ -1166,6 +1204,11 @@ class ChatCompletionAgent(BaseModel):
             approval_interrupts=approval_interrupts,
             ask_user_question_interrupts=ask_user_question_interrupts,
             run_end_extras_hook=build_artifacts_generated_hook(self.resource_manager, self.executor_info),
+            # D-11 装配收编：复用 execute() 入口惰性构造的 processor 注入 AidevAGUIAgent
+            # （不再现造；ItsmTicketCreator 由 dispatch_interrupts 内部按 ctx 现构造，
+            # RM 在 core/ag_ui 层持有合法，供流结束 processor 的 ApprovalHandler.prepare
+            # 建 ITSM 工单，取代 InterruptDispatcher（44 D-02））。
+            interrupt_processor=self.interrupt_processor,
         )
 
         return self._stream_with_queue(
@@ -1321,8 +1364,10 @@ class ChatCompletionAgent(BaseModel):
             )
             return None
 
-        tasks = state.tasks if state and len(state.tasks) > 0 else None
-        interrupts = tasks[0].interrupts if tasks else []
+        tasks = state.tasks if state else None
+        interrupts = []
+        for task in tasks or []:
+            interrupts.extend(getattr(task, "interrupts", None) or [])
         next_nodes = state.next or ()
         is_terminal = len(next_nodes) == 0 and not interrupts
         if not is_terminal:

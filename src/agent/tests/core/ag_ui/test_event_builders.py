@@ -10,11 +10,14 @@ from unittest.mock import MagicMock
 
 import pytest
 from aidev_agent.core.ag_ui.event_builders import (
+    _is_deferred_tool,
     build_model_end_payload,
+    build_tool_calls_with_approval_filter,
     build_tool_result_event,
     enhance_tool_call,
     is_tool_approval_required,
     should_end_thinking,
+    should_suppress_approval_tool_call,
     should_switch_thinking_step,
 )
 from langchain_core.messages import AIMessage, ToolMessage
@@ -41,8 +44,9 @@ def _make_tool_message(
     duration: float | None = 1.5,
     status: str | None = None,
     error: str | None = None,
+    name: str | None = "mock_tool",
 ) -> MagicMock:
-    """构造 Mock ToolMessage 对象，带 content / tool_call_id / id / additional_kwargs / status 属性。"""
+    """构造 Mock ToolMessage 对象，带 content / tool_call_id / id / additional_kwargs / status / name 属性。"""
     tool_msg = MagicMock()
     tool_msg.content = content
     tool_msg.tool_call_id = tool_call_id
@@ -51,6 +55,7 @@ def _make_tool_message(
     tool_msg.additional_kwargs = {"duration": duration} if duration is not None else {}
     tool_msg.status = status
     tool_msg.error = error
+    tool_msg.name = name
     return tool_msg
 
 
@@ -116,6 +121,8 @@ class TestBuildToolResultEvent:
         assert event.message_id == "msg-1"
         assert event.content == "result content"
         assert event.role == "tool"
+        # D-06：tool_call_name 取自 ToolMessage.name
+        assert event.tool_call_name == "mock_tool"
 
     def test_error_status_sets_is_error_true(self):
         tool_msg = _make_tool_message(status="error")
@@ -245,3 +252,120 @@ class TestBuildModelEndPayload:
         output_message = AIMessage(content="回复", id="msg-1", tool_calls=[], additional_kwargs={})
         payload = build_model_end_payload(output_message, {})
         assert payload["message_id"] == "msg-1"
+
+
+class TestShouldSuppressApprovalToolCall:
+    """DB 等价谓词 should_suppress_approval_tool_call 组合矩阵（D-05 方向 a 同源复算）。"""
+
+    def test_non_approval_tool_call_never_suppressed(self):
+        """非审批工具：即使无 ToolMessage 也保留（immediate 不过滤）。"""
+        tool_call = {"id": "c1", "name": "my_tool", "args": {}, "type": "tool_call"}
+        tools = {"my_tool": _make_tool(approval=None)}
+        assert should_suppress_approval_tool_call(tool_call, [], tools) is False
+
+    def test_approval_pending_no_tool_message_suppressed(self):
+        """审批配置命中且无对应 ToolMessage → 应过滤（True）。"""
+        tool_call = {"id": "c1", "name": "ask_user_question", "args": {}, "type": "tool_call"}
+        tools = {"ask_user_question": _make_tool(approval={"enabled": True})}
+        assert should_suppress_approval_tool_call(tool_call, [], tools) is True
+
+    def test_approval_executed_with_tool_message_kept(self):
+        """审批配置命中但有对应 ToolMessage（已执行）→ 保留（False）。"""
+        tool_call = {"id": "c1", "name": "ask_user_question", "args": {}, "type": "tool_call"}
+        tools = {"ask_user_question": _make_tool(approval={"enabled": True})}
+        state_messages = [ToolMessage(content="answered", tool_call_id="c1", name="ask_user_question")]
+        assert should_suppress_approval_tool_call(tool_call, state_messages, tools) is False
+
+    def test_approval_pending_with_other_tool_message_keeps_suppressed(self):
+        """审批配置命中但仅有其他 tool_call 的 ToolMessage → 仍 pending（True）。"""
+        tool_call = {"id": "c1", "name": "ask_user_question", "args": {}, "type": "tool_call"}
+        tools = {"ask_user_question": _make_tool(approval={"enabled": True})}
+        state_messages = [ToolMessage(content="result", tool_call_id="other-call", name="my_tool")]
+        assert should_suppress_approval_tool_call(tool_call, state_messages, tools) is True
+
+    def test_empty_tools_mapping_no_suppression(self):
+        """tools_mapping 为空 → 无审批工具命中 → 保留（False）。"""
+        tool_call = {"id": "c1", "name": "ask_user_question", "args": {}, "type": "tool_call"}
+        assert should_suppress_approval_tool_call(tool_call, [], {}) is False
+
+    def test_missing_tool_call_id_handled(self):
+        """tool_call 缺 id：无 ToolMessage 命中 → pending 过滤（True）。"""
+        tool_call = {"name": "ask_user_question", "args": {}}
+        tools = {"ask_user_question": _make_tool(approval={"enabled": True})}
+        assert should_suppress_approval_tool_call(tool_call, [], tools) is True
+
+
+class TestIsDeferredTool:
+    """D-15 deferred 判定谓词：approval 或 ask_user_question 均延迟写入（同源复算对称）。"""
+
+    def test_approval_configured_tool_is_deferred(self):
+        tool = _make_tool(approval={"enabled": True}, description="t")
+        assert _is_deferred_tool(tool) is True
+
+    def test_ask_user_question_tool_is_deferred_without_approval(self):
+        """ask_user_question 工具即使未配置 approval 也走 deferred（D-15 核心）。"""
+        tool = _make_tool(approval=None)
+        tool.name = "ask_user_question"
+        assert _is_deferred_tool(tool) is True
+
+    def test_plain_tool_not_deferred(self):
+        tool = _make_tool(approval=None)
+        tool.name = "get_weather"
+        assert _is_deferred_tool(tool) is False
+
+    def test_none_tool_not_deferred(self):
+        assert _is_deferred_tool(None) is False
+
+
+class TestAskUserQuestionDeferred:
+    """D-15 ask_user deferred 对齐：build_tool_calls_with_approval_filter 将 ask_user 延迟写入。"""
+
+    def test_ask_user_tool_call_goes_to_deferred(self):
+        """ask_user_question 工具调用 → deferred_tool_calls（延迟写而非 immediate）。"""
+        tool = _make_tool(approval=None)
+        tool.name = "ask_user_question"
+        tools_mapping = {"ask_user_question": tool}
+        output_message = AIMessage(
+            content="",
+            id="msg-auq",
+            tool_calls=[
+                {"name": "ask_user_question", "args": {"questions": [{"question": "确认？"}]}, "id": "call-auq"}
+            ],
+            additional_kwargs={},
+        )
+        immediate, deferred = build_tool_calls_with_approval_filter(output_message, tools_mapping)
+        assert immediate == []
+        assert len(deferred) == 1
+        assert deferred[0]["id"] == "call-auq"
+
+    def test_plain_tool_stays_immediate_in_same_call(self):
+        """同一次 build：普通工具走 immediate，ask_user 走 deferred（两谓词对称不互扰）。"""
+        ask_tool = _make_tool(approval=None)
+        ask_tool.name = "ask_user_question"
+        plain_tool = _make_tool(approval=None)
+        plain_tool.name = "get_weather"
+        tools_mapping = {"ask_user_question": ask_tool, "get_weather": plain_tool}
+        output_message = AIMessage(
+            content="",
+            id="msg-mix",
+            tool_calls=[
+                {"name": "get_weather", "args": {}, "id": "call-w"},
+                {"name": "ask_user_question", "args": {"questions": []}, "id": "call-a"},
+            ],
+            additional_kwargs={},
+        )
+        immediate, deferred = build_tool_calls_with_approval_filter(output_message, tools_mapping)
+        assert [t["id"] for t in immediate] == ["call-w"]
+        assert [t["id"] for t in deferred] == ["call-a"]
+
+    def test_suppress_symmetric_with_ask_user_without_approval(self):
+        """同源复算对称：ask_user 工具未配置 approval 时也应被 should_suppress 过滤（快照/重放对称）。"""
+        tool = _make_tool(approval=None)
+        tool.name = "ask_user_question"
+        tools = {"ask_user_question": tool}
+        tool_call = {"id": "call-auq", "name": "ask_user_question", "args": {}}
+        # 无 ToolMessage → 过滤（True），与 approval pending 同语义
+        assert should_suppress_approval_tool_call(tool_call, [], tools) is True
+        # 有 ToolMessage（已执行/已答）→ 保留（False）
+        state_messages = [ToolMessage(content="answered", tool_call_id="call-auq", name="ask_user_question")]
+        assert should_suppress_approval_tool_call(tool_call, state_messages, tools) is False

@@ -10,7 +10,6 @@ import pytest
 from aidev_agent.core.nodes.tool import ToolNodeSettings, build_tool_node
 from aidev_agent.core.nodes.tool.approval_wrapper import (
     TOOL_APPROVAL_STATE_KEY,
-    identify_message_approval_targets,
     is_approval_configured,
 )
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -425,55 +424,67 @@ class TestBuildToolNode:
         assert "duration" in fail_msg.additional_kwargs
 
     def test_approval_state_isolated_per_tool_call(self):
-        """同一工具多个 tool_call 的审批状态应按 tool_call_id 隔离。"""
-        original_metadata = dict(getattr(calculator, "metadata", None) or {})
-        calculator.metadata = {
-            **original_metadata,
-            "approval": {"approval_enabled": True},
-        }
-        try:
-            tool_node = build_tool_node(tools=[calculator])
-            state = {
-                "messages": [
-                    HumanMessage(content="Run two approved states"),
-                    AIMessage(
-                        content="",
-                        tool_calls=[
-                            {
-                                "name": "calculator",
-                                "args": {"a": 2, "b": 3},
-                                "id": "call_approved",
-                                "type": "tool_call",
-                            },
-                            {
-                                "name": "calculator",
-                                "args": {"a": 4, "b": 5},
-                                "id": "call_rejected",
-                                "type": "tool_call",
-                            },
-                        ],
-                        additional_kwargs={
-                            TOOL_APPROVAL_STATE_KEY: {
-                                "call_approved": {"status": "approved"},
-                                "call_rejected": {"status": "rejected"},
-                            }
-                        },
-                    ),
-                ]
-            }
+        """D-05：策略恢复 state 审批终态短路，且不再建单。
 
-            result = run_tool_node_in_graph(tool_node, state)
-            tool_messages = [msg for msg in result["messages"] if isinstance(msg, ToolMessage)]
-            assert len(tool_messages) == 2
+        - state 含 approved 终态 → interrupt 未被调用，直接放行 execute（result None）；
+        - state 含 rejected 终态 → interrupt 未被调用，返回拒绝 ToolMessage；
+        - state 无终态 → 调 interrupt 一次。
+        策略只直抛 ApprovalTarget，建单副作用在流结束层 prepare。
+        """
+        from unittest.mock import MagicMock, patch
 
-            approved_msg = next(msg for msg in tool_messages if msg.tool_call_id == "call_approved")
-            rejected_msg = next(msg for msg in tool_messages if msg.tool_call_id == "call_rejected")
+        from aidev_agent.core.nodes.tool.approval_wrapper import ItsmApprovalStrategy
 
-            assert approved_msg.content == "5"
-            assert rejected_msg.content == "工具审批未通过，已取消执行。"
-            assert getattr(calculator, "metadata", {}).get("approval") == {"approval_enabled": True}
-        finally:
-            calculator.metadata = original_metadata
+        def build_request(status: str | None) -> MagicMock:
+            tool = MagicMock()
+            tool.name = "calculator"
+            tool.metadata = {"approval": {"approval_enabled": True}}
+            strategy = ItsmApprovalStrategy()
+            request = MagicMock()
+            request.tool = tool
+            request.tool_call = {"id": "call_1", "name": "calculator", "args": {"a": 2, "b": 3}, "type": "tool_call"}
+            if status is None:
+                request.state = {"messages": [AIMessage(content="")]}
+            else:
+                request.state = {
+                    "messages": [
+                        AIMessage(
+                            content="",
+                            additional_kwargs={TOOL_APPROVAL_STATE_KEY: {"call_1": {"status": status}}},
+                        )
+                    ]
+                }
+            return strategy, request
+
+        # ① approved 终态 → interrupt 未被调用，放行（result None）
+        strategy, request = build_request("approved")
+        with patch(
+            "aidev_agent.core.nodes.tool.approval_wrapper.interrupt",
+            return_value={"toolCallId": "call_1", "status": "approved"},
+        ) as mock_interrupt:
+            result = strategy.interrupt(request)
+        assert result is None  # approved 终态 → 放行 execute
+        assert mock_interrupt.call_count == 0
+
+        # ② rejected 终态 → interrupt 未被调用，返回拒绝 ToolMessage
+        strategy, request = build_request("rejected")
+        with patch(
+            "aidev_agent.core.nodes.tool.approval_wrapper.interrupt",
+            return_value={"toolCallId": "call_1", "status": "rejected"},
+        ) as mock_interrupt:
+            result = strategy.interrupt(request)
+        assert result is not None and result.status == "error"
+        assert mock_interrupt.call_count == 0
+
+        # ③ 无终态 → 调 interrupt 一次
+        strategy, request = build_request(None)
+        with patch(
+            "aidev_agent.core.nodes.tool.approval_wrapper.interrupt",
+            return_value={"toolCallId": "call_1", "status": "approved"},
+        ) as mock_interrupt:
+            result = strategy.interrupt(request)
+        assert result is None
+        assert mock_interrupt.call_count == 1
 
     def test_is_approval_configured_accepts_skill_metadata_without_need_approval(self):
         original_metadata = dict(getattr(calculator, "metadata", None) or {})
@@ -510,8 +521,6 @@ class TestBuildToolNode:
             assert is_approval_configured(calculator) is True
         finally:
             calculator.metadata = original_metadata
-
-
 
     def test_timing_accuracy(self):
         """测试6: 验证执行时间记录的准确性"""
@@ -1337,9 +1346,8 @@ class TestDefaultToolCallHandler:
         捕获中间件链异常并调用 default_tool_call_handler，如果 GraphBubbleUp 被转为
         字符串而非抛出，interrupt() 会被吞掉，图不会暂停。
         """
-        from langgraph.errors import GraphBubbleUp
-
         from aidev_agent.core.nodes.tool.node import default_tool_call_handler
+        from langgraph.errors import GraphBubbleUp
 
         error = GraphBubbleUp("interrupt value")
         with pytest.raises(GraphBubbleUp):
@@ -1347,9 +1355,8 @@ class TestDefaultToolCallHandler:
 
     def test_graph_interrupt_subclass_is_reraised(self):
         """GraphInterrupt（GraphBubbleUp 子类）也必须重新抛出。"""
-        from langgraph.errors import GraphInterrupt
-
         from aidev_agent.core.nodes.tool.node import default_tool_call_handler
+        from langgraph.errors import GraphInterrupt
 
         error = GraphInterrupt("interrupt payload")
         with pytest.raises(GraphInterrupt):
@@ -1536,60 +1543,3 @@ class TestToolMsgContentLen:
         msg = ToolMessage(content=12345, tool_call_id="test")
         result = _tool_msg_content_len(msg)
         assert result == 5  # str(12345) = "12345"
-
-
-class TestToolApprovalCreatePayload:
-    def test_create_approval_payload_includes_resource_fields(self):
-        from unittest.mock import MagicMock, patch
-
-        from aidev_agent.core.nodes.tool.approval_wrapper import ApprovalTarget, _create_approval_from_target
-
-        target = ApprovalTarget(
-            target_type="mcp",
-            target_id="call_1",
-            target_name="Query Time",
-            target_code="query-time",
-            args={"timezone": "Asia/Shanghai"},
-            approval={"mcp_code": "time-server", "approvers": ["admin"]},
-            tool=None,
-        )
-        mock_client = MagicMock()
-        mock_client.api.create_tool_approval.return_value = {"data": {"callback_token": "token", "ticket": {}}}
-
-        with patch(
-            "aidev_agent.core.nodes.tool.approval_wrapper.BKAidevApi.get_client",
-            return_value=mock_client,
-        ):
-            _create_approval_from_target(target, None)
-
-        payload = mock_client.api.create_tool_approval.call_args.kwargs["json"]
-        assert payload["tool_name"] == "Query Time"
-        assert payload["tool_code"] == "query-time"
-        assert payload["mcp_name"] == "time-server"
-        assert payload["tool_args"] == {"timezone": "Asia/Shanghai"}
-
-    def test_create_approval_payload_resolves_mcp_name_from_binding(self):
-        from unittest.mock import MagicMock, patch
-
-        from aidev_agent.core.nodes.tool.approval_wrapper import ApprovalTarget, _create_approval_from_target
-
-        target = ApprovalTarget(
-            target_type="mcp",
-            target_id="call_1",
-            target_name="get_ticket_info",
-            target_code="get_ticket_info",
-            args={"query_param": {"sn": "DE2026070600000005"}},
-            approval={"mcp_name": "itsm-mcp", "approvers": ["admin"]},
-            tool=None,
-        )
-        mock_client = MagicMock()
-        mock_client.api.create_tool_approval.return_value = {"data": {"callback_token": "token", "ticket": {}}}
-
-        with patch(
-            "aidev_agent.core.nodes.tool.approval_wrapper.BKAidevApi.get_client",
-            return_value=mock_client,
-        ):
-            _create_approval_from_target(target, None)
-
-        payload = mock_client.api.create_tool_approval.call_args.kwargs["json"]
-        assert payload["mcp_name"] == "itsm-mcp"

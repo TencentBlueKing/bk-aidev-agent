@@ -8,7 +8,6 @@ import pytest
 from ag_ui.core import CustomEvent, EventType, RunErrorEvent, RunFinishedEvent
 from aidev_agent.config import settings
 from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
-from aidev_agent.core.ag_ui.ask_user_question import ASK_USER_QUESTION_REASON, ASK_USER_QUESTION_SKIPPED_CONTENT
 from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
 from aidev_agent.core.ag_ui.types import CustomMessageType, SessionPersistenceEventNames
 from aidev_agent.core.nodes.model.chat_history_assembly import (
@@ -17,8 +16,15 @@ from aidev_agent.core.nodes.model.chat_history_assembly import (
     convert_chat_history_to_messages,
     inject_role_system,
 )
-from aidev_agent.core.nodes.tool.approval_wrapper import TOOL_APPROVAL_REASON
 from aidev_agent.enums import PromptRole
+from aidev_agent.packages.interrupt_manager import (
+    ASK_USER_QUESTION_REASON,
+    ASK_USER_QUESTION_SKIPPED_CONTENT,
+    TOOL_APPROVAL_REASON,
+    AskUserQuestionHandler,
+    InterruptReason,
+)
+from aidev_agent.packages.interrupt_manager.processor import InterruptProcessor
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
 from aidev_agent.packages.langchain_core.models.mock import MockChatModel, MockResponse
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
@@ -867,11 +873,132 @@ class TestChatModelClientCleanup:
             patch.object(agent, "_sync_checkpoint_messages"),
             patch.object(client, "aclose", close_spy),
         ):
-            result = agent._execute([HumanMessage(content="hello")], ExecuteKwargs(stream=False))
+            # U-06（48）：_execute 恢复双参签名（agent 构建在 _execute 内部 _get_agent），
+            # 不再显式传 agent_e/cfg。
+            result = agent._execute(
+                [HumanMessage(content="hello")],
+                ExecuteKwargs(stream=False),
+            )
 
         assert result["choices"][0]["delta"]["content"] == "done"
         close_spy.assert_awaited_once()
         assert client.is_closed
+
+    def test_invoke_rejects_resume_with_agent_exception(self):
+        """D-03：非流式 _invoke 遇 resume 显式抛 AgentException（消除静默忽略歧义）。"""
+        from aidev_agent.exceptions import AgentException
+
+        agent = ChatCompletionAgent(chat_model=MockChatModel(responses=["ok"]))
+        agent_e = MagicMock()
+        with pytest.raises(AgentException) as exc_info:
+            agent._invoke(
+                agent_e,
+                {},
+                {},
+                [HumanMessage(content="hi")],
+                ExecuteKwargs(stream=False, resume={"interruptId": "i1", "status": "resolved"}),
+            )
+        assert "非流式调用不支持 resume 续流" in str(exc_info.value)
+        agent_e.ainvoke.assert_not_called()
+
+    def test_execute_builds_agent_once_and_reuses_in_execute(self):
+        """U-06：_get_agent 在 _execute 内构建且仅调用一次（回滚 294ff5d55，双参签名）。"""
+        agent = ChatCompletionAgent(
+            chat_model=MockChatModel(responses=["ok"]),
+            checkpointer=MemorySaver(),
+            chat_history=[ChatPrompt(role="user", content="hi")],
+            event_handler=_RecordingEventWriter(),
+        )
+        agent_e = MagicMock()
+        # get_state 返回空 tasks，_invoke 由 _execute 分派（无 resume 走正常 invoke）
+        agent_e.get_state.return_value = MagicMock(tasks=[])
+        agent_e.ainvoke = AsyncMock(
+            return_value={"messages": [AIMessage(content="done", id="message-id")], "reference_doc": []}
+        )
+        with (
+            patch.object(agent, "_get_agent", return_value=(agent_e, {})) as mock_get_agent,
+            patch.object(agent, "_update_aidev_agent_header"),
+            patch.object(agent, "_sync_checkpoint_messages"),
+        ):
+            result = agent.execute(ExecuteKwargs(stream=False))
+
+        mock_get_agent.assert_called_once()
+        assert result["choices"][0]["delta"]["content"] == "done"
+
+
+class TestStreamResumeAgentState:
+    """48 回归：流式 resume 路径 agent_state 无条件现取（生产 0000400）。"""
+
+    def test_stream_resume_fetches_agent_state_and_emits_not_ready_sse(self):
+        """回归：U-07 删除 Phase 47 resume 分支现场 resolve 块后，agent_state 若仅在
+        非 resume 分支赋值，流式 resume（ask_user 续流）进入 _prepare_stream_input
+        前即 UnboundLocalError（"cannot access local variable 'agent_state'"）。
+
+        lw4：未就绪 resume 不再 hand-roll SSE（`_build_not_ready_sse` 已删），并入
+        父类 prepare_stream 快照-结束通道（events_to_dispatch，经 _stream_with_queue
+        队列生产者）。本测试经
+        _stream 全链路：agent_state 现取 → _prepare_stream_input → get_resume_input
+        （tasks 数据源正是 agent_state.tasks）→ 未就绪 → AidevAGUIAgent.run 快照-结束
+        （首帧快照 → RUN_STARTED → RUN_FINISHED 携带 next_interrupt）。生产者路径的
+        `_build_terminal_resume_replay`（scheme B）会二次 get_state 探测终态；因
+        agent_state.next 非空（有 pending task → 非终态），其返回 None 落回正常 run。
+        """
+        agent = ChatCompletionAgent(
+            chat_model=MockChatModel(responses=["ok"]),
+            checkpointer=MemorySaver(),
+            chat_history=[ChatPrompt(role="user", content="hi")],
+            event_handler=_RecordingEventWriter(),
+        )
+        # chat.py execute 入口同形 handlers dict（键 = reason 值字符串，D-03）
+        agent.interrupt_processor = InterruptProcessor(
+            handlers={
+                InterruptReason.USER_QUESTION.value: AskUserQuestionHandler(
+                    dispatch_skip=agent._dispatch_ask_user_skip,
+                    dispatch_answer=agent._dispatch_ask_user_answer,
+                    resource_manager=None,
+                ),
+            }
+        )
+        # graph state：一个未终态 ask_user pending（id 不在 chat_history 终态集合 → not ready）
+        pending_value = {
+            "questions": [{"question": "继续吗？", "header": "确认", "multiSelect": False}],
+            "interrupt_reason": ASK_USER_QUESTION_REASON,
+            "message": "需要用户回答：继续吗？",
+            "toolCallId": "call-auq-1",
+        }
+        pending = SimpleNamespace(id="int-auq-1", value=pending_value)
+        task = SimpleNamespace(interrupts=[pending])
+        # next=["tools"]：有未处理 task → 图非终态，_build_terminal_resume_replay 返回 None
+        agent_state = SimpleNamespace(values={"messages": []}, tasks=[task], next=["tools"])
+        agent_e = MagicMock()
+        agent_e.get_state.return_value = agent_state
+        # 未就绪路径现走父类 _handle_stream_events（快照-结束经 events_to_dispatch 通道），
+        # 其会真实 await graph.aget_state（只读 checkpoint）——桩需可 await。
+        agent_e.aget_state = AsyncMock(return_value=agent_state)
+
+        chunks = list(
+            agent._stream(
+                agent_e,
+                {},
+                {},
+                [HumanMessage(content="hi", id="m1")],
+                ExecuteKwargs(stream=True, resume=[{"interruptId": "int-auq-1", "status": "resolved"}]),
+            )
+        )
+        # U-07：resume 分支 agent_state 必须被取到（否则 UnboundLocalError）；生产者路径
+        # 的 _build_terminal_resume_replay 会二次 get_state 探测终态（scheme B 兜底入口）。
+        assert agent_e.get_state.call_count >= 1, "resume 分支应现取 agent_state（防 U-07 UnboundLocalError）"
+
+        # 快照-结束 SSE（协议完整序列，对齐 294ff5d55 好基线）：
+        # MESSAGES_SNAPSHOT 首帧 → RUN_STARTED → RUN_FINISHED 携带下一张 ask_user 卡。
+        # RUN_STARTED 是前端 RUN_FINISHED 的 run 关联前提（缺卡片渲染回归）。
+        events = [json.loads(c[6:]) for c in chunks if isinstance(c, str) and c.startswith("data:")]
+        assert events and events[0]["type"] == EventType.MESSAGES_SNAPSHOT.value
+        assert any(e["type"] == EventType.RUN_STARTED.value for e in events)
+        rf = [e for e in events if e["type"] == EventType.RUN_FINISHED.value and e["outcome"]["type"] == "interrupt"]
+        assert rf, "未就绪 resume 应发出 interrupt RUN_FINISHED（携带下一张卡）"
+        card = rf[-1]["outcome"]["interrupts"][0]
+        assert "继续吗" in card["metadata"]["questions"][0]["question"], "next_interrupt 应经 prepare enrich 携带卡片"
 
 
 @pytest.mark.skipif(
@@ -2224,6 +2351,71 @@ class TestAgentFactory2Chat:
         assert agent.knowledge_query_options.knowledge_resource_rough_recall_topk == 3
         mock_execute.assert_called_once()
 
+    def test_execute_lazy_processor_carries_executor_into_ticket_creator(self):
+        """CR-01 回归：execute() 惰性构造的 InterruptProcessor 的 ApprovalHandler 注入 ticket_creator。
+
+        经真实 chat.py execute() 构造链路（handlers dict 注入，D-03/U-01），断言 executor
+        从 execute_kwargs 流入 resource_manager.create_tool_approval 的 username
+        （X-BKAIDEV-USER 身份头）。修复前此处 ctx.executor 恒为 None → 建单丢失操作者身份。
+        """
+        from aidev_agent.packages.interrupt_manager.types import ProcessorContext
+
+        class _Rm:
+            def __init__(self):
+                self.create_calls: list[tuple[dict, str | None]] = []
+
+            def create_tool_approval(self, payload: dict, *, username: str | None = None, **kwargs) -> dict:
+                self.create_calls.append((payload, username))
+                return {"ticket": {"sn": "REQ-CR01"}, "callback_token": "cb-cr01"}
+
+        rm = _Rm()
+        agent = ChatCompletionAgent(
+            chat_model=MockChatModel(responses=["hi"]),
+            checkpointer=MemorySaver(),
+            resource_manager=rm,
+            messages=[HumanMessage(content="hi")],
+            thread_id="t-cr01",
+        )
+
+        captured_processor = {}
+
+        def _fake_execute(messages, execute_kwargs):
+            captured_processor["processor"] = agent.interrupt_processor
+            return "ok"
+
+        with patch.object(agent, "_execute", side_effect=_fake_execute):
+            agent.execute(ExecuteKwargs(executor="bob", session_code="sess-cr01"))
+
+        processor = captured_processor["processor"]
+        assert processor is not None, "execute() 应惰性构造 processor"
+        # D-03/U-01：processor 经 handlers dict 注入 approval handler（自持 RM + ticket_creator）
+        approval_handler = processor._handlers[InterruptReason.TOOL_APPROVAL.value]
+        assert approval_handler is not None
+        assert approval_handler.resource_manager is rm
+        assert approval_handler._ticket_creator is not None, "U-01：ApprovalHandler 应自持 ticket_creator"
+        assert approval_handler._ticket_creator._username == "bob"
+
+        # 真实 dispatch：经构造的 processor 走 dispatch_interrupts，executor 应流入建单 username
+        task_value = {
+            "reason": TOOL_APPROVAL_REASON,
+            "target_type": "tool",
+            "toolCallId": "call_cr01",
+            "toolName": "测试工具",
+            "toolCode": "test_tool",
+            "toolArgs": {"a": 1},
+            "approval": {"enabled": True, "approvers": ["approver-a"]},
+        }
+        intr = SimpleNamespace(value=task_value, id="int-approval-call_cr01")
+        task = SimpleNamespace(name="tools", id="task-call_cr01", interrupts=(intr,))
+        processor.dispatch_interrupts(
+            [task],
+            ProcessorContext(session_code="sess-cr01", thread_id="t-cr01"),
+        )
+
+        assert len(rm.create_calls) == 1, "dispatch_interrupts 应触发一次建单"
+        _, username = rm.create_calls[0]
+        assert username == "bob", f"CR-01：executor 应流入建单 username，实际 {username!r}"
+
     @pytest.mark.parametrize(
         "prompt_content",
         [
@@ -2579,6 +2771,55 @@ class TestTerminalResumeReplay:
         result_event = next(e for e in events if e["type"] == EventType.TOOL_CALL_RESULT)
         assert result_event["content"] == "ok"
 
+    def test_replay_event_stream_filters_approval_pending_tool_call(self):
+        """D-05 方向 a：审批 pending 无 ToolMessage 的 tool_call 不重放；已执行（有 ToolMessage）保留。"""
+        entry = _real_agui_entry(emit_approval_finished=False)
+        approval_tool = MagicMock()
+        approval_tool.metadata = {"approval": {"enabled": True}}
+        entry._tool_mapping = {"approval_tool": approval_tool}
+        agent_input = SimpleNamespace(thread_id="t1", run_id="r1")
+        replayable = [
+            AIMessage(
+                content="",
+                id="ai-1",
+                tool_calls=[
+                    {"id": "pending-call", "name": "approval_tool", "args": {"q": 1}, "type": "tool_call"},
+                    {"id": "executed-call", "name": "approval_tool", "args": {"q": 2}, "type": "tool_call"},
+                ],
+            ),
+            ToolMessage(content="answered", id="tool-1", tool_call_id="executed-call"),
+        ]
+
+        events = [_parse_sse(e) for e in entry.build_terminal_replay_stream(agent_input, replayable)]
+        # 只有已执行的 executed-call 重放 START/ARGS/END；pending-call 被过滤，无 TOOL_CALL_* 事件
+        tool_call_ids = [
+            e["toolCallId"]
+            for e in events
+            if e["type"] in (EventType.TOOL_CALL_START, EventType.TOOL_CALL_ARGS, EventType.TOOL_CALL_END)
+        ]
+        assert tool_call_ids == ["executed-call", "executed-call", "executed-call"]
+        assert "pending-call" not in tool_call_ids
+
+    def test_replay_event_stream_non_approval_tool_call_still_replayed(self):
+        """Do-Not-Break：非审批 tool_call 照常重放（审批 pending 过滤不影响 immediate）。"""
+        entry = _real_agui_entry(emit_approval_finished=False)
+        agent_input = SimpleNamespace(thread_id="t1", run_id="r1")
+        replayable = [
+            AIMessage(
+                content="",
+                id="ai-1",
+                tool_calls=[{"id": "plain-call", "name": "my_tool", "args": {}, "type": "tool_call"}],
+            )
+        ]
+
+        events = [_parse_sse(e) for e in entry.build_terminal_replay_stream(agent_input, replayable)]
+        tool_call_ids = [
+            e["toolCallId"]
+            for e in events
+            if e["type"] in (EventType.TOOL_CALL_START, EventType.TOOL_CALL_ARGS, EventType.TOOL_CALL_END)
+        ]
+        assert tool_call_ids == ["plain-call", "plain-call", "plain-call"]
+
     def test_replay_event_stream_skips_human_and_system_messages(self):
         """checkpoint 片段中的 Human/System 消息不应下发（前端历史已持有）"""
         entry = _real_agui_entry(emit_approval_finished=False)
@@ -2874,7 +3115,22 @@ class TestDispatchSessionPersistenceEvents:
             event_handler=writer,
             chat_history=chat_history,
         )
+        self._attach_processor(agent)
         return agent, writer
+
+    def _attach_processor(self, agent: ChatCompletionAgent) -> None:
+        """D-03/U-01（48）：注入 handlers dict——ask_user handler 绑定 agent 的 bound method
+        （D-14），使 resolve_resumes 经 on_resume 派发 skip/answer 事件（装配层不再
+        消费返回值，事件派发内聚到 handler）。
+        """
+        agent.interrupt_processor = InterruptProcessor(
+            handlers={
+                str(InterruptReason.USER_QUESTION.value): AskUserQuestionHandler(
+                    dispatch_skip=agent._dispatch_ask_user_skip,
+                    dispatch_answer=agent._dispatch_ask_user_answer,
+                )
+            }
+        )
 
     def _make_agent_without_tail_interrupt(self):
         """构造末尾非 INTERRUPT 的 agent（末尾是 user 记录，模拟已回答场景）。"""
@@ -2913,6 +3169,7 @@ class TestDispatchSessionPersistenceEvents:
             event_handler=writer,
             chat_history=chat_history,
         )
+        self._attach_processor(agent)
         return agent, writer
 
     def _ask_user_resume(self, interrupt_id=None, answers=None):
@@ -2924,7 +3181,7 @@ class TestDispatchSessionPersistenceEvents:
             "payload": {"answers": payload_answers},
         }
 
-    def test_skip_path_patches_tool_and_user_and_clears_resume(self):
+    def test_skip_path_patches_tool_and_user_and_preserves_resume(self):
         agent, writer = self._make_agent()
         kwargs = ExecuteKwargs(resume=self._ask_user_resume(), input="hi", turn_id="t1")
         agent._prepare_pre_run_history(kwargs)
@@ -2934,7 +3191,9 @@ class TestDispatchSessionPersistenceEvents:
         assert roles[-2:] == [PromptRole.TOOL.value, PromptRole.USER.value]
         assert agent.chat_history[-2].builtin_property.get("tool_call_id") == "call_auq_001"
         assert agent.chat_history[-1].content == "hi"
-        assert kwargs.resume is None
+        # D-15（48）：skip 统一串行语义——不再清 resume 当新对话轮；跳过的卡片标记
+        # cancelled（完成态），由 get_resume_input 判全完成 → Command(resume=skip 值) 拉图。
+        assert kwargs.resume is not None, "D-15：skip 不再清 execute_kwargs.resume（串行推进依赖）"
         interrupt_after = next(p for p in agent.chat_history if p.role == PromptRole.INTERRUPT.value)
         outcome = interrupt_after.content.get("outcome") or {}
         assert outcome.get("type") == "success"
@@ -3014,19 +3273,24 @@ class TestDispatchSessionPersistenceEvents:
         interrupt_after = next(p for p in agent.chat_history if p.role == PromptRole.INTERRUPT.value)
         assert (interrupt_after.content.get("outcome") or {}).get("type") != "success"
 
-    def test_no_interrupt_resume_raises_on_validation(self):
-        """末尾非 INTERRUPT（已回答场景）+ ask_user resume：一致性校验抛 AgentException。"""
-        from aidev_agent.exceptions import AgentException
+    def test_no_interrupt_resume_skips_unmatched(self):
+        """末尾非 INTERRUPT（已回答场景）+ ask_user resume → D-04 未命中尾中断记录，跳过。
 
+        D-04（48）：resolve_resumes 经 interruptId → chat_history 末尾 interrupt_messages
+        路由（不信任前端 reason）。resume item 的 interruptId 未命中末尾 interrupt 记录
+        → 跳过（不调用 on_resume），不抛异常（旧「期望末尾为 INTERRUPT」校验随
+        validate_resume_consistency 迁入 packages on_resume，仅在被路由时触发）。
+        """
         agent, writer = self._make_agent_without_tail_interrupt()
-        kwargs = ExecuteKwargs(resume=self._ask_user_resume(), input="hi", turn_id="t1")
-        with pytest.raises(AgentException, match="期望末尾为 INTERRUPT"):
-            agent._prepare_pre_run_history(kwargs)
+        before = len(agent.chat_history)
+        kwargs = ExecuteKwargs(resume=self._ask_user_resume(), input="", turn_id="t1")
+        agent._prepare_pre_run_history(kwargs)
+        # D-04：未命中末尾 interrupt_messages → 跳过（无 chat_history 改写 / 事件派发）
+        assert len(agent.chat_history) == before
+        assert writer.events == []
 
-    def test_empty_chat_history_resume_raises_on_validation(self):
-        """chat_history 为空 + ask_user resume：一致性校验抛 AgentException。"""
-        from aidev_agent.exceptions import AgentException
-
+    def test_empty_chat_history_resume_skips_unmatched(self):
+        """chat_history 为空 + ask_user resume → D-04 无中断记录可路由，跳过（不抛异常）。"""
         writer = _RecordingEventWriter()
         agent = ChatCompletionAgent(
             chat_model=MockChatModel(responses=["ok"]),
@@ -3034,17 +3298,22 @@ class TestDispatchSessionPersistenceEvents:
             event_handler=writer,
             chat_history=[],
         )
-        kwargs = ExecuteKwargs(resume=self._ask_user_resume(), input="hi", turn_id="t1")
-        with pytest.raises(AgentException, match="缺少对应的 interrupt 记录"):
-            agent._prepare_pre_run_history(kwargs)
+        self._attach_processor(agent)
+        before = len(agent.chat_history)
+        kwargs = ExecuteKwargs(resume=self._ask_user_resume(), input="", turn_id="t1")
+        agent._prepare_pre_run_history(kwargs)
+        assert len(agent.chat_history) == before
+        assert writer.events == []
 
     def test_validate_resume_consistency_raises_on_missing_tool_call_id(self):
-        """interrupt.builtin_property 缺 tool_call_id（脏数据）→ 抛异常。"""
+        """tool 链接完全缺失（记录 builtin 与匹配元素均无 tool_call_id，真脏数据）→ 抛异常。"""
         from aidev_agent.exceptions import AgentException
 
         agent, writer = self._make_agent()
         interrupt_prompt = next(p for p in agent.chat_history if p.role == PromptRole.INTERRUPT.value)
         interrupt_prompt.builtin_property = {"reason": ASK_USER_QUESTION_REASON, "questions": []}
+        # 元素侧 toolCallId 一并抹除（仅记录级缺失时由元素兜底，两处均缺才算脏数据）
+        interrupt_prompt.content["outcome"]["interrupts"][0].pop("toolCallId", None)
         kwargs = ExecuteKwargs(resume=self._ask_user_resume(), input="hi", turn_id="t1")
         with pytest.raises(AgentException, match="缺少 tool_call_id"):
             agent._prepare_pre_run_history(kwargs)
@@ -3055,7 +3324,9 @@ class TestDispatchSessionPersistenceEvents:
         before = len(agent.chat_history)
         kwargs = ExecuteKwargs(resume=self._ask_user_resume(answers=[]), input="", turn_id="t1")
         agent._prepare_pre_run_history(kwargs)
-        assert kwargs.resume is None
+        # D-15（48）：skip 统一串行语义——不再清 resume 当新对话轮，跳过卡片标记
+        # cancelled（完成态），由 get_resume_input 判全完成 → Command(resume=skip 值) 拉图
+        assert kwargs.resume is not None
         # 不补 user 记录（无 input），仅补 tool 记录；interrupt 就地改写为 CANCELLED 终态（零 append）
         assert len(agent.chat_history) == before + 1
         assert agent.chat_history[-1].role == PromptRole.TOOL.value
@@ -3067,14 +3338,19 @@ class TestDispatchSessionPersistenceEvents:
         assert SessionPersistenceEventNames.UserInputSaved.value not in custom_names
         assert SessionPersistenceEventNames.AskUserQuestionFinalized.value in custom_names
 
-    def test_validate_resume_consistency_raises_on_id_mismatch(self):
-        """resume.interruptId 与 chat_history interrupt id 不一致 → 抛异常。"""
-        from aidev_agent.exceptions import AgentException
+    def test_validate_resume_consistency_unmatched_id_skips(self):
+        """resume.interruptId 不在末尾中断记录 → D-04 未命中路由，跳过（不抛异常）。
 
+        D-04（48）：不信任前端 interruptId——未命中 chat_history 末尾 interrupt_messages
+        的 resume item 直接跳过（而非旧「id 不一致抛异常」；后者迁入 packages
+        validate_resume_consistency，仅在被路由到 on_resume 时触发）。
+        """
         agent, writer = self._make_agent()
-        kwargs = ExecuteKwargs(resume=self._ask_user_resume(interrupt_id="wrong-id"), input="hi", turn_id="t1")
-        with pytest.raises(AgentException, match="不一致"):
-            agent._prepare_pre_run_history(kwargs)
+        before = len(agent.chat_history)
+        kwargs = ExecuteKwargs(resume=self._ask_user_resume(interrupt_id="wrong-id"), input="", turn_id="t1")
+        agent._prepare_pre_run_history(kwargs)
+        assert len(agent.chat_history) == before
+        assert writer.events == []
 
     def test_validate_resume_consistency_raises_on_status_not_pending(self):
         """interrupt status 非 pending → 抛异常。"""
@@ -3087,6 +3363,92 @@ class TestDispatchSessionPersistenceEvents:
         kwargs = ExecuteKwargs(resume=self._ask_user_resume(), input="hi", turn_id="t1")
         with pytest.raises(AgentException, match="status=pending"):
             agent._prepare_pre_run_history(kwargs)
+
+    def _make_agent_multi_interrupt(self):
+        """构造多中断 interrupt 记录（approval + ask_user 双 pending，DB 全量落库形态）。"""
+        agent, writer = self._make_agent()
+        interrupt_prompt = next(p for p in agent.chat_history if p.role == PromptRole.INTERRUPT.value)
+        interrupt_prompt.content["outcome"]["interrupts"].append(
+            {
+                "id": "int-approval",
+                "reason": "tool_approval",
+                "toolCallId": "call_approval_001",
+                "metadata": {"type": "tool_approval", "status": "pending"},
+            }
+        )
+        return agent, writer
+
+    def test_validate_resume_consistency_multi_interrupt_passes_on_id_match(self):
+        """多中断全量落库（HI-02）+ resume 按 interruptId 命中 ask_user 元素 → 校验通过。
+
+        UAT 回归：DB outcome.interrupts 含 2 个 pending（approval 在前），resume
+        回答 ask_user 元素时按 id 定位成功，不再因「期望仅一个元素」误拒。
+        """
+        agent, writer = self._make_agent_multi_interrupt()
+        before = len(agent.chat_history)
+        kwargs = ExecuteKwargs(resume=self._ask_user_resume(), input="hi", turn_id="t1")
+        # 不抛 AgentException 即校验通过（input 非空 → skip 路径正常执行，追加 tool + user 两条记录）
+        agent._prepare_pre_run_history(kwargs)
+        # D-15（48）：skip 统一串行语义——不再清 resume 当新对话轮，跳过卡片标记
+        # cancelled（完成态），由 get_resume_input 判全完成 → Command(resume=skip 值) 拉图
+        assert kwargs.resume is not None
+        assert len(agent.chat_history) == before + 2
+
+    def test_validate_resume_consistency_multi_interrupt_unmatched_id_skips(self):
+        """多中断全量落库 + resume interruptId 不在任何元素 → D-04 未命中路由，跳过（不抛异常）。"""
+        agent, writer = self._make_agent_multi_interrupt()
+        before = len(agent.chat_history)
+        kwargs = ExecuteKwargs(resume=self._ask_user_resume(interrupt_id="not-exist"), input="", turn_id="t1")
+        agent._prepare_pre_run_history(kwargs)
+        assert len(agent.chat_history) == before
+        assert writer.events == []
+
+    def test_validate_resume_consistency_tool_call_id_from_matched_element(self):
+        """UAT 回归：记录级 builtin 缺 tool_call_id 时回退匹配元素 toolCallId。
+
+        旧写入链路（reason 误归一为 tool_call → DEFAULT_HANDLER 落库）产生的记录
+        builtin_property 无 tool_call_id，但 outcome.interrupts 元素本身携带
+        toolCallId——tool 链接关系仍成立，不应误判脏数据。
+        """
+        agent, writer = self._make_agent_multi_interrupt()
+        interrupt_prompt = next(p for p in agent.chat_history if p.role == PromptRole.INTERRUPT.value)
+        # 模拟旧链路脏记录：抹掉记录级 tool_call_id（元素 toolCallId 保留）
+        interrupt_prompt.builtin_property.pop("tool_call_id", None)
+        kwargs = ExecuteKwargs(resume=self._ask_user_resume(), input="hi", turn_id="t1")
+        # 不抛 AgentException：tool_call_id 由匹配元素兜底，校验通过
+        agent._prepare_pre_run_history(kwargs)
+        # D-15（48）：skip 统一串行语义——不再清 resume 当新对话轮，跳过卡片标记
+        # cancelled（完成态），由 get_resume_input 判全完成 → Command(resume=skip 值) 拉图
+        assert kwargs.resume is not None
+
+    def test_validate_resume_consistency_target_form_without_metadata(self):
+        """UAT 回归：target 形态历史落库（元素无 metadata）以 outcome.type 兜底。
+
+        策略直抛 target 5 键无 metadata，历史落库元素缺 metadata.status——
+        outcome.type=interrupt 视同 pending（未回答，放行）；success 视为已
+        回答终态（拒绝二次回答）。
+        """
+        from aidev_agent.exceptions import AgentException
+
+        agent, writer = self._make_agent()
+        interrupt_prompt = next(p for p in agent.chat_history if p.role == PromptRole.INTERRUPT.value)
+        # 抹掉元素 metadata（模拟 target 形态历史落库），outcome.type 保持 interrupt
+        interrupt_prompt.content["outcome"]["interrupts"][0].pop("metadata", None)
+        kwargs = ExecuteKwargs(resume=self._ask_user_resume(), input="hi", turn_id="t1")
+        # 未回答（outcome.type=interrupt）→ 视同 pending，校验通过
+        agent._prepare_pre_run_history(kwargs)
+        # D-15（48）：skip 统一串行语义——不再清 resume 当新对话轮，跳过卡片标记
+        # cancelled（完成态），由 get_resume_input 判全完成 → Command(resume=skip 值) 拉图
+        assert kwargs.resume is not None
+
+        # 已回答（outcome.type=success）→ 终态，拒绝二次回答
+        agent2, writer2 = self._make_agent()
+        interrupt_prompt2 = next(p for p in agent2.chat_history if p.role == PromptRole.INTERRUPT.value)
+        interrupt_prompt2.content["outcome"]["interrupts"][0].pop("metadata", None)
+        interrupt_prompt2.content["outcome"]["type"] = "success"
+        kwargs2 = ExecuteKwargs(resume=self._ask_user_resume(), input="hi", turn_id="t1")
+        with pytest.raises(AgentException, match="status=pending"):
+            agent2._prepare_pre_run_history(kwargs2)
 
     def test_non_ask_user_resume_returns_early(self):
         """resume payload 不含 answers（模拟 approval）→ 不走 ask_user 回写逻辑。"""
@@ -3103,6 +3465,27 @@ class TestDispatchSessionPersistenceEvents:
         # resume 未被清空（未走 ask_user 路径）
         interrupt_after = next(p for p in agent.chat_history if p.role == PromptRole.INTERRUPT.value)
         assert (interrupt_after.content.get("outcome") or {}).get("type") != "success"
+
+    def test_resume_resolve_formal_output_and_d11_contract(self):
+        """D-11 契约 + U-08/D-16 语义：答题路径保留 resume，_resume_resolve 实例暂存消亡。
+
+        - D-11：前端 resume 请求携带全量 DB messages 契约维持——execute_kwargs.resume
+          在答题路径被保留（非 skip），terminal_interrupt_ids 推导与串行推进依赖此契约，
+          不因 stream_input 收编而破坏。
+        - U-08/D-16：_prepare_pre_run_history 不再暂存 self._resume_resolve（实例暂存
+          机制整体消亡），resolve_resumes 无返回值；回放字段改由 get_resume_input 产出。
+        """
+        agent, writer = self._make_agent()
+        answers = [{"question": "Q", "answer": [{"label": "A"}]}]
+        kwargs = ExecuteKwargs(resume=self._ask_user_resume(answers=answers), input="", turn_id="t1")
+        agent._prepare_pre_run_history(kwargs)
+        # U-08：_resume_resolve 不再暂存（resolve_resumes 无返回值，回放字段由 get_resume_input 产出）
+        assert not hasattr(agent, "_resume_resolve") or getattr(agent, "_resume_resolve", None) is None, (
+            "_resume_resolve 实例暂存机制应消亡（U-08）"
+        )
+        # D-11：答题路径（非 skip）保留 execute_kwargs.resume——前端全量 messages 契约维持，
+        # terminal_interrupt_ids 推导 / 串行推进防死循环依赖此契约不变
+        assert kwargs.resume is not None, "答题路径应保留 execute_kwargs.resume（D-11 契约）"
 
 
 class TestBuildKnowledgeQueryOptions:

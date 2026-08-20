@@ -12,12 +12,45 @@
 from typing import Any
 
 from aidev_agent.core.ag_ui.utils import (
-    agui_messages_to_langchain,
     get_stream_payload_input,
 )
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from aidev_agent.enums import PromptRole
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.types import Command
+
+
+def _agui_messages_to_langchain(messages: list) -> list[BaseMessage]:
+    """测试辅助：将 AGUI 消息（role dict/model 形态）转为 LangChain 消息。
+
+    原 ``agui_messages_to_langchain``（生产零调用死代码）已删除；此处为测试辅助内联的
+    安全替代，仅覆盖测试实际用到的 role（user/assistant/system/tool），
+    不再复刻引入即炸的 ``tc.function.name`` 顶层 tool_call 暗雷。
+    """
+    langchain_messages: list[BaseMessage] = []
+    for message in messages:
+        role = message.get("role") if isinstance(message, dict) else getattr(message, "role", None)
+        msg_id = message.get("id") if isinstance(message, dict) else getattr(message, "id", None)
+        content = message.get("content") if isinstance(message, dict) else getattr(message, "content", None)
+        if role == PromptRole.USER.value:
+            langchain_messages.append(HumanMessage(id=msg_id, content=content))
+        elif role == PromptRole.ASSISTANT.value:
+            langchain_messages.append(AIMessage(id=msg_id, content=content or ""))
+        elif role == PromptRole.SYSTEM.value:
+            langchain_messages.append(SystemMessage(id=msg_id, content=content))
+        elif role == PromptRole.TOOL.value:
+            tool_call_id = (
+                message.get("tool_call_id") if isinstance(message, dict) else getattr(message, "tool_call_id", None)
+            )
+            langchain_messages.append(ToolMessage(id=msg_id, content=content, tool_call_id=tool_call_id))
+        # 其他 role（interrupt/info/reasoning）测试辅助用不到，跳过
+    return langchain_messages
 
 
 def _merge_state(
@@ -128,7 +161,7 @@ def prepare_stream_data_for_agent(
         langchain_messages: list[BaseMessage] = []
     else:
         state_input["messages"] = []
-        langchain_messages = agui_messages_to_langchain(messages)
+        langchain_messages = _agui_messages_to_langchain(messages)
         state = _merge_state(state_input, langchain_messages)
 
     # 2. regenerate 检测 + checkpoint 时间旅行
@@ -152,6 +185,8 @@ def prepare_stream_data_for_agent(
 
                 stream_input: Any = _merge_state(time_travel_checkpoint.values, [last_user_message])
                 if resume := forwarded_props.get("command", {}).get("resume"):
+                    # 47-02：Command 由 pre_run（chat.py _prepare_pre_run_history）唯一构造；
+                    # 测试辅助直接构造现成 Command 供 prepare_stream 统一启动消费。
                     stream_input = Command(resume=resume)
 
                 return {
@@ -162,6 +197,8 @@ def prepare_stream_data_for_agent(
 
     # 3. 正常路径：构造 stream_input（11.6：与 chat.py _prepare_stream_input 一致）
     if resume_input:
+        # 47-02：分支 B 已删除，prepare_stream 只消费现成 Command（input.stream_input 即
+        # Command → 统一启动）。测试辅助直接构造现成 Command（镜像 pre_run 产出）。
         stream_input: Any = Command(resume=resume_input)
     else:
         payload_input = get_stream_payload_input(

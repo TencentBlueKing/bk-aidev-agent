@@ -22,13 +22,16 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 from langgraph.graph.state import CompiledStateGraph
 
-from aidev_agent.core.nodes.tool.approval_wrapper import TOOL_APPROVAL_REASON
 from aidev_agent.exceptions import extract_model_error_message
+from aidev_agent.packages.interrupt_manager import (
+    TOOL_APPROVAL_REASON,
+    ApprovalOutcomeBuilder,
+    ApproveResultLiteral,
+)
+from aidev_agent.packages.interrupt_manager.processor import InterruptProcessor
 from aidev_agent.utils.event import stamp_round_end_event
 
 from .agent import LangGraphAGUIAgent
-from .approval import ApprovalOutcomeBuilder, ApproveResultLiteral
-from .ask_user_question import AskUserQuestionOutcomeBuilder
 from .event_builders import (
     build_tool_result_event,
     enhance_tool_call,
@@ -39,6 +42,7 @@ from .types import (
     AgentInput,
     CustomEventNames,
     CustomMessageType,
+    LangGraphEventTypes,
     MessagesInProgressRecord,
     MessageSnapshotEventExtend,
     RunFinishedSuccessOutcome,
@@ -81,8 +85,16 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         approval_interrupts: list[dict] | None = None,
         ask_user_question_interrupts: list[dict] | None = None,
         run_end_extras_hook: Callable[..., AsyncGenerator[Any, None]] | None = None,
+        interrupt_processor: InterruptProcessor | None = None,
     ):
-        super().__init__(name=name, graph=graph, description=description, config=config, cancel_checker=cancel_checker)
+        super().__init__(
+            name=name,
+            graph=graph,
+            description=description,
+            config=config,
+            cancel_checker=cancel_checker,
+            interrupt_processor=interrupt_processor,
+        )
         self._tool_mapping = tools or {}
         self._event_handler = event_handler
         self._suppressed_tool_call_ids: set[str] = set()
@@ -124,7 +136,13 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
             yield ev
 
     async def run(self, input: RunAgentInput) -> AsyncGenerator[str, None]:
-        """运行 Agent 并生成编码后的事件流"""
+        """运行 Agent 并生成编码后的事件流。
+
+        未就绪 resume（stream_input 为 None + next_interrupt）由父类
+        ``prepare_stream`` 经 ``events_to_dispatch`` 通道走快照-结束路径：本方法首帧
+        MESSAGES_SNAPSHOT 后，``super().run`` 内部 RUN_STARTED → RUN_FINISHED(下一张
+        卡) 即结束，不拉图。ready/普通路径正常进入 ``super().run`` 拉图。
+        """
         event_encoder = EventEncoder()
         temp_message_emitted = False
         skip_encode_custom = frozenset({SessionPersistenceEventNames.ChatModelEnd.value})
@@ -165,17 +183,14 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
                 else:
                     # RUN_FINISHED 事件：approval 中断的 SSE 输出仅保留 metadata.ticket，减少冗余字段。
                     # 非 approval 中断（如 ask_user_question）保留完整 metadata，前端需 questions 数组渲染卡片。
+                    # HI-02（D-03/D-04 解耦）：outcome.interrupts 在事件构造/DB 落库侧保留**全量**
+                    # （D-04 落库全量，base.py handle_run_finished 以此为落库源）；**SSE 单元素裁剪
+                    # 只在此序列化边界发生**（D-03 SSE 逐个下发）——该 outcome dict 在 _dispatch_event
+                    # 的 DB 写（_event_handler）之后才被本处就地裁剪，仅影响 SSE 载荷，不影响 DB 落库。
                     if getattr(event, "type", "") == EventType.RUN_FINISHED.value:
                         _outcome = getattr(event, "outcome", None)
-                        if isinstance(_outcome, dict) and _outcome.get("type") == "interrupt":
-                            for _interrupt in _outcome.get("interrupts", []):
-                                if _interrupt.get("reason") != TOOL_APPROVAL_REASON:
-                                    continue
-                                _metadata = _interrupt.get("metadata")
-                                if isinstance(_metadata, dict):
-                                    _interrupt["metadata"] = (
-                                        {"ticket": _metadata["ticket"]} if "ticket" in _metadata else None
-                                    )
+                        if isinstance(_outcome, dict):
+                            self._trim_run_finished_interrupts_for_sse(_outcome)
                     yield event_encoder.encode(event)
 
                 # MCP 工具拉取失败消息需要紧跟在 RUN_STARTED 后返回
@@ -201,16 +216,12 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         """续流首帧回放：在 SDK 任何事件之前先回放一条"终态形态"事件。
 
         让前端能立即据此把原中断卡片更新为最终状态（关闭弹窗）。
-        支持 approval 和 ask_user_question 两种中断类型，统一构造 RunFinishedEvent。
+        当前仅 approval 中断类型；ask_user_question 已移除（见
+        :meth:`_build_resume_finished_event` 说明）。
 
         该 RunFinishedEvent 仅用于更新前端的旧中断卡片，所属 run_id 是 interruptId，
         不是当前恢复请求的 run_id。中断终态已由入口层落库，因此这里只直发 SSE，
         不能走 _dispatch_event 提前结束当前 session。
-
-        ask_user_question 路径额外推送 MESSAGES_SNAPSHOT：前端 handleRunFinishedEvent
-        只标记 loading 完成，不更新消息列表中的 interrupt 卡片内容。前端依赖
-        MESSAGES_SNAPSHOT 的覆盖式语义来渲染 interrupt 卡片的 resolved 终态
-        （outcome.type=success + result.payload.answers）。
         """
         resume_event = self._build_resume_finished_event(input)
         if resume_event is not None:
@@ -220,51 +231,24 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
                 logger.exception("[Resume] Failed to emit resume event")
 
     def _build_resume_finished_event(self, input: RunAgentInput) -> RunFinishedEvent | None:
-        """构造续流首条"终态形态"事件（支持 approval 和 ask_user_question）。
+        """构造续流首条"终态形态"事件（当前仅 approval）。
 
         approval 路径：依赖 ``approve_result`` + ``approval_interrupts``（chat.py 从 DB 查询）。
-        ask_user_question 路径：依赖 ``ask_user_question_interrupts``（chat.py 从 graph state 获取）。
+
+        ask_user_question 续流首帧回放**已移除**（生产回归实证 2026-09-02）：
+        处理前置（chat.py ``_prepare_pre_run_history`` 在快照构建前经 on_resume 就地
+        改写 interrupt 记录为终态）+ MESSAGES_SNAPSHOT 完整携带 resolved 卡片
+        （outcome.type=success + result.reason/payload.answers），replay 事件冗余；
+        且其会整体替换前端 pending 卡片的 content——事件数据来自 graph tasks 的
+        raw value（缺顶层 reason/id），替换后已回答卡查无渲染器 → 卡片凭空消失。
+        294ff5d55（用户验证可用）同样不推送该事件。
 
         返回 None 表示不需要发首帧回放。
         """
         # approval 续流首帧回放
         if self._should_emit_resume_approval_finished():
             return self._build_resume_approval_finished_event(input)
-
-        # ask_user_question 续流首帧回放
-        if self._ask_user_question_interrupts:
-            return self._build_resume_ask_user_question_finished_event(input)
-
         return None
-
-    def _resolve_resume_context(self, input: RunAgentInput) -> tuple[str, list]:
-        """从 input.resume / forwarded_props 解析 (interruptId, answers)。
-
-        chat.py 把 resume 放在 forwarded_props.command.resume（非 AgentInput.resume），
-        前端传的 resume 可能是单 dict 或 list。返回 (interrupt_id, resume_answers)，
-        interrupt_id 为空时用 self._ask_user_question_interrupts[0].id 兜底。
-        """
-        interrupt_id: str = ""
-        resume_answers: list = []
-        resume_value = None
-        if isinstance(input, AgentInput):
-            if input.resume:
-                resume_value = input.resume
-            elif input.forwarded_props:
-                resume_value = (input.forwarded_props or {}).get("command", {}).get("resume")
-        if resume_value:
-            if isinstance(resume_value, dict):
-                resume_value = [resume_value]
-            if isinstance(resume_value, list) and resume_value:
-                first = resume_value[0]
-                if isinstance(first, dict):
-                    interrupt_id = first.get("interruptId") or ""
-                    resume_payload = first.get("payload") or {}
-                    if isinstance(resume_payload, dict):
-                        resume_answers = resume_payload.get("answers") or []
-        if not interrupt_id and self._ask_user_question_interrupts:
-            interrupt_id = (self._ask_user_question_interrupts[0] or {}).get("id", "") or ""
-        return interrupt_id, resume_answers
 
     def _should_emit_resume_approval_finished(self) -> bool:
         """是否需要在续流首位发送"终态 RUN_FINISHED"（approval 专用）。
@@ -284,30 +268,6 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
             return False
         first = self._approval_interrupts[0] or {}
         return isinstance(first, dict) and first.get("reason") == TOOL_APPROVAL_REASON
-
-    def _build_resume_ask_user_question_finished_event(self, input: RunAgentInput) -> RunFinishedEvent:
-        """构造 ask_user_question 续流首条 RunFinishedEvent 事件（与 approval 路径对称）。
-
-        通过 RunFinishedEvent（outcome.type=success）关闭弹窗：
-        - outcome.interrupts 含完整中断数据（深拷贝 + status 刷写为 resolved）
-        - result 含 interruptId / payload.answers / reason / status
-        - run_id = interruptId（前端据此关联弹窗）
-        """
-        interrupt_id, resume_answers = self._resolve_resume_context(input)
-
-        # 调用 AskUserQuestionOutcomeBuilder 构造终态 (outcome, result)——
-        # 与 approval 续流路径对称（ApprovalOutcomeBuilder.build_run_finished_payload）。
-        outcome_dict, result_dict = AskUserQuestionOutcomeBuilder.build_run_finished_payload(
-            self._ask_user_question_interrupts, "resolved", resume_answers=resume_answers
-        )
-        return RunFinishedEvent(
-            type=EventType.RUN_FINISHED,
-            thread_id=input.thread_id or "",
-            run_id=interrupt_id,
-            outcome=outcome_dict,
-            result=result_dict,
-            resume_replay=True,
-        )
 
     def _build_resume_approval_finished_event(self, input: RunAgentInput) -> RunFinishedEvent:
         """构造续流首条"终态形态" RUN_FINISHED 事件。
@@ -384,7 +344,13 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         if replayable_messages:
             try:
                 event_count = 0
-                for ev in langchain_messages_to_streaming_events(replayable_messages):
+                # D-05 方向 a（DB 权威化）：重放 tool_call 按 DB 等价谓词过滤审批 pending
+                # （同源复算，不真查 DB）——state_messages 用重放源消息，tools_mapping 用 SSE 侧注入映射。
+                for ev in langchain_messages_to_streaming_events(
+                    replayable_messages,
+                    state_messages=replayable_messages,
+                    tools_mapping=self._tool_mapping,
+                ):
                     yield encoder.encode(ev)
                     event_count += 1
                 logger.info(
@@ -420,17 +386,42 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         覆盖所有 TOOL_CALL 来源（_handle_*_stream_event 子方法 + _handle_on_chat_model_end_event + ManuallyEmitToolCall），
         不需覆写 3 个子方法。ManuallyEmitToolCall 的 tool_call_id 不在 _suppressed_tool_call_ids（手动发射不审批），透传。
 
-        ask_user_question 工具的 TOOL_CALL_START/ARGS/END 在续流场景下会被 ``_handle_on_tool_end_event``
-        重复补发（中断前的首次 run 已通过 OnChatModelStream 流式发到前端），此处直接按工具名抑制：
-        ask_user_question 工具只可能由 interrupt 路径触发，OnToolNodeFinish 路径会独立发出 TOOL_CALL_RESULT，
-        因此其 START/ARGS/END 三元组在续流场景下是冗余的。
+        审批工具抑制按**原始事件来源**门控：
+        - 模型阶段来源（on_chat_model_stream / on_chat_model_end，pre-approval 隐藏语义）：仍抑制，
+          与首跑语义一致——审批确认前不向前端暴露工具调用样式。
+        - OnToolEnd 补发来源（event.get("event") == LangGraphEventTypes.OnToolEnd，resume 续流审批已决出、
+          工具已执行、ToolMessage 已存在）：不抑制，让 TOOL_CALL_START/ARGS/END 与独立路径发出的
+          TOOL_CALL_RESULT 完整流向前端，避免 TOOL_CALL_RESULT 孤儿事件（工具卡片样式丢失）。
+          该"已执行保留"维度与 event_builders.should_suppress_approval_tool_call 的 DB 等价谓词对齐。
+
+        ask_user_question 工具的 TOOL_CALL_START/ARGS/END 在**首跑与续流均被抑制**（此处按工具名
+        直接抑制）。UAT 复盘（2026-08-31）：ask_user 的 tool_call **不在** 45-04 快照谓词
+        ``should_suppress_approval_tool_call`` 的过滤范围内（该谓词仅过滤审批 pending）——
+        首跑 MESSAGES_SNAPSHOT 已携带 ask_user tool_call 渲染一次，问题卡片经 interrupt
+        outcome 下发；若续流放行 OnToolEnd 补发三元组，前端会渲染第二次（单 ask_user
+        双样式 UAT 回归）。与审批工具的差异恰在于：审批 pending tool_call 被快照谓词
+        过滤（快照渲染 0 次），补发放行后恰好渲染一次。故 ask_user 三元组保持无条件
+        抑制；第二个 ask_user 卡片样式由 run-end 出口补发 MESSAGES_SNAPSHOT 修复
+        （对齐分支 B ``_build_next_interrupt_events`` 结构）。
+        该"流式抑制"是根因 B（同一轮 assistant.tool_calls 存在 4 个互不一致的真相源）的组成部分，
+        方向 a（DB 权威化）保持此抑制不动，数量真相源统一由 checkpoint 派生快照/重放按 DB 等价谓词
+        过滤（D-05，见 event_builders.should_suppress_approval_tool_call）。
         """
         async for ev in super()._handle_single_event(event, state):
             if isinstance(ev, ToolCallStartEvent):
-                if is_tool_approval_required(ev.tool_call_name, self._tool_mapping):
+                # 审批工具抑制按**原始事件来源**门控（quick-omz UAT 回归）：
+                # - 模型阶段来源（on_chat_model_stream/end，pre-approval 隐藏语义）仍抑制——
+                #   审批确认前不向前端暴露工具调用样式；
+                # - OnToolEnd 补发来源（工具已执行、approval 已解决、ToolMessage 已存在）放行——
+                #   审批 pending tool_call 已被快照谓词 should_suppress_approval_tool_call 过滤
+                #   （快照渲染 0 次），补发三元组与 RESULT 完整下发恰好渲染一次，避免孤儿 RESULT。
+                is_ontoolend_source = bool(event and event.get("event") == LangGraphEventTypes.OnToolEnd)
+                if is_tool_approval_required(ev.tool_call_name, self._tool_mapping) and not is_ontoolend_source:
                     logger.info(f"[AidevAGUIAgent] 抑制需要审批的工具流式事件: {ev.tool_call_name} ({ev.tool_call_id})")
                     self._suppressed_tool_call_ids.add(ev.tool_call_id)
                     continue  # suppress
+                # ask_user 无条件抑制（首跑+续流）：其 tool_call 不在快照谓词过滤范围内，
+                # 首跑 MESSAGES_SNAPSHOT 已渲染——补发/流式三元组均冗余（放行会双样式）。
                 if ev.tool_call_name == ASK_USER_QUESTION_TOOL_NAME:
                     logger.info(f"[AidevAGUIAgent] 抑制 ask_user_question 工具的 TOOL_CALL_START: {ev.tool_call_id}")
                     self._suppressed_tool_call_ids.add(ev.tool_call_id)
@@ -487,6 +478,30 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
                 logger.exception(f"Event handler failed: {e}")
 
         return super()._dispatch_event(event)
+
+    @staticmethod
+    def _trim_run_finished_interrupts_for_sse(outcome: dict) -> None:
+        """串行语义（用户裁定 2026-08-31）：SSE 边界防御性裁剪 RUN_FINISHED outcome。
+
+        仅对 ``outcome.type == "interrupt"`` 生效：把 ``outcome.interrupts`` 裁剪为
+        **单元素**（当前活跃/第一个 pending）。由于源头 ``_resolve_exit`` / 分支 A
+        已单元素化（DB 与 SSE 均仅当前活跃），此处裁剪对正常路径为 no-op，仅作
+        防御（防其他路径多元素再犯）。顺带完成 approval 中断的 metadata.ticket 精简
+        （非 approval 中断保留完整 metadata，前端需 questions 数组渲染卡片）。
+        """
+        if not isinstance(outcome, dict) or outcome.get("type") != "interrupt":
+            return
+        _interrupts = outcome.get("interrupts")
+        if not isinstance(_interrupts, list):
+            return
+        if len(_interrupts) > 1:
+            outcome["interrupts"] = _interrupts[:1]
+        for _interrupt in outcome.get("interrupts", []):
+            if _interrupt.get("reason") != TOOL_APPROVAL_REASON:
+                continue
+            _metadata = _interrupt.get("metadata")
+            if isinstance(_metadata, dict):
+                _interrupt["metadata"] = {"ticket": _metadata["ticket"]} if "ticket" in _metadata else None
 
     async def _handle_stream_events(self, input: RunAgentInput, config: RunnableConfig) -> AsyncGenerator[str, None]:
         """处理流事件，添加异常处理"""

@@ -16,13 +16,14 @@ class ExtendToolCallStartEvent(ToolCallStartEvent):
 
 
 class ExtendToolCallResultEvent(ToolCallResultEvent):
-    tool_call_name: str | None = Field(default=None, description="工具名，供无 START 事件的恢复流展示")
     duration: float | None = Field(default=None, description="工具调用的耗时")
     is_error: bool | None = Field(default=None, description="工具调用是否出错")
     additional_metadata: dict | None = Field(
         default=None, description="完整 additional_kwargs dict，含 duration/description/tool_approval 等"
     )
     skip_db: bool = Field(default=False, description="子 Agent 中间步骤标记，DB 侧检查后跳过写入")
+    # D-06: 工具名（ToolMessage.name），修复续流审批回填 name=tool_call_id（根因 A）
+    tool_call_name: str | None = Field(default=None, description="工具调用的名称")
 
 
 class ExtendThinkingEndEvent(ThinkingEndEvent):
