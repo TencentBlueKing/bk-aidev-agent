@@ -5,7 +5,6 @@
     :style="{
       '--resize-main-width': resizeMainWidth,
       '--resize-aside-width': resizeAsideWidthVar,
-      borderTopColor: isCollapse ? 'transparent' : '#eaebf0',
     }"
   >
     <div
@@ -770,7 +769,6 @@
     height: 100%;
     font-size: var(--ai-font-size, 12px);
     border: none;
-    border-top: 1px solid transparent;
 
     &-loading {
       display: flex;

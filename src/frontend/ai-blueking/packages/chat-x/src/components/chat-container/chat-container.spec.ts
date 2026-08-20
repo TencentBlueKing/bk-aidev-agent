@@ -981,6 +981,16 @@ describe('ChatContainer', () => {
       expect(wrapper.find('.ai-chat-container-resize-layout').classes()).not.toContain('ai-is-collapse');
     });
 
+    it('根节点不应通过 inline border-top 绘制顶部分割线（改由业务 Header 贯穿全宽）', async () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, asideCollapsed: false },
+      });
+      await nextTick();
+
+      const style = wrapper.find('.ai-chat-container').attributes('style') ?? '';
+      expect(style).not.toMatch(/border-top/i);
+    });
+
     it('外部切换 asideCollapsed 应触发 collapseChange', async () => {
       wrapper = mount(ChatContainer, {
         props: { ...defaultProps, asideCollapsed: true },

@@ -239,6 +239,7 @@ sinceVersion: 1.0.0
 ## 核心能力
 
 - **分栏布局**：基于 `ResizeLayout`，侧栏固定从右侧展开且无内置折叠按钮；展开 / 折叠由外部通过 `v-model:asideCollapsed` 判断，容器只负责渲染与回写，不再依赖 `executionGroups`、`keyword` 等数据条件。无数据时侧栏照常展开，由各面板展示空态
+- **顶部分割线**：容器自身不再绘制 `border-top`。侧栏展开时的顶栏分割线由业务 Header（如 AI 小鲸 `ai-header`）在 `asideCollapsed === false` 时绘制，以保证贯穿全宽
 - **消息分组**：内置 `useMessageGroup`，自动分组、Tool 合并、Loading 注入
 - **输入区状态推导**：对内 `messageStatus` 取 `inputStatus`——分组中存在 `LOADING_MESSAGE_ID`（`'__loading__'`）时用 `MessageStatus.Fetching`，否则用外部 `messageStatus`，保证「已发未流式」阶段也能停止、并避免重复发送
 - **待审批发送阻塞**：存在 `AIDevToolApproval` 且为 `pending` / `draft` 时，输入区上方提示，并通过 `ChatInput.sendDisabledTip` 禁止发送

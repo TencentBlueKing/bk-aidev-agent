@@ -2,7 +2,7 @@
   <div
     ref="headerRef"
     class="ai-header drag-handle"
-    :class="{ draggable: props.draggable }"
+    :class="{ draggable: props.draggable, 'is-aside-expanded': !props.asideCollapsed }"
   >
     <div class="left-section">
       <div class="logo">
@@ -514,7 +514,11 @@
     justify-content: space-between;
     height: 48px;
     padding: 14px;
-    border-bottom: none;
+    border-bottom: 1px solid transparent;
+
+    &.is-aside-expanded {
+      border-bottom-color: #eaebf0;
+    }
 
     &.draggable {
       cursor: move;
