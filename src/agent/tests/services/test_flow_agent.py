@@ -110,6 +110,39 @@ class TestFlowAgentCompletion:
 
         event_handler.set_streaming_finished.assert_called_once_with()
 
+    @patch.object(GeneratorStreamingHelper, "is_cancelled", return_value=False)
+    def test_execute_uses_run_id_to_replace_stale_replay(self, mock_cancelled):
+        captured: dict = {}
+        agent = FlowAgentCompletionAgent(
+            resource_manager=MockResourceManager(task_info_sequence=[{"task_state": "FINISHED", "task_outputs": []}]),
+            session_code="flow-session",
+        )
+
+        def capture_stream(_helper, generator, **kwargs):
+            captured["generator"] = generator
+            captured["run_id"] = kwargs["expected_run_id"]
+            return iter(())
+
+        with patch.object(GeneratorStreamingHelper, "stream", new=capture_stream):
+            assert list(agent.execute()) == []
+
+        events = _parse_sse_events(captured["generator"])
+        assert captured["run_id"]
+        assert events[0]["runId"] == captured["run_id"]
+
+    def test_attach_keeps_existing_stream_run_id(self):
+        captured: dict = {}
+        agent = FlowAgentCompletionAgent(session_code="flow-session")
+
+        def capture_stream(_helper, _generator, **kwargs):
+            captured["expected_run_id"] = kwargs["expected_run_id"]
+            return iter(())
+
+        with patch.object(GeneratorStreamingHelper, "stream", new=capture_stream):
+            assert list(agent.execute(MagicMock(stream_mode="attach"))) == []
+
+        assert captured["expected_run_id"] is None
+
 
 class TestFlowAgentMainFlow:
     """主流程：start → SSE 流式输出 → 轮询到终态"""

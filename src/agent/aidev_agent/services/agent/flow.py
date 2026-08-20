@@ -139,11 +139,22 @@ class FlowAgentCompletionAgent(BaseModel):
             thread_id=stream_thread_id,
             defer_cleanup_on_complete=background_only,
         )
+        attach_only = getattr(execute_kwargs, "stream_mode", "start") == "attach"
+        run_id = None if attach_only else str(uuid.uuid4())
+        logger.info(
+            "[FLOW_AGENT] Execute stream: session_code=%s, task_id=%s, action=%s, run_id=%s, attach_only=%s",
+            self.session_code,
+            self.task_id,
+            self.resume_from_node,
+            run_id,
+            attach_only,
+        )
         return helper.stream(
-            self._run_flow(),
+            self._run_flow(run_id),
             on_complete=self._on_complete,
             event_handler=self.event_handler,
-            attach_only=getattr(execute_kwargs, "stream_mode", "start") == "attach",
+            expected_run_id=run_id,
+            attach_only=attach_only,
         )
 
     def _on_complete(self) -> None:
@@ -158,18 +169,20 @@ class FlowAgentCompletionAgent(BaseModel):
 
     # ---------- 核心流程 ----------
 
-    def _run_flow(self) -> Generator[str, None, None]:
+    def _run_flow(self, run_id: str | None = None) -> Generator[str, None, None]:
         """核心流程：启动（或使用已有 task_id）→ 轮询 → 产出 SSE 事件"""
         encoder = EventEncoder()
-        run_id = str(uuid.uuid4())
+        run_id = run_id or str(uuid.uuid4())
         # 每次运行重置任务启动状态
         self._task_started = False
 
         logger.info(
-            "[FLOW_AGENT] _run_flow started: session_code=%s, task_id=%s, skip_start=%s",
+            "[FLOW_AGENT] _run_flow started: run_id=%s, session_code=%s, task_id=%s, skip_start=%s, action=%s",
+            run_id,
             self.session_code,
             self.task_id,
             bool(self.task_id),
+            self.resume_from_node,
         )
 
         run_started_event = RunStartedEvent(type=EventType.RUN_STARTED, run_id=run_id, thread_id=self.thread_id)
@@ -229,7 +242,8 @@ class FlowAgentCompletionAgent(BaseModel):
                 yield encoder.encode(resumed_event)
                 self._task_started = True
                 logger.info(
-                    "[FLOW_AGENT] Node resumed: task_id=%s, action=%s",
+                    "[FLOW_AGENT] Node resumed: run_id=%s, task_id=%s, action=%s",
+                    run_id,
                     task_id,
                     self.resume_from_node,
                 )
@@ -268,9 +282,12 @@ class FlowAgentCompletionAgent(BaseModel):
         # 保存最后一次成功轮询的 task_info，用于取消时构造 revoke 事件
         last_task_info: dict | None = None
         logger.info(
-            "[FLOW_AGENT] Polling started: task_id=%s, session_code=%s, poll_interval=%ss, poll_timeout=%ss",
+            "[FLOW_AGENT] Polling started: run_id=%s, task_id=%s, session_code=%s, action=%s, "
+            "poll_interval=%ss, poll_timeout=%ss",
+            run_id,
             task_id,
             self.session_code,
+            self.resume_from_node,
             self.poll_interval,
             self.poll_timeout,
         )
@@ -351,6 +368,17 @@ class FlowAgentCompletionAgent(BaseModel):
             # 兼容 task_state 和 state 两种字段名
             task_state = task_info.get("task_state", task_info.get("state", ""))
 
+            if self.resume_from_node and _poll_count == 1:
+                logger.info(
+                    "[FLOW_AGENT] First poll after node resume: run_id=%s, task_id=%s, action=%s, "
+                    "task_state=%s, elapsed=%.3fs",
+                    run_id,
+                    task_id,
+                    self.resume_from_node,
+                    task_state,
+                    time.time() - start_time,
+                )
+
             if _poll_count <= 3 or task_state in FLOW_TASK_END_STATES:
                 logger.debug(
                     f"[FLOW_AGENT] Poll #{_poll_count}: task_id={task_id}, "
@@ -358,6 +386,15 @@ class FlowAgentCompletionAgent(BaseModel):
                 )
 
             if task_state in FLOW_TASK_END_STATES:
+                if self.resume_from_node and _poll_count == 1:
+                    logger.warning(
+                        "[FLOW_AGENT] Node resume reached terminal state on first poll: run_id=%s, task_id=%s, "
+                        "action=%s, task_state=%s",
+                        run_id,
+                        task_id,
+                        self.resume_from_node,
+                        task_state,
+                    )
                 logger.info(
                     f"[FLOW_AGENT] Task finished: task_id={task_id}, task_state={task_state}, "
                     f"poll_count={_poll_count}, elapsed={time.time() - start_time:.1f}s"
