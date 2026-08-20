@@ -508,8 +508,7 @@ class TestCommonAgentChatStreaming:
             result = agent.execute(ExecuteKwargs(stream=True))
             result_content = list(result)
 
-            # 验证错误消息被正确捕获
-            # 当前实现：RUN_ERROR 后跟 RUN_FINISHED 作为结束信号
+            # 验证错误消息被正确捕获，结束帧仅负责关闭流，不得错误标记为成功。
             error_events = [
                 c for c in result_content if c.startswith("data: ") and json.loads(c[6:]).get("type") == "RUN_ERROR"
             ]
@@ -519,7 +518,9 @@ class TestCommonAgentChatStreaming:
             # 最后一条事件应为 RUN_FINISHED
             last_content = result_content[-1]
             assert last_content.startswith("data: ")
-            assert json.loads(last_content[6:])["type"] == "RUN_FINISHED"
+            last_payload = json.loads(last_content[6:])
+            assert last_payload["type"] == "RUN_FINISHED"
+            assert "outcome" not in last_payload
 
     def test_tool_call_error_case(self):
         """case 6: 工具调用错误处理

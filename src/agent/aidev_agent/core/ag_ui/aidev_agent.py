@@ -497,12 +497,11 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
             logger.exception(f"Failed to handle stream events: {e}")
             error_chunk = extract_model_error_message(e)
             yield self._dispatch_event(RunErrorEvent(message=error_chunk))
-            # 补发 RunFinishedEvent 确保前端和 BaseSessionWriter 收到完整的结束信号
+            # 补发结束事件以完成前端和会话回写收尾；错误路径不得携带 success outcome。
             yield self._dispatch_event(
                 RunFinishedEvent(
                     type=EventType.RUN_FINISHED,
                     thread_id=input.thread_id,
                     run_id=self.active_run.get("id", "") if self.active_run else "",
-                    outcome=serialize_run_finished_outcome(RunFinishedSuccessOutcome()),
                 )
             )

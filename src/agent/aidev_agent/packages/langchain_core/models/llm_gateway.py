@@ -29,11 +29,15 @@ from langchain_core.runnables.fallbacks import RunnableWithFallbacks
 from langchain_openai.chat_models import ChatOpenAI as RawChatOpenAI
 from langchain_openai.chat_models.base import _convert_message_to_dict
 from langchain_openai.embeddings import OpenAIEmbeddings as RawOpenAIEmbeddings
-from pydantic import BaseModel, PrivateAttr, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, model_validator
 
 from aidev_agent.api.domains import BKAIDEV_URL
 from aidev_agent.config import settings
 from aidev_agent.exceptions import AIDevException
+from aidev_agent.packages.langchain_core.models.attachments import (
+    normalize_content_for_provider,
+    normalize_messages_for_provider,
+)
 from aidev_agent.utils.datetimes import get_current_timestamp_in_milliseconds
 
 
@@ -65,6 +69,7 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
     remote_tokenizer: bool = True
     max_content_length: Optional[int] = None
     fallback_model: str | None = None
+    attachment_capabilities: dict[str, bool] = Field(default_factory=lambda: {"image": True})
     _owns_http_async_client: bool = PrivateAttr(default=False)
 
     @classmethod
@@ -123,32 +128,63 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
     def get_num_tokens_from_messages(self, messages: list[BaseMessage]) -> int:
         if not self.remote_tokenizer:
             return super().get_num_tokens_from_messages(messages)
-        messages_dict = [_convert_message_to_dict(m) for m in messages]
-        return self.get_num_tokens(json.dumps(messages_dict))
+        normalized_input = self._normalize_input_messages_for_provider(messages)
+        messages_dict = [_convert_message_to_dict(m) for m in normalized_input]
+        normalized_messages = normalize_messages_for_provider(
+            messages_dict,
+            capabilities=self.attachment_capabilities,
+        )
+        return self.get_num_tokens(json.dumps(normalized_messages))
+
+    def _normalize_input_messages_for_provider(self, input_: object) -> object:
+        """在 LangChain 转 OpenAI content block 前完成附件能力映射。"""
+        if not isinstance(input_, list) or not all(isinstance(message, BaseMessage) for message in input_):
+            return input_
+
+        role_mapping = {
+            "ai": "assistant",
+            "chat": "user",
+            "function": "function",
+            "human": "user",
+            "system": "system",
+            "tool": "tool",
+        }
+        normalized_messages: list[BaseMessage] = []
+        for message in input_:
+            if not isinstance(message.content, list):
+                normalized_messages.append(message)
+                continue
+            normalized_messages.append(
+                message.model_copy(
+                    update={
+                        "content": normalize_content_for_provider(
+                            message.content,
+                            role=role_mapping.get(message.type, message.type),
+                            capabilities=self.attachment_capabilities,
+                        )
+                    }
+                )
+            )
+        return normalized_messages
 
     def _get_request_payload(self, *args, **kwargs) -> dict:
+        if args:
+            args = (self._normalize_input_messages_for_provider(args[0]), *args[1:])
+        else:
+            for key in ("input", "input_"):
+                if key in kwargs:
+                    kwargs[key] = self._normalize_input_messages_for_provider(kwargs[key])
+                    break
+
         payload = super()._get_request_payload(*args, **kwargs)
         # 部分 langchain-openai 版本会将子类扩展字段合并到 OpenAI 请求参数中。
-        # fallback_model 仅用于 SDK 内部切换，不能透传给 OpenAI 客户端。
+        # fallback_model / attachment_capabilities 仅用于 SDK 内部，不能透传给 OpenAI 客户端。
         payload.pop("fallback_model", None)
-        for message in payload.get("messages", []):
-            if message.get("role") != "user" or not isinstance(message.get("content"), list):
-                continue
-            content = []
-            for item in message["content"]:
-                if (
-                    isinstance(item, dict)
-                    and item.get("type") == "binary"
-                    and str(item.get("mime_type") or "").startswith("image/")
-                ):
-                    image_url = item.get("url")
-                    if not image_url and item.get("data"):
-                        image_url = f"data:{item['mime_type']};base64,{item['data']}"
-                    if image_url:
-                        content.append({"type": "image_url", "image_url": {"url": image_url}})
-                        continue
-                content.append(item)
-            message["content"] = content
+        payload.pop("attachment_capabilities", None)
+        payload["messages"] = normalize_messages_for_provider(
+            payload.get("messages", []),
+            capabilities=self.attachment_capabilities,
+        )
         return payload
 
     def _create_chat_result(

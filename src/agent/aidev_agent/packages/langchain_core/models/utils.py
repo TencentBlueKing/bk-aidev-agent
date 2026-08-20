@@ -16,11 +16,6 @@ We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
 
-import logging
-
-logger = logging.getLogger(__name__)
-
-
 def remove_thinking_process(resp_content):
     if resp_content.startswith("<think>\n") and "\n</think>\n\n" in resp_content:
         return resp_content.split("\n</think>\n\n")[-1]

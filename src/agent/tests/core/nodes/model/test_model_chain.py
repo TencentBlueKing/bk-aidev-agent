@@ -757,14 +757,14 @@ class TestCallLlmInvokeTimePayload:
 
 
 class TestExtractQueryTextAndImages:
-    """当前轮 query 的 multimodal 提取：只剥离挂载，转换复用 llm_gateway。"""
+    """当前轮 query 的 multimodal 提取：保留附件供统一出站闸门处理。"""
 
-    def test_extracts_binary_image_as_is_with_text(self):
+    def test_converts_incident_binary_image_with_text(self):
         binary = {
-            "filename": "a.jpeg",
-            "mime_type": "image/jpeg",
+            "filename": "image.png",
+            "mimeType": "application/octet-stream",
             "type": "binary",
-            "url": "https://example.com/a.jpeg",
+            "url": "https://example.com/files/upload_file.png/",
         }
         text, images = _extract_query_text_and_images(
             [binary, {"type": "text", "text": "图片内容是啥呀"}]
@@ -772,22 +772,24 @@ class TestExtractQueryTextAndImages:
         assert text == "图片内容是啥呀"
         assert images == [binary]
 
-    def test_keeps_image_url_and_ignores_non_image_binary(self):
+    def test_preserves_non_image_binary_for_provider_boundary(self):
         query = [
             {"type": "image_url", "image_url": {"url": "https://example.com/old.png"}},
             {"type": "binary", "mime_type": "application/pdf", "url": "https://example.com/a.pdf"},
             {"type": "text", "text": "看这张"},
         ]
-        text, images = _extract_query_text_and_images(query)
-        assert text == "看这张"
-        assert images == [{"type": "image_url", "image_url": {"url": "https://example.com/old.png"}}]
+        text, attachments = _extract_query_text_and_images(query)
 
-    def test_render_attaches_binary_image_to_last_human_message(self):
-        """_render_messages：binary 图片从 query 剥离后原样挂到最后一条 HumanMessage。"""
+        assert text == "看这张"
+        assert attachments == query[:2]
+
+    def test_render_attaches_converted_image_to_last_human_message(self):
+        """_render_messages：附件从 query 剥离后保留原始语义并挂到最后一条 HumanMessage。"""
         binary = {
             "type": "binary",
-            "mime_type": "image/jpeg",
-            "url": "https://example.com/curr.jpeg",
+            "mimeType": "application/octet-stream",
+            "filename": "curr.png",
+            "url": "https://example.com/curr.png/",
         }
         ca = Mock()
         ca.get_choice_tools = Mock(return_value=[])

@@ -24,8 +24,9 @@ from pathlib import Path
 import openai
 import pytest
 from aidev_agent.config import settings
+from aidev_agent.exceptions import AIDevException
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 # 测试模型列表
 TEST_MODELS = ["hunyuan-turbo", "qwen3", "deepseek-v3", "deepseek-r1"]
@@ -105,6 +106,99 @@ def test_chat_model_payload_converts_binary_images_to_image_url():
         {"type": "image_url", "image_url": {"url": "data:image/png;base64,aW1hZ2U="}},
         {"type": "text", "text": "描述图片"},
     ]
+
+
+def test_chat_model_payload_normalizes_incident_binary_image():
+    model = ChatModel.get_setup_instance(model="test", base_url=TEST_BASE_URL)
+    messages = [
+        HumanMessage(
+            content=[
+                {
+                    "type": "binary",
+                    "mimeType": "application/octet-stream",
+                    "url": "https://example.com/files/upload_file.png/",
+                    "filename": "image.png",
+                },
+                {"type": "binary", "mime_type": "application/octet-stream", "data": "aW1hZ2U=", "filename": "a.png"},
+            ]
+        )
+    ]
+
+    try:
+        payload = model._get_request_payload(messages)
+    finally:
+        asyncio.run(model.http_async_client.aclose())
+
+    assert payload["messages"][0]["content"] == [
+        {"type": "image_url", "image_url": {"url": "https://example.com/files/upload_file.png/"}},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,aW1hZ2U="}},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("message", "expected_message"),
+    [
+        (
+            HumanMessage(content=[{"type": "binary", "mime_type": "application/pdf", "url": "https://example.com/a.pdf"}]),
+            "尚未解析为文本",
+        ),
+        (
+            AIMessage(content=[{"type": "binary", "mime_type": "image/png", "url": "https://example.com/a.png"}]),
+            "仅支持用户消息中的附件",
+        ),
+    ],
+)
+def test_chat_model_payload_rejects_unmappable_binary_content(message, expected_message):
+    model = ChatModel.get_setup_instance(model="test", base_url=TEST_BASE_URL)
+    try:
+        with pytest.raises(AIDevException, match=expected_message):
+            model._get_request_payload([message])
+    finally:
+        asyncio.run(model.http_async_client.aclose())
+
+
+def test_chat_model_payload_maps_enabled_audio_video_and_extracted_document():
+    model = ChatModel.get_setup_instance(
+        model="test",
+        base_url=TEST_BASE_URL,
+        attachment_capabilities={"image": True, "audio": True, "video": True},
+    )
+    messages = [
+        HumanMessage(
+            content=[
+                {"type": "binary", "mime_type": "audio/mpeg", "url": "https://example.com/audio.mp3"},
+                {"type": "binary", "mime_type": "video/mp4", "url": "https://example.com/video.mp4"},
+                {
+                    "type": "binary",
+                    "mime_type": "application/pdf",
+                    "url": "https://example.com/report.pdf",
+                    "filename": "report.pdf",
+                    "extracted_text": "报告正文",
+                },
+            ]
+        )
+    ]
+
+    try:
+        payload = model._get_request_payload(messages)
+    finally:
+        asyncio.run(model.http_async_client.aclose())
+
+    assert payload["messages"][0]["content"] == [
+        {"type": "audio_url", "audio_url": {"url": "https://example.com/audio.mp3"}},
+        {"type": "video_url", "video_url": {"url": "https://example.com/video.mp4"}},
+        {"type": "text", "text": "[附件：report.pdf]\n报告正文"},
+    ]
+    assert "attachment_capabilities" not in payload
+
+
+def test_chat_model_payload_rejects_unknown_content_part():
+    model = ChatModel.get_setup_instance(model="test", base_url=TEST_BASE_URL)
+    try:
+        with pytest.raises(AIDevException, match="不支持的消息内容类型"):
+            model._get_request_payload([HumanMessage(content=[{"type": "file", "url": "https://example.com/a"}])])
+    finally:
+        asyncio.run(model.http_async_client.aclose())
 
 
 @pytest.mark.skipif(

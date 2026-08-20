@@ -31,6 +31,7 @@ from openai import RateLimitError
 from tenacity import RetryError
 
 from aidev_agent.config import settings
+from aidev_agent.exceptions import AIDevException
 from aidev_agent.packages.langchain_core.output_parsers import StructuredOutputToToolMessageParser
 
 from .pydantic_models import (
@@ -52,36 +53,34 @@ def _promote_message(message: AnyMessage, allowed_tool_names: set[str]) -> AnyMe
 
 
 def _extract_query_text_and_images(query: Any) -> tuple[Any, list[dict[str, Any]]]:
-    """从 query 中提取文本和图片（OpenAI 风格内容列表）。
+    """从 query 中提取文本和附件内容。
 
-    支持 ``image_url`` 与前端 ``binary``（image/*）。binary 原样挂载，
-    由 ``ChatModel._get_request_payload`` 统一转 ``image_url``（与 history 一致），
-    此处只负责在进 prompt 前剥离，避免被 ``str()`` 进文本。
+    附件保留原始 canonical（规范化）结构，统一由 ``ChatModel`` 的 provider 出站闸门
+    做能力映射，避免当前轮与历史轮使用不同的 MIME（媒体类型）判断逻辑。
     """
 
     if not isinstance(query, list):
         return query, []
 
     text_parts: list[str] = []
-    image_contents: list[dict[str, Any]] = []
+    attachment_contents: list[dict[str, Any]] = []
     for item in query:
         if not isinstance(item, dict):
-            continue
+            raise AIDevException(message="不支持的消息内容：内容块必须是对象")
         item_type = item.get("type")
         if item_type == "text":
             text = item.get("text")
-            if isinstance(text, str):
-                text_parts.append(text)
-        elif item_type == "image_url":
-            image_contents.append(item)
-        elif item_type == "binary" and str(item.get("mime_type") or "").startswith("image/"):
-            image_contents.append(item)
+            if not isinstance(text, str):
+                raise AIDevException(message="不支持的消息内容：text 内容必须是字符串")
+            text_parts.append(text)
+        else:
+            attachment_contents.append(dict(item))
 
-    return "\n".join(text_parts), image_contents
+    return "\n".join(text_parts), attachment_contents
 
 
 def _attach_images_to_last_human_message(messages: list[BaseMessage], image_contents: list[dict[str, Any]]) -> None:
-    """将图片内容挂载到最后一条 HumanMessage，避免丢失多模态输入。"""
+    """将附件内容挂载到最后一条 HumanMessage，避免丢失多模态输入。"""
 
     if not image_contents:
         return

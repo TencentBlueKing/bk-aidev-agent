@@ -54,6 +54,8 @@ def emit_run_finished_event(
     thread_id: str,
     run_id: str,
     event_handler: Callable[[RunFinishedEvent], None] | None = None,
+    *,
+    include_success_outcome: bool = True,
 ) -> str:
     """
     发送 RUN_FINISHED 事件
@@ -63,6 +65,8 @@ def emit_run_finished_event(
         thread_id: 会话线程 ID
         run_id: 运行标识，可使用 RunId.CANCELLED 或 RunId.STOPPED 等常量
         event_handler: 可选的事件处理器回调，用于分发事件
+        include_success_outcome: 是否写入 ``outcome.type=success``。错误终态必须为 False，
+            以免错误流被误标记为成功。
 
     Returns:
         SSE 编码的事件字符串
@@ -87,12 +91,14 @@ def emit_run_finished_event(
         ```
     """
     encoder = EventEncoder()
-    finished_event = RunFinishedEvent(
-        type=EventType.RUN_FINISHED,
-        thread_id=thread_id,
-        run_id=run_id,
-        outcome=serialize_run_finished_outcome(RunFinishedSuccessOutcome()),
-    )
+    event_kwargs: dict[str, object] = {
+        "type": EventType.RUN_FINISHED,
+        "thread_id": thread_id,
+        "run_id": run_id,
+    }
+    if include_success_outcome:
+        event_kwargs["outcome"] = serialize_run_finished_outcome(RunFinishedSuccessOutcome())
+    finished_event = RunFinishedEvent(**event_kwargs)
     stamp_round_end_event(finished_event)
 
     # 如果提供了事件处理器，调用它分发事件

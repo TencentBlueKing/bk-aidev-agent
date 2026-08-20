@@ -361,6 +361,17 @@ class GeneratorStreamingHelper:
             and not payload.get("resume_replay", False)
         )
 
+    @staticmethod
+    def _is_run_error_event_chunk(chunk: Any) -> bool:
+        """判断 chunk 是否为 AG-UI RUN_ERROR 事件。"""
+        if not isinstance(chunk, str) or not chunk.startswith("data:"):
+            return False
+        try:
+            payload = json.loads(chunk.removeprefix("data:").strip())
+        except (TypeError, json.JSONDecodeError):
+            return False
+        return isinstance(payload, dict) and payload.get("type") == EventType.RUN_ERROR.value
+
     def _is_cancelled(self, cancel_event: threading.Event) -> bool:
         """检查是否被取消（同时检查进程内事件和跨进程信号）
 
@@ -700,6 +711,7 @@ class GeneratorStreamingHelper:
             thread_id=self.thread_id,
             run_id="error",
             event_handler=event_handler,
+            include_success_outcome=False,
         )
 
     def _build_terminal_cancel_events(self) -> tuple[tuple[Any, str], tuple[Any, str]]:
@@ -1212,6 +1224,7 @@ class GeneratorStreamingHelper:
         draining = False
         done_event_seen = False
         producer_error = False
+        run_error_seen = False
         run_finished_seen = False
         cancel_error_emitted = False
         cancel_finished_emitted = False
@@ -1312,6 +1325,8 @@ class GeneratorStreamingHelper:
 
                 if self._is_done_event_chunk(chunk):
                     done_event_seen = True
+                if self._is_run_error_event_chunk(chunk):
+                    run_error_seen = True
                 is_run_finished = self._is_run_finished_event_chunk(chunk)
                 if is_run_finished:
                     run_finished_seen = True
@@ -1357,7 +1372,7 @@ class GeneratorStreamingHelper:
             logger.info(
                 f"[PRODUCER] finally enter thread_id={self.thread_id} "
                 f"producer_error={producer_error} done_event_seen={done_event_seen} "
-                f"draining={draining} "
+                f"run_error_seen={run_error_seen} draining={draining} "
                 f"elapsed={time.monotonic() - _producer_start:.1f}s"
             )
             heartbeat_stop_event.set()
@@ -1379,9 +1394,11 @@ class GeneratorStreamingHelper:
                     _emit_cancel_and_complete()
                 elif expected_run_id and not producer_error and not run_finished_seen:
                     logger.warning(
-                        "[RUN_FINISHED] missing from normal producer stream; emitting fallback thread_id=%s run_id=%s",
+                        "[RUN_FINISHED] missing from producer stream; emitting fallback "
+                        "thread_id=%s run_id=%s run_error_seen=%s",
                         self.thread_id,
                         expected_run_id,
+                        run_error_seen,
                     )
                     self.message_handler.put(
                         self.thread_id,
@@ -1389,6 +1406,7 @@ class GeneratorStreamingHelper:
                             thread_id=self.thread_id,
                             run_id=expected_run_id,
                             event_handler=event_handler,
+                            include_success_outcome=not run_error_seen,
                         ),
                     )
                     _complete_session()

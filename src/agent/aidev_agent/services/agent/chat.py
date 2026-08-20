@@ -1285,15 +1285,10 @@ class ChatCompletionAgent(BaseModel):
                     if multimodal is not None:
                         each.content = multimodal
                     if isinstance(each.content, list):
-                        new_content = []
-                        for each_content in each.content:
-                            if each_content.get("type") == "binary":
-                                new_content.append(each_content)
-                            elif each_content.get("url"):
-                                new_content.append({"type": "image_url", "image_url": {"url": each_content.get("url")}})
-                            else:
-                                new_content.append(each_content)
-                        each.content = new_content
+                        each.content = [
+                            dict(each_content) if isinstance(each_content, dict) else each_content
+                            for each_content in each.content
+                        ]
                         messages.append(HumanMessage(id=each.id, content=each.content, additional_kwargs=turn_kwargs))
                     else:
                         messages.append(
@@ -1443,6 +1438,7 @@ class ChatAgentBuilder:
             "model": config.chat_model,
             "fallback_model": config.fallback_model,
             "base_url": settings.LLM_GW_ENDPOINT,
+            "attachment_capabilities": self.build_attachment_capabilities(),
         }
 
         temperature = chat.temperature if chat.temperature is not None else config.temperature
@@ -1949,6 +1945,15 @@ class ChatAgentBuilder:
         """从 prompt_setting.support_upload.vision 构建 support_vision"""
         support_upload = self.ctx.agent_config.model_context_options_data.get("support_upload") or {}
         return bool(support_upload.get("vision", False))
+
+    def build_attachment_capabilities(self) -> dict[str, bool]:
+        """从模型配置构建附件能力映射。"""
+        support_upload = self.ctx.agent_config.model_context_options_data.get("support_upload") or {}
+        return {
+            "image": bool(support_upload.get("vision", False)),
+            "audio": bool(support_upload.get("audio", False)),
+            "video": bool(support_upload.get("video", False)),
+        }
 
     def build_executor_info(self) -> dict:
         """构建执行用户信息，包含 access_token / app_code / app_secret 用于沙箱认证和 MCP 调用"""

@@ -34,6 +34,7 @@ from langchain_core.messages import (
 from .events import ExtendToolCallResultEvent, ExtendToolCallStartEvent
 from .event_builders import TOOL_CALLING_PLACEHOLDER
 from aidev_agent.utils.event import RunId
+from aidev_agent.packages.langchain_core.models.attachments import get_binary_mime_type
 from .types import (
     ActivityMessage,
     InfoMessage,
@@ -172,7 +173,7 @@ def convert_langchain_multimodal_to_agui(
                 agui_content.append(
                     BinaryInputContent(
                         type="binary",
-                        mime_type=item.get("mime_type") or "application/octet-stream",
+                        mime_type=get_binary_mime_type(item),
                         url=item.get("url"),
                         data=item.get("data"),
                         filename=item.get("filename"),
@@ -197,7 +198,7 @@ def convert_langchain_multimodal_to_agui(
                     agui_content.append(
                         BinaryInputContent(
                             type="binary",
-                            mime_type="image/png",  # Default MIME type
+                            mime_type=get_binary_mime_type({"url": url}),
                             url=url,
                         )
                     )
@@ -367,20 +368,17 @@ def convert_agui_multimodal_to_langchain(
         if isinstance(item, TextInputContent):
             langchain_content.append({"type": "text", "text": item.text})
         elif isinstance(item, BinaryInputContent):
-            # LangChain uses image_url format (OpenAI-style)
-            content_dict = {"type": "image_url"}
-
-            # Prioritize url, then data, then id
-            if item.url:
-                content_dict["image_url"] = {"url": item.url}
-            elif item.data:
-                # Construct data URL from base64 data
-                content_dict["image_url"] = {"url": f"data:{item.mime_type};base64,{item.data}"}
-            elif item.id:
-                # Use id as a reference (some providers may support this)
-                content_dict["image_url"] = {"url": item.id}
-
-            langchain_content.append(content_dict)
+            # 保留 binary 的真实语义；最终 provider 映射统一由 ChatModel 完成。
+            langchain_content.append(
+                {
+                    "type": "binary",
+                    "mime_type": item.mime_type,
+                    "url": item.url,
+                    "data": item.data,
+                    "filename": item.filename,
+                    "id": item.id,
+                }
+            )
 
     return langchain_content
 

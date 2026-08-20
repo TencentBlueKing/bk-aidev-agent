@@ -8,7 +8,7 @@ from contextvars import ContextVar
 
 import aidev_agent.services.messages_handler.streaming_helper as streaming_helper_module
 import pytest
-from ag_ui.core import EventType, RunFinishedEvent
+from ag_ui.core import EventType, RunErrorEvent, RunFinishedEvent
 from ag_ui.encoder import EventEncoder
 from aidev_agent.enums import MessageHandlerType
 from aidev_agent.services.messages_handler import (
@@ -284,6 +284,23 @@ class TestReplayFromStartStreamingHelper:
         assert result[0] == "chunk_0"
         assert _event_types(result[1:]) == [EventType.RUN_FINISHED]
         assert [event.type for event in dispatched] == [EventType.RUN_FINISHED]
+        assert json.loads(result[1].removeprefix("data: "))["outcome"] == {"type": "success"}
+
+    def test_run_error_fallback_does_not_mark_outcome_success(self):
+        handler = ReplayFromStartHandler()
+        run_error = EventEncoder().encode(
+            RunErrorEvent(type=EventType.RUN_ERROR, message="模型调用失败"),
+        )
+
+        result = list(
+            GeneratorStreamingHelper(handler, thread_id="thread-1").stream(
+                iter([run_error]),
+                expected_run_id="run-1",
+            )
+        )
+
+        assert _event_types(result) == [EventType.RUN_ERROR, EventType.RUN_FINISHED]
+        assert "outcome" not in json.loads(result[-1].removeprefix("data: "))
 
     def test_normal_agui_stream_does_not_duplicate_existing_run_finished(self):
         handler = ReplayFromStartHandler()
@@ -1000,6 +1017,7 @@ class TestInMemoryQueueMessageHandler:
         assert _event_types(result[1:]) == ["RUN_ERROR", "RUN_FINISHED"]
         assert [event.type for event in dispatched] == [EventType.RUN_ERROR, EventType.RUN_FINISHED]
         assert completed == [True]
+        assert "outcome" not in json.loads(result[-1].removeprefix("data: "))
 
     def test_cancel_terminal_events_retry_after_partial_queue_failure(self, handler, monkeypatch):
         """取消终态第二帧首次入队失败时，只重试缺失帧且完成回调仅执行一次。"""
