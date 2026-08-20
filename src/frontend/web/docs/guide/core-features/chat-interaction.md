@@ -127,6 +127,42 @@ AI 小鲸支持多种内容渲染格式：
 
 所有 Markdown 内容都经过安全处理，防止 XSS 攻击。**不解析任意 HTML 标签**；若需彩色标题、背景高亮等，请让模型使用蓝鲸行内富文本语法，并在 AIDev Agent 系统提示词中约定格式（参见上文链接中的 LLM 配置示例）。
 
+## 消息时间展示 {#消息时间展示}
+
+自 **v2.2.3** 起，对话区会在消息工具栏旁展示创建时间，无需额外配置即可生效。时区可通过 `timezone` 统一指定，详见 [UI 定制 · 字号与消息时间](/guide/core-features/ui-customization#字号与消息时间)。
+
+### 展示位置
+
+| 场景 | 位置 | 时间取值 |
+| --- | --- | --- |
+| 用户消息 | 工具栏左侧（`MessageTools` `#prepend`） | 该条消息的 `createdAt` |
+| AI 回复组 | 工具栏右侧（`MessageTools` `#append`） | 组内**最后一条**带 `createdAt` 的消息，即本轮回答完成时间 |
+
+组内 `reasoning` / `activity` 等子消息不单独展示时间。`createdAt` 为空或无法解析时不渲染，不留占位。
+
+### 四档格式
+
+分档与展示都取**同一时区**的日历日（避免「按浏览器时区判断今天、按配置时区显示时分」错位）：
+
+| 档位 | 判定 | 输出示例 |
+| --- | --- | --- |
+| 今天 | 与今天同一日历日 | `12:00` |
+| 昨天 | 相差 1 个日历日 | `昨天 12:00` |
+| 今年内更早 | 相差 ≥ 2 天且年份相同 | `3-12 12:00` |
+| 非今年 | 年份不同 | `2025-3-12 12:00` |
+
+时分固定 `HH:mm`（24 小时制、补零），月日不补零。`昨天` 走组件 i18n，英文环境为 `Yesterday 12:00`。不做「几分钟前」这类相对时间。
+
+### 时间从哪来
+
+| 来源 | 写入 `createdAt` 的时机 |
+| --- | --- |
+| 历史消息 | REST `session_contents.created_at`（chat-helper 映射为 `IMessage.createdAt`） |
+| 本轮流式 | 落库前没有时间；`RUN_FINISHED.timestamp`（毫秒）转成 ISO 后补上，已有时间的历史消息不覆盖 |
+| `MESSAGES_SNAPSHOT` | 快照里带的 `created_at` / `createdAt` 全量透传 |
+
+原子组装时给 `ChatContainer` 传入带 `createdAt` 的 `messages` 即可；也可单独使用 chat-x 的 `MessageTime`，见 [MessageTime](/api/chat-x/components#messagetime)。
+
 ## 停止生成
 
 当 AI 正在生成内容时，可以通过以下方式停止：

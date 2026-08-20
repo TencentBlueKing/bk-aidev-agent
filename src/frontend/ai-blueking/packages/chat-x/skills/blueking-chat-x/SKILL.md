@@ -4,7 +4,8 @@ description: >-
   Use when 在消费方项目中接入 / 使用 @blueking/chat-x 对话组件库（已 npm 安装、非改库源码），
   涉及「某组件怎么用、有哪些 props / events / slots / expose / v-model、怎么搭 AI 对话界面、
   流式输出、停止生成、工具调用 ToolCall、快捷指令、文件上传、@ 资源、自定义消息或侧栏 Tab、
-  分享多选、HITL 中断审批、Markdown / 代码 / 公式 / 图表渲染、字号与主题 CSS 变量」等问题时优先使用。
+  分享多选、HITL 中断审批、Markdown / 代码 / 公式 / 图表渲染、字号与主题 CSS 变量、
+  消息时间 MessageTime / timezone」等问题时优先使用。
   若是在 packages/chat-x/src 内改库源码（写组件 / composable / 样式 / 测试），改用 chat-x-dev skill。
 ---
 
@@ -104,6 +105,7 @@ description: >-
 | 分享 / 多选 | `components/chat-container.md`、`components/selection-footer.md` |
 | 自定义消息类型 / 侧栏 Tab | `composables/use-custom-tab.md` + `components/chat-container.md` |
 | 字号 / 主题 CSS 变量 | `theme/theme.md` |
+| 消息时间 / 时区 | `ChatContainer` 的 `timezone` prop；组件 `MessageTime`（wikis `components/feedback/message-time.md`）。四档：今天 `12:00` / 昨天 / 今年内 `3-12 12:00` / 跨年；无 `createdAt` 不渲染 |
 
 ## 类型与常量速查
 

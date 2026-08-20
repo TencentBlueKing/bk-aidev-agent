@@ -1,13 +1,13 @@
 ---
 name: ai-blueking-dev
-description: 蓝鲸 AI 小鲸组件开发指南。基于 @blueking/chat-x（UI 组件）和 @blueking/chat-helper（业务 SDK）开发 AI 聊天应用、智能体、对话界面。涵盖 ChatBot 独立使用、嵌入模式业务 Header（会话名称 + asideCollapsed 侧栏开关）、AIBlueking 完整集成、流式响应、快捷指令、划词选择、模型选择（Model Select）、自定义消息渲染（图表/表单/iframe）、HITL 人机协同（工具审批/用户提问/中断恢复）、流程化智能体节点重试跳过、渲染模式（chat/share/test 分享态）、字号主题、侧栏自定义与自定义 Tab、欢迎区 `#welcome` 插槽、消息工具栏扩展（messageTools/updateTools）、非 Vue 宿主挂载等。触发场景：开发 AI 小鲸、集成 AI Agent、使用 chat-x/chat-helper、构建 AI 对话 UI、实现流式聊天、模型热切换、自定义消息组件渲染、human-in-the-loop、interrupt/resume、flow agent、自定义欢迎页、自定义消息工具按钮、嵌入式 ChatBot Header、侧栏展开收起。
+description: 蓝鲸 AI 小鲸组件开发指南。基于 @blueking/chat-x（UI 组件）和 @blueking/chat-helper（业务 SDK）开发 AI 聊天应用、智能体、对话界面。涵盖 ChatBot 独立使用、嵌入模式业务 Header（会话名称 + asideCollapsed 侧栏开关）、AIBlueking 完整集成、流式响应、快捷指令、划词选择、模型选择（Model Select）、自定义消息渲染（图表/表单/iframe）、HITL 人机协同（工具审批/用户提问/中断恢复）、流程化智能体节点重试跳过、渲染模式（chat/share/test 分享态）、字号主题、消息时间（timezone / MessageTime 四档格式）、侧栏自定义与自定义 Tab、欢迎区 `#welcome` 插槽、消息工具栏扩展（messageTools/updateTools）、非 Vue 宿主挂载等。触发场景：开发 AI 小鲸、集成 AI Agent、使用 chat-x/chat-helper、构建 AI 对话 UI、实现流式聊天、模型热切换、自定义消息组件渲染、human-in-the-loop、interrupt/resume、flow agent、自定义欢迎页、自定义消息工具按钮、嵌入式 ChatBot Header、侧栏展开收起、消息时间、timezone。
 metadata:
   author: blueking
-  version: '5.22'
+  version: '5.23'
   packages:
-    ai-blueking: 2.2.3-dev.1
-    chat-x: 0.0.49-beta.8
-    chat-helper: 0.0.12-beta.20
+    ai-blueking: 2.2.3
+    chat-x: 0.0.49-beta.12
+    chat-helper: 0.0.12-beta.24
 ---
 
 # AI 小鲸组件开发指南
@@ -25,6 +25,7 @@ metadata:
 - 欢迎区 `#welcome` 插槽；消息工具栏 `messageTools` / `updateTools` 扩展与 `agent-action` / `confirm-share(source)`
 - 非 Vue 宿主挂载（`mountAIBlueking` / `mountChatBot`）
 - 嵌入式 ChatBot 业务 Header（会话名称 + `v-model:asideCollapsed` 侧栏开关）
+- 消息时间展示（`timezone`、`MessageTime` 四档格式、`createdAt` 来源）
 
 ## 架构概览
 
@@ -382,7 +383,19 @@ Agent 可在流式执行中**中断**，把控制权交回用户，处理后再*
 | `RenderMode.Share` | **只读分享态**：隐藏输入与交互元素、禁用审批取消、流程节点仅保留「详情」。这是「分享态开放流程智能体查看能力」的实现方式 |
 | `RenderMode.Test` | 测试态：隐藏 `share` 工具 |
 
-`renderMode` 是现代分享方案，**取代**了手动切换 `enableSelection` 的旧写法（`enableSelection` 仍用于「多选消息以生成分享链接」的选择动作，二者职责不同）。字号主题（`size: 'normal' | 'small'`）与消息时间时区（`timezone`，IANA 名如 `Asia/Shanghai`，未配置时按浏览器时区）已在 `AIBlueking` / `ChatBot` / `ChatContainer` 全链路透传，详见 [ChatBot API](references/chatbot-api.md) 与 [chat-x 组件 API](references/chat-x-api.md)。
+`renderMode` 是现代分享方案，**取代**了手动切换 `enableSelection` 的旧写法（`enableSelection` 仍用于「多选消息以生成分享链接」的选择动作，二者职责不同）。字号主题（`size: 'normal' | 'small'`）已在 `AIBlueking` / `ChatBot` / `ChatContainer` 全链路透传。
+
+### 消息时间（≥ v2.2.3）
+
+对话区默认在工具栏旁展示 `createdAt`，无需开关：
+
+- **用户消息**：工具栏左侧，取该条 `createdAt`
+- **AI 回复组**：工具栏右侧，取组内最后一条带 `createdAt` 的消息（本轮完成时间）；`reasoning` / `activity` 不单独展示
+- **四档格式**：今天 `12:00` / 昨天 `昨天 12:00` / 今年内 `3-12 12:00` / 跨年 `2025-3-12 12:00`（时分补零、月日不补零；分档与展示取同一时区日历日）
+- **时区**：`timezone` 为 IANA 名（如 `Asia/Shanghai`）。`MessageTime` 优先用自身 props，否则读 `injectGlobalConfig().timezone`（由 `ChatContainer` 注入），都未配置时按浏览器时区；非法时区名回退浏览器时区
+- **数据**：历史消息 REST `created_at` → `IMessage.createdAt`；本轮流式用 `RUN_FINISHED.timestamp` 转 ISO 后补上（已有时间不覆盖）；无值不渲染
+
+详见 [ChatBot API](references/chatbot-api.md) 与 [chat-x 组件 API](references/chat-x-api.md)。
 
 ### 模型选择（Model Select，≥ v2.2.2）
 

@@ -1,6 +1,6 @@
 # ChatBot 组件 API
 
-> 适用版本：`@blueking/ai-blueking` `2.2.2`（含 HITL 中断/恢复、renderMode、模型选择、侧栏自定义渲染、standalone-mount、文件产物预览等能力）。
+> 适用版本：`@blueking/ai-blueking` `2.2.3`（含 HITL 中断/恢复、renderMode、模型选择、侧栏自定义渲染、standalone-mount、文件产物预览、消息时间 `timezone` 等能力）。
 
 ## Props
 
@@ -36,7 +36,7 @@
 | asideCollapsed | `boolean` | 内部默认折叠 | 侧栏折叠态。传入后**严格受控**（内部展开只发 `update:asideCollapsed`）；不传时由 ChatBot 内部自持。侧栏固定从右侧展开，已移除 `placement`。**嵌入模式须业务 Header 提供开关**，见下节 |
 | resizeProps     | `ResizeProps`        | -       | ResizeLayout 配置（执行情况侧面板拖拽）        |
 | size            | `AiSizeMode`（`'normal' \| 'small'`） | `'small'` | 字号主题档位，透传至 ChatContainer（`small` 12px / `normal` 14px） |
-| timezone        | `string`             | —       | 消息时间展示所用的 IANA 时区名（如 `Asia/Shanghai`），透传至 ChatContainer；未配置时按浏览器时区展示 |
+| timezone        | `string`             | —       | 消息时间展示所用的 IANA 时区名（≥ v2.2.3，如 `Asia/Shanghai`），透传至 ChatContainer；未配置时按浏览器时区展示 |
 | executionTabVisible | `boolean` | `true` | 「执行情况」Tab 是否展示（与 ChatContainer 一致）；置 `false` 时从 Tab 栏隐藏 |
 | getSideRenderComponent | `GetSideRenderComponent` | - | 自定义侧栏内容区渲染（详见 [side render / custom tabs](integration-patterns.md#侧栏自定义渲染与自定义-tab-side-render--custom-tabs)） |
 | getSideTabRenderComponent | `GetSideTabRenderComponent` | - | 自定义侧栏 Tab 标签渲染 |
@@ -292,7 +292,7 @@ AIBlueking 是完整面板组件（Nimbus 悬浮球 + 浮窗 + 拖拽 + Header +
 | onCustomTabChange | `OnCustomTabChange` | - | 覆盖默认 Flow 节点详情拉取（透传 ChatBot） |
 | resizeProps | `ResizeProps` | - | 执行情况侧面板拖拽配置 |
 | size | `AiSizeMode`（`'normal' \| 'small'`） | `'small'` | 字号主题档位，透传至 ChatBot → ChatContainer（`small` 12px / `normal` 14px） |
-| timezone | `string` | - | 消息时间展示所用的 IANA 时区名（如 `Asia/Shanghai`），透传至 ChatBot → ChatContainer；未配置时按浏览器时区展示 |
+| timezone | `string` | - | 消息时间展示所用的 IANA 时区名（≥ v2.2.3，如 `Asia/Shanghai`），透传至 ChatBot → ChatContainer；未配置时按浏览器时区展示 |
 | beforeNimbusClick | `() => boolean \| Promise<boolean \| void> \| void` | - | Nimbus 点击前钩子，返回 `false` 阻止默认 showPanel（见 [beforeNimbusClick](integration-patterns.md#nimbus-点击自定义beforenimbusclick)） |
 | **会话** |||
 | enableChatSession | `boolean` | `true` | 是否启用会话管理 |

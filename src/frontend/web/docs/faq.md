@@ -295,3 +295,18 @@ v2.1.4-beta.6 起，消息区**不解析任意 HTML**。请在 AIDev Agent **系
 - **`placement` 已移除**，侧栏固定从右侧展开
 
 完整接线见 [业务 Header](/guide/integration-modes/chatbot-embedded#业务-header会话名称--侧栏开关)。Playground 样例：`packages/ai-blueking/playground/views/EmbeddedHeaderView.vue`。
+
+---
+
+## 如何让消息时间按指定时区显示？为什么有的消息没有时间？
+
+自 **v2.2.3** 起默认展示消息时间，无需开关。传入 IANA 时区名即可统一展示时区：
+
+```vue
+<AIBlueking url="/api/" timezone="Asia/Shanghai" />
+<ChatBot url="/api/" timezone="UTC" />
+```
+
+不传 `timezone` 时跟随浏览器时区。四档格式（今天 / 昨天 / 今年内 / 跨年）见 [消息时间展示](/guide/core-features/chat-interaction#消息时间展示)。
+
+没有时间通常是因为该条（或 AI 回复组内所有消息）没有合法 `createdAt`：历史接口未返回 `created_at`，或本轮流式尚未收到 `RUN_FINISHED`。此时组件不渲染占位。

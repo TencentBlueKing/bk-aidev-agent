@@ -1,5 +1,32 @@
 # 更新日志
 
+## v2.2.3
+
+v2.2.3 正式版整合 2.2.3-dev 与 2.2.3-beta.3 的功能与修复。配套 `@blueking/chat-x` `0.0.49-beta.12`、`@blueking/chat-helper` `0.0.12-beta.24`。
+
+### 新功能
+
+- **消息时间展示**（≥ v2.2.3）：用户消息与 AI 回复在工具栏旁展示创建时间。历史消息取 `session_contents.created_at`；本轮流式在 `RUN_FINISHED.timestamp` 转成 ISO 后写入。四档格式：今天 `12:00`、昨天 `昨天 12:00`、今年内 `3-12 12:00`、跨年 `2025-3-12 12:00`。`AIBlueking` / `ChatBot` / `ChatContainer` 新增 `timezone`（IANA 名，如 `Asia/Shanghai`），未配置时按浏览器时区。详见 [聊天交互 · 消息时间展示](/guide/core-features/chat-interaction#消息时间展示)
+
+### 优化
+
+- **浮窗右侧侧栏新 UI**：展开侧栏时先腾出右侧空间再扩宽面板（两阶段动画）；`AIHeader` 提供展开/收起开关（`showAsideToggle`）。空会话欢迎态也可打开侧栏，「文件产物」Tab 常驻，无数据时展示空态
+- 欢迎区顶距只作用在主栏，避免空态展开侧栏时主栏与侧栏错位
+- 修正会话分享勾选框与消息首行的垂直对齐
+
+### 文档
+
+- 补充 [聊天交互](/guide/core-features/chat-interaction#消息时间展示) 消息时间与时区说明
+- 更新 [UI 定制](/guide/core-features/ui-customization#字号与消息时间)、[AIBlueking 浮窗模式](/guide/integration-modes/aiblueking-floating) 侧栏开关与扩宽行为
+- 更新 [chat-x UI 组件](/api/chat-x/components#messagetime) `MessageTime` API
+
+### 升级建议
+
+- 需要统一时区时传入 `timezone="Asia/Shanghai"`；不传则跟随浏览器时区
+- 嵌入式 `ChatBot` 仍须业务 Header 绑定 `v-model:asideCollapsed`（与 2.2.2 一致）
+
+---
+
 ## v2.2.2
 
 v2.2.2 正式版整合了未对外发布的 2.2.1-beta 与 2.2.2-beta.1 至 beta.11 的功能与修复。

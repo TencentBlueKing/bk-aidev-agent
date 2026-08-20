@@ -85,7 +85,7 @@ interface BaseMessage<R extends MessageRole = MessageRole> {
   content: string;
   /** 消息状态 */
   status?: MessageStatus;
-  /** 创建时间 */
+  /** 创建时间（ISO；历史消息来自 REST `created_at`，本轮流式来自 `RUN_FINISHED.timestamp`） */
   createdAt?: string;
 }
 ```

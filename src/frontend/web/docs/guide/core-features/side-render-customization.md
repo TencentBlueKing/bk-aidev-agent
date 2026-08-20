@@ -47,6 +47,8 @@
 
 自 **v2.2.2** 起，`AIBlueking` / `ChatBot` 会把 `ChatContainer.onArtifactClick` 接到 `pv_files/download_url`。AI 回复中的文件卡片可打开侧栏固定的「文件产物」Tab（`name: 'file-artifact'`），聚合当前会话 `property.artifacts` 并预览 / 下载。集成方无需额外配置；原子组装时需自行传入 `onArtifactClick`。
 
+自 **v2.2.3** 起，该 Tab **常驻不随产物有无增删**：空会话或无产物时也可打开侧栏，面板展示「暂无数据」空态。浮窗展开侧栏时会先腾出右侧空间再扩宽面板，见 [AIBlueking 浮窗模式](/guide/integration-modes/aiblueking-floating)。
+
 侧栏折叠由 `v-model:asideCollapsed` 驱动。浮窗入口在 `AIHeader`；**嵌入式 ChatBot 须业务 Header 提供开关**，否则用户无法手动展开/收起。详见 [ChatBot 页面嵌入 · 业务 Header](/guide/integration-modes/chatbot-embedded#业务-header会话名称--侧栏开关)。
 
 ## 数据流

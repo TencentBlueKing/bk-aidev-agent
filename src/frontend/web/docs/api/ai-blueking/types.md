@@ -127,7 +127,7 @@ interface AIBluekingProps {
   };
   /** 字号主题档位，透传至 ChatBot → ChatContainer（`small` 默认 12px / `normal` 14px） */
   size?: 'normal' | 'small';
-  /** 消息时间展示所用的 IANA 时区名，透传至 ChatBot → ChatContainer；未配置时按浏览器时区展示 */
+  /** 消息时间展示所用的 IANA 时区名（≥ v2.2.3），透传至 ChatBot → ChatContainer；未配置时按浏览器时区展示 */
   timezone?: string;
 
   /** 「执行情况」Tab 是否展示，缺省 true（≥ v2.2.0-beta.11，透传内层 ChatBot）；该 Tab order 固定 0 且不可关闭 */
@@ -372,7 +372,7 @@ interface ChatBotProps {
   };
   /** 字号主题档位，透传至 ChatContainer（`small` 默认 12px / `normal` 14px） */
   size?: 'normal' | 'small';
-  /** 消息时间展示所用的 IANA 时区名，透传至 ChatContainer；未配置时按浏览器时区展示 */
+  /** 消息时间展示所用的 IANA 时区名（≥ v2.2.3），透传至 ChatContainer；未配置时按浏览器时区展示 */
   timezone?: string;
 
   /** 「执行情况」Tab 是否展示，缺省 true（≥ v2.2.0-beta.11，透传 ChatContainer）；该 Tab order 固定 0 且不可关闭 */

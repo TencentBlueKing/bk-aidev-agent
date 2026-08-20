@@ -60,14 +60,17 @@ Nimbus 是页面右下角的浮球入口，点击后展开对话面板。可通�
 
 对话面板支持自由拖拽和调整大小，通过 `draggable` 属性启用。可通过 `defaultHeight`、`defaultWidth`、`defaultLeft`、`defaultTop` 设置初始位置和尺寸。
 
+展开右侧侧栏时，浮窗会先腾出右侧空间再扩宽面板（两阶段动画），避免侧栏把聊天区挤出视口。收起时反向：先缩宽再移回。
+
 ### AIHeader 会话管理头部
 
 面板顶部的 Header 区域包含：
 - 会话下拉列表：快速切换历史会话
 - 新建会话按钮：创建新的对话
 - 会话重命名、删除等管理操作
+- **侧栏展开/收起**（压缩图标左侧）：侧栏固定从右侧展开，可用 `showAsideToggle` 隐藏该按钮
 
-可通过 `hideHeader` 属性隐藏 Header。
+可通过 `hideHeader` 属性隐藏 Header（开关一并消失）。嵌入式 `ChatBot` 无此按钮，须业务自建，见 [业务 Header](/guide/integration-modes/chatbot-embedded#业务-header会话名称--侧栏开关)。
 
 ### AiSelection 文本选中弹窗
 
@@ -90,6 +93,7 @@ Nimbus 是页面右下角的浮球入口，点击后展开对话面板。可通�
 | `defaultTop` | `number` | — | 面板默认上偏移（px），不传则自动计算 |
 | `miniPadding` | `number` | `10` | 面板最小化时距离屏幕边缘的间距（px） |
 | `enableChatSession` | `boolean` | `true` | 是否启用会话管理功能（Header 中的会话下拉列表） |
+| `showAsideToggle` | `boolean` | `true` | 是否显示侧栏展开/收起按钮（在压缩图标左侧） |
 
 > **提示**：`AIBlueking` 同样支持 `ChatBot` 的所有 Props（如 `url`、`requestOptions` 等），具体请参考 [ChatBot 页面嵌入模式](./chatbot-embedded.md)。
 

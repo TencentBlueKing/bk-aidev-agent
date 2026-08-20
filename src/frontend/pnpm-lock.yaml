@@ -448,14 +448,14 @@ importers:
   web:
     dependencies:
       '@blueking/ai-blueking':
-        specifier: 2.2.2
-        version: 2.2.2(highlight.js@11.11.1)(typescript@5.9.3)(vue@3.5.27(typescript@5.9.3))
+        specifier: 2.2.3
+        version: 2.2.3(highlight.js@11.11.1)(typescript@5.9.3)(vue@3.5.27(typescript@5.9.3))
       '@blueking/chat-helper':
-        specifier: 0.0.12-beta.20
-        version: 0.0.12-beta.20(vue@3.5.27(typescript@5.9.3))
+        specifier: 0.0.12-beta.24
+        version: 0.0.12-beta.24(vue@3.5.27(typescript@5.9.3))
       '@blueking/chat-x':
-        specifier: 0.0.49-beta.8
-        version: 0.0.49-beta.8(typescript@5.9.3)
+        specifier: 0.0.49-beta.12
+        version: 0.0.49-beta.12(typescript@5.9.3)
       bkui-vue:
         specifier: ^2.0.2-beta.81
         version: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.27(typescript@5.9.3))
@@ -674,21 +674,21 @@ packages:
     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
     engines: {node: '>=18'}
 
-  '@blueking/ai-blueking@2.2.2':
-    resolution: {integrity: sha512-dHP1HTEmt+LJf46EQX4INb+5a5Okik+yvpdmB/ZK4xK7aA/tsMfMnTFQAjhWGPVZX8/2DmBpe6JW+adbBmX3Ew==}
+  '@blueking/ai-blueking@2.2.3':
+    resolution: {integrity: sha512-IXosor3KjD+um2ropL+Bp7z6P+o3AZI4Po75A/dz/MA9gNFrE+7AHFzEwTjaOVAv4fTcyT82YgBJJ+gBP6XFrQ==}
     peerDependencies:
       vue: ^3.5.24
 
   '@blueking/bkui-library@0.0.0-beta.6':
     resolution: {integrity: sha512-1M6pNDIOQYWzOu3uVRxo0h67d+huTbBQYDjj8+QF4Ka3HSe/mLgSrIkaZhhUVlJJl5zP8HK+UwXpkWcjL8zIsw==}
 
-  '@blueking/chat-helper@0.0.12-beta.20':
-    resolution: {integrity: sha512-hFxCp8cRqjO1vPMHginR5ivXOHqILH4mfm6GZQR2obxMXjpEVvnfFbiqvKqijtrFFgvydlRYtkg8MOwiQMadDA==}
+  '@blueking/chat-helper@0.0.12-beta.24':
+    resolution: {integrity: sha512-Zstz4u4SC3nKUuMdnvPA4HQ81i7i7xj8pr8lDkYP6vFKPjSG+Xm8qK6CpZfq90tzioxVHgkAroYhluAKpylpaQ==}
     peerDependencies:
       vue: ^3.5.24
 
-  '@blueking/chat-x@0.0.49-beta.8':
-    resolution: {integrity: sha512-by4Gvvrf76EIkM8Y9xHbaSv2F583qRY2oMscAfRK115WTfWiSTBfMxwFTIY9LXhKOvo6jkPLeL1HimeNMxt2gA==}
+  '@blueking/chat-x@0.0.49-beta.12':
+    resolution: {integrity: sha512-RdodgJ6sGCS11wnl5FATzgkFhr1jYL0j04mOHHDTRKRt1arwk5TeSvElipqXHDaMIeGSjzCqMLcC6520stZcMw==}
     hasBin: true
 
   '@blueking/cli-service@0.1.0-beta.31':
@@ -8700,10 +8700,10 @@ snapshots:
 
   '@bcoe/v8-coverage@1.0.2': {}
 
-  '@blueking/ai-blueking@2.2.2(highlight.js@11.11.1)(typescript@5.9.3)(vue@3.5.27(typescript@5.9.3))':
+  '@blueking/ai-blueking@2.2.3(highlight.js@11.11.1)(typescript@5.9.3)(vue@3.5.27(typescript@5.9.3))':
     dependencies:
-      '@blueking/chat-helper': 0.0.12-beta.20(vue@3.5.27(typescript@5.9.3))
-      '@blueking/chat-x': 0.0.49-beta.8(typescript@5.9.3)
+      '@blueking/chat-helper': 0.0.12-beta.24(vue@3.5.27(typescript@5.9.3))
+      '@blueking/chat-x': 0.0.49-beta.12(typescript@5.9.3)
       bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.27(typescript@5.9.3))
       tippy.js: 6.3.7
       vue: 3.5.27(typescript@5.9.3)
@@ -8719,12 +8719,12 @@ snapshots:
     dependencies:
       '@vue/runtime-dom': 3.5.32
 
-  '@blueking/chat-helper@0.0.12-beta.20(vue@3.5.27(typescript@5.9.3))':
+  '@blueking/chat-helper@0.0.12-beta.24(vue@3.5.27(typescript@5.9.3))':
     dependencies:
       '@types/json-schema': 7.0.15
       vue: 3.5.27(typescript@5.9.3)
 
-  '@blueking/chat-x@0.0.49-beta.8(typescript@5.9.3)':
+  '@blueking/chat-x@0.0.49-beta.12(typescript@5.9.3)':
     dependencies:
       '@modelcontextprotocol/sdk': 1.29.0(zod@4.3.6)
       bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.32(typescript@5.9.3))
@@ -10771,7 +10771,7 @@ snapshots:
       obug: 2.1.1
       std-env: 4.0.0
       tinyrainbow: 3.1.0
-      vitest: 4.1.4(@types/node@25.5.2)(@vitest/coverage-v8@4.1.4)(@vitest/ui@1.6.1(vitest@1.6.1))(happy-dom@20.8.9)(rolldown-vite@7.2.5(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)(@types/node@25.5.2)(esbuild@0.25.12)(jiti@2.6.1)(less@4.6.4)(sass-embedded@1.99.0)(sass@1.99.0)(stylus@0.64.0)(sugarss@4.0.1(postcss@8.5.9))(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.3))
+      vitest: 4.1.4(@types/node@25.5.2)(@vitest/coverage-v8@4.1.4)(@vitest/ui@1.6.1(vitest@1.6.1))(happy-dom@20.8.9)(vite@8.0.8(@types/node@25.5.2)(esbuild@0.27.7)(jiti@2.6.1)(less@4.6.4)(sass-embedded@1.99.0)(sass@1.99.0)(stylus@0.64.0)(sugarss@4.0.1(postcss@8.5.9))(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.3))
 
   '@vitest/expect@1.6.1':
     dependencies:

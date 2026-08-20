@@ -2,7 +2,7 @@
 
 > **约定**：以下 API 以仓库内 `packages/chat-x/src` 源码为准；发布包以 `dist` 为准。若二者不一致，以当前分支源码为准。
 >
-> **当前版本**：`@blueking/chat-x` `0.0.49-beta.8`（含 HITL 中断消息、RenderMode、ModelSelector、字号主题、`#group` 插槽、文件产物预览等能力）。与 `@blueking/ai-blueking` `2.2.2` 配套。
+> **当前版本**：`@blueking/chat-x` `0.0.49-beta.12`（含 HITL 中断消息、RenderMode、ModelSelector、字号主题、`#group` 插槽、文件产物预览、`MessageTime` 消息时间等能力）。与 `@blueking/ai-blueking` `2.2.3` 配套。
 
 ## 包入口导出概要
 
@@ -35,6 +35,7 @@ import {
   HighlightKeyword,
   MessageLoading,
   MessageTools,
+  MessageTime,
   MessageUserFeedback,
   SelectionFooter,
   ToolCallRender,
@@ -454,7 +455,8 @@ const {
 | ExecutionSummary | 执行情况摘要 Tab 内容 |
 | HighlightKeyword | 关键词高亮 |
 | MessageLoading | 加载动画 |
-| MessageTools | 消息工具条（内置 `CONST_MESSAGE_TOOLS` + `CONST_UPDATE_TOOLS`） |
+| MessageTools | 消息工具条（内置 `CONST_MESSAGE_TOOLS` + `CONST_UPDATE_TOOLS`；`#prepend` / `#append` 可嵌入 `MessageTime`） |
+| MessageTime | 消息时间（四档格式；`createdAt` + 可选 `timezone`；无值不渲染） |
 | MessageUserFeedback | 点赞/点踩原因表单 |
 | SelectionFooter | 分享模式底栏 |
 | ToolCallRender | 工具调用展示 |
@@ -496,7 +498,7 @@ const renderMode = useRenderModeInject(); // ComputedRef<RenderMode>
 - **下发**：容器内 `useGlobalConfig({ size, supportUpload, timezone })`（provide `GLOBAL_CONFIG_TOKEN`）。
 - **读取**：子组件 `injectGlobalConfig()` 取 `{ size, supportUpload, timezone }`。
 - **DOM 生效**：容器根节点带 `:data-ai-size="size"`；同时把当前值镜像到 `document.body.dataset.aiSize`，让挂到 body 的浮层（tippy / Teleport）也继承 `--ai-font-size` 等 CSS 变量（卸载时清理）。样式普遍使用 `var(--ai-font-size, 12px)`。
-- **时区**：`timezone` 为 IANA 名（如 `Asia/Shanghai`）；`MessageTime` 优先用自身 props，否则读全局配置，都未配置时按浏览器时区展示。
+- **时区**：`timezone` 为 IANA 名（如 `Asia/Shanghai`）；`MessageTime` 优先用自身 props，否则读全局配置，都未配置时按浏览器时区展示。四档格式：今天 `12:00` / 昨天 `昨天 12:00` / 今年内 `3-12 12:00` / 跨年 `2025-3-12 12:00`。用户消息在工具栏左侧、AI 组在右侧（组内最后一条带 `createdAt` 的消息）。
 
 ```typescript
 export type AiSizeMode = 'normal' | 'small';

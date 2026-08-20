@@ -269,6 +269,28 @@ const onConfirmShare = (messages: Message[], source?: IToolBtn) => {
 </template>
 ```
 
+### 字号与消息时间 {#字号与消息时间}
+
+`AIBlueking` / `ChatBot` 透传 `size` 与 `timezone` 至 `ChatContainer`：
+
+| Prop | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `size` | `'small' \| 'normal'` | `'small'` | 字号主题（12px / 14px） |
+| `timezone` | `string` | — | 消息时间所用的 IANA 时区名（如 `Asia/Shanghai`）。**≥ v2.2.3**；未配置时按浏览器时区。非法时区名回退浏览器时区，不会导致渲染失败 |
+
+```vue
+<template>
+  <!-- 整个会话按北京时间展示消息时间 -->
+  <AIBlueking
+    url="/api/ai/assistant/"
+    size="normal"
+    timezone="Asia/Shanghai"
+  />
+</template>
+```
+
+时间的四档格式、展示位置与数据来源见 [聊天交互 · 消息时间展示](/guide/core-features/chat-interaction#消息时间展示)。
+
 ### nimbusSize
 
 设置悬浮球大小：
@@ -310,6 +332,7 @@ const onConfirmShare = (messages: Message[], source?: IToolBtn) => {
     :show-history-icon="true"
     :show-more-icon="true"
     :show-compression-icon="false"
+    :show-aside-toggle="true"
   />
 </template>
 ```

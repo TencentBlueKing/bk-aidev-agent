@@ -1,9 +1,9 @@
 ---
 name: ai-blueking-docs-update
-description: 更新 AI 小鲸 VitePress 主站文档（src/frontend/web/docs）。在发布新功能、修改 chat-x/ai-blueking 行为、补充 changelog、撰写 LLM/系统提示词说明、同步 API 与指南交叉链接时使用。触发词：文档更新、changelog、主站文档、VitePress、蓝鲸行内富文本、模型选择、提示词文档、web/docs、欢迎插槽、消息工具栏、嵌入模式 Header、asideCollapsed。
+description: 更新 AI 小鲸 VitePress 主站文档（src/frontend/web/docs）。在发布新功能、修改 chat-x/ai-blueking 行为、补充 changelog、撰写 LLM/系统提示词说明、同步 API 与指南交叉链接时使用。触发词：文档更新、changelog、主站文档、VitePress、蓝鲸行内富文本、模型选择、提示词文档、web/docs、欢迎插槽、消息工具栏、嵌入模式 Header、asideCollapsed、消息时间、timezone、MessageTime。
 metadata:
   author: blueking
-  version: '1.9'
+  version: '1.10'
 compatibility: 需能读写仓库内 src/frontend/web/docs；本地预览需 Node 20+ 与 pnpm。
 ---
 
@@ -25,7 +25,7 @@ compatibility: 需能读写仓库内 src/frontend/web/docs；本地预览需 Nod
 | `src/frontend/web/dist/` | 构建产物，**不要手改** |
 | `packages/chat-x/wikis/` | chat-x 组件级 Wiki（与主站互补，重大 API 变更时考虑同步） |
 
-版本号来源：`src/frontend/web/docs/changelog.md` 首条 `## vX.Y.Z`（导航栏与 changelog 标题应对齐；发布 2.2.2 时该标题即为 `## v2.2.2`）。
+版本号来源：`src/frontend/web/docs/changelog.md` 首条 `## vX.Y.Z`（导航栏与 changelog 标题应对齐；发布 2.2.3 时该标题即为 `## v2.2.3`）。
 
 本地预览（在 `src/frontend/web` 下）：
 

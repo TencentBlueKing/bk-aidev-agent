@@ -35,12 +35,11 @@
 ## 示例（节选）
 
 ```markdown
-## v2.2.2
+## v2.2.3
 
 ### 新功能
 
-- **模型选择（Model Select）**（≥ v2.2.2）：`ChatBot` / `AIBlueking` 新增 `enableModelSelect`（默认 `true`）与 `models` prop；切换历史会话用 `session.model` 同步，用户切换写回当前会话。详见 [模型选择](/guide/core-features/model-selection)
-- **文件产物预览 / 下载**（≥ v2.2.2）：AI 回复中的文件卡片可打开侧栏「文件产物」Tab
+- **消息时间展示**（≥ v2.2.3）：用户消息与 AI 回复在工具栏旁展示创建时间；`timezone` 为 IANA 名。详见 [聊天交互 · 消息时间展示](/guide/core-features/chat-interaction#消息时间展示)
 
 ---
 ```

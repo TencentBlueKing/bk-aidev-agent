@@ -357,3 +357,32 @@ AI 选区组件，用于在页面中通过选区触发快捷指令。
 ```
 
 行内富文本语法与 LLM 提示词配置见 [蓝鲸行内富文本](/guide/core-features/markdown-inline-style)。
+
+## MessageTime {#messagetime}
+
+消息时间组件（≥ chat-x `0.0.49-beta.9` / 小鲸 **v2.2.3**）。按「今天 / 昨天 / 今年内 / 跨年」四档格式展示 `createdAt`；通常通过 `MessageTools` 的 `prepend` / `append` 插槽嵌入。`ChatContainer` 传入 `timezone` 后经 `useGlobalConfig` 注入，无需逐条传。
+
+### Props
+
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `createdAt` | `number \| string` | — | ISO 字符串或毫秒时间戳；无值或非法时不渲染 |
+| `timezone` | `string` | — | IANA 时区名；优先于全局配置，两者都未配置时按浏览器时区 |
+
+### 用法示例
+
+```vue
+<template>
+  <ChatContainer
+    :messages="messages"
+    timezone="Asia/Shanghai"
+  />
+  <!-- 原子组装时也可单独使用 -->
+  <MessageTime
+    :created-at="message.createdAt"
+    timezone="Asia/Shanghai"
+  />
+</template>
+```
+
+四档格式、展示位置与数据来源见 [消息时间展示](/guide/core-features/chat-interaction#消息时间展示)。

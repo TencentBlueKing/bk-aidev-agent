@@ -124,6 +124,7 @@ export default {
 | `extCls` | `string` | — | 自定义外层 CSS 类名 |
 | `requestOptions` | `RequestOptions` | — | 请求配置，支持自定义 headers、超时等 |
 | `asideCollapsed` | `boolean` | 内部默认折叠 | 侧栏折叠态。传入后严格受控，须配合 `v-model:asideCollapsed`。侧栏固定从右侧展开，**已移除 `placement`** |
+| `timezone` | `string` | — | 消息时间展示所用的 IANA 时区名（**≥ v2.2.3**，如 `Asia/Shanghai`）；未配置时按浏览器时区。详见 [消息时间展示](/guide/core-features/chat-interaction#消息时间展示) |
 
 ## Events 事件
 
