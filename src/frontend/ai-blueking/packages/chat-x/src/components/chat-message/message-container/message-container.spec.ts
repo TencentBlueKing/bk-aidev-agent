@@ -36,6 +36,9 @@ import MessageContainer from './message-container.vue';
 
 import type { AssistantMessage, Message, ToolMessage, UserMessage } from '../../../ag-ui/types';
 
+const jumpToBottomMock = vi.fn();
+const toScrollBottomMock = vi.fn();
+
 // Mock composables
 vi.mock('../../../composables', () => ({
   useClipboard: () => ({
@@ -43,8 +46,8 @@ vi.mock('../../../composables', () => ({
   }),
   useContainerScrollProvider: () => ({
     isScrollBottom: { value: true },
-    jumpToBottom: vi.fn(),
-    toScrollBottom: vi.fn(),
+    jumpToBottom: jumpToBottomMock,
+    toScrollBottom: toScrollBottomMock,
     scrollBottomHeight: { value: 0 },
     toScrollTop: vi.fn(),
     debouncedShowScrollBottomBtn: { value: false },
@@ -291,6 +294,27 @@ describe('MessageContainer', () => {
 
   afterEach(() => {
     wrapper?.unmount();
+  });
+
+  describe('发送消息后滚动到底部', () => {
+    it('新增用户消息时应调用 jumpToBottom', async () => {
+      const messages = [createUserMessage('1', 'Hello')];
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages) },
+      });
+      await flushPromises();
+      jumpToBottomMock.mockClear();
+
+      const nextMessages = [...messages, createUserMessage('2', 'World', 2)];
+      await wrapper.setProps({
+        messages: nextMessages,
+        messageGroups: buildGroups(nextMessages),
+      });
+      await nextTick();
+      await flushPromises();
+
+      expect(jumpToBottomMock).toHaveBeenCalled();
+    });
   });
 
   describe('渲染测试', () => {
