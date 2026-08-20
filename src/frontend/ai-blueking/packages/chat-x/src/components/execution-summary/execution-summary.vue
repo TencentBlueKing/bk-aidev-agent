@@ -83,7 +83,7 @@
 
   import { Button, Exception, Input } from 'bkui-vue';
 
-  import { useCommonTippyInject, useKeywordProvider } from '../../composables/use-common';
+  import { useCommonTippyInject, useExecutionPanelProvider, useKeywordProvider } from '../../composables/use-common';
   import { OverflowTips as vOverflowTips } from '../../directives';
   import { t } from '../../lang/lang';
   import MessageRender from '../chat-message/message-render/message-render.vue';
@@ -100,6 +100,8 @@
   }>();
   const commonTippyOptions = useCommonTippyInject();
   const { keyword } = useKeywordProvider();
+  // 标记面板上下文：面板复用对话的消息渲染链路，内容组件据此隐藏交互操作（如节点重试 / 跳过）
+  useExecutionPanelProvider();
 
   // const dateValue = deepRef<[Date, Date]>([new Date(), new Date()]);
   const hoverGroupId = shallowRef<string | undefined>(undefined);

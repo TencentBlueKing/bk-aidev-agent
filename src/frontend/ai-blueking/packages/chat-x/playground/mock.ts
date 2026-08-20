@@ -28,6 +28,7 @@
 import {
   // type AssistantMessage,
   type AIFileInfo,
+  type BkFlowMessageContent,
   type IAiSlashMenuItem,
   type IModelOption,
   // type InfoMessage,
@@ -39,6 +40,7 @@ import {
   // CopyIcon,
   DeleteIcon,
   InterruptReason,
+  MessageContentType,
   MessageRole,
   MessageStatus,
   ShareIcon,
@@ -1026,6 +1028,112 @@ export const MOCK_TOOLCALL_STATUS_MESSAGES = [
         },
       },
     ],
+  },
+] as Message[];
+
+/**
+ * flow_agent 执行情况 mock：单任务 + 5 个节点，覆盖成功 / 失败 / 待执行三态。
+ * 失败节点带 retryable + skippable，用于验证「重试 / 跳过」只在对话流内出现，
+ * 侧栏「执行情况」面板内只保留「详情」。
+ */
+const MOCK_FLOW_AGENT_CONTENT: BkFlowMessageContent = [
+  {
+    is_active: true,
+    nodes: {
+      'node-message-start': {
+        elapsed_time: 0.4,
+        finish_time: '2026-08-20 16:20:01',
+        id: 'node-message-start',
+        loop: 0,
+        name: '消息展示',
+        retry: 0,
+        skip: false,
+        start_time: '2026-08-20 16:20:00',
+        state: 'FINISHED',
+        type: 'task',
+      },
+      'node-knowledge': {
+        elapsed_time: 5,
+        finish_time: '2026-08-20 16:20:06',
+        id: 'node-knowledge',
+        loop: 0,
+        name: '知识库',
+        retry: 0,
+        skip: false,
+        start_time: '2026-08-20 16:20:01',
+        state: 'FINISHED',
+        type: 'task',
+      },
+      // 失败节点：重试 / 跳过入口的唯一来源
+      'node-hy3-preview': {
+        elapsed_time: 0.6,
+        finish_time: '2026-08-20 16:20:07',
+        id: 'node-hy3-preview',
+        loop: 0,
+        name: 'hy3-preview',
+        retry: 0,
+        retryable: true,
+        skip: false,
+        skippable: true,
+        start_time: '2026-08-20 16:20:06',
+        state: 'FAILED',
+        type: 'task',
+      },
+      'node-deploy-test': {
+        elapsed_time: 0,
+        finish_time: '',
+        id: 'node-deploy-test',
+        loop: 0,
+        name: '部署测试0114',
+        retry: 0,
+        skip: false,
+        start_time: '',
+        state: 'PENDING',
+        type: 'task',
+      },
+      'node-message-end': {
+        elapsed_time: 0,
+        finish_time: '',
+        id: 'node-message-end',
+        loop: 0,
+        name: '消息展示',
+        retry: 0,
+        skip: false,
+        start_time: '',
+        state: 'PENDING',
+        type: 'task',
+      },
+    },
+    statistics: {
+      state_counts: { FAILED: 1, FINISHED: 2, PENDING: 2 },
+      total: 5,
+    },
+    task_id: 1787195768571,
+    task_name: 'flow_agent_test_new_session_1787195768571',
+    task_outputs: {},
+    task_state: 'FAILED',
+  },
+];
+
+/** flow_agent 会话 mock：user 提问作为执行情况面板的分组标题，activity 承载流程内容 */
+export const MOCK_FLOW_AGENT_MESSAGES = [
+  {
+    id: 'mock-flow-agent-user',
+    role: MessageRole.User,
+    content: '测试',
+    name: 'user',
+    status: MessageStatus.Complete,
+    messageId: 'mock-flow-agent-user',
+    createdAt: mockCreatedAt(0, 16, 20),
+  },
+  {
+    id: 'mock-flow-agent-activity',
+    role: MessageRole.Activity,
+    activityType: MessageContentType.FlowAgent,
+    content: MOCK_FLOW_AGENT_CONTENT,
+    status: MessageStatus.Completed,
+    messageId: 'mock-flow-agent-activity',
+    createdAt: mockCreatedAt(0, 16, 20),
   },
 ] as Message[];
 

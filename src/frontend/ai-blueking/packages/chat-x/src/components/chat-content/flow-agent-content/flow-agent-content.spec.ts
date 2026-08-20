@@ -30,7 +30,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { InterruptResumeOperation } from '../../../ag-ui/types/interrupt';
 import { RenderMode } from '../../../common/constants';
-import { useRenderModeProvider } from '../../../composables/use-common';
+import { useExecutionPanelProvider, useRenderModeProvider } from '../../../composables/use-common';
 import FlowAgentContent from './flow-agent-content.vue';
 
 import type { BkFlowMessageContent, BkFlowTask } from '../../../ag-ui/types/contents';
@@ -436,6 +436,30 @@ describe('FlowAgentContent', () => {
       const actionTexts = wrapper.findAll('.flow-agent-node-action-btn').map(btn => btn.text());
       expect(actionTexts).toContain('详情');
       // 交互式 resume 操作被过滤
+      expect(actionTexts).not.toContain('重试');
+      expect(actionTexts).not.toContain('跳过');
+    });
+
+    it('处于侧栏执行情况面板内时应保留节点详情入口，但隐藏重试/跳过', () => {
+      const Parent = defineComponent({
+        setup() {
+          useExecutionPanelProvider();
+          return () =>
+            h(FlowAgentContent, {
+              // 失败可重试/可跳过节点：对话流内会出现重试/跳过，用于验证面板内被过滤
+              content: createContent({
+                nodes: {
+                  n1: createNode({ id: 'n1', name: '失败节点', state: 'FAILED', retryable: true, skippable: true }),
+                },
+              }),
+            });
+        },
+      });
+
+      wrapper = mount(Parent);
+
+      const actionTexts = wrapper.findAll('.flow-agent-node-action-btn').map(btn => btn.text());
+      expect(actionTexts).toContain('详情');
       expect(actionTexts).not.toContain('重试');
       expect(actionTexts).not.toContain('跳过');
     });

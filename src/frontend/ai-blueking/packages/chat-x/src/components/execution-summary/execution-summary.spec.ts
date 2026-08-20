@@ -28,6 +28,7 @@ import { defineComponent, h, ref } from 'vue';
 import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { useExecutionPanelProvider } from '../../composables/use-common';
 import ExecutionSummary from './execution-summary.vue';
 
 import type { MessageGroup } from '../../composables';
@@ -79,6 +80,7 @@ vi.mock('../../composables/use-common', () => ({
     keyword: ref(''),
   }),
   useCommonTippyInject: vi.fn(() => undefined),
+  useExecutionPanelProvider: vi.fn(),
 }));
 
 vi.mock('../../directives', () => ({
@@ -146,6 +148,14 @@ describe('ExecutionSummary', () => {
 
       expect(wrapper.find('.ai-execution-summary-content-empty').exists()).toBe(true);
       expect(wrapper.find('.mock-exception').exists()).toBe(true);
+    });
+
+    it('应提供执行情况面板上下文，供内容组件隐藏交互操作', () => {
+      wrapper = mount(ExecutionSummary, {
+        props: { messageGroups: [] },
+      });
+
+      expect(vi.mocked(useExecutionPanelProvider)).toHaveBeenCalled();
     });
   });
 

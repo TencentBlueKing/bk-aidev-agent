@@ -6,6 +6,8 @@ domain: agent
 description: 按消息流提取执行摘要，支持关键词定位和消息渲染。
 aiSummary: >
   按消息流提取执行摘要，支持关键词定位和消息渲染。
+  通过 useExecutionPanelProvider 提供 EXECUTION_PANEL_TOKEN，面板内消息按只读呈现，
+  FlowAgent 失败节点在面板内不展示重试/跳过，只保留详情。
   源码位置：src/components/execution-summary/execution-summary.vue。
 relatedComponents:
   - slug: message-render
@@ -30,6 +32,8 @@ sinceVersion: 1.0.0
       checked: false,
       isHover: false,
       startTime: Date.now() - 120000,
+      // 时间线标题取自 userMessageTitle；传数字（时间戳）时组件会格式化为时间
+      userMessageTitle: '帮我查一下用户信息',
       messages: [
         {
           id: 'msg-1',
@@ -60,6 +64,7 @@ sinceVersion: 1.0.0
       checked: false,
       isHover: false,
       startTime: Date.now() - 60000,
+      userMessageTitle: Date.now() - 60000,
       messages: [
         {
           id: 'msg-2',
@@ -116,6 +121,7 @@ sinceVersion: 1.0.0
 - **关键词搜索**：实时过滤匹配的执行记录
 - **对话定位**：hover 显示「在对话中定位」按钮，点击滚动到对应消息
 - **空状态处理**：无数据或搜索无结果时显示空状态提示
+- **面板上下文（只读呈现）**：组件 setup 时通过 `useExecutionPanelProvider()` 提供 `EXECUTION_PANEL_TOKEN`，供内部消息组件识别「当前处于侧栏面板内」并隐藏交互操作。目前 `FlowAgentContent` 据此不展示节点「重试 / 跳过」，只保留「详情」
 
 ## 基础用法
 
@@ -197,6 +203,27 @@ ai-execution-summary
   @update-keyword="handleUpdateKeyword"
 />
 ```
+
+## 面板内的消息按只读呈现
+
+面板与对话流复用同一套渲染链路（`MessageRender` → `ContentRender` → 具体内容组件），但面板定位是「回看执行过程」，不承载操作。为此组件在 setup 阶段 provide 面板上下文：
+
+```typescript
+// 源码：src/composables/use-common.ts（内部上下文，未从包入口导出）
+import { useExecutionPanelProvider } from '../../composables/use-common';
+
+// 面板身份在组件树中恒定，provide 常量 true 即可，无需响应式
+useExecutionPanelProvider();
+```
+
+内容组件用 `useExecutionPanelInject()` 读取（缺省 `false`，即对话流内）。当前的差异：
+
+| 内容 | 对话流内 | 侧栏「执行情况」面板内 |
+| ---- | -------- | ---------------------- |
+| FlowAgent 失败节点「重试 / 跳过」 | 展示（依赖 `retryable` / `skippable`） | **不展示** |
+| FlowAgent 节点「详情」 | 展示 | 展示 |
+
+新增内容组件若也需要区分这两种场景，同样注入 `useExecutionPanelInject()` 即可，不必扩展 props。`EXECUTION_PANEL_TOKEN` 与这两个函数同属 `use-common.ts` 的内部上下文，未从 `@blueking/chat-x` 包入口导出，仅供库内组件使用。详见 [FlowAgentContent](/components/agent/flow-agent-content)。
 
 ## API
 

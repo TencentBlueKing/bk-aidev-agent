@@ -37,6 +37,11 @@ export const KEYWORD_TOKEN = Symbol('KEYWORD_TOKEN');
 
 export const RENDER_MODE_TOKEN = Symbol('RENDER_MODE_TOKEN');
 export const COMMON_TIPPY_OPTIONS_TOKEN = Symbol('COMMON_TIPPY_OPTIONS_TOKEN');
+/**
+ * 侧栏「执行情况」面板上下文 token。
+ * 面板与对话流复用同一套消息渲染链路，内容组件据此按面板场景只读呈现。
+ */
+export const EXECUTION_PANEL_TOKEN = Symbol('EXECUTION_PANEL_TOKEN');
 export const useKeywordProvider = () => {
   const keyword = shallowRef('');
   provide(
@@ -71,6 +76,16 @@ export const useKeywordInject = () => {
 
 export const useCommonTippyInject = () => {
   return inject<ComputedRef<AITippyProps> | undefined>(COMMON_TIPPY_OPTIONS_TOKEN, undefined);
+};
+
+/** 侧栏「执行情况」面板内渲染消息时调用；面板身份在组件树中恒定，无需响应式 */
+export const useExecutionPanelProvider = () => {
+  provide(EXECUTION_PANEL_TOKEN, true);
+};
+
+/** 是否处于侧栏「执行情况」面板内；缺省 false，即对话流内渲染 */
+export const useExecutionPanelInject = () => {
+  return inject<boolean>(EXECUTION_PANEL_TOKEN, false);
 };
 
 export const useKeywordMatch = (getSearchTexts: () => (string | undefined)[]) => {

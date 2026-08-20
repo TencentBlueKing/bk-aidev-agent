@@ -118,7 +118,7 @@ const nodePendingKey = (task: BkFlowTask, node: BkFlowNode) => `${task.task_id}:
  * 操作列表，组件层只需遍历渲染，显隐与点击行为均收敛于此，便于复用、单测与扩展。
  */
 export const useFlowNodeActions = (options: {
-  /** 隐藏重试 / 跳过等交互式 resume 操作（分享态只读，仅保留「详情」查看入口） */
+  /** 隐藏重试 / 跳过等交互式 resume 操作（分享态、侧栏执行情况面板等只读场景，仅保留「详情」查看入口） */
   hideResumeActions?: Ref<boolean>;
   /** resume 回调（与第三方审批取消同一回调，按 payload.operation 分流） */
   onInterruptResume: Ref<OnInterruptResume | undefined>;
@@ -148,7 +148,7 @@ export const useFlowNodeActions = (options: {
   /** 计算单个节点行尾应展示的操作列表（重试 / 跳过按需，详情恒在末尾） */
   const getNodeActions = (task: FlowTaskVM, node: FlowNodeVM): FlowNodeActionVM[] => {
     const pendingOp = pendingMap.value[nodePendingKey(task.raw, node.raw)];
-    // 分享态只读：过滤掉重试 / 跳过等交互式 resume 操作，仅保留「详情」查看入口
+    // 只读场景（分享态 / 侧栏执行情况面板）：过滤掉重试 / 跳过等交互式 resume 操作，仅保留「详情」查看入口
     const resumeDefs = hideResumeActions?.value ? [] : RESUME_ACTION_DEFS;
     const actions: FlowNodeActionVM[] = resumeDefs
       .filter(def => def.visible(node))

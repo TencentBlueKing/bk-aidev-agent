@@ -402,6 +402,8 @@ ai-chat-container（:data-ai-size="size"）
 
 侧边栏默认包含「执行情况」Tab，展示所有工具调用和 FlowAgent 类型的 Activity 消息。支持关键词搜索过滤和点击定位到对话中的消息位置。
 
+面板内的消息虽与对话流复用同一套渲染链路，但按**只读回看**呈现：`ExecutionSummary` 会 provide 面板上下文，FlowAgent 失败节点在面板内不展示「重试 / 跳过」，只保留「详情」；对话流内不受影响。详见 [ExecutionSummary](/components/agent/execution-summary)。
+
 **展示条件**：侧栏是否渲染只取决于折叠态与是否存在可见 Tab —— `asideCollapsed === false` 且 `displayTabs` 非空即展开，与 `executionGroups`、`keyword`、是否有文件产物均无关。无执行数据时 `ExecutionSummary` 展示自身空态，无文件产物时 `FileArtifactPanel` 展示整块空态。`renderMode === Share` 分享态同样按折叠态展示侧栏（开放只读查看流程智能体详情/证据/执行情况），仅底部输入区保持隐藏。
 
 **展开 / 折叠由外部判断（严格受控）**：只要传入了 `asideCollapsed`，折叠态就**一律以外部值为准**。容器内部的展开动作（点击文件卡片预览、`addCustomTab` 打开节点详情等）只发出 `update:asideCollapsed` 请求，外部不改值就不会展开 —— 所以务必用 `v-model:asideCollapsed` 绑定，只写 `:aside-collapsed` 会让这些内部入口失效。完全不传该 prop 时退化为组件内部状态（默认折叠），内部入口照常生效。容器不会因为数据变空而自动收起或重置自定义 Tab。

@@ -212,7 +212,7 @@
 
   import { MessageContentType, MessageStatus } from '../../../ag-ui/types/constants';
   import { RenderMode } from '../../../common/constants';
-  import { useCommonTippyInject, useRenderModeInject } from '../../../composables/use-common';
+  import { useCommonTippyInject, useExecutionPanelInject, useRenderModeInject } from '../../../composables/use-common';
   import { OverflowTips as vOverflowTips } from '../../../directives/overflow-tips';
   import { ArrowRightIcon, NodeOutputIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
@@ -246,6 +246,11 @@
   /** 分享态只读：保留「详情 / 有效证据 / 耗时」查看入口，仅隐藏「重试 / 跳过」等交互操作 */
   const isShareMode = computed(() => renderMode.value === RenderMode.Share);
 
+  // 侧栏「执行情况」面板与对话流渲染同一组件，面板内按只读呈现：
+  // 与分享态一样仅保留「详情」，不出「重试 / 跳过」
+  const isInExecutionPanel = useExecutionPanelInject();
+  const hideResumeActions = computed(() => isShareMode.value || isInExecutionPanel);
+
   const isLoading = computed(() => props.status === MessageStatus.Pending || props.status === MessageStatus.Streaming);
 
   // 视图模型层：任务 / 节点视图模型、统计概览、展开态
@@ -259,9 +264,10 @@
     taskList,
   });
 
-  // 节点行尾操作层：聚合「详情 / 重试 / 跳过」为声明式操作列表；分享态隐藏交互式 resume 操作
+  // 节点行尾操作层：聚合「详情 / 重试 / 跳过」为声明式操作列表；
+  // 分享态与侧栏执行情况面板隐藏交互式 resume 操作
   const { getNodeActions, isNodePending } = useFlowNodeActions({
-    hideResumeActions: isShareMode,
+    hideResumeActions,
     onInterruptResume: toRef(props, 'onInterruptResume'),
     openNodeDetail,
   });
@@ -602,6 +608,7 @@
         justify-content: center;
         width: 1em;
         height: 1em;
+        margin-right: 4px;
         font-size: var(--ai-font-size, 12px);
       }
     }

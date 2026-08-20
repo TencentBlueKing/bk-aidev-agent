@@ -8,6 +8,7 @@ aiSummary: >
   useFlowNodeActions 接收 onInterruptResume 与 openNodeDetail，返回 getNodeActions 与 isNodePending。
   失败节点按 retryable/skippable 展示重试/跳过，详情恒在末尾；点击后进入 pending 防重复提交，
   以 task_id:node_id:retry 为键自动收敛；点击 resume 时不传 interrupt。
+  hideResumeActions 为 true 时只返回详情，覆盖 Share 分享态与侧栏「执行情况」面板两类只读场景。
 relatedComponents:
   - slug: flow-agent-content
     relation: FlowAgentContent 内部消费，驱动节点行尾按钮组渲染
@@ -26,7 +27,7 @@ sinceVersion: 2.0.0
 
 ```typescript
 function useFlowNodeActions(options: {
-  /** 隐藏重试 / 跳过等交互式 resume 操作（分享态只读，仅保留「详情」查看入口） */
+  /** 隐藏重试 / 跳过等交互式 resume 操作（分享态、侧栏执行情况面板等只读场景，仅保留「详情」查看入口） */
   hideResumeActions?: Ref<boolean>;
   /** resume 回调（与第三方审批取消同一回调，按 payload.operation 分流） */
   onInterruptResume: Ref<OnInterruptResume | undefined>;
@@ -76,13 +77,16 @@ interface FlowNodeActionVM {
 
 | 操作 | `id`               | 显隐条件                                   | 点击行为                                      |
 | ---- | ------------------ | ------------------------------------------ | --------------------------------------------- |
-| 重试 | `flow_node_retry`  | `convergedState === 'failed'` 且 `retryable` | 调用 `onInterruptResume`，**不传** `interrupt` |
-| 跳过 | `flow_node_skip`   | `convergedState === 'failed'` 且 `skippable` | 同上                                          |
-| 详情 | `detail`           | 始终（含 Share 分享态）                     | 调用 `openNodeDetail(task.raw, node.raw)`     |
+| 重试 | `flow_node_retry`  | `convergedState === 'failed'` 且 `retryable`，且 `hideResumeActions` 为 `false` | 调用 `onInterruptResume`，**不传** `interrupt` |
+| 跳过 | `flow_node_skip`   | `convergedState === 'failed'` 且 `skippable`，且 `hideResumeActions` 为 `false` | 同上                                          |
+| 详情 | `detail`           | 始终（不受 `hideResumeActions` 影响）        | 调用 `openNodeDetail(task.raw, node.raw)`     |
 
 展示顺序：重试 → 跳过 → 详情。
 
-> **分享态过滤**：传入 `hideResumeActions`（`Ref<boolean>`，如 `RenderMode.Share`）为 `true` 时，`getNodeActions` 直接过滤掉重试 / 跳过，仅返回「详情」查看入口；用于只读分享场景放开查看、禁止交互。
+> **只读场景过滤**：`hideResumeActions` 为 `true` 时，`getNodeActions` 直接过滤掉重试 / 跳过，仅返回「详情」查看入口，用于放开查看、禁止交互的场景。`FlowAgentContent` 目前把两类只读场景并入该入参：
+>
+> - `RenderMode.Share` 分享态
+> - 侧栏「执行情况」面板内（`ExecutionSummary` 通过 `EXECUTION_PANEL_TOKEN` 提供上下文，组件用 `useExecutionPanelInject` 读取）
 
 ## pending 态与防重复提交
 
@@ -120,9 +124,13 @@ import { toRef } from 'vue';
 import { useFlowNodeActions } from '@blueking/chat-x';
 // 或相对路径：'./use-flow-node-actions'
 
+// 是否处于侧栏「执行情况」面板内；缺省 false，即对话流内渲染
+// useExecutionPanelInject 来自内部 src/composables/use-common.ts，未从包入口导出
+const isInExecutionPanel = useExecutionPanelInject();
+
 const { getNodeActions, isNodePending } = useFlowNodeActions({
-  // 分享态只读：过滤重试 / 跳过，仅保留详情
-  hideResumeActions: computed(() => renderMode.value === RenderMode.Share),
+  // 分享态与侧栏执行情况面板均只读：过滤重试 / 跳过，仅保留详情
+  hideResumeActions: computed(() => renderMode.value === RenderMode.Share || isInExecutionPanel),
   onInterruptResume: toRef(props, 'onInterruptResume'),
   openNodeDetail,
 });
