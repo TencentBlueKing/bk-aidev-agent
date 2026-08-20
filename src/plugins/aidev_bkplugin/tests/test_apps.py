@@ -18,7 +18,8 @@ def _mock_otel_inputs(mocker, agent_info, metric_settings):
         metric_provider_managed_externally=False,
     )
     mocker.patch.object(apps, "OTelConfig", return_value=otel_config)
-    mocker.patch.object(apps.MetricExportSettings, "from_agent_info", return_value=metric_settings)
+    metric_export_settings = mocker.patch.object(apps, "MetricExportSettings")
+    metric_export_settings.from_agent_info.return_value = metric_settings
     instrumentor = mocker.patch.object(apps, "BkAidevAgentInstrumentor").return_value
     return otel_config, instrumentor
 
