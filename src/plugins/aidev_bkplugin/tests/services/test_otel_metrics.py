@@ -7,13 +7,13 @@ from types import ModuleType
 
 import pytest
 import requests
+
+pytest.importorskip("opentelemetry.sdk.metrics")
+
 from aidev_agent.packages.opentelemetry.metrics import (
     DURATION_HISTOGRAM_BOUNDARIES,
     MESSAGE_SIZE_HISTOGRAM_BOUNDARIES,
 )
-
-pytest.importorskip("opentelemetry.sdk.metrics")
-
 from aidev_bkplugin.services.metric_runtime import RetryableMetricPushError
 from aidev_bkplugin.services.otel_metrics import (
     BkPluginMetricService,
