@@ -4,6 +4,7 @@
 
 - [docs/README_FRAMEWORK.md](docs/README_FRAMEWORK.md) —— SDK 框架说明
 - [docs/craw-adapter.md](docs/craw-adapter.md) —— Craw 适配层（OpenClaw / Hermes 等 CLI 内核接入：Proxy + 周期读写）
+- [docs/craw-isolation-publish.md](docs/craw-isolation-publish.md) —— craw 隔离运行时的模板生成与发布约定
 - [docs/sdk_context_compression.md](docs/sdk_context_compression.md) —— 上下文压缩
 - [docs/release.md](docs/release.md) —— 发布说明 ｜ [CHANGELOG.md](CHANGELOG.md) —— 变更记录
 - [AGENTS.md](AGENTS.md) —— AI 协作入口（命令 / 约定）
