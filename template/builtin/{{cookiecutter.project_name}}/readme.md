@@ -159,7 +159,7 @@ uv add cruft --dev
 
 ```shell
 cd {{cookiecutter.project_name}}
-cruft link https://github.com/TencentBlueKing/bk-aidev-agent.git --directory template --config-file=./support-files/cookiecutter.yaml --no-input
+cruft link https://github.com/TencentBlueKing/bk-aidev-agent.git --directory template/builtin --config-file=./support-files/cookiecutter.yaml --no-input
 ```
 
 3. 提交 `cruft.json` 到代码仓库，请按实际代码分支处理

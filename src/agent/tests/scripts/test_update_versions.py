@@ -67,7 +67,7 @@ def create_repo_fixture(repo_root: Path) -> None:
         """,
     )
     write_file(
-        repo_root / "template/{{cookiecutter.project_name}}/pyproject.toml",
+        repo_root / "template/builtin/{{cookiecutter.project_name}}/pyproject.toml",
         """
         [project]
         version = "1.1.0rc5"
@@ -80,7 +80,7 @@ def create_repo_fixture(repo_root: Path) -> None:
         """,
     )
     write_file(
-        repo_root / "template/{{cookiecutter.project_name}}/requirements.txt",
+        repo_root / "template/builtin/{{cookiecutter.project_name}}/requirements.txt",
         """
         aidev-agent[opentelemetry]==1.1.0b13
         aidev-ai-blueking==2.0.0.dev31
@@ -89,7 +89,7 @@ def create_repo_fixture(repo_root: Path) -> None:
         """,
     )
     write_file(
-        repo_root / "template/{{cookiecutter.project_name}}/bk_plugin/versions/assistant.py",
+        repo_root / "template/builtin/{{cookiecutter.project_name}}/bk_plugin/versions/assistant.py",
         """
         class CommonAgent:
             class Meta:
@@ -97,14 +97,14 @@ def create_repo_fixture(repo_root: Path) -> None:
         """,
     )
     write_file(
-        repo_root / "template/{{cookiecutter.project_name}}/readme.md",
+        repo_root / "template/builtin/{{cookiecutter.project_name}}/readme.md",
         """
         curl -X POST http://127.0.0.1:8000/bk_plugin/invoke/1.0.0assistant
         curl -X POST https://example.com/prod/invoke/1.0.0assistant/
         """,
     )
     write_file(
-        repo_root / "template/{{cookiecutter.project_name}}/VERSION",
+        repo_root / "template/builtin/{{cookiecutter.project_name}}/VERSION",
         """2.0.0rc12""",
     )
 
@@ -122,9 +122,9 @@ def test_update_repo_versions_updates_all_target_files(tmp_path):
         "src/plugins/aidev_wxbot/pyproject.toml",
         "src/plugins/aidev_wxbot/aidev_wxbot/__init__.py",
         "src/plugins/aidev_ai_blueking/pyproject.toml",
-        "template/{{cookiecutter.project_name}}/pyproject.toml",
-        "template/{{cookiecutter.project_name}}/requirements.txt",
-        "template/{{cookiecutter.project_name}}/VERSION",
+        "template/builtin/{{cookiecutter.project_name}}/pyproject.toml",
+        "template/builtin/{{cookiecutter.project_name}}/requirements.txt",
+        "template/builtin/{{cookiecutter.project_name}}/VERSION",
     }
     assert 'version = "2.0.0b1"' in (repo_root / "src/agent/pyproject.toml").read_text(encoding="utf-8")
     assert '"aidev-agent>=2.0.0b1"' in (repo_root / "src/plugins/aidev_bkplugin/pyproject.toml").read_text(
@@ -139,10 +139,10 @@ def test_update_repo_versions_updates_all_target_files(tmp_path):
     assert '"aidev-agent>=2.0.0b1"' in (repo_root / "src/plugins/aidev_ai_blueking/pyproject.toml").read_text(
         encoding="utf-8"
     )
-    assert 'version = "2.0.0b1"' in (repo_root / "template/{{cookiecutter.project_name}}/pyproject.toml").read_text(
-        encoding="utf-8"
-    )
-    requirements_text = (repo_root / "template/{{cookiecutter.project_name}}/requirements.txt").read_text(
+    assert 'version = "2.0.0b1"' in (
+        repo_root / "template/builtin/{{cookiecutter.project_name}}/pyproject.toml"
+    ).read_text(encoding="utf-8")
+    requirements_text = (repo_root / "template/builtin/{{cookiecutter.project_name}}/requirements.txt").read_text(
         encoding="utf-8"
     )
     assert "aidev-agent[opentelemetry]==2.0.0b1" in requirements_text
@@ -150,11 +150,11 @@ def test_update_repo_versions_updates_all_target_files(tmp_path):
     # assert "aidev-ai-blueking==2.0.0b1" in requirements_text
     assert "aidev-bkplugin==2.0.0b1" in requirements_text
     assert "aidev-wxbot==2.0.0b1" in requirements_text
-    assistant_text = (repo_root / "template/{{cookiecutter.project_name}}/bk_plugin/versions/assistant.py").read_text(
-        encoding="utf-8"
-    )
+    assistant_text = (
+        repo_root / "template/builtin/{{cookiecutter.project_name}}/bk_plugin/versions/assistant.py"
+    ).read_text(encoding="utf-8")
     assert 'version = "1.0.0assistant"' in assistant_text
-    readme_text = (repo_root / "template/{{cookiecutter.project_name}}/readme.md").read_text(encoding="utf-8")
+    readme_text = (repo_root / "template/builtin/{{cookiecutter.project_name}}/readme.md").read_text(encoding="utf-8")
     assert "invoke/1.0.0assistant" in readme_text
 
 
@@ -182,10 +182,12 @@ def test_main_updates_only_specified_component_versions(tmp_path, monkeypatch, c
     assert 'version = "3.0.0rc1"' in (repo_root / "src/plugins/aidev_ai_blueking/pyproject.toml").read_text(
         encoding="utf-8"
     )
-    template_text = (repo_root / "template/{{cookiecutter.project_name}}/pyproject.toml").read_text(encoding="utf-8")
+    template_text = (repo_root / "template/builtin/{{cookiecutter.project_name}}/pyproject.toml").read_text(
+        encoding="utf-8"
+    )
     assert '"aidev-agent[opentelemetry]==1.1.0b12"' in template_text
     assert '"aidev-ai-blueking==3.0.0rc1"' in template_text
-    requirements_text = (repo_root / "template/{{cookiecutter.project_name}}/requirements.txt").read_text(
+    requirements_text = (repo_root / "template/builtin/{{cookiecutter.project_name}}/requirements.txt").read_text(
         encoding="utf-8"
     )
     assert "aidev-agent[opentelemetry]==1.1.0b13" in requirements_text

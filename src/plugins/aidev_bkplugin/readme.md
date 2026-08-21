@@ -25,6 +25,5 @@ make build-aidev-bkplugin
 ```bash
 GIT_ROOT=$(git rev-parse --show-toplevel)
 cd /tmp
-python -m cookiecutter ${GIT_ROOT}/template --no-input
+python -m cookiecutter ${GIT_ROOT} --directory template/builtin --no-input
 ```
-

@@ -71,13 +71,13 @@ pip install cruft
 
 ```bash
 cruft link https://github.com/TencentBlueKing/bk-aidev-agent.git \
-    --directory template \
+    --directory template/builtin \
     --config-file=./support-files/cookiecutter.yaml \
     --no-input
 ```
 
 **参数说明**：
-- `--directory template`：指定模板所在子目录
+- `--directory template/builtin`：指定内置智能体模板所在子目录
 - `--config-file`：指定 cookiecutter 配置文件路径
 - `--no-input`：跳过交互式输入，使用配置文件中的默认值
 
@@ -141,4 +141,3 @@ cruft update
 1. 首先查阅 [常见问题 FAQ](./agent/FAQ.md)
 2. 参考 [智能体定制开发指南](./agent/EXTENSION_AGENT.md) 
 3. 在 [GitHub Issues](https://github.com/TencentBlueKing/bk-aidev-agent/issues) 提交问题
-

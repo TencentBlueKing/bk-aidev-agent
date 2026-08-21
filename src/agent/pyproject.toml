@@ -48,7 +48,7 @@ a2a = [
 ]
 # OpenTelemetry 可选 extras：
 #   pip install aidev-agent[opentelemetry]
-# 版本与 template/{{cookiecutter.project_name}}/pyproject.toml 中的 OTel 版本组合对齐，
+# 版本与 template/builtin/{{cookiecutter.project_name}}/pyproject.toml 中的 OTel 版本组合对齐，
 # 保证导入 aidev_agent.packages.opentelemetry 子包时无跨主版本不兼容。
 opentelemetry = [
     "opentelemetry-api==1.33.1",
