@@ -189,6 +189,76 @@ class TestTwoPhaseTransaction:
         assert (tmp_path / "SOUL.md").read_text(encoding="utf-8") == "# old-soul"
         assert not (tmp_path.parent / "evil.txt").exists()
 
+    def test_second_commit_rename_failure_rolls_back_all_live_files(self, tmp_path):
+        """阶段二第二次 rename 失败时，已切换的正式文件必须全部回到旧版本。"""
+        (tmp_path / "SOUL.md").write_text("# old-soul", encoding="utf-8")
+        (tmp_path / "agent-config.json").write_text('{"old":1}', encoding="utf-8")
+        syncer = CrawSyncer(
+            backend=_HealthStubBackend(),
+            home_dir=str(tmp_path),
+            artifacts_provider=lambda: {"SOUL.md": "# new-soul", "agent-config.json": '{"new":1}'},
+        )
+        orig = CrawSyncer._commit_at
+        calls = {"n": 0}
+
+        def boom(dirfd, staging_name, filename):
+            calls["n"] += 1
+            if calls["n"] >= 2:
+                raise OSError("injected commit failure")
+            return orig(dirfd, staging_name, filename)
+
+        syncer._commit_at = boom
+        result = syncer.run_cycle()
+        assert not result.ok and result.error
+        assert "injected commit failure" in result.error
+        assert (tmp_path / "SOUL.md").read_text(encoding="utf-8") == "# old-soul"
+        assert (tmp_path / "agent-config.json").read_text(encoding="utf-8") == '{"old":1}'
+        residues = [p.name for p in tmp_path.rglob("*") if ".craw-staging." in p.name or ".craw-backup." in p.name]
+        assert residues == []
+
+    def test_overlapping_cycles_serialize_to_consistent_pair(self, tmp_path):
+        """重叠周期由文件锁串行化，最终正式文件来自同一完整版本，不会新旧混搭。"""
+        import threading
+        import time
+
+        (tmp_path / "SOUL.md").write_text("# old", encoding="utf-8")
+        (tmp_path / "agent-config.json").write_text('{"v":0}', encoding="utf-8")
+        started = threading.Event()
+        release = threading.Event()
+        orig = CrawSyncer._commit_at
+
+        def blocking_commit(dirfd, staging_name, filename):
+            started.set()
+            assert release.wait(timeout=5)
+            return orig(dirfd, staging_name, filename)
+
+        first = CrawSyncer(
+            backend=_HealthStubBackend(),
+            home_dir=str(tmp_path),
+            artifacts_provider=lambda: {"SOUL.md": "# a", "agent-config.json": '{"v":1}'},
+        )
+        first._commit_at = blocking_commit
+        second = CrawSyncer(
+            backend=_HealthStubBackend(),
+            home_dir=str(tmp_path),
+            artifacts_provider=lambda: {"SOUL.md": "# b", "agent-config.json": '{"v":2}'},
+        )
+        t1 = threading.Thread(target=first.run_cycle)
+        t1.start()
+        assert started.wait(timeout=5)
+        t2 = threading.Thread(target=second.run_cycle)
+        t2.start()
+        time.sleep(0.2)
+        release.set()
+        t1.join(timeout=5)
+        t2.join(timeout=5)
+        assert not t1.is_alive() and not t2.is_alive()
+        pair = (
+            (tmp_path / "SOUL.md").read_text(encoding="utf-8"),
+            (tmp_path / "agent-config.json").read_text(encoding="utf-8"),
+        )
+        assert pair in {("# a", '{"v":1}'), ("# b", '{"v":2}')}
+
     def test_failed_cycle_leaves_no_staging_residue(self, tmp_path):
         syncer = CrawSyncer(
             backend=_HealthStubBackend(),

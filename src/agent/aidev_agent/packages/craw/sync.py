@@ -33,9 +33,11 @@ from __future__ import annotations
 
 import contextlib
 import errno
+import fcntl
 import json
 import os
 import time
+import uuid
 from dataclasses import dataclass, field
 from logging import getLogger
 from pathlib import Path
@@ -50,8 +52,11 @@ INTERVAL_ENV = "BKAI_CRAW_SYNC_INTERVAL"
 ARTIFACT_MODE_ENV = "BKAI_CRAW_ARTIFACT_MODE"
 DEFAULT_SOUL_FILENAME = "SOUL.md"
 DEFAULT_CONFIG_FILENAME = "agent-config.json"
-# staging 文件命名：``.<产物名>.craw-staging``（与正式文件同目录，rename 才是原子的）
-_STAGING_SUFFIX = ".craw-staging"
+# staging / backup 与正式文件同目录，rename 才是原子的。文件名带周期 uuid，
+# 重叠周期不会去删对方正在用的临时文件。
+_STAGING_MARKER = ".craw-staging."
+_BACKUP_MARKER = ".craw-backup."
+_LOCK_NAME = ".craw-sync.lock"
 # 产物含 MCP 认证 header 等敏感配置：staging/正式文件默认 0600，不依赖 umask。
 # craw 内核与 agent 以不同 UID 跑在共享卷两侧时（同 Pod 双容器），0600 会挡住
 # 内核消费——此时经参数 artifact_mode / env BKAI_CRAW_ARTIFACT_MODE 显式放宽（如 0644）。
@@ -88,6 +93,17 @@ class CrawSyncResult:
     @property
     def soul_verified(self) -> bool:
         return self.soul_filename in self.artifacts_written and self.artifacts_verified
+
+
+@dataclass
+class _StagedArtifact:
+    relpath: str
+    filename: str
+    dirfd: int
+    content: str
+    staging_name: Optional[str] = None
+    backup_name: Optional[str] = None
+    committed: bool = False
 
 
 class CrawSyncer:
@@ -135,6 +151,32 @@ class CrawSyncer:
                 _logger.warning("[CRAW-SYNC] 非法 %s=%r，回落默认 0600", ARTIFACT_MODE_ENV, raw_mode)
                 artifact_mode = _DEFAULT_ARTIFACT_MODE
         self.artifact_mode = artifact_mode
+
+    @contextlib.contextmanager
+    def _home_lock(self):
+        """同一 craw home 的提交阶段互斥，避免重叠周期交错写入。"""
+        if not self.home_dir:
+            raise RuntimeError(f"craw home 未配置（参数 home_dir 或 env {HOME_ENV}）")
+        fd = os.open(str(self.home_dir / _LOCK_NAME), os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            with contextlib.suppress(OSError):
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+
+    def _is_temp_name(name: str) -> bool:
+        return _STAGING_MARKER in name or _BACKUP_MARKER in name
+
+    def _cleanup_temp_files(self) -> None:
+        """持锁后清掉上一周期崩溃残留的 staging。backup 只在本周期成功提交后删除。"""
+        if not self.home_dir:
+            return
+        for path in self.home_dir.rglob("*"):
+            if path.is_file() and _STAGING_MARKER in path.name:
+                with contextlib.suppress(OSError):
+                    path.unlink()
 
     # ---------- read ----------
 
@@ -212,11 +254,9 @@ class CrawSyncer:
             raise
         return fd
 
-    def _write_staging_at(self, dirfd: int, filename: str, content: str) -> str:
+    def _write_staging_at(self, dirfd: int, filename: str, content: str, cycle_id: str) -> str:
         """在目录 fd 下写 staging 文件（``artifact_mode``，O_EXCL + O_NOFOLLOW），返回 staging 名。"""
-        staging_name = f".{filename}{_STAGING_SUFFIX}"
-        with contextlib.suppress(FileNotFoundError):  # 清掉上次异常退出的残留
-            os.unlink(staging_name, dir_fd=dirfd)
+        staging_name = f".{filename}{_STAGING_MARKER}{cycle_id}"
         fd = os.open(
             staging_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, self.artifact_mode, dir_fd=dirfd
         )
@@ -238,6 +278,10 @@ class CrawSyncer:
             return fh.read()
 
     @staticmethod
+    def _rename_at(dirfd: int, src: str, dst: str) -> None:
+        os.rename(src, dst, src_dir_fd=dirfd, dst_dir_fd=dirfd)
+
+    @staticmethod
     def _commit_at(dirfd: int, staging_name: str, filename: str) -> None:
         """staging → 正式文件原子切换（同目录 renameat，POSIX rename 覆盖语义）。"""
         os.rename(staging_name, filename, src_dir_fd=dirfd, dst_dir_fd=dirfd)
@@ -249,19 +293,22 @@ class CrawSyncer:
         :raises ValueError: 路径非法（绝对路径 / ``..`` / 符号链接段）。
         """
         rel = self._validate_rel(relpath)
-        dirfd = self._open_dir_in_home(rel.parts[:-1])
-        try:
-            staging_name = self._write_staging_at(dirfd, rel.name, content)
+        with self._home_lock():
+            dirfd = self._open_dir_in_home(rel.parts[:-1])
+            staging_name = None
             try:
+                staging_name = self._write_staging_at(dirfd, rel.name, content, uuid.uuid4().hex)
                 if self._read_text_at(dirfd, staging_name) != content:
                     raise RuntimeError(f"staging 读回校验失败: {relpath}")
                 self._commit_at(dirfd, staging_name, rel.name)
+                staging_name = None
             except BaseException:
-                with contextlib.suppress(OSError):
-                    os.unlink(staging_name, dir_fd=dirfd)
+                if staging_name:
+                    with contextlib.suppress(OSError):
+                        os.unlink(staging_name, dir_fd=dirfd)
                 raise
-        finally:
-            os.close(dirfd)
+            finally:
+                os.close(dirfd)
         return Path(self.home_dir) / rel  # type: ignore[arg-type]  # home_dir 已在 _open_dir_in_home 校验非空
 
     def write_soul(self, content: str) -> Path:
@@ -286,45 +333,79 @@ class CrawSyncer:
 
     # ---------- 周期 ----------
 
-    def _sync_artifacts(self, result: CrawSyncResult) -> None:
-        """产物集两阶段同步：staging 全量写入并校验 → 逐个原子切换 → 终态核验。
+    def _live_exists(self, dirfd: int, filename: str) -> bool:
+        try:
+            os.stat(filename, dir_fd=dirfd, follow_symlinks=False)
+            return True
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            if exc.errno == errno.ENOENT:
+                return False
+            raise
 
-        阶段一任一产物失败（路径非法 / 写失败 / staging 校验不一致）时正式
-        文件**零改动**，不会出现「新 SOUL + 旧 agent-config」的混合版本。
+    def _rollback_commit(self, staged: "list[_StagedArtifact]") -> None:
+        """commit 中途失败：撤掉已切换的新文件，把 backup 还原为正式文件。"""
+        for entry in reversed(staged):
+            if entry.committed:
+                with contextlib.suppress(OSError):
+                    os.unlink(entry.filename, dir_fd=entry.dirfd)
+                entry.committed = False
+            if entry.backup_name:
+                with contextlib.suppress(OSError):
+                    self._rename_at(entry.dirfd, entry.backup_name, entry.filename)
+                entry.backup_name = None
+
+    def _sync_artifacts(self, result: CrawSyncResult) -> None:
+        """产物集事务同步：staging 全量校验 → 备份正式文件 → 切换 → 失败则完整回滚。
+
+        阶段一任一产物失败时正式文件零改动。阶段二（正式文件 rename）若在
+        第二个或后续文件失败，已切换的文件也会从 backup 还原，不会出现
+        「新 SOUL + 旧 agent-config」的混合版本。同一 home 的提交持排它锁。
         """
         artifacts = self.collect_artifacts()
         if not artifacts:
             return
-        # entry: [relpath, 文件名, dirfd, staging 名（未写成功前为 None）, content]
-        staged: "list[list]" = []
-        try:
-            # 阶段一：全部产物写 staging（0600）并读回校验
-            for relpath, content in artifacts.items():
-                rel = self._validate_rel(relpath)
-                dirfd = self._open_dir_in_home(rel.parts[:-1])
-                entry: list = [relpath, rel.name, dirfd, None, content]
-                staged.append(entry)
-                entry[3] = self._write_staging_at(dirfd, rel.name, content)
-                if self._read_text_at(dirfd, entry[3]) != content:
-                    raise RuntimeError(f"staging 读回校验失败: {relpath}")
-            # 阶段二：全部通过后逐个原子切换（同目录 rename）
-            for entry in staged:
-                relpath, filename, dirfd, staging_name, content = entry
-                self._commit_at(dirfd, staging_name, filename)
-                entry[3] = None  # 已切换，staging 名失效，清理阶段跳过
-                result.artifacts_written[relpath] = len(content.encode("utf-8"))
-        finally:
-            for _, _, dirfd, staging_name, _ in staged:
-                if staging_name:
-                    with contextlib.suppress(OSError):
-                        os.unlink(staging_name, dir_fd=dirfd)
-                os.close(dirfd)
-        # 切换后终态核验（捕获并发篡改；读回不一致进失败态）
+        cycle_id = uuid.uuid4().hex
+        staged: "list[_StagedArtifact]" = []
+        with self._home_lock():
+            self._cleanup_temp_files()
+            try:
+                for relpath, content in artifacts.items():
+                    rel = self._validate_rel(relpath)
+                    dirfd = self._open_dir_in_home(rel.parts[:-1])
+                    entry = _StagedArtifact(relpath=relpath, filename=rel.name, dirfd=dirfd, content=content)
+                    staged.append(entry)
+                    entry.staging_name = self._write_staging_at(dirfd, rel.name, content, cycle_id)
+                    if self._read_text_at(dirfd, entry.staging_name) != content:
+                        raise RuntimeError(f"staging 读回校验失败: {relpath}")
+                for entry in staged:
+                    if self._live_exists(entry.dirfd, entry.filename):
+                        entry.backup_name = f".{entry.filename}{_BACKUP_MARKER}{cycle_id}"
+                        self._rename_at(entry.dirfd, entry.filename, entry.backup_name)
+                for entry in staged:
+                    self._commit_at(entry.dirfd, entry.staging_name, entry.filename)
+                    entry.staging_name = None
+                    entry.committed = True
+                    result.artifacts_written[entry.relpath] = len(entry.content.encode("utf-8"))
+                for entry in staged:
+                    if entry.backup_name:
+                        with contextlib.suppress(OSError):
+                            os.unlink(entry.backup_name, dir_fd=entry.dirfd)
+                        entry.backup_name = None
+            except BaseException:
+                self._rollback_commit(staged)
+                raise
+            finally:
+                for entry in staged:
+                    if entry.staging_name:
+                        with contextlib.suppress(OSError):
+                            os.unlink(entry.staging_name, dir_fd=entry.dirfd)
+                    os.close(entry.dirfd)
         failed = [relpath for relpath, content in artifacts.items() if self.read_file(relpath) != content]
         result.artifacts_failed = failed
         result.artifacts_verified = not failed
         if failed:
-            # 读回校验失败必须进入失败状态，不能把损坏配置当成功
             result.error = f"产物读回校验失败: {', '.join(failed)}"
 
     def run_cycle(self) -> CrawSyncResult:
