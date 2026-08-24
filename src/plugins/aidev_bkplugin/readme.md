@@ -26,4 +26,6 @@ make build-aidev-bkplugin
 GIT_ROOT=$(git rev-parse --show-toplevel)
 cd /tmp
 python -m cookiecutter ${GIT_ROOT} --directory template/builtin --no-input
+# 任务智能体隔离模板
+python -m cookiecutter ${GIT_ROOT} --directory template/craw --no-input
 ```
