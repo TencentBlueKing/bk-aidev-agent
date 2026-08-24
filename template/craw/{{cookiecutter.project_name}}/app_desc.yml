@@ -1,0 +1,114 @@
+specVersion: 3
+modules:
+  - name: default
+    isDefault: true
+    language: python
+    spec:
+      hooks:
+        preRelease:
+          procCommand: "bash bin/pre_release.sh"
+      configuration:
+        env:
+          - name: PYTHONPATH
+            value: /app
+            description: ADD PYTHONPATH
+          - name: BK_APP_CONFIG_PATH
+            value: bk_plugin_runtime.config
+            description: app config path
+          - name: DJANGO_SETTINGS_MODULE
+            value: bk_plugin.patch.plugin
+            description: django settings module
+          - name: BK_APIGW_MANAGER_URL_TMPL
+            value: {{cookiecutter.apigw_manager_url_tmpl}}
+            description: apigw manager url format
+          - name: BK_APIGW_MANAGER_MAINTAINERS
+            value: {{cookiecutter.init_apigw_maintainer}}
+            description: plugin apigw managers
+          - name: BK_INIT_SUPERUSER
+            value: {{cookiecutter.init_admin}}
+            description: plugin admin panel init superuser
+          - name: BK_SOPS_APP_CODE
+            value: bksops
+            description: bk-sops app code
+          - name: BK_APIGW_CORS_ALLOW_ORIGINS
+            value: "**"
+            description: apigw cors strategie allow origins
+          - name: BK_APIGW_CORS_ALLOW_METHODS
+            value: "**"
+            description: apigw cors strategie allow methods
+          - name: BK_APIGW_CORS_ALLOW_HEADERS
+            value: "**"
+            description: apigw cors strategie allow headers
+          - name: DJANGO_ALLOW_ASYNC_UNSAFE
+            value: "True"
+            description: set django allow unsafe async
+          - name: AIDEV_GATEWAY_NAME
+            value: "{{ cookiecutter.aidev_gateway_name }}"
+            description: aidev gateway name
+          - name: BK_APIGW_STAGE
+            value: "{{ cookiecutter.bk_apigw_stage }}"
+            description: bk apigw stage
+          - name: BK_APIGW_DEFAULT_TIMEOUT
+            value: "{{ cookiecutter.bk_apigw_default_timeout }}"
+            description: default apigw timeout
+          - name: BKAPP_OTEL_SAMPLER
+            value: "always_on"
+            description: otel sampler
+          - name: ENABLE_METRICS
+            value: "True"
+            description: enable metrics
+          - name: BKAI_AGENT_APM_OTEL_ENABLED
+            value: "True"
+            description: enable apm otel
+          {% if cookiecutter.model_management_ns_host %}
+          - name: MODEL_MANAGEMENT_NS_HOST
+            value: "{{cookiecutter.model_management_ns_host}}"
+            description: model management host
+          {%- endif -%}
+          {% if cookiecutter.model_management_ns_port %}
+          - name: MODEL_MANAGEMENT_NS_PORT
+            value: "{{cookiecutter.model_management_ns_port}}"
+            description: model management port
+          {%- endif -%}
+          {% if cookiecutter.similarity_model_service_name %}
+          - name: SIMILARITY_MODEL_SERVICE_NAME
+            value: "{{cookiecutter.similarity_model_service_name}}"
+            description: similarity model service name
+          {%- endif -%}
+          {% if cookiecutter.llm_service_prefix %}
+          - name: LLM_SERVICE_PREFIX
+            value: "{{ cookiecutter.llm_service_prefix }}"
+            description: LLM service prefix
+          {% endif %}
+          {% if cookiecutter.bkpaas_grant_apps %}
+          - name: BK_APIGW_GRANTED_APPS
+            value: "{{ cookiecutter.bkpaas_grant_apps }}"
+            description: bkpaas grant apps
+          {% endif %}
+          - name: MESSAGE_HANDLER_TYPE
+            value: "inmemory"
+            description: single-replica craw runtime; switch to rabbitmq before multi-replica
+          - name: BKAI_CRAW_BACKEND
+            value: "openclaw"
+            description: CHAT takeover; unset to keep native ReAct
+          - name: BKAI_CRAW_API_URL
+            value: "http://127.0.0.1:18789"
+            description: local craw gateway; do not point this at an environment-specific hostname
+          - name: BKAI_OPENCLAW_MODE
+            value: "paas"
+            description: craw kernel process mode
+          - name: OPENCLAW_GATEWAY_PORT
+            value: "18789"
+            description: craw gateway listen port
+      processes:
+        - name: web
+          procCommand: tini -- bash /app/deploy/craw-supervisor.sh /app/.venv/bin/gunicorn bk_plugin_runtime.wsgi --bind 0.0.0.0:5000 --timeout 300 -k gthread -w 1 --threads 32 --max-requests 512 --max-requests-jitter 50 --backlog 512
+          resQuotaPlan: 4C4G
+          replicas: 1
+          services:
+            - name: web
+              protocol: TCP
+              exposedType:
+                name: bk/http
+              targetPort: 5000
+              port: 80
