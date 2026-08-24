@@ -86,7 +86,7 @@ Legacy env（既有插件迁移兼容，统一 env 优先）：`BKAI_OPENCLAW_GA
 
 单元测试：`make test path=tests/packages/craw`。
 
-官方插件模板已在 `bk_plugin/patch/urls.py` 挂上 `enable_chat_takeover()`（未设 env 零影响）。任务智能体要走隔离容器时，生成模板传 `agent_runtime=craw`，见 [craw-isolation-publish.md](craw-isolation-publish.md)。
+任务智能体用独立模板 `template/craw/`，在 `bk_plugin/patch/urls.py` 挂 `enable_chat_takeover()`。对话插件仍走 `template/builtin/`，见 [craw-isolation-publish.md](craw-isolation-publish.md)。
 
 ## 扩展新内核
 
