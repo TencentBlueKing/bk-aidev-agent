@@ -160,15 +160,17 @@ bk-aidev-agent/
 │       ├── aidev_bkplugin/    # 蓝鲸智能体插件：智能体开发管理后台服务，包含前端页面、Agent服务、权限管理等
 │       └── aidev_wxbot/       # 企业微信机器人插件：提供企微消息回调处理、自动化消息处理、RabbitMQ集成等
 ├── template/             # 智能体模板集合
-│   └── builtin/          # 单智能体与 Flow 智能体共用模板
+│   ├── builtin/          # 单智能体与 Flow 智能体共用模板
+│   │   └── {{cookiecutter.project_name}}/
+│   │       ├── bk_plugin/    # 插件核心代码
+│   │       │   ├── apis/     # API 接口
+│   │       │   ├── extend/   # 扩展模块（agent、config_manager）
+│   │       │   ├── openapi/  # 用于生成蓝鲸插件的应用态接口
+│   │       │   ├── patch/    # 补丁模块
+│   │       │   └── versions/ # 【重要】智能体配置
+│   │       └── bin/          # 管理脚本
+│   └── craw/             # 任务智能体隔离运行时模板（同容器 craw 内核）
 │       └── {{cookiecutter.project_name}}/
-│           ├── bk_plugin/    # 插件核心代码
-│           │   ├── apis/     # API 接口
-│           │   ├── extend/   # 扩展模块（agent、config_manager）
-│           │   ├── openapi/  # 用于生成蓝鲸插件的应用态接口
-│           │   ├── patch/    # 补丁模块
-│           │   └── versions/ # 【重要】智能体配置
-│           └── bin/          # 管理脚本
 ├── docs/                 # 项目设计文档
 ├── assets/               # 项目资源文件
 ├── dist/                 # 构建产物
