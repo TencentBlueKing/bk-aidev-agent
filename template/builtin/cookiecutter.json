@@ -21,6 +21,7 @@
   "model_management_ns_port": "",
   "similarity_model_service_name": "",
   "llm_service_prefix": "",
+  "wxaibot_replicas": "0",
   "_copy_without_render": [
     ".ci",
     "*dist",
