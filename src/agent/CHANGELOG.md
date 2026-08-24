@@ -2,7 +2,7 @@
 
 ## 2026-08-21 · CrawSyncer 多产物 commit 事务化 + 隔离模板
 
-- **变更**：`CrawSyncer` 提交阶段在第二次及后续 rename 失败时，从 backup 完整回滚全部正式文件，不再出现「新 SOUL + 旧 agent-config」。staging 文件名带周期 uuid；同一 craw home 提交持排它锁。官方插件模板 opt-in 挂载 `enable_chat_takeover()`，并增加 `agent_runtime=craw` 隔离 overlay（Dockerfile / supervisor）。凭据与环境域名不进模板。
+- **变更**：`CrawSyncer` 提交阶段在第二次及后续 rename 失败时，从 backup 完整回滚全部正式文件，不再出现「新 SOUL + 旧 agent-config」。staging 文件名带周期 uuid；同一 craw home 提交持排它锁。任务智能体模板落在 `template/craw/`，与官方 `template/builtin/` 并列。凭据与环境域名不进模板。
 - **验证**：`tests/packages/craw/` 91 → 93（含第二次 commit 失败回滚、重叠周期串行化）。
 
 ## 2026-07-14 · CrawSyncer 扩展全配置同步
