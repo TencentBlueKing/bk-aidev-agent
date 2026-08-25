@@ -100,6 +100,15 @@ modules:
           - name: OPENCLAW_GATEWAY_PORT
             value: "18789"
             description: craw gateway listen port
+          - name: BKAI_MCP_EGRESS_PORT
+            value: "18787"
+            description: loopback MCP egress for per-user access_token
+          - name: BKAI_MCP_EGRESS_URL
+            value: "http://127.0.0.1:18787"
+            description: craw chat leases this egress before talking to the kernel
+          - name: BKAI_BKAPI_USE_USER_TOKEN
+            value: "0"
+            description: user token is for MCP egress only, not bkapi client
       processes:
         - name: web
           procCommand: tini -- bash /app/deploy/craw-supervisor.sh /app/.venv/bin/gunicorn bk_plugin_runtime.wsgi --bind 0.0.0.0:5000 --timeout 300 -k gthread -w 1 --threads 32 --max-requests 512 --max-requests-jitter 50 --backlog 512
