@@ -13,10 +13,10 @@ Craw = 以本机 API 服务（localhost / 同容器 / 同 Pod）形态运行的 
    校验）。最小形态只下发人设 ``SOUL.md``；``agent_config_to_artifacts``
    可把平台 ``AgentConfig`` 渲染成整组产物。
 
-用户 Token 隔离：``CrawIdentity`` 携带 username + access_token，
-``X-Bkai-Access-Token`` 头透传给 craw 侧（对齐 bkai-cli 池模式反代契约，
-由前置反代做每用户内核 / MCP 凭证隔离）；本层日志只落
-``identity_id``（sha256 前 16 位），绝不落原始 token。
+用户 Token 隔离：聊天入口 ``set_user_access_token`` 换用户 token，
+``CrawIdentity`` 经 ``X-Bkai-Access-Token`` 交给内核侧；单内核 MCP
+由本机 ``mcp_egress`` 按对话租约注入 ``X-Bkapi-Authorization``
+（盘上零真 token）。日志只落 ``identity_id``（sha256 前 16 位）。
 
 新增内核 = 继承 ``BaseCrawBackend`` 覆写差异点 +
 ``craw_backend_registry.register(name, MyBackend)``。
@@ -41,6 +41,13 @@ from aidev_agent.packages.craw.sync import (
     agent_config_to_artifacts,
     render_soul,
 )
+from aidev_agent.packages.craw.mcp_identity import (
+    bind_user_access_token,
+    get_bound_user_access_token,
+    mcp_identity_lease,
+    normalize_access_token,
+    resolve_user_access_token,
+)
 from aidev_agent.packages.craw.takeover import enable_chat_takeover
 
 craw_backend_registry.register(OpenClawBackend.name, OpenClawBackend)
@@ -61,8 +68,13 @@ __all__ = [
     "HermesBackend",
     "OpenClawBackend",
     "agent_config_to_artifacts",
+    "bind_user_access_token",
     "craw_backend_registry",
     "enable_chat_takeover",
     "get_backend",
+    "get_bound_user_access_token",
+    "mcp_identity_lease",
+    "normalize_access_token",
     "render_soul",
+    "resolve_user_access_token",
 ]

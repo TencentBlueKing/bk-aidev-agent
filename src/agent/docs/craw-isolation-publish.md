@@ -2,7 +2,7 @@
 
 > 只描述公开模板与平台约定。不要把环境域名、内网控制台、真实空间 / 知识库 ID、凭据写进仓库。
 
-对话插件走 `template/builtin/`。任务智能体走独立 cookiecutter：`template/craw/`。
+对话插件走 `template/builtin/`。协作智能体走独立 cookiecutter：`template/craw/`。
 
 ## 模板怎么用
 

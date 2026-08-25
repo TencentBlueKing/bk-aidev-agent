@@ -6,6 +6,7 @@ set -euo pipefail
 OC_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
 OC_PID=""
 WEB_PID=""
+EGRESS_PID=""
 READY_URL="http://127.0.0.1:${OC_PORT}/healthz"
 READY_ATTEMPTS="${BKAI_OPENCLAW_READY_ATTEMPTS:-90}"
 READY_INTERVAL="${BKAI_OPENCLAW_READY_INTERVAL:-2}"
@@ -19,6 +20,9 @@ cleanup() {
   fi
   if [ -n "${OC_PID}" ]; then
     kill -TERM "${OC_PID}" 2>/dev/null || true
+  fi
+  if [ -n "${EGRESS_PID}" ]; then
+    kill -TERM "${EGRESS_PID}" 2>/dev/null || true
   fi
   wait || true
 }
@@ -45,6 +49,17 @@ fi
 export BKAI_CRAW_API_URL="${BKAI_CRAW_API_URL:-http://127.0.0.1:${OC_PORT}}"
 export OPENCLAW_GATEWAY_PORT="${OC_PORT}"
 export BKAI_CRAW_BACKEND="${BKAI_CRAW_BACKEND:-openclaw}"
+export BKAI_MCP_EGRESS_PORT="${BKAI_MCP_EGRESS_PORT:-18787}"
+export BKAI_MCP_EGRESS_URL="${BKAI_MCP_EGRESS_URL:-http://127.0.0.1:${BKAI_MCP_EGRESS_PORT}}"
+export BKAI_MCP_EGRESS_ROUTES="${BKAI_MCP_EGRESS_ROUTES:-/tmp/craw-mcp-routes.json}"
+
+if [ "${BKAI_MCP_EGRESS_ENABLED:-1}" = "1" ]; then
+  echo "[craw] starting MCP egress on 127.0.0.1:${BKAI_MCP_EGRESS_PORT}"
+  if [ -x /app/.venv/bin/python ]; then
+    /app/.venv/bin/python -m aidev_agent.packages.craw.mcp_egress --port "${BKAI_MCP_EGRESS_PORT}" &
+    EGRESS_PID=$!
+  fi
+fi
 
 trap 'cleanup; exit 143' TERM
 trap 'cleanup; exit 130' INT
@@ -72,6 +87,23 @@ if [ "${ready}" -ne 1 ]; then
   echo "[craw] FATAL: kernel healthz not ready after ${READY_ATTEMPTS} attempts" >&2
   cleanup
   exit 1
+fi
+
+if [ -n "${EGRESS_PID}" ]; then
+  CONFIG_CANDIDATE="${OPENCLAW_CONFIG_PATH:-}"
+  if [ -z "${CONFIG_CANDIDATE}" ]; then
+    for candidate in /data/craw/openclaw.json /data/openclaw/openclaw.json "${HOME}/.openclaw/openclaw.json"; do
+      if [ -f "${candidate}" ]; then
+        CONFIG_CANDIDATE="${candidate}"
+        break
+      fi
+    done
+  fi
+  if [ -n "${CONFIG_CANDIDATE}" ] && [ -x /app/.venv/bin/python ]; then
+    echo "[craw] rewriting MCP servers to egress via ${CONFIG_CANDIDATE}"
+    /app/.venv/bin/python -m aidev_agent.packages.craw.mcp_egress --rewrite-only --config "${CONFIG_CANDIDATE}" --port "${BKAI_MCP_EGRESS_PORT}" || \
+      echo "[craw] WARN: MCP egress rewrite failed" >&2
+  fi
 fi
 
 if [ -x /app/.venv/bin/python ]; then
