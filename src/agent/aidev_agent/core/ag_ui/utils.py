@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import uuid
 from collections.abc import Iterator
@@ -30,26 +31,17 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
+from pydantic import ValidationError
 
-from aidev_agent.utils.event import RunId
-
-from .event_builders import TOOL_CALLING_PLACEHOLDER
 from .events import ExtendToolCallResultEvent, ExtendToolCallStartEvent
-from .types import (
-    ActivityMessage,
-    InfoMessage,
-    InterruptMessage,
-    LangGraphReasoning,
-    ReasoningLangChainMessage,
-    ReasoningMessage,
-    SchemaKeys,
-    State,
-)
 from .types import (
     ExtendActivityMessage as AGUIActivityMessage,
 )
 from .types import (
     ExtendAssistantMessage as AGUIAssistantMessage,
+)
+from .types import (
+    ExtendDeveloperMessage as AGUIDeveloperMessage,
 )
 from .types import (
     ExtendFunctionCall as AGUIFunctionCall,
@@ -75,9 +67,86 @@ from .types import (
 from .types import (
     ExtendUserMessage as AGUIUserMessage,
 )
+from .types import (
+    InfoMessage,
+    InterruptMessage,
+    LangGraphReasoning,
+    ReasoningMessage,
+    SchemaKeys,
+    State,
+)
 from ...enums import PromptRole
 
 DEFAULT_SCHEMA_KEYS = ["tools"]
+
+logger = logging.getLogger(__name__)
+
+# 平台会话内容 status 域（success/fail/loading + AG-UI 域）→ AG-UI 域映射：
+# 平台写入方（services/event_handlers/base.py）落库 success/fail/loading，
+# 而 ExtendBaseMessage.status 仅接受 complete/streaming/pending/error/stop。
+# 未知值一律收敛为 complete，避免单条记录阻塞整批转换。
+_STATUS_MAP = {
+    "success": "complete",
+    "fail": "error",
+    "loading": "streaming",
+    # complete / streaming / pending / error / stop 原样透传
+}
+
+# 用户图片消息的 Markdown 图片链接提取：`![name](http://host/path/file.ext)`
+# 捕获完整的 http(s) 地址（含文件名），与 services/agent/chat.py 的 IMAGE_FILE_PATTERN 保持同源。
+IMAGE_FILE_PATTERN = re.compile(r"^!\[.*\]\((http[^)]+/([^/]+?))\)")
+
+
+def _normalize_status(raw: Any) -> str:
+    """把平台会话记录 status 归一化为 AG-UI ExtendBaseMessage.status 允许域。"""
+    status = raw if isinstance(raw, str) else ""
+    status = _STATUS_MAP.get(status, status)
+    return status if status in {"complete", "streaming", "pending", "error", "stop"} else "complete"
+
+
+def _read_builtin_property(record: dict) -> dict:
+    """读取 ChatPrompt 单账本的 builtin_property（适配层回嵌的平铺协议字段）。"""
+    bp = record.get("builtin_property")
+    return bp if isinstance(bp, dict) else {}
+
+
+def _read_extra(record: dict) -> Any:
+    """读取 ChatPrompt 单账本的 extra 字段（property.extra，适配层透传）。"""
+    extra = record.get("extra")
+    if extra is not None:
+        return extra
+    # 缺 extra 时回退 __pydantic_extra__ 透传的 property 原文
+    return (record.get("__pydantic_extra__") or {}).get("property")
+
+
+def _read_field(record: dict, key: str) -> Any:
+    """按 ChatPrompt 单账本形状读取字段：builtin_property 优先，回退 __pydantic_extra__/顶层。
+
+    迁移函数（migration_chat_session_context_from_chat_session_contents_v1）把平铺顶层字段回嵌 builtin_property，
+    缺失时回退 extra="allow" 透传的 __pydantic_extra__；对直构的 A-dict 记录回退顶层，
+    保证快照转换对两种形态都容错。
+    """
+    bp = _read_builtin_property(record)
+    value = bp.get(key)
+    if value is not None:
+        return value
+    extra_dict = record.get("__pydantic_extra__")
+    if isinstance(extra_dict, dict) and extra_dict.get(key) is not None:
+        return extra_dict[key]
+    return record.get(key)
+
+
+def _build_assistant_property(record: dict) -> dict | None:
+    """构造 assistant 快照的开放属性字典（与前端 IMessageProperty 契约对齐）。
+
+    artifacts（本轮文件产物）从 builtin_property 显式读取，归入 property["artifacts"]，
+    与实时流 artifacts 事件构造的开放属性形态一致；无产物时不写 property，
+    避免污染无产物的历史 assistant 消息。
+    """
+    artifacts = _read_field(record, "artifacts")
+    if not artifacts:
+        return None
+    return {"artifacts": artifacts}
 
 
 def get_schema_keys(graph, config, constant_schema_keys: list[str]) -> SchemaKeys:
@@ -160,51 +229,6 @@ def parse_multimodal_content(content: Any) -> list[dict[str, Any]] | None:
     return None
 
 
-def convert_langchain_multimodal_to_agui(
-    content: list[dict[str, Any]],
-) -> list[TextInputContent | BinaryInputContent]:
-    """Convert LangChain's multimodal content to AG-UI format."""
-    agui_content = []
-    for item in content:
-        if isinstance(item, dict):
-            if item.get("type") == "text":
-                agui_content.append(TextInputContent(type="text", text=item.get("text", "")))
-            elif item.get("type") == "binary":
-                agui_content.append(
-                    BinaryInputContent(
-                        type="binary",
-                        mime_type=item.get("mime_type") or "application/octet-stream",
-                        url=item.get("url"),
-                        data=item.get("data"),
-                        filename=item.get("filename"),
-                        id=item.get("id"),
-                    )
-                )
-            elif item.get("type") == "image_url":
-                image_url_data = item.get("image_url", {})
-                url = image_url_data.get("url", "") if isinstance(image_url_data, dict) else image_url_data
-
-                # Parse data URLs to extract base64 data
-                if url.startswith("data:"):
-                    # Format: data:mime_type;base64,data
-                    parts = url.split(",", 1)
-                    header = parts[0]
-                    data = parts[1] if len(parts) > 1 else ""
-                    mime_type = header.split(":")[1].split(";")[0] if ":" in header else "image/png"
-
-                    agui_content.append(BinaryInputContent(type="binary", mime_type=mime_type, data=data))
-                else:
-                    # Regular URL or ID
-                    agui_content.append(
-                        BinaryInputContent(
-                            type="binary",
-                            mime_type="image/png",  # Default MIME type
-                            url=url,
-                        )
-                    )
-    return agui_content
-
-
 def parse_reasoning_content_value(content: Any) -> list[str]:
     """将 reasoning content 归一为 list[str]。
 
@@ -217,145 +241,255 @@ def parse_reasoning_content_value(content: Any) -> list[str]:
     return [str(content)]
 
 
-def langchain_messages_to_agui(messages: list[BaseMessage]) -> list[AGUIMessage]:
-    agui_messages: list[AGUIMessage] = []
-    for message in messages:
-        created_at = (message.additional_kwargs or {}).get("created_at")
-        if isinstance(message, HumanMessage):
-            # Handle multimodal content
-            multimodal = parse_multimodal_content(message.content)
-            if multimodal is not None:
-                content = convert_langchain_multimodal_to_agui(multimodal)
-            else:
-                content = stringify_if_needed(resolve_message_content(message.content))
+def _map_reference_documents(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """将 reference document 数组逐项 ``origin_file_url`` → ``originFileUrl`` 映射（name/url 原样保留）。
 
-            agui_messages.append(
-                AGUIUserMessage(
-                    id=str(message.id),
-                    role="user",
-                    content=content,
-                    name=message.name,
-                    created_at=created_at,
-                )
-            )
-        elif isinstance(message, AIMessage):
-            tool_calls = None
-            if message.tool_calls:
-                tool_calls = [
-                    AGUIToolCall(
-                        id=str(tc["id"]),
-                        type="function",
-                        function=AGUIFunctionCall(
-                            name=tc["name"],
-                            arguments=json.dumps(tc.get("args", {})),
-                            description=tc.get("description", ""),
-                        ),
-                    )
-                    for tc in message.tool_calls
-                ]
+    语义镜像前端 ``transferReferenceDocumentApi2ReferenceDocument``（transform/message.ts:108-113）。
+    仅映射白名单键，name/url/data 等原键透传不丢；非 list 输入原样返回。
+    """
+    mapped: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            mapped.append(item)
+            continue
+        doc = dict(item)
+        if "origin_file_url" in doc:
+            doc["originFileUrl"] = doc.pop("origin_file_url")
+        mapped.append(doc)
+    return mapped
 
-            if message.additional_kwargs.get("reasoning_content"):
-                agui_messages.append(
-                    ReasoningMessage(
-                        id=str(message.id),
-                        content=[message.additional_kwargs.get("reasoning_content")],
-                        duration=message.additional_kwargs.get("reasoning_time", None),
-                        created_at=created_at,
-                    )
-                )
 
-            # 占位符归一化：仅有 tool_calls、无文本输出的 assistant 消息 content 为
-            # "正在调用工具..."，首帧 MESSAGES_SNAPSHOT 展示时归一化为 ""（与前端读接口一致）；
-            # 消息本身及 tool_calls 保留。此归一化置于过滤之后、快照构建之前的最后一环。
-            content = stringify_if_needed(resolve_message_content(message.content))
-            if content == TOOL_CALLING_PLACEHOLDER:
-                content = ""
+def _map_user_multimodal_content(content: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """将 user 多模态 content（dict list）映射为 InputContent 形态，binary 项 ``mime_type`` → ``mimeType``。
 
-            # 历史还原：本轮文件产物（经 AIMessage.additional_kwargs 透传），
-            # 放到 property["artifacts"]，与 DB 落库结构、前端 IMessageProperty 契约对齐；
-            # 仅在存在产物时才写 property，避免污染无产物的历史 assistant 消息。
-            artifacts = message.additional_kwargs.get("artifacts")
-            message_property = {"artifacts": artifacts} if artifacts else None
-            content_status = (message.additional_kwargs or {}).get("status") or ""
-            if content == RunId.CANCELLED_MESSAGE or content_status in {"fail", "error"}:
-                assistant_status = "error"
-            else:
-                assistant_status = "complete"
-            agui_messages.append(
-                AGUIAssistantMessage(
-                    id=str(message.id),
-                    role="assistant",
-                    content=content,
-                    tool_calls=tool_calls,
-                    name=message.name,
-                    property=message_property,
-                    status=assistant_status,
-                    created_at=created_at,
-                )
-            )
-        elif isinstance(message, SystemMessage):
-            agui_messages.append(
-                AGUISystemMessage(
-                    id=str(message.id),
-                    role="system",
-                    content=stringify_if_needed(resolve_message_content(message.content)),
-                    name=message.name,
-                    created_at=created_at,
-                )
-            )
-        elif isinstance(message, ToolMessage):
-            content = stringify_if_needed(resolve_message_content(message.content))
-            agui_messages.append(
-                AGUIToolMessage(
-                    id=str(message.id),
-                    role="tool",
-                    content=content if message.status != "error" else "",
-                    tool_call_id=message.tool_call_id,
-                    error=content if message.status == "error" else None,
-                    duration=message.additional_kwargs.get("duration", None),
-                    created_at=created_at,
-                )
-            )
-        elif isinstance(message, InterruptMessage):
-            # 必须在 ActivityMessage 分支之前判断：InterruptMessage 继承 ActivityMessage，
-            # 否则会被上一分支提前命中。还原为 role=interrupt 的中断/审批卡片，
-            # 供 MESSAGES_SNAPSHOT 在前端展示。
-            agui_messages.append(
-                AGUIInterruptMessage(
-                    id=str(message.id),
-                    content=message.content,
-                    name=message.name,
-                    created_at=created_at,
-                )
-            )
-        elif isinstance(message, ActivityMessage):
-            agui_messages.append(
-                AGUIActivityMessage(
-                    id=str(message.id),
-                    content=message.content,
-                    activity_type=message.type,
-                    created_at=created_at,
-                )
-            )
-        elif isinstance(message, InfoMessage):
-            agui_messages.append(
-                AGUIInfoMessage(
-                    id=str(message.id),
-                    content=message.content,
-                    created_at=created_at,
-                )
-            )
-        elif isinstance(message, ReasoningLangChainMessage):
-            agui_messages.append(
-                ReasoningMessage(
-                    id=str(message.id),
-                    content=parse_reasoning_content_value(message.content),
-                    duration=message.additional_kwargs.get("duration"),
-                    created_at=created_at,
-                )
-            )
+    语义镜像前端 ``transferMessageApi2Message`` User 分支（transform/message.ts:352-377）。
+    binary 项保 data/filename/id/url；text 项原样保留。
+    """
+    mapped: list[dict[str, Any]] = []
+    for item in content:
+        if isinstance(item, dict) and item.get("type") == "binary":
+            binary = dict(item)
+            binary["mimeType"] = binary.get("mime_type") or binary.get("mimeType") or "application/octet-stream"
+            binary.pop("mime_type", None)
+            mapped.append(binary)
         else:
-            raise TypeError(f"Unsupported message type: {type(message)}")
+            mapped.append(item)
+    return mapped
+
+
+def _record_to_agui_message(
+    record: dict,
+    msg_id: str,
+    status: str,
+    created_at: Any,
+) -> AGUIMessage | None:
+    """把单条 ChatPrompt 单账本记录（适配层输出形状）转换为 AG-UI ExtendMessage。
+
+    消费形态为 lossless ChatPrompt：role/content 顶层原样，status/created_at/tool_calls/
+    tool_call_id/duration/activity_type/artifacts 从 builtin_property（缺失回退 __pydantic_extra__/顶层），
+    property 从 extra。ai/pause 归一 assistant（两域统一），user-image 还原为用户多模态。
+
+    由 ``contents_to_agui_messages`` 逐条调用；构造失败（pydantic ValidationError）
+    由调用方捕获并跳过，不阻塞整批转换。
+    """
+    role = record.get("role")
+
+    if role == PromptRole.USER_IMAGE.value:
+        # 用户图片消息：提取 Markdown 图片链接为 binary/InputContent 多模态形态
+        # （与前端历史接口 binary+url 形态一致，装配侧 _convert_contents 则转 image_url 供 LLM）。
+        raw_content = record.get("content")
+        match = IMAGE_FILE_PATTERN.search(raw_content) if isinstance(raw_content, str) else None
+        content = [{"type": "binary", "mime_type": "image/png", "url": match.group(1)}] if match else raw_content
+        return AGUIUserMessage(
+            id=msg_id,
+            role="user",
+            content=content,
+            status=status,
+            created_at=created_at,
+        )
+    if role == PromptRole.USER.value:
+        raw_content = record.get("content")
+        multimodal = parse_multimodal_content(raw_content)
+        content = _map_user_multimodal_content(multimodal) if multimodal is not None else raw_content
+        return AGUIUserMessage(
+            id=msg_id,
+            role="user",
+            content=content,
+            status=status,
+            created_at=created_at,
+        )
+    if role in (PromptRole.ASSISTANT.value, PromptRole.AI.value, PromptRole.PAUSE.value):
+        # ai/pause 均归一 assistant（与装配侧 _convert_contents pause→assistant + convert 链 case ASSISTANT|AI 两域统一）
+        tool_calls = _extract_agui_tool_calls(_read_field(record, "tool_calls"))
+        return AGUIAssistantMessage(
+            id=msg_id,
+            role="assistant",
+            content=record.get("content"),
+            tool_calls=tool_calls,
+            property=_build_assistant_property(record),
+            status=status,
+            created_at=created_at,
+        )
+    if role == PromptRole.TOOL.value:
+        content = record.get("content")
+        tool_call_id = _read_field(record, "tool_call_id") or msg_id
+        return AGUIToolMessage(
+            id=msg_id,
+            role="tool",
+            content=content if status != "error" else "",
+            tool_call_id=str(tool_call_id),
+            error=content if status == "error" else None,
+            duration=_read_field(record, "duration"),
+            status=status,
+            created_at=created_at,
+        )
+    if role == PromptRole.ACTIVITY.value:
+        activity_type = _read_field(record, "activity_type")
+        content = record.get("content")
+        if activity_type == "knowledge_rag" and isinstance(content, dict):
+            ref_docs = content.get("reference_document")
+            content = {
+                "content": content.get("content"),
+                "referenceDocument": _map_reference_documents(ref_docs) if isinstance(ref_docs, list) else ref_docs,
+            }
+        elif activity_type == "reference_document" and isinstance(content, list):
+            content = _map_reference_documents(content)
+        return AGUIActivityMessage(
+            id=msg_id,
+            role="activity",
+            content=content,
+            activity_type=activity_type,
+            status=status,
+            created_at=created_at,
+        )
+    if role == PromptRole.INTERRUPT.value:
+        return AGUIInterruptMessage(
+            id=msg_id,
+            role="interrupt",
+            content=record.get("content"),
+            name=record.get("name"),
+            status=status,
+            created_at=created_at,
+        )
+    if role == PromptRole.INFO.value:
+        return AGUIInfoMessage(
+            id=msg_id,
+            role="info",
+            content=record.get("content"),
+            status=status,
+            created_at=created_at,
+        )
+    if role == PromptRole.REASONING.value:
+        content = record.get("content")
+        if isinstance(content, str):
+            try:
+                parsed = json.loads(content)
+                reasoning_content = parsed if isinstance(parsed, list) else [content]
+            except (json.JSONDecodeError, TypeError):
+                reasoning_content = [content]
+        elif isinstance(content, list):
+            reasoning_content = [str(each) for each in content]
+        elif content is None:
+            reasoning_content = []
+        else:
+            reasoning_content = [str(content)]
+        return ReasoningMessage(
+            id=msg_id,
+            role="reasoning",
+            content=reasoning_content,
+            duration=_read_field(record, "duration"),
+            status=status,
+            created_at=created_at,
+        )
+    if role == "developer":
+        return AGUIDeveloperMessage(
+            id=msg_id,
+            role="developer",
+            content=record.get("content"),
+            status=status,
+            created_at=created_at,
+        )
+    if role in (PromptRole.SYSTEM.value, PromptRole.GUIDE.value, PromptRole.HIDDEN.value):
+        # system/guide/hidden 均落位 ExtendSystemMessage：content 原样保留（不丢弃），
+        # 镜像前端同名 role 的 content 透传语义。AG-UI 协议无 guide/hidden 原生 role，
+        # 故统一收敛到 system 消息类型承载 content（禁止清单：不丢 system/guide）。
+        # 注意：pause 不在此收敛——pause 已归一 assistant（两域统一），不再作为 system 承载。
+        return AGUISystemMessage(
+            id=msg_id,
+            role="system",
+            content=record.get("content"),
+            status=status,
+            created_at=created_at,
+        )
+    logger.warning("contents_to_agui_messages: 未识别 role=%r，跳过记录 %r", role, record)
+    return None
+
+
+def _extract_agui_tool_calls(raw_tool_calls: Any) -> list[AGUIToolCall] | None:
+    """把 assistant 落库 tool_calls 归一化为 AG-UI ExtendToolCall 列表。
+
+    落库记录（与 ``chat_history_assembly._extract_tool_calls`` 同源）保存 OpenAI 嵌套形态：
+    ``{"id","type","function":{name,arguments,mcp_name}}``。先展开嵌套 ``function``
+    dict 再读 name/arguments/mcp_name，避免顶层缺失时 name/arguments 被静默丢弃。
+    """
+    if not isinstance(raw_tool_calls, list) or not raw_tool_calls:
+        return None
+    tool_calls: list[AGUIToolCall] = []
+    for tc in raw_tool_calls:
+        if not isinstance(tc, dict):
+            continue
+        fn = tc.get("function") if isinstance(tc.get("function"), dict) else {}
+        raw_args = tc.get("args") if tc.get("args") is not None else fn.get("arguments")
+        arguments = json.dumps(raw_args) if isinstance(raw_args, (dict, list)) else str(raw_args or "{}")
+        tool_calls.append(
+            AGUIToolCall(
+                id=str(tc.get("id") or uuid.uuid4().hex),
+                type="function",
+                function=AGUIFunctionCall(
+                    name=str(tc.get("name") or fn.get("name") or ""),
+                    arguments=arguments,
+                    description=tc.get("description") or fn.get("description"),
+                    mcp_name=tc.get("mcp_name") or tc.get("mcpName") or fn.get("mcp_name") or None,
+                ),
+            )
+        )
+    return tool_calls
+
+
+def contents_to_agui_messages(records: list[dict]) -> list[AGUIMessage]:
+    """将 lossless ChatPrompt 单账本记录（快照数据源）转换为 AG-UI ExtendMessage。
+
+    消费形态为适配层输出的 ChatPrompt dict：role/content 顶层原样，status/created_at/
+    tool_calls/tool_call_id/duration/activity_type/artifacts 从 builtin_property（缺失回退
+    __pydantic_extra__/顶层），property 从 extra。语义镜像前端 ``transferMessageApi2Message``：
+    忠实保留多模态/知识库召回/tool 内容，不做 context 链路的破坏性转换（不丢 system/guide、
+    不剥离 think、不过滤 tool）。ai/pause 归一 assistant、user-image 还原多模态。
+    嵌套 content dict 键手工 camelCase 化（referenceDocument/originFileUrl/mimeType）。
+    单条坏记录（缺 role / 非 dict / 构造抛 ValidationError / 未识别 role）跳过并 warning，
+    不阻塞整批转换。
+    """
+    agui_messages: list[AGUIMessage] = []
+    for record in records:
+        if not isinstance(record, dict):
+            logger.warning("contents_to_agui_messages: 跳过非 dict 记录 %r", record)
+            continue
+        role = record.get("role")
+        if not role:
+            logger.warning("contents_to_agui_messages: 跳过缺 role 记录 %r", record)
+            continue
+
+        created_at = _read_field(record, "created_at")
+        # 平台 status 域（success/fail/loading 等）归一化为 AG-UI 允许域，未知值收敛 complete。
+        status = _normalize_status(_read_field(record, "status") or "complete")
+        msg_id = str(record.get("id") or uuid.uuid4().hex)
+
+        try:
+            message = _record_to_agui_message(record, msg_id, status, created_at)
+        except ValidationError as e:
+            logger.warning("contents_to_agui_messages: 跳过非法记录 id=%s: %s", record.get("id"), e)
+            continue
+        if message is not None:
+            agui_messages.append(message)
     return agui_messages
 
 

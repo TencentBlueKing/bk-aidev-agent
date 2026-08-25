@@ -1,7 +1,6 @@
 import asyncio
 import json
 import os
-import re
 import uuid
 import warnings
 from functools import partial
@@ -12,7 +11,7 @@ from typing import Any, Callable, ClassVar, Generator, List, Optional
 from ag_ui.core import BaseEvent, CustomEvent, EventType
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage, SystemMessage, ToolMessage
+from langchain_core.messages import BaseMessage, HumanMessage, RemoveMessage, SystemMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.runnables.fallbacks import RunnableWithFallbacks
 from langchain_core.stores import ByteStore
@@ -36,18 +35,17 @@ from aidev_agent.core.ag_ui.ask_user_question import (
 from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
 from aidev_agent.core.ag_ui.types import (
     AgentInput,
-    InterruptMessage,
+    ExtendMessage,
     ReasoningLangChainMessage,
     SchemaKeys,
     SessionPersistenceEventNames,
 )
 from aidev_agent.core.ag_ui.utils import (
+    contents_to_agui_messages,
     get_schema_keys,
     get_stream_payload_input,
-    langchain_messages_to_agui,
-    parse_multimodal_content,
-    parse_reasoning_content_value,
 )
+from aidev_agent.core.nodes.model import convert_chat_history_to_messages
 from aidev_agent.core.tools.a2a_tools.types import AgentBackendType, AgentSpec
 from aidev_agent.core.tools.runtime_tools import RuntimeBackendResolver
 from aidev_agent.enums import AgentType, PromptRole
@@ -85,28 +83,18 @@ except ImportError:  # OpenTelemetry is an optional SDK extra.
 logger = getLogger(__name__)
 
 
-def _extract_tool_calls(builtin_property: dict) -> list[dict]:
-    """从 builtin_property 中提取 tool_calls 列表。
+def _to_ledger_dict(record: Any) -> dict:
+    """把 chat_history 账本记录归一为 dict 形态。
 
-    注意：arguments 在数据库中存储为 JSON 字符串，需要解析为字典。
+    账本记录以 ChatPrompt 对象为主（build 期 model_validate 承接 + 本轮 patch append）；
+    快照转换器（contents_to_agui_messages）按 dict 消费，这里统一把 ChatPrompt 对象
+    model_dump 为 dict（role/content 顶层、status/created_at 透传顶层、builtin_property/extra 保留）。
     """
-    tool_calls = []
-    for tc in builtin_property.get("tool_calls", []):
-        args_str = tc.get("function", {}).get("arguments", "{}")
-        try:
-            args = json.loads(args_str) if isinstance(args_str, str) else args_str
-        except json.JSONDecodeError:
-            args = {}
-
-        tool_calls.append(
-            {
-                "id": tc.get("id", ""),
-                "name": tc.get("function", {}).get("name", ""),
-                "args": args,
-                "type": "tool_call",
-            }
-        )
-    return tool_calls
+    if isinstance(record, dict):
+        return record
+    if hasattr(record, "model_dump"):
+        return record.model_dump()
+    return dict(record)
 
 
 class ChatCompletionAgent(BaseModel):
@@ -163,11 +151,13 @@ class ChatCompletionAgent(BaseModel):
     )
     agent_info: dict | None = Field(default=None, description="原始配置信息，来自 AgentConfig.agent_info")
     max_spawn_depth: int = Field(default=1, description="最大 Agent 嵌套深度，来自 AgentConfig.max_spawn_depth")
+    generating_keyword: str | None = Field(
+        default=None,
+        description="生成中关键词，来自 AgentConfig.generating_keyword；LLM 输入视图据此清理末条 assistant 占位",
+    )
 
-    IMAGE_FILE_PATTERN: ClassVar[re.Pattern] = re.compile(r"^!\[.*\]\((http[^)]+/([^/]+?))\)")
     TOOL_EXECUTION_INTERVAL: ClassVar[int] = 10
     UPLOAD_IMAGE_PROMPT_PREFIX: ClassVar[Any] = "我上传了个图片文件,文件名为{file_name}。"
-    SKIP_PROMPT_ROLE: ClassVar[list[str]] = ["guide"]
 
     class Config:
         arbitrary_types_allowed = True
@@ -202,6 +192,8 @@ class ChatCompletionAgent(BaseModel):
         self.knowledges = builder.build_knowledge_items()
         self.subagent_specs = builder.build_subagents(ctx.agent_code)
         self.role_prompt = builder.get_role_prompt()
+        # chat_history 由 ChatAgentBuilder 无损承接 ctx.session_context_data（A 源适配层输出），
+        # 是 agent 唯一历史事实源：LLM 装配（convert 链）与首帧快照均从它派生。
         self.chat_history = builder.build_chat_history(ctx.session_context_data)
         # 构建Agent参数配置
         if ctx.agent_config and ctx.agent_config.agent_options is not None:
@@ -215,6 +207,7 @@ class ChatCompletionAgent(BaseModel):
         self.runtime_backend_resolver = builder.build_runtime_backend_resolver()
         self.agent_info = getattr(ctx.agent_config, "agent_info", None) if ctx.agent_config else None
         self.max_spawn_depth = ctx.agent_config.max_spawn_depth if ctx.agent_config else 1
+        self.generating_keyword = ctx.agent_config.generating_keyword if ctx.agent_config else None
 
         if chat.agent_cls is not None:
             self.agent_cls = chat.agent_cls
@@ -225,12 +218,13 @@ class ChatCompletionAgent(BaseModel):
         return self
 
     def _prepare_pre_run_history(self, execute_kwargs: ExecuteKwargs) -> None:
-        """agent 运行前的对话预处理：resume / input 三态分流 + chat_history 镜像 patch。
+        """agent 运行前的对话预处理：resume / input 三态分流 + 本轮记录 patch 进 chat_history 账本。
 
-        在 ``convert_history_to_messages`` 之前调用。build 期 DB 读已先发生，
-        这里把本轮 user / tool 记录手工 patch 进 ``self.chat_history``，
-        让 ``convert_history_to_messages`` 消费到最新记录，并派发对应 DB 回写事件
-        （由 ``AGUISessionWriter`` 的 handler 落库）。
+        在 ``convert_chat_history_to_messages`` 之前调用。build 期 DB 读已先发生，
+        这里把本轮 user / tool 记录手工 patch 进 ``self.chat_history``，并把 resume
+        命中的末尾 interrupt 记录就地改写为终态（原 id 不变）
+        （唯一历史事实源，快照与 convert 链共用），让 ``convert_chat_history_to_messages``
+        消费到最新记录，并派发对应 DB 回写事件（由 ``AGUISessionWriter`` 的 handler 落库）。
 
         - resume + (input 或空 answers)（跳过）：补 tool + user 两条，派发 skipped + user 事件，清空 resume。
         - resume + 非空 answers（答题）：改写 interrupt 记录为 resolved，派发 resolved 事件。
@@ -265,6 +259,8 @@ class ChatCompletionAgent(BaseModel):
 
         # 步骤 7：独立的 user 事件分发（跳过路径 resume 已清空 / 普通新对话 / 审批 resume 都走这里）。
         if input_text:
+            # 本轮 user 记录并入 chat_history 账本（唯一事实源）：build 期账本不含本轮 user 消息，
+            # 不并入则新对话首帧快照丢失用户刚发的消息；convert 链消费同一账本。
             self.chat_history.append(ChatPrompt(role=PromptRole.USER.value, content=input_text))
             self._dispatch_custom(
                 CustomEvent(
@@ -295,6 +291,7 @@ class ChatCompletionAgent(BaseModel):
                 builtin_property={"tool_call_id": tool_call_id},
             )
         )
+        # 本轮 skip tool 记录直接并入 chat_history 账本（唯一事实源，快照与 convert 链共用）。
         self._dispatch_custom(
             ExtendToolCallResultEvent(
                 type=EventType.TOOL_CALL_RESULT,
@@ -322,6 +319,7 @@ class ChatCompletionAgent(BaseModel):
                 interrupt.id,
             )
             return
+        # 改写已就地落账（原记录 id 不变），终态内容经 finalize 事件下发前端。
         self._dispatch_custom(
             CustomEvent(
                 type=EventType.CUSTOM,
@@ -374,7 +372,7 @@ class ChatCompletionAgent(BaseModel):
         """把传入的 chat_history 末尾 interrupt 记录改写为终态，返回 upgraded content。
 
         build 期 DB 读（chat_history）已先于本轮的 resolved/skipped 事件发生，若不改写，
-        ``convert_history_to_messages`` 产出的首帧 MESSAGES_SNAPSHOT 里 interrupt
+        ``convert_chat_history_to_messages`` 产出的首帧 MESSAGES_SNAPSHOT 里 interrupt
         卡片仍是 pending，前端无法关闭弹窗。这里把传入的 interrupt 记录 content 升级为
         ``{"outcome": {type: success, ...}, "result": {...}}``（与 DB 的
         upgrade_content_to_success 输出一致）。
@@ -410,7 +408,15 @@ class ChatCompletionAgent(BaseModel):
         self.migration_v1()
         self._prepare_pre_run_history(execute_kwargs)
         if not self.messages:
-            self.messages = self.convert_history_to_messages()
+            self.messages = convert_chat_history_to_messages(
+                self.chat_history,
+                model_context_options=self.model_context_options,
+                support_vision=self.support_vision,
+                model_name=self.model_name,
+                agent_info=self.agent_info,
+                generating_keyword=self.generating_keyword,
+                files=self.files,
+            )
         messages = self.messages
         chat_models = (
             (self.chat_model.runnable, *self.chat_model.fallbacks)
@@ -508,11 +514,6 @@ class ChatCompletionAgent(BaseModel):
                 exc_info=True,
             )
             return []
-
-    def convert_history_to_messages(self) -> list[BaseMessage]:
-        if not self.chat_history:
-            return []
-        return self._chat_history_to_langchain_messages(self._convert_contents(self.chat_history))
 
     @staticmethod
     def _filter_messages_for_llm(messages: list[BaseMessage]) -> list[BaseMessage]:
@@ -876,8 +877,8 @@ class ChatCompletionAgent(BaseModel):
         agent_e, cfg = self._get_agent(messages, execute_kwargs=execute_kwargs)
         cfg.setdefault("configurable", {})
         cfg["configurable"]["thread_id"] = self.thread_id
-        # D-01/D-03: spawn_depth/spawned_by 由 ExecuteKwargs 默认值（主 Agent）或 _extract_execute_kwargs（子 Agent）提供，这里不再覆盖。
-        # D-02: 仅主 Agent（无父会话）读 AgentConfig.max_spawn_depth；子 Agent 由 _extract_execute_kwargs 继承父值（Phase 33 D-02）
+        # spawn_depth/spawned_by 由 ExecuteKwargs 默认值（主 Agent）或 _extract_execute_kwargs（子 Agent）提供，
+        # 这里不再覆盖；仅主 Agent（无父会话）读 AgentConfig.max_spawn_depth，子 Agent 继承父值
         if execute_kwargs.spawned_by is None:
             execute_kwargs.max_spawn_depth = self.max_spawn_depth
         execute_kwargs.tool_deny = execute_kwargs.tool_deny or []
@@ -1027,6 +1028,20 @@ class ChatCompletionAgent(BaseModel):
             async_finalizer=self._aclose_chat_models,
         )
 
+    def _build_snapshot_agui_messages(self) -> list[ExtendMessage]:
+        """构建首帧 MESSAGES_SNAPSHOT 的 AG-UI 消息列表。
+
+        数据源为 lossless chat_history 账本（由 build_chat_history 无损承接 session_context_data 而来，
+        与前端历史消息接口同源，含 system 展示类记录）；resume 命中的 interrupt 记录已被
+        _prepare_pre_run_history 就地改写为终态（原 id 不变），本轮 user/tool 记录也已直接并入账本，
+        快照对账本全量转换。
+
+        账本记录统一经 model_dump 归一为 dict 后交由快照转换器消费（role/content 顶层、
+        status/created_at 透传顶层、builtin_property/extra 保留）。
+        """
+        base = [_to_ledger_dict(rec) for rec in (self.chat_history or [])]
+        return contents_to_agui_messages(base)
+
     def _stream(
         self,
         agent_e: Runnable,
@@ -1086,7 +1101,9 @@ class ChatCompletionAgent(BaseModel):
         # 4. 预处理（在 agent_input 构造前）
         # 11.8: tools/context 不在 _stream 作用域内，原 AgentInput.tools/context 默认为 []（body 不含）
         # tools 通过 AidevAGUIAgent 构造函数传入（graph 挂载），不通过 state 传递
-        agui_messages = langchain_messages_to_agui(messages)
+        # 快照 messages 数据源为 lossless ChatPrompt 单账本（含本轮 patch 记录并入）；
+        # run_id/stream_input 仍用 langchain messages（LLM 路径不受影响）。
+        agui_messages = self._build_snapshot_agui_messages()
         preprocessed = self._prepare_stream_input(
             agent_e,
             cfg,
@@ -1368,132 +1385,6 @@ class ChatCompletionAgent(BaseModel):
             runtime_backend_resolver=self.runtime_backend_resolver,
         )
 
-    def _chat_history_to_langchain_messages(self, chat_history: list[ChatPrompt]) -> list[BaseMessage]:
-        """
-        将 ChatPrompt 列表转换为 LangChain 消息列表
-        支持从 builtin_property 中提取 tool_calls 和 tool_call_id 等协议字段，
-        以支持多轮工具调用场景的历史消息透传。
-        """
-        messages: list[BaseMessage] = []
-        for each in chat_history:
-            bp = each.builtin_property or {}
-            turn_kwargs = {}
-            if bp.get("turn_id"):
-                turn_kwargs["turn_id"] = bp["turn_id"]
-            if bp.get("status"):
-                turn_kwargs["status"] = bp["status"]
-            if bp.get("created_at"):
-                # 仅供 MESSAGES_SNAPSHOT 展示；LangChain 转 OpenAI 不会把该键写入模型 payload
-                turn_kwargs["created_at"] = bp["created_at"]
-            match each.role:
-                case PromptRole.USER.value:
-                    multimodal = parse_multimodal_content(each.content)
-                    if multimodal is not None:
-                        each.content = multimodal
-                    if isinstance(each.content, list):
-                        new_content = []
-                        for each_content in each.content:
-                            if each_content.get("type") == "binary":
-                                new_content.append(each_content)
-                            elif each_content.get("url"):
-                                new_content.append({"type": "image_url", "image_url": {"url": each_content.get("url")}})
-                            else:
-                                new_content.append(each_content)
-                        each.content = new_content
-                        messages.append(HumanMessage(id=each.id, content=each.content, additional_kwargs=turn_kwargs))
-                    else:
-                        messages.append(
-                            HumanMessage(id=each.id, content=str(each.content), additional_kwargs=turn_kwargs)
-                        )
-                case PromptRole.ASSISTANT.value | PromptRole.AI.value:
-                    tool_calls = _extract_tool_calls(bp)
-                    # 首帧 MESSAGES_SNAPSHOT（历史还原）：artifacts 经 builtin_property 透传，
-                    # 放入 AIMessage.additional_kwargs（LangChain 标准扩展位），供
-                    # langchain_messages_to_agui 还原到 AGUIAssistantMessage.artifacts。
-                    # 无 artifacts 时不写 additional_kwargs，避免污染其它 AIMessage。
-                    additional_kwargs = dict(turn_kwargs)
-                    artifacts = bp.get("artifacts")
-                    if artifacts:
-                        additional_kwargs["artifacts"] = artifacts
-                    messages.append(
-                        AIMessage(
-                            id=each.id,
-                            content=each.content,
-                            tool_calls=tool_calls,
-                            additional_kwargs=additional_kwargs,
-                        )
-                    )
-                case PromptRole.SYSTEM.value:
-                    messages.append(SystemMessage(id=each.id, content=each.content, additional_kwargs=turn_kwargs))
-                case PromptRole.TOOL.value:
-                    content = each.content if isinstance(each.content, str) else str(each.content)
-                    messages.append(
-                        ToolMessage(
-                            id=each.id,
-                            content=content,
-                            tool_call_id=bp.get("tool_call_id", ""),
-                            additional_kwargs=turn_kwargs,
-                        )
-                    )
-                case PromptRole.REASONING.value:
-                    duration = bp.get("duration", 0)
-                    messages.append(
-                        ReasoningLangChainMessage(
-                            id=each.id,
-                            content=parse_reasoning_content_value(each.content),
-                            additional_kwargs={"duration": duration, **turn_kwargs},
-                        )
-                    )
-                case PromptRole.INTERRUPT.value:
-                    # 中断/审批卡片：content 落库为 JSON 字符串（形如
-                    # ``{"outcome": {"type": "interrupt"/"success", "interrupts": [...]}}``），
-                    # 历史回放时可能已被解析为 dict。统一还原为 dict 后封装成
-                    # InterruptMessage（继承 ActivityMessage），既进入 state["messages"]
-                    # 供 MESSAGES_SNAPSHOT 重建与前端展示，又会被 basic_middleware 的
-                    # isinstance(ActivityMessage) 过滤剔除，绝不进入 LLM 输入。
-                    interrupt_content = each.content
-                    if isinstance(interrupt_content, str):
-                        try:
-                            interrupt_content = json.loads(interrupt_content)
-                        except (json.JSONDecodeError, TypeError):
-                            interrupt_content = {}
-                    if not isinstance(interrupt_content, (dict, list)):
-                        interrupt_content = {}
-                    messages.append(
-                        InterruptMessage(id=each.id, content=interrupt_content, additional_kwargs=turn_kwargs)
-                    )
-        return messages
-
-    def _convert_contents(self, contents: list[ChatPrompt]) -> list[ChatPrompt]:
-        """将无需送到大模型处理的 content 去掉"""
-        new_contents = []
-        for each in contents:
-            each.role = each.role.replace("hidden-", "")
-            if each.role in self.SKIP_PROMPT_ROLE:
-                continue
-            if each.role == PromptRole.HIDDEN.value:
-                each.role = PromptRole.USER.value
-            if each.role == PromptRole.PAUSE.value:
-                each.role = PromptRole.ASSISTANT.value
-            if each.role == PromptRole.USER_IMAGE.value:
-                if not self.support_vision:
-                    raise AgentException(message="当前模型不支持图片识别,请切换其他模型")
-                each.role = PromptRole.USER.value
-                match = self.IMAGE_FILE_PATTERN.search(each.content)
-                if match:
-                    file_path, _ = match.group(1), match.group(2)
-                    each.content = [{"type": "image_url", "image_url": {"url": file_path}}]
-                    # 图片不计算实际大小，但不能为 0 —— 给一个大于 0 的占位值
-                    self.files.append({"file_name": file_path, "file_size": 100})
-                else:
-                    raise AgentException(message="图片md格式非法")
-            # deepseek-r1 系列不支持 system role，需要降级为 user
-            if each.role == PromptRole.SYSTEM.value and "deepseek-r1" in self.model_name:
-                each.role = PromptRole.USER.value
-            new_contents.append(each)
-
-        return new_contents
-
 
 class ChatAgentBuilder:
     """``ChatCompletionAgent`` 装配器
@@ -1501,7 +1392,7 @@ class ChatAgentBuilder:
     把原 ``AgentInstanceFactory`` 中所有 Chat 专属装配方法收敛在这里：
 
     - 模型 / 工具 / 知识 / 技能装配
-    - 聊天历史构建（含 tool_calls 过滤、think 移除、role_history 拼接、modify_last_system_message）
+    - 聊天历史构建（lossless 单账本承接，LLM 侧过滤归 convert 链）
     - executor_info / checkpointer 取值
     - model_context_options / knowledge_query_options 取值
     - handle_agent_switch（替换 system 消息）
@@ -1627,38 +1518,13 @@ class ChatAgentBuilder:
         return ChatModel.get_setup_instance(**kwargs)
 
     def build_chat_history(self, session_context_data: List[dict]) -> List[ChatPrompt]:
-        """构建聊天历史"""
-        config = self.ctx.agent_config
-        role_prompt_roles = {
-            PromptRole.USER.value,
-            PromptRole.ASSISTANT.value,
-            PromptRole.SYSTEM.value,
-            PromptRole.PAUSE.value,
-            "hidden-user",
-            "hidden-assistant",
-            "hidden-system",
-        }
-        role_history = [
-            ChatPrompt(role=each["role"].replace("hidden-", ""), content=each["content"])
-            for each in (config.role_prompts or [])
-            if each.get("content") and each.get("role") in role_prompt_roles
-        ]
+        """构建聊天历史：无损承接 session_context_data（A 源适配层输出）为唯一历史账本。
 
-        chat_history = [
-            ChatPrompt.model_validate(each)
-            for each in (session_context_data or [])
-            if each.get("content") and each["role"] != "system"
-        ]
-        for each in chat_history:
-            if each.role != "assistant":
-                continue
-            each.content = self._remove_think(each.content)
-
-        chat_history = self._filter_unmatched_tool_calls(chat_history)
-
-        self._modify_last_system_message(chat_history)
-        chat_history = role_history + chat_history
-        return chat_history
+        不做任何过滤或改写：system 展示类、思考内容、空 content、半成品记录全部原样保留，
+        供快照忠实转换；LLM 侧过滤由 convert 链（_build_llm_history_view / status 过滤 /
+        轮数截断）在副本上承担。
+        """
+        return [ChatPrompt.model_validate(each) for each in (session_context_data or [])]
 
     def build_non_thinking_llm(self) -> str | None:
         """构建非思考模型
@@ -2098,15 +1964,16 @@ class ChatAgentBuilder:
         return config.role_prompts[0]["content"] if config.role_prompts else None
 
     def handle_agent_switch(self) -> None:
-        """处理智能体切换：替换最后一条 system 消息为新 role_prompt"""
+        """处理智能体切换：system 差异由注入挂点天然承担，不再改写账本。
+
+        切换后 ctx.agent_config 已指向新 agent（factory 经 get_agent_config(final_agent_code)
+        装配），self.agent_info 随之指向新 agent，inject_role_system 注入自动使用新 agent 预设。
+        账本 system 记录原样保留，不再视图级改写污染快照。
+        """
         if not self.ctx.switch_agent:
             return
 
         logger.info(f"ChatAgentBuilder: switching agent to->[{self.ctx.agent_code}]")
-        for item in reversed(self.ctx.session_context_data):
-            if item["role"] == "system":
-                item["content"] = self.get_role_prompt()
-                break
 
     # ---------- 内部方法 ----------
 
@@ -2125,157 +1992,3 @@ class ChatAgentBuilder:
                 if extra.get("resources"):
                     self._specific_resources = extra.get("resources")
                 break
-
-    def _filter_unmatched_tool_calls(self, chat_history: List[ChatPrompt]) -> List[ChatPrompt]:
-        """过滤没有匹配工具结果的 assistant 消息
-
-        当 assistant 消息包含 tool_calls 但没有对应的 tool 结果消息时，
-        该 assistant 消息会导致模型调用失败（模型期望每个 tool_use 都有对应的 tool_result）。
-
-        特殊处理：ask_user_question 等中断型工具，工具调用因 interrupt 中断没有 tool 结果，
-        但 chat_history 中有对应的 role=interrupt 记录。这类 tool_call 不应被过滤，
-        否则续流时 MESSAGES_SNAPSHOT 会丢失 AI(AskUser) 消息。
-
-        Args:
-            chat_history: 聊天历史列表
-
-        Returns:
-            过滤后的聊天历史列表，移除了不完整的工具调用链
-        """
-        if not chat_history:
-            return chat_history
-
-        tool_result_ids: set[str] = set()
-        # interrupt 记录的 tool_call_id（ask_user_question 中断的 tool_call 有对应 interrupt 记录）
-        interrupt_tool_call_ids: set[str] = set()
-        for prompt in chat_history:
-            if prompt.role == "tool":
-                tool_call_id = prompt.builtin_property.get("tool_call_id", "")
-                if tool_call_id:
-                    tool_result_ids.add(tool_call_id)
-            elif prompt.role == "interrupt":
-                # interrupt 记录的 builtin_property 或 content 中含 tool_call_id
-                tc_id = prompt.builtin_property.get("tool_call_id", "")
-                if tc_id:
-                    interrupt_tool_call_ids.add(tc_id)
-
-        # 过滤 assistant 消息中未匹配的 tool_calls：
-        # 全部无结果 → 整条丢弃；部分有结果 → 仅保留匹配的 tool_calls。
-        # 中断型 tool_call（有对应 interrupt 记录）视为已匹配，不过滤。
-        filtered_history: List[ChatPrompt] = []
-        for prompt in chat_history:
-            if prompt.role != "assistant":
-                filtered_history.append(prompt)
-                continue
-
-            tool_calls = self._extract_tool_calls_from_prompt(prompt)
-
-            if not tool_calls:
-                filtered_history.append(prompt)
-                continue
-
-            matched_calls = [
-                tc
-                for tc in tool_calls
-                if tc.get("id", "") in tool_result_ids or tc.get("id", "") in interrupt_tool_call_ids
-            ]
-            unmatched_calls = [
-                tc
-                for tc in tool_calls
-                if tc.get("id", "") not in tool_result_ids and tc.get("id", "") not in interrupt_tool_call_ids
-            ]
-
-            if not matched_calls:
-                logger.info(
-                    f"ChatAgentBuilder: filtering assistant message with no matched tool_calls, "
-                    f"message_id=[{prompt.id}], tool_calls_count=[{len(tool_calls)}]"
-                )
-                continue
-
-            if unmatched_calls:
-                logger.info(
-                    f"ChatAgentBuilder: removing unmatched tool_calls from assistant message, "
-                    f"message_id=[{prompt.id}], total_calls=[{len(tool_calls)}], "
-                    f"matched=[{len(matched_calls)}], unmatched=[{len(unmatched_calls)}]"
-                )
-                self._update_tool_calls_in_prompt(prompt, matched_calls)
-
-            filtered_history.append(prompt)
-
-        return filtered_history
-
-    def _extract_tool_calls_from_prompt(self, prompt: ChatPrompt) -> List[dict]:
-        """从 ChatPrompt 中提取 tool_calls 列表
-
-        Args:
-            prompt: ChatPrompt 对象
-
-        Returns:
-            tool_calls 列表，每个元素包含 id, name, args 字段
-        """
-        return _extract_tool_calls(prompt.builtin_property or {})
-
-    def _update_tool_calls_in_prompt(self, prompt: ChatPrompt, matched_tool_calls: List[dict]) -> None:
-        """更新 ChatPrompt 中的 tool_calls，只保留匹配的调用
-
-        Args:
-            prompt: ChatPrompt 对象
-            matched_tool_calls: 匹配的 tool_calls 列表（来自 _extract_tool_calls_from_prompt 的格式）
-        """
-        builtin_property = prompt.builtin_property or {}
-        tool_calls_raw = builtin_property.get("tool_calls", [])
-
-        matched_ids = {tc.get("id", "") for tc in matched_tool_calls}
-
-        filtered_tool_calls = [tc for tc in tool_calls_raw if tc.get("id", "") in matched_ids]
-
-        if builtin_property:
-            builtin_property["tool_calls"] = filtered_tool_calls
-        else:
-            prompt.builtin_property = {"tool_calls": filtered_tool_calls}
-
-    def _modify_last_system_message(self, chat_history: List[ChatPrompt]) -> None:
-        if not self.ctx.agent_code:
-            return
-
-        role_prompt = self.get_role_prompt()
-        if not role_prompt:
-            return
-
-        for prompt in reversed(chat_history):
-            if prompt.role == "system":
-                prompt.content = role_prompt
-                break
-
-    @staticmethod
-    def _remove_think(content: str) -> str:
-        """移除 HTML 中的思考部分内容
-
-        Args:
-            content: 包含思考内容的 HTML 字符串
-
-        Returns:
-            清理后的内容字符串
-        """
-        _content = re.sub(
-            r'<section class="think-head click-close">[\s\S]*?</section>',
-            "",
-            content,
-            flags=re.DOTALL,
-        )
-
-        _content = re.sub(
-            r'<section class="think-head click-close closed">[\s\S]*?</section>',
-            "",
-            _content,
-            flags=re.DOTALL,
-        )
-
-        _content = re.sub(r'<section class="think-body">[\s\S]*?</section>', "", _content, flags=re.DOTALL)
-
-        if not _content.strip():
-            think_body_match = re.search(r'<section class="think-body">([\s\S]*?)</section>', content, re.DOTALL)
-            if think_body_match:
-                _content = think_body_match.group(1).strip()
-
-        return _content.strip()

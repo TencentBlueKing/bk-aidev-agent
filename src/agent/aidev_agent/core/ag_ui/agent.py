@@ -65,7 +65,6 @@ from .utils import (
     filter_object_by_schema_keys,
     get_schema_keys,
     json_safe_stringify,
-    langchain_messages_to_agui,
     make_json_safe,
     resolve_message_content,
     resolve_reasoning_content,
@@ -329,13 +328,8 @@ class LangGraphAgent:
         for ev in self.handle_node_change(None):
             yield ev
 
-        final_snapshot_events = self._build_terminal_snapshot_events(state_values)
-        yield self._dispatch_event(final_snapshot_events[0])
-
-        # 续流（resume）场景不再下发终态 MESSAGES_SNAPSHOT：
-        # resume 时 state["messages"] 仅来自中断点的 checkpoint，并非完整会话历史
-        if not resume_input:
-            yield self._dispatch_event(final_snapshot_events[1])
+        final_snapshot_event = self._build_terminal_snapshot_events(state_values)
+        yield self._dispatch_event(final_snapshot_event)
 
         # 本轮产物识别 hook（子类实现，默认 no-op）；异常内部兜底，不阻断 RUN_FINISHED
         async for ev in self._emit_run_end_extras(state_values, thread_id):
@@ -388,7 +382,7 @@ class LangGraphAgent:
         )
 
     async def _emit_run_end_extras(self, state_values: State, thread_id: str) -> AsyncGenerator[Any, None]:
-        """本轮 run 收尾扩展点：MESSAGES_SNAPSHOT 之后、RUN_FINISHED 之前每 run 触发一次。
+        """本轮 run 收尾扩展点：终态 STATE_SNAPSHOT 之后、RUN_FINISHED 之前每 run 触发一次。
 
         父类默认 no-op；子类覆写以 yield 自定义事件，异常须自行兜底避免阻断 RUN_FINISHED。
         典型用法见 :class:`AidevAGUIAgent` 的 ``run_end_extras_hook`` 注入模式。
@@ -396,18 +390,11 @@ class LangGraphAgent:
         return
         yield  # pragma: no cover - 让本方法成为 async generator
 
-    def _build_terminal_snapshot_events(
-        self, state_values: State
-    ) -> tuple[StateSnapshotEvent, MessageSnapshotEventExtend]:
-        return (
-            StateSnapshotEvent(
-                type=EventType.STATE_SNAPSHOT,
-                snapshot=self.get_state_snapshot(state_values),
-            ),
-            MessageSnapshotEventExtend(
-                type=EventType.MESSAGES_SNAPSHOT,
-                messages=langchain_messages_to_agui(state_values.get("messages", [])),
-            ),
+    def _build_terminal_snapshot_events(self, state_values: State) -> StateSnapshotEvent:
+        """构建终态 STATE_SNAPSHOT 事件（消息快照死信分支已移除，续流由首帧快照承担）。"""
+        return StateSnapshotEvent(
+            type=EventType.STATE_SNAPSHOT,
+            snapshot=self.get_state_snapshot(state_values),
         )
 
     async def prepare_stream(self, input: RunAgentInput, agent_state: State, config: RunnableConfig):
@@ -429,7 +416,7 @@ class LangGraphAgent:
         if has_active_interrupts and not resume_input:
             interrupt_values = [self._normalize_interrupt_value(interrupt.value) for interrupt in interrupts]
             terminal_state = agent_state.values if agent_state.values else state
-            events_to_dispatch.extend(self._build_terminal_snapshot_events(terminal_state))
+            events_to_dispatch.append(self._build_terminal_snapshot_events(terminal_state))
 
             outcome = RunFinishedInterruptOutcome(interrupts=interrupt_values)
             events_to_dispatch.append(

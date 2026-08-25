@@ -6,6 +6,7 @@ from aidev_agent.packages.langchain_core.models.mock import MockChatModel
 from aidev_agent.pydantic_models import AgentOptions, IntentRecognition, KnowledgebaseSettings, KnowledgeSettings
 from aidev_agent.utils.migrations import (
     migration_chat_model_non_thinking_from_non_thinking_llm_v1,
+    migration_chat_session_context_from_chat_session_contents_v1,
     migration_knowledge_query_options_from_agent_options_v1,
     migration_model_context_options_from_agent_options_v1,
 )
@@ -111,3 +112,38 @@ def test_legacy_knowledge_options_preserve_pure_scalar_retrieval_layers():
 
     assert migrated.recall_channels == []
     assert migrated.scalar_expression == 'eq("status","enabled")'
+
+
+def test_migration_chat_session_context_from_chat_session_contents_v1_skips_malformed_records():
+    records = [
+        {"id": "1", "role": "user", "content": "你好"},
+        "not-a-dict",
+        {"id": "2", "content": "缺 role"},
+    ]
+
+    result = migration_chat_session_context_from_chat_session_contents_v1(records)
+
+    assert len(result) == 1
+    assert result[0]["id"] == "1"
+    assert result[0]["role"] == "user"
+
+
+def test_migration_chat_session_context_from_chat_session_contents_v1_merges_builtin_property_base_without_none_override():
+    record = {
+        "id": "10",
+        "role": "assistant",
+        "content": "回答",
+        "status": None,  # 平铺 None：不得遮蔽基底同名键
+        "property": {
+            "builtin_property": {"status": "complete", "message_id": "base-mid"},
+            "artifacts": [{"name": "a.txt"}],
+        },
+    }
+
+    result = migration_chat_session_context_from_chat_session_contents_v1([record])
+
+    assert len(result) == 1
+    bp = result[0]["builtin_property"]
+    assert bp["status"] == "complete"  # 基底保留（平铺 None 未覆盖）
+    assert bp["message_id"] == "base-mid"  # 基底独有键保留
+    assert bp["artifacts"] == [{"name": "a.txt"}]  # 非 None 平铺键写入

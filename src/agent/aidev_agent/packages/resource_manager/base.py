@@ -161,6 +161,14 @@ class BaseResourceManager(abc.ABC):
         client = self.get_client()
         return client.api.get_chat_session_context(path_params={"session_code": session_code}, **kwargs).get("data", [])
 
+    def get_chat_session_contents(self, session_code: str, **kwargs) -> list[dict]:
+        """取回会话全部落库内容记录（与前端历史消息接口同源，property 不含 builtin_property）。
+
+        返回结构 = 后端 ``data`` 字段。快照 messages 数据源以此为准。
+        """
+        client = self.get_client()
+        return client.api.get_chat_session_contents(params={"session_code": session_code}, **kwargs).get("data", [])
+
     def retrieve_chat_session(self, session_code: str, **kwargs) -> dict:
         client = self.get_client()
         return client.api.retrieve_chat_session(path_params={"session_code": session_code}, **kwargs).get("data", {})

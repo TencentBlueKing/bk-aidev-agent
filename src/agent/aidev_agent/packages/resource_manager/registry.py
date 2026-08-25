@@ -61,6 +61,10 @@ class ResourceManagerProtocol(Protocol):
         """取回会话上下文消息列表（业务返回结构 = 后端 ``data`` 字段）"""
         ...
 
+    def get_chat_session_contents(self, session_code: str, **kwargs) -> list[dict]:
+        """取回会话全部落库内容记录（业务返回结构 = 后端 ``data`` 字段，与前端历史接口同源）。"""
+        ...
+
     def retrieve_chat_session(self, session_code: str, **kwargs) -> dict:
         """取回会话详情（业务返回结构 = 后端 ``data`` 字段）。"""
         ...
