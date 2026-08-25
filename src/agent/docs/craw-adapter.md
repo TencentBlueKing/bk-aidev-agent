@@ -86,7 +86,7 @@ Legacy env（既有插件迁移兼容，统一 env 优先）：`BKAI_OPENCLAW_GA
 
 单元测试：`make test path=tests/packages/craw`。
 
-任务智能体用独立模板 `template/craw/`，在 `bk_plugin/patch/urls.py` 挂 `enable_chat_takeover()`。对话插件仍走 `template/builtin/`，见 [craw-isolation-publish.md](craw-isolation-publish.md)。
+协作智能体用独立模板 `template/craw/`，在 `bk_plugin/patch/urls.py` 挂 `enable_chat_takeover()`。对话插件仍走 `template/builtin/`，见 [craw-isolation-publish.md](craw-isolation-publish.md)。
 
 ## 扩展新内核
 
@@ -97,5 +97,5 @@ Legacy env（既有插件迁移兼容，统一 env 优先）：`BKAI_OPENCLAW_GA
 ## 已知边界
 
 - craw 内核自身就是完整 agent（会话循环 / 工具编排在 craw 侧），因此接管发生在 `agent_registry` 层而非 executor 层——不能再被 LangGraph ReAct 套一层。
-- MCP 凭证的传输层注入（egress 网关）由 bkai-cli 侧反代实现，本包只负责身份透传；不要在本包内实现凭证落盘。
+- 单内核 MCP 出口由本包 `mcp_egress` 按对话租约注入用户 token（盘上零真 token）。一人一内核的 pool 反代仍在 bkai-cli / porter，本轮不做。
 - 文件面读写要求 agent 与 craw 可见同一目录（同容器 / 共享卷 / 同 Pod emptyDir）；纯 HTTP 面无此要求。
