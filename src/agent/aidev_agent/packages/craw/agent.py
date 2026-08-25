@@ -41,6 +41,7 @@ from aidev_agent.packages.craw.base import (
     CrawUpstreamError,
     CrawUpstreamRunError,
 )
+from aidev_agent.packages.craw.mcp_identity import mcp_identity_lease, resolve_user_access_token
 from aidev_agent.packages.craw.registry import CrawBackendProtocol, get_backend
 from aidev_agent.services.agent.registry import AgentBuildContext
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
@@ -131,12 +132,7 @@ class CrawCompletionAgent(BaseModel):
             if not self.allow_anonymous:
                 raise CrawIdentityError("缺少 username，且未显式允许匿名调用（allow_anonymous=False）")
             return CrawIdentity()
-        try:
-            access_token = (
-                ctx.resource_manager.resolve_access_token(username) if ctx.resource_manager is not None else ""
-            ) or ""
-        except Exception as exc:
-            raise CrawIdentityError(f"resolve_access_token({username}) 失败: {exc}") from exc
+        access_token = resolve_user_access_token(username, ctx.resource_manager)
         if not access_token:
             raise CrawIdentityError(f"用户 {username} 的 access_token 为空，拒绝降级为无身份请求")
         return CrawIdentity(username=username, access_token=access_token)
@@ -145,10 +141,16 @@ class CrawCompletionAgent(BaseModel):
 
     def execute(self, execute_kwargs=None) -> Any:
         """流式返回 SSE 字符串生成器；非流式返回 ChatCompletionAgent 同构 dict。"""
+        token = self.identity.access_token if self.identity else ""
         if bool(getattr(execute_kwargs, "stream", False)):
             thread = self.session_code or self.thread_id
-            return GeneratorStreamingHelper(thread_id=thread).stream(self._run_stream())
-        return self._run_sync()
+            return GeneratorStreamingHelper(thread_id=thread).stream(self._run_stream_with_mcp_lease(token))
+        with mcp_identity_lease(token):
+            return self._run_sync()
+
+    def _run_stream_with_mcp_lease(self, token: str) -> Generator[str, None, None]:
+        with mcp_identity_lease(token):
+            yield from self._run_stream()
 
     def stop(self) -> None:
         key = self.session_code or self.thread_id

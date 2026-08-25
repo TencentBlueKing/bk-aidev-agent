@@ -169,7 +169,7 @@ bk-aidev-agent/
 │   │       │   ├── patch/    # 补丁模块
 │   │       │   └── versions/ # 【重要】智能体配置
 │   │       └── bin/          # 管理脚本
-│   └── craw/             # 任务智能体隔离运行时模板（同容器 craw 内核）
+│   └── craw/             # 协作智能体隔离运行时模板（同容器 craw 内核）
 │       └── {{cookiecutter.project_name}}/
 ├── docs/                 # 项目设计文档
 ├── assets/               # 项目资源文件
