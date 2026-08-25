@@ -246,6 +246,16 @@ class TestIdentityFailClosed:
         assert agent.identity.username == "demo-user"
         assert agent.identity.access_token == "fake-token-xyz"
 
+    def test_bound_request_token_wins_over_empty_rm(self):
+        from aidev_agent.packages.craw.mcp_identity import bind_user_access_token
+
+        bind_user_access_token("request-token-aaa")
+        try:
+            agent = _build_agent(_StubBackend(), resource_manager=_StubResourceManager(token=""))
+            assert agent.identity.access_token == "request-token-aaa"
+        finally:
+            bind_user_access_token("")
+
     def test_empty_token_raises(self):
         with pytest.raises(CrawIdentityError):
             _build_agent(_StubBackend(), resource_manager=_StubResourceManager(token=""))
