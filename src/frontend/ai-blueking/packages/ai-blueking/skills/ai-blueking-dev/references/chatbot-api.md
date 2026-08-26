@@ -17,7 +17,7 @@
 | prompts         | `string[]`           | -       | 预设提示词                                     |
 | helloText       | `string`             | -       | 欢迎语                                         |
 | useAgentName    | `boolean`            | `false` | 使用 agentName 作为欢迎标题                     |
-| placeholder     | `string`             | -       | 输入框占位符                                   |
+| placeholder     | `string`             | -       | 输入框占位符；未传时按 Skill / Prompt / 资源列表动态生成 |
 | renderMode      | `RenderMode`         | `chat`  | 渲染模式：`chat`(默认) / `share`(分享只读) / `test`（详见「渲染模式 renderMode」） |
 | enableSelection | `boolean`            | `false` | 是否启用多选模式（分享用；新代码推荐用 `renderMode="share"`） |
 | shareLoading    | `boolean`            | `false` | 分享加载状态                                   |
@@ -272,7 +272,7 @@ AIBlueking 是完整面板组件（Nimbus 悬浮球 + 浮窗 + 拖拽 + Header +
 | title | `string` | `''` | 组件标题 |
 | helloText | `string` | `你好，我是小鲸` | 欢迎语 |
 | useAgentName | `boolean` | `false` | 使用 agentName 作为欢迎标题 |
-| placeholder | `string` | - | 输入框占位文本 |
+| placeholder | `string` | - | 输入框占位文本；未传时按 Skill / Prompt / 资源列表动态生成 |
 | renderMode | `RenderMode` | `chat` | 渲染模式：`chat` / `share`（只读）/ `test` |
 | requestOptions | `MaybeRefOrGetter<IRequestOptions>` | `{}` | 请求配置（`headers` / `data` / `context` 支持 ref/computed，替换后后续请求自动生效） |
 | shortcuts | `IShortcut[]` | `[]` | 快捷操作列表 |

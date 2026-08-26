@@ -178,7 +178,7 @@ import {
 | modelValue | `string \| TagSchema` | - | **必填**，支持 v-model |
 | cite | `string` | `''` | 引用内容，`v-model:cite` |
 | messageStatus | `MessageStatus` | - | 控制发送/停止等按钮状态 |
-| placeholder | `string` | 见下方 | 占位符 |
+| placeholder | `string` | 动态默认 | 未传时按 skills/prompts/resources 动态拼接；传入则完全覆盖 |
 | prompts | `string[]` | `[]` | `/` 触发 |
 | resources | `IAiSlashMenuItem[]` | `[]` | `@` / `/` 触发的资源（工具、MCP 等） |
 | skills | `ISkillListItem[]` | `[]` | Skill 列表（`/` 唤出） |
@@ -208,13 +208,16 @@ onSendMessage?: (
 
 即：普通「发送」可同时承载一次中断响应（resume）——例如用户不点选项、直接在输入框打字来回答 `UserQuestion`，此时 `options.interrupt` / `options.payload` 会随发送回传。
 
-**默认占位符（中文）**：
+**默认占位符**：未传入 `placeholder` 时按 `skills` / `prompts` / `resources` 是否非空动态拼接（有对应能力才显示该行），始终保留换行提示：
 
 ```
-输入 “/”唤出 Prompt
-输入“@”唤出 工具 和 MCP
-通过 Shift + Enter 进行换行输入
+输入 "/" 唤出 Skill          // 仅当 skills 非空
+输入 "\" 唤出 Prompt         // 仅当 prompts 非空
+输入 "@" 唤出 工具和 MCP     // 仅当 resources 非空
+通过 Shift + Enter 进行换行输入  // 始终显示
 ```
+
+显式传入 `placeholder`（含空字符串）时完全覆盖。三种列表都为空时只显示换行提示。ChatBot / AIBlueking 未传 `placeholder` 时，上述列表来自 `agent/info`（`relatedSkills` / `predefinedQuestions` / `resources`）。
 
 ### v-model（模型）
 
