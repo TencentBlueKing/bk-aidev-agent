@@ -23,6 +23,10 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { type Ref, defineComponent, h, nextTick } from 'vue';
 
 import { type ComponentMountingOptions, type VueWrapper, mount } from '@vue/test-utils';
@@ -358,6 +362,7 @@ vi.mock('../../icons', () => ({
       return () => h('span', { class: 'mock-banner-icon' });
     },
   }),
+  // 文件产物 Tab 默认图标：设计稿 16×16 线性折角文档
   ArtifactTabIcon: defineComponent({
     name: 'ArtifactTabIcon',
     setup() {
@@ -653,6 +658,11 @@ describe('ChatContainer', () => {
       });
 
       expect(wrapper.find('.ai-chat-container').exists()).toBe(true);
+    });
+
+    it('执行摘要 Tab 图标尺寸应为 16px', () => {
+      const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'chat-container.vue'), 'utf-8');
+      expect(source).toMatch(/\.ai-execution-summary-icon[\s\S]*?width:\s*16px/);
     });
 
     it('chatLoading 为 true 时应该显示 loading', () => {

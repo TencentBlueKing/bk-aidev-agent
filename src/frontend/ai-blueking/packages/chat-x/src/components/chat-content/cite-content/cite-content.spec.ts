@@ -90,6 +90,19 @@ describe('CiteContent', () => {
       expect(wrapper.find('.mock-cite-icon').exists()).toBe(true);
     });
 
+    it('引用条 hover 背景色应为 #eaebf0', () => {
+      wrapper = mount(CiteContent, {
+        props: { content: '引用内容' },
+        attachTo: document.body,
+      });
+
+      const styleTexts = Array.from(document.querySelectorAll('style'))
+        .map(el => el.textContent ?? '')
+        .join('\n');
+
+      expect(styleTexts).toMatch(/\.ai-cite-content[\s\S]{0,400}?:hover[\s\S]{0,80}?background:\s*#eaebf0/i);
+    });
+
     it('没有 onClose 时不应该渲染 CloseIcon', () => {
       wrapper = mount(CiteContent, {
         props: { content: '引用内容' },

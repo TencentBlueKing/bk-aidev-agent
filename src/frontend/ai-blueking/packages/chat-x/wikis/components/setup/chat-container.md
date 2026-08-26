@@ -401,7 +401,7 @@ ai-chat-container（:data-ai-size="size"）
 
 ## 侧边栏与执行摘要
 
-侧边栏默认包含「执行情况」Tab，展示所有工具调用和 FlowAgent 类型的 Activity 消息。支持关键词搜索过滤和点击定位到对话中的消息位置。
+侧边栏默认包含「执行情况」Tab，展示所有工具调用和 FlowAgent 类型的 Activity 消息。支持关键词搜索过滤和点击定位到对话中的消息位置。Tab 标签内 `.ai-execution-summary-icon` 固定 16×16px，避免被 flex 压缩。
 
 **展示条件**：侧栏是否渲染只取决于折叠态与是否存在可见 Tab —— `asideCollapsed === false` 且 `displayTabs` 非空即展开，与 `executionGroups`、`keyword`、是否有文件产物均无关。无执行数据时 `ExecutionSummary` 展示自身空态，无文件产物时 `FileArtifactPanel` 展示整块空态。`renderMode === Share` 分享态同样按折叠态展示侧栏（开放只读查看流程智能体详情/证据/执行情况），仅底部输入区保持隐藏。
 
@@ -532,6 +532,7 @@ ai-chat-container（:data-ai-size="size"）
 除「执行情况」外，容器内置一个常驻固定 Tab —— **「文件产物」**（`name: 'file-artifact'`），用于聚合预览当前会话所有 `AssistantMessage.property.artifacts`（按 `outputId` 去重）：
 
 - **常驻挂载 / 默认选中**：容器初始化即通过 `ensureCustomTab` 挂上该 Tab（不展开侧栏）；因 `order: -1` 排在 Tab 栏首位，在用户未主动切换过 Tab 时它就是侧栏的默认面板。不随产物有无增删，无产物时由面板展示整块空态
+- **默认图标**：`ArtifactTabIcon`，16×16 线性折角文档，`fill` 走 `currentColor` 以继承 Tab 选中/默认色
 - **主动打开**：点击 AI 回复中的文件卡片（[ArtifactFileCard](/components/message/assistant-message)）时，容器通过 `useArtifactPreviewProvider` 以 `outputId` 命中该文件，再 `addCustomTab` 展开侧栏并选中「文件产物」
 - **排序 / 关闭**：`order: -1` 排在「执行情况」之前，`closable: false` 不可关闭
 - **命中态维护**：产物列表为空时清空命中；命中项已不在列表时回落到第一个 `outputId`

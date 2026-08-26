@@ -804,6 +804,13 @@
         align-items: center;
         justify-content: center;
 
+        .ai-execution-summary-icon {
+          flex-shrink: 0;
+          width: 16px;
+          height: 16px;
+          font-size: 16px;
+        }
+
         &-text {
           max-width: 100px;
           overflow: hidden;

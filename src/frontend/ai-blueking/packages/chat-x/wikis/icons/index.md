@@ -288,6 +288,13 @@ type Key = ToolIcons;
 | `AIBluekingIcon`       | `ai-blueking-icon`        | `0 0 24 24`  | 硬编码渐变 | 小鲸品牌图标    |
 | `AIBluekingBannerIcon` | `ai-blueking-banner-icon` | `0 0 309 93` | 硬编码渐变 | 小鲸品牌 Banner |
 
+### 文件图标 `file.ts`
+
+| 导出名             | class                       | viewBox         | 颜色         | 说明                 |
+| ------------------ | --------------------------- | --------------- | ------------ | -------------------- |
+| `ArtifactTabIcon`  | `ai-file-artifact-tab-icon` | `0 0 16 16`     | currentColor | 文件产物侧栏 Tab     |
+| `DownloadFileIcon` | `ai-file-download-icon`     | `0 0 1024 1024` | currentColor | 文件下载             |
+
 ### 输入区图标 `input.ts`
 
 | 导出名             | class                   | 说明     |
@@ -330,5 +337,5 @@ type Key = ToolIcons;
 
 1. **VNode 而非组件**：图标是 `h()` 预创建的 VNode 实例，同一个 VNode 不能被多处挂载。在列表渲染中使用 `cloneVNode()` 创建副本，或用 `defineComponent` 包装
 2. **硬编码颜色**：`DocumentIcon`、`RemoveIcon`（`#737987`）、`AIBluekingIcon` / `AIBluekingBannerIcon`（渐变）、`ImageBrokenIcon`、`BkFlowSuccessIcon`（`#18B456`）、`BkFlowFailedIcon`（`#EA3636`）、`BkFlowSuspendedIcon`（`#F59500`）内部使用固定颜色，不响应父元素 `color` 继承
-3. **非标准 viewBox**：`TargetIcon` / `RemoveIcon` 为 `0 0 64 64`，`ImageErrorIcon` 为 `0 0 24 18`，`AIBluekingIcon` 为 `0 0 24 24`，`AIBluekingBannerIcon` 为 `0 0 309 93`，`ImageBrokenIcon` 为 `0 0 200 180`，`BkFlowSuccessIcon` / `BkFlowFailedIcon` / `BkFlowSuspendedIcon` 为 `0 0 16 16`，设置 `width` / `height` 时注意比例
+3. **非标准 viewBox**：`TargetIcon` / `RemoveIcon` 为 `0 0 64 64`，`ImageErrorIcon` 为 `0 0 24 18`，`AIBluekingIcon` 为 `0 0 24 24`，`AIBluekingBannerIcon` 为 `0 0 309 93`，`ImageBrokenIcon` 为 `0 0 200 180`，`BkFlowSuccessIcon` / `BkFlowFailedIcon` / `BkFlowSuspendedIcon` / `ArtifactTabIcon` 为 `0 0 16 16`，设置 `width` / `height` 时注意比例
 4. **`FileUploadIcon` 类名**：源码中 class 为 `ai-delete-circle-icon`（与 `DeleteCircleIcon` 相同），通过 CSS 定位时需注意
