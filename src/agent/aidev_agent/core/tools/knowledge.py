@@ -19,11 +19,16 @@ to the current version of the project delivered to anyone in the future.
 from __future__ import annotations
 
 import logging
+import time
+import uuid
 from typing import TYPE_CHECKING, Annotated, Optional
 
+from langchain_core.callbacks import dispatch_custom_event
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel
 
+from aidev_agent.core.ag_ui.types import CustomMessageType
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.packages.langchain_core.retrievers.kb_rag import KnowledgeRag
 from aidev_agent.pydantic_models import KnowledgeSettings
@@ -73,7 +78,7 @@ def make_knowledge_retrieval_tool(
     kb_names = []
     if knowledge_query_options.knowledge_bases:
         kb_names = [kb.get("name", "") for kb in knowledge_query_options.knowledge_bases if kb.get("name")]
-    
+
     # 构建工具描述
     base_description = "检索私域知识库以获取相关信息。当需要查询企业内部知识、文档或历史问答时使用此工具。"
     if kb_names:
@@ -82,7 +87,7 @@ def make_knowledge_retrieval_tool(
     else:
         description = base_description
 
-    def knowledge_retrieval(query: str) -> list:
+    def knowledge_retrieval(query: str, config: RunnableConfig) -> list:
         """执行知识库检索。
 
         Args:
@@ -95,8 +100,46 @@ def make_knowledge_retrieval_tool(
         kb_retriever = BkRetriever()
         retriever = KnowledgeRag(llm, kb_retriever)
 
-        # 执行知识库检索
-        ret = retriever.retrieve(query, knowledge_query_options, input=query, chat_history=chat_history)
+        # 流处理：仅在存在回调时派发自定义事件
+        dispatch_config = config if config and config.get("callbacks") else None
+        t1 = time.time()
+        if dispatch_config:
+            dispatch_custom_event(
+                CustomMessageType.KNOWLEDGE_RAG_START.value,
+                data={},
+                config=dispatch_config,
+            )
+
+        # 检索异常会被 ToolNode 转为错误 ToolMessage 并继续执行，
+        # 用 finally 保证 END 始终派发，避免前端知识检索状态无法结束
+        try:
+            # 执行知识库检索
+            ret = retriever.retrieve(query, knowledge_query_options, input=query, chat_history=chat_history)
+
+            # 处理引用文档，用于前端统一消费
+            reference_doc = ret.get("reference_doc") or []
+            if reference_doc:
+                reference_doc = [each["metadata"] for each in reference_doc]
+                reference_doc = [
+                    {"originFile": each["preview_path"], "url": each["path"], "name": each["display_name"]}
+                    for each in reference_doc
+                ]
+
+            if dispatch_config:
+                duration = round(time.time() - t1, 4) * 1000
+                dispatch_custom_event(
+                    CustomMessageType.KNOWLEDGE_RAG_RESULT.value,
+                    data={"message_id": uuid.uuid4().hex, "data": reference_doc, "duration": duration},
+                    config=dispatch_config,
+                )
+        finally:
+            if dispatch_config:
+                dispatch_custom_event(
+                    CustomMessageType.KNOWLEDGE_RAG_END.value,
+                    data={},
+                    config=dispatch_config,
+                )
+
         return ret.get("knowledge_content", [])
 
     return StructuredTool.from_function(
