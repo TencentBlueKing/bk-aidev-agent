@@ -1,6 +1,6 @@
 # @blueking/chat-helper SDK API 参考
 
-> 版本：`@blueking/chat-helper@0.0.12-beta.20`（peerDep `vue ^3.5.24`）。与 `@blueking/ai-blueking` `2.2.2` 配套。本文档已同步 HITL（human in the loop）中断/恢复、flow-agent 操作、模型列表（`getLlms`）等能力。
+> 版本：`@blueking/chat-helper@0.0.12-beta.24`（peerDep `vue ^3.5.24`）。与 `@blueking/ai-blueking` `2.2.3` 配套。本文档已同步 HITL、flow-agent、模型列表（`getLlms`）、消息时间（`createdAt` / `RUN_FINISHED.timestamp`）等能力。
 
 ## 基础配置
 

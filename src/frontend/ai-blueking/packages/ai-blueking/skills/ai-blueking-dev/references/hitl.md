@@ -1,6 +1,6 @@
 # HITL 人机协同（中断与恢复）
 
-> 适用版本：ai-blueking `2.2.2` / chat-x `0.0.49-beta.8` / chat-helper `0.0.12-beta.20`（HITL 自 2.2.0-beta.4 起可用）
+> 适用版本：ai-blueking `2.2.3` / chat-x `0.0.49-beta.12` / chat-helper `0.0.12-beta.24`（HITL 自 2.2.0-beta.4 起可用）
 
 Human-in-the-loop（HITL）让 Agent 在流式执行过程中**暂停**，把控制权交回用户，等用户处理后再**恢复**执行。当前覆盖三类场景：
 
