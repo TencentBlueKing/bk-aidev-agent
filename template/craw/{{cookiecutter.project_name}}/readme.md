@@ -523,7 +523,7 @@ AGENT_CONFIG = {
 
 本目录由 `template/craw` 生成，不是 `template/builtin` 对话插件。CHAT 在 `bk_plugin/patch/urls.py` 经 `enable_chat_takeover()` 交给同容器内核。`bk_plugin` 其余文件与 builtin 相同，不要改 `extend/agent.py` 去套 ReAct。
 
-内核镜像用 `craw_base_image` 或构建参数 `CRAW_BASE_IMAGE` 注入，不要把私有仓库或环境域名写进仓库。凭据只填控制台。发布走隔离应用 + Dockerfile，不要走普通 buildpack。
+平台生成时用 `craw_base_image` 注入固定 digest 的内核镜像，并用 `aidev_agent_version` 固定 Proxy SDK 版本；不要把私有仓库或环境域名写进公开仓库。Dockerfile 会创建 `/app/.venv` 并安装生成后的依赖，凭据只填控制台。发布走隔离应用 + Dockerfile，不要走普通 buildpack。
 
 ## 五、升级与迁移
 

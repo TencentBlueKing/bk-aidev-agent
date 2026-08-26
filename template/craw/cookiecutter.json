@@ -5,6 +5,7 @@
   "init_apigw_maintainer": "admin",
   "app_code": "ai-plugin",
   "craw_base_image": "craw-runtime:local",
+  "aidev_agent_version": "2.2.2rc17",
   "extra_fields": {
     "space_id": ""
   },
