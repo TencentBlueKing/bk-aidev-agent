@@ -1,1 +1,1 @@
-2.2.2rc17
+{{ cookiecutter.aidev_agent_version }}
