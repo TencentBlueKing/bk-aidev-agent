@@ -1,8 +1,8 @@
 ag-ui-protocol==0.1.10
-aidev-agent==2.2.2rc17
+aidev-agent=={{ cookiecutter.aidev_agent_version }}
 aidev-ai-blueking==2.2.4b1
-aidev-bkplugin==2.2.2rc17
-aidev-wxbot==2.2.2rc17
+aidev-bkplugin=={{ cookiecutter.aidev_agent_version }}
+aidev-wxbot=={{ cookiecutter.aidev_agent_version }}
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.3
 aiosignal==1.4.0
