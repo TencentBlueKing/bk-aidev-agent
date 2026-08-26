@@ -8,10 +8,13 @@
 
 ```bash
 python -m cookiecutter /path/to/bk-aidev-agent --directory template/craw --no-input \
-  craw_base_image=craw-runtime:local
+  craw_base_image=craw-runtime:local \
+  aidev_agent_version=2.2.2rc17
 ```
 
-`craw-runtime:local` 只是占位。构建时用 `--build-arg CRAW_BASE_IMAGE=...` 或生成时改 `craw_base_image`。基镜像需要提供：craw 网关入口（默认 `/usr/local/bin/docker-entrypoint.sh`）、`tini`、Python 3.11。
+`craw-runtime:local` 只是占位。平台生成时必须注入固定 digest 的 `craw_base_image` 和已发布的 `aidev_agent_version`，不要等到 PaaS 构建阶段再补 build arg。基镜像需要提供：craw 网关入口（默认 `/usr/local/bin/docker-entrypoint.sh`）、`tini`、Python 3.11，以及可用的 Python 包索引策略。
+
+Dockerfile 会在基镜像之上创建 `/app/.venv`，按生成后的 `requirements.txt` 安装 `aidev-agent`、`aidev-bkplugin` 和 gunicorn，再复制插件源码；不要假设纯 OpenClaw 基镜像已经包含 Proxy 依赖。`requirements.txt` 是镜像构建锁，模板不携带可能与动态 SDK 版本冲突的 `uv.lock`；生成项目做本地开发时可运行 `uv lock` 生成自己的锁文件。
 
 `bk_plugin` 与 `template/builtin` 相同。只在 `bk_plugin/patch/urls.py` 挂了 `enable_chat_takeover()`。不要改 `extend/agent.py`。本模板会把 `BKAI_CRAW_BACKEND` 设成 `openclaw`。
 
