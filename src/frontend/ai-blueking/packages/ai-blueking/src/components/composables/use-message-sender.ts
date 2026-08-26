@@ -7,7 +7,7 @@
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
  */
 
-import { shallowRef } from 'vue';
+import { shallowRef, watch } from 'vue';
 import type { Ref, ShallowRef } from 'vue';
 
 import { applyRequestOptionsContext } from '../../utils';
@@ -69,6 +69,16 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
 
   const userInput = shallowRef<string | TagSchema>([[]]);
   const cite = shallowRef('');
+
+  // 引用绑定当前会话：切换/新建会话后不应把旧会话的引用带到新对话
+  watch(
+    () => chatHelper.value?.session.current?.value?.sessionCode,
+    (newCode, oldCode) => {
+      if (oldCode && oldCode !== newCode) {
+        cite.value = '';
+      }
+    },
+  );
 
   const handleUpdateModelValue = (value: string | TagSchema, resourceList: IAiSlashMenuItem[]) => {
     userInput.value = value;
