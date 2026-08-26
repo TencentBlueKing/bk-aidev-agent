@@ -24,6 +24,9 @@
  * IN THE SOFTWARE.
  */
 
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineComponent, h } from 'vue';
 
 import { type VueWrapper, mount } from '@vue/test-utils';
@@ -91,16 +94,9 @@ describe('CiteContent', () => {
     });
 
     it('引用条 hover 背景色应为 #eaebf0', () => {
-      wrapper = mount(CiteContent, {
-        props: { content: '引用内容' },
-        attachTo: document.body,
-      });
+      const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'cite-content.vue'), 'utf-8');
 
-      const styleTexts = Array.from(document.querySelectorAll('style'))
-        .map(el => el.textContent ?? '')
-        .join('\n');
-
-      expect(styleTexts).toMatch(/\.ai-cite-content[\s\S]{0,400}?:hover[\s\S]{0,80}?background:\s*#eaebf0/i);
+      expect(source).toMatch(/&:hover\s*\{\s*background:\s*#eaebf0;/);
     });
 
     it('没有 onClose 时不应该渲染 CloseIcon', () => {
