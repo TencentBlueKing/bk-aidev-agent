@@ -58,7 +58,7 @@ class ChatCompletionViewSet(PluginViewSet):
         try:
             serializer = ChatCompletionRequestSerializer(
                 data=request.data,
-                context={"username": username, "agent_code": agent_code},
+                context={"username": username, "agent_code": agent_code, "resource_manager": rm},
             )
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
@@ -277,13 +277,15 @@ class ChatCompletionViewSet(PluginViewSet):
         session_code: str,
         username: str,
         content: str,
-        rm: Optional[ResourceManagerProtocol] = None,
+        resource_manager: Optional[ResourceManagerProtocol] = None,
         turn_id: str = "",
     ) -> str:
         if not session_code or not content:
-            return self._resolve_turn_id(session_code, username, rm, turn_id)
-        agent_code = rm.get_agent_code() if rm else None
-        saved = SessionManager(username=username, resource_manager=rm, agent_code=agent_code).save_content(
+            return self._resolve_turn_id(session_code, username, resource_manager, turn_id)
+        agent_code = resource_manager.get_agent_code() if resource_manager else None
+        saved = SessionManager(
+            username=username, resource_manager=resource_manager, agent_code=agent_code
+        ).save_content(
             session_code=session_code,
             role=PromptRole.USER.value,
             content=content,
@@ -293,17 +295,17 @@ class ChatCompletionViewSet(PluginViewSet):
 
     @staticmethod
     def _resolve_turn_id(
-        session_code: str, username: str, rm: Optional[ResourceManagerProtocol] = None, turn_id: str = ""
+        session_code: str, username: str, resource_manager: Optional[ResourceManagerProtocol] = None, turn_id: str = ""
     ) -> str:
         """用户消息已由 SDK 落库时，从最近一条 user 内容继承 turn_id。"""
         if turn_id:
             return turn_id
         if not session_code:
             return ""
-        agent_code = rm.get_agent_code() if rm else None
-        contents = SessionManager(username, resource_manager=rm, agent_code=agent_code).list_session_contents(
-            session_code
-        )
+        agent_code = resource_manager.get_agent_code() if resource_manager else None
+        contents = SessionManager(
+            username, resource_manager=resource_manager, agent_code=agent_code
+        ).list_session_contents(session_code)
         for item in reversed(contents):
             if item.get("role") != PromptRole.USER.value:
                 continue
@@ -317,7 +319,7 @@ class ChatCompletionViewSet(PluginViewSet):
         session_code: str,
         username: str,
         _input: str,
-        rm: Optional[ResourceManagerProtocol] = None,
+        resource_manager: Optional[ResourceManagerProtocol] = None,
         turn_id: str = "",
     ) -> str:
         """产出本轮 user-ai 回复的 turn_id（三分支，必须保序）。
@@ -333,7 +335,7 @@ class ChatCompletionViewSet(PluginViewSet):
         if turn_id:
             return turn_id
         if not _input:
-            return ChatCompletionViewSet._resolve_turn_id(session_code, username, rm, turn_id)
+            return ChatCompletionViewSet._resolve_turn_id(session_code, username, resource_manager, turn_id)
         return uuid.uuid4().hex
 
     def _handle_flow_agent(
