@@ -24,6 +24,10 @@
  * IN THE SOFTWARE.
  */
 
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { defineComponent, h } from 'vue';
 
 import { type VueWrapper, mount } from '@vue/test-utils';
@@ -34,6 +38,8 @@ import ChatInput from './chat-input.vue';
 
 import type { UploadFile } from '../../types';
 import type { IAiSlashMenuItem } from '../../types/editor';
+
+const chatInputSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'chat-input.vue'), 'utf-8');
 
 const mockBkMessage = vi.fn();
 vi.mock('bkui-vue', () => ({
@@ -315,6 +321,17 @@ describe('ChatInput', () => {
       });
 
       expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
+    });
+
+    it('输入容器底部间距应为 16px', () => {
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+        },
+      });
+
+      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
+      expect(chatInputSource).toMatch(/\.ai-chat-input-container\s*\{[\s\S]*?padding:\s*0\s+16px\s+16px;/);
     });
 
     it('应该渲染 chat-input 容器', () => {
