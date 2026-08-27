@@ -1,43 +1,50 @@
-# Craw 隔离运行时：从模板到发布
+# Craw 隔离运行时：共用插件模板与发布约定
 
-> 只描述公开模板与平台约定。不要把环境域名、内网控制台、真实空间 / 知识库 ID、凭据写进仓库。
+> 只描述公开模板与平台约定。不要把环境域名、真实空间 / 知识库 ID 或凭据写进仓库。
 
-对话插件走 `template/builtin/`。协作智能体走独立 cookiecutter：`template/craw/`。
+普通智能体与协作智能体共用 `template/builtin/`。模板在 URL 初始化阶段调用
+`enable_chat_takeover()`；未设置 `BKAI_CRAW_BACKEND` 时立即返回，保持原生 ReAct，
+因此普通智能体行为不变。
 
-## 模板怎么用
+## 共用模板
 
 ```bash
-python -m cookiecutter /path/to/bk-aidev-agent --directory template/craw --no-input \
-  craw_base_image=craw-runtime:local \
-  aidev_agent_version=2.2.2rc17
+python -m cookiecutter /path/to/bk-aidev-agent --directory template/builtin --no-input
 ```
 
-`craw-runtime:local` 只是占位。平台生成时必须注入固定 digest 的 `craw_base_image` 和已发布的 `aidev_agent_version`，不要等到 PaaS 构建阶段再补 build arg。基镜像需要提供：craw 网关入口（默认 `/usr/local/bin/docker-entrypoint.sh`）、`tini`、Python 3.11，以及可用的 Python 包索引策略。
+插件代码、应用态 `AgentResourceManager`、聊天窗、pre-release 和 API 网关定义均来自同一模板。
+协作智能体不维护第二份 Python 插件模板，也不把平台配置或凭据复制进源码。
 
-Dockerfile 会在基镜像之上创建 `/app/.venv`，按生成后的 `requirements.txt` 安装 `aidev-agent`、`aidev-bkplugin` 和 gunicorn，再复制插件源码；不要假设纯 OpenClaw 基镜像已经包含 Proxy 依赖。`requirements.txt` 是镜像构建锁，模板不携带可能与动态 SDK 版本冲突的 `uv.lock`；生成项目做本地开发时可运行 `uv lock` 生成自己的锁文件。
+## Craw 部署外壳
 
-`bk_plugin` 与 `template/builtin` 相同。只在 `bk_plugin/patch/urls.py` 挂了 `enable_chat_takeover()`。不要改 `extend/agent.py`。本模板会把 `BKAI_CRAW_BACKEND` 设成 `openclaw`。
+Craw 仍需要 OpenClaw/Hermes 内核，因此部署侧在共用插件代码外增加最小 Docker 外壳：
 
-## 平台创建 / 发布 / 部署
+- 固定 digest 的内核基础镜像；
+- 一个同时管理 craw 内核与 gunicorn 的 supervisor；
+- `BKAI_CRAW_BACKEND=openclaw` 等 loopback 配置；
+- 用户 token → MCP 的本机 egress。
 
-1. 在 AIDEV 上创建智能体配置（Prompt / 模型 / Skill / MCP / 知识库）。
-2. 发布应用时选用 `template/craw`，**不要**走 `template/builtin` 的 buildpack 路径。
-3. 应用创建应走隔离应用接口（Dockerfile 构建），而不是常规 BkApp。
-4. 把生成应用的 `app_code` / 插件入口写回该智能体记录。
-5. 在应用控制台填写凭据：`BKAI_AIDEV_API_KEY`、`OPENCLAW_GATEWAY_TOKEN` 或 `BKAI_CRAW_API_KEY`。不要写进 Git。
+这是构建形态差异，不是第二套业务模板。PaaS 的 Dockerfile 构建必须使用 Git 源，不能使用
+源码包来源；平台因此让隔离应用指向受管共享运行时 Git 目录。普通智能体继续使用源码包 +
+buildpack。
 
-内核只监听 `127.0.0.1`。对外只暴露插件 HTTP 入口（`/chat-window/`、`/bk_plugin/plugin_api/chat_completion/`）。
+## 配置与身份
 
-## 和官方 `template/builtin` 的差别
+1. PaaS 自动注入当前隔离应用的 `BKPAAS_APP_ID` / `BKPAAS_APP_SECRET`。
+2. 运行时沿用 `template/builtin` 的 `AgentResourceManager`，以应用态身份从对应环境的 AIDEV
+   Gateway/Stage 拉取同名 Agent 配置。
+3. 不要求 `BKAI_AIDEV_API_KEY`，也不通过 PaaS 环境变量复制 Agent 配置快照。
+4. OpenClaw 模型请求经过 loopback egress，由 egress 注入当前 PaaS 应用身份；应用密钥不写入
+   OpenClaw 配置。
+5. 登录用户 token 只在对话租约期间进入 MCP egress；无租约请求返回 401，token 不落盘。
 
-| 项 | `template/builtin` | `template/craw` |
-|---|---|---|
-| 构建 | buildpack | Dockerfile overlay |
-| Web 进程 | gunicorn + celery | tini + craw-supervisor + gunicorn |
-| CHAT 执行 | 原生 ReAct | `CrawCompletionAgent` → localhost 内核 |
-| 消息后端 | rabbitmq | inmemory（单副本） |
+Gateway 名称和 Stage 与普通模板一样由发布环境提供，不应根据隔离应用 code 自行推导，也不应
+硬编码正式环境地址。
 
-## 已知边界
+## 运行约束
 
-- craw 当前对话转发走 OpenAI 兼容 HTTP，正文 AG-UI 可用。内核内部工具活动需要 WebSocket 才能映射成 `TOOL_CALL_*` 卡片，那是后续增量。
-- 配置变更若在启动期物化，改平台配置后需要重新部署才会生效。
+- 内核和两个 egress 只监听 `127.0.0.1`；对外仅暴露插件 HTTP 服务。
+- 当前单副本使用 `MESSAGE_HANDLER_TYPE=inmemory`；需要多副本时再接 RabbitMQ。
+- 未绑定数据库增强服务时，单副本可使用本机 SQLite；需要持久会话或多副本时再切共享数据库。
+- OpenClaw HTTP 转发需要启用 `/v1/chat/completions`。
+- 配置在启动期装配，平台配置变更后通过重新部署生效。
