@@ -6,10 +6,11 @@
 - execute_kwargs：默认 stream=False、显式 stream/version 透传。
 - agent_type：完全由 ``AgentConfigFetcher.get_info()`` 决定，不接受用户输入。
 - thread_id：显式 > execute_kwargs.thread_id > uuid 兜底（仅当 session_code 也为空时）。
+- model 热切换：非空时把 context 中的 resource_manager 传给 ``LLMService.is_llm_accessible``。
 """
 
 import uuid
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from aidev_agent.pydantic_models import ExecuteKwargs
@@ -215,3 +216,24 @@ class TestChatCompletionRequestSerializerThreadIdFallback:
     def test_thread_id_not_generated_when_session_code_present(self):
         data = self._validated({"session_code": "s-1"})
         assert data["thread_id"] == ""
+
+
+class TestChatCompletionRequestSerializerModelAccess:
+    """model 热切换授权：必须把请求级 resource_manager 传给 LLMService。"""
+
+    def test_is_llm_accessible_receives_context_resource_manager(self):
+        rm = MagicMock(name="request_rm")
+        with patch("aidev_bkplugin.serializers.chat_completion.LLMService.is_llm_accessible") as mock_access:
+            mock_access.return_value = True
+            s = ChatCompletionRequestSerializer(
+                data={"input": "hi", "model": "qwen-plus"},
+                context={"username": "alice", "resource_manager": rm},
+            )
+            s.is_valid(raise_exception=True)
+        mock_access.assert_called_once_with(username="alice", llm_code="qwen-plus", resource_manager=rm)
+
+    def test_is_llm_accessible_not_called_when_model_omitted(self):
+        with patch("aidev_bkplugin.serializers.chat_completion.LLMService.is_llm_accessible") as mock_access:
+            s = ChatCompletionRequestSerializer(data={"input": "hi"}, context={"username": "alice"})
+            s.is_valid(raise_exception=True)
+        mock_access.assert_not_called()
