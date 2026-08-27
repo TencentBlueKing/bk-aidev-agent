@@ -5,9 +5,9 @@
 - **变更**：聊天入口用登录态换用户 `access_token`；对话期间租约占用本机 `mcp_egress` 共享槽，注入 `X-Bkapi-Authorization`。盘上零真 token。隔离应用设 `BKAI_BKAPI_USE_USER_TOKEN=0`，用户 token 不进 bkapi client。
 - **验证**：`tests/packages/craw/` 102 passed（含租约注入、无租约 401、TTL、routes 落盘）。
 
-## 2026-08-21 · CrawSyncer 多产物 commit 事务化 + 隔离模板
+## 2026-08-21 · CrawSyncer 多产物 commit 事务化 + 共用插件模板
 
-- **变更**：`CrawSyncer` 提交阶段在第二次及后续 rename 失败时，从 backup 完整回滚全部正式文件，不再出现「新 SOUL + 旧 agent-config」。staging 文件名带周期 uuid；同一 craw home 提交持排它锁。协作智能体模板落在 `template/craw/`，与官方 `template/builtin/` 并列。凭据与环境域名不进模板。
+- **变更**：`CrawSyncer` 提交阶段在第二次及后续 rename 失败时，从 backup 完整回滚全部正式文件，不再出现「新 SOUL + 旧 agent-config」。staging 文件名带周期 uuid；同一 craw home 提交持排它锁。普通智能体与协作智能体共用 `template/builtin/`；Craw 的 Docker 内核只作为部署外壳维护。凭据与环境域名不进模板。
 - **验证**：`tests/packages/craw/` 91 → 93（含第二次 commit 失败回滚、重叠周期串行化）。
 
 ## 2026-07-14 · CrawSyncer 扩展全配置同步
