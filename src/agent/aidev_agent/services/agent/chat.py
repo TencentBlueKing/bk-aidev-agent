@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from aidev_agent.api.bk_agent import BkAgentApi
 from aidev_agent.config import settings
 from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
+from aidev_agent.core.ag_ui.approval import ApproveResult
 from aidev_agent.core.ag_ui.ask_user_question import (
     ASK_USER_QUESTION_SKIPPED_CONTENT,
     AskUserQuestionHandler,
@@ -63,6 +64,13 @@ from aidev_agent.pydantic_models import (
 )
 from aidev_agent.services.agent.approval import ApprovalStateHandler
 from aidev_agent.services.agent.artifacts import build_artifacts_generated_hook
+from aidev_agent.services.agent.executor_identity import (
+    apply_http_approver_identity,
+    collect_approver_tool_names,
+    make_mcp_approver_interceptor,
+    make_mcp_identity_ctx,
+    normalize_executor_identity,
+)
 from aidev_agent.services.agent.registry import AgentBuildContext, ChatBuildExtras
 from aidev_agent.services.common_agent import CommonAgentProtocol, CommonQAAgent
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
@@ -157,6 +165,11 @@ class ChatCompletionAgent(BaseModel):
     )
     agent_info: dict | None = Field(default=None, description="原始配置信息，来自 AgentConfig.agent_info")
     max_spawn_depth: int = Field(default=1, description="最大 Agent 嵌套深度，来自 AgentConfig.max_spawn_depth")
+    executor_identity_ctx: Any = Field(
+        default=None,
+        exclude=True,
+        description="审批人身份切换上下文，与 MCP interceptor 共享同一 dict",
+    )
 
     IMAGE_FILE_PATTERN: ClassVar[re.Pattern] = re.compile(r"^!\[.*\]\((http[^)]+/([^/]+?))\)")
     TOOL_EXECUTION_INTERVAL: ClassVar[int] = 10
@@ -191,6 +204,7 @@ class ChatCompletionAgent(BaseModel):
         self.resource_manager = ctx.resource_manager
         self.skills = builder.build_skills()
         self.tools = builder.build_tools()
+        self.executor_identity_ctx = builder.executor_identity_ctx
         self.mcp_fetch_failures = builder.mcp_fetch_failures
         self.knowledge_bases = builder.build_knowledge_bases()
         self.knowledges = builder.build_knowledge_items()
@@ -468,10 +482,26 @@ class ChatCompletionAgent(BaseModel):
         """查询 gongfeng 后端判断是否需要续流，并从 interrupt 记录获取审批结果及 interrupts。
 
         Returns:
-            ``{"approve_result": ApproveResult, "interrupts": list, "id": int|None}``
+            ``{"approve_result": ApproveResult, "interrupts": list, "id": int|None, "approved_by": str}``
             或 None（尚未回调），其中 ``approve_result`` ∈ {approved, rejected, cancelled}。
         """
         return ApprovalStateHandler().query_approval_info(session_code)
+
+    def _switch_tools_to_approver_identity(self, approved_by: str) -> None:
+        """续流通过后，把 executor_identity=approver 的 tool / MCP 切到审批人应用态身份。"""
+        username = str(approved_by or "").strip()
+        if not username:
+            logger.warning("[ToolApproval] executor_identity=approver 但缺少 approved_by，保持使用者身份")
+            return
+        ctx = self.executor_identity_ctx
+        if isinstance(ctx, dict):
+            ctx["approved_by"] = username
+        apply_http_approver_identity(self.tools, self.executor_info, username)
+        logger.info(
+            "[ToolApproval] 已切换审批人身份: approved_by=%s, tools=%s",
+            username,
+            (ctx or {}).get("approver_tools") if isinstance(ctx, dict) else None,
+        )
 
     def _query_ask_user_question_interrupts(self, agent_e: Runnable, cfg: RunnableConfig) -> list[dict]:
         """从 graph state 获取 ask_user_question 中断信息（续流首帧回放需要）。
@@ -998,6 +1028,16 @@ class ChatCompletionAgent(BaseModel):
             if approval_info is not None:
                 approve_result = approval_info["approve_result"]
                 approval_interrupts = approval_info.get("interrupts") or []
+                logger.info(
+                    "[ToolApproval] _stream 审批查询: approve_result=%s, approved_by=%s, interrupt_count=%s",
+                    approve_result,
+                    approval_info.get("approved_by") or "",
+                    len(approval_interrupts),
+                )
+                if approve_result == ApproveResult.APPROVED:
+                    self._switch_tools_to_approver_identity(approval_info.get("approved_by") or "")
+            else:
+                logger.info("[ToolApproval] _stream 审批查询: approval_info 为空")
             ApprovalStateHandler.hydrate_resume_payload(execute_kwargs.resume, approve_result)
             # ask_user_question 中断：从 graph state 获取（续流首帧回放需要）
             ask_user_question_interrupts = self._query_ask_user_question_interrupts(agent_e, cfg)
@@ -1413,6 +1453,7 @@ class ChatAgentBuilder:
         self._mcp_fetch_failures: list[dict] = []
         self._executor_info: dict | None = None
         self._runtime_backend_resolver: Any | None = None
+        self._executor_identity_ctx: dict[str, Any] = make_mcp_identity_ctx()
         # 装配前先从最后一条 user 消息提取 specific_resources，供 build_tools / build_knowledge_bases 过滤
         self._handle_last_human_message(ctx.session_context_data)
 
@@ -1420,6 +1461,11 @@ class ChatAgentBuilder:
     def mcp_fetch_failures(self) -> list[dict]:
         """MCP 工具拉取失败记录，由 ``build_tools`` 写入"""
         return self._mcp_fetch_failures
+
+    @property
+    def executor_identity_ctx(self) -> dict[str, Any]:
+        """审批人身份切换上下文，与 MCP interceptor 共享。"""
+        return self._executor_identity_ctx
 
     def build_runtime_backend_resolver(self) -> RuntimeBackendResolver:
         """构造 RuntimeBackendResolver。
@@ -1596,6 +1642,9 @@ class ChatAgentBuilder:
             mcp_config=mcp_server_config,
             username=self.ctx.username,
             executor_info=self._executor_info,
+            tool_interceptors=[
+                make_mcp_approver_interceptor(self._executor_identity_ctx, self._executor_info),
+            ],
         )
         self._mcp_fetch_failures = [f.model_dump() for f in mcp_result.fetch_failures]
         logger.info(f"ChatAgentBuilder: mcp_server_config->[{mcp_server_config}]")
@@ -1614,6 +1663,7 @@ class ChatAgentBuilder:
             for tool_code in tool_codes
         ] + mcp_result.tools
         self._apply_tool_approval_settings(tools)
+        self._executor_identity_ctx["approver_tools"] = collect_approver_tool_names(tools)
         return tools
 
     def _apply_tool_approval_settings(self, tools: list[Any]) -> None:
@@ -1693,6 +1743,10 @@ class ChatAgentBuilder:
                 "approval_name": strategy.get("approval_name", ""),
                 "approvers": strategy.get("approvers") or [],
                 "strategy": strategy,
+                "executor_identity": normalize_executor_identity(
+                    binding_data.get("executor_identity"),
+                    approval_enabled=True,
+                ),
             }
             if resource_type == "tool":
                 tool_id = binding_data.get("tool_id")
@@ -1710,6 +1764,24 @@ class ChatAgentBuilder:
                 binding["mcp_name"] = binding_data.get("mcp_name") or mcp_code
                 binding["tool_code"] = binding_data.get("mcp_tool_name", "")
                 binding["tool_name"] = binding_data.get("mcp_tool_name", "")
+                logger.info(
+                    "[ToolApproval] mcp binding 解析: mcp_id=%s, mcp_code=%s, mcp_name=%s, "
+                    "mcp_tool_name=%s, executor_identity=%s, raw_executor_identity=%s, "
+                    "binding_data_keys=%s",
+                    mcp_id,
+                    binding.get("mcp_code"),
+                    binding.get("mcp_name"),
+                    binding.get("tool_code"),
+                    binding["executor_identity"],
+                    binding_data.get("executor_identity"),
+                    list(binding_data.keys()),
+                )
+            logger.info(
+                "[ToolApproval] 归一化 binding: resource_type=%s, tool=%s, executor_identity=%s",
+                resource_type,
+                binding.get("tool_code") or binding.get("tool_name"),
+                binding["executor_identity"],
+            )
             bindings.append(binding)
 
         return bindings
