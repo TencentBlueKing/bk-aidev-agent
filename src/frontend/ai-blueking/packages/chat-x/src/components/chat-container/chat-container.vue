@@ -185,6 +185,7 @@
             :on-user-shortcut-confirm="onUserShortcutConfirm"
             :render-mode="renderMode"
             :update-tools="updateTools"
+            :user-message-tools="userMessageTools"
             @stop-streaming="emits('stopStreaming')"
           >
             <template #group="{ group }">

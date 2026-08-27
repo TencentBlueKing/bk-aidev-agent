@@ -67,6 +67,7 @@ export const transferAgentInfoApi2AgentInfo = (data: IAgentInfoApi): IAgentInfo 
       }
     : undefined,
   agentName: data?.agent_name,
+  agentType: data?.agent_type,
   relatedSkills: data?.related_skills?.map(skill => ({
     id: skill.id,
     skill_name: skill.skill_name,

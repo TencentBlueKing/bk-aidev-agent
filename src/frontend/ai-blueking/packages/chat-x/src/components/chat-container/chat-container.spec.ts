@@ -487,6 +487,8 @@ vi.mock('../chat-message/message-container/message-container.vue', () => ({
       onUserInputConfirm: Function,
       onUserShortcutConfirm: Function,
       renderMode: String,
+      updateTools: Array,
+      userMessageTools: Array,
     },
     emits: ['stopStreaming', 'update:selectedUserMessages'],
     setup(props, { slots }) {
@@ -1300,6 +1302,18 @@ describe('ChatContainer', () => {
 
       const mc = wrapper.findComponent({ name: 'MessageContainer' });
       expect(mc.attributes('data-render-mode')).toBe(RenderMode.Test);
+    });
+
+    it('传入 userMessageTools 应透传给 MessageContainer', () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      const userMessageTools = [{ id: 'edit', hidden: true }];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, userMessageTools },
+      });
+
+      const mc = wrapper.findComponent({ name: 'MessageContainer' });
+      expect(mc.props('userMessageTools')).toEqual(userMessageTools);
     });
 
     it('应将 renderMode 提供给后代组件', () => {

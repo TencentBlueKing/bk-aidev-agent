@@ -5,7 +5,8 @@
   "main": "./dist/index.ts.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "bk-cli-service build && vue-tsc --emitDeclarationOnly"
+    "build": "bk-cli-service build && vue-tsc --emitDeclarationOnly",
+    "test": "vitest run"
   },
   "keywords": [
     "chat-helper"
@@ -28,6 +29,7 @@
     "@blueking/cli-service": "0.1.0-beta.31",
     "eslint-plugin-simple-import-sort": "^10.0.0",
     "typescript": "^5.5.4",
+    "vitest": "^4.0.18",
     "vue-tsc": "^3.1.4"
   },
   "dependencies": {

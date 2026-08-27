@@ -944,7 +944,7 @@ ai-chat-container（:data-ai-size="size"）
 
 ### 自定义按钮触发多选（triggerSelection）
 
-除内置「分享」外，任意自定义工具按钮标记 `triggerSelection: true` 后，点击即可复用同一套多选流程（勾选消息 → `SelectionFooter` 确认），确认时同样触发 `confirmShare`。配合 `messageTools` / `updateTools`（合并规则见 [MessageContainer · 自定义消息工具栏](/components/setup/message-container)）即可扩展如「保存」「收藏到空间」等批量操作。
+除内置「分享」外，任意自定义工具按钮标记 `triggerSelection: true` 后，点击即可复用同一套多选流程（勾选消息 → `SelectionFooter` 确认），确认时同样触发 `confirmShare`。配合 `messageTools` / `updateTools` / `userMessageTools`（合并规则见 [MessageContainer · 自定义消息工具栏](/components/setup/message-container)）即可扩展如「保存」「收藏到空间」等批量操作，或隐藏用户消息上的编辑 / 删除。
 
 ```vue
 <template>
@@ -1119,7 +1119,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | onCustomTabChange         | `(tab: CustomTab) => Promise<any>`                                                       | —         | 自定义 Tab 切换回调，返回值作为 Tab 组件 props                                                                                       |
 | onArtifactClick           | `(file: AIFileInfo) => Promise<{ download_url?: string; preview_url?: string }>`          | —         | 异步获取下载 / 预览链接（每次调用重新获取，无缓存；同文件并发去重）。文本类预览依赖 `download_url`，iframe 类依赖 `preview_url`；未传则隐藏下载、预览无数据 |
 
-> 其余 Props（如 `messages`、`messageStatus`、`onSendMessage`、`shortcuts` 等）继承自 [ChatInput](/components/input/chat-input) 与 [MessageContainer](/components/setup/message-container)。
+> 其余 Props（如 `messages`、`messageStatus`、`onSendMessage`、`shortcuts`、`userMessageTools` 等）继承自 [ChatInput](/components/input/chat-input) 与 [MessageContainer](/components/setup/message-container)。`userMessageTools` 透传给内部 `MessageContainer`，用于按 id 覆盖或隐藏用户消息工具栏。
 
 ### v-model
 

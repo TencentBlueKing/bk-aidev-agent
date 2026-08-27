@@ -125,6 +125,13 @@
 - 其它自定义按钮：走 `agent-action`
 - 仅 builtin share（`!source || source.id === 'share'`）执行内置分享；自定义 source 只向外 emit
 
+**Claw 智能体**：当 `agent/info` 返回 `agent_type: 'claw'`（映射为 `IAgentInfo.agentType`）时，ChatBot 自动在工具列表前叠加 `{ id, hidden: true }`，隐藏：
+
+- 用户消息：`edit`、`delete`（保留 copy / cite）
+- AI 消息：`rebuild`（重新生成）、反馈组 `delete`（保留 copy / cite / share / like / unlike）
+
+`single`、缺省或未知 `agentType` 不做特殊处理。消费方无需新增 prop；Claw 隐藏优先于同 id 的消费方配置。
+
 ```vue
 <ChatBot
   :message-tools="[

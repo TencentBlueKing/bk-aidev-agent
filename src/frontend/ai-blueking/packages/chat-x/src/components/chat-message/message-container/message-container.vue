@@ -49,6 +49,7 @@
               <MessageRender
                 :key="index"
                 :message="message"
+                :message-tools="userMessageTools"
                 :message-tools-status="messageToolsStatus"
                 :on-action="(tool: IToolBtn) => handleUserAction(tool, message)"
                 :on-input-confirm="
@@ -145,6 +146,7 @@
   import { ArrowDownIcon, CloseCircleIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
   import { MessageToolsStatus } from '../../../types/tool';
+  import { mergeToolsById } from '../../../utils';
   import ScrollBtn from '../../ai-buttons/scroll-btn/scroll-btn.vue';
   import MessageTime from '../../message-tools/message-time/message-time.vue';
   import MessageTools, { type MessageToolsProps } from '../../message-tools/message-tools.vue';
@@ -172,6 +174,8 @@
     onInterruptResume?: OnInterruptResume; // ag-ui human-in-the-loop 中断响应回调
     onUserAction?: UserActionCallback;
     renderMode?: RenderMode;
+    // 自定义用户消息工具组（copy/cite/edit/delete）；以内置列表为基底，按 id 覆盖同名项、追加新项；{ id, hidden: true } 可隐藏
+    userMessageTools?: IToolBtn[];
     // 自定义 AI 消息反馈工具组（like/unlike/delete 一排）；以内置列表为基底，按 id 覆盖同名项、追加新项
     updateTools?: IToolBtn[];
   } & {
@@ -264,21 +268,6 @@
   });
 
   const { copy } = useClipboard();
-  /**
-   * 按 id 合并工具列表：以内置列表为基底，同 id 覆盖（字段级合并）、新 id 追加，其余保留；
-   * 最后过滤掉标记 hidden 的项，实现「隐藏内置按钮」（如 { id: 'share', hidden: true }）。
-   * @param base 内置基底列表
-   * @param extra 业务自定义列表
-   */
-  const mergeToolsById = (base: IToolBtn[], extra?: IToolBtn[]): IToolBtn[] => {
-    if (!extra?.length) return base;
-    const merged = base.map(tool => {
-      const override = extra.find(item => item.id === tool.id);
-      return override ? { ...tool, ...override } : tool;
-    });
-    const appended = extra.filter(item => !base.some(tool => tool.id === item.id));
-    return [...merged, ...appended].filter(tool => !tool.hidden);
-  };
   const messageTools = computed(() => {
     const tools = mergeToolsById(CONST_MESSAGE_TOOLS, props.messageTools);
     return tools.filter(tool => props.renderMode !== RenderMode.Test || tool.id !== 'share');

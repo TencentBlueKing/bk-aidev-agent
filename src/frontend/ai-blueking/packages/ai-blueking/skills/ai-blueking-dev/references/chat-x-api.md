@@ -123,7 +123,7 @@ import {
 |------|-----------|------|
 | ChatContainerProps | `chatLoading?`、`commonTippyOptions?`、`executionTabVisible?`（默认 `true`）、`getSideRenderComponent?`、`getSideTabRenderComponent?`、`onCustomTabChange?`、`openingRemark?`、`asideCollapsed?`（严格受控，不传则内部自持默认折叠）、`resizeProps?`、`size?`（`AiSizeMode`，默认 `'small'`）、`welcomeTitle?` | 侧栏固定右侧展开、Tab、欢迎语、全局 tippy、字号主题、侧栏渲染 |
 | ChatInputProps | 同 [ChatInput](#chatinput-聊天输入框) | 内部透传 `ChatInput` |
-| MessageContainerProps（省略项由容器内部注入） | `messages`、`messageStatus?`、`messageTools?`、`updateTools?`、`messageToolsStatus?`、`onAgentAction?`、`onAgentFeedback?`、`onUserAction?`、`onInterruptResume?`、`onUserInputConfirm?`、`onUserShortcutConfirm?` 等 | `enableSelection` / `messageGroups` / `messageToolsTippyOptions` 由内部 `useMessageGroup` 管理；`messageTools`/`updateTools` 与内置工具按 id 合并 |
+| MessageContainerProps（省略项由容器内部注入） | `messages`、`messageStatus?`、`messageTools?`、`updateTools?`、`userMessageTools?`、`messageToolsStatus?`、`onAgentAction?`、`onAgentFeedback?`、`onUserAction?`、`onInterruptResume?`、`onUserInputConfirm?`、`onUserShortcutConfirm?` 等 | `enableSelection` / `messageGroups` / `messageToolsTippyOptions` 由内部 `useMessageGroup` 管理；`messageTools`/`updateTools`/`userMessageTools` 与内置工具按 id 合并 |
 
 > **侧栏渲染是 prop 而非插槽**：`getSideRenderComponent?: (h, props?) => VNode` 与 `getSideTabRenderComponent?: (h, tab, events) => VNode` 的返回结果被渲染进内部 `#aside` 区域（不存在 `#headerLeft` / 侧栏插槽）。
 
@@ -265,6 +265,7 @@ onSendMessage?: (
 | messageToolsStatus | `MessageToolsStatus` | - | 工具栏 `Disabled` / `Hidden` |
 | messageTools | `IToolBtn[]` | - | 自定义 AI 主工具组；按 id 与内置 `CONST_MESSAGE_TOOLS` 合并 |
 | updateTools | `IToolBtn[]` | - | 自定义反馈工具组；按 id 与内置 `CONST_UPDATE_TOOLS` 合并 |
+| userMessageTools | `IToolBtn[]` | - | 自定义用户消息工具组；按 id 与内置 `CONST_USER_MESSAGE_TOOLS` 合并，`{ id, hidden: true }` 可隐藏 edit/delete 等 |
 | messageToolsTippyOptions | `MessageToolsProps['tippyOptions']` | - | 消息工具 Tippy |
 | enableSelection | `boolean` | `false` | 多选（分享） |
 | renderMode | `RenderMode` | - | 渲染模式（chat/share/test），影响选择、工具、Loading 组等，见 [RenderMode](#rendermode-渲染模式chatsharetest) |
@@ -356,7 +357,7 @@ const {
 
 ### Props（节选）
 
-`Partial<UserMessageActionsProps> & Pick<MessageToolsProps, 'onAction' | 'tippyOptions'> & { message: Partial<Message>; onInterruptResume?: OnInterruptResume }`，含 `messageToolsStatus`、`onInputConfirm`、`onShortcutConfirm` 等（与 `UserMessage` 工具栏、编辑态一致）。`onInterruptResume` 会向下传给 `ActivityMessage`（flow-agent 节点重试/跳过）与 `InterruptMessageRender`。
+`Partial<UserMessageActionsProps> & Pick<MessageToolsProps, 'onAction' | 'tippyOptions'> & { message: Partial<Message>; messageTools?: IToolBtn[]; onInterruptResume?: OnInterruptResume }`，含 `messageToolsStatus`、`onInputConfirm`、`onShortcutConfirm` 等（与 `UserMessage` 工具栏、编辑态一致）。`messageTools` 仅转发给 `UserMessage`，按 id 与 `CONST_USER_MESSAGE_TOOLS` 合并。`onInterruptResume` 会向下传给 `ActivityMessage`（flow-agent 节点重试/跳过）与 `InterruptMessageRender`。
 
 ### Slots
 

@@ -267,6 +267,7 @@ slot 参数类型与 `AssistantMessage` 的 slot 保持一致（`Partial<Assista
 | 属性名             | 类型                                                                       | 默认值 | 说明                                              |
 | ------------------ | -------------------------------------------------------------------------- | ------ | ------------------------------------------------- |
 | message            | `Partial<Message>`                                                         | —      | **必填**，消息对象，`role` 字段决定渲染哪个子组件 |
+| messageTools       | `IToolBtn[]`                                                               | —      | 自定义用户消息工具组；**仅转发给 `UserMessage`**，按 id 与内置列表合并 |
 | messageToolsStatus | `MessageToolsStatus`                                                       | —      | 工具按钮状态；**仅转发给 `UserMessage`**          |
 | onAction           | `(tool: IToolBtn) => Promise<string[] \| void>`                            | —      | 工具操作回调；**仅转发给 `UserMessage`**          |
 | onInputConfirm     | `(content: UserMessage['content'], docSchema: TagSchema) => Promise<void>` | —      | 用户编辑确认回调；**仅转发给 `UserMessage`**      |
@@ -286,7 +287,7 @@ slot 参数类型与 `AssistantMessage` 的 slot 保持一致（`Partial<Assista
 
 | `MessageRole` | 渲染组件           | prop 路由                                                                                               | 说明                  |
 | ------------- | ------------------ | ------------------------------------------------------------------------------------------------------- | --------------------- |
-| `user`        | `UserMessage`      | `message` + `onAction` + `onInputConfirm` + `onShortcutConfirm` + `messageToolsStatus` + `tippyOptions` | 用户发送的消息        |
+| `user`        | `UserMessage`      | `message` + `onAction` + `onInputConfirm` + `onShortcutConfirm` + `messageTools` + `messageToolsStatus` + `tippyOptions` | 用户发送的消息        |
 | `assistant`   | `AssistantMessage` | `message` + `default slot`                                                                              | AI 助手回复消息       |
 | `info`        | `InfoMessage`      | `message`                                                                                               | 系统信息 / 会话分隔符 |
 | `reasoning`   | `ReasoningMessage` | `message`                                                                                               | AI 思考过程（可折叠） |

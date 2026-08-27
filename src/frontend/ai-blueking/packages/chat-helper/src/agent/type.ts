@@ -90,6 +90,8 @@ export interface IAgentCommandComponentApi {
 
 export interface IAgentInfo {
   agentName?: string;
+  /** Agent 类型：single 为普通智能体，claw 为 Claw 智能体 */
+  agentType?: 'claw' | 'single' | string;
   relatedSkills?: IRelatedSkill[];
   resources?: IAgentResourceItem[];
   saasUrl?: string;
@@ -112,6 +114,8 @@ export interface IAgentInfo {
 
 export interface IAgentInfoApi {
   agent_name: string;
+  /** Agent 类型：single 为普通智能体，claw 为 Claw 智能体 */
+  agent_type?: 'claw' | 'single' | string;
   related_skills?: IRelatedSkillApi[];
   resources?: IAgentResourceItem[];
   saas_url?: string;

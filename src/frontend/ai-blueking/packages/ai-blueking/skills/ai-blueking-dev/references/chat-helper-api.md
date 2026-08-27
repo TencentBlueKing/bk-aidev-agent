@@ -284,6 +284,8 @@ interface ISupportUpload {
 
 interface IAgentInfo {
   agentName?: string;
+  /** Agent 类型：`single` 为普通智能体；`claw` 时 ChatBot 自动隐藏编辑/删除/重新生成 */
+  agentType?: 'claw' | 'single' | string;
   resources?: IAgentResourceItem[];
   saasUrl?: string;
   chatGroup?: { enabled: boolean; staff: string[]; username: string };

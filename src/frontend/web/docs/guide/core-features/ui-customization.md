@@ -151,6 +151,8 @@ aiBluekingRef.value.updatePositionAndSize(100, 200, 600, 800);
 
 在内置工具基础上增量定制 AI 消息工具栏，合并规则与 chat-x 一致：同 `id` 覆盖、新 `id` 追加、`{ id, hidden: true }` 隐藏。
 
+当 `agent/info` 返回 `agent_type: 'claw'` 时，ChatBot 会自动隐藏用户消息的编辑/删除，以及 AI 消息的重新生成与删除（copy / cite / share / like / unlike 仍可用），无需额外 prop。
+
 ```vue
 <template>
   <ChatBot

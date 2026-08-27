@@ -50,6 +50,8 @@ Agent 信息接口，描述一个 AI Agent 的基础配置。
 interface IAgentInfo {
   /** Agent 名称 */
   agentName: string;
+  /** Agent 类型：`single` 为普通智能体；`claw` 时 ChatBot 自动隐藏编辑/删除/重新生成 */
+  agentType?: 'claw' | 'single' | string;
   /** 可用资源列表 */
   resources: IAgentResource[];
   /** SaaS 地址 */
