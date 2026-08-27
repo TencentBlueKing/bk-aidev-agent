@@ -86,7 +86,7 @@ Legacy env（既有插件迁移兼容，统一 env 优先）：`BKAI_OPENCLAW_GA
 
 单元测试：`make test path=tests/packages/craw`。
 
-协作智能体用独立模板 `template/craw/`，在 `bk_plugin/patch/urls.py` 挂 `enable_chat_takeover()`。对话插件仍走 `template/builtin/`，见 [craw-isolation-publish.md](craw-isolation-publish.md)。
+普通智能体与协作智能体共用 `template/builtin/`；模板在 `bk_plugin/patch/urls.py` 调用 `enable_chat_takeover()`，未设置 `BKAI_CRAW_BACKEND` 时零影响。Craw 只在部署侧增加 Docker 内核运行外壳，见 [craw-isolation-publish.md](craw-isolation-publish.md)。
 
 ## 扩展新内核
 
