@@ -5,7 +5,11 @@ ROOT_DIR := $(abspath $(OTEL_DIR)/../..)
 PLUGIN_DIR := $(ROOT_DIR)/src/plugins/aidev_bkplugin
 PYTHON ?= $(PLUGIN_DIR)/.venv/bin/python
 PODMAN ?= podman
+JQ ?= jq
 COMPOSE := $(PODMAN) compose -f $(OTEL_DIR)/docker-compose.yml
+PROMETHEUS_DASHBOARD := $(OTEL_DIR)/grafana/dashboards/aidev-agent-metrics.json
+BKMONITOR_DASHBOARD := $(OTEL_DIR)/grafana/components/aidev-agent-metrics-bkmonitor.json
+BKMONITOR_DASHBOARD_FILTER := $(OTEL_DIR)/grafana/generate-bkmonitor-dashboard.jq
 
 N ?= 3
 MODELS ?= mock-log-analysis-a,mock-log-analysis-b,mock-log-analysis-c
@@ -19,7 +23,7 @@ MOCK_COMMAND = env PYTHONPATH="$(ROOT_DIR)/src/agent:$(PLUGIN_DIR):$(ROOT_DIR)" 
 	-n "$(N)" --models "$(MODELS)" --handler "$(HANDLER)" \
 	--iterations "$(ITERATIONS)" --interval "$(INTERVAL)" --seed "$(SEED)"
 
-.PHONY: help start stop up down status logs mock test metrics
+.PHONY: help start stop up down status logs mock test metrics dashboard-bkmonitor
 
 help:
 	@echo "Local OpenTelemetry observability"
@@ -30,6 +34,7 @@ help:
 	@echo "  make mock        Run mock in the foreground"
 	@echo "  make test        Run exporter and local observability tests"
 	@echo "  make metrics     Print the Collector Prometheus endpoint"
+	@echo "  make dashboard-bkmonitor  Regenerate the standalone BK Monitor dashboard"
 	@echo ""
 	@echo "Parameters: N=3 MODELS=a,b,c HANDLER=all ITERATIONS=400 INTERVAL=1.5 SEED=20260809"
 
@@ -59,3 +64,8 @@ test:
 
 metrics:
 	curl -fsS http://localhost:8889/metrics
+
+dashboard-bkmonitor:
+	mkdir -p "$(dir $(BKMONITOR_DASHBOARD))"
+	$(JQ) -f "$(BKMONITOR_DASHBOARD_FILTER)" "$(PROMETHEUS_DASHBOARD)" > "$(BKMONITOR_DASHBOARD).tmp"
+	mv "$(BKMONITOR_DASHBOARD).tmp" "$(BKMONITOR_DASHBOARD)"

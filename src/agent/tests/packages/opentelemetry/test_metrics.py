@@ -57,7 +57,7 @@ def test_agent_metrics_only_create_instruments_used_by_the_dashboard():
         "gen_ai.execute_tool.active",
         "gen_ai.execute_tool.duration",
         "gen_ai.invoke_agent.duration",
-        "gen_ai.invoke_agent.inference_calls",
+        "gen_ai.invoke_agent.iteration_count",
         "gen_ai.invoke_agent.started",
         "gen_ai.invoke_agent.time_to_first_token",
     }
@@ -112,7 +112,7 @@ def test_error_type_is_added_only_to_duration_metric():
 
     duration_attrs = meter.instruments["gen_ai.invoke_agent.duration"].calls[0][1]
     assert duration_attrs["error.type"] == "RuntimeError"
-    assert "error.type" not in meter.instruments["gen_ai.invoke_agent.inference_calls"].calls[0][1]
+    assert meter.instruments["gen_ai.invoke_agent.iteration_count"].calls == [(2, attrs)]
     assert "agent.session.session_code" not in duration_attrs
 
 

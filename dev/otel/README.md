@@ -27,6 +27,26 @@ Collector 接收端口为 `4317`（gRPC）和 `4318`（HTTP），Prometheus 为
 本地镜像固定为 Grafana `10.4.19`，仪表盘使用该版本生成的 schema 39，保持与线上
 Grafana 10.x 的兼容性；后续编辑和导出也应继续使用 10.x 环境。
 
+## 蓝鲸监控仪表盘
+
+线上蓝鲸监控导入版位于
+`grafana/components/aidev-agent-metrics-bkmonitor.json`。它参考
+`monitor-as-code/grafana/components/bkaidev-resource.json`，使用
+`bkmonitor-timeseries-datasource`、`source/promqlAlias` 查询结构和蓝鲸监控变量协议；
+保留与本地版相同的 34 个面板、过滤维度和 PromQL 计算语义。
+
+该文件不在本地 Grafana provisioning 的 `grafana/dashboards` 目录中，不会覆盖或加载为
+本地 Prometheus 仪表盘。修改本地版面板后，可重新生成独立的蓝鲸监控配置：
+
+```bash
+cd dev/otel
+make dashboard-bkmonitor
+```
+
+该配置固定使用 UID `cfjy28njb6ghsd` 的“蓝鲸监控 - 指标数据”数据源。蓝鲸监控版默认
+查询最近 1 小时，按 1 分钟、5 分钟或 1 小时窗口计算速率和 P95；本地 Prometheus 版
+仍保持最近 15 分钟和 5 秒刷新。
+
 ## 发送 mock 指标
 
 `make start` 默认同时模拟 4 个 Handler。每个 Handler 有一个持续运行的基础槽位，

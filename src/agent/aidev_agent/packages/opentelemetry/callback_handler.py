@@ -321,7 +321,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         # 工具调用计数器
         self.tool_call_counter = 0
         self.rag_call_counter = 0
-        self.inference_call_counter = 0
+        self.agent_iteration_counter = 0
 
         # Metric state uses monotonic clocks and contains no session/user data.
         self._metrics = metric_recorder or (get_agent_metrics() if enable_metrics else None)
@@ -385,7 +385,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
                     try:
                         self._metrics.record_agent(
                             duration=time.monotonic() - started_at,
-                            inference_calls=self.inference_call_counter,
+                            iteration_count=self.agent_iteration_counter,
                             attributes=self._metric_agent_attributes,
                             error=error,
                         )
@@ -913,7 +913,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             max_attribute_length=self.max_attribute_length,
         )
         if self._metrics is not None:
-            self.inference_call_counter += 1
+            self.agent_iteration_counter += 1
             self._llm_started_at[run_id] = time.monotonic()
             active_attributes = self._llm_metric_attributes(run_id)
             self._llm_active_attributes[run_id] = active_attributes
@@ -952,7 +952,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             max_attribute_length=self.max_attribute_length,
         )
         if self._metrics is not None:
-            self.inference_call_counter += 1
+            self.agent_iteration_counter += 1
             self._llm_started_at[run_id] = time.monotonic()
             active_attributes = self._llm_metric_attributes(run_id)
             self._llm_active_attributes[run_id] = active_attributes

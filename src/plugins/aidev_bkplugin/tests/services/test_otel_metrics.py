@@ -11,6 +11,7 @@ import requests
 pytest.importorskip("opentelemetry.sdk.metrics")
 
 from aidev_agent.packages.opentelemetry.metrics import (
+    AGENT_ITERATION_HISTOGRAM_BOUNDARIES,
     DURATION_HISTOGRAM_BOUNDARIES,
     MESSAGE_SIZE_HISTOGRAM_BOUNDARIES,
 )
@@ -258,6 +259,7 @@ def test_metric_service_uses_agent_sdk_histogram_boundaries():
 
     assert tuple(views[0]._aggregation._boundaries) == DURATION_HISTOGRAM_BOUNDARIES
     assert tuple(views[1]._aggregation._boundaries) == MESSAGE_SIZE_HISTOGRAM_BOUNDARIES
+    assert tuple(views[2]._aggregation._boundaries) == AGENT_ITERATION_HISTOGRAM_BOUNDARIES
 
 
 def test_bkm_records_preserve_counter_and_histogram_semantics():
