@@ -232,10 +232,12 @@ OTel Counter 转成 BKM 的 `*_total`；Histogram 转成累计 `*_bucket`（`le`
 生产默认周期为 10 秒；显式下发 `export_interval_millis` 时仍以配置值为准。本地 mock 为了缩短
 仪表盘验证等待时间，继续使用 1 秒周期。
 
-本地生成项目的 `.env` 可只配置以下三项；未显式配置 `metrics.enabled` 时，三项齐全会自动启用
-BKM 指标。平台下发的 `otel_info.metrics.agent_*` 优先级高于环境变量：
+本地生成项目默认使用 `BKAI_AGENT_ENABLE_METRICS=false` 强制关闭指标，该显式环境变量的优先级
+高于平台下发的 `otel_info.metrics.enabled`。需要联调 BKM 时改为 `true` 并配置以下参数；平台下发的
+`otel_info.metrics.agent_*` 仍优先于同名连接参数环境变量：
 
 ```bash
+BKAI_AGENT_ENABLE_METRICS=true
 BKAI_AGENT_METRICS_HOST=proxy.example
 BKAI_AGENT_METRICS_DATA_ID=1001
 BKAI_AGENT_METRICS_TOKEN=<本地密钥>

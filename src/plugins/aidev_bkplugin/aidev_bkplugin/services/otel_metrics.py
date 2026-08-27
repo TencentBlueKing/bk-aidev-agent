@@ -106,7 +106,12 @@ class MetricExportSettings:
         has_bkm_config = data_id not in (None, "") and bool(access_token and push_url)
         if export_via_celery is None:
             export_via_celery = has_bkm_config
-        enabled = metrics_info.get("enabled", otel_info.get("enable_metrics", default_enabled or has_bkm_config))
+        environment_enabled = os.getenv("BKAI_AGENT_ENABLE_METRICS")
+        enabled = (
+            environment_enabled
+            if environment_enabled is not None
+            else metrics_info.get("enabled", otel_info.get("enable_metrics", default_enabled or has_bkm_config))
+        )
         return cls(
             enabled=_as_bool(enabled),
             export_interval_millis=max(1000, int(interval)),

@@ -29,6 +29,9 @@ cp ./support-files/env.template .env
 
 **注意：support-files/env.template 是环境变量模板，会提交到代码仓库，请勿配置敏感信息**
 
+模板默认设置 `BKAI_AGENT_ENABLE_METRICS=false`，本地运行时会强制关闭指标，即使平台下发的
+`agent_info.otel_info.metrics` 为启用状态也不会上报；需要联调指标时再显式改为 `true`。
+
 ### 1.4 启动服务并测试
 
 #### 1.4.1 UNIX 系统
