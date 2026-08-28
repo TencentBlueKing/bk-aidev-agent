@@ -96,8 +96,9 @@ def test_tool_call_start_is_pushed_before_the_result_arrives():
     assert not frames[0].finish
     assert "🔄" in frames[0].content
     assert "execute" in frames[0].content
+    assert "调用中" in frames[0].content
     assert frames[0].content.endswith("\n\n")
-    assert "🟢 **execute** · 207ms" in frames[-1].content
+    assert "🟢 **execute** · 已完成 · 207ms" in frames[-1].content
 
 
 def test_tool_block_refreshes_in_place_and_interleaves_with_text():
@@ -118,8 +119,11 @@ def test_tool_block_refreshes_in_place_and_interleaves_with_text():
     )
 
     content = frames[-1].content
-    assert "🟢 **activate_skill** `bklog` · 12ms" in content
-    assert "🟢 **execute** · 90ms" in content
+    assert "调用中" in frames[0].content
+    assert "执行中" in frames[1].content
+    assert "已完成" in frames[2].content
+    assert "🟢 **activate_skill** `bklog` · 已完成 · 12ms" in content
+    assert "🟢 **execute** · 已完成 · 90ms" in content
     assert "`ls`" not in content
     assert "接下来查询日志" in content
     # 成功的结果由正文复述，工具块里不再重复
@@ -143,7 +147,7 @@ def test_failed_tool_shows_the_reason():
     )
 
     content = frames[-1].content
-    assert "🔴 **execute** · 60.0s" in content
+    assert "🔴 **execute** · 执行失败 · 60.0s" in content
     assert "1640001" in content
     assert "用户认证失败" not in content
 
@@ -192,7 +196,7 @@ def test_tool_block_and_thinking_coexist():
 
     content = frames[-1].content
     assert content.startswith("<think>需要先激活技能</think>")
-    assert "🟢 **activate_skill** · 5ms" in content
+    assert "🟢 **activate_skill** · 已完成 · 5ms" in content
 
 
 def test_chat_run_error_becomes_explicit_terminal_frame():

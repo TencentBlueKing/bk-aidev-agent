@@ -55,6 +55,12 @@ TOOL_STATUS_ICONS = {
     "ok": "🟢",
     "error": "🔴",
 }
+TOOL_STATUS_LABELS = {
+    "calling": "调用中",
+    "running": "执行中",
+    "ok": "已完成",
+    "error": "执行失败",
+}
 # 每行的前缀，靠引用块把工具与正文在视觉上分开。
 # 若企微不渲染引用块，改成 "▎" 这类竖线字符即可，纯文本下同样有分隔效果。
 TOOL_LINE_PREFIX = "> "

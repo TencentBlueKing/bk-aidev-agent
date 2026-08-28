@@ -15,7 +15,7 @@ from logging import getLogger
 
 from ag_ui.core.events import EventType
 
-from .constants import TOOL_LINE_PREFIX, TOOL_STATUS_ICONS, TOOL_TARGET_LIMIT
+from .constants import TOOL_LINE_PREFIX, TOOL_STATUS_ICONS, TOOL_STATUS_LABELS, TOOL_TARGET_LIMIT
 
 logger = getLogger(__name__)
 
@@ -86,7 +86,7 @@ def _safe_tool_error(result: str) -> str:
 
 
 def format_tool_markdown(tool: dict) -> str:
-    """一行「图标 + 工具名 + 操作对象 + 耗时」，失败时补一行原因。
+    """一行「图标 + 工具名 + 操作对象 + 状态 + 耗时」，失败时补一行原因。
 
     工具块靠引用块与正文分开；成功的结果不展示，正文本就会复述一遍。
     """
@@ -95,6 +95,7 @@ def format_tool_markdown(tool: dict) -> str:
     target = _format_tool_target(tool.get("args") or "")
     if target:
         parts.append(f"`{target}`")
+    parts.append(f"· {TOOL_STATUS_LABELS.get(status, '处理中')}")
     duration = _format_duration(tool.get("duration"))
     if duration and status in {"ok", "error"}:
         parts.append(f"· {duration}")
