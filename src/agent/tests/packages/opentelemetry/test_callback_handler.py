@@ -235,6 +235,37 @@ class TestBkAidevAgentCallbackHandler:
         assert end_call.args[0] == -1
         assert start_call.args[1] == end_call.args[1]
 
+    def test_agent_iteration_count_equals_llm_start_callbacks_in_one_run(self, tracer_and_exporter):
+        tracer, _ = tracer_and_exporter
+        recorder = MagicMock()
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, metric_recorder=recorder)
+        chain_run_id = uuid4()
+        llm_run_id = uuid4()
+        chat_run_id = uuid4()
+
+        asyncio.run(handler.on_chain_start(serialized={"name": "agent"}, inputs={}, run_id=chain_run_id))
+        asyncio.run(
+            handler.on_llm_start(
+                serialized={"name": "model-a"},
+                prompts=["hello"],
+                run_id=llm_run_id,
+                parent_run_id=chain_run_id,
+            )
+        )
+        asyncio.run(handler.on_llm_error(RuntimeError("retry"), run_id=llm_run_id, parent_run_id=chain_run_id))
+        asyncio.run(
+            handler.on_chat_model_start(
+                serialized={"name": "model-b"},
+                messages=[[HumanMessage(content="retry")]],
+                run_id=chat_run_id,
+                parent_run_id=chain_run_id,
+            )
+        )
+        asyncio.run(handler.on_llm_error(RuntimeError("boom"), run_id=chat_run_id, parent_run_id=chain_run_id))
+        asyncio.run(handler.on_chain_end(outputs={}, run_id=chain_run_id))
+
+        assert recorder.record_agent.call_args.kwargs["iteration_count"] == 2
+
     def test_agent_phase_and_first_token_metrics_follow_runtime_callbacks(self, tracer_and_exporter):
         tracer, _ = tracer_and_exporter
         recorder = MagicMock()

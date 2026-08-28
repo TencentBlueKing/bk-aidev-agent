@@ -71,8 +71,10 @@ vi.mock('../../../composables', () => ({
 // Mock common/constants
 vi.mock('../../../common/constants', () => ({
   CONST_USER_MESSAGE_TOOLS: [
-    { id: 'edit', name: '编辑', description: '编辑消息' },
     { id: 'copy', name: '复制', description: '复制消息' },
+    { id: 'cite', name: '引用', description: '引用消息' },
+    { id: 'edit', name: '编辑', description: '编辑消息' },
+    { id: 'delete', name: '删除', description: '删除消息' },
   ],
 }));
 
@@ -180,6 +182,7 @@ vi.mock('../../message-tools/message-tools.vue', () => ({
             class: 'mock-message-tools',
             'data-message-tools-status': props.messageToolsStatus,
             'data-has-tippy-options': props.tippyOptions !== undefined ? 'true' : undefined,
+            'data-tools-json': JSON.stringify(props.messageTools ?? []),
           },
           [slots.prepend?.(), 'Message Tools', slots.append?.()],
         );
@@ -591,6 +594,33 @@ describe('UserMessage', () => {
 
       const editBtn = wrapper.findAll('.mock-message-tools');
       expect(editBtn.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('messageTools 覆盖与隐藏', () => {
+    const readToolIds = () => {
+      const json = wrapper.find('.mock-message-tools').attributes('data-tools-json');
+      return (JSON.parse(json ?? '[]') as Array<{ id: string }>).map(tool => tool.id);
+    };
+
+    it('不传 messageTools 时应使用内置 copy/cite/edit/delete', () => {
+      wrapper = mount(UserMessage, {
+        props: { content: '消息' },
+      });
+      expect(readToolIds()).toEqual(['copy', 'cite', 'edit', 'delete']);
+    });
+
+    it('传入 hidden 的 edit/delete 后应只保留 copy/cite', () => {
+      wrapper = mount(UserMessage, {
+        props: {
+          content: '消息',
+          messageTools: [
+            { id: 'edit', hidden: true },
+            { id: 'delete', hidden: true },
+          ],
+        },
+      });
+      expect(readToolIds()).toEqual(['copy', 'cite']);
     });
   });
 });

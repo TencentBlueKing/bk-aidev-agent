@@ -187,7 +187,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "含义：当前正在执行的 LLM Operation 数量。计算：对筛选范围内 gen_ai_client_operation_active Gauge 求和；按请求模型过滤，不使用调用结束后才确定的响应模型。",
+      "description": "含义：当前互斥地处于 LLM 阶段的 Agent Run 数量，与 processing、tool、mixed、finalizing 阶段共同构成活跃 Agent Run；mixed 不重复计入本卡片。计算：对 aidev_agent_phase_active Gauge 中 aidev.agent.phase=llm 的序列求和。模型维度属于 Operation，不适用于 Agent 阶段过滤。",
       "fieldConfig": {
         "defaults": {
           "decimals": 0,
@@ -240,13 +240,13 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(gen_ai_client_operation_active{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\"}) or vector(0)",
-          "legendFormat": "活跃 LLM",
+          "expr": "sum(aidev_agent_phase_active{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",aidev_agent_phase=\"llm\"}) or vector(0)",
+          "legendFormat": "LLM 阶段 Run",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "活跃 LLM Operation",
+      "title": "LLM 阶段 Agent Run",
       "type": "stat"
     },
     {
@@ -254,7 +254,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "含义：当前正在执行的工具 Operation 数量。计算：对筛选范围内 gen_ai_execute_tool_active Gauge 求和，可按工具名称过滤。",
+      "description": "含义：当前互斥地处于 Tool 阶段的 Agent Run 数量，与 processing、llm、mixed、finalizing 阶段共同构成活跃 Agent Run；一个 Run 内并行多个工具仍只计 1，mixed 不重复计入本卡片。计算：对 aidev_agent_phase_active Gauge 中 aidev.agent.phase=tool 的序列求和。工具名称属于 Operation，不适用于 Agent 阶段过滤。",
       "fieldConfig": {
         "defaults": {
           "decimals": 0,
@@ -307,13 +307,13 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(gen_ai_execute_tool_active{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_tool_name=~\"${tool_name:regex}\"}) or vector(0)",
-          "legendFormat": "活跃 Tool",
+          "expr": "sum(aidev_agent_phase_active{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",aidev_agent_phase=\"tool\"}) or vector(0)",
+          "legendFormat": "Tool 阶段 Run",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "活跃 Tool Operation",
+      "title": "Tool 阶段 Agent Run",
       "type": "stat"
     },
     {
@@ -453,10 +453,10 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "含义：所选时段内每个已完成 Agent Run 的平均迭代次数，一次 LLM 推理调用计为一次迭代。计算：inference_calls_total 的 increase 总和除以 Agent duration count 的 increase 总和，分母最小取 1。",
+      "description": "含义：所选时段内，单个已完成 Agent Run 的 LLM 调用尝试次数 P95；一次 on_chat_model_start 或 on_llm_start 计为一次迭代，失败与重试调用也计入，未完成 Run 不计入。计算：对 gen_ai_invoke_agent_iteration_count Histogram bucket 在所选时段的增量按 le 汇总，使用 histogram_quantile(0.95, …) 估算并向上取整。",
       "fieldConfig": {
         "defaults": {
-          "decimals": 2,
+          "decimals": 0,
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -506,13 +506,14 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(increase(gen_ai_invoke_agent_inference_calls_total{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[$__range])) / clamp_min(sum(increase(gen_ai_invoke_agent_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[$__range])), 1)",
-          "legendFormat": "迭代/Run",
-          "range": true,
+          "expr": "ceil(histogram_quantile(0.95, sum by (le) (increase(gen_ai_invoke_agent_iteration_count_bucket{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}[$__range]))))",
+          "instant": true,
+          "legendFormat": "迭代次数 P95",
+          "range": false,
           "refId": "A"
         }
       ],
-      "title": "平均 Agent 迭代次数",
+      "title": "Agent 迭代次数 P95",
       "type": "stat"
     },
     {
@@ -777,8 +778,8 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 24,
-        "x": 0,
+        "w": 12,
+        "x": 12,
         "y": 14
       },
       "id": 9,
@@ -824,6 +825,61 @@
       ],
       "title": "Agent 进入与完成速率",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "含义：按 Agent Code 展示当前正在执行的 Agent Run 数；在同一会话同一时刻最多运行一个 Run 时，该值等价于运行中会话数。为避免高基数，不采集 session_code，无法区分同一会话并发多个 Run 的情况。计算：按 agent_info_code、agent_info_name、agent_info_sdk_version 汇总 aidev_agent_active，并仅保留大于 0 的智能体。",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "id": 33,
+      "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (agent_info_code, agent_info_name, agent_info_sdk_version) (aidev_agent_active{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\"}) > 0",
+          "instant": true,
+          "legendFormat": "{{agent_info_code}} · {{agent_info_name}} · {{agent_info_sdk_version}}",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "当前运行智能体及会话数",
+      "type": "bargauge"
     },
     {
       "collapsed": false,
@@ -2000,6 +2056,129 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "含义：所选时段内 Agent、LLM、Tool 和 Handler 已结束错误记录的总数；同一次失败如果同时形成多类错误指标，会分别计数，因此它表示错误指标事件数而不是失败会话去重数。计算：分别对四类带非空 error_type 的 duration count 计算 increase，通过来源标签合并后求和。",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 4,
+        "x": 0,
+        "y": 100
+      },
+      "id": 34,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "10.4.19",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(label_replace(sum(increase(gen_ai_invoke_agent_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",error_type!=\"\"}[$__range])), \"aidev_error_source\", \"agent\", \"\", \".*\") or label_replace(sum(increase(gen_ai_client_operation_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\",gen_ai_response_model=~\"${response_model:regex}\",error_type!=\"\"}[$__range])), \"aidev_error_source\", \"llm\", \"\", \".*\") or label_replace(sum(increase(gen_ai_execute_tool_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_tool_name=~\"${tool_name:regex}\",error_type!=\"\"}[$__range])), \"aidev_error_source\", \"tool\", \"\", \".*\") or label_replace(sum(increase(aidev_message_publish_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",aidev_message_handler_type=~\"${handler_type:regex}\",error_type!=\"\"}[$__range])), \"aidev_error_source\", \"handler\", \"\", \".*\")) or vector(0)",
+          "instant": true,
+          "legendFormat": "错误计数",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "错误计数（所选时段）",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "含义：所选时段内各 Agent Code 产生的 Agent、LLM、Tool 和 Handler 错误指标事件总数，用于识别错误集中在哪些智能体；error.type 与指标来源细分见右侧错误速率图。计算：四类错误 duration count 分别按 Agent 聚合 increase，增加临时来源标签避免集合冲突，再按 Agent 求和并降序排列。",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 4,
+        "y": 100
+      },
+      "id": 35,
+      "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sort_desc(sum by (agent_info_code) (label_replace(sum by (agent_info_code) (increase(gen_ai_invoke_agent_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",error_type!=\"\"}[$__range])), \"aidev_error_source\", \"agent\", \"agent_info_code\", \".*\") or label_replace(sum by (agent_info_code) (increase(gen_ai_client_operation_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_request_model=~\"${request_model:regex}\",gen_ai_response_model=~\"${response_model:regex}\",error_type!=\"\"}[$__range])), \"aidev_error_source\", \"llm\", \"agent_info_code\", \".*\") or label_replace(sum by (agent_info_code) (increase(gen_ai_execute_tool_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",gen_ai_tool_name=~\"${tool_name:regex}\",error_type!=\"\"}[$__range])), \"aidev_error_source\", \"tool\", \"agent_info_code\", \".*\") or label_replace(sum by (agent_info_code) (increase(aidev_message_publish_duration_seconds_count{agent_info_code=~\"${agent_code:regex}\",agent_info_sdk_version=~\"${agent_version:regex}\",aidev_message_handler_type=~\"${handler_type:regex}\",error_type!=\"\"}[$__range])), \"aidev_error_source\", \"handler\", \"agent_info_code\", \".*\")))",
+          "instant": true,
+          "legendFormat": "{{agent_info_code}}",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "错误智能体分布（所选时段）",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "description": "含义：按 Agent、LLM、Tool 和 Handler 指标来源以及 error.type 拆分的每秒错误完成数，仅覆盖带非空 error_type 标签的已结束操作。计算：分别对四类 duration count 错误序列计算 rate，再按 error_type 求和；拆分查询可避免 rate 移除指标名后不同来源发生标签冲突。",
       "fieldConfig": {
         "defaults": {
@@ -2009,8 +2188,8 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 24,
-        "x": 0,
+        "w": 12,
+        "x": 12,
         "y": 100
       },
       "id": 28,

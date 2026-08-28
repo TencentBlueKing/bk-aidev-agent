@@ -30,6 +30,7 @@ class LLMService:
         llm_type: str = "",
         fuzzy: str = "",
         supports: str = "",
+        resource_manager: AgentResourceManager = None,
     ) -> list[dict[str, Any]]:
         """拉取当前空间可用 LLM 列表。
 
@@ -42,12 +43,13 @@ class LLMService:
             fuzzy: 模糊搜索关键词。
             supports: 按模型支持的功能过滤，逗号分隔字符串（如 ``tool_call,vision``），
                 透传平台由 ``AppLLMListRequest`` 归一为 list。
-
+            resource_manager: 资源管理器实例，为空时使用默认实例。
         Returns:
             平台返回的模型精简列表（llm_code/llm_name/llm_type/icon/...）。
         """
         # 用户态 client：传 bk_username 给 APIGW 用户身份鉴权
-        client = AgentResourceManager(username=username).get_client()
+        rm = resource_manager or AgentResourceManager(username=username)
+        client = rm.get_client()
         params: dict[str, Any] = {}
         if llm_type:
             params["llm_type"] = llm_type
@@ -60,7 +62,9 @@ class LLMService:
         return result.get("data", []) or []
 
     @staticmethod
-    def is_llm_accessible(username: str = "", llm_code: str = "") -> bool:
+    def is_llm_accessible(
+        username: str = "", llm_code: str = "", resource_manager: AgentResourceManager = None
+    ) -> bool:
         """校验 ``llm_code`` 是否在当前空间可用模型列表内。
 
         用于 ``chat_completion`` 收到 ``model`` 字段时做空间授权校验，避免越权切换到未授权模型。
@@ -68,5 +72,5 @@ class LLMService:
         """
         if not llm_code:
             return True
-        llms = LLMService.list_llms(username=username)
+        llms = LLMService.list_llms(username=username, resource_manager=resource_manager)
         return any(llm.get("llm_code") == llm_code for llm in llms)

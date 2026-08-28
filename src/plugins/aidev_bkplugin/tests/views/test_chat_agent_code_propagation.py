@@ -7,7 +7,8 @@
 路由会按主智能体的 agent_type 走进错误的构建分支。
 
 serializer 侧的取值断言见 tests/views/test_chat_completion_serializer.py，
-本文件专门守护 view → serializer 这一段传递。
+本文件专门守护 view → serializer 这一段传递：context 含 username、agent_code、
+以及用于 model 热切换授权校验的请求级 resource_manager。
 """
 
 import sys
@@ -52,4 +53,8 @@ def test_create_passes_request_scoped_agent_code_to_serializer(monkeypatch):
     with pytest.raises(Exception):
         view.create(request)
 
-    assert captured["context"] == {"username": "alice", "agent_code": "sub-agent"}
+    assert captured["context"] == {
+        "username": "alice",
+        "agent_code": "sub-agent",
+        "resource_manager": rm,
+    }

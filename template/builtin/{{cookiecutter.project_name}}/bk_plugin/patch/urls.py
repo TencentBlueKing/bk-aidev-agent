@@ -46,7 +46,7 @@ urlpatterns = [
         name="wxbot_callback",
     ),
     re_path(r"^bk_plugin/", include("bk_plugin_framework.services.bpf_service.urls")),
-    re_path(r"^chat-window/$", IndexView.as_view(), name="chat-window"),
+    re_path(r"^chat-window/?$", IndexView.as_view(), name="chat-window"),
     re_path(r"", include("aidev_ai_blueking.urls")),
 ]
 

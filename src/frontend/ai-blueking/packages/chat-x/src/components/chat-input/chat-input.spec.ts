@@ -24,6 +24,10 @@
  * IN THE SOFTWARE.
  */
 
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { defineComponent, h } from 'vue';
 
 import { type VueWrapper, mount } from '@vue/test-utils';
@@ -34,6 +38,8 @@ import ChatInput from './chat-input.vue';
 
 import type { UploadFile } from '../../types';
 import type { IAiSlashMenuItem } from '../../types/editor';
+
+const chatInputSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'chat-input.vue'), 'utf-8');
 
 const mockBkMessage = vi.fn();
 vi.mock('bkui-vue', () => ({
@@ -121,13 +127,14 @@ vi.mock('./ai-slash-input/ai-slash-input.vue', () => ({
       skills: { type: Array, default: () => [] },
     },
     emits: ['update:modelValue', 'keydown', 'upload'],
-    setup(_, { emit, expose }) {
+    setup(props, { emit, expose }) {
       expose({
         cleanup: vi.fn(),
       });
       return () =>
         h('div', {
           class: 'mock-ai-slash-input',
+          'aria-placeholder': props.placeholder,
           onKeydown: (e: KeyboardEvent) => emit('keydown', e),
         });
     },
@@ -317,6 +324,17 @@ describe('ChatInput', () => {
       expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
     });
 
+    it('输入容器底部间距应为 16px', () => {
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+        },
+      });
+
+      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
+      expect(chatInputSource).toMatch(/\.ai-chat-input-container\s*\{[\s\S]*?padding:\s*0\s+16px\s+16px;/);
+    });
+
     it('应该渲染 chat-input 容器', () => {
       wrapper = mount(ChatInput, {
         props: {
@@ -397,6 +415,82 @@ describe('ChatInput', () => {
       });
 
       expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
+    });
+
+    it('无 Skill/Prompt/Resources 时默认 placeholder 仅保留换行提示', () => {
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+        },
+      });
+
+      expect(wrapper.find('.mock-ai-slash-input').attributes('aria-placeholder')).toBe(
+        '通过 Shift + Enter 进行换行输入',
+      );
+    });
+
+    it('仅有 Skill 时默认 placeholder 含 Skill 行且不含 Prompt 和 @ 行', () => {
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          skills: [
+            {
+              skill_name: 'Code Review',
+              skill_code: 'code-review',
+              description: '审查代码',
+              icon: '',
+            },
+          ],
+        },
+      });
+
+      const placeholder = wrapper.find('.mock-ai-slash-input').attributes('aria-placeholder') ?? '';
+      expect(placeholder).toContain('输入 "/" 唤出 Skill');
+      expect(placeholder).not.toContain('唤出 Prompt');
+      expect(placeholder).not.toContain('工具和 MCP');
+      expect(placeholder).toContain('通过 Shift + Enter 进行换行输入');
+    });
+
+    it('显式 placeholder 不被 skills/prompts/resources 改写', () => {
+      const placeholder = '请输入你的问题';
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          placeholder,
+          skills: [
+            {
+              skill_name: 'Code Review',
+              skill_code: 'code-review',
+              description: '审查代码',
+              icon: '',
+            },
+          ],
+          prompts: ['帮我总结'],
+          resources: [{ id: '1', name: 'resource1', type: 'tool' }] as IAiSlashMenuItem[],
+        },
+      });
+
+      expect(wrapper.find('.mock-ai-slash-input').attributes('aria-placeholder')).toBe(placeholder);
+    });
+
+    it('显式空字符串 placeholder 完全覆盖动态文案', () => {
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          placeholder: '',
+          skills: [
+            {
+              skill_name: 'Code Review',
+              skill_code: 'code-review',
+              description: '审查代码',
+              icon: '',
+            },
+          ],
+        },
+      });
+
+      expect(wrapper.find('.mock-ai-slash-input').attributes('aria-placeholder')).toBe('');
     });
 
     it('应该正确接收 prompts', () => {

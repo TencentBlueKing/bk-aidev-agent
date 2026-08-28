@@ -16,6 +16,7 @@ from opentelemetry import metrics
 METER_NAME = "aidev_agent"
 DURATION_HISTOGRAM_BOUNDARIES = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300)
 MESSAGE_SIZE_HISTOGRAM_BOUNDARIES = (64, 256, 1024, 4096, 16384, 65536, 262144, 1048576)
+AGENT_ITERATION_HISTOGRAM_BOUNDARIES = (0, 1, 2, 3, 4, 5, 6, 8, 10, 15, 20, 30, 50, 100)
 
 
 def _as_int(value: Any) -> int:
@@ -111,8 +112,10 @@ class AgentMetrics:
             unit="s",
             description="Agent invocation time to the first streamed LLM token",
         )
-        self.agent_inference_calls = meter.create_counter(
-            "gen_ai.invoke_agent.inference_calls", unit="{call}", description="LLM calls per agent invocation"
+        self.agent_iteration_count = meter.create_histogram(
+            "gen_ai.invoke_agent.iteration_count",
+            unit="{iteration}",
+            description="LLM invocation attempts in one completed agent invocation",
         )
         self.active_agents = meter.create_up_down_counter(
             "aidev.agent.active",
@@ -181,7 +184,7 @@ class AgentMetrics:
     def record_agent(
         self,
         duration: float,
-        inference_calls: int,
+        iteration_count: int,
         attributes: dict[str, str],
         error: BaseException | None = None,
     ) -> None:
@@ -189,7 +192,7 @@ class AgentMetrics:
         if error is not None:
             attrs["error.type"] = type(error).__name__
         self.agent_duration.record(duration, attrs)
-        self.agent_inference_calls.add(inference_calls, attributes)
+        self.agent_iteration_count.record(iteration_count, attributes)
 
     def record_active_agent(self, delta: int, attributes: dict[str, str]) -> None:
         """Adjust the number of Agent runs that are currently executing."""

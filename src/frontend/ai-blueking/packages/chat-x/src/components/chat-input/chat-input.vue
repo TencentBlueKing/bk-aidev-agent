@@ -35,7 +35,7 @@
       <AiSlashInput
         ref="aiSlashInputRef"
         :model-value="modelValue"
-        :placeholder="placeholder"
+        :placeholder="resolvedPlaceholder"
         :prompts="prompts"
         :resources="resources"
         :skills="skills"
@@ -129,6 +129,7 @@
   import ShortcutBtns from '../ai-shortcut/shortcut-btns/shortcut-btns.vue';
   import CiteContent from '../chat-content/cite-content/cite-content.vue';
   import FileContent from '../chat-content/file-content/file-content.vue';
+  import { buildDefaultPlaceholder } from './build-default-placeholder';
   import AiSlashInput from './ai-slash-input/ai-slash-input.vue';
   import { tagSchemaToMessageString } from './ai-slash-input/constants';
   import InputAttachment from './input-attachment/input-attachment.vue';
@@ -179,15 +180,6 @@
     tippyOptions?: AITippyProps; // tips配置
   };
   const props = withDefaults(defineProps<ChatInputProps>(), {
-    placeholder: isEn
-      ? `Input "/" to trigger skill
-Input "\\" to trigger prompt
-Input "@" to trigger tool and MCP
-Use Shift + Enter to enter a new line`
-      : `输入 "/" 唤出 Skill
-输入 "\\" 唤出 Prompt
-输入 "@" 唤出 工具和 MCP
-通过 Shift + Enter 进行换行输入`,
     prompts: () => [],
     resources: () => [],
     skills: () => [],
@@ -195,6 +187,17 @@ Use Shift + Enter to enter a new line`
     supportUpload: true,
   });
   const emit = defineEmits<ChatInputEmits>();
+  const resolvedPlaceholder = computed(() => {
+    if (props.placeholder !== undefined) {
+      return props.placeholder;
+    }
+    return buildDefaultPlaceholder({
+      isEn,
+      hasSkills: (props.skills?.length ?? 0) > 0,
+      hasPrompts: (props.prompts?.length ?? 0) > 0,
+      hasResources: (props.resources?.length ?? 0) > 0,
+    });
+  });
   const uploadFiles = deepRef<Partial<UploadFile>[]>(props.defaultUploadFiles || []);
   const selectedShortcut = computed(() => {
     return props.shortcuts?.find(shortcut => shortcut.id === props.shortcutId);
@@ -393,7 +396,7 @@ Use Shift + Enter to enter a new line`
     flex-direction: column;
     align-items: center;
     width: 100%;
-    padding: 0 16px 8px;
+    padding: 0 16px 16px;
 
     .chat-input {
       position: relative;

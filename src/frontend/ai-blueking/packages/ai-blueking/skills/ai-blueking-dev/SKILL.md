@@ -3,11 +3,11 @@ name: ai-blueking-dev
 description: 蓝鲸 AI 小鲸组件开发指南。基于 @blueking/chat-x（UI 组件）和 @blueking/chat-helper（业务 SDK）开发 AI 聊天应用、智能体、对话界面。涵盖 ChatBot 独立使用、嵌入模式业务 Header（会话名称 + asideCollapsed 侧栏开关）、AIBlueking 完整集成、流式响应、快捷指令、划词选择、模型选择（Model Select）、自定义消息渲染（图表/表单/iframe）、HITL 人机协同（工具审批/用户提问/中断恢复）、流程化智能体节点重试跳过、渲染模式（chat/share/test 分享态）、字号主题、消息时间（timezone / MessageTime 四档格式）、侧栏自定义与自定义 Tab、欢迎区 `#welcome` 插槽、消息工具栏扩展（messageTools/updateTools）、非 Vue 宿主挂载等。触发场景：开发 AI 小鲸、集成 AI Agent、使用 chat-x/chat-helper、构建 AI 对话 UI、实现流式聊天、模型热切换、自定义消息组件渲染、human-in-the-loop、interrupt/resume、flow agent、自定义欢迎页、自定义消息工具按钮、嵌入式 ChatBot Header、侧栏展开收起、消息时间、timezone。
 metadata:
   author: blueking
-  version: '5.23'
+  version: '5.28'
   packages:
-    ai-blueking: 2.2.3
-    chat-x: 0.0.49-beta.12
-    chat-helper: 0.0.12-beta.24
+    ai-blueking: 2.2.4
+    chat-x: 0.0.49-beta.13
+    chat-helper: 0.0.12-beta.25
 ---
 
 # AI 小鲸组件开发指南
@@ -22,7 +22,7 @@ metadata:
 - 自定义消息渲染（`parseCustomBlocks`、`custom-component` 代码块、`#message` 插槽自定义组件）
 - 人机协同 HITL（工具审批、用户提问、流程节点重试/跳过、中断与恢复）
 - 渲染模式（`renderMode`：chat/share/test）、字号主题、侧栏自定义渲染与自定义 Tab
-- 欢迎区 `#welcome` 插槽；消息工具栏 `messageTools` / `updateTools` 扩展与 `agent-action` / `confirm-share(source)`
+- 欢迎区 `#welcome` 插槽；消息工具栏 `messageTools` / `updateTools` 扩展与 `agent-action` / `confirm-share(source)`；Claw 智能体（`agentType === 'claw'`）自动隐藏编辑/删除/重新生成
 - 非 Vue 宿主挂载（`mountAIBlueking` / `mountChatBot`）
 - 嵌入式 ChatBot 业务 Header（会话名称 + `v-model:asideCollapsed` 侧栏开关）
 - 消息时间展示（`timezone`、`MessageTime` 四档格式、`createdAt` 来源）
@@ -35,7 +35,7 @@ metadata:
 ├──────────────────────────────────────────────────────┤
 │  @blueking/ai-blueking (业务组件层)                     │
 │    AIBlueking ── 完整面板（Header + ChatBot + 拖拽）    │
-│    ChatBot ───── 独立聊天组件（~200 行纯组装层）         │
+│    ChatBot ───── 独立聊天组件（composable 组装层）       │
 │    Managers ──── 业务管理器（Session/Chat/Shortcut）     │
 ├────────────────────┬─────────────────────────────────┤
 │  @blueking/chat-x  │  @blueking/chat-helper           │
@@ -134,6 +134,8 @@ metadata:
 
 侧栏固定从右侧展开，**已移除 `placement`**。
 
+> **Vue2**：`ChatBotV2` **未注册** `asideCollapsed` / `enableModelSelect` / `models` / `renderMode` / `errorToast` / `skills`。嵌入式侧栏开关与模型选择请用 Vue3 `ChatBot`。
+
 ### `#welcome` 与消息工具栏扩展
 
 - `#welcome`：`AIBlueking` → `ChatBot` → `ChatContainer`，scope `{ openingRemark, welcomeTitle }`；无插槽时默认欢迎 UI 不变
@@ -180,6 +182,7 @@ metadata:
 - 普通对象、`() => object`
 - `ref` / `computed`（修改 `.value` 后后续请求自动生效）
 - 外层 `requestOptions` 可为 `ref` / `computed`（AIBlueking / ChatBot / `useChatBootstrap`）
+- `context`：合并到消息 `property.extra.context`（简单 KV 自动转结构化条目；与 shortcuts 表单数据同级，key 冲突时 `context` 覆盖）
 
 旧写法无需修改；需要动态 token、租户 ID 时可直接传 `ref`，不必再包一层稳定闭包。
 
@@ -189,6 +192,7 @@ metadata:
 
 - POST/PUT/PATCH/DELETE → 合并进请求体
 - GET/HEAD/OPTIONS → 合并进 query（`params`），不会写入 body
+- `context` 不走 HTTP 分流，始终写入消息 `property.extra.context`
 
 ### 编程式渲染事件只用 emit
 
@@ -241,10 +245,13 @@ const handleNewChatCreated = (session) => {
 | ChatBot 独立模式 | `@error` | `(error: Error)` | 原始 Error 对象；默认同时弹 Message（`errorToast`，文案 `error.message`） |
 | AIBlueking 集成模式 | `@sdk-error` | `{ apiName, code, message, data }` | 结构化错误数据；父层统一 toast，内嵌 ChatBot 关闭 toast 防双弹 |
 
-**AIBlueking 不对外暴露 `@error` 事件**，所有错误（初始化失败、流式对话错误）统一通过 `@sdk-error` 输出，业务方可根据 `apiName` 区分错误类型：
+**AIBlueking 不对外暴露 `@error` 事件**，所有错误统一通过 `@sdk-error` 输出。`apiName` 为 `'chat' | 'getAgentInfo' | 'init' | 'session' | 'share'`，另有可选 `action?`、`source?`（`'business' | 'http' | 'protocol'`）：
 
-- `apiName: 'init'` — 初始化阶段错误（Agent 信息获取失败、会话加载失败）
-- `apiName: 'chat'` — 流式对话阶段错误（SSE onError、ChatBot 内部错误）
+- `init` — 初始化（会话加载 / bootstrap）
+- `getAgentInfo` — 拉取 Agent 信息失败
+- `chat` — 流式对话（SSE onError、ChatBot 内部错误）
+- `session` — 会话操作（切换 / 删除 / 重命名等）
+- `share` — 分享确认失败
 
 ```vue
 <!-- ChatBot 独立模式 -->
@@ -254,11 +261,13 @@ const handleNewChatCreated = (session) => {
 <AIBlueking url="/api/" @sdk-error="handleSdkError" />
 
 <script setup>
-const handleSdkError = ({ apiName, code, message, data }) => {
-  if (apiName === 'init') {
-    // 初始化失败：提示用户检查网络或 API 地址
+const handleSdkError = ({ apiName, code, message, data, action, source }) => {
+  if (apiName === 'init' || apiName === 'getAgentInfo') {
+    // 初始化 / Agent 信息失败
   } else if (apiName === 'chat') {
-    // 对话错误：提示用户重试
+    // 对话错误
+  } else if (apiName === 'session') {
+    // 会话操作失败（看 action：historySwitch / rename 等）
   }
 };
 </script>
@@ -369,6 +378,7 @@ Agent 可在流式执行中**中断**，把控制权交回用户，处理后再*
 
 - 恢复统一入口：chat-x 的 `OnInterruptResume = (payload: InterruptResume, interrupt?) => Promise<void> | void`
 - 底层原语：chat-helper 的 `agent.streamRequest({ sessionCode, resume })` 与 `agent.userOperationStreamRequest(sessionCode, operation, payload)`
+- HITL / 新发送默认 `streamMode: 'start'`；刷新、切会话、静默重连走 `resumeStreamingChat`（`stream_mode=attach`），详见 [chat-helper SDK API](references/chat-helper-api.md#streamrequest)
 - chat-helper **没有** `onInterruptResume` 方法（它只提供原语 + `IResume` 结构）；统一回调在 chat-x/ai-blueking 层
 
 > 完整协议、组件、集成示例（含用户「直接在输入框作答」旁路、流程节点重试/跳过、只读回显）见 [HITL 人机协同](references/hitl.md)。

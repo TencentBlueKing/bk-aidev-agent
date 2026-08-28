@@ -11,6 +11,7 @@ import requests
 pytest.importorskip("opentelemetry.sdk.metrics")
 
 from aidev_agent.packages.opentelemetry.metrics import (
+    AGENT_ITERATION_HISTOGRAM_BOUNDARIES,
     DURATION_HISTOGRAM_BOUNDARIES,
     MESSAGE_SIZE_HISTOGRAM_BOUNDARIES,
 )
@@ -224,6 +225,26 @@ def test_metric_settings_parse_false_string_safely():
     assert settings.enabled is False
 
 
+def test_metric_settings_explicit_environment_disable_overrides_agent_info(monkeypatch):
+    monkeypatch.setenv("BKAI_AGENT_ENABLE_METRICS", "false")
+
+    settings = MetricExportSettings.from_agent_info(
+        {
+            "otel_info": {
+                "metrics": {
+                    "enabled": True,
+                    "agent_data_id": 1001,
+                    "agent_access_token": "platform-secret",
+                    "agent_push_url": "http://platform-proxy:10205/v2/push/",
+                }
+            }
+        },
+        default_enabled=True,
+    )
+
+    assert settings.enabled is False
+
+
 def test_metric_resource_uses_agent_sdk_version_without_agent_type():
     service = BkPluginMetricService(
         service_name="ai-demo",
@@ -258,6 +279,7 @@ def test_metric_service_uses_agent_sdk_histogram_boundaries():
 
     assert tuple(views[0]._aggregation._boundaries) == DURATION_HISTOGRAM_BOUNDARIES
     assert tuple(views[1]._aggregation._boundaries) == MESSAGE_SIZE_HISTOGRAM_BOUNDARIES
+    assert tuple(views[2]._aggregation._boundaries) == AGENT_ITERATION_HISTOGRAM_BOUNDARIES
 
 
 def test_bkm_records_preserve_counter_and_histogram_semantics():

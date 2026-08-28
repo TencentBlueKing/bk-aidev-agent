@@ -1,6 +1,6 @@
 # HITL 人机协同（中断与恢复）
 
-> 适用版本：ai-blueking `2.2.2` / chat-x `0.0.49-beta.8` / chat-helper `0.0.12-beta.20`（HITL 自 2.2.0-beta.4 起可用）
+> 适用版本：ai-blueking `2.2.3` / chat-x `0.0.49-beta.12` / chat-helper `0.0.12-beta.24`（HITL 自 2.2.0-beta.4 起可用）
 
 Human-in-the-loop（HITL）让 Agent 在流式执行过程中**暂停**，把控制权交回用户，等用户处理后再**恢复**执行。当前覆盖三类场景：
 
@@ -229,7 +229,7 @@ type UserQuestionResume = BaseResume<InterruptReason.UserQuestion, {
 `OnInterruptResume` 是所有恢复动作的唯一入口：审批卡片的「取消审批」、用户提问卡片的「完成 / 跳过」、流程节点的「重试 / 跳过」都调用它。ChatBot / AIBlueking 内部（`use-interrupt-resume.ts`）把这个回调翻译成 chat-helper 的原语：
 
 - `FlowNode*` / `ApprovalCancel` → `agent.userOperationStreamRequest(sessionCode, operation, payload)`（POST `user_operation/`）
-- 用户提问作答 → `agent.streamRequest({ sessionCode, resume: IResume, input? })`（把 `resume` 放进 `chat_completion/` 的 `execute_kwargs.resume`）
+- 用户提问作答 → `agent.streamRequest({ sessionCode, resume: IResume, input? })`（把 `resume` 放进 `chat_completion/` 的 `execute_kwargs.resume`；默认 `streamMode: 'start'`，不要传 `attach`）
 
 ---
 

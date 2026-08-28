@@ -93,8 +93,8 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `messageToolsTippyOptions` | `MessageToolsTippyOptions` | — | 消息工具栏 Tippy 配置（如 `appendTo`，用于控制弹窗挂载位置和层级） |
-| `messageTools` | `IToolBtn[]` | — | 自定义 AI 消息主工具组（copy/cite/rebuild/share）；按 id 与内置合并（覆盖/追加/`hidden`） |
-| `updateTools` | `IToolBtn[]` | — | 自定义 AI 消息反馈工具组（like/unlike/delete）；合并规则同上 |
+| `messageTools` | `IToolBtn[]` | — | 自定义 AI 消息主工具组（copy/cite/rebuild/share）；按 id 与内置合并（覆盖/追加/`hidden`）。`agentType === 'claw'` 时 ChatBot 会自动隐藏 `rebuild` |
+| `updateTools` | `IToolBtn[]` | — | 自定义 AI 消息反馈工具组（like/unlike/delete）；合并规则同上。`agentType === 'claw'` 时 ChatBot 会自动隐藏 `delete` |
 | `resizeProps` | `{ disabled?, initialDivide?, max?, min? }` | — | ResizeLayout 配置（执行情况侧面板拖拽） |
 | `size` | `'normal' \| 'small'` | `'small'` | 字号主题档位，透传至 ChatContainer（`small` 12px / `normal` 14px） |
 | `timezone` | `string` | — | 消息时间展示所用的 IANA 时区名（如 `Asia/Shanghai`）（**≥ v2.2.3**），透传至 ChatContainer；未配置时按浏览器时区。详见 [消息时间展示](/guide/core-features/chat-interaction#消息时间展示) |

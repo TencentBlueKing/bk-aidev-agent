@@ -20,3 +20,4 @@ THINKING_MESSAGE = "正在思考中..."
 
 # RabbitMQ 队列自动过期时间
 QUEUE_EXPIRES_MS = 360000
+WS_INSTANCE_LOCK_CACHE_KEY_PREFIX = "wxaibot:ws:instance:"

@@ -50,7 +50,7 @@
       <MessageTools
         v-if="messageToolsStatus !== MessageToolsStatus.Hidden"
         class="ai-user-message-tools"
-        :message-tools="CONST_USER_MESSAGE_TOOLS"
+        :message-tools="mergedMessageTools"
         :message-tools-status="messageToolsStatus"
         :on-action="handleAction"
         :tippy-options="tippyOptions"
@@ -117,7 +117,7 @@
     type UploadFile,
     MessageToolsStatus,
   } from '../../../types';
-  import { isImageFile } from '../../../utils';
+  import { isImageFile, mergeToolsById } from '../../../utils';
   import ShortcutRender from '../../ai-shortcut/shortcut-render/shortcut-render.vue';
   import CiteContent from '../../chat-content/cite-content/cite-content.vue';
   import FileContent from '../../chat-content/file-content/file-content.vue';
@@ -141,6 +141,7 @@
     id?: UserMessage['id'];
     messageId?: UserMessage['messageId'];
     name?: UserMessage['name'];
+    messageTools?: IToolBtn[];
     onAction?: MessageToolsProps['onAction'];
     property?: UserMessage['property'];
     role?: UserMessage['role'];
@@ -151,6 +152,7 @@
   const props = defineProps<UserMessageProps>();
   const globalConfig = injectGlobalConfig();
   const { copy } = useClipboard();
+  const mergedMessageTools = computed(() => mergeToolsById(CONST_USER_MESSAGE_TOOLS, props.messageTools));
   const isEdit = shallowRef(false);
   const editContent = shallowRef<string | TagSchema>('');
   const chatInputRef = useTemplateRef<InstanceType<typeof ChatInput>>('chatInputRef');

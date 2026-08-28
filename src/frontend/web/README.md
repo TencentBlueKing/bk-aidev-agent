@@ -62,9 +62,11 @@ const mount = require('koa-mount');
 const { createDocsMiddleware, createMockAguiRouter } = require('ai-blueking-docs');
 
 // 挂载文档站
+// BK_AIDEV_URL：顶栏「返回 AIDev」按钮跳转；BK_AIDEV_API_URL：在线 Demo
 app.use(mount('/docs', createDocsMiddleware({
   globals: {
     BK_AIDEV_API_URL: process.env.BK_AIDEV_API_URL || '',
+    BK_AIDEV_URL: process.env.BK_AIDEV_URL || '',
   }
 })));
 
@@ -83,7 +85,12 @@ app.use(mount('/docs', createDocsMiddleware({
 })));
 ```
 
-注入的变量会作为 `window.BK_AIDEV_API_URL` 等全局变量出现在 HTML 的 `<head>` 中。
+注入的变量会作为 `window.BK_AIDEV_URL`、`window.BK_AIDEV_API_URL` 出现在 HTML 的 `<head>` 中。
+
+| 变量 | 用途 |
+| --- | --- |
+| `BK_AIDEV_URL` | 顶栏「返回 AIDev」按钮跳转地址；空字符串或不传则隐藏按钮 |
+| `BK_AIDEV_API_URL` | 文档页在线 Demo 的智能体 API；空则 Demo 显示提示、不加载组件 |
 
 ### 卸载
 
@@ -101,7 +108,12 @@ npm uninstall ai-blueking-docs
 
 **Options:**
 - `staticDir?: string` — 静态文件目录，默认为包内的 `dist/static/`
-- `globals?: Record<string, string>` — 注入到 HTML 的全局变量
+- `basePath?: string` — 运行时 base；未指定时从 `koa-mount` 的 `ctx.mountPath` 推导
+- `globals?: Record<string, string>` — 注入到 HTML `<head>` 的全局变量。常用：`BK_AIDEV_URL`（返回 AIDev）、`BK_AIDEV_API_URL`（在线 Demo）
+
+### `createDocsAssetService(options)`
+
+框架无关的静态资源服务（NestJS / Express 推荐）。`options.basePath` 必填；`globals` 与中间件相同。
 
 ### `createMockAguiRouter()`
 
@@ -129,8 +141,11 @@ pnpm preview:npm
 
 # 生产静态服务（自动识别 dist/ 或 dist/static/）
 pnpm server
-# 或指定目录 / 注入 Demo 环境变量：
-# DOCS_STATIC_DIR=./dist/static DOCS_BASE=/ BK_AIDEV_API_URL=https://... pnpm server
+# 或指定目录 / 注入运行时全局变量：
+# DOCS_STATIC_DIR=./dist/static DOCS_BASE=/ BK_AIDEV_URL=https://... BK_AIDEV_API_URL=https://... pnpm server
+#
+# 本地 pnpm dev 读取 docs/.env.development（可填 BK_AIDEV_URL / BK_AIDEV_API_URL）
+# pnpm preview / preview:npm 读取 docs/.env（git 忽略，需自行创建）
 
 # 构建 npm 包（base = __DOCS_BASE__/，用于中间件运行时替换）
 pnpm build:npm

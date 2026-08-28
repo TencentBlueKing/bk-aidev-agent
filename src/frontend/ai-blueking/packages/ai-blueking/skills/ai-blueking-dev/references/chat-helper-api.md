@@ -1,6 +1,6 @@
 # @blueking/chat-helper SDK API 参考
 
-> 版本：`@blueking/chat-helper@0.0.12-beta.20`（peerDep `vue ^3.5.24`）。与 `@blueking/ai-blueking` `2.2.2` 配套。本文档已同步 HITL（human in the loop）中断/恢复、flow-agent 操作、模型列表（`getLlms`）等能力。
+> 版本：`@blueking/chat-helper@0.0.12-beta.24`（peerDep `vue ^3.5.24`）。与 `@blueking/ai-blueking` `2.2.3` 配套。本文档已同步 HITL、flow-agent、模型列表（`getLlms`）、消息时间（`createdAt` / `RUN_FINISHED.timestamp`）等能力。
 
 ## 基础配置
 
@@ -216,10 +216,20 @@ agent.streamRequest({
   resume?: IResume,        // HITL：恢复中断，写入 execute_kwargs.resume
   input?: string,          // 直接传入用户输入（不经 createAndPlusMessage）
   lastMessageId?: string,  // 恢复流式时定位最后一条消息
+  streamMode?: 'start' | 'attach', // 默认 start；attach 仅接管/回放已有流
 });
 // 实际请求：POST chat_completion/
-//   { session_code, input, execute_kwargs: { stream: true, persist_input, last_message_id, resume } }
+//   { session_code, input, execute_kwargs: { stream: true, stream_mode, persist_input, last_message_id, resume } }
 ```
+
+`stream_mode` 语义（对齐后端 `ExecuteKwargs.stream_mode`）：
+
+| 值 | 含义 | 谁传 |
+|----|------|------|
+| `start`（默认） | 可创建生产者，开新一轮执行 | `chat` / `resendMessage` / HITL `resume` / `userOperationStreamRequest` |
+| `attach` | 仅接管/回放已有流，禁止新建生产者 | `resumeStreamingChat`、静默重连 |
+
+> attach 且后端无可接管流时，不会进入静默重连空转。
 
 #### pollResumeSession
 
@@ -255,7 +265,7 @@ await agent.userOperationStreamRequest(
 
 #### resumeStreamingChat
 
-恢复流式聊天（页面刷新后恢复）。
+恢复流式聊天（页面刷新 / `chooseSession` 时，会话仍为 `Running`）。内部以 `streamMode: 'attach'` 发起请求，仅接管已有流。
 
 ```typescript
 await agent.resumeStreamingChat(sessionCode: string);
@@ -284,6 +294,8 @@ interface ISupportUpload {
 
 interface IAgentInfo {
   agentName?: string;
+  /** Agent 类型：`single` 为普通智能体；`claw` 时 ChatBot 自动隐藏编辑/删除/重新生成 */
+  agentType?: 'claw' | 'single' | string;
   resources?: IAgentResourceItem[];
   saasUrl?: string;
   chatGroup?: { enabled: boolean; staff: string[]; username: string };
@@ -334,6 +346,11 @@ interface ILlmListQuery {
   supports?: string;
 }
 
+/** chat_completion execute_kwargs.stream_mode */
+type StreamMode = 'start' | 'attach';
+// start：可创建生产者，开新一轮执行（默认）
+// attach：仅接管/回放已有流，不允许新建生产者
+
 // 消息属性：由 chat() 第 5 个参数 / 消息 property 字段承载
 interface IMessageProperty {
   [key: string]: unknown;
@@ -374,7 +391,7 @@ enum SessionStatus {
 }
 ```
 
-> `resumeStreamingChat` 仅在 `session.current.value?.status === SessionStatus.Running` 时才重连流式（页面刷新恢复）。
+> `resumeStreamingChat` 仅在 `session.current.value?.status === SessionStatus.Running` 时才以 `stream_mode=attach` 重连流式（页面刷新 / 切会话恢复）。
 
 ### ISession 接口
 
@@ -794,6 +811,7 @@ type IUserOperationPayload =
   agent.streamRequest({
     sessionCode,
     resume: { interruptId, status: ResumeStatus.Resolved /* 或 Cancelled */, payload },
+    // HITL 恢复默认 streamMode: 'start'，不要传 attach
   });
   ```
 - **审批轮询**：`agent.pollResumeSession(sessionCode)` 检测到待审批的中断消息（ticket 处于 `Pending`/`Draft`）后，轮询 `GET session/{code}/is_resume/`；返回 `true` 时自动以 `resume: { interruptId, status: Resolved }` 重新发起 `streamRequest`；返回 `false` 则 30s 后重试（会话切换后停止）。

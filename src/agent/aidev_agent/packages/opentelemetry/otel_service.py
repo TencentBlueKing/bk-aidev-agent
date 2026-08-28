@@ -46,7 +46,11 @@ except ImportError:
 
 
 from .config import OTelConfig
-from .metrics import DURATION_HISTOGRAM_BOUNDARIES, MESSAGE_SIZE_HISTOGRAM_BOUNDARIES
+from .metrics import (
+    AGENT_ITERATION_HISTOGRAM_BOUNDARIES,
+    DURATION_HISTOGRAM_BOUNDARIES,
+    MESSAGE_SIZE_HISTOGRAM_BOUNDARIES,
+)
 from .utils import ExporterType
 
 logger = logging.getLogger(__name__)
@@ -223,6 +227,10 @@ class BkAgentOTelService:
             View(
                 instrument_name="aidev.message.publish.size",
                 aggregation=ExplicitBucketHistogramAggregation(boundaries=MESSAGE_SIZE_HISTOGRAM_BOUNDARIES),
+            ),
+            View(
+                instrument_name="gen_ai.invoke_agent.iteration_count",
+                aggregation=ExplicitBucketHistogramAggregation(boundaries=AGENT_ITERATION_HISTOGRAM_BOUNDARIES),
             ),
         ]
 

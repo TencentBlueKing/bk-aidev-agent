@@ -25,10 +25,12 @@ from dev.otel.mock_agent_metrics import (
 )
 
 OTEL_ROOT = Path(__file__).resolve().parents[1]
+PROMETHEUS_DASHBOARD = OTEL_ROOT / "grafana/dashboards/aidev-agent-metrics.json"
+BKMONITOR_DASHBOARD = OTEL_ROOT / "grafana/components/aidev-agent-metrics-bkmonitor.json"
 
 
 def test_local_dashboard_covers_required_filters_and_metric_groups():
-    dashboard = json.loads((OTEL_ROOT / "grafana/dashboards/aidev-agent-metrics.json").read_text())
+    dashboard = json.loads(PROMETHEUS_DASHBOARD.read_text())
     compose = (OTEL_ROOT / "docker-compose.yml").read_text()
     variables = {item["name"] for item in dashboard["templating"]["list"]}
     panels_by_id = {panel["id"]: panel for panel in dashboard["panels"]}
@@ -39,7 +41,7 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
     assert "grafana/grafana:10.4.19" in compose
     assert dashboard["schemaVersion"] == 39
     assert dashboard["graphTooltip"] == 1
-    assert len(dashboard["panels"]) == 34
+    assert len(dashboard["panels"]) == 37
 
     for panel in dashboard["panels"]:
         if panel.get("type") == "row":
@@ -59,6 +61,7 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
         "aidev_agent_phase_active",
         "aidev_agent_phase_duration",
         "gen_ai_invoke_agent_time_to_first_token",
+        "gen_ai_invoke_agent_iteration_count",
         "gen_ai_client_operation_active",
         "gen_ai_execute_tool_active",
         "aidev_sse_event_count",
@@ -72,6 +75,12 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
     assert "sum(aidev_agent_active" in panels_by_id[1]["targets"][0]["expr"]
     assert "or vector(0)" in panels_by_id[1]["targets"][0]["expr"]
     assert panels_by_id[30]["title"] == "活跃智能体数量"
+    assert panels_by_id[2]["title"] == "LLM 阶段 Agent Run"
+    assert 'aidev_agent_phase="llm"' in panels_by_id[2]["targets"][0]["expr"]
+    assert "gen_ai_client_operation_active" not in panels_by_id[2]["targets"][0]["expr"]
+    assert panels_by_id[3]["title"] == "Tool 阶段 Agent Run"
+    assert 'aidev_agent_phase="tool"' in panels_by_id[3]["targets"][0]["expr"]
+    assert "gen_ai_execute_tool_active" not in panels_by_id[3]["targets"][0]["expr"]
     assert "or vector(0)" in panels_by_id[2]["targets"][0]["expr"]
     assert "or vector(0)" in panels_by_id[3]["targets"][0]["expr"]
     assert panels_by_id[30]["gridPos"]["x"] == 0
@@ -89,13 +98,25 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
     assert "sum by (le, agent_info_code)" in panels_by_id[32]["targets"][0]["expr"]
     assert "gen_ai_invoke_agent_time_to_first_token_seconds_bucket" in panels_by_id[32]["targets"][0]["expr"]
     assert panels_by_id[32]["gridPos"] == {"h": 8, "w": 12, "x": 12, "y": 23}
+    assert panels_by_id[6]["title"] == "Agent 迭代次数 P95"
+    assert panels_by_id[6]["targets"][0]["instant"] is True
+    assert "histogram_quantile(0.95" in panels_by_id[6]["targets"][0]["expr"]
+    assert "gen_ai_invoke_agent_iteration_count_bucket" in panels_by_id[6]["targets"][0]["expr"]
+    assert panels_by_id[33]["title"] == "当前运行智能体及会话数"
+    assert panels_by_id[33]["type"] == "bargauge"
+    assert panels_by_id[33]["targets"][0]["instant"] is True
+    assert "sum by (agent_info_code, agent_info_name, agent_info_sdk_version)" in panels_by_id[33]["targets"][0]["expr"]
+    assert panels_by_id[33]["gridPos"] == {"h": 8, "w": 12, "x": 0, "y": 14}
+    assert panels_by_id[9]["gridPos"] == {"h": 8, "w": 12, "x": 12, "y": 14}
     assert panels_by_id[12]["gridPos"] == {"h": 8, "w": 24, "x": 0, "y": 31}
     assert panels_by_id[16]["title"].startswith("LLM 并发")
+    assert "gen_ai_client_operation_active" in panels_by_id[16]["targets"][0]["expr"]
     for panel_id in (2, 14, 16):
         assert all("gen_ai_response_model" not in target["expr"] for target in panels_by_id[panel_id]["targets"])
     for panel_id in (13, 15):
         assert any("gen_ai_response_model" in target["expr"] for target in panels_by_id[panel_id]["targets"])
     assert panels_by_id[29]["title"].startswith("工具并发")
+    assert "gen_ai_execute_tool_active" in panels_by_id[29]["targets"][0]["expr"]
     assert panels_by_id[29]["gridPos"]["w"] == 24
     assert 19 not in panels_by_id
     assert 17 not in panels_by_id
@@ -133,6 +154,16 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
     assert 27 not in panels_by_id
     assert panels_by_id[105]["gridPos"]["y"] == 99
     assert panels_by_id[28]["gridPos"]["y"] == 100
+    assert panels_by_id[34]["title"] == "错误计数（所选时段）"
+    assert panels_by_id[34]["type"] == "stat"
+    assert panels_by_id[34]["targets"][0]["instant"] is True
+    assert "increase(gen_ai_invoke_agent_duration_seconds_count" in panels_by_id[34]["targets"][0]["expr"]
+    assert panels_by_id[35]["title"] == "错误智能体分布（所选时段）"
+    assert panels_by_id[35]["type"] == "bargauge"
+    assert "sum by (agent_info_code)" in panels_by_id[35]["targets"][0]["expr"]
+    assert panels_by_id[34]["gridPos"] == {"h": 8, "w": 4, "x": 0, "y": 100}
+    assert panels_by_id[35]["gridPos"] == {"h": 8, "w": 8, "x": 4, "y": 100}
+    assert panels_by_id[28]["gridPos"] == {"h": 8, "w": 12, "x": 12, "y": 100}
     assert [target["legendFormat"] for target in panels_by_id[28]["targets"]] == [
         "Agent · {{error_type}}",
         "LLM · {{error_type}}",
@@ -167,6 +198,46 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
     assert panels_by_id[20]["gridPos"]["y"] == panels_by_id[21]["gridPos"]["y"] == 83
     panel_order = [panel["id"] for panel in dashboard["panels"]]
     assert panel_order.index(104) < panel_order.index(25) < panel_order.index(106) < panel_order.index(20)
+
+
+def test_bkmonitor_dashboard_is_a_separate_importable_component():
+    local = json.loads(PROMETHEUS_DASHBOARD.read_text())
+    dashboard = json.loads(BKMONITOR_DASHBOARD.read_text())
+    datasource = {"type": "bkmonitor-timeseries-datasource", "uid": "cfjy28njb6ghsd"}
+    panels = [panel for panel in dashboard["panels"] if panel.get("type") != "row"]
+    targets = [target for panel in panels for target in panel["targets"]]
+    variables = {item["name"]: item for item in dashboard["templating"]["list"]}
+
+    assert local["uid"] == "aidev-agent-metrics"
+    assert dashboard["uid"] == "aidev-agent-metrics-bkmonitor"
+    assert dashboard["title"] == "AIDev Agent Metrics (BK Monitor)"
+    assert dashboard["schemaVersion"] == 39
+    assert len(dashboard["panels"]) == len(local["panels"]) == 37
+    assert "__inputs" not in dashboard
+    assert dashboard["__requires"][0]["id"] == "bkmonitor-timeseries-datasource"
+    rows = [panel for panel in dashboard["panels"] if panel["type"] == "row"]
+    assert all("datasource" not in panel and "targets" not in panel for panel in rows)
+    assert all(panel["datasource"] == datasource for panel in panels)
+    assert all(target["datasource"] == datasource and target["type"] == "range" for target in targets)
+    assert all("source" in target and "expr" not in target for target in targets)
+    assert all(
+        "${" not in target["source"]
+        and "$__rate_interval" not in target["source"]
+        and "$__range" not in target["source"]
+        for target in targets
+    )
+    assert any("$window" in target["source"] for target in targets)
+    assert set(variables) == {
+        "agent_code",
+        "agent_version",
+        "request_model",
+        "response_model",
+        "tool_name",
+        "handler_type",
+        "window",
+    }
+    assert variables["window"]["query"] == "1m,5m,1h"
+    assert all(variable["datasource"] == datasource for name, variable in variables.items() if name != "window")
 
 
 def test_log_query_mock_is_sanitized_and_models_broker_coalescing():

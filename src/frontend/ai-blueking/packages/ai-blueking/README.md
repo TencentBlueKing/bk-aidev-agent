@@ -239,7 +239,7 @@ const handleError = (error: Error) => {
 | `maxWidth` | `string \| number` | - | 最大宽度 |
 | `shortcuts` | `Shortcut[]` | `[]` | 快捷操作列表 |
 | `shortcutLimit` | `number` | `10` | 快捷方式数量限制 |
-| `placeholder` | `string` | - | 输入框占位符 |
+| `placeholder` | `string` | - | 输入框占位符；未传时按 Skill / Prompt / 资源列表动态生成 |
 | `autoLoad` | `boolean` | `true` | 是否自动加载会话 |
 | `sessionCode` | `string` | - | 指定会话编码 |
 | `enableSelection` | `boolean` | `false` | 是否启用消息选择（仅集成模式，独立模式自动管理） |

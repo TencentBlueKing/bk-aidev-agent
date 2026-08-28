@@ -18,7 +18,23 @@ import type { ShortcutManager } from '../../manager/business/shortcut-manager';
 import type { IChatHelper } from '../../types';
 import type { ChatBotProps } from '../types';
 import type { ISupportUpload } from '@blueking/chat-helper';
-import type { IAiSlashMenuItem, ISkillListItem, Message, Shortcut } from '@blueking/chat-x';
+import type { IAiSlashMenuItem, ISkillListItem, IToolBtn, Message, Shortcut } from '@blueking/chat-x';
+
+const CLAW_HIDDEN_MESSAGE_TOOLS: IToolBtn[] = [{ id: 'rebuild', hidden: true }];
+const CLAW_HIDDEN_UPDATE_TOOLS: IToolBtn[] = [{ id: 'delete', hidden: true }];
+const CLAW_HIDDEN_USER_MESSAGE_TOOLS: IToolBtn[] = [
+  { id: 'edit', hidden: true },
+  { id: 'delete', hidden: true },
+];
+
+function withClawHiddenTools(
+  isClaw: boolean,
+  extra: IToolBtn[] | undefined,
+  hidden: IToolBtn[],
+): IToolBtn[] | undefined {
+  if (!isClaw) return extra;
+  return [...hidden, ...(extra ?? [])];
+}
 
 export interface UseChatbotStateParams {
   chatBusinessManager: Ref<ChatBusinessManager | null>;
@@ -34,10 +50,13 @@ export interface UseChatbotStateParams {
 export interface UseChatbotStateReturn {
   chatbotStyle: ComputedRef<Record<string, string | undefined>>;
   currentSession: ComputedRef<any>;
+  effectiveMessageTools: ComputedRef<IToolBtn[] | undefined>;
   effectivePrompts: ComputedRef<string[]>;
   effectiveResources: ComputedRef<IAiSlashMenuItem[]>;
   effectiveSkills: ComputedRef<ISkillListItem[]>;
   effectiveSupportUpload: ComputedRef<boolean>;
+  effectiveUpdateTools: ComputedRef<IToolBtn[] | undefined>;
+  effectiveUserMessageTools: ComputedRef<IToolBtn[] | undefined>;
   filteredShortcuts: ComputedRef<Shortcut[]>;
   isGenerating: ComputedRef<boolean>;
   isMessagesLoading: ComputedRef<boolean>;
@@ -70,6 +89,21 @@ export function useChatbotState(params: UseChatbotStateParams): UseChatbotStateR
   const messageToolsStatus = computed(() => {
     return messageStatus.value === MessageStatus.Streaming ? MessageToolsStatus.Disabled : undefined;
   });
+
+  const isClawAgent = computed(() => {
+    const agent = (props.chatHelper || chatHelper.value)?.agent;
+    return agent?.info.value?.agentType === 'claw';
+  });
+
+  const effectiveMessageTools = computed(() =>
+    withClawHiddenTools(isClawAgent.value, props.messageTools, CLAW_HIDDEN_MESSAGE_TOOLS),
+  );
+  const effectiveUpdateTools = computed(() =>
+    withClawHiddenTools(isClawAgent.value, props.updateTools, CLAW_HIDDEN_UPDATE_TOOLS),
+  );
+  const effectiveUserMessageTools = computed(() =>
+    withClawHiddenTools(isClawAgent.value, undefined, CLAW_HIDDEN_USER_MESSAGE_TOOLS),
+  );
 
   // TODO: IMessage (chat-helper) 和 Message (chat-x) 类型需要统一
   const messages = computed(() => (chatBusinessManager.value?.messages.value ?? []) as Message[]);
@@ -147,6 +181,9 @@ export function useChatbotState(params: UseChatbotStateParams): UseChatbotStateR
   return {
     messageStatus,
     messageToolsStatus,
+    effectiveMessageTools,
+    effectiveUpdateTools,
+    effectiveUserMessageTools,
     messages,
     isMessagesLoading,
     isGenerating,

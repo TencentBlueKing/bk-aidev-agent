@@ -15,6 +15,7 @@ from urllib.parse import urlparse, urlunparse
 
 import requests
 from aidev_agent.packages.opentelemetry.metrics import (
+    AGENT_ITERATION_HISTOGRAM_BOUNDARIES,
     DURATION_HISTOGRAM_BOUNDARIES,
     MESSAGE_SIZE_HISTOGRAM_BOUNDARIES,
 )
@@ -105,7 +106,12 @@ class MetricExportSettings:
         has_bkm_config = data_id not in (None, "") and bool(access_token and push_url)
         if export_via_celery is None:
             export_via_celery = has_bkm_config
-        enabled = metrics_info.get("enabled", otel_info.get("enable_metrics", default_enabled or has_bkm_config))
+        environment_enabled = os.getenv("BKAI_AGENT_ENABLE_METRICS")
+        enabled = (
+            environment_enabled
+            if environment_enabled is not None
+            else metrics_info.get("enabled", otel_info.get("enable_metrics", default_enabled or has_bkm_config))
+        )
         return cls(
             enabled=_as_bool(enabled),
             export_interval_millis=max(1000, int(interval)),
@@ -412,6 +418,10 @@ class BkPluginMetricService:
             View(
                 instrument_name="aidev.message.publish.size",
                 aggregation=ExplicitBucketHistogramAggregation(boundaries=MESSAGE_SIZE_HISTOGRAM_BOUNDARIES),
+            ),
+            View(
+                instrument_name="gen_ai.invoke_agent.iteration_count",
+                aggregation=ExplicitBucketHistogramAggregation(boundaries=AGENT_ITERATION_HISTOGRAM_BOUNDARIES),
             ),
         ]
 

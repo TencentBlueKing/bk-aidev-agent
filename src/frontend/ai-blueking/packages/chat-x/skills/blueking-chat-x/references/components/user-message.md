@@ -276,6 +276,9 @@ binaryFiles 有值      → 进入编辑模式（editContent 可为空）
 | `copy`  | 复制 | 字符串直接复制；数组 `JSON.stringify` 后复制 |
 | `cite`  | 引用 | 无内置行为，需通过 `onAction` 外部处理       |
 | `edit`  | 编辑 | 切换 `isEdit=true`，进入编辑模式             |
+| `delete` | 删除 | 无内置行为，需通过 `onAction` 外部处理      |
+
+可通过 `messageTools` 按 id 覆盖/追加，`{ id: 'edit', hidden: true }` 可隐藏内置项。
 
 ```vue
 <!-- 隐藏工具按钮（从 DOM 移除，不占位） -->
@@ -293,6 +296,7 @@ binaryFiles 有值      → 进入编辑模式（editContent 可为空）
 | ------------------ | ---------------------------------------------------------------------------- | --------------------------------------------------------- |
 | content            | `string \| InputContent[]`                                                   | 消息内容，字符串或含 text/binary 的数组                   |
 | property           | `{ extra?: MessageExtra }`                                                   | 消息附加属性，包含引用、快捷指令、context 等信息          |
+| messageTools       | `IToolBtn[]`                                                                 | 自定义用户消息工具组；按 id 与 `CONST_USER_MESSAGE_TOOLS` 合并，`{ id, hidden: true }` 可隐藏 |
 | messageToolsStatus | `MessageToolsStatus`                                                         | 工具按钮状态，`disabled` 禁用、`hidden` 从 DOM 移除       |
 | onAction           | `(tool: IToolBtn) => Promise<void>`                                          | 工具按钮回调；`copy`/`edit` 有内置行为，`cite` 需外部处理 |
 | onInputConfirm     | `(content: string \| InputContent[], docSchema: TagSchema) => Promise<void>` | 普通消息编辑确认回调                                      |

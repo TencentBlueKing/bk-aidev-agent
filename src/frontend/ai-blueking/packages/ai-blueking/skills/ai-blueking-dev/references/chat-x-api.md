@@ -123,7 +123,7 @@ import {
 |------|-----------|------|
 | ChatContainerProps | `chatLoading?`、`commonTippyOptions?`、`executionTabVisible?`（默认 `true`）、`getSideRenderComponent?`、`getSideTabRenderComponent?`、`onCustomTabChange?`、`openingRemark?`、`asideCollapsed?`（严格受控，不传则内部自持默认折叠）、`resizeProps?`、`size?`（`AiSizeMode`，默认 `'small'`）、`welcomeTitle?` | 侧栏固定右侧展开、Tab、欢迎语、全局 tippy、字号主题、侧栏渲染 |
 | ChatInputProps | 同 [ChatInput](#chatinput-聊天输入框) | 内部透传 `ChatInput` |
-| MessageContainerProps（省略项由容器内部注入） | `messages`、`messageStatus?`、`messageTools?`、`updateTools?`、`messageToolsStatus?`、`onAgentAction?`、`onAgentFeedback?`、`onUserAction?`、`onInterruptResume?`、`onUserInputConfirm?`、`onUserShortcutConfirm?` 等 | `enableSelection` / `messageGroups` / `messageToolsTippyOptions` 由内部 `useMessageGroup` 管理；`messageTools`/`updateTools` 与内置工具按 id 合并 |
+| MessageContainerProps（省略项由容器内部注入） | `messages`、`messageStatus?`、`messageTools?`、`updateTools?`、`userMessageTools?`、`messageToolsStatus?`、`onAgentAction?`、`onAgentFeedback?`、`onUserAction?`、`onInterruptResume?`、`onUserInputConfirm?`、`onUserShortcutConfirm?` 等 | `enableSelection` / `messageGroups` / `messageToolsTippyOptions` 由内部 `useMessageGroup` 管理；`messageTools`/`updateTools`/`userMessageTools` 与内置工具按 id 合并 |
 
 > **侧栏渲染是 prop 而非插槽**：`getSideRenderComponent?: (h, props?) => VNode` 与 `getSideTabRenderComponent?: (h, tab, events) => VNode` 的返回结果被渲染进内部 `#aside` 区域（不存在 `#headerLeft` / 侧栏插槽）。
 
@@ -178,7 +178,7 @@ import {
 | modelValue | `string \| TagSchema` | - | **必填**，支持 v-model |
 | cite | `string` | `''` | 引用内容，`v-model:cite` |
 | messageStatus | `MessageStatus` | - | 控制发送/停止等按钮状态 |
-| placeholder | `string` | 见下方 | 占位符 |
+| placeholder | `string` | 动态默认 | 未传时按 skills/prompts/resources 动态拼接；传入则完全覆盖 |
 | prompts | `string[]` | `[]` | `/` 触发 |
 | resources | `IAiSlashMenuItem[]` | `[]` | `@` / `/` 触发的资源（工具、MCP 等） |
 | skills | `ISkillListItem[]` | `[]` | Skill 列表（`/` 唤出） |
@@ -208,13 +208,16 @@ onSendMessage?: (
 
 即：普通「发送」可同时承载一次中断响应（resume）——例如用户不点选项、直接在输入框打字来回答 `UserQuestion`，此时 `options.interrupt` / `options.payload` 会随发送回传。
 
-**默认占位符（中文）**：
+**默认占位符**：未传入 `placeholder` 时按 `skills` / `prompts` / `resources` 是否非空动态拼接（有对应能力才显示该行），始终保留换行提示：
 
 ```
-输入 “/”唤出 Prompt
-输入“@”唤出 工具 和 MCP
-通过 Shift + Enter 进行换行输入
+输入 "/" 唤出 Skill          // 仅当 skills 非空
+输入 "\" 唤出 Prompt         // 仅当 prompts 非空
+输入 "@" 唤出 工具和 MCP     // 仅当 resources 非空
+通过 Shift + Enter 进行换行输入  // 始终显示
 ```
+
+显式传入 `placeholder`（含空字符串）时完全覆盖。三种列表都为空时只显示换行提示。ChatBot / AIBlueking 未传 `placeholder` 时，上述列表来自 `agent/info`（`relatedSkills` / `predefinedQuestions` / `resources`）。
 
 ### v-model（模型）
 
@@ -262,6 +265,7 @@ onSendMessage?: (
 | messageToolsStatus | `MessageToolsStatus` | - | 工具栏 `Disabled` / `Hidden` |
 | messageTools | `IToolBtn[]` | - | 自定义 AI 主工具组；按 id 与内置 `CONST_MESSAGE_TOOLS` 合并 |
 | updateTools | `IToolBtn[]` | - | 自定义反馈工具组；按 id 与内置 `CONST_UPDATE_TOOLS` 合并 |
+| userMessageTools | `IToolBtn[]` | - | 自定义用户消息工具组；按 id 与内置 `CONST_USER_MESSAGE_TOOLS` 合并，`{ id, hidden: true }` 可隐藏 edit/delete 等 |
 | messageToolsTippyOptions | `MessageToolsProps['tippyOptions']` | - | 消息工具 Tippy |
 | enableSelection | `boolean` | `false` | 多选（分享） |
 | renderMode | `RenderMode` | - | 渲染模式（chat/share/test），影响选择、工具、Loading 组等，见 [RenderMode](#rendermode-渲染模式chatsharetest) |
@@ -353,7 +357,7 @@ const {
 
 ### Props（节选）
 
-`Partial<UserMessageActionsProps> & Pick<MessageToolsProps, 'onAction' | 'tippyOptions'> & { message: Partial<Message>; onInterruptResume?: OnInterruptResume }`，含 `messageToolsStatus`、`onInputConfirm`、`onShortcutConfirm` 等（与 `UserMessage` 工具栏、编辑态一致）。`onInterruptResume` 会向下传给 `ActivityMessage`（flow-agent 节点重试/跳过）与 `InterruptMessageRender`。
+`Partial<UserMessageActionsProps> & Pick<MessageToolsProps, 'onAction' | 'tippyOptions'> & { message: Partial<Message>; messageTools?: IToolBtn[]; onInterruptResume?: OnInterruptResume }`，含 `messageToolsStatus`、`onInputConfirm`、`onShortcutConfirm` 等（与 `UserMessage` 工具栏、编辑态一致）。`messageTools` 仅转发给 `UserMessage`，按 id 与 `CONST_USER_MESSAGE_TOOLS` 合并。`onInterruptResume` 会向下传给 `ActivityMessage`（flow-agent 节点重试/跳过）与 `InterruptMessageRender`。
 
 ### Slots
 

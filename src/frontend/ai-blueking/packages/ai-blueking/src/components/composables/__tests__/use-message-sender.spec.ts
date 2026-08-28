@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ref, shallowRef, computed } from 'vue';
+import { nextTick, ref, shallowRef, computed } from 'vue';
 
 import {
   createErrorReporterParams,
@@ -345,6 +345,32 @@ describe('useMessageSender', () => {
       const sentOptions = (params.chatBusinessManager.value!.sendMessage as any).mock.calls[0][2];
       expect(sentOptions.property.extra.command).toBe('cmd-1');
       expect(sentOptions.property.extra.context).toBeUndefined();
+    });
+  });
+
+  describe('session change', () => {
+    it('should clear cite when the current session changes', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      const { cite } = useMessageSender(params);
+
+      cite.value = '引用内容';
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-2' };
+      await nextTick();
+
+      expect(cite.value).toBe('');
+    });
+
+    it('should keep cite when the current session stays the same', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      const { cite } = useMessageSender(params);
+
+      cite.value = '引用内容';
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1', sessionName: 'renamed' };
+      await nextTick();
+
+      expect(cite.value).toBe('引用内容');
     });
   });
 });

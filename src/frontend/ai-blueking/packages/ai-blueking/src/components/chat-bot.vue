@@ -16,7 +16,7 @@
       :get-side-render-component="props.getSideRenderComponent"
       :get-side-tab-render-component="props.getSideTabRenderComponent"
       :message-status="messageStatus"
-      :message-tools="props.messageTools"
+      :message-tools="effectiveMessageTools"
       :message-tools-status="messageToolsStatus"
       :messages="messages"
       :model-value="userInput"
@@ -43,7 +43,8 @@
       :skills="effectiveSkills"
       :timezone="props.timezone"
       :support-upload="effectiveSupportUpload"
-      :update-tools="props.updateTools"
+      :update-tools="effectiveUpdateTools"
+      :user-message-tools="effectiveUserMessageTools"
       :welcome-title="welcomeTitle"
       @collapse-change="handleExecutionPanelChange"
       @confirm-share="handleConfirmShare"
@@ -77,6 +78,7 @@
         <MessageRender
           v-else
           :message="message"
+          :message-tools="effectiveUserMessageTools"
           :message-tools-status="messageToolsStatus"
           :on-action="tool => handleUserAction(tool, message)"
           :on-input-confirm="(content, docSchema) => handleUserInputConfirm(message, content, docSchema)"
@@ -266,6 +268,9 @@
   const {
     messageStatus,
     messageToolsStatus,
+    effectiveMessageTools,
+    effectiveUpdateTools,
+    effectiveUserMessageTools,
     messages,
     isMessagesLoading,
     isGenerating,

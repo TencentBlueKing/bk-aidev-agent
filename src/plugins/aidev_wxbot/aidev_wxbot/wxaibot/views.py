@@ -19,6 +19,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 
+from .channel_config import find_rtx_channel, get_channel_config
 from .constants import EMPTY_INPUT_PROMPT, GROUP_CHAT_TYPE, NEW_CONVERSATION_CMDS, WRONG_MENTION_PROMPT
 from .context import ContextGenerator, LlmChunkMsg, WxWorkAiBotContext, stream_msg, text_msg
 from .decryption import WXBizJsonMsgCrypt
@@ -47,11 +48,10 @@ class WxAiBotViewSet(ViewSet):
                 "contact": "智能体管理员",
             }
 
-        # 从AI开发平台获取配置
-        configs = [item for item in BkAiDevApi().retrieve_agent_channel_configs("rtx") if item["channel_type"] == "rtx"]
-        if not configs:
+        channel = find_rtx_channel(BkAiDevApi().retrieve_agent_channel_configs("rtx"))
+        if not channel:
             raise Exception("请先在AI开发平台配置企业智能机器人渠道")
-        config = configs[0]["config"] or {}
+        config = get_channel_config(channel)
         if not config.get("contact"):
             config["contact"] = "智能体管理员"
         return config

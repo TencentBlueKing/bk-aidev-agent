@@ -384,16 +384,16 @@ it('should initialize', async () => {
 });
 ```
 
-### Q: chat-bot.vue 只有 ~200 行，逻辑都在哪里？
+### Q: chat-bot.vue 的逻辑都在哪里？
 
-**A**: 所有逻辑拆分到 7 个 composable 中，`chat-bot.vue` 仅负责：
+**A**: 模板只组装 `ChatContainer`；业务拆到 8 个 composable，`chat-bot.vue` 的 `<script setup>` 负责接线：
 1. 创建共享 ref（`selectedShortcut`、`internalEnableSelection`、`selectedResources`）
 2. 定义辅助函数（`scrollToBottom`、`focusInput`）
-3. 按依赖拓扑顺序调用 7 个 composable
+3. 按依赖拓扑顺序调用 composable
 4. 保留 `switchSession`、`setCiteText` 等简单辅助方法
 5. `defineExpose` 暴露接口
 
-组装顺序（依赖拓扑）：`useChatbotInit` → `useInterruptResume` → `useMessageSender` → `useShortcuts` → `useChatbotState` → `useToolActions` → `useShareSelection`
+组装顺序（依赖拓扑）：`useErrorReporter` → `useChatbotInit` → `useInterruptResume` → `useMessageSender` → `useShortcuts` → `useChatbotState` → `useToolActions` → `useShareSelection`
 
 ---
 

@@ -18,15 +18,15 @@ import logging
 import time
 import uuid
 from typing import Any
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from django.conf import settings
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
-from urllib.parse import quote, urlsplit, urlunsplit
 
 from aidev_wxbot.api.bkaidev import BkAiDevApi
 from aidev_wxbot.context import Context, Message
 from aidev_wxbot.context.message import MsgType
-from aidev_wxbot.wxaibot.constants import QUEUE_EXPIRES_MS
+from aidev_wxbot.wxaibot.constants import QUEUE_EXPIRES_MS, THINKING_MESSAGE
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 CHUNK_FLUSH_THRESHOLD = 50
 MAX_BATCH_CONSUME_COUNT = 30
 MAX_THINK_ONLY_BATCH_CONSUME_COUNT = 10
-THINKING_MSG = "正在思考中...."
+THINKING_MSG = THINKING_MESSAGE
 
 
 def stream_msg(content, is_finish, stream_id):
@@ -148,7 +148,6 @@ class LlmChunkMsg(BaseModel):
         try:
             queue_name = self.stream_id
             stream_time = int(self.stream_id.split("_")[1])
-
             # 检查消息是否超时
             if time.time() - stream_time > settings.MAX_MESSAGE_TIME:  # 消息时间太久
                 self._safe_delete_queue(rabbitmq_client, queue_name)

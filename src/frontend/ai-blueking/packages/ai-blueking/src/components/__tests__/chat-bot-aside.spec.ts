@@ -103,6 +103,9 @@ vi.mock('../composables/use-chatbot-state', () => ({
   useChatbotState: () => ({
     messageStatus: ref({}),
     messageToolsStatus: ref({}),
+    effectiveMessageTools: ref(undefined),
+    effectiveUpdateTools: ref(undefined),
+    effectiveUserMessageTools: ref(undefined),
     messages: ref([]),
     isMessagesLoading: ref(false),
     isGenerating: ref(false),

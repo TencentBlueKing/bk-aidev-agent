@@ -105,7 +105,7 @@ sinceVersion: 1.0.0
 ## 组件结构
 
 ```
-ai-chat-input-container
+ai-chat-input-container（padding: 0 16px 16px，底部间距 16px）
 ├── slot#top（容器顶部，在输入框框体外侧）
 ├── slot#interrupt（容器顶部，在输入框框体外侧，通常展示中断/审批提示）
 └── chat-input（框体，受 inputMaxHeight 控制）
@@ -584,7 +584,7 @@ const handleSendMessage = async (
 
 ## 自定义占位符
 
-通过 `placeholder` 自定义占位符文案，支持多行（换行用 `\n`）：
+未传入 `placeholder` 时，组件会按 `skills` / `prompts` / `resources` 是否非空动态生成提示行。传入后完全覆盖，支持多行（换行用 `\n`）：
 
 ```vue
 <template>
@@ -807,7 +807,7 @@ const handleSendMessage = async (
 | shortcuts          | `Shortcut[]`                                                               | -        | -    | 快捷指令列表，显示在底部工具栏                          |
 | models             | `IModelOption[]`                                                           | -        | -    | 可选模型列表，传入后在发送按钮左侧展示模型选择器        |
 | shortcutId         | `string`                                                                   | -        | -    | 当前选中的快捷指令 ID，匹配时列表收起为已选样式         |
-| placeholder        | `string`                                                                   | 见默认值 | -    | 编辑器占位符，支持多行                                  |
+| placeholder        | `string`                                                                   | 动态默认 | -    | 编辑器占位符，支持多行；未传时按 skills/prompts/resources 动态拼接 |
 | inputMaxHeight     | `number`                                                                   | `280`    | -    | 框体最大高度（px），有文件时自动加上文件预览区高度      |
 | defaultUploadFiles | `UploadFile[]`                                                             | -        | -    | 预设已上传的文件列表                                    |
 | sendDisabledTip    | `string`                                                                   | -        | -    | 业务阻塞发送时的 tooltip 提示；传入后发送按钮置灰，点击、Enter 与 `triggerSendMessage()` 均不会发送 |
@@ -819,12 +819,16 @@ const handleSendMessage = async (
 
 ### 默认占位符
 
+未传入 `placeholder` 时，根据当前 `skills` / `prompts` / `resources` 是否非空动态拼接（有对应能力才显示该行），始终保留换行提示：
+
 ```
-输入 "/" 唤出 Skill
-输入 "\" 唤出 Prompt
-输入 "@" 唤出 工具和 MCP
-通过 Shift + Enter 进行换行输入
+输入 "/" 唤出 Skill          // 仅当 skills 非空
+输入 "\" 唤出 Prompt         // 仅当 prompts 非空
+输入 "@" 唤出 工具和 MCP     // 仅当 resources 非空
+通过 Shift + Enter 进行换行输入  // 始终显示
 ```
+
+显式传入 `placeholder`（含空字符串）时完全覆盖上述默认文案。三种列表都为空时，只显示换行提示。
 
 ### Events
 

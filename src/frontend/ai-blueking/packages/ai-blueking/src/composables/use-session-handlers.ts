@@ -69,6 +69,8 @@ export function useSessionHandlers(params: UseSessionHandlersParams) {
 
   const handleNewChat = async () => {
     chatBotRef.value?.exitShareMode();
+    // 当前已是空会话时 createNewSession 会复用而不改 sessionCode，需显式清引用
+    chatBotRef.value?.setCiteText('');
     forwarders.newChat();
   };
 

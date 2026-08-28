@@ -88,6 +88,9 @@ modules:
           - name: MESSAGE_HANDLER_TYPE
             value: "rabbitmq"
             description: message handler type for multi-process mode
+          - name: BKAPP_WXAIBOT_WS_ENABLED
+            value: "true"
+            description: enable wecom websocket worker
       processes:
         - name: web
           procCommand: gunicorn bk_plugin_runtime.wsgi --timeout 300 -k gthread -w 2 --max-requests 512 --max-requests-jitter 50 --threads 32 --backlog 512
@@ -103,4 +106,8 @@ modules:
         - name: celery
           procCommand: celery -A blueapps.core.celery worker -P threads -Q plugin_schedule -l INFO -c 2 --max-tasks-per-child 256
           resQuotaPlan: 4C4G
-          targetReplicas: 1
+          replicas: 1
+        - name: wxaibot
+          procCommand: /bin/bash bin/start_wxaibot.sh
+          resQuotaPlan: 4C4G
+          replicas: {{ cookiecutter.wxaibot_replicas }}
