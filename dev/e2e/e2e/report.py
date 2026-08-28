@@ -46,6 +46,7 @@ class CaseResult:
     duration_ms: int
     detail: Any = None
     error: str = ""
+    coverage: str = ""
 
 
 @dataclass
@@ -104,6 +105,45 @@ def _render_conversations(conversations: list[dict[str, Any]]) -> str:
     return "".join(rows) or '<section class="card empty">本次执行未产生会话内容。</section>'
 
 
+def _render_capability_overview(cases: list[dict[str, Any]]) -> str:
+    module_names = {
+        "api": "API 与登录",
+        "ai-blueking": "AI 小鲸与智能体对话",
+        "message": "数据库与消息服务",
+        "metrics": "可观测性",
+        "wxbot": "企业微信",
+        "runner": "测试基础设施",
+    }
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for case in cases:
+        grouped.setdefault(str(case.get("module", "unknown")), []).append(case)
+
+    cards = []
+    for module, module_cases in grouped.items():
+        passed = sum(case.get("status") == "passed" for case in module_cases)
+        healthy = passed == len(module_cases)
+        state_class = "healthy" if healthy else "unhealthy"
+        state_text = "功能正常" if healthy else "存在异常"
+        scenarios = []
+        for case in module_cases:
+            case_passed = case.get("status") == "passed"
+            icon = "✓" if case_passed else "✗"
+            coverage = case.get("coverage") or case.get("name", "")
+            error = case.get("error", "")
+            error_html = f'<p class="error">{html.escape(str(error))}</p>' if error else ""
+            scenarios.append(
+                f'<li class="{"ok" if case_passed else "bad"}"><span>{icon}</span><div>'
+                f"<b>{html.escape(str(case.get('name', '')))}</b>"
+                f"<p>{html.escape(str(coverage))}</p>{error_html}</div>"
+                f"<small>{case.get('duration_ms', 0)} ms</small></li>"
+            )
+        cards.append(
+            f'<section class="component-card {state_class}"><header><h3>{html.escape(module_names.get(module, module))}</h3>'
+            f"<span>{state_text} · {passed}/{len(module_cases)}</span></header><ul>{''.join(scenarios)}</ul></section>"
+        )
+    return '<div class="component-grid">' + "".join(cards) + "</div>"
+
+
 def _render_api_calls(api_calls: list[dict[str, Any]]) -> str:
     rows = []
     source_names = {
@@ -149,25 +189,16 @@ def write_report(report: RunReport, report_dir: Path, secrets: tuple[str, ...] =
     json_path = output_dir / "result.json"
     json_path.write_text(json.dumps(safe, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    rows = []
-    for case in safe["cases"]:
-        icon = "✓" if case["status"] == "passed" else "✗"
-        detail = _pretty(case.get("detail"))
-        error = html.escape(case.get("error", ""))
-        rows.append(
-            f'<details class="{case["status"]}"><summary><span>{icon}</span> '
-            f"{html.escape(case['module'])} · {html.escape(case['name'])} "
-            f"<small>{case['duration_ms']} ms</small></summary>"
-            f"{f'<p class=error>{error}</p>' if error else ''}"
-            f"{f'<pre>{detail}</pre>' if detail else ''}</details>"
-        )
+    capability_overview = _render_capability_overview(safe["cases"])
     conversations = _render_conversations(safe["conversations"])
     api_calls = _render_api_calls(safe["api_calls"])
+    overall_state = "本次覆盖的功能均正常" if report.failed == 0 else "发现功能异常，请查看红色场景"
+    overall_class = "healthy" if report.failed == 0 else "unhealthy"
     document = f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>bk-aidev-agent E2E report</title><style>
 body{{font:14px/1.5 system-ui;margin:0;background:#f5f7fa;color:#17233d}}main{{max-width:1100px;margin:32px auto;padding:0 20px}}
-.card,details{{background:white;border:1px solid #e5e7eb;border-radius:8px;margin:10px 0;padding:14px}}summary{{cursor:pointer;font-weight:600}}
+.card,details,.component-card{{background:white;border:1px solid #e5e7eb;border-radius:8px;margin:10px 0;padding:14px}}summary{{cursor:pointer;font-weight:600}}
 .passed summary span{{color:#169c51}}.failed summary span,.error{{color:#d4380d}}small{{float:right;color:#7a869a;font-weight:400}}
 pre{{overflow:auto;background:#0b1020;color:#d9e2f2;padding:14px;border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere}}
 code{{font-family:ui-monospace}}h2{{margin:28px 0 10px}}h3,h4{{margin:0 0 8px}}.meta,.empty{{color:#667085}}
@@ -177,13 +208,24 @@ code{{font-family:ui-monospace}}h2{{margin:28px 0 10px}}h3,h4{{margin:0 0 8px}}.
 .api-call summary{{display:flex;align-items:center;gap:8px}}.sequence{{min-width:28px}}.source{{color:#475467!important}}
 .method,.status{{padding:2px 7px;border-radius:4px;background:#eef2f6}}.url{{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
 .status{{margin-left:auto}}.api-call small{{float:none;min-width:52px;text-align:right}}
-@media(max-width:760px){{.exchange{{grid-template-columns:1fr}}.conversation .message{{max-width:100%}}.source{{display:none}}}}
+.result-banner{{border-left:5px solid #12a150}}.result-banner.unhealthy{{border-left-color:#d4380d}}.result-banner h2{{margin:0 0 4px}}
+.stats{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}}.stat{{background:#f7f9fc;padding:10px;border-radius:6px}}
+.stat b{{display:block;font-size:22px}}.component-grid{{display:grid;grid-template-columns:1fr 1fr;gap:14px}}
+.component-card{{margin:0}}.component-card header{{display:flex;justify-content:space-between;gap:10px;align-items:center}}
+.component-card header span{{color:#168a4a;font-weight:600}}.component-card.unhealthy header span{{color:#d4380d}}
+.component-card ul{{list-style:none;margin:12px 0 0;padding:0}}.component-card li{{display:grid;grid-template-columns:24px 1fr auto;gap:8px;padding:10px 0;border-top:1px solid #eef1f5}}
+.component-card li>span{{color:#169c51;font-size:18px;font-weight:700}}.component-card li.bad>span{{color:#d4380d}}
+.component-card li p{{color:#667085;margin:3px 0 0}}.component-card li small{{float:none;padding-left:8px}}
+@media(max-width:760px){{.exchange,.component-grid{{grid-template-columns:1fr}}.stats{{grid-template-columns:1fr 1fr}}.conversation .message{{max-width:100%}}.source{{display:none}}}}
 </style></head><body><main><h1>bk-aidev-agent 本地 E2E</h1>
-<section class="card">开始：{html.escape(safe["started_at"])}<br>结束：{html.escape(safe["finished_at"])}<br>
-模块：{html.escape(", ".join(safe["modules"]))}<br>鉴权：{html.escape(safe["auth_mode"])}<br>
-结果：<b>{report.passed} passed / {report.failed} failed</b><br>接口调用：<b>{len(safe["api_calls"])} 次</b></section>
-<h2>会话内容</h2>{conversations}<h2>用例结果</h2>{"".join(rows)}
-<h2>完整 API 调用记录（{len(safe["api_calls"])}）</h2>{api_calls}</main></body></html>"""
+<section class="card result-banner {overall_class}"><h2>{overall_state}</h2>
+<span class="meta">✓ 表示该功能在本次本地全链路中实际执行并通过断言；✗ 表示功能未通过；未列出的功能不代表已验证。</span>
+<div class="stats"><div class="stat">覆盖组件<b>{len({case["module"] for case in safe["cases"]})}</b></div>
+<div class="stat">功能场景<b>{len(safe["cases"])}</b></div><div class="stat">正常<b>{report.passed}</b></div>
+<div class="stat">异常<b>{report.failed}</b></div></div><p class="meta">开始：{html.escape(safe["started_at"])}　
+结束：{html.escape(safe["finished_at"])}　鉴权：{html.escape(safe["auth_mode"])}　自动化计数：{report.passed} passed / {report.failed} failed</p></section>
+<h2>功能健康概览</h2>{capability_overview}<h2>验证证据：会话内容</h2>{conversations}
+<h2>诊断证据：完整 API 调用记录（{len(safe["api_calls"])}）</h2>{api_calls}</main></body></html>"""
     html_path = output_dir / "report.html"
     html_path.write_text(document, encoding="utf-8")
     (report_dir / "latest.html").write_text(document, encoding="utf-8")

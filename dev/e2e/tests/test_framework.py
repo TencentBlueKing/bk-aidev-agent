@@ -71,6 +71,7 @@ class ReportTests(unittest.TestCase):
         report = RunReport(
             "2026-08-28T00:00:00+08:00",
             ["ai-blueking"],
+            cases=[CaseResult("ai-blueking", "智能体对话", "passed", 8, coverage="同步问答与会话内容写入")],
             conversations=[{"case": "chat", "messages": [{"role": "user", "content": "发送的会话内容"}]}],
             api_calls=[
                 {
@@ -94,6 +95,9 @@ class ReportTests(unittest.TestCase):
             path = write_report(report, Path(directory), ("trace-secret",))
             document = path.read_text(encoding="utf-8")
         self.assertIn("发送的会话内容", document)
+        self.assertIn("功能健康概览", document)
+        self.assertIn("未列出的功能不代表已验证", document)
+        self.assertIn("同步问答与会话内容写入", document)
         self.assertIn("/v1/chat/completions", document)
         self.assertIn("请求 Headers", document)
         self.assertIn("***MASKED***", document)

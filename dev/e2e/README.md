@@ -41,11 +41,11 @@ make e2e-browser modules=api     # 也可指定模块
 - `dev/e2e/reports/<timestamp>/result.json`
 - `dev/e2e/reports/latest.html`
 
-报告包含三层信息：
+报告按“先判断功能是否正常，再查看诊断证据”的顺序组织：
 
-- 会话内容：完整展示发送给智能体的用户内容和 mock LLM 返回的助手内容。
-- 用例结果：保留每个模块的断言结果与业务摘要。
-- 完整 API 调用记录：按发生顺序展示测试端请求和“智能体 → 远端 mock”中间调用；每次调用可展开查看所属用例、方法、URL、请求 Headers/Body、响应状态、响应 Headers/Body 和耗时。
+- 功能健康概览：按 API/登录、AI 小鲸与对话、数据库与消息、可观测性、企微分组，直接列出本次实际执行通过或失败的功能场景及覆盖说明。
+- 会话证据：展示发送给智能体的用户内容和 mock LLM 返回的助手内容。
+- API 诊断证据：按发生顺序展示测试端请求和“智能体 → 远端 mock”中间调用；每次调用可展开查看所属场景、方法、URL、请求 Headers/Body、响应状态、响应 Headers/Body 和耗时。
 
 报告落盘前会递归遮蔽 access token、Authorization、cookie、密码、签名和 API key 等敏感字段；除敏感字段外不截断请求或响应内容。
 
