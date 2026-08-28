@@ -26,10 +26,10 @@ class Checks:
         self.report = report
 
     @contextmanager
-    def case(self, module: str, name: str, coverage: str):
+    def case(self, module: str, scenario_id: str, name: str, coverage: str):
         started = time.monotonic()
         detail: dict = {}
-        with API_TRACE.case(module, name):
+        with API_TRACE.case(module, name, scenario_id):
             try:
                 yield detail
             except Exception as error:
@@ -42,6 +42,7 @@ class Checks:
                         detail,
                         str(error),
                         coverage,
+                        scenario_id,
                     )
                 )
             else:
@@ -53,6 +54,7 @@ class Checks:
                         round((time.monotonic() - started) * 1000),
                         detail,
                         coverage=coverage,
+                        scenario_id=scenario_id,
                     )
                 )
 
@@ -63,7 +65,9 @@ class Checks:
         return result
 
     def auth(self):
-        with self.case("api", "登录与身份解析", "username 登录 mock、access token 优先级和用户身份解析") as detail:
+        with self.case(
+            "api", "api.auth", "登录与身份解析", "username 登录 mock、access token 优先级和用户身份解析"
+        ) as detail:
             if self.identity.mode == "access_token":
                 result = request(
                     "POST",
@@ -86,7 +90,9 @@ class Checks:
         headers = self.identity.headers
         root = self.config.mock_url + "/openapi/aidev/resource/v1/chat/session/"
         session_code = ""
-        with self.case("api", "远端 Session 生命周期", "Session 创建、列表、改名、详情回查和删除") as detail:
+        with self.case(
+            "api", "api.remote-session", "远端 Session 生命周期", "Session 创建、列表、改名、详情回查和删除"
+        ) as detail:
             created = self.require(request("POST", root, headers=headers, json_body={"session_name": "E2E"}))
             session_code = created.body["data"]["session_code"]
             listed = self.require(request("GET", root, headers=headers))
@@ -99,7 +105,9 @@ class Checks:
                 raise AssertionError("session mock did not persist CRUD state")
             detail.update({"session_code": session_code, "updated": updated.body["data"]})
 
-        with self.case("api", "智能体 OpenAPI", "Django 应用探活以及应用态 Session 创建、查询和删除") as detail:
+        with self.case(
+            "api", "api.openapi", "智能体 OpenAPI", "Django 应用探活以及应用态 Session 创建、查询和删除"
+        ) as detail:
             health = request("GET", self.config.app_url + "/bk_plugin/meta/", headers=headers, timeout=5)
             self.require(health)
             created = self.require(
@@ -125,7 +133,12 @@ class Checks:
             detail.update({"session_code": app_session, "response": fetched.body})
 
     def ai_blueking(self):
-        with self.case("ai-blueking", "页面与 Agent 配置", "AI 小鲸页面、Agent 基本信息、配置和访问权限") as detail:
+        with self.case(
+            "ai-blueking",
+            "ai-blueking.configuration",
+            "页面与 Agent 配置",
+            "AI 小鲸页面、Agent 基本信息、配置和访问权限",
+        ) as detail:
             page = self.require(request("GET", self.config.app_url + "/chat-window/", headers=self.identity.headers))
             if "html" not in page.headers.get("Content-Type", "").lower():
                 raise AssertionError("chat-window did not return HTML")
@@ -137,7 +150,10 @@ class Checks:
             detail.update({"page_bytes": len(str(page.body).encode()), "agent": info.body})
 
         with self.case(
-            "ai-blueking", "浏览器渲染", "AI 小鲸页面在 Chrome/Chromium headed 或 headless 模式正常渲染"
+            "ai-blueking",
+            "ai-blueking.browser-render",
+            "浏览器渲染",
+            "AI 小鲸页面在 Chrome/Chromium headed 或 headless 模式正常渲染",
         ) as detail:
             configured = os.getenv("E2E_BROWSER_BIN", "").strip()
             candidates = (
@@ -188,6 +204,7 @@ class Checks:
 
         with self.case(
             "ai-blueking",
+            "ai-blueking.sync-chat",
             "同步智能体对话",
             "chat_completion、会话初始化、Token 计算、LLM 调用和会话内容写入",
         ) as detail:
@@ -205,7 +222,9 @@ class Checks:
             detail.update({"request": chat_request, "response": result.body})
             self.report.conversations.append(
                 {
-                    "case": "同步智能体对话到 mock LLM",
+                    "module": "ai-blueking",
+                    "scenario_id": "ai-blueking.sync-chat",
+                    "case": "同步智能体对话",
                     "conversation_id": result.body["data"].get("id", ""),
                     "messages": [
                         {"role": "user", "content": chat_request["input"]},
@@ -221,7 +240,7 @@ class Checks:
             if self.config.database == "sqlite"
             else "MySQL 5.7 版本和应用库连接"
         )
-        with self.case("message", database_name, database_coverage) as detail:
+        with self.case("message", "message.database", database_name, database_coverage) as detail:
             if self.config.database == "sqlite":
                 path = self.config.root / "dev/e2e/.runtime/agent.sqlite3"
                 if not path.is_file():
@@ -273,7 +292,7 @@ print(json.dumps({'version': version, 'database': database}))
                     raise AssertionError(f"unexpected MySQL baseline: {mysql}")
                 detail.update({"backend": "mysql", **mysql})
 
-        with self.case("message", "Redis 可用性", "真实 Redis 连接和 PING/PONG 往返") as detail:
+        with self.case("message", "message.redis", "Redis 可用性", "真实 Redis 连接和 PING/PONG 往返") as detail:
             parsed = urllib.parse.urlparse(os.getenv("MESSAGE_REDIS_URL", "redis://127.0.0.1:16379/0"))
             with socket.create_connection((parsed.hostname or "127.0.0.1", parsed.port or 6379), timeout=5) as stream:
                 stream.sendall(b"*1\r\n$4\r\nPING\r\n")
@@ -282,7 +301,9 @@ print(json.dumps({'version': version, 'database': database}))
                 raise AssertionError(f"unexpected Redis response: {reply!r}")
             detail["response"] = reply.decode(errors="replace").strip()
 
-        with self.case("message", "RabbitMQ 消息往返", "真实队列创建、消息发布、消费确认和队列清理") as detail:
+        with self.case(
+            "message", "message.rabbitmq", "RabbitMQ 消息往返", "真实队列创建、消息发布、消费确认和队列清理"
+        ) as detail:
             user = os.getenv("RABBITMQ_USER", "aidev")
             password = os.getenv("RABBITMQ_PASSWORD", "aidev-e2e")
             host = os.getenv("RABBITMQ_HOST", "127.0.0.1")
@@ -333,7 +354,9 @@ print(json.dumps({'version': version, 'database': database}))
                 request("DELETE", queue_url, headers=headers)
 
     def metrics(self):
-        with self.case("metrics", "OTel 指标上报", "Agent 指标经真实 OTel exporter 发送到本地 Collector") as detail:
+        with self.case(
+            "metrics", "metrics.otel-export", "OTel 指标上报", "Agent 指标经真实 OTel exporter 发送到本地 Collector"
+        ) as detail:
             python = self.config.root / "template/builtin/{{cookiecutter.project_name}}/.venv/bin/python"
             environment = os.environ.copy()
             environment["PYTHONPATH"] = ":".join(
@@ -366,7 +389,9 @@ print(json.dumps({'version': version, 'database': database}))
                 raise AssertionError(f"metric exporter failed: {emitted.stderr[-1000:]}")
             time.sleep(2)
             detail["exporter"] = emitted.stdout.splitlines()[-1] if emitted.stdout else "completed"
-        with self.case("metrics", "Prometheus 指标查询", "Prometheus 就绪且可查询智能体 active 指标序列") as detail:
+        with self.case(
+            "metrics", "metrics.prometheus", "Prometheus 指标查询", "Prometheus 就绪且可查询智能体 active 指标序列"
+        ) as detail:
             health = self.require(request("GET", "http://127.0.0.1:9090/-/ready", timeout=8))
             query = self.require(
                 request(
@@ -380,14 +405,18 @@ print(json.dumps({'version': version, 'database': database}))
             if not query.body["data"]["result"]:
                 raise AssertionError("Prometheus has no aidev_agent_active series")
             detail.update({"ready": health.body, "series": len(query.body["data"]["result"])})
-        with self.case("metrics", "Grafana 仪表盘", "预置的 AIDev Agent Metrics 仪表盘可读取") as detail:
+        with self.case(
+            "metrics", "metrics.grafana", "Grafana 仪表盘", "预置的 AIDev Agent Metrics 仪表盘可读取"
+        ) as detail:
             result = self.require(
                 request("GET", "http://127.0.0.1:3000/api/dashboards/uid/aidev-agent-metrics", timeout=8)
             )
             detail.update({"title": result.body["dashboard"]["title"], "uid": result.body["dashboard"]["uid"]})
 
     def wxbot(self):
-        with self.case("wxbot", "企微签名回调", "企微消息加密签名、回调路由解密和真实 RabbitMQ 依赖") as detail:
+        with self.case(
+            "wxbot", "wxbot.callback", "企微签名回调", "企微消息加密签名、回调路由解密和真实 RabbitMQ 依赖"
+        ) as detail:
             python = self.config.root / "template/builtin/{{cookiecutter.project_name}}/.venv/bin/python"
             script = """
 import json

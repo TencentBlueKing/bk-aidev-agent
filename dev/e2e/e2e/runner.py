@@ -50,7 +50,16 @@ def main() -> int:
         Checks(config, identity, report).run()
     except Exception as error:
         report.cases.append(
-            CaseResult("runner", "基础设施与执行器", "failed", 0, {"traceback": traceback.format_exc()}, str(error))
+            CaseResult(
+                "runner",
+                "基础设施与执行器",
+                "failed",
+                0,
+                {"traceback": traceback.format_exc()},
+                str(error),
+                "应用启动、配置装载和测试执行器",
+                "runner.infrastructure",
+            )
         )
     finally:
         if app:

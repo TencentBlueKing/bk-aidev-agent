@@ -12,6 +12,7 @@ class ApiCall:
     source: str
     module: str
     case: str
+    scenario_id: str
     method: str
     url: str
     request_headers: dict[str, str]
@@ -29,20 +30,20 @@ class ApiTraceRecorder:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._calls: list[ApiCall] = []
-        self._current_case = ("runner", "应用启动与基础设施")
+        self._current_case = ("runner", "应用启动与基础设施", "runner.infrastructure")
         self._sequence = 0
 
     def reset(self) -> None:
         with self._lock:
             self._calls.clear()
-            self._current_case = ("runner", "应用启动与基础设施")
+            self._current_case = ("runner", "应用启动与基础设施", "runner.infrastructure")
             self._sequence = 0
 
     @contextmanager
-    def case(self, module: str, name: str) -> Iterator[None]:
+    def case(self, module: str, name: str, scenario_id: str) -> Iterator[None]:
         with self._lock:
             previous = self._current_case
-            self._current_case = (module, name)
+            self._current_case = (module, name, scenario_id)
         try:
             yield
         finally:
@@ -60,12 +61,13 @@ class ApiTraceRecorder:
     ) -> ApiCall:
         with self._lock:
             self._sequence += 1
-            module, case = self._current_case
+            module, case, scenario_id = self._current_case
             call = ApiCall(
                 sequence=self._sequence,
                 source=source,
                 module=module,
                 case=case,
+                scenario_id=scenario_id,
                 method=method.upper(),
                 url=url,
                 request_headers=dict(request_headers or {}),

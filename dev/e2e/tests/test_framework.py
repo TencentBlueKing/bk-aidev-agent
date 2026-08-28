@@ -61,7 +61,11 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(value["url"], "http://localhost/callback?msg_signature=***MASKED***&nonce=1")
 
     def test_html_is_written_for_failed_run(self):
-        report = RunReport("2026-08-28T00:00:00+08:00", ["api"], cases=[CaseResult("api", "case", "failed", 1)])
+        report = RunReport(
+            "2026-08-28T00:00:00+08:00",
+            ["api"],
+            cases=[CaseResult("api", "case", "failed", 1, scenario_id="api.failed")],
+        )
         with tempfile.TemporaryDirectory() as directory:
             path = write_report(report, Path(directory))
             self.assertTrue(path.is_file())
@@ -71,14 +75,30 @@ class ReportTests(unittest.TestCase):
         report = RunReport(
             "2026-08-28T00:00:00+08:00",
             ["ai-blueking"],
-            cases=[CaseResult("ai-blueking", "智能体对话", "passed", 8, coverage="同步问答与会话内容写入")],
-            conversations=[{"case": "chat", "messages": [{"role": "user", "content": "发送的会话内容"}]}],
+            cases=[
+                CaseResult(
+                    "ai-blueking",
+                    "智能体对话",
+                    "passed",
+                    8,
+                    coverage="同步问答与会话内容写入",
+                    scenario_id="ai-blueking.sync-chat",
+                )
+            ],
+            conversations=[
+                {
+                    "scenario_id": "ai-blueking.sync-chat",
+                    "case": "智能体对话",
+                    "messages": [{"role": "user", "content": "发送的会话内容"}],
+                }
+            ],
             api_calls=[
                 {
                     "sequence": 1,
                     "source": "agent-to-remote-mock",
                     "module": "ai-blueking",
                     "case": "chat",
+                    "scenario_id": "ai-blueking.sync-chat",
                     "method": "POST",
                     "url": "http://mock/v1/chat/completions",
                     "request_headers": {"Authorization": "Bearer trace-secret"},
@@ -98,22 +118,41 @@ class ReportTests(unittest.TestCase):
         self.assertIn("功能健康概览", document)
         self.assertIn("未列出的功能不代表已验证", document)
         self.assertIn("同步问答与会话内容写入", document)
+        self.assertIn('href="#evidence-ai-blueking.sync-chat"', document)
+        self.assertIn('id="evidence-ai-blueking.sync-chat"', document)
+        self.assertIn("1 断言 / 1 会话 / 1 API", document)
+        self.assertIn("场景标识：<code>ai-blueking.sync-chat</code>", document)
         self.assertIn("/v1/chat/completions", document)
         self.assertIn("请求 Headers", document)
         self.assertIn("***MASKED***", document)
         self.assertNotIn("trace-secret", document)
 
+    def test_unmatched_evidence_is_preserved_as_supporting_context(self):
+        report = RunReport(
+            "2026-08-28T00:00:00+08:00",
+            ["api"],
+            cases=[CaseResult("api", "登录", "passed", 1, scenario_id="api.auth")],
+            conversations=[{"scenario_id": "runner.infrastructure", "messages": [{"content": "启动会话"}]}],
+            api_calls=[{"scenario_id": "runner.infrastructure", "method": "GET", "url": "http://mock/start"}],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            document = write_report(report, Path(directory)).read_text(encoding="utf-8")
+        self.assertIn("公共支撑链路", document)
+        self.assertIn("启动会话", document)
+        self.assertIn("http://mock/start", document)
+
 
 class TraceTests(unittest.TestCase):
     def test_calls_keep_sequence_and_case_context(self):
         recorder = ApiTraceRecorder()
-        with recorder.case("api", "session"):
+        with recorder.case("api", "session", "api.session"):
             call = recorder.start_call(source="test-runner", method="post", url="http://mock/session")
             recorder.finish_call(call, status=200, response_body={"ok": True}, duration_ms=3)
         recorded = recorder.snapshot()
         self.assertEqual(recorded[0]["sequence"], 1)
         self.assertEqual(recorded[0]["module"], "api")
         self.assertEqual(recorded[0]["case"], "session")
+        self.assertEqual(recorded[0]["scenario_id"], "api.session")
         self.assertEqual(recorded[0]["response_body"], {"ok": True})
 
 
