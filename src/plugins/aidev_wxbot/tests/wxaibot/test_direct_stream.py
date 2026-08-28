@@ -95,6 +95,7 @@ def test_tool_call_start_is_pushed_before_the_result_arrives():
     assert not frames[0].finish
     assert "🔄" in frames[0].content
     assert "execute" in frames[0].content
+    assert frames[0].content.endswith("\n\n")
     assert "🟢 **execute** · 207ms" in frames[-1].content
 
 

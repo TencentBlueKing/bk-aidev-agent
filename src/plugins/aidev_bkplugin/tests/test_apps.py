@@ -20,6 +20,29 @@ def test_init_otel_disabled_skips_remote_initialization(mocker):
     set_metric_service.assert_called_once_with(None)
 
 
+def test_init_otel_logging_export_skips_remote_configuration(mocker):
+    otel_config = SimpleNamespace(
+        enabled=True,
+        trace_exporter="logging",
+        enable_metrics=True,
+        enable_logs=True,
+    )
+    mocker.patch.object(apps, "OTelConfig", return_value=otel_config)
+    get_json_endpoints = mocker.patch.object(apps, "get_otel_endpoint_by_json_str")
+    get_env_endpoints = mocker.patch.object(apps, "get_otel_endpoint_by_env")
+    instrumentor = mocker.patch.object(apps, "BkAidevAgentInstrumentor").return_value
+    set_metric_service = mocker.patch.object(apps, "set_metric_service")
+
+    apps.init_bk_aidev_agent_otel()
+
+    get_json_endpoints.assert_not_called()
+    get_env_endpoints.assert_not_called()
+    set_metric_service.assert_called_once_with(None)
+    assert otel_config.enable_metrics is False
+    assert otel_config.enable_logs is False
+    instrumentor.instrument.assert_called_once_with()
+
+
 def _mock_otel_inputs(mocker, agent_info, metric_settings):
     mocker.patch.object(apps, "get_otel_endpoint_by_json_str", return_value=[])
     mocker.patch.object(apps, "get_otel_endpoint_by_agent_info", return_value=[])

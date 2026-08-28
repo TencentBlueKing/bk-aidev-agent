@@ -28,8 +28,13 @@ def test_generate_session_code_is_stable_md5(username, agent_code, thread_id, ex
     assert SessionManager.generate_session_code(username, agent_code, thread_id) == code
 
 
-def test_get_or_create_by_thread_id_delegates_to_resource_manager(session_manager, mock_plugin_rm_client):
-    result = session_manager.get_or_create_by_thread_id("t-1")
+@pytest.mark.parametrize("channel_type", ["popup", "rtx"])
+def test_get_or_create_by_thread_id_delegates_to_resource_manager(
+    session_manager,
+    mock_plugin_rm_client,
+    channel_type,
+):
+    result = session_manager.get_or_create_by_thread_id("t-1", channel_type=channel_type)
 
     expected = session_manager.generate_session_code("alice", "bk-aidev", "t-1")
     assert result == expected
@@ -38,7 +43,7 @@ def test_get_or_create_by_thread_id_delegates_to_resource_manager(session_manage
         session_name="新会话",
         protocol_version=AGUI_PROTOCOL_VERSION,
         is_temporary=None,
-        channel_type="popup",
+        channel_type=channel_type,
         headers={"X-BKAIDEV-USER": "alice"},
     )
 
@@ -143,10 +148,11 @@ def test_prepare_session_turn_inherits_user_turn_id_without_input(session_manage
         ],
     )
 
-    session_code, turn_id = session_manager.prepare_session_turn("thread-1", input_text="")
+    session_code, turn_id = session_manager.prepare_session_turn("thread-1", input_text="", channel_type="rtx")
 
     assert session_code
     assert turn_id == "turn-existing"
+    assert mock_plugin_rm_client.resource_manager_mock.get_or_create_session.call_args.kwargs["channel_type"] == "rtx"
     mock_plugin_rm_client.api.create_chat_session_content.assert_not_called()
 
 

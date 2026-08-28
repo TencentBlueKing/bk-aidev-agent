@@ -149,7 +149,7 @@ class TestFlowAgentStrategyExecute:
 
         # 验证完整调用链
         mock_session_cls.assert_called_once_with(username="wxid_123")
-        session_manager.get_or_create_by_thread_id.assert_called_once_with("t1")
+        session_manager.get_or_create_by_thread_id.assert_called_once_with("t1", channel_type="rtx")
         session_manager.save_content.assert_called_once()
         save_kwargs = session_manager.save_content.call_args.kwargs
         assert save_kwargs["session_code"] == "sc_abc"

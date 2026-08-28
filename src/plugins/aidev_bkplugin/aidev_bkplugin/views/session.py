@@ -48,6 +48,7 @@ class ChatSessionViewSet(PluginViewSet):
         params = {
             "session_type": self.session_type,
             "protocol_version": AGUI_PROTOCOL_VERSION,
+            "channel_type": self.channel_type,
         }
         page = request.query_params.get("page")
         page_size = request.query_params.get("page_size")

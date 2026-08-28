@@ -168,15 +168,22 @@ class ChatSegments:
 
     def render(self) -> str:
         blocks = []
+        last_kind = ""
         for segment in self._segments:
             if segment["kind"] == "text":
                 if segment["text"]:
                     blocks.append(segment["text"])
+                    last_kind = "text"
             else:
                 blocks.append(format_tool_markdown(segment["tool"]))
+                last_kind = "tool"
         if self._pending:
             blocks.append(self._pending)
-        return "\n\n".join(blocks)
+            last_kind = "text"
+        content = "\n\n".join(blocks)
+        # 企微会边接收边解析 Markdown。仅有工具引用块的中间快照如果没有空行闭合，
+        # 客户端会把它当作尚未完成的引用段，直到下一帧/终态才显示图标。
+        return content + "\n\n" if content and last_kind == "tool" else content
 
     def _ensure_tool(self, tool_id: str, name: str) -> dict:
         if tool_id in self._tools:

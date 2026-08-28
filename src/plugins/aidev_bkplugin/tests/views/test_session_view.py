@@ -66,7 +66,11 @@ def test_list_without_pagination_returns_legacy_array():
     assert response.data == [_session("v2")]
     api.list_chat_session.assert_called_once_with(
         headers={"X-BKAIDEV-USER": "alice"},
-        params={"session_type": view.session_type, "protocol_version": AGUI_PROTOCOL_VERSION},
+        params={
+            "session_type": view.session_type,
+            "protocol_version": AGUI_PROTOCOL_VERSION,
+            "channel_type": "popup",
+        },
     )
 
 
@@ -90,6 +94,7 @@ def test_list_with_pagination_returns_paginated_data():
         params={
             "session_type": view.session_type,
             "protocol_version": AGUI_PROTOCOL_VERSION,
+            "channel_type": "popup",
             "page": 1,
             "page_size": 20,
         },
@@ -119,6 +124,7 @@ def test_list_pagination_params_invalid_fallback_to_default():
         params={
             "session_type": view.session_type,
             "protocol_version": AGUI_PROTOCOL_VERSION,
+            "channel_type": "popup",
             "page": session_mod.DEFAULT_SESSION_PAGE,
             "page_size": session_mod.DEFAULT_SESSION_PAGE_SIZE,
         },

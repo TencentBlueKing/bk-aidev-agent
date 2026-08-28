@@ -1,3 +1,4 @@
+import logging
 from types import SimpleNamespace
 
 from aidev_agent.packages.opentelemetry.config import OTelConfig
@@ -7,6 +8,7 @@ from aidev_agent.packages.opentelemetry.metrics import (
     MESSAGE_SIZE_HISTOGRAM_BOUNDARIES,
 )
 from aidev_agent.packages.opentelemetry.otel_service import BkAgentOTelService
+from opentelemetry.sdk.resources import Resource
 
 
 def test_metric_toggle_does_not_change_trace_service_setup(mocker):
@@ -60,3 +62,21 @@ def test_direct_metric_provider_uses_configured_reader_and_shared_histogram_view
     assert tuple(views[0]._aggregation._boundaries) == DURATION_HISTOGRAM_BOUNDARIES
     assert tuple(views[1]._aggregation._boundaries) == MESSAGE_SIZE_HISTOGRAM_BOUNDARIES
     assert tuple(views[2]._aggregation._boundaries) == AGENT_ITERATION_HISTOGRAM_BOUNDARIES
+
+
+def test_logging_trace_exporter_writes_span_without_remote_export(mocker, caplog):
+    config = OTelConfig(otel_endpoints=[])
+    config.trace_exporter = "logging"
+    service = BkAgentOTelService(config)
+    create_remote_exporter = mocker.patch.object(service, "_create_trace_exporter")
+
+    with caplog.at_level(logging.INFO, logger="aidev_agent.packages.opentelemetry.otel_service"):
+        service._setup_traces(Resource.create({}))
+        tracer = service.get_tracer(__name__)
+        with tracer.start_as_current_span("local-evaluation"):
+            pass
+
+    create_remote_exporter.assert_not_called()
+    assert "event=aidev_otel_span" in caplog.text
+    assert "name=local-evaluation" in caplog.text
+    service.tracer_provider.shutdown()

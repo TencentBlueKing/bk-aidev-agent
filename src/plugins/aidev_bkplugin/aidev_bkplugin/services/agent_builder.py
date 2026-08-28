@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from logging import getLogger
 
-from aidev_agent.enums import AgentBuildType, PromptRole, SessionsStatus
+from aidev_agent.enums import AgentBuildType, ChannelType, PromptRole, SessionsStatus
 from aidev_agent.packages.resource_manager.agent import AgentResourceManager
 from aidev_agent.packages.resource_manager.registry import ResourceManagerProtocol
 from aidev_agent.pydantic_models import AgentConfig, ChatPrompt
@@ -95,7 +95,10 @@ class AgentBuilder:
         version: str | None = None,
         channel_type: str | None = None,
     ) -> tuple[ChatCompletionAgent, str]:
-        session_code = self.session_manager.get_or_create_by_thread_id(thread_id)
+        session_code = self.session_manager.get_or_create_by_thread_id(
+            thread_id,
+            channel_type=channel_type or ChannelType.POPUP.value,
+        )
         if save_content and input_text:
             saved = self.session_manager.save_content(
                 session_code=session_code,
@@ -120,7 +123,10 @@ class AgentBuilder:
         version: str | None = None,
         channel_type: str | None = None,
     ) -> tuple[ChatCompletionAgent, str]:
-        session_code = self.session_manager.get_or_create_by_thread_id(thread_id)
+        session_code = self.session_manager.get_or_create_by_thread_id(
+            thread_id,
+            channel_type=channel_type or ChannelType.POPUP.value,
+        )
         if chat_history and chat_history[-1].role == PromptRole.USER.value:
             # 最后一条 user 视为本轮新输入；历史消息不带 turn_id
             self.session_manager.save_chat_history(session_code, chat_history[:-1])

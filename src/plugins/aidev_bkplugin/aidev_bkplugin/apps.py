@@ -86,6 +86,16 @@ def init_bk_aidev_agent_otel() -> None:
         set_metric_service(None)
         return
 
+    if getattr(otel_config, "trace_exporter", "otlp") == "logging":
+        # 本地评测只需要 trace/span，禁用远程 endpoint 探测和指标上报，
+        # 由 Agent SDK 的 LoggingSpanExporter 写入应用日志。
+        otel_config.enable_metrics = False
+        otel_config.enable_logs = False
+        set_metric_service(None)
+        BkAidevAgentInstrumentor(config=otel_config).instrument()
+        logger.info("[aidev_bkplugin] OpenTelemetry local logging export enabled")
+        return
+
     from aidev_bkplugin.services.agent_config import AgentConfigFetcher
 
     endpoints = []

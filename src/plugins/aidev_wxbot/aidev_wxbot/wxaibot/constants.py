@@ -48,6 +48,7 @@ THINKING_MESSAGE = "正在思考中..."
 
 # 工具调用渲染：与 Flow 节点状态共用一套图标语言
 TOOL_STATUS_ICONS = {
+    "calling": "🔄",
     "running": "🔄",
     "ok": "🟢",
     "error": "🔴",

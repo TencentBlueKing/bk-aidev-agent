@@ -61,11 +61,15 @@ def test_by_thread_id_with_chat_history_persists_then_builds():
         mock_factory.return_value = MagicMock()
         mock_build.return_value = MagicMock()
         builder = AgentBuilder(username="alice", session_manager=sm, turn_id="turn-1")
-        agent_instance, session_code = builder.by_thread_id_with_chat_history("t-1", history)
+        agent_instance, session_code = builder.by_thread_id_with_chat_history(
+            "t-1",
+            history,
+            channel_type="rtx",
+        )
 
     assert session_code == "session-xyz"
     assert agent_instance is mock_build.return_value
-    sm.get_or_create_by_thread_id.assert_called_once_with("t-1")
+    sm.get_or_create_by_thread_id.assert_called_once_with("t-1", channel_type="rtx")
     sm.save_chat_history.assert_called_once_with("session-xyz", history[:-1])
     sm.save_content.assert_called_once_with(
         session_code="session-xyz",

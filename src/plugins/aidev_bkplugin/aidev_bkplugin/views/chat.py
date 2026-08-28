@@ -79,7 +79,10 @@ class ChatCompletionViewSet(PluginViewSet):
                 session_code = SessionManager(
                     username=username, agent_code=agent_code, resource_manager=rm
                 ).get_or_create_by_session_code(
-                    session_code, session_name="子智能体调用", is_temporary=session_temporary
+                    session_code,
+                    session_name="子智能体调用",
+                    is_temporary=session_temporary,
+                    channel_type=self.channel_type,
                 )
 
             logger.info(f"resolved agent_type={agent_type}, version={execute_kwargs.version}")
@@ -91,7 +94,7 @@ class ChatCompletionViewSet(PluginViewSet):
                     try:
                         session_code = SessionManager(
                             username=username, agent_code=agent_code, resource_manager=rm
-                        ).get_or_create_by_thread_id(thread_id)
+                        ).get_or_create_by_thread_id(thread_id, channel_type=self.channel_type)
                         execute_kwargs.session_code = session_code
                         logger.info(
                             "[FLOW_AGENT] Resolved session_code from thread_id: thread_id=%s, session_code=%s",

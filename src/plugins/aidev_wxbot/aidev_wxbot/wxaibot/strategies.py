@@ -241,7 +241,10 @@ class FlowAgentStrategy:
         logger.info(f"[FlowAgentStrategy] 使用 RTX: {rtx_username}")
         turn_id = uuid.uuid4().hex
         session_manager = SessionManager(username=rtx_username)
-        session_code = session_manager.get_or_create_by_thread_id(thread_id)
+        session_code = session_manager.get_or_create_by_thread_id(
+            thread_id,
+            channel_type=ChannelType.RTX.value,
+        )
         session_manager.save_content(session_code=session_code, role="user", content=content, turn_id=turn_id)
 
         agent_instance = AgentInstanceFactory.build_agent(
