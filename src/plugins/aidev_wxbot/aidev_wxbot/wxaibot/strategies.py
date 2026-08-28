@@ -40,6 +40,17 @@ if TYPE_CHECKING:
 
 logger = getLogger(__name__)
 
+WECOM_AGENT_EXECUTION_POLICY = (
+    "企业微信会话执行规则：\n"
+    "1. 用户已给出目标对象、时间范围、数据类型和返回数量时，直接调用工具；"
+    "过滤条件等可选参数未提供时使用无过滤默认值，不得重复询问确认。\n"
+    "2. 用户要求先说明将开始查询时，先只输出一句简短说明，然后立即调用工具。\n"
+    "3. 用户要求返回 N 条记录时，最终回复必须完整展示实际获得的 N 条不同记录，"
+    "使用序号 1 到 N 的 Markdown 表格；不得用摘要、样例或省略号代替。\n"
+    "4. 工具实际返回少于 N 条时，完整展示已有记录并明确实际条数；不得虚构数据。"
+)
+WECOM_AGENT_TEMPERATURE = 0.1
+
 
 # ---------------------------------------------------------------------------
 # 策略协议
@@ -145,6 +156,9 @@ class ChatAgentStrategy:
             execute_kwargs=execute_kwargs,
             channel_type=ChannelType.RTX.value,
             save_content=True,
+            transient_system_prompt=WECOM_AGENT_EXECUTION_POLICY,
+            enable_query_clarification=False,
+            temperature=WECOM_AGENT_TEMPERATURE,
         )
         return AgentStream(
             kind="chat",

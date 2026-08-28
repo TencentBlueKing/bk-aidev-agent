@@ -12,7 +12,7 @@ import json
 from logging import getLogger
 
 from aidev_agent.enums import ChatContentStatus, PromptRole, StreamEventType
-from aidev_agent.pydantic_models import ExecuteKwargs
+from aidev_agent.pydantic_models import ChatPrompt, ExecuteKwargs
 from aidev_agent.services.agent import ChatCompletionAgent
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
 
@@ -259,6 +259,9 @@ class AgentExecutor:
         execute_kwargs: ExecuteKwargs,
         channel_type: str | None = None,
         save_content: bool = True,
+        transient_system_prompt: str | None = None,
+        enable_query_clarification: bool | None = None,
+        temperature: float | None = None,
     ):
         """通过 ``thread_id`` 统一执行 ChatCompletion 并自动处理会话保存。
 
@@ -266,11 +269,14 @@ class AgentExecutor:
 
         :param channel_type: 调用渠道（如 ``api`` / ``popup`` / ``bkplugin`` / ``rtx``），
             透传到 SDK 用于 token usage 渠道分类；不传时按空处理（不上报渠道）。
+        :param transient_system_prompt: 仅参与本轮执行、不写入会话存储的系统提示词。
+        :param enable_query_clarification: 按调用渠道覆盖查询澄清开关；不传时沿用智能体配置。
+        :param temperature: 按调用渠道覆盖模型温度；不传时沿用智能体配置。
         """
         if not input_text:
             raise ValueError("input_text is required when using thread_id")
 
-        builder = AgentBuilder(username=username)
+        builder = AgentBuilder(username=username, temperature=temperature)
         agent_instance, session_code = builder.by_thread_id(
             thread_id=thread_id,
             input_text=input_text,
@@ -278,6 +284,13 @@ class AgentExecutor:
             version=execute_kwargs.version,
             channel_type=channel_type,
         )
+        if transient_system_prompt:
+            agent_instance.chat_history.insert(
+                0,
+                ChatPrompt(role=PromptRole.SYSTEM.value, content=transient_system_prompt),
+            )
+        if enable_query_clarification is not None:
+            agent_instance.knowledge_query_options.enable_query_clarification = enable_query_clarification
         turn_id = builder.turn_id
         execute_kwargs.session_code = session_code
         if hasattr(execute_kwargs, "turn_id"):

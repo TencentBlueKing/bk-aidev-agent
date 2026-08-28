@@ -2,6 +2,7 @@
 """``AgentExecutor.run_chat_completion_with_thread_id`` 的回归测试：thread_id 路径下的 OO 装配语义。"""
 
 import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -79,3 +80,37 @@ class TestRunChatCompletionWithThreadId:
                 channel_type=None,
             )
             mock_execute_with_save.assert_called_once_with(mock_agent, ek, "session-abc", turn_id="turn-1")
+
+    def test_applies_transient_system_prompt_and_clarification_override(self):
+        from aidev_agent.enums import PromptRole
+        from aidev_bkplugin.services.agent_execution import AgentExecutor
+
+        with (
+            patch("aidev_bkplugin.services.agent_execution.AgentBuilder") as mock_builder_cls,
+            patch.object(AgentExecutor, "execute_with_save", return_value=iter(["data: {}"])),
+        ):
+            agent = SimpleNamespace(
+                chat_history=[],
+                knowledge_query_options=SimpleNamespace(enable_query_clarification=True),
+                event_handler=None,
+            )
+            builder = mock_builder_cls.return_value
+            builder.by_thread_id.return_value = (agent, "session-abc")
+            builder.turn_id = "turn-1"
+            builder.session_manager = MagicMock()
+            execute_kwargs = SimpleNamespace(stream=True, session_code=None, version=None)
+
+            AgentExecutor.run_chat_completion_with_thread_id(
+                thread_id="thread-1",
+                input_text="query",
+                username="tester",
+                execute_kwargs=execute_kwargs,
+                transient_system_prompt="execute completely",
+                enable_query_clarification=False,
+                temperature=0.1,
+            )
+
+        mock_builder_cls.assert_called_once_with(username="tester", temperature=0.1)
+        assert agent.chat_history[0].role == PromptRole.SYSTEM.value
+        assert agent.chat_history[0].content == "execute completely"
+        assert agent.knowledge_query_options.enable_query_clarification is False
