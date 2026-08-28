@@ -7,7 +7,7 @@ ENV_FILE ?= $(if $(wildcard $(E2E_DIR)/.env),$(E2E_DIR)/.env,$(E2E_DIR)/.env.exa
 PODMAN ?= podman
 COMPOSE := $(PODMAN) compose -f $(E2E_DIR)/docker-compose.yml
 PYTHON ?= python3
-MODULES ?= api,ai-blueking,metrics
+MODULES ?= api,ai-blueking,metrics,wxbot
 HEADLESS ?= true
 DB ?= sqlite
 
@@ -19,7 +19,7 @@ help:
 	@echo "  make setup              Install template runtime and link local SDK/plugin sources"
 	@echo "  make up                 Start real Redis, RabbitMQ and local observability (SQLite by default)"
 	@echo "  make up DB=mysql        Also start the optional real MySQL 5.7 profile"
-	@echo "  make run                Run default API/AI/metrics modules; always write an HTML report"
+	@echo "  make run                Run the complete API/AI/metrics/WeCom suite; write one HTML report"
 	@echo "  make api                Run one module (also: ai-blueking/metrics/wxbot)"
 	@echo "  make run HEADLESS=false Run headed/browser-friendly mode"
 	@echo "  make browser            Open headed browser checks (default: AI whale)"

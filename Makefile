@@ -7,7 +7,7 @@ TEMPLATE_PROJECT_DIR := $(TEMPLATE_DIR)/{{cookiecutter.project_name}}
 ALL: init-project
 
 E2E_MAKE := $(MAKE) -C $(ROOT_DIR)/dev/e2e
-E2E_DEFAULT_MODULES := api,ai-blueking,metrics
+E2E_DEFAULT_MODULES := api,ai-blueking,metrics,wxbot
 
 e2e-setup:
 	$(E2E_MAKE) setup $(if $(env_file),ENV_FILE="$(env_file)",)
