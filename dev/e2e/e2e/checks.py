@@ -16,6 +16,7 @@ from typing import Callable
 from .config import Config, Identity
 from .http import request, with_query
 from .report import CaseResult, RunReport
+from .trace import API_TRACE
 
 
 class Checks:
@@ -28,16 +29,17 @@ class Checks:
     def case(self, module: str, name: str):
         started = time.monotonic()
         detail: dict = {}
-        try:
-            yield detail
-        except Exception as error:
-            self.report.cases.append(
-                CaseResult(module, name, "failed", round((time.monotonic() - started) * 1000), detail, str(error))
-            )
-        else:
-            self.report.cases.append(
-                CaseResult(module, name, "passed", round((time.monotonic() - started) * 1000), detail)
-            )
+        with API_TRACE.case(module, name):
+            try:
+                yield detail
+            except Exception as error:
+                self.report.cases.append(
+                    CaseResult(module, name, "failed", round((time.monotonic() - started) * 1000), detail, str(error))
+                )
+            else:
+                self.report.cases.append(
+                    CaseResult(module, name, "passed", round((time.monotonic() - started) * 1000), detail)
+                )
 
     @staticmethod
     def require(result, expected=(200,)):
@@ -168,16 +170,28 @@ class Checks:
                 detail.update({"mode": "headed", "browser": browser.name})
 
         with self.case("ai-blueking", "同步智能体对话到 mock LLM") as detail:
+            chat_request = {"input": "本地 E2E 测试", "execute_kwargs": {"stream": False}}
             result = self.require(
                 request(
                     "POST",
                     self.config.app_url + "/bk_plugin/openapi/agent/chat_completion/",
                     headers=self.identity.headers,
-                    json_body={"input": "本地 E2E 测试", "execute_kwargs": {"stream": False}},
+                    json_body=chat_request,
                     timeout=90,
                 )
             )
-            detail["response"] = result.body
+            assistant_content = result.body["data"]["choices"][0]["delta"]["content"]
+            detail.update({"request": chat_request, "response": result.body})
+            self.report.conversations.append(
+                {
+                    "case": "同步智能体对话到 mock LLM",
+                    "conversation_id": result.body["data"].get("id", ""),
+                    "messages": [
+                        {"role": "user", "content": chat_request["input"]},
+                        {"role": "assistant", "content": assistant_content},
+                    ],
+                }
+            )
 
     def message(self):
         database_name = "真实 SQLite 应用数据库" if self.config.database == "sqlite" else "真实 MySQL 5.7 应用数据库"

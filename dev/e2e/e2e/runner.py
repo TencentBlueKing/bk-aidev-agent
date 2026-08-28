@@ -13,6 +13,7 @@ from .checks import Checks
 from .config import Config, configured_identity
 from .mock_remote import RemoteMock
 from .report import CaseResult, RunReport, write_report
+from .trace import API_TRACE
 
 
 def parse_args() -> argparse.Namespace:
@@ -23,6 +24,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    API_TRACE.reset()
     args = parse_args()
     if args.headless is not None:
         os.environ["E2E_HEADLESS"] = "true" if args.headless else "false"
@@ -55,6 +57,7 @@ def main() -> int:
             app.close()
         if mock:
             mock.close()
+        report.api_calls = API_TRACE.snapshot()
         html_path = write_report(report, report_dir, secrets)
         print(f"E2E report: {html_path}")
         print(f"Result: {report.passed} passed / {report.failed} failed")

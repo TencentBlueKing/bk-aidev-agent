@@ -3,11 +3,14 @@ from __future__ import annotations
 import base64
 import json
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
+
+from .trace import API_TRACE
 
 
 def envelope(data=None, *, result: bool = True, message: str = "ok", code: str = "success") -> dict:
@@ -60,6 +63,17 @@ class RemoteMock:
                 self.send_header("Content-Length", str(len(raw)))
                 self.end_headers()
                 self.wfile.write(raw)
+                response_headers = {
+                    "Content-Type": f"{content_type}; charset=utf-8",
+                    "Content-Length": str(len(raw)),
+                }
+                API_TRACE.finish_call(
+                    self._trace_call,
+                    status=int(status),
+                    response_headers=response_headers,
+                    response_body=data,
+                    duration_ms=round((time.monotonic() - self._trace_started) * 1000),
+                )
 
             def _record(self, body):
                 auth_mode = "username" if self.headers.get("X-BKAIDEV-USER") else "application"
@@ -70,9 +84,18 @@ class RemoteMock:
                     state.requests.append({"method": self.command, "path": self.path, "auth_mode": auth_mode})
 
             def _dispatch(self):
+                self._trace_started = time.monotonic()
                 parsed = urlparse(self.path)
                 path = parsed.path
                 body = self._body() if self.command in {"POST", "PUT", "PATCH"} else {}
+                host = self.headers.get("Host", "local-remote-mock")
+                self._trace_call = API_TRACE.start_call(
+                    source="agent-to-remote-mock",
+                    method=self.command,
+                    url=f"http://{host}{self.path}",
+                    request_headers=dict(self.headers.items()),
+                    request_body=body,
+                )
                 self._record(body)
 
                 if path == "/healthz":
@@ -94,6 +117,9 @@ class RemoteMock:
                     return self._send(envelope(agent_config()))
                 if path == "/openapi/aidev/resource/v1/agents/llms/" and self.command == "GET":
                     return self._send(envelope([{"llm_code": "mock-model", "name": "Local deterministic model"}]))
+                if path == "/v1/api/token_check" and self.command == "POST":
+                    prompts = body.get("prompts", [])
+                    return self._send({"prompts": [{"tokenCount": 8} for _ in prompts]})
                 if path.startswith("/v1/chat/completions") and self.command == "POST":
                     return self._chat(body)
                 if path.startswith("/openapi/aidev/resource/v1/chat/session_content"):

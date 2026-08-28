@@ -8,6 +8,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
+from .trace import API_TRACE
+
 
 @dataclass
 class HttpResult:
@@ -31,19 +33,39 @@ def request(
         request_headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=payload, headers=request_headers, method=method.upper())
     started = time.monotonic()
+    trace_call = API_TRACE.start_call(
+        source="test-runner",
+        method=method,
+        url=url,
+        request_headers=request_headers,
+        request_body=json_body,
+    )
     try:
         response = urllib.request.urlopen(req, timeout=timeout)
     except urllib.error.HTTPError as error:
         response = error
+    except Exception as error:
+        elapsed = round((time.monotonic() - started) * 1000)
+        API_TRACE.finish_call(trace_call, duration_ms=elapsed, error=str(error))
+        raise
     raw = response.read()
     elapsed = round((time.monotonic() - started) * 1000)
+    status = response.status
+    response_headers = dict(response.headers.items())
     text = raw.decode("utf-8", errors="replace")
     content_type = response.headers.get("Content-Type", "")
     try:
         body = json.loads(text) if "json" in content_type or text[:1] in "[{" else text
     except json.JSONDecodeError:
         body = text
-    return HttpResult(response.status, dict(response.headers.items()), body, elapsed)
+    API_TRACE.finish_call(
+        trace_call,
+        status=status,
+        response_headers=response_headers,
+        response_body=body,
+        duration_ms=elapsed,
+    )
+    return HttpResult(status, response_headers, body, elapsed)
 
 
 def with_query(url: str, **params: Any) -> str:

@@ -41,6 +41,14 @@ make e2e-browser modules=api     # 也可指定模块
 - `dev/e2e/reports/<timestamp>/result.json`
 - `dev/e2e/reports/latest.html`
 
+报告包含三层信息：
+
+- 会话内容：完整展示发送给智能体的用户内容和 mock LLM 返回的助手内容。
+- 用例结果：保留每个模块的断言结果与业务摘要。
+- 完整 API 调用记录：按发生顺序展示测试端请求和“智能体 → 远端 mock”中间调用；每次调用可展开查看所属用例、方法、URL、请求 Headers/Body、响应状态、响应 Headers/Body 和耗时。
+
+报告落盘前会递归遮蔽 access token、Authorization、cookie、密码、签名和 API key 等敏感字段；除敏感字段外不截断请求或响应内容。
+
 这些运行产物和 `.env` 都已忽略，不会提交。若只需扩展测试框架并做快速回归，执行 `make -C dev/e2e test`。
 
 Grafana 仪表盘地址为 <http://127.0.0.1:3000/d/aidev-agent-metrics>，Prometheus 为 <http://127.0.0.1:9090>。指标模块会检查 Prometheus 可查询，以及 Grafana 中预置的智能体仪表盘可读取。
