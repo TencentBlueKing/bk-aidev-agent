@@ -1462,7 +1462,9 @@ class ChatAgentBuilder:
         if self.ctx.session_code:
             kwargs["session_code"] = self.ctx.session_code
 
-        if settings.LLM_RETRY_STRATEGY == "sdk":
+        retry_strategy = chat.retry_strategy or settings.LLM_RETRY_STRATEGY
+        kwargs["retry_strategy"] = retry_strategy
+        if retry_strategy == "sdk":
             kwargs["max_retries"] = 0
 
         return ChatModel.get_setup_instance(**kwargs)
@@ -1482,7 +1484,9 @@ class ChatAgentBuilder:
         if chat.default_headers:
             kwargs["default_headers"] = chat.default_headers
 
-        if settings.LLM_RETRY_STRATEGY == "sdk":
+        retry_strategy = chat.retry_strategy or settings.LLM_RETRY_STRATEGY
+        kwargs["retry_strategy"] = retry_strategy
+        if retry_strategy == "sdk":
             kwargs["max_retries"] = 0
 
         return ChatModel.get_setup_instance(**kwargs)
@@ -1509,7 +1513,9 @@ class ChatAgentBuilder:
         if chat.default_headers:
             kwargs["default_headers"] = chat.default_headers
 
-        if settings.LLM_RETRY_STRATEGY == "sdk":
+        retry_strategy = chat.retry_strategy or settings.LLM_RETRY_STRATEGY
+        kwargs["retry_strategy"] = retry_strategy
+        if retry_strategy == "sdk":
             kwargs["max_retries"] = 0
 
         return ChatModel.get_setup_instance(**kwargs)
@@ -1867,6 +1873,7 @@ class ChatAgentBuilder:
                     auth_headers=parent_chat.auth_headers if parent_chat is not None else None,
                     temperature=None,  # 由子 agent_config.temperature 决定（build_chat_model 读取）
                     max_tokens=None,  # 同上
+                    retry_strategy=parent_chat.retry_strategy if parent_chat is not None else None,
                     checkpointer=shared_checkpointer,  # 共享父 checkpointer，使 member 模式可跨调用续接
                 )
 

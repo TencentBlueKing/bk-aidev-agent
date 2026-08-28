@@ -25,6 +25,7 @@ from aidev_wxbot.wxaibot.formatters import handle_flow_custom_event
 from aidev_wxbot.wxaibot.strategies import (
     WECOM_AGENT_EXECUTION_POLICY,
     WECOM_AGENT_TEMPERATURE,
+    WECOM_LONG_CONNECTION_EXECUTION_POLICY,
     ChatAgentStrategy,
     FlowAgentStrategy,
     resolve_strategy,
@@ -176,6 +177,24 @@ class TestFlowAgentStrategyExecute:
 class TestChatAgentStrategyExecute:
     @patch("aidev_wxbot.wxaibot.strategies.AgentExecutor.run_chat_completion_with_thread_id")
     @patch("aidev_wxbot.wxaibot.strategies.build_execute_kwargs")
+    def test_long_connection_uses_sdk_retry_and_strict_file_delivery_policy(self, mock_build, mock_run):
+        mock_build.return_value = MagicMock(stream=True)
+        mock_run.return_value = (iter(()), "session-1")
+
+        ChatAgentStrategy().open_stream(
+            content="query",
+            username="user",
+            thread_id="thread",
+            group_id="group",
+            retry_strategy="sdk",
+        )
+
+        call_kwargs = mock_run.call_args.kwargs
+        assert call_kwargs["retry_strategy"] == "sdk"
+        assert call_kwargs["transient_system_prompt"] == WECOM_LONG_CONNECTION_EXECUTION_POLICY
+
+    @patch("aidev_wxbot.wxaibot.strategies.AgentExecutor.run_chat_completion_with_thread_id")
+    @patch("aidev_wxbot.wxaibot.strategies.build_execute_kwargs")
     def test_stream_mode_writes_to_rabbitmq(self, mock_build, mock_run, mock_rabbitmq):
         """Chat 流式模式：调用 chat completion → 内容写入 RabbitMQ"""
         mock_build.return_value = MagicMock(stream=True)
@@ -203,6 +222,7 @@ class TestChatAgentStrategyExecute:
         assert call_kwargs["transient_system_prompt"] == WECOM_AGENT_EXECUTION_POLICY
         assert call_kwargs["enable_query_clarification"] is False
         assert call_kwargs["temperature"] == WECOM_AGENT_TEMPERATURE
+        assert call_kwargs["retry_strategy"] is None
         assert mock_rabbitmq.publish_message.call_count >= 1
 
 

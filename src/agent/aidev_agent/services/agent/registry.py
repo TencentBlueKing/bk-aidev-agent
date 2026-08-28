@@ -41,6 +41,7 @@ class ChatBuildExtras:
     default_headers: Optional[dict[str, str]] = None
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
+    retry_strategy: Optional[str] = None
     checkpointer: Optional["BaseCheckpointSaver"] = None
 
 

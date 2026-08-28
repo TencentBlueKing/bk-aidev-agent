@@ -44,6 +44,14 @@ from .utils import promote_plain_text_tool_call_message
 logger = logging.getLogger(__name__)
 
 
+def _resolve_retry_strategy(llm) -> str:
+    configured = getattr(llm, "retry_strategy", None)
+    if configured:
+        return configured
+    primary = getattr(llm, "runnable", None)
+    return getattr(primary, "retry_strategy", None) or settings.LLM_RETRY_STRATEGY
+
+
 def _promote_message(message: AnyMessage, allowed_tool_names: set[str]) -> AnyMessage:
     """尝试将消息中的纯文本工具调用提升为原生 tool_calls。"""
     if not isinstance(message, AIMessage):
@@ -72,9 +80,9 @@ def _extract_query_text_and_images(query: Any) -> tuple[Any, list[dict[str, Any]
             text = item.get("text")
             if isinstance(text, str):
                 text_parts.append(text)
-        elif item_type == "image_url":
-            image_contents.append(item)
-        elif item_type == "binary" and str(item.get("mime_type") or "").startswith("image/"):
+        elif (
+            item_type == "image_url" or item_type == "binary" and str(item.get("mime_type") or "").startswith("image/")
+        ):
             image_contents.append(item)
 
     return "\n".join(text_parts), image_contents
@@ -182,6 +190,8 @@ def _build_model_chain(
         Runnable，支持 .invoke() 和 .ainvoke()
     """
 
+    retry_strategy = _resolve_retry_strategy(llm)
+
     # ------------------------------------------------------------------
     # 内部函数：消息渲染
     # ------------------------------------------------------------------
@@ -224,7 +234,7 @@ def _build_model_chain(
         try:
             response = llm_with_tools.invoke(ctx.messages, config=ctx.config, **invoke_kwargs)
         except RateLimitError:
-            if settings.LLM_RETRY_STRATEGY != "sdk":
+            if retry_strategy != "sdk":
                 raise
             ctx.model_chain_state.empty_content_retries += 1
             logger.warning(
@@ -257,7 +267,7 @@ def _build_model_chain(
         try:
             response = await llm_with_tools.ainvoke(ctx.messages, config=ctx.config, **invoke_kwargs)
         except RateLimitError:
-            if settings.LLM_RETRY_STRATEGY != "sdk":
+            if retry_strategy != "sdk":
                 raise
             ctx.model_chain_state.empty_content_retries += 1
             logger.warning(

@@ -1094,6 +1094,18 @@ class TestBuildChatModelFast:
         assert result is not None
         assert mock_setup.call_args[1]["model"] == "fast-model-v1"
 
+    @patch("aidev_agent.services.agent.chat.ChatModel.get_setup_instance")
+    @patch("aidev_agent.services.agent.chat.settings.LLM_GW_ENDPOINT", "http://gw.test")
+    def test_channel_retry_strategy_overrides_global_strategy(self, mock_setup):
+        mock_setup.return_value = MagicMock(spec=BaseChatModel)
+        ctx = self._make_ctx(fast_llm="fast-model-v1")
+        ctx.chat = ChatBuildExtras(retry_strategy="sdk")
+
+        ChatAgentBuilder(ctx).build_chat_model_fast()
+
+        assert mock_setup.call_args.kwargs["retry_strategy"] == "sdk"
+        assert mock_setup.call_args.kwargs["max_retries"] == 0
+
     def test_returns_none_when_fast_llm_empty(self):
         """``agent_config.fast_llm`` 为空时返回 None。"""
         builder = ChatAgentBuilder(self._make_ctx(fast_llm=None))
@@ -2768,11 +2780,11 @@ class TestBuildKnowledgeQueryOptions:
     @pytest.mark.parametrize(
         "env_val, resources, expected_ekn",
         [
-            (None, [{"type": "knowledgebase", "id": 58}], True),   # env 未设 + 含 kb → resources 覆盖为 True
-            (None, [{"type": "mcp", "code": "x"}], False),         # env 未设 + 不含 kb → 保持默认 False
-            (None, [], False),                                     # env 未设 + 无 resources → 默认 False
+            (None, [{"type": "knowledgebase", "id": 58}], True),  # env 未设 + 含 kb → resources 覆盖为 True
+            (None, [{"type": "mcp", "code": "x"}], False),  # env 未设 + 不含 kb → 保持默认 False
+            (None, [], False),  # env 未设 + 无 resources → 默认 False
             ("false", [{"type": "knowledgebase", "id": 58}], False),  # env 已设 false → 取 env，忽略 resources
-            ("true", [], True),                                    # env 已设 true → 取 env True
+            ("true", [], True),  # env 已设 true → 取 env True
         ],
     )
     def test_enable_knowledge_node_env_and_resources_priority(self, monkeypatch, env_val, resources, expected_ekn):
@@ -2796,7 +2808,7 @@ class TestBuildKnowledgeQueryOptions:
     @pytest.mark.parametrize(
         "env_val, expected",
         [
-            (None, True),    # env 未设 → 保持字段默认 True
+            (None, True),  # env 未设 → 保持字段默认 True
             ("true", True),  # env=true → True
             ("false", False),  # env=false → False
             ("abc", False),  # 非法值 → False（严格 .lower()=="true" 匹配）

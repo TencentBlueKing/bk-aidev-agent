@@ -108,9 +108,10 @@ class TestRunChatCompletionWithThreadId:
                 transient_system_prompt="execute completely",
                 enable_query_clarification=False,
                 temperature=0.1,
+                retry_strategy="sdk",
             )
 
-        mock_builder_cls.assert_called_once_with(username="tester", temperature=0.1)
+        mock_builder_cls.assert_called_once_with(username="tester", temperature=0.1, retry_strategy="sdk")
         assert agent.chat_history[0].role == PromptRole.SYSTEM.value
         assert agent.chat_history[0].content == "execute completely"
         assert agent.knowledge_query_options.enable_query_clarification is False

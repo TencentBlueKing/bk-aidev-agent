@@ -18,7 +18,13 @@ logger = getLogger(__name__)
 class ExecutorSnapshot:
     active: int
     pending: int
+    max_workers: int
+    max_pending: int
     capacity: int
+    submitted: int
+    rejected: int
+    peak_active: int
+    peak_pending: int
 
 
 class BoundedDaemonExecutor:
@@ -30,12 +36,18 @@ class BoundedDaemonExecutor:
         if max_pending < 0:
             raise ValueError("max_pending must not be negative")
 
+        self._max_workers = max_workers
+        self._max_pending = max_pending
         self._capacity = max_workers + max_pending
         self._slots = threading.BoundedSemaphore(self._capacity)
         self._tasks: queue.Queue[tuple[Callable[..., Any], tuple[Any, ...], dict[str, Any]] | None] = queue.Queue()
         self._lock = threading.Lock()
         self._active = 0
         self._pending = 0
+        self._submitted = 0
+        self._rejected = 0
+        self._peak_active = 0
+        self._peak_pending = 0
         self._shutdown = False
         self._threads = [
             threading.Thread(target=self._worker, name=f"{thread_name_prefix}-{index + 1}", daemon=True)
@@ -48,21 +60,37 @@ class BoundedDaemonExecutor:
         """非阻塞提交；达到总容量时返回 False。"""
         with self._lock:
             if self._shutdown:
+                self._rejected += 1
                 return False
         if not self._slots.acquire(blocking=False):
+            with self._lock:
+                self._rejected += 1
             return False
 
         with self._lock:
             if self._shutdown:
                 self._slots.release()
+                self._rejected += 1
                 return False
             self._pending += 1
+            self._submitted += 1
+            self._peak_pending = max(self._peak_pending, self._pending)
         self._tasks.put((fn, args, kwargs))
         return True
 
     def snapshot(self) -> ExecutorSnapshot:
         with self._lock:
-            return ExecutorSnapshot(active=self._active, pending=self._pending, capacity=self._capacity)
+            return ExecutorSnapshot(
+                active=self._active,
+                pending=self._pending,
+                max_workers=self._max_workers,
+                max_pending=self._max_pending,
+                capacity=self._capacity,
+                submitted=self._submitted,
+                rejected=self._rejected,
+                peak_active=self._peak_active,
+                peak_pending=self._peak_pending,
+            )
 
     def shutdown(self, wait: bool = True) -> None:
         with self._lock:
@@ -85,6 +113,7 @@ class BoundedDaemonExecutor:
             with self._lock:
                 self._pending -= 1
                 self._active += 1
+                self._peak_active = max(self._peak_active, self._active)
             try:
                 fn(*args, **kwargs)
             except Exception:
@@ -104,7 +133,7 @@ def get_agent_executor() -> BoundedDaemonExecutor:
     with _executor_lock:
         if _agent_executor is None:
             _agent_executor = BoundedDaemonExecutor(
-                max_workers=int(getattr(settings, "WXAIBOT_AGENT_MAX_WORKERS", 2)),
+                max_workers=int(getattr(settings, "WXAIBOT_AGENT_MAX_WORKERS", 10)),
                 max_pending=int(getattr(settings, "WXAIBOT_AGENT_MAX_PENDING", 16)),
             )
         return _agent_executor
@@ -114,5 +143,15 @@ def get_agent_executor_snapshot() -> ExecutorSnapshot:
     with _executor_lock:
         executor = _agent_executor
     if executor is None:
-        return ExecutorSnapshot(active=0, pending=0, capacity=0)
+        return ExecutorSnapshot(
+            active=0,
+            pending=0,
+            max_workers=0,
+            max_pending=0,
+            capacity=0,
+            submitted=0,
+            rejected=0,
+            peak_active=0,
+            peak_pending=0,
+        )
     return executor.snapshot()

@@ -62,6 +62,7 @@ class AgentBuilder:
         turn_id: str = "",
         model: str = "",
         temperature: float | None = None,
+        retry_strategy: str | None = None,
     ):
         self.username = username
         self.resource_manager = resource_manager
@@ -74,6 +75,7 @@ class AgentBuilder:
         # 模型热更新：非空时覆盖 agent 配置的 chat_model
         self.model = model or ""
         self.temperature = temperature
+        self.retry_strategy = retry_strategy
 
     def by_session_code(
         self,
@@ -184,4 +186,5 @@ class AgentBuilder:
             version=version,
             channel_type=channel_type,
             temperature=self.temperature,
+            retry_strategy=self.retry_strategy,
         )
