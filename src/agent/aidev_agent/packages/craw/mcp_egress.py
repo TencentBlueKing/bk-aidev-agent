@@ -90,7 +90,9 @@ def rewrite_openclaw_config_file(path: str, egress_base: str, *, identity_id: st
     """读盘改写 MCP，权限 0600。返回 {rewritten, skipped, routes}（routes 仅 slug，不含 token）。"""
     with open(path, encoding="utf-8") as handle:
         config = json.load(handle)
-    routes, rewritten, skipped = rewrite_openclaw_mcp_to_egress(config, egress_base=egress_base, identity_id=identity_id)
+    routes, rewritten, skipped = rewrite_openclaw_mcp_to_egress(
+        config, egress_base=egress_base, identity_id=identity_id
+    )
     tmp = f"{path}.craw-egress-tmp"
     with open(tmp, "w", encoding="utf-8") as handle:
         json.dump(config, handle, ensure_ascii=False, indent=2)
@@ -316,14 +318,16 @@ class McpEgress:
                         payload = resp.read()
                         self.send_response(getattr(resp, "status", 200))
                         for name, value in resp.headers.items():
-                            if name.lower() in {"transfer-encoding", "connection"}:
+                            if name.lower() in {"transfer-encoding", "connection", "content-length"}:
                                 continue
                             self.send_header(name, value)
                         self.send_header("Content-Length", str(len(payload)))
                         self.end_headers()
                         if self.command != "HEAD":
                             self.wfile.write(payload)
-                        _logger.info("[egress] %s id=%s slug=%s %s", getattr(resp, "status", 200), SHARED_ID, slug, self.command)
+                        _logger.info(
+                            "[egress] %s id=%s slug=%s %s", getattr(resp, "status", 200), SHARED_ID, slug, self.command
+                        )
                 except HTTPError as exc:
                     payload = exc.read() if exc.fp else b""
                     self.send_response(exc.code)
