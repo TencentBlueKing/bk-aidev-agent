@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """WxBot 流式协议适配层：LlmChunkMsg、stream_msg、CHUNK_FLUSH_THRESHOLD 回归。需在具备 Django + aidev_wxbot 环境中运行。"""
 
+from unittest.mock import patch
+
 import pytest
 
 try:
     import django  # noqa: F401
     from aidev_wxbot.wxaibot.constants import QUEUE_EXPIRES_MS
-    from aidev_wxbot.wxaibot.context import CHUNK_FLUSH_THRESHOLD, LlmChunkMsg, stream_msg
+    from aidev_wxbot.wxaibot.context import CHUNK_FLUSH_THRESHOLD, ContextGenerator, LlmChunkMsg, stream_msg
     from django.conf import settings
 
     _wxbot_available = True
@@ -28,6 +30,43 @@ class TestStreamMsg:
         assert out["stream"]["id"] == "sid_123"
         assert out["stream"]["finish"] is True
         assert out["stream"]["content"] == "内容"
+
+
+@pytest.mark.skipif(not _wxbot_available, reason="Django and aidev_wxbot required")
+class TestConversationIsolation:
+    @staticmethod
+    def _payload(*, user_id: str, msg_id: str, chat_id: str | None = None) -> dict:
+        payload = {
+            "msgtype": "text",
+            "msgid": msg_id,
+            "chattype": "group" if chat_id else "single",
+            "from": {"userid": user_id},
+            "text": {"content": "hello"},
+        }
+        if chat_id:
+            payload["chatid"] = chat_id
+        return payload
+
+    @patch("aidev_wxbot.wxaibot.context.BkAiDevApi.convert_to_rtx")
+    def test_single_chats_use_sender_as_group_id(self, convert_to_rtx):
+        convert_to_rtx.side_effect = lambda user_id: {"userid": f"rtx-{user_id}"}
+
+        first = ContextGenerator(self._payload(user_id="u1", msg_id="m1")).generate()
+        second = ContextGenerator(self._payload(user_id="u2", msg_id="m2")).generate()
+
+        assert first.group_id == "rtx-u1"
+        assert second.group_id == "rtx-u2"
+        assert first.group_id != second.group_id
+
+    @patch("aidev_wxbot.wxaibot.context.BkAiDevApi.convert_to_rtx")
+    def test_group_chat_uses_chat_id_for_shared_conversation(self, convert_to_rtx):
+        convert_to_rtx.side_effect = lambda user_id: {"userid": f"rtx-{user_id}"}
+
+        first = ContextGenerator(self._payload(user_id="u1", msg_id="m1", chat_id="chat-1")).generate()
+        second = ContextGenerator(self._payload(user_id="u2", msg_id="m2", chat_id="chat-1")).generate()
+
+        assert first.group_id == "chat-1"
+        assert second.group_id == "chat-1"
 
 
 @pytest.mark.skipif(not _wxbot_available, reason="Django and aidev_wxbot required")
@@ -209,6 +248,44 @@ class TestLlmChunkMsg:
         msg.append_to_cache(rabbitmq_client)
 
         assert rabbitmq_client.declared_queue_args["arguments"]["x-expires"] == QUEUE_EXPIRES_MS
+
+    def test_queue_expiry_always_outlives_configured_message_timeout(self, monkeypatch):
+        class StubRabbitMQClient:
+            def __init__(self):
+                self.declared_queue_args = None
+
+            def declare_queue(self, queue_name, **kwargs):
+                self.declared_queue_args = kwargs
+                return True
+
+            def publish_message(self, exchange, queue_name, message_data):
+                return True
+
+        monkeypatch.setattr(settings, "MAX_MESSAGE_TIME", 600)
+        rabbitmq_client = StubRabbitMQClient()
+
+        LlmChunkMsg(stream_id="sid_test", content="hello").append_to_cache(rabbitmq_client)
+
+        assert rabbitmq_client.declared_queue_args["arguments"]["x-expires"] == 660000
+
+    def test_timeout_requests_agent_cancel_before_deleting_queue(self, monkeypatch):
+        events = []
+
+        class TrackRabbitMQClient:
+            def delete_queue(self, queue_name):
+                events.append(("delete", queue_name))
+
+        monkeypatch.setattr(settings, "MAX_MESSAGE_TIME", 1)
+        monkeypatch.setattr(
+            "aidev_wxbot.wxaibot.context.stream_registry.cancel",
+            lambda stream_id: events.append(("cancel", stream_id)) or True,
+        )
+        stream_id = f"sid_{int(__import__('time').time()) - 10}"
+
+        out = LlmChunkMsg(stream_id=stream_id).wxaibot_msg_json_from_cache(TrackRabbitMQClient())
+
+        assert out["stream"]["finish"] is True
+        assert events == [("cancel", stream_id), ("delete", stream_id)]
 
 
 @pytest.mark.skipif(not _wxbot_available, reason="Django and aidev_wxbot required")

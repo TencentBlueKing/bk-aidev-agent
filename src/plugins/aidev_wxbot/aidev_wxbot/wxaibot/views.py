@@ -3,9 +3,9 @@ Django REST Framework implementation for aidev_wxbot.
 """
 
 import json
-import threading
 import time
 import uuid
+from dataclasses import dataclass
 from logging import getLogger
 
 from aidev_agent.packages.resource_manager import resource_manager
@@ -23,6 +23,7 @@ from .channel_config import find_rtx_channel, get_channel_config
 from .constants import EMPTY_INPUT_PROMPT, GROUP_CHAT_TYPE, NEW_CONVERSATION_CMDS, WRONG_MENTION_PROMPT
 from .context import ContextGenerator, LlmChunkMsg, WxWorkAiBotContext, stream_msg, text_msg
 from .decryption import WXBizJsonMsgCrypt
+from .execution import get_agent_executor
 from .models import AgentSession
 from .strategies import resolve_strategy
 from ..api.bkaidev import BkAiDevApi
@@ -30,6 +31,16 @@ from ..context.message import MsgType
 from ..utils.rabbitmq import rabbitmq_client
 
 logger = getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class WxBotAgentRequest:
+    """已完成企微消息校验、可交给 Agent 的请求。"""
+
+    content: str
+    stream_id: str
+    username: str
+    group_id: str
 
 
 class WxAiBotViewSet(ViewSet):
@@ -141,6 +152,17 @@ class WxAiBotViewSet(ViewSet):
         """
         处理文本消息，启动异步 AI 请求线程并立即返回流式占位响应。
         """
+        response, request = self.prepare_agent_request(payload)
+        if response is not None:
+            return response
+        if request is None:
+            return stream_msg("服务暂时不可用", True, "")
+        if not self._start_async_processing(request.content, request.stream_id, request):
+            return stream_msg("当前请求较多，请稍后重试", True, request.stream_id)
+        return stream_msg("正在思考中...", False, request.stream_id)
+
+    def prepare_agent_request(self, payload: dict) -> tuple[dict | None, WxBotAgentRequest | None]:
+        """解析企微文本消息，但不启动 Agent；长连接与 callback 共用。"""
         stream_id = ""
         try:
             # 提取并验证必要字段
@@ -160,19 +182,22 @@ class WxAiBotViewSet(ViewSet):
                 result, content = self._handle_single_chat(content, stream_id, current_context)
             # 如果需要立即返回（如提示信息）
             if result is not None:
-                return result
+                return result, None
             # 处理引用消息
             content = self._process_quote(payload, content)
-            # 启动异步处理
-            self._start_async_processing(content, stream_id, current_context)
-            return stream_msg("正在思考中...", False, stream_id)
+            return None, WxBotAgentRequest(
+                content=content,
+                stream_id=stream_id,
+                username=current_context.sender_id,
+                group_id=current_context.group_id,
+            )
 
         except (KeyError, AttributeError) as e:
             logger.error(f"[WxAiBot] 消息格式错误: {e}")
-            return stream_msg("消息格式错误", True, stream_id)
+            return stream_msg("消息格式错误", True, stream_id), None
         except Exception as e:
             logger.exception(f"[WxAiBot] 处理异常: {e}")
-            return stream_msg("服务暂时不可用", True, stream_id)
+            return stream_msg("服务暂时不可用", True, stream_id), None
 
     def _handle_single_chat(self, content: str, stream_id: str, context: WxWorkAiBotContext) -> tuple[dict | None, str]:
         """
@@ -252,7 +277,12 @@ class WxAiBotViewSet(ViewSet):
         logger.debug(f"[WxAiBot] 合并引用消息 | original_len={len(content)}, merged_len={len(merged)}")
         return merged
 
-    def _start_async_processing(self, content: str, stream_id: str, context: WxWorkAiBotContext) -> None:
+    def _start_async_processing(
+        self,
+        content: str,
+        stream_id: str,
+        context: WxWorkAiBotContext | WxBotAgentRequest,
+    ) -> bool:
         """
         启动异步线程处理 AI 请求。
 
@@ -261,16 +291,24 @@ class WxAiBotViewSet(ViewSet):
             stream_id: 流式响应 ID
             context: 消息上下文
         """
-        logger.debug(
-            f"[WxAiBot] 启动异步处理 | stream_id={stream_id}, content_len={len(content)}, sender={context.sender_id}"
-        )
+        username = context.username if isinstance(context, WxBotAgentRequest) else context.sender_id
+        logger.debug(f"[WxAiBot] 启动异步处理 | stream_id={stream_id}, content_len={len(content)}, sender={username}")
 
-        thread = threading.Thread(
-            target=self._process_ai_request_async,
-            args=(content, stream_id, context.sender_id, context.group_id),
-            daemon=True,
+        submitted = get_agent_executor().submit(
+            self._process_ai_request_async,
+            content,
+            stream_id,
+            username,
+            context.group_id,
         )
-        thread.start()
+        if not submitted:
+            logger.warning(
+                "event=wxbot_agent_overload stream_id=%s sender=%s group_id=%s",
+                stream_id,
+                username,
+                context.group_id,
+            )
+        return submitted
 
     @staticmethod
     def _build_quoted_input(quote_content: str, user_content: str) -> str:
@@ -324,8 +362,15 @@ class WxAiBotViewSet(ViewSet):
                 rabbitmq_client=rabbitmq_client,
             )
         except ConsumerPreemptedError:
-            # 消费者被抢占是框架正常行为，静默处理，不返回错误给用户
-            logger.debug(f"stream_id:{stream_id} consumer 被新请求抢占，当前请求终止")
+            logger.info("event=wxbot_stream_preempted stream_id=%s group_id=%s", stream_id, group_id)
+            try:
+                LlmChunkMsg(
+                    content="当前会话已有新请求，原请求已结束",
+                    is_finish=True,
+                    stream_id=stream_id,
+                ).append_to_cache(rabbitmq_client)
+            except Exception as cache_e:
+                logger.error(f"stream_id:{stream_id} 写入抢占终态失败: {cache_e}")
         except Exception as e:
             logger.exception(f"stream_id:{stream_id} 异步处理AI请求失败: {e}")
             try:

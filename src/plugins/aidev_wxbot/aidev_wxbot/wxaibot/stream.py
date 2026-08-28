@@ -12,8 +12,10 @@ SSE 流消费层。
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
+from collections.abc import Callable
 from logging import getLogger
 from typing import TYPE_CHECKING, Generator
 
@@ -67,10 +69,8 @@ def iter_sse_lines(stream_generator: Generator, stream_id: str) -> Generator[dic
     if remainder and remainder.startswith("data: "):
         data_content = remainder[6:]
         if data_content and data_content != "[DONE]":
-            try:
+            with contextlib.suppress(json.JSONDecodeError):
                 yield json.loads(data_content)
-            except json.JSONDecodeError:
-                pass
 
 
 def consume_chat_stream(
@@ -78,6 +78,8 @@ def consume_chat_stream(
     stream_id: str,
     start_time: float,
     rabbitmq_client: RabbitMQClient,
+    on_run_started: Callable[[str], None] | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> None:
     """消费 Chat Agent SSE 流并桥接到企微 RabbitMQ 队列。
 
@@ -100,6 +102,11 @@ def consume_chat_stream(
                 logger.info(f"stream_id:{stream_id} chat 首次响应耗时: {time.time() - start_time:.3f}s")
 
             event_type = chunk_json.get("type", "")
+
+            if event_type == EventType.RUN_STARTED and on_run_started:
+                on_run_started(str(chunk_json.get("run_id", "")))
+            if is_cancelled and is_cancelled():
+                continue
 
             if event_type == EventType.TEXT_MESSAGE_CONTENT:
                 text_content = chunk_json.get("delta", "")
@@ -150,6 +157,9 @@ def consume_chat_stream(
         )
         return
 
+    if is_cancelled and is_cancelled():
+        return
+
     # 刷新剩余内容
     if think_content:
         llm_chunk.think_content = llm_chunk.think_content + think_content
@@ -166,6 +176,8 @@ def consume_flow_stream(
     start_time: float,
     rabbitmq_client: RabbitMQClient,
     session_code: str = "",
+    on_run_started: Callable[[str], None] | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> None:
     """消费 Flow Agent SSE 流并桥接到企微 RabbitMQ 队列。
 
@@ -185,9 +197,17 @@ def consume_flow_stream(
 
             event_type = chunk_json.get("type", "")
 
+            if event_type == EventType.RUN_STARTED and on_run_started:
+                on_run_started(str(chunk_json.get("run_id", "")))
+            if is_cancelled and is_cancelled():
+                continue
+
             if event_type == EventType.CUSTOM:
                 handle_flow_custom_event(
-                    chunk_json.get("name", ""), chunk_json, llm_chunk, rabbitmq_client,
+                    chunk_json.get("name", ""),
+                    chunk_json,
+                    llm_chunk,
+                    rabbitmq_client,
                     session_code=session_code,
                 )
 
@@ -199,13 +219,10 @@ def consume_flow_stream(
                 ).append_to_cache(rabbitmq_client)
                 return
 
-            elif event_type == EventType.RUN_FINISHED:
-                if not llm_chunk.is_finish:
-                    llm_chunk.is_finish = True
-                    llm_chunk.append_to_cache(rabbitmq_client)
+            elif event_type == EventType.RUN_FINISHED and not llm_chunk.is_finish:
+                llm_chunk.is_finish = True
+                llm_chunk.append_to_cache(rabbitmq_client)
 
     except RuntimeError as e:
         logger.error(f"stream_id:{stream_id} flow stream 处理错误: {e}")
-        LlmChunkMsg(content=f"流程处理异常: {e}", is_finish=True, stream_id=stream_id).append_to_cache(
-            rabbitmq_client
-        )
+        LlmChunkMsg(content=f"流程处理异常: {e}", is_finish=True, stream_id=stream_id).append_to_cache(rabbitmq_client)
