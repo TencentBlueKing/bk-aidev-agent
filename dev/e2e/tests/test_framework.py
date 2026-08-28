@@ -95,10 +95,23 @@ class ReportTests(unittest.TestCase):
             api_calls=[
                 {
                     "sequence": 1,
+                    "source": "test-runner",
+                    "module": "ai-blueking",
+                    "case": "chat",
+                    "scenario_id": "ai-blueking.sync-chat",
+                    "chain_id": "request-0001",
+                    "method": "POST",
+                    "url": "http://agent/bk_plugin/openapi/agent/chat_completion/",
+                    "status": 200,
+                    "duration_ms": 10,
+                },
+                {
+                    "sequence": 2,
                     "source": "agent-to-remote-mock",
                     "module": "ai-blueking",
                     "case": "chat",
                     "scenario_id": "ai-blueking.sync-chat",
+                    "chain_id": "request-0001",
                     "method": "POST",
                     "url": "http://mock/v1/chat/completions",
                     "request_headers": {"Authorization": "Bearer trace-secret"},
@@ -108,7 +121,7 @@ class ReportTests(unittest.TestCase):
                     "response_body": {"choices": [{"message": {"content": "回复内容"}}]},
                     "duration_ms": 8,
                     "error": "",
-                }
+                },
             ],
         )
         with tempfile.TemporaryDirectory() as directory:
@@ -120,7 +133,9 @@ class ReportTests(unittest.TestCase):
         self.assertIn("同步问答与会话内容写入", document)
         self.assertIn('href="#evidence-ai-blueking.sync-chat"', document)
         self.assertIn('id="evidence-ai-blueking.sync-chat"', document)
-        self.assertIn("1 断言 / 1 会话 / 1 API", document)
+        self.assertIn("1 断言 / 1 会话 / 1 请求链 / 2 API", document)
+        self.assertIn("测试端请求 + 1 次远端 mock", document)
+        self.assertIn("链路通过", document)
         self.assertIn("场景标识：<code>ai-blueking.sync-chat</code>", document)
         self.assertIn("/v1/chat/completions", document)
         self.assertIn("请求 Headers", document)
@@ -146,14 +161,17 @@ class TraceTests(unittest.TestCase):
     def test_calls_keep_sequence_and_case_context(self):
         recorder = ApiTraceRecorder()
         with recorder.case("api", "session", "api.session"):
-            call = recorder.start_call(source="test-runner", method="post", url="http://mock/session")
-            recorder.finish_call(call, status=200, response_body={"ok": True}, duration_ms=3)
+            parent = recorder.start_call(source="test-runner", method="post", url="http://agent/session")
+            child = recorder.start_call(source="agent-to-remote-mock", method="post", url="http://mock/session")
+            recorder.finish_call(child, status=200, response_body={"ok": True}, duration_ms=2)
+            recorder.finish_call(parent, status=200, response_body={"ok": True}, duration_ms=3)
         recorded = recorder.snapshot()
         self.assertEqual(recorded[0]["sequence"], 1)
         self.assertEqual(recorded[0]["module"], "api")
         self.assertEqual(recorded[0]["case"], "session")
         self.assertEqual(recorded[0]["scenario_id"], "api.session")
-        self.assertEqual(recorded[0]["response_body"], {"ok": True})
+        self.assertEqual(recorded[0]["chain_id"], recorded[1]["chain_id"])
+        self.assertEqual(recorded[1]["response_body"], {"ok": True})
 
 
 if __name__ == "__main__":

@@ -128,6 +128,14 @@ def _index_by_scenario(items: list[dict[str, Any]]) -> dict[str, list[dict[str, 
     return indexed
 
 
+def _group_api_chains(api_calls: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    chains: dict[str, list[dict[str, Any]]] = {}
+    for call in api_calls:
+        chain_id = str(call.get("chain_id") or f"standalone-{call.get('sequence', 'unknown')}")
+        chains.setdefault(chain_id, []).append(call)
+    return list(chains.values())
+
+
 def _render_capability_overview(
     cases: list[dict[str, Any]], conversations: list[dict[str, Any]], api_calls: list[dict[str, Any]]
 ) -> str:
@@ -153,14 +161,17 @@ def _render_capability_overview(
             error = case.get("error", "")
             error_html = f'<p class="error">{html.escape(str(error))}</p>' if error else ""
             conversation_count = len(conversations_by_scenario.get(scenario_id, []))
-            api_count = len(calls_by_scenario.get(scenario_id, []))
+            related_calls = calls_by_scenario.get(scenario_id, [])
+            chain_count = len(_group_api_chains(related_calls))
+            api_count = len(related_calls)
             scenarios.append(
                 f'<li id="health-{anchor}" class="{"ok" if case_passed else "bad"}"><span>{icon}</span><div>'
                 f"<b>{html.escape(str(case.get('name', '')))}</b>"
                 f"<p>{html.escape(str(coverage))}</p>{error_html}</div>"
                 '<div class="scenario-actions">'
                 f"<small>{case.get('duration_ms', 0)} ms</small>"
-                f'<a href="#evidence-{anchor}">查看证据 · 1 断言 / {conversation_count} 会话 / {api_count} API</a>'
+                f'<a href="#evidence-{anchor}">查看证据 · 1 断言 / {conversation_count} 会话 / '
+                f"{chain_count} 请求链 / {api_count} API</a>"
                 "</div></li>"
             )
         cards.append(
@@ -207,6 +218,30 @@ def _render_api_calls(api_calls: list[dict[str, Any]]) -> str:
     return "".join(rows) or '<section class="card empty">本次执行未记录到 HTTP 调用。</section>'
 
 
+def _render_api_chains(api_calls: list[dict[str, Any]]) -> str:
+    rows = []
+    for index, calls in enumerate(_group_api_chains(api_calls), start=1):
+        parent = next((call for call in calls if call.get("source") == "test-runner"), None)
+        lead = parent or calls[0]
+        remote_count = sum(call.get("source") == "agent-to-remote-mock" for call in calls)
+        failed = any(
+            call.get("error") or not isinstance(call.get("status"), int) or call.get("status", 500) >= 400
+            for call in calls
+        )
+        css_class = "failed" if failed else "passed"
+        chain_status = "链路异常" if failed else "链路通过"
+        relation = f"测试端请求 + {remote_count} 次远端 mock" if parent else f"独立远端 mock · {remote_count} 次调用"
+        rows.append(
+            f'<details class="call-chain {css_class}"><summary><span class="chain-marker">链路 {index}</span>'
+            f'<span class="chain-relation">{html.escape(relation)}</span>'
+            f'<code class="method">{html.escape(str(lead.get("method", "")))}</code>'
+            f'<code class="url">{html.escape(str(lead.get("url", "")))}</code>'
+            f'<span class="status">{chain_status}</span>'
+            f'<small>{len(calls)} 次 API</small></summary><div class="chain-timeline">{_render_api_calls(calls)}</div></details>'
+        )
+    return "".join(rows) or '<section class="card empty">本次执行未记录到请求链。</section>'
+
+
 def _render_scenario_evidence(
     cases: list[dict[str, Any]], conversations: list[dict[str, Any]], api_calls: list[dict[str, Any]]
 ) -> str:
@@ -224,6 +259,7 @@ def _render_scenario_evidence(
         anchor = _scenario_anchor(scenario_id)
         related_conversations = conversations_by_scenario.get(scenario_id, [])
         related_calls = calls_by_scenario.get(scenario_id, [])
+        related_chains = _group_api_chains(related_calls)
         case_passed = case.get("status") == "passed"
         state_class = "healthy" if case_passed else "unhealthy"
         state_text = "验证通过" if case_passed else "验证失败"
@@ -243,7 +279,10 @@ def _render_scenario_evidence(
             )
         api_html = ""
         if related_calls:
-            api_html = f"<h4>接口证据（{len(related_calls)}）</h4>{_render_api_calls(related_calls)}"
+            api_html = (
+                f"<h4>请求与远端 mock 调用链（{len(related_chains)} 条链路 / {len(related_calls)} 次 API）</h4>"
+                f"{_render_api_chains(related_calls)}"
+            )
 
         evidence_sections.append(
             f'<section id="evidence-{anchor}" class="card scenario-evidence {state_class}">'
@@ -252,7 +291,8 @@ def _render_scenario_evidence(
             f'<p class="meta">场景标识：<code>{html.escape(scenario_id)}</code></p>'
             '<div class="evidence-counts">'
             "<span>1 项断言</span>"
-            f"<span>{len(related_conversations)} 组会话</span><span>{len(related_calls)} 次 API</span>"
+            f"<span>{len(related_conversations)} 组会话</span><span>{len(related_chains)} 条请求链</span>"
+            f"<span>{len(related_calls)} 次 API</span>"
             f"<span>{case.get('duration_ms', 0)} ms</span></div>"
             f'<div class="assertion-proof"><b>通过依据</b><p>{html.escape(str(coverage))}</p>{error_html}</div>'
             f"{detail_html}{conversation_html}{api_html}"
@@ -273,7 +313,11 @@ def _render_scenario_evidence(
             )
         api_html = ""
         if unmatched_calls:
-            api_html = f"<h4>接口记录（{len(unmatched_calls)}）</h4>{_render_api_calls(unmatched_calls)}"
+            unmatched_chains = _group_api_chains(unmatched_calls)
+            api_html = (
+                f"<h4>独立调用链（{len(unmatched_chains)} 条链路 / {len(unmatched_calls)} 次 API）</h4>"
+                f"{_render_api_chains(unmatched_calls)}"
+            )
         evidence_sections.append(
             '<section class="card scenario-evidence supporting"><header><div><p class="eyebrow">公共支撑链路</p>'
             '<h3>应用启动与测试基础设施</h3></div><span class="evidence-state">支撑证据</span></header>'
@@ -311,6 +355,10 @@ code{{font-family:ui-monospace}}h2{{margin:28px 0 10px}}h3,h4{{margin:0 0 8px}}.
 .api-call summary{{display:flex;align-items:center;gap:8px}}.sequence{{min-width:28px}}.source{{color:#475467!important}}
 .method,.status{{padding:2px 7px;border-radius:4px;background:#eef2f6}}.url{{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
 .status{{margin-left:auto}}.api-call small{{float:none;min-width:52px;text-align:right}}
+.call-chain{{background:#f8fafc;border-color:#d7e0ea}}.call-chain>summary{{display:flex;align-items:center;gap:8px}}
+.chain-marker{{min-width:48px}}.chain-relation{{color:#475467!important;font-weight:500;white-space:nowrap}}
+.call-chain>summary small{{float:none;min-width:55px;text-align:right}}.chain-timeline{{border-left:3px solid #d7e6f5;margin:14px 0 0 8px;padding-left:14px}}
+.chain-timeline .api-call{{background:#fff}}
 .result-banner{{border-left:5px solid #12a150}}.result-banner.unhealthy{{border-left-color:#d4380d}}.result-banner h2{{margin:0 0 4px}}
 .stats{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}}.stat{{background:#f7f9fc;padding:10px;border-radius:6px}}
 .stat b{{display:block;font-size:22px}}.component-grid{{display:grid;grid-template-columns:1fr 1fr;gap:14px}}
@@ -330,13 +378,13 @@ code{{font-family:ui-monospace}}h2{{margin:28px 0 10px}}h3,h4{{margin:0 0 8px}}.
 @media(max-width:760px){{.exchange,.component-grid{{grid-template-columns:1fr}}.stats{{grid-template-columns:1fr 1fr}}.conversation .message{{max-width:100%}}.source{{display:none}}.component-card li{{grid-template-columns:24px 1fr}}.scenario-actions{{grid-column:2;text-align:left}}}}
 </style></head><body><main><h1>bk-aidev-agent 本地 E2E</h1>
 <section class="card result-banner {overall_class}"><h2>{overall_state}</h2>
-<span class="meta">✓ 表示该功能在本次本地全链路中实际执行并通过断言；点击“查看证据”可定位到同一场景的断言、会话和 API；未列出的功能不代表已验证。</span>
+<span class="meta">✓ 表示该功能在本次本地全链路中实际执行并通过断言；点击“查看证据”可定位到同一场景的断言、测试端请求及其远端 mock 调用链；未列出的功能不代表已验证。</span>
 <div class="stats"><div class="stat">覆盖组件<b>{len({case["module"] for case in safe["cases"]})}</b></div>
 <div class="stat">功能场景<b>{len(safe["cases"])}</b></div><div class="stat">正常<b>{report.passed}</b></div>
 <div class="stat">异常<b>{report.failed}</b></div></div><p class="meta">开始：{html.escape(safe["started_at"])}　
 结束：{html.escape(safe["finished_at"])}　鉴权：{html.escape(safe["auth_mode"])}　自动化计数：{report.passed} passed / {report.failed} failed</p></section>
 <h2>功能健康概览</h2>{capability_overview}
-<h2>场景验证证据</h2><p class="meta">全部 {len(safe["api_calls"])} 次 API 调用均按场景归档；公共启动调用单独列出。</p>
+<h2>场景验证证据</h2><p class="meta">全部 {len(safe["api_calls"])} 次 API 调用按请求链归档；每条链路将测试端请求与其触发的远端 mock 调用放在一起，公共启动调用单独列出。</p>
 {scenario_evidence}</main></body></html>"""
     html_path = output_dir / "report.html"
     html_path.write_text(document, encoding="utf-8")
