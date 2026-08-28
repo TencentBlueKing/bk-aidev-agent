@@ -23,6 +23,7 @@ import orjson
 from langchain_core.messages import BaseMessage
 from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
 from opentelemetry.instrumentation.utils import unwrap
+from opentelemetry.sdk.trace import TracerProvider
 from wrapt import wrap_function_wrapper
 
 from aidev_agent.pydantic_models import ExecuteKwargs
@@ -36,6 +37,22 @@ from .utils import dont_throw
 logger = logging.getLogger(__name__)
 
 _instruments = ("langchain-core > 0.1.0",)
+
+
+def get_agent_tracer_provider() -> Optional[TracerProvider]:
+    """返回已启动的 Agent TracerProvider；未 instrument 时为 None。
+
+    供宿主（如企微长连接）复用同一套 exporter 与 resource。本插桩器刻意不把 provider
+    注册为全局（见 ``BkAidevAgentInstrumentor`` 说明），宿主若自建一个，它产出的 span
+    会落在另一棵树上且无处上报。
+
+    直接读单例属性而不是构造 ``BkAidevAgentInstrumentor()``：``BaseInstrumentor.__new__``
+    返回单例，但 ``__init__`` 仍会重跑并把 ``_otel_service`` 抹回 None。
+    """
+    instance = BkAidevAgentInstrumentor._instance
+    if instance is None or instance._otel_service is None:
+        return None
+    return instance._otel_service.tracer_provider
 
 
 class BkAidevAgentInstrumentor(BaseInstrumentor):

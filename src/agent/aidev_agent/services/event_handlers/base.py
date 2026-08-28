@@ -40,6 +40,7 @@ from aidev_agent.core.ag_ui.types import (
 from aidev_agent.core.ag_ui.utils import camel_to_snake, get_interrupt_value, unwrap_interrupt_source
 from aidev_agent.enums import ActivityType, PromptRole
 from aidev_agent.utils.event import RunId
+from aidev_agent.utils.tracing import current_trace_id
 
 logger = getLogger(__name__)
 
@@ -274,16 +275,18 @@ class BaseSessionWriter(ABC):
             message_id = extract_message_id(upgraded)
             db_item_adapter = {"property": {"builtin_property": bp}}
             updated_builtin = build_updated_builtin_property(db_item_adapter, message_id, status)
+            payload = {
+                "content": upgraded,
+                "status": "complete",
+                "property": {
+                    "builtin_property": updated_builtin,
+                    "turn_id": value.get("turn_id") or "",
+                },
+            }
+            self._stamp_trace_id(payload)
             self._do_update_content(
                 content_id=content_id,
-                payload={
-                    "content": upgraded,
-                    "status": "complete",
-                    "property": {
-                        "builtin_property": updated_builtin,
-                        "turn_id": value.get("turn_id") or "",
-                    },
-                },
+                payload=payload,
                 headers=self._get_headers(),
             )
             logger.info(
@@ -300,14 +303,16 @@ class BaseSessionWriter(ABC):
         """处理 user 输入落库事件（所有带 input 路径）：直调 _do_create_content 写 user 记录。"""
         value = event.value if isinstance(event.value, dict) else {}
         try:
+            payload = {
+                "session_code": self.session_code,
+                "role": PromptRole.USER.value,
+                "content": value.get("content") or "",
+                "status": "success",
+                "property": {"turn_id": value.get("turn_id") or ""},
+            }
+            self._stamp_trace_id(payload)
             self._do_create_content(
-                payload={
-                    "session_code": self.session_code,
-                    "role": PromptRole.USER.value,
-                    "content": value.get("content") or "",
-                    "status": "success",
-                    "property": {"turn_id": value.get("turn_id") or ""},
-                },
+                payload=payload,
                 headers=self._get_headers(),
             )
         except Exception:
@@ -1456,6 +1461,16 @@ class BaseSessionWriter(ABC):
             logger.exception(f"Failed to {action} session content: message_id={message_id}, error={e}", exc_info=True)
             return None
 
+    @staticmethod
+    def _stamp_trace_id(payload: dict[str, Any]) -> None:
+        """把当前 trace id 盖进 payload.property，原地修改。
+
+        与 turn_id 并列：turn_id 标识一轮 user-ai 对话，trace_id 标识这轮实际执行的
+        调用链，两者一起才能从一条会话记录直接跳到 APM。无有效 span 时不写空值。
+        """
+        if trace_id := current_trace_id():
+            payload.setdefault("property", {})["trace_id"] = trace_id
+
     def _create_session_content(
         self,
         message_id: str,
@@ -1489,6 +1504,7 @@ class BaseSessionWriter(ABC):
         }
         if self.turn_id:
             payload["property"]["turn_id"] = self.turn_id
+        self._stamp_trace_id(payload)
         content_id = self._safe_call(
             self._do_create_content, message_id, "create", payload=payload, headers=self._get_headers()
         )
@@ -1519,6 +1535,7 @@ class BaseSessionWriter(ABC):
         }
         if self.turn_id:
             payload["property"]["turn_id"] = self.turn_id
+        self._stamp_trace_id(payload)
         self._safe_call(
             self._do_update_content,
             message_id,

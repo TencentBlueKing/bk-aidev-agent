@@ -59,6 +59,7 @@ opentelemetry = [
     "opentelemetry-exporter-otlp-proto-http==1.33.1",
     "opentelemetry-instrumentation==0.54b1",
     "opentelemetry-instrumentation-httpx==0.54b1",
+    "opentelemetry-instrumentation-requests==0.54b1",
     "opentelemetry-instrumentation-threading==0.54b1",
     "opentelemetry-instrumentation-langchain==0.38.10",
     "opentelemetry-semantic-conventions==0.54b1",
@@ -80,6 +81,8 @@ dev = [
     "pytest-xdist<4.0.0,>=3.5.0",
     "responses<1.0.0,>=0.25.0",
     "loguru>=0.7.3",
+    "opentelemetry-sdk==1.33.1",
+    "opentelemetry-instrumentation-requests==0.54b1",
 ]
 
 [tool.pdm.build]

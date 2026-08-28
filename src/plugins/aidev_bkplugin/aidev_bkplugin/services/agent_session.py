@@ -17,6 +17,7 @@ from aidev_agent.enums import ChatContentStatus, PromptRole, SessionsStatus
 from aidev_agent.packages.resource_manager import ResourceManagerProtocol
 from aidev_agent.packages.resource_manager.registry import resource_manager as resource_manager_factory
 from aidev_agent.pydantic_models import ChatPrompt
+from aidev_agent.utils.tracing import current_trace_id
 from django.conf import settings
 
 from ..constants import AGUI_PROTOCOL_VERSION
@@ -101,6 +102,9 @@ class SessionManager:
             data["extra"] = extra
         if turn_id:
             data["property"] = {"turn_id": turn_id}
+        # 与 turn_id 并列：turn_id 标识一轮对话，trace_id 标识这轮实际执行的调用链
+        if trace_id := current_trace_id():
+            data.setdefault("property", {})["trace_id"] = trace_id
         client = self._client()
         result = client.api.create_chat_session_content(json=data, headers=self._user_headers())
         saved = result.get("data", {})

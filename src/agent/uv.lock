@@ -94,6 +94,7 @@ opentelemetry = [
     { name = "opentelemetry-instrumentation" },
     { name = "opentelemetry-instrumentation-httpx" },
     { name = "opentelemetry-instrumentation-langchain" },
+    { name = "opentelemetry-instrumentation-requests" },
     { name = "opentelemetry-instrumentation-threading" },
     { name = "opentelemetry-sdk" },
     { name = "opentelemetry-semantic-conventions" },
@@ -105,6 +106,8 @@ dev = [
     { name = "faker" },
     { name = "ipdb" },
     { name = "loguru" },
+    { name = "opentelemetry-instrumentation-requests" },
+    { name = "opentelemetry-sdk" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -147,6 +150,7 @@ requires-dist = [
     { name = "opentelemetry-instrumentation", marker = "extra == 'opentelemetry'", specifier = "==0.54b1" },
     { name = "opentelemetry-instrumentation-httpx", marker = "extra == 'opentelemetry'", specifier = "==0.54b1" },
     { name = "opentelemetry-instrumentation-langchain", marker = "extra == 'opentelemetry'", specifier = "==0.38.10" },
+    { name = "opentelemetry-instrumentation-requests", marker = "extra == 'opentelemetry'", specifier = "==0.54b1" },
     { name = "opentelemetry-instrumentation-threading", marker = "extra == 'opentelemetry'", specifier = "==0.54b1" },
     { name = "opentelemetry-sdk", marker = "extra == 'opentelemetry'", specifier = "==1.33.1" },
     { name = "opentelemetry-semantic-conventions", marker = "extra == 'opentelemetry'", specifier = "==0.54b1" },
@@ -169,6 +173,8 @@ dev = [
     { name = "faker", specifier = ">=37.0.0,<38.0.0" },
     { name = "ipdb", specifier = ">=0.13.13,<0.14.0" },
     { name = "loguru", specifier = ">=0.7.3" },
+    { name = "opentelemetry-instrumentation-requests", specifier = "==0.54b1" },
+    { name = "opentelemetry-sdk", specifier = "==1.33.1" },
     { name = "pre-commit", specifier = "==4.0.1" },
     { name = "pytest", specifier = ">=7.4.4,<7.5.0" },
     { name = "pytest-asyncio", specifier = ">=0.23.3,<0.24.0" },
@@ -1366,6 +1372,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/2d/fb/499334b03a7f9a274da5f7b9b8674479800f402bf1792cafc944c87b00bd/opentelemetry_instrumentation_langchain-0.38.10.tar.gz", hash = "sha256:d63ebba00d6741d69d7ee68b186fa353364b94d781827b848d32fdc21e60286c", size = 8838, upload-time = "2025-03-05T14:22:26.834Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0f/46/dfa63ef4e0bfba712f7395aeba592a6f7214b7190c5a276a99503a9a268d/opentelemetry_instrumentation_langchain-0.38.10-py3-none-any.whl", hash = "sha256:d3f71da783a6771a15bc282e09f58e6155a7d8e537bd10f8d5a899f0072dc60b", size = 10277, upload-time = "2025-03-05T14:21:44.42Z" },
+]
+
+[[package]]
+name = "opentelemetry-instrumentation-requests"
+version = "0.54b1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-instrumentation" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "opentelemetry-util-http" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e7/45/116da84930d3dc2f5cdd876283ca96e9b96547bccee7eaa0bd01ce6bf046/opentelemetry_instrumentation_requests-0.54b1.tar.gz", hash = "sha256:3eca5d697c5564af04c6a1dd23b6a3ffbaf11e64887c6051655cee03998f4654", size = 15148, upload-time = "2025-05-16T19:04:00.488Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2b/b1/6e33d2c3d3cc9e3ae20a9a77625ec81a509a0e5d7fa87e09e7f879468990/opentelemetry_instrumentation_requests-0.54b1-py3-none-any.whl", hash = "sha256:a0c4cd5d946224f336d6bd73cdabdecc6f80d5c39208f84eb96eb15f16cd41a0", size = 12968, upload-time = "2025-05-16T19:03:03.131Z" },
 ]
 
 [[package]]
