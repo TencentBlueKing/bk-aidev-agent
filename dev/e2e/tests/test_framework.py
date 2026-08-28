@@ -58,6 +58,8 @@ class ConfigTests(unittest.TestCase):
             with patch.dict(os.environ, {"E2E_ENV_FILE": str(env_file)}, clear=True):
                 self.assertEqual(Config.from_env().modules, DEFAULT_MODULES)
                 self.assertEqual(Config.from_env("all").modules, SUPPORTED_MODULES)
+                with self.assertRaisesRegex(ValueError, "unsupported E2E modules"):
+                    Config.from_env("message,wxbot")
         self.assertNotIn("message", DEFAULT_MODULES)
         self.assertNotIn("wxbot", DEFAULT_MODULES)
 

@@ -6,8 +6,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 TRUTHY = {"1", "true", "yes", "on", "y"}
-SUPPORTED_MODULES = ("api", "ai-blueking", "message", "metrics", "wxbot")
-DEFAULT_MODULES = ("api", "ai-blueking", "metrics")
+SUPPORTED_MODULES = ("api", "ai-blueking", "metrics")
+DEFAULT_MODULES = SUPPORTED_MODULES
 
 
 def load_env_file(path: Path) -> None:

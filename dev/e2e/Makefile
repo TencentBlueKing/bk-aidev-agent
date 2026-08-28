@@ -12,7 +12,7 @@ HEADLESS ?= true
 DB ?= sqlite
 
 .PHONY: help setup deps-up deps-down observability-up observability-down up down run browser test report-open \
-	api ai-blueking message metrics wxbot
+	api ai-blueking metrics
 
 help:
 	@echo "bk-aidev-agent local E2E"
@@ -55,7 +55,7 @@ run:
 browser:
 	$(MAKE) run MODULES=$(MODULES) HEADLESS=false DB=$(DB) ENV_FILE="$(ENV_FILE)"
 
-api ai-blueking message metrics wxbot:
+api ai-blueking metrics:
 	$(MAKE) run MODULES=$@ HEADLESS=$(HEADLESS) DB=$(DB) ENV_FILE="$(ENV_FILE)"
 
 test:
