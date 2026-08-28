@@ -237,6 +237,7 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
     remote_tokenizer: bool = True
     max_content_length: Optional[int] = None
     fallback_model: str | None = None
+    retry_strategy: str | None = None
     _owns_http_async_client: bool = PrivateAttr(default=False)
     _model_role: str = PrivateAttr(default="primary")
 
@@ -304,6 +305,7 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
         # 部分 langchain-openai 版本会将子类扩展字段合并到 OpenAI 请求参数中。
         # fallback_model 仅用于 SDK 内部切换，不能透传给 OpenAI 客户端。
         payload.pop("fallback_model", None)
+        payload.pop("retry_strategy", None)
         for message in payload.get("messages", []):
             if message.get("role") != "user" or not isinstance(message.get("content"), list):
                 continue

@@ -262,6 +262,7 @@ class AgentExecutor:
         transient_system_prompt: str | None = None,
         enable_query_clarification: bool | None = None,
         temperature: float | None = None,
+        retry_strategy: str | None = None,
     ):
         """通过 ``thread_id`` 统一执行 ChatCompletion 并自动处理会话保存。
 
@@ -276,7 +277,10 @@ class AgentExecutor:
         if not input_text:
             raise ValueError("input_text is required when using thread_id")
 
-        builder = AgentBuilder(username=username, temperature=temperature)
+        builder_kwargs = {"username": username, "temperature": temperature}
+        if retry_strategy is not None:
+            builder_kwargs["retry_strategy"] = retry_strategy
+        builder = AgentBuilder(**builder_kwargs)
         agent_instance, session_code = builder.by_thread_id(
             thread_id=thread_id,
             input_text=input_text,

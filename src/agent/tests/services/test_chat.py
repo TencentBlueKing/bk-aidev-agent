@@ -1094,6 +1094,18 @@ class TestBuildChatModelFast:
         assert result is not None
         assert mock_setup.call_args[1]["model"] == "fast-model-v1"
 
+    @patch("aidev_agent.services.agent.chat.ChatModel.get_setup_instance")
+    @patch("aidev_agent.services.agent.chat.settings.LLM_GW_ENDPOINT", "http://gw.test")
+    def test_channel_retry_strategy_overrides_global_strategy(self, mock_setup):
+        mock_setup.return_value = MagicMock(spec=BaseChatModel)
+        ctx = self._make_ctx(fast_llm="fast-model-v1")
+        ctx.chat = ChatBuildExtras(retry_strategy="sdk")
+
+        ChatAgentBuilder(ctx).build_chat_model_fast()
+
+        assert mock_setup.call_args.kwargs["retry_strategy"] == "sdk"
+        assert mock_setup.call_args.kwargs["max_retries"] == 0
+
     def test_returns_none_when_fast_llm_empty(self):
         """``agent_config.fast_llm`` 为空时返回 None。"""
         builder = ChatAgentBuilder(self._make_ctx(fast_llm=None))

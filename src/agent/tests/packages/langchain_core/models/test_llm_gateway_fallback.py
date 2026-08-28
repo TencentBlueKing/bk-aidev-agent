@@ -9,10 +9,18 @@ from langchain_openai import ChatOpenAI
 
 def test_fallback_model_is_not_forwarded_to_openai_request(monkeypatch):
     def fake_get_request_payload(model, *args, **kwargs):
-        return {"model": model.model_name, "fallback_model": model.fallback_model}
+        return {
+            "model": model.model_name,
+            "fallback_model": model.fallback_model,
+            "retry_strategy": model.retry_strategy,
+        }
 
     monkeypatch.setattr(ChatOpenAI, "_get_request_payload", fake_get_request_payload)
-    model = ChatModel.get_setup_instance(model="primary-model", fallback_model="fallback-model")
+    model = ChatModel.get_setup_instance(
+        model="primary-model",
+        fallback_model="fallback-model",
+        retry_strategy="sdk",
+    )
 
     assert isinstance(model, RunnableWithFallbacks)
     assert model.runnable._get_request_payload([]) == {"model": "primary-model"}

@@ -50,6 +50,14 @@ from .utils import promote_plain_text_tool_call_message
 logger = logging.getLogger(__name__)
 
 
+def _resolve_retry_strategy(llm) -> str:
+    configured = getattr(llm, "retry_strategy", None)
+    if configured:
+        return configured
+    primary = getattr(llm, "runnable", None)
+    return getattr(primary, "retry_strategy", None) or settings.LLM_RETRY_STRATEGY
+
+
 def _promote_message(message: AnyMessage, allowed_tool_names: set[str]) -> AnyMessage:
     """尝试将消息中的纯文本工具调用提升为原生 tool_calls。"""
     if not isinstance(message, AIMessage):
@@ -188,6 +196,8 @@ def _build_model_chain(
         Runnable，支持 .invoke() 和 .ainvoke()
     """
 
+    retry_strategy = _resolve_retry_strategy(llm)
+
     # ------------------------------------------------------------------
     # 内部函数：消息渲染
     # ------------------------------------------------------------------
@@ -230,7 +240,6 @@ def _build_model_chain(
         try:
             response = llm_with_tools.invoke(ctx.messages, config=ctx.config, **invoke_kwargs)
         except RateLimitError as error:
-            retry_strategy = settings.LLM_RETRY_STRATEGY
             if record_model_rate_limit is not None:
                 record_model_rate_limit(retry_strategy=retry_strategy, error=error)
             if retry_strategy != "sdk":
@@ -295,7 +304,6 @@ def _build_model_chain(
         try:
             response = await llm_with_tools.ainvoke(ctx.messages, config=ctx.config, **invoke_kwargs)
         except RateLimitError as error:
-            retry_strategy = settings.LLM_RETRY_STRATEGY
             if record_model_rate_limit is not None:
                 record_model_rate_limit(retry_strategy=retry_strategy, error=error)
             if retry_strategy != "sdk":

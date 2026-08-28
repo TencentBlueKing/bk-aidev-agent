@@ -57,6 +57,7 @@ class AgentInstanceFactory:
         default_headers: dict[str, str] | None = None,
         temperature: float = None,
         max_tokens: int = None,
+        retry_strategy: str | None = None,
         switch_agent_by_scene: bool = False,
         resource_manager: Optional[ResourceManagerProtocol] = None,
         is_temporary: bool = False,
@@ -104,6 +105,7 @@ class AgentInstanceFactory:
         self.default_headers = default_headers or None
         self.temperature = temperature or None
         self.max_tokens = max_tokens or None
+        self.retry_strategy = retry_strategy or None
         self.switch_agent_by_scene = switch_agent_by_scene
         self.is_temporary = is_temporary
         self.checkpointer = checkpointer
@@ -124,6 +126,7 @@ class AgentInstanceFactory:
         default_headers: dict[str, str] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = settings.MAX_TOKENS,
+        retry_strategy: str | None = None,
         switch_agent_by_scene: bool = False,
         resource_manager: Optional[ResourceManagerProtocol] = None,
         is_temporary: bool = False,
@@ -171,6 +174,7 @@ class AgentInstanceFactory:
             default_headers=default_headers,
             temperature=temperature,
             max_tokens=max_tokens,
+            retry_strategy=retry_strategy,
             switch_agent_by_scene=switch_agent_by_scene,
             resource_manager=resource_manager,
             is_temporary=is_temporary,
@@ -398,6 +402,7 @@ class AgentInstanceFactory:
                 default_headers=self.default_headers,
                 temperature=self.temperature,
                 max_tokens=self.max_tokens,
+                retry_strategy=self.retry_strategy,
                 checkpointer=self.checkpointer,
             )
         elif self.agent_type == AgentType.FLOW:

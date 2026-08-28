@@ -49,7 +49,12 @@ WECOM_AGENT_EXECUTION_POLICY = (
     "使用序号 1 到 N 的 Markdown 表格；不得用摘要、样例或省略号代替。\n"
     "4. 工具实际返回少于 N 条时，完整展示已有记录并明确实际条数；不得虚构数据。"
 )
+WECOM_LONG_CONNECTION_EXECUTION_POLICY = (
+    WECOM_AGENT_EXECUTION_POLICY + "\n5. 如果工具把结果保存到文件，必须继续读取文件并把记录写入最终回复；"
+    "在明细表格完成前不得只返回概览、文件路径或询问用户是否需要查看详情。"
+)
 WECOM_AGENT_TEMPERATURE = 0.1
+WECOM_AGENT_RETRY_STRATEGY = "sdk"
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +83,7 @@ class AgentStrategy(Protocol):
         username: str,
         thread_id: str,
         group_id: str,
+        retry_strategy: str | None = None,
     ) -> AgentStream: ...
 
 
@@ -143,6 +149,7 @@ class ChatAgentStrategy:
         username: str,
         thread_id: str,
         group_id: str,
+        retry_strategy: str | None = None,
     ) -> AgentStream:
         """创建 Chat Agent 原始 SSE，供 callback 或 WebSocket 各自消费。"""
         execute_kwargs = build_execute_kwargs(
@@ -156,9 +163,12 @@ class ChatAgentStrategy:
             execute_kwargs=execute_kwargs,
             channel_type=ChannelType.RTX.value,
             save_content=True,
-            transient_system_prompt=WECOM_AGENT_EXECUTION_POLICY,
+            transient_system_prompt=(
+                WECOM_LONG_CONNECTION_EXECUTION_POLICY if retry_strategy else WECOM_AGENT_EXECUTION_POLICY
+            ),
             enable_query_clarification=False,
             temperature=WECOM_AGENT_TEMPERATURE,
+            retry_strategy=retry_strategy,
         )
         return AgentStream(
             kind="chat",
@@ -224,6 +234,7 @@ class FlowAgentStrategy:
         username: str,
         thread_id: str,
         group_id: str,
+        retry_strategy: str | None = None,
     ) -> AgentStream:
         """创建 Flow Agent 原始 SSE，供 callback 或 WebSocket 各自消费。"""
         rtx_username = username

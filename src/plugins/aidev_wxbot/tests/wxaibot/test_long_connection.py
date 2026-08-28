@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import sys
 import threading
@@ -77,6 +78,22 @@ class ThreadExecutor:
         return True
 
 
+class OrderedStreamConsumer:
+    def __init__(self, *stream_ids: str):
+        self.releases = {stream_id: asyncio.Event() for stream_id in stream_ids}
+        self.started = {stream_id: asyncio.Event() for stream_id in stream_ids}
+        self.starts: list[str] = []
+
+    async def __call__(self, _frame, request, _cancel_event):
+        self.starts.append(request.stream_id)
+        self.started[request.stream_id].set()
+        await self.releases[request.stream_id].wait()
+
+    async def release_then_wait(self, current: str, following: str) -> None:
+        self.releases[current].set()
+        await asyncio.wait_for(self.started[following].wait(), timeout=1)
+
+
 def _service(client: FakeClient | None = None) -> WxAiBotLongConnectionService:
     service = object.__new__(WxAiBotLongConnectionService)
     service._client = client or FakeClient()
@@ -86,9 +103,12 @@ def _service(client: FakeClient | None = None) -> WxAiBotLongConnectionService:
     service._loop = None
     service._active_streams = {}
     service._group_streams = {}
+    service._group_pending_streams = {}
+    service._queued_stream_ids = set()
     service._metrics = StreamMetrics()
     service._view = MagicMock()
     service._frame_semaphore = asyncio.Semaphore(16)
+    service._draining_streams = False
     return service
 
 
@@ -149,7 +169,13 @@ class TestLongConnectionStreaming:
             task = service._active_streams["stream-direct"].task
             await task
 
-        strategy.open_stream.assert_called_once()
+        strategy.open_stream.assert_called_once_with(
+            content="query",
+            username="user-1",
+            thread_id="thread-1",
+            group_id="group-1",
+            retry_strategy="sdk",
+        )
         strategy.execute.assert_not_called()
         assert service._client.reply_stream_calls == [("a" * 50, False), ("a" * 50, True)]
 
@@ -259,40 +285,84 @@ class TestLongConnectionStreaming:
         service._view._reply_wxaibot.assert_not_called()
         sent.assert_awaited_once_with(frame, "stream-1", "长连接模式无需轮询流式结果", True)
 
-    async def test_same_session_preemption_cancels_old_stream_and_sends_terminal(self):
+    async def test_same_group_requests_are_processed_in_fifo_order_without_preemption(self):
         service = _service()
-        old_task = asyncio.create_task(asyncio.sleep(60))
-        service._active_streams["old"] = ActiveStream({}, "group-1", old_task, __import__("threading").Event(), 0)
-        service._group_streams["group-1"] = "old"
+        consumer = OrderedStreamConsumer("first", "second", "third")
+        service._consume_direct_stream = consumer
+        requests = [SimpleNamespace(stream_id=stream_id, group_id="group-1") for stream_id in consumer.releases]
+
+        with patch.object(long_connection_module.stream_registry, "cancel", return_value=True) as cancel:
+            for request in requests:
+                await service._start_direct_stream({"frame": request.stream_id}, request)
+            await consumer.started["first"].wait()
+            assert consumer.starts == ["first"]
+            assert service._queued_stream_ids == {"second", "third"}
+
+            await consumer.release_then_wait("first", "second")
+            await consumer.release_then_wait("second", "third")
+            third_task = service._active_streams["third"].task
+            consumer.releases["third"].set()
+            await third_task
+
+        cancel.assert_not_called()
+        assert consumer.starts == ["first", "second", "third"]
+        assert service._metrics.queued == 2
+        assert service._metrics.dequeued == 2
+        assert service._client.reply_stream_calls[:2] == [
+            ("当前会话正在处理上一条请求，已进入队列（前方 1 条）", False),
+            ("当前会话正在处理上一条请求，已进入队列（前方 2 条）", False),
+        ]
+
+    async def test_same_group_queue_rejects_when_full(self, monkeypatch):
+        service = _service()
         release = asyncio.Event()
 
         async def consume(*_args):
             await release.wait()
 
         service._consume_direct_stream = consume
-        request = SimpleNamespace(stream_id="new", group_id="group-1")
+        monkeypatch.setattr(long_connection_module.settings, "WXAIBOT_WS_GROUP_QUEUE_SIZE", 1)
 
-        with patch.object(long_connection_module.stream_registry, "cancel", return_value=True) as cancel:
-            await service._start_direct_stream({"frame": "new"}, request)
+        for stream_id in ("active", "queued", "rejected"):
+            await service._start_direct_stream({}, SimpleNamespace(stream_id=stream_id, group_id="group-1"))
 
-        cancel.assert_called_once_with("old")
-        assert old_task.cancelled()
-        assert ("当前会话已有新请求，原请求已结束", True) in service._client.reply_stream_calls
-        assert service._group_streams["group-1"] == "new"
-        release.set()
-        await service._active_streams["new"].task
+        assert service._metrics.queue_rejected == 1
+        assert service._client.reply_stream_calls[-1] == ("当前会话排队请求已满，请稍后重试", True)
+        await service._cancel_stream_tasks()
+
+    async def test_different_groups_start_concurrently(self):
+        service = _service()
+        started = {group_id: asyncio.Event() for group_id in ("group-1", "group-2")}
+        release = asyncio.Event()
+
+        async def consume(_frame, request, _cancel_event):
+            started[request.group_id].set()
+            await release.wait()
+
+        service._consume_direct_stream = consume
+        for group_id in started:
+            request = SimpleNamespace(stream_id=f"stream-{group_id}", group_id=group_id)
+            await service._start_direct_stream({}, request)
+
+        await asyncio.wait_for(asyncio.gather(*(event.wait() for event in started.values())), timeout=1)
+        assert len(service._active_streams) == 2
+        assert not service._queued_stream_ids
+        await service._cancel_stream_tasks()
 
     async def test_cancel_stream_tasks_on_shutdown(self):
         service = _service()
         task = asyncio.create_task(asyncio.sleep(60))
         service._active_streams["stream-1"] = ActiveStream({}, "group-1", task, __import__("threading").Event(), 0)
         service._group_streams["group-1"] = "stream-1"
+        queued = SimpleNamespace(stream_id="stream-2", group_id="group-1")
+        await service._enqueue_group_stream({"frame": "queued"}, queued)
 
         with patch.object(long_connection_module.stream_registry, "cancel", return_value=True):
             await service._cancel_stream_tasks(terminal_content="服务正在停机，当前请求已取消")
 
         assert task.cancelled()
-        assert ("服务正在停机，当前请求已取消", True) in service._client.reply_stream_calls
+        assert service._client.reply_stream_calls.count(("服务正在停机，当前请求已取消", True)) == 2
+        assert not service._queued_stream_ids
 
 
 class TestLongConnectionLifecycle:
@@ -352,6 +422,32 @@ class TestLongConnectionLifecycle:
         assert service._shutdown_requested
         assert not service._accepting_messages
         assert service._service_state == ServiceState.STOPPING
+
+    def test_health_log_exposes_group_queue_metrics(self, caplog):
+        service = _service()
+        service._service_state = ServiceState.RUNNING
+        service._metrics.queued = 3
+        service._metrics.dequeued = 2
+        executor = SimpleNamespace(
+            active=1,
+            pending=0,
+            max_workers=10,
+            max_pending=16,
+            capacity=26,
+            submitted=2,
+            rejected=0,
+            peak_active=2,
+            peak_pending=1,
+        )
+
+        with (
+            patch.object(long_connection_module, "get_agent_executor_snapshot", return_value=executor),
+            caplog.at_level(logging.INFO, logger=long_connection_module.__name__),
+        ):
+            service._log_health()
+
+        assert "streams_queued=3 streams_dequeued=2" in caplog.text
+        assert "queue_rejected=0 peak_queued=0" in caplog.text
 
     async def test_waits_for_client_disconnect_without_sdk_wait_method(self):
         service = _service()

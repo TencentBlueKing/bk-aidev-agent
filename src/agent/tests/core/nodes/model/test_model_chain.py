@@ -208,11 +208,12 @@ class TestModelChain:
         mock_llm = RunnableLambda(invoke_fn)
         mock_llm.bind_tools = Mock(return_value=mock_llm)
         mock_llm._invoke_count = invoke_counter
+        mock_llm.retry_strategy = "sdk"
 
         self._set_rendered_messages(mock_context_assembly, [HumanMessage(content="test")])
 
         with (
-            patch("aidev_agent.core.nodes.model.model_chain.settings.LLM_RETRY_STRATEGY", "sdk"),
+            patch("aidev_agent.core.nodes.model.model_chain.settings.LLM_RETRY_STRATEGY", "llm_gw"),
             patch("time.sleep", return_value=None),
             patch("aidev_agent.core.nodes.model.model_chain.record_model_rate_limit") as rate_limit_metric,
             patch("aidev_agent.core.nodes.model.model_chain.record_model_retry") as retry_metric,
