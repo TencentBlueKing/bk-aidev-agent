@@ -72,6 +72,8 @@ class FakeClient:
         self.is_connected = True
         self.failures = failures
         self.reply_stream_calls: list[tuple[str, bool]] = []
+        self.reply_stream_with_card_calls: list[tuple[str, bool, dict]] = []
+        self.update_template_card_calls: list[dict] = []
         self.disconnected = False
 
     async def reply_stream(self, _frame, _stream_id, content, finish):
@@ -79,6 +81,12 @@ class FakeClient:
         if self.failures:
             self.failures -= 1
             raise RuntimeError("temporary websocket failure")
+
+    async def reply_stream_with_card(self, _frame, _stream_id, content, finish, *, template_card):
+        self.reply_stream_with_card_calls.append((content, finish, template_card))
+
+    async def update_template_card(self, _frame, template_card):
+        self.update_template_card_calls.append(template_card)
 
     def disconnect(self):
         self.disconnected = True
@@ -604,7 +612,8 @@ class TestLongConnectionStreaming:
         strategy = MagicMock()
         approval = (
             'data: {"type":"RUN_FINISHED","outcome":{"type":"interrupt","interrupts":'
-            '[{"reason":"aidev:tool_approval","metadata":{"ticket":{"sn":"DE001"}}}]}}\n'
+            '[{"id":"int-approval-call-1-DE001","reason":"aidev:tool_approval",'
+            '"metadata":{"ticket":{"sn":"DE001","url":"https://itsm.example.com/DE001"}}}]}}\n'
         )
         strategy.open_stream.return_value = AgentStream("chat", iter([approval]), "session-1")
         request = SimpleNamespace(content="query", stream_id="approval", username="user-1", group_id="group-1")
@@ -612,13 +621,70 @@ class TestLongConnectionStreaming:
         with (
             patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
             patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
-            patch("aidev_wxbot.wxaibot.direct_stream.AgentHelper.build_session_detail_url", return_value=""),
+            patch("aidev_wxbot.wxaibot.approval_cards.AgentHelper.build_session_detail_url", return_value=""),
         ):
             await service._start_direct_stream({}, request)
             await service._active_streams["approval"].task
 
         assert service._metrics.approval_pending == 1
         assert service._metrics.completed == 0
+        assert service._client.reply_stream_calls == []
+        assert len(service._client.reply_stream_with_card_calls) == 1
+        content, finish, card = service._client.reply_stream_with_card_calls[0]
+        assert content == "等待工具审批"
+        assert finish is True
+        assert card["button_list"][0]["text"] == "取消审批"
+
+    async def test_approval_cancel_card_event_dispatches_operation_and_updates_card(self):
+        from aidev_wxbot.wxaibot.approval_cards import (
+            ApprovalCancelAction,
+            approval_task_id,
+            encode_cancel_event_key,
+        )
+
+        service = _service()
+        service._view.resolve_event_username.return_value = "alice"
+        action = ApprovalCancelAction("session-1", "int-approval-call-1-DE001")
+        task_id = approval_task_id(action)
+        payload = {
+            "msgtype": "event",
+            "from": {"userid": "alice-wx"},
+            "event": {
+                "eventtype": "template_card_event",
+                "template_card_event": {
+                    "event_key": encode_cancel_event_key(action),
+                    "task_id": task_id,
+                },
+            },
+        }
+
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value={"ok": True}) as dispatch,
+            patch(
+                "aidev_wxbot.wxaibot.approval_cards.AgentHelper.build_session_detail_url",
+                return_value="https://agent.example.com/session-1",
+            ),
+        ):
+            await service._handle_frame({"body": payload})
+
+        dispatch.assert_called_once_with(
+            "approval_cancel",
+            "alice",
+            {
+                "session_code": "session-1",
+                "operation": "approval_cancel",
+                "payload": {"interrupt_id": "int-approval-call-1-DE001"},
+                "request_id": task_id,
+            },
+        )
+        assert service._client.update_template_card_calls == [
+            {
+                "card_type": "text_notice",
+                "main_title": {"title": "审批已取消", "desc": "本次工具执行已终止"},
+                "task_id": task_id,
+                "card_action": {"type": 1, "url": "https://agent.example.com/session-1"},
+            }
+        ]
 
     async def test_slow_wecom_sender_applies_bounded_backpressure(self, monkeypatch):
         class SlowClient(FakeClient):

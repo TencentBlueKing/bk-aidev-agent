@@ -28,6 +28,11 @@ from aidev_bkplugin.services.execution import (
 )
 from django.conf import settings
 
+from .approval_cards import (
+    approval_task_id,
+    build_cancel_result_card,
+    decode_cancel_event_key,
+)
 from .constants import (
     AGENT_STREAM_DRAIN_TIMEOUT,
     BUSY_BY_OTHERS_REPLY,
@@ -40,13 +45,20 @@ from .constants import (
     STREAM_TIMEOUT_REPLY,
     WS_INSTANCE_LOCK_CACHE_KEY_PREFIX,
 )
-from .context import THINKING_MSG, stream_msg
+from .context import THINKING_MSG, ContextGenerator, stream_msg
 from .direct_stream import DirectStreamFrame, iter_direct_stream_frames
 from .strategies import WECOM_AGENT_RETRY_STRATEGY, resolve_strategy
 from .stream_registry import stream_registry
 from .views import WxAiBotViewSet, WxBotAgentRequest
 
 logger = getLogger(__name__)
+
+
+def dispatch_user_operation(operation: str, username: str, data: dict) -> dict:
+    """延迟加载 Bkplugin 视图依赖，避免长连接启动时加载无关 DRF 模块。"""
+    from aidev_bkplugin.services.user_operation import dispatch
+
+    return dispatch(operation, username, data)
 
 
 class LongConnectionConfigError(ValueError):
@@ -256,6 +268,11 @@ class _LongConnectionViewSet(WxAiBotViewSet):
         self._service.request_stop(group_id, username, reason="new_conversation")
         return super()._new_conversation(group_id, username, stream_id)
 
+    @staticmethod
+    def resolve_event_username(payload: dict[str, Any]) -> str:
+        """沿用普通消息的企微 userid → 平台用户名转换。"""
+        return ContextGenerator(payload).generate().sender_id
+
 
 class WxAiBotLongConnectionService:
     """通过官方 Python SDK 建立企微机器人长连接，并复用现有消息处理逻辑。"""
@@ -424,6 +441,8 @@ class WxAiBotLongConnectionService:
         async with self._frame_semaphore:
             if self._shutdown_requested:
                 return
+            if payload.get("msgtype") == "event" and await self._handle_approval_card_event(frame, payload):
+                return
             if payload.get("msgtype") == "text":
                 response, request = await asyncio.to_thread(self._view.prepare_agent_request, payload)
                 if response is not None:
@@ -441,6 +460,53 @@ class WxAiBotLongConnectionService:
 
             response = await asyncio.to_thread(self._view._reply_wxaibot, payload)
             await self._dispatch_immediate_response(frame, payload, response)
+
+    async def _handle_approval_card_event(self, frame: dict[str, Any], payload: dict[str, Any]) -> bool:
+        """处理本服务发出的“取消审批”按钮；其他模板卡片事件继续走旧逻辑。"""
+        event = payload.get("event") or {}
+        if not isinstance(event, dict) or event.get("eventtype") != "template_card_event":
+            return False
+        card_event = event.get("template_card_event") or {}
+        if not isinstance(card_event, dict):
+            card_event = {}
+        # 兼容官方 SDK 类型声明的扁平字段与线上协议的嵌套字段。
+        event_key = str(card_event.get("event_key") or event.get("event_key") or "")
+        task_id = str(card_event.get("task_id") or event.get("task_id") or "")
+        action = decode_cancel_event_key(event_key)
+        if action is None:
+            return False
+
+        expected_task_id = approval_task_id(action)
+        if not task_id or task_id != expected_task_id:
+            logger.warning("event=wxbot_approval_cancel_rejected reason=task_mismatch")
+            return True
+
+        succeeded = False
+        try:
+            username = await asyncio.to_thread(self._view.resolve_event_username, payload)
+            envelope = await asyncio.to_thread(
+                dispatch_user_operation,
+                "approval_cancel",
+                username,
+                {
+                    "session_code": action.session_code,
+                    "operation": "approval_cancel",
+                    "payload": {"interrupt_id": action.interrupt_id},
+                    "request_id": task_id,
+                },
+            )
+            succeeded = not isinstance(envelope, dict) or envelope.get("ok") is not False
+        except Exception:
+            logger.exception("event=wxbot_approval_cancel_failed task_id=%s", task_id)
+
+        result_card = build_cancel_result_card(action, task_id, succeeded=succeeded)
+        try:
+            await self._client.update_template_card(frame, result_card)
+        except Exception:
+            logger.exception("event=wxbot_approval_card_update_failed task_id=%s", task_id)
+        else:
+            logger.info("event=wxbot_approval_cancel_finished task_id=%s succeeded=%s", task_id, succeeded)
+        return True
 
     async def _dispatch_immediate_response(
         self, frame: dict[str, Any], payload: dict[str, Any], response: dict[str, Any]
@@ -569,7 +635,13 @@ class WxAiBotLongConnectionService:
                         raise item
 
                     content = item.content or ("回答完成" if item.finish else THINKING_MSG)
-                    send_wait = await self._send_stream_reply(frame, request.stream_id, content, item.finish)
+                    send_wait = await self._send_stream_reply(
+                        frame,
+                        request.stream_id,
+                        content,
+                        item.finish,
+                        template_card=item.template_card,
+                    )
                     if active := self._active_streams.get(request.stream_id):
                         active.last_content = content
                     now = time.monotonic()
@@ -840,7 +912,15 @@ class WxAiBotLongConnectionService:
             with contextlib.suppress(Exception):
                 await self._send_stream_reply(active.frame, stream_id, f"{delivered}\n\n{notice}", True)
 
-    async def _send_stream_reply(self, frame: dict[str, Any], stream_id: str, content: str, finish: bool) -> float:
+    async def _send_stream_reply(
+        self,
+        frame: dict[str, Any],
+        stream_id: str,
+        content: str,
+        finish: bool,
+        *,
+        template_card: dict[str, Any] | None = None,
+    ) -> float:
         started_at = time.monotonic()
         deadline = time.monotonic() + getattr(settings, "MAX_MESSAGE_TIME", 300)
         last_error: Exception | None = None
@@ -853,7 +933,16 @@ class WxAiBotLongConnectionService:
                 continue
 
             try:
-                await self._client.reply_stream(frame, stream_id, content, finish)
+                if template_card:
+                    await self._client.reply_stream_with_card(
+                        frame,
+                        stream_id,
+                        content,
+                        finish,
+                        template_card=template_card,
+                    )
+                else:
+                    await self._client.reply_stream(frame, stream_id, content, finish)
                 return time.monotonic() - started_at
             except Exception as error:
                 last_error = error

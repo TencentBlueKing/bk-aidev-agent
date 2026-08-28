@@ -3,6 +3,7 @@
 import json
 from unittest.mock import patch
 
+from aidev_wxbot.wxaibot.approval_cards import decode_cancel_event_key
 from aidev_wxbot.wxaibot.constants import STREAM_ERROR_REPLY
 from aidev_wxbot.wxaibot.direct_stream import AgentStream, iter_direct_stream_frames
 
@@ -219,7 +220,7 @@ def test_chat_run_error_becomes_explicit_terminal_frame():
     "aidev_wxbot.wxaibot.direct_stream.AgentHelper.build_session_detail_url",
     return_value="https://agent.example.com/chat-window/?session=session-1",
 )
-def test_pending_tool_approval_is_pushed_with_safe_ticket_link(mock_detail_url):
+def test_pending_tool_approval_is_pushed_as_interactive_card(mock_detail_url):
     frames = _chat_frames(
         [
             {"type": "TEXT_MESSAGE_CONTENT", "delta": "我将获取 Skill 的详细信息。"},
@@ -237,6 +238,7 @@ def test_pending_tool_approval_is_pushed_with_safe_ticket_link(mock_detail_url):
                                 "ticket": {
                                     "sn": "DE001",
                                     "title": "执行「retrieve_private_v1_skills」需要审批",
+                                    "submit_time": "2026-08-28T16:30:15.245792+00:00",
                                     "url": "https://itsm.example.com/ticket/DE001?a=1 2",
                                 }
                             },
@@ -249,12 +251,21 @@ def test_pending_tool_approval_is_pushed_with_safe_ticket_link(mock_detail_url):
 
     assert frames[-1].finish
     assert frames[-1].pending_approval
-    assert "我将获取 Skill 的详细信息。" in frames[-1].content
-    assert "等待工具审批" in frames[-1].content
-    assert "DE001" in frames[-1].content
-    assert "[查看并处理审批](https://itsm.example.com/ticket/DE001?a=1%202)" in frames[-1].content
-    assert "[查看会话进度](https://agent.example.com/chat-window/?session=session-1)" in frames[-1].content
-    assert "must-not-leak" not in frames[-1].content
+    assert frames[-1].content == "我将获取 Skill 的详细信息。"
+    card = frames[-1].template_card
+    assert card["card_type"] == "button_interaction"
+    assert card["main_title"]["title"] == "执行「retrieve_private_v1_skills」需要审批"
+    assert card["horizontal_content_list"] == [
+        {"keyname": "单据编号", "value": "DE001"},
+        {"keyname": "提交时间", "value": "2026-08-28T16:30:15.245792+00:00"},
+    ]
+    assert card["card_action"] == {"type": 1, "url": "https://itsm.example.com/ticket/DE001?a=1%202"}
+    assert "source" not in card  # 不展示“已通过”等状态徽标
+    assert card["button_list"][0]["text"] == "取消审批"
+    action = decode_cancel_event_key(card["button_list"][0]["key"])
+    assert action.session_code == "s"
+    assert action.interrupt_id == "int-approval-call-1-DE001"
+    assert "must-not-leak" not in json.dumps(card, ensure_ascii=False)
     mock_detail_url.assert_called_once_with("s")
 
 
@@ -277,8 +288,10 @@ def test_pending_tool_approval_drops_non_http_ticket_url(_mock_detail_url):
         ]
     )
 
-    assert "DE002" in frames[-1].content
-    assert "javascript" not in frames[-1].content
+    card = frames[-1].template_card
+    assert card["horizontal_content_list"] == [{"keyname": "单据编号", "value": "DE002"}]
+    assert "card_action" not in card
+    assert "javascript" not in json.dumps(card, ensure_ascii=False)
 
 
 def test_chat_stream_eof_without_terminal_is_failed():
