@@ -41,11 +41,13 @@ try:
         STOP_NOTICE,
         STOP_REPLY,
         STREAM_ERROR_REPLY,
+        STREAM_TIMEOUT_REPLY,
     )
     from aidev_wxbot.wxaibot.long_connection import (
         ActiveStream,
         LongConnectionConfigError,
         ServiceState,
+        StreamDrain,
         StreamMetrics,
         WxAiBotLongConnectionConfig,
         WxAiBotLongConnectionService,
@@ -89,6 +91,12 @@ class ThreadExecutor:
         return True
 
 
+class InlineExecutor:
+    def submit(self, fn, *args):
+        fn(*args)
+        return True
+
+
 def _service(client: FakeClient | None = None) -> WxAiBotLongConnectionService:
     service = object.__new__(WxAiBotLongConnectionService)
     service._client = client or FakeClient()
@@ -98,6 +106,8 @@ def _service(client: FakeClient | None = None) -> WxAiBotLongConnectionService:
     service._loop = None
     service._active_streams = {}
     service._group_streams = {}
+    service._draining_streams = {}
+    service._drain_lock = threading.Lock()
     service._metrics = StreamMetrics()
     service._view = MagicMock()
     service._frame_semaphore = asyncio.Semaphore(16)
@@ -108,6 +118,7 @@ class TestAgentStreamDrain:
     """收尾只排空 Agent 统一流接口，不由长连接操作消息缓存。"""
 
     def test_remaining_frames_are_drained(self):
+        service = _service()
         consumed = 0
 
         def generator():
@@ -116,12 +127,16 @@ class TestAgentStreamDrain:
                 consumed += 1
                 yield "frame"
 
-        WxAiBotLongConnectionService._drain_stream_frames(generator(), "stream-1")
+        with patch.object(long_connection_module, "get_agent_cleanup_executor", return_value=InlineExecutor()):
+            drain = service._schedule_stream_drain(generator(), "stream-1")
 
         assert consumed == 6
+        assert drain.completed.is_set()
+        assert not service._draining_streams
 
-    def test_blocking_next_does_not_bypass_drain_timeout(self, monkeypatch):
-        """即使 next() 本身阻塞，wxbot worker 也只能等待配置的上限。"""
+    async def test_blocking_next_is_cancelled_after_drain_timeout(self, monkeypatch):
+        """即使 next() 永久阻塞，等待也有上限，并向 Agent run 发出取消。"""
+        service = _service()
         monkeypatch.setattr(long_connection_module, "AGENT_STREAM_DRAIN_TIMEOUT", 0.01)
         entered = threading.Event()
         release = threading.Event()
@@ -135,23 +150,73 @@ class TestAgentStreamDrain:
             finally:
                 finished.set()
 
-        started = time.monotonic()
-        WxAiBotLongConnectionService._drain_stream_frames(blocking_generator(), "stream-1")
-        elapsed = time.monotonic() - started
+        with (
+            patch.object(long_connection_module, "get_agent_cleanup_executor", return_value=ThreadExecutor()),
+            patch.object(long_connection_module.stream_registry, "cancel", return_value=True) as cancel,
+        ):
+            drain = service._schedule_stream_drain(blocking_generator(), "stream-1")
+            started = time.monotonic()
+            await service._wait_for_stream_drain(drain)
+            elapsed = time.monotonic() - started
 
         assert entered.is_set()
         assert elapsed < 0.2
+        cancel.assert_called_once_with("stream-1")
+        assert service._metrics.drain_timeouts == 1
         release.set()
         assert finished.wait(timeout=1)
 
+    async def test_stream_timeout_during_drain_still_cancels_agent_run(self):
+        service = _service()
+        drain = StreamDrain("stream-1")
+
+        with patch.object(long_connection_module.stream_registry, "cancel", return_value=True) as cancel:
+            task = asyncio.create_task(service._wait_for_stream_drain(drain))
+            await asyncio.sleep(0)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        cancel.assert_called_once_with("stream-1")
+
     def test_drain_failure_does_not_propagate(self):
         """上游收尾异常不能再打断 wxbot worker。"""
+        service = _service()
 
         def exploding():
             yield "frame"
             raise RuntimeError("upstream reset")
 
-        WxAiBotLongConnectionService._drain_stream_frames(exploding(), "stream-1")
+        with patch.object(long_connection_module, "get_agent_cleanup_executor", return_value=InlineExecutor()):
+            drain = service._schedule_stream_drain(exploding(), "stream-1")
+
+        assert drain.completed.is_set()
+
+    def test_cleanup_capacity_rejection_cancels_and_closes_stream(self):
+        service = _service()
+        closed = threading.Event()
+
+        def generator():
+            try:
+                yield "frame"
+            finally:
+                closed.set()
+
+        frames = generator()
+        next(frames)
+        rejecting_executor = MagicMock()
+        rejecting_executor.submit.return_value = False
+        with (
+            patch.object(long_connection_module, "get_agent_cleanup_executor", return_value=rejecting_executor),
+            patch.object(long_connection_module.stream_registry, "cancel", return_value=True) as cancel,
+        ):
+            drain = service._schedule_stream_drain(frames, "stream-1")
+
+        cancel.assert_called_once_with("stream-1")
+        assert closed.is_set()
+        assert drain.completed.is_set()
+        assert service._metrics.drain_rejected == 1
+        assert not service._draining_streams
 
     def test_long_connection_does_not_import_message_handler_factory(self):
         assert not hasattr(long_connection_module, "message_handler_factory")
@@ -167,12 +232,12 @@ class TestAgentStreamDrain:
         with (
             patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
             patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
-            patch.object(WxAiBotLongConnectionService, "_drain_stream_frames") as drain,
+            patch.object(long_connection_module, "get_agent_cleanup_executor", return_value=InlineExecutor()),
         ):
             await service._start_direct_stream({}, request)
             await service._active_streams["stream-1"].task
 
-        drain.assert_called_once()
+        assert not service._draining_streams
 
     async def test_terminal_frame_releases_executor_when_upstream_drain_blocks(self, monkeypatch):
         service = _service()
@@ -194,11 +259,14 @@ class TestAgentStreamDrain:
         with (
             patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
             patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+            patch.object(long_connection_module, "get_agent_cleanup_executor", return_value=ThreadExecutor()),
+            patch.object(long_connection_module.stream_registry, "cancel", return_value=True) as cancel,
         ):
             await service._start_direct_stream({}, request)
             try:
                 await asyncio.wait_for(service._active_streams["stream-1"].task, timeout=0.2)
                 assert entered.is_set()
+                cancel.assert_called_with("stream-1")
             finally:
                 release.set()
 
@@ -406,6 +474,28 @@ class TestLongConnectionConfig:
 
 @pytest.mark.asyncio
 class TestLongConnectionStreaming:
+    async def test_stream_timeout_gets_explicit_terminal_reply(self, monkeypatch):
+        service = _service()
+        request = SimpleNamespace(content="q", stream_id="stream-timeout", username="u", group_id="g")
+
+        def block_after_started(_request, loop, output_queue, cancel_event):
+            service._put_from_worker(loop, output_queue, long_connection_module._PRODUCER_STARTED, cancel_event)
+            cancel_event.wait(timeout=2)
+
+        service._produce_direct_stream = block_after_started
+        monkeypatch.setattr(settings, "WXAIBOT_WS_STREAM_TIMEOUT_SEC", 1)
+
+        with (
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+            patch.object(long_connection_module.stream_registry, "cancel", return_value=True) as cancel,
+        ):
+            await service._start_direct_stream({}, request)
+            await service._active_streams[request.stream_id].task
+
+        assert service._client.reply_stream_calls == [(STREAM_TIMEOUT_REPLY, True)]
+        cancel.assert_called_with(request.stream_id)
+        assert service._metrics.failed == 1
+
     async def test_chat_sse_is_pushed_directly_without_legacy_execute(self):
         service = _service()
         service._view._get_or_create_thread_id.return_value = "thread-1"
@@ -709,6 +799,27 @@ class TestLongConnectionStreaming:
         # 停机同样不能抹掉用户已经看到的内容
         assert service._client.reply_stream_calls == [("半截回答\n\n（服务正在停机，本次回复已中断）", True)]
 
+    async def test_shutdown_cancels_and_waits_for_tracked_drains(self):
+        service = _service()
+        drain = StreamDrain("stream-1")
+        service._draining_streams[drain.stream_id] = drain
+
+        def complete_after_cancel(stream_id):
+            assert stream_id == "stream-1"
+            service._finish_stream_drain(drain)
+            return True
+
+        with patch.object(
+            long_connection_module.stream_registry,
+            "cancel",
+            side_effect=complete_after_cancel,
+        ) as cancel:
+            await asyncio.wait_for(service._cancel_stream_drains(), timeout=0.2)
+
+        cancel.assert_called_once_with("stream-1")
+        assert drain.completed.is_set()
+        assert not service._draining_streams
+
 
 class TestLongConnectionLifecycle:
     @staticmethod
@@ -792,9 +903,23 @@ class TestLongConnectionLifecycle:
             peak_active=2,
             peak_pending=1,
         )
+        cleanup_executor = SimpleNamespace(
+            active=1,
+            pending=2,
+            max_workers=2,
+            max_pending=32,
+            capacity=34,
+            submitted=4,
+            rejected=1,
+            peak_active=2,
+            peak_pending=3,
+        )
+        service._draining_streams["stream-1"] = StreamDrain("stream-1")
+        service._metrics.drain_timeouts = 2
 
         with (
             patch.object(long_connection_module, "get_agent_executor_snapshot", return_value=executor),
+            patch.object(long_connection_module, "get_agent_cleanup_executor_snapshot", return_value=cleanup_executor),
             caplog.at_level(logging.INFO, logger=long_connection_module.__name__),
         ):
             service._log_health()
@@ -803,6 +928,9 @@ class TestLongConnectionLifecycle:
         assert "streams_approval_pending=0" in caplog.text
         # 被拒次数是判断「用户是不是一直在撞正在生成」的唯一线索
         assert "streams_rejected_busy=2" in caplog.text
+        assert "draining_streams=1" in caplog.text
+        assert "cleanup_active=1" in caplog.text
+        assert "drain_timeouts=2" in caplog.text
 
     async def test_waits_for_client_disconnect_without_sdk_wait_method(self):
         service = _service()

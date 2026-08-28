@@ -20,14 +20,15 @@ STOP_NOTICE = "（已停止生成）"
 
 PREPARING_REPLY = "正在准备回复中..."
 STREAM_ERROR_REPLY = "请求处理失败，请稍后重试"
+STREAM_TIMEOUT_REPLY = "处理超过 10 分钟，已终止本次请求"
 
 # 同一会话已有回复在生成时的拒绝提示。长连接下同会话只允许一条流。
 BUSY_REPLY = "当前会话正在生成回复，请等待完成，或发送 /stop 结束后再提问"
 # 群里占用名额的是别人的提问时用这条：/stop 只能停自己的，让他等而不是让他去停别人的
 BUSY_BY_OTHERS_REPLY = "群里有其他成员的提问正在处理，请稍后再试"
 
-# 收尾时等待 Agent 统一流接口自然结束的上限（秒）。排空在独立守护线程中执行，
-# 即使上游 next() 阻塞也不会继续占住 wxbot Agent worker。
+# 收尾时等待 Agent 统一流接口自然结束的上限（秒）。排空由 Bkplugin 有界收尾执行器执行；
+# 超时会取消 Agent run，因此既不继续占住生成 worker，也不会为每条流留下新线程。
 AGENT_STREAM_DRAIN_TIMEOUT = 30.0
 
 # 帮助。命令集变化时必须同步本文案，因此与命令定义放在一起。

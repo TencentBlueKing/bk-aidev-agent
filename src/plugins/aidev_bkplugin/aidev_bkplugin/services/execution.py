@@ -126,6 +126,21 @@ class BoundedDaemonExecutor:
 
 _executor_lock = threading.Lock()
 _agent_executor: BoundedDaemonExecutor | None = None
+_agent_cleanup_executor: BoundedDaemonExecutor | None = None
+
+
+def _empty_snapshot() -> ExecutorSnapshot:
+    return ExecutorSnapshot(
+        active=0,
+        pending=0,
+        max_workers=0,
+        max_pending=0,
+        capacity=0,
+        submitted=0,
+        rejected=0,
+        peak_active=0,
+        peak_pending=0,
+    )
 
 
 def get_agent_executor() -> BoundedDaemonExecutor:
@@ -143,15 +158,24 @@ def get_agent_executor_snapshot() -> ExecutorSnapshot:
     with _executor_lock:
         executor = _agent_executor
     if executor is None:
-        return ExecutorSnapshot(
-            active=0,
-            pending=0,
-            max_workers=0,
-            max_pending=0,
-            capacity=0,
-            submitted=0,
-            rejected=0,
-            peak_active=0,
-            peak_pending=0,
-        )
+        return _empty_snapshot()
     return executor.snapshot()
+
+
+def get_agent_cleanup_executor() -> BoundedDaemonExecutor:
+    """返回 Agent 流收尾专用执行器，避免阻塞收尾反占生成 worker。"""
+    global _agent_cleanup_executor
+    with _executor_lock:
+        if _agent_cleanup_executor is None:
+            _agent_cleanup_executor = BoundedDaemonExecutor(
+                max_workers=int(getattr(settings, "AIDEV_AGENT_CLEANUP_MAX_WORKERS", 2)),
+                max_pending=int(getattr(settings, "AIDEV_AGENT_CLEANUP_MAX_PENDING", 32)),
+                thread_name_prefix="aidev-agent-cleanup",
+            )
+        return _agent_cleanup_executor
+
+
+def get_agent_cleanup_executor_snapshot() -> ExecutorSnapshot:
+    with _executor_lock:
+        executor = _agent_cleanup_executor
+    return _empty_snapshot() if executor is None else executor.snapshot()

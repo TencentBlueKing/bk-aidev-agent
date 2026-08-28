@@ -39,3 +39,18 @@ def test_shared_executor_defaults_to_16_workers_and_32_pending(monkeypatch):
     finally:
         executor.shutdown(wait=True)
         execution._agent_executor = None
+
+
+def test_cleanup_executor_is_separate_and_bounded(monkeypatch):
+    monkeypatch.delattr(settings, "AIDEV_AGENT_CLEANUP_MAX_WORKERS", raising=False)
+    monkeypatch.delattr(settings, "AIDEV_AGENT_CLEANUP_MAX_PENDING", raising=False)
+    monkeypatch.setattr(execution, "_agent_cleanup_executor", None)
+
+    executor = execution.get_agent_cleanup_executor()
+    try:
+        snapshot = executor.snapshot()
+        assert (snapshot.max_workers, snapshot.max_pending, snapshot.capacity) == (2, 32, 34)
+        assert all(thread.name.startswith("aidev-agent-cleanup-") for thread in executor._threads)
+    finally:
+        executor.shutdown(wait=True)
+        execution._agent_cleanup_executor = None

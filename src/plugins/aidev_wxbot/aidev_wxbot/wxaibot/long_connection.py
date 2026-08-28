@@ -11,7 +11,7 @@ import signal
 import threading
 import time
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from logging import getLogger
 from pathlib import Path
@@ -20,7 +20,12 @@ from typing import Any
 
 from aibot import WSClient, WSClientOptions
 from aidev_agent.utils.tracing import recording_span
-from aidev_bkplugin.services.execution import get_agent_executor, get_agent_executor_snapshot
+from aidev_bkplugin.services.execution import (
+    get_agent_cleanup_executor,
+    get_agent_cleanup_executor_snapshot,
+    get_agent_executor,
+    get_agent_executor_snapshot,
+)
 from django.conf import settings
 
 from .constants import (
@@ -32,6 +37,7 @@ from .constants import (
     STOP_NOTICE,
     STOP_REPLY,
     STREAM_ERROR_REPLY,
+    STREAM_TIMEOUT_REPLY,
     WS_INSTANCE_LOCK_CACHE_KEY_PREFIX,
 )
 from .context import THINKING_MSG, stream_msg
@@ -78,6 +84,12 @@ class ActiveStream:
 
 
 @dataclass(slots=True)
+class StreamDrain:
+    stream_id: str
+    completed: threading.Event = field(default_factory=threading.Event)
+
+
+@dataclass(slots=True)
 class StreamMetrics:
     started: int = 0
     completed: int = 0
@@ -91,17 +103,19 @@ class StreamMetrics:
     send_wait_total: float = 0.0
     sent_frames: int = 0
     rejected_busy: int = 0
+    drain_timeouts: int = 0
+    drain_rejected: int = 0
 
 
+@dataclass(frozen=True, slots=True)
 class _ProducerDone:
-    pass
+    drain: StreamDrain | None = None
 
 
 class _ProducerStarted:
     pass
 
 
-_PRODUCER_DONE = _ProducerDone()
 _PRODUCER_STARTED = _ProducerStarted()
 
 
@@ -251,6 +265,8 @@ class WxAiBotLongConnectionService:
         self._view = _LongConnectionViewSet(self)
         self._active_streams: dict[str, ActiveStream] = {}
         self._group_streams: dict[str, str] = {}
+        self._draining_streams: dict[str, StreamDrain] = {}
+        self._drain_lock = threading.Lock()
         self._metrics = StreamMetrics()
         self._instance_guard: SingleInstanceGuard | None = None
         self._signal_handlers: dict[int, Any] = {}
@@ -532,18 +548,22 @@ class WxAiBotLongConnectionService:
 
         first_frame = True
         terminal_received = False
+        stream_timeout_context: asyncio.Timeout | None = None
         try:
             queue_timeout = max(1, int(getattr(settings, "WXAIBOT_AGENT_QUEUE_TIMEOUT_SEC", 300)))
             started_item = await asyncio.wait_for(output_queue.get(), timeout=queue_timeout)
             if started_item is not _PRODUCER_STARTED:
                 raise RuntimeError("Agent 执行器启动协议异常")
             timeout = max(1, int(getattr(settings, "WXAIBOT_WS_STREAM_TIMEOUT_SEC", settings.MAX_MESSAGE_TIME)))
-            async with asyncio.timeout(timeout):
+            stream_timeout_context = asyncio.timeout(timeout)
+            async with stream_timeout_context:
                 while True:
                     item = await output_queue.get()
-                    if item is _PRODUCER_DONE:
+                    if isinstance(item, _ProducerDone):
                         if not terminal_received:
                             raise RuntimeError("Agent 流未产生终态")
+                        if item.drain is not None:
+                            await self._wait_for_stream_drain(item.drain)
                         return
                     if isinstance(item, Exception):
                         raise item
@@ -594,10 +614,21 @@ class WxAiBotLongConnectionService:
             raise
         except Exception as error:
             self._metrics.failed += 1
-            logger.exception("event=wxbot_ws_stream_failed stream_id=%s error=%s", request.stream_id, error)
+            stream_timed_out = (
+                isinstance(error, TimeoutError)
+                and stream_timeout_context is not None
+                and stream_timeout_context.expired()
+            )
+            logger.exception(
+                "event=wxbot_ws_stream_failed stream_id=%s kind=%s error=%s",
+                request.stream_id,
+                "stream_timeout" if stream_timed_out else "agent_error",
+                error,
+            )
             if self._client.is_connected:
                 with contextlib.suppress(Exception):
-                    await self._send_stream_reply(frame, request.stream_id, STREAM_ERROR_REPLY, True)
+                    reply = STREAM_TIMEOUT_REPLY if stream_timed_out else STREAM_ERROR_REPLY
+                    await self._send_stream_reply(frame, request.stream_id, reply, True)
         finally:
             if not terminal_received:
                 stream_registry.cancel(request.stream_id)
@@ -661,41 +692,71 @@ class WxAiBotLongConnectionService:
             if not cancel_event.is_set():
                 self._put_from_worker(loop, output_queue, error, cancel_event)
         finally:
+            drain = None
             if frames is not None:
-                self._drain_stream_frames(frames, request.stream_id)
-            stream_registry.unregister(request.stream_id)
+                drain = self._schedule_stream_drain(frames, request.stream_id)
+            else:
+                stream_registry.unregister(request.stream_id)
             if not cancel_event.is_set():
-                self._put_from_worker(loop, output_queue, _PRODUCER_DONE, cancel_event)
+                self._put_from_worker(loop, output_queue, _ProducerDone(drain), cancel_event)
 
-    @staticmethod
-    def _drain_stream_frames(frames, stream_id: str) -> None:
-        """在独立守护线程中排空统一流接口，让 Agent 自己完成收尾。
+    def _schedule_stream_drain(self, frames, stream_id: str) -> StreamDrain:
+        """把 Agent 流收尾交给 Bkplugin 的有界专用执行器。"""
+        drain = StreamDrain(stream_id)
+        with self._drain_lock:
+            self._draining_streams[stream_id] = drain
+
+        if get_agent_cleanup_executor().submit(self._drain_stream_frames, frames, drain):
+            return drain
+
+        self._metrics.drain_rejected += 1
+        logger.error("event=wxbot_ws_stream_drain_rejected stream_id=%s", stream_id)
+        stream_registry.cancel(stream_id)
+        if hasattr(frames, "close"):
+            with contextlib.suppress(Exception):
+                frames.close()
+        self._finish_stream_drain(drain)
+        return drain
+
+    def _drain_stream_frames(self, frames, drain: StreamDrain) -> None:
+        """排空统一流接口，让 Agent 自己完成收尾。
 
         长连接不操作消息处理器或缓存。正常读到 Agent 流末尾后，SDK 会按自己的
-        生命周期释放资源。排空放到独立线程后，即使某次 ``next()`` 永久阻塞，调用方
-        也只等待配置的上限，不会继续占住 wxbot Agent worker。
+        生命周期释放资源。固定大小的 Bkplugin 收尾执行器隔离异常阻塞，避免为每条
+        流创建无法回收的线程，也不占用 Agent 生成 worker。
         """
-        completed = threading.Event()
+        try:
+            for _ in frames:
+                pass
+        except Exception as error:
+            logger.debug("event=wxbot_ws_stream_drain_aborted stream_id=%s error=%s", drain.stream_id, error)
+        finally:
+            if hasattr(frames, "close"):
+                with contextlib.suppress(Exception):
+                    frames.close()
+            self._finish_stream_drain(drain)
 
-        def _drain() -> None:
-            try:
-                for _ in frames:
-                    pass
-            except Exception as error:
-                logger.debug("event=wxbot_ws_stream_drain_aborted stream_id=%s error=%s", stream_id, error)
-            finally:
-                if hasattr(frames, "close"):
-                    with contextlib.suppress(Exception):
-                        frames.close()
-                completed.set()
+    def _finish_stream_drain(self, drain: StreamDrain) -> None:
+        stream_registry.unregister(drain.stream_id)
+        drain.completed.set()
+        with self._drain_lock:
+            if self._draining_streams.get(drain.stream_id) is drain:
+                self._draining_streams.pop(drain.stream_id, None)
 
-        threading.Thread(
-            target=_drain,
-            daemon=True,
-            name=f"wxbot-stream-drain-{stream_id[:8]}",
-        ).start()
-        if not completed.wait(timeout=max(0.0, AGENT_STREAM_DRAIN_TIMEOUT)):
-            logger.warning("event=wxbot_ws_stream_drain_timeout stream_id=%s", stream_id)
+    async def _wait_for_stream_drain(self, drain: StreamDrain) -> None:
+        try:
+            deadline = time.monotonic() + max(0.0, AGENT_STREAM_DRAIN_TIMEOUT)
+            while not drain.completed.is_set() and time.monotonic() < deadline:
+                await asyncio.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+        except asyncio.CancelledError:
+            stream_registry.cancel(drain.stream_id)
+            raise
+        if drain.completed.is_set():
+            return
+
+        self._metrics.drain_timeouts += 1
+        logger.warning("event=wxbot_ws_stream_drain_timeout stream_id=%s cancel_requested=true", drain.stream_id)
+        stream_registry.cancel(drain.stream_id)
 
     @staticmethod
     def _put_from_worker(
@@ -863,6 +924,9 @@ class WxAiBotLongConnectionService:
 
     def _log_health(self) -> None:
         executor = get_agent_executor_snapshot()
+        cleanup_executor = get_agent_cleanup_executor_snapshot()
+        with self._drain_lock:
+            draining_streams = len(self._draining_streams)
         final_frames = max(1, self._metrics.final_frames)
         first_frames = max(1, self._metrics.first_frames)
         sent_frames = max(1, self._metrics.sent_frames)
@@ -870,6 +934,8 @@ class WxAiBotLongConnectionService:
             "event=wxbot_ws_health state=%s connected=%s accepting=%s active_streams=%s "
             "agent_active=%s agent_pending=%s agent_workers=%s agent_pending_limit=%s agent_capacity=%s "
             "agent_submitted=%s agent_rejected=%s agent_peak_active=%s agent_peak_pending=%s "
+            "draining_streams=%s cleanup_active=%s cleanup_pending=%s cleanup_workers=%s "
+            "cleanup_pending_limit=%s cleanup_rejected=%s drain_timeouts=%s drain_rejected=%s "
             "streams_started=%s streams_completed=%s streams_approval_pending=%s "
             "streams_cancelled=%s streams_failed=%s streams_rejected_busy=%s "
             "avg_first_frame_ms=%.3f avg_final_frame_ms=%.3f avg_send_wait_ms=%.3f",
@@ -886,6 +952,14 @@ class WxAiBotLongConnectionService:
             executor.rejected,
             executor.peak_active,
             executor.peak_pending,
+            draining_streams,
+            cleanup_executor.active,
+            cleanup_executor.pending,
+            cleanup_executor.max_workers,
+            cleanup_executor.max_pending,
+            cleanup_executor.rejected,
+            self._metrics.drain_timeouts,
+            self._metrics.drain_rejected,
             self._metrics.started,
             self._metrics.completed,
             self._metrics.approval_pending,
@@ -913,12 +987,14 @@ class WxAiBotLongConnectionService:
             with contextlib.suppress(Exception):
                 self._client.disconnect()
             await self._cancel_stream_tasks()
+            await self._cancel_stream_drains(wait=False)
             self._set_service_state(ServiceState.STOPPED)
             if self._loop and self._loop.is_running():
                 self._loop.stop()
 
     async def _graceful_shutdown(self) -> None:
         await self._cancel_stream_tasks(notice="（服务正在停机，本次回复已中断）")
+        await self._cancel_stream_drains()
         with contextlib.suppress(Exception):
             self._client.disconnect()
         await self._wait_for_client_disconnected()
@@ -935,6 +1011,19 @@ class WxAiBotLongConnectionService:
             ),
             return_exceptions=True,
         )
+
+    async def _cancel_stream_drains(self, *, wait: bool = True) -> None:
+        """取消已进入收尾阶段的 Agent run，并在停机宽限期内等待释放。"""
+        while True:
+            with self._drain_lock:
+                drains = list(self._draining_streams.values())
+            if not drains:
+                return
+            for drain in drains:
+                stream_registry.cancel(drain.stream_id)
+            if not wait:
+                return
+            await asyncio.sleep(0.05)
 
     def _mark_startup_failure(self, error: Exception) -> None:
         if self._startup_error is None:

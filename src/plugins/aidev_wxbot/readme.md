@@ -31,8 +31,10 @@ username). Different conversations still execute concurrently. Long-connection C
 SDK retry strategy for model rate limits without changing the legacy HTTP callback strategy. The default stream
 timeout is 600 seconds so an in-progress retry can finish. Override `BKAPP_AIDEV_AGENT_MAX_WORKERS`,
 `BKAPP_AIDEV_AGENT_MAX_PENDING`, and `BKAPP_WXAIBOT_WS_STREAM_TIMEOUT_SEC` when the deployment's upstream Agent or
-database capacity requires different limits. Health logs expose active, pending, peak, submitted, rejected, and
-busy-rejected counts for capacity verification.
+database capacity requires different limits. Stream cleanup runs in a separate Bkplugin-owned bounded executor
+(2 workers and 32 pending tasks by default); override `BKAPP_AIDEV_AGENT_CLEANUP_MAX_WORKERS` and
+`BKAPP_AIDEV_AGENT_CLEANUP_MAX_PENDING` only when upstream cleanup behavior requires it. Health logs expose generation
+and cleanup executor usage, drain timeouts/rejections, and busy-rejected counts for capacity verification.
 
 ## License
 
