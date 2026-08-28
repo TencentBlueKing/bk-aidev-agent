@@ -23,6 +23,8 @@ from aidev_wxbot.wxaibot.auth import WxFlowAgentClient, resolve_channel_admin_rt
 from aidev_wxbot.wxaibot.context import LlmChunkMsg
 from aidev_wxbot.wxaibot.formatters import handle_flow_custom_event
 from aidev_wxbot.wxaibot.strategies import (
+    WECOM_AGENT_EXECUTION_POLICY,
+    WECOM_AGENT_TEMPERATURE,
     ChatAgentStrategy,
     FlowAgentStrategy,
     resolve_strategy,
@@ -197,6 +199,10 @@ class TestChatAgentStrategyExecute:
         )
 
         mock_run.assert_called_once()
+        call_kwargs = mock_run.call_args.kwargs
+        assert call_kwargs["transient_system_prompt"] == WECOM_AGENT_EXECUTION_POLICY
+        assert call_kwargs["enable_query_clarification"] is False
+        assert call_kwargs["temperature"] == WECOM_AGENT_TEMPERATURE
         assert mock_rabbitmq.publish_message.call_count >= 1
 
 

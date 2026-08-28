@@ -61,6 +61,7 @@ class AgentBuilder:
         resource_manager: ResourceManagerProtocol | None = None,
         turn_id: str = "",
         model: str = "",
+        temperature: float | None = None,
     ):
         self.username = username
         self.resource_manager = resource_manager
@@ -72,6 +73,7 @@ class AgentBuilder:
         self.turn_id = turn_id
         # 模型热更新：非空时覆盖 agent 配置的 chat_model
         self.model = model or ""
+        self.temperature = temperature
 
     def by_session_code(
         self,
@@ -181,4 +183,5 @@ class AgentBuilder:
             username=self.username,
             version=version,
             channel_type=channel_type,
+            temperature=self.temperature,
         )
