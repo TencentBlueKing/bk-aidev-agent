@@ -11,6 +11,8 @@ AIDEV_AGENT = os.environ.get("AIDEV_AGENT", "aidev_agent.services.common_agent.C
 # ``resource_manager.replace_defaults(...)`` 注入到全局工厂；为空则使用 SDK 默认的
 # ``AgentResourceManager``。
 AIDEV_RESOURCE_MANAGER = os.environ.get("AIDEV_RESOURCE_MANAGER", "")
+AIDEV_AGENT_MAX_WORKERS = int(os.environ.get("BKAPP_AIDEV_AGENT_MAX_WORKERS", 16))
+AIDEV_AGENT_MAX_PENDING = int(os.environ.get("BKAPP_AIDEV_AGENT_MAX_PENDING", 32))
 
 # 客服渠道
 CHAT_GROUP_ENABLED = os.environ.get("CHAT_GROUP_ENABLED") == "1"

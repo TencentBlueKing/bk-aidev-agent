@@ -12,6 +12,7 @@ from aidev_agent.core.ag_ui.types import CustomMessageType
 from aidev_agent.core.nodes.tool.approval_wrapper import TOOL_APPROVAL_REASON
 from aidev_bkplugin.services.agent_helpers import AgentHelper
 
+from .constants import STREAM_ERROR_REPLY
 from .context import CHUNK_FLUSH_THRESHOLD, _escape_markdown_text, _normalize_url
 from .formatters import _node_display, _task_state_label, format_task_outputs
 from .stream import iter_sse_lines
@@ -25,6 +26,7 @@ class DirectStreamFrame:
     content: str
     finish: bool
     failed: bool = False
+    pending_approval: bool = False
     observed_at: float = field(default_factory=time.monotonic)
 
 
@@ -107,8 +109,7 @@ def _iter_chat_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
                 if isinstance(document, dict) and isinstance(document.get("metadata"), dict):
                     documents.append(document["metadata"])
         elif event_type == EventType.RUN_ERROR:
-            message = event.get("message", event)
-            yield DirectStreamFrame(content=f"处理请求时发生错误: {message}", finish=True, failed=True)
+            yield DirectStreamFrame(content=STREAM_ERROR_REPLY, finish=True, failed=True)
             finished = True
         elif event_type == EventType.RUN_FINISHED:
             if approval_content := _format_pending_approvals(event, agent_stream.session_code):
@@ -116,6 +117,7 @@ def _iter_chat_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
                 yield DirectStreamFrame(
                     content=f"{current_content}\n\n{approval_content}" if current_content else approval_content,
                     finish=True,
+                    pending_approval=True,
                 )
                 finished = True
                 continue
@@ -161,11 +163,7 @@ def _iter_flow_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
                 if frame.finish:
                     finished = True
         elif event_type == EventType.RUN_ERROR:
-            yield DirectStreamFrame(
-                content=f"流程执行出错: {event.get('message', '未知错误')}",
-                finish=True,
-                failed=True,
-            )
+            yield DirectStreamFrame(content=STREAM_ERROR_REPLY, finish=True, failed=True)
             finished = True
         elif event_type == EventType.RUN_FINISHED:
             yield DirectStreamFrame(content=_render_flow(state), finish=True)

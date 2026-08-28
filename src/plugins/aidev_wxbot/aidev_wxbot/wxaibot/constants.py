@@ -19,6 +19,7 @@ STOP_NO_ACTIVE_REPLY = "当前没有正在生成的回复"
 STOP_NOTICE = "（已停止生成）"
 
 PREPARING_REPLY = "正在准备回复中..."
+STREAM_ERROR_REPLY = "请求处理失败，请稍后重试"
 
 # 同一会话已有回复在生成时的拒绝提示。长连接下同会话只允许一条流。
 BUSY_REPLY = "当前会话正在生成回复，请等待完成，或发送 /stop 结束后再提问"

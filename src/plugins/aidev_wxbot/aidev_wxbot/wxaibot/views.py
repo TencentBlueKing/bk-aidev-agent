@@ -10,6 +10,7 @@ from logging import getLogger
 
 from aidev_agent.packages.resource_manager import resource_manager
 from aidev_agent.services.messages_handler import ConsumerPreemptedError
+from aidev_bkplugin.services.execution import get_agent_executor
 from django.conf import settings
 from django.http import HttpResponse
 from django.utils import timezone
@@ -32,7 +33,6 @@ from .constants import (
 )
 from .context import ContextGenerator, LlmChunkMsg, WxWorkAiBotContext, stream_msg, text_msg
 from .decryption import WXBizJsonMsgCrypt
-from .execution import get_agent_executor
 from .models import AgentSession
 from .strategies import resolve_strategy
 from ..api.bkaidev import BkAiDevApi

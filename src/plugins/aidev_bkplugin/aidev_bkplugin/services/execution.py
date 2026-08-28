@@ -1,4 +1,4 @@
-"""有界、守护线程式的 wxbot Agent 后台执行器。"""
+"""Bkplugin 统一的有界后台执行器。"""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ class ExecutorSnapshot:
 class BoundedDaemonExecutor:
     """固定数量守护线程，并限制活跃与排队任务总数。"""
 
-    def __init__(self, max_workers: int, max_pending: int, thread_name_prefix: str = "wxbot-agent"):
+    def __init__(self, max_workers: int, max_pending: int, thread_name_prefix: str = "aidev-agent"):
         if max_workers <= 0:
             raise ValueError("max_workers must be greater than zero")
         if max_pending < 0:
@@ -117,7 +117,7 @@ class BoundedDaemonExecutor:
             try:
                 fn(*args, **kwargs)
             except Exception:
-                logger.exception("event=wxbot_agent_executor task_failed=true")
+                logger.exception("event=aidev_agent_executor task_failed=true")
             finally:
                 with self._lock:
                     self._active -= 1
@@ -133,8 +133,8 @@ def get_agent_executor() -> BoundedDaemonExecutor:
     with _executor_lock:
         if _agent_executor is None:
             _agent_executor = BoundedDaemonExecutor(
-                max_workers=int(getattr(settings, "WXAIBOT_AGENT_MAX_WORKERS", 10)),
-                max_pending=int(getattr(settings, "WXAIBOT_AGENT_MAX_PENDING", 16)),
+                max_workers=int(getattr(settings, "AIDEV_AGENT_MAX_WORKERS", 16)),
+                max_pending=int(getattr(settings, "AIDEV_AGENT_MAX_PENDING", 32)),
             )
         return _agent_executor
 

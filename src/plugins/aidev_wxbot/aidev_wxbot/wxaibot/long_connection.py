@@ -19,6 +19,7 @@ from tempfile import gettempdir
 from typing import Any
 
 from aibot import WSClient, WSClientOptions
+from aidev_bkplugin.services.execution import get_agent_executor, get_agent_executor_snapshot
 from django.conf import settings
 
 from .constants import (
@@ -29,11 +30,11 @@ from .constants import (
     STOP_NO_ACTIVE_REPLY,
     STOP_NOTICE,
     STOP_REPLY,
+    STREAM_ERROR_REPLY,
     WS_INSTANCE_LOCK_CACHE_KEY_PREFIX,
 )
 from .context import THINKING_MSG, stream_msg
 from .direct_stream import DirectStreamFrame, iter_direct_stream_frames
-from .execution import get_agent_executor, get_agent_executor_snapshot
 from .strategies import WECOM_AGENT_RETRY_STRATEGY, resolve_strategy
 from .stream_registry import stream_registry
 from .views import WxAiBotViewSet, WxBotAgentRequest
@@ -79,6 +80,7 @@ class ActiveStream:
 class StreamMetrics:
     started: int = 0
     completed: int = 0
+    approval_pending: int = 0
     cancelled: int = 0
     failed: int = 0
     first_frames: int = 0
@@ -279,7 +281,8 @@ class WxAiBotLongConnectionService:
     def _register_handlers(self) -> None:
         @self._client.on("authenticated")
         def _on_authenticated() -> None:
-            self._set_service_state(ServiceState.READY)
+            authenticated_before = bool(self._authenticated_event and self._authenticated_event.is_set())
+            self._set_service_state(ServiceState.RUNNING if authenticated_before else ServiceState.READY)
             logger.info("[WxAiBot-WS] 长连接认证成功")
             self._set_async_event(self._authenticated_event)
             self._ensure_health_task()
@@ -573,7 +576,9 @@ class WxAiBotLongConnectionService:
                     if item.finish:
                         terminal_received = True
                         self._metrics.final_frames += 1
-                        if item.failed:
+                        if item.pending_approval:
+                            self._metrics.approval_pending += 1
+                        elif item.failed:
                             self._metrics.failed += 1
                         else:
                             self._metrics.completed += 1
@@ -591,7 +596,7 @@ class WxAiBotLongConnectionService:
             logger.exception("event=wxbot_ws_stream_failed stream_id=%s error=%s", request.stream_id, error)
             if self._client.is_connected:
                 with contextlib.suppress(Exception):
-                    await self._send_stream_reply(frame, request.stream_id, f"请求处理失败: {error}", True)
+                    await self._send_stream_reply(frame, request.stream_id, STREAM_ERROR_REPLY, True)
         finally:
             if not terminal_received:
                 stream_registry.cancel(request.stream_id)
@@ -640,6 +645,8 @@ class WxAiBotLongConnectionService:
                 if cancel_event.is_set() or stream_registry.is_cancel_requested(request.stream_id):
                     break
                 if not self._put_from_worker(loop, output_queue, stream_frame, cancel_event):
+                    break
+                if stream_frame.finish:
                     break
         except Exception as error:
             if not cancel_event.is_set():
@@ -854,7 +861,7 @@ class WxAiBotLongConnectionService:
             "event=wxbot_ws_health state=%s connected=%s accepting=%s active_streams=%s "
             "agent_active=%s agent_pending=%s agent_workers=%s agent_pending_limit=%s agent_capacity=%s "
             "agent_submitted=%s agent_rejected=%s agent_peak_active=%s agent_peak_pending=%s "
-            "streams_started=%s streams_completed=%s "
+            "streams_started=%s streams_completed=%s streams_approval_pending=%s "
             "streams_cancelled=%s streams_failed=%s streams_rejected_busy=%s "
             "avg_first_frame_ms=%.3f avg_final_frame_ms=%.3f avg_send_wait_ms=%.3f",
             self._service_state,
@@ -872,6 +879,7 @@ class WxAiBotLongConnectionService:
             executor.peak_pending,
             self._metrics.started,
             self._metrics.completed,
+            self._metrics.approval_pending,
             self._metrics.cancelled,
             self._metrics.failed,
             self._metrics.rejected_busy,
@@ -884,31 +892,40 @@ class WxAiBotLongConnectionService:
         logger.info("[WxAiBot-WS] 执行停机清理: %s", reason)
         if self._health_task and not self._health_task.done():
             self._health_task.cancel()
-        await self._cancel_stream_tasks(notice="（服务正在停机，本次回复已中断）")
-        with contextlib.suppress(Exception):
-            self._client.disconnect()
-
-        waiters: list[asyncio.Future[Any] | asyncio.Task[Any] | Any] = [self._wait_for_client_disconnected()]
 
         try:
             await asyncio.wait_for(
-                asyncio.gather(*waiters, return_exceptions=True),
+                self._graceful_shutdown(),
                 timeout=self._config.shutdown_grace_period_sec,
             )
         except asyncio.TimeoutError:
             logger.warning("[WxAiBot-WS] 优雅停机等待超时，开始强制取消未完成任务")
         finally:
+            with contextlib.suppress(Exception):
+                self._client.disconnect()
             await self._cancel_stream_tasks()
             self._set_service_state(ServiceState.STOPPED)
-            asyncio.get_running_loop().stop()
+            if self._loop and self._loop.is_running():
+                self._loop.stop()
+
+    async def _graceful_shutdown(self) -> None:
+        await self._cancel_stream_tasks(notice="（服务正在停机，本次回复已中断）")
+        with contextlib.suppress(Exception):
+            self._client.disconnect()
+        await self._wait_for_client_disconnected()
 
     async def _wait_for_client_disconnected(self) -> None:
         while self._client.is_connected:
             await asyncio.sleep(0.1)
 
     async def _cancel_stream_tasks(self, notice: str | None = None) -> None:
-        for stream_id in list(self._active_streams):
-            await self._cancel_active_stream(stream_id, reason="service_shutdown", notice=notice)
+        await asyncio.gather(
+            *(
+                self._cancel_active_stream(stream_id, reason="service_shutdown", notice=notice)
+                for stream_id in list(self._active_streams)
+            ),
+            return_exceptions=True,
+        )
 
     def _mark_startup_failure(self, error: Exception) -> None:
         if self._startup_error is None:

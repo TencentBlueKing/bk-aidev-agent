@@ -3,6 +3,7 @@
 import json
 from unittest.mock import patch
 
+from aidev_wxbot.wxaibot.constants import STREAM_ERROR_REPLY
 from aidev_wxbot.wxaibot.direct_stream import AgentStream, iter_direct_stream_frames
 
 
@@ -206,7 +207,8 @@ def test_chat_run_error_becomes_explicit_terminal_frame():
     assert len(frames) == 1
     assert frames[0].finish
     assert frames[0].failed
-    assert "upstream timeout" in frames[0].content
+    assert frames[0].content == STREAM_ERROR_REPLY
+    assert "upstream timeout" not in frames[0].content
 
 
 @patch(
@@ -242,6 +244,7 @@ def test_pending_tool_approval_is_pushed_with_safe_ticket_link(mock_detail_url):
     )
 
     assert frames[-1].finish
+    assert frames[-1].pending_approval
     assert "我将获取 Skill 的详细信息。" in frames[-1].content
     assert "等待工具审批" in frames[-1].content
     assert "DE001" in frames[-1].content
