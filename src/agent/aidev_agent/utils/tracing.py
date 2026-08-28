@@ -9,12 +9,10 @@ from typing import Any
 
 try:
     from opentelemetry import trace
-    from opentelemetry.trace import SpanKind, Status, StatusCode, Tracer
+    from opentelemetry.trace import SpanKind, Tracer
 except ImportError:  # OpenTelemetry is an optional Agent SDK extra.
     trace = None
     SpanKind = None
-    Status = None
-    StatusCode = None
     Tracer = Any
 
 _agent_tracer: Tracer | None = None
@@ -58,7 +56,7 @@ def recording_span(
     attributes: dict[str, Any] | None = None,
     kind: Any = None,
 ) -> Iterator[Any]:
-    """Create an agent span and consistently record its final status."""
+    """Create a span with the Agent tracer, or safely no-op without OTel."""
 
     tracer = get_agent_tracer(__name__)
     if tracer is None:
@@ -69,13 +67,4 @@ def recording_span(
     if kind is not None:
         start_kwargs["kind"] = kind
     with tracer.start_as_current_span(name, **start_kwargs) as span:
-        try:
-            yield span
-        except Exception as exc:
-            if span.is_recording():
-                span.record_exception(exc)
-                span.set_status(Status(StatusCode.ERROR, str(exc)))
-            raise
-        else:
-            if span.is_recording():
-                span.set_status(Status(StatusCode.OK))
+        yield span
