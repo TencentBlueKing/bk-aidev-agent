@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from e2e.checks import assistant_text, parse_sse_events, run_finished
 from e2e.config import Config, Identity, configured_identity, load_env_file
 from e2e.report import CaseResult, RunReport, redact, write_report
 from e2e.trace import ApiTraceRecorder
@@ -172,6 +173,22 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(recorded[0]["scenario_id"], "api.session")
         self.assertEqual(recorded[0]["chain_id"], recorded[1]["chain_id"])
         self.assertEqual(recorded[1]["response_body"], {"ok": True})
+
+
+class ConversationProtocolTests(unittest.TestCase):
+    def test_sse_helpers_extract_text_and_current_terminal(self):
+        body = "\n".join(
+            (
+                'data: {"type":"RUN_STARTED","runId":"run-1"}',
+                'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"蓝鲸"}',
+                'data: {"type":"RUN_FINISHED","runId":"old","outcome":{"type":"interrupt"}}',
+                'data: {"type":"RUN_FINISHED","runId":"run-1","outcome":{"type":"success"}}',
+                "data: [DONE]",
+            )
+        )
+        events = parse_sse_events(body)
+        self.assertEqual(assistant_text(events), "蓝鲸")
+        self.assertEqual(run_finished(events, outcome="success")["runId"], "run-1")
 
 
 if __name__ == "__main__":

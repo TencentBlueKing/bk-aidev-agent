@@ -7,6 +7,7 @@ import shutil
 import socket
 import sqlite3
 import subprocess
+import threading
 import time
 import urllib.parse
 from contextlib import contextmanager
@@ -14,9 +15,37 @@ from pathlib import Path
 from typing import Callable
 
 from .config import Config, Identity
-from .http import request, with_query
+from .http import request, stream_request, with_query
 from .report import CaseResult, RunReport
 from .trace import API_TRACE
+
+
+def parse_sse_events(body: str) -> list[dict]:
+    events: list[dict] = []
+    for line in body.splitlines():
+        if not line.startswith("data: "):
+            continue
+        payload = line.removeprefix("data: ").strip()
+        if not payload or payload == "[DONE]":
+            continue
+        try:
+            event = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+    return events
+
+
+def assistant_text(events: list[dict]) -> str:
+    return "".join(str(event.get("delta", "")) for event in events if event.get("type") == "TEXT_MESSAGE_CONTENT")
+
+
+def run_finished(events: list[dict], *, outcome: str | None = None) -> dict | None:
+    candidates = [event for event in events if event.get("type") == "RUN_FINISHED"]
+    if outcome is not None:
+        candidates = [event for event in candidates if (event.get("outcome") or {}).get("type") == outcome]
+    return candidates[-1] if candidates else None
 
 
 class Checks:
@@ -133,6 +162,46 @@ class Checks:
             detail.update({"session_code": app_session, "response": fetched.body})
 
     def ai_blueking(self):
+        chat_url = self.config.app_url + "/bk_plugin/openapi/agent/chat_completion/"
+        content_url = self.config.app_url + "/bk_plugin/openapi/agent/session_content/"
+
+        def create_session(name: str) -> str:
+            created = self.require(
+                request(
+                    "POST",
+                    self.config.app_url + "/bk_plugin/openapi/agent/session/",
+                    headers=self.identity.headers,
+                    json_body={"session_name": name},
+                    timeout=30,
+                )
+            )
+            return created.body["data"]["session_code"]
+
+        def execute_stream(payload: dict, timeout: float = 90):
+            result = self.require(
+                stream_request(
+                    "POST",
+                    chat_url,
+                    headers=self.identity.headers,
+                    json_body=payload,
+                    timeout=timeout,
+                )
+            )
+            if "text/event-stream" not in result.headers.get("content-type", "").lower():
+                raise AssertionError(f"chat completion did not return SSE: {result.headers}")
+            return result, parse_sse_events(result.body)
+
+        def record_conversation(scenario_id: str, case: str, conversation_id: str, messages: list[dict]) -> None:
+            self.report.conversations.append(
+                {
+                    "module": "ai-blueking",
+                    "scenario_id": scenario_id,
+                    "case": case,
+                    "conversation_id": conversation_id,
+                    "messages": messages,
+                }
+            )
+
         with self.case(
             "ai-blueking",
             "ai-blueking.configuration",
@@ -231,6 +300,334 @@ class Checks:
                         {"role": "assistant", "content": assistant_content},
                     ],
                 }
+            )
+
+        with self.case(
+            "ai-blueking",
+            "ai-blueking.stream-terminal",
+            "流式消息与正常终态",
+            "SSE 依次包含运行开始、文本增量、文本结束和当前运行的 RUN_FINISHED(success)",
+        ) as detail:
+            payload = {"input": "请用流式消息回复本地测试", "execute_kwargs": {"stream": True}}
+            result, events = execute_stream(payload)
+            event_types = [event.get("type") for event in events]
+            required = {"RUN_STARTED", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED"}
+            if not required.issubset(set(event_types)) or run_finished(events, outcome="success") is None:
+                raise AssertionError(f"incomplete successful stream: {event_types}")
+            content = assistant_text(events)
+            if not content:
+                raise AssertionError("stream did not contain assistant text")
+            session_code = result.headers.get("x-bkaidev-agent-session-code", "")
+            detail.update(
+                {
+                    "session_code": session_code,
+                    "message_handler": os.getenv("MESSAGE_HANDLER_TYPE", "redis"),
+                    "event_types": event_types,
+                    "terminal": run_finished(events, outcome="success"),
+                }
+            )
+            record_conversation(
+                "ai-blueking.stream-terminal",
+                "流式消息与正常终态",
+                session_code,
+                [{"role": "user", "content": payload["input"]}, {"role": "assistant", "content": content}],
+            )
+
+        with self.case(
+            "ai-blueking",
+            "ai-blueking.multi-turn-context",
+            "多轮上下文连续性",
+            "同一 session 连续两轮对话，第二次 LLM 请求可见第一轮用户消息与助手回复",
+        ) as detail:
+            session_code = create_session("E2E multi-turn conversation")
+            first_input = "[E2E_CONTEXT_TURN_1] 第一轮：项目代号是蓝鲸。"
+            _, first_events = execute_stream(
+                {"session_code": session_code, "input": first_input, "execute_kwargs": {"stream": True}}
+            )
+            if run_finished(first_events, outcome="success") is None:
+                raise AssertionError("first turn did not create a completed session")
+            second_input = "[E2E_CONTEXT_TURN_2] 第二轮：请确认仍记得第一轮。"
+            _, second_events = execute_stream(
+                {"session_code": session_code, "input": second_input, "execute_kwargs": {"stream": True}}
+            )
+            second_answer = assistant_text(second_events)
+            if "多轮上下文完整" not in second_answer or run_finished(second_events, outcome="success") is None:
+                raise AssertionError(f"second turn lost prior context: {second_answer}")
+            detail.update(
+                {
+                    "session_code": session_code,
+                    "turns": 2,
+                    "first_terminal": run_finished(first_events, outcome="success"),
+                    "second_terminal": run_finished(second_events, outcome="success"),
+                }
+            )
+            record_conversation(
+                "ai-blueking.multi-turn-context",
+                "多轮上下文连续性",
+                session_code,
+                [
+                    {"role": "user", "content": first_input},
+                    {"role": "assistant", "content": assistant_text(first_events)},
+                    {"role": "user", "content": second_input},
+                    {"role": "assistant", "content": second_answer},
+                ],
+            )
+
+        with self.case(
+            "ai-blueking",
+            "ai-blueking.disconnect-replay",
+            "断线重连与消息回放",
+            "客户端收到首段文本后主动断开，生产者继续运行；attach 重连可回放完整消息并收到成功终态",
+        ) as detail:
+            session_code = create_session("E2E reconnect conversation")
+            payload = {
+                "session_code": session_code,
+                "input": "[E2E_SLOW_STREAM] 验证断线后重连",
+                "execute_kwargs": {"stream": True},
+            }
+            disconnected = self.require(
+                stream_request(
+                    "POST",
+                    chat_url,
+                    headers=self.identity.headers,
+                    json_body=payload,
+                    timeout=90,
+                    stop_after=lambda line: '"type":"TEXT_MESSAGE_CONTENT"' in line,
+                )
+            )
+            partial_events = parse_sse_events(disconnected.body)
+            if not assistant_text(partial_events) or run_finished(partial_events) is not None:
+                raise AssertionError("disconnect point was not inside an active stream")
+            reconnected, replay_events = execute_stream(
+                {
+                    "session_code": session_code,
+                    "input": "",
+                    "execute_kwargs": {"stream": True, "stream_mode": "attach"},
+                },
+                timeout=90,
+            )
+            replay_text = assistant_text(replay_events)
+            if "断线恢复" not in replay_text or "分段响应" not in replay_text:
+                raise AssertionError(f"replay did not restore the complete answer: {replay_text}")
+            if run_finished(replay_events, outcome="success") is None:
+                raise AssertionError("reconnected stream did not reach current successful terminal")
+            detail.update(
+                {
+                    "session_code": session_code,
+                    "partial_event_types": [event.get("type") for event in partial_events],
+                    "replayed_event_types": [event.get("type") for event in replay_events],
+                    "terminal": run_finished(replay_events, outcome="success"),
+                    "reconnect_status": reconnected.status,
+                }
+            )
+            record_conversation(
+                "ai-blueking.disconnect-replay",
+                "断线重连与消息回放",
+                session_code,
+                [
+                    {"role": "user", "content": payload["input"]},
+                    {"role": "assistant", "content": replay_text},
+                ],
+            )
+
+        with self.case(
+            "ai-blueking",
+            "ai-blueking.stop-idempotent",
+            "生成中停止与重复停止",
+            "文本流生成期间携带当前 run_id 停止，消费者收敛到取消终态；重复停止不产生重复中断内容",
+        ) as detail:
+            session_code = create_session("E2E stop conversation")
+            first_delta_seen = threading.Event()
+            run_id_seen = threading.Event()
+            captured: dict[str, object] = {"run_id": ""}
+
+            def on_line(line: str) -> None:
+                if not line.startswith("data: "):
+                    return
+                try:
+                    event = json.loads(line.removeprefix("data: "))
+                except json.JSONDecodeError:
+                    return
+                if event.get("type") == "RUN_STARTED":
+                    captured["run_id"] = event.get("runId", "")
+                    run_id_seen.set()
+                if event.get("type") == "TEXT_MESSAGE_CONTENT":
+                    first_delta_seen.set()
+
+            def consume_slow_stream() -> None:
+                try:
+                    captured["result"] = stream_request(
+                        "POST",
+                        chat_url,
+                        headers=self.identity.headers,
+                        json_body={
+                            "session_code": session_code,
+                            "input": "[E2E_SLOW_STREAM] 请生成一段可停止的回复",
+                            "execute_kwargs": {"stream": True},
+                        },
+                        timeout=90,
+                        on_line=on_line,
+                    )
+                except Exception as error:  # pragma: no cover - surfaced by assertion below
+                    captured["error"] = str(error)
+
+            consumer = threading.Thread(target=consume_slow_stream, name="e2e-stop-stream", daemon=True)
+            consumer.start()
+            if not run_id_seen.wait(20) or not first_delta_seen.wait(20):
+                raise AssertionError("slow stream did not reach the stoppable stage")
+            stop_payload = {"session_code": session_code, "run_id": captured["run_id"]}
+            first_stop = self.require(
+                request(
+                    "POST",
+                    content_url + "stop/",
+                    headers=self.identity.headers,
+                    json_body=stop_payload,
+                    timeout=30,
+                )
+            )
+            consumer.join(timeout=30)
+            if consumer.is_alive() or captured.get("error"):
+                raise AssertionError(f"stream did not stop cleanly: {captured.get('error', 'still running')}")
+            second_stop = self.require(
+                request(
+                    "POST",
+                    content_url + "stop/",
+                    headers=self.identity.headers,
+                    json_body=stop_payload,
+                    timeout=30,
+                )
+            )
+            stream_result = captured.get("result")
+            if stream_result is None:
+                raise AssertionError("stopped stream result is missing")
+            stopped_events = parse_sse_events(stream_result.body)
+            terminal = run_finished(stopped_events)
+            session = self.require(
+                request(
+                    "GET",
+                    self.config.app_url + f"/bk_plugin/openapi/agent/session/{session_code}/",
+                    headers=self.identity.headers,
+                )
+            ).body["data"]
+            if terminal is None or terminal.get("runId") != "cancelled" or session.get("status") != "cancelled":
+                raise AssertionError(f"stream did not expose a cancellation terminal: {terminal}")
+            contents = self.require(
+                request(
+                    "GET",
+                    with_query(content_url + "content/", session_code=session_code),
+                    headers=self.identity.headers,
+                )
+            ).body["data"]
+            interrupted = [
+                item
+                for item in contents
+                if item.get("role") == "assistant"
+                and (item.get("status") in {"cancelled", "error"} or "取消" in str(item.get("content", "")))
+            ]
+            if len(interrupted) > 1:
+                raise AssertionError(f"duplicate interruption content after repeated stop: {interrupted}")
+            detail.update(
+                {
+                    "session_code": session_code,
+                    "run_id": captured["run_id"],
+                    "terminal": terminal,
+                    "session_status": session.get("status"),
+                    "first_stop": first_stop.body,
+                    "second_stop": second_stop.body,
+                    "interruption_records": interrupted,
+                }
+            )
+            record_conversation(
+                "ai-blueking.stop-idempotent",
+                "生成中停止与重复停止",
+                session_code,
+                [
+                    {"role": "user", "content": "[E2E_SLOW_STREAM] 请生成一段可停止的回复"},
+                    {"role": "assistant", "content": assistant_text(stopped_events) or "（生成已停止）"},
+                ],
+            )
+
+        with self.case(
+            "ai-blueking",
+            "ai-blueking.ask-user-resume",
+            "提问卡片答题与续流",
+            "模型触发 ask_user_question 中断，提交选项后同一会话恢复并产出助手回复与当前运行成功终态",
+        ) as detail:
+            session_code = create_session("E2E ask-user-question conversation")
+            question_input = "[E2E_ASK_USER] 部署前请先询问我要使用哪个环境。"
+            _, question_events = execute_stream(
+                {"session_code": session_code, "input": question_input, "execute_kwargs": {"stream": True}}
+            )
+            interrupt_terminal = run_finished(question_events, outcome="interrupt")
+            interrupts = (interrupt_terminal or {}).get("outcome", {}).get("interrupts", [])
+            if not interrupts:
+                raise AssertionError(f"ask_user_question did not produce an interrupt: {interrupt_terminal}")
+            interrupt = interrupts[0]
+            interrupt_id = interrupt.get("id") or interrupt.get("interruptId") or ""
+            metadata = interrupt.get("metadata") or {}
+            if interrupt.get("reason") != "aidev:user_question" or not metadata.get("questions") or not interrupt_id:
+                raise AssertionError(f"invalid ask_user_question payload: {interrupt}")
+            answers = [
+                {
+                    "question": "请选择部署环境",
+                    "answer": [{"label": "生产环境", "description": "prod"}],
+                }
+            ]
+            _, resumed_events = execute_stream(
+                {
+                    "session_code": session_code,
+                    "input": "",
+                    "resume": [{"interruptId": interrupt_id, "payload": {"answers": answers}}],
+                    "execute_kwargs": {"stream": True},
+                }
+            )
+            resumed_text = assistant_text(resumed_events)
+            if "已收到你的选择：生产环境" not in resumed_text:
+                raise AssertionError(f"resume did not continue to the assistant answer: {resumed_text}")
+            success_terminals = [
+                event
+                for event in resumed_events
+                if event.get("type") == "RUN_FINISHED" and (event.get("outcome") or {}).get("type") == "success"
+            ]
+            if not success_terminals:
+                raise AssertionError("resumed run did not expose its own successful terminal")
+            replay_terminal_index = next(
+                (index for index, event in enumerate(resumed_events) if event.get("type") == "RUN_FINISHED"), -1
+            )
+            run_started_index = next(
+                (index for index, event in enumerate(resumed_events) if event.get("type") == "RUN_STARTED"), -1
+            )
+            assistant_index = next(
+                (index for index, event in enumerate(resumed_events) if event.get("type") == "TEXT_MESSAGE_CONTENT"),
+                -1,
+            )
+            current_terminal_index = max(
+                index
+                for index, event in enumerate(resumed_events)
+                if event.get("type") == "RUN_FINISHED" and (event.get("outcome") or {}).get("type") == "success"
+            )
+            if not replay_terminal_index < run_started_index < assistant_index < current_terminal_index:
+                raise AssertionError("old question-card terminal prematurely ended the resumed run")
+            detail.update(
+                {
+                    "session_code": session_code,
+                    "interrupt": interrupt,
+                    "submitted_answers": answers,
+                    "resumed_event_types": [event.get("type") for event in resumed_events],
+                    "replayed_card_terminal": resumed_events[replay_terminal_index],
+                    "success_terminal": success_terminals[-1],
+                }
+            )
+            record_conversation(
+                "ai-blueking.ask-user-resume",
+                "提问卡片答题与续流",
+                session_code,
+                [
+                    {"role": "user", "content": question_input},
+                    {"role": "assistant", "content": "请选择部署环境：测试环境 / 生产环境"},
+                    {"role": "user", "content": "生产环境"},
+                    {"role": "assistant", "content": resumed_text},
+                ],
             )
 
     def message(self):

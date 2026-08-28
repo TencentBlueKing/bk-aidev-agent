@@ -35,6 +35,13 @@ make e2e-browser                 # 默认打开 AI 小鲸 headed 浏览器检查
 make e2e-browser modules=api     # 也可指定模块
 ```
 
+`ai-blueking` 模块重点覆盖页面与 Agent 配置、同步对话、SSE 正常终态、多轮上下文、断线后 attach
+回放、生成中停止及重复停止、`ask_user_question` 提问卡片答题续流。需要用 RabbitMQ 验证这些会话状态机时执行：
+
+```bash
+MESSAGE_HANDLER_TYPE=rabbitmq make e2e-ai-blueking
+```
+
 默认 `headless=true`，适合流水线。交互检查可执行 `make e2e headless=false`，然后使用内置浏览器打开 `E2E_APP_URL` 和本次报告。每一次 runner 执行（包括配置或基础设施失败）都会生成：
 
 - `dev/e2e/reports/<timestamp>/report.html`

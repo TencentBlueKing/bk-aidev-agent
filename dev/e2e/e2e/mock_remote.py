@@ -81,7 +81,9 @@ class RemoteMock:
                 if authorization:
                     auth_mode = "access_token"
                 with state.lock:
-                    state.requests.append({"method": self.command, "path": self.path, "auth_mode": auth_mode})
+                    state.requests.append(
+                        {"method": self.command, "path": self.path, "auth_mode": auth_mode, "body": body}
+                    )
 
             def _dispatch(self):
                 self._trace_started = time.monotonic()
@@ -155,7 +157,18 @@ class RemoteMock:
                     state.sessions[code]["session_name"] = "Mock generated title"
                     return self._send(envelope(state.sessions[code]))
                 if suffix.endswith("/context"):
-                    return self._send(envelope([]))
+                    code = suffix.split("/")[0]
+                    values = []
+                    for item in state.contents.values():
+                        if item.get("session_code") != code:
+                            continue
+                        context_item = dict(item)
+                        property_data = item.get("property") if isinstance(item.get("property"), dict) else {}
+                        context_item["builtin_property"] = property_data.get("builtin_property") or {}
+                        if property_data.get("extra") is not None:
+                            context_item["extra"] = property_data["extra"]
+                        values.append(context_item)
+                    return self._send(envelope(values))
                 if suffix:
                     code = suffix.split("/")[0]
                     item = state.sessions.get(code)
@@ -203,17 +216,50 @@ class RemoteMock:
                 )
 
             def _chat(self, body):
-                content = "这是本地 mock LLM 的确定性回复。"
+                messages = body.get("messages") or []
+                prompt_text = json.dumps(messages, ensure_ascii=False)
+                has_tool_answer = any(
+                    message.get("role") == "tool" for message in messages if isinstance(message, dict)
+                )
+
+                if "[E2E_ASK_USER]" in prompt_text and not has_tool_answer:
+                    return self._ask_user_question(body)
+
+                if "[E2E_ASK_USER]" in prompt_text and has_tool_answer:
+                    content = "已收到你的选择：生产环境。"
+                elif "[E2E_CONTEXT_TURN_2]" in prompt_text:
+                    retained = "[E2E_CONTEXT_TURN_1]" in prompt_text
+                    content = "多轮上下文完整：已看到第一轮和第二轮。" if retained else "多轮上下文缺失：未看到第一轮。"
+                elif "[E2E_CONTEXT_TURN_1]" in prompt_text:
+                    content = "第一轮上下文已记录。"
+                elif "[E2E_SLOW_STREAM]" in prompt_text:
+                    content = "这是用于验证断线恢复与停止生成的分段响应。"
+                else:
+                    content = "这是本地 mock LLM 的确定性回复。"
                 if body.get("stream"):
+                    parts = [content]
+                    delay = 0.0
+                    if "[E2E_SLOW_STREAM]" in prompt_text:
+                        parts = ["这是用于", "验证断线恢复", "与停止生成", "的分段响应。"]
+                        delay = 0.75
                     chunks = [
-                        {"id": "chatcmpl-e2e", "choices": [{"delta": {"content": content}, "index": 0}]},
-                        {"id": "chatcmpl-e2e", "choices": [{"delta": {}, "finish_reason": "stop", "index": 0}]},
+                        {
+                            "id": "chatcmpl-e2e",
+                            "object": "chat.completion.chunk",
+                            "model": body.get("model", "mock-model"),
+                            "choices": [{"delta": {"content": part}, "index": 0}],
+                        }
+                        for part in parts
                     ]
-                    payload = (
-                        "".join(f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n" for chunk in chunks)
-                        + "data: [DONE]\n\n"
+                    chunks.append(
+                        {
+                            "id": "chatcmpl-e2e",
+                            "object": "chat.completion.chunk",
+                            "model": body.get("model", "mock-model"),
+                            "choices": [{"delta": {}, "finish_reason": "stop", "index": 0}],
+                        }
                     )
-                    return self._send(payload, content_type="text/event-stream")
+                    return self._send_sse(chunks, delay=delay)
                 return self._send(
                     {
                         "id": "chatcmpl-e2e",
@@ -224,6 +270,80 @@ class RemoteMock:
                         ],
                         "usage": {"prompt_tokens": 8, "completion_tokens": 12, "total_tokens": 20},
                     }
+                )
+
+            def _ask_user_question(self, body):
+                arguments = json.dumps(
+                    {
+                        "questions": [
+                            {
+                                "header": "部署确认",
+                                "multiSelect": False,
+                                "question": "请选择部署环境",
+                                "options": [
+                                    {"label": "测试环境", "description": "test"},
+                                    {"label": "生产环境", "description": "prod"},
+                                ],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+                chunks = [
+                    {
+                        "id": "chatcmpl-e2e-question",
+                        "object": "chat.completion.chunk",
+                        "model": body.get("model", "mock-model"),
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {
+                                    "role": "assistant",
+                                    "tool_calls": [
+                                        {
+                                            "index": 0,
+                                            "id": "call_e2e_question",
+                                            "type": "function",
+                                            "function": {"name": "ask_user_question", "arguments": arguments},
+                                        }
+                                    ],
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "id": "chatcmpl-e2e-question",
+                        "object": "chat.completion.chunk",
+                        "model": body.get("model", "mock-model"),
+                        "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}],
+                    },
+                ]
+                return self._send_sse(chunks)
+
+            def _send_sse(self, chunks, delay=0.0):
+                frames = [f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n" for chunk in chunks]
+                frames.append("data: [DONE]\n\n")
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                sent: list[str] = []
+                try:
+                    for frame in frames:
+                        self.wfile.write(frame.encode())
+                        self.wfile.flush()
+                        sent.append(frame)
+                        if delay:
+                            time.sleep(delay)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                API_TRACE.finish_call(
+                    self._trace_call,
+                    status=int(HTTPStatus.OK),
+                    response_headers={"Content-Type": "text/event-stream; charset=utf-8"},
+                    response_body="".join(sent),
+                    duration_ms=round((time.monotonic() - self._trace_started) * 1000),
                 )
 
             do_GET = _dispatch
