@@ -19,6 +19,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from aidev_agent.exceptions import AgentDeadlineExceededError
 from aidev_agent.utils import (
     Empty,
 )
@@ -86,6 +87,34 @@ def test_async_to_sync_generator_finalizes_when_consumer_closes():
     generator.close()
 
     assert finalized is True
+
+
+def test_async_to_sync_generator_enforces_total_agent_deadline(mocker):
+    timeout_metric = mocker.patch("aidev_agent.utils.async_utils.record_operation_timeout")
+
+    async def _blocked_gen():
+        await asyncio.Event().wait()
+        yield "unreachable"
+
+    with pytest.raises(AgentDeadlineExceededError, match="deadline exceeded"):
+        list(async_to_sync_generator(_blocked_gen(), total_timeout=0.01))
+
+    timeout_metric.assert_called_once()
+    assert timeout_metric.call_args.kwargs["scope"] == "session"
+    assert timeout_metric.call_args.kwargs["outcome"] == "cancelled"
+
+
+def test_async_to_sync_generator_does_not_misclassify_inner_timeout(mocker):
+    timeout_metric = mocker.patch("aidev_agent.utils.async_utils.record_operation_timeout")
+
+    async def _inner_timeout():
+        raise TimeoutError("tool timed out")
+        yield "unreachable"
+
+    with pytest.raises(TimeoutError, match="tool timed out"):
+        list(async_to_sync_generator(_inner_timeout(), total_timeout=10))
+
+    timeout_metric.assert_not_called()
 
 
 async def test_async_gen_with_timeout():

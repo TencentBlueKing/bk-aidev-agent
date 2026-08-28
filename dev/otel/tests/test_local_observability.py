@@ -41,7 +41,7 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
     assert "grafana/grafana:10.4.19" in compose
     assert dashboard["schemaVersion"] == 39
     assert dashboard["graphTooltip"] == 1
-    assert len(dashboard["panels"]) == 37
+    assert len(dashboard["panels"]) == 42
 
     for panel in dashboard["panels"]:
         if panel.get("type") == "row":
@@ -171,6 +171,17 @@ def test_local_dashboard_covers_required_filters_and_metric_groups():
         "Handler · {{error_type}}",
     ]
     assert all('error_type!=""' in target["expr"] for target in panels_by_id[28]["targets"])
+    assert panels_by_id[111]["title"] == "模型限流与重试事件速率"
+    assert "gen_ai_client_rate_limit_count" in panels_by_id[111]["targets"][0]["expr"]
+    assert "gen_ai_client_retry_count" in panels_by_id[111]["targets"][1]["expr"]
+    assert panels_by_id[112]["title"] == "备选模型切换与结果（所选时段）"
+    assert "gen_ai_client_fallback_count" in panels_by_id[112]["targets"][0]["expr"]
+    assert panels_by_id[113]["title"] == "模型重试等待时长 P95"
+    assert "histogram_quantile(0.95" in panels_by_id[113]["targets"][0]["expr"]
+    assert panels_by_id[114]["title"] == "总时限与 Tool/外部超时（所选时段）"
+    assert "aidev_operation_timeout_count" in panels_by_id[114]["targets"][0]["expr"]
+    assert panels_by_id[115]["title"] == "Tool/外部调用重试事件速率"
+    assert "aidev_operation_retry_count" in panels_by_id[115]["targets"][0]["expr"]
     assert 26 not in panels_by_id
     assert panels_by_id[25]["title"] == "SSE 事件与物理消息数量"
     assert panels_by_id[25]["gridPos"]["y"] == panels_by_id[31]["gridPos"]["y"] == 74
@@ -212,7 +223,7 @@ def test_bkmonitor_dashboard_is_a_separate_importable_component():
     assert dashboard["uid"] == "aidev-agent-metrics-bkmonitor"
     assert dashboard["title"] == "AIDev Agent Metrics (BK Monitor)"
     assert dashboard["schemaVersion"] == 39
-    assert len(dashboard["panels"]) == len(local["panels"]) == 37
+    assert len(dashboard["panels"]) == len(local["panels"]) == 42
     assert "__inputs" not in dashboard
     assert dashboard["__requires"][0]["id"] == "bkmonitor-timeseries-datasource"
     rows = [panel for panel in dashboard["panels"] if panel["type"] == "row"]

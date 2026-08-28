@@ -16,6 +16,7 @@ from aidev_agent.pydantic_models import AgentConfig, AgentOptions
 from aidev_agent.services.agent import AgentBuildContext, ChatBuildExtras
 from aidev_agent.services.agent.chat import ChatAgentBuilder
 from aidev_agent.services.common_agent import CommonQAAgent
+from langchain_core.runnables.fallbacks import RunnableWithFallbacks
 from langgraph.checkpoint.memory import MemorySaver
 
 # ============================== ApiGwMixin.get_setup_instance ==============================
@@ -69,6 +70,13 @@ class TestApiGwMixinSessionIdHeader:
         instance = ChatModel.get_setup_instance(model="mock-model", session_code="abc")
         # ChatOpenAI / pydantic 不应有 ``session_code`` 字段
         assert not hasattr(instance, "session_code")
+
+    def test_fallback_model_has_explicit_observability_role(self):
+        instance = ChatModel.get_setup_instance(model="primary-model", fallback_model="fallback-model")
+
+        assert isinstance(instance, RunnableWithFallbacks)
+        assert instance.runnable._model_role == "primary"
+        assert instance.fallbacks[0]._model_role == "fallback"
 
 
 # ============================== ChatAgentBuilder.build_chat_model ==============================

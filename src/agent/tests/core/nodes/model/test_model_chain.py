@@ -214,6 +214,8 @@ class TestModelChain:
         with (
             patch("aidev_agent.core.nodes.model.model_chain.settings.LLM_RETRY_STRATEGY", "sdk"),
             patch("time.sleep", return_value=None),
+            patch("aidev_agent.core.nodes.model.model_chain.record_model_rate_limit") as rate_limit_metric,
+            patch("aidev_agent.core.nodes.model.model_chain.record_model_retry") as retry_metric,
         ):
             chain = _build_model_chain(
                 llm=mock_llm,
@@ -237,6 +239,47 @@ class TestModelChain:
             result = chain.invoke(initial_ctx)
             assert result.response.content == "限流后重试成功"
             assert invoke_counter[0] == 2
+            rate_limit_metric.assert_called_once()
+            assert [call.kwargs["outcome"] for call in retry_metric.call_args_list] == ["scheduled", "started"]
+            assert retry_metric.call_args_list[0].kwargs["wait_seconds"] == 60
+            assert retry_metric.call_args_list[0].kwargs["attempt"] == 1
+            assert retry_metric.call_args_list[0].kwargs["max_attempts"] == 3
+
+    def test_rate_limit_retry_exhaustion_is_observed(self, mock_context_assembly):
+        mock_llm = RunnableLambda(lambda *_args, **_kwargs: (_ for _ in ()).throw(_make_rate_limit_error()))
+        mock_llm.bind_tools = Mock(return_value=mock_llm)
+        self._set_rendered_messages(mock_context_assembly, [HumanMessage(content="test")])
+
+        with (
+            patch("aidev_agent.core.nodes.model.model_chain.settings.LLM_RETRY_STRATEGY", "sdk"),
+            patch("aidev_agent.core.nodes.model.model_chain.record_model_rate_limit"),
+            patch("aidev_agent.core.nodes.model.model_chain.record_model_retry") as retry_metric,
+        ):
+            chain = _build_model_chain(
+                llm=mock_llm,
+                context_assembly=mock_context_assembly,
+                max_retries=0,
+                quality_gate=QualityGate(enable_judge_response=False),
+                use_structured_response=False,
+                enable_parallel_tool_calls=False,
+                use_tool_call_promotion=False,
+            )
+            initial_ctx = ProcessorContext(
+                state={"messages": []},
+                config=RunnableConfig(),
+                store=Mock(),
+                messages=[],
+                model_chain_state=ModelChainState(max_retries=0),
+                response=None,
+            )
+
+            with pytest.raises(RateLimitError):
+                chain.invoke(initial_ctx)
+
+        retry_metric.assert_called_once()
+        assert retry_metric.call_args.kwargs["outcome"] == "exhausted"
+        assert retry_metric.call_args.kwargs["attempt"] == 1
+        assert retry_metric.call_args.kwargs["max_attempts"] == 0
 
     def test_tool_calls_passthrough(self, mock_context_assembly):
         """测试工具调用：返回 TOOL_EXECUTION → 不重试，原样返回"""
@@ -766,9 +809,7 @@ class TestExtractQueryTextAndImages:
             "type": "binary",
             "url": "https://example.com/a.jpeg",
         }
-        text, images = _extract_query_text_and_images(
-            [binary, {"type": "text", "text": "图片内容是啥呀"}]
-        )
+        text, images = _extract_query_text_and_images([binary, {"type": "text", "text": "图片内容是啥呀"}])
         assert text == "图片内容是啥呀"
         assert images == [binary]
 

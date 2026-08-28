@@ -358,6 +358,19 @@ class TestBkAidevAgentCallbackHandler:
         recorder.record_tool.assert_called_once()
         assert recorder.record_tool.call_args.kwargs["error"] is error
 
+    def test_tool_timeout_is_classified_separately_from_session_deadline(self, tracer_and_exporter, mocker):
+        tracer, _ = tracer_and_exporter
+        timeout_metric = mocker.patch("aidev_agent.packages.opentelemetry.callback_handler.record_operation_timeout")
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, metric_recorder=MagicMock())
+        run_id = uuid4()
+
+        asyncio.run(handler.on_tool_start(serialized={"name": "demo-tool"}, input_str="input", run_id=run_id))
+        asyncio.run(handler.on_tool_error(TimeoutError("upstream timed out"), run_id=run_id))
+
+        timeout_metric.assert_called_once()
+        assert timeout_metric.call_args.kwargs["scope"] == "tool"
+        assert timeout_metric.call_args.kwargs["outcome"] == "failed"
+
     def test_llm_metric_keeps_request_model_when_traces_are_disabled(self):
         recorder = MagicMock()
         handler = BkAidevAgentCallbackHandler(

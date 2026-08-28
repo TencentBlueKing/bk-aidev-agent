@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import re
@@ -50,7 +51,7 @@ from aidev_agent.core.ag_ui.utils import (
 from aidev_agent.core.tools.a2a_tools.types import AgentBackendType, AgentSpec
 from aidev_agent.core.tools.runtime_tools import RuntimeBackendResolver
 from aidev_agent.enums import AgentType, PromptRole
-from aidev_agent.exceptions import AgentException
+from aidev_agent.exceptions import AgentDeadlineExceededError, AgentException
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel, ChatModelRunnable
 from aidev_agent.packages.langgraph.streaming.streaming_protocol import AgentStreamAdapter
 from aidev_agent.packages.resource_manager.registry import resource_manager
@@ -75,6 +76,11 @@ from aidev_agent.utils.migrations import (
     migration_knowledge_query_options_from_agent_options_v1,
     migration_model_context_options_from_agent_options_v1,
 )
+
+try:
+    from aidev_agent.packages.opentelemetry.resilience import record_operation_timeout
+except ImportError:  # OpenTelemetry is an optional SDK extra.
+    record_operation_timeout = None
 
 logger = getLogger(__name__)
 
@@ -925,7 +931,21 @@ class ChatCompletionAgent(BaseModel):
                 finally:
                     await self._aclose_chat_models()
 
-            result = run_coro_sync(_ainvoke_with_cleanup, timeout=execute_kwargs.invoke_timeout)
+            async def _ainvoke_with_deadline():
+                if execute_kwargs.invoke_timeout is None:
+                    return await _ainvoke_with_cleanup()
+                deadline = asyncio.timeout(execute_kwargs.invoke_timeout)
+                try:
+                    async with deadline:
+                        return await _ainvoke_with_cleanup()
+                except TimeoutError:
+                    if not deadline.expired():
+                        raise
+                    raise AgentDeadlineExceededError(
+                        f"Agent/session deadline exceeded after {float(execute_kwargs.invoke_timeout):g}s"
+                    ) from None
+
+            result = run_coro_sync(_ainvoke_with_deadline)
             result_output = result.get("messages")[-1]
             return_data = {
                 "choices": [{"delta": {"role": "assistant", "content": result_output.content}}],
@@ -934,6 +954,16 @@ class ChatCompletionAgent(BaseModel):
                 "reference_doc": result.get("reference_doc", []),
             }
             return return_data
+        except AgentDeadlineExceededError as deadline_error:
+            if record_operation_timeout is not None:
+                record_operation_timeout(
+                    scope="session",
+                    outcome="cancelled",
+                    error=deadline_error,
+                    timeout_seconds=execute_kwargs.invoke_timeout,
+                )
+            logger.exception("Agent/session deadline exceeded")
+            raise AgentException(message=str(deadline_error)) from deadline_error
         except Exception as e:
             logger.exception(f"Error executing agent: {e}")
             raise AgentException(message=f"Error executing agent: {e}")
@@ -1080,6 +1110,7 @@ class ChatCompletionAgent(BaseModel):
             cfg=merged_cfg,
             resume=bool(execute_kwargs.resume),
             attach_only=execute_kwargs.stream_mode == "attach",
+            total_timeout=execute_kwargs.invoke_timeout,
         )
 
     def _stream_with_queue(
@@ -1092,6 +1123,7 @@ class ChatCompletionAgent(BaseModel):
         cfg: RunnableConfig | None = None,
         resume: bool = False,
         attach_only: bool = False,
+        total_timeout: int | float | None = None,
     ) -> Generator[Any, None, None]:
         """使用队列处理器缓存流式请求，支持断点续传。
 
@@ -1105,7 +1137,14 @@ class ChatCompletionAgent(BaseModel):
         )
         run_id = agent_input.run_id or self.thread_id
         cancel_event = helper.prepare_run(run_id)
-        producer = self._build_resume_aware_producer(agui_entry, agent_input, agent_e=agent_e, cfg=cfg, resume=resume)
+        producer = self._build_resume_aware_producer(
+            agui_entry,
+            agent_input,
+            agent_e=agent_e,
+            cfg=cfg,
+            resume=resume,
+            total_timeout=total_timeout,
+        )
         yield from helper.stream(
             producer,
             # replay 模式下由 producer 在 EOD 写入并 flush 成功后更新会话终态；
@@ -1124,6 +1163,7 @@ class ChatCompletionAgent(BaseModel):
         agent_e: Runnable | None,
         cfg: RunnableConfig | None,
         resume: bool,
+        total_timeout: int | float | None = None,
     ) -> Generator[Any, None, None]:
         """构造「resume 感知」的生产者生成器（方案 B 兜底入口）。
 
@@ -1153,6 +1193,7 @@ class ChatCompletionAgent(BaseModel):
             yield from async_to_sync_generator(
                 agui_entry.run(agent_input),
                 async_finalizer=self._aclose_chat_models,
+                total_timeout=total_timeout,
             )
 
         return _gen()

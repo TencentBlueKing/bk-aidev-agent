@@ -143,6 +143,26 @@ class AgentMetrics:
         self.llm_time_to_first_chunk = meter.create_histogram(
             "gen_ai.client.operation.time_to_first_chunk", unit="s", description="LLM time to first stream chunk"
         )
+        self.llm_rate_limit_count = meter.create_counter(
+            "gen_ai.client.rate_limit.count",
+            unit="{event}",
+            description="LLM rate-limit events",
+        )
+        self.llm_retry_count = meter.create_counter(
+            "gen_ai.client.retry.count",
+            unit="{event}",
+            description="LLM retry lifecycle events",
+        )
+        self.llm_retry_wait_duration = meter.create_histogram(
+            "gen_ai.client.retry.wait.duration",
+            unit="s",
+            description="LLM retry wait duration",
+        )
+        self.llm_fallback_count = meter.create_counter(
+            "gen_ai.client.fallback.count",
+            unit="{event}",
+            description="LLM fallback lifecycle events",
+        )
         self.tool_duration = meter.create_histogram(
             "gen_ai.execute_tool.duration", unit="s", description="Tool execution duration"
         )
@@ -167,6 +187,16 @@ class AgentMetrics:
         )
         self.message_publish_duration = meter.create_histogram(
             "aidev.message.publish.duration", unit="s", description="Handler publish batch duration"
+        )
+        self.operation_retry_count = meter.create_counter(
+            "aidev.operation.retry.count",
+            unit="{event}",
+            description="Tool or external operation retry lifecycle events",
+        )
+        self.operation_timeout_count = meter.create_counter(
+            "aidev.operation.timeout.count",
+            unit="{event}",
+            description="Agent deadline and tool or external operation timeout events",
         )
 
     @staticmethod
@@ -232,6 +262,17 @@ class AgentMetrics:
     def record_first_llm_chunk(self, duration: float, attributes: dict[str, str]) -> None:
         self.llm_time_to_first_chunk.record(duration, attributes)
 
+    def record_llm_rate_limit(self, attributes: dict[str, str]) -> None:
+        self.llm_rate_limit_count.add(1, attributes)
+
+    def record_llm_retry(self, attributes: dict[str, str], *, wait_seconds: float | None = None) -> None:
+        self.llm_retry_count.add(1, attributes)
+        if wait_seconds is not None:
+            self.llm_retry_wait_duration.record(wait_seconds, attributes)
+
+    def record_llm_fallback(self, attributes: dict[str, str]) -> None:
+        self.llm_fallback_count.add(1, attributes)
+
     def record_tool(
         self,
         duration: float,
@@ -242,6 +283,12 @@ class AgentMetrics:
         if error is not None:
             attrs["error.type"] = type(error).__name__
         self.tool_duration.record(duration, attrs)
+
+    def record_operation_retry(self, attributes: dict[str, str]) -> None:
+        self.operation_retry_count.add(1, attributes)
+
+    def record_operation_timeout(self, attributes: dict[str, str]) -> None:
+        self.operation_timeout_count.add(1, attributes)
 
     def record_sse_event(self, message_attributes: dict[str, str] | None = None) -> None:
         self.sse_event_count.add(1, {**_metric_identity, **(message_attributes or {})})

@@ -2398,14 +2398,22 @@ class TestTerminalResumeReplay:
 
         with (
             patch.object(agent, "_build_terminal_resume_replay") as mock_replay,
-            patch(f"{_CHAT_MODULE}.async_to_sync_generator", return_value=iter(["X"])),
+            patch(f"{_CHAT_MODULE}.async_to_sync_generator", return_value=iter(["X"])) as mock_astream,
         ):
-            producer = agent._build_resume_aware_producer(agui_entry, agent_input, agent_e=None, cfg=None, resume=False)
+            producer = agent._build_resume_aware_producer(
+                agui_entry,
+                agent_input,
+                agent_e=None,
+                cfg=None,
+                resume=False,
+                total_timeout=600,
+            )
             out = list(producer)
 
         assert out == ["X"]
         mock_replay.assert_not_called()
         agui_entry.run.assert_called_once_with(agent_input)
+        assert mock_astream.call_args.kwargs["total_timeout"] == 600
 
     def test_producer_resume_missing_context_uses_astream(self):
         """resume=True 但缺少 agent_e/cfg → 不查 checkpoint，直接 astream"""
@@ -2768,11 +2776,11 @@ class TestBuildKnowledgeQueryOptions:
     @pytest.mark.parametrize(
         "env_val, resources, expected_ekn",
         [
-            (None, [{"type": "knowledgebase", "id": 58}], True),   # env 未设 + 含 kb → resources 覆盖为 True
-            (None, [{"type": "mcp", "code": "x"}], False),         # env 未设 + 不含 kb → 保持默认 False
-            (None, [], False),                                     # env 未设 + 无 resources → 默认 False
+            (None, [{"type": "knowledgebase", "id": 58}], True),  # env 未设 + 含 kb → resources 覆盖为 True
+            (None, [{"type": "mcp", "code": "x"}], False),  # env 未设 + 不含 kb → 保持默认 False
+            (None, [], False),  # env 未设 + 无 resources → 默认 False
             ("false", [{"type": "knowledgebase", "id": 58}], False),  # env 已设 false → 取 env，忽略 resources
-            ("true", [], True),                                    # env 已设 true → 取 env True
+            ("true", [], True),  # env 已设 true → 取 env True
         ],
     )
     def test_enable_knowledge_node_env_and_resources_priority(self, monkeypatch, env_val, resources, expected_ekn):
@@ -2796,7 +2804,7 @@ class TestBuildKnowledgeQueryOptions:
     @pytest.mark.parametrize(
         "env_val, expected",
         [
-            (None, True),    # env 未设 → 保持字段默认 True
+            (None, True),  # env 未设 → 保持字段默认 True
             ("true", True),  # env=true → True
             ("false", False),  # env=false → False
             ("abc", False),  # 非法值 → False（严格 .lower()=="true" 匹配）
