@@ -3,7 +3,7 @@ name: ai-blueking-dev
 description: 蓝鲸 AI 小鲸组件开发指南。基于 @blueking/chat-x（UI 组件）和 @blueking/chat-helper（业务 SDK）开发 AI 聊天应用、智能体、对话界面。涵盖 ChatBot 独立使用、嵌入模式业务 Header（会话名称 + asideCollapsed 侧栏开关）、AIBlueking 完整集成、流式响应、快捷指令、划词选择、模型选择（Model Select）、自定义消息渲染（图表/表单/iframe）、HITL 人机协同（工具审批/用户提问/中断恢复）、流程化智能体节点重试跳过、渲染模式（chat/share/test 分享态）、字号主题、消息时间（timezone / MessageTime 四档格式）、侧栏自定义与自定义 Tab、欢迎区 `#welcome` 插槽、消息工具栏扩展（messageTools/updateTools）、非 Vue 宿主挂载等。触发场景：开发 AI 小鲸、集成 AI Agent、使用 chat-x/chat-helper、构建 AI 对话 UI、实现流式聊天、模型热切换、自定义消息组件渲染、human-in-the-loop、interrupt/resume、flow agent、自定义欢迎页、自定义消息工具按钮、嵌入式 ChatBot Header、侧栏展开收起、消息时间、timezone。
 metadata:
   author: blueking
-  version: '5.27'
+  version: '5.28'
   packages:
     ai-blueking: 2.2.4
     chat-x: 0.0.49-beta.13
@@ -378,6 +378,7 @@ Agent 可在流式执行中**中断**，把控制权交回用户，处理后再*
 
 - 恢复统一入口：chat-x 的 `OnInterruptResume = (payload: InterruptResume, interrupt?) => Promise<void> | void`
 - 底层原语：chat-helper 的 `agent.streamRequest({ sessionCode, resume })` 与 `agent.userOperationStreamRequest(sessionCode, operation, payload)`
+- HITL / 新发送默认 `streamMode: 'start'`；刷新、切会话、静默重连走 `resumeStreamingChat`（`stream_mode=attach`），详见 [chat-helper SDK API](references/chat-helper-api.md#streamrequest)
 - chat-helper **没有** `onInterruptResume` 方法（它只提供原语 + `IResume` 结构）；统一回调在 chat-x/ai-blueking 层
 
 > 完整协议、组件、集成示例（含用户「直接在输入框作答」旁路、流程节点重试/跳过、只读回显）见 [HITL 人机协同](references/hitl.md)。

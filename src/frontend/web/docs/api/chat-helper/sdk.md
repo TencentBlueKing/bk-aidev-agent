@@ -79,10 +79,11 @@ Agent 模块负责与 AI Agent 交互，包括获取 Agent 信息和发起聊天
 | --------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | `getAgentInfo`        | `() => Promise<IAgentInfo>`                                               | 获取 Agent 信息                                                           |
 | `getLlms`             | `(params?: ILlmListQuery, config?) => Promise<ILlmItem[]>`                | 获取可用模型列表（`GET llms/`，未传 `llm_type` 时默认 `chat.completion`） |
-| `chat`                | `(input, sessionCode, url?, config?, property?, model?) => Promise<void>` | 发起聊天；`model` 为热切换 `llm_code`                                     |
+| `chat`                | `(input, sessionCode, url?, config?, property?, model?) => Promise<void>` | 发起聊天；`model` 为热切换 `llm_code`；内部 `stream_mode=start`           |
 | `stopChat`            | `(sessionCode: string) => void`                                           | 停止当前聊天                                                              |
-| `resumeStreamingChat` | `(sessionCode: string, url?, config?, model?) => Promise<void>`           | 恢复流式聊天                                                              |
-| `resendMessage`       | `(id, sessionCode, content?, url?, config?) => Promise<void>`             | 重发消息                                                                  |
+| `resumeStreamingChat` | `(sessionCode: string, url?, config?, model?) => Promise<void>`           | 接管已有流（刷新 / 切会话且会话仍 `Running`）；内部 `stream_mode=attach`  |
+| `resendMessage`       | `(id, sessionCode, content?, url?, config?) => Promise<void>`             | 重发消息；内部 `stream_mode=start`                                        |
+| `streamRequest`       | `(options) => Promise<void>`                                              | 底层流式原语；`streamMode` 默认 `'start'`，续流传 `'attach'`              |
 
 ### 用法示例
 
@@ -119,6 +120,28 @@ agent.stopChat("session-123")
 // 重发消息
 await agent.resendMessage("msg-456", "session-123")
 ```
+
+## stream_mode {#stream-mode}
+
+`POST chat_completion/` 的 `execute_kwargs.stream_mode` 对齐后端 `ExecuteKwargs.stream_mode`，显式区分「新开一轮」和「接管已有流」。不要再用 `last_message_id` 推断语义。
+
+| 值 | 含义 | 谁传 |
+| --- | --- | --- |
+| `start`（默认） | 可创建生产者，开新一轮执行 | `chat` / `resendMessage` / HITL `resume` / `userOperationStreamRequest` |
+| `attach` | 仅接管或回放已有流，禁止新建生产者 | `resumeStreamingChat`、静默重连 |
+
+原子组装或自定义 UI 直接调 `streamRequest` 时：
+
+```typescript
+await agent.streamRequest({
+  sessionCode: "session-123",
+  streamMode: "attach", // 刷新 / 切会话续流；新发送不要传
+})
+```
+
+ChatBot / AIBlueking 开箱即用，无需改 Props。`attach` 且后端没有可接管流时，不会进入静默重连空转。
+
+详见类型 [`StreamMode`](/api/chat-helper/types#streammode)。
 
 ## Session 模块
 

@@ -1,9 +1,9 @@
 ---
 name: ai-blueking-docs-update
-description: 更新 AI 小鲸 VitePress 主站文档（src/frontend/web/docs）。在发布新功能、修改 chat-x/ai-blueking 行为、补充 changelog、撰写 LLM/系统提示词说明、同步 API 与指南交叉链接时使用。触发词：文档更新、changelog、主站文档、VitePress、蓝鲸行内富文本、模型选择、提示词文档、web/docs、欢迎插槽、消息工具栏、嵌入模式 Header、asideCollapsed、消息时间、timezone、MessageTime。
+description: 更新 AI 小鲸 VitePress 主站文档（src/frontend/web/docs）。在发布新功能、修改 chat-x/ai-blueking 行为、补充 changelog、撰写 LLM/系统提示词说明、同步 API 与指南交叉链接时使用。触发词：文档更新、changelog、主站文档、VitePress、蓝鲸行内富文本、模型选择、提示词文档、web/docs、欢迎插槽、消息工具栏、嵌入模式 Header、asideCollapsed、消息时间、timezone、MessageTime、stream_mode、续流、attach。
 metadata:
   author: blueking
-  version: '1.10'
+  version: '1.11'
 compatibility: 需能读写仓库内 src/frontend/web/docs；本地预览需 Node 20+ 与 pnpm。
 ---
 

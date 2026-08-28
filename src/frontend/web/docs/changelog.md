@@ -1,5 +1,19 @@
 # 更新日志
 
+## v2.2.4-beta.3
+
+配套 `@blueking/chat-helper` 显式 `stream_mode`。ChatBot / AIBlueking 无新 Props。
+
+### 优化
+
+- **chat_completion `stream_mode`**：新开对话默认 `start`；刷新 / 切会话 / 静默重连走 `attach`，只接管已有流，避免误开新生产者。详见 [chat-helper SDK · stream_mode](/api/chat-helper/sdk#stream-mode)
+
+### 文档
+
+- 更新 [chat-helper SDK](/api/chat-helper/sdk#stream-mode)、[类型定义 StreamMode](/api/chat-helper/types#streammode)、[聊天交互 · 刷新 / 切会话续流](/guide/core-features/chat-interaction#刷新--切会话续流)
+
+---
+
 ## v2.2.3
 
 v2.2.3 正式版整合 2.2.3-dev 与 2.2.3-beta.3 的功能与修复。配套 `@blueking/chat-x` `0.0.49-beta.12`、`@blueking/chat-helper` `0.0.12-beta.24`。

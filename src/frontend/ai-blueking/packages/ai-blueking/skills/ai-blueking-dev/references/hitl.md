@@ -229,7 +229,7 @@ type UserQuestionResume = BaseResume<InterruptReason.UserQuestion, {
 `OnInterruptResume` 是所有恢复动作的唯一入口：审批卡片的「取消审批」、用户提问卡片的「完成 / 跳过」、流程节点的「重试 / 跳过」都调用它。ChatBot / AIBlueking 内部（`use-interrupt-resume.ts`）把这个回调翻译成 chat-helper 的原语：
 
 - `FlowNode*` / `ApprovalCancel` → `agent.userOperationStreamRequest(sessionCode, operation, payload)`（POST `user_operation/`）
-- 用户提问作答 → `agent.streamRequest({ sessionCode, resume: IResume, input? })`（把 `resume` 放进 `chat_completion/` 的 `execute_kwargs.resume`）
+- 用户提问作答 → `agent.streamRequest({ sessionCode, resume: IResume, input? })`（把 `resume` 放进 `chat_completion/` 的 `execute_kwargs.resume`；默认 `streamMode: 'start'`，不要传 `attach`）
 
 ---
 

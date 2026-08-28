@@ -346,6 +346,11 @@ interface ILlmListQuery {
   supports?: string;
 }
 
+/** chat_completion execute_kwargs.stream_mode */
+type StreamMode = 'start' | 'attach';
+// start：可创建生产者，开新一轮执行（默认）
+// attach：仅接管/回放已有流，不允许新建生产者
+
 // 消息属性：由 chat() 第 5 个参数 / 消息 property 字段承载
 interface IMessageProperty {
   [key: string]: unknown;
@@ -806,6 +811,7 @@ type IUserOperationPayload =
   agent.streamRequest({
     sessionCode,
     resume: { interruptId, status: ResumeStatus.Resolved /* 或 Cancelled */, payload },
+    // HITL 恢复默认 streamMode: 'start'，不要传 attach
   });
   ```
 - **审批轮询**：`agent.pollResumeSession(sessionCode)` 检测到待审批的中断消息（ticket 处于 `Pending`/`Draft`）后，轮询 `GET session/{code}/is_resume/`；返回 `true` 时自动以 `resume: { interruptId, status: Resolved }` 重新发起 `streamRequest`；返回 `false` 则 30s 后重试（会话切换后停止）。

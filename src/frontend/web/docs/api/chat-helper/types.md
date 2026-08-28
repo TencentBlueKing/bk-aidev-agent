@@ -123,6 +123,23 @@ interface ILlmItem {
 }
 ```
 
+## StreamMode {#streammode}
+
+`chat_completion` 的 `execute_kwargs.stream_mode`（`@blueking/chat-helper` 导出）。
+
+```typescript
+/** start：可创建生产者，开新一轮执行（默认） */
+/** attach：仅接管/回放已有流，不允许新建生产者 */
+type StreamMode = "start" | "attach"
+```
+
+| 值 | 说明 |
+| --- | --- |
+| `start` | 新发送、重发、HITL 恢复、用户操作后续流 |
+| `attach` | `resumeStreamingChat`、静默重连 |
+
+详见 [chat-helper SDK · stream_mode](/api/chat-helper/sdk#stream-mode)。
+
 ## ISession
 
 会话接口。

@@ -185,6 +185,12 @@ stopChat()
     → emit('stop')
 ```
 
+## 刷新 / 切会话续流
+
+页面刷新或切换会话时，若当前会话仍为 `Running`，SDK 会调用 `resumeStreamingChat`，请求体带 `execute_kwargs.stream_mode: "attach"`，只接管已有流、不新建生产者。新发送、重发、HITL 恢复仍用默认 `"start"`。
+
+ChatBot / AIBlueking 已接入，无需额外配置。自定义 `streamRequest` 时不要把续流写成 `start`，也不要用 `last_message_id` 推断语义。详见 [chat-helper SDK · stream_mode](/api/chat-helper/sdk#stream-mode)。
+
 ## 错误处理
 
 AI 小鲸提供了多层错误处理机制：
