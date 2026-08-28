@@ -5,6 +5,7 @@ import json
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
+
 import httpx
 import pytest
 
@@ -52,9 +53,7 @@ def test_rewrite_openclaw_mcp_strips_baked_token():
             }
         }
     }
-    routes, rewritten, skipped = rewrite_openclaw_mcp_to_egress(
-        config, egress_base="http://127.0.0.1:18787"
-    )
+    routes, rewritten, skipped = rewrite_openclaw_mcp_to_egress(config, egress_base="http://127.0.0.1:18787")
     assert rewritten == ["log-query"]
     assert skipped == []
     assert routes["log-query"] == "https://example.invalid/mcp/"
@@ -128,6 +127,7 @@ def test_egress_injects_leased_user_token(upstream):
         url = f"{egress.base_url}/egress/{SHARED_ID}/log-query/"
         response = httpx.post(url, json={"method": "initialize"})
         assert response.status_code == 200
+        assert response.headers.get_list("content-length") == [str(len(response.content))]
         assert json.loads(_Upstream.seen[-1]["auth"]) == {"access_token": "user-token-aaa"}
     finally:
         egress.release()
