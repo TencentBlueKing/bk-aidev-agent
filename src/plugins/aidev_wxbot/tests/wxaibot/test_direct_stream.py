@@ -209,6 +209,71 @@ def test_chat_run_error_becomes_explicit_terminal_frame():
     assert "upstream timeout" in frames[0].content
 
 
+@patch(
+    "aidev_wxbot.wxaibot.direct_stream.AgentHelper.build_session_detail_url",
+    return_value="https://agent.example.com/chat-window/?session=session-1",
+)
+def test_pending_tool_approval_is_pushed_with_safe_ticket_link(mock_detail_url):
+    frames = _chat_frames(
+        [
+            {"type": "TEXT_MESSAGE_CONTENT", "delta": "我将获取 Skill 的详细信息。"},
+            {
+                "type": "RUN_FINISHED",
+                "outcome": {
+                    "type": "interrupt",
+                    "interrupts": [
+                        {
+                            "id": "int-approval-call-1-DE001",
+                            "reason": "aidev:tool_approval",
+                            "message": "执行工具前需要人工审批。",
+                            "callbackToken": "must-not-leak",
+                            "metadata": {
+                                "ticket": {
+                                    "sn": "DE001",
+                                    "title": "执行「retrieve_private_v1_skills」需要审批",
+                                    "url": "https://itsm.example.com/ticket/DE001?a=1 2",
+                                }
+                            },
+                        }
+                    ],
+                },
+            },
+        ]
+    )
+
+    assert frames[-1].finish
+    assert "我将获取 Skill 的详细信息。" in frames[-1].content
+    assert "等待工具审批" in frames[-1].content
+    assert "DE001" in frames[-1].content
+    assert "[查看并处理审批](https://itsm.example.com/ticket/DE001?a=1%202)" in frames[-1].content
+    assert "[查看会话进度](https://agent.example.com/chat-window/?session=session-1)" in frames[-1].content
+    assert "must-not-leak" not in frames[-1].content
+    mock_detail_url.assert_called_once_with("s")
+
+
+@patch("aidev_wxbot.wxaibot.direct_stream.AgentHelper.build_session_detail_url", return_value="")
+def test_pending_tool_approval_drops_non_http_ticket_url(_mock_detail_url):
+    frames = _chat_frames(
+        [
+            {
+                "type": "RUN_FINISHED",
+                "outcome": {
+                    "type": "interrupt",
+                    "interrupts": [
+                        {
+                            "reason": "aidev:tool_approval",
+                            "metadata": {"ticket": {"sn": "DE002", "url": "javascript:alert(1)"}},
+                        }
+                    ],
+                },
+            }
+        ]
+    )
+
+    assert "DE002" in frames[-1].content
+    assert "javascript" not in frames[-1].content
+
+
 def test_chat_stream_eof_without_terminal_is_failed():
     agent_stream = AgentStream(
         kind="chat",

@@ -5,9 +5,11 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from typing import Generator
+from urllib.parse import urlsplit
 
 from ag_ui.core.events import EventType
 from aidev_agent.core.ag_ui.types import CustomMessageType
+from aidev_agent.core.nodes.tool.approval_wrapper import TOOL_APPROVAL_REASON
 from aidev_bkplugin.services.agent_helpers import AgentHelper
 
 from .context import CHUNK_FLUSH_THRESHOLD, _escape_markdown_text, _normalize_url
@@ -109,6 +111,14 @@ def _iter_chat_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
             yield DirectStreamFrame(content=f"处理请求时发生错误: {message}", finish=True, failed=True)
             finished = True
         elif event_type == EventType.RUN_FINISHED:
+            if approval_content := _format_pending_approvals(event, agent_stream.session_code):
+                current_content = _render_chat(thinking, segments.render())
+                yield DirectStreamFrame(
+                    content=f"{current_content}\n\n{approval_content}" if current_content else approval_content,
+                    finish=True,
+                )
+                finished = True
+                continue
             yield DirectStreamFrame(
                 content=_render_chat(thinking, segments.render()) + _format_documents(documents),
                 finish=True,
@@ -253,3 +263,51 @@ def _format_documents(documents: list[dict]) -> str:
         path = _normalize_url(str(document.get("path", "")))
         lines.append(f"[{index + 1}][{display_name}]({path})")
     return "\n".join(lines) + "\n"
+
+
+def _format_pending_approvals(event: dict, session_code: str) -> str:
+    """把 AG-UI 工具审批中断渲染为企微可点击消息。
+
+    只读取审批协议中的展示字段，不回显 callbackToken、工具参数或完整 metadata。
+    """
+    outcome = event.get("outcome") or {}
+    if not isinstance(outcome, dict) or outcome.get("type") != "interrupt":
+        return ""
+
+    blocks: list[str] = []
+    for interrupt in outcome.get("interrupts") or []:
+        if not isinstance(interrupt, dict) or interrupt.get("reason") != TOOL_APPROVAL_REASON:
+            continue
+        metadata = interrupt.get("metadata") or {}
+        ticket = metadata.get("ticket") or {} if isinstance(metadata, dict) else {}
+        if not isinstance(ticket, dict):
+            ticket = {}
+
+        title = _escape_markdown_text(str(ticket.get("title") or interrupt.get("message") or "工具执行需要人工审批"))
+        ticket_sn = _escape_markdown_text(str(ticket.get("sn") or interrupt.get("ticketSn") or ""))
+        approval_url = _safe_approval_url(str(ticket.get("url") or ""))
+        lines = ["⏳ **等待工具审批**", title]
+        if ticket_sn:
+            lines.append(f"审批单号：`{ticket_sn}`")
+        if approval_url:
+            lines.append(f"[查看并处理审批]({approval_url})")
+        blocks.append("\n".join(lines))
+
+    if not blocks:
+        return ""
+
+    session_url = _safe_approval_url(AgentHelper.build_session_detail_url(session_code))
+    suffix = "审批完成后系统将继续执行。"
+    if session_url:
+        suffix += f" [查看会话进度]({session_url})"
+    return "\n\n".join(blocks + [suffix])
+
+
+def _safe_approval_url(raw_url: str) -> str:
+    """审批消息只允许 HTTP(S) 链接，避免把协议字段直接拼成危险 URI。"""
+    if not raw_url:
+        return ""
+    parsed = urlsplit(raw_url)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return _normalize_url(raw_url)
