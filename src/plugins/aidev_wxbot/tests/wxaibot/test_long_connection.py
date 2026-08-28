@@ -445,6 +445,42 @@ class TestLongConnectionStreaming:
         strategy.execute.assert_not_called()
         assert service._client.reply_stream_calls == [("a" * 50, False), ("a" * 50, True)]
 
+    async def test_request_starts_independent_trace_and_propagates_traceparent(self, monkeypatch):
+        from aidev_agent.utils import tracing
+        from aidev_bkplugin.services.agent_execution import build_execute_kwargs
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+        from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+        exporter = InMemorySpanExporter()
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+        tracer = provider.get_tracer(__name__)
+        monkeypatch.setattr(tracing, "_agent_tracer", tracer)
+        captured = {}
+
+        def open_stream(**_kwargs):
+            execute_kwargs = build_execute_kwargs({"stream": True}, "user-1")
+            captured.update(execute_kwargs.caller_trace_context)
+            return AgentStream("chat", iter(['data: {"type":"RUN_FINISHED"}\n']), "session-1")
+
+        service = _service()
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+        request = SimpleNamespace(content="q", stream_id="stream-1", username="user-1", group_id="group-1")
+        strategy = MagicMock(open_stream=open_stream)
+
+        with (
+            tracer.start_as_current_span("unrelated-parent") as parent,
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+        ):
+            await service._start_direct_stream({}, request)
+            await service._active_streams["stream-1"].task
+
+        main_span = next(span for span in exporter.get_finished_spans() if span.name == "wxbot.long_connection.session")
+        assert main_span.context.trace_id != parent.get_span_context().trace_id
+        assert captured["traceparent"].split("-")[1] == f"{main_span.context.trace_id:032x}"
+
     async def test_agent_run_error_is_counted_as_failed_stream(self):
         service = _service()
         service._view._get_or_create_thread_id.return_value = "thread-1"

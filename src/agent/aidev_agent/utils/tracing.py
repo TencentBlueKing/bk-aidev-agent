@@ -8,9 +8,11 @@ from contextlib import contextmanager
 from typing import Any
 
 try:
+    from opentelemetry import context as context_api
     from opentelemetry import trace
     from opentelemetry.trace import SpanKind, Tracer
 except ImportError:  # OpenTelemetry is an optional Agent SDK extra.
+    context_api = None
     trace = None
     SpanKind = None
     Tracer = Any
@@ -64,8 +66,14 @@ def recording_span(
     *,
     attributes: dict[str, Any] | None = None,
     kind: Any = None,
+    root: bool = False,
 ) -> Iterator[Any]:
-    """Create a span with the Agent tracer, or safely no-op without OTel."""
+    """Create a span with the Agent tracer, or safely no-op without OTel.
+
+    ``root=True`` starts a new trace even when the caller happens to have an
+    active context. This is intended for protocol entrypoints that represent a
+    new inbound request rather than a child operation of a long-lived client.
+    """
 
     tracer = get_agent_tracer(__name__)
     if tracer is None:
@@ -75,5 +83,7 @@ def recording_span(
     start_kwargs: dict[str, Any] = {"attributes": attributes or {}}
     if kind is not None:
         start_kwargs["kind"] = kind
+    if root and context_api is not None:
+        start_kwargs["context"] = context_api.Context()
     with tracer.start_as_current_span(name, **start_kwargs) as span:
         yield span

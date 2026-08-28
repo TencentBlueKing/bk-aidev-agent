@@ -19,6 +19,7 @@ from tempfile import gettempdir
 from typing import Any
 
 from aibot import WSClient, WSClientOptions
+from aidev_agent.utils.tracing import recording_span
 from aidev_bkplugin.services.execution import get_agent_executor, get_agent_executor_snapshot
 from django.conf import settings
 
@@ -610,7 +611,15 @@ class WxAiBotLongConnectionService:
         cancel_event: threading.Event,
     ) -> None:
         """worker 线程入口：执行 Agent 并把生成帧转发到事件循环。"""
-        self._produce_agent_frames(request, loop, output_queue, cancel_event)
+        with recording_span(
+            "wxbot.long_connection.session",
+            attributes={
+                "aidev.channel": "rtx",
+                "aidev.transport": "websocket",
+            },
+            root=True,
+        ):
+            self._produce_agent_frames(request, loop, output_queue, cancel_event)
 
     def _produce_agent_frames(
         self,
