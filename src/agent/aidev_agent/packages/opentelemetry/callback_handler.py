@@ -1116,6 +1116,20 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             "tool.call_index": self.tool_call_counter,
             "tool.input": input_str,
         }
+        metadata = metadata or {}
+        if mcp_name := metadata.get("mcp_name"):
+            attributes.update(
+                {
+                    "tool.type": "mcp",
+                    "rpc.system": "mcp",
+                    "mcp.operation.name": "tools/call",
+                    "mcp.server.name": str(mcp_name),
+                    "mcp.tool.name": tool_name,
+                    "mcp.transport": str(metadata.get("mcp_transport") or "unknown"),
+                }
+            )
+        elif tool_code := metadata.get("tool_code"):
+            attributes.update({"tool.type": "http_api", "tool.code": str(tool_code)})
         self._create_span(
             run_id=run_id,
             parent_run_id=parent_run_id,

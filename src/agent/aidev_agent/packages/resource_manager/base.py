@@ -35,6 +35,7 @@ from aidev_agent.packages.langchain_core.tools.base import (
 )
 from aidev_agent.pydantic_models import AgentConfig
 from aidev_agent.utils.loop import run_coro_sync
+from aidev_agent.utils.tracing import CLIENT_SPAN_KIND, recording_span
 
 try:
     import bkoauth
@@ -537,10 +538,24 @@ class BaseResourceManager(abc.ABC):
 
         async def _load_tool(server_name, selected_tools_map, index) -> tuple[list[StructuredTool], Any | None]:
             _start = time.monotonic()
+            server_config = new_server_config[server_name]
+            transport = str(server_config.get("transport") or "unknown")
             for _i in range(2):
                 client = MultiServerMCPClient(new_server_config)
                 try:
-                    tools: list[StructuredTool] = await client.get_tools(server_name=server_name)
+                    with recording_span(
+                        "mcp.tools.list",
+                        kind=CLIENT_SPAN_KIND,
+                        attributes={
+                            "rpc.system": "mcp",
+                            "mcp.operation.name": "tools/list",
+                            "mcp.server.name": server_name,
+                            "mcp.transport": transport,
+                            "mcp.retry.count": _i,
+                        },
+                    ) as span:
+                        tools: list[StructuredTool] = await client.get_tools(server_name=server_name)
+                        span.set_attribute("mcp.tool.count", len(tools))
                     total_count = len(tools)
                     if selected_tools_map.get(server_name):
                         tools = [each for each in tools if each.name in selected_tools_map[server_name]]
@@ -557,6 +572,7 @@ class BaseResourceManager(abc.ABC):
                         if not each.metadata:
                             each.metadata = {}
                         each.metadata["mcp_name"] = server_name
+                        each.metadata["mcp_transport"] = transport
                     return (tools, None)
                 except Exception as err:
                     error_detail = _extract_mcp_tools_error_detail(err)

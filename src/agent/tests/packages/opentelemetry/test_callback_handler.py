@@ -579,6 +579,48 @@ class TestBkAidevAgentCallbackHandler:
         assert span.attributes["tool.input"] == '{"action": "process", "data": [1, 2, 3]}'
         assert span.attributes["tool.execution_status"] == "success"
 
+    def test_mcp_tool_execution_span_has_mcp_semantic_attributes(self, tracer_and_exporter):
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        run_id = uuid4()
+
+        asyncio.run(
+            handler.on_tool_start(
+                serialized={"name": "search"},
+                input_str='{"query": "blueking"}',
+                run_id=run_id,
+                metadata={"mcp_name": "resource", "mcp_transport": "streamable_http"},
+            )
+        )
+        asyncio.run(handler.on_tool_end(output="ok", run_id=run_id))
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["tool.type"] == "mcp"
+        assert span.attributes["rpc.system"] == "mcp"
+        assert span.attributes["mcp.operation.name"] == "tools/call"
+        assert span.attributes["mcp.server.name"] == "resource"
+        assert span.attributes["mcp.tool.name"] == "search"
+        assert span.attributes["mcp.transport"] == "streamable_http"
+
+    def test_http_tool_execution_span_has_interface_attributes(self, tracer_and_exporter):
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        run_id = uuid4()
+
+        asyncio.run(
+            handler.on_tool_start(
+                serialized={"name": "get_ticket"},
+                input_str="{}",
+                run_id=run_id,
+                metadata={"tool_code": "get_ticket"},
+            )
+        )
+        asyncio.run(handler.on_tool_end(output="ok", run_id=run_id))
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["tool.type"] == "http_api"
+        assert span.attributes["tool.code"] == "get_ticket"
+
     def test_rag_retrieval_span_attributes(self, tracer_and_exporter):
         """测试 rag.retrieval span 包含 rag.knowledge_bases 和 rag.knowledge_items 属性"""
         tracer, exporter = tracer_and_exporter

@@ -1,0 +1,81 @@
+# -*- coding: utf-8 -*-
+"""Optional OpenTelemetry helpers shared by Agent SDK integrations."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Any
+
+try:
+    from opentelemetry import trace
+    from opentelemetry.trace import SpanKind, Status, StatusCode, Tracer
+except ImportError:  # OpenTelemetry is an optional Agent SDK extra.
+    trace = None
+    SpanKind = None
+    Status = None
+    StatusCode = None
+    Tracer = Any
+
+_agent_tracer: Tracer | None = None
+CLIENT_SPAN_KIND = SpanKind.CLIENT if SpanKind is not None else None
+
+
+class _NoOpSpan:
+    """Minimal span surface used when the OpenTelemetry extra is absent."""
+
+    @staticmethod
+    def is_recording() -> bool:
+        return False
+
+    @staticmethod
+    def set_attribute(name: str, value: Any) -> None:
+        return None
+
+
+def set_agent_tracer(tracer: Tracer | None) -> None:
+    """Register the tracer owned by ``BkAidevAgentInstrumentor``.
+
+    The agent exporter intentionally uses a private ``TracerProvider``. Code
+    outside the LangChain callback therefore cannot rely on the global tracer
+    provider when it needs to create a child span.
+    """
+
+    global _agent_tracer
+    _agent_tracer = tracer
+
+
+def get_agent_tracer(name: str) -> Tracer | None:
+    """Return the agent tracer, falling back to the global no-op capable API."""
+
+    return _agent_tracer or (trace.get_tracer(name) if trace is not None else None)
+
+
+@contextmanager
+def recording_span(
+    name: str,
+    *,
+    attributes: dict[str, Any] | None = None,
+    kind: Any = None,
+) -> Iterator[Any]:
+    """Create an agent span and consistently record its final status."""
+
+    tracer = get_agent_tracer(__name__)
+    if tracer is None:
+        yield _NoOpSpan()
+        return
+
+    start_kwargs: dict[str, Any] = {"attributes": attributes or {}}
+    if kind is not None:
+        start_kwargs["kind"] = kind
+    with tracer.start_as_current_span(name, **start_kwargs) as span:
+        try:
+            yield span
+        except Exception as exc:
+            if span.is_recording():
+                span.record_exception(exc)
+                span.set_status(Status(StatusCode.ERROR, str(exc)))
+            raise
+        else:
+            if span.is_recording():
+                span.set_status(Status(StatusCode.OK))

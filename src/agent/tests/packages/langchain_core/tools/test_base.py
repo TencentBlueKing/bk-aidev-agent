@@ -478,8 +478,39 @@ def test_make_mcp_tools_basic(mock_mcp_client_class, sample_mcp_config):
     assert len(result.tools) == 1
     assert result.tools[0].name == "test-mcp-tool"
     assert result.tools[0].metadata["mcp_name"] == "tencentcloud-doc-mcp"
+    assert result.tools[0].metadata["mcp_transport"] == "streamable_http"
     assert result.fetch_failures == []
     mock_mcp_client_class.assert_called_once()
+
+
+@patch("aidev_agent.packages.resource_manager.base.recording_span")
+@patch("aidev_agent.packages.resource_manager.base.MultiServerMCPClient")
+def test_make_mcp_tools_records_list_semantics(mock_mcp_client_class, mock_recording_span, sample_mcp_config):
+    from aidev_agent.utils.tracing import CLIENT_SPAN_KIND
+
+    mock_tool = MagicMock(spec=StructuredTool)
+    mock_tool.name = "test-mcp-tool"
+    mock_tool.coroutine = AsyncMock()
+    mock_tool.metadata = {}
+    mock_client = MagicMock()
+    mock_client.get_tools = AsyncMock(return_value=[mock_tool])
+    mock_mcp_client_class.return_value = mock_client
+    span = mock_recording_span.return_value.__enter__.return_value
+
+    make_mcp_tools(sample_mcp_config)
+
+    mock_recording_span.assert_called_once_with(
+        "mcp.tools.list",
+        kind=CLIENT_SPAN_KIND,
+        attributes={
+            "rpc.system": "mcp",
+            "mcp.operation.name": "tools/list",
+            "mcp.server.name": "tencentcloud-doc-mcp",
+            "mcp.transport": "streamable_http",
+            "mcp.retry.count": 0,
+        },
+    )
+    span.set_attribute.assert_called_once_with("mcp.tool.count", 1)
 
 
 @patch("aidev_agent.packages.resource_manager.base.MultiServerMCPClient")
