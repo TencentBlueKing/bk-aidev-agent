@@ -13,7 +13,7 @@ make e2e
 make e2e-down
 ```
 
-标准 `make e2e` 只验证 API/登录、AI 小鲸与智能体对话、指标与可观测性；数据库与消息服务仅作为智能体运行所需的真实底层依赖，不单独形成健康结论，企业微信不进入默认范围。
+标准 `make e2e` 只验证 API/登录、AI 小鲸与智能体对话、指标与可观测性；数据库与消息服务仅作为智能体运行所需的真实底层依赖，不单独形成健康结论。企业微信不进入默认范围，可通过独立模块按需执行。
 
 默认数据库为 SQLite，不需要额外容器。若要执行 MySQL 5.7 兼容性检查，启动和执行时使用同一个选择：
 
@@ -31,6 +31,7 @@ make e2e-down
 make e2e-api
 make e2e-ai-blueking
 make e2e-metrics
+make e2e-wxbot
 make e2e-browser                 # 默认打开 AI 小鲸 headed 浏览器检查
 make e2e-browser modules=api     # 也可指定模块
 ```
@@ -44,6 +45,14 @@ make e2e-browser modules=api     # 也可指定模块
 MESSAGE_HANDLER_TYPE=rabbitmq make e2e-ai-blueking
 ```
 
+`wxbot` 模块在本机启动一个只模拟企微远端协议的 WebSocket 服务，被测侧仍使用官方企微 SDK、Django、SQLite、Redis 和 RabbitMQ。它验证渠道配置读取、长连接认证、心跳、首包响应、RabbitMQ 轮询转发，以及 `/help`、`/new`、生成中的 `/stop`。执行方式：
+
+```bash
+make e2e-wxbot
+```
+
+HTML 报告会把每条企微输入、流式响应帧和完整 WebSocket 请求/回复放在同一个 `scenario_id` 下。由此可以从“功能健康概览”直接确认长连接、轮询和三个指令是否正常，再展开查看对应的协议帧和智能体调用链。
+
 默认 `headless=true`，适合流水线。交互检查可执行 `make e2e headless=false`，然后使用内置浏览器打开 `E2E_APP_URL` 和本次报告。每一次 runner 执行（包括配置或基础设施失败）都会生成：
 
 - `dev/e2e/reports/<timestamp>/report.html`
@@ -52,7 +61,7 @@ MESSAGE_HANDLER_TYPE=rabbitmq make e2e-ai-blueking
 
 报告按“先判断功能是否正常，再查看诊断证据”的顺序组织：
 
-- 功能健康概览：默认按 API/登录、AI 小鲸与对话、可观测性纵向分区，每个组件内使用自适应场景卡片列出本次实际执行通过或失败的功能及覆盖说明；未执行的数据库与消息、企微不会显示为已验证。
+- 功能健康概览：默认按 API/登录、AI 小鲸与对话、可观测性纵向分区，每个组件内使用自适应场景卡片列出本次实际执行通过或失败的功能及覆盖说明；执行 `e2e-wxbot` 时会增加企业微信分区，未执行的数据库与消息、企微不会显示为已验证。
 - 场景证据关联：每个场景使用稳定的 `scenario_id` 关联断言、会话和 API 调用；健康项展示证据数量，点击“查看证据”直接定位到对应证据区。
 - 完整诊断证据：场景证据区展示断言输出和发送给智能体的会话内容；接口按 `chain_id` 把测试端请求与其触发的“智能体 → 远端 mock”调用合并为一条请求链，再逐层展开查看每次调用的方法、URL、请求 Headers/Body、响应状态、响应 Headers/Body 和耗时。业务场景开始前没有父请求的公共启动调用单独归档，不作为某个功能正常的证据。
 

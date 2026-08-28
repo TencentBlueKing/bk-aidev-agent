@@ -14,10 +14,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable
 
+from .app import ManagedApp
 from .config import Config, Identity
 from .http import request, stream_request, with_query
 from .report import CaseResult, RunReport
 from .trace import API_TRACE
+from .wecom_ws import WeComWebSocketMock
 
 
 def parse_sse_events(body: str) -> list[dict]:
@@ -1047,6 +1049,235 @@ print(json.dumps(json.loads(payload)))
             if result.body != "e2e-echo":
                 raise AssertionError(f"unexpected wxbot echo: {result.body!r}")
             detail.update({"status": result.status, "response": result.body})
+
+        ws_mock = WeComWebSocketMock()
+        ws_process: subprocess.Popen | None = None
+        ws_log_handle = None
+        runtime = self.config.root / "dev/e2e/.runtime"
+        ws_log_path = runtime / "wxbot-ws.log"
+        project = self.config.root / "template/builtin/{{cookiecutter.project_name}}"
+
+        def start_ws_exchange(command: str):
+            started = time.monotonic()
+            call = API_TRACE.start_call(
+                source="test-runner",
+                method="WS",
+                url=ws_mock.url,
+                request_headers={"X-WeCom-Command": command},
+                request_body={"cmd": command, "state": "sending"},
+            )
+            return call, started
+
+        def finish_ws_exchange(call, callback: dict, replies: list[dict], started: float, *, status: int = 200) -> None:
+            call.request_headers = {"X-WeCom-Command": callback.get("cmd", "")}
+            call.request_body = callback
+            API_TRACE.finish_call(
+                call,
+                status=status,
+                response_headers={"X-WeCom-Frames": str(len(replies))},
+                response_body={"frames": replies},
+                duration_ms=round((time.monotonic() - started) * 1000),
+            )
+
+        def stream_messages(replies: list[dict]) -> list[dict]:
+            messages: list[dict] = []
+            for reply in replies:
+                stream = reply.get("body", {}).get("stream") or {}
+                content = stream.get("content", "")
+                if content:
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "content": content,
+                            "finish": bool(stream.get("finish")),
+                            "stream_id": stream.get("id", ""),
+                        }
+                    )
+            return messages
+
+        try:
+            with self.case(
+                "wxbot",
+                "wxbot.long-connection",
+                "企微 WebSocket 长连接",
+                "本地模拟企微远端，真实官方 SDK 完成长连接认证、渠道配置读取和心跳 ACK",
+            ) as detail:
+                runtime.mkdir(parents=True, exist_ok=True)
+                ws_mock.start()
+                env = ManagedApp(self.config, self.identity).environment()
+                env.update(
+                    {
+                        "BKAPP_WXAIBOT_WS_ENABLED": "true",
+                        "BKAPP_WXAIBOT_WS_BOT_ID": "e2e-bot",
+                        "BKAPP_WXAIBOT_WS_SECRET": "e2e-ws-secret",
+                        "BKAPP_WXAIBOT_WS_URL": ws_mock.url,
+                        "BKAPP_WXAIBOT_WS_HEARTBEAT_INTERVAL_MS": "1000",
+                        "BKAPP_WXAIBOT_WS_RECONNECT_INTERVAL_MS": "200",
+                        "BKAPP_WXAIBOT_WS_MAX_RECONNECT_ATTEMPTS": "2",
+                        "BKAPP_WXAIBOT_WS_REQUEST_TIMEOUT_MS": "5000",
+                        "BKAPP_WXAIBOT_WS_STARTUP_TIMEOUT_SEC": "10",
+                        "BKAPP_WXAIBOT_WS_SHUTDOWN_GRACE_PERIOD_SEC": "3",
+                        "BKAPP_WXAIBOT_WS_SINGLE_INSTANCE_ENABLED": "false",
+                        "BKAPP_WAXIBOT_MAX_MESSAGE_TIME": "60",
+                    }
+                )
+                ws_log_handle = ws_log_path.open("w", encoding="utf-8")
+                ws_call, started = start_ws_exchange("aibot_subscribe")
+                ws_process = subprocess.Popen(
+                    [str(project / ".venv/bin/python"), "bin/manage.py", "run_wxaibot_ws"],
+                    cwd=project,
+                    env=env,
+                    stdout=ws_log_handle,
+                    stderr=subprocess.STDOUT,
+                )
+                auth_frame = ws_mock.wait_authenticated(timeout=15)
+                if ws_process.poll() is not None:
+                    raise AssertionError(f"wxbot long connection exited with {ws_process.returncode}: {ws_log_path}")
+                heartbeat = ws_mock.wait_heartbeat(timeout=5)
+                finish_ws_exchange(ws_call, auth_frame, [heartbeat], started, status=101)
+                detail.update(
+                    {
+                        "transport": ws_mock.url,
+                        "sdk_authenticated": True,
+                        "heartbeat": heartbeat.get("cmd"),
+                        "service_log": str(ws_log_path.relative_to(self.config.root)),
+                    }
+                )
+
+            with self.case(
+                "wxbot", "wxbot.help-command", "企微 /help 指令", "长连接接收 /help，并同步返回三条会话控制指令"
+            ) as detail:
+                ws_call, started = start_ws_exchange("aibot_msg_callback")
+                req_id, callback = ws_mock.send_text("/help")
+                replies = ws_mock.wait_replies(req_id, until_finish=True, timeout=15)
+                content = (replies[-1].get("body", {}).get("stream") or {}).get("content", "")
+                if not all(command in content for command in ("/help", "/new", "/stop")):
+                    raise AssertionError(f"unexpected /help response: {content!r}")
+                finish_ws_exchange(ws_call, callback, replies, started)
+                self.report.conversations.append(
+                    {
+                        "module": "wxbot",
+                        "scenario_id": "wxbot.help-command",
+                        "case": "企微 /help 指令",
+                        "conversation_id": req_id,
+                        "messages": [{"role": "user", "content": "/help"}, *stream_messages(replies)],
+                    }
+                )
+                detail.update({"command": "/help", "response": content, "frames": len(replies)})
+
+            with self.case(
+                "wxbot", "wxbot.new-command", "企微 /new 指令", "长连接接收 /new，并在 SQLite 中创建或轮换会话"
+            ) as detail:
+                ws_call, started = start_ws_exchange("aibot_msg_callback")
+                req_id, callback = ws_mock.send_text("/new")
+                replies = ws_mock.wait_replies(req_id, until_finish=True, timeout=15)
+                content = (replies[-1].get("body", {}).get("stream") or {}).get("content", "")
+                if "已创建新会话" not in content:
+                    raise AssertionError(f"unexpected /new response: {content!r}")
+                finish_ws_exchange(ws_call, callback, replies, started)
+                self.report.conversations.append(
+                    {
+                        "module": "wxbot",
+                        "scenario_id": "wxbot.new-command",
+                        "case": "企微 /new 指令",
+                        "conversation_id": req_id,
+                        "messages": [{"role": "user", "content": "/new"}, *stream_messages(replies)],
+                    }
+                )
+                detail.update({"command": "/new", "response": content, "frames": len(replies)})
+
+            with self.case(
+                "wxbot",
+                "wxbot.stream-polling",
+                "企微长连接流式轮询",
+                "首包同步返回思考状态，服务随后从真实 RabbitMQ 轮询并通过同一 WebSocket 推送终态",
+            ) as detail:
+                prompt = "企业微信长连接轮询 E2E 测试"
+                ws_call, started = start_ws_exchange("aibot_msg_callback")
+                req_id, callback = ws_mock.send_text(prompt)
+                replies = ws_mock.wait_replies(req_id, min_count=2, until_finish=True, timeout=60)
+                streams = [(reply.get("body", {}).get("stream") or {}) for reply in replies]
+                if streams[0].get("finish") is not False or "正在思考" not in streams[0].get("content", ""):
+                    raise AssertionError(f"unexpected initial stream frame: {streams[0]}")
+                if not streams[-1].get("finish") or "本地 mock LLM" not in streams[-1].get("content", ""):
+                    raise AssertionError(f"unexpected final stream frame: {streams[-1]}")
+                finish_ws_exchange(ws_call, callback, replies, started)
+                self.report.conversations.append(
+                    {
+                        "module": "wxbot",
+                        "scenario_id": "wxbot.stream-polling",
+                        "case": "企微长连接流式轮询",
+                        "conversation_id": req_id,
+                        "messages": [{"role": "user", "content": prompt}, *stream_messages(replies)],
+                    }
+                )
+                detail.update(
+                    {
+                        "frames": len(replies),
+                        "initial_finish": streams[0].get("finish"),
+                        "final_finish": streams[-1].get("finish"),
+                        "response": streams[-1].get("content", ""),
+                    }
+                )
+
+            with self.case(
+                "wxbot",
+                "wxbot.stop-command",
+                "企微 /stop 指令",
+                "生成中通过独立长连接消息发送 /stop，写入跨进程取消信号并收敛原流终态",
+            ) as detail:
+                prompt = "[E2E_SLOW_STREAM] 企业微信停止生成测试"
+                stream_ws_call, stream_started = start_ws_exchange("aibot_msg_callback")
+                stream_req_id, stream_callback = ws_mock.send_text(prompt)
+                initial_replies = ws_mock.wait_replies(stream_req_id, min_count=1, timeout=15)
+                stop_ws_call, stop_started = start_ws_exchange("aibot_msg_callback")
+                stop_req_id, stop_callback = ws_mock.send_text("/stop")
+                stop_replies = ws_mock.wait_replies(stop_req_id, until_finish=True, timeout=15)
+                stop_content = (stop_replies[-1].get("body", {}).get("stream") or {}).get("content", "")
+                if "已停止当前会话生成" not in stop_content:
+                    raise AssertionError(f"unexpected /stop response: {stop_content!r}")
+                stream_replies = ws_mock.wait_replies(stream_req_id, until_finish=True, timeout=45)
+                final_stream_content = (stream_replies[-1].get("body", {}).get("stream") or {}).get("content", "")
+                if "停止" not in final_stream_content and "取消" not in final_stream_content:
+                    raise AssertionError(f"original stream did not end as cancelled: {final_stream_content!r}")
+                if "分段响应" in final_stream_content:
+                    raise AssertionError("/stop returned success but the slow generation still completed")
+                finish_ws_exchange(stream_ws_call, stream_callback, stream_replies, stream_started)
+                finish_ws_exchange(stop_ws_call, stop_callback, stop_replies, stop_started)
+                self.report.conversations.append(
+                    {
+                        "module": "wxbot",
+                        "scenario_id": "wxbot.stop-command",
+                        "case": "企微 /stop 指令",
+                        "conversation_id": stream_req_id,
+                        "messages": [
+                            {"role": "user", "content": prompt},
+                            *stream_messages(initial_replies),
+                            {"role": "user", "content": "/stop"},
+                            *stream_messages(stop_replies),
+                            *stream_messages(stream_replies[len(initial_replies) :]),
+                        ],
+                    }
+                )
+                detail.update(
+                    {
+                        "command": "/stop",
+                        "response": stop_content,
+                        "stream_frames": len(stream_replies),
+                        "stream_finished": bool((stream_replies[-1].get("body", {}).get("stream") or {}).get("finish")),
+                    }
+                )
+        finally:
+            if ws_process and ws_process.poll() is None:
+                ws_process.terminate()
+                try:
+                    ws_process.wait(timeout=8)
+                except subprocess.TimeoutExpired:
+                    ws_process.kill()
+                    ws_process.wait(timeout=5)
+            if ws_log_handle:
+                ws_log_handle.close()
+            ws_mock.close()
 
     def run(self):
         self.auth()

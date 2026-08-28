@@ -51,17 +51,19 @@ class ConfigTests(unittest.TestCase):
             ):
                 Config.from_env("api")
 
-    def test_default_modules_exclude_message_and_wecom(self):
+    def test_default_modules_exclude_message_and_support_optional_wecom(self):
         with tempfile.TemporaryDirectory() as directory:
             env_file = Path(directory) / ".env"
             env_file.write_text("E2E_USERNAME=alice\n", encoding="utf-8")
             with patch.dict(os.environ, {"E2E_ENV_FILE": str(env_file)}, clear=True):
                 self.assertEqual(Config.from_env().modules, DEFAULT_MODULES)
                 self.assertEqual(Config.from_env("all").modules, SUPPORTED_MODULES)
+                self.assertEqual(Config.from_env("wxbot").modules, ("wxbot",))
                 with self.assertRaisesRegex(ValueError, "unsupported E2E modules"):
-                    Config.from_env("message,wxbot")
+                    Config.from_env("message")
         self.assertNotIn("message", DEFAULT_MODULES)
         self.assertNotIn("wxbot", DEFAULT_MODULES)
+        self.assertIn("wxbot", SUPPORTED_MODULES)
 
 
 class ReportTests(unittest.TestCase):

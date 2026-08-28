@@ -89,6 +89,9 @@ class RemoteMock:
                 self._trace_started = time.monotonic()
                 parsed = urlparse(self.path)
                 path = parsed.path
+                openapi_marker = "/openapi/aidev/"
+                if openapi_marker in path:
+                    path = path[path.index(openapi_marker) :]
                 body = self._body() if self.command in {"POST", "PUT", "PATCH"} else {}
                 host = self.headers.get("Host", "local-remote-mock")
                 self._trace_call = API_TRACE.start_call(
@@ -115,6 +118,28 @@ class RemoteMock:
                             envelope(None, result=False, message="missing username", code="invalid_user"), 400
                         )
                     return self._send(envelope({"username": username}))
+                if path == "/openapi/aidev/resource/v1/agent_channel/configs/" and self.command == "GET":
+                    return self._send(
+                        envelope(
+                            [
+                                {
+                                    "channel_id": "e2e-rtx",
+                                    "channel_name": "E2E WeCom",
+                                    "channel_type": "rtx",
+                                    "connection_type": "websocket",
+                                    "websocket_connected": True,
+                                    "config": {
+                                        "bot_id": "e2e-bot",
+                                        "secret": "e2e-ws-secret",
+                                        "ws_url": "ws://127.0.0.1",
+                                        "contact": "E2E",
+                                    },
+                                }
+                            ]
+                        )
+                    )
+                if path == "/openapi/aidev/resource/v1/qyweixin/convert_to_userid/" and self.command == "POST":
+                    return self._send(envelope({"userid": body.get("openid", "e2e-user")}))
                 if path.startswith("/openapi/aidev/resource/v1/agent/") and self.command == "GET":
                     return self._send(envelope(agent_config()))
                 if path == "/openapi/aidev/resource/v1/agents/llms/" and self.command == "GET":

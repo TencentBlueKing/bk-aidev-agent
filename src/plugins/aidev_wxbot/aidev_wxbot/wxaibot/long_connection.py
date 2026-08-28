@@ -19,8 +19,10 @@ from logging import getLogger
 from pathlib import Path
 from tempfile import gettempdir
 from typing import Any
+from urllib.parse import urlparse
 
 from aibot import WSClient, WSClientOptions
+from aibot import ws as aibot_ws
 from aidev_agent.config import settings as agent_settings
 from aidev_agent.utils.tracing import get_current_trace_id
 from aidev_bkplugin.services.agent_session import SessionManager
@@ -87,6 +89,8 @@ from .tracing import (
     wxbot_span,
 )
 from .views import WxAiBotViewSet, WxBotAgentRequest
+
+_SDK_DEFAULT_SSL_CONTEXT = aibot_ws._SSL_CONTEXT
 
 logger = getLogger(__name__)
 
@@ -336,6 +340,9 @@ class WxAiBotLongConnectionService:
 
     def __init__(self, config: WxAiBotLongConnectionConfig | None = None):
         self._config = config or WxAiBotLongConnectionConfig.from_settings()
+        # SDK 1.0.2 会固定向 websockets.connect() 传 TLS context；本地 E2E
+        # 使用 ws://，此时显式 SSL context 会被 websockets 拒绝。
+        aibot_ws._SSL_CONTEXT = None if urlparse(self._config.ws_url).scheme == "ws" else _SDK_DEFAULT_SSL_CONTEXT
         self._view = _LongConnectionViewSet(self)
         self._active_streams: dict[str, ActiveStream] = {}
         self._group_streams: dict[str, str] = {}

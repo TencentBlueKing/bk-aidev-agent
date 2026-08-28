@@ -11,6 +11,7 @@ class AgentSession(models.Model):
 
     group_id = models.CharField(max_length=255, primary_key=True, verbose_name="群组ID")
     thread_id = models.CharField(max_length=255, verbose_name="线程ID")
+    active_session_code = models.CharField(max_length=255, blank=True, default="", verbose_name="当前执行会话ID")
     last_session_time = models.DateTimeField(verbose_name="最后会话时间")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")

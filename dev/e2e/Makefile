@@ -12,7 +12,7 @@ HEADLESS ?= true
 DB ?= sqlite
 
 .PHONY: help setup deps-up deps-down observability-up observability-down up down run browser test report-open \
-	api ai-blueking metrics
+	api ai-blueking metrics wxbot
 
 help:
 	@echo "bk-aidev-agent local E2E"
@@ -20,7 +20,7 @@ help:
 	@echo "  make up                 Start real Redis, RabbitMQ and local observability (SQLite by default)"
 	@echo "  make up DB=mysql        Also start the optional real MySQL 5.7 profile"
 	@echo "  make run                Run default API/AI/metrics modules; always write an HTML report"
-	@echo "  make api                Run one default module (also: ai-blueking/metrics)"
+	@echo "  make api                Run one module (also: ai-blueking/metrics/wxbot)"
 	@echo "  make run HEADLESS=false Run headed/browser-friendly mode"
 	@echo "  make browser            Open headed browser checks (default: AI whale)"
 	@echo "  make test               Run fast framework regression tests"
@@ -55,7 +55,7 @@ run:
 browser:
 	$(MAKE) run MODULES=$(MODULES) HEADLESS=false DB=$(DB) ENV_FILE="$(ENV_FILE)"
 
-api ai-blueking metrics:
+api ai-blueking metrics wxbot:
 	$(MAKE) run MODULES=$@ HEADLESS=$(HEADLESS) DB=$(DB) ENV_FILE="$(ENV_FILE)"
 
 test:
