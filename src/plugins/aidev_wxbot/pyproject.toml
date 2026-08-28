@@ -30,6 +30,8 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "opentelemetry-instrumentation-requests>=0.41b0",
+    "opentelemetry-sdk>=1.20",
     "pytest>=7.4.4,<9",
     "pytest-asyncio>=0.23.3,<1",
     "pytest-django>=4.7.0,<5",

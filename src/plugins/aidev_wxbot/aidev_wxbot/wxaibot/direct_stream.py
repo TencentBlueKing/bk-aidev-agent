@@ -13,6 +13,7 @@ from aidev_bkplugin.services.agent_helpers import AgentHelper
 from .context import CHUNK_FLUSH_THRESHOLD, _escape_markdown_text, _normalize_url
 from .formatters import _node_display, _task_state_label, format_task_outputs
 from .stream import iter_sse_lines
+from .tool_blocks import ChatSegments, is_tool_event
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,8 +57,17 @@ def iter_direct_stream_frames(
     yield from _iter_chat_frames(agent_stream, stream_id, on_run_started)
 
 
+def _run_id_of(event: dict) -> str:
+    """取 RUN_STARTED 的 run id。
+
+    AG-UI 的 SSE 按 camelCase 别名序列化，字段是 runId；只读 run_id 会永远取到空，
+    导致后续取消退化成 session 级信号，把同会话的下一轮一起毒死。
+    """
+    return str(event.get("runId") or event.get("run_id") or "")
+
+
 def _iter_chat_frames(agent_stream: AgentStream, stream_id: str, on_run_started) -> Generator[DirectStreamFrame]:
-    content = ""
+    segments = ChatSegments(stream_id)
     thinking = ""
     documents: list[dict] = []
     finished = False
@@ -66,22 +76,27 @@ def _iter_chat_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
     for event in iter_sse_lines(agent_stream.generator, stream_id):
         event_type = event.get("type", "")
         if event_type == EventType.RUN_STARTED and on_run_started:
-            on_run_started(str(event.get("run_id", "")))
+            on_run_started(_run_id_of(event))
+        elif is_tool_event(event_type):
+            # 工具状态变化要立刻推给用户：卡住时至少看得到卡在哪个工具上
+            if segments.apply_tool_event(event_type, event):
+                yield DirectStreamFrame(content=_render_chat(thinking, segments.render()), finish=False)
+                pending_chars = 0
         elif event_type == EventType.THINKING_TEXT_MESSAGE_CONTENT:
             delta = event.get("delta", "")
             if delta and delta != "正在思考...":
                 thinking += delta
                 pending_chars += len(delta)
                 if pending_chars >= CHUNK_FLUSH_THRESHOLD:
-                    yield DirectStreamFrame(content=_render_chat(thinking, content), finish=False)
+                    yield DirectStreamFrame(content=_render_chat(thinking, segments.render()), finish=False)
                     pending_chars = 0
         elif event_type == EventType.TEXT_MESSAGE_CONTENT:
             delta = event.get("delta", "")
             if delta and delta != "正在思考...":
-                content += delta
+                segments.append_text(delta)
                 pending_chars += len(delta)
                 if pending_chars >= CHUNK_FLUSH_THRESHOLD:
-                    yield DirectStreamFrame(content=_render_chat(thinking, content), finish=False)
+                    yield DirectStreamFrame(content=_render_chat(thinking, segments.render()), finish=False)
                     pending_chars = 0
         elif event_type == EventType.CUSTOM:
             for document in event.get("documents", []):
@@ -94,14 +109,14 @@ def _iter_chat_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
             break
         elif event_type == EventType.RUN_FINISHED:
             yield DirectStreamFrame(
-                content=_render_chat(thinking, content) + _format_documents(documents),
+                content=_render_chat(thinking, segments.render()) + _format_documents(documents),
                 finish=True,
             )
             finished = True
             break
 
     if not finished:
-        partial = _render_chat(thinking, content) + _format_documents(documents)
+        partial = _render_chat(thinking, segments.render()) + _format_documents(documents)
         yield DirectStreamFrame(
             content=f"{partial}\n\n回答生成提前结束，请重试" if partial else "回答生成提前结束，请重试",
             finish=True,
@@ -126,7 +141,7 @@ def _iter_flow_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
     for event in iter_sse_lines(agent_stream.generator, stream_id):
         event_type = event.get("type", "")
         if event_type == EventType.RUN_STARTED and on_run_started:
-            on_run_started(str(event.get("run_id", "")))
+            on_run_started(_run_id_of(event))
         elif event_type == EventType.CUSTOM:
             frame = _format_flow_event(event.get("name", ""), event.get("value"), state, agent_stream.session_code)
             if frame:

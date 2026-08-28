@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import queue
 import threading
 from collections.abc import Callable
@@ -40,7 +41,9 @@ class BoundedDaemonExecutor:
         self._max_pending = max_pending
         self._capacity = max_workers + max_pending
         self._slots = threading.BoundedSemaphore(self._capacity)
-        self._tasks: queue.Queue[tuple[Callable[..., Any], tuple[Any, ...], dict[str, Any]] | None] = queue.Queue()
+        self._tasks: queue.Queue[
+            tuple[contextvars.Context, Callable[..., Any], tuple[Any, ...], dict[str, Any]] | None
+        ] = queue.Queue()
         self._lock = threading.Lock()
         self._active = 0
         self._pending = 0
@@ -57,7 +60,12 @@ class BoundedDaemonExecutor:
             thread.start()
 
     def submit(self, fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> bool:
-        """非阻塞提交；达到总容量时返回 False。"""
+        """非阻塞提交；达到总容量时返回 False。
+
+        任务在提交方的 contextvars 快照里执行。worker 是常驻线程，如果直接裸调，
+        任务内 attach 的 OTel context 一旦漏了 detach 就会污染后续落到同一线程的
+        所有任务，表现为不同请求共用同一个 trace id。
+        """
         with self._lock:
             if self._shutdown:
                 self._rejected += 1
@@ -75,7 +83,7 @@ class BoundedDaemonExecutor:
             self._pending += 1
             self._submitted += 1
             self._peak_pending = max(self._peak_pending, self._pending)
-        self._tasks.put((fn, args, kwargs))
+        self._tasks.put((contextvars.copy_context(), fn, args, kwargs))
         return True
 
     def snapshot(self) -> ExecutorSnapshot:
@@ -109,13 +117,13 @@ class BoundedDaemonExecutor:
             if task is None:
                 return
 
-            fn, args, kwargs = task
+            context, fn, args, kwargs = task
             with self._lock:
                 self._pending -= 1
                 self._active += 1
                 self._peak_active = max(self._peak_active, self._active)
             try:
-                fn(*args, **kwargs)
+                context.run(fn, *args, **kwargs)
             except Exception:
                 logger.exception("event=wxbot_agent_executor task_failed=true")
             finally:

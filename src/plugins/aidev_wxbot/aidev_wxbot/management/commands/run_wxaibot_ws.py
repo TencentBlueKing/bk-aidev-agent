@@ -2,6 +2,7 @@
 
 import os
 
+from aidev_agent.utils.tracing import setup_tracing
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
@@ -28,6 +29,9 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         if not getattr(settings, "WXAIBOT_WS_ENABLED", False):
             raise CommandError("WXAIBOT_WS_ENABLED 未开启，拒绝启动企微机器人长连接服务")
+
+        # 必须早于任何出站请求：instrument 之后建立的 requests 会话才会带上 traceparent
+        setup_tracing(console=getattr(settings, "WXAIBOT_TRACE_CONSOLE", False))
 
         channel = self._retrieve_channel()
         if not channel:

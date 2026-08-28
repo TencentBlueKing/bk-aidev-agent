@@ -10,7 +10,6 @@ import re
 import signal
 import threading
 import time
-from collections import deque
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from enum import StrEnum
@@ -20,11 +19,22 @@ from tempfile import gettempdir
 from typing import Any
 
 from aibot import WSClient, WSClientOptions
+from aidev_agent.services.messages_handler.factory import message_handler_factory
+from aidev_agent.utils.tracing import start_request_span
 from django.conf import settings
 
-from .constants import WS_INSTANCE_LOCK_CACHE_KEY_PREFIX
-from .context import THINKING_MSG
-from .direct_stream import DirectStreamFrame, iter_direct_stream_frames
+from .constants import (
+    AGENT_STREAM_DRAIN_TIMEOUT,
+    BUSY_BY_OTHERS_REPLY,
+    BUSY_REPLY,
+    PREPARING_REPLY,
+    STOP_NO_ACTIVE_REPLY,
+    STOP_NOTICE,
+    STOP_REPLY,
+    WS_INSTANCE_LOCK_CACHE_KEY_PREFIX,
+)
+from .context import THINKING_MSG, stream_msg
+from .direct_stream import AgentStream, DirectStreamFrame, iter_direct_stream_frames
 from .execution import get_agent_executor, get_agent_executor_snapshot
 from .strategies import WECOM_AGENT_RETRY_STRATEGY, resolve_strategy
 from .stream_registry import stream_registry
@@ -59,16 +69,12 @@ class ServiceState(StrEnum):
 class ActiveStream:
     frame: dict[str, Any]
     group_id: str
+    username: str
     task: asyncio.Task[None]
     cancel_event: threading.Event
     started_at: float
-
-
-@dataclass(slots=True)
-class PendingStream:
-    frame: dict[str, Any]
-    request: WxBotAgentRequest
-    enqueued_at: float
+    # 最后一次发给企微的全量快照。中止时要带上它重发，否则用户已经看到的半截回答会被抹掉
+    last_content: str = ""
 
 
 @dataclass(slots=True)
@@ -83,11 +89,7 @@ class StreamMetrics:
     final_frame_latency_total: float = 0.0
     send_wait_total: float = 0.0
     sent_frames: int = 0
-    queued: int = 0
-    dequeued: int = 0
-    queue_rejected: int = 0
-    peak_queued: int = 0
-    queue_wait_total: float = 0.0
+    rejected_busy: int = 0
 
 
 class _ProducerDone:
@@ -209,16 +211,45 @@ class WxAiBotLongConnectionConfig:
             raise LongConnectionConfigError("WXAIBOT_WS_SHUTDOWN_GRACE_PERIOD_SEC 必须大于 0")
 
 
+class _LongConnectionViewSet(WxAiBotViewSet):
+    """把 /stop、/new 接到长连接的活跃流登记簿上，并把会话作用域收敛到人。
+
+    命令解析仍复用基类，长连接只覆写「需要中止在跑的流」这两个动作；HTTP 回调
+    继续用基类实现，行为不变。
+    """
+
+    def __init__(self, service: "WxAiBotLongConnectionService"):
+        super().__init__()
+        self._service = service
+
+    def _session_scope(self, group_id: str, username: str) -> str:
+        """群聊里会话按人轮换。
+
+        上下文本来就是每人一份——平台侧的 session_code 是 MD5(username:agent_code:thread_id)，
+        username 参与了哈希。但 thread_id 原先只按群存一行，于是一个人 /new 会把全群
+        每个人的上下文一起清掉，30 分钟超时也被别人的活跃度顺带续期。
+        单聊的 group_id 就是发起人本身，不必再拼一次。
+        """
+        return group_id if group_id == username else f"{group_id}:{username}"
+
+    def stop_generation(self, group_id: str, username: str, stream_id: str) -> dict:
+        stopped = self._service.request_stop(group_id, username, reason="user_stop")
+        return stream_msg(STOP_REPLY if stopped else STOP_NO_ACTIVE_REPLY, True, stream_id)
+
+    def _new_conversation(self, group_id: str, username: str, stream_id: str) -> dict:
+        # 开新会话时旧回复还在推，用户会看到两个气泡同时动，先把旧的收掉
+        self._service.request_stop(group_id, username, reason="new_conversation")
+        return super()._new_conversation(group_id, username, stream_id)
+
+
 class WxAiBotLongConnectionService:
     """通过官方 Python SDK 建立企微机器人长连接，并复用现有消息处理逻辑。"""
 
     def __init__(self, config: WxAiBotLongConnectionConfig | None = None):
         self._config = config or WxAiBotLongConnectionConfig.from_settings()
-        self._view = WxAiBotViewSet()
+        self._view = _LongConnectionViewSet(self)
         self._active_streams: dict[str, ActiveStream] = {}
         self._group_streams: dict[str, str] = {}
-        self._group_pending_streams: dict[str, deque[PendingStream]] = {}
-        self._queued_stream_ids: set[str] = set()
         self._metrics = StreamMetrics()
         self._instance_guard: SingleInstanceGuard | None = None
         self._signal_handlers: dict[int, Any] = {}
@@ -226,7 +257,6 @@ class WxAiBotLongConnectionService:
         self._service_state = ServiceState.INITIALIZED
         self._shutdown_requested = False
         self._accepting_messages = True
-        self._draining_streams = False
         self._loop: asyncio.AbstractEventLoop | None = None
         self._shutdown_task: asyncio.Task[None] | None = None
         self._health_task: asyncio.Task[None] | None = None
@@ -429,52 +459,29 @@ class WxAiBotLongConnectionService:
         await self._client.reply(frame, response)
 
     async def _start_direct_stream(self, frame: dict[str, Any], request: WxBotAgentRequest) -> None:
-        if request.stream_id in self._active_streams or request.stream_id in self._queued_stream_ids:
+        if request.stream_id in self._active_streams:
             logger.info("event=wxbot_ws_stream_duplicate stream_id=%s ignored=true", request.stream_id)
             return
 
-        pending = self._group_pending_streams.get(request.group_id)
-        if request.group_id in self._group_streams or pending:
-            await self._enqueue_group_stream(frame, request)
-            if request.group_id not in self._group_streams:
-                self._start_next_group_stream(request.group_id)
+        # 同一个群只允许一条流。排队会让用户等一段没有反馈的时间，且拿到的回答未必还
+        # 切题；直接拒绝并告诉他怎么办，比默默排队更好。
+        if active_stream_id := self._group_streams.get(request.group_id):
+            self._metrics.rejected_busy += 1
+            # /stop 只能停自己的，占着名额的是别人时不能让他去停
+            occupied_by_self = self._active_streams[active_stream_id].username == request.username
+            logger.info(
+                "event=wxbot_ws_stream_rejected stream_id=%s group_id=%s reason=group_busy "
+                "active_stream_id=%s by_self=%s",
+                request.stream_id,
+                request.group_id,
+                active_stream_id,
+                occupied_by_self,
+            )
+            notice = BUSY_REPLY if occupied_by_self else BUSY_BY_OTHERS_REPLY
+            await self._send_stream_reply(frame, request.stream_id, notice, True)
             return
 
         self._launch_direct_stream(frame, request)
-
-    async def _enqueue_group_stream(self, frame: dict[str, Any], request: WxBotAgentRequest) -> None:
-        queue = self._group_pending_streams.setdefault(request.group_id, deque())
-        queue_limit = max(1, int(getattr(settings, "WXAIBOT_WS_GROUP_QUEUE_SIZE", 10)))
-        if len(queue) >= queue_limit:
-            self._metrics.queue_rejected += 1
-            logger.warning(
-                "event=wxbot_ws_group_queue_rejected stream_id=%s group_id=%s queue_depth=%s queue_limit=%s",
-                request.stream_id,
-                request.group_id,
-                len(queue),
-                queue_limit,
-            )
-            await self._send_stream_reply(frame, request.stream_id, "当前会话排队请求已满，请稍后重试", True)
-            return
-
-        queue.append(PendingStream(frame=frame, request=request, enqueued_at=time.monotonic()))
-        self._queued_stream_ids.add(request.stream_id)
-        self._metrics.queued += 1
-        total_queued = self._queued_stream_count()
-        self._metrics.peak_queued = max(self._metrics.peak_queued, total_queued)
-        logger.info(
-            "event=wxbot_ws_group_stream_queued stream_id=%s group_id=%s group_queue_depth=%s queued_streams=%s",
-            request.stream_id,
-            request.group_id,
-            len(queue),
-            total_queued,
-        )
-        await self._send_stream_reply(
-            frame,
-            request.stream_id,
-            f"当前会话正在处理上一条请求，已进入队列（前方 {len(queue)} 条）",
-            False,
-        )
 
     def _launch_direct_stream(self, frame: dict[str, Any], request: WxBotAgentRequest) -> None:
         cancel_event = threading.Event()
@@ -482,6 +489,7 @@ class WxAiBotLongConnectionService:
         active = ActiveStream(
             frame=frame,
             group_id=request.group_id,
+            username=request.username,
             task=task,
             cancel_event=cancel_event,
             started_at=time.monotonic(),
@@ -496,33 +504,6 @@ class WxAiBotLongConnectionService:
             request.group_id,
             len(self._active_streams),
         )
-
-    def _start_next_group_stream(self, group_id: str) -> None:
-        if self._shutdown_requested or self._draining_streams or group_id in self._group_streams:
-            return
-        queue = self._group_pending_streams.get(group_id)
-        if not queue:
-            self._group_pending_streams.pop(group_id, None)
-            return
-
-        pending = queue.popleft()
-        self._queued_stream_ids.discard(pending.request.stream_id)
-        if not queue:
-            self._group_pending_streams.pop(group_id, None)
-        queue_wait = time.monotonic() - pending.enqueued_at
-        self._metrics.dequeued += 1
-        self._metrics.queue_wait_total += queue_wait
-        logger.info(
-            "event=wxbot_ws_group_stream_dequeued stream_id=%s group_id=%s queue_wait_ms=%.3f queued_streams=%s",
-            pending.request.stream_id,
-            group_id,
-            queue_wait * 1000,
-            self._queued_stream_count(),
-        )
-        self._launch_direct_stream(pending.frame, pending.request)
-
-    def _queued_stream_count(self) -> int:
-        return sum(len(queue) for queue in self._group_pending_streams.values())
 
     async def _consume_direct_stream(
         self,
@@ -565,12 +546,10 @@ class WxAiBotLongConnectionService:
                     if isinstance(item, Exception):
                         raise item
 
-                    send_wait = await self._send_stream_reply(
-                        frame,
-                        request.stream_id,
-                        item.content or ("回答完成" if item.finish else THINKING_MSG),
-                        item.finish,
-                    )
+                    content = item.content or ("回答完成" if item.finish else THINKING_MSG)
+                    send_wait = await self._send_stream_reply(frame, request.stream_id, content, item.finish)
+                    if active := self._active_streams.get(request.stream_id):
+                        active.last_content = content
                     now = time.monotonic()
                     sse_to_send = now - item.observed_at
                     self._metrics.send_wait_total += send_wait
@@ -627,11 +606,41 @@ class WxAiBotLongConnectionService:
         output_queue: asyncio.Queue,
         cancel_event: threading.Event,
     ) -> None:
+        """worker 线程入口：为本次请求开一条独立 trace，再执行 Agent。
+
+        span 覆盖整个生产过程，期间的平台 API 调用、Agent 执行与 LLM 请求都挂在它下面，
+        排障时一个 trace id 就能串起一次提问的全部下游动作。
+        """
+        with start_request_span(
+            "wxbot.agent_request",
+            **{
+                "wxbot.stream_id": request.stream_id,
+                "wxbot.group_id": request.group_id,
+                "wxbot.username": request.username,
+            },
+        ) as trace_id:
+            if trace_id:
+                logger.info(
+                    "event=wxbot_ws_stream_trace stream_id=%s trace_id=%s",
+                    request.stream_id,
+                    trace_id,
+                )
+            self._produce_agent_frames(request, loop, output_queue, cancel_event)
+
+    def _produce_agent_frames(
+        self,
+        request: WxBotAgentRequest,
+        loop: asyncio.AbstractEventLoop,
+        output_queue: asyncio.Queue,
+        cancel_event: threading.Event,
+    ) -> None:
         agent_stream = None
         try:
             if not self._put_from_worker(loop, output_queue, _PRODUCER_STARTED, cancel_event):
                 return
-            thread_id = self._view._get_or_create_thread_id(request.group_id)
+            thread_id = self._view._get_or_create_thread_id(
+                self._view._session_scope(request.group_id, request.username)
+            )
             strategy = resolve_strategy(request.username)
             agent_stream = strategy.open_stream(
                 content=request.content,
@@ -655,12 +664,44 @@ class WxAiBotLongConnectionService:
             if not cancel_event.is_set():
                 self._put_from_worker(loop, output_queue, error, cancel_event)
         finally:
-            if agent_stream is not None and hasattr(agent_stream.generator, "close"):
-                with contextlib.suppress(Exception):
-                    agent_stream.generator.close()
+            if agent_stream is not None:
+                self._release_agent_stream(agent_stream, request.stream_id)
             stream_registry.unregister(request.stream_id)
             if not cancel_event.is_set():
                 self._put_from_worker(loop, output_queue, _PRODUCER_DONE, cancel_event)
+
+    @staticmethod
+    def _release_agent_stream(agent_stream: AgentStream, stream_id: str) -> None:
+        """读完这一轮剩下的帧，再把它的缓存流清掉。
+
+        replay 模式下框架不在 EOD 自行清理，而是「由上层在合适时机统一 mark_completed」
+        （streaming_helper 原话），缓存要留满 90 秒窗口等前端重连重放。企微这边每条消息
+        都是同一个 session_code 上的新消费者，下一轮开局发现队列非空就当成断线重连，
+        把上一轮整个重播一遍——用户看到的是上一轮的工具调用和结尾的「用户已取消」。
+
+        先排空再清理：/stop 时框架的 producer 还在收尾，读到 EOD 才能确认它不会在
+        清理之后又把 EOD 写回队列，让下一轮重新捡到一条无终态的残流。
+        """
+        deadline = time.monotonic() + AGENT_STREAM_DRAIN_TIMEOUT
+        try:
+            for _ in agent_stream.generator:
+                if time.monotonic() > deadline:
+                    logger.warning("event=wxbot_ws_stream_drain_timeout stream_id=%s", stream_id)
+                    break
+        except Exception as error:
+            logger.debug("event=wxbot_ws_stream_drain_aborted stream_id=%s error=%s", stream_id, error)
+        finally:
+            if hasattr(agent_stream.generator, "close"):
+                with contextlib.suppress(Exception):
+                    agent_stream.generator.close()
+            try:
+                message_handler_factory.get().mark_completed(agent_stream.session_code)
+            except Exception:
+                logger.exception(
+                    "event=wxbot_ws_stream_cache_released stream_id=%s session_code=%s released=false",
+                    stream_id,
+                    agent_stream.session_code,
+                )
 
     @staticmethod
     def _put_from_worker(
@@ -689,19 +730,47 @@ class WxAiBotLongConnectionService:
             self._active_streams.pop(stream_id, None)
             if self._group_streams.get(active.group_id) == stream_id:
                 self._group_streams.pop(active.group_id, None)
-            self._start_next_group_stream(active.group_id)
         if task.cancelled():
             return
         if error := task.exception():
             logger.error("event=wxbot_ws_stream_task_failed stream_id=%s error=%s", stream_id, error)
+
+    def request_stop(self, group_id: str, username: str, *, reason: str) -> bool:
+        """中止该发起人正在生成的流，返回是否确有流被中止。
+
+        只停自己那条：群里每个人的上下文是独立的，谁都能掐掉别人的回复不合理。
+        并发名额仍是群级的，所以这里先按群取到唯一那条流，再核对归属。
+
+        由解析线程（prepare_agent_request 跑在 to_thread 里）调用，因此这里只做
+        线程安全的动作：置取消位、通知 Agent 侧停生成，再把收尾丢回事件循环。
+        置位必须同步完成，否则用户会在 /stop 回执之后继续看到旧回复刷出来。
+        """
+        stream_id = self._group_streams.get(group_id, "")
+        active = self._active_streams.get(stream_id) if stream_id else None
+        if active is None or active.username != username:
+            return False
+
+        active.cancel_event.set()
+        stream_registry.cancel(stream_id)
+        if self._loop and self._loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                self._cancel_active_stream(stream_id, reason=reason, notice=STOP_NOTICE),
+                self._loop,
+            )
+        return True
 
     async def _cancel_active_stream(
         self,
         stream_id: str,
         *,
         reason: str,
-        terminal_content: str | None = None,
+        notice: str | None = None,
     ) -> None:
+        """中止这条流。notice 非空时补一个终态帧说明中止原因。
+
+        终态帧必须带上已经推给用户的内容再重发：企微的 stream 协议收到的是全量快照，
+        只发一句说明会把用户已经看到的半截回答整个替换掉。
+        """
         active = self._active_streams.get(stream_id)
         if active is None:
             return
@@ -711,9 +780,10 @@ class WxAiBotLongConnectionService:
         await asyncio.gather(active.task, return_exceptions=True)
         self._metrics.cancelled += 1
         logger.info("event=wxbot_ws_stream_cancelled stream_id=%s reason=%s", stream_id, reason)
-        if terminal_content:
+        if notice:
+            delivered = active.last_content or PREPARING_REPLY
             with contextlib.suppress(Exception):
-                await self._send_stream_reply(active.frame, stream_id, terminal_content, True)
+                await self._send_stream_reply(active.frame, stream_id, f"{delivered}\n\n{notice}", True)
 
     async def _send_stream_reply(self, frame: dict[str, Any], stream_id: str, content: str, finish: bool) -> float:
         started_at = time.monotonic()
@@ -799,23 +869,20 @@ class WxAiBotLongConnectionService:
 
     def _log_health(self) -> None:
         executor = get_agent_executor_snapshot()
-        queued_streams = self._queued_stream_count()
         final_frames = max(1, self._metrics.final_frames)
         first_frames = max(1, self._metrics.first_frames)
         sent_frames = max(1, self._metrics.sent_frames)
         logger.info(
-            "event=wxbot_ws_health state=%s connected=%s accepting=%s active_streams=%s queued_streams=%s "
+            "event=wxbot_ws_health state=%s connected=%s accepting=%s active_streams=%s "
             "agent_active=%s agent_pending=%s agent_workers=%s agent_pending_limit=%s agent_capacity=%s "
             "agent_submitted=%s agent_rejected=%s agent_peak_active=%s agent_peak_pending=%s "
             "streams_started=%s streams_completed=%s "
-            "streams_cancelled=%s streams_failed=%s streams_queued=%s streams_dequeued=%s "
-            "queue_rejected=%s peak_queued=%s avg_queue_wait_ms=%.3f "
+            "streams_cancelled=%s streams_failed=%s streams_rejected_busy=%s "
             "avg_first_frame_ms=%.3f avg_final_frame_ms=%.3f avg_send_wait_ms=%.3f",
             self._service_state,
             bool(getattr(self._client, "is_connected", False)),
             self._accepting_messages,
             len(self._active_streams),
-            queued_streams,
             executor.active,
             executor.pending,
             executor.max_workers,
@@ -829,11 +896,7 @@ class WxAiBotLongConnectionService:
             self._metrics.completed,
             self._metrics.cancelled,
             self._metrics.failed,
-            self._metrics.queued,
-            self._metrics.dequeued,
-            self._metrics.queue_rejected,
-            self._metrics.peak_queued,
-            self._metrics.queue_wait_total / max(1, self._metrics.dequeued) * 1000,
+            self._metrics.rejected_busy,
             self._metrics.first_frame_latency_total / first_frames * 1000,
             self._metrics.final_frame_latency_total / final_frames * 1000,
             self._metrics.send_wait_total / sent_frames * 1000,
@@ -843,7 +906,7 @@ class WxAiBotLongConnectionService:
         logger.info("[WxAiBot-WS] 执行停机清理: %s", reason)
         if self._health_task and not self._health_task.done():
             self._health_task.cancel()
-        await self._cancel_stream_tasks(terminal_content="服务正在停机，当前请求已取消")
+        await self._cancel_stream_tasks(notice="（服务正在停机，本次回复已中断）")
         with contextlib.suppress(Exception):
             self._client.disconnect()
 
@@ -865,34 +928,9 @@ class WxAiBotLongConnectionService:
         while self._client.is_connected:
             await asyncio.sleep(0.1)
 
-    async def _cancel_stream_tasks(self, terminal_content: str | None = None) -> None:
-        self._draining_streams = True
+    async def _cancel_stream_tasks(self, notice: str | None = None) -> None:
         for stream_id in list(self._active_streams):
-            await self._cancel_active_stream(
-                stream_id,
-                reason="service_shutdown",
-                terminal_content=terminal_content,
-            )
-        await self._cancel_pending_streams(terminal_content)
-
-    async def _cancel_pending_streams(self, terminal_content: str | None = None) -> None:
-        pending_streams = [pending for queue in self._group_pending_streams.values() for pending in queue]
-        self._group_pending_streams.clear()
-        self._queued_stream_ids.clear()
-        self._metrics.cancelled += len(pending_streams)
-        for pending in pending_streams:
-            logger.info(
-                "event=wxbot_ws_stream_cancelled stream_id=%s reason=service_shutdown state=queued",
-                pending.request.stream_id,
-            )
-            if terminal_content:
-                with contextlib.suppress(Exception):
-                    await self._send_stream_reply(
-                        pending.frame,
-                        pending.request.stream_id,
-                        terminal_content,
-                        True,
-                    )
+            await self._cancel_active_stream(stream_id, reason="service_shutdown", notice=notice)
 
     def _mark_startup_failure(self, error: Exception) -> None:
         if self._startup_error is None:
@@ -939,8 +977,6 @@ class WxAiBotLongConnectionService:
     def _cleanup_runtime(self) -> None:
         self._active_streams.clear()
         self._group_streams.clear()
-        self._group_pending_streams.clear()
-        self._queued_stream_ids.clear()
         self._shutdown_task = None
         self._health_task = None
         self._authenticated_event = None

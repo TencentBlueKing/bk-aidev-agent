@@ -20,7 +20,16 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 
 from .channel_config import find_rtx_channel, get_channel_config
-from .constants import EMPTY_INPUT_PROMPT, GROUP_CHAT_TYPE, NEW_CONVERSATION_CMDS, WRONG_MENTION_PROMPT
+from .constants import (
+    EMPTY_INPUT_PROMPT,
+    GROUP_CHAT_TYPE,
+    HELP_CMDS,
+    HELP_REPLY,
+    NEW_CONVERSATION_CMDS,
+    STOP_CMDS,
+    STOP_NO_ACTIVE_REPLY,
+    WRONG_MENTION_PROMPT,
+)
 from .context import ContextGenerator, LlmChunkMsg, WxWorkAiBotContext, stream_msg, text_msg
 from .decryption import WXBizJsonMsgCrypt
 from .execution import get_agent_executor
@@ -114,38 +123,46 @@ class WxAiBotViewSet(ViewSet):
             logger.exception(f"处理事件消息失败: {e}")
         return stream_msg("", True, uuid.uuid4().hex)
 
-    def _get_or_create_thread_id(self, group_id: str) -> str:
+    def _session_scope(self, group_id: str, username: str) -> str:
+        """会话轮换的作用域键，即 ``AgentSession`` 这张表的主键。
+
+        回调按群共享一个 thread_id；长连接覆写为按人，见其子类说明。
+        """
+        return group_id
+
+    def _get_or_create_thread_id(self, scope: str) -> str:
         """
         获取或创建thread_id
 
         Args:
-            group_id: 群组ID
+            scope: 会话作用域键，由 ``_session_scope`` 给出
 
         Returns:
             str: thread_id
         """
         try:
             # 尝试获取现有会话
-            agent_session = AgentSession.objects.get(group_id=group_id)
+            agent_session = AgentSession.objects.get(group_id=scope)
 
             # 检查会话是否有效（30分钟内）
             if agent_session.is_session_valid(timeout_minutes=30):
-                logger.info(f"group_id:{group_id} 使用现有会话 thread_id:{agent_session.thread_id}")
+                # 每条消息都会命中，放 INFO 没有信息量
+                logger.debug(f"scope:{scope} 使用现有会话 thread_id:{agent_session.thread_id}")
                 # 更新最后会话时间
                 agent_session.update_session()
                 return agent_session.thread_id
             else:
                 # 会话已过期，生成新的thread_id
-                new_thread_id = f"{group_id}_{int(time.time())}"
+                new_thread_id = f"{scope}_{int(time.time())}"
                 agent_session.update_session(thread_id=new_thread_id)
-                logger.info(f"group_id:{group_id} 会话已过期，生成新的 thread_id:{new_thread_id}")
+                logger.info(f"scope:{scope} 会话已过期，生成新的 thread_id:{new_thread_id}")
                 return new_thread_id
 
         except AgentSession.DoesNotExist:
             # 创建新会话
-            new_thread_id = f"{group_id}_{int(time.time())}"
-            AgentSession.objects.create(group_id=group_id, thread_id=new_thread_id, last_session_time=timezone.now())
-            logger.info(f"group_id:{group_id} 创建新会话 thread_id:{new_thread_id}")
+            new_thread_id = f"{scope}_{int(time.time())}"
+            AgentSession.objects.create(group_id=scope, thread_id=new_thread_id, last_session_time=timezone.now())
+            logger.info(f"scope:{scope} 创建新会话 thread_id:{new_thread_id}")
             return new_thread_id
 
     def _reply_text(self, payload: dict) -> dict:
@@ -206,8 +223,8 @@ class WxAiBotViewSet(ViewSet):
         stripped = content.strip()
         if not stripped:
             return stream_msg(EMPTY_INPUT_PROMPT, True, stream_id), ""
-        if stripped in NEW_CONVERSATION_CMDS:
-            return self._new_conversation(context.group_id, stream_id), ""
+        if command := self._resolve_builtin_command(stripped, stream_id, context):
+            return command, ""
         return None, content
 
     def _handle_group_chat(self, content: str, stream_id: str, context: WxWorkAiBotContext) -> tuple[dict | None, str]:
@@ -235,8 +252,8 @@ class WxAiBotViewSet(ViewSet):
         user_input = content[prefix_len:].strip()
         if not user_input:
             return stream_msg(EMPTY_INPUT_PROMPT, True, stream_id), ""
-        if user_input in NEW_CONVERSATION_CMDS:
-            return self._new_conversation(context.group_id, stream_id), ""
+        if command := self._resolve_builtin_command(user_input, stream_id, context):
+            return command, ""
         return None, user_input
 
     def _process_mention_fallback(
@@ -254,7 +271,31 @@ class WxAiBotViewSet(ViewSet):
         user_input = parts[1].strip()
         if not user_input:
             return stream_msg(EMPTY_INPUT_PROMPT, True, stream_id), ""
+        if command := self._resolve_builtin_command(user_input, stream_id, context):
+            return command, ""
         return None, user_input
+
+    def _resolve_builtin_command(self, user_input: str, stream_id: str, context: WxWorkAiBotContext) -> dict | None:
+        """命中内置命令则返回终态响应，否则返回 None 交给 Agent。
+
+        单聊、@机器人、未配置机器人名的兜底解析三条路径共用本入口，避免命令集
+        在某一条路径上漏掉。
+        """
+        if user_input in NEW_CONVERSATION_CMDS:
+            return self._new_conversation(context.group_id, context.sender_id, stream_id)
+        if user_input in HELP_CMDS:
+            return stream_msg(HELP_REPLY, True, stream_id)
+        if user_input in STOP_CMDS:
+            return self.stop_generation(context.group_id, context.sender_id, stream_id)
+        return None
+
+    def stop_generation(self, group_id: str, username: str, stream_id: str) -> dict:
+        """中止该发起人正在生成的回复。
+
+        HTTP 回调没有进程内的活跃流登记（企微靠轮询取结果，进程间也不共享状态），
+        因此基类只能如实回复「没有正在生成的回复」；长连接服务覆写本方法接上登记簿。
+        """
+        return stream_msg(STOP_NO_ACTIVE_REPLY, True, stream_id)
 
     def _process_quote(self, payload: dict, content: str) -> str:
         """
@@ -317,29 +358,31 @@ class WxAiBotViewSet(ViewSet):
             quote_content = quote_content.split("\n</think>\n\n", 1)[-1]
         return f"引用内容：「{quote_content}」\n\n{user_content}"
 
-    def _new_conversation(self, group_id: str, stream_id: str) -> dict:
+    def _new_conversation(self, group_id: str, username: str, stream_id: str) -> dict:
         """
         创建新会话
 
         Args:
             group_id: 群组ID
+            username: 发起人
             stream_id: 流式响应ID
 
         Returns:
             dict: 返回消息
         """
+        scope = self._session_scope(group_id, username)
         # 生成新的thread_id
-        new_thread_id = f"{group_id}_{int(time.time())}"
+        new_thread_id = f"{scope}_{int(time.time())}"
 
         try:
             # 尝试获取现有会话并更新
-            agent_session = AgentSession.objects.get(group_id=group_id)
+            agent_session = AgentSession.objects.get(group_id=scope)
             agent_session.update_session(thread_id=new_thread_id)
-            logger.info(f"group_id:{group_id} 更新会话 thread_id:{new_thread_id}")
+            logger.info(f"scope:{scope} 更新会话 thread_id:{new_thread_id}")
         except AgentSession.DoesNotExist:
             # 创建新会话
-            AgentSession.objects.create(group_id=group_id, thread_id=new_thread_id, last_session_time=timezone.now())
-            logger.info(f"group_id:{group_id} 创建新会话 thread_id:{new_thread_id}")
+            AgentSession.objects.create(group_id=scope, thread_id=new_thread_id, last_session_time=timezone.now())
+            logger.info(f"scope:{scope} 创建新会话 thread_id:{new_thread_id}")
 
         return stream_msg("已创建新会话，请输入咨询内容", True, stream_id)
 
@@ -351,7 +394,7 @@ class WxAiBotViewSet(ViewSet):
         """
         try:
             logger.debug(f"[WxAiBot] 发送至Agent | stream_id:{stream_id}, content_len={len(content)}")
-            thread_id = self._get_or_create_thread_id(group_id)
+            thread_id = self._get_or_create_thread_id(self._session_scope(group_id, username))
             strategy = resolve_strategy(username)
             strategy.execute(
                 content=content,
