@@ -8,6 +8,7 @@ import logging
 import os
 import sys
 import threading
+import time
 import types
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -102,22 +103,10 @@ def _service(client: FakeClient | None = None) -> WxAiBotLongConnectionService:
     return service
 
 
-class TestAgentStreamRelease:
-    """收尾必须把这一轮的缓存流清掉，否则下一轮会把它当断线重连整个重放。
+class TestAgentStreamDrain:
+    """收尾只排空 Agent 统一流接口，不由长连接操作消息缓存。"""
 
-    框架在 replay 模式下不在 EOD 自行清理，注释写明「由上层在合适时机统一 mark_completed」，
-    wxbot 就是那个上层。漏掉时的现象是：/stop 之后再提问，企微里回放出上一轮的工具调用，
-    最后以上一轮的「用户已取消」收场。
-    """
-
-    @staticmethod
-    def _release(generator):
-        with patch.object(long_connection_module, "message_handler_factory") as factory:
-            WxAiBotLongConnectionService._release_agent_stream(AgentStream("chat", generator, "session-1"), "stream-1")
-        return factory.get.return_value
-
-    def test_remaining_frames_are_drained_before_release(self):
-        """/stop 时框架 producer 还在收尾，读到 EOD 才能确保它不会在清理后又写回队列。"""
+    def test_remaining_frames_are_drained(self):
         consumed = 0
 
         def generator():
@@ -126,41 +115,48 @@ class TestAgentStreamRelease:
                 consumed += 1
                 yield "frame"
 
-        handler = self._release(generator())
+        WxAiBotLongConnectionService._drain_stream_frames(generator(), "stream-1")
 
         assert consumed == 6
-        handler.mark_completed.assert_called_once_with("session-1")
 
-    def test_drain_gives_up_on_a_stream_that_never_ends(self, monkeypatch):
-        """排空必须有上限，不能让一条不收敛的流永久占住 worker 线程。"""
-        monkeypatch.setattr(long_connection_module, "AGENT_STREAM_DRAIN_TIMEOUT", -1)
+    def test_blocking_next_does_not_bypass_drain_timeout(self, monkeypatch):
+        """即使 next() 本身阻塞，wxbot worker 也只能等待配置的上限。"""
+        monkeypatch.setattr(long_connection_module, "AGENT_STREAM_DRAIN_TIMEOUT", 0.01)
+        entered = threading.Event()
+        release = threading.Event()
+        finished = threading.Event()
 
-        def endless():
-            while True:
+        def blocking_generator():
+            try:
+                entered.set()
+                release.wait()
                 yield "frame"
+            finally:
+                finished.set()
 
-        handler = self._release(endless())
+        started = time.monotonic()
+        WxAiBotLongConnectionService._drain_stream_frames(blocking_generator(), "stream-1")
+        elapsed = time.monotonic() - started
 
-        handler.mark_completed.assert_called_once_with("session-1")
+        assert entered.is_set()
+        assert elapsed < 0.2
+        release.set()
+        assert finished.wait(timeout=1)
 
-    def test_cache_is_released_even_when_draining_blows_up(self):
-        """排空是尽力而为，但清理不能因此被跳过——跳过就等于把重放留给下一轮。"""
+    def test_drain_failure_does_not_propagate(self):
+        """上游收尾异常不能再打断 wxbot worker。"""
 
         def exploding():
             yield "frame"
             raise RuntimeError("upstream reset")
 
-        handler = self._release(exploding())
+        WxAiBotLongConnectionService._drain_stream_frames(exploding(), "stream-1")
 
-        handler.mark_completed.assert_called_once_with("session-1")
+    def test_long_connection_does_not_import_message_handler_factory(self):
+        assert not hasattr(long_connection_module, "message_handler_factory")
 
-    def test_release_failure_does_not_propagate(self):
-        with patch.object(long_connection_module, "message_handler_factory") as factory:
-            factory.get.return_value.mark_completed.side_effect = RuntimeError("broker down")
-            WxAiBotLongConnectionService._release_agent_stream(AgentStream("chat", iter([]), "session-1"), "s-1")
-
-    async def test_worker_releases_the_cache_when_the_stream_ends(self):
-        """接线检查：收尾真的挂在了 worker 的 finally 上。"""
+    async def test_worker_drains_the_unified_stream_when_it_ends(self):
+        """接线检查：worker 的 finally 只排空统一帧迭代器。"""
         service = _service()
         service._view._get_or_create_thread_id.return_value = "thread-1"
         strategy = MagicMock()
@@ -170,12 +166,12 @@ class TestAgentStreamRelease:
         with (
             patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
             patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
-            patch.object(long_connection_module, "message_handler_factory") as factory,
+            patch.object(WxAiBotLongConnectionService, "_drain_stream_frames") as drain,
         ):
             await service._start_direct_stream({}, request)
             await service._active_streams["stream-1"].task
 
-        factory.get.return_value.mark_completed.assert_called_once_with("session-1")
+        drain.assert_called_once()
 
 
 class TestStopCommand:

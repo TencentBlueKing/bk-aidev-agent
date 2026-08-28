@@ -19,8 +19,6 @@ from tempfile import gettempdir
 from typing import Any
 
 from aibot import WSClient, WSClientOptions
-from aidev_agent.services.messages_handler.factory import message_handler_factory
-from aidev_agent.utils.tracing import start_request_span
 from django.conf import settings
 
 from .constants import (
@@ -34,7 +32,7 @@ from .constants import (
     WS_INSTANCE_LOCK_CACHE_KEY_PREFIX,
 )
 from .context import THINKING_MSG, stream_msg
-from .direct_stream import AgentStream, DirectStreamFrame, iter_direct_stream_frames
+from .direct_stream import DirectStreamFrame, iter_direct_stream_frames
 from .execution import get_agent_executor, get_agent_executor_snapshot
 from .strategies import WECOM_AGENT_RETRY_STRATEGY, resolve_strategy
 from .stream_registry import stream_registry
@@ -606,26 +604,8 @@ class WxAiBotLongConnectionService:
         output_queue: asyncio.Queue,
         cancel_event: threading.Event,
     ) -> None:
-        """worker 线程入口：为本次请求开一条独立 trace，再执行 Agent。
-
-        span 覆盖整个生产过程，期间的平台 API 调用、Agent 执行与 LLM 请求都挂在它下面，
-        排障时一个 trace id 就能串起一次提问的全部下游动作。
-        """
-        with start_request_span(
-            "wxbot.agent_request",
-            **{
-                "wxbot.stream_id": request.stream_id,
-                "wxbot.group_id": request.group_id,
-                "wxbot.username": request.username,
-            },
-        ) as trace_id:
-            if trace_id:
-                logger.info(
-                    "event=wxbot_ws_stream_trace stream_id=%s trace_id=%s",
-                    request.stream_id,
-                    trace_id,
-                )
-            self._produce_agent_frames(request, loop, output_queue, cancel_event)
+        """worker 线程入口：执行 Agent 并把生成帧转发到事件循环。"""
+        self._produce_agent_frames(request, loop, output_queue, cancel_event)
 
     def _produce_agent_frames(
         self,
@@ -635,6 +615,7 @@ class WxAiBotLongConnectionService:
         cancel_event: threading.Event,
     ) -> None:
         agent_stream = None
+        frames = None
         try:
             if not self._put_from_worker(loop, output_queue, _PRODUCER_STARTED, cancel_event):
                 return
@@ -664,44 +645,41 @@ class WxAiBotLongConnectionService:
             if not cancel_event.is_set():
                 self._put_from_worker(loop, output_queue, error, cancel_event)
         finally:
-            if agent_stream is not None:
-                self._release_agent_stream(agent_stream, request.stream_id)
+            if frames is not None:
+                self._drain_stream_frames(frames, request.stream_id)
             stream_registry.unregister(request.stream_id)
             if not cancel_event.is_set():
                 self._put_from_worker(loop, output_queue, _PRODUCER_DONE, cancel_event)
 
     @staticmethod
-    def _release_agent_stream(agent_stream: AgentStream, stream_id: str) -> None:
-        """读完这一轮剩下的帧，再把它的缓存流清掉。
+    def _drain_stream_frames(frames, stream_id: str) -> None:
+        """在独立守护线程中排空统一流接口，让 Agent 自己完成收尾。
 
-        replay 模式下框架不在 EOD 自行清理，而是「由上层在合适时机统一 mark_completed」
-        （streaming_helper 原话），缓存要留满 90 秒窗口等前端重连重放。企微这边每条消息
-        都是同一个 session_code 上的新消费者，下一轮开局发现队列非空就当成断线重连，
-        把上一轮整个重播一遍——用户看到的是上一轮的工具调用和结尾的「用户已取消」。
-
-        先排空再清理：/stop 时框架的 producer 还在收尾，读到 EOD 才能确认它不会在
-        清理之后又把 EOD 写回队列，让下一轮重新捡到一条无终态的残流。
+        长连接不操作消息处理器或缓存。正常读到 Agent 流末尾后，SDK 会按自己的
+        生命周期释放资源。排空放到独立线程后，即使某次 ``next()`` 永久阻塞，调用方
+        也只等待配置的上限，不会继续占住 wxbot Agent worker。
         """
-        deadline = time.monotonic() + AGENT_STREAM_DRAIN_TIMEOUT
-        try:
-            for _ in agent_stream.generator:
-                if time.monotonic() > deadline:
-                    logger.warning("event=wxbot_ws_stream_drain_timeout stream_id=%s", stream_id)
-                    break
-        except Exception as error:
-            logger.debug("event=wxbot_ws_stream_drain_aborted stream_id=%s error=%s", stream_id, error)
-        finally:
-            if hasattr(agent_stream.generator, "close"):
-                with contextlib.suppress(Exception):
-                    agent_stream.generator.close()
+        completed = threading.Event()
+
+        def _drain() -> None:
             try:
-                message_handler_factory.get().mark_completed(agent_stream.session_code)
-            except Exception:
-                logger.exception(
-                    "event=wxbot_ws_stream_cache_released stream_id=%s session_code=%s released=false",
-                    stream_id,
-                    agent_stream.session_code,
-                )
+                for _ in frames:
+                    pass
+            except Exception as error:
+                logger.debug("event=wxbot_ws_stream_drain_aborted stream_id=%s error=%s", stream_id, error)
+            finally:
+                if hasattr(frames, "close"):
+                    with contextlib.suppress(Exception):
+                        frames.close()
+                completed.set()
+
+        threading.Thread(
+            target=_drain,
+            daemon=True,
+            name=f"wxbot-stream-drain-{stream_id[:8]}",
+        ).start()
+        if not completed.wait(timeout=max(0.0, AGENT_STREAM_DRAIN_TIMEOUT)):
+            logger.warning("event=wxbot_ws_stream_drain_timeout stream_id=%s", stream_id)
 
     @staticmethod
     def _put_from_worker(

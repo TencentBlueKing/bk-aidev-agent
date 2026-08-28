@@ -61,6 +61,22 @@ def test_chat_sse_is_converted_to_direct_frames_with_thinking_docs_and_terminal(
     assert "[1][日志](https://example.com/a%20b)" in frames[-1].content
 
 
+def test_terminal_frame_still_drains_the_agent_iterator_to_its_natural_end():
+    consumed: list[str] = []
+
+    def source():
+        for chunk in (_sse({"type": "RUN_FINISHED"}), "data: [DONE]\n"):
+            consumed.append(chunk)
+            yield chunk
+
+    stream = AgentStream(kind="chat", session_code="session-1", generator=source())
+
+    frames = list(iter_direct_stream_frames(stream, "stream-1"))
+
+    assert frames[-1].finish
+    assert len(consumed) == 2
+
+
 def _chat_frames(events: list[dict], stream_id: str = "stream-tool"):
     stream = AgentStream(kind="chat", session_code="s", generator=iter([_sse(event) for event in events]))
     return list(iter_direct_stream_frames(stream, stream_id))
@@ -101,7 +117,8 @@ def test_tool_block_refreshes_in_place_and_interleaves_with_text():
 
     content = frames[-1].content
     assert "🟢 **activate_skill** `bklog` · 12ms" in content
-    assert "🟢 **execute** `ls` · 90ms" in content
+    assert "🟢 **execute** · 90ms" in content
+    assert "`ls`" not in content
     assert "接下来查询日志" in content
     # 成功的结果由正文复述，工具块里不再重复
     assert "activated" not in content
@@ -125,8 +142,39 @@ def test_failed_tool_shows_the_reason():
 
     content = frames[-1].content
     assert "🔴 **execute** · 60.0s" in content
-    # 失败原因必须展示，否则用户只看到一个红点
     assert "1640001" in content
+    assert "用户认证失败" not in content
+
+
+def test_sensitive_tool_args_and_raw_error_are_not_exposed():
+    frames = _chat_frames(
+        [
+            {"type": "TOOL_CALL_START", "toolCallId": "e1", "toolCallName": "execute"},
+            {
+                "type": "TOOL_CALL_ARGS",
+                "toolCallId": "e1",
+                "delta": '{"password":"do-not-display","query":"token=redacted-value"}',
+            },
+            {
+                "type": "TOOL_CALL_RESULT",
+                "toolCallId": "e1",
+                "content": "Traceback /srv/app.py authorization=Bearer redacted-value https://internal.example",
+                "isError": True,
+            },
+            {"type": "RUN_FINISHED"},
+        ]
+    )
+
+    content = frames[-1].content
+    assert "执行失败，详细原因请查看服务日志" in content
+    for sensitive_text in (
+        "do-not-display",
+        "token=redacted-value",
+        "Bearer redacted-value",
+        "/srv/app.py",
+        "internal.example",
+    ):
+        assert sensitive_text not in content
 
 
 def test_tool_block_and_thinking_coexist():

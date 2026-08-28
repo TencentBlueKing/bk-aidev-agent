@@ -10,11 +10,12 @@
 from __future__ import annotations
 
 import json
+import re
 from logging import getLogger
 
 from ag_ui.core.events import EventType
 
-from .constants import TOOL_ERROR_LIMIT, TOOL_LINE_PREFIX, TOOL_STATUS_ICONS, TOOL_TARGET_LIMIT
+from .constants import TOOL_LINE_PREFIX, TOOL_STATUS_ICONS, TOOL_TARGET_LIMIT
 
 logger = getLogger(__name__)
 
@@ -24,6 +25,12 @@ _TOOL_EVENTS = (
     EventType.TOOL_CALL_END,
     EventType.TOOL_CALL_RESULT,
 )
+_SAFE_TARGET_KEYS = ("skill", "name", "index_set_id", "bk_biz_id")
+_SENSITIVE_MARKER = re.compile(
+    r"(?i)(?:authorization|cookie|credential|password|passwd|secret|token|api[-_]?key|access[-_]?key|private[-_]?key)"
+)
+_SENSITIVE_VALUE = re.compile(r"(?i)(?:bearer\s+\S+|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})")
+_ERROR_CODE = re.compile(r"(?i)(?:error|错误码|code)\s*[:：=#-]?\s*([A-Za-z0-9_-]*\d[A-Za-z0-9_-]*)")
 
 
 def is_tool_event(event_type) -> bool:
@@ -54,16 +61,28 @@ def _format_duration(duration) -> str:
 
 
 def _format_tool_target(args: str) -> str:
-    """取首个参数值当操作对象。参数是流式拼接的，半截 JSON 就回退到截断原文。"""
+    """仅展示明确允许且不含敏感标记的参数；半截 JSON 和未知字段一律不回显。"""
     try:
         parsed = json.loads(args)
     except (TypeError, ValueError):
-        return _one_line(args, TOOL_TARGET_LIMIT)
-    if not isinstance(parsed, dict):
-        return _one_line(parsed, TOOL_TARGET_LIMIT)
-    if not parsed:
         return ""
-    return _one_line(next(iter(parsed.values())), TOOL_TARGET_LIMIT)
+    if not isinstance(parsed, dict):
+        return ""
+    normalized = {str(key).lower().replace("-", "_"): value for key, value in parsed.items()}
+    for key in _SAFE_TARGET_KEYS:
+        if key not in normalized or _SENSITIVE_MARKER.search(key):
+            continue
+        value = _one_line(normalized[key], TOOL_TARGET_LIMIT)
+        if value and not _SENSITIVE_MARKER.search(value) and not _SENSITIVE_VALUE.search(value):
+            return value
+    return ""
+
+
+def _safe_tool_error(result: str) -> str:
+    """不回显工具原始异常，只保留可安全展示的错误码。"""
+    if match := _ERROR_CODE.search(result or ""):
+        return f"执行失败（错误码：{match.group(1)}），详细原因请查看服务日志"
+    return "执行失败，详细原因请查看服务日志"
 
 
 def format_tool_markdown(tool: dict) -> str:
@@ -81,8 +100,8 @@ def format_tool_markdown(tool: dict) -> str:
         parts.append(f"· {duration}")
 
     lines = [" ".join(parts)]
-    if status == "error" and tool.get("result"):
-        lines.append(_one_line(tool["result"], TOOL_ERROR_LIMIT))
+    if status == "error":
+        lines.append(tool.get("result") or _safe_tool_error(""))
     return "\n".join(f"{TOOL_LINE_PREFIX}{line}" for line in lines)
 
 
@@ -139,7 +158,7 @@ class ChatSegments:
             is_error = bool(_event_value(event, "isError", "is_error", default=False))
             result = str(_event_value(event, "content", default="") or "")
             tool["status"] = "error" if is_error else "ok"
-            tool["result"] = result or ("执行失败" if is_error else tool.get("result") or "")
+            tool["result"] = _safe_tool_error(result) if is_error else ""
             tool["duration"] = _event_value(event, "duration", default=None)
             logger.info(
                 f"stream_id:{self._stream_id} 工具结束 | name={tool['name']} "

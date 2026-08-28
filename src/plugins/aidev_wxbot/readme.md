@@ -34,12 +34,6 @@ timeout is 600 seconds so an in-progress retry can finish. Override `BKAPP_WXAIB
 database capacity requires different limits. Health logs expose active, pending, peak, submitted, rejected, and
 busy-rejected counts for capacity verification.
 
-Set `BKAPP_WXAIBOT_TRACE_CONSOLE=true` to print one line per finished span to the terminal. It is a local
-troubleshooting aid that separates "the span was never recorded" from "the span was recorded but never exported"; the
-`span` and `parent` columns reconstruct the tree. Agent-side spans (`agent.execution`, `tool.execution`, LLM and RAG
-spans) only exist when the Agent SDK's own OpenTelemetry is enabled, so a console showing nothing but `wxbot.*` and
-HTTP client spans means that switch is off rather than the instrumentation being absent.
-
 ## License
 
 MIT License

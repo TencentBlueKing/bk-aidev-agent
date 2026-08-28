@@ -74,6 +74,8 @@ def _iter_chat_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
     pending_chars = 0
 
     for event in iter_sse_lines(agent_stream.generator, stream_id):
+        if finished:
+            continue
         event_type = event.get("type", "")
         if event_type == EventType.RUN_STARTED and on_run_started:
             on_run_started(_run_id_of(event))
@@ -106,14 +108,12 @@ def _iter_chat_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
             message = event.get("message", event)
             yield DirectStreamFrame(content=f"处理请求时发生错误: {message}", finish=True, failed=True)
             finished = True
-            break
         elif event_type == EventType.RUN_FINISHED:
             yield DirectStreamFrame(
                 content=_render_chat(thinking, segments.render()) + _format_documents(documents),
                 finish=True,
             )
             finished = True
-            break
 
     if not finished:
         partial = _render_chat(thinking, segments.render()) + _format_documents(documents)
@@ -139,6 +139,8 @@ def _iter_flow_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
     finished = False
 
     for event in iter_sse_lines(agent_stream.generator, stream_id):
+        if finished:
+            continue
         event_type = event.get("type", "")
         if event_type == EventType.RUN_STARTED and on_run_started:
             on_run_started(_run_id_of(event))
@@ -148,7 +150,6 @@ def _iter_flow_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
                 yield frame
                 if frame.finish:
                     finished = True
-                    break
         elif event_type == EventType.RUN_ERROR:
             yield DirectStreamFrame(
                 content=f"流程执行出错: {event.get('message', '未知错误')}",
@@ -156,11 +157,9 @@ def _iter_flow_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
                 failed=True,
             )
             finished = True
-            break
         elif event_type == EventType.RUN_FINISHED:
             yield DirectStreamFrame(content=_render_flow(state), finish=True)
             finished = True
-            break
 
     if not finished:
         partial = _render_flow(state)

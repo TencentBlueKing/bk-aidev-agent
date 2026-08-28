@@ -1,13 +1,10 @@
 """wxbot 后台并发与 Agent 取消注册表测试。"""
 
-import contextvars
 import threading
 from unittest.mock import patch
 
 from aidev_wxbot.wxaibot.execution import BoundedDaemonExecutor
 from aidev_wxbot.wxaibot.stream_registry import StreamRegistry
-
-_probe: contextvars.ContextVar[str] = contextvars.ContextVar("wxbot_test_probe", default="")
 
 
 def test_bounded_executor_rejects_tasks_over_active_and_pending_capacity():
@@ -65,55 +62,6 @@ def test_bounded_executor_runs_ten_sessions_concurrently():
     finally:
         release.set()
         executor.shutdown(wait=True)
-
-
-def test_executor_task_runs_in_the_submitter_context():
-    """提交方的 contextvars 要带到 worker 线程，OTel 的 trace context 才传得下去。"""
-    executor = BoundedDaemonExecutor(max_workers=1, max_pending=1, thread_name_prefix="wxbot-ctx")
-    seen: list[str] = []
-    done = threading.Event()
-
-    def task() -> None:
-        seen.append(_probe.get())
-        done.set()
-
-    token = _probe.set("from-submitter")
-    try:
-        assert executor.submit(task)
-        assert done.wait(timeout=1)
-    finally:
-        _probe.reset(token)
-        executor.shutdown(wait=True)
-
-    assert seen == ["from-submitter"]
-
-
-def test_executor_isolates_context_between_tasks_on_one_thread():
-    """worker 是常驻线程，上一个任务写脏的 context 不能漏给下一个任务。
-
-    OTel 在任务里 attach span context，生成器被中途丢弃时不保证 detach；
-    没有隔离的话后续请求会继承残留的 span，表现为所有请求共用同一个 trace id。
-    """
-    executor = BoundedDaemonExecutor(max_workers=1, max_pending=2, thread_name_prefix="wxbot-ctx")
-    seen: list[str] = []
-    done = threading.Event()
-
-    def polluting_task() -> None:
-        _probe.set("leaked")
-
-    def observing_task() -> None:
-        seen.append(_probe.get())
-        done.set()
-
-    try:
-        # max_workers=1 保证两个任务落在同一个 worker 线程上
-        assert executor.submit(polluting_task)
-        assert executor.submit(observing_task)
-        assert done.wait(timeout=1)
-    finally:
-        executor.shutdown(wait=True)
-
-    assert seen == [""]
 
 
 def test_stream_registry_cancels_exact_registered_run():
