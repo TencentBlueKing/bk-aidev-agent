@@ -176,6 +176,21 @@ class ReportTests(unittest.TestCase):
         self.assertIn("启动会话", document)
         self.assertIn("http://mock/start", document)
 
+    def test_health_overview_uses_full_width_modules_and_responsive_scenario_grid(self):
+        report = RunReport(
+            "2026-08-28T00:00:00+08:00",
+            ["api", "ai-blueking"],
+            cases=[
+                CaseResult("api", "应用态对话", "passed", 1, scenario_id="api.chat"),
+                CaseResult("ai-blueking", "流式对话", "passed", 1, scenario_id="ai-blueking.chat"),
+            ],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            document = write_report(report, Path(directory)).read_text(encoding="utf-8")
+        self.assertIn(".component-grid{display:grid;grid-template-columns:1fr;gap:16px}", document)
+        self.assertIn("grid-template-columns:repeat(auto-fit,minmax(280px,1fr))", document)
+        self.assertEqual(document.count('<section class="component-card healthy">'), 2)
+
 
 class TraceTests(unittest.TestCase):
     def test_calls_keep_sequence_and_case_context(self):

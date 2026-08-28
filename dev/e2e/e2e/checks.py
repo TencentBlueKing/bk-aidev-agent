@@ -119,6 +119,24 @@ class Checks:
         headers = self.identity.headers
         root = self.config.mock_url + "/openapi/aidev/resource/v1/chat/session/"
         session_code = ""
+
+        def reply_content(result) -> str:
+            try:
+                return str(result.body["data"]["choices"][0]["delta"]["content"])
+            except (KeyError, IndexError, TypeError) as error:
+                raise AssertionError(f"chat response did not contain assistant content: {result.body}") from error
+
+        def record_conversation(scenario_id: str, case: str, conversation_id: str, messages: list[dict]) -> None:
+            self.report.conversations.append(
+                {
+                    "module": "api",
+                    "scenario_id": scenario_id,
+                    "case": case,
+                    "conversation_id": conversation_id,
+                    "messages": messages,
+                }
+            )
+
         with self.case(
             "api", "api.remote-session", "远端 Session 生命周期", "Session 创建、列表、改名、详情回查和删除"
         ) as detail:
@@ -160,6 +178,182 @@ class Checks:
                 )
             )
             detail.update({"session_code": app_session, "response": fetched.body})
+
+        with self.case(
+            "api",
+            "api.application-chat",
+            "应用态智能体对话",
+            "模板 README 3.1/3.2：X-BKAIDEV-USER、chat_history 和非流式 chat_completion 协议",
+        ) as detail:
+            payload = {
+                "chat_history": [{"role": "user", "content": "应用态 API 本地 E2E 测试"}],
+                "execute_kwargs": {"stream": False},
+            }
+            result = self.require(
+                request(
+                    "POST",
+                    self.config.app_url + "/bk_plugin/openapi/agent/chat_completion/",
+                    headers=headers,
+                    json_body=payload,
+                    timeout=90,
+                )
+            )
+            content = reply_content(result)
+            conversation_id = str(result.body["data"].get("id", ""))
+            detail.update({"protocol": "application", "response": result.body})
+            record_conversation(
+                "api.application-chat",
+                "应用态智能体对话",
+                conversation_id,
+                [*payload["chat_history"], {"role": "assistant", "content": content}],
+            )
+
+        with self.case(
+            "api",
+            "api.user-chat",
+            "用户态智能体对话",
+            "模板 README 3.3：本地登录身份注入和 plugin_api/chat_completion 非流式调用",
+        ) as detail:
+            payload = {
+                "input": "用户态 API 本地 E2E 测试",
+                "execute_kwargs": {"stream": False},
+            }
+            result = self.require(
+                request(
+                    "POST",
+                    self.config.app_url + "/bk_plugin/plugin_api/chat_completion/",
+                    json_body=payload,
+                    timeout=90,
+                )
+            )
+            content = reply_content(result)
+            conversation_id = str(result.body["data"].get("id", ""))
+            detail.update({"protocol": "user", "response": result.body})
+            record_conversation(
+                "api.user-chat",
+                "用户态智能体对话",
+                conversation_id,
+                [
+                    {"role": "user", "content": payload["input"]},
+                    {"role": "assistant", "content": content},
+                ],
+            )
+
+        with self.case(
+            "api",
+            "api.plugin-invoke",
+            "蓝鲸插件同步调用",
+            "模板 README 3.4：1.0.0assistant 的 inputs/context 标准插件协议与同步输出",
+        ) as detail:
+            payload = {
+                "inputs": {
+                    "command": "",
+                    "input": "蓝鲸插件协议本地 E2E 测试",
+                    "chat_history": [{"role": "system", "content": "请返回确定性的本地测试结果"}],
+                },
+                "context": {"executor": self.identity.username},
+            }
+            result = self.require(
+                request(
+                    "POST",
+                    self.config.app_url + "/bk_plugin/invoke/1.0.0assistant",
+                    json_body=payload,
+                    timeout=90,
+                )
+            )
+            response_text = json.dumps(result.body, ensure_ascii=False, default=str)
+            expected = "这是本地 mock LLM 的确定性回复。"
+            if expected not in response_text:
+                raise AssertionError(f"plugin response did not contain assistant output: {result.body}")
+            detail.update({"protocol": "bk-plugin", "response": result.body})
+            record_conversation(
+                "api.plugin-invoke",
+                "蓝鲸插件同步调用",
+                "",
+                [
+                    {"role": "user", "content": payload["inputs"]["input"]},
+                    {"role": "assistant", "content": expected},
+                ],
+            )
+
+        with self.case(
+            "api",
+            "api.sse-protocol",
+            "API 流式响应协议",
+            "模板 README 3.5：SSE 包含运行开始、文本 Start/Content/End 和成功结束事件",
+        ) as detail:
+            payload = {"input": "API SSE 协议本地 E2E 测试", "execute_kwargs": {"stream": True}}
+            result = self.require(
+                stream_request(
+                    "POST",
+                    self.config.app_url + "/bk_plugin/openapi/agent/chat_completion/",
+                    headers=headers,
+                    json_body=payload,
+                    timeout=90,
+                )
+            )
+            events = parse_sse_events(result.body)
+            event_types = [str(event.get("type", "")) for event in events]
+            required = {"RUN_STARTED", "TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED"}
+            content = assistant_text(events)
+            if (
+                not required.issubset(set(event_types))
+                or not content
+                or run_finished(events, outcome="success") is None
+            ):
+                raise AssertionError(f"incomplete API SSE protocol: {event_types}")
+            conversation_id = result.headers.get("x-bkaidev-agent-session-code", "")
+            detail.update({"event_types": event_types, "terminal": run_finished(events, outcome="success")})
+            record_conversation(
+                "api.sse-protocol",
+                "API 流式响应协议",
+                conversation_id,
+                [
+                    {"role": "user", "content": payload["input"]},
+                    {"role": "assistant", "content": content},
+                ],
+            )
+
+        with self.case(
+            "api",
+            "api.multimodal-chat",
+            "多模态消息协议",
+            "模板 README 3.1：chat_history.content 接受 text 与 image_url 组合并完成智能体调用",
+        ) as detail:
+            multimodal_content = [
+                {"type": "text", "text": "描述这张本地测试图片"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII="
+                    },
+                },
+            ]
+            payload = {
+                "chat_history": [{"role": "user", "content": multimodal_content}],
+                "execute_kwargs": {"stream": False},
+            }
+            result = self.require(
+                request(
+                    "POST",
+                    self.config.app_url + "/bk_plugin/openapi/agent/chat_completion/",
+                    headers=headers,
+                    json_body=payload,
+                    timeout=90,
+                )
+            )
+            content = reply_content(result)
+            conversation_id = str(result.body["data"].get("id", ""))
+            detail.update({"content_types": [item["type"] for item in multimodal_content], "response": result.body})
+            record_conversation(
+                "api.multimodal-chat",
+                "多模态消息协议",
+                conversation_id,
+                [
+                    {"role": "user", "content": multimodal_content},
+                    {"role": "assistant", "content": content},
+                ],
+            )
 
     def ai_blueking(self):
         chat_url = self.config.app_url + "/bk_plugin/openapi/agent/chat_completion/"

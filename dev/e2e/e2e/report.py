@@ -361,13 +361,14 @@ code{{font-family:ui-monospace}}h2{{margin:28px 0 10px}}h3,h4{{margin:0 0 8px}}.
 .chain-timeline .api-call{{background:#fff}}
 .result-banner{{border-left:5px solid #12a150}}.result-banner.unhealthy{{border-left-color:#d4380d}}.result-banner h2{{margin:0 0 4px}}
 .stats{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}}.stat{{background:#f7f9fc;padding:10px;border-radius:6px}}
-.stat b{{display:block;font-size:22px}}.component-grid{{display:grid;grid-template-columns:1fr 1fr;gap:14px}}
-.component-card{{margin:0}}.component-card header{{display:flex;justify-content:space-between;gap:10px;align-items:center}}
-.component-card header span{{color:#168a4a;font-weight:600}}.component-card.unhealthy header span{{color:#d4380d}}
-.component-card ul{{list-style:none;margin:12px 0 0;padding:0}}.component-card li{{display:grid;grid-template-columns:24px 1fr auto;gap:8px;padding:10px 0;border-top:1px solid #eef1f5}}
+.stat b{{display:block;font-size:22px}}.component-grid{{display:grid;grid-template-columns:1fr;gap:16px}}
+.component-card{{margin:0;padding:18px}}.component-card header{{display:flex;justify-content:space-between;gap:12px;align-items:center;padding-bottom:12px;border-bottom:1px solid #e7edf3}}
+.component-card header h3{{font-size:17px}}.component-card header span{{color:#168a4a;font-weight:600;background:#edf8f1;border-radius:999px;padding:4px 10px;white-space:nowrap}}.component-card.unhealthy header span{{color:#d4380d;background:#fff1ed}}
+.component-card ul{{list-style:none;margin:14px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}}
+.component-card li{{display:grid;grid-template-columns:24px minmax(0,1fr);align-content:start;gap:8px;padding:13px;background:#f8fafc;border:1px solid #edf1f5;border-radius:7px;min-width:0}}
 .component-card li>span{{color:#169c51;font-size:18px;font-weight:700}}.component-card li.bad>span{{color:#d4380d}}
-.component-card li p{{color:#667085;margin:3px 0 0}}.component-card li small{{float:none}}.scenario-actions{{text-align:right;min-width:190px}}
-.scenario-actions a,.back-link{{display:block;margin-top:5px;color:#1769aa;text-decoration:none;font-size:12px}}.scenario-actions a:hover,.back-link:hover{{text-decoration:underline}}
+.component-card li p{{color:#667085;margin:4px 0 0}}.component-card li small{{float:none;color:#667085}}.scenario-actions{{grid-column:2;display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:5px}}
+.scenario-actions a,.back-link{{display:block;color:#1769aa;text-decoration:none;font-size:12px}}.scenario-actions a:hover,.back-link:hover{{text-decoration:underline}}
 .scenario-evidence{{scroll-margin-top:20px;border-left:5px solid #12a150}}.scenario-evidence.unhealthy{{border-left-color:#d4380d}}
 .scenario-evidence.supporting{{border-left-color:#8091a7}}.scenario-evidence:target,.component-card li:target{{box-shadow:0 0 0 3px #b7dcff}}
 .scenario-evidence>header{{display:flex;justify-content:space-between;align-items:center;gap:12px}}.eyebrow{{margin:0;color:#667085;font-size:12px}}
@@ -375,7 +376,7 @@ code{{font-family:ui-monospace}}h2{{margin:28px 0 10px}}h3,h4{{margin:0 0 8px}}.
 .evidence-counts{{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}}.evidence-counts span{{background:#eef4fa;border-radius:999px;padding:4px 9px;font-size:12px}}
 .assertion-proof{{background:#f6fbf8;border:1px solid #d7eee0;border-radius:7px;padding:11px 12px;margin:10px 0}}.assertion-proof p{{margin:4px 0 0}}
 .assertion-detail{{padding:10px;margin:10px 0}}.scenario-evidence h4{{margin-top:18px}}
-@media(max-width:760px){{.exchange,.component-grid{{grid-template-columns:1fr}}.stats{{grid-template-columns:1fr 1fr}}.conversation .message{{max-width:100%}}.source{{display:none}}.component-card li{{grid-template-columns:24px 1fr}}.scenario-actions{{grid-column:2;text-align:left}}}}
+@media(max-width:760px){{main{{padding:0 12px}}.exchange{{grid-template-columns:1fr}}.stats{{grid-template-columns:1fr 1fr}}.conversation .message{{max-width:100%}}.source{{display:none}}.component-card{{padding:14px}}.component-card header{{align-items:flex-start;flex-direction:column}}.component-card ul{{grid-template-columns:1fr}}.scenario-actions{{align-items:flex-start;flex-direction:column}}}}
 </style></head><body><main><h1>bk-aidev-agent 本地 E2E</h1>
 <section class="card result-banner {overall_class}"><h2>{overall_state}</h2>
 <span class="meta">✓ 表示该功能在本次本地全链路中实际执行并通过断言；点击“查看证据”可定位到同一场景的断言、测试端请求及其远端 mock 调用链；未列出的功能不代表已验证。</span>
