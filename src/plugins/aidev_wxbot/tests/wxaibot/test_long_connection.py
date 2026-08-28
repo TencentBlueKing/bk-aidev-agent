@@ -6,9 +6,10 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import threading
 import types
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -27,11 +28,14 @@ try:
     # bk-plugin-framework 和真实 Agent 执行链。
     views_stub = types.ModuleType("aidev_wxbot.wxaibot.views")
     views_stub.WxAiBotViewSet = type("WxAiBotViewSet", (), {})
+    views_stub.WxBotAgentRequest = type("WxBotAgentRequest", (), {})
     sys.modules["aidev_wxbot.wxaibot.views"] = views_stub
     from aidev_wxbot.wxaibot import long_connection as long_connection_module
     from aidev_wxbot.wxaibot.long_connection import (
+        ActiveStream,
         LongConnectionConfigError,
         ServiceState,
+        StreamMetrics,
         WxAiBotLongConnectionConfig,
         WxAiBotLongConnectionService,
     )
@@ -44,6 +48,9 @@ except (ImportError, ModuleNotFoundError, RuntimeError):
 
 
 pytestmark = pytest.mark.skipif(not _wxbot_available, reason="Django and aidev_wxbot required")
+
+if _wxbot_available:
+    from aidev_wxbot.wxaibot.direct_stream import AgentStream
 
 
 class FakeClient:
@@ -64,6 +71,12 @@ class FakeClient:
         self.is_connected = False
 
 
+class ThreadExecutor:
+    def submit(self, fn, *args):
+        threading.Thread(target=fn, args=args, daemon=True).start()
+        return True
+
+
 def _service(client: FakeClient | None = None) -> WxAiBotLongConnectionService:
     service = object.__new__(WxAiBotLongConnectionService)
     service._client = client or FakeClient()
@@ -71,7 +84,11 @@ def _service(client: FakeClient | None = None) -> WxAiBotLongConnectionService:
     service._shutdown_requested = False
     service._accepting_messages = True
     service._loop = None
-    service._stream_tasks = {}
+    service._active_streams = {}
+    service._group_streams = {}
+    service._metrics = StreamMetrics()
+    service._view = MagicMock()
+    service._frame_semaphore = asyncio.Semaphore(16)
     return service
 
 
@@ -103,6 +120,111 @@ class TestLongConnectionConfig:
 
 @pytest.mark.asyncio
 class TestLongConnectionStreaming:
+    async def test_chat_sse_is_pushed_directly_without_legacy_execute(self):
+        service = _service()
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+        strategy = MagicMock()
+        strategy.open_stream.return_value = AgentStream(
+            kind="chat",
+            session_code="session-1",
+            generator=iter(
+                [
+                    f'data: {{"type":"TEXT_MESSAGE_CONTENT","delta":"{"a" * 50}"}}\n',
+                    'data: {"type":"RUN_FINISHED","run_id":"run-1"}\n',
+                ]
+            ),
+        )
+        request = SimpleNamespace(
+            content="query",
+            stream_id="stream-direct",
+            username="user-1",
+            group_id="group-1",
+        )
+
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+        ):
+            await service._start_direct_stream({}, request)
+            task = service._active_streams["stream-direct"].task
+            await task
+
+        strategy.open_stream.assert_called_once()
+        strategy.execute.assert_not_called()
+        assert service._client.reply_stream_calls == [("a" * 50, False), ("a" * 50, True)]
+
+    async def test_agent_run_error_is_counted_as_failed_stream(self):
+        service = _service()
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+        strategy = MagicMock()
+        strategy.open_stream.return_value = AgentStream(
+            kind="chat",
+            session_code="session-1",
+            generator=iter(['data: {"type":"RUN_ERROR","message":"upstream timeout"}\n']),
+        )
+        request = SimpleNamespace(
+            content="query",
+            stream_id="stream-error",
+            username="user-1",
+            group_id="group-1",
+        )
+
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+        ):
+            await service._start_direct_stream({}, request)
+            await service._active_streams["stream-error"].task
+
+        assert service._client.reply_stream_calls == [("处理请求时发生错误: upstream timeout", True)]
+        assert service._metrics.failed == 1
+        assert service._metrics.completed == 0
+
+    async def test_slow_wecom_sender_applies_bounded_backpressure(self, monkeypatch):
+        class SlowClient(FakeClient):
+            def __init__(self):
+                super().__init__()
+                self.sending = asyncio.Event()
+                self.release = asyncio.Event()
+
+            async def reply_stream(self, _frame, _stream_id, content, finish):
+                self.reply_stream_calls.append((content, finish))
+                self.sending.set()
+                await self.release.wait()
+
+        client = SlowClient()
+        service = _service(client)
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+        yielded = 0
+
+        def generator():
+            nonlocal yielded
+            for index in range(20):
+                yielded += 1
+                yield f'data: {{"type":"TEXT_MESSAGE_CONTENT","delta":"{index:02d}{"x" * 48}"}}\n'
+            yield 'data: {"type":"RUN_FINISHED"}\n'
+
+        strategy = MagicMock()
+        strategy.open_stream.return_value = AgentStream("chat", generator(), "session-1")
+        request = SimpleNamespace(content="query", stream_id="slow", username="user-1", group_id="group-1")
+        monkeypatch.setattr(long_connection_module.settings, "WXAIBOT_WS_STREAM_BUFFER_SIZE", 1)
+
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+        ):
+            await service._start_direct_stream({}, request)
+            task = service._active_streams["slow"].task
+            try:
+                await client.sending.wait()
+                await asyncio.sleep(0.05)
+                assert yielded < 20
+            finally:
+                client.release.set()
+                await task
+
+        assert service._metrics.completed == 1
+
     async def test_retries_stream_reply_after_temporary_failure(self, monkeypatch):
         client = FakeClient(failures=1)
         service = _service(client)
@@ -126,81 +248,103 @@ class TestLongConnectionStreaming:
 
         assert client.reply_stream_calls == [("answer", False)]
 
-    async def test_forwarder_sends_new_snapshots_and_stops_on_finish(self, monkeypatch):
+    async def test_long_connection_does_not_poll_legacy_rabbitmq_stream(self):
         service = _service()
-        responses = iter(
-            [
-                {"stream": {"content": "partial", "finish": False}},
-                {"stream": {"content": "partial", "finish": False}},
-                {"stream": {"content": "complete", "finish": True}},
-            ]
-        )
         sent = AsyncMock()
-        service._poll_stream_response = lambda _stream_id: next(responses)
         service._send_stream_reply = sent
-        monkeypatch.setattr(long_connection_module.asyncio, "sleep", AsyncMock())
 
-        await service._forward_stream_replies({}, "stream-1")
+        frame = {"body": {"msgtype": "stream", "stream": {"id": "stream-1"}}}
+        await service._handle_frame(frame)
 
-        assert sent.await_args_list == [
-            (({}, "stream-1", "partial", False),),
-            (({}, "stream-1", "complete", True),),
-        ]
+        service._view._reply_wxaibot.assert_not_called()
+        sent.assert_awaited_once_with(frame, "stream-1", "长连接模式无需轮询流式结果", True)
 
-    async def test_forwarder_skips_already_sent_snapshot(self, monkeypatch):
+    async def test_same_session_preemption_cancels_old_stream_and_sends_terminal(self):
         service = _service()
-        responses = iter(
-            [
-                {"stream": {"content": "partial", "finish": False}},
-                {"stream": {"content": "complete", "finish": True}},
-            ]
-        )
-        sent = AsyncMock()
-        service._poll_stream_response = lambda _stream_id: next(responses)
-        service._send_stream_reply = sent
-        monkeypatch.setattr(long_connection_module.asyncio, "sleep", AsyncMock())
-
-        await service._forward_stream_replies({}, "stream-1", last_signature=("partial", False))
-
-        assert sent.await_args_list == [
-            (({}, "stream-1", "complete", True),),
-        ]
-
-    async def test_does_not_create_duplicate_forwarders_for_same_stream(self):
-        service = _service()
-        started = asyncio.Event()
+        old_task = asyncio.create_task(asyncio.sleep(60))
+        service._active_streams["old"] = ActiveStream({}, "group-1", old_task, __import__("threading").Event(), 0)
+        service._group_streams["group-1"] = "old"
         release = asyncio.Event()
 
-        async def forward(_frame, _stream_id, _last_signature=None):
-            started.set()
+        async def consume(*_args):
             await release.wait()
 
-        service._forward_stream_replies = forward
-        service._start_stream_forwarder({}, "stream-1")
-        await started.wait()
-        first_task = service._stream_tasks["stream-1"]
+        service._consume_direct_stream = consume
+        request = SimpleNamespace(stream_id="new", group_id="group-1")
 
-        service._start_stream_forwarder({}, "stream-1")
+        with patch.object(long_connection_module.stream_registry, "cancel", return_value=True) as cancel:
+            await service._start_direct_stream({"frame": "new"}, request)
 
-        assert service._stream_tasks["stream-1"] is first_task
+        cancel.assert_called_once_with("old")
+        assert old_task.cancelled()
+        assert ("当前会话已有新请求，原请求已结束", True) in service._client.reply_stream_calls
+        assert service._group_streams["group-1"] == "new"
         release.set()
-        await first_task
+        await service._active_streams["new"].task
 
     async def test_cancel_stream_tasks_on_shutdown(self):
         service = _service()
         task = asyncio.create_task(asyncio.sleep(60))
-        service._stream_tasks["stream-1"] = task
+        service._active_streams["stream-1"] = ActiveStream({}, "group-1", task, __import__("threading").Event(), 0)
+        service._group_streams["group-1"] = "stream-1"
 
-        await service._cancel_stream_tasks()
+        with patch.object(long_connection_module.stream_registry, "cancel", return_value=True):
+            await service._cancel_stream_tasks(terminal_content="服务正在停机，当前请求已取消")
 
         assert task.cancelled()
+        assert ("服务正在停机，当前请求已取消", True) in service._client.reply_stream_calls
 
 
 class TestLongConnectionLifecycle:
+    @staticmethod
+    def _service_with_registered_callbacks():
+        class CallbackClient:
+            def __init__(self):
+                self.handlers = {}
+
+            def on(self, event_name):
+                def decorator(callback):
+                    self.handlers[event_name] = callback
+                    return callback
+
+                return decorator
+
+        service = object.__new__(WxAiBotLongConnectionService)
+        service._client = CallbackClient()
+        service._authenticated_event = MagicMock()
+        service._authenticated_event.is_set.return_value = False
+        service._mark_startup_failure = MagicMock()
+        service._set_service_state = MagicMock()
+        service._set_async_event = MagicMock()
+        service._ensure_health_task = MagicMock()
+        service._handle_frame = AsyncMock()
+        service._register_handlers()
+        return service
+
+    def test_transient_startup_error_keeps_sdk_reconnect_alive(self):
+        service = self._service_with_registered_callbacks()
+
+        service._client.handlers["error"](RuntimeError("temporary websocket failure"))
+
+        service._mark_startup_failure.assert_not_called()
+        service._set_service_state.assert_called_once_with(
+            ServiceState.RECONNECTING,
+            "transient_startup_error=temporary websocket failure",
+        )
+
+    @pytest.mark.parametrize("message", ["Authentication failed: bad secret", "Max reconnect attempts exceeded"])
+    def test_terminal_sdk_error_marks_startup_failure(self, message):
+        service = self._service_with_registered_callbacks()
+
+        service._client.handlers["error"](RuntimeError(message))
+
+        service._mark_startup_failure.assert_called_once()
+
     def test_shutdown_request_stops_accepting_messages_and_disconnects(self):
         service = _service()
         service._service_state = ServiceState.RUNNING
         service._state_lock = __import__("threading").Lock()
+        service._health_task = None
 
         service._request_shutdown("test")
 
@@ -216,4 +360,3 @@ class TestLongConnectionLifecycle:
         await service._wait_for_client_disconnected()
 
         assert service._client.disconnected
-

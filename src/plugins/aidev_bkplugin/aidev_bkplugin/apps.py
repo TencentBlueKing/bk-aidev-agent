@@ -33,7 +33,10 @@ except ImportError:
 try:
     from aidev_agent.packages.opentelemetry.metrics import configure_metric_identity
 
-    from aidev_bkplugin.services.otel_metrics import BkPluginMetricService, MetricExportSettings
+    from aidev_bkplugin.services.otel_metrics import (
+        BkPluginMetricService,
+        MetricExportSettings,
+    )
 except ImportError:
     configure_metric_identity = None
     BkPluginMetricService = None
@@ -75,6 +78,14 @@ def init_bk_aidev_agent_otel() -> None:
         )
         return
 
+    # 先解析全局开关，避免本地评测或显式关闭 OTel 的进程仍为 endpoint/identity
+    # 发起 Agent 配置远程请求。默认值保持开启，不改变线上既有初始化行为。
+    otel_config = OTelConfig(otel_endpoints=[])
+    if not getattr(otel_config, "enabled", True):
+        logger.info("[aidev_bkplugin] OpenTelemetry disabled; remote initialization skipped")
+        set_metric_service(None)
+        return
+
     from aidev_bkplugin.services.agent_config import AgentConfigFetcher
 
     endpoints = []
@@ -92,7 +103,7 @@ def init_bk_aidev_agent_otel() -> None:
     # 3. 从 OTEL_GRPC_URL 和 OTEL_BK_DATA_TOKEN 获取单地址
     endpoints.extend(get_otel_endpoint_by_env())
 
-    otel_config = OTelConfig(otel_endpoints=endpoints)
+    otel_config.otel_endpoints = endpoints
     if configure_metric_identity is None or BkPluginMetricService is None or MetricExportSettings is None:
         logger.info("[aidev_bkplugin] metric OpenTelemetry extras unavailable; metric export skipped")
         otel_config.enable_metrics = False
@@ -142,7 +153,10 @@ class AgentConfig(AppConfig):
 
     def ready(self) -> None:
         from aidev_agent.packages.resource_manager import resource_manager
-        from aidev_agent.services.common_agent import CommonQAAgent, common_agent_factory
+        from aidev_agent.services.common_agent import (
+            CommonQAAgent,
+            common_agent_factory,
+        )
 
         if bkoauth:
             bkoauth._init_function()

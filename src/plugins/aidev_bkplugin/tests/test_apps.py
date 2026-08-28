@@ -4,6 +4,22 @@ import aidev_agent.packages as aidev_agent_packages
 from aidev_bkplugin import apps
 
 
+def test_init_otel_disabled_skips_remote_initialization(mocker):
+    otel_config = SimpleNamespace(enabled=False)
+    mocker.patch.object(apps, "OTelConfig", return_value=otel_config)
+    get_json_endpoints = mocker.patch.object(apps, "get_otel_endpoint_by_json_str")
+    get_env_endpoints = mocker.patch.object(apps, "get_otel_endpoint_by_env")
+    instrumentor = mocker.patch.object(apps, "BkAidevAgentInstrumentor")
+    set_metric_service = mocker.patch.object(apps, "set_metric_service")
+
+    apps.init_bk_aidev_agent_otel()
+
+    get_json_endpoints.assert_not_called()
+    get_env_endpoints.assert_not_called()
+    instrumentor.assert_not_called()
+    set_metric_service.assert_called_once_with(None)
+
+
 def _mock_otel_inputs(mocker, agent_info, metric_settings):
     mocker.patch.object(apps, "get_otel_endpoint_by_json_str", return_value=[])
     mocker.patch.object(apps, "get_otel_endpoint_by_agent_info", return_value=[])
@@ -13,6 +29,7 @@ def _mock_otel_inputs(mocker, agent_info, metric_settings):
         return_value=agent_info,
     )
     otel_config = SimpleNamespace(
+        enabled=True,
         enable_metrics=True,
         service_name="agent-service",
         metric_provider_managed_externally=False,
@@ -64,7 +81,11 @@ def test_init_otel_uses_bkplugin_metric_provider_for_celery_export(mocker):
     )
     otel_config, instrumentor = _mock_otel_inputs(
         mocker,
-        {"agent_code": "ai-demo", "agent_name": "Demo Agent", "agent_sdk_version": "2.2.3"},
+        {
+            "agent_code": "ai-demo",
+            "agent_name": "Demo Agent",
+            "agent_sdk_version": "2.2.3",
+        },
         settings,
     )
     metric_service = mocker.patch.object(apps, "BkPluginMetricService").return_value
