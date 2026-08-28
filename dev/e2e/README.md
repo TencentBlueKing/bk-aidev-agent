@@ -13,6 +13,8 @@ make e2e
 make e2e-down
 ```
 
+标准 `make e2e` 只验证 API/登录、AI 小鲸与智能体对话、指标与可观测性；数据库与消息服务仅作为智能体运行所需的真实底层依赖，不单独形成健康结论，企业微信不进入默认范围。
+
 默认数据库为 SQLite，不需要额外容器。若要执行 MySQL 5.7 兼容性检查，启动和执行时使用同一个选择：
 
 ```bash
@@ -28,9 +30,7 @@ make e2e-down
 ```bash
 make e2e-api
 make e2e-ai-blueking
-make e2e-message
 make e2e-metrics
-make e2e-wxbot
 make e2e-browser                 # 默认打开 AI 小鲸 headed 浏览器检查
 make e2e-browser modules=api     # 也可指定模块
 ```
@@ -50,7 +50,7 @@ MESSAGE_HANDLER_TYPE=rabbitmq make e2e-ai-blueking
 
 报告按“先判断功能是否正常，再查看诊断证据”的顺序组织：
 
-- 功能健康概览：按 API/登录、AI 小鲸与对话、数据库与消息、可观测性、企微分组，直接列出本次实际执行通过或失败的功能场景及覆盖说明。
+- 功能健康概览：默认按 API/登录、AI 小鲸与对话、可观测性分组，直接列出本次实际执行通过或失败的功能场景及覆盖说明；未执行的数据库与消息、企微不会显示为已验证。
 - 场景证据关联：每个场景使用稳定的 `scenario_id` 关联断言、会话和 API 调用；健康项展示证据数量，点击“查看证据”直接定位到对应证据区。
 - 完整诊断证据：场景证据区展示断言输出和发送给智能体的会话内容；接口按 `chain_id` 把测试端请求与其触发的“智能体 → 远端 mock”调用合并为一条请求链，再逐层展开查看每次调用的方法、URL、请求 Headers/Body、响应状态、响应 Headers/Body 和耗时。业务场景开始前没有父请求的公共启动调用单独归档，不作为某个功能正常的证据。
 

@@ -7,6 +7,7 @@ TEMPLATE_PROJECT_DIR := $(TEMPLATE_DIR)/{{cookiecutter.project_name}}
 ALL: init-project
 
 E2E_MAKE := $(MAKE) -C $(ROOT_DIR)/dev/e2e
+E2E_DEFAULT_MODULES := api,ai-blueking,metrics
 
 e2e-setup:
 	$(E2E_MAKE) setup $(if $(env_file),ENV_FILE="$(env_file)",)
@@ -18,7 +19,7 @@ e2e-down:
 	$(E2E_MAKE) down
 
 e2e:
-	$(E2E_MAKE) run MODULES=all DB=$(if $(db),$(db),sqlite) HEADLESS=$(if $(headless),$(headless),true) $(if $(env_file),ENV_FILE="$(env_file)",)
+	$(E2E_MAKE) run MODULES=$(E2E_DEFAULT_MODULES) DB=$(if $(db),$(db),sqlite) HEADLESS=$(if $(headless),$(headless),true) $(if $(env_file),ENV_FILE="$(env_file)",)
 
 e2e-browser:
 	$(E2E_MAKE) browser MODULES=$(if $(modules),$(modules),ai-blueking) DB=$(if $(db),$(db),sqlite) $(if $(env_file),ENV_FILE="$(env_file)",)

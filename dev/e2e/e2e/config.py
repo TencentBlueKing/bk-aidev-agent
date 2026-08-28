@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 TRUTHY = {"1", "true", "yes", "on", "y"}
 SUPPORTED_MODULES = ("api", "ai-blueking", "message", "metrics", "wxbot")
+DEFAULT_MODULES = ("api", "ai-blueking", "metrics")
 
 
 def load_env_file(path: Path) -> None:
@@ -62,7 +63,9 @@ class Config:
         env_file = Path(os.getenv("E2E_ENV_FILE", root / "dev/e2e/.env")).expanduser()
         load_env_file(env_file)
         selected = tuple(item.strip() for item in (modules or os.getenv("E2E_MODULES", "")).split(",") if item.strip())
-        if not selected or "all" in selected:
+        if not selected:
+            selected = DEFAULT_MODULES
+        elif "all" in selected:
             selected = SUPPORTED_MODULES
         unknown = sorted(set(selected) - set(SUPPORTED_MODULES))
         if unknown:

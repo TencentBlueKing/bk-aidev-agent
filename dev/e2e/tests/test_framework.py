@@ -7,7 +7,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from e2e.checks import assistant_text, parse_sse_events, run_finished
-from e2e.config import Config, Identity, configured_identity, load_env_file
+from e2e.config import (
+    DEFAULT_MODULES,
+    SUPPORTED_MODULES,
+    Config,
+    Identity,
+    configured_identity,
+    load_env_file,
+)
 from e2e.report import CaseResult, RunReport, redact, write_report
 from e2e.trace import ApiTraceRecorder
 
@@ -43,6 +50,16 @@ class ConfigTests(unittest.TestCase):
                 self.assertRaisesRegex(ValueError, "E2E_DB must be sqlite or mysql"),
             ):
                 Config.from_env("api")
+
+    def test_default_modules_exclude_message_and_wecom(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env_file = Path(directory) / ".env"
+            env_file.write_text("E2E_USERNAME=alice\n", encoding="utf-8")
+            with patch.dict(os.environ, {"E2E_ENV_FILE": str(env_file)}, clear=True):
+                self.assertEqual(Config.from_env().modules, DEFAULT_MODULES)
+                self.assertEqual(Config.from_env("all").modules, SUPPORTED_MODULES)
+        self.assertNotIn("message", DEFAULT_MODULES)
+        self.assertNotIn("wxbot", DEFAULT_MODULES)
 
 
 class ReportTests(unittest.TestCase):
