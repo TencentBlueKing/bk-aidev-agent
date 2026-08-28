@@ -15,6 +15,7 @@ from blueapps.core.exceptions import ClientBlueException
 from django.http.response import StreamingHttpResponse
 from rest_framework.views import Response
 
+from aidev_bkplugin.packages.drf.renderers import get_response_trace_id
 from aidev_bkplugin.serializers.chat_completion import ChatCompletionRequestSerializer
 from aidev_bkplugin.services.agent_builder import AgentBuilder
 from aidev_bkplugin.services.agent_execution import AgentExecutor
@@ -527,7 +528,8 @@ class ChatCompletionViewSet(PluginViewSet):
         sr.headers["Cache-Control"] = "no-cache"
         sr.headers["X-Accel-Buffering"] = "no"
         sr.headers["content-type"] = "text/event-stream"
-        sr.headers["Otel-Trace-Id"] = getattr(self.request._request, "otel_trace_id", "") or ""
+        trace_id = get_response_trace_id(self.request._request) or ""
+        sr.headers["Otel-Trace-Id"] = trace_id
         # 注入 session 相关响应标头，便于客户端获取会话信息和跳转链接
         if session_code:
             sr.headers["x-bkaidev-agent-session-code"] = session_code

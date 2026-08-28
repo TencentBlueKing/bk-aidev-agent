@@ -49,6 +49,15 @@ def get_agent_tracer(name: str) -> Tracer | None:
     return _agent_tracer or (trace.get_tracer(name) if trace is not None else None)
 
 
+def get_current_trace_id() -> str | None:
+    """Return the active OpenTelemetry trace ID without requiring the OTel extra."""
+
+    if trace is None:
+        return None
+    context = trace.get_current_span().get_span_context()
+    return format(context.trace_id, "032x") if context.trace_id else None
+
+
 @contextmanager
 def recording_span(
     name: str,
