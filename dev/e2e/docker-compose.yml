@@ -1,0 +1,51 @@
+services:
+  mysql:
+    image: mysql:5.7
+    platform: linux/amd64
+    profiles: ["mysql"]
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    environment:
+      MYSQL_DATABASE: aidev_agent_e2e
+      MYSQL_USER: aidev
+      MYSQL_PASSWORD: aidev-e2e
+      MYSQL_ROOT_PASSWORD: aidev-root-e2e
+    ports:
+      - "13306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-paidev-root-e2e"]
+      interval: 2s
+      timeout: 3s
+      retries: 40
+    volumes:
+      - e2e-mysql57-v2:/var/lib/mysql
+
+  redis:
+    image: redis:6.2.23-alpine
+    ports:
+      - "16379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  rabbitmq:
+    image: rabbitmq:3.13.7-management
+    user: "999:999"
+    environment:
+      RABBITMQ_DEFAULT_USER: aidev
+      RABBITMQ_DEFAULT_PASS: aidev-e2e
+    ports:
+      - "25672:5672"
+      - "15673:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - e2e-rabbitmq-v2:/var/lib/rabbitmq
+
+volumes:
+  e2e-mysql57-v2:
+  e2e-rabbitmq-v2:

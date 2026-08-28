@@ -14,6 +14,8 @@ TEMPLATE_PROJECT = REPOSITORY_ROOT / "template" / "builtin" / "{{cookiecutter.pr
 SOURCE_LINKS = {
     "aidev_agent": REPOSITORY_ROOT / "src" / "agent" / "aidev_agent",
     "aidev_bkplugin": REPOSITORY_ROOT / "src" / "plugins" / "aidev_bkplugin" / "aidev_bkplugin",
+    "aidev_ai_blueking": REPOSITORY_ROOT / "src" / "plugins" / "aidev_ai_blueking" / "aidev_ai_blueking",
+    "aidev_wxbot": REPOSITORY_ROOT / "src" / "plugins" / "aidev_wxbot" / "aidev_wxbot",
 }
 
 

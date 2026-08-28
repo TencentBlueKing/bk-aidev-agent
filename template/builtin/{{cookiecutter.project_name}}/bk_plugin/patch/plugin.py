@@ -40,6 +40,17 @@ for _setting in dir(_module):
     if _setting == _setting.upper():
         locals()[_setting] = getattr(_module, _setting)
 
+# Explicit local-only login mock for dev/e2e. Django authentication first
+# populates request.user; this middleware replaces it before Blueapps checks
+# login requirements. It is unreachable unless the E2E runner enables it.
+if os.getenv("E2E_AUTH_MOCK_ENABLED", "").lower() in {"1", "true", "yes", "on"} and ENVIRONMENT == "dev":
+    auth_middleware = "django.contrib.auth.middleware.AuthenticationMiddleware"
+    e2e_middleware = "e2e.django_auth.E2EAuthMiddleware"
+    middleware = list(locals().get("MIDDLEWARE", ()))
+    if e2e_middleware not in middleware:
+        middleware.insert(middleware.index(auth_middleware) + 1, e2e_middleware)
+        MIDDLEWARE = tuple(middleware)
+
 # 日志
 if locals().get("LOGGING"):
     locals()["LOGGING"]["loggers"]["bkapi_client_core"] = {"handlers": ["root"], "level": "DEBUG", "propagate": True}
