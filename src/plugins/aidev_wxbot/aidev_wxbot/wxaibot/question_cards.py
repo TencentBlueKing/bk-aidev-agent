@@ -6,10 +6,9 @@ import json
 from dataclasses import asdict, dataclass, replace
 
 from aidev_agent.core.ag_ui.ask_user_question import ASK_USER_QUESTION_REASON
-from aidev_bkplugin.services.agent_helpers import AgentHelper
 from django.core import signing
 
-from .approval_cards import _safe_url
+from .context import _escape_markdown_text
 
 _PREFIX = "question_answer:"
 _SALT = "aidev.wxbot.question.v1"
@@ -78,15 +77,17 @@ def _native_kind(questions: list) -> str | None:
             for option in options
         ):
             return None
-        # Descriptions cannot be silently discarded in native option labels.
-        if any(option.get("description") for option in options):
-            return None
     if len(questions) == 1:
         return "vote_interaction"
     return "multiple_interaction" if not any(q.get("multiSelect") for q in questions) else None
 
 
 def build_pending_question_card(event: dict, session_code: str) -> dict | None:
+    interrupt = pending_question(event)
+    return build_question_card(interrupt, session_code) if interrupt else None
+
+
+def pending_question(event: dict) -> dict | None:
     outcome = event.get("outcome") or {}
     if not isinstance(outcome, dict) or outcome.get("type") != "interrupt":
         return None
@@ -98,30 +99,44 @@ def build_pending_question_card(event: dict, session_code: str) -> dict | None:
             metadata = interrupt.get("metadata") or {}
             if not isinstance(metadata, dict) or metadata.get("status", "pending") != "pending":
                 return None
-            return build_question_card(interrupt, session_code)
+            return interrupt
     return None
 
 
-def build_question_card(interrupt: dict, session_code: str) -> dict:
+def question_prompt(interrupt: dict) -> str:
+    """Keep the complete questions and option descriptions available in chat."""
+    lines = ["请直接在企微回复答案，也可以使用下方卡片选择（如有）。"]
+    for index, question in enumerate((interrupt.get("metadata") or {}).get("questions") or [], 1):
+        if not isinstance(question, dict):
+            continue
+        lines.append(f"\n{index}. {_escape_markdown_text(str(question.get('question') or '请补充信息'))}")
+        for option in question.get("options") or []:
+            if not isinstance(option, dict):
+                continue
+            text = str(option.get("label") or "")
+            if option.get("description"):
+                text += f"：{option['description']}"
+            lines.append(f"- {_escape_markdown_text(text)}")
+    return "\n".join(lines)
+
+
+def build_question_card(interrupt: dict, session_code: str) -> dict | None:
     questions = (interrupt.get("metadata") or {}).get("questions") or []
-    session_url = _safe_url(AgentHelper.build_session_detail_url(session_code))
-    card = {
-        "card_type": "text_notice",
-        "main_title": {"title": "需要你补充信息", "desc": "点击卡片回到原会话填写"},
-        "card_action": {"type": 1, "url": session_url} if session_url else {"type": 0},
-    }
     if not isinstance(questions, list) or not all(isinstance(q, dict) for q in questions):
-        return card
+        return None
     kind = _native_kind(questions)
     if not kind or not session_code or not interrupt.get("id"):
-        return card
+        return None
+    card = {
+        "main_title": {"title": "需要你补充信息", "desc": "请选择后提交，或直接文字回复"},
+        "card_action": {"type": 0},
+    }
     action = QuestionAction(session_code, interrupt["id"], questions_digest(questions))
     card.update(
         card_type=kind,
         task_id=question_task_id(action),
         submit_button={"text": "提交答案", "key": encode_question_key(action)},
     )
-    card["main_title"]["desc"] = "请选择后提交，继续原会话"
     if kind == "vote_interaction":
         question = questions[0]
         card["main_title"]["title"] = question["question"]
@@ -186,7 +201,8 @@ def decode_answers(questions: list, selected_items: dict) -> list:
 
 
 def submitted_question_card(interrupt: dict, session_code: str, *, text: str = "答案已接收") -> dict:
-    card = build_question_card(interrupt, session_code)
+    card = build_question_card(interrupt, session_code) or {"main_title": {"title": text}, "card_action": {"type": 0}}
+    card["main_title"].pop("desc", None)
     for key in ("checkbox", "select_list", "submit_button"):
         card.pop(key, None)
     card.update(card_type="text_notice", sub_title_text=text)

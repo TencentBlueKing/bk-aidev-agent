@@ -168,3 +168,65 @@ def test_resume_span_and_agent_traceparent_follow_callback(approval_resume_case,
     kwargs = case.run.call_args.args[1]
     assert kwargs.caller_trace_context["traceparent"].split("-")[1] == f"{parent.context.trace_id:032x}"
     assert "alice" not in resumed.to_json()
+
+
+@pytest.mark.parametrize("flattened", [False, True])
+def test_missing_pending_property_resumes_from_matching_record(persisted_approval_case, flattened):
+    case = persisted_approval_case
+    if flattened:
+        case.record.update(case.record["property"].pop("builtin_property"))
+    delivery = MagicMock()
+    case.module._resume_worker(case.action, "alice", delivery)
+    kwargs = case.run.call_args.args[1]
+    assert kwargs.thread_id == "graph-1"
+    assert kwargs.session_code == "session-1" and kwargs.turn_id == "turn-1"
+    assert kwargs.resume[0]["payload"] == {"approved": False}
+    delivery.failed.assert_not_called()
+    delivery.finish.assert_called_once()
+
+
+@pytest.mark.parametrize("invalid", ["missing_thread", "new_interrupt", "approved", "new_user", "conflicting_pending"])
+def test_record_fallback_never_resumes_missing_or_superseded_context(persisted_approval_case, invalid):
+    case = persisted_approval_case
+    if invalid == "missing_thread":
+        case.record["property"]["builtin_property"].pop("graph_thread_id")
+    elif invalid == "new_interrupt":
+        case.record["content"]["outcome"]["interrupts"] = [{"id": "new", "reason": "aidev:tool_approval"}]
+    elif invalid == "approved":
+        case.record["property"]["builtin_property"]["approve_result"] = "approved"
+    elif invalid == "new_user":
+        case.manager.return_value.list_session_contents.return_value.append({"role": "user"})
+    else:
+        case.api.retrieve_chat_session.return_value["data"]["session_property"]["pending_interrupt"] = {
+            "graph_thread_id": "other-graph",
+            "interrupts": case.result["interrupts"],
+        }
+    delivery = MagicMock()
+    case.module._resume_worker(case.action, "alice", delivery)
+    case.run.assert_not_called()
+    delivery.failed.assert_called_once()
+    delivery.finish.assert_called_once()
+
+
+async def test_cancel_fallback_delivers_only_reply_on_existing_connection(persisted_approval_case):
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from aidev_wxbot.wxaibot.resume_delivery import ResumeDelivery
+
+    case = persisted_approval_case
+    send = AsyncMock()
+    delivery = ResumeDelivery(send, resume_type="tool_approval")
+    output = iter(
+        [
+            'data: {"type":"RUN_STARTED","runId":"resume-1"}\n\n',
+            'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"已跳过该工具，继续回复。"}\n\n',
+            'data: {"type":"RUN_FINISHED"}\n\n',
+        ]
+    )
+    case.run.side_effect = lambda *args, **kwargs: kwargs["consume_stream"](output)
+    await asyncio.to_thread(case.module._resume_worker, case.action, "alice", delivery)
+    await delivery.task
+    bodies = [call.args[0]["markdown"]["content"] for call in send.call_args_list]
+    assert len(bodies) == 1
+    assert "已跳过该工具" in bodies[0]

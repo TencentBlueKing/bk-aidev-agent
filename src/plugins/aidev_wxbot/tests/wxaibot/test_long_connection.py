@@ -144,6 +144,30 @@ def question_callback(question_case):
     return body
 
 
+@pytest.mark.parametrize("content", ["你好", "华南", "1. 华南\n2. 按默认设置继续"])
+async def test_all_text_goes_directly_to_llm_without_question_lookup(content):
+    from aidev_wxbot.wxaibot import question_resume
+
+    service = _service()
+    service._view._get_or_create_thread_id.return_value = "existing-thread"
+    request = SimpleNamespace(content=content, stream_id="text-direct", username="alice", group_id="g1")
+    strategy = MagicMock()
+    strategy.open_stream.return_value = AgentStream("chat", iter(['data: {"type":"RUN_FINISHED"}\n']), "session-1")
+    with (
+        patch.object(
+            question_resume, "SessionManager", side_effect=AssertionError("Unexpected question lookup")
+        ) as lookup,
+        patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+        patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+    ):
+        await service._start_direct_stream({}, request)
+        await service._active_streams[request.stream_id].task
+    lookup.assert_not_called()
+    assert strategy.open_stream.call_args.kwargs["content"] == content
+    assert strategy.open_stream.call_args.kwargs["thread_id"] == "existing-thread"
+    assert service._metrics.completed == 1
+
+
 @pytest.mark.parametrize("status", ["accepted", "duplicate", "busy"])
 async def test_question_click_updates_only_accepted_card(question_case, question_callback, status):
     service = _service()

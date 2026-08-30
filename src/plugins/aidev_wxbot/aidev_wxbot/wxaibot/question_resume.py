@@ -17,8 +17,14 @@ from django.db import close_old_connections
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from .question_cards import MAX_AGE, QuestionAction, decode_answers, question_task_id, questions_digest
-from .resume_context import original_interrupt_turn
+from .question_cards import (
+    MAX_AGE,
+    QuestionAction,
+    decode_answers,
+    question_task_id,
+    questions_digest,
+)
+from .resume_context import original_interrupt_record, original_interrupt_turn
 from .tracing import wxbot_span
 
 logger = getLogger(__name__)
@@ -39,6 +45,19 @@ def _read_pending(action: QuestionAction, username: str) -> tuple[SessionManager
     # User-scoped platform read enforces session access; group visibility is not authorization.
     session = manager.retrieve_session(action.session_code)
     pending = (session.get("session_property") or {}).get("pending_interrupt") or {}
+    if not pending:
+        # Older platforms omit this session property. Recover only the latest
+        # matching, still-pending persisted question after the scoped read above.
+        record = original_interrupt_record(manager, action.session_code, action.interrupt_id)
+        outcome = record["content"].get("outcome") or {}
+        if outcome.get("type") != "interrupt":
+            raise ValueError("Question is already finalized")
+        builtin = (record.get("property") or {}).get("builtin_property")
+        builtin = builtin if isinstance(builtin, dict) else record
+        pending = {
+            "graph_thread_id": builtin.get("graph_thread_id") or record.get("graph_thread_id"),
+            "interrupts": outcome.get("interrupts"),
+        }
     interrupts = pending.get("interrupts") or []
     interrupt = interrupts[-1] if isinstance(interrupts, list) and interrupts else {}
     metadata = interrupt.get("metadata") or {}
@@ -137,6 +156,7 @@ def _question_worker(submission: QuestionSubmission, delivery, key: str) -> None
                 ),
             )
             cache.set(key, "completed", timeout=MAX_AGE)
+            logger.info("event=wxbot_question_resume_finished")
         except Exception as error:
             logger.error("event=wxbot_question_resume_failed error_type=%s", type(error).__name__)
             delivery.failed()

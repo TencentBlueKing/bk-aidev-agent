@@ -14,7 +14,7 @@ from .approval_cards import build_pending_approval_card
 from .constants import STREAM_ERROR_REPLY
 from .context import CHUNK_FLUSH_THRESHOLD, _escape_markdown_text, _normalize_url
 from .formatters import _node_display, _task_state_label, format_task_outputs
-from .question_cards import build_pending_question_card
+from .question_cards import build_pending_question_card, pending_question, question_prompt
 from .stream import iter_sse_lines
 from .tool_blocks import ChatSegments, is_tool_event
 from .tracing import wxbot_span
@@ -131,14 +131,17 @@ def _iter_chat_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
             with wxbot_span("wxbot.approval_card.build") as span:
                 approval_card = build_pending_approval_card(event, agent_stream.session_code)
                 question_card = build_pending_question_card(event, agent_stream.session_code)
+                question = pending_question(event)
                 span.set_attribute("wxbot.approval.pending", approval_card is not None)
-            if approval_card or question_card:
+            if approval_card or question:
                 current_content = _render_chat(thinking, segments.render())
+                if question:
+                    current_content = "\n\n".join(filter(None, [current_content, question_prompt(question)]))
                 yield DirectStreamFrame(
                     content=current_content or ("等待工具审批" if approval_card else "请回答卡片中的问题"),
                     finish=True,
                     pending_approval=approval_card is not None,
-                    pending_question=question_card is not None,
+                    pending_question=question is not None,
                     template_card=approval_card or question_card,
                 )
                 finished = True

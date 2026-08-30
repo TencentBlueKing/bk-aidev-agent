@@ -1,6 +1,6 @@
 """Resume output → new WeCom messages on the owning connection's event loop.
 
-Only READY and the final rendered output cross the bounded queue. Network
+Only channel notices and the final rendered output cross the bounded queue. Network
 failure never restarts the Agent or prevents its remaining output being saved.
 This process-local adapter is not an outbox for external approval callbacks.
 """
@@ -34,7 +34,13 @@ def markdown_parts(content: str, limit: int = 4000) -> Iterator[str]:
 
 
 class ResumeDelivery:
-    def __init__(self, send: Callable[[dict], Awaitable[None]], *, resume_type: str, paused: bool = False):
+    def __init__(
+        self,
+        send: Callable[[dict], Awaitable[None]],
+        *,
+        resume_type: str,
+        paused: bool = False,
+    ):
         self._loop = asyncio.get_running_loop()
         self._queue: asyncio.Queue = asyncio.Queue(maxsize=8)
         self._send = send
@@ -49,10 +55,11 @@ class ResumeDelivery:
         self.task = asyncio.create_task(self._consume_messages())
 
     def _on_ready(self, event: CustomEvent) -> None:
-        text = (
-            "审批已取消，正在继续原会话。" if self._resume_type == "tool_approval" else "答案已接收，正在继续原会话。"
-        )
-        self._enqueue({"msgtype": "markdown", "markdown": {"content": text}})
+        # The updated approval card already confirms cancellation; READY still
+        # remains available to other listeners without sending another notice.
+        if self._resume_type == "tool_approval":
+            return
+        self._enqueue({"msgtype": "markdown", "markdown": {"content": "答案已接收，正在继续原会话。"}})
 
     def _enqueue(self, body: object) -> None:
         if self._closed or self._loop.is_closed():

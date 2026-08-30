@@ -92,3 +92,39 @@ def test_permission_failure_does_not_accept_answers(resume_case):
     with pytest.raises(PermissionError):
         mod.prepare_question_submission(case.action, "alice", case.selected)
     case.executor.submit.assert_not_called()
+
+
+@pytest.mark.parametrize("flattened", [False, True])
+def test_native_card_submission_without_pending_session_property(resume_case, flattened):
+    case = resume_case
+    case.manager.retrieve_session.return_value = {"session_property": {}}
+    record = case.manager.list_session_contents.return_value[0]
+    record["content"] = {"outcome": {"type": "interrupt", "interrupts": [case.interrupt]}}
+    if flattened:
+        record["graph_thread_id"] = "graph-1"
+    else:
+        record["property"]["builtin_property"] = {"graph_thread_id": "graph-1"}
+    submission = mod.prepare_question_submission(case.action, "alice", case.selected)
+    mod._question_worker(submission, case.delivery, "test-claim")
+    kwargs = case.run.call_args.args[1]
+    assert kwargs.thread_id == "graph-1" and kwargs.turn_id == "turn-1"
+    assert kwargs.resume[0]["payload"]["answers"][0]["answer"] == [{"label": "华南"}]
+    case.delivery.failed.assert_not_called()
+
+
+@pytest.mark.parametrize("changed", ["resolved", "thread", "new_user"])
+def test_native_card_fallback_rejects_finalized_or_superseded_question(resume_case, changed):
+    case = resume_case
+    case.manager.retrieve_session.return_value = {"session_property": {}}
+    records = case.manager.list_session_contents.return_value
+    records[0]["content"] = {"outcome": {"type": "interrupt", "interrupts": [case.interrupt]}}
+    records[0]["graph_thread_id"] = "graph-1"
+    if changed == "resolved":
+        records[0]["content"]["outcome"]["type"] = "success"
+    elif changed == "thread":
+        records[0].pop("graph_thread_id")
+    else:
+        records.append({"role": "user"})
+    with pytest.raises(ValueError):
+        mod.prepare_question_submission(case.action, "alice", case.selected)
+    case.executor.submit.assert_not_called()

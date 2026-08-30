@@ -67,7 +67,7 @@ class ApprovalStateHandler:
         ``builtin_property`` 平铺到记录顶层。读取按"嵌套优先 + 顶层兜底"处理。
 
         Returns:
-            ``{"approve_result": ApproveResultLiteral, "interrupts": list, "id": int|None}``。
+            审批结果、interrupts、记录 id，以及同一记录保存的 graph_thread_id。
             未找到 interrupt 记录或记录尚未写入审批结果时返回 None。
         """
         latest = self._get_latest_interrupt_record(session_code)
@@ -81,8 +81,7 @@ class ApprovalStateHandler:
         )
         if approve_result is None:
             logger.warning(
-                "[Approval] fetch_approve_result: interrupt 记录无有效 approve_result, "
-                "session_code=%s, raw=%r",
+                "[Approval] fetch_approve_result: interrupt 记录无有效 approve_result, session_code=%s, raw=%r",
                 session_code,
                 raw_approve_result,
             )
@@ -97,6 +96,7 @@ class ApprovalStateHandler:
             "approve_result": approve_result,
             "interrupts": interrupts,
             "id": latest.get("id"),
+            "graph_thread_id": self._extract_graph_thread_id_from_interrupt_record(latest),
         }
 
     def query_approval_info(self, session_code: str) -> Optional[dict]:
@@ -154,7 +154,9 @@ class ApprovalStateHandler:
         logger.info(
             "[Approval] get_graph_thread_id_from_interrupt_content: graph_thread_id=%s, session_code=%s, "
             "latest_keys=%s",
-            graph_thread_id, session_code, list(latest.keys()),
+            graph_thread_id,
+            session_code,
+            list(latest.keys()),
         )
         return graph_thread_id
 
@@ -175,9 +177,7 @@ class ApprovalStateHandler:
         contents = result.get("data", []) if isinstance(result, dict) else []
         if not contents or not isinstance(contents, list):
             return []
-        return [
-            c for c in contents if isinstance(c, dict) and c.get("role") == PromptRole.INTERRUPT.value
-        ]
+        return [c for c in contents if isinstance(c, dict) and c.get("role") == PromptRole.INTERRUPT.value]
 
     def _get_latest_interrupt_record(self, session_code: str) -> Optional[dict]:
         """获取该 session 最新一条 ``role=interrupt`` 记录原始 dict。"""

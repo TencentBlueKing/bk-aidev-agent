@@ -99,15 +99,33 @@ def _resume_cancelled_approval(action: ApprovalCancelAction, username: str, deli
     handler = ApprovalStateHandler(username=username)
     pending = handler.get_pending_interrupt_context(action.session_code)
     info = handler.fetch_approve_result(action.session_code)
+    # 部分平台不保留 session_property.pending_interrupt。用同一条审批记录的
+    # graph_thread_id 和 interrupts 兜底，不能新建线程或从其他审批拼接上下文。
+    if not pending and info:
+        pending = {"graph_thread_id": info.get("graph_thread_id"), "interrupts": info.get("interrupts")}
+        logger.info("event=wxbot_approval_resume_context source=interrupt_record trace_id=%s", get_current_trace_id())
     # 排队期间可能已由 Web 恢复或进入下一轮审批，不对旧卡片重放 Agent。
-    if (
-        not pending.get("graph_thread_id")
-        or not _contains_interrupt(pending.get("interrupts"), action.interrupt_id)
-        or not info
-        or info.get("approve_result") != "cancelled"
-        or not _contains_interrupt(info.get("interrupts"), action.interrupt_id)
-    ):
-        logger.info("event=wxbot_approval_resume_skipped reason=interrupt_changed trace_id=%s", get_current_trace_id())
+    thread_id = pending.get("graph_thread_id")
+    has_thread = isinstance(thread_id, str) and bool(thread_id.strip())
+    pending_matches = _contains_interrupt(pending.get("interrupts"), action.interrupt_id)
+    result_matches = bool(
+        info
+        and info.get("approve_result") == "cancelled"
+        and _contains_interrupt(info.get("interrupts"), action.interrupt_id)
+    )
+    thread_matches = not info or not info.get("graph_thread_id") or info["graph_thread_id"] == thread_id
+    if not all((has_thread, pending_matches, result_matches, thread_matches)):
+        logger.info(
+            "event=wxbot_approval_resume_skipped reason=interrupt_changed "
+            "has_thread=%s pending_matches=%s result_matches=%s thread_matches=%s trace_id=%s",
+            has_thread,
+            pending_matches,
+            result_matches,
+            thread_matches,
+            get_current_trace_id(),
+        )
+        if delivery is not None:
+            delivery.failed()
         return
     resume = [{"interruptId": action.interrupt_id}]
     handler.hydrate_resume_payload(resume, "cancelled")
@@ -115,7 +133,7 @@ def _resume_cancelled_approval(action: ApprovalCancelAction, username: str, deli
         {
             "stream": True,
             "session_code": action.session_code,
-            "thread_id": pending["graph_thread_id"],
+            "thread_id": thread_id,
             "resume": resume,
         },
         username,
@@ -123,11 +141,12 @@ def _resume_cancelled_approval(action: ApprovalCancelAction, username: str, deli
     builder = AgentBuilder(username=username)
     agent = builder.by_session_code(action.session_code, channel_type=ChannelType.RTX.value)
     manager = SessionManager(username=username, resource_manager=builder.resource_manager)
+    # 即使会话属性被过滤，也必须确认原中断后没有新用户输入，沿用原 turn。
+    turn_id = original_interrupt_turn(manager, action.session_code, action.interrupt_id)
+    execute_kwargs.turn_id = turn_id
     if delivery is None:
-        AgentExecutor.run_agent_to_completion(agent, execute_kwargs, action.session_code, manager)
+        AgentExecutor.run_agent_to_completion(agent, execute_kwargs, action.session_code, manager, turn_id=turn_id)
     else:
-        turn_id = original_interrupt_turn(manager, action.session_code, action.interrupt_id)
-        execute_kwargs.turn_id = turn_id
         AgentExecutor.run_agent_to_completion(
             agent,
             execute_kwargs,
@@ -135,7 +154,7 @@ def _resume_cancelled_approval(action: ApprovalCancelAction, username: str, deli
             manager,
             turn_id=turn_id,
             consume_stream=lambda output: delivery.consume(
-                output, action.session_code, action.interrupt_id, turn_id, thread_id=pending["graph_thread_id"]
+                output, action.session_code, action.interrupt_id, turn_id, thread_id=thread_id
             ),
         )
     logger.info("event=wxbot_approval_resume_finished trace_id=%s", get_current_trace_id())

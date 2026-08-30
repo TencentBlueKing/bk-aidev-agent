@@ -10,7 +10,7 @@ from aidev_wxbot.wxaibot import question_cards as cards
         (1, False, "vote_interaction"),
         (1, True, "vote_interaction"),
         (2, False, "multiple_interaction"),
-        (2, True, "text_notice"),
+        (2, True, None),
     ],
 )
 def test_native_question_types(question_case, count, multi, kind):
@@ -18,28 +18,40 @@ def test_native_question_types(question_case, count, multi, kind):
     questions[0]["multiSelect"] = multi
     questions[:] = [copy.deepcopy(questions[0]) for _ in range(count)]
     card = cards.build_pending_question_card(question_case.event, "session-1")
+    if kind is None:
+        assert card is None
+        return
     assert card["card_type"] == kind
-    assert card["card_action"]["url"].endswith("session-1")
+    assert card["card_action"] == {"type": 0}
+    assert "文字回复" in card["main_title"]["desc"]
     if kind == "vote_interaction":
         assert card["checkbox"]["mode"] == int(multi)
 
 
-@pytest.mark.parametrize("change", ["text", "too_many", "description", "malformed", "long"])
-def test_unsupported_questions_use_web_without_truncation(question_case, change):
+@pytest.mark.parametrize("change", ["text", "too_many", "malformed", "long"])
+def test_unsupported_questions_use_chat_without_web_card(question_case, change):
     question = question_case.interrupt["metadata"]["questions"][0]
     if change == "text":
         question["options"] = None
     elif change == "too_many":
         question["options"] *= 11
-    elif change == "description":
-        question["options"][0]["description"] = "important context"
     elif change == "malformed":
         question["options"] = [None]
     else:
         question["question"] = "长" * 100
     card = cards.build_pending_question_card(question_case.event, "session-1")
-    assert card["card_type"] == "text_notice"
-    assert "submit_button" not in card
+    assert card is None
+    prompt = cards.question_prompt(question_case.interrupt)
+    assert question["question"] in prompt
+    assert "直接在企微回复" in prompt and "回到原会话" not in prompt
+
+
+def test_native_card_keeps_option_descriptions_in_chat(question_case):
+    question = question_case.interrupt["metadata"]["questions"][0]
+    question["options"][0]["description"] = "important context"
+    card = cards.build_pending_question_card(question_case.event, "session-1")
+    assert card["card_type"] == "vote_interaction"
+    assert "important context" in cards.question_prompt(question_case.interrupt)
 
 
 def test_signed_action_binds_original_target(question_case):

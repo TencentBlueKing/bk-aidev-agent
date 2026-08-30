@@ -568,7 +568,9 @@ class WxAiBotLongConnectionService:
         if not target:
             raise ValueError("Missing original WeCom recipient")
         delivery = ResumeDelivery(
-            lambda body: self._send_resume_message(target, body), resume_type=resume_type, paused=paused
+            lambda body: self._send_resume_message(target, body),
+            resume_type=resume_type,
+            paused=paused,
         )
         if not hasattr(self, "_resume_deliveries"):
             self._resume_deliveries = set()
@@ -586,6 +588,9 @@ class WxAiBotLongConnectionService:
             await self._send_with_retry(
                 lambda: self._client.send_message(target, body), span, "wxbot_resume_send_retry"
             )
+        logger.info(
+            "event=wxbot_resume_message_sent msgtype=%s trace_id=%s", body.get("msgtype"), get_current_trace_id()
+        )
 
     async def _update_interaction_card(self, frame: dict, card: dict, span_name: str) -> None:
         remaining = 4.8 - (time.monotonic() - frame.get("_wxbot_received_at", time.monotonic()))

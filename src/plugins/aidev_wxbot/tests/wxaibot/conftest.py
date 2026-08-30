@@ -12,6 +12,14 @@ from aidev_wxbot.wxaibot.approval_cards import (
 )
 
 
+@pytest.fixture(scope="session", autouse=True)
+def card_signing_settings():
+    """Card signature tests must not depend on a developer's local .env."""
+    from django.conf import settings
+
+    settings.SECRET_KEY = "wxbot-test-only-signing-key"
+
+
 @pytest.fixture
 def approval_card_case(monkeypatch):
     monkeypatch.setattr(
@@ -79,6 +87,13 @@ def approval_resume_case(approval_card_case, monkeypatch):
     monkeypatch.setattr(mod, "AgentBuilder", case.builder)
     case.manager = MagicMock()
     monkeypatch.setattr(mod, "SessionManager", case.manager)
+    case.manager.return_value.list_session_contents.return_value = [
+        {
+            "role": "interrupt",
+            "property": {"turn_id": "turn-1"},
+            "content": {"outcome": {"type": "success", "interrupts": case.result["interrupts"]}},
+        }
+    ]
     case.real_run = mod.AgentExecutor.run_agent_to_completion
     case.run = MagicMock()
     monkeypatch.setattr(mod.AgentExecutor, "run_agent_to_completion", case.run)
@@ -93,13 +108,37 @@ def approval_resume_case(approval_card_case, monkeypatch):
 
 
 @pytest.fixture
+def persisted_approval_case(approval_resume_case, monkeypatch):
+    """Use real state readers with the platform's persisted-content contract."""
+    from aidev_agent.services.agent.approval import ApprovalStateHandler
+
+    case = approval_resume_case
+    case.record = {
+        "id": 1,
+        "role": "interrupt",
+        "property": {
+            "turn_id": "turn-1",
+            "builtin_property": {
+                "approve_result": "cancelled",
+                "graph_thread_id": "graph-1",
+            },
+        },
+        "content": {"outcome": {"type": "success", "interrupts": case.result["interrupts"]}},
+    }
+    case.api = MagicMock()
+    # ChatSessionProperty does not expose pending_interrupt on older platforms.
+    case.api.retrieve_chat_session.return_value = {"data": {"session_property": {"labels": []}}}
+    case.api.get_chat_session_contents.return_value = {"data": [case.record]}
+    monkeypatch.setattr(ApprovalStateHandler, "_get_client", lambda _: SimpleNamespace(api=case.api))
+    monkeypatch.setattr(case.module, "ApprovalStateHandler", ApprovalStateHandler)
+    case.manager.return_value.list_session_contents.return_value = [case.record]
+    return case
+
+
+@pytest.fixture
 def question_case(monkeypatch):
     from aidev_wxbot.wxaibot.question_cards import QuestionAction, questions_digest
 
-    monkeypatch.setattr(
-        "aidev_wxbot.wxaibot.question_cards.AgentHelper.build_session_detail_url",
-        lambda session: f"https://agent.example.com/{session}",
-    )
     questions = [
         {
             "header": "区域",
