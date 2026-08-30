@@ -1,4 +1,4 @@
-"""取消成功后在原会话续流，结果由 Agent 写回 Web，不发送额外企微消息。"""
+"""取消成功后在原会话续流，写回 Web，并可注入企微消息消费者。"""
 
 import threading
 from contextvars import copy_context
@@ -14,6 +14,7 @@ from aidev_bkplugin.services.execution import get_agent_executor
 from django.db import close_old_connections
 
 from .approval_cards import ApprovalCancelAction
+from .resume_context import original_interrupt_turn
 from .tracing import record_failure, wxbot_span
 
 logger = getLogger(__name__)
@@ -21,17 +22,21 @@ _pending: set[ApprovalCancelAction] = set()
 _pending_lock = threading.Lock()
 
 
-def submit_cancelled_approval_resume(action: ApprovalCancelAction, username: str, envelope: dict) -> bool:
+def submit_cancelled_approval_resume(
+    action: ApprovalCancelAction, username: str, envelope: dict, delivery=None
+) -> bool:
     """仅接受本次撤销成功的原会话指令；不信任回调携带的 URL 或执行参数。"""
     if not _can_resume(action, envelope):
         return False
     with _pending_lock:
         if action in _pending:
+            if delivery is not None:
+                delivery.finish()
             return True
         _pending.add(action)
     submitted = False
     try:
-        submitted = get_agent_executor().submit(copy_context().run, _resume_worker, action, username)
+        submitted = get_agent_executor().submit(copy_context().run, _resume_worker, action, username, delivery)
         logger.info("event=wxbot_approval_resume_submitted accepted=%s trace_id=%s", submitted, get_current_trace_id())
         return submitted
     finally:
@@ -57,12 +62,14 @@ def _can_resume(action: ApprovalCancelAction, envelope: dict) -> bool:
     )
 
 
-def _resume_worker(action: ApprovalCancelAction, username: str) -> None:
+def _resume_worker(action: ApprovalCancelAction, username: str, delivery=None) -> None:
     with wxbot_span("wxbot.approval.resume") as span:
         try:
             close_old_connections()
-            _resume_cancelled_approval(action, username)
+            _resume_cancelled_approval(action, username, delivery)
         except Exception as error:
+            if delivery is not None:
+                delivery.failed()
             record_failure(span, error)
             logger.error(
                 "event=wxbot_approval_resume_failed error_type=%s trace_id=%s",
@@ -75,6 +82,8 @@ def _resume_worker(action: ApprovalCancelAction, username: str) -> None:
             finally:
                 with _pending_lock:
                     _pending.discard(action)
+                if delivery is not None:
+                    delivery.finish()
 
 
 def _contains_interrupt(interrupts, interrupt_id: str) -> bool:
@@ -86,7 +95,7 @@ def _contains_interrupt(interrupts, interrupt_id: str) -> bool:
     )
 
 
-def _resume_cancelled_approval(action: ApprovalCancelAction, username: str) -> None:
+def _resume_cancelled_approval(action: ApprovalCancelAction, username: str, delivery=None) -> None:
     handler = ApprovalStateHandler(username=username)
     pending = handler.get_pending_interrupt_context(action.session_code)
     info = handler.fetch_approve_result(action.session_code)
@@ -114,5 +123,19 @@ def _resume_cancelled_approval(action: ApprovalCancelAction, username: str) -> N
     builder = AgentBuilder(username=username)
     agent = builder.by_session_code(action.session_code, channel_type=ChannelType.RTX.value)
     manager = SessionManager(username=username, resource_manager=builder.resource_manager)
-    AgentExecutor.run_agent_to_completion(agent, execute_kwargs, action.session_code, manager)
+    if delivery is None:
+        AgentExecutor.run_agent_to_completion(agent, execute_kwargs, action.session_code, manager)
+    else:
+        turn_id = original_interrupt_turn(manager, action.session_code, action.interrupt_id)
+        execute_kwargs.turn_id = turn_id
+        AgentExecutor.run_agent_to_completion(
+            agent,
+            execute_kwargs,
+            action.session_code,
+            manager,
+            turn_id=turn_id,
+            consume_stream=lambda output: delivery.consume(
+                output, action.session_code, action.interrupt_id, turn_id, thread_id=pending["graph_thread_id"]
+            ),
+        )
     logger.info("event=wxbot_approval_resume_finished trace_id=%s", get_current_trace_id())

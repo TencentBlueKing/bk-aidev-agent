@@ -126,6 +126,77 @@ def _service(client: FakeClient | None = None) -> WxAiBotLongConnectionService:
     return service
 
 
+@pytest.fixture
+def question_callback(question_case):
+    from aidev_wxbot.wxaibot.question_cards import encode_question_key, question_task_id
+
+    case = question_case
+    card_event = {
+        "event_key": encode_question_key(case.action),
+        "task_id": question_task_id(case.action),
+        "selected_items": case.selected,
+    }
+    body = {
+        "msgtype": "event",
+        "from": {"userid": "alice-wx"},
+        "event": {"eventtype": "template_card_event", "template_card_event": card_event},
+    }
+    return body
+
+
+@pytest.mark.parametrize("status", ["accepted", "duplicate", "busy"])
+async def test_question_click_updates_only_accepted_card(question_case, question_callback, status):
+    service = _service()
+    submission = SimpleNamespace(interrupt=question_case.interrupt)
+    with (
+        patch.object(long_connection_module, "prepare_question_submission", return_value=submission) as prepare,
+        patch.object(long_connection_module, "submit_question_resume", return_value=status) as submit,
+    ):
+        await service._handle_frame({"body": question_callback})
+    assert len(service._client.update_template_card_calls) == int(status != "busy")
+    assert prepare.call_args.args[0] == question_case.action
+    if status == "accepted":
+        delivery = submit.call_args.args[1]
+        delivery.failed()
+        delivery.finish()
+        await delivery.task
+        assert service._client.send_message_calls[-1][0] == "alice-wx"
+
+
+@pytest.mark.parametrize("changed", ["signature", "task", "target"])
+async def test_question_click_rejects_modified_binding(question_callback, changed):
+    service = _service()
+    event = question_callback["event"]["template_card_event"]
+    if changed == "signature":
+        event["event_key"] += "tampered"
+    elif changed == "task":
+        event["task_id"] = "other-task"
+    else:
+        question_callback["from"]["userid"] = "other-user"
+    with patch.object(long_connection_module, "prepare_question_submission") as prepare:
+        await service._handle_frame({"body": question_callback})
+    prepare.assert_not_called()
+    assert service._client.update_template_card_calls == []
+
+
+async def test_question_card_is_bound_to_original_group(question_case):
+    from aidev_wxbot.wxaibot.question_cards import build_pending_question_card, decode_question_key
+
+    service = _service()
+    card = build_pending_question_card(question_case.event, "session-1")
+    await service._send_template_card({"body": {"chattype": "group", "chatid": "group-1"}}, card)
+    target, body = service._client.send_message_calls[0]
+    assert target == "group-1"
+    assert decode_question_key(body["template_card"]["submit_button"]["key"]).target == "group-1"
+    assert not service._client.reply_stream_calls
+
+
+async def test_expired_card_callback_is_not_retried():
+    service = _service()
+    await service._update_interaction_card({"_wxbot_received_at": time.monotonic() - 6}, {}, "test.update")
+    assert not service._client.update_template_card_calls
+
+
 class TestAgentStreamDrain:
     """收尾只排空 Agent 统一流接口，不由长连接操作消息缓存。"""
 
@@ -694,6 +765,9 @@ class TestLongConnectionStreaming:
         expected = {key: value for key, value in case.card.items() if key != "button_list"}
         expected.update(card_type="text_notice", jump_list=[{"type": 0, "title": label}])
         assert service._client.update_template_card_calls == [expected]
+        for delivery in tuple(getattr(service, "_resume_deliveries", ())):
+            delivery.finish()
+            await delivery.task
 
     @pytest.mark.parametrize("envelope", [None, {}, {"ok": True}, {"ok": False}])
     async def test_cancel_missing_result_preserves_card(self, approval_card_case, envelope):
@@ -708,6 +782,30 @@ class TestLongConnectionStreaming:
             await service._handle_frame({"body": approval_card_case.event})
         assert service._client.update_template_card_calls == []
 
+    async def test_forwarded_cancel_card_cannot_change_reply_target(self, approval_card_case):
+        case = approval_card_case
+        case.event.update(chattype="group", chatid="different-group")
+        service = _service()
+        with patch.object(long_connection_module, "dispatch_user_operation") as dispatch:
+            await service._handle_frame({"body": case.event})
+        dispatch.assert_not_called()
+        assert service._client.send_message_calls == []
+
+    async def test_legacy_cancel_card_resumes_web_without_new_message(self, approval_card_case):
+        from aidev_wxbot.wxaibot.approval_cards import ApprovalCancelAction, encode_cancel_event_key
+
+        case = approval_card_case
+        action = ApprovalCancelAction(case.action.session_code, case.action.interrupt_id)
+        case.event["event"]["template_card_event"]["event_key"] = encode_cancel_event_key(action)
+        service = _service()
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value=case.envelope),
+            patch.object(long_connection_module, "submit_cancelled_approval_resume", return_value=True) as resume,
+        ):
+            await service._handle_frame({"body": case.event})
+        assert resume.call_args.args[3] is None
+        assert service._client.send_message_calls == []
+
     @pytest.mark.parametrize("update_fails", [False, True])
     async def test_cancel_resumes_even_when_card_update_fails(self, approval_card_case, update_fails):
         case = approval_card_case
@@ -720,7 +818,10 @@ class TestLongConnectionStreaming:
             patch.object(long_connection_module, "submit_cancelled_approval_resume", return_value=True) as resume,
         ):
             await service._handle_frame({"body": case.event})
-        resume.assert_called_once_with(case.action, "alice", case.envelope)
+        assert resume.call_args.args[:3] == (case.action, "alice", case.envelope)
+        delivery = resume.call_args.args[3]
+        delivery.finish()
+        await delivery.task
 
     @pytest.mark.parametrize("raises", [False, True])
     async def test_resume_capacity_failure_keeps_cancelled_state_and_web_link(self, approval_card_case, raises):
@@ -736,7 +837,9 @@ class TestLongConnectionStreaming:
         card = service._client.update_template_card_calls[0]
         assert card["jump_list"] == [{"type": 0, "title": "已取消"}]
         assert card["card_action"] == case.card["card_action"]
-        assert card["sub_title_text"] == "审批已取消，请点击卡片返回会话继续。"
+        assert card["sub_title_text"] == case.card["sub_title_text"]
+        await asyncio.gather(*(d.task for d in service._resume_deliveries))
+        assert "返回原会话" in service._client.send_message_calls[-1][1]["markdown"]["content"]
 
     async def test_slow_wecom_sender_applies_bounded_backpressure(self, monkeypatch):
         class SlowClient(FakeClient):

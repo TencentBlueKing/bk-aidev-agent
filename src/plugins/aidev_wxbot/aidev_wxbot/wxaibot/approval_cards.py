@@ -3,20 +3,24 @@
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import json
 import re
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import Any
 from urllib.parse import urlsplit
 
 from aidev_agent.core.nodes.tool.approval_wrapper import TOOL_APPROVAL_REASON
 from aidev_bkplugin.services.agent_helpers import AgentHelper
+from django.core import signing
 
 from .context import _normalize_url
 
 _CANCEL_EVENT_PREFIX = "approval_cancel:"
+_BOUND_CANCEL_PREFIX = "approval_cancel:v2:"
+_BOUND_CANCEL_SALT = "aidev.wxbot.approval.v2"
 _MAX_ACTION_FIELD_LENGTH = 256
 
 
@@ -26,6 +30,7 @@ class ApprovalCancelAction:
 
     session_code: str
     interrupt_id: str
+    target: str = field(default="", compare=False)
 
 
 def build_pending_approval_card(event: dict, session_code: str) -> dict[str, Any] | None:
@@ -52,6 +57,10 @@ def approval_task_id(action: ApprovalCancelAction) -> str:
 
 def encode_cancel_event_key(action: ApprovalCancelAction) -> str:
     """生成无持久缓存依赖的按钮 key；平台仍会按点击用户做对象级鉴权。"""
+    if action.target:
+        return _BOUND_CANCEL_PREFIX + signing.dumps(
+            [action.session_code, action.interrupt_id, action.target], salt=_BOUND_CANCEL_SALT, compress=True
+        )
     payload = json.dumps([action.session_code, action.interrupt_id], ensure_ascii=False, separators=(",", ":"))
     encoded = base64.urlsafe_b64encode(zlib.compress(payload.encode())).decode().rstrip("=")
     return f"{_CANCEL_EVENT_PREFIX}{encoded}"
@@ -59,6 +68,10 @@ def encode_cancel_event_key(action: ApprovalCancelAction) -> str:
 
 def decode_cancel_event_key(event_key: str) -> ApprovalCancelAction | None:
     """解析本服务生成的取消按钮 key；非审批按钮返回 ``None``。"""
+    if not isinstance(event_key, str) or len(event_key) > 2048:
+        return None
+    if event_key.startswith(_BOUND_CANCEL_PREFIX):
+        return _decode_bound_cancel(event_key)
     if not event_key.startswith(_CANCEL_EVENT_PREFIX):
         return None
     encoded = event_key.removeprefix(_CANCEL_EVENT_PREFIX)
@@ -79,6 +92,28 @@ def decode_cancel_event_key(event_key: str) -> ApprovalCancelAction | None:
     if len(session_code) > _MAX_ACTION_FIELD_LENGTH or len(interrupt_id) > _MAX_ACTION_FIELD_LENGTH:
         return None
     return ApprovalCancelAction(session_code=session_code, interrupt_id=interrupt_id)
+
+
+def _decode_bound_cancel(key: str) -> ApprovalCancelAction | None:
+    try:
+        values = signing.loads(key[len(_BOUND_CANCEL_PREFIX) :], salt=_BOUND_CANCEL_SALT, max_age=86400)
+    except (signing.BadSignature, ValueError, TypeError):
+        return None
+    if not isinstance(values, list) or len(values) != 3:
+        return None
+    if not all(isinstance(value, str) and 0 < len(value) <= _MAX_ACTION_FIELD_LENGTH for value in values):
+        return None
+    return ApprovalCancelAction(*values)
+
+
+def bind_approval_target(card: dict, target: str) -> dict:
+    """Only newly sent, signed cards authorize automatic replies to this target."""
+    result = copy.deepcopy(card)
+    for button in result.get("button_list") or []:
+        action = decode_cancel_event_key(button.get("key", ""))
+        if action is not None:
+            button["key"] = encode_cancel_event_key(replace(action, target=target))
+    return result
 
 
 def build_cancel_result_card(action: ApprovalCancelAction, task_id: str, *, result: Any) -> dict[str, Any] | None:

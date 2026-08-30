@@ -32,6 +32,7 @@ from django.conf import settings
 
 from .approval_cards import (
     approval_task_id,
+    bind_approval_target,
     build_cancel_result_card,
     decode_cancel_event_key,
 )
@@ -51,6 +52,9 @@ from .constants import (
 )
 from .context import THINKING_MSG, ContextGenerator, stream_msg
 from .direct_stream import DirectStreamFrame, iter_direct_stream_frames
+from .question_cards import bind_question_target, decode_question_key, question_task_id, submitted_question_card
+from .question_resume import prepare_question_submission, submit_question_resume
+from .resume_delivery import ResumeDelivery
 from .strategies import WECOM_AGENT_RETRY_STRATEGY, resolve_strategy
 from .stream_registry import stream_registry
 from .tracing import (
@@ -447,6 +451,8 @@ class WxAiBotLongConnectionService:
             raise timeout_error
 
     async def _handle_frame(self, frame: dict[str, Any]) -> None:
+        if (frame.get("body") or {}).get("msgtype") == "event":
+            frame = {**frame, "_wxbot_received_at": time.monotonic()}
         # create_task / to_thread 继承此上下文；每条入站消息都隔离于长连接自身。
         with received_message_span(frame):
             logger.info("event=wxbot_message_received trace_id=%s", get_current_trace_id())
@@ -466,6 +472,8 @@ class WxAiBotLongConnectionService:
             if self._shutdown_requested:
                 return
             if payload.get("msgtype") == "event" and await self._handle_approval_card_event(frame, payload):
+                return
+            if payload.get("msgtype") == "event" and await self._handle_question_card_event(frame, payload):
                 return
             if payload.get("msgtype") == "text":
                 with wxbot_span("wxbot.message.prepare"):
@@ -502,7 +510,8 @@ class WxAiBotLongConnectionService:
             return False
 
         expected_task_id = approval_task_id(action)
-        if not task_id or task_id != expected_task_id:
+        target = self._resolve_message_target(frame)
+        if not task_id or task_id != expected_task_id or (action.target and action.target != target):
             logger.warning("event=wxbot_approval_cancel_rejected reason=task_mismatch")
             return True
 
@@ -531,29 +540,115 @@ class WxAiBotLongConnectionService:
         except Exception:
             logger.exception("event=wxbot_approval_cancel_failed task_id=%s", task_id)
 
-        if succeeded:
+        if result_card is not None:
             try:
-                with wxbot_span("wxbot.approval.resume.submit"):
-                    submitted = submit_cancelled_approval_resume(action, username, envelope)
-                if not submitted and result_card is not None:
-                    result_card["sub_title_text"] = "审批已取消，请点击卡片返回会话继续。"
+                await self._update_interaction_card(frame, result_card, "wxbot.approval_card.update")
             except Exception:
-                logger.exception("event=wxbot_approval_resume_submit_failed task_id=%s", task_id)
-                if result_card is not None:
-                    result_card["sub_title_text"] = "审批已取消，请点击卡片返回会话继续。"
+                logger.exception("event=wxbot_approval_card_update_failed task_id=%s", task_id)
+        if succeeded:
+            delivery = None
+            try:
+                if action.target and target:
+                    delivery = self._new_resume_delivery(frame, "tool_approval")
+                with wxbot_span("wxbot.approval.resume.submit"):
+                    submitted = submit_cancelled_approval_resume(action, username, envelope, delivery)
+                if not submitted and delivery is not None:
+                    if (envelope.get("result") or {}).get("approve_result") == "cancelled":
+                        delivery.failed()
+                    delivery.finish()
+            except Exception as error:
+                if delivery is not None:
+                    delivery.failed()
+                    delivery.finish()
+                logger.error("event=wxbot_approval_resume_submit_failed error_type=%s", type(error).__name__)
+        return True
 
-        if result_card is None:
-            # 请求失败或旧平台未返回原详情时，不用精简失败卡片覆盖用户已有的信息。
-            logger.warning("event=wxbot_approval_card_update_skipped task_id=%s reason=no_result_card", task_id)
-            return True
-        try:
-            await self._send_once(
-                "wxbot.approval_card.update", lambda: self._client.update_template_card(frame, result_card)
+    def _new_resume_delivery(self, frame: dict, resume_type: str, *, paused: bool = False) -> ResumeDelivery:
+        target = self._resolve_message_target(frame)
+        if not target:
+            raise ValueError("Missing original WeCom recipient")
+        delivery = ResumeDelivery(
+            lambda body: self._send_resume_message(target, body), resume_type=resume_type, paused=paused
+        )
+        if not hasattr(self, "_resume_deliveries"):
+            self._resume_deliveries = set()
+        self._resume_deliveries.add(delivery)
+        delivery.task.add_done_callback(lambda _: self._resume_deliveries.discard(delivery))
+        return delivery
+
+    async def _send_resume_message(self, target: str, body: dict) -> None:
+        if self._shutdown_requested:
+            raise RuntimeError("Service is stopping")
+        if body.get("msgtype") == "template_card":
+            card = bind_approval_target(body["template_card"], target)
+            body = {**body, "template_card": bind_question_target(card, target)}
+        with wxbot_span("wxbot.resume.send", kind=CLIENT) as span:
+            await self._send_with_retry(
+                lambda: self._client.send_message(target, body), span, "wxbot_resume_send_retry"
             )
-        except Exception:
-            logger.exception("event=wxbot_approval_card_update_failed task_id=%s", task_id)
-        else:
-            logger.info("event=wxbot_approval_cancel_finished task_id=%s succeeded=%s", task_id, succeeded)
+
+    async def _update_interaction_card(self, frame: dict, card: dict, span_name: str) -> None:
+        remaining = 4.8 - (time.monotonic() - frame.get("_wxbot_received_at", time.monotonic()))
+        if remaining <= 0:
+            logger.warning("event=wxbot_card_update_skipped reason=callback_expired")
+            return
+        await asyncio.wait_for(
+            self._send_once(span_name, lambda: self._client.update_template_card(frame, card)), timeout=remaining
+        )
+
+    async def _handle_question_card_event(self, frame: dict, payload: dict) -> bool:
+        event = payload.get("event") or {}
+        if not isinstance(event, dict) or event.get("eventtype") != "template_card_event":
+            return False
+        card_event = event.get("template_card_event") or event
+        if not isinstance(card_event, dict):
+            return False
+        key = card_event.get("event_key", "")
+        if not isinstance(key, str) or not key.startswith("question_answer:"):
+            return False
+        action = decode_question_key(key)
+        target = self._resolve_message_target(frame)
+        if (
+            action is None
+            or not target
+            or action.target != target
+            or card_event.get("task_id") != question_task_id(action)
+        ):
+            logger.warning("event=wxbot_question_rejected reason=invalid_action")
+            return True
+        delivery = None
+        try:
+            username = await asyncio.to_thread(self._view.resolve_event_username, payload)
+            submission = await asyncio.to_thread(
+                prepare_question_submission,
+                action,
+                username,
+                card_event.get("selected_items") or {},
+            )
+            delivery = self._new_resume_delivery(frame, "ask_user_question", paused=True)
+            status = await asyncio.to_thread(submit_question_resume, submission, delivery)
+            if status != "accepted":
+                delivery.close()
+            if status == "busy":
+                await self._send_resume_message(
+                    target, {"msgtype": "markdown", "markdown": {"content": "当前繁忙，答案尚未提交，请稍后重试。"}}
+                )
+                return True
+            result_card = submitted_question_card(submission.interrupt, action.session_code)
+            try:
+                await self._update_interaction_card(frame, result_card, "wxbot.question_card.update")
+            except Exception as error:
+                logger.warning("event=wxbot_question_card_update_failed error_type=%s", type(error).__name__)
+            finally:
+                delivery.activate()
+        except Exception as error:
+            if delivery is not None:
+                delivery.close()
+            logger.warning("event=wxbot_question_rejected error_type=%s", type(error).__name__)
+            await self._send_resume_message(
+                target,
+                {"msgtype": "markdown", "markdown": {"content": "无法提交答案，请返回原会话检查问题状态和访问权限。"}},
+            )
         return True
 
     async def _dispatch_immediate_response(
@@ -748,6 +843,8 @@ class WxAiBotLongConnectionService:
                         if item.pending_approval:
                             current_span().set_attribute("wxbot.outcome", "approval_pending")
                             self._metrics.approval_pending += 1
+                        elif item.pending_question:
+                            current_span().set_attribute("wxbot.outcome", "question_pending")
                         elif item.failed:
                             record_failure(current_span(), RuntimeError("agent_run_error"))
                             self._metrics.failed += 1
@@ -1003,7 +1100,8 @@ class WxAiBotLongConnectionService:
             target = self._resolve_message_target(frame)
             if not target:
                 raise ValueError("企微消息缺少卡片推送目标")
-            body = {"msgtype": "template_card", "template_card": template_card}
+            card = bind_approval_target(template_card, target)
+            body = {"msgtype": "template_card", "template_card": bind_question_target(card, target)}
             return await self._send_with_retry(
                 lambda: self._client.send_message(target, body), span, "wxbot_approval_card_retry"
             )
@@ -1198,6 +1296,11 @@ class WxAiBotLongConnectionService:
                 self._loop.stop()
 
     async def _graceful_shutdown(self) -> None:
+        deliveries = tuple(getattr(self, "_resume_deliveries", ()))
+        for delivery in deliveries:
+            delivery.close()
+        if deliveries:
+            await asyncio.gather(*(delivery.task for delivery in deliveries), return_exceptions=True)
         await self._cancel_stream_tasks(notice="（服务正在停机，本次回复已中断）")
         await self._cancel_stream_drains()
         with contextlib.suppress(Exception):

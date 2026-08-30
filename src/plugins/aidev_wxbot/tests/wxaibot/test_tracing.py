@@ -198,6 +198,10 @@ class TestWxBotMessageTrace:
             await asyncio.gather(*(service._handle_frame(_frame(index)) for index in range(10)))
         tasks = [active.task for active in service._active_streams.values()]
         await asyncio.gather(*tasks)
+        # Producer completion is queued just before its thread exits the span.
+        async with asyncio.timeout(1):
+            while len(_spans(wxbot_spans, "wxbot.agent.stream")) < 10:
+                await asyncio.sleep(0.001)
         receives = _spans(wxbot_spans, "wxbot.message.receive")
         trace_ids = {span.context.trace_id for span in receives}
         assert len(trace_ids) == 10

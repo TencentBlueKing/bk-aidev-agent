@@ -14,6 +14,7 @@ from .approval_cards import build_pending_approval_card
 from .constants import STREAM_ERROR_REPLY
 from .context import CHUNK_FLUSH_THRESHOLD, _escape_markdown_text, _normalize_url
 from .formatters import _node_display, _task_state_label, format_task_outputs
+from .question_cards import build_pending_question_card
 from .stream import iter_sse_lines
 from .tool_blocks import ChatSegments, is_tool_event
 from .tracing import wxbot_span
@@ -27,6 +28,7 @@ class DirectStreamFrame:
     finish: bool
     failed: bool = False
     pending_approval: bool = False
+    pending_question: bool = False
     template_card: dict | None = None
     observed_at: float = field(default_factory=time.monotonic)
 
@@ -39,6 +41,7 @@ class AgentStream:
     generator: Generator
     session_code: str
     is_stream: bool = True
+    resume_interrupt_id: str = ""
 
 
 def iter_direct_stream_frames(
@@ -77,11 +80,23 @@ def _iter_chat_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
     documents: list[dict] = []
     finished = False
     pending_chars = 0
+    run_started = False
 
     for event in iter_sse_lines(agent_stream.generator, stream_id):
         if finished:
             continue
         event_type = event.get("type", "")
+        if event_type == EventType.RUN_STARTED:
+            run_started = True
+        if not run_started and event_type == EventType.RUN_FINISHED and agent_stream.resume_interrupt_id:
+            outcome = event.get("outcome") or {}
+            if outcome.get("type") == "success" and any(
+                isinstance(item, dict) and item.get("id") == agent_stream.resume_interrupt_id
+                for item in outcome.get("interrupts") or []
+            ):
+                # SDK replays the resolved interrupt BEFORE the resumed RUN_STARTED.
+                # This is not completion of the new run and contains no new answer.
+                continue
         if event_type == EventType.RUN_STARTED and on_run_started:
             on_run_started(_run_id_of(event))
         elif is_tool_event(event_type):
@@ -115,14 +130,16 @@ def _iter_chat_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
         elif event_type == EventType.RUN_FINISHED:
             with wxbot_span("wxbot.approval_card.build") as span:
                 approval_card = build_pending_approval_card(event, agent_stream.session_code)
+                question_card = build_pending_question_card(event, agent_stream.session_code)
                 span.set_attribute("wxbot.approval.pending", approval_card is not None)
-            if approval_card:
+            if approval_card or question_card:
                 current_content = _render_chat(thinking, segments.render())
                 yield DirectStreamFrame(
-                    content=current_content or "等待工具审批",
+                    content=current_content or ("等待工具审批" if approval_card else "请回答卡片中的问题"),
                     finish=True,
-                    pending_approval=True,
-                    template_card=approval_card,
+                    pending_approval=approval_card is not None,
+                    pending_question=question_card is not None,
+                    template_card=approval_card or question_card,
                 )
                 finished = True
                 continue

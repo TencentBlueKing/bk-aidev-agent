@@ -1,8 +1,35 @@
 """取消审批后续流：只执行一次、沿用原会话、后台写回，不重复执行工具。"""
 
 from contextvars import ContextVar
+from unittest.mock import MagicMock
 
 import pytest
+
+
+def test_cancel_resume_wires_delivery_without_creating_new_turn(approval_resume_case):
+    case = approval_resume_case
+    case.manager.return_value.list_session_contents.return_value = [
+        {"role": "interrupt", "property": {"turn_id": "turn-1"}, "content": {"interrupts": case.result["interrupts"]}}
+    ]
+    delivery = MagicMock()
+    case.module._resume_worker(case.action, "alice", delivery)
+    consumer = case.run.call_args.kwargs["consume_stream"]
+    output = iter(())
+    consumer(output)
+    delivery.consume.assert_called_once_with(
+        output, "session-1", case.action.interrupt_id, "turn-1", thread_id="graph-1"
+    )
+    assert case.run.call_args.args[1].turn_id == "turn-1"
+    delivery.finish.assert_called_once()
+
+
+def test_duplicate_cancel_closes_unused_delivery(approval_resume_case):
+    case = approval_resume_case
+    delivery = MagicMock()
+    case.module._pending.add(case.action)
+    assert case.module.submit_cancelled_approval_resume(case.action, "alice", case.envelope, delivery)
+    case.executor.submit.assert_not_called()
+    delivery.finish.assert_called_once()
 
 
 @pytest.mark.parametrize(

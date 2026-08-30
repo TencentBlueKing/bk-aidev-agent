@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable, Iterator
 from logging import getLogger
 
 from aidev_agent.enums import ChatContentStatus, PromptRole, StreamEventType
@@ -91,6 +92,7 @@ class AgentExecutor:
         session_manager: SessionManager,
         *,
         turn_id: str = "",
+        consume_stream: Callable[[Iterator[str]], None] | None = None,
     ):
         """执行 agent 直至结束；会话终态由 Agent 流完成回调统一写入。"""
         # 后台 drain（for _ in out: pass，无 SSE 下游）：标记为 background_only，
@@ -109,8 +111,13 @@ class AgentExecutor:
             turn_id=turn_id,
         )
         if execute_kwargs.stream:
-            for _ in out:
-                pass
+            try:
+                if consume_stream is not None:
+                    consume_stream(out)
+            finally:
+                # Channel errors must not leave the session writer half-consumed.
+                for _ in out:
+                    pass
         return out
 
     def wrap_generator(self, generator, session_code: str, *, turn_id: str = ""):

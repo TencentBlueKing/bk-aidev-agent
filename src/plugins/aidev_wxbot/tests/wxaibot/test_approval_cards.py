@@ -2,9 +2,34 @@
 
 import copy
 import json
+from dataclasses import replace
 
 import pytest
-from aidev_wxbot.wxaibot.approval_cards import build_cancel_result_card, build_pending_approval_card
+from aidev_wxbot.wxaibot.approval_cards import (
+    bind_approval_target,
+    build_cancel_result_card,
+    build_pending_approval_card,
+    decode_cancel_event_key,
+    encode_cancel_event_key,
+)
+
+
+def test_sent_card_binds_signed_target_without_changing_original(approval_card_case):
+    original = copy.deepcopy(approval_card_case.card)
+    bound = bind_approval_target(original, "group-original")
+    action = decode_cancel_event_key(bound["button_list"][0]["key"])
+    assert action.target == "group-original"
+    assert action.session_code == approval_card_case.action.session_code
+    assert original == approval_card_case.card
+    assert decode_cancel_event_key(original["button_list"][0]["key"]).target == ""
+
+
+def test_signed_cancel_key_cannot_change_target(approval_card_case):
+    key = encode_cancel_event_key(approval_card_case.action)
+    head, signature = key.rsplit(":", 1)
+    assert decode_cancel_event_key(f"{head}:{'x' if signature[0] != 'x' else 'y'}{signature[1:]}") is None
+    legacy = encode_cancel_event_key(replace(approval_card_case.action, target=""))
+    assert decode_cancel_event_key(legacy).target == ""
 
 
 @pytest.mark.parametrize(
