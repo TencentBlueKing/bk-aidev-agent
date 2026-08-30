@@ -17,7 +17,7 @@ from aidev_wxbot.wxaibot.approval_cards import build_cancel_result_card, build_p
         "javascript:void(0)",
     ],
 )
-def test_pending_card_has_separate_safe_web_session_link(approval_card_case, monkeypatch, session_url):
+def test_pending_card_opens_safe_session_without_session_row(approval_card_case, monkeypatch, session_url):
     case = approval_card_case
     monkeypatch.setattr(
         "aidev_wxbot.wxaibot.approval_cards.AgentHelper.build_session_detail_url", lambda _session: session_url
@@ -25,10 +25,11 @@ def test_pending_card_has_separate_safe_web_session_link(approval_card_case, mon
     card = build_pending_approval_card(
         {"outcome": {"type": "interrupt", "interrupts": case.result["interrupts"]}}, case.action.session_code
     )
-    links = [row for row in card["horizontal_content_list"] if row["keyname"] == "会话"]
-    expected = [{"keyname": "会话", "value": "查看会话", "type": 1, "url": session_url}]
-    assert links == (expected if session_url.startswith(("https://", "http://")) else [])
-    assert card["card_action"] == ({"type": 1, "url": session_url} if links else {"type": 0})
+    assert [row["keyname"] for row in card["horizontal_content_list"]] == ["单据编号", "提交时间"]
+    expected_action = (
+        {"type": 1, "url": session_url} if session_url.startswith(("https://", "http://")) else {"type": 0}
+    )
+    assert card["card_action"] == expected_action
     assert card["horizontal_content_list"][0] == case.card["horizontal_content_list"][0]
     assert card["button_list"] == case.card["button_list"]
 
@@ -44,12 +45,8 @@ def test_result_only_replaces_action_area(approval_card_case, status, label):
     expected = {key: value for key, value in case.card.items() if key != "button_list"}
     expected.update(card_type="text_notice", jump_list=[{"type": 0, "title": label}])
     assert card == expected
-    assert card["horizontal_content_list"][-1] == {
-        "keyname": "会话",
-        "value": "查看会话",
-        "type": 1,
-        "url": "https://agent.example.com/session-1",
-    }
+    assert [row["keyname"] for row in card["horizontal_content_list"]] == ["单据编号", "提交时间"]
+    assert card["card_action"] == {"type": 1, "url": "https://agent.example.com/session-1"}
     assert case.result == original
     assert "must-not-leak" not in json.dumps(card)
     assert "candidate-not-actual-approver" not in json.dumps(card)
