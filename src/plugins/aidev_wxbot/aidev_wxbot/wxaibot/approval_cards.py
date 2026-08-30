@@ -147,6 +147,8 @@ def _build_pending_card(interrupt: dict, session_code: str) -> dict[str, Any]:
         horizontal_content_list.append({"keyname": "单据编号", "value": ticket_sn})
     if submit_time:
         horizontal_content_list.append({"keyname": "提交时间", "value": submit_time})
+    if session_url:
+        horizontal_content_list.append({"keyname": "会话", "value": "查看会话", "type": 1, "url": session_url})
     if horizontal_content_list:
         card["horizontal_content_list"] = horizontal_content_list
 
