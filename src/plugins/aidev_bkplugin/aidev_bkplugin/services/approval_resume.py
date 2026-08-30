@@ -80,6 +80,12 @@ def _approval_resume_worker(session_code: str, username: str, graph_thread_id: s
         return
     approve_result = approve_info["approve_result"]
 
+    # 主动取消由调用方根据 user_operation.next 续流（Web 或企微）。
+    # 与平台后台 worker 保持一致，避免两个消费者同时恢复同一个中断。
+    if approve_result == "cancelled":
+        logger.info("[ApprovalResume] 审批已取消，由操作发起方续流: session_code=%s", session_code)
+        return
+
     # 3. 审批完成，构建 agent 并续流
     try:
         resume_items = []

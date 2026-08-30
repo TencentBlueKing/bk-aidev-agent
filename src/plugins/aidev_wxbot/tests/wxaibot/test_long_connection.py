@@ -674,9 +674,13 @@ class TestLongConnectionStreaming:
         service = _service()
         service._view.resolve_event_username.return_value = "alice"
         case.result["approve_result"] = status
-        envelope = {"ok": ok, "result": case.result}
-        with patch.object(long_connection_module, "dispatch_user_operation", return_value=envelope) as dispatch:
+        case.envelope["ok"] = ok
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value=case.envelope) as dispatch,
+            patch.object(long_connection_module, "submit_cancelled_approval_resume", return_value=True) as resume,
+        ):
             await service._handle_frame({"body": case.event})
+        assert resume.call_count == int(ok)
         dispatch.assert_called_once_with(
             "approval_cancel",
             "alice",
@@ -703,6 +707,36 @@ class TestLongConnectionStreaming:
         with patch.object(long_connection_module, "dispatch_user_operation", side_effect=RuntimeError("failed")):
             await service._handle_frame({"body": approval_card_case.event})
         assert service._client.update_template_card_calls == []
+
+    @pytest.mark.parametrize("update_fails", [False, True])
+    async def test_cancel_resumes_even_when_card_update_fails(self, approval_card_case, update_fails):
+        case = approval_card_case
+        service = _service()
+        service._view.resolve_event_username.return_value = "alice"
+        if update_fails:
+            service._client.update_template_card = AsyncMock(side_effect=RuntimeError("failed"))
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value=case.envelope),
+            patch.object(long_connection_module, "submit_cancelled_approval_resume", return_value=True) as resume,
+        ):
+            await service._handle_frame({"body": case.event})
+        resume.assert_called_once_with(case.action, "alice", case.envelope)
+
+    @pytest.mark.parametrize("raises", [False, True])
+    async def test_resume_capacity_failure_keeps_cancelled_state_and_web_link(self, approval_card_case, raises):
+        case = approval_card_case
+        service = _service()
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value=case.envelope),
+            patch.object(long_connection_module, "submit_cancelled_approval_resume", return_value=False) as resume,
+        ):
+            if raises:
+                resume.side_effect = RuntimeError("executor unavailable")
+            await service._handle_frame({"body": case.event})
+        card = service._client.update_template_card_calls[0]
+        assert card["jump_list"] == [{"type": 0, "title": "已取消"}]
+        assert card["card_action"] == case.card["card_action"]
+        assert card["sub_title_text"] == "审批已取消，请点击卡片返回会话继续。"
 
     async def test_slow_wecom_sender_applies_bounded_backpressure(self, monkeypatch):
         class SlowClient(FakeClient):

@@ -271,7 +271,7 @@ def test_pending_tool_approval_is_pushed_as_interactive_card(mock_detail_url, ti
     assert card["card_type"] == "button_interaction"
     assert card["main_title"]["title"] == "执行「retrieve_private_v1_skills」需要审批"
     assert card["horizontal_content_list"] == [
-        {"keyname": "单据编号", "value": "DE001"},
+        {"keyname": "单据编号", "value": "DE001", "type": 1, "url": expected_url},
         {"keyname": "提交时间", "value": "2026-08-28T16:30:15.245792+00:00"},
         {
             "keyname": "会话",
@@ -280,7 +280,7 @@ def test_pending_tool_approval_is_pushed_as_interactive_card(mock_detail_url, ti
             "url": "https://agent.example.com/chat-window/?session=session-1",
         },
     ]
-    assert card["card_action"] == {"type": 1, "url": expected_url}
+    assert card["card_action"] == {"type": 1, "url": "https://agent.example.com/chat-window/?session=session-1"}
     assert "source" not in card  # 不展示“已通过”等状态徽标
     assert card["button_list"][0]["text"] == "取消审批"
     action = decode_cancel_event_key(card["button_list"][0]["key"])
@@ -311,7 +311,7 @@ def test_pending_tool_approval_drops_non_http_ticket_url(_mock_detail_url):
 
     card = frames[-1].template_card
     assert card["horizontal_content_list"] == [{"keyname": "单据编号", "value": "DE002"}]
-    assert "card_action" not in card
+    assert card["card_action"] == {"type": 0}
     assert "javascript" not in json.dumps(card, ensure_ascii=False)
 
 

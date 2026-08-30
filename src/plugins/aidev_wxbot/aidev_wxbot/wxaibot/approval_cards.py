@@ -138,13 +138,16 @@ def _build_pending_card(interrupt: dict, session_code: str) -> dict[str, Any]:
         "card_type": "button_interaction",
         "main_title": {
             "title": title,
-            "desc": "点击卡片查看单据详情" if approval_url else "请在审批系统中处理",
+            "desc": "点击卡片查看会话" if session_url else "请点击单据编号查看审批详情",
         },
         "sub_title_text": "审批完成后系统将继续执行。",
     }
     horizontal_content_list = []
     if ticket_sn:
-        horizontal_content_list.append({"keyname": "单据编号", "value": ticket_sn})
+        ticket_row = {"keyname": "单据编号", "value": ticket_sn}
+        if approval_url:
+            ticket_row.update(type=1, url=approval_url)
+        horizontal_content_list.append(ticket_row)
     if submit_time:
         horizontal_content_list.append({"keyname": "提交时间", "value": submit_time})
     if session_url:
@@ -152,9 +155,7 @@ def _build_pending_card(interrupt: dict, session_code: str) -> dict[str, Any]:
     if horizontal_content_list:
         card["horizontal_content_list"] = horizontal_content_list
 
-    detail_url = approval_url or session_url
-    if detail_url:
-        card["card_action"] = {"type": 1, "url": detail_url}
+    card["card_action"] = {"type": 1, "url": session_url} if session_url else {"type": 0}
 
     interrupt_id = str(interrupt.get("id") or "")
     if session_code and interrupt_id:

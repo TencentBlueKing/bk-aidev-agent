@@ -35,6 +35,7 @@ from .approval_cards import (
     build_cancel_result_card,
     decode_cancel_event_key,
 )
+from .approval_resume import submit_cancelled_approval_resume
 from .constants import (
     AGENT_STREAM_DRAIN_TIMEOUT,
     BUSY_BY_OTHERS_REPLY,
@@ -529,6 +530,17 @@ class WxAiBotLongConnectionService:
                     record_failure(span, RuntimeError("approval_cancel_failed"))
         except Exception:
             logger.exception("event=wxbot_approval_cancel_failed task_id=%s", task_id)
+
+        if succeeded:
+            try:
+                with wxbot_span("wxbot.approval.resume.submit"):
+                    submitted = submit_cancelled_approval_resume(action, username, envelope)
+                if not submitted and result_card is not None:
+                    result_card["sub_title_text"] = "审批已取消，请点击卡片返回会话继续。"
+            except Exception:
+                logger.exception("event=wxbot_approval_resume_submit_failed task_id=%s", task_id)
+                if result_card is not None:
+                    result_card["sub_title_text"] = "审批已取消，请点击卡片返回会话继续。"
 
         if result_card is None:
             # 请求失败或旧平台未返回原详情时，不用精简失败卡片覆盖用户已有的信息。

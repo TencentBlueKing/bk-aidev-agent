@@ -1,6 +1,7 @@
 """企微审批卡片测试使用的脱敏平台响应与回调。"""
 
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 from aidev_wxbot.wxaibot.approval_cards import (
@@ -48,4 +49,44 @@ def approval_card_case(monkeypatch):
         },
     }
     result = {"approve_result": "cancelled", "interrupts": [interrupt]}
-    return SimpleNamespace(action=action, task_id=task_id, result=result, card=card, event=event)
+    envelope = {
+        "ok": True,
+        "result": result,
+        "next": {
+            "endpoint": "chat_completion",
+            "payload": {"session_code": action.session_code, "execute_kwargs": {"stream": True}},
+        },
+    }
+    return SimpleNamespace(action=action, task_id=task_id, result=result, card=card, event=event, envelope=envelope)
+
+
+@pytest.fixture
+def approval_resume_case(approval_card_case, monkeypatch):
+    from aidev_wxbot.wxaibot import approval_resume as mod
+
+    case = approval_card_case
+    real_hydrate = mod.ApprovalStateHandler.hydrate_resume_payload
+    handler_type = MagicMock()
+    handler = handler_type.return_value
+    handler.hydrate_resume_payload.side_effect = real_hydrate
+    handler.get_pending_interrupt_context.return_value = {
+        "graph_thread_id": "graph-1",
+        "interrupts": case.result["interrupts"],
+    }
+    handler.fetch_approve_result.return_value = case.result
+    monkeypatch.setattr(mod, "ApprovalStateHandler", handler_type)
+    case.builder = MagicMock()
+    monkeypatch.setattr(mod, "AgentBuilder", case.builder)
+    case.manager = MagicMock()
+    monkeypatch.setattr(mod, "SessionManager", case.manager)
+    case.real_run = mod.AgentExecutor.run_agent_to_completion
+    case.run = MagicMock()
+    monkeypatch.setattr(mod.AgentExecutor, "run_agent_to_completion", case.run)
+    case.executor = MagicMock()
+    case.executor.submit.return_value = True
+    monkeypatch.setattr(mod, "get_agent_executor", lambda: case.executor)
+    case.cleanup = MagicMock()
+    monkeypatch.setattr(mod, "close_old_connections", case.cleanup)
+    monkeypatch.setattr(mod, "_pending", set())
+    case.module, case.handler = mod, handler
+    return case
