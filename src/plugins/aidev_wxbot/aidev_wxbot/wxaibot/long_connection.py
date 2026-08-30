@@ -506,6 +506,7 @@ class WxAiBotLongConnectionService:
             return True
 
         succeeded = False
+        result_card = None
         try:
             username = await asyncio.to_thread(self._view.resolve_event_username, payload)
             with wxbot_span("wxbot.approval.cancel", kind=CLIENT) as span:
@@ -520,13 +521,19 @@ class WxAiBotLongConnectionService:
                         "request_id": task_id,
                     },
                 )
-                succeeded = not isinstance(envelope, dict) or envelope.get("ok") is not False
-                if not succeeded:
+                succeeded = isinstance(envelope, dict) and envelope.get("ok") is True
+                result_card = build_cancel_result_card(
+                    action, task_id, result=envelope.get("result") if isinstance(envelope, dict) else None
+                )
+                if not succeeded and result_card is None:
                     record_failure(span, RuntimeError("approval_cancel_failed"))
         except Exception:
             logger.exception("event=wxbot_approval_cancel_failed task_id=%s", task_id)
 
-        result_card = build_cancel_result_card(action, task_id, succeeded=succeeded)
+        if result_card is None:
+            # 请求失败或旧平台未返回原详情时，不用精简失败卡片覆盖用户已有的信息。
+            logger.warning("event=wxbot_approval_card_update_skipped task_id=%s reason=no_result_card", task_id)
+            return True
         try:
             await self._send_once(
                 "wxbot.approval_card.update", lambda: self._client.update_template_card(frame, result_card)

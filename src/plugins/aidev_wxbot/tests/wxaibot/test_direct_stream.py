@@ -3,6 +3,7 @@
 import json
 from unittest.mock import patch
 
+import pytest
 from aidev_wxbot.wxaibot.approval_cards import decode_cancel_event_key
 from aidev_wxbot.wxaibot.constants import STREAM_ERROR_REPLY
 from aidev_wxbot.wxaibot.direct_stream import AgentStream, iter_direct_stream_frames
@@ -220,7 +221,21 @@ def test_chat_run_error_becomes_explicit_terminal_frame():
     "aidev_wxbot.wxaibot.direct_stream.AgentHelper.build_session_detail_url",
     return_value="https://agent.example.com/chat-window/?session=session-1",
 )
-def test_pending_tool_approval_is_pushed_as_interactive_card(mock_detail_url):
+@pytest.mark.parametrize(
+    ("ticket_url", "expected_url"),
+    [
+        ("https://itsm.example.com/ticket/DE001?a=1 2", "https://itsm.example.com/ticket/DE001?a=1%202"),
+        (
+            "https://itsm.example.com/#/ticket/ticketInfo?type=ticket&ticketId=123",
+            "https://itsm.example.com/#/ticket/ticketInfo?type=ticket&ticketId=123",
+        ),
+        (
+            "https://itsm.example.com/#/ticket/ticketInfo?type=ticket&ticketId=123&value=a%26b%3Dc",
+            "https://itsm.example.com/#/ticket/ticketInfo?type=ticket&ticketId=123&value=a%26b%3Dc",
+        ),
+    ],
+)
+def test_pending_tool_approval_is_pushed_as_interactive_card(mock_detail_url, ticket_url, expected_url):
     frames = _chat_frames(
         [
             {"type": "TEXT_MESSAGE_CONTENT", "delta": "我将获取 Skill 的详细信息。"},
@@ -239,7 +254,7 @@ def test_pending_tool_approval_is_pushed_as_interactive_card(mock_detail_url):
                                     "sn": "DE001",
                                     "title": "执行「retrieve_private_v1_skills」需要审批",
                                     "submit_time": "2026-08-28T16:30:15.245792+00:00",
-                                    "url": "https://itsm.example.com/ticket/DE001?a=1 2",
+                                    "url": ticket_url,
                                 }
                             },
                         }
@@ -259,7 +274,7 @@ def test_pending_tool_approval_is_pushed_as_interactive_card(mock_detail_url):
         {"keyname": "单据编号", "value": "DE001"},
         {"keyname": "提交时间", "value": "2026-08-28T16:30:15.245792+00:00"},
     ]
-    assert card["card_action"] == {"type": 1, "url": "https://itsm.example.com/ticket/DE001?a=1%202"}
+    assert card["card_action"] == {"type": 1, "url": expected_url}
     assert "source" not in card  # 不展示“已通过”等状态徽标
     assert card["button_list"][0]["text"] == "取消审批"
     action = decode_cancel_event_key(card["button_list"][0]["key"])

@@ -659,56 +659,50 @@ class TestLongConnectionStreaming:
             (expected, {"msgtype": "template_card", "template_card": {"card_type": "text_notice"}})
         ]
 
-    async def test_approval_cancel_card_event_dispatches_operation_and_updates_card(self):
-        from aidev_wxbot.wxaibot.approval_cards import (
-            ApprovalCancelAction,
-            approval_task_id,
-            encode_cancel_event_key,
-        )
-
+    @pytest.mark.parametrize(
+        ("status", "ok", "label"),
+        [
+            ("cancelled", True, "已取消"),
+            ("cancelled", False, "已取消"),
+            ("approved", False, "审批已通过"),
+        ],
+    )
+    async def test_approval_cancel_card_event_dispatches_operation_and_updates_card(
+        self, approval_card_case, status, ok, label
+    ):
+        case = approval_card_case
         service = _service()
         service._view.resolve_event_username.return_value = "alice"
-        action = ApprovalCancelAction("session-1", "int-approval-call-1-DE001")
-        task_id = approval_task_id(action)
-        payload = {
-            "msgtype": "event",
-            "from": {"userid": "alice-wx"},
-            "event": {
-                "eventtype": "template_card_event",
-                "template_card_event": {
-                    "event_key": encode_cancel_event_key(action),
-                    "task_id": task_id,
-                },
-            },
-        }
-
-        with (
-            patch.object(long_connection_module, "dispatch_user_operation", return_value={"ok": True}) as dispatch,
-            patch(
-                "aidev_wxbot.wxaibot.approval_cards.AgentHelper.build_session_detail_url",
-                return_value="https://agent.example.com/session-1",
-            ),
-        ):
-            await service._handle_frame({"body": payload})
-
+        case.result["approve_result"] = status
+        envelope = {"ok": ok, "result": case.result}
+        with patch.object(long_connection_module, "dispatch_user_operation", return_value=envelope) as dispatch:
+            await service._handle_frame({"body": case.event})
         dispatch.assert_called_once_with(
             "approval_cancel",
             "alice",
             {
                 "session_code": "session-1",
                 "operation": "approval_cancel",
-                "payload": {"interrupt_id": "int-approval-call-1-DE001"},
-                "request_id": task_id,
+                "payload": {"interrupt_id": case.action.interrupt_id},
+                "request_id": case.task_id,
             },
         )
-        assert service._client.update_template_card_calls == [
-            {
-                "card_type": "text_notice",
-                "main_title": {"title": "审批已取消", "desc": "本次工具执行已终止"},
-                "task_id": task_id,
-                "card_action": {"type": 1, "url": "https://agent.example.com/session-1"},
-            }
-        ]
+        expected = {key: value for key, value in case.card.items() if key != "button_list"}
+        expected.update(card_type="text_notice", jump_list=[{"type": 0, "title": label}])
+        assert service._client.update_template_card_calls == [expected]
+
+    @pytest.mark.parametrize("envelope", [None, {}, {"ok": True}, {"ok": False}])
+    async def test_cancel_missing_result_preserves_card(self, approval_card_case, envelope):
+        service = _service()
+        with patch.object(long_connection_module, "dispatch_user_operation", return_value=envelope):
+            await service._handle_frame({"body": approval_card_case.event})
+        assert service._client.update_template_card_calls == []
+
+    async def test_cancel_exception_preserves_card(self, approval_card_case):
+        service = _service()
+        with patch.object(long_connection_module, "dispatch_user_operation", side_effect=RuntimeError("failed")):
+            await service._handle_frame({"body": approval_card_case.event})
+        assert service._client.update_template_card_calls == []
 
     async def test_slow_wecom_sender_applies_bounded_backpressure(self, monkeypatch):
         class SlowClient(FakeClient):

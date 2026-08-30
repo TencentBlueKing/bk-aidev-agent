@@ -8,7 +8,13 @@ import pytest
 try:
     import django  # noqa: F401
     from aidev_wxbot.wxaibot.constants import QUEUE_EXPIRES_MS
-    from aidev_wxbot.wxaibot.context import CHUNK_FLUSH_THRESHOLD, ContextGenerator, LlmChunkMsg, stream_msg
+    from aidev_wxbot.wxaibot.context import (
+        CHUNK_FLUSH_THRESHOLD,
+        ContextGenerator,
+        LlmChunkMsg,
+        _normalize_url,
+        stream_msg,
+    )
     from django.conf import settings
 
     _wxbot_available = True
@@ -18,6 +24,35 @@ except ImportError:
     LlmChunkMsg = None
     settings = None
     stream_msg = None
+
+
+@pytest.mark.skipif(not _wxbot_available, reason="Django and aidev_wxbot required")
+@pytest.mark.parametrize(
+    ("raw_url", "expected"),
+    [
+        ("", ""),
+        (
+            "https://approval.example.com/ticket?id=123&name=a b",
+            "https://approval.example.com/ticket?id=123&name=a%20b",
+        ),
+        (
+            "https://approval.example.com/#/ticket/ticketInfo?type=ticket&ticketId=123",
+            "https://approval.example.com/#/ticket/ticketInfo?type=ticket&ticketId=123",
+        ),
+        (
+            "https://approval.example.com/#/ticket?name=审批 单&ticketId=123",
+            "https://approval.example.com/#/ticket?name=%E5%AE%A1%E6%89%B9%20%E5%8D%95&ticketId=123",
+        ),
+        (
+            "https://approval.example.com/#/ticket?value=a%26b%3Dc%3Fd&ticketId=123",
+            "https://approval.example.com/#/ticket?value=a%26b%3Dc%3Fd&ticketId=123",
+        ),
+        ("/#/ticket?type=ticket&ticketId=123", "/#/ticket?type=ticket&ticketId=123"),
+    ],
+)
+def test_normalize_url_preserves_route_and_query_delimiters(raw_url, expected):
+    assert _normalize_url(raw_url) == expected
+    assert _normalize_url(expected) == expected
 
 
 @pytest.mark.skipif(not _wxbot_available, reason="Django and aidev_wxbot required")

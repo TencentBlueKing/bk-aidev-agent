@@ -81,37 +81,45 @@ def decode_cancel_event_key(event_key: str) -> ApprovalCancelAction | None:
     return ApprovalCancelAction(session_code=session_code, interrupt_id=interrupt_id)
 
 
-def build_cancel_result_card(action: ApprovalCancelAction, task_id: str, *, succeeded: bool) -> dict[str, Any]:
-    """构建取消按钮点击后的卡片，不展示审批状态徽标。"""
-    session_url = _safe_url(AgentHelper.build_session_detail_url(action.session_code))
-    if succeeded:
-        card: dict[str, Any] = {
-            "card_type": "text_notice",
-            "main_title": {
-                "title": "审批已取消",
-                "desc": "本次工具执行已终止",
-            },
-            "task_id": task_id,
-        }
-    else:
-        card = {
-            "card_type": "button_interaction",
-            "main_title": {
-                "title": "取消审批失败",
-                "desc": "请稍后重试，或前往审批单页面处理",
-            },
-            "button_list": [
-                {
-                    "text": "重试取消审批",
-                    "style": 2,
-                    "key": encode_cancel_event_key(action),
-                }
-            ],
-            "task_id": task_id,
-        }
-    if session_url:
-        card["card_action"] = {"type": 1, "url": session_url}
-    return card
+def build_cancel_result_card(action: ApprovalCancelAction, task_id: str, *, result: Any) -> dict[str, Any] | None:
+    """用平台返回的原审批详情更新操作区；信息不完整时保留企微原卡片。
+
+    ``ok=False`` 也可能表示审批已经结束，应展示实际结果而非“取消失败”。
+    不用取消按钮的点击人或候选 approvers 冒充实际审批人。
+    """
+    if not isinstance(result, dict) or task_id != approval_task_id(action):
+        return None
+    status = result.get("approve_result")
+    if not isinstance(status, str):
+        return None
+    status_text = {
+        "cancelled": "已取消",
+        "approved": "审批已通过",
+        "rejected": "审批已拒绝",
+    }.get(status)
+    if status_text is None:
+        return None
+
+    interrupts = result.get("interrupts")
+    if not isinstance(interrupts, list):
+        return None
+    for interrupt in interrupts:
+        if not isinstance(interrupt, dict) or interrupt.get("id") != action.interrupt_id:
+            continue
+        metadata = interrupt.get("metadata")
+        if (
+            interrupt.get("reason") != TOOL_APPROVAL_REASON
+            or not isinstance(metadata, dict)
+            or not isinstance(metadata.get("ticket"), dict)
+        ):
+            return None
+        card = _build_pending_card(interrupt, action.session_code)
+        # 通知卡支持原有详情字段，用不可点击的底部文字代替取消按钮。
+        card["card_type"] = "text_notice"
+        card.pop("button_list", None)
+        card["jump_list"] = [{"type": 0, "title": status_text}]
+        return card
+    return None
 
 
 def _build_pending_card(interrupt: dict, session_code: str) -> dict[str, Any]:

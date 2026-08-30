@@ -69,7 +69,8 @@ def _normalize_url(raw_url: str) -> str:
             parts.netloc,
             quote(parts.path, safe="/%:@+-._~"),
             quote(parts.query, safe="=&%:@/+,-._~"),
-            quote(parts.fragment, safe="%:@/+,-._~"),
+            # Hash 路由可能包含查询参数，必须保留分隔符及已有的百分号编码。
+            quote(parts.fragment, safe="?=&%:@/+,-._~"),
         )
     )
 
