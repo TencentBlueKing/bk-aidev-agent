@@ -29,6 +29,7 @@ from aidev_wxbot.context import Context, Message
 from aidev_wxbot.context.message import MsgType
 from aidev_wxbot.wxaibot.constants import QUEUE_EXPIRES_MS, THINKING_MESSAGE
 from aidev_wxbot.wxaibot.stream_registry import stream_registry
+from aidev_wxbot.wxaibot.tracing import CLIENT, record_failure, wxbot_span
 
 logger = logging.getLogger(__name__)
 
@@ -245,11 +246,15 @@ class ContextGenerator:
     def generate(self) -> WxWorkAiBotContext:
         logger.info(f"企微传递的参数是 {json.dumps(self.payload, ensure_ascii=False)}")
         sender_code = self.payload.get("from", {}).get("userid")
-        try:
-            sender_id = BkAiDevApi().convert_to_rtx(sender_code)["userid"]
-        except Exception as e:
-            logger.error(f"convert_to_rtx 出错: {e}")
-            sender_id = sender_code
+        with wxbot_span("wxbot.identity.convert_to_rtx", kind=CLIENT) as span:
+            try:
+                sender_id = BkAiDevApi().convert_to_rtx(sender_code)["userid"]
+                span.set_attribute("wxbot.identity.fallback", False)
+            except Exception as e:
+                record_failure(span, e)
+                span.set_attribute("wxbot.identity.fallback", True)
+                logger.error("convert_to_rtx 出错: %s", type(e).__name__)
+                sender_id = sender_code
         from_type = self.payload.get("chattype")
         chat_id = self.payload.get("chatid")
         ctx_data = {

@@ -10,7 +10,9 @@ import re
 import signal
 import threading
 import time
+from collections.abc import Awaitable, Callable
 from concurrent.futures import TimeoutError as FutureTimeoutError
+from contextvars import copy_context
 from dataclasses import dataclass, field
 from enum import StrEnum
 from logging import getLogger
@@ -19,7 +21,7 @@ from tempfile import gettempdir
 from typing import Any
 
 from aibot import WSClient, WSClientOptions
-from aidev_agent.utils.tracing import recording_span
+from aidev_agent.utils.tracing import get_current_trace_id
 from aidev_bkplugin.services.execution import (
     get_agent_cleanup_executor,
     get_agent_cleanup_executor_snapshot,
@@ -37,6 +39,7 @@ from .constants import (
     AGENT_STREAM_DRAIN_TIMEOUT,
     BUSY_BY_OTHERS_REPLY,
     BUSY_REPLY,
+    GROUP_CHAT_TYPE,
     PREPARING_REPLY,
     STOP_NO_ACTIVE_REPLY,
     STOP_NOTICE,
@@ -49,6 +52,16 @@ from .context import THINKING_MSG, ContextGenerator, stream_msg
 from .direct_stream import DirectStreamFrame, iter_direct_stream_frames
 from .strategies import WECOM_AGENT_RETRY_STRATEGY, resolve_strategy
 from .stream_registry import stream_registry
+from .tracing import (
+    CLIENT,
+    current_span,
+    error_attributes,
+    message_trace_active,
+    received_message_span,
+    record_ack,
+    record_failure,
+    wxbot_span,
+)
 from .views import WxAiBotViewSet, WxBotAgentRequest
 
 logger = getLogger(__name__)
@@ -106,6 +119,9 @@ class StreamMetrics:
     started: int = 0
     completed: int = 0
     approval_pending: int = 0
+    approval_cards_sent: int = 0
+    approval_cards_failed: int = 0
+    approval_card_send_wait_total: float = 0.0
     cancelled: int = 0
     failed: int = 0
     first_frames: int = 0
@@ -397,9 +413,10 @@ class WxAiBotLongConnectionService:
         self._cleanup_runtime()
 
     async def _start_client(self) -> None:
-        self._set_service_state(ServiceState.STARTING)
-        await self._client.connect()
-        await self._wait_for_startup()
+        with wxbot_span("wxbot.connection.connect", kind=CLIENT):
+            self._set_service_state(ServiceState.STARTING)
+            await self._client.connect()
+            await self._wait_for_startup()
 
     async def _wait_for_startup(self) -> None:
         if not self._authenticated_event or not self._startup_failed_event:
@@ -429,6 +446,12 @@ class WxAiBotLongConnectionService:
             raise timeout_error
 
     async def _handle_frame(self, frame: dict[str, Any]) -> None:
+        # create_task / to_thread 继承此上下文；每条入站消息都隔离于长连接自身。
+        with received_message_span(frame):
+            logger.info("event=wxbot_message_received trace_id=%s", get_current_trace_id())
+            await self._handle_received_frame(frame)
+
+    async def _handle_received_frame(self, frame: dict[str, Any]) -> None:
         if self._shutdown_requested or not self._accepting_messages:
             logger.info("[WxAiBot-WS] 服务停机中，忽略新消息")
             return
@@ -444,7 +467,8 @@ class WxAiBotLongConnectionService:
             if payload.get("msgtype") == "event" and await self._handle_approval_card_event(frame, payload):
                 return
             if payload.get("msgtype") == "text":
-                response, request = await asyncio.to_thread(self._view.prepare_agent_request, payload)
+                with wxbot_span("wxbot.message.prepare"):
+                    response, request = await asyncio.to_thread(self._view.prepare_agent_request, payload)
                 if response is not None:
                     await self._dispatch_immediate_response(frame, payload, response)
                     return
@@ -484,24 +508,29 @@ class WxAiBotLongConnectionService:
         succeeded = False
         try:
             username = await asyncio.to_thread(self._view.resolve_event_username, payload)
-            envelope = await asyncio.to_thread(
-                dispatch_user_operation,
-                "approval_cancel",
-                username,
-                {
-                    "session_code": action.session_code,
-                    "operation": "approval_cancel",
-                    "payload": {"interrupt_id": action.interrupt_id},
-                    "request_id": task_id,
-                },
-            )
-            succeeded = not isinstance(envelope, dict) or envelope.get("ok") is not False
+            with wxbot_span("wxbot.approval.cancel", kind=CLIENT) as span:
+                envelope = await asyncio.to_thread(
+                    dispatch_user_operation,
+                    "approval_cancel",
+                    username,
+                    {
+                        "session_code": action.session_code,
+                        "operation": "approval_cancel",
+                        "payload": {"interrupt_id": action.interrupt_id},
+                        "request_id": task_id,
+                    },
+                )
+                succeeded = not isinstance(envelope, dict) or envelope.get("ok") is not False
+                if not succeeded:
+                    record_failure(span, RuntimeError("approval_cancel_failed"))
         except Exception:
             logger.exception("event=wxbot_approval_cancel_failed task_id=%s", task_id)
 
         result_card = build_cancel_result_card(action, task_id, succeeded=succeeded)
         try:
-            await self._client.update_template_card(frame, result_card)
+            await self._send_once(
+                "wxbot.approval_card.update", lambda: self._client.update_template_card(frame, result_card)
+            )
         except Exception:
             logger.exception("event=wxbot_approval_card_update_failed task_id=%s", task_id)
         else:
@@ -517,7 +546,7 @@ class WxAiBotLongConnectionService:
             return
 
         if msg_type != "stream":
-            await self._client.reply(frame, response)
+            await self._send_once("wxbot.message.reply", lambda: self._client.reply(frame, response))
             return
 
         stream = response.get("stream") or {}
@@ -538,9 +567,9 @@ class WxAiBotLongConnectionService:
     async def _reply_text(self, frame: dict[str, Any], payload: dict[str, Any], response: dict[str, Any]) -> None:
         event_type = payload.get("event", {}).get("eventtype")
         if payload.get("msgtype") == "event" and event_type == "enter_chat":
-            await self._client.reply_welcome(frame, response)
+            await self._send_once("wxbot.message.welcome", lambda: self._client.reply_welcome(frame, response))
             return
-        await self._client.reply(frame, response)
+        await self._send_once("wxbot.message.reply", lambda: self._client.reply(frame, response))
 
     async def _start_direct_stream(self, frame: dict[str, Any], request: WxBotAgentRequest) -> None:
         if request.stream_id in self._active_streams:
@@ -583,10 +612,11 @@ class WxAiBotLongConnectionService:
         self._metrics.started += 1
         task.add_done_callback(lambda finished, sid=request.stream_id: self._cleanup_stream_task(sid, finished))
         logger.info(
-            "event=wxbot_ws_stream_started stream_id=%s group_id=%s active_streams=%s",
+            "event=wxbot_ws_stream_started stream_id=%s group_id=%s active_streams=%s trace_id=%s",
             request.stream_id,
             request.group_id,
             len(self._active_streams),
+            get_current_trace_id(),
         )
 
     async def _consume_direct_stream(
@@ -595,12 +625,24 @@ class WxAiBotLongConnectionService:
         request: WxBotAgentRequest,
         cancel_event: threading.Event,
     ) -> None:
+        # 保持会话 span 至正常发送完成或消费任务取消，不随生成器提前结束。
+        with wxbot_span(
+            "wxbot.long_connection.session",
+            root=not message_trace_active.get(),
+            attributes={"aidev.transport": "websocket"},
+        ):
+            await self._consume_agent_stream(frame, request, cancel_event)
+
+    async def _consume_agent_stream(
+        self, frame: dict[str, Any], request: WxBotAgentRequest, cancel_event: threading.Event
+    ) -> None:
         queue_size = max(1, int(getattr(settings, "WXAIBOT_WS_STREAM_BUFFER_SIZE", 4)))
         output_queue: asyncio.Queue[DirectStreamFrame | Exception | _ProducerDone | _ProducerStarted] = asyncio.Queue(
             maxsize=queue_size
         )
         loop = asyncio.get_running_loop()
         submitted = get_agent_executor().submit(
+            copy_context().run,
             self._produce_direct_stream,
             request,
             loop,
@@ -608,6 +650,7 @@ class WxAiBotLongConnectionService:
             cancel_event,
         )
         if not submitted:
+            record_failure(current_span(), RuntimeError("agent_capacity_exceeded"))
             self._metrics.failed += 1
             await self._send_stream_reply(frame, request.stream_id, "当前请求较多，请稍后重试", True)
             return
@@ -635,13 +678,27 @@ class WxAiBotLongConnectionService:
                         raise item
 
                     content = item.content or ("回答完成" if item.finish else THINKING_MSG)
-                    send_wait = await self._send_stream_reply(
-                        frame,
-                        request.stream_id,
-                        content,
-                        item.finish,
-                        template_card=item.template_card,
-                    )
+                    send_wait = await self._send_stream_reply(frame, request.stream_id, content, item.finish)
+                    if item.template_card:
+                        try:
+                            card_send_wait = await self._send_template_card(frame, item.template_card)
+                        except Exception as error:
+                            self._metrics.approval_cards_failed += 1
+                            logger.exception(
+                                "event=wxbot_approval_card_failed stream_id=%s kind=%s trace_id=%s",
+                                request.stream_id,
+                                type(error).__name__,
+                                get_current_trace_id(),
+                            )
+                        else:
+                            self._metrics.approval_cards_sent += 1
+                            self._metrics.approval_card_send_wait_total += card_send_wait
+                            logger.info(
+                                "event=wxbot_approval_card_sent stream_id=%s send_wait_ms=%.3f trace_id=%s",
+                                request.stream_id,
+                                card_send_wait * 1000,
+                                get_current_trace_id(),
+                            )
                     if active := self._active_streams.get(request.stream_id):
                         active.last_content = content
                     now = time.monotonic()
@@ -670,8 +727,10 @@ class WxAiBotLongConnectionService:
                         terminal_received = True
                         self._metrics.final_frames += 1
                         if item.pending_approval:
+                            current_span().set_attribute("wxbot.outcome", "approval_pending")
                             self._metrics.approval_pending += 1
                         elif item.failed:
+                            record_failure(current_span(), RuntimeError("agent_run_error"))
                             self._metrics.failed += 1
                         else:
                             self._metrics.completed += 1
@@ -685,6 +744,7 @@ class WxAiBotLongConnectionService:
         except asyncio.CancelledError:
             raise
         except Exception as error:
+            record_failure(current_span(), error)
             self._metrics.failed += 1
             stream_timed_out = (
                 isinstance(error, TimeoutError)
@@ -714,14 +774,7 @@ class WxAiBotLongConnectionService:
         cancel_event: threading.Event,
     ) -> None:
         """worker 线程入口：执行 Agent 并把生成帧转发到事件循环。"""
-        with recording_span(
-            "wxbot.long_connection.session",
-            attributes={
-                "aidev.channel": "rtx",
-                "aidev.transport": "websocket",
-            },
-            root=True,
-        ):
+        with wxbot_span("wxbot.agent.stream"):
             self._produce_agent_frames(request, loop, output_queue, cancel_event)
 
     def _produce_agent_frames(
@@ -761,6 +814,7 @@ class WxAiBotLongConnectionService:
                 if stream_frame.finish:
                     break
         except Exception as error:
+            record_failure(current_span(), error)
             if not cancel_event.is_set():
                 self._put_from_worker(loop, output_queue, error, cancel_event)
         finally:
@@ -778,7 +832,7 @@ class WxAiBotLongConnectionService:
         with self._drain_lock:
             self._draining_streams[stream_id] = drain
 
-        if get_agent_cleanup_executor().submit(self._drain_stream_frames, frames, drain):
+        if get_agent_cleanup_executor().submit(copy_context().run, self._drain_stream_frames, frames, drain):
             return drain
 
         self._metrics.drain_rejected += 1
@@ -918,43 +972,80 @@ class WxAiBotLongConnectionService:
         stream_id: str,
         content: str,
         finish: bool,
-        *,
-        template_card: dict[str, Any] | None = None,
     ) -> float:
-        started_at = time.monotonic()
-        deadline = time.monotonic() + getattr(settings, "MAX_MESSAGE_TIME", 300)
-        last_error: Exception | None = None
+        with wxbot_span("wxbot.reply_stream", kind=CLIENT, attributes={"wecom.stream.finish": finish}) as span:
+            return await self._send_with_retry(
+                lambda: self._client.reply_stream(frame, stream_id, content, finish), span, "wxbot_stream_reply_retry"
+            )
 
+    async def _send_template_card(self, frame: dict[str, Any], template_card: dict[str, Any]) -> float:
+        """在流式消息结束后，向原会话主动推送独立审批卡片。"""
+        with wxbot_span("wxbot.approval_card.send", kind=CLIENT) as span:
+            target = self._resolve_message_target(frame)
+            if not target:
+                raise ValueError("企微消息缺少卡片推送目标")
+            body = {"msgtype": "template_card", "template_card": template_card}
+            return await self._send_with_retry(
+                lambda: self._client.send_message(target, body), span, "wxbot_approval_card_retry"
+            )
+
+    @staticmethod
+    async def _send_once(name: str, send: Callable[[], Awaitable[Any]]) -> None:
+        with wxbot_span(name, kind=CLIENT) as span:
+            record_ack(span, await send())
+
+    async def _send_with_retry(self, send: Callable[[], Awaitable[Any]], span: Any, retry_event: str) -> float:
+        """逐次 await 回执；一次发送 span 覆盖断线等待与重试，不记录消息载荷。"""
+        started_at = time.monotonic()
+        deadline = started_at + getattr(settings, "MAX_MESSAGE_TIME", 300)
+        last_error: Exception | None = None
+        attempts = 0
+        retries = 0
+        disconnected_wait = 0.0
+        span.set_attribute("wecom.send.attempts", attempts)
+        span.set_attribute("wecom.send.retries", retries)
         while time.monotonic() < deadline:
             if self._shutdown_requested and not self._client.is_connected:
                 raise asyncio.CancelledError()
             if not self._client.is_connected:
-                await asyncio.sleep(1)
+                waiting_at = time.monotonic()
+                try:
+                    await asyncio.sleep(1)
+                finally:
+                    disconnected_wait += time.monotonic() - waiting_at
+                    span.set_attribute("wecom.disconnected_wait_ms", disconnected_wait * 1000)
                 continue
 
+            attempts += 1
+            span.set_attribute("wecom.send.attempts", attempts)
             try:
-                if template_card:
-                    await self._client.reply_stream_with_card(
-                        frame,
-                        stream_id,
-                        content,
-                        finish,
-                        template_card=template_card,
-                    )
-                else:
-                    await self._client.reply_stream(frame, stream_id, content, finish)
+                record_ack(span, await send())
+                span.set_attribute("wecom.send.wait_ms", (time.monotonic() - started_at) * 1000)
                 return time.monotonic() - started_at
             except Exception as error:
                 last_error = error
+                retries += 1
+                span.set_attribute("wecom.send.retries", retries)
+                span.add_event("wecom.send.retry", attributes=error_attributes(error))
                 logger.warning(
-                    "[WxAiBot-WS] 发送流式消息失败，等待重试 | stream_id=%s finish=%s error=%s",
-                    stream_id,
-                    finish,
-                    error,
+                    "event=%s kind=%s trace_id=%s",
+                    retry_event,
+                    type(error).__name__,
+                    get_current_trace_id(),
                 )
                 await asyncio.sleep(1)
 
-        raise RuntimeError(f"stream_id={stream_id} 在重连窗口内未能发送成功，最后错误: {last_error}")
+        if last_error is not None:
+            raise last_error
+        raise TimeoutError("企微消息在重连窗口内未能发送成功")
+
+    @staticmethod
+    def _resolve_message_target(frame: dict[str, Any]) -> str:
+        payload = frame.get("body") or {}
+        if payload.get("chattype") == GROUP_CHAT_TYPE:
+            return str(payload.get("chatid") or "")
+        sender = payload.get("from") or {}
+        return str(sender.get("userid") or "") if isinstance(sender, dict) else ""
 
     def _acquire_instance_guard(self) -> None:
         if not self._config.single_instance_enabled:
@@ -1019,6 +1110,7 @@ class WxAiBotLongConnectionService:
         final_frames = max(1, self._metrics.final_frames)
         first_frames = max(1, self._metrics.first_frames)
         sent_frames = max(1, self._metrics.sent_frames)
+        approval_cards_sent = max(1, self._metrics.approval_cards_sent)
         logger.info(
             "event=wxbot_ws_health state=%s connected=%s accepting=%s active_streams=%s "
             "agent_active=%s agent_pending=%s agent_workers=%s agent_pending_limit=%s agent_capacity=%s "
@@ -1027,7 +1119,9 @@ class WxAiBotLongConnectionService:
             "cleanup_pending_limit=%s cleanup_rejected=%s drain_timeouts=%s drain_rejected=%s "
             "streams_started=%s streams_completed=%s streams_approval_pending=%s "
             "streams_cancelled=%s streams_failed=%s streams_rejected_busy=%s "
-            "avg_first_frame_ms=%.3f avg_final_frame_ms=%.3f avg_send_wait_ms=%.3f",
+            "approval_cards_sent=%s approval_cards_failed=%s "
+            "avg_first_frame_ms=%.3f avg_final_frame_ms=%.3f avg_send_wait_ms=%.3f "
+            "avg_approval_card_send_wait_ms=%.3f",
             self._service_state,
             bool(getattr(self._client, "is_connected", False)),
             self._accepting_messages,
@@ -1055,9 +1149,12 @@ class WxAiBotLongConnectionService:
             self._metrics.cancelled,
             self._metrics.failed,
             self._metrics.rejected_busy,
+            self._metrics.approval_cards_sent,
+            self._metrics.approval_cards_failed,
             self._metrics.first_frame_latency_total / first_frames * 1000,
             self._metrics.final_frame_latency_total / final_frames * 1000,
             self._metrics.send_wait_total / sent_frames * 1000,
+            self._metrics.approval_card_send_wait_total / approval_cards_sent * 1000,
         )
 
     async def _shutdown_async(self, reason: str) -> None:

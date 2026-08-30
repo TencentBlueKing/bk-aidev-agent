@@ -16,6 +16,7 @@ from .context import CHUNK_FLUSH_THRESHOLD, _escape_markdown_text, _normalize_ur
 from .formatters import _node_display, _task_state_label, format_task_outputs
 from .stream import iter_sse_lines
 from .tool_blocks import ChatSegments, is_tool_event
+from .tracing import wxbot_span
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,7 +113,10 @@ def _iter_chat_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
             yield DirectStreamFrame(content=STREAM_ERROR_REPLY, finish=True, failed=True)
             finished = True
         elif event_type == EventType.RUN_FINISHED:
-            if approval_card := build_pending_approval_card(event, agent_stream.session_code):
+            with wxbot_span("wxbot.approval_card.build") as span:
+                approval_card = build_pending_approval_card(event, agent_stream.session_code)
+                span.set_attribute("wxbot.approval.pending", approval_card is not None)
+            if approval_card:
                 current_content = _render_chat(thinking, segments.render())
                 yield DirectStreamFrame(
                     content=current_content or "等待工具审批",

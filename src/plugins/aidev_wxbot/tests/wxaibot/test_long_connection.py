@@ -73,6 +73,7 @@ class FakeClient:
         self.failures = failures
         self.reply_stream_calls: list[tuple[str, bool]] = []
         self.reply_stream_with_card_calls: list[tuple[str, bool, dict]] = []
+        self.send_message_calls: list[tuple[str, dict]] = []
         self.update_template_card_calls: list[dict] = []
         self.disconnected = False
 
@@ -84,6 +85,9 @@ class FakeClient:
 
     async def reply_stream_with_card(self, _frame, _stream_id, content, finish, *, template_card):
         self.reply_stream_with_card_calls.append((content, finish, template_card))
+
+    async def send_message(self, target, body):
+        self.send_message_calls.append((target, body))
 
     async def update_template_card(self, _frame, template_card):
         self.update_template_card_calls.append(template_card)
@@ -623,17 +627,37 @@ class TestLongConnectionStreaming:
             patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
             patch("aidev_wxbot.wxaibot.approval_cards.AgentHelper.build_session_detail_url", return_value=""),
         ):
-            await service._start_direct_stream({}, request)
+            frame = {"body": {"chattype": "single", "from": {"userid": "wecom-user-1"}}}
+            await service._start_direct_stream(frame, request)
             await service._active_streams["approval"].task
 
         assert service._metrics.approval_pending == 1
         assert service._metrics.completed == 0
-        assert service._client.reply_stream_calls == []
-        assert len(service._client.reply_stream_with_card_calls) == 1
-        content, finish, card = service._client.reply_stream_with_card_calls[0]
-        assert content == "等待工具审批"
-        assert finish is True
+        assert service._client.reply_stream_calls == [("等待工具审批", True)]
+        assert service._client.reply_stream_with_card_calls == []
+        assert len(service._client.send_message_calls) == 1
+        target, body = service._client.send_message_calls[0]
+        assert target == "wecom-user-1"
+        card = body["template_card"]
+        assert body["msgtype"] == "template_card"
         assert card["button_list"][0]["text"] == "取消审批"
+        assert service._metrics.approval_cards_sent == 1
+
+    @pytest.mark.parametrize(
+        ("payload", "expected"),
+        [
+            ({"chattype": "single", "from": {"userid": "user-1"}}, "user-1"),
+            ({"chattype": "group", "chatid": "chat-1"}, "chat-1"),
+        ],
+    )
+    async def test_template_card_is_pushed_to_original_conversation(self, payload, expected):
+        service = _service()
+
+        await service._send_template_card({"body": payload}, {"card_type": "text_notice"})
+
+        assert service._client.send_message_calls == [
+            (expected, {"msgtype": "template_card", "template_card": {"card_type": "text_notice"}})
+        ]
 
     async def test_approval_cancel_card_event_dispatches_operation_and_updates_card(self):
         from aidev_wxbot.wxaibot.approval_cards import (
@@ -992,6 +1016,8 @@ class TestLongConnectionLifecycle:
 
         assert "streams_started=3" in caplog.text
         assert "streams_approval_pending=0" in caplog.text
+        assert "approval_cards_sent=0" in caplog.text
+        assert "approval_cards_failed=0" in caplog.text
         # 被拒次数是判断「用户是不是一直在撞正在生成」的唯一线索
         assert "streams_rejected_busy=2" in caplog.text
         assert "draining_streams=1" in caplog.text
