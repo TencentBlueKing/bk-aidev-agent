@@ -8,10 +8,6 @@ This process-local adapter is not an outbox for external approval callbacks.
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Iterator
-from datetime import datetime, timezone
-
-from ag_ui.core import CustomEvent
-from aidev_agent.events import AIDEV_CHAT_RESUME_READY, EventPublisher, LocalEventBus
 
 from .direct_stream import AgentStream, iter_direct_stream_frames
 
@@ -49,12 +45,9 @@ class ResumeDelivery:
         self._sending_allowed = asyncio.Event()
         if not paused:
             self._sending_allowed.set()
-        self._bus = LocalEventBus()
-        self.publisher: EventPublisher = self._bus
-        self._unsubscribe = self._bus.subscribe(AIDEV_CHAT_RESUME_READY, self._on_ready)
         self.task = asyncio.create_task(self._consume_messages())
 
-    def _on_ready(self, event: CustomEvent) -> None:
+    def _on_ready(self) -> None:
         # The updated approval card already confirms cancellation; READY still
         # remains available to other listeners without sending another notice.
         if self._resume_type == "tool_approval":
@@ -86,22 +79,7 @@ class ResumeDelivery:
             if ready or not run_id:
                 return
             ready = True
-            self.publisher.publish(
-                CustomEvent(
-                    name=AIDEV_CHAT_RESUME_READY,
-                    value={
-                        "schemaVersion": 1,
-                        "eventId": f"{run_id}:resume-ready",
-                        "occurredAt": datetime.now(timezone.utc).isoformat(),
-                        "sessionCode": session_code,
-                        "threadId": thread_id,
-                        "runId": run_id,
-                        "turnId": turn_id,
-                        "interruptId": interrupt_id,
-                        "resumeType": self._resume_type,
-                    },
-                )
-            )
+            self._on_ready()
 
         last = None
         try:
@@ -133,7 +111,6 @@ class ResumeDelivery:
 
     def close(self) -> None:
         self._closed = True
-        self._unsubscribe()
         self.task.cancel()
 
     async def _consume_messages(self) -> None:
@@ -152,4 +129,3 @@ class ResumeDelivery:
             logger.error("event=wxbot_resume_delivery_failed error_type=%s", type(error).__name__)
         finally:
             self._closed = True
-            self._unsubscribe()

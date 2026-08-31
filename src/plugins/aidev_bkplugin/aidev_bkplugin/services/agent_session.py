@@ -17,6 +17,7 @@ from aidev_agent.enums import ChannelType, ChatContentStatus, PromptRole, Sessio
 from aidev_agent.packages.resource_manager import ResourceManagerProtocol
 from aidev_agent.packages.resource_manager.registry import resource_manager as resource_manager_factory
 from aidev_agent.pydantic_models import ChatPrompt
+from aidev_agent.utils.tracing import get_current_trace_id
 from django.conf import settings
 
 from ..constants import AGUI_PROTOCOL_VERSION
@@ -44,6 +45,7 @@ class SessionManager:
         resource_manager: ResourceManagerProtocol | None = None,
     ):
         self.username = username
+        self.trace_id = get_current_trace_id() or ""
         self.agent_code = agent_code or settings.APP_CODE
         self.resource_manager = resource_manager or resource_manager_factory()
 
@@ -111,6 +113,8 @@ class SessionManager:
             data["extra"] = extra
         if turn_id:
             data["property"] = {"turn_id": turn_id}
+        if self.trace_id:
+            data.setdefault("property", {})["trace_id"] = self.trace_id
         client = self._client()
         result = client.api.create_chat_session_content(json=data, headers=self._user_headers())
         saved = result.get("data", {})

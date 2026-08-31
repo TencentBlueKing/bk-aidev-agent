@@ -168,6 +168,31 @@ async def test_all_text_goes_directly_to_llm_without_question_lookup(content):
     assert service._metrics.completed == 1
 
 
+@pytest.mark.parametrize("kind", ["chat", "flow"])
+async def test_database_route_is_bound_before_chat_output_but_not_for_flow(kind):
+    service = _service()
+    request = SimpleNamespace(content="query", stream_id="bind-original", username="alice", group_id="g1")
+    strategy = MagicMock()
+    with patch.object(service, "_bind_resume_route") as bind:
+
+        def output():
+            assert bind.called == (kind == "chat")
+            yield 'data: {"type":"RUN_FINISHED"}\n'
+
+        strategy.open_stream.return_value = AgentStream(kind, output(), "original-session")
+        with (
+            patch.object(service, "_database_events_enabled", return_value=True),
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+        ):
+            await service._start_direct_stream({"body": {"from": {"userid": "original-user"}}}, request)
+            await service._active_streams[request.stream_id].task
+        if kind == "chat":
+            bind.assert_called_once_with("original-session", "alice", "original-user")
+        else:
+            bind.assert_not_called()
+
+
 @pytest.mark.parametrize("status", ["accepted", "duplicate", "busy"])
 async def test_question_click_updates_only_accepted_card(question_case, question_callback, status):
     service = _service()
@@ -188,6 +213,24 @@ async def test_question_click_updates_only_accepted_card(question_case, question
         delivery.finish()
         await delivery.task
         assert service._client.send_message_calls[-1][0] == "alice-wx"
+
+
+async def test_database_question_click_binds_route_without_local_delivery(question_case, question_callback):
+    service = _service()
+    service._view.resolve_event_username.return_value = "alice"
+    submission = SimpleNamespace(interrupt=question_case.interrupt, answers=[{"answer": [{"label": "华南"}]}])
+    with (
+        patch.object(service, "_database_events_enabled", return_value=True),
+        patch.object(service, "_bind_resume_route") as bind,
+        patch.object(service, "_new_resume_delivery") as local_delivery,
+        patch.object(long_connection_module, "prepare_question_submission", return_value=submission),
+        patch.object(long_connection_module, "submit_question_resume", return_value="accepted") as submit,
+    ):
+        await service._handle_frame({"body": question_callback})
+    bind.assert_called_once_with("session-1", "alice", "alice-wx")
+    assert submit.call_args.args == (submission, None)
+    local_delivery.assert_not_called()
+    assert len(service._client.update_template_card_calls) == 1
 
 
 @pytest.mark.parametrize("failure", ["missing_url", "build_error", "update_error"])
@@ -791,6 +834,7 @@ class TestLongConnectionStreaming:
             ("cancelled", True, "已取消"),
             ("cancelled", False, "已取消"),
             ("approved", False, "审批已通过"),
+            ("rejected", False, "审批已拒绝"),
         ],
     )
     async def test_approval_cancel_card_event_dispatches_operation_and_updates_card(
@@ -823,6 +867,26 @@ class TestLongConnectionStreaming:
         for delivery in tuple(getattr(service, "_resume_deliveries", ())):
             delivery.finish()
             await delivery.task
+
+    @pytest.mark.parametrize("status,label", [("approved", "审批已通过"), ("rejected", "审批已拒绝")])
+    async def test_repeated_old_card_click_only_updates_actual_terminal_result(self, approval_card_case, status, label):
+        case = approval_card_case
+        service = _service()
+        case.result["approve_result"] = status
+        case.envelope.update(ok=False, already_finalized=True)
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value=case.envelope),
+            patch.object(long_connection_module, "submit_cancelled_approval_resume") as resume,
+        ):
+            await service._handle_frame({"body": case.event})
+            await service._handle_frame({"body": case.event})
+        resume.assert_not_called()
+        assert service._client.send_message_calls == []
+        cards = service._client.update_template_card_calls
+        assert len(cards) == 2 and cards[0] == cards[1]
+        assert cards[0]["jump_list"] == [{"type": 0, "title": label}]
+        assert cards[0]["task_id"] == case.task_id
+        assert "button_list" not in cards[0]
 
     @pytest.mark.parametrize("envelope", [None, {}, {"ok": True}, {"ok": False}])
     async def test_cancel_missing_result_preserves_card(self, approval_card_case, envelope):

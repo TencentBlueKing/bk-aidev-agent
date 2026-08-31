@@ -2,6 +2,8 @@
 
 本插件需与智能体模板配合使用，用于开发和管理智能体插件。
 
+审批 Web 回调与企业微信跨进程联动见 [DatabaseEventBus 使用说明](docs/database-events.md)。
+
 ## 管理命令的指标和 Trace 采集
 
 通过 `manage.py` 或 `django-admin` 运行一次性管理命令（如 `migrate`、

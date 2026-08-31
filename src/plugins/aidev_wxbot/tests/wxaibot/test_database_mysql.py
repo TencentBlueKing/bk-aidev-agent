@@ -85,6 +85,37 @@ def _close_socket_with_error(alias):
     return threading.get_ident()
 
 
+def _disconnect_without_error_flag(alias, mode):
+    connection = connections[alias]
+    connection.ensure_connection()
+    old_id = _select_connection_id(alias)
+    if mode == "socket_closed":
+        connection.connection._force_close()
+    else:
+        controller = connection.copy(alias="disconnect_controller")
+        try:
+            with controller.cursor() as cursor:
+                cursor.execute("KILL CONNECTION %s", [old_id])
+        finally:
+            controller.close()
+    assert not connection.errors_occurred
+    assert not connection.health_check_enabled
+    assert connection.close_at is None
+    return threading.get_ident(), old_id
+
+
+@pytest.mark.parametrize("mode", ["socket_closed", "server_closed"])
+def test_first_new_recovers_without_prior_failed_query(mysql_session_store, mode):
+    store = mysql_session_store
+    worker_id, old_id = store.pool.submit(_disconnect_without_error_flag, store.alias, mode).result()
+    response, request = store.pool.submit(run_with_database_connections, _prepare, store.view, "/new").result()
+    assert response["stream"]["content"] == "已创建新会话，请输入咨询内容" and request is None
+    assert store.manager.count() == 1
+    assert store.pool.submit(threading.get_ident).result() == worker_id
+    new_id = store.pool.submit(_select_connection_id, store.alias).result()
+    assert new_id != old_id
+
+
 def _prepare(view, command):
     return view.prepare_agent_request({"msgtype": "text", "text": {"content": command}})
 

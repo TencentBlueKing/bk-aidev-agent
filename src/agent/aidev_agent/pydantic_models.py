@@ -91,7 +91,7 @@ class SessionContentProperty(BaseModel):
     """会话内容的一些额外属性"""
 
     turn_id: str = Field(default="", description="同一次 user-ai 回复的轮次 ID")
-    trace_id: str = Field(default="", description="创建会话内容时的 Trace ID")
+    trace_id: str = Field(default="", description="chat 入口 Trace ID；仅创建时传递，未提供时保持为空，更新时不修改")
     extra: SessionContentExtra | None = None
 
 

@@ -21,6 +21,7 @@ from django.conf import settings
 
 from .agent_helpers import AgentHelper
 from .agent_session import SessionManager
+from .event_resource_manager import with_database_events
 
 logger = getLogger(__name__)
 
@@ -174,9 +175,10 @@ class AgentBuilder:
         elif self.model and isinstance(self.resource_manager, LLMOverrideResourceManager):
             # 注入的 rm 保留用户态认证，仅补上 model 覆盖能力
             self.resource_manager.model = self.model
+        execution_resource_manager = with_database_events(self.resource_manager, self.agent_code)
         event_handler = AGUISessionWriter(
             session_code=session_code,
-            client=AgentHelper.get_client(resource_manager=self.resource_manager),
+            client=AgentHelper.get_client(resource_manager=execution_resource_manager),
             username=self.username,
             turn_id=self.turn_id,
         )
@@ -187,7 +189,7 @@ class AgentBuilder:
             agent_cls=agent_cls,
             checkpointer=AgentHelper.get_checkpointer(),
             event_handler=event_handler,
-            resource_manager=self.resource_manager,
+            resource_manager=execution_resource_manager,
             username=self.username,
             version=version,
             channel_type=channel_type,

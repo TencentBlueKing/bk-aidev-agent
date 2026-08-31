@@ -904,7 +904,45 @@ class ChatCompletionAgent(BaseModel):
                 return self._stream(agent_e, cfg, state, messages, execute_kwargs)
 
         else:
+            from aidev_agent.services.resume_events import uses_resume_event_stream
+
+            if uses_resume_event_stream(self.resource_manager, execute_kwargs):
+                return self._invoke_resume_with_events(agent_e, cfg, state, messages, execute_kwargs)
             return self._invoke(agent_e, cfg, state, messages, execute_kwargs)
+
+    def _invoke_resume_with_events(self, agent_e, cfg, state, messages, execute_kwargs):
+        """Keep a non-stream HTTP response while using the AG-UI resume/persistence path.
+
+        _invoke uses ainvoke(input_state), not Command(resume=...). Opted-in
+        callbacks must not become new input, nor execute the Agent twice.
+        """
+        stream_kwargs = execute_kwargs.model_copy(update={"stream": True})
+        cfg["configurable"]["execute_kwargs"] = stream_kwargs
+        self._execute_kwargs = stream_kwargs
+        text, message_id, outcome = [], "", None
+        for chunk in self._stream(agent_e, cfg, state, messages, stream_kwargs):
+            if not isinstance(chunk, str) or not chunk.startswith("data:"):
+                continue
+            try:
+                event = json.loads(chunk[5:].strip())
+            except ValueError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            if event.get("type") == "TEXT_MESSAGE_CONTENT":
+                text.append(event.get("delta", ""))
+                message_id = event.get("messageId", message_id)
+            elif event.get("type") == "RUN_FINISHED" and not event.get("resume_replay"):
+                outcome = event.get("outcome")
+        result = {
+            "choices": [{"delta": {"role": "assistant", "content": "".join(text)}}],
+            "id": message_id,
+            "model": self.model_name,
+            "reference_doc": [],
+        }
+        if outcome is not None:
+            result["outcome"] = outcome
+        return result
 
     def _invoke(
         self,
@@ -1131,31 +1169,54 @@ class ChatCompletionAgent(BaseModel):
         所有事件都由后台 producer 写入消息处理器。producer 会在 RUN_STARTED
         入队后立即 flush，既保持初始化事件顺序，也确保客户端在首帧前断开时
         producer 仍能继续执行并供后续请求 replay。
+
+        恢复事件的 Trace 上下文在入口同步捕获；队列和 producer 仍延迟到消费时启动。
         """
-        helper = GeneratorStreamingHelper(
-            thread_id=queue_thread_id or agent_input.thread_id,
-            defer_cleanup_on_complete=background_only,
+        from aidev_agent.services.resume_events import resume_events_for
+
+        resume_items = (agent_input.forwarded_props or {}).get("command", {}).get("resume") or []
+        observer = (
+            resume_events_for(
+                self.resource_manager,
+                session_code=getattr(self.event_handler, "session_code", "") or "",
+                thread_id=agent_input.thread_id,
+                turn_id=getattr(self.event_handler, "turn_id", "") or "",
+                resume=resume_items if isinstance(resume_items, list) else [resume_items],
+            )
+            if resume and not attach_only
+            else None
         )
-        run_id = agent_input.run_id or self.thread_id
-        cancel_event = helper.prepare_run(run_id)
-        producer = self._build_resume_aware_producer(
-            agui_entry,
-            agent_input,
-            agent_e=agent_e,
-            cfg=cfg,
-            resume=resume,
-            total_timeout=total_timeout,
-        )
-        yield from helper.stream(
-            producer,
-            # replay 模式下由 producer 在 EOD 写入并 flush 成功后更新会话终态；
-            # 消费者中断不会影响最终状态收敛。
-            on_complete=partial(self._on_complete, finalize_session=True),
-            event_handler=self.event_handler,
-            expected_run_id=run_id,
-            cancel_event=cancel_event,
-            attach_only=attach_only,
-        )
+
+        def stream() -> Generator[Any, None, None]:
+            # 不把 observer 放进惰性生成器：HTTP 入口 span 可能在首次消费前已经结束。
+            helper = GeneratorStreamingHelper(
+                thread_id=queue_thread_id or agent_input.thread_id,
+                defer_cleanup_on_complete=background_only,
+                producer_observer=observer,
+            )
+            run_id = agent_input.run_id or self.thread_id
+            cancel_event = helper.prepare_run(run_id)
+            producer = self._build_resume_aware_producer(
+                agui_entry,
+                agent_input,
+                agent_e=agent_e,
+                cfg=cfg,
+                resume=resume,
+                total_timeout=total_timeout,
+                producer_observer=observer,
+            )
+            yield from helper.stream(
+                producer,
+                # replay 模式下由 producer 在 EOD 写入并 flush 成功后更新会话终态；
+                # 消费者中断不会影响最终状态收敛。
+                on_complete=partial(self._on_complete, finalize_session=True),
+                event_handler=self.event_handler,
+                expected_run_id=run_id,
+                cancel_event=cancel_event,
+                attach_only=attach_only,
+            )
+
+        return stream()
 
     def _build_resume_aware_producer(
         self,
@@ -1165,6 +1226,7 @@ class ChatCompletionAgent(BaseModel):
         cfg: RunnableConfig | None,
         resume: bool,
         total_timeout: int | float | None = None,
+        producer_observer=None,
     ) -> Generator[Any, None, None]:
         """构造「resume 感知」的生产者生成器（方案 B 兜底入口）。
 
@@ -1181,6 +1243,8 @@ class ChatCompletionAgent(BaseModel):
             if resume and agent_e is not None and cfg is not None and agent_input.thread_id:
                 replay = self._build_terminal_resume_replay(agui_entry, agent_input, agent_e, cfg)
                 if replay is not None:
+                    if producer_observer is not None:
+                        producer_observer.enabled = False
                     logger.info(
                         "[ResumeReplay] graph terminal, replay persisted turn from checkpoint "
                         "(scheme B fallback), thread_id=%s",

@@ -103,6 +103,20 @@ def test_save_content_generates_turn_id_for_user(session_manager, mock_plugin_rm
     assert saved["property"]["turn_id"] == payload["property"]["turn_id"]
 
 
+def test_save_content_keeps_entry_trace(mock_plugin_rm_client, mocker):
+    from aidev_bkplugin.services.agent_session import SessionManager
+
+    current = mocker.patch("aidev_bkplugin.services.agent_session.get_current_trace_id", return_value="a" * 32)
+    manager = SessionManager("test")
+    current.return_value = "b" * 32
+    mock_plugin_rm_client.api.create_chat_session_content.return_value = {"data": {"id": 1}}
+
+    manager.save_content("sc-1", "user", "hello", turn_id="turn-1")
+
+    payload = mock_plugin_rm_client.api.create_chat_session_content.call_args.kwargs["json"]
+    assert payload["property"] == {"turn_id": "turn-1", "trace_id": "a" * 32}
+
+
 def test_set_flow_resume_pending_preserves_existing_fields(session_manager, mock_plugin_rm_client):
     """read-modify-write：仅叠加 resume_pending，保留 flow_info 其它字段与同级属性。"""
     mock_plugin_rm_client.api.retrieve_chat_session.return_value = {

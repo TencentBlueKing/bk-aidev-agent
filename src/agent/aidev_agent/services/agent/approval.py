@@ -97,6 +97,7 @@ class ApprovalStateHandler:
             "interrupts": interrupts,
             "id": latest.get("id"),
             "graph_thread_id": self._extract_graph_thread_id_from_interrupt_record(latest),
+            "approval_trace_context": builtin_property.get("approval_trace_context"),
         }
 
     def query_approval_info(self, session_code: str) -> Optional[dict]:

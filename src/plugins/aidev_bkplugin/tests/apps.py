@@ -14,3 +14,10 @@ class AidevBkpluginTestConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "aidev_bkplugin"
     label = "aidev_bkplugin"
+
+
+class WxAiBotTestConfig(AppConfig):
+    """Register models only, without starting wxbot services."""
+
+    name = "aidev_wxbot.wxaibot"
+    label = "wxaibot"

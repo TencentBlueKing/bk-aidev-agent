@@ -1,6 +1,8 @@
 """企微消息链路的 span、跨任务上下文与敏感信息边界。"""
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -31,7 +33,78 @@ def _spans(exporter, name):
     return [span for span in exporter.get_finished_spans() if span.name == name]
 
 
+def _queued_resume(monkeypatch):
+    from aidev_agent.core.ag_ui.types import AgentInput
+    from aidev_agent.services.agent import chat
+    from aidev_agent.services.messages_handler import GeneratorStreamingHelper, InMemoryQueueMessageHandler
+
+    published = []
+    manager = SimpleNamespace(
+        get_agent_code=lambda: "app", event_publishing_enabled=lambda: True, publish_event=published.append
+    )
+    monkeypatch.setattr(
+        chat, "GeneratorStreamingHelper", partial(GeneratorStreamingHelper, InMemoryQueueMessageHandler())
+    )
+    agent = SimpleNamespace(
+        resource_manager=manager,
+        event_handler=MagicMock(session_code="session", turn_id="turn"),
+        _on_complete=lambda **kwargs: None,
+        _build_resume_aware_producer=lambda *args, **kwargs: iter(
+            ['data: {"type":"RUN_STARTED","runId":"run"}\n\n', 'data: {"type":"RUN_FINISHED","runId":"run"}\n\n']
+        ),
+    )
+    request = AgentInput(
+        thread_id="graph",
+        run_id="run",
+        messages=[],
+        state={},
+        forwarded_props={"command": {"resume": [{"interruptId": "approval"}]}},
+    )
+    return chat.ChatCompletionAgent._stream_with_queue(agent, MagicMock(), request, resume=True), published
+
+
 class TestWxBotSpan:
+    def test_deferred_queue_delivery_links_consumer_and_send_to_entry(self, wxbot_spans, monkeypatch):
+        from aidev_agent.events import AIDEV_CHAT_RESUME_FINISHED, AIDEV_CHAT_RESUME_READY
+
+        with tracing.wxbot_span("chat.entry") as entry:
+            stream, published = _queued_resume(monkeypatch)
+            assert not published
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            list_output = pool.submit(list, stream).result(timeout=10)
+        assert list_output
+        assert [event.name for event in published] == [AIDEV_CHAT_RESUME_READY, AIDEV_CHAT_RESUME_FINISHED]
+        for event in published:
+            with (
+                tracing.resumed_event_context(event.value["traceContext"]),
+                tracing.wxbot_span("wxbot.event.consume") as consumer,
+                tracing.wxbot_span("wxbot.resume.send") as sender,
+            ):
+                assert sender.get_span_context().trace_id == entry.get_span_context().trace_id
+            consumed = _spans(wxbot_spans, "wxbot.event.consume")[-1]
+            sent = _spans(wxbot_spans, "wxbot.resume.send")[-1]
+            assert consumed.parent.span_id == entry.get_span_context().span_id
+            assert sent.parent.span_id == consumer.get_span_context().span_id
+        assert get_current_trace_id() is None
+
+    def test_durable_resume_inherits_producer_trace_without_baggage(self, wxbot_spans):
+        from aidev_agent.services.resume_events import ResumeEvents
+
+        manager = SimpleNamespace(get_agent_code=lambda: "app", publish_event=lambda _: None)
+        with tracing.wxbot_span("producer") as producer:
+            observer = ResumeEvents(manager, session_code="session", thread_id="graph", turn_id="turn", resume=[])
+            observer.on_chunk('data: {"type":"RUN_STARTED","runId":"run"}')
+            carrier = observer._ready.value["traceContext"]
+        with (
+            tracing.resumed_event_context({**carrier, "baggage": "private=value"}),
+            tracing.wxbot_span("wxbot.event.consume"),
+        ):
+            assert get_current_trace_id() == format(producer.get_span_context().trace_id, "032x")
+        consumer = _spans(wxbot_spans, "wxbot.event.consume")[0]
+        assert consumer.parent.span_id == producer.get_span_context().span_id
+        assert "private" not in consumer.to_json()
+        assert get_current_trace_id() is None
+
     @pytest.mark.parametrize("error", [RuntimeError("secret-token"), asyncio.CancelledError("secret-token")])
     def test_exception_is_redacted_and_context_restored(self, wxbot_spans, error):
         with pytest.raises(type(error)), tracing.wxbot_span("operation"):

@@ -3,7 +3,6 @@ import json
 from unittest.mock import AsyncMock
 
 import pytest
-from aidev_agent.events import AIDEV_CHAT_RESUME_READY
 from aidev_wxbot.wxaibot.resume_delivery import ResumeDelivery, markdown_parts
 
 
@@ -12,11 +11,9 @@ def sse(events):
 
 
 @pytest.mark.parametrize("resume_type, message_count", [("tool_approval", 1), ("ask_user_question", 2)])
-async def test_resume_notice_does_not_change_ready_event_or_final_reply(resume_type, message_count):
+async def test_legacy_resume_notice_and_final_reply_do_not_publish_business_events(resume_type, message_count):
     send = AsyncMock()
     delivery = ResumeDelivery(send, resume_type=resume_type)
-    ready = []
-    delivery._bus.subscribe(AIDEV_CHAT_RESUME_READY, ready.append)
     events = [
         {"type": "RUN_STARTED", "runId": "r1"},
         {"type": "RUN_STARTED", "runId": "r1"},
@@ -28,7 +25,7 @@ async def test_resume_notice_does_not_change_ready_event_or_final_reply(resume_t
     await delivery.task
     bodies = [call.args[0] for call in send.call_args_list]
     assert len(bodies) == message_count
-    assert len(ready) == 1 and ready[0].value["resumeType"] == resume_type
+    assert not hasattr(delivery, "publisher")
     assert "hello" in bodies[-1]["markdown"]["content"]
     if resume_type == "ask_user_question":
         assert "答案已接收" in bodies[0]["markdown"]["content"]
@@ -106,7 +103,7 @@ async def test_close_unregisters_and_does_not_send():
     delivery.finish()
     await asyncio.gather(delivery.task, return_exceptions=True)
     send.assert_not_called()
-    assert not delivery._bus._handlers
+    assert delivery._closed
 
 
 def test_utf8_message_split_is_lossless_and_bounded():

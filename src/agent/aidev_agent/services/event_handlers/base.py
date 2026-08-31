@@ -40,6 +40,7 @@ from aidev_agent.core.ag_ui.types import (
 from aidev_agent.core.ag_ui.utils import camel_to_snake, get_interrupt_value, unwrap_interrupt_source
 from aidev_agent.enums import ActivityType, PromptRole
 from aidev_agent.utils.event import RunId
+from aidev_agent.utils.tracing import get_current_trace_id
 
 logger = getLogger(__name__)
 
@@ -114,6 +115,8 @@ class BaseSessionWriter(ABC):
         self.session_code: str = session_code
         self.username: str = username
         self.turn_id: str = turn_id or ""
+        # Writer 在 chat 入口构造；异步回写时的当前 Span 可能已经属于另一条链路。
+        self.trace_id: str = get_current_trace_id() or ""
         self._tools_mapping: dict[str, Any] = {}
         if tools:
             self.set_tools(tools)
@@ -1489,6 +1492,8 @@ class BaseSessionWriter(ABC):
         }
         if self.turn_id:
             payload["property"]["turn_id"] = self.turn_id
+        if self.trace_id:
+            payload["property"]["trace_id"] = self.trace_id
         content_id = self._safe_call(
             self._do_create_content, message_id, "create", payload=payload, headers=self._get_headers()
         )

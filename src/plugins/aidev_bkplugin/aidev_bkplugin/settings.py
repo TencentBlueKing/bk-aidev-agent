@@ -11,6 +11,9 @@ AIDEV_AGENT = os.environ.get("AIDEV_AGENT", "aidev_agent.services.common_agent.C
 # ``resource_manager.replace_defaults(...)`` 注入到全局工厂；为空则使用 SDK 默认的
 # ``AgentResourceManager``。
 AIDEV_RESOURCE_MANAGER = os.environ.get("AIDEV_RESOURCE_MANAGER", "")
+# Enabled by default; migrate before startup and share the database/app scope across Web and wxbot.
+# Set BKAPP_AIDEV_DATABASE_EVENTS_ENABLED=0 to opt out.
+AIDEV_DATABASE_EVENTS_ENABLED = os.environ.get("BKAPP_AIDEV_DATABASE_EVENTS_ENABLED", "1") == "1"
 AIDEV_AGENT_MAX_WORKERS = int(os.environ.get("BKAPP_AIDEV_AGENT_MAX_WORKERS", 16))
 AIDEV_AGENT_MAX_PENDING = int(os.environ.get("BKAPP_AIDEV_AGENT_MAX_PENDING", 32))
 AIDEV_AGENT_CLEANUP_MAX_WORKERS = int(os.environ.get("BKAPP_AIDEV_AGENT_CLEANUP_MAX_WORKERS", 2))

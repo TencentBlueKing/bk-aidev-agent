@@ -20,6 +20,7 @@ from copy import deepcopy
 from logging import getLogger
 from typing import TYPE_CHECKING, Any, List, Optional
 
+from ag_ui.core import BaseEvent
 from langchain_core.tools import StructuredTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
@@ -93,6 +94,12 @@ class BaseResourceManager(abc.ABC):
     def get_agent_code(self, **kwargs: Any) -> str:
         """获取resource manager的agent code。子类可覆写按照其他场景获取agent code"""
         return self.app_code
+
+    def publish_event(self, event: BaseEvent) -> None:
+        """Optional integration boundary; standalone agents have no event backend."""
+
+    def event_publishing_enabled(self) -> bool:
+        return False
 
     def resolve_access_token(self, username: str = None) -> str:
         """获取 access_token，优先级：self.access_token > username 参数 > self.username > 空字符串。

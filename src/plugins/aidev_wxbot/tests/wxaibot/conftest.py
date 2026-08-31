@@ -71,6 +71,27 @@ def approval_card_case(monkeypatch):
 
 
 @pytest.fixture
+def approval_notification_case(approval_card_case, monkeypatch):
+    from aidev_wxbot.wxaibot import approval_notifications as module
+
+    case = approval_card_case
+    case.record = {
+        "role": "interrupt",
+        "session_code": case.action.session_code,
+        "property": {"builtin_property": {"approve_result": "approved"}},
+        "content": {"outcome": {"type": "success", "interrupts": case.result["interrupts"]}},
+    }
+    case.history = MagicMock(return_value=[case.record])
+    manager = MagicMock()
+    manager.return_value.list_session_contents = case.history
+    monkeypatch.setattr(module, "SessionManager", manager)
+    case.messages = lambda: module.approval_result_messages(
+        case.action.session_code, [case.action.interrupt_id], "alice"
+    )
+    return case
+
+
+@pytest.fixture
 def approval_resume_case(approval_card_case, monkeypatch):
     from aidev_wxbot.wxaibot import approval_resume as mod
 
