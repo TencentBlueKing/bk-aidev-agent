@@ -62,6 +62,8 @@ class WxBotAgentRequest:
     stream_id: str
     username: str
     group_id: str
+    task_id: str = ""
+    resume_from_node: str = ""
 
 
 class WxAiBotViewSet(ViewSet):

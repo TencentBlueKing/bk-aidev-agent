@@ -87,8 +87,8 @@ def handle_flow_custom_event(
     """
     分发 Flow Agent 的 CUSTOM 事件到具体处理函数。
     事件分发：
-    - flow_agent_start  → think_content（任务启动信息）
-    - flow_agent_result → think_content（轮询中间状态，追加节点进度）
+    - flow_agent_start / restart → 缓存 task_id
+    - flow_agent_result / update → think_content（节点名称列表）
     - flow_agent_end    → content（最终执行结果 + 小鲸跳转链接）
     """
     value = chunk_json.get("value") or {}
@@ -97,9 +97,9 @@ def handle_flow_custom_event(
     if isinstance(value, list):
         value = value[0] if value else {}
 
-    if event_name == CustomMessageType.FLOW_AGENT_START.value:
+    if event_name in {CustomMessageType.FLOW_AGENT_START.value, CustomMessageType.FLOW_AGENT_RESTART.value}:
         _on_flow_start(value, llm_chunk, rabbitmq_client)
-    elif event_name == CustomMessageType.FLOW_AGENT_RESULT.value:
+    elif event_name in {CustomMessageType.FLOW_AGENT_RESULT.value, CustomMessageType.FLOW_AGENT_UPDATE.value}:
         _on_flow_result(value, llm_chunk, rabbitmq_client)
     elif event_name == CustomMessageType.FLOW_AGENT_END.value:
         _on_flow_end(value, llm_chunk, rabbitmq_client, session_code=session_code)

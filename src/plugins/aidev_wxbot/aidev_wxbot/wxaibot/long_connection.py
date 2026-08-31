@@ -54,6 +54,13 @@ from .constants import (
 from .context import THINKING_MSG, ContextGenerator, stream_msg
 from .database import database_connection_scope, run_with_database_connections
 from .direct_stream import DirectStreamFrame, iter_direct_stream_frames
+from .flow_cards import (
+    bind_flow_target,
+    build_flow_action_result_card,
+    decode_flow_event_key,
+    flow_card_task_id,
+)
+from .flow_resume import submit_flow_node_resume
 from .question_cards import bind_question_target, decode_question_key, question_task_id, submitted_question_card
 from .question_resume import prepare_question_submission, submit_question_resume
 from .resume_delivery import ResumeDelivery
@@ -479,6 +486,8 @@ class WxAiBotLongConnectionService:
                 return
             if payload.get("msgtype") == "event" and await self._handle_question_card_event(frame, payload):
                 return
+            if payload.get("msgtype") == "event" and await self._handle_flow_card_event(frame, payload):
+                return
             if payload.get("msgtype") == "text":
                 with wxbot_span("wxbot.message.prepare"):
                     response, request = await asyncio.to_thread(
@@ -620,7 +629,8 @@ class WxAiBotLongConnectionService:
             raise RuntimeError("Service is stopping")
         if body.get("msgtype") == "template_card":
             card = bind_approval_target(body["template_card"], target)
-            body = {**body, "template_card": bind_question_target(card, target)}
+            card = bind_question_target(card, target)
+            body = {**body, "template_card": bind_flow_target(card, target)}
         with wxbot_span("wxbot.resume.send", kind=CLIENT) as span:
             await self._send_with_retry(
                 lambda: self._client.send_message(target, body), span, "wxbot_resume_send_retry"
@@ -706,6 +716,83 @@ class WxAiBotLongConnectionService:
             await self._send_resume_message(
                 target,
                 {"msgtype": "markdown", "markdown": {"content": "无法提交答案，请返回原会话检查问题状态和访问权限。"}},
+            )
+        return True
+
+    async def _handle_flow_card_event(self, frame: dict[str, Any], payload: dict[str, Any]) -> bool:
+        """处理 Flow 失败节点的重试/跳过按钮；非本卡片事件返回 False。"""
+        event = payload.get("event") or {}
+        if not isinstance(event, dict) or event.get("eventtype") != "template_card_event":
+            return False
+        card_event = event.get("template_card_event") or event
+        if not isinstance(card_event, dict):
+            return False
+        event_key = str(card_event.get("event_key") or event.get("event_key") or "")
+        action = decode_flow_event_key(event_key)
+        if action is None:
+            return False
+
+        expected_task_id = flow_card_task_id(action)
+        target = self._resolve_message_target(frame)
+        wecom_task_id = str(card_event.get("task_id") or event.get("task_id") or "")
+        if not wecom_task_id or wecom_task_id != expected_task_id or (action.target and action.target != target):
+            logger.warning("event=wxbot_flow_card_rejected reason=task_mismatch")
+            return True
+
+        operation = f"flow_node_{action.operation}"
+        succeeded = False
+        result_card = None
+        username = ""
+        try:
+            username = await asyncio.to_thread(
+                run_with_database_connections, self._view.resolve_event_username, payload
+            )
+            with wxbot_span("wxbot.flow_node.action", kind=CLIENT) as span:
+                envelope = await asyncio.to_thread(
+                    run_with_database_connections,
+                    dispatch_user_operation,
+                    operation,
+                    username,
+                    {
+                        "session_code": action.session_code,
+                        "operation": operation,
+                        "payload": {"task_id": action.task_id, "node_id": action.node_id},
+                        "request_id": wecom_task_id,
+                    },
+                )
+                succeeded = isinstance(envelope, dict) and envelope.get("ok") is True
+                result_card = build_flow_action_result_card(action, wecom_task_id, ok=succeeded)
+                if not succeeded:
+                    record_failure(span, RuntimeError("flow_node_action_failed"))
+        except Exception:
+            logger.exception("event=wxbot_flow_card_failed operation=%s", operation)
+            result_card = build_flow_action_result_card(action, wecom_task_id, ok=False)
+
+        if result_card is not None:
+            try:
+                await self._update_interaction_card(frame, result_card, "wxbot.flow_card.update")
+            except Exception:
+                logger.exception("event=wxbot_flow_card_update_failed task_id=%s", wecom_task_id)
+
+        if succeeded and username:
+            delivery = None
+            try:
+                if target:
+                    delivery = self._new_resume_delivery(frame, "flow_node")
+                with wxbot_span("wxbot.flow.resume.submit"):
+                    submitted = submit_flow_node_resume(action, username, delivery)
+                if not submitted and delivery is not None:
+                    delivery.failed()
+                    delivery.finish()
+            except Exception as error:
+                if delivery is not None:
+                    delivery.failed()
+                    delivery.finish()
+                logger.error("event=wxbot_flow_resume_submit_failed error_type=%s", type(error).__name__)
+        elif not succeeded:
+            await self._send_resume_message(
+                target,
+                {"msgtype": "markdown", "markdown": {"content": "节点操作失败，请返回原会话查看任务状态。"}},
             )
         return True
 
@@ -974,6 +1061,8 @@ class WxAiBotLongConnectionService:
                 thread_id=thread_id,
                 group_id=request.group_id,
                 retry_strategy=WECOM_AGENT_RETRY_STRATEGY,
+                task_id=getattr(request, "task_id", None) or None,
+                resume_from_node=getattr(request, "resume_from_node", None) or None,
             )
             stream_registry.register(request.stream_id, agent_stream.session_code)
             if self._database_events_enabled() and agent_stream.kind == "chat":
@@ -1159,13 +1248,14 @@ class WxAiBotLongConnectionService:
             )
 
     async def _send_template_card(self, frame: dict[str, Any], template_card: dict[str, Any]) -> float:
-        """在流式消息结束后，向原会话主动推送独立审批卡片。"""
+        """在流式消息结束后，向原会话主动推送独立交互卡片。"""
         with wxbot_span("wxbot.approval_card.send", kind=CLIENT) as span:
             target = self._resolve_message_target(frame)
             if not target:
                 raise ValueError("企微消息缺少卡片推送目标")
             card = bind_approval_target(template_card, target)
-            body = {"msgtype": "template_card", "template_card": bind_question_target(card, target)}
+            card = bind_question_target(card, target)
+            body = {"msgtype": "template_card", "template_card": bind_flow_target(card, target)}
             return await self._send_with_retry(
                 lambda: self._client.send_message(target, body), span, "wxbot_approval_card_retry"
             )

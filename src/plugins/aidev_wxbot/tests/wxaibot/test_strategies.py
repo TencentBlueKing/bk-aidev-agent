@@ -168,6 +168,71 @@ class TestFlowAgentStrategyExecute:
         # start 仅缓存 task_id；result 和 end 各写入一次。
         assert mock_rabbitmq.publish_message.call_count == 2
 
+    @patch("aidev_wxbot.wxaibot.strategies.AgentHelper.get_client")
+    @patch("aidev_wxbot.wxaibot.strategies.WxFlowAgentClient")
+    @patch("aidev_wxbot.wxaibot.strategies.SessionManager")
+    @patch("aidev_wxbot.wxaibot.strategies.AgentInstanceFactory")
+    @patch("aidev_wxbot.wxaibot.strategies.AGUISessionWriter")
+    def test_open_stream_resume_passes_task_id_and_clears_pending(
+        self,
+        mock_writer,
+        mock_factory,
+        mock_session_cls,
+        mock_flow_client,
+        mock_get_client,
+    ):
+        """卡片续流：把 task_id / resume_from_node 交给工厂，并消费 resume_pending。"""
+        session_manager = mock_session_cls.return_value
+        session_manager.get_or_create_by_thread_id.return_value = "sc_abc"
+        mock_factory.build_agent.return_value = MagicMock()
+
+        FlowAgentStrategy().open_stream(
+            content="重试节点：HTTP请求",
+            username="wxid_123",
+            thread_id="t1",
+            group_id="g1",
+            task_id="42",
+            resume_from_node="retry",
+        )
+
+        factory_kwargs = mock_factory.build_agent.call_args.kwargs
+        assert factory_kwargs["task_id"] == "42"
+        assert factory_kwargs["resume_from_node"] == "retry"
+        session_manager.set_flow_resume_pending.assert_called_once_with("sc_abc", False)
+        mock_writer.assert_called_once()
+        assert mock_writer.call_args.kwargs["task_id"] == "42"
+
+    @patch("aidev_wxbot.wxaibot.strategies.AgentHelper.get_client")
+    @patch("aidev_wxbot.wxaibot.strategies.WxFlowAgentClient")
+    @patch("aidev_wxbot.wxaibot.strategies.SessionManager")
+    @patch("aidev_wxbot.wxaibot.strategies.AgentInstanceFactory")
+    @patch("aidev_wxbot.wxaibot.strategies.AGUISessionWriter")
+    def test_open_stream_binds_existing_session_code(
+        self,
+        mock_writer,
+        mock_factory,
+        mock_session_cls,
+        mock_flow_client,
+        mock_get_client,
+    ):
+        """卡片续流按签名里的 session_code 绑定原会话，不按 thread_id 另开。"""
+        session_manager = mock_session_cls.return_value
+        mock_factory.build_agent.return_value = MagicMock()
+
+        FlowAgentStrategy().open_stream(
+            content="跳过节点：HTTP请求",
+            username="wxid_123",
+            thread_id="",
+            group_id="",
+            task_id="42",
+            resume_from_node="skip",
+            session_code="session-1",
+        )
+
+        session_manager.get_or_create_by_session_code.assert_called_once_with("session-1", channel_type="rtx")
+        session_manager.get_or_create_by_thread_id.assert_not_called()
+        assert mock_factory.build_agent.call_args.kwargs["session_code"] == "session-1"
+
 
 # ---------------------------------------------------------------------------
 # 3. ChatAgentStrategy.execute
@@ -285,6 +350,7 @@ class TestConsumeFlowStream:
         last_msg = last_call_data if isinstance(last_call_data, dict) else json.loads(last_call_data)
         assert last_msg["is_finish"] is True
         assert "完成" in last_msg["content"]
+        assert "out: ok" in last_msg["content"]
 
     def test_run_error_terminates_and_writes_error(self, mock_rabbitmq):
         """RUN_ERROR → 写入错误消息 + is_finish=True，后续事件不再处理"""
@@ -360,22 +426,18 @@ class TestHandleFlowCustomEvent:
             mock_rabbitmq,
         )
 
-        # 验证节点名称列表（无图标/状态/耗时）
-        # 提取节点名称列表（按行分割，提取 "- 名称" 格式）
         think_lines = chunk.think_content.split("\n")
         node_names = [line.strip()[2:] for line in think_lines if line.strip().startswith("- ")]
         assert "数据清洗" in node_names
         assert "模型训练" in node_names
         assert "汇总" in node_names
         assert "共包含3个节点" in chunk.think_content
-        # 验证缓存了 nodes 和 task_state
         assert chunk._flow_nodes_cache == {
             "n1": {"name": "数据清洗", "state": "FINISHED", "elapsed_time": 90},
             "n2": {"name": "模型训练", "state": "RUNNING", "elapsed_time": 30},
             "n3": {"name": "汇总", "state": "PENDING", "elapsed_time": 0},
         }
         assert chunk._flow_last_task_state == "RUNNING"
-        # content 仍为空（中间状态）
         assert chunk.content == ""
 
     def test_end_success_uses_cached_state(self, mock_rabbitmq):
@@ -404,7 +466,6 @@ class TestHandleFlowCustomEvent:
 
         assert "完成" in chunk.content
         assert "result: done" in chunk.content
-        # think_content 使用缓存的 nodes 展示最终状态（有图标）
         assert "成功" in chunk.think_content
         assert "数据清洗" in chunk.think_content
         assert chunk.is_finish
@@ -493,5 +554,7 @@ class TestWxFlowAgentClient:
         result = WxFlowAgentClient("openid_xxx").start_flow_agent(data={"session_code": "sc1"})
 
         assert result["task_id"] == "123"
-        # 验证通过 AgentResourceManager.get_client 调用了 BKAidevApi.get_client
         mock_get_client.assert_called_once()
+        mock_client.api.flow_agent_start.assert_called_once_with(
+            data={"session_code": "sc1"}, headers={"X-BKAIDEV-USER": "admin_rtx"}
+        )

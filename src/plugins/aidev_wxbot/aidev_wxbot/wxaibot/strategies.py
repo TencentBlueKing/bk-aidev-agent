@@ -84,6 +84,8 @@ class AgentStrategy(Protocol):
         thread_id: str,
         group_id: str,
         retry_strategy: str | None = None,
+        task_id: str | None = None,
+        resume_from_node: str | None = None,
     ) -> AgentStream: ...
 
 
@@ -150,8 +152,11 @@ class ChatAgentStrategy:
         thread_id: str,
         group_id: str,
         retry_strategy: str | None = None,
+        task_id: str | None = None,
+        resume_from_node: str | None = None,
     ) -> AgentStream:
         """创建 Chat Agent 原始 SSE，供 callback 或 WebSocket 各自消费。"""
+        _ = task_id, resume_from_node
         execute_kwargs = build_execute_kwargs(
             {"stream": True, "thread_id": thread_id, "executor": username, "group_id": group_id},
             username,
@@ -235,17 +240,28 @@ class FlowAgentStrategy:
         thread_id: str,
         group_id: str,
         retry_strategy: str | None = None,
+        task_id: str | None = None,
+        resume_from_node: str | None = None,
+        session_code: str | None = None,
     ) -> AgentStream:
         """创建 Flow Agent 原始 SSE，供 callback 或 WebSocket 各自消费。"""
         rtx_username = username
         logger.info(f"[FlowAgentStrategy] 使用 RTX: {rtx_username}")
         turn_id = uuid.uuid4().hex
         session_manager = SessionManager(username=rtx_username)
-        session_code = session_manager.get_or_create_by_thread_id(
-            thread_id,
-            channel_type=ChannelType.RTX.value,
-        )
+        if session_code:
+            session_manager.get_or_create_by_session_code(session_code, channel_type=ChannelType.RTX.value)
+        else:
+            session_code = session_manager.get_or_create_by_thread_id(
+                thread_id,
+                channel_type=ChannelType.RTX.value,
+            )
         session_manager.save_content(session_code=session_code, role="user", content=content, turn_id=turn_id)
+        if task_id:
+            try:
+                session_manager.set_flow_resume_pending(session_code, False)
+            except Exception:
+                logger.exception("[FlowAgentStrategy] 清除 resume_pending 失败: session_code=%s", session_code)
 
         agent_instance = AgentInstanceFactory.build_agent(
             agent_type=AgentType.FLOW,
@@ -257,12 +273,15 @@ class FlowAgentStrategy:
                 client=AgentHelper.get_client(),
                 username=rtx_username,
                 turn_id=turn_id,
+                task_id=str(task_id) if task_id else "",
             ),
             username=rtx_username,
             flow_resource_manager=WxFlowAgentClient(username, rtx_username=rtx_username),
             flow_start_params={"session_code": session_code, "channel_type": ChannelType.RTX.value},
             poll_interval=float(agent_settings.FLOW_AGENT_POLL_INTERVAL),
             poll_timeout=float(agent_settings.FLOW_AGENT_POLL_TIMEOUT),
+            task_id=task_id or None,
+            resume_from_node=resume_from_node or None,
         )
         return AgentStream(
             kind="flow",

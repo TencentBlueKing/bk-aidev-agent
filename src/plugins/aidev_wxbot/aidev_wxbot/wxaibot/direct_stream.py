@@ -13,6 +13,7 @@ from aidev_bkplugin.services.agent_helpers import AgentHelper
 from .approval_cards import build_pending_approval_card
 from .constants import STREAM_ERROR_REPLY
 from .context import CHUNK_FLUSH_THRESHOLD, _escape_markdown_text, _normalize_url
+from .flow_cards import build_flow_action_card
 from .formatters import _node_display, _task_state_label, format_task_outputs
 from .question_cards import build_pending_question_card, pending_question, question_prompt
 from .stream import iter_sse_lines
@@ -209,18 +210,23 @@ def _format_flow_event(event_name: str, raw_value, state: _FlowState, session_co
     if isinstance(value, list):
         value = value[0] if value else {}
 
-    if event_name == CustomMessageType.FLOW_AGENT_START.value:
-        state.task_id = value.get("task_id", "未知")
+    if event_name in {
+        CustomMessageType.FLOW_AGENT_START.value,
+        CustomMessageType.FLOW_AGENT_RESTART.value,
+    }:
+        state.task_id = value.get("task_id") or state.task_id or "未知"
         state.nodes_initialized = False
         return None
 
-    if event_name == CustomMessageType.FLOW_AGENT_RESULT.value:
+    if event_name in {CustomMessageType.FLOW_AGENT_RESULT.value, CustomMessageType.FLOW_AGENT_UPDATE.value}:
         task_state = value.get("task_state", value.get("state", ""))
         nodes = value.get("nodes") or {}
         if nodes:
             state.nodes = nodes
         if task_state:
             state.last_task_state = task_state
+        if value.get("task_id"):
+            state.task_id = value["task_id"]
         if not state.nodes_initialized:
             task_id = state.task_id or value.get("task_id", "未知")
             lines = [f"流程任务已启动 (任务ID: {task_id})"]
@@ -252,7 +258,8 @@ def _format_flow_event(event_name: str, raw_value, state: _FlowState, session_co
         lines.extend(node_lines)
     state.thinking = "\n".join(lines) + "\n"
 
-    if value.get("error", False):
+    is_error = bool(value.get("error", False))
+    if is_error:
         state.content = f"流程任务执行{task_state_cn}\n任务ID: {task_id}"
     else:
         outputs = format_task_outputs(value.get("task_outputs", {}))
@@ -263,11 +270,10 @@ def _format_flow_event(event_name: str, raw_value, state: _FlowState, session_co
         detail_url = AgentHelper.build_session_detail_url(session_code)
         if detail_url:
             state.content += f"\n\n[查看详情]({detail_url})"
-    return DirectStreamFrame(
-        content=_render_flow(state),
-        finish=True,
-        failed=bool(value.get("error", False)),
-    )
+    card = None
+    if is_error and session_code:
+        card = build_flow_action_card(session_code=session_code, task_id=task_id, nodes=state.nodes)
+    return DirectStreamFrame(content=_render_flow(state), finish=True, failed=is_error, template_card=card)
 
 
 def _render_chat(thinking: str, content: str) -> str:

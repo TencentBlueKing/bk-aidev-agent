@@ -629,40 +629,57 @@ class BaseResourceManager(abc.ABC):
 
     # ---------- Flow Agent 方法 (8) ----------
 
+    def _apply_user_header(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """应用态 Flow 接口用 ``X-BKAIDEV-USER`` 识别操作者；调用方已显式传入时不覆盖。"""
+        if not self.username:
+            return kwargs
+        headers = dict(kwargs.get("headers") or {})
+        headers.setdefault("X-BKAIDEV-USER", self.username)
+        kwargs["headers"] = headers
+        return kwargs
+
     def start_flow_agent(self, data: dict, **kwargs) -> dict:
         client = self.get_client()
-        return client.api.flow_agent_start(data=data, **kwargs).get("data", {})
+        return client.api.flow_agent_start(data=data, **self._apply_user_header(kwargs)).get("data", {})
 
     def get_flow_agent_task_info(self, task_id: str, **kwargs) -> dict:
         client = self.get_client()
-        return client.api.flow_agent_task_info(path_params={"task_id": task_id}, **kwargs).get("data", {})
+        return client.api.flow_agent_task_info(
+            path_params={"task_id": task_id}, **self._apply_user_header(kwargs)
+        ).get("data", {})
 
     def retry_flow_agent_node(self, session_code: str, node_id: str, **kwargs) -> dict:
         client = self.get_client()
         return client.api.flow_agent_retry_node(
-            path_params={"session_code": session_code, "node_id": node_id}, **kwargs
+            path_params={"session_code": session_code, "node_id": node_id}, **self._apply_user_header(kwargs)
         ).get("data", {})
 
     def skip_flow_agent_node(self, session_code: str, node_id: str, **kwargs) -> dict:
         client = self.get_client()
         return client.api.flow_agent_skip_node(
-            path_params={"session_code": session_code, "node_id": node_id}, **kwargs
+            path_params={"session_code": session_code, "node_id": node_id}, **self._apply_user_header(kwargs)
         ).get("data", {})
 
     def stop_flow_agent_task(self, session_code: str, **kwargs) -> dict:
         client = self.get_client()
-        return client.api.flow_agent_task_stop(data={"session_code": session_code}, **kwargs).get("data", {})
+        return client.api.flow_agent_task_stop(
+            data={"session_code": session_code}, **self._apply_user_header(kwargs)
+        ).get("data", {})
 
     def pause_flow_agent_task(self, session_code: str, **kwargs) -> dict:
         client = self.get_client()
-        return client.api.flow_agent_task_pause(data={"session_code": session_code}, **kwargs).get("data", {})
+        return client.api.flow_agent_task_pause(
+            data={"session_code": session_code}, **self._apply_user_header(kwargs)
+        ).get("data", {})
 
     def resume_flow_agent_task(self, session_code: str, **kwargs) -> dict:
         client = self.get_client()
-        return client.api.flow_agent_task_resume(data={"session_code": session_code}, **kwargs).get("data", {})
+        return client.api.flow_agent_task_resume(
+            data={"session_code": session_code}, **self._apply_user_header(kwargs)
+        ).get("data", {})
 
     def get_flow_agent_task_node_info(self, task_id: str, node_id: str, **kwargs) -> dict:
         client = self.get_client()
-        return client.api.flow_agent_task_node_info(path_params={"task_id": task_id, "node_id": node_id}, **kwargs).get(
-            "data", {}
-        )
+        return client.api.flow_agent_task_node_info(
+            path_params={"task_id": task_id, "node_id": node_id}, **self._apply_user_header(kwargs)
+        ).get("data", {})

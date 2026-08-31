@@ -718,6 +718,8 @@ class TestLongConnectionStreaming:
             thread_id="thread-1",
             group_id="group-1",
             retry_strategy="sdk",
+            task_id=None,
+            resume_from_node=None,
         )
         strategy.execute.assert_not_called()
         assert service._client.reply_stream_calls == [("a" * 50, False), ("a" * 50, True)]
@@ -1165,6 +1167,111 @@ class TestLongConnectionStreaming:
         cancel.assert_called_once_with("stream-1")
         assert drain.completed.is_set()
         assert not service._draining_streams
+
+
+class TestFlowNodeCard:
+    @staticmethod
+    def _event(action, *, userid="alice-wx"):
+        from aidev_wxbot.wxaibot.flow_cards import encode_flow_event_key, flow_card_task_id
+
+        return {
+            "msgtype": "event",
+            "from": {"userid": userid},
+            "event": {
+                "eventtype": "template_card_event",
+                "template_card_event": {
+                    "event_key": encode_flow_event_key(action),
+                    "task_id": flow_card_task_id(action),
+                },
+            },
+        }
+
+    async def test_click_dispatches_operation_updates_card_and_submits_resume(self, monkeypatch):
+        from aidev_wxbot.wxaibot.flow_cards import FlowNodeAction, flow_card_task_id
+
+        monkeypatch.setattr(
+            "aidev_wxbot.wxaibot.flow_cards.AgentHelper.build_session_detail_url",
+            lambda _session: "https://agent.example.com/session-1",
+        )
+        action = FlowNodeAction("session-1", "42", "n2", "retry", "HTTP请求", "alice-wx")
+        service = _service()
+        service._view.resolve_event_username.return_value = "alice"
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value={"ok": True}) as dispatch,
+            patch.object(long_connection_module, "submit_flow_node_resume", return_value=True) as resume,
+        ):
+            await service._handle_frame({"body": self._event(action)})
+
+        dispatch.assert_called_once_with(
+            "flow_node_retry",
+            "alice",
+            {
+                "session_code": "session-1",
+                "operation": "flow_node_retry",
+                "payload": {"task_id": "42", "node_id": "n2"},
+                "request_id": flow_card_task_id(action),
+            },
+        )
+        assert service._client.update_template_card_calls
+        assert service._client.update_template_card_calls[0]["jump_list"] == [{"type": 0, "title": "已重试"}]
+        resume.assert_called_once()
+        assert resume.call_args.args[:2] == (action, "alice")
+        assert resume.call_args.args[2] is not None
+        assert not service._client.reply_stream_calls
+        for delivery in tuple(getattr(service, "_resume_deliveries", ())):
+            delivery.finish()
+            await delivery.task
+
+    async def test_click_rejects_modified_binding(self):
+        from aidev_wxbot.wxaibot.flow_cards import FlowNodeAction
+
+        action = FlowNodeAction("session-1", "42", "n2", "retry", "HTTP请求", "alice-wx")
+        service = _service()
+        event = self._event(action)
+        event["from"]["userid"] = "other-user"
+        with patch.object(long_connection_module, "dispatch_user_operation") as dispatch:
+            await service._handle_frame({"body": event})
+        dispatch.assert_not_called()
+
+    async def test_failed_operation_updates_card_and_does_not_resume(self, monkeypatch):
+        from aidev_wxbot.wxaibot.flow_cards import FlowNodeAction
+
+        monkeypatch.setattr(
+            "aidev_wxbot.wxaibot.flow_cards.AgentHelper.build_session_detail_url",
+            lambda _session: "https://agent.example.com/session-1",
+        )
+        action = FlowNodeAction("session-1", "42", "n2", "skip", "HTTP请求", "alice-wx")
+        service = _service()
+        service._view.resolve_event_username.return_value = "alice"
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value={"ok": False}) as dispatch,
+            patch.object(long_connection_module, "resolve_strategy") as resolve,
+        ):
+            await service._handle_frame({"body": self._event(action)})
+        dispatch.assert_called_once()
+        resolve.assert_not_called()
+        assert service._client.update_template_card_calls[0]["jump_list"] == [{"type": 0, "title": "操作失败"}]
+        assert service._client.send_message_calls[-1][1]["msgtype"] == "markdown"
+
+    async def test_resume_capacity_failure_sends_markdown_not_stream(self, monkeypatch):
+        from aidev_wxbot.wxaibot.flow_cards import FlowNodeAction
+
+        monkeypatch.setattr(
+            "aidev_wxbot.wxaibot.flow_cards.AgentHelper.build_session_detail_url",
+            lambda _session: "https://agent.example.com/session-1",
+        )
+        action = FlowNodeAction("session-1", "42", "n2", "skip", "HTTP请求", "alice-wx")
+        service = _service()
+        service._view.resolve_event_username.return_value = "alice"
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value={"ok": True}),
+            patch.object(long_connection_module, "submit_flow_node_resume", return_value=False),
+        ):
+            await service._handle_frame({"body": self._event(action)})
+        await asyncio.gather(*(d.task for d in getattr(service, "_resume_deliveries", ())))
+        assert not service._client.reply_stream_calls
+        assert service._client.send_message_calls[-1][1]["msgtype"] == "markdown"
+        assert "返回原会话" in service._client.send_message_calls[-1][1]["markdown"]["content"]
 
 
 class TestLongConnectionLifecycle:

@@ -405,8 +405,109 @@ def test_flow_sse_is_converted_to_direct_progress_and_terminal(mock_detail_url):
     frames = list(iter_direct_stream_frames(stream, "stream-flow"))
 
     assert not frames[0].finish
+    assert frames[0].content.startswith("<think>")
     assert "查询日志" in frames[0].content
+    assert "🔄" not in frames[0].content
     assert frames[-1].finish
+    assert "<think>" in frames[-1].content
     assert "result: ok" in frames[-1].content
+    assert "查询日志" in frames[-1].content
     assert "[查看详情](/detail/s1)" in frames[-1].content
+    assert frames[-1].template_card is None
     mock_detail_url.assert_called_once_with("s1")
+
+
+@patch("aidev_wxbot.wxaibot.flow_cards.AgentHelper.build_session_detail_url", return_value="https://agent.example.com/s1")
+def test_flow_failed_end_attaches_retry_skip_card_for_first_failed_node(mock_detail_url):
+    from aidev_wxbot.wxaibot.flow_cards import decode_flow_event_key
+
+    stream = AgentStream(
+        kind="flow",
+        session_code="s1",
+        generator=iter(
+            [
+                _sse({"type": "RUN_STARTED", "run_id": "flow-run"}),
+                _sse({"type": "CUSTOM", "name": "flow_agent_start", "value": [{"task_id": "42"}]}),
+                _sse(
+                    {
+                        "type": "CUSTOM",
+                        "name": "flow_agent_result",
+                        "value": [
+                            {
+                                "task_state": "FAILED",
+                                "nodes": {
+                                    "n1": {"id": "n1", "name": "查询日志", "state": "FINISHED"},
+                                    "n2": {
+                                        "id": "n2",
+                                        "name": "HTTP请求",
+                                        "state": "FAILED",
+                                        "retryable": True,
+                                        "skippable": True,
+                                    },
+                                    "n3": {
+                                        "id": "n3",
+                                        "name": "后一个失败",
+                                        "state": "FAILED",
+                                        "retryable": True,
+                                        "skippable": True,
+                                    },
+                                },
+                            }
+                        ],
+                    }
+                ),
+                _sse(
+                    {
+                        "type": "CUSTOM",
+                        "name": "flow_agent_end",
+                        "value": [{"task_id": "42", "error": True, "state": "FAILED"}],
+                    }
+                ),
+            ]
+        ),
+    )
+
+    frames = list(iter_direct_stream_frames(stream, "stream-flow-fail"))
+
+    assert frames[-1].finish
+    assert frames[-1].failed
+    assert "HTTP请求" in frames[-1].content
+    card = frames[-1].template_card
+    assert card is not None
+    assert [button["text"] for button in card["button_list"]] == ["重试", "跳过"]
+    action = decode_flow_event_key(card["button_list"][0]["key"])
+    assert action.node_id == "n2"
+    assert action.task_id == "42"
+    assert action.session_code == "s1"
+    mock_detail_url.assert_called()
+
+
+def test_flow_failed_end_without_actionable_node_has_no_card():
+    stream = AgentStream(
+        kind="flow",
+        session_code="s1",
+        generator=iter(
+            [
+                _sse({"type": "CUSTOM", "name": "flow_agent_start", "value": [{"task_id": "42"}]}),
+                _sse(
+                    {
+                        "type": "CUSTOM",
+                        "name": "flow_agent_result",
+                        "value": [{"task_state": "REVOKED", "nodes": {"n1": {"id": "n1", "state": "REVOKED"}}}],
+                    }
+                ),
+                _sse(
+                    {
+                        "type": "CUSTOM",
+                        "name": "flow_agent_end",
+                        "value": [{"task_id": "42", "error": True, "state": "REVOKED"}],
+                    }
+                ),
+            ]
+        ),
+    )
+
+    frames = list(iter_direct_stream_frames(stream, "stream-flow-revoked"))
+
+    assert frames[-1].failed
+    assert frames[-1].template_card is None
