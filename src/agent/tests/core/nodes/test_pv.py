@@ -115,7 +115,9 @@ def _make_mock_client():
 def _make_mock_resource_manager():
     """创建带有 chat-session PV 写回方法的 mock resource manager。"""
     resource_manager = MagicMock()
-    resource_manager.update_chat_session_sandbox_pv_id.return_value = {"sandbox_pv_id": "test-volume-uuid"}
+    resource_manager.update_chat_session_sandbox_pv_id.side_effect = lambda _session_code, volume_id: {
+        "session_property": {"sandbox_pv_id": volume_id}
+    }
     return resource_manager
 
 
@@ -266,6 +268,35 @@ def test_pv_node_creates_pv_and_writes_back():
     assert pv["volume_name"].startswith("agent-pv-test-thread-")
     assert pv["mount_path"] == "session"
     assert pv["source"] == "platform"
+
+
+def test_pv_node_mounts_persisted_volume_when_concurrent_upload_wins():
+    """上传与 Agent 并发创建 PV 时，Agent 必须挂载平台先持久化的上传卷。"""
+    client = _make_mock_client()
+    resource_manager = _make_mock_resource_manager()
+    resource_manager.retrieve_chat_session.return_value = {"session_property": {}}
+    resource_manager.update_chat_session_sandbox_pv_id.side_effect = None
+    resource_manager.update_chat_session_sandbox_pv_id.return_value = {
+        "session_property": {"sandbox_pv_id": "upload-volume-id"}
+    }
+    pv_node = make_pv_node(client=client, app_code="test-app", resource_manager=resource_manager)
+
+    state = {
+        "runtime_paas_sbx_pv": [],
+        "messages": [_make_ai_message_with_paas_sandbox()],
+    }
+    config = _make_config(session_code="test-session")
+
+    result = pv_node(state, config)
+
+    resource_manager.update_chat_session_sandbox_pv_id.assert_called_once_with("test-session", "test-volume-uuid")
+    pv = result["runtime_paas_sbx_pv"][0]
+    assert pv["volume_id"] == "upload-volume-id"
+    assert pv["volume_name"] == ""
+    assert pv["source"] == "platform"
+    client.delete_agent_sandbox_volume.request.assert_called_once_with(
+        path_params={"app_code": "test-app", "volume_id": "test-volume-uuid"}
+    )
 
 
 def test_pv_node_writeback_failure_keeps_runtime_source():
