@@ -136,7 +136,8 @@ def _iter_chat_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
             if approval_card or question:
                 current_content = _render_chat(thinking, segments.render())
                 if question:
-                    current_content = "\n\n".join(filter(None, [current_content, question_prompt(question)]))
+                    prompt = question_prompt(question, has_card=question_card is not None)
+                    current_content = "\n\n".join(filter(None, [current_content, prompt]))
                 yield DirectStreamFrame(
                     content=current_content or ("等待工具审批" if approval_card else "请回答卡片中的问题"),
                     finish=True,

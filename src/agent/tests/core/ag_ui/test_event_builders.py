@@ -8,6 +8,7 @@ should_end_thinking / should_switch_thinking_step / build_model_end_payload å…­ä
 
 from unittest.mock import MagicMock
 
+import pytest
 from aidev_agent.core.ag_ui.event_builders import (
     build_model_end_payload,
     build_tool_result_event,
@@ -16,7 +17,7 @@ from aidev_agent.core.ag_ui.event_builders import (
     should_end_thinking,
     should_switch_thinking_step,
 )
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, ToolMessage
 
 
 def _make_tool(*, description: str = "desc", mcp_name: str = "", approval: dict | None = None) -> MagicMock:
@@ -45,6 +46,7 @@ def _make_tool_message(
     tool_msg = MagicMock()
     tool_msg.content = content
     tool_msg.tool_call_id = tool_call_id
+    tool_msg.name = None
     tool_msg.id = message_id
     tool_msg.additional_kwargs = {"duration": duration} if duration is not None else {}
     tool_msg.status = status
@@ -90,6 +92,21 @@ class TestEnhanceToolCall:
 
 
 class TestBuildToolResultEvent:
+    @pytest.mark.parametrize("name", ["ask_user_question", "query_logs", None])
+    @pytest.mark.parametrize("immediate", [False, True])
+    def test_tool_name_survives_wire_serialization(self, name, immediate):
+        message = ToolMessage(content="done", tool_call_id="call-1", name=name)
+        event = build_tool_result_event(message, is_immediate=immediate)
+        assert event.model_dump(by_alias=True)["toolCallName"] == name
+
+    @pytest.mark.parametrize("name", ["ask_user_question", None])
+    def test_replayed_tool_result_keeps_name(self, name):
+        from aidev_agent.core.ag_ui.utils import langchain_messages_to_streaming_events
+
+        message = ToolMessage(content="done", tool_call_id="call-1", name=name)
+        (event,) = list(langchain_messages_to_streaming_events([message]))
+        assert event.model_dump(by_alias=True)["toolCallName"] == name
+
     def test_normal_completion_duration_and_error_from_kwargs(self):
         tool_msg = _make_tool_message(duration=3.2, status=None, error=None)
         event = build_tool_result_event(tool_msg, is_immediate=False)

@@ -1,5 +1,6 @@
 """Agent SSE 直推企微长连接的协议测试。"""
 
+import copy
 import json
 from unittest.mock import patch
 
@@ -83,6 +84,51 @@ def test_terminal_frame_still_drains_the_agent_iterator_to_its_natural_end():
 def _chat_frames(events: list[dict], stream_id: str = "stream-tool"):
     stream = AgentStream(kind="chat", session_code="s", generator=iter([_sse(event) for event in events]))
     return list(iter_direct_stream_frames(stream, stream_id))
+
+
+@pytest.mark.parametrize("name", ["ask_user_question", "query_logs"])
+def test_result_without_start_keeps_real_tool_name(name):
+    from ag_ui.encoder import EventEncoder
+    from aidev_agent.core.ag_ui.event_builders import build_tool_result_event
+    from langchain_core.messages import ToolMessage
+
+    result = build_tool_result_event(ToolMessage(content="ok", tool_call_id="t1", name=name))
+    stream = AgentStream("chat", iter([EventEncoder().encode(result), _sse({"type": "RUN_FINISHED"})]), "s1")
+    frames = list(iter_direct_stream_frames(stream, "resume-stream"))
+    assert f"**{name}** · 已完成" in frames[-1].content
+    assert "unknown" not in frames[-1].content
+
+
+@pytest.mark.parametrize(
+    "count,multi,kind",
+    [
+        (1, False, "vote_interaction"),
+        (1, True, "vote_interaction"),
+        (3, False, "multiple_interaction"),
+        (2, True, None),
+        (4, False, None),
+    ],
+)
+def test_agui_question_outcome_uses_supported_card_or_lettered_text(question_case, count, multi, kind):
+    questions = question_case.interrupt["metadata"]["questions"]
+    questions[:] = [copy.deepcopy(questions[0]) for _ in range(count)]
+    questions[0]["multiSelect"] = multi
+    frame = _chat_frames([{"type": "RUN_STARTED", "runId": "r1"}, question_case.event])[-1]
+    assert frame.finish and frame.pending_question and not frame.failed
+    assert (frame.template_card or {}).get("card_type") == kind
+    assert "A. 华南" in frame.content and "B. 华东" in frame.content
+    assert ("下方卡片" in frame.content) == bool(kind)
+
+
+def test_long_questions_at_native_capacity_render_in_agui_stream(protocol_question_case):
+    case = protocol_question_case
+    frame = _chat_frames([{"type": "RUN_STARTED", "runId": "r1"}, case.event])[-1]
+    assert frame.finish and frame.pending_question and not frame.failed
+    assert frame.template_card is not None
+    assert "下方卡片" in frame.content
+    for question in case.interrupt["metadata"]["questions"]:
+        assert question["question"] in frame.content
+        assert question["options"][-1]["label"] in frame.content
 
 
 def test_tool_call_start_is_pushed_before_the_result_arrives():

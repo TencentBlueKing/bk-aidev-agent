@@ -31,9 +31,10 @@ from langchain_core.messages import (
     ToolMessage,
 )
 
-from .events import ExtendToolCallResultEvent, ExtendToolCallStartEvent
-from .event_builders import TOOL_CALLING_PLACEHOLDER
 from aidev_agent.utils.event import RunId
+
+from .event_builders import TOOL_CALLING_PLACEHOLDER
+from .events import ExtendToolCallResultEvent, ExtendToolCallStartEvent
 from .types import (
     ActivityMessage,
     InfoMessage,
@@ -746,6 +747,7 @@ def _tool_message_to_event(message: ToolMessage) -> BaseEvent:
     return ExtendToolCallResultEvent(
         type=EventType.TOOL_CALL_RESULT,
         tool_call_id=message.tool_call_id,
+        tool_call_name=message.name,
         message_id=str(message.id) if message.id else str(uuid.uuid4()),
         content=content if not is_error else "",
         role="tool",

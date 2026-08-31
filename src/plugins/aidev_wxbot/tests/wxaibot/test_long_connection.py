@@ -144,7 +144,7 @@ def question_callback(question_case):
     return body
 
 
-@pytest.mark.parametrize("content", ["你好", "华南", "1. 华南\n2. 按默认设置继续"])
+@pytest.mark.parametrize("content", ["你好", "华南", "1. 华南\n2. 按默认设置继续", "1A；2B；3AC", "A、C"])
 async def test_all_text_goes_directly_to_llm_without_question_lookup(content):
     from aidev_wxbot.wxaibot import question_resume
 
@@ -185,6 +185,34 @@ async def test_question_click_updates_only_accepted_card(question_case, question
         delivery.finish()
         await delivery.task
         assert service._client.send_message_calls[-1][0] == "alice-wx"
+
+
+@pytest.mark.parametrize("failure", ["missing_url", "build_error", "update_error"])
+async def test_question_result_card_failure_does_not_block_resume(question_case, question_callback, failure):
+    service = _service()
+    submission = SimpleNamespace(interrupt=question_case.interrupt)
+    with (
+        patch.object(long_connection_module, "prepare_question_submission", return_value=submission),
+        patch.object(long_connection_module, "submit_question_resume", return_value="accepted") as submit,
+        patch.object(
+            long_connection_module,
+            "submitted_question_card",
+            return_value=None if failure == "missing_url" else {"card_type": "text_notice"},
+            side_effect=RuntimeError("build failed") if failure == "build_error" else None,
+        ),
+        patch.object(
+            service,
+            "_update_interaction_card",
+            side_effect=RuntimeError("update failed") if failure == "update_error" else None,
+        ) as update,
+    ):
+        await service._handle_frame({"body": question_callback})
+    assert update.call_count == int(failure == "update_error")
+    delivery = submit.call_args.args[1]
+    delivery.failed()
+    delivery.finish()
+    await asyncio.wait_for(delivery.task, timeout=1)
+    assert service._client.send_message_calls[-1][0] == "alice-wx"
 
 
 @pytest.mark.parametrize("changed", ["signature", "task", "target"])

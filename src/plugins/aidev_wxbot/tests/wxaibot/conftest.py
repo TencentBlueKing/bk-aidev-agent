@@ -1,5 +1,7 @@
 """企微审批卡片测试使用的脱敏平台响应与回调。"""
 
+import copy
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -139,6 +141,10 @@ def persisted_approval_case(approval_resume_case, monkeypatch):
 def question_case(monkeypatch):
     from aidev_wxbot.wxaibot.question_cards import QuestionAction, questions_digest
 
+    monkeypatch.setattr(
+        "aidev_wxbot.wxaibot.question_cards.AgentHelper.build_session_detail_url",
+        lambda session_code: f"https://agent.example.com/chat-window/?session={session_code}",
+    )
     questions = [
         {
             "header": "区域",
@@ -159,3 +165,46 @@ def question_case(monkeypatch):
         event={"type": "RUN_FINISHED", "outcome": {"type": "interrupt", "interrupts": [interrupt]}},
         selected={"selected_item": [{"question_key": "q0", "option_ids": {"option_id": ["0"]}}]},
     )
+
+
+@pytest.fixture(params=["single", "multi", "three_single"])
+def native_question_case(question_case, request):
+    """The three supported native layouts with non-default user selections."""
+    from aidev_wxbot.wxaibot.question_cards import questions_digest
+
+    case = question_case
+    questions = case.interrupt["metadata"]["questions"]
+    questions[0]["multiSelect"] = request.param == "multi"
+    if request.param == "three_single":
+        questions[:] = [copy.deepcopy(questions[0]) for _ in range(3)]
+        for index, question in enumerate(questions, 1):
+            question["question"] = f"请选择区域{index}"
+    case.selected = {
+        "selected_item": [
+            {"question_key": f"q{i}", "option_ids": {"option_id": ["1", "0"] if q["multiSelect"] else ["1"]}}
+            for i, q in enumerate(questions)
+        ]
+    }
+    case.action = replace(case.action, digest=questions_digest(questions))
+    return case
+
+
+@pytest.fixture(params=[(1, False, 20), (1, True, 20), (2, False, 10), (3, False, 10)])
+def protocol_question_case(question_case, request):
+    """Native capacity boundaries, with text beyond the old byte-length guards."""
+    count, multi, options = request.param
+    case = question_case
+    case.interrupt["metadata"]["questions"] = [
+        {
+            "question": f"问题{i}：" + "完整题干" * 30,
+            "multiSelect": multi,
+            "options": [{"label": f"选项{j}：" + "完整选项" * 10} for j in range(options)],
+        }
+        for i in range(count)
+    ]
+    case.selected = {
+        "selected_item": [
+            {"question_key": f"q{i}", "option_ids": {"option_id": [str(options - 1)]}} for i in range(count)
+        ]
+    }
+    return case

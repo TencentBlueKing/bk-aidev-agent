@@ -36,6 +36,45 @@ database capacity requires different limits. Stream cleanup runs in a separate B
 `BKAPP_AIDEV_AGENT_CLEANUP_MAX_PENDING` only when upstream cleanup behavior requires it. Health logs expose generation
 and cleanup executor usage, drain timeouts/rejections, and busy-rejected counts for capacity verification.
 
+## Session commands and Ask-user interactions
+
+Both WebSocket and HTTP callback/polling support `/title 新标题` (1–255 characters on one line) and `/web`
+(the current session's AI 小鲸 link). They look up the existing local thread and user-scoped platform session;
+neither command starts an Agent run, creates a session, nor rotates or refreshes the local thread.
+Title changes send only `session_name` to the platform and require a matching response before reporting success.
+Missing/inaccessible sessions or missing Web configuration produce an explicit message. Group commands require an @mention.
+
+WebSocket Ask-user output retains the full questions and option descriptions in chat, with A/B/C option prefixes
+and single-/multiple-choice hints. Replies such as `1A；2B；3AC` remain ordinary text delivered unchanged to the LLM;
+only native card submissions send structured `resume[].payload.answers` after identity/session/interrupt validation.
+
+| Questions in one Ask-user interrupt | WebSocket presentation |
+| --- | --- |
+| One single-choice or multiple-choice question, 1–20 options | Native voting card, plus full text |
+| Two or three questions, all single-choice, 1–10 options each | One native multi-selector card, plus full text |
+| More than three questions | Text only, with numbered questions and lettered options |
+| Multiple questions containing multiple-choice, free text, or option counts beyond the native schema | Text only |
+
+Only the [official card schema](https://developer.work.weixin.qq.com/document/path/101032) limits native rendering.
+Title/option text lengths are display recommendations: no local byte-length rejection or truncation is applied.
+The three-selector bound is specific to `multiple_interaction`, not the conversation. Each selector accepts a
+single selection; the schema has no mixed single-/multiple-choice form. Such a form falls back without changing
+the requested answer semantics. Voting cards have one checkbox question with a single-/multiple-choice mode.
+Selectors contain only the original options, without a synthetic placeholder taking up the tenth slot. They
+use WeCom's native first-option default; answers are submitted only after the user presses the submit button.
+
+After an accepted native submission, the click callback replaces the question card with a result notice:
+the original task ID and title remain, choices and the submit button are removed, and clicking opens only
+the original AI 小鲸 session. This requires a configured session URL and a reply within the callback's five-second
+window. Missing URLs or update failures do not block the accepted answer's resume output; old cards are not
+proactively updated in the background. Ordinary text replies do not trigger this card replacement.
+
+HTTP polling is not feature-equivalent to WebSocket: its current chat consumer does not render approval/Ask-user
+interrupt outcomes, and template-card callbacks are not dispatched to the resume handlers. It also reads the old
+`run_id` spelling instead of AG-UI `runId`. These gaps are covered by strict expected-failure tests; successful ordinary
+text/command tests do not imply that HTTP interactive cards work. The callback tests use real encryption/decryption with
+synthetic credentials and an in-memory queue, not a live WeCom endpoint or RabbitMQ instance.
+
 ## WebSocket tracing
 
 With the existing Agent OpenTelemetry integration enabled, each inbound message starts an independent

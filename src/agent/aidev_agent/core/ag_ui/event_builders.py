@@ -77,6 +77,7 @@ def build_tool_result_event(tool_msg: Any, is_immediate: bool = False) -> Extend
     return ExtendToolCallResultEvent(
         type=EventType.TOOL_CALL_RESULT,
         tool_call_id=tool_msg.tool_call_id,
+        tool_call_name=getattr(tool_msg, "name", None),
         message_id=tool_msg.id or str(uuid.uuid4()),
         content=content,
         role="tool",

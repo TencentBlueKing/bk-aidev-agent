@@ -1,4 +1,5 @@
-from unittest.mock import MagicMock
+import asyncio
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aidev_wxbot.wxaibot import question_resume as mod
@@ -39,6 +40,41 @@ def test_user_submission_preserves_original_session_thread_turn(resume_case):
     assert kwargs.resume[0]["interruptId"] == "question-1"
     case.builder.assert_called_once_with(username="alice", turn_id="turn-1")
     case.delivery.finish.assert_called_once()
+
+
+async def test_native_selection_resumes_and_delivers_agui_output(native_question_case, resume_case):
+    from ag_ui.encoder import EventEncoder
+    from aidev_agent.core.ag_ui.event_builders import build_tool_result_event
+    from aidev_wxbot.wxaibot.resume_delivery import ResumeDelivery
+    from langchain_core.messages import ToolMessage
+
+    case = resume_case
+    send = AsyncMock()
+    delivery = ResumeDelivery(send, resume_type="ask_user_question")
+    result = build_tool_result_event(ToolMessage(content="ok", name="ask_user_question", tool_call_id="t1"))
+    output = [
+        'data: {"type":"RUN_STARTED","runId":"r1"}\n',
+        EventEncoder().encode(result),
+        'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"已按选择继续"}\n',
+        'data: {"type":"RUN_FINISHED"}\n',
+    ]
+    case.run.side_effect = lambda *_, **kwargs: kwargs["consume_stream"](iter(output))
+    submission = mod.prepare_question_submission(case.action, "alice", case.selected)
+    assert mod.submit_question_resume(submission, delivery) == "accepted"
+    callback, *args = case.executor.submit.call_args.args
+    await asyncio.to_thread(callback, *args)
+    await delivery.task
+    kwargs = case.run.call_args.args[1]
+    assert kwargs.session_code == "session-1" and kwargs.thread_id == "graph-1" and kwargs.turn_id == "turn-1"
+    answers = kwargs.resume[0]["payload"]["answers"]
+    assert len(answers) == len(case.interrupt["metadata"]["questions"])
+    assert all(
+        a["answer"] == ([{"label": "华东"}, {"label": "华南"}] if a["multiSelect"] else [{"label": "华东"}])
+        for a in answers
+    )
+    assert case.run.call_count == 1
+    content = send.call_args.args[0]["markdown"]["content"]
+    assert "**ask_user_question**" in content and "已按选择继续" in content and "unknown" not in content
 
 
 @pytest.mark.parametrize("change", ["id", "reason", "status", "questions", "expired", "turn", "thread"])

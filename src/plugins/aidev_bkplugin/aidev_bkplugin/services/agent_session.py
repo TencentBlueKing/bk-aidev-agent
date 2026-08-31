@@ -133,6 +133,16 @@ class SessionManager:
         )
         return result.get("data") or {}
 
+    def update_session_name(self, session_code: str, session_name: str) -> None:
+        """Rename an existing session as its caller, without invoking AI rename."""
+        result = self._client().api.update_chat_session(
+            path_params={"session_code": session_code},
+            json={"session_name": session_name},
+            headers=self._user_headers(),
+        )
+        if (result.get("data") or {}).get("session_name") != session_name:
+            raise ValueError("Session title update was not confirmed")
+
     def get_flow_info(self, session_code: str) -> dict:
         """读取 ``session_property.flow_info``（流程智能体执行信息），不存在时返回空 dict。"""
         session_property = self.retrieve_session(session_code).get("session_property") or {}

@@ -4,15 +4,22 @@ import copy
 import hashlib
 import json
 from dataclasses import asdict, dataclass, replace
+from urllib.parse import urlsplit
 
 from aidev_agent.core.ag_ui.ask_user_question import ASK_USER_QUESTION_REASON
+from aidev_bkplugin.services.agent_helpers import AgentHelper
 from django.core import signing
 
-from .context import _escape_markdown_text
+from .context import _escape_markdown_text, _normalize_url
 
 _PREFIX = "question_answer:"
 _SALT = "aidev.wxbot.question.v1"
 MAX_AGE = 86400
+# Hard limits from https://developer.work.weixin.qq.com/document/path/101032.
+# Title/option text lengths there are display recommendations, not rejection rules.
+_MAX_VOTE_OPTIONS = 20
+_MAX_SELECTORS = 3
+_MAX_SELECTOR_OPTIONS = 10
 
 
 @dataclass(frozen=True)
@@ -61,25 +68,29 @@ def bind_question_target(card: dict, target: str) -> dict:
 
 
 def _native_kind(questions: list) -> str | None:
-    if not questions or len(questions) > 3:
+    """Choose a native card that can express all answers in one submission."""
+    if not questions:
         return None
     for question in questions:
         options = question.get("options")
-        if not isinstance(options, list) or not 1 <= len(options) <= (20 if len(questions) == 1 else 9):
+        if not isinstance(options, list) or not options:
             return None
-        if not isinstance(question.get("question"), str) or len(question["question"].encode()) > 72:
+        if not isinstance(question.get("question"), str):
             return None
         if any(
-            not isinstance(option, dict)
-            or not isinstance(option.get("label"), str)
-            or not option["label"]
-            or len(option["label"].encode()) > 32
+            not isinstance(option, dict) or not isinstance(option.get("label"), str) or not option["label"]
             for option in options
         ):
             return None
     if len(questions) == 1:
-        return "vote_interaction"
-    return "multiple_interaction" if not any(q.get("multiSelect") for q in questions) else None
+        return "vote_interaction" if len(questions[0]["options"]) <= _MAX_VOTE_OPTIONS else None
+    # SelectionItem has one selected_id and no multi-select mode. Do not silently
+    # turn multiple-choice questions into single-choice selectors.
+    if len(questions) <= _MAX_SELECTORS and all(
+        not q.get("multiSelect") and len(q["options"]) <= _MAX_SELECTOR_OPTIONS for q in questions
+    ):
+        return "multiple_interaction"
+    return None
 
 
 def build_pending_question_card(event: dict, session_code: str) -> dict | None:
@@ -103,20 +114,35 @@ def pending_question(event: dict) -> dict | None:
     return None
 
 
-def question_prompt(interrupt: dict) -> str:
+def _option_prefix(index: int) -> str:
+    """Zero-based option index as A…Z, AA…; do not alter protocol labels."""
+    prefix = ""
+    number = index + 1
+    while number:
+        number, remainder = divmod(number - 1, 26)
+        prefix = chr(ord("A") + remainder) + prefix
+    return prefix
+
+
+def question_prompt(interrupt: dict, *, has_card: bool = False) -> str:
     """Keep the complete questions and option descriptions available in chat."""
-    lines = ["请直接在企微回复答案，也可以使用下方卡片选择（如有）。"]
+    hint = "请直接在企微回复答案。"
+    if has_card:
+        hint += "也可以使用下方卡片选择。"
+    lines = [hint, "选择题可回复题号+选项字母（如：1A；2B；3AC），也可直接描述答案。"]
     for index, question in enumerate((interrupt.get("metadata") or {}).get("questions") or [], 1):
         if not isinstance(question, dict):
             continue
-        lines.append(f"\n{index}. {_escape_markdown_text(str(question.get('question') or '请补充信息'))}")
-        for option in question.get("options") or []:
+        options = question.get("options") or []
+        mode = ("（可多选）" if question.get("multiSelect") else "（单选）") if options else ""
+        lines.append(f"\n{index}. {_escape_markdown_text(str(question.get('question') or '请补充信息'))}{mode}")
+        for option_index, option in enumerate(options):
             if not isinstance(option, dict):
                 continue
             text = str(option.get("label") or "")
             if option.get("description"):
                 text += f"：{option['description']}"
-            lines.append(f"- {_escape_markdown_text(text)}")
+            lines.append(f"- {_option_prefix(option_index)}. {_escape_markdown_text(text)}")
     return "\n".join(lines)
 
 
@@ -150,9 +176,9 @@ def build_question_card(interrupt: dict, session_code: str) -> dict | None:
             {
                 "question_key": f"q{i}",
                 "title": q["question"],
-                "selected_id": "_",
-                "option_list": [{"id": "_", "text": "请选择"}]
-                + [{"id": str(j), "text": o["label"]} for j, o in enumerate(q["options"])],
+                # Use the native default (first option), without consuming one
+                # of the protocol's ten options for an artificial placeholder.
+                "option_list": [{"id": str(j), "text": o["label"]} for j, o in enumerate(q["options"])],
             }
             for i, q in enumerate(questions)
         ]
@@ -200,10 +226,24 @@ def decode_answers(questions: list, selected_items: dict) -> list:
     return answers
 
 
-def submitted_question_card(interrupt: dict, session_code: str, *, text: str = "答案已接收") -> dict:
-    card = build_question_card(interrupt, session_code) or {"main_title": {"title": text}, "card_action": {"type": 0}}
-    card["main_title"].pop("desc", None)
+def submitted_question_card(interrupt: dict, session_code: str, *, text: str = "答案已接收") -> dict | None:
+    """Replace the controls with a result notice linked only to the original session."""
+    card = build_question_card(interrupt, session_code)
+    if card is None:
+        return None
+    session_url = AgentHelper.build_session_detail_url(session_code)
+    try:
+        parsed = urlsplit(session_url)
+    except ValueError:
+        return None
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    card["main_title"]["desc"] = "点击查看原会话"
     for key in ("checkbox", "select_list", "submit_button"):
         card.pop(key, None)
-    card.update(card_type="text_notice", sub_title_text=text)
+    card.update(
+        card_type="text_notice",
+        sub_title_text=text,
+        card_action={"type": 1, "url": _normalize_url(session_url)},
+    )
     return card

@@ -2621,6 +2621,7 @@ class TestDispatchSessionPersistenceEvents:
         assert (outcome.get("interrupts") or [{}])[0].get("metadata", {}).get("status") == "cancelled"
         assert isinstance(writer.events[0], ExtendToolCallResultEvent)
         assert writer.events[0].content == ASK_USER_QUESTION_SKIPPED_CONTENT
+        assert writer.events[0].tool_call_name == "ask_user_question"
         custom_names = [e.name for e in writer.events if isinstance(e, CustomEvent)]
         assert custom_names == [
             SessionPersistenceEventNames.AskUserQuestionFinalized.value,

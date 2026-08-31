@@ -639,9 +639,14 @@ class WxAiBotLongConnectionService:
                     target, {"msgtype": "markdown", "markdown": {"content": "当前繁忙，答案尚未提交，请稍后重试。"}}
                 )
                 return True
-            result_card = submitted_question_card(submission.interrupt, action.session_code)
             try:
-                await self._update_interaction_card(frame, result_card, "wxbot.question_card.update")
+                result_card = await asyncio.to_thread(
+                    submitted_question_card, submission.interrupt, action.session_code
+                )
+                if result_card is not None:
+                    await self._update_interaction_card(frame, result_card, "wxbot.question_card.update")
+                else:
+                    logger.warning("event=wxbot_question_card_update_skipped reason=result_card_unavailable")
             except Exception as error:
                 logger.warning("event=wxbot_question_card_update_failed error_type=%s", type(error).__name__)
             finally:

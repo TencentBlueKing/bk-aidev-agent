@@ -45,14 +45,34 @@ async def test_resume_interrupt_sends_question_card(question_case):
     assert send.call_args.args[0]["template_card"]["card_type"] == "vote_interaction"
 
 
+@pytest.mark.parametrize("resume_type", ["tool_approval", "ask_user_question"])
+async def test_resume_renders_long_questions_at_protocol_capacity(protocol_question_case, resume_type):
+    from aidev_wxbot.wxaibot.question_cards import build_question_card
+
+    case = protocol_question_case
+    send = AsyncMock()
+    delivery = ResumeDelivery(send, resume_type=resume_type)
+    events = [{"type": "RUN_STARTED", "runId": "r1"}, case.event]
+    await asyncio.to_thread(delivery.consume, sse(events), "session-1", "previous-interrupt", "turn-1")
+    delivery.finish()
+    await delivery.task
+    bodies = [call.args[0] for call in send.call_args_list]
+    sent_cards = [b["template_card"] for b in bodies if b["msgtype"] == "template_card"]
+    assert sent_cards == [build_question_card(case.interrupt, "session-1")]
+    text = "".join(b["markdown"]["content"] for b in bodies if b["msgtype"] == "markdown")
+    for question in case.interrupt["metadata"]["questions"]:
+        assert question["question"] in text and question["options"][-1]["label"] in text
+
+
 @pytest.mark.parametrize("native", [True, False])
 async def test_resumed_question_always_displays_full_text_and_chat_reply_hint(question_case, native):
     from aidev_wxbot.wxaibot.direct_stream import AgentStream, iter_direct_stream_frames
 
     question = question_case.interrupt["metadata"]["questions"][0]
     question["options"][0]["description"] = "必须保留的选项说明"
+    question["question"] *= 20
     if not native:
-        question["question"] *= 20
+        question_case.interrupt["metadata"]["questions"] = [question] * 4
     frame = list(iter_direct_stream_frames(AgentStream("chat", sse([question_case.event]), "s1"), "stream"))[-1]
     assert frame.pending_question and frame.finish and not frame.failed
     assert bool(frame.template_card) == native

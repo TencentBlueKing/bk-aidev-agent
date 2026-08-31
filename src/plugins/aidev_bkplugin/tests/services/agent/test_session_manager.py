@@ -57,6 +57,24 @@ def test_get_or_create_by_session_code_passes_options(session_manager, mock_plug
     assert call.kwargs["is_temporary"] is True
 
 
+def test_update_title_only_writes_name_with_user_identity(session_manager, mock_plugin_rm_client):
+    api = mock_plugin_rm_client.api
+    api.update_chat_session.return_value = {"data": {"session_name": "日志查询"}}
+    session_manager.update_session_name("sc-1", "日志查询")
+    api.update_chat_session.assert_called_once_with(
+        path_params={"session_code": "sc-1"}, json={"session_name": "日志查询"}, headers={"X-BKAIDEV-USER": "alice"}
+    )
+    api.rename_chat_session.assert_not_called()
+    mock_plugin_rm_client.resource_manager_mock.get_or_create_session.assert_not_called()
+
+
+@pytest.mark.parametrize("result", [{}, {"data": None}, {"data": {"session_name": "old"}}])
+def test_update_title_requires_platform_confirmation(session_manager, mock_plugin_rm_client, result):
+    mock_plugin_rm_client.api.update_chat_session.return_value = result
+    with pytest.raises(ValueError, match="not confirmed"):
+        session_manager.update_session_name("sc-1", "new")
+
+
 @pytest.mark.parametrize(
     "extra, status, expect_extra",
     [

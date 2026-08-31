@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 
 from aidev_agent.api.bk_agent import BkAgentApi
 from aidev_agent.config import settings
-from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
+from aidev_agent.core.ag_ui.aidev_agent import ASK_USER_QUESTION_TOOL_NAME, AidevAGUIAgent
 from aidev_agent.core.ag_ui.ask_user_question import (
     ASK_USER_QUESTION_SKIPPED_CONTENT,
     AskUserQuestionHandler,
@@ -299,6 +299,7 @@ class ChatCompletionAgent(BaseModel):
             ExtendToolCallResultEvent(
                 type=EventType.TOOL_CALL_RESULT,
                 tool_call_id=tool_call_id,
+                tool_call_name=ASK_USER_QUESTION_TOOL_NAME,
                 message_id=tool_call_id,
                 content=ASK_USER_QUESTION_SKIPPED_CONTENT,
                 role="tool",

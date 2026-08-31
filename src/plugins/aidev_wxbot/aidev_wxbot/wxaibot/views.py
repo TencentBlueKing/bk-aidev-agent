@@ -7,9 +7,12 @@ import time
 import uuid
 from dataclasses import dataclass
 from logging import getLogger
+from urllib.parse import urlsplit
 
 from aidev_agent.packages.resource_manager import resource_manager
 from aidev_agent.services.messages_handler import ConsumerPreemptedError
+from aidev_bkplugin.services.agent_helpers import AgentHelper
+from aidev_bkplugin.services.agent_session import SessionManager
 from aidev_bkplugin.services.execution import get_agent_executor
 from django.conf import settings
 from django.http import HttpResponse
@@ -31,7 +34,15 @@ from .constants import (
     STOP_NO_ACTIVE_REPLY,
     WRONG_MENTION_PROMPT,
 )
-from .context import ContextGenerator, LlmChunkMsg, WxWorkAiBotContext, stream_msg, text_msg
+from .context import (
+    ContextGenerator,
+    LlmChunkMsg,
+    WxWorkAiBotContext,
+    _escape_markdown_text,
+    _normalize_url,
+    stream_msg,
+    text_msg,
+)
 from .decryption import WXBizJsonMsgCrypt
 from .models import AgentSession
 from .strategies import resolve_strategy
@@ -287,7 +298,40 @@ class WxAiBotViewSet(ViewSet):
             return stream_msg(HELP_REPLY, True, stream_id)
         if user_input in STOP_CMDS:
             return self.stop_generation(context.group_id, context.sender_id, stream_id)
+        parts = user_input.split(maxsplit=1)
+        if parts and parts[0] in {"/title", "/web"}:
+            argument = parts[1].strip() if len(parts) == 2 else ""
+            return self._session_command(parts[0], argument, stream_id, context)
         return None
+
+    def _session_command(self, command: str, argument: str, stream_id: str, context: WxWorkAiBotContext) -> dict:
+        """Inspect/rename only the last selected session; never rotate or create it."""
+        if command == "/title" and (not argument or len(argument) > 255 or any(c in argument for c in "\r\n")):
+            return stream_msg("用法：/title 新标题（1–255 个字符，单行）", True, stream_id)
+        if command == "/web" and argument:
+            return stream_msg("用法：/web（返回当前会话的 AI 小鲸地址）", True, stream_id)
+        try:
+            scope = self._session_scope(context.group_id, context.sender_id)
+            local_session = AgentSession.objects.get(group_id=scope)
+            manager = SessionManager(username=context.sender_id)
+            session_code = manager.generate_session_code(context.sender_id, manager.agent_code, local_session.thread_id)
+            if not manager.retrieve_session(session_code):
+                return stream_msg("当前没有可用会话，请先发送问题。", True, stream_id)
+            if command == "/title":
+                manager.update_session_name(session_code, argument)
+                content = f"会话标题已修改为：{_escape_markdown_text(argument)}"
+            else:
+                url = AgentHelper.build_session_detail_url(session_code, username=context.sender_id)
+                parsed = urlsplit(url)
+                if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                    return stream_msg("暂时无法获取 AI 小鲸地址，请联系管理员检查配置。", True, stream_id)
+                content = f"[在 AI 小鲸打开当前会话]({_normalize_url(url)})"
+            return stream_msg(content, True, stream_id)
+        except AgentSession.DoesNotExist:
+            return stream_msg("当前没有可用会话，请先发送问题。", True, stream_id)
+        except Exception as error:
+            logger.warning("event=wxbot_session_command_failed command=%s error_type=%s", command, type(error).__name__)
+            return stream_msg("会话操作未成功，请稍后重试或检查会话访问权限。", True, stream_id)
 
     def stop_generation(self, group_id: str, username: str, stream_id: str) -> dict:
         """中止该发起人正在生成的回复。
