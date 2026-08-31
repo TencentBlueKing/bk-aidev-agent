@@ -15,10 +15,25 @@ def test_injection_is_opt_in_and_preserves_original_resource_manager(settings, e
     assert with_database_events(wrapped, "app") is wrapped
 
 
-def test_publishing_uses_injected_backend():
-    backend = Mock()
+@pytest.mark.parametrize("failing", [False, True])
+def test_publishing_cleans_producer_connections_even_on_error(monkeypatch, failing):
+    calls = []
+    monkeypatch.setattr(
+        "aidev_bkplugin.services.event_resource_manager.close_old_connections",
+        lambda: calls.append("cleanup"),
+    )
+
+    def publish(_event):
+        calls.append("publish")
+        if failing:
+            raise RuntimeError("database unavailable")
+
+    backend = Mock(publish=publish)
     wrapped = EventResourceManager(object(), backend)
-    event = object()
-    wrapped.publish_event(event)
-    backend.publish.assert_called_once_with(event)
+    if failing:
+        with pytest.raises(RuntimeError):
+            wrapped.publish_event(object())
+    else:
+        wrapped.publish_event(object())
+    assert calls == ["cleanup", "publish", "cleanup"]
     assert wrapped.event_publishing_enabled() is True

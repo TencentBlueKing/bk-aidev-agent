@@ -1,6 +1,7 @@
 """Per-agent publishing adapter; never replaces the global resource registry."""
 
 from ag_ui.core import BaseEvent
+from django.db import close_old_connections
 
 
 class EventResourceManager:
@@ -15,7 +16,12 @@ class EventResourceManager:
         return True
 
     def publish_event(self, event: BaseEvent) -> None:
-        self._publisher.publish(event)
+        # The Agent producer runs outside Django's request thread/lifecycle.
+        try:
+            close_old_connections()
+            self._publisher.publish(event)
+        finally:
+            close_old_connections()
 
 
 def with_database_events(resource_manager, app_code: str):
