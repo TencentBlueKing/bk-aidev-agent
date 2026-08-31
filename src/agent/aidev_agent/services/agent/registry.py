@@ -55,7 +55,7 @@ class FlowBuildExtras:
     """
 
     flow_resource_manager: Optional["ResourceManagerProtocol"] = None
-    task_id: Optional[str] = None
+    task_id: Optional[int] = None
     flow_start_params: dict = field(default_factory=dict)
     poll_interval: Optional[float] = None
     poll_timeout: Optional[float] = None

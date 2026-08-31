@@ -214,6 +214,7 @@ export type IEvent =
   | IToolCallStartEvent;
 
 export type IFlowAgentEndCustomValue = {
+  task_id: number;
   task_outputs: string[];
 }[];
 
@@ -230,14 +231,14 @@ export interface IFlowAgentNode {
 
 export type IFlowAgentResultCustomValue = {
   nodes: Record<string, IFlowAgentNode>;
-  task_id: string;
+  task_id: number;
   task_name: string;
   task_outputs: string[];
   task_state: FlowTaskState;
 }[];
 
 export type IFlowAgentStartCustomValue = {
-  task_id: string;
+  task_id: number;
 }[];
 
 export type IFlowAgentRestartCustomValue = IFlowAgentStartCustomValue;

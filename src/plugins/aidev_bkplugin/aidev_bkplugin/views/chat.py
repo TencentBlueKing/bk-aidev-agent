@@ -378,7 +378,7 @@ class ChatCompletionViewSet(PluginViewSet):
         if session_code:
             flow_info = session_manager.get_flow_info(session_code)
             if flow_info.get("resume_pending"):
-                resume_task_id = flow_info.get("task_id") or ""
+                resume_task_id = flow_info.get("task_id")
                 if resume_task_id:
                     task_id = resume_task_id
                     resume_action = flow_info.get("resume_action") or ""

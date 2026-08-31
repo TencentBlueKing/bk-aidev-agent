@@ -1203,7 +1203,7 @@ class BaseSessionWriter(ABC):
         else:
             event_data = event.event.get("data", {})
 
-        task_id = event_data.get("task_id", "")
+        task_id = event_data.get("task_id")
         task_outputs = event_data.get("task_outputs")
 
         # 1. 回写 assistant 消息（task_outputs 作为 AI 回复内容）
@@ -1252,9 +1252,9 @@ class BaseSessionWriter(ABC):
         else:
             event_data = event.event.get("data", {})
 
-        task_id = event_data.get("task_id", "")
+        task_id = event_data.get("task_id")
         if task_id:
-            self.update_flow_agent_info(task_id=str(task_id))
+            self.update_flow_agent_info(task_id=task_id)
         else:
             logger.warning("handle_flow_agent_start: task_id 为空，跳过持久化: event_data=%s", event_data)
 
@@ -1576,7 +1576,7 @@ class BaseSessionWriter(ABC):
         以便前端正确展示暂停/取消状态。
         """
 
-    def update_flow_agent_info(self, task_id: str) -> None:
+    def update_flow_agent_info(self, task_id: int | str) -> None:
         """更新 session 中的 Flow Agent task_id
 
         子类应覆盖此方法来将 task_id 持久化到 session_property.flow_info 元数据。
