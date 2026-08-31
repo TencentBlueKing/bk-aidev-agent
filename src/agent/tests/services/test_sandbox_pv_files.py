@@ -199,22 +199,6 @@ class TestEnsureVolume:
             path_params={"app_code": "test-app", "volume_id": "vol-loser"}
         )
 
-    def test_cached_volume_id_skips_retrieve(self, service, resource_manager, mock_client):
-        assert service.ensure_volume("s1", cached_volume_id="vol-cached") == "vol-cached"
-        resource_manager.retrieve_chat_session.assert_not_called()
-        mock_client.create_agent_sandbox_volume.request.assert_not_called()
-
-    def test_empty_cached_volume_id_creates_without_retrieve(self, service, resource_manager, mock_client):
-        resource_manager.update_chat_session_sandbox_pv_id.return_value = {
-            "session_property": {"sandbox_pv_id": "vol-new"}
-        }
-        mock_client.create_agent_sandbox_volume.request.return_value = _mock_paas_response({"uuid": "vol-new"})
-
-        assert service.ensure_volume("s1", cached_volume_id="") == "vol-new"
-        resource_manager.retrieve_chat_session.assert_not_called()
-        mock_client.create_agent_sandbox_volume.request.assert_called_once()
-
-
 # ---------------------------------------------------------------------------
 # _to_iso8601_z / _parse_paas_code / _map_paas_error
 # ---------------------------------------------------------------------------

@@ -326,20 +326,12 @@ class SandboxPvFileService:
         except Exception:  # noqa: BLE001
             logger.warning("清理未关联的 sandbox PV 失败: volume_id=%s", volume_id, exc_info=True)
 
-    def ensure_volume(self, session_code: str, *, cached_volume_id: str | None = None) -> str:
-        """幂等获取会话 PV；不存在时创建并写回会话。
-
-        ``cached_volume_id`` 非 None 表示调用方已读过会话：
-        - 非空：直接使用，不再 retrieve
-        - 空串：已知尚未初始化，跳过 retrieve 直接创建
-        """
-        if cached_volume_id:
-            return cached_volume_id
-        if cached_volume_id is None:
-            try:
-                return self._get_volume_id(session_code)
-            except SandboxFileNotFoundError:
-                pass
+    def ensure_volume(self, session_code: str) -> str:
+        """幂等获取会话 PV；不存在时创建并写回会话。"""
+        try:
+            return self._get_volume_id(session_code)
+        except SandboxFileNotFoundError:
+            pass
 
         client = self._get_client()
         app_code = self._executor_info.get("app_code") or ""
@@ -597,8 +589,6 @@ class SandboxPvFileService:
         self,
         session_code: str,
         files: list[SandboxUploadFile],
-        *,
-        cached_volume_id: str | None = None,
     ) -> dict:
         """通过会话级复用的临时 sandbox 将一批文件写入会话 PV。
 
@@ -609,7 +599,7 @@ class SandboxPvFileService:
         validate_session_upload_files(files)
 
         snapshot = self._resolve_upload_snapshot()
-        volume_id = self.ensure_volume(session_code, cached_volume_id=cached_volume_id)
+        volume_id = self.ensure_volume(session_code)
         client = self._get_client()
         backend = PaasSandboxBackend(
             app_code=self._executor_info.get("app_code") or "",

@@ -4,7 +4,7 @@
 覆盖点：
 - 构造沙箱文件 Service 时正确注入 PluginResourceManager + executor_info
 - 5 个 action 参数透传（GET list / stat / preview / download_url / upload）
-- 上传文件类型、数量、大小和会话归属校验
+- 上传会话归属校验与沙箱文件异常映射
 - 沙箱文件异常 → HTTP 状态码映射（404 / 400 / 500）
 - preview 返回 HttpResponse(text/plain) + X-Truncated 头透传
 - path/max_bytes/expires_in 缺失或默认值回退
@@ -110,7 +110,6 @@ def _reset_retrieve_chat_session_mock():
     """
     fake_client.api.retrieve_chat_session.reset_mock(side_effect=True, return_value=True)
     session_mod.PluginResourceManager.return_value.resolve_access_token.return_value = None
-    session_mod._upload_snapshot_cache = None
     latest_image = session_mod.PluginResourceManager.return_value.get_client.return_value.api.retrieve_latest_skill_version_image
     latest_image.reset_mock()
     yield
@@ -192,25 +191,6 @@ class TestMakePvFileService:
             "mirrors.tencent.com/bkpaas-sandbox/bkaidev/file-kit:0.0.9"
         )
         rm.get_client.return_value.api.retrieve_latest_skill_version_image.assert_called_once_with()
-
-    def test_upload_snapshot_uses_process_cache(self, view, mock_svc):
-        """TTL 内第二次上传不再打平台 latest image 接口。"""
-        instance, svc_cls = mock_svc
-        rm = session_mod.PluginResourceManager.return_value
-        rm.get_client.return_value.api.retrieve_latest_skill_version_image.return_value = {
-            "data": {"image": "mirrors.tencent.com/bkpaas-sandbox/bkaidev/file-kit:0.0.9"}
-        }
-        first = SimpleUploadedFile("report.txt", b"report", content_type="text/plain")
-        second = SimpleUploadedFile("report.txt", b"report", content_type="text/plain")
-
-        view.pv_files_upload(_request(method="POST", files=[first]), pk="s1")
-        view.pv_files_upload(_request(method="POST", files=[second]), pk="s1")
-
-        assert instance._executor_info["snapshot"] == (
-            "mirrors.tencent.com/bkpaas-sandbox/bkaidev/file-kit:0.0.9"
-        )
-        rm.get_client.return_value.api.retrieve_latest_skill_version_image.assert_called_once_with()
-
 
 # ---------------------------------------------------------------------------
 # pv_files (GET / DELETE)
@@ -424,20 +404,18 @@ class TestPvFilesUpload:
             files=[{"name": "report.txt", "content": b"report", "mime_type": "text/plain"}],
         )
 
-    @pytest.mark.parametrize(
-        ("files", "message"),
-        [
-            ([], "files is required"),
-            ([SimpleUploadedFile("payload.exe", b"binary")], "文件类型 .exe 不支持"),
-        ],
-    )
-    def test_upload_rejects_invalid_files(self, view, mock_svc, files, message):
-        from blueapps.core.exceptions import ClientBlueException
-
+    def test_upload_rejects_invalid_files_before_resolving_snapshot(self, view, mock_svc):
         instance, _ = mock_svc
-        with pytest.raises(ClientBlueException, match=message):
-            view.pv_files_upload(_request(method="POST", files=files), pk="s1")
+
+        response = view.pv_files_upload(
+            _request(method="POST", files=[SimpleUploadedFile("payload.exe", b"binary")]),
+            pk="s1",
+        )
+
+        assert response.status_code == 400
+        assert response.data == {"message": "文件类型 .exe 不支持"}
         instance.upload_files.assert_not_called()
+        session_mod.PluginResourceManager.return_value.get_client.return_value.api.retrieve_latest_skill_version_image.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

@@ -1,18 +1,11 @@
 # -*- coding: utf-8 -*-
 
-import threading
-import time
-from pathlib import PurePosixPath
-
 from aidev_agent.enums import ChannelType
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
 from aidev_agent.services.messages_handler.constants import TimeoutConfig
 from aidev_agent.services.messages_handler.factory import message_handler_factory
 from aidev_agent.services.sandbox_pv_files import (
     IMAGE_DOWNLOAD_URL_EXPIRES_IN,
-    MAX_SESSION_UPLOAD_FILE_SIZE,
-    MAX_SESSION_UPLOAD_FILES,
-    SESSION_UPLOAD_FILE_EXTENSIONS,
     SandboxFileError,
     SandboxFileInvalidArgumentError,
     SandboxFileInvalidRequestError,
@@ -20,6 +13,7 @@ from aidev_agent.services.sandbox_pv_files import (
     SandboxPvFileService,
     fill_user_image_urls,
     iter_user_images_missing_url,
+    validate_session_upload_files,
 )
 from bkapi_client_core.exceptions import HTTPResponseError
 from blueapps.core.exceptions import ClientBlueException
@@ -33,11 +27,6 @@ from aidev_bkplugin.constants import AGUI_PROTOCOL_VERSION, DEFAULT_SESSION_PAGE
 from aidev_bkplugin.services.agent_config import AgentConfigFetcher
 from aidev_bkplugin.utils import is_local_dev
 from aidev_bkplugin.views.base import PluginResourceManager, PluginViewSet, logger
-
-# file-kit 最新镜像进程内缓存：镜像发布不频繁，避免每次上传都打平台
-_UPLOAD_SNAPSHOT_TTL_SECONDS = 300
-_upload_snapshot_lock = threading.Lock()
-_upload_snapshot_cache: tuple[str, float] | None = None
 
 
 def _parse_positive_int(value, default):
@@ -233,12 +222,6 @@ class ChatSessionViewSet(PluginViewSet):
     @staticmethod
     def _resolve_upload_snapshot(rm) -> str:
         """走平台 image 表查询：取 file-kit 已构建成功的最新镜像。"""
-        global _upload_snapshot_cache
-        now = time.monotonic()
-        with _upload_snapshot_lock:
-            cached = _upload_snapshot_cache
-            if cached and cached[0] and now < cached[1]:
-                return cached[0]
         try:
             result = rm.get_client().api.retrieve_latest_skill_version_image()
         except Exception:
@@ -247,27 +230,9 @@ class ChatSessionViewSet(PluginViewSet):
         data = result.get("data") if isinstance(result, dict) else None
         image = data.get("image") if isinstance(data, dict) else ""
         image = image.strip() if isinstance(image, str) else ""
-        if image:
-            with _upload_snapshot_lock:
-                _upload_snapshot_cache = (image, time.monotonic() + _UPLOAD_SNAPSHOT_TTL_SECONDS)
-        else:
+        if not image:
             logger.warning("[pv_files] resolve_upload_snapshot empty")
         return image
-
-    @staticmethod
-    def _validate_pv_upload_files(files) -> None:
-        if not files:
-            raise ClientBlueException(message="files is required")
-        if len(files) > MAX_SESSION_UPLOAD_FILES:
-            raise ClientBlueException(message=f"单次上传文件不能超过 {MAX_SESSION_UPLOAD_FILES} 个")
-        for upload_file in files:
-            extension = PurePosixPath(upload_file.name.replace("\\", "/")).suffix.lower()
-            if extension not in SESSION_UPLOAD_FILE_EXTENSIONS:
-                raise ClientBlueException(message=f"文件类型 {extension or '无扩展名'} 不支持")
-            if upload_file.size > MAX_SESSION_UPLOAD_FILE_SIZE:
-                raise ClientBlueException(
-                    message=f"文件 {upload_file.name} 超过单文件大小限制 {MAX_SESSION_UPLOAD_FILE_SIZE} 字节"
-                )
 
     @action(["GET"], url_path="pv_files", detail=True)
     def pv_files(self, request, pk, **kwargs):
@@ -339,7 +304,6 @@ class ChatSessionViewSet(PluginViewSet):
         """批量上传文件到会话 PV。"""
         self._check_session_owner(request, pk, require_access=True)
         uploaded_files = request.FILES.getlist("files")
-        self._validate_pv_upload_files(uploaded_files)
         files = [
             {
                 "name": upload_file.name,
@@ -348,6 +312,11 @@ class ChatSessionViewSet(PluginViewSet):
             }
             for upload_file in uploaded_files
         ]
+        try:
+            validate_session_upload_files(files)
+        except SandboxFileError as exc:
+            return self._pv_exc_to_response(exc)
+
         svc = self._make_pv_file_service(request)
         snapshot = self._resolve_upload_snapshot(PluginResourceManager(username=request.user.username))
         if snapshot:
