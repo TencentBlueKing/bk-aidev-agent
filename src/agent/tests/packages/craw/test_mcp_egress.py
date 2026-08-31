@@ -100,13 +100,19 @@ class _Upstream(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else b""
-        self.seen.append({"auth": self.headers.get("X-Bkapi-Authorization"), "body": body})
+        self.seen.append({"method": "POST", "auth": self.headers.get("X-Bkapi-Authorization"), "body": body})
         payload = b'{"ok":true}'
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         self.wfile.write(payload)
+
+    def do_DELETE(self):
+        self.seen.append({"method": "DELETE", "auth": self.headers.get("X-Bkapi-Authorization"), "body": b""})
+        self.send_response(204)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
 
 @pytest.fixture
@@ -129,6 +135,21 @@ def test_egress_injects_leased_user_token(upstream):
         assert response.status_code == 200
         assert response.headers.get_list("content-length") == [str(len(response.content))]
         assert json.loads(_Upstream.seen[-1]["auth"]) == {"access_token": "user-token-aaa"}
+    finally:
+        egress.release()
+        egress.stop()
+
+
+def test_egress_proxies_delete_for_session_cleanup(upstream):
+    egress = McpEgress(port=0).start()
+    try:
+        egress.register_routes({"log-query": upstream})
+        assert egress.acquire("user-token-delete")
+        url = f"{egress.base_url}/egress/{SHARED_ID}/log-query/"
+        response = httpx.delete(url)
+        assert response.status_code == 204
+        assert _Upstream.seen[-1]["method"] == "DELETE"
+        assert json.loads(_Upstream.seen[-1]["auth"]) == {"access_token": "user-token-delete"}
     finally:
         egress.release()
         egress.stop()
