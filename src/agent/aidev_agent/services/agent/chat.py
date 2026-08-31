@@ -1169,6 +1169,8 @@ class ChatCompletionAgent(BaseModel):
         所有事件都由后台 producer 写入消息处理器。producer 会在 RUN_STARTED
         入队后立即 flush，既保持初始化事件顺序，也确保客户端在首帧前断开时
         producer 仍能继续执行并供后续请求 replay。
+
+        恢复事件的 Trace 上下文在入口同步捕获；队列和 producer 仍延迟到消费时启动。
         """
         from aidev_agent.services.resume_events import resume_events_for
 
@@ -1184,32 +1186,37 @@ class ChatCompletionAgent(BaseModel):
             if resume and not attach_only
             else None
         )
-        helper = GeneratorStreamingHelper(
-            thread_id=queue_thread_id or agent_input.thread_id,
-            defer_cleanup_on_complete=background_only,
-            producer_observer=observer,
-        )
-        run_id = agent_input.run_id or self.thread_id
-        cancel_event = helper.prepare_run(run_id)
-        producer = self._build_resume_aware_producer(
-            agui_entry,
-            agent_input,
-            agent_e=agent_e,
-            cfg=cfg,
-            resume=resume,
-            total_timeout=total_timeout,
-            producer_observer=observer,
-        )
-        yield from helper.stream(
-            producer,
-            # replay 模式下由 producer 在 EOD 写入并 flush 成功后更新会话终态；
-            # 消费者中断不会影响最终状态收敛。
-            on_complete=partial(self._on_complete, finalize_session=True),
-            event_handler=self.event_handler,
-            expected_run_id=run_id,
-            cancel_event=cancel_event,
-            attach_only=attach_only,
-        )
+
+        def stream() -> Generator[Any, None, None]:
+            # 不把 observer 放进惰性生成器：HTTP 入口 span 可能在首次消费前已经结束。
+            helper = GeneratorStreamingHelper(
+                thread_id=queue_thread_id or agent_input.thread_id,
+                defer_cleanup_on_complete=background_only,
+                producer_observer=observer,
+            )
+            run_id = agent_input.run_id or self.thread_id
+            cancel_event = helper.prepare_run(run_id)
+            producer = self._build_resume_aware_producer(
+                agui_entry,
+                agent_input,
+                agent_e=agent_e,
+                cfg=cfg,
+                resume=resume,
+                total_timeout=total_timeout,
+                producer_observer=observer,
+            )
+            yield from helper.stream(
+                producer,
+                # replay 模式下由 producer 在 EOD 写入并 flush 成功后更新会话终态；
+                # 消费者中断不会影响最终状态收敛。
+                on_complete=partial(self._on_complete, finalize_session=True),
+                event_handler=self.event_handler,
+                expected_run_id=run_id,
+                cancel_event=cancel_event,
+                attach_only=attach_only,
+            )
+
+        return stream()
 
     def _build_resume_aware_producer(
         self,

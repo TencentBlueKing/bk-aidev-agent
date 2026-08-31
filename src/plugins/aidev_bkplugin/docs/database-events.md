@@ -80,6 +80,12 @@ threadId、turnId、runId、interruptIds；终态还包含 events 与 persisted�
 开启 OTel 时，仅传递 W3C traceparent/tracestate；wxbot.event.consume 延续生产者
 trace。事件内容、接收者及完整异常不会作为该 span 的属性。
 
+恢复事件在 Agent 返回流之前同步捕获入口 Trace 上下文，每次执行独立保存。
+即使入口 span 已结束、流在其他线程或上下文中消费，READY 和终态事件仍使用同一
+入口快照；wxbot 消费和发送 span 由该快照关联。队列初始化、取消标识准备和后台执行
+仍在开始消费流时触发，未消费的流不启动任务、不发布事件。入口没有有效上下文或未安装
+OTel 时不制造 Trace ID，也不借用之后消费者的上下文。
+
 DatabaseEventBus 的 subscribe 注册的是持久订阅身份及路由，不是 Python 回调。
 其他插件可以注册自己的 subscriber/name/session_code，独立领取、确认投递并执行
 自己的处理逻辑；不要求 wxbot 和 Web 在同一进程调用 subscribe(callback)。
