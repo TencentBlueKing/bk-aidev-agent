@@ -94,6 +94,15 @@ def init_bk_aidev_agent_otel() -> None:
         set_metric_service(None)
         return
 
+    if _is_one_off_management_command():
+        # 一次性命令不采集指标或 Trace，避免退出时等待上报；无需获取远程 OT 配置。
+        otel_config.enable_metrics = False
+        otel_config.enable_traces = False
+        set_metric_service(None)
+        BkAidevAgentInstrumentor(config=otel_config).instrument()
+        logger.info("[aidev_bkplugin] metrics and traces disabled for one-off management command")
+        return
+
     if getattr(otel_config, "trace_exporter", "otlp") == "logging":
         # 本地评测只需要 trace/span，禁用远程 endpoint 探测和指标上报，
         # 由 Agent SDK 的 LoggingSpanExporter 写入应用日志。
@@ -122,14 +131,6 @@ def init_bk_aidev_agent_otel() -> None:
     endpoints.extend(get_otel_endpoint_by_env())
 
     otel_config.otel_endpoints = endpoints
-    if _is_one_off_management_command():
-        # 一次性命令不启动指标采集线程，避免退出时等待最后一次上报；Trace 保持原配置。
-        # 在两种指标上报路径之前统一关闭，平台配置也不能重新开启。
-        otel_config.enable_metrics = False
-        set_metric_service(None)
-        BkAidevAgentInstrumentor(config=otel_config).instrument()
-        logger.info("[aidev_bkplugin] metric export skipped for one-off management command")
-        return
     if configure_metric_identity is None or BkPluginMetricService is None or MetricExportSettings is None:
         logger.info("[aidev_bkplugin] metric OpenTelemetry extras unavailable; metric export skipped")
         otel_config.enable_metrics = False

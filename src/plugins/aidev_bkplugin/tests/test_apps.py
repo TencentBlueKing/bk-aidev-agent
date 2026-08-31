@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import aidev_agent.packages as aidev_agent_packages
 import pytest
 from aidev_bkplugin import apps
+from aidev_bkplugin.services.agent_config import AgentConfigFetcher
 
 
 def test_init_otel_disabled_skips_remote_initialization(mocker):
@@ -78,17 +79,22 @@ def _mock_otel_inputs(mocker, agent_info, metric_settings):
         ["django-admin.py", "migrate"],
     ],
 )
-def test_management_commands_skip_both_metric_export_paths(mocker, monkeypatch, argv):
+@pytest.mark.parametrize("trace_exporter", ["otlp", "logging"])
+def test_management_commands_disable_metrics_and_traces_before_remote_config(mocker, monkeypatch, argv, trace_exporter):
     monkeypatch.setattr(apps.sys, "argv", argv)
     config, instrumentor = _mock_otel_inputs(mocker, {"otel_info": {"enable_metrics": True}}, None)
     config.enable_traces = True
+    config.trace_exporter = trace_exporter
     metric_service = mocker.patch.object(apps, "BkPluginMetricService")
     set_metric_service = mocker.patch.object(apps, "set_metric_service")
 
     apps.init_bk_aidev_agent_otel()
 
     assert config.enable_metrics is False
-    assert config.enable_traces is True
+    assert config.enable_traces is False
+    AgentConfigFetcher.get_info.assert_not_called()
+    apps.get_otel_endpoint_by_json_str.assert_not_called()
+    apps.get_otel_endpoint_by_env.assert_not_called()
     apps.MetricExportSettings.from_agent_info.assert_not_called()
     metric_service.assert_not_called()
     set_metric_service.assert_called_once_with(None)
@@ -115,6 +121,7 @@ def test_service_entries_preserve_metric_configuration(mocker, monkeypatch, argv
         enabled=enabled, export_via_celery=via_celery, export_interval_millis=1500, export_timeout_millis=7000
     )
     config, instrumentor = _mock_otel_inputs(mocker, {}, metric_settings)
+    config.enable_traces = not enabled
     metric_service = mocker.patch.object(apps, "BkPluginMetricService")
     metric_service.return_value.start.return_value = enabled
     mocker.patch.object(apps, "configure_metric_identity")
@@ -123,6 +130,7 @@ def test_service_entries_preserve_metric_configuration(mocker, monkeypatch, argv
     apps.init_bk_aidev_agent_otel()
 
     assert config.enable_metrics is enabled
+    assert config.enable_traces is (not enabled)
     assert config.metric_provider_managed_externally is (enabled and via_celery)
     assert metric_service.called is via_celery
     apps.MetricExportSettings.from_agent_info.assert_called_once()

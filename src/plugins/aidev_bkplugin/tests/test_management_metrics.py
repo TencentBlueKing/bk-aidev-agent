@@ -10,7 +10,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 AGENT_ROOT = PLUGIN_ROOT.parents[1] / "agent"
 
 # Exercise the actual plugin initializer and SDK shutdown without a database,
-# collector or broker. A regression delays exit during the final metric export.
+# collector or broker. A regression delays exit during metric/trace shutdown.
 EXIT_PROBE = dedent("""
     import sys
     import threading
@@ -23,8 +23,9 @@ EXIT_PROBE = dedent("""
     from aidev_bkplugin.services.otel_metrics import BkPluginMetricService
     from aidev_agent.packages.opentelemetry.otel_service import BkAgentOTelService
     from aidev_agent.packages.opentelemetry.utils import ExporterType
-    from opentelemetry import metrics
+    from opentelemetry import metrics, trace
     from opentelemetry.sdk.metrics.export import MetricExporter, MetricExportResult
+    from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 
     class SlowExporter(MetricExporter):
         def export(self, metrics_data, timeout_millis=10000, **kwargs):
@@ -36,6 +37,14 @@ EXIT_PROBE = dedent("""
 
         def shutdown(self, timeout_millis=30000, **kwargs):
             pass
+
+    class SlowSpanExporter(SpanExporter):
+        def export(self, spans):
+            threading.Event().wait(20)
+            return SpanExportResult.SUCCESS
+
+        def shutdown(self):
+            threading.Event().wait(20)
 
     def instrumentor(config):
         # Keep the real SDK provider lifecycle; avoid unrelated agent wrappers.
@@ -57,24 +66,27 @@ EXIT_PROBE = dedent("""
         patch.object(apps, "BkAidevAgentInstrumentor", side_effect=instrumentor),
         patch.object(apps, "push_bkm_metrics_task", SimpleNamespace(delay=lambda *args: None)),
         patch.object(BkAgentOTelService, "_create_metric_exporter", side_effect=lambda *args: SlowExporter()),
+        patch.object(BkAgentOTelService, "_create_trace_exporter", side_effect=lambda *args: SlowSpanExporter()),
         patch.object(BkPluginMetricService, "_create_celery_exporter", side_effect=lambda: SlowExporter()),
     ):
         apps.init_bk_aidev_agent_otel()
         metrics.get_meter("exit-probe").create_counter("probe.count").add(1)
+        with trace.get_tracer("exit-probe").start_as_current_span("probe"):
+            pass
         print("command returned", flush=True)
 """)
 
 
 @pytest.mark.parametrize("transport", ["direct", "celery"])
 @pytest.mark.parametrize("command", ["migrate", "upgrade_sessions"])
-def test_management_initialization_exits_without_final_metric_export(transport, command):
+def test_management_initialization_exits_without_metric_or_trace_export(transport, command):
     env = {
         **os.environ,
         "DJANGO_SETTINGS_MODULE": "tests.settings",
         "PYTHONPATH": os.pathsep.join([str(PLUGIN_ROOT), str(AGENT_ROOT)]),
         "BKAI_AGENT_OTEL_ENABLED": "true",
         "BKAI_AGENT_ENABLE_METRICS": "true",
-        "BKAI_AGENT_ENABLE_TRACES": "false",
+        "BKAI_AGENT_ENABLE_TRACES": "true",
         "BKAI_AGENT_ENABLE_LOGS": "false",
         "BKAI_AGENT_TRACE_EXPORTER": "otlp",
     }
