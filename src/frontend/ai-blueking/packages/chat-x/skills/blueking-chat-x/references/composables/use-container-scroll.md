@@ -2,7 +2,7 @@
 
 > 导入：`import { useContainerScroll } from '@blueking/chat-x'` ｜ since 1.0.0
 
-useContainerScrollProvider 在滚动容器与底部锚点上绑定 IntersectionObserver、scroll、wheel，提供 isScrollBottom、scrollBottomHeight、autoScrollEnabled、toScrollBottom/toScrollTop 及防抖「返回底部」按钮状态。 useContainerScrollConsumer 通过 inject 在子组件中获取同一套控制，无需 props 透传。 典型用于流式输出时仅在用户位于底部时自动滚底。MessageContainer 与 ScrollBtn 配合使用。
+useContainerScrollProvider 在滚动容器与底部锚点上绑定 IntersectionObserver、scroll、wheel，提供 isScrollBottom、scrollBottomHeight、autoScrollEnabled、jumpToBottom、toScrollBottom/toScrollTop 及防抖「返回底部」按钮状态。 toScrollBottom 缺省按距底部距离自动选择行为：超过 INSTANT_SCROLL_DISTANCE（600px）时瞬时贴底，否则平滑滚动，避免切换会话时出现长距离平滑滚动动画。 useContainerScrollConsumer 通过 inject 在子组件中获取同一套控制，无需 props 透传。 典型用于流式输出时仅在用户位于底部时自动滚底。MessageContainer 与 ScrollBtn 配合使用。
 
 **关联**：message-container（Provider 挂载于消息列表滚动区域）、scroll-btn（使用 debouncedShowScrollBottomBtn 与 toScrollBottom）、chat-container（组合消息区与输入区时的整体布局上下文）
 
@@ -32,7 +32,10 @@ useContainerScrollProvider(containerRef, bottomRef)
   ├── wheel 事件（passive）→ deltaY < 0 时 autoScrollEnabled=false
   │     （用户向上滚动时暂停自动滚动）
   │
-  ├── toScrollBottom() → autoScrollEnabled=true + bottomRef.scrollIntoView('smooth')
+  ├── jumpToBottom()   → autoScrollEnabled=true + container.scrollTop = scrollHeight（瞬时）
+  ├── toScrollBottom(behavior?) → autoScrollEnabled=true；
+  │     behavior 缺省时：距底部 > INSTANT_SCROLL_DISTANCE(600) → jumpToBottom()
+  │     否则 / 显式 'smooth' → bottomRef.scrollIntoView({ behavior:'smooth', block:'end' })
   ├── toScrollTop()    → containerRef.scrollTo({ top:0, behavior:'smooth' })
   │
   └── provide(CONTAINER_SCROLL_TOKEN, computed(() => ({
@@ -40,6 +43,7 @@ useContainerScrollProvider(containerRef, bottomRef)
             isScrollBottom,             // ShallowRef<boolean>（保持响应式）
             scrollBottomHeight,         // ShallowRef<number>（保持响应式）
             debouncedShowScrollBottomBtn, // customRef，防抖显示返回底部按钮
+            jumpToBottom,
             toScrollBottom,
             toScrollTop,
         })))

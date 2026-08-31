@@ -10,6 +10,8 @@ aiSummary: >
 relatedComponents:
   - slug: toolcall-render
     relation: 工具调用详情中渲染描述与参数
+  - slug: tool-message
+    relation: 工具返回内容同样由 DescPanel 承载
   - slug: highlight-keyword
     relation: 键值与文本匹配关键词高亮
 sinceVersion: 1.0.0
@@ -37,17 +39,36 @@ sinceVersion: 1.0.0
 ## 组件结构
 
 ```
-.ai-toolcall-desc（flex column，gap: 4px，padding: 12px，background: #f5f7fa）
-├── .desc-title（font-size: 12px，font-weight: bold，color: #313238，margin-bottom: 6px）
-│     └── {{ title }}
-└── .desc-panel（flex column，gap: 4px）
+.ai-toolcall-desc（flex column，padding: 0 16px，max-height: 300px，overflow-y: auto，
+                  font-size: 12px，line-height: 20px，color: #4d4f56，background: #f5f7fa，radius: 2px）
+├── .desc-title（sticky top: 0，flex + gap 4px，padding: 12px 0 4px，加粗，背景同面板）
+│     ├── {{ title }}
+│     └── .desc-copy（v-if desc；CopyIcon 14×14，margin-left: auto，默认 visibility: hidden）
+└── .desc-panel（flex column，gap: 4px，padding-bottom: 12px）
       ├── [JSON 对象/数组] v-for 逐项渲染 .desc-panel-item
-      │     ├── .desc-label  → HighlightKeyword(key)
+      │     ├── .desc-label  → HighlightKeyword(key) + 半角冒号
       │     └── .desc-value → HighlightKeyword(值的文本或 JSON 字符串)，`word-break: break-all`
       └── [非 JSON / 解析失败] HighlightKeyword(data)，`word-break: break-all`
 ```
 
+面板整体限高 **300px**，超出后内部滚动，`.desc-title` 吸顶不动。纵向留白由标题的 `padding-top` 与内容区的 `padding-bottom` 承担（容器自身不设上下 padding），避免标题吸顶时上方留白漏出滚动内容。
+
 > **说明**：键值与纯文本均通过 `HighlightKeyword` 展示，长内容依赖换行与面板宽度展示，**不再**使用 `v-overflow-tips` 悬停气泡。
+
+## 复制原始内容
+
+`desc` 有值时，标题右侧渲染复制按钮（`.desc-copy`），默认 `visibility: hidden`，鼠标移入面板后显示，图标默认 `#979ba5`、hover `#3a84ff`：
+
+```typescript
+// 复制的是原始 desc 字符串，而非解析后的展示内容，便于粘贴后二次使用
+const handleCopy = () => {
+  if (props.desc) {
+    copy(props.desc);
+  }
+};
+```
+
+复制能力来自 [useClipboard](/composables/use-clipboard)，复制结果的成功/失败提示由该 composable 统一处理。`desc` 为空时按钮不渲染。
 
 ## desc 解析规则
 
@@ -161,7 +182,7 @@ JSON 数组同样被视为 `object`，以数组索引（`0:`、`1:`…）作为�
 
 ## 无 desc
 
-`desc` 为可选，不传时面板仅显示标题，内容区域为空：
+`desc` 为可选，不传时面板仅显示标题，内容区域为空，复制按钮也不渲染：
 
 <div class="demo">
   <DescPanel title="暂无调用参数" />
@@ -173,14 +194,16 @@ JSON 数组同样被视为 `object`，以数组索引（`0:`、`1:`…）作为�
 
 | 属性名 | 类型     | 必填 | 说明                                                                                |
 | ------ | -------- | ---- | ----------------------------------------------------------------------------------- |
-| title  | `string` | ✓    | 面板标题，始终渲染在顶部                                                            |
-| desc   | `string` | —    | 描述内容；尝试 `JSON.parse`，成功且为 `object` 类型时渲染键值对列表，否则渲染纯文本 |
+| title  | `string` | ✓    | 面板标题，始终渲染在顶部（吸顶）                                                    |
+| desc   | `string` | —    | 描述内容；尝试 `JSON.parse`，成功且为 `object` 类型时渲染键值对列表，否则渲染纯文本；有值时才渲染复制按钮 |
 
 ## 使用场景
 
-`DescPanel` 由 `ToolcallRender` 内部在折叠面板中使用，分别用于渲染工具调用的 **输入参数**（`arguments`）和 **输出结果**（`toolMessage.description`）。通常不需要手动引入，如需独立使用，直接传入 `title` 和 `desc` 即可。
+`DescPanel` 主要由 `ToolcallRender` 在展开的详情面板中使用，渲染两块内容：**描述**（`function.description`）与**参数**（`function.arguments`）；工具返回结果则由 `ToolMessage` 再包一层 `DescPanel`（标题「返回内容」）展示。通常不需要手动引入，如需独立使用，直接传入 `title` 和 `desc` 即可。
 
 ## 关联组件
 
 - [ToolcallRender](/components/agent/toolcall-render) — 主要使用场景
+- [ToolMessage](/components/message/tool-message) — 工具返回内容面板
 - [HighlightKeyword](/components/helper/highlight-keyword) — 键值高亮
+- [useClipboard](/composables/use-clipboard) — 复制按钮能力来源

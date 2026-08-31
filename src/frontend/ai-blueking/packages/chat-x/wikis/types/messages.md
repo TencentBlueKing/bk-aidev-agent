@@ -220,11 +220,16 @@ type ToolCall = {
   function: FunctionCall;
 };
 
+// 调用类型：不填等价于 function
+type FunctionCallType = 'function' | 'mcp' | 'skill';
+
 type FunctionCall = {
   name: string;
   arguments: string;
   description?: string;
   mcpName?: string;
+  // 决定 ToolcallRender 头部前缀（调用工具 / 调用 MCP / 读取 Skill）
+  type?: FunctionCallType;
 };
 
 // 示例

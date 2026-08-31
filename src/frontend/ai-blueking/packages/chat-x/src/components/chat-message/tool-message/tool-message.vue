@@ -24,7 +24,5 @@
     font-size: var(--ai-font-size, 12px);
     line-height: var(--ai-line-height-compact, 20px);
     color: #313238;
-    background: #f5f7fa;
-    border-radius: 2px;
   }
 </style>

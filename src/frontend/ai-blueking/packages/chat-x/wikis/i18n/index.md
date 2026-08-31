@@ -9,7 +9,7 @@ import { t } from '@blueking/chat-x';
 // 模拟当前语言（实际由 Cookie 在页面加载时确定）
 const simulateLang = ref<'zh' | 'en'>('zh');
 
-const langKeys = ['发送', '停止', '复制', '重新生成', '点赞', '不满意', '引用', '返回底部', '停止生成', '深度思考', '思考中', '已思考完成', '思考失败', '复制成功', '复制失败', '调用中', '调用成功', '调用失败', '上传文件', '更多'] as const;
+const langKeys = ['发送', '停止', '复制', '重新生成', '点赞', '不满意', '引用', '返回底部', '停止生成', '深度思考', '思考中', '已思考完成', '思考失败', '复制成功', '复制失败', '正在调用', '正在读取', '调用工具', '调用 MCP', '读取 Skill', '上传文件', '更多'] as const;
 
 const enMap: Record<string, string> = {
   发送: 'Send', 停止: 'Stop', 复制: 'Copy', 重新生成: 'Regenerate',
@@ -17,7 +17,7 @@ const enMap: Record<string, string> = {
   停止生成: 'Stop generating', 深度思考: 'Deep Thinking', 思考中: 'Thinking...',
   已思考完成: 'Thinking Completed', 思考失败: 'Thinking Failed',
   复制成功: 'Copy Success', 复制失败: 'Copy Failed',
-  调用中: 'Calling...', 调用成功: 'Call Success', 调用失败: 'Call Failed',
+  正在调用: 'Calling', 正在读取: 'Reading', 调用工具: 'Call Tool', '调用 MCP': 'Call MCP', '读取 Skill': 'Read Skill',
   上传文件: 'Upload File', 更多: 'More',
 };
 
@@ -142,17 +142,19 @@ t('未定义的文本'); // ✗ 编译报错
 | `思考失败`   | Thinking Failed    |
 | `耗时`       | Duration           |
 
-### Tool Call / MCP
+### Tool Call / MCP / Skill
 
-| 中文 key     | 英文         |
-| ------------ | ------------ |
-| `调用工具：` | Call Tool:   |
-| `调用 MCP：` | Call MCP:    |
-| `调用中`     | Calling...   |
-| `调用成功`   | Call Success |
-| `调用失败`   | Call Failed  |
-| `参数`       | Parameters   |
-| `描述`       | Description  |
+| 中文 key      | 英文       |
+| ------------- | ---------- |
+| `调用工具`    | Call Tool  |
+| `调用 MCP`    | Call MCP   |
+| `读取 Skill`  | Read Skill |
+| `正在调用`    | Calling    |
+| `正在读取`    | Reading    |
+| `参数`        | Parameters |
+| `描述`        | Description |
+
+> 结束态的状态词复用通用的 `成功` / `失败`（见 FlowAgent 表），耗时复用 `耗时`。头部完整文案由「前缀 + 工具名 +（状态词，耗时：xx）」拼接，详见 [ToolcallRender](/components/agent/toolcall-render)。
 
 ### 图片
 

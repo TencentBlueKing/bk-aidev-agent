@@ -4,7 +4,7 @@
 
 聊天输入区，组合富文本输入、快捷指令、附件、引用、发送/停止等交互。 源码位置：src/components/chat-input/chat-input.vue。
 
-**关联**：shortcut-btns（底部附件区默认展示的快捷指令列表）、shortcut-btn（已选快捷指令以单按钮形式展示并可关闭）、shortcut-render（快捷指令含 components 时由外层唤起表单渲染）、chat-container（顶层聊天布局中作为输入区子组件）、cite-content（消息引用区展示选中的上下文片段）
+**关联**：shortcut-btns（底部附件区默认展示的快捷指令列表）、shortcut-btn（已选快捷指令以单按钮形式展示并可关闭）、shortcut-render（快捷指令含 components 时由外层唤起表单渲染）、chat-container（顶层聊天布局中作为输入区子组件）、model-selector（传入 models 后在发送按钮左侧默认展示模型选择器）、cite-content（消息引用区展示选中的上下文片段）
 
 ---
 
@@ -22,7 +22,7 @@
 ## 组件结构
 
 ```
-chat-input-container
+ai-chat-input-container（padding: 0 16px 16px，底部间距 16px）
 ├── slot#top（容器顶部，在输入框框体外侧）
 ├── slot#interrupt（容器顶部，在输入框框体外侧，通常展示中断/审批提示）
 └── chat-input（框体，受 inputMaxHeight 控制）
@@ -33,6 +33,7 @@ chat-input-container
         ├── FileUploadBtn（仅当 supportUpload 为 true 时显示，在 slot#attachment 外部）
         ├── 分隔线（仅当 supportUpload 为 true 且有快捷指令时显示）
         ├── slot#attachment（默认：ShortcutBtns 或已选 ShortcutBtn + 关闭图标）
+        ├── slot#before-send（默认：传入 models 时渲染 ModelSelector）
         └── slot#send-icon（默认：发送/停止图标，仅替换图标，按钮容器保留）
 ```
 
@@ -178,9 +179,24 @@ const handleSendMessage = async (
 
 **渲染效果**（顶部引用区，点击右侧 × 关闭引用）
 
-## Prompt 模板（`/` 触发）
+## Skill 列表（`/` 触发）
 
-通过 `prompts` 传入字符串数组，用户在编辑器中输入 `/` 唤出 Prompt 菜单，支持模糊搜索，选择后自动填入编辑器：
+通过 `skills` 传入 Skill 列表，用户在编辑器中输入 `/` 唤出 [AiSkillList](/components/input/ai-skill-list) 菜单，支持按名称/编码模糊搜索，选择后以 Skill 标签嵌入编辑器。无 icon 或 icon 加载失败时展示首字母 fallback。已插入的 Skill 不会再出现在下拉菜单中（自动去重）。
+
+```vue
+<script setup lang="ts">
+  import type { ISkillListItem } from '@blueking/chat-x';
+
+  const skills: ISkillListItem[] = [
+    { skill_code: 'translate', skill_name: '翻译', description: '翻译文本', icon: '' },
+    { skill_code: 'summarize', skill_name: '总结', description: '总结内容', icon: 'https://example.com/icon.png' },
+  ];
+</script>
+```
+
+## Prompt 模板（`\` 触发）
+
+通过 `prompts` 传入字符串数组，用户在编辑器中输入 `\` 唤出 Prompt 菜单，支持模糊搜索，选择后自动填入编辑器：
 
 ```vue
 <script setup lang="ts">
@@ -478,6 +494,57 @@ const handleSendMessage = async (
 
 **渲染效果**（顶部自定义模型信息与中断提示）
 
+## 模型选择
+
+传入 `models` 后，会在发送按钮左侧展示 [ModelSelector](/components/input/model-selector)。选中值（模型的 `llm_name`）通过 `v-model:selected-model` 双向绑定，`@model-change` 可获取完整模型对象。能力标签由组件依据 `property` 自动派生。
+
+```vue
+<template>
+  <ChatInput
+    v-model="inputValue"
+    v-model:selected-model="selectedModel"
+    :message-status="messageStatus"
+    :models="models"
+    :on-send-message="handleSendMessage"
+    @model-change="handleModelChange"
+  />
+</template>
+
+<script setup lang="ts">
+  import { ref } from 'vue';
+  import { ChatInput, MessageStatus, type IModelOption, type TagSchema } from '@blueking/chat-x';
+
+  const inputValue = ref('');
+  // 选中值为 llm_name
+  const selectedModel = ref('GPT-4');
+  const messageStatus = ref(MessageStatus.Complete);
+  const models: IModelOption[] = [
+    { id: 1, llm_name: 'GPT-4', property: { support_thinking: true } },
+    { id: 2, llm_name: 'Claude 3', property: {} },
+  ];
+
+  const handleSendMessage = async (content: string, docSchema: TagSchema) => {
+    /* 发送时可读取 selectedModel.value */
+  };
+
+  const handleModelChange = (model: IModelOption) => {
+    console.log('切换模型:', model);
+  };
+</script>
+```
+
+也可通过 `#model-selector` 插槽完全自定义选择器，插槽参数为 `{ models, selectedModel }`：
+
+```vue
+<template>
+  <ChatInput v-model="inputValue" :models="models">
+    <template #model-selector="{ models, selectedModel }">
+      <span>当前：{{ selectedModel || '未选择' }}（共 {{ models.length }} 个）</span>
+    </template>
+  </ChatInput>
+</template>
+```
+
 ## Expose（模板引用）
 
 通过 `ref` 获取组件实例后可调用以下方法：
@@ -512,14 +579,17 @@ const handleSendMessage = async (
 | 属性名             | 类型                                                                       | 默认值   | 必填 | 说明                                                    |
 | ------------------ | -------------------------------------------------------------------------- | -------- | ---- | ------------------------------------------------------- |
 | modelValue         | `string \| TagSchema`                                                      | -        | ✅   | 编辑器的值，支持 `v-model`                              |
+| selectedModel      | `string`                                                                   | -        | -    | 当前选中模型的 `llm_name`，支持 `v-model:selected-model` |
 | messageStatus      | `MessageStatus`                                                            | -        | -    | 消息状态，控制按钮；输入为空时内部强制 `disabled`       |
 | cite               | `string`                                                                   | `''`     | -    | 引用内容，支持 `v-model:cite`，不为空时显示引用区       |
-| prompts            | `string[]`                                                                 | `[]`     | -    | Prompt 模板列表，输入 `/` 触发                          |
+| skills             | `ISkillListItem[]`                                                         | `[]`     | -    | Skill 列表，输入 `/` 触发，选中后插入 Skill 标签        |
+| prompts            | `string[]`                                                                 | `[]`     | -    | Prompt 模板列表，输入 `\` 触发                          |
 | resources          | `IAiSlashMenuItem[]`                                                       | `[]`     | -    | 资源列表，输入 `@` 触发，按 `type` 分组展示             |
 | shortcuts          | `Shortcut[]`                                                               | -        | -    | 快捷指令列表，显示在底部工具栏                          |
+| models             | `IModelOption[]`                                                           | -        | -    | 可选模型列表，传入后在发送按钮左侧展示模型选择器        |
 | shortcutId         | `string`                                                                   | -        | -    | 当前选中的快捷指令 ID，匹配时列表收起为已选样式         |
 | placeholder        | `string`                                                                   | 动态默认 | -    | 编辑器占位符，支持多行；未传时按 skills/prompts/resources 动态拼接 |
-| inputMaxHeight     | `number`                                                                   | `200`    | -    | 框体最大高度（px），有文件时自动加上文件预览区高度      |
+| inputMaxHeight     | `number`                                                                   | `280`    | -    | 框体最大高度（px），有文件时自动加上文件预览区高度      |
 | defaultUploadFiles | `UploadFile[]`                                                             | -        | -    | 预设已上传的文件列表                                    |
 | sendDisabledTip    | `string`                                                                   | -        | -    | 业务阻塞发送时的 tooltip 提示；传入后发送按钮置灰，点击、Enter 与 `triggerSendMessage()` 均不会发送 |
 | supportUpload      | `boolean`                                                                  | `true`   | -    | 是否显示文件上传按钮                                    |
@@ -546,6 +616,7 @@ const handleSendMessage = async (
 | 事件名            | 参数                                                                     | 触发时机                                                  |
 | ----------------- | ------------------------------------------------------------------------ | --------------------------------------------------------- |
 | update:modelValue | `(value: string \| TagSchema, selectedResourceList: IAiSlashMenuItem[])` | 编辑器值变化时触发；第二个参数为当前已选中的 `@` 资源列表 |
+| modelChange       | `(model: IModelOption)`                                                  | 用户切换模型时触发                                        |
 | selectShortcut    | `(shortcut: Shortcut)`                                                   | 点击底部快捷指令按钮                                      |
 | deleteShortcut    | -                                                                        | 点击已选快捷指令旁的关闭按钮                              |
 
@@ -558,6 +629,7 @@ const handleSendMessage = async (
 | input-header | -                                  | 框体内顶部，替换引用区（`CiteContent`）                    |
 | files        | `{ files: Partial<UploadFile>[] }` | 文件预览区                                                 |
 | attachment   | -                                  | 底部快捷指令区，`FileUploadBtn` 在其左侧，不受此 slot 影响 |
+| model-selector | `{ models: IModelOption[]; selectedModel: string \| undefined }` | 发送按钮左侧模型选择区，默认渲染 ModelSelector             |
 | send-icon    | -                                  | 发送按钮内图标，按钮的点击逻辑和样式仍由组件控制           |
 
 ### Expose
@@ -580,18 +652,10 @@ const handleSendMessage = async (
 
 ## 类型定义
 
+> `MessageStatus` 完整取值见 [常量枚举](../../types/constants)。与输入区相关：`pending` / `streaming` / `fetching` → 停止按钮；`complete` / `completed` / `error` / `stop` → 发送；`disabled` → 置灰。
+
 ```typescript
 import type { UserMessage } from '@blueking/chat-x';
-
-// 消息状态
-enum MessageStatus {
-  Pending = 'pending', // 等待中（显示停止按钮）
-  Streaming = 'streaming', // 流式输出中（显示停止按钮）
-  Complete = 'complete', // 完成（显示发送按钮）
-  Error = 'error', // 错误（显示发送按钮）
-  Stop = 'stop', // 已停止（显示发送按钮）
-  Disabled = 'disabled', // 禁用（发送按钮置灰）
-}
 
 // 上传状态
 enum UploadStatus {

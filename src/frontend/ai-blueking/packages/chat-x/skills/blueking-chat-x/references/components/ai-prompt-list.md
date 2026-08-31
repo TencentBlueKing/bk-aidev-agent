@@ -2,7 +2,9 @@
 
 > 能力域：输入交互 ｜ 导入：`import { AiPromptList } from '@blueking/chat-x'` ｜ since 1.0.0
 
-/ Prompt 选择列表，供 AiSlashInput 插入模板文本。 源码位置：src/components/chat-input/ai-slash-input/ai-prompt-list/ai-prompt-list.vue。
+\ Prompt 选择列表，供 AiSlashInput 插入模板文本。 源码位置：src/components/chat-input/ai-slash-input/ai-prompt-list/ai-prompt-list.vue。
+
+**关联**：ai-slash-input（输入 \ 时由 AiSlashInput tippy 菜单渲染）
 
 ---
 
@@ -13,13 +15,13 @@
 ## 源码事实
 
 - **源码位置**：`src/components/chat-input/ai-slash-input/ai-prompt-list/ai-prompt-list.vue`
-- **能力说明**：/ Prompt 选择列表，供 AiSlashInput 插入模板文本。
+- **能力说明**：`\` Prompt 选择列表，供 AiSlashInput 插入模板文本。
 
 ## API 摘要
 
 ### Props
 
-- `{ onSelect: (prompt: string) =`
+- `{ onSelect: (prompt: string) => void; prompts: string[]; }`
 
 ### Emits
 

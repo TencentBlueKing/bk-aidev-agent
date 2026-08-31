@@ -1,6 +1,6 @@
 # LoadingMessage 加载消息
 
-> 能力域：消息系统 ｜ 导入：`import { LoadingMessage } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：消息系统 ｜ 导入：`import { LoadingMessage } from '@blueking/chat-x'` ｜ since 0.0.20
 
 消息列表中的加载占位，默认使用 AiLoading，也支持默认插槽覆盖。 源码位置：src/components/chat-message/loading-message/loading-message.vue。
 
@@ -9,46 +9,60 @@
 ---
 
 # LoadingMessage 加载中消息
+
 ## 源码事实
 
 - **源码位置**：`src/components/chat-message/loading-message/loading-message.vue`
 - **能力域**：消息系统
 - **能力说明**：消息列表中的加载占位，默认使用 AiLoading，也支持默认插槽覆盖。
 
-> **能力域**：消息系统
+> **导出说明**：`LoadingMessage` **未**从包入口导出。消费方经 `MessageRender`（`role: 'loading'`）或由 `MessageContainer` 自动注入。下文 `LoadingMessageComp` 为文档站内部示例。
 
-加载等待状态组件，展示 AI 正在处理请求时的过渡动画。由旋转渐变环 + 脉冲星形图标（蓝→紫→粉渐变）和"请求中..."文案组成。支持通过默认插槽自定义加载文案。
+加载等待状态组件：`AiLoading`（18px）+ 默认文案「请求中...」。可通过默认插槽自定义文案。
 
-> **提示**：此组件通常**不需要手动使用**，`MessageContainer` 会在满足条件时自动注入。
+> **提示**：通常**不需要手动使用**，`MessageContainer` / `useMessageGroup` 会在满足条件时自动注入。
 
 ## 渲染效果
 
 ## 基础用法
 
-组件无 Props，直接引入渲染即可：
+组件无 Props。文档站内部示例：
 
 ```vue
 <template>
-  <LoadingMessage />
+  <LoadingMessageComp />
+</template>
+```
+
+消费方经 `MessageRender`：
+
+```vue
+<template>
+  <MessageRender
+    :message="{
+      id: 'loading',
+      messageId: '',
+      role: MessageRole.Loading,
+      content: '',
+      status: MessageStatus.Pending,
+    }"
+  />
 </template>
 
 <script setup lang="ts">
-  import { LoadingMessage } from '@blueking/chat-x';
+  import { MessageRender, MessageRole, MessageStatus } from '@blueking/chat-x';
 </script>
 ```
 
 ## 自定义加载文案
 
-通过默认插槽可覆盖默认的"请求中..."文案：
+通过默认插槽覆盖「请求中...」：
 
 ```vue
 <template>
-  <LoadingMessage>正在思考中，请稍候...</LoadingMessage>
+  <!-- 文档站内部示例 -->
+  <LoadingMessageComp>正在思考中，请稍候...</LoadingMessageComp>
 </template>
-
-<script setup lang="ts">
-  import { LoadingMessage } from '@blueking/chat-x';
-</script>
 ```
 
 ## 动画说明
@@ -64,15 +78,18 @@
 
 ## 在 MessageContainer 中的自动注入
 
-`MessageContainer` 在构建消息分组列表时，检测到**消息列表最后一条为用户消息**（`role === 'user'`）时，自动在末尾追加一个 Loading 消息组：
+`useMessageGroup` 构建分组时，若**最后一条为用户消息**且 **`renderMode !== RenderMode.Share`**，自动在末尾追加 Loading 组：
 
 ```typescript
-// MessageContainer 内部逻辑（简化）
-if (messages.at(-1)?.role === MessageRole.User) {
+// use-message-group.ts（简化）
+const shouldAppendLoading =
+  messages.at(-1)?.role === MessageRole.User && renderMode !== RenderMode.Share;
+
+if (shouldAppendLoading) {
   list.push({
     messages: [
       {
-        role: MessageRole.Loading, // 'loading'
+        role: MessageRole.Loading,
         content: '',
         status: MessageStatus.Pending,
         id: 'loading',
@@ -84,7 +101,8 @@ if (messages.at(-1)?.role === MessageRole.User) {
 }
 ```
 
-当下一条 AI 消息（`role: 'assistant'`）到来后，最后一条不再是用户消息，Loading 组自动消失。
+- 下一条 AI 消息到来后，末尾不再是 user，Loading 组自动消失
+- **分享预览**（`renderMode === RenderMode.Share`）**不会**注入 Loading，避免分享页出现「请求中」占位
 
 **触发示例**：
 
@@ -124,6 +142,7 @@ if (messages.at(-1)?.role === MessageRole.User) {
 - **默认插槽**：可通过默认插槽自定义加载文案，未传入时显示内置的 "请求中..."
 - **i18n 支持**：默认文案 "请求中..." 通过内置 `t()` 函数处理，英文环境自动显示 "Requesting..."
 - **选择模式**：`MessageContainer` 开启 `enableSelection` 时，Loading 消息组不显示复选框
+- **分享模式**：`renderMode === RenderMode.Share` 时不自动注入 Loading
 - **自动生命周期**：Loading 组随消息列表变化自动插入/移除，无需手动控制
 
 ## API

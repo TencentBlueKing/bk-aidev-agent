@@ -17,7 +17,7 @@
 
 > **能力域**：内容渲染
 
-展示被引用文本片段的紧凑条带组件。固定高度 28px，左侧引用图标 + 单行截断文本 + 可选关闭图标，背景灰色（`#f5f7fa`）。
+展示被引用文本片段的紧凑条带组件。固定高度 28px，左侧引用图标 + 单行截断文本 + 可选关闭图标，背景灰色（`#f5f7fa`），hover 背景为 `#eaebf0`。
 
 常见于两处：
 
@@ -27,7 +27,7 @@
 ## 组件结构
 
 ```
-.ai-cite-content（flex，height: 28px，padding: 0 8px，gap: 4px，bg: #f5f7fa，border-radius: 4px，margin-bottom: 4px）
+.ai-cite-content（flex，height: 28px，padding: 0 8px，gap: 4px，bg: #f5f7fa，hover: #eaebf0，border-radius: 4px，margin-bottom: 4px）
 ├── CiteIcon（14×14px，color: #979ba5，始终显示）
 ├── .ai-cite-content-text（flex: 1，单行截断，color: #979ba5，overflow: hidden，text-overflow: ellipsis）
 │     {{ content }}（Vue 文本插值，XSS 安全）
@@ -133,7 +133,7 @@ const message = {
 
 | 元素                     | 关键样式                                                                                            |
 | ------------------------ | --------------------------------------------------------------------------------------------------- |
-| `.ai-cite-content`       | `height: 28px`，`padding: 0 8px`，`background: #f5f7fa`，`margin-bottom: 4px`（为下方内容留出间距） |
+| `.ai-cite-content`       | `height: 28px`，`padding: 0 8px`，`background: #f5f7fa`，hover `#eaebf0`，`margin-bottom: 4px`（为下方内容留出间距） |
 | `.ai-cite-content-text`  | `flex: 1`，`white-space: nowrap`，`overflow: hidden`，`text-overflow: ellipsis`，`color: #979ba5`   |
 | `CiteIcon` / `CloseIcon` | `14×14px`，`color: #979ba5`；CloseIcon hover 变为 `#4d4f56`                                         |
 

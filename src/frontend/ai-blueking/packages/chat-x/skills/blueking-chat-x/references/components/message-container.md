@@ -22,7 +22,7 @@
 - **消息分组**：将连续的非用户消息合并为一组，每组共享一个工具栏
 - **Tool 消息关联**：自动将 `role: 'tool'` 消息注入到对应 Assistant 消息的 toolCall 中
 - **Loading 自动注入**：末尾为用户消息时，自动追加 Loading 动画组
-- **滚动管理**：`messageStatus` 为流式、等待响应或请求中（`streaming` / `pending` / `fetching`）时显示「停止生成」，离开底部时显示「返回底部」
+- **滚动管理**：`messageStatus` 为流式、等待响应或请求中（`streaming` / `pending` / `fetching`）时显示「停止生成」，离开底部时显示「返回底部」；`renderMode` 为 `Share` 时不显示「停止生成」。挂载时通过 `jumpToBottom()` 瞬时贴底，避免切换会话时从顶部平滑滚到底部的动画
 - **多选模式**：支持按消息组勾选，用户消息与 AI 回复联动选中
 
 ## 基础用法
@@ -120,17 +120,36 @@
   - `renderMode === RenderMode.Share`（分享预览模式）
   - 消息组的 `pause` 为 `true`（来源于 `message.property?.extra?.pause`）
   - 多选模式（`enableSelection`）开启且消息组不是 Loading 类型
+- AI 消息组的时间通过 `MessageTools` 的 `#append` 插槽渲染在工具图标右侧，取值为组内**最后一条**带 `createdAt` 的消息（即本轮回答完成时间）；组内 `reasoning` / `activity` 等子消息不单独展示时间，全组都没有 `createdAt` 时不展示
 - `renderMode === RenderMode.Test` 时，工具栏会过滤掉「分享」按钮，其余正常
 - `renderMode === RenderMode.Share` 时，`message-group-messages` 自动添加 `message-group-enabled-selection` 类名（与 `enableSelection: true` 一致的多选视觉效果）
 - Loading 消息组的 `type` 是 `MessageRole.Loading`，不显示工具栏和多选 Checkbox
 
+## DOM 定位标识
+
+为方便业务方通过 `document.querySelector` 定位消息（埋点、自动化测试、外部滚动锚定等），渲染结构上固定输出两层标识：
+
+| 层级     | 选择器                                | 值                                                  |
+| -------- | ------------------------------------- | --------------------------------------------------- |
+| 消息组   | `.message-group[data-message-group-id]` | `MessageGroup.uid`（与外层 `id` 同值）              |
+| 单条消息 | `.ai-message-item[data-message-id]`   | `message.id`，缺失时回退 `message.uid`；两者都无则不输出该属性 |
+
+```js
+// 定位某条消息
+document.querySelector('[data-message-id="123"]');
+// 定位某个消息组下的全部消息
+document.querySelectorAll('[data-message-group-id="xxx"] [data-message-id]');
+```
+
+`.ai-message-item` 是 `MessageContainer` 统一包裹的容器，`#default` 插槽自定义渲染的消息同样被它包裹，因此无论用默认 `MessageRender` 还是自定义渲染，标识都一致存在。
+
 ## 等待响应（Loading 自动注入）
 
-当 `messages` 末尾为 `role: 'user'` 时，自动追加 Loading 消息组，展示 AI 正在处理的加载动画：
+当 `messages` 末尾为 `role: 'user'` 时，自动追加 Loading 消息组，展示 AI 正在处理的加载动画（`renderMode` 为 `Share` 时不追加，且 `MessageContainer` 会过滤 Loading 组）：
 
 ## 流式输出与停止生成
 
-当 `messageStatus` 为 `streaming`、`pending`（等待首包）或 `fetching`（请求中、与末尾 Loading 占位一致）时，底部固定区域显示「停止生成」按钮（`stop-loading` 时按钮展示为正在停止），点击后触发 `@stop-streaming` 事件。
+当 `messageStatus` 为 `streaming`、`pending`（等待首包）或 `fetching`（请求中、与末尾 Loading 占位一致）时，底部固定区域显示「停止生成」按钮（`stop-loading` 时按钮展示为正在停止），点击后触发 `@stop-streaming` 事件。`renderMode` 为 `Share` 时不显示「停止生成」按钮。
 
 点击下方按钮体验完整的流式输出过程：
 
@@ -296,6 +315,51 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
 ## 多轮对话
 
 连续多轮问答，组件按角色自动分组，每个 AI 组独立显示工具栏：
+
+## 自定义消息工具栏
+
+`messageTools`（左侧）与 `updateTools`（右侧反馈区）用于在**内置工具的基础上做增量定制**，无需重写整份列表。二者分别与内置 `CONST_MESSAGE_TOOLS`、`CONST_UPDATE_TOOLS` 按 `id` 合并，规则如下：
+
+- **覆盖**：`id` 命中内置项时，做字段级浅合并（仅覆盖传入的字段，其余保留），不新增条目
+- **追加**：`id` 为内置列表中不存在的新值时，追加到该组末尾（如自定义「保存」「收藏」按钮）
+- **隐藏**：传入 `{ id: 'xxx', hidden: true }` 可移除对应内置项（如隐藏「分享」）
+- **自定义图标**：通过 `icon`（组件/VNode）为自定义按钮提供图标，优先级高于内置 `ToolIconsMap`
+- 不传 `messageTools` / `updateTools` 时，各自使用内置默认列表
+
+```vue
+<template>
+  <MessageContainer
+    :messages="messages"
+    :message-groups="messageGroups"
+    message-status="complete"
+    :message-tools="customMessageTools"
+    :update-tools="customUpdateTools"
+    :on-agent-action="handleAgentAction"
+    @stop-streaming="handleStopStreaming"
+  />
+</template>
+
+<script setup lang="ts">
+  import { MessageContainer, DownloadIcon, type IToolBtn, type Message } from '@blueking/chat-x';
+
+  const customMessageTools: IToolBtn[] = [
+    { id: 'save', name: '保存', description: '保存该回答', icon: DownloadIcon }, // 追加新按钮
+    { id: 'copy', description: '复制全文' }, // 覆盖内置 copy 的 description
+    { id: 'share', hidden: true }, // 隐藏内置「分享」
+  ];
+  const customUpdateTools: IToolBtn[] = [
+    { id: 'collect', name: '收藏', description: '收藏到我的空间', icon: DownloadIcon },
+  ];
+
+  const handleAgentAction = async (tool: IToolBtn, messages: Message[]) => {
+    if (tool.id === 'save') {
+      // 处理保存
+    }
+  };
+</script>
+```
+
+> **合并优先级**：`RenderMode.Test` 下仍会额外过滤掉「分享」按钮（即便合并后存在）；即测试模式对 `share` 的过滤在自定义合并之后生效。
 
 ## 工具栏状态控制
 
@@ -483,11 +547,12 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
 
 | 按钮         | 显示条件                                                                                       | 点击行为               |
 | ------------ | ---------------------------------------------------------------------------------------------- | ---------------------- |
-| 「停止生成」 | `messageStatus` 为 `streaming`、`pending`、`fetching` 或 `stop-loading`（停止中 loading 态） | 触发 `@stop-streaming` |
-| 「返回底部」 | `debouncedShowScrollBottomBtn`（距底部 > 100px，且防抖 300ms 后才显示/隐藏）                     | 滚动到消息列表底部     |
+| 「停止生成」 | `messageStatus` 为 `streaming`、`pending`、`fetching` 或 `stop-loading`（停止中 loading 态），且 `renderMode` 不为 `Share` | 触发 `@stop-streaming` |
+| 「返回底部」 | `debouncedShowScrollBottomBtn`（距底部 > 100px，且防抖 300ms 后才显示/隐藏）                     | 平滑滚动到消息列表底部（显式 `toScrollBottom('smooth')`） |
 
 > **防抖说明**：「返回底部」按钮的显隐使用 300ms 防抖，避免快速滚动时按钮频繁闪烁。隐藏时立即生效（无防抖），显示时延迟 300ms。
 
+> **首屏 / 切换会话贴底**：`MessageContainer` 挂载时若已有消息组，会立即调用 `jumpToBottom()`，并在下一帧再补一次，避免历史消息渲染过程中出现「从顶部滚到底部」的动画。流式输出场景下的小幅跟随仍由 markdown 挂载触发的 `toScrollBottom()`（距底较近时走 smooth）完成。
 ## API
 
 ### Props
@@ -497,10 +562,10 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
 | messages                 | `Message[]`                                                                                  | —       | **必填**，消息列表                                                                                                                       |
 | messageGroups            | `MessageGroup[]`                                                                             | —       | 预计算的消息分组；传入时跳过内部分组逻辑，由 `ChatContainer` 通过 `useMessageGroup` 提供                                                 |
 | messageStatus            | `MessageStatus`                                                                              | —       | 当前整体消息状态，控制底部「停止生成」按钮显示；`ChatContainer` 会结合末尾 Loading 占位推导 `fetching` 等再传入                                                                                                   |
-| messageToolsStatus       | `MessageToolsStatus`                                                                         | —       | 工具栏状态，透传给 `MessageTools` 和 `MessageRender`                                                                                     |
-| messageTools             | `IToolBtn[]`                                                                                 | —       | 自定义 AI 主工具组；按 id 与内置 `CONST_MESSAGE_TOOLS` 合并                                                                              |
-| updateTools              | `IToolBtn[]`                                                                                 | —       | 自定义 AI 反馈工具组；按 id 与内置 `CONST_UPDATE_TOOLS` 合并                                                                             |
+| messageTools             | `IToolBtn[]`                                                                                 | —       | AI 消息左侧工具（复制/引用等）的自定义配置；按 `id` 与内置 `CONST_MESSAGE_TOOLS` 合并（覆盖同 id、追加新 id、`hidden` 过滤），详见「自定义消息工具栏」 |
+| updateTools              | `IToolBtn[]`                                                                                 | —       | AI 消息右侧反馈工具（点赞/踩/删除等）的自定义配置；按 `id` 与内置 `CONST_UPDATE_TOOLS` 合并，规则同上                                     |
 | userMessageTools         | `IToolBtn[]`                                                                                 | —       | 自定义用户消息工具组，透传给 `MessageRender` → `UserMessage`；按 id 与 `CONST_USER_MESSAGE_TOOLS` 合并，`{ id, hidden: true }` 可隐藏     |
+| messageToolsStatus       | `MessageToolsStatus`                                                                         | —       | 工具栏状态，透传给 `MessageTools` 和 `MessageRender`                                                                                     |
 | messageToolsTippyOptions | `AITippyProps`                                                                               | —       | 透传给 `MessageTools` 和 `MessageRender`（进而透传给 `UserMessage` 的工具栏）的 Tippy 配置，用于自定义 tooltip 挂载点、位置等（如 `appendTo`、`placement`、`zIndex`） |
 | enableSelection          | `boolean`                                                                                    | `false` | 是否启用多选模式                                                                                                                         |
 | onAgentAction            | `(tool: IToolBtn, messages: Message[]) => Promise<string[] \| void>`                         | —       | AI 消息工具操作回调；`copy` 操作由内部处理，`like/unlike` 应返回反馈原因字符串数组                                                       |
@@ -509,7 +574,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
 | onUserInputConfirm       | `(message: Message, content: UserMessage['content'], docSchema: TagSchema) => Promise<void>` | —       | 用户编辑消息确认回调                                                                                                                     |
 | onUserShortcutConfirm    | `(message: Message, formModel: Record<string, unknown>) => Promise<void>`                    | —       | 用户快捷指令表单提交回调                                                                                                                 |
 | onInterruptResume        | `OnInterruptResume`                                                                          | —       | AG-UI human-in-the-loop 中断响应回调，透传给 `MessageRender` → `InterruptMessageRender`                                                  |
-| renderMode               | `RenderMode`                                                                                 | —       | 渲染模式。`Share` 模式下启用多选样式并隐藏工具栏；`Test` 模式下过滤掉「分享」按钮；不传或 `Chat` 为默认行为                              |
+| renderMode               | `RenderMode`                                                                                 | —       | 渲染模式。`Share` 模式下启用多选样式并隐藏工具栏与「停止生成」按钮；`Test` 模式下过滤掉「分享」按钮；不传或 `Chat` 为默认行为                              |
 
 ### v-model
 
@@ -565,32 +630,16 @@ enum MessageToolsStatus {
   Hidden = 'hidden',
 }
 
-// 消息角色
-enum MessageRole {
-  User = 'user',
-  Assistant = 'assistant',
-  Tool = 'tool',
-  Reasoning = 'reasoning',
-  Activity = 'activity',
-  Info = 'info',
-  Interrupt = 'interrupt',
-  Loading = 'loading',
-}
-
-// 消息状态
-enum MessageStatus {
-  Pending = 'pending',
-  Streaming = 'streaming',
-  Complete = 'complete',
-  Error = 'error',
-  Stop = 'stop',
-  Disabled = 'disabled',
-}
+// 消息角色 / 消息状态完整枚举见常量文档，勿在此维护副本
+// MessageRole、MessageStatus → ../../types/constants
 ```
+
+> `MessageRole` / `MessageStatus` 完整取值见 [常量枚举](../../types/constants)。
 
 ## 关联组件
 
 - [MessageRender](/components/message/message-render) — 按组渲染每条消息时委托使用
+- [MessageTime](/components/feedback/message-time) — AI 消息组工具栏右侧的时间
 - [InterruptMessage 中断消息](/components/agent/interrupt-message) — `role: 'interrupt'` 的渲染与 `onInterruptResume` 透传
 - [ChatInput](/components/input/chat-input) — 常与输入区组合构成完整对话界面
 - [LoadingMessage](/components/message/loading-message) — 末尾为用户消息时自动追加加载组

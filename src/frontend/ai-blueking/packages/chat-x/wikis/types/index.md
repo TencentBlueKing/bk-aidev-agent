@@ -30,6 +30,7 @@ import type {
   // 工具调用
   ToolCall,
   FunctionCall,
+  FunctionCallType,
   Tool,
 
   // 快捷指令

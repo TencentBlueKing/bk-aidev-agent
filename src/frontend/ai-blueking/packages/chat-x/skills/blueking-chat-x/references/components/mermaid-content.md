@@ -43,7 +43,7 @@ props.token（Token[]）
              nextTick → emit('mounted', { get el() { return mermaidContentRef.value } })
 
 模板：
-div.mermaid-content（:key="svgDomStr"，v-html="svgDomStr"）
+div.ai-mermaid-content（:key="svgDomStr"，v-html="svgDomStr"）
   注：:key 绑定 svgDomStr，每次 SVG 变化会重建 div 而非就地 patch
 ```
 
@@ -74,7 +74,7 @@ div.mermaid-content（:key="svgDomStr"，v-html="svgDomStr"）
   ];
 
   const handleMounted = ({ el }: { el: HTMLElement | null }) => {
-    // el 是 lazy getter，值为渲染后的 .mermaid-content 元素
+    // el 是 lazy getter，值为渲染后的 .ai-mermaid-content 元素
     console.log('渲染完成:', el);
   };
 </script>
@@ -140,7 +140,7 @@ div.mermaid-content（:key="svgDomStr"，v-html="svgDomStr"）
 
 | 事件名  | 参数                          | 触发时机                                                                           |
 | ------- | ----------------------------- | ---------------------------------------------------------------------------------- |
-| mounted | `{ el: HTMLElement \| null }` | SVG 更新后的 `nextTick`；`el` 为 lazy getter，返回当前 `.mermaid-content` 元素引用 |
+| mounted | `{ el: HTMLElement \| null }` | SVG 更新后的 `nextTick`；`el` 为 lazy getter，返回当前 `.ai-mermaid-content` 元素引用 |
 
 ### Token 结构
 

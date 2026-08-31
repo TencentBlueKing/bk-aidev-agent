@@ -2,7 +2,7 @@
 
 > since 1.0.0
 
-汇总 MessageRole、MessageStatus（含 Fetching 请求中）、MessageContentType、MessageToolsStatus、MessageState、Z-Index 与 CONST_MESSAGE_TOOLS 等导出常量。 用于构造消息、配置 MessageContainer 工具栏与输入态，以及层级与默认快捷指令。与类型 messages 配套使用。
+汇总 MessageRole、MessageStatus（含 Fetching 请求中、Complete/Completed 完成态兼容）、MessageContentType、MessageToolsStatus、MessageState、Z-Index 与 CONST_MESSAGE_TOOLS 等导出常量。 用于构造消息、配置 MessageContainer 工具栏与输入态，以及层级与默认快捷指令。与类型 messages 配套使用。
 
 **关联**：message-tools（默认工具 ID 与展示）、chat-input（MessageState 与快捷指令）、message-container（工具栏与消息态）
 
@@ -55,6 +55,7 @@ enum MessageRole {
 ```typescript
 enum MessageStatus {
   Complete = 'complete',
+  Completed = 'completed', // 与 Complete 同为完成态，兼容后端/协议返回的 completed
   Disabled = 'disabled',
   Error = 'error',
   Fetching = 'fetching', // 请求中（例如已发用户消息、尚未开始流式，与末尾 Loading 占位一致）
@@ -68,6 +69,7 @@ enum MessageStatus {
 
 | 枚举值          | 说明 |
 | --------------- | ---- |
+| `Complete` / `Completed` | 已完成。`complete` 为库内常用值；`completed` 与之语义相同，用于兼容外部协议或后端返回。`ToolcallRender` 等将二者与 `success` 一并视为成功态。 |
 | `Fetching`      | 请求中：与 `useMessageGroup` 在末尾用户消息后注入的 Loading 占位（`LOADING_MESSAGE_ID`）配合时，`ChatContainer` 会将传入输入区与列表底部的状态推导为该值，便于展示「停止」与禁止重复发送。 |
 
 ### InterruptReason
