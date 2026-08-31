@@ -1,5 +1,6 @@
 import json
 import multiprocessing
+import queue
 from contextlib import contextmanager
 from urllib.request import ProxyHandler, Request, build_opener
 
@@ -9,7 +10,7 @@ from aidev_bkplugin.models import EventDelivery
 from aidev_bkplugin.services.database_event_bus import DatabaseEventBus
 from django.db import connection
 
-from .process_helpers import runtime_events, web_process, wxbot_process
+from .process_helpers import polling_process, runtime_events, web_process, wxbot_process
 
 
 @contextmanager
@@ -89,16 +90,89 @@ def assert_delivered_messages(case, web_pid, question):
         assert case.sent.get(timeout=2)[1]["template_card"]["card_type"] == "vote_interaction"
 
 
-def call_web(port, stream):
+def call_web(port, stream, traceparent="", approved=True):
     data = {
         "session_code": "session-original",
-        "resume": [{"interruptId": "approval-original", "status": "resolved"}],
+        "resume": [{"interruptId": "approval-original", "status": "resolved", "payload": {"approved": approved}}],
         "execute_kwargs": {"stream": stream},
     }
     request = Request(
         f"http://127.0.0.1:{port}/chat/",
         data=json.dumps(data).encode(),
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "traceparent": traceparent},
     )
     with build_opener(ProxyHandler({})).open(request, timeout=20) as response:
         return response.read().decode()
+
+
+@pytest.mark.parametrize("approved", [True, False])
+def test_http_trace_survives_separate_web_and_wxbot_processes(process_case, approved):
+    case = process_case
+    records = case.ctx.Queue()
+    web = case.ctx.Process(
+        target=web_process, args=(case.path, runtime_events(), case.web_status, case.executions, records)
+    )
+    wx = case.ctx.Process(
+        target=wxbot_process,
+        args=(case.path, case.sent, case.wx_status, 2, records, "approved" if approved else "rejected"),
+    )
+    with processes(web, wx):
+        web.start()
+        ready = case.web_status.get(timeout=20)
+        assert ready[0] == "ready", ready
+        wx.start()
+        call_web(ready[1], True, "00-" + "1" * 32 + "-" + "2" * 16 + "-01", approved)
+        assert case.web_status.get(timeout=20)[0] == "done"
+        assert case.wx_status.get(timeout=25)[0] == "done"
+    assert_trace_records(records)
+    assert EventDelivery.objects.filter(status="delivered").count() == 2
+    assert case.executions.value == 1
+    card = case.sent.get(timeout=2)[1]["template_card"]
+    assert card["jump_list"][0]["title"] == ("审批已通过" if approved else "审批已拒绝")
+
+
+@pytest.mark.parametrize("approved", [True, False])
+def test_polling_trace_survives_separate_web_and_wxbot_processes(process_case, approved):
+    case = process_case
+    records = case.ctx.Queue()
+    web = case.ctx.Process(
+        target=polling_process, args=(case.path, case.web_status, case.executions, records, approved)
+    )
+    wx = case.ctx.Process(
+        target=wxbot_process,
+        args=(case.path, case.sent, case.wx_status, 2, records, "approved" if approved else "rejected"),
+    )
+    with processes(web, wx):
+        wx.start()
+        web.start()
+        result = case.web_status.get(timeout=25)
+        assert result[0] == "done", result
+        result = case.wx_status.get(timeout=25)
+        assert result[0] == "done", result
+    assert_trace_records(records, entry_name="bkplugin.approval.resume")
+    assert EventDelivery.objects.filter(status="delivered").count() == 2
+    assert case.executions.value == 1
+    card = case.sent.get(timeout=2)[1]["template_card"]
+    assert card["jump_list"][0]["title"] == ("审批已通过" if approved else "审批已拒绝")
+
+
+def assert_trace_records(records, entry_name="bkplugin.chat.request"):
+    spans = []
+    while True:
+        try:
+            spans.append(records.get(timeout=0.2))
+        except queue.Empty:
+            break
+    expected = {
+        entry_name,
+        "database_event.publish",
+        "database_event.claim",
+        "wxbot.event.consume",
+        "wxbot.resume.send",
+    }
+    assert expected <= {span["name"] for span in spans}
+    assert all(span["trace_id"] == "1" * 32 for span in spans)
+    entry = next(span for span in spans if span["name"] == entry_name)
+    assert entry["parent_id"] == int("2" * 16, 16)
+    consumers = {span["span_id"] for span in spans if span["name"] == "wxbot.event.consume"}
+    assert all(span["parent_id"] in consumers for span in spans if span["name"] == "wxbot.resume.send")

@@ -11,11 +11,13 @@ try:
     from opentelemetry import context as context_api
     from opentelemetry import trace
     from opentelemetry.trace import SpanKind, Tracer
+    from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 except ImportError:  # OpenTelemetry is an optional Agent SDK extra.
     context_api = None
     trace = None
     SpanKind = None
     Tracer = Any
+    TraceContextTextMapPropagator = None
 
 _agent_tracer: Tracer | None = None
 CLIENT_SPAN_KIND = SpanKind.CLIENT if SpanKind is not None else None
@@ -60,6 +62,29 @@ def get_current_trace_id() -> str | None:
     return format(context.trace_id, "032x") if context.trace_id else None
 
 
+def trace_headers() -> dict[str, str]:
+    """Capture W3C trace context only; do not propagate credentials or baggage."""
+    carrier: dict[str, str] = {}
+    if TraceContextTextMapPropagator is not None:
+        TraceContextTextMapPropagator().inject(carrier)
+    return carrier
+
+
+@contextmanager
+def propagated_trace_context(carrier: Any) -> Iterator[None]:
+    """Restore a durable parent, isolating missing/invalid context from the worker."""
+    if context_api is None or TraceContextTextMapPropagator is None:
+        yield
+        return
+    carrier = carrier if isinstance(carrier, dict) else {}
+    safe = {key: carrier[key] for key in ("traceparent", "tracestate") if isinstance(carrier.get(key), str)}
+    token = context_api.attach(TraceContextTextMapPropagator().extract(safe, context=context_api.Context()))
+    try:
+        yield
+    finally:
+        context_api.detach(token)
+
+
 @contextmanager
 def recording_span(
     name: str,
@@ -67,6 +92,7 @@ def recording_span(
     attributes: dict[str, Any] | None = None,
     kind: Any = None,
     root: bool = False,
+    record_exception: bool = True,
 ) -> Iterator[Any]:
     """Create a span with the Agent tracer, or safely no-op without OTel.
 
@@ -81,6 +107,8 @@ def recording_span(
         return
 
     start_kwargs: dict[str, Any] = {"attributes": attributes or {}}
+    if not record_exception:
+        start_kwargs.update(record_exception=False, set_status_on_exception=False)
     if kind is not None:
         start_kwargs["kind"] = kind
     if root and context_api is not None:

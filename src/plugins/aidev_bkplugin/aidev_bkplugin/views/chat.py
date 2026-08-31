@@ -21,6 +21,7 @@ from aidev_bkplugin.services.agent_builder import AgentBuilder
 from aidev_bkplugin.services.agent_execution import AgentExecutor
 from aidev_bkplugin.services.agent_helpers import AgentHelper
 from aidev_bkplugin.services.agent_session import SessionManager
+from aidev_bkplugin.services.chat_tracing import chat_request_span
 from aidev_bkplugin.views.base import IgnoreClientContentNegotiation, PluginViewSet, logger
 
 
@@ -40,6 +41,7 @@ class ChatCompletionViewSet(PluginViewSet):
             return ChannelType.API.value
         return ChannelType.POPUP.value
 
+    @chat_request_span
     def create(self, request):
         """
         入参校验与解析统一交给 ChatCompletionRequestSerializer：

@@ -8,6 +8,7 @@ operations run in the publisher. Delivery is at-least-once, not exactly-once.
 import hashlib
 import json
 import logging
+import time
 import uuid
 from datetime import timedelta
 
@@ -18,6 +19,7 @@ from django.db.models import Exists, F, OuterRef, Q
 from django.utils import timezone
 
 from aidev_bkplugin.models import EventDelivery, EventSubscription
+from aidev_bkplugin.services.event_tracing import event_span
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +63,7 @@ class DatabaseEventBus:
             raise ValueError("Invalid event scope or identity")
         event_id = hashlib.sha256(str(value["eventId"]).encode()).hexdigest()
         envelope = event.model_dump(mode="json", by_alias=True)
-        with transaction.atomic():
+        with event_span("database_event.publish", envelope, producer=True), transaction.atomic():
             subscriptions = EventSubscription.objects.filter(
                 scope_key=self._scope_key(value["sessionCode"]),
                 app_code=self.app_code,
@@ -79,6 +81,7 @@ class DatabaseEventBus:
                     raise ValueError("An event identity cannot be reused for different content")
 
     def claim(self, subscriber: str) -> EventDelivery | None:
+        lookup_started = time.perf_counter()
         now = timezone.now()
         eligible = Q(status="pending", available_at__lte=now) | Q(status="processing", lease_until__lte=now)
         earlier = EventDelivery.objects.filter(
@@ -99,17 +102,31 @@ class DatabaseEventBus:
             .order_by("id")[:50]
         )
         for candidate in candidates:
-            # Order all event kinds per session/subscriber; no MySQL-8-only SKIP LOCKED.
-            token = uuid.uuid4().hex
-            count = EventDelivery.objects.filter(eligible, pk=candidate.pk).update(
-                status="processing",
-                lease_token=token,
-                lease_until=now + timedelta(seconds=self.LEASE_SECONDS),
-                attempts=F("attempts") + 1,
-                updated_at=now,
-            )
-            if count:
-                return EventDelivery.objects.get(pk=candidate.pk, lease_token=token)
+            attributes = {
+                "messaging.receive.lookup.duration_ms": (time.perf_counter() - lookup_started) * 1000,
+                "messaging.message.age_ms": max(0, (now - candidate.created_at).total_seconds() * 1000),
+                "messaging.delivery.attempt": candidate.attempts + 1,
+            }
+            # The parent becomes known only after selecting the candidate. Record
+            # lookup time as an attribute, and trace the actual lease acquisition.
+            with event_span("database_event.claim", candidate.envelope, attributes=attributes):
+                claimed = self._claim_candidate(candidate, eligible, now)
+            if claimed is not None:
+                return claimed
+        return None
+
+    def _claim_candidate(self, candidate: EventDelivery, eligible: Q, now) -> EventDelivery | None:
+        # Order all event kinds per session/subscriber; no MySQL-8-only SKIP LOCKED.
+        token = uuid.uuid4().hex
+        count = EventDelivery.objects.filter(eligible, pk=candidate.pk).update(
+            status="processing",
+            lease_token=token,
+            lease_until=now + timedelta(seconds=self.LEASE_SECONDS),
+            attempts=F("attempts") + 1,
+            updated_at=now,
+        )
+        if count:
+            return EventDelivery.objects.get(pk=candidate.pk, lease_token=token)
         return None
 
     def _owned(self, delivery: EventDelivery):

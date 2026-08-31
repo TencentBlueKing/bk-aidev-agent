@@ -16,6 +16,7 @@ from logging import getLogger
 
 from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.agent.approval import ApprovalStateHandler
+from aidev_agent.utils.tracing import propagated_trace_context, recording_span, trace_headers
 
 from aidev_bkplugin.services.agent_builder import AgentBuilder
 from aidev_bkplugin.services.agent_execution import AgentExecutor
@@ -87,6 +88,16 @@ def _approval_resume_worker(session_code: str, username: str, graph_thread_id: s
         return
 
     # 3. 审批完成，构建 agent 并续流
+    # 恢复回调落库的父上下文；不要继承轮询线程中可能残留的其他会话 Trace。
+    # 上下文覆盖生成器构造和排空，保证延迟发布的恢复事件也关联到审批回调。
+    with (
+        propagated_trace_context(approve_info.get("approval_trace_context")),
+        recording_span("bkplugin.approval.resume", record_exception=False),
+    ):
+        _resume_approval(session_code, username, graph_thread_id, interrupts, approve_result)
+
+
+def _resume_approval(session_code, username, graph_thread_id, interrupts, approve_result):
     try:
         resume_items = []
         for interrupt in interrupts:
@@ -115,6 +126,7 @@ def _approval_resume_worker(session_code: str, username: str, graph_thread_id: s
             session_code=session_code,
             thread_id=graph_thread_id,
             resume=resume_items,
+            caller_trace_context=trace_headers(),
             # 后台 drain（无 SSE 下游，下方 for _ in generator 自行排空）：标记 background_only，
             # 使消费者读到 EOD 时不立即清理队列，保留缓存历史供前端在清理窗口内接管续流。
             background_only=True,

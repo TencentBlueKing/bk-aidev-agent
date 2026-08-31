@@ -11,6 +11,7 @@ from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command, interrupt
 
 from aidev_agent.api.bk_aidev import BKAidevApi
+from aidev_agent.utils.tracing import CLIENT_SPAN_KIND, recording_span, trace_headers
 
 logger = logging.getLogger(__name__)
 
@@ -292,10 +293,10 @@ def _create_approval_from_target(target: ApprovalTarget, execute_kwargs: Any | N
     }
     logger.info("[ToolApproval] 当前用户: %s, approvers: %s", username, approvers)
     try:
-        result = client.api.create_tool_approval(
-            json=payload,
-            headers={"X-BKAIDEV-USER": username} if username else {},
-        )
+        with recording_span("agent.approval.create", kind=CLIENT_SPAN_KIND, record_exception=False):
+            headers = {"X-BKAIDEV-USER": username} if username else {}
+            headers.update(trace_headers())
+            result = client.api.create_tool_approval(json=payload, headers=headers)
         logger.info("[ToolApproval] 审批工单创建结果: %s", result)
     except Exception as error:
         logger.error("[ToolApproval] 创建审批工单失败: %s: %s", type(error).__name__, error, exc_info=True)
