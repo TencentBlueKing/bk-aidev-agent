@@ -153,6 +153,7 @@ class BaseCrawBackend:
         ).rstrip("/")
         self.api_key = api_key or _env_first("BKAI_CRAW_API_KEY", *self.legacy_key_envs)
         self.model = model or _env_first("BKAI_CRAW_MODEL", *self.legacy_model_envs) or self.default_model
+        self.transport = "http"
         if timeout is None:
             raw = _env_first("BKAI_CRAW_TIMEOUT", *self.legacy_timeout_envs)
             try:
@@ -384,4 +385,13 @@ class CrawUpstreamRunError(RuntimeError):
 
     @property
     def client_message(self) -> str:
+        try:
+            error = json.loads(self.detail)
+        except (TypeError, ValueError):
+            error = {}
+        if isinstance(error, dict):
+            code = str(error.get("code") or "")
+            message = str(error.get("message") or "").lower()
+            if code == "429" or "rate limit" in message or "qpm" in message:
+                return "模型请求已达到限流，请稍后重试"
         return f"craw backend {self.backend} 上游运行失败，请重试（详情见服务端日志）"

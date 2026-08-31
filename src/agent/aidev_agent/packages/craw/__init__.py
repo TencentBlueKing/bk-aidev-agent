@@ -33,6 +33,13 @@ from aidev_agent.packages.craw.base import (
     CrawUpstreamRunError,
 )
 from aidev_agent.packages.craw.hermes import HermesBackend
+from aidev_agent.packages.craw.mcp_identity import (
+    bind_user_access_token,
+    get_bound_user_access_token,
+    mcp_identity_lease,
+    normalize_access_token,
+    resolve_user_access_token,
+)
 from aidev_agent.packages.craw.openclaw import OpenClawBackend
 from aidev_agent.packages.craw.registry import CrawBackendProtocol, craw_backend_registry, get_backend
 from aidev_agent.packages.craw.sync import (
@@ -40,13 +47,6 @@ from aidev_agent.packages.craw.sync import (
     CrawSyncResult,
     agent_config_to_artifacts,
     render_soul,
-)
-from aidev_agent.packages.craw.mcp_identity import (
-    bind_user_access_token,
-    get_bound_user_access_token,
-    mcp_identity_lease,
-    normalize_access_token,
-    resolve_user_access_token,
 )
 from aidev_agent.packages.craw.takeover import enable_chat_takeover
 

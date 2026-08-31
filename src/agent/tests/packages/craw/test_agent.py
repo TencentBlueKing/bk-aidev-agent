@@ -138,6 +138,88 @@ class TestCrawCompletionAgent:
         ]
         assert "".join(e.delta for e in events if e.type.value == "TEXT_MESSAGE_CONTENT") == "hello"
 
+    def test_ws_stream_translates_tool_events_to_ag_ui(self, monkeypatch):
+        from aidev_agent.packages.craw import agent as agent_module
+        from aidev_agent.packages.craw.openclaw_ws import OpenClawEvent
+
+        sessions = []
+
+        class _FakeWSSession:
+            def __init__(self, url, token, timeout):
+                self.url = url
+                self.token = token
+                self.timeout = timeout
+                self.closed = False
+                self.sent = None
+                sessions.append(self)
+
+            def connect(self):
+                return None
+
+            def send_chat(self, session_key, message, agent_id=""):
+                self.sent = (session_key, message, agent_id)
+                return "run-1"
+
+            def events(self):
+                yield OpenClawEvent("text", text="我来查询")
+                yield OpenClawEvent(
+                    "tool",
+                    phase="start",
+                    tool_call_id="call-1",
+                    tool_name="list_index_sets",
+                    args={"bk_biz_id": 1},
+                )
+                yield OpenClawEvent(
+                    "tool",
+                    phase="result",
+                    tool_call_id="call-1",
+                    tool_name="list_index_sets",
+                    result={"content": [{"type": "text", "text": "ok"}], "details": {"durationMs": 25}},
+                )
+                yield OpenClawEvent("text", text="查询完成")
+                yield OpenClawEvent("done")
+
+            def abort(self, session_key):
+                return None
+
+            def close(self):
+                self.closed = True
+
+        monkeypatch.setattr(agent_module, "OpenClawWSSession", _FakeWSSession)
+        backend = _StubBackend()
+        backend.transport = "ws"
+        events = []
+        agent = _build_agent(
+            backend,
+            session_context=[{"role": "user", "content": "查询日志索引集"}],
+            session_code="sess-ws-tool",
+        )
+        agent.event_handler = events.append
+
+        list(agent._run_stream())
+
+        types = [event.type.value for event in events]
+        assert types == [
+            "RUN_STARTED",
+            "TEXT_MESSAGE_START",
+            "TEXT_MESSAGE_CONTENT",
+            "TEXT_MESSAGE_END",
+            "TOOL_CALL_START",
+            "TOOL_CALL_ARGS",
+            "TOOL_CALL_END",
+            "TOOL_CALL_RESULT",
+            "TEXT_MESSAGE_START",
+            "TEXT_MESSAGE_CONTENT",
+            "TEXT_MESSAGE_END",
+            "RUN_FINISHED",
+        ]
+        assert sessions[0].sent == ("sess-ws-tool", "查询日志索引集", "")
+        assert sessions[0].closed is True
+        tool_result = next(event for event in events if event.type.value == "TOOL_CALL_RESULT")
+        assert tool_result.content == "ok"
+        assert tool_result.duration == 0.025
+        assert tool_result.is_error is False
+
     def test_stream_upstream_error_emits_run_error(self):
         class _BoomBackend(_StubBackend):
             def open_chat_stream(self, messages, identity=None, session_code=None):
@@ -183,6 +265,17 @@ class TestRunErrorSanitized:
 
         message = self._run_and_get_error(_ProtocolBoom())
         assert "secret-fragment" not in message
+
+    def test_rate_limit_run_error_has_actionable_message(self):
+        class _RateLimited(_StubBackend):
+            def open_chat_stream(self, messages, identity=None, session_code=None):
+                raise CrawUpstreamRunError(
+                    "openclaw",
+                    '{"message":"API rate limit reached","type":"requestAuthError","code":"429"}',
+                )
+
+        message = self._run_and_get_error(_RateLimited())
+        assert message == "模型请求已达到限流，请稍后重试"
 
     def test_generic_error_only_exposes_type_name(self):
         class _GenericBoom(_StubBackend):

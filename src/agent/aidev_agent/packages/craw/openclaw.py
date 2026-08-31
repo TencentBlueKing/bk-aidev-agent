@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import ClassVar, Optional
 
 from aidev_agent.packages.craw.base import BaseCrawBackend, CrawIdentity
@@ -32,6 +33,12 @@ class OpenClawBackend(BaseCrawBackend):
     legacy_key_envs: ClassVar[tuple[str, ...]] = ("OPENCLAW_GATEWAY_TOKEN",)
     legacy_model_envs: ClassVar[tuple[str, ...]] = ("BKAI_OPENCLAW_MODEL",)
     legacy_timeout_envs: ClassVar[tuple[str, ...]] = ("BKAI_OPENCLAW_TIMEOUT",)
+
+    def __init__(self, *args, transport: Optional[str] = None, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.transport = (transport or os.getenv("BKAI_OPENCLAW_TRANSPORT") or "http").strip().lower()
+        if self.transport not in {"http", "ws"}:
+            self.transport = "http"
 
     def extra_headers(
         self, identity: Optional[CrawIdentity] = None, session_code: Optional[str] = None
