@@ -38,7 +38,10 @@ class CrawBackendProtocol(Protocol):
     default_model: str
     # 装配后连接参数（takeover 日志 / agent 非流式回包引用）
     api_url: str
+    api_key: str
     model: str
+    timeout: float
+    transport: str
 
     def build_headers(
         self, identity: Optional["CrawIdentity"] = None, session_code: Optional[str] = None

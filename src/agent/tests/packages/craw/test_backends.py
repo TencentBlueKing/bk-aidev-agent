@@ -57,6 +57,12 @@ class TestBackendEnvAssembly:
         assert backend.model == "openclaw"
         assert backend.timeout == 300.0
 
+    def test_openclaw_transport_from_env(self, monkeypatch):
+        monkeypatch.setenv("BKAI_OPENCLAW_TRANSPORT", "ws")
+        assert OpenClawBackend().transport == "ws"
+        monkeypatch.setenv("BKAI_OPENCLAW_TRANSPORT", "unsupported")
+        assert OpenClawBackend().transport == "http"
+
     def test_get_backend_by_env(self, monkeypatch):
         monkeypatch.setenv("BKAI_CRAW_BACKEND", "hermes")
         assert isinstance(get_backend(), HermesBackend)

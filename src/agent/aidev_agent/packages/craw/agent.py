@@ -15,7 +15,9 @@
 
 from __future__ import annotations
 
+import json
 import threading
+import time
 import uuid
 from logging import getLogger
 from typing import Any, Callable, ClassVar, Generator, Optional
@@ -28,13 +30,16 @@ from ag_ui.core import (
     TextMessageContentEvent,
     TextMessageEndEvent,
     TextMessageStartEvent,
+    ToolCallArgsEvent,
+    ToolCallEndEvent,
+    ToolCallStartEvent,
 )
 from ag_ui.encoder import EventEncoder
 from pydantic import BaseModel, Field
 
+from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
 from aidev_agent.enums import AgentType
 from aidev_agent.packages.craw.base import (
-    CrawChatStream,
     CrawIdentity,
     CrawIdentityError,
     CrawStreamProtocolError,
@@ -42,6 +47,7 @@ from aidev_agent.packages.craw.base import (
     CrawUpstreamRunError,
 )
 from aidev_agent.packages.craw.mcp_identity import mcp_identity_lease, resolve_user_access_token
+from aidev_agent.packages.craw.openclaw_ws import OpenClawWSError, OpenClawWSSession
 from aidev_agent.packages.craw.registry import CrawBackendProtocol, get_backend
 from aidev_agent.services.agent.registry import AgentBuildContext
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
@@ -96,7 +102,7 @@ class CrawCompletionAgent(BaseModel):
 
     # 本进程内活跃上游流句柄（会话键 → 句柄列表）：stop() 据此主动关闭，
     # 立即打断阻塞中的 HTTP 读；跨进程实例仍由取消信号（is_cancelled）兜底
-    _active_streams: ClassVar[dict[str, list[CrawChatStream]]] = {}
+    _active_streams: ClassVar[dict[str, list[Any]]] = {}
     _active_streams_lock: ClassVar[threading.Lock] = threading.Lock()
 
     class Config:
@@ -162,12 +168,12 @@ class CrawCompletionAgent(BaseModel):
     # ---------------- 活跃流句柄管理（stop 主动中断用） ----------------
 
     @classmethod
-    def _track_stream(cls, key: str, stream: CrawChatStream) -> None:
+    def _track_stream(cls, key: str, stream: Any) -> None:
         with cls._active_streams_lock:
             cls._active_streams.setdefault(key, []).append(stream)
 
     @classmethod
-    def _untrack_stream(cls, key: str, stream: CrawChatStream) -> None:
+    def _untrack_stream(cls, key: str, stream: Any) -> None:
         with cls._active_streams_lock:
             streams = cls._active_streams.get(key)
             if streams and stream in streams:
@@ -208,9 +214,235 @@ class CrawCompletionAgent(BaseModel):
         self._dispatch(end_event)
         yield encoder.encode(end_event)
 
-    # ---------------- 流式：转发 craw + 翻译成 AG-UI 文本事件 ----------------
+    # ---------------- 流式：转发 craw + 翻译成 AG-UI 事件 ----------------
 
     def _run_stream(self) -> Generator[str, None, None]:
+        backend: CrawBackendProtocol = self.backend
+        if backend is not None and backend.name == "openclaw" and backend.transport == "ws":
+            yield from self._run_stream_ws()
+            return
+        yield from self._run_stream_http()
+
+    def _last_user_message(self) -> str:
+        for item in reversed(build_openai_messages(self.session_context_data)):
+            if item.get("role") == "user":
+                return item.get("content") or ""
+        return ""
+
+    def _emit(self, encoder: EventEncoder, event: BaseEvent) -> str:
+        self._dispatch(event)
+        return encoder.encode(event)
+
+    @staticmethod
+    def _client_ws_error(text: str) -> str:
+        lowered = (text or "").lower()
+        if "429" in lowered or "rate limit" in lowered or "qpm" in lowered:
+            return "模型请求已达到限流，请稍后重试"
+        return "OpenClaw 工具事件运行失败，请重试（详情见服务端日志）"
+
+    def _run_stream_ws(self) -> Generator[str, None, None]:
+        encoder = EventEncoder()
+        run_id = str(uuid.uuid4())
+        message_id = str(uuid.uuid4())
+        thread = self.session_code or self.thread_id
+        backend: CrawBackendProtocol = self.backend
+
+        yield self._emit(
+            encoder,
+            RunStartedEvent(type=EventType.RUN_STARTED, thread_id=self.thread_id, run_id=run_id),
+        )
+
+        if backend is None:
+            yield from self._emit_error_and_finish(encoder, run_id, "craw backend 未装配（检查 BKAI_CRAW_BACKEND）")
+            return
+
+        ws_url = backend.api_url.replace("https://", "wss://").replace("http://", "ws://") + "/"
+        text_open = False
+        open_tools: set[str] = set()
+        started_at: dict[str, float] = {}
+        session = OpenClawWSSession(ws_url, backend.api_key, timeout=backend.timeout)
+
+        try:
+            session.connect()
+            self._track_stream(thread, session)
+            try:
+                session.send_chat(thread, self._last_user_message())
+                for event in session.events():
+                    if GeneratorStreamingHelper.is_cancelled(thread):
+                        session.abort(thread)
+                        if text_open:
+                            yield from self._emit_text_end(encoder, message_id)
+                        yield emit_run_finished_event(
+                            thread_id=self.thread_id,
+                            run_id=RunId.CANCELLED,
+                            event_handler=self._dispatch,
+                        )
+                        return
+
+                    if event.kind == "text":
+                        if not text_open:
+                            yield self._emit(
+                                encoder,
+                                TextMessageStartEvent(
+                                    type=EventType.TEXT_MESSAGE_START,
+                                    message_id=message_id,
+                                    role="assistant",
+                                ),
+                            )
+                            text_open = True
+                        yield self._emit(
+                            encoder,
+                            TextMessageContentEvent(
+                                type=EventType.TEXT_MESSAGE_CONTENT,
+                                message_id=message_id,
+                                delta=event.text,
+                            ),
+                        )
+                    elif event.kind == "tool":
+                        if text_open and event.phase == "start":
+                            yield from self._emit_text_end(encoder, message_id)
+                            text_open = False
+                            message_id = str(uuid.uuid4())
+                        yield from self._emit_tool(
+                            encoder,
+                            event,
+                            message_id,
+                            open_tools,
+                            started_at,
+                        )
+                    elif event.kind == "error":
+                        logger.warning("[CRAW] OpenClaw WS run error: %s", event.text)
+                        if text_open:
+                            yield from self._emit_text_end(encoder, message_id)
+                            text_open = False
+                        yield from self._emit_error_and_finish(
+                            encoder,
+                            run_id,
+                            self._client_ws_error(event.text),
+                        )
+                        return
+                    elif event.kind == "done":
+                        break
+            finally:
+                self._untrack_stream(thread, session)
+                session.close()
+
+            if GeneratorStreamingHelper.is_cancelled(thread):
+                if text_open:
+                    yield from self._emit_text_end(encoder, message_id)
+                yield emit_run_finished_event(
+                    thread_id=self.thread_id,
+                    run_id=RunId.CANCELLED,
+                    event_handler=self._dispatch,
+                )
+                return
+            if text_open:
+                yield from self._emit_text_end(encoder, message_id)
+            yield from self._emit_finish(run_id)
+        except OpenClawWSError as exc:
+            logger.warning("[CRAW] OpenClaw WS unavailable: %s", exc)
+            if text_open:
+                yield from self._emit_text_end(encoder, message_id)
+            yield from self._emit_error_and_finish(
+                encoder,
+                run_id,
+                "连接 OpenClaw 工具事件通道失败，请重试（详情见服务端日志）",
+            )
+        except Exception as exc:
+            logger.exception("[CRAW] OpenClaw WS stream error: %s", exc)
+            if text_open:
+                yield from self._emit_text_end(encoder, message_id)
+            yield from self._emit_error_and_finish(
+                encoder,
+                run_id,
+                f"转发 craw({backend.name}) 失败: {type(exc).__name__}",
+            )
+        finally:
+            self._untrack_stream(thread, session)
+            session.close()
+
+    @staticmethod
+    def _tool_result_text(result: Any) -> str:
+        if result is None:
+            return ""
+        if isinstance(result, str):
+            return result
+        if isinstance(result, dict):
+            parts = result.get("content")
+            if isinstance(parts, list):
+                text = "".join(
+                    part.get("text", "") for part in parts if isinstance(part, dict) and part.get("type") == "text"
+                )
+                if text:
+                    return text
+        return json.dumps(result, ensure_ascii=False)
+
+    @staticmethod
+    def _tool_duration(result: Any) -> Optional[float]:
+        if isinstance(result, dict):
+            milliseconds = (result.get("details") or {}).get("durationMs")
+            if isinstance(milliseconds, (int, float)):
+                return round(milliseconds / 1000.0, 3)
+        return None
+
+    def _emit_tool(
+        self,
+        encoder: EventEncoder,
+        event,
+        parent_message_id: str,
+        open_tools: set[str],
+        started_at: dict[str, float],
+    ) -> Generator[str, None, None]:
+        call_id = event.tool_call_id or str(uuid.uuid4())
+
+        if event.phase == "start" or call_id not in open_tools:
+            open_tools.add(call_id)
+            started_at[call_id] = time.monotonic()
+            yield self._emit(
+                encoder,
+                ToolCallStartEvent(
+                    type=EventType.TOOL_CALL_START,
+                    tool_call_id=call_id,
+                    tool_call_name=event.tool_name or "tool",
+                    parent_message_id=parent_message_id,
+                ),
+            )
+            if event.args:
+                args = event.args if isinstance(event.args, str) else json.dumps(event.args, ensure_ascii=False)
+                yield self._emit(
+                    encoder,
+                    ToolCallArgsEvent(
+                        type=EventType.TOOL_CALL_ARGS,
+                        tool_call_id=call_id,
+                        delta=args,
+                    ),
+                )
+
+        if event.phase == "result":
+            yield self._emit(
+                encoder,
+                ToolCallEndEvent(type=EventType.TOOL_CALL_END, tool_call_id=call_id),
+            )
+            content = self._tool_result_text(event.result)
+            duration = self._tool_duration(event.result)
+            if duration is None and call_id in started_at:
+                duration = round(time.monotonic() - started_at[call_id], 3)
+            started_at.pop(call_id, None)
+            yield self._emit(
+                encoder,
+                ExtendToolCallResultEvent(
+                    type=EventType.TOOL_CALL_RESULT,
+                    tool_call_id=call_id,
+                    message_id=str(uuid.uuid4()),
+                    content=content,
+                    role="tool",
+                    duration=duration,
+                    is_error=event.is_error,
+                ),
+            )
+            open_tools.discard(call_id)
+
+    def _run_stream_http(self) -> Generator[str, None, None]:
         encoder = EventEncoder()
         run_id = str(uuid.uuid4())
         message_id = str(uuid.uuid4())
