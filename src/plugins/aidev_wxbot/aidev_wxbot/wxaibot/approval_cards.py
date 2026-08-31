@@ -117,6 +117,11 @@ def bind_approval_target(card: dict, target: str) -> dict:
 
 
 def build_cancel_result_card(action: ApprovalCancelAction, task_id: str, *, result: Any) -> dict[str, Any] | None:
+    """Compatibility entry point for cancellation callbacks."""
+    return build_approval_result_card(action, task_id, result=result)
+
+
+def build_approval_result_card(action: ApprovalCancelAction, task_id: str, *, result: Any) -> dict[str, Any] | None:
     """用平台返回的原审批详情更新操作区；信息不完整时保留企微原卡片。
 
     ``ok=False`` 也可能表示审批已经结束，应展示实际结果而非“取消失败”。

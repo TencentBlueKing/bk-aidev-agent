@@ -834,6 +834,7 @@ class TestLongConnectionStreaming:
             ("cancelled", True, "已取消"),
             ("cancelled", False, "已取消"),
             ("approved", False, "审批已通过"),
+            ("rejected", False, "审批已拒绝"),
         ],
     )
     async def test_approval_cancel_card_event_dispatches_operation_and_updates_card(
@@ -866,6 +867,26 @@ class TestLongConnectionStreaming:
         for delivery in tuple(getattr(service, "_resume_deliveries", ())):
             delivery.finish()
             await delivery.task
+
+    @pytest.mark.parametrize("status,label", [("approved", "审批已通过"), ("rejected", "审批已拒绝")])
+    async def test_repeated_old_card_click_only_updates_actual_terminal_result(self, approval_card_case, status, label):
+        case = approval_card_case
+        service = _service()
+        case.result["approve_result"] = status
+        case.envelope.update(ok=False, already_finalized=True)
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value=case.envelope),
+            patch.object(long_connection_module, "submit_cancelled_approval_resume") as resume,
+        ):
+            await service._handle_frame({"body": case.event})
+            await service._handle_frame({"body": case.event})
+        resume.assert_not_called()
+        assert service._client.send_message_calls == []
+        cards = service._client.update_template_card_calls
+        assert len(cards) == 2 and cards[0] == cards[1]
+        assert cards[0]["jump_list"] == [{"type": 0, "title": label}]
+        assert cards[0]["task_id"] == case.task_id
+        assert "button_list" not in cards[0]
 
     @pytest.mark.parametrize("envelope", [None, {}, {"ok": True}, {"ok": False}])
     async def test_cancel_missing_result_preserves_card(self, approval_card_case, envelope):

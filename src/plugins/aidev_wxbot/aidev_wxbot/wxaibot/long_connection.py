@@ -33,7 +33,7 @@ from django.conf import settings
 from .approval_cards import (
     approval_task_id,
     bind_approval_target,
-    build_cancel_result_card,
+    build_approval_result_card,
     decode_cancel_event_key,
 )
 from .approval_resume import submit_cancelled_approval_resume
@@ -540,7 +540,7 @@ class WxAiBotLongConnectionService:
                     },
                 )
                 succeeded = isinstance(envelope, dict) and envelope.get("ok") is True
-                result_card = build_cancel_result_card(
+                result_card = build_approval_result_card(
                     action, task_id, result=envelope.get("result") if isinstance(envelope, dict) else None
                 )
                 if not succeeded and result_card is None:

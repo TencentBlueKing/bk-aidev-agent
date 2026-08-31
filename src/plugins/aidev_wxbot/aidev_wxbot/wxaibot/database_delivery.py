@@ -6,9 +6,12 @@ import json
 import logging
 
 from aidev_agent.events import AIDEV_CHAT_RESUME_FAILED, AIDEV_CHAT_RESUME_FINISHED, AIDEV_CHAT_RESUME_READY
+from aidev_bkplugin.models import EventDelivery
 from aidev_bkplugin.services.database_event_bus import DatabaseEventBus
 from django.db import transaction
+from django.utils import timezone
 
+from .approval_notifications import approval_result_messages
 from .database import database_connection_scope, run_with_database_connections
 from .direct_stream import AgentStream, iter_direct_stream_frames
 from .resume_delivery import markdown_parts
@@ -42,7 +45,7 @@ def result_messages(envelope: dict) -> list[dict]:
     """Reuse the same AG-UI renderer/card protocol as ordinary long-connection replies."""
     name, value = envelope["name"], envelope["value"]
     if name == AIDEV_CHAT_RESUME_READY:
-        return []  # Notification/audit only; never equate READY with approval granted.
+        return []  # Approval notices need a separate authoritative history read.
     if name not in RESUME_EVENTS:
         raise ValueError("Unsupported wxbot event")
     if not value.get("persisted"):
@@ -71,6 +74,32 @@ class DatabaseResumeConsumer:
         self.subscriber = subscriber_name(bot_id)
         self.send = send
 
+    @database_connection_scope()
+    def _prepare_messages(self, delivery) -> list[dict]:
+        if delivery.envelope["name"] != AIDEV_CHAT_RESUME_READY:
+            return result_messages(delivery.envelope)
+        if "approvalMessages" in delivery.route:
+            return delivery.route["approvalMessages"]
+        value = delivery.envelope["value"]
+        messages = approval_result_messages(
+            value["sessionCode"], value.get("interruptIds") or [], delivery.route["username"]
+        )
+        # Freeze the rendered notice before the first send. Retrying (or another
+        # process) must not change message indexes if history/config later changes.
+        route = {**delivery.route, "approvalMessages": messages}
+        updated = EventDelivery.objects.filter(
+            pk=delivery.pk,
+            status="processing",
+            lease_token=delivery.lease_token,
+            lease_until__gt=timezone.now(),
+            subscription__enabled=True,
+            subscription__app_code=self.bus.app_code,
+        ).update(route=route)
+        if not updated:
+            raise RuntimeError("Event delivery lease lost")
+        delivery.route = route
+        return messages
+
     async def consume_once(self) -> bool:
         delivery = await asyncio.to_thread(run_with_database_connections, self.bus.claim, self.subscriber)
         if delivery is None:
@@ -93,7 +122,7 @@ class DatabaseResumeConsumer:
                     or not delivery.route.get("username")
                 ):
                     raise ValueError("Invalid event recipient binding")
-                messages = await asyncio.to_thread(result_messages, delivery.envelope)
+                messages = await asyncio.to_thread(self._prepare_messages, delivery)
                 for index in range(delivery.progress, len(messages)):
                     await asyncio.to_thread(run_with_database_connections, self.bus.checkpoint, delivery, index)
                     await asyncio.wait_for(self.send(delivery.route["target"], messages[index]), timeout=45)

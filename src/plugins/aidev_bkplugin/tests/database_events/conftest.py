@@ -75,3 +75,26 @@ def wx_delivery_case(transactional_db, settings, monkeypatch):
     return SimpleNamespace(
         bus=bus, event=event, send=send, consumer=DatabaseResumeConsumer("app", "bot-original", send)
     )
+
+
+@pytest.fixture
+def approval_delivery_case(wx_delivery_case, monkeypatch):
+    from unittest.mock import MagicMock
+
+    from aidev_agent.events import AIDEV_CHAT_RESUME_READY
+
+    from .process_helpers import approval_record
+
+    case = wx_delivery_case
+    case.event.name = AIDEV_CHAT_RESUME_READY
+    case.event.value.pop("events")
+    case.event.value.pop("persisted")
+    case.bus.subscribe(
+        case.consumer.subscriber,
+        AIDEV_CHAT_RESUME_READY,
+        "session-original",
+        property={"target": "original-group", "username": "author", "sessionCode": "session-original"},
+    )
+    case.history = MagicMock(return_value=[approval_record()])
+    monkeypatch.setattr("aidev_wxbot.wxaibot.approval_notifications.SessionManager.list_session_contents", case.history)
+    return case

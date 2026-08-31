@@ -23,7 +23,8 @@ wxbot 在普通 Chat 请求获取原 session_code 后、消费 Agent 输出前�
 3. bkplugin 的 AgentBuilder 用 EventResourceManager 包装原 ResourceManager，
    委托原有鉴权、模型配置等能力，仅把发布操作交给 DatabaseEventBus。
 4. aidev_agent 的实际恢复生产者在 RUN_STARTED 入队并 flush 后发布
-   AIDEV_CHAT_RESUME_READY。它不代表“审批通过”，不用于更新原审批卡。
+   AIDEV_CHAT_RESUME_READY。它不代表“审批通过”；wxbot 按原用户、session_code
+   和 interruptIds 查询平台已落库的原审批结果，确认通过或拒绝后另发结果卡。
 5. 本次执行的 AG-UI 事件照常进入 Web 响应和会话持久化流程。非流式 HTTP
    回调内部也走同一恢复路径，最终聚合为原有 JSON 响应形态，执行次数仍为一次。
 6. 生产者完成会话写入与队列收尾后，发布 FINISHED 或 FAILED，携带本次执行
@@ -35,8 +36,25 @@ wxbot 在普通 Chat 请求获取原 session_code 后、消费 Agent 输出前�
 9. 每条消息收到发送成功确认后记录进度，全部完成才确认整条投递。下次原生
    卡片点击仍走现有身份校验、结构化答案和原会话恢复流程。
 
-本版是**结束或再次中断后的结果交付**，不是逐 token/逐段实时转发。READY 只做
-通知与审计；wxbot 处理 FINISHED/FAILED 才发送结果。HTTP 调用者可以继续流式接收。
+正文是**结束或再次中断后的结果交付**，不是逐 token/逐段实时转发。审批结果卡
+可在 READY 消费时先行发送，正文仍在 FINISHED/FAILED 时交付。HTTP 调用者可以
+继续流式接收。
+
+## 审批结果卡与旧卡点击
+
+- 通过或拒绝后发送新的结果卡，保留原标题、说明、单号、提交时间及跳转链接；
+  底部显示“审批已通过”或“审批已拒绝”，不包含取消按钮。当前平台没有可信
+  实际审批人字段，不使用候选 approvers 或点击用户拼接“由 xx”。
+- 原卡不能通过后台审批回调主动刷新。用户再次点击原卡时仍校验原会话、目标
+  和身份；平台返回 already_finalized 后，使用同一渲染函数替换底部为实际终态，
+  不再次取消或恢复会话。更新需要有效签名及本次点击回调窗口，不复用旧 req_id。
+- 查询精确匹配被恢复的中断，不只读最新一条，避免延迟消费时将下一次审批结果
+  误写到原卡。记录缺失、未终态或相互冲突则重试，不将 READY 当作审批通过。
+- 首次发送前，将结果卡快照保存到本条 EventDelivery.route 的内部 approvalMessages
+  字段，不改变订阅路由。重试或进程重启复用同一内容及消息序号，不新增数据表。
+- Ask-user 不产生审批结果卡；取消已有点击卡片确认，不再额外发送取消通知。
+- 结果查询或发送失败沿用投递重试；同一会话后续事件等待其交付或重试耗尽，
+  不影响 Web 的 HTTP 输出，也不重跑 Agent。历史已确认的 READY 不自动重放。
 
 ## 分层与事件
 
@@ -50,7 +68,7 @@ wxbot 在普通 Chat 请求获取原 session_code 后、消费 Agent 输出前�
 
 | CUSTOM.name | 触发点 | 用途 |
 | --- | --- | --- |
-| AIDEV_CHAT_RESUME_READY | 实际恢复的 RUN_STARTED 已 flush | 通知执行已开始；不能当作审批结果 |
+| AIDEV_CHAT_RESUME_READY | 实际恢复的 RUN_STARTED 已 flush | 通知执行已开始；wxbot 另查可信审批结果后发结果卡 |
 | AIDEV_CHAT_RESUME_FINISHED | 本次执行正常收尾并完成持久化 | 交付本次完整结果；可能再次进入人机交互 |
 | AIDEV_CHAT_RESUME_FAILED | 本次执行发生 RUN_ERROR 或收尾失败 | 交付错误结果或恢复失败提示 |
 
@@ -82,7 +100,7 @@ DatabaseEventBus 的 subscribe 注册的是持久订阅身份及路由，不是 
 - 记录包含本次回复、工具展示数据和路由，按会话数据保护；不要把 envelope、
   property 或完整异常写入日志。部署需配置终态记录保留/清理策略，未投递记录
   不应按普通日志直接清理。当前版本不自动删除事件或修改用户订阅。
-- 不更新后台审批完成前发出的旧卡片，不复用过期 req_id。后续结果使用新消息。
+- 后台不主动更新旧卡，不复用过期 req_id；结果另发新卡，旧卡仅在有效点击后更新。
 - 本次只覆盖 AG-UI Chat 的 resume，不补齐 HTTP 轮询卡片能力，不更改 Flow、
   legacy streaming、跨环境恢复、Web checkpoint 或审批回调鉴权协议。
 
@@ -94,10 +112,12 @@ DatabaseEventBus 的 subscribe 注册的是持久订阅身份及路由，不是 
 
 - Web 流式回调 + 独立 wxbot 消费者：双方获得同次执行内容。
 - Web 非流式回调 + 独立 wxbot 消费者：JSON 返回与企微交付并存。
-- Web 先结束、wxbot 后上线：补收正文和下一张 Ask-user 卡片。
+- Web 先结束、wxbot 后上线：补收审批结果卡、正文和下一张 Ask-user 卡片。
 - 每个跨进程场景断言执行一次、原会话和群目标不变、两条生命周期投递均确认。
 - 覆盖幂等发布、订阅隔离、原路由保护、租约过期、发送进度重试、停机未确认、
   订阅停用及迁移一致性。
+- 审批通过/拒绝文案、延迟读取原中断、结果卡快照重试、无效租约禁止发送；
+  wxbot 卡片测试覆盖重复点击旧卡只更新实际终态、不重复恢复。
 
 HTTP View、ResourceManager 注入、核心生产者、数据库及企微渲染/消费者使用
 实际代码；鉴权平台、模型执行和企微网络发送使用测试替身。因此这些测试证明

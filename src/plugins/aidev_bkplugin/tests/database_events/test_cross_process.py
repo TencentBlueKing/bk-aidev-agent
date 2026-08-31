@@ -59,7 +59,7 @@ def test_platform_http_callback_and_wxbot_receive_same_resume_once(process_case,
     web = case.ctx.Process(
         target=web_process, args=(case.path, runtime_events(question), case.web_status, case.executions)
     )
-    wx = case.ctx.Process(target=wxbot_process, args=(case.path, case.sent, case.wx_status, 2 if question else 1))
+    wx = case.ctx.Process(target=wxbot_process, args=(case.path, case.sent, case.wx_status, 3 if question else 2))
     with processes(web, wx):
         web.start()
         ready = case.web_status.get(timeout=20)
@@ -73,12 +73,20 @@ def test_platform_http_callback_and_wxbot_receive_same_resume_once(process_case,
             assert EventDelivery.objects.filter(status="pending").count() == 2
             wx.start()
         assert case.wx_status.get(timeout=25)[0] == "done"
-        target, body, wx_pid = case.sent.get(timeout=2)
-        assert target == "original-group" and "审批已完成，继续查询。" in body["markdown"]["content"]
-        assert wx_pid != ready[2] and case.executions.value == 1
-        if question:
-            assert case.sent.get(timeout=2)[1]["template_card"]["card_type"] == "vote_interaction"
+        assert_delivered_messages(case, ready[2], question)
         assert EventDelivery.objects.filter(status="delivered").count() == 2
+
+
+def assert_delivered_messages(case, web_pid, question):
+    target, body, wx_pid = case.sent.get(timeout=2)
+    assert target == "original-group"
+    assert body["template_card"]["jump_list"] == [{"type": 0, "title": "审批已通过"}]
+    assert "button_list" not in body["template_card"] and "task_id" not in body["template_card"]
+    target, body, _ = case.sent.get(timeout=2)
+    assert target == "original-group" and "审批已完成，继续查询。" in body["markdown"]["content"]
+    assert wx_pid != web_pid and case.executions.value == 1
+    if question:
+        assert case.sent.get(timeout=2)[1]["template_card"]["card_type"] == "vote_interaction"
 
 
 def call_web(port, stream):

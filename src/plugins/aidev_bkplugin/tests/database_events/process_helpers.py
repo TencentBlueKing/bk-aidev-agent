@@ -77,6 +77,34 @@ def runtime_events(question=False):
     ]
 
 
+def approval_record(status="approved"):
+    return {
+        "session_code": "session-original",
+        "role": "interrupt",
+        "property": {"builtin_property": {"approve_result": status}},
+        "content": {
+            "outcome": {
+                "type": "success",
+                "interrupts": [
+                    {
+                        "id": "approval-original",
+                        "reason": "aidev:tool_approval",
+                        "metadata": {
+                            "ticket": {
+                                "title": "执行工具需要审批",
+                                "sn": "DE001",
+                                "submit_time": "2026-08-31T00:00:00Z",
+                                "url": "https://approval.example.com/DE001",
+                                "approvers": ["candidate-not-actual-approver"],
+                            }
+                        },
+                    }
+                ],
+            },
+        },
+    }
+
+
 def build_web_application(events, execution_count):
     from aidev_agent.core.ag_ui.types import AgentInput
     from aidev_agent.pydantic_models import ChatPrompt
@@ -197,9 +225,15 @@ def wxbot_process(path, sent, status, expected_messages):
                 await asyncio.sleep(0.025)
             raise TimeoutError("wxbot did not receive expected result")
 
-        with patch(
-            "aidev_bkplugin.services.agent_helpers.AgentHelper.build_session_detail_url",
-            side_effect=lambda session: f"https://agent.example.com/?session={session}",
+        with (
+            patch(
+                "aidev_bkplugin.services.agent_helpers.AgentHelper.build_session_detail_url",
+                side_effect=lambda session: f"https://agent.example.com/?session={session}",
+            ),
+            patch(
+                "aidev_wxbot.wxaibot.approval_notifications.SessionManager.list_session_contents",
+                return_value=[approval_record()],
+            ),
         ):
             asyncio.run(consume())
         status.put(("done", os.getpid()))
