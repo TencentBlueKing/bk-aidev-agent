@@ -43,6 +43,7 @@ from .context import (
     stream_msg,
     text_msg,
 )
+from .database import database_connection_scope
 from .decryption import WXBizJsonMsgCrypt
 from .models import AgentSession
 from .strategies import resolve_strategy
@@ -430,6 +431,7 @@ class WxAiBotViewSet(ViewSet):
 
         return stream_msg("已创建新会话，请输入咨询内容", True, stream_id)
 
+    @database_connection_scope()
     def _process_ai_request_async(self, content: str, stream_id: str, username: str, group_id: str):
         """异步处理 AI 请求：根据 agent_type 选择策略，执行并桥接到 RabbitMQ。
 

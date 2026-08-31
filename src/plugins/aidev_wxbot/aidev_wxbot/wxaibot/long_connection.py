@@ -51,6 +51,7 @@ from .constants import (
     WS_INSTANCE_LOCK_CACHE_KEY_PREFIX,
 )
 from .context import THINKING_MSG, ContextGenerator, stream_msg
+from .database import database_connection_scope, run_with_database_connections
 from .direct_stream import DirectStreamFrame, iter_direct_stream_frames
 from .question_cards import bind_question_target, decode_question_key, question_task_id, submitted_question_card
 from .question_resume import prepare_question_submission, submit_question_resume
@@ -477,7 +478,9 @@ class WxAiBotLongConnectionService:
                 return
             if payload.get("msgtype") == "text":
                 with wxbot_span("wxbot.message.prepare"):
-                    response, request = await asyncio.to_thread(self._view.prepare_agent_request, payload)
+                    response, request = await asyncio.to_thread(
+                        run_with_database_connections, self._view.prepare_agent_request, payload
+                    )
                 if response is not None:
                     await self._dispatch_immediate_response(frame, payload, response)
                     return
@@ -491,7 +494,7 @@ class WxAiBotLongConnectionService:
                     await self._send_stream_reply(frame, stream_id, "长连接模式无需轮询流式结果", True)
                 return
 
-            response = await asyncio.to_thread(self._view._reply_wxaibot, payload)
+            response = await asyncio.to_thread(run_with_database_connections, self._view._reply_wxaibot, payload)
             await self._dispatch_immediate_response(frame, payload, response)
 
     async def _handle_approval_card_event(self, frame: dict[str, Any], payload: dict[str, Any]) -> bool:
@@ -518,9 +521,12 @@ class WxAiBotLongConnectionService:
         succeeded = False
         result_card = None
         try:
-            username = await asyncio.to_thread(self._view.resolve_event_username, payload)
+            username = await asyncio.to_thread(
+                run_with_database_connections, self._view.resolve_event_username, payload
+            )
             with wxbot_span("wxbot.approval.cancel", kind=CLIENT) as span:
                 envelope = await asyncio.to_thread(
+                    run_with_database_connections,
                     dispatch_user_operation,
                     "approval_cancel",
                     username,
@@ -623,7 +629,9 @@ class WxAiBotLongConnectionService:
             return True
         delivery = None
         try:
-            username = await asyncio.to_thread(self._view.resolve_event_username, payload)
+            username = await asyncio.to_thread(
+                run_with_database_connections, self._view.resolve_event_username, payload
+            )
             submission = await asyncio.to_thread(
                 prepare_question_submission,
                 action,
@@ -897,6 +905,7 @@ class WxAiBotLongConnectionService:
                 stream_registry.cancel(request.stream_id)
             cancel_event.set()
 
+    @database_connection_scope()
     def _produce_direct_stream(
         self,
         request: WxBotAgentRequest,
@@ -975,6 +984,7 @@ class WxAiBotLongConnectionService:
         self._finish_stream_drain(drain)
         return drain
 
+    @database_connection_scope()
     def _drain_stream_frames(self, frames, drain: StreamDrain) -> None:
         """排空统一流接口，让 Agent 自己完成收尾。
 
