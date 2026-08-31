@@ -17,6 +17,7 @@ import os
 import secrets
 import threading
 import time
+from contextlib import suppress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable, Optional
 from urllib.error import HTTPError, URLError
@@ -98,10 +99,8 @@ def rewrite_openclaw_config_file(path: str, egress_base: str, *, identity_id: st
         json.dump(config, handle, ensure_ascii=False, indent=2)
         handle.write("\n")
     os.replace(tmp, path)
-    try:
+    with suppress(OSError):
         os.chmod(path, 0o600)
-    except OSError:
-        pass
     persist_egress_routes(routes)
     _logger.warning("[CRAW] MCP 已改写到 egress identity=%s rewritten=%s skipped=%s", identity_id, rewritten, skipped)
     return {"rewritten": rewritten, "skipped": skipped, "routes": routes}
@@ -115,10 +114,8 @@ def persist_egress_routes(routes: dict[str, str], path: str = "") -> str:
         json.dump(routes, handle, ensure_ascii=False)
         handle.write("\n")
     os.replace(tmp, dest)
-    try:
+    with suppress(OSError):
         os.chmod(dest, 0o600)
-    except OSError:
-        pass
     return dest
 
 
@@ -266,6 +263,9 @@ class McpEgress:
                 self._proxy(urlparse(self.path))
 
             def do_HEAD(self) -> None:  # noqa: N802
+                self._proxy(urlparse(self.path))
+
+            def do_DELETE(self) -> None:  # noqa: N802
                 self._proxy(urlparse(self.path))
 
             def _proxy(self, parsed) -> None:

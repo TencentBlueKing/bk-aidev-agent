@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 2026-08-31 · OpenClaw WS 工具事件与 MCP 会话清理
+
+- **变更**：把已在 PaaS Demo 验证的 OpenClaw WebSocket `tool-events` 传输收敛到 `packages/craw`；`BKAI_OPENCLAW_TRANSPORT=ws` 时输出 `TOOL_CALL_START / ARGS / END / RESULT`，HTTP 保留为纯文本回退。MCP egress 增加 DELETE 转发，支持 streamable HTTP 会话关闭；模型 QPM 429 返回明确限流提示。
+- **依赖**：新增 `websocket-client`。
+- **验证**：`tests/packages/craw/` 106 passed，包含 WS 工具事件闭合、transport 回退、DELETE 用户身份注入和限流错误脱敏。
+
 ## 2026-08-25 · craw MCP 用户 token 出口
 
 - **变更**：聊天入口用登录态换用户 `access_token`；对话期间租约占用本机 `mcp_egress` 共享槽，注入 `X-Bkapi-Authorization`。盘上零真 token。隔离应用设 `BKAI_BKAPI_USE_USER_TOKEN=0`，用户 token 不进 bkapi client。
