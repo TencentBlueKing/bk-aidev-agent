@@ -2,6 +2,16 @@
 
 本插件需与智能体模板配合使用，用于开发和管理智能体插件。
 
+## 管理命令的指标采集
+
+通过 `manage.py` 或 `django-admin` 运行一次性管理命令（如 `migrate`、
+`collectstatic`、`shell`）时，插件不会启动指标采集线程，避免进程退出时等待最后一次上报。
+该策略同时覆盖直连 OTLP 和经 Celery 上报，即使环境或平台配置启用了指标也不会启动。
+
+`runserver`、`celery`（含 worker/beat）、`run_wxaibot_ws` 保留原有指标配置；
+直接启动的 Gunicorn、Celery 不受影响。Trace 和日志上报配置不变。
+策略位于插件初始化入口，已有模板升级插件即可生效，无需修改 `bin/manage.py`。
+
 ## 本地调试智能体插件
 
 ### 环境准备

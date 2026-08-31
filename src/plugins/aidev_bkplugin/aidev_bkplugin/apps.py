@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import logging
+import sys
+from pathlib import Path
 
 from aidev_agent.utils.module_loading import import_string
 from django.apps import AppConfig
@@ -60,6 +62,12 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _is_one_off_management_command() -> bool:
+    if not sys.argv or Path(sys.argv[0]).name not in {"manage.py", "django-admin", "django-admin.py"}:
+        return False
+    return sys.argv[1:2] not in (["runserver"], ["celery"], ["run_wxaibot_ws"])
+
+
 def init_bk_aidev_agent_otel() -> None:
     """
     初始化 BK AIDEV Agent OpenTelemetry。
@@ -114,6 +122,14 @@ def init_bk_aidev_agent_otel() -> None:
     endpoints.extend(get_otel_endpoint_by_env())
 
     otel_config.otel_endpoints = endpoints
+    if _is_one_off_management_command():
+        # 一次性命令不启动指标采集线程，避免退出时等待最后一次上报；Trace 保持原配置。
+        # 在两种指标上报路径之前统一关闭，平台配置也不能重新开启。
+        otel_config.enable_metrics = False
+        set_metric_service(None)
+        BkAidevAgentInstrumentor(config=otel_config).instrument()
+        logger.info("[aidev_bkplugin] metric export skipped for one-off management command")
+        return
     if configure_metric_identity is None or BkPluginMetricService is None or MetricExportSettings is None:
         logger.info("[aidev_bkplugin] metric OpenTelemetry extras unavailable; metric export skipped")
         otel_config.enable_metrics = False
