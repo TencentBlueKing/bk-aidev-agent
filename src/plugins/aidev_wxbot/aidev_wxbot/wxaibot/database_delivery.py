@@ -7,8 +7,9 @@ import logging
 
 from aidev_agent.events import AIDEV_CHAT_RESUME_FAILED, AIDEV_CHAT_RESUME_FINISHED, AIDEV_CHAT_RESUME_READY
 from aidev_bkplugin.services.database_event_bus import DatabaseEventBus
-from django.db import close_old_connections, transaction
+from django.db import transaction
 
+from .database import database_connection_scope, run_with_database_connections
 from .direct_stream import AgentStream, iter_direct_stream_frames
 from .resume_delivery import markdown_parts
 from .tracing import CONSUMER, resumed_event_context, wxbot_span
@@ -23,21 +24,18 @@ def subscriber_name(bot_id: str) -> str:
     return "wxbot:" + hashlib.sha256(bot_id.encode()).hexdigest()
 
 
+@database_connection_scope()
 def bind_resume_subscription(app_code: str, bot_id: str, session_code: str, username: str, target: str) -> None:
     if not username or not target:
         raise ValueError("Missing trusted original WeCom recipient")
-    try:
-        close_old_connections()
-        with transaction.atomic():
-            for name in RESUME_EVENTS:
-                DatabaseEventBus(app_code).subscribe(
-                    subscriber_name(bot_id),
-                    name,
-                    session_code,
-                    property={"username": username, "target": target, "sessionCode": session_code},
-                )
-    finally:
-        close_old_connections()
+    with transaction.atomic():
+        for name in RESUME_EVENTS:
+            DatabaseEventBus(app_code).subscribe(
+                subscriber_name(bot_id),
+                name,
+                session_code,
+                property={"username": username, "target": target, "sessionCode": session_code},
+            )
 
 
 def result_messages(envelope: dict) -> list[dict]:
@@ -67,14 +65,6 @@ def result_messages(envelope: dict) -> list[dict]:
     return messages
 
 
-def _database_call(func, *args):
-    try:
-        close_old_connections()
-        return func(*args)
-    finally:
-        close_old_connections()
-
-
 class DatabaseResumeConsumer:
     def __init__(self, app_code: str, bot_id: str, send):
         self.bus = DatabaseEventBus(app_code)
@@ -82,7 +72,7 @@ class DatabaseResumeConsumer:
         self.send = send
 
     async def consume_once(self) -> bool:
-        delivery = await asyncio.to_thread(_database_call, self.bus.claim, self.subscriber)
+        delivery = await asyncio.to_thread(run_with_database_connections, self.bus.claim, self.subscriber)
         if delivery is None:
             return False
         try:
@@ -105,13 +95,13 @@ class DatabaseResumeConsumer:
                     raise ValueError("Invalid event recipient binding")
                 messages = await asyncio.to_thread(result_messages, delivery.envelope)
                 for index in range(delivery.progress, len(messages)):
-                    await asyncio.to_thread(_database_call, self.bus.checkpoint, delivery, index)
+                    await asyncio.to_thread(run_with_database_connections, self.bus.checkpoint, delivery, index)
                     await asyncio.wait_for(self.send(delivery.route["target"], messages[index]), timeout=45)
-                    await asyncio.to_thread(_database_call, self.bus.checkpoint, delivery, index + 1)
-                await asyncio.to_thread(_database_call, self.bus.acknowledge, delivery)
+                    await asyncio.to_thread(run_with_database_connections, self.bus.checkpoint, delivery, index + 1)
+                await asyncio.to_thread(run_with_database_connections, self.bus.acknowledge, delivery)
                 logger.info("event=wxbot_event_delivered event_name=%s", delivery.envelope["name"])
         except Exception as error:
-            await asyncio.to_thread(_database_call, self.bus.retry, delivery, error)
+            await asyncio.to_thread(run_with_database_connections, self.bus.retry, delivery, error)
         # CancelledError leaves the lease unacknowledged for another process after expiry.
         return True
 
