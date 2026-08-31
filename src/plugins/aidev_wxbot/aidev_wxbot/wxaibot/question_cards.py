@@ -226,7 +226,9 @@ def decode_answers(questions: list, selected_items: dict) -> list:
     return answers
 
 
-def submitted_question_card(interrupt: dict, session_code: str, *, text: str = "答案已接收") -> dict | None:
+def submitted_question_card(
+    interrupt: dict, session_code: str, *, text: str = "答案已接收", answers: list | None = None
+) -> dict | None:
     """Replace the controls with a result notice linked only to the original session."""
     card = build_question_card(interrupt, session_code)
     if card is None:
@@ -241,9 +243,15 @@ def submitted_question_card(interrupt: dict, session_code: str, *, text: str = "
     card["main_title"]["desc"] = "点击查看原会话"
     for key in ("checkbox", "select_list", "submit_button"):
         card.pop(key, None)
+    lines = [text]
+    for index, answer in enumerate(answers or [], 1):
+        if len(answers) > 1:
+            lines.append(f"\n{index}. {answer['question']}")
+        labels = "、".join(option["label"] for option in answer["answer"])
+        lines.append(f"你的答案：{labels}")
     card.update(
         card_type="text_notice",
-        sub_title_text=text,
+        sub_title_text="\n".join(lines),
         card_action={"type": 1, "url": _normalize_url(session_url)},
     )
     return card

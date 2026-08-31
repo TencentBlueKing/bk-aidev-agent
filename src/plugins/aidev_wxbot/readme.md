@@ -65,7 +65,9 @@ use WeCom's native first-option default; answers are submitted only after the us
 
 After an accepted native submission, the click callback replaces the question card with a result notice:
 the original task ID and title remain, choices and the submit button are removed, and clicking opens only
-the original AI 小鲸 session. This requires a configured session URL and a reply within the callback's five-second
+the original AI 小鲸 session. The notice shows the server-validated answers, with every selected label for
+multiple-choice answers and numbered questions for multiple questions. A duplicate click does not display its
+new selections as accepted answers. This requires a configured session URL and a reply within the callback's five-second
 window. Missing URLs or update failures do not block the accepted answer's resume output; old cards are not
 proactively updated in the background. Ordinary text replies do not trigger this card replacement.
 

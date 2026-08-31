@@ -111,6 +111,29 @@ def test_submitted_card_removes_controls_and_opens_original_session(native_quest
     assert interrupt == original
 
 
+def test_result_card_shows_every_validated_answer(native_question_case):
+    case = native_question_case
+    questions = case.interrupt["metadata"]["questions"]
+    answers = cards.decode_answers(questions, case.selected)
+    original = copy.deepcopy(answers)
+    result = cards.submitted_question_card(case.interrupt, "session-1", answers=answers)
+    content = result["sub_title_text"]
+    for index, answer in enumerate(answers, 1):
+        if len(answers) > 1:
+            assert f"{index}. {answer['question']}" in content
+        assert "你的答案：" + "、".join(o["label"] for o in answer["answer"]) in content
+    assert result["card_type"] == "text_notice"
+    assert not {"checkbox", "select_list", "submit_button"} & result.keys()
+    assert answers == original
+
+
+def test_result_card_does_not_truncate_long_answers(protocol_question_case):
+    case = protocol_question_case
+    answers = cards.decode_answers(case.interrupt["metadata"]["questions"], case.selected)
+    result = cards.submitted_question_card(case.interrupt, "session-1", answers=answers)
+    assert all(a["answer"][0]["label"] in result["sub_title_text"] for a in answers)
+
+
 @pytest.mark.parametrize("url", ["", "/chat-window/", "javascript:alert(1)", "https://[invalid"])
 def test_submitted_card_requires_valid_session_url(question_case, monkeypatch, url):
     monkeypatch.setattr(cards.AgentHelper, "build_session_detail_url", lambda _: url)

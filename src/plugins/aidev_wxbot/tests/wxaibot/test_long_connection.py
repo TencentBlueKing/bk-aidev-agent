@@ -171,7 +171,7 @@ async def test_all_text_goes_directly_to_llm_without_question_lookup(content):
 @pytest.mark.parametrize("status", ["accepted", "duplicate", "busy"])
 async def test_question_click_updates_only_accepted_card(question_case, question_callback, status):
     service = _service()
-    submission = SimpleNamespace(interrupt=question_case.interrupt)
+    submission = SimpleNamespace(interrupt=question_case.interrupt, answers=[{"answer": [{"label": "华南"}]}])
     with (
         patch.object(long_connection_module, "prepare_question_submission", return_value=submission) as prepare,
         patch.object(long_connection_module, "submit_question_resume", return_value=status) as submit,
@@ -179,6 +179,9 @@ async def test_question_click_updates_only_accepted_card(question_case, question
         await service._handle_frame({"body": question_callback})
     assert len(service._client.update_template_card_calls) == int(status != "busy")
     assert prepare.call_args.args[0] == question_case.action
+    if status != "busy":
+        result_card = service._client.update_template_card_calls[-1]
+        assert ("你的答案：华南" in result_card["sub_title_text"]) == (status == "accepted")
     if status == "accepted":
         delivery = submit.call_args.args[1]
         delivery.failed()
@@ -190,7 +193,7 @@ async def test_question_click_updates_only_accepted_card(question_case, question
 @pytest.mark.parametrize("failure", ["missing_url", "build_error", "update_error"])
 async def test_question_result_card_failure_does_not_block_resume(question_case, question_callback, failure):
     service = _service()
-    submission = SimpleNamespace(interrupt=question_case.interrupt)
+    submission = SimpleNamespace(interrupt=question_case.interrupt, answers=[])
     with (
         patch.object(long_connection_module, "prepare_question_submission", return_value=submission),
         patch.object(long_connection_module, "submit_question_resume", return_value="accepted") as submit,

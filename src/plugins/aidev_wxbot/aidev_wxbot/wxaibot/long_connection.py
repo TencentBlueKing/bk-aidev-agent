@@ -641,7 +641,12 @@ class WxAiBotLongConnectionService:
                 return True
             try:
                 result_card = await asyncio.to_thread(
-                    submitted_question_card, submission.interrupt, action.session_code
+                    submitted_question_card,
+                    submission.interrupt,
+                    action.session_code,
+                    # A duplicate click may contain different selections. Only
+                    # display answers actually accepted for this resume.
+                    answers=submission.answers if status == "accepted" else None,
                 )
                 if result_card is not None:
                     await self._update_interaction_card(frame, result_card, "wxbot.question_card.update")
