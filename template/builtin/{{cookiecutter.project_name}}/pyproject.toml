@@ -6,7 +6,7 @@ readme = "readme.md"
 authors = [{ name = "blueking" }]
 requires-python = "~=3.11.9"
 dependencies = [
-    "aidev-agent[opentelemetry]==2.2.2rc30",
+    "aidev-agent[opentelemetry]==2.2.2rc39",
     "aidev-bkplugin==2.2.2rc28",
     "aidev-wxbot==2.2.2rc28",
     "aidev-ai-blueking==2.2.4b5",

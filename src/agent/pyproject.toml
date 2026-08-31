@@ -36,7 +36,7 @@ dependencies = [
     "websocket-client>=1.8.0,<2.0.0",
 ]
 name = "aidev-agent"
-version = "2.2.2rc30"
+version = "2.2.2rc39"
 description = "bkaidev agent builder"
 
 [project.optional-dependencies]
