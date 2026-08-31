@@ -67,7 +67,7 @@ class ApprovalStateHandler:
         ``builtin_property`` 平铺到记录顶层。读取按"嵌套优先 + 顶层兜底"处理。
 
         Returns:
-            ``{"approve_result": ApproveResultLiteral, "interrupts": list, "id": int|None}``。
+            ``{"approve_result": ApproveResultLiteral, "interrupts": list, "id": int|None, "approved_by": str}``。
             未找到 interrupt 记录或记录尚未写入审批结果时返回 None。
         """
         latest = self._get_latest_interrupt_record(session_code)
@@ -88,15 +88,18 @@ class ApprovalStateHandler:
             )
             return None
         interrupts = self._extract_interrupts_from_content(latest.get("content"))
+        approved_by = str(builtin_property.get("approved_by") or latest.get("approved_by") or "").strip()
         logger.info(
-            "[Approval] fetch_approve_result: session_code=%s, approve_result=%s",
+            "[Approval] fetch_approve_result: session_code=%s, approve_result=%s, approved_by=%s",
             session_code,
             approve_result,
+            approved_by,
         )
         return {
             "approve_result": approve_result,
             "interrupts": interrupts,
             "id": latest.get("id"),
+            "approved_by": approved_by,
         }
 
     def query_approval_info(self, session_code: str) -> Optional[dict]:

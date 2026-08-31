@@ -473,6 +473,7 @@ class BaseResourceManager(abc.ABC):
         agent_options: Any = None,
         username: str = None,
         executor_info: dict | None = None,
+        tool_interceptors: list | None = None,
         **kwargs,
     ) -> Any:
         """按 MCP 配置装配 LangChain ``StructuredTool`` 列表。
@@ -485,6 +486,7 @@ class BaseResourceManager(abc.ABC):
         :param username: 用户名，用于 BLUEAPPS 认证
         :param executor_info: 执行用户信息（含 app_code/app_secret/access_token），
             优先用于 MCP 凭证注入，与 skill sandbox 保持一致
+        :param tool_interceptors: MCP 工具调用 interceptor 列表，用于按次改写请求头
         :return: McpToolsResult 对象，包含 tools 和 fetch_failures
         """
         new_server_config = deepcopy(mcp_config)
@@ -541,7 +543,7 @@ class BaseResourceManager(abc.ABC):
             server_config = new_server_config[server_name]
             transport = str(server_config.get("transport") or "unknown")
             for _i in range(2):
-                client = MultiServerMCPClient(new_server_config)
+                client = MultiServerMCPClient(new_server_config, tool_interceptors=tool_interceptors)
                 try:
                     with recording_span(
                         "mcp.tools.list",
