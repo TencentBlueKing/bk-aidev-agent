@@ -95,6 +95,12 @@ class ResourceManagerProtocol(Protocol):
         """按 skill_id + version 取回技能详情。"""
         ...
 
+    def retrieve_skill_download(
+        self, skill_id: str, version: str | None, callee_agent_code: str | None, **kwargs
+    ) -> dict:
+        """按 skill_id + version 取回完整技能包的短期下载链接。"""
+        ...
+
     def check_agent_call_permission(self, caller_app_code: str, username: Optional[str] = None, **kwargs) -> dict:
         """被调方校验主调方智能体调用权限，返回平台 ``data``（含 ``allowed`` 等字段）。"""
         ...
