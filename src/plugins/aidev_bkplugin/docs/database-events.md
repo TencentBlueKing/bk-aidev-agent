@@ -6,8 +6,12 @@ Agent，不创建新会话，也不要求两个进程共用 Redis 或进程内�
 
 ## 启用
 
-默认关闭。启用前需在应用的 Django 环境执行 `migrate aidev_bkplugin`，再为 Web
-和 wxbot **同时**配置 `BKAPP_AIDEV_DATABASE_EVENTS_ENABLED=1`。
+默认开启：未设置 `BKAPP_AIDEV_DATABASE_EVENTS_ENABLED` 时，Web 发布数据库事件，
+wxbot 注册订阅并消费投递。升级后启动进程前，必须先在应用的 Django 环境执行
+`migrate aidev_bkplugin`，确保事件表已创建。
+
+如需关闭，为 Web 和 wxbot **同时**配置 `BKAPP_AIDEV_DATABASE_EVENTS_ENABLED=0`；
+显式设置 `=1` 可开启。已有 `=0` 配置会继续生效，不会被新默认值覆盖。
 两端必须加载匹配的 SDK / 插件版本，使用同一个应用标识、数据库和会话环境。
 不需要为 wxbot 新增表，通用表由 bkplugin 的迁移维护。
 
