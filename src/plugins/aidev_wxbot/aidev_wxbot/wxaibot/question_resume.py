@@ -147,19 +147,25 @@ def _question_worker(submission: QuestionSubmission, delivery, key: str) -> None
                 submission.action.session_code,
                 builder.session_manager,
                 turn_id=submission.turn_id,
-                consume_stream=lambda output: delivery.consume(
-                    output,
-                    submission.action.session_code,
-                    submission.action.interrupt_id,
-                    submission.turn_id,
-                    thread_id=submission.graph_thread_id,
-                ),
+                consume_stream=(
+                    lambda output: delivery.consume(
+                        output,
+                        submission.action.session_code,
+                        submission.action.interrupt_id,
+                        submission.turn_id,
+                        thread_id=submission.graph_thread_id,
+                    )
+                )
+                if delivery is not None
+                else None,
             )
             cache.set(key, "completed", timeout=MAX_AGE)
             logger.info("event=wxbot_question_resume_finished")
         except Exception as error:
             logger.error("event=wxbot_question_resume_failed error_type=%s", type(error).__name__)
-            delivery.failed()
+            if delivery is not None:
+                delivery.failed()
         finally:
             close_old_connections()
-            delivery.finish()
+            if delivery is not None:
+                delivery.finish()

@@ -1,0 +1,96 @@
+import json
+import multiprocessing
+from contextlib import contextmanager
+from urllib.request import ProxyHandler, Request, build_opener
+
+import pytest
+from aidev_agent.events import AIDEV_CHAT_RESUME_FAILED, AIDEV_CHAT_RESUME_FINISHED, AIDEV_CHAT_RESUME_READY
+from aidev_bkplugin.models import EventDelivery
+from aidev_bkplugin.services.database_event_bus import DatabaseEventBus
+from django.db import connection
+
+from .process_helpers import runtime_events, web_process, wxbot_process
+
+
+@contextmanager
+def processes(*workers):
+    try:
+        yield
+    finally:
+        for worker in workers:
+            if worker.pid is not None:
+                worker.join(timeout=25)
+                if worker.is_alive():
+                    worker.terminate()
+                    worker.join(timeout=5)
+
+
+@pytest.fixture
+def process_case(transactional_db):
+    import hashlib
+    from types import SimpleNamespace
+
+    subscriber = "wxbot:" + hashlib.sha256(b"bot-original").hexdigest()
+    for name in (AIDEV_CHAT_RESUME_READY, AIDEV_CHAT_RESUME_FINISHED, AIDEV_CHAT_RESUME_FAILED):
+        DatabaseEventBus("app").subscribe(
+            subscriber,
+            name,
+            "session-original",
+            property={
+                "username": "author",
+                "target": "original-group",
+                "sessionCode": "session-original",
+            },
+        )
+    ctx = multiprocessing.get_context("spawn")
+    return SimpleNamespace(
+        ctx=ctx,
+        path=connection.settings_dict["NAME"],
+        executions=ctx.Value("i", 0),
+        web_status=ctx.Queue(),
+        wx_status=ctx.Queue(),
+        sent=ctx.Queue(),
+    )
+
+
+@pytest.mark.parametrize("stream,question,offline", [(True, False, False), (False, False, False), (True, True, True)])
+def test_platform_http_callback_and_wxbot_receive_same_resume_once(process_case, stream, question, offline):
+    case = process_case
+    web = case.ctx.Process(
+        target=web_process, args=(case.path, runtime_events(question), case.web_status, case.executions)
+    )
+    wx = case.ctx.Process(target=wxbot_process, args=(case.path, case.sent, case.wx_status, 2 if question else 1))
+    with processes(web, wx):
+        web.start()
+        ready = case.web_status.get(timeout=20)
+        assert ready[0] == "ready", ready
+        if not offline:
+            wx.start()
+        response = call_web(ready[1], stream)
+        assert "审批已完成，继续查询。" in response
+        assert case.web_status.get(timeout=20)[0] == "done"
+        if offline:
+            assert EventDelivery.objects.filter(status="pending").count() == 2
+            wx.start()
+        assert case.wx_status.get(timeout=25)[0] == "done"
+        target, body, wx_pid = case.sent.get(timeout=2)
+        assert target == "original-group" and "审批已完成，继续查询。" in body["markdown"]["content"]
+        assert wx_pid != ready[2] and case.executions.value == 1
+        if question:
+            assert case.sent.get(timeout=2)[1]["template_card"]["card_type"] == "vote_interaction"
+        assert EventDelivery.objects.filter(status="delivered").count() == 2
+
+
+def call_web(port, stream):
+    data = {
+        "session_code": "session-original",
+        "resume": [{"interruptId": "approval-original", "status": "resolved"}],
+        "execute_kwargs": {"stream": stream},
+    }
+    request = Request(
+        f"http://127.0.0.1:{port}/chat/",
+        data=json.dumps(data).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    with build_opener(ProxyHandler({})).open(request, timeout=20) as response:
+        return response.read().decode()

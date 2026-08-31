@@ -32,6 +32,24 @@ def _spans(exporter, name):
 
 
 class TestWxBotSpan:
+    def test_durable_resume_inherits_producer_trace_without_baggage(self, wxbot_spans):
+        from aidev_agent.services.resume_events import ResumeEvents
+
+        manager = SimpleNamespace(get_agent_code=lambda: "app", publish_event=lambda _: None)
+        with tracing.wxbot_span("producer") as producer:
+            observer = ResumeEvents(manager, session_code="session", thread_id="graph", turn_id="turn", resume=[])
+            observer.on_chunk('data: {"type":"RUN_STARTED","runId":"run"}')
+            carrier = observer._ready.value["traceContext"]
+        with (
+            tracing.resumed_event_context({**carrier, "baggage": "private=value"}),
+            tracing.wxbot_span("wxbot.event.consume"),
+        ):
+            assert get_current_trace_id() == format(producer.get_span_context().trace_id, "032x")
+        consumer = _spans(wxbot_spans, "wxbot.event.consume")[0]
+        assert consumer.parent.span_id == producer.get_span_context().span_id
+        assert "private" not in consumer.to_json()
+        assert get_current_trace_id() is None
+
     @pytest.mark.parametrize("error", [RuntimeError("secret-token"), asyncio.CancelledError("secret-token")])
     def test_exception_is_redacted_and_context_restored(self, wxbot_spans, error):
         with pytest.raises(type(error)), tracing.wxbot_span("operation"):

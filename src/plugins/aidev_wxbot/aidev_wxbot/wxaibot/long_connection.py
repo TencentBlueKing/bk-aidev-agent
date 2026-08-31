@@ -316,6 +316,7 @@ class WxAiBotLongConnectionService:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._shutdown_task: asyncio.Task[None] | None = None
         self._health_task: asyncio.Task[None] | None = None
+        self._event_consumer_task: asyncio.Task[None] | None = None
         self._authenticated_event: asyncio.Event | None = None
         self._startup_failed_event: asyncio.Event | None = None
         self._startup_error: Exception | None = None
@@ -342,6 +343,7 @@ class WxAiBotLongConnectionService:
             logger.info("[WxAiBot-WS] 长连接认证成功")
             self._set_async_event(self._authenticated_event)
             self._ensure_health_task()
+            self._ensure_event_consumer()
 
         @self._client.on("disconnected")
         def _on_disconnected(reason: str) -> None:
@@ -555,7 +557,10 @@ class WxAiBotLongConnectionService:
             delivery = None
             try:
                 if action.target and target:
-                    delivery = self._new_resume_delivery(frame, "tool_approval")
+                    if self._database_events_enabled():
+                        await asyncio.to_thread(self._bind_resume_route, action.session_code, username, target)
+                    else:
+                        delivery = self._new_resume_delivery(frame, "tool_approval")
                 with wxbot_span("wxbot.approval.resume.submit"):
                     submitted = submit_cancelled_approval_resume(action, username, envelope, delivery)
                 if not submitted and delivery is not None:
@@ -568,6 +573,31 @@ class WxAiBotLongConnectionService:
                     delivery.finish()
                 logger.error("event=wxbot_approval_resume_submit_failed error_type=%s", type(error).__name__)
         return True
+
+    @staticmethod
+    def _database_events_enabled() -> bool:
+        return getattr(settings, "AIDEV_DATABASE_EVENTS_ENABLED", False) is True
+
+    def _bind_resume_route(self, session_code: str, username: str, target: str) -> None:
+        from .database_delivery import bind_resume_subscription
+
+        bind_resume_subscription(settings.APP_CODE, self._config.bot_id, session_code, username, target)
+
+    def _ensure_event_consumer(self) -> None:
+        if not self._database_events_enabled():
+            return
+        task = getattr(self, "_event_consumer_task", None)
+        if task is not None and not task.done():
+            return
+        from .database_delivery import DatabaseResumeConsumer
+
+        consumer = DatabaseResumeConsumer(settings.APP_CODE, self._config.bot_id, self._send_resume_message)
+        self._event_consumer_task = asyncio.create_task(
+            consumer.run(
+                lambda: bool(self._client.is_connected),
+                lambda: self._shutdown_requested,
+            )
+        )
 
     def _new_resume_delivery(self, frame: dict, resume_type: str, *, paused: bool = False) -> ResumeDelivery:
         target = self._resolve_message_target(frame)
@@ -638,9 +668,12 @@ class WxAiBotLongConnectionService:
                 username,
                 card_event.get("selected_items") or {},
             )
-            delivery = self._new_resume_delivery(frame, "ask_user_question", paused=True)
+            if self._database_events_enabled():
+                await asyncio.to_thread(self._bind_resume_route, action.session_code, username, target)
+            else:
+                delivery = self._new_resume_delivery(frame, "ask_user_question", paused=True)
             status = await asyncio.to_thread(submit_question_resume, submission, delivery)
-            if status != "accepted":
+            if status != "accepted" and delivery is not None:
                 delivery.close()
             if status == "busy":
                 await self._send_resume_message(
@@ -663,7 +696,8 @@ class WxAiBotLongConnectionService:
             except Exception as error:
                 logger.warning("event=wxbot_question_card_update_failed error_type=%s", type(error).__name__)
             finally:
-                delivery.activate()
+                if delivery is not None:
+                    delivery.activate()
         except Exception as error:
             if delivery is not None:
                 delivery.close()
@@ -941,6 +975,10 @@ class WxAiBotLongConnectionService:
                 retry_strategy=WECOM_AGENT_RETRY_STRATEGY,
             )
             stream_registry.register(request.stream_id, agent_stream.session_code)
+            if self._database_events_enabled() and agent_stream.kind == "chat":
+                active = self._active_streams.get(request.stream_id)
+                target = self._resolve_message_target(active.frame) if active else ""
+                self._bind_resume_route(agent_stream.session_code, request.username, target)
             frames = iter_direct_stream_frames(
                 agent_stream,
                 request.stream_id,
@@ -1321,6 +1359,10 @@ class WxAiBotLongConnectionService:
                 self._loop.stop()
 
     async def _graceful_shutdown(self) -> None:
+        event_task = getattr(self, "_event_consumer_task", None)
+        if event_task is not None:
+            event_task.cancel()
+            await asyncio.gather(event_task, return_exceptions=True)
         deliveries = tuple(getattr(self, "_resume_deliveries", ()))
         for delivery in deliveries:
             delivery.close()
@@ -1405,6 +1447,7 @@ class WxAiBotLongConnectionService:
         self._group_streams.clear()
         self._shutdown_task = None
         self._health_task = None
+        self._event_consumer_task = None
         self._authenticated_event = None
         self._startup_failed_event = None
 

@@ -95,6 +95,20 @@ def wxbot_span(name: str, *, root: bool = False, kind=None, attributes: dict | N
 
 
 @contextmanager
+def resumed_event_context(carrier: dict) -> Iterator[None]:
+    """Continue the producer trace across a durable event; never carry baggage."""
+    if not context or not TraceContextTextMapPropagator:
+        yield
+        return
+    safe = {key: carrier[key] for key in ("traceparent", "tracestate") if isinstance(carrier.get(key), str)}
+    token = context.attach(TraceContextTextMapPropagator().extract(safe))
+    try:
+        yield
+    finally:
+        context.detach(token)
+
+
+@contextmanager
 def received_message_span(frame: dict) -> Iterator[None]:
     payload = frame.get("body") or {}
     msgtype = payload.get("msgtype") if isinstance(payload, dict) else None

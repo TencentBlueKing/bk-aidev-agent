@@ -2,6 +2,8 @@
 
 本插件需与智能体模板配合使用，用于开发和管理智能体插件。
 
+审批 Web 回调与企业微信跨进程联动见 [DatabaseEventBus 使用说明](docs/database-events.md)。
+
 ## 本地调试智能体插件
 
 ### 环境准备

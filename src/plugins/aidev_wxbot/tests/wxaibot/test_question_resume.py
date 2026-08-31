@@ -42,6 +42,16 @@ def test_user_submission_preserves_original_session_thread_turn(resume_case):
     case.delivery.finish.assert_called_once()
 
 
+def test_database_publisher_mode_runs_once_without_local_delivery(resume_case):
+    case = resume_case
+    submission = mod.prepare_question_submission(case.action, "alice", case.selected)
+    assert mod.submit_question_resume(submission, None) == "accepted"
+    callback, *args = case.executor.submit.call_args.args
+    callback(*args)
+    assert case.run.call_count == 1
+    assert case.run.call_args.kwargs["consume_stream"] is None
+
+
 async def test_native_selection_resumes_and_delivers_agui_output(native_question_case, resume_case):
     from ag_ui.encoder import EventEncoder
     from aidev_agent.core.ag_ui.event_builders import build_tool_result_event

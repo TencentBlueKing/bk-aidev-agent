@@ -16,6 +16,7 @@ from aidev_agent.enums import ChatContentStatus, PromptRole, StreamEventType
 from aidev_agent.pydantic_models import ChatPrompt, ExecuteKwargs
 from aidev_agent.services.agent import ChatCompletionAgent
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
+from aidev_agent.services.resume_events import uses_resume_event_stream
 
 # OpenTelemetry 是可选 extras（pip install aidev-bkplugin[opentelemetry]）。
 # 未安装时 trace context 注入降级为 no-op，其余流程不受影响。
@@ -76,6 +77,9 @@ class AgentExecutor:
                 return generator
             return self.wrap_generator(generator, session_code, turn_id=turn_id)
         result = agent_instance.execute(execute_kwargs)
+        if uses_resume_event_stream(getattr(agent_instance, "resource_manager", None), execute_kwargs):
+            # The internal AG-UI producer already persisted/finalized this response.
+            return result
         # 非流式 ainvoke 不经过 AG-UI 事件分发，必须显式写回 assistant
         self.session_manager.save_ai_response(session_code, result, turn_id=turn_id)
         event_handler = getattr(agent_instance, "event_handler", None)

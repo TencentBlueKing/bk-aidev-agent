@@ -1,4 +1,4 @@
-"""Runtime-independent, process-local integration events (AG-UI envelopes)."""
+"""Runtime-independent integration events (AG-UI envelopes)."""
 
 from collections.abc import Callable
 from threading import RLock
@@ -7,6 +7,8 @@ from typing import Protocol
 from ag_ui.core import BaseEvent, CustomEvent
 
 AIDEV_CHAT_RESUME_READY = "AIDEV_CHAT_RESUME_READY"
+AIDEV_CHAT_RESUME_FINISHED = "AIDEV_CHAT_RESUME_FINISHED"
+AIDEV_CHAT_RESUME_FAILED = "AIDEV_CHAT_RESUME_FAILED"
 EventHandler = Callable[[BaseEvent], None]
 
 
