@@ -3,14 +3,84 @@
 import asyncio
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aidev_wxbot.wxaibot import database
-from django.db import InterfaceError
+from django.db import InterfaceError, OperationalError
 
 from .test_long_connection import StreamDrain, _service
+
+
+@pytest.fixture
+def existing_connection(monkeypatch):
+    connection = MagicMock(in_atomic_block=False)
+    connection.get_autocommit.return_value = True
+    connection.wrap_database_errors = nullcontext()
+    monkeypatch.setattr(database, "close_old_connections", MagicMock())
+    monkeypatch.setattr("django.db.connections.all", MagicMock(return_value=[connection]))
+    return connection
+
+
+@pytest.mark.parametrize("error", [None, InterfaceError(0, ""), OperationalError(2013, "lost connection")])
+def test_scope_checks_existing_socket_before_business(existing_connection, error):
+    connection = existing_connection
+    cursor = connection.connection.cursor.return_value
+    cursor.execute.side_effect = error
+    operation = MagicMock(return_value="result")
+    assert database.run_with_database_connections(operation) == "result"
+    cursor.execute.assert_called_once_with("SELECT 1")
+    assert connection.close.call_count == (error is not None)
+    operation.assert_called_once_with()
+
+
+def test_failed_probe_is_discarded_before_business_runs(existing_connection):
+    connection = existing_connection
+    connection.connection.cursor.return_value.execute.side_effect = InterfaceError(0, "")
+
+    def operation():
+        connection.close.assert_called_once_with()
+
+    database.run_with_database_connections(operation)
+
+
+@pytest.mark.parametrize("disconnect", [False, True])
+def test_sqlite_probe_preserves_or_replaces_existing_connection(monkeypatch, django_db_blocker, tmp_path, disconnect):
+    from django.db.utils import ConnectionHandler
+
+    handler = ConnectionHandler({"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": tmp_path / "probe.db"}})
+    connection = handler["default"]
+    monkeypatch.setattr(database.connections, "all", lambda **_kw: [connection])
+    connection.settings_dict["CONN_MAX_AGE"] = None
+    with django_db_blocker.unblock():
+        connection.ensure_connection()
+        raw = connection.connection
+        if disconnect:
+            raw.close()
+        try:
+            with database.database_connection_scope(), connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+                assert cursor.fetchone() == (1,)
+                assert (connection.connection is raw) == (not disconnect)
+        finally:
+            connection.close()
+
+
+@pytest.mark.parametrize("state", ["unopened", "atomic", "manual_transaction"])
+def test_scope_does_not_probe_unopened_or_transaction_connections(existing_connection, state):
+    connection = existing_connection
+    raw = connection.connection
+    if state == "unopened":
+        connection.connection = None
+    elif state == "atomic":
+        connection.in_atomic_block = True
+    else:
+        connection.get_autocommit.return_value = False
+    assert database.run_with_database_connections(lambda: "result") == "result"
+    raw.cursor.assert_not_called()
+    connection.close.assert_not_called()
 
 
 @pytest.mark.parametrize("failed", [False, True])
