@@ -157,6 +157,22 @@ def test_flush_publishes_coalesced_sse_and_eod(monkeypatch):
     assert len(metric_call["message_sizes"]) == 2
 
 
+def test_background_flush_explicitly_reuses_daemon_thread_connection(monkeypatch):
+    handler = object.__new__(RabbitMQMessageHandler)
+    handler._buffer_lock = threading.Lock()
+    handler._message_buffer = {"thread-id": ["chunk"]}
+    handler._get_flush_peek_lock = MagicMock(return_value=threading.Lock())
+    handler._with_channel = MagicMock(return_value=contextlib.nullcontext(MagicMock()))
+    handler._ensure_queue = MagicMock(return_value="replay-queue")
+    handler._notify_eod_committed = MagicMock()
+    handler._notify_replay_waiters = MagicMock()
+    monkeypatch.setattr(rabbitmq_module, "record_message_publish_metrics", MagicMock())
+
+    handler._flush_messages()
+
+    handler._with_channel.assert_called_once_with(reuse=True)
+
+
 def test_get_messages_since_replays_mixed_physical_messages():
     first = 'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"a"}\n\n'
     second = 'data: {"type":"TEXT_MESSAGE_CONTENT","delta":"b"}\n\n'
