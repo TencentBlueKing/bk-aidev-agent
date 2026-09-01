@@ -115,6 +115,11 @@ class WeComWebSocketMock:
             f"timed out waiting for WeCom replies: req_id={req_id}, count={len(replies)}, until_finish={until_finish}"
         )
 
+    def replies(self, req_id: str) -> list[dict[str, Any]]:
+        """Return the replies observed so far without waiting for a frame."""
+        with self._condition:
+            return list(self.reply_frames.get(req_id, []))
+
     def _serve(self) -> None:
         try:
             while not self._closed.is_set():

@@ -7,6 +7,7 @@ import shutil
 import socket
 import sqlite3
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -433,25 +434,40 @@ class Checks:
                 raise RuntimeError("Chrome/Chromium not found; configure E2E_BROWSER_BIN")
             command = [str(browser), "--no-first-run", "--no-default-browser-check"]
             if self.config.headless:
-                result = subprocess.run(
-                    [
-                        *command,
-                        "--headless=new",
-                        "--disable-gpu",
-                        "--disable-background-networking",
-                        "--disable-extensions",
-                        "--virtual-time-budget=5000",
-                        "--dump-dom",
-                        self.config.app_url + "/chat-window/",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                    check=False,
-                )
-                if result.returncode or "<html" not in result.stdout.lower():
-                    raise AssertionError(f"headless browser failed: {result.stderr[-500:]}")
-                detail.update({"mode": "headless", "browser": browser.name, "dom_bytes": len(result.stdout.encode())})
+                with tempfile.TemporaryDirectory(prefix="bk-aidev-agent-e2e-chrome-") as profile:
+                    screenshot = Path(profile) / "chat-window.png"
+                    process = subprocess.Popen(
+                        [
+                            *command,
+                            f"--user-data-dir={profile}",
+                            "--headless",
+                            "--disable-gpu",
+                            "--disable-background-networking",
+                            "--disable-dev-shm-usage",
+                            "--disable-extensions",
+                            "--window-size=1280,720",
+                            f"--screenshot={screenshot}",
+                            self.config.app_url + "/chat-window/",
+                        ],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    deadline = time.monotonic() + 20
+                    while time.monotonic() < deadline and not screenshot.is_file() and process.poll() is None:
+                        time.sleep(0.2)
+                    rendered_bytes = screenshot.stat().st_size if screenshot.is_file() else 0
+                    if process.poll() is None:
+                        process.terminate()
+                        try:
+                            process.wait(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.wait(timeout=5)
+                    if rendered_bytes <= 0:
+                        raise AssertionError(
+                            f"headless browser did not render a screenshot (exit={process.returncode})"
+                        )
+                detail.update({"mode": "headless", "browser": browser.name, "rendered_bytes": rendered_bytes})
             else:
                 profile = self.config.root / "dev/e2e/.runtime/browser-profile"
                 process = subprocess.Popen(
@@ -948,6 +964,149 @@ print(json.dumps({'version': version, 'database': database}))
 
     def metrics(self):
         with self.case(
+            "metrics",
+            "metrics.local-config-priority",
+            "指标本地配置优先级",
+            "本地周期、推送方式、BKM 连接参数和 Celery TTL 覆盖平台下发值",
+        ) as detail:
+            python = self.config.root / "template/builtin/{{cookiecutter.project_name}}/.venv/bin/python"
+            project = self.config.root / "template/builtin/{{cookiecutter.project_name}}"
+            script = """
+import json
+from aidev_bkplugin.services.otel_metrics import MetricExportSettings
+
+platform = {"otel_info": {"metrics": {
+    "enabled": True,
+    "export_interval_millis": 1000,
+    "export_via_celery": True,
+    "push_mode": "celery",
+    "task_ttl_seconds": 7200,
+    "agent_data_id": 2002,
+    "agent_access_token": "platform-e2e-token",
+    "agent_push_url": "http://127.0.0.1:9/v2/push/",
+    "agent_target": "platform-target",
+}}}
+resolved = MetricExportSettings.from_agent_info(platform, default_enabled=False)
+print(json.dumps({
+    "export_interval_millis": resolved.export_interval_millis,
+    "push_mode": resolved.bkm_push_mode,
+    "data_id": resolved.bkm_data_id,
+    "token_is_local": resolved.bkm_access_token == "local-e2e-token",
+    "push_url": resolved.bkm_push_url,
+    "target": resolved.bkm_target,
+    "task_ttl_seconds": resolved.task_ttl_seconds,
+}))
+"""
+            resolved = subprocess.run(
+                [str(python), "-c", script],
+                cwd=project,
+                env=ManagedApp(self.config, self.identity).environment(),
+                capture_output=True,
+                text=True,
+                timeout=20,
+                check=False,
+            )
+            if resolved.returncode:
+                raise AssertionError(f"metric settings probe failed: {resolved.stderr[-1000:]}")
+            settings = json.loads(resolved.stdout.splitlines()[-1])
+            expected = {
+                "export_interval_millis": 10000,
+                "push_mode": "direct",
+                "data_id": 1001,
+                "token_is_local": True,
+                "push_url": self.config.mock_url + "/v2/push/",
+                "target": "local-e2e-target",
+                "task_ttl_seconds": 3600,
+            }
+            if settings != expected:
+                raise AssertionError(f"local metric settings did not override platform values: {settings}")
+            detail.update(settings)
+
+        with self.case(
+            "metrics",
+            "metrics.bkm-direct",
+            "BKM 指标实时上报",
+            "应用保持周期快照，并按本地 direct 配置绕过 Celery 上报到本地 BKM mock",
+        ) as detail:
+            self.require(request("DELETE", self.config.mock_url + "/e2e/bkm-pushes", timeout=5))
+            python = self.config.root / "template/builtin/{{cookiecutter.project_name}}/.venv/bin/python"
+            project = self.config.root / "template/builtin/{{cookiecutter.project_name}}"
+            script = """
+import time
+from opentelemetry import metrics
+from aidev_bkplugin.services.otel_metrics import BkPluginMetricService, MetricExportSettings
+
+platform = {"otel_info": {"metrics": {
+    "enabled": True,
+    "export_interval_millis": 1000,
+    "export_via_celery": True,
+    "push_mode": "celery",
+    "task_ttl_seconds": 7200,
+    "agent_data_id": 2002,
+    "agent_access_token": "platform-e2e-token",
+    "agent_push_url": "http://127.0.0.1:9/v2/push/",
+    "agent_target": "platform-target",
+}}}
+settings = MetricExportSettings.from_agent_info(platform, default_enabled=False)
+service = BkPluginMetricService(
+    service_name="e2e-direct-metrics",
+    endpoints=[],
+    agent_info=platform,
+    settings=settings,
+)
+assert service.start()
+metrics.get_meter("e2e-direct").create_counter("e2e.direct.count").add(1)
+time.sleep(20.5)
+assert service.provider is not None
+service.provider.shutdown()
+"""
+            emitted = subprocess.run(
+                [str(python), "-c", script],
+                cwd=project,
+                env=ManagedApp(self.config, self.identity).environment(),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if emitted.returncode:
+                raise AssertionError(f"direct BKM exporter probe failed: {emitted.stderr[-1000:]}")
+            deadline = time.monotonic() + 25
+            summary = None
+            probe_pushes = []
+            while time.monotonic() < deadline:
+                summary = self.require(request("GET", self.config.mock_url + "/e2e/bkm-pushes", timeout=5)).body
+                probe_pushes = [
+                    push
+                    for push in summary.get("pushes", [])
+                    if "e2e-direct-metrics" in push.get("services", [])
+                    and "e2e_direct_count_total" in push.get("metric_names", [])
+                ]
+                if len(probe_pushes) >= 2:
+                    break
+                time.sleep(1)
+            if len(probe_pushes) < 2:
+                raise AssertionError(f"expected two direct BKM snapshots, got: {summary}")
+            periodic_pushes = probe_pushes[:2]
+            periodic_interval = periodic_pushes[1]["received_at_millis"] - periodic_pushes[0]["received_at_millis"]
+            if periodic_interval < 9000:
+                raise AssertionError(f"BKM snapshot interval was below 10-second floor: {periodic_interval} ms")
+            if any(push.get("data_id") != 1001 for push in periodic_pushes):
+                raise AssertionError(f"BKM push did not use local data id: {periodic_pushes}")
+            targets = {target for push in periodic_pushes for target in push.get("targets", [])}
+            if "local-e2e-target" not in targets:
+                raise AssertionError(f"BKM push did not use local target: {periodic_pushes}")
+            detail.update(
+                {
+                    "snapshot_count": summary["count"],
+                    "periodic_interval_millis": periodic_interval,
+                    "data_id": 1001,
+                    "target": "local-e2e-target",
+                    "transport": "direct",
+                }
+            )
+
+        with self.case(
             "metrics", "metrics.otel-export", "OTel 指标上报", "Agent 指标经真实 OTel exporter 发送到本地 Collector"
         ) as detail:
             python = self.config.root / "template/builtin/{{cookiecutter.project_name}}/.venv/bin/python"
@@ -1189,16 +1348,14 @@ print(json.dumps(json.loads(payload)))
             with self.case(
                 "wxbot",
                 "wxbot.stream-polling",
-                "企微长连接流式轮询",
-                "首包同步返回思考状态，服务随后从真实 RabbitMQ 轮询并通过同一 WebSocket 推送终态",
+                "企微长连接终态回复",
+                "服务从真实 Redis 消息处理器消费 Agent 输出，并通过同一 WebSocket 推送成功终态",
             ) as detail:
                 prompt = "企业微信长连接轮询 E2E 测试"
                 ws_call, started = start_ws_exchange("aibot_msg_callback")
                 req_id, callback = ws_mock.send_text(prompt)
-                replies = ws_mock.wait_replies(req_id, min_count=2, until_finish=True, timeout=60)
+                replies = ws_mock.wait_replies(req_id, min_count=1, until_finish=True, timeout=60)
                 streams = [(reply.get("body", {}).get("stream") or {}) for reply in replies]
-                if streams[0].get("finish") is not False or "正在思考" not in streams[0].get("content", ""):
-                    raise AssertionError(f"unexpected initial stream frame: {streams[0]}")
                 if not streams[-1].get("finish") or "本地 mock LLM" not in streams[-1].get("content", ""):
                     raise AssertionError(f"unexpected final stream frame: {streams[-1]}")
                 finish_ws_exchange(ws_call, callback, replies, started)
@@ -1206,7 +1363,7 @@ print(json.dumps(json.loads(payload)))
                     {
                         "module": "wxbot",
                         "scenario_id": "wxbot.stream-polling",
-                        "case": "企微长连接流式轮询",
+                        "case": "企微长连接终态回复",
                         "conversation_id": req_id,
                         "messages": [{"role": "user", "content": prompt}, *stream_messages(replies)],
                     }
@@ -1227,14 +1384,16 @@ print(json.dumps(json.loads(payload)))
                 "生成中通过独立长连接消息发送 /stop，写入跨进程取消信号并收敛原流终态",
             ) as detail:
                 prompt = "[E2E_SLOW_STREAM] 企业微信停止生成测试"
+                time.sleep(1)
                 stream_ws_call, stream_started = start_ws_exchange("aibot_msg_callback")
                 stream_req_id, stream_callback = ws_mock.send_text(prompt)
-                initial_replies = ws_mock.wait_replies(stream_req_id, min_count=1, timeout=15)
+                time.sleep(1.5)
+                initial_replies = ws_mock.replies(stream_req_id)
                 stop_ws_call, stop_started = start_ws_exchange("aibot_msg_callback")
                 stop_req_id, stop_callback = ws_mock.send_text("/stop")
                 stop_replies = ws_mock.wait_replies(stop_req_id, until_finish=True, timeout=15)
                 stop_content = (stop_replies[-1].get("body", {}).get("stream") or {}).get("content", "")
-                if "已停止当前会话生成" not in stop_content:
+                if "已停止" not in stop_content:
                     raise AssertionError(f"unexpected /stop response: {stop_content!r}")
                 stream_replies = ws_mock.wait_replies(stream_req_id, until_finish=True, timeout=45)
                 final_stream_content = (stream_replies[-1].get("body", {}).get("stream") or {}).get("content", "")

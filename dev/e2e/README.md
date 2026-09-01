@@ -69,4 +69,6 @@ HTML 报告会把每条企微输入、流式响应帧和完整 WebSocket 请求/
 
 这些运行产物和 `.env` 都已忽略，不会提交。若只需扩展测试框架并做快速回归，执行 `make -C dev/e2e test`。
 
-Grafana 仪表盘地址为 <http://127.0.0.1:3000/d/aidev-agent-metrics>，Prometheus 为 <http://127.0.0.1:9090>。指标模块会检查 Prometheus 可查询，以及 Grafana 中预置的智能体仪表盘可读取。
+Grafana 仪表盘地址为 <http://127.0.0.1:3000/d/aidev-agent-metrics>，Prometheus 为 <http://127.0.0.1:9090>。指标模块会检查本地 `.env` 对平台指标配置的优先级、10 秒最小周期、direct BKM 周期快照、Prometheus 查询，以及 Grafana 中预置的智能体仪表盘。
+
+默认 E2E 配置会让平台 mock 下发 1 秒周期、Celery 推送和一组不可达的 BKM 连接参数，同时在本地 `.env` 配置 10 秒周期、direct 推送和本地 BKM mock。测试必须观测到连续两次本地直推且间隔不低于 9 秒，才能判定本地优先级和 direct 链路正常；所有 token 仍会在报告中遮蔽。

@@ -23,6 +23,7 @@ class MockState:
     sessions: dict[str, dict] = field(default_factory=dict)
     contents: dict[int, dict] = field(default_factory=dict)
     requests: list[dict] = field(default_factory=list)
+    bkm_pushes: list[dict] = field(default_factory=list)
     next_content_id: int = 1
     lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -105,6 +106,46 @@ class RemoteMock:
 
                 if path == "/healthz":
                     return self._send({"status": "ok"})
+                if path == "/v2/push/" and self.command == "POST":
+                    records = body.get("data") if isinstance(body.get("data"), list) else []
+                    with state.lock:
+                        state.bkm_pushes.append(
+                            {
+                                "received_at_millis": time.monotonic_ns() // 1_000_000,
+                                "data_id": body.get("data_id"),
+                                "record_count": len(records),
+                                "metric_names": sorted(
+                                    {
+                                        str(metric_name)
+                                        for record in records
+                                        for metric_name in (record.get("metrics") or {})
+                                    }
+                                ),
+                                "services": sorted(
+                                    {
+                                        str((record.get("dimension") or {}).get("service_name"))
+                                        for record in records
+                                        if (record.get("dimension") or {}).get("service_name")
+                                    }
+                                ),
+                                "targets": sorted(
+                                    {str(record.get("target")) for record in records if record.get("target")}
+                                ),
+                            }
+                        )
+                    return self._send({"result": True})
+                if path == "/e2e/bkm-pushes" and self.command == "GET":
+                    with state.lock:
+                        pushes = [dict(item) for item in state.bkm_pushes]
+                    intervals = [
+                        current["received_at_millis"] - previous["received_at_millis"]
+                        for previous, current in zip(pushes, pushes[1:])
+                    ]
+                    return self._send({"count": len(pushes), "pushes": pushes, "intervals_millis": intervals})
+                if path == "/e2e/bkm-pushes" and self.command == "DELETE":
+                    with state.lock:
+                        state.bkm_pushes.clear()
+                    return self._send({"result": True})
                 if path == "/api/v1/auth/access-tokens/verify" and self.command == "POST":
                     if not body.get("access_token"):
                         return self._send(
@@ -391,7 +432,17 @@ def agent_config() -> dict:
     otel_info = {
         "otel_url": "http://127.0.0.1:4318",
         "otel_token": "",
-        "metrics": {"enabled": True, "export_interval_millis": 1000, "export_via_celery": False},
+        "metrics": {
+            "enabled": True,
+            "export_interval_millis": 1000,
+            "export_via_celery": True,
+            "push_mode": "celery",
+            "task_ttl_seconds": 7200,
+            "agent_data_id": 2002,
+            "agent_access_token": "platform-e2e-token",
+            "agent_push_url": "http://127.0.0.1:9/v2/push/",
+            "agent_target": "platform-target",
+        },
     }
     return {
         "agent_code": "e2e-agent",
